@@ -16,7 +16,7 @@ import logging
 import re
 import time
 from datetime import UTC, datetime, timezone, timedelta
-from typing import AsyncGenerator, Dict, Any, List, Optional
+from typing import AsyncGenerator, Dict, Any, List, Optional, Tuple
 from urllib.parse import urlencode
 
 import httpx
@@ -694,6 +694,11 @@ def _strip_xml_tool_markers(text: str) -> str:
     stripped = _INVOKE_STRIP_RE.sub("", text)
     stripped = _MINIMAX_TAG_STRIP_RE.sub("", stripped)
     return stripped.strip()
+
+
+# GenUI metric_table (rank1): 这些只读数据查询工具的结果可确定性打成表格卡片。
+# 其余工具结果不建表 (fail-open 回散文)。
+_GENUI_TABLE_TOOLS = frozenset({"health_query", "health_query_batch", "query_lab_indicators"})
 
 
 def _strip_reva_ui_from_llm_text(text: str) -> str:
@@ -3665,6 +3670,7 @@ class AgentExecutor:
         extra_context: Optional[str] = None,
         channel: Optional[str] = None,
         client_turn_id: Optional[str] = None,
+        client_caps: Optional[List[str]] = None,
     ) -> AsyncGenerator[Dict, None]:
         """Run one durable client turn, taking over an ACKed turn after worker loss."""
         yield self._progress_event("accepted")
@@ -3804,6 +3810,7 @@ class AgentExecutor:
                 channel=channel,
                 client_turn_id=client_turn_id,
                 recovered_user_message=recovered_user_message,
+                client_caps=client_caps,
             ):
                 yield event
         finally:
@@ -3823,6 +3830,7 @@ class AgentExecutor:
         channel: Optional[str] = None,
         client_turn_id: Optional[str] = None,
         recovered_user_message: Any = None,
+        client_caps: Optional[List[str]] = None,
     ) -> AsyncGenerator[Dict, None]:
         """运行 Agent 循环，SSE 流式输出"""
         from app.services.llm.usage_tracker import set_caller
@@ -3830,6 +3838,16 @@ class AgentExecutor:
         # 输入通道(客户端传输层声明,typed/voice/siri):症状类记录的确认策略依赖它。
         # 非法/未声明一律 None → fail-closed(症状保留确认)。
         self._turn_channel = channel if channel in ("typed", "voice", "siri") else None
+        # GenUI metric_table (rank1): 客户端声明 genui-table-v1 且未被 kill-switch 关闭时,
+        # 工具结果确定性打成表格卡片 (合成后追加 fence) + 正文改走 ≤500字 契约。
+        # 无 cap / flag 关 → 逐字节现状 (不追踪、不注入、不追加)。fail-open。
+        from app.services.genui import GENUI_TABLE_CAP as _GENUI_TABLE_CAP
+        genui_table_on = (
+            getattr(settings, "genui_table_enabled", True)
+            and _GENUI_TABLE_CAP in (client_caps or [])
+        )
+        # 本回合已执行的只读数据查询工具 (name, args, result) —— 供合成后确定性建表。
+        genui_tool_calls: List[Tuple[str, Optional[dict], str]] = []
         # 多模型综合分析 (商用三强 panel)。仅纯文本分析回合走此路径;
         # 带图片/附件时回退普通单模型路径 (panel 是文本综合, 不处理多模态)。
         if _extract_multi_model_flag(extra_context) and not images and not file_base64:
@@ -4124,13 +4142,32 @@ class AgentExecutor:
             )
             if "ActionCard" not in sources_used:
                 sources_used.append("ActionCard")
-        desktop_response_instruction = _extract_desktop_response_instruction(extra_context)
-        if desktop_response_instruction:
+        if genui_table_on:
+            # GenUI metric_table (rank1): 客户端声明 genui-table-v1 → 数据由后端确定性
+            # 表格卡片直接呈现, 正文改走 ≤500字 结论先行契约。**服务端硬门**: 即便旧客户端
+            # 仍在 extra_context 里塞 mac "最高优先级要求生成大 markdown 表", 声明了 cap 就
+            # 以本契约为准并**覆盖**那条指令 —— 否则旧指令会一边索要 4000 字表格、一边又声明
+            # cap, 自伤 decode 税 (rank1 要消灭的正是这份税)。
             turn_context_parts.append(
-                "## 桌面端回复格式要求\n"
-                f"{desktop_response_instruction}\n"
-                "这是桌面端展示的最高优先级格式要求；除非用户明确要求纯文本，否则必须遵守。"
+                "## 数据回答格式要求（最高优先级）\n"
+                "本回合若涉及健康数据查询，系统已用表格卡片把数值直接呈现给用户。因此：\n"
+                "- 正文**不超过 500 字**；\n"
+                "- **结论先行**：先给 2-3 条关键要点，再给可执行的行动建议；\n"
+                "- **绝不逐行复述表格中的数值行**（用户已在卡片里看到），只做解读、趋势、对比与行动指引；\n"
+                "- **安全例外**：异常或危急数值（如血压达高血压2-3级、血氧过低、血糖过高或过低、"
+                "化验危急值等）**必须在正文中明确说出具体数值**并给出对应行动建议，不受上面"
+                "\"不复述表格数值\"约束；是否异常/危急以系统安全提示（⚠️ 安全提示）与卡片中的"
+                "分级/异常标注为准，不要给系统标注为正常的数值自行加危急判断；\n"
+                "- 不确定性与安全边界照常表达。"
             )
+        else:
+            desktop_response_instruction = _extract_desktop_response_instruction(extra_context)
+            if desktop_response_instruction:
+                turn_context_parts.append(
+                    "## 桌面端回复格式要求\n"
+                    f"{desktop_response_instruction}\n"
+                    "这是桌面端展示的最高优先级格式要求；除非用户明确要求纯文本，否则必须遵守。"
+                )
         # 入口 deeplink 携带的结构化上下文 — 用户在 SNP/饮食/运动等页点"详细聊"时,
         # 把当前页正展示的具体方案条目透传过来, 让 LLM 不重新猜, 在已有方案上深化.
         if extra_context and extra_context.strip():
@@ -4875,6 +4912,12 @@ class AgentExecutor:
                             "content": result,
                         })
 
+                        # GenUI metric_table (rank1): 记下只读数据查询工具的
+                        # (name, args, result), 合成后确定性建表 (零 LLM)。仅在客户端
+                        # 声明 genui-table-v1 时追踪 (无 cap → 零开销)。
+                        if genui_table_on and func_name in _GENUI_TABLE_TOOLS:
+                            genui_tool_calls.append((func_name, parsed_tool_args, result))
+
                         # tool_result 事件给前端用. health_record 时附 args 让前端能识别
                         # 是哪种 record + 提取关键内容显示 summary 卡 (I Phase 2).
                         tool_event_data = {
@@ -5322,6 +5365,27 @@ class AgentExecutor:
                 user_id,
                 (message or "")[:80],
             )
+        # GenUI metric_table (rank1): 合成完成后, 把本回合只读数据查询结果确定性打成
+        # reva-ui 表格卡片, 追加到答案末尾 (镜像图表 "叙事在前、卡片在后" 的顺序)。
+        # 数值全部来自工具结果具名字段 (R4); 在 _strip_reva_ui_from_llm_text **之后**追加
+        # → 确定性 fence 不会被防伪造剥离器吃掉。fail-open: 无表/任何异常 → 逐字节现状。
+        if genui_table_on and genui_tool_calls:
+            try:
+                from app.services.genui import (
+                    build_tables_from_tool_calls,
+                    render_metric_table_block,
+                )
+                for _tbl in build_tables_from_tool_calls(genui_tool_calls):
+                    _fence = render_metric_table_block(_tbl)
+                    _chunk = f"\n\n{_fence}" if full_reply.strip() else _fence
+                    if first_token_at is None:
+                        first_token_at = time.time()
+                    yield {"event": "token", "data": {"content": _chunk}}
+                    full_reply += _chunk
+            except Exception as e:  # noqa: BLE001 — 建表/emit 失败绝不断回合
+                logger.warning(
+                    "[agent_executor] GenUI metric_table build/emit failed: %s", e
+                )
         ai_msg = svc.save_message(
             conv.id,
             "assistant",

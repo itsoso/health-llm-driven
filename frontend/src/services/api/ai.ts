@@ -4,7 +4,7 @@ import { parseSimpleSSE } from '@/utils/sseParser';
 // GenUI 能力声明 (X-Reva-Client-Caps): 让后端知道本端能渲染哪些 reva-ui 组件。
 // metric_table 渲染器 (MetricTableCard) 已随前端上线, 但 cap token 先暗着 —— eval
 // 过闸后把下面这行翻成 true, 后端才会开始产出 metric_table 块。改这一个常量即可。
-const REVA_UI_TABLE_CAP_ENABLED = false;
+const REVA_UI_TABLE_CAP_ENABLED = true;
 const BASE_CLIENT_CAPS = 'genui-v1, genui-components-v1';
 const CLIENT_CAPS = REVA_UI_TABLE_CAP_ENABLED ? `${BASE_CLIENT_CAPS}, genui-table-v1` : BASE_CLIENT_CAPS;
 

@@ -52,6 +52,8 @@ const EMPTY_MEALS: DietRecord[] = [];
 type DietRouteParams = {
   capture?: string | string[];
   return_to?: string | string[];
+  date?: string | string[];
+  share_record_id?: string | string[];
   draft?: string | string[];
   meal_type?: string | string[];
   food_items?: string | string[];
@@ -76,6 +78,7 @@ const BUSY_PHOTO_CAPTURE_STAGES = new Set<PhotoCaptureStage>([
 ]);
 const PHOTO_RECOGNITION_SLOW_MS = 6000;
 const PORTION_REVIEW_ASSISTIVE_HINT = '优先核对食物份量；热量和三大营养会随份量一起修正。';
+const POST_CONFIRM_DIET_REVIEW_PROMPT = '请先查询今天数据库里的所有饮食记录，并核验 created_id 对应的刚保存记录是否存在；再结合这条刚保存的饮食记录，汇总全天饮食、总热量和蛋白质/碳水/脂肪，并给出下一餐最小调整建议。如果数据库里查不到这条记录，请明确提示同步失败，不要只凭本页缓存或本轮对话猜测。';
 const PHOTO_CAPTURE_STEPS = [
   { key: 'preparing', label: '优化照片' },
   { key: 'recognizing', label: '识别食物' },
@@ -122,6 +125,18 @@ function readRouteMealType(value: string | string[] | undefined): DietRecordCrea
   return raw && VALID_MEAL_TYPES.has(raw) ? raw as DietRecordCreate['meal_type'] : undefined;
 }
 
+function readRouteDate(value: string | string[] | undefined): string | undefined {
+  const raw = readRouteText(value);
+  return raw && /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : undefined;
+}
+
+function readRoutePositiveInt(value: string | string[] | undefined): number | undefined {
+  const raw = readRouteText(value);
+  if (!raw || !/^\d+$/.test(raw)) return undefined;
+  const parsed = Number(raw);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
+
 function needsNutritionBackfill(record: Partial<DietRecordCreate>): boolean {
   return [record.calories, record.protein, record.carbs, record.fat]
     .some((value) => typeof value !== 'number' || !Number.isFinite(value));
@@ -165,7 +180,6 @@ function formatTimingSeconds(ms: number | null | undefined): string | null {
 
 function foodNeedsPortionReview(food: FoodItem): boolean {
   const hasQuantity = Boolean(food.quantity?.trim());
-  const hasTrustedPortion = food.portion_basis === 'measured' || food.portion_basis === 'label';
   const identityConfidence = typeof food.confidence === 'number' && Number.isFinite(food.confidence)
     ? food.confidence
     : null;
@@ -173,13 +187,27 @@ function foodNeedsPortionReview(food: FoodItem): boolean {
     ? food.portion_confidence
     : null;
   return !hasQuantity
-    || !hasTrustedPortion
     || (identityConfidence !== null && identityConfidence < 0.7)
     || (portionConfidence !== null && portionConfidence < 0.7);
 }
 
+function normalizedDraftConfidence(value: number | null | undefined): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+  const normalized = value > 1 ? value / 100 : value;
+  return normalized >= 0 && normalized <= 1 ? normalized : null;
+}
+
+function quickDraftNeedsWholeReview(draft: Partial<DietRecordCreate>): boolean {
+  const confidence = normalizedDraftConfidence(draft.ai_confidence);
+  return confidence !== null && confidence < 0.7;
+}
+
 function quickDraftNeedsPortionReview(draft: Partial<DietRecordCreate>): boolean {
   return (draft.ai_raw_result?.foods ?? []).some(foodNeedsPortionReview);
+}
+
+function quickDraftNeedsReview(draft: Partial<DietRecordCreate>): boolean {
+  return quickDraftNeedsPortionReview(draft) || quickDraftNeedsWholeReview(draft);
 }
 
 function buildQuickDraftReviewHint(draft: DietRecordCreate): string {
@@ -192,6 +220,9 @@ function buildQuickDraftReviewHint(draft: DietRecordCreate): string {
     const visibleNames = portionCheckNames.slice(0, 2).join('、');
     const suffix = portionCheckNames.length > 2 ? `等 ${portionCheckNames.length} 项` : '';
     return `小巴建议先核对：${visibleNames}${suffix}的份量；确认后才写入今天饮食。`;
+  }
+  if (quickDraftNeedsWholeReview(draft)) {
+    return '小巴建议先核对整餐识别结果和份量；确认后才写入今天饮食。';
   }
   if (foods.length > 0) {
     return `小巴已拆出 ${foods.length} 项食物；确认后才写入今天饮食。`;
@@ -252,6 +283,34 @@ function buildShareRecordFromConfirmation(created: DietRecord, draft: DietRecord
   };
 }
 
+function buildPostConfirmDietReviewContext(record: DietRecord) {
+  return {
+    from: 'diet/post_confirm',
+    must_query_database: true,
+    created_id: record.id,
+    verify_record_id: record.id,
+    expected_record: {
+      id: record.id,
+      record_date: record.record_date,
+      meal_type: record.meal_type,
+      food_items: record.food_items,
+    },
+    record: {
+      record_date: record.record_date,
+      meal_type: record.meal_type,
+      food_items: record.food_items,
+      calories: record.calories ?? null,
+      protein: record.protein ?? null,
+      carbs: record.carbs ?? null,
+      fat: record.fat ?? null,
+      fiber: record.fiber ?? null,
+      alcohol_units: record.alcohol_units ?? null,
+      notes: record.notes ?? null,
+      source: record.source ?? null,
+    },
+  };
+}
+
 function mergeRevisedDraft(
   original: Partial<DietRecordCreate>,
   revision: DietRecordCreate,
@@ -262,7 +321,8 @@ function mergeRevisedDraft(
   const foodChanged = normalized(original.food_items) !== normalized(revision.food_items);
   const nutritionChanged = (['calories', 'protein', 'carbs', 'fat'] as const)
     .some(key => original[key] !== revision[key]);
-  if (!foodChanged && !nutritionChanged) return merged;
+  const reviewedRiskyDraft = quickDraftNeedsReview(original);
+  if (!foodChanged && !nutritionChanged && !reviewedRiskyDraft) return merged;
   const corrected: DietRecordCreate = {
     ...merged,
     food_id: foodChanged ? undefined : original.food_id,
@@ -351,7 +411,7 @@ export default function DietScreen() {
   const draftConsumedRef = useRef(false);
   const qc = useQueryClient();
   const toast = useToast();
-  const [date, setDate] = useState(todayStr());
+  const [date, setDate] = useState(() => readRouteDate(params.date) ?? todayStr());
   const { data: daily, refetch, isRefetching } = useDailyDiet(date);
   const { estimate, pendingIds, failedIds } = useDietEstimate();
   // 记住每条记录的估算来源, 让「点重试」用同一来源 (photo/voice/text) 重跑.
@@ -373,6 +433,7 @@ export default function DietScreen() {
   const [quickDraftSaving, setQuickDraftSaving] = useState(false);
   const [shareRecord, setShareRecord] = useState<DietRecord | null>(null);
   const [shareImageUriOverride, setShareImageUriOverride] = useState<string | null>(null);
+  const shareRecordParamConsumedRef = useRef<string | null>(null);
   const [photoDraftRestoreReady, setPhotoDraftRestoreReady] = useState(false);
   const quickDraftSavingRef = useRef(false);
   const activeDraftRef = useRef(false);
@@ -535,7 +596,7 @@ export default function DietScreen() {
         const saveSource = corrected && needsNutritionBackfill(revised)
           ? { kind: 'text' as const, description: revised.food_items }
           : draftEstimateSource;
-        await saveNewDietRecord(revised, saveSource);
+        const created = await saveNewDietRecord(revised, saveSource);
         if (isPhotoCorrection) {
           void emitClientEvent('diet_photo_confirmation_terminal', {
             phase: 'completed',
@@ -543,6 +604,14 @@ export default function DietScreen() {
             verified: true,
             corrected,
           });
+        }
+        if (!returnToChatAfterConfirm) {
+          setShareImageUriOverride(
+            !created.image_url && draftEstimateSource?.kind === 'photo'
+              ? draftEstimateSource.imageUri ?? null
+              : null,
+          );
+          setShareRecord(buildShareRecordFromConfirmation(created, revised));
         }
       }
       setShowForm(false);
@@ -571,9 +640,15 @@ export default function DietScreen() {
         Alert.alert('照片草稿已失效', '请重新拍照识别这一餐。');
         return;
       }
+      if (!editingRecord && formDefaults.photo_draft_token && authUserId) {
+        const recoverable = mergeRevisedDraft(formDefaults, record);
+        await saveDietPhotoDraft(authUserId, recoverable).catch(() => {
+          toast.show('当前草稿仍在页面中，请不要退出后再试', 'info');
+        });
+      }
       Alert.alert(editingRecord ? '更新失败' : '保存失败', '请稍后再试');
     }
-  }, [authUserId, draftEstimateSource, editingRecord, formDefaults, qc, saveNewDietRecord, toast]);
+  }, [authUserId, draftEstimateSource, editingRecord, formDefaults, qc, returnToChatAfterConfirm, saveNewDietRecord, toast]);
 
   const handleConfirmQuickDraft = useCallback(async () => {
     if (!quickDraft) return;
@@ -586,6 +661,7 @@ export default function DietScreen() {
       const draftRecord = quickDraft.record;
       if (isPhotoDraft) setPhotoCaptureStage('saving');
       const created = await saveNewDietRecord(draftRecord, quickDraft.source);
+      const confirmedRecord = buildShareRecordFromConfirmation(created, draftRecord);
       if (isPhotoDraft) {
         void emitClientEvent('diet_photo_confirmation_terminal', {
           phase: 'completed',
@@ -594,18 +670,6 @@ export default function DietScreen() {
           corrected: false,
         });
       }
-      const recordContext = {
-        record_date: draftRecord.record_date,
-        meal_type: draftRecord.meal_type,
-        food_items: draftRecord.food_items,
-        calories: draftRecord.calories ?? null,
-        protein: draftRecord.protein ?? null,
-        carbs: draftRecord.carbs ?? null,
-        fat: draftRecord.fat ?? null,
-        fiber: draftRecord.fiber ?? null,
-        alcohol_units: draftRecord.alcohol_units ?? null,
-        notes: draftRecord.notes ?? null,
-      };
       activeDraftRef.current = false;
       setQuickDraft(null);
       setShowForm(false);
@@ -615,12 +679,8 @@ export default function DietScreen() {
       if (isPhotoDraft) setPhotoCaptureStage('saved');
       if (returnToChatAfterConfirm) {
         pushChatWithContext(router, {
-          prompt: '我刚记录了一餐, 请更新今天饮食进度, 并给出下一餐最小建议。',
-          context: {
-            from: 'diet/quick_capture',
-            created_id: created?.id ?? null,
-            record: recordContext,
-          },
+          prompt: POST_CONFIRM_DIET_REVIEW_PROMPT,
+          context: buildPostConfirmDietReviewContext(confirmedRecord),
           badge: '刚记录饮食',
         });
       } else {
@@ -629,7 +689,7 @@ export default function DietScreen() {
             ? quickDraft.source.imageUri ?? null
             : null,
         );
-        setShareRecord(buildShareRecordFromConfirmation(created, draftRecord));
+        setShareRecord(confirmedRecord);
       }
     } catch (error) {
       if (isPhotoDraft) {
@@ -651,12 +711,17 @@ export default function DietScreen() {
         Alert.alert('照片草稿已失效', '请重新拍照识别这一餐。');
         return;
       }
+      if (isPhotoDraft && authUserId) {
+        await saveDietPhotoDraft(authUserId, quickDraft.record).catch(() => {
+          toast.show('当前草稿仍在页面中，请不要退出后再试', 'info');
+        });
+      }
       Alert.alert('保存失败', '请稍后再试');
     } finally {
       quickDraftSavingRef.current = false;
       setQuickDraftSaving(false);
     }
-  }, [authUserId, quickDraft, returnToChatAfterConfirm, router, saveNewDietRecord]);
+  }, [authUserId, quickDraft, returnToChatAfterConfirm, router, saveNewDietRecord, toast]);
 
   const handleReviseQuickDraft = useCallback(() => {
     if (!quickDraft) return;
@@ -740,12 +805,15 @@ export default function DietScreen() {
     }
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     qc.invalidateQueries({ queryKey: ['diet'] });
+    setShareImageUriOverride(null);
+    setShareRecord(created);
     toast.showUndoable(
       `已记录「${f.food_items.slice(0, 14)}」`,
       async () => {
         try {
           await deleteDietRecord(created.id);
           qc.invalidateQueries({ queryKey: ['diet'] });
+          setShareRecord((current) => (current?.id === created.id ? null : current));
         } catch {
           toast.show('撤销失败,请重试', 'error');
         }
@@ -886,7 +954,8 @@ export default function DietScreen() {
           ? `diet-photo:${recognized.photo_draft_token}`
           : undefined,
         ai_recognized: 1,
-        ai_confidence: averageRecognitionConfidence(recognized.foods),
+        ai_confidence: normalizedDraftConfidence(recognized.ai_confidence ?? recognized.confidence)
+          ?? averageRecognitionConfidence(recognized.foods),
         ai_raw_result: recognized,
         health_tips: recognized.health_tips ?? undefined,
       }, { kind: 'photo', imageBase64, imageUri: asset.uri ?? preparedImage.uri }, '已识别餐食,确认后写入');
@@ -1031,6 +1100,13 @@ export default function DietScreen() {
     params.protein,
   ]);
 
+  useEffect(() => {
+    const routeDate = readRouteDate(params.date);
+    if (routeDate && routeDate !== date) {
+      setDate(routeDate);
+    }
+  }, [date, params.date]);
+
   // 进入/刷新时对账: 任何 calories==null 的当日记录 (含上次中途退出卡住的),
   // 若本会话尚未跑过 → 用已知来源或文字兜底自动重试一次. 不让一餐永远空着.
   useEffect(() => {
@@ -1047,11 +1123,23 @@ export default function DietScreen() {
   }, [daily?.meals, date, estimate, pendingIds, failedIds]);
 
   const meals = daily?.meals ?? EMPTY_MEALS;
+
+  useEffect(() => {
+    const targetId = readRoutePositiveInt(params.share_record_id);
+    if (!targetId || shareRecordParamConsumedRef.current === String(targetId)) return;
+    const record = meals.find(item => item.id === targetId);
+    if (!record) return;
+    shareRecordParamConsumedRef.current = String(targetId);
+    setShareImageUriOverride(null);
+    setShareRecord(record);
+  }, [meals, params.share_record_id]);
+
   const totals = useMemo(() => computeDietTotals(meals), [meals]);
   const isToday = date === todayStr();
   const dateLabel = isToday ? '今天' : new Date(date).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric', weekday: 'short' });
   const photoCaptureBusy = BUSY_PHOTO_CAPTURE_STAGES.has(photoCaptureStage);
-  const showDietFab = !showForm && !quickDraft && !photoCaptureBusy;
+  const showPhotoCaptureStatus = !showForm && !quickDraft && (photoCaptureBusy || photoCaptureStage === 'failed');
+  const showDietFab = !showForm && !quickDraft && !photoCaptureBusy && photoCaptureStage !== 'failed';
   const shareImageSource = shareRecord
     ? buildChatImageSource(
       absoluteApiAssetUrl(shareRecord.image_url) ?? shareImageUriOverride ?? '',
@@ -1067,6 +1155,39 @@ export default function DietScreen() {
       badge: `基于${dateLabel}饮食 ${daily.meals_count ?? daily.meals?.length ?? 0} 餐`,
     });
   }, [daily, dateLabel, router]);
+
+  const handleAskRevaFromShare = useCallback((record: DietRecord) => {
+    const baseContext = daily
+      ? createDietAgentContext(daily)
+      : {
+        from: `diet/${record.record_date}`,
+        date: record.record_date,
+        totals: null,
+        meals: [],
+      };
+    pushChatWithContext(router, {
+      prompt: POST_CONFIRM_DIET_REVIEW_PROMPT,
+      context: {
+        ...baseContext,
+        ...buildPostConfirmDietReviewContext(record),
+        just_recorded: {
+          id: record.id,
+          record_date: record.record_date,
+          meal_type: record.meal_type,
+          food_items: record.food_items,
+          calories: record.calories ?? null,
+          protein: record.protein ?? null,
+          carbs: record.carbs ?? null,
+          fat: record.fat ?? null,
+          fiber: record.fiber ?? null,
+          source: record.source ?? null,
+        },
+      },
+      badge: '今日饮食复盘',
+    });
+    setShareRecord(null);
+    setShareImageUriOverride(null);
+  }, [daily, router]);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -1129,8 +1250,14 @@ export default function DietScreen() {
           />
         )}
 
-        {!showForm && !quickDraft && photoCaptureBusy && (
-          <PhotoCaptureStatusCard stage={photoCaptureStage} slowRecognition={photoRecognitionSlow} />
+        {showPhotoCaptureStatus && (
+          <PhotoCaptureStatusCard
+            stage={photoCaptureStage}
+            slowRecognition={photoRecognitionSlow}
+            onRetryPhoto={handlePhoto}
+            onPickLibrary={handlePhotoLibrary}
+            onManualText={handleText}
+          />
         )}
 
         {quickDraft && !showForm && (
@@ -1148,7 +1275,7 @@ export default function DietScreen() {
           <MealForm date={date}
             initialRecord={editingRecord || undefined}
             initialMealType={formDefaults.meal_type}
-            assistiveHint={quickDraftNeedsPortionReview(formDefaults) ? PORTION_REVIEW_ASSISTIVE_HINT : undefined}
+            assistiveHint={quickDraftNeedsReview(formDefaults) ? PORTION_REVIEW_ASSISTIVE_HINT : undefined}
             onSubmit={handleSave}
             onCancel={handleCancelForm}
             initialDescription={formDefaults.food_items}
@@ -1257,8 +1384,12 @@ export default function DietScreen() {
             setShareRecord(null);
             setShareImageUriOverride(null);
           }}
+          onAskReva={() => handleAskRevaFromShare(shareRecord)}
           onShareTerminal={(meta) => {
             void emitClientEvent('diet_share_terminal', meta);
+          }}
+          onShareFeedback={(hint) => {
+            toast.show(hint.title, hint.tone === 'success' ? 'success' : 'error');
           }}
         />
       ) : null}
@@ -1279,12 +1410,21 @@ function NutriPill({ label, value, unit, color }: { label: string; value: string
 function PhotoCaptureStatusCard({
   stage,
   slowRecognition = false,
+  onRetryPhoto,
+  onPickLibrary,
+  onManualText,
 }: {
   stage: PhotoCaptureStage;
   slowRecognition?: boolean;
+  onRetryPhoto?: () => void;
+  onPickLibrary?: () => void;
+  onManualText?: () => void;
 }) {
+  const failed = stage === 'failed';
   const label = stage === 'saving'
     ? '正在保存饮食'
+    : failed
+      ? '照片识别失败'
     : stage === 'capturing'
       ? '正在打开相机'
       : stage === 'selecting'
@@ -1294,6 +1434,8 @@ function PhotoCaptureStatusCard({
         : '正在识别餐食';
   const detail = stage === 'saving'
     ? '保存成功后会立即更新今日饮食进度。'
+    : failed
+      ? '换一张照片、从相册选择，或直接手动录入，不会重复提交。'
     : slowRecognition && stage === 'recognizing'
       ? '仍在识别照片；完成后会先给你确认草稿，不会自动写入。'
     : '识别完成后先给你确认草稿，不会自动写入。';
@@ -1306,43 +1448,84 @@ function PhotoCaptureStatusCard({
       : 0;
   return (
     <View style={styles.photoStatusCard}>
-      <ActivityIndicator size="small" color={C.green500} />
+      {failed ? (
+        <View style={styles.photoStatusFailedIcon}>
+          <Ionicons name="refresh" size={16} color={revaSemantic.caution.fg} />
+        </View>
+      ) : (
+        <ActivityIndicator size="small" color={C.green500} />
+      )}
       <View style={{ flex: 1 }}>
         <Text style={txt.photoStatusTitle}>{label}</Text>
         <Text style={txt.photoStatusDetail}>{detail}</Text>
-        <View style={styles.photoStatusSteps}>
-          {PHOTO_CAPTURE_STEPS.map((step, index) => {
-            const completed = activeIndex > index;
-            const active = activeIndex === index;
-            return (
-              <View
-                key={step.key}
-                style={[
-                  styles.photoStatusStep,
-                  completed && styles.photoStatusStepDone,
-                  active && styles.photoStatusStepActive,
-                ]}
-              >
+        {!failed ? (
+          <View style={styles.photoStatusSteps}>
+            {PHOTO_CAPTURE_STEPS.map((step, index) => {
+              const completed = activeIndex > index;
+              const active = activeIndex === index;
+              return (
                 <View
+                  key={step.key}
                   style={[
-                    styles.photoStatusStepDot,
-                    completed && styles.photoStatusStepDotDone,
-                    active && styles.photoStatusStepDotActive,
-                  ]}
-                />
-                <Text
-                  style={[
-                    txt.photoStatusStepText,
-                    completed && txt.photoStatusStepTextDone,
-                    active && txt.photoStatusStepTextActive,
+                    styles.photoStatusStep,
+                    completed && styles.photoStatusStepDone,
+                    active && styles.photoStatusStepActive,
                   ]}
                 >
-                  {step.label}
-                </Text>
-              </View>
-            );
-          })}
-        </View>
+                  <View
+                    style={[
+                      styles.photoStatusStepDot,
+                      completed && styles.photoStatusStepDotDone,
+                      active && styles.photoStatusStepDotActive,
+                    ]}
+                  />
+                  <Text
+                    style={[
+                      txt.photoStatusStepText,
+                      completed && txt.photoStatusStepTextDone,
+                      active && txt.photoStatusStepTextActive,
+                    ]}
+                  >
+                    {step.label}
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
+        ) : (
+          <View style={styles.photoRecoveryRow}>
+            <TouchableOpacity
+              style={[styles.photoRecoveryBtn, styles.photoRecoveryBtnPrimary]}
+              onPress={onRetryPhoto}
+              activeOpacity={0.78}
+              accessibilityRole="button"
+              accessibilityLabel="重新拍照记录饮食"
+            >
+              <Ionicons name="camera-outline" size={14} color={C.surface} />
+              <Text style={txt.photoRecoveryPrimaryText}>重新拍照</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.photoRecoveryBtn}
+              onPress={onPickLibrary}
+              activeOpacity={0.78}
+              accessibilityRole="button"
+              accessibilityLabel="从相册重新选择饮食照片"
+            >
+              <Ionicons name="images-outline" size={14} color={C.green700} />
+              <Text style={txt.photoRecoveryText}>相册</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.photoRecoveryBtn}
+              onPress={onManualText}
+              activeOpacity={0.78}
+              accessibilityRole="button"
+              accessibilityLabel="手动录入饮食"
+            >
+              <Ionicons name="create-outline" size={14} color={C.green700} />
+              <Text style={txt.photoRecoveryText}>手动录入</Text>
+            </TouchableOpacity>
+          </View>
+        )}
         {slowRecognition && stage === 'recognizing' ? (
           <Text style={txt.photoStatusTrust}>深度识别中，不会重复提交</Text>
         ) : null}
@@ -1388,7 +1571,11 @@ function QuickDietDraftCard({
   const calibrationSeconds = formatTimingSeconds(draft.ai_raw_result?.timing_ms?.calibration);
   const showRecognitionTiming = Boolean(recognitionTotalSeconds || calibrationSeconds);
   const reviewItemCount = recognizedFoods.filter(foodNeedsPortionReview).length;
-  const confirmLabel = reviewItemCount > 0 ? '核对后确认' : '确认记录';
+  const needsWholeReview = quickDraftNeedsWholeReview(draft);
+  const needsReview = reviewItemCount > 0 || needsWholeReview;
+  const confirmLabel = needsReview ? '核对后确认' : '确认记录';
+  const primaryAction = needsReview ? onRevise : onConfirm;
+  const primaryAccessibilityLabel = needsReview ? '核对后确认饮食' : '确认记录饮食';
 
   return (
     <View style={styles.quickDraftCard}>
@@ -1420,6 +1607,19 @@ function QuickDietDraftCard({
           <Ionicons name="alert-circle-outline" size={14} color={revaSemantic.caution.fg} />
           <Text style={txt.quickReviewSummaryStrong}>{reviewItemCount} 项需核对</Text>
           <Text style={txt.quickReviewSummaryText}>重点核对份量</Text>
+        </TouchableOpacity>
+      ) : needsWholeReview ? (
+        <TouchableOpacity
+          style={styles.quickReviewSummary}
+          onPress={onRevise}
+          activeOpacity={0.78}
+          accessibilityRole="button"
+          accessibilityLabel="核对整餐识别结果"
+          accessibilityHint="打开修正表单，核对整餐识别结果和份量"
+        >
+          <Ionicons name="alert-circle-outline" size={14} color={revaSemantic.caution.fg} />
+          <Text style={txt.quickReviewSummaryStrong}>整体识别待核对</Text>
+          <Text style={txt.quickReviewSummaryText}>先核对食物和份量</Text>
         </TouchableOpacity>
       ) : null}
       {recognizedFoods.length > 0 ? (
@@ -1468,11 +1668,11 @@ function QuickDietDraftCard({
       <View style={styles.quickActions}>
         <TouchableOpacity
           style={[styles.quickConfirmBtn, isSaving && styles.quickConfirmBtnDisabled]}
-          onPress={onConfirm}
+          onPress={primaryAction}
           disabled={isSaving}
           activeOpacity={0.82}
           accessibilityRole="button"
-          accessibilityLabel="确认记录饮食"
+          accessibilityLabel={primaryAccessibilityLabel}
         >
           {isSaving ? (
             <ActivityIndicator size="small" color={C.greenOn} />
@@ -1542,6 +1742,20 @@ function RecognizedFoodRow({ food, index, onRevise }: { food: FoodItem; index: n
       : isEstimatedPortion
         ? '份量为估算'
         : null;
+  const portionBasisLabel = food.portion_basis === 'vision_estimate'
+    ? '视觉估份'
+    : food.portion_basis === 'measured'
+      ? '称量份量'
+      : food.portion_basis === 'label'
+        ? '标签份量'
+        : food.portion_basis === 'unknown'
+          ? '份量来源待核对'
+          : null;
+  const portionEvidence = portionBasisLabel
+    ? portionConfidence !== null
+      ? `${portionBasisLabel} ${portionConfidence}%`
+      : portionBasisLabel
+    : null;
   const basisIsFullyTrusted = isTableCalibrated && hasTrustedPortion;
   const portion = food.quantity?.trim() || '份量待确认';
   const calories = typeof food.calories === 'number' && Number.isFinite(food.calories)
@@ -1574,6 +1788,12 @@ function RecognizedFoodRow({ food, index, onRevise }: { food: FoodItem; index: n
       </View>
       <View style={styles.recognizedFoodSignals}>
         {identitySignal ? <Text style={txt.recognizedConfidence}>{identitySignal}</Text> : null}
+        {portionEvidence ? (
+          <View style={styles.portionEvidenceRow}>
+            <Ionicons name="resize-outline" size={13} color={C.ink3} />
+            <Text style={txt.portionEvidenceText}>{portionEvidence}</Text>
+          </View>
+        ) : null}
         {portionSignal ? (
           <View style={styles.verifyPortionRow}>
             <Ionicons name="alert-circle-outline" size={13} color={revaSemantic.caution.fg} />
@@ -1682,6 +1902,14 @@ const styles = StyleSheet.create({
     borderColor: C.line,
     ...revaShadows.sm,
   },
+  photoStatusFailedIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: revaSemantic.caution.bg,
+  },
   photoStatusSteps: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1720,6 +1948,29 @@ const styles = StyleSheet.create({
   photoStatusStepDotDone: {
     backgroundColor: C.green300,
   },
+  photoRecoveryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: revaSpacing.s3,
+  },
+  photoRecoveryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    minHeight: 34,
+    paddingHorizontal: 11,
+    paddingVertical: 7,
+    borderRadius: revaRadii.pill,
+    backgroundColor: C.green50,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.green100,
+  },
+  photoRecoveryBtnPrimary: {
+    backgroundColor: C.green600,
+    borderColor: C.green600,
+  },
   quickDraftHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: revaSpacing.s3 },
   mealTail: { alignItems: 'flex-end', justifyContent: 'center', gap: 7 },
   mealShareButton: {
@@ -1755,7 +2006,7 @@ const styles = StyleSheet.create({
   recognizedFoodRowDivided: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.line },
   recognizedFoodMain: { flexDirection: 'row', alignItems: 'flex-start', gap: revaSpacing.s2 },
   recognizedFoodSignals: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginTop: 6,
   },
   quickReviewSummary: {
     alignSelf: 'flex-start',
@@ -1777,6 +2028,7 @@ const styles = StyleSheet.create({
   },
   recognitionBasisTable: { backgroundColor: C.green50, borderColor: C.green100 },
   recognitionBasisEstimate: { backgroundColor: revaSemantic.caution.bg, borderColor: revaSemantic.caution.line },
+  portionEvidenceRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   verifyPortionRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   recognitionTimingRow: {
     alignSelf: 'flex-start',
@@ -1862,6 +2114,8 @@ const txt = {
   photoStatusStepTextActive: { color: C.green700 } as TextStyle,
   photoStatusStepTextDone: { color: C.green600 } as TextStyle,
   photoStatusTrust: { fontFamily: revaFonts.sans, fontSize: 11, color: C.green700, fontWeight: '700', marginTop: 8 } as TextStyle,
+  photoRecoveryText: { fontFamily: revaFonts.sans, fontSize: 12, color: C.green700, fontWeight: '800' } as TextStyle,
+  photoRecoveryPrimaryText: { fontFamily: revaFonts.sans, fontSize: 12, color: C.surface, fontWeight: '900' } as TextStyle,
   quickOverline: { fontFamily: revaFonts.sans, fontSize: 11, color: C.ink3, fontWeight: '700' } as TextStyle,
   quickTitle: { fontFamily: revaFonts.sans, fontSize: 17, color: C.ink1, fontWeight: '800', marginTop: 2 } as TextStyle,
   quickMealChipText: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink2, fontWeight: '700' } as TextStyle,
@@ -1876,6 +2130,7 @@ const txt = {
   recognizedFoodMeta: { fontFamily: revaFonts.mono, fontSize: 11, color: C.ink3, marginTop: 3 } as TextStyle,
   recognitionBasisText: { fontFamily: revaFonts.sans, fontSize: 10, fontWeight: '800' } as TextStyle,
   recognizedConfidence: { fontFamily: revaFonts.mono, fontSize: 10, color: C.ink3 } as TextStyle,
+  portionEvidenceText: { fontFamily: revaFonts.mono, fontSize: 10, color: C.ink3, fontWeight: '700' } as TextStyle,
   verifyPortionText: { fontFamily: revaFonts.sans, fontSize: 10, color: revaSemantic.caution.fg, fontWeight: '700' } as TextStyle,
   recognitionTimingText: { fontFamily: revaFonts.sans, fontSize: 11, color: C.green700, fontWeight: '900' } as TextStyle,
   recognitionTimingMuted: { fontFamily: revaFonts.sans, fontSize: 10.5, color: C.ink3, fontWeight: '700' } as TextStyle,

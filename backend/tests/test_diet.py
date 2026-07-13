@@ -170,6 +170,10 @@ class TestDietAPI:
         "保存并确认",
         "沃克",
         "伏诺拉生",
+        "晨跑 30 分钟",
+        "体重 73.1kg 腰围 84cm",
+        "昨晚睡了 6 小时",
+        "血压 130/85 血糖 6.2",
     ])
     def test_create_diet_record_rejects_non_food_items(self, client, auth_headers, food_items):
         """REST API 防御纵深: 管理意图/药物/补剂不能直接落成 DietRecord。"""

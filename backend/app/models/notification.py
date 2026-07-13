@@ -52,9 +52,9 @@ class UserNotificationSetting(Base):
     workout_analysis_enabled = Column(Boolean, default=True)  # 跑后教练推送 (W3)
 
     # 推送时间设置
-    morning_briefing_time = Column(String(5), default="07:30")  # 早间简报时间 HH:MM
+    morning_briefing_time = Column(String(5), default="09:00")  # 早间简报时间 HH:MM
     quiet_hours_start = Column(String(5), default="22:00")  # 免打扰开始
-    quiet_hours_end = Column(String(5), default="08:30")  # 免打扰结束
+    quiet_hours_end = Column(String(5), default="09:00")  # 免打扰结束
 
     # 告警严重度阈值 (H1-B): info/warning/critical
     # 低于此阈值的 health_alert 直接不推 (白天也不推). 默认 warning = 屏蔽 info 级噪音.

@@ -156,6 +156,27 @@ function sourceLabel(value: unknown): string | undefined {
   return `来源: ${SOURCE_LABELS[source] || source}`;
 }
 
+function isPhotoSource(value: unknown): boolean {
+  const source = text(value)?.toLowerCase();
+  return Boolean(source && (source.includes('photo') || source.includes('image') || source.includes('vision')));
+}
+
+function nutritionStatusText(data: DietDraftData): string {
+  if (!hasNutritionEstimate(data)) {
+    return '确认后先记录，营养后台估算';
+  }
+  return isPhotoSource(data.source) ? '已带营养估算，核对后计入今日' : '已带营养估算，确认后计入今日';
+}
+
+function boundaryText(data: DietDraftData): string {
+  const boundary = text(data.boundary) || '营养为估算值,确认后写入今日饮食记录。';
+  return isPhotoSource(data.source) ? boundary.replace('确认后写入', '核对后写入') : boundary;
+}
+
+function editHintText(data: DietDraftData): string {
+  return isPhotoSource(data.source) ? '核对前可修正餐次、食物和营养估算' : '确认前可修正餐次、食物和营养估算';
+}
+
 /** 仅当 data 里有明确时点 (time / recorded_at 的 HH:MM) 才回显, 不伪造。 */
 function mealTimeLabel(data: DietDraftData): string | undefined {
   const raw = text(data.time) ?? text(data.recorded_at);
@@ -201,6 +222,7 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
   const macros = macroRows(data);
   const caloriesValue = numberValue(data.calories);
   const nutritionEstimated = hasNutritionEstimate(data);
+  const nutritionStatus = nutritionStatusText(data);
   const timeLabel = mealTimeLabel(data);
   const meta = [confidenceLabel(data.confidence), sourceLabel(data.source)].filter(Boolean).join(' · ');
   const suggestions = listText(data.suggestions);
@@ -209,7 +231,8 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
   const showNextMealDetail = Boolean(
     nextMealDetail && hasExpandedSection(data.expanded_sections, 'next_meal'),
   );
-  const boundary = text(data.boundary) || '营养为估算值,确认后写入今日饮食记录。';
+  const boundary = boundaryText(data);
+  const editHint = editHintText(data);
   const isRecorded = data.confirmActionState === 'done';
   const canConfirmFromEditor = Boolean(data.confirmAction && data.onConfirmAction && !data.confirmAction.disabled_reason);
   const recordedNextStep = walkText || suggestions[0] || '下一餐按目标补足蛋白和蔬菜';
@@ -295,7 +318,7 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
               { color: nutritionEstimated ? C.green600 : C.ink3 },
             ]}
           >
-            {nutritionEstimated ? '已带营养估算，确认后计入今日' : '确认后先记录，营养后台估算'}
+            {nutritionStatus}
           </Text>
         </View>
       ) : null}
@@ -303,7 +326,7 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
       {!isRecorded ? (
         <View style={styles.inlineHeader}>
           <Text maxFontSizeMultiplier={1.15} style={styles.inlineHint}>
-            确认前可修正餐次、食物和营养估算
+            {editHint}
           </Text>
           <Pressable
             onPress={() => setEditing((prev) => !prev)}

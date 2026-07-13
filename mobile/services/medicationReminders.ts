@@ -1,6 +1,10 @@
 import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import type { MedicationTodayItem } from './medications';
+import {
+  applyLocalMorningFloorToDailyTime,
+  formatHHMM,
+} from './localNotificationQuietHours';
 
 /** scheduler 接受的最小药品形状 — Medication 与 MedicationTodayItem 都满足 */
 export interface ReminderSource {
@@ -102,6 +106,8 @@ export async function scheduleMedicationReminders(meds: ReminderSource[]): Promi
   const entries = buildReminderEntries(meds);
   let scheduled = 0;
   for (const e of entries) {
+    const scheduledTime = applyLocalMorningFloorToDailyTime(e.hour, e.minute);
+    const scheduledHHMM = formatHHMM(scheduledTime.hour, scheduledTime.minute);
     try {
       await Notifications.scheduleNotificationAsync({
         content: {
@@ -117,13 +123,14 @@ export async function scheduleMedicationReminders(meds: ReminderSource[]): Promi
             medication_name: e.name,
             dosage: e.dosage,
             taken_time: e.time,
+            scheduled_time: scheduledHHMM,
             screen: 'home',
           },
         },
         trigger: {
           type: Notifications.SchedulableTriggerInputTypes.DAILY,
-          hour: e.hour,
-          minute: e.minute,
+          hour: scheduledTime.hour,
+          minute: scheduledTime.minute,
         },
       });
       scheduled += 1;

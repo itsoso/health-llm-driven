@@ -27,6 +27,10 @@
  */
 import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
+import {
+  LOCAL_NOTIFICATION_MORNING_FLOOR_HOUR,
+  LOCAL_NOTIFICATION_MORNING_FLOOR_MINUTE,
+} from './localNotificationQuietHours';
 
 /** 标记本模块排的提醒；重排/取消时只动这一类。 */
 export const EYE_BREAK_KIND = 'eye_break';
@@ -118,6 +122,13 @@ function localMidnight(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
 }
 
+function isBeforeLocalMorningFloor(at: Date): boolean {
+  const current = at.getHours() * 60 + at.getMinutes();
+  const floor = LOCAL_NOTIFICATION_MORNING_FLOOR_HOUR * 60
+    + LOCAL_NOTIFICATION_MORNING_FLOOR_MINUTE;
+  return current < floor;
+}
+
 /**
  * 生成今天 + 未来 LOOKAHEAD_DAYS 天、活跃时段内的全部提醒 spec（纯函数，便于测试）。
  * 总条数硬上限 EYE_BREAK_MAX_PENDING（超出截断，远离 iOS 64 上限）。
@@ -135,7 +146,10 @@ export function buildEyeBreakNotifications(
     day.setDate(day.getDate() + dayOffset);
     // 第 0 天只排 now 之后的 slot；后续天排整段。
     const after = dayOffset === 0 ? now : new Date(day.getTime() - 1);
-    all.push(...computeEyeBreakSlots(prefs, day, after));
+    all.push(
+      ...computeEyeBreakSlots(prefs, day, after)
+        .filter((slot) => !isBeforeLocalMorningFloor(slot)),
+    );
     if (all.length >= EYE_BREAK_MAX_PENDING) break;
   }
 

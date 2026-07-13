@@ -696,6 +696,7 @@ async def agent_stream(
                     extra_context=extra_ctx,
                     channel=chan,
                     client_turn_id=client_turn_id,
+                    client_caps=caps,
                 ):
                     if event.get("event") == "token":
                         tc = event.get("data", {}).get("content")
@@ -867,6 +868,7 @@ async def agent_send(
     req: AgentRequest,
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
+    x_reva_client_caps: str | None = Header(default=None),
 ):
     """Non-streaming wrapper for clients that cannot consume SSE reliably.
 
@@ -897,6 +899,12 @@ async def agent_send(
 
     auth_header = request.headers.get("authorization", "")
     user_token = auth_header.replace("Bearer ", "") if auth_header.startswith("Bearer ") else None
+
+    # GenUI 能力协商 (与 /stream 同一解析口径): 客户端声明的 caps 透传给 executor,
+    # metric_table 卡片只在声明 genui-table-v1 时发 (无 cap → 逐字节现状)。
+    from app.api._client_caps import parse_client_caps
+
+    send_caps = parse_client_caps(x_reva_client_caps)
 
     from app.services.agent_executor import AgentExecutor
 
@@ -933,6 +941,7 @@ async def agent_send(
                 extra_context=req.extra_context,
                 channel=req.channel,
                 client_turn_id=req.client_turn_id,
+                client_caps=send_caps,
             ):
                 if event.get("event") == "token":
                     content = event.get("data", {}).get("content")

@@ -15,6 +15,14 @@ from app.services.intake_intent_classifier import classify_intake_intent
     ("喝了300ml水", "water"),
     ("删除这一餐", "diet_management"),
     ("我刚才不小心删除了", "diet_management"),
+    ("午餐没有保存成功", "diet_management"),
+    ("查询全天饮食和热量", "diet_management"),
+    ("今天总热量是多少", "diet_management"),
+    ("晨跑 30 分钟", "health_metric"),
+    ("今天步数 5370", "health_metric"),
+    ("体重 73.1kg 腰围 84cm", "health_metric"),
+    ("昨晚睡了 6 小时", "health_metric"),
+    ("血压 130/85 血糖 6.2", "health_metric"),
     ("刚吃了一个东西", "unknown"),
 ])
 def test_classifies_common_intake_phrases(query, kind):

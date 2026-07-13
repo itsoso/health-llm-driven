@@ -192,6 +192,27 @@ def test_api_voice_parse_degraded_path(client, auth, monkeypatch):
     assert body["needs_confirmation"] is True          # 降级必确认
 
 
+@pytest.mark.parametrize("raw_text", [
+    "午餐没有保存成功",
+    "查询全天饮食和热量",
+])
+def test_api_voice_parse_rejects_diet_management_or_query_text(client, auth, monkeypatch, raw_text):
+    """管理/查询话术不能降级成可确认食物草稿。"""
+    _, headers = auth
+
+    async def empty_llm_parse(db, user_id, raw_text):
+        return [], None
+
+    monkeypatch.setattr(dvp, "_llm_parse_foods", empty_llm_parse)
+    r = client.post(
+        "/api/v1/diet/voice/parse",
+        headers=headers,
+        json={"raw_text": raw_text},
+    )
+    assert r.status_code == 400
+    assert "饮食记录" in r.json()["detail"]
+
+
 def test_api_voice_parse_requires_auth(client):
     assert client.post("/api/v1/diet/voice/parse", json={"raw_text": "x"}).status_code == 401
 

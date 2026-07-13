@@ -44,6 +44,7 @@ def evaluate_interruption(
     sent_tier: int = 0,
     tier_budget: int | None = None,
     in_quiet_hours: bool = False,
+    in_morning_sleep_floor: bool = False,
     in_busy_window: bool = False,
     reason: str | None = None,
     action: str | None = None,
@@ -52,8 +53,9 @@ def evaluate_interruption(
     """Return an explainable interruption decision.
 
     P0 is reserved for urgent/safety-critical notifications. It can bypass
-    quiet hours but remains capped by the global and P0 tier budgets. P1 is
-    actionable but must respect quiet hours and busy windows. P2 is log-only.
+    ordinary quiet hours but not the 09:00 morning sleep floor; it remains
+    capped by the global and P0 tier budgets. P1 is actionable but must
+    respect quiet hours and busy windows. P2 is log-only.
     Missing reason/action/fallback fields are reported for migration safety but
     do not block legacy callers yet.
     """
@@ -70,6 +72,10 @@ def evaluate_interruption(
     if normalized_tier == "P2":
         blocked_reason = "log_only"
         delivery_policy = "log_only"
+        quiet_hours_respected = True
+    elif in_morning_sleep_floor:
+        blocked_reason = "morning_sleep_floor"
+        delivery_policy = "delay_or_fallback"
         quiet_hours_respected = True
     elif global_budget > 0 and sent_global >= global_budget:
         blocked_reason = "global_budget"

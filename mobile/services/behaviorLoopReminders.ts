@@ -18,6 +18,7 @@ import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { pickTopPlanActions, type DailyOperatingPlan, type DailyPlanAction } from './dailyPlan';
 import type { InterventionCycle } from './healthOs';
+import { deferImmediateLocalNotificationUntilMorningFloor } from './localNotificationQuietHours';
 
 export const BEHAVIOR_LOOP_KIND = 'behavior_loop';
 export const INTERVENTION_CYCLE_KIND = 'intervention_cycle';
@@ -147,8 +148,8 @@ export function buildInterventionCycleNotifications(
         categoryIdentifier: 'INTERVENTION_CYCLE',
         data: { ...baseData, kind: INTERVENTION_RECHECK_KIND },
       },
-      // 立即提醒（到期当下）；null trigger = 立刻投递
-      trigger: null,
+      // 到期提醒若发生在 09:00 前, 延迟到晨间睡眠地板; 白天仍立即投递。
+      trigger: deferImmediateLocalNotificationUntilMorningFloor(now),
     });
   }
 

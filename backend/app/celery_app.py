@@ -185,10 +185,11 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=4, minute=0),  # 凌晨4点
     },
 
-    # 每日 08:00 推送今日计划提醒
+    # 每日 09:10 推送今日计划提醒: 09:00 quiet-hours floor 后再启动,
+    # 避免 07:00/08:00 附近任何用户可见通知影响睡眠。
     "plan-morning-reminder": {
         "task": "app.tasks.notifications.send_plan_morning_reminder",
-        "schedule": crontab(hour=8, minute=0),
+        "schedule": crontab(hour=9, minute=10),
     },
 
     # 每日 20:00 推送计划进度总结
@@ -221,10 +222,10 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=22, minute=0),
     },
 
-    # 每日 08:30 趋势摘要推送
+    # 每日 09:25 趋势摘要推送: 避开 07:00/08:00 睡眠保护窗口。
     "trend-morning-push": {
         "task": "app.tasks.notifications.send_trend_morning_push",
-        "schedule": crontab(hour=8, minute=30),
+        "schedule": crontab(hour=9, minute=25),
     },
 
     # 每日 09:30 早安健康摘要(等 Garmin 09:01 同步完成后推送)
@@ -318,12 +319,12 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=8, minute=0),
     },
 
-    # 每天 08:45 (北京) 主动循环管理 — 扫所有用户的开放健康循环, 推 top 2 条 APNs
+    # 每天 09:15 (北京) 主动循环管理 — 扫所有用户的开放健康循环, 推 top 2 条 APNs
     # vertical health agent 的灵魂: AI 主动盯, 不再被动等问.
-    # 时间点: 默认 quiet_hours 结束是 08:30, 留 15min 缓冲避免边界用户被打扰.
+    # 时间点: 默认 quiet_hours 结束是 09:00, 留 15min 缓冲避免边界用户被打扰.
     "open-loop-manager": {
         "task": "app.tasks.open_loop_manager.run_open_loop_check",
-        "schedule": crontab(hour=8, minute=45),
+        "schedule": crontab(hour=9, minute=15),
     },
 
     # 每天 4:00 LLM Wiki v2 lifecycle: decay + crystallization

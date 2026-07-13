@@ -8,7 +8,11 @@ from sqlalchemy.orm import Session
 from app.database import SessionLocal
 from app.models.user import User
 from app.models.notification import UserNotificationSetting, ReminderConfig, NotificationType
-from app.services.notification.push_service import PushService, PREDEFINED_REMINDERS
+from app.services.notification.push_service import (
+    PushService,
+    PREDEFINED_REMINDERS,
+    normalize_morning_sleep_floor_time,
+)
 from app.services.ai_scheduler import AISchedulerService
 from app.utils.timezone import get_china_now
 
@@ -180,12 +184,18 @@ class PushScheduler:
         """发送早间健康简报"""
         current_time = now.strftime("%H:%M")
 
-        # 查找需要发送早间简报的用户
-        settings = db.query(UserNotificationSetting).filter(
+        # 查找需要发送早间简报的用户。历史用户可能已存 07:30/08:00;
+        # effective time 统一钳到 09:00,避免睡眠窗口内打扰。
+        candidate_settings = db.query(UserNotificationSetting).filter(
             UserNotificationSetting.enabled == True,
             UserNotificationSetting.morning_briefing_enabled == True,
-            UserNotificationSetting.morning_briefing_time == current_time
         ).all()
+        settings = [
+            setting
+            for setting in candidate_settings
+            if normalize_morning_sleep_floor_time(setting.morning_briefing_time)
+            == current_time
+        ]
 
         for setting in settings:
             try:

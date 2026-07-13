@@ -20,9 +20,9 @@ logger = logging.getLogger(__name__)
 
 QuietHoursPolicy = Literal["delay", "bypass", "drop"]
 
-MORNING_PUSH_FLOOR = "08:00"
+MORNING_PUSH_FLOOR = "09:00"
 DEFAULT_QUIET_HOURS_START = "22:00"
-DEFAULT_QUIET_HOURS_END = "08:30"
+DEFAULT_QUIET_HOURS_END = "09:00"
 
 
 # H1-B: severity 排序 (低 → 高). 其他字面量默认 0.
@@ -60,10 +60,9 @@ def resolve_quiet_hours_policy(
 
     基线: 显式 quiet_hours_policy 优先; 否则 respect_quiet_hours=True→delay, False→bypass.
 
-    2026-05-30 (反转 2026-05-11 的"严格不打扰"): **critical 健康告警穿透静默时段**.
-    致命药物交互 (DDI/PGx) / 急性阈值不应压到早上 08:30 —— 原计划的"紧急联系人穿透
-    系统"从未落地, 不穿透等于半夜致命告警无任何投递路径. 故 critical 一律 bypass.
-    其余 severity 仍尊重 quiet-hours.
+    2026-05-30 (反转 2026-05-11 的"严格不打扰"): critical 健康告警可穿透普通
+    quiet-hours. 但 09:00 前的晨间睡眠地板在 send_notification 顶层统一兜住,
+    避免 07:00/08:00 影响睡眠.
     """
     policy: QuietHoursPolicy = quiet_hours_policy or (
         "delay" if respect_quiet_hours else "bypass"
@@ -124,8 +123,27 @@ def _not_before_morning_floor(candidate: datetime, floor_minutes: int) -> dateti
 
 
 def _is_before_morning_floor(now: datetime) -> bool:
-    floor_min = _hhmm_to_minutes(MORNING_PUSH_FLOOR, "08:00")
+    floor_min = _hhmm_to_minutes(MORNING_PUSH_FLOOR, "09:00")
     return now.hour * 60 + now.minute < floor_min
+
+
+def normalize_morning_sleep_floor_time(value: Optional[str]) -> str:
+    """Clamp user-visible morning notification times to the 09:00 sleep floor."""
+    floor_min = _hhmm_to_minutes(MORNING_PUSH_FLOOR, "09:00")
+    minutes = _hhmm_to_minutes(value, MORNING_PUSH_FLOOR)
+    if minutes < floor_min:
+        minutes = floor_min
+    return f"{minutes // 60:02d}:{minutes % 60:02d}"
+
+
+def _morning_floor_at(now: datetime) -> datetime:
+    floor_min = _hhmm_to_minutes(MORNING_PUSH_FLOOR, "09:00")
+    return now.replace(
+        hour=floor_min // 60,
+        minute=floor_min % 60,
+        second=0,
+        microsecond=0,
+    )
 
 
 def _advice_candidate_from_push(
@@ -226,6 +244,11 @@ class PushService:
         settings: Dict[str, Any]
     ) -> UserNotificationSetting:
         """创建或更新用户推送设置"""
+        settings = dict(settings)
+        for key in ("morning_briefing_time", "quiet_hours_end"):
+            if key in settings and settings[key] is not None:
+                settings[key] = normalize_morning_sleep_floor_time(settings[key])
+
         existing = self.get_user_settings(user_id)
 
         if existing:
@@ -242,12 +265,12 @@ class PushService:
             return new_settings
 
     def is_quiet_hours(self, user_id: int) -> bool:
-        """检查当前是否在免打扰时段。普通 push 08:00 前一律延迟。"""
+        """检查当前是否在免打扰时段。普通 push 09:00 前一律延迟。"""
         settings = self.get_user_settings(user_id)
 
         now = get_china_now()
         current_min = now.hour * 60 + now.minute
-        floor_min = _hhmm_to_minutes(MORNING_PUSH_FLOOR, "08:00")
+        floor_min = _hhmm_to_minutes(MORNING_PUSH_FLOOR, "09:00")
         if current_min < floor_min:
             return True
 
@@ -261,15 +284,15 @@ class PushService:
     def next_quiet_hours_end(self, user_id: int) -> datetime:
         """计算下一次静默时段结束的本地时间.
 
-        例: now=03:14, quiet_hours_end=08:30 → 今天 08:30
-        例: now=14:00, quiet_hours_end=08:30, quiet_hours_start=22:00
-            → 明天 08:30 (今天 14:00 不在静默, 但若强制延迟到下一次结束就是次日)
+        例: now=03:14, quiet_hours_end=09:00 → 今天 09:00
+        例: now=14:00, quiet_hours_end=09:00, quiet_hours_start=22:00
+            → 明天 09:00 (今天 14:00 不在静默, 但若强制延迟到下一次结束就是次日)
         但实际只在 is_quiet_hours()=True 时才调本函数, 所以"今天 end"或"明天 end"都成立.
         """
         settings = self.get_user_settings(user_id)
         now = get_china_now()
         current_min = now.hour * 60 + now.minute
-        floor_min = _hhmm_to_minutes(MORNING_PUSH_FLOOR, "08:00")
+        floor_min = _hhmm_to_minutes(MORNING_PUSH_FLOOR, "09:00")
         candidates: list[datetime] = []
 
         if current_min < floor_min:
@@ -336,7 +359,8 @@ class PushService:
         # 注: 静默时段不再在 can_send_notification 里检查.
         # is_quiet_hours 不是"拒绝", 而是"延迟"语义 — 由 send_notification 顶层处理:
         # 命中静默时段 → 写 status='delayed' log + scheduled_at, 由 Celery flush 任务后续 fire.
-        # 2026-05-30: critical 健康告警穿透静默 (resolve_quiet_hours_policy), 其余 severity 延迟.
+        # 2026-05-30: critical 健康告警穿透普通静默 (resolve_quiet_hours_policy);
+        # 09:00 前的晨间睡眠地板仍在 send_notification 顶层统一拦截。
 
         # 检查具体类型开关
         type_switches = {
@@ -389,15 +413,15 @@ class PushService:
             发送结果 {"success": bool, "channels": {...}}
         """
         rule_id = (data or {}).get("rule_id") if data else None
-        # critical 穿透静默 (见 resolve_quiet_hours_policy docstring); 其余尊重 quiet-hours.
+        # critical 可穿透普通静默 (见 resolve_quiet_hours_policy docstring);
+        # 09:00 前的晨间睡眠地板优先级更高。
         effective_quiet_policy: QuietHoursPolicy = resolve_quiet_hours_policy(
             severity, quiet_hours_policy, respect_quiet_hours
         )
-        # 用户明确要求 08:00 前不要 push。这里比普通 quiet-hours 更硬:
-        # 非 critical 即使显式 bypass, 也先延迟到 morning floor; critical 仍保留安全穿透。
+        # 用户明确要求 09:00 前不要 push。这里比普通 quiet-hours 更硬:
+        # 即使 critical / 显式 bypass, 也先延迟到 morning floor。
         if (
             effective_quiet_policy == "bypass"
-            and _severity_rank(severity) < _severity_rank("critical")
             and _is_before_morning_floor(get_china_now())
         ):
             effective_quiet_policy = "delay"
@@ -440,7 +464,7 @@ class PushService:
                 return {"success": False, "reason": f"advice_guard_{decision.reason}"}
 
         # 去重检查必须先于 quiet-hours 延迟队列。
-        # 否则夜间同一提醒会被重复写成多条 delayed, 到 08:30 一起 flush 出去。
+        # 否则夜间同一提醒会被重复写成多条 delayed, 到 09:00 一起 flush 出去。
         if dedup_window_hours and dedup_window_hours > 0:
             existing = self._find_dedup_log(
                 user_id=user_id,
@@ -463,9 +487,9 @@ class PushService:
                 )
                 return {"success": False, "reason": "dedup"}
 
-        # 静默时段: critical 已在 resolve_quiet_hours_policy 里被改成 bypass (穿透立即推);
-        # 其余 severity 仍写 status='delayed' log + scheduled_at, 由 Celery 任务
-        # flush_delayed_pushes 在 quiet_hours_end 后再 fire.
+        # 静默时段: critical 可穿透普通 quiet-hours; 但 09:00 前已被上方晨间地板
+        # 改回 delay。delay 写 status='delayed' log + scheduled_at, 由 Celery 任务
+        # flush_delayed_pushes 在 quiet_hours_end / morning floor 后再 fire.
         if effective_quiet_policy != "bypass" and self.is_quiet_hours(user_id):
             if effective_quiet_policy == "drop":
                 logger.info(
@@ -837,6 +861,31 @@ class PushService:
         返回: {"flushed": N, "succeeded": K, "failed": M}
         """
         now = get_china_now()
+        if _is_before_morning_floor(now):
+            floor_at = _morning_floor_at(now)
+            early_logs = (
+                self.db.query(NotificationLog)
+                .filter(
+                    NotificationLog.status == NotificationStatus.DELAYED.value,
+                    NotificationLog.scheduled_at <= now,
+                )
+                .order_by(NotificationLog.scheduled_at.asc())
+                .limit(batch_limit)
+                .all()
+            )
+            rescheduled = 0
+            for log in early_logs:
+                if log.scheduled_at is None or log.scheduled_at < floor_at:
+                    log.scheduled_at = floor_at
+                    rescheduled += 1
+            if rescheduled:
+                self.db.commit()
+                logger.info(
+                    "[flush_delayed_pushes] 09:00 前重排 delayed=%s 到 %s",
+                    rescheduled,
+                    floor_at.isoformat(),
+                )
+
         delayed_logs = (
             self.db.query(NotificationLog)
             .filter(

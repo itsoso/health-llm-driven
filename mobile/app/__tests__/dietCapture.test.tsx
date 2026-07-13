@@ -15,7 +15,11 @@ const mockDeleteTemporaryImage = jest.fn().mockResolvedValue(undefined);
 const mockLoadDietPhotoDraft = jest.fn().mockResolvedValue(null);
 const mockSaveDietPhotoDraft = jest.fn().mockResolvedValue(undefined);
 const mockClearDietPhotoDraft = jest.fn().mockResolvedValue(undefined);
+const mockToastShow = jest.fn();
+const mockToastShowUndoable = jest.fn();
 const mockDailyMeals: any[] = [];
+const mockFrequentFoods: any[] = [];
+const mockUseDailyDiet = jest.fn();
 let mockAuthUserId: number | null = 7;
 
 jest.mock('expo-router', () => ({
@@ -25,7 +29,13 @@ jest.mock('expo-router', () => ({
 
 jest.mock('@tanstack/react-query', () => ({
   useQueryClient: () => ({ invalidateQueries: jest.fn() }),
-  useQuery: () => ({ data: [], isLoading: false, isError: false, isRefetching: false }),
+  useQuery: (options: any) => {
+    const key = options?.queryKey;
+    if (Array.isArray(key) && key[0] === 'diet' && key[1] === 'frequent') {
+      return { data: mockFrequentFoods, isLoading: false, isError: false, isRefetching: false };
+    }
+    return { data: [], isLoading: false, isError: false, isRefetching: false };
+  },
 }));
 
 jest.mock('expo-haptics', () => ({
@@ -63,11 +73,7 @@ jest.mock('react-native-gesture-handler/ReanimatedSwipeable', () => {
 });
 
 jest.mock('../../hooks/useDiet', () => ({
-  useDailyDiet: () => ({
-    data: { meals: mockDailyMeals, meals_count: mockDailyMeals.length, total_calories: 0, total_protein: 0, total_carbs: 0, total_fat: 0 },
-    refetch: jest.fn(),
-    isRefetching: false,
-  }),
+  useDailyDiet: (...args: any[]) => mockUseDailyDiet(...args),
 }));
 
 jest.mock('../../hooks/useAuth', () => ({
@@ -111,7 +117,7 @@ jest.mock('../../services/diet', () => ({
 }));
 
 jest.mock('../../hooks/useToast', () => ({
-  useToast: () => ({ show: jest.fn(), showUndoable: jest.fn() }),
+  useToast: () => ({ show: mockToastShow, showUndoable: mockToastShowUndoable }),
 }));
 
 jest.mock('../../hooks/useTheme', () => ({
@@ -169,12 +175,20 @@ describe('DietScreen capture deeplink', () => {
   beforeEach(() => {
     mockMealForm.mockClear();
     mockEstimate.mockClear();
+    mockToastShow.mockClear();
+    mockToastShowUndoable.mockClear();
     jest.clearAllMocks();
     (ImagePicker.requestCameraPermissionsAsync as jest.Mock).mockReset().mockResolvedValue({ granted: true });
     (ImagePicker.requestMediaLibraryPermissionsAsync as jest.Mock).mockReset().mockResolvedValue({ granted: true });
     (ImagePicker.launchCameraAsync as jest.Mock).mockReset().mockResolvedValue({ canceled: true, assets: [] });
     (ImagePicker.launchImageLibraryAsync as jest.Mock).mockReset().mockResolvedValue({ canceled: true, assets: [] });
     require('../../services/diet').recognizeFood.mockReset();
+    mockUseDailyDiet.mockReset();
+    mockUseDailyDiet.mockImplementation(() => ({
+      data: { meals: mockDailyMeals, meals_count: mockDailyMeals.length, total_calories: 0, total_protein: 0, total_carbs: 0, total_fat: 0 },
+      refetch: jest.fn(),
+      isRefetching: false,
+    }));
     mockLoadDietPhotoDraft.mockResolvedValue(null);
     mockSaveDietPhotoDraft.mockResolvedValue(undefined);
     mockClearDietPhotoDraft.mockResolvedValue(undefined);
@@ -188,6 +202,7 @@ describe('DietScreen capture deeplink', () => {
     mockAuthUserId = 7;
     Object.keys(mockRouteParams).forEach((key) => { delete mockRouteParams[key]; });
     mockDailyMeals.splice(0, mockDailyMeals.length);
+    mockFrequentFoods.splice(0, mockFrequentFoods.length);
   });
 
   it('starts photo capture when opened with capture=photo', async () => {
@@ -303,7 +318,7 @@ describe('DietScreen capture deeplink', () => {
     });
     dietService.recognizeFood.mockResolvedValueOnce({
       success: true,
-      foods: [{ name: '煎牛肉能量碗', quantity: null }],
+      foods: [{ name: '煎牛肉能量碗', quantity: '1份' }],
       meal_description: '煎牛肉能量碗 + 姜黄鲜柠维C茶',
       total_calories: 770,
       total_protein: 30,
@@ -805,7 +820,7 @@ describe('DietScreen capture deeplink', () => {
 
     resolveRecognition({
       success: true,
-      foods: [{ name: '煎牛肉能量碗', quantity: null }],
+      foods: [{ name: '煎牛肉能量碗', quantity: '1份' }],
       meal_description: '煎牛肉能量碗 + 姜黄鲜柠维C茶',
       total_calories: 770,
       total_protein: 30,
@@ -868,6 +883,55 @@ describe('DietScreen capture deeplink', () => {
     }
   });
 
+  it('keeps recovery actions visible when photo recognition fails', async () => {
+    const dietService = require('../../services/diet');
+    mockRouteParams.capture = 'photo';
+    (ImagePicker.launchCameraAsync as jest.Mock)
+      .mockResolvedValueOnce({
+        canceled: false,
+        assets: [{ base64: 'unclear-photo' }],
+      })
+      .mockResolvedValueOnce({
+        canceled: false,
+        assets: [{ base64: 'retry-photo' }],
+      });
+    dietService.recognizeFood
+      .mockResolvedValueOnce({
+        success: false,
+        foods: [],
+        error: '照片太暗,没有识别出可记录的餐食',
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        foods: [{ name: '番茄鸡蛋面', quantity: null }],
+        meal_description: '番茄鸡蛋面',
+        total_calories: 480,
+        total_protein: 22,
+        total_carbs: 58,
+        total_fat: 14,
+        error: null,
+      });
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+
+    const { getByLabelText, getByText } = render(<DietScreen />);
+
+    await waitFor(() => {
+      expect(getByText('照片识别失败')).toBeTruthy();
+    });
+    expect(getByText('换一张照片、从相册选择，或直接手动录入，不会重复提交。')).toBeTruthy();
+    expect(getByLabelText('重新拍照记录饮食')).toBeTruthy();
+    expect(getByLabelText('从相册重新选择饮食照片')).toBeTruthy();
+    expect(getByLabelText('手动录入饮食')).toBeTruthy();
+
+    fireEvent.press(getByLabelText('重新拍照记录饮食'));
+
+    await waitFor(() => {
+      expect(getByText('待确认饮食')).toBeTruthy();
+    });
+    expect(ImagePicker.launchCameraAsync).toHaveBeenCalledTimes(2);
+    alertSpy.mockRestore();
+  });
+
   it('shows explainable per-food sources and flags uncertain photo portions', async () => {
     const dietService = require('../../services/diet');
     mockRouteParams.capture = 'photo';
@@ -912,27 +976,178 @@ describe('DietScreen capture deeplink', () => {
       expect(getByText('识别明细')).toBeTruthy();
     });
     expect(getByText('已带营养估算，确认后计入今日')).toBeTruthy();
-    expect(getByText('2 项需核对')).toBeTruthy();
+    expect(getByText('1 项需核对')).toBeTruthy();
     expect(getByText('重点核对份量')).toBeTruthy();
     expect(getByText('鸡胸肉')).toBeTruthy();
     expect(getByText('200g · 330 kcal')).toBeTruthy();
     expect(getByText('表值 × 估算份量')).toBeTruthy();
+    expect(getByText('视觉估份 74%')).toBeTruthy();
     expect(getByText('识别较稳')).toBeTruthy();
     expect(getByText('杂粮饭')).toBeTruthy();
     expect(getByText('1碗 · 230 kcal')).toBeTruthy();
     expect(getByText('视觉估算')).toBeTruthy();
     expect(getByText('识别待核对')).toBeTruthy();
     expect(getAllByText('份量为估算').length).toBeGreaterThan(0);
-    expect(getAllByText('请核对份量').length).toBeGreaterThan(0);
+    expect(getAllByText('请核对份量').length).toBe(1);
     expect(getByText('识别完成 · 2.6s')).toBeTruthy();
     expect(getByText('营养校准 0.4s')).toBeTruthy();
-    expect(getByText('小巴建议先核对：鸡胸肉、杂粮饭的份量；确认后才写入今天饮食。')).toBeTruthy();
+    expect(getByText('小巴建议先核对：杂粮饭的份量；确认后才写入今天饮食。')).toBeTruthy();
     expect(getByText('核对后确认')).toBeTruthy();
     expect(getByText('修正份量')).toBeTruthy();
     fireEvent.press(getByLabelText('核对杂粮饭份量'));
     await waitFor(() => {
       expect(mockMealForm).toHaveBeenCalledWith(expect.objectContaining({
         assistiveHint: '优先核对食物份量；热量和三大营养会随份量一起修正。',
+      }));
+    });
+  });
+
+  it('routes uncertain photo drafts to revision when the primary action is tapped', async () => {
+    const dietService = require('../../services/diet');
+    mockRouteParams.capture = 'photo';
+    (ImagePicker.launchCameraAsync as jest.Mock).mockResolvedValueOnce({
+      canceled: false,
+      assets: [{ base64: 'photo-base64' }],
+    });
+    dietService.recognizeFood.mockResolvedValueOnce({
+      success: true,
+      foods: [
+        {
+          name: '杂粮饭', quantity: '1碗', calories: 230, protein: 5,
+          carbs: 48, fat: 2, fiber: 3, confidence: 0.62,
+          source: 'ai_estimate', nutrition_basis: 'vision_estimate',
+        },
+      ],
+      meal_description: '杂粮饭 1碗',
+      total_calories: 230,
+      total_protein: 5,
+      total_carbs: 48,
+      total_fat: 2,
+      total_fiber: 3,
+      error: null,
+    });
+
+    const { getByLabelText, getByText } = render(<DietScreen />);
+
+    await waitFor(() => {
+      expect(getByText('核对后确认')).toBeTruthy();
+    });
+    fireEvent.press(getByLabelText('核对后确认饮食'));
+
+    await waitFor(() => {
+      expect(mockMealForm).toHaveBeenCalledWith(expect.objectContaining({
+        assistiveHint: '优先核对食物份量；热量和三大营养会随份量一起修正。',
+      }));
+    });
+    expect(dietService.createDietRecord).not.toHaveBeenCalled();
+  });
+
+  it('routes low whole-photo confidence drafts to revision before saving', async () => {
+    const dietService = require('../../services/diet');
+    mockRouteParams.capture = 'photo';
+    (ImagePicker.launchCameraAsync as jest.Mock).mockResolvedValueOnce({
+      canceled: false,
+      assets: [{ base64: 'photo-base64' }],
+    });
+    dietService.recognizeFood.mockResolvedValueOnce({
+      success: true,
+      ai_confidence: 0.52,
+      foods: [
+        {
+          name: '番茄鸡蛋面', quantity: '1小碗', calories: 360, protein: 14,
+          carbs: 52, fat: 9, fiber: 3, confidence: null,
+          source: 'ai_estimate', nutrition_basis: 'vision_estimate',
+          portion_basis: 'vision_estimate', portion_confidence: 0.82,
+        },
+      ],
+      meal_description: '番茄鸡蛋面 1小碗',
+      total_calories: 360,
+      total_protein: 14,
+      total_carbs: 52,
+      total_fat: 9,
+      total_fiber: 3,
+      error: null,
+    });
+
+    const { getByLabelText, getByText } = render(<DietScreen />);
+
+    await waitFor(() => {
+      expect(getByText('整体识别待核对')).toBeTruthy();
+    });
+    expect(getByText('核对后确认')).toBeTruthy();
+
+    fireEvent.press(getByLabelText('核对后确认饮食'));
+
+    await waitFor(() => {
+      expect(mockMealForm).toHaveBeenCalledWith(expect.objectContaining({
+        assistiveHint: '优先核对食物份量；热量和三大营养会随份量一起修正。',
+      }));
+    });
+    expect(dietService.createDietRecord).not.toHaveBeenCalled();
+  });
+
+  it('marks reviewed low-confidence photo drafts as user-corrected even without field edits', async () => {
+    const dietService = require('../../services/diet');
+    mockRouteParams.capture = 'photo';
+    (ImagePicker.launchCameraAsync as jest.Mock).mockResolvedValueOnce({
+      canceled: false,
+      assets: [{ base64: 'photo-base64' }],
+    });
+    dietService.recognizeFood.mockResolvedValueOnce({
+      success: true,
+      ai_confidence: 0.52,
+      foods: [
+        {
+          name: '番茄鸡蛋面', quantity: '1小碗', calories: 360, protein: 14,
+          carbs: 52, fat: 9, fiber: 3, confidence: null,
+          source: 'ai_estimate', nutrition_basis: 'vision_estimate',
+          portion_basis: 'vision_estimate', portion_confidence: 0.82,
+        },
+      ],
+      meal_description: '番茄鸡蛋面 1小碗',
+      total_calories: 360,
+      total_protein: 14,
+      total_carbs: 52,
+      total_fat: 9,
+      total_fiber: 3,
+      photo_draft_token: 'draft-low-confidence-1',
+      error: null,
+    });
+    dietService.createDietRecord.mockResolvedValueOnce({ id: 188 });
+
+    const { getByLabelText, getByText } = render(<DietScreen />);
+
+    await waitFor(() => {
+      expect(getByText('整体识别待核对')).toBeTruthy();
+    });
+    fireEvent.press(getByLabelText('核对后确认饮食'));
+
+    await waitFor(() => {
+      expect(mockMealForm).toHaveBeenCalledWith(expect.objectContaining({
+        initialDescription: '番茄鸡蛋面 1小碗',
+      }));
+    });
+    const formProps = mockMealForm.mock.calls.at(-1)?.[0];
+    await act(async () => {
+      await formProps.onSubmit({
+        record_date: '2026-07-12',
+        meal_type: 'dinner',
+        food_items: '番茄鸡蛋面 1小碗',
+        calories: 360,
+        protein: 14,
+        carbs: 52,
+        fat: 9,
+        fiber: 3,
+      });
+    });
+
+    await waitFor(() => {
+      expect(dietService.createDietRecord).toHaveBeenCalledWith(expect.objectContaining({
+        food_items: '番茄鸡蛋面 1小碗',
+        source: 'user_corrected',
+        ai_recognized: 0,
+        ai_confidence: undefined,
+        ai_raw_result: undefined,
       }));
     });
   });
@@ -1040,6 +1255,170 @@ describe('DietScreen capture deeplink', () => {
     promptSpy.mockRestore();
   });
 
+  it('can jump from the post-confirmation share preview into an Agent diet review', async () => {
+    const dietService = require('../../services/diet');
+    dietService.createDietRecord.mockResolvedValueOnce({
+      id: 89,
+      user_id: 1,
+      record_date: '2026-07-11',
+      meal_type: 'lunch',
+      food_items: '鸡胸肉 200g + 糙米饭一碗',
+      source: 'ai_estimate',
+      calories: 560,
+      protein: 67,
+      carbs: 48,
+      fat: 9.2,
+      fiber: 3,
+      alcohol_units: null,
+      image_url: null,
+      notes: null,
+      health_tips: null,
+    });
+    const promptSpy = jest.spyOn(Alert, 'prompt').mockImplementationOnce((_title, _message, callback) => {
+      if (typeof callback === 'function') callback('鸡胸肉 200g + 糙米饭一碗');
+    });
+
+    const { getByLabelText, getByTestId, getByText } = render(<DietScreen />);
+    fireEvent.press(getByTestId('diet-fab-text'));
+    await waitFor(() => {
+      expect(getByText('待确认饮食')).toBeTruthy();
+    });
+
+    fireEvent.press(getByLabelText('确认记录饮食'));
+    await waitFor(() => expect(getByText('分享这一餐')).toBeTruthy());
+
+    fireEvent.press(getByLabelText('问小巴复盘今日饮食'));
+
+    await waitFor(() => {
+      expect(mockPushChatWithContext).toHaveBeenCalledWith(
+        expect.objectContaining({ push: expect.any(Function) }),
+        expect.objectContaining({
+          prompt: expect.stringContaining('请先查询今天数据库里的所有饮食记录'),
+          badge: '今日饮食复盘',
+          context: expect.objectContaining({
+            just_recorded: expect.objectContaining({
+              id: 89,
+              food_items: '鸡胸肉 200g + 糙米饭一碗',
+              calories: 560,
+              protein: 67,
+            }),
+          }),
+        }),
+      );
+    });
+    promptSpy.mockRestore();
+  });
+
+  it('opens the premium share preview after submitting a new meal form', async () => {
+    const dietService = require('../../services/diet');
+    dietService.createDietRecord.mockResolvedValueOnce({
+      id: 188,
+      user_id: 7,
+      record_date: '2026-07-11',
+      meal_type: 'lunch',
+      food_items: '三文鱼 180g',
+      source: 'user_corrected',
+      calories: 360,
+      protein: 38,
+      carbs: 0,
+      fat: 22,
+      fiber: 2,
+      alcohol_units: null,
+      image_url: null,
+      notes: null,
+      health_tips: null,
+    });
+    mockRouteParams.draft = 'diet';
+    mockRouteParams.food_items = encodeURIComponent('三文鱼 180g');
+    mockRouteParams.meal_type = 'lunch';
+
+    const { getByTestId, getByText } = render(<DietScreen />);
+    await waitFor(() => {
+      expect(getByTestId('meal-form')).toBeTruthy();
+    });
+
+    const formProps = mockMealForm.mock.calls[mockMealForm.mock.calls.length - 1][0];
+    await act(async () => {
+      await formProps.onSubmit({
+        record_date: '2026-07-11',
+        meal_type: 'lunch',
+        food_items: '三文鱼 180g',
+        calories: 360,
+        protein: 38,
+        carbs: 0,
+        fat: 22,
+        fiber: 2,
+      });
+    });
+
+    await waitFor(() => {
+      expect(getByText('分享这一餐')).toBeTruthy();
+      expect(getByText('发微信/朋友圈')).toBeTruthy();
+      expect(getByText('发小红书')).toBeTruthy();
+      expect(getByText('三文鱼 180g')).toBeTruthy();
+    });
+    expect(mockPushChatWithContext).not.toHaveBeenCalled();
+  });
+
+  it('opens the premium share preview for a saved record deep linked from Agent chat', async () => {
+    mockRouteParams.share_record_id = '88';
+    mockRouteParams.return_to = 'chat';
+    mockDailyMeals.push({
+      id: 88,
+      user_id: 1,
+      record_date: '2026-07-11',
+      meal_type: 'lunch',
+      food_items: '牛肉面',
+      source: 'ai_estimate',
+      calories: 620,
+      protein: 28,
+      carbs: 78,
+      fat: 18,
+      fiber: 4,
+      alcohol_units: null,
+      image_url: null,
+      notes: null,
+      health_tips: null,
+    });
+
+    const { getAllByText, getByText } = render(<DietScreen />);
+
+    await waitFor(() => {
+      expect(getByText('分享这一餐')).toBeTruthy();
+      expect(getByText('发微信/朋友圈')).toBeTruthy();
+      expect(getByText('发小红书')).toBeTruthy();
+      expect(getAllByText('牛肉面').length).toBeGreaterThan(0);
+    });
+  });
+
+  it('loads a saved-record share deeplink with its route date on the first render', async () => {
+    mockRouteParams.share_record_id = '88';
+    mockRouteParams.return_to = 'chat';
+    mockRouteParams.date = '2026-07-09';
+    mockAuthUserId = null;
+    mockDailyMeals.push({
+      id: 88,
+      user_id: 1,
+      record_date: '2026-07-09',
+      meal_type: 'lunch',
+      food_items: '牛肉面',
+      source: 'ai_estimate',
+      calories: 620,
+      protein: 28,
+      carbs: 78,
+      fat: 18,
+      fiber: 4,
+      alcohol_units: null,
+      image_url: null,
+      notes: null,
+      health_tips: null,
+    });
+
+    render(<DietScreen />);
+
+    expect(mockUseDailyDiet.mock.calls[0][0]).toBe('2026-07-09');
+  });
+
   it('keeps the just-captured meal photo in the immediate share preview when the confirm response has no image url', async () => {
     const dietService = require('../../services/diet');
     mockRouteParams.capture = 'photo';
@@ -1136,7 +1515,7 @@ describe('DietScreen capture deeplink', () => {
     });
     dietService.recognizeFood.mockResolvedValueOnce({
       success: true,
-      foods: [{ name: '煎牛肉能量碗', quantity: null }],
+      foods: [{ name: '煎牛肉能量碗', quantity: '1份' }],
       meal_description: '煎牛肉能量碗 + 姜黄鲜柠维C茶',
       total_calories: 770,
       total_protein: 30,
@@ -1169,11 +1548,13 @@ describe('DietScreen capture deeplink', () => {
       expect(mockPushChatWithContext).toHaveBeenCalledWith(
         expect.objectContaining({ push: expect.any(Function) }),
         expect.objectContaining({
-          prompt: expect.stringContaining('刚记录了一餐'),
+          prompt: expect.stringContaining('请先查询今天数据库里的所有饮食记录'),
           badge: expect.stringContaining('刚记录饮食'),
           context: expect.objectContaining({
-            from: 'diet/quick_capture',
+            from: 'diet/post_confirm',
+            must_query_database: true,
             created_id: 88,
+            verify_record_id: 88,
             record: expect.objectContaining({
               food_items: '煎牛肉能量碗 + 姜黄鲜柠维C茶',
               calories: 770,
@@ -1200,7 +1581,7 @@ describe('DietScreen capture deeplink', () => {
     });
     dietService.recognizeFood.mockResolvedValueOnce({
       success: true,
-      foods: [{ name: '三文鱼能量碗', quantity: null }],
+      foods: [{ name: '三文鱼能量碗', quantity: '1份' }],
       meal_description: '三文鱼能量碗',
       total_calories: 620,
       total_protein: 34,
@@ -1228,11 +1609,13 @@ describe('DietScreen capture deeplink', () => {
       expect(mockPushChatWithContext).toHaveBeenCalledWith(
         expect.objectContaining({ push: expect.any(Function) }),
         expect.objectContaining({
-          prompt: expect.stringContaining('刚记录了一餐'),
+          prompt: expect.stringContaining('请先查询今天数据库里的所有饮食记录'),
           badge: '刚记录饮食',
           context: expect.objectContaining({
-            from: 'diet/quick_capture',
+            from: 'diet/post_confirm',
+            must_query_database: true,
             created_id: 91,
+            verify_record_id: 91,
             record: expect.objectContaining({
               food_items: '三文鱼能量碗',
               calories: 620,
@@ -1268,10 +1651,12 @@ describe('DietScreen capture deeplink', () => {
       expect(mockPushChatWithContext).toHaveBeenCalledWith(
         expect.objectContaining({ push: expect.any(Function) }),
         expect.objectContaining({
-          prompt: expect.stringContaining('刚记录了一餐'),
+          prompt: expect.stringContaining('请先查询今天数据库里的所有饮食记录'),
           context: expect.objectContaining({
-            from: 'diet/quick_capture',
+            from: 'diet/post_confirm',
+            must_query_database: true,
             created_id: 92,
+            verify_record_id: 92,
             record: expect.objectContaining({
               food_items: '鸡胸肉 200g + 糙米饭一碗',
             }),
@@ -1306,9 +1691,12 @@ describe('DietScreen capture deeplink', () => {
       expect(mockPushChatWithContext).toHaveBeenCalledWith(
         expect.objectContaining({ push: expect.any(Function) }),
         expect.objectContaining({
+          prompt: expect.stringContaining('请先查询今天数据库里的所有饮食记录'),
           context: expect.objectContaining({
-            from: 'diet/quick_capture',
+            from: 'diet/post_confirm',
+            must_query_database: true,
             created_id: 93,
+            verify_record_id: 93,
             record: expect.objectContaining({
               food_items: '晚饭吃了牛肉面',
             }),
@@ -1329,7 +1717,7 @@ describe('DietScreen capture deeplink', () => {
     });
     dietService.recognizeFood.mockResolvedValueOnce({
       success: true,
-      foods: [{ name: '牛肉面', quantity: null }],
+      foods: [{ name: '牛肉面', quantity: '1碗' }],
       meal_description: '牛肉面',
       total_calories: 650,
       total_protein: 28,
@@ -1352,6 +1740,54 @@ describe('DietScreen capture deeplink', () => {
     });
     expect(getByText('待确认饮食')).toBeTruthy();
     expect(mockPushChatWithContext).not.toHaveBeenCalled();
+    alertSpy.mockRestore();
+  });
+
+  it('re-persists the current photo draft after a failed confirmation so the meal can be restored', async () => {
+    const dietService = require('../../services/diet');
+    mockRouteParams.capture = 'photo';
+    (ImagePicker.launchCameraAsync as jest.Mock).mockResolvedValueOnce({
+      canceled: false,
+      assets: [{ uri: 'file:///recoverable-meal.heic', width: 4032, height: 3024 }],
+    });
+    dietService.recognizeFood.mockResolvedValueOnce({
+      success: true,
+      foods: [{ name: '鸡胸肉糙米饭', quantity: '1份' }],
+      meal_description: '鸡胸肉糙米饭',
+      total_calories: 560,
+      total_protein: 44,
+      total_carbs: 62,
+      total_fat: 12,
+      photo_draft_token: 'recoverable-photo-draft-77',
+      error: null,
+    });
+    mockSaveDietPhotoDraft.mockRejectedValueOnce(new Error('secure store temporarily unavailable'));
+    dietService.createDietRecord.mockRejectedValueOnce(new Error('network down'));
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+
+    const { getByLabelText, getByText } = render(<DietScreen />);
+    await waitFor(() => {
+      expect(getByText('待确认饮食')).toBeTruthy();
+    });
+    expect(mockSaveDietPhotoDraft).toHaveBeenCalledTimes(1);
+
+    fireEvent.press(getByLabelText('确认记录饮食'));
+
+    await waitFor(() => {
+      expect(alertSpy).toHaveBeenCalledWith('保存失败', '请稍后再试');
+    });
+    await waitFor(() => {
+      expect(mockSaveDietPhotoDraft).toHaveBeenCalledTimes(2);
+    });
+    expect(mockSaveDietPhotoDraft).toHaveBeenLastCalledWith(
+      7,
+      expect.objectContaining({
+        photo_draft_token: 'recoverable-photo-draft-77',
+        food_items: '鸡胸肉糙米饭',
+        image_base64: undefined,
+      }),
+    );
+    expect(getByText('待确认饮食')).toBeTruthy();
     alertSpy.mockRestore();
   });
 
@@ -1449,5 +1885,102 @@ describe('DietScreen capture deeplink', () => {
     expect(getByText('高清 3:4 图片 · 微信与小红书')).toBeTruthy();
     expect(getByText('蛋白质拉满的一餐')).toBeTruthy();
     await waitFor(() => expect(mockLoadDietPhotoDraft).toHaveBeenCalledWith(7));
+  });
+
+  it('opens the premium share preview after one-tap frequent food logging', async () => {
+    const dietService = require('../../services/diet');
+    mockFrequentFoods.push({
+      food_items: '希腊酸奶 + 蓝莓',
+      meal_type: 'breakfast',
+      calories: 310,
+      protein: 28,
+      carbs: 34,
+      fat: 7,
+      count: 6,
+    });
+    dietService.createDietRecord.mockResolvedValueOnce({
+      id: 178,
+      user_id: 7,
+      record_date: '2026-07-11',
+      meal_type: 'breakfast',
+      food_items: '希腊酸奶 + 蓝莓',
+      source: 'manual',
+      calories: 310,
+      protein: 28,
+      carbs: 34,
+      fat: 7,
+      fiber: 4,
+      alcohol_units: null,
+      image_url: null,
+      notes: null,
+      health_tips: null,
+    });
+
+    const { getAllByText, getByLabelText, getByText } = render(<DietScreen />);
+    fireEvent.press(getByLabelText('记录早餐：希腊酸奶 + 蓝莓，310kcal'));
+
+    await waitFor(() => {
+      expect(dietService.createDietRecord).toHaveBeenCalledWith(expect.objectContaining({
+        meal_type: 'breakfast',
+        food_items: '希腊酸奶 + 蓝莓',
+        calories: 310,
+      }));
+      expect(getByText('分享这一餐')).toBeTruthy();
+      expect(getAllByText('希腊酸奶 + 蓝莓').length).toBeGreaterThan(0);
+      expect(getByText('发小红书')).toBeTruthy();
+    });
+  });
+
+  it('closes the frequent-food share preview when the just-created record is undone', async () => {
+    const dietService = require('../../services/diet');
+    mockFrequentFoods.push({
+      food_items: '希腊酸奶 + 蓝莓',
+      meal_type: 'breakfast',
+      calories: 310,
+      protein: 28,
+      carbs: 34,
+      fat: 7,
+      count: 6,
+    });
+    dietService.createDietRecord.mockResolvedValueOnce({
+      id: 178,
+      user_id: 7,
+      record_date: '2026-07-11',
+      meal_type: 'breakfast',
+      food_items: '希腊酸奶 + 蓝莓',
+      source: 'manual',
+      calories: 310,
+      protein: 28,
+      carbs: 34,
+      fat: 7,
+      fiber: 4,
+      alcohol_units: null,
+      image_url: null,
+      notes: null,
+      health_tips: null,
+    });
+    dietService.deleteDietRecord.mockResolvedValueOnce(undefined);
+
+    const { getByLabelText, getByText, queryByText } = render(<DietScreen />);
+    fireEvent.press(getByLabelText('记录早餐：希腊酸奶 + 蓝莓，310kcal'));
+
+    await waitFor(() => {
+      expect(getByText('分享这一餐')).toBeTruthy();
+      expect(mockToastShowUndoable).toHaveBeenCalledWith(
+        '已记录「希腊酸奶 + 蓝莓」',
+        expect.any(Function),
+        5000,
+      );
+    });
+
+    const undo = mockToastShowUndoable.mock.calls[0][1];
+    await act(async () => {
+      await undo();
+    });
+
+    await waitFor(() => {
+      expect(dietService.deleteDietRecord).toHaveBeenCalledWith(178);
+      expect(queryByText('分享这一餐')).toBeNull();
+    });
   });
 });

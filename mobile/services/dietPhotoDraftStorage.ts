@@ -36,6 +36,8 @@ function compactFood(food: FoodItem): FoodItem {
     source: compactText(food.source, 80),
     quantity_grams: food.quantity_grams,
     nutrition_basis: compactText(food.nutrition_basis, 40),
+    portion_basis: compactText(food.portion_basis, 40),
+    portion_confidence: food.portion_confidence,
   };
 }
 

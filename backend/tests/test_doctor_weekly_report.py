@@ -257,6 +257,42 @@ class TestGenerateDoctorWeeklyReport:
         assert result.get("generated", 0) == 0
         assert sent == []
 
+    def test_ios_fallback_uses_push_service_so_8am_is_quiet(self, db, monkeypatch):
+        """医生周报 APNs 兜底必须走 PushService, 否则 08:00 补跑会绕过静默时间。"""
+        from app.models.notification import UserNotificationSetting
+        from app.tasks import notifications as n
+
+        user = _setup_minimal_user_with_garmin(db, user_id=300)
+        db.add(UserNotificationSetting(
+            user_id=user.id,
+            enabled=True,
+            ios_push_enabled=True,
+            ios_device_token="ios-token",
+            quiet_hours_start="22:00",
+            quiet_hours_end="09:00",
+        ))
+        db.commit()
+
+        monkeypatch.setattr(n, "SessionLocal", lambda: _DbCtx(db))
+        sent_via_push_service = []
+
+        async def fake_send_notification(**kwargs):
+            sent_via_push_service.append(kwargs)
+            return {"success": False, "reason": "delayed_for_quiet_hours"}
+
+        with patch("app.services.notification.telegram_push.TelegramPushService") as MockTelegram, \
+             patch("app.services.notification.push_service.PushService.send_notification", new=AsyncMock(side_effect=fake_send_notification)):
+            MockTelegram.return_value.configured = False
+            result = n.generate_doctor_weekly_report()
+
+        assert result.get("generated", 0) == 1
+        assert len(sent_via_push_service) == 1
+        payload = sent_via_push_service[0]
+        assert payload["user_id"] == user.id
+        assert payload["notification_type"] == "doctor_weekly_summary"
+        assert payload["severity"] == "info"
+        assert payload["data"]["type"] == "doctor_weekly_summary"
+
 
 class _DbCtx:
     """测试用的 Session context manager 包装, 让 `with SessionLocal() as db:` 可用."""

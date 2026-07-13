@@ -33,7 +33,7 @@ def _make_settings(
     *,
     enabled: bool = True,
     quiet_start: str = "22:00",
-    quiet_end: str = "08:30",
+    quiet_end: str = "09:00",
     ios_token: str = "fake-token",
 ) -> UserNotificationSetting:
     s = UserNotificationSetting(
@@ -141,12 +141,12 @@ class TestQuietHoursSeverity:
 
     @patch("app.services.notification.push_service.get_china_now")
     def test_default_quiet_hours_covers_0830(self, mock_now, db):
-        """新默认 22:00–08:30：08:00 仍算夜间，09:00 算白天."""
+        """默认 22:00–09:00：08:30 仍算夜间，09:00 算白天."""
         user_id = _make_user(db)
-        _make_settings(db, user_id)  # 用默认 22:00–08:30
+        _make_settings(db, user_id)  # 用默认 22:00–09:00
         svc = PushService(db)
 
-        mock_now.return_value = datetime(2026, 5, 1, 8, 0)
+        mock_now.return_value = datetime(2026, 5, 1, 8, 30)
         assert svc.is_quiet_hours(user_id) is True
 
         mock_now.return_value = datetime(2026, 5, 1, 9, 0)

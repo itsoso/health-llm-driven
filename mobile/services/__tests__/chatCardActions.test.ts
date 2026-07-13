@@ -404,6 +404,9 @@ describe('dispatchChatCardAction', () => {
     ['鱼油', 'invalid_diet_food_items_non_diet'],
     ['和午餐食品营养卡', 'invalid_diet_food_items_ui_text'],
     ['保存并确认', 'invalid_diet_food_items_ui_text'],
+    ['晨跑 30 分钟', 'invalid_diet_food_items_health_metric'],
+    ['体重 73.1kg 腰围 84cm', 'invalid_diet_food_items_health_metric'],
+    ['昨晚睡了 6 小时', 'invalid_diet_food_items_health_metric'],
   ])('rejects non-food diet card payloads before posting: %s', async (foodItems, errorCode) => {
     await expect(dispatchChatCardAction({
       label: '确认记录',

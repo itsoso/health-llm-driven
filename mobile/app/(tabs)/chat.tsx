@@ -642,6 +642,15 @@ export default function ChatScreen() {
     router.push('/diet' as any);
   }, []);
 
+  const handleOpenDietShare = useCallback(() => {
+    const route = buildSavedDietShareRoute(contextPayload);
+    if (!route) {
+      router.push('/diet' as any);
+      return;
+    }
+    router.push(route as any);
+  }, [contextPayload]);
+
   const handleCardActionCompleted = useCallback((event: {
     action: ChatCardActionDescriptor;
     descriptor: ServerCardDescriptor;
@@ -883,6 +892,17 @@ export default function ChatScreen() {
               >
                 <Ionicons name="analytics-outline" size={12} color={C.green600} />
                 <Text style={txt.contextQuickAction} numberOfLines={1}>查今日热量</Text>
+              </Pressable>
+            )}
+            {hasSavedDietContext && (
+              <Pressable
+                onPress={handleOpenDietShare}
+                style={({ pressed }) => [styles.contextQuickAction, pressed && styles.contextBannerPressed]}
+                accessibilityRole="button"
+                accessibilityLabel="生成刚保存饮食的微信小红书分享图"
+              >
+                <Ionicons name="images-outline" size={12} color={C.green600} />
+                <Text style={txt.contextQuickAction} numberOfLines={1}>晒图</Text>
               </Pressable>
             )}
             {hasSavedDietContext && (
@@ -1213,6 +1233,23 @@ function isSavedDietContextPayload(value: string | null): boolean {
   return parsed?.source === 'chat_card_action' && parsed?.event === 'diet_record_saved';
 }
 
+function buildSavedDietShareRoute(value: string | null): string | null {
+  const parsed = parseJsonObject(String(value || '').trim());
+  if (parsed?.source !== 'chat_card_action' || parsed?.event !== 'diet_record_saved') return null;
+  const record = normalizeDietContextRecord(parsed.record);
+  const id = normalizeNumberValue(record?.id);
+  if (id == null || id <= 0) return null;
+  const params = new URLSearchParams({
+    share_record_id: String(Math.round(id)),
+    return_to: 'chat',
+  });
+  const recordDate = textValue(record?.record_date);
+  if (recordDate && /^\d{4}-\d{2}-\d{2}$/.test(recordDate)) {
+    params.set('date', recordDate);
+  }
+  return `/diet?${params.toString()}`;
+}
+
 function mergeExtraContext(primary?: string, secondary?: string | null): string | undefined {
   const first = String(primary || '').trim();
   const second = String(secondary || '').trim();
@@ -1265,7 +1302,7 @@ function buildCardActionStatusMessage(event: {
   const details = [
     foodItems,
     '可在饮食页修正；下条消息会基于这条记录和今日饮食记录回答。',
-    '想晒这一餐，可以去饮食页生成微信/小红书分享图。',
+    '想晒这一餐，可直接晒图到微信/小红书。',
   ].filter(Boolean);
   return {
     id: `card-action-status-${Date.now()}`,

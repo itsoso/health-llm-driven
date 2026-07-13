@@ -17,6 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
+import * as MediaLibrary from 'expo-media-library';
 import * as Sharing from 'expo-sharing';
 import { captureRef, releaseCapture } from 'react-native-view-shot';
 
@@ -29,6 +30,7 @@ import {
   revaSpacing,
 } from '../../constants/revaTheme';
 import type { DietRecord } from '../../services/diet';
+import { MACRO_HUES } from '../chat/cards/mealCardVisuals';
 
 const MEAL_LABEL: Record<string, string> = {
   breakfast: '早餐',
@@ -38,6 +40,19 @@ const MEAL_LABEL: Record<string, string> = {
 };
 export const DIET_SHARE_IMAGE_TIMEOUT_MS = 5_000;
 type ShareTarget = 'generic' | 'wechat' | 'xiaohongshu';
+type MacroSegmentKey = 'protein' | 'carbs' | 'fat';
+type DietShareMacroSegment = {
+  key: MacroSegmentKey;
+  label: string;
+  grams: number;
+  percent: number;
+  color: string;
+};
+type ShareResult =
+  | { target: ShareTarget; kind: 'completed' }
+  | { target: ShareTarget; kind: 'caption_fallback' }
+  | { target: ShareTarget; kind: 'saved_to_library' }
+  | { target: ShareTarget; kind: 'photo_library_permission_denied' };
 
 export function dietShareCaptureDimensions(
   platform = Platform.OS,
@@ -97,6 +112,29 @@ function buildDietShareStatusLine(highlights: string[]): string {
   return `今日状态：${highlights.join(' · ')}`;
 }
 
+export function buildDietShareBalance(record: DietRecord): { score: number | null; label: string } {
+  if (!isNutritionComplete(record)) {
+    return { score: null, label: '营养回填后生成均衡度' };
+  }
+
+  let score = 58;
+  if ((record.protein ?? 0) >= 30) score += (record.protein ?? 0) > 45 ? 14 : 16;
+  else if ((record.protein ?? 0) >= 18) score += 9;
+  if ((record.fat ?? 0) <= 12) score += 12;
+  else if ((record.fat ?? 0) <= 20) score += 10;
+  if ((record.fiber ?? 0) >= 5) score += 10;
+  else if ((record.fiber ?? 0) >= 3) score += 6;
+  if ((record.calories ?? 0) >= 350 && (record.calories ?? 0) <= 750) score += 10;
+  else if ((record.calories ?? 0) >= 250 && (record.calories ?? 0) <= 850) score += 6;
+  if ((record.carbs ?? 0) >= 25 && (record.carbs ?? 0) <= 90) score += 8;
+
+  const normalized = Math.min(96, Math.max(62, score));
+  if (normalized >= 90 && (record.protein ?? 0) >= 30) return { score: normalized, label: '高蛋白稳态餐' };
+  if (normalized >= 88) return { score: normalized, label: '结构很在线' };
+  if (normalized >= 78) return { score: normalized, label: '均衡感不错' };
+  return { score: normalized, label: '已记录，可复盘' };
+}
+
 function buildDietShareCaptionStatusLine(highlights: string[]): string {
   if (highlights.length === 0) return '今日状态: 认真记录';
   return `今日状态: ${highlights.join(' / ')}`;
@@ -115,17 +153,83 @@ function buildDietShareHashtags(highlights: string[]): string {
 
 function buildDietShareDataDisclosure(record: DietRecord): string {
   const sourceLabel = nutritionSourceLabel(record.source);
+  const confidencePercent = normalizedAiConfidence(record.ai_confidence);
+  if (confidencePercent != null && confidencePercent < 60) {
+    return `营养数据: ${sourceLabel}，待核对后再发布`;
+  }
   if (!hasAnyNutritionMetric(record)) return '营养数据: 估算中，稍后可继续复盘';
-  if (!isNutritionComplete(record)) return '营养数据: 部分估算中，已确认部分可继续复盘';
-  if (sourceLabel === '智能估算') return '营养数据: 智能估算，已确认，可继续复盘';
-  if (sourceLabel === '手动确认') return '营养数据: 手动确认，可继续复盘';
+  if (!isNutritionComplete(record)) return '营养数据: 部分估算中，可继续复盘';
+  if (sourceLabel === '智能估算') return '营养数据: 智能估算，可继续复盘';
+  if (sourceLabel === '手动确认') return '营养数据: 手动核对，可继续复盘';
   return `营养数据: ${sourceLabel}，已确认，可继续复盘`;
 }
 
+function normalizedAiConfidence(value: number | null | undefined): number | null {
+  if (!hasMetric(value)) return null;
+  const percent = value <= 1 ? value * 100 : value;
+  if (percent < 0 || percent > 100) return null;
+  return Math.round(percent);
+}
+
+function buildDietShareConfidenceDisclosure(record: DietRecord): string | null {
+  const percent = normalizedAiConfidence(record.ai_confidence);
+  if (percent == null) return null;
+  if (percent < 60) return `识别置信度: ${percent}%，发布前建议核对食物和份量`;
+  if (percent < 80) return `识别置信度: ${percent}%，建议复盘时留意份量`;
+  return `识别置信度: ${percent}%`;
+}
+
+function isAiEstimatedNutritionSource(source?: string | null): boolean {
+  return !source || source === 'ai_estimate' || source === 'photo';
+}
+
+function buildDietShareConfidenceUi(record: DietRecord): { percent: number; detail: string; tone: 'warning' | 'neutral' } | null {
+  const percent = normalizedAiConfidence(record.ai_confidence);
+  if (percent == null) return null;
+  if (percent < 60) {
+    return {
+      percent,
+      detail: '发布前建议核对食物和份量',
+      tone: 'warning',
+    };
+  }
+  if (percent < 80) {
+    return {
+      percent,
+      detail: '建议复盘时留意份量',
+      tone: 'neutral',
+    };
+  }
+  return {
+    percent,
+    detail: isAiEstimatedNutritionSource(record.source) ? '识别结果较稳定' : '识别结果已确认',
+    tone: 'neutral',
+  };
+}
+
+function buildDietShareConfirmBadge(record: DietRecord): { primary: string; secondary: string; tone: 'confirmed' | 'estimate' | 'caution' } {
+  const percent = normalizedAiConfidence(record.ai_confidence);
+  if (percent != null && percent < 60) {
+    return { primary: '待核对', secondary: '谨慎分享', tone: 'caution' };
+  }
+  if (isAiEstimatedNutritionSource(record.source)) {
+    return { primary: '智能估算', secondary: '可复盘', tone: 'estimate' };
+  }
+  return { primary: '已确认', secondary: '可分享', tone: 'confirmed' };
+}
+
 function buildDietShareFooterSecondary(record: DietRecord): string {
+  const percent = normalizedAiConfidence(record.ai_confidence);
+  if (percent != null && percent < 60) return '识别待核对，发布前确认食物和份量';
   if (!hasAnyNutritionMetric(record)) return '营养回填后用于复盘';
   if (!isNutritionComplete(record)) return '部分营养回填后用于复盘';
+  if (isAiEstimatedNutritionSource(record.source)) return '智能估算用于复盘，核对后更准确';
   return '营养数据以本次确认记录为准';
+}
+
+function isLowConfidenceDietShare(record: DietRecord): boolean {
+  const percent = normalizedAiConfidence(record.ai_confidence);
+  return percent != null && percent < 60;
 }
 
 function buildDietShareMacroLine(record: DietRecord, style: 'compact' | 'sentence'): string {
@@ -148,21 +252,115 @@ function buildDietShareMacroLine(record: DietRecord, style: 'compact' | 'sentenc
     : allParts.join(' · ');
 }
 
+const SHARE_MACRO_DEFS: Array<{
+  key: MacroSegmentKey;
+  field: 'protein' | 'carbs' | 'fat';
+  label: string;
+  kcalPerGram: number;
+  color: string;
+}> = [
+  { key: 'protein', field: 'protein', label: '蛋白', kcalPerGram: 4, color: MACRO_HUES.protein },
+  { key: 'carbs', field: 'carbs', label: '碳水', kcalPerGram: 4, color: MACRO_HUES.carbs },
+  { key: 'fat', field: 'fat', label: '脂肪', kcalPerGram: 9, color: MACRO_HUES.fat },
+];
+
+export function buildDietShareMacroSegments(record: DietRecord): DietShareMacroSegment[] {
+  const hasCompleteEnergyMacros = SHARE_MACRO_DEFS.every((def) => {
+    const grams = record[def.field];
+    return hasMetric(grams) && grams > 0;
+  });
+  if (!hasCompleteEnergyMacros) return [];
+
+  const rawSegments = SHARE_MACRO_DEFS
+    .map((def) => {
+      const grams = record[def.field];
+      if (!hasMetric(grams) || grams <= 0) return null;
+      return {
+        key: def.key,
+        label: def.label,
+        grams,
+        kcal: grams * def.kcalPerGram,
+        color: def.color,
+      };
+    })
+    .filter((segment): segment is DietShareMacroSegment & { kcal: number } => Boolean(segment));
+
+  const totalKcal = rawSegments.reduce((sum, segment) => sum + segment.kcal, 0);
+  if (totalKcal <= 0) return [];
+
+  const normalized = rawSegments.map((segment) => {
+    const exactPercent = (segment.kcal / totalKcal) * 100;
+    return {
+      ...segment,
+      percent: Math.floor(exactPercent),
+      remainder: exactPercent - Math.floor(exactPercent),
+    };
+  });
+  let remainingPercent = 100 - normalized.reduce((sum, segment) => sum + segment.percent, 0);
+  [...normalized]
+    .sort((a, b) => b.remainder - a.remainder)
+    .forEach((segment) => {
+      if (remainingPercent <= 0) return;
+      segment.percent += 1;
+      remainingPercent -= 1;
+    });
+
+  return normalized.map((segment) => ({
+    key: segment.key,
+    label: segment.label,
+    grams: segment.grams,
+    percent: segment.percent,
+    color: segment.color,
+  }));
+}
+
+function buildDietShareMacroStructureLine(record: DietRecord): string | null {
+  const segments = buildDietShareMacroSegments(record);
+  if (segments.length === 0) return null;
+  return `能量结构: ${segments.map((segment) => `${segment.label} ${segment.percent}%`).join(' / ')}`;
+}
+
+export function compactDietShareFoodItems(foodItems: string, maxChars = 35): string {
+  const normalized = foodItems.replace(/\s+/g, ' ').trim();
+  if (normalized.length <= maxChars) return normalized;
+
+  const parts = normalized
+    .split(/[、,，]/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  let compacted = '';
+  for (const part of parts) {
+    const candidate = compacted ? `${compacted}、${part}` : part;
+    if (candidate.length > maxChars) break;
+    compacted = candidate;
+  }
+
+  if (!compacted) compacted = normalized.slice(0, maxChars).trim();
+  return `${compacted.replace(/[、,，\s]+$/, '')}…`;
+}
+
 export function buildDietShareCaption(record: DietRecord, dateLabel: string): string {
   const mealLabel = MEAL_LABEL[record.meal_type] ?? '餐食';
   const headline = buildDietShareHeadline(record);
   const highlights = buildDietShareHighlights(record);
+  const foodItems = compactDietShareFoodItems(record.food_items);
   const lines = [
     `小巴饮食卡｜${headline}`,
     `今天这餐打卡: ${dateLabel}`,
-    `${mealLabel}: ${record.food_items}`,
+    `${mealLabel}: ${foodItems}`,
     buildDietShareCaptionStatusLine(highlights),
     buildDietShareMacroLine(record, 'compact'),
   ];
+  const macroStructureLine = buildDietShareMacroStructureLine(record);
+  if (macroStructureLine) lines.push(macroStructureLine);
   if (highlights.length > 0) lines.push(`亮点: ${highlights.join(' / ')}`);
   if (record.fiber != null) lines.push(`膳食纤维 ${metric(record.fiber, 1)}g`);
   lines.push(buildDietShareDataDisclosure(record));
-  lines.push('认真记录，也认真生活。');
+  const confidenceDisclosure = buildDietShareConfidenceDisclosure(record);
+  if (confidenceDisclosure) lines.push(confidenceDisclosure);
+  lines.push('不是节食，是把身体照顾得更有章法。');
+  lines.push('晒得出，也复盘得清楚。');
+  lines.push('适合截图留档，也适合发给认真生活的朋友。');
   lines.push(buildDietShareHashtags(highlights));
   return lines.join('\n');
 }
@@ -171,15 +369,20 @@ export function buildDietShareMomentsCaption(record: DietRecord, dateLabel: stri
   const mealLabel = MEAL_LABEL[record.meal_type] ?? '餐食';
   const headline = buildDietShareHeadline(record);
   const highlights = buildDietShareHighlights(record);
+  const foodItems = compactDietShareFoodItems(record.food_items);
   const lines = [
     `${dateLabel}，${headline}。`,
-    `${mealLabel}: ${record.food_items}`,
+    `${mealLabel}: ${foodItems}`,
     buildDietShareCaptionStatusLine(highlights),
     buildDietShareMacroLine(record, 'sentence'),
   ];
+  const macroStructureLine = buildDietShareMacroStructureLine(record);
+  if (macroStructureLine) lines.push(macroStructureLine);
   if (highlights.length > 0) lines.push(`亮点: ${highlights.join(' / ')}`);
   if (record.fiber != null) lines.push(`膳食纤维 ${metric(record.fiber, 1)}g。`);
   lines.push(buildDietShareDataDisclosure(record));
+  const confidenceDisclosure = buildDietShareConfidenceDisclosure(record);
+  if (confidenceDisclosure) lines.push(confidenceDisclosure);
   lines.push('小巴帮我把吃过的东西留成一张可复盘的记录。');
   return lines.join('\n');
 }
@@ -215,6 +418,38 @@ function publishHintForShareTarget(target: ShareTarget): { title: string; detail
   };
 }
 
+function publishHintForShareResult(result: ShareResult): { title: string; detail: string; icon: keyof typeof Ionicons.glyphMap; tone: 'success' | 'warning' } {
+  if (result.kind === 'caption_fallback') {
+    return {
+      title: '图片没生成，文案已复制',
+      detail: '先发文案，或点“保存/分享图片”重试生成高清图',
+      icon: 'alert-circle',
+      tone: 'warning',
+    };
+  }
+  if (result.kind === 'saved_to_library') {
+    return {
+      title: '图片已保存到相册，文案已复制',
+      detail: '去微信或小红书选择这张图片，再直接粘贴发布',
+      icon: 'checkmark-circle',
+      tone: 'success',
+    };
+  }
+  if (result.kind === 'photo_library_permission_denied') {
+    return {
+      title: '需要相册权限',
+      detail: '允许访问相册后，再保存高清分享图',
+      icon: 'alert-circle',
+      tone: 'warning',
+    };
+  }
+  return {
+    ...publishHintForShareTarget(result.target),
+    icon: 'checkmark-circle',
+    tone: 'success',
+  };
+}
+
 export type DietShareCardProps = {
   record: DietRecord;
   dateLabel: string;
@@ -239,6 +474,10 @@ export default function DietShareCard({
   const headline = buildDietShareHeadline(record);
   const highlights = buildDietShareHighlights(record);
   const statusLine = buildDietShareStatusLine(highlights);
+  const balance = buildDietShareBalance(record);
+  const macroSegments = buildDietShareMacroSegments(record);
+  const confidence = buildDietShareConfidenceUi(record);
+  const confirmBadge = buildDietShareConfirmBadge(record);
 
   return (
     <View style={styles.card}>
@@ -247,9 +486,19 @@ export default function DietShareCard({
           <Ionicons name="sparkles" size={15} color={C.greenBright} />
         </View>
         <Text style={styles.brand}>小巴 / 今日饮食</Text>
-        <View style={styles.confirmBadge}>
-          <Text style={styles.confirmBadgePrimary}>已确认</Text>
-          <Text style={styles.confirmBadgeSecondary}>可分享</Text>
+        <View style={[
+          styles.confirmBadge,
+          confirmBadge.tone === 'estimate' && styles.confirmBadgeEstimate,
+          confirmBadge.tone === 'caution' && styles.confirmBadgeCaution,
+        ]}>
+          <Text style={[
+            styles.confirmBadgePrimary,
+            confirmBadge.tone === 'estimate' && styles.confirmBadgePrimaryEstimate,
+            confirmBadge.tone === 'caution' && styles.confirmBadgePrimaryCaution,
+          ]}>
+            {confirmBadge.primary}
+          </Text>
+          <Text style={styles.confirmBadgeSecondary}>{confirmBadge.secondary}</Text>
         </View>
         <Text style={styles.date}>{dateLabel}</Text>
       </View>
@@ -318,10 +567,45 @@ export default function DietShareCard({
         </View>
 
         {hasMacros ? (
-          <View style={styles.macroGrid}>
-            <ShareMacro label="蛋白质" value={hasMetric(record.protein) ? `${metric(record.protein)}g` : '估算中'} color="#E34F6F" />
-            <ShareMacro label="碳水" value={hasMetric(record.carbs) ? `${metric(record.carbs)}g` : '估算中'} color={C.blue500} />
-            <ShareMacro label="脂肪" value={hasMetric(record.fat) ? `${metric(record.fat, 1)}g` : '估算中'} color="#D18B1D" />
+          <View style={styles.macroSection}>
+            <View style={styles.macroGrid}>
+              <ShareMacro label="蛋白质" value={hasMetric(record.protein) ? `${metric(record.protein)}g` : '估算中'} color={MACRO_HUES.protein} />
+              <ShareMacro label="碳水" value={hasMetric(record.carbs) ? `${metric(record.carbs)}g` : '估算中'} color={MACRO_HUES.carbs} />
+              <ShareMacro label="脂肪" value={hasMetric(record.fat) ? `${metric(record.fat, 1)}g` : '估算中'} color={MACRO_HUES.fat} />
+            </View>
+            {macroSegments.length > 0 ? (
+              <View style={styles.macroStructure}>
+                <View style={styles.macroStructureHeader}>
+                  <Text style={styles.macroStructureTitle}>能量结构</Text>
+                  <Text style={styles.macroStructureMeta}>按三大营养热量占比</Text>
+                </View>
+                <View style={styles.macroStructureTrack}>
+                  {macroSegments.map((segment, index) => (
+                    <View
+                      key={segment.key}
+                      style={[
+                        styles.macroStructureFill,
+                        {
+                          flexGrow: Math.max(segment.percent, 6),
+                          backgroundColor: segment.color,
+                          marginRight: index < macroSegments.length - 1 ? 1 : 0,
+                        },
+                      ]}
+                    />
+                  ))}
+                </View>
+                <View style={styles.macroStructureLegend}>
+                  {macroSegments.map((segment) => (
+                    <View key={segment.key} style={styles.macroStructureLegendItem}>
+                      <View style={[styles.macroStructureDot, { backgroundColor: segment.color }]} />
+                      <Text style={styles.macroStructureLegendText}>
+                        {segment.label} {segment.percent}%
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            ) : null}
           </View>
         ) : (
           <View style={styles.pendingMacroPanel}>
@@ -329,6 +613,25 @@ export default function DietShareCard({
             <Text style={styles.pendingMacroText}>确认记录已保存，热量和三大营养会回填后用于复盘。</Text>
           </View>
         )}
+
+        <View style={styles.balancePanel}>
+          <View style={styles.balanceCopy}>
+            <Text style={styles.balanceLabel}>均衡度</Text>
+            <Text style={styles.balanceTitle}>{balance.label}</Text>
+          </View>
+          <View style={styles.balanceScoreWrap}>
+            {balance.score == null ? (
+              <Text style={styles.balancePending}>待回填</Text>
+            ) : (
+              <>
+                <Text style={styles.balanceScore}>{balance.score}</Text>
+                <View style={styles.balanceTrack}>
+                  <View style={[styles.balanceFill, { width: `${balance.score}%` }]} />
+                </View>
+              </>
+            )}
+          </View>
+        </View>
 
         <View style={styles.sourceRow}>
           <Ionicons
@@ -341,6 +644,38 @@ export default function DietShareCard({
             { color: sourceLabel === '智能估算' ? revaSemantic.caution.fg : C.green600 },
           ]}>{sourceLabel}</Text>
           {record.fiber != null ? <Text style={styles.fiberText}>膳食纤维 {metric(record.fiber, 1)}g</Text> : null}
+        </View>
+
+        {confidence ? (
+          <View style={[
+            styles.confidencePanel,
+            confidence.tone === 'warning' && styles.confidencePanelWarning,
+          ]}>
+            <View style={styles.confidencePrimaryRow}>
+              <Ionicons
+                name={confidence.tone === 'warning' ? 'alert-circle-outline' : 'checkmark-circle-outline'}
+                size={13}
+                color={confidence.tone === 'warning' ? revaSemantic.caution.fg : C.green600}
+              />
+              <Text style={[
+                styles.confidencePrimary,
+                confidence.tone === 'warning' && styles.confidencePrimaryWarning,
+              ]}>
+                识别置信度 {confidence.percent}%
+              </Text>
+            </View>
+            <Text style={styles.confidenceDetail}>{confidence.detail}</Text>
+          </View>
+        ) : null}
+
+        <View style={styles.lifestylePanel}>
+          <View style={styles.lifestyleIcon}>
+            <Ionicons name="leaf-outline" size={13} color={C.green600} />
+          </View>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={styles.lifestyleTitle}>不是节食，是把身体照顾得更有章法</Text>
+            <Text style={styles.lifestyleMeta}>不含体重 / 用户 ID / 私密健康数据</Text>
+          </View>
         </View>
       </View>
 
@@ -374,6 +709,13 @@ function ShareReadyItem({ icon, label }: { icon: React.ComponentProps<typeof Ion
 export type DietShareSheetProps = DietShareCardProps & {
   visible: boolean;
   onClose: () => void;
+  onAskReva?: () => void;
+  onShareFeedback?: (hint: {
+    title: string;
+    detail: string;
+    tone: 'success' | 'warning';
+    result: ShareResult;
+  }) => void;
   onShareTerminal?: (meta: {
     phase: 'completed' | 'failed';
     duration_ms: number;
@@ -389,6 +731,8 @@ export function DietShareSheet({
   dateLabel,
   imageSource,
   onClose,
+  onAskReva,
+  onShareFeedback,
   onShareTerminal,
 }: DietShareSheetProps) {
   const cardRef = useRef<View>(null);
@@ -396,15 +740,16 @@ export function DietShareSheet({
   const [imageReady, setImageReady] = useState(!imageSource);
   const [imageTimedOut, setImageTimedOut] = useState(false);
   const [copiedCaption, setCopiedCaption] = useState<'moments' | 'xiaohongshu' | null>(null);
-  const [lastSharedTarget, setLastSharedTarget] = useState<ShareTarget | null>(null);
+  const [shareResult, setShareResult] = useState<ShareResult | null>(null);
   const shareHasPhoto = Boolean(imageSource) && !imageTimedOut;
-  const publishHint = lastSharedTarget ? publishHintForShareTarget(lastSharedTarget) : null;
+  const publishHint = shareResult ? publishHintForShareResult(shareResult) : null;
+  const lowConfidenceShare = isLowConfidenceDietShare(record);
 
   React.useEffect(() => {
     setImageReady(!imageSource);
     setImageTimedOut(false);
     setCopiedCaption(null);
-    setLastSharedTarget(null);
+    setShareResult(null);
   }, [imageSource, visible]);
 
   React.useEffect(() => {
@@ -423,6 +768,17 @@ export function DietShareSheet({
     });
   };
 
+  const publishShareResult = (result: ShareResult) => {
+    setShareResult(result);
+    const hint = publishHintForShareResult(result);
+    onShareFeedback?.({
+      title: hint.title,
+      detail: hint.detail,
+      tone: hint.tone,
+      result,
+    });
+  };
+
   const copyCaption = async (kind: 'moments' | 'xiaohongshu') => {
     try {
       await Clipboard.setStringAsync(
@@ -431,6 +787,17 @@ export function DietShareSheet({
           : buildDietShareCaption(record, dateLabel),
       );
       setCopiedCaption(kind);
+      onShareFeedback?.({
+        title: kind === 'moments' ? '朋友圈文案已复制' : '小红书文案已复制',
+        detail: kind === 'moments'
+          ? '去微信或朋友圈直接粘贴发布'
+          : '去小红书正文框直接粘贴发布',
+        tone: 'success',
+        result: {
+          target: kind === 'moments' ? 'wechat' : 'xiaohongshu',
+          kind: 'completed',
+        },
+      });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch {
       Alert.alert('复制失败', '请稍后重试');
@@ -443,9 +810,7 @@ export function DietShareSheet({
     let captureUri: string | null = null;
     setSharing(true);
     try {
-      if (target !== 'generic') {
-        await Clipboard.setStringAsync(captionForShareTarget(record, dateLabel, target));
-      }
+      await Clipboard.setStringAsync(captionForShareTarget(record, dateLabel, target));
       if (!await Sharing.isAvailableAsync()) {
         await shareTextFallback(target);
         onShareTerminal?.({
@@ -454,7 +819,7 @@ export function DietShareSheet({
           has_photo: false,
           share_target: target,
         });
-        setLastSharedTarget(target);
+        publishShareResult({ target, kind: 'caption_fallback' });
         return;
       }
       const dimensions = dietShareCaptureDimensions();
@@ -475,20 +840,21 @@ export function DietShareSheet({
         has_photo: shareHasPhoto,
         share_target: target,
       });
-      setLastSharedTarget(target);
+      publishShareResult({ target, kind: 'completed' });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch {
       try {
         await shareTextFallback(target);
         onShareTerminal?.({
-          phase: 'completed',
+          phase: 'failed',
           duration_ms: Date.now() - startedAt,
           has_photo: false,
           share_target: target,
+          error_code: 'image_share_fell_back_to_caption',
         });
-        setLastSharedTarget(target);
+        publishShareResult({ target, kind: 'caption_fallback' });
       } catch {
-        setLastSharedTarget(null);
+        setShareResult(null);
         onShareTerminal?.({
           phase: 'failed',
           duration_ms: Date.now() - startedAt,
@@ -504,6 +870,64 @@ export function DietShareSheet({
           releaseCapture(captureUri);
         } catch {
           // Temporary-file cleanup is best effort after the system share promise settles.
+        }
+      }
+      setSharing(false);
+    }
+  };
+
+  const handleSaveToLibrary = async () => {
+    if (sharing || !imageReady || !cardRef.current) return;
+    const startedAt = Date.now();
+    let captureUri: string | null = null;
+    setSharing(true);
+    try {
+      const permission = await MediaLibrary.requestPermissionsAsync(true);
+      if (!permission.granted && permission.status !== 'granted') {
+        onShareTerminal?.({
+          phase: 'failed',
+          duration_ms: Date.now() - startedAt,
+          has_photo: shareHasPhoto,
+          share_target: 'generic',
+          error_code: 'photo_library_permission_denied',
+        });
+        publishShareResult({ target: 'generic', kind: 'photo_library_permission_denied' });
+        return;
+      }
+      const dimensions = dietShareCaptureDimensions();
+      captureUri = await captureRef(cardRef, {
+        format: 'png',
+        quality: 1,
+        ...dimensions,
+        result: 'tmpfile',
+      });
+      await MediaLibrary.saveToLibraryAsync(captureUri);
+      await Clipboard.setStringAsync(buildDietShareCaption(record, dateLabel));
+      setCopiedCaption('xiaohongshu');
+      onShareTerminal?.({
+        phase: 'completed',
+        duration_ms: Date.now() - startedAt,
+        has_photo: shareHasPhoto,
+        share_target: 'generic',
+      });
+      publishShareResult({ target: 'generic', kind: 'saved_to_library' });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch {
+      setShareResult(null);
+      onShareTerminal?.({
+        phase: 'failed',
+        duration_ms: Date.now() - startedAt,
+        has_photo: shareHasPhoto,
+        share_target: 'generic',
+        error_code: 'image_save_failed',
+      });
+      Alert.alert('保存失败', '请检查相册权限，或先使用“保存/分享图片”。');
+    } finally {
+      if (captureUri) {
+        try {
+          releaseCapture(captureUri);
+        } catch {
+          // Temporary-file cleanup is best effort after the image is saved.
         }
       }
       setSharing(false);
@@ -549,8 +973,14 @@ export function DietShareSheet({
 
           <View style={styles.shareReadyStrip} accessibilityLabel="分享素材已准备完成">
             <ShareReadyItem icon="image-outline" label="3:4 高清图" />
-            <ShareReadyItem icon="chatbubble-ellipses-outline" label="朋友圈文案" />
-            <ShareReadyItem icon="sparkles-outline" label="小红书话题" />
+            <ShareReadyItem
+              icon="chatbubble-ellipses-outline"
+              label={lowConfidenceShare ? '核对后朋友圈文案' : '朋友圈文案'}
+            />
+            <ShareReadyItem
+              icon="sparkles-outline"
+              label={lowConfidenceShare ? '核对后小红书文案' : '小红书话题'}
+            />
           </View>
 
           <View style={styles.platformShareRow}>
@@ -565,7 +995,9 @@ export function DietShareSheet({
               <Ionicons name="chatbubble-ellipses-outline" size={18} color={C.greenOn} />
               <View>
                 <Text style={styles.platformShareText}>发微信/朋友圈</Text>
-                <Text style={styles.platformShareHint}>自动复制朋友圈文案</Text>
+                <Text style={styles.platformShareHint}>
+                  {lowConfidenceShare ? '先核对食物和份量' : '自动复制朋友圈文案'}
+                </Text>
               </View>
             </TouchableOpacity>
             <TouchableOpacity
@@ -579,20 +1011,70 @@ export function DietShareSheet({
               <Ionicons name="sparkles-outline" size={18} color="#fff" />
               <View>
                 <Text style={styles.platformShareText}>发小红书</Text>
-                <Text style={styles.platformShareHint}>自动复制带话题文案</Text>
+                <Text style={styles.platformShareHint}>
+                  {lowConfidenceShare ? '核对后复制带话题文案' : '自动复制带话题文案'}
+                </Text>
               </View>
             </TouchableOpacity>
           </View>
 
+          {onAskReva ? (
+            <TouchableOpacity
+              style={styles.agentReviewButton}
+              onPress={onAskReva}
+              disabled={sharing}
+              activeOpacity={0.82}
+              accessibilityRole="button"
+              accessibilityLabel="问小巴复盘今日饮食"
+            >
+              <View style={styles.agentReviewIcon}>
+                <Ionicons name="chatbubble-ellipses-outline" size={17} color={C.green600} />
+              </View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={styles.agentReviewTitle}>问小巴复盘今日饮食</Text>
+                <Text style={styles.agentReviewSubtitle}>先查数据库，再看全天热量和下一餐</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={C.ink3} />
+            </TouchableOpacity>
+          ) : null}
+
           {publishHint ? (
             <View style={styles.publishHint} testID="diet-share-publish-hint">
-              <Ionicons name="checkmark-circle" size={18} color={C.green600} />
+              <Ionicons
+                name={publishHint.icon}
+                size={18}
+                color={publishHint.tone === 'success' ? C.green600 : revaSemantic.caution.fg}
+              />
               <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={styles.publishHintTitle}>{publishHint.title}</Text>
+                <Text style={[
+                  styles.publishHintTitle,
+                  publishHint.tone === 'warning' && styles.publishHintTitleWarning,
+                ]}>{publishHint.title}</Text>
                 <Text style={styles.publishHintDetail}>{publishHint.detail}</Text>
               </View>
             </View>
           ) : null}
+
+          <TouchableOpacity
+            style={[styles.saveLibraryButton, (sharing || !imageReady) && styles.shareButtonDisabled]}
+            onPress={handleSaveToLibrary}
+            disabled={sharing || !imageReady}
+            activeOpacity={0.84}
+            accessibilityRole="button"
+            accessibilityLabel="保存饮食图片到相册"
+          >
+            {sharing || !imageReady ? (
+              <ActivityIndicator size="small" color={C.green600} />
+            ) : (
+              <Ionicons name="download-outline" size={19} color={C.green600} />
+            )}
+            <View style={styles.shareButtonCopy}>
+              <Text style={styles.saveLibraryButtonText}>{!imageReady ? '图片加载中' : sharing ? '保存中' : '保存到相册'}</Text>
+              {!sharing && imageReady ? (
+                <Text style={styles.saveLibraryButtonHint}>发布前先存图，微信 / 小红书直接选</Text>
+              ) : null}
+            </View>
+          </TouchableOpacity>
 
           <TouchableOpacity
             style={[styles.shareButton, (sharing || !imageReady) && styles.shareButtonDisabled]}
@@ -686,6 +1168,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   confirmBadgePrimary: { fontFamily: revaFonts.sans, fontSize: 8, color: C.green600, fontWeight: '900' },
+  confirmBadgeEstimate: {
+    backgroundColor: '#FFF7E8',
+    borderColor: '#F1D7A8',
+  },
+  confirmBadgePrimaryEstimate: { color: '#8A5B16' },
+  confirmBadgeCaution: {
+    backgroundColor: revaSemantic.caution.bg,
+    borderColor: revaSemantic.caution.line,
+  },
+  confirmBadgePrimaryCaution: { color: revaSemantic.caution.fg },
   confirmBadgeSecondary: { fontFamily: revaFonts.sans, fontSize: 7, color: C.focusInk2, fontWeight: '800', marginTop: -1 },
   date: { fontFamily: revaFonts.mono, fontSize: 10, color: C.focusInk2 },
   mealImage: { width: '100%', height: 136, backgroundColor: C.paper2 },
@@ -733,18 +1225,57 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     textAlign: 'right',
   },
-  macroGrid: {
-    flexDirection: 'row',
+  macroSection: {
     borderTopWidth: StyleSheet.hairlineWidth,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderColor: C.line,
-    marginTop: 14,
-    paddingVertical: 12,
+    marginTop: 12,
+    paddingTop: 10,
+    paddingBottom: 9,
+  },
+  macroGrid: {
+    flexDirection: 'row',
   },
   macroItem: { flex: 1, paddingHorizontal: 8, position: 'relative' },
   macroAccent: { width: 18, height: 3, borderRadius: 2, marginBottom: 6 },
   macroValue: { fontFamily: revaFonts.mono, fontSize: 15, color: C.ink1, fontWeight: '600' },
   macroLabel: { fontFamily: revaFonts.sans, fontSize: 9, color: C.ink3, marginTop: 2 },
+  macroStructure: {
+    marginTop: 9,
+    borderRadius: 10,
+    backgroundColor: '#F7F7F2',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#E5E4DA',
+    paddingHorizontal: 9,
+    paddingVertical: 8,
+  },
+  macroStructureHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  macroStructureTitle: { fontFamily: revaFonts.sans, fontSize: 10, color: C.ink1, fontWeight: '900' },
+  macroStructureMeta: { fontFamily: revaFonts.sans, fontSize: 8, color: C.ink3, fontWeight: '800' },
+  macroStructureTrack: {
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: C.paper2,
+    overflow: 'hidden',
+    flexDirection: 'row',
+    marginTop: 6,
+  },
+  macroStructureFill: { height: '100%', flexBasis: 0 },
+  macroStructureLegend: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    gap: 5,
+    marginTop: 6,
+  },
+  macroStructureLegendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  macroStructureDot: { width: 5, height: 5, borderRadius: 2.5 },
+  macroStructureLegendText: { fontFamily: revaFonts.mono, fontSize: 8.5, color: C.ink2, fontWeight: '700' },
   pendingMacroPanel: {
     borderTopWidth: StyleSheet.hairlineWidth,
     borderBottomWidth: StyleSheet.hairlineWidth,
@@ -754,9 +1285,91 @@ const styles = StyleSheet.create({
   },
   pendingMacroTitle: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink1, fontWeight: '900' },
   pendingMacroText: { fontFamily: revaFonts.sans, fontSize: 10, lineHeight: 15, color: C.ink3, marginTop: 4 },
+  balancePanel: {
+    minHeight: 46,
+    borderRadius: 12,
+    backgroundColor: '#F8F4EC',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#E9D9BE',
+    marginTop: 10,
+    paddingHorizontal: 11,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  balanceCopy: { flex: 1, minWidth: 0 },
+  balanceLabel: { fontFamily: revaFonts.sans, fontSize: 8.5, color: '#B87921', fontWeight: '900' },
+  balanceTitle: { fontFamily: revaFonts.sans, fontSize: 12, lineHeight: 16, color: C.ink1, fontWeight: '900', marginTop: 1 },
+  balanceScoreWrap: { width: 72, alignItems: 'flex-end' },
+  balanceScore: { fontFamily: revaFonts.mono, fontSize: 23, lineHeight: 25, color: '#C66A23', fontWeight: '700' },
+  balancePending: { fontFamily: revaFonts.sans, fontSize: 10, color: revaSemantic.caution.fg, fontWeight: '900' },
+  balanceTrack: {
+    width: 66,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(198,106,35,0.16)',
+    overflow: 'hidden',
+    marginTop: 3,
+  },
+  balanceFill: { height: '100%', borderRadius: 2, backgroundColor: '#C66A23' },
   sourceRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 11 },
   sourceText: { fontFamily: revaFonts.sans, fontSize: 10, fontWeight: '800' },
   fiberText: { fontFamily: revaFonts.mono, fontSize: 9, color: C.ink3, marginLeft: 'auto' },
+  confidencePanel: {
+    minHeight: 34,
+    borderRadius: 10,
+    backgroundColor: C.focusBg,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.focusLine,
+    marginTop: 7,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  confidencePanelWarning: {
+    backgroundColor: revaSemantic.caution.bg,
+    borderColor: revaSemantic.caution.line,
+  },
+  confidencePrimaryRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  confidencePrimary: { fontFamily: revaFonts.sans, fontSize: 9.5, color: C.green600, fontWeight: '900' },
+  confidencePrimaryWarning: { color: revaSemantic.caution.fg },
+  confidenceDetail: {
+    flexShrink: 1,
+    fontFamily: revaFonts.sans,
+    fontSize: 8.5,
+    lineHeight: 11,
+    color: C.ink3,
+    fontWeight: '800',
+    textAlign: 'right',
+  },
+  lifestylePanel: {
+    minHeight: 45,
+    borderRadius: 12,
+    backgroundColor: C.focusBg,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.focusLine,
+    marginTop: 10,
+    paddingHorizontal: 11,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  lifestyleIcon: {
+    width: 24,
+    height: 24,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.72)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  lifestyleTitle: { fontFamily: revaFonts.sans, fontSize: 10.5, lineHeight: 14, color: C.focusInk1, fontWeight: '900' },
+  lifestyleMeta: { fontFamily: revaFonts.sans, fontSize: 8.5, lineHeight: 12, color: C.focusInk2, fontWeight: '800', marginTop: 2 },
   cardFooter: {
     height: 42,
     paddingHorizontal: 18,
@@ -853,6 +1466,30 @@ const styles = StyleSheet.create({
   xhsShareButton: { backgroundColor: '#D95A45' },
   platformShareText: { fontFamily: revaFonts.sans, fontSize: 13, color: C.greenOn, fontWeight: '900' },
   platformShareHint: { fontFamily: revaFonts.sans, fontSize: 9.5, color: 'rgba(255,255,255,0.78)', marginTop: 1 },
+  agentReviewButton: {
+    width: '100%',
+    minHeight: 52,
+    borderRadius: revaRadii.md,
+    backgroundColor: C.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.focusLine,
+    marginTop: revaSpacing.s2,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+  },
+  agentReviewIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: C.focusBg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  agentReviewTitle: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink1, fontWeight: '900' },
+  agentReviewSubtitle: { fontFamily: revaFonts.sans, fontSize: 10.5, color: C.ink3, fontWeight: '700', marginTop: 1 },
   publishHint: {
     width: '100%',
     minHeight: 46,
@@ -868,7 +1505,23 @@ const styles = StyleSheet.create({
     gap: 9,
   },
   publishHintTitle: { fontFamily: revaFonts.sans, fontSize: 12.5, color: C.green600, fontWeight: '900' },
+  publishHintTitleWarning: { color: revaSemantic.caution.fg },
   publishHintDetail: { fontFamily: revaFonts.sans, fontSize: 10.5, color: C.ink3, fontWeight: '700', marginTop: 1 },
+  saveLibraryButton: {
+    width: '100%',
+    minHeight: 52,
+    borderRadius: revaRadii.md,
+    backgroundColor: C.green50,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.green100,
+    marginTop: revaSpacing.s2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+  },
+  saveLibraryButtonText: { fontFamily: revaFonts.sans, fontSize: 15, color: C.green700, fontWeight: '900' },
+  saveLibraryButtonHint: { fontFamily: revaFonts.sans, fontSize: 10, color: C.green600, fontWeight: '700', marginTop: 1 },
   shareButton: {
     width: '100%',
     minHeight: 52,

@@ -14,7 +14,11 @@ from app.models.notification import (
     NotificationLog,
     NotificationType
 )
-from app.services.notification.push_service import PushService, PREDEFINED_REMINDERS
+from app.services.notification.push_service import (
+    PushService,
+    PREDEFINED_REMINDERS,
+    normalize_morning_sleep_floor_time,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/notification", tags=["notification"])
@@ -99,13 +103,13 @@ def get_notification_settings(
         return {
             "enabled": True,
             "morning_briefing_enabled": True,
-            "morning_briefing_time": "07:30",
+            "morning_briefing_time": "09:00",
             "reminder_enabled": True,
             "health_alert_enabled": True,
             "ai_advice_enabled": True,
             "workout_analysis_enabled": True,
             "quiet_hours_start": "22:00",
-            "quiet_hours_end": "08:30",
+            "quiet_hours_end": "09:00",
             "wechat_enabled": True,
             "wechat_bound": False,
             "ios_push_enabled": True,
@@ -118,13 +122,15 @@ def get_notification_settings(
     return {
         "enabled": settings.enabled,
         "morning_briefing_enabled": settings.morning_briefing_enabled,
-        "morning_briefing_time": settings.morning_briefing_time,
+        "morning_briefing_time": normalize_morning_sleep_floor_time(
+            settings.morning_briefing_time
+        ),
         "reminder_enabled": settings.reminder_enabled,
         "health_alert_enabled": settings.health_alert_enabled,
         "ai_advice_enabled": settings.ai_advice_enabled,
         "workout_analysis_enabled": getattr(settings, "workout_analysis_enabled", True),
         "quiet_hours_start": settings.quiet_hours_start,
-        "quiet_hours_end": settings.quiet_hours_end,
+        "quiet_hours_end": normalize_morning_sleep_floor_time(settings.quiet_hours_end),
         "wechat_enabled": settings.wechat_enabled,
         "wechat_bound": bool(settings.wechat_openid),
         "ios_push_enabled": settings.ios_push_enabled,
@@ -146,6 +152,9 @@ def update_notification_settings(
 
     # 过滤掉 None 值
     updates = {k: v for k, v in data.dict().items() if v is not None}
+    for key in ("morning_briefing_time", "quiet_hours_end"):
+        if key in updates:
+            updates[key] = normalize_morning_sleep_floor_time(updates[key])
 
     settings = push_service.create_or_update_settings(current_user.id, updates)
 

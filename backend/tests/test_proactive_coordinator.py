@@ -4,9 +4,12 @@
 钉:P2 永不推;P1 静默时段不推 + 受全局周上限;P0 穿透静默 + 受 P0 周上限 + 全局封顶;
 旧埋点无 tier 记为 P1;tier 计数互不串。
 """
+from datetime import datetime
+
 import pytest
 
 import app.services.proactive_coordinator as pc
+from app.models.notification import UserNotificationSetting
 from app.services.proactive_coordinator import (
     can_notify_proactively,
     proactive_notifications_sent,
@@ -27,6 +30,7 @@ def _audit(db, user_id, agent_type, notified, tier=None):
 def awake(monkeypatch):
     """把当前固定为非静默时段,隔离 P1 测试对挂钟时间的依赖。"""
     monkeypatch.setattr(pc, "_in_quiet_hours", lambda db, uid: False)
+    monkeypatch.setattr(pc, "_in_morning_sleep_floor", lambda db, uid: False)
 
 
 def test_p2_never_pushed(db):
@@ -42,6 +46,56 @@ def test_p1_blocked_in_quiet_hours(db, monkeypatch):
     assert can_notify_proactively(db, 1, tier="P1") is False
 
 
+def test_morning_sleep_floor_overrides_user_quiet_end_before_9am(db, monkeypatch):
+    """08:30 仍算静默,即使老用户偏好保存的是 08:00 结束。"""
+    db.add(UserNotificationSetting(
+        user_id=1,
+        enabled=True,
+        quiet_hours_start="22:00",
+        quiet_hours_end="08:00",
+    ))
+    db.commit()
+    monkeypatch.setattr(
+        pc,
+        "get_user_now",
+        lambda _db, _user_id: datetime(2026, 5, 12, 8, 30, 0),
+    )
+
+    assert pc._in_quiet_hours(db, 1) is True
+    assert can_notify_proactively(db, 1, tier="P1") is False
+
+
+def test_morning_sleep_floor_blocks_p0_before_9am(db, monkeypatch):
+    """08:00 仍是睡眠保护窗口, P0 也不能穿透到用户设备。"""
+    db.add(UserNotificationSetting(
+        user_id=1,
+        enabled=True,
+        quiet_hours_start="22:00",
+        quiet_hours_end="07:00",
+    ))
+    db.commit()
+    monkeypatch.setattr(
+        pc,
+        "get_user_now",
+        lambda _db, _user_id: datetime(2026, 5, 12, 8, 0, 0),
+    )
+
+    decision = pc.proactive_notification_decision(
+        db,
+        1,
+        tier="P0",
+        reason="安全提醒",
+        action="延后到 09:00 后再提醒",
+        fallback_surface="mobile",
+    )
+
+    assert decision["allowed"] is False
+    assert decision["blocked_reason"] == "morning_sleep_floor"
+    assert decision["delivery_policy"] == "delay_or_fallback"
+    assert decision["quiet_hours_respected"] is True
+    assert can_notify_proactively(db, 1, tier="P0") is False
+
+
 def test_p1_blocked_at_global_cap(db, awake, monkeypatch):
     from app.config import settings
     monkeypatch.setattr(settings, "proactive_global_weekly_budget", 3)
@@ -53,11 +107,13 @@ def test_p1_blocked_at_global_cap(db, awake, monkeypatch):
 
 def test_p0_punches_through_quiet_hours(db, monkeypatch):
     monkeypatch.setattr(pc, "_in_quiet_hours", lambda db, uid: True)
+    monkeypatch.setattr(pc, "_in_morning_sleep_floor", lambda db, uid: False)
     assert can_notify_proactively(db, 1, tier="P0") is True   # P0 穿透静默
 
 
 def test_p0_own_weekly_cap(db, monkeypatch):
     monkeypatch.setattr(pc, "_in_quiet_hours", lambda db, uid: True)
+    monkeypatch.setattr(pc, "_in_morning_sleep_floor", lambda db, uid: False)
     from app.config import settings
     monkeypatch.setattr(settings, "proactive_p0_weekly_budget", 2)
     _audit(db, 1, "trajectory_watch", True, tier="P0")
@@ -76,6 +132,7 @@ def test_tier_counting_isolated(db):
 
 def test_proactive_decision_exposes_reason_action_and_fallback(db, monkeypatch):
     monkeypatch.setattr(pc, "_in_quiet_hours", lambda db, uid: True)
+    monkeypatch.setattr(pc, "_in_morning_sleep_floor", lambda db, uid: False)
     decision = pc.proactive_notification_decision(
         db,
         1,

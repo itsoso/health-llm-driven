@@ -12,5 +12,5 @@ import Foundation
 public enum RevaUIFeatureFlags {
     /// `revaUITableCapEnabled`(rank1):是否声明 `genui-table-v1` cap 并改用简洁桌面指令。
     /// 默认 **false** —— 渲染器已就绪,cap 仍暗。翻开只需把这一行改成 `true`。
-    public static let tableCapEnabled = false
+    public static let tableCapEnabled = true
 }

@@ -92,11 +92,11 @@ export default function NotificationSettingsScreen() {
         </View>
 
         <Text style={txt.section}>安静时段</Text>
-        <Text style={txt.hintSmall}>此时段内非紧急推送会被抑制，只有危及生命的严重告警才会送达。</Text>
+        <Text style={txt.hintSmall}>09:00 前是睡眠保护窗口，所有提醒都会延后；白天仅危及生命的严重告警可穿透安静时段。</Text>
         <View style={styles.card}>
           <TimeRow label="开始" value={settings?.quiet_hours_start || '22:00'}
             onPress={() => setEditing('start')} />
-          <TimeRow label="结束" value={settings?.quiet_hours_end || '08:30'}
+          <TimeRow label="结束" value={settings?.quiet_hours_end || '09:00'}
             onPress={() => setEditing('end')} />
         </View>
 
@@ -169,7 +169,7 @@ export default function NotificationSettingsScreen() {
         options={editing === 'start' ? START_PRESETS : END_PRESETS}
         current={editing === 'start'
           ? (settings?.quiet_hours_start || '22:00')
-          : (settings?.quiet_hours_end || '08:30')}
+          : (settings?.quiet_hours_end || '09:00')}
         onPick={(v) => setQuietTime(
           editing === 'start' ? 'quiet_hours_start' : 'quiet_hours_end',
           v,
@@ -181,7 +181,7 @@ export default function NotificationSettingsScreen() {
 }
 
 const START_PRESETS = ['21:00', '21:30', '22:00', '22:30', '23:00', '23:30', '00:00'];
-const END_PRESETS = ['06:00', '06:30', '07:00', '07:30', '08:00', '08:30', '09:00', '09:30', '10:00'];
+const END_PRESETS = ['09:00', '09:30', '10:00'];
 
 function TimePickerModal({
   visible, title, options, current, onPick, onClose,
