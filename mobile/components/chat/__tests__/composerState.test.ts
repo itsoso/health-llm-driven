@@ -74,6 +74,20 @@ describe('composerState', () => {
     expect(canStartDictation(stopped)).toBe(true);
   });
 
+  it('moves a rejected hold-to-talk transcript back into editable text mode', () => {
+    const hold = reduceComposerState(createInitialComposerState(), { type: 'toggle_mode' });
+    const submitting = reduceComposerState(hold, { type: 'submit' });
+    const draftReady = reduceComposerState(submitting, { type: 'voice_draft_ready' });
+
+    expect(draftReady).toEqual({
+      mode: 'text',
+      phase: 'idle',
+      dictationEnabled: false,
+      gesture: null,
+    });
+    expect(canStartDictation(draftReady)).toBe(true);
+  });
+
   it('cleans active audio state when submitting or moving to the background', () => {
     const dictating = reduceComposerState(createInitialComposerState(), { type: 'dictation_start' });
     const submitting = reduceComposerState(dictating, { type: 'submit' });

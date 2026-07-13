@@ -25,6 +25,7 @@ export type ComposerEvent =
   | { type: 'hold_release' }
   | { type: 'hold_transcribed' }
   | { type: 'hold_cancel' }
+  | { type: 'voice_draft_ready' }
   | { type: 'dictation_start' }
   | { type: 'dictation_stop' }
   | { type: 'dictation_end' }
@@ -79,6 +80,8 @@ export function reduceComposerState(state: ComposerState, event: ComposerEvent):
     case 'hold_cancel':
       if (state.phase !== 'hold_starting' && state.phase !== 'hold_recording') return state;
       return { ...state, phase: 'idle', gesture: null };
+    case 'voice_draft_ready':
+      return { ...state, mode: 'text', phase: 'idle', dictationEnabled: false, gesture: null };
     case 'dictation_start':
       if (!canStartDictation(state)) return state;
       return {

@@ -1493,6 +1493,14 @@ const styles = StyleSheet.create({
     backgroundColor: C.green50,
     overflow: 'hidden',
   },
+  thinkingPillExpanded: {
+    alignSelf: 'stretch',
+    width: '100%',
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.green100,
+    backgroundColor: C.paper2,
+  },
   thinkingPillHeader: {
     minHeight: 22,
     flexDirection: 'row',
@@ -1513,6 +1521,10 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: C.green100,
+  },
+  thinkingPillListExpanded: {
+    minWidth: 0,
+    width: '100%',
   },
   thinkingHeader: {
     flexDirection: 'row',
@@ -1757,7 +1769,7 @@ function ThinkingStepsPanel({ steps, streaming }: { steps: string[]; streaming?:
     return (
       <View
         testID="assistant-thinking-panel"
-        style={styles.thinkingPill}
+        style={[styles.thinkingPill, expanded && styles.thinkingPillExpanded]}
         accessibilityLabel={`小巴正在思考,当前步骤:${latestStep}`}
       >
         <Pressable
@@ -1775,7 +1787,7 @@ function ThinkingStepsPanel({ steps, streaming }: { steps: string[]; streaming?:
           <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={14} color={C.ink3} />
         </Pressable>
         {expanded ? (
-          <View style={styles.thinkingPillList}>
+          <View style={[styles.thinkingPillList, styles.thinkingPillListExpanded]}>
             {steps.map((step, index) => {
               const active = index === steps.length - 1;
               return (
@@ -1801,7 +1813,7 @@ function ThinkingStepsPanel({ steps, streaming }: { steps: string[]; streaming?:
   if (!streaming) {
     const summary = `思考完成 · ${steps.length} 步`;
     return (
-      <View testID="assistant-thinking-panel" style={styles.thinkingPill}>
+      <View testID="assistant-thinking-panel" style={[styles.thinkingPill, expanded && styles.thinkingPillExpanded]}>
         <Pressable
           onPress={() => setExpanded((prev) => !prev)}
           style={({ pressed }) => [styles.thinkingPillHeader, pressed && styles.actionBtnPressed]}
@@ -1814,7 +1826,7 @@ function ThinkingStepsPanel({ steps, streaming }: { steps: string[]; streaming?:
           <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={14} color={C.ink3} />
         </Pressable>
         {expanded ? (
-          <View style={styles.thinkingPillList}>
+          <View style={[styles.thinkingPillList, styles.thinkingPillListExpanded]}>
             {steps.map((step, index) => (
               <View
                 key={`${step}-${index}`}

@@ -210,6 +210,10 @@ describe('ChatBubble streaming degraded render', () => {
 
     fireEvent.press(getByLabelText('展开思考步骤'));
     expect(getByText('正在理解你的问题')).toBeTruthy();
+    const expandedStyle = StyleSheet.flatten(getByTestId('assistant-thinking-panel').props.style);
+    expect(expandedStyle.alignSelf).toBe('stretch');
+    expect(expandedStyle.borderRadius).toBeLessThanOrEqual(12);
+    expect(expandedStyle.minWidth).toBeUndefined();
   });
 
   it('collapses completed thinking steps into an inline status row (expand to reveal steps)', () => {
@@ -239,6 +243,9 @@ describe('ChatBubble streaming degraded render', () => {
     expect(getByText('读取记录信息')).toBeTruthy();
     expect(getByText('整理回复中')).toBeTruthy();
     expect(getByLabelText('已完成步骤:整理回复中')).toBeTruthy();
+    const expandedPanelStyle = StyleSheet.flatten(getByTestId('assistant-thinking-panel').props.style);
+    expect(expandedPanelStyle.alignSelf).toBe('stretch');
+    expect(expandedPanelStyle.borderRadius).toBeLessThanOrEqual(12);
 
     // 再点收起 → 步骤列表重新隐藏.
     fireEvent.press(getByLabelText('收起思考步骤'));

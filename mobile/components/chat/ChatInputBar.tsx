@@ -211,6 +211,15 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
     };
   }, [draftHydrated, input, pendingImages]);
 
+  const restoreVoiceTranscriptDraft = useCallback((text: string) => {
+    const clean = text.trim();
+    if (!clean) return;
+    inputChannelRef.current = 'voice';
+    setInput(clean);
+    dispatchComposer({ type: 'voice_draft_ready' });
+    setTimeout(() => textInputRef.current?.focus(), 30);
+  }, []);
+
   // GPT/Gemini 式默认唤起键盘: chat.tsx 在「空对话获得焦点」时递增 token。
   // (2026-07-04 founder 拍板反转旧「不 auto-focus」设计 — 仅限空对话, 回到有
   //  历史的对话不弹, 不打断阅读。)延迟等 tab 过渡完成; 流式/语音时不抢焦点。
@@ -256,11 +265,22 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
       );
       const accepted = await Promise.resolve(sendResult);
       if (accepted === false) {
+        if (sendOptions?.channel === 'voice' && text && msg) {
+          restoreVoiceTranscriptDraft(msg);
+          Alert.alert('发送失败', '语音已转成文字并保留在输入框里，请修改后重试。');
+          return;
+        }
         dispatchComposer({ type: 'fail', errorCode: 'send_not_accepted' });
         Alert.alert('发送失败', '消息和图片草稿已保留，请检查网络后重试。');
         return;
       }
     } catch (e) {
+      if (sendOptions?.channel === 'voice' && text && msg) {
+        restoreVoiceTranscriptDraft(msg);
+        Alert.alert('发送失败', '语音已转成文字并保留在输入框里，请修改后重试。');
+        if (__DEV__) console.warn('[ChatInputBar] voice send rejected:', e);
+        return;
+      }
       dispatchComposer({ type: 'fail', errorCode: 'send_rejected' });
       Alert.alert('发送失败', '消息和图片草稿已保留，请检查网络后重试。');
       if (__DEV__) console.warn('[ChatInputBar] send rejected:', e);
@@ -287,7 +307,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
     } catch (e) {
       if (__DEV__) console.warn('[ChatInputBar] sent draft cleanup failed:', e);
     }
-  }, [agentMode, input, pendingImages, onSend, releaseImagesAfterSend]);
+  }, [agentMode, input, pendingImages, onSend, releaseImagesAfterSend, restoreVoiceTranscriptDraft]);
 
   const handleRealtimeTranscript = useCallback((text: string) => {
     const clean = text.trim();

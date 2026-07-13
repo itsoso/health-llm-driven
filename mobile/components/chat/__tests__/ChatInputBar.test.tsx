@@ -335,8 +335,10 @@ describe('ChatInputBar', () => {
     });
     await act(async () => { await Promise.resolve(); });
     fireEvent(getByLabelText('按住说话'), 'responderRelease');
-    act(() => {
+    await act(async () => {
       latestVoiceRecordingOptions.onTranscript('午餐吃了鸡胸肉');
+      await Promise.resolve();
+      await Promise.resolve();
     });
 
     await waitFor(() => {
@@ -346,6 +348,36 @@ describe('ChatInputBar', () => {
         { channel: 'voice' },
       );
     });
+  });
+
+  it('restores a hold-to-talk transcript as editable text when voice submit is rejected', async () => {
+    const onSend = jest.fn().mockResolvedValue(false);
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(jest.fn());
+    const { getByLabelText, queryByLabelText } = render(
+      <ChatInputBar onSend={onSend} isStreaming={false} />,
+    );
+
+    fireEvent.press(getByLabelText('切换到语音输入'));
+    fireEvent(getByLabelText('按住说话'), 'responderGrant', {
+      nativeEvent: { pageX: 220, pageY: 300 },
+    });
+    await act(async () => { await Promise.resolve(); });
+    fireEvent(getByLabelText('按住说话'), 'responderRelease');
+    act(() => {
+      latestVoiceRecordingOptions.onTranscript('机场贵宾厅吃了番茄鸡蛋面');
+    });
+
+    await waitFor(() => {
+      expect(onSend).toHaveBeenCalledWith(
+        '机场贵宾厅吃了番茄鸡蛋面',
+        null,
+        { channel: 'voice' },
+      );
+      expect(queryByLabelText('按住说话')).toBeNull();
+      expect(getByLabelText('消息输入框').props.value).toBe('机场贵宾厅吃了番茄鸡蛋面');
+      expect(getByLabelText('发送消息')).toBeTruthy();
+    });
+    expect(alertSpy).toHaveBeenCalledWith('发送失败', '语音已转成文字并保留在输入框里，请修改后重试。');
   });
 
   it('keeps the empty field directly focusable because voice has its own left button', () => {
