@@ -241,6 +241,17 @@ describe('DietShareCard', () => {
     });
   });
 
+  it('does not overstate AI-estimated meals as fully share-ready on the card badge', () => {
+    const estimatedRecord = { ...record, source: 'ai_estimate', ai_confidence: 0.84 };
+    const { getAllByText, getByText, queryByText } = render(
+      <DietShareCard record={estimatedRecord} dateLabel="7月11日 · 午餐" />,
+    );
+
+    expect(getAllByText('智能估算').length).toBeGreaterThan(0);
+    expect(getByText('可复盘')).toBeTruthy();
+    expect(queryByText('可分享')).toBeNull();
+  });
+
   it('surfaces low AI recognition confidence before users share externally', async () => {
     const lowConfidenceRecord = {
       ...record,

@@ -203,10 +203,17 @@ function buildDietShareConfidenceUi(record: DietRecord): { percent: number; deta
   };
 }
 
-function buildDietShareConfirmBadge(record: DietRecord): { primary: string; secondary: string; tone: 'confirmed' | 'caution' } {
+function isAiEstimatedNutritionSource(source?: string | null): boolean {
+  return !source || source === 'ai_estimate' || source === 'photo';
+}
+
+function buildDietShareConfirmBadge(record: DietRecord): { primary: string; secondary: string; tone: 'confirmed' | 'estimate' | 'caution' } {
   const percent = normalizedAiConfidence(record.ai_confidence);
   if (percent != null && percent < 60) {
     return { primary: '待核对', secondary: '谨慎分享', tone: 'caution' };
+  }
+  if (isAiEstimatedNutritionSource(record.source)) {
+    return { primary: '智能估算', secondary: '可复盘', tone: 'estimate' };
   }
   return { primary: '已确认', secondary: '可分享', tone: 'confirmed' };
 }
@@ -478,8 +485,16 @@ export default function DietShareCard({
           <Ionicons name="sparkles" size={15} color={C.greenBright} />
         </View>
         <Text style={styles.brand}>小巴 / 今日饮食</Text>
-        <View style={[styles.confirmBadge, confirmBadge.tone === 'caution' && styles.confirmBadgeCaution]}>
-          <Text style={[styles.confirmBadgePrimary, confirmBadge.tone === 'caution' && styles.confirmBadgePrimaryCaution]}>
+        <View style={[
+          styles.confirmBadge,
+          confirmBadge.tone === 'estimate' && styles.confirmBadgeEstimate,
+          confirmBadge.tone === 'caution' && styles.confirmBadgeCaution,
+        ]}>
+          <Text style={[
+            styles.confirmBadgePrimary,
+            confirmBadge.tone === 'estimate' && styles.confirmBadgePrimaryEstimate,
+            confirmBadge.tone === 'caution' && styles.confirmBadgePrimaryCaution,
+          ]}>
             {confirmBadge.primary}
           </Text>
           <Text style={styles.confirmBadgeSecondary}>{confirmBadge.secondary}</Text>
@@ -1152,6 +1167,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   confirmBadgePrimary: { fontFamily: revaFonts.sans, fontSize: 8, color: C.green600, fontWeight: '900' },
+  confirmBadgeEstimate: {
+    backgroundColor: '#FFF7E8',
+    borderColor: '#F1D7A8',
+  },
+  confirmBadgePrimaryEstimate: { color: '#8A5B16' },
   confirmBadgeCaution: {
     backgroundColor: revaSemantic.caution.bg,
     borderColor: revaSemantic.caution.line,
