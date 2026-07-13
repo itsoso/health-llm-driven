@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 import json
 
 import pytest
@@ -240,6 +240,31 @@ def test_list_workspace_packets_marks_packet_stale_after_claim_change(tmp_path):
 
     assert listed["items"][0]["status"] == "stale"
     assert listed["items"][0]["stale"] is True
+
+
+def test_list_workspace_packets_returns_only_latest_duplicate_packet(tmp_path):
+    from app.services.kbase_review_workspace import (
+        generate_review_verification_packet,
+        list_review_verification_packets,
+        workspace_content_fingerprint,
+    )
+
+    workspace = _write_workspace(tmp_path / "review-workspace")
+    fingerprint = workspace_content_fingerprint(workspace)
+    for generated_at in (NOW, NOW + timedelta(minutes=5)):
+        generate_review_verification_packet(
+            workspace,
+            doc_id="claim:release-1-caffeine",
+            expected_workspace_fingerprint=fingerprint,
+            generated_at=generated_at,
+        )
+
+    assert len((workspace / "verification_packets.jsonl").read_text().splitlines()) == 2
+    listed = list_review_verification_packets(workspace, doc_id="claim:release-1-caffeine")
+
+    assert listed["total"] == 1
+    assert len(listed["items"]) == 1
+    assert listed["items"][0]["generated_at"] == (NOW + timedelta(minutes=5)).isoformat()
 
 
 def test_generate_workspace_packet_preserves_workspace_on_candidate_failure(tmp_path, monkeypatch):

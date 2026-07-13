@@ -26,6 +26,7 @@ from app.services.system_knowledge_ingest import (
 
 ADJUDICATION_LEDGER = "adjudications.jsonl"
 VERIFICATION_PACKET_LEDGER = "verification_packets.jsonl"
+VERIFICATION_PACKET_READ_LIMIT = 50
 CLAIM_DECISIONS = frozenset({"approve", "needs_evidence", "reject", "background_only"})
 
 
@@ -365,7 +366,7 @@ def list_review_verification_packets(
             str(claim.get("doc_id") or ""): claim
             for claim in _read_jsonl(root / "claims.jsonl")
         }
-        items = []
+        candidates = []
         for stored in _read_jsonl(root / VERIFICATION_PACKET_LEDGER):
             packet_doc_id = str(stored.get("doc_id") or "")
             if doc_id is not None and packet_doc_id != doc_id:
@@ -380,8 +381,18 @@ def list_review_verification_packets(
             packet["stale"] = stale
             if stale:
                 packet["status"] = "stale"
+            candidates.append(packet)
+        candidates.sort(key=lambda item: (str(item.get("generated_at") or ""), str(item.get("packet_id") or "")), reverse=True)
+        items = []
+        seen_packet_ids: set[str] = set()
+        for packet in candidates:
+            packet_id = str(packet.get("packet_id") or "")
+            if not packet_id or packet_id in seen_packet_ids:
+                continue
+            seen_packet_ids.add(packet_id)
             items.append(packet)
-        items.sort(key=lambda item: (str(item.get("generated_at") or ""), str(item.get("packet_id") or "")), reverse=True)
+            if len(items) >= VERIFICATION_PACKET_READ_LIMIT:
+                break
         return {
             "workspace_fingerprint": current_fingerprint,
             "total": len(items),
