@@ -8,9 +8,7 @@ claims are never imported automatically; they remain review candidates.
 
 from __future__ import annotations
 
-from contextlib import contextmanager
 from datetime import UTC, datetime
-import fcntl
 import hashlib
 import json
 import logging
@@ -38,6 +36,12 @@ from app.integrations.dedao_kbase_release_consumer import (
 from app.services.system_knowledge_crystallize import draft_crystallized_claim_candidates
 from app.services.system_knowledge_eval import run_system_kb_eval_cases
 from app.services.system_knowledge_ingest import ARTIFACT_FILES, validate_artifact_review_gate, write_draft_artifacts
+from app.services.kbase_review_workspace import (
+    read_workspace_metadata,
+    review_workspace_lock,
+    workspace_artifacts_valid,
+    workspace_backup_path,
+)
 from app.services.system_knowledge_service import (
     apply_confidence_decay,
     lint_knowledge_base,
@@ -75,36 +79,14 @@ def _artifact_fingerprint(artifact_dir: str | Path) -> str:
     return digest.hexdigest()
 
 
-def _workspace_base_fingerprint(artifact_dir: str | Path) -> str:
-    path = Path(artifact_dir) / "draft_manifest.json"
-    if not path.exists():
-        return ""
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return ""
-    return str(payload.get("base_fingerprint") or "") if isinstance(payload, dict) else ""
-
-
-@contextmanager
-def _workspace_lock(artifact_dir: str | Path):
-    target = Path(artifact_dir)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    lock_path = target.parent / f".{target.name}.lock"
-    descriptor = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
-    with os.fdopen(descriptor, "a+") as lock_file:
-        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-        try:
-            yield
-        finally:
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+_workspace_lock = review_workspace_lock
 
 
 def _replace_workspace(candidate: Path, target: Path) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
-    backup = target.with_name(f".{target.name}.backup")
+    backup = workspace_backup_path(target)
     if backup.exists():
-        shutil.rmtree(backup)
+        raise RuntimeError(f"unrecovered review workspace backup: {backup}")
     had_target = target.exists()
     try:
         if had_target:
@@ -250,7 +232,7 @@ def sync_dedao_kbase_releases_draft_once(
     limit: int = 50,
 ) -> dict[str, Any]:
     """Serialize cursor reads and workspace replacement for one review path."""
-    with _workspace_lock(artifact_dir):
+    with review_workspace_lock(artifact_dir):
         return _sync_dedao_kbase_releases_draft_locked(
             db,
             base_url=base_url,
@@ -290,9 +272,26 @@ def _sync_dedao_kbase_releases_draft_locked(
     target = Path(artifact_dir)
     has_separate_base = base_artifact_dir is not None
     canonical = Path(base_artifact_dir) if base_artifact_dir is not None else target
+    target_resolved = target.expanduser().resolve()
+    canonical_resolved = canonical.expanduser().resolve()
+    paths_overlap = (
+        target_resolved == canonical_resolved
+        or target_resolved in canonical_resolved.parents
+        or canonical_resolved in target_resolved.parents
+    )
+    if has_separate_base and paths_overlap:
+        raise ValueError("dedao-kbase review workspace must not overlap canonical System KB artifact dir")
     base_fingerprint = _artifact_fingerprint(canonical)
-    recorded_fingerprint = _workspace_base_fingerprint(target)
-    workspace_valid = target.exists() and bool(recorded_fingerprint)
+    workspace_metadata = read_workspace_metadata(target)
+    recorded_fingerprint = str(workspace_metadata.get("base_fingerprint") or "")
+    recorded_cursor = str(workspace_metadata.get("cursor") or "")
+    recorded_base_url = str(workspace_metadata.get("producer_base_url") or "")
+    workspace_valid = (
+        workspace_artifacts_valid(target)
+        and bool(recorded_fingerprint)
+        and recorded_cursor == previous_cursor
+        and recorded_base_url == base_url
+    )
     if has_separate_base:
         workspace_valid = workspace_valid and recorded_fingerprint == base_fingerprint
     mode = "incremental" if workspace_valid else "rebuild"
@@ -345,6 +344,7 @@ def _sync_dedao_kbase_releases_draft_locked(
             {
                 "base_fingerprint": base_fingerprint,
                 "cursor": cursor,
+                "producer_base_url": base_url,
                 "sync_mode": mode,
             }
         )

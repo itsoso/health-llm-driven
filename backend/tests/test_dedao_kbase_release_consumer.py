@@ -303,6 +303,83 @@ def test_release_sync_failed_rebuild_preserves_previous_workspace_and_cursor(tmp
     assert audits[0].diff["cursor"] == "release-abc"
 
 
+@pytest.mark.parametrize("damage", ["stale_cursor", "missing_artifact", "count_mismatch"])
+def test_release_sync_rebuilds_when_workspace_state_disagrees_with_audit(tmp_path, db, damage):
+    from app.tasks.system_knowledge_lifecycle import sync_dedao_kbase_releases_draft_once
+
+    release = _release_payload()
+    requests: list[tuple[str, str, dict | None]] = []
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _release_handler(release, requests))
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    canonical = tmp_path / "canonical"
+    workspace = tmp_path / "review-workspace"
+    _write_canonical_artifacts(canonical, marker="base-v1")
+    try:
+        sync_dedao_kbase_releases_draft_once(
+            db,
+            base_url=f"http://127.0.0.1:{server.server_port}",
+            auth_token="secret-token",
+            artifact_dir=workspace,
+            base_artifact_dir=canonical,
+            source_root=tmp_path / "source",
+        )
+        if damage == "stale_cursor":
+            manifest_path = workspace / "draft_manifest.json"
+            manifest = json.loads(manifest_path.read_text())
+            manifest["cursor"] = "release-old"
+            manifest_path.write_text(json.dumps(manifest))
+        else:
+            if damage == "missing_artifact":
+                (workspace / "claims.jsonl").unlink()
+            else:
+                manifest_path = workspace / "manifest.json"
+                manifest = json.loads(manifest_path.read_text())
+                manifest["counts"]["claims"] += 1
+                manifest_path.write_text(json.dumps(manifest))
+        repaired = sync_dedao_kbase_releases_draft_once(
+            db,
+            base_url=f"http://127.0.0.1:{server.server_port}",
+            auth_token="secret-token",
+            artifact_dir=workspace,
+            base_artifact_dir=canonical,
+            source_root=tmp_path / "source",
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+    assert repaired["mode"] == "rebuild"
+    assert repaired["status"] == "draft_written"
+    assert (workspace / "claims.jsonl").exists()
+
+
+@pytest.mark.parametrize("layout", ["equal", "review_inside_base", "base_inside_review"])
+def test_release_sync_rejects_review_workspace_overlapping_canonical_seed(tmp_path, db, layout):
+    from app.tasks.system_knowledge_lifecycle import sync_dedao_kbase_releases_draft_once
+
+    if layout == "equal":
+        canonical = workspace = tmp_path / "canonical"
+    elif layout == "review_inside_base":
+        canonical = tmp_path / "canonical"
+        workspace = canonical / "review-workspace"
+    else:
+        workspace = tmp_path / "review-workspace"
+        canonical = workspace / "canonical"
+    _write_canonical_artifacts(canonical, marker="base-v1")
+
+    with pytest.raises(ValueError, match="must not overlap canonical"):
+        sync_dedao_kbase_releases_draft_once(
+            db,
+            base_url="https://kbase.example.test",
+            auth_token="secret-token",
+            artifact_dir=workspace,
+            base_artifact_dir=canonical,
+            source_root=tmp_path / "source",
+        )
+
+
 def test_review_bundle_uses_dedicated_release_workspace(tmp_path, monkeypatch):
     from app.config import settings
     from app.services.system_knowledge_service import get_dedao_kbase_draft_review_bundle
@@ -315,6 +392,44 @@ def test_review_bundle_uses_dedicated_release_workspace(tmp_path, monkeypatch):
 
     assert bundle["artifact_dir"] == str(workspace)
     assert bundle["preview"]["pages"][0]["title"] == "persistent-review"
+    assert len(bundle["workspace_fingerprint"]) == 64
+
+
+def test_review_approval_rejects_workspace_changed_after_preview(tmp_path, monkeypatch):
+    from app.config import settings
+    from app.services.system_knowledge_service import (
+        approve_dedao_kbase_draft_review,
+        get_dedao_kbase_draft_review_bundle,
+    )
+
+    workspace = tmp_path / "review-workspace"
+    _write_canonical_artifacts(workspace, marker="reviewed-version")
+    monkeypatch.setattr(settings, "dedao_kbase_review_artifact_dir", str(workspace))
+    bundle = get_dedao_kbase_draft_review_bundle()
+    with (workspace / "pages.jsonl").open("a", encoding="utf-8") as stream:
+        stream.write("\n")
+
+    with pytest.raises(ValueError, match="changed since preview"):
+        approve_dedao_kbase_draft_review(
+            reviewer="reviewer:test",
+            expected_workspace_fingerprint=bundle["workspace_fingerprint"],
+        )
+
+
+def test_review_bundle_rejects_manifest_count_mismatch(tmp_path, monkeypatch):
+    from app.config import settings
+    from app.services.system_knowledge_service import get_dedao_kbase_draft_review_bundle
+
+    workspace = tmp_path / "review-workspace"
+    _write_canonical_artifacts(workspace, marker="truncated-review")
+    manifest_path = workspace / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["counts"]["pages"] = 2
+    manifest_path.write_text(json.dumps(manifest))
+    monkeypatch.setattr(settings, "dedao_kbase_review_artifact_dir", str(workspace))
+
+    with pytest.raises(ValueError, match="incomplete or corrupt"):
+        get_dedao_kbase_draft_review_bundle()
 
 
 def test_workspace_lock_serializes_concurrent_writers(tmp_path):
@@ -348,6 +463,49 @@ def test_workspace_lock_serializes_concurrent_writers(tmp_path):
     second.join(timeout=2)
 
     assert order == ["first-enter", "first-exit", "second-enter"]
+
+
+def test_review_bundle_recovers_workspace_backup_before_read(tmp_path, monkeypatch):
+    from app.config import settings
+    from app.services.kbase_review_workspace import workspace_backup_path
+    from app.services.system_knowledge_service import get_dedao_kbase_draft_review_bundle
+
+    workspace = tmp_path / "review-workspace"
+    backup = workspace_backup_path(workspace)
+    _write_canonical_artifacts(backup, marker="recovered-review")
+    monkeypatch.setattr(settings, "dedao_kbase_review_artifact_dir", str(workspace))
+
+    bundle = get_dedao_kbase_draft_review_bundle()
+
+    assert workspace.exists()
+    assert not backup.exists()
+    assert bundle["preview"]["pages"][0]["title"] == "recovered-review"
+
+
+def test_review_bundle_waits_for_active_workspace_sync(tmp_path, monkeypatch):
+    from app.config import settings
+    from app.services.kbase_review_workspace import review_workspace_lock
+    from app.services.system_knowledge_service import get_dedao_kbase_draft_review_bundle
+
+    workspace = tmp_path / "review-workspace"
+    _write_canonical_artifacts(workspace, marker="serialized-review")
+    monkeypatch.setattr(settings, "dedao_kbase_review_artifact_dir", str(workspace))
+    review_started = Event()
+    review_finished = Event()
+
+    def read_review_bundle() -> None:
+        review_started.set()
+        get_dedao_kbase_draft_review_bundle()
+        review_finished.set()
+
+    with review_workspace_lock(workspace):
+        review = Thread(target=read_review_bundle)
+        review.start()
+        assert review_started.wait(timeout=2)
+        assert not review_finished.wait(timeout=0.1)
+
+    review.join(timeout=2)
+    assert review_finished.is_set()
 
 
 def _write_canonical_artifacts(root: Path, *, marker: str) -> None:
@@ -384,7 +542,25 @@ def _write_canonical_artifacts(root: Path, *, marker: str) -> None:
         + "\n"
     )
     (root / "manifest.json").write_text(
-        json.dumps({"ingest": {"review_status": "reviewed"}, "marker": marker}) + "\n"
+        json.dumps(
+            {
+                "ingest": {"review_status": "reviewed"},
+                "marker": marker,
+                "counts": {
+                    "pages": 1,
+                    "entities": 0,
+                    "claims": 0,
+                    "protocols": 0,
+                    "contraindications": 0,
+                    "eval_cases": 0,
+                    "relations": 1,
+                },
+            }
+        )
+        + "\n"
+    )
+    (root / "draft_manifest.json").write_text(
+        json.dumps({"status": "reviewed", "requires_review": False, "serving_allowed": True}) + "\n"
     )
 
 

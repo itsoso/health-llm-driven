@@ -74,6 +74,7 @@ class ClaimReviewUpdateRequest(BaseModel):
 
 
 class DedaoKbaseDraftReviewApproveRequest(BaseModel):
+    workspace_fingerprint: str = Field(..., min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
     note: str | None = Field(default=None, max_length=1000)
     publish: bool = False
     dry_run_publish: bool = False
@@ -656,7 +657,10 @@ def approve_dedao_kbase_draft_review_endpoint(
     try:
         if request.publish and request.dry_run_publish:
             raise ValueError("publish and dry_run_publish cannot both be true")
-        result = approve_dedao_kbase_draft_review(reviewer=f"admin:{admin_user.id}")
+        result = approve_dedao_kbase_draft_review(
+            reviewer=f"admin:{admin_user.id}",
+            expected_workspace_fingerprint=request.workspace_fingerprint,
+        )
         publish_report = None
         publish_preview = None
         if request.publish:

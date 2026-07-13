@@ -30,7 +30,11 @@ records after the last cursor.
 4. For rebuild, compile all Releases against the canonical seed into a
    temporary sibling directory, then atomically replace the workspace.
 5. Write draft metadata and KBAudit only after the workspace is complete.
-6. Review and publish APIs operate on the persistent workspace. Serving tables
+6. Validate every required JSONL file against manifest counts before treating a
+   workspace as incremental-safe; reject an all-empty workspace.
+7. Review returns an exact content fingerprint. Approval must submit that same
+   fingerprint and rechecks it while holding the workspace lock.
+8. Review and publish APIs operate on the persistent workspace. Serving tables
    remain unchanged until explicit approval and publish.
 
 ## Failure Behavior
@@ -38,6 +42,11 @@ records after the last cursor.
 - Network, schema, compilation, or filesystem failures do not advance cursor.
 - A missing workspace never returns `up_to_date`; it triggers replay.
 - A failed rebuild leaves the previous workspace intact.
+- Interrupted replacement is recovered from a sibling backup under the shared
+  review/sync/publish lock.
+- A stale review fingerprint fails approval and requires a fresh preview.
+- A review workspace resolving to the canonical seed or overlapping its path
+  tree is rejected.
 - No Release feedback is emitted merely because a draft was synchronized.
 
 ## Production Layout
@@ -48,7 +57,10 @@ records after the last cursor.
 
 ## Verification
 
-Tests cover workspace deletion, canonical base change, incremental idempotency,
-failed rebuild preservation, review-path selection, and deployment-independent
-configuration. Production verification must sync, restart/redeploy, and prove
-the draft and cursor remain available before approval.
+Tests cover workspace deletion, canonical base change, audit/workspace cursor
+drift, manifest-count corruption, incremental idempotency, failed rebuild
+preservation, replacement recovery, cross-service locking, stale review
+fingerprints, path alias rejection, review-path selection, and
+deployment-independent configuration. Production verification must sync,
+restart/redeploy, and prove the draft and cursor remain available before
+approval.
