@@ -6306,15 +6306,9 @@ class AgentExecutor:
             except Exception as e:
                 logger.warning(f"Agent 干预效应估计注入失败: {e}")
 
-            # 注入记忆
-            try:
-                from app.services.conversation_memory_service import get_relevant_memories
-                memories = get_relevant_memories(self.db, user_id, limit=5)
-                if memories:
-                    parts.append("\n## 用户记忆")
-                    parts.append(memories)
-            except Exception:
-                pass
+            # 记忆已由 build_lite_health_context(lite/full 都调,见 health_context_lite_service
+            # 的「用户历史记忆」段)注入一次,自带 "用户历史记忆:" 标签 —— 此处曾重复注入 limit=5,
+            # 造成同一批记忆进 prompt 两遍 + 一次冗余 DB 往返。去重(零信息损失,记忆仍在)。
 
         # 告诉 LLM 自己是哪个模型 — 用户问 "你是什么模型" 时如实答
         try:

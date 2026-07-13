@@ -178,7 +178,12 @@ def _build_context(db: Session, user_id: int, budget: str = INJECTION_FULL) -> s
         from app.services.location_resolver import resolve_effective_location
         city = resolve_effective_location(profile)["city"] or ""
     location_str = f" | 位置: {city}" if city else ""
-    parts.append(f"时间: {time_str} ({period}){location_str}")
+    # 缓存稳定性(rank13 prefill):HH:MM 的分钟每回合都变,落在 tool schema 之前的 system 前缀里
+    # → 每分钟把下游 ~27k 字符静态头(base 规则 + 21.7k tool schema)整段 cache-miss(实测隐式命中
+    # 仅 29%)。降精度到「小时 + 时段」:5min TTL 窗内恒稳定(仅跨整点偶变),模型仍知大致时刻;
+    # 精确时间戳由工具侧 datetime.now() 负责(记录落库时间不受影响)。
+    hour_str = time_str.split(":")[0] if ":" in time_str else time_str
+    parts.append(f"时间: {hour_str}点 ({period}){location_str}")
 
     age_str = ""
     max_hr = 0
