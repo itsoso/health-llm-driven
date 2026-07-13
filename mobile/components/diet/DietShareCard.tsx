@@ -276,6 +276,8 @@ const SHARE_MACRO_DEFS: Array<{
 ];
 
 export function buildDietShareMacroSegments(record: DietRecord): DietShareMacroSegment[] {
+  if (isLowConfidenceDietShare(record)) return [];
+
   const hasCompleteEnergyMacros = SHARE_MACRO_DEFS.every((def) => {
     const grams = record[def.field];
     return hasMetric(grams) && grams > 0;

@@ -134,6 +134,12 @@ describe('DietShareCard', () => {
     expect(queryByText('蛋白 50%')).toBeNull();
   });
 
+  it('does not derive macro energy structure for low-confidence diet estimates', () => {
+    const lowConfidenceRecord = { ...record, source: 'ai_estimate', ai_confidence: 0.42 };
+
+    expect(buildDietShareMacroSegments(lowConfidenceRecord)).toEqual([]);
+  });
+
   it('derives macro energy structure for a more premium share image', () => {
     const segments = buildDietShareMacroSegments(record);
 
