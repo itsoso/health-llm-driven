@@ -1008,6 +1008,41 @@ describe('DietShareCard', () => {
     });
   });
 
+  it('keeps low-confidence image-share fallback framed as review material', async () => {
+    mockShareAsync.mockRejectedValueOnce(new Error('share sheet failed'));
+    const lowConfidenceRecord = {
+      ...record,
+      source: 'ai_estimate',
+      ai_confidence: 0.42,
+      food_items: '机场贵宾厅番茄鸡蛋面、鸭肉、生菜',
+    };
+    const onShareTerminal = jest.fn();
+    const { getByText, queryByText } = render(
+      <DietShareSheet
+        visible
+        record={lowConfidenceRecord}
+        dateLabel="7月11日 · 午餐"
+        onClose={jest.fn()}
+        onShareTerminal={onShareTerminal}
+      />,
+    );
+
+    fireEvent.press(getByText('核对后发小红书'));
+
+    await waitFor(() => {
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('营养数据: 智能估算，待核对后再发布'));
+      expect(onShareTerminal).toHaveBeenCalledWith(expect.objectContaining({
+        phase: 'failed',
+        has_photo: false,
+        share_target: 'xiaohongshu',
+        error_code: 'image_share_fell_back_to_caption',
+      }));
+      expect(getByText('图片没生成，核对文案已复制')).toBeTruthy();
+      expect(getByText('先核对食物和份量，或点“保存/分享复盘图”重试生成核对图')).toBeTruthy();
+      expect(queryByText('先发文案，或点“保存/分享图片”重试生成高清图')).toBeNull();
+    });
+  });
+
   it('falls back to the metric card when a protected image never settles', async () => {
     jest.useFakeTimers();
     const { getByLabelText, getByText, queryByTestId } = render(

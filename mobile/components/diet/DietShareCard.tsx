@@ -438,6 +438,16 @@ function publishHintForShareTarget(target: ShareTarget): { title: string; detail
 
 function publishHintForReviewResult(result: ShareResult, reviewTone: Exclude<ShareReviewTone, 'none'>): { title: string; detail: string; icon: keyof typeof Ionicons.glyphMap; tone: 'success' | 'warning' } | null {
   const isLowConfidence = reviewTone === 'low-confidence';
+  if (result.kind === 'caption_fallback') {
+    return {
+      title: isLowConfidence ? '图片没生成，核对文案已复制' : '图片没生成，复盘文案已复制',
+      detail: isLowConfidence
+        ? '先核对食物和份量，或点“保存/分享复盘图”重试生成核对图'
+        : '可继续核对后，点“保存/分享复盘图”重试生成复盘图',
+      icon: 'alert-circle',
+      tone: 'warning',
+    };
+  }
   if (result.kind === 'saved_to_library') {
     return {
       title: isLowConfidence ? '核对素材已保存，文案已复制' : '复盘素材已保存，文案已复制',
