@@ -672,7 +672,7 @@ export default function DietShareCard({
           </View>
           <View style={styles.balanceScoreWrap}>
             {balance.score == null ? (
-              <Text style={styles.balancePending}>待回填</Text>
+              <Text style={styles.balancePending}>{lowConfidenceShare ? '待核对' : '待回填'}</Text>
             ) : (
               <>
                 <Text style={styles.balanceScore}>{balance.score}</Text>

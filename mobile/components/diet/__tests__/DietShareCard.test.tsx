@@ -113,6 +113,7 @@ describe('DietShareCard', () => {
     expect(getByText('均衡度')).toBeTruthy();
     expect(getAllByText('待核对').length).toBeGreaterThan(0);
     expect(getByText('核对后生成均衡度')).toBeTruthy();
+    expect(queryByText('待回填')).toBeNull();
     expect(queryByText('96')).toBeNull();
     expect(queryByText('高蛋白稳态餐')).toBeNull();
   });
