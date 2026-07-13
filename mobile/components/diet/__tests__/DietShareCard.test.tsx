@@ -252,6 +252,30 @@ describe('DietShareCard', () => {
     expect(getByText('手动确认')).toBeTruthy();
   });
 
+  it('treats user-corrected records as confirmed even when stale AI confidence remains low', () => {
+    const correctedRecord = { ...record, source: 'user_corrected', ai_confidence: 0.42 };
+    const { getByText, queryByText } = render(
+      <DietShareSheet
+        visible
+        record={correctedRecord}
+        dateLabel="7月11日 · 午餐"
+        onClose={jest.fn()}
+      />,
+    );
+
+    expect(getByText('高清 3:4 图片 · 微信与小红书')).toBeTruthy();
+    expect(getByText('蛋白质拉满的一餐')).toBeTruthy();
+    expect(getByText('已确认')).toBeTruthy();
+    expect(getByText('可分享')).toBeTruthy();
+    expect(getByText('手动确认')).toBeTruthy();
+    expect(getByText('营养数据以本次确认记录为准')).toBeTruthy();
+    expect(getByText('560')).toBeTruthy();
+    expect(queryByText('待核对')).toBeNull();
+    expect(queryByText('谨慎分享')).toBeNull();
+    expect(queryByText('识别置信度 42%')).toBeNull();
+    expect(queryByText('发布前建议核对食物和份量')).toBeNull();
+  });
+
   it('uses manually reviewed wording in platform captions for user-corrected meals', () => {
     const correctedRecord = { ...record, source: 'user_corrected' };
     expect(buildDietShareCaption(correctedRecord, '7月11日 · 午餐')).toContain('营养数据: 手动核对，可继续复盘');

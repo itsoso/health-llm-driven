@@ -93,6 +93,10 @@ function nutritionSourceLabel(source?: string | null): string {
   return '营养表校准';
 }
 
+function isManuallyConfirmedNutritionSource(source?: string | null): boolean {
+  return source === 'manual' || source === 'user_corrected';
+}
+
 export function buildDietShareHeadline(record: DietRecord): string {
   if (isLowConfidenceDietShare(record)) return '待核对的一餐';
   if (typeof record.protein === 'number' && record.protein >= 35) return '蛋白质拉满的一餐';
@@ -160,6 +164,7 @@ function buildDietShareHashtags(highlights: string[]): string {
 
 function buildDietShareDataDisclosure(record: DietRecord): string {
   const sourceLabel = nutritionSourceLabel(record.source);
+  if (isManuallyConfirmedNutritionSource(record.source)) return '营养数据: 手动核对，可继续复盘';
   const confidencePercent = normalizedAiConfidence(record.ai_confidence);
   if (confidencePercent != null && confidencePercent < DIET_SHARE_REVIEW_CONFIDENCE_THRESHOLD) {
     return `营养数据: ${sourceLabel}，待核对后再发布`;
@@ -179,6 +184,7 @@ function normalizedAiConfidence(value: number | null | undefined): number | null
 }
 
 function buildDietShareConfidenceDisclosure(record: DietRecord): string | null {
+  if (isManuallyConfirmedNutritionSource(record.source)) return null;
   const percent = normalizedAiConfidence(record.ai_confidence);
   if (percent == null) return null;
   if (percent < DIET_SHARE_REVIEW_CONFIDENCE_THRESHOLD) return `识别置信度: ${percent}%，发布前建议核对食物和份量`;
@@ -191,6 +197,7 @@ function isAiEstimatedNutritionSource(source?: string | null): boolean {
 }
 
 function buildDietShareConfidenceUi(record: DietRecord): { percent: number; detail: string; tone: 'warning' | 'neutral' } | null {
+  if (isManuallyConfirmedNutritionSource(record.source)) return null;
   const percent = normalizedAiConfidence(record.ai_confidence);
   if (percent == null) return null;
   if (percent < DIET_SHARE_REVIEW_CONFIDENCE_THRESHOLD) {
@@ -215,6 +222,9 @@ function buildDietShareConfidenceUi(record: DietRecord): { percent: number; deta
 }
 
 function buildDietShareConfirmBadge(record: DietRecord): { primary: string; secondary: string; tone: 'confirmed' | 'estimate' | 'caution' } {
+  if (isManuallyConfirmedNutritionSource(record.source)) {
+    return { primary: '已确认', secondary: '可分享', tone: 'confirmed' };
+  }
   const percent = normalizedAiConfidence(record.ai_confidence);
   if (percent != null && percent < DIET_SHARE_REVIEW_CONFIDENCE_THRESHOLD) {
     return { primary: '待核对', secondary: '谨慎分享', tone: 'caution' };
@@ -226,6 +236,7 @@ function buildDietShareConfirmBadge(record: DietRecord): { primary: string; seco
 }
 
 function buildDietShareFooterSecondary(record: DietRecord): string {
+  if (isManuallyConfirmedNutritionSource(record.source)) return '营养数据以本次确认记录为准';
   const percent = normalizedAiConfidence(record.ai_confidence);
   if (percent != null && percent < DIET_SHARE_REVIEW_CONFIDENCE_THRESHOLD) return '识别待核对，发布前确认食物和份量';
   if (!hasAnyNutritionMetric(record)) return '营养回填后用于复盘';
@@ -235,6 +246,7 @@ function buildDietShareFooterSecondary(record: DietRecord): string {
 }
 
 function isLowConfidenceDietShare(record: DietRecord): boolean {
+  if (isManuallyConfirmedNutritionSource(record.source)) return false;
   const percent = normalizedAiConfidence(record.ai_confidence);
   return percent != null && percent < DIET_SHARE_REVIEW_CONFIDENCE_THRESHOLD;
 }
