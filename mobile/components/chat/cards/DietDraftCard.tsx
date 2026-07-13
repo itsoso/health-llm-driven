@@ -168,6 +168,11 @@ function nutritionStatusText(data: DietDraftData): string {
   return isPhotoSource(data.source) ? '已带营养估算，核对后计入今日' : '已带营养估算，确认后计入今日';
 }
 
+function boundaryText(data: DietDraftData): string {
+  const boundary = text(data.boundary) || '营养为估算值,确认后写入今日饮食记录。';
+  return isPhotoSource(data.source) ? boundary.replace('确认后写入', '核对后写入') : boundary;
+}
+
 /** 仅当 data 里有明确时点 (time / recorded_at 的 HH:MM) 才回显, 不伪造。 */
 function mealTimeLabel(data: DietDraftData): string | undefined {
   const raw = text(data.time) ?? text(data.recorded_at);
@@ -222,7 +227,7 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
   const showNextMealDetail = Boolean(
     nextMealDetail && hasExpandedSection(data.expanded_sections, 'next_meal'),
   );
-  const boundary = text(data.boundary) || '营养为估算值,确认后写入今日饮食记录。';
+  const boundary = boundaryText(data);
   const isRecorded = data.confirmActionState === 'done';
   const canConfirmFromEditor = Boolean(data.confirmAction && data.onConfirmAction && !data.confirmAction.disabled_reason);
   const recordedNextStep = walkText || suggestions[0] || '下一餐按目标补足蛋白和蔬菜';
