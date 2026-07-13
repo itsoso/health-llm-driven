@@ -412,6 +412,34 @@ describe('DietShareCard', () => {
     });
   });
 
+  it('keeps borderline 60-69% recognition confidence in review mode before sharing', () => {
+    const borderlineRecord = {
+      ...record,
+      source: 'ai_estimate',
+      ai_confidence: 0.65,
+    };
+    const { getByText, getAllByText, queryByText } = render(
+      <DietShareSheet
+        visible
+        record={borderlineRecord}
+        dateLabel="7月11日 · 午餐"
+        onClose={jest.fn()}
+      />,
+    );
+
+    expect(getByText('核对 3:4 图片 · 微信与小红书')).toBeTruthy();
+    expect(getByText('待核对的一餐')).toBeTruthy();
+    expect(getByText('识别置信度 65%')).toBeTruthy();
+    expect(getByText('发布前建议核对食物和份量')).toBeTruthy();
+    expect(getAllByText('待核对').length).toBeGreaterThan(0);
+    expect(getByText('谨慎分享')).toBeTruthy();
+    expect(getByText('核对后发微信/朋友圈')).toBeTruthy();
+    expect(getByText('核对后发小红书')).toBeTruthy();
+    expect(queryByText('蛋白质拉满的一餐')).toBeNull();
+    expect(queryByText('高蛋白')).toBeNull();
+    expect(queryByText('560')).toBeNull();
+  });
+
   it('does not turn low-confidence estimates into a polished nutrition claim', async () => {
     const lowConfidenceRecord = {
       ...record,

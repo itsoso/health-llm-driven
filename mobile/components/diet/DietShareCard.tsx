@@ -39,6 +39,7 @@ const MEAL_LABEL: Record<string, string> = {
   snack: '加餐',
 };
 export const DIET_SHARE_IMAGE_TIMEOUT_MS = 5_000;
+const DIET_SHARE_REVIEW_CONFIDENCE_THRESHOLD = 70;
 type ShareTarget = 'generic' | 'wechat' | 'xiaohongshu';
 type MacroSegmentKey = 'protein' | 'carbs' | 'fat';
 type DietShareMacroSegment = {
@@ -160,7 +161,7 @@ function buildDietShareHashtags(highlights: string[]): string {
 function buildDietShareDataDisclosure(record: DietRecord): string {
   const sourceLabel = nutritionSourceLabel(record.source);
   const confidencePercent = normalizedAiConfidence(record.ai_confidence);
-  if (confidencePercent != null && confidencePercent < 60) {
+  if (confidencePercent != null && confidencePercent < DIET_SHARE_REVIEW_CONFIDENCE_THRESHOLD) {
     return `营养数据: ${sourceLabel}，待核对后再发布`;
   }
   if (!hasAnyNutritionMetric(record)) return '营养数据: 估算中，稍后可继续复盘';
@@ -180,7 +181,7 @@ function normalizedAiConfidence(value: number | null | undefined): number | null
 function buildDietShareConfidenceDisclosure(record: DietRecord): string | null {
   const percent = normalizedAiConfidence(record.ai_confidence);
   if (percent == null) return null;
-  if (percent < 60) return `识别置信度: ${percent}%，发布前建议核对食物和份量`;
+  if (percent < DIET_SHARE_REVIEW_CONFIDENCE_THRESHOLD) return `识别置信度: ${percent}%，发布前建议核对食物和份量`;
   if (percent < 80) return `识别置信度: ${percent}%，建议复盘时留意份量`;
   return `识别置信度: ${percent}%`;
 }
@@ -192,7 +193,7 @@ function isAiEstimatedNutritionSource(source?: string | null): boolean {
 function buildDietShareConfidenceUi(record: DietRecord): { percent: number; detail: string; tone: 'warning' | 'neutral' } | null {
   const percent = normalizedAiConfidence(record.ai_confidence);
   if (percent == null) return null;
-  if (percent < 60) {
+  if (percent < DIET_SHARE_REVIEW_CONFIDENCE_THRESHOLD) {
     return {
       percent,
       detail: '发布前建议核对食物和份量',
@@ -215,7 +216,7 @@ function buildDietShareConfidenceUi(record: DietRecord): { percent: number; deta
 
 function buildDietShareConfirmBadge(record: DietRecord): { primary: string; secondary: string; tone: 'confirmed' | 'estimate' | 'caution' } {
   const percent = normalizedAiConfidence(record.ai_confidence);
-  if (percent != null && percent < 60) {
+  if (percent != null && percent < DIET_SHARE_REVIEW_CONFIDENCE_THRESHOLD) {
     return { primary: '待核对', secondary: '谨慎分享', tone: 'caution' };
   }
   if (isAiEstimatedNutritionSource(record.source)) {
@@ -226,7 +227,7 @@ function buildDietShareConfirmBadge(record: DietRecord): { primary: string; seco
 
 function buildDietShareFooterSecondary(record: DietRecord): string {
   const percent = normalizedAiConfidence(record.ai_confidence);
-  if (percent != null && percent < 60) return '识别待核对，发布前确认食物和份量';
+  if (percent != null && percent < DIET_SHARE_REVIEW_CONFIDENCE_THRESHOLD) return '识别待核对，发布前确认食物和份量';
   if (!hasAnyNutritionMetric(record)) return '营养回填后用于复盘';
   if (!isNutritionComplete(record)) return '部分营养回填后用于复盘';
   if (isAiEstimatedNutritionSource(record.source)) return '智能估算用于复盘，核对后更准确';
@@ -235,7 +236,7 @@ function buildDietShareFooterSecondary(record: DietRecord): string {
 
 function isLowConfidenceDietShare(record: DietRecord): boolean {
   const percent = normalizedAiConfidence(record.ai_confidence);
-  return percent != null && percent < 60;
+  return percent != null && percent < DIET_SHARE_REVIEW_CONFIDENCE_THRESHOLD;
 }
 
 function buildDietShareMacroLine(record: DietRecord, style: 'compact' | 'sentence'): string {
