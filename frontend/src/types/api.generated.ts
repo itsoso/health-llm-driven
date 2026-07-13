@@ -5592,6 +5592,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/episodes/life-event": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 记录生活事件(带发生时间) */
+        post: operations["create_life_event_api_v1_episodes_life_event_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/episodes/life-event/{event_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** 删除生活事件(auto 写入的 undo 通路) */
+        delete: operations["delete_life_event_api_v1_episodes_life_event__event_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/episodes/me/life-events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 我的生活事件时间线 */
+        get: operations["list_life_events_api_v1_episodes_me_life_events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/diet/records": {
         parameters: {
             query?: never;
@@ -25466,6 +25517,33 @@ export interface components {
             /** Evidence */
             evidence?: string[];
         };
+        /** LifeEventCreate */
+        LifeEventCreate: {
+            /** Title */
+            title: string;
+            /** Occurred At */
+            occurred_at?: string | null;
+            /** Notes */
+            notes?: string | null;
+        };
+        /** LifeEventOut */
+        LifeEventOut: {
+            /** Id */
+            id: number;
+            /** Title */
+            title: string;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /** Occurred Precision */
+            occurred_precision: string;
+            /** Occurred Display */
+            occurred_display: string;
+            /** Notes */
+            notes?: string | null;
+        };
         /** LiveRunEndRequest */
         LiveRunEndRequest: {
             /** Total Distance M */
@@ -41107,6 +41185,101 @@ export interface operations {
             };
         };
     };
+    create_life_event_api_v1_episodes_life_event_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LifeEventCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LifeEventOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_life_event_api_v1_episodes_life_event__event_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_life_events_api_v1_episodes_me_life_events_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LifeEventOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     create_diet_record_api_v1_diet_records_post: {
         parameters: {
             query?: never;
@@ -49459,7 +49632,9 @@ export interface operations {
     agent_send_api_v1_agent_send_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "x-reva-client-caps"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };

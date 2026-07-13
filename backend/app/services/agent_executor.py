@@ -1465,6 +1465,7 @@ _RESOURCE_TYPE_BY_RECORD_TYPE = {
     "bp": "blood_pressure_record",
     "blood_pressure": "blood_pressure_record",
     "diet": "diet_record",
+    "event": "health_episode",
     "exercise": "exercise_record",
     "excretion": "excretion_record",
     "goal": "goal",
@@ -1894,6 +1895,10 @@ _FAST_RECORD_AUTO_CONFIRM_KINDS = {
     # 每条症状都二次询问被用户明确否决(2026-07-02)。
     "symptom",
     "rhinitis",
+    # event(生活事件账本):founder 2026-07-13 裁决 AUTO·全通道 —— 非医疗、
+    # L0、纯时间打点,写错顶多时间锚偏(可删重记);undo 通路=
+    # health_manage(delete event {id}) → DELETE /episodes/life-event/{id}。
+    "event",
 }
 # 症状类仅打字通道免确认;语音/未声明通道保留确认前置(转写失真 + Siri 单轮
 # 无法撤销)。channel 由客户端传输层声明(AgentRequest.channel),绝不读 LLM
@@ -1921,6 +1926,8 @@ _FAST_RECORD_KIND_ALIASES = {
     "bp": "blood_pressure",
     "blood-pressure": "blood_pressure",
     "bloodpressure": "blood_pressure",
+    "life_event": "event",
+    "life-event": "event",
 }
 def _normalize_fast_record_kind(raw: Any) -> str:
     kind = str(raw or "").strip().lower()
@@ -8120,10 +8127,11 @@ class AgentExecutor:
                 {"medication_id": matched["id"], "taken_time": taken_time, "status": "taken"}
             )
 
-        if rtype in ("event", "life_event"):
+        if rtype == "event":
             # 生活事件 → HealthEpisode 情景账本(2026-07-12):行程/落地/送达等
             # 带发生时间落库,时间线总结读结构化 occurred_at 而不是猜。
             # occurred_at 传用户原话("下午"/"刚才"/"21:07"),折算在后端确定性代码。
+            # life_event 是别名(_FAST_RECORD_KIND_ALIASES),canonical 名只有 event。
             title = str(data.get("title") or data.get("name") or data.get("event") or "").strip()
             if not title:
                 return "Error: event 必须提供 title (如 '落地北京' / '药品送达酒店')"
@@ -8235,6 +8243,7 @@ class AgentExecutor:
             "reminder": "/reminders/me?status=all&limit=50",
             "goal": "/goals/me",
             "medical_exam": f"/medical-exams/me/reports?limit={limit}",
+            "event": "/episodes/me/life-events?days=30",
         }
         record_paths = {
             "diet": "/diet/records/{id}",
@@ -8254,6 +8263,9 @@ class AgentExecutor:
             "supplement_definition": "/supplements/definitions/{id}",
             "reminder": "/reminders/{id}",
             "goal": "/goals/{id}",
+            # event 只开 list/delete(undo 通路);update 不开——occurred_at 由
+            # 确定性代码折算,改动走删除后重记(registry update 格 gap 挂账)。
+            "event": "/episodes/life-event/{id}",
         }
         update_supported = {
             "diet", "water", "weight", "waist", "blood_pressure",

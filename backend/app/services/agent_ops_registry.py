@@ -263,6 +263,27 @@ AGENT_OPS: Dict[str, Dict[str, Any]] = {
                    "via": "DELETE /illness/episodes/{id}"},
     },
 
+    "life_event": {
+        # 情景事件账本(2026-07-12,复用 HealthEpisode episode_type=life_event)。
+        # 2026-07-13 founder 裁决升 AUTO·全通道:非医疗、L0、可逆的纯时间打点,
+        # 恒确认违背时间线账本低摩擦初衷;undo 通路(list/delete)同批补齐
+        # (spec §3.3:auto 写入必须有 undo)。update 不开——occurred_at 由
+        # 确定性代码折算,改动走删除后重记。
+        "create": {
+            "tool": "health_record", "record_type": "event", "confirm": "auto",
+            "via": "health_record(event) → POST /episodes/life-event",
+            "undo": "health_manage(delete event {record_id})",
+        },
+        "read": {"tool": "health_query", "dimensions": ("events",),
+                 "via": "health_query(events) → GET /episodes/me/life-events?days={days}"},
+        "list": {"tool": "health_manage", "record_type": "event",
+                 "via": "GET /episodes/me/life-events?days=30"},
+        "update": {"gap": True,
+                   "reason": "无 agent 改通路;occurred_at 由确定性代码折算,改动走删除后重记"},
+        "delete": {"tool": "health_manage", "record_type": "event",
+                   "via": "DELETE /episodes/life-event/{id}(user_id + episode_type=life_event 双过滤 fail-closed)"},
+    },
+
     # ── 医疗级(never_auto:恒确认前置,spec §3.2)────────────────────────
     "medication": {
         "create": {

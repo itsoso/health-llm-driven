@@ -388,7 +388,7 @@ _MANAGE_RECORD_TYPES = {
     "diet", "water", "weight", "waist", "blood_pressure",
     "sleep", "mood", "excretion", "exercise", "illness", "symptom",
     "medication", "medication_log", "supplement", "supplement_definition", "reminder",
-    "goal", "medical_exam",
+    "goal", "medical_exam", "event",
 }
 _MANAGE_OPERATIONS = {"list", "update", "delete"}
 _CARD_TYPES = {"plan", "insight", "recommendation"}

@@ -320,6 +320,31 @@ def create_life_event(
     return _life_event_out(ep)
 
 
+@router.delete("/life-event/{event_id}", summary="删除生活事件(auto 写入的 undo 通路)")
+def delete_life_event(
+    event_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    # episode_type 过滤 fail-closed:本端点只允许删生活事件,其他 episode
+    # 类型(有 actions/outcome 流程语义)不开放 agent 删除。
+    ep = (
+        db.query(HealthEpisode)
+        .filter(
+            HealthEpisode.id == event_id,
+            HealthEpisode.user_id == current_user.id,
+            HealthEpisode.episode_type == "life_event",
+        )
+        .first()
+    )
+    if not ep:
+        raise HTTPException(status_code=404, detail="生活事件不存在")
+    title = ep.headline or ""
+    db.delete(ep)
+    db.commit()
+    return {"message": "已删除", "id": event_id, "title": title}
+
+
 @router.get("/me/life-events", response_model=List[LifeEventOut], summary="我的生活事件时间线")
 def list_life_events(
     days: int = Query(1, ge=1, le=30),

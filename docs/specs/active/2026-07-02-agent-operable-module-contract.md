@@ -144,10 +144,18 @@ task #43 已落地:
 8. **per-op confirm 只在 create 有执行机制**(快路由 gate);§3.1 示例里
    delete 的 `typed_only` 档位尚无 executor 执行点,注册表如实只在 create
    登记 confirm。
+9. ✅ **life_event(情景事件账本,2026-07-12)**:2026-07-13 founder 裁决升
+   AUTO·全通道(非医疗、L0、可逆的纯时间打点,恒确认违背账本低摩擦初衷)。
+   `event` 已进 executor AUTO 集;undo 通路同批补齐 —— health_manage
+   list(`GET /episodes/me/life-events`)+ delete
+   (`DELETE /episodes/life-event/{id}`,user_id + episode_type 双过滤
+   fail-closed)。update 不开:occurred_at 由确定性代码折算,改动走删除后重记
+   (gap 挂账)。
 
 ### 确认档位现状(镜像 executor 活集合,CI 强制)
 
 - `auto`:water / weight / blood_pressure / diet / exercise / reminder / supplement
+  / waist / sleep / excretion / event(生活事件,2026-07-13 升档)
 - `typed_only`:symptom / rhinitis / goal
 - `never_auto`:illness / medication(executor NEVER 集∩注册面)+ fail-closed
   兜底(mood / supplement_group / garmin_sync / intervention_cycle)
