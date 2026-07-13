@@ -173,6 +173,10 @@ function boundaryText(data: DietDraftData): string {
   return isPhotoSource(data.source) ? boundary.replace('确认后写入', '核对后写入') : boundary;
 }
 
+function editHintText(data: DietDraftData): string {
+  return isPhotoSource(data.source) ? '核对前可修正餐次、食物和营养估算' : '确认前可修正餐次、食物和营养估算';
+}
+
 /** 仅当 data 里有明确时点 (time / recorded_at 的 HH:MM) 才回显, 不伪造。 */
 function mealTimeLabel(data: DietDraftData): string | undefined {
   const raw = text(data.time) ?? text(data.recorded_at);
@@ -228,6 +232,7 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
     nextMealDetail && hasExpandedSection(data.expanded_sections, 'next_meal'),
   );
   const boundary = boundaryText(data);
+  const editHint = editHintText(data);
   const isRecorded = data.confirmActionState === 'done';
   const canConfirmFromEditor = Boolean(data.confirmAction && data.onConfirmAction && !data.confirmAction.disabled_reason);
   const recordedNextStep = walkText || suggestions[0] || '下一餐按目标补足蛋白和蔬菜';
@@ -321,7 +326,7 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
       {!isRecorded ? (
         <View style={styles.inlineHeader}>
           <Text maxFontSizeMultiplier={1.15} style={styles.inlineHint}>
-            确认前可修正餐次、食物和营养估算
+            {editHint}
           </Text>
           <Pressable
             onPress={() => setEditing((prev) => !prev)}

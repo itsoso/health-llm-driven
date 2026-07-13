@@ -271,6 +271,8 @@ describe('renderCard 安全降级', () => {
     expect(getByText('置信度 82% · 来源: 对话/图片')).toBeTruthy();
     expect(getByText('已带营养估算，核对后计入今日')).toBeTruthy();
     expect(queryByText('已带营养估算，确认后计入今日')).toBeNull();
+    expect(getByText('核对前可修正餐次、食物和营养估算')).toBeTruthy();
+    expect(queryByText('确认前可修正餐次、食物和营养估算')).toBeNull();
     expect(getByText('餐后轻走 10 分钟')).toBeTruthy();
     expect(getByText('营养为估算值,核对后写入今日饮食记录。')).toBeTruthy();
     expect(queryByText('营养为估算值,确认后写入今日饮食记录。')).toBeNull();
