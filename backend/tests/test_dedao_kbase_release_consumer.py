@@ -508,6 +508,189 @@ def test_review_bundle_waits_for_active_workspace_sync(tmp_path, monkeypatch):
     assert review_finished.is_set()
 
 
+def test_list_review_claims_returns_bounded_release_claims(tmp_path):
+    from app.services.kbase_review_workspace import list_review_claims
+
+    workspace = tmp_path / "review-workspace"
+    _write_release_review_workspace(workspace)
+
+    result = list_review_claims(workspace, offset=0, limit=20)
+
+    assert result["total"] == 1
+    assert result["offset"] == 0
+    assert result["limit"] == 20
+    assert len(result["workspace_fingerprint"]) == 64
+    assert result["items"] == [
+        {
+            "doc_id": "claim:release-abc-claim-1",
+            "title": "睡眠与咖啡因:晚间咖啡因可能延长睡眠潜伏期。",
+            "summary": "晚间咖啡因可能延长睡眠潜伏期。",
+            "evidence_level": "C",
+            "confidence": 0.68,
+            "sources": ["citation-1"],
+            "source_count": 1,
+            "review_status": "draft",
+            "decision": None,
+            "release_id": "release-abc",
+            "usage_policy": "evidence_only",
+            "citation_ids": ["citation-1"],
+        }
+    ]
+
+
+def test_adjudicate_review_claim_approves_with_structured_evidence(tmp_path):
+    from app.services.kbase_review_workspace import (
+        adjudicate_review_claim,
+        list_review_claims,
+        workspace_content_fingerprint,
+    )
+
+    workspace = tmp_path / "review-workspace"
+    _write_release_review_workspace(workspace)
+    before = workspace_content_fingerprint(workspace)
+
+    result = adjudicate_review_claim(
+        workspace,
+        doc_id="claim:release-abc-claim-1",
+        decision="approve",
+        reviewer="admin:7",
+        expected_workspace_fingerprint=before,
+        note="二源核验后通过",
+        evidence={
+            "kind": "research",
+            "source": "pubmed:12345",
+            "title": "Caffeine and sleep",
+            "url": "https://pubmed.ncbi.nlm.nih.gov/12345/",
+        },
+        evidence_level="B",
+        confidence=0.86,
+    )
+
+    assert result["decision"] == "approve"
+    assert result["workspace_fingerprint"] != before
+    item = list_review_claims(workspace, offset=0, limit=20)["items"][0]
+    assert item["decision"] == "approve"
+    assert item["review_status"] == "reviewed"
+    assert item["evidence_level"] == "B"
+    assert item["confidence"] == 0.86
+    assert item["source_count"] == 2
+    ledger = [json.loads(line) for line in (workspace / "adjudications.jsonl").read_text().splitlines()]
+    assert ledger[0]["doc_id"] == item["doc_id"]
+    assert ledger[0]["decision"] == "approve"
+    assert ledger[0]["reviewer"] == "admin:7"
+    assert "body" not in ledger[0]
+
+
+def test_adjudicate_review_claim_needs_evidence_remains_blocking(tmp_path):
+    from app.services.kbase_review_workspace import adjudicate_review_claim, list_review_claims
+    from app.services.system_knowledge_ingest import validate_artifact_review_gate
+
+    workspace = tmp_path / "review-workspace"
+    _write_release_review_workspace(workspace)
+    before = list_review_claims(workspace, offset=0, limit=20)["workspace_fingerprint"]
+
+    adjudicate_review_claim(
+        workspace,
+        doc_id="claim:release-abc-claim-1",
+        decision="needs_evidence",
+        reviewer="admin:7",
+        expected_workspace_fingerprint=before,
+        note="需要独立临床来源",
+    )
+
+    item = list_review_claims(workspace, offset=0, limit=20)["items"][0]
+    assert item["decision"] == "needs_evidence"
+    assert item["review_status"] == "draft"
+    assert validate_artifact_review_gate(workspace)["serving_allowed"] is False
+
+
+@pytest.mark.parametrize("decision", ["reject", "background_only"])
+def test_adjudicate_review_claim_excludes_claim_and_connected_relations(tmp_path, decision):
+    from app.services.kbase_review_workspace import adjudicate_review_claim, list_review_claims
+
+    workspace = tmp_path / "review-workspace"
+    _write_release_review_workspace(workspace)
+    before = list_review_claims(workspace, offset=0, limit=20)["workspace_fingerprint"]
+
+    result = adjudicate_review_claim(
+        workspace,
+        doc_id="claim:release-abc-claim-1",
+        decision=decision,
+        reviewer="admin:7",
+        expected_workspace_fingerprint=before,
+        note="不适用于 Health serving",
+    )
+
+    assert result["decision"] == decision
+    assert list_review_claims(workspace, offset=0, limit=20)["items"] == []
+    relations = [json.loads(line) for line in (workspace / "relations.jsonl").read_text().splitlines()]
+    assert all(row.get("dst_doc_id") != "claim:release-abc-claim-1" for row in relations)
+    ledger = json.loads((workspace / "adjudications.jsonl").read_text().strip())
+    assert ledger["decision"] == decision
+
+
+def test_adjudicate_review_claim_rejects_stale_fingerprint_without_mutation(tmp_path):
+    from app.services.kbase_review_workspace import adjudicate_review_claim, workspace_content_fingerprint
+
+    workspace = tmp_path / "review-workspace"
+    _write_release_review_workspace(workspace)
+    before = workspace_content_fingerprint(workspace)
+
+    with pytest.raises(ValueError, match="changed since preview"):
+        adjudicate_review_claim(
+            workspace,
+            doc_id="claim:release-abc-claim-1",
+            decision="approve",
+            reviewer="admin:7",
+            expected_workspace_fingerprint="0" * 64,
+        )
+
+    assert workspace_content_fingerprint(workspace) == before
+    assert not (workspace / "adjudications.jsonl").exists()
+
+
+def test_adjudicate_review_claim_preserves_workspace_when_candidate_validation_fails(tmp_path):
+    from app.services.kbase_review_workspace import adjudicate_review_claim, workspace_content_fingerprint
+
+    workspace = tmp_path / "review-workspace"
+    _write_release_review_workspace(workspace)
+    before = workspace_content_fingerprint(workspace)
+
+    with patch(
+        "app.services.kbase_review_workspace.workspace_artifacts_valid",
+        side_effect=[True, False],
+    ):
+        with pytest.raises(ValueError, match="candidate validation failed"):
+            adjudicate_review_claim(
+                workspace,
+                doc_id="claim:release-abc-claim-1",
+                decision="approve",
+                reviewer="admin:7",
+                expected_workspace_fingerprint=before,
+            )
+
+    assert workspace_content_fingerprint(workspace) == before
+    assert not (workspace / "adjudications.jsonl").exists()
+
+
+def _write_release_review_workspace(root: Path) -> None:
+    from app.integrations.dedao_kbase_release_consumer import compile_knowledge_release_artifacts
+    from app.services.system_knowledge_ingest import write_draft_artifacts
+
+    result = compile_knowledge_release_artifacts(
+        release=_release_payload(),
+        base_artifact_dir=root,
+        source_root=root.parent / "source",
+        now=datetime(2026, 7, 12, 13, tzinfo=UTC),
+    )
+    write_draft_artifacts(
+        result,
+        root,
+        extractor="test:release",
+        created_at=datetime(2026, 7, 12, 13, tzinfo=UTC),
+    )
+
+
 def _write_canonical_artifacts(root: Path, *, marker: str) -> None:
     root.mkdir(parents=True, exist_ok=True)
     (root / "pages.jsonl").write_text(
