@@ -24,10 +24,16 @@ def _executor(model_id, deep_analysis=False):
 
 # ──── registry / config 静态不变量 ────
 
-def test_only_qwen37max_advertises_thinking_budget():
-    """fail-closed: 只有探针验证过的 qwen3.7-max 声明 supports_thinking_budget。"""
-    supported = [m.id for m in reg.MODELS if getattr(m, "supports_thinking_budget", False)]
-    assert supported == ["qwen3.7-max"], f"意外扩大了 thinking-budget 白名单: {supported}"
+def test_only_probed_models_advertise_thinking_budget():
+    """fail-closed: 只有真网探针验证过的模型声明 supports_thinking_budget。
+
+    当前白名单: qwen3.7-max (probe 2026-07-12) + qwen3.7-plus (probe 2026-07-13,
+    见 6996d1f82)。新模型必须先跑 scripts/probe_qwen_thinking_budget.py 再进这里。
+    """
+    supported = sorted(m.id for m in reg.MODELS if getattr(m, "supports_thinking_budget", False))
+    assert supported == ["qwen3.7-max", "qwen3.7-plus"], (
+        f"意外改动了 thinking-budget 白名单: {supported}"
+    )
 
 
 def test_config_default_disabled():
@@ -53,8 +59,8 @@ def test_injects_when_enabled_and_model_supports(monkeypatch):
 def test_skips_unsupported_model(monkeypatch):
     monkeypatch.setattr(settings, "synthesis_thinking_budget", 512, raising=False)
     sk = {"messages": []}
-    # qwen3.7-plus 未验证 → supports_thinking_budget=False → 不注入(免端点 400)
-    _executor("qwen3.7-plus")._maybe_apply_synthesis_thinking_budget(sk)
+    # qwen3.6-plus 未跑探针 → supports_thinking_budget=False → 不注入(免端点 400)
+    _executor("qwen3.6-plus")._maybe_apply_synthesis_thinking_budget(sk)
     assert "thinking_budget" not in sk
 
 
