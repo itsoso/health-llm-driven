@@ -419,6 +419,14 @@ function publishHintForShareTarget(target: ShareTarget): { title: string; detail
 }
 
 function publishHintForReviewResult(result: ShareResult): { title: string; detail: string; icon: keyof typeof Ionicons.glyphMap; tone: 'success' | 'warning' } | null {
+  if (result.kind === 'saved_to_library') {
+    return {
+      title: '核对素材已保存，文案已复制',
+      detail: '先核对食物和份量，再从相册选择图片发布',
+      icon: 'alert-circle',
+      tone: 'warning',
+    };
+  }
   if (result.kind !== 'completed') return null;
   const targetDetail = result.target === 'xiaohongshu'
     ? '先核对食物和份量，再去小红书选择图片发布'

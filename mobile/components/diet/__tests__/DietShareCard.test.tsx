@@ -515,6 +515,39 @@ describe('DietShareCard', () => {
     });
   });
 
+  it('keeps low-confidence saved share images framed as review material', async () => {
+    const lowConfidenceRecord = {
+      ...record,
+      source: 'ai_estimate',
+      ai_confidence: 0.42,
+      food_items: '机场贵宾厅番茄鸡蛋面、鸭肉、生菜',
+    };
+    const onShareFeedback = jest.fn();
+    const { getByText, queryByText } = render(
+      <DietShareSheet
+        visible
+        record={lowConfidenceRecord}
+        dateLabel="7月11日 · 午餐"
+        onClose={jest.fn()}
+        onShareFeedback={onShareFeedback}
+      />,
+    );
+
+    fireEvent.press(getByText('保存复盘图到相册'));
+
+    await waitFor(() => {
+      expect(mockSaveToLibraryAsync).toHaveBeenCalledWith('file:///meal-share.png');
+      expect(getByText('核对素材已保存，文案已复制')).toBeTruthy();
+      expect(getByText('先核对食物和份量，再从相册选择图片发布')).toBeTruthy();
+      expect(queryByText('图片已保存到相册，文案已复制')).toBeNull();
+      expect(queryByText('去微信或小红书选择这张图片，再直接粘贴发布')).toBeNull();
+      expect(onShareFeedback).toHaveBeenCalledWith(expect.objectContaining({
+        title: '核对素材已保存，文案已复制',
+        tone: 'warning',
+      }));
+    });
+  });
+
   it('does not capture or save when photo library permission is denied', async () => {
     mockRequestPermissionsAsync.mockResolvedValueOnce({ status: 'denied', granted: false });
     const onShareTerminal = jest.fn();
