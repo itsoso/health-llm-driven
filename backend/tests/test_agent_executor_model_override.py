@@ -1,6 +1,7 @@
 import json
 
 from app.services.agent_executor import (
+    _extract_database_verification_instruction,
     _extract_desktop_response_instruction,
     _extract_model_id_from_extra_context,
 )
@@ -45,3 +46,32 @@ def test_extract_desktop_response_instruction_requires_mac_client():
     })
 
     assert _extract_desktop_response_instruction(extra_context) is None
+
+
+def test_extract_database_verification_instruction_requires_diet_query_from_db():
+    extra_context = json.dumps({
+        "from": "diet/post_confirm",
+        "database_verification": {
+            "required": True,
+            "date": "2026-07-11",
+            "verify_record_id": 89,
+            "query_scope": "daily_diet_records",
+            "totals_source": "database",
+            "forbid_cached_totals": True,
+            "missing_record_instruction": "如果数据库里查不到 verify_record_id 对应记录，明确提示同步失败。",
+        },
+    }, ensure_ascii=False)
+
+    instruction = _extract_database_verification_instruction(extra_context)
+
+    assert instruction is not None
+    assert "health_query(dimension='diet')" in instruction
+    assert "2026-07-11" in instruction
+    assert "89" in instruction
+    assert "不要使用入口上下文里的 totals" in instruction
+    assert "同步失败" in instruction
+
+
+def test_extract_database_verification_instruction_ignores_unrelated_context():
+    assert _extract_database_verification_instruction("not json") is None
+    assert _extract_database_verification_instruction(json.dumps({"from": "diet/today"})) is None

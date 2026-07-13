@@ -206,6 +206,55 @@ def _extract_desktop_response_instruction(extra_context: Optional[str]) -> Optio
     return instruction[:1200]
 
 
+def _extract_database_verification_instruction(extra_context: Optional[str]) -> Optional[str]:
+    """Return a hard turn instruction for mobile contexts that require DB verification."""
+
+    if not extra_context:
+        return None
+    try:
+        payload = json.loads(extra_context)
+    except Exception:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    verification = payload.get("database_verification")
+    if not isinstance(verification, dict) or verification.get("required") is not True:
+        return None
+    if verification.get("query_scope") != "daily_diet_records":
+        return None
+    if verification.get("totals_source") != "database":
+        return None
+
+    raw_date = verification.get("date")
+    date_text = raw_date.strip() if isinstance(raw_date, str) else ""
+    if date_text and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date_text):
+        date_text = ""
+
+    raw_record_id = verification.get("verify_record_id")
+    try:
+        record_id = int(raw_record_id)
+    except (TypeError, ValueError):
+        record_id = 0
+    if record_id <= 0:
+        return None
+
+    missing_instruction = verification.get("missing_record_instruction")
+    if not isinstance(missing_instruction, str) or not missing_instruction.strip():
+        missing_instruction = "如果数据库里查不到该记录，明确提示同步失败，不要根据入口上下文猜测。"
+    missing_instruction = missing_instruction.strip()[:300]
+
+    date_clause = f"，日期限定为 {date_text}" if date_text else ""
+    return (
+        "## 数据库校验要求（最高优先级）\n"
+        "本回合来自饮食确认后的复盘入口。回答前必须先调用 "
+        "health_query(dimension='diet') 查询数据库中的饮食记录"
+        f"{date_clause}，并核对结果里是否包含 diet_record id={record_id}。\n"
+        "- 不要使用入口上下文里的 totals、meals 或 cached totals 作为全天饮食/热量依据；\n"
+        "- 全天热量、餐次列表和下一餐建议只能基于 health_query 返回的数据库结果；\n"
+        f"- {missing_instruction}"
+    )
+
+
 # ── 意图专属 prompt 块门控(2026-07-11 token 优化 #5)─────────────────────
 # menu_share(739 chars)只在餐食/菜单类问题有用;基因解读规则(356 chars)只在
 # 基因/补剂类回合有用 —— 二者曾无条件每轮全发(占空用户 full prompt 20%)。
@@ -4210,6 +4259,9 @@ class AgentExecutor:
                     f"{desktop_response_instruction}\n"
                     "这是桌面端展示的最高优先级格式要求；除非用户明确要求纯文本，否则必须遵守。"
                 )
+        database_verification_instruction = _extract_database_verification_instruction(extra_context)
+        if database_verification_instruction:
+            turn_context_parts.append(database_verification_instruction)
         # 入口 deeplink 携带的结构化上下文 — 用户在 SNP/饮食/运动等页点"详细聊"时,
         # 把当前页正展示的具体方案条目透传过来, 让 LLM 不重新猜, 在已有方案上深化.
         if extra_context and extra_context.strip():
