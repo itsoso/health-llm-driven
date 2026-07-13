@@ -1395,8 +1395,21 @@ def _build_compact_empty_retry_messages(messages: List[Dict[str, Any]]) -> List[
     return compact_messages
 
 
-def _fallback_text_from_tool_results(messages: List[Dict[str, Any]]) -> str:
-    """Use the latest successful tool result when the model fails synthesis."""
+def _fallback_text_from_tool_results(
+    messages: List[Dict[str, Any]],
+    *,
+    has_verified_write: bool = False,
+) -> str:
+    """Use the latest successful tool result when the model fails synthesis.
+
+    诚实不变量(turn 6334 同病根的第三个宣称面):"已完成记录/已完成操作"只允许在
+    本轮产生了**可验证写入回执**(调用点按 write_receipts 传 has_verified_write)时
+    出现。纯查询/分析回合走到空回复重试链时,工具结果里有 food_items/id 不代表
+    写过任何东西 —— 无回执一律查询味口径("查到：…");没有人话可展示(id-only 字典、
+    结构化残片/manage-list 数组)就返回空串交回重试链,链有界(compact retry →
+    fallback provider → 硬兜底文案),不会重试风暴。默认 False = fail-closed:
+    新调用点忘了传参也绝不凭空宣称写入。
+    """
     for message in reversed(messages):
         if message.get("role") != "tool":
             continue
@@ -1418,14 +1431,24 @@ def _fallback_text_from_tool_results(messages: List[Dict[str, Any]]) -> str:
             for key in ("food_items", "summary", "preview"):
                 value = payload.get(key)
                 if isinstance(value, str) and value.strip():
-                    return f"已完成记录：{value.strip()}"
+                    if has_verified_write:
+                        return f"已完成记录：{value.strip()}"
+                    return f"查到：{value.strip()}"
 
             if payload.get("id") or payload.get("record_id"):
-                return "已完成记录。"
+                # 只读回合返回的 id 字典没有可展示的人话字段 —— 绝不因"结果里有
+                # id"就宣称写入,交回重试链让模型重答。
+                return "已完成记录。" if has_verified_write else ""
 
         preview = content.replace("\n", " ").strip()
         if preview:
-            return f"已完成操作：{preview[:120]}"
+            if has_verified_write:
+                return f"已完成操作：{preview[:120]}"
+            if preview[0] in "{[":
+                # 结构化残片(含 manage-list 的记录数组)在查询回合既不可读又
+                # 泄漏工具结果 —— 不展示,交回重试链。
+                return ""
+            return f"查到：{preview[:120]}"
 
     return ""
 
@@ -5463,7 +5486,11 @@ class AgentExecutor:
                         if isinstance(retry_response, dict):
                             final_text = _append_interrupted_notice(final_text, retry_response.get("finish_reason"))
                         if not final_text.strip():
-                            final_text = _fallback_text_from_tool_results(messages)
+                            # 诚实不变量:兜底的"已完成记录/操作"口径只在本轮有可验证
+                            # 写入回执时允许;查询/分析回合(write_receipts 空)用查询味。
+                            final_text = _fallback_text_from_tool_results(
+                                messages, has_verified_write=bool(write_receipts),
+                            )
                         if not final_text.strip():
                             compact_messages = _build_compact_empty_retry_messages(messages)
                             logger.warning(
