@@ -939,6 +939,11 @@ export default function DietScreen() {
         food_count: recognized.foods.length,
         table_calibrated_count: recognized.foods.filter(food => food.nutrition_basis === 'food_table').length,
       });
+      const draftConfidence = normalizedDraftConfidence(recognized.ai_confidence ?? recognized.confidence)
+        ?? averageRecognitionConfidence(recognized.foods)
+        ?? null;
+      const photoDraftNeedsReview = recognized.foods.some(foodNeedsPortionReview)
+        || (draftConfidence !== null && draftConfidence < 0.7);
       await openDietDraft({
         meal_type: guessMealType(),
         food_items: description,
@@ -956,11 +961,10 @@ export default function DietScreen() {
           ? `diet-photo:${recognized.photo_draft_token}`
           : undefined,
         ai_recognized: 1,
-        ai_confidence: normalizedDraftConfidence(recognized.ai_confidence ?? recognized.confidence)
-          ?? averageRecognitionConfidence(recognized.foods),
+        ai_confidence: draftConfidence ?? undefined,
         ai_raw_result: recognized,
         health_tips: recognized.health_tips ?? undefined,
-      }, { kind: 'photo', imageBase64, imageUri: asset.uri ?? preparedImage.uri }, '已识别餐食,确认后写入');
+      }, { kind: 'photo', imageBase64, imageUri: asset.uri ?? preparedImage.uri }, photoDraftNeedsReview ? '已识别餐食,核对后写入' : '已识别餐食,确认后写入');
       setPhotoCaptureStage('draft_ready');
     } catch {
       setPhotoCaptureStage('failed');
@@ -1578,6 +1582,9 @@ function QuickDietDraftCard({
   const confirmLabel = needsReview ? '核对后确认' : '确认记录';
   const primaryAction = needsReview ? onRevise : onConfirm;
   const primaryAccessibilityLabel = needsReview ? '核对后确认饮食' : '确认记录饮食';
+  const sharePromiseText = needsReview
+    ? '核对后自动生成微信 / 小红书分享图'
+    : '确认后自动生成微信 / 小红书分享图';
 
   return (
     <View style={styles.quickDraftCard}>
@@ -1663,7 +1670,7 @@ function QuickDietDraftCard({
       </View>
       <View style={styles.quickSharePromiseRow}>
         <Ionicons name="images-outline" size={14} color={C.green600} />
-        <Text style={txt.quickSharePromiseText}>确认后自动生成微信 / 小红书分享图</Text>
+        <Text style={txt.quickSharePromiseText}>{sharePromiseText}</Text>
       </View>
       <Text style={txt.quickHint}>{reviewHint}</Text>
 

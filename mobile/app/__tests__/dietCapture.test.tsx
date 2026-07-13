@@ -994,6 +994,10 @@ describe('DietScreen capture deeplink', () => {
     expect(getByText('营养校准 0.4s')).toBeTruthy();
     expect(getByText('小巴建议先核对：杂粮饭的份量；核对后才写入今天饮食。')).toBeTruthy();
     expect(queryByText('小巴建议先核对：杂粮饭的份量；确认后才写入今天饮食。')).toBeNull();
+    expect(getByText('核对后自动生成微信 / 小红书分享图')).toBeTruthy();
+    expect(queryByText('确认后自动生成微信 / 小红书分享图')).toBeNull();
+    expect(mockToastShow).toHaveBeenCalledWith('已识别餐食,核对后写入', 'success');
+    expect(mockToastShow).not.toHaveBeenCalledWith('已识别餐食,确认后写入', 'success');
     expect(getByText('核对后确认')).toBeTruthy();
     expect(getByText('修正份量')).toBeTruthy();
     fireEvent.press(getByLabelText('核对杂粮饭份量'));
