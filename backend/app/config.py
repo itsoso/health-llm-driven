@@ -256,6 +256,20 @@ class Settings(BaseSettings):
     # SHAPE-IDENTICAL(synthesis/intent/used_specialists/findings),上层投影/shadow 捕获零改动。
     # False = 回退旧 localhost HTTP 路径(保留一个 release 后删)。
     orchestrator_in_process: bool = True
+    # 深报告并行分专家段落合成(计划 rank11):深分析合成本是一次串行强模型大 decode
+    # (单 _call_llm 吃掉全部 specialist findings → p50 30-40s decode)。findings 天然
+    # per-specialist,确定性专家层早已并行,只有 LLM 叙事被串行化。改为 asyncio.gather N 个
+    # 小强模型段落调用(每段一个专家 finding + twin blob + 仲裁判词 + 严格段落契约),按严重度
+    # 确定性拼接(safety first);_safety_wrap/validate_text 套在**拼接整体**上(加层不减层)。
+    # 只对"报告形"深分析启用(≥2 substantive findings 且非 lite/siri;SoT-R 教训:对话形会劣化)。
+    #   'off'    = 默认,零行为变更(ships-off):run_orchestrator 走 mega-synthesis 逐字节不变;
+    #   'shadow' = 用户可见行为逐字节不变(mega 服务用户),但并行分段在后台 bg task 跑,结果 +
+    #              计时落 agent_audit_log(action=shadow_parallel_synthesis)供离线 pairwise judge;
+    #              shadow 失败/超时绝不影响服务回合(fail-soft),bg 用 fresh SessionLocal;
+    #   'on'     = 并行分段结果直接服务用户(仍过与 mega **同一条** _strip_llm_reva_ui +
+    #              _safety_wrap 出站护栏,R4 加层不减层)。分段流式是后续 seam(现只出拼接文本)。
+    # 未知值 fail-closed 归一到 'off'(见 orchestrator.parallel_synthesis.resolve_mode)。
+    orchestrator_parallel_synthesis: str = "off"
     # 多模型 panel(高风险裁决多模型投票):primitive,默认关
     multi_model_panel: bool = False
 

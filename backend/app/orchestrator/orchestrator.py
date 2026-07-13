@@ -16,6 +16,8 @@ from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
+from app.config import settings
+from app.orchestrator import parallel_synthesis
 from app.orchestrator.intent import classify_intent
 from app.orchestrator.schema import (
     Intent,
@@ -1402,6 +1404,75 @@ async def _stream_llm(
 # ───────────────────── 公开 API ────────────────────────
 
 
+def _launch_shadow_parallel_synthesis(
+    user_id: int,
+    query: str,
+    twin: HealthTwin,
+    findings: List[SpecialistFinding],
+    arb_block: str,
+    *,
+    task_tier: Optional[str] = None,
+) -> None:
+    """rank11 shadow: 把并行分段合成丢后台跑, 落 audit。绝不阻塞/影响服务回合。
+
+    mega-synthesis 已服务用户(调用方在 launch 前 await 完毕)。本 bg task 是纯旁路影子样本,
+    供离线 pairwise judge。持 task 引用防 GC(与 G-W9 stream bg task 共用集合), 完成即清理。
+    """
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        logger.debug("[orchestrator.shadow] 无运行中的事件循环, 跳过 shadow parallel synthesis")
+        return
+    task = loop.create_task(
+        _shadow_parallel_synthesis_worker(user_id, query, twin, findings, arb_block, task_tier)
+    )
+    _BACKGROUND_STREAM_TASKS.add(task)
+    task.add_done_callback(_BACKGROUND_STREAM_TASKS.discard)
+
+
+async def _shadow_parallel_synthesis_worker(
+    user_id: int,
+    query: str,
+    twin: HealthTwin,
+    findings: List[SpecialistFinding],
+    arb_block: str,
+    task_tier: Optional[str],
+) -> None:
+    """rank11 shadow worker: fresh SessionLocal + 独立 provider 作用域, 落 audit。fail-soft。
+
+    DB 会话纪律(镜像 rank8 in-process 模式): 用**独立 fresh SessionLocal**, 不复用请求 db
+    (请求可能已在 shadow 完成前 close)。provider 作用域也切到 fresh db(override _user_pref_ctx),
+    与请求生命周期完全解耦。任何异常/超时只落日志, 绝不影响已返回的服务回合。
+    """
+    from app.database import SessionLocal
+
+    t_start = time.monotonic()
+    shadow_db = SessionLocal()
+    tok_pref = _user_pref_ctx.set((user_id, shadow_db))
+    tok_tier = _task_tier_ctx.set(task_tier)
+    try:
+        text, meta = await parallel_synthesis.run_parallel_sectioned(
+            call_llm=_call_llm, query=query, twin=twin,
+            findings=findings, arb_block=arb_block,
+        )
+        # 与 mega 同一条出站护栏(加层不减层), 使影子样本与服务文本可比。
+        text = _strip_llm_reva_ui(text)
+        text = _safety_wrap(text, source="orchestrator.shadow_parallel").safe_text
+        meta["wall_ms"] = int((time.monotonic() - t_start) * 1000)
+        from app.agents.audit import log_shadow_synthesis
+        log_shadow_synthesis(shadow_db, user_id=user_id, query=query, text=text, meta=meta)
+    except Exception as e:  # noqa: BLE001 — shadow 是旁路, 绝不影响服务回合
+        logger.warning("[orchestrator.shadow] 并行分段 shadow 失败 (旁路, 不影响回合): %s", e)
+        try:
+            shadow_db.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+    finally:
+        _user_pref_ctx.reset(tok_pref)
+        _task_tier_ctx.reset(tok_tier)
+        shadow_db.close()
+
+
 async def run_orchestrator(
     db: Session, user_id: int, req: OrchestratorRequest
 ) -> OrchestratorResponse:
@@ -1475,14 +1546,44 @@ async def run_orchestrator(
         db, user_id, user_prompt, findings=findings, lite_mode=lite_mode,
     )
 
+    # rank11 分段合成: flag 归一 + 报告形 gate。off / 非报告形 → mega-synthesis 逐字节不变。
+    _synth_mode = parallel_synthesis.resolve_mode(
+        getattr(settings, "orchestrator_parallel_synthesis", "off")
+    )
+    _sectioned_ok = _synth_mode != "off" and parallel_synthesis.report_shaped(
+        lite_mode, findings, req.source
+    )
+
     t_llm = time.monotonic()
-    synthesis = await _call_llm(system_prompt, user_prompt, lite_mode=lite_mode)
+    if _synth_mode == "on" and _sectioned_ok:
+        # 'on': 并行分段结果直接服务用户。全段失败(空产出)→ fail-closed 回落 mega。
+        synthesis, _sec_meta = await parallel_synthesis.run_parallel_sectioned(
+            call_llm=_call_llm, query=req.query, twin=twin,
+            findings=findings, arb_block=conflict_arb_block,
+        )
+        perf["parallel_synthesis"] = _sec_meta
+        if not (synthesis or "").strip():
+            logger.warning("[orchestrator] parallel synthesis 空产出, 回落 mega-synthesis")
+            synthesis = await _call_llm(system_prompt, user_prompt, lite_mode=lite_mode)
+            perf["parallel_synthesis_fallback"] = "empty_sections"
+    else:
+        synthesis = await _call_llm(system_prompt, user_prompt, lite_mode=lite_mode)
     perf["llm_full_ms"] = int((time.monotonic() - t_llm) * 1000)
     synthesis = _strip_llm_reva_ui(synthesis)  # R4 护栏: 剥 LLM 伪造图表 block
 
-    # v3 cross-cutting safety: 所有 LLM 终态自由文本统一过 validator
+    # v3 cross-cutting safety: 所有 LLM 终态自由文本统一过 validator。
+    # 分段('on')与 mega 走**同一条** _safety_wrap, 套在拼接整体上(加层不减层):
+    # 任一段落越界 → 整篇同样被句级遮蔽 + disclaimer。
     safety = _safety_wrap(synthesis, source="orchestrator.run")
     synthesis = safety.safe_text
+
+    # 'shadow': mega 已服务用户(上方)。并行分段丢后台 bg task 跑, 落 audit 供离线 pairwise
+    # judge; fresh SessionLocal, 失败/超时 fail-soft 绝不影响本回合。
+    if _synth_mode == "shadow" and _sectioned_ok:
+        _launch_shadow_parallel_synthesis(
+            user_id, req.query, twin, list(findings), conflict_arb_block,
+            task_tier=_task_tier_ctx.get(),
+        )
 
     # 旁路观测: KB 证据引用率 —— 提供给 LLM 的 claim 里有多少在终稿里显现 (cheap substring).
     # 失败绝不影响主流程。

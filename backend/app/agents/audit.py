@@ -116,6 +116,35 @@ def log_orchestrator_run(
     )
 
 
+def log_shadow_synthesis(
+    db: Session,
+    user_id: int,
+    query: str,
+    text: str,
+    meta: Dict[str, Any],
+) -> Optional[int]:
+    """记录一次 rank11 shadow 并行分段合成(off-line pairwise judge 用)。
+
+    仅在 flag='shadow' 时写。mega-synthesis 服务用户, 本行是旁路影子样本:
+    result_detail = {"text": <拼接文本[:4000]>, "wall_ms", "sections", ...meta}。
+    失败静默(旁路), 绝不影响服务回合。
+    """
+    detail: Dict[str, Any] = {"text": (text or "")[:4000]}
+    if isinstance(meta, dict):
+        detail.update({k: v for k, v in meta.items() if k != "text"})
+    return _write(
+        db,
+        user_id=user_id,
+        agent_type="orchestrator",
+        action="shadow_parallel_synthesis",
+        query=query,
+        result_summary=(text or "")[:200],
+        findings_count=int(detail.get("sections", 0) or 0),
+        total_ms=int(detail.get("wall_ms", 0) or 0),
+        result_detail=detail,
+    )
+
+
 def log_cross_review_conflicts(
     db: Session,
     user_id: int,
