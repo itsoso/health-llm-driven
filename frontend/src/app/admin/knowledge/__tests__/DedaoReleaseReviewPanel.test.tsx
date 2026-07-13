@@ -106,6 +106,25 @@ describe('DedaoReleaseReviewPanel', () => {
     });
   });
 
+  it('clears claim-specific evidence inputs when selecting another claim', async () => {
+    renderPanel();
+    await screen.findByRole('button', { name: /咖啡因与睡眠窗口/ });
+
+    fireEvent.change(screen.getByLabelText('裁决说明'), { target: { value: '仅适用于第一条 claim' } });
+    fireEvent.change(screen.getByLabelText('证据类型'), { target: { value: 'research' } });
+    fireEvent.change(screen.getByLabelText('外部证据 ID'), { target: { value: 'pubmed:12345' } });
+    fireEvent.change(screen.getByLabelText('证据标题'), { target: { value: 'First claim evidence' } });
+    fireEvent.change(screen.getByLabelText('证据 URL'), { target: { value: 'https://example.test/evidence' } });
+
+    fireEvent.click(screen.getByRole('button', { name: /晨间光照/ }));
+
+    expect(screen.getByLabelText('裁决说明')).toHaveValue('');
+    expect(screen.getByLabelText('证据类型')).toHaveValue('');
+    expect(screen.getByLabelText('外部证据 ID')).toHaveValue('');
+    expect(screen.getByLabelText('证据标题')).toHaveValue('');
+    expect(screen.getByLabelText('证据 URL')).toHaveValue('');
+  });
+
   it('keeps finalization disabled while claims are unresolved', async () => {
     renderPanel();
     await screen.findByRole('button', { name: /咖啡因与睡眠窗口/ });

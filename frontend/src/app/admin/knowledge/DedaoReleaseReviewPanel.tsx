@@ -93,6 +93,11 @@ export function DedaoReleaseReviewPanel({ enabled }: DedaoReleaseReviewPanelProp
     setSelectedId(selected.doc_id);
     setEvidenceLevel(selected.evidence_level ?? '');
     setConfidence(selected.confidence == null ? '' : String(selected.confidence));
+    setNote('');
+    setEvidenceKind('');
+    setEvidenceSource('');
+    setEvidenceTitle('');
+    setEvidenceUrl('');
   }, [selected]);
 
   const refreshReview = async () => {
