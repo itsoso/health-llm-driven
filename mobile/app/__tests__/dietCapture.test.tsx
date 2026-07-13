@@ -970,12 +970,13 @@ describe('DietScreen capture deeplink', () => {
       error: null,
     });
 
-    const { getByText, getAllByText, getByLabelText } = render(<DietScreen />);
+    const { getByText, getAllByText, getByLabelText, queryByText } = render(<DietScreen />);
 
     await waitFor(() => {
       expect(getByText('识别明细')).toBeTruthy();
     });
-    expect(getByText('已带营养估算，确认后计入今日')).toBeTruthy();
+    expect(getByText('已带营养估算，核对后计入今日')).toBeTruthy();
+    expect(queryByText('已带营养估算，确认后计入今日')).toBeNull();
     expect(getByText('1 项需核对')).toBeTruthy();
     expect(getByText('重点核对份量')).toBeTruthy();
     expect(getByText('鸡胸肉')).toBeTruthy();
@@ -991,7 +992,8 @@ describe('DietScreen capture deeplink', () => {
     expect(getAllByText('请核对份量').length).toBe(1);
     expect(getByText('识别完成 · 2.6s')).toBeTruthy();
     expect(getByText('营养校准 0.4s')).toBeTruthy();
-    expect(getByText('小巴建议先核对：杂粮饭的份量；确认后才写入今天饮食。')).toBeTruthy();
+    expect(getByText('小巴建议先核对：杂粮饭的份量；核对后才写入今天饮食。')).toBeTruthy();
+    expect(queryByText('小巴建议先核对：杂粮饭的份量；确认后才写入今天饮食。')).toBeNull();
     expect(getByText('核对后确认')).toBeTruthy();
     expect(getByText('修正份量')).toBeTruthy();
     fireEvent.press(getByLabelText('核对杂粮饭份量'));

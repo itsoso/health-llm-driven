@@ -212,6 +212,8 @@ function quickDraftNeedsReview(draft: Partial<DietRecordCreate>): boolean {
 
 function buildQuickDraftReviewHint(draft: DietRecordCreate): string {
   const foods = draft.ai_raw_result?.foods ?? [];
+  const needsReview = quickDraftNeedsReview(draft);
+  const writeVerb = needsReview ? '核对后' : '确认后';
   const portionCheckNames = foods
     .filter(foodNeedsPortionReview)
     .map(food => food.name?.trim())
@@ -219,15 +221,15 @@ function buildQuickDraftReviewHint(draft: DietRecordCreate): string {
   if (portionCheckNames.length > 0) {
     const visibleNames = portionCheckNames.slice(0, 2).join('、');
     const suffix = portionCheckNames.length > 2 ? `等 ${portionCheckNames.length} 项` : '';
-    return `小巴建议先核对：${visibleNames}${suffix}的份量；确认后才写入今天饮食。`;
+    return `小巴建议先核对：${visibleNames}${suffix}的份量；${writeVerb}才写入今天饮食。`;
   }
   if (quickDraftNeedsWholeReview(draft)) {
-    return '小巴建议先核对整餐识别结果和份量；确认后才写入今天饮食。';
+    return `小巴建议先核对整餐识别结果和份量；${writeVerb}才写入今天饮食。`;
   }
   if (foods.length > 0) {
-    return `小巴已拆出 ${foods.length} 项食物；确认后才写入今天饮食。`;
+    return `小巴已拆出 ${foods.length} 项食物；${writeVerb}才写入今天饮食。`;
   }
-  return '先核对食物和份量；确认后才写入今天饮食。';
+  return `先核对食物和份量；${writeVerb}才写入今天饮食。`;
 }
 
 function quickDraftReviseLabel(draft: DietRecordCreate): string {
@@ -1560,19 +1562,19 @@ function QuickDietDraftCard({
     fat ? `脂肪 ${fat}g` : null,
   ].filter(Boolean).join(' · ');
   const recognizedFoods = draft.ai_raw_result?.foods ?? [];
+  const reviewItemCount = recognizedFoods.filter(foodNeedsPortionReview).length;
+  const needsWholeReview = quickDraftNeedsWholeReview(draft);
+  const needsReview = reviewItemCount > 0 || needsWholeReview;
   const hasNutritionEstimate = [draft.calories, draft.protein, draft.carbs, draft.fat, draft.fiber]
     .some((value) => typeof value === 'number' && Number.isFinite(value));
   const nutritionStatusText = hasNutritionEstimate
-    ? '已带营养估算，确认后计入今日'
+    ? (needsReview ? '已带营养估算，核对后计入今日' : '已带营养估算，确认后计入今日')
     : '确认后先记录，营养后台估算';
   const reviewHint = buildQuickDraftReviewHint(draft);
   const reviseLabel = quickDraftReviseLabel(draft);
   const recognitionTotalSeconds = formatTimingSeconds(draft.ai_raw_result?.timing_ms?.total);
   const calibrationSeconds = formatTimingSeconds(draft.ai_raw_result?.timing_ms?.calibration);
   const showRecognitionTiming = Boolean(recognitionTotalSeconds || calibrationSeconds);
-  const reviewItemCount = recognizedFoods.filter(foodNeedsPortionReview).length;
-  const needsWholeReview = quickDraftNeedsWholeReview(draft);
-  const needsReview = reviewItemCount > 0 || needsWholeReview;
   const confirmLabel = needsReview ? '核对后确认' : '确认记录';
   const primaryAction = needsReview ? onRevise : onConfirm;
   const primaryAccessibilityLabel = needsReview ? '核对后确认饮食' : '确认记录饮食';
