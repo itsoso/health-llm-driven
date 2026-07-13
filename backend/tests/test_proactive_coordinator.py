@@ -5,8 +5,10 @@
 旧埋点无 tier 记为 P1;tier 计数互不串。
 """
 import pytest
+from datetime import datetime
 
 import app.services.proactive_coordinator as pc
+from app.models.notification import UserNotificationSetting
 from app.services.proactive_coordinator import (
     can_notify_proactively,
     proactive_notifications_sent,
@@ -40,6 +42,19 @@ def test_p1_allowed_when_awake_and_under_global(db, awake):
 def test_p1_blocked_in_quiet_hours(db, monkeypatch):
     monkeypatch.setattr(pc, "_in_quiet_hours", lambda db, uid: True)
     assert can_notify_proactively(db, 1, tier="P1") is False
+
+
+def test_quiet_hours_has_9am_sleep_floor_even_with_legacy_end(db, monkeypatch):
+    db.add(UserNotificationSetting(
+        user_id=1,
+        enabled=True,
+        quiet_hours_start="22:00",
+        quiet_hours_end="08:30",
+    ))
+    db.commit()
+    monkeypatch.setattr(pc, "get_user_now", lambda db, uid: datetime(2026, 5, 1, 8, 45))
+
+    assert pc._in_quiet_hours(db, 1) is True
 
 
 def test_p1_blocked_at_global_cap(db, awake, monkeypatch):

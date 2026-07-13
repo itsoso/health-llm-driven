@@ -5,6 +5,15 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { UIMessage } from '../../../hooks/useChatEngine';
 
 const mockToastShow = jest.fn();
+const mockRememberVerifiedWriteReceipt = jest.fn().mockResolvedValue(undefined);
+const mockEmitClientEvent = jest.fn().mockResolvedValue(undefined);
+const mockDurationBucket = jest.fn().mockReturnValue('1_3s');
+const mockLoadCardActionReceipt = jest.fn().mockResolvedValue(undefined);
+const mockSaveCardActionReceipt = jest.fn().mockResolvedValue(undefined);
+const mockSaveChatImageToLibrary = jest.fn().mockResolvedValue(undefined);
+const mockShareLocalImage = jest.fn().mockResolvedValue(undefined);
+const mockCaptureRefCalls: Array<{ testID?: string; options: unknown }> = [];
+let mockCaptureRefResult = 'file:///tmp/diet-card.png';
 
 /* eslint-disable @typescript-eslint/no-require-imports */
 jest.mock('expo-speech', () => ({ stop: jest.fn() }));
@@ -17,12 +26,25 @@ jest.mock('expo-haptics', () => ({
 jest.mock('../../../services/speakWithUserVoice', () => ({
   speakWithUserVoice: jest.fn(),
 }));
-jest.mock('../../../services/chatResultActions', () => ({
-  saveAssistantReplyAsMemory: jest.fn(),
-  createRecordFromAssistantReply: jest.fn(),
-}));
 jest.mock('../../../services/chatCardActions', () => ({
   dispatchChatCardAction: jest.fn(),
+}));
+jest.mock('../../../services/conversationContinuity', () => ({
+  rememberVerifiedWriteReceipt: (...args: any[]) => mockRememberVerifiedWriteReceipt(...args),
+}));
+jest.mock('../../../services/cardActionReceiptStorage', () => ({
+  buildCardActionReceiptIdentity: jest.fn((action: any, cardType: string) => (
+    `${cardType}:${action.id || action.action}:${action.endpoint || ''}`
+  )),
+  loadCardActionCompletion: async (...args: any[]) => {
+    const receipt = await mockLoadCardActionReceipt(...args);
+    return receipt ? { verified: true, receipt } : undefined;
+  },
+  saveCardActionReceipt: (...args: any[]) => mockSaveCardActionReceipt(...args),
+}));
+jest.mock('../../../services/clientEvents', () => ({
+  emitClientEvent: (...args: any[]) => mockEmitClientEvent(...args),
+  durationBucket: (...args: any[]) => mockDurationBucket(...args),
 }));
 jest.mock('../../../hooks/useToast', () => ({
   useToast: () => ({ show: mockToastShow }),
@@ -44,13 +66,6 @@ jest.mock('../BrandCircle', () => {
   MockBrandCircle.displayName = 'MockBrandCircle';
   return MockBrandCircle;
 });
-jest.mock('../AttributionChips', () => {
-  const React = require('react');
-  const { View } = require('react-native');
-  const MockAttributionChips = () => <View />;
-  MockAttributionChips.displayName = 'MockAttributionChips';
-  return MockAttributionChips;
-});
 jest.mock('../cards', () => {
   const React = require('react');
   const { View, Text } = require('react-native');
@@ -62,30 +77,25 @@ jest.mock('../cards', () => {
     __mockCard: <View><Text>今晚晚餐建议</Text></View>,
   };
 });
-jest.mock('../../../services/actionCards', () => ({
-  createInterventionDraft: jest.fn(),
-}));
-jest.mock('../../../services/interventionDraft', () => ({
-  buildInterventionDraft: jest.fn(() => ({})),
-}));
 jest.mock('../../../utils/share', () => ({
   sharePlainText: jest.fn(),
+  shareLocalImage: (...args: any[]) => mockShareLocalImage(...args),
 }));
-jest.mock('../../actions/InterventionDraftSheet', () => {
-  const React = require('react');
-  const { View } = require('react-native');
-  const MockInterventionDraftSheet = () => <View />;
-  MockInterventionDraftSheet.displayName = 'MockInterventionDraftSheet';
-  return MockInterventionDraftSheet;
-});
+jest.mock('react-native-view-shot', () => ({
+  captureRef: (target: any, options: unknown) => {
+    mockCaptureRefCalls.push({ testID: target?.props?.testID, options });
+    return Promise.resolve(mockCaptureRefResult);
+  },
+}));
+jest.mock('../../../services/chatImageSave', () => ({
+  saveChatImageToLibrary: (...args: any[]) => mockSaveChatImageToLibrary(...args),
+}));
 
 const ChatBubble = require('../ChatBubble').default;
-const { saveAssistantReplyAsMemory, createRecordFromAssistantReply } = require('../../../services/chatResultActions');
 const { dispatchChatCardAction } = require('../../../services/chatCardActions');
 const { renderCard, __mockCard } = require('../cards');
 const { sharePlainText } = require('../../../utils/share');
 const { router } = require('expo-router');
-const { createInterventionDraft } = require('../../../services/actionCards');
 
 function renderBubble(content: string) {
   const qc = new QueryClient();
@@ -102,10 +112,33 @@ function renderBubble(content: string) {
   );
 }
 
+function verifiedReceipt(resourceType = 'diet_record', resourceId = '77') {
+  return {
+    operationId: `${resourceType}:${resourceId}`,
+    status: 'verified' as const,
+    resourceType,
+    resourceId,
+    completedAt: '2026-07-09T12:00:00.000Z',
+    verified: true as const,
+  };
+}
+
 describe('ChatBubble structured summary', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockToastShow.mockClear();
+    renderCard.mockReset();
+    renderCard.mockReturnValue(null);
+    mockLoadCardActionReceipt.mockReset();
+    mockLoadCardActionReceipt.mockResolvedValue(undefined);
+    mockSaveCardActionReceipt.mockReset();
+    mockSaveCardActionReceipt.mockResolvedValue(undefined);
+    mockCaptureRefCalls.length = 0;
+    mockCaptureRefResult = 'file:///tmp/diet-card.png';
+    mockSaveChatImageToLibrary.mockReset();
+    mockSaveChatImageToLibrary.mockResolvedValue(undefined);
+    mockShareLocalImage.mockReset();
+    mockShareLocalImage.mockResolvedValue(undefined);
   });
 
   it('summarizes markdown metric tables and today advice for mobile scanning', () => {
@@ -145,100 +178,42 @@ describe('ChatBubble structured summary', () => {
     expect(queryByText(/###/)).toBeNull();
   });
 
-  it('shows executable actions for completed assistant replies and can save memory', async () => {
-    saveAssistantReplyAsMemory.mockResolvedValueOnce(undefined);
+  it('renders explicit WeChat and Xiaohongshu share actions for a normal completed reply', () => {
+    const { queryByText, getByLabelText } = renderBubble(
+      '建议今晚 23:00 前睡觉，并在睡前 3 小时停止正餐。',
+    );
 
-    const { getByText } = renderBubble('建议今晚 23:00 前睡觉，并在睡前 3 小时停止正餐。');
-
-    expect(getByText('加入今日计划')).toBeTruthy();
-    expect(getByText('保存记忆')).toBeTruthy();
-    expect(getByText('生成记录')).toBeTruthy();
-    expect(getByText('继续追问')).toBeTruthy();
-
-    fireEvent.press(getByText('保存记忆'));
-
-    await waitFor(() => {
-      expect(saveAssistantReplyAsMemory).toHaveBeenCalledWith('建议今晚 23:00 前睡觉，并在睡前 3 小时停止正餐。');
-    });
-    expect(getByText('已保存')).toBeTruthy();
+    expect(queryByText('加入今日计划')).toBeNull();
+    expect(queryByText('保存记忆')).toBeNull();
+    expect(queryByText('生成记录')).toBeNull();
+    expect(queryByText('继续追问')).toBeNull();
+    expect(getByLabelText('发微信分享这条回复')).toBeTruthy();
+    expect(getByLabelText('发小红书分享这条回复')).toBeTruthy();
+    expect(getByLabelText('更多分享')).toBeTruthy();
+    expect(getByLabelText('语音播报')).toBeTruthy();
   });
 
-  it('adds an assistant reply to today plan directly from the result action', async () => {
-    createInterventionDraft.mockResolvedValueOnce({ id: 77 });
-
-    const { getByText } = renderBubble('今晚 23:00 前睡觉，并在睡前 3 小时停止正餐。');
-
-    fireEvent.press(getByText('加入今日计划'));
-
-    await waitFor(() => {
-      expect(createInterventionDraft).toHaveBeenCalled();
-    });
-    expect(mockToastShow).toHaveBeenCalledWith('已加入今日计划', 'success');
-  });
-
-  it('creates a record from a diet-like assistant reply instead of only opening the record tab', async () => {
-    createRecordFromAssistantReply.mockResolvedValueOnce({
-      status: 'created',
-      type: 'diet',
-      message: '已记录午餐：煎牛肉能量碗 + 姜黄鲜柠维C茶',
-    });
-    const content = '✅ 已记录午餐 — 煎牛肉能量碗 + 姜黄鲜柠维C茶，770 kcal（蛋白 30g / 碳水 70g / 脂肪 17g）';
-
-    const { getByText } = renderBubble(content);
-
-    fireEvent.press(getByText('生成记录'));
-
-    await waitFor(() => {
-      expect(createRecordFromAssistantReply).toHaveBeenCalledWith(content);
-    });
-    expect(router.push).not.toHaveBeenCalledWith('/(tabs)/record');
-    expect(mockToastShow).toHaveBeenCalledWith('已记录午餐：煎牛肉能量碗 + 姜黄鲜柠维C茶', 'success');
-    expect(getByText('已生成')).toBeTruthy();
-  });
-
-  it('refreshes today execution surfaces after generating a record from an assistant reply', async () => {
-    createRecordFromAssistantReply.mockResolvedValueOnce({
-      status: 'created',
-      type: 'diet',
-      message: '已记录午餐',
-    });
+  it('does not offer a second prose-derived write after health_record already completed', () => {
     const qc = new QueryClient();
-    const invalidateSpy = jest.spyOn(qc, 'invalidateQueries');
     const message: UIMessage = {
-      id: 'assistant-record-refresh',
+      id: 'assistant-record-complete',
       role: 'assistant',
       content: '✅ 已记录午餐 — 煎牛肉能量碗 + 姜黄鲜柠维C茶，770 kcal',
       streaming: false,
+      toolsUsed: ['health_record'],
+      completionStatus: 'complete',
     };
 
-    const { getByText } = render(
+    const { queryByText } = render(
       <QueryClientProvider client={qc}>
         <ChatBubble item={message} />
       </QueryClientProvider>,
     );
 
-    fireEvent.press(getByText('生成记录'));
-
-    await waitFor(() => {
-      expect(mockToastShow).toHaveBeenCalledWith('已记录午餐', 'success');
-    });
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['timeline', 'today'] });
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['agenda', 'today'] });
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['daily-artifact', 'me'] });
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['today-dynamic-view', 'mobile.today'] });
-  });
-
-  it('injects follow-up prompts into the current chat input instead of pushing the same tab', () => {
-    const { getByText } = renderBubble('晚餐后散步 15 分钟，明早观察 HRV 和主观恢复。');
-
-    fireEvent.press(getByText('继续追问'));
-
-    expect(router.setParams).toHaveBeenCalledWith(expect.objectContaining({
-      prompt: expect.stringContaining('继续追问'),
-      promptNonce: expect.any(String),
-    }));
-    expect(router.push).not.toHaveBeenCalledWith(expect.objectContaining({ pathname: '/(tabs)/chat' }));
-    expect(getByText('已放入输入框')).toBeTruthy();
+    expect(queryByText('加入今日计划')).toBeNull();
+    expect(queryByText('保存记忆')).toBeNull();
+    expect(queryByText('生成记录')).toBeNull();
+    expect(queryByText('继续追问')).toBeNull();
   });
 
   it('shares assistant replies under the 小巴 persona', async () => {
@@ -246,13 +221,68 @@ describe('ChatBubble structured summary', () => {
 
     const { getByLabelText } = renderBubble('今天先补水 300ml, 晚饭后散步 15 分钟。');
 
-    fireEvent.press(getByLabelText('分享'));
+    fireEvent.press(getByLabelText('发微信分享这条回复'));
 
     await waitFor(() => {
       expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
         title: '小巴 · 建议',
       }));
     });
+  });
+
+  it('shares assistant replies from the Xiaohongshu action too', async () => {
+    sharePlainText.mockResolvedValueOnce(undefined);
+
+    const { getByLabelText } = renderBubble('今天午餐记录完成，晚饭少油并补 30g 蛋白。');
+
+    fireEvent.press(getByLabelText('发小红书分享这条回复'));
+
+    await waitFor(() => {
+      expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
+        title: '小巴 · 建议',
+      }));
+    });
+  });
+
+  it('shares completed diet records with a polished social note', async () => {
+    sharePlainText.mockResolvedValueOnce(undefined);
+
+    const { getByLabelText } = renderBubble([
+      '✅ 已记录午餐 — 煎牛肉能量碗 + 姜黄鲜柠维C茶，770 kcal（蛋白 30g / 碳水 70g / 脂肪 17g）',
+      '晚餐建议：优先补 40g 蛋白，少油少刺激。',
+    ].join('\n'));
+
+    fireEvent.press(getByLabelText('更多分享'));
+
+    await waitFor(() => {
+      expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
+        message: expect.stringContaining('今天这餐被小巴认真记下来了'),
+      }));
+      expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
+        message: expect.stringContaining('#饮食记录 #健康管理 #小巴'),
+      }));
+    });
+  });
+
+  it('renders backend source metadata and opens memory management from a memory source', () => {
+    const qc = new QueryClient();
+    const message: UIMessage = {
+      id: 'assistant-sources',
+      role: 'assistant',
+      content: '今晚优先休息。',
+      streaming: false,
+      sourcesUsed: ['用户记忆', 'Garmin 数据 (14 天 HRV/睡眠/RHR)'],
+    };
+    const { getByText, getByLabelText } = render(
+      <QueryClientProvider client={qc}>
+        <ChatBubble item={message} />
+      </QueryClientProvider>,
+    );
+
+    expect(getByText('用户记忆')).toBeTruthy();
+    expect(getByText('Garmin 数据 (14 天 HRV/睡眠/RHR)')).toBeTruthy();
+    fireEvent.press(getByLabelText('查看 AI 记忆来源'));
+    expect(router.push).toHaveBeenCalledWith('/memory');
   });
 
   it('normalizes headerless markdown tables before rendering assistant replies', () => {
@@ -299,8 +329,187 @@ describe('ChatBubble structured summary', () => {
     });
   });
 
+  it('shares a card-only diet draft as a polished meal note', async () => {
+    sharePlainText.mockResolvedValueOnce(undefined);
+    renderCard.mockReturnValueOnce(__mockCard);
+    const qc = new QueryClient();
+    const message: UIMessage = {
+      id: 'assistant-card-diet-share',
+      role: 'assistant',
+      content: '',
+      streaming: false,
+      cardType: 'diet_draft',
+      writeReceipts: [verifiedReceipt('diet_record', '770')],
+      cardData: {
+        meal_type: 'lunch',
+        food_items: '煎牛肉能量碗 + 姜黄鲜柠维C茶',
+        calories: 770,
+        protein: 30,
+        carbs: 70,
+        fat: 17,
+        suggestions: ['晚餐优先补 40g 蛋白'],
+      },
+    };
+
+    const { getByLabelText, getByTestId, getByText } = render(
+      <QueryClientProvider client={qc}>
+        <ChatBubble item={message} />
+      </QueryClientProvider>,
+    );
+
+    expect(getByTestId('assistant-card-capture-frame')).toBeTruthy();
+    expect(getByTestId('assistant-card-share-actions')).toHaveStyle({
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+    });
+    expect(getByText('发微信')).toBeTruthy();
+    expect(getByText('发小红书')).toBeTruthy();
+    expect(getByText('更多')).toBeTruthy();
+    expect(getByText('保存截图')).toBeTruthy();
+    expect(getByText('截图可直接发微信 / 小红书')).toBeTruthy();
+    fireEvent.press(getByLabelText('保存餐食截图'));
+
+    await waitFor(() => {
+      expect(mockCaptureRefCalls).toHaveLength(1);
+      expect(mockSaveChatImageToLibrary).toHaveBeenCalledWith({ uri: 'file:///tmp/diet-card.png' });
+      expect(mockToastShow).toHaveBeenCalledWith('已保存到照片', 'success');
+    });
+    expect(mockCaptureRefCalls[0]).toEqual({
+      testID: 'assistant-card-capture-frame',
+      options: {
+        format: 'png',
+        quality: 1,
+        result: 'tmpfile',
+      },
+    });
+
+    fireEvent.press(getByLabelText('发微信分享餐食图片'));
+    await waitFor(() => {
+      expect(mockCaptureRefCalls).toHaveLength(2);
+      expect(mockShareLocalImage).toHaveBeenCalledWith('file:///tmp/diet-card.png');
+    });
+
+    fireEvent.press(getByLabelText('发小红书分享餐食图片'));
+    await waitFor(() => {
+      expect(mockCaptureRefCalls).toHaveLength(3);
+      expect(mockShareLocalImage).toHaveBeenCalledTimes(2);
+    });
+
+    fireEvent.press(getByLabelText('分享餐食记录正文'));
+
+    await waitFor(() => {
+      expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
+        title: '小巴 · 饮食记录',
+        message: expect.stringContaining('今天这餐被小巴认真记下来了'),
+      }));
+      expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
+        message: expect.stringContaining('今日饮食打卡'),
+      }));
+      expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
+        message: expect.stringContaining('今日策略'),
+      }));
+      expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
+        message: expect.stringContaining('#小红书饮食日记 #朋友圈打卡 #小巴'),
+      }));
+    });
+  });
+
+  it('does not share an unconfirmed diet draft as a completed meal record', () => {
+    renderCard.mockReturnValueOnce(__mockCard);
+    const qc = new QueryClient();
+    const message: UIMessage = {
+      id: 'assistant-card-diet-draft-unconfirmed',
+      role: 'assistant',
+      content: '',
+      streaming: false,
+      cardType: 'diet_draft',
+      cardData: {
+        meal_type: 'lunch',
+        food_items: '待确认午餐',
+        calories: 650,
+      },
+      cardActions: [{
+        id: 'confirm-diet-draft',
+        label: '确认记录',
+        action: 'diet_record.create',
+        endpoint: '/diet/records',
+        requires_manual_confirm: true,
+        payload: { record: { meal_type: 'lunch', food_items: '待确认午餐' } },
+      }],
+    };
+
+    const { queryByLabelText } = render(
+      <QueryClientProvider client={qc}>
+        <ChatBubble item={message} />
+      </QueryClientProvider>,
+    );
+
+    expect(queryByLabelText('分享餐食记录正文')).toBeNull();
+  });
+
+  it('shares a card-only diet quality result with progress and next action', async () => {
+    sharePlainText.mockResolvedValueOnce(undefined);
+    renderCard.mockReturnValueOnce(__mockCard);
+    const qc = new QueryClient();
+    const message: UIMessage = {
+      id: 'assistant-card-diet-quality-share',
+      role: 'assistant',
+      content: '',
+      streaming: false,
+      cardType: 'record_quality',
+      cardData: {
+        domain: 'diet',
+        title: '午餐已记录',
+        summary: '770 kcal · 蛋白 30g · 碳水 70g',
+        progress: {
+          calories_total: 1040,
+          meals_count: 2,
+          protein_total_g: 37,
+          protein_target_g: 112,
+          remaining_protein_g: 75,
+        },
+        next_action: '晚餐优先 40g 蛋白，少油少刺激。',
+      },
+    };
+
+    const { getByLabelText, getByText } = render(
+      <QueryClientProvider client={qc}>
+        <ChatBubble item={message} />
+      </QueryClientProvider>,
+    );
+
+    expect(getByText('更多')).toBeTruthy();
+    expect(getByText('截图可直接发微信 / 小红书')).toBeTruthy();
+    fireEvent.press(getByLabelText('分享餐食记录正文'));
+
+    await waitFor(() => {
+      expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
+        title: '小巴 · 饮食记录',
+        message: expect.stringContaining('今日摄入 1040 kcal'),
+      }));
+      expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
+        message: expect.stringContaining('蛋白进度 37/112g'),
+      }));
+      expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
+        message: expect.stringContaining('下一步：晚餐优先 40g 蛋白，少油少刺激。'),
+      }));
+      expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
+        message: expect.stringContaining('今日饮食打卡'),
+      }));
+      expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
+        message: expect.stringContaining('今日策略'),
+      }));
+      expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
+        message: expect.stringContaining('#小红书饮食日记 #朋友圈打卡 #小巴'),
+      }));
+    });
+  });
+
   it('dispatches server card actions from the chat bubble', async () => {
-    dispatchChatCardAction.mockResolvedValueOnce({ status: 'completed' });
+    dispatchChatCardAction.mockResolvedValueOnce({
+      status: 'completed',
+      receipt: verifiedReceipt('agenda_event', '71'),
+    });
     renderCard.mockImplementationOnce((descriptor: any, options: any) => {
       const { Pressable, Text } = require('react-native');
       return (
@@ -337,12 +546,287 @@ describe('ChatBubble structured summary', () => {
     await waitFor(() => {
       expect(dispatchChatCardAction).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'agenda.complete' }),
+        expect.any(String),
       );
     });
   });
 
-  it('shows diet-specific success feedback after confirming a diet card', async () => {
+  it('shows a verified resource receipt after a write card action completes', async () => {
+    dispatchChatCardAction.mockResolvedValueOnce({
+      status: 'completed',
+      receipt: {
+        operationId: 'agenda.complete:71',
+        status: 'verified',
+        resourceType: 'agenda_event',
+        resourceId: '71',
+        completedAt: '2026-07-09T12:00:00.000Z',
+        verified: true,
+      },
+    });
+    renderCard.mockImplementation((descriptor: any, options: any) => {
+      const { Pressable, Text } = require('react-native');
+      return (
+        <Pressable onPress={() => options.onAction(descriptor.actions[0], descriptor)}>
+          <Text>完成行动</Text>
+        </Pressable>
+      );
+    });
+    const qc = new QueryClient();
+    const message: UIMessage = {
+      id: 'assistant-card-write-receipt',
+      role: 'assistant',
+      content: '',
+      streaming: false,
+      cardType: 'vitals',
+      cardData: { sleep: '8h' },
+      cardActions: [{
+        label: '完成行动',
+        action: 'agenda.complete',
+        endpoint: '/agenda/complete',
+        requires_manual_confirm: true,
+        payload: { source: { object_type: 'health_protocol', object_id: 7 } },
+      }],
+    };
+
+    const { getByText, getByTestId } = render(
+      <QueryClientProvider client={qc}>
+        <ChatBubble item={message} />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.press(getByText('完成行动'));
+
+    await waitFor(() => {
+      expect(getByTestId('write-receipt')).toBeTruthy();
+      expect(getByText('已写入 · 今日行动 #71')).toBeTruthy();
+      expect(mockRememberVerifiedWriteReceipt).toHaveBeenCalledWith(expect.objectContaining({
+        operationId: 'agenda.complete:71',
+        resourceType: 'agenda_event',
+        resourceId: '71',
+        verified: true,
+      }));
+      expect(mockSaveCardActionReceipt).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ resourceType: 'agenda_event', resourceId: '71' }),
+      );
+    });
+    expect(mockEmitClientEvent).toHaveBeenCalledWith('write_receipt_terminal', {
+      phase: 'verified',
+      duration_bucket: '1_3s',
+      action_type: 'agenda.complete',
+      verified: true,
+    });
+  });
+
+  it('locks the completed card but shows a persistence warning when its duplicate guard cannot be saved', async () => {
+    dispatchChatCardAction.mockResolvedValueOnce({
+      status: 'completed',
+      receipt: verifiedReceipt('diet_record', '72'),
+    });
+    mockRememberVerifiedWriteReceipt.mockRejectedValueOnce(new Error('secure store unavailable'));
+    mockSaveCardActionReceipt.mockRejectedValueOnce(new Error('receipt index unavailable'));
+    renderCard.mockImplementation((descriptor: any, options: any) => {
+      const { Pressable, Text } = require('react-native');
+      return (
+        <Pressable onPress={() => options.onAction(descriptor.actions[0], descriptor)}>
+          <Text>确认午餐</Text>
+        </Pressable>
+      );
+    });
+    const qc = new QueryClient();
+    const message: UIMessage = {
+      id: 'assistant-card-receipt-persistence-failed',
+      role: 'assistant',
+      content: '',
+      streaming: false,
+      cardType: 'diet_draft',
+      cardData: { food_items: '鸡胸肉', meal_type: 'lunch' },
+      cardActions: [{
+        id: 'confirm-lunch-72',
+        label: '确认午餐',
+        action: 'diet_record.create',
+        endpoint: '/diet/records',
+        requires_manual_confirm: true,
+        payload: { record: { food_items: '鸡胸肉', meal_type: 'lunch' } },
+      }],
+    };
+
+    const { getByText, getByTestId, queryByTestId } = render(
+      <QueryClientProvider client={qc}>
+        <ChatBubble item={message} />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.press(getByText('确认午餐'));
+
+    await waitFor(() => {
+      expect(getByTestId('write-receipt-warning')).toBeTruthy();
+      expect(getByText('已写入，但本机未保存防重复凭证')).toBeTruthy();
+    });
+    expect(queryByTestId('write-receipt')).toBeNull();
+    fireEvent.press(getByText('确认午餐'));
+    expect(dispatchChatCardAction).toHaveBeenCalledTimes(1);
+    expect(mockEmitClientEvent).toHaveBeenCalledWith('write_receipt_terminal', {
+      phase: 'unverified',
+      duration_bucket: '1_3s',
+      action_type: 'diet_record.create',
+      verified: false,
+      error_code: 'card_receipt_persistence_failed',
+    });
+  });
+
+  it('shows a durable direct-tool receipt on a completed assistant message', () => {
+    const qc = new QueryClient();
+    const message: UIMessage = {
+      id: 'assistant-direct-tool-receipt',
+      role: 'assistant',
+      content: '午餐已记录。',
+      streaming: false,
+      writeReceipts: [verifiedReceipt('diet_record', '701')],
+    };
+
+    const { getByText, getByTestId } = render(
+      <QueryClientProvider client={qc}>
+        <ChatBubble item={message} />
+      </QueryClientProvider>,
+    );
+
+    expect(getByTestId('write-receipt')).toBeTruthy();
+    expect(getByText('已保存到今日饮食 · 记录 #701')).toBeTruthy();
+  });
+
+  it('blocks two same-frame presses before React state has time to update', async () => {
+    let resolveAction!: (value: any) => void;
+    dispatchChatCardAction.mockReturnValueOnce(new Promise(resolve => { resolveAction = resolve; }));
+    renderCard.mockImplementation((descriptor: any, options: any) => {
+      const { Pressable, Text } = require('react-native');
+      return (
+        <Pressable onPress={() => options.onAction(descriptor.actions[0], descriptor)}>
+          <Text>查看详情</Text>
+        </Pressable>
+      );
+    });
+    const qc = new QueryClient();
+    const message: UIMessage = {
+      id: 'assistant-double-press',
+      role: 'assistant',
+      content: '',
+      cardType: 'metric_chart',
+      cardData: { metric: 'hrv' },
+      cardActions: [{
+        id: 'open-hrv',
+        label: '查看详情',
+        action: 'route.open',
+        payload: { route: '/indicator-history?type=hrv' },
+      }],
+    };
+    const { getByText } = render(
+      <QueryClientProvider client={qc}>
+        <ChatBubble item={message} />
+      </QueryClientProvider>,
+    );
+
+    act(() => {
+      fireEvent.press(getByText('查看详情'));
+      fireEvent.press(getByText('查看详情'));
+    });
+
+    expect(dispatchChatCardAction).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      resolveAction({ status: 'opened', route: '/indicator-history?type=hrv' });
+    });
+  });
+
+  it('restores a durable card receipt and prevents the completed write from running again', async () => {
+    mockLoadCardActionReceipt.mockResolvedValueOnce(verifiedReceipt('diet_record', '77'));
+    renderCard.mockImplementation((descriptor: any, options: any) => {
+      const { Pressable, Text } = require('react-native');
+      return (
+        <Pressable onPress={() => options.onAction(descriptor.actions[0], descriptor)}>
+          <Text>确认记录</Text>
+        </Pressable>
+      );
+    });
+    const qc = new QueryClient();
+    const message: UIMessage = {
+      id: 'assistant-restored-receipt',
+      role: 'assistant',
+      content: '',
+      cardType: 'diet_draft',
+      cardData: { food_items: '鸡胸肉', meal_type: 'lunch' },
+      cardActions: [{
+        id: 'confirm-lunch-77',
+        label: '确认记录',
+        action: 'diet_record.create',
+        endpoint: '/diet/records',
+        requires_manual_confirm: true,
+        payload: { record: { food_items: '鸡胸肉', meal_type: 'lunch' } },
+      }],
+    };
+    const { getByText, getByTestId } = render(
+      <QueryClientProvider client={qc}>
+        <ChatBubble item={message} />
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => expect(getByTestId('write-receipt')).toBeTruthy());
+    fireEvent.press(getByText('确认记录'));
+
+    expect(dispatchChatCardAction).not.toHaveBeenCalled();
+  });
+
+  it('fails closed and keeps caches intact when a write action has no receipt', async () => {
     dispatchChatCardAction.mockResolvedValueOnce({ status: 'completed' });
+    renderCard.mockImplementation((descriptor: any, options: any) => {
+      const { Pressable, Text } = require('react-native');
+      return (
+        <Pressable onPress={() => options.onAction(descriptor.actions[0], descriptor)}>
+          <Text>确认写入</Text>
+        </Pressable>
+      );
+    });
+    const qc = new QueryClient();
+    const invalidateSpy = jest.spyOn(qc, 'invalidateQueries');
+    const message: UIMessage = {
+      id: 'assistant-card-missing-write-receipt',
+      role: 'assistant',
+      content: '',
+      streaming: false,
+      cardType: 'record',
+      cardData: { type: 'exercise', detail: '散步 20 分钟' },
+      cardActions: [{
+        label: '确认写入',
+        action: 'write_intent.confirm',
+        endpoint: '/write-intents/42/confirm',
+        requires_manual_confirm: true,
+        payload: { write_intent_id: 42 },
+      }],
+    };
+
+    const { getByText, queryByTestId } = render(
+      <QueryClientProvider client={qc}>
+        <ChatBubble item={message} />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.press(getByText('确认写入'));
+
+    await waitFor(() => {
+      expect(mockToastShow).toHaveBeenCalledWith('操作失败，请稍后重试', 'error');
+    });
+    expect(invalidateSpy).not.toHaveBeenCalled();
+    expect(queryByTestId('write-receipt')).toBeNull();
+    expect(mockEmitClientEvent).toHaveBeenCalledWith('write_receipt_terminal', {
+      phase: 'unverified',
+      duration_bucket: '1_3s',
+      action_type: 'write_intent.confirm',
+      verified: false,
+      error_code: 'write_receipt_missing_identity',
+    });
+  });
+
+  it('shows diet-specific success feedback after confirming a diet card', async () => {
+    dispatchChatCardAction.mockResolvedValueOnce({ status: 'completed', receipt: verifiedReceipt() });
     renderCard.mockImplementationOnce((descriptor: any, options: any) => {
       const { Pressable, Text } = require('react-native');
       return (
@@ -382,7 +866,11 @@ describe('ChatBubble structured summary', () => {
   });
 
   it('shows nutrition estimation feedback after confirming an incomplete diet card', async () => {
-    dispatchChatCardAction.mockResolvedValueOnce({ status: 'completed', nutrition_status: 'estimated' });
+    dispatchChatCardAction.mockResolvedValueOnce({
+      status: 'completed',
+      nutrition_status: 'estimated',
+      receipt: verifiedReceipt('diet_record', '88'),
+    });
     renderCard.mockImplementationOnce((descriptor: any, options: any) => {
       const { Pressable, Text } = require('react-native');
       return (
@@ -422,7 +910,11 @@ describe('ChatBubble structured summary', () => {
   });
 
   it('keeps the saved-record feedback visible when diet nutrition estimation fails', async () => {
-    dispatchChatCardAction.mockResolvedValueOnce({ status: 'completed', nutrition_status: 'estimate_failed' });
+    dispatchChatCardAction.mockResolvedValueOnce({
+      status: 'completed',
+      nutrition_status: 'estimate_failed',
+      receipt: verifiedReceipt('diet_record', '89'),
+    });
     renderCard.mockImplementationOnce((descriptor: any, options: any) => {
       const { Pressable, Text } = require('react-native');
       return (
@@ -512,7 +1004,10 @@ describe('ChatBubble structured summary', () => {
   it('asks for confirmation before dispatching write card actions', async () => {
     const { Alert } = require('react-native');
     const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(jest.fn());
-    dispatchChatCardAction.mockResolvedValueOnce({ status: 'completed' });
+    dispatchChatCardAction.mockResolvedValueOnce({
+      status: 'completed',
+      receipt: verifiedReceipt('smart_reminder', '18'),
+    });
     renderCard.mockImplementationOnce((descriptor: any, options: any) => {
       const { Pressable, Text } = require('react-native');
       return (
@@ -567,6 +1062,7 @@ describe('ChatBubble structured summary', () => {
     await waitFor(() => {
       expect(dispatchChatCardAction).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'write_intent.confirm' }),
+        expect.any(String),
       );
     });
 

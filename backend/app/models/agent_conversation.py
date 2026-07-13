@@ -1,7 +1,7 @@
 """Agent conversation persistence models."""
 from datetime import UTC, datetime
 
-from sqlalchemy import Column, DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import Column, DateTime, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 
@@ -49,6 +49,18 @@ class AgentMessage(Base):
     image_url = Column(Text, nullable=True)
     rating = Column(Integer, nullable=True)
     meta = Column(JSONB, nullable=True)
+    client_turn_id = Column(String(112), nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
     conversation = relationship("AgentConversation", back_populates="messages")
+
+    __table_args__ = (
+        Index("ix_agent_messages_client_turn_id", "client_turn_id"),
+        Index(
+            "uq_agent_messages_user_client_turn",
+            "client_turn_id",
+            unique=True,
+            postgresql_where=text("role = 'user' AND client_turn_id IS NOT NULL"),
+            sqlite_where=text("role = 'user' AND client_turn_id IS NOT NULL"),
+        ),
+    )

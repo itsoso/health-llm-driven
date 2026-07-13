@@ -18,6 +18,13 @@ jest.mock('expo-document-picker', () => ({
   getDocumentAsync: (...args: any[]) => mockGetDocument(...args),
 }));
 
+const mockMaterializeDraftImages = jest.fn();
+const mockDeleteDraftImage = jest.fn().mockResolvedValue(undefined);
+jest.mock('../../services/chatDraftStorage', () => ({
+  materializeDraftImages: (...args: any[]) => mockMaterializeDraftImages(...args),
+  deleteDraftImage: (...args: any[]) => mockDeleteDraftImage(...args),
+}));
+
 jest.spyOn(Alert, 'alert');
 
 import { useMediaPicker } from '../useMediaPicker';
@@ -25,6 +32,8 @@ import { useMediaPicker } from '../useMediaPicker';
 describe('useMediaPicker', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockMaterializeDraftImages.mockImplementation(async (images: any[]) => images);
+    mockDeleteDraftImage.mockResolvedValue(undefined);
   });
 
   // ── pickImage ──
@@ -56,6 +65,9 @@ describe('useMediaPicker', () => {
         base64: 'abc123',
         type: 'png',
       });
+      expect(mockMaterializeDraftImages).toHaveBeenCalledWith([
+        expect.objectContaining({ uri: 'file:///photo.jpg', base64: 'abc123', type: 'png' }),
+      ]);
     });
 
     it('does not set pendingImage when user cancels', async () => {
@@ -213,8 +225,27 @@ describe('useMediaPicker', () => {
       await act(async () => { await result.current.takePhoto(); });
       expect(result.current.pendingImage).not.toBeNull();
 
-      act(() => { result.current.clearImages(); });
+      await act(async () => { await result.current.clearImages(); });
       expect(result.current.pendingImage).toBeNull();
+      expect(mockDeleteDraftImage).toHaveBeenCalledWith(
+        expect.objectContaining({ uri: 'file:///x.jpg' }),
+      );
+    });
+
+    it('releases accepted images from composer state without deleting their display files', async () => {
+      mockRequestCameraPermissions.mockResolvedValue({ granted: true });
+      mockLaunchCamera.mockResolvedValue({
+        canceled: false,
+        assets: [{ uri: 'file:///accepted.jpg', base64: 'data', mimeType: 'image/jpeg' }],
+      });
+
+      const { result } = renderHook(() => useMediaPicker());
+      await act(async () => { await result.current.takePhoto(); });
+
+      act(() => { result.current.releaseImagesAfterSend(); });
+
+      expect(result.current.pendingImage).toBeNull();
+      expect(mockDeleteDraftImage).not.toHaveBeenCalled();
     });
   });
 });

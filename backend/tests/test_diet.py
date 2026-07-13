@@ -82,6 +82,28 @@ class TestDietAPI:
         assert data["food_items"] == "米饭,青菜"
         assert data["calories"] is None
 
+    def test_create_diet_record_reuses_user_scoped_idempotency_key(
+        self, client, db, auth_headers, sample_diet_data
+    ):
+        headers = {**auth_headers, "Idempotency-Key": "chat-card-lunch-77"}
+
+        first = client.post(
+            "/api/v1/diet/records",
+            json=sample_diet_data,
+            headers=headers,
+        )
+        second = client.post(
+            "/api/v1/diet/records",
+            json=sample_diet_data,
+            headers=headers,
+        )
+
+        assert first.status_code == 200
+        assert second.status_code == 200
+        assert second.json()["id"] == first.json()["id"]
+        assert db.query(DietRecord).count() == 1
+        assert db.query(DietRecord).one().client_action_id == "chat-card-lunch-77"
+
     def test_create_diet_record_invalid_meal_type(self, client, auth_headers):
         """测试创建饮食记录（无效的餐类型）"""
         invalid_data = {
@@ -123,6 +145,10 @@ class TestDietAPI:
         "删除这一餐",
         "替普瑞酮胶囊（施维舒）",
         "鱼油",
+        "晨跑 30 分钟",
+        "体重 73.1kg 腰围 84cm",
+        "昨晚睡了 6 小时",
+        "血压 130/85 血糖 6.2",
     ])
     def test_create_diet_record_rejects_non_food_items(self, client, auth_headers, food_items):
         """REST API 防御纵深: 管理意图/药物/补剂不能直接落成 DietRecord。"""

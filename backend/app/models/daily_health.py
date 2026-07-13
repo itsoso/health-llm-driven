@@ -173,6 +173,7 @@ class DietRecord(Base):
 
     # 图片和AI识别
     image_url = Column(String, nullable=True)  # 食物图片URL
+    client_action_id = Column(String(160), nullable=True)
     ai_recognized = Column(Boolean, default=False)  # 是否AI识别
     ai_confidence = Column(Float, nullable=True)  # AI识别置信度
     ai_raw_result = Column(Text, nullable=True)  # AI识别原始结果(JSON)
@@ -190,6 +191,14 @@ class DietRecord(Base):
         Index('idx_diet_user_date', 'user_id', 'record_date'),
         Index('idx_diet_user_date_meal', 'user_id', 'record_date', 'meal_type'),
         Index('idx_diet_food_id', 'food_id'),
+        Index(
+            'uq_diet_records_user_client_action_id',
+            'user_id',
+            'client_action_id',
+            unique=True,
+            postgresql_where=text('client_action_id IS NOT NULL'),
+            sqlite_where=text('client_action_id IS NOT NULL'),
+        ),
     )
 
 

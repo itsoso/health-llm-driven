@@ -1,7 +1,7 @@
 """Open-Loop push 的 quiet_hours 守门测试.
 
 保证:
-- 默认 22:00-08:30 窗口内不推
+- 默认 22:00-09:00 窗口内不推
 - score>=85 (critical-level) 也不穿透 quiet_hours
 - 用户自定义 quiet_hours 被尊重
 - 跨午夜逻辑正确
@@ -32,10 +32,18 @@ def test_default_quiet_hours_7am_is_quiet():
         assert _is_in_quiet_hours_now(s) is True
 
 
-def test_default_quiet_hours_845am_is_allowed():
-    """08:45 (新 open-loop cron 时间点) 已过 quiet."""
+def test_default_quiet_hours_845am_is_quiet():
+    """08:45 仍在睡眠保护内, 不能推."""
     with patch("app.tasks.open_loop_manager.datetime") as mock_dt:
         mock_dt.now.return_value = _at(8, 45)
+        s = _FakeSetting("22:00", "08:30")
+        assert _is_in_quiet_hours_now(s) is True
+
+
+def test_default_quiet_hours_9am_is_allowed():
+    """09:00 才允许 open-loop 推送."""
+    with patch("app.tasks.open_loop_manager.datetime") as mock_dt:
+        mock_dt.now.return_value = _at(9, 0)
         s = _FakeSetting("22:00", "08:30")
         assert _is_in_quiet_hours_now(s) is False
 
@@ -64,12 +72,12 @@ def test_default_quiet_hours_22_exactly_is_quiet():
         assert _is_in_quiet_hours_now(s) is True
 
 
-def test_default_quiet_hours_0830_exactly_is_allowed():
-    """08:30 = quiet 结束, 已过, allowed (半开区间 end 不含)."""
+def test_default_quiet_hours_0830_exactly_is_quiet():
+    """08:30 即使是旧 quiet 结束值, 仍在 09:00 硬下限内."""
     with patch("app.tasks.open_loop_manager.datetime") as mock_dt:
         mock_dt.now.return_value = _at(8, 30)
         s = _FakeSetting("22:00", "08:30")
-        assert _is_in_quiet_hours_now(s) is False
+        assert _is_in_quiet_hours_now(s) is True
 
 
 def test_custom_non_crossing_window():
@@ -85,7 +93,7 @@ def test_custom_non_crossing_window():
 
 
 def test_none_values_fall_back_to_defaults():
-    """setting 字段为 None 时走 22:00-08:30 默认."""
+    """setting 字段为 None 时走 22:00-09:00 默认."""
     with patch("app.tasks.open_loop_manager.datetime") as mock_dt:
         mock_dt.now.return_value = _at(7, 0)
         s = _FakeSetting(None, None)

@@ -64,6 +64,14 @@
       "expo-router",
       "expo-secure-store",
       "expo-document-picker",
+      "expo-audio",
+      [
+        "@react-native-voice/voice",
+        {
+          "microphonePermission": "用于语音输入、健康记录听写和小巴对话",
+          "speechRecognitionPermission": "识别你的语音,和小巴连续对话"
+        }
+      ],
       [
         "expo-location",
         {
@@ -92,6 +100,13 @@
       "@sentry/react-native",
       "expo-font",
       "expo-image",
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "用于你主动选择餐盘、补剂标签、检查报告或健康相关图片，生成记录草稿和健康分析",
+          "savePhotosPermission": "用于你主动保存小巴对话中的图片、健康报告或分享截图到照片图库"
+        }
+      ],
       "expo-web-browser",
       "./plugins/withHealthKitCleanup",
       "./plugins/withRokidPushupApk",

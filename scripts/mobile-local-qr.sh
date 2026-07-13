@@ -159,7 +159,9 @@ if [ -n "${IPA_INPUT}" ]; then
     echo "IPA not found: ${IPA_INPUT}" >&2
     exit 1
   fi
-  cp "${IPA_INPUT}" "${IPA_PATH}"
+  if ! cmp -s "${IPA_INPUT}" "${IPA_PATH}" 2>/dev/null; then
+    cp "${IPA_INPUT}" "${IPA_PATH}"
+  fi
 else
   require_command xcodebuild
   require_command pod
@@ -290,8 +292,12 @@ APP_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$
 BUILD_NUMBER="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "${APP_INFO}" 2>/dev/null || echo "${BUILD_ID}")"
 TITLE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "${APP_INFO}" 2>/dev/null || echo "HealthPilot")"
 
-PUBLIC_BASE_URL="${IOS_LOCAL_QR_PUBLIC_BASE_URL:-https://health.executor.life/mobile-install/ios/${BUILD_ID}}"
+PUBLIC_ROOT_URL="${IOS_LOCAL_QR_PUBLIC_ROOT_URL:-https://health.executor.life/mobile-install/ios}"
+PUBLIC_ROOT_URL="${PUBLIC_ROOT_URL%/}"
+PUBLIC_BASE_URL="${IOS_LOCAL_QR_PUBLIC_BASE_URL:-${PUBLIC_ROOT_URL}/${BUILD_ID}}"
 PUBLIC_BASE_URL="${PUBLIC_BASE_URL%/}"
+LATEST_PUBLIC_BASE_URL="${IOS_LOCAL_QR_LATEST_PUBLIC_BASE_URL:-${PUBLIC_ROOT_URL}/latest}"
+LATEST_PUBLIC_BASE_URL="${LATEST_PUBLIC_BASE_URL%/}"
 IPA_URL="${PUBLIC_BASE_URL}/${IPA_NAME}"
 MANIFEST_URL="${PUBLIC_BASE_URL}/manifest.plist"
 INSTALL_URL="itms-services://?action=download-manifest&url=$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "${MANIFEST_URL}")"
@@ -376,10 +382,14 @@ if [ "${UPLOAD}" = "1" ]; then
     echo "DEPLOY_SERVER missing; cannot upload. Re-run with --no-upload for local artifacts only." >&2
     exit 1
   fi
-  REMOTE_DIR="${IOS_LOCAL_QR_REMOTE_DIR:-/opt/health-app-shared/mobile-install/ios/${BUILD_ID}}"
+  REMOTE_ROOT_DIR="${IOS_LOCAL_QR_REMOTE_ROOT_DIR:-/opt/health-app-shared/mobile-install/ios}"
+  REMOTE_DIR="${IOS_LOCAL_QR_REMOTE_DIR:-${REMOTE_ROOT_DIR}/${BUILD_ID}}"
+  REMOTE_LATEST_DIR="${IOS_LOCAL_QR_LATEST_REMOTE_DIR:-${REMOTE_ROOT_DIR}/latest}"
   echo "==> upload to ${DEPLOY_SERVER}:${REMOTE_DIR}"
-  ssh "${DEPLOY_SERVER}" "mkdir -p '${REMOTE_DIR}'"
+  ssh "${DEPLOY_SERVER}" "mkdir -p '${REMOTE_DIR}' '${REMOTE_LATEST_DIR}'"
   rsync -az --delete "${OUTPUT_DIR}/" "${DEPLOY_SERVER}:${REMOTE_DIR}/"
+  echo "==> update latest alias ${DEPLOY_SERVER}:${REMOTE_LATEST_DIR}"
+  rsync -az --delete "${OUTPUT_DIR}/" "${DEPLOY_SERVER}:${REMOTE_LATEST_DIR}/"
 fi
 
 echo
@@ -390,11 +400,13 @@ echo "IPA:             ${IPA_PATH}"
 echo "Manifest:        ${OUTPUT_DIR}/manifest.plist"
 [ -f "${OUTPUT_DIR}/qr.png" ] && echo "QR PNG:          ${OUTPUT_DIR}/qr.png"
 echo "Install page:    ${PUBLIC_BASE_URL}/install.html"
+echo "Latest install page: ${LATEST_PUBLIC_BASE_URL}/install.html"
 echo "Install URL:     ${INSTALL_URL}"
 
 if [ "${UPLOAD}" = "1" ]; then
   echo "==> verify public install page"
   curl -fsSI "${PUBLIC_BASE_URL}/install.html" >/dev/null
+  curl -fsSI "${LATEST_PUBLIC_BASE_URL}/install.html" >/dev/null
   curl -fsSI "${MANIFEST_URL}" >/dev/null
   curl -fsSI "${IPA_URL}" >/dev/null
   echo "Public artifacts are reachable."

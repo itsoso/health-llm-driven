@@ -609,7 +609,9 @@ class AnomalyDetectionService:
 
         severity = (alert.severity or "").lower()
         check_back_days = 3 if severity == "critical" else 7
-        title = f"[{alert.metric_name}] {alert.message[:40]}"
+        # 标题只用人话 message；绝不把内部 metric_name(如 spo2_avg)漏进用户可见文本。
+        # metric_key 已存独立列(见 dedup),标题无需再带 [key] 前缀。message 自带指标名。
+        title = alert.message[:40]
         content_lines = [f"**触发原因**: {alert.message}"]
         if alert.deviation_pct is not None:
             content_lines.append(

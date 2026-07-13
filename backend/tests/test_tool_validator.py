@@ -110,6 +110,20 @@ class TestRequiredFields:
         assert v["error"] is not None
         assert "amount" in v["error"]
 
+    def test_waist_missing_waist_cm_is_required(self):
+        v = validate_health_record("waist", {})
+        assert v["error"] is not None
+        assert "waist_cm" in v["error"]
+
+    def test_sleep_accepts_duration_hours_without_times(self):
+        v = validate_health_record("sleep", {"duration_hours": 7.5})
+        assert v["error"] is None
+
+    def test_excretion_missing_type_is_required(self):
+        v = validate_health_record("excretion", {})
+        assert v["error"] is not None
+        assert "type" in v["error"]
+
 
 class TestDietManagementIntentGuard:
     @pytest.mark.parametrize("food_items", [
@@ -276,6 +290,7 @@ class TestDispatcher:
         schemas = {t["function"]["name"]: t["function"]["parameters"]["properties"]
                    for t in HEALTH_TOOLS}
         assert set(schemas["health_query"]["dimension"]["enum"]) == _QUERY_DIMENSIONS
+        assert {"waist", "sleep", "excretion"} <= set(schemas["health_record"]["record_type"]["enum"])
         assert set(schemas["health_manage"]["record_type"]["enum"]) == _MANAGE_RECORD_TYPES
         assert set(schemas["health_manage"]["operation"]["enum"]) == _MANAGE_OPERATIONS
         assert set(schemas["health_analysis"]["analysis_type"]["enum"]) == _ANALYSIS_TYPES
@@ -312,6 +327,17 @@ class TestQueryGuard:
 
         v = validate_tool_call("health_query", {"dimension": "mri"})
         assert v["data"]["dimension"] == "medical_exam"
+
+    @pytest.mark.parametrize(
+        "raw_dimension",
+        ["饮食", "今日饮食", "全天饮食", "diet_records", "nutrition", "calorie_intake", "热量摄入"],
+    )
+    def test_diet_query_dimension_aliases_are_normalized(self, raw_dimension):
+        v = validate_tool_call("health_query", {"dimension": raw_dimension, "days": 1})
+
+        assert v["error"] is None
+        assert v["data"]["dimension"] == "diet"
+        assert v["data"]["days"] == 1
 
     def test_valid_dimension_kept(self):
         v = validate_tool_call("health_query", {"dimension": "hrv", "days": 14})

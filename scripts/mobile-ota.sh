@@ -29,6 +29,27 @@ esac
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ANCHOR_FILE="${REPO_ROOT}/.last-ota-commit"
 
+# ── 发版前置守卫(2026-07-11 评审加固):OTA 打的是**工作树**,不是 HEAD ──
+# 两类历史事故:① 脏树 WIP 泄进生产 bundle;② 落后 origin/main 的树整包回滚他人已上线工作。
+# 机械拦截,不再靠纪律。逃生口:OTA_ALLOW_DIRTY=1(仅限明知故犯的调试)。
+if [[ "${OTA_ALLOW_DIRTY:-0}" != "1" ]]; then
+  git -C "${REPO_ROOT}" fetch origin --quiet
+  _HEAD="$(git -C "${REPO_ROOT}" rev-parse HEAD)"
+  _MAIN="$(git -C "${REPO_ROOT}" rev-parse origin/main)"
+  if [[ "${_HEAD}" != "${_MAIN}" ]]; then
+    echo "✗ OTA 拒绝:HEAD (${_HEAD:0:9}) ≠ origin/main (${_MAIN:0:9})。"
+    echo "  从落后/分叉的树发 OTA 会回滚已上线工作。请从干净的 origin/main worktree 发;明知故犯用 OTA_ALLOW_DIRTY=1。"
+    exit 1
+  fi
+  _DIRTY="$(git -C "${REPO_ROOT}" status --porcelain -- mobile/ packages/shared/ | head -5)"
+  if [[ -n "${_DIRTY}" ]]; then
+    echo "✗ OTA 拒绝:mobile/ 或 packages/shared/ 有未提交改动(会把 WIP 打进生产 bundle):"
+    echo "${_DIRTY}"
+    echo "  请 stash/提交后再发;明知故犯用 OTA_ALLOW_DIRTY=1。"
+    exit 1
+  fi
+fi
+
 cd "${REPO_ROOT}/mobile"
 
 echo "==> EAS Update → channel=${CHANNEL}"

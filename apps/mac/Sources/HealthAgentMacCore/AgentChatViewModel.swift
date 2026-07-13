@@ -635,6 +635,47 @@ public struct AgentToolActivity: Equatable, Identifiable, Sendable {
     }
 }
 
+/// One visible step in the accumulating "thinking process" trace shown while 小巴
+/// streams. Unlike `liveStatusText` (a single line that each new `status` event
+/// overwrites), steps accumulate so the user sees the *sequence* of what the
+/// agent did. The label is stored as a localization **key** + optional detail
+/// (same shape as `AgentChatViewModel.statusText`), so the View resolves it
+/// through `appText`/`L10n` and never has raw zh baked into the model.
+public enum ThinkingStepState: Equatable, Sendable {
+    case running
+    case done
+}
+
+public struct ThinkingStep: Equatable, Identifiable, Sendable {
+    public let id: UUID
+    /// L10n key OR, for the `thinking` server-phrase / `tool` detail path, a
+    /// verbatim string the View renders as-is (L10n pass-through).
+    public let labelKey: String
+    /// Chinese tool label spliced into `labelKey` when it is the `"Working: %@…"`
+    /// format string; nil for plain (non-format) keys.
+    public let labelDetail: String?
+    public var state: ThinkingStepState
+
+    public init(
+        id: UUID = UUID(),
+        labelKey: String,
+        labelDetail: String? = nil,
+        state: ThinkingStepState = .running
+    ) {
+        self.id = id
+        self.labelKey = labelKey
+        self.labelDetail = labelDetail
+        self.state = state
+    }
+
+    /// Two steps represent "the same activity" when their resolved label pair
+    /// matches — used to suppress consecutive duplicate `status` events so the
+    /// trace doesn't flicker the same line repeatedly.
+    func hasSameLabel(as other: ThinkingStep) -> Bool {
+        labelKey == other.labelKey && labelDetail == other.labelDetail
+    }
+}
+
 @Observable
 @MainActor
 public final class AgentChatViewModel {
@@ -670,6 +711,13 @@ public final class AgentChatViewModel {
     public var savedContextBundles: [AgentContextBundle] = []
     public var conversationHistory: [AgentConversationSnapshot] = []
     public var toolActivities: [AgentToolActivity] = []
+    /// Accumulating "thinking process" trace (vision/thinking/tool/synthesis steps
+    /// from the backend `status` SSE stream). Unlike `liveStatusText` — a single
+    /// line each new status overwrites — steps are kept so the user sees the full
+    /// sequence. Preserved through the first token (NOT wiped like `liveStatusText`)
+    /// so the trace stays visible during content streaming; cleared only when a new
+    /// turn starts (`send()` / `startNewConversation()` / `cancelStreaming()`).
+    public var thinkingSteps: [ThinkingStep] = []
     public var proposedActions: [AgentProposedAction] = []
 
     // MARK: transcript 渲染缓存(按键热点)
@@ -682,6 +730,15 @@ public final class AgentChatViewModel {
     @ObservationIgnored private var _transcriptCacheMessages: [AgentChatMessage] = []
     @ObservationIgnored private var _transcriptCacheStreaming = false
     @ObservationIgnored private var _transcriptCacheProposed: [AgentProposedAction] = []
+    @ObservationIgnored private var _transcriptCacheThinkingSteps: [ThinkingStep] = []
+    @ObservationIgnored private var _transcriptCacheLanguage = ""
+    /// Per-message snapshot of the finished thinking trace, so a completed answer
+    /// keeps a collapsible, reviewable "思考过程" (mobile-style) instead of it
+    /// vanishing when the answer streams in. Keyed by assistant message id; session
+    /// -only (backend doesn't persist it, so replayed old conversations simply have
+    /// none). Not observed — set at turn completion, coincident with a `messages`
+    /// change that already invalidates the transcript cache.
+    @ObservationIgnored private var _completedThinkingSteps: [UUID: [ThinkingStep]] = [:]
 
     /// Set when the backend history list/detail fetch fell back to the local
     /// cache (offline / 401 / server error). The UI surfaces this so a stale
@@ -841,6 +898,10 @@ public final class AgentChatViewModel {
         streamingTask = nil
         isStreaming = false
         clearLiveStatus()
+        // User pressed Stop: settle the trace (mark running steps done) rather than
+        // wiping it, so any partial content stays paired with a completed-looking
+        // trace. The next send() clears it wholesale.
+        settleThinkingSteps()
     }
 
     public func send(_ text: String) async {
@@ -852,6 +913,7 @@ public final class AgentChatViewModel {
         errorMessage = nil
         toolActivities = []
         clearLiveStatus()
+        clearThinkingSteps()
         isStreaming = true
         runState = .preparing
         lastPrompt = message
@@ -900,11 +962,24 @@ public final class AgentChatViewModel {
                     let mapped = Self.statusText(stage: stage, detail: detail, round: round)
                     liveStatusText = mapped.key
                     liveStatusDetail = mapped.detail
+                    // Accumulate into the visible trace (kept across the first token,
+                    // unlike the single-line liveStatusText above). Consecutive same
+                    // stage/label is de-duped inside appendThinkingStep.
+                    appendThinkingStep(labelKey: mapped.key, labelDetail: mapped.detail)
                 case .token(let content):
+                    let isFirstToken = runState != .streaming
                     runState = .streaming
-                    // First real token → drop the live status line; the transcript
-                    // now streams actual content and ThinkingStatusLine is torn down.
+                    // First real token → drop the single live status line, but KEEP the
+                    // accumulated trace visible during content streaming. Mark any
+                    // in-flight step done and add a running "composing" step so the
+                    // trace reflects that the model is now writing the answer.
                     clearLiveStatus()
+                    if isFirstToken {
+                        settleThinkingSteps()
+                        if !thinkingSteps.isEmpty {
+                            appendThinkingStep(labelKey: "Reva is composing a reply…", labelDetail: nil)
+                        }
+                    }
                     guard messages.contains(where: { $0.id == assistantID }) else {
                         isStreaming = false
                         return
@@ -964,10 +1039,15 @@ public final class AgentChatViewModel {
                     }
                     livePreLLMPerf = nil
                     clearLiveStatus()
+                    settleThinkingSteps()
+                    // 快照本轮思考轨迹到 side-store,完成后折叠可回溯(mobile 同款;
+                    // live thinkingSteps 要下一轮 send 才清,此处仍在)。
+                    if !thinkingSteps.isEmpty { _completedThinkingSteps[assistantID] = thinkingSteps }
                     runState = .completed
                 case .error(let message):
                     errorMessage = message
                     clearLiveStatus()
+                    settleThinkingSteps()
                 }
             }
         } catch is CancellationError {
@@ -1009,11 +1089,13 @@ public final class AgentChatViewModel {
         }
         persistCurrentConversation()
         clearLiveStatus()
+        settleThinkingSteps()
         isStreaming = false
     }
 
     public func startNewConversation() {
         messages = []
+        _completedThinkingSteps = [:]
         conversationID = nil
         errorMessage = nil
         lastCompletionStatus = nil
@@ -1028,6 +1110,7 @@ public final class AgentChatViewModel {
         contextItems = []
         preparedDraft = nil
         clearLiveStatus()
+        clearThinkingSteps()
     }
 
     /// Refreshes the history list from the backend (`GET /agent/conversations`),
@@ -1309,10 +1392,12 @@ public final class AgentChatViewModel {
     /// 在 View.body 里调用:读 messages/isStreaming/proposedActions 建立 Observation 依赖,
     /// 这三者真正变化才重渲;打字(只改 View 的 draft)命中缓存,不再每键重 parse markdown。
     /// 流式中的最后一条助手消息走 plain text(streaming=true);其余走富 markdown。
-    public func renderedTranscript() -> [ChatTranscriptHTML.RenderedMessage] {
+    public func renderedTranscript(language: String = AppLanguage.defaultLanguage.rawValue) -> [ChatTranscriptHTML.RenderedMessage] {
         if isStreaming == _transcriptCacheStreaming
             && messages == _transcriptCacheMessages
-            && proposedActions == _transcriptCacheProposed {
+            && proposedActions == _transcriptCacheProposed
+            && thinkingSteps == _transcriptCacheThinkingSteps
+            && language == _transcriptCacheLanguage {
             return _transcriptCache
         }
         let lastID = messages.last?.id
@@ -1333,11 +1418,28 @@ public final class AgentChatViewModel {
                 bodyHTML = "<p class=\"streaming-text\">" + ChatTranscriptHTML.escape(content) + "</p>"
                     + ChatTranscriptHTML.imageGalleryHTML(urls: message.remoteImageURLs)
             } else if isStreamingThis {
-                // 流式态:plain 文本(避免每 60ms 用更长全文重 parse markdown 的 O(n²))。
-                bodyHTML = cardHTML + "<div class=\"streaming-text\">" + ChatTranscriptHTML.escape(content) + "</div>"
+                if content.isEmpty {
+                    // 等待首 token:在气泡内渲染展开的"思考过程"轨迹,跟随气泡位置(短对话在顶、
+                    // 滚动长对话在底),而不是钉在输入框上方。有 status 步骤 → 累积轨迹;老后端
+                    // 无步骤 → 单行兜底。首 token 到达后 content 非空,自动切到下面的折叠态 + 正文。
+                    let trace = ChatTranscriptHTML.thinkingTraceHTML(steps: thinkingSteps, language: language, open: true)
+                    let thinkingBody = trace.isEmpty
+                        ? ChatTranscriptHTML.thinkingLineHTML(
+                            L10n.text("Reva is thinking…", language: AppLanguage(rawValue: language) ?? .defaultLanguage))
+                        : trace
+                    bodyHTML = cardHTML + thinkingBody
+                } else {
+                    // 答案流式中:轨迹折叠到正文上方(想看过程可点开),plain 文本避免重 parse。
+                    let trace = ChatTranscriptHTML.thinkingTraceHTML(steps: thinkingSteps, language: language, open: false)
+                    bodyHTML = cardHTML + trace + "<div class=\"streaming-text\">" + ChatTranscriptHTML.escape(content) + "</div>"
+                }
             } else {
+                // 已完成:把本条回答的思考轨迹以折叠态留在正文上方,用户可展开回溯(mobile 同款)。
+                let trace = _completedThinkingSteps[message.id].map {
+                    ChatTranscriptHTML.thinkingTraceHTML(steps: $0, language: language, open: false)
+                } ?? ""
                 let textHTML = content.isEmpty ? "" : ChatTranscriptHTML.renderMessageBody(markdown: content)
-                bodyHTML = cardHTML + textHTML
+                bodyHTML = cardHTML + trace + textHTML
             }
             let showCopy = message.role == .assistant && !isStreamingThis && !content.isEmpty
             let footerHTML: String
@@ -1370,6 +1472,8 @@ public final class AgentChatViewModel {
         _transcriptCacheMessages = messages
         _transcriptCacheStreaming = isStreaming
         _transcriptCacheProposed = proposedActions
+        _transcriptCacheThinkingSteps = thinkingSteps
+        _transcriptCacheLanguage = language
         _transcriptCache = rendered
         return rendered
     }
@@ -1446,6 +1550,43 @@ public final class AgentChatViewModel {
     private func clearLiveStatus() {
         liveStatusText = nil
         liveStatusDetail = nil
+    }
+
+    /// Appends a new running step to the trace, first marking the previously
+    /// running step done. Consecutive events that resolve to the same label are
+    /// suppressed (the last step just stays running) so the trace never flickers
+    /// the same line repeatedly. Called from the `.status` handler.
+    private func appendThinkingStep(labelKey: String, labelDetail: String?) {
+        let candidate = ThinkingStep(labelKey: labelKey, labelDetail: labelDetail, state: .running)
+        if let last = thinkingSteps.last, last.hasSameLabel(as: candidate) {
+            // Same activity as the current tail — keep it running, don't duplicate.
+            if last.state != .running {
+                thinkingSteps[thinkingSteps.index(before: thinkingSteps.endIndex)].state = .running
+            }
+            return
+        }
+        markRunningThinkingStepsDone()
+        thinkingSteps.append(candidate)
+    }
+
+    /// Flips every still-running step to done (leaves order/labels intact).
+    private func markRunningThinkingStepsDone() {
+        for index in thinkingSteps.indices where thinkingSteps[index].state == .running {
+            thinkingSteps[index].state = .done
+        }
+    }
+
+    /// First token / completion: keep the trace visible but stop showing any step
+    /// as in-flight. The trace is NOT cleared here — it persists through content
+    /// streaming until the next turn resets it.
+    private func settleThinkingSteps() {
+        markRunningThinkingStepsDone()
+    }
+
+    /// New turn boundary only (`send()` / `startNewConversation()` /
+    /// `cancelStreaming()`): drop the whole trace.
+    private func clearThinkingSteps() {
+        thinkingSteps = []
     }
 
     private func updateProposedAction(_ action: AgentProposedAction, status: AgentProposedActionStatus) {

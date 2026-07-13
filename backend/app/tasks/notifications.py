@@ -356,7 +356,7 @@ def send_custom_notification(user_id: int, title: str, body: str):
 @celery_app.task
 def send_plan_morning_reminder():
     """
-    发送今日计划提醒（每天 08:00 执行）
+    发送今日计划提醒（每天 09:05 执行）
     """
     logger.info("开始发送今日计划提醒")
 
@@ -809,7 +809,7 @@ def daily_trend_analysis():
 @celery_app.task
 def send_trend_morning_push():
     """
-    早间趋势摘要推送（08:30执行）
+    早间趋势摘要推送（09:25 执行）
     推送昨日生成的趋势报告摘要。
     """
     from app.models.health_trend import HealthTrendReport
@@ -858,7 +858,7 @@ def send_trend_morning_push():
 @celery_app.task
 def send_morning_health_summary():
     """
-    每日早安健康摘要推送（07:30执行）— 升级版.
+    每日早安健康摘要推送（09:30 执行）— 升级版.
 
     输出:
       - title: '🌅 早安'
@@ -1090,7 +1090,7 @@ def _status_emoji(value, good_threshold, bad_threshold, higher_is_better=True):
 def regenerate_briefing_for_user(user_id: int):
     """
     Garmin 同步完成后为单个用户重新生成今日简报。
-    确保简报包含最新同步数据，而不是 07:35 时的旧数据。
+    确保简报包含最新同步数据，而不是早于 09:00 睡眠保护窗口时的旧数据。
     """
     from app.utils.timezone import get_china_today
     today = get_china_today()
@@ -1191,7 +1191,7 @@ def evaluate_and_push_safety(user_id: int):
 @celery_app.task(time_limit=600)
 def generate_daily_briefing_message():
     """
-    每日健康简报（07:35 执行）
+    每日健康简报（09:32 执行）
     为有 Garmin 设备的活跃用户生成简报并写入 Agent 对话。
     """
     from app.models.user import GarminCredential

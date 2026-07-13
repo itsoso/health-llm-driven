@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, TextStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import LlmModelPicker from './LlmModelPicker';
+import XiaoBaAvatar from './XiaoBaAvatar';
 import type { ModelOption } from '../../services/llmPreference';
 import {
   revaColors as C,
@@ -53,7 +54,7 @@ export default function ChatHeader({
   return (
     <View style={styles.headerWrap}>
       <View testID="chat-header-surface" style={styles.headerSurface}>
-        {/* 「阿」头像已删（与标题「小巴」重复）——「我」入口挪进右侧「…」工具 sheet。 */}
+        <XiaoBaAvatar size={28} />
         <LlmModelPicker
           variant="header"
           currentLabel={headerLlmLabel}

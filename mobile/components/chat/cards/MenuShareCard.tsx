@@ -7,7 +7,7 @@
  * - 餐次标题 + 一句话理由
  * - 食材表 (name / qty / kcal)
  * - 营养汇总
- * - 「分享给家人」按钮 → 系统分享 (微信/群/朋友圈)
+ * - 「发微信 / 发小红书 / 更多」按钮 → 系统分享 (微信/群/朋友圈/小红书)
  * - shopping_list 不在卡里渲染, 出现在分享文本末尾, 方便对方直接照单买
  */
 import React from 'react';
@@ -17,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { CardShell } from './CardShell';
 import { revaColors as C, revaRadii, revaFonts } from '../../../constants/revaTheme';
 import type { CardSpec } from './types';
+import { sharePlainText } from '../../../utils/share';
 
 // 菜单/饮食类目 accent (橙) + 卡底 tint = 装饰色, 保留字面量 (= legacy orange/tintOrange).
 const MENU_ACCENT = '#C97A2E';
@@ -76,7 +77,6 @@ export function MenuShareCardView(d: MenuShareData) {
   const handleShare = async () => {
     Haptics.selectionAsync();
     try {
-      const { sharePlainText } = await import('../../../utils/share');
       await sharePlainText({
         title: d.title || '菜单分享',
         message: buildShareText(d),
@@ -143,13 +143,35 @@ export function MenuShareCardView(d: MenuShareData) {
         </View>
       )}
 
-      <Pressable
-        onPress={handleShare}
-        style={({ pressed }) => [styles.shareBtn, { backgroundColor: MENU_ACCENT }, pressed && { opacity: 0.85 }]}
-      >
-        <Ionicons name="share-social-outline" size={14} color="#fff" />
-        <Text maxFontSizeMultiplier={1.2} style={styles.shareText}>分享给家人</Text>
-      </Pressable>
+      <View style={styles.shareActions}>
+        <Pressable
+          onPress={handleShare}
+          accessibilityRole="button"
+          accessibilityLabel="发微信分享菜单"
+          style={({ pressed }) => [styles.wechatShareBtn, pressed && { opacity: 0.85 }]}
+        >
+          <Ionicons name="logo-wechat" size={14} color="#fff" />
+          <Text maxFontSizeMultiplier={1.2} style={styles.wechatShareText}>发微信</Text>
+        </Pressable>
+        <Pressable
+          onPress={handleShare}
+          accessibilityRole="button"
+          accessibilityLabel="发小红书分享菜单"
+          style={({ pressed }) => [styles.xhsShareBtn, pressed && { opacity: 0.85 }]}
+        >
+          <Ionicons name="book-outline" size={14} color={MENU_ACCENT} />
+          <Text maxFontSizeMultiplier={1.2} style={styles.xhsShareText}>发小红书</Text>
+        </Pressable>
+        <Pressable
+          onPress={handleShare}
+          accessibilityRole="button"
+          accessibilityLabel="更多分享菜单"
+          style={({ pressed }) => [styles.moreShareBtn, pressed && { opacity: 0.85 }]}
+        >
+          <Ionicons name="share-social-outline" size={14} color={C.ink2} />
+          <Text maxFontSizeMultiplier={1.2} style={styles.moreShareText}>更多</Text>
+        </Pressable>
+      </View>
     </CardShell>
   );
 }
@@ -176,10 +198,40 @@ const styles = StyleSheet.create({
   macros: { flex: 1, minWidth: 0, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 8 },
   macroChip: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   macroDot: { width: 5, height: 5, borderRadius: 2.5 },
-  shareBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    marginTop: 10, paddingVertical: 8,
-    borderRadius: revaRadii.md,
+  shareActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 10,
+  },
+  wechatShareBtn: {
+    minHeight: 32,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
+    borderRadius: revaRadii.pill,
+    backgroundColor: '#1AAD19',
+    paddingHorizontal: 11,
+    paddingVertical: 6,
+  },
+  xhsShareBtn: {
+    minHeight: 32,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
+    borderRadius: revaRadii.pill,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#E7CDB7',
+    backgroundColor: '#FFF8F1',
+    paddingHorizontal: 11,
+    paddingVertical: 6,
+  },
+  moreShareBtn: {
+    minHeight: 32,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
+    borderRadius: revaRadii.pill,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
+    backgroundColor: C.paper,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
   },
   reason: { fontFamily: revaFonts.sans, fontSize: 12, lineHeight: 17, color: C.ink2, marginBottom: 4 } as TextStyle,
   itemName: { fontFamily: revaFonts.sans, flex: 1, minWidth: 0, fontSize: 13, fontWeight: '500', color: C.ink1 } as TextStyle,
@@ -189,5 +241,7 @@ const styles = StyleSheet.create({
   totalKcalUnit: { fontFamily: revaFonts.mono, fontSize: 11, fontWeight: '400', color: C.ink3 } as TextStyle,
   macroLabel: { fontFamily: revaFonts.sans, fontSize: 10, color: C.ink2 } as TextStyle,
   macroVal: { fontFamily: revaFonts.mono, fontSize: 11, fontWeight: '700', fontVariant: ['tabular-nums'] as const } as TextStyle,
-  shareText: { fontFamily: revaFonts.sans, fontSize: 13, color: '#fff', fontWeight: '700' } as TextStyle,
+  wechatShareText: { fontFamily: revaFonts.sans, fontSize: 12.5, color: '#fff', fontWeight: '800' } as TextStyle,
+  xhsShareText: { fontFamily: revaFonts.sans, fontSize: 12.5, color: MENU_ACCENT, fontWeight: '800' } as TextStyle,
+  moreShareText: { fontFamily: revaFonts.sans, fontSize: 12.5, color: C.ink2, fontWeight: '700' } as TextStyle,
 });

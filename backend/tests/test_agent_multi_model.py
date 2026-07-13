@@ -57,7 +57,7 @@ async def test_multi_model_stream_lead_tools_once_then_synthesizes(db, auth_user
     monkeypatch.setattr(executor, "_build_system_prompt", lambda *a, **k: "SYS")
     monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda: [])
 
-    # Lead loop: round 1 → one tool call; round 2 → final analysis text.
+    # Lead loop: round 1 → one write tool call; round 2 → final analysis text.
     lead_calls = {"n": 0}
 
     async def fake_call_llm(messages, tools):
@@ -68,7 +68,13 @@ async def test_multi_model_stream_lead_tools_once_then_synthesizes(db, auth_user
                 "finish_reason": "tool_calls",
                 "tool_calls": [{
                     "id": "c1", "type": "function",
-                    "function": {"name": "health_query", "arguments": json.dumps({"metric": "sleep"})},
+                    "function": {
+                        "name": "health_record",
+                        "arguments": json.dumps({
+                            "record_type": "diet",
+                            "data": {"food_items": "鸡胸肉", "meal_type": "lunch"},
+                        }),
+                    },
                 }],
             }
         return {"content": "LEAD ANALYSIS", "finish_reason": "stop"}
@@ -77,7 +83,12 @@ async def test_multi_model_stream_lead_tools_once_then_synthesizes(db, auth_user
 
     async def fake_execute_tool(name, args, token):
         tool_runs.append(name)
-        return "睡眠评分 79，HRV 56ms"
+        from app.models.agent_conversation import AgentMessage
+
+        db.expire_all()
+        user_message = db.query(AgentMessage).filter(AgentMessage.role == "user").one()
+        assert user_message.meta["write_state"]["status"] == "in_flight"
+        return '{"id":812,"food_items":"鸡胸肉","meal_type":"lunch"}'
 
     monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
     monkeypatch.setattr(executor, "_execute_tool", fake_execute_tool)
@@ -104,16 +115,21 @@ async def test_multi_model_stream_lead_tools_once_then_synthesizes(db, auth_user
 
     events = []
     async for ev in executor._run_multi_model_stream(
-        user.id, "我最近睡眠怎么样", None, None, '{"multi_model": true}'
+        user.id,
+        "记录午餐并综合分析",
+        None,
+        None,
+        '{"multi_model": true}',
+        "turn-multi-write",
     ):
         events.append(ev)
 
     kinds = [e["event"] for e in events]
-    assert kinds[0] == "agent_start"
+    assert kinds[:2] == ["request_persisted", "agent_start"]
     assert "token" in kinds and kinds[-1] == "done"
 
     # lead tool executed exactly once (panel must NOT triplicate writes)
-    assert tool_runs == ["health_query"]
+    assert tool_runs == ["health_record"]
 
     # streamed answer is the synthesis
     streamed = "".join(e["data"]["content"] for e in events if e["event"] == "token")
@@ -134,5 +150,304 @@ async def test_multi_model_stream_lead_tools_once_then_synthesizes(db, auth_user
     from app.services.agent_conversation_service import AgentConversationService
     conv = AgentConversationService(db).get_conversation_detail(user.id, done["conversation_id"])
     assistant_msgs = [m for m in conv.messages if m.role == "assistant"]
+    user_msgs = [m for m in conv.messages if m.role == "user"]
     assert len(assistant_msgs) == 1  # exactly one synthesis message, not one per panel model
     assert "SYNTHESIS REPORT" in (assistant_msgs[0].content or "")
+    assert user_msgs[0].meta["write_state"]["status"] == "verified"
+    assert user_msgs[0].meta["write_receipts"][0]["resource_id"] == "812"
+
+
+@pytest.mark.asyncio
+async def test_multi_model_identityless_write_fails_closed_before_panel_synthesis(
+    db, auth_user_and_headers, monkeypatch
+):
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
+    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda: [])
+
+    async def fake_call_llm(messages, tools):
+        return {
+            "content": "",
+            "finish_reason": "tool_calls",
+            "tool_calls": [{
+                "id": "delete-1",
+                "type": "function",
+                "function": {
+                    "name": "health_manage",
+                    "arguments": json.dumps({
+                        "record_type": "diet",
+                        "operation": "delete",
+                        "record_id": 42,
+                    }),
+                },
+            }],
+        }
+
+    async def fake_execute_tool(name, args, token):
+        return '{"message":"Record deleted successfully"}'
+
+    monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
+    monkeypatch.setattr(executor, "_execute_tool", fake_execute_tool)
+    monkeypatch.setattr(
+        "app.services.llm.factory.create_provider_for_model_id",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("panel synthesis must not run after an unverified write")
+        ),
+    )
+
+    events = [
+        event
+        async for event in executor._run_multi_model_stream(
+            user.id,
+            "删除饮食记录 42",
+            None,
+            None,
+            '{"multi_model": true}',
+            "turn-multi-delete-no-id",
+        )
+    ]
+
+    rendered = "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+    assert "不能确认" in rendered
+    assert "deleted successfully" not in rendered.lower()
+    done = events[-1]["data"]
+    assert done["completion_status"] == "error"
+    assert done["write_receipts"] == []
+
+
+@pytest.mark.asyncio
+async def test_multi_model_http_500_write_is_uncertain_and_retry_bypasses_panel(
+    db, auth_user_and_headers, monkeypatch
+):
+    from app.models.agent_conversation import AgentMessage
+
+    user, _ = auth_user_and_headers
+    turn_id = "turn-multi-committed-then-500"
+    message = "记录午餐并综合分析"
+    executor = AgentExecutor(db)
+    monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
+    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda: [])
+
+    async def first_llm_call(messages, tools):
+        return {
+            "content": "",
+            "finish_reason": "tool_calls",
+            "tool_calls": [{
+                "id": "write-500",
+                "type": "function",
+                "function": {
+                    "name": "health_record",
+                    "arguments": json.dumps({
+                        "record_type": "diet",
+                        "data": {"food_items": "鸡胸肉", "meal_type": "lunch"},
+                    }),
+                },
+            }],
+        }
+
+    async def committed_then_500(name, args, token):
+        return "Error: upstream returned 500 after request dispatch"
+
+    monkeypatch.setattr(executor, "_call_llm", first_llm_call)
+    monkeypatch.setattr(executor, "_execute_tool", committed_then_500)
+    first_events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message=message,
+            user_auth_token="test-token",
+            extra_context='{"multi_model": true}',
+            client_turn_id=turn_id,
+        )
+    ]
+    assert first_events[-1]["data"]["completion_status"] == "error"
+
+    user_message = db.query(AgentMessage).filter(
+        AgentMessage.role == "user",
+        AgentMessage.content == message,
+    ).one()
+    assert user_message.meta["write_state"]["status"] == "uncertain"
+    for assistant in db.query(AgentMessage).filter(
+        AgentMessage.role == "assistant",
+        AgentMessage.conversation_id == user_message.conversation_id,
+    ).all():
+        db.delete(assistant)
+    db.commit()
+
+    retry_llm_calls = 0
+    retry_executor = AgentExecutor(db)
+
+    async def retry_llm_call(messages, tools):
+        nonlocal retry_llm_calls
+        retry_llm_calls += 1
+        return {"content": "不应再次进入多模型面板", "finish_reason": "stop"}
+
+    monkeypatch.setattr(retry_executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
+    monkeypatch.setattr(retry_executor, "_call_llm", retry_llm_call)
+    retry_events = [
+        event
+        async for event in retry_executor.run_stream(
+            user_id=user.id,
+            message=message,
+            user_auth_token="test-token",
+            extra_context='{"multi_model": true}',
+            client_turn_id=turn_id,
+        )
+    ]
+
+    assert retry_llm_calls == 0
+    assert "没有自动重试" in "".join(
+        event["data"].get("content", "")
+        for event in retry_events
+        if event.get("event") == "token"
+    )
+
+
+@pytest.mark.asyncio
+async def test_multi_model_duplicate_writes_execute_once(
+    db, auth_user_and_headers, monkeypatch
+):
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
+    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda: [])
+    arguments = json.dumps({
+        "record_type": "diet",
+        "data": {"food_items": "鸡胸肉", "meal_type": "lunch"},
+    })
+    lead_calls = 0
+    tool_calls = 0
+
+    async def fake_llm_call(messages, tools):
+        nonlocal lead_calls
+        lead_calls += 1
+        if lead_calls == 1:
+            return {
+                "content": "",
+                "finish_reason": "tool_calls",
+                "tool_calls": [
+                    {"id": "duplicate-1", "type": "function", "function": {"name": "health_record", "arguments": arguments}},
+                    {"id": "duplicate-2", "type": "function", "function": {"name": "health_record", "arguments": arguments}},
+                ],
+            }
+        return {"content": "LEAD", "finish_reason": "stop"}
+
+    async def fake_execute_tool(name, args, token):
+        nonlocal tool_calls
+        tool_calls += 1
+        return json.dumps({"id": 950 + tool_calls, "food_items": "鸡胸肉"})
+
+    class FakeProvider:
+        def __init__(self, model_id):
+            self.model = model_id
+
+        async def chat(self, **kwargs):
+            if "综合专家" in kwargs["messages"][0]["content"]:
+                return {"content": "SYNTHESIS", "finish_reason": "stop"}
+            return {"content": "PERSPECTIVE", "finish_reason": "stop"}
+
+    monkeypatch.setattr(executor, "_call_llm", fake_llm_call)
+    monkeypatch.setattr(executor, "_execute_tool", fake_execute_tool)
+    monkeypatch.setattr(
+        "app.services.llm.factory.create_provider_for_model_id",
+        lambda model_id: FakeProvider(model_id),
+    )
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="记录午餐并综合分析",
+            user_auth_token="test-token",
+            extra_context='{"multi_model": true}',
+            client_turn_id="turn-multi-duplicate-write",
+        )
+    ]
+
+    assert tool_calls == 1
+    duplicate_results = [
+        event["data"]
+        for event in events
+        if event.get("event") == "tool_result"
+        and event["data"].get("tool") == "health_record"
+    ]
+    assert len(duplicate_results) == 2
+    assert duplicate_results[1]["replayed"] is True
+    assert len(events[-1]["data"]["write_receipts"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_multi_model_checkpoints_all_planned_writes_before_dispatch(
+    db, auth_user_and_headers, monkeypatch
+):
+    from app.models.agent_conversation import AgentMessage
+
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
+    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda: [])
+    arguments = [
+        json.dumps({"record_type": "diet", "operation": "delete", "record_id": 1201}),
+        json.dumps({"record_type": "diet", "operation": "delete", "record_id": 1202}),
+    ]
+
+    async def fake_llm_call(messages, tools):
+        return {
+            "content": "",
+            "finish_reason": "tool_calls",
+            "tool_calls": [
+                {"id": "a", "type": "function", "function": {"name": "health_manage", "arguments": arguments[0]}},
+                {"id": "b", "type": "function", "function": {"name": "health_manage", "arguments": arguments[1]}},
+            ],
+        }
+
+    checked = False
+
+    async def fake_execute_tool(name, args, token):
+        nonlocal checked
+        if not checked:
+            db.expire_all()
+            user_message = db.query(AgentMessage).filter(
+                AgentMessage.role == "user",
+                AgentMessage.content == "多模型删除两条记录",
+            ).one()
+            operations = user_message.meta["write_operations"]
+            assert len(operations) == 2
+            assert sorted(operation["status"] for operation in operations.values()) == [
+                "in_flight",
+                "planned",
+            ]
+            checked = True
+        record_id = json.loads(args)["record_id"]
+        return json.dumps({
+            "id": record_id,
+            "record_id": record_id,
+            "resource_type": "diet_record",
+        })
+
+    monkeypatch.setattr(executor, "_call_llm", fake_llm_call)
+    monkeypatch.setattr(executor, "_execute_tool", fake_execute_tool)
+    monkeypatch.setattr(
+        "app.services.llm.factory.create_provider_for_model_id",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("test stops after proving the plan checkpoint")
+        ),
+    )
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="多模型删除两条记录",
+            user_auth_token="test-token",
+            extra_context='{"multi_model": true}',
+            client_turn_id="turn-multi-planned-writes",
+        )
+    ]
+    assert checked is True
+    assert events[-1]["data"]["completion_status"] == "error"

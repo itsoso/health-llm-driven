@@ -45,7 +45,7 @@ case "${MODE}" in
       echo "    当前 HEAD = $(git -C "${ROOT}" rev-parse --short HEAD)"
     fi
     echo "→ 远端 EAS production 构建 + 自动提交(含 watch,自动分发进内部测试组)…"
-    npx eas-cli build --platform ios --profile production --non-interactive --auto-submit 2>&1 | tee "${LOG}"
+    npx eas-cli build --platform ios --profile production --non-interactive --auto-submit-with-profile production-no-groups 2>&1 | tee "${LOG}"
     echo
     echo "✓ 完成。构建/提交详情见上方 expo.dev 链接;Apple 处理 ~5-10 分钟后 TestFlight 可装。"
     ;;

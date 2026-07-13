@@ -7,7 +7,7 @@
  *
  * 「小巴先开口」(State A, 2026-07 founder CDS):
  * - system content 不再是卡片家具, 而是小巴在流里的开场消息气泡:
- *   30pt paw-avatar + 气泡(非对称圆角, surface + hairline)。
+ *   30pt 小巴品牌头像 + 气泡(非对称圆角, surface + hairline)。
  * - 问候语(早上好/下午好…)折进气泡当第一句, opener.text 接在后面。
  * - 记忆 footnote 在气泡内部(hairline 分隔): 书签图标 + 清洗过的记忆文本 + 「校准」入口。
  * - quick replies 在气泡外下方(chips), 追加一个「换个话题」中性 chip。
@@ -36,6 +36,7 @@ import type {
 import { formatOpenerText } from './OpenerCard';
 import type { MemoryOpenerItem } from '../../services/memoryOpener';
 import { QUICK_ACTION_LABEL } from '../../utils/quickReplyAction';
+import XiaoBaAvatar from './XiaoBaAvatar';
 import {
   revaColors as C,
   revaRadii,
@@ -143,15 +144,20 @@ function quickActionIcon(action: QuickReplyAction): keyof typeof Ionicons.glyphM
  */
 function MemoryFootnote({
   text,
+  typeLabel,
   onOpenMemory,
 }: {
   text: string;
+  typeLabel?: string;
   onOpenMemory: () => void;
 }) {
   return (
     <View style={styles.footnote}>
       <View style={styles.footnoteLead}>
-        <Ionicons name="bookmark-outline" size={12} color={C.ink3} />
+        <View style={styles.memorySourceBadge}>
+          <Ionicons name="bookmark-outline" size={11} color={C.green600} />
+          <Text style={txt.memorySourceBadge}>记忆 · {typeLabel || '健康'}</Text>
+        </View>
         <Text style={txt.footnoteBody} numberOfLines={2}>
           {text}
         </Text>
@@ -188,16 +194,18 @@ export default function EmptyStateHome({
     return (
       <View style={styles.container}>
         <View style={styles.bubbleRow}>
-          <View style={styles.avatar}>
-            <Ionicons name="paw" size={15} color={C.green600} />
-          </View>
+          <XiaoBaAvatar size={AVATAR} />
           <View style={styles.bubble}>
             <Text style={txt.bubbleBody}>
               <Text style={txt.greetingInline}>{greeting}。</Text>
               {openerText}
             </Text>
             {showMemory && (
-              <MemoryFootnote text={memoryText} onOpenMemory={onOpenMemory} />
+              <MemoryFootnote
+                text={memoryText}
+                typeLabel={memoryOpener[0]?.type_label}
+                onOpenMemory={onOpenMemory}
+              />
             )}
           </View>
         </View>
@@ -265,12 +273,15 @@ export default function EmptyStateHome({
           <Text style={txt.greetingSub} numberOfLines={1}>今天想从哪里开始？</Text>
         </View>
         <View style={styles.bubbleRow}>
-          <View style={styles.avatar}>
-            <Ionicons name="paw" size={15} color={C.green600} />
-          </View>
+          <XiaoBaAvatar size={AVATAR} />
           <View style={styles.bubble}>
+            <View style={styles.memorySourceBadge}>
+              <Ionicons name="bookmark-outline" size={11} color={C.green600} />
+              <Text style={txt.memorySourceBadge}>
+                记忆 · {memoryOpener[0]?.type_label || '健康'}
+              </Text>
+            </View>
             <View style={styles.memoryOnlyLead}>
-              <Ionicons name="bookmark-outline" size={13} color={C.ink3} />
               <Text style={txt.bubbleBody} numberOfLines={2}>{memoryText}</Text>
             </View>
             <View style={styles.memoryOnlyActionRow}>
@@ -290,15 +301,13 @@ export default function EmptyStateHome({
   }
 
   // 冷启动第三态 (onboarding 但 opener 因故未到 + 无记忆) → Quick Start 卡:
-  // 三个首次价值动作, 视觉与开场气泡一致 (爪印头像 + 非对称圆角气泡 + Reva tokens)。
+  // 三个首次价值动作, 视觉与开场气泡一致 (小巴品牌头像 + 非对称圆角气泡 + Reva tokens)。
   // opener 正常到达时上面已 return, 不会走到这里 → 不会气泡 + 卡 + chips 三层堆叠。
   if (onboarding && onQuickAction) {
     return (
       <View style={styles.container}>
         <View style={styles.bubbleRow}>
-          <View style={styles.avatar}>
-            <Ionicons name="paw" size={15} color={C.green600} />
-          </View>
+          <XiaoBaAvatar size={AVATAR} />
           <View style={styles.bubble}>
             <Text style={txt.bubbleBody}>
               <Text style={txt.greetingInline}>{greeting}。</Text>
@@ -359,14 +368,6 @@ const styles = StyleSheet.create({
     gap: revaSpacing.s2,
     paddingTop: revaSpacing.s2,
   },
-  avatar: {
-    width: AVATAR,
-    height: AVATAR,
-    borderRadius: AVATAR / 2,
-    backgroundColor: C.green50,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   bubble: {
     flexShrink: 1,
     maxWidth: '86%',
@@ -398,6 +399,20 @@ const styles = StyleSheet.create({
     gap: 5,
     flexShrink: 1,
     minWidth: 0,
+  },
+  memorySourceBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 3,
+    minHeight: 22,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    marginBottom: 4,
+    borderRadius: revaRadii.pill,
+    backgroundColor: C.green50,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.green100,
   },
   memoryOnlyLead: {
     flexDirection: 'row',
@@ -498,6 +513,13 @@ const txt = {
     color: C.ink3,
     lineHeight: 17,
     flexShrink: 1,
+  } as TextStyle,
+  memorySourceBadge: {
+    fontFamily: revaFonts.sans,
+    fontSize: 10,
+    lineHeight: 14,
+    color: C.green600,
+    fontWeight: '700',
   } as TextStyle,
   footnoteAction: {
     fontFamily: revaFonts.sans,

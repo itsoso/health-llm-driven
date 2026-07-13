@@ -177,3 +177,120 @@ def test_watch_action_events_accepted(client, db, auth_user_and_headers, event_n
     )
     assert r.status_code == 202, f"{event_name} 被拒, body={r.text}"
     assert r.json()["ok"] is True
+
+
+@pytest.mark.parametrize("event_name,meta", [
+    ("agent_turn_terminal", {
+        "phase": "completed",
+        "duration_bucket": "3_10s",
+    }),
+    ("voice_input_terminal", {
+        "phase": "cancelled",
+        "duration_bucket": "1_3s",
+        "action_type": "hold",
+    }),
+    ("write_receipt_terminal", {
+        "phase": "verified",
+        "duration_bucket": "10_30s",
+        "action_type": "diet.update",
+        "verified": True,
+    }),
+])
+def test_reliability_terminal_events_accept_privacy_safe_meta(
+    client,
+    db,
+    auth_user_and_headers,
+    event_name,
+    meta,
+):
+    _, headers = auth_user_and_headers
+    response = client.post(
+        "/api/v1/client-events",
+        headers=headers,
+        json={"event_name": event_name, "meta": meta},
+    )
+
+    assert response.status_code == 202, response.text
+    row = db.query(ClientEvent).order_by(ClientEvent.id.desc()).first()
+    assert row.event_name == event_name
+    assert row.meta == meta
+
+
+@pytest.mark.parametrize("forbidden_key,forbidden_value", [
+    ("content", "用户健康正文"),
+    ("audio", "base64-secret"),
+    ("uri", "file:///private/voice.m4a"),
+    ("resource_id", 42),
+])
+def test_reliability_terminal_events_reject_private_or_identifying_meta(
+    client,
+    auth_user_and_headers,
+    forbidden_key,
+    forbidden_value,
+):
+    _, headers = auth_user_and_headers
+    response = client.post(
+        "/api/v1/client-events",
+        headers=headers,
+        json={
+            "event_name": "voice_input_terminal",
+            "meta": {
+                "phase": "completed",
+                "duration_bucket": "1_3s",
+                "action_type": "dictation",
+                forbidden_key: forbidden_value,
+            },
+        },
+    )
+
+    assert response.status_code == 422, response.text
+
+
+@pytest.mark.parametrize("event_name,meta", [
+    ("agent_turn_terminal", {
+        "phase": "unknown",
+        "duration_bucket": "3_10s",
+    }),
+    ("voice_input_terminal", {
+        "phase": "completed",
+        "duration_bucket": "forever",
+        "action_type": "dictation",
+    }),
+    ("voice_input_terminal", {
+        "phase": "completed",
+        "duration_bucket": "1_3s",
+        "action_type": "dictation\nprivate",
+    }),
+    ("write_receipt_terminal", {
+        "phase": "verified",
+        "duration_bucket": "1_3s",
+        "action_type": "diet.update",
+        "verified": "yes",
+    }),
+    ("write_receipt_terminal", {
+        "phase": "verified",
+        "duration_bucket": "1_3s",
+        "action_type": "diet.update",
+        "verified": False,
+    }),
+    ("write_receipt_terminal", {
+        "phase": "unverified",
+        "duration_bucket": "1_3s",
+        "action_type": "diet.update",
+        "verified": True,
+    }),
+])
+def test_reliability_terminal_events_reject_invalid_contract(
+    client,
+    auth_user_and_headers,
+    event_name,
+    meta,
+):
+    _, headers = auth_user_and_headers
+    response = client.post(
+        "/api/v1/client-events",
+        headers=headers,
+        json={"event_name": event_name, "meta": meta},
+    )
+
+    assert response.status_code == 422, response.text

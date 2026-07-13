@@ -170,8 +170,11 @@ AGENT_OPS: Dict[str, Dict[str, Any]] = {
 
     # ── manage-only 对象(create 空洞:UI 有录入口,agent 建不了)──────────
     "waist": {
-        "create": {"gap": True,
-                   "reason": "UI 有腰围记录入口,health_record 无 waist record_type —— '记腰围 82'走不通"},
+        "create": {
+            "tool": "health_record", "record_type": "waist", "confirm": "auto",
+            "via": "health_record(waist) → POST /waist/records",
+            "undo": "health_manage(delete waist {record_id})",
+        },
         "read": {"tool": "health_manage", "record_type": "waist",
                  "via": "health_manage(list waist)"},
         "list": {"tool": "health_manage", "record_type": "waist",
@@ -182,8 +185,11 @@ AGENT_OPS: Dict[str, Dict[str, Any]] = {
                    "via": "DELETE /waist/records/{id}"},
     },
     "sleep": {
-        "create": {"gap": True,
-                   "reason": "睡眠数据主走 Garmin 同步;手动补录无 health_record 通路(manage 改/删反而有)"},
+        "create": {
+            "tool": "health_record", "record_type": "sleep", "confirm": "auto",
+            "via": "health_record(sleep) → POST /sleep/records",
+            "undo": "health_manage(delete sleep {record_id})",
+        },
         "read": {"tool": "health_query", "dimensions": ("sleep",),
                  "via": "health_query(sleep) → GET /garmin-analysis/me/sleep"},
         "list": {"tool": "health_manage", "record_type": "sleep",
@@ -194,8 +200,11 @@ AGENT_OPS: Dict[str, Dict[str, Any]] = {
                    "via": "DELETE /sleep/records/{id}"},
     },
     "excretion": {
-        "create": {"gap": True,
-                   "reason": "UI 有排泄记录入口,health_record 无 excretion record_type"},
+        "create": {
+            "tool": "health_record", "record_type": "excretion", "confirm": "auto",
+            "via": "health_record(excretion) → POST /excretion/records",
+            "undo": "health_manage(delete excretion {record_id})",
+        },
         "read": {"tool": "health_manage", "record_type": "excretion",
                  "via": "health_manage(list excretion)"},
         "list": {"tool": "health_manage", "record_type": "excretion",
@@ -289,22 +298,20 @@ AGENT_OPS: Dict[str, Dict[str, Any]] = {
 
     # ── 补剂三兄弟 ─────────────────────────────────────────────────────────
     "supplement": {
-        # 补剂打卡(intake 记录)。undo 空洞:auto 写入却撤不了当日打卡
-        # (health_manage 只有 supplement_definition 映射)—— spec 落地状态 #2。
+        # 补剂打卡(intake 记录)。NFC 单个打卡会返回 record_id, 可直接撤销。
         "create": {
             "tool": "health_record", "record_type": "supplement", "confirm": "auto",
             "via": "health_record(supplement) 名称匹配活跃定义 → POST /nfc/tap(action=supplement)",
-            "undo": None,
-            "undo_gap": "打卡记录无 health_manage 删除通路(仅 supplement_definition 可删),撤销只能撤自动建档的定义",
+            "undo": "health_manage(delete supplement {record_id})",
         },
         "read": {"tool": "health_query", "dimensions": ("supplements",),
                  "via": "health_query(supplements) → GET /supplements/me/stats"},
-        "list": {"gap": True,
-                 "reason": "health_manage 无 supplement intake 记录映射(只有 supplement_definition)"},
-        "update": {"gap": True,
-                   "reason": "同 list:intake 记录不可经 agent 修改"},
-        "delete": {"gap": True,
-                   "reason": "同 list:intake 记录不可经 agent 删除 → auto 打卡无撤销通路"},
+        "list": {"tool": "health_manage", "record_type": "supplement",
+                 "via": "GET /supplements/me/records"},
+        "update": {"tool": "health_manage", "record_type": "supplement",
+                   "via": "PUT /supplements/records/{id}"},
+        "delete": {"tool": "health_manage", "record_type": "supplement",
+                   "via": "DELETE /supplements/records/{id}"},
     },
     "supplement_definition": {
         # spec §5 First Application:supplement 自动建档(镜像 medication 先例)。
@@ -351,8 +358,8 @@ AGENT_OPS: Dict[str, Dict[str, Any]] = {
         # canonical read 层(health_read.read_medical_indicators, 与 Twin 同源)。
         "read": {"tool": "health_query", "dimensions": ("medical_exam",),
                  "via": "health_query(medical_exam) → canonical MedicalIndicator 读层"},
-        "list": {"gap": True,
-                 "reason": "报告级列表无 agent 通路;指标级读走 health_query(medical_exam)"},
+        "list": {"tool": "health_manage", "record_type": "medical_exam",
+                 "via": "GET /medical-exams/me"},
         "update": {"opt_out": "数值修正走人工核对管线,不开放 agent 改"},
         "delete": {"opt_out": "体检报告不开放 agent 删除"},
     },
@@ -389,15 +396,29 @@ AGENT_OPS: Dict[str, Dict[str, Any]] = {
         },
         "read": {"tool": "intervention_cycle",
                  "via": "intervention_cycle(action=status)"},
-        "list": {"gap": True, "reason": "只有当前周期 status,历史周期列表无 agent 通路"},
-        "update": {"gap": True, "reason": "周期参数调整无 agent 通路(R16:处方/激素类恒 clinician_review)"},
-        "delete": {"gap": True, "reason": "取消/删除周期无 agent 通路"},
+        "list": {"tool": "intervention_cycle",
+                 "via": "intervention_cycle(action=list)"},
+        "update": {"tool": "intervention_cycle",
+                   "via": "intervention_cycle(action=update, confirmed=true)"},
+        "delete": {"tool": "intervention_cycle",
+                   "via": "intervention_cycle(action=cancel, confirmed=true) — 标记 abandoned, 不物理删除"},
     },
 
     # ── 整对象空洞(有 UI 面,agent 三件套零通路)────────────────────────
     "goal": {
-        "gap": True,
-        "reason": "UI 有(web goals 页 / mobile Goals tab),agent create/read/list/update/delete 零通路 —— '帮我把目标改成…'走不通",
+        "create": {
+            "tool": "health_record", "record_type": "goal", "confirm": "auto",
+            "via": "health_record(goal) → POST /goals/",
+            "undo": "health_manage(delete goal {record_id})",
+        },
+        "read": {"tool": "health_manage", "record_type": "goal",
+                 "via": "health_manage(list goal)"},
+        "list": {"tool": "health_manage", "record_type": "goal",
+                 "via": "GET /goals/me"},
+        "update": {"tool": "health_manage", "record_type": "goal",
+                   "via": "PUT /goals/{id}"},
+        "delete": {"tool": "health_manage", "record_type": "goal",
+                   "via": "DELETE /goals/{id}"},
     },
 }
 

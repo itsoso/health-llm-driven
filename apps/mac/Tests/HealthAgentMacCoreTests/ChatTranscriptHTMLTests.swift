@@ -89,6 +89,22 @@ final class ChatTranscriptHTMLTests: XCTestCase {
         XCTAssertTrue(html.contains("<h2>Title</h2>"))
     }
 
+    func testOrderedListContinuesAcrossNestedBullets() {
+        // LLM 常把每个顶级条目都写成 "1.",插在条目间的子 bullet 会把 <ol> 冲断成单条列表 →
+        // 修复前每个都显示 "1."。修复后应连续:后续 <ol> 带 start="2"/"3"。
+        let md = "1. 蛋白质\n- 目标\n- 紧急\n1. 木糖醇\n- 行动\n1. 激素\n- 方案"
+        let html = ChatTranscriptHTML.renderMessageBody(markdown: md)
+        XCTAssertTrue(html.contains("start=\"2\""), "第二个顶级条目应从 2 起: \(html)")
+        XCTAssertTrue(html.contains("start=\"3\""), "第三个顶级条目应从 3 起: \(html)")
+    }
+
+    func testOrderedListResetsAfterHeading() {
+        // 标题分界后是新的逻辑列表,应重新从 1 起(不带 start="2"/"3")。
+        let md = "1. a\n1. b\n## 新段\n1. c"
+        let html = ChatTranscriptHTML.renderMessageBody(markdown: md)
+        XCTAssertFalse(html.contains("start=\"3\""), "标题后应重置计数,不应把 c 编成第 3 项: \(html)")
+    }
+
     // MARK: - JS string injection safety
 
     func testRenderedMessageJSStringEscapesQuotesAndScriptClose() {

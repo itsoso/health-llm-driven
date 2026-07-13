@@ -8,6 +8,7 @@ import {
 } from 'expo-audio';
 import * as Haptics from 'expo-haptics';
 import { transcribeAudio } from '../services/transcribe';
+import { durationBucket, emitClientEvent } from '../services/clientEvents';
 
 export interface VoiceRecordingState {
   isRecording: boolean;
@@ -26,6 +27,24 @@ export function useVoiceRecording(opts?: {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const cancelledRef = useRef(false);
   const readyRef = useRef(false);
+  const startSeqRef = useRef(0);
+  const transcriptionSeqRef = useRef(0);
+  const sessionStartedAtRef = useRef(0);
+  const terminalSentRef = useRef(false);
+
+  const emitTerminal = useCallback((
+    phase: 'completed' | 'failed' | 'cancelled',
+    errorCode?: string,
+  ) => {
+    if (!sessionStartedAtRef.current || terminalSentRef.current) return;
+    terminalSentRef.current = true;
+    void emitClientEvent('voice_input_terminal', {
+      phase,
+      duration_bucket: durationBucket(sessionStartedAtRef.current),
+      action_type: 'hold',
+      ...(errorCode ? { error_code: errorCode } : {}),
+    });
+  }, []);
 
   const clearTimer = useCallback(() => {
     if (timerRef.current) {
@@ -50,29 +69,53 @@ export function useVoiceRecording(opts?: {
   // Cleanup on unmount
   useEffect(() => {
     return () => {
+      if (sessionStartedAtRef.current && !terminalSentRef.current) {
+        emitTerminal('cancelled', 'component_unmounted');
+      }
+      startSeqRef.current += 1;
+      transcriptionSeqRef.current += 1;
       clearTimer();
       try { recorder.stop(); } catch {}
       // 卸载时若还占着录音 session, 放回来 (不阻塞卸载, fire-and-forget)。
       void setAudioModeAsync({ allowsRecording: false }).catch(() => {});
     };
-  }, [clearTimer, recorder]);
+  }, [clearTimer, emitTerminal, recorder]);
 
   const startRecording = useCallback(async () => {
+    sessionStartedAtRef.current = Date.now();
+    terminalSentRef.current = false;
+    transcriptionSeqRef.current += 1;
+    const seq = startSeqRef.current + 1;
+    startSeqRef.current = seq;
+    const isCurrentStart = () => startSeqRef.current === seq;
     try {
       readyRef.current = false;
 
       const perm = await requestRecordingPermissionsAsync();
+      if (!isCurrentStart()) {
+        await releaseAudioSession();
+        return false;
+      }
       if (!perm.granted) {
+        emitTerminal('failed', 'microphone_permission_denied');
         Alert.alert('需要麦克风权限', '请在 iPhone 设置 → HealthPilot → 麦克风 中开启权限');
-        return;
+        return false;
       }
 
       await setAudioModeAsync({
         allowsRecording: true,
         playsInSilentMode: true,
       });
+      if (!isCurrentStart()) {
+        await releaseAudioSession();
+        return false;
+      }
 
       await recorder.prepareToRecordAsync();
+      if (!isCurrentStart()) {
+        await releaseAudioSession();
+        return false;
+      }
       recorder.record();
 
       cancelledRef.current = false;
@@ -86,29 +129,45 @@ export function useVoiceRecording(opts?: {
       }, 200);
 
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      return true;
     } catch (err: any) {
       try { await setAudioModeAsync({ allowsRecording: false }); } catch {}
+      readyRef.current = false;
       setIsRecording(false);
       clearTimer();
       const msg = err?.message || String(err);
+      emitTerminal('failed', 'recording_start_failed');
       Alert.alert('录音启动失败', msg);
+      return false;
     }
-  }, [clearTimer, recorder]);
+  }, [clearTimer, emitTerminal, recorder, releaseAudioSession]);
 
   const stopAndTranscribe = useCallback(async () => {
-    if (!readyRef.current) return;
+    if (!readyRef.current) {
+      startSeqRef.current += 1;
+      clearTimer();
+      setIsRecording(false);
+      await releaseAudioSession();
+      emitTerminal('cancelled', 'released_before_ready');
+      return;
+    }
     clearTimer();
     setIsRecording(false);
 
     if (cancelledRef.current) {
       try { await recorder.stop(); } catch {}
+      readyRef.current = false;
       await releaseAudioSession();  // 释放录音 session, 否则语音后键盘弹不出。
+      emitTerminal('cancelled');
       return;
     }
 
+    const transcriptionSeq = transcriptionSeqRef.current + 1;
+    transcriptionSeqRef.current = transcriptionSeq;
     setIsTranscribing(true);
     try {
       await recorder.stop();
+      readyRef.current = false;
       // 停录音后立刻放回 session (在转写网络请求之前) —— 转写可能耗时几秒,
       // 期间键盘/输入应已可用, 不必等转写回来才释放麦克风占用。
       await releaseAudioSession();
@@ -116,32 +175,60 @@ export function useVoiceRecording(opts?: {
 
       if (!uri) {
         setIsTranscribing(false);
+        emitTerminal('failed', 'recording_uri_missing');
         return;
       }
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       const text = await transcribeAudio(uri);
 
+      if (transcriptionSeqRef.current !== transcriptionSeq || cancelledRef.current) {
+        return;
+      }
+
       if (text && opts?.onTranscript) {
         opts.onTranscript(text);
+        emitTerminal('completed');
+      } else if (text) {
+        emitTerminal('completed');
       } else if (!text) {
+        emitTerminal('failed', 'empty_transcript');
         Alert.alert('未识别到语音', '请靠近麦克风重试');
       }
     } catch {
-      Alert.alert('语音识别失败', '请稍后再试');
+      readyRef.current = false;
+      if (transcriptionSeqRef.current === transcriptionSeq && !cancelledRef.current) {
+        emitTerminal('failed', 'transcription_failed');
+        Alert.alert('语音识别失败', '请稍后再试');
+      }
     } finally {
-      setIsTranscribing(false);
+      if (transcriptionSeqRef.current === transcriptionSeq) {
+        setIsTranscribing(false);
+      }
     }
-  }, [opts, clearTimer, recorder, releaseAudioSession]);
+  }, [opts, clearTimer, emitTerminal, recorder, releaseAudioSession]);
 
   const cancelRecording = useCallback(async () => {
     cancelledRef.current = true;
+    transcriptionSeqRef.current += 1;
+    setIsTranscribing(false);
+    if (!readyRef.current) {
+      startSeqRef.current += 1;
+      clearTimer();
+      setIsRecording(false);
+      await releaseAudioSession();
+      emitTerminal('cancelled');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      return;
+    }
     clearTimer();
     setIsRecording(false);
     try { await recorder.stop(); } catch {}
+    readyRef.current = false;
     await releaseAudioSession();  // 取消同样要释放, 否则语音后键盘弹不出。
+    emitTerminal('cancelled');
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-  }, [clearTimer, recorder, releaseAudioSession]);
+  }, [clearTimer, emitTerminal, recorder, releaseAudioSession]);
 
   return {
     isRecording,

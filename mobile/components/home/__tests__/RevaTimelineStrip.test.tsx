@@ -102,7 +102,7 @@ describe('RevaTimelineStrip', () => {
 
     fireEvent.press(getByText('拍照记餐'));
 
-    expect(mockPush).toHaveBeenCalledWith('/diet?capture=photo');
+    expect(mockPush).toHaveBeenCalledWith('/diet?capture=photo&return_to=chat');
   });
 
   it('keeps calendar work blocks out of the Today next-actions strip', () => {

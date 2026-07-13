@@ -31,6 +31,7 @@ class DietRecordBase(BaseModel):
     image_url: Optional[str] = None  # 食物图片URL
     ai_recognized: Optional[int] = 0  # 是否AI识别
     ai_confidence: Optional[float] = None  # AI/语音解析置信度
+    ai_raw_result: Optional[Any] = None  # AI识别原始 JSON (创建时落库,响应暂不回传)
     health_tips: Optional[str] = None  # AI健康提示
 
 

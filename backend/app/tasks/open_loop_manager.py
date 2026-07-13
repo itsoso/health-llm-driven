@@ -1,7 +1,7 @@
 """
 Open-Loop Manager — 主动循环管理 (vertical health agent 的灵魂).
 
-每天 7:00 (北京) 跑一次, 扫所有用户的 "开放健康循环",
+每天早上定时跑一次, 扫所有用户的 "开放健康循环",
 按严重度+到期度评分, 给每个用户最多推 2 条 APNs.
 
 什么是"开放循环":
@@ -377,12 +377,14 @@ def _is_in_quiet_hours_now(setting) -> bool:
     和 push_service.PushService.is_quiet_hours 同语义, 但不依赖 PushService 初始化
     (open_loop 的 push 链路一直走 ios_push 直连, 不经 push_service).
 
-    跨午夜情况: start > end 时 (如 22:00 - 08:30), 当前时间 >= start 或 < end 都算静默.
+    跨午夜情况: start > end 时 (如 22:00 - 09:00), 当前时间 >= start 或 < end 都算静默.
     """
     start = (setting.quiet_hours_start or "22:00").strip()
-    end = (setting.quiet_hours_end or "08:30").strip()
+    end = (setting.quiet_hours_end or "09:00").strip()
     now_cn = datetime.now(CHINA_TIMEZONE).strftime("%H:%M")
-    if start > end:  # 跨午夜: 22:00 ~ 08:30
+    if now_cn < "09:00":
+        return True
+    if start > end:  # 跨午夜: 22:00 ~ 09:00
         return now_cn >= start or now_cn < end
     return start <= now_cn < end
 
@@ -541,7 +543,7 @@ def _push_loop(db, user_id: int, loop: OpenLoop) -> bool:
         if not setting.health_alert_enabled:
             return False
 
-        # Defense-in-depth: quiet hours 守门 — cron 已移到 08:45 避开默认 22:00-08:30,
+        # Defense-in-depth: quiet hours 守门 — 默认 22:00-09:00, 且 09:00 前硬静默。
         # 但用户若把 quiet_hours 往后调 (例如 10:00) 或把结束设得更晚, 仍要尊重.
         # 严格不打扰睡眠: Open-Loop 直连 APNs 不允许按 score 穿透 quiet-hours,
         # 避免绕过 PushService 的统一静默策略。下次 cron 会重试, 不触发 dedup.
@@ -645,7 +647,7 @@ def _push_via_telegram(loop: OpenLoop) -> tuple[bool, str]:
 @celery_app.task(time_limit=600, name="app.tasks.open_loop_manager.run_open_loop_check")
 def run_open_loop_check(max_per_user: int = 2):
     """
-    每天 7:00 (北京) 扫所有 active 用户的开放循环, 推送 top N.
+    每天早上定时扫所有 active 用户的开放循环, 推送 top N.
 
     返回 {users_scanned, total_loops, pushed}.
     """

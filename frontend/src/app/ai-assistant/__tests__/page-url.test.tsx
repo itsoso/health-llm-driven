@@ -68,6 +68,34 @@ describe('ai-assistant URL state', () => {
     expect(getConversation).not.toHaveBeenCalled();
   });
 
+  it('renders structured opener quick replies by label', async () => {
+    searchParamsGet.mockReturnValue(null);
+    apiGet.mockImplementation((path: string) => {
+      if (path === '/agent/conversation-starters') {
+        return Promise.resolve({
+          data: {
+            opener: {
+              text: '我们从记录一件小事开始吧',
+              source: 'cold_start',
+              quick_replies: [
+                { label: '拍一张今天的饭', action: 'photo_meal' },
+                { label: '记一下体重', action: 'record_weight' },
+              ],
+            },
+            suggestions: [],
+            onboarding: true,
+          },
+        });
+      }
+      return Promise.resolve({ data: {} });
+    });
+
+    render(<AIAssistantPage />);
+
+    expect(await screen.findByText('拍一张今天的饭')).toBeInTheDocument();
+    expect(screen.getByText('记一下体重')).toBeInTheDocument();
+  });
+
   it('imports a medical exam file from the composer and renders a result card', async () => {
     searchParamsGet.mockReturnValue(null);
     executeMedicalExamImportSkillForFile.mockResolvedValueOnce({

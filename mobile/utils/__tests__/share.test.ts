@@ -1,11 +1,17 @@
 import { Platform, Share } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
+import * as Sharing from 'expo-sharing';
 import api from '../../services/api';
 
-import { sharePlainText } from '../share';
+import { shareLocalImage, sharePlainText } from '../share';
 
 jest.mock('expo-clipboard', () => ({
   setStringAsync: jest.fn().mockResolvedValue(undefined),
+}));
+
+jest.mock('expo-sharing', () => ({
+  isAvailableAsync: jest.fn().mockResolvedValue(true),
+  shareAsync: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock('../../services/api', () => ({
@@ -67,5 +73,31 @@ describe('sharePlainText', () => {
       title: '健康 Agent',
       message: '健康 Agent\nhttps://health.executor.life/shared/token123',
     });
+  });
+});
+
+describe('shareLocalImage', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    (Sharing.isAvailableAsync as jest.Mock).mockResolvedValue(true);
+    (Sharing.shareAsync as jest.Mock).mockResolvedValue(undefined);
+  });
+
+  it('opens the native image share sheet for a local card screenshot', async () => {
+    await shareLocalImage('file:///tmp/diet-card.png');
+
+    expect(Sharing.isAvailableAsync).toHaveBeenCalledTimes(1);
+    expect(Sharing.shareAsync).toHaveBeenCalledWith('file:///tmp/diet-card.png', {
+      dialogTitle: '分享饮食打卡截图',
+      mimeType: 'image/png',
+      UTI: 'public.png',
+    });
+  });
+
+  it('fails clearly when native image sharing is unavailable', async () => {
+    (Sharing.isAvailableAsync as jest.Mock).mockResolvedValueOnce(false);
+
+    await expect(shareLocalImage('file:///tmp/diet-card.png')).rejects.toThrow('image_sharing_unavailable');
+    expect(Sharing.shareAsync).not.toHaveBeenCalled();
   });
 });

@@ -61,6 +61,42 @@ describe('streamChat', () => {
     await iter.return?.(undefined as any);
   });
 
+  it('sends the client turn id and yields only durable request persistence as acceptance', async () => {
+    const iter = streamChat(
+      '记录午餐',
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      'voice',
+      'turn-mobile-42',
+    );
+    const first = iter.next();
+
+    await Promise.resolve();
+    const xhr = MockXMLHttpRequest.instances[0];
+    expect(JSON.parse(xhr.send.mock.calls[0][0])).toMatchObject({
+      message: '记录午餐',
+      channel: 'voice',
+      client_turn_id: 'turn-mobile-42',
+    });
+
+    xhr.responseText =
+      'data: {"event":"request_persisted","data":{"conversation_id":42,"user_message_id":98,"client_turn_id":"turn-mobile-42"}}\n\n';
+    xhr.onprogress?.();
+
+    await expect(first).resolves.toEqual({
+      value: {
+        type: 'persisted',
+        conversationId: 42,
+        userMessageId: 98,
+        clientTurnId: 'turn-mobile-42',
+      },
+      done: false,
+    });
+    await iter.return?.(undefined as any);
+  });
+
   it('maps agent progress events to safe thinking summaries', async () => {
     const iter = streamChat('分析我最近 7 天睡眠');
     const first = iter.next();
@@ -111,6 +147,77 @@ describe('streamChat', () => {
     await iter.return?.(undefined as any);
   });
 
+  it('preserves deterministic write receipts from tool results', async () => {
+    const iter = streamChat('记录午餐');
+    const first = iter.next();
+
+    await Promise.resolve();
+    const xhr = MockXMLHttpRequest.instances[0];
+    xhr.responseText =
+      'data: {"event":"tool_result","data":{"tool":"health_record","success":true,"write_attempted":true,"write_completed":true,"record_type":"diet","record_data":{"food_items":"牛肉面"},"receipt":{"operation_id":"health_record:diet_record:701","status":"verified","resource_type":"diet_record","resource_id":"701","completed_at":"2026-07-09T12:00:00.000Z","verified":true}}}\n\n';
+    xhr.onprogress?.();
+
+    await expect(first).resolves.toEqual({
+      value: {
+        type: 'tool',
+        content: '',
+        toolName: 'health_record',
+        toolSuccess: true,
+        writeAttempted: true,
+        writeCompleted: true,
+        receipt: {
+          operationId: 'health_record:diet_record:701',
+          status: 'verified',
+          resourceType: 'diet_record',
+          resourceId: '701',
+          completedAt: '2026-07-09T12:00:00.000Z',
+          verified: true,
+        },
+        recordType: 'diet',
+        recordData: { food_items: '牛肉面' },
+        thought: '已取得记录信息',
+      },
+      done: false,
+    });
+    await iter.return?.(undefined as any);
+  });
+
+  it('distinguishes health-manage queries from writes at tool-call time', async () => {
+    const queryIter = streamChat('查询饮食');
+    const queryEvent = queryIter.next();
+    await Promise.resolve();
+    const queryXhr = MockXMLHttpRequest.instances[0];
+    queryXhr.responseText =
+      'data: {"event":"tool_call","data":{"tool":"health_manage","args":"{\\"operation\\":\\"list\\"}"}}\n\n';
+    queryXhr.onprogress?.();
+    await expect(queryEvent).resolves.toEqual({
+      value: expect.objectContaining({
+        type: 'tool',
+        toolName: 'health_manage',
+        writeAttempted: false,
+      }),
+      done: false,
+    });
+    await queryIter.return?.(undefined as any);
+
+    const writeIter = streamChat('删除饮食');
+    const writeEvent = writeIter.next();
+    await Promise.resolve();
+    const writeXhr = MockXMLHttpRequest.instances[1];
+    writeXhr.responseText =
+      'data: {"event":"tool_call","data":{"tool":"health_manage","args":"{\\"operation\\":\\"delete\\"}"}}\n\n';
+    writeXhr.onprogress?.();
+    await expect(writeEvent).resolves.toEqual({
+      value: expect.objectContaining({
+        type: 'tool',
+        toolName: 'health_manage',
+        writeAttempted: true,
+      }),
+      done: false,
+    });
+    await writeIter.return?.(undefined as any);
+  });
+
   it('declares GenUI support so the backend can return deterministic charts', async () => {
     const iter = streamChat('帮我绘制最近半年的HRV曲线');
     const first = iter.next();
@@ -126,6 +233,28 @@ describe('streamChat', () => {
       'data: {"event":"done","data":{"conversation_id":42,"message_id":99}}\n\n';
     xhr.onprogress?.();
     await first;
+    await iter.return?.(undefined as any);
+  });
+
+  it('preserves an explicit request_persisted false on done', async () => {
+    const iter = streamChat('保留草稿');
+    const first = iter.next();
+
+    await Promise.resolve();
+    const xhr = MockXMLHttpRequest.instances[0];
+    xhr.responseText =
+      'data: {"event":"done","data":{"conversation_id":42,"message_id":99,"request_persisted":false}}\n\n';
+    xhr.onprogress?.();
+
+    await expect(first).resolves.toEqual({
+      value: expect.objectContaining({
+        type: 'done',
+        conversationId: 42,
+        messageId: 99,
+        requestPersisted: false,
+      }),
+      done: false,
+    });
     await iter.return?.(undefined as any);
   });
 
@@ -156,6 +285,33 @@ describe('streamChat', () => {
           },
         ],
       },
+      done: false,
+    });
+    await iter.return?.(undefined as any);
+  });
+
+  it('preserves verified write receipts from done for durable message rendering', async () => {
+    const iter = streamChat('记录午餐');
+    const first = iter.next();
+
+    await Promise.resolve();
+    const xhr = MockXMLHttpRequest.instances[0];
+    xhr.responseText =
+      'data: {"event":"done","data":{"conversation_id":42,"message_id":99,"write_receipts":[{"operation_id":"health_record:diet_record:701","status":"verified","resource_type":"diet_record","resource_id":"701","completed_at":"2026-07-09T12:00:00.000Z","verified":true}]}}\n\n';
+    xhr.onprogress?.();
+
+    await expect(first).resolves.toEqual({
+      value: expect.objectContaining({
+        type: 'done',
+        writeReceipts: [{
+          operationId: 'health_record:diet_record:701',
+          status: 'verified',
+          resourceType: 'diet_record',
+          resourceId: '701',
+          completedAt: '2026-07-09T12:00:00.000Z',
+          verified: true,
+        }],
+      }),
       done: false,
     });
     await iter.return?.(undefined as any);

@@ -24,12 +24,14 @@ interface Props {
   suggestions: EmptyStateSuggestion[];
   onCapturePhoto: () => void;
   onSuggestionPress: (s: EmptyStateSuggestion, position: number) => void;
+  showCapturePhoto?: boolean;
 }
 
 export default function ComposerSuggestionsRow({
   suggestions,
   onCapturePhoto,
   onSuggestionPress,
+  showCapturePhoto = true,
 }: Props) {
   const starters = suggestions.slice(0, 2);
   return (
@@ -40,15 +42,17 @@ export default function ComposerSuggestionsRow({
       contentContainerStyle={styles.row}
       style={styles.scroll}
     >
-      <Pressable
-        style={({ pressed }) => [styles.chip, styles.chipCamera, pressed && styles.chipPressed]}
-        onPress={onCapturePhoto}
-        accessibilityRole="button"
-        accessibilityLabel="拍照记一餐"
-      >
-        <Ionicons name="camera-outline" size={15} color={C.green600} />
-        <Text style={txt.chip} numberOfLines={1}>拍照记一餐</Text>
-      </Pressable>
+      {showCapturePhoto ? (
+        <Pressable
+          style={({ pressed }) => [styles.chip, styles.chipCamera, pressed && styles.chipPressed]}
+          onPress={onCapturePhoto}
+          accessibilityRole="button"
+          accessibilityLabel="拍照记一餐"
+        >
+          <Ionicons name="camera-outline" size={15} color={C.green600} />
+          <Text style={txt.chip} numberOfLines={1}>拍照记一餐</Text>
+        </Pressable>
+      ) : null}
       {starters.map((s, position) => (
         <Pressable
           key={s.text}

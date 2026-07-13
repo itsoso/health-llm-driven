@@ -1,11 +1,22 @@
 import { act, renderHook, waitFor } from '@testing-library/react-native';
+import NetInfo from '@react-native-community/netinfo';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 
 const mockStreamChat = jest.fn();
 const mockGetConversations = jest.fn();
 const mockGetConversationMessages = jest.fn();
 const mockDeleteConversation = jest.fn();
 const mockRenderServerCards = jest.fn();
+const mockEmitClientEvent = jest.fn().mockResolvedValue(undefined);
+const mockDurationBucket = jest.fn().mockReturnValue('10_30s');
 let mockAsyncStorage: Record<string, string> = {};
+const TEST_STORAGE_SCOPE = 'user-7';
+const scopedStorageKey = (base: string) => `${base}:${TEST_STORAGE_SCOPE}`;
+
+jest.mock('../../services/authStorageScope', () => ({
+  getAuthStorageScope: jest.fn().mockResolvedValue('user-7'),
+}));
 
 jest.mock('expo-router', () => ({
   useFocusEffect: (cb: any) => {
@@ -39,13 +50,15 @@ jest.mock('../../services/api', () => ({
 }));
 
 jest.mock('../../services/clientEvents', () => ({
-  emitClientEvent: jest.fn(),
+  emitClientEvent: (...args: any[]) => mockEmitClientEvent(...args),
+  durationBucket: (...args: any[]) => mockDurationBucket(...args),
 }));
 
 import { restoreMessagesFromHistory, useChatEngine } from '../useChatEngine';
 
 let finishStream: (() => void) | undefined;
 let failStream: (() => void) | undefined;
+let persistStream: (() => void) | undefined;
 
 async function* streamStartThenWait() {
   yield { type: 'start', conversationId: 777 };
@@ -55,12 +68,93 @@ async function* streamStartThenWait() {
   yield { type: 'done', conversationId: 777, messageId: 2 };
 }
 
+async function* streamStartWaitForPersistenceThenDone(...args: any[]) {
+  yield { type: 'start', conversationId: 777 };
+  await new Promise<void>((resolve) => {
+    persistStream = resolve;
+  });
+  yield {
+    type: 'persisted',
+    conversationId: 777,
+    userMessageId: 41,
+    clientTurnId: args[6],
+  };
+  yield { type: 'done', conversationId: 777, messageId: 42 };
+}
+
 async function* streamStartThenTimeout() {
   yield { type: 'start', conversationId: 777 };
   await new Promise<void>((resolve) => {
     failStream = resolve;
   });
   throw new Error('请求超时');
+}
+
+async function* streamInterruptedWithoutPersistence() {
+  yield { type: 'start', conversationId: 777 };
+  yield {
+    type: 'done',
+    conversationId: 777,
+    messageId: null,
+    completionStatus: 'interrupted',
+  };
+}
+
+async function* streamDoneExplicitlyNotPersisted() {
+  yield { type: 'start', conversationId: 777 };
+  yield {
+    type: 'card',
+    card: {
+      type: 'diet',
+      data: { items: ['不应执行'] },
+      actions: [{
+        id: 'unsafe-confirm',
+        label: '确认记录',
+        action: 'write_intent.confirm',
+        endpoint: '/write-intents/999/confirm',
+        payload: { write_intent_id: 999 },
+        requires_manual_confirm: true,
+      }],
+    },
+  };
+  yield {
+    type: 'done',
+    conversationId: 777,
+    messageId: 42,
+    requestPersisted: false,
+    completionStatus: 'complete',
+    cards: [{
+      type: 'diet',
+      data: { items: ['也不应执行'] },
+      actions: [{
+        id: 'unsafe-done-confirm',
+        label: '确认记录',
+        action: 'write_intent.confirm',
+        endpoint: '/write-intents/1000/confirm',
+        payload: { write_intent_id: 1000 },
+        requires_manual_confirm: true,
+      }],
+    }],
+  };
+}
+
+async function* streamCardThenEndsWithoutDone() {
+  yield { type: 'start', conversationId: 777 };
+  yield {
+    type: 'card',
+    card: {
+      type: 'diet',
+      data: { items: ['中断前草稿'] },
+      actions: [{
+        id: 'interrupted-confirm',
+        label: '确认记录',
+        action: 'write_intent.confirm',
+        endpoint: '/write-intents/2000/confirm',
+        payload: { write_intent_id: 2000 },
+        requires_manual_confirm: true,
+      }],
+    },
+  };
 }
 
 async function* streamStartToolThenWait() {
@@ -119,6 +213,17 @@ async function* streamTokenBurstThenDone() {
   for (const t of BURST_TOKENS) {
     yield { type: 'token', content: t };
   }
+  yield { type: 'done', conversationId: 777, messageId: 2 };
+}
+
+// Bug 1 原子性: 最后一批 token 紧挨 done 到达 (中间无 await gap → token flush timer
+// 还没触发就进了 done)。done 收尾必须把这最后一批折进同一次 setMessages 且同帧翻
+// streaming:false —— 否则 done 首帧 content 半量但 streaming 已 false, 渲染成生 markdown。
+async function* streamLastTokenThenDoneAtomic() {
+  yield { type: 'start', conversationId: 777 };
+  yield { type: 'token', content: '## 今日状态总览 ' };
+  // 最后一批, 紧接着 done, 不给 80ms flush timer 触发的机会。
+  yield { type: 'token', content: '这是最后一段正文。' };
   yield { type: 'done', conversationId: 777, messageId: 2 };
 }
 
@@ -183,16 +288,73 @@ async function* streamUnknownEventThenToken() {
   yield { type: 'done', conversationId: 777, messageId: 2 };
 }
 
+async function* streamVerifiedWriteThenDone() {
+  yield { type: 'start', conversationId: 777 };
+  yield {
+    type: 'tool',
+    toolName: 'health_record',
+    toolSuccess: true,
+    writeCompleted: true,
+    receipt: {
+      operationId: 'health_record:diet:81',
+      status: 'verified',
+      resourceType: 'diet_record',
+      resourceId: '81',
+      completedAt: '2026-07-09T12:00:00.000Z',
+      verified: true,
+    },
+  };
+  yield { type: 'done', conversationId: 777, messageId: 2 };
+}
+
+async function* streamFailedWriteThenDone() {
+  yield { type: 'start', conversationId: 777 };
+  yield {
+    type: 'tool',
+    toolName: 'health_record',
+    toolSuccess: false,
+    writeAttempted: true,
+    writeCompleted: false,
+  };
+  yield { type: 'done', conversationId: 777, messageId: 2, completionStatus: 'complete' };
+}
+
+async function* streamLegacyHealthManageQueryThenDone() {
+  yield { type: 'start', conversationId: 777 };
+  yield {
+    type: 'tool',
+    toolName: 'health_manage',
+  };
+  yield {
+    type: 'tool',
+    toolName: 'health_manage',
+    toolSuccess: true,
+  };
+  yield { type: 'token', content: '查询完成。' };
+  yield { type: 'done', conversationId: 777, messageId: 2, completionStatus: 'complete' };
+}
+
 describe('useChatEngine', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockAsyncStorage = {};
     finishStream = undefined;
     failStream = undefined;
+    persistStream = undefined;
     mockGetConversations.mockResolvedValue([]);
     mockGetConversationMessages.mockResolvedValue({ total_messages: 0, messages: [] });
     mockDeleteConversation.mockResolvedValue(true);
     mockRenderServerCards.mockImplementation((cards: any[]) => Array.isArray(cards) ? cards : []);
+    (NetInfo.fetch as jest.Mock).mockResolvedValue({ isConnected: true });
+    (SecureStore.getItemAsync as jest.Mock).mockImplementation(
+      async (key: string) => mockAsyncStorage[key] ?? null,
+    );
+    (SecureStore.setItemAsync as jest.Mock).mockImplementation(
+      async (key: string, value: string) => { mockAsyncStorage[key] = value; },
+    );
+    (SecureStore.deleteItemAsync as jest.Mock).mockImplementation(
+      async (key: string) => { delete mockAsyncStorage[key]; },
+    );
   });
 
   it('restores persisted safe thinking steps from assistant history meta', () => {
@@ -216,8 +378,32 @@ describe('useChatEngine', () => {
     }));
   });
 
+  it('restores verified write receipts from assistant history meta', () => {
+    const restored = restoreMessagesFromHistory([{
+      id: 51,
+      role: 'assistant',
+      content: '午餐已记录。',
+      meta: {
+        write_receipts: [{
+          operation_id: 'health_record:diet_record:701',
+          status: 'verified',
+          resource_type: 'diet_record',
+          resource_id: '701',
+          completed_at: '2026-07-09T12:00:00.000Z',
+          verified: true,
+        }],
+      },
+    }]);
+
+    expect(restored[0].writeReceipts).toEqual([expect.objectContaining({
+      resourceType: 'diet_record',
+      resourceId: '701',
+      verified: true,
+    })]);
+  });
+
   it('restores the last active conversation after the chat page is remounted', async () => {
-    mockAsyncStorage['chat:last_conversation_id:v1'] = '321';
+    mockAsyncStorage[scopedStorageKey('chat:last_conversation_id:v1')] = '321';
     mockGetConversationMessages.mockResolvedValueOnce({
       total_messages: 2,
       messages: [
@@ -245,7 +431,7 @@ describe('useChatEngine', () => {
   });
 
   it('can force a context entry to start a new server conversation', async () => {
-    mockAsyncStorage['chat:last_conversation_id:v1'] = '321';
+    mockAsyncStorage[scopedStorageKey('chat:last_conversation_id:v1')] = '321';
     mockGetConversationMessages.mockResolvedValueOnce({
       total_messages: 2,
       messages: [
@@ -277,9 +463,10 @@ describe('useChatEngine', () => {
         undefined,
         expect.any(AbortSignal),
         '{"from":"sleep/7d"}',
+        'typed',
+        expect.stringMatching(/^turn-/),
       );
     });
-
     await act(async () => {
       finishStream?.();
       await Promise.resolve();
@@ -311,6 +498,510 @@ describe('useChatEngine', () => {
       finishStream?.();
       await Promise.resolve();
     });
+  });
+
+  it('tracks and persists the active Agent turn through stream completion', async () => {
+    mockStreamChat.mockImplementation(streamStatusThenWait);
+
+    const { result } = renderHook(() => useChatEngine());
+
+    act(() => {
+      void result.current.sendMessage('我今天走了多少步');
+    });
+
+    await waitFor(() => {
+      expect(result.current.activeTurn).toMatchObject({
+        phase: 'running',
+        conversationId: 777,
+        label: '正在整理回答…',
+        recoverable: true,
+      });
+    });
+    expect(JSON.parse(mockAsyncStorage[scopedStorageKey('chat:active_turn:v1')])).toMatchObject({
+      phase: 'running',
+      conversationId: 777,
+    });
+
+    await act(async () => {
+      finishStream?.();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(result.current.activeTurn).toMatchObject({
+        phase: 'completed',
+        conversationId: 777,
+        messageId: 2,
+        recoverable: false,
+      });
+    });
+    await waitFor(() => {
+      expect(mockAsyncStorage[scopedStorageKey('chat:active_turn:v1')]).toBeUndefined();
+    });
+    expect(mockEmitClientEvent).toHaveBeenCalledWith('agent_turn_terminal', {
+      phase: 'completed',
+      duration_bucket: '10_30s',
+    });
+  });
+
+  it('continues the real request when the network status probe itself fails', async () => {
+    (NetInfo.fetch as jest.Mock).mockRejectedValueOnce(new Error('netinfo unavailable'));
+    mockStreamChat.mockImplementation(streamTokenBurstThenDone);
+    const { result } = renderHook(() => useChatEngine());
+
+    const onAccepted = jest.fn();
+    let accepted: boolean | undefined;
+    await act(async () => {
+      accepted = await result.current.sendMessage('继续分析', null, { onAccepted } as any);
+    });
+
+    expect(mockStreamChat).toHaveBeenCalled();
+    expect(accepted).toBe(true);
+    expect(onAccepted).toHaveBeenCalledTimes(1);
+    expect(onAccepted).toHaveBeenCalledWith(true);
+    expect(result.current.activeTurn.phase).toBe('completed');
+    expect(mockEmitClientEvent).toHaveBeenCalledWith('agent_turn_terminal', {
+      phase: 'completed',
+      duration_bucket: '10_30s',
+    });
+  });
+
+  it('does not acknowledge or clear the composer until the user message is durably persisted', async () => {
+    mockStreamChat.mockImplementation(streamStartWaitForPersistenceThenDone);
+    const onAccepted = jest.fn();
+    const { result } = renderHook(() => useChatEngine());
+
+    act(() => {
+      void result.current.sendMessage('这条消息先不要清草稿', null, { onAccepted } as any);
+    });
+
+    await waitFor(() => {
+      expect(result.current.conversationId).toBe(777);
+    });
+    expect(onAccepted).not.toHaveBeenCalled();
+    expect(mockStreamChat).toHaveBeenCalledWith(
+      '这条消息先不要清草稿',
+      undefined,
+      undefined,
+      expect.anything(),
+      undefined,
+      'typed',
+      expect.stringMatching(/^turn-/),
+    );
+
+    await act(async () => {
+      persistStream?.();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(onAccepted).toHaveBeenCalledTimes(1);
+      expect(onAccepted).toHaveBeenCalledWith(true);
+    });
+  });
+
+  it('forwards a voice transcript as the voice transport channel', async () => {
+    mockStreamChat.mockImplementation(streamTokenBurstThenDone);
+    const { result } = renderHook(() => useChatEngine());
+
+    await act(async () => {
+      await result.current.sendMessage('午餐吃了鸡胸肉', null, { channel: 'voice' } as any);
+    });
+
+    expect(mockStreamChat).toHaveBeenCalledWith(
+      '午餐吃了鸡胸肉',
+      undefined,
+      undefined,
+      expect.anything(),
+      undefined,
+      'voice',
+      expect.stringMatching(/^turn-/),
+    );
+    expect(mockEmitClientEvent).toHaveBeenCalledWith('chat_message_sent', {
+      source: 'voice',
+      has_image: false,
+    });
+  });
+
+  it('rejects before acceptance when the device is known to be offline', async () => {
+    (NetInfo.fetch as jest.Mock).mockResolvedValueOnce({ isConnected: false });
+    const onAccepted = jest.fn();
+    const { result } = renderHook(() => useChatEngine());
+    let accepted: boolean | undefined;
+
+    await act(async () => {
+      accepted = await result.current.sendMessage('离线消息', null, { onAccepted } as any);
+    });
+
+    expect(accepted).toBe(false);
+    expect(onAccepted).toHaveBeenCalledTimes(1);
+    expect(onAccepted).toHaveBeenCalledWith(false);
+    expect(mockStreamChat).not.toHaveBeenCalled();
+    expect(result.current.activeTurn).toMatchObject({
+      phase: 'failed',
+      errorCode: 'network_unavailable',
+    });
+  });
+
+  it('does not accept an interrupted done event without durable persistence evidence', async () => {
+    mockStreamChat.mockImplementation(streamInterruptedWithoutPersistence);
+    const onAccepted = jest.fn();
+    const { result } = renderHook(() => useChatEngine());
+    let accepted: boolean | undefined;
+
+    await act(async () => {
+      accepted = await result.current.sendMessage(
+        '保留这条草稿',
+        null,
+        { onAccepted } as any,
+      );
+    });
+
+    expect(accepted).toBe(false);
+    expect(onAccepted).toHaveBeenCalledTimes(1);
+    expect(onAccepted).toHaveBeenCalledWith(false);
+    expect(result.current.activeTurn).toMatchObject({
+      phase: 'interrupted',
+      recoverable: true,
+    });
+    expect(result.current.messages.find(message => message.role === 'assistant')).toMatchObject({
+      completionStatus: 'interrupted',
+    });
+    expect(result.current.messages.filter(message => message.cardType)).toHaveLength(0);
+  });
+
+  it('does not acknowledge done ids when the server explicitly says request was not persisted', async () => {
+    mockStreamChat.mockImplementation(streamDoneExplicitlyNotPersisted);
+    const onAccepted = jest.fn();
+    const { result } = renderHook(() => useChatEngine());
+
+    let accepted: boolean | undefined;
+    await act(async () => {
+      accepted = await result.current.sendMessage(
+        '保留这条草稿',
+        null,
+        { onAccepted } as any,
+      );
+    });
+
+    expect(accepted).toBe(false);
+    expect(onAccepted).toHaveBeenCalledWith(false);
+    expect(result.current.activeTurn).toMatchObject({
+      phase: 'interrupted',
+      recoverable: true,
+    });
+    expect(result.current.messages.find(message => message.role === 'assistant')).toMatchObject({
+      completionStatus: 'interrupted',
+    });
+    expect(result.current.messages.filter(message => message.cardType)).toHaveLength(0);
+  });
+
+  it('removes streamed action cards when the stream ends without done', async () => {
+    mockStreamChat.mockImplementation(streamCardThenEndsWithoutDone);
+    const { result } = renderHook(() => useChatEngine());
+
+    await act(async () => {
+      await result.current.sendMessage('记录这顿饭');
+    });
+
+    expect(result.current.activeTurn).toMatchObject({
+      phase: 'interrupted',
+      recoverable: true,
+    });
+    expect(result.current.messages.filter(message => message.cardType)).toHaveLength(0);
+  });
+
+  it('reuses the same client turn when an unchanged offline draft is retried', async () => {
+    (NetInfo.fetch as jest.Mock)
+      .mockResolvedValueOnce({ isConnected: false })
+      .mockResolvedValueOnce({ isConnected: true });
+    mockStreamChat.mockImplementation(streamTokenBurstThenDone);
+    const { result } = renderHook(() => useChatEngine());
+
+    await act(async () => {
+      await result.current.sendMessage('午餐吃了鸡胸肉');
+    });
+    const failedTurnId = result.current.activeTurn.turnId;
+
+    await act(async () => {
+      await result.current.sendMessage('午餐吃了鸡胸肉');
+    });
+
+    expect(failedTurnId).toMatch(/^turn-/);
+    expect(mockStreamChat.mock.calls[0][6]).toBe(failedTurnId);
+  });
+
+  it('waits for active-turn hydration before reconciling initial history', async () => {
+    let releaseHydration!: () => void;
+    const hydrationGate = new Promise<void>((resolve) => { releaseHydration = resolve; });
+    mockAsyncStorage[scopedStorageKey('chat:active_turn:v1')] = JSON.stringify({
+      version: 1,
+      phase: 'interrupted',
+      turnId: 'turn-hydration-race',
+      conversationId: 321,
+      startedAt: Date.now() - 1000,
+      updatedAt: Date.now() - 500,
+      recoverable: true,
+      hadWrite: false,
+    });
+    (AsyncStorage.getItem as jest.Mock).mockImplementation(async (key: string) => {
+      if (key === scopedStorageKey('chat:active_turn:v1')) await hydrationGate;
+      return mockAsyncStorage[key] ?? null;
+    });
+    mockGetConversations.mockResolvedValue([{ id: 321, title: '最近对话' }]);
+    mockGetConversationMessages.mockResolvedValue({
+      total_messages: 2,
+      messages: [
+        { id: 1, role: 'user', content: '问题', meta: { client_turn_id: 'turn-hydration-race' } },
+        {
+          id: 2,
+          role: 'assistant',
+          content: '已完成',
+          meta: { client_turn_id: 'turn-hydration-race', completion_status: 'complete' },
+        },
+      ],
+    });
+    const { result } = renderHook(() => useChatEngine());
+    let loadPromise: Promise<unknown> | undefined;
+
+    act(() => {
+      loadPromise = result.current.loadLatestConversation();
+    });
+    expect(mockGetConversations).not.toHaveBeenCalled();
+    await act(async () => {
+      releaseHydration();
+      await loadPromise;
+    });
+
+    expect(result.current.activeTurn).toMatchObject({
+      turnId: 'turn-hydration-race',
+      phase: 'completed',
+      messageId: 2,
+    });
+  });
+
+  it('reports a failed terminal event when a write attempt has no successful receipt', async () => {
+    mockStreamChat.mockImplementation(streamFailedWriteThenDone);
+    const { result } = renderHook(() => useChatEngine());
+
+    await act(async () => {
+      await result.current.sendMessage('记录午餐');
+    });
+
+    expect(result.current.activeTurn).toMatchObject({ phase: 'failed', hadWrite: true });
+    expect(mockEmitClientEvent).toHaveBeenCalledWith('agent_turn_terminal', {
+      phase: 'failed',
+      duration_bucket: '10_30s',
+      error_code: 'tool_failed',
+    });
+    expect(mockEmitClientEvent).not.toHaveBeenCalledWith(
+      'agent_turn_terminal',
+      expect.objectContaining({ phase: 'completed' }),
+    );
+  });
+
+  it('does not infer a legacy health-manage query is a failed write', async () => {
+    mockStreamChat.mockImplementation(streamLegacyHealthManageQueryThenDone);
+    const { result } = renderHook(() => useChatEngine());
+
+    await act(async () => {
+      await result.current.sendMessage('查询今天的饮食记录');
+    });
+
+    expect(result.current.activeTurn).toMatchObject({ phase: 'completed', hadWrite: false });
+    expect(mockEmitClientEvent).not.toHaveBeenCalledWith(
+      'write_receipt_terminal',
+      expect.anything(),
+    );
+  });
+
+  it('hydrates an interrupted Agent turn and resolves it from authoritative history', async () => {
+    mockAsyncStorage[scopedStorageKey('chat:last_conversation_id:v1')] = '321';
+    mockAsyncStorage[scopedStorageKey('chat:active_turn:v1')] = JSON.stringify({
+      version: 1,
+      phase: 'interrupted',
+      turnId: 'turn-restored',
+      conversationId: 321,
+      startedAt: Date.now() - 1000,
+      updatedAt: Date.now() - 500,
+      errorCode: 'app_backgrounded',
+      recoverable: true,
+      hadWrite: false,
+    });
+    mockGetConversationMessages.mockResolvedValue({
+      total_messages: 2,
+      messages: [
+        { id: 1, role: 'user', content: '上一轮问题', created_at: '2026-07-09T10:00:00Z' },
+        {
+          id: 2,
+          role: 'assistant',
+          content: '服务端已经完成。',
+          created_at: '2026-07-09T10:00:05Z',
+          meta: { completion_status: 'complete', client_turn_id: 'turn-restored' },
+        },
+      ],
+    });
+
+    const { result } = renderHook(() => useChatEngine());
+
+    await waitFor(() => {
+      expect(result.current.activeTurn).toMatchObject({
+        phase: 'interrupted',
+        turnId: 'turn-restored',
+        conversationId: 321,
+      });
+    });
+
+    await act(async () => {
+      await result.current.loadLatestConversation();
+    });
+
+    await waitFor(() => {
+      expect(result.current.activeTurn).toMatchObject({
+        phase: 'completed',
+        turnId: 'turn-restored',
+        conversationId: 321,
+        messageId: 2,
+        recoverable: false,
+      });
+    });
+    expect(mockEmitClientEvent).toHaveBeenCalledWith('agent_turn_terminal', {
+      phase: 'completed',
+      duration_bucket: '10_30s',
+    });
+  });
+
+  it('does not certify an older assistant reply as completion of a newer interrupted turn', async () => {
+    mockAsyncStorage[scopedStorageKey('chat:last_conversation_id:v1')] = '322';
+    mockAsyncStorage[scopedStorageKey('chat:active_turn:v1')] = JSON.stringify({
+      version: 1,
+      phase: 'interrupted',
+      turnId: 'turn-new',
+      conversationId: 322,
+      startedAt: Date.now() - 1000,
+      updatedAt: Date.now() - 500,
+      errorCode: 'app_backgrounded',
+      recoverable: true,
+      hadWrite: false,
+    });
+    mockGetConversationMessages.mockResolvedValue({
+      total_messages: 3,
+      messages: [
+        { id: 1, role: 'user', content: '旧问题', meta: { client_turn_id: 'turn-old' } },
+        {
+          id: 2,
+          role: 'assistant',
+          content: '旧问题的答案',
+          meta: { completion_status: 'complete', client_turn_id: 'turn-old' },
+        },
+        { id: 3, role: 'user', content: '本轮尚未完成', meta: { client_turn_id: 'turn-new' } },
+      ],
+    });
+
+    const { result } = renderHook(() => useChatEngine());
+    await waitFor(() => expect(result.current.activeTurn.turnId).toBe('turn-new'));
+
+    await act(async () => {
+      await result.current.loadLatestConversation();
+    });
+
+    await waitFor(() => {
+      expect(result.current.activeTurn).toMatchObject({
+        turnId: 'turn-new',
+        phase: 'running',
+        recoverable: true,
+      });
+    });
+    expect(result.current.activeTurn.messageId).toBeUndefined();
+  });
+
+  it('fails closed when recovered write history has no verified resource receipt', async () => {
+    mockAsyncStorage[scopedStorageKey('chat:last_conversation_id:v1')] = '323';
+    mockAsyncStorage[scopedStorageKey('chat:active_turn:v1')] = JSON.stringify({
+      version: 1,
+      phase: 'interrupted',
+      turnId: 'turn-write-no-receipt',
+      conversationId: 323,
+      startedAt: Date.now() - 1000,
+      updatedAt: Date.now() - 500,
+      recoverable: true,
+      hadWrite: true,
+    });
+    mockGetConversationMessages.mockResolvedValue({
+      total_messages: 2,
+      messages: [
+        { id: 1, role: 'user', content: '记录午餐', meta: { client_turn_id: 'turn-write-no-receipt' } },
+        {
+          id: 2,
+          role: 'assistant',
+          content: '已处理。',
+          meta: { completion_status: 'complete', client_turn_id: 'turn-write-no-receipt' },
+        },
+      ],
+    });
+
+    const { result } = renderHook(() => useChatEngine());
+    await waitFor(() => expect(result.current.activeTurn.turnId).toBe('turn-write-no-receipt'));
+    await act(async () => { await result.current.loadLatestConversation(); });
+
+    await waitFor(() => {
+      expect(result.current.activeTurn).toMatchObject({
+        phase: 'failed',
+        hadWrite: true,
+        writeVerified: false,
+        errorCode: 'write_receipt_missing_identity',
+        recoverable: true,
+      });
+    });
+  });
+
+  it('preserves interrupted recovery and emits one interrupted terminal event', async () => {
+    mockAsyncStorage[scopedStorageKey('chat:last_conversation_id:v1')] = '324';
+    mockAsyncStorage[scopedStorageKey('chat:active_turn:v1')] = JSON.stringify({
+      version: 1,
+      phase: 'interrupted',
+      turnId: 'turn-server-interrupted',
+      conversationId: 324,
+      startedAt: Date.now() - 1000,
+      updatedAt: Date.now() - 500,
+      recoverable: true,
+      hadWrite: false,
+    });
+    mockGetConversationMessages.mockResolvedValue({
+      total_messages: 2,
+      messages: [
+        { id: 1, role: 'user', content: '上一轮', meta: { client_turn_id: 'turn-server-interrupted' } },
+        {
+          id: 2,
+          role: 'assistant',
+          content: '本轮中断。',
+          meta: { completion_status: 'interrupted', client_turn_id: 'turn-server-interrupted' },
+        },
+      ],
+    });
+
+    const { result } = renderHook(() => useChatEngine());
+    await waitFor(() => expect(result.current.activeTurn.turnId).toBe('turn-server-interrupted'));
+    await act(async () => { await result.current.loadLatestConversation(); });
+
+    await waitFor(() => {
+      expect(result.current.activeTurn).toMatchObject({
+        phase: 'interrupted',
+        errorCode: 'stream_interrupted',
+        recoverable: true,
+      });
+    });
+    const terminalCalls = mockEmitClientEvent.mock.calls.filter(
+      ([name]) => name === 'agent_turn_terminal',
+    );
+    expect(terminalCalls).toEqual([[
+      'agent_turn_terminal',
+      {
+        phase: 'interrupted',
+        duration_bucket: '10_30s',
+        error_code: 'stream_interrupted',
+      },
+    ]]);
   });
 
   it('keeps the thinking bubble while empty tool events arrive before text tokens', async () => {
@@ -402,6 +1093,32 @@ describe('useChatEngine', () => {
     });
   });
 
+  it('lands the last token batch and streaming:false atomically on done (done 首帧内容完整)', async () => {
+    mockStreamChat.mockImplementation(streamLastTokenThenDoneAtomic);
+
+    const { result } = renderHook(() => useChatEngine());
+
+    act(() => {
+      void result.current.sendMessage('原子收尾压测');
+    });
+
+    // done 之后: 最后一批 token 不丢, streaming 已翻 false —— 二者同一帧完成。
+    // (若非原子, 会短暂出现 content 缺 "最后一段" 但 streaming:false 的中间态。)
+    // 注: 每个 token 经 sanitizeChatErrorMessage 会 trim, 故首批尾部空格被吃掉,
+    //     两批直接相接 —— 关键是两批都在、顺序对、streaming 已 false。
+    await waitFor(() => {
+      const assistant = result.current.messages.find(m => m.role === 'assistant');
+      expect(assistant?.content).toBe('## 今日状态总览这是最后一段正文。');
+      expect(assistant?.streaming).toBe(false);
+    });
+
+    // done 帧内容既包含首批也包含最后一批, 无残缺; thinking placeholder 已剥掉。
+    const assistant = result.current.messages.find(m => m.role === 'assistant');
+    expect(assistant?.content).not.toContain('⏳');
+    expect(assistant?.content).toContain('## 今日状态总览');
+    expect(assistant?.content).toContain('这是最后一段正文。');
+  });
+
   it('flushes buffered tokens before an error tail (攒批不吞已接收内容)', async () => {
     mockStreamChat.mockImplementation(streamTokenBurstThenError);
 
@@ -419,6 +1136,12 @@ describe('useChatEngine', () => {
       expect(content).toContain('❌');
       expect(content.indexOf('开头一段还没说完')).toBeLessThan(content.indexOf('❌'));
     });
+    expect(mockEmitClientEvent).toHaveBeenCalledWith('agent_turn_terminal', {
+      phase: 'failed',
+      duration_bucket: '10_30s',
+      error_code: 'stream_error_event',
+    });
+    expect(mockEmitClientEvent.mock.calls.filter(([name]) => name === 'agent_turn_terminal')).toHaveLength(1);
   });
 
   it('sanitizes provider quota errors that arrive as legacy token text', async () => {
@@ -472,6 +1195,8 @@ describe('useChatEngine', () => {
         ]),
       );
     });
+    const streamedCard = result.current.messages.find(message => message.cardType === 'diet');
+    expect(streamedCard?.sourceTurnId).toBe(result.current.activeTurn.turnId);
 
     await act(async () => {
       finishStream?.();
@@ -531,12 +1256,27 @@ describe('useChatEngine', () => {
 
   it('recovers the server answer when a local stream times out after leaving the page', async () => {
     mockStreamChat.mockImplementation(streamStartThenTimeout);
-    mockGetConversationMessages.mockResolvedValueOnce({
-      total_messages: 2,
-      messages: [
-        { id: 1, role: 'user', content: '继续分析图片记录饮食', created_at: '2026-05-22T23:30:00Z' },
-        { id: 2, role: 'assistant', content: '已从服务端恢复的完整回答', created_at: '2026-05-22T23:31:00Z' },
-      ],
+    mockGetConversationMessages.mockImplementationOnce(async () => {
+      const clientTurnId = mockStreamChat.mock.calls[0]?.[6];
+      return {
+        total_messages: 2,
+        messages: [
+          {
+            id: 1,
+            role: 'user',
+            content: '继续分析图片记录饮食',
+            created_at: '2026-05-22T23:30:00Z',
+            meta: { client_turn_id: clientTurnId },
+          },
+          {
+            id: 2,
+            role: 'assistant',
+            content: '已从服务端恢复的完整回答',
+            created_at: '2026-05-22T23:31:00Z',
+            meta: { client_turn_id: clientTurnId, completion_status: 'complete' },
+          },
+        ],
+      };
     });
 
     const { result } = renderHook(() => useChatEngine());
@@ -705,5 +1445,76 @@ describe('useChatEngine', () => {
     const assistant = result.current.messages.find(m => m.role === 'assistant');
     expect(JSON.stringify(assistant?.thinkingSteps || [])).not.toContain('mystery_future_event');
     expect(JSON.stringify(assistant?.thinkingSteps || [])).not.toContain('another_unknown');
+  });
+
+  it('carries the latest verified write receipt into the next structured request context', async () => {
+    mockAsyncStorage[scopedStorageKey('chat:conversation_continuity:v2')] = JSON.stringify({
+      version: 1,
+      storedAt: Date.now(),
+      receipt: {
+        operationId: 'health_record:diet:81',
+        status: 'verified',
+        resourceType: 'diet_record',
+        resourceId: '81',
+        completedAt: '2026-07-09T12:00:00.000Z',
+        verified: true,
+      },
+    });
+    mockStreamChat.mockImplementation(streamStartThenWait);
+    const { result } = renderHook(() => useChatEngine());
+
+    act(() => {
+      void result.current.sendMessage('那我今天总热量是多少？', null, {
+        extraContext: '{"from":"diet/today"}',
+      });
+    });
+
+    await waitFor(() => expect(mockStreamChat).toHaveBeenCalled());
+    const outboundContext = JSON.parse(mockStreamChat.mock.calls[0][4]);
+    expect(outboundContext).toEqual(expect.objectContaining({
+      from: 'diet/today',
+      continuity: {
+        latest_verified_write: expect.objectContaining({
+          operation_id: 'health_record:diet:81',
+          resource_type: 'diet_record',
+          resource_id: '81',
+          verified: true,
+        }),
+      },
+    }));
+    expect(mockAsyncStorage[scopedStorageKey('chat:conversation_continuity:v2')]).toBeDefined();
+
+    await act(async () => {
+      finishStream?.();
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(mockAsyncStorage[scopedStorageKey('chat:conversation_continuity:v2')]).toBeUndefined();
+    });
+  });
+
+  it('stores a verified tool write receipt for the following turn', async () => {
+    mockStreamChat.mockImplementation(streamVerifiedWriteThenDone);
+    const { result } = renderHook(() => useChatEngine());
+
+    await act(async () => {
+      await result.current.sendMessage('记录午餐');
+    });
+
+    await waitFor(() => {
+      const stored = JSON.parse(mockAsyncStorage[scopedStorageKey('chat:conversation_continuity:v2')]);
+      expect(stored.receipt).toEqual(expect.objectContaining({
+        operationId: 'health_record:diet:81',
+        resourceType: 'diet_record',
+        resourceId: '81',
+        verified: true,
+      }));
+    });
+    expect(mockEmitClientEvent).toHaveBeenCalledWith('write_receipt_terminal', {
+      phase: 'verified',
+      duration_bucket: '10_30s',
+      action_type: 'health_record',
+      verified: true,
+    });
   });
 });

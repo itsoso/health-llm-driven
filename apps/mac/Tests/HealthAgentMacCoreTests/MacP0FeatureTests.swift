@@ -36,6 +36,77 @@ final class MacP0FeatureTests: XCTestCase {
         XCTAssertTrue(model.isModelPickerEnabled)
     }
 
+    /// The accumulating "thinking process" trace: consecutive `status` events
+    /// build an ordered step list, the first `token` does NOT wipe it (adds a
+    /// composing step instead), `done` settles every step, and a new `send()`
+    /// clears the trace at the turn boundary.
+    @MainActor
+    func testThinkingStepsAccumulateSurviveFirstTokenAndResetOnNewTurn() async {
+        let firstTurn: [AgentStreamEvent] = [
+            .status(stage: "accepted", detail: nil, round: 1),
+            .status(stage: "tool", detail: "查询健康数据", round: 1),
+            .status(stage: "thinking", detail: nil, round: 2),
+            .token("分"),
+            .token("析"),
+            .done(
+                conversationID: 1, messageID: 1, completionStatus: "complete",
+                model: "m", sourcesUsed: [], toolsUsed: [], elapsedMs: 10, llmRounds: 1
+            ),
+        ]
+        let secondTurn: [AgentStreamEvent] = [
+            .status(stage: "accepted", detail: nil, round: 1),
+            .done(
+                conversationID: 1, messageID: 2, completionStatus: "complete",
+                model: "m", sourcesUsed: [], toolsUsed: [], elapsedMs: 5, llmRounds: 1
+            ),
+        ]
+        // One script per stream() call (the ViewModel's streamService is a `let`,
+        // so the same mock must serve both turns).
+        let model = AgentChatViewModel(streamService: ScriptedStreamService(scripts: [firstTurn, secondTurn]))
+
+        await model.send("分析好了吗")
+
+        let labels = model.thinkingSteps.map { $0.labelKey }
+        // Ordered accumulation: the three status stages, then the composing step
+        // the first token appends — the trace was NOT cleared on first token.
+        XCTAssertEqual(labels, [
+            "Reva received your message…",
+            "Working: %@…",
+            // thinking stage with round≥2 → "organizing thoughts" per statusText.
+            "Reva is organizing thoughts…",
+            "Reva is composing a reply…",
+        ])
+        // The `tool` step carries the backend's Chinese label verbatim (spliced by
+        // the View into the "Working: %@…" template).
+        XCTAssertEqual(model.thinkingSteps[1].labelDetail, "查询健康数据")
+        // After `done`, every step is settled (nothing left spinning).
+        XCTAssertTrue(model.thinkingSteps.allSatisfy { $0.state == .done })
+
+        // A new turn resets the trace at `send()` start (secondTurn script).
+        await model.send("再问一次")
+        // Only the new turn's single status step survives — old steps were cleared.
+        XCTAssertEqual(model.thinkingSteps.map { $0.labelKey }, ["Reva received your message…"])
+    }
+
+    /// De-dup: a repeated identical `status` event must not append a duplicate row.
+    @MainActor
+    func testConsecutiveIdenticalStatusEventsDoNotDuplicateThinkingStep() async {
+        let script: [AgentStreamEvent] = [
+            .status(stage: "tool", detail: "查询健康数据", round: 1),
+            .status(stage: "tool", detail: "查询健康数据", round: 1),
+            .done(
+                conversationID: 1, messageID: 1, completionStatus: "complete",
+                model: "m", sourcesUsed: [], toolsUsed: [], elapsedMs: 5, llmRounds: 1
+            ),
+        ]
+        let model = AgentChatViewModel(streamService: ScriptedStreamService(scripts: [script]))
+
+        await model.send("查一下")
+
+        XCTAssertEqual(model.thinkingSteps.count, 1)
+        XCTAssertEqual(model.thinkingSteps.first?.labelDetail, "查询健康数据")
+    }
+
     func testAgentModelCatalogIncludesAliyunTokenPlanModels() {
         let options = AgentModelCatalog.defaultOptions
         let optionIDs = Set(options.map(\.id))

@@ -10,6 +10,8 @@ const mockPrepare = jest.fn().mockResolvedValue(undefined);
 const mockRecord = jest.fn();
 const mockStop = jest.fn().mockResolvedValue(undefined);
 const mockTranscribe = jest.fn().mockResolvedValue('识别出的文字');
+const mockEmitClientEvent = jest.fn().mockResolvedValue(undefined);
+const mockDurationBucket = jest.fn().mockReturnValue('3_10s');
 
 const recorder = {
   prepareToRecordAsync: (...a: any[]) => mockPrepare(...a),
@@ -40,6 +42,11 @@ jest.mock('../../services/transcribe', () => ({
   transcribeAudio: (...a: any[]) => mockTranscribe(...a),
 }));
 
+jest.mock('../../services/clientEvents', () => ({
+  emitClientEvent: (...args: any[]) => mockEmitClientEvent(...args),
+  durationBucket: (...args: any[]) => mockDurationBucket(...args),
+}));
+
 import { useVoiceRecording } from '../useVoiceRecording';
 
 /** 从 mockSetAudioModeAsync 的调用里找是否发生过 allowsRecording:false 的释放调用。 */
@@ -53,6 +60,8 @@ describe('useVoiceRecording audio session release (Bug 2: 语音后键盘失效)
   beforeEach(() => {
     jest.clearAllMocks();
     mockRequestPerm.mockResolvedValue({ granted: true });
+    mockPrepare.mockResolvedValue(undefined);
+    mockStop.mockResolvedValue(undefined);
     mockTranscribe.mockResolvedValue('识别出的文字');
   });
 
@@ -75,6 +84,22 @@ describe('useVoiceRecording audio session release (Bug 2: 语音后键盘失效)
     // 关键: 转写完后 session 被放回 allowsRecording:false, 键盘才能再弹。
     expect(releasedRecordingSession()).toBe(true);
     await waitFor(() => expect(onTranscript).toHaveBeenCalledWith('识别出的文字'));
+    expect(mockEmitClientEvent).toHaveBeenCalledWith('voice_input_terminal', {
+      phase: 'completed',
+      duration_bucket: '3_10s',
+      action_type: 'hold',
+    });
+  });
+
+  it('reports whether native recording actually became ready', async () => {
+    const { result } = renderHook(() => useVoiceRecording({ onTranscript: jest.fn() }));
+    let started: boolean | undefined;
+
+    await act(async () => {
+      started = await result.current.startRecording();
+    });
+
+    expect(started).toBe(true);
   });
 
   it('still releases the session when transcription yields no text', async () => {
@@ -90,6 +115,12 @@ describe('useVoiceRecording audio session release (Bug 2: 语音后键盘失效)
     });
 
     expect(releasedRecordingSession()).toBe(true);
+    expect(mockEmitClientEvent).toHaveBeenCalledWith('voice_input_terminal', {
+      phase: 'failed',
+      duration_bucket: '3_10s',
+      action_type: 'hold',
+      error_code: 'empty_transcript',
+    });
   });
 
   it('releases the recording audio session after cancelRecording', async () => {
@@ -106,6 +137,40 @@ describe('useVoiceRecording audio session release (Bug 2: 语音后键盘失效)
     // 取消同样要释放 session。
     expect(releasedRecordingSession()).toBe(true);
     expect(mockTranscribe).not.toHaveBeenCalled();
+    expect(mockEmitClientEvent).toHaveBeenCalledWith('voice_input_terminal', {
+      phase: 'cancelled',
+      duration_bucket: '3_10s',
+      action_type: 'hold',
+    });
+  });
+
+  it('drops a late transcription result after cancellation or background cleanup', async () => {
+    let resolveTranscription!: (text: string) => void;
+    mockTranscribe.mockImplementationOnce(() => new Promise<string>((resolve) => {
+      resolveTranscription = resolve;
+    }));
+    const onTranscript = jest.fn();
+    const { result } = renderHook(() => useVoiceRecording({ onTranscript }));
+
+    await act(async () => {
+      await result.current.startRecording();
+    });
+    let stopPromise!: Promise<void>;
+    act(() => {
+      stopPromise = result.current.stopAndTranscribe();
+    });
+    await waitFor(() => expect(mockTranscribe).toHaveBeenCalled());
+
+    await act(async () => {
+      await result.current.cancelRecording();
+    });
+    resolveTranscription('这条迟到结果不应写回输入框');
+    await act(async () => {
+      await stopPromise;
+    });
+
+    expect(onTranscript).not.toHaveBeenCalled();
+    expect(result.current.isTranscribing).toBe(false);
   });
 
   it('does not transcribe when recording never became ready (stop before start finished)', async () => {
@@ -117,5 +182,33 @@ describe('useVoiceRecording audio session release (Bug 2: 语音后键盘失效)
     });
 
     expect(mockTranscribe).not.toHaveBeenCalled();
+  });
+
+  it('aborts a pending recording start when the user releases before the recorder is ready', async () => {
+    let resolvePrepare!: () => void;
+    mockPrepare.mockImplementationOnce(() => new Promise<void>((resolve) => {
+      resolvePrepare = resolve;
+    }));
+    const { result } = renderHook(() => useVoiceRecording({ onTranscript: jest.fn() }));
+    let startPromise!: Promise<boolean>;
+
+    act(() => {
+      startPromise = result.current.startRecording();
+    });
+    await waitFor(() => expect(mockPrepare).toHaveBeenCalled());
+
+    await act(async () => {
+      await result.current.stopAndTranscribe();
+    });
+    expect(mockTranscribe).not.toHaveBeenCalled();
+
+    resolvePrepare();
+    await act(async () => {
+      await startPromise;
+    });
+
+    expect(mockRecord).not.toHaveBeenCalled();
+    expect(mockTranscribe).not.toHaveBeenCalled();
+    expect(releasedRecordingSession()).toBe(true);
   });
 });

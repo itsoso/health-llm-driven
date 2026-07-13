@@ -1,12 +1,51 @@
 """Conversation persistence for the first-party health Agent."""
 from __future__ import annotations
 
+import hashlib
+import json
+import logging
+import threading
 import uuid
-from typing import Dict, List, Optional
+from contextlib import nullcontext
+from typing import Any, Dict, List, Optional
 
+from sqlalchemy import create_engine, text
+from sqlalchemy.exc import IntegrityError, TimeoutError as SQLAlchemyTimeoutError
 from sqlalchemy.orm import Session, joinedload
 
 from app.models.agent_conversation import AgentConversation, AgentMessage
+
+
+logger = logging.getLogger(__name__)
+_LOCAL_CLIENT_TURN_LOCK_GUARD = threading.Lock()
+_LOCAL_CLIENT_TURN_LOCKS: set[int] = set()
+_CLIENT_TURN_LOCK_ENGINE_GUARD = threading.Lock()
+_CLIENT_TURN_LOCK_ENGINES: dict[int, Any] = {}
+CLIENT_TURN_LOCK_POOL_SIZE = 8
+CLIENT_TURN_LOCK_POOL_TIMEOUT_SECONDS = 0.25
+CLIENT_TURN_GLOBAL_SLOT_COUNT = 16
+_CLIENT_TURN_GLOBAL_SLOT_NAMESPACE = 1_381_387_841
+
+
+def _get_client_turn_lock_engine(bind):
+    """Return a small dedicated pool so turn locks cannot consume the API pool."""
+    source_engine = getattr(bind, "engine", bind)
+    url = getattr(source_engine, "url", None)
+    if url is None:
+        raise RuntimeError("client_turn_lock_engine_url_unavailable")
+    cache_key = id(source_engine)
+    with _CLIENT_TURN_LOCK_ENGINE_GUARD:
+        lock_engine = _CLIENT_TURN_LOCK_ENGINES.get(cache_key)
+        if lock_engine is None:
+            lock_engine = create_engine(
+                url,
+                pool_size=CLIENT_TURN_LOCK_POOL_SIZE,
+                max_overflow=0,
+                pool_timeout=CLIENT_TURN_LOCK_POOL_TIMEOUT_SECONDS,
+                pool_pre_ping=True,
+            )
+            _CLIENT_TURN_LOCK_ENGINES[cache_key] = lock_engine
+        return lock_engine
 
 
 class AgentConversationService:
@@ -14,6 +53,109 @@ class AgentConversationService:
 
     def __init__(self, db: Session):
         self.db = db
+        self._postgres_client_turn_locks: dict[int, tuple[Any, Any]] = {}
+
+    @staticmethod
+    def _client_turn_storage_key(user_id: int, client_turn_id: str) -> str:
+        return f"{int(user_id)}:{client_turn_id}"
+
+    @classmethod
+    def _client_turn_lock_key(cls, user_id: int, client_turn_id: str) -> int:
+        storage_key = cls._client_turn_storage_key(user_id, client_turn_id).encode()
+        return int.from_bytes(
+            hashlib.blake2b(storage_key, digest_size=8).digest(),
+            byteorder="big",
+            signed=True,
+        )
+
+    def try_acquire_client_turn_execution(self, user_id: int, client_turn_id: str) -> bool:
+        """Claim a turn on a dedicated PostgreSQL transaction.
+
+        A SQLAlchemy Session may return its connection to QueuePool on every
+        business-data commit. The lock therefore cannot live on ``self.db``. A
+        dedicated connection keeps a transaction-level advisory lock for the
+        whole turn and releases it automatically on rollback, connection loss,
+        or worker death. SQLite uses a process-local equivalent for tests/dev.
+        """
+        lock_key = self._client_turn_lock_key(user_id, client_turn_id)
+        bind = self.db.get_bind()
+        dialect = getattr(bind, "dialect", None)
+        if getattr(dialect, "name", None) == "postgresql":
+            if lock_key in self._postgres_client_turn_locks:
+                return True
+            connection = None
+            transaction = None
+            try:
+                connection = _get_client_turn_lock_engine(bind).connect()
+                transaction = connection.begin()
+                slot_start = abs(lock_key) % CLIENT_TURN_GLOBAL_SLOT_COUNT
+                slot_acquired = False
+                for offset in range(CLIENT_TURN_GLOBAL_SLOT_COUNT):
+                    slot = (slot_start + offset) % CLIENT_TURN_GLOBAL_SLOT_COUNT
+                    slot_acquired = bool(connection.execute(
+                        text(
+                            "SELECT pg_try_advisory_xact_lock("
+                            ":slot_namespace, :slot)"
+                        ),
+                        {
+                            "slot_namespace": _CLIENT_TURN_GLOBAL_SLOT_NAMESPACE,
+                            "slot": slot,
+                        },
+                    ).scalar())
+                    if slot_acquired:
+                        break
+                if not slot_acquired:
+                    transaction.rollback()
+                    connection.close()
+                    return False
+                acquired = connection.execute(
+                    text("SELECT pg_try_advisory_xact_lock(:lock_key)"),
+                    {"lock_key": lock_key},
+                ).scalar()
+                if not acquired:
+                    transaction.rollback()
+                    connection.close()
+                    return False
+                self._postgres_client_turn_locks[lock_key] = (connection, transaction)
+                return True
+            except SQLAlchemyTimeoutError:
+                if transaction is not None:
+                    transaction.rollback()
+                if connection is not None:
+                    connection.close()
+                return False
+            except Exception:
+                if transaction is not None:
+                    transaction.rollback()
+                if connection is not None:
+                    connection.close()
+                raise
+        with _LOCAL_CLIENT_TURN_LOCK_GUARD:
+            if lock_key in _LOCAL_CLIENT_TURN_LOCKS:
+                return False
+            _LOCAL_CLIENT_TURN_LOCKS.add(lock_key)
+            return True
+
+    def release_client_turn_execution(self, user_id: int, client_turn_id: str) -> None:
+        lock_key = self._client_turn_lock_key(user_id, client_turn_id)
+        bind = self.db.get_bind()
+        dialect = getattr(bind, "dialect", None)
+        if getattr(dialect, "name", None) == "postgresql":
+            lock = self._postgres_client_turn_locks.pop(lock_key, None)
+            if lock is None:
+                logger.warning(
+                    "Client turn lock release had no owned transaction user_id=%s",
+                    user_id,
+                )
+                return
+            connection, transaction = lock
+            try:
+                transaction.rollback()
+            finally:
+                connection.close()
+            return
+        with _LOCAL_CLIENT_TURN_LOCK_GUARD:
+            _LOCAL_CLIENT_TURN_LOCKS.discard(lock_key)
 
     def get_or_create_conversation(
         self,
@@ -74,6 +216,12 @@ class AgentConversationService:
         )
 
     def delete_conversation(self, user_id: int, conversation_id: int) -> bool:
+        from app.services.chat_utils import chat_image_lifecycle_lock
+
+        with chat_image_lifecycle_lock():
+            return self._delete_conversation_locked(user_id, conversation_id)
+
+    def _delete_conversation_locked(self, user_id: int, conversation_id: int) -> bool:
         conv = (
             self.db.query(AgentConversation)
             .filter(
@@ -84,9 +232,136 @@ class AgentConversationService:
         )
         if not conv:
             return False
-        self.db.delete(conv)
-        self.db.commit()
+        image_urls: list[str] = []
+        for message in conv.messages:
+            if not message.image_url:
+                continue
+            try:
+                parsed = json.loads(message.image_url)
+            except (json.JSONDecodeError, TypeError):
+                parsed = message.image_url
+            values = parsed if isinstance(parsed, list) else [parsed]
+            image_urls.extend(str(value) for value in values if isinstance(value, str) and value)
+        from app.services.chat_utils import (
+            _chat_image_file_path,
+            finalize_staged_chat_image,
+            restore_staged_chat_image,
+            stage_chat_image_deletion,
+        )
+
+        self._retry_staged_chat_image_deletions_locked(user_id)
+        staged_deletions: list[Any] = []
+        try:
+            for image_url in image_urls:
+                image_path = _chat_image_file_path(image_url, user_id)
+                if image_path and self._chat_image_path_is_referenced(
+                    image_path,
+                    None,
+                    exclude_conversation_id=conversation_id,
+                ):
+                    continue
+                staged = stage_chat_image_deletion(image_url, user_id)
+                if staged:
+                    staged_deletions.append(staged)
+        except Exception as error:
+            for staged in reversed(staged_deletions):
+                try:
+                    restore_staged_chat_image(staged)
+                except Exception:
+                    logger.critical(
+                        "Failed to restore staged chat image user_id=%s",
+                        user_id,
+                        exc_info=True,
+                    )
+            raise RuntimeError("chat_image_deletion_staging_failed") from error
+
+        try:
+            self.db.delete(conv)
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            for staged in reversed(staged_deletions):
+                try:
+                    restore_staged_chat_image(staged)
+                except Exception:
+                    logger.critical(
+                        "Failed to restore chat image after DB rollback user_id=%s",
+                        user_id,
+                        exc_info=True,
+                    )
+            raise
+
+        for staged in staged_deletions:
+            try:
+                finalize_staged_chat_image(staged)
+            except Exception:
+                logger.error(
+                    "Failed to finalize staged chat image deletion user_id=%s",
+                    user_id,
+                    exc_info=True,
+                )
         return True
+
+    def _chat_image_path_is_referenced(
+        self,
+        path: str,
+        user_id: int | None,
+        *,
+        exclude_conversation_id: int | None = None,
+    ) -> bool:
+        from app.services.chat_utils import (
+            _chat_image_file_path,
+        )
+
+        query = (
+            self.db.query(AgentMessage.image_url, AgentConversation.user_id)
+            .join(
+                AgentConversation,
+                AgentConversation.id == AgentMessage.conversation_id,
+            )
+            .filter(AgentMessage.image_url.isnot(None))
+        )
+        if user_id is not None:
+            query = query.filter(AgentConversation.user_id == user_id)
+        if exclude_conversation_id is not None:
+            query = query.filter(
+                AgentMessage.conversation_id != exclude_conversation_id,
+            )
+
+        for raw_image_url, owner_id in query.all():
+            try:
+                parsed = json.loads(raw_image_url)
+            except (json.JSONDecodeError, TypeError):
+                parsed = raw_image_url
+            values = parsed if isinstance(parsed, list) else [parsed]
+            for value in values:
+                if not isinstance(value, str) or not value:
+                    continue
+                referenced_path = _chat_image_file_path(value, int(owner_id))
+                if referenced_path == path:
+                    return True
+        return False
+
+    def _retry_staged_chat_image_deletions_locked(
+        self,
+        user_id: int | None = None,
+    ) -> int:
+        from app.services.chat_utils import retry_staged_chat_image_deletions
+
+        return retry_staged_chat_image_deletions(
+            user_id,
+            is_referenced=lambda path: self._chat_image_path_is_referenced(
+                path,
+                user_id,
+            ),
+        )
+
+    def retry_staged_chat_image_deletions(self, user_id: int | None = None) -> int:
+        """Reconcile tombstones against current DB references under one lock."""
+        from app.services.chat_utils import chat_image_lifecycle_lock
+
+        with chat_image_lifecycle_lock():
+            return self._retry_staged_chat_image_deletions_locked(user_id)
 
     def update_conversation_title(
         self,
@@ -118,17 +393,188 @@ class AgentConversationService:
         role: str,
         content: str,
         image_url: str | None = None,
+        meta: Optional[Dict[str, Any]] = None,
+        client_turn_id: str | None = None,
+        client_turn_user_id: int | None = None,
     ) -> AgentMessage:
-        msg = AgentMessage(
-            conversation_id=conversation_id,
-            role=role,
-            content=content,
-            image_url=image_url,
+        if image_url:
+            from app.services.chat_utils import chat_image_lifecycle_lock
+
+            lifecycle_context = chat_image_lifecycle_lock()
+        else:
+            lifecycle_context = nullcontext()
+        with lifecycle_context:
+            msg = AgentMessage(
+                conversation_id=conversation_id,
+                role=role,
+                content=content,
+                image_url=image_url,
+                meta=meta,
+                client_turn_id=(
+                    self._client_turn_storage_key(client_turn_user_id, client_turn_id)
+                    if client_turn_id and client_turn_user_id is not None
+                    else client_turn_id
+                ),
+            )
+            self.db.add(msg)
+            self.db.commit()
+            self.db.refresh(msg)
+            return msg
+
+    def update_user_message_after_image_upload(
+        self,
+        user_id: int,
+        message_id: int,
+        *,
+        content: str,
+        image_url: str,
+        meta: Optional[Dict[str, Any]] = None,
+    ) -> Optional[AgentMessage]:
+        """Attach uploaded image references atomically with image deletion."""
+        from app.services.chat_utils import chat_image_lifecycle_lock
+
+        with chat_image_lifecycle_lock():
+            message = (
+                self.db.query(AgentMessage)
+                .join(
+                    AgentConversation,
+                    AgentConversation.id == AgentMessage.conversation_id,
+                )
+                .filter(
+                    AgentMessage.id == message_id,
+                    AgentMessage.role == "user",
+                    AgentConversation.user_id == user_id,
+                )
+                .first()
+            )
+            if message is None:
+                return None
+            message.content = content
+            message.image_url = image_url
+            message.meta = {
+                **(message.meta or {}),
+                **(meta or {}),
+            }
+            self.db.commit()
+            self.db.refresh(message)
+            return message
+
+    def find_user_message_by_client_turn(
+        self,
+        user_id: int,
+        client_turn_id: str,
+    ) -> Optional[AgentMessage]:
+        if not client_turn_id:
+            return None
+        return (
+            self.db.query(AgentMessage)
+            .join(AgentConversation, AgentConversation.id == AgentMessage.conversation_id)
+            .filter(
+                AgentConversation.user_id == user_id,
+                AgentMessage.role == "user",
+                AgentMessage.client_turn_id == self._client_turn_storage_key(user_id, client_turn_id),
+            )
+            .order_by(AgentMessage.id.asc())
+            .first()
         )
-        self.db.add(msg)
-        self.db.commit()
-        self.db.refresh(msg)
-        return msg
+
+    def find_assistant_message_by_client_turn(
+        self,
+        user_id: int,
+        client_turn_id: str,
+    ) -> Optional[AgentMessage]:
+        if not client_turn_id:
+            return None
+        return (
+            self.db.query(AgentMessage)
+            .join(AgentConversation, AgentConversation.id == AgentMessage.conversation_id)
+            .filter(
+                AgentConversation.user_id == user_id,
+                AgentMessage.role == "assistant",
+                AgentMessage.client_turn_id == self._client_turn_storage_key(user_id, client_turn_id),
+            )
+            .order_by(AgentMessage.id.desc())
+            .first()
+        )
+
+    def discard_unfinalized_assistant_by_client_turn(
+        self,
+        user_id: int,
+        client_turn_id: str,
+    ) -> int:
+        """Remove stale partial assistant rows before a crashed turn is resumed."""
+        messages = (
+            self.db.query(AgentMessage)
+            .join(AgentConversation, AgentConversation.id == AgentMessage.conversation_id)
+            .filter(
+                AgentConversation.user_id == user_id,
+                AgentMessage.role == "assistant",
+                AgentMessage.client_turn_id == self._client_turn_storage_key(user_id, client_turn_id),
+            )
+            .all()
+        )
+        stale = [
+            message
+            for message in messages
+            if not (message.meta or {}).get("client_turn_finalized")
+        ]
+        for message in stale:
+            self.db.delete(message)
+        if stale:
+            self.db.commit()
+        return len(stale)
+
+    def save_user_message_once(
+        self,
+        conversation_id: int,
+        user_id: int,
+        content: str,
+        *,
+        client_turn_id: str | None,
+        image_url: str | None = None,
+        meta: Optional[Dict[str, Any]] = None,
+    ) -> tuple[AgentMessage, bool]:
+        """Persist one client turn exactly once across retries and workers."""
+        if not client_turn_id:
+            return self.save_message(
+                conversation_id,
+                "user",
+                content,
+                image_url=image_url,
+                meta=meta,
+            ), True
+        if image_url:
+            from app.services.chat_utils import chat_image_lifecycle_lock
+
+            lifecycle_context = chat_image_lifecycle_lock()
+        else:
+            lifecycle_context = nullcontext()
+        with lifecycle_context:
+            existing = self.find_user_message_by_client_turn(user_id, client_turn_id)
+            if existing:
+                return existing, False
+            msg = AgentMessage(
+                conversation_id=conversation_id,
+                role="user",
+                content=content,
+                image_url=image_url,
+                meta=meta,
+                client_turn_id=self._client_turn_storage_key(user_id, client_turn_id),
+            )
+            self.db.add(msg)
+            try:
+                self.db.commit()
+                self.db.refresh(msg)
+                return msg, True
+            except IntegrityError:
+                self.db.rollback()
+                existing = self.find_user_message_by_client_turn(
+                    user_id,
+                    client_turn_id,
+                )
+                if existing:
+                    return existing, False
+                raise
 
     def build_messages(self, conversation_id: int, limit: int = 20) -> List[Dict[str, str]]:
         history = (

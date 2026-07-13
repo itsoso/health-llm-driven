@@ -67,7 +67,7 @@ def _set_quiet_hours(db, user_id: int, *, start: str, end: str) -> None:
 @pytest.mark.parametrize("severity", ["medium", "high"])
 @pytest.mark.asyncio
 async def test_quiet_hours_delays_non_critical_severities(db, severity):
-    """非 critical 的够级别告警在静默时段延迟到 08:30.
+    """非 critical 的够级别告警在静默时段延迟到 09:00.
 
     注: info/low 在 alert_severity_threshold='warning' (默认) 下会被更早的
     threshold 检查拦截, 不会走到 quiet_hours 路径. critical 单独测 (穿透).
@@ -102,28 +102,28 @@ async def test_quiet_hours_delays_non_critical_severities(db, severity):
     assert len(delayed) == 1
     log = delayed[0]
     assert log.scheduled_at is not None
-    # scheduled_at 应在 fake_now 之后, 且对应 08:30
-    assert log.scheduled_at.hour == 8
-    assert log.scheduled_at.minute == 30
-    # 还是同一天的 08:30 (因为 fake_now 是 03:00 之前)
+    # scheduled_at 应在 fake_now 之后, 且对应 09:00
+    assert log.scheduled_at.hour == 9
+    assert log.scheduled_at.minute == 0
+    # 还是同一天的 09:00 (因为 fake_now 是 03:00 之前)
     assert log.scheduled_at.day == fake_now.day
 
 
 @pytest.mark.asyncio
-async def test_morning_floor_delays_reminders_before_8_even_if_user_quiet_hours_end_earlier(db):
-    """普通 push 在 08:00 前不发送,即使用户 quiet_hours_end 配得更早。"""
+async def test_morning_floor_delays_reminders_before_9_even_if_user_quiet_hours_end_earlier(db):
+    """普通 push 在 09:00 前不发送,即使用户 quiet_hours_end 配得更早。"""
     user = _make_user(db, username="morning_floor")
     _set_quiet_hours(db, user.id, start="22:00", end="07:00")
     svc = PushService(db)
 
-    fake_now = datetime(2026, 5, 12, 7, 59, 0)
+    fake_now = datetime(2026, 5, 12, 8, 59, 0)
     with patch("app.services.notification.push_service.get_china_now", return_value=fake_now), \
          patch.object(PushService, "_send_ios", new=AsyncMock(return_value={"success": True})):
         result = await svc.send_notification(
             user_id=user.id,
             notification_type="reminder",
             title="早晨提醒",
-            content="08:00 前不应发出。",
+            content="09:00 前不应发出。",
         )
 
     assert result["success"] is False
@@ -136,13 +136,13 @@ async def test_morning_floor_delays_reminders_before_8_even_if_user_quiet_hours_
         )
         .one()
     )
-    assert delayed.scheduled_at.hour == 8
+    assert delayed.scheduled_at.hour == 9
     assert delayed.scheduled_at.minute == 0
 
 
 @pytest.mark.asyncio
-async def test_morning_floor_delays_cross_midnight_quiet_hours_until_8(db):
-    """晚上进入静默后,即使用户 quiet_hours_end=07:00, delayed 也不能排到 08:00 前。"""
+async def test_morning_floor_delays_cross_midnight_quiet_hours_until_9(db):
+    """晚上进入静默后,即使用户 quiet_hours_end=07:00, delayed 也不能排到 09:00 前。"""
     user = _make_user(db, username="morning_floor_midnight")
     _set_quiet_hours(db, user.id, start="22:00", end="07:00")
     svc = PushService(db)
@@ -154,7 +154,7 @@ async def test_morning_floor_delays_cross_midnight_quiet_hours_until_8(db):
             user_id=user.id,
             notification_type="reminder",
             title="夜间提醒",
-            content="应延迟到明早 08:00。",
+            content="应延迟到明早 09:00。",
         )
 
     assert result["success"] is False
@@ -168,13 +168,13 @@ async def test_morning_floor_delays_cross_midnight_quiet_hours_until_8(db):
         .one()
     )
     assert delayed.scheduled_at.day == 13
-    assert delayed.scheduled_at.hour == 8
+    assert delayed.scheduled_at.hour == 9
     assert delayed.scheduled_at.minute == 0
 
 
 @pytest.mark.asyncio
-async def test_morning_floor_overrides_non_critical_bypass_before_8(db):
-    """08:00 前普通 push 即使显式 bypass,也不能立即发送。"""
+async def test_morning_floor_overrides_non_critical_bypass_before_9(db):
+    """09:00 前普通 push 即使显式 bypass,也不能立即发送。"""
     user = _make_user(db, username="morning_floor_bypass")
     _set_quiet_hours(db, user.id, start="22:00", end="07:00")
     svc = PushService(db)
@@ -186,7 +186,7 @@ async def test_morning_floor_overrides_non_critical_bypass_before_8(db):
             user_id=user.id,
             notification_type="reminder",
             title="显式 bypass 早晨提醒",
-            content="08:00 前仍不应发出。",
+            content="09:00 前仍不应发出。",
             quiet_hours_policy="bypass",
         )
 
@@ -200,7 +200,7 @@ async def test_morning_floor_overrides_non_critical_bypass_before_8(db):
         )
         .one()
     )
-    assert delayed.scheduled_at.hour == 8
+    assert delayed.scheduled_at.hour == 9
     assert delayed.scheduled_at.minute == 0
 
 
@@ -208,7 +208,7 @@ async def test_morning_floor_overrides_non_critical_bypass_before_8(db):
 async def test_quiet_hours_critical_bypasses_immediately(db):
     """critical 健康告警穿透静默时段立即推送 (2026-05-30 反转"严格不打扰").
 
-    致命药物交互 / 急性阈值不应压到早上 08:30 —— 原计划的"紧急联系人穿透"从未落地.
+    致命药物交互 / 急性阈值不应压到早上 09:00 —— 原计划的"紧急联系人穿透"从未落地.
     """
     user = _make_user(db, username="strict_critical_bypass")
     svc = PushService(db)
@@ -241,7 +241,7 @@ async def test_quiet_hours_critical_bypasses_immediately(db):
 
 @pytest.mark.asyncio
 async def test_quiet_hours_dedups_existing_delayed_reminder(db):
-    """同一睡眠提醒在静默时段重复触发时, 只能排队 1 条 08:30 delayed。"""
+    """同一睡眠提醒在静默时段重复触发时, 只能排队 1 条 09:00 delayed。"""
     user = _make_user(db, username="quiet_dedup_sleep")
     svc = PushService(db)
 
@@ -340,8 +340,8 @@ async def test_critical_still_immediate_outside_quiet_hours(db):
 
 
 @pytest.mark.asyncio
-async def test_quiet_hours_policy_bypass_sends_immediately(db):
-    """明确 bypass 的 bedtime/用户主动提醒不进入 delayed 队列."""
+async def test_quiet_hours_policy_bypass_still_delays_non_critical_at_night(db):
+    """非 critical 通知即使旧调用方显式 bypass, 22:00-09:00 内也不能打扰睡眠."""
     user = _make_user(db, username="qh_bypass")
     svc = PushService(db)
 
@@ -356,16 +356,19 @@ async def test_quiet_hours_policy_bypass_sends_immediately(db):
             quiet_hours_policy="bypass",
         )
 
-    assert result.get("success") is True
+    assert result["success"] is False
+    assert result["reason"] == "delayed_for_quiet_hours"
     delayed = (
         db.query(NotificationLog)
         .filter(
             NotificationLog.user_id == user.id,
             NotificationLog.status == NotificationStatus.DELAYED.value,
         )
-        .count()
+        .one()
     )
-    assert delayed == 0
+    assert delayed.scheduled_at.day == 13
+    assert delayed.scheduled_at.hour == 9
+    assert delayed.scheduled_at.minute == 0
 
 
 @pytest.mark.asyncio
@@ -398,7 +401,7 @@ async def test_quiet_hours_policy_drop_skips_without_queueing(db):
 
 
 def test_next_quiet_hours_end_during_quiet(db):
-    """凌晨 03:00, end=08:30 → 今天 08:30."""
+    """凌晨 03:00, end=09:00 → 今天 09:00."""
     user = _make_user(db, username="qh_calc1")
     svc = PushService(db)
 
@@ -407,11 +410,11 @@ def test_next_quiet_hours_end_during_quiet(db):
         result = svc.next_quiet_hours_end(user.id)
 
     assert result.year == 2026 and result.month == 5 and result.day == 12
-    assert result.hour == 8 and result.minute == 30
+    assert result.hour == 9 and result.minute == 0
 
 
 def test_next_quiet_hours_end_after_morning(db):
-    """白天 14:00, end=08:30 → 明天 08:30."""
+    """白天 14:00, end=09:00 → 明天 09:00."""
     user = _make_user(db, username="qh_calc2")
     svc = PushService(db)
 
@@ -420,7 +423,7 @@ def test_next_quiet_hours_end_after_morning(db):
         result = svc.next_quiet_hours_end(user.id)
 
     assert result.day == 13
-    assert result.hour == 8 and result.minute == 30
+    assert result.hour == 9 and result.minute == 0
 
 
 @pytest.mark.asyncio
@@ -429,8 +432,8 @@ async def test_flush_delayed_pushes_processes_due(db):
     user = _make_user(db, username="flush_user")
     svc = PushService(db)
 
-    # 钉死墙钟到白天非静默、且过 08:00 morning-floor 的时点:flush 重发会再过一遍静默/晨间闸,
-    # 若用真实 get_china_now() 在北京 00:00–08:00(CI 跑在此窗口时)会被 morning-floor 再延迟
+    # 钉死墙钟到白天非静默、且过 09:00 morning-floor 的时点:flush 重发会再过一遍静默/晨间闸,
+    # 若用真实 get_china_now() 在北京 00:00–09:00(CI 跑在此窗口时)会被 morning-floor 再延迟
     # → succeeded=0 随墙钟夜间确定性失败。本测试只验"到点 flush、未到点跳过",与时段无关。
     fake_now = datetime(2026, 5, 12, 14, 0, 0)
     now = fake_now
@@ -478,7 +481,7 @@ async def test_flush_delayed_pushes_dedups_same_title(db):
     """历史上已经排队的重复 delayed, flush 时也只真正发第一条。"""
     user = _make_user(db, username="flush_dedup_sleep")
     svc = PushService(db)
-    # 钉死墙钟到白天(见 test_flush_delayed_pushes_processes_due 注释):否则北京 00:00–08:00
+    # 钉死墙钟到白天(见 test_flush_delayed_pushes_processes_due 注释):否则北京 00:00–09:00
     # flush 重发被 morning-floor 再延迟 → succeeded=0 随墙钟夜间失败。本测试只验去重。
     fake_now = datetime(2026, 5, 12, 14, 0, 0)
     now = fake_now

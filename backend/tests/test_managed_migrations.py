@@ -41,6 +41,43 @@ def test_apply_managed_migrations_runs_matching_dialect_once(tmp_path: Path):
     assert count == 1
 
 
+def test_diet_card_idempotency_migration_adds_user_scoped_unique_key(tmp_path: Path):
+    from sqlalchemy.exc import IntegrityError
+
+    migrations_dir = Path(__file__).resolve().parents[1] / "migrations" / "managed"
+    sqlite_file = migrations_dir / "20260710_120000_add_diet_client_action_id.sqlite.sql"
+    postgres_file = migrations_dir / "20260710_120000_add_diet_client_action_id.postgresql.sql"
+    assert sqlite_file.exists()
+    assert postgres_file.exists()
+    assert "WHERE client_action_id IS NOT NULL" in postgres_file.read_text(encoding="utf-8")
+
+    isolated = tmp_path / "managed"
+    isolated.mkdir()
+    (isolated / sqlite_file.name).write_text(
+        sqlite_file.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE diet_records (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL)"))
+    result = apply_managed_migrations(engine, isolated)
+    assert [migration.id for migration in result.applied] == [
+        "20260710_120000_add_diet_client_action_id"
+    ]
+
+    with engine.begin() as conn:
+        conn.execute(text(
+            "INSERT INTO diet_records (id, user_id, client_action_id) "
+            "VALUES (1, 7, 'card-1'), (2, 8, 'card-1')"
+        ))
+    with pytest.raises(IntegrityError):
+        with engine.begin() as conn:
+            conn.execute(text(
+                "INSERT INTO diet_records (id, user_id, client_action_id) "
+                "VALUES (3, 7, 'card-1')"
+            ))
+
+
 def test_split_sql_statements_keeps_postgres_dollar_quoted_blocks_intact():
     statements = _split_sql_statements(
         """
@@ -283,3 +320,37 @@ def test_retire_legacy_agent_table_names_sqlite_migration_preserves_data(tmp_pat
     assert title == "阿衡"
     assert content == "ok"
     assert batch_id == "batch-1"
+
+
+def test_agent_client_turn_sqlite_migration_enforces_scoped_user_uniqueness(tmp_path: Path):
+    migrations_dir = Path(__file__).resolve().parents[1] / "migrations" / "managed"
+    sqlite_file = migrations_dir / "20260709_120000_add_agent_client_turn_id.sqlite.sql"
+    postgres_file = migrations_dir / "20260709_120000_add_agent_client_turn_id.postgresql.sql"
+    assert sqlite_file.exists()
+    assert postgres_file.exists()
+
+    isolated = tmp_path / "managed"
+    isolated.mkdir()
+    (isolated / sqlite_file.name).write_text(sqlite_file.read_text(encoding="utf-8"), encoding="utf-8")
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        conn.execute(text(
+            "CREATE TABLE agent_messages ("
+            "id INTEGER PRIMARY KEY, role TEXT NOT NULL, content TEXT NOT NULL)"
+        ))
+
+    result = apply_managed_migrations(engine, isolated)
+
+    assert [m.id for m in result.applied] == ["20260709_120000_add_agent_client_turn_id"]
+    assert "client_turn_id" in {column["name"] for column in inspect(engine).get_columns("agent_messages")}
+    with engine.begin() as conn:
+        conn.execute(text(
+            "INSERT INTO agent_messages (id, role, content, client_turn_id) "
+            "VALUES (1, 'user', 'a', '1:turn-same'), (2, 'user', 'b', '2:turn-same')"
+        ))
+    with pytest.raises(Exception):
+        with engine.begin() as conn:
+            conn.execute(text(
+                "INSERT INTO agent_messages (id, role, content, client_turn_id) "
+                "VALUES (3, 'user', 'duplicate', '1:turn-same')"
+            ))

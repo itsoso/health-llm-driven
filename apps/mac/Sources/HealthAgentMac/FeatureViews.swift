@@ -602,7 +602,7 @@ struct AgentChatView: View {
     /// WKWebView 渲染的滚动对话区(自带滚动 + 自动滚底 + 文本选择)。
     private var transcriptWebView: some View {
         ChatTranscriptWebView(
-            messages: viewModel.renderedTranscript(),
+            messages: viewModel.renderedTranscript(language: appLanguageRaw),
             fontScale: AppFontScale(level: appFontScaleLevel).pointScale,
             onCopy: { id in handleWebCopy(messageID: id) },
             onRouteOpen: { route in handleWebRouteOpen(route) }
@@ -639,23 +639,12 @@ struct AgentChatView: View {
         if let last = viewModel.messages.last, last.role == .assistant {
             let actions = viewModel.proposedActions(for: last)
             let showChips = shouldShowFollowUpChips(for: last)
-            let showSpinner = viewModel.isStreaming && last.content.isEmpty
-            if !actions.isEmpty || showChips || showSpinner {
+            // The "thinking process" trace now renders INSIDE the streaming assistant
+            // bubble (see renderedTranscript / ChatTranscriptHTML.thinkingTraceHTML) so
+            // it follows the bubble instead of being stranded above the composer. The
+            // footer keeps only post-answer affordances: proposed-action cards + chips.
+            if !actions.isEmpty || showChips {
                 VStack(alignment: .leading, spacing: 8) {
-                    if showSpinner {
-                        // Pre-first-token affordance: an informative animated status
-                        // line instead of a bare spinner (小巴 TTFT is 2–14s, longer
-                        // on a silent tool round). Purely presentational — no stream,
-                        // parse, or network behavior changes. `isToolTurn` only flips
-                        // the copy when a tool activity has already surfaced, so we
-                        // never overclaim "checking records" on a plain analysis turn.
-                        ThinkingStatusLine(
-                            language: appLanguageRaw,
-                            isToolTurn: !viewModel.toolActivities.isEmpty,
-                            liveStatusKey: viewModel.liveStatusText,
-                            liveStatusDetail: viewModel.liveStatusDetail
-                        )
-                    }
                     ForEach(actions) { action in
                         AgentProposedActionCard(
                             action: action,
@@ -1286,6 +1275,78 @@ struct AgentChatView: View {
         case .low: Color.secondary
         case .medicalGrade: Color.red
         }
+    }
+}
+
+/// Accumulating "thinking process" trace: a left-aligned vertical list of the
+/// steps 小巴 went through this turn (from the backend `status` SSE stream).
+/// Running step = mini spinner + emphasized text; done steps = checkmark +
+/// dimmed. Unlike `ThinkingStatusLine` (a single overwriting line) the whole
+/// sequence stays visible through content streaming until the turn resets.
+///
+/// Layout is deliberately a plain header + `VStack`/`ForEach` over stable step
+/// ids with a fixed-width leading gutter — NO `ViewThatFits`/`fixedSize` probing
+/// (that path caused an exponential `sizeThatFits` layout freeze historically).
+private struct ThinkingProcessTrace: View {
+    let steps: [ThinkingStep]
+    let language: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 6) {
+                Image(systemName: "brain")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                Text(appText("Thinking process", language))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(steps) { step in
+                    row(for: step)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func row(for step: ThinkingStep) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            // Fixed-width leading gutter keeps rows aligned and gives the layout a
+            // deterministic width (no measurement feedback loop).
+            leadingGlyph(for: step.state)
+                .frame(width: 16, alignment: .center)
+            Text(label(for: step))
+                .font(.caption)
+                .foregroundStyle(step.state == .running ? Color.primary : .secondary)
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+        }
+    }
+
+    @ViewBuilder
+    private func leadingGlyph(for state: ThinkingStepState) -> some View {
+        if state == .running {
+            ProgressView()
+                .controlSize(.mini)
+        } else {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+        }
+    }
+
+    /// Resolves a step's L10n key (+ optional detail) exactly like
+    /// `ThinkingStatusLine.statusText`: `"Working: %@…"` splices the backend's
+    /// Chinese tool label verbatim; other keys are a straight `appText` lookup
+    /// (server-phrase keys pass through unchanged in zh).
+    private func label(for step: ThinkingStep) -> String {
+        let template = appText(step.labelKey, language)
+        if let detail = step.labelDetail {
+            return String(format: template, detail)
+        }
+        return template
     }
 }
 
@@ -2060,6 +2121,27 @@ private final class CommandReturnTextView: NSTextView {
             break
         }
         super.paste(sender)
+    }
+
+    // 纯图片剪贴板(如 ⌘⇧⌃4 截图,只有位图、无文本)时,基类 isRichText=false 只声明
+    // 文本可读类型 → 系统在调用上面的 paste() 前就把 paste: 判为无效:右键"粘贴"置灰、
+    // ⌘V 无响应,处理图片的 paste() 覆写永远进不去(实测:之前只有"图+URL文本"的浏览器
+    // 拷图能贴,就是因为那时剪贴板有文本让 paste: 有效)。这里补声明图片/文件可读类型 +
+    // 显式放行 paste:,让纯图剪贴板下粘贴也生效。
+    override var readablePasteboardTypes: [NSPasteboard.PasteboardType] {
+        super.readablePasteboardTypes + [.tiff, .png, .fileURL]
+    }
+
+    override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
+        if item.action == #selector(NSTextView.paste(_:)) {
+            let pb = NSPasteboard.general
+            if pb.canReadObject(forClasses: [NSImage.self], options: nil) { return true }
+            if pb.canReadObject(
+                forClasses: [NSURL.self],
+                options: [.urlReadingFileURLsOnly: true]
+            ) { return true }
+        }
+        return super.validateUserInterfaceItem(item)
     }
 
     override func keyDown(with event: NSEvent) {

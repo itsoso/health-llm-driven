@@ -84,6 +84,17 @@ beforeEach(() => {
 
 // ============================================================
 
+describe('Home', () => {
+  it('exposes the latest iPhone QR install entry', async () => {
+    const Page = (await import('@/app/page')).default;
+    render(<Page />);
+
+    const installLink = screen.getByRole('link', { name: /扫码安装 iPhone 版/i });
+    expect(installLink).toHaveAttribute('href', '/mobile-install/ios/latest/install.html');
+    expect(screen.getByText('不走 TestFlight, 保留登录状态直接更新')).toBeDefined();
+  });
+});
+
 describe('Dashboard', () => {
   it('renders quick action buttons', async () => {
     const Page = (await import('@/app/dashboard/page')).default;

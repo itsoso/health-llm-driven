@@ -44,10 +44,30 @@ describe('EmptyStateHome', () => {
     expect(getByText(/今天就是「提前晚餐」的检验日，做到了吗？/)).toBeTruthy();
     // memory footnote lives inside the bubble (sanitized text).
     expect(getByText('对花粉过敏')).toBeTruthy();
+    expect(getByText('记忆 · 过敏')).toBeTruthy();
 
     // 校准 button reaches the memory calibration handler.
     fireEvent.press(getByLabelText('查看和校准 AI 记忆'));
     expect(onOpenMemory).toHaveBeenCalled();
+  });
+
+  it('renders 小巴 as a branded assistant avatar in the opening bubble', () => {
+    const opener = {
+      text: '今天就是「提前晚餐」的检验日，做到了吗？',
+      source: 'action_card_due',
+      quick_replies: [{ text: '做到了' }],
+    } as any;
+
+    const { getByLabelText } = render(
+      <EmptyStateHome
+        memoryOpener={[]}
+        opener={opener}
+        onOpenMemory={jest.fn()}
+        onOpenerQuickReply={jest.fn()}
+      />,
+    );
+
+    expect(getByLabelText('小巴形象')).toBeTruthy();
   });
 
   it('renders quick replies below the bubble including a 换个话题 chip, all routed to onQuickReply', () => {
@@ -112,6 +132,7 @@ describe('EmptyStateHome', () => {
 
     expect(getByText('今天想从哪里开始？')).toBeTruthy();
     expect(getByText('对花粉过敏')).toBeTruthy();
+    expect(getByText('记忆 · 医疗')).toBeTruthy();
     fireEvent.press(getByLabelText('查看和校准 AI 记忆'));
     expect(onOpenMemory).toHaveBeenCalled();
   });

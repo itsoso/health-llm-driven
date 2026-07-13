@@ -140,6 +140,27 @@ async def startup_event():
     import app.models.family  # noqa: F401 — 确保家庭管理表被创建
     import app.models.family_health  # noqa: F401 — 确保体检报告/用药/复查表被创建
     settings.validate_required_security()
+    try:
+        from app.database import SessionLocal as _ChatCleanupSession
+        from app.services.agent_conversation_service import AgentConversationService
+
+        cleanup_db = _ChatCleanupSession()
+        try:
+            removed_tombstones = AgentConversationService(
+                cleanup_db,
+            ).retry_staged_chat_image_deletions()
+        finally:
+            cleanup_db.close()
+        if removed_tombstones:
+            logger.info(
+                "[startup] retried %s staged private chat image deletions",
+                removed_tombstones,
+            )
+    except Exception:
+        logger.error(
+            "[startup] private chat image tombstone cleanup failed",
+            exc_info=True,
+        )
     # 中文分词器启动探针: System KB 检索依赖 jieba(硬依赖)。在启动时一次性 warm
     # (付掉字典构建 + userdict 成本, 而非每次查询), 并在缺失时 fail-loud(ERROR 级),
     # 不静默退化到未分词的坏检索行为。缺失不 crash 启动(检索层会降级到 bigram), 但日志

@@ -2,6 +2,7 @@ import { getToken } from './auth';
 import { BASE_URL } from './api';
 import { sanitizeChatErrorMessage } from '../utils/chatErrorMessage';
 import type { AgentPerfProfileLike } from '../utils/chatTransparency';
+import { normalizeWriteReceipt, type WriteReceipt } from './writeReceipt';
 
 export interface ChatMessage {
   role: 'user' | 'assistant';
@@ -64,7 +65,7 @@ export interface LlmUsageProfile {
 export type AgentPerfProfile = AgentPerfProfileLike;
 
 export interface StreamEvent {
-  type: 'start' | 'token' | 'tool' | 'status' | 'card' | 'done' | 'error';
+  type: 'start' | 'persisted' | 'token' | 'tool' | 'status' | 'card' | 'done' | 'error';
   content?: string;
   /** 面向用户的安全思考/进度摘要,不包含模型原始推理链或工具参数。 */
   thought?: string;
@@ -75,11 +76,17 @@ export interface StreamEvent {
   /** status 事件的原始阶段 (accepted / tool / synthesis), 供消费端语义判定。 */
   statusStage?: string;
   conversationId?: number;
+  userMessageId?: number;
+  clientTurnId?: string;
   messageId?: number;
+  requestPersisted?: boolean;
   anchor?: string;
   card?: StreamCardDescriptor;
   toolName?: string;
   toolSuccess?: boolean;
+  writeAttempted?: boolean;
+  writeCompleted?: boolean;
+  receipt?: WriteReceipt;
   // I Phase 2: health_record 时附 record_type + record_data 让前端能 sniff 录入摘要
   recordType?: string;
   recordData?: Record<string, any>;
@@ -98,6 +105,7 @@ export interface StreamEvent {
   completionStatus?: 'complete' | 'interrupted' | 'error' | 'unknown';
   // SSE done 事件里的动态卡片，由 useChatEngine 交给 card registry 渲染
   cards?: StreamCardDescriptor[];
+  writeReceipts?: WriteReceipt[];
 }
 
 const TOOL_THOUGHT_LABELS: Record<string, string> = {
@@ -118,6 +126,21 @@ function toolThoughtLabel(toolName?: string): string {
   if (tool.includes('diet')) return '饮食数据';
   if (tool.includes('sleep')) return '睡眠数据';
   return '相关数据';
+}
+
+function writeAttemptFromToolCall(toolName: string, rawArgs: unknown): boolean | undefined {
+  if (toolName === 'health_record') return true;
+  if (!['health_manage', 'intervention_cycle'].includes(toolName)) return undefined;
+  try {
+    const args = typeof rawArgs === 'string' ? JSON.parse(rawArgs) : rawArgs;
+    if (!args || typeof args !== 'object' || Array.isArray(args)) return false;
+    if (toolName === 'health_manage') {
+      return ['update', 'delete'].includes(String((args as any).operation || ''));
+    }
+    return ['start', 'update', 'cancel'].includes(String((args as any).action || ''));
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -164,11 +187,13 @@ export async function* streamChat(
   signal?: AbortSignal,
   extraContext?: string,
   channel: 'typed' | 'voice' | 'siri' = 'typed',
+  clientTurnId?: string,
 ): AsyncGenerator<StreamEvent, void, unknown> {
   const token = await getToken();
   // channel = 传输层输入通道声明(非 LLM 参数):打字免症状二次确认;
   // 语音(转写有失真风险)fail-closed 保留确认 —— 语音入口必须显式传 'voice'。
   const body: Record<string, any> = { message, channel };
+  if (clientTurnId) body.client_turn_id = clientTurnId;
   if (conversationId) body.conversation_id = conversationId;
   if (extraContext && extraContext.trim()) body.extra_context = extraContext.trim();
   if (images && images.length > 0) {
@@ -257,7 +282,14 @@ export async function* streamChat(
         return undefined;
       }
 
-      if (parsed.event === 'agent_start') {
+      if (parsed.event === 'request_persisted') {
+        return {
+          type: 'persisted',
+          conversationId: parsed.data?.conversation_id,
+          userMessageId: parsed.data?.user_message_id,
+          clientTurnId: parsed.data?.client_turn_id,
+        };
+      } else if (parsed.event === 'agent_start') {
         return {
           type: 'start',
           conversationId: parsed.data?.conversation_id,
@@ -268,24 +300,36 @@ export async function* streamChat(
         if (text) return { type: 'token', content: text };
       } else if (parsed.event === 'tool_call') {
         const tool = parsed.data?.tool || '';
+        const writeAttempted = writeAttemptFromToolCall(tool, parsed.data?.args);
         // 不把 "🔧 health_record (第1轮)" 这种技术文本注入消息气泡
         // toolName 仍传给前端, cards dispatcher / analytics 可用
         return {
           type: 'tool',
           content: '',
           toolName: tool,
+          ...(typeof writeAttempted === 'boolean' ? { writeAttempted } : {}),
           thought: `读取${toolThoughtLabel(tool)}`,
         };
       } else if (parsed.event === 'tool_result') {
         const tool = parsed.data?.tool || '';
         const ok = parsed.data?.success;
         const label = toolThoughtLabel(tool);
+        const writeCompleted = typeof parsed.data?.write_completed === 'boolean'
+          ? parsed.data.write_completed
+          : undefined;
+        const writeAttempted = typeof parsed.data?.write_attempted === 'boolean'
+          ? parsed.data.write_attempted
+          : undefined;
+        const receipt = normalizeWriteReceipt(parsed.data?.receipt);
         // 成功静默 (AI token 流会接着讲), 失败才给用户可见的简短提示
         return {
           type: 'tool',
           content: ok ? '' : '⚠️ 操作未成功，请稍后重试\n\n',
           toolName: tool,
           toolSuccess: ok,
+          ...(typeof writeAttempted === 'boolean' ? { writeAttempted } : {}),
+          ...(typeof writeCompleted === 'boolean' ? { writeCompleted } : {}),
+          ...(receipt ? { receipt } : {}),
           thought: ok ? `已取得${label}` : `${label}暂时不可用`,
           // I Phase 2: health_record 时后端附 record_type + record_data, 前端 sniff 录入摘要
           recordType: parsed.data?.record_type,
@@ -323,10 +367,18 @@ export async function* streamChat(
         const perf = parsed.data?.perf && typeof parsed.data.perf === 'object'
           ? parsed.data.perf
           : undefined;
+        const writeReceipts = Array.isArray(parsed.data?.write_receipts)
+          ? parsed.data.write_receipts
+            .map(normalizeWriteReceipt)
+            .filter((receipt: WriteReceipt | undefined): receipt is WriteReceipt => !!receipt)
+          : undefined;
         return {
           type: 'done',
           conversationId: parsed.data?.conversation_id,
           messageId: parsed.data?.message_id,
+          requestPersisted: typeof parsed.data?.request_persisted === 'boolean'
+            ? parsed.data.request_persisted
+            : undefined,
           elapsedMs: parsed.data?.elapsed_ms,
           llmMs: parsed.data?.llm_ms,
           llmRounds: parsed.data?.llm_rounds,
@@ -339,6 +391,7 @@ export async function* streamChat(
           completionStatus: parsed.data?.completion_status,
           thinkingSteps: normalizeThinkingSteps(parsed.data?.thinking_steps),
           cards: Array.isArray(parsed.data?.cards) ? parsed.data.cards : undefined,
+          writeReceipts: writeReceipts?.length ? writeReceipts : undefined,
         };
       } else if (parsed.event === 'error') {
         return {

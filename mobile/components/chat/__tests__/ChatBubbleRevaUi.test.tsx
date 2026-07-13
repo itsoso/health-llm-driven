@@ -133,11 +133,11 @@ describe('ChatBubble reva-ui blocks', () => {
       '```',
     ].join('\n');
 
-    const { getByText, queryByText } = renderBubble(content);
+    const { getAllByText, getByText, queryByText } = renderBubble(content);
 
     expect(getByText('午餐已记录')).toBeTruthy();
     expect(getByText('770 kcal · 蛋白 30g · 碳水 70g')).toBeTruthy();
-    expect(getByText('37/112g')).toBeTruthy();
+    expect(getAllByText('37/112g').length).toBeGreaterThanOrEqual(1);
     expect(getByText('蛋白质到位，但晚餐仍要补足。')).toBeTruthy();
     expect(getByText('胃溃疡记录在案，冷饮/酸性饮品可能刺激胃。')).toBeTruthy();
     expect(queryByText(/```reva-ui/)).toBeNull();

@@ -184,10 +184,11 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=4, minute=0),  # 凌晨4点
     },
 
-    # 每日 08:00 推送今日计划提醒
+    # 每日 09:05 推送今日计划提醒。
+    # 睡眠保护: 默认 quiet_hours 到 09:00, 面向用户的早晨推送不得排在 09:00 前。
     "plan-morning-reminder": {
         "task": "app.tasks.notifications.send_plan_morning_reminder",
-        "schedule": crontab(hour=8, minute=0),
+        "schedule": crontab(hour=9, minute=5),
     },
 
     # 每日 20:00 推送计划进度总结
@@ -220,10 +221,10 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=22, minute=0),
     },
 
-    # 每日 08:30 趋势摘要推送
+    # 每日 09:25 趋势摘要推送: 避开 22:00-09:00 睡眠保护窗口。
     "trend-morning-push": {
         "task": "app.tasks.notifications.send_trend_morning_push",
-        "schedule": crontab(hour=8, minute=30),
+        "schedule": crontab(hour=9, minute=25),
     },
 
     # 每日 09:30 早安健康摘要(等 Garmin 09:01 同步完成后推送)
@@ -317,12 +318,12 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=8, minute=0),
     },
 
-    # 每天 08:45 (北京) 主动循环管理 — 扫所有用户的开放健康循环, 推 top 2 条 APNs
+    # 每天 09:15 (北京) 主动循环管理 — 扫所有用户的开放健康循环, 推 top 2 条 APNs
     # vertical health agent 的灵魂: AI 主动盯, 不再被动等问.
-    # 时间点: 默认 quiet_hours 结束是 08:30, 留 15min 缓冲避免边界用户被打扰.
+    # 时间点: 默认 quiet_hours 结束是 09:00, 留 15min 缓冲避免边界用户被打扰.
     "open-loop-manager": {
         "task": "app.tasks.open_loop_manager.run_open_loop_check",
-        "schedule": crontab(hour=8, minute=45),
+        "schedule": crontab(hour=9, minute=15),
     },
 
     # 每天 4:00 LLM Wiki v2 lifecycle: decay + crystallization
@@ -339,10 +340,10 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=3, minute=27, day_of_week=0),  # 周日凌晨 03:27
     },
 
-    # 月度复盘报告: 每月 1 日 08:10 生成上月报告
+    # 月度复盘报告: 每月 1 日 09:12 生成上月报告, 不在早晨静默窗口内触发用户提醒。
     "monthly-report-generate": {
         "task": "app.tasks.monthly_report.generate_previous_month_reports",
-        "schedule": crontab(hour=8, minute=10, day_of_month=1),
+        "schedule": crontab(hour=9, minute=12, day_of_month=1),
     },
 
     # Agent-Native v3 Increment 3 §3 — Episode action 时间窗扫描:

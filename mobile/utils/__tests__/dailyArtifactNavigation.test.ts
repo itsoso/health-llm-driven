@@ -117,9 +117,9 @@ describe('dailyArtifactNavigation', () => {
       source: null,
     });
 
-    expect(routeForNutritionActionText('拍照记餐')).toBe('/diet?capture=photo');
-    expect(routeForNutritionActionText('把早餐拍照记录下来')).toBe('/diet?capture=photo');
-    expect(buildDailyArtifactExecuteRoute(artifact({ top_action: photoLog }), photoLog)).toBe('/diet?capture=photo');
+    expect(routeForNutritionActionText('拍照记餐')).toBe('/diet?capture=photo&return_to=chat');
+    expect(routeForNutritionActionText('把早餐拍照记录下来')).toBe('/diet?capture=photo&return_to=chat');
+    expect(buildDailyArtifactExecuteRoute(artifact({ top_action: photoLog }), photoLog)).toBe('/diet?capture=photo&return_to=chat');
   });
 
   it('upgrades generic diet deep links to camera capture for photo meal actions', () => {
@@ -133,13 +133,13 @@ describe('dailyArtifactNavigation', () => {
       },
     } as any);
 
-    expect(buildDailyArtifactExecuteRoute(artifact({ top_action: photoLog }), photoLog)).toBe('/diet?capture=photo');
+    expect(buildDailyArtifactExecuteRoute(artifact({ top_action: photoLog }), photoLog)).toBe('/diet?capture=photo&return_to=chat');
   });
 
   it('upgrades raw generic diet routes when the surrounding action text means photo meal capture', () => {
-    expect(normalizeHealthActionRoute('/diet', '拍照记餐 打开相机拍一下今天午餐')).toBe('/diet?capture=photo');
+    expect(normalizeHealthActionRoute('/diet', '拍照记餐 打开相机拍一下今天午餐')).toBe('/diet?capture=photo&return_to=chat');
     expect(normalizeHealthActionRoute('/diet', '记录午餐')).toBe('/diet');
-    expect(normalizeHealthActionRoute('/diet?capture=photo', '拍照记餐')).toBe('/diet?capture=photo');
+    expect(normalizeHealthActionRoute('/diet?capture=photo', '拍照记餐')).toBe('/diet?capture=photo&return_to=chat');
   });
 
   it('keeps nutrition advice actions on the diet plan screen', () => {

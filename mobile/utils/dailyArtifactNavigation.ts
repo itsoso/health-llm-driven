@@ -41,6 +41,7 @@ const DIET_RECORD_WORDS = [
 const DIET_RECORD_VERBS = ['记录', '打卡', '拍照', '文字', '语音', 'log'];
 const DIET_RECORD_OBJECTS = ['饮食', '餐', '早餐', '午餐', '晚餐', '加餐', 'meal', 'food'];
 const DIET_PHOTO_WORDS = ['拍照记餐', '拍照记录', '拍照打卡', '拍一下', '拍餐', '拍饭', '相机'];
+const DIET_PHOTO_CHAT_CAPTURE_ROUTE = '/diet?capture=photo&return_to=chat' as const;
 const MEDICATION_WORDS = ['用药', '服药', '药', '补剂', '维生素'];
 const EXAM_WORDS = ['体检', '化验', '复查', '检查', '指标'];
 
@@ -142,10 +143,10 @@ export function inferDailyArtifactMovementTarget(
   return strengthLike ? 'strength' : null;
 }
 
-export function routeForNutritionActionText(text: string | null | undefined): '/diet' | '/diet?capture=photo' | '/diet-plan' | null {
+export function routeForNutritionActionText(text: string | null | undefined): '/diet' | typeof DIET_PHOTO_CHAT_CAPTURE_ROUTE | '/diet-plan' | null {
   const normalized = (text || '').trim().toLowerCase();
   if (!normalized) return null;
-  if (isPhotoDietRecordText(normalized)) return '/diet?capture=photo';
+  if (isPhotoDietRecordText(normalized)) return DIET_PHOTO_CHAT_CAPTURE_ROUTE;
   if (DIET_RECORD_WORDS.some((word) => normalized.includes(word.toLowerCase()))) return '/diet';
   const hasRecordIntent = DIET_RECORD_VERBS.some((word) => normalized.includes(word.toLowerCase()));
   const hasDietObject = DIET_RECORD_OBJECTS.some((word) => normalized.includes(word.toLowerCase()));
@@ -158,10 +159,10 @@ export function normalizeHealthActionRoute(route: string | null | undefined, act
   const normalizedRoute = normalizeInternalRoute(route);
   if (!normalizedRoute) return null;
   if (
-    routeForNutritionActionText(actionTextValue) === '/diet?capture=photo' &&
-    isGenericDietRoute(normalizedRoute)
+    routeForNutritionActionText(actionTextValue) === DIET_PHOTO_CHAT_CAPTURE_ROUTE &&
+    (isGenericDietRoute(normalizedRoute) || isPhotoDietCaptureRoute(normalizedRoute))
   ) {
-    return '/diet?capture=photo';
+    return DIET_PHOTO_CHAT_CAPTURE_ROUTE;
   }
   return normalizedRoute;
 }
@@ -178,6 +179,12 @@ function isGenericDietRoute(route: string): boolean {
   const [path, query = ''] = route.split('?');
   if (path !== '/diet') return false;
   return !/(^|&)capture=photo(&|$)/.test(query);
+}
+
+function isPhotoDietCaptureRoute(route: string): boolean {
+  const [path, query = ''] = route.split('?');
+  if (path !== '/diet') return false;
+  return /(^|&)capture=photo(&|$)/.test(query);
 }
 
 export function createDailyArtifactChatContext(

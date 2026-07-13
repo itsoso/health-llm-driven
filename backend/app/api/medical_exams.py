@@ -485,8 +485,11 @@ async def import_medical_exam_from_image(
         raise HTTPException(status_code=422, detail=result["error"])
 
     items = result.get("items", []) or []
-    if not items:
-        raise HTTPException(status_code=422, detail="未能从图片中识别出检查指标,请换一张更清晰的照片")
+    conclusion = (result.get("conclusion") or "").strip()
+    # 准入门 (与聊天路径对齐, 只加不减方向): 数值项非空 OR 有诊断结论全文才入库。
+    # 病理/影像报告常 0 数值项、只有诊断全文, 若仍硬性要求 items 会把它们全丢。
+    if not items and not conclusion:
+        raise HTTPException(status_code=422, detail="未能从图片中识别出检查指标或诊断结论,请换一张更清晰的照片")
 
     logger.info(f"OCR 识别完成: {result.get('report_type', '未知')} 共 {len(items)} 项")
 
@@ -496,7 +499,8 @@ async def import_medical_exam_from_image(
             exam_date=parse_date(result.get("report_date")),
             exam_type=result.get("report_type", "comprehensive"),
             hospital_name=result.get("institution"),
-            overall_assessment=result.get("conclusion"),
+            overall_assessment=conclusion or None,
+            conclusions=result.get("conclusions"),
             notes=f"从图片 OCR 导入: {file.filename}"
         )
         db.add(db_exam)
@@ -510,7 +514,9 @@ async def import_medical_exam_from_image(
                 except (ValueError, TypeError):
                     value = None
 
-            is_ab_flag = "abnormal" if it.get("is_abnormal") else "normal"
+            # 红线#2: value=null 的病理/影像项不进数值异常门 —— 只有真数值项才标 abnormal。
+            item_value_text = it.get("value_text")
+            is_ab_flag = "abnormal" if (it.get("is_abnormal") and value is not None) else "normal"
 
             ref_range_str = None
             if it.get("reference_low") is not None and it.get("reference_high") is not None:
@@ -521,11 +527,13 @@ async def import_medical_exam_from_image(
                 item_name=it.get("name"),
                 item_code=it.get("name_en"),
                 value=value,
+                value_text=item_value_text,
                 unit=it.get("unit"),
                 reference_range=ref_range_str,
                 is_abnormal=is_ab_flag,
                 source="ocr",
                 original_value=value,
+                original_value_text=item_value_text,
             )
             db.add(db_item)
 
@@ -536,10 +544,11 @@ async def import_medical_exam_from_image(
                     "item_name": it.get("name"),
                     "item_code": it.get("name_en"),
                     "value": value,
+                    "value_text": item_value_text,
                     "unit": it.get("unit"),
                     "reference_low": it.get("reference_low"),
                     "reference_high": it.get("reference_high"),
-                    "is_abnormal": bool(it.get("is_abnormal")),
+                    "is_abnormal": bool(it.get("is_abnormal")) and value is not None,
                 },
                 source="image_ocr",
             )
@@ -548,7 +557,11 @@ async def import_medical_exam_from_image(
         db.commit()
         db.refresh(db_exam)
 
-        abnormal_count = sum(1 for i in items if i.get("is_abnormal"))
+        # 红线#2: 只统计有真实数值且标异常的项 —— value=null 的病理/影像项
+        # 已在落库时压回 normal, 响应计数也不得把它们当数值异常上报。
+        abnormal_count = sum(
+            1 for i in items if i.get("is_abnormal") and i.get("value") is not None
+        )
 
         # Twin invalidation: OCR 入库后让 specialist 立刻拿新数据 (旁路)
         try:

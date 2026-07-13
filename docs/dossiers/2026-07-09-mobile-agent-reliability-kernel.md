@@ -4,8 +4,8 @@
 |---|---|
 | slug | `mobile-agent-reliability-kernel` |
 | 创建日期 | 2026-07-09 |
-| 当前阶段 | S4 分解 |
-| 状态 | building |
+| 当前阶段 | S5 验证 |
+| 状态 | verifying |
 | 负责 | Codex |
 | 反馈环 | Mobile Jest / TypeScript / backend pytest / iOS Simulator / Mobile OTA |
 
@@ -84,29 +84,40 @@
 
 ## S4 · 研发任务分解
 
-- [ ] T1 AgentTurn reducer、持久化快照与 `useChatEngine` 集成（OTA）
-- [ ] T2 WriteReceipt client contract、卡片 action 资源回执与 fail-closed（OTA）
-- [ ] T3 Agent tool_result additive receipt（backend deploy + OTA）
-- [ ] T4 Composer reducer、两条语音互斥、AppState cleanup（OTA）
-- [ ] T5 输入草稿和未发送图片 App 私有目录恢复（OTA）
-- [ ] T6 回复动作收敛、Today Focus 自适应折叠和等待态（OTA）
-- [ ] T7 小巴记忆可见性和关键体验埋点（backend deploy + OTA）
+- [x] T1 AgentTurn reducer、持久化快照与 `useChatEngine` 集成（OTA）
+- [x] T2 WriteReceipt client contract、卡片 action 资源回执与 fail-closed（OTA）
+- [x] T3 Agent tool_result additive receipt（backend deploy + OTA）
+- [x] T4 Composer reducer、两条语音互斥、AppState cleanup（OTA）
+- [x] T5 输入草稿和未发送图片 App 私有目录恢复（OTA）
+- [x] T6 回复动作收敛、Today Focus 自适应折叠和等待态（OTA）
+- [x] T7 小巴记忆可见性和关键体验埋点（backend deploy + OTA）
 - [ ] T8 G3/G4、模拟器视觉与发布闸
-- 并发检查：当前 `main...origin/main [ahead 1, behind 108]` 且存在大量并发 WIP；继续当前工作区以保留前置修改，只编辑/提交本 feature 文件，部署必须另用干净主干 worktree。
+- 并发检查：当前 `main...origin/main [ahead 2, behind 110]` 且存在大量并发 WIP；继续当前工作区以保留前置修改，只编辑/提交本 feature 文件，部署必须另用干净主干 worktree。
 
 ## S5 · 实现
 
 - 委托：health-harness-orchestrator（Codex 在当前 session 顺序执行；共享状态任务不并行写同一文件）。
 - 分支 / commit：当前项目约定直接在 `main`；提交与 push 需在完成 G3/G4 后评估远端差异。
+- 已落地：统一 AgentTurn / Composer 状态机、写入回执、账户隔离、请求 ACK 与断流恢复、输入草稿和图片恢复、双语音入口互斥、提交后停听、Today Focus 和来源可见性。
+- 第二轮加固：server-side `client_turn_id` 幂等、未最终落盘回复禁止回放、软写失败 fail-closed、跨天卡片回执身份、私有健康图片签名访问、部分图片失败回滚、语音最终文本与 hydration 竞态防护。
+- 发布前加固：单个模型响应的完整写计划在任何工具执行前封存；恢复时 `planned / in_flight / uncertain` 一律 fail-closed；会话图片引用、删除和 tombstone 清理使用跨线程/跨进程生命周期锁并在文件锁后读取最新 DB 引用；非持久化 Agent 请求在 HTTP 与 Mobile 消息终态上统一为可重试中断。
 
 ## G3 · 测试闸
 
-- 待执行。
+- Backend 受影响回归：两组不重叠测试共 `581 passed`（核心可靠性/饮食/上传/迁移/client events `272`，来源/GenUI/医疗记录/工具校验 `309`）。
+- Mobile 全量 Jest：`220 suites / 1511 tests passed`；现有 Jest runner 仍需 `--forceExit` 才能返回，作为非阻塞测试基建债跟踪。
+- 静态检查：Mobile `tsc --noEmit`、Backend `ruff` / `py_compile`、`git diff --check` 均通过。
+- 真实 PostgreSQL：主业务连接池保持未占用；turn lock 专用池 `pool_size=8 / max_overflow=0`；跨 worker 全局槽上限 `16`，超限 fail-closed。
+- 文档闸：42 份 Dossier 一致性通过；system-map/doc drift 检查通过。
+- **裁决：PASS**。模拟器视觉与真机音频验证归入 T8 / G6，不替代自动化测试结论。
 
 ## G4 · 安全闸
 
 - 触发：写路径、用药/补剂记录反馈、麦克风和健康图片隐私。
-- 待实现后独立审查。
+- 第六至第八轮独立审查提出完整写计划、legacy 图片用户隔离、图片清理 TOCTOU、非持久化 HTTP 状态、Mobile 终态、卡片持久化与图片引用提交竞态等发布阻断问题；均已补回归测试并修复。
+- 第九轮独立复审结论：无 Critical、无 Important，未发现 at-most-once、共享图片或中断卡片的同等级绕过，允许发布。
+- 已知非阻断残余：worker 若在图片原子落盘后、数据库引用提交前被 `SIGKILL`，异常清理来不及执行，可能留下仅当前用户可访问的无引用私有文件；不造成重复写或跨用户损坏，后续应增加按 DB 引用集合清扫的回收任务。
+- **裁决：PASS**。
 
 ## S6 · 部署
 
@@ -118,7 +129,7 @@
 
 ## S7 · 上线验证
 
-- 待模拟器与生产 anchor 路径验证。
+- iPhone 17 Pro Simulator 原生构建、安装和启动成功（0 errors，9 warnings）；macOS 当前锁屏，截图、键盘遮挡、前后台恢复和双语音交互仍待解锁后验证。
 
 ## G6 · 验证闸
 

@@ -1,9 +1,10 @@
 import api from './api';
 import { confirmWriteIntent, dismissWriteIntent } from './writeIntents';
-import { isMedicationRecordItem } from './medicationFilters';
 import type { ChatCardActionDescriptor } from '../components/chat/cards/types';
 import { isSafeInternalRoute } from '../utils/internalRoutes';
 import { normalizeHealthActionRoute } from '../utils/dailyArtifactNavigation';
+import { assertDietFoodItemsAllowed } from '../utils/dietIntakeGuard';
+import { createVerifiedWriteReceipt, type WriteReceipt } from './writeReceipt';
 
 type DietNutritionStatus = 'not_needed' | 'estimated' | 'estimate_failed';
 
@@ -12,32 +13,70 @@ export interface ChatCardActionResult {
   route?: string;
   nutrition_status?: DietNutritionStatus;
   patch?: Record<string, unknown>;
+  receipt?: WriteReceipt;
 }
 
 export async function dispatchChatCardAction(
   action: ChatCardActionDescriptor,
+  idempotencyKey?: string,
 ): Promise<ChatCardActionResult> {
   switch (action.action) {
     case 'agenda.complete':
       assertManualConfirm(action);
       assertEndpoint(action, '/agenda/complete');
-      await completeAgendaFromCard(action);
-      return { status: 'completed' };
+      return {
+        status: 'completed',
+        receipt: receiptFromAgendaResult(action, await completeAgendaFromCard(action)),
+      };
     case 'diet_record.create':
       assertManualConfirm(action);
       assertEndpoint(action, '/diet/records');
-      return {
+      {
+        const result = await createDietRecordFromCard(action, idempotencyKey);
+        return {
         status: 'completed',
-        nutrition_status: await createDietRecordFromCard(action),
-      };
+          nutrition_status: result.nutritionStatus,
+          receipt: createVerifiedWriteReceipt({
+            operationId: action.id || `diet_record.create:${result.recordId}`,
+            resourceType: 'diet_record',
+            resourceId: result.recordId,
+          }),
+        };
+      }
     case 'write_intent.confirm':
       assertManualConfirm(action);
-      await confirmWriteIntent(readWriteIntentId(action));
-      return { status: 'completed' };
+      {
+        const intentId = readWriteIntentId(action);
+        const result = await confirmWriteIntent(intentId);
+        if (result.status !== 'executed') throw new Error('write_intent_not_executed');
+        return {
+          status: 'completed',
+          receipt: createVerifiedWriteReceipt({
+            operationId: action.id || `write_intent.confirm:${intentId}`,
+            executedRef: result.executed_ref,
+            ...(result.executed_ref === 'acknowledged' ? {
+              resourceType: 'write_intent',
+              resourceId: intentId,
+            } : {}),
+          }),
+        };
+      }
     case 'write_intent.dismiss':
       assertManualConfirm(action);
-      await dismissWriteIntent(readWriteIntentId(action));
-      return { status: 'dismissed' };
+      {
+        const intentId = readWriteIntentId(action);
+        const result = await dismissWriteIntent(intentId);
+        if (result.status !== 'dismissed') throw new Error('write_intent_not_dismissed');
+        return {
+          status: 'dismissed',
+          receipt: createVerifiedWriteReceipt({
+            operationId: action.id || `write_intent.dismiss:${intentId}`,
+            status: 'dismissed',
+            resourceType: 'write_intent',
+            resourceId: intentId,
+          }),
+        };
+      }
     case 'route.open':
       return { status: 'opened', route: readRoute(action) };
     case 'ui.inline.expand':
@@ -97,13 +136,34 @@ function readOptionalTextList(raw: unknown): string[] {
     .slice(0, 6);
 }
 
-async function createDietRecordFromCard(action: ChatCardActionDescriptor): Promise<DietNutritionStatus> {
+async function createDietRecordFromCard(
+  action: ChatCardActionDescriptor,
+  idempotencyKey?: string,
+): Promise<{
+  nutritionStatus: DietNutritionStatus;
+  recordId: number;
+}> {
   const record = readDietRecord(action);
-  const { data } = await api.post('/diet/records', record);
-  if (!needsNutritionEstimate(record)) return 'not_needed';
+  const normalizedKey = normalizeIdempotencyKey(idempotencyKey);
+  const response = normalizedKey
+    ? await api.post('/diet/records', record, {
+      headers: { 'Idempotency-Key': normalizedKey },
+    })
+    : await api.post('/diet/records', record);
+  const { data } = response;
   const recordId = readOptionalNumericId(data?.id);
-  if (!recordId) return 'estimate_failed';
-  return backfillEstimatedNutrition(recordId, record);
+  if (!recordId) throw new Error('diet_record_missing_id');
+  if (!needsNutritionEstimate(record)) return { nutritionStatus: 'not_needed', recordId };
+  return { nutritionStatus: await backfillEstimatedNutrition(recordId, record), recordId };
+}
+
+function normalizeIdempotencyKey(raw: string | undefined): string | undefined {
+  const value = optionalText(raw);
+  if (!value) return undefined;
+  if (value.length > 160 || !/^[A-Za-z0-9._:-]+$/.test(value)) {
+    throw new Error('invalid_card_action_idempotency_key');
+  }
+  return value;
 }
 
 function assertManualConfirm(action: ChatCardActionDescriptor): void {
@@ -118,7 +178,7 @@ function assertEndpoint(action: ChatCardActionDescriptor, expected: string): voi
   }
 }
 
-async function completeAgendaFromCard(action: ChatCardActionDescriptor): Promise<void> {
+async function completeAgendaFromCard(action: ChatCardActionDescriptor): Promise<Record<string, unknown>> {
   const source = action.payload?.source;
   if (!source || typeof source.object_type !== 'string') {
     throw new Error('invalid_agenda_source');
@@ -137,7 +197,21 @@ async function completeAgendaFromCard(action: ChatCardActionDescriptor): Promise
   if (payload.status === 'skipped') {
     payload.skip_reason = action.payload?.skip_reason ?? 'no_time';
   }
-  await api.post('/agenda/complete', payload);
+  const { data } = await api.post('/agenda/complete', payload);
+  return data && typeof data === 'object' ? data : {};
+}
+
+function receiptFromAgendaResult(
+  action: ChatCardActionDescriptor,
+  result: Record<string, unknown>,
+): WriteReceipt {
+  const eventId = readOptionalNumericId(result.event_id);
+  if (!eventId) throw new Error('write_receipt_missing_identity');
+  return createVerifiedWriteReceipt({
+    operationId: action.id || `agenda.complete:${eventId}`,
+    resourceType: 'agenda_event',
+    resourceId: eventId,
+  });
 }
 
 function readWriteIntentId(action: ChatCardActionDescriptor): number {
@@ -248,43 +322,6 @@ function readFoodItems(raw: unknown): string {
   foodItems = readRequiredText(raw, 'invalid_diet_food_items');
   assertDietFoodItemsAllowed(foodItems);
   return foodItems;
-}
-
-function assertDietFoodItemsAllowed(foodItems: string): void {
-  if (looksLikeDietManagementIntent(foodItems)) {
-    throw new Error('invalid_diet_food_items_management');
-  }
-  if (looksLikeNonDietIntake(foodItems)) {
-    throw new Error('invalid_diet_food_items_non_diet');
-  }
-}
-
-function looksLikeDietManagementIntent(value: string): boolean {
-  const normalized = value.replace(/\s+/g, '').toLowerCase();
-  return [
-    '删除',
-    '删掉',
-    '删了',
-    '删去',
-    '移除',
-    '撤销',
-    '取消记录',
-    '取消这一餐',
-    '取消这餐',
-    '误删',
-    '不小心删',
-    '恢复',
-    '找回',
-  ].some((marker) => normalized.includes(marker.toLowerCase()));
-}
-
-function looksLikeNonDietIntake(value: string): boolean {
-  if (isMedicationRecordItem({ name: value })) return true;
-  if (/维\s*c\s*(?:茶|饮|饮料|果汁|柠檬|柠)/i.test(value)) return false;
-  if (/鱼油|维生素|维\s*d|d3|d2|b族|益生菌|辅酶\s*q?\s*10|甘氨酸镁|钙片|叶酸|锌片/i.test(value)) {
-    return true;
-  }
-  return /(^|[^a-z0-9])(?:nac|magnesium|glycinate)(?=$|[^a-z0-9])/i.test(value);
 }
 
 function optionalText(raw: unknown): string | undefined {

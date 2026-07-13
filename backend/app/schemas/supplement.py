@@ -125,6 +125,12 @@ class SupplementRecordCreate(SupplementRecordBase):
     user_id: int
 
 
+class SupplementRecordUpdate(BaseModel):
+    taken: Optional[bool] = None
+    taken_time: Optional[time] = None
+    notes: Optional[str] = None
+
+
 class SupplementRecordResponse(SupplementRecordBase):
     id: int
     supplement_id: int

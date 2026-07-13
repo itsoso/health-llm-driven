@@ -16,7 +16,11 @@ jest.mock('expo-router', () => ({
   useFocusEffect: (cb: () => void | (() => void)) => cb(),
 }));
 
-// 今日简报条走 React Query 的 useTodayTimeline;测试无 QueryClientProvider,mock 掉。
+jest.mock('@tanstack/react-query', () => ({
+  useQuery: () => ({ data: undefined, isLoading: false, isSuccess: false }),
+}));
+
+// 今日焦点走 React Query-backed hooks;测试无 QueryClientProvider,mock 掉。
 jest.mock('../../../hooks/useTodayTimeline', () => ({
   useTodayTimeline: () => ({ data: undefined }),
 }));
@@ -29,6 +33,7 @@ jest.mock('../../../hooks/useChatEngine', () => ({
   useChatEngine: () => ({
     messages: [],
     isStreaming: false,
+    activeTurn: { phase: 'idle', recoverable: false },
     conversationId: undefined,
     sendMessage: mockSendMessage,
     newChat: mockNewChat,
@@ -85,12 +90,6 @@ jest.mock('../OpenerCard', () => {
   const MockOpenerCard = () => <MockText>OpenerCard</MockText>;
   MockOpenerCard.displayName = 'MockOpenerCard';
   return MockOpenerCard;
-});
-// BriefingStrip 依赖 React Query provider, 本 suite 无 provider → mock 掉。
-jest.mock('../BriefingStrip', () => {
-  const MockBriefingStrip = () => <MockText>BriefingStrip</MockText>;
-  MockBriefingStrip.displayName = 'MockBriefingStrip';
-  return MockBriefingStrip;
 });
 
 import ChatScreen from '../../../app/(tabs)/chat';

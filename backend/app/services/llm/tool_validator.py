@@ -69,6 +69,9 @@ NUMERIC_RANGES: Dict[str, Dict[str, tuple]] = {
     "water": {
         "amount": (10, 5000, None),            # ml; missing amount must stay visible
     },
+    "waist": {
+        "waist_cm": (30.0, 200.0, None),       # cm
+    },
     "diet": {
         "calories": (0, 10000, None),          # kcal — None 不强制
         "protein": (0, 500, None),
@@ -80,6 +83,23 @@ NUMERIC_RANGES: Dict[str, Dict[str, tuple]] = {
         "duration": (1, 720, None),            # 分钟
         "distance": (0.0, 200.0, None),        # km
         "calories_burned": (0, 5000, None),
+    },
+    "goal": {
+        "target_value": (0.0, 100000.0, None),
+        "current_value": (0.0, 100000.0, None),
+        "priority": (1, 10, 5),
+    },
+    "sleep": {
+        "duration_minutes": (1, 1440, None),
+        "duration_hours": (0.1, 24.0, None),
+        "sleep_quality": (1, 5, 3),
+        "wake_count": (0, 50, 0),
+    },
+    "excretion": {
+        "stool_type": (1, 7, None),
+        "duration_minutes": (0, 180, None),
+        "urgency": (1, 5, None),
+        "pain_level": (0, 5, None),
     },
     "rhinitis": {
         "sneezing": (0, 200, 0),
@@ -226,11 +246,22 @@ def _validate_required(
         "diet": ["food_items"],
         "water": ["amount"],
         "weight": ["weight"],
+        "waist": ["waist_cm"],
         "blood_pressure": ["systolic", "diastolic"],
         "exercise": ["exercise_type"],
+        "goal": ["goal_type", "goal_period", "title"],
+        "excretion": ["type"],
         "medication": [],  # medication_id 或 medication_name 二选一, 由 API 层判
         "illness": ["name"],
     }
+    if rtype == "sleep":
+        has_times = data.get("bedtime") and data.get("wake_time")
+        has_duration = data.get("duration_minutes") or data.get("duration_hours") or data.get("duration")
+        if not (has_times or has_duration):
+            return (
+                "Error: sleep 记录必须包含 bedtime+wake_time 或 duration_minutes/duration_hours。"
+                "请补充睡眠时长或入睡/醒来时间后重新调用 health_record."
+            )
     needs = required.get(rtype, [])
     missing = [f for f in needs if not data.get(f)]
     if missing:
@@ -256,6 +287,32 @@ def validate_health_record(
     """
     warnings: list = []
     today = datetime.now(BEIJING_TZ).date()
+
+    if rtype == "waist" and "waist_cm" not in data:
+        for alias in ("waist", "value", "cm", "腰围"):
+            if data.get(alias) is not None:
+                data["waist_cm"] = data[alias]
+                break
+
+    if rtype == "excretion":
+        raw_type = data.get("type") or data.get("excretion_type") or data.get("kind")
+        if raw_type is not None:
+            normalized_type = str(raw_type).strip().lower()
+            type_aliases = {
+                "stool": "bowel",
+                "poop": "bowel",
+                "feces": "bowel",
+                "便便": "bowel",
+                "大便": "bowel",
+                "排便": "bowel",
+                "bowel_movement": "bowel",
+                "pee": "urine",
+                "urination": "urine",
+                "小便": "urine",
+                "尿": "urine",
+                "排尿": "urine",
+            }
+            data["type"] = type_aliases.get(normalized_type, normalized_type)
 
     if rtype == "illness" and "name" not in data and data.get("illness_name"):
         data["name"] = data["illness_name"]
@@ -346,7 +403,8 @@ _PLAN_ACTIONS = {"generate_weekly", "complete_item", "save_to_card"}
 _MANAGE_RECORD_TYPES = {
     "diet", "water", "weight", "waist", "blood_pressure",
     "sleep", "mood", "excretion", "exercise", "illness", "symptom",
-    "medication", "medication_log", "supplement_definition", "reminder",
+    "medication", "medication_log", "supplement", "supplement_definition",
+    "goal", "medical_exam", "reminder",
 }
 _MANAGE_OPERATIONS = {"list", "update", "delete"}
 _CARD_TYPES = {"plan", "insight", "recommendation"}

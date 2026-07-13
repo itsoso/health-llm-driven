@@ -1,6 +1,6 @@
 import React from 'react';
-import { StyleSheet } from 'react-native';
-import { fireEvent, render } from '@testing-library/react-native';
+import { Alert, StyleSheet } from 'react-native';
+import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import type { UIMessage } from '../../../hooks/useChatEngine';
@@ -63,6 +63,10 @@ jest.mock('../../../services/interventionDraft', () => ({
 jest.mock('../../../utils/share', () => ({
   sharePlainText: jest.fn(),
 }));
+const mockSaveChatImageToLibrary = jest.fn();
+jest.mock('../../../services/chatImageSave', () => ({
+  saveChatImageToLibrary: (...args: any[]) => mockSaveChatImageToLibrary(...args),
+}));
 jest.mock('../../actions/InterventionDraftSheet', () => {
   const React = require('react');
   const { View } = require('react-native');
@@ -102,6 +106,38 @@ describe('ChatBubble streaming degraded render', () => {
     expect(mockMarkdownMount).not.toHaveBeenCalled();
     // Raw content shows as plain text, newlines preserved (literal markdown markers visible).
     expect(getByText(CONTENT)).toBeTruthy();
+  });
+
+  it('does not enable native text selection inside bubbles, so long press stays on the custom message menu', () => {
+    const { getByText, rerender } = render(
+      <QueryClientProvider client={new QueryClient()}>
+        <ChatBubble
+          item={{
+            id: 'user-selectable-regression',
+            role: 'user',
+            content: '口腔溃疡应该吃什么药',
+            streaming: false,
+          }}
+        />
+      </QueryClientProvider>,
+    );
+
+    expect(getByText('口腔溃疡应该吃什么药').props.selectable).not.toBe(true);
+
+    rerender(
+      <QueryClientProvider client={new QueryClient()}>
+        <ChatBubble
+          item={{
+            id: 'assistant-streaming-selectable-regression',
+            role: 'assistant',
+            content: '正在整理建议。',
+            streaming: true,
+          }}
+        />
+      </QueryClientProvider>,
+    );
+
+    expect(getByText('正在整理建议。').props.selectable).not.toBe(true);
   });
 
   it('renders a slim status line (not a panel) before the first token', () => {
@@ -165,8 +201,9 @@ describe('ChatBubble streaming degraded render', () => {
     expect(getByText('读取健康数据')).toBeTruthy();
     expect(getByLabelText('当前步骤:读取健康数据')).toBeTruthy();
     const panelStyle = StyleSheet.flatten(getByTestId('assistant-thinking-panel').props.style);
-    expect(panelStyle.alignSelf).toBe('stretch');
-    expect(panelStyle.minWidth).toBeGreaterThanOrEqual(260);
+    expect(panelStyle.alignSelf).toBe('flex-start');
+    expect(panelStyle.maxWidth).toBe('100%');
+    expect(panelStyle.minWidth ?? 0).toBe(0);
     expect(getByText('今晚优先固定睡眠时间。')).toBeTruthy();
   });
 
@@ -179,12 +216,13 @@ describe('ChatBubble streaming degraded render', () => {
       thinkingSteps: ['正在理解你的问题', '读取记录信息', '整理回复中'],
     });
 
-    // 完成态默认折叠成低干扰状态行: 「思考完成 · N 步」, 步骤列表隐藏.
+    // 完成态默认折叠成低干扰胶囊: 「思考完成 · N 步」, 步骤列表隐藏.
     expect(getByText('思考完成 · 3 步')).toBeTruthy();
     const panelStyle = StyleSheet.flatten(getByTestId('assistant-thinking-panel').props.style);
-    expect(panelStyle.alignSelf).toBe('stretch');
+    expect(panelStyle.alignSelf).toBe('flex-start');
+    expect(panelStyle.borderRadius).toBeGreaterThanOrEqual(14);
     expect(panelStyle.borderWidth ?? 0).toBe(0);
-    expect(panelStyle.backgroundColor).toBe('transparent');
+    expect(panelStyle.backgroundColor).not.toBe('transparent');
     expect(queryByText('正在理解你的问题')).toBeNull();
     expect(queryByLabelText('已完成步骤:整理回复中')).toBeNull();
     // 助手正文不受折叠影响, 始终可见.
@@ -255,5 +293,63 @@ describe('ChatBubble streaming degraded render', () => {
     // Terminal state goes through the rich markdown path.
     expect(getByTestId('rich-markdown')).toBeTruthy();
     expect(mockMarkdownMount).toHaveBeenCalled();
+  });
+
+  it('offers saving attached chat images to Photos from a long press', async () => {
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation((_title, _message, buttons) => {
+      buttons?.find(button => button.text === '保存到相册')?.onPress?.();
+    });
+    mockSaveChatImageToLibrary.mockResolvedValueOnce(undefined);
+
+    const { getByLabelText } = renderBubble({
+      id: 'user-image',
+      role: 'user',
+      content: '',
+      imageUris: ['file:///tmp/lunch.jpg'],
+      streaming: false,
+    });
+
+    fireEvent(getByLabelText('打开图片 1'), 'longPress');
+
+    await waitFor(() => {
+      expect(mockSaveChatImageToLibrary).toHaveBeenCalledWith({ uri: 'file:///tmp/lunch.jpg' });
+    });
+
+    alertSpy.mockRestore();
+  });
+
+  // Bug 1 regression: LLM 吐脏 markdown (无空格标题 / 黏连表头分隔) 时, done 首帧就应
+  // 通过 normalize 后走富 markdown, 不再显示生 markdown 原文等 setState 才刷正。
+  const DIRTY_MARKDOWN = [
+    '##今日状态总览',
+    '',
+    '| 指标 | 数值 | 状态 || --- | --- | --- |',
+    '| 睡眠 | 7h | 良好 |',
+    '',
+    '###1. 今晚早睡',
+  ].join('\n');
+
+  it('normalizes dirty LLM markdown into a parseable rich tree on the done first frame', () => {
+    const { getByTestId, queryByText } = renderBubble({
+      id: 'assistant-done-dirty',
+      role: 'assistant',
+      content: DIRTY_MARKDOWN,
+      streaming: false,
+    });
+
+    // 走富 markdown 路径 (非纯文本降级), 且传入的是归一化后的内容。
+    expect(getByTestId('rich-markdown')).toBeTruthy();
+    expect(mockMarkdownMount).toHaveBeenCalled();
+    const rendered = mockMarkdownMount.mock.calls[mockMarkdownMount.mock.calls.length - 1][0];
+    // renderedMarkdown 非空且已补空格标题 / 拆开表格黏连行。
+    expect(typeof rendered).toBe('string');
+    expect(rendered.length).toBeGreaterThan(0);
+    expect(rendered).toContain('## 今日状态总览');
+    expect(rendered).toContain('### 1. 今晚早睡');
+    // 无空格黏连标题不再残留。
+    expect(rendered).not.toMatch(/^##今日/m);
+    expect(rendered).not.toMatch(/^###1\./m);
+    // 黏连表格分隔已被拆开处理, 不再逐字出现原始生 markdown 原文。
+    expect(queryByText(DIRTY_MARKDOWN)).toBeNull();
   });
 });

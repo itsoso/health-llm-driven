@@ -47,6 +47,18 @@ describe('chatResultActions', () => {
     )).toBeNull();
   });
 
+  it('routes medication-like assistant replies to the medication draft confirmation page', async () => {
+    await expect(createRecordFromAssistantReply(
+      '好的，记录你刚服用了沃克 20mg。我准备记录：用药：沃克（富马酸伏诺拉生片）20mg。',
+    )).resolves.toEqual({
+      status: 'needs_manual',
+      message: '已识别到用药草稿，请确认后写入',
+      route: '/medications?draft=medication&name=%E6%B2%83%E5%85%8B%EF%BC%88%E5%AF%8C%E9%A9%AC%E9%85%B8%E4%BC%8F%E8%AF%BA%E6%8B%89%E7%94%9F%E7%89%87%EF%BC%89&dose=20mg',
+    });
+
+    expect(api.post).not.toHaveBeenCalled();
+  });
+
   it('creates a quick record from assistant text when a deterministic record can be inferred', async () => {
     (api.post as jest.Mock).mockResolvedValueOnce({
       data: {

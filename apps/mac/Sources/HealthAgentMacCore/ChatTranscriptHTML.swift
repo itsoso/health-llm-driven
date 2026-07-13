@@ -120,6 +120,12 @@ public enum ChatTranscriptHTML {
         var pendingBullets: [String] = []
         var pendingNumbered: [String] = []
         var pendingTableRows: [[String]] = []
+        // 有序列表跨"被子 bullet 打断"仍连续编号:LLM 常把每个顶级条目都写成 "1.",
+        // 且插在条目间的子 bullet 会把 <ol> 冲断成一串单条列表 → 浏览器每个都从 1 显示。
+        // 用跨 flush 的运行计数 + <ol start=N> 让编号延续;只在真正的列表分界
+        // (标题/段落/分割线)重置回 1。
+        var numberedNext = 1        // 下一个有序 <li> 该显示的序号
+        var numberedRunStart = 1    // 当前 pending run 的 <ol start> 起始值
 
         func flushBullets() {
             guard !pendingBullets.isEmpty else { return }
@@ -128,7 +134,8 @@ public enum ChatTranscriptHTML {
         }
         func flushNumbered() {
             guard !pendingNumbered.isEmpty else { return }
-            html += "<ol>" + pendingNumbered.map { "<li>\($0)</li>" }.joined() + "</ol>"
+            let startAttr = numberedRunStart > 1 ? " start=\"\(numberedRunStart)\"" : ""
+            html += "<ol\(startAttr)>" + pendingNumbered.map { "<li>\($0)</li>" }.joined() + "</ol>"
             pendingNumbered = []
         }
         func flushTable() {
@@ -152,11 +159,13 @@ public enum ChatTranscriptHTML {
             switch block {
             case .heading(let level, let text):
                 flushAll()
+                numberedNext = 1
                 let clampedLevel = min(max(level, 1), 4)
                 let inner = inlineMarkdown(escape(text))
                 html += "<h\(clampedLevel)>\(inner)</h\(clampedLevel)>"
             case .paragraph(let text):
                 flushAll()
+                numberedNext = 1
                 html += "<p>\(inlineMarkdown(escape(text)))</p>"
             case .bullet(let text):
                 flushNumbered()
@@ -165,13 +174,17 @@ public enum ChatTranscriptHTML {
             case .numbered(_, let text):
                 flushBullets()
                 flushTable()
+                // 忽略源里的 index(LLM 常全写 "1"),用运行计数;pending 为空=新一段的起点
+                if pendingNumbered.isEmpty { numberedRunStart = numberedNext }
                 pendingNumbered.append(inlineMarkdown(escape(text)))
+                numberedNext += 1
             case .tableRow(let columns):
                 flushBullets()
                 flushNumbered()
                 pendingTableRows.append(columns.map { inlineMarkdown(escape($0)) })
             case .divider:
                 flushAll()
+                numberedNext = 1
                 html += "<hr/>"
             }
         }
@@ -1073,4 +1086,92 @@ public enum ChatTranscriptHTML {
     public static func messagesJSONArray(_ messages: [RenderedMessage]) -> String {
         "[" + messages.map(\.jsonObject).joined(separator: ",") + "]"
     }
+
+    // MARK: - Thinking-process trace (rendered inside the streaming assistant bubble)
+
+    /// The "thinking process" trace as a collapsible `<details>` inside the assistant
+    /// bubble, so it sits with the answer (top of a short chat, bottom of a scrolled
+    /// one) and — mobile-style — stays reviewable after the answer instead of
+    /// vanishing. `open` = expanded (live, during the wait) vs collapsed (answer
+    /// streaming / completed). Repeated activities fold into distinct rows with a ×N
+    /// count; the collapsed header briefly names what was looked at / called. Labels
+    /// resolved via `L10n.text` (the `"Working: %@…"` key splices the backend zh tool
+    /// label). Empty steps → "" (caller falls back to `thinkingLineHTML`).
+    public static func thinkingTraceHTML(steps: [ThinkingStep], language: String, open: Bool) -> String {
+        guard !steps.isEmpty else { return "" }
+        let lang = AppLanguage(rawValue: language) ?? .defaultLanguage
+        func composite(_ key: String, _ detail: String?) -> String { key + "\u{1}" + (detail ?? "") }
+        func resolve(_ key: String, _ detail: String?) -> String {
+            let template = L10n.text(key, language: lang)
+            if let detail { return String(format: template, detail) }
+            return template
+        }
+        // De-clutter: fold repeated activities (the backend often emits the same tool
+        // status many times) into distinct rows in first-occurrence order, with counts.
+        var order: [(key: String, detail: String?)] = []
+        var count: [String: Int] = [:]
+        for step in steps {
+            let ck = composite(step.labelKey, step.labelDetail)
+            if count[ck] == nil { order.append((step.labelKey, step.labelDetail)) }
+            count[ck, default: 0] += 1
+        }
+        // Only the latest step's activity spins; everything else is done.
+        var runningKey: String? = nil
+        if let last = steps.last, last.state == .running {
+            runningKey = composite(last.labelKey, last.labelDetail)
+        }
+        var rowsHTML = ""
+        for item in order {
+            let ck = composite(item.key, item.detail)
+            let running = ck == runningKey
+            let glyph = running
+                ? "<span class=\"rv-tk-spin\"></span>"
+                : "<span class=\"rv-tk-done\">✓</span>"
+            let rowCls = running ? "rv-tk-row rv-tk-run" : "rv-tk-row"
+            var label = resolve(item.key, item.detail)
+            if let n = count[ck], n > 1 { label += " ×\(n)" }
+            rowsHTML += "<div class=\"\(rowCls)\"><span class=\"rv-tk-g\">\(glyph)</span><span>\(escape(label))</span></div>"
+        }
+        // Brief header hint of what was looked at / called: the distinct tool-detail
+        // labels (the `Working: %@` steps carry the concrete activity), capped short.
+        var briefParts: [String] = []
+        for item in order {
+            if let d = item.detail, !d.isEmpty, !briefParts.contains(d) { briefParts.append(d) }
+        }
+        let brief = briefParts.prefix(4).joined(separator: "、")
+        let title = escape(L10n.text("Thinking process", language: lang))
+        let briefHTML = brief.isEmpty ? "" : "<span class=\"rv-tk-brief\"> · \(escape(brief))</span>"
+        let openAttr = open ? " open" : ""
+        return thinkingStyle
+            + "<details class=\"rv-tk\"\(openAttr)><summary class=\"rv-tk-sum\">\(title)\(briefHTML)</summary><div class=\"rv-tk-body\">\(rowsHTML)</div></details>"
+    }
+
+    /// Single-line fallback for backends that emit no `status` steps (thinkingSteps
+    /// empty). `text` is already localized. Not collapsible — there's nothing to fold.
+    public static func thinkingLineHTML(_ text: String) -> String {
+        thinkingStyle
+            + "<div class=\"rv-tk-line\"><span class=\"rv-tk-g\"><span class=\"rv-tk-spin\"></span></span><span>\(escape(text))</span></div>"
+    }
+
+    /// Shared inline styles for the in-bubble trace. Self-contained (no dependency on
+    /// chat-transcript.html CSS), legible on light/dark. The header disclosure is a
+    /// pure-CSS chevron (no emoji/brain icon) that rotates open↔closed.
+    private static let thinkingStyle = """
+    <style>
+    .rv-tk{font-size:12.5px;margin:2px 0 6px;border-left:2px solid rgba(140,143,152,.22);padding-left:10px}
+    .rv-tk-sum{list-style:none;cursor:pointer;color:#8a8f98;font-weight:600;display:flex;align-items:center;gap:6px;user-select:none;-webkit-user-select:none}
+    .rv-tk-sum::-webkit-details-marker{display:none}
+    .rv-tk-sum::before{content:"";width:5px;height:5px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(-45deg);transition:transform .15s ease;display:inline-block;opacity:.7;margin-right:1px}
+    .rv-tk[open] .rv-tk-sum::before{transform:rotate(45deg)}
+    .rv-tk-brief{font-weight:400;color:#9aa0a8}
+    .rv-tk-body{margin-top:6px}
+    .rv-tk-row{display:flex;align-items:flex-start;gap:8px;color:#8a8f98;line-height:1.5;margin:3px 0}
+    .rv-tk-run{color:inherit}
+    .rv-tk-line{display:flex;align-items:center;gap:8px;color:#8a8f98;line-height:1.5;margin:2px 0}
+    .rv-tk-g{flex:0 0 15px;display:inline-flex;justify-content:center;align-items:center;align-self:flex-start;margin-top:2px}
+    .rv-tk-done{color:#3aa76d;font-size:12px}
+    .rv-tk-spin{width:10px;height:10px;border:2px solid rgba(140,143,152,.4);border-top-color:#3aa76d;border-radius:50%;display:inline-block;animation:rv-tk-rot .7s linear infinite}
+    @keyframes rv-tk-rot{to{transform:rotate(360deg)}}
+    </style>
+    """
 }

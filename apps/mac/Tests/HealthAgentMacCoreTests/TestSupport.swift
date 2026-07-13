@@ -105,3 +105,33 @@ extension URLRequest {
         return data
     }
 }
+
+/// A `AgentStreamServicing` stub that replays a fixed list of events per turn.
+/// Each `stream()` call pops the next script from `scripts`; once exhausted it
+/// yields nothing and finishes (so an over-eager caller can't crash). Lets a
+/// ViewModel test drive the real `send()` loop with deterministic status/token/
+/// done sequences without a network or SSE parser in the loop.
+final class ScriptedStreamService: AgentStreamServicing, @unchecked Sendable {
+    private let lock = NSLock()
+    private var scripts: [[AgentStreamEvent]]
+
+    init(scripts: [[AgentStreamEvent]]) {
+        self.scripts = scripts
+    }
+
+    func stream(
+        message: String,
+        conversationID: Int?,
+        extraContext: String?
+    ) -> AsyncThrowingStream<AgentStreamEvent, Error> {
+        lock.lock()
+        let events = scripts.isEmpty ? [] : scripts.removeFirst()
+        lock.unlock()
+        return AsyncThrowingStream { continuation in
+            for event in events {
+                continuation.yield(event)
+            }
+            continuation.finish()
+        }
+    }
+}

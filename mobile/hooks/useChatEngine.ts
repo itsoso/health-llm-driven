@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, useReducer } from 'react';
 import { AppState } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import * as Haptics from 'expo-haptics';
@@ -8,8 +8,23 @@ import { streamChat, getConversations, getConversationMessages, deleteConversati
 import { dispatchCard, renderServerCards } from '../components/chat/cards';
 import type { ChatCardActionDescriptor, ServerCardDescriptor } from '../components/chat/cards/types';
 import api, { BASE_URL } from '../services/api';
-import { emitClientEvent } from '../services/clientEvents';
+import { durationBucket, emitClientEvent } from '../services/clientEvents';
 import { sanitizeChatErrorMessage } from '../utils/chatErrorMessage';
+import {
+  createIdleAgentTurn,
+  isAgentTurnTerminal,
+  reduceAgentTurn,
+  type AgentTurnEvent,
+  type AgentTurnState,
+} from '../utils/agentTurnState';
+import {
+  acknowledgePendingWriteReceipt,
+  loadPendingWriteReceipt,
+  mergeConversationContinuity,
+  rememberVerifiedWriteReceipt,
+} from '../services/conversationContinuity';
+import { getAuthStorageScope } from '../services/authStorageScope';
+import { normalizeWriteReceipt, type WriteReceipt } from '../services/writeReceipt';
 
 function normalizeImageHost(baseUrl: string): string {
   return String(baseUrl || '').replace(/\/+$/, '').replace(/\/api(?:\/v\d+)?$/, '');
@@ -34,6 +49,8 @@ export interface UIMessage extends ChatMessage {
   cardType?: string;
   cardData?: any;
   cardActions?: ChatCardActionDescriptor[];
+  sourceMessageId?: number;
+  sourceTurnId?: string;
   createdAt?: string;
   fromSiri?: boolean;
   // 2026-05-13: 性能可观测 — done 事件的耗时 + 模型名, 渲染在 assistant 气泡底部
@@ -49,10 +66,32 @@ export interface UIMessage extends ChatMessage {
   // 2026-06-12: 本轮调用的 Skill / 工具名 (后端 done.tools_used / meta.tools_used), 对齐 mac/web
   toolsUsed?: string[];
   completionStatus?: 'complete' | 'interrupted' | 'error' | 'unknown';
+  writeReceipts?: WriteReceipt[];
 }
 
 let msgCounter = 0;
 function nextId(): string { return `msg-${++msgCounter}-${Date.now()}`; }
+let turnCounter = 0;
+function nextTurnId(): string { return `turn-${++turnCounter}-${Date.now()}`; }
+
+function digestTurnRequest(value: string): string {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `${(hash >>> 0).toString(16)}-${value.length}`;
+}
+
+export function buildTurnRequestFingerprint(
+  text: string,
+  images?: { uri: string; type?: string }[] | null,
+): string {
+  return digestTurnRequest(JSON.stringify({
+    text: text.trim(),
+    images: (images || []).map(image => ({ uri: image.uri, type: image.type || '' })),
+  }));
+}
 
 /** 2026-05-14 FIX-7: 把 message.meta (后端持久化的性能/可解释性 JSON)
  * 映射到 UIMessage 字段, 让 reload 也能恢复 chat bubble footer. */
@@ -71,7 +110,16 @@ function applyMeta(msg: any): Partial<UIMessage> {
     toolsUsed: Array.isArray(meta.tools_used) ? meta.tools_used : undefined,
     completionStatus: typeof meta.completion_status === 'string' ? meta.completion_status : undefined,
     thinkingSteps: normalizeThinkingSteps(meta.thinking_steps ?? meta.thought_steps),
+    writeReceipts: normalizeWriteReceipts(meta.write_receipts),
   };
+}
+
+function normalizeWriteReceipts(value: unknown): WriteReceipt[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const receipts = value
+    .map(normalizeWriteReceipt)
+    .filter((receipt): receipt is WriteReceipt => !!receipt);
+  return receipts.length > 0 ? receipts : undefined;
 }
 
 function normalizeThinkingSteps(value: unknown): string[] | undefined {
@@ -111,6 +159,15 @@ function parseHistoryImageUris(raw: any, imageHost: string): string[] | undefine
   return uris.length > 0 ? uris : undefined;
 }
 
+function assistantMessageForTurn(msgs: any[], turnId: string): any | undefined {
+  return [...(msgs || [])].reverse().find((message: any) => (
+    message?.role === 'assistant'
+    && message?.meta?.client_turn_id === turnId
+    && typeof message.content === 'string'
+    && message.content.trim().length > 0
+  ));
+}
+
 /** Restore durable chat messages plus server-rendered cards from history.
  *
  * Live streams render cards from the `done.cards` payload. The backend also
@@ -144,6 +201,10 @@ export function restoreMessagesFromHistory(
         cardType: card.type,
         cardData: card.data,
         cardActions: card.actions,
+        sourceMessageId: typeof m.id === 'number' ? m.id : undefined,
+        sourceTurnId: typeof m?.meta?.client_turn_id === 'string'
+          ? m.meta.client_turn_id
+          : undefined,
         createdAt: m.created_at,
       });
     });
@@ -159,6 +220,7 @@ const BRIEFING_CONVERSATION_TITLE = '每日健康简报';
 const DEFAULT_WINDOW_DAYS = 7;
 const LAST_CONVERSATION_ID_KEY = 'chat:last_conversation_id:v1';
 const PENDING_STREAM_STARTED_AT_KEY = 'chat:pending_stream_started_at:v1';
+const ACTIVE_TURN_KEY = 'chat:active_turn:v1';
 const PENDING_STREAM_TTL_MS = 10 * 60 * 1000;
 const THINKING_PLACEHOLDER = '⏳ AI 正在思考中...';
 const MAX_THINKING_STEPS = 8;
@@ -169,6 +231,34 @@ const LOCAL_STREAM_HOLD_MS = 30 * 1000;
 // P0-1 节流: 思考面板 (thinkingSteps) 更新最小间隔。快路由下 status/tool 事件密集到达,
 // 逐事件 setMessages 全量 map 会打满 JS 线程 —— 攒到 >=200ms 才 flush 一次思考步骤。
 const THINKING_FLUSH_MS = 200;
+
+export function scopedChatStorageKey(baseKey: string, scope: string): string {
+  return `${baseKey}:${scope}`;
+}
+
+async function currentChatStorageKey(baseKey: string): Promise<string> {
+  return scopedChatStorageKey(baseKey, await getAuthStorageScope());
+}
+
+function parseStoredAgentTurn(raw: string | null): AgentTurnState | null {
+  if (!raw) return null;
+  try {
+    const value = JSON.parse(raw);
+    if (
+      value?.version !== 1
+      || typeof value?.phase !== 'string'
+      || typeof value?.turnId !== 'string'
+      || typeof value?.recoverable !== 'boolean'
+      || typeof value?.hadWrite !== 'boolean'
+    ) return null;
+    if (typeof value.updatedAt === 'number' && Date.now() - value.updatedAt > PENDING_STREAM_TTL_MS) {
+      return null;
+    }
+    return value as AgentTurnState;
+  } catch {
+    return null;
+  }
+}
 
 function stripThinkingPlaceholder(content: string): string {
   return content.replace(THINKING_PLACEHOLDER, '');
@@ -199,6 +289,7 @@ function insertCardMessagesAfterAssistant(
   messages: UIMessage[],
   assistantId: string,
   cards: ServerCardDescriptor[],
+  sourceTurnId?: string,
 ): UIMessage[] {
   if (cards.length === 0) return messages;
   const insertAtBase = messages.findIndex(m => m.id === assistantId);
@@ -213,13 +304,16 @@ function insertCardMessagesAfterAssistant(
     cardType: card.type,
     cardData: card.data,
     cardActions: card.actions,
+    sourceTurnId,
   }));
   return [...messages.slice(0, insertAt), ...cardMessages, ...messages.slice(insertAt)];
 }
 
 async function readStoredConversationId(): Promise<number | null> {
   try {
-    const raw = await AsyncStorage.getItem(LAST_CONVERSATION_ID_KEY);
+    const key = await currentChatStorageKey(LAST_CONVERSATION_ID_KEY);
+    await AsyncStorage.removeItem(LAST_CONVERSATION_ID_KEY);
+    const raw = await AsyncStorage.getItem(key);
     const id = raw ? Number(raw) : NaN;
     return Number.isFinite(id) && id > 0 ? id : null;
   } catch {
@@ -229,24 +323,37 @@ async function readStoredConversationId(): Promise<number | null> {
 
 async function rememberConversationId(id: number | undefined | null): Promise<void> {
   if (!id) return;
-  try { await AsyncStorage.setItem(LAST_CONVERSATION_ID_KEY, String(id)); } catch {}
+  try {
+    await AsyncStorage.setItem(await currentChatStorageKey(LAST_CONVERSATION_ID_KEY), String(id));
+  } catch {}
 }
 
 async function forgetConversationId(): Promise<void> {
-  try { await AsyncStorage.removeItem(LAST_CONVERSATION_ID_KEY); } catch {}
+  try {
+    await AsyncStorage.removeItem(await currentChatStorageKey(LAST_CONVERSATION_ID_KEY));
+  } catch {}
 }
 
 async function markPendingStream(): Promise<void> {
-  try { await AsyncStorage.setItem(PENDING_STREAM_STARTED_AT_KEY, String(Date.now())); } catch {}
+  try {
+    await AsyncStorage.setItem(
+      await currentChatStorageKey(PENDING_STREAM_STARTED_AT_KEY),
+      String(Date.now()),
+    );
+  } catch {}
 }
 
 async function clearPendingStream(): Promise<void> {
-  try { await AsyncStorage.removeItem(PENDING_STREAM_STARTED_AT_KEY); } catch {}
+  try {
+    await AsyncStorage.removeItem(await currentChatStorageKey(PENDING_STREAM_STARTED_AT_KEY));
+  } catch {}
 }
 
 async function hasFreshPendingStream(): Promise<boolean> {
   try {
-    const raw = await AsyncStorage.getItem(PENDING_STREAM_STARTED_AT_KEY);
+    const raw = await AsyncStorage.getItem(
+      await currentChatStorageKey(PENDING_STREAM_STARTED_AT_KEY),
+    );
     const startedAt = raw ? Number(raw) : NaN;
     return Number.isFinite(startedAt) && Date.now() - startedAt < PENDING_STREAM_TTL_MS;
   } catch {
@@ -257,11 +364,79 @@ async function hasFreshPendingStream(): Promise<boolean> {
 export function useChatEngine(opts: UseChatEngineOptions = {}) {
   const [messages, setMessages] = useState<UIMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [activeTurn, reduceAgentTurnDispatch] = useReducer(reduceAgentTurn, undefined, createIdleAgentTurn);
+  const activeTurnRef = useRef(activeTurn);
+  const terminalTelemetryKeysRef = useRef<Set<string>>(new Set());
+  const emitAgentTurnTerminal = useCallback((
+    turnId: string,
+    startedAt: number,
+    phase: 'completed' | 'failed' | 'interrupted',
+    errorCode?: string,
+  ) => {
+    const key = `${turnId}:${phase}`;
+    if (terminalTelemetryKeysRef.current.has(key)) return;
+    terminalTelemetryKeysRef.current.add(key);
+    if (terminalTelemetryKeysRef.current.size > 200) {
+      const oldest = terminalTelemetryKeysRef.current.values().next().value;
+      if (oldest) terminalTelemetryKeysRef.current.delete(oldest);
+    }
+    void emitClientEvent('agent_turn_terminal', {
+      phase,
+      duration_bucket: durationBucket(startedAt),
+      ...(errorCode ? { error_code: errorCode } : {}),
+    });
+  }, []);
+  const hydrationGateRef = useRef<{ promise: Promise<void>; resolve: () => void } | null>(null);
+  if (!hydrationGateRef.current) {
+    let resolve!: () => void;
+    const promise = new Promise<void>((ready) => { resolve = ready; });
+    hydrationGateRef.current = { promise, resolve };
+  }
+  const dispatchAgentTurn = useCallback((event: AgentTurnEvent): AgentTurnState => {
+    const next = reduceAgentTurn(activeTurnRef.current, event);
+    activeTurnRef.current = next;
+    reduceAgentTurnDispatch(event);
+    return next;
+  }, []);
+  const [activeTurnHydrated, setActiveTurnHydrated] = useState(false);
   const [conversationId, setConversationId] = useState<number | undefined>(undefined);
   const [windowDays, setWindowDays] = useState<number | undefined>(DEFAULT_WINDOW_DAYS);
   const [hasMoreHistory, setHasMoreHistory] = useState(false);
   const briefingInjected = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
+  useEffect(() => { activeTurnRef.current = activeTurn; }, [activeTurn]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void currentChatStorageKey(ACTIVE_TURN_KEY).then(async (key) => {
+      await AsyncStorage.removeItem(ACTIVE_TURN_KEY);
+      return { key, raw: await AsyncStorage.getItem(key) };
+    }).then(({ key, raw }) => {
+      if (cancelled) return;
+      const stored = parseStoredAgentTurn(raw);
+      if (stored && stored.phase !== 'idle' && stored.phase !== 'completed') {
+        dispatchAgentTurn({ type: 'hydrate', snapshot: stored });
+      } else if (raw) {
+        void AsyncStorage.removeItem(key);
+      }
+    }).finally(() => {
+      if (!cancelled) {
+        setActiveTurnHydrated(true);
+        hydrationGateRef.current?.resolve();
+      }
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!activeTurnHydrated) return;
+    void currentChatStorageKey(ACTIVE_TURN_KEY).then((key) => {
+      if (activeTurn.turnId && activeTurn.recoverable && activeTurn.phase !== 'completed') {
+        return AsyncStorage.setItem(key, JSON.stringify(activeTurn));
+      }
+      return AsyncStorage.removeItem(key);
+    }).catch(() => undefined);
+  }, [activeTurn, activeTurnHydrated]);
   // 2026-05-14: 标记是否有正在进行的 stream — 离开页面回来时, 如果还在 stream
   // 后端 G-W9 bg task 还在跑), 重新 fetch 拉服务端最新消息.
   const streamingRef = useRef(false);
@@ -290,6 +465,59 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
   // 把后端写入的最终消息拉回前端显示.
   useEffect(() => () => { /* no-op: 不在 unmount 时 abort */ }, []);
 
+  const reconcileActiveTurnFromServer = useCallback((id: number, msgs: any[]) => {
+    const current = activeTurnRef.current;
+    if (!current.turnId || !current.recoverable) return;
+    if (current.conversationId && current.conversationId !== id) return;
+
+    const assistant = assistantMessageForTurn(msgs, current.turnId);
+    if (!assistant) {
+      dispatchAgentTurn({
+        type: 'recover',
+        serverStatus: 'running',
+        conversationId: id,
+        at: Date.now(),
+      });
+      return;
+    }
+
+    const completionStatus = assistant?.meta?.completion_status;
+    const recoveredReceipts = normalizeWriteReceipts(assistant?.meta?.write_receipts) || [];
+    const recoveredWrite = recoveredReceipts.length > 0;
+    const missingWriteReceipt = current.hadWrite && !recoveredWrite;
+    if (recoveredWrite) {
+      void rememberVerifiedWriteReceipt(recoveredReceipts[recoveredReceipts.length - 1]).catch(() => {
+        console.warn('[chat] recovered write receipt persistence failed');
+      });
+    }
+    const recoveredStatus = completionStatus === 'interrupted'
+      ? 'interrupted'
+      : completionStatus === 'error' || missingWriteReceipt
+        ? 'failed'
+        : 'completed';
+    const recoveredErrorCode = completionStatus === 'interrupted'
+      ? 'stream_interrupted'
+      : missingWriteReceipt
+        ? 'write_receipt_missing_identity'
+        : undefined;
+    dispatchAgentTurn({
+      type: 'recover',
+      serverStatus: recoveredStatus,
+      conversationId: id,
+      messageId: typeof assistant.id === 'number' ? assistant.id : undefined,
+      errorCode: recoveredErrorCode,
+      hadWrite: current.hadWrite || recoveredWrite,
+      writeVerified: recoveredWrite ? true : (current.hadWrite ? false : current.writeVerified),
+      at: Date.now(),
+    });
+    emitAgentTurnTerminal(
+      current.turnId,
+      current.startedAt ?? Date.now(),
+      recoveredStatus,
+      recoveredErrorCode,
+    );
+  }, [emitAgentTurnTerminal]);
+
   const reloadCurrentFromServer = useCallback(async () => {
     if (!conversationId) return;
     // P0-5: 本地流式态活跃且 <30s → 让位, 不用服务端半截 partial 覆盖本地流。
@@ -306,10 +534,11 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       const restored = restoreMessagesFromHistory(msgs, IMAGE_HOST, 'hist');
       setMessages(restored);
       setIsStreaming(false);  // 清掉 streaming 残留态
+      reconcileActiveTurnFromServer(conversationId, msgs);
     } catch {
       // 网络失败不影响现有 UI
     }
-  }, [conversationId, windowDays]);
+  }, [conversationId, windowDays, reconcileActiveTurnFromServer]);
 
   const restoreCards = useCallback(async (restored: UIMessage[]) => {
     const userMsgs = restored.filter(m => m.role === 'user' && m.content);
@@ -335,16 +564,16 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     }
   }, []);
 
-  const recoverConversationFromServer = useCallback(async (id: number) => {
+  const recoverConversationFromServer = useCallback(async (id: number, expectedTurnId?: string) => {
     try {
       const { messages: msgs, total_messages } = await getConversationMessages(
         id,
         { days: windowDays || DEFAULT_WINDOW_DAYS },
       );
-      const hasAssistantAnswer = msgs.some((m: any) =>
-        m?.role === 'assistant' && typeof m.content === 'string' && m.content.trim().length > 0
-      );
-      if (!hasAssistantAnswer) return false;
+      const turnId = expectedTurnId || activeTurnRef.current.turnId;
+      if (!turnId) return false;
+      const assistantAnswer = assistantMessageForTurn(msgs, turnId);
+      if (!assistantAnswer) return false;
 
       setConversationId(id);
       void rememberConversationId(id);
@@ -352,11 +581,25 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       const restored = restoreMessagesFromHistory(msgs, IMAGE_HOST, 'hist');
       setMessages(restored);
       restoreCards(restored);
-      return true;
+      reconcileActiveTurnFromServer(id, msgs);
+      const completionStatus = (assistantAnswer as any)?.meta?.completion_status;
+      const recoveredReceipts = normalizeWriteReceipts((assistantAnswer as any)?.meta?.write_receipts) || [];
+      const current = activeTurnRef.current;
+      const missingWriteReceipt = current.turnId === turnId && current.hadWrite && recoveredReceipts.length === 0;
+      return {
+        completionStatus: typeof completionStatus === 'string'
+          ? completionStatus
+          : undefined,
+        terminalPhase: completionStatus === 'error' || missingWriteReceipt
+          ? 'failed' as const
+          : completionStatus === 'interrupted'
+            ? 'interrupted' as const
+            : 'completed' as const,
+      };
     } catch {
       return false;
     }
-  }, [restoreCards, windowDays]);
+  }, [reconcileActiveTurnFromServer, restoreCards, windowDays]);
 
   const loadConversationFromServer = useCallback(async (id: number, idPrefix: string = 'hist') => {
     const { messages: msgs, total_messages } = await getConversationMessages(id, { days: DEFAULT_WINDOW_DAYS });
@@ -369,10 +612,12 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     const restored = restoreMessagesFromHistory(msgs, IMAGE_HOST, idPrefix);
     setMessages(restored);
     restoreCards(restored);
+    reconcileActiveTurnFromServer(id, msgs);
     return true;
-  }, [restoreCards]);
+  }, [reconcileActiveTurnFromServer, restoreCards]);
 
   const loadLatestConversation = useCallback(async (options?: { preferBriefing?: boolean }) => {
+    await hydrationGateRef.current?.promise;
     // P0-5: 本地流式态活跃且 <30s → 不拉服务端最近对话覆盖当前流。
     if (localStreamOwnsState()) return;
     try {
@@ -466,31 +711,92 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
   const sendMessage = useCallback(async (
     text: string,
     pendingImages?: { uri: string; base64?: string; type?: string }[] | null,
-    sendOpts?: { fromSiri?: boolean; extraContext?: string; forceNewConversation?: boolean },
+    sendOpts?: {
+      fromSiri?: boolean;
+      extraContext?: string;
+      forceNewConversation?: boolean;
+      channel?: 'typed' | 'voice' | 'siri';
+      onAccepted?: (accepted: boolean) => void;
+    },
   ) => {
+    let acceptanceSettled = false;
+    let acceptedByServer = false;
+    const settleAcceptance = (accepted: boolean) => {
+      if (acceptanceSettled) return;
+      acceptanceSettled = true;
+      acceptedByServer = accepted;
+      sendOpts?.onAccepted?.(accepted);
+    };
     const msg = text.trim();
     const hasImages = pendingImages && pendingImages.length > 0;
-    if (!msg && !hasImages) return;
-    if (isStreaming) return;
+    if (!msg && !hasImages) {
+      settleAcceptance(false);
+      return false;
+    }
+    if (isStreaming) {
+      settleAcceptance(false);
+      return false;
+    }
 
-    const net = await NetInfo.fetch();
-    if (!net.isConnected) {
+    const finalMsg = msg || (hasImages ? '请分析这些图片' : '');
+    const requestFingerprint = buildTurnRequestFingerprint(finalMsg, pendingImages);
+    const forceNewConversation = !!sendOpts?.forceNewConversation;
+    const previousTurn = activeTurnRef.current;
+    const turnId = (
+      !forceNewConversation
+      && previousTurn.recoverable
+      && previousTurn.turnId
+      && previousTurn.requestFingerprint === requestFingerprint
+    ) ? previousTurn.turnId : nextTurnId();
+    const turnStartedAt = Date.now();
+    const emitAgentTerminal = (
+      phase: 'completed' | 'failed' | 'interrupted',
+      errorCode?: string,
+    ) => {
+      emitAgentTurnTerminal(turnId, turnStartedAt, phase, errorCode);
+    };
+    dispatchAgentTurn({
+      type: 'submit',
+      turnId,
+      at: turnStartedAt,
+      requestFingerprint,
+      label: '正在提交…',
+    });
+
+    let isConnected: boolean | null = null;
+    try {
+      isConnected = (await NetInfo.fetch()).isConnected;
+    } catch {
+      if (__DEV__) console.warn('[chat] network status probe failed; attempting request');
+    }
+    if (isConnected === false) {
       const errMsg: UIMessage = { id: nextId(), role: 'assistant', content: '⚠️ 网络不可用，请检查网络连接后重试' };
       setMessages(prev => [...prev, { id: nextId(), role: 'user', content: msg || '(图片)', imageUris: hasImages ? pendingImages.map(i => i.uri) : undefined, fromSiri: sendOpts?.fromSiri }, errMsg]);
-      return;
+      dispatchAgentTurn({
+        type: 'fail',
+        at: Date.now(),
+        errorCode: 'network_unavailable',
+        label: '网络不可用',
+        recoverable: true,
+      });
+      emitAgentTerminal('failed', 'network_unavailable');
+      settleAcceptance(false);
+      return false;
     }
 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
     // Phase 0.4: 埋点 — 用户实际发出的对话, 区分入口 (siri vs chat)
+    const inputChannel: 'typed' | 'voice' | 'siri' = sendOpts?.fromSiri
+      ? 'siri'
+      : (sendOpts?.channel ?? 'typed');
     try {
       emitClientEvent('chat_message_sent', {
-        source: sendOpts?.fromSiri ? 'siri' : 'chat',
+        source: inputChannel === 'typed' ? 'chat' : inputChannel,
         has_image: !!hasImages,
       });
     } catch { /* noop */ }
 
-    const forceNewConversation = !!sendOpts?.forceNewConversation;
     const targetConversationId = forceNewConversation ? undefined : conversationId;
     if (forceNewConversation) {
       setConversationId(undefined);
@@ -499,7 +805,6 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       briefingInjected.current = false;
     }
 
-    const finalMsg = msg || (hasImages ? '请分析这些图片' : '');
     const uris = hasImages ? pendingImages.map(i => i.uri) : undefined;
     const userMsg: UIMessage = { id: nextId(), role: 'user', content: finalMsg, imageUris: uris, fromSiri: sendOpts?.fromSiri };
     const aId = nextId();
@@ -520,6 +825,27 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     const ac = new AbortController();
     abortRef.current = ac;
 
+    let pendingContinuityReceipt: Awaited<ReturnType<typeof loadPendingWriteReceipt>>;
+    try {
+      pendingContinuityReceipt = await loadPendingWriteReceipt();
+    } catch {
+      console.warn('[chat] continuity receipt restore failed');
+    }
+    const outboundExtraContext = mergeConversationContinuity(
+      sendOpts?.extraContext,
+      pendingContinuityReceipt,
+    );
+    let continuityAcknowledged = false;
+    const acknowledgeContinuityOnce = async () => {
+      if (!pendingContinuityReceipt || continuityAcknowledged) return;
+      continuityAcknowledged = true;
+      try {
+        await acknowledgePendingWriteReceipt(pendingContinuityReceipt.operationId);
+      } catch {
+        console.warn('[chat] continuity receipt acknowledgement failed');
+      }
+    };
+
     let gotFirstToken = false;
     const slowTimer = setTimeout(() => {
       if (!gotFirstToken) {
@@ -528,6 +854,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     }, 8000);
 
     let streamConversationId = targetConversationId;
+    const writeToolStartedAt = new Map<string, number>();
 
     // Token 攒批: 快路由 (deepseek-v4-flash) 后每个 SSE chunk 到达快得多, 逐 chunk
     // setMessages 全数组 map 是热点. 累积到缓冲, 每 ~80ms flush 一次; done/error/card/
@@ -535,11 +862,20 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     // 声明在 try 外, 让 catch 也能收尾 flush 已接收内容 (避免异常吞掉最后一批).
     let pendingTokenText = '';
     let tokenFlushTimer: ReturnType<typeof setTimeout> | null = null;
-    const flushTokenBuffer = () => {
+    // 取出并清空 token 缓冲 (含 timer), 不自己 setMessages —— 让调用方把这最后一批
+    // 折进同一次 setMessages。done 收尾要用它保证「落最后内容」与「streaming:false」
+    // 在同一帧原子完成: 否则 flushTokenBuffer 与 finally 的 streaming:false 是两次
+    // 独立 setMessages, done 首帧可能 streaming 已翻 false 但 content 还是半量 →
+    // renderedMarkdown memo 拿旧内容, 首帧渲染成生 markdown, 下一次 setState 才刷对。
+    const drainPendingTokenText = () => {
       if (tokenFlushTimer) { clearTimeout(tokenFlushTimer); tokenFlushTimer = null; }
-      if (!pendingTokenText) return;
       const batch = pendingTokenText;
       pendingTokenText = '';
+      return batch;
+    };
+    const flushTokenBuffer = () => {
+      const batch = drainPendingTokenText();
+      if (!batch) return;
       setMessages(prev => prev.map(m => m.id === aId ? { ...m, content: mergeAssistantStreamContent(m.content, batch) } : m));
     };
 
@@ -569,19 +905,63 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     try {
       const toolsUsed: Set<string> = new Set();
       const streamedCardKeys: Set<string> = new Set();
+      const removeStreamedTurnCards = () => {
+        setMessages(prev => prev.filter(
+          message => !message.cardType || message.sourceTurnId !== turnId,
+        ));
+      };
       let sawDone = false;
-      for await (const evt of streamChat(finalMsg, targetConversationId, hasImages ? pendingImages : undefined, ac.signal, sendOpts?.extraContext)) {
+      let sawError = false;
+      for await (const evt of streamChat(
+        finalMsg,
+        targetConversationId,
+        hasImages ? pendingImages : undefined,
+        ac.signal,
+        outboundExtraContext,
+        inputChannel,
+        turnId,
+      )) {
         if (evt.thought) {
           // 节流进思考面板 (>=200ms 一批), 不逐事件 setMessages。
           queueThought(evt.thought);
         }
         if (evt.type === 'start') {
+          dispatchAgentTurn({
+            type: 'accepted',
+            at: Date.now(),
+            conversationId: evt.conversationId,
+            label: evt.thought || '正在理解…',
+          });
+          if (evt.conversationId) {
+            streamConversationId = evt.conversationId;
+            if (!targetConversationId) setConversationId(evt.conversationId);
+            void rememberConversationId(evt.conversationId);
+          }
+        } else if (evt.type === 'persisted') {
+          if (evt.clientTurnId !== turnId) {
+            console.warn('[chat] ignored mismatched persistence acknowledgement');
+            continue;
+          }
+          settleAcceptance(true);
+          await acknowledgeContinuityOnce();
+          dispatchAgentTurn({
+            type: 'accepted',
+            at: Date.now(),
+            conversationId: evt.conversationId,
+            label: '请求已保存，正在处理…',
+          });
           if (evt.conversationId) {
             streamConversationId = evt.conversationId;
             if (!targetConversationId) setConversationId(evt.conversationId);
             void rememberConversationId(evt.conversationId);
           }
         } else if (evt.type === 'status') {
+          dispatchAgentTurn({
+            type: 'status',
+            at: Date.now(),
+            stage: evt.statusStage,
+            label: evt.statusLabel,
+          });
           // P0-1 (刀⑤): status 事件 → 气泡顶部单行状态。首 token 前才有意义,
           // 首 token 到达后清空 (见下方 token 分支)。只在还没出正文时更新, 避免正文中途回退状态行。
           if (!gotFirstToken && evt.statusLabel) {
@@ -591,6 +971,53 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
             )));
           }
         } else if (evt.type === 'token' || evt.type === 'tool') {
+          if (evt.type === 'tool' && evt.toolName) {
+              if (typeof evt.toolSuccess === 'boolean') {
+                const writes = evt.writeAttempted
+                  ?? (evt.toolName === 'health_record' && evt.writeCompleted !== false);
+              const toolSucceeded = evt.toolSuccess && (!writes || evt.writeCompleted === true);
+              dispatchAgentTurn({
+                type: 'tool_finished',
+                at: Date.now(),
+                toolName: evt.toolName,
+                writes,
+                success: toolSucceeded,
+                receiptVerified: writes ? evt.receipt?.verified === true : undefined,
+                errorCode: toolSucceeded ? undefined : 'tool_failed',
+                label: evt.thought,
+              });
+              if (writes && toolSucceeded && evt.receipt?.verified === true) {
+                try {
+                  await rememberVerifiedWriteReceipt(evt.receipt);
+                } catch {
+                  console.warn('[chat] verified write receipt persistence failed');
+                }
+              }
+              if (writes) {
+                const verified = toolSucceeded && evt.receipt?.verified === true;
+                void emitClientEvent('write_receipt_terminal', {
+                  phase: verified ? 'verified' : (toolSucceeded ? 'unverified' : 'failed'),
+                  duration_bucket: durationBucket(writeToolStartedAt.get(evt.toolName) ?? turnStartedAt),
+                  action_type: evt.toolName,
+                  verified,
+                  ...(!verified ? {
+                    error_code: toolSucceeded ? 'write_receipt_missing_identity' : 'tool_failed',
+                  } : {}),
+                });
+              }
+              writeToolStartedAt.delete(evt.toolName);
+            } else {
+              const writes = evt.writeAttempted ?? evt.toolName === 'health_record';
+              if (writes) writeToolStartedAt.set(evt.toolName, Date.now());
+              dispatchAgentTurn({
+                type: 'tool_started',
+                at: Date.now(),
+                toolName: evt.toolName,
+                writes,
+                label: evt.thought,
+              });
+            }
+          }
           const incoming = sanitizeChatErrorMessage(evt.content || '', '');
           if (incoming) {
             if (!gotFirstToken) {
@@ -617,11 +1044,65 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
             return true;
           });
           if (uniqueCards.length > 0) {
-            setMessages(prev => insertCardMessagesAfterAssistant(prev, aId, uniqueCards));
+            setMessages(prev => insertCardMessagesAfterAssistant(prev, aId, uniqueCards, turnId));
           }
         } else if (evt.type === 'done') {
           sawDone = true;
-          flushTokenBuffer();
+          const effectiveCompletionStatus = evt.requestPersisted === false
+            ? 'interrupted'
+            : evt.completionStatus;
+          const doneProvesPersistence = (
+            typeof evt.conversationId === 'number'
+            && typeof evt.messageId === 'number'
+          );
+          if (
+            evt.requestPersisted !== false
+            && (acceptedByServer || doneProvesPersistence)
+          ) {
+            settleAcceptance(true);
+            await acknowledgeContinuityOnce();
+          } else {
+            settleAcceptance(false);
+          }
+          if (evt.writeReceipts?.length) {
+            const latestReceipt = evt.writeReceipts[evt.writeReceipts.length - 1];
+            dispatchAgentTurn({
+              type: 'tool_finished',
+              at: Date.now(),
+              writes: true,
+              success: true,
+              receiptVerified: true,
+            });
+            try {
+              await rememberVerifiedWriteReceipt(latestReceipt);
+            } catch {
+              console.warn('[chat] done write receipt persistence failed');
+            }
+          }
+          const terminalTurn = dispatchAgentTurn({
+            type: 'done',
+            at: Date.now(),
+            completionStatus: effectiveCompletionStatus,
+            conversationId: evt.conversationId,
+            messageId: evt.messageId,
+          });
+          if (terminalTurn.phase === 'failed') {
+            emitAgentTerminal('failed', terminalTurn.errorCode || 'agent_turn_failed');
+          } else if (terminalTurn.phase === 'interrupted') {
+            emitAgentTerminal('interrupted', terminalTurn.errorCode || 'server_completion_interrupted');
+          } else if (terminalTurn.phase === 'completed') {
+            emitAgentTerminal('completed');
+          }
+          const allowDoneCards = (
+            evt.requestPersisted !== false
+            && terminalTurn.phase === 'completed'
+            && typeof evt.messageId === 'number'
+          );
+          // done 收尾原子性: 把 token 缓冲里最后一批一起折进这次 setMessages, 且同帧
+          // 把 streaming 翻 false —— 不再靠 finally 的 streaming:false 分帧收尾。这样
+          // done 首帧就是「完整内容 + streaming:false」, ChatBubble 的 renderedMarkdown
+          // memo 拿到全量文本并走富 markdown, 不会先闪一帧生 markdown 再自动刷正。
+          const lastBatch = drainPendingTokenText();
           flushThinkingBuffer();  // 收尾: 把节流缓冲里最后的思考步骤落盘 (done 可能覆盖为服务端权威列表)。
           if (evt.conversationId) {
             streamConversationId = evt.conversationId;
@@ -629,22 +1110,29 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
             void rememberConversationId(evt.conversationId);
           }
           // 把耗时 + 模型名写入当前 assistant 消息 (ChatBubble 渲染 footer)。清空 status 行 (收进思考完成态 pill)。
-          setMessages(prev => prev.map(m => m.id === aId ? {
-            ...m,
-            currentStatus: undefined,
-            elapsedMs: evt.elapsedMs,
-            llmMs: evt.llmMs,
-            llmRounds: evt.llmRounds,
-            llmRoundsMs: evt.llmRoundsMs,
-            model: evt.model,
-            llmUsage: evt.llmUsage,
-            perf: evt.perf,
-            sourcesUsed: evt.sourcesUsed,
-            toolsUsed: evt.toolsUsed,
-            completionStatus: evt.completionStatus,
-            thinkingSteps: evt.thinkingSteps?.length ? evt.thinkingSteps : m.thinkingSteps,
-          } : m));
-          const rawDoneCards = Array.isArray((evt as any).cards) ? (evt as any).cards : [];
+          setMessages(prev => prev
+            .filter(m => allowDoneCards || !m.cardType || m.sourceTurnId !== turnId)
+            .map(m => m.id === aId ? {
+              ...m,
+              content: lastBatch ? mergeAssistantStreamContent(m.content, lastBatch) : m.content,
+              streaming: false,
+              currentStatus: undefined,
+              elapsedMs: evt.elapsedMs,
+              llmMs: evt.llmMs,
+              llmRounds: evt.llmRounds,
+              llmRoundsMs: evt.llmRoundsMs,
+              model: evt.model,
+              llmUsage: evt.llmUsage,
+              perf: evt.perf,
+              sourcesUsed: evt.sourcesUsed,
+              toolsUsed: evt.toolsUsed,
+              completionStatus: effectiveCompletionStatus,
+              thinkingSteps: evt.thinkingSteps?.length ? evt.thinkingSteps : m.thinkingSteps,
+              writeReceipts: evt.writeReceipts,
+            } : m));
+          const rawDoneCards = (
+            allowDoneCards && Array.isArray((evt as any).cards)
+          ) ? (evt as any).cards : [];
           const serverCards = renderServerCards(rawDoneCards).filter((card) => {
             const key = serverCardKey(card);
             if (streamedCardKeys.has(key)) return false;
@@ -660,8 +1148,10 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
               cardType: single.type,
               cardData: single.data,
               cardActions: single.actions,
+              sourceMessageId: evt.messageId,
+              sourceTurnId: turnId,
             }]);
-          } else if (rawDoneCards.length === 0) {
+          } else if (allowDoneCards && rawDoneCards.length === 0) {
             const card = await dispatchCard({
               query: finalMsg,
               query_lower: finalMsg.toLowerCase(),
@@ -670,10 +1160,27 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
               api,
             });
             if (card) {
-              setMessages(prev => [...prev, { id: nextId(), role: 'assistant', content: '', cardType: card.type, cardData: card.data }]);
+              setMessages(prev => [...prev, {
+                id: nextId(),
+                role: 'assistant',
+                content: '',
+                cardType: card.type,
+                cardData: card.data,
+                sourceTurnId: turnId,
+              }]);
             }
           }
         } else if (evt.type === 'error') {
+          sawError = true;
+          removeStreamedTurnCards();
+          dispatchAgentTurn({
+            type: 'fail',
+            at: Date.now(),
+            errorCode: 'stream_error_event',
+            label: sanitizeChatErrorMessage(evt.content, '请求出错，请稍后再试'),
+            recoverable: true,
+          });
+          emitAgentTerminal('failed', 'stream_error_event');
           flushTokenBuffer();
           flushThinkingBuffer();
           const errMsg = sanitizeChatErrorMessage(evt.content, '请求出错，请稍后再试');
@@ -687,9 +1194,13 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
           } : m));
         }
       }
+      settleAcceptance(false);
       flushTokenBuffer();
       flushThinkingBuffer();
-      if (!sawDone) {
+      if (!sawDone && !sawError) {
+        removeStreamedTurnCards();
+        dispatchAgentTurn({ type: 'interrupt', at: Date.now(), errorCode: 'stream_ended_without_done' });
+        emitAgentTerminal('interrupted', 'stream_ended_without_done');
         setMessages(prev => prev.map(m => m.id === aId ? {
           ...m,
           currentStatus: undefined,
@@ -702,11 +1213,38 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     } catch (err: any) {
       flushTokenBuffer();
       flushThinkingBuffer();
+      setMessages(prev => prev.filter(
+        message => !message.cardType || message.sourceTurnId !== turnId,
+      ));
       const isAbort = err?.message === 'aborted';
       if (!isAbort && streamConversationId) {
-        const recovered = await recoverConversationFromServer(streamConversationId);
-        if (recovered) return;
+        const recovered = await recoverConversationFromServer(streamConversationId, turnId);
+        if (recovered) {
+          settleAcceptance(true);
+          if (recovered.terminalPhase === 'failed') {
+            emitAgentTerminal('failed', 'recovered_server_error');
+          } else if (recovered.terminalPhase === 'interrupted') {
+            emitAgentTerminal('interrupted', 'recovered_server_interrupted');
+          } else {
+            emitAgentTerminal('completed');
+          }
+          return true;
+        }
       }
+      settleAcceptance(false);
+      dispatchAgentTurn(isAbort
+        ? { type: 'interrupt', at: Date.now(), errorCode: 'stream_aborted' }
+        : {
+            type: 'fail',
+            at: Date.now(),
+            errorCode: 'stream_request_failed',
+            label: sanitizeChatErrorMessage(err?.message, '请求失败'),
+            recoverable: true,
+          });
+      emitAgentTerminal(
+        isAbort ? 'interrupted' : 'failed',
+        isAbort ? 'stream_aborted' : 'stream_request_failed',
+      );
       setMessages(prev => prev.map(m => m.id === aId ? {
         ...m,
         currentStatus: undefined,
@@ -727,13 +1265,18 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       setMessages(prev => prev.map(m => m.id === aId ? { ...m, streaming: false, currentStatus: undefined } : m));
       setIsStreaming(false);
     }
+    return acceptedByServer;
   }, [isStreaming, conversationId, opts.contextData, recoverConversationFromServer]);
 
   const newChat = useCallback(() => {
     setMessages([]);
     setConversationId(undefined);
+    dispatchAgentTurn({ type: 'reset' });
     void forgetConversationId();
     void clearPendingStream();
+    void currentChatStorageKey(ACTIVE_TURN_KEY)
+      .then(key => AsyncStorage.removeItem(key))
+      .catch(() => undefined);
     briefingInjected.current = false;
   }, []);
 
@@ -746,6 +1289,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
   return {
     messages,
     isStreaming,
+    activeTurn,
     conversationId,
     sendMessage,
     newChat,

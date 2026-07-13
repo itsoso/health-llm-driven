@@ -57,6 +57,27 @@ describe('buildAiShareMessage', () => {
     expect(buildAiShareMessage(content)).toBe(`${content}\n\n— 小巴`);
   });
 
+  it('turns a completed diet record reply into a polished WeChat/XHS-ready share note', () => {
+    const content = [
+      '✅ 已记录午餐 — 煎牛肉能量碗 + 姜黄鲜柠维C茶，770 kcal（蛋白 30g / 碳水 70g / 脂肪 17g）',
+      '晚餐建议：优先补 40g 蛋白，少油少刺激。',
+    ].join('\n');
+
+    expect(buildAiShareMessage(content)).toBe([
+      '今天这餐被小巴认真记下来了',
+      '',
+      '午餐 · 煎牛肉能量碗 + 姜黄鲜柠维C茶',
+      '',
+      '770 kcal · 蛋白 30g · 碳水 70g · 脂肪 17g',
+      '',
+      '下一步：晚餐优先补 40g 蛋白，少油少刺激。',
+      '',
+      '#饮食记录 #健康管理 #小巴',
+      '',
+      '— 小巴',
+    ].join('\n'));
+  });
+
   it('structures flattened advice with headings and action labels', () => {
     const content = '收到，立刻撤回"加量"建议！ 你的身体反馈是最准确的，20 分钟对你来说就是黄金安全区。 🛑 为什么上次"连跑三天挂了"？ 结合你的病史，原因很可能是： 免疫"开窗期"：连续跑步后，免疫系统会短暂下降。 累积疲劳：连续跑没有给关节和肌肉修复时间。 🛡️ 新策略：细水长流（保命版） 时长锁定：20 分钟，绝不贪多。 频率红线：跑一休一 或 跑二休一。 看灯行事：身体电量 < 50 或 HRV 不平衡就不跑。 跑后防护（关键）：出汗后立刻擦干。 总结：今天的 20 分钟非常完美。 💧 提醒：跑后记得补 300ml 水。';
 

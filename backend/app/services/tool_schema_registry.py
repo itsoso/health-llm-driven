@@ -129,23 +129,28 @@ days 参数: 默认 7. 问"昨天" → days=1; 问"最近 / 这周" → days=7; 
                         "type": "string",
                         "enum": ["water", "weight", "blood_pressure", "exercise",
                                  "diet", "supplement", "supplement_group", "rhinitis",
+                                 "waist", "sleep", "excretion",
                                  "mood", "medication", "illness", "symptom",
-                                 "garmin_sync", "reminder"],
+                                 "garmin_sync", "reminder", "goal"],
                         "description": """记录类型:
 - water: 饮水 ("喝了杯水" / "喝了咖啡")
 - diet: 饮食 ("早餐吃了…" / "吃了牛排")
 - supplement: 单个补剂打卡 ("吃了鱼油")
 - supplement_group: 按时段批量打卡 ("早上的药都吃了")
 - weight: 体重
+- waist: 腰围
 - blood_pressure: 血压
+- sleep: 手动补录睡眠
 - exercise: 用户手动录的简单锻炼 (俯卧撑/瑜伽等). 注意: Garmin 跑步手表自动同步, 不要让用户走这个
+- excretion: 排便/排尿
 - rhinitis: 鼻炎症状 (喷嚏/鼻塞/流涕)
 - mood: 情绪
 - medication: 服药一次
 - illness: 生病 / 急性症状周期 (感冒/流感/发烧). 用户明确说"我感冒了/生病了/发烧了"优先记录 illness
 - symptom: 身体症状记录 (咳嗽/嗓子疼/鼻塞/流涕/眼痒/膝盖痛/皮肤起疹 等). **不需要慢病档案**, 任何偶发症状都走这个；感冒相关症状用 body_part=respiratory/general
 - garmin_sync: 触发 Garmin 数据立即同步
-- reminder: 设置提醒""",
+- reminder: 设置提醒
+- goal: 设置健康目标 ("每天运动40分钟", "90天腰围降到82cm")""",
                     },
                     "data": {
                         "type": "object",
@@ -161,9 +166,13 @@ diet:  {"meal_type": "breakfast|lunch|dinner|snack",  // 用英文枚举
 supplement:       {"supplement_name": "鱼油"}          // 按名字匹配用户已定义的补剂
 supplement_group: {"timing": "morning|noon|evening|bedtime"}
 weight:           {"weight": 72.2, "record_date": "2026-05-05"}  // weight 必须在 data 里, 不能放顶层!
+waist:            {"waist_cm": 82, "record_date": "2026-05-05"}   // cm, 可用 waist/value 别名但优先 waist_cm
 blood_pressure:   {"systolic": 120, "diastolic": 80, "record_date": "..."}
+sleep:            {"duration_hours": 7.5, "wake_time": "2026-05-05T07:30:00+08:00", "sleep_quality": 4}
+                  或 {"bedtime": "2026-05-04T23:30:00+08:00", "wake_time": "2026-05-05T07:00:00+08:00", "sleep_quality": 4}
 exercise:         {"exercise_type": "俯卧撑", "reps": 10, "sets": 1}
                   或 {"exercise_type": "running", "duration": 30, "distance": 5.0}
+excretion:        {"type": "bowel|urine", "stool_type": 4, "record_time": "08:10:00"}  // 大便/小便会归一化
 rhinitis:         {"sneezing": 2, "congestion": 1, "runny_nose": 0}  // 0-3 级
 mood:             {"score": 7, "notes": "心情不错"}    // score 1-10
 medication:       {"medication_name": "布洛芬", "taken_time": "08:00"}
@@ -175,7 +184,12 @@ symptom:          {"body_part": "eye|respiratory|skin|digestive|musculoskeletal|
 garmin_sync:      {}
 reminder:         {"title": "臀中肌训练", "message": "蚌式开合、侧卧抬腿、臀桥",
                    "remind_at": "2026-06-30T10:30:00+08:00",
-                   "recurrence": "daily", "priority": "normal"}""",
+                   "recurrence": "daily", "priority": "normal"}
+goal:             {"goal_type": "exercise|diet|sleep|water|supplement|outdoor|weight|other",
+                   "goal_period": "daily|weekly|monthly|yearly",
+                   "title": "每日运动40分钟",
+                   "target_value": 40, "target_unit": "分钟",
+                   "start_date": "2026-07-06"}""",
                     },
                 },
                 "required": ["record_type", "data"],
@@ -198,8 +212,9 @@ reminder:         {"title": "臀中肌训练", "message": "蚌式开合、侧卧
 
 支持 record_type:
 - diet, water, weight, waist, blood_pressure, sleep, mood, excretion: 支持 list/update/delete
-- illness, medication, supplement_definition: 支持 list/update/delete
-- exercise, symptom, medication_log, reminder: 支持 list/update/delete
+- illness, medication, supplement, supplement_definition: 支持 list/update/delete
+- exercise, symptom, medication_log, reminder, goal: 支持 list/update/delete
+- medical_exam: 仅支持 list 报告级列表;指标级读取继续用 health_query(medical_exam)
 """,
             "parameters": {
                 "type": "object",
@@ -210,7 +225,8 @@ reminder:         {"title": "臀中肌训练", "message": "蚌式开合、侧卧
                             "diet", "water", "weight", "waist", "blood_pressure",
                             "sleep", "mood", "excretion", "exercise", "illness",
                             "symptom", "medication", "medication_log",
-                            "supplement_definition", "reminder",
+                            "supplement", "supplement_definition", "goal",
+                            "medical_exam", "reminder",
                         ],
                         "description": "要管理的数据类型",
                     },
@@ -227,6 +243,11 @@ reminder:         {"title": "臀中肌训练", "message": "蚌式开合、侧卧
                         "type": "string",
                         "description": "list 可选日期 YYYY-MM-DD。饮食支持按日期汇总; 其他类型走最近列表。",
                     },
+                    "meal_type": {
+                        "type": "string",
+                        "enum": ["breakfast", "lunch", "dinner", "snack", "extra", "早餐", "午餐", "晚餐", "加餐", "夜宵"],
+                        "description": "仅 record_type=diet 且 operation=list 时使用。用户明确说早餐/午餐/晚餐/加餐时必须带上, 用于只列该餐次候选, 避免把晚餐误改成加餐。",
+                    },
                     "data": {
                         "type": "object",
                         "description": """update 的字段补丁。例如:
@@ -236,7 +257,9 @@ weight: {"weight":71.2}
 blood_pressure: {"systolic":120,"diastolic":78}
 illness: {"status":"resolved","severity":2}
 medication: {"name":"二甲双胍","dosage":"500mg"}
+supplement: {"taken":false,"notes":"误点,已撤销"}
 supplement_definition: {"name":"维生素D","dosage":"2000IU"}
+goal: {"title":"每日运动40分钟","target_value":40}
 exercise: {"reps":20,"sets":2}
 symptom: {"severity":2,"notes":"洗鼻后缓解"}
 medication_log: {"status":"skipped","skip_reason":"医生要求暂停"}
@@ -475,6 +498,9 @@ action 选择:
           用户明确同意后**重新调用并带 confirmed=true** 才真正建周期。
           目标指标由当前异常的代谢/血脂/血糖/肝指标自动推导 (如 LDL/尿酸/HbA1c 偏高)。
           用户说"开个周期验证下 / 我想系统调理代谢三个月 / 帮我跟踪降 LDL 的效果" 走这个。
+- list: 查询历史干预周期列表。
+- update: 调整周期元数据/目标参数, 需 confirmed=true; 不得修改药物、剂量或医疗建议。
+- cancel: 取消周期, 标记 abandoned, 需 confirmed=true; 不做物理删除。
 
 注意:
 - 这是健康自我管理工具, 不是医疗诊断或处方。提议/解读时措辞要"非诊断、建议结合医生"。
@@ -484,17 +510,34 @@ action 选择:
                 "properties": {
                     "action": {
                         "type": "string",
-                        "enum": ["status", "start"],
-                        "description": "status 报当前周期进展; start 开启新周期 (写操作, 需确认)",
+                        "enum": ["status", "start", "list", "update", "cancel"],
+                        "description": "status 报当前周期进展; start 开启新周期; list 查历史; update 调整; cancel 取消",
+                    },
+                    "cycle_id": {
+                        "type": "integer",
+                        "description": "update/cancel 必填。必须来自 list/status/API 返回的真实周期 ID。",
                     },
                     "days": {
                         "type": "integer",
                         "default": 90,
                         "description": "仅 start: 周期天数, 默认 90 天",
                     },
+                    "status": {
+                        "type": "string",
+                        "description": "仅 list: 可选 active/completed/abandoned 过滤。",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "仅 list: 最多返回多少条。",
+                    },
+                    "data": {
+                        "type": "object",
+                        "description": "仅 update: 允许 status、planned_end_date、target_metrics、stop_conditions。",
+                    },
                     "confirmed": {
                         "type": "boolean",
-                        "description": "仅 start: 用户已明确同意开周期后置 true。首次提议不要带, 让确认流程走一遍。",
+                        "description": "start/update/cancel 写操作: 用户已明确同意后置 true。首次提议不要带, 让确认流程走一遍。",
                     },
                 },
                 "required": ["action"],

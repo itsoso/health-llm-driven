@@ -94,6 +94,19 @@ def test_humanize_card_title_strips_fullwidth_threshold_paren():
     assert out == "血氧饱和度偏低：94.0%"
 
 
+def test_humanize_card_title_strips_internal_metric_key_prefix():
+    # 存量卡标题带 [spo2_avg] 内部键 —— 绝不能漏进用户可见 opener 文本
+    assert humanize_card_title("[spo2_avg] 血氧饱和度偏低：94.0%") == "血氧饱和度偏低：94.0%"
+    assert humanize_card_title("[hrv] HRV 明显下降") == "HRV 明显下降"
+    # 全角方括号 + 组合阈值括号一起剥
+    assert (
+        humanize_card_title("［resting_heart_rate］静息心率升高：78（阈值 70），请注意")
+        == "静息心率升高：78"
+    )
+    # 中文方括号内容 (非 ASCII 键) 不误伤
+    assert humanize_card_title("「血压」偏高需关注").startswith("「血压」")
+
+
 def test_humanize_card_title_strips_halfwidth_threshold_paren():
     out = humanize_card_title("血氧饱和度偏低：94.0%(阈值 95%),请注意")
     assert out == "血氧饱和度偏低：94.0%"

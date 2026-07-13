@@ -12,6 +12,7 @@ from app.services.agent_executor import (
     INTERRUPTED_COMPLETION_NOTICE,
     AgentExecutor,
     _completion_status_from_finish_reason,
+    _write_tool_completed,
 )
 
 
@@ -62,6 +63,601 @@ def test_completion_status_marks_stop_finish_reason_as_complete():
 
 def test_completion_status_marks_error_finish_reason_as_error():
     assert _completion_status_from_finish_reason("error") == "error"
+
+
+@pytest.mark.parametrize("result", [
+    "未找到活跃药物",
+    "写入完成",
+])
+def test_unstructured_write_result_is_never_reported_as_completed(result):
+    assert _write_tool_completed(
+        "health_manage",
+        {"operation": "update"},
+        result,
+    ) is False
+
+
+def test_structured_write_result_with_resource_identity_is_completed():
+    assert _write_tool_completed(
+        "health_manage",
+        {"record_type": "diet", "operation": "update"},
+        '{"success":true,"id":42}',
+    ) is True
+
+
+def test_structured_write_result_without_resource_identity_is_not_completed():
+    assert _write_tool_completed(
+        "health_manage",
+        {"record_type": "diet", "operation": "delete", "record_id": 42},
+        '{"message":"Record deleted successfully"}',
+    ) is False
+
+
+@pytest.mark.asyncio
+async def test_identityless_write_result_cannot_render_or_finish_as_success(
+    db, auth_user_and_headers, monkeypatch
+):
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    calls = 0
+
+    async def fake_call_llm(messages, tools):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return {
+                "content": "",
+                "finish_reason": "tool_calls",
+                "tool_calls": [{
+                    "id": "delete-1",
+                    "function": {
+                        "name": "health_manage",
+                        "arguments": json.dumps({
+                            "record_type": "diet",
+                            "operation": "delete",
+                            "record_id": 42,
+                        }),
+                    },
+                }],
+            }
+        return {"content": "已经删除。", "finish_reason": "stop"}
+
+    async def fake_execute_tool(name, args, token):
+        return '{"message":"Record deleted successfully"}'
+
+    monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
+    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda: [])
+    monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
+    monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
+    monkeypatch.setattr(executor, "_execute_tool", fake_execute_tool)
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="删除记录 42",
+            user_auth_token="test-token",
+            client_turn_id="turn-delete-no-identity",
+        )
+    ]
+
+    rendered = "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+    assert "不能确认" in rendered
+    assert "deleted successfully" not in rendered.lower()
+    assert "已经删除" not in rendered
+    done = next(event for event in events if event.get("event") == "done")
+    assert done["data"]["completion_status"] == "error"
+    assert done["data"]["write_receipts"] == []
+
+
+@pytest.mark.asyncio
+async def test_http_500_after_dispatched_write_is_uncertain_and_orphan_retry_does_not_reexecute(
+    db, auth_user_and_headers, monkeypatch
+):
+    user, _ = auth_user_and_headers
+    turn_id = "turn-write-committed-then-500"
+    message = "记录午餐鸡胸肉"
+    executor = AgentExecutor(db)
+
+    async def first_llm_call(messages, tools):
+        return {
+            "content": "",
+            "finish_reason": "tool_calls",
+            "tool_calls": [{
+                "id": "write-500",
+                "function": {
+                    "name": "health_record",
+                    "arguments": json.dumps({
+                        "record_type": "diet",
+                        "data": {"food_items": "鸡胸肉", "meal_type": "lunch"},
+                    }),
+                },
+            }],
+        }
+
+    async def committed_then_500(name, args, token):
+        return "Error: upstream returned 500 after request dispatch"
+
+    monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
+    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda: [])
+    monkeypatch.setattr(executor, "_call_llm", first_llm_call)
+    monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(first_llm_call))
+    monkeypatch.setattr(executor, "_execute_tool", committed_then_500)
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message=message,
+            user_auth_token="test-token",
+            client_turn_id=turn_id,
+        )
+    ]
+    assert next(event for event in events if event.get("event") == "done")["data"][
+        "completion_status"
+    ] == "error"
+
+    user_message = db.query(AgentMessage).filter(
+        AgentMessage.role == "user",
+        AgentMessage.content == message,
+    ).one()
+    assert user_message.meta["write_state"]["status"] == "uncertain"
+
+    for assistant in db.query(AgentMessage).filter(
+        AgentMessage.role == "assistant",
+        AgentMessage.conversation_id == user_message.conversation_id,
+    ).all():
+        db.delete(assistant)
+    db.commit()
+
+    retry_llm_calls = 0
+    retry_executor = AgentExecutor(db)
+
+    async def retry_llm_call(messages, tools):
+        nonlocal retry_llm_calls
+        retry_llm_calls += 1
+        return {"content": "不应再次进入模型或写工具", "finish_reason": "stop"}
+
+    monkeypatch.setattr(retry_executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
+    monkeypatch.setattr(retry_executor, "_call_llm", retry_llm_call)
+    monkeypatch.setattr(retry_executor, "_call_llm_stream", _stream_from(retry_llm_call))
+    retry_events = [
+        event
+        async for event in retry_executor.run_stream(
+            user_id=user.id,
+            message=message,
+            user_auth_token="test-token",
+            client_turn_id=turn_id,
+        )
+    ]
+
+    assert retry_llm_calls == 0
+    recovered = "".join(
+        event["data"].get("content", "")
+        for event in retry_events
+        if event.get("event") == "token"
+    )
+    assert "没有自动重试" in recovered
+
+
+@pytest.mark.asyncio
+async def test_duplicate_writes_in_one_model_response_execute_once(
+    db, auth_user_and_headers, monkeypatch
+):
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    llm_calls = 0
+    tool_calls = 0
+    arguments = json.dumps({
+        "record_type": "diet",
+        "operation": "delete",
+        "record_id": 900,
+    })
+
+    async def fake_llm_call(messages, tools):
+        nonlocal llm_calls
+        llm_calls += 1
+        if llm_calls == 1:
+            return {
+                "content": "",
+                "finish_reason": "tool_calls",
+                "tool_calls": [
+                    {"id": "duplicate-1", "function": {"name": "health_manage", "arguments": arguments}},
+                    {"id": "duplicate-2", "function": {"name": "health_manage", "arguments": arguments}},
+                ],
+            }
+        return {"content": "记录已删除。", "finish_reason": "stop"}
+
+    async def fake_execute_tool(name, args, token):
+        nonlocal tool_calls
+        tool_calls += 1
+        return json.dumps({
+            "id": 900,
+            "record_id": 900,
+            "resource_type": "diet_record",
+        })
+
+    monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
+    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda: [])
+    monkeypatch.setattr(executor, "_call_llm", fake_llm_call)
+    monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_llm_call))
+    monkeypatch.setattr(executor, "_execute_tool", fake_execute_tool)
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="删除饮食记录 900",
+            user_auth_token="test-token",
+            client_turn_id="turn-duplicate-write",
+        )
+    ]
+
+    assert tool_calls == 1
+    tool_results = [
+        event["data"]
+        for event in events
+        if event.get("event") == "tool_result"
+    ]
+    assert len(tool_results) == 2
+    assert tool_results[1]["replayed"] is True
+    done = next(event for event in events if event.get("event") == "done")
+    assert len(done["data"]["write_receipts"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_client_turn_lock_is_released_when_post_acquire_lookup_raises(
+    db, auth_user_and_headers, monkeypatch
+):
+    from app.services.agent_conversation_service import AgentConversationService
+
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    find_calls = 0
+    releases = []
+
+    def fake_find_user(self, user_id, client_turn_id):
+        nonlocal find_calls
+        find_calls += 1
+        if find_calls == 1:
+            return None
+        raise RuntimeError("post-acquire lookup failed")
+
+    monkeypatch.setattr(AgentConversationService, "find_user_message_by_client_turn", fake_find_user)
+    monkeypatch.setattr(
+        AgentConversationService,
+        "find_assistant_message_by_client_turn",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        AgentConversationService,
+        "try_acquire_client_turn_execution",
+        lambda *args, **kwargs: True,
+    )
+    monkeypatch.setattr(
+        AgentConversationService,
+        "release_client_turn_execution",
+        lambda self, user_id, client_turn_id: releases.append((user_id, client_turn_id)),
+    )
+
+    with pytest.raises(RuntimeError, match="post-acquire lookup failed"):
+        [
+            event
+            async for event in executor.run_stream(
+                user_id=user.id,
+                message="测试锁释放",
+                client_turn_id="turn-release-on-lookup-error",
+            )
+        ]
+
+    assert releases == [(user.id, "turn-release-on-lookup-error")]
+
+
+@pytest.mark.asyncio
+async def test_recovery_reports_partial_when_one_of_multiple_writes_is_uncertain(
+    db, auth_user_and_headers
+):
+    from app.services.agent_conversation_service import AgentConversationService
+
+    user, _ = auth_user_and_headers
+    service = AgentConversationService(db)
+    conversation = service.get_or_create_conversation(user.id, None, title="多条写入")
+    user_message, _ = service.save_user_message_once(
+        conversation.id,
+        user.id,
+        "记录两项",
+        client_turn_id="turn-partial-multi-write",
+    )
+    executor = AgentExecutor(db)
+    executor._persist_turn_write_state(
+        user_message,
+        status="uncertain",
+        tool_name="health_record",
+        parsed_args={"record_type": "diet", "data": {"food_items": "A"}},
+    )
+    receipt = {
+        "operation_id": "health_record:water_record:77",
+        "status": "verified",
+        "resource_type": "water_record",
+        "resource_id": "77",
+        "completed_at": "2026-07-10T12:00:00+00:00",
+        "verified": True,
+    }
+    executor._persist_turn_write_state(
+        user_message,
+        status="verified",
+        tool_name="health_record",
+        parsed_args={"record_type": "water", "data": {"amount": 500}},
+        receipt=receipt,
+    )
+
+    events = [
+        event
+        async for event in executor._recover_client_turn_write_checkpoint(
+            service,
+            user.id,
+            user_message,
+            "turn-partial-multi-write",
+        )
+    ]
+    assert "部分写入获得回执" in next(
+        event for event in events if event.get("event") == "token"
+    )["data"]["content"]
+    assert events[-1]["data"]["completion_status"] == "error"
+
+
+@pytest.mark.asyncio
+async def test_legacy_verified_checkpoint_without_sealed_plan_never_reports_complete(
+    db, auth_user_and_headers
+):
+    from app.services.agent_conversation_service import AgentConversationService
+
+    user, _ = auth_user_and_headers
+    service = AgentConversationService(db)
+    conversation = service.get_or_create_conversation(
+        user.id,
+        None,
+        title="旧版写入恢复",
+    )
+    user_message, _ = service.save_user_message_once(
+        conversation.id,
+        user.id,
+        "删除两条旧记录",
+        client_turn_id="turn-legacy-unsealed-write",
+    )
+    executor = AgentExecutor(db)
+    executor._persist_turn_write_state(
+        user_message,
+        status="verified",
+        tool_name="health_manage",
+        parsed_args={
+            "record_type": "diet",
+            "operation": "delete",
+            "record_id": 901,
+        },
+        receipt={
+            "operation_id": "health_manage:diet_record:901",
+            "status": "verified",
+            "resource_type": "diet_record",
+            "resource_id": "901",
+            "completed_at": "2026-07-10T12:00:00+00:00",
+            "verified": True,
+        },
+    )
+
+    events = [
+        event
+        async for event in executor._recover_client_turn_write_checkpoint(
+            service,
+            user.id,
+            user_message,
+            "turn-legacy-unsealed-write",
+        )
+    ]
+
+    assert events[-1]["data"]["completion_status"] == "error"
+    assert "部分写入获得回执" in next(
+        event for event in events if event.get("event") == "token"
+    )["data"]["content"]
+
+
+@pytest.mark.asyncio
+async def test_sealed_planned_only_checkpoint_can_resume_before_any_dispatch(
+    db, auth_user_and_headers, monkeypatch
+):
+    from app.services.agent_conversation_service import AgentConversationService
+
+    user, _ = auth_user_and_headers
+    service = AgentConversationService(db)
+    conversation = service.get_or_create_conversation(
+        user.id,
+        None,
+        title="安全恢复未执行写入",
+    )
+    user_message, _ = service.save_user_message_once(
+        conversation.id,
+        user.id,
+        "删除这条记录",
+        client_turn_id="turn-planned-before-dispatch",
+    )
+    write_args = {
+        "record_type": "diet",
+        "operation": "delete",
+        "record_id": 902,
+    }
+    AgentExecutor(db)._persist_turn_expected_writes(
+        user_message,
+        [("health_manage", write_args)],
+    )
+
+    executor = AgentExecutor(db)
+    llm_calls = 0
+    tool_calls = 0
+
+    async def fake_llm(messages, tools):
+        nonlocal llm_calls
+        llm_calls += 1
+        if llm_calls == 1:
+            return {
+                "content": "",
+                "finish_reason": "tool_calls",
+                "tool_calls": [{
+                    "id": "resume-write",
+                    "function": {
+                        "name": "health_manage",
+                        "arguments": json.dumps(write_args),
+                    },
+                }],
+            }
+        return {"content": "已删除。", "finish_reason": "stop"}
+
+    async def fake_execute_tool(name, args, token):
+        nonlocal tool_calls
+        tool_calls += 1
+        return json.dumps({
+            "id": 902,
+            "record_id": 902,
+            "resource_type": "diet_record",
+        })
+
+    monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
+    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda: [])
+    monkeypatch.setattr(executor, "_call_llm", fake_llm)
+    monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_llm))
+    monkeypatch.setattr(executor, "_execute_tool", fake_execute_tool)
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="删除这条记录",
+            user_auth_token="test-token",
+            client_turn_id="turn-planned-before-dispatch",
+        )
+    ]
+
+    assert tool_calls == 1
+    assert events[-1]["data"]["completion_status"] == "complete"
+
+
+@pytest.mark.asyncio
+async def test_all_planned_writes_are_checkpointed_before_first_dispatch(
+    db, auth_user_and_headers, monkeypatch
+):
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    first_args = {
+        "record_type": "diet",
+        "operation": "delete",
+        "record_id": 1001,
+    }
+    second_args = {
+        "record_type": "diet",
+        "operation": "delete",
+        "record_id": 1002,
+    }
+
+    async def fake_llm_call(messages, tools):
+        return {
+            "content": "",
+            "finish_reason": "tool_calls",
+            "tool_calls": [
+                {
+                    "id": "write-a",
+                    "function": {
+                        "name": "health_manage",
+                        "arguments": json.dumps(first_args),
+                    },
+                },
+                {
+                    "id": "write-b",
+                    "function": {
+                        "name": "health_manage",
+                        "arguments": json.dumps(second_args),
+                    },
+                },
+            ],
+        }
+
+    async def fake_execute_tool(name, args, token):
+        parsed = json.loads(args)
+        return json.dumps({
+            "id": parsed["record_id"],
+            "record_id": parsed["record_id"],
+            "resource_type": "diet_record",
+        })
+
+    class WorkerCrashed(BaseException):
+        pass
+
+    original_persist = executor._persist_turn_write_state
+
+    def crash_before_second_dispatch(user_message, **kwargs):
+        if (
+            kwargs["status"] == "in_flight"
+            and kwargs["parsed_args"].get("record_id") == 1002
+        ):
+            raise WorkerCrashed()
+        return original_persist(user_message, **kwargs)
+
+    monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
+    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda: [])
+    monkeypatch.setattr(executor, "_call_llm", fake_llm_call)
+    monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_llm_call))
+    monkeypatch.setattr(executor, "_execute_tool", fake_execute_tool)
+    monkeypatch.setattr(executor, "_persist_turn_write_state", crash_before_second_dispatch)
+
+    with pytest.raises(WorkerCrashed):
+        [
+            event
+            async for event in executor.run_stream(
+                user_id=user.id,
+                message="删除两条饮食记录",
+                user_auth_token="test-token",
+                client_turn_id="turn-two-planned-writes",
+            )
+        ]
+
+    user_message = db.query(AgentMessage).filter(
+        AgentMessage.role == "user",
+        AgentMessage.content == "删除两条饮食记录",
+    ).one()
+    operations = user_message.meta["write_operations"]
+    assert len(operations) == 2
+    assert sorted(operation["status"] for operation in operations.values()) == [
+        "planned",
+        "verified",
+    ]
+
+    retry_executor = AgentExecutor(db)
+    retry_llm_calls = 0
+
+    async def retry_llm(messages, tools):
+        nonlocal retry_llm_calls
+        retry_llm_calls += 1
+        return {"content": "不应重跑", "finish_reason": "stop"}
+
+    monkeypatch.setattr(retry_executor, "_call_llm", retry_llm)
+    monkeypatch.setattr(retry_executor, "_call_llm_stream", _stream_from(retry_llm))
+    retry_events = [
+        event
+        async for event in retry_executor.run_stream(
+            user_id=user.id,
+            message="删除两条饮食记录",
+            user_auth_token="test-token",
+            client_turn_id="turn-two-planned-writes",
+        )
+    ]
+    assert retry_llm_calls == 0
+    assert "部分写入获得回执" in "".join(
+        event["data"].get("content", "")
+        for event in retry_events
+        if event.get("event") == "token"
+    )
 
 
 @pytest.mark.asyncio
@@ -240,7 +836,7 @@ async def test_agent_stream_finishes_pure_record_turn_from_tool_result(db, auth_
 
     async def fake_execute_tool(tool_name, args_raw, user_token):
         assert tool_name == "health_record"
-        return json.dumps({"message": "已记录晚餐：牛肉饭"}, ensure_ascii=False)
+        return json.dumps({"id": 101, "message": "已记录晚餐：牛肉饭"}, ensure_ascii=False)
 
     executor._call_llm = fake_call_llm
     executor._call_llm_stream = _stream_from(fake_call_llm)
@@ -390,7 +986,7 @@ async def test_agent_stream_auto_confirms_fast_record_tool_calls(db, auth_user_a
                 "[NEEDS_CONFIRMATION] 我准备记录: 喝水 1000ml. "
                 "请向用户复述并问一次'是这样吗？'"
             )
-        return json.dumps({"message": "已记录饮水 1000ml"}, ensure_ascii=False)
+        return json.dumps({"id": 102, "message": "已记录饮水 1000ml"}, ensure_ascii=False)
 
     executor._call_llm = fake_call_llm
     executor._call_llm_stream = _stream_from(fake_call_llm)
@@ -449,7 +1045,7 @@ async def test_agent_stream_emits_record_card_after_fast_diet_record(db, auth_us
         assert tool_name == "health_record"
         parsed = json.loads(args_raw)
         assert parsed["confirmed"] is True
-        return json.dumps({"message": "已记录早餐：两个鸡蛋,一杯牛奶"}, ensure_ascii=False)
+        return json.dumps({"id": 103, "message": "已记录早餐：两个鸡蛋,一杯牛奶"}, ensure_ascii=False)
 
     executor._call_llm = fake_call_llm
     executor._call_llm_stream = _stream_from(fake_call_llm)
@@ -522,7 +1118,7 @@ async def test_agent_stream_emits_safety_card_after_record_safety_alert(db, auth
         assert tool_name == "health_record"
         parsed = json.loads(args_raw)
         assert parsed["confirmed"] is True
-        return json.dumps({"message": "已记录晚餐：牛肉面"}, ensure_ascii=False)
+        return json.dumps({"id": 104, "message": "已记录晚餐：牛肉面"}, ensure_ascii=False)
 
     safety_alert = Alert(
         rule_id="training.high_intensity_not_recommended",
@@ -623,7 +1219,7 @@ async def test_agent_stream_keeps_safety_text_visible_for_old_clients(db, auth_u
     async def fake_execute_tool(tool_name, args_raw, user_token):
         assert tool_name == "health_record"
         return json.dumps(
-            {"message": "已记录晚餐：" + ("牛肉面" * 80)},
+            {"id": 105, "message": "已记录晚餐：" + ("牛肉面" * 80)},
             ensure_ascii=False,
         )
 
@@ -676,6 +1272,16 @@ async def test_agent_stream_marks_length_limited_answer_as_interrupted(db, auth_
 
     executor._call_llm = fake_call_llm
     executor._call_llm_stream = _stream_from(fake_call_llm)
+    executor._build_system_knowledge_evidence_card = lambda *args, **kwargs: {
+        "type": "system_knowledge_evidence",
+        "data": {"entity": {"title": "不完整证据"}, "claims": []},
+        "actions": [{
+            "id": "unsafe-open",
+            "label": "继续操作",
+            "action": "route.open",
+            "payload": {"route": "/knowledge"},
+        }],
+    }
 
     events = [
         event
@@ -698,8 +1304,10 @@ async def test_agent_stream_marks_length_limited_answer_as_interrupted(db, auth_
     assert done["event"] == "done"
     assert done["data"]["completion_status"] == "interrupted"
     assert done["data"]["finish_reason"] == "length"
+    assert done["data"]["cards"] == []
     assert saved.meta["completion_status"] == "interrupted"
     assert saved.meta["finish_reason"] == "length"
+    assert saved.meta["cards"] == []
 
 
 @pytest.mark.asyncio
@@ -977,12 +1585,36 @@ async def test_agent_stream_executes_inline_diet_record_json_with_nutrition(db, 
         event.get("event") == "tool_result"
         and event["data"]["record_type"] == "diet"
         and event["data"]["record_data"]["calories"] == 520
+        and event["data"]["write_completed"] is True
+        and event["data"]["receipt"]["resource_type"] == "diet_record"
+        and event["data"]["receipt"]["resource_id"] == "701"
+        and event["data"]["receipt"]["verified"] is True
         and event["data"]["result"] == (
             '{"id":701,"message":"已记录晚餐：约 520 kcal，蛋白质 32g",'
             '"food_items":"鳕鱼 100g + 米饭 150g + 青菜 100g","calories":520}'
         )
         for event in events
     )
+    done = next(event for event in events if event.get("event") == "done")
+    assert done["data"]["write_receipts"] == [
+        {
+            "operation_id": "health_record:diet_record:701",
+            "status": "verified",
+            "resource_type": "diet_record",
+            "resource_id": "701",
+            "completed_at": done["data"]["write_receipts"][0]["completed_at"],
+            "verified": True,
+        }
+    ]
+    from app.models.agent_conversation import AgentMessage
+
+    saved_assistant = (
+        db.query(AgentMessage)
+        .filter(AgentMessage.role == "assistant")
+        .order_by(AgentMessage.id.desc())
+        .first()
+    )
+    assert saved_assistant.meta["write_receipts"] == done["data"]["write_receipts"]
     assert "已记录晚餐" in rendered
     assert '"name":"health_record"' not in rendered
 
@@ -1018,7 +1650,7 @@ async def test_agent_stream_strips_leading_inline_tool_json_then_prose(db, auth_
     async def fake_execute_tool(tool_name, args_raw, user_token):
         executed.append((tool_name, json.loads(args_raw)))
         return json.dumps(
-            {"message": "已记录：口腔溃疡 ×2", "record_type": "symptom"},
+            {"id": 106, "message": "已记录：口腔溃疡 ×2", "record_type": "symptom"},
             ensure_ascii=False,
         )
 
@@ -1115,7 +1747,7 @@ async def test_record_intent_with_tool_executed_is_not_flagged(db, auth_user_and
         return {"content": "已记录晚餐。", "finish_reason": "stop"}
 
     async def fake_execute_tool(tool_name, args_raw, user_token):
-        return json.dumps({"message": "已记录晚餐：牛肉饭"}, ensure_ascii=False)
+        return json.dumps({"id": 107, "message": "已记录晚餐：牛肉饭"}, ensure_ascii=False)
 
     executor._call_llm = fake_call_llm
     executor._call_llm_stream = _stream_from(fake_call_llm)
@@ -1167,6 +1799,7 @@ async def test_agent_stream_falls_back_to_tool_result_when_model_synthesis_is_em
         args = json.loads(args_raw)
         assert tool_name == "health_record"
         return json.dumps({
+            "id": 108,
             "message": "已记录早餐：两个豆腐包子",
             "record_type": args["record_type"],
             "food_items": args["data"]["food_items"],

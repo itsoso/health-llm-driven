@@ -64,7 +64,7 @@ def _parse_hhmm(s: str, default: time) -> time:
 
 
 def _in_quiet_hours(db: Session, user_id: int) -> bool:
-    """当前(本地时刻)是否在用户免打扰时段(默认 22:00–08:30,跨午夜)。失败 → False(不静默)。"""
+    """当前(本地时刻)是否在用户免打扰时段(默认 22:00–09:00,跨午夜)。失败 → False(不静默)。"""
     try:
         from app.models.notification import UserNotificationSetting
         s = (
@@ -73,8 +73,10 @@ def _in_quiet_hours(db: Session, user_id: int) -> bool:
             .first()
         )
         start = _parse_hhmm(getattr(s, "quiet_hours_start", None) or "22:00", time(22, 0))
-        end = _parse_hhmm(getattr(s, "quiet_hours_end", None) or "08:30", time(8, 30))
+        end = _parse_hhmm(getattr(s, "quiet_hours_end", None) or "09:00", time(9, 0))
         now = get_user_now(db, user_id).time()
+        if now < time(9, 0):
+            return True
         if start <= end:
             return start <= now < end
         return now >= start or now < end  # 跨午夜

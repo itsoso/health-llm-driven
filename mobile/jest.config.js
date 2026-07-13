@@ -7,6 +7,10 @@ module.exports = {
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/$1',
   },
+  testPathIgnorePatterns: [
+    '/node_modules/',
+    '<rootDir>/ios/Pods/',
+  ],
   collectCoverageFrom: [
     'components/**/*.{ts,tsx}',
     'hooks/**/*.{ts,tsx}',

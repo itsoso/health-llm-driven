@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/services/api/client';
 
+const IOS_LATEST_INSTALL_PATH = '/mobile-install/ios/latest/install.html';
+
 export default function Home() {
   const { data: healthStatus } = useQuery({
     queryKey: ['health'],
@@ -13,6 +15,22 @@ export default function Home() {
   return (
     <main className="min-h-screen p-8 bg-gradient-to-br from-indigo-50 via-white to-purple-50 pt-4">
       <div className="max-w-7xl mx-auto">
+        <section className="mb-6 rounded-2xl border border-emerald-100 bg-white/90 p-5 shadow-sm">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">Mobile RC</p>
+              <h1 className="mt-1 text-2xl font-bold text-slate-950">小巴 iPhone 版</h1>
+              <p className="mt-2 text-sm text-slate-600">不走 TestFlight, 保留登录状态直接更新</p>
+            </div>
+            <Link
+              href={IOS_LATEST_INSTALL_PATH}
+              className="inline-flex items-center justify-center rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2"
+            >
+              扫码安装 iPhone 版
+            </Link>
+          </div>
+        </section>
+
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
           {/* 主入口: Web 端深度阅读, 日常对话用 mobile "会诊" */}
           <Link

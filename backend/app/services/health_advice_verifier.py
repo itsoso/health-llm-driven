@@ -66,6 +66,79 @@ RED_FLAG_DOWNGRADE_MARKERS = (
     "放松训练",
     "多喝水",
 )
+LAB_REPORT_SIGNAL_TYPES = {
+    "biomarker",
+    "exam_report",
+    "lab",
+    "lab_report",
+    "medical_exam",
+    "medical_report",
+}
+LAB_REPORT_TEXT_MARKERS = (
+    "hba1c",
+    "糖化血红蛋白",
+    "ldl",
+    "ldl-c",
+    "血脂",
+    "alt",
+    "ggt",
+    "谷丙转氨酶",
+    "谷氨酰转肽酶",
+    "γ-谷氨酰转肽酶",
+    "幽门螺杆菌",
+    "h. pylori",
+    "hp 阳性",
+    "hp阳性",
+    "胃镜",
+    "内镜",
+)
+LAB_DIAGNOSIS_CONDITION_MARKERS = (
+    "糖尿病",
+    "高血压",
+    "脂肪肝",
+    "肝炎",
+    "胃溃疡",
+    "溃疡复发",
+    "冠心病",
+)
+LAB_DIAGNOSIS_OVERCLAIM_MARKERS = (
+    "确诊",
+    "诊断为",
+    "已经得了",
+    "就是",
+    "不需要再复查",
+    "不用复查",
+    "不需要医生确认",
+    "不用医生确认",
+)
+LAB_MEDICATION_PLAN_MARKERS = (
+    "三联",
+    "四联",
+    "根除方案",
+    "阿莫西林",
+    "克拉霉素",
+    "甲硝唑",
+    "抗生素",
+    "ppi",
+    "p-cab",
+    "他汀",
+    "二甲双胍",
+    "胰岛素",
+)
+LAB_TREATMENT_ACTION_MARKERS = (
+    "直接开始",
+    "开始",
+    "服用",
+    "每天",
+    "每晚",
+    "疗程",
+    "处方",
+    "开药",
+    "用药方案",
+    "按",
+    "治疗",
+)
+HRV_CAUSAL_MARKERS = ("根因", "病因", "导致", "造成", "引起", "引发", "直接原因")
 
 
 @dataclass(frozen=True)
@@ -111,6 +184,19 @@ def verify_advice(
             reason="epigenetic_overclaim",
             required_changes=["rewrite_as_long_term_proxy"],
             audit_tags=["epigenetic_boundary"],
+        )
+
+    lab_report_boundary_changes = _lab_report_boundary_required_changes(
+        candidate,
+        personal_matrix or {},
+    )
+    if lab_report_boundary_changes:
+        return AdviceVerification(
+            allowed=False,
+            decision="blocked",
+            reason="lab_report_boundary_violation",
+            required_changes=lab_report_boundary_changes,
+            audit_tags=["lab_report_boundary"],
         )
 
     medical_boundary_changes = _medical_boundary_required_changes(candidate)
@@ -227,6 +313,91 @@ def _medical_boundary_required_changes(candidate: Any) -> list[str]:
         required_changes.append("escalate_red_flag_symptoms")
 
     return required_changes
+
+
+def _lab_report_boundary_required_changes(
+    candidate: Any,
+    personal_matrix: dict[str, Any],
+) -> list[str]:
+    text = f"{getattr(candidate, 'title', '')} {getattr(candidate, 'body', '')}".lower()
+    if not _has_lab_or_report_context(candidate, personal_matrix, text):
+        return []
+
+    required_changes: list[str] = []
+    if _turns_lab_fact_into_diagnosis(text):
+        required_changes.append("rewrite_lab_fact_without_diagnosis")
+    if _turns_lab_fact_into_medication_plan(text):
+        required_changes.append("remove_prescription_or_self_medication_plan")
+    if _uses_hrv_as_direct_disease_cause(text, personal_matrix):
+        required_changes.append("rewrite_hrv_as_correlate_not_cause")
+    return required_changes
+
+
+def _has_lab_or_report_context(candidate: Any, personal_matrix: dict[str, Any], text: str) -> bool:
+    if _candidate_list(candidate, "lab_report_facts"):
+        return True
+    if personal_matrix.get("lab_report_facts"):
+        return True
+    if any(marker in text for marker in LAB_REPORT_TEXT_MARKERS):
+        return True
+
+    for signal in personal_matrix.get("signals") or []:
+        if not isinstance(signal, dict):
+            continue
+        signal_type = str(signal.get("signal_type") or "").lower()
+        signal_blob = " ".join(
+            str(signal.get(key) or "").lower()
+            for key in ("signal_id", "name", "metric_key", "source", "category")
+        )
+        if signal_type in LAB_REPORT_SIGNAL_TYPES:
+            return True
+        if any(marker in signal_blob for marker in LAB_REPORT_TEXT_MARKERS):
+            return True
+    return False
+
+
+def _turns_lab_fact_into_diagnosis(text: str) -> bool:
+    if any(marker in text for marker in ("不需要再复查", "不用复查", "不需要医生确认", "不用医生确认")):
+        return True
+    if any(marker in text for marker in ("确诊", "诊断为", "已经得了")):
+        return True
+    has_condition = any(marker in text for marker in LAB_DIAGNOSIS_CONDITION_MARKERS)
+    if has_condition and any(marker in text for marker in LAB_DIAGNOSIS_OVERCLAIM_MARKERS):
+        return True
+    if has_condition and "按" in text and "治疗" in text:
+        return True
+    return False
+
+
+def _turns_lab_fact_into_medication_plan(text: str) -> bool:
+    has_medication = any(marker in text for marker in LAB_MEDICATION_PLAN_MARKERS)
+    has_action = any(marker in text for marker in LAB_TREATMENT_ACTION_MARKERS)
+    return has_medication and has_action
+
+
+def _uses_hrv_as_direct_disease_cause(text: str, personal_matrix: dict[str, Any]) -> bool:
+    has_hrv_text = "hrv" in text or "心率变异" in text
+    has_hrv_signal = any(
+        isinstance(signal, dict)
+        and (
+            "hrv"
+            in " ".join(
+                str(signal.get(key) or "").lower()
+                for key in ("signal_id", "name", "metric_key")
+            )
+            or "心率变异"
+            in " ".join(
+                str(signal.get(key) or "")
+                for key in ("signal_id", "name", "metric_key")
+            )
+        )
+        for signal in personal_matrix.get("signals") or []
+    )
+    if not (has_hrv_text or has_hrv_signal):
+        return False
+    has_disease = any(marker in text for marker in LAB_DIAGNOSIS_CONDITION_MARKERS)
+    has_cause = any(marker in text for marker in HRV_CAUSAL_MARKERS)
+    return has_disease and has_cause
 
 
 def _matching_contraindication(

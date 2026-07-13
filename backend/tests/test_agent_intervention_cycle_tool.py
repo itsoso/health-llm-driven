@@ -148,6 +148,120 @@ def test_start_no_double_open(db):
     assert n == 1
 
 
+def test_list_cycles_returns_history(db):
+    from app.models.intervention_cycle import InterventionCycle
+
+    u = _mk_user(db)
+    c1 = InterventionCycle(
+        user_id=u.id,
+        cycle_type="metabolic_90d",
+        status="completed",
+        start_date=datetime.date(2026, 1, 1),
+        planned_end_date=datetime.date(2026, 3, 31),
+        target_metrics=[{"code": "lipid_ldl", "target": 3.0, "direction": "down"}],
+        stop_conditions=["肌痛 + CK 升高"],
+    )
+    c2 = InterventionCycle(
+        user_id=u.id,
+        cycle_type="metabolic_90d",
+        status="active",
+        start_date=datetime.date(2026, 4, 1),
+        planned_end_date=datetime.date(2026, 6, 30),
+        target_metrics=[{"code": "UA", "target": 380, "direction": "down"}],
+        stop_conditions=["关节痛"],
+    )
+    db.add_all([c1, c2])
+    db.commit()
+
+    out = _exec(db, u.id, {"action": "list"})
+    data = __import__("json").loads(out)
+
+    assert [row["id"] for row in data] == [c2.id, c1.id]
+    assert data[0]["status"] == "active"
+    assert data[1]["status"] == "completed"
+
+
+def test_update_cycle_requires_confirmation(db):
+    from app.models.intervention_cycle import InterventionCycle
+
+    u = _mk_user(db)
+    cycle = InterventionCycle(
+        user_id=u.id,
+        cycle_type="metabolic_90d",
+        status="active",
+        start_date=datetime.date(2026, 4, 1),
+        planned_end_date=datetime.date(2026, 6, 30),
+    )
+    db.add(cycle)
+    db.commit()
+    db.refresh(cycle)
+
+    out = _exec(db, u.id, {
+        "action": "update",
+        "cycle_id": cycle.id,
+        "data": {"planned_end_date": "2026-07-31"},
+    })
+
+    assert "[NEEDS_CONFIRMATION]" in out
+    db.refresh(cycle)
+    assert cycle.planned_end_date == datetime.date(2026, 6, 30)
+
+
+def test_update_cycle_confirmed_changes_metadata(db):
+    from app.models.intervention_cycle import InterventionCycle
+
+    u = _mk_user(db)
+    cycle = InterventionCycle(
+        user_id=u.id,
+        cycle_type="metabolic_90d",
+        status="active",
+        start_date=datetime.date(2026, 4, 1),
+        planned_end_date=datetime.date(2026, 6, 30),
+    )
+    db.add(cycle)
+    db.commit()
+    db.refresh(cycle)
+
+    out = _exec(db, u.id, {
+        "action": "update",
+        "cycle_id": cycle.id,
+        "confirmed": True,
+        "data": {
+            "planned_end_date": "2026-07-31",
+            "stop_conditions": ["肌痛 + CK 升高", "转氨酶 > 3xULN"],
+        },
+    })
+    data = __import__("json").loads(out)
+
+    db.refresh(cycle)
+    assert data["id"] == cycle.id
+    assert cycle.planned_end_date == datetime.date(2026, 7, 31)
+    assert cycle.stop_conditions == ["肌痛 + CK 升高", "转氨酶 > 3xULN"]
+
+
+def test_cancel_cycle_confirmed_marks_abandoned(db):
+    from app.models.intervention_cycle import InterventionCycle
+
+    u = _mk_user(db)
+    cycle = InterventionCycle(
+        user_id=u.id,
+        cycle_type="metabolic_90d",
+        status="active",
+        start_date=datetime.date(2026, 4, 1),
+        planned_end_date=datetime.date(2026, 6, 30),
+    )
+    db.add(cycle)
+    db.commit()
+    db.refresh(cycle)
+
+    out = _exec(db, u.id, {"action": "cancel", "cycle_id": cycle.id, "confirmed": True})
+    data = __import__("json").loads(out)
+
+    db.refresh(cycle)
+    assert data["status"] == "abandoned"
+    assert cycle.status == "abandoned"
+
+
 # ── user 隔离 ───────────────────────────────────────────
 
 def test_user_isolation_status(db):

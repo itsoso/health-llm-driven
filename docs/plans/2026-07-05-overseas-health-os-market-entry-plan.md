@@ -357,6 +357,8 @@
 
 ### Task 5: Lab-Aware Advice Boundary
 
+**Status:** DONE。已新增 Lab/Report facts 输入、`lab_report_boundary_violation` 专用 guard、eval runner 内嵌 `advice_guard` 断言,并补齐 HbA1c、血脂、ALT/GGT、H. pylori、胃镜、HRV 非直接病因 6 条种子 eval。验证: `DATABASE_URL=sqlite:///:memory: backend/.venv/bin/python -m pytest backend/tests/test_advice_guard.py backend/tests/test_lab_aware_advice_boundary.py -q`。
+
 **Files:**
 
 - Modify: `backend/data/system_kb_v2_seed/eval_cases.jsonl`

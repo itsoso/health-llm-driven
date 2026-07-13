@@ -176,3 +176,22 @@ python3 scripts/check_doc_drift.py
 - P0-4/P0-5 已完成:摄入 classifier 保持 diet/medication/supplement/water/diet_management 分流;用药草稿 route 携带 `dose`;Mobile 用药页支持从小巴草稿确认写入用药清单并记录一次已服用。
 - P0-6 已核对完成:当前 Chat 卡片 action 集合仍为 `agenda.complete`、`diet_record.create`、`route.open`、`ui.inline.expand` 等既有受控动作,Mobile dispatcher/registry 测试通过。
 - 待继续:P1 小巴首屏动线真机/模拟器审计、拍照记餐 smoke、二维码 RC、HealthKit/Watch/手机号生产验证。
+
+## 2026-07-06 Codex 执行回写
+
+- P0-4 继续加固:摄入 classifier 已补胃药/促胃动力药别名(`沃克`、`伏诺拉生`、`加斯清`、`伊托必利` 等),避免“刚吃了胃药”落入饮食或 unknown 路径。
+- P0-6 继续加固:`生成记录` 对用药型助手回复不再 fallback 到记录页;Mobile 会带 `draft=medication&name=...&dose=...` 打开用药确认页,维持 manual-confirm 写入边界。
+- P1-7 UI 继续收敛:小巴回复完成后的思考状态从整宽分隔条改为低干扰胶囊,默认折叠,展开才显示步骤,避免覆盖正文或形成难看的大块状态 UI。
+- P0-4/P1-8 饮食链路继续加固:新增客户端共享 `dietIntakeGuard`,卡片写入和 `/diet?draft=diet` 深链都会拒绝“删除这一餐”管理意图、药物和补剂文本;`姜黄鲜柠维C茶` 等真实饮品继续允许。
+- P1-8 继续加固:小巴输入栏 `+` 菜单里的相机入口改为明确的“拍照记餐”,直接进入 `/diet?capture=photo` 饮食拍照确认流,不再作为通用图片附件入口误导用户。
+- P1-7 UI 回归修复:小巴底部 composer 收起键盘时的呼吸空间恢复为 `12`,避免输入区/底部留白重新变高;键盘弹起时仍按键盘高度让位。
+- P1-8 回路闭合:从小巴输入栏、冷启动 chip、quick reply 发起拍照记餐时统一携带 `return_to=chat`;饮食草稿确认成功后携带 `diet/quick_capture` 上下文回到小巴,让对话可继续更新饮食进度和下一餐建议。
+- P1-9 QR RC 入口补齐:Web 首页新增“扫码安装 iPhone 版”入口,指向稳定地址 `/mobile-install/ios/latest/install.html`;`scripts/mobile-local-qr.sh` 上传 build-id 目录时同步更新 `latest` 别名,并修复复用同目录 IPA 时 `cp` 自复制失败的问题。已用现有 `20260703-ota-9daf1113` IPA 同步一次 latest。
+- 测试基础设施:Mobile Jest 排除 `ios/Pods`,避免 Hermes Pods 旧 snapshot 让单测本体通过但进程返回 1。
+- P1-10/P1-11 RC 验证入口补齐:新增 `scripts/mobile_rc_readiness.sh`,把 App Store release pack、iOS latest QR、手机号登录、HealthKit 导入、Watch 后端安全动作、Mobile HealthKit/auth/login、Watch Swift core 串成只读检查;脚本测试明确禁止真实短信副作用。2026-07-06 已完整跑通。
+- 手机号测试隔离加固:`test_phone_code_send_fails_loud_when_delivery_is_not_configured` 显式清空企业短信、PNVS 和通用 Aliyun fallback key,避免本地/生产环境变量污染导致测试误打真实阿里云。
+- P2-12 Agent 操作面补洞(第一刀):`waist`/`sleep`/`excretion` 已从 `agent_ops_registry` 的 create gap 变成真实 `health_record` 通路;tool schema、validator、executor、registry 和回归测试同步。现在可以从小巴说一句记录腰围、手动补录睡眠、记录排便/排尿,并保留 `health_manage(delete ...)` 撤销通路。
+- P2-12 Agent 操作面补洞(第二刀):补剂打卡(intake)从 registry gap 变成真实 `health_manage(record_type="supplement")` 通路;后端新增 `PUT/DELETE /supplements/records/{id}`,小巴可先 list 查当天补剂打卡,再修正误点、删除误打或撤销 NFC/自动打卡返回的 `record_id`。
+- P2-12 Agent 操作面补洞(第三刀):`goal` 从整对象 gap 变成真实 `health_record(goal)` + `health_manage(goal)` CRUD;后端 `/goals` 新增目标本体 `PUT/DELETE`,小巴可设置健康目标、查询目标列表、修改目标数值/标题并撤销误建目标。
+- P2-12 Agent 操作面补洞(第四刀):`medical_exam` 报告级列表从 gap 变成 `health_manage(record_type="medical_exam", operation="list")` 只读通路,小巴可以先列出报告 ID/日期/类型再追问某份报告;报告数值校正和删除仍保持人工核对/不开放 agent。
+- P2-12 Agent 操作面补洞(第五刀):`intervention_cycle` 专属工具新增 `list/update/cancel`;历史周期可列表,周期元数据/目标参数调整必须 `confirmed=true`,取消只标记 `abandoned` 不物理删除,继续保持医疗/处方调整边界。

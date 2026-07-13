@@ -61,6 +61,7 @@ class AdviceCandidate:
     risk_level: str | None = None
     contraindications: list[dict] | None = None
     personal_matrix: dict | None = None
+    lab_report_facts: list[dict] | None = None
     valid_for_date: date | None = None
     created_at: datetime | None = None
 
@@ -160,10 +161,17 @@ class AdviceGuard:
     def _verify_health_contract(self, candidate: AdviceCandidate):
         from app.services.health_advice_verifier import verify_advice
 
+        personal_matrix = dict(candidate.personal_matrix or {})
+        lab_report_facts = candidate.lab_report_facts or []
+        if lab_report_facts:
+            signals = list(personal_matrix.get("signals") or [])
+            personal_matrix["signals"] = signals + lab_report_facts
+            personal_matrix["lab_report_facts"] = lab_report_facts
+
         return verify_advice(
             candidate,
             evidence_resolution={"evidence_refs": candidate.evidence_refs or []},
-            personal_matrix=candidate.personal_matrix or {},
+            personal_matrix=personal_matrix,
             contraindications=candidate.contraindications or [],
         )
 

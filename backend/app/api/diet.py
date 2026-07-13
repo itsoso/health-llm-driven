@@ -2,7 +2,8 @@
 import os
 import json
 import logging
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 from typing import List, Optional
@@ -29,6 +30,7 @@ from app.schemas.diet import (
 from statistics import median
 from app.services.ai.food_recognition import food_recognition_service
 from app.services.intake_intent_classifier import classify_intake_intent
+from app.services.private_uploads import refresh_private_upload_url
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -46,16 +48,35 @@ def _assert_diet_food_items_allowed(food_items: str) -> None:
             status_code=400,
             detail="药物或补剂摄入不能作为饮食记录写入，请使用用药或补剂记录。",
         )
+    if intent.kind == "health_metric":
+        raise HTTPException(
+            status_code=400,
+            detail="运动、睡眠、体重、血压或血糖不能作为饮食记录写入，请使用对应健康记录入口。",
+        )
 
 
 @router.post("/records", response_model=DietRecordResponse)
 def create_diet_record(
     record: DietRecordCreate,
     current_user: User = Depends(get_current_user_required),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    idempotency_key: Optional[str] = Header(
+        default=None,
+        alias="Idempotency-Key",
+        min_length=8,
+        max_length=160,
+        pattern=r"^[A-Za-z0-9._:-]+$",
+    ),
 ):
     """创建饮食记录（需要登录）"""
     _assert_diet_food_items_allowed(record.food_items)
+    if idempotency_key:
+        existing = db.query(DietRecordModel).filter(
+            DietRecordModel.user_id == current_user.id,
+            DietRecordModel.client_action_id == idempotency_key,
+        ).first()
+        if existing:
+            return _convert_to_response(existing)
     try:
         logger.info(f"用户 {current_user.id} 创建饮食记录: {record.meal_type}, {record.food_items[:50] if record.food_items else ''}")
 
@@ -95,7 +116,7 @@ def create_diet_record(
                     base64_data = base64_data.split(",", 1)[1]
 
                 image_data = b64.b64decode(base64_data)
-                filename = generate_filename(image_type, "diet")
+                filename = generate_filename(image_type, "diet", current_user.id)
                 filepath = os.path.join(UPLOAD_DIR, filename)
                 os.makedirs(os.path.dirname(filepath), exist_ok=True)
 
@@ -116,6 +137,9 @@ def create_diet_record(
         food_name = record_dict['food_items']
         if food_name and len(food_name) > 100:
             food_name = food_name[:100]  # 截断过长的名称
+        ai_raw_result = record_dict.get('ai_raw_result')
+        if ai_raw_result is not None and not isinstance(ai_raw_result, str):
+            ai_raw_result = json.dumps(ai_raw_result, ensure_ascii=False)
 
         db_record = DietRecordModel(
             user_id=current_user.id,
@@ -133,12 +157,25 @@ def create_diet_record(
             alcohol_units=record_dict.get('alcohol_units'),
             notes=record_dict.get('notes'),
             image_url=image_url,
+            client_action_id=idempotency_key,
             ai_recognized=bool(record_dict.get('ai_recognized')),
             ai_confidence=record_dict.get('ai_confidence'),
+            ai_raw_result=ai_raw_result,
             health_tips=record_dict.get('health_tips'),
         )
         db.add(db_record)
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            if idempotency_key:
+                existing = db.query(DietRecordModel).filter(
+                    DietRecordModel.user_id == current_user.id,
+                    DietRecordModel.client_action_id == idempotency_key,
+                ).first()
+                if existing:
+                    return _convert_to_response(existing)
+            raise
         db.refresh(db_record)
 
         logger.info(f"饮食记录创建成功: id={db_record.id}")
@@ -196,7 +233,11 @@ def _convert_to_response(record) -> DietRecordResponse:
         fat=record.fat,
         fiber=record.fiber,
         notes=record.notes,
-        image_url=getattr(record, 'image_url', None),
+        image_url=refresh_private_upload_url(
+            getattr(record, 'image_url', None),
+            "diet",
+            record.user_id,
+        ),
         ai_recognized=getattr(record, 'ai_recognized', 0),
         ai_confidence=getattr(record, 'ai_confidence', None),
         health_tips=getattr(record, 'health_tips', None),
@@ -499,7 +540,12 @@ def delete_diet_record(
 
     db.delete(record)
     db.commit()
-    return {"message": "Record deleted successfully"}
+    return {
+        "message": "Record deleted successfully",
+        "id": record_id,
+        "record_id": record_id,
+        "resource_type": "diet_record",
+    }
 
 
 # ========== AI食物识别端点 ==========
@@ -651,7 +697,7 @@ async def recognize_and_save_diet(
                     base64_data = base64_data.split(",", 1)[1]
 
                 image_data = b64.b64decode(base64_data)
-                filename = generate_filename(image_type, "diet")
+                filename = generate_filename(image_type, "diet", current_user.id)
                 filepath = os.path.join(UPLOAD_DIR, filename)
                 os.makedirs(os.path.dirname(filepath), exist_ok=True)
 
