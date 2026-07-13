@@ -1689,6 +1689,12 @@ function QuickDietDraftCard({
         <Ionicons name="images-outline" size={14} color={C.green600} />
         <Text style={txt.quickSharePromiseText}>{sharePromiseText}</Text>
       </View>
+      {isSaving ? (
+        <View style={styles.quickSavingStatusRow}>
+          <Ionicons name="cloud-upload-outline" size={14} color={C.green600} />
+          <Text style={txt.quickSavingStatusText}>正在写入饮食记录，完成后生成分享图</Text>
+        </View>
+      ) : null}
       <Text style={txt.quickHint}>{reviewHint}</Text>
 
       <View style={styles.quickActions}>
@@ -2088,6 +2094,19 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.green100,
   },
+  quickSavingStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 6,
+    marginTop: revaSpacing.s2,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: revaRadii.pill,
+    backgroundColor: C.green50,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.green100,
+  },
   quickActions: { flexDirection: 'row', alignItems: 'center', gap: revaSpacing.s2, marginTop: revaSpacing.s4 },
   quickConfirmBtn: {
     flex: 1.5,
@@ -2162,6 +2181,7 @@ const txt = {
   recognitionTimingMuted: { fontFamily: revaFonts.sans, fontSize: 10.5, color: C.ink3, fontWeight: '700' } as TextStyle,
   quickTrustText: { fontFamily: revaFonts.sans, fontSize: 12, lineHeight: 17, fontWeight: '800' } as TextStyle,
   quickSharePromiseText: { fontFamily: revaFonts.sans, fontSize: 11, lineHeight: 15, color: C.green700, fontWeight: '800' } as TextStyle,
+  quickSavingStatusText: { fontFamily: revaFonts.sans, fontSize: 11, lineHeight: 15, color: C.green700, fontWeight: '800' } as TextStyle,
   quickHint: { fontFamily: revaFonts.sans, fontSize: 12, lineHeight: 17, color: C.ink3, marginTop: revaSpacing.s3 } as TextStyle,
   quickConfirmText: { fontFamily: revaFonts.sans, fontSize: 14, color: C.greenOn, fontWeight: '800' } as TextStyle,
   quickSecondaryText: { fontFamily: revaFonts.sans, fontSize: 14, color: C.green600, fontWeight: '800' } as TextStyle,

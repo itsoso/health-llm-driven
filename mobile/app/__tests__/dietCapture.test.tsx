@@ -1504,6 +1504,7 @@ describe('DietScreen capture deeplink', () => {
 
     expect(dietService.createDietRecord).toHaveBeenCalledTimes(1);
     expect(getByText('保存中')).toBeTruthy();
+    expect(getByText('正在写入饮食记录，完成后生成分享图')).toBeTruthy();
     resolveSave({ id: 88 });
     await waitFor(() => {
       expect(mockEstimate).toHaveBeenCalledWith(88, { kind: 'text', description: '鸡胸肉 200g + 糙米饭一碗' });
