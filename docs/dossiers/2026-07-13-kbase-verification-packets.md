@@ -4,7 +4,7 @@
 |---|---|
 | slug | `kbase-verification-packets` |
 | stage | S5 release |
-| status | in_progress |
+| status | blocked |
 | owner | Codex |
 
 ## Intake
@@ -38,9 +38,20 @@ would create a competing ingestion path.
   finalizes, or publishes.
 - Contract and drift gates: **PASS.** Web and mobile OpenAPI clients include the
   verification routes; all pre-commit hooks and `git diff --check` pass.
-- G5 deployment health: pending.
-- G6 production verification: pending; shadow generation only, with no apply,
-  finalization, or publication.
+- G5 deployment health: **PASS.** Production deployed merge commit `368cbfff`;
+  the deployment score was `60/60`, the frontend and backend were online, and
+  the local/remote Skills manifests matched at `22/22`.
+- G6 production verification: **BLOCKED.** One shadow packet was generated for
+  an unresolved claim and remained `ready`, current (`stale=false`), and
+  non-serving with two citation IDs. No apply, finalization, or publication was
+  invoked. The request returned 500 after the packet write because the audit op
+  `dedao_kbase_verification_packet_generated` is 41 characters while
+  `kb_audit.op` is `VARCHAR(40)`; therefore no audit row was written. Hotfix PR
+  #245 shortens and bounds both verification audit operation names and passes
+  the focused verification API suite, but cannot proceed while the latest
+  unrelated Agent Native merge on `main` has failing CI shards. Production was
+  intentionally left on the healthy `368cbfff` release rather than deploying a
+  red main branch.
 
 ## Artifacts
 
