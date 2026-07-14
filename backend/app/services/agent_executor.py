@@ -8339,6 +8339,21 @@ class AgentExecutor:
         uid = self._current_user_id
         if dim == "weight":
             raw = await self._read_in_process(art.read_weight, uid, limit=10)
+        elif dim == "blood_pressure":
+            raw = await self._read_in_process(art.read_blood_pressure, uid, limit=10)
+        elif dim == "water":
+            raw = await self._read_in_process(art.read_daily_water, uid)
+        elif dim == "diet":
+            raw = await self._read_in_process(art.read_daily_diet, uid)
+        elif dim in ("workout", "exercise"):
+            # 两个 dim 旧端点都是 /workout/me?days=N(WorkoutRecord)。
+            raw = await self._read_in_process(art.read_workouts, uid, days=days)
+        elif dim == "manual_exercise":
+            raw = await self._read_in_process(art.read_manual_exercises, uid, days=days)
+        elif dim == "events":
+            raw = await self._read_in_process(art.read_life_events, uid, days=days)
+        elif dim == "supplements":
+            raw = await self._read_in_process(art.read_supplement_stats, uid, days=days)
         else:
             return None
         return _truncate_for_display(raw)

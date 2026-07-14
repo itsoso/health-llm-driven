@@ -43,7 +43,10 @@ from app.services.intake_intent_classifier import (
     classify_intake_intent,
     looks_like_food_ui_text,
 )
-from app.services.private_uploads import refresh_private_upload_url
+# D1(garmin-sync 治理 Wave 3):图片 URL 签名抽到 utils 做单一真源,供 api 的
+# _convert_to_response 与进程内 diet reader 共用(非确定性签名字段无法 parity-test,
+# 必须共用同一函数对象防静默漂移)。保留同名以不动本模块调用点。
+from app.utils.diet_image_url import diet_response_image_url as _diet_response_image_url
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -151,17 +154,6 @@ def _diet_image_file_path(image_url: str | None, owner_id: int) -> str | None:
     if not filename or not candidate.startswith(f"{owner_root}{os.sep}"):
         return None
     return candidate
-
-
-def _diet_response_image_url(image_url: str | None, owner_id: int) -> str | None:
-    """Sign only canonical paths whose owner is encoded in the path itself."""
-    if not image_url:
-        return None
-    path = urlsplit(str(image_url)).path
-    canonical_prefix = f"/api/v1/upload/files/diet/{int(owner_id)}/"
-    if not path.startswith(canonical_prefix):
-        return None
-    return refresh_private_upload_url(image_url, "diet", owner_id)
 
 
 def _assert_diet_user_access(user_id: int, current_user: User) -> None:

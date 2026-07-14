@@ -22,6 +22,9 @@ from app.utils.health_record import (
     apply_date_filter,
     get_records_in_days,
 )
+# D1(garmin-sync 治理 Wave 3): 血压分类抽到 utils 做单一真源, 供 api 与进程内 reader 共用。
+# 保留同名 re-export, 既有 `from app.api.blood_pressure import classify_blood_pressure` 不破。
+from app.utils.blood_pressure_classify import classify_blood_pressure
 
 router = APIRouter()
 
@@ -33,22 +36,6 @@ def _invalidate_twin(user_id: int) -> None:
         invalidate_twin(user_id)
     except Exception:  # noqa: BLE001 — a Redis error must never fail the write
         pass
-
-
-def classify_blood_pressure(systolic: int, diastolic: int) -> str:
-    """血压分类"""
-    if systolic < 120 and diastolic < 80:
-        return "正常"
-    elif systolic < 130 and diastolic < 80:
-        return "正常偏高"
-    elif systolic < 140 or diastolic < 90:
-        return "高血压前期"
-    elif systolic < 160 or diastolic < 100:
-        return "高血压1级"
-    elif systolic < 180 or diastolic < 110:
-        return "高血压2级"
-    else:
-        return "高血压3级"
 
 
 @router.post("/records", response_model=BloodPressureRecordResponse)

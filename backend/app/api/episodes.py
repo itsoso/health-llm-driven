@@ -24,6 +24,7 @@ from app.models.episode import (
     HealthEpisode,
 )
 from app.models.user import User
+from app.schemas.episode import LifeEventOut
 from app.services.episode.lifecycle import maybe_close_episode
 
 router = APIRouter()
@@ -258,15 +259,6 @@ class LifeEventCreate(BaseModel):
     # 原话时间表达:"下午" / "刚才" / "21:07" / ISO;空 = 此刻
     occurred_at: Optional[str] = Field(None, max_length=64)
     notes: Optional[str] = Field(None, max_length=500)
-
-
-class LifeEventOut(BaseModel):
-    id: int
-    title: str
-    occurred_at: datetime
-    occurred_precision: str
-    occurred_display: str
-    notes: Optional[str] = None
 
 
 def _life_event_out(ep: HealthEpisode) -> LifeEventOut:

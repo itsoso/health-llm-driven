@@ -22,12 +22,18 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 from sqlalchemy import desc as sa_desc
 from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
+
+# 北京时区 —— water/diet 端点用它把"今天"解析成日期(与 agent_executor.BEIJING_TZ 同值)。
+BEIJING_TZ = timezone(timedelta(hours=8))
+# 每日目标饮水量(毫升)—— 复刻 app/api/water.py::DAILY_WATER_TARGET(golden-master 钉死)。
+DAILY_WATER_TARGET = 2000
 
 
 def read_weight(db: Session, user_id: Optional[int], *, limit: int = 10) -> str:
@@ -95,3 +101,337 @@ def read_supplement_daily_guide(db: Session, user_id: Optional[int]) -> str:
 
     guide = get_daily_supplement_guide(db, user_id, None)
     return json.dumps(guide, ensure_ascii=False, default=str)
+
+
+def read_blood_pressure(db: Session, user_id: Optional[int], *, limit: int = 10) -> str:
+    """血压记录 — 镜像 GET /blood-pressure/records/me?limit=N
+    (blood_pressure.py::get_my_blood_pressure_records)。
+
+    tool 只传 limit(不传 start/end), order by record_date desc, 经
+    BloodPressureRecordResponse 序列化, **每条补 category=classify_blood_pressure(sys,dia)**
+    —— 与端点逐字段一致(golden-master 校验)。
+    """
+    if user_id is None:
+        return "Error: 当前会话无 user_id, 无法查询血压"
+    from app.models.blood_pressure import BloodPressureRecord
+    from app.schemas.blood_pressure import BloodPressureRecordResponse
+    from app.utils.blood_pressure_classify import classify_blood_pressure
+
+    records = (
+        db.query(BloodPressureRecord)
+        .filter(BloodPressureRecord.user_id == user_id)
+        .order_by(sa_desc(BloodPressureRecord.record_date))
+        .limit(limit)
+        .all()
+    )
+    payload = []
+    for r in records:
+        resp = BloodPressureRecordResponse.model_validate(r)
+        resp.category = classify_blood_pressure(r.systolic, r.diastolic)
+        payload.append(resp.model_dump(mode="json"))
+    return json.dumps(payload, ensure_ascii=False, default=str)
+
+
+def _water_record_to_response(record):
+    """复刻 app/api/water.py::_convert_to_response(不 import api 层)。"""
+    from datetime import time as dt_time
+
+    from app.schemas.water import WaterRecordResponse
+
+    drink_time = None
+    if hasattr(record, "intake_time") and record.intake_time:
+        if isinstance(record.intake_time, datetime):
+            drink_time = record.intake_time.time()
+        elif isinstance(record.intake_time, dt_time):
+            drink_time = record.intake_time
+
+    return WaterRecordResponse(
+        id=record.id,
+        user_id=record.user_id,
+        record_date=record.record_date,
+        amount=record.amount or 0,
+        drink_time=drink_time,
+        drink_type=record.drink_type if hasattr(record, "drink_type") else None,
+        notes=record.notes if hasattr(record, "notes") else None,
+        created_at=record.created_at,
+        updated_at=record.updated_at if hasattr(record, "updated_at") else None,
+    )
+
+
+def read_daily_water(db: Session, user_id: Optional[int]) -> str:
+    """今日饮水汇总 — 镜像 GET /water/records/me/date/{today}
+    (water.py::get_my_daily_water_summary)。
+
+    today = 北京时区当日(与 agent_executor endpoint_map 同源)。逐字段复刻端点的
+    DailyWaterSummary 聚合(total_amount / progress / records_count / records)。
+    """
+    if user_id is None:
+        return "Error: 当前会话无 user_id, 无法查询饮水"
+    from app.models.daily_health import WaterIntake
+    from app.schemas.water import DailyWaterSummary
+
+    record_date = datetime.now(BEIJING_TZ).date()
+    records = (
+        db.query(WaterIntake)
+        .filter(WaterIntake.user_id == user_id, WaterIntake.record_date == record_date)
+        .order_by(WaterIntake.created_at)
+        .all()
+    )
+    total_amount = sum(r.amount or 0 for r in records)
+    progress = round((total_amount / DAILY_WATER_TARGET) * 100, 1) if DAILY_WATER_TARGET > 0 else 0
+    summary = DailyWaterSummary(
+        record_date=record_date,
+        total_amount=total_amount,
+        target_amount=DAILY_WATER_TARGET,
+        progress_percentage=min(progress, 100),
+        records_count=len(records),
+        records=[_water_record_to_response(r) for r in records],
+    )
+    return json.dumps(summary.model_dump(mode="json"), ensure_ascii=False, default=str)
+
+
+def _diet_record_to_response(record):
+    """复刻 app/api/diet.py::_convert_to_response(不 import api 层)。
+
+    image_url 签名走**共用** util `diet_response_image_url`(与 api 同一函数对象)——
+    非确定性签名字段无法 parity-test,共用防静默漂移(单一真源)。其余字段确定性,
+    由 golden-master 逐字段钉死。
+    """
+    from datetime import time as dt_time
+
+    from app.schemas.diet import DietRecordResponse, MealType
+    from app.utils.diet_image_url import diet_response_image_url
+
+    meal_time = None
+    if hasattr(record, "meal_time") and record.meal_time:
+        if isinstance(record.meal_time, str):
+            try:
+                meal_time = datetime.strptime(record.meal_time, "%H:%M").time()
+            except (ValueError, TypeError):
+                meal_time = None
+        elif isinstance(record.meal_time, dt_time):
+            meal_time = record.meal_time
+
+    return DietRecordResponse(
+        id=record.id,
+        user_id=record.user_id,
+        record_date=record.record_date,
+        meal_type=MealType(record.meal_type) if record.meal_type else MealType.EXTRA,
+        meal_time=meal_time,
+        food_items=record.food_items or "",
+        food_id=getattr(record, "food_id", None),
+        source=getattr(record, "source", None),
+        calories=record.calories,
+        protein=record.protein,
+        carbs=record.carbs,
+        fat=record.fat,
+        fiber=record.fiber,
+        notes=record.notes,
+        image_url=diet_response_image_url(getattr(record, "image_url", None), record.user_id),
+        ai_recognized=getattr(record, "ai_recognized", 0),
+        ai_confidence=getattr(record, "ai_confidence", None),
+        health_tips=getattr(record, "health_tips", None),
+        created_at=record.created_at,
+        updated_at=record.updated_at if hasattr(record, "updated_at") else None,
+    )
+
+
+def read_daily_diet(db: Session, user_id: Optional[int]) -> str:
+    """今日饮食汇总 — 镜像 GET /diet/records/me/date/{today}
+    (diet.py::get_my_daily_diet_summary)。
+
+    today = 北京时区当日。逐字段复刻端点的 DailyDietSummary 聚合(热量/宏量四舍五入到 1 位 +
+    meals_count + meals)。每餐经复刻的 _diet_record_to_response(含 image_url 签名 + schema
+    的 display_message post-init)。
+    """
+    if user_id is None:
+        return "Error: 当前会话无 user_id, 无法查询饮食"
+    from app.models.daily_health import DietRecord
+    from app.schemas.diet import DailyDietSummary
+
+    record_date = datetime.now(BEIJING_TZ).date()
+    records = (
+        db.query(DietRecord)
+        .filter(DietRecord.user_id == user_id, DietRecord.record_date == record_date)
+        .order_by(DietRecord.created_at)
+        .all()
+    )
+    total_calories = sum(r.calories or 0 for r in records)
+    total_protein = sum(r.protein or 0 for r in records)
+    total_carbs = sum(r.carbs or 0 for r in records)
+    total_fat = sum(r.fat or 0 for r in records)
+    total_fiber = sum(r.fiber or 0 for r in records)
+    summary = DailyDietSummary(
+        record_date=record_date,
+        total_calories=total_calories,
+        total_protein=round(total_protein, 1),
+        total_carbs=round(total_carbs, 1),
+        total_fat=round(total_fat, 1),
+        total_fiber=round(total_fiber, 1),
+        meals_count=len(records),
+        meals=[_diet_record_to_response(r) for r in records],
+    )
+    return json.dumps(summary.model_dump(mode="json"), ensure_ascii=False, default=str)
+
+
+def read_workouts(db: Session, user_id: Optional[int], *, days: int = 7) -> str:
+    """运动记录(Garmin 同步的跑步/骑行等)— 镜像 GET /workout/me?days=N
+    (workout.py::get_my_workouts)。
+
+    tool 只传 days(不传 workout_type/start_date/end_date), 走端点的 days 分支:
+    query_start = today-(days-1) 若 days>1 否则 today; order by workout_date desc, start_time
+    desc; 经 WorkoutSummary 序列化。today 用 get_china_today()(与端点同源)。
+    """
+    if user_id is None:
+        return "Error: 当前会话无 user_id, 无法查询运动"
+    from app.models.daily_health import WorkoutRecord
+    from app.schemas.workout import WorkoutSummary
+    from app.utils.timezone import get_china_today
+
+    days = int(days)
+    today = get_china_today()
+    query_start = today - timedelta(days=days - 1) if days > 1 else today
+    query_end = today
+    records = (
+        db.query(WorkoutRecord)
+        .filter(
+            WorkoutRecord.user_id == user_id,
+            WorkoutRecord.workout_date >= query_start,
+            WorkoutRecord.workout_date <= query_end,
+        )
+        .order_by(WorkoutRecord.workout_date.desc(), WorkoutRecord.start_time.desc())
+        .all()
+    )
+    payload = [
+        WorkoutSummary(
+            id=r.id,
+            workout_date=r.workout_date,
+            workout_type=r.workout_type,
+            workout_name=r.workout_name,
+            duration_seconds=r.duration_seconds,
+            distance_meters=r.distance_meters,
+            avg_heart_rate=r.avg_heart_rate,
+            calories=r.calories,
+            feeling=r.feeling,
+            has_ai_analysis=r.ai_analysis is not None,
+        ).model_dump(mode="json")
+        for r in records
+    ]
+    return json.dumps(payload, ensure_ascii=False, default=str)
+
+
+def read_manual_exercises(db: Session, user_id: Optional[int], *, days: int = 7) -> str:
+    """手动录入锻炼(俯卧撑/瑜伽等)— 镜像 GET /daily-health/exercise/me?days=N
+    (daily_health.py::get_my_exercises)。
+
+    start = date.today()-days(端点用 naive 本地 date.today(), 服务器 = Asia/Shanghai);
+    filter record_date >= start; order by created_at desc; 经 ExerciseRecordResponse 序列化
+    (含 schema 的 display_message post-init)。
+    """
+    if user_id is None:
+        return "Error: 当前会话无 user_id, 无法查询锻炼"
+    from app.models.daily_health import ExerciseRecord
+    from app.schemas.daily_health import ExerciseRecordResponse
+
+    days = int(days)
+    start = date.today() - timedelta(days=days)
+    records = (
+        db.query(ExerciseRecord)
+        .filter(ExerciseRecord.user_id == user_id, ExerciseRecord.record_date >= start)
+        .order_by(sa_desc(ExerciseRecord.created_at))
+        .all()
+    )
+    payload = [ExerciseRecordResponse.model_validate(r).model_dump(mode="json") for r in records]
+    return json.dumps(payload, ensure_ascii=False, default=str)
+
+
+def _life_event_out(ep):
+    """复刻 app/api/episodes.py::_life_event_out(不 import api 层)。"""
+    from app.schemas.episode import LifeEventOut
+    from app.services.occurred_time import precision_display
+
+    snap = ep.context_snapshot or {}
+    precision = str(snap.get("occurred_precision") or "exact")
+    raw = snap.get("occurred_raw")
+    return LifeEventOut(
+        id=ep.id,
+        title=ep.headline or "",
+        occurred_at=ep.occurred_at,
+        occurred_precision=precision,
+        occurred_display=precision_display(ep.occurred_at, precision, raw),
+        notes=snap.get("notes"),
+    )
+
+
+def read_life_events(db: Session, user_id: Optional[int], *, days: int = 7) -> str:
+    """生活事件时间线 — 镜像 GET /episodes/me/life-events?days=N
+    (episodes.py::list_life_events)。
+
+    since = now(utc)-days; filter episode_type=='life_event' + occurred_at>=since;
+    order by occurred_at asc; limit 200; 经复刻的 _life_event_out(用 precision_display 服务)
+    序列化为 LifeEventOut。
+    """
+    if user_id is None:
+        return "Error: 当前会话无 user_id, 无法查询生活事件"
+    from app.models.episode import HealthEpisode
+
+    days = int(days)
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+    rows = (
+        db.query(HealthEpisode)
+        .filter(
+            HealthEpisode.user_id == user_id,
+            HealthEpisode.episode_type == "life_event",
+            HealthEpisode.occurred_at >= since,
+        )
+        .order_by(HealthEpisode.occurred_at.asc())
+        .limit(200)
+        .all()
+    )
+    payload = [_life_event_out(ep).model_dump(mode="json") for ep in rows]
+    return json.dumps(payload, ensure_ascii=False, default=str)
+
+
+def read_supplement_stats(db: Session, user_id: Optional[int], *, days: int = 7) -> str:
+    """补剂依从统计 — 镜像 GET /supplements/me/stats?days=N
+    (supplements.py::get_my_supplement_stats, 无 response_model → inline list[dict])。
+
+    end_date = date.today(); start_date = end_date-(days-1); 遍历 is_active 补剂定义,
+    统计窗内 taken 次数。逐字段复刻端点的 dict 投影。
+    """
+    if user_id is None:
+        return "Error: 当前会话无 user_id, 无法查询补剂统计"
+    from app.models.supplement import SupplementDefinition, SupplementRecord
+
+    days = int(days)
+    end_date = date.today()
+    start_date = end_date - timedelta(days=days - 1)
+    supplements = (
+        db.query(SupplementDefinition)
+        .filter(SupplementDefinition.user_id == user_id, SupplementDefinition.is_active)
+        .all()
+    )
+    stats = []
+    for supp in supplements:
+        records = (
+            db.query(SupplementRecord)
+            .filter(
+                SupplementRecord.user_id == user_id,
+                SupplementRecord.supplement_id == supp.id,
+                SupplementRecord.record_date >= start_date,
+                SupplementRecord.record_date <= end_date,
+            )
+            .all()
+        )
+        taken_count = sum(1 for r in records if r.taken)
+        stats.append(
+            {
+                "supplement_id": supp.id,
+                "supplement_name": supp.name,
+                "category": supp.category,
+                "total_days": days,
+                "taken_days": taken_count,
+                "completion_rate": round(taken_count / days * 100, 1),
+            }
+        )
+    return json.dumps(stats, ensure_ascii=False, default=str)

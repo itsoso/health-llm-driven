@@ -18,19 +18,34 @@
 import asyncio
 import json
 import uuid
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 
 import pytest
 from sqlalchemy.orm import sessionmaker
 
 from app.api.deps import get_current_user_required
 from app.config import settings
+from app.models.blood_pressure import BloodPressureRecord
+from app.models.daily_health import (
+    DietRecord,
+    ExerciseRecord,
+    WaterIntake,
+    WorkoutRecord,
+)
+from app.models.episode import HealthEpisode
 from app.models.genetic_data import GeneticProfile
+from app.models.supplement import SupplementDefinition, SupplementRecord
 from app.models.user import User
 from app.models.weight import WeightRecord
 from app.services import agent_read_tools as art
 from app.services.agent_executor import AgentExecutor, _truncate_for_display
 from main import app
+
+BEIJING_TZ = timezone(timedelta(hours=8))
+
+
+def _beijing_today():
+    return datetime.now(BEIJING_TZ).date()
 
 
 def _run(coro):
@@ -349,3 +364,416 @@ def test_truncate_long_list_first_10():
     out = _truncate_for_display(big)
     assert "仅显示前10条" in out
     assert len(json.loads(out.split("\n")[0])) == 10
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# D1 增量 A2:剩余 7 个只读维度进程内直调 golden-master parity + killswitch
+# 每维:进程内 reader 输出 == 真 route(TestClient,完整 response_model)输出。
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+# ── blood_pressure ──────────────────────────────────────────────────────────────
+
+
+def test_blood_pressure_parity_via_testclient(db, client):
+    user = _make_user(db)
+    db.add(
+        BloodPressureRecord(
+            user_id=user.id, record_date=date.today(), systolic=165, diastolic=105, pulse=72
+        )
+    )
+    db.add(
+        BloodPressureRecord(
+            user_id=user.id,
+            record_date=date.today() - timedelta(days=1),
+            systolic=118,
+            diastolic=76,
+            pulse=64,
+        )
+    )
+    db.commit()
+    app.dependency_overrides[get_current_user_required] = lambda: user
+
+    http = client.get("/api/v1/blood-pressure/records/me?limit=10").json()
+    inproc = json.loads(art.read_blood_pressure(db, user.id, limit=10))
+
+    assert inproc == http  # 逐字段数据等价(同一 response_model + category 分类)
+    assert inproc[0]["category"] == "高血压2级"  # 165/105 order by record_date desc
+    assert inproc[1]["category"] == "正常"  # 118/76
+
+
+def test_blood_pressure_killswitch_false_uses_http(db, monkeypatch):
+    user = _make_user(db)
+    monkeypatch.setattr(settings, "reads_in_process", False, raising=False)
+    ex = AgentExecutor(db)
+    ex._current_user_id = user.id
+    calls = {}
+
+    async def fake_api_get(url, headers):
+        calls["url"] = url
+        return "[]"
+
+    ex._api_get = fake_api_get
+    _run(ex._exec_health_query("http://x/api/v1", {}, {"dimension": "blood_pressure"}))
+    assert calls["url"].endswith("/blood-pressure/records/me?limit=10")
+
+
+def test_blood_pressure_user_scoping(db):
+    a = _make_user(db)
+    b = _make_user(db)
+    db.add(BloodPressureRecord(user_id=a.id, record_date=date.today(), systolic=120, diastolic=80))
+    db.add(BloodPressureRecord(user_id=b.id, record_date=date.today(), systolic=190, diastolic=120))
+    db.commit()
+
+    a_out = json.loads(art.read_blood_pressure(db, a.id, limit=10))
+    assert [(r["systolic"], r["diastolic"]) for r in a_out] == [(120, 80)]  # 只见自己的
+    b_out = json.loads(art.read_blood_pressure(db, b.id, limit=10))
+    assert [(r["systolic"], r["diastolic"]) for r in b_out] == [(190, 120)]
+
+
+# ── water ────────────────────────────────────────────────────────────────────────
+
+
+def test_water_parity_via_testclient(db, client):
+    user = _make_user(db)
+    today = _beijing_today()
+    db.add(WaterIntake(user_id=user.id, record_date=today, amount_ml=500, drink_type="水"))
+    db.add(WaterIntake(user_id=user.id, record_date=today, amount_ml=300, drink_type="茶"))
+    db.commit()
+    app.dependency_overrides[get_current_user_required] = lambda: user
+
+    http = client.get(f"/api/v1/water/records/me/date/{today.isoformat()}").json()
+    inproc = json.loads(art.read_daily_water(db, user.id))
+
+    assert inproc == http
+    assert inproc["total_amount"] == 800
+    assert inproc["records_count"] == 2
+
+
+def test_water_killswitch_false_uses_http(db, monkeypatch):
+    user = _make_user(db)
+    monkeypatch.setattr(settings, "reads_in_process", False, raising=False)
+    ex = AgentExecutor(db)
+    ex._current_user_id = user.id
+    calls = {}
+
+    async def fake_api_get(url, headers):
+        calls["url"] = url
+        return "{}"
+
+    ex._api_get = fake_api_get
+    _run(ex._exec_health_query("http://x/api/v1", {}, {"dimension": "water"}))
+    today = datetime.now(BEIJING_TZ).strftime("%Y-%m-%d")
+    assert calls["url"].endswith(f"/water/records/me/date/{today}")
+
+
+# ── diet ─────────────────────────────────────────────────────────────────────────
+
+
+def test_diet_parity_via_testclient(db, client):
+    user = _make_user(db)
+    today = _beijing_today()
+    db.add(
+        DietRecord(
+            user_id=user.id,
+            record_date=today,
+            meal_type="breakfast",
+            food_items="燕麦",
+            calories=300.0,
+            protein=10.0,
+            carbs=50.0,
+            fat=5.0,
+            fiber=4.0,
+        )
+    )
+    db.add(
+        DietRecord(
+            user_id=user.id,
+            record_date=today,
+            meal_type="lunch",
+            food_items="鸡胸肉",
+            calories=250.0,
+            protein=40.0,
+            carbs=2.0,
+            fat=6.0,
+            fiber=0.0,
+        )
+    )
+    db.commit()
+    app.dependency_overrides[get_current_user_required] = lambda: user
+
+    http = client.get(f"/api/v1/diet/records/me/date/{today.isoformat()}").json()
+    inproc = json.loads(art.read_daily_diet(db, user.id))
+
+    assert inproc == http  # 含 display_message post-init + 宏量四舍五入
+    assert inproc["total_calories"] == 550
+    assert inproc["meals_count"] == 2
+
+
+def test_diet_killswitch_false_uses_http(db, monkeypatch):
+    user = _make_user(db)
+    monkeypatch.setattr(settings, "reads_in_process", False, raising=False)
+    ex = AgentExecutor(db)
+    ex._current_user_id = user.id
+    calls = {}
+
+    async def fake_api_get(url, headers):
+        calls["url"] = url
+        return "{}"
+
+    ex._api_get = fake_api_get
+    _run(ex._exec_health_query("http://x/api/v1", {}, {"dimension": "diet"}))
+    today = datetime.now(BEIJING_TZ).strftime("%Y-%m-%d")
+    assert calls["url"].endswith(f"/diet/records/me/date/{today}")
+
+
+# ── workout / exercise(两个 dim 都映射到 /workout/me)──────────────────────────────
+
+
+def test_workout_parity_via_testclient(db, client):
+    user = _make_user(db)
+    today = date.today()
+    db.add(
+        WorkoutRecord(
+            user_id=user.id,
+            workout_date=today,
+            workout_type="running",
+            workout_name="晨跑",
+            duration_seconds=1800,
+            distance_meters=5000.0,
+            avg_heart_rate=150,
+            calories=350,
+            feeling="good",
+        )
+    )
+    db.add(
+        WorkoutRecord(
+            user_id=user.id,
+            workout_date=today - timedelta(days=2),
+            workout_type="cycling",
+            duration_seconds=3600,
+            calories=500,
+        )
+    )
+    db.commit()
+    app.dependency_overrides[get_current_user_required] = lambda: user
+
+    http = client.get("/api/v1/workout/me?days=7").json()
+    inproc = json.loads(art.read_workouts(db, user.id, days=7))
+
+    assert inproc == http
+    assert inproc[0]["workout_type"] == "running"  # order by workout_date desc
+
+
+def test_exercise_dim_also_uses_workout_reader_no_http(db, monkeypatch):
+    """dim='exercise' 与 dim='workout' 同走 read_workouts,进程内不打 HTTP。"""
+    user = _make_user(db)
+    db.add(
+        WorkoutRecord(
+            user_id=user.id, workout_date=date.today(), workout_type="hiit", duration_seconds=600
+        )
+    )
+    db.commit()
+    test_sm = sessionmaker(autocommit=False, autoflush=False, bind=db.get_bind())
+    monkeypatch.setattr("app.database.SessionLocal", test_sm)
+    monkeypatch.setattr(settings, "reads_in_process", True, raising=False)
+
+    ex = AgentExecutor(db)
+    ex._current_user_id = user.id
+
+    async def _boom(*a, **k):
+        raise AssertionError("进程内路径绝不能打 _api_get")
+
+    ex._api_get = _boom
+    out = _run(ex._exec_health_query("http://x/api/v1", {}, {"dimension": "exercise", "days": 7}))
+    assert json.loads(out)[0]["workout_type"] == "hiit"
+
+
+def test_workout_killswitch_false_uses_http(db, monkeypatch):
+    user = _make_user(db)
+    monkeypatch.setattr(settings, "reads_in_process", False, raising=False)
+    ex = AgentExecutor(db)
+    ex._current_user_id = user.id
+    calls = {}
+
+    async def fake_api_get(url, headers):
+        calls["url"] = url
+        return "[]"
+
+    ex._api_get = fake_api_get
+    _run(ex._exec_health_query("http://x/api/v1", {}, {"dimension": "workout", "days": 14}))
+    assert calls["url"].endswith("/workout/me?days=14")
+
+
+def test_exercise_killswitch_false_uses_http(db, monkeypatch):
+    user = _make_user(db)
+    monkeypatch.setattr(settings, "reads_in_process", False, raising=False)
+    ex = AgentExecutor(db)
+    ex._current_user_id = user.id
+    calls = {}
+
+    async def fake_api_get(url, headers):
+        calls["url"] = url
+        return "[]"
+
+    ex._api_get = fake_api_get
+    _run(ex._exec_health_query("http://x/api/v1", {}, {"dimension": "exercise", "days": 3}))
+    assert calls["url"].endswith("/workout/me?days=3")
+
+
+# ── manual_exercise ──────────────────────────────────────────────────────────────
+
+
+def test_manual_exercise_parity_via_testclient(db, client):
+    user = _make_user(db)
+    db.add(
+        ExerciseRecord(
+            user_id=user.id,
+            record_date=date.today(),
+            exercise_type="俯卧撑",
+            reps=30,
+            sets=3,
+        )
+    )
+    db.add(
+        ExerciseRecord(
+            user_id=user.id,
+            record_date=date.today() - timedelta(days=1),
+            exercise_type="平板支撑",
+            duration_seconds=90,
+        )
+    )
+    db.commit()
+    app.dependency_overrides[get_current_user_required] = lambda: user
+
+    http = client.get("/api/v1/daily-health/exercise/me?days=7").json()
+    inproc = json.loads(art.read_manual_exercises(db, user.id, days=7))
+
+    assert inproc == http  # 含 ExerciseRecordResponse.display_message post-init
+    assert any("俯卧撑" in r["display_message"] for r in inproc)
+
+
+def test_manual_exercise_killswitch_false_uses_http(db, monkeypatch):
+    user = _make_user(db)
+    monkeypatch.setattr(settings, "reads_in_process", False, raising=False)
+    ex = AgentExecutor(db)
+    ex._current_user_id = user.id
+    calls = {}
+
+    async def fake_api_get(url, headers):
+        calls["url"] = url
+        return "[]"
+
+    ex._api_get = fake_api_get
+    _run(ex._exec_health_query("http://x/api/v1", {}, {"dimension": "manual_exercise", "days": 5}))
+    assert calls["url"].endswith("/daily-health/exercise/me?days=5")
+
+
+# ── events(生活事件时间线)────────────────────────────────────────────────────────
+
+
+def test_events_parity_via_testclient(db, client):
+    user = _make_user(db)
+    db.add(
+        HealthEpisode(
+            user_id=user.id,
+            episode_type="life_event",
+            source_type="chat",
+            occurred_at=datetime.now(timezone.utc) - timedelta(hours=2),
+            status="closed",
+            risk_level="L0",
+            headline="到北京",
+            context_snapshot={
+                "occurred_precision": "exact",
+                "occurred_raw": "14:00",
+                "notes": "落地首都机场",
+            },
+        )
+    )
+    db.commit()
+    app.dependency_overrides[get_current_user_required] = lambda: user
+
+    http = client.get("/api/v1/episodes/me/life-events?days=7").json()
+    inproc = json.loads(art.read_life_events(db, user.id, days=7))
+
+    assert inproc == http
+    assert inproc[0]["title"] == "到北京"
+    assert inproc[0]["occurred_display"]  # precision_display 非空
+
+
+def test_events_killswitch_false_uses_http(db, monkeypatch):
+    user = _make_user(db)
+    monkeypatch.setattr(settings, "reads_in_process", False, raising=False)
+    ex = AgentExecutor(db)
+    ex._current_user_id = user.id
+    calls = {}
+
+    async def fake_api_get(url, headers):
+        calls["url"] = url
+        return "[]"
+
+    ex._api_get = fake_api_get
+    _run(ex._exec_health_query("http://x/api/v1", {}, {"dimension": "events", "days": 7}))
+    assert calls["url"].endswith("/episodes/me/life-events?days=7")
+
+
+# ── supplements(依从统计,inline list[dict],无 response_model)──────────────────────
+
+
+def test_supplements_parity_via_testclient(db, client):
+    user = _make_user(db)
+    supp = SupplementDefinition(
+        user_id=user.id, name="维生素D", category="维生素", is_active=True
+    )
+    db.add(supp)
+    db.commit()
+    db.refresh(supp)
+    # 7 天窗内取 3 天已服用
+    for i in range(3):
+        db.add(
+            SupplementRecord(
+                user_id=user.id,
+                supplement_id=supp.id,
+                record_date=date.today() - timedelta(days=i),
+                taken=True,
+            )
+        )
+    db.commit()
+    app.dependency_overrides[get_current_user_required] = lambda: user
+
+    http = client.get("/api/v1/supplements/me/stats?days=7").json()
+    inproc = json.loads(art.read_supplement_stats(db, user.id, days=7))
+
+    assert inproc == http  # 逐字段 dict 投影等价
+    assert inproc[0]["taken_days"] == 3
+    assert inproc[0]["total_days"] == 7
+    assert inproc[0]["completion_rate"] == round(3 / 7 * 100, 1)
+
+
+def test_supplements_killswitch_false_uses_http(db, monkeypatch):
+    user = _make_user(db)
+    monkeypatch.setattr(settings, "reads_in_process", False, raising=False)
+    ex = AgentExecutor(db)
+    ex._current_user_id = user.id
+    calls = {}
+
+    async def fake_api_get(url, headers):
+        calls["url"] = url
+        return "[]"
+
+    ex._api_get = fake_api_get
+    _run(ex._exec_health_query("http://x/api/v1", {}, {"dimension": "supplements", "days": 30}))
+    assert calls["url"].endswith("/supplements/me/stats?days=30")
+
+
+# ── fail-loud:新增 reader 无 user_id ────────────────────────────────────────────
+
+
+def test_new_readers_fail_loud_without_user():
+    assert art.read_blood_pressure(None, None).startswith("Error")
+    assert art.read_daily_water(None, None).startswith("Error")
+    assert art.read_daily_diet(None, None).startswith("Error")
+    assert art.read_workouts(None, None).startswith("Error")
+    assert art.read_manual_exercises(None, None).startswith("Error")
+    assert art.read_life_events(None, None).startswith("Error")
+    assert art.read_supplement_stats(None, None).startswith("Error")
