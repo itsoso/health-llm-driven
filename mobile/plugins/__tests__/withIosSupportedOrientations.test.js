@@ -5,6 +5,7 @@ const plist = require('@expo/plist').default;
 
 const {
   _SUPPORTED_ORIENTATIONS,
+  _applyIosReleaseScopeToInfoPlist,
   _patchGeneratedInfoPlist,
   _resolveGeneratedInfoPlistPath,
 } = require('../withIosSupportedOrientations');
@@ -33,7 +34,10 @@ describe('withIosSupportedOrientations', () => {
 
     const patched = plist.parse(fs.readFileSync(infoPlistPath, 'utf8'));
     expect(patched.UISupportedInterfaceOrientations).toEqual(_SUPPORTED_ORIENTATIONS);
-    expect(patched['UISupportedInterfaceOrientations~ipad']).toEqual(_SUPPORTED_ORIENTATIONS);
+    expect(patched.UISupportedInterfaceOrientations).toEqual([
+      'UIInterfaceOrientationPortrait',
+    ]);
+    expect(patched['UISupportedInterfaceOrientations~ipad']).toBeUndefined();
   });
 
   it('resolves the main app plist without choosing generated extension plists', () => {
@@ -43,5 +47,21 @@ describe('withIosSupportedOrientations', () => {
     writeInfoPlist(watchInfoPlistPath, { CFBundleIdentifier: 'life.executor.health.watchkitapp' });
 
     expect(_resolveGeneratedInfoPlistPath(tmpDir, { projectName: 'missing' })).toBe(appInfoPlistPath);
+  });
+
+  it('removes unused background and always-location declarations from the standard binary', () => {
+    const infoPlist = {
+      UIBackgroundModes: ['fetch', 'audio'],
+      NSLocationAlwaysUsageDescription: 'always',
+      NSLocationAlwaysAndWhenInUseUsageDescription: 'always and when in use',
+      NSLocationWhenInUseUsageDescription: 'foreground only',
+    };
+
+    _applyIosReleaseScopeToInfoPlist(infoPlist);
+
+    expect(infoPlist.UIBackgroundModes).toBeUndefined();
+    expect(infoPlist.NSLocationAlwaysUsageDescription).toBeUndefined();
+    expect(infoPlist.NSLocationAlwaysAndWhenInUseUsageDescription).toBeUndefined();
+    expect(infoPlist.NSLocationWhenInUseUsageDescription).toBe('foreground only');
   });
 });

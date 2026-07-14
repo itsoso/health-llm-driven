@@ -2030,7 +2030,11 @@ _RESOURCE_TYPE_BY_RECORD_TYPE = {
 }
 
 
-def _write_result_payload(result: Any) -> Optional[Dict[str, Any]]:
+def _write_result_payload(
+    result: Any,
+    *,
+    allow_pending: bool = False,
+) -> Optional[Dict[str, Any]]:
     if isinstance(result, dict):
         payload = result
     elif isinstance(result, str):
@@ -2053,10 +2057,13 @@ def _write_result_payload(result: Any) -> Optional[Dict[str, Any]]:
     if error not in (None, "", False, {}, []):
         return None
     status = str(payload.get("status") or "").strip().lower()
-    if status in {
-        "error", "failed", "pending", "needs_confirmation", "rejected",
+    rejected_statuses = {
+        "error", "failed", "needs_confirmation", "rejected",
         "cancelled", "canceled", "not_found", "denied",
-    }:
+    }
+    if not allow_pending:
+        rejected_statuses.add("pending")
+    if status in rejected_statuses:
         return None
     message = str(payload.get("message") or "")
     if any(marker in message for marker in _WRITE_RESULT_FAILURE_MARKERS):
@@ -2159,13 +2166,19 @@ def _write_receipt_from_tool_result(
     """Build a persistence receipt from structured tool output only."""
     if tool_name not in _WRITE_RECEIPT_TOOL_NAMES:
         return None
-    payload = _write_result_payload(result)
+    normalized_record_type = str(record_type or "").strip().lower()
+    payload = _write_result_payload(
+        result,
+        allow_pending=(
+            tool_name == "health_record"
+            and normalized_record_type == "reminder"
+        ),
+    )
     if payload is None:
         return None
     result_resource_type, resource_id = _receipt_resource_identity(payload)
     if not resource_id:
         return None
-    normalized_record_type = str(record_type or "").strip().lower()
     resource_type = result_resource_type
     if not resource_type:
         if tool_name == "intervention_cycle":
@@ -2598,7 +2611,9 @@ def _parse_time_only_to_next_beijing(raw: Any) -> Optional[str]:
         .replace("点半", ":30")
         .replace("点", ":")
         .replace("时", ":")
+        .replace("分", "")
         .strip()
+        .rstrip(":")
     )
     m = re.fullmatch(r"(\d{1,2})(?::(\d{1,2}))?", compact)
     if not m:
@@ -2630,6 +2645,73 @@ def _normalize_recurrence(raw: Any) -> Optional[str]:
     if re.search(r"每周|weekly|星期|周[一二三四五六日天]", s):
         return "weekly"
     return s
+
+
+_REMINDER_WINDOW_RE = re.compile(
+    r"(?P<start>\d{1,2}(?::\d{1,2}|：\d{1,2}|点半|点\d{0,2}分?|时\d{0,2}分?)?)"
+    r"\s*(?:到|至|[-~～—])\s*"
+    r"(?P<end>\d{1,2}(?::\d{1,2}|：\d{1,2}|点半|点\d{0,2}分?|时\d{0,2}分?)?)"
+)
+_REMINDER_INTERVAL_RE = re.compile(
+    r"(?:每隔|每)\s*(?P<value>\d+(?:\.\d+)?)\s*"
+    r"(?P<unit>小时|钟头|hours?|hrs?|h|分钟|minutes?|mins?|min|m)",
+    re.IGNORECASE,
+)
+
+
+def _interval_minutes_from_reminder_context(text: str) -> Optional[int]:
+    matches = list(_REMINDER_INTERVAL_RE.finditer(text or ""))
+    if not matches:
+        return None
+    match = matches[-1]
+    value = float(match.group("value"))
+    unit = match.group("unit").lower()
+    minutes = round(value * 60) if unit in {"小时", "钟头", "hour", "hours", "hr", "hrs", "h"} else round(value)
+    return minutes if 15 <= minutes <= 720 else None
+
+
+def _enrich_reminder_window_from_turn(
+    data: dict,
+    *,
+    user_message: str,
+    recent_messages: list[dict],
+) -> dict:
+    """Recover an explicit follow-up window without inventing its interval."""
+    out = dict(data or {})
+    if all(out.get(key) not in (None, "") for key in (
+        "start_time", "end_time", "interval_minutes",
+    )):
+        return out
+
+    window_match = _REMINDER_WINDOW_RE.search(user_message or "")
+    if not window_match:
+        return out
+    start = _parse_time_only_to_next_beijing(window_match.group("start"))
+    end = _parse_time_only_to_next_beijing(window_match.group("end"))
+    if not start or not end:
+        return out
+
+    context = "\n".join(
+        str(message.get("content") or "")
+        for message in recent_messages[-6:]
+        if isinstance(message, dict)
+    )
+    interval_minutes = out.get("interval_minutes")
+    if interval_minutes in (None, ""):
+        interval_minutes = _interval_minutes_from_reminder_context(
+            f"{context}\n{user_message}"
+        )
+
+    out["start_time"] = start
+    out["end_time"] = end
+    if interval_minutes not in (None, ""):
+        out["interval_minutes"] = interval_minutes
+    out.pop("remind_at", None)
+    logger.info(
+        "[health_record] recovered explicit reminder window interval_present=%s",
+        interval_minutes not in (None, ""),
+    )
+    return out
 
 
 def _normalize_reminder_record_data(data: dict) -> dict:
@@ -2668,7 +2750,53 @@ def _normalize_reminder_record_data(data: dict) -> dict:
     if remind_at:
         out["remind_at"] = remind_at
 
-    for key in ("alarm_time", "reminder_time", "time", "at", "repeat", "frequency", "confirmed", "confirm"):
+    def normalize_clock(raw: Any) -> Optional[str]:
+        parsed = _parse_time_only_to_next_beijing(raw)
+        if not parsed:
+            return None
+        try:
+            return datetime.fromisoformat(parsed).astimezone(BEIJING_TZ).strftime("%H:%M")
+        except (TypeError, ValueError):
+            return None
+
+    start_time = normalize_clock(
+        out.get("start_time") or out.get("window_start") or out.get("from_time")
+    )
+    end_time = normalize_clock(
+        out.get("end_time") or out.get("window_end") or out.get("to_time")
+    )
+    if start_time:
+        out["start_time"] = start_time
+    if end_time:
+        out["end_time"] = end_time
+
+    raw_interval = out.get("interval_minutes")
+    if raw_interval in (None, "") and out.get("interval_hours") not in (None, ""):
+        try:
+            raw_interval = float(out["interval_hours"]) * 60
+        except (TypeError, ValueError):
+            raw_interval = None
+    if isinstance(raw_interval, str):
+        interval_text = raw_interval.strip().lower()
+        interval_match = re.fullmatch(r"(\d+(?:\.\d+)?)\s*(小时|hour|hours|h)", interval_text)
+        if interval_match:
+            raw_interval = float(interval_match.group(1)) * 60
+        else:
+            minute_match = re.fullmatch(r"(\d+(?:\.\d+)?)\s*(分钟|minute|minutes|min|m)?", interval_text)
+            raw_interval = float(minute_match.group(1)) if minute_match else None
+    if raw_interval not in (None, ""):
+        try:
+            interval_minutes = int(round(float(raw_interval)))
+        except (TypeError, ValueError):
+            interval_minutes = 0
+        if 15 <= interval_minutes <= 720:
+            out["interval_minutes"] = interval_minutes
+
+    for key in (
+        "alarm_time", "reminder_time", "time", "at", "repeat", "frequency",
+        "confirmed", "confirm", "window_start", "from_time", "window_end",
+        "to_time", "interval_hours",
+    ):
         out.pop(key, None)
     return out
 
@@ -3628,6 +3756,7 @@ class AgentExecutor:
         self._request_model_id: Optional[str] = None
         self._turn_channel: Optional[str] = None
         self._current_turn_user_message = ""
+        self._current_turn_recent_messages: list[dict] = []
         self._prefer_fast_record_model = False
         # 本回合是否被 fast-route 到快模型 (简单记录/查询)。仅用于把答案 max_tokens
         # 从 ANSWER_MAX_TOKENS 收紧到 FAST_ROUTE_ANSWER_MAX_TOKENS —— 见 _answer_max_tokens。
@@ -4411,6 +4540,7 @@ class AgentExecutor:
         """
         yield self._progress_event("accepted")
         self._current_turn_user_message = message or ""
+        self._current_turn_recent_messages = []
         recovered_user_message = None
         claimed_turn = False
         turn_service = None
@@ -4958,6 +5088,9 @@ class AgentExecutor:
         # 3. 构建对话历史
         _t_stage = time.time()
         messages = svc.build_messages(conv.id, limit=15)
+        self._current_turn_recent_messages = [
+            dict(item) for item in messages[-6:] if isinstance(item, dict)
+        ]
         # 确定性护栏 (R4): 历史里助手消息带过 ```reva-ui``` 图表 block —— 若原样喂回
         # LLM, 它会**模仿**这个格式并**编造**图表数据 (实测: 编 "Apple Watch + Garmin +
         # RingConn 多源合并")。把历史助手消息里的 block 换成占位符, LLM 无从模仿。
@@ -6724,7 +6857,8 @@ class AgentExecutor:
             "- 用户说'吃了/服用了XX'：若包含药名、药物剂型(胶囊/缓释片/颗粒/口服液等)、mg/毫克、处方/用药语境 → record_type=medication；补剂/保健品名(鱼油/维C/B族等) → record_type=supplement；明确食物或餐次 → record_type=diet",
             "- 用户说'早上的药都吃了' → record_type=supplement_group, timing=morning",
             "- 用户明确要设置提醒/闹钟/每天几点提醒,且已给出时间 → 调用 health_record(record_type=reminder, data={title,message,remind_at,recurrence})。每日提醒用 recurrence=daily; remind_at 必须是带 +08:00 的 ISO 时间; 只有 HH:MM 时按下一次北京时间生成。不能回复“系统接口限制”或让用户自己去手机/手表设置。",
-            "- 如果上一轮已在问'几点提醒',用户只回复'10:30'这类时间,要继承上一轮任务标题和内容,直接创建 reminder; 不要丢失上下文。",
+            "- 用户要在时间窗内循环提醒(如 9:00 到 20:00 每 1.5 小时) → 一次调用 health_record(record_type=reminder, data={title,message,start_time,end_time,interval_minutes,recurrence}); 不要降级成单个开始时点。",
+            "- 如果上一轮已在问提醒时段,用户只回复'9点到20点'或'10:30'这类时间,要继承上一轮的任务标题、内容和间隔,直接创建 reminder; 不要丢失上下文或重复询问。",
             "- 模糊数量：'几杯水' → 追问具体杯数再记录；'130多' → 追问具体数值",
             "- 时间归属：'昨天' → 记到昨天日期；'刚才' → 当前时间；未说明 → 今天",
             "- 图片：用户发食物照片时，先用你的视觉能力识别图片中的食物名称和份量，然后调用 health_record(type=diet, data={meal_type, food_items, calories, protein, carbs, fat, fiber, record_date}) 记录。必须在 data 中填写完整的 food_items 字符串，不能传空 data。",
@@ -8905,7 +9039,24 @@ class AgentExecutor:
             data["type"] = raw_type
 
         if rtype == "reminder":
+            data = _enrich_reminder_window_from_turn(
+                data,
+                user_message=getattr(self, "_current_turn_user_message", ""),
+                recent_messages=getattr(self, "_current_turn_recent_messages", []),
+            )
             data = _normalize_reminder_record_data(data)
+            has_window_field = any(
+                data.get(key) not in (None, "")
+                for key in ("start_time", "end_time", "interval_minutes")
+            )
+            if has_window_field and not all(
+                data.get(key) not in (None, "")
+                for key in ("start_time", "end_time", "interval_minutes")
+            ):
+                return (
+                    "Error: 时间窗提醒必须同时提供 start_time、end_time、"
+                    "interval_minutes。请继承上一轮已确认的时段与间隔后重试。"
+                )
             args["data"] = data
 
         if rtype == "goal":
@@ -9145,7 +9296,15 @@ class AgentExecutor:
             "excretion": ("/excretion/records", "POST", data),
             # rhinitis 走 special case (见上方 rtype=="rhinitis" 分支), 不在 record_map 里
             "mood": ("/mood/records", "POST", data),
-            "reminder": ("/reminders/me", "POST", data),
+            "reminder": (
+                "/reminders/me/window"
+                if all(data.get(key) not in (None, "") for key in (
+                    "start_time", "end_time", "interval_minutes",
+                ))
+                else "/reminders/me",
+                "POST",
+                data,
+            ),
             "goal": ("/goals/", "POST", data),
         }
 

@@ -46,7 +46,7 @@ export function useNotifications(isAuthenticated: boolean) {
   useEffect(() => {
     if (!isAuthenticated) return;
 
-    registerForPush();
+    void syncGrantedPushRegistration();
     registerNotificationCategories();
 
     receivedSub.current = Notifications.addNotificationReceivedListener(
@@ -68,28 +68,44 @@ export function useNotifications(isAuthenticated: boolean) {
   }, [isAuthenticated]);
 }
 
-async function registerForPush() {
-  if (!Device.isDevice) return;
-  if (Platform.OS !== 'ios') return;
+export type PushRegistrationResult = {
+  status: string;
+  bound: boolean;
+};
 
-  const { status: existing } = await Notifications.getPermissionsAsync();
-  let finalStatus = existing;
-
-  if (existing !== 'granted') {
-    const { status } = await Notifications.requestPermissionsAsync();
-    finalStatus = status;
-  }
-  if (finalStatus !== 'granted') return;
-
+async function bindCurrentIOSToken(): Promise<PushRegistrationResult> {
   try {
     const token = await Notifications.getDevicePushTokenAsync();
     // 上报当前 bundle (variant 后 dev-client 是 .dev, 正式包 .health),
     // 后端用它做 apns-topic, 否则 APNs 返 DeviceTokenNotForTopic
     const bundleId = Constants.expoConfig?.ios?.bundleIdentifier;
     await bindIOSToken(token.data as string, bundleId || undefined);
-  } catch {
-    // simulator or token error — silently ignore
+    return { status: 'granted', bound: true };
+  } catch (error) {
+    console.warn('[useNotifications] failed to bind iOS push token', error);
+    return { status: 'granted', bound: false };
   }
+}
+
+export async function syncGrantedPushRegistration(): Promise<PushRegistrationResult> {
+  if (!Device.isDevice || Platform.OS !== 'ios') {
+    return { status: 'unavailable', bound: false };
+  }
+  const { status } = await Notifications.getPermissionsAsync();
+  if (status !== 'granted') return { status: 'not_granted', bound: false };
+  return bindCurrentIOSToken();
+}
+
+export async function requestPushPermissionAndRegister(): Promise<PushRegistrationResult> {
+  if (!Device.isDevice || Platform.OS !== 'ios') {
+    return { status: 'unavailable', bound: false };
+  }
+  const current = await Notifications.getPermissionsAsync();
+  const status = current.status === 'granted'
+    ? 'granted'
+    : (await Notifications.requestPermissionsAsync()).status;
+  if (status !== 'granted') return { status, bound: false };
+  return bindCurrentIOSToken();
 }
 
 async function registerNotificationCategories() {

@@ -5,6 +5,20 @@ const { buildWatchInjectionEnv, _resolveGeneratedXcodeprojPath } = require('../w
 
 const APP_GROUP = 'group.life.executor.health';
 
+function watchEnabledConfig() {
+  const previous = process.env.INCLUDE_WATCH_APP;
+  process.env.INCLUDE_WATCH_APP = '1';
+  try {
+    jest.resetModules();
+    const appJson = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'app.json'), 'utf8'));
+    const buildConfig = require('../../app.config').default;
+    return buildConfig({ config: appJson.expo });
+  } finally {
+    if (previous == null) delete process.env.INCLUDE_WATCH_APP;
+    else process.env.INCLUDE_WATCH_APP = previous;
+  }
+}
+
 describe('withWatchApp privacy manifests', () => {
   it('keeps photo library purpose strings in generated watch plist templates', () => {
     const pluginSource = fs.readFileSync(path.join(__dirname, '..', 'withWatchApp.js'), 'utf8');
@@ -83,8 +97,7 @@ describe('withWatchApp privacy manifests', () => {
   });
 
   it('passes watch App Group entitlements to EAS app extension provisioning', () => {
-    const appJson = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'app.json'), 'utf8'));
-    const extensions = appJson.expo.extra.eas.build.experimental.ios.appExtensions;
+    const extensions = watchEnabledConfig().extra.eas.build.experimental.ios.appExtensions;
 
     for (const target of ['RevaWatch', 'RevaComplication']) {
       const extension = extensions.find((item) => item.targetName === target);

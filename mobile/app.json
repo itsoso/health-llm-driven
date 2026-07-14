@@ -13,7 +13,7 @@
       "backgroundColor": "#0A8F8F"
     },
     "ios": {
-      "supportsTablet": true,
+      "supportsTablet": false,
       "bundleIdentifier": "life.executor.health",
       "entitlements": {
         "aps-environment": "production",
@@ -22,29 +22,120 @@
       "infoPlist": {
         "CFBundleDisplayName": "小巴",
         "UISupportedInterfaceOrientations": [
-          "UIInterfaceOrientationPortrait",
-          "UIInterfaceOrientationPortraitUpsideDown",
-          "UIInterfaceOrientationLandscapeLeft",
-          "UIInterfaceOrientationLandscapeRight"
-        ],
-        "UISupportedInterfaceOrientations~ipad": [
-          "UIInterfaceOrientationPortrait",
-          "UIInterfaceOrientationPortraitUpsideDown",
-          "UIInterfaceOrientationLandscapeLeft",
-          "UIInterfaceOrientationLandscapeRight"
+          "UIInterfaceOrientationPortrait"
         ],
         "NSFaceIDUsageDescription": "使用 Face ID 保护您的健康数据",
-        "NSSiriUsageDescription": "使用 Siri 语音快速记录或分析健康数据",
         "NSPhotoLibraryUsageDescription": "用于你主动选择餐盘、补剂标签、检查报告或健康相关图片，生成记录草稿和健康分析",
         "NSPhotoLibraryAddUsageDescription": "用于你主动保存健康报告、截图或导出图片到照片图库",
         "NSCameraUsageDescription": "拍摄食物或健康数据进行分析",
         "NSMicrophoneUsageDescription": "用于语音输入、健康记录听写和小巴对话",
         "NSSpeechRecognitionUsageDescription": "识别你的语音,和小巴连续对话",
         "NSLocationWhenInUseUsageDescription": "用你当前位置查天气、空气质量,给出更贴合的建议",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "跑步过程中需要后台定位才能持续记录路线和配速,息屏 / 切换到其他 App 时不中断",
         "NSHealthShareUsageDescription": "用于读取 Apple Watch / RingConn / Oura 等设备写入的健康数据,生成个性化健康分析",
-        "UIBackgroundModes": ["location", "audio", "fetch"],
         "ITSAppUsesNonExemptEncryption": false
+      },
+      "privacyManifests": {
+        "NSPrivacyTracking": false,
+        "NSPrivacyTrackingDomains": [],
+        "NSPrivacyAccessedAPITypes": [
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryFileTimestamp",
+            "NSPrivacyAccessedAPITypeReasons": ["C617.1", "0A2A.1", "3B52.1"]
+          },
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryUserDefaults",
+            "NSPrivacyAccessedAPITypeReasons": ["CA92.1"]
+          },
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategorySystemBootTime",
+            "NSPrivacyAccessedAPITypeReasons": ["35F9.1"]
+          },
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryDiskSpace",
+            "NSPrivacyAccessedAPITypeReasons": ["E174.1", "85F4.1"]
+          }
+        ],
+        "NSPrivacyCollectedDataTypes": [
+          {
+            "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeHealth",
+            "NSPrivacyCollectedDataTypeLinked": true,
+            "NSPrivacyCollectedDataTypeTracking": false,
+            "NSPrivacyCollectedDataTypePurposes": [
+              "NSPrivacyCollectedDataTypePurposeAppFunctionality",
+              "NSPrivacyCollectedDataTypePurposeProductPersonalization"
+            ]
+          },
+          {
+            "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeFitness",
+            "NSPrivacyCollectedDataTypeLinked": true,
+            "NSPrivacyCollectedDataTypeTracking": false,
+            "NSPrivacyCollectedDataTypePurposes": [
+              "NSPrivacyCollectedDataTypePurposeAppFunctionality",
+              "NSPrivacyCollectedDataTypePurposeProductPersonalization"
+            ]
+          },
+          {
+            "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeEmailAddress",
+            "NSPrivacyCollectedDataTypeLinked": true,
+            "NSPrivacyCollectedDataTypeTracking": false,
+            "NSPrivacyCollectedDataTypePurposes": [
+              "NSPrivacyCollectedDataTypePurposeAppFunctionality"
+            ]
+          },
+          {
+            "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeUserID",
+            "NSPrivacyCollectedDataTypeLinked": true,
+            "NSPrivacyCollectedDataTypeTracking": false,
+            "NSPrivacyCollectedDataTypePurposes": [
+              "NSPrivacyCollectedDataTypePurposeAppFunctionality"
+            ]
+          },
+          {
+            "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeOtherUserContent",
+            "NSPrivacyCollectedDataTypeLinked": true,
+            "NSPrivacyCollectedDataTypeTracking": false,
+            "NSPrivacyCollectedDataTypePurposes": [
+              "NSPrivacyCollectedDataTypePurposeAppFunctionality",
+              "NSPrivacyCollectedDataTypePurposeProductPersonalization"
+            ]
+          },
+          {
+            "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypePhotosorVideos",
+            "NSPrivacyCollectedDataTypeLinked": true,
+            "NSPrivacyCollectedDataTypeTracking": false,
+            "NSPrivacyCollectedDataTypePurposes": [
+              "NSPrivacyCollectedDataTypePurposeAppFunctionality",
+              "NSPrivacyCollectedDataTypePurposeProductPersonalization"
+            ]
+          },
+          {
+            "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypePreciseLocation",
+            "NSPrivacyCollectedDataTypeLinked": true,
+            "NSPrivacyCollectedDataTypeTracking": false,
+            "NSPrivacyCollectedDataTypePurposes": [
+              "NSPrivacyCollectedDataTypePurposeAppFunctionality",
+              "NSPrivacyCollectedDataTypePurposeProductPersonalization"
+            ]
+          },
+          {
+            "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeCrashData",
+            "NSPrivacyCollectedDataTypeLinked": false,
+            "NSPrivacyCollectedDataTypeTracking": false,
+            "NSPrivacyCollectedDataTypePurposes": [
+              "NSPrivacyCollectedDataTypePurposeAnalytics",
+              "NSPrivacyCollectedDataTypePurposeAppFunctionality"
+            ]
+          },
+          {
+            "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypePerformanceData",
+            "NSPrivacyCollectedDataTypeLinked": false,
+            "NSPrivacyCollectedDataTypeTracking": false,
+            "NSPrivacyCollectedDataTypePurposes": [
+              "NSPrivacyCollectedDataTypePurposeAnalytics",
+              "NSPrivacyCollectedDataTypePurposeAppFunctionality"
+            ]
+          }
+        ]
       }
     },
     "android": {
@@ -64,7 +155,13 @@
       "expo-router",
       "expo-secure-store",
       "expo-document-picker",
-      "expo-audio",
+      [
+        "expo-audio",
+        {
+          "enableBackgroundPlayback": false,
+          "enableBackgroundRecording": false
+        }
+      ],
       [
         "@react-native-voice/voice",
         {
@@ -76,27 +173,26 @@
         "expo-location",
         {
           "locationWhenInUsePermission": "用你当前位置查天气、空气质量,给出更贴合的建议",
-          "locationAlwaysAndWhenInUsePermission": "跑步过程中需要后台定位才能持续记录路线和配速",
-          "isIosBackgroundLocationEnabled": true
+          "locationAlwaysPermission": false,
+          "locationAlwaysAndWhenInUsePermission": false,
+          "isIosBackgroundLocationEnabled": false
         }
       ],
       [
         "expo-build-properties",
         {
           "ios": {
-            "deploymentTarget": "16.0"
+            "deploymentTarget": "16.0",
+            "privacyManifestAggregationEnabled": true
           }
         }
       ],
-      "./plugins/withRokidIosPods",
-      "./plugins/withRokidIosAuthCallback",
       [
         "expo-notifications",
         {
           "color": "#0A8F8F"
         }
       ],
-      "./plugins/withIntentsExtension",
       "@sentry/react-native",
       "expo-font",
       "expo-image",
@@ -109,15 +205,14 @@
       ],
       "expo-web-browser",
       "./plugins/withHealthKitCleanup",
-      "./plugins/withRokidPushupApk",
       [
         "react-native-health",
         {
           "isClinicalDataEnabled": false,
-          "healthSharePermission": "用于读取 Apple Watch / RingConn / Oura 等设备的健康数据"
+          "healthSharePermission": "用于读取 Apple Watch / RingConn / Oura 等设备的健康数据",
+          "healthUpdatePermission": "仅在你确认后将健康记录写入 Apple Health"
         }
       ],
-      "./plugins/withWatchApp",
       "./plugins/withIosSupportedOrientations"
     ],
     "experiments": {
@@ -127,30 +222,7 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "911ea84f-bc7e-4a12-90cf-33966b6f7398",
-        "build": {
-          "experimental": {
-            "ios": {
-              "appExtensions": [
-                {
-                  "targetName": "RevaWatch",
-                  "bundleIdentifier": "life.executor.health.watchkitapp",
-                  "entitlements": {
-                    "com.apple.security.application-groups": ["group.life.executor.health"]
-                  }
-                },
-                {
-                  "targetName": "RevaComplication",
-                  "bundleIdentifier": "life.executor.health.watchkitapp.watchkitextension",
-                  "parentBundleIdentifier": "life.executor.health.watchkitapp",
-                  "entitlements": {
-                    "com.apple.security.application-groups": ["group.life.executor.health"]
-                  }
-                }
-              ]
-            }
-          }
-        }
+        "projectId": "911ea84f-bc7e-4a12-90cf-33966b6f7398"
       }
     },
     "owner": "itsoso",

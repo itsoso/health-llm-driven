@@ -17,6 +17,9 @@ type AndroidIntentFilter = NonNullable<NonNullable<ExpoConfig['android']>['inten
 const VARIANT = process.env.APP_VARIANT ?? 'production';
 const IS_DEV = VARIANT === 'development';
 const IS_PREVIEW = VARIANT === 'preview';
+const INCLUDE_ROKID = process.env.ROKID_IOS_SDK_ENABLED === '1';
+const INCLUDE_WATCH = process.env.INCLUDE_WATCH_APP === '1';
+const INCLUDE_SIRI = process.env.INCLUDE_SIRI_INTENTS === '1';
 
 const BUNDLE_ID_BASE = 'life.executor.health';
 const APP_LINK_DOMAIN = 'health.executor.life';
@@ -59,28 +62,98 @@ const ROKID_CALLBACK_SCHEMES = Array.from(new Set([
   BUNDLE_ROKID_CALLBACK_SCHEME,
 ]));
 
-export default ({ config }: ConfigContext): ExpoConfig => ({
-  ...config,
-  name: config.name ?? '小巴',
-  slug: config.slug ?? 'health-pilot',
-  plugins: [
-    ...(config.plugins ?? []),
-    ...((config.plugins ?? []).some((plugin) => (
-      Array.isArray(plugin) ? plugin[0] === 'expo-sharing' : plugin === 'expo-sharing'
-    )) ? [] : ['expo-sharing'] as const),
-    ...((config.plugins ?? []).some((plugin) => (
-      Array.isArray(plugin) ? plugin[0] === 'expo-media-library' : plugin === 'expo-media-library'
-    )) ? [] : [[
+const OPTIONAL_NATIVE_PLUGINS = new Set([
+  './plugins/withRokidIosPods',
+  './plugins/withRokidIosAuthCallback',
+  './plugins/withRokidPushupApk',
+  './plugins/withWatchApp',
+  './plugins/withIntentsExtension',
+]);
+
+const WATCH_EXTENSIONS = [
+  {
+    targetName: 'RevaWatch',
+    bundleIdentifier: 'life.executor.health.watchkitapp',
+    entitlements: {
+      'com.apple.security.application-groups': ['group.life.executor.health'],
+    },
+  },
+  {
+    targetName: 'RevaComplication',
+    bundleIdentifier: 'life.executor.health.watchkitapp.watchkitextension',
+    parentBundleIdentifier: 'life.executor.health.watchkitapp',
+    entitlements: {
+      'com.apple.security.application-groups': ['group.life.executor.health'],
+    },
+  },
+];
+
+function pluginName(plugin: NonNullable<ExpoConfig['plugins']>[number]): string {
+  const name = Array.isArray(plugin) ? plugin[0] : plugin;
+  return typeof name === 'string' ? name : '';
+}
+
+function withoutOptionalNativePlugins(plugins: ExpoConfig['plugins'] = []) {
+  return plugins.filter((plugin) => !OPTIONAL_NATIVE_PLUGINS.has(pluginName(plugin)));
+}
+
+function removeKeys<T extends Record<string, any>>(value: T, keys: string[]): T {
+  const next = { ...value };
+  keys.forEach((key) => delete next[key]);
+  return next;
+}
+
+export default ({ config }: ConfigContext): ExpoConfig => {
+  const basePlugins = withoutOptionalNativePlugins(config.plugins);
+  const baseInfoPlist = removeKeys((config.ios?.infoPlist ?? {}) as Record<string, any>, [
+    'UISupportedInterfaceOrientations~ipad',
+    'UIBackgroundModes',
+    'NSLocationAlwaysUsageDescription',
+    'NSLocationAlwaysAndWhenInUseUsageDescription',
+    'NSBluetoothAlwaysUsageDescription',
+    'NSBluetoothPeripheralUsageDescription',
+    'NSSiriUsageDescription',
+    'LSApplicationQueriesSchemes',
+    'RokidCXRAuthCallbackScheme',
+  ]);
+  const baseUrlTypes = ((baseInfoPlist.CFBundleURLTypes ?? []) as any[]).filter((entry) => (
+    entry?.CFBundleURLName !== 'Rokid CXR Auth Callback'
+  ));
+  const baseExtra = config.extra ?? {};
+  const baseEas = (baseExtra.eas ?? {}) as Record<string, any>;
+
+  const plugins: NonNullable<ExpoConfig['plugins']> = [
+    ...basePlugins,
+    ...(INCLUDE_ROKID ? [
+      './plugins/withRokidIosPods',
+      './plugins/withRokidIosAuthCallback',
+      './plugins/withRokidPushupApk',
+    ] : []),
+    ...(INCLUDE_WATCH ? ['./plugins/withWatchApp'] : []),
+    ...(INCLUDE_SIRI ? ['./plugins/withIntentsExtension'] : []),
+  ];
+  if (!plugins.some((plugin) => pluginName(plugin) === 'expo-sharing')) {
+    plugins.push('expo-sharing');
+  }
+  if (!plugins.some((plugin) => pluginName(plugin) === 'expo-media-library')) {
+    plugins.push([
       'expo-media-library',
       {
         photosPermission: PHOTO_LIBRARY_USAGE_DESCRIPTION,
         savePhotosPermission: PHOTO_LIBRARY_ADD_USAGE_DESCRIPTION,
         granularPermissions: ['photo'],
       },
-    ] as [string, any]]),
-  ],
+    ]);
+  }
+
+  return {
+  ...config,
+  name: config.name ?? '小巴',
+  slug: config.slug ?? 'health-pilot',
+  plugins,
   ios: {
     ...(config.ios ?? {}),
+    supportsTablet: false,
     bundleIdentifier: bundleId,
     associatedDomains: Array.from(new Set([
       ...(((config.ios as any)?.associatedDomains ?? []) as string[]),
@@ -94,28 +167,28 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       'com.apple.developer.healthkit': true,
     },
     infoPlist: {
-      ...((config.ios as any)?.infoPlist ?? {}),
+      ...baseInfoPlist,
       CFBundleDisplayName: displayName,
-      LSApplicationQueriesSchemes: Array.from(new Set([
-        ...((((config.ios as any)?.infoPlist ?? {}) as any).LSApplicationQueriesSchemes ?? []),
-        ...ROKID_QUERY_SCHEMES,
-      ])),
+      UISupportedInterfaceOrientations: ['UIInterfaceOrientationPortrait'],
       CFBundleURLTypes: [
-        ...(((((config.ios as any)?.infoPlist ?? {}) as any).CFBundleURLTypes ?? []) as any[]),
-        {
+        ...baseUrlTypes,
+        ...(INCLUDE_ROKID ? [{
           CFBundleURLName: 'Rokid CXR Auth Callback',
           CFBundleURLSchemes: ROKID_CALLBACK_SCHEMES,
-        },
+        }] : []),
       ],
-      RokidCXRAuthCallbackScheme: ROKID_CALLBACK_SCHEME,
-      UIBackgroundModes: Array.from(new Set([
-        ...(((((config.ios as any)?.infoPlist ?? {}) as any).UIBackgroundModes ?? []) as string[]),
-        'bluetooth-central',
-      ])),
-      NSBluetoothAlwaysUsageDescription:
-        '用于连接 Rokid Glasses 并接收用户主动触发的语音、照片和短提示事件',
-      NSBluetoothPeripheralUsageDescription:
-        '用于连接 Rokid Glasses 并接收用户主动触发的语音、照片和短提示事件',
+      ...(INCLUDE_ROKID ? {
+        LSApplicationQueriesSchemes: ROKID_QUERY_SCHEMES,
+        RokidCXRAuthCallbackScheme: ROKID_CALLBACK_SCHEME,
+        UIBackgroundModes: ['bluetooth-central'],
+        NSBluetoothAlwaysUsageDescription:
+          '用于连接 Rokid Glasses 并接收用户主动触发的语音、照片和短提示事件',
+        NSBluetoothPeripheralUsageDescription:
+          '用于连接 Rokid Glasses 并接收用户主动触发的语音、照片和短提示事件',
+      } : {}),
+      ...(INCLUDE_SIRI ? {
+        NSSiriUsageDescription: '使用 Siri 语音快速记录或分析健康数据',
+      } : {}),
       NSPhotoLibraryUsageDescription: PHOTO_LIBRARY_USAGE_DESCRIPTION,
       NSPhotoLibraryAddUsageDescription: PHOTO_LIBRARY_ADD_USAGE_DESCRIPTION,
     },
@@ -128,4 +201,28 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       SHARED_LINK_INTENT_FILTER,
     ],
   },
-});
+  extra: {
+    ...baseExtra,
+    release: {
+      variant: VARIANT,
+      capabilities: {
+        advancedSettings: IS_DEV || IS_PREVIEW,
+        backgroundLocation: IS_DEV || IS_PREVIEW,
+        rokid: INCLUDE_ROKID,
+        siri: INCLUDE_SIRI,
+        watch: INCLUDE_WATCH,
+      },
+    },
+    eas: {
+      ...baseEas,
+      ...(INCLUDE_WATCH ? {
+        build: {
+          experimental: {
+            ios: { appExtensions: WATCH_EXTENSIONS },
+          },
+        },
+      } : {}),
+    },
+  },
+  };
+};

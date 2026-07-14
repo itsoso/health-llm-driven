@@ -57,6 +57,9 @@ def test_action_card_due_today_uses_today_phrase(db):
     assert out is not None
     assert "今天" in out.text or "明天" in out.text  # 临界条件按 day 算
     assert out.source == "action_card_due"
+    assert "检验日" not in out.text
+    assert "做到了吗" not in out.text
+    assert out.quick_replies == ["已完成", "还没完成", "需要调整"]
 
 
 def test_action_card_due_humanizes_noisy_alert_title(db):
@@ -93,6 +96,29 @@ def test_action_card_due_skips_receipt_title(db):
         status="active",
         source_type="orchestrator",
         check_back_date=now,
+    ))
+    db.commit()
+
+    assert compute_conversation_opener(db, user_id=1) is None
+
+
+@pytest.mark.parametrize("title", [
+    "已记录✅",
+    "已为您记录 ✅",
+    "午餐已记录",
+    "记录成功！",
+])
+def test_action_card_due_skips_decorated_receipt_titles(db, title):
+    """Emoji and domain labels must not turn a write receipt into a follow-up prompt."""
+    from app.models.action_card import ActionCard
+
+    db.add(ActionCard(
+        user_id=1,
+        title=title,
+        content="...",
+        status="active",
+        source_type="orchestrator",
+        check_back_date=datetime.now(timezone.utc),
     ))
     db.commit()
 

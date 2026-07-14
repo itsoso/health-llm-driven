@@ -3,6 +3,7 @@ import {
   getMainTabBarPresentation,
   getMainTabLabels,
   getMainTabRouteNames,
+  getColdStartPermissionPrompts,
   unstable_settings,
 } from '../_layout';
 
@@ -25,6 +26,7 @@ describe('agent-native mobile shell', () => {
 
   it('pins chat as the cold-start entry for the agent-native shell', () => {
     expect(unstable_settings.initialRouteName).toBe('chat');
+    expect(getColdStartPermissionPrompts()).toEqual([]);
   });
 
   it('keeps the bottom tab bar hidden and out of layout flow', () => {

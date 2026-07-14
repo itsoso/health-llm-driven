@@ -35,12 +35,16 @@ export interface PhoneLoginResponse extends LoginResponse {
 }
 
 export interface AccountDeletionRequestResponse {
-  status: 'requested';
+  status: 'none' | 'requested' | 'processing' | 'completed' | 'rejected';
   user_id: number;
-  audit_id: number;
-  requested_at: string;
-  estimated_completion_days: number;
-  message: string;
+  request_id?: number;
+  audit_id?: number | null;
+  requested_at?: string;
+  completed_at?: string | null;
+  due_at?: string | null;
+  estimated_completion_days?: number;
+  existing?: boolean;
+  message?: string;
 }
 
 /**
@@ -159,6 +163,11 @@ export async function fetchCurrentUser(): Promise<User> {
 
 export async function requestAccountDeletion(): Promise<AccountDeletionRequestResponse> {
   const { data } = await api.post<AccountDeletionRequestResponse>('/auth/me/deletion-request');
+  return data;
+}
+
+export async function getAccountDeletionRequest(): Promise<AccountDeletionRequestResponse> {
+  const { data } = await api.get<AccountDeletionRequestResponse>('/auth/me/deletion-request');
   return data;
 }
 

@@ -8,6 +8,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 import Markdown from 'react-native-markdown-display';
+import { prepareSafeMarkdown, safeMarkdownIt } from '../../utils/safeMarkdown';
 import {
   getConsultation, updateConsultationItem, verifyPredictions,
   type ConsultationItem, type ConsultationPredictionVerification,
@@ -114,7 +115,7 @@ function ItemCard({
       </View>
       <Text style={styles.itemTitle}>{item.title}</Text>
       {item.content_markdown ? (
-        <Markdown style={mdStyle}>{item.content_markdown}</Markdown>
+        <Markdown style={mdStyle} markdownit={safeMarkdownIt}>{prepareSafeMarkdown(item.content_markdown)}</Markdown>
       ) : null}
 
       {item.due_date ? (
@@ -359,7 +360,7 @@ export default function ConsultationDetailScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>完整分析</Text>
           <View style={styles.markdownCard}>
-            <Markdown style={mdStyle}>{data.rationale_markdown}</Markdown>
+            <Markdown style={mdStyle} markdownit={safeMarkdownIt}>{prepareSafeMarkdown(data.rationale_markdown)}</Markdown>
           </View>
         </View>
 

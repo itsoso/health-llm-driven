@@ -273,6 +273,9 @@ garmin_sync:      {}
 reminder:         {"title": "臀中肌训练", "message": "蚌式开合、侧卧抬腿、臀桥",
                    "remind_at": "2026-06-30T10:30:00+08:00",
                    "recurrence": "daily", "priority": "normal"}
+                  或 {"title": "定时饮水提醒", "message": "少量多次饮水",
+                      "start_time": "09:00", "end_time": "20:00",
+                      "interval_minutes": 90, "recurrence": "daily"}
 goal:             {"title": "每日快走30分钟", "goal_type": "exercise|diet|sleep|water|supplement|outdoor|weight|other",
                    "goal_period": "daily|weekly|monthly|yearly", "target_value": 30,
                    "target_unit": "分钟", "start_date": "2026-07-05",

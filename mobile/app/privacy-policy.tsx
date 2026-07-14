@@ -26,9 +26,14 @@ const sections = [
       'Apple Health / HealthKit 数据仅用于身体状态展示、自动同步、趋势复盘、提醒和个性化健康行动建议。我们不会把 HealthKit 数据用于广告、营销画像或出售给数据经纪方。',
   },
   {
+    title: '位置、图片和诊断数据',
+    body:
+      '仅当你在相关功能中主动授权并使用定位时,小巴读取精确位置来查询天气、空气质量和户外环境,不会持续或后台定位。你主动上传的图片用于生成记录草稿或分析。必要的崩溃和性能数据用于修复故障,不用于广告或营销。',
+  },
+  {
     title: 'AI 与第三方模型',
     body:
-      '当你请求 AI 分析或对话时,系统会按最小必要原则向所选模型提供上下文。AI 用于解释、总结和生成行动草稿,不能替代医生诊断、治疗、处方或药物剂量调整。',
+      '当你请求 AI 分析或对话时,系统会按最小必要原则向完成任务所需的 AI 模型服务提供上下文。模型服务只用于完成该次对话、识别、总结或建议,不用于第三方广告、营销画像或出售。',
   },
   {
     title: '安全与隔离',
@@ -38,12 +43,17 @@ const sections = [
   {
     title: '你的控制权',
     body:
-      '你可以在应用内断开设备授权,停止同步 Apple Health、Garmin 等来源。你也可以在“我 -> 账号与隐私”中发起删除账号与数据请求;请求会进入可审计处理流程,通常 7 天内完成。',
+      '你可以在应用内断开设备授权,停止同步 Apple Health、Garmin 等来源。你也可以在“我 -> 账号与隐私 -> 删除账号与数据”中发起请求;App 会显示删除请求编号和处理状态,通常 7 天内完成。',
   },
   {
     title: '医疗边界',
     body:
       '小巴提供健康记录、趋势解读和生活方式建议,不提供诊断、急救分诊、处方、治疗方案或药物剂量调整。出现红旗症状或医生要求复查时,请以医生和急救服务为准。',
+  },
+  {
+    title: '运营方与联系',
+    body:
+      '小巴由睿为健康运营。如需访问、更正、删除数据或撤回授权,请使用 App 内入口,或联系 support@executor.life。',
   },
 ];
 
@@ -72,7 +82,7 @@ export default function PrivacyPolicyScreen() {
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={txt.heroTitle}>健康数据优先按最小必要原则使用</Text>
             <Text style={txt.heroBody}>
-              这份摘要说明移动端当前主要数据用途和控制方式。完整法律文本、App Store 隐私填报和权限说明需要保持一致。
+              这份政策说明移动端当前主要数据用途和控制方式,并与 App Store 隐私标签和权限说明保持一致。
             </Text>
           </View>
         </View>
@@ -86,7 +96,7 @@ export default function PrivacyPolicyScreen() {
           ))}
         </View>
 
-        <Text style={txt.footer}>最近更新: 2026-06-28</Text>
+        <Text style={txt.footer}>生效及最近更新日期: 2026-07-14</Text>
       </ScrollView>
     </SafeAreaView>
   );

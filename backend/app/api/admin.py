@@ -1,5 +1,5 @@
 """管理员API"""
-from typing import List, Optional
+from typing import List, Literal, Optional
 from datetime import UTC, datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
@@ -11,6 +11,8 @@ from app.models.user import User, GarminCredential
 from app.models.daily_health import GarminData
 from app.models.daily_recommendation import DailyRecommendation
 from app.models.medical_exam import MedicalExam
+from app.models.account_deletion_request import AccountDeletionRequest
+from app.models.agent_audit_log import AgentAuditLog
 from app.api.auth import get_current_user_required
 
 import logging
@@ -97,6 +99,13 @@ class AdminCreateUserRequest(BaseModel):
     is_approved: bool = True
 
 
+class AccountDeletionRequestUpdate(BaseModel):
+    status: Literal["requested", "processing", "completed", "rejected"]
+    note: Optional[str] = None
+    data_deletion_verified: bool = False
+    verification_reference: Optional[str] = None
+
+
 # ========== 权限检查 ==========
 
 async def get_admin_user(
@@ -112,6 +121,92 @@ async def get_admin_user(
 
 
 # ========== API端点 ==========
+
+def _admin_deletion_request_payload(request: AccountDeletionRequest) -> dict:
+    return {
+        "request_id": request.id,
+        "user_id": request.user_id,
+        "status": request.status,
+        "channel": request.channel,
+        "requested_at": request.requested_at,
+        "updated_at": request.updated_at,
+        "completed_at": request.completed_at,
+        "processing_admin_id": request.processing_admin_id,
+        "processing_note": request.processing_note,
+        "verification_reference": request.verification_reference,
+    }
+
+
+@router.get("/account-deletion-requests", summary="账号删除请求队列")
+async def list_account_deletion_requests(
+    request_status: Optional[str] = Query(default=None, alias="status"),
+    limit: int = Query(default=100, ge=1, le=500),
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    query = db.query(AccountDeletionRequest)
+    if request_status:
+        query = query.filter(AccountDeletionRequest.status == request_status)
+    rows = query.order_by(AccountDeletionRequest.requested_at.asc()).limit(limit).all()
+    return {"total": len(rows), "requests": [_admin_deletion_request_payload(row) for row in rows]}
+
+
+@router.patch("/account-deletion-requests/{request_id}", summary="更新账号删除请求")
+async def update_account_deletion_request(
+    request_id: int,
+    update: AccountDeletionRequestUpdate,
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    request = db.query(AccountDeletionRequest).filter(AccountDeletionRequest.id == request_id).first()
+    if request is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="删除请求不存在")
+
+    allowed = {
+        "requested": {"requested", "processing", "completed", "rejected"},
+        "processing": {"processing", "completed", "rejected"},
+        "completed": {"completed"},
+        "rejected": {"rejected"},
+    }
+    if update.status not in allowed.get(request.status, set()):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="不允许的状态变更")
+    if update.status == "completed" and (
+        not update.data_deletion_verified
+        or not (update.verification_reference or "").strip()
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="完成删除请求前必须提供数据清除核验结果和核验引用",
+        )
+
+    now = datetime.now(UTC)
+    request.status = update.status
+    request.processing_admin_id = admin_user.id
+    request.processing_note = update.note
+    if update.verification_reference:
+        request.verification_reference = update.verification_reference.strip()
+    request.updated_at = now
+    if update.status in {"completed", "rejected"}:
+        request.active_user_id = None
+        request.completed_at = now
+
+    db.add(AgentAuditLog(
+        user_id=request.user_id,
+        agent_type="account_privacy",
+        action="account_deletion_status_updated",
+        result_summary=f"账号删除请求状态更新为 {update.status}",
+        result_detail={
+            "request_id": request.id,
+            "admin_user_id": admin_user.id,
+            "status": update.status,
+            "note": update.note,
+            "data_deletion_verified": update.data_deletion_verified,
+            "verification_reference": request.verification_reference,
+        },
+    ))
+    db.commit()
+    db.refresh(request)
+    return _admin_deletion_request_payload(request)
 
 @router.get("/stats", response_model=AdminStatsResponse, summary="获取统计数据")
 async def get_admin_stats(

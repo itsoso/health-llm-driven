@@ -3,13 +3,24 @@ const appJson = require('../app.json');
 
 function configForVariant(variant?: string, env: Record<string, string | undefined> = {}) {
   const previous = process.env.APP_VARIANT;
+  const optionalEnvKeys = [
+    'ROKID_IOS_SDK_ENABLED',
+    'ROKID_IOS_CALLBACK_SCHEME',
+    'INCLUDE_WATCH_APP',
+    'INCLUDE_SIRI_INTENTS',
+  ];
   const previousEnv = new Map<string, string | undefined>();
   if (variant == null) {
     delete process.env.APP_VARIANT;
   } else {
     process.env.APP_VARIANT = variant;
   }
+  optionalEnvKeys.forEach((key) => {
+    previousEnv.set(key, process.env[key]);
+    delete process.env[key];
+  });
   Object.entries(env).forEach(([key, value]) => {
+    if (!previousEnv.has(key)) previousEnv.set(key, process.env[key]);
     previousEnv.set(key, process.env[key]);
     if (value == null) {
       delete process.env[key];
@@ -22,10 +33,7 @@ function configForVariant(variant?: string, env: Record<string, string | undefin
     jest.resetModules();
     const buildConfig = require('../app.config').default;
     return buildConfig({
-      config: {
-        name: '小巴',
-        slug: 'health-pilot',
-      },
+      config: JSON.parse(JSON.stringify(appJson.expo)),
     } as any);
   } finally {
     if (previous == null) {
@@ -46,6 +54,12 @@ function configForVariant(variant?: string, env: Record<string, string | undefin
 function configuredUrlSchemes(config: any) {
   return (config.ios?.infoPlist?.CFBundleURLTypes ?? [])
     .flatMap((entry: any) => entry.CFBundleURLSchemes ?? []);
+}
+
+function configuredPluginNames(config: any): string[] {
+  return (config.plugins ?? []).map((plugin: any) => (
+    Array.isArray(plugin) ? plugin[0] : plugin
+  ));
 }
 
 describe('app.config app links', () => {
@@ -92,10 +106,68 @@ describe('app.config app links', () => {
     expect(env.LANG).toBe('en_US.UTF-8');
   });
 
-  it('uses variant-specific Rokid callback schemes so installed builds do not steal auth callbacks', () => {
-    const productionSchemes = configuredUrlSchemes(configForVariant('production'));
-    const previewSchemes = configuredUrlSchemes(configForVariant('preview'));
-    const developmentSchemes = configuredUrlSchemes(configForVariant('development'));
+  it('keeps the App Store production binary iPhone-only and portrait-only', () => {
+    const config = configForVariant('production');
+
+    expect(config.ios?.supportsTablet).toBe(false);
+    expect(config.ios?.infoPlist?.UISupportedInterfaceOrientations).toEqual([
+      'UIInterfaceOrientationPortrait',
+    ]);
+    expect(config.ios?.infoPlist?.['UISupportedInterfaceOrientations~ipad']).toBeUndefined();
+  });
+
+  it('excludes unverified wearable, glasses, Siri, and background capabilities by default', () => {
+    const config = configForVariant('production');
+    const plugins = configuredPluginNames(config);
+    const infoPlist = config.ios?.infoPlist ?? {};
+
+    expect(plugins).not.toContain('./plugins/withWatchApp');
+    expect(plugins).not.toContain('./plugins/withRokidIosPods');
+    expect(plugins).not.toContain('./plugins/withRokidIosAuthCallback');
+    expect(plugins).not.toContain('./plugins/withRokidPushupApk');
+    expect(plugins).not.toContain('./plugins/withIntentsExtension');
+    expect(config.extra?.eas?.build?.experimental?.ios?.appExtensions).toBeUndefined();
+    expect(infoPlist.UIBackgroundModes).toBeUndefined();
+    expect(infoPlist.NSLocationAlwaysAndWhenInUseUsageDescription).toBeUndefined();
+    expect(infoPlist.NSBluetoothAlwaysUsageDescription).toBeUndefined();
+    expect(infoPlist.NSSiriUsageDescription).toBeUndefined();
+    expect(infoPlist.RokidCXRAuthCallbackScheme).toBeUndefined();
+    expect(configuredUrlSchemes(config)).not.toEqual(expect.arrayContaining([
+      expect.stringContaining('rokid'),
+    ]));
+  });
+
+  it('keeps location permission foreground-only in the App Store binary', () => {
+    const config = configForVariant('production');
+    const locationPlugin = (config.plugins ?? []).find((plugin: any) => (
+      Array.isArray(plugin) && plugin[0] === 'expo-location'
+    ));
+
+    expect(locationPlugin?.[1]).toEqual(expect.objectContaining({
+      locationWhenInUsePermission: expect.stringContaining('天气'),
+      locationAlwaysPermission: false,
+      locationAlwaysAndWhenInUsePermission: false,
+      isIosBackgroundLocationEnabled: false,
+    }));
+  });
+
+  it('does not declare background audio for the App Store production binary', () => {
+    const config = configForVariant('production');
+    const audioPlugin = (config.plugins ?? []).find((plugin: any) => (
+      Array.isArray(plugin) && plugin[0] === 'expo-audio'
+    ));
+
+    expect(audioPlugin?.[1]).toEqual(expect.objectContaining({
+      enableBackgroundPlayback: false,
+      enableBackgroundRecording: false,
+    }));
+  });
+
+  it('uses variant-specific Rokid callback schemes only for explicit Rokid builds', () => {
+    const rokidEnv = { ROKID_IOS_SDK_ENABLED: '1' };
+    const productionSchemes = configuredUrlSchemes(configForVariant('production', rokidEnv));
+    const previewSchemes = configuredUrlSchemes(configForVariant('preview', rokidEnv));
+    const developmentSchemes = configuredUrlSchemes(configForVariant('development', rokidEnv));
 
     expect(productionSchemes).toContain('life.executor.health.rokid');
     expect(previewSchemes).toContain('life.executor.health.preview.rokid');
@@ -109,6 +181,7 @@ describe('app.config app links', () => {
 
   it('allows Rokid CXR-L builds to request the SDK default cxrl callback while keeping the bundle-specific fallback registered', () => {
     const config = configForVariant('production', {
+      ROKID_IOS_SDK_ENABLED: '1',
       ROKID_IOS_CALLBACK_SCHEME: 'cxrl',
     });
     const schemes = configuredUrlSchemes(config);
@@ -120,10 +193,29 @@ describe('app.config app links', () => {
     ]));
   });
 
+  it('adds Watch and Siri native targets only for explicit feature builds', () => {
+    const config = configForVariant('production', {
+      INCLUDE_WATCH_APP: '1',
+      INCLUDE_SIRI_INTENTS: '1',
+    });
+    const plugins = configuredPluginNames(config);
+
+    expect(plugins).toContain('./plugins/withWatchApp');
+    expect(plugins).toContain('./plugins/withIntentsExtension');
+    expect(config.extra?.eas?.build?.experimental?.ios?.appExtensions).toHaveLength(2);
+    expect(config.ios?.infoPlist?.NSSiriUsageDescription).toContain('Siri');
+  });
+
   it('declares native voice permissions for both hold-to-talk and realtime dictation', () => {
     const plugins = appJson.expo.plugins;
 
-    expect(plugins).toContain('expo-audio');
+    expect(plugins).toContainEqual([
+      'expo-audio',
+      expect.objectContaining({
+        enableBackgroundPlayback: false,
+        enableBackgroundRecording: false,
+      }),
+    ]);
     expect(plugins).toContainEqual([
       '@react-native-voice/voice',
       expect.objectContaining({
@@ -131,5 +223,36 @@ describe('app.config app links', () => {
         speechRecognitionPermission: expect.stringContaining('识别你的语音'),
       }),
     ]);
+  });
+
+  it('declares the collected data categories used by the App Store production binary', () => {
+    const config = configForVariant('production');
+    const privacy = config.ios?.privacyManifests;
+    const collected = privacy?.NSPrivacyCollectedDataTypes ?? [];
+    const collectedTypes = collected.map((entry: any) => entry.NSPrivacyCollectedDataType);
+
+    expect(privacy?.NSPrivacyTracking).toBe(false);
+    expect(privacy?.NSPrivacyTrackingDomains).toEqual([]);
+    expect(collectedTypes).toEqual(expect.arrayContaining([
+      'NSPrivacyCollectedDataTypeHealth',
+      'NSPrivacyCollectedDataTypeFitness',
+      'NSPrivacyCollectedDataTypeEmailAddress',
+      'NSPrivacyCollectedDataTypeUserID',
+      'NSPrivacyCollectedDataTypeOtherUserContent',
+      'NSPrivacyCollectedDataTypePhotosorVideos',
+      'NSPrivacyCollectedDataTypePreciseLocation',
+      'NSPrivacyCollectedDataTypeCrashData',
+      'NSPrivacyCollectedDataTypePerformanceData',
+    ]));
+    expect(collected.every((entry: any) => entry.NSPrivacyCollectedDataTypeTracking === false)).toBe(true);
+  });
+
+  it('enables Expo privacy manifest aggregation for native dependencies', () => {
+    const config = configForVariant('production');
+    const buildProperties = (config.plugins ?? []).find((plugin: any) => (
+      Array.isArray(plugin) && plugin[0] === 'expo-build-properties'
+    ));
+
+    expect(buildProperties?.[1]?.ios?.privacyManifestAggregationEnabled).toBe(true);
   });
 });

@@ -1,6 +1,7 @@
 """提醒创建 API 测试"""
 import pytest
 from datetime import datetime, timedelta
+from app.models.smart_reminder import SmartReminder
 from app.models.user import User
 
 
@@ -98,3 +99,102 @@ class TestReminderCreateAPI:
             json={"title": "test", "remind_at": "2026-12-01T09:00:00+08:00"},
         )
         assert response.status_code in (401, 403)
+
+    def test_create_daily_window_is_complete_and_idempotent(
+        self,
+        client,
+        auth_headers,
+        db,
+        test_user,
+    ):
+        payload = {
+            "title": "定时饮水提醒",
+            "message": "少量多次饮水",
+            "start_time": "09:00",
+            "end_time": "20:00",
+            "interval_minutes": 90,
+            "recurrence": "daily",
+        }
+
+        first = client.post(
+            "/api/v1/reminders/me/window",
+            json=payload,
+            headers=auth_headers,
+        )
+        assert first.status_code == 201
+        first_data = first.json()
+        assert first_data["status"] == "scheduled"
+        assert first_data["resource_type"] == "smart_reminder"
+        assert first_data["created_count"] == 8
+        assert first_data["existing_count"] == 0
+        assert first_data["times"] == [
+            "09:00", "10:30", "12:00", "13:30",
+            "15:00", "16:30", "18:00", "19:30",
+        ]
+        assert len(first_data["record_ids"]) == 8
+
+        second = client.post(
+            "/api/v1/reminders/me/window",
+            json=payload,
+            headers=auth_headers,
+        )
+        assert second.status_code == 201
+        second_data = second.json()
+        assert second_data["created_count"] == 0
+        assert second_data["existing_count"] == 8
+        assert second_data["record_ids"] == first_data["record_ids"]
+
+        assert db.query(SmartReminder).filter(
+            SmartReminder.user_id == test_user.id,
+            SmartReminder.title == payload["title"],
+            SmartReminder.status == "pending",
+        ).count() == 8
+
+    def test_create_daily_window_never_reuses_another_users_reminder(
+        self,
+        client,
+        auth_headers,
+        db,
+        test_user,
+    ):
+        other_user = User(
+            username="other-reminder-user",
+            email="other-reminder@example.com",
+            hashed_password="hashed_password",
+            name="另一位用户",
+            is_active=True,
+            is_approved=True,
+        )
+        db.add(other_user)
+        db.commit()
+        db.refresh(other_user)
+        db.add(SmartReminder(
+            user_id=other_user.id,
+            title="定时饮水提醒",
+            message="少量多次饮水",
+            remind_at=datetime.now().replace(hour=9, minute=0, second=0, microsecond=0),
+            priority="normal",
+            recurrence="daily",
+            status="pending",
+        ))
+        db.commit()
+
+        response = client.post(
+            "/api/v1/reminders/me/window",
+            json={
+                "title": "定时饮水提醒",
+                "message": "少量多次饮水",
+                "start_time": "09:00",
+                "end_time": "10:30",
+                "interval_minutes": 90,
+                "recurrence": "daily",
+            },
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 201
+        assert response.json()["created_count"] == 2
+        assert db.query(SmartReminder).filter(
+            SmartReminder.user_id == test_user.id,
+            SmartReminder.title == "定时饮水提醒",
+        ).count() == 2

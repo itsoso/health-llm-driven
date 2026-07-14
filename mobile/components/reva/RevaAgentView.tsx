@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Markdown from 'react-native-markdown-display';
+import { prepareSafeMarkdown, safeMarkdownIt } from '../../utils/safeMarkdown';
 import { useChatEngine, type UIMessage } from '../../hooks/useChatEngine';
 import { renderCard } from '../chat/cards';
 import { revaColors as C, revaRadii, revaShadows } from '../../constants/revaTheme';
@@ -43,7 +44,7 @@ function RevaBubble({ message }: { message: UIMessage }) {
   return (
     <View style={[styles.row, { justifyContent: 'flex-start' }]}>
       <View style={[styles.bubble, styles.bubbleAgent]}>
-        {message.content ? <Markdown style={mdStyles}>{message.content}</Markdown> : <ActivityIndicator size="small" color={C.green500} />}
+        {message.content ? <Markdown style={mdStyles} markdownit={safeMarkdownIt}>{prepareSafeMarkdown(message.content)}</Markdown> : <ActivityIndicator size="small" color={C.green500} />}
       </View>
     </View>
   );

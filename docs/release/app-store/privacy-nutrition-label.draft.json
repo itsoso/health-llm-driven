@@ -100,7 +100,7 @@
     {
       "category": "Location",
       "examples": [
-        "coarse_or_device_location_for_weather_air_quality_and_outdoor_activity_context"
+        "precise_location_selected_by_user_for_weather_air_quality_and_outdoor_activity_context"
       ],
       "purpose": [
         "app_functionality",
@@ -111,8 +111,7 @@
     }
   ],
   "manual_review_required_before_submission": [
-    "Confirm Sentry/diagnostic collection settings in production.",
-    "Confirm whether precise location is collected or only coarse context is stored.",
-    "Confirm whether any future marketing integrations are disabled before submission."
+    "Confirm that the App Store Connect privacy answers exactly match this checked-in declaration before submission.",
+    "Re-run the privacy review whenever a new SDK, analytics provider, advertising feature, or data category is added."
   ]
 }

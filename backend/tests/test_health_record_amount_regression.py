@@ -192,6 +192,100 @@ async def test_reminder_record_normalizes_daily_time_without_extra_confirmation(
 
 
 @pytest.mark.asyncio
+async def test_reminder_record_routes_interval_window_as_one_atomic_write(db):
+    """A follow-up time range must preserve the promised interval schedule."""
+    from app.services.agent_executor import AgentExecutor
+
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    captured = {}
+
+    async def fake_post(url, headers, payload):
+        captured["url"] = url
+        captured["payload"] = payload
+        return json.dumps({
+            "id": 150,
+            "record_ids": list(range(150, 158)),
+            "resource_type": "smart_reminder",
+            "status": "scheduled",
+            "created_count": 8,
+        })
+
+    with patch.object(executor, "_api_post", new=AsyncMock(side_effect=fake_post)):
+        result = await executor._execute_tool(
+            tool_name="health_record",
+            args_raw=json.dumps({
+                "record_type": "reminder",
+                "data": {
+                    "title": "定时饮水提醒",
+                    "message": "少量多次饮水",
+                    "start_time": "9点",
+                    "end_time": "20点",
+                    "interval_hours": 1.5,
+                    "recurrence": "daily",
+                },
+            }, ensure_ascii=False),
+            user_token="test-token",
+        )
+
+    assert "Error" not in str(result)
+    assert captured["url"].endswith("/reminders/me/window")
+    assert captured["payload"]["start_time"] == "09:00"
+    assert captured["payload"]["end_time"] == "20:00"
+    assert captured["payload"]["interval_minutes"] == 90
+
+
+@pytest.mark.asyncio
+async def test_reminder_follow_up_recovers_explicit_window_and_prior_interval(db):
+    """Production regression: '9点到20点' must not collapse to one 09:00 reminder."""
+    from app.services.agent_executor import AgentExecutor
+
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._current_turn_user_message = "9点到20点”"
+    executor._current_turn_recent_messages = [
+        {
+            "role": "assistant",
+            "content": "我会为你生成每天每 1.5 小时一次的循环饮水提醒。请告诉我开始和结束时间。",
+        },
+        {"role": "user", "content": "9点到20点”"},
+    ]
+    captured = {}
+
+    async def fake_post(url, headers, payload):
+        captured["url"] = url
+        captured["payload"] = payload
+        return json.dumps({
+            "id": 150,
+            "record_ids": list(range(150, 158)),
+            "resource_type": "smart_reminder",
+            "status": "scheduled",
+        })
+
+    with patch.object(executor, "_api_post", new=AsyncMock(side_effect=fake_post)):
+        result = await executor._execute_tool(
+            tool_name="health_record",
+            args_raw=json.dumps({
+                "record_type": "reminder",
+                "data": {
+                    "title": "定时饮水提醒",
+                    "message": "少量多次饮水",
+                    "remind_at": "2026-07-15T09:00:00+08:00",
+                    "recurrence": "daily",
+                },
+            }, ensure_ascii=False),
+            user_token="test-token",
+        )
+
+    assert "Error" not in str(result)
+    assert captured["url"].endswith("/reminders/me/window")
+    assert captured["payload"]["start_time"] == "09:00"
+    assert captured["payload"]["end_time"] == "20:00"
+    assert captured["payload"]["interval_minutes"] == 90
+    assert "remind_at" not in captured["payload"]
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("record_type", "payload", "path", "expected_key"),
     [

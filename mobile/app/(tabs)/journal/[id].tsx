@@ -13,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import Markdown from 'react-native-markdown-display';
+import { prepareSafeMarkdown, safeMarkdownIt } from '../../../utils/safeMarkdown';
 import { useCaseDetail } from '../../../hooks/useClinicalJournal';
 import type { JournalEntry } from '../../../services/clinicalJournal';
 import { spacing, radii, typography } from '../../../constants/theme';
@@ -68,7 +69,7 @@ function SoapField({ label, value, color }: { label: string; value: string | nul
         <Text style={[styles.soapLabel, { color }]}>{label}</Text>
       </View>
       <View style={styles.soapValueWrap}>
-        <Markdown style={mdStyles}>{value}</Markdown>
+        <Markdown style={mdStyles} markdownit={safeMarkdownIt}>{prepareSafeMarkdown(value)}</Markdown>
       </View>
     </View>
   );

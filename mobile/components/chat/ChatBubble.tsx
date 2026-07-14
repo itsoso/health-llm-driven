@@ -39,6 +39,7 @@ import { shareLocalImage, sharePlainCaption, sharePlainText } from '../../utils/
 import { buildAiShareMessage, buildXiaohongshuShareMessage } from '../../utils/aiShareText';
 import { buildChatImageSource } from '../../utils/chatImageSource';
 import { containsMarkdownTable, preprocessMarkdownTables } from '../../utils/markdownTables';
+import { prepareSafeMarkdown, safeMarkdownIt } from '../../utils/safeMarkdown';
 import { extractRevaUiBlocks } from '../../utils/revaUiBlocks';
 import { saveChatImageToLibrary } from '../../services/chatImageSave';
 import InterventionDraftSheet from '../actions/InterventionDraftSheet';
@@ -1453,9 +1454,10 @@ class MarkdownRenderBoundary extends React.Component<
 }
 
 function SafeMarkdown({ content, fallbackText }: { content: string; fallbackText: string }) {
+  const safeContent = prepareSafeMarkdown(content);
   return (
     <MarkdownRenderBoundary resetKey={content} fallbackText={fallbackText}>
-      <Markdown style={MD_STYLES}>{content}</Markdown>
+      <Markdown style={MD_STYLES} markdownit={safeMarkdownIt}>{safeContent}</Markdown>
     </MarkdownRenderBoundary>
   );
 }

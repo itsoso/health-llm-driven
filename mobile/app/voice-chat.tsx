@@ -6,6 +6,7 @@ import { useLocalSearchParams, router } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import Animated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming, Easing, withSequence } from 'react-native-reanimated';
 import Markdown from 'react-native-markdown-display';
+import { prepareSafeMarkdown, safeMarkdownIt } from '../utils/safeMarkdown';
 import { useVoiceConversation } from '../hooks/useVoiceConversation';
 import { spacing, radii, shadows } from '../constants/theme';
 import { ColorPalette, useTheme } from '../hooks/useTheme';
@@ -306,7 +307,7 @@ export default function VoiceChatScreen() {
               {t.role === 'user' ? (
                 <Text style={[txt.bubbleText, { color: '#fff' }]}>{t.text}</Text>
               ) : t.text ? (
-                <Markdown style={mdStyles}>{t.text}</Markdown>
+                <Markdown style={mdStyles} markdownit={safeMarkdownIt}>{prepareSafeMarkdown(t.text)}</Markdown>
               ) : null}
             </View>
           ))

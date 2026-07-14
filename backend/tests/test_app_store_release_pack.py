@@ -7,10 +7,17 @@ import zlib
 from pathlib import Path
 
 from scripts.check_app_store_release_pack import (
+    REQUIRED_FILES,
     validate_app_review_redlines,
     validate_demo_review_credentials,
+    validate_privacy_policy_copy,
+    validate_real_device_evidence,
     validate_release_narrative,
 )
+
+
+def test_release_pack_requires_dependency_risk_review():
+    assert "docs/release/app-store/dependency-risk-review.md" in REQUIRED_FILES
 
 REQUIRED_SCREENSHOT_NAMES = [
     "00-launch",
@@ -78,6 +85,28 @@ def test_app_store_release_pack_checker_passes():
     assert "App Store release pack check passed." in result.stdout
 
 
+def test_privacy_policy_copy_rejects_stale_brand_and_missing_controls():
+    failures = validate_privacy_policy_copy(
+        "隐私政策 | 健康助理\n最近更新: 2026-06-28\nHealthKit",
+        "HealthKit 数据摘要",
+    )
+
+    joined = "\n".join(failures)
+    assert "stale privacy-policy brand" in joined
+    assert "2026-07-14" in joined
+    assert "精确位置" in joined
+    assert "删除请求编号" in joined
+
+
+def test_privacy_policy_copy_accepts_current_web_and_mobile_contract():
+    required = (
+        "小巴 睿为健康 2026-07-14 HealthKit AI 模型服务 精确位置 "
+        "删除账号与数据 删除请求编号 7 天 support@executor.life 广告 营销 不提供诊断 处方 药物剂量调整"
+    )
+
+    assert validate_privacy_policy_copy(required, required) == []
+
+
 def test_app_store_release_pack_checker_validates_optional_screenshot_dir(tmp_path: Path):
     root = Path(__file__).resolve().parents[2]
     screenshot_dir = tmp_path / "screens"
@@ -122,6 +151,63 @@ def test_app_store_release_pack_final_submit_fails_loud_without_human_materials(
     assert "final submit requires APP_STORE_SCREENSHOT_DIR or --screenshot-dir" in result.stderr
     assert "final submit requires replacing demo account placeholders" in result.stderr
     assert "missing App Store Connect credentials" in result.stderr
+    assert "final submit requires real-device acceptance evidence" in result.stderr
+
+
+def test_real_device_evidence_requires_current_build_and_all_core_flows(tmp_path: Path):
+    evidence = tmp_path / "real-device.json"
+    evidence.write_text(
+        json.dumps(
+            {
+                "build_id": "226",
+                "device_model": "iPhone 15 Pro",
+                "ios_version": "18.5",
+                "tested_at": "2026-07-14T12:00:00Z",
+                "checks": {
+                    "realtime_dictation_toggle": True,
+                    "hold_to_talk_send_cancel_text": True,
+                    "camera_photo_persistence": True,
+                    "wechat_share_handoff": True,
+                    "xiaohongshu_share_handoff": False,
+                    "confirmed_database_write": True,
+                    "account_deletion_status": True,
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    failures = validate_real_device_evidence(evidence, expected_build_id="226")
+
+    assert "xiaohongshu_share_handoff" in "\n".join(failures)
+
+
+def test_real_device_evidence_accepts_complete_matching_build(tmp_path: Path):
+    evidence = tmp_path / "real-device.json"
+    evidence.write_text(
+        json.dumps(
+            {
+                "build_id": "226",
+                "device_model": "iPhone 15 Pro",
+                "ios_version": "18.5",
+                "tested_at": "2026-07-14T12:00:00Z",
+                "checks": {
+                    "realtime_dictation_toggle": True,
+                    "hold_to_talk_send_cancel_text": True,
+                    "camera_photo_persistence": True,
+                    "wechat_share_handoff": True,
+                    "xiaohongshu_share_handoff": True,
+                    "confirmed_database_write": True,
+                    "account_deletion_status": True,
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    assert validate_real_device_evidence(evidence, expected_build_id="226") == []
 
 
 def test_demo_review_credentials_accept_env_for_final_submit_with_placeholder_notes():

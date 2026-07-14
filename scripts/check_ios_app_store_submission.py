@@ -15,7 +15,6 @@ RELEASE_DIR = ROOT / "docs/release/app-store"
 
 REQUIRED_INFO_PLIST_KEYS = [
     "NSFaceIDUsageDescription",
-    "NSSiriUsageDescription",
     "NSPhotoLibraryUsageDescription",
     "NSCameraUsageDescription",
     "NSMicrophoneUsageDescription",
@@ -24,12 +23,27 @@ REQUIRED_INFO_PLIST_KEYS = [
     "NSHealthShareUsageDescription",
 ]
 
-REQUIRED_EXTENSION_BUNDLE_IDS = {
-    "life.executor.health.watchkitapp",
-    "life.executor.health.watchkitapp.watchkitextension",
+FORBIDDEN_PRODUCTION_PLUGINS = {
+    "./plugins/withWatchApp",
+    "./plugins/withRokidIosPods",
+    "./plugins/withRokidIosAuthCallback",
+    "./plugins/withRokidPushupApk",
+    "./plugins/withIntentsExtension",
 }
 
 EXPECTED_APP_NAME = "小巴"
+
+REQUIRED_PRIVACY_DATA_TYPES = {
+    "NSPrivacyCollectedDataTypeHealth",
+    "NSPrivacyCollectedDataTypeFitness",
+    "NSPrivacyCollectedDataTypeEmailAddress",
+    "NSPrivacyCollectedDataTypeUserID",
+    "NSPrivacyCollectedDataTypeOtherUserContent",
+    "NSPrivacyCollectedDataTypePhotosorVideos",
+    "NSPrivacyCollectedDataTypePreciseLocation",
+    "NSPrivacyCollectedDataTypeCrashData",
+    "NSPrivacyCollectedDataTypePerformanceData",
+}
 
 
 def read_json(path: Path) -> dict[str, Any]:
@@ -95,15 +109,90 @@ def validate(require_asc_credentials: bool) -> list[str]:
     if info_plist.get("ITSAppUsesNonExemptEncryption") is not False:
         failures.append("ITSAppUsesNonExemptEncryption must be false or explicitly reviewed before submission")
 
+    privacy_manifest = ios.get("privacyManifests", {})
+    if privacy_manifest.get("NSPrivacyTracking") is not False:
+        failures.append("iOS privacy manifest must explicitly disable tracking")
+    if privacy_manifest.get("NSPrivacyTrackingDomains") != []:
+        failures.append("iOS privacy manifest must not declare tracking domains")
+    collected_entries = privacy_manifest.get("NSPrivacyCollectedDataTypes", [])
+    collected_types = {
+        entry.get("NSPrivacyCollectedDataType")
+        for entry in collected_entries
+        if isinstance(entry, dict)
+    }
+    missing_privacy_types = REQUIRED_PRIVACY_DATA_TYPES - collected_types
+    if missing_privacy_types:
+        failures.append(
+            "iOS privacy manifest is missing collected data types: "
+            + ", ".join(sorted(missing_privacy_types))
+        )
+    for entry in collected_entries:
+        if isinstance(entry, dict) and entry.get("NSPrivacyCollectedDataTypeTracking") is not False:
+            failures.append(
+                "collected data type must explicitly disable tracking: "
+                f"{entry.get('NSPrivacyCollectedDataType')!r}"
+            )
+
+    privacy_categories = {
+        entry.get("category")
+        for entry in privacy.get("data_types", [])
+        if isinstance(entry, dict)
+    }
+    if not {"Health", "Fitness", "User Content", "Contact Info", "Identifiers", "Diagnostics", "Location"} <= privacy_categories:
+        failures.append("App Store privacy label is missing one or more collected data categories")
+    location_entry = next(
+        (
+            entry
+            for entry in privacy.get("data_types", [])
+            if isinstance(entry, dict) and entry.get("category") == "Location"
+        ),
+        {},
+    )
+    if not any("precise_location" in str(example) for example in location_entry.get("examples", [])):
+        failures.append("App Store privacy label must declare precise location collection")
+    if ios.get("supportsTablet") is not False:
+        failures.append("App Store production must be iPhone-only until iPad acceptance is complete")
+    if info_plist.get("UISupportedInterfaceOrientations") != ["UIInterfaceOrientationPortrait"]:
+        failures.append("App Store production must support portrait orientation only")
+    if "UISupportedInterfaceOrientations~ipad" in info_plist:
+        failures.append("App Store production must not declare iPad orientations")
+    if info_plist.get("UIBackgroundModes"):
+        failures.append("App Store production must not declare unverified background modes")
+    for key in (
+        "NSLocationAlwaysUsageDescription",
+        "NSLocationAlwaysAndWhenInUseUsageDescription",
+        "NSBluetoothAlwaysUsageDescription",
+        "NSBluetoothPeripheralUsageDescription",
+        "NSSiriUsageDescription",
+        "RokidCXRAuthCallbackScheme",
+    ):
+        if key in info_plist:
+            failures.append(f"App Store production must not declare deferred capability: {key}")
+
     for key in REQUIRED_INFO_PLIST_KEYS:
         value = info_plist.get(key)
         if not isinstance(value, str) or len(value.strip()) < 8:
             failures.append(f"missing or weak iOS usage string: {key}")
 
     names = plugin_names(app.get("plugins", []))
-    for plugin in {"expo-router", "expo-secure-store", "react-native-health", "./plugins/withWatchApp"}:
+    for plugin in {"expo-router", "expo-secure-store", "react-native-health"}:
         if plugin not in names:
             failures.append(f"missing required mobile plugin: {plugin}")
+    for plugin in sorted(FORBIDDEN_PRODUCTION_PLUGINS & names):
+        failures.append(f"deferred plugin must not be in App Store production: {plugin}")
+    build_properties = next(
+        (
+            plugin[1]
+            for plugin in app.get("plugins", [])
+            if isinstance(plugin, list)
+            and len(plugin) > 1
+            and plugin[0] == "expo-build-properties"
+            and isinstance(plugin[1], dict)
+        ),
+        {},
+    )
+    if build_properties.get("ios", {}).get("privacyManifestAggregationEnabled") is not True:
+        failures.append("Expo privacy manifest aggregation must be enabled for iOS dependencies")
 
     project_id = app.get("extra", {}).get("eas", {}).get("projectId")
     updates_url = app.get("updates", {}).get("url")
@@ -113,17 +202,10 @@ def validate(require_asc_credentials: bool) -> list[str]:
         failures.append(f"updates.url must match EAS project id, got {updates_url!r}")
 
     extensions = app.get("extra", {}).get("eas", {}).get("build", {}).get("experimental", {}).get("ios", {}).get(
-        "appExtensions",
-        [],
+        "appExtensions", [],
     )
-    extension_bundle_ids = {
-        item.get("bundleIdentifier")
-        for item in extensions
-        if isinstance(item, dict) and isinstance(item.get("bundleIdentifier"), str)
-    }
-    missing_extensions = REQUIRED_EXTENSION_BUNDLE_IDS - extension_bundle_ids
-    for missing in sorted(missing_extensions):
-        failures.append(f"missing EAS app extension bundle id: {missing}")
+    if extensions:
+        failures.append("App Store production must not include Watch app extensions")
 
     production = eas.get("build", {}).get("production", {})
     production_ios = production.get("ios", {})
@@ -138,6 +220,9 @@ def validate(require_asc_credentials: bool) -> list[str]:
         failures.append("EAS production env APP_VARIANT must be production")
     if production_env.get("SENTRY_DISABLE_AUTO_UPLOAD") != "true":
         failures.append("EAS production env must keep SENTRY_DISABLE_AUTO_UPLOAD=true unless release owner enables upload")
+    for key in ("ROKID_IOS_SDK_ENABLED", "INCLUDE_WATCH_APP", "INCLUDE_SIRI_INTENTS"):
+        if production_env.get(key) == "1":
+            failures.append(f"EAS production must not enable deferred capability: {key}")
 
     submit_ios = eas.get("submit", {}).get("production", {}).get("ios", {})
     asc_app_id = submit_ios.get("ascAppId")

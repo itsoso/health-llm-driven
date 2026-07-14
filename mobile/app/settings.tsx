@@ -6,7 +6,7 @@ import { useRouter } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 import api from '../services/api';
-import { requestAccountDeletion } from '../services/auth';
+import { getAccountDeletionRequest, requestAccountDeletion } from '../services/auth';
 import { connectionStatusSummary, fetchDataConnections } from '../services/dataConnections';
 import { useAuth } from '../hooks/useAuth';
 import { useBiometricLock } from '../hooks/useBiometricLock';
@@ -21,6 +21,7 @@ import {
 } from '../constants/revaTheme';
 import { APP_DISPLAY_NAME } from '../constants/brand';
 import { AppleHealthRow } from '../components/AppleHealthRow';
+import { getReleaseCapabilities } from '../config/releaseCapabilities';
 
 export default function SettingsScreen() {
   const router = useRouter();
@@ -28,6 +29,7 @@ export default function SettingsScreen() {
   const qc = useQueryClient();
   const [syncing, setSyncing] = useState(false);
   const [deletionRequesting, setDeletionRequesting] = useState(false);
+  const releaseCapabilities = getReleaseCapabilities();
   const { isEnabled: bioEnabled, isSupported: bioSupported, toggleEnabled: toggleBio } = useBiometricLock(isAuthenticated);
 
   const { data: profile } = useQuery({ queryKey: queryKeys.profile, queryFn: () => api.get('/profile/me').then(r => r.data), staleTime: 600_000 });
@@ -56,6 +58,11 @@ export default function SettingsScreen() {
     queryFn: fetchDataConnections,
     staleTime: 120_000,
   });
+  const { data: deletionRequest } = useQuery({
+    queryKey: ['accountDeletionRequest'],
+    queryFn: getAccountDeletionRequest,
+    staleTime: 60_000,
+  });
 
   const syncGarmin = async () => {
     setSyncing(true);
@@ -80,9 +87,33 @@ export default function SettingsScreen() {
   };
 
   const handleRequestAccountDeletion = () => {
+    if (deletionRequest?.status === 'requested' || deletionRequest?.status === 'processing') {
+      Alert.alert(
+        '删除请求处理中',
+        `请求编号 #${deletionRequest.request_id ?? '-'}，当前状态：${deletionRequest.status === 'processing' ? '人工处理中' : '已提交'}。通常会在 7 天内完成。`,
+        [{ text: '知道了' }],
+      );
+      return;
+    }
+    if (deletionRequest?.status === 'completed') {
+      Alert.alert(
+        '删除已完成',
+        `请求编号 #${deletionRequest.request_id ?? '-'} 已完成。当前登录会话失效后，此账号将无法继续登录。`,
+        [{ text: '知道了' }],
+      );
+      return;
+    }
+    if (deletionRequest?.status === 'rejected') {
+      Alert.alert(
+        '删除请求需要处理',
+        `请求编号 #${deletionRequest.request_id ?? '-'} 未能完成，请联系 support@executor.life。`,
+        [{ text: '知道了' }],
+      );
+      return;
+    }
     Alert.alert(
       '删除账号与数据',
-      '提交后我们会在 7 天内处理账号、健康数据和设备连接删除请求。处理期间请不要卸载 App,以便接收必要通知。这个操作需要人工复核,不能撤销。',
+      '提交后我们会在 7 天内处理账号、健康数据和设备连接删除请求。你可以留在“账号与隐私”查看进度。完成后账号将无法继续登录。',
       [
         { text: '取消', style: 'cancel' },
         {
@@ -95,10 +126,10 @@ export default function SettingsScreen() {
               const result = await requestAccountDeletion();
               Alert.alert(
                 '删除请求已提交',
-                result.message || `请求已记录,预计 ${result.estimated_completion_days} 天内完成处理。`,
+                result.message || `请求 #${result.request_id ?? '-'} 已记录,预计 ${result.estimated_completion_days ?? 7} 天内完成处理。`,
                 [{ text: '知道了' }],
               );
-              await logout();
+              await qc.invalidateQueries({ queryKey: ['accountDeletionRequest'] });
             } catch {
               Alert.alert('提交失败', '删除请求没有保存成功,请稍后重试。');
             } finally {
@@ -214,9 +245,11 @@ export default function SettingsScreen() {
             onPress={() => router.push('/eye-care' as any)} />
           <SettingRow icon="volume-high-outline" label="语音风格"
             onPress={() => router.push('/voice-style' as any)} />
-          <SettingRow icon="mic-outline" label="Siri 语音记录"
-            value="使用说明"
-            onPress={showSiriInfo} />
+          {releaseCapabilities.siri ? (
+            <SettingRow icon="mic-outline" label="Siri 语音记录"
+              value="使用说明"
+              onPress={showSiriInfo} />
+          ) : null}
           {bioSupported && (
             <View style={styles.settingRow}>
               <Ionicons name="finger-print-outline" size={18} color={C.ink2} />
@@ -243,13 +276,25 @@ export default function SettingsScreen() {
           <SettingRow icon="pulse-outline" label="数据自检"
             onPress={() => router.push('/data-integrity' as any)} />
           <SettingRow icon="trash-outline" label="删除账号与数据"
-            value={deletionRequesting ? '提交中...' : '请求删除'}
+            value={deletionRequesting
+              ? '提交中...'
+              : deletionRequest?.status === 'processing'
+                ? '处理中'
+                : deletionRequest?.status === 'requested'
+                  ? '已提交'
+                  : deletionRequest?.status === 'completed'
+                    ? '已完成'
+                    : deletionRequest?.status === 'rejected'
+                      ? '需联系支持'
+                  : '请求删除'}
             destructive
             onPress={handleRequestAccountDeletion} />
         </View>
 
-        <Text style={txt.sectionLabel}>高级与实验</Text>
-        <View style={styles.card}>
+        {releaseCapabilities.advancedSettings ? (
+          <>
+          <Text style={txt.sectionLabel}>高级与实验</Text>
+          <View style={styles.card}>
           <SettingRow icon="sparkles-outline" label="AI 模型"
             onPress={() => router.push('/llm-preference' as any)} />
           <SettingRow icon="person-outline" label="AI 教练风格"
@@ -270,16 +315,22 @@ export default function SettingsScreen() {
             onPress={() => router.push('/connection-checkin' as any)} />
           <SettingRow icon="time-outline" label="健康事件流"
             onPress={() => router.push('/timeline' as any)} />
-          <SettingRow icon="scan-outline" label="Rokid 眼镜健康模式"
-            onPress={() => router.push('/rokid-health' as any)} />
-          <SettingRow icon="body-outline" label="Rokid 俯卧撑计数"
-            onPress={() => router.push('/rokid-pushup-coach' as any)} />
-          <SettingRow icon="shield-checkmark-outline" label="Rokid 自检"
-            onPress={() => router.push('/rokid-diagnostics' as any)} />
+          {releaseCapabilities.rokid ? (
+            <>
+              <SettingRow icon="scan-outline" label="Rokid 眼镜健康模式"
+                onPress={() => router.push('/rokid-health' as any)} />
+              <SettingRow icon="body-outline" label="Rokid 俯卧撑计数"
+                onPress={() => router.push('/rokid-pushup-coach' as any)} />
+              <SettingRow icon="shield-checkmark-outline" label="Rokid 自检"
+                onPress={() => router.push('/rokid-diagnostics' as any)} />
+            </>
+          ) : null}
           <SettingRow icon="bug-outline" label="App 诊断"
             onPress={() => router.push('/app-diagnostics' as any)} />
           <SettingRow icon="information-circle-outline" label="版本" value="1.0.0" />
-        </View>
+          </View>
+          </>
+        ) : null}
 
         {/* Logout */}
         <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.7}>

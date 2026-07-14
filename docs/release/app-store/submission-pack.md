@@ -33,11 +33,11 @@ Status: draft for the next App Store submission.
 
 核心能力:
 
-- HealthKit / Apple Watch 自动同步: 读取你授权的活动、心率、睡眠、血氧等健康数据。
+- HealthKit 数据连接: 读取你授权的活动、心率、睡眠、血氧等健康数据，包括 Apple Watch 写入 Apple Health 的记录。
 - 体检报告导入: 上传报告后整理关键指标，形成可追踪的健康档案。
 - 快速记录: 快速记录饮食、饮水、运动、体重、血压、症状、用药和补剂。
 - AI 健康分析: 基于你的授权数据和上下文生成解释、复盘和行动草稿。
-- 7 天健康运行时: 结合实时状态和历史数据，生成提醒、复盘和下一步建议。
+- 动态健康行动: 结合实时状态和历史数据，优先给出今天的下一步，未来节奏按新记录动态调整。
 - 隐私与控制: 可断开数据来源，也可在 App 内发起账号与数据删除请求。
 
 重要说明:
@@ -50,13 +50,15 @@ Status: draft for the next App Store submission.
 
 ### What's New
 
-本版本重构了移动端核心动线: 打开即进入小巴,今日简报、记录和个人中心都从对话内进入。新增 App 内账号与数据删除请求入口，更新隐私政策说明，并优化 HealthKit、体检导入、快速记录和复盘入口。
+本版本收敛为 iPhone 上的 Agent Native 核心体验: 打开即进入小巴，今日简报、文字与语音输入、拍照记录、确认写入和个人中心都围绕对话完成。新增可查询的账号与数据删除请求，改为场景触发权限，并优化动态行动、流式 Markdown、图片持久化和写入回执。
 
 ## Review Notes
 
 Use `docs/release/app-store/review-notes.zh-CN.md` as the source text for App Store Connect.
 
 ## Production Build Preflight
+
+Standard production is iPhone-only and portrait-only. It intentionally excludes the Watch companion, Rokid integration, Siri intents and background location. Those capabilities use separate non-submission profiles.
 
 Before triggering a production iOS build or submit, run the no-network config gate:
 
@@ -88,11 +90,15 @@ Immediately before an App Store submission, run the stricter final gate. It must
 export APP_STORE_REVIEW_DEMO_ACCOUNT="..."
 export APP_STORE_REVIEW_DEMO_PASSWORD="..."
 export APP_STORE_REVIEW_CONTACT_PHONE="+8613800138000"
+export APP_STORE_BUILD_ID="..."
+export APP_STORE_REAL_DEVICE_EVIDENCE="/secure/path/real-device-acceptance.json"
 
 python3 scripts/check_app_store_release_pack.py \
   --final-submit \
   --screenshot-dir design/screenshots/app-store/<build-id>-ready
 ```
+
+Create the external evidence file from `docs/release/app-store/real-device-acceptance.template.json`. It must refer to the exact TestFlight build and every physical-iPhone check must be `true`. Do not commit tester evidence containing device or account details.
 
 ## Privacy Nutrition Label
 
@@ -157,4 +163,6 @@ Do not submit until:
       `APP_STORE_SCREENSHOT_DIR=design/screenshots/app-store/<build-id>-ready python3 scripts/check_app_store_release_pack.py`.
 - [ ] Privacy policy URL is publicly reachable: `curl -fsSI https://health.executor.life/privacy`.
 - [ ] A production IPA or EAS build is visible in App Store Connect.
+- [ ] A physical iPhone has passed real-time dictation toggle, hold-to-talk send/cancel/text conversion, camera/photo persistence, WeChat/Xiaohongshu share handoff, confirmed database write, and deletion-request status checks.
+- [ ] `docs/release/app-store/dependency-risk-review.md` still matches a fresh production dependency audit.
 - [ ] The release machine has `APP_STORE_REVIEW_DEMO_ACCOUNT`, `APP_STORE_REVIEW_DEMO_PASSWORD`, and `APP_STORE_REVIEW_CONTACT_PHONE`, or a human has filled the equivalent Review Detail fields in App Store Connect.

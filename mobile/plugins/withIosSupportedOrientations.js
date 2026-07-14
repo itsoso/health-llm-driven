@@ -5,14 +5,29 @@ const path = require('path');
 
 const SUPPORTED_ORIENTATIONS = [
   'UIInterfaceOrientationPortrait',
-  'UIInterfaceOrientationPortraitUpsideDown',
-  'UIInterfaceOrientationLandscapeLeft',
-  'UIInterfaceOrientationLandscapeRight',
 ];
 
 function applySupportedOrientationsToInfoPlist(infoPlist) {
   infoPlist.UISupportedInterfaceOrientations = [...SUPPORTED_ORIENTATIONS];
-  infoPlist['UISupportedInterfaceOrientations~ipad'] = [...SUPPORTED_ORIENTATIONS];
+  delete infoPlist['UISupportedInterfaceOrientations~ipad'];
+  return infoPlist;
+}
+
+function applyIosReleaseScopeToInfoPlist(infoPlist) {
+  delete infoPlist.NSLocationAlwaysUsageDescription;
+  delete infoPlist.NSLocationAlwaysAndWhenInUseUsageDescription;
+
+  const backgroundModes = Array.isArray(infoPlist.UIBackgroundModes)
+    ? infoPlist.UIBackgroundModes
+    : [];
+  const retainedModes = process.env.ROKID_IOS_SDK_ENABLED === '1'
+    ? backgroundModes.filter((mode) => mode === 'bluetooth-central')
+    : [];
+  if (retainedModes.length > 0) {
+    infoPlist.UIBackgroundModes = retainedModes;
+  } else {
+    delete infoPlist.UIBackgroundModes;
+  }
   return infoPlist;
 }
 
@@ -68,13 +83,16 @@ function patchGeneratedInfoPlist(platformProjectRoot, modRequest = {}) {
   }
 
   const current = plist.parse(fs.readFileSync(infoPlistPath, 'utf8'));
-  const patched = applySupportedOrientationsToInfoPlist(current);
+  const patched = applyIosReleaseScopeToInfoPlist(
+    applySupportedOrientationsToInfoPlist(current),
+  );
   fs.writeFileSync(infoPlistPath, plist.build(patched), 'utf8');
 }
 
 function withIosSupportedOrientations(config) {
   config = withInfoPlist(config, (mod) => {
     applySupportedOrientationsToInfoPlist(mod.modResults);
+    applyIosReleaseScopeToInfoPlist(mod.modResults);
     return mod;
   });
 
@@ -89,6 +107,7 @@ function withIosSupportedOrientations(config) {
 
 module.exports = withIosSupportedOrientations;
 module.exports._applySupportedOrientationsToInfoPlist = applySupportedOrientationsToInfoPlist;
+module.exports._applyIosReleaseScopeToInfoPlist = applyIosReleaseScopeToInfoPlist;
 module.exports._patchGeneratedInfoPlist = patchGeneratedInfoPlist;
 module.exports._resolveGeneratedInfoPlistPath = resolveGeneratedInfoPlistPath;
 module.exports._SUPPORTED_ORIENTATIONS = SUPPORTED_ORIENTATIONS;

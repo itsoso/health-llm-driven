@@ -60,6 +60,8 @@ _NON_ACTION_TITLE_EXACT = {
 _NON_ACTION_TITLE_PATTERNS = (
     re.compile(r"^已为(你|您)?记录$"),
     re.compile(r"^(已|已经)?(帮你|帮您)?(记录|保存|写入|确认)(成功|好了|完成)?$"),
+    re.compile(r"^(早餐|午餐|晚餐|加餐|夜宵|饮食|用药|补剂|运动|体重|血压|血糖)已记录$"),
+    re.compile(r"^已记录(早餐|午餐|晚餐|加餐|夜宵|饮食|用药|补剂|运动|体重|血压|血糖)?(\d+项)?$"),
 )
 
 
@@ -108,7 +110,10 @@ def _is_non_action_title(title: str) -> bool:
     s = (title or "").strip()
     if not s:
         return True
-    compact = re.sub(r"\s+", "", s).strip("。.!！")
+    # Status labels often arrive decorated ("已记录✅", "午餐已记录"). Keep only
+    # letters and digits for classification so presentation glyphs never turn a
+    # write receipt into an action to follow up.
+    compact = "".join(ch for ch in s if ch.isalnum())
     if compact in _NON_ACTION_TITLE_EXACT:
         return True
     return any(pattern.match(compact) for pattern in _NON_ACTION_TITLE_PATTERNS)
@@ -255,17 +260,20 @@ def _try_action_card_due(db: Session, user_id: int) -> Optional[OpenerSuggestion
         days_until = max(0, (chk.astimezone(CHINA_TZ).date() - datetime.now(CHINA_TZ).date()).days)
 
         if days_until == 0:
-            text = f"今天就是「{title}」的检验日，做到了吗？"
+            text = f"「{title}」今天到复盘时间了。当前更接近哪种情况？"
+            quick_replies = ["已完成", "还没完成", "需要调整"]
         elif days_until == 1:
-            text = f"明天就到「{title}」的检验日，目前情况怎么样？"
+            text = f"明天复盘「{title}」。现在进展顺利吗？"
+            quick_replies = ["按计划进行", "遇到阻碍", "调整计划"]
         else:  # 2
-            text = f"还有 {days_until} 天到「{title}」检验日，进展如何？"
+            text = f"距「{title}」复盘还有 {days_until} 天。要按原计划继续，还是现在调整？"
+            quick_replies = ["按计划进行", "遇到阻碍", "调整计划"]
 
         return OpenerSuggestion(
             text=text,
             source="action_card_due",
             source_id=card.id,
-            quick_replies=["做到了 ✅", "没做 ❌", "调整下计划"],
+            quick_replies=quick_replies,
             deep_link=f"/action-cards/{card.id}",
             priority=100,
         )

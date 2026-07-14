@@ -264,82 +264,9 @@ def main() -> int:
                 f"found {actual_partitions}"
             )
 
-    # 4. ARCHITECTURE.md 文档数字与代码一致
-    actual_api_routers = count_api_include_routers()
-    actual_celery_tasks = count_celery_tasks()
-    actual_models = count_model_files()
-    actual_services = count_service_files()
-    actual_mobile_routes = count_mobile_routes()
-    actual_web_pages = count_web_pages()
-
-    # 对 safety rules / specialists / twin partitions, doc 里有常见写法也校验
-    if actual_specialists > 0:
-        assert_doc_number(
-            failures,
-            label="specialists 数量",
-            expected=actual_specialists,
-            patterns=[
-                # 后面不能紧跟"单测|单元|test|覆盖"之类测试上下文
-                r"{n}\s*个?\s*[Ss]pecialist(?!\s*(?:单测|单元|unit|test|覆盖|测试))",
-                r"{n}\s*[Ss]pecialists(?!\s*(?:单测|单元|unit|test|覆盖|测试))",
-            ],
-            required_docs=("docs/ARCHITECTURE.md",),
-        )
-    if actual_partitions > 0:
-        assert_doc_number(
-            failures,
-            label="Twin 分区数",
-            expected=actual_partitions,
-            patterns=[r"{n}\s*分区", r"{n}-partition"],
-            required_docs=("docs/ARCHITECTURE.md",),
-        )
-    if total_actual > 0:
-        assert_doc_number(
-            failures,
-            label="安全规则条数",
-            expected=total_actual,
-            patterns=[
-                r"{n}\s*条\s*(?:安全|确定性)?\s*规则",
-                r"{n}\s*safety\s*rules?",
-                r"规则分类[（(]\s*{n}\s*条",  # Hook 3: 防 "规则分类(51 条)" 子标题漏检
-            ],
-            required_docs=("docs/ARCHITECTURE.md",),
-        )
-
-    # API 路由 / Celery / models / services / 前后端路由 (只在 ARCHITECTURE.md 里)
-    assert_doc_number(
-        failures,
-        label="API include_router 数",
-        expected=actual_api_routers,
-        patterns=[r"{n}\s*(?:条)?\s*API\s*路由", r"{n}\s*API\s*路由"],
-    )
-    assert_doc_number(
-        failures,
-        label="Celery 任务数",
-        expected=actual_celery_tasks,
-        patterns=[r"{n}\s*Celery", r"{n}\s*个?\s*(?:Celery\s*)?任务"],
-    )
-    assert_doc_number(
-        failures,
-        label="模型文件数",
-        expected=actual_models,
-        patterns=[r"{n}\s*models\b"],
-    )
-    assert_doc_number(
-        failures,
-        label="service 文件数",
-        expected=actual_services,
-        patterns=[r"{n}\s*services\b"],
-    )
-    assert_doc_number(
-        failures,
-        label="mobile 路由数",
-        expected=actual_mobile_routes,
-        patterns=[r"{n}\s*RN\s*路由", r"{n}\s*mobile\s*路由", r"\(\s*{n}\s*路由\s*\)"],
-    )
-    # web pages 在 CLAUDE.md / ARCHITECTURE.md 里写法灵活, 放宽到存在即可
-    # 如果 doc 里确实写了 "X 路由" / "X 页面" 就要对齐
-    # (避免误报: 若 doc 里 web 数字没提, 不算 fail)
+    # 4. Architecture counts are code-derived only. Narrative docs link to
+    # docs/_generated/system-map.json instead of duplicating mutable numbers.
+    # The generated-map comparison below is the single documentation drift gate.
 
     # 4b. KB 对账 auto-approve τ 钉死 (founder ratified §10)。悄悄调低 τ 无 CI 拦 = 安全护栏缺口。
     judge_src = BACKEND / "app" / "services" / "kb_reconciliation_judge.py"
@@ -378,28 +305,24 @@ def main() -> int:
         failures.append(f"  system-map build/compare failed: {e}")
 
     if failures:
-        print("❌ CLAUDE.md / ARCHITECTURE.md 与代码已漂移：", file=sys.stderr)
+        print("❌ 架构治理事实与代码已漂移：", file=sys.stderr)
         for f in failures:
             print(f, file=sys.stderr)
         print(
             "\n修复：\n"
             "  1) 确认代码是目标状态\n"
-            "  2) 同步更新 CLAUDE.md / docs/ARCHITECTURE.md 里对应数字\n"
-            "  3) 不一致数字列在上面, 一条一条修",
+            "  2) 运行 python scripts/dump_system_map.py 更新代码派生快照\n"
+            "  3) 不要把架构计数手写回叙事文档",
             file=sys.stderr,
         )
         return 1
 
-    print("✅ CLAUDE.md + ARCHITECTURE.md 数字与代码一致")
+    print("✅ 架构治理事实与代码一致")
     print(f"   safety rules: {total_actual} total {actual_rules}")
     print(f"   specialists:  {actual_specialists}")
     print(f"   twin partitions: {actual_partitions}")
-    print(f"   API routers: {actual_api_routers}")
-    print(f"   celery tasks: {actual_celery_tasks}")
-    print(f"   model files: {actual_models}")
-    print(f"   service files: {actual_services}")
-    print(f"   mobile routes: {actual_mobile_routes}")
-    print(f"   web pages: {actual_web_pages}")
+    for key, value in fresh_map["counts"].items():
+        print(f"   {key}: {value}")
     return 0
 
 

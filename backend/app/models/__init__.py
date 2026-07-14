@@ -162,10 +162,12 @@ from app.models.rokid_pushup import RokidPushupEvent, RokidPushupSession
 from app.models.fitness_plan import FitnessPlan
 # 程序性记忆/配方 (Harness Slice 3 — 确定性重放的工具序列)
 from app.models.procedure_recipe import ProcedureRecipe
+from app.models.account_deletion_request import AccountDeletionRequest
 
 __all__ = [
     "FitnessPlan",
     "ProcedureRecipe",
+    "AccountDeletionRequest",
     "User",
     "PhoneAuthCode",
     "BasicHealthData",

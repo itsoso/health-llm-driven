@@ -25,6 +25,7 @@ import RootErrorBoundary from '../components/RootErrorBoundary';
 import LoginScreen from './login';
 // Side-effect import: TaskManager.defineTask 必须在 module load 时跑 (React 树挂载前).
 import { registerBackgroundLocationTask } from '../services/backgroundLocationTask';
+import { getReleaseCapabilities } from '../config/releaseCapabilities';
 import { useTheme, type ColorPalette } from '../hooks/useTheme';
 import { loadDietPhotoDraft } from '../services/dietPhotoDraftStorage';
 import {
@@ -47,6 +48,7 @@ function AppContent() {
   const styles = useMemo(() => createStyles(c), [c]);
   const { isAuthenticated, isLoading, user } = useAuth();
   const { isLocked, authenticate } = useBiometricLock(isAuthenticated);
+  const releaseCapabilities = getReleaseCapabilities();
 
   useNotifications(isAuthenticated);
   useGPSAutoRefresh(isAuthenticated);
@@ -59,10 +61,10 @@ function AppContent() {
   // iOS BackgroundFetch — best-effort 后台位置刷新. 已授权才注册.
   // 这里跑 effect 是因为权限授予 (通过 onboarding modal) 后才能注册.
   useEffect(() => {
-    if (isAuthenticated) {
+    if (isAuthenticated && releaseCapabilities.backgroundLocation) {
       registerBackgroundLocationTask();
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, releaseCapabilities.backgroundLocation]);
 
   useEffect(() => {
     if (!isAuthenticated || !user?.id) return;

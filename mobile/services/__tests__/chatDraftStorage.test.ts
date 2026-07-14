@@ -65,6 +65,10 @@ describe('chatDraftStorage', () => {
     mockScope = 'user-7';
   });
 
+  it('uses a SecureStore-compatible key for protected draft text', () => {
+    expect(chatDraftTextStorageKey('user-7')).toMatch(/^[A-Za-z0-9._-]+$/);
+  });
+
   it('persists text and image metadata without base64 health content', async () => {
     await persistChatDraft('午餐照片待确认', [{
       uri: `${chatDraftDirectory(mockScope)}photo.jpeg`,

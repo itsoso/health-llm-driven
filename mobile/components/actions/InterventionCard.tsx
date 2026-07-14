@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Alert, LayoutAnimation, Pressable, StyleSheet, Text, TextStyle, View } from 'react-native';
 import Markdown from 'react-native-markdown-display';
+import { prepareSafeMarkdown, safeMarkdownIt } from '../../utils/safeMarkdown';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
@@ -197,7 +198,7 @@ export default function InterventionCard({ card, onComplete, onReview }: Props) 
           ) : null}
 
           <View style={styles.markdownWrap}>
-            <Markdown style={mdStyles}>{card.content || ''}</Markdown>
+            <Markdown style={mdStyles} markdownit={safeMarkdownIt}>{prepareSafeMarkdown(card.content)}</Markdown>
           </View>
 
           <EvidenceRefsRow refs={card.evidence_refs} />

@@ -8,6 +8,7 @@ import * as Haptics from 'expo-haptics';
 import { getSettings, updateSettings, sendTestPush, type NotificationSettings, type NotificationSettingsUpdate } from '../services/notifications';
 import { spacing, radii, shadows } from '../constants/theme'
 import { useTheme, type ColorPalette } from '../hooks/useTheme';
+import { requestPushPermissionAndRegister } from '../hooks/useNotifications';
 
 export default function NotificationSettingsScreen() {
   const { c } = useTheme();
@@ -29,8 +30,27 @@ export default function NotificationSettingsScreen() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['notificationSettings'] }),
   });
 
-  const toggle = (key: keyof NotificationSettingsUpdate, value: boolean) => {
+  const toggle = async (key: keyof NotificationSettingsUpdate, value: boolean) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (key === 'enabled') {
+      if (!value) {
+        mutation.mutate({ enabled: false, ios_push_enabled: false });
+        return;
+      }
+      const registration = await requestPushPermissionAndRegister();
+      if (registration.status !== 'granted' || !registration.bound) {
+        mutation.mutate({ enabled: false, ios_push_enabled: false });
+        Alert.alert(
+          '推送未开启',
+          registration.status === 'denied'
+            ? '你已拒绝系统通知权限，可在 iPhone“设置”中重新开启。'
+            : '暂时无法绑定这台设备，请稍后重试。',
+        );
+        return;
+      }
+      mutation.mutate({ enabled: true, ios_push_enabled: true });
+      return;
+    }
     mutation.mutate({ [key]: value });
   };
 
@@ -74,21 +94,21 @@ export default function NotificationSettingsScreen() {
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.card}>
           <ToggleRow label="启用推送" value={settings?.enabled ?? true}
-            onToggle={(v) => toggle('enabled', v)} />
+            onToggle={(v) => { void toggle('enabled', v); }} />
         </View>
 
         <Text style={txt.section}>通知类型</Text>
         <View style={styles.card}>
           <ToggleRow label="晨间简报" icon="sunny-outline" value={settings?.morning_briefing_enabled ?? true}
-            onToggle={(v) => toggle('morning_briefing_enabled', v)} />
+            onToggle={(v) => { void toggle('morning_briefing_enabled', v); }} />
           <ToggleRow label="健康告警" icon="warning-outline" value={settings?.health_alert_enabled ?? true}
-            onToggle={(v) => toggle('health_alert_enabled', v)} />
+            onToggle={(v) => { void toggle('health_alert_enabled', v); }} />
           <ToggleRow label="提醒事项" icon="alarm-outline" value={settings?.reminder_enabled ?? true}
-            onToggle={(v) => toggle('reminder_enabled', v)} />
+            onToggle={(v) => { void toggle('reminder_enabled', v); }} />
           <ToggleRow label="AI 建议" icon="sparkles-outline" value={settings?.ai_advice_enabled ?? true}
-            onToggle={(v) => toggle('ai_advice_enabled', v)} />
+            onToggle={(v) => { void toggle('ai_advice_enabled', v); }} />
           <ToggleRow label="跑后教练" icon="fitness-outline" value={settings?.workout_analysis_enabled ?? true}
-            onToggle={(v) => toggle('workout_analysis_enabled', v)} />
+            onToggle={(v) => { void toggle('workout_analysis_enabled', v); }} />
         </View>
 
         <Text style={txt.section}>安静时段</Text>

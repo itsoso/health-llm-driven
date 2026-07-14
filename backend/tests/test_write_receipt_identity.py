@@ -78,3 +78,29 @@ def test_autocreate_with_unparseable_tap_stays_fail_closed():
         ensure_ascii=False,
     )
     assert _write_receipt_from_tool_result("health_record", "supplement", shape) is None
+
+
+def test_pending_smart_reminder_is_a_verified_persisted_write():
+    """Reminder pending means scheduled, not an unverified database write."""
+    shape = json.dumps(
+        {
+            "id": 150,
+            "resource_type": "smart_reminder",
+            "status": "pending",
+            "created_at": "2026-07-14T12:00:00+08:00",
+        }
+    )
+
+    receipt = _write_receipt_from_tool_result("health_record", "reminder", shape)
+
+    assert receipt is not None
+    assert receipt["resource_type"] == "smart_reminder"
+    assert receipt["resource_id"] == "150"
+    assert receipt["verified"] is True
+
+
+def test_pending_non_reminder_write_stays_fail_closed():
+    """Do not weaken the write gate for ordinary records."""
+    shape = json.dumps({"id": 151, "status": "pending"})
+
+    assert _write_receipt_from_tool_result("health_record", "diet", shape) is None

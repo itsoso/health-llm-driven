@@ -11,18 +11,10 @@
 
 import React, { useMemo } from 'react';
 import Markdown from 'react-native-markdown-display';
-// @ts-ignore — markdown-it 没有 bundled types, instance 用作运行时配置
-import MarkdownIt from 'markdown-it';
 import { createMdStylesCompact, createMdStylesChat } from '../../constants/markdownStyles';
 import { useTheme } from '../../hooks/useTheme';
 import { preprocessMarkdownTables } from '../../utils/markdownTables';
-
-const mdInstance = MarkdownIt('default', {
-  typographer: true,
-  breaks: false,
-  linkify: true,
-  html: false,
-});
+import { prepareSafeMarkdown, safeMarkdownIt } from '../../utils/safeMarkdown';
 
 interface Props {
   children: string;
@@ -35,7 +27,10 @@ export default function MarkdownText({ children, variant = 'compact' }: Props) {
     () => (variant === 'chat' ? createMdStylesChat(c) : createMdStylesCompact(c)),
     [c, variant],
   );
-  const processed = useMemo(() => preprocessMarkdownTables(children || ''), [children]);
+  const processed = useMemo(
+    () => prepareSafeMarkdown(preprocessMarkdownTables(children || '')),
+    [children],
+  );
   if (!children) return null;
-  return <Markdown style={style} markdownit={mdInstance}>{processed}</Markdown>;
+  return <Markdown style={style} markdownit={safeMarkdownIt}>{processed}</Markdown>;
 }

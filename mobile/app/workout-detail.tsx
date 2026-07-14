@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import MapView, { Polyline as MapPolyline, Marker } from 'react-native-maps';
 import Markdown from 'react-native-markdown-display';
+import { prepareSafeMarkdown, safeMarkdownIt } from '../utils/safeMarkdown';
 import { useQuery } from '@tanstack/react-query';
 import { useWorkoutDetail } from '../hooks/useWorkouts';
 import { getPostWorkoutAnalysis, getWorkoutChart, getWorkoutVoiceCoach, type WorkoutAnalysis, type PostWorkoutAnalysisResponse, type WorkoutChartData } from '../services/workouts';
@@ -649,7 +650,7 @@ export default function WorkoutDetailScreen() {
               <Text style={T.placeholder}>AI 正在分析运动数据...</Text>
             </View>
           ) : postContent ? (
-            <Markdown style={MD}>{postContent}</Markdown>
+            <Markdown style={MD} markdownit={safeMarkdownIt}>{prepareSafeMarkdown(postContent)}</Markdown>
           ) : analysis ? (
             <View style={{ gap: 8 }}>
               <Text style={T.analysisText}>{analysis.intensity_assessment}</Text>

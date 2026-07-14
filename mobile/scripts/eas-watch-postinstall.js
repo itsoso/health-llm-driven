@@ -8,9 +8,18 @@ if (platform && platform !== 'ios') {
   process.exit(0);
 }
 
+if (process.env.INCLUDE_WATCH_APP !== '1') {
+  console.log('[watch] skip: INCLUDE_WATCH_APP is not enabled');
+  process.exit(0);
+}
+
 const mobileRoot = path.resolve(__dirname, '..');
 const repoRoot = path.resolve(mobileRoot, '..');
-const project = path.join(mobileRoot, 'ios', 'HealthPilot.xcodeproj');
+const iosRoot = path.join(mobileRoot, 'ios');
+const project = ['app.xcodeproj', 'HealthPilot.xcodeproj']
+  .map((name) => path.join(iosRoot, name))
+  .find((candidate) => fs.existsSync(candidate))
+  || path.join(iosRoot, 'app.xcodeproj');
 const script = path.join(repoRoot, 'apps', 'watch', 'scripts', 'inject_watch_target.rb');
 
 if (!fs.existsSync(project)) {

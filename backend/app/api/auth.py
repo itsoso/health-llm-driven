@@ -12,6 +12,7 @@ from slowapi.util import get_remote_address
 from app.database import get_db
 from app.models.user import User, GarminCredential
 from app.models.agent_audit_log import AgentAuditLog
+from app.models.account_deletion_request import AccountDeletionRequest
 from app.schemas.auth import (
     UserRegister, UserLogin, Token, UserResponse, UserUpdate,
     PhoneCodeRequest, PhoneCodeResponse, PhoneCodeLogin, PhoneLoginToken,
@@ -355,6 +356,48 @@ async def get_me(
     return user_to_response(current_user, db)
 
 
+def _deletion_request_response(
+    request: AccountDeletionRequest,
+    *,
+    existing: bool,
+) -> dict:
+    messages = {
+        "requested": "删除请求已提交，我们会在 7 天内完成处理并保留必要审计记录。",
+        "processing": "删除请求正在处理中。完成后账号将无法继续登录。",
+        "completed": "账号与数据删除已完成。",
+        "rejected": "删除请求未能完成，请联系 support@executor.life 了解原因。",
+    }
+    due_at = request.requested_at + timedelta(days=7) if request.requested_at else None
+    return {
+        "status": request.status,
+        "user_id": request.user_id,
+        "request_id": request.id,
+        "audit_id": request.audit_id,
+        "requested_at": request.requested_at.isoformat() if request.requested_at else None,
+        "completed_at": request.completed_at.isoformat() if request.completed_at else None,
+        "due_at": due_at.isoformat() if due_at else None,
+        "estimated_completion_days": 7,
+        "existing": existing,
+        "message": messages.get(request.status, messages["requested"]),
+    }
+
+
+@router.get("/me/deletion-request", summary="查询账号与数据删除请求")
+async def get_account_deletion_request(
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    request = (
+        db.query(AccountDeletionRequest)
+        .filter(AccountDeletionRequest.user_id == current_user.id)
+        .order_by(AccountDeletionRequest.requested_at.desc(), AccountDeletionRequest.id.desc())
+        .first()
+    )
+    if request is None:
+        return {"status": "none", "user_id": current_user.id, "existing": False}
+    return _deletion_request_response(request, existing=True)
+
+
 @router.post("/me/deletion-request", summary="发起账号与数据删除请求")
 async def request_account_deletion(
     current_user: User = Depends(get_current_user_required),
@@ -367,7 +410,23 @@ async def request_account_deletion(
     fail-loud auditable request for the deletion worker/admin process instead of
     silently pretending the account was deleted.
     """
+    existing = (
+        db.query(AccountDeletionRequest)
+        .filter(AccountDeletionRequest.active_user_id == current_user.id)
+        .first()
+    )
+    if existing is not None:
+        return _deletion_request_response(existing, existing=True)
+
     requested_at = datetime.now(timezone.utc)
+    deletion_request = AccountDeletionRequest(
+        user_id=current_user.id,
+        active_user_id=current_user.id,
+        status="requested",
+        channel="mobile_app",
+        scope="account,health_data,device_connections",
+        requested_at=requested_at,
+    )
     audit = AgentAuditLog(
         user_id=current_user.id,
         agent_type="account_privacy",
@@ -383,9 +442,27 @@ async def request_account_deletion(
         },
     )
     try:
+        db.add(deletion_request)
         db.add(audit)
+        db.flush()
+        deletion_request.audit_id = audit.id
         db.commit()
+        db.refresh(deletion_request)
         db.refresh(audit)
+    except IntegrityError:
+        db.rollback()
+        existing = (
+            db.query(AccountDeletionRequest)
+            .filter(AccountDeletionRequest.active_user_id == current_user.id)
+            .first()
+        )
+        if existing is not None:
+            return _deletion_request_response(existing, existing=True)
+        logger.error("账号删除请求发生唯一约束冲突但未找到活动请求 - user_id=%s", current_user.id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="删除请求未能记录，请稍后重试",
+        )
     except Exception as exc:  # noqa: BLE001
         db.rollback()
         logger.error(
@@ -399,18 +476,12 @@ async def request_account_deletion(
         ) from exc
 
     logger.warning(
-        "用户 %s 发起账号与数据删除请求 audit_id=%s",
+        "用户 %s 发起账号与数据删除请求 request_id=%s audit_id=%s",
         current_user.id,
+        deletion_request.id,
         audit.id,
     )
-    return {
-        "status": "requested",
-        "user_id": current_user.id,
-        "audit_id": audit.id,
-        "requested_at": requested_at.isoformat(),
-        "estimated_completion_days": 7,
-        "message": "删除请求已提交，我们会在 7 天内完成处理并保留必要审计记录。",
-    }
+    return _deletion_request_response(deletion_request, existing=False)
 
 
 @router.put("/me", response_model=UserResponse, summary="更新用户信息")

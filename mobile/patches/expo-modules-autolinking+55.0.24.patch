@@ -2,7 +2,7 @@ diff --git a/node_modules/expo-modules-autolinking/scripts/ios/project_integrato
 index 7b37f57..ba399f8 100644
 --- a/node_modules/expo-modules-autolinking/scripts/ios/project_integrator.rb
 +++ b/node_modules/expo-modules-autolinking/scripts/ios/project_integrator.rb
-@@ -236,5 +236,7 @@ module Expo
+@@ -236,4 +236,6 @@ module Expo
        <<~XCODE_BUILD_SCRIPT
        # This script configures Expo modules and generates the modules provider file.
 -      bash -l -c "./#{escaped_path}"
@@ -10,4 +10,3 @@ index 7b37f57..ba399f8 100644
 +      cd "$SRCROOT"
 +      bash -c "./#{escaped_path}"
        XCODE_BUILD_SCRIPT
-     end

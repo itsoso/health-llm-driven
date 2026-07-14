@@ -19,6 +19,9 @@ REQUIRED_FILES = [
     "docs/release/app-store/review-notes.zh-CN.md",
     "docs/release/app-store/screenshot-runbook.md",
     "docs/release/app-store/adapted-review-checklist.md",
+    "docs/release/app-store/account-deletion-runbook.md",
+    "docs/release/app-store/dependency-risk-review.md",
+    "docs/release/app-store/real-device-acceptance.template.json",
     "docs/plans/2026-06-28-app-store-mvp-release-batch2-plan.md",
     "docs/plans/2026-06-28-app-store-mvp-release-batch3-plan.md",
     "docs/plans/2026-06-28-app-store-mvp-release-batch4-plan.md",
@@ -38,7 +41,6 @@ REQUIRED_FILES = [
 
 REQUIRED_INFO_PLIST_KEYS = [
     "NSFaceIDUsageDescription",
-    "NSSiriUsageDescription",
     "NSPhotoLibraryUsageDescription",
     "NSCameraUsageDescription",
     "NSMicrophoneUsageDescription",
@@ -76,6 +78,17 @@ DEMO_CREDENTIAL_LINES = [
 ]
 REVIEW_CONTACT_PHONE_ENV = "APP_STORE_REVIEW_CONTACT_PHONE"
 REVIEW_CONTACT_PHONE_RE = re.compile(r"^\+[1-9]\d{1,14}(?:[\s-]\d+)*$")
+REAL_DEVICE_EVIDENCE_ENV = "APP_STORE_REAL_DEVICE_EVIDENCE"
+APP_STORE_BUILD_ID_ENV = "APP_STORE_BUILD_ID"
+REAL_DEVICE_CHECKS = (
+    "realtime_dictation_toggle",
+    "hold_to_talk_send_cancel_text",
+    "camera_photo_persistence",
+    "wechat_share_handoff",
+    "xiaohongshu_share_handoff",
+    "confirmed_database_write",
+    "account_deletion_status",
+)
 CURRENT_AGENT_NATIVE_ENTRY_TERMS = [
     "打开即进入小巴",
     "今日简报",
@@ -198,6 +211,35 @@ def validate_release_narrative(
     return failures
 
 
+def validate_privacy_policy_copy(web_copy: str, mobile_copy: str) -> list[str]:
+    failures: list[str] = []
+    combined = "\n".join([web_copy, mobile_copy])
+    for stale in ("健康助理", "Reva"):
+        if stale in combined:
+            failures.append(f"stale privacy-policy brand: {stale}")
+
+    for required in (
+        "小巴",
+        "睿为健康",
+        "2026-07-14",
+        "HealthKit",
+        "AI 模型服务",
+        "精确位置",
+        "删除账号与数据",
+        "删除请求编号",
+        "7 天",
+        "support@executor.life",
+        "广告",
+        "营销",
+        "不提供诊断",
+        "处方",
+        "药物剂量调整",
+    ):
+        if required not in web_copy or required not in mobile_copy:
+            failures.append(f"privacy policy must contain {required!r} on web and mobile")
+    return failures
+
+
 def collect_app_review_redline_sources() -> dict[str, str]:
     sources: dict[str, str] = {}
     for pattern in APP_REVIEW_REDLINE_GLOBS:
@@ -299,6 +341,32 @@ def validate_demo_review_credentials(
     return failures
 
 
+def validate_real_device_evidence(path: Path, *, expected_build_id: str) -> list[str]:
+    failures: list[str] = []
+    if not path.is_file():
+        return [f"real-device acceptance evidence file not found: {path}"]
+    try:
+        evidence = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return [f"invalid real-device acceptance evidence: {exc}"]
+
+    if str(evidence.get("build_id") or "").strip() != str(expected_build_id).strip():
+        failures.append(
+            "real-device evidence build_id does not match APP_STORE_BUILD_ID: "
+            f"evidence={evidence.get('build_id')!r}, expected={expected_build_id!r}"
+        )
+    for field in ("device_model", "ios_version", "tested_at"):
+        if not str(evidence.get(field) or "").strip():
+            failures.append(f"real-device evidence missing {field}")
+    checks = evidence.get("checks")
+    if not isinstance(checks, dict):
+        return failures + ["real-device evidence missing checks object"]
+    for check in REAL_DEVICE_CHECKS:
+        if checks.get(check) is not True:
+            failures.append(f"real-device acceptance check not passed: {check}")
+    return failures
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -309,6 +377,14 @@ def main() -> int:
     parser.add_argument(
         "--screenshot-dir",
         help="App Store-ready screenshot directory. Overrides APP_STORE_SCREENSHOT_DIR.",
+    )
+    parser.add_argument(
+        "--real-device-evidence",
+        help="JSON evidence from the physical-iPhone acceptance run. Overrides APP_STORE_REAL_DEVICE_EVIDENCE.",
+    )
+    parser.add_argument(
+        "--build-id",
+        help="App Store build number expected in real-device evidence. Overrides APP_STORE_BUILD_ID.",
     )
     args = parser.parse_args()
 
@@ -333,6 +409,7 @@ def main() -> int:
     review_notes = read_text("docs/release/app-store/review-notes.zh-CN.md")
     screenshot_runbook = read_text("docs/release/app-store/screenshot-runbook.md")
     privacy_page = read_text("frontend/src/app/privacy/page.tsx")
+    mobile_privacy_page = read_text("mobile/app/privacy-policy.tsx")
 
     bundle_id = ios.get("bundleIdentifier")
     if app.get("name") != EXPECTED_APP_NAME:
@@ -382,6 +459,8 @@ def main() -> int:
     for required in ["HealthKit", "删除账号与数据", "广告", "营销", "support@executor.life"]:
         if required not in combined_release_text:
             failures.append(f"release text missing required wording: {required}")
+
+    failures.extend(validate_privacy_policy_copy(privacy_page, mobile_privacy_page))
 
     failures.extend(
         validate_release_narrative(
@@ -447,6 +526,19 @@ def main() -> int:
                 "App Store screenshot set failed validation; "
                 f"APP_STORE_SCREENSHOT_DIR={screenshot_dir!r}\n{result.stderr.strip()}"
             )
+
+    if args.final_submit:
+        evidence_path = args.real_device_evidence or os.environ.get(REAL_DEVICE_EVIDENCE_ENV, "").strip()
+        build_id = args.build_id or os.environ.get(APP_STORE_BUILD_ID_ENV, "").strip()
+        if not evidence_path:
+            failures.append(
+                "final submit requires real-device acceptance evidence via "
+                "--real-device-evidence or APP_STORE_REAL_DEVICE_EVIDENCE"
+            )
+        elif not build_id:
+            failures.append("final submit requires --build-id or APP_STORE_BUILD_ID")
+        else:
+            failures.extend(validate_real_device_evidence(Path(evidence_path), expected_build_id=build_id))
 
     if failures:
         print("App Store release pack check failed:", file=sys.stderr)

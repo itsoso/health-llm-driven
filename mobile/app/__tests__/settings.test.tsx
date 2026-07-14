@@ -7,6 +7,7 @@ const mockBack = jest.fn();
 const mockPush = jest.fn();
 const mockLogout = jest.fn();
 const mockRequestAccountDeletion = jest.fn();
+const mockGetAccountDeletionRequest = jest.fn();
 let mockGarminStatus: any = { health: 'healthy', minutes_since_last_sync: 3 };
 
 jest.mock('expo-router', () => ({
@@ -90,6 +91,7 @@ jest.mock('../../services/api', () => ({
 
 jest.mock('../../services/auth', () => ({
   requestAccountDeletion: (...args: unknown[]) => mockRequestAccountDeletion(...args),
+  getAccountDeletionRequest: (...args: unknown[]) => mockGetAccountDeletionRequest(...args),
 }));
 
 import SettingsScreen from '../settings';
@@ -100,9 +102,11 @@ describe('SettingsScreen', () => {
     mockGarminStatus = { health: 'healthy', minutes_since_last_sync: 3 };
     mockRequestAccountDeletion.mockResolvedValue({
       status: 'requested',
+      request_id: 42,
       estimated_completion_days: 7,
       requested_at: '2026-06-28T00:00:00Z',
     });
+    mockGetAccountDeletionRequest.mockResolvedValue({ status: 'none' });
   });
 
   it('surfaces GPS and city positioning as one explicit clickable entry', () => {
@@ -118,45 +122,15 @@ describe('SettingsScreen', () => {
     expect(mockPush).toHaveBeenCalledWith('/location');
   });
 
-  it('opens the Rokid health mode from settings', () => {
-    const { getByText } = render(<SettingsScreen />);
+  it('hides deferred native and experimental entries in the App Store production UI', () => {
+    const { queryByText } = render(<SettingsScreen />);
 
-    fireEvent.press(getByText('Rokid 眼镜健康模式'));
-
-    expect(mockPush).toHaveBeenCalledWith('/rokid-health');
-  });
-
-  it('opens the Rokid push-up coach from settings', () => {
-    const { getByText } = render(<SettingsScreen />);
-
-    fireEvent.press(getByText('Rokid 俯卧撑计数'));
-
-    expect(mockPush).toHaveBeenCalledWith('/rokid-pushup-coach');
-  });
-
-  it('opens diagnostics pages from settings', () => {
-    const { getByText } = render(<SettingsScreen />);
-
-    fireEvent.press(getByText('Rokid 自检'));
-    fireEvent.press(getByText('App 诊断'));
-
-    expect(mockPush).toHaveBeenCalledWith('/rokid-diagnostics');
-    expect(mockPush).toHaveBeenCalledWith('/app-diagnostics');
-  });
-
-  it('uses 小巴 in Siri voice recording examples', () => {
-    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
-    const { getByText } = render(<SettingsScreen />);
-
-    fireEvent.press(getByText('Siri 语音记录'));
-
-    expect(alertSpy).toHaveBeenCalledWith(
-      'Siri 语音记录',
-      expect.stringContaining('嘿 Siri，用 小巴 记录喝了500ml水'),
-      expect.any(Array),
-    );
-    expect(alertSpy.mock.calls[0][1]).not.toContain('HealthPilot');
-    alertSpy.mockRestore();
+    expect(queryByText('Siri 语音记录')).toBeNull();
+    expect(queryByText('Rokid 眼镜健康模式')).toBeNull();
+    expect(queryByText('Rokid 俯卧撑计数')).toBeNull();
+    expect(queryByText('Rokid 自检')).toBeNull();
+    expect(queryByText('高级与实验')).toBeNull();
+    expect(queryByText('AI 模型')).toBeNull();
   });
 
   it('opens one health analysis hub instead of scattering analysis rows in settings', () => {
@@ -199,7 +173,7 @@ describe('SettingsScreen', () => {
     fireEvent.press(getByText('删除账号与数据'));
 
     await waitFor(() => expect(mockRequestAccountDeletion).toHaveBeenCalledTimes(1));
-    expect(mockLogout).toHaveBeenCalledTimes(1);
+    expect(mockLogout).not.toHaveBeenCalled();
     expect(alertSpy).toHaveBeenCalledWith(
       '删除请求已提交',
       expect.stringContaining('7 天'),

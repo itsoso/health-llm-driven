@@ -1,9 +1,7 @@
 import React from 'react';
-import { Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { View } from 'react-native';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useTheme } from '../../hooks/useTheme';
-import { useGPSOnboardingPrompt } from '../../hooks/useGPSOnboardingPrompt';
 
 /**
  * Phase 5 (2026-07-03): Agent-native shell. 移除底部 Tab Bar, 小巴(chat) 成为主屏
@@ -27,10 +25,6 @@ export const unstable_settings = {
 };
 
 export default function TabLayout() {
-  const { c } = useTheme();
-  // 用户登录后第一次进 tabs 时, 一次性问一下 GPS 权限. 不再弹.
-  const gpsPrompt = useGPSOnboardingPrompt(true);
-
   return (
     <View style={{ flex: 1 }}>
       <Tabs
@@ -52,45 +46,12 @@ export default function TabLayout() {
         <Tabs.Screen name="journal" options={{ href: null }} />
       </Tabs>
 
-      <Modal
-        visible={gpsPrompt.visible}
-        transparent
-        animationType="fade"
-        onRequestClose={gpsPrompt.onLater}
-      >
-        <View style={[modalStyles.backdrop, { backgroundColor: 'rgba(0,0,0,0.5)' }]}>
-          <View style={[modalStyles.card, { backgroundColor: c.bgCard }]}>
-            <View style={[modalStyles.iconCircle, { backgroundColor: c.brandLight }]}>
-              <Ionicons name="location" size={28} color={c.brand} />
-            </View>
-            <Text style={[modalStyles.title, { color: c.labelPrimary }]}>
-              开启自动定位?
-            </Text>
-            <Text style={[modalStyles.body, { color: c.labelSecondary }]}>
-              用 GPS 自动定位你当前的城市, 天气 / 空气质量 / 户外运动建议会更准.
-              {'\n\n'}仅在 App 使用时定位, 不会后台跟踪.
-            </Text>
-            <View style={modalStyles.btnRow}>
-              <TouchableOpacity
-                style={[modalStyles.btn, modalStyles.btnSecondary, { borderColor: c.separator }]}
-                onPress={gpsPrompt.onLater}
-                activeOpacity={0.7}
-              >
-                <Text style={[modalStyles.btnLabel, { color: c.labelSecondary }]}>以后再说</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[modalStyles.btn, { backgroundColor: c.brand }]}
-                onPress={() => { gpsPrompt.onAllow(); }}
-                activeOpacity={0.7}
-              >
-                <Text style={[modalStyles.btnLabel, { color: '#fff' }]}>允许定位</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
     </View>
   );
+}
+
+export function getColdStartPermissionPrompts(): string[] {
+  return [];
 }
 
 // ── 小巴 agent-native shell 路由契约 ───────────────────────
@@ -168,21 +129,3 @@ function createTabScreenOptions(name: MainTabName) {
     ),
   };
 }
-
-const modalStyles = StyleSheet.create({
-  backdrop: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
-  card: {
-    width: '100%', maxWidth: 360, borderRadius: 16, padding: 24,
-    alignItems: 'center',
-  },
-  iconCircle: {
-    width: 60, height: 60, borderRadius: 30, alignItems: 'center', justifyContent: 'center',
-    marginBottom: 16,
-  },
-  title: { fontSize: 18, fontWeight: '700', marginBottom: 12, textAlign: 'center' },
-  body: { fontSize: 14, lineHeight: 20, textAlign: 'center', marginBottom: 20 },
-  btnRow: { flexDirection: 'row', gap: 12, width: '100%' },
-  btn: { flex: 1, paddingVertical: 12, borderRadius: 8, alignItems: 'center' },
-  btnSecondary: { borderWidth: 1 },
-  btnLabel: { fontSize: 14, fontWeight: '600' },
-});
