@@ -56,6 +56,14 @@ class Settings(BaseSettings):
     openai_base_url: Optional[str] = None  # 代理地址，如: https://api.openai-proxy.com/v1
     openai_model: str = "gpt-4o-mini"  # 默认模型
 
+    # 语音识别:短按住说话优先走国内 DashScope,失败再回退 OpenAI Whisper。
+    asr_dashscope_model: str = "qwen3-asr-flash"
+    asr_dashscope_base_url: str = "https://dashscope.aliyuncs.com/api/v1"
+    asr_openai_model: str = "whisper-1"
+    asr_openai_fallback_enabled: bool = False
+    asr_provider_timeout_seconds: float = 12.0
+    asr_total_timeout_seconds: float = 25.0
+
     # 阿里云 TokenPlan (兼容 OpenAI 协议) — 国内直连低延迟, 套餐固定成本
     # 模型选项: qwen3.6-plus / deepseek-v3.2 / glm-5 / MiniMax-M2.5
     tokenplan_api_key: Optional[str] = None

@@ -101,12 +101,14 @@
 - 已落地：统一 AgentTurn / Composer 状态机、写入回执、账户隔离、请求 ACK 与断流恢复、输入草稿和图片恢复、双语音入口互斥、提交后停听、Today Focus 和来源可见性。
 - 第二轮加固：server-side `client_turn_id` 幂等、未最终落盘回复禁止回放、软写失败 fail-closed、跨天卡片回执身份、私有健康图片签名访问、部分图片失败回滚、语音最终文本与 hydration 竞态防护。
 - 发布前加固：单个模型响应的完整写计划在任何工具执行前封存；恢复时 `planned / in_flight / uncertain` 一律 fail-closed；会话图片引用、删除和 tombstone 清理使用跨线程/跨进程生命周期锁并在文件锁后读取最新 DB 引用；非持久化 Agent 请求在 HTTP 与 Mobile 消息终态上统一为可重试中断。
+- 语音与工具恢复加固：服务端语音转写改为 DashScope Qwen ASR 主路径，OpenAI Whisper 仅在独立隐私开关显式启用时备用，并设置供应商/总请求超时；裸写工具文本必须匹配用户明确意图；显式“删除最后一餐”在写 checkpoint 前用未截断查询解析为精确 ID，`list` 永不隐式删除，含混/否定/教学式请求均 fail-closed。
 
 ## G3 · 测试闸
 
 - Backend 受影响回归：两组不重叠测试共 `581 passed`（核心可靠性/饮食/上传/迁移/client events `272`，来源/GenUI/医疗记录/工具校验 `309`）。
 - Mobile 全量 Jest：`220 suites / 1511 tests passed`；现有 Jest runner 仍需 `--forceExit` 才能返回，作为非阻塞测试基建债跟踪。
 - 静态检查：Mobile `tsc --noEmit`、Backend `ruff` / `py_compile`、`git diff --check` 均通过。
+- 2026-07-14 增量回归：Backend 受影响面 `243 passed`；Mobile 全量 `244 suites / 1720 tests passed`；DashScope 合成音频经真实配置返回非空转写；iPhone 17 Pro Simulator 原生构建 `0 errors` 并完成页面截图验收。
 - 真实 PostgreSQL：主业务连接池保持未占用；turn lock 专用池 `pool_size=8 / max_overflow=0`；跨 worker 全局槽上限 `16`，超限 fail-closed。
 - 文档闸：42 份 Dossier 一致性通过；system-map/doc drift 检查通过。
 - **裁决：PASS**。模拟器视觉与真机音频验证归入 T8 / G6，不替代自动化测试结论。

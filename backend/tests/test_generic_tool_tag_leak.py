@@ -17,12 +17,14 @@
 """
 import json
 
+import pytest
+
 from app.services.agent_executor import (
     _strip_xml_tool_markers,
     _is_botched_text_tool_call,
     _extract_inline_tool_call,
     _GENERIC_TOOL_TAG_LEAK_RE,
-    _maybe_generic_tool_tag,
+    _starts_like_bare_registered_tool_call,
     _XML_TOOLCALL_PREFIX_RE,
 )
 from app.services.tool_schema_registry import HEALTH_TOOLS
@@ -111,6 +113,58 @@ def test_no_touch_menu_share_block():
 def test_no_touch_plain_answer():
     txt = "你今天的睡眠评分是 82 分,深睡占比不错。"
     assert _strip_xml_tool_markers(txt) == txt
+
+
+def test_recovers_exact_bare_registered_python_call():
+    """整条回复只有已注册函数签名时应恢复执行,不能把机器语法展示给用户。"""
+    call = _extract_inline_tool_call(
+        "health_manage(record_type='diet', operation='delete')",
+        HEALTH_TOOLS,
+        user_message="删除最后一餐，重复记录了",
+    )
+
+    assert call is not None
+    assert call["function"]["name"] == "health_manage"
+    assert json.loads(call["function"]["arguments"]) == {
+        "record_type": "diet",
+        "operation": "delete",
+    }
+
+
+def test_does_not_execute_bare_python_call_embedded_in_prose():
+    """只允许整条机器调用恢复;教程或解释里的函数签名保持普通文本。"""
+    assert _extract_inline_tool_call(
+        "示例写法是 health_manage(record_type='diet', operation='delete')。",
+        HEALTH_TOOLS,
+    ) is None
+
+
+def test_does_not_recover_bare_delete_without_matching_user_write_intent():
+    raw = "health_manage(record_type='diet', operation='delete', record_id=74)"
+
+    assert _extract_inline_tool_call(raw, HEALTH_TOOLS, user_message="如何删除一餐？") is None
+    assert _extract_inline_tool_call(raw, HEALTH_TOOLS, user_message="不要删除最后一餐") is None
+    assert _extract_inline_tool_call(raw, HEALTH_TOOLS, user_message="请展示调用示例") is None
+
+
+@pytest.mark.parametrize("raw", [
+    '[工具调用: health_manage(record_type="diet", operation="delete", record_id=74)]',
+    '<invoke name="health_manage"><parameter name="record_type">diet</parameter>'
+    '<parameter name="operation">delete</parameter><parameter name="record_id">74</parameter></invoke>',
+    '<tool>health_manage {"record_type":"diet","operation":"delete","record_id":74}</tool>',
+    '{"name":"health_manage","parameters":{"record_type":"diet","operation":"delete","record_id":74}}',
+])
+def test_all_textual_tool_formats_share_the_same_write_intent_gate(raw):
+    assert _extract_inline_tool_call(raw, HEALTH_TOOLS, user_message="如何删除一餐？") is None
+    assert _extract_inline_tool_call(raw, HEALTH_TOOLS, user_message="不要删除这条记录") is None
+
+
+def test_suppresses_a_bare_registered_call_while_it_is_still_streaming():
+    assert _starts_like_bare_registered_tool_call("health_man", HEALTH_TOOLS)
+    assert _starts_like_bare_registered_tool_call("health_manage(", HEALTH_TOOLS)
+    assert not _starts_like_bare_registered_tool_call("h", HEALTH_TOOLS)
+    assert not _starts_like_bare_registered_tool_call("health advice", HEALTH_TOOLS)
+    assert not _starts_like_bare_registered_tool_call("今天建议先休息", HEALTH_TOOLS)
 
 
 # ── Finding 1:fenced ``` 块 / 行内 `code` span 里的工具语法(即便形如调用)绝不剥 ─────

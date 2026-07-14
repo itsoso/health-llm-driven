@@ -126,7 +126,7 @@ git diff --check
 
 ## 13. Rollout And Rollback
 
-This is a pure Mobile JS/TS/UI change and can ship by commit plus Mobile OTA after focused verification. Rollback is reverting the composer and hook changes; no backend or schema rollback is needed.
+Composer interactions remain a Mobile JS/TS/UI OTA surface. Speech transcription is server-routed: DashScope Qwen ASR is primary; OpenAI Whisper is available only behind an explicit privacy switch. Each provider and the complete request have deadlines. Rollback restores the prior transcription endpoint and Mobile composer changes; no schema rollback is needed.
 
 ## 14. Open Questions
 
@@ -138,3 +138,4 @@ This is a pure Mobile JS/TS/UI change and can ship by commit plus Mobile OTA aft
 | Date | Change | Reason |
 |---|---|---|
 | 2026-07-06 | Initial spec | Admit WeChat-style Mobile voice composer as a narrow Mobile Capture improvement. |
+| 2026-07-14 | Add bounded server-side ASR routing | Keep both voice entry paths available on DashScope while making any cross-provider fallback explicit and time-bounded. |

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Alert } from 'react-native';
+import { Alert, StyleSheet } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
@@ -196,6 +196,42 @@ describe('ChatBubble structured summary', () => {
     expect(getByText('补水 上午 500ml')).toBeTruthy();
     // no literal markdown markers leak into the card
     expect(queryByText(/###/)).toBeNull();
+  });
+
+  it('uses a calm light action surface instead of a dark hero card', () => {
+    const { getByTestId, getByText } = renderBubble(
+      '📌 今日建议：\n1. 今晚暂停高强度训练，优先睡眠与轻活动',
+    );
+
+    const actionCardStyle = StyleSheet.flatten(getByTestId('assistant-action-card').props.style);
+    const actionTitleStyle = StyleSheet.flatten(
+      getByText('今晚暂停高强度训练，优先睡眠与轻活动').props.style,
+    );
+    expect(actionCardStyle.backgroundColor).toBe('#FBFAF7');
+    expect(actionTitleStyle.color).toBe('#16201B');
+  });
+
+  it('does not render an action card for placeholder advice', () => {
+    const { getByTestId, queryByTestId, queryByText } = renderBubble(`
+| 指标 | 数值 | 状态 |
+| --- | --- | --- |
+| 饮食 | 1710 kcal | 已记录 |
+
+📌 今日建议：
+--
+`);
+
+    expect(getByTestId('assistant-metric-grid')).toBeTruthy();
+    expect(queryByTestId('assistant-action-card')).toBeNull();
+    expect(queryByText('--')).toBeNull();
+  });
+
+  it('renders a short write receipt as body text instead of an oversized conclusion', () => {
+    const receipt = '已记录症状：打喷嚏（记录号 74，说“撤销”可以删除）';
+    const { getByText, queryByTestId } = renderBubble(receipt);
+
+    expect(queryByTestId('assistant-conclusion')).toBeNull();
+    expect(getByText(receipt)).toBeTruthy();
   });
 
   it('opens a direct today-plan confirmation instead of sending a second plan prompt', async () => {

@@ -1303,6 +1303,7 @@ function parseStructuredHealthSummary(text: string): StructuredHealthSummary | n
         if (advice.length > 0) break;
         continue;
       }
+      if (!isMeaningfulAdvice(cleaned)) continue;
       advice.push(cleaned);
       if (advice.length >= 3) break;
     }
@@ -1310,6 +1311,15 @@ function parseStructuredHealthSummary(text: string): StructuredHealthSummary | n
 
   if (metrics.length === 0 && advice.length === 0) return null;
   return { metrics, advice };
+}
+
+function isMeaningfulAdvice(value: string): boolean {
+  const normalized = value
+    .replace(/[\s\-—–_.。·]/g, '')
+    .replace(/[✅⚠️❌]/g, '')
+    .trim();
+  if (!normalized) return false;
+  return !/^(?:无|暂无|暂无建议|无建议|待补充|待生成|na|n\/a)$/i.test(normalized);
 }
 
 /**
@@ -1404,6 +1414,9 @@ function cleanConclusionText(value: string): string {
 function parseAdvisorPresentation(text: string): AdvisorPresentation | null {
   const trimmed = text.trim();
   if (!trimmed || /^\s*(?:\||```|[-*+]\s|\d+[.)、]\s)/.test(trimmed)) return null;
+  if (/^(?:✅\s*)?(?:已记录|已删除|已更新|已修改|已保存|已撤销|已取消|记录成功|删除成功)/.test(
+    cleanConclusionText(trimmed),
+  )) return null;
 
   const blocks = trimmed.split(/\n\s*\n/).filter(Boolean);
   if (blocks.length === 0) return null;
@@ -1649,8 +1662,12 @@ const summaryStyles = StyleSheet.create({
     fontWeight: '800',
   } as TextStyle,
   actionCard: {
-    borderRadius: 12,
-    backgroundColor: '#0E2119',
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.green100,
+    borderLeftWidth: 3,
+    borderLeftColor: C.green300,
+    backgroundColor: C.surface2,
     paddingHorizontal: 14,
     paddingVertical: 13,
     gap: 6,
@@ -1660,24 +1677,24 @@ const summaryStyles = StyleSheet.create({
     fontSize: 10.5,
     lineHeight: 15,
     fontWeight: '800',
-    color: '#94AA9E',
+    color: C.green600,
   } as TextStyle,
   actionTitle: {
     fontFamily: revaFonts.sans,
-    fontSize: 17,
-    lineHeight: 24,
-    fontWeight: '900',
-    color: '#F7FAF8',
+    fontSize: 15.5,
+    lineHeight: 22,
+    fontWeight: '800',
+    color: C.ink1,
   } as TextStyle,
   actionSecondaryList: { gap: 2 },
   actionSecondaryRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 7 },
-  actionSecondaryDot: { width: 3, height: 3, borderRadius: 2, marginTop: 7, backgroundColor: '#94AA9E' },
+  actionSecondaryDot: { width: 3, height: 3, borderRadius: 2, marginTop: 7, backgroundColor: C.green300 },
   actionSecondary: {
     flex: 1,
     fontFamily: revaFonts.sans,
     fontSize: 11.5,
     lineHeight: 17,
-    color: '#BCC9C2',
+    color: C.ink2,
   } as TextStyle,
   actionButtons: {
     marginTop: 5,
@@ -1688,8 +1705,8 @@ const summaryStyles = StyleSheet.create({
   actionPrimary: {
     minHeight: 38,
     flex: 1,
-    borderRadius: revaRadii.pill,
-    backgroundColor: '#3ED7A2',
+    borderRadius: 8,
+    backgroundColor: C.green500,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 14,
@@ -1698,19 +1715,23 @@ const summaryStyles = StyleSheet.create({
     fontFamily: revaFonts.sans,
     fontSize: 12.5,
     fontWeight: '900',
-    color: '#092019',
+    color: C.greenOn,
   } as TextStyle,
   actionSecondaryButton: {
     minHeight: 38,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 10,
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.lineStrong,
+    backgroundColor: C.surface,
+    paddingHorizontal: 12,
   },
   actionSecondaryButtonText: {
     fontFamily: revaFonts.sans,
     fontSize: 12.5,
     fontWeight: '800',
-    color: '#DDE7E2',
+    color: C.ink2,
   } as TextStyle,
 });
 

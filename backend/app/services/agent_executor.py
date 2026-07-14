@@ -597,6 +597,35 @@ _BRACKET_TOOL_CALL_STRIP_RE = re.compile(
     re.S | re.I,
 )
 
+# 模型偶发只吐裸 Python 风格函数签名,没有 `[工具调用:]` 标记。仅允许**整条内容**匹配且
+# name 在注册工具表内时恢复;散文/教程/代码片段里的同名签名一律不执行。
+_BARE_TOOL_CALL_RE = re.compile(r"^\s*([A-Za-z_]\w*)\s*\((.*)\)\s*$", re.S)
+
+
+def _starts_like_bare_registered_tool_call(content: str, tools: Optional[List[Dict]]) -> bool:
+    """Detect a registered bare call before the closing parenthesis arrives in a stream."""
+    candidate = (content or "").lstrip()
+    if not candidate or "\n" in candidate:
+        return False
+    allowed = {
+        str((tool.get("function") or {}).get("name") or "")
+        for tool in (tools or [])
+        if isinstance(tool, dict)
+    }
+    token = re.match(r"[A-Za-z_]\w*", candidate)
+    if not token:
+        return False
+    current_name = token.group(0)
+    tail = candidate[len(current_name):].lstrip()
+    if tail.startswith("("):
+        return current_name in allowed
+    # Do not hide an ordinary English response merely because its first token is
+    # `h`/`health`. Registry tool names use snake_case, so waiting for the
+    # underscore still suppresses the machine call before its arguments.
+    return not tail and "_" in current_name and any(
+        name and name.startswith(current_name) for name in allowed
+    )
+
 # XML/`<invoke>` 格式的内联工具调用。实测 MiniMax 经代理时把工具调用吐成 Anthropic 风格
 # 的 XML 标记而非结构化 tool_calls(生产实锤 2026-07-05):
 #   <invoke name="health_query">
@@ -890,6 +919,23 @@ def _extract_bracket_tool_call(raw: str, allowed: set) -> Optional[Dict[str, Any
             },
         }
     return None
+
+
+def _extract_bare_tool_call(raw: str, allowed: set) -> Optional[Dict[str, Any]]:
+    match = _BARE_TOOL_CALL_RE.fullmatch(raw or "")
+    if not match or match.group(1) not in allowed:
+        return None
+    return {
+        "id": "inline_tool_call_0",
+        "type": "function",
+        "function": {
+            "name": match.group(1),
+            "arguments": json.dumps(
+                _parse_bracket_tool_args(match.group(2) or ""),
+                ensure_ascii=False,
+            ),
+        },
+    }
 
 
 def _strip_bracket_tool_markers(text: str) -> str:
@@ -1496,7 +1542,32 @@ def _loads_lenient(raw: str) -> Any:
     raise last_err if last_err else json.JSONDecodeError("empty", raw or "", 0)
 
 
-def _extract_inline_tool_call(text: str, tools: List[Dict]) -> Optional[Dict[str, Any]]:
+def _text_tool_call_write_is_authorized(
+    call: Dict[str, Any],
+    user_message: Optional[str],
+) -> bool:
+    """Require matching user intent before recovering any textual manage write."""
+    function = call.get("function") or {}
+    if function.get("name") != "health_manage":
+        return True
+    try:
+        args = json.loads(function.get("arguments") or "{}")
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return False
+    operation = args.get("operation")
+    if operation == "delete":
+        return _has_explicit_delete_intent(user_message or "")
+    if operation == "update":
+        return _has_explicit_update_intent(user_message or "")
+    return True
+
+
+def _extract_inline_tool_call(
+    text: str,
+    tools: List[Dict],
+    *,
+    user_message: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
     """Recover tool calls emitted as visible JSON text by weaker gateways/models.
 
     Some commercial proxy models ignore OpenAI `tools` semantics and print a
@@ -1522,21 +1593,28 @@ def _extract_inline_tool_call(text: str, tools: List[Dict]) -> Optional[Dict[str
 
     allowed = {t.get("function", {}).get("name") for t in tools or []}
 
+    def _authorized(call: Dict[str, Any]) -> bool:
+        return _text_tool_call_write_is_authorized(call, user_message)
+
     # XML/`<invoke>` 格式先尝试:它以 `<` 开头,与 JSON(`{`)/括号(`(`)路径互不干扰。
     xml = _extract_xml_tool_call(raw, tools, allowed)
     if xml is not None:
-        return xml
+        return xml if _authorized(xml) else None
 
     # `<tool>funcname {args}</tool>` 形态(函数名在标签体 + 独立参数 JSON):既有三路都不认,
     # 恢复后真执行、不泄漏(founder 2026-07-14「列出喝水记录」根因)。
     tag_call = _extract_tool_tag_call(raw, allowed)
     if tag_call is not None:
-        return tag_call
+        return tag_call if _authorized(tag_call) else None
 
     # 括号格式先于 JSON 尝试:它含 `(` 不含起始 `{`,与 JSON 路径互不干扰。
     bracket = _extract_bracket_tool_call(raw, allowed)
     if bracket is not None:
-        return bracket
+        return bracket if _authorized(bracket) else None
+
+    bare = _extract_bare_tool_call(raw, allowed)
+    if bare is not None:
+        return bare if _authorized(bare) else None
 
     def _payload_to_tool_call(payload: Any) -> Optional[Dict[str, Any]]:
         if not isinstance(payload, dict):
@@ -1601,7 +1679,7 @@ def _extract_inline_tool_call(text: str, tools: List[Dict]) -> Optional[Dict[str
             continue
         call = _payload_to_tool_call(payload)
         if call is not None:
-            return call
+            return call if _authorized(call) else None
 
     # 兜底:整段就是一个被截断的 tool-call JSON(raw_decode 对每个 `{` 都失败)。
     # 从第一个 `{` 起做截断修复再解析一次 —— 救 glm-5.1 吐到一半被切断的调用。
@@ -1612,7 +1690,8 @@ def _extract_inline_tool_call(text: str, tools: List[Dict]) -> Optional[Dict[str
         except json.JSONDecodeError:
             payload = None
         if payload is not None:
-            return _payload_to_tool_call(payload)
+            call = _payload_to_tool_call(payload)
+            return call if call is not None and _authorized(call) else None
     return None
 
 
@@ -2236,28 +2315,6 @@ def _write_tool_completed(tool_name: str, args: Any, result: Any) -> bool:
             return False
     record_type = parsed_args.get("record_type") or parsed_args.get("type")
     return _write_receipt_from_tool_result(tool_name, record_type, result) is not None
-
-
-def _health_manage_auto_delete_args(
-    parsed_args: Dict[str, Any],
-    result: Any,
-) -> Optional[Dict[str, Any]]:
-    """Recognize a list call that safely upgraded itself to a verified delete."""
-    if (
-        parsed_args.get("record_type") != "diet"
-        or parsed_args.get("operation") != "list"
-    ):
-        return None
-    payload = _write_result_payload(result)
-    if not payload or payload.get("auto_deleted_from_list") is not True:
-        return None
-    record_id = payload.get("record_id") or payload.get("id")
-    if record_id in (None, "", False):
-        return None
-    amended = dict(parsed_args)
-    amended["operation"] = "delete"
-    amended["record_id"] = record_id
-    return amended
 
 
 # health_record 的 record_type 里，个别是**触发动作**而非写记录 —— 它们没有
@@ -2903,47 +2960,54 @@ def _normalize_diet_meal_type(value: Any) -> Optional[str]:
 
 
 _DIET_DELETE_WORD_RE = re.compile(r"(删除|删掉|删了|移除|去掉|撤销|清掉|delete|remove)", re.I)
-_MEAL_TYPE_LABELS = {
-    "breakfast": ("早餐", "早饭", "早晨", "breakfast"),
-    "lunch": ("午餐", "午饭", "中餐", "lunch"),
-    "dinner": ("晚餐", "晚饭", "dinner"),
-    "snack": ("加餐", "零食", "snack"),
-}
-_ZH_ORDINAL_NUMBERS = {
-    "一": 1, "二": 2, "两": 2, "三": 3, "四": 4,
-    "五": 5, "六": 6, "七": 7, "八": 8, "九": 9,
-    "十": 10,
-}
+_DIET_DELETE_LATEST_RE = re.compile(
+    r"(最后|最新|刚才|刚刚|刚记录|上一)(?:的)?(?:一条|一份|一顿|一餐|这条|这顿|这餐)?",
+    re.I,
+)
+_WRITE_NEGATED_RE = re.compile(
+    r"(?:不要|别|不想|无需|不需要|不能|不可|禁止|避免|先别|暂不)\s*.{0,10}"
+    r"(?:删除|删掉|删了|移除|去掉|撤销|清掉|修改|更新|调整)",
+    re.I,
+)
+_WRITE_HOW_TO_RE = re.compile(
+    r"(?:如何|怎么|怎样|是否)\s*.{0,10}"
+    r"(?:删除|删掉|移除|去掉|撤销|清掉|修改|更新|调整)",
+    re.I,
+)
+_UPDATE_WORD_RE = re.compile(r"(修改|改成|改为|更新|调整|更正|edit|update)", re.I)
 
 
-def _diet_delete_ordinal_from_message(
-    message: str,
-    meal_type: Optional[str],
-) -> Optional[int]:
-    """Parse commands like “删除早餐 1” into a 1-based candidate index.
-
-    This is intentionally narrow. It only arms when the user text has a delete
-    verb, an explicit meal label, and an explicit ordinal/number.
-    """
+def _write_request_is_negated_or_instructional(message: str) -> bool:
     text = (message or "").strip()
-    if not text or not _DIET_DELETE_WORD_RE.search(text):
-        return None
-    labels = _MEAL_TYPE_LABELS.get(meal_type or "")
-    if not labels or not any(label.lower() in text.lower() for label in labels):
-        return None
-    number_patterns = (
-        r"(?:第\s*)?(\d{1,2})\s*(?:条|个|项|份|餐|$)",
-        r"(?:第\s*)?([一二两三四五六七八九十])\s*(?:条|个|项|份|餐)",
+    return bool(_WRITE_NEGATED_RE.search(text) or _WRITE_HOW_TO_RE.search(text))
+
+
+def _has_explicit_delete_intent(message: str) -> bool:
+    text = (message or "").strip()
+    return bool(
+        text
+        and _DIET_DELETE_WORD_RE.search(text)
+        and not _write_request_is_negated_or_instructional(text)
     )
-    for pattern in number_patterns:
-        match = re.search(pattern, text)
-        if not match:
-            continue
-        raw = match.group(1)
-        value = int(raw) if raw.isdigit() else _ZH_ORDINAL_NUMBERS.get(raw)
-        if value and value > 0:
-            return value
-    return None
+
+
+def _has_explicit_update_intent(message: str) -> bool:
+    text = (message or "").strip()
+    return bool(
+        text
+        and _UPDATE_WORD_RE.search(text)
+        and not _write_request_is_negated_or_instructional(text)
+    )
+
+
+def _is_explicit_latest_diet_delete(message: str) -> bool:
+    text = (message or "").strip()
+    return bool(
+        text
+        and _has_explicit_delete_intent(text)
+        and _DIET_DELETE_LATEST_RE.search(text)
+        and re.search(r"(餐|饮食|记录|重复|刚才|刚刚)", text)
+    )
 
 
 # 相对日期词 → 相对今天的天数偏移 (lower() 后匹配; 中文不受 lower 影响)。
@@ -4250,7 +4314,11 @@ class AgentExecutor:
                 tool_calls = resp.get("tool_calls") if isinstance(resp, dict) else None
                 content = ((resp.get("content") if isinstance(resp, dict) else str(resp)) or "")
                 if not tool_calls:
-                    recovered = _extract_inline_tool_call(content, tools)
+                    recovered = _extract_inline_tool_call(
+                        content,
+                        tools,
+                        user_message=message,
+                    )
                     if recovered:
                         tool_calls = [recovered]
                         content = ""
@@ -4267,6 +4335,10 @@ class AgentExecutor:
                         continue
                     content = _strip_text_tool_call(content)
                 if tool_calls:
+                    tool_calls = await self._normalize_latest_diet_delete_tool_calls(
+                        tool_calls,
+                        user_auth_token,
+                    )
                     planned_writes: List[tuple[str, Dict[str, Any]]] = []
                     for tc in tool_calls:
                         fn = tc["function"]["name"]
@@ -4326,16 +4398,6 @@ class AgentExecutor:
                                     result = _hb_val
                             if write_fingerprint:
                                 write_results_by_fingerprint[write_fingerprint] = result
-                        amended_write_args = (
-                            _health_manage_auto_delete_args(parsed_args, result)
-                            if fn == "health_manage" else None
-                        )
-                        if amended_write_args:
-                            parsed_args = amended_write_args
-                            write_attempted = True
-                            write_fingerprint = _write_operation_fingerprint(fn, parsed_args)
-                            replayed_write = False
-                            write_results_by_fingerprint[write_fingerprint] = result
                         lead_messages.append({"role": "tool", "tool_call_id": tc["id"], "content": result})
                         lbl = _TOOL_TO_SOURCE_LABEL.get(fn)
                         if lbl and lbl not in sources_used:
@@ -5361,7 +5423,11 @@ class AgentExecutor:
                             and not streamed_tool_calls
                             and _detect_tools
                             and (
-                                _extract_inline_tool_call(streamed_text, _detect_tools)
+                                _extract_inline_tool_call(
+                                    streamed_text,
+                                    _detect_tools,
+                                    user_message=message,
+                                )
                                 # 括号标记 `[工具调用: ...` 可能正在逐 token 形成,`)` 还没到
                                 # → 上面的精确解析此刻 match 不到。一旦看到标记前缀就提前抑制,
                                 # 避免裸标记被逐 delta 泄漏(即便最终参数解析不出也不外漏)。
@@ -5373,6 +5439,8 @@ class AgentExecutor:
                                 or _XML_TOOLCALL_PREFIX_RE.search(streamed_text)
                                 # call{ / <call: / {name: 行首前导(qwen 畸形文本工具调用泄漏)
                                 or _TEXTCALL_LEAK_PREFIX_RE.search(streamed_text)
+                                # 裸 `health_manage(` 在闭括号到达前也要从首 token 抑制。
+                                or _starts_like_bare_registered_tool_call(streamed_text, _detect_tools)
                             )
                         ):
                             # 检测到内联工具调用(JSON 或括号标记) → 进入抑制模式,本轮不再 live 下发。
@@ -5487,7 +5555,11 @@ class AgentExecutor:
                     )
                     inline_tool_call = (
                         None if _is_result_echo
-                        else _extract_inline_tool_call(_resp_content, _detect_tools)
+                        else _extract_inline_tool_call(
+                            _resp_content,
+                            _detect_tools,
+                            user_message=message,
+                        )
                     )
                     if inline_tool_call:
                         logger.warning(
@@ -5598,6 +5670,11 @@ class AgentExecutor:
                             fast_subset_active = False
                             self._record_model_fallback_reason("fast_subset_upgraded_full_tools")
                             continue
+
+                    tool_calls = await self._normalize_latest_diet_delete_tool_calls(
+                        tool_calls,
+                        user_auth_token,
+                    )
 
                     planned_writes: List[tuple[str, Dict[str, Any]]] = []
                     for tc in tool_calls:
@@ -5831,17 +5908,6 @@ class AgentExecutor:
                                     result += f"\n\n⚠️ 安全提示: {alert_msgs}"
                             except Exception as e:
                                 logger.warning(f"Safety check after write failed: {e}")
-                        amended_write_args = (
-                            _health_manage_auto_delete_args(parsed_tool_args, result_for_record_card)
-                            if func_name == "health_manage" else None
-                        )
-                        if amended_write_args:
-                            parsed_tool_args = amended_write_args
-                            write_attempted = True
-                            write_fingerprint = _write_operation_fingerprint(
-                                func_name, parsed_tool_args,
-                            )
-                            replayed_write = False
                         if write_fingerprint and not replayed_write:
                             write_results_by_fingerprint[write_fingerprint] = (
                                 result,
@@ -8328,6 +8394,86 @@ class AgentExecutor:
                 pass
             return None
 
+    async def _normalize_latest_diet_delete_tool_calls(
+        self,
+        tool_calls: List[Dict[str, Any]],
+        user_auth_token: Optional[str],
+    ) -> List[Dict[str, Any]]:
+        """Resolve an explicit latest-meal delete to an exact ID before write tracking.
+
+        The preflight is read-only and uses untruncated JSON. A failed lookup leaves
+        the original call untouched so the validator rejects its missing ID. A list
+        call is never upgraded into a mutation.
+        """
+        normalized: List[Dict[str, Any]] = []
+        for tool_call in tool_calls:
+            function = tool_call.get("function") or {}
+            if function.get("name") != "health_manage":
+                normalized.append(tool_call)
+                continue
+            raw_args = function.get("arguments")
+            try:
+                args = (
+                    json.loads(raw_args)
+                    if isinstance(raw_args, str)
+                    else dict(raw_args or {})
+                )
+            except (json.JSONDecodeError, TypeError, ValueError):
+                normalized.append(tool_call)
+                continue
+            if (
+                args.get("record_type") != "diet"
+                or args.get("operation") != "delete"
+                or args.get("record_id") not in (None, "", False)
+                or not _is_explicit_latest_diet_delete(
+                    getattr(self, "_current_turn_user_message", "")
+                )
+            ):
+                normalized.append(tool_call)
+                continue
+
+            query: Dict[str, Any] = {"limit": 1}
+            target_date = _normalize_relative_date(args.get("date"))
+            target_meal_type = _normalize_diet_meal_type(args.get("meal_type"))
+            if target_date:
+                query["start_date"] = target_date
+                query["end_date"] = target_date
+            if target_meal_type:
+                query["meal_type"] = target_meal_type
+            base_url = settings.health_api_base_url or "http://localhost:8000/api/v1"
+            headers = (
+                {"Authorization": f"Bearer {user_auth_token}"}
+                if user_auth_token else {}
+            )
+            records, error = await self._api_get_json(
+                f"{base_url}/diet/records/me?{urlencode(query)}",
+                headers,
+            )
+            latest = records[0] if isinstance(records, list) and records else None
+            record_id = (
+                latest.get("id") or latest.get("record_id")
+                if isinstance(latest, dict) else None
+            )
+            if error or record_id in (None, "", False):
+                logger.warning(
+                    "[health_manage] latest diet delete preflight failed user=%s error=%s",
+                    self._current_user_id,
+                    error or "record_not_found",
+                )
+                normalized.append(tool_call)
+                continue
+
+            resolved_args = dict(args)
+            resolved_args["record_id"] = record_id
+            normalized.append({
+                **tool_call,
+                "function": {
+                    **function,
+                    "arguments": json.dumps(resolved_args, ensure_ascii=False),
+                },
+            })
+        return normalized
+
     async def _run_tool_with_progress(
         self,
         func_name: str,
@@ -9498,28 +9644,7 @@ class AgentExecutor:
             path = list_paths.get(record_type)
             if not path:
                 return f"Error: 不支持查询 {record_type}"
-            result = await self._api_get(f"{base}{path}", headers)
-            ordinal = _diet_delete_ordinal_from_message(
-                getattr(self, "_current_turn_user_message", ""),
-                target_meal_type,
-            ) if record_type == "diet" else None
-            if ordinal:
-                payload = _recover_tool_result_payload(result)
-                if isinstance(payload, list) and 1 <= ordinal <= len(payload):
-                    selected = payload[ordinal - 1]
-                    selected_id = (
-                        selected.get("id") or selected.get("record_id")
-                        if isinstance(selected, dict) else None
-                    )
-                    if selected_id not in (None, "", False):
-                        deleted = await _delete_record_by_id(selected_id)
-                        deleted_payload = _write_result_payload(deleted)
-                        if deleted_payload is not None:
-                            deleted_payload["auto_deleted_from_list"] = True
-                            deleted_payload["selected_ordinal"] = ordinal
-                            return json.dumps(deleted_payload, ensure_ascii=False)
-                        return deleted
-            return result
+            return await self._api_get(f"{base}{path}", headers)
 
         if not path_tmpl:
             return f"Error: 不支持管理 {record_type}"

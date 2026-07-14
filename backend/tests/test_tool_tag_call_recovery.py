@@ -12,8 +12,8 @@ _TOOLS = [
 ]
 
 
-def _fn(text):
-    r = _extract_inline_tool_call(text, _TOOLS)
+def _fn(text, *, user_message=None):
+    r = _extract_inline_tool_call(text, _TOOLS, user_message=user_message)
     return r["function"] if r else None
 
 
@@ -49,7 +49,10 @@ def test_nested_args_json_balanced():
 def test_recovered_write_is_normal_health_manage_subject_to_confirm_gate():
     # belt-and-suspenders: 恢复的写调用 = 普通 health_manage delete 结构(name+operation+id),
     # 与原生结构化调用逐字节同形 → 下游确认门 source-agnostic, 恢复不绕过确认。
-    fn = _fn('<tool>health_manage {"record_type":"diet","operation":"delete","record_id":123}</tool>')
+    fn = _fn(
+        '<tool>health_manage {"record_type":"diet","operation":"delete","record_id":123}</tool>',
+        user_message="删除记录 123",
+    )
     assert fn is not None and fn["name"] == "health_manage"
     import json as _json
     args = _json.loads(fn["arguments"])

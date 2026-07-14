@@ -1,8 +1,8 @@
 """语音 API — 语音转文字 + 语音指令（从 chat.py 独立出来）"""
 import base64
+import binascii
+import asyncio
 import logging
-import os
-import tempfile
 import time
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -15,6 +15,10 @@ from app.models.user import User
 from app.schemas.chat import TranscribeRequest, TranscribeResponse
 from app.api.deps import get_current_user_required
 from app.config import settings
+from app.services.speech_transcription import (
+    SpeechTranscriptionUnavailable,
+    transcribe_audio_bytes,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/chat", tags=["speech"])
@@ -38,48 +42,37 @@ async def transcribe_audio(
     req: TranscribeRequest,
     current_user: User = Depends(get_current_user_required),
 ):
-    """将语音音频转为文字，使用 OpenAI Whisper API"""
-    if not settings.openai_api_key:
-        raise HTTPException(status_code=503, detail="语音识别服务不可用")
+    """将短语音转为文字;按隐私配置使用有时限的 ASR 通道。"""
+    started_at = time.monotonic()
+    try:
+        audio_bytes = base64.b64decode(req.audio_base64, validate=True)
+    except (binascii.Error, ValueError):
+        raise HTTPException(status_code=400, detail="音频数据格式无效")
+    if not audio_bytes:
+        raise HTTPException(status_code=400, detail="音频内容为空")
+    if len(audio_bytes) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="音频过长，请控制在 5 分钟内")
 
     try:
-        from openai import OpenAI
-        client_kwargs = {"api_key": settings.openai_api_key}
-        if settings.openai_base_url:
-            client_kwargs["base_url"] = settings.openai_base_url
-        client = OpenAI(**client_kwargs)
+        result = await asyncio.wait_for(
+            asyncio.to_thread(transcribe_audio_bytes, audio_bytes, req.audio_format),
+            timeout=settings.asr_total_timeout_seconds,
+        )
+    except asyncio.TimeoutError:
+        logger.error("语音转文字超时: total ASR deadline exceeded")
+        raise HTTPException(status_code=504, detail="语音识别超时，请稍后重试")
+    except SpeechTranscriptionUnavailable:
+        logger.error("语音转文字失败: all ASR providers unavailable")
+        raise HTTPException(status_code=503, detail="语音识别服务暂不可用，请稍后重试")
 
-        audio_bytes = base64.b64decode(req.audio_base64)
-        suffix = f".{req.audio_format}" if req.audio_format else ".mp3"
-
-        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
-            f.write(audio_bytes)
-            temp_path = f.name
-
-        model = "whisper-1"
-        started_at = time.monotonic()
-        try:
-            with open(temp_path, "rb") as audio_file:
-                transcript = client.audio.transcriptions.create(
-                    model=model,
-                    file=audio_file,
-                    language="zh",
-                )
-            duration_ms = max(0, round((time.monotonic() - started_at) * 1000))
-            text = (transcript.text or "").strip()
-            return TranscribeResponse(
-                text=text,
-                provider="openai_whisper",
-                model=model,
-                duration_ms=duration_ms,
-                confidence=_transcript_confidence(text),
-            )
-        finally:
-            os.unlink(temp_path)
-
-    except Exception as e:
-        logger.error(f"语音转文字失败: {e}")
-        raise HTTPException(status_code=500, detail=f"语音识别失败: {str(e)[:100]}")
+    duration_ms = max(0, round((time.monotonic() - started_at) * 1000))
+    return TranscribeResponse(
+        text=result.text,
+        provider=result.provider,
+        model=result.model,
+        duration_ms=duration_ms,
+        confidence=_transcript_confidence(result.text),
+    )
 
 
 @router.post("/voice-command", summary="语音指令快速执行")

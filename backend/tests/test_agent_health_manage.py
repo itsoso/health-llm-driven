@@ -98,7 +98,7 @@ async def test_health_manage_lists_diet_candidates_by_explicit_meal_type(db):
 
 
 @pytest.mark.asyncio
-async def test_health_manage_list_auto_deletes_numbered_diet_candidate(db):
+async def test_health_manage_list_never_auto_deletes_numbered_diet_candidate(db):
     from app.services.agent_executor import AgentExecutor
 
     executor = AgentExecutor(db)
@@ -134,12 +134,9 @@ async def test_health_manage_list_auto_deletes_numbered_diet_candidate(db):
         )
 
     assert "start_date=today" not in captured["list_url"]
-    assert len(captured["deleted"]) == 1
-    assert captured["deleted"][0].endswith("/diet/records/701")
+    assert captured["deleted"] == []
     payload = json.loads(result)
-    assert payload["id"] == 701
-    assert payload["record_id"] == 701
-    assert payload["resource_type"] == "diet_record"
+    assert [item["id"] for item in payload] == [701, 702]
 
 
 @pytest.mark.asyncio

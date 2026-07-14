@@ -627,7 +627,11 @@ def get_user_diet_records(
     if meal_type:
         query = query.filter(DietRecordModel.meal_type == meal_type)
 
-    records = query.order_by(desc(DietRecordModel.record_date)).limit(limit).all()
+    records = query.order_by(
+        desc(DietRecordModel.record_date),
+        desc(DietRecordModel.created_at),
+        desc(DietRecordModel.id),
+    ).limit(limit).all()
     return [_convert_to_response(r) for r in records]
 
 
@@ -726,7 +730,11 @@ def get_my_diet_records(
     if meal_type:
         query = query.filter(DietRecordModel.meal_type == meal_type)
 
-    records = query.order_by(desc(DietRecordModel.record_date)).limit(limit).all()
+    records = query.order_by(
+        desc(DietRecordModel.record_date),
+        desc(DietRecordModel.created_at),
+        desc(DietRecordModel.id),
+    ).limit(limit).all()
     return [_convert_to_response(r) for r in records]
 
 
