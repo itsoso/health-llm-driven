@@ -3882,11 +3882,9 @@ class AgentExecutor:
 
         set_caller("agent_executor.multi_model", user_id=user_id)
         start_time = time.time()
-        # 该路径的准入门是 `not images and not file_base64`(见 run_stream 调用点),
-        # 故本回合恒无图片。此前 request_persisted 事件引用了从未在本函数定义的
-        # saved_image_urls → NameError 让**每个**多模型回合在持久化事件处即崩(pre-existing,
-        # Wave 2 顺手修:恒 []。别名参考单模型路径 _pre_stage 的 saved_image_urls)。
-        saved_image_urls: List[str] = []
+        # 该路径的准入门是 `not images and not file_base64`(见 run_stream 调用点),故本回合
+        # 恒无图片;request_persisted 事件已不再引用 saved_image_urls(消费引用已被移除),
+        # 故此前 Wave 2 顺手加的 `saved_image_urls = []` 兜底已成 dead code,一并清掉。
         self._current_user_id = user_id
         self._prefer_fast_record_model = False
         self._last_provider_model_name = None
@@ -8404,6 +8402,7 @@ class AgentExecutor:
         新增维度时只在此加分支 + 写 golden-master parity 测试。
         """
         from app.services import agent_read_tools as art
+        from app.services import agent_read_tools_analysis as arta
 
         uid = self._current_user_id
         if dim == "weight":
@@ -8423,6 +8422,16 @@ class AgentExecutor:
             raw = await self._read_in_process(art.read_life_events, uid, days=days)
         elif dim == "supplements":
             raw = await self._read_in_process(art.read_supplement_stats, uid, days=days)
+        # 增量 B1(非敏感确定性分析维度): comprehensive/sleep 复用 GarminAnalysisService,
+        # spo2 两维复刻 app/api/spo2.py 确定性算法(见 agent_read_tools_analysis)。
+        elif dim == "comprehensive":
+            raw = await self._read_in_process(arta.read_comprehensive_analysis, uid, days=days)
+        elif dim == "sleep":
+            raw = await self._read_in_process(arta.read_sleep_analysis, uid, days=days)
+        elif dim == "spo2":
+            raw = await self._read_in_process(arta.read_latest_night_spo2, uid)
+        elif dim == "spo2_sleep_correlation":
+            raw = await self._read_in_process(arta.read_spo2_sleep_correlation, uid, days=days)
         else:
             return None
         return _truncate_for_display(raw)

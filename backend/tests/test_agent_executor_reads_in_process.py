@@ -29,6 +29,9 @@ from app.models.blood_pressure import BloodPressureRecord
 from app.models.daily_health import (
     DietRecord,
     ExerciseRecord,
+    GarminData,
+    SleepLevelInterval,
+    SpO2Sample,
     WaterIntake,
     WorkoutRecord,
 )
@@ -38,6 +41,7 @@ from app.models.supplement import SupplementDefinition, SupplementRecord
 from app.models.user import User
 from app.models.weight import WeightRecord
 from app.services import agent_read_tools as art
+from app.services import agent_read_tools_analysis as arta
 from app.services.agent_executor import AgentExecutor, _truncate_for_display
 from main import app
 
@@ -777,3 +781,316 @@ def test_new_readers_fail_loud_without_user():
     assert art.read_manual_exercises(None, None).startswith("Error")
     assert art.read_life_events(None, None).startswith("Error")
     assert art.read_supplement_stats(None, None).startswith("Error")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# D1 增量 B1:非敏感确定性分析维度进程内直读 golden-master parity + killswitch
+# comprehensive/sleep 复用 GarminAnalysisService;spo2 两维复刻 app/api/spo2.py 算法。
+# 每维:进程内 reader 输出 == 真 route(TestClient,完整 response_model/dict)输出。
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+def _seed_garmin_sleep(db, user_id, record_date):
+    db.add(
+        GarminData(
+            user_id=user_id,
+            record_date=record_date,
+            sleep_score=82,
+            total_sleep_duration=480,
+            deep_sleep_duration=110,
+            rem_sleep_duration=95,
+            light_sleep_duration=250,
+            awake_duration=25,
+            sleep_start_time=time(22, 0),
+            sleep_end_time=time(6, 0),
+            avg_heart_rate=58,
+            resting_heart_rate=50,
+            hrv=45.0,
+        )
+    )
+    db.commit()
+
+
+# ── comprehensive(Garmin 综合分析,无 response_model → dict)───────────────────────
+
+
+def test_comprehensive_parity_via_testclient(db, client):
+    user = _make_user(db)
+    _seed_garmin_sleep(db, user.id, date.today())
+    app.dependency_overrides[get_current_user_required] = lambda: user
+
+    http = client.get("/api/v1/garmin-analysis/me/comprehensive?days=7").json()
+    inproc = json.loads(arta.read_comprehensive_analysis(db, user.id, days=7))
+
+    assert inproc == http  # 逐字段数据等价(同一 GarminAnalysisService + daily_data date.isoformat)
+    assert inproc["sleep"]["status"] == "success"
+    assert set(inproc.keys()) == {"sleep", "heart_rate", "body_battery", "activity", "spo2"}
+
+
+def test_comprehensive_killswitch_false_uses_http(db, monkeypatch):
+    user = _make_user(db)
+    monkeypatch.setattr(settings, "reads_in_process", False, raising=False)
+    ex = AgentExecutor(db)
+    ex._current_user_id = user.id
+    calls = {}
+
+    async def fake_api_get(url, headers):
+        calls["url"] = url
+        return "{}"
+
+    ex._api_get = fake_api_get
+    _run(ex._exec_health_query("http://x/api/v1", {}, {"dimension": "comprehensive", "days": 14}))
+    assert calls["url"].endswith("/garmin-analysis/me/comprehensive?days=14")
+
+
+# ── sleep(Garmin 睡眠质量分析,无 response_model → dict)────────────────────────────
+
+
+def test_sleep_parity_via_testclient(db, client):
+    user = _make_user(db)
+    _seed_garmin_sleep(db, user.id, date.today())
+    app.dependency_overrides[get_current_user_required] = lambda: user
+
+    http = client.get("/api/v1/garmin-analysis/me/sleep?days=7").json()
+    inproc = json.loads(arta.read_sleep_analysis(db, user.id, days=7))
+
+    assert inproc == http
+    assert inproc["status"] == "success"
+    assert inproc["average_sleep_score"] == 82  # round(82, 1)
+
+
+def test_sleep_killswitch_false_uses_http(db, monkeypatch):
+    user = _make_user(db)
+    monkeypatch.setattr(settings, "reads_in_process", False, raising=False)
+    ex = AgentExecutor(db)
+    ex._current_user_id = user.id
+    calls = {}
+
+    async def fake_api_get(url, headers):
+        calls["url"] = url
+        return "{}"
+
+    ex._api_get = fake_api_get
+    _run(ex._exec_health_query("http://x/api/v1", {}, {"dimension": "sleep", "days": 30}))
+    assert calls["url"].endswith("/garmin-analysis/me/sleep?days=30")
+
+
+def test_sleep_in_process_no_http(db, monkeypatch):
+    """dim='sleep' 走进程内 GarminAnalysisService,零 HTTP。"""
+    user = _make_user(db)
+    _seed_garmin_sleep(db, user.id, date.today())
+    test_sm = sessionmaker(autocommit=False, autoflush=False, bind=db.get_bind())
+    monkeypatch.setattr("app.database.SessionLocal", test_sm)
+    monkeypatch.setattr(settings, "reads_in_process", True, raising=False)
+
+    ex = AgentExecutor(db)
+    ex._current_user_id = user.id
+
+    async def _boom(*a, **k):
+        raise AssertionError("进程内路径绝不能打 _api_get")
+
+    ex._api_get = _boom
+    out = _run(ex._exec_health_query("http://x/api/v1", {}, {"dimension": "sleep", "days": 7}))
+    assert json.loads(out)["status"] == "success"
+
+
+# ── spo2 latest-night(response_model=SpO2NightlyResponse)──────────────────────────
+
+
+def _seed_spo2_night(db, user_id, record_date):
+    """一晚采样:14:00 日间点(sleep window 应被过滤)+ 23:00/23:30/02:00 睡眠期点。"""
+    for sample_time, epoch_ms, spo2 in [
+        (time(14, 0), 1000, 98),  # 日间 → sleep window 过滤掉
+        (time(23, 0), 2000, 96),
+        (time(23, 30), 3000, 95),
+        (time(2, 0), 4000, 93),
+    ]:
+        db.add(
+            SpO2Sample(
+                user_id=user_id,
+                record_date=record_date,
+                sample_time=sample_time,
+                spo2_value=spo2,
+                epoch_ms=epoch_ms,
+            )
+        )
+    db.commit()
+
+
+def test_spo2_latest_night_parity_via_testclient(db, client):
+    user = _make_user(db)
+    # 两个 record_date → 验证 max(record_date) 选夜逻辑与端点一致(都选 today)
+    _seed_spo2_night(db, user.id, date.today())
+    db.add(
+        SpO2Sample(
+            user_id=user.id,
+            record_date=date.today() - timedelta(days=1),
+            sample_time=time(23, 0),
+            spo2_value=99,
+            epoch_ms=500,
+        )
+    )
+    _seed_garmin_sleep(db, user.id, date.today())  # sleep_start=22:00 sleep_end=06:00 → 跨日窗
+    db.commit()
+    app.dependency_overrides[get_current_user_required] = lambda: user
+
+    http = client.get("/api/v1/spo2/me/latest-night").json()
+    inproc = json.loads(arta.read_latest_night_spo2(db, user.id))
+
+    assert inproc == http  # 逐字段数据等价(同一 SpO2NightlyResponse + 选夜 + sleep window)
+    assert inproc["record_date"] == date.today().isoformat()  # 选了 today 这一夜
+    assert inproc["window"] == "sleep"
+    assert inproc["summary"]["data_points"] == 3  # 14:00 日间点被 sleep window 过滤
+    assert inproc["summary"]["min_spo2"] == 93
+    assert [p["value"] for p in inproc["timeline"]] == [96, 95, 93]  # epoch_ms asc
+
+
+def test_spo2_killswitch_false_uses_http(db, monkeypatch):
+    user = _make_user(db)
+    monkeypatch.setattr(settings, "reads_in_process", False, raising=False)
+    ex = AgentExecutor(db)
+    ex._current_user_id = user.id
+    calls = {}
+
+    async def fake_api_get(url, headers):
+        calls["url"] = url
+        return "{}"
+
+    ex._api_get = fake_api_get
+    _run(ex._exec_health_query("http://x/api/v1", {}, {"dimension": "spo2"}))
+    assert calls["url"].endswith("/spo2/me/latest-night")  # 无 days 参数
+
+
+def test_spo2_in_process_no_http(db, monkeypatch):
+    user = _make_user(db)
+    _seed_spo2_night(db, user.id, date.today())
+    test_sm = sessionmaker(autocommit=False, autoflush=False, bind=db.get_bind())
+    monkeypatch.setattr("app.database.SessionLocal", test_sm)
+    monkeypatch.setattr(settings, "reads_in_process", True, raising=False)
+
+    ex = AgentExecutor(db)
+    ex._current_user_id = user.id
+
+    async def _boom(*a, **k):
+        raise AssertionError("进程内路径绝不能打 _api_get")
+
+    ex._api_get = _boom
+    out = _run(ex._exec_health_query("http://x/api/v1", {}, {"dimension": "spo2"}))
+    assert json.loads(out)["record_date"] == date.today().isoformat()
+
+
+def test_spo2_user_scoping(db):
+    a = _make_user(db)
+    b = _make_user(db)
+    _seed_spo2_night(db, a.id, date.today())
+    db.add(
+        SpO2Sample(
+            user_id=b.id,
+            record_date=date.today(),
+            sample_time=time(23, 0),
+            spo2_value=80,  # B 的低值,A 绝不该看到
+            epoch_ms=9999,
+        )
+    )
+    db.commit()
+
+    a_out = json.loads(arta.read_latest_night_spo2(db, a.id))
+    assert a_out["summary"]["min_spo2"] == 93  # 只见自己(A 无 80 那条)
+    b_out = json.loads(arta.read_latest_night_spo2(db, b.id))
+    assert b_out["summary"]["min_spo2"] == 80
+
+
+# ── spo2 sleep-correlation(response_model=SpO2SleepCorrelationResponse)─────────────
+
+
+def _seed_spo2_correlation(db, user_id, record_date):
+    """一晚:deep/rem/light 三段 + 落在各段内的采样点,用真实 ms 尺度以得到有意义的时长。"""
+    base = 1_700_000_000_000
+    minute = 60_000
+    for start_min, end_min, level in [
+        (0, 60, "deep"),
+        (60, 90, "rem"),
+        (90, 150, "light"),
+    ]:
+        db.add(
+            SleepLevelInterval(
+                user_id=user_id,
+                record_date=record_date,
+                start_epoch_ms=base + start_min * minute,
+                end_epoch_ms=base + end_min * minute,
+                activity_level=level,
+            )
+        )
+    # sample_time 必须各异(uq_spo2_user_date_time_source);correlation 只用 epoch_ms,
+    # sample_time 仅为满足 NOT NULL + 唯一约束,值本身不影响关联结果。
+    for offset_min, spo2 in [(10, 95), (20, 94), (70, 90), (75, 88), (100, 96)]:
+        db.add(
+            SpO2Sample(
+                user_id=user_id,
+                record_date=record_date,
+                sample_time=time(offset_min // 60, offset_min % 60),
+                spo2_value=spo2,
+                epoch_ms=base + offset_min * minute,
+            )
+        )
+    db.commit()
+
+
+def test_spo2_sleep_correlation_parity_via_testclient(db, client):
+    user = _make_user(db)
+    _seed_spo2_correlation(db, user.id, date.today())
+    app.dependency_overrides[get_current_user_required] = lambda: user
+
+    http = client.get("/api/v1/spo2/me/sleep-correlation?days=7").json()
+    inproc = json.loads(arta.read_spo2_sleep_correlation(db, user.id, days=7))
+
+    assert inproc == http  # 逐字段:stages 分段统计 + summary 聚合 + risk 分类 + disclaimer
+    assert inproc["days"] == 7
+    assert len(inproc["nights"]) == 1
+    assert inproc["summary"]["nights_analyzed"] == 1
+    stages = {s["stage"]: s for s in inproc["nights"][0]["stages"]}
+    assert stages["deep"]["data_points"] == 2  # 落在 deep 段的两点
+    assert stages["rem"]["data_points"] == 2
+    assert stages["light"]["data_points"] == 1
+
+
+def test_spo2_sleep_correlation_killswitch_false_uses_http(db, monkeypatch):
+    user = _make_user(db)
+    monkeypatch.setattr(settings, "reads_in_process", False, raising=False)
+    ex = AgentExecutor(db)
+    ex._current_user_id = user.id
+    calls = {}
+
+    async def fake_api_get(url, headers):
+        calls["url"] = url
+        return "{}"
+
+    ex._api_get = fake_api_get
+    _run(
+        ex._exec_health_query(
+            "http://x/api/v1", {}, {"dimension": "spo2_sleep_correlation", "days": 14}
+        )
+    )
+    assert calls["url"].endswith("/spo2/me/sleep-correlation?days=14")
+
+
+def test_spo2_sleep_correlation_empty_parity(db, client):
+    """无采样时 route 返回 nights=[] summary=None;reader 数据等价(非 Error,是合法空结构)。"""
+    user = _make_user(db)
+    app.dependency_overrides[get_current_user_required] = lambda: user
+
+    http = client.get("/api/v1/spo2/me/sleep-correlation?days=7").json()
+    inproc = json.loads(arta.read_spo2_sleep_correlation(db, user.id, days=7))
+
+    assert inproc == http
+    assert inproc["nights"] == [] and inproc["summary"] is None
+
+
+# ── fail-loud:分析维度 reader 无 user_id ─────────────────────────────────────────
+
+
+def test_analysis_readers_fail_loud_without_user():
+    assert arta.read_comprehensive_analysis(None, None).startswith("Error")
+    assert arta.read_sleep_analysis(None, None).startswith("Error")
+    assert arta.read_latest_night_spo2(None, None).startswith("Error")
+    assert arta.read_spo2_sleep_correlation(None, None).startswith("Error")
