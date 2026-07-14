@@ -140,7 +140,7 @@ describe('ChatBubble streaming degraded render', () => {
     expect(getByText('正在整理建议。').props.selectable).not.toBe(true);
   });
 
-  it('renders a slim status line (not a panel) before the first token', () => {
+  it('renders one unified streaming status before the first token', () => {
     const { getByTestId, getByText, queryByTestId } = renderBubble({
       id: 'assistant-status-line',
       role: 'assistant',
@@ -149,11 +149,10 @@ describe('ChatBubble streaming degraded render', () => {
       currentStatus: '查看步数数据…',
     });
 
-    // 细状态行出现, 文案即 currentStatus。
-    expect(getByTestId('assistant-status-line')).toBeTruthy();
+    // 统一处理状态出现, 文案即 currentStatus; 不再叠一个独立 status line。
+    expect(getByTestId('assistant-thinking-panel')).toBeTruthy();
     expect(getByText('查看步数数据…')).toBeTruthy();
-    // 无思考步骤时不渲染大思考面板 (状态行是"细"行, 非面板)。
-    expect(queryByTestId('assistant-thinking-panel')).toBeNull();
+    expect(queryByTestId('assistant-status-line')).toBeNull();
     // 未出正文 → 不走富 markdown。
     expect(queryByTestId('rich-markdown')).toBeNull();
   });
@@ -195,7 +194,7 @@ describe('ChatBubble streaming degraded render', () => {
     });
 
     expect(queryByTestId('rich-markdown')).toBeNull();
-    expect(getByText('正在思考 · 2 步')).toBeTruthy();
+    expect(getByText('小巴处理中 · 2 步')).toBeTruthy();
     expect(getByText('读取健康数据')).toBeTruthy();
     expect(queryByText('小巴正在思考')).toBeNull();
     expect(queryByText('2/2')).toBeNull();
@@ -205,7 +204,7 @@ describe('ChatBubble streaming degraded render', () => {
     expect(panelStyle.alignSelf).toBe('flex-start');
     expect(panelStyle.width).toBeUndefined();
     expect(panelStyle.maxWidth).toBe('100%');
-    expect(panelStyle.minWidth ?? 0).toBe(0);
+    expect(panelStyle.minWidth).toBeGreaterThanOrEqual(200);
     expect(getByText('今晚优先固定睡眠时间。')).toBeTruthy();
 
     fireEvent.press(getByLabelText('展开思考步骤'));
@@ -213,7 +212,22 @@ describe('ChatBubble streaming degraded render', () => {
     const expandedStyle = StyleSheet.flatten(getByTestId('assistant-thinking-panel').props.style);
     expect(expandedStyle.alignSelf).toBe('stretch');
     expect(expandedStyle.borderRadius).toBeLessThanOrEqual(12);
-    expect(expandedStyle.minWidth).toBeUndefined();
+  });
+
+  it('uses one unified streaming status when currentStatus and thinking steps arrive together', () => {
+    const { getByTestId, getByText, queryByTestId, queryByText } = renderBubble({
+      id: 'assistant-streaming-status-and-thinking',
+      role: 'assistant',
+      content: '⏳ AI 正在思考中...',
+      streaming: true,
+      currentStatus: '正在记录体重和腰围…',
+      thinkingSteps: ['正在理解你的问题'],
+    });
+
+    expect(getByTestId('assistant-thinking-panel')).toBeTruthy();
+    expect(getByText('正在记录体重和腰围…')).toBeTruthy();
+    expect(queryByTestId('assistant-status-line')).toBeNull();
+    expect(queryByText('⏳ AI 正在思考中...')).toBeNull();
   });
 
   it('collapses completed thinking steps into an inline status row (expand to reveal steps)', () => {

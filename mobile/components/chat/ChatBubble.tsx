@@ -63,6 +63,7 @@ const MD_PALETTE = {
   separator: C.line,
 } as unknown as ColorPalette;
 const MD_STYLES = createMdStylesChat(MD_PALETTE);
+const THINKING_PLACEHOLDER_TEXT = '⏳ AI 正在思考中...';
 
 interface Props {
   item: UIMessage;
@@ -125,8 +126,15 @@ function ChatBubbleInner({ item, onViewImage, imageAuthToken, selectionMode = fa
     () => (!isUser && item.streaming ? String(item.currentStatus || '').trim() : ''),
     [isUser, item.streaming, item.currentStatus],
   );
+  const placeholderOnly = visibleMarkdown === THINKING_PLACEHOLDER_TEXT;
+  const processingStatusLabel = currentStatus
+    || (item.streaming && placeholderOnly ? '正在理解你的问题…' : '');
+  const showProcessingPanel = !isUser && (
+    thinkingSteps.length > 0
+    || !!processingStatusLabel
+  );
   const visibleAssistantMarkdown = (
-    thinkingSteps.length > 0 && visibleMarkdown === '⏳ AI 正在思考中...'
+    showProcessingPanel && placeholderOnly
       ? ''
       : visibleMarkdown
   );
@@ -680,12 +688,13 @@ function ChatBubbleInner({ item, onViewImage, imageAuthToken, selectionMode = fa
             accessibilityLabel={`AI: ${assistantTextForActions || (revaUiContent.cards.length > 0 ? '图表卡片' : item.content)}`}
             accessibilityState={selectionMode ? { selected } : undefined}
           >
-            {currentStatus ? (
-              <StatusLine label={currentStatus} />
-            ) : null}
             {renderMessageImages()}
-            {thinkingSteps.length > 0 ? (
-              <ThinkingStepsPanel steps={thinkingSteps} streaming={item.streaming} />
+            {showProcessingPanel ? (
+              <ThinkingStepsPanel
+                steps={thinkingSteps}
+                streaming={item.streaming}
+                statusLabel={processingStatusLabel}
+              />
             ) : null}
             {structuredSummary ? (
               <StructuredSummaryCard summary={structuredSummary} />
@@ -731,7 +740,7 @@ function ChatBubbleInner({ item, onViewImage, imageAuthToken, selectionMode = fa
                 </Pressable>
               </View>
             ) : null}
-            {item.streaming && thinkingSteps.length === 0 && !currentStatus ? (
+            {item.streaming && !showProcessingPanel && !visibleAssistantMarkdown ? (
               <ActivityIndicator size="small" color={C.green500} style={{ marginTop: 4 }} />
             ) : null}
             {/* 2026-05-13: 耗时 + 模型名 footer + 🔊 播报按钮 (流式结束才显示) */}
@@ -1493,6 +1502,13 @@ const styles = StyleSheet.create({
     backgroundColor: C.green50,
     overflow: 'hidden',
   },
+  thinkingPillStreaming: {
+    minWidth: 220,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.green100,
+    backgroundColor: C.paper2,
+  },
   thinkingPillExpanded: {
     alignSelf: 'stretch',
     width: '100%',
@@ -1765,21 +1781,31 @@ function StatusLine({ label }: { label: string }) {
   );
 }
 
-function ThinkingStepsPanel({ steps, streaming }: { steps: string[]; streaming?: boolean }) {
+function ThinkingStepsPanel({
+  steps,
+  streaming,
+  statusLabel,
+}: {
+  steps: string[];
+  streaming?: boolean;
+  statusLabel?: string;
+}) {
   // 完成态默认折叠成一条 slim pill;流式态保持实时进度展开 (用户要看到它在干活).
   const [expanded, setExpanded] = React.useState(false);
-  if (steps.length === 0) return null;
+  const cleanStatusLabel = String(statusLabel || '').trim();
+  if (steps.length === 0 && !cleanStatusLabel) return null;
 
   const latestStep = steps[steps.length - 1];
 
-  // 流式态也用紧凑 pill: 默认只露最新步骤,避免大面板遮挡对话;点击才展开完整步骤.
+  // 流式态也用紧凑 pill: 默认只露当前阶段,避免大面板遮挡对话;点击才展开完整步骤.
   if (streaming) {
-    const summary = `正在思考 · ${steps.length} 步`;
+    const visibleStep = cleanStatusLabel || latestStep || '正在理解你的问题…';
+    const summary = steps.length > 0 ? `小巴处理中 · ${steps.length} 步` : '小巴处理中';
     return (
       <View
         testID="assistant-thinking-panel"
-        style={[styles.thinkingPill, expanded && styles.thinkingPillExpanded]}
-        accessibilityLabel={`小巴正在思考,当前步骤:${latestStep}`}
+        style={[styles.thinkingPill, styles.thinkingPillStreaming, expanded && styles.thinkingPillExpanded]}
+        accessibilityLabel={`小巴处理中,当前步骤:${visibleStep}`}
       >
         <Pressable
           onPress={() => setExpanded((prev) => !prev)}
@@ -1791,11 +1817,11 @@ function ThinkingStepsPanel({ steps, streaming }: { steps: string[]; streaming?:
           <ActivityIndicator size="small" color={C.green500} />
           <View style={styles.thinkingPillCopy}>
             <Text style={txt.thinkingPillLabel} numberOfLines={1}>{summary}</Text>
-            <Text style={txt.thinkingLatestStep} numberOfLines={1}>{latestStep}</Text>
+            <Text style={txt.thinkingLatestStep} numberOfLines={1}>{visibleStep}</Text>
           </View>
           <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={14} color={C.ink3} />
         </Pressable>
-        {expanded ? (
+        {expanded && steps.length > 0 ? (
           <View style={[styles.thinkingPillList, styles.thinkingPillListExpanded]}>
             {steps.map((step, index) => {
               const active = index === steps.length - 1;
