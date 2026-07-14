@@ -256,6 +256,16 @@ class Settings(BaseSettings):
     # SHAPE-IDENTICAL(synthesis/intent/used_specialists/findings),上层投影/shadow 捕获零改动。
     # False = 回退旧 localhost HTTP 路径(保留一个 release 后删)。
     orchestrator_in_process: bool = True
+    # D1 读拉类工具进程内直调(garmin-sync 治理 Wave 3):agent 读工具原本对每个维度打
+    # localhost 回环(settings.health_api_base_url)重入整个 FastAPI 中间件栈,付三重税:
+    # 跨-worker 饥饿(/agent 占 worker A,回环读又占一个 slot)+ 内层 60s 中间件连杀
+    # (慢读被误杀 504)+ 双鉴权/双 JSON。True = 直接进程内直调 service/repo 读
+    # (fresh SessionLocal,user_id 显式传),输出与旧 HTTP 路径**数据等价**(golden-master
+    # 钉死,不改变 LLM 所见);False = 回退旧 localhost HTTP 路径(保留一个 release 后删)。
+    # **仅覆盖只读工具**;写工具(health_record/health_manage/intervention_cycle 等)绝不
+    # 进程内 —— Wave 2 的 per-tool task.cancel() 写取消安全依赖回环提供的独立请求+独立事务
+    # 隔离(cancel 只杀客户端协程杀不了已下发事务 → 不撕裂写)。
+    reads_in_process: bool = True
     # 深报告并行分专家段落合成(计划 rank11):深分析合成本是一次串行强模型大 decode
     # (单 _call_llm 吃掉全部 specialist findings → p50 30-40s decode)。findings 天然
     # per-specialist,确定性专家层早已并行,只有 LLM 叙事被串行化。改为 asyncio.gather N 个

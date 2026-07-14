@@ -112,6 +112,33 @@ CLIENT_TURN_REPLAY_WAIT_SECONDS = 5.0
 INTERRUPTED_COMPLETION_NOTICE = "\n\n[回复因长度限制中断，请让我接着上文继续。]"
 AGENT_MODEL = "NousResearch/Hermes-3-Llama-3.1-8B"
 BEIJING_TZ = timezone(timedelta(hours=8))
+
+
+def _truncate_for_display(text: str) -> str:
+    """把给 LLM 当上下文的长文本做"显示截断"(list 取前 10 / dict 内 list 各取前 10 /
+    兜底字符截断)。
+
+    **单一真源**:HTTP 读路径(`_api_get`)与 D1 进程内读路径共用此函数,保证两路截断行为
+    逐字节一致 —— D1 迁移是纯 transport 变更,LLM 所见绝不因换传输而漂移。≤3000 字符原样返回。
+    """
+    if len(text) <= 3000:
+        return text
+    try:
+        parsed = json.loads(text)
+        if isinstance(parsed, list) and len(parsed) > 10:
+            parsed = parsed[:10]
+            return json.dumps(parsed, ensure_ascii=False, default=str) + "\n...(仅显示前10条)"
+        elif isinstance(parsed, dict):
+            for k, v in parsed.items():
+                if isinstance(v, list) and len(v) > 10:
+                    parsed[k] = v[:10]
+            truncated = json.dumps(parsed, ensure_ascii=False, default=str)
+            if len(truncated) > 4000:
+                truncated = truncated[:4000] + "...}"
+            return truncated
+    except Exception:  # noqa: BLE001 — 非 JSON / 解析失败 → 字符截断兜底
+        pass
+    return text[:3000] + "\n...(数据已截断)"
 COMPACT_EMPTY_RETRY_SYSTEM_CHAR_LIMIT = 760
 SAFETY_CARD_BOUNDARY = "这不是诊断；如出现急性不适或持续症状，请及时就医。"
 SAFETY_WARNING_MARKER = "\n\n⚠️ 安全提示:"
@@ -8222,6 +8249,15 @@ class AgentExecutor:
         if canonical is not None:
             return canonical
 
+        # D1(garmin-sync 治理 Wave 3):已迁移到进程内直读的维度 → 绕 localhost 回环。
+        # flag 关 → inproc 返回 None,落到下面旧 HTTP endpoint_map 路径(逐 release 可回退)。
+        if getattr(settings, "reads_in_process", True):
+            inproc = await self._read_health_query_dim_in_process(
+                dim, days=days, indicator=indicator
+            )
+            if inproc is not None:
+                return inproc
+
         endpoint_map = {
             "comprehensive": f"/garmin-analysis/me/comprehensive?days={days}",
             "sleep": f"/garmin-analysis/me/sleep?days={days}",
@@ -8289,6 +8325,23 @@ class AgentExecutor:
 
         return await self._api_get(f"{base}{path}", headers)
 
+    async def _read_health_query_dim_in_process(
+        self, dim: str, *, days, indicator: str
+    ) -> Optional[str]:
+        """D1: health_query 已迁移到进程内直读的维度 → 返回截断后文本;未迁移 → None(回退 HTTP)。
+
+        每个维度经 `_read_in_process`(fresh SessionLocal + 线程池)调 `agent_read_tools` 里的
+        对应 reader,再统一过 `_truncate_for_display`(与旧 HTTP `_api_get` 同一截断真源)。
+        新增维度时只在此加分支 + 写 golden-master parity 测试。
+        """
+        from app.services import agent_read_tools as art
+
+        uid = self._current_user_id
+        if dim == "weight":
+            raw = await self._read_in_process(art.read_weight, uid, limit=10)
+        else:
+            return None
+        return _truncate_for_display(raw)
 
     async def _exec_health_query_batch(
         self, base: str, headers: dict, args: dict
@@ -9153,6 +9206,14 @@ class AgentExecutor:
         self, base: str, headers: dict, args: dict
     ) -> str:
         """获取补剂指南"""
+        # D1: 进程内直读(复用 daily_supplement_guide service);flag 关 → 旧 localhost HTTP。
+        if getattr(settings, "reads_in_process", True):
+            from app.services.agent_read_tools import read_supplement_daily_guide
+
+            raw = await self._read_in_process(
+                read_supplement_daily_guide, self._current_user_id
+            )
+            return _truncate_for_display(raw)
         return await self._api_get(f"{base}/supplements/daily-guide", headers)
 
     async def _exec_manage_plan(
@@ -9461,6 +9522,14 @@ class AgentExecutor:
         self, base: str, headers: dict, args: dict
     ) -> str:
         """列出基因档案."""
+        # D1: 进程内直读(仅档案元数据 provider/date/notes,不含变异位点);flag 关 → 旧 HTTP。
+        if getattr(settings, "reads_in_process", True):
+            from app.services.agent_read_tools import read_genetic_profiles
+
+            raw = await self._read_in_process(
+                read_genetic_profiles, self._current_user_id
+            )
+            return _truncate_for_display(raw)
         return await self._api_get(f"{base}/genetic/profiles/me", headers)
 
     async def _exec_upload_medical_exam_text(
@@ -9643,6 +9712,36 @@ class AgentExecutor:
             ensure_ascii=False,
         )
 
+    async def _read_in_process(self, reader, *args, **kwargs) -> str:
+        """D1 读拉类进程内直调统一入口 —— 在 fresh SessionLocal 里跑一个同步只读函数。
+
+        照 `_run_orchestrator_in_process` 的会话纪律(garmin-sync 治理 Wave 3 D1):
+        - **fresh SessionLocal(非 self.db)**:忠实复刻 HTTP 边界会话隔离,bulletproof 防
+          reader 内部隐藏 commit / autoflush 纠缠执行器未提交的 user_message 事务。
+        - **只读**:成功不显式 commit;`finally` close;异常 rollback + close。
+        - **丢线程池**(`asyncio.to_thread`):reader 是同步 DB 读,复刻 FastAPI 对 sync
+          handler 的 threadpool 行为,不阻塞事件循环。Session 非线程安全 → 在线程内新建。
+        - reader 签名:`reader(db, *args, **kwargs) -> str`。reader 内部**绝不**调 build_twin
+          (其 Phase B 忽略传入 db 自开 SessionLocal 连真 PG,见 memory
+          project_build_twin_sessionlocal_ignores_db)。
+
+        超时所有权:本调用被 `_run_tool_with_progress` 的 per-tool 预算 + 心跳包住(D2:
+        工具执行脑独占 wall-clock),此处不自设 timeout。
+        """
+        from app.database import SessionLocal
+
+        def _run() -> str:
+            db = SessionLocal()
+            try:
+                return reader(db, *args, **kwargs)
+            except Exception:
+                db.rollback()
+                raise
+            finally:
+                db.close()
+
+        return await asyncio.to_thread(_run)
+
     async def _api_get_json(self, url: str, headers: dict):
         """HTTP GET, 返回解析后的 JSON (list/dict)。
 
@@ -9675,25 +9774,7 @@ class AgentExecutor:
         resp = await client.get(url, headers=headers)
         if resp.status_code != 200:
             return f"Error: API 返回 {resp.status_code}: {resp.text[:200]}"
-        text = resp.text
-        if len(text) > 3000:
-            try:
-                parsed = json.loads(text)
-                if isinstance(parsed, list) and len(parsed) > 10:
-                    parsed = parsed[:10]
-                    return json.dumps(parsed, ensure_ascii=False, default=str) + "\n...(仅显示前10条)"
-                elif isinstance(parsed, dict):
-                    for k, v in parsed.items():
-                        if isinstance(v, list) and len(v) > 10:
-                            parsed[k] = v[:10]
-                    truncated = json.dumps(parsed, ensure_ascii=False, default=str)
-                    if len(truncated) > 4000:
-                        truncated = truncated[:4000] + "...}"
-                    return truncated
-            except Exception:
-                pass
-            text = text[:3000] + "\n...(数据已截断)"
-        return text
+        return _truncate_for_display(resp.text)
 
     async def _api_post(self, url: str, headers: dict, data: dict) -> str:
         """HTTP POST"""
