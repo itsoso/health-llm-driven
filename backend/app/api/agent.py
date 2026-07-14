@@ -335,25 +335,22 @@ def _maybe_genui_chart_events(
         build_empty_state,
         build_line_chart,
         build_multi_metric_chart,
-        build_nocturnal_spo2_curve,
+        build_nocturnal_curve,
         detect_chart_requests,
         detect_nocturnal_curve_request,
         render_reva_ui_block,
     )
 
-    # 单晚/整晚 intra-night 血氧曲线优先 (bug 修: 「昨晚整晚血氧」曾被误判成近半年月度趋势)。
-    # 命中即走逐分钟分支, 不再 fall through 到区间趋势检测。
+    # 单晚/整晚 intra-night 曲线优先 (血氧/HRV/心率/呼吸/压力/睡眠)。bug 修: 「昨晚整晚X」
+    # 曾被误判成近半年月度趋势。命中即走逐点分支, 不再 fall through 到区间趋势检测。
     nocturnal = detect_nocturnal_curve_request(message)
     if nocturnal is not None:
-        _noct_evening = nocturnal[1]
-        block = build_nocturnal_spo2_curve(db, user_id, _noct_evening)
+        _noct_metric, _noct_evening = nocturnal
+        block = build_nocturnal_curve(db, user_id, _noct_metric, _noct_evening)
         if block is None:
-            # 诚实兜底: 该夜无逐分钟血氧采样 → 不回退月度趋势, 走普通 LLM 路径 (永不答非所问)。
+            # 诚实兜底: 该夜无该指标逐点采样 → 不回退月度趋势, 走普通 LLM 路径 (永不答非所问)。
             return None
-        intro = (
-            f"{_noct_evening.month}月{_noct_evening.day}日整晚血氧曲线"
-            f"（数据来自你的设备，逐分钟采样）："
-        )
+        intro = f"{block.get('title', '整晚曲线')}（数据来自你的设备，逐点采样）："
         full_reply = f"{intro}\n\n{render_reva_ui_block(block)}"
     else:
         detected = detect_chart_requests(message)

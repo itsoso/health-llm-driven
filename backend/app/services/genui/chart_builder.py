@@ -26,13 +26,19 @@ import re
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from statistics import mean
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
 from app.models.basic_health import BasicHealthData
 from app.models.blood_pressure import BloodPressureRecord
-from app.models.daily_health import GarminData, SpO2Sample
+from app.models.daily_health import (
+    GarminData,
+    HeartRateSample,
+    SleepLevelInterval,
+    SpO2Sample,
+)
+from app.models.garmin_timeseries import HrvReading, RespirationSample, StressSample
 from app.models.waist import WaistRecord
 from app.models.weight import WeightRecord
 
@@ -258,18 +264,61 @@ def detect_chart_requests(query: str) -> List[Tuple[str, str]]:
 # 命中单晚线索 → 走逐分钟 intra-night 曲线; 无数据则诚实兜底(绝不回退月度趋势)。
 # ---------------------------------------------------------------------------
 
-# 单晚线索: 明确指向"某一整晚"而非跨日趋势。
+# 单晚线索: **强**指向"某一整晚"而非跨日趋势。故意不含弱词"夜间"(如"夜间HRV趋势"=趋势,
+# 会误吞)—— 只认整晚/昨晚/今晚/前晚/单晚/通宵/overnight 这类明确单夜信号。
 _NOCTURNAL_CUE = re.compile(
-    r"(整晚|整夜|一整晚|一整夜|单晚|单夜|昨晚|昨天晚上|今晚|今天晚上|前晚|前天晚上|通宵|overnight|夜间血氧|睡眠血氧|睡眠时?的?血氧)",
+    r"(整晚|整夜|一整晚|一整夜|单晚|单夜|昨晚|昨天晚上|今晚|今天晚上|前晚|前天晚上|通宵|overnight)",
     re.IGNORECASE,
 )
-# 目前只有 spo2 有逐分钟夜间采样表 (spo2_samples); 心率样本表在, 先只做血氧。
-_NOCTURNAL_METRIC = re.compile(r"(血氧饱和度|血氧|spo2|spO2|氧饱和)", re.IGNORECASE)
 
 # 显式完整日期: 2026-7-13 / 2026/7/13 / 2026 7 13 / 2026年7月13日
 _DATE_FULL_RE = re.compile(r"(20\d{2})\s*[-/年.\s]\s*(\d{1,2})\s*[-/月.\s]\s*(\d{1,2})")
 # 仅月日: 7月13日 / 7/13 / 7-13 (年份用 today 推断)
 _DATE_MD_RE = re.compile(r"(?<!\d)(\d{1,2})\s*[月/\-]\s*(\d{1,2})\s*日?(?!\d)")
+
+
+@dataclass
+class _NightMetricSpec:
+    """一个可画「单晚 intra-night 曲线」的指标: 逐点样本表 + 取值/时刻/绝对时戳字段。
+
+    新增一个夜间指标 = 在 `_NIGHT_METRICS` 加一条(表须有 record_date + 时刻列 + 数值列)。
+    """
+    key: str
+    title: str            # 标题 "{日期}整晚{title}"
+    series_name: str      # 图例
+    unit: str
+    model: Any            # ORM 模型 (逐点样本表)
+    value_field: str
+    time_field: str
+    epoch_field: Optional[str]   # None = 该表无 epoch_ms(如 heart_rate_samples), 退回 record_date+time
+    lo: float                    # 值域 sanity 下限(含)
+    hi: float                    # 值域 sanity 上限(含)
+    decimals: int                # 展示小数位(0=整数; 见 number_format 规范)
+    keywords: re.Pattern
+    warn_below: Optional[float]  # 仅当设置且桶均值 < 此 → min 标红(临床阈值); 否则不 over-alarm
+
+
+# 顺序 = 检测优先级。**hrv 必须在 heart_rate 之前**(否则"心率变异"被"心率"抢)。
+_NIGHT_METRICS: List[_NightMetricSpec] = [
+    _NightMetricSpec("spo2", "血氧", "夜间逐时血氧", "%", SpO2Sample,
+                     "spo2_value", "sample_time", "epoch_ms", 50, 100, 0,
+                     re.compile(r"(血氧饱和度|血氧|spo2|spO2|氧饱和)", re.IGNORECASE), 92),
+    _NightMetricSpec("hrv", "HRV", "夜间逐时 HRV(RMSSD)", "ms", HrvReading,
+                     "hrv_value", "reading_time", "epoch_ms", 5, 250, 0,
+                     re.compile(r"(心率变异性?|hrv|rmssd)", re.IGNORECASE), None),
+    _NightMetricSpec("heart_rate", "心率", "夜间逐时心率", "bpm", HeartRateSample,
+                     "heart_rate", "sample_time", None, 25, 220, 0,
+                     re.compile(r"(静息心率|心率|心跳|heart\s*rate|脉搏)", re.IGNORECASE), None),
+    _NightMetricSpec("respiration", "呼吸率", "夜间逐时呼吸率", "次/分", RespirationSample,
+                     "respiration_rate", "sample_time", "epoch_ms", 4, 60, 1,
+                     re.compile(r"(呼吸频率|呼吸率|呼吸|respiration|breath)", re.IGNORECASE), None),
+    _NightMetricSpec("stress", "压力", "夜间逐时压力", "", StressSample,
+                     "stress_value", "sample_time", "epoch_ms", 0, 100, 0,
+                     re.compile(r"(压力值?|压力水平|stress)", re.IGNORECASE), None),
+]
+
+# 睡眠是阶段(hypnogram), 非数值曲线, 单独处理(见 build_nocturnal_sleep_hypnogram)。
+_SLEEP_KEYWORDS = re.compile(r"(睡眠|睡觉|入睡|睡得|hypnogram|sleep)", re.IGNORECASE)
 
 
 def _parse_target_night(query: str, today: date) -> Optional[date]:
@@ -308,10 +357,11 @@ def _parse_target_night(query: str, today: date) -> Optional[date]:
 def detect_nocturnal_curve_request(
     query: str, today: Optional[date] = None
 ) -> Optional[Tuple[str, date]]:
-    """检测"某一整晚的血氧曲线"意图 (逐分钟 intra-night, 区别于日/月度趋势)。
+    """检测"某一整晚的 X 曲线"意图 (逐点 intra-night, 区别于日/月度趋势)。
 
-    命中(全需): 图表名词(曲线/趋势/图...) + 血氧 metric + 单晚线索(整晚/昨晚/...)。
-    返回 ("spo2", evening_date); 未命中 → None。
+    命中(全需): 图表名词(曲线/趋势/图...) + 单晚线索(整晚/昨晚/...) + 一个有 intra-night
+    数据的指标(血氧/HRV/心率/呼吸/压力/睡眠)。返回 (metric_key, evening_date); 未命中 → None。
+    metric_key ∈ {各注册 key, "sleep"}。调用方据此走 `build_nocturnal_curve`。
 
     **调用方必须先查本函数**, 命中即走 intra-night 分支、不再 fall through 到
     detect_chart_requests —— 否则单晚请求被误判成近半年月度趋势 (正是本 bug)。
@@ -320,14 +370,21 @@ def detect_nocturnal_curve_request(
         return None
     if not _CHART_NOUN.search(query):
         return None
-    if not _NOCTURNAL_METRIC.search(query):
-        return None
     if not _NOCTURNAL_CUE.search(query):
+        return None
+    matched: Optional[str] = None
+    for spec in _NIGHT_METRICS:  # 顺序即优先级(hrv 在 heart_rate 前, 防"心率变异"被抢)
+        if spec.keywords.search(query):
+            matched = spec.key
+            break
+    if matched is None and _SLEEP_KEYWORDS.search(query):
+        matched = "sleep"
+    if matched is None:
         return None
     target = _parse_target_night(query, today or date.today())
     if target is None:
         return None
-    return ("spo2", target)
+    return (matched, target)
 
 
 # ---------------------------------------------------------------------------
@@ -806,54 +863,76 @@ def build_multi_metric_chart(
     return _apply_component_contract(block, per_metric[0][0].key, range, component)
 
 
-# 单晚曲线: 按**绝对时间窗**选夜, 逐分钟采样过密 → 等时间分桶取桶均值 (与趋势图同款均值
+# 单晚曲线: 按**绝对时间窗**选夜, 逐点采样过密 → 等时间分桶取桶均值 (与趋势图同款均值
 # 口径, 避免单点腕式伪影放大, 见 spo2_min 需持续负荷佐证的教训)。annotation 标最低/最高桶。
 _NOCTURNAL_MAX_BUCKETS = 60
 _NOCTURNAL_MIN_SAMPLES = 12  # 少于此 → 数据不足, 不画 (诚实兜底, 绝不回退月度趋势)
 _NIGHT_START_HOUR = 18       # 傍晚起点 (evening_date 当天 18:00)
 _NIGHT_END_HOUR = 12         # 次日中午止 (覆盖晚睡→晚起, 且不吞下一整夜)
-_SPO2_WARN_BELOW = 92        # 桶均值低于此才标红, 否则中性 (避免正常夜 over-alarm)
+
+# 睡眠阶段 → y 深度 (hypnogram 惯例: 清醒最高, 深睡最低)。
+_SLEEP_LEVEL_Y = {"awake": 4, "rem": 3, "light": 2, "deep": 1}
 
 
-def build_nocturnal_spo2_curve(
-    db: Session, user_id: int, evening_date: date
+def _night_window(evening_date: date) -> Tuple[datetime, datetime]:
+    return (
+        datetime.combine(evening_date, time(_NIGHT_START_HOUR, 0)),
+        datetime.combine(evening_date + timedelta(days=1), time(_NIGHT_END_HOUR, 0)),
+    )
+
+
+def _spec_for(metric_key: str) -> Optional[_NightMetricSpec]:
+    for s in _NIGHT_METRICS:
+        if s.key == metric_key:
+            return s
+    return None
+
+
+def build_nocturnal_curve(
+    db: Session, user_id: int, metric_key: str, evening_date: date
 ) -> Optional[dict]:
-    """构建某一整晚的逐分钟血氧曲线 (x=时刻 HH:MM, y=血氧%)。零 LLM, 全来自 spo2_samples。
+    """通用单晚 intra-night 曲线 (x=时刻 HH:MM)。零 LLM, 全来自逐点样本表。
+
+    metric_key=="sleep" → hypnogram 阶段步进曲线; 其余 → 注册表(`_NIGHT_METRICS`)数值曲线。
 
     **选夜=绝对时间窗** [evening_date 18:00 → 次日 12:00]: 查 evening_date 与次日两个
-    record_date 的样本, 用 epoch_ms(缺则 record_date+sample_time)算**绝对时刻**, 只保留落在
-    窗内的点。无论厂商把整夜挂在傍晚日还是醒来次日都能精确取到"所问那一夜", 且**绝不把相邻夜
-    (前一夜/下一夜)冒充进来**(替代早先按样本数 argmax 挑 record_date —— 相邻夜都密时会挑错夜,
-    见安全评审)。
+    record_date, 用 epoch(缺则 record_date+时刻)算**绝对时刻**, 只留窗内点。无论厂商把整夜
+    挂傍晚日还是醒来次日都精确取到"所问那一夜", 且**绝不把相邻夜(前一夜/下一夜)冒充进来**。
 
-    - 值域 sanity 50-100; 同一绝对分钟同源去重; 按绝对时刻升序 (天然跨零点正确)。
-    - 等时间分桶 (≤60) 取桶均值 (整数%); x 轴 = 桶起始 HH:MM。
-    - annotation: 最低桶 (仅当 <92% 标红, 否则中性) + 最高桶。
-    - 窗内采样 < _NOCTURNAL_MIN_SAMPLES / 桶 < MIN_BUCKETS → None (诚实兜底, 绝不回退月度趋势)。
+    - 值域 sanity(每 metric 各自区间); 同一绝对分钟同源去重; 按绝对时刻升序(天然跨零点正确)。
+    - 等时间分桶(≤60)取桶均值(int-metric 取整, float-metric 保留声明小数位)。
+    - annotation: 最低桶(仅当有临床阈值且低于阈值才标红, 否则中性) + 最高桶。
+    - 窗内采样 < _NOCTURNAL_MIN_SAMPLES / 桶 < MIN_BUCKETS → None(诚实兜底, 绝不回退月度趋势)。
     """
-    win_start = datetime.combine(evening_date, time(_NIGHT_START_HOUR, 0))
-    win_end = datetime.combine(evening_date + timedelta(days=1), time(_NIGHT_END_HOUR, 0))
+    if metric_key == "sleep":
+        return build_nocturnal_sleep_hypnogram(db, user_id, evening_date)
+    spec = _spec_for(metric_key)
+    if spec is None:
+        return None
 
+    win_start, win_end = _night_window(evening_date)
+    model = spec.model
     rows = (
-        db.query(SpO2Sample)
+        db.query(model)
         .filter(
-            SpO2Sample.user_id == user_id,
-            SpO2Sample.record_date.in_([evening_date, evening_date + timedelta(days=1)]),
+            model.user_id == user_id,
+            model.record_date.in_([evening_date, evening_date + timedelta(days=1)]),
         )
         .all()
     )
     pts: List[Tuple[datetime, float, str]] = []  # (abs_ts, value, source)
     for r in rows:
-        v = r.spo2_value
-        if v is None or not (50 <= v <= 100):
-            continue
-        if r.epoch_ms:
-            ts = datetime.fromtimestamp(r.epoch_ms / 1000)
+        v = getattr(r, spec.value_field, None)
+        if v is None or not (spec.lo <= v <= spec.hi):
+            continue  # 值域外(含 stress 的 -1/-2 无数据哨兵)剔除
+        epoch = getattr(r, spec.epoch_field, None) if spec.epoch_field else None
+        if epoch:
+            ts = datetime.fromtimestamp(epoch / 1000)
         else:
-            ts = datetime.combine(r.record_date, r.sample_time)
+            ts = datetime.combine(r.record_date, getattr(r, spec.time_field))
         if not (win_start <= ts <= win_end):
             continue  # 窗外(白天点检 / 相邻夜)一律剔除, 只留所问那一夜
-        pts.append((ts, float(v), r.source or ""))
+        pts.append((ts, float(v), getattr(r, "source", "") or ""))
     if len(pts) < _NOCTURNAL_MIN_SAMPLES:
         return None
 
@@ -888,7 +967,8 @@ def build_nocturnal_spo2_curve(
     points: List[float] = []
     for b in sorted(buckets):
         x_labels.append(bucket_ts[b].strftime("%H:%M"))
-        points.append(round(mean(buckets[b])))
+        m = mean(buckets[b])
+        points.append(int(round(m)) if spec.decimals == 0 else round(m, spec.decimals))
     if len(points) < MIN_BUCKETS:
         return None
 
@@ -897,25 +977,81 @@ def build_nocturnal_spo2_curve(
     hi_lbl, hi_val = max(pairs, key=lambda t: t[1])
     annotations: List[dict] = []
     if lo_lbl != hi_lbl:
-        annotations.append({
-            "x": lo_lbl,
-            "label": f"最低 {lo_val}%",
-            "kind": "warn" if lo_val < _SPO2_WARN_BELOW else "good",
-        })
-        annotations.append({"x": hi_lbl, "label": f"最高 {hi_val}%", "kind": "good"})
+        # 仅 spo2(有临床阈值)且桶均值 < 阈值才标红(warn); 其余一律中性(info)。max 恒中性。
+        # Mac 端把 "good" 渲成绿色 → 会把偏低 HRV / 偏高压力等中性极值误标成"健康绿"
+        # (见安全评审); "info" 走中性 accent, mobile/web 忽略 kind 只显文案。
+        lo_kind = "warn" if (spec.warn_below is not None and lo_val < spec.warn_below) else "info"
+        annotations.append({"x": lo_lbl, "label": f"最低 {lo_val}{spec.unit}", "kind": lo_kind})
+        annotations.append({"x": hi_lbl, "label": f"最高 {hi_val}{spec.unit}", "kind": "info"})
 
     disp_night = f"{evening_date.month}月{evening_date.day}日"
     return {
         "v": 1,
         "component": "line_chart",
-        "title": f"{disp_night}整晚血氧",
-        "unit": "%",
+        "title": f"{disp_night}整晚{spec.title}",
+        "unit": spec.unit,
         "x": x_labels,
-        "series": [{"name": "夜间逐时血氧", "points": points}],
+        "series": [{"name": spec.series_name, "points": points}],
         "annotations": annotations,
         "source": src or "garmin",
         "data_note": f"基于当晚 {len(dedup)} 个真实采样点",
     }
+
+
+def build_nocturnal_sleep_hypnogram(
+    db: Session, user_id: int, evening_date: date
+) -> Optional[dict]:
+    """单晚睡眠阶段 hypnogram (阶段步进曲线; y: 4清醒/3REM/2浅睡/1深睡)。零 LLM。
+
+    数据来自 sleep_level_intervals, 同款绝对时间窗选夜。段 < MIN_BUCKETS → None(诚实兜底)。
+    """
+    win_start, win_end = _night_window(evening_date)
+    rows = (
+        db.query(SleepLevelInterval)
+        .filter(
+            SleepLevelInterval.user_id == user_id,
+            SleepLevelInterval.record_date.in_(
+                [evening_date, evening_date + timedelta(days=1)]
+            ),
+        )
+        .all()
+    )
+    segs: List[Tuple[datetime, int, str]] = []
+    for r in rows:
+        lvl = _SLEEP_LEVEL_Y.get((r.activity_level or "").strip().lower())
+        if lvl is None or not r.start_epoch_ms:
+            continue
+        ts = datetime.fromtimestamp(r.start_epoch_ms / 1000)
+        if not (win_start <= ts <= win_end):
+            continue
+        segs.append((ts, lvl, r.source or ""))
+    if len(segs) < MIN_BUCKETS:
+        return None
+
+    segs.sort(key=lambda s: s[0])
+    x_labels = [ts.strftime("%H:%M") for ts, _, _ in segs]
+    points = [lvl for _, lvl, _ in segs]
+    src = next((s for _, _, s in segs if s), "garmin")
+
+    disp_night = f"{evening_date.month}月{evening_date.day}日"
+    return {
+        "v": 1,
+        "component": "line_chart",
+        "title": f"{disp_night}整晚睡眠阶段",
+        "unit": "",
+        "x": x_labels,
+        "series": [{"name": "睡眠阶段 4清醒·3REM·2浅睡·1深睡", "points": points}],
+        "annotations": [],
+        "source": src or "garmin",
+        "data_note": f"基于当晚 {len(segs)} 个睡眠阶段段",
+    }
+
+
+def build_nocturnal_spo2_curve(
+    db: Session, user_id: int, evening_date: date
+) -> Optional[dict]:
+    """向后兼容薄封装: spo2 单晚曲线 = 通用 build_nocturnal_curve 的 spo2 分支。"""
+    return build_nocturnal_curve(db, user_id, "spo2", evening_date)
 
 
 def build_empty_state(metric: str, range: str = "6m") -> Optional[dict]:

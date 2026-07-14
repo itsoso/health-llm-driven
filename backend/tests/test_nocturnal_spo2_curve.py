@@ -2,14 +2,16 @@
 
 bug 修回归: 「绘制昨晚整晚血氧曲线」曾被误判成近半年月度趋势 (答非所问)。
 """
-from datetime import date, time
+from datetime import date, datetime, time
 
 import pytest
 
-from app.models.daily_health import SpO2Sample
+from app.models.daily_health import HeartRateSample, SleepLevelInterval, SpO2Sample
+from app.models.garmin_timeseries import HrvReading, StressSample
 from app.models.user import User
 from app.services.genui.chart_builder import (
     _parse_target_night,
+    build_nocturnal_curve,
     build_nocturnal_spo2_curve,
     detect_chart_requests,
     detect_nocturnal_curve_request,
@@ -59,9 +61,10 @@ def test_half_year_trend_still_goes_to_trend_detector():
     assert detect_chart_requests("绘制近半年血氧趋势") == [("spo2", "6m")]
 
 
-def test_non_spo2_nocturnal_is_none():
-    # 目前只做血氧 intra-night; 「昨晚心率曲线」不走本分支
-    assert detect_nocturnal_curve_request("昨晚整晚心率曲线", today=TODAY) is None
+def test_metric_without_intranight_data_is_none():
+    # 体重/步数无逐点夜间采样表 → 不走单晚分支 (fall through 到趋势, 由趋势侧处理)
+    assert detect_nocturnal_curve_request("昨晚整晚体重曲线", today=TODAY) is None
+    assert detect_nocturnal_curve_request("昨晚整晚步数曲线", today=TODAY) is None
 
 
 def test_parse_month_day_infers_year():
@@ -135,9 +138,9 @@ def test_window_excludes_previous_night(db, user):
     pts = block["series"][0]["points"]
     assert all(p >= 95 for p in pts), f"应只含所问夜(~97), 不含前一夜(85): {pts}"
     assert "12" in block["data_note"]  # 只数窗内 12 点
-    # 全 ≥95 → 最低桶不标红 (避免正常夜 over-alarm)
+    # 全 ≥95 → 最低桶不标红, 走中性 info (避免正常夜 over-alarm; Mac 上 good=绿 已弃用)
     lo_ann = next(a for a in block["annotations"] if "最低" in a["label"])
-    assert lo_ann["kind"] == "good"
+    assert lo_ann["kind"] == "info"
 
 
 def test_epoch_ms_absolute_time_wins_over_record_date(db, user):
@@ -172,3 +175,139 @@ def test_out_of_range_values_filtered(db, user):
     assert block is not None
     for pt in block["series"][0]["points"]:
         assert 50 <= pt <= 100
+
+
+# ──────────── 通用化: HRV / 心率 / 睡眠 (bug: 之前只 spo2) ────────────
+
+def test_detect_covers_all_night_metrics():
+    cases = {
+        "绘制我昨晚上HRV的曲线": ("hrv", date(2026, 7, 13)),
+        "画昨晚整晚心率曲线": ("heart_rate", date(2026, 7, 13)),
+        "昨晚睡眠曲线": ("sleep", date(2026, 7, 13)),
+        "昨晚呼吸曲线": ("respiration", date(2026, 7, 13)),
+        "昨晚整晚压力曲线": ("stress", date(2026, 7, 13)),
+    }
+    for q, expect in cases.items():
+        assert detect_nocturnal_curve_request(q, today=TODAY) == expect, q
+
+
+def test_hrv_disambiguation_beats_heart_rate():
+    # "心率变异" 必须判 hrv (不能被 "心率" 抢)
+    assert detect_nocturnal_curve_request("昨晚整晚心率变异曲线", today=TODAY) == (
+        "hrv", date(2026, 7, 13),
+    )
+    assert detect_nocturnal_curve_request("昨晚整晚心率曲线", today=TODAY) == (
+        "heart_rate", date(2026, 7, 13),
+    )
+
+
+def test_trend_request_still_falls_to_trend_for_all_metrics():
+    # 无单晚线索的趋势请求: nocturnal 不吞, 仍走 detect_chart_requests
+    for q, key in [("绘制近半年HRV趋势", "hrv"), ("画心率趋势图", "resting_hr")]:
+        assert detect_nocturnal_curve_request(q, today=TODAY) is None
+        assert any(m == key for m, _ in detect_chart_requests(q)), q
+
+
+def _seed_hrv(db, user_id, record_date, samples):
+    """samples: list[(hour, minute, value)] — 用 epoch_ms 走绝对时刻路径。"""
+    for h, m, v in samples:
+        ep = int(datetime(record_date.year, record_date.month, record_date.day, h, m).timestamp() * 1000)
+        db.add(HrvReading(
+            user_id=user_id, record_date=record_date,
+            reading_time=time(h, m), hrv_value=v, epoch_ms=ep, source="garmin",
+        ))
+    db.commit()
+
+
+def test_build_hrv_curve_via_epoch(db, user):
+    # HRV 夜间 (7/13→14, 挂 record_date 7/14), epoch_ms 权威
+    _seed_hrv(db, user.id, date(2026, 7, 14),
+              [(h, mm, 40 + h) for h in range(1, 7) for mm in (0, 30)])  # 12 点
+    block = build_nocturnal_curve(db, user.id, "hrv", date(2026, 7, 13))
+    assert block is not None
+    assert block["title"] == "7月13日整晚HRV"
+    assert block["unit"] == "ms"
+    assert all(":" in x for x in block["x"])
+    assert "月" not in "".join(block["x"])
+
+
+def test_build_heart_rate_curve_no_epoch(db, user):
+    # HeartRateSample 无 epoch_ms → 走 combine(record_date, sample_time) 兜底
+    for h in range(1, 7):
+        for mm in (0, 30):
+            db.add(HeartRateSample(
+                user_id=user.id, record_date=date(2026, 7, 14),
+                sample_time=time(h, mm), heart_rate=55 + h, source="garmin",
+            ))
+    db.commit()
+    block = build_nocturnal_curve(db, user.id, "heart_rate", date(2026, 7, 13))
+    assert block is not None
+    assert block["title"] == "7月13日整晚心率"
+    assert block["unit"] == "bpm"
+    assert all(50 <= p <= 70 for p in block["series"][0]["points"])
+
+
+def test_build_sleep_hypnogram(db, user):
+    # 睡眠阶段: 5 段 (deep→light→rem→light→awake), 挂 7/14 凌晨
+    stages = [("deep", 1, 0), ("light", 2, 0), ("rem", 3, 0), ("light", 4, 0), ("awake", 5, 0)]
+    for level, h, mm in stages:
+        start = int(datetime(2026, 7, 14, h, mm).timestamp() * 1000)
+        db.add(SleepLevelInterval(
+            user_id=user.id, record_date=date(2026, 7, 14),
+            start_epoch_ms=start, end_epoch_ms=start + 3600_000,
+            activity_level=level, source="garmin",
+        ))
+    db.commit()
+    block = build_nocturnal_curve(db, user.id, "sleep", date(2026, 7, 13))
+    assert block is not None
+    assert block["title"] == "7月13日整晚睡眠阶段"
+    # y = 深度: deep=1, light=2, rem=3, awake=4
+    assert block["series"][0]["points"] == [1, 2, 3, 2, 4]
+
+
+def test_night_metric_no_data_returns_none(db, user):
+    # 该夜无该指标逐点采样 → None (诚实兜底, 绝不回退趋势)
+    assert build_nocturnal_curve(db, user.id, "hrv", date(2026, 7, 13)) is None
+    assert build_nocturnal_curve(db, user.id, "sleep", date(2026, 7, 13)) is None
+
+
+def test_annotation_kind_only_spo2_low_is_warn(db, user):
+    """Mac 按 kind 上色: 仅 spo2 桶均值<92 标 warn(红); 其余中性 info, 不误标"健康绿"。"""
+    # spo2 低谷夜 → min warn, max info
+    night = []
+    for h in range(1, 7):
+        for mm in (0, 20, 40):
+            night.append((h, mm, 85 if (h == 3) else 96))  # 03:xx 低于 92
+    _seed(db, user.id, date(2026, 7, 14), night)
+    spo2 = build_nocturnal_spo2_curve(db, user.id, date(2026, 7, 13))
+    kinds = {a["label"][:2]: a["kind"] for a in spo2["annotations"]}
+    assert kinds["最低"] == "warn"
+    assert kinds["最高"] == "info"
+    # HRV 无临床阈值 → min/max 都 info (绝不 good/绿)
+    _seed_hrv(db, user.id, date(2026, 7, 14),
+              [(h, mm, 30 + h) for h in range(1, 7) for mm in (0, 30)])
+    hrv = build_nocturnal_curve(db, user.id, "hrv", date(2026, 7, 13))
+    assert all(a["kind"] == "info" for a in hrv["annotations"])
+    assert not any(a["kind"] == "good" for a in hrv["annotations"])
+
+
+def test_stress_sentinel_values_excluded(db, user):
+    """stress 的 -1/-2 (无数据/休息哨兵) 被值域 (0,100) 排除, 不进曲线。"""
+    for h in range(1, 7):
+        for mm in (0, 30):
+            db.add(StressSample(
+                user_id=user.id, record_date=date(2026, 7, 14),
+                sample_time=time(h, mm), stress_value=40, source="garmin",
+                epoch_ms=int(datetime(2026, 7, 14, h, mm).timestamp() * 1000),
+            ))
+    # 哨兵值
+    for h, mm in ((2, 15), (4, 15)):
+        db.add(StressSample(
+            user_id=user.id, record_date=date(2026, 7, 14),
+            sample_time=time(h, mm), stress_value=-2, source="garmin",
+            epoch_ms=int(datetime(2026, 7, 14, h, mm).timestamp() * 1000),
+        ))
+    db.commit()
+    block = build_nocturnal_curve(db, user.id, "stress", date(2026, 7, 13))
+    assert block is not None
+    assert all(0 <= p <= 100 for p in block["series"][0]["points"])
