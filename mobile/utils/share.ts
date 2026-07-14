@@ -32,6 +32,11 @@ export async function sharePlainText({ title, message }: SharePlainTextOptions) 
   return Share.share({ title, message: shareMessage });
 }
 
+export async function sharePlainCaption({ title, message }: SharePlainTextOptions) {
+  await Clipboard.setStringAsync(message).catch(() => {});
+  return Share.share({ title, message });
+}
+
 export async function shareLocalImage(uri: string) {
   const imageUri = String(uri || '').trim();
   if (!/^file:\/\//i.test(imageUri)) throw new Error('image_share_requires_local_file');

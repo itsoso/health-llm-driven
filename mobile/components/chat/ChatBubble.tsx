@@ -37,8 +37,8 @@ import {
   revaFonts,
 } from '../../constants/revaTheme';
 import { useToast } from '../../hooks/useToast';
-import { shareLocalImage, sharePlainText } from '../../utils/share';
-import { buildAiShareMessage } from '../../utils/aiShareText';
+import { shareLocalImage, sharePlainCaption, sharePlainText } from '../../utils/share';
+import { buildAiShareMessage, buildXiaohongshuShareMessage } from '../../utils/aiShareText';
 import { buildChatImageSource } from '../../utils/chatImageSource';
 import { containsMarkdownTable, preprocessMarkdownTables } from '../../utils/markdownTables';
 import { extractRevaUiBlocks } from '../../utils/revaUiBlocks';
@@ -614,19 +614,26 @@ function ChatBubbleInner({ item, onViewImage, imageAuthToken, selectionMode = fa
 
   // 分享当前 AI 气泡 — 系统分享菜单, 微信/群/朋友圈/短信都走这里.
   // 不引 native WeChat SDK (破坏 OTA 反馈环), 复用 RN Share 已够用.
-  const handleShare = async (_target: 'wechat' | 'xiaohongshu' | 'more' = 'more') => {
+  const handleShare = async (target: 'wechat' | 'xiaohongshu' | 'more' = 'more') => {
     if (item.completionStatus === 'interrupted' || item.completionStatus === 'error') {
       toast.show('这条回复没有完整结束，暂不能分享。', 'info');
       return;
     }
-    const message = buildAiShareMessage(assistantTextForActions);
+    const message = target === 'xiaohongshu'
+      ? buildXiaohongshuShareMessage(assistantTextForActions)
+      : buildAiShareMessage(assistantTextForActions);
     if (!message) return;
     Haptics.selectionAsync();
     try {
-      await sharePlainText({
-        title: '小巴 · 建议',
-        message,
-      });
+      if (target === 'xiaohongshu') {
+        await sharePlainCaption({
+          title: '小巴 · 小红书文案',
+          message,
+        });
+        toast.show('小红书文案已复制', 'success');
+        return;
+      }
+      await sharePlainText({ title: '小巴 · 建议', message });
     } catch { /* 用户取消分享也会走这里, 不打扰 */ }
   };
 

@@ -98,7 +98,7 @@ function structureFlattenedGeneralAdvice(content: string): string {
 
 function normalizeFlattenedAgentContent(content: string): string {
   const original = content.trim();
-  if (/\n\s*(?:#{1,6}\s+|[-*+]\s+|\d+\.\s+|\|.+\|)/u.test(original)) {
+  if (/(?:^|\n)\s*(?:#{1,6}\s+|[-*+]\s+|\d+\.\s+|\|.+\|)/u.test(original)) {
     return original;
   }
 
@@ -159,7 +159,7 @@ function buildDietShareMessage(content: string): string | null {
     ? `${nextPrefix.replace('建议', '')}${nextBody}`
     : nextBody;
 
-  if (!meal && !food && !kcal) return null;
+  if (!food && !kcal) return null;
 
   const lines = ['今天这餐被小巴认真记下来了', ''];
   const mealLine = [meal, food].filter(Boolean).join(' · ');
@@ -178,10 +178,63 @@ function buildDietShareMessage(content: string): string | null {
   return lines.join('\n');
 }
 
+function stripCaptionLine(line: string): string {
+  return stripInlineMarkdown(line
+    .replace(/^#{1,6}\s*/u, '')
+    .replace(/^[-*+]\s+/u, '')
+    .replace(/^\d+[.)、]\s*/u, '')
+    .replace(/\[(.*?)\]\([^)]*\)/g, '$1'));
+}
+
+function buildConciseAdviceLines(content: string): string[] {
+  const normalized = normalizeFlattenedAgentContent(content);
+  const lines = normalized
+    .split(/\n+/)
+    .map(stripCaptionLine)
+    .filter(Boolean)
+    .filter(line => !/^[-:| ]+$/u.test(line))
+    .filter(line => !/^今日建议[:：]?$/u.test(line))
+    .filter(line => !/^小巴$/u.test(line))
+    .filter(line => !/^仅作健康管理参考/u.test(line))
+    .filter(line => !/^#/.test(line));
+
+  const result: string[] = [];
+  let totalLength = 0;
+  for (const line of lines) {
+    if (result.includes(line)) continue;
+    const nextLength = totalLength + line.length;
+    if (nextLength > 320 && result.length > 0) break;
+    result.push(line.length > 120 ? `${line.slice(0, 117).trim()}...` : line);
+    totalLength = nextLength;
+    if (result.length >= 4) break;
+  }
+
+  if (result.length > 0) return result;
+  const fallback = stripCaptionLine(normalized.replace(/\s+/g, ' '));
+  return fallback ? [fallback.slice(0, 180)] : [];
+}
+
 export function buildAiShareMessage(content: string): string {
   const dietShare = buildDietShareMessage(content);
   if (dietShare) return dietShare;
 
   const text = normalizeFlattenedAgentContent(content);
   return text ? `${text}\n\n— 小巴` : '';
+}
+
+export function buildXiaohongshuShareMessage(content: string): string {
+  const dietShare = buildDietShareMessage(content);
+  if (dietShare) return dietShare.replace('#饮食记录 #健康管理 #小巴', '#健康饮食 #饮食记录 #小巴');
+
+  const adviceLines = buildConciseAdviceLines(content);
+  if (adviceLines.length === 0) return '';
+
+  return [
+    '小巴给我的今日建议',
+    '',
+    ...adviceLines,
+    '',
+    '仅作健康管理参考，不替代医生诊疗。',
+    '#健康管理 #生活方式改善 #小巴',
+  ].join('\n');
 }

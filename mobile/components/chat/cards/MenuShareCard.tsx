@@ -17,7 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { CardShell } from './CardShell';
 import { revaColors as C, revaRadii, revaFonts } from '../../../constants/revaTheme';
 import type { CardSpec } from './types';
-import { sharePlainText } from '../../../utils/share';
+import { sharePlainCaption, sharePlainText } from '../../../utils/share';
 
 // 菜单/饮食类目 accent (橙) + 卡底 tint = 装饰色, 保留字面量 (= legacy orange/tintOrange).
 const MENU_ACCENT = '#C97A2E';
@@ -70,17 +70,49 @@ export function buildShareText(d: MenuShareData): string {
   return lines.join('\n');
 }
 
+export function buildXiaohongshuShareText(d: MenuShareData): string {
+  const lines: string[] = ['小巴给我的一餐建议', '', d.title || '这一餐'];
+  if (d.reason) lines.push(d.reason);
+  const items = Array.isArray(d.items) ? d.items : [];
+  if (items.length > 0) {
+    lines.push('');
+    for (const it of items.slice(0, 4)) {
+      const parts = [
+        it.name,
+        it.qty,
+        it.kcal != null ? `${Math.round(it.kcal)} kcal` : null,
+      ].filter(Boolean);
+      lines.push(parts.join(' · '));
+    }
+  }
+  if (d.totals) {
+    const t = d.totals;
+    const parts: string[] = [];
+    if (t.kcal != null) parts.push(`${Math.round(t.kcal)} kcal`);
+    if (t.protein != null) parts.push(`蛋白 ${t.protein.toFixed(0)}g`);
+    if (t.carbs != null) parts.push(`碳水 ${t.carbs.toFixed(0)}g`);
+    if (t.fat != null) parts.push(`脂肪 ${t.fat.toFixed(0)}g`);
+    if (parts.length) lines.push('', `营养概览：${parts.join(' · ')}`);
+  }
+  lines.push('', '仅作健康管理参考，不替代医生诊疗。', '#健康饮食 #饮食记录 #小巴');
+  return lines.join('\n');
+}
+
 export function MenuShareCardView(d: MenuShareData) {
   const items = Array.isArray(d.items) ? d.items : [];
   const totals = d.totals || {};
 
-  const handleShare = async () => {
+  const handleShare = async (target: 'wechat' | 'xiaohongshu' | 'more' = 'more') => {
     Haptics.selectionAsync();
     try {
-      await sharePlainText({
-        title: d.title || '菜单分享',
-        message: buildShareText(d),
-      });
+      if (target === 'xiaohongshu') {
+        await sharePlainCaption({
+          title: `${d.title || '菜单分享'} · 小红书文案`,
+          message: buildXiaohongshuShareText(d),
+        });
+        return;
+      }
+      await sharePlainText({ title: d.title || '菜单分享', message: buildShareText(d) });
     } catch { /* noop */ }
   };
 
@@ -145,7 +177,7 @@ export function MenuShareCardView(d: MenuShareData) {
 
       <View style={styles.shareActions}>
         <Pressable
-          onPress={handleShare}
+          onPress={() => handleShare('wechat')}
           accessibilityRole="button"
           accessibilityLabel="发微信分享菜单"
           style={({ pressed }) => [styles.wechatShareBtn, pressed && { opacity: 0.85 }]}
@@ -154,7 +186,7 @@ export function MenuShareCardView(d: MenuShareData) {
           <Text maxFontSizeMultiplier={1.2} style={styles.wechatShareText}>发微信</Text>
         </Pressable>
         <Pressable
-          onPress={handleShare}
+          onPress={() => handleShare('xiaohongshu')}
           accessibilityRole="button"
           accessibilityLabel="发小红书分享菜单"
           style={({ pressed }) => [styles.xhsShareBtn, pressed && { opacity: 0.85 }]}
@@ -163,7 +195,7 @@ export function MenuShareCardView(d: MenuShareData) {
           <Text maxFontSizeMultiplier={1.2} style={styles.xhsShareText}>发小红书</Text>
         </Pressable>
         <Pressable
-          onPress={handleShare}
+          onPress={() => handleShare('more')}
           accessibilityRole="button"
           accessibilityLabel="更多分享菜单"
           style={({ pressed }) => [styles.moreShareBtn, pressed && { opacity: 0.85 }]}

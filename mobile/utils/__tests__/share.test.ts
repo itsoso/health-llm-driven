@@ -3,7 +3,7 @@ import * as Clipboard from 'expo-clipboard';
 import * as Sharing from 'expo-sharing';
 import api from '../../services/api';
 
-import { shareLocalImage, sharePlainText } from '../share';
+import { shareLocalImage, sharePlainCaption, sharePlainText } from '../share';
 
 jest.mock('expo-clipboard', () => ({
   setStringAsync: jest.fn().mockResolvedValue(undefined),
@@ -72,6 +72,31 @@ describe('sharePlainText', () => {
     expect(Share.share).toHaveBeenCalledWith({
       title: '健康 Agent',
       message: '健康 Agent\nhttps://health.executor.life/shared/token123',
+    });
+  });
+});
+
+describe('sharePlainCaption', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jest.spyOn(Share, 'share').mockResolvedValue({ action: Share.sharedAction });
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('shares copy-ready text without creating a public url', async () => {
+    await sharePlainCaption({
+      title: '小巴 · 小红书文案',
+      message: '今晚 23:00 前睡觉。\n#健康管理 #小巴',
+    });
+
+    expect(api.post).not.toHaveBeenCalled();
+    expect(Clipboard.setStringAsync).toHaveBeenCalledWith('今晚 23:00 前睡觉。\n#健康管理 #小巴');
+    expect(Share.share).toHaveBeenCalledWith({
+      title: '小巴 · 小红书文案',
+      message: '今晚 23:00 前睡觉。\n#健康管理 #小巴',
     });
   });
 });

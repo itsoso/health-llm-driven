@@ -79,6 +79,7 @@ jest.mock('../cards', () => {
 });
 jest.mock('../../../utils/share', () => ({
   sharePlainText: jest.fn(),
+  sharePlainCaption: jest.fn(),
   shareLocalImage: (...args: any[]) => mockShareLocalImage(...args),
 }));
 jest.mock('react-native-view-shot', () => ({
@@ -95,6 +96,7 @@ const ChatBubble = require('../ChatBubble').default;
 const { dispatchChatCardAction } = require('../../../services/chatCardActions');
 const { renderCard, __mockCard } = require('../cards');
 const { sharePlainText } = require('../../../utils/share');
+const { sharePlainCaption } = require('../../../utils/share');
 const { router } = require('expo-router');
 
 function renderBubble(content: string) {
@@ -231,15 +233,23 @@ describe('ChatBubble structured summary', () => {
   });
 
   it('shares assistant replies from the Xiaohongshu action too', async () => {
-    sharePlainText.mockResolvedValueOnce(undefined);
+    sharePlainCaption.mockResolvedValueOnce(undefined);
 
     const { getByLabelText } = renderBubble('今天午餐记录完成，晚饭少油并补 30g 蛋白。');
 
     fireEvent.press(getByLabelText('发小红书分享这条回复'));
 
     await waitFor(() => {
-      expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
-        title: '小巴 · 建议',
+      expect(sharePlainCaption).toHaveBeenCalledWith(expect.objectContaining({
+        title: '小巴 · 小红书文案',
+        message: expect.not.stringContaining('http'),
+      }));
+      expect(sharePlainCaption).toHaveBeenCalledWith(expect.objectContaining({
+        message: expect.stringContaining('小巴给我的今日建议'),
+      }));
+      expect(sharePlainText).not.toHaveBeenCalled();
+      expect(sharePlainCaption).toHaveBeenCalledWith(expect.objectContaining({
+        message: expect.stringContaining('#健康管理 #生活方式改善 #小巴'),
       }));
     });
   });

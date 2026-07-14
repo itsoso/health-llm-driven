@@ -1,4 +1,4 @@
-import { buildAiShareMessage } from '../aiShareText';
+import { buildAiShareMessage, buildXiaohongshuShareMessage } from '../aiShareText';
 
 describe('buildAiShareMessage', () => {
   it('preserves markdown tables so the shared web page can render them', () => {
@@ -75,6 +75,26 @@ describe('buildAiShareMessage', () => {
       '#饮食记录 #健康管理 #小巴',
       '',
       '— 小巴',
+    ].join('\n'));
+  });
+
+  it('turns an assistant suggestion into a concise Xiaohongshu caption', () => {
+    const content = [
+      '## 今日建议',
+      '',
+      '建议今晚 23:00 前睡觉，并在睡前 3 小时停止正餐。',
+      '',
+      '原因：最近 HRV 偏低，先把恢复放在第一位。',
+    ].join('\n');
+
+    expect(buildXiaohongshuShareMessage(content)).toBe([
+      '小巴给我的今日建议',
+      '',
+      '建议今晚 23:00 前睡觉，并在睡前 3 小时停止正餐。',
+      '原因：最近 HRV 偏低，先把恢复放在第一位。',
+      '',
+      '仅作健康管理参考，不替代医生诊疗。',
+      '#健康管理 #生活方式改善 #小巴',
     ].join('\n'));
   });
 

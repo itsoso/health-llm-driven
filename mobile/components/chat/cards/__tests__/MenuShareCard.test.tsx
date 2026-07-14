@@ -1,17 +1,18 @@
 import React from 'react';
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { buildShareText, MenuShareCardView } from '../MenuShareCard';
 
 const mockSharePlainText = jest.fn();
+const mockSharePlainCaption = jest.fn();
 
 jest.mock('../../../../utils/share', () => ({
   sharePlainText: (...args: any[]) => mockSharePlainText(...args),
+  sharePlainCaption: (...args: any[]) => mockSharePlainCaption(...args),
 }));
 
 jest.mock('expo-haptics', () => ({
   selectionAsync: jest.fn().mockResolvedValue(undefined),
 }));
-
-const { buildShareText, MenuShareCardView } = require('../MenuShareCard');
 
 describe('MenuShareCard', () => {
   it('shares menu recommendations under the 小巴 persona', async () => {
@@ -31,6 +32,7 @@ describe('MenuShareCard', () => {
 
   it('renders explicit WeChat and Xiaohongshu share actions', async () => {
     mockSharePlainText.mockResolvedValue(undefined);
+    mockSharePlainCaption.mockResolvedValue(undefined);
     const { getByLabelText, getByText } = render(
       <MenuShareCardView
         title="今晚晚餐"
@@ -49,10 +51,18 @@ describe('MenuShareCard', () => {
     fireEvent.press(getByLabelText('发小红书分享菜单'));
 
     await waitFor(() => {
-      expect(mockSharePlainText).toHaveBeenCalledTimes(2);
+      expect(mockSharePlainText).toHaveBeenCalledTimes(1);
       expect(mockSharePlainText).toHaveBeenCalledWith(expect.objectContaining({
         title: '今晚晚餐',
         message: expect.stringContaining('— 小巴'),
+      }));
+      expect(mockSharePlainCaption).toHaveBeenCalledTimes(1);
+      expect(mockSharePlainCaption).toHaveBeenCalledWith(expect.objectContaining({
+        title: '今晚晚餐 · 小红书文案',
+        message: expect.stringContaining('适合轻负担补蛋白。'),
+      }));
+      expect(mockSharePlainCaption).toHaveBeenCalledWith(expect.objectContaining({
+        message: expect.not.stringContaining('http'),
       }));
     });
   });
