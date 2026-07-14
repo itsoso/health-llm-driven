@@ -86,6 +86,20 @@ def _prompt_prefix_signature(messages: List[Dict]) -> Dict[str, Any]:
 
 
 MAX_TOOL_ROUNDS = 8
+
+# Wave 2(2026-07-14):慢工具执行的心跳 + per-tool 超时预算。
+# 病灶:慢工具(health_analysis 走 orchestrator、knowledge_search 走 ChromaDB 等)内联
+# await 期间 SSE 流零事件 → nginx idle read-timeout 可掐断连接 + 用户看冻结转圈。
+# 对策:执行期间每 _TOOL_HEARTBEAT_INTERVAL_S 吐一个 status 心跳(保活 + 进度可见),
+# 并施加 per-tool 超时(< 客户端 xhr 300s;写工具 <2s 完成不会触及)。超时 → fail-loud
+# 结果串(绝不 hang/静默)。默认 90s 与 httpx 客户端超时对齐(避免过早取消写);
+# health_analysis 走进程内 orchestrator(自有 120s wait_for),给 135s 让内层先 fail-loud。
+_TOOL_HEARTBEAT_INTERVAL_S = 5.0
+_TOOL_TIMEOUT_DEFAULT_S = 90.0
+_TOOL_TIMEOUT_OVERRIDES: Dict[str, float] = {
+    "health_analysis": 135.0,
+}
+
 # 最终用户回复的 token 上限。健康养护/操作清单类回复常 >4000 token,
 # 旧值 4000 会把 Opus 4.7 的长回复硬截断(用户需手动点"继续")。
 # Opus 4.7 / GPT-5.5 / Gemini 3.1 均支持远高于此, 8000 覆盖绝大多数长方案。
@@ -1412,13 +1426,23 @@ def _fallback_text_from_tool_results(
 
     数据泄漏护栏(双模):结构化残片(首字符 { / [)任何模式都不回显给用户 ——
     有回执退中性"已完成记录。",无回执退空串;"已完成操作：…"只承载人话文本。
+
+    C3(Wave 2):所有工具结果都是 "Error:*"(查询服务 500/超时等)时,此前 skip 掉
+    全部错误 → 返回空串 → 上层通用"没拿到有效模型回复",把真失败盖成 silent-green。
+    改为:见过错误且无任何可展示人话时,返回规范化诚实失败(不泄漏原始 error 文本)。
     """
+    saw_error = False
     for message in reversed(messages):
         if message.get("role") != "tool":
             continue
 
         content = str(message.get("content") or "").strip()
-        if not content or content.startswith("Error"):
+        if not content:
+            continue
+        if content.startswith("Error"):
+            # C3(Wave 2):记下"有工具失败了",但不在这里回显原始 error 文本(可能含
+            # 上游 resp.text 内部细节)—— 用于末尾决定返回规范化诚实失败还是空串。
+            saw_error = True
             continue
 
         try:
@@ -1454,6 +1478,10 @@ def _fallback_text_from_tool_results(
                 return f"已完成操作：{preview[:120]}"
             return f"查到：{preview[:120]}"
 
+    # C3(Wave 2):无任何可展示人话。若过程中有工具失败,fail-loud 一句诚实失败,
+    # 而不是空串(空串会被上层兜成通用"没拿到有效模型回复",遮盖真因)。
+    if saw_error:
+        return "抱歉，刚才有一步没有成功，我没能拿到完整结果。请稍后再试一次，或者换个说法告诉我。"
     return ""
 
 
@@ -3604,6 +3632,11 @@ class AgentExecutor:
 
         set_caller("agent_executor.multi_model", user_id=user_id)
         start_time = time.time()
+        # 该路径的准入门是 `not images and not file_base64`(见 run_stream 调用点),
+        # 故本回合恒无图片。此前 request_persisted 事件引用了从未在本函数定义的
+        # saved_image_urls → NameError 让**每个**多模型回合在持久化事件处即崩(pre-existing,
+        # Wave 2 顺手修:恒 []。别名参考单模型路径 _pre_stage 的 saved_image_urls)。
+        saved_image_urls: List[str] = []
         self._current_user_id = user_id
         self._prefer_fast_record_model = False
         self._last_provider_model_name = None
@@ -3733,7 +3766,15 @@ class AgentExecutor:
                         if replayed_write:
                             result = write_results_by_fingerprint[write_fingerprint]
                         else:
-                            result = await self._execute_tool(fn, fa, user_auth_token)
+                            # Wave 2: 心跳 + per-tool 超时(同主路径)。
+                            result = None
+                            async for _hb_kind, _hb_val in self._run_tool_with_progress(
+                                fn, fa, user_auth_token, _tool_progress_label(fn),
+                            ):
+                                if _hb_kind == "heartbeat":
+                                    yield _hb_val
+                                else:
+                                    result = _hb_val
                             if write_fingerprint:
                                 write_results_by_fingerprint[write_fingerprint] = result
                         lead_messages.append({"role": "tool", "tool_call_id": tc["id"], "content": result})
@@ -5121,9 +5162,16 @@ class AgentExecutor:
                                 write_results_by_fingerprint[write_fingerprint]
                             )
                         else:
-                            result = await self._execute_tool(
-                                func_name, func_args, user_auth_token
-                            )
+                            # Wave 2: 心跳 + per-tool 超时(慢工具不再冻结转圈/被 nginx 掐断)。
+                            result = None
+                            async for _hb_kind, _hb_val in self._run_tool_with_progress(
+                                func_name, func_args, user_auth_token,
+                                _tool_progress_label(func_name),
+                            ):
+                                if _hb_kind == "heartbeat":
+                                    yield _hb_val
+                                else:
+                                    result = _hb_val
                             result_for_record_card = result
                         if _is_orch_tool:
                             try:
@@ -7650,6 +7698,75 @@ class AgentExecutor:
             except Exception:
                 pass
             return None
+
+    async def _run_tool_with_progress(
+        self,
+        func_name: str,
+        func_args: Any,
+        user_auth_token: Optional[str],
+        progress_label: str,
+    ):
+        """执行工具,期间周期性吐 status 心跳(保活 + 进度可见),并施加 per-tool 超时预算。
+
+        Wave 2(2026-07-14):慢工具内联 await 期间 SSE 流零事件 → 连接可被 nginx idle
+        read-timeout 掐断 + 用户看冻结转圈。本 helper 把工具跑进 task,每
+        _TOOL_HEARTBEAT_INTERVAL_S 让出一次 status 心跳;超过 per-tool 预算 → 取消 task 并
+        返回 fail-loud 结果串(绝不 hang/静默)。
+
+        yields ('heartbeat', <status event dict>) 若干,最后**恰好一个** ('result', <str>)。
+        契约:无论成功/超时/异常,末尾必产出一个 ('result', str),调用方据此赋值 result。
+        finally 里取消未完成 task,保证消费方提前关闭生成器(客户端断连)时不泄漏。
+        """
+        timeout_s = _TOOL_TIMEOUT_OVERRIDES.get(func_name, _TOOL_TIMEOUT_DEFAULT_S)
+        task = asyncio.create_task(
+            self._execute_tool(func_name, func_args, user_auth_token)
+        )
+        waited = 0.0
+        try:
+            while not task.done():
+                await asyncio.wait({task}, timeout=_TOOL_HEARTBEAT_INTERVAL_S)
+                if task.done():
+                    break
+                waited += _TOOL_HEARTBEAT_INTERVAL_S
+                if waited >= timeout_s:
+                    task.cancel()
+                    try:
+                        await task
+                    except (asyncio.CancelledError, Exception):  # noqa: BLE001
+                        pass
+                    logger.warning(
+                        f"[tool timeout] {func_name} 超过 {timeout_s:.0f}s 被中止"
+                    )
+                    yield (
+                        "result",
+                        f"Error: {progress_label}耗时过长(超过 {int(timeout_s)} 秒),已中止。请稍后重试。",
+                    )
+                    return
+                # 心跳 status(与既有 stage=tool 契约同源:客户端显示进度 label + 保活)
+                yield (
+                    "heartbeat",
+                    {
+                        "event": "status",
+                        "data": {
+                            "stage": "tool",
+                            "label": progress_label,
+                            "detail": "running",
+                        },
+                    },
+                )
+            try:
+                result = task.result()
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:  # noqa: BLE001
+                logger.warning(
+                    f"[tool exec] {func_name} 抛异常: {type(e).__name__}: {str(e)[:120]}"
+                )
+                result = f"Error: {progress_label}执行失败,请稍后重试。"
+            yield ("result", result)
+        finally:
+            if not task.done():
+                task.cancel()
 
     async def _execute_tool(
         self, tool_name: str, args_raw: Any, user_token: Optional[str]
