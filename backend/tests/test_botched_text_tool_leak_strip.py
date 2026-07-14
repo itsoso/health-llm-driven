@@ -37,6 +37,15 @@ def test_does_not_strip_tool_name_mention_without_call_syntax():
     assert strip(t) == t
 
 
+def test_weak_markers_alone_do_not_strip():
+    # fix-forward(安全评审): dimension:/工具调用 是**弱** marker,已从 SYNTAX_RE 移除。
+    # 模型自我解释工具机制的元散文(工具名 + 弱 marker 共现)不再被误剥。
+    t1 = "health_query 支持多个 dimension: 睡眠、饮水。\n\n你想查哪个?"
+    assert strip(t1) == t1
+    t2 = "你可以通过工具调用 health_query 来查询。\n\n需要我帮你查吗?"
+    assert strip(t2) == t2
+
+
 def test_does_not_strip_medical_disclaimer():
     t = "建议就医。涉及用药请咨询医生。"
     assert strip(t) == t

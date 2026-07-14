@@ -1101,8 +1101,11 @@ _TEXTCALL_LEAK_STRIP_ENABLED = True
 # {dimension:…}}` 嵌套畸形。qwen 系经代理这类畸形层出不穷 → 用"标记+注册工具名"的通用检测,
 # 覆盖未来新格式,而非逐格式点补。
 _TOOL_CALL_SYNTAX_RE = re.compile(
+    # 只用**强** marker(call{/<call:/<tool>/{name:/arguments:);去掉弱 marker dimension:/工具调用
+    # (它们易与"模型自我解释工具"的元散文共现 → 误伤; 安全评审 fix-forward)。founder 的畸形串
+    # 含 call{+{name:+arguments: 三个强 marker, 仍稳命中。
     r"(<?\s*call\s*[:{]|<\s*(?:tool|function|invoke)(?:_call)?\b|\{\s*\"?name\"?\s*:"
-    r"|\barguments\s*[:=]|\bdimension\s*[:=]|工具调用)"
+    r"|\barguments\s*[:=])"
 )
 _REGISTERED_TOOL_NAMES_CACHE: Optional[frozenset] = None
 
