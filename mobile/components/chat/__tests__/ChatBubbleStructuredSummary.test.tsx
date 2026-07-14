@@ -1,4 +1,5 @@
 import React from 'react';
+import { Alert } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
@@ -12,6 +13,8 @@ const mockLoadCardActionReceipt = jest.fn().mockResolvedValue(undefined);
 const mockSaveCardActionReceipt = jest.fn().mockResolvedValue(undefined);
 const mockSaveChatImageToLibrary = jest.fn().mockResolvedValue(undefined);
 const mockShareLocalImage = jest.fn().mockResolvedValue(undefined);
+const mockCreateInterventionDraft = jest.fn().mockResolvedValue({ id: 88 });
+const mockAlert = jest.spyOn(Alert, 'alert');
 const mockCaptureRefCalls: { testID?: string; options: unknown }[] = [];
 let mockCaptureRefResult = 'file:///tmp/diet-card.png';
 
@@ -96,6 +99,9 @@ jest.mock('react-native-view-shot', () => ({
 jest.mock('../../../services/chatImageSave', () => ({
   saveChatImageToLibrary: (...args: any[]) => mockSaveChatImageToLibrary(...args),
 }));
+jest.mock('../../../services/actionCards', () => ({
+  createInterventionDraft: (...args: any[]) => mockCreateInterventionDraft(...args),
+}));
 
 const ChatBubble = require('../ChatBubble').default;
 const { dispatchChatCardAction } = require('../../../services/chatCardActions');
@@ -146,6 +152,11 @@ describe('ChatBubble structured summary', () => {
     mockSaveChatImageToLibrary.mockResolvedValue(undefined);
     mockShareLocalImage.mockReset();
     mockShareLocalImage.mockResolvedValue(undefined);
+    mockCreateInterventionDraft.mockReset();
+    mockCreateInterventionDraft.mockResolvedValue({ id: 88 });
+    mockAlert.mockImplementation((_title, _message, buttons) => {
+      buttons?.find(button => button.style !== 'cancel')?.onPress?.();
+    });
   });
 
   it('summarizes markdown metric tables and today advice for mobile scanning', () => {
@@ -185,6 +196,39 @@ describe('ChatBubble structured summary', () => {
     expect(getByText('补水 上午 500ml')).toBeTruthy();
     // no literal markdown markers leak into the card
     expect(queryByText(/###/)).toBeNull();
+  });
+
+  it('opens a direct today-plan confirmation instead of sending a second plan prompt', async () => {
+    const qc = new QueryClient();
+    const onSendSuggestedPrompt = jest.fn();
+    const message: UIMessage = {
+      id: 'assistant-today-action',
+      role: 'assistant',
+      content: '📌 今日建议：\n1. 今晚暂停高强度训练，优先睡眠与轻活动',
+      streaming: false,
+    };
+    const { getByLabelText, getByText } = render(
+      <QueryClientProvider client={qc}>
+        <ChatBubble item={message} onSendSuggestedPrompt={onSendSuggestedPrompt} />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.press(getByLabelText('把建议加入今天计划'));
+
+    expect(onSendSuggestedPrompt).not.toHaveBeenCalled();
+    expect(getByText('加入今日计划')).toBeTruthy();
+    expect(getByLabelText('今日计划标题')).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.press(getByLabelText('确认加入今日计划'));
+    });
+    await waitFor(() => {
+      expect(mockCreateInterventionDraft).toHaveBeenCalledWith(expect.objectContaining({
+        title: expect.stringContaining('暂停高强度训练'),
+        source_type: 'chat',
+        verification_days: 1,
+      }));
+    });
   });
 
   it('keeps a compact WeChat and Xiaohongshu share rail while speech remains in the long-press menu', () => {
@@ -1065,8 +1109,7 @@ describe('ChatBubble structured summary', () => {
   });
 
   it('asks for confirmation before dispatching write card actions', async () => {
-    const { Alert } = require('react-native');
-    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(jest.fn());
+    mockAlert.mockImplementation(jest.fn());
     dispatchChatCardAction.mockResolvedValueOnce({
       status: 'completed',
       receipt: verifiedReceipt('smart_reminder', '18'),
@@ -1111,13 +1154,13 @@ describe('ChatBubble structured summary', () => {
     fireEvent.press(getByText('确认记录'));
 
     expect(dispatchChatCardAction).not.toHaveBeenCalled();
-    expect(alertSpy).toHaveBeenCalledWith(
+    expect(mockAlert).toHaveBeenCalledWith(
       '记录 30 个俯卧撑？',
       '将写入今天的运动记录',
       expect.any(Array),
     );
 
-    const buttons = alertSpy.mock.calls[0][2] as { onPress?: () => void }[];
+    const buttons = mockAlert.mock.calls[0][2] as { onPress?: () => void }[];
     await act(async () => {
       buttons[1].onPress?.();
     });
@@ -1129,6 +1172,5 @@ describe('ChatBubble structured summary', () => {
       );
     });
 
-    alertSpy.mockRestore();
   });
 });

@@ -30,5 +30,7 @@ describe('interventionDraft', () => {
 
     expect(payload.target_value).toBeUndefined();
     expect(payload.card_type).toBe('plan');
+    expect(payload.accepted).toBe(true);
+    expect(payload.expires_at).toBeUndefined();
   });
 });

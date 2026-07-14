@@ -75,7 +75,7 @@ export type ChatCardActionRuntimeState = 'running' | 'done' | 'error';
 export interface ChatCardActionDescriptor {
   id?: string;
   label: string;
-  action: 'agenda.complete' | 'diet_record.create' | 'write_intent.confirm' | 'write_intent.dismiss' | 'route.open' | string;
+  action: 'agenda.complete' | 'daily_plan_action.complete' | 'diet_record.create' | 'write_intent.confirm' | 'write_intent.dismiss' | 'route.open' | string;
   endpoint?: string | null;
   payload?: Record<string, any> | null;
   style?: ChatCardActionStyle;

@@ -97,14 +97,31 @@ def test_today_dynamic_view_keeps_distinct_runtime_atom(client, auth_user_and_he
     assert card["render"]["dedupe_key"] == "action:smart_daily_plan_action_walk"
     assert card["render"]["reason"] == "next_runtime_action"
     assert card["data"]["generated_by"] == "rolling_health_runtime_v1"
+    assert card["data"]["presentation_mode"] == "today"
     assert card["data"]["next_action"]["replan_reason"] == "today_smart_rank"
     assert card["actions"] == [
         {
-            "id": "open-runtime-agenda",
-            "label": "查看7天计划",
-            "action": "route.open",
-            "payload": {"route": "/agenda"},
+            "id": "complete-daily-plan-action",
+            "label": "完成这一步",
+            "action": "daily_plan_action.complete",
+            "endpoint": "/daily-plan/actions/walk/events",
+            "requires_manual_confirm": True,
+            "payload": {"action_id": "walk", "event_type": "completed"},
             "style": "primary",
+            "confirmation": {
+                "title": "完成：晚餐后步行 15 分钟？",
+                "detail": "将写入今天的行动记录，并从待执行列表移除。",
+                "confirm_label": "确认完成",
+                "cancel_label": "再看看",
+            },
+            "optimistic": True,
+        },
+        {
+            "id": "open-runtime-agenda",
+            "label": "管理今日行动",
+            "action": "route.open",
+            "payload": {"route": "/alerts"},
+            "style": "secondary",
         }
     ]
 
@@ -329,6 +346,7 @@ def _runtime_action(action_id: str, title: str):
         "title": title,
         "time_window": "evening",
         "priority_tier": "P1",
+        "source": {"object_type": "daily_plan_action", "object_id": "walk"},
         "runtime_context": {
             "current_state_summary": "晚餐后是今天最短的代谢干预窗口。",
             "replan_reason": "today_smart_rank",

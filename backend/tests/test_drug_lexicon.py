@@ -11,6 +11,9 @@ from app.services.drug_lexicon import (
     SUPPLEMENT_CLASS_ALIASES,
     _FREE_TEXT_AMBIGUOUS_TERMS,
     _FREE_TEXT_EXCLUDED_SUPPLEMENT_CLASSES,
+    contains_drug_name,
+    drug_name_spans,
+    drug_name_free_text_terms,
     prescriptive_free_text_terms,
 )
 
@@ -70,6 +73,16 @@ def test_named_drug_residual_now_covered():
                   "levothyroxine", "lisinopril", "布洛芬", "ibuprofen", "他克莫司",
                   "别嘌醇", "allopurinol", "对乙酰氨基酚"):
         assert probe in terms, f"{probe!r} 应在 gate term set 里(命名残余未闭合)"
+
+
+def test_drug_name_detector_covers_complete_names_without_short_substring_false_positives():
+    terms = drug_name_free_text_terms()
+    assert "二甲双胍" in terms
+    assert "格列美脲" in terms
+    assert contains_drug_name("把二甲双胍换成格列美脲") is True
+    assert len(drug_name_spans("把二甲双胍换成格列美脲")) == 2
+    assert contains_drug_name("停用跑步机，改为户外步行") is False
+    assert contains_drug_name("停用睡前闹钟") is False
 
 
 # 迁移前 kb_reconciliation_merge 手抄的处方 term 全集(2026-07 迁到 drug_lexicon 前)。

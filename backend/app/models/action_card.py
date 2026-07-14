@@ -32,6 +32,8 @@ class ActionCard(Base):
     # 来源溯源
     source_type = Column(String(30), default="manual")  # conversation / orchestrator / manual
     source_id = Column(String(120))  # 原始消息 ID 或 conversation_id
+    # 显式接受写入的数据库级幂等键。包含 user/source/title；NULL 兼容历史卡。
+    accepted_create_key = Column(String(64), unique=True, index=True)
 
     # 状态
     status = Column(String(20), default="active", index=True)  # active / completed / archived

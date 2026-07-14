@@ -162,6 +162,18 @@ const styles = StyleSheet.create({
   runtimeDayBody: { flex: 1, gap: 2 },
   runtimeDayTitle: { fontFamily: revaFonts.sans, fontSize: 13, fontWeight: '800', color: C.ink1, lineHeight: 17 },
   runtimeDayMeta: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink3, lineHeight: 16 },
+  runtimeToggle: {
+    minHeight: 42,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: revaSpacing.s3,
+    borderRadius: revaRadii.md,
+    backgroundColor: C.paper,
+  },
+  runtimeToggleBody: { flex: 1, gap: 2 },
+  runtimeToggleTitle: { fontFamily: revaFonts.sans, fontSize: 13, fontWeight: '800', color: C.ink1 },
+  runtimeToggleHint: { fontFamily: revaFonts.sans, fontSize: 11, color: C.ink3 },
   runtimeEmpty: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink2, lineHeight: 18 },
   card: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: C.surface,
@@ -385,7 +397,7 @@ function runtimeMeta(item: RuntimeAgendaItem): string {
   const verify = item.runtime_context.verification_window;
   const metrics = verify.metrics.slice(0, 2).join('、');
   const surface = surfaceLabel(item.surface.primary);
-  return `${surface} · ${verify.window_days}天验证${metrics ? ` · ${metrics}` : ''}`;
+  return `${surface} · ${verify.window_days}天后复盘${metrics ? ` · ${metrics}` : ''}`;
 }
 
 function RuntimeRangePanel({
@@ -397,22 +409,23 @@ function RuntimeRangePanel({
   loading: boolean;
   styles: AgendaStyles;
 }) {
-  const previewDays = projection?.days.slice(0, 4) ?? [];
+  const [futureExpanded, setFutureExpanded] = React.useState(false);
+  const futureDays = projection?.days.filter(day => !day.is_today).slice(0, 3) ?? [];
   return (
     <View style={styles.runtimePanel}>
       <View style={styles.smartHeader}>
         <View style={styles.runtimeTitleRow}>
           <Ionicons name="calendar-outline" size={18} color={SMART_ACCENT} />
-          <Text style={styles.runtimeTitle}>7天运行时</Text>
+          <Text style={styles.runtimeTitle}>动态节奏</Text>
         </View>
         <Text style={styles.runtimeMeta}>
-          {projection ? `${projection.start} → ${projection.end}` : '生成中'}
+          {projection ? '每天按状态更新' : '生成中'}
         </Text>
       </View>
       {loading && !projection ? (
         <View style={styles.smartLoading}>
           <ActivityIndicator size="small" color={SMART_ACCENT} />
-          <Text style={styles.smartMuted}>正在生成未来 7 天行动投影…</Text>
+          <Text style={styles.smartMuted}>正在更新今天的行动优先级…</Text>
         </View>
       ) : projection?.next_action ? (
         <View style={styles.runtimeNext}>
@@ -421,22 +434,36 @@ function RuntimeRangePanel({
           <Text style={styles.runtimeNextMeta}>{runtimeMeta(projection.next_action)}</Text>
         </View>
       ) : (
-        <Text style={styles.runtimeEmpty}>未来 7 天暂无可执行行动。</Text>
+        <Text style={styles.runtimeEmpty}>今天暂无明确行动，记录新状态后会重新判断。</Text>
       )}
-      {previewDays.map((day) => {
-        const item = firstRuntimeItem(day);
-        return (
-          <View key={day.date} style={styles.runtimeDayRow}>
-            <View style={styles.runtimeDayBadge}>
-              <Text style={styles.runtimeDayLabel}>{formatRuntimeDay(day.date, day.is_today)}</Text>
-            </View>
-            <View style={styles.runtimeDayBody}>
-              <Text style={styles.runtimeDayTitle}>{item?.title ?? '暂无行动'}</Text>
-              {item ? <Text style={styles.runtimeDayMeta}>{runtimeMeta(item)}</Text> : null}
-            </View>
+      {futureDays.length > 0 ? (
+        <TouchableOpacity
+          style={styles.runtimeToggle}
+          onPress={() => setFutureExpanded(value => !value)}
+          accessibilityRole="button"
+          accessibilityLabel={futureExpanded ? '收起未来节奏' : '展开未来节奏'}
+        >
+          <View style={styles.runtimeToggleBody}>
+            <Text style={styles.runtimeToggleTitle}>未来几天按状态动态调整</Text>
+            <Text style={styles.runtimeToggleHint}>不是固定任务，需要时再查看预测</Text>
           </View>
-        );
-      })}
+          <Ionicons name={futureExpanded ? 'chevron-up' : 'chevron-down'} size={16} color={C.ink3} />
+        </TouchableOpacity>
+      ) : null}
+      {futureExpanded ? futureDays.map((day) => {
+          const item = firstRuntimeItem(day);
+          return (
+            <View key={day.date} style={styles.runtimeDayRow}>
+              <View style={styles.runtimeDayBadge}>
+                <Text style={styles.runtimeDayLabel}>{formatRuntimeDay(day.date, false)}</Text>
+              </View>
+              <View style={styles.runtimeDayBody}>
+                <Text style={styles.runtimeDayTitle}>{item?.title ?? '当天确认'}</Text>
+                <Text style={styles.runtimeDayMeta}>预测 · 当天根据睡眠和记录确认</Text>
+              </View>
+            </View>
+          );
+        }) : null}
     </View>
   );
 }

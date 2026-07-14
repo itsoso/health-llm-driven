@@ -66,9 +66,26 @@ describe('InterventionDraftSheet', () => {
     expect(getByText('来自小巴建议')).toBeTruthy();
     expect(getByText('今天执行')).toBeTruthy();
     expect(getByText('执行检查项')).toBeTruthy();
-    expect(getByText('如何验证')).toBeTruthy();
+    expect(getByText('复盘设置')).toBeTruthy();
+    expect(getByText('3天后回看 · 心率')).toBeTruthy();
     expect(getByText('确认加入今日计划')).toBeTruthy();
     expect(getByLabelText('今日计划标题')).toBeTruthy();
+  });
+
+  it('keeps detailed verification controls collapsed until requested', () => {
+    const { getByLabelText, queryByText, getByText } = render(
+      <InterventionDraftSheet
+        visible
+        draft={draft}
+        onClose={jest.fn()}
+        onSubmit={jest.fn()}
+      />,
+    );
+
+    expect(queryByText('跟踪指标')).toBeNull();
+    fireEvent.press(getByLabelText('展开复盘设置'));
+    expect(getByText('跟踪指标')).toBeTruthy();
+    expect(getByLabelText('收起复盘设置')).toBeTruthy();
   });
 
   it('submits the edited today-plan draft', () => {

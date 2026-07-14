@@ -79,6 +79,72 @@ def test_diet_card_idempotency_migration_adds_user_scoped_unique_key(tmp_path: P
             ))
 
 
+def test_action_card_accepted_key_migration_enforces_unique_replay_key(tmp_path: Path):
+    from sqlalchemy.exc import IntegrityError
+
+    migrations_dir = Path(__file__).resolve().parents[1] / "migrations" / "managed"
+    sqlite_file = migrations_dir / "20260714_170000_add_action_card_accepted_create_key.sqlite.sql"
+    postgres_file = migrations_dir / "20260714_170000_add_action_card_accepted_create_key.postgresql.sql"
+    assert sqlite_file.exists()
+    assert postgres_file.exists()
+    assert "WHERE accepted_create_key IS NOT NULL" in postgres_file.read_text(encoding="utf-8")
+
+    isolated = tmp_path / "managed"
+    isolated.mkdir()
+    (isolated / sqlite_file.name).write_text(sqlite_file.read_text(encoding="utf-8"), encoding="utf-8")
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE action_cards (id INTEGER PRIMARY KEY)"))
+
+    result = apply_managed_migrations(engine, isolated)
+    assert [migration.id for migration in result.applied] == [
+        "20260714_170000_add_action_card_accepted_create_key"
+    ]
+
+    with engine.begin() as conn:
+        conn.execute(text(
+            "INSERT INTO action_cards (id, accepted_create_key) VALUES (1, 'same-key')"
+        ))
+    with pytest.raises(IntegrityError):
+        with engine.begin() as conn:
+            conn.execute(text(
+                "INSERT INTO action_cards (id, accepted_create_key) VALUES (2, 'same-key')"
+            ))
+
+
+def test_intervention_event_idempotency_migration_enforces_unique_replay_key(tmp_path: Path):
+    from sqlalchemy.exc import IntegrityError
+
+    migrations_dir = Path(__file__).resolve().parents[1] / "migrations" / "managed"
+    sqlite_file = migrations_dir / "20260714_171000_add_intervention_event_idempotency_key.sqlite.sql"
+    postgres_file = migrations_dir / "20260714_171000_add_intervention_event_idempotency_key.postgresql.sql"
+    assert sqlite_file.exists()
+    assert postgres_file.exists()
+    assert "WHERE event_idempotency_key IS NOT NULL" in postgres_file.read_text(encoding="utf-8")
+
+    isolated = tmp_path / "managed"
+    isolated.mkdir()
+    (isolated / sqlite_file.name).write_text(sqlite_file.read_text(encoding="utf-8"), encoding="utf-8")
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE intervention_events (id INTEGER PRIMARY KEY)"))
+
+    result = apply_managed_migrations(engine, isolated)
+    assert [migration.id for migration in result.applied] == [
+        "20260714_171000_add_intervention_event_idempotency_key"
+    ]
+
+    with engine.begin() as conn:
+        conn.execute(text(
+            "INSERT INTO intervention_events (id, event_idempotency_key) VALUES (1, 'same-key')"
+        ))
+    with pytest.raises(IntegrityError):
+        with engine.begin() as conn:
+            conn.execute(text(
+                "INSERT INTO intervention_events (id, event_idempotency_key) VALUES (2, 'same-key')"
+            ))
+
+
 def test_food_calibration_names_migration_defaults_closed_and_curates_known_rows(tmp_path: Path):
     migrations_dir = Path(__file__).resolve().parents[1] / "migrations" / "managed"
     sqlite_file = migrations_dir / "20260711_201000_add_food_calibration_names.sqlite.sql"

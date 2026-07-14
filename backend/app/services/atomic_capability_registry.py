@@ -7,7 +7,9 @@ not invent card schemas, action types, write endpoints, or safety boundaries.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from typing import Any, Mapping
+from urllib.parse import quote
 
 
 @dataclass(frozen=True)
@@ -44,10 +46,10 @@ CAPABILITIES: tuple[AtomicCapability, ...] = (
         first_class_objects=("HealthAgendaItem", "InterventionCycle"),
         surfaces=("mobile.today", "mobile.chat", "watch.summary"),
         data_required_fields=("mode", "generated_by", "start", "end", "next_action", "days"),
-        action_types=("route.open",),
+        action_types=("route.open", "agenda.complete", "daily_plan_action.complete"),
         safety_boundary="suggest_only",
         telemetry_events=("impression", "open", "dismiss"),
-        execution="read_only_route_open",
+        execution="manual_confirm_complete_or_route_open",
     ),
     AtomicCapability(
         # R4 安全地板卡:SafetyGuardian CRITICAL/HIGH 告警钉在 Today 视图 hero 之上。
@@ -152,4 +154,19 @@ def _validate_actions(
             violations.append(
                 f"{action_path}: action '{action_type}' is not allowed for {capability.card_type}"
             )
+            continue
+        if action_type in {"agenda.complete", "daily_plan_action.complete"}:
+            if action.get("requires_manual_confirm") is not True:
+                violations.append(f"{action_path}: write action requires manual confirmation")
+                continue
+        if action_type == "agenda.complete" and action.get("endpoint") != "/agenda/complete":
+            violations.append(f"{action_path}: agenda.complete endpoint is not allowed")
+        if action_type == "daily_plan_action.complete":
+            payload = action.get("payload") if isinstance(action.get("payload"), Mapping) else {}
+            action_id = str(payload.get("action_id") or "").strip()
+            endpoint = str(action.get("endpoint") or "").strip()
+            if not re.fullmatch(r"[A-Za-z0-9._:-]{1,160}", action_id):
+                violations.append(f"{action_path}: invalid daily plan action id")
+            elif endpoint != f"/daily-plan/actions/{quote(action_id, safe='._-')}/events":
+                violations.append(f"{action_path}: daily plan completion endpoint does not match payload")
     return violations

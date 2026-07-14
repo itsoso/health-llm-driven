@@ -1,6 +1,7 @@
 /* eslint-disable import/first */
 
 const mockApiPost = jest.fn();
+const mockApiPatch = jest.fn();
 const mockApiPut = jest.fn();
 const mockConfirmWriteIntent = jest.fn();
 const mockDismissWriteIntent = jest.fn();
@@ -9,6 +10,7 @@ jest.mock('../api', () => ({
   __esModule: true,
   default: {
     post: (...args: any[]) => mockApiPost(...args),
+    patch: (...args: any[]) => mockApiPatch(...args),
     put: (...args: any[]) => mockApiPut(...args),
   },
 }));
@@ -25,6 +27,7 @@ describe('dispatchChatCardAction', () => {
     jest.clearAllMocks();
     mockApiPost.mockResolvedValue({ data: { event_id: 71, agenda_status: 'completed' } });
     mockApiPut.mockResolvedValue({ data: { ok: true } });
+    mockApiPatch.mockResolvedValue({ data: { id: 42, status: 'completed' } });
     mockConfirmWriteIntent.mockResolvedValue({ id: 42, status: 'executed', executed_ref: 'smart_reminder:18' });
     mockDismissWriteIntent.mockResolvedValue({ status: 'dismissed' });
   });
@@ -79,6 +82,44 @@ describe('dispatchChatCardAction', () => {
       payload: {
         source: { object_type: 'health_protocol', object_id: 7 },
       },
+    })).rejects.toThrow('unsupported_card_action_endpoint');
+
+    expect(mockApiPost).not.toHaveBeenCalled();
+  });
+
+  it('completes daily plan actions through their validated event endpoint', async () => {
+    mockApiPost.mockResolvedValueOnce({
+      data: { id: 88, action_id: 'intervention.card.42', event_type: 'completed' },
+    });
+
+    await expect(dispatchChatCardAction({
+      label: '完成这一步',
+      action: 'daily_plan_action.complete',
+      endpoint: '/daily-plan/actions/intervention.card.42/events',
+      requires_manual_confirm: true,
+      payload: { action_id: 'intervention.card.42', event_type: 'completed' },
+    })).resolves.toEqual(expect.objectContaining({
+      status: 'completed',
+      receipt: expect.objectContaining({
+        resourceType: 'intervention_event',
+        resourceId: '88',
+        verified: true,
+      }),
+    }));
+
+    expect(mockApiPost).toHaveBeenCalledWith(
+      '/daily-plan/actions/intervention.card.42/events',
+      { event_type: 'completed', payload: { source: 'chat_card' } },
+    );
+  });
+
+  it('rejects a mismatched daily plan action endpoint', async () => {
+    await expect(dispatchChatCardAction({
+      label: '完成这一步',
+      action: 'daily_plan_action.complete',
+      endpoint: '/daily-plan/actions/other.action/events',
+      requires_manual_confirm: true,
+      payload: { action_id: 'intervention.card.42', event_type: 'completed' },
     })).rejects.toThrow('unsupported_card_action_endpoint');
 
     expect(mockApiPost).not.toHaveBeenCalled();

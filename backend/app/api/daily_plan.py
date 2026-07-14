@@ -1,10 +1,12 @@
 """Daily Operating Plan API."""
 
 from datetime import date, datetime, timezone
+from hashlib import sha256
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user_required
@@ -113,6 +115,62 @@ def _action_execution_snapshot(action: dict, action_key: str) -> dict:
     )
 
 
+def _existing_daily_plan_event(
+    db: Session,
+    *,
+    user_id: int,
+    action_key: str,
+    event_type: str,
+    plan_date: date,
+    event_idempotency_key: str | None = None,
+) -> InterventionEvent | None:
+    if event_idempotency_key:
+        keyed = (
+            db.query(InterventionEvent)
+            .filter(
+                InterventionEvent.user_id == user_id,
+                InterventionEvent.event_idempotency_key == event_idempotency_key,
+            )
+            .first()
+        )
+        if keyed is not None:
+            return keyed
+    return (
+        db.query(InterventionEvent)
+        .filter(
+            InterventionEvent.user_id == user_id,
+            InterventionEvent.action_key == action_key,
+            InterventionEvent.feedback_status == event_type,
+            InterventionEvent.plan_date == plan_date,
+            InterventionEvent.source == "daily_plan",
+        )
+        .order_by(InterventionEvent.id.desc())
+        .first()
+    )
+
+
+def _daily_plan_event_idempotency_key(
+    *, user_id: int, plan_date: date, action_key: str, event_type: str
+) -> str:
+    raw = f"{user_id}|{plan_date.isoformat()}|{action_key}|{event_type}|daily_plan"
+    return sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _event_response(row: InterventionEvent, fallback_payload: dict) -> DailyPlanActionEventResponse:
+    snapshot = row.action_snapshot if isinstance(row.action_snapshot, dict) else {}
+    event_payload = snapshot.get("event_payload")
+    return DailyPlanActionEventResponse(
+        id=row.id,
+        plan_id=row.plan_id,
+        plan_date=row.plan_date,
+        action_id=row.action_key,
+        action_title=row.action_title,
+        event_type=row.feedback_status,
+        action_state=row.feedback_status,
+        payload=event_payload if isinstance(event_payload, dict) else fallback_payload,
+    )
+
+
 @router.get("/me")
 def get_my_daily_plan(
     plan_date: Optional[date] = Query(None, description="默认今天"),
@@ -198,6 +256,24 @@ def record_my_daily_plan_action_event(
 
     新事件流使用 protocol 状态名, 用于后续验证闭环和 Agent 学习。
     """
+    requested_plan_date = request.plan_date or date.today()
+    event_key = _daily_plan_event_idempotency_key(
+        user_id=current_user.id,
+        plan_date=requested_plan_date,
+        action_key=action_id,
+        event_type=request.event_type,
+    )
+    existing = _existing_daily_plan_event(
+        db,
+        user_id=current_user.id,
+        action_key=action_id,
+        event_type=request.event_type,
+        plan_date=requested_plan_date,
+        event_idempotency_key=event_key,
+    )
+    if existing is not None:
+        return _event_response(existing, request.payload)
+
     payload, action = _load_daily_plan_action(
         db,
         user_id=current_user.id,
@@ -220,6 +296,7 @@ def record_my_daily_plan_action_event(
         feedback_status=request.event_type,
         reason=None,
         source="daily_plan",
+        event_idempotency_key=event_key,
         action_snapshot=action_snapshot,
     )
     db.add(row)
@@ -229,16 +306,21 @@ def record_my_daily_plan_action_event(
         action=action,
         status=request.event_type,
     )
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        existing = _existing_daily_plan_event(
+            db,
+            user_id=current_user.id,
+            action_key=action_id,
+            event_type=request.event_type,
+            plan_date=plan_date,
+            event_idempotency_key=event_key,
+        )
+        if existing is not None:
+            return _event_response(existing, request.payload)
+        raise
     db.refresh(row)
 
-    return DailyPlanActionEventResponse(
-        id=row.id,
-        plan_id=row.plan_id,
-        plan_date=row.plan_date,
-        action_id=row.action_key,
-        action_title=row.action_title,
-        event_type=row.feedback_status,
-        action_state=row.feedback_status,
-        payload=request.payload,
-    )
+    return _event_response(row, request.payload)

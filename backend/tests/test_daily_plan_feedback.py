@@ -2,6 +2,9 @@
 
 from datetime import date, datetime, timedelta, timezone
 
+import pytest
+from sqlalchemy.exc import IntegrityError
+
 from tests.conftest import create_authenticated_user
 
 
@@ -245,6 +248,33 @@ def test_completed_daily_plan_action_is_removed_from_refreshed_plan(client, db, 
     refreshed = client.get("/api/v1/daily-plan/me", headers=headers)
     assert refreshed.status_code == 200
     assert action_key not in [a["action_key"] for a in refreshed.json()["actions"]]
+
+    retry = client.post(
+        f"/api/v1/daily-plan/actions/{action_key}/events",
+        headers=headers,
+        json={"event_type": "completed", "payload": {"source": "home"}},
+    )
+    assert retry.status_code == 200
+    assert retry.json()["id"] == event_resp.json()["id"]
+
+    from app.models.intervention_event import InterventionEvent
+
+    stored = db.query(InterventionEvent).filter(InterventionEvent.id == event_resp.json()["id"]).one()
+    assert stored.event_idempotency_key
+    duplicate = InterventionEvent(
+        user_id=user.id,
+        plan_date=stored.plan_date,
+        action_key=stored.action_key,
+        action_title=stored.action_title,
+        feedback_status=stored.feedback_status,
+        source=stored.source,
+        action_snapshot={},
+        event_idempotency_key=stored.event_idempotency_key,
+    )
+    db.add(duplicate)
+    with pytest.raises(IntegrityError):
+        db.commit()
+    db.rollback()
 
 
 def test_daily_plan_progress_separates_completed_from_other_terminal_events(client, db, auth_user_and_headers):

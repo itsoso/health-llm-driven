@@ -1,4 +1,5 @@
 import React from 'react';
+import { Alert } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 
 import DynamicTodayRenderer from '../DynamicTodayRenderer';
@@ -170,7 +171,7 @@ describe('DynamicTodayRenderer', () => {
       />,
     );
 
-    expect(getByText('7天验证节奏')).toBeTruthy();
+    expect(getByText('今天先做')).toBeTruthy();
     expect(getByText('晚餐后步行 15 分钟')).toBeTruthy();
   });
 
@@ -223,7 +224,7 @@ describe('DynamicTodayRenderer', () => {
       />,
     );
 
-    expect(getByText('7天验证节奏')).toBeTruthy();
+    expect(getByText('今天先做')).toBeTruthy();
     expect(getByText('晚餐后步行 15 分钟')).toBeTruthy();
     await act(async () => {
       fireEvent.press(getByText('查看7天计划'));
@@ -299,6 +300,53 @@ describe('DynamicTodayRenderer', () => {
     await waitFor(() => {
       expect(getByText('已打开')).toBeTruthy();
     });
+  });
+
+  it('requires visible confirmation before a Today write action runs', async () => {
+    const onAction = jest.fn().mockResolvedValue(undefined);
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation((title, message, buttons) => {
+      expect(title).toBe('确认完成？');
+      expect(message).toContain('记录为已完成');
+      buttons?.find(button => button.text === '确认完成')?.onPress?.();
+    });
+    const view = makeView({
+      sections: [{
+        slot: 'runtime',
+        priority: 80,
+        cards: [{
+          id: 'runtime-agenda:today:intervention.card.9',
+          type: 'runtime_agenda',
+          data: {
+            presentation_mode: 'today',
+            next_action: { title: '散步 10 分钟', verification_window_days: 1 },
+            days: [],
+          },
+          actions: [{
+            id: 'complete-runtime-action',
+            label: '完成这一步',
+            action: 'daily_plan_action.complete',
+            endpoint: '/daily-plan/actions/intervention.card.9/events',
+            requires_manual_confirm: true,
+            payload: { action_id: 'intervention.card.9', event_type: 'completed' },
+            confirmation: {
+              title: '确认完成？',
+              detail: '确认后会将“散步 10 分钟”记录为已完成。',
+              confirm_label: '确认完成',
+              cancel_label: '取消',
+            },
+          }],
+        }],
+      }],
+    });
+    const { getByText } = render(
+      <DynamicTodayRenderer view={view} onCardAction={onAction} />,
+    );
+
+    fireEvent.press(getByText('完成这一步'));
+
+    await waitFor(() => expect(onAction).toHaveBeenCalledTimes(1));
+    expect(alertSpy).toHaveBeenCalledTimes(1);
+    alertSpy.mockRestore();
   });
 
   it('ignores unknown cards without breaking the view', () => {

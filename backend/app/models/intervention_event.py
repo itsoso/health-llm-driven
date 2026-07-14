@@ -31,6 +31,7 @@ class InterventionEvent(Base):
     feedback_status = Column(String(20), nullable=False, index=True)
     reason = Column(Text, nullable=True)
     source = Column(String(40), nullable=False, default="daily_plan")
+    event_idempotency_key = Column(String(64), unique=True, nullable=True, index=True)
     action_snapshot = Column(JSON, nullable=False, default=dict)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 

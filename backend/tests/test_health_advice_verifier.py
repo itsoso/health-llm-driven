@@ -1,5 +1,7 @@
 from datetime import date
 
+import pytest
+
 from app.services.advice_guard import AdviceCandidate, AdviceGuard
 from app.services.health_advice_verifier import verify_advice
 
@@ -222,6 +224,180 @@ def test_verifier_blocks_self_medication_change_even_with_guideline_source():
     assert result.allowed is False
     assert result.reason == "medical_boundary_violation"
     assert "remove_self_medication_change" in result.required_changes
+
+
+def test_verifier_blocks_direct_medication_change_without_self_wording():
+    result = verify_advice(
+        _candidate(
+            domain="medication",
+            title="停用二甲双胍",
+            body="从今天开始停用二甲双胍。",
+            evidence_refs=["claim:medication_review_required"],
+            evidence_source_types=["guideline"],
+            verification_metric="doctor_review",
+            verification_window_days=7,
+        ),
+        evidence_resolution={"evidence_refs": ["claim:medication_review_required"]},
+        personal_matrix={},
+        contraindications=[],
+    )
+
+    assert result.allowed is False
+    assert result.reason == "medical_boundary_violation"
+    assert "remove_self_medication_change" in result.required_changes
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "把二甲双胍换成格列美脲。",
+        "二甲双胍改用格列美脲。",
+        "把二甲双胍换为格列美脲。",
+        "二甲双胍转为格列美脲。",
+        "二甲双胍从每天一片改为两片。",
+        "二甲双胍每天一片变成两片。",
+        "二甲双胍从1片增加到2片。",
+        "二甲双胍减半。",
+        "不要自行停药；现在把二甲双胍减半。",
+        "不要自行停药但把二甲双胍减半。",
+        "不要自行停药：二甲双胍减半。",
+        "不要自行停药.二甲双胍减半。",
+        "如需调整剂量就把二甲双胍减半，请咨询医生。",
+        "如果需要换药就改用格列美脲，请咨询医生。",
+        "二甲双胍改服格列美脲。",
+        "二甲双胍从半片调成一片。",
+        "别再吃二甲双胍了。",
+        "取消二甲双胍。",
+        "停二甲双胍。",
+        "二甲双胍停了。",
+        "二甲双胍别吃了。",
+        "二甲双胍不用吃了。",
+        "把二甲双胍改吃格列美脲。",
+        "把二甲双胍替成格列美脲。",
+        "二甲双胍减到半片。",
+        "二甲双胍从两片降到一片。",
+        "如需把二甲双胍减半就执行。明天再咨询医生。",
+        "如需停药就直接停。之后联系医生。",
+        "不要自行做决定后把二甲双胍减半。",
+        "不要自行停药，改服格列美脲。",
+        "把降压药停了。",
+        "降压药今天先停。",
+        "二甲双胍从明天开始停了。",
+        "二甲双胍明天停。",
+        "把所有药从今晚开始停了。",
+        "二甲双胍从明天起不吃了。",
+        "明天不吃二甲双胍。",
+        "从明天起不服二甲双胍。",
+        "今晚不用降压药。",
+        "二甲双胍明天不要吃了。",
+        "二甲双胍明天减一片。",
+        "二甲双胍明天少吃一片。",
+        "二甲双胍明天加一片。",
+        "二甲双胍明天多吃一片。",
+        "明天加一片二甲双胍。",
+        "停掉降糖药。",
+        "把所有药都停了。",
+        "如需停药就停，请咨询医生。",
+        "如需停药就马上停，请咨询医生。",
+        "如需停药便停下，并咨询医生。",
+        "未经医生确认，把二甲双胍换成格列美脲。",
+    ],
+)
+def test_verifier_recovers_named_medication_change_from_non_medication_domain(body):
+    result = verify_advice(
+        _candidate(
+            domain="recovery",
+            title="今天的行动",
+            body=body,
+            evidence_refs=["claim:medication_review_required"],
+            evidence_source_types=["guideline"],
+            verification_metric="doctor_review",
+            verification_window_days=7,
+        ),
+        evidence_resolution={"evidence_refs": ["claim:medication_review_required"]},
+        personal_matrix={},
+        contraindications=[],
+    )
+
+    assert result.allowed is False
+    assert result.reason == "medical_boundary_violation"
+    assert "remove_self_medication_change" in result.required_changes
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "不要自行停药；如需调整剂量，请咨询医生。",
+        "切勿自行停用二甲双胍，请咨询医生。",
+        "严禁自行把二甲双胍减半，请咨询医生。",
+        "换药前请先咨询医生。",
+        "必须先咨询医生再调整剂量。",
+        "不要自行停药或减半，请咨询医生。",
+        "切勿自行换药或调整剂量，请咨询医生。",
+        "禁止擅自停药、换药或减量，请咨询医生。",
+        "请勿擅自停用或改服其他药物。",
+        "不要自行停用二甲双胍或改服格列美脲。",
+    ],
+)
+def test_verifier_allows_warning_against_self_directed_medication_change(body):
+    result = verify_advice(
+        _candidate(
+            domain="medication",
+            title="用药安全提醒",
+            body=body,
+            evidence_refs=["claim:medication_review_required"],
+            evidence_source_types=["guideline"],
+            verification_metric="doctor_review",
+            verification_window_days=7,
+        ),
+        evidence_resolution={"evidence_refs": ["claim:medication_review_required"]},
+        personal_matrix={},
+        contraindications=[],
+    )
+
+    assert result.allowed is True
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "二甲双胍改善了血糖。",
+        "二甲双胍转运机制说明。",
+        "二甲双胍在体内的停留时间。",
+        "服用二甲双胍期间不要吃辛辣食物。",
+    ],
+)
+def test_verifier_allows_non_prescriptive_drug_explanation(body):
+    result = verify_advice(
+        _candidate(domain="medication", title="药物知识", body=body),
+        evidence_resolution={"evidence_refs": ["claim:c_sleep_caffeine_boundary"]},
+        personal_matrix={},
+        contraindications=[],
+    )
+
+    assert result.allowed is True
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "停用跑步机，改为户外步行。",
+        "停用睡前闹钟，改成自然唤醒。",
+    ],
+)
+def test_verifier_does_not_treat_non_medication_stop_as_medication_change(body):
+    result = verify_advice(
+        _candidate(
+            domain="movement",
+            title="调整今天的习惯",
+            body=body,
+        ),
+        evidence_resolution={"evidence_refs": ["claim:c_sleep_caffeine_boundary"]},
+        personal_matrix={},
+        contraindications=[],
+    )
+
+    assert result.allowed is True
 
 
 def test_verifier_blocks_red_flag_symptom_downgrade_even_with_sleep_evidence():

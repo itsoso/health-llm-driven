@@ -277,11 +277,14 @@ def _runtime_agenda_card(runtime: dict[str, Any]) -> dict[str, Any] | None:
         return None
     start = _safe_token(runtime.get("start")) or "unknown"
     action_id = _safe_token(action.get("id")) or "empty"
+    # Home 与 Chat 共用同一份受控动作合同，避免一端能完成、另一端只能看。
+    from app.services.inline_cards import _runtime_agenda_actions
+
     return {
         "id": f"runtime-agenda:{start}:{action_id}",
         "type": "runtime_agenda",
         "data": data,
-        "actions": [_open_runtime_agenda_action()],
+        "actions": _runtime_agenda_actions(data),
         "render": {
             "atom": "runtime_agenda",
             "priority": 80,
@@ -309,6 +312,7 @@ def _runtime_agenda_card_data(runtime: dict[str, Any]) -> dict[str, Any]:
 
     return {
         "mode": runtime.get("mode"),
+        "presentation_mode": "today",
         "generated_by": runtime.get("generated_by"),
         "horizon_days": runtime.get("horizon_days"),
         "start": runtime.get("start"),
@@ -318,6 +322,7 @@ def _runtime_agenda_card_data(runtime: dict[str, Any]) -> dict[str, Any]:
             "id": action.get("id"),
             "title": action.get("title"),
             "kind": action.get("type"),
+            "source": action.get("source") if isinstance(action.get("source"), dict) else None,
             "time_window": action.get("time_window"),
             "priority_tier": action.get("priority_tier"),
             "current_state_summary": runtime_context.get("current_state_summary"),
@@ -353,16 +358,6 @@ def _compact_runtime_day(day: dict[str, Any]) -> dict[str, Any]:
         "date": day.get("date"),
         "next_action_title": next_action.get("title") if next_action else None,
         "items_count": item_count,
-    }
-
-
-def _open_runtime_agenda_action() -> dict[str, Any]:
-    return {
-        "id": "open-runtime-agenda",
-        "label": "查看7天计划",
-        "action": "route.open",
-        "payload": {"route": "/agenda"},
-        "style": "primary",
     }
 
 

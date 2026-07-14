@@ -134,6 +134,45 @@ def test_dynamic_view_validation_rejects_actions_outside_capability_allowlist():
     ]
 
 
+def test_runtime_agenda_capability_allows_only_governed_completion_actions():
+    from app.services.atomic_capability_registry import get_atomic_capability, validate_dynamic_view
+
+    capability = get_atomic_capability("runtime_agenda")
+    assert capability is not None
+    assert capability.execution == "manual_confirm_complete_or_route_open"
+
+    view = {
+        "surface": "mobile.today",
+        "sections": [{
+            "slot": "runtime",
+            "cards": [{
+                "type": "runtime_agenda",
+                "data": {
+                    "mode": "runtime",
+                    "generated_by": "rolling_health_runtime_v1",
+                    "start": "2026-07-14",
+                    "end": "2026-07-20",
+                    "next_action": {},
+                    "days": [],
+                },
+                "actions": [{
+                    "label": "完成这一步",
+                    "action": "daily_plan_action.complete",
+                    "endpoint": "/daily-plan/actions/intervention.card.42/events",
+                    "requires_manual_confirm": True,
+                    "payload": {"action_id": "intervention.card.42", "event_type": "completed"},
+                }],
+            }],
+        }],
+    }
+    assert validate_dynamic_view(view) == []
+
+    view["sections"][0]["cards"][0]["actions"][0].pop("requires_manual_confirm")
+    assert validate_dynamic_view(view) == [
+        "sections[0].cards[0].actions[0]: write action requires manual confirmation"
+    ]
+
+
 def test_today_dynamic_view_fails_loud_when_composer_emits_unregistered_card(monkeypatch):
     from app.services import today_dynamic_view_service
 

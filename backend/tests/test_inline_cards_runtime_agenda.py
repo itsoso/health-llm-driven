@@ -1,5 +1,7 @@
 """Chat inline runtime-agenda card contract."""
 
+import pytest
+
 
 def test_inline_cards_builds_runtime_agenda_card(monkeypatch):
     from app.services import inline_cards
@@ -48,6 +50,7 @@ def test_inline_cards_builds_runtime_agenda_card(monkeypatch):
     assert calls == {"user_id": 3, "days": 7, "max_items_per_day": 3}
     assert cards[0]["type"] == "runtime_agenda"
     assert cards[0]["data"]["generated_by"] == "rolling_health_runtime_v1"
+    assert cards[0]["data"]["presentation_mode"] == "horizon"
     assert cards[0]["data"]["horizon_days"] == 7
     assert cards[0]["data"]["next_action"]["title"] == "晚餐后步行 15 分钟"
     assert cards[0]["data"]["next_action"]["source"] == {
@@ -60,25 +63,15 @@ def test_inline_cards_builds_runtime_agenda_card(monkeypatch):
         "waist_cm",
         "hrv",
     ]
-    assert cards[0]["actions"] == [
-        {
-            "id": "complete-runtime-action",
-            "label": "完成",
-            "action": "agenda.complete",
-            "endpoint": "/agenda/complete",
-            "requires_manual_confirm": True,
-            "payload": {},
-            "style": "primary",
-            "disabled_reason": "当前行动缺少可完成的来源,请进入7天计划处理",
-        },
-        {
-            "id": "open-runtime-agenda",
-            "label": "查看7天计划",
-            "action": "route.open",
-            "payload": {"route": "/agenda"},
-            "style": "secondary",
-        }
-    ]
+    assert cards[0]["actions"][0]["action"] == "daily_plan_action.complete"
+    assert cards[0]["actions"][0]["payload"] == {"action_id": "walk", "event_type": "completed"}
+    assert cards[0]["actions"][1] == {
+        "id": "open-runtime-agenda",
+        "label": "查看完整计划",
+        "action": "route.open",
+        "payload": {"route": "/agenda"},
+        "style": "secondary",
+    }
 
 
 def test_inline_cards_runtime_agenda_emits_manual_confirm_complete_action(monkeypatch):
@@ -114,9 +107,10 @@ def test_inline_cards_runtime_agenda_emits_manual_confirm_complete_action(monkey
     cards = inline_cards.build_cards(db=None, user_id=3, query="我现在下一步该做什么？")
 
     assert cards[0]["type"] == "runtime_agenda"
+    assert cards[0]["data"]["presentation_mode"] == "today"
     assert cards[0]["actions"][0] == {
         "id": "complete-runtime-action",
-        "label": "完成",
+        "label": "完成这一步",
         "action": "agenda.complete",
         "endpoint": "/agenda/complete",
         "requires_manual_confirm": True,
@@ -134,6 +128,165 @@ def test_inline_cards_runtime_agenda_emits_manual_confirm_complete_action(monkey
         },
         "optimistic": True,
     }
+    assert cards[0]["actions"][1] == {
+        "id": "open-runtime-agenda",
+        "label": "管理今日行动",
+        "action": "route.open",
+        "payload": {"route": "/alerts"},
+        "style": "secondary",
+    }
+
+
+def test_inline_cards_runtime_agenda_can_complete_daily_plan_action(monkeypatch):
+    from app.services import inline_cards
+
+    action = {
+        "id": "smart_daily_plan_action_intervention.card.42",
+        "type": "intervention",
+        "title": "今晚暂停高强度训练",
+        "time_window": "evening",
+        "priority_tier": "P1",
+        "source": {"object_type": "daily_plan_action", "object_id": "intervention.card.42"},
+        "runtime_context": {
+            "current_state_summary": "今天先恢复。",
+            "verification_window": {"metrics": ["hrv"], "window_days": 1},
+        },
+    }
+    monkeypatch.setattr(inline_cards.agenda_service, "runtime_range_view", lambda *a, **k: {
+        "mode": "runtime",
+        "generated_by": "rolling_health_runtime_v1",
+        "horizon_days": 7,
+        "next_action": action,
+        "runtime_context": {},
+        "days": [{"date": "2026-07-14", "next_action": action, "time_windows": []}],
+    })
+
+    card = inline_cards.build_cards(db=None, user_id=3, query="我现在下一步该做什么？")[0]
+
+    assert card["actions"][0] == {
+        "id": "complete-daily-plan-action",
+        "label": "完成这一步",
+        "action": "daily_plan_action.complete",
+        "endpoint": "/daily-plan/actions/intervention.card.42/events",
+        "requires_manual_confirm": True,
+        "payload": {"action_id": "intervention.card.42", "event_type": "completed"},
+        "style": "primary",
+        "confirmation": {
+            "title": "完成：今晚暂停高强度训练？",
+            "detail": "将写入今天的行动记录，并从待执行列表移除。",
+            "confirm_label": "确认完成",
+            "cancel_label": "再看看",
+        },
+        "optimistic": True,
+    }
+
+
+def test_inline_cards_runtime_agenda_does_not_trigger_for_add_to_today_intent(monkeypatch):
+    from app.services import inline_cards
+
+    monkeypatch.setattr(
+        inline_cards.agenda_service,
+        "runtime_range_view",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("should not call runtime")),
+    )
+
+    cards = inline_cards.build_cards(
+        db=None,
+        user_id=3,
+        query="把这项建议加入今天计划：今晚暂停高强度训练",
+    )
+
+    assert all(card["type"] != "runtime_agenda" for card in cards)
+
+
+def test_inline_cards_runtime_agenda_excludes_common_add_to_today_phrases(monkeypatch):
+    from app.services import inline_cards
+
+    monkeypatch.setattr(
+        inline_cards.agenda_service,
+        "runtime_range_view",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("should not call runtime")),
+    )
+
+    for query in [
+        "把这条加到我的今日安排里",
+        "把这个列入今天计划",
+        "把这项排进今日待办",
+        "把这条放入今日计划",
+    ]:
+        cards = inline_cards.build_cards(db=None, user_id=3, query=query)
+        assert all(card["type"] != "runtime_agenda" for card in cards)
+
+
+def test_inline_cards_runtime_agenda_does_not_trigger_for_generic_how_to(monkeypatch):
+    from app.services import inline_cards
+
+    monkeypatch.setattr(
+        inline_cards.agenda_service,
+        "runtime_range_view",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("should not call runtime")),
+    )
+
+    cards = inline_cards.build_cards(db=None, user_id=3, query="教我怎么做俯卧撑")
+    assert all(card["type"] != "runtime_agenda" for card in cards)
+
+
+def test_inline_cards_runtime_agenda_excludes_non_health_how_to_queries(monkeypatch):
+    from app.services import inline_cards
+
+    monkeypatch.setattr(
+        inline_cards.agenda_service,
+        "runtime_range_view",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("should not call runtime")),
+    )
+
+    for query in (
+        "我现在怎么做番茄炒蛋",
+        "我现在怎么做红烧肉",
+        "今天怎么安排会议",
+        "今天怎么安排论文写作",
+    ):
+        cards = inline_cards.build_cards(db=None, user_id=3, query=query)
+        assert all(card["type"] != "runtime_agenda" for card in cards)
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "今天怎么安排锻炼",
+        "今天怎么安排服药",
+        "今天怎么安排康复",
+        "今天怎么安排冥想",
+    ],
+)
+def test_runtime_agenda_recognizes_common_health_context_terms(query):
+    from app.services.inline_cards import _runtime_agenda_presentation_mode
+
+    assert _runtime_agenda_presentation_mode(query) == "today"
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "今天怎么安排健康产品会议",
+        "今天怎么安排运动会",
+        "今天怎么安排健康科技产品会议",
+        "今天怎么安排健康类产品发布会",
+        "今天怎么安排运动员会议",
+        "今天怎么安排运动服品牌发布会",
+        "今天怎么安排休息室会议",
+        "今天怎么安排康复产业论坛",
+        "今天怎么安排睡眠产品会议",
+        "今天怎么安排营养行业会议",
+        "今天怎么安排健康管理行业会议",
+        "今天怎么安排运动健康产品会议",
+        "今天怎么安排康复医学产业论坛",
+    ],
+)
+def test_runtime_agenda_disambiguates_non_health_compound_words(query):
+    from app.services.inline_cards import _runtime_agenda_presentation_mode
+
+    assert _runtime_agenda_presentation_mode(query) is None
 
 
 def test_inline_cards_runtime_agenda_does_not_trigger_for_record_intent(monkeypatch):

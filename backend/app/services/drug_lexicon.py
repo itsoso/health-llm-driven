@@ -31,8 +31,9 @@
 
 from __future__ import annotations
 
+import re
 from functools import lru_cache
-from typing import Dict, FrozenSet, List
+from typing import Dict, FrozenSet, List, Pattern
 
 # ─────────────────────────── 药名 class → 别名(safety: ddi.py 消费) ──────────────
 # 从 `rules/ddi.py` 迁入,逐字节不变。每个「药物类」下列常见中英文别名(小写 + 正则友好)。
@@ -46,7 +47,8 @@ DRUG_CLASS_ALIASES: Dict[str, List[str]] = {
     ],
     "insulin": ["胰岛素", "insulin", "优泌林", "甘精", "门冬", "德谷", "赖脯"],
     "sulfonylurea": [
-        "格列", "gliclazide", "glimepiride", "glibenclamide", "磺脲",
+        "格列", "格列美脲", "格列齐特", "格列本脲", "格列吡嗪",
+        "gliclazide", "glimepiride", "glibenclamide", "磺脲",
         "glipizide", "tolbutamide",
     ],
     "cetirizine": ["西替利嗪", "cetirizine", "仙特明", "zyrtec"],
@@ -254,6 +256,75 @@ def _has_cjk(s: str) -> bool:
 
 
 @lru_cache(maxsize=1)
+def drug_name_free_text_terms() -> FrozenSet[str]:
+    """完整药名探测词，只用于自由文本中的药物上下文识别。"""
+    terms = set(_flatten_aliases(DRUG_CLASS_ALIASES))
+    terms |= _flatten_aliases(COMMON_DRUG_ALIASES)
+    terms -= _FREE_TEXT_AMBIGUOUS_TERMS
+    collapsed = {t.replace(" ", "") for t in terms if " " in t and _has_cjk(t)}
+    return frozenset(t for t in (terms | collapsed) if t)
+
+
+@lru_cache(maxsize=1)
+def _drug_name_free_text_pattern() -> Pattern[str]:
+    alternatives: list[str] = []
+    for term in sorted(drug_name_free_text_terms(), key=lambda value: (-len(value), value)):
+        escaped = re.escape(term)
+        if term.isascii():
+            alternatives.append(rf"(?<![a-z0-9]){escaped}s?(?![a-z0-9])")
+        else:
+            alternatives.append(escaped)
+    return re.compile("|".join(alternatives), re.IGNORECASE)
+
+
+_GENERIC_MEDICATION_REFERENCE_PATTERN = re.compile(
+    r"(?:降压|降糖|降脂|抗凝|抗血小板|抗抑郁|助眠|胃病|胃|处方|所有|全部|"
+    r"这类|该类|某类|某种|任何|正在吃的|在服的)?药(?:物|品)?(?!膳|店|厂|学|材|妆)"
+)
+
+
+def contains_drug_name(text: str | None) -> bool:
+    """识别自由文本中的完整药名，并规避 iron/environment 等短词误配。"""
+    if not text:
+        return False
+    return _drug_name_free_text_pattern().search(str(text).lower()) is not None
+
+
+def drug_name_spans(text: str | None) -> tuple[tuple[int, int], ...]:
+    """返回完整药名在自由文本中的位置，供子句级安全语义判断使用。"""
+    if not text:
+        return ()
+    return tuple(
+        (match.start(), match.end())
+        for match in _drug_name_free_text_pattern().finditer(str(text).lower())
+    )
+
+
+def medication_reference_spans(text: str | None) -> tuple[tuple[int, int], ...]:
+    """返回具名药与泛称药物引用的位置，供变更动作邻域判断使用。"""
+    if not text:
+        return ()
+    normalized = str(text).lower()
+    spans = set(drug_name_spans(normalized))
+    spans.update(
+        (match.start(), match.end())
+        for match in _GENERIC_MEDICATION_REFERENCE_PATTERN.finditer(normalized)
+    )
+    return tuple(sorted(spans))
+
+
+def contains_medication_reference(text: str | None) -> bool:
+    return bool(medication_reference_spans(text))
+
+
+def strip_medication_references(text: str) -> str:
+    """删除协调警示中的药物引用，保留连接词供作用域校验。"""
+    normalized = str(text).lower()
+    normalized = _drug_name_free_text_pattern().sub("", normalized)
+    return _GENERIC_MEDICATION_REFERENCE_PATTERN.sub("", normalized)
+
+
+@lru_cache(maxsize=1)
 def sensitive_name_free_text_terms() -> FrozenSet[str]:
     """推送隐私 backstop 用的**名称类**敏感词(自由文本匹配,见 push_privacy)。
 
@@ -264,9 +335,7 @@ def sensitive_name_free_text_terms() -> FrozenSet[str]:
     不泄露诊断)- `_FREE_TEXT_AMBIGUOUS_TERMS`。额外为 CJK+ASCII 混排别名补空格
     折叠变体(lexicon 写「维生素 d」,LLM 文案常写「维生素D」)。
     """
-    terms = set()
-    terms |= _flatten_aliases(DRUG_CLASS_ALIASES)
-    terms |= _flatten_aliases(COMMON_DRUG_ALIASES)
+    terms = set(drug_name_free_text_terms())
     terms |= _flatten_aliases(
         SUPPLEMENT_CLASS_ALIASES, exclude_classes=_FREE_TEXT_EXCLUDED_SUPPLEMENT_CLASSES
     )

@@ -15,7 +15,7 @@ import logging
 import re
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
@@ -57,13 +57,74 @@ def _looks_like_food_ui_text(value: Any) -> bool:
     ))
 
 
+def _runtime_agenda_presentation_mode(q: str) -> Optional[str]:
+    """Split an immediate action request from an explicit multi-day horizon.
+
+    "加入今天计划" is a write intent owned by the client confirmation flow.  It
+    must not be reinterpreted as a request to synthesize another seven-day plan.
+    """
+    ql = re.sub(r"\s+", "", q.lower())
+    normalized_query = re.sub(r"[？?！!。,.，;；:：]+$", "", ql)
+    add_verbs = r"加入|添加|放到|放进|放入|纳入|存到|加到|加进|列入|列到|排进|排到"
+    today_targets = r"(?:今天|今日).{0,6}(?:计划|安排|待办)"
+    add_to_today = bool(
+        re.search(rf"(?:{add_verbs}).{{0,12}}{today_targets}", ql)
+        or re.search(rf"{today_targets}.{{0,12}}(?:{add_verbs})", ql)
+    )
+    if add_to_today:
+        return None
+
+    # 运行时卡片只接受明确健康语境，或极短的上下文承接句。不能依赖不断扩张的
+    # 非健康黑名单，否则“红烧肉/论文写作”等新对象会持续误触发。
+    has_health_context = bool(re.search(
+        r"健康(?!类?(?:科技)?产品|科技|产业|行业|项目|会议|论坛|大会)|"
+        r"运动(?!会|员|服|赛事|项目|品牌|产品|产业|行业|会议|论坛)|"
+        r"睡眠(?!产品|科技|产业|行业|会议|论坛)|恢复|"
+        r"康复(?!产品|产业|行业|会议|论坛)|锻炼|训练|步行|跑步|拉伸|冥想|"
+        r"呼吸训练|休息(?!室)|饮食|营养(?!产品|产业|行业|会议|论坛)|"
+        r"血压|血糖|心率|hrv|体重|腰围|用药|服药|补剂",
+        ql,
+    ))
+    has_non_personal_planning_context = bool(re.search(
+        r"产品|品牌|产业|行业|科技|会议|论坛|发布会|赛事|运动员|运动服|休息室",
+        ql,
+    ))
+    has_specific_personal_health_context = bool(re.search(
+        r"服药|用药|血压|血糖|心率|hrv|体重|腰围|症状|疼痛|锻炼|训练|"
+        r"跑步|步行|拉伸|冥想|呼吸训练|我的(?:睡眠|恢复|康复|饮食|营养)",
+        ql,
+    ))
+    if has_non_personal_planning_context and not has_specific_personal_health_context:
+        has_health_context = False
+    contextual_short_queries = {
+        "下一步",
+        "我下一步该做什么",
+        "我现在下一步该做什么",
+        "现在该做什么",
+        "该做什么",
+        "今天怎么安排",
+        "今日怎么安排",
+        "今天的重点",
+        "今日重点",
+    }
+    if not has_health_context and normalized_query not in contextual_short_queries:
+        return None
+
+    if re.search(
+        r"7天|七天|(?:未来|接下来|接下去).{0,4}(?:天|一周|7|七)|这周|本周|一周|周计划|未来节奏|运行时(?:计划|编排)",
+        ql,
+    ):
+        return "horizon"
+    if re.search(
+        r"下一步|现在.{0,5}(?:做什么|该做|怎么做)|该做什么|今天.{0,8}(?:怎么|如何|做什么|安排|计划|行动|重点)|今日.{0,8}(?:怎么|如何|做什么|安排|计划|行动|重点)|今天怎么样|今日如何|健康状况|健康状态|健康行动|健康怎么改善|当前重点",
+        ql,
+    ):
+        return "today"
+    return None
+
+
 def _is_runtime_agenda_query(q: str) -> bool:
-    ql = q.lower()
-    if re.search(r"7天|七天|未来|接下来|接下去|这周|一周|计划|安排|编排|运行时|下一步|该做|重点", ql):
-        return True
-    if re.search(r"今天怎么样|今日如何|健康状况|健康行动|怎么改善|怎么做", ql):
-        return True
-    return False
+    return _runtime_agenda_presentation_mode(q) is not None
 
 
 def _is_operating_review_query(q: str) -> bool:
@@ -190,16 +251,28 @@ def _normalize_agenda_source(source: Any) -> Optional[Dict[str, Any]]:
     return {"object_type": object_type, "object_id": oid}
 
 
+def _normalize_daily_plan_action_source(source: Any) -> Optional[str]:
+    if not isinstance(source, dict) or source.get("object_type") != "daily_plan_action":
+        return None
+    action_id = str(source.get("object_id") or "").strip()
+    if not action_id or len(action_id) > 160:
+        return None
+    if not re.fullmatch(r"[A-Za-z0-9._:-]+", action_id):
+        return None
+    return action_id
+
+
 def _runtime_agenda_actions(data: Dict[str, Any]) -> List[Dict[str, Any]]:
     action = data.get("next_action") if isinstance(data.get("next_action"), dict) else {}
     title = action.get("title") if isinstance(action.get("title"), str) else "当前行动"
     source = _normalize_agenda_source(action.get("source"))
+    daily_plan_action_id = _normalize_daily_plan_action_source(action.get("source"))
     actions: List[Dict[str, Any]] = []
 
     if source:
         actions.append({
             "id": "complete-runtime-action",
-            "label": "完成",
+            "label": "完成这一步",
             "action": "agenda.complete",
             "endpoint": "/agenda/complete",
             "requires_manual_confirm": True,
@@ -217,24 +290,35 @@ def _runtime_agenda_actions(data: Dict[str, Any]) -> List[Dict[str, Any]]:
             },
             "optimistic": True,
         })
-    else:
+    elif daily_plan_action_id:
+        endpoint = f"/daily-plan/actions/{quote(daily_plan_action_id, safe='._-')}/events"
         actions.append({
-            "id": "complete-runtime-action",
-            "label": "完成",
-            "action": "agenda.complete",
-            "endpoint": "/agenda/complete",
+            "id": "complete-daily-plan-action",
+            "label": "完成这一步",
+            "action": "daily_plan_action.complete",
+            "endpoint": endpoint,
             "requires_manual_confirm": True,
-            "payload": {},
+            "payload": {
+                "action_id": daily_plan_action_id,
+                "event_type": "completed",
+            },
             "style": "primary",
-            "disabled_reason": "当前行动缺少可完成的来源,请进入7天计划处理",
+            "confirmation": {
+                "title": f"完成：{title}？",
+                "detail": "将写入今天的行动记录，并从待执行列表移除。",
+                "confirm_label": "确认完成",
+                "cancel_label": "再看看",
+            },
+            "optimistic": True,
         })
 
+    presentation_mode = data.get("presentation_mode")
     actions.append({
         "id": "open-runtime-agenda",
-        "label": "查看7天计划",
+        "label": "管理今日行动" if presentation_mode == "today" else "查看完整计划",
         "action": "route.open",
-        "payload": {"route": "/agenda"},
-        "style": "secondary",
+        "payload": {"route": "/alerts" if presentation_mode == "today" else "/agenda"},
+        "style": "secondary" if (source or daily_plan_action_id) else "primary",
     })
     return actions
 
@@ -481,7 +565,8 @@ def _build_operating_review(db: Session, user_id: int, q: str) -> Optional[Dict[
 
 
 def _build_runtime_agenda(db: Session, user_id: int, q: str) -> Optional[Dict[str, Any]]:
-    if _is_record_intent(q) or not _is_runtime_agenda_query(q):
+    presentation_mode = _runtime_agenda_presentation_mode(q)
+    if _is_record_intent(q) or presentation_mode is None:
         return None
     try:
         payload = agenda_service.runtime_range_view(
@@ -522,6 +607,7 @@ def _build_runtime_agenda(db: Session, user_id: int, q: str) -> Optional[Dict[st
 
     return {
         "mode": payload.get("mode"),
+        "presentation_mode": presentation_mode,
         "generated_by": payload.get("generated_by"),
         "horizon_days": payload.get("horizon_days"),
         "start": payload.get("start"),

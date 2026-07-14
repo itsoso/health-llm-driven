@@ -40,6 +40,7 @@ export interface GetTodayDynamicViewOptions {
 
 const ALLOWED_DYNAMIC_ACTIONS = new Set([
   'agenda.complete',
+  'daily_plan_action.complete',
   'write_intent.confirm',
   'write_intent.dismiss',
   'route.open',
@@ -158,6 +159,16 @@ function isSafeAction(action: ChatCardActionDescriptor): boolean {
       action.payload?.patch &&
       typeof action.payload.patch === 'object' &&
       !Array.isArray(action.payload.patch),
+    );
+  }
+  if (action.action === 'daily_plan_action.complete') {
+    const actionId = action.payload?.action_id;
+    return Boolean(
+      action.requires_manual_confirm === true &&
+      typeof actionId === 'string' &&
+      actionId.length > 0 &&
+      action.payload?.event_type === 'completed' &&
+      action.endpoint === `/daily-plan/actions/${encodeURIComponent(actionId)}/events`,
     );
   }
   return action.requires_manual_confirm === true;

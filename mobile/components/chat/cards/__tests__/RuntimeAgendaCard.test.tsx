@@ -4,7 +4,7 @@
  * 目标: text()/numberText()/metrics()/days() 空值防御在真实渲染路径上被验证,
  * 而不是只被全量 descriptor 的 registry 测试间接覆盖。
  */
-import { render } from '@testing-library/react-native';
+import { fireEvent, render } from '@testing-library/react-native';
 import { renderCard } from '../registry';
 
 function renderRuntimeAgendaCard(data: unknown) {
@@ -18,8 +18,8 @@ describe('RuntimeAgendaCard via registry renderCard', () => {
     const { getByText, queryByText } = renderRuntimeAgendaCard({});
 
     // horizon 兜底 7 天 + 固定骨架
-    expect(getByText('7天验证节奏')).toBeTruthy();
-    expect(getByText('下一步行动')).toBeTruthy();
+    expect(getByText('今天先做')).toBeTruthy();
+    expect(getByText('今天行动')).toBeTruthy();
     // formatHealthActionTitle 会剥掉兜底文案的前导"今日"
     expect(getByText('暂无明确行动')).toBeTruthy();
     // 安全边界兜底文案
@@ -50,7 +50,7 @@ describe('RuntimeAgendaCard via registry renderCard', () => {
       days: [null, undefined],
     });
 
-    expect(getByText('7天验证节奏')).toBeTruthy();
+    expect(getByText('今天先做')).toBeTruthy();
     expect(getByText('暂无明确行动')).toBeTruthy();
     expect(getByText('这是健康管理建议,不替代医生诊断。')).toBeTruthy();
     expect(queryByText('为什么现在')).toBeNull();
@@ -75,7 +75,7 @@ describe('RuntimeAgendaCard via registry renderCard', () => {
     });
 
     // horizon 非数字对象 → 兜底 7
-    expect(getByText('7天验证节奏')).toBeTruthy();
+    expect(getByText('今天先做')).toBeTruthy();
     // number title 被 text() 归一成字符串
     expect(getByText('42')).toBeTruthy();
     // boundary number 被 text() 归一成字符串
@@ -87,22 +87,22 @@ describe('RuntimeAgendaCard via registry renderCard', () => {
   });
 
   it('survives non-object next_action and junk day entries (no crash)', () => {
-    const { getByText } = renderRuntimeAgendaCard({
+    const { getByText, queryByText } = renderRuntimeAgendaCard({
       next_action: 'junk',
       days: ['junk'],
     });
 
-    expect(getByText('7天验证节奏')).toBeTruthy();
+    expect(getByText('今天先做')).toBeTruthy();
     // 字符串 next_action 上取不到 title → 兜底文案
     expect(getByText('暂无明确行动')).toBeTruthy();
-    // 字符串 day 元素: 取不到字段但仍渲染兜底行
-    expect(getByText('今天')).toBeTruthy();
-    expect(getByText('待运行时重排')).toBeTruthy();
-    expect(getByText('0项待安排')).toBeTruthy();
+    // 今天模式不展示预测列表，脏数据也不会撑高卡片。
+    expect(queryByText('今天')).toBeNull();
+    expect(queryByText('待运行时重排')).toBeNull();
   });
 
-  it('renders all key fields from a fully-populated descriptor', () => {
-    const { getByText } = renderRuntimeAgendaCard({
+  it('keeps the future cadence collapsed until the user asks for it', () => {
+    const { getByText, queryByText, getByLabelText } = renderRuntimeAgendaCard({
+      presentation_mode: 'horizon',
       generated_by: 'rolling_health_runtime_v1',
       horizon_days: 7,
       start: '2026-06-28',
@@ -124,32 +124,32 @@ describe('RuntimeAgendaCard via registry renderCard', () => {
       ],
     });
 
-    expect(getByText('7天验证节奏')).toBeTruthy();
+    expect(getByText('本周验证节奏')).toBeTruthy();
     expect(getByText('晚餐后步行 15 分钟')).toBeTruthy();
     expect(getByText('晚餐后是今天最短的代谢干预窗口。')).toBeTruthy();
     // signal pills: kind / time_window / priority / 验证窗口
     expect(getByText('运动')).toBeTruthy();
     expect(getByText('晚间')).toBeTruthy();
     expect(getByText('重要')).toBeTruthy();
-    expect(getByText('7天验证')).toBeTruthy();
-    // replan → badge + reason chip
-    expect(getByText('已重排')).toBeTruthy();
+    expect(getByText('7天后复盘')).toBeTruthy();
+    // 周期只在用户主动请求时按需展开；重排原因仍保留。
+    expect(getByText('按需展开')).toBeTruthy();
     expect(getByText('基于今日状态重排')).toBeTruthy();
     // 验证信号 labels
     expect(getByText('验证信号')).toBeTruthy();
     expect(getByText('餐后步行完成')).toBeTruthy();
     expect(getByText('腰围')).toBeTruthy();
     expect(getByText('HRV')).toBeTruthy();
-    // 未来节奏 rows
+    // 未来节奏默认折叠，避免把尚未锁定的 7 天任务全部压到首屏。
+    expect(queryByText('未来节奏')).toBeNull();
+    expect(queryByText('明天')).toBeNull();
+    fireEvent.press(getByLabelText('展开后续6天'));
     expect(getByText('未来节奏')).toBeTruthy();
-    expect(getByText('今天')).toBeTruthy();
     expect(getByText('明天')).toBeTruthy();
-    // day1 标题与当前行动一致 → 折叠成"延续当前行动"
-    expect(getByText('延续当前行动')).toBeTruthy();
-    expect(getByText('3项待安排')).toBeTruthy();
-    // day2 无标题 → 兜底
+    // 只展示未来日期，不重复今天的行动。
+    expect(queryByText('今天')).toBeNull();
     expect(getByText('待运行时重排')).toBeTruthy();
-    expect(getByText('0项待安排')).toBeTruthy();
+    expect(getByText('当天根据状态确认')).toBeTruthy();
     // boundary 用后端下发的文案
     expect(getByText('这是健康管理行动建议, 不替代医生诊断。')).toBeTruthy();
   });

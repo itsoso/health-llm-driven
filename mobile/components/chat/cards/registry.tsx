@@ -86,6 +86,7 @@ export const CARD_MAP: Record<string, CardSpec> = Object.fromEntries(
 
 const ALLOWED_ACTIONS = new Set([
   'agenda.complete',
+  'daily_plan_action.complete',
   'diet_record.create',
   'write_intent.confirm',
   'write_intent.dismiss',

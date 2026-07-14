@@ -1,5 +1,5 @@
-import React from 'react';
-import { StyleSheet, Text, TextStyle, View, ViewStyle } from 'react-native';
+import React, { useState } from 'react';
+import { Pressable, StyleSheet, Text, TextStyle, View, ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { CardShell } from './CardShell';
 import type { CardSpec } from './types';
@@ -29,6 +29,7 @@ interface RuntimeAgendaDay {
 }
 
 interface RuntimeAgendaData {
+  presentation_mode?: unknown;
   generated_by?: unknown;
   horizon_days?: unknown;
   start?: unknown;
@@ -75,12 +76,19 @@ function days(value: RuntimeAgendaData['days']): RuntimeAgendaDay[] {
 }
 
 export function RuntimeAgendaCardView(data: RuntimeAgendaData) {
+  const [futureExpanded, setFutureExpanded] = useState(false);
   const horizon = numberText(data.horizon_days) || '7';
+  const isHorizon = text(data.presentation_mode) === 'horizon';
   const action = data.next_action || {};
   const actionTitle = formatHealthActionTitle(text(action.title) || '今日暂无明确行动');
   const stateSummary = text(action.current_state_summary);
   const visibleMetrics = metrics(action.verification_metrics);
   const visibleDays = days(data.days);
+  const futureDays = visibleDays.slice(1);
+  const parsedHorizon = Number(horizon);
+  const futureDayCount = Number.isFinite(parsedHorizon)
+    ? Math.max(0, Math.round(parsedHorizon) - 1)
+    : Math.max(0, futureDays.length);
   const boundary = text(data.safety_boundary) || '这是健康管理建议,不替代医生诊断。';
   const timeWindow = formatTimeWindow(text(action.time_window));
   const priority = formatPriority(text(action.priority_tier));
@@ -92,8 +100,8 @@ export function RuntimeAgendaCardView(data: RuntimeAgendaData) {
     <CardShell
       icon="calendar-clear-outline"
       iconColor={C.green500}
-      title={`${horizon}天验证节奏`}
-      badge={replanReason ? '已重排' : '动态'}
+      title={isHorizon ? '本周验证节奏' : '今天先做'}
+      badge={isHorizon ? '按需展开' : replanReason ? '已更新' : '实时'}
       badgeColor={C.green500}
       bg={C.surface}
       style={styles.shell}
@@ -105,7 +113,7 @@ export function RuntimeAgendaCardView(data: RuntimeAgendaData) {
           </View>
           <View style={styles.heroBody}>
             <Text maxFontSizeMultiplier={1.2} style={styles.eyebrow}>
-              下一步行动
+              今天行动
             </Text>
             <Text maxFontSizeMultiplier={1.3} style={styles.actionTitle} numberOfLines={3}>
               {actionTitle}
@@ -122,7 +130,7 @@ export function RuntimeAgendaCardView(data: RuntimeAgendaData) {
           {actionKind ? <SignalPill icon="layers-outline" label={actionKind} /> : null}
           {timeWindow ? <SignalPill icon="time-outline" label={timeWindow} /> : null}
           {priority ? <SignalPill icon="flag-outline" label={priority} /> : null}
-          {verifyDays ? <SignalPill icon="analytics-outline" label={`${verifyDays}天验证`} /> : null}
+          {verifyDays ? <SignalPill icon="analytics-outline" label={`${verifyDays}天后复盘`} /> : null}
         </View>
       </View>
 
@@ -158,26 +166,50 @@ export function RuntimeAgendaCardView(data: RuntimeAgendaData) {
         </View>
       ) : null}
 
-      {visibleDays.length > 0 ? (
+      {isHorizon && futureDays.length > 0 ? (
         <View style={styles.daysBlock}>
-          <View style={styles.sectionHeader}>
-            <Text maxFontSizeMultiplier={1.2} style={styles.sectionLabel}>
-              未来节奏
-            </Text>
-            <Text maxFontSizeMultiplier={1.2} style={styles.sectionHint}>
-              随睡眠/记录自动重排
-            </Text>
-          </View>
-          <View style={styles.days}>
-            {visibleDays.map((day, index) => (
-              <DayRow
-                key={`${text(day.date) || index}`}
-                day={day}
-                index={index}
-                currentTitle={actionTitle}
-              />
-            ))}
-          </View>
+          <Pressable
+            onPress={() => setFutureExpanded(value => !value)}
+            accessibilityRole="button"
+            accessibilityLabel={`${futureExpanded ? '收起' : '展开'}后续${futureDayCount}天`}
+            style={({ pressed }) => [styles.futureToggle, pressed && styles.futureTogglePressed]}
+          >
+            <View style={styles.futureToggleBody}>
+              <Text maxFontSizeMultiplier={1.2} style={styles.futureToggleTitle}>
+                后续{futureDayCount}天按状态动态调整
+              </Text>
+              <Text maxFontSizeMultiplier={1.2} style={styles.futureToggleHint}>
+                不是固定任务，睡眠和记录变化后会重排
+              </Text>
+            </View>
+            <Ionicons
+              name={futureExpanded ? 'chevron-up' : 'chevron-down'}
+              size={16}
+              color={C.ink3}
+            />
+          </Pressable>
+          {futureExpanded ? (
+            <>
+              <View style={styles.sectionHeader}>
+                <Text maxFontSizeMultiplier={1.2} style={styles.sectionLabel}>
+                  未来节奏
+                </Text>
+                <Text maxFontSizeMultiplier={1.2} style={styles.sectionHint}>
+                  随睡眠/记录自动重排
+                </Text>
+              </View>
+              <View style={styles.days}>
+                {futureDays.map((day, index) => (
+                  <DayRow
+                    key={`${text(day.date) || index + 1}`}
+                    day={day}
+                    index={index + 1}
+                    currentTitle={actionTitle}
+                  />
+                ))}
+              </View>
+            </>
+          ) : null}
         </View>
       ) : null}
 
@@ -229,7 +261,7 @@ function DayRow({
           {visibleTitle}
         </Text>
         <Text maxFontSizeMultiplier={1.2} style={styles.dayCount}>
-          {numberText(day.items_count) || '0'}项待安排
+          当天根据状态确认
         </Text>
       </View>
     </View>
@@ -328,7 +360,7 @@ function formatDayLabel(value: string | undefined, index: number): string {
 
 export const RuntimeAgendaCardSpec: CardSpec<RuntimeAgendaData> = {
   type: 'runtime_agenda',
-  label: '7天验证节奏',
+  label: '健康行动节奏',
   match() {
     return null;
   },
@@ -423,12 +455,6 @@ const styles = StyleSheet.create({
     marginTop: 12,
     paddingTop: 2,
   },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
-  },
   sectionLabel: {
     fontFamily: revaFonts.sans,
     fontSize: 11,
@@ -499,6 +525,47 @@ const styles = StyleSheet.create({
   } as TextStyle,
   daysBlock: {
     marginTop: 13,
+  },
+  futureToggle: {
+    minHeight: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 11,
+    paddingVertical: 9,
+    borderRadius: revaRadii.sm,
+    backgroundColor: C.surface2,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
+  },
+  futureTogglePressed: {
+    opacity: 0.72,
+  },
+  futureToggleBody: {
+    flex: 1,
+    minWidth: 0,
+  },
+  futureToggleTitle: {
+    fontFamily: revaFonts.sans,
+    fontSize: 12,
+    fontWeight: '800',
+    color: C.ink1,
+    lineHeight: 16,
+  } as TextStyle,
+  futureToggleHint: {
+    marginTop: 2,
+    fontFamily: revaFonts.sans,
+    fontSize: 10,
+    fontWeight: '600',
+    color: C.ink3,
+    lineHeight: 14,
+  } as TextStyle,
+  sectionHeader: {
+    marginTop: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
   },
   days: {
     marginTop: 8,

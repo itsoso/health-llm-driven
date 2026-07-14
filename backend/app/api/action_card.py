@@ -11,11 +11,13 @@ ActionCard API —— 对话固化到首页。
 import logging
 import re
 from datetime import UTC, datetime, timedelta, timezone
+from hashlib import sha256
 from typing import Any, Dict, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import desc
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user_required
@@ -110,6 +112,9 @@ class ActionCardCreate(BaseModel):
     verification_days: Optional[int] = Field(None, ge=1, le=90)
     checklist: list[ChecklistItem] = Field(default_factory=list)
     evidence_refs: list[str] = Field(default_factory=list)
+    # Only explicit, user-confirmed creation flows set this. Keeping the default
+    # false preserves draft/pending behavior for every existing caller.
+    accepted: bool = False
     # 信任循环字段
     creator_specialist: Optional[str] = Field(None, max_length=64)
     check_back_date: Optional[datetime] = None
@@ -191,6 +196,99 @@ def _extract_title(content: str, max_len: int = 60) -> str:
     return "行动卡片"
 
 
+def _accepted_create_key(*, user_id: int, body: ActionCardCreate) -> str:
+    source_identity = body.source_id or datetime.now(UTC).date().isoformat()
+    raw = "|".join(
+        [
+            str(user_id),
+            body.source_type.strip().lower(),
+            source_identity.strip(),
+            body.title.strip(),
+        ]
+    )
+    return sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _accepted_action_domain(title: str, content: str) -> str:
+    text = f"{title} {content}".lower()
+    try:
+        from app.services.drug_lexicon import contains_medication_reference
+
+        has_medication_reference = contains_medication_reference(text)
+    except Exception as exc:
+        logger.exception("Accepted action medication classifier unavailable")
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "advice_guard_contract_invalid", "message": "健康行动安全分类暂不可用"},
+        ) from exc
+
+    if has_medication_reference or any(marker in text for marker in ("用药", "服药", "服用", "停药", "停止服用", "不再服用", "换药", "剂量", "处方", "药物", "药品")):
+        return "medication"
+    if any(marker in text for marker in ("补剂", "补充剂", "维生素", "益生菌", "鱼油", "辅酶", "镁")):
+        return "supplement"
+    if any(marker in text for marker in ("睡眠", "入睡", "起床", "熬夜", "午睡")):
+        return "sleep"
+    if any(marker in text for marker in ("运动", "训练", "跑步", "散步", "步行", "拉伸", "太极", "八段锦")):
+        return "movement"
+    if any(marker in text for marker in ("饮食", "早餐", "午餐", "晚餐", "蛋白质", "热量", "血糖")):
+        return "metabolic"
+    return "recovery"
+
+
+def _guard_accepted_action(
+    db: Session,
+    *,
+    user_id: int,
+    body: ActionCardCreate,
+    accepted_key: str,
+) -> None:
+    from app.services.advice_guard import AdviceCandidate, AdviceGuardError, guard_and_record_advice
+
+    domain = _accepted_action_domain(body.title, body.content)
+    candidate = AdviceCandidate(
+        user_id=user_id,
+        source="action_card_explicit_accept",
+        source_id=f"action-card:{accepted_key[:24]}",
+        domain=domain,
+        title=body.title,
+        body=body.content,
+        metric_key=body.metric_key,
+        target_value=body.target_value or f"action:{sha256(body.title.encode('utf-8')).hexdigest()[:16]}",
+        evidence_tier="knowledge_claim" if body.evidence_refs else "model_inference",
+        confidence="medium",
+        claim_boundary="这是健康管理行动建议，不替代医生诊断、处方或治疗。",
+        evidence_refs=body.evidence_refs,
+        verification_metric=body.metric_key or "self_report",
+        verification_window_days=body.verification_days or 1,
+        risk_level="high" if domain in {"medication", "supplement"} else "low",
+        valid_for_date=datetime.now(UTC).date(),
+    )
+    try:
+        decision = guard_and_record_advice(db, candidate)
+    except AdviceGuardError as exc:
+        logger.warning(
+            "Accepted ActionCard contract rejected - user_id=%s source_type=%s reason=%s",
+            user_id,
+            body.source_type,
+            type(exc).__name__,
+        )
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "advice_guard_contract_invalid", "message": "这条行动缺少必要的安全信息，暂不能加入今天。"},
+        ) from exc
+    if not decision.allowed:
+        logger.warning(
+            "Accepted ActionCard blocked by AdviceGuard - user_id=%s source_type=%s reason=%s",
+            user_id,
+            body.source_type,
+            decision.reason,
+        )
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "advice_guard_blocked", "message": "这条行动涉及医疗安全边界，暂不能直接加入今天。"},
+        )
+
+
 # ─────────────────────── 端点 ────────────────────────
 
 
@@ -223,9 +321,9 @@ def create_card(
     current_user: User = Depends(get_current_user_required),
 ):
     """手动创建卡片。"""
+    # 复盘窗口和生命周期是两套语义。verification_days 只决定何时回看，
+    # 不能把行动在同一时刻自动归档；只有调用方显式给 expires_at 才过期。
     expires_at = body.expires_at
-    if expires_at is None and body.verification_days is not None:
-        expires_at = datetime.now(UTC) + timedelta(days=body.verification_days)
 
     # 自动推算 check_back_date: 显式给 > verification_days > 默认 7 天 (有 metric_key 才设)
     check_back = body.check_back_date
@@ -233,6 +331,51 @@ def create_card(
         days = body.verification_days or 7
         check_back = datetime.now(UTC) + timedelta(days=days)
 
+    accepted_key = _accepted_create_key(user_id=current_user.id, body=body) if body.accepted else None
+
+    # Chat 的确认按钮可能因网络重试或连续点击重复提交。相同消息中的同名
+    # accepted 行动视为同一次用户决定，直接回放已有资源。
+    if accepted_key:
+        existing = (
+            db.query(ActionCard)
+            .filter(
+                ActionCard.user_id == current_user.id,
+                ActionCard.accepted_create_key == accepted_key,
+            )
+            .order_by(desc(ActionCard.created_at))
+            .first()
+        )
+        if existing is None and body.source_id:
+            existing = (
+                db.query(ActionCard)
+                .filter(
+                    ActionCard.user_id == current_user.id,
+                    ActionCard.source_type == body.source_type,
+                    ActionCard.source_id == body.source_id,
+                    ActionCard.title == body.title,
+                    ActionCard.user_decision.in_(["accepted", "adjusted"]),
+                )
+                .order_by(desc(ActionCard.created_at))
+                .first()
+            )
+        if existing is not None:
+            logger.info(
+                "ActionCard accepted create replayed - user_id=%s source_type=%s source_id=%s card_id=%s",
+                current_user.id,
+                body.source_type,
+                body.source_id,
+                existing.id,
+            )
+            return _card_to_dict(existing)
+
+        _guard_accepted_action(
+            db,
+            user_id=current_user.id,
+            body=body,
+            accepted_key=accepted_key,
+        )
+
+    decided_at = datetime.now(UTC) if body.accepted else None
     card = ActionCard(
         user_id=current_user.id,
         title=body.title,
@@ -241,6 +384,7 @@ def create_card(
         color=body.color,
         source_type=body.source_type,
         source_id=body.source_id,
+        accepted_create_key=accepted_key,
         priority=body.priority,
         expires_at=expires_at,
         metric_key=body.metric_key,
@@ -251,9 +395,27 @@ def create_card(
         evidence_refs=body.evidence_refs,
         creator_specialist=body.creator_specialist,
         check_back_date=check_back,
+        user_decision="accepted" if body.accepted else None,
+        decided_at=decided_at,
+        decision_reason="explicit_create_confirmation" if body.accepted else None,
     )
     db.add(card)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        if accepted_key:
+            existing = (
+                db.query(ActionCard)
+                .filter(
+                    ActionCard.user_id == current_user.id,
+                    ActionCard.accepted_create_key == accepted_key,
+                )
+                .first()
+            )
+            if existing is not None:
+                return _card_to_dict(existing)
+        raise
     db.refresh(card)
     return _card_to_dict(card)
 

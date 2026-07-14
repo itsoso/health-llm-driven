@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Alert, StyleSheet, View } from 'react-native';
 
 import type {
   ChatCardActionDescriptor,
@@ -48,6 +48,7 @@ export default function DynamicTodayRenderer({
   onCardAction?: (action: ChatCardActionDescriptor, descriptor: ServerCardDescriptor) => Promise<void> | void;
 }) {
   const [actionStateByKey, setActionStateByKey] = React.useState<Record<string, ChatCardActionRuntimeState>>({});
+  const actionLocksRef = React.useRef(new Set<string>());
   const handleCardAction = React.useCallback(async (
     action: ChatCardActionDescriptor,
     descriptor: ServerCardDescriptor,
@@ -55,14 +56,40 @@ export default function DynamicTodayRenderer({
     if (!onCardAction) return;
     const actionKey = getCardActionRuntimeKey(action, descriptor);
     const state = actionStateByKey[actionKey];
-    if (state === 'running' || state === 'done') return;
-    setActionStateByKey(prev => ({ ...prev, [actionKey]: 'running' }));
-    try {
-      await onCardAction(action, descriptor);
-      setActionStateByKey(prev => ({ ...prev, [actionKey]: 'done' }));
-    } catch {
-      setActionStateByKey(prev => ({ ...prev, [actionKey]: 'error' }));
+    if (state === 'running' || state === 'done' || actionLocksRef.current.has(actionKey)) return;
+
+    const execute = async () => {
+      setActionStateByKey(prev => ({ ...prev, [actionKey]: 'running' }));
+      try {
+        await onCardAction(action, descriptor);
+        setActionStateByKey(prev => ({ ...prev, [actionKey]: 'done' }));
+      } catch {
+        actionLocksRef.current.delete(actionKey);
+        setActionStateByKey(prev => ({ ...prev, [actionKey]: 'error' }));
+      }
+    };
+
+    actionLocksRef.current.add(actionKey);
+    if (action.action !== 'route.open' && action.requires_manual_confirm) {
+      const confirmation = action.confirmation;
+      Alert.alert(
+        confirmation?.title || action.label,
+        confirmation?.detail || '确认后会写入你的健康记录。',
+        [
+          {
+            text: confirmation?.cancel_label || '取消',
+            style: 'cancel',
+            onPress: () => { actionLocksRef.current.delete(actionKey); },
+          },
+          {
+            text: confirmation?.confirm_label || action.label,
+            onPress: () => { void execute(); },
+          },
+        ],
+      );
+      return;
     }
+    await execute();
   }, [actionStateByKey, onCardAction]);
   const promotedTitleKeys = collectTodayDynamicPromotedTitleKeys(view);
   const sections = [...(view?.sections ?? [])]

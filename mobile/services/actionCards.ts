@@ -78,6 +78,8 @@ export interface ActionCardCreateInput {
   verification_days?: number;
   checklist?: { item: string; done: boolean }[];
   evidence_refs?: string[];
+  /** Explicit user confirmation: create and accept in the same backend transaction. */
+  accepted?: boolean;
 }
 
 export type ActionCockpitItem =

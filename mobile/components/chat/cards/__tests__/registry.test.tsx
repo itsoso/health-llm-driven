@@ -905,6 +905,7 @@ describe('renderCard 安全降级', () => {
     const descriptor = {
       type: 'runtime_agenda',
       data: {
+        presentation_mode: 'horizon',
         generated_by: 'rolling_health_runtime_v1',
         horizon_days: 7,
         next_action: {
@@ -926,7 +927,7 @@ describe('renderCard 安全降级', () => {
       actions: [
         {
           id: 'open-runtime-agenda',
-          label: '查看7天计划',
+          label: '查看完整计划',
           action: 'route.open',
           payload: { route: '/agenda' },
           style: 'primary',
@@ -937,7 +938,7 @@ describe('renderCard 安全降级', () => {
     expect(r).not.toBeNull();
 
     const { getByText, queryByText } = render(r!);
-    expect(getByText('7天验证节奏')).toBeTruthy();
+    expect(getByText('本周验证节奏')).toBeTruthy();
     expect(getByText('晚餐后步行 15 分钟')).toBeTruthy();
     expect(queryByText('围绕当前重点动态重排')).toBeNull();
     expect(getByText('基于今日状态重排')).toBeTruthy();
@@ -946,7 +947,7 @@ describe('renderCard 安全降级', () => {
     expect(getByText('HRV')).toBeTruthy();
     expect(() => getByText('today_smart_rank')).toThrow();
     expect(() => getByText('waist_cm')).toThrow();
-    fireEvent.press(getByText('查看7天计划'));
+    fireEvent.press(getByText('查看完整计划'));
     expect(onAction).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'route.open' }),
       expect.objectContaining({ type: 'runtime_agenda' }),

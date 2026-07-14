@@ -144,6 +144,14 @@ describe('todayDynamicView service', () => {
                   requires_manual_confirm: true,
                   payload: { source: { object_type: 'health_protocol', object_id: 7 } },
                 },
+                {
+                  label: '完成今天行动',
+                  action: 'daily_plan_action.complete',
+                  endpoint: '/daily-plan/actions/intervention.card.9/events',
+                  requires_manual_confirm: true,
+                  payload: { action_id: 'intervention.card.9', event_type: 'completed' },
+                  confirmation: { title: '确认完成？', confirm_label: '确认完成' },
+                },
               ],
             } as any,
           ],
@@ -154,6 +162,7 @@ describe('todayDynamicView service', () => {
     expect(view.sections[0].cards[0].actions).toEqual([
       expect.objectContaining({ action: 'route.open', payload: { route: '/(tabs)/chat?prompt=hrv' } }),
       expect.objectContaining({ action: 'agenda.complete', requires_manual_confirm: true }),
+      expect.objectContaining({ action: 'daily_plan_action.complete', requires_manual_confirm: true }),
     ]);
   });
 });

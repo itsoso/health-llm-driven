@@ -38,9 +38,11 @@ export default function InterventionDraftSheet({ visible, draft, isSaving, onClo
   const styles = useMemo(() => createStyles(c), [c]);
   const txt = useMemo(() => createTxt(c), [c]);
   const [form, setForm] = useState<InterventionDraft | null>(draft);
+  const [reviewExpanded, setReviewExpanded] = useState(false);
 
   useEffect(() => {
     setForm(draft);
+    setReviewExpanded(false);
   }, [draft]);
 
   if (!form) return null;
@@ -134,35 +136,45 @@ export default function InterventionDraftSheet({ visible, draft, isSaving, onClo
             </View>
 
             <View style={styles.section}>
-              <View style={styles.sectionHeader}>
+              <Pressable
+                style={styles.sectionHeader}
+                onPress={() => setReviewExpanded(value => !value)}
+                accessibilityRole="button"
+                accessibilityLabel={reviewExpanded ? '收起复盘设置' : '展开复盘设置'}
+              >
                 <View style={styles.sectionIcon}>
                   <Ionicons name="analytics-outline" size={15} color={c.brand} />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={txt.sectionTitle}>如何验证</Text>
-                  <Text style={txt.sectionSub}>让计划有复盘出口，而不是只添加一条待办</Text>
+                  <Text style={txt.sectionTitle}>复盘设置</Text>
+                  <Text style={txt.sectionSub}>
+                    {form.verification_days === 1 ? '明天回看' : `${form.verification_days}天后回看`} · {metricLabel}
+                  </Text>
                 </View>
-              </View>
-              <View style={styles.metricCurrent}>
-                <Text style={txt.metricCurrentLabel}>跟踪指标</Text>
-                <Text style={txt.metricCurrentValue}>{metricLabel}</Text>
-              </View>
-              <View style={styles.metricWrap}>
-                {METRICS.map(metric => {
-                  const active = form.metric_key === metric.key;
-                  return (
-                    <Pressable
-                      key={metric.key}
-                      style={[styles.metricChip, active && styles.metricChipActive]}
-                      onPress={() => update({ metric_key: metric.key })}
-                      accessibilityRole="button"
-                      accessibilityState={{ selected: active }}
-                    >
-                      <Text style={[txt.metricChip, active && txt.metricChipActive]}>{metric.label}</Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
+                <Ionicons name={reviewExpanded ? 'chevron-up' : 'chevron-down'} size={16} color={c.labelTertiary} />
+              </Pressable>
+
+              {reviewExpanded ? <>
+                <View style={styles.metricCurrent}>
+                  <Text style={txt.metricCurrentLabel}>跟踪指标</Text>
+                  <Text style={txt.metricCurrentValue}>{metricLabel}</Text>
+                </View>
+                <View style={styles.metricWrap}>
+                  {METRICS.map(metric => {
+                    const active = form.metric_key === metric.key;
+                    return (
+                      <Pressable
+                        key={metric.key}
+                        style={[styles.metricChip, active && styles.metricChipActive]}
+                        onPress={() => update({ metric_key: metric.key })}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: active }}
+                      >
+                        <Text style={[txt.metricChip, active && txt.metricChipActive]}>{metric.label}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
 
               <View style={styles.twoCol}>
                 <View style={styles.col}>
@@ -201,6 +213,7 @@ export default function InterventionDraftSheet({ visible, draft, isSaving, onClo
                   </Pressable>
                 ))}
               </View>
+              </> : null}
             </View>
           </ScrollView>
 

@@ -64,6 +64,7 @@ export function normalizeInterventionDraft(draft: InterventionDraft): Interventi
     target_value: normalizeOptional(draft.target_value),
     verification_days: draft.verification_days,
     checklist: draft.checklist,
+    accepted: true,
   };
 }
 

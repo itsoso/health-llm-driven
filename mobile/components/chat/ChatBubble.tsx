@@ -41,6 +41,13 @@ import { buildChatImageSource } from '../../utils/chatImageSource';
 import { containsMarkdownTable, preprocessMarkdownTables } from '../../utils/markdownTables';
 import { extractRevaUiBlocks } from '../../utils/revaUiBlocks';
 import { saveChatImageToLibrary } from '../../services/chatImageSave';
+import InterventionDraftSheet from '../actions/InterventionDraftSheet';
+import { createInterventionDraft } from '../../services/actionCards';
+import {
+  buildInterventionDraft,
+  type InterventionDraft,
+} from '../../services/interventionDraft';
+import { invalidateQueryKeys, queryKeys } from '../../applib/queryKeys';
 import {
   buildAgentTransparency,
   formatDurationMs,
@@ -98,6 +105,8 @@ function ChatBubbleInner({
   const [cardActionStateByKey, setCardActionStateByKey] = useState<Record<string, ChatCardActionRuntimeState>>({});
   const [cardReceiptByKey, setCardReceiptByKey] = useState<Record<string, WriteReceipt>>({});
   const [cardReceiptPersistenceWarning, setCardReceiptPersistenceWarning] = useState(false);
+  const [todayPlanDraft, setTodayPlanDraft] = useState<InterventionDraft | null>(null);
+  const [savingTodayPlan, setSavingTodayPlan] = useState(false);
   const cardActionLocksRef = useRef(new Set<string>());
   const cardFrameRef = useRef<View | null>(null);
   const speechTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -196,12 +205,49 @@ function ChatBubbleInner({
       item.perf,
     ],
   );
-
   const sentTimeShort = formatMessageTimeLabel(item.createdAt);
   const sentTimeFull = formatMessageFullTimeLabel(item.createdAt);
   const timeAccessibilityPrefix = sentTimeFull
     ? `${isUser ? '你发送于' : '小巴回复于'} ${sentTimeFull}. `
     : '';
+
+  const openTodayPlanDraft = useCallback((advice: string) => {
+    const cleanAdvice = advice.trim();
+    if (!cleanAdvice) return;
+    try { Haptics.selectionAsync(); } catch {}
+    setTodayPlanDraft(buildInterventionDraft({
+      title: cleanAdvice.length > 28 ? `${cleanAdvice.slice(0, 28)}...` : cleanAdvice,
+      advice: cleanAdvice,
+      sourceType: 'chat',
+      sourceId: item.id,
+      verificationDays: 1,
+    }));
+  }, [item.id]);
+
+  const submitTodayPlanDraft = useCallback(async (draft: InterventionDraft) => {
+    if (savingTodayPlan) return;
+    setSavingTodayPlan(true);
+    try {
+      await createInterventionDraft(draft);
+      await invalidateQueryKeys(qc, [
+        queryKeys.actionCards,
+        queryKeys.todayCoachRoot,
+        queryKeys.agentAgendaRoot,
+        ['agenda', 'today'],
+        ['daily-artifact', 'me'],
+        ['today-dynamic-view', 'mobile.today'],
+      ]);
+      setTodayPlanDraft(null);
+      try { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); } catch {}
+      toast.show('已加入今天，完成后可直接打卡', 'success');
+    } catch (error) {
+      try { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error); } catch {}
+      toast.show('加入失败，请稍后重试', 'error');
+      if (__DEV__) console.warn('[chat] add today plan failed', error);
+    } finally {
+      setSavingTodayPlan(false);
+    }
+  }, [qc, savingTodayPlan, toast]);
 
   const clearSpeechTimeout = useCallback(() => {
     if (speechTimeoutRef.current) {
@@ -340,6 +386,9 @@ function ChatBubbleInner({
           );
         }
         const refreshResults = await Promise.allSettled([
+          qc.invalidateQueries({ queryKey: queryKeys.actionCards }),
+          qc.invalidateQueries({ queryKey: queryKeys.todayCoachRoot }),
+          qc.invalidateQueries({ queryKey: queryKeys.agentAgendaRoot }),
           qc.invalidateQueries({ queryKey: ['timeline', 'today'] }),
           qc.invalidateQueries({ queryKey: ['agenda', 'today'] }),
           qc.invalidateQueries({ queryKey: ['daily-artifact', 'me'] }),
@@ -372,18 +421,19 @@ function ChatBubbleInner({
       }
     };
 
-    if (action.action !== 'route.open' && action.confirmation) {
+    if (action.action !== 'route.open' && action.requires_manual_confirm) {
+      const confirmation = action.confirmation;
       Alert.alert(
-        action.confirmation.title || action.label,
-        action.confirmation.detail || '确认后会写入你的健康记录。',
+        confirmation?.title || action.label,
+        confirmation?.detail || '确认后会写入你的健康记录。',
         [
           {
-            text: action.confirmation.cancel_label || '取消',
+            text: confirmation?.cancel_label || '取消',
             style: 'cancel',
             onPress: () => { cardActionLocksRef.current.delete(actionKey); },
           },
           {
-            text: action.confirmation.confirm_label || action.label,
+            text: confirmation?.confirm_label || action.label,
             onPress: execute,
           },
         ],
@@ -875,6 +925,7 @@ function ChatBubbleInner({
               <StructuredSummaryCard
                 summary={structuredSummary}
                 showEyebrow={!advisorPresentation?.conclusion}
+                onAddToTodayPlan={openTodayPlanDraft}
                 onSendSuggestedPrompt={onSendSuggestedPrompt}
               />
             ) : null}
@@ -911,6 +962,13 @@ function ChatBubbleInner({
           </TouchableOpacity>
         )}
       </View>
+      <InterventionDraftSheet
+        visible={!!todayPlanDraft}
+        draft={todayPlanDraft}
+        isSaving={savingTodayPlan}
+        onClose={() => setTodayPlanDraft(null)}
+        onSubmit={submitTodayPlanDraft}
+      />
     </>
   );
 }
@@ -1097,6 +1155,7 @@ function buildDietQualitySharePayload(data: Record<string, unknown>): { title: s
 function isWriteCardAction(action: ChatCardActionDescriptor): boolean {
   return [
     'agenda.complete',
+    'daily_plan_action.complete',
     'diet_record.create',
     'write_intent.confirm',
     'write_intent.dismiss',
@@ -1111,6 +1170,7 @@ function formatWriteReceipt(receipt: WriteReceipt): string {
   }
   const resourceLabels: Record<string, string> = {
     agenda_event: '今日行动',
+    intervention_event: '今日行动',
     diet_record: '饮食记录',
     write_intent: '待确认项',
     smart_reminder: '提醒',
@@ -1131,6 +1191,7 @@ function getCardActionSuccessMessage(
     if (result.nutrition_status === 'estimate_failed') return '已记录饮食，营养估算稍后补充';
     return '已记录饮食';
   }
+  if (action.action === 'daily_plan_action.complete') return '已完成今日行动';
   if (result.status === 'dismissed' || action.action === 'write_intent.dismiss') return '已忽略';
   return '已执行';
 }
@@ -1424,10 +1485,12 @@ function statusTone(status?: string): string {
 function StructuredSummaryCard({
   summary,
   showEyebrow,
+  onAddToTodayPlan,
   onSendSuggestedPrompt,
 }: {
   summary: StructuredHealthSummary;
   showEyebrow: boolean;
+  onAddToTodayPlan?: (advice: string) => void;
   onSendSuggestedPrompt?: (prompt: string) => void;
 }) {
   const primaryAdvice = summary.advice[0];
@@ -1474,24 +1537,28 @@ function StructuredSummaryCard({
               ))}
             </View>
           ) : null}
-          {onSendSuggestedPrompt ? (
+          {onAddToTodayPlan || onSendSuggestedPrompt ? (
             <View style={summaryStyles.actionButtons}>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="把建议加入今天计划"
-                onPress={() => onSendSuggestedPrompt(`把这项建议加入今天计划：${primaryAdvice}`)}
-                style={({ pressed }) => [summaryStyles.actionPrimary, pressed && styles.actionBtnPressed]}
-              >
-                <Text style={summaryStyles.actionPrimaryText}>加入今天计划</Text>
-              </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="解释这条建议的依据"
-                onPress={() => onSendSuggestedPrompt(`解释为什么建议我：${primaryAdvice}`)}
-                style={({ pressed }) => [summaryStyles.actionSecondaryButton, pressed && styles.actionBtnPressed]}
-              >
-                <Text style={summaryStyles.actionSecondaryButtonText}>为什么</Text>
-              </Pressable>
+              {onAddToTodayPlan ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="把建议加入今天计划"
+                  onPress={() => onAddToTodayPlan(primaryAdvice)}
+                  style={({ pressed }) => [summaryStyles.actionPrimary, pressed && styles.actionBtnPressed]}
+                >
+                  <Text style={summaryStyles.actionPrimaryText}>加入今天</Text>
+                </Pressable>
+              ) : null}
+              {onSendSuggestedPrompt ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="解释这条建议的依据"
+                  onPress={() => onSendSuggestedPrompt(`解释为什么建议我：${primaryAdvice}`)}
+                  style={({ pressed }) => [summaryStyles.actionSecondaryButton, pressed && styles.actionBtnPressed]}
+                >
+                  <Text style={summaryStyles.actionSecondaryButtonText}>为什么</Text>
+                </Pressable>
+              ) : null}
             </View>
           ) : null}
         </View>

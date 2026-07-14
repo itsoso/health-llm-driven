@@ -28,6 +28,12 @@ export async function dispatchChatCardAction(
         status: 'completed',
         receipt: receiptFromAgendaResult(action, await completeAgendaFromCard(action)),
       };
+    case 'daily_plan_action.complete':
+      assertManualConfirm(action);
+      return {
+        status: 'completed',
+        receipt: receiptFromDailyPlanResult(action, await completeDailyPlanActionFromCard(action)),
+      };
     case 'diet_record.create':
       assertManualConfirm(action);
       assertEndpoint(action, '/diet/records');
@@ -199,6 +205,40 @@ async function completeAgendaFromCard(action: ChatCardActionDescriptor): Promise
   }
   const { data } = await api.post('/agenda/complete', payload);
   return data && typeof data === 'object' ? data : {};
+}
+
+function readDailyPlanActionId(action: ChatCardActionDescriptor): string {
+  const actionId = optionalText(action.payload?.action_id);
+  if (!actionId || actionId.length > 160 || !/^[A-Za-z0-9._:-]+$/.test(actionId)) {
+    throw new Error('invalid_daily_plan_action_id');
+  }
+  const endpoint = `/daily-plan/actions/${encodeURIComponent(actionId)}/events`;
+  assertEndpoint(action, endpoint);
+  return actionId;
+}
+
+async function completeDailyPlanActionFromCard(
+  action: ChatCardActionDescriptor,
+): Promise<Record<string, unknown>> {
+  const actionId = readDailyPlanActionId(action);
+  const { data } = await api.post(
+    `/daily-plan/actions/${encodeURIComponent(actionId)}/events`,
+    { event_type: 'completed', payload: { source: 'chat_card' } },
+  );
+  return data && typeof data === 'object' ? data : {};
+}
+
+function receiptFromDailyPlanResult(
+  action: ChatCardActionDescriptor,
+  result: Record<string, unknown>,
+): WriteReceipt {
+  const eventId = readOptionalNumericId(result.id);
+  if (!eventId) throw new Error('write_receipt_missing_identity');
+  return createVerifiedWriteReceipt({
+    operationId: action.id || `daily_plan_action.complete:${eventId}`,
+    resourceType: 'intervention_event',
+    resourceId: eventId,
+  });
 }
 
 function receiptFromAgendaResult(

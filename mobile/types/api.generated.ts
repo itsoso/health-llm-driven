@@ -18909,6 +18909,11 @@ export interface components {
             checklist?: components["schemas"]["ChecklistItem"][];
             /** Evidence Refs */
             evidence_refs?: string[];
+            /**
+             * Accepted
+             * @default false
+             */
+            accepted: boolean;
             /** Creator Specialist */
             creator_specialist?: string | null;
             /** Check Back Date */
