@@ -366,10 +366,16 @@ AGENT_OPS: Dict[str, Dict[str, Any]] = {
 
     # ── 触发动作/只读面 ────────────────────────────────────────────────────
     "garmin_sync": {
-        # 同步触发动作,非记录对象。不在 AUTO 集 → fail-closed 恒确认。
+        # 同步触发动作,非记录对象。founder 2026-07-14 裁决 confirm=auto ——
+        # 幂等读拉、无用户可见突变、可安全重复,不是不可逆写(R4 允许 agent 自动执行)。
+        # 执行走专属异步分支 _trigger_garmin_sync:本地 precondition fail-loud →
+        # Celery enqueue(sync_user_garmin_data)→ 乐观 ack,不再内联阻塞。
         "create": {
-            "tool": "health_record", "record_type": "garmin_sync", "confirm": "never_auto",
-            "via": "health_record(garmin_sync) → POST /data-collection/garmin/me/sync?days=1",
+            "tool": "health_record", "record_type": "garmin_sync", "confirm": "auto",
+            "via": "health_record(garmin_sync) → _trigger_garmin_sync → sync_user_garmin_data.delay()",
+            # 幂等读拉,无写入产物可撤销;重复同步安全(upsert)。
+            "undo": None,
+            "undo_gap": "幂等读拉(登录+域限定 upsert+invalidate);下游推送/Episode 均去重、与定时 fan-out 同权,无新增不可逆写,无产物可撤销",
         },
         "read": {"opt_out": "同步结果经 wearable/garmin/activity 等维度读(见 health_query 对象)"},
         "list": {"opt_out": "同步触发动作,无独立记录可管理"},

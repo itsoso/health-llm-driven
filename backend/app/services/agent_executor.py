@@ -1880,6 +1880,13 @@ def _write_tool_completed(tool_name: str, args: Any, result: Any) -> bool:
     return _write_receipt_from_tool_result(tool_name, record_type, result) is not None
 
 
+# health_record 的 record_type 里，个别是**触发动作**而非写记录 —— 它们没有
+# resource id，不产写回执，绝不能进写诚实闸(否则真成功 / MFA 失败 / 未绑定都会被
+# 误判成"未取得可验证写入回执"，把真因盖掉、还驱动无谓重试)。garmin_sync = 异步
+# 同步 job，是这类的第一个成员。匹配 record_type 与 type 双键(模型两种都吐过)。
+_NON_WRITE_RECORD_TYPES: frozenset[str] = frozenset({"garmin_sync"})
+
+
 def _write_tool_attempted(tool_name: str, args: Any) -> bool:
     """Return whether this invocation crossed a write boundary, even if it failed."""
     if tool_name not in _WRITE_RECEIPT_TOOL_NAMES:
@@ -1889,6 +1896,9 @@ def _write_tool_attempted(tool_name: str, args: Any) -> bool:
     except (json.JSONDecodeError, TypeError, ValueError):
         parsed_args = {}
     if tool_name == "health_record":
+        rtype = parsed_args.get("record_type") or parsed_args.get("type")
+        if rtype in _NON_WRITE_RECORD_TYPES:
+            return False
         return True
     if tool_name == "health_manage":
         return parsed_args.get("operation") in {"update", "delete"}
@@ -2133,6 +2143,12 @@ _FAST_RECORD_AUTO_CONFIRM_KINDS = {
     # L0、纯时间打点,写错顶多时间锚偏(可删重记);undo 通路=
     # health_manage(delete event {id}) → DELETE /episodes/life-event/{id}。
     "event",
+    # garmin_sync(触发同步动作,非写记录):founder 2026-07-14 裁决 AUTO ——
+    # 幂等读拉、无用户可见突变、可安全重复,不是不可逆写。执行走专属异步分支
+    # (_trigger_garmin_sync:本地 precondition fail-loud → Celery enqueue → 乐观 ack),
+    # 不经此快路由 confirm 门(无 garmin_sync 关键词分类器);登记于此仅为镜像
+    # agent_ops_registry 的 confirm=auto,并让任何路径达此 kind 时免确认前置。
+    "garmin_sync",
 }
 # 症状类仅打字通道免确认;语音/未声明通道保留确认前置(转写失真 + Siri 单轮
 # 无法撤销)。channel 由客户端传输层声明(AgentRequest.channel),绝不读 LLM
@@ -8442,6 +8458,13 @@ class AgentExecutor:
                 return "Error: illness 必须提供 name (如 '感冒' / '发烧')"
             return await self._api_post(f"{base}/illness/episodes", headers, payload)
 
+        # garmin_sync 不是写记录,是一个长跑的 ingest **job**。绝不走内联阻塞路径
+        # (旧实现:record_map 里同步 POST /data-collection/garmin/me/sync → 端点
+        # 里同步 def 拉 Garmin,10–90s 冻死 event loop、全程无进度 → 手机永久转圈)。
+        # 新执行模型:本地 precondition fail-loud → Celery enqueue → 乐观 ack 立即返回。
+        if rtype == "garmin_sync":
+            return await self._trigger_garmin_sync()
+
         record_map = {
             "weight": ("/weight/records", "POST", data),
             "blood_pressure": ("/blood-pressure/records", "POST", data),
@@ -8453,7 +8476,6 @@ class AgentExecutor:
             "excretion": ("/excretion/records", "POST", data),
             # rhinitis 走 special case (见上方 rtype=="rhinitis" 分支), 不在 record_map 里
             "mood": ("/mood/records", "POST", data),
-            "garmin_sync": ("/data-collection/garmin/me/sync?days=1", "POST", {}),
             "reminder": ("/reminders/me", "POST", data),
             "goal": ("/goals/", "POST", data),
         }
@@ -8485,6 +8507,58 @@ class AgentExecutor:
                 logger.info(f"[health_record] type={rtype} result={result[:200]}")
                 return result
         return f"Error: 不支持的记录类型 {rtype}"
+
+    async def _trigger_garmin_sync(self) -> str:
+        """触发 Garmin 数据同步 —— 异步 job 模型(不阻塞对话回合)。
+
+        founder 2026-07-14 裁决:同步是幂等读拉、无用户可见突变,agent 可 auto 执行
+        (不违反 R4),但必须三护栏:① 未绑定/MFA/禁用 → 本地 precondition fail-loud
+        明确指引(绝不空转/谎报);② 不内联阻塞(Celery enqueue,回合立即返回);
+        ③ MFA 降级为指引、不自动重试。
+
+        precondition 全是本地 DB 读(无网络);满足则把真同步交给 Celery worker,
+        乐观 ack 立即返回;worker 完成后重生今日简报,失败时推送告知(fail-loud)。
+        返回**串**(_exec_health_record 契约),作为 tool 结果交给 LLM 复述。
+        """
+        user_id = self._current_user_id
+        if not user_id:
+            return "无法确定当前用户身份,暂时不能发起同步,请稍后重试。"
+
+        from app.models.user import GarminCredential
+
+        credential = (
+            self.db.query(GarminCredential)
+            .filter(GarminCredential.user_id == user_id)
+            .first()
+        )
+        # ── 护栏①:precondition fail-loud(本地 DB,无网络,绝不空转/谎报)──
+        if not credential:
+            return ("你还没有绑定 Garmin 账号,所以我无法同步手表数据。"
+                    "请到「设置 → 设备」绑定 Garmin 账号,之后我就能帮你同步。")
+        if not credential.sync_enabled:
+            return ("你的 Garmin 同步在设置里是关闭状态。"
+                    "到「设置 → 设备」打开同步后,我就能帮你拉取最新数据。")
+        if not credential.credentials_valid:
+            return ("你的 Garmin 登录凭据已失效(可能改过密码),无法同步。"
+                    "请到「设置 → 设备」重新绑定账号。")
+        if getattr(credential, "requires_mfa", False):
+            # ── 护栏③:MFA 降级为指引,不自动重试 ──
+            return ("你的 Garmin 账号开启了两步验证(MFA),暂时无法自动同步。"
+                    "你可以在手机 Garmin Connect App 里手动刷新一次,"
+                    "或到「设置 → 设备」完成一次验证后再让我同步。")
+
+        # ── 护栏②:不内联阻塞;交给 Celery worker,乐观 ack 立即返回 ──
+        try:
+            from app.tasks.garmin_sync import sync_user_garmin_data
+            sync_user_garmin_data.delay(user_id, days=1, notify_on_failure=True)
+        except Exception as e:  # 入队失败(如 broker 不可用)也 fail-loud,不谎报成功
+            logger.warning(f"[garmin_sync] enqueue 失败 user={user_id}: {e}")
+            return ("同步服务暂时不可用,没能发起后台同步。"
+                    "请稍后重试,或到「设置 → 设备」手动同步。")
+
+        logger.info(f"[garmin_sync] enqueued background sync user={user_id}")
+        return ("已经在后台开始同步你的 Garmin 数据了,通常一分钟内完成。"
+                "同步好之后我会用最新数据刷新今日概览;万一没成功,我也会告诉你。")
 
     async def _exec_health_manage(
         self, base: str, headers: dict, args: dict

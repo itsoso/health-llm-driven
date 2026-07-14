@@ -22,10 +22,40 @@ from app.services.workout_coach_copy import (
 )
 
 
+def _notify_garmin_sync_failed(user_id: int, reason: str = "sync_error") -> None:
+    """Agent 触发的后台同步终态失败 → 推送告知用户(fail-loud)。best-effort,不抛。
+
+    仅当调用方(agent 的 _trigger_garmin_sync)传 notify_on_failure=True 时才发 ——
+    定时 fan-out 静默 skip 无用户等待,不打扰;用户主动"帮我同步"后失败必须知会,
+    否则"已在后台同步"变成静默谎报(silent-green)。
+    """
+    try:
+        from app.services.notification.push_service import PushService
+        with SessionLocal() as db:
+            push_svc = PushService(db)
+
+            async def _send():
+                await push_svc.send_notification(
+                    user_id=user_id,
+                    notification_type="garmin_sync_failed",
+                    title="Garmin 同步未成功",
+                    content="刚才的后台同步没有完成。请稍后重试，或到「设置 → 设备」检查 Garmin 账号。",
+                    data={"reason": reason},
+                    respect_quiet_hours=True,
+                )
+
+            asyncio.run(_send())
+    except Exception as e:
+        logger.warning(f"[garmin_sync] 失败推送发送失败 user={user_id}: {e}")
+
+
 @celery_app.task(bind=True, max_retries=3)
-def sync_user_garmin_data(self, user_id: int, days: int = 1):
+def sync_user_garmin_data(self, user_id: int, days: int = 1, notify_on_failure: bool = False):
     """
     同步单个用户的 Garmin 数据（健康数据 + 运动活动）
+
+    notify_on_failure: agent 主动触发(用户"帮我同步")时置 True —— 终态失败时推送
+    告知用户,兑现 fail-loud;定时 fan-out 保持 False(静默 skip,无人等待)。
     """
     logger.info(f"开始同步用户 {user_id} 的 Garmin 数据 (最近 {days} 天)")
 
@@ -43,6 +73,8 @@ def sync_user_garmin_data(self, user_id: int, days: int = 1):
 
             if not credential:
                 logger.warning(f"用户 {user_id} 没有有效的 Garmin 凭据")
+                if notify_on_failure:
+                    _notify_garmin_sync_failed(user_id, reason="no_credentials")
                 return {"status": "skipped", "reason": "no_credentials"}
 
             # 解密密码
@@ -50,6 +82,8 @@ def sync_user_garmin_data(self, user_id: int, days: int = 1):
                 password = garmin_credential_service.decrypt_password(credential.encrypted_password)
             except Exception as e:
                 logger.error(f"用户 {user_id} Garmin 凭据解密失败: {e}")
+                if notify_on_failure:
+                    _notify_garmin_sync_failed(user_id, reason="decrypt_failed")
                 return {"status": "error", "reason": "decrypt_failed"}
 
             email = credential.garmin_email
@@ -220,6 +254,12 @@ def sync_user_garmin_data(self, user_id: int, days: int = 1):
             except Exception as e:
                 logger.warning(f"触发简报重新生成失败（不影响同步结果）: {e}")
 
+            # fail-loud 补缝(safety-review N2):非 auth 的软错误可能整批失败
+            # (success_count==0 & error_count>0)却走到这里返回 success —— agent 触发
+            # 路径承诺过"万一没成功我也会告诉你",此路径必须通知,否则窄 silent-green。
+            if notify_on_failure and success_count == 0 and error_count > 0:
+                _notify_garmin_sync_failed(user_id, reason="no_data_synced")
+
             return {
                 "status": "success",
                 "success_count": success_count,
@@ -229,6 +269,12 @@ def sync_user_garmin_data(self, user_id: int, days: int = 1):
 
     except Exception as e:
         logger.error(f"用户 {user_id} Garmin 同步失败: {e}", exc_info=True)
+        # 已到最大重试:agent 触发的同步必须 fail-loud 告知用户,否则"已在后台同步"
+        # 之后所有重试静默耗尽 = 静默谎报。retries 从 0 计,>= max_retries 即终态。
+        if self.request.retries >= self.max_retries:
+            if notify_on_failure:
+                _notify_garmin_sync_failed(user_id, reason="sync_error")
+            return {"status": "error", "reason": str(e)[:200]}
         raise self.retry(exc=e, countdown=60 * (self.request.retries + 1))
 
 
