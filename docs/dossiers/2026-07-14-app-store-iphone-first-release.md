@@ -76,7 +76,8 @@ RequirementAdmission:
 - [x] R3 隐私清单、隐私政策、账号删除处理闭环。
 - [ ] R4 Agent 核心写入、语音、拍照、分享和渲染回归（自动化与模拟器已过；真机待测）。
 - [x] R5 安全、依赖、可访问性和审核材料 Gate。
-- [ ] R6 commit/push、新 EAS build、TestFlight 与真机 G6。
+- [x] R6 commit/push、前后端部署、新 EAS production build 与 TestFlight 上传。
+- [ ] R7 在 Build 226 上完成真机 G6 并补齐 App Review 材料。
 
 ## Gate Ledger
 
@@ -86,7 +87,7 @@ RequirementAdmission:
 | G2 可行性/安全 | PASS | 已冻结范围与医疗/隐私边界 |
 | G3 测试 | PASS | 合并后后端联合回归 381 项、Mobile 全量 1717 项、TypeScript、Lint、iOS 原生模拟器构建与启动通过；全量回归见发布记录 |
 | G4 安全 | PASS | 生产包无后台录音/持续定位；账号删除、隐私清单、写入回执 fail-closed 已复核 |
-| G5 部署健康 | PENDING | 等待新 production build |
+| G5 部署健康 | PASS | 生产运行提交 `16d0517f1`；前后端部署健康度 60/60；EAS Build 226 构建成功并上传 App Store Connect |
 | G6 真机验证 | BLOCKED | 必须在同一 TestFlight build 完成真实 iPhone 语音/拍照/微信与小红书分享/写入/删除状态证据 |
 
 ## Correction Block
@@ -104,3 +105,5 @@ RequirementAdmission:
 - 修复 Mac/Web 连续提醒链路:生产日志证明上下文历史已保留；失败来自 SmartReminder 的 `pending` 被误判为未写入，而非记忆缺失。
 - 新增时间窗原子提醒:支持 `start_time + end_time + interval_minutes`，09:00–20:00 每 90 分钟确定性生成 8 个时点；同一用户重复提交幂等复用已有记录。
 - 对“9点到20点”这类补充回答增加确定性上下文恢复：仅在当前消息明确给出时间范围时继承最近一轮已确认的频率，避免模型把整段计划收缩成单个 09:00 提醒。
+- 生产部署:服务器 `main`=`16d0517f1`，API/数据库/Redis/Celery 均 healthy；提醒时间窗与账号删除路由均返回鉴权状态，账号删除表已执行幂等 PostgreSQL 迁移并验证存在。
+- iOS production:App Version 1.3.1，Build 226，EAS Build ID `8ad0eea2-6c0f-45ba-98c0-1c0e682c306f`；IPA 构建成功并由 Submission `448c0120-fc37-49b8-aab6-bfcd6246abe6` 上传 App Store Connect，等待 Apple 处理。
