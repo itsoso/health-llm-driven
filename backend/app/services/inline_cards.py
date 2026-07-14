@@ -24,6 +24,7 @@ from app.services import agenda_service
 from app.services.health_operating_review import build_health_operating_review
 from app.services.intake_intent_classifier import classify_intake_intent
 from app.services.metric_chart_cards import build_metric_chart
+from app.utils.number_format import format_card_numbers
 
 logger = logging.getLogger(__name__)
 
@@ -1030,6 +1031,10 @@ def build_cards(
                         "style": "secondary",
                     }
                 ]
+            # 展示精度统一(AGENTS.md §14): 面向用户的卡片数字最多 2 位小数(整数保持整数)。
+            # 在 actions 已构建之后才格式化 data —— actions 的写入 payload 保留原始精度,
+            # 只有 data(展示层)被规范。单一 choke point 覆盖所有卡片所有字段。
+            card["data"] = format_card_numbers(card.get("data"))
             out.append(card)
             emitted.append(card_type)
             if len(out) >= MAX_CARDS:

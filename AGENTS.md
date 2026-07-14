@@ -634,6 +634,23 @@ class ExampleModel(Base):
 - 如果全局 openskills 已提供同名 skill,可以用 `npx openskills read <skill-name>`;否则以仓库内 `.claude/skills/<name>/SKILL.md` 为准。
 - 这里说的是**研发 agent skill**。`backend/skills/*` 是产品运行时技能,不得当作编码 agent 的研发流程入口。
 
+## 14. 数据展示规范 — 面向用户的数字精度 🔢
+
+**硬规则**:一切**面向用户展示**的数字(卡片 / 表格 / 图表标签 / 叙事里回读的读数),**最多保留 2 位小数**:
+- 整数就是整数 —— `58`,不写 `58.0`;
+- 小数**四舍五入到 2 位并去掉尾零**,按实际精度决定 —— `6.166666666666667` → `6.17`、`71.4` → `71.4`、`6.10` → `6.1`。
+
+**单一真源**:`backend/app/utils/number_format.py`
+- `format_display_number(value)` —— 单个标量按上面规则规范(bool / 非数字 / NaN / Inf 原样返回,不误伤)。
+- `format_card_numbers(obj)` —— 递归规范 dict / list 里的所有数字,用于卡片 payload 的展示口径统一。
+
+**接入点(新增展示数字时按此接)**:
+- 动态卡片(inline cards):`inline_cards.build_cards` 已在 choke point 对每张卡的 `data` 跑 `format_card_numbers`;新加卡片 builder 无需各自 round,choke point 兜底。
+- GenUI 表格(metric_table):`table_builder._fmt_num` 已用 `format_display_number`;新加数值列走 `_fmt_num`。
+- 其他新展示面(新客户端渲染 / 新图表标签):调 `format_display_number`,别自己拍 `.1f`/`.2f` 或直接 `str(float)`。
+
+**边界(别越界)**:本规范**只作用于展示层**。**写入库 / 记录草稿 / 安全阈值判定 / 存储的原始读数不得**因此被降精度 —— 数据完整性与展示精度是两回事(inline_cards 的 choke point 特意在 actions 写入 payload 构建**之后**才格式化 `data`,正是这个原因)。
+
 <skills_system priority="1">
 
 ## Available Skills

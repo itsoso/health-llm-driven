@@ -37,6 +37,7 @@ import json
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.services.genui.chart_builder import render_reva_ui_block
+from app.utils.number_format import format_display_number
 
 # 客户端在 X-Reva-Client-Caps 声明本 token 才发 metric_table (与图表的 genui-v1 并列)。
 GENUI_TABLE_CAP = "genui-table-v1"
@@ -106,10 +107,11 @@ def _fmt_value(value: Any, unit: Any = None) -> Optional[str]:
 
 
 def _fmt_num(value: Any, unit: Any = None) -> Optional[str]:
-    """数值单元格: 整数值浮点去掉多余 '.0' (350.0→'350', float 与 int 同值, 非换算/判定),
-    其余交给 _fmt_value 逐字。供饮食 kcal/g 等常来自 DB float 的列用, 避免 "350.0" 噪声。"""
-    if isinstance(value, float) and value.is_integer():
-        value = int(value)
+    """数值单元格 (AGENTS.md §14 展示精度): 整数保持整数, 小数最多 2 位去尾零
+    (350.0→'350', 6.166…→'6.17', 71.4→'71.4'), 其余交给 _fmt_value 逐字。
+    供饮食 kcal/g、时长 h 等常来自 DB float 的列用, 避免 "6.166666666666667" 噪声。"""
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        value = format_display_number(value)
     return _fmt_value(value, unit)
 
 
