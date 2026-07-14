@@ -661,7 +661,13 @@ async def test_all_planned_writes_are_checkpointed_before_first_dispatch(
 
 
 @pytest.mark.asyncio
-async def test_health_query_blood_pressure_uses_existing_records_endpoint(db):
+async def test_health_query_blood_pressure_uses_existing_records_endpoint(db, monkeypatch):
+    # D1(garmin-sync 治理 Wave 3)把 blood_pressure 读维度默认迁到进程内直读;本测试守的是
+    # killswitch 关闭时的 HTTP 回退路径仍映射到正确的 records 端点(limit=10)。进程内路径的
+    # 数据等价 + 默认零 HTTP 由 test_agent_executor_reads_in_process.py 覆盖。
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "reads_in_process", False, raising=False)
     executor = AgentExecutor(db)
     captured_urls = []
 
