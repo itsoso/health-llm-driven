@@ -125,6 +125,28 @@
     color: var(--text);
     margin-bottom: 6px;
   }
+  .meta-left {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .message-time {
+    flex: 0 0 auto;
+    font-family: "SF Mono", ui-monospace, Menlo, monospace;
+    font-size: 0.78em;
+    font-weight: 600;
+    color: var(--secondary);
+    opacity: 0;
+    transition: opacity 0.16s ease;
+    white-space: nowrap;
+    pointer-events: none;
+  }
+  .row:hover .message-time { opacity: 0.72; }
+  .row.user .message-time {
+    align-self: center;
+    margin-right: 8px;
+  }
   .copy-btn {
     cursor: pointer;
     border: none;
@@ -1452,6 +1474,10 @@
     var row = document.createElement("div");
     row.className = "row " + (msg.role === "user" ? "user" : "assistant");
     row.setAttribute("data-id", msg.id);
+    if (msg.sentAtFull) {
+      row.setAttribute("title", msg.sentAtFull);
+      row.setAttribute("aria-label", (msg.role === "user" ? "你发送于 " : "小巴回复于 ") + msg.sentAtFull);
+    }
 
     var bubble = document.createElement("div");
     bubble.className = "bubble";
@@ -1459,9 +1485,18 @@
     if (msg.role === "assistant") {
       var meta = document.createElement("div");
       meta.className = "meta";
+      var metaLeft = document.createElement("span");
+      metaLeft.className = "meta-left";
       var label = document.createElement("span");
       label.textContent = "小巴";
-      meta.appendChild(label);
+      metaLeft.appendChild(label);
+      if (msg.sentAtShort) {
+        var assistantTime = document.createElement("span");
+        assistantTime.className = "message-time";
+        assistantTime.textContent = msg.sentAtShort;
+        metaLeft.appendChild(assistantTime);
+      }
+      meta.appendChild(metaLeft);
       if (msg.copy) {
         var btn = document.createElement("button");
         btn.className = "copy-btn";
@@ -1498,6 +1533,12 @@
       bubble.appendChild(footer);
     }
 
+    if (msg.role === "user" && msg.sentAtShort) {
+      var userTime = document.createElement("span");
+      userTime.className = "message-time";
+      userTime.textContent = msg.sentAtShort;
+      row.appendChild(userTime);
+    }
     row.appendChild(bubble);
     return row;
   }

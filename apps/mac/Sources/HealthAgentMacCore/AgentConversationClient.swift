@@ -220,6 +220,7 @@ public final class AgentConversationClient: AgentConversationRemoteSourcing, @un
             id: deterministicID(forMessageID: dto.id),
             role: role,
             content: dto.content ?? "",
+            createdAt: parseDate(dto.created_at),
             model: meta?.model,
             selectedModel: meta?.selectedModel,
             answerModel: meta?.answerModel,

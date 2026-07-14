@@ -10,6 +10,10 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
     public let id: UUID
     public let role: AgentChatRole
     public var content: String
+    /// Creation time for this visible chat message. Backend history carries
+    /// `created_at`; locally sent messages fill Date() so the transcript can show
+    /// WeChat-style message time before the conversation is reloaded.
+    public var createdAt: Date?
     /// Public image URLs attached to this historical message. Mobile/web persist
     /// uploaded chat images in the backend; Mac uses these URLs when replaying
     /// the same conversation from `/agent/conversations/{id}`.
@@ -66,6 +70,7 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
         id: UUID = UUID(),
         role: AgentChatRole,
         content: String,
+        createdAt: Date? = nil,
         model: String? = nil,
         selectedModel: String? = nil,
         answerModel: String? = nil,
@@ -88,6 +93,7 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
         self.id = id
         self.role = role
         self.content = content
+        self.createdAt = createdAt
         self.remoteImageURLs = remoteImageURLs
         self.cardType = cardType
         self.cardRender = cardRender
@@ -110,7 +116,7 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
 
     // 显式 Codable:历史快照(老版本无这些字段)用 decodeIfPresent 容错;数组缺失 → 空。
     private enum CodingKeys: String, CodingKey {
-        case id, role, content, remoteImageURLs, model, selectedModel, answerModel, toolModels, fallbackReasons, elapsedMs, llmRounds, llmUsage, sourcesUsed, toolsUsed, completionStatus, perf, thinkingSteps, cardType, cardRender, cardData, cardActions
+        case id, role, content, createdAt, remoteImageURLs, model, selectedModel, answerModel, toolModels, fallbackReasons, elapsedMs, llmRounds, llmUsage, sourcesUsed, toolsUsed, completionStatus, perf, thinkingSteps, cardType, cardRender, cardData, cardActions
         case cardTypeSnake = "card_type"
         case cardRenderSnake = "card_render"
         case cardDataSnake = "card_data"
@@ -122,6 +128,7 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
         self.id = try c.decode(UUID.self, forKey: .id)
         self.role = try c.decode(AgentChatRole.self, forKey: .role)
         self.content = try c.decode(String.self, forKey: .content)
+        self.createdAt = try c.decodeIfPresent(Date.self, forKey: .createdAt)
         self.remoteImageURLs = try c.decodeIfPresent([String].self, forKey: .remoteImageURLs) ?? []
         self.model = try c.decodeIfPresent(String.self, forKey: .model)
         self.selectedModel = try c.decodeIfPresent(String.self, forKey: .selectedModel)
@@ -152,6 +159,7 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
         try c.encode(id, forKey: .id)
         try c.encode(role, forKey: .role)
         try c.encode(content, forKey: .content)
+        try c.encodeIfPresent(createdAt, forKey: .createdAt)
         try c.encode(remoteImageURLs, forKey: .remoteImageURLs)
         try c.encodeIfPresent(model, forKey: .model)
         try c.encodeIfPresent(selectedModel, forKey: .selectedModel)
@@ -956,8 +964,9 @@ public final class AgentChatViewModel {
         isStreaming = true
         runState = .preparing
         lastPrompt = message
-        messages.append(.init(role: .user, content: message))
-        messages.append(.init(role: .assistant, content: ""))
+        let turnStartedAt = Date()
+        messages.append(.init(role: .user, content: message, createdAt: turnStartedAt))
+        messages.append(.init(role: .assistant, content: "", createdAt: turnStartedAt))
         // Track the streaming assistant message by its stable id, not a captured
         // index: New Chat / loading a conversation / sending again resets `messages`
         // mid-stream, which would make a captured index stale and crash on next token.
@@ -1509,13 +1518,16 @@ public final class AgentChatViewModel {
             } else {
                 footerHTML = ""
             }
+            let timeLabels = ChatTranscriptHTML.messageTimeLabels(for: message.createdAt)
             return ChatTranscriptHTML.RenderedMessage(
                 id: message.id.uuidString,
                 role: message.role == .user ? "user" : "assistant",
                 bodyHTML: bodyHTML,
                 isStreaming: isStreamingThis,
                 showCopy: showCopy,
-                footerHTML: footerHTML
+                footerHTML: footerHTML,
+                sentAtShort: timeLabels?.short ?? "",
+                sentAtFull: timeLabels?.full ?? ""
             )
         }
         let visibleRendered = rendered.filter { message in

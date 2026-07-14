@@ -197,6 +197,12 @@ function ChatBubbleInner({
     ],
   );
 
+  const sentTimeShort = formatMessageTimeLabel(item.createdAt);
+  const sentTimeFull = formatMessageFullTimeLabel(item.createdAt);
+  const timeAccessibilityPrefix = sentTimeFull
+    ? `${isUser ? '你发送于' : '小巴回复于'} ${sentTimeFull}. `
+    : '';
+
   const clearSpeechTimeout = useCallback(() => {
     if (speechTimeoutRef.current) {
       clearTimeout(speechTimeoutRef.current);
@@ -460,6 +466,7 @@ function ChatBubbleInner({
                 {rendered}
                 {latestWriteReceipt ? <WriteReceiptLine receipt={latestWriteReceipt} /> : null}
                 {cardReceiptPersistenceWarning ? <WriteReceiptPersistenceWarning /> : null}
+                <MessageTime label={sentTimeShort} isUser={false} />
               </View>
             </Pressable>
             {showCardActions && cardSharePayload && !selectionMode ? (
@@ -827,7 +834,7 @@ function ChatBubbleInner({
             onPress={handleBubblePress}
             onLongPress={selectionMode ? undefined : openMessageActions}
             accessibilityRole="text"
-            accessibilityLabel={`你: ${item.content}${item.fromSiri ? ' (来自 Siri)' : ''}`}
+            accessibilityLabel={`${timeAccessibilityPrefix}你: ${item.content}${item.fromSiri ? ' (来自 Siri)' : ''}`}
             accessibilityState={selectionMode ? { selected } : undefined}
           >
             {item.fromSiri && (
@@ -837,6 +844,7 @@ function ChatBubbleInner({
             )}
             {renderMessageImages()}
             {displayText ? <Text style={txt.bubbleUser}>{displayText}</Text> : null}
+            <MessageTime label={sentTimeShort} isUser />
             {renderMessageActions()}
           </TouchableOpacity>
         ) : (
@@ -848,7 +856,7 @@ function ChatBubbleInner({
             onPress={hasInlineEditableCard ? undefined : handleBubblePress}
             onLongPress={hasInlineEditableCard ? undefined : openMessageActions}
             accessibilityRole={hasInlineEditableCard ? undefined : 'text'}
-            accessibilityLabel={hasInlineEditableCard ? undefined : `AI: ${assistantTextForActions || (revaUiContent.cards.length > 0 ? '图表卡片' : item.content)}`}
+            accessibilityLabel={hasInlineEditableCard ? undefined : `${timeAccessibilityPrefix}AI: ${assistantTextForActions || (revaUiContent.cards.length > 0 ? '图表卡片' : item.content)}`}
             accessibilityState={selectionMode ? { selected } : undefined}
           >
             {renderMessageImages()}
@@ -898,11 +906,53 @@ function ChatBubbleInner({
                 onShareXiaohongshu={() => { void handleShare('xiaohongshu'); }}
               />
             ) : null}
+            <MessageTime label={sentTimeShort} isUser={false} />
             {renderMessageActions()}
           </TouchableOpacity>
         )}
       </View>
     </>
+  );
+}
+
+function parseMessageDate(value?: string | null): Date | null {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatMessageTimeLabel(value?: string | null): string {
+  const date = parseMessageDate(value);
+  if (!date) return '';
+  return date.toLocaleTimeString('zh-CN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+}
+
+function formatMessageFullTimeLabel(value?: string | null): string {
+  const date = parseMessageDate(value);
+  if (!date) return '';
+  return date.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+}
+
+function MessageTime({ label, isUser }: { label: string; isUser: boolean }) {
+  if (!label) return null;
+  return (
+    <Text
+      testID="message-time"
+      style={[styles.messageTime, isUser ? styles.messageTimeUser : styles.messageTimeAI]}
+    >
+      {label}
+    </Text>
   );
 }
 
@@ -1681,6 +1731,22 @@ const styles = StyleSheet.create({
   } as TextStyle,
   bubble: { maxWidth: '88%', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10 },
   bubbleUser: { backgroundColor: C.green500, borderBottomRightRadius: 4 },
+  messageTime: {
+    marginTop: 6,
+    fontFamily: revaFonts.mono,
+    fontSize: 10.5,
+    lineHeight: 14,
+    fontWeight: '600',
+    letterSpacing: 0,
+  } as TextStyle,
+  messageTimeUser: {
+    alignSelf: 'flex-end',
+    color: 'rgba(255,255,255,0.72)',
+  } as TextStyle,
+  messageTimeAI: {
+    alignSelf: 'flex-start',
+    color: C.ink3,
+  } as TextStyle,
   bubbleSelected: {
     borderWidth: 2,
     borderColor: C.green500,

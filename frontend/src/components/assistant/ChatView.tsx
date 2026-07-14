@@ -47,6 +47,48 @@ function AssistantAvatar({ className = '' }: { className?: string }) {
   );
 }
 
+function parseMessageDate(value?: string | null): Date | null {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatMessageShortTime(value?: string | null): string {
+  const date = parseMessageDate(value);
+  if (!date) return '';
+  return date.toLocaleTimeString('zh-CN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+}
+
+function formatMessageFullTime(value?: string | null): string {
+  const date = parseMessageDate(value);
+  if (!date) return '';
+  return date.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+}
+
+function MessageTimePill({ value }: { value?: string | null }) {
+  const label = formatMessageShortTime(value);
+  if (!label) return null;
+  return (
+    <span
+      data-testid="message-hover-time"
+      className="self-center shrink-0 select-none rounded-full bg-[#F0EDE4]/90 px-2 py-0.5 text-[11px] leading-4 text-[#948F80] opacity-0 shadow-sm ring-1 ring-[#E5E1D5]/70 transition-opacity group-hover:opacity-100"
+    >
+      {label}
+    </span>
+  );
+}
+
 export default function ChatView({
   messages,
   loading,
@@ -181,14 +223,21 @@ const MessageRow = memo(function MessageRow({
   handlePointerDown,
   cancelLongPress,
 }: MessageRowProps) {
+  const sentAtFull = formatMessageFullTime(msg.created_at);
+  const accessibilityPrefix = msg.role === 'user' ? '你发送于' : '小巴回复于';
   // 动态卡片消息 - 独立分支, 气泡外直接贴卡片
   if (msg.card_type && msg.card_data) {
     const cardEl = renderCard({ type: msg.card_type, data: msg.card_data });
     if (cardEl) {
       return (
-        <div className="flex gap-3.5 justify-start">
+        <div
+          className="group flex gap-3.5 justify-start"
+          title={sentAtFull || undefined}
+          aria-label={sentAtFull ? `${accessibilityPrefix} ${sentAtFull}` : undefined}
+        >
           <AssistantAvatar className="mt-1" />
           <div className="min-w-0 flex-1">{cardEl}</div>
+          <MessageTimePill value={msg.created_at} />
         </div>
       );
     }
@@ -196,6 +245,8 @@ const MessageRow = memo(function MessageRow({
   return (
     <div
       className={`group flex gap-3.5 ${msg.role === 'user' ? 'justify-end' : 'justify-start'} ${shareSelectionMode && selectedForShare ? 'rounded-2xl bg-[#F3E4DC]/60 ring-1 ring-[#C96442]/25' : ''}`}
+      title={sentAtFull || undefined}
+      aria-label={sentAtFull ? `${accessibilityPrefix} ${sentAtFull}` : undefined}
       onContextMenu={
         canSelectForShare && !shareSelectionMode && onEnterSelectionWith
           ? e => {
@@ -228,11 +279,7 @@ const MessageRow = memo(function MessageRow({
         </button>
       )}
       {msg.role === 'assistant' && <AssistantAvatar className="mt-0.5" />}
-      {msg.role === 'user' && msg.created_at && (
-        <span className="self-center select-none text-[11px] text-[#B4AF9F] opacity-0 transition-opacity group-hover:opacity-100 shrink-0">
-          {new Date(msg.created_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}
-        </span>
-      )}
+      {msg.role === 'user' && <MessageTimePill value={msg.created_at} />}
       <div className={`${msg.role === 'user' ? 'max-w-[min(80%,34rem)] rounded-[1.25rem] px-4 py-2.5' : 'min-w-0 flex-1'} ${msg.role === 'user' ? STYLE.userBubbleClass : STYLE.assistantTextClass}`}>
         {msg.role === 'assistant' ? (
           <div>
@@ -255,11 +302,7 @@ const MessageRow = memo(function MessageRow({
           </div>
         )}
       </div>
-      {msg.role === 'assistant' && msg.created_at && (
-        <span className="mb-1 ml-1 self-end select-none text-[11px] text-[#B4AF9F] opacity-0 transition-opacity group-hover:opacity-100 shrink-0">
-          {new Date(msg.created_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}
-        </span>
-      )}
+      {msg.role === 'assistant' && <MessageTimePill value={msg.created_at} />}
       {msg.role === 'assistant' && msg.content && done && (
         <div className="ml-1 mt-1 flex items-center gap-0.5 self-end opacity-0 transition-opacity group-hover:opacity-100">
           <button onClick={() => navigator.clipboard?.writeText(msg.content)} className="rounded-lg p-1.5 text-[#948F80] transition-all hover:bg-[#F0EDE4] hover:text-[#29261F]" title="复制">

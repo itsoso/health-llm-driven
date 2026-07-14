@@ -126,6 +126,23 @@ final class ChatTranscriptHTMLTests: XCTestCase {
         XCTAssertTrue(json.contains("\\n"))
     }
 
+    func testRenderedMessageJSONIncludesMessageTimeFields() {
+        let msg = ChatTranscriptHTML.RenderedMessage(
+            id: "id-1",
+            role: "assistant",
+            bodyHTML: "<p>hi</p>",
+            isStreaming: false,
+            showCopy: true,
+            sentAtShort: "12:31",
+            sentAtFull: "2026年7月14日 12:31"
+        )
+
+        let json = msg.jsonObject
+
+        XCTAssertTrue(json.contains("\"sentAtShort\":\"12:31\""))
+        XCTAssertTrue(json.contains("\"sentAtFull\":\"2026年7月14日 12:31\""))
+    }
+
     // MARK: - meta footer (模型 · 轮数 · 耗时 / 数据源 / Skill)
 
     func testMetaFooterRendersModelRoundsElapsed() {

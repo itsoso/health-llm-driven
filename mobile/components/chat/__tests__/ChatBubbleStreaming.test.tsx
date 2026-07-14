@@ -118,6 +118,42 @@ describe('ChatBubble streaming degraded render', () => {
     expect(mockMarkdownMount).toHaveBeenLastCalledWith(CONTENT);
   });
 
+  it('shows a subtle message time for user and assistant bubbles', () => {
+    const { getByLabelText, getByTestId, rerender } = render(
+      <QueryClientProvider client={new QueryClient()}>
+        <ChatBubble
+          item={{
+            id: 'user-time',
+            role: 'user',
+            content: '飞机准备起飞 记录下来',
+            streaming: false,
+            createdAt: '2026-07-14T12:30:00',
+          }}
+        />
+      </QueryClientProvider>,
+    );
+
+    expect(getByTestId('message-time').props.children).toBe('12:30');
+    expect(getByLabelText(/你发送于/)).toBeTruthy();
+
+    rerender(
+      <QueryClientProvider client={new QueryClient()}>
+        <ChatBubble
+          item={{
+            id: 'assistant-time',
+            role: 'assistant',
+            content: '已记录。',
+            streaming: false,
+            createdAt: '2026-07-14T12:31:00',
+          }}
+        />
+      </QueryClientProvider>,
+    );
+
+    expect(getByTestId('message-time').props.children).toBe('12:31');
+    expect(getByLabelText(/小巴回复于/)).toBeTruthy();
+  });
+
   it('does not enable native text selection inside bubbles, so long press stays on the custom message menu', () => {
     const { getByText, rerender } = render(
       <QueryClientProvider client={new QueryClient()}>

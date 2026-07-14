@@ -30,6 +30,21 @@ public enum ChatTranscriptHTML {
         return out
     }
 
+    public static func messageTimeLabels(for date: Date?) -> (short: String, full: String)? {
+        guard let date else { return nil }
+        let short = DateFormatter()
+        short.locale = Locale(identifier: "zh_CN")
+        short.timeZone = .current
+        short.dateFormat = "HH:mm"
+
+        let full = DateFormatter()
+        full.locale = Locale(identifier: "zh_CN")
+        full.timeZone = .current
+        full.dateFormat = "yyyy年M月d日 HH:mm"
+
+        return (short.string(from: date), full.string(from: date))
+    }
+
     // MARK: - Inline markdown (转义之后才做,受控白名单)
 
     /// 对**已转义**的文本做受控的 inline markdown → HTML。
@@ -1297,6 +1312,9 @@ public enum ChatTranscriptHTML {
         public let showCopy: Bool
         /// meta footer 片段(模型/数据源/Skill);流式中或无 meta 时为空 → JS 不渲染 footer。
         public let footerHTML: String
+        /// Short hover label (HH:mm) and full tooltip/accessibility label.
+        public let sentAtShort: String
+        public let sentAtFull: String
 
         public init(
             id: String,
@@ -1304,7 +1322,9 @@ public enum ChatTranscriptHTML {
             bodyHTML: String,
             isStreaming: Bool,
             showCopy: Bool,
-            footerHTML: String = ""
+            footerHTML: String = "",
+            sentAtShort: String = "",
+            sentAtFull: String = ""
         ) {
             self.id = id
             self.role = role
@@ -1312,11 +1332,13 @@ public enum ChatTranscriptHTML {
             self.isStreaming = isStreaming
             self.showCopy = showCopy
             self.footerHTML = footerHTML
+            self.sentAtShort = sentAtShort
+            self.sentAtFull = sentAtFull
         }
 
         /// 序列化为 JS 对象字面量字符串(不依赖 Foundation JSONEncoder 的键序,字段固定)。
         public var jsonObject: String {
-            "{\"id\":\(Self.jsString(id)),\"role\":\(Self.jsString(role)),\"html\":\(Self.jsString(bodyHTML)),\"streaming\":\(isStreaming ? "true" : "false"),\"copy\":\(showCopy ? "true" : "false"),\"footer\":\(Self.jsString(footerHTML))}"
+            "{\"id\":\(Self.jsString(id)),\"role\":\(Self.jsString(role)),\"html\":\(Self.jsString(bodyHTML)),\"streaming\":\(isStreaming ? "true" : "false"),\"copy\":\(showCopy ? "true" : "false"),\"footer\":\(Self.jsString(footerHTML)),\"sentAtShort\":\(Self.jsString(sentAtShort)),\"sentAtFull\":\(Self.jsString(sentAtFull))}"
         }
 
         /// JSON 字符串字面量编码(含引号)。用于安全注入 evaluateJavaScript 的字符串实参。
