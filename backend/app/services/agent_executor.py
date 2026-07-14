@@ -709,6 +709,14 @@ _XML_TOOLCALL_PREFIX_RE = re.compile(
     re.I,
 )
 
+# `call {`/`<call:`/`{name:`/`{"name":` 行首前导(qwen 系经代理把工具调用写成文本的新畸形,
+# founder 2026-07-14「列出饮食记录」→ `call {name: health_query, arguments:…}` 嵌套)。流式期
+# 一出现行首前导就抑制 live 下发, 避免逐 token 泄漏(最终由 _strip_botched_text_tool_leak 定稿剥净)。
+_TEXTCALL_LEAK_PREFIX_RE = re.compile(
+    r"^\s*[<＜]?\s*(?:call\s*[{:]|<\s*call\b|\{\s*\"?name\"?\s*:)",
+    re.I,
+)
+
 # Markdown 清单式工具调用:`Tool calls:\n- health_query`(无括号、无参数)。实测
 # Claude-Opus-4.7 经 langbridge 代理时**偶发**(多数仍结构化)把工具调用降级成这种文本 —
 # 既没结构化 tool_calls(没真执行=零数据)又把 "Tool calls:" 标记泄漏给用户。
@@ -1083,6 +1091,59 @@ def _strip_scope_refusal_preamble(text: str) -> str:
         return text
     stripped = _SCOPE_REFUSAL_PREAMBLE_RE.sub("", text, count=1)
     return stripped if stripped.strip() else text
+
+
+_TEXTCALL_LEAK_STRIP_ENABLED = True
+
+# 通用"工具调用写成文本"泄漏标记(分隔符无关): call{ / <call: / <tool>/<function_call> /
+# {name: / {"name": / arguments: / dimension: / [工具调用:。既有 <tool> 族 strip/recover 只认
+# <tool>{...},不认 founder 2026-07-14「列出饮食记录」的 `call {name: health_query, arguments:
+# {dimension:…}}` 嵌套畸形。qwen 系经代理这类畸形层出不穷 → 用"标记+注册工具名"的通用检测,
+# 覆盖未来新格式,而非逐格式点补。
+_TOOL_CALL_SYNTAX_RE = re.compile(
+    r"(<?\s*call\s*[:{]|<\s*(?:tool|function|invoke)(?:_call)?\b|\{\s*\"?name\"?\s*:"
+    r"|\barguments\s*[:=]|\bdimension\s*[:=]|工具调用)"
+)
+_REGISTERED_TOOL_NAMES_CACHE: Optional[frozenset] = None
+
+
+def _registered_tool_names() -> frozenset:
+    global _REGISTERED_TOOL_NAMES_CACHE
+    if _REGISTERED_TOOL_NAMES_CACHE is None:
+        try:
+            from app.services.tool_schema_registry import get_health_tools
+            _REGISTERED_TOOL_NAMES_CACHE = frozenset(
+                (t.get("function") or {}).get("name")
+                for t in get_health_tools()
+                if (t.get("function") or {}).get("name")
+            )
+        except Exception:  # noqa: BLE001
+            _REGISTERED_TOOL_NAMES_CACHE = frozenset({
+                "health_query", "health_query_batch", "health_manage", "health_record",
+                "query_lab_indicators", "knowledge_search", "health_analysis",
+            })
+    return _REGISTERED_TOOL_NAMES_CACHE
+
+
+def _strip_botched_text_tool_leak(text: str) -> str:
+    """剥掉弱模型把工具调用写成**文本**的畸形前导泄漏(任意分隔符)。
+
+    仅剥**前导块**(到首个空行/```围栏/结尾),且该块必须**同时**含 调用语法标记 + 注册工具名
+    → 不误伤讨论工具名的散文(散文一般无 call{/arguments: 语法)。剥后为空 → 返回原文(不吞整条)。
+    已执行的工具结果(reva-ui 卡/表)在泄漏块之后,原样保留 —— 泄漏只是模型多吐的文本。
+    """
+    if not _TEXTCALL_LEAK_STRIP_ENABLED or not text:
+        return text
+    m = re.match(r"\s*([\s\S]*?)(?=\n\s*\n|```|\Z)", text)
+    if not m:
+        return text
+    head = m.group(1)
+    if not head.strip() or not _TOOL_CALL_SYNTAX_RE.search(head):
+        return text
+    if not any(n in head for n in _registered_tool_names()):
+        return text
+    rest = text[m.end():].lstrip()
+    return rest if rest.strip() else text
 
 
 def _placeholder_reva_ui_in_history(text: str) -> str:
@@ -4273,6 +4334,7 @@ class AgentExecutor:
 
         # 确定性护栏 (R4): 多模型综合是 LLM 生成文本 → 剥掉任何伪造的 reva-ui block。
         full_reply = _strip_reva_ui_from_llm_text(full_reply)
+        full_reply = _strip_botched_text_tool_leak(full_reply)
         full_reply = _strip_scope_refusal_preamble(full_reply)
         ai_msg = svc.save_message(
             conv.id,
@@ -5173,6 +5235,8 @@ class AgentExecutor:
                                 # XML `<invoke ...` / `<minimax:tool_call>` 逐 token 形成中,
                                 # `</invoke>` 闭标签还没到 → 精确解析 match 不到。见到前缀即抑制。
                                 or _XML_TOOLCALL_PREFIX_RE.search(streamed_text)
+                                # call{ / <call: / {name: 行首前导(qwen 畸形文本工具调用泄漏)
+                                or _TEXTCALL_LEAK_PREFIX_RE.search(streamed_text)
                             )
                         ):
                             # 检测到内联工具调用(JSON 或括号标记) → 进入抑制模式,本轮不再 live 下发。
@@ -6120,6 +6184,7 @@ class AgentExecutor:
         # 确定性护栏 (R4, 防御纵深): full_reply 是 LLM 生成文本 —— 剥掉任何伪造的
         # reva-ui 图表 block (数值只能来自确定性 genui 短路; 短路走独立路径不经此处)。
         full_reply = _strip_reva_ui_from_llm_text(full_reply)
+        full_reply = _strip_botched_text_tool_leak(full_reply)
         full_reply = _strip_scope_refusal_preamble(full_reply)
         record_intent_no_tool = bool(
             self._prefer_fast_record_model and tool_executed_count == 0
