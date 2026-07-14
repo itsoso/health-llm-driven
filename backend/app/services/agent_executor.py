@@ -1993,6 +1993,36 @@ def _write_operation_fingerprint(
     return hashlib.sha256(fingerprint_payload.encode()).hexdigest()
 
 
+# 只读工具回合级去重(founder 2026-07-14「列出喝水记录」→ health_query 空转 7 次 70s 根因)。
+# 镜像写工具的 fingerprint replay,但只对**只读**工具(写工具重复要走确认链,绝不盲去重)。
+_READ_DEDUP_ENABLED = True
+
+
+def _read_operation_fingerprint(tool_name: str, parsed_args: Dict[str, Any]) -> str:
+    """只读工具去重指纹。health_query/batch 先归一(维度别名 / time_range→days),避免
+    "同义不同字面"漏判;归一失败退回原参(fail-open,宁多跑一次别漏数据)。"""
+    if tool_name in ("health_query", "health_query_batch"):
+        try:
+            parsed_args = _normalize_health_query_args(parsed_args)
+        except Exception:  # noqa: BLE001
+            pass
+    return _write_operation_fingerprint(tool_name, parsed_args)
+
+
+def _is_seen_readonly_call(tc: Dict[str, Any], seen_read_fps: Dict[str, Any]) -> bool:
+    """本轮 tool_call 是否是"本回合已跑过"的只读调用(收敛护栏用: 全是则强制进合成停 loop)。"""
+    fn = tc.get("function") or {}
+    name = fn.get("name")
+    if name not in _READ_ONLY_TURN_ALLOWED_TOOLS or name in _WRITE_RECEIPT_TOOL_NAMES:
+        return False
+    raw = fn.get("arguments")
+    try:
+        args = json.loads(raw) if isinstance(raw, str) else dict(raw or {})
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return False
+    return _read_operation_fingerprint(name, args) in seen_read_fps
+
+
 def _receipt_resource_identity(payload: Dict[str, Any]) -> tuple[Optional[str], Optional[str]]:
     id_keys = ("id", "record_id", "event_id", "log_id", "cycle_id", "exam_id")
 
@@ -4980,6 +5010,8 @@ class AgentExecutor:
         tools_used: List[str] = []
         write_receipts: List[Dict[str, Any]] = []
         write_results_by_fingerprint: Dict[str, tuple[str, str]] = {}
+        # 只读工具回合级去重(同名+同参已跑过 → 复用结果, 不重复真执行)。回合级 local, 自然重置。
+        read_results_by_fingerprint: Dict[str, tuple[str, str]] = {}
         unverified_write_tools: List[str] = []
         # Slice 3 配方候选: 本轮**成功完成**的 health_record 写步骤 (sanitize 掉
         # 一次性确认标志 + 日期模板化)。≥2 步时 done 附 save_recipe 描述符
@@ -5363,6 +5395,18 @@ class AgentExecutor:
                             )
                     self._persist_turn_expected_writes(user_msg, planned_writes)
 
+                    # 只读收敛护栏: 若本轮 tool_calls **全是**"本回合已跑过"的只读调用(模型空转
+                    # 重发同参 health_query 等)→ 本轮复用结果后强制进合成轮, 停住 loop(否则会
+                    # 一直空转到 MAX_TOOL_ROUNDS)。用**执行前**的 read_results_by_fingerprint 判定。
+                    planned_reads_all_seen = (
+                        _READ_DEDUP_ENABLED
+                        and bool(tool_calls)
+                        and all(
+                            _is_seen_readonly_call(tc, read_results_by_fingerprint)
+                            for tc in tool_calls
+                        )
+                    )
+
                     # 思考过程: 真流式下已逐 delta 下发过, 这里只补 full_reply,
                     # 不重复 yield token (避免客户端看到双份)。inline-recovery 路径
                     # 会把 content 置空 → text_content 为空也不发。
@@ -5415,6 +5459,20 @@ class AgentExecutor:
                             write_fingerprint
                             and write_fingerprint in write_results_by_fingerprint
                         )
+                        # 只读去重: 只对只读工具(与写集天然不相交, belt-and-suspenders 再排一次写集)。
+                        read_attempted = (
+                            _READ_DEDUP_ENABLED
+                            and func_name in _READ_ONLY_TURN_ALLOWED_TOOLS
+                            and func_name not in _WRITE_RECEIPT_TOOL_NAMES
+                        )
+                        read_fingerprint = (
+                            _read_operation_fingerprint(func_name, parsed_tool_args)
+                            if read_attempted else None
+                        )
+                        replayed_read = bool(
+                            read_fingerprint
+                            and read_fingerprint in read_results_by_fingerprint
+                        )
                         tool_id = tc["id"]
 
                         # 通知前端正在执行工具
@@ -5465,6 +5523,11 @@ class AgentExecutor:
                             result, result_for_record_card = (
                                 write_results_by_fingerprint[write_fingerprint]
                             )
+                        elif replayed_read:
+                            # 同名+同参只读调用本回合已跑过 → 复用结果, 不重复真执行(省空转)。
+                            result, result_for_record_card = (
+                                read_results_by_fingerprint[read_fingerprint]
+                            )
                         else:
                             # Wave 2: 心跳 + per-tool 超时(慢工具不再冻结转圈/被 nginx 掐断)。
                             result = None
@@ -5497,7 +5560,7 @@ class AgentExecutor:
                             except Exception:  # noqa: BLE001
                                 pass
                         safety_cards: list[dict] = []
-                        if not replayed_write:
+                        if not replayed_write and not replayed_read:
                             tool_executed_count += 1
                             # 旁路给 _maybe_fast_route_tool_round: 一旦跑过工具, 后续 (合成) 轮
                             # 即便仍带 tools 也不再降 fast (留在强模型产出医疗正文)。
@@ -5550,6 +5613,14 @@ class AgentExecutor:
                                 result,
                                 result_for_record_card,
                             )
+                            # 回合内写后失效读缓存: 写→同参"列出"应含该写, 不复用写前陈旧读
+                            # (安全评审 fast-follow; 自然顺序是先写后读=新鲜, 此处兜住 read→write→read)。
+                            read_results_by_fingerprint.clear()
+                        if read_fingerprint and not replayed_read:
+                            read_results_by_fingerprint[read_fingerprint] = (
+                                result,
+                                result_for_record_card,
+                            )
 
                         # 追加 tool_result 到 messages
                         messages.append({
@@ -5561,7 +5632,7 @@ class AgentExecutor:
                         # GenUI metric_table (rank1): 记下只读数据查询工具的
                         # (name, args, result), 合成后确定性建表 (零 LLM)。仅在客户端
                         # 声明 genui-table-v1 时追踪 (无 cap → 零开销)。
-                        if genui_table_on and func_name in _GENUI_TABLE_TOOLS:
+                        if genui_table_on and func_name in _GENUI_TABLE_TOOLS and not replayed_read:
                             genui_tool_calls.append((func_name, parsed_tool_args, result))
 
                         # tool_result 事件给前端用. health_record 时附 args 让前端能识别
@@ -5787,6 +5858,11 @@ class AgentExecutor:
                             # 不留工具轮的 'tool_calls' 陈值 (镜像 rank7 passthrough 收尾)。
                             final_finish_reason = "stop"
                             break
+
+                    # 只读收敛护栏: 本轮全是"已跑过"的只读调用(纯空转重发)→ 强制下轮进合成轮,
+                    # 停住 loop(_force_no_tools_synthesis 在轮首最先判, 压过 keep_tools_after_synthesis_miss)。
+                    if planned_reads_all_seen:
+                        self._force_no_tools_synthesis = True
 
                     # 继续循环让模型处理 tool_result
                     continue
@@ -6562,6 +6638,7 @@ class AgentExecutor:
             "## 行为准则",
             "- 数据驱动：引用具体数据，不要泛泛而谈",
             "- 主动分析：不仅回答问题，还要发现潜在问题",
+            "- 取数请求（列出/查询/显示/看一下…记录）：直接调 health_query 如实列出结果（含逐条时间/数值），你的职责本就涵盖记录、查询与分析——绝不要用「我只负责记录与查询」「无法提供分析/建议」这类自我设限开场白（医疗边界只按下方 R4，不用自我声明）。",
             "- 中文回复：简洁实用，给出可执行的建议",
             "- 严重异常（HRV持续偏低、SpO2<92%、血压异常）→ 建议就医",
             "- 涉及药物的建议：附加'请咨询医生'免责声明",

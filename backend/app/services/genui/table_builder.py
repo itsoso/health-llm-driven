@@ -373,18 +373,50 @@ def _table_from_blood_pressure(payload: Any) -> Optional[dict]:
 
 
 def _table_from_water(payload: Any) -> Optional[dict]:
-    """health_query(water): {record_date, total_amount, target_amount, records:[...]}。"""
+    """health_query(water): {record_date, total_amount, target_amount, records:[...]}。
+
+    records 非空 → 逐条 [时间·水量] 明细(汇总的超集, footnote 保留总量/目标);否则回退
+    2 行汇总卡。R4: 每格来自 records[].drink_time/amount 具名字段, 空值落诚实占位, 绝不编造。
+    """
     if not isinstance(payload, dict):
         return None
     total = payload.get("total_amount")
     if total is None:
         return None
+
+    records = payload.get("records")
+    if isinstance(records, list) and records:
+        detail_rows: List[Dict[str, str]] = []
+        for r in records:
+            if not isinstance(r, dict):
+                continue
+            amount_cell = _fmt_num(r.get("amount"), "ml")  # 水量=锚点字段
+            if amount_cell is None:
+                continue  # 无水量 → 跳过该条, 不落占位
+            t = str(r.get("drink_time") or "").strip()  # "HH:MM:SS" → "HH:MM"
+            time_cell = t[:5] if len(t) >= 5 else (t or "—")  # None/空 → 诚实占位
+            detail_rows.append({"time": time_cell, "amount": amount_cell})
+        if detail_rows:
+            note = f"今日 {_fmt_num(total)}"
+            target = payload.get("target_amount")
+            if target is not None:
+                note += f"/{_fmt_num(target)}"
+            note += " ml"
+            if len(detail_rows) > _MAX_ROWS:
+                note += f" · 仅显示前 {_MAX_ROWS} 条"
+            return _make_block(
+                "今日饮水明细",
+                [("time", "时间"), ("amount", "水量")],
+                detail_rows,
+                footnote=f"{note} · {_FOOTNOTE}",
+            )
+
+    # 回退: 2 行汇总卡(旧行为逐字节保留)
     rows: List[Dict[str, str]] = [{"item": "今日饮水", "value": _fmt_value(total, "ml") or ""}]
     target = payload.get("target_amount")
     if target is not None:
         rows.append({"item": "目标", "value": _fmt_value(target, "ml") or ""})
-    columns = [("item", "项目"), ("value", "数值")]
-    return _make_block("饮水概览", columns, rows)
+    return _make_block("饮水概览", [("item", "项目"), ("value", "数值")], rows)
 
 
 def _table_from_sleep(payload: Any) -> Optional[dict]:
