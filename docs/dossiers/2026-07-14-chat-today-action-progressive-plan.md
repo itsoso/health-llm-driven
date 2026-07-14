@@ -4,7 +4,7 @@
 |---|---|
 | slug | `chat-today-action-progressive-plan` |
 | 创建日期 | 2026-07-14 |
-| 当前阶段 | S6 部署 |
+| 当前阶段 | S7 上线验证 |
 | 状态 | shipping |
 | 负责 | Codex |
 | 反馈环 | Backend deploy -> Mobile production OTA -> iOS Simulator / 真机 |
@@ -67,7 +67,7 @@
   - [x] T2 接回今日行动确认页并原子创建 accepted ActionCard。
   - [x] T3 将运行时卡收敛为今天优先、验证摘要、未来折叠。
   - [x] T4 让完成/调整动作在首屏可达并补失败回归。
-  - [ ] T5 后端部署、types 生成、Mobile OTA 和真实路径验证。
+  - [x] T5 后端部署、types 生成与 Mobile OTA；真机路径验证留在 G6 人在环确认。
 - 并发检查:当前工作树已有他人对 conversation opener 的修改；本切片不触碰、不暂存、不回退这些文件。
 
 ## S5 · 实现
@@ -106,19 +106,25 @@
 ## S6 · 部署
 
 - 路由:Backend deploy -> generate-types -> Mobile production OTA。
-- 待回写。
+- 主干提交:`32cfe6b3f fix(mobile): prioritize executable today actions`。
+- Backend:`deploy.sh -b` 完成；managed migrations `20260714_170000` 与 `20260714_171000` 已应用。
+- Mobile Production OTA:runtime `1.3.1`，update group `910f2356-6f53-431e-9d4c-6ff7650323ad`，iOS update `019f601c-c414-7409-a13d-64fd97b0daec`。
 
 ## G5 · 部署健康闸
 
-- 待回写。
+- 生产运行提交:`32cfe6b3f`。
+- `deploy.sh` 健康度:`60/60 PASS`；数据库、Redis、Celery 均 connected；本地与线上 skills manifest 均为 22。
+- `/api/v1/action-cards` 未鉴权 GET 返回 `405` 而非 `404`，路由已加载；生产 `/health` 返回 healthy。
+- **裁决:PASS。** 无自动回滚，Backend 与 OTA 均已发布。
 
 ## S7 · 上线验证
 
-- 待回写。
+- 已完成生产服务和发布工件验证；设备需冷启动或后台 30 秒以上拉取 OTA。
+- 待真机点击“加入今日计划”确认:直接出现可编辑确认页、默认明天复盘、不生成完整七天卡；仅明确询问七天/本周时显示折叠周期。
 
 ## G6 · 验证闸(人在环)
 
-- 待用户真机确认。
+- **待用户真机确认。** 当前不提前宣称完整闭环完成。
 
 ## S8 · 沉淀
 
