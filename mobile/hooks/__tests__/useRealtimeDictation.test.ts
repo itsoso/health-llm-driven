@@ -175,6 +175,29 @@ describe('useRealtimeDictation', () => {
     });
   });
 
+  it('emits content-free ASR quality metadata when realtime dictation stops', async () => {
+    const { result } = renderHook(() => useRealtimeDictation({ onTranscript: jest.fn() }));
+
+    await act(async () => {
+      await result.current.startDictation();
+    });
+    act(() => {
+      mockedVoice.onSpeechResults({ value: ['记录今天喝水 500 毫升'] });
+    });
+    await act(async () => {
+      await result.current.stopDictation();
+    });
+
+    expect(mockEmitClientEvent).toHaveBeenCalledWith('voice_asr_terminal', {
+      phase: 'completed',
+      duration_bucket: '1_3s',
+      action_type: 'dictation',
+      provider: 'native_realtime',
+      confidence: 'medium',
+      empty: false,
+    });
+  });
+
   it('keeps the final native transcript delivered while stop is completing', async () => {
     const onTranscript = jest.fn();
     let resolveStop!: () => void;

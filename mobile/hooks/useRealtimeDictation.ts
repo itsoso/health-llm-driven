@@ -5,6 +5,7 @@ import Voice, {
 } from '@react-native-voice/voice';
 import { setAudioModeAsync } from 'expo-audio';
 import { durationBucket, emitClientEvent } from '../services/clientEvents';
+import { estimateVoiceDraftConfidence } from '../services/voiceDraft';
 
 interface UseRealtimeDictationOptions {
   onTranscript: (text: string) => void;
@@ -31,6 +32,7 @@ export function useRealtimeDictation({
   const latestTextRef = useRef('');
   const sessionStartedAtRef = useRef(0);
   const terminalSentRef = useRef(false);
+  const asrTerminalSentRef = useRef(false);
   const startGenerationRef = useRef(0);
   const startingRef = useRef(false);
   const onTranscriptRef = useRef(onTranscript);
@@ -47,6 +49,25 @@ export function useRealtimeDictation({
       phase,
       duration_bucket: durationBucket(sessionStartedAtRef.current),
       action_type: 'dictation',
+      ...(errorCode ? { error_code: errorCode } : {}),
+    });
+  }, []);
+
+  const emitAsrTerminal = useCallback((
+    phase: 'completed' | 'failed',
+    text: string,
+    errorCode?: string,
+  ) => {
+    if (!sessionStartedAtRef.current || asrTerminalSentRef.current) return;
+    asrTerminalSentRef.current = true;
+    const clean = text.trim();
+    void emitClientEvent('voice_asr_terminal', {
+      phase,
+      duration_bucket: durationBucket(sessionStartedAtRef.current),
+      action_type: 'dictation',
+      provider: 'native_realtime',
+      ...(clean ? { confidence: estimateVoiceDraftConfidence(clean) } : {}),
+      empty: clean.length === 0,
       ...(errorCode ? { error_code: errorCode } : {}),
     });
   }, []);
@@ -125,6 +146,11 @@ export function useRealtimeDictation({
       void waitForFinalResult().finally(async () => {
         if (manualStopRef.current) return;
         acceptingFinalResultsRef.current = false;
+        emitAsrTerminal(
+          latestTextRef.current.trim() ? 'completed' : 'failed',
+          latestTextRef.current,
+          latestTextRef.current.trim() ? undefined : 'empty_transcript',
+        );
         emitTerminal('completed');
         await releaseRecordingMode();
         onEndRef.current?.();
@@ -138,6 +164,7 @@ export function useRealtimeDictation({
       finalResultFinishRef.current?.();
       setError(message);
       setIsDictating(false);
+      emitAsrTerminal('failed', latestTextRef.current, 'speech_recognition_failed');
       emitTerminal('failed', 'speech_recognition_failed');
       void releaseRecordingMode().finally(() => onErrorRef.current?.(message));
     };
@@ -168,6 +195,7 @@ export function useRealtimeDictation({
     startingRef.current = true;
     sessionStartedAtRef.current = Date.now();
     terminalSentRef.current = false;
+    asrTerminalSentRef.current = false;
     latestTextRef.current = '';
     acceptingFinalResultsRef.current = false;
     manualStopRef.current = false;
@@ -181,6 +209,7 @@ export function useRealtimeDictation({
       if (!available) {
         const message = '当前设备不可用语音识别';
         setError(message);
+        emitAsrTerminal('failed', '', 'speech_recognition_unavailable');
         emitTerminal('failed', 'speech_recognition_unavailable');
         onErrorRef.current?.(message);
         return false;
@@ -215,6 +244,7 @@ export function useRealtimeDictation({
       const message = e?.message || String(e);
       setError(message);
       await releaseRecordingMode();
+      emitAsrTerminal('failed', '', 'speech_recognition_start_failed');
       emitTerminal('failed', 'speech_recognition_start_failed');
       onErrorRef.current?.(message);
       return false;
@@ -256,6 +286,11 @@ export function useRealtimeDictation({
       if (wasStarting) {
         emitTerminal('cancelled', 'start_cancelled');
       } else if (wasActive || wasAwaitingFinal) {
+        emitAsrTerminal(
+          stopFailed || !latestTextRef.current.trim() ? 'failed' : 'completed',
+          latestTextRef.current,
+          stopFailed ? 'speech_recognition_stop_failed' : (!latestTextRef.current.trim() ? 'empty_transcript' : undefined),
+        );
         emitTerminal(
           stopFailed ? 'failed' : 'completed',
           stopFailed ? 'speech_recognition_stop_failed' : undefined,

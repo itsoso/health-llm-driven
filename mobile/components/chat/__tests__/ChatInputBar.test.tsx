@@ -672,6 +672,38 @@ describe('ChatInputBar', () => {
     });
   });
 
+  it('keeps realtime microphone text editable when voice submit is rejected', async () => {
+    const onSend = jest.fn().mockResolvedValue(false);
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(jest.fn());
+    const { getByLabelText } = render(
+      <ChatInputBar onSend={onSend} isStreaming={false} />,
+    );
+
+    await act(async () => {
+      fireEvent.press(getByLabelText('实时语音转文字'));
+      await Promise.resolve();
+    });
+    act(() => {
+      latestRealtimeDictationOptions.onTranscript('记录今天喝水 500 毫升');
+    });
+    await act(async () => {
+      fireEvent.press(getByLabelText('发送消息'));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(onSend).toHaveBeenCalledWith(
+        '记录今天喝水 500ml',
+        null,
+        expect.objectContaining({ channel: 'voice' }),
+      );
+      expect(getByLabelText('消息输入框').props.value).toBe('记录今天喝水 500ml');
+      expect(getByLabelText('发送消息')).toBeTruthy();
+    });
+    expect(alertSpy).toHaveBeenCalledWith('发送失败', '语音已转成文字并保留在输入框里，请修改后重试。');
+  });
+
   it('cancels active dictation when the app moves to the background', async () => {
     mockRealtimeDictationState = { isDictating: true, error: null };
     const { getByLabelText, rerender } = render(

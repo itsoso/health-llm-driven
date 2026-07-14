@@ -258,6 +258,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
     let msg = (text || input).trim();
     if (!msg && pendingImages.length === 0) return;
     const phase = composerRef.current.phase;
+    let effectiveChannelForSend: 'typed' | 'voice' | 'siri' = sendOptions?.channel ?? inputChannelRef.current;
     dispatchComposer({ type: 'submit' });
     try {
       let voiceDraftForSend: VoiceDraft | null = null;
@@ -277,6 +278,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
         : pendingImages;
       const modeOptions = buildAgentModeOptions(agentMode);
       const effectiveChannel = sendOptions?.channel ?? inputChannelRef.current;
+      effectiveChannelForSend = effectiveChannel;
       if (effectiveChannel === 'voice') {
         if (!voiceDraftForSend && voiceDraftRef.current?.normalizedText === msg) {
           voiceDraftForSend = voiceDraftRef.current;
@@ -308,7 +310,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
       );
       const accepted = await Promise.resolve(sendResult);
       if (accepted === false) {
-        if (sendOptions?.channel === 'voice' && text && msg) {
+        if (effectiveChannelForSend === 'voice' && msg) {
           restoreVoiceTranscriptDraft(msg);
           Alert.alert('发送失败', '语音已转成文字并保留在输入框里，请修改后重试。');
           return;
@@ -318,7 +320,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
         return;
       }
     } catch (e) {
-      if (sendOptions?.channel === 'voice' && text && msg) {
+      if (effectiveChannelForSend === 'voice' && msg) {
         restoreVoiceTranscriptDraft(msg);
         Alert.alert('发送失败', '语音已转成文字并保留在输入框里，请修改后重试。');
         if (__DEV__) console.warn('[ChatInputBar] voice send rejected:', e);
