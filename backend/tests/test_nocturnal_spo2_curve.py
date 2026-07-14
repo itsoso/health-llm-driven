@@ -6,14 +6,17 @@ from datetime import date, datetime, time
 
 import pytest
 
+from app.models.cgm_reading import CgmReading
 from app.models.daily_health import HeartRateSample, SleepLevelInterval, SpO2Sample
 from app.models.garmin_timeseries import HrvReading, StressSample
 from app.models.user import User
 from app.services.genui.chart_builder import (
     _parse_target_night,
+    build_intra_curve,
     build_nocturnal_curve,
     build_nocturnal_spo2_curve,
     detect_chart_requests,
+    detect_intra_curve_request,
     detect_nocturnal_curve_request,
 )
 
@@ -311,3 +314,75 @@ def test_stress_sentinel_values_excluded(db, user):
     block = build_nocturnal_curve(db, user.id, "stress", date(2026, 7, 13))
     assert block is not None
     assert all(0 <= p <= 100 for p in block["series"][0]["points"])
+
+
+# ──────────── 泛化: 日内窗(今天/昨天) + CGM 血糖 ────────────
+
+def test_detect_day_window():
+    # 昼线索 + 显式日期 → 日内窗(不是夜窗)
+    r = detect_intra_curve_request("画今天的心率曲线", today=TODAY)
+    assert r[0] == "heart_rate" and r[1].label == "今天"
+    r = detect_intra_curve_request("昨天的血糖曲线", today=TODAY)
+    assert r[0] == "blood_glucose" and r[1].label == "昨天"
+    r = detect_intra_curve_request("7月13日的压力曲线", today=TODAY)  # 7/13 = 昨天
+    assert r[0] == "stress" and r[1].label == "昨天"
+    # 无单昼/夜线索的趋势请求 → None(落趋势)
+    assert detect_intra_curve_request("绘制近半年血糖趋势", today=TODAY) is None
+
+
+def test_multiday_range_cooccur_falls_to_trend():
+    # 单日词 + 多日范围 token 共现 → 优先趋势(不收成单日, 避免"从昨天开始一周"误判)
+    for q in ["从昨天开始一周的血糖趋势", "前天以来的心率曲线",
+              "过去30天的血氧曲线", "这周每天的压力趋势", "近3天心率曲线"]:
+        assert detect_intra_curve_request(q, today=TODAY) is None, q
+    # 纯单日仍走日内窗(未被误伤)
+    assert detect_intra_curve_request("昨天的血糖曲线", today=TODAY)[1].label == "昨天"
+    assert detect_intra_curve_request("今天心率曲线", today=TODAY)[1].label == "今天"
+
+
+def test_build_day_window_heart_rate(db, user):
+    """今天心率: 日内窗 [今天00:00, 次日00:00] 覆盖全天采样(非仅夜段)。"""
+    # 全天 HR (含白天 14:00, 傍晚 20:00) 都应进曲线
+    for h in (2, 8, 14, 20, 23):
+        for mm in (0, 15, 30, 45):
+            db.add(HeartRateSample(
+                user_id=user.id, record_date=date(2026, 7, 14),
+                sample_time=time(h, mm), heart_rate=60 + h, source="garmin",
+            ))
+    db.commit()
+    hit = detect_intra_curve_request("画今天的心率曲线", today=TODAY)  # 今天=7/14
+    block = build_intra_curve(db, user.id, hit[0], hit[1])
+    assert block is not None
+    assert block["title"] == "今天心率"
+    # 覆盖白天(有 14:xx / 20:xx 标签), 证明不是只取夜段
+    assert any(x.startswith(("14:", "20:")) for x in block["x"])
+
+
+def _seed_cgm(db, user_id, day, readings):
+    """readings: list[(hour, minute, mg_dl)] under measured_at on `day`."""
+    for h, m, mg in readings:
+        db.add(CgmReading(
+            user_id=user_id, measured_at=datetime(day.year, day.month, day.day, h, m),
+            glucose_mg_dl=mg, source="libre",
+        ))
+    db.commit()
+
+
+def test_build_cgm_glucose_mmol_and_thresholds(db, user):
+    """CGM: measured_at 绝对时刻 + mg/dL→mmol/L(÷18) + 低血糖<3.9红 / 高血糖>10红。"""
+    # 昨天(7/13)全天 CGM: 基线 108mg/dL(=6.0), 一次低谷 60(=3.3), 一次高峰 200(=11.1)
+    reads = [(h, mm, 108) for h in range(0, 24, 2) for mm in (0, 30)]  # 偶数点基线
+    reads.append((3, 15, 60))    # 低血糖谷 (3:xx 无基线, 独占桶)
+    reads.append((15, 15, 200))  # 餐后高峰 (15:xx 无基线, 独占桶)
+    _seed_cgm(db, user.id, date(2026, 7, 13), reads)
+    hit = detect_intra_curve_request("昨天的血糖曲线", today=TODAY)  # 昨天=7/13
+    block = build_intra_curve(db, user.id, hit[0], hit[1])
+    assert block is not None
+    assert block["title"] == "昨天血糖"
+    assert block["unit"] == "mmol/L"
+    pts = block["series"][0]["points"]
+    assert all(2.0 <= p <= 22.0 for p in pts)  # 已换算成 mmol/L
+    assert any(abs(p - 6.0) < 0.2 for p in pts)  # 108/18 ≈ 6.0
+    kinds = {a["label"][:2]: a["kind"] for a in block["annotations"]}
+    assert kinds["最低"] == "warn"   # 3.3 < 3.9 低血糖 → 红
+    assert kinds["最高"] == "warn"   # 11.1 > 10 高血糖 → 红

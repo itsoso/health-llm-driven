@@ -101,26 +101,26 @@ def _maybe_build_genui_chart(
         return None
 
     from app.services.genui import (
+        build_intra_curve,
         build_line_chart,
         build_multi_metric_chart,
-        build_nocturnal_curve,
         detect_chart_requests,
-        detect_nocturnal_curve_request,
+        detect_intra_curve_request,
         render_reva_ui_block,
     )
 
-    # 单晚/整晚 intra-night 曲线优先 (血氧/HRV/心率/呼吸/压力/睡眠)。bug 修: 「昨晚整晚X」
-    # 曾被误判成近半年月度趋势。命中即走逐点分支; 该夜无数据则诚实兜底走全流程, 绝不回退月度趋势。
-    nocturnal = detect_nocturnal_curve_request(req.query)
-    if nocturnal is not None:
-        _noct_metric, _noct_evening = nocturnal
-        block = build_nocturnal_curve(db, user_id, _noct_metric, _noct_evening)
+    # 单窗(昼/夜)intra 曲线优先 (血氧/HRV/心率/呼吸/压力/血糖/睡眠)。bug 修: 「昨晚/今天X」
+    # 曾被误判成近半年月度趋势。命中即走逐点分支; 该窗无数据则诚实兜底走全流程, 绝不回退月度趋势。
+    intra = detect_intra_curve_request(req.query)
+    if intra is not None:
+        _intra_metric, _intra_window = intra
+        block = build_intra_curve(db, user_id, _intra_metric, _intra_window)
         if block is None:
             return None
         note = block.get("data_note", "")
         synthesis = (
-            f"已根据你的设备逐点采样绘制{block.get('title', '整晚曲线')}（{note}）。"
-            f"图中为当晚各时段实测值，未做任何推断填充。"
+            f"已根据你的设备逐点采样绘制{block.get('title', '曲线')}（{note}）。"
+            f"图中为各时段实测值，未做任何推断填充。"
             f"\n\n{render_reva_ui_block(block)}"
         )
         return OrchestratorResponse(
