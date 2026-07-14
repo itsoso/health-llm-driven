@@ -7,7 +7,7 @@ import {
   requestRecordingPermissionsAsync,
 } from 'expo-audio';
 import * as Haptics from 'expo-haptics';
-import { transcribeAudio } from '../services/transcribe';
+import { transcribeAudioDetailed, type TranscribeAudioResult } from '../services/transcribe';
 import { durationBucket, emitClientEvent } from '../services/clientEvents';
 
 export interface VoiceRecordingState {
@@ -17,7 +17,7 @@ export interface VoiceRecordingState {
 }
 
 export function useVoiceRecording(opts?: {
-  onTranscript?: (text: string) => void;
+  onTranscript?: (text: string, result?: TranscribeAudioResult) => void;
 }) {
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
@@ -42,6 +42,26 @@ export function useVoiceRecording(opts?: {
       phase,
       duration_bucket: durationBucket(sessionStartedAtRef.current),
       action_type: 'hold',
+      ...(errorCode ? { error_code: errorCode } : {}),
+    });
+  }, []);
+
+  const emitAsrTerminal = useCallback((
+    phase: 'completed' | 'failed',
+    startedAt: number,
+    result?: TranscribeAudioResult,
+    errorCode?: string,
+  ) => {
+    void emitClientEvent('voice_asr_terminal', {
+      phase,
+      duration_bucket: durationBucket(
+        startedAt,
+        result?.durationMs !== undefined ? startedAt + result.durationMs : Date.now(),
+      ),
+      action_type: 'hold',
+      provider: result?.provider || 'cloud_asr',
+      ...(result?.confidence ? { confidence: result.confidence } : {}),
+      empty: result?.empty ?? true,
       ...(errorCode ? { error_code: errorCode } : {}),
     });
   }, []);
@@ -180,24 +200,30 @@ export function useVoiceRecording(opts?: {
       }
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      const text = await transcribeAudio(uri);
+      const asrStartedAt = Date.now();
+      const result = await transcribeAudioDetailed(uri);
+      const text = result.text;
 
       if (transcriptionSeqRef.current !== transcriptionSeq || cancelledRef.current) {
         return;
       }
 
       if (text && opts?.onTranscript) {
-        opts.onTranscript(text);
+        opts.onTranscript(text, result);
+        emitAsrTerminal('completed', asrStartedAt, result);
         emitTerminal('completed');
       } else if (text) {
+        emitAsrTerminal('completed', asrStartedAt, result);
         emitTerminal('completed');
       } else if (!text) {
+        emitAsrTerminal('failed', asrStartedAt, result, 'empty_transcript');
         emitTerminal('failed', 'empty_transcript');
         Alert.alert('未识别到语音', '请靠近麦克风重试');
       }
     } catch {
       readyRef.current = false;
       if (transcriptionSeqRef.current === transcriptionSeq && !cancelledRef.current) {
+        emitAsrTerminal('failed', Date.now(), undefined, 'transcription_failed');
         emitTerminal('failed', 'transcription_failed');
         Alert.alert('语音识别失败', '请稍后再试');
       }
@@ -206,7 +232,7 @@ export function useVoiceRecording(opts?: {
         setIsTranscribing(false);
       }
     }
-  }, [opts, clearTimer, emitTerminal, recorder, releaseAudioSession]);
+  }, [opts, clearTimer, emitAsrTerminal, emitTerminal, recorder, releaseAudioSession]);
 
   const cancelRecording = useCallback(async () => {
     cancelledRef.current = true;

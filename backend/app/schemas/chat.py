@@ -65,6 +65,10 @@ class TranscribeRequest(BaseModel):
 
 class TranscribeResponse(BaseModel):
     text: str
+    provider: Optional[str] = None
+    model: Optional[str] = None
+    duration_ms: Optional[int] = None
+    confidence: Optional[str] = None
 
 
 class ConversationResponse(BaseModel):

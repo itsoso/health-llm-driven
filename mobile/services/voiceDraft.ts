@@ -7,6 +7,9 @@ export interface VoiceDraft {
   rawTranscript: string;
   normalizedText: string;
   confidence: VoiceDraftConfidence;
+  asrProvider: string;
+  asrModel?: string;
+  asrDurationMs?: number;
   state: VoiceDraftState;
   createdAt: number;
 }
@@ -38,14 +41,26 @@ export function buildVoiceDraft(args: {
   rawTranscript: string;
   state?: VoiceDraftState;
   createdAt?: number;
+  asr?: {
+    provider?: string;
+    model?: string;
+    durationMs?: number;
+    confidence?: VoiceDraftConfidence;
+  };
 }): VoiceDraft {
   const rawTranscript = String(args.rawTranscript || '').trim();
   const normalizedText = normalizeVoiceTranscript(rawTranscript);
+  const asrDurationMs = typeof args.asr?.durationMs === 'number' && Number.isFinite(args.asr.durationMs)
+    ? Math.max(0, Math.round(args.asr.durationMs))
+    : undefined;
   return {
     source: args.source,
     rawTranscript,
     normalizedText,
-    confidence: estimateVoiceDraftConfidence(normalizedText),
+    confidence: args.asr?.confidence ?? estimateVoiceDraftConfidence(normalizedText),
+    asrProvider: args.asr?.provider || (args.source === 'realtime_mic' ? 'native_realtime' : 'cloud_asr'),
+    ...(args.asr?.model ? { asrModel: args.asr.model } : {}),
+    ...(asrDurationMs !== undefined ? { asrDurationMs } : {}),
     state: args.state ?? 'editable',
     createdAt: args.createdAt ?? Date.now(),
   };
@@ -56,10 +71,13 @@ export function buildVoiceDraftExtraContext(draft: VoiceDraft): string {
     source: 'mobile_voice_input',
     voice_draft: {
       source: draft.source,
-      raw: draft.rawTranscript,
-      normalized: draft.normalizedText,
-      confidence: draft.confidence,
-    },
+        raw: draft.rawTranscript,
+        normalized: draft.normalizedText,
+        confidence: draft.confidence,
+        asr_provider: draft.asrProvider,
+        ...(draft.asrModel ? { asr_model: draft.asrModel } : {}),
+        ...(typeof draft.asrDurationMs === 'number' ? { asr_duration_ms: draft.asrDurationMs } : {}),
+      },
     instruction: '这条消息来自语音输入。优先按 normalized 理解；raw 仅用于转写纠错和歧义恢复。健康记录、饮食、药物、补剂、日程等写入前要按语义确认。',
   });
 }

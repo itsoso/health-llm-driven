@@ -217,6 +217,14 @@ def test_watch_action_events_accepted(client, db, auth_user_and_headers, event_n
         "duration_bucket": "1_3s",
         "action_type": "hold",
     }),
+    ("voice_asr_terminal", {
+        "phase": "completed",
+        "duration_bucket": "1_3s",
+        "action_type": "hold",
+        "provider": "openai_whisper",
+        "confidence": "medium",
+        "empty": False,
+    }),
     ("write_receipt_terminal", {
         "phase": "verified",
         "duration_bucket": "10_30s",
@@ -261,14 +269,16 @@ def test_reliability_terminal_events_reject_private_or_identifying_meta(
         "/api/v1/client-events",
         headers=headers,
         json={
-            "event_name": "voice_input_terminal",
-            "meta": {
-                "phase": "completed",
-                "duration_bucket": "1_3s",
-                "action_type": "dictation",
-                forbidden_key: forbidden_value,
+                "event_name": "voice_asr_terminal",
+                "meta": {
+                    "phase": "completed",
+                    "duration_bucket": "1_3s",
+                    "action_type": "dictation",
+                    "provider": "openai_whisper",
+                    "empty": False,
+                    forbidden_key: forbidden_value,
+                },
             },
-        },
     )
 
     assert response.status_code == 422, response.text
@@ -288,6 +298,21 @@ def test_reliability_terminal_events_reject_private_or_identifying_meta(
         "phase": "completed",
         "duration_bucket": "1_3s",
         "action_type": "dictation\nprivate",
+    }),
+    ("voice_asr_terminal", {
+        "phase": "completed",
+        "duration_bucket": "1_3s",
+        "action_type": "hold",
+        "provider": "OpenAI Whisper",
+        "empty": False,
+    }),
+    ("voice_asr_terminal", {
+        "phase": "completed",
+        "duration_bucket": "1_3s",
+        "action_type": "hold",
+        "provider": "openai_whisper",
+        "confidence": "certain",
+        "empty": False,
     }),
     ("write_receipt_terminal", {
         "phase": "verified",

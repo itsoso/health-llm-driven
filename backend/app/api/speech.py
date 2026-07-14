@@ -3,6 +3,7 @@ import base64
 import logging
 import os
 import tempfile
+import time
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
@@ -19,6 +20,15 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/chat", tags=["speech"])
 
 limiter = Limiter(key_func=get_remote_address)
+
+
+def _transcript_confidence(text: str) -> str:
+    clean = (text or "").strip()
+    if not clean:
+        return "low"
+    if len(clean) >= 24 and any(ch in clean for ch in "，。；;"):
+        return "high"
+    return "medium" if len(clean) >= 4 else "low"
 
 
 @router.post("/transcribe", response_model=TranscribeResponse, summary="语音转文字")
@@ -46,14 +56,24 @@ async def transcribe_audio(
             f.write(audio_bytes)
             temp_path = f.name
 
+        model = "whisper-1"
+        started_at = time.monotonic()
         try:
             with open(temp_path, "rb") as audio_file:
                 transcript = client.audio.transcriptions.create(
-                    model="whisper-1",
+                    model=model,
                     file=audio_file,
                     language="zh",
                 )
-            return TranscribeResponse(text=transcript.text)
+            duration_ms = max(0, round((time.monotonic() - started_at) * 1000))
+            text = (transcript.text or "").strip()
+            return TranscribeResponse(
+                text=text,
+                provider="openai_whisper",
+                model=model,
+                duration_ms=duration_ms,
+                confidence=_transcript_confidence(text),
+            )
         finally:
             os.unlink(temp_path)
 

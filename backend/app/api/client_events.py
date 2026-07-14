@@ -51,6 +51,7 @@ _ALLOWED_EVENTS = frozenset({
     # Mobile Agent 可靠性终态. meta 严格限制为无正文、无资源标识的字段.
     "agent_turn_terminal",
     "voice_input_terminal",
+    "voice_asr_terminal",
     "write_receipt_terminal",
     "diet_photo_recognition_terminal",
     "diet_photo_confirmation_terminal",
@@ -72,6 +73,14 @@ _RELIABILITY_EVENT_SCHEMAS = {
         "allowed": frozenset({"phase", "duration_bucket", "error_code", "action_type"}),
         "required": frozenset({"phase", "duration_bucket", "action_type"}),
         "phases": frozenset({"completed", "failed", "cancelled"}),
+    },
+    "voice_asr_terminal": {
+        "allowed": frozenset({
+            "phase", "duration_bucket", "error_code", "action_type",
+            "provider", "confidence", "empty",
+        }),
+        "required": frozenset({"phase", "duration_bucket", "action_type", "provider", "empty"}),
+        "phases": frozenset({"completed", "failed"}),
     },
     "write_receipt_terminal": {
         "allowed": frozenset({
@@ -146,12 +155,17 @@ class EventIn(BaseModel):
             if self.meta.get("duration_bucket") not in _DURATION_BUCKETS:
                 raise ValueError("invalid reliability event duration_bucket")
 
-            for key in ("action_type", "error_code"):
+            for key in ("action_type", "error_code", "provider"):
                 value = self.meta.get(key)
                 if value is not None and (
                     not isinstance(value, str) or _SAFE_TOKEN.fullmatch(value) is None
                 ):
                     raise ValueError(f"invalid reliability event {key}")
+            confidence = self.meta.get("confidence")
+            if confidence is not None and confidence not in {"high", "medium", "low"}:
+                raise ValueError("invalid reliability event confidence")
+            if "empty" in self.meta and type(self.meta["empty"]) is not bool:
+                raise ValueError("invalid reliability event empty")
             if "verified" in self.meta and type(self.meta["verified"]) is not bool:
                 raise ValueError("invalid reliability event verified")
             if self.event_name == "write_receipt_terminal":

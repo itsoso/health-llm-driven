@@ -92,6 +92,31 @@ describe('client reliability events', () => {
     });
   });
 
+  it('keeps ASR quality metadata content-free for voice input tuning', async () => {
+    await emitClientEvent('voice_asr_terminal', {
+      phase: 'completed',
+      duration_bucket: '1_3s',
+      action_type: 'hold',
+      provider: 'openai_whisper',
+      confidence: 'medium',
+      empty: false,
+      transcript: '不能上传',
+      audio: 'base64-secret',
+    });
+
+    expect(mockPost).toHaveBeenCalledWith('/client-events', {
+      event_name: 'voice_asr_terminal',
+      meta: {
+        phase: 'completed',
+        duration_bucket: '1_3s',
+        action_type: 'hold',
+        provider: 'openai_whisper',
+        confidence: 'medium',
+        empty: false,
+      },
+    });
+  });
+
   it('keeps existing event metadata backward compatible', () => {
     const meta = { source: 'chat', has_image: false };
     expect(sanitizeClientEventMeta('chat_message_sent', meta)).toBe(meta);

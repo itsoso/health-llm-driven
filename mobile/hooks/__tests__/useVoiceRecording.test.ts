@@ -39,7 +39,17 @@ jest.mock('react-native', () => ({
 }));
 
 jest.mock('../../services/transcribe', () => ({
-  transcribeAudio: (...a: any[]) => mockTranscribe(...a),
+  transcribeAudioDetailed: async (...a: any[]) => {
+    const text = await mockTranscribe(...a);
+    return {
+      text,
+      provider: 'openai_whisper',
+      model: 'whisper-1',
+      durationMs: 1234,
+      confidence: text ? 'medium' : 'low',
+      empty: !text,
+    };
+  },
 }));
 
 jest.mock('../../services/clientEvents', () => ({
@@ -83,7 +93,10 @@ describe('useVoiceRecording audio session release (Bug 2: 语音后键盘失效)
 
     // 关键: 转写完后 session 被放回 allowsRecording:false, 键盘才能再弹。
     expect(releasedRecordingSession()).toBe(true);
-    await waitFor(() => expect(onTranscript).toHaveBeenCalledWith('识别出的文字'));
+    await waitFor(() => expect(onTranscript).toHaveBeenCalledWith(
+      '识别出的文字',
+      expect.objectContaining({ provider: 'openai_whisper', durationMs: 1234 }),
+    ));
     expect(mockEmitClientEvent).toHaveBeenCalledWith('voice_input_terminal', {
       phase: 'completed',
       duration_bucket: '3_10s',

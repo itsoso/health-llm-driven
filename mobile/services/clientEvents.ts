@@ -29,6 +29,7 @@ export type ClientEventName =
   // Mobile Agent 可靠性闭环 (2026-07-09) — 只允许无正文、无资源标识的终态元数据
   | 'agent_turn_terminal'
   | 'voice_input_terminal'
+  | 'voice_asr_terminal'
   | 'write_receipt_terminal'
   | 'diet_photo_recognition_terminal'
   | 'diet_photo_confirmation_terminal'
@@ -41,6 +42,7 @@ export type DurationBucket = 'lt_1s' | '1_3s' | '3_10s' | '10_30s' | 'gte_30s';
 const RELIABILITY_PHASES = {
   agent_turn_terminal: new Set(['completed', 'failed', 'interrupted']),
   voice_input_terminal: new Set(['completed', 'failed', 'cancelled']),
+  voice_asr_terminal: new Set(['completed', 'failed']),
   write_receipt_terminal: new Set(['verified', 'unverified', 'failed']),
 } as const;
 
@@ -151,6 +153,20 @@ export function sanitizeClientEventMeta(
   }
   if (typeof meta.verified === 'boolean') {
     sanitized.verified = meta.verified;
+  }
+  if (name === 'voice_asr_terminal') {
+    if (typeof meta.provider === 'string' && SAFE_TOKEN.test(meta.provider)) {
+      sanitized.provider = meta.provider;
+    }
+    if (
+      typeof meta.confidence === 'string'
+      && (meta.confidence === 'high' || meta.confidence === 'medium' || meta.confidence === 'low')
+    ) {
+      sanitized.confidence = meta.confidence;
+    }
+    if (typeof meta.empty === 'boolean') {
+      sanitized.empty = meta.empty;
+    }
   }
   if (name === 'write_receipt_terminal') {
     const phase = sanitized.phase;

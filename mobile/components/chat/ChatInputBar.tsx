@@ -430,10 +430,21 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
   const voiceModeToggleLabel = isVoiceMode ? '切换到键盘输入' : '切换到语音输入';
 
   const voice = useVoiceRecording({
-    onTranscript: (text) => {
+    onTranscript: (text, asr) => {
       const clean = text.trim();
       if (!clean) return;
-      const draft = buildVoiceDraft({ source: 'hold_to_talk', rawTranscript: clean });
+      const draft = buildVoiceDraft({
+        source: 'hold_to_talk',
+        rawTranscript: clean,
+        asr: asr
+          ? {
+            provider: asr.provider,
+            model: asr.model,
+            durationMs: asr.durationMs,
+            confidence: asr.confidence,
+          }
+          : undefined,
+      });
       voiceDraftRef.current = draft;
       if (voiceCommitModeRef.current === 'send') {
         void handleSend(draft.normalizedText, { channel: 'voice' });
