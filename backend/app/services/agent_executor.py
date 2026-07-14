@@ -967,6 +967,45 @@ def _extract_xml_tool_call(raw: str, tools: Optional[List[Dict]], allowed: set) 
     return None
 
 
+# `<tool>funcname {args_json}</tool>` 形态:函数名在标签体、参数是紧跟的**独立** JSON(无 "name"
+# 键)。qwen 系经代理偶发(founder 2026-07-14 实测「列出喝水记录」→ 泄漏
+# `<tool>health_query {"dimension":"water"}</tool>` 且**未执行** → 无水数据)。既有三条恢复路径都
+# 不认:JSON 路径要 payload 带 "name",bracket 要 `(`,invoke 要 `<invoke name=`。
+_TOOL_TAG_NAME_RE = re.compile(
+    r"<\s*(?:tool|tool_call|function_call)\s*>\s*([A-Za-z_]\w*)",
+    re.IGNORECASE,
+)
+
+
+def _extract_tool_tag_call(raw: str, allowed: set) -> Optional[Dict[str, Any]]:
+    """恢复 `<tool>funcname {args_json}</tool>`(函数名在标签体 + 紧跟独立参数 JSON)。
+
+    name 必须在注册表内(否则不吞,保持可见,镜像 invoke/bracket 守卫)。用 raw_decode 从名后
+    紧邻的 `{` 取平衡 JSON(支持嵌套);参数解析不出 → None,交给 botched 层走重提示/剥离,
+    绝不硬塞空参执行错工具。恢复成功 → 调用真执行(有数据)且不泄漏。
+    """
+    m = _TOOL_TAG_NAME_RE.search(raw or "")
+    if not m or m.group(1) not in allowed:
+        return None
+    brace = raw.find("{", m.end())
+    if brace == -1 or brace > m.end() + 3:  # `{` 必须紧跟函数名(容忍几个空白)
+        return None
+    try:
+        args, _ = json.JSONDecoder().raw_decode(raw[brace:])
+    except json.JSONDecodeError:
+        try:
+            args = json.loads(_normalize_json_quotes(raw[brace:]))
+        except (json.JSONDecodeError, TypeError, ValueError):
+            return None
+    if not isinstance(args, dict):
+        return None
+    return {
+        "id": "inline_tool_call_0",
+        "type": "function",
+        "function": {"name": m.group(1), "arguments": json.dumps(args, ensure_ascii=False)},
+    }
+
+
 def _strip_xml_tool_markers(text: str) -> str:
     """Strip ``<invoke>…</invoke>`` / ``<minimax:tool_call>`` / 通用 ``<tool>`` 家族工具语法。
 
@@ -1390,6 +1429,12 @@ def _extract_inline_tool_call(text: str, tools: List[Dict]) -> Optional[Dict[str
     xml = _extract_xml_tool_call(raw, tools, allowed)
     if xml is not None:
         return xml
+
+    # `<tool>funcname {args}</tool>` 形态(函数名在标签体 + 独立参数 JSON):既有三路都不认,
+    # 恢复后真执行、不泄漏(founder 2026-07-14「列出喝水记录」根因)。
+    tag_call = _extract_tool_tag_call(raw, allowed)
+    if tag_call is not None:
+        return tag_call
 
     # 括号格式先于 JSON 尝试:它含 `(` 不含起始 `{`,与 JSON 路径互不干扰。
     bracket = _extract_bracket_tool_call(raw, allowed)
