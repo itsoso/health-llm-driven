@@ -55,7 +55,12 @@ jest.mock('expo-router', () => ({
 jest.mock('react-native-markdown-display', () => {
   const React = require('react');
   const { Text } = require('react-native');
-  const MockMarkdown = ({ children }: { children: string }) => <Text>{children}</Text>;
+  const MockMarkdown = ({ children }: { children: string }) => {
+    if (String(children || '').includes('THROW_MARKDOWN')) {
+      throw new Error('markdown render failed');
+    }
+    return <Text>{children}</Text>;
+  };
   MockMarkdown.displayName = 'MockMarkdown';
   return MockMarkdown;
 });
@@ -195,6 +200,20 @@ describe('ChatBubble structured summary', () => {
     expect(getByLabelText('语音播报')).toBeTruthy();
   });
 
+  it('falls back to readable text when markdown rendering fails', () => {
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      expect(() => {
+        const { getByText } = renderBubble('THROW_MARKDOWN\n\n这条内容仍然要显示');
+        expect(getByText(/这条内容仍然要显示/)).toBeTruthy();
+      }).not.toThrow();
+    } finally {
+      errorSpy.mockRestore();
+      warnSpy.mockRestore();
+    }
+  });
+
   it('does not offer a second prose-derived write after health_record already completed', () => {
     const qc = new QueryClient();
     const message: UIMessage = {
@@ -289,6 +308,8 @@ describe('ChatBubble structured summary', () => {
       </QueryClientProvider>,
     );
 
+    expect(getByText('使用数据 · 2 项')).toBeTruthy();
+    fireEvent.press(getByLabelText('展开使用数据'));
     expect(getByText('用户记忆')).toBeTruthy();
     expect(getByText('Garmin 数据 (14 天 HRV/睡眠/RHR)')).toBeTruthy();
     fireEvent.press(getByLabelText('查看 AI 记忆来源'));

@@ -19,14 +19,19 @@ export interface ExtractedRevaUiBlocks {
 
 export function extractRevaUiBlocks(raw: string): ExtractedRevaUiBlocks {
   const cards: ServerCardDescriptor[] = [];
+  let malformedBlockCount = 0;
   const text = raw.replace(REVA_UI_FENCE_RE, (_match, payload: string) => {
     const descriptor = descriptorFromPayload(payload);
     if (descriptor) cards.push(descriptor);
+    else malformedBlockCount += 1;
     return '\n';
   });
+  const normalizedText = normalizeTextAfterBlockRemoval(text);
 
   return {
-    text: normalizeTextAfterBlockRemoval(text),
+    text: normalizedText || (malformedBlockCount > 0
+      ? '这张动态卡片暂时无法显示，请让小巴用文字说明。'
+      : ''),
     cards,
   };
 }

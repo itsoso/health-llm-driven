@@ -63,6 +63,29 @@ describe('buildSelectedChatShareMessage', () => {
     expect(text).toBe(['【我】', '早上好', '', '— 小巴对话节选'].join('\n'));
   });
 
+  it('includes selected chat photos as markdown image references', () => {
+    const text = buildSelectedChatShareMessage(
+      [
+        {
+          id: 'h-60',
+          role: 'user',
+          content: '记录这餐',
+          imageUris: ['https://health.executor.life/api/v1/upload/files/chat/3/meal.jpg?signature=abc'],
+        },
+      ],
+      new Set(['h-60']),
+    );
+
+    expect(text).toBe([
+      '【我】',
+      '记录这餐',
+      '',
+      '![对话图片 1](https://health.executor.life/api/v1/upload/files/chat/3/meal.jpg?signature=abc)',
+      '',
+      '— 小巴对话节选',
+    ].join('\n'));
+  });
+
   describe('isShareableChatMessage', () => {
     it('accepts a finished assistant reply with content', () => {
       expect(

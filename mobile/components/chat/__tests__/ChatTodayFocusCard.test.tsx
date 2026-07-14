@@ -117,4 +117,31 @@ describe('ChatTodayFocusCard', () => {
     fireEvent.press(getByLabelText('重试上一轮'));
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
+
+  it('lets the parent close the focus card from the full state', () => {
+    const onDismiss = jest.fn();
+    const { getByLabelText } = render(
+      <ChatTodayFocusCard model={focusModel()} onDismiss={onDismiss} />,
+    );
+
+    fireEvent.press(getByLabelText('关闭今日重点'));
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders a small launcher when the focus card is hidden and can reopen it', () => {
+    const onRestore = jest.fn();
+    const { getByText, getByLabelText, queryByLabelText } = render(
+      <ChatTodayFocusCard
+        model={focusModel()}
+        variant="launcher"
+        onRestore={onRestore}
+      />,
+    );
+
+    expect(getByText('今日重点')).toBeTruthy();
+    expect(getByText('已隐藏，点此展开')).toBeTruthy();
+    expect(queryByLabelText('关闭今日重点')).toBeNull();
+    fireEvent.press(getByLabelText('展开今日重点'));
+    expect(onRestore).toHaveBeenCalledTimes(1);
+  });
 });

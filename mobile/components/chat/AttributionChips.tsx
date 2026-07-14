@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextStyle, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -69,6 +69,7 @@ function sourceMeta(kind: SourceKind) {
 }
 
 export default function AttributionChips({ sources, onOpenMemory }: Props) {
+  const [expanded, setExpanded] = useState(false);
   const items = useMemo(() => normalizeSources(sources), [sources]);
   if (items.length === 0) return null;
 
@@ -76,24 +77,33 @@ export default function AttributionChips({ sources, onOpenMemory }: Props) {
   const hiddenCount = items.length - visible.length;
   return (
     <View style={styles.wrap} accessibilityLabel="AI 用到了你的数据">
-      <View style={styles.prefix}>
+      <Pressable
+        style={({ pressed }) => [styles.summaryRow, pressed && styles.summaryPressed]}
+        onPress={() => setExpanded(value => !value)}
+        accessibilityRole="button"
+        accessibilityLabel={expanded ? '收起使用数据' : '展开使用数据'}
+        accessibilityState={{ expanded }}
+      >
         <Ionicons name="layers-outline" size={12} color={C.ink3} />
-        <Text style={txt.prefix}>使用数据</Text>
-      </View>
-      <View style={styles.chipsRow}>
-        {visible.map(item => (
-          <SourceChip
-            key={item.label}
-            item={item}
-            onOpenMemory={item.kind === 'memory' ? onOpenMemory : undefined}
-          />
-        ))}
-        {hiddenCount > 0 ? (
-          <View style={[styles.chip, { backgroundColor: C.paper2 }]}>
-            <Text style={txt.chipMore}>+{hiddenCount}</Text>
-          </View>
-        ) : null}
-      </View>
+        <Text style={txt.prefix}>使用数据 · {items.length} 项</Text>
+        <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={12} color={C.ink3} />
+      </Pressable>
+      {expanded ? (
+        <View style={styles.chipsRow}>
+          {visible.map(item => (
+            <SourceChip
+              key={item.label}
+              item={item}
+              onOpenMemory={item.kind === 'memory' ? onOpenMemory : undefined}
+            />
+          ))}
+          {hiddenCount > 0 ? (
+            <View style={[styles.chip, { backgroundColor: C.paper2 }]}>
+              <Text style={txt.chipMore}>+{hiddenCount}</Text>
+            </View>
+          ) : null}
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -132,7 +142,18 @@ const styles = StyleSheet.create({
     borderTopColor: C.paper2,
     gap: revaSpacing.s1,
   },
-  prefix: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  summaryRow: {
+    alignSelf: 'flex-start',
+    minHeight: 28,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: revaRadii.pill,
+    backgroundColor: C.paper2,
+  },
+  summaryPressed: { opacity: 0.74 },
   chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
   chip: {
     minHeight: 26,

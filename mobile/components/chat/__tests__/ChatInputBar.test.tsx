@@ -35,6 +35,7 @@ const mockSetPendingImages = jest.fn();
 const mockRemoveImage = jest.fn();
 const mockClearImages = jest.fn().mockResolvedValue(undefined);
 const mockReleaseImagesAfterSend = jest.fn();
+const mockTakePhoto = jest.fn();
 const mockLoadChatDraft = jest.fn();
 const mockPersistChatDraft = jest.fn().mockResolvedValue(undefined);
 const mockHydrateDraftImages = jest.fn();
@@ -49,7 +50,7 @@ jest.mock('../../../hooks/useMediaPicker', () => ({
     clearImages: mockClearImages,
     releaseImagesAfterSend: mockReleaseImagesAfterSend,
     pickImage: jest.fn(),
-    takePhoto: jest.fn(),
+    takePhoto: (...args: any[]) => mockTakePhoto(...args),
   }),
 }));
 
@@ -128,6 +129,7 @@ describe('ChatInputBar', () => {
     mockPendingImages = [];
     mockSetPendingImages.mockReset();
     mockClearImages.mockResolvedValue(undefined);
+    mockTakePhoto.mockReset();
     mockLoadChatDraft.mockImplementation(() => new Promise(() => {}));
     mockPersistChatDraft.mockResolvedValue(undefined);
     mockHydrateDraftImages.mockImplementation(async (images: any[]) => images);
@@ -198,15 +200,29 @@ describe('ChatInputBar', () => {
     expect(getByLabelText('导入体检报告')).toBeTruthy();
   });
 
-  it('routes the attachment camera entry to meal photo capture', () => {
+  it('sends meal photos into the current chat instead of routing to diet', async () => {
+    const photo = { uri: 'file:///meal.jpg', base64: 'base64-meal', type: 'jpeg' };
+    mockTakePhoto.mockResolvedValueOnce([photo]);
+    const onSend = jest.fn().mockResolvedValue(true);
     const { getByLabelText } = render(
-      <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
+      <ChatInputBar onSend={onSend} isStreaming={false} />,
     );
 
     fireEvent.press(getByLabelText('附件菜单'));
-    fireEvent.press(getByLabelText('拍照记餐'));
+    await act(async () => {
+      fireEvent.press(getByLabelText('拍照记餐'));
+      await Promise.resolve();
+    });
 
-    expect(mockRouterPush).toHaveBeenCalledWith('/diet?capture=photo&return_to=chat');
+    expect(mockRouterPush).not.toHaveBeenCalled();
+    expect(onSend).toHaveBeenCalledWith(
+      '记录这餐',
+      [photo],
+      expect.objectContaining({
+        extraContext: expect.stringContaining('mobile_chat_meal_photo'),
+      }),
+    );
+    expect(mockReleaseImagesAfterSend).toHaveBeenCalled();
   });
 
   it('renders only one compact composer row by default', () => {

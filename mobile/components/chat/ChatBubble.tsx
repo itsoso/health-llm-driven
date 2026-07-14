@@ -64,6 +64,7 @@ const MD_PALETTE = {
 } as unknown as ColorPalette;
 const MD_STYLES = createMdStylesChat(MD_PALETTE);
 const THINKING_PLACEHOLDER_TEXT = '⏳ AI 正在思考中...';
+const INLINE_EDITABLE_CARD_TYPES = new Set(['diet_draft', 'record_quality', 'save_recipe']);
 
 interface Props {
   item: UIMessage;
@@ -103,6 +104,10 @@ function ChatBubbleInner({ item, onViewImage, imageAuthToken, selectionMode = fa
   const revaUiContent = useMemo(
     () => (!isUser && !streamingBubble ? extractRevaUiBlocks(displayText) : { text: displayText, cards: [] }),
     [displayText, isUser, streamingBubble],
+  );
+  const hasInlineEditableCard = useMemo(
+    () => revaUiContent.cards.some(card => INLINE_EDITABLE_CARD_TYPES.has(card.type)),
+    [revaUiContent.cards],
   );
   const assistantText = revaUiContent.text;
   const structuredSummary = useMemo(
@@ -720,11 +725,12 @@ function ChatBubbleInner({ item, onViewImage, imageAuthToken, selectionMode = fa
         ) : (
           <TouchableOpacity
             style={[styles.bubble, styles.bubbleAI, hasTable && styles.bubbleAIWide, selected && styles.bubbleSelected]}
-            activeOpacity={0.95}
-            onPress={handleBubblePress}
-            onLongPress={openMessageActions}
-            accessibilityRole="text"
-            accessibilityLabel={`AI: ${assistantTextForActions || (revaUiContent.cards.length > 0 ? '图表卡片' : item.content)}`}
+            activeOpacity={hasInlineEditableCard ? 1 : 0.95}
+            disabled={hasInlineEditableCard}
+            onPress={hasInlineEditableCard ? undefined : handleBubblePress}
+            onLongPress={hasInlineEditableCard ? undefined : openMessageActions}
+            accessibilityRole={hasInlineEditableCard ? undefined : 'text'}
+            accessibilityLabel={hasInlineEditableCard ? undefined : `AI: ${assistantTextForActions || (revaUiContent.cards.length > 0 ? '图表卡片' : item.content)}`}
             accessibilityState={selectionMode ? { selected } : undefined}
           >
             {renderMessageImages()}
@@ -742,7 +748,7 @@ function ChatBubbleInner({ item, onViewImage, imageAuthToken, selectionMode = fa
               // 流式降级: plain text, 保留换行, 不做 markdown 解析/整树渲染
               <Text style={txt.streaming}>{visibleAssistantMarkdown}</Text>
             ) : visibleAssistantMarkdown ? (
-              <Markdown style={MD_STYLES}>{renderedMarkdown}</Markdown>
+              <SafeMarkdown content={renderedMarkdown} fallbackText={visibleAssistantMarkdown} />
             ) : !item.streaming && !displayText ? (
               <Text style={txt.fallback}>抱歉，这条回复没能送达。你可以重新提问。</Text>
             ) : null}
@@ -1195,6 +1201,42 @@ function stripStructuredHealthSummary(text: string): string {
   return kept.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
+class MarkdownRenderBoundary extends React.Component<
+  { resetKey: string; fallbackText: string; children: React.ReactNode },
+  { failed: boolean }
+> {
+  state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  componentDidUpdate(prevProps: { resetKey: string }) {
+    if (prevProps.resetKey !== this.props.resetKey && this.state.failed) {
+      this.setState({ failed: false });
+    }
+  }
+
+  componentDidCatch(error: unknown) {
+    if (__DEV__) console.warn('[chat] markdown render failed; showing plain-text fallback', error);
+  }
+
+  render() {
+    if (this.state.failed) {
+      return <Text style={txt.streaming}>{this.props.fallbackText}</Text>;
+    }
+    return this.props.children;
+  }
+}
+
+function SafeMarkdown({ content, fallbackText }: { content: string; fallbackText: string }) {
+  return (
+    <MarkdownRenderBoundary resetKey={content} fallbackText={fallbackText}>
+      <Markdown style={MD_STYLES}>{content}</Markdown>
+    </MarkdownRenderBoundary>
+  );
+}
+
 // 指标状态 = 真正的「好坏」语义 → Reva 三步临床色 (warning=caution / danger=risk / success=normal),
 // 中性回退用灰 (= legacy neutral.solid).
 function statusTone(status?: string): string {
@@ -1523,6 +1565,7 @@ const styles = StyleSheet.create({
   // 完成态: 低干扰内联状态行, 展开时在下方补步骤列表.
   thinkingPill: {
     alignSelf: 'flex-start',
+    minWidth: 132,
     maxWidth: '100%',
     marginBottom: 7,
     borderRadius: revaRadii.pill,
@@ -1555,6 +1598,12 @@ const styles = StyleSheet.create({
   thinkingPillCopy: {
     flex: 1,
     minWidth: 0,
+  },
+  thinkingDoneCopy: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   thinkingPillList: {
     gap: 6,
@@ -1774,6 +1823,8 @@ const txt = {
   streaming: { fontFamily: revaFonts.sans, fontSize: 15, lineHeight: 23, color: C.ink1 } as TextStyle,
   statusLine: { flex: 1, minWidth: 0, fontFamily: revaFonts.sans, fontSize: 12.5, lineHeight: 17, fontWeight: '700', color: C.ink3 } as TextStyle,
   thinkingPillLabel: { flex: 1, minWidth: 0, fontFamily: revaFonts.sans, fontSize: 11.5, lineHeight: 16, fontWeight: '800', color: C.ink3 } as TextStyle,
+  thinkingDoneLabel: { fontFamily: revaFonts.sans, fontSize: 12, lineHeight: 16, fontWeight: '900', color: C.green700 } as TextStyle,
+  thinkingDoneMeta: { fontFamily: revaFonts.sans, fontSize: 11.2, lineHeight: 16, fontWeight: '800', color: C.ink3 } as TextStyle,
   thinkingLatestStep: { fontFamily: revaFonts.sans, fontSize: 12.2, lineHeight: 17, fontWeight: '800', color: C.ink1 } as TextStyle,
   thinkingTitle: { fontFamily: revaFonts.sans, fontSize: 12.5, lineHeight: 17, fontWeight: '900', color: C.ink1 } as TextStyle,
   thinkingSubtitle: { fontFamily: revaFonts.sans, fontSize: 11, lineHeight: 15, color: C.ink3 } as TextStyle,
@@ -1881,7 +1932,6 @@ function ThinkingStepsPanel({
 
   // 完成态: slim pill 行 (勾 + 「思考完成 · N 步」+ 折叠箭头), 点击展开/收起步骤列表.
   if (!streaming) {
-    const summary = `思考完成 · ${steps.length} 步`;
     return (
       <View testID="assistant-thinking-panel" style={[styles.thinkingPill, expanded && styles.thinkingPillExpanded]}>
         <Pressable
@@ -1892,7 +1942,10 @@ function ThinkingStepsPanel({
           accessibilityState={{ expanded }}
         >
           <Ionicons name="checkmark-circle" size={15} color={C.green500} />
-          <Text style={txt.thinkingPillLabel} numberOfLines={1}>{summary}</Text>
+          <View style={styles.thinkingDoneCopy}>
+            <Text style={txt.thinkingDoneLabel} numberOfLines={1}>思考完成</Text>
+            <Text style={txt.thinkingDoneMeta} numberOfLines={1}> · {steps.length} 步</Text>
+          </View>
           <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={14} color={C.ink3} />
         </Pressable>
         {expanded ? (

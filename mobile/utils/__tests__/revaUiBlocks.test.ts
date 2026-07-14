@@ -145,6 +145,13 @@ describe('extractRevaUiBlocks', () => {
     expect(result.cards).toEqual([]);
   });
 
+  it('shows a readable fallback when an assistant message only contains a malformed dynamic UI block', () => {
+    const result = extractRevaUiBlocks('```reva-ui\nnot-json\n```');
+
+    expect(result.text).toBe('这张动态卡片暂时无法显示，请让小巴用文字说明。');
+    expect(result.cards).toEqual([]);
+  });
+
   it('turns fenced reva-ui metric_table JSON into a metric_table card descriptor', () => {
     const text = [
       '近三次血压如下:',

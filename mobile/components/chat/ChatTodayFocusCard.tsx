@@ -25,14 +25,18 @@ export default function ChatTodayFocusCard({
   variant = 'full',
   turnStatus,
   onRetry,
+  onDismiss,
+  onRestore,
 }: {
   model: TodayFocusModel;
   onExecute?: (primary: TodayFocusPrimary) => void;
   onAsk?: (primary: TodayFocusPrimary) => void;
   onOpenToday?: () => void;
-  variant?: 'full' | 'compact';
+  variant?: 'full' | 'compact' | 'launcher';
   turnStatus?: ChatTurnStatus;
   onRetry?: () => void;
+  onDismiss?: () => void;
+  onRestore?: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const primary = model.primary;
@@ -40,6 +44,33 @@ export default function ChatTodayFocusCard({
   useEffect(() => {
     if (variant === 'compact') setExpanded(false);
   }, [variant]);
+
+  if (variant === 'launcher') {
+    return (
+      <TouchableOpacity
+        testID="chat-today-focus-card"
+        accessibilityRole="button"
+        accessibilityLabel="展开今日重点"
+        style={[styles.card, styles.launcherCard]}
+        activeOpacity={0.78}
+        onPress={onRestore}
+        disabled={!onRestore}
+      >
+        <View style={[styles.iconWrap, styles.launcherIconWrap]}>
+          <Ionicons name="calendar-outline" size={15} color={C.green500} />
+        </View>
+        <View style={styles.titleWrap}>
+          <Text maxFontSizeMultiplier={1.15} style={txt.compactEyebrow} numberOfLines={1}>
+            今日重点
+          </Text>
+          <Text maxFontSizeMultiplier={1.15} style={txt.compactMeta} numberOfLines={1}>
+            已隐藏，点此展开
+          </Text>
+        </View>
+        <Ionicons name="chevron-down" size={16} color={C.ink3} />
+      </TouchableOpacity>
+    );
+  }
 
   if (variant === 'compact') {
     const summaryParts = [`接下来 ${model.status.actionable}`];
@@ -89,16 +120,29 @@ export default function ChatTodayFocusCard({
               <Text maxFontSizeMultiplier={1.1} style={txt.retryButton}>重试</Text>
             </TouchableOpacity>
           ) : (
-            <TouchableOpacity
-              style={styles.compactOpenButton}
-              onPress={onOpenToday}
-              disabled={!onOpenToday}
-              activeOpacity={0.74}
-              accessibilityRole="button"
-              accessibilityLabel="打开今日详情"
-            >
-              <Ionicons name="chevron-forward" size={18} color={C.ink3} />
-            </TouchableOpacity>
+            <View style={styles.compactTrailingActions}>
+              {onDismiss ? (
+                <TouchableOpacity
+                  style={styles.compactIconButton}
+                  onPress={onDismiss}
+                  activeOpacity={0.74}
+                  accessibilityRole="button"
+                  accessibilityLabel="关闭今日重点"
+                >
+                  <Ionicons name="close" size={17} color={C.ink3} />
+                </TouchableOpacity>
+              ) : null}
+              <TouchableOpacity
+                style={styles.compactIconButton}
+                onPress={onOpenToday}
+                disabled={!onOpenToday}
+                activeOpacity={0.74}
+                accessibilityRole="button"
+                accessibilityLabel="打开今日详情"
+              >
+                <Ionicons name="chevron-forward" size={18} color={C.ink3} />
+              </TouchableOpacity>
+            </View>
           )}
         </View>
       </View>
@@ -123,6 +167,17 @@ export default function ChatTodayFocusCard({
             {primary?.title ?? model.emptyTitle}
           </Text>
         </View>
+        {onDismiss ? (
+          <TouchableOpacity
+            style={styles.dismissButton}
+            onPress={onDismiss}
+            activeOpacity={0.72}
+            accessibilityRole="button"
+            accessibilityLabel="关闭今日重点"
+          >
+            <Ionicons name="close" size={16} color={C.ink3} />
+          </TouchableOpacity>
+        ) : null}
       </View>
 
       {primary ? (
@@ -284,8 +339,26 @@ const styles = StyleSheet.create({
     height: 28,
     borderRadius: 14,
   },
-  compactOpenButton: {
-    width: 36,
+  launcherCard: {
+    minHeight: 48,
+    marginBottom: revaSpacing.s2,
+    paddingVertical: revaSpacing.s2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: revaSpacing.s2,
+  },
+  launcherIconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+  },
+  compactTrailingActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: -6,
+  },
+  compactIconButton: {
+    width: 34,
     height: 44,
     alignItems: 'center',
     justifyContent: 'center',
@@ -319,6 +392,14 @@ const styles = StyleSheet.create({
   titleWrap: {
     flex: 1,
     minWidth: 0,
+  },
+  dismissButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: C.paper2,
   },
   actionRow: {
     flexDirection: 'row',

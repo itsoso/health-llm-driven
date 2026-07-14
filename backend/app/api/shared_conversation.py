@@ -12,6 +12,7 @@ from app.models.chat import ChatConversation, ChatMessage
 from app.models.agent_conversation import AgentConversation, AgentMessage
 from app.models.shared_conversation import SharedConversation
 from app.api.deps import get_current_user_required
+from app.services.chat_utils import refresh_chat_image_url_value
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/shared", tags=["shared-conversation"])
@@ -37,6 +38,7 @@ class SharedMessageOut(BaseModel):
     role: str
     content: str
     created_at: Optional[str] = None
+    image_url: Optional[str] = None
 
 
 class SharedConversationOut(BaseModel):
@@ -122,6 +124,7 @@ def create_share(
             "role": m.role,
             "content": m.content,
             "created_at": m.created_at.isoformat() if m.created_at else None,
+            "image_url": getattr(m, "image_url", None),
         })
 
     # 检查是否已分享过（复用已有分享）
@@ -230,6 +233,8 @@ def get_shared_conversation(
             role=m["role"],
             content=m["content"],
             created_at=m.get("created_at"),
+            image_url=refresh_chat_image_url_value(m.get("image_url"), shared.user_id)
+            if m.get("image_url") else None,
         )
         for m in shared.messages_snapshot
     ]

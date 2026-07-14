@@ -21,6 +21,10 @@ function hasMarkdownTable(content: string): boolean {
   return /\n\s*\|.+\|\s*\n\s*\|[\s|:-]+\|/u.test(content);
 }
 
+function removeFencedBlocks(content: string): string {
+  return content.replace(/```[\w-]*\s*[\s\S]*?```/g, '\n');
+}
+
 function sectionizeWorkoutPlan(content: string): string {
   const matches = Array.from(content.matchAll(WORKOUT_PLAN_HEADINGS));
   if (matches.length === 0) return content;
@@ -139,8 +143,8 @@ function normalizeMealLabel(value: string | null): string | null {
 
 function buildDietShareMessage(content: string): string | null {
   const flattened = content.replace(/\s+/g, ' ').trim();
-  const hasDietSignal = /(?:已记录|今日饮食|饮食记录|早餐|午餐|晚餐|加餐).*(?:kcal|千卡|蛋白|碳水|脂肪)/iu
-    .test(flattened);
+  const hasDietSignal = /(?:已记录|记录完成|已写入|饮食记录(?:完成|已保存|已写入)?|本餐|这餐).{0,80}(?:kcal|千卡|蛋白|碳水|脂肪)/iu.test(flattened)
+    || /(?:kcal|千卡|蛋白|碳水|脂肪).{0,80}(?:已记录|记录完成|已写入|饮食记录(?:完成|已保存|已写入)?|本餐|这餐)/iu.test(flattened);
   if (!hasDietSignal) return null;
 
   const meal = normalizeMealLabel(extractFirst(/已记录\s*([^—\-，,。；;\s]{1,6})/u, flattened)
@@ -180,37 +184,67 @@ function buildDietShareMessage(content: string): string | null {
 
 function stripCaptionLine(line: string): string {
   return stripInlineMarkdown(line
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
     .replace(/^#{1,6}\s*/u, '')
     .replace(/^[-*+]\s+/u, '')
     .replace(/^\d+[.)、]\s*/u, '')
     .replace(/\[(.*?)\]\([^)]*\)/g, '$1'));
 }
 
-function buildConciseAdviceLines(content: string): string[] {
-  const normalized = normalizeFlattenedAgentContent(content);
+function tableLineToCaption(line: string): string | null {
+  const trimmed = line.trim();
+  if (!/^\|.*\|$/u.test(trimmed)) return null;
+  const cells = trimmed
+    .replace(/^\|/u, '')
+    .replace(/\|$/u, '')
+    .split('|')
+    .map(stripCaptionLine)
+    .map(value => value.trim())
+    .filter(Boolean);
+  if (cells.length === 0) return null;
+  if (cells.every(cell => /^:?-{2,}:?$/u.test(cell))) return null;
+  if (cells.length === 1) return cells[0];
+  if (cells.length === 2) return `${cells[0]}：${cells[1]}`;
+  return `${cells[0]}：${cells.slice(1).join('，')}`;
+}
+
+function toXiaohongshuPlainLines(content: string): string[] {
+  const normalized = normalizeFlattenedAgentContent(removeFencedBlocks(content));
   const lines = normalized
     .split(/\n+/)
-    .map(stripCaptionLine)
+    .map((rawLine) => {
+      const tableLine = tableLineToCaption(rawLine);
+      if (tableLine) return tableLine;
+      return stripCaptionLine(rawLine);
+    })
+    .map(line => line.replace(/\s+/g, ' ').trim())
     .filter(Boolean)
     .filter(line => !/^[-:| ]+$/u.test(line))
+    .filter(line => !/^---+$/u.test(line))
     .filter(line => !/^今日建议[:：]?$/u.test(line))
     .filter(line => !/^小巴$/u.test(line))
     .filter(line => !/^仅作健康管理参考/u.test(line))
-    .filter(line => !/^#/.test(line));
+    .filter(line => !/^#/.test(line))
+    .filter(line => !/^指标：数值/u.test(line));
 
   const result: string[] = [];
   let totalLength = 0;
   for (const line of lines) {
     if (result.includes(line)) continue;
     const nextLength = totalLength + line.length;
-    if (nextLength > 320 && result.length > 0) break;
-    result.push(line.length > 120 ? `${line.slice(0, 117).trim()}...` : line);
+    if (nextLength > 420 && result.length > 0) break;
+    result.push(line.length > 130 ? `${line.slice(0, 127).trim()}...` : line);
     totalLength = nextLength;
-    if (result.length >= 4) break;
+    if (result.length >= 5) break;
   }
+  return result;
+}
+
+function buildConciseAdviceLines(content: string): string[] {
+  const result = toXiaohongshuPlainLines(content);
 
   if (result.length > 0) return result;
-  const fallback = stripCaptionLine(normalized.replace(/\s+/g, ' '));
+  const fallback = stripCaptionLine(removeFencedBlocks(content).replace(/\s+/g, ' '));
   return fallback ? [fallback.slice(0, 180)] : [];
 }
 

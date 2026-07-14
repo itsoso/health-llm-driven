@@ -235,6 +235,26 @@ describe('ChatScreen', () => {
     expect(bar().props.autoFocusToken).toBeGreaterThan(initial);
   });
 
+  it('routes empty-state meal photo capture through the chat composer', async () => {
+    mockFetchConversationStarters.mockResolvedValue({ opener: null, suggestions: null, onboarding: false });
+    mockFetchMemoryOpener.mockResolvedValue([]);
+
+    const { UNSAFE_getAllByType, getByLabelText } = render(<ChatScreen />);
+    const bar = () => UNSAFE_getAllByType('ChatInputBar' as any)[0];
+
+    await waitFor(() => {
+      expect(bar().props.autoFocusToken).toBeGreaterThan(0);
+    });
+    const before = bar().props.captureMealPhotoToken ?? 0;
+
+    await act(async () => {
+      fireEvent.press(getByLabelText('拍照记一餐'));
+    });
+
+    expect(mockPush).not.toHaveBeenCalledWith('/diet?capture=photo&return_to=chat');
+    expect(bar().props.captureMealPhotoToken).toBeGreaterThan(before);
+  });
+
   it('does NOT summon the keyboard when 小巴 has an opening message (opener present)', async () => {
     // 小巴有开场消息 → 让话被看见, 不抢键盘。
     mockFetchConversationStarters.mockResolvedValue({
@@ -323,6 +343,27 @@ describe('ChatScreen', () => {
 
     act(() => keyboardListeners.keyboardDidHide({}));
     expect(view.getByLabelText('今日重点，已展开')).toBeTruthy();
+  });
+
+  it('lets the user hide Today Focus and reopen it from the launcher', async () => {
+    mockTodayTimelineData = {
+      items: [{
+        id: 'timeline-1', kind: 'action', title: '晨起记录体重和腰围', subtitle: '今日重点',
+        status: 'pending', priority: 9, can_complete: true, deep_link: '/agenda',
+      }],
+      past: { completed_count: 0, events: [] },
+      counts: { actionable: 1, overdue: 0, info: 0 },
+    };
+
+    const view = render(<ChatScreen />);
+
+    expect(view.getByText('晨起记录体重和腰围')).toBeTruthy();
+    fireEvent.press(view.getByLabelText('关闭今日重点'));
+    expect(view.getByText('已隐藏，点此展开')).toBeTruthy();
+    expect(view.queryByText('晨起记录体重和腰围')).toBeNull();
+
+    fireEvent.press(view.getByLabelText('展开今日重点'));
+    expect(view.getByText('晨起记录体重和腰围')).toBeTruthy();
   });
 
   it('shows a recoverable Agent failure and retries only the latest text message', async () => {
@@ -845,14 +886,17 @@ describe('ChatScreen', () => {
       suggestions: [{ text: '分析我的睡眠质量', key: 'sleep', priority: 10 }],
     });
 
-    const { getByLabelText } = render(<ChatScreen />);
+    const { UNSAFE_getAllByType, getByLabelText } = render(<ChatScreen />);
+    const bar = () => UNSAFE_getAllByType('ChatInputBar' as any)[0];
 
-    // Fixed 拍照记一餐 chip 存在 → 点击走 proven route,并在确认后回小巴。
+    // Fixed 拍照记一餐 chip 存在 → 点击触发 ChatInputBar 直接拍照进当前对话。
     await waitFor(() => {
       expect(getByLabelText('拍照记一餐')).toBeTruthy();
     });
+    const before = bar().props.captureMealPhotoToken ?? 0;
     fireEvent.press(getByLabelText('拍照记一餐'));
-    expect(mockPush).toHaveBeenCalledWith('/diet?capture=photo&return_to=chat');
+    expect(mockPush).not.toHaveBeenCalledWith('/diet?capture=photo&return_to=chat');
+    expect(bar().props.captureMealPhotoToken).toBeGreaterThan(before);
 
     // 动态 starter suggestion 也进 composer 行, 点击走既有发送。
     await waitFor(() => {

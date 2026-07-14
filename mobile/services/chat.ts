@@ -78,6 +78,7 @@ export interface StreamEvent {
   conversationId?: number;
   userMessageId?: number;
   clientTurnId?: string;
+  imageUrls?: string[];
   messageId?: number;
   requestPersisted?: boolean;
   anchor?: string;
@@ -283,11 +284,15 @@ export async function* streamChat(
       }
 
       if (parsed.event === 'request_persisted') {
+        const imageUrls = Array.isArray(parsed.data?.image_urls)
+          ? parsed.data.image_urls.filter((value: unknown): value is string => typeof value === 'string' && value.trim().length > 0)
+          : undefined;
         return {
           type: 'persisted',
           conversationId: parsed.data?.conversation_id,
           userMessageId: parsed.data?.user_message_id,
           clientTurnId: parsed.data?.client_turn_id,
+          imageUrls,
         };
       } else if (parsed.event === 'agent_start') {
         return {

@@ -4,7 +4,7 @@
  * 「小巴先开口」把 opener 抬成流里的开场气泡后, 建议 chip 从空状态卡片
  * 下沉到贴着输入框的一行, 让「想问别的」的动作离手最近。
  *
- * - 第一颗 FIXED「拍照记一餐」(相机图标) → /diet?capture=photo&return_to=chat。
+ * - 第一颗 FIXED「拍照记一餐」(相机图标) → 触发 ChatInputBar 拍照并把照片作为当前对话消息发送。
  * - 其后最多 2 颗动态 starter suggestion, 单行 numberOfLines 1, 点击走既有 send handler。
  * - chip 视觉: surface + hairline + pill, 13px ink2; 相机 chip 图标 green600。
  * - 只在空对话且非多选态渲染(由 chat.tsx 门控), 本组件不做可见性判断。

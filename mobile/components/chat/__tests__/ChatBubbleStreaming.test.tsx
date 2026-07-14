@@ -1,5 +1,5 @@
 import React from 'react';
-import { Alert, StyleSheet } from 'react-native';
+import { Alert, StyleSheet, TextInput } from 'react-native';
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import * as Clipboard from 'expo-clipboard';
@@ -82,6 +82,7 @@ jest.mock('../../actions/InterventionDraftSheet', () => {
 });
 
 const ChatBubble = require('../ChatBubble').default;
+const { renderCard } = require('../cards');
 
 function renderBubble(message: UIMessage) {
   const qc = new QueryClient();
@@ -298,8 +299,9 @@ describe('ChatBubble streaming degraded render', () => {
       thinkingSteps: ['正在理解你的问题', '读取记录信息', '整理回复中'],
     });
 
-    // 完成态默认折叠成低干扰胶囊: 「思考完成 · N 步」, 步骤列表隐藏.
-    expect(getByText('思考完成 · 3 步')).toBeTruthy();
+    // 完成态默认折叠成低干扰胶囊: 明确显示「思考完成」和步数, 步骤列表隐藏.
+    expect(getByText('思考完成')).toBeTruthy();
+    expect(getByText(' · 3 步')).toBeTruthy();
     const panelStyle = StyleSheet.flatten(getByTestId('assistant-thinking-panel').props.style);
     expect(panelStyle.alignSelf).toBe('flex-start');
     expect(panelStyle.borderRadius).toBeGreaterThanOrEqual(14);
@@ -365,6 +367,41 @@ describe('ChatBubble streaming degraded render', () => {
     expect(queryByTestId('assistant-reva-ui-cards')).toBeTruthy();
     // done 后 sanitize 生效 → [附图: …] 被剥掉, fence 源码不再逐字显示.
     expect(queryByText(CONTENT_WITH_MARKERS)).toBeNull();
+  });
+
+  it('does not make editable inline cards part of the assistant bubble touch target', () => {
+    (renderCard as jest.Mock).mockReturnValueOnce(
+      <TextInput
+        accessibilityLabel="卡片食物描述"
+        value="牛肉面"
+        onChangeText={jest.fn()}
+      />,
+    );
+    const editableCardContent = [
+      '```reva-ui',
+      JSON.stringify({
+        v: 1,
+        component: 'record_quality',
+        domain: 'diet',
+        expanded_sections: ['adjust_record'],
+        adjust_record: {
+          record_id: 123,
+          meal_type: 'dinner',
+          food_items: '牛肉面',
+        },
+      }),
+      '```',
+    ].join('\n');
+
+    const { getByLabelText, queryByLabelText } = renderBubble({
+      id: 'assistant-inline-editable-card',
+      role: 'assistant',
+      content: editableCardContent,
+      streaming: false,
+    });
+
+    expect(getByLabelText('卡片食物描述')).toBeTruthy();
+    expect(queryByLabelText('AI: 图表卡片')).toBeNull();
   });
 
   it('renders rich Markdown once streaming has finished (terminal state unchanged)', () => {

@@ -28891,6 +28891,8 @@ export interface components {
             content: string;
             /** Created At */
             created_at?: string | null;
+            /** Image Url */
+            image_url?: string | null;
         };
         /** SiriResponse */
         SiriResponse: {

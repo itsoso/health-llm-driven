@@ -98,6 +98,38 @@ describe('buildAiShareMessage', () => {
     ].join('\n'));
   });
 
+  it('turns markdown-heavy replies into Xiaohongshu-ready plain text', () => {
+    const content = [
+      '## 今日复盘',
+      '',
+      '![餐食](file:///tmp/meal.jpg)',
+      '',
+      '| 指标 | 数值 | 状态 |',
+      '| --- | --- | --- |',
+      '| 蛋白 | 75g | 偏低 |',
+      '| 热量 | 1676kcal | 达标 |',
+      '',
+      '```reva-ui',
+      '{"component":"metric_line_chart","v":1}',
+      '```',
+      '',
+      '- **下一步**：晚餐补 30g 蛋白。',
+      '[查看详情](https://health.executor.life/shared/token)',
+    ].join('\n');
+
+    const caption = buildXiaohongshuShareMessage(content);
+
+    expect(caption).toContain('今日复盘');
+    expect(caption).toContain('蛋白：75g，偏低');
+    expect(caption).toContain('热量：1676kcal，达标');
+    expect(caption).toContain('下一步：晚餐补 30g 蛋白。');
+    expect(caption).not.toContain('|');
+    expect(caption).not.toContain('```');
+    expect(caption).not.toContain('![');
+    expect(caption).not.toContain('](');
+    expect(caption).not.toContain('https://');
+  });
+
   it('structures flattened advice with headings and action labels', () => {
     const content = '收到，立刻撤回"加量"建议！ 你的身体反馈是最准确的，20 分钟对你来说就是黄金安全区。 🛑 为什么上次"连跑三天挂了"？ 结合你的病史，原因很可能是： 免疫"开窗期"：连续跑步后，免疫系统会短暂下降。 累积疲劳：连续跑没有给关节和肌肉修复时间。 🛡️ 新策略：细水长流（保命版） 时长锁定：20 分钟，绝不贪多。 频率红线：跑一休一 或 跑二休一。 看灯行事：身体电量 < 50 或 HRV 不平衡就不跑。 跑后防护（关键）：出汗后立刻擦干。 总结：今天的 20 分钟非常完美。 💧 提醒：跑后记得补 300ml 水。';
 

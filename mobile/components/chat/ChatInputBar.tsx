@@ -9,7 +9,6 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
-import { router } from 'expo-router';
 import ReAnimated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming } from 'react-native-reanimated';
 import { useMediaPicker, type PendingImage } from '../../hooks/useMediaPicker';
 import { useVoiceRecording } from '../../hooks/useVoiceRecording';
@@ -126,9 +125,19 @@ interface Props {
   onMedicalExamImportResult?: (result: ChatMedicalExamImportSkillResult) => void;
   /** 变化(>0)即请求聚焦输入框 — GPT/Gemini 式默认唤起键盘;空对话进入时由 chat.tsx 递增。 */
   autoFocusToken?: number;
+  /** 变化(>0)即从聊天页直接拍照记餐,照片先进入当前对话。 */
+  captureMealPhotoToken?: number;
 }
 
-export default function ChatInputBar({ onSend, isStreaming, initialText, initialTextKey, onMedicalExamImportResult, autoFocusToken }: Props) {
+export default function ChatInputBar({
+  onSend,
+  isStreaming,
+  initialText,
+  initialTextKey,
+  onMedicalExamImportResult,
+  autoFocusToken,
+  captureMealPhotoToken,
+}: Props) {
   const [input, setInput] = useState(initialText ?? '');
   const [showMenu, setShowMenu] = useState(false);
   const [showMedicalImportMenu, setShowMedicalImportMenu] = useState(false);
@@ -149,6 +158,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
     clearImages,
     releaseImagesAfterSend,
     pickImage,
+    takePhoto,
   } = useMediaPicker();
   const textInputRef = useRef<TextInput>(null);
   const lastKeyboardSubmitAtRef = useRef(0);
@@ -603,11 +613,58 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
   }, []);
 
   const handlePickImage = useCallback(async () => { setShowMenu(false); await pickImage(); }, [pickImage]);
-  const handleCaptureMealPhoto = useCallback(() => {
-    setShowMenu(false);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    router.push('/diet?capture=photo&return_to=chat' as any);
+  const markJustSent = useCallback(() => {
+    setJustSent(true);
+    if (justSentTimerRef.current) clearTimeout(justSentTimerRef.current);
+    justSentTimerRef.current = setTimeout(() => {
+      justSentTimerRef.current = null;
+      setJustSent(false);
+    }, 1000);
   }, []);
+  const sendCapturedMealPhoto = useCallback(async () => {
+    setShowMenu(false);
+    if (isStreaming) {
+      Alert.alert('小巴还在回复', '等这一轮结束后再拍照记录。');
+      return;
+    }
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const photos = await takePhoto();
+    if (!photos || photos.length === 0) return;
+    try {
+      const accepted = await Promise.resolve(onSend('记录这餐', photos, {
+        extraContext: JSON.stringify({
+          source: 'mobile_chat_meal_photo',
+          intent: 'diet_photo_record',
+          instruction: '先把用户上传的餐食照片作为本轮对话上下文,识别食物和份量,生成可确认的饮食记录卡片。',
+        }),
+      }));
+      if (accepted === false) {
+        Alert.alert('发送失败', '照片已保留在输入框里，请稍后重试。');
+        return;
+      }
+      releaseImagesAfterSend();
+      markJustSent();
+      try {
+        await clearPersistedChatDraft();
+      } catch (e) {
+        if (__DEV__) console.warn('[ChatInputBar] meal photo draft cleanup failed:', e);
+      }
+    } catch (e) {
+      Alert.alert('发送失败', '照片已保留在输入框里，请稍后重试。');
+      if (__DEV__) console.warn('[ChatInputBar] meal photo send rejected:', e);
+    }
+  }, [isStreaming, markJustSent, onSend, releaseImagesAfterSend, takePhoto]);
+  const handleCaptureMealPhoto = useCallback(() => {
+    void sendCapturedMealPhoto();
+  }, [sendCapturedMealPhoto]);
+
+  const lastCaptureMealPhotoTokenRef = useRef(captureMealPhotoToken ?? 0);
+  React.useEffect(() => {
+    const token = Number(captureMealPhotoToken || 0);
+    if (token <= 0 || token === lastCaptureMealPhotoTokenRef.current) return;
+    lastCaptureMealPhotoTokenRef.current = token;
+    void sendCapturedMealPhoto();
+  }, [captureMealPhotoToken, sendCapturedMealPhoto]);
   const handlePickFile = useCallback(async () => {
     setShowMenu(false);
     try {

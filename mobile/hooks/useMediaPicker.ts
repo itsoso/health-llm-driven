@@ -118,16 +118,16 @@ export function useMediaPicker() {
     }
   }, [pendingImages?.length, addImages]);
 
-  const takePhoto = useCallback(async () => {
+  const takePhoto = useCallback(async (): Promise<PendingImage[]> => {
     try {
       if ((pendingImages?.length || 0) >= MAX_IMAGES) {
         Alert.alert('已达上限', `最多选择 ${MAX_IMAGES} 张图片`);
-        return;
+        return [];
       }
       const perm = await ImagePicker.requestCameraPermissionsAsync();
       if (!perm.granted) {
         Alert.alert('需要相机权限', '请在系统设置中允许 HealthPilot 使用相机');
-        return;
+        return [];
       }
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: ['images'],
@@ -137,16 +137,18 @@ export function useMediaPicker() {
         const image = await prepareImageForUploadSafe(result.assets[0]);
         if (!image) {
           warnSkipped(1);
-          return;
+          return [];
         }
         try {
-          await addImages([toPendingImage(image)]);
+          return await addImages([toPendingImage(image)]);
         } finally {
           await cleanupPreparedUploadImages([image]);
         }
       }
+      return [];
     } catch (e) {
       Alert.alert('拍照失败', String(e));
+      return [];
     }
   }, [pendingImages?.length, addImages]);
 

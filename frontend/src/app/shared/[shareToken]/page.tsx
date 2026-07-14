@@ -4,6 +4,7 @@ import MarkdownRenderer from '@/components/assistant/MarkdownRenderer';
 import { normalizeSharedAgentContent } from './contentNormalizer';
 import OpenInAppButton from './OpenInAppButton';
 import { buildSharedMetadata, isSensitiveSharedConversation } from './sharePrivacy';
+import SharedMessageImages from './SharedMessageImages';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,6 +12,7 @@ interface SharedMessage {
   role: string;
   content: string;
   created_at?: string | null;
+  image_url?: string | null;
 }
 
 interface SharedConversation {
@@ -129,6 +131,7 @@ export default async function SharedPage({
                     <MarkdownRenderer content={normalizeSharedAgentContent(m.content)} variant="light" />
                   )}
                 </div>
+                <SharedMessageImages imageUrl={m.image_url} />
               </article>
             ))}
           </div>

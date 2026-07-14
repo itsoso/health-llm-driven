@@ -1,6 +1,7 @@
 from datetime import UTC, datetime, timedelta
 
 from app.models.shared_conversation import SharedConversation
+from app.services.agent_conversation_service import AgentConversationService
 
 
 def test_create_text_share_returns_public_web_url(client, db, auth_user_and_headers):
@@ -36,6 +37,36 @@ def test_create_text_share_rejects_empty_message(client, auth_user_and_headers):
     )
 
     assert resp.status_code == 400
+
+
+def test_agent_share_preserves_chat_image_urls(client, db, auth_user_and_headers):
+    user, headers = auth_user_and_headers
+    svc = AgentConversationService(db)
+    conv = svc.get_or_create_conversation(user.id, None, title="午餐照片")
+    svc.save_message(
+        conv.id,
+        "user",
+        "记录这餐\n[附图: 1张]",
+        image_url=f'["/api/v1/upload/files/chat/{user.id}/meal.jpg?expires=1&signature=old"]',
+    )
+
+    create_resp = client.post(
+        "/api/v1/shared/create",
+        headers=headers,
+        json={"conversation_id": conv.id, "source_type": "agent"},
+    )
+
+    assert create_resp.status_code == 200
+    shared = db.query(SharedConversation).filter_by(user_id=user.id, source_type="agent").one()
+    assert shared.messages_snapshot[0]["image_url"]
+
+    get_resp = client.get(f"/api/v1/shared/{create_resp.json()['share_token']}?count_view=false")
+
+    assert get_resp.status_code == 200
+    message = get_resp.json()["messages"][0]
+    assert message["content"] == "记录这餐\n[附图: 1张]"
+    assert message["image_url"].startswith("[")
+    assert f"/api/v1/upload/files/chat/{user.id}/meal.jpg" in message["image_url"]
 
 
 def test_shared_metadata_fetch_can_skip_view_count(client, db, auth_user_and_headers):

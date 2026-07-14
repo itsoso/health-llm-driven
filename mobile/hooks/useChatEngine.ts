@@ -942,6 +942,11 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
             console.warn('[chat] ignored mismatched persistence acknowledgement');
             continue;
           }
+          if (evt.imageUrls?.length) {
+            setMessages(prev => prev.map(m => (
+              m.id === userMsg.id ? { ...m, imageUris: evt.imageUrls } : m
+            )));
+          }
           settleAcceptance(true);
           await acknowledgeContinuityOnce();
           dispatchAgentTurn({

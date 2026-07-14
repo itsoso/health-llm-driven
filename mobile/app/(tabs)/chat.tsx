@@ -188,6 +188,7 @@ export default function ChatScreen() {
   const [selectedMessageIds, setSelectedMessageIds] = useState<Set<string>>(new Set());
   const [sharing, setSharing] = useState(false);
   const [toolMenuVisible, setToolMenuVisible] = useState(false);
+  const [todayFocusHidden, setTodayFocusHidden] = useState(false);
 
   // Context from alert / push / Siri deep-link. Read ONCE on first mount, then cleared.
   // autoSend=1 (from Siri HealthAnalysisOpenIntent) → directly send instead of prefilling.
@@ -196,6 +197,7 @@ export default function ChatScreen() {
   const [contextBadge, setContextBadge] = useState<string | null>(null);
   const [initialInput, setInitialInput] = useState<string | undefined>(undefined);
   const [initialInputKey, setInitialInputKey] = useState(0);
+  const [captureMealPhotoToken, setCaptureMealPhotoToken] = useState(0);
   const lastContextKey = useRef<string | null>(null);
 
   // P1: opener — chat tab mount 时拉一次, 用户发了第一条 message 后自动隐藏.
@@ -761,12 +763,14 @@ export default function ChatScreen() {
       ) : (
         <ChatTodayFocusCard
           model={todayFocusModel}
-          variant={todayFocusVariant}
+          variant={todayFocusHidden ? 'launcher' : todayFocusVariant}
           turnStatus={turnStatus}
           onRetry={turnStatus?.retryable ? retryLastTextTurn : undefined}
           onExecute={handleTodayFocusExecute}
           onAsk={handleTodayFocusAsk}
           onOpenToday={handleOpenToday}
+          onDismiss={() => setTodayFocusHidden(true)}
+          onRestore={() => setTodayFocusHidden(false)}
         />
       )}
 
@@ -839,7 +843,7 @@ export default function ChatScreen() {
         {bootstrapReady && messages.length === 0 && !selectionMode && (
           <ComposerSuggestionsRow
             suggestions={starterSuggestions}
-            onCapturePhoto={() => router.push('/diet?capture=photo&return_to=chat' as any)}
+            onCapturePhoto={() => setCaptureMealPhotoToken(token => token + 1)}
             onSuggestionPress={handleStarterPress}
             showCapturePhoto={!startersOnboarding}
           />
@@ -852,6 +856,7 @@ export default function ChatScreen() {
           conversationId={conversationId}
           onMedicalExamImportResult={handleMedicalExamImportResult}
           autoFocusToken={composerFocusToken}
+          captureMealPhotoToken={captureMealPhotoToken}
         />
         <View testID="chat-bottom-spacer" style={{ height: bottomSpacerHeight }} />
       </View>

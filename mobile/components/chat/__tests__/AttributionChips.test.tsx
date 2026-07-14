@@ -4,8 +4,8 @@ import { fireEvent, render } from '@testing-library/react-native';
 import AttributionChips from '../AttributionChips';
 
 describe('AttributionChips', () => {
-  it('renders only structured source metadata and deduplicates exact labels', () => {
-    const { getByText, queryByText } = render(
+  it('renders only structured source metadata and keeps details collapsed by default', () => {
+    const { getByLabelText, getByText, queryByText } = render(
       <AttributionChips
         sources={[
           'Garmin 数据 (14 天 HRV/睡眠/RHR)',
@@ -15,6 +15,10 @@ describe('AttributionChips', () => {
       />,
     );
 
+    expect(getByText('使用数据 · 2 项')).toBeTruthy();
+    expect(queryByText('Garmin 数据 (14 天 HRV/睡眠/RHR)')).toBeNull();
+    expect(queryByText('用户记忆')).toBeNull();
+    fireEvent.press(getByLabelText('展开使用数据'));
     expect(getByText('Garmin 数据 (14 天 HRV/睡眠/RHR)')).toBeTruthy();
     expect(getByText('用户记忆')).toBeTruthy();
     expect(queryByText('+1')).toBeNull();
@@ -34,6 +38,7 @@ describe('AttributionChips', () => {
       <AttributionChips sources={['用户记忆']} onOpenMemory={onOpenMemory} />,
     );
 
+    fireEvent.press(getByLabelText('展开使用数据'));
     fireEvent.press(getByLabelText('查看 AI 记忆来源'));
     expect(onOpenMemory).toHaveBeenCalledTimes(1);
   });
