@@ -38,7 +38,9 @@ Knowledge Release.
   skipped; the same failed-file set on clean `origin/main` reproduced 40
   baseline failures, primarily because the shared test database lacks current
   columns. CI remains the authoritative clean-environment gate.
-- G4 review: **PENDING.**
+- G4 review: **PASS.** Reviewed the producer identity mapping, audit-to-event
+  projection, privacy boundary, cursor semantics, deterministic idempotency,
+  failure behavior, task registration, and generated architecture drift.
 - G5 deployment health: **PENDING.**
 - G6 production verification: **PENDING.**
 
