@@ -656,16 +656,28 @@ _TEXT_TOOLCALL_STRIP_RE = re.compile(
 
 
 def _is_botched_text_tool_call(content: Optional[str], tools: Optional[List[Dict]]) -> bool:
-    """模型把工具调用写成了 Markdown 文本(`Tool calls:\\n- <tool>`)而非结构化 tool_calls。
+    """模型把工具调用写成了**文本**而非结构化 tool_calls(两种形态,都命名了已注册工具)。
 
-    判定:命中 "Tool calls:"/"工具调用:" 标题 **且** 文本里出现某个已注册工具名。
-    仅在 `_extract_inline_tool_call`(带参数的可解析格式)已返回 None 后调用 —
-    这种无参数清单格式解析不出参数,只能重提示重试。
+    (a) Markdown 清单式:`Tool calls:` / `工具调用:` 标题 + 工具名(无参数可解析);
+    (b) 残缺 `<tool>`/`<tool_call>`/`<function_call>` 伪标签泄漏(founder 截图 2026-07-14)——
+        `_extract_inline_tool_call` 恢复失败的畸形 blob(`_GENERIC_TOOL_TAG_LEAK_RE` 命中)。
+    仅在 `_extract_inline_tool_call`(可解析格式)已返回 None 后调用 —— 两种都解析不出参数,
+    只能重提示模型用结构化 function calling 重试(拿真数据 > 空转);轮次用尽由展示层
+    `_strip_xml_tool_markers` 兜底剥离,绝不泄漏。
     """
-    if not content or not _TEXT_TOOLCALL_HEADER_RE.search(content):
+    if not content:
         return False
     allowed = {t.get("function", {}).get("name") for t in (tools or [])}
-    return any(n and n in content for n in allowed)
+    names_in_content = [n for n in allowed if n and n in content]
+    if not names_in_content:
+        return False
+    # (a) 无参数清单式标题 + 已注册工具名。
+    if _TEXT_TOOLCALL_HEADER_RE.search(content):
+        return True
+    # (b) 畸形 `<tool>` 伪标签 blob(门控确保是工具调用形状,非文档/代码块里的 `<tool>`)。
+    if _maybe_generic_tool_tag(content) and _GENERIC_TOOL_TAG_LEAK_RE.search(content):
+        return True
+    return False
 
 
 def _strip_text_tool_call(content: str) -> str:
@@ -885,19 +897,29 @@ def _extract_xml_tool_call(raw: str, tools: Optional[List[Dict]], allowed: set) 
 
 
 def _strip_xml_tool_markers(text: str) -> str:
-    """Strip ``<invoke>…</invoke>`` blocks and orphan ``<minimax:tool_call>`` tags.
+    """Strip ``<invoke>…</invoke>`` / ``<minimax:tool_call>`` / 通用 ``<tool>`` 家族工具语法。
 
     重试用尽 / name 不在白名单 / 参数解析失败时的兜底:任何情况都不能把原始工具语法
-    (含悬空无开标签的 ``</minimax:tool_call>``)留在用户可见正文里。镜像
-    ``_strip_bracket_tool_markers`` 的便宜预检 + 剥离。
+    (含悬空无开标签的 ``</minimax:tool_call>``、以及畸形 ``<tool>`` 伪标签 blob)留在
+    用户可见正文里。镜像 ``_strip_bracket_tool_markers`` 的便宜预检 + 剥离。
     """
     if not text:
         return text
     low = text.lower()
-    if "<invoke" not in low and "minimax:tool_call" not in low:
+    if (
+        "<invoke" not in low
+        and "minimax:tool_call" not in low
+        and not _maybe_generic_tool_tag(text)
+    ):
         return text
     stripped = _INVOKE_STRIP_RE.sub("", text)
     stripped = _MINIMAX_TAG_STRIP_RE.sub("", stripped)
+    # 通用 `<tool>`/`<tool_call>`/`<function_call>` 伪标签泄漏(残缺/嵌套 JSON+签名混合,
+    # 恢复不出结构化调用)—— 展示兜底剥离(founder 截图 2026-07-14)。`_GENERIC_TOOL_TAG_LEAK_RE`
+    # 的门控确保只吃工具调用形状,不误伤文档里的 `<tool>example</tool>` 与代码块
+    # (负例见 tests/test_generic_tool_tag_leak.py)。剥净后若空 → 交给下方空回复重试链。
+    if _maybe_generic_tool_tag(stripped):
+        stripped = _GENERIC_TOOL_TAG_LEAK_RE.sub("", stripped)
     return stripped.strip()
 
 
