@@ -1052,6 +1052,39 @@ def _strip_reva_ui_from_llm_text(text: str) -> str:
     return strip_reva_ui_blocks(text)
 
 
+_SCOPE_REFUSAL_STRIP_ENABLED = True
+
+# 弱模型幻觉出的"自我设限"开场白(全仓非硬编码; prompt 压不住变体, founder 2026-07-14 两版:
+# "我仅负责健康数据的记录与查询,无法提供健康分析与建议…" / "我是健康记录工具路由器,无法为您
+# 提供健康分析和长建议…")。确定性剥掉。极特异: 首句须**同时**含(记录|查询|路由器|工具)+
+# (无法|不能|不提供|不做)+(分析|建议)三要素 → 不误伤 R4 合法免责("请咨询医生"不含此组合)、
+# 也不误伤真·超范围婉拒。可选吃掉紧随的"如需…/请问您…"招呼句。
+# 开场必须是**角色/职责**自限(是…路由器/工具、只/仅负责),不是能力限制(只能查询最近7天):
+# `我(是…路由器/工具/助理 | [只仅]负责)` —— 排除"我只能查询…无法分析更早的"这类合法数据范围说明。
+_SCOPE_REFUSAL_PREAMBLE_RE = re.compile(
+    r"^\s*[<＜]?\s*"
+    r"(?:抱歉[，,]?\s*)?"
+    r"我(?:是[^。！？!?\n]{0,12}(?:路由器|工具|助理)|[只仅]负责)"
+    r"[^。！？!?\n]*?(?:记录|查询|路由器|工具)"
+    r"[^。！？!?\n]*?(?:无法|不能|不提供|不做)"
+    r"[^。！？!?\n]*?(?:分析|建议)[^。！？!?\n]*[。！？!?]"
+    r"(?:\s*(?:如需|请问您|需要记录|如有)[^。！？!?\n]*[。！？!?])?"
+    r"\s*"
+)
+
+
+def _strip_scope_refusal_preamble(text: str) -> str:
+    """剥掉弱模型幻觉的"我只/是负责记录查询、无法分析"自我设限开场白。
+
+    人格恰恰相反(记录+查询+分析都归它), 这句永远是错的。极特异正则(三要素同句)→ 不误伤
+    合法免责/婉拒。剥后为空 → 返回原文(极端兜底, 不吞掉整条回复)。也顺带吃掉杂散前缀 `<`。
+    """
+    if not _SCOPE_REFUSAL_STRIP_ENABLED or not text:
+        return text
+    stripped = _SCOPE_REFUSAL_PREAMBLE_RE.sub("", text, count=1)
+    return stripped if stripped.strip() else text
+
+
 def _placeholder_reva_ui_in_history(text: str) -> str:
     """把历史助手消息里的 ```reva-ui``` block 换成占位符, 再喂回 LLM (防模仿)。
 
@@ -4240,6 +4273,7 @@ class AgentExecutor:
 
         # 确定性护栏 (R4): 多模型综合是 LLM 生成文本 → 剥掉任何伪造的 reva-ui block。
         full_reply = _strip_reva_ui_from_llm_text(full_reply)
+        full_reply = _strip_scope_refusal_preamble(full_reply)
         ai_msg = svc.save_message(
             conv.id,
             "assistant",
@@ -6086,6 +6120,7 @@ class AgentExecutor:
         # 确定性护栏 (R4, 防御纵深): full_reply 是 LLM 生成文本 —— 剥掉任何伪造的
         # reva-ui 图表 block (数值只能来自确定性 genui 短路; 短路走独立路径不经此处)。
         full_reply = _strip_reva_ui_from_llm_text(full_reply)
+        full_reply = _strip_scope_refusal_preamble(full_reply)
         record_intent_no_tool = bool(
             self._prefer_fast_record_model and tool_executed_count == 0
         )
