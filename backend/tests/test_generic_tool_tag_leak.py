@@ -113,6 +113,72 @@ def test_no_touch_plain_answer():
     assert _strip_xml_tool_markers(txt) == txt
 
 
+# ── Finding 1:fenced ``` 块 / 行内 `code` span 里的工具语法(即便形如调用)绝不剥 ─────
+# 讲解工具语法的示例、贴 KB 片段等会把 tool-call 形状的 `<tool>` 放进代码区;此前门控只在
+# "标签后无调用形状"时豁免,一旦示例里带 `example(1)` / `{"name":...}` 就被 mangle 且吃穿闭合
+# 围栏继续吞后文。修复:`_apply_outside_code_spans` 把代码区整体豁免(镜像 _leaks_tool_result_json)。
+def test_no_touch_code_fence_with_toolshaped_content():
+    """围栏块里 `<tool>example(1)</tool>` 形如调用 → 整块豁免,不吃穿闭合 ``` 吞后文。"""
+    txt = "示例:\n```xml\n<tool>demo</tool>\n<tool>example(1)</tool>\n```\n以上是配置。"
+    assert _strip_xml_tool_markers(txt) == txt
+
+
+def test_no_touch_code_fence_with_json_toolcall():
+    txt = '讲解:\n```json\n<tool_call>{"name":"health_query","arguments":{"dimension":"diet"}}</tool_call>\n```\n就是这样。'
+    assert _strip_xml_tool_markers(txt) == txt
+
+
+def test_no_touch_inline_code_tool_syntax():
+    """行内 `code` span 里的 `<tool_call>{...}</tool_call>` 元讲解 → 保留。"""
+    txt = '系统内部会生成 `<tool_call>{"name":"health_query"}</tool_call>` 这样的结构。'
+    assert _strip_xml_tool_markers(txt) == txt
+
+
+def test_real_leak_after_fence_still_stripped():
+    """Finding 1 的对侧:真泄漏若恰好跟在围栏块后,仍照剥(只豁免代码区,不豁免其后散文)。"""
+    txt = '```json\n{"a":1}\n```\n好的<tool>{"name":"health_query"}'
+    assert _strip_xml_tool_markers(txt) == '```json\n{"a":1}\n```\n好的'
+
+
+def test_botched_ignores_fenced_example():
+    """围栏/行内代码里的工具语法不算"该重试的畸形调用" → 不触发重提示门。"""
+    fenced = '讲解:\n```\n<tool>health_query(dimension="diet")</tool>\n```'
+    assert _is_botched_text_tool_call(fenced, HEALTH_TOOLS) is False
+    inline = '系统会生成 `<tool_call>{"name":"health_query"}</tool_call>` 结构'
+    assert _is_botched_text_tool_call(inline, HEALTH_TOOLS) is False
+
+
+def test_botched_still_fires_on_leak_after_fence():
+    txt = '```\nx\n```\n好的<tool>{"name":"health_query"}'
+    assert _is_botched_text_tool_call(txt, HEALTH_TOOLS) is True
+
+
+# 已知限度(接受):**裸散文**(无围栏/无行内代码)里的元讲解含字面工具语法,与真泄漏在
+# 语法层不可区分 → 仍被剥。缓解 = 用代码区包起来(见上面 inline_code / code_fence 用例即保留)。
+# 健康产品几乎不会裸讲工具语法,故接受;此测试把该边界钉成"有意为之",防被误当回归。
+def test_bare_prose_meta_explanation_is_stripped_known_limitation():
+    txt = '系统内部会生成 <tool_call>{"name":"health_query"}</tool_call> 这样的结构。'
+    assert _strip_xml_tool_markers(txt) == "系统内部会生成 这样的结构。"
+
+
+# ── Finding 2:JSON 对象体止于配平 `}` → 不吞尾随**英文**散文(中文本就被 CJK 挡住)─────
+# `[^<一-鿿]` 止于 `<`/CJK 但不止于英文,故 blob 后同一行的英文子句被吞。修复:JSON 体加
+# `{}` 到 stop set,收在配平括号处,尾随英文由外层循环在非调用形状处自然停下而保留。
+def test_blob_then_english_suffix_preserved():
+    txt = 'Okay. <tool>{"name":"health_query"} your blood pressure is fine'
+    assert _strip_xml_tool_markers(txt) == "Okay. your blood pressure is fine"
+
+
+def test_blob_balanced_json_then_english():
+    txt = '<tool>{"name":"health_query","arguments":{"dimension":"diet"}} here is your data'
+    assert _strip_xml_tool_markers(txt) == "here is your data"
+
+
+def test_founder_still_empty_after_finding2_change():
+    """Finding 2 的 `{}` stop 不得破坏主修复:founder 残缺/嵌套 blob 仍剥净为空。"""
+    assert _strip_xml_tool_markers(_FOUNDER) == ""
+
+
 # ── 既有格式回归:invoke / minimax 剥离仍生效,不受新分支影响 ─────────────────
 def test_invoke_regression_still_stripped():
     txt = '<invoke name="health_query"><parameter name="dimension">diet</parameter></invoke>'
@@ -161,3 +227,6 @@ def test_streaming_prefix_no_false_positive():
 def test_no_catastrophic_backtracking():
     _GENERIC_TOOL_TAG_LEAK_RE.sub("", "<tool>" + '{"a":"b",' * 800 + "x" * 800)
     _GENERIC_TOOL_TAG_LEAK_RE.sub("", "<tool>" + "a(" * 500)
+    # Finding 2 后 JSON 体在 }/{ 处收尾→外层循环重入,深嵌套/多对象不得退化。
+    _GENERIC_TOOL_TAG_LEAK_RE.sub("", "<tool>" + "{" * 1000 + "}" * 1000)
+    _GENERIC_TOOL_TAG_LEAK_RE.sub("", "<tool>" + '{"k":1}' * 800)

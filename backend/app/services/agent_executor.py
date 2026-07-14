@@ -632,17 +632,21 @@ _MINIMAX_TAG_STRIP_RE = re.compile(r"</?\s*minimax:tool_call\s*>", re.I)
 # `_force_no_tools_synthesis` 的 fast 丢弃层)。
 # 安全边界(测试锁死):
 #   · 门控——`<tool>` 标签后必须**紧跟**工具调用形状(`{` / 另一个 tool 标签 / `name(`),
-#     否则整段不动 → 保护文档里的 `<tool>example</tool>` 与代码块里的 `<tool>`(见测试
-#     doc_tag_no_shape / code_fence_*);`<toolbar>`/`<toolkit>` 因 `\btool\b` 词边界天然不匹配。
-#   · JSON/签名片段止于 `<` 或 CJK 表意文字(`一-鿿`)→ 绝不吞后续中文散文
-#     (见测试 blob_then_prose_suffix);带引号字符串(值可含中文)整体消费。
+#     否则整段不动 → 保护文档里的 `<tool>example</tool>`;`<toolbar>`/`<toolkit>` 因
+#     `\btool\b` 词边界天然不匹配。
+#   · fenced ```` ``` ```` 块 / 行内 `` `code` `` span 里的 `<tool>`(即便形如工具调用)不剥
+#     —— 由调用方 `_apply_outside_code_spans` / `_search_outside_code_spans` 外科豁免(镜像
+#     `_leaks_tool_result_json` 的 fenced 豁免;区外真泄漏照剥。见测试 code_fence_* / inline_code_*)。
+#   · JSON 对象体止于 `}` / 嵌套 `{`(→ 收在配平括号处,外层循环重入)/ `<` / CJK(`一-鿿`);
+#     签名片段止于 `)` / `<` / CJK → **绝不吞后续英文或中文散文**(CJK 见 blob_then_prose_suffix,
+#     英文见 blob_then_english_suffix);带引号字符串(值可含中文)整体消费。
 #   · 各分支首字符互斥(`<` / `{` / 字母 / 标点集)→ 无灾难性回溯(ReDoS smoke 已验)。
 _TOOL_TAG_ATOM = r"<\s*/?\s*(?:tool|tool_call|function_call)\b[^>{]{0,200}>?"
 _TOOL_LEAK_QSTR = r"(?:\"[^\"<]*\"|'[^'<]*')"  # 引号串(CJK 安全,止于 `<`)
 _TOOL_LEAK_TAIL = (
     r"(?:"
     + _TOOL_TAG_ATOM                                               # 更多 tool 伪标签
-    + r"|\{(?:" + _TOOL_LEAK_QSTR + r"|[^<一-鿿])*"        # JSON 对象体(截断安全,止于 `<`/CJK)
+    + r"|\{(?:" + _TOOL_LEAK_QSTR + r"|[^{}<一-鿿])*"      # JSON 对象体(止于 }/嵌套{/`<`/CJK;} 处收尾→不吞尾随英文散文)
     + r"|[A-Za-z_][\w.]*\s*\((?:" + _TOOL_LEAK_QSTR + r"|[^)<一-鿿])*\)?"  # name(args) 签名
     + r"|[\s\"'`:,}\]=]"                                           # 零散 JSON 标点/空白
     + r")*"
@@ -658,6 +662,45 @@ _GENERIC_TOOL_TAG_LEAK_RE = re.compile(
 def _maybe_generic_tool_tag(text: str) -> bool:
     low = (text or "").lower()
     return "<tool" in low or "<function_call" in low
+
+
+# fenced ``` 块 + 行内 `code` span —— 里面的 `<tool>` 是文档/示例(讲解工具语法、贴 KB
+# 片段),即便形如工具调用也**绝不**当泄漏剥。镜像 `_leaks_tool_result_json` 的 fenced 豁免,
+# 但保持外科手术:只豁免代码区,区外的真泄漏照剥(见 Finding 1)。围栏块非贪婪且含闭合围栏
+# → 天然防止 `_GENERIC_TOOL_TAG_LEAK_RE` "吃穿"闭合 ``` 继续吞后文散文。
+_CODE_SPAN_RE = re.compile(
+    r"```.*?```"        # 围栏代码块(非贪婪,含语言标注 + 闭合围栏)
+    r"|``[^`]+``"       # 行内双反引号 span
+    r"|`[^`\n]+`",      # 行内单反引号 span(不跨行)
+    re.S,
+)
+
+
+def _apply_outside_code_spans(fn, text: str) -> str:
+    """只在代码区(fenced ``` / 行内 `code`)**之外**的片段跑 `fn`,代码区原样保留。"""
+    if "`" not in text:
+        return fn(text)
+    out: List[str] = []
+    last = 0
+    for m in _CODE_SPAN_RE.finditer(text):
+        out.append(fn(text[last:m.start()]))
+        out.append(m.group(0))
+        last = m.end()
+    out.append(fn(text[last:]))
+    return "".join(out)
+
+
+def _search_outside_code_spans(regex: "re.Pattern", text: str) -> bool:
+    """`regex` 是否在代码区外命中(代码区内的命中视为文档/示例,不算泄漏)。"""
+    if "`" not in text:
+        return bool(regex.search(text))
+    last = 0
+    for m in _CODE_SPAN_RE.finditer(text):
+        if regex.search(text[last:m.start()]):
+            return True
+        last = m.end()
+    return bool(regex.search(text[last:]))
+
 
 # 流式期前缀检测:`<invoke` / `<minimax:tool_call` / `<tool` / `<tool_call` / `<function_call`
 # 一出现就抑制 live 下发(逐 token 泄漏兜底 —— founder 截图正是逐 token live 泄漏)。
@@ -701,8 +744,9 @@ def _is_botched_text_tool_call(content: Optional[str], tools: Optional[List[Dict
     # (a) 无参数清单式标题 + 已注册工具名。
     if _TEXT_TOOLCALL_HEADER_RE.search(content):
         return True
-    # (b) 畸形 `<tool>` 伪标签 blob(门控确保是工具调用形状,非文档/代码块里的 `<tool>`)。
-    if _maybe_generic_tool_tag(content) and _GENERIC_TOOL_TAG_LEAK_RE.search(content):
+    # (b) 畸形 `<tool>` 伪标签 blob(门控确保是工具调用形状;fenced/行内代码里的 `<tool>` 是
+    #     文档/示例,由 `_search_outside_code_spans` 豁免 → 不误当成"该重试的工具调用")。
+    if _maybe_generic_tool_tag(content) and _search_outside_code_spans(_GENERIC_TOOL_TAG_LEAK_RE, content):
         return True
     return False
 
@@ -943,10 +987,13 @@ def _strip_xml_tool_markers(text: str) -> str:
     stripped = _MINIMAX_TAG_STRIP_RE.sub("", stripped)
     # 通用 `<tool>`/`<tool_call>`/`<function_call>` 伪标签泄漏(残缺/嵌套 JSON+签名混合,
     # 恢复不出结构化调用)—— 展示兜底剥离(founder 截图 2026-07-14)。`_GENERIC_TOOL_TAG_LEAK_RE`
-    # 的门控确保只吃工具调用形状,不误伤文档里的 `<tool>example</tool>` 与代码块
-    # (负例见 tests/test_generic_tool_tag_leak.py)。剥净后若空 → 交给下方空回复重试链。
+    # 的门控确保只吃工具调用形状,不误伤文档里的 `<tool>example</tool>`;`_apply_outside_code_spans`
+    # 再把 fenced ``` 块 / 行内 `code` span 整体豁免(讲解工具语法的示例不被 mangle,Finding 1)。
+    # 负例见 tests/test_generic_tool_tag_leak.py。剥净后若空 → 交给下方空回复重试链。
     if _maybe_generic_tool_tag(stripped):
-        stripped = _GENERIC_TOOL_TAG_LEAK_RE.sub("", stripped)
+        stripped = _apply_outside_code_spans(
+            lambda seg: _GENERIC_TOOL_TAG_LEAK_RE.sub("", seg), stripped
+        )
     return stripped.strip()
 
 
