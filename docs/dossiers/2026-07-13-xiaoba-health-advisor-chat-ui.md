@@ -4,8 +4,8 @@
 |---|---|
 | slug | `xiaoba-health-advisor-chat-ui` |
 | 创建日期 | 2026-07-13 |
-| 当前阶段 | S5 实现 |
-| 状态 | building |
+| 当前阶段 | S7 上线验证 |
+| 状态 | validating |
 | 负责 | Codex |
 | 反馈环 | Mobile 本地测试 -> iOS Simulator 视觉验收 -> production OTA |
 
@@ -64,7 +64,7 @@
   - [x] T5 思考面板统一为单一进度源。
   - [x] T6 落地原型三种状态：结论/指标/行动、完整思考态、紧凑饮食草稿。
   - [x] T7 合并“使用数据”和“透视”，补回轻量微信/小红书分享。
-  - [ ] T8 模拟器视觉验收和 production OTA。
+  - [x] T8 模拟器视觉验收和 production OTA。
 - 并发检查：已 `git fetch` 并审查远端 4 个提交，均为后端工具、Garmin 和图表改动，与本切片不冲突。
 
 ## S5 · 实现
@@ -77,30 +77,38 @@
 
 - Mobile 定向 Jest：10 suites / 186 tests PASS。
 - TypeScript：`npx tsc --noEmit` PASS。
-- 定向 ESLint：0 errors；7 个既有 warnings，未冒充修复。
+- 定向 ESLint：0 errors；6 个既有 warnings，未冒充修复。
 - `git diff --check`：PASS。
 
 ## G4 · 安全闸
 
-- 不触及用药、诊断、基因、化验、安全规则、认证或新写路径；仍需检查 UI 没有掩盖错误与证据入口。
-- 待回写。
+- 不触及用药、诊断、基因、化验、安全规则、认证或新写路径。
+- 中断/错误回复不会被包装成“小巴结论”，也不会暴露微信/小红书分享；错误仍保持可见。
+- 行动卡按钮只发送后续 Agent 请求，不绕过既有写入确认和回执校验。
+- **裁决：PASS。**
 
 ## S6 · 部署
 
 - 路由：`mobile-ota`。
-- 待回写。
+- production OTA：`e78e1949-c9ef-491e-8dc6-a31b978a0b8c`。
+- iOS update：`019f5eb9-39e2-7844-baaf-a541608bb6ea`，runtime `1.3.1`。
+- 对应主干：`62ad02c36df698167c89c819644c133e34a9fac7`。
 
 ## G5 · 部署健康闸
 
-- OTA 发布结果与运行时兼容性待回写。
+- EAS production 发布成功，iOS bundle 与 runtime `1.3.1` 匹配。
+- **裁决：PASS。**
 
 ## S7 · 上线验证
 
-- iOS Simulator 截图和 production OTA 真机验收待回写。
+- iPhone 17 Pro Simulator 连续两次冷启动后加载 production OTA。
+- 截图：`/tmp/xiaoba-chat-ota-e78e1949.png`。
+- 已验证：紧凑 Header、无框“小巴结论”、单一“依据与过程”入口、微信/小红书轻量分享、微信式输入框保持不变。
+- 流式思考态与饮食草稿态不在真实账号制造测试记录，由 G3 自动化交互测试覆盖。
 
 ## G6 · 验证闸
 
-- 待用户在 OTA 后确认。
+- 待用户在真实设备冷启动后确认视觉层级和触控手感。
 
 ## S8 · 沉淀
 
