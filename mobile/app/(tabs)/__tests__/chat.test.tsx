@@ -710,7 +710,7 @@ describe('ChatScreen', () => {
     await waitFor(() => {
       expect(getByLabelText('切换 AI 模型，当前 Qwen3.7 Plus')).toBeTruthy();
     });
-    expect(getByText('回复中')).toBeTruthy();
+    expect(queryByText('回复中')).toBeNull();
     expect(queryByText('正在回复')).toBeNull();
 
     await act(async () => {
@@ -1031,7 +1031,7 @@ describe('ChatScreen', () => {
     });
     mockFetchMemoryOpener.mockResolvedValue([]);
 
-    const { getByLabelText, getAllByLabelText } = render(<ChatScreen />);
+    const { getByLabelText } = render(<ChatScreen />);
 
     await waitFor(() => {
       // Quick Start 卡的三个动作按钮都在。

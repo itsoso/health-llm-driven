@@ -12,7 +12,7 @@ const mockLoadCardActionReceipt = jest.fn().mockResolvedValue(undefined);
 const mockSaveCardActionReceipt = jest.fn().mockResolvedValue(undefined);
 const mockSaveChatImageToLibrary = jest.fn().mockResolvedValue(undefined);
 const mockShareLocalImage = jest.fn().mockResolvedValue(undefined);
-const mockCaptureRefCalls: Array<{ testID?: string; options: unknown }> = [];
+const mockCaptureRefCalls: { testID?: string; options: unknown }[] = [];
 let mockCaptureRefResult = 'file:///tmp/diet-card.png';
 
 /* eslint-disable @typescript-eslint/no-require-imports */
@@ -149,7 +149,7 @@ describe('ChatBubble structured summary', () => {
   });
 
   it('summarizes markdown metric tables and today advice for mobile scanning', () => {
-    const { getByText, queryByText } = renderBubble(`
+    const { getByText, getByTestId, queryByText } = renderBubble(`
 | 指标 | 数值 | 状态 |
 | --- | --- | --- |
 | 睡眠 | 89 分 | ✅ 优秀 |
@@ -161,10 +161,12 @@ describe('ChatBubble structured summary', () => {
 2. 基因提示：MTHFR TT 影响叶酸代谢
 `);
 
-    expect(getByText('指标摘要')).toBeTruthy();
+    expect(getByText('小巴结论')).toBeTruthy();
+    expect(getByTestId('assistant-metric-grid')).toBeTruthy();
+    expect(getByTestId('assistant-action-card')).toBeTruthy();
     expect(getByText('睡眠')).toBeTruthy();
     expect(getByText('89 分')).toBeTruthy();
-    expect(getByText('今日建议')).toBeTruthy();
+    expect(getByText('今天只做')).toBeTruthy();
     expect(getByText('饮水未达标，上午补充 500ml')).toBeTruthy();
     expect(queryByText(/\| 指标 \| 数值 \| 状态 \|/)).toBeNull();
   });
@@ -176,7 +178,7 @@ describe('ChatBubble structured summary', () => {
 2. **补水** 上午 500ml
 `);
 
-    expect(getByText('今日建议')).toBeTruthy();
+    expect(getByText('今天只做')).toBeTruthy();
     // "### " heading marker stripped
     expect(getByText('✅ 你已有的（继续保持）')).toBeTruthy();
     // "**bold**" emphasis stripped
@@ -185,8 +187,8 @@ describe('ChatBubble structured summary', () => {
     expect(queryByText(/###/)).toBeNull();
   });
 
-  it('renders explicit WeChat and Xiaohongshu share actions for a normal completed reply', () => {
-    const { queryByText, getByLabelText } = renderBubble(
+  it('keeps a compact WeChat and Xiaohongshu share rail while speech remains in the long-press menu', () => {
+    const { getByText, getByLabelText, queryByText } = renderBubble(
       '建议今晚 23:00 前睡觉，并在睡前 3 小时停止正餐。',
     );
 
@@ -194,10 +196,34 @@ describe('ChatBubble structured summary', () => {
     expect(queryByText('保存记忆')).toBeNull();
     expect(queryByText('生成记录')).toBeNull();
     expect(queryByText('继续追问')).toBeNull();
-    expect(getByLabelText('发微信分享这条回复')).toBeTruthy();
-    expect(getByLabelText('发小红书分享这条回复')).toBeTruthy();
-    expect(getByLabelText('更多分享')).toBeTruthy();
+    expect(getByText('微信')).toBeTruthy();
+    expect(getByText('小红书')).toBeTruthy();
+    expect(getByLabelText('微信分享这条回复')).toBeTruthy();
+    expect(getByLabelText('小红书分享这条回复')).toBeTruthy();
+    expect(() => getByLabelText('语音播报')).toThrow();
+
+    fireEvent(getByLabelText('AI: 建议今晚 23:00 前睡觉，并在睡前 3 小时停止正餐。'), 'longPress');
+    expect(getByLabelText('分享这条回复')).toBeTruthy();
     expect(getByLabelText('语音播报')).toBeTruthy();
+  });
+
+  it('does not expose social sharing for interrupted assistant replies', () => {
+    const qc = new QueryClient();
+    const message: UIMessage = {
+      id: 'assistant-interrupted',
+      role: 'assistant',
+      content: '这条回复只生成了一部分',
+      streaming: false,
+      completionStatus: 'interrupted',
+    };
+    const { queryByLabelText } = render(
+      <QueryClientProvider client={qc}>
+        <ChatBubble item={message} />
+      </QueryClientProvider>,
+    );
+
+    expect(queryByLabelText('微信分享这条回复')).toBeNull();
+    expect(queryByLabelText('小红书分享这条回复')).toBeNull();
   });
 
   it('falls back to readable text when markdown rendering fails', () => {
@@ -242,7 +268,9 @@ describe('ChatBubble structured summary', () => {
 
     const { getByLabelText } = renderBubble('今天先补水 300ml, 晚饭后散步 15 分钟。');
 
-    fireEvent.press(getByLabelText('发微信分享这条回复'));
+    fireEvent(getByLabelText('AI: 今天先补水 300ml, 晚饭后散步 15 分钟。'), 'longPress');
+    fireEvent.press(getByLabelText('分享这条回复'));
+    fireEvent.press(getByLabelText('系统分享'));
 
     await waitFor(() => {
       expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
@@ -256,7 +284,9 @@ describe('ChatBubble structured summary', () => {
 
     const { getByLabelText } = renderBubble('今天午餐记录完成，晚饭少油并补 30g 蛋白。');
 
-    fireEvent.press(getByLabelText('发小红书分享这条回复'));
+    fireEvent(getByLabelText('AI: 今天午餐记录完成，晚饭少油并补 30g 蛋白。'), 'longPress');
+    fireEvent.press(getByLabelText('分享这条回复'));
+    fireEvent.press(getByLabelText('小红书文案'));
 
     await waitFor(() => {
       expect(sharePlainCaption).toHaveBeenCalledWith(expect.objectContaining({
@@ -276,12 +306,15 @@ describe('ChatBubble structured summary', () => {
   it('shares completed diet records with a polished social note', async () => {
     sharePlainText.mockResolvedValueOnce(undefined);
 
-    const { getByLabelText } = renderBubble([
+    const content = [
       '✅ 已记录午餐 — 煎牛肉能量碗 + 姜黄鲜柠维C茶，770 kcal（蛋白 30g / 碳水 70g / 脂肪 17g）',
       '晚餐建议：优先补 40g 蛋白，少油少刺激。',
-    ].join('\n'));
+    ].join('\n');
+    const { getByLabelText } = renderBubble(content);
 
-    fireEvent.press(getByLabelText('更多分享'));
+    fireEvent(getByLabelText(`AI: ${content}`), 'longPress');
+    fireEvent.press(getByLabelText('分享这条回复'));
+    fireEvent.press(getByLabelText('系统分享'));
 
     await waitFor(() => {
       expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
@@ -302,14 +335,16 @@ describe('ChatBubble structured summary', () => {
       streaming: false,
       sourcesUsed: ['用户记忆', 'Garmin 数据 (14 天 HRV/睡眠/RHR)'],
     };
-    const { getByText, getByLabelText } = render(
+    const { getByText, getByLabelText, queryByText, queryByLabelText } = render(
       <QueryClientProvider client={qc}>
         <ChatBubble item={message} />
       </QueryClientProvider>,
     );
 
-    expect(getByText('使用数据 · 2 项')).toBeTruthy();
-    fireEvent.press(getByLabelText('展开使用数据'));
+    expect(getByText('依据与过程 · 2')).toBeTruthy();
+    expect(queryByText('使用数据 · 2 项')).toBeNull();
+    expect(queryByLabelText('展开执行透视')).toBeNull();
+    fireEvent.press(getByLabelText('展开依据与过程'));
     expect(getByText('用户记忆')).toBeTruthy();
     expect(getByText('Garmin 数据 (14 天 HRV/睡眠/RHR)')).toBeTruthy();
     fireEvent.press(getByLabelText('查看 AI 记忆来源'));
@@ -332,7 +367,7 @@ describe('ChatBubble structured summary', () => {
   });
 
   it('constrains server-rendered cards inside the assistant column', () => {
-    renderCard.mockReturnValueOnce(__mockCard);
+    renderCard.mockReturnValue(__mockCard);
     const qc = new QueryClient();
     const message: UIMessage = {
       id: 'assistant-card',
@@ -362,7 +397,7 @@ describe('ChatBubble structured summary', () => {
 
   it('shares a card-only diet draft as a polished meal note', async () => {
     sharePlainText.mockResolvedValueOnce(undefined);
-    renderCard.mockReturnValueOnce(__mockCard);
+    renderCard.mockReturnValue(__mockCard);
     const qc = new QueryClient();
     const message: UIMessage = {
       id: 'assistant-card-diet-share',
@@ -382,23 +417,25 @@ describe('ChatBubble structured summary', () => {
       },
     };
 
-    const { getByLabelText, getByTestId, getByText } = render(
+    const { getByLabelText, getByTestId, queryByTestId, queryByText } = render(
       <QueryClientProvider client={qc}>
         <ChatBubble item={message} />
       </QueryClientProvider>,
     );
 
     expect(getByTestId('assistant-card-capture-frame')).toBeTruthy();
+    expect(queryByTestId('assistant-card-share-actions')).toBeNull();
+    expect(queryByText('截图可直接发微信 / 小红书')).toBeNull();
+
+    fireEvent(getByTestId('assistant-card-interaction-surface'), 'longPress');
     expect(getByTestId('assistant-card-share-actions')).toHaveStyle({
       flexDirection: 'row',
       flexWrap: 'wrap',
     });
-    expect(getByText('发微信')).toBeTruthy();
-    expect(getByText('发小红书')).toBeTruthy();
-    expect(getByText('更多')).toBeTruthy();
-    expect(getByText('保存截图')).toBeTruthy();
-    expect(getByText('截图可直接发微信 / 小红书')).toBeTruthy();
-    fireEvent.press(getByLabelText('保存餐食截图'));
+    expect(getByLabelText('保存卡片图片')).toBeTruthy();
+    expect(getByLabelText('分享卡片图片')).toBeTruthy();
+    expect(getByLabelText('分享卡片正文')).toBeTruthy();
+    fireEvent.press(getByLabelText('保存卡片图片'));
 
     await waitFor(() => {
       expect(mockCaptureRefCalls).toHaveLength(1);
@@ -414,19 +451,13 @@ describe('ChatBubble structured summary', () => {
       },
     });
 
-    fireEvent.press(getByLabelText('发微信分享餐食图片'));
+    fireEvent.press(getByLabelText('分享卡片图片'));
     await waitFor(() => {
       expect(mockCaptureRefCalls).toHaveLength(2);
       expect(mockShareLocalImage).toHaveBeenCalledWith('file:///tmp/diet-card.png');
     });
 
-    fireEvent.press(getByLabelText('发小红书分享餐食图片'));
-    await waitFor(() => {
-      expect(mockCaptureRefCalls).toHaveLength(3);
-      expect(mockShareLocalImage).toHaveBeenCalledTimes(2);
-    });
-
-    fireEvent.press(getByLabelText('分享餐食记录正文'));
+    fireEvent.press(getByLabelText('分享卡片正文'));
 
     await waitFor(() => {
       expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
@@ -446,7 +477,7 @@ describe('ChatBubble structured summary', () => {
   });
 
   it('does not share an unconfirmed diet draft as a completed meal record', () => {
-    renderCard.mockReturnValueOnce(__mockCard);
+    renderCard.mockReturnValue(__mockCard);
     const qc = new QueryClient();
     const message: UIMessage = {
       id: 'assistant-card-diet-draft-unconfirmed',
@@ -469,18 +500,19 @@ describe('ChatBubble structured summary', () => {
       }],
     };
 
-    const { queryByLabelText } = render(
+    const { getByTestId, queryByLabelText } = render(
       <QueryClientProvider client={qc}>
         <ChatBubble item={message} />
       </QueryClientProvider>,
     );
 
-    expect(queryByLabelText('分享餐食记录正文')).toBeNull();
+    fireEvent(getByTestId('assistant-card-interaction-surface'), 'longPress');
+    expect(queryByLabelText('分享卡片正文')).toBeNull();
   });
 
   it('shares a card-only diet quality result with progress and next action', async () => {
     sharePlainText.mockResolvedValueOnce(undefined);
-    renderCard.mockReturnValueOnce(__mockCard);
+    renderCard.mockReturnValue(__mockCard);
     const qc = new QueryClient();
     const message: UIMessage = {
       id: 'assistant-card-diet-quality-share',
@@ -503,15 +535,15 @@ describe('ChatBubble structured summary', () => {
       },
     };
 
-    const { getByLabelText, getByText } = render(
+    const { getByLabelText, getByTestId, queryByText } = render(
       <QueryClientProvider client={qc}>
         <ChatBubble item={message} />
       </QueryClientProvider>,
     );
 
-    expect(getByText('更多')).toBeTruthy();
-    expect(getByText('截图可直接发微信 / 小红书')).toBeTruthy();
-    fireEvent.press(getByLabelText('分享餐食记录正文'));
+    expect(queryByText('截图可直接发微信 / 小红书')).toBeNull();
+    fireEvent(getByTestId('assistant-card-interaction-surface'), 'longPress');
+    fireEvent.press(getByLabelText('分享卡片正文'));
 
     await waitFor(() => {
       expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({

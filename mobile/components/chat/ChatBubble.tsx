@@ -13,7 +13,6 @@ import * as Speech from 'expo-speech';
 import { setAudioModeAsync } from 'expo-audio';
 import { captureRef } from 'react-native-view-shot';
 import Markdown from 'react-native-markdown-display';
-import BrandCircle from './BrandCircle';
 import { getCardActionRuntimeKey, renderCard } from './cards';
 import { createMdStylesChat } from '../../constants/markdownStyles';
 import type { ColorPalette } from '../../hooks/useTheme';
@@ -27,12 +26,11 @@ import {
   saveCardActionReceipt,
 } from '../../services/cardActionReceiptStorage';
 import { durationBucket, emitClientEvent } from '../../services/clientEvents';
-import AttributionChips from './AttributionChips';
+import { AttributionDetails, normalizedAttributionCount } from './AttributionChips';
 import type { ChatCardActionDescriptor, ChatCardActionRuntimeState, ServerCardDescriptor } from './cards/types';
 import {
   revaColors as C,
   revaRadii,
-  revaShadows,
   revaSemantic,
   revaFonts,
 } from '../../constants/revaTheme';
@@ -75,13 +73,27 @@ interface Props {
   onToggleSelected?: (id: string) => void;
   /** 微信式: 长按这条消息进入多选模式 (仅可分享的消息才传). 进入后默认选中该条. */
   onEnterSelection?: (id: string) => void;
+  onSendSuggestedPrompt?: (prompt: string) => void;
+  onStopStreaming?: () => void;
 }
 
-function ChatBubbleInner({ item, onViewImage, imageAuthToken, selectionMode = false, selected = false, onToggleSelected, onEnterSelection }: Props) {
+function ChatBubbleInner({
+  item,
+  onViewImage,
+  imageAuthToken,
+  selectionMode = false,
+  selected = false,
+  onToggleSelected,
+  onEnterSelection,
+  onSendSuggestedPrompt,
+  onStopStreaming,
+}: Props) {
   const qc = useQueryClient();
   const toast = useToast();
   const isUser = item.role === 'user';
   const [showActions, setShowActions] = useState(false);  // 长按显示操作
+  const [showShareActions, setShowShareActions] = useState(false);
+  const [showCardActions, setShowCardActions] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [cardActionStateByKey, setCardActionStateByKey] = useState<Record<string, ChatCardActionRuntimeState>>({});
   const [cardReceiptByKey, setCardReceiptByKey] = useState<Record<string, WriteReceipt>>({});
@@ -118,6 +130,17 @@ function ChatBubbleInner({ item, onViewImage, imageAuthToken, selectionMode = fa
     () => (structuredSummary ? stripStructuredHealthSummary(assistantText) : assistantText),
     [assistantText, structuredSummary],
   );
+  const advisorPresentation = useMemo(
+    () => (
+      !isUser
+      && !item.streaming
+      && item.completionStatus !== 'interrupted'
+      && item.completionStatus !== 'error'
+        ? parseAdvisorPresentation(visibleMarkdown)
+        : null
+    ),
+    [isUser, item.completionStatus, item.streaming, visibleMarkdown],
+  );
   const thinkingSteps = useMemo(
     () => (!isUser && Array.isArray(item.thinkingSteps)
       ? item.thinkingSteps.map(step => String(step || '').trim()).filter(Boolean).slice(-4)
@@ -133,16 +156,19 @@ function ChatBubbleInner({ item, onViewImage, imageAuthToken, selectionMode = fa
   );
   const placeholderOnly = visibleMarkdown === THINKING_PLACEHOLDER_TEXT;
   const processingStatusLabel = currentStatus
-    || (item.streaming && placeholderOnly ? '正在理解你的问题…' : '');
+    || (item.streaming && (placeholderOnly || !visibleMarkdown.trim()) ? '正在理解你的问题…' : '');
   const showProcessingPanel = !isUser && (
     thinkingSteps.length > 0
     || !!processingStatusLabel
   );
-  const visibleAssistantMarkdown = (
+  const rawVisibleAssistantMarkdown = (
     showProcessingPanel && placeholderOnly
       ? ''
       : visibleMarkdown
   );
+  const visibleAssistantMarkdown = item.streaming
+    ? rawVisibleAssistantMarkdown
+    : advisorPresentation?.details ?? rawVisibleAssistantMarkdown;
   const assistantTextForActions = assistantText.trim();
   // 流式期间故意不跑 preprocessMarkdownTables + <Markdown> 整树渲染:
   // visibleMarkdown 每个 token 批次都变, memo 会失效 → 每秒 10-20 次全量
@@ -415,6 +441,11 @@ function ChatBubbleInner({ item, onViewImage, imageAuthToken, selectionMode = fa
       toast.show(`分享${targetName}失败，请稍后重试`, 'error');
     }
   }, [captureCardScreenshot, toast]);
+  const openCardActions = useCallback(() => {
+    if (!cardSharePayload || selectionMode) return;
+    try { Haptics.selectionAsync(); } catch {}
+    setShowCardActions(true);
+  }, [cardSharePayload, selectionMode]);
 
   if (item.cardType && item.cardData) {
     const rendered = renderCard(
@@ -424,60 +455,62 @@ function ChatBubbleInner({ item, onViewImage, imageAuthToken, selectionMode = fa
     if (rendered) {
       return (
         <View style={[styles.msgRow, styles.msgRowAI]}>
-          <View style={{ width: 36 }} />
           <View testID="assistant-card-frame" style={styles.cardFrame}>
-            <View ref={cardFrameRef} testID="assistant-card-capture-frame" collapsable={false}>
-              {rendered}
-              {latestWriteReceipt ? <WriteReceiptLine receipt={latestWriteReceipt} /> : null}
-              {cardReceiptPersistenceWarning ? <WriteReceiptPersistenceWarning /> : null}
-            </View>
-            {cardSharePayload && !selectionMode ? (
-              <View style={styles.cardMetaRow}>
-                <Text style={txt.cardShareHint} numberOfLines={1}>
-                  截图可直接发微信 / 小红书
-                </Text>
-                <View testID="assistant-card-share-actions" style={styles.cardShareActions}>
-                  <Pressable
-                    onPress={handleSaveCardScreenshot}
-                    hitSlop={6}
-                    accessibilityRole="button"
-                    accessibilityLabel="保存餐食截图"
-                    style={({ pressed }) => [styles.cardSaveButton, pressed && styles.actionBtnPressed]}
-                  >
-                    <Ionicons name="image-outline" size={13} color={C.ink3} />
-                    <Text style={txt.cardSaveButton}>保存截图</Text>
-                  </Pressable>
-                  <Pressable
-                    onPress={() => handleShareCardImage('wechat')}
-                    hitSlop={6}
-                    accessibilityRole="button"
-                    accessibilityLabel="发微信分享餐食图片"
-                    style={({ pressed }) => [styles.cardWechatShareButton, pressed && styles.actionBtnPressed]}
-                  >
-                    <Ionicons name="logo-wechat" size={13} color="#fff" />
-                    <Text style={txt.cardWechatShareButton}>发微信</Text>
-                  </Pressable>
-                  <Pressable
-                    onPress={() => handleShareCardImage('xiaohongshu')}
-                    hitSlop={6}
-                    accessibilityRole="button"
-                    accessibilityLabel="发小红书分享餐食图片"
-                    style={({ pressed }) => [styles.cardXhsShareButton, pressed && styles.actionBtnPressed]}
-                  >
-                    <Ionicons name="book-outline" size={13} color={C.green700} />
-                    <Text style={txt.cardImageShareButton}>发小红书</Text>
-                  </Pressable>
-                  <Pressable
-                    onPress={handleCardShare}
-                    hitSlop={6}
-                    accessibilityRole="button"
-                    accessibilityLabel="分享餐食记录正文"
-                    style={({ pressed }) => [styles.cardShareButton, pressed && styles.actionBtnPressed]}
-                  >
-                    <Ionicons name="share-social-outline" size={13} color={C.green700} />
-                    <Text style={txt.cardShareButton}>更多</Text>
-                  </Pressable>
-                </View>
+            <Pressable
+              testID="assistant-card-interaction-surface"
+              onLongPress={openCardActions}
+              delayLongPress={350}
+              accessibilityRole="summary"
+              accessibilityLabel={cardSharePayload ? '长按卡片打开分享操作' : '健康卡片'}
+            >
+              <View ref={cardFrameRef} testID="assistant-card-capture-frame" collapsable={false}>
+                {rendered}
+                {latestWriteReceipt ? <WriteReceiptLine receipt={latestWriteReceipt} /> : null}
+                {cardReceiptPersistenceWarning ? <WriteReceiptPersistenceWarning /> : null}
+              </View>
+            </Pressable>
+            {showCardActions && cardSharePayload && !selectionMode ? (
+              <View testID="assistant-card-share-actions" style={styles.cardShareActions}>
+                <Pressable
+                  onPress={handleSaveCardScreenshot}
+                  hitSlop={6}
+                  accessibilityRole="button"
+                  accessibilityLabel="保存卡片图片"
+                  style={({ pressed }) => [styles.cardSaveButton, pressed && styles.actionBtnPressed]}
+                >
+                  <Ionicons name="image-outline" size={13} color={C.ink3} />
+                  <Text style={txt.cardSaveButton}>保存图片</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => handleShareCardImage('more')}
+                  hitSlop={6}
+                  accessibilityRole="button"
+                  accessibilityLabel="分享卡片图片"
+                  style={({ pressed }) => [styles.cardShareButton, pressed && styles.actionBtnPressed]}
+                >
+                  <Ionicons name="share-social-outline" size={13} color={C.green700} />
+                  <Text style={txt.cardShareButton}>分享图片</Text>
+                </Pressable>
+                <Pressable
+                  onPress={handleCardShare}
+                  hitSlop={6}
+                  accessibilityRole="button"
+                  accessibilityLabel="分享卡片正文"
+                  style={({ pressed }) => [styles.cardShareButton, pressed && styles.actionBtnPressed]}
+                >
+                  <Ionicons name="document-text-outline" size={13} color={C.green700} />
+                  <Text style={txt.cardShareButton}>分享正文</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => setShowCardActions(false)}
+                  hitSlop={6}
+                  accessibilityRole="button"
+                  accessibilityLabel="收起卡片操作"
+                  style={({ pressed }) => [styles.cardSaveButton, pressed && styles.actionBtnPressed]}
+                >
+                  <Ionicons name="close" size={13} color={C.ink3} />
+                  <Text style={txt.cardSaveButton}>收起</Text>
+                </Pressable>
               </View>
             ) : null}
           </View>
@@ -492,6 +525,7 @@ function ChatBubbleInner({ item, onViewImage, imageAuthToken, selectionMode = fa
     Clipboard.setStringAsync(item.content);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setShowActions(false);
+    setShowShareActions(false);
     Alert.alert('已复制');
   };
 
@@ -562,12 +596,14 @@ function ChatBubbleInner({ item, onViewImage, imageAuthToken, selectionMode = fa
       return;
     }
     Haptics.selectionAsync();
+    setShowShareActions(false);
     setShowActions(prev => !prev);
   };
 
   const handleSelectMessage = () => {
     if (!onEnterSelection) return;
     setShowActions(false);
+    setShowShareActions(false);
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     } catch {}
@@ -642,19 +678,80 @@ function ChatBubbleInner({ item, onViewImage, imageAuthToken, selectionMode = fa
     } catch { /* 用户取消分享也会走这里, 不打扰 */ }
   };
 
+  const handleMessageShare = async (target: 'xiaohongshu' | 'more' = 'more') => {
+    setShowActions(false);
+    setShowShareActions(false);
+    if (isUser) {
+      try {
+        await sharePlainText({ title: '小巴 · 对话', message: item.content.trim() });
+      } catch { /* 用户取消分享不打扰 */ }
+      return;
+    }
+    await handleShare(target);
+  };
+
+  const handleSpeakFromMenu = () => {
+    setShowActions(false);
+    setShowShareActions(false);
+    void handleSpeak();
+  };
+
   const handleBubblePress = () => {
     if (selectionMode) {
       onToggleSelected?.(item.id);
       return;
     }
-    if (showActions) setShowActions(false);
+    if (showActions) {
+      setShowActions(false);
+      setShowShareActions(false);
+    }
   };
 
   const renderMessageActions = () => {
     if (!showActions || selectionMode) return null;
     const canCopy = item.content.trim().length > 0;
     const canSelect = !!onEnterSelection;
-    if (!canCopy && !canSelect) return null;
+    const canShare = canCopy && (
+      isUser
+      || (item.completionStatus !== 'interrupted' && item.completionStatus !== 'error')
+    );
+    const canSpeak = !isUser && !!assistantTextForActions;
+    if (!canCopy && !canSelect && !canShare && !canSpeak) return null;
+
+    if (showShareActions && !isUser) {
+      return (
+        <View style={styles.actionsRow}>
+          <Pressable
+            style={({ pressed }) => [styles.actionBtn, pressed && styles.actionBtnPressed]}
+            onPress={() => { void handleMessageShare('more'); }}
+            accessibilityRole="button"
+            accessibilityLabel="系统分享"
+          >
+            <Ionicons name="share-social-outline" size={14} color={C.green500} />
+            <Text style={txt.actionBtn}>系统分享</Text>
+          </Pressable>
+          <Pressable
+            style={({ pressed }) => [styles.actionBtn, pressed && styles.actionBtnPressed]}
+            onPress={() => { void handleMessageShare('xiaohongshu'); }}
+            accessibilityRole="button"
+            accessibilityLabel="小红书文案"
+          >
+            <Ionicons name="book-outline" size={14} color={C.green500} />
+            <Text style={txt.actionBtn}>小红书文案</Text>
+          </Pressable>
+          <Pressable
+            style={({ pressed }) => [styles.actionBtn, pressed && styles.actionBtnPressed]}
+            onPress={() => setShowShareActions(false)}
+            accessibilityRole="button"
+            accessibilityLabel="返回消息操作"
+          >
+            <Ionicons name="arrow-back" size={14} color={C.green500} />
+            <Text style={txt.actionBtn}>返回</Text>
+          </Pressable>
+        </View>
+      );
+    }
+
     return (
       <View style={[styles.actionsRow, isUser && styles.actionsRowUser]}>
         {canCopy ? (
@@ -679,6 +776,38 @@ function ChatBubbleInner({ item, onViewImage, imageAuthToken, selectionMode = fa
             <Text style={[txt.actionBtn, isUser && txt.actionBtnOnUser]}>选择</Text>
           </Pressable>
         ) : null}
+        {canShare ? (
+          <Pressable
+            style={({ pressed }) => [styles.actionBtn, isUser && styles.actionBtnOnUser, pressed && styles.actionBtnPressed]}
+            onPress={() => {
+              if (isUser) {
+                void handleMessageShare('more');
+              } else {
+                setShowShareActions(true);
+              }
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={isUser ? '分享这条消息' : '分享这条回复'}
+          >
+            <Ionicons name="share-social-outline" size={14} color={isUser ? C.green700 : C.green500} />
+            <Text style={[txt.actionBtn, isUser && txt.actionBtnOnUser]}>分享</Text>
+          </Pressable>
+        ) : null}
+        {canSpeak ? (
+          <Pressable
+            style={({ pressed }) => [styles.actionBtn, pressed && styles.actionBtnPressed]}
+            onPress={handleSpeakFromMenu}
+            accessibilityRole="button"
+            accessibilityLabel={speaking ? '停止播报' : '语音播报'}
+          >
+            <Ionicons
+              name={speaking ? 'stop-circle' : 'volume-high-outline'}
+              size={14}
+              color={C.green500}
+            />
+            <Text style={txt.actionBtn}>{speaking ? '停止' : '朗读'}</Text>
+          </Pressable>
+        ) : null}
       </View>
     );
   };
@@ -697,11 +826,6 @@ function ChatBubbleInner({ item, onViewImage, imageAuthToken, selectionMode = fa
           >
             {selected ? <Ionicons name="checkmark" size={13} color="#fff" /> : null}
           </Pressable>
-        )}
-        {!isUser && (
-          <BrandCircle size={28} style={{ marginRight: 8 }}>
-            <Ionicons name="sparkles" size={12} color="#fff" />
-          </BrandCircle>
         )}
         {isUser ? (
           <TouchableOpacity
@@ -724,6 +848,7 @@ function ChatBubbleInner({ item, onViewImage, imageAuthToken, selectionMode = fa
           </TouchableOpacity>
         ) : (
           <TouchableOpacity
+            testID="assistant-message-surface"
             style={[styles.bubble, styles.bubbleAI, hasTable && styles.bubbleAIWide, selected && styles.bubbleSelected]}
             activeOpacity={hasInlineEditableCard ? 1 : 0.95}
             disabled={hasInlineEditableCard}
@@ -734,15 +859,23 @@ function ChatBubbleInner({ item, onViewImage, imageAuthToken, selectionMode = fa
             accessibilityState={selectionMode ? { selected } : undefined}
           >
             {renderMessageImages()}
-            {showProcessingPanel ? (
+            {item.streaming && showProcessingPanel ? (
               <ThinkingStepsPanel
                 steps={thinkingSteps}
                 streaming={item.streaming}
                 statusLabel={processingStatusLabel}
+                onStop={onStopStreaming}
               />
             ) : null}
+            {advisorPresentation?.conclusion ? (
+              <AssistantConclusion text={advisorPresentation.conclusion} />
+            ) : null}
             {structuredSummary ? (
-              <StructuredSummaryCard summary={structuredSummary} />
+              <StructuredSummaryCard
+                summary={structuredSummary}
+                showEyebrow={!advisorPresentation?.conclusion}
+                onSendSuggestedPrompt={onSendSuggestedPrompt}
+              />
             ) : null}
             {visibleAssistantMarkdown && isStreaming ? (
               // 流式降级: plain text, 保留换行, 不做 markdown 解析/整树渲染
@@ -762,73 +895,20 @@ function ChatBubbleInner({ item, onViewImage, imageAuthToken, selectionMode = fa
             ) : null}
             {latestWriteReceipt ? <WriteReceiptLine receipt={latestWriteReceipt} /> : null}
             {cardReceiptPersistenceWarning ? <WriteReceiptPersistenceWarning /> : null}
-            {/* 只消费后端 sources_used；不从 assistant 正文推断来源。 */}
-            {!item.streaming && item.sourcesUsed?.length ? (
-              <AttributionChips
+            {!item.streaming
+              && item.completionStatus !== 'interrupted'
+              && item.completionStatus !== 'error'
+              && assistantTextForActions ? (
+              <AssistantUtilityPanel
+                profile={transparency}
                 sources={item.sourcesUsed}
+                thinkingSteps={thinkingSteps}
                 onOpenMemory={() => router.push('/memory')}
+                onShareWeChat={() => { void handleShare('wechat'); }}
+                onShareXiaohongshu={() => { void handleShare('xiaohongshu'); }}
               />
             ) : null}
-            {!item.streaming && assistantTextForActions && transparency.visible ? (
-              <AgentTransparencyPanel profile={transparency} />
-            ) : null}
             {renderMessageActions()}
-            {item.streaming && !showProcessingPanel && !visibleAssistantMarkdown ? (
-              <ActivityIndicator size="small" color={C.green500} style={{ marginTop: 4 }} />
-            ) : null}
-            {/* 2026-05-13: 耗时 + 模型名 footer + 🔊 播报按钮 (流式结束才显示) */}
-            {!item.streaming && assistantTextForActions ? (
-              <View style={styles.metaRow}>
-                <View style={{ flex: 1 }} />
-                {!selectionMode ? (
-                  <View style={styles.assistantShareActions}>
-                    <Pressable
-                      onPress={() => handleShare('wechat')}
-                      hitSlop={6}
-                      accessibilityRole="button"
-                      accessibilityLabel="发微信分享这条回复"
-                      style={({ pressed }) => [styles.assistantWechatShareButton, pressed && styles.actionBtnPressed]}
-                    >
-                      <Ionicons name="logo-wechat" size={13} color="#fff" />
-                      <Text style={txt.assistantWechatShareButton}>微信</Text>
-                    </Pressable>
-                    <Pressable
-                      onPress={() => handleShare('xiaohongshu')}
-                      hitSlop={6}
-                      accessibilityRole="button"
-                      accessibilityLabel="发小红书分享这条回复"
-                      style={({ pressed }) => [styles.assistantXhsShareButton, pressed && styles.actionBtnPressed]}
-                    >
-                      <Ionicons name="book-outline" size={13} color={C.green700} />
-                      <Text style={txt.assistantShareButton}>小红书</Text>
-                    </Pressable>
-                    <Pressable
-                      onPress={() => handleShare('more')}
-                      hitSlop={6}
-                      accessibilityRole="button"
-                      accessibilityLabel="更多分享"
-                      style={({ pressed }) => [styles.assistantMoreShareButton, pressed && styles.actionBtnPressed]}
-                    >
-                      <Ionicons name="share-social-outline" size={13} color={C.ink2} />
-                      <Text style={txt.assistantMoreShareButton}>更多</Text>
-                    </Pressable>
-                  </View>
-                ) : null}
-                <Pressable
-                  onPress={handleSpeak}
-                  hitSlop={6}
-                  accessibilityRole="button"
-                  accessibilityLabel={speaking ? '停止播报' : '语音播报'}
-                  style={({ pressed }) => [styles.speakBtn, pressed && styles.actionBtnPressed]}
-                >
-                  <Ionicons
-                    name={speaking ? 'stop-circle' : 'volume-high-outline'}
-                    size={14}
-                    color={speaking ? C.green500 : C.ink2}
-                  />
-                </Pressable>
-              </View>
-            ) : null}
           </TouchableOpacity>
         )}
       </View>
@@ -1201,6 +1281,48 @@ function stripStructuredHealthSummary(text: string): string {
   return kept.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
+interface AdvisorPresentation {
+  conclusion: string;
+  details: string;
+}
+
+function cleanConclusionText(value: string): string {
+  return value
+    .replace(/^#{1,6}\s*/gm, '')
+    .replace(/^>\s*/gm, '')
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/__(.+?)__/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/\s*\n\s*/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+function parseAdvisorPresentation(text: string): AdvisorPresentation | null {
+  const trimmed = text.trim();
+  if (!trimmed || /^\s*(?:\||```|[-*+]\s|\d+[.)、]\s)/.test(trimmed)) return null;
+
+  const blocks = trimmed.split(/\n\s*\n/).filter(Boolean);
+  if (blocks.length === 0) return null;
+  let firstBlock = blocks[0];
+  let remainingBlocks = blocks.slice(1);
+
+  if (firstBlock.length > 150) {
+    const relativeSentenceEnd = firstBlock.slice(30, 130).search(/[。！？!?]/);
+    if (relativeSentenceEnd >= 0) {
+      const splitAt = relativeSentenceEnd + 31;
+      const rest = firstBlock.slice(splitAt).trim();
+      firstBlock = firstBlock.slice(0, splitAt).trim();
+      if (rest) remainingBlocks = [rest, ...remainingBlocks];
+    }
+  }
+
+  const conclusion = cleanConclusionText(firstBlock);
+  if (!conclusion) return null;
+  return { conclusion, details: remainingBlocks.join('\n\n').trim() };
+}
+
 class MarkdownRenderBoundary extends React.Component<
   { resetKey: string; fallbackText: string; children: React.ReactNode },
   { failed: boolean }
@@ -1237,6 +1359,18 @@ function SafeMarkdown({ content, fallbackText }: { content: string; fallbackText
   );
 }
 
+function AssistantConclusion({ text }: { text: string }) {
+  return (
+    <View testID="assistant-conclusion" style={summaryStyles.conclusion}>
+      <View style={summaryStyles.conclusionLabelRow}>
+        <View style={summaryStyles.conclusionDot} />
+        <Text style={summaryStyles.conclusionLabel}>小巴结论</Text>
+      </View>
+      <Text style={summaryStyles.conclusionText}>{text}</Text>
+    </View>
+  );
+}
+
 // 指标状态 = 真正的「好坏」语义 → Reva 三步临床色 (warning=caution / danger=risk / success=normal),
 // 中性回退用灰 (= legacy neutral.solid).
 function statusTone(status?: string): string {
@@ -1249,49 +1383,77 @@ function statusTone(status?: string): string {
 
 function StructuredSummaryCard({
   summary,
+  showEyebrow,
+  onSendSuggestedPrompt,
 }: {
   summary: StructuredHealthSummary;
+  showEyebrow: boolean;
+  onSendSuggestedPrompt?: (prompt: string) => void;
 }) {
+  const primaryAdvice = summary.advice[0];
+  const secondaryAdvice = summary.advice.slice(1);
   return (
-    <View style={[summaryStyles.card, { backgroundColor: C.paper, borderColor: C.line }]}>
+    <View style={summaryStyles.card}>
+      {showEyebrow ? (
+        <View style={summaryStyles.conclusionLabelRow}>
+          <View style={summaryStyles.conclusionDot} />
+          <Text style={summaryStyles.conclusionLabel}>小巴结论</Text>
+        </View>
+      ) : null}
       {summary.metrics.length > 0 ? (
-        <>
-          <View style={summaryStyles.header}>
-            <Ionicons name="analytics-outline" size={14} color={C.green500} />
-            <Text style={summaryStyles.title}>指标摘要</Text>
-          </View>
-          <View style={summaryStyles.metrics}>
+          <View testID="assistant-metric-grid" style={summaryStyles.metrics}>
             {summary.metrics.map(metric => (
-              <View key={`${metric.label}-${metric.value}`} style={summaryStyles.metricRow}>
+              <View key={`${metric.label}-${metric.value}`} style={summaryStyles.metricCell}>
                 <Text style={summaryStyles.metricLabel} numberOfLines={1}>
                   {metric.label}
                 </Text>
-                <Text style={summaryStyles.metricValue} numberOfLines={1}>
+                <Text style={summaryStyles.metricValue} numberOfLines={2}>
                   {metric.value}
                 </Text>
                 {metric.status ? (
-                  <View style={[summaryStyles.statusDot, { backgroundColor: statusTone(metric.status) }]} />
+                  <Text style={[summaryStyles.metricStatus, { color: statusTone(metric.status) }]} numberOfLines={1}>
+                    {metric.status}
+                  </Text>
                 ) : null}
               </View>
             ))}
           </View>
-        </>
       ) : null}
 
-      {summary.advice.length > 0 ? (
-        <View style={[summaryStyles.adviceBlock, summary.metrics.length > 0 && { borderTopColor: C.line, borderTopWidth: StyleSheet.hairlineWidth }]}>
-          <View style={summaryStyles.header}>
-            <Ionicons name="pin-outline" size={14} color={C.green500} />
-            <Text style={summaryStyles.title}>今日建议</Text>
-          </View>
-          {summary.advice.map((item, index) => (
-            <View key={`${index}-${item}`} style={summaryStyles.adviceRow}>
-              <Text style={summaryStyles.adviceIndex}>{index + 1}</Text>
-              <Text style={summaryStyles.adviceText} numberOfLines={2}>
-                {item}
-              </Text>
+      {primaryAdvice ? (
+        <View testID="assistant-action-card" style={summaryStyles.actionCard}>
+          <Text style={summaryStyles.actionEyebrow}>今天只做</Text>
+          <Text style={summaryStyles.actionTitle}>{primaryAdvice}</Text>
+          {secondaryAdvice.length > 0 ? (
+            <View style={summaryStyles.actionSecondaryList}>
+              {secondaryAdvice.map(item => (
+                <View key={item} style={summaryStyles.actionSecondaryRow}>
+                  <View style={summaryStyles.actionSecondaryDot} />
+                  <Text style={summaryStyles.actionSecondary}>{item}</Text>
+                </View>
+              ))}
             </View>
-          ))}
+          ) : null}
+          {onSendSuggestedPrompt ? (
+            <View style={summaryStyles.actionButtons}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="把建议加入今天计划"
+                onPress={() => onSendSuggestedPrompt(`把这项建议加入今天计划：${primaryAdvice}`)}
+                style={({ pressed }) => [summaryStyles.actionPrimary, pressed && styles.actionBtnPressed]}
+              >
+                <Text style={summaryStyles.actionPrimaryText}>加入今天计划</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="解释这条建议的依据"
+                onPress={() => onSendSuggestedPrompt(`解释为什么建议我：${primaryAdvice}`)}
+                style={({ pressed }) => [summaryStyles.actionSecondaryButton, pressed && styles.actionBtnPressed]}
+              >
+                <Text style={summaryStyles.actionSecondaryButtonText}>为什么</Text>
+              </Pressable>
+            </View>
+          ) : null}
         </View>
       ) : null}
     </View>
@@ -1302,91 +1464,155 @@ const ChatBubble = React.memo(ChatBubbleInner);
 export default ChatBubble;
 
 const summaryStyles = StyleSheet.create({
-  card: {
-    borderRadius: 14,
-    borderWidth: StyleSheet.hairlineWidth,
-    padding: 10,
-    marginBottom: 10,
-    gap: 8,
+  conclusion: {
+    marginBottom: 12,
+    gap: 5,
   },
-  header: {
+  conclusionLabelRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    marginBottom: 6,
+    gap: 7,
   },
-  title: {
+  conclusionDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: C.green500,
+  },
+  conclusionLabel: {
     fontFamily: revaFonts.sans,
-    fontSize: 12,
+    fontSize: 11.5,
+    lineHeight: 16,
+    fontWeight: '900',
+    color: C.green600,
+  } as TextStyle,
+  conclusionText: {
+    fontFamily: revaFonts.sans,
+    fontSize: 19,
+    lineHeight: 27,
     fontWeight: '800',
     color: C.ink1,
   } as TextStyle,
-  metrics: {
-    gap: 6,
+  card: {
+    marginBottom: 12,
+    gap: 10,
   },
-  metricRow: {
+  metrics: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+    flexWrap: 'wrap',
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
+    backgroundColor: C.paper,
+    overflow: 'hidden',
+  },
+  metricCell: {
+    minWidth: '33.333%',
+    flexGrow: 1,
+    flexBasis: 0,
+    minHeight: 88,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    borderRightWidth: StyleSheet.hairlineWidth,
+    borderRightColor: C.line,
   },
   metricLabel: {
     fontFamily: revaFonts.sans,
-    width: 58,
-    fontSize: 12,
+    fontSize: 10.5,
+    lineHeight: 15,
     fontWeight: '700',
-    color: C.ink2,
+    color: C.ink3,
   } as TextStyle,
   metricValue: {
+    marginTop: 3,
     fontFamily: revaFonts.mono,
-    flex: 1,
-    fontSize: 13,
-    fontWeight: '800',
+    fontSize: 16,
+    lineHeight: 21,
+    fontWeight: '900',
     color: C.ink1,
     fontVariant: ['tabular-nums'] as const,
   } as TextStyle,
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  adviceBlock: {
-    paddingTop: 8,
-  },
-  adviceRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 7,
-    marginTop: 5,
-  },
-  adviceIndex: {
-    fontFamily: revaFonts.mono,
-    width: 18,
-    fontSize: 11,
-    fontWeight: '900',
-    color: C.green500,
-    textAlign: 'center',
-  } as TextStyle,
-  adviceText: {
+  metricStatus: {
+    marginTop: 3,
     fontFamily: revaFonts.sans,
+    fontSize: 10,
+    lineHeight: 14,
+    fontWeight: '800',
+  } as TextStyle,
+  actionCard: {
+    borderRadius: 12,
+    backgroundColor: '#0E2119',
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    gap: 6,
+  },
+  actionEyebrow: {
+    fontFamily: revaFonts.sans,
+    fontSize: 10.5,
+    lineHeight: 15,
+    fontWeight: '800',
+    color: '#94AA9E',
+  } as TextStyle,
+  actionTitle: {
+    fontFamily: revaFonts.sans,
+    fontSize: 17,
+    lineHeight: 24,
+    fontWeight: '900',
+    color: '#F7FAF8',
+  } as TextStyle,
+  actionSecondaryList: { gap: 2 },
+  actionSecondaryRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 7 },
+  actionSecondaryDot: { width: 3, height: 3, borderRadius: 2, marginTop: 7, backgroundColor: '#94AA9E' },
+  actionSecondary: {
     flex: 1,
-    fontSize: 12,
+    fontFamily: revaFonts.sans,
+    fontSize: 11.5,
     lineHeight: 17,
-    fontWeight: '600',
-    color: C.ink2,
+    color: '#BCC9C2',
+  } as TextStyle,
+  actionButtons: {
+    marginTop: 5,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  actionPrimary: {
+    minHeight: 38,
+    flex: 1,
+    borderRadius: revaRadii.pill,
+    backgroundColor: '#3ED7A2',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+  },
+  actionPrimaryText: {
+    fontFamily: revaFonts.sans,
+    fontSize: 12.5,
+    fontWeight: '900',
+    color: '#092019',
+  } as TextStyle,
+  actionSecondaryButton: {
+    minHeight: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+  },
+  actionSecondaryButtonText: {
+    fontFamily: revaFonts.sans,
+    fontSize: 12.5,
+    fontWeight: '800',
+    color: '#DDE7E2',
   } as TextStyle,
 });
 
-// Reva 设计语言: 用户气泡 green500, AI 气泡 surface + 软阴影 (light-first). 数字/耗时走 mono.
+// Reva 设计语言: 用户气泡 green500, AI 正文无框,结构化对象使用独立卡片. 数字/耗时走 mono.
 const styles = StyleSheet.create({
   msgRow: { flexDirection: 'row', marginBottom: 12, alignItems: 'flex-end' },
   msgRowUser: { justifyContent: 'flex-end' },
   msgRowAI: { justifyContent: 'flex-start' },
   cardFrame: { flex: 1, minWidth: 0, maxWidth: '100%' },
-  cardMetaRow: {
-    marginTop: 6,
-    gap: 6,
-  },
   cardShareActions: {
+    marginTop: 8,
     flexDirection: 'row',
     flexWrap: 'wrap',
     alignItems: 'center',
@@ -1413,41 +1639,6 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.line,
     backgroundColor: C.paper,
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-  },
-  cardImageShareButton: {
-    minHeight: 30,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    borderRadius: revaRadii.pill,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.green100,
-    backgroundColor: C.green50,
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-  },
-  cardWechatShareButton: {
-    minHeight: 30,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    borderRadius: revaRadii.pill,
-    backgroundColor: C.green500,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    ...revaShadows.sm,
-  },
-  cardXhsShareButton: {
-    minHeight: 30,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    borderRadius: revaRadii.pill,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.green100,
-    backgroundColor: C.green50,
     paddingHorizontal: 9,
     paddingVertical: 4,
   },
@@ -1534,21 +1725,20 @@ const styles = StyleSheet.create({
     zIndex: 2,
   },
   bubbleAI: {
-    backgroundColor: C.surface, borderBottomLeftRadius: 4,
-    ...revaShadows.sm,
+    flex: 1,
+    maxWidth: '100%',
+    alignSelf: 'stretch',
+    borderRadius: 0,
+    paddingHorizontal: 0,
+    paddingVertical: 2,
+    backgroundColor: 'transparent',
+    shadowOpacity: 0,
+    elevation: 0,
   },
   bubbleAIWide: { flex: 1, maxWidth: '94%', flexShrink: 1, alignSelf: 'stretch' },
   imageGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginBottom: 4 },
   msgImageSingle: { width: 160, height: 120, borderRadius: 10 },
   msgImageGrid: { width: 72, height: 72, borderRadius: 8 },
-  // 刀⑤ 细状态行: 单行, 小 spinner + 灰字, 无边框无背景 (低干扰), 首 token 前短暂出现.
-  statusLine: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 7,
-    marginBottom: 2,
-    minHeight: 20,
-  },
   thinkingPanel: {
     alignSelf: 'stretch',
     width: '100%',
@@ -1561,6 +1751,70 @@ const styles = StyleSheet.create({
     backgroundColor: C.paper,
     paddingHorizontal: 10,
     paddingVertical: 9,
+  },
+  thinkingAnalysisCard: {
+    alignSelf: 'stretch',
+    width: '100%',
+    marginBottom: 14,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
+    backgroundColor: C.paper,
+    overflow: 'hidden',
+  },
+  thinkingAnalysisHeader: {
+    minHeight: 74,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 13,
+    paddingVertical: 12,
+  },
+  thinkingIndicatorWrap: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: C.green50,
+  },
+  thinkingAnalysisCopy: { flex: 1, minWidth: 0, gap: 2 },
+  thinkingStopButton: { minHeight: 32, justifyContent: 'center', paddingHorizontal: 4 },
+  thinkingAnalysisSteps: {
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: C.line,
+  },
+  thinkingAnalysisStepRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  thinkingAnalysisStepIcon: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: C.green500,
+  },
+  thinkingAnalysisStepIconActive: {
+    backgroundColor: C.paper,
+    borderWidth: 1.5,
+    borderColor: C.green500,
+  },
+  thinkingSkeleton: {
+    gap: 9,
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 16,
+  },
+  thinkingSkeletonLine: {
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: C.paper2,
   },
   // 完成态: 低干扰内联状态行, 展开时在下方补步骤列表.
   thinkingPill: {
@@ -1700,59 +1954,54 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.92)',
   },
   actionBtnPressed: { opacity: 0.82 },
-  assistantShareActions: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-    gap: 5,
-    flexShrink: 1,
+  assistantUtilityPanel: {
+    alignSelf: 'stretch',
+    width: '100%',
+    marginTop: 12,
   },
-  assistantWechatShareButton: {
-    minHeight: 26,
+  assistantUtilityRail: {
+    minHeight: 38,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    borderRadius: revaRadii.pill,
-    backgroundColor: C.green600,
+    borderRadius: 10,
+    backgroundColor: C.paper2,
+    paddingHorizontal: 4,
+  },
+  assistantUtilityEvidence: {
+    minHeight: 38,
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     paddingHorizontal: 8,
-    paddingVertical: 3,
   },
-  assistantXhsShareButton: {
-    minHeight: 26,
+  assistantUtilitySpacer: { flex: 1 },
+  assistantUtilityDivider: {
+    width: StyleSheet.hairlineWidth,
+    height: 18,
+    backgroundColor: C.line,
+  },
+  assistantUtilityShare: {
+    minHeight: 38,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    borderRadius: revaRadii.pill,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.green100,
-    backgroundColor: C.green50,
     paddingHorizontal: 8,
-    paddingVertical: 3,
   },
-  assistantMoreShareButton: {
-    minHeight: 26,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    borderRadius: revaRadii.pill,
+  assistantUtilityDetails: {
+    marginTop: 7,
+    borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.line,
     backgroundColor: C.paper,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingHorizontal: 11,
+    paddingVertical: 10,
+    gap: 12,
   },
-  speakBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 999,
-  },
-  metaRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 3,
-    marginTop: 6,
-  },
+  assistantUtilitySection: { gap: 7 },
+  assistantUtilityThoughts: { gap: 6 },
+  assistantUtilityThoughtRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 7 },
   transparencyPanel: {
     marginTop: 9,
     borderRadius: 14,
@@ -1821,7 +2070,12 @@ const txt = {
   bubbleUser: { fontFamily: revaFonts.sans, fontSize: 15, lineHeight: 22, color: '#fff' } as TextStyle,
   // 与 markdownStyles body (fontSize 15 / lineHeight 23) 对齐, 流式→终态切 markdown 时无跳动
   streaming: { fontFamily: revaFonts.sans, fontSize: 15, lineHeight: 23, color: C.ink1 } as TextStyle,
-  statusLine: { flex: 1, minWidth: 0, fontFamily: revaFonts.sans, fontSize: 12.5, lineHeight: 17, fontWeight: '700', color: C.ink3 } as TextStyle,
+  thinkingAnalysisEyebrow: { fontFamily: revaFonts.sans, fontSize: 11, lineHeight: 15, fontWeight: '900', color: C.green600 } as TextStyle,
+  thinkingAnalysisTitle: { fontFamily: revaFonts.sans, fontSize: 14, lineHeight: 20, fontWeight: '800', color: C.ink1 } as TextStyle,
+  thinkingStop: { fontFamily: revaFonts.sans, fontSize: 11.5, lineHeight: 16, fontWeight: '800', color: C.ink3 } as TextStyle,
+  thinkingAnalysisStep: { flex: 1, fontFamily: revaFonts.sans, fontSize: 12.5, lineHeight: 18, fontWeight: '700', color: C.ink3 } as TextStyle,
+  thinkingAnalysisStepActive: { color: C.ink1, fontWeight: '900' } as TextStyle,
+  thinkingAnalysisStepNumber: { fontFamily: revaFonts.mono, fontSize: 10, lineHeight: 13, fontWeight: '900', color: C.green600 } as TextStyle,
   thinkingPillLabel: { flex: 1, minWidth: 0, fontFamily: revaFonts.sans, fontSize: 11.5, lineHeight: 16, fontWeight: '800', color: C.ink3 } as TextStyle,
   thinkingDoneLabel: { fontFamily: revaFonts.sans, fontSize: 12, lineHeight: 16, fontWeight: '900', color: C.green700 } as TextStyle,
   thinkingDoneMeta: { fontFamily: revaFonts.sans, fontSize: 11.2, lineHeight: 16, fontWeight: '800', color: C.ink3 } as TextStyle,
@@ -1834,16 +2088,13 @@ const txt = {
   thinkingStep: { flex: 1, fontFamily: revaFonts.sans, fontSize: 12.2, lineHeight: 18, color: C.ink2, fontWeight: '600' } as TextStyle,
   actionBtn: { fontFamily: revaFonts.sans, fontSize: 12, fontWeight: '700', color: C.green500 } as TextStyle,
   actionBtnOnUser: { color: C.green700 } as TextStyle,
+  assistantUtilityEvidence: { flex: 1, minWidth: 0, fontFamily: revaFonts.sans, fontSize: 11.5, lineHeight: 16, fontWeight: '800', color: C.ink2 } as TextStyle,
+  assistantUtilityShare: { fontFamily: revaFonts.sans, fontSize: 11, lineHeight: 15, fontWeight: '800', color: C.green700 } as TextStyle,
+  assistantUtilitySectionTitle: { fontFamily: revaFonts.sans, fontSize: 10.5, lineHeight: 14, fontWeight: '900', color: C.ink3 } as TextStyle,
+  assistantUtilityThought: { flex: 1, fontFamily: revaFonts.sans, fontSize: 11.5, lineHeight: 17, fontWeight: '700', color: C.ink2 } as TextStyle,
   cardShareButton: { fontFamily: revaFonts.sans, fontSize: 11.5, lineHeight: 15, fontWeight: '900', color: C.green700 } as TextStyle,
   cardSaveButton: { fontFamily: revaFonts.sans, fontSize: 11.5, lineHeight: 15, fontWeight: '900', color: C.ink3 } as TextStyle,
-  cardWechatShareButton: { fontFamily: revaFonts.sans, fontSize: 11.5, lineHeight: 15, fontWeight: '900', color: '#fff' } as TextStyle,
-  cardImageShareButton: { fontFamily: revaFonts.sans, fontSize: 11.5, lineHeight: 15, fontWeight: '900', color: C.green700 } as TextStyle,
-  cardShareHint: { flex: 1, minWidth: 0, fontFamily: revaFonts.sans, fontSize: 10.5, lineHeight: 14, fontWeight: '700', color: C.ink3 } as TextStyle,
-  assistantShareButton: { fontFamily: revaFonts.sans, fontSize: 10.8, lineHeight: 14, fontWeight: '900', color: C.green700 } as TextStyle,
-  assistantWechatShareButton: { fontFamily: revaFonts.sans, fontSize: 10.8, lineHeight: 14, fontWeight: '900', color: '#fff' } as TextStyle,
-  assistantMoreShareButton: { fontFamily: revaFonts.sans, fontSize: 10.8, lineHeight: 14, fontWeight: '800', color: C.ink2 } as TextStyle,
   fallback: { fontFamily: revaFonts.sans, fontSize: 14, lineHeight: 20, color: C.ink2, fontStyle: 'italic' } as TextStyle,
-  meta: { fontFamily: revaFonts.mono, fontSize: 10, color: C.ink3 } as TextStyle,
   transparencyTitle: { flex: 1, fontFamily: revaFonts.sans, fontSize: 11.5, lineHeight: 16, fontWeight: '800', color: C.ink2 } as TextStyle,
   transparencyLabel: { width: 64, fontFamily: revaFonts.sans, fontSize: 11, lineHeight: 16, color: C.ink3 } as TextStyle,
   transparencyValue: { flex: 1, fontFamily: revaFonts.sans, fontSize: 11, lineHeight: 16, fontWeight: '700', color: C.ink2 } as TextStyle,
@@ -1851,30 +2102,16 @@ const txt = {
   transparencyChip: { fontFamily: revaFonts.sans, fontSize: 10.5, lineHeight: 14, color: C.ink2, fontWeight: '700' } as TextStyle,
 };
 
-// P0-1 渐进渲染 (刀⑤): 首 token 前的"细状态行" —— 单行进度 + 小 spinner, 低干扰。
-// 例: "正在理解…" → "查看步数数据…" → "正在整理回答…"。首 token 到达后由上游清空 → 消失。
-function StatusLine({ label }: { label: string }) {
-  return (
-    <View
-      testID="assistant-status-line"
-      style={styles.statusLine}
-      accessibilityLiveRegion="polite"
-      accessibilityLabel={`小巴${label}`}
-    >
-      <ActivityIndicator size="small" color={C.green500} />
-      <Text style={txt.statusLine} numberOfLines={1}>{label}</Text>
-    </View>
-  );
-}
-
 function ThinkingStepsPanel({
   steps,
   streaming,
   statusLabel,
+  onStop,
 }: {
   steps: string[];
   streaming?: boolean;
   statusLabel?: string;
+  onStop?: () => void;
 }) {
   // 完成态默认折叠成一条 slim pill;流式态保持实时进度展开 (用户要看到它在干活).
   const [expanded, setExpanded] = React.useState(false);
@@ -1883,49 +2120,55 @@ function ThinkingStepsPanel({
 
   const latestStep = steps[steps.length - 1];
 
-  // 流式态也用紧凑 pill: 默认只露当前阶段,避免大面板遮挡对话;点击才展开完整步骤.
   if (streaming) {
     const visibleStep = cleanStatusLabel || latestStep || '正在理解你的问题…';
-    const summary = steps.length > 0 ? `小巴处理中 · ${steps.length} 步` : '小巴处理中';
     return (
       <View
         testID="assistant-thinking-panel"
-        style={[styles.thinkingPill, styles.thinkingPillStreaming, expanded && styles.thinkingPillExpanded]}
-        accessibilityLabel={`小巴处理中,当前步骤:${visibleStep}`}
+        style={styles.thinkingAnalysisCard}
+        accessibilityLabel={`小巴正在分析,当前步骤:${visibleStep}`}
       >
-        <Pressable
-          onPress={() => setExpanded((prev) => !prev)}
-          style={({ pressed }) => [styles.thinkingPillHeader, pressed && styles.actionBtnPressed]}
-          accessibilityRole="button"
-          accessibilityLabel={expanded ? '收起思考步骤' : '展开思考步骤'}
-          accessibilityState={{ expanded }}
-        >
-          <ActivityIndicator size="small" color={C.green500} />
-          <View style={styles.thinkingPillCopy}>
-            <Text style={txt.thinkingPillLabel} numberOfLines={1}>{summary}</Text>
-            <Text style={txt.thinkingLatestStep} numberOfLines={1}>{visibleStep}</Text>
+        <View style={styles.thinkingAnalysisHeader}>
+          <View style={styles.thinkingIndicatorWrap}>
+            <ActivityIndicator testID="assistant-thinking-indicator" size="small" color={C.green500} />
           </View>
-          <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={14} color={C.ink3} />
-        </Pressable>
-        {expanded && steps.length > 0 ? (
-          <View style={[styles.thinkingPillList, styles.thinkingPillListExpanded]}>
-            {steps.map((step, index) => {
-              const active = index === steps.length - 1;
-              return (
-                <View
-                  key={`${step}-${index}`}
-                  style={styles.thinkingStepRow}
-                  accessibilityLabel={`${active ? '当前步骤' : '已完成步骤'}:${step}`}
-                >
-                  <View style={[styles.thinkingStepIndex, active && styles.thinkingStepIndexActive]}>
-                    <Text style={[txt.thinkingStepIndex, active && txt.thinkingStepIndexActive]}>{index + 1}</Text>
-                  </View>
-                  <Text style={txt.thinkingStep} numberOfLines={2}>{step}</Text>
+          <View style={styles.thinkingAnalysisCopy}>
+            <Text style={txt.thinkingAnalysisEyebrow}>正在分析</Text>
+            <Text style={txt.thinkingAnalysisTitle} numberOfLines={2}>{visibleStep}</Text>
+          </View>
+          {onStop ? (
+            <Pressable
+              onPress={onStop}
+              accessibilityRole="button"
+              accessibilityLabel="停止本轮分析"
+              hitSlop={8}
+              style={({ pressed }) => [styles.thinkingStopButton, pressed && styles.actionBtnPressed]}
+            >
+              <Text style={txt.thinkingStop}>停止</Text>
+            </Pressable>
+          ) : null}
+        </View>
+        {steps.filter(step => step !== visibleStep).length > 0 ? (
+          <View style={styles.thinkingAnalysisSteps}>
+          {steps.filter(step => step !== visibleStep).slice(-3).map((step, index) => {
+            return (
+              <View key={`${step}-${index}`} style={styles.thinkingAnalysisStepRow}>
+                <View style={styles.thinkingAnalysisStepIcon}>
+                  <Ionicons name="checkmark" size={12} color="#fff" />
                 </View>
-              );
-            })}
+                <Text style={txt.thinkingAnalysisStep} numberOfLines={2}>
+                  {step}
+                </Text>
+              </View>
+            );
+          })}
           </View>
         ) : null}
+        <View testID="assistant-thinking-skeleton" style={styles.thinkingSkeleton}>
+          <View style={[styles.thinkingSkeletonLine, { width: '88%' }]} />
+          <View style={[styles.thinkingSkeletonLine, { width: '66%' }]} />
+          <View style={[styles.thinkingSkeletonLine, { width: '78%' }]} />
+        </View>
       </View>
     );
   }
@@ -1982,8 +2225,23 @@ function bandColor(kind: AgentTransparencyBand['kind']): string {
   }
 }
 
-function AgentTransparencyPanel({ profile }: { profile: AgentTransparencyProfile }) {
+function AssistantUtilityPanel({
+  profile,
+  sources,
+  thinkingSteps,
+  onOpenMemory,
+  onShareWeChat,
+  onShareXiaohongshu,
+}: {
+  profile: AgentTransparencyProfile;
+  sources?: readonly string[];
+  thinkingSteps: readonly string[];
+  onOpenMemory: () => void;
+  onShareWeChat: () => void;
+  onShareXiaohongshu: () => void;
+}) {
   const [open, setOpen] = React.useState(false);
+  const sourceCount = normalizedAttributionCount(sources);
   const rows = [
     ...(profile.stages.length > 0 ? [{ label: '继续阶段', value: profile.stages.map(s => `${s.label} ${s.value}`).join(' · ') }] : []),
     ...(profile.rounds.length > 0 ? [{ label: 'LLM 轮次', value: profile.rounds.map(r => `${r.label} ${r.value}`).join('\n') }] : []),
@@ -1991,32 +2249,76 @@ function AgentTransparencyPanel({ profile }: { profile: AgentTransparencyProfile
     ...(profile.errorLine ? [{ label: '失败', value: profile.errorLine }] : []),
     ...(profile.traceLine ? [{ label: '追踪', value: profile.traceLine }] : []),
   ];
+  const hasExecutionDetails = profile.bands.length > 0
+    || rows.length > 0
+    || profile.tools.length > 0
+    || (sourceCount === 0 && profile.sources.length > 0);
+  const hasDetails = sourceCount > 0 || hasExecutionDetails || thinkingSteps.length > 0;
   return (
     <View
-      testID="agent-transparency-panel"
-      style={[
-        styles.transparencyPanel,
-        open ? styles.transparencyPanelOpen : styles.transparencyPanelCollapsed,
-      ]}
+      testID="assistant-utility-panel"
+      style={styles.assistantUtilityPanel}
     >
-      <Pressable
-        onPress={() => setOpen(o => !o)}
-        style={({ pressed }) => [styles.transparencyHeader, pressed && styles.actionBtnPressed]}
-        accessibilityRole="button"
-        accessibilityLabel={open ? '收起执行透视' : '展开执行透视'}
-      >
-        <Ionicons name="analytics-outline" size={13} color={C.green500} />
-        <Text style={txt.transparencyTitle} numberOfLines={1}>
-          透视 · {profile.headline || '本轮执行'}
-        </Text>
-        <Ionicons
-          name={open ? 'chevron-up' : 'chevron-down'}
-          size={13}
-          color={C.ink3}
-        />
-      </Pressable>
-      {open && (
-        <View style={styles.transparencyBody}>
+      <View style={styles.assistantUtilityRail}>
+        {hasDetails ? (
+          <Pressable
+            onPress={() => setOpen(o => !o)}
+            style={({ pressed }) => [styles.assistantUtilityEvidence, pressed && styles.actionBtnPressed]}
+            accessibilityRole="button"
+            accessibilityLabel={open ? '收起依据与过程' : '展开依据与过程'}
+            accessibilityState={{ expanded: open }}
+          >
+            <Ionicons name="layers-outline" size={13} color={C.ink3} />
+            <Text style={txt.assistantUtilityEvidence} numberOfLines={1}>
+              依据与过程{sourceCount > 0 ? ` · ${sourceCount}` : ''}
+            </Text>
+            <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={13} color={C.ink3} />
+          </Pressable>
+        ) : <View style={styles.assistantUtilitySpacer} />}
+        <View style={styles.assistantUtilityDivider} />
+        <Pressable
+          onPress={onShareWeChat}
+          accessibilityRole="button"
+          accessibilityLabel="微信分享这条回复"
+          style={({ pressed }) => [styles.assistantUtilityShare, pressed && styles.actionBtnPressed]}
+        >
+          <Ionicons name="logo-wechat" size={14} color={C.green600} />
+          <Text style={txt.assistantUtilityShare}>微信</Text>
+        </Pressable>
+        <Pressable
+          onPress={onShareXiaohongshu}
+          accessibilityRole="button"
+          accessibilityLabel="小红书分享这条回复"
+          style={({ pressed }) => [styles.assistantUtilityShare, pressed && styles.actionBtnPressed]}
+        >
+          <Ionicons name="book-outline" size={14} color={C.green600} />
+          <Text style={txt.assistantUtilityShare}>小红书</Text>
+        </Pressable>
+      </View>
+      {open && hasDetails ? (
+        <View style={styles.assistantUtilityDetails}>
+          {sourceCount > 0 ? (
+            <View style={styles.assistantUtilitySection}>
+              <Text style={txt.assistantUtilitySectionTitle}>使用数据</Text>
+              <AttributionDetails sources={sources} onOpenMemory={onOpenMemory} />
+            </View>
+          ) : null}
+          {thinkingSteps.length > 0 ? (
+            <View style={styles.assistantUtilitySection}>
+              <Text style={txt.assistantUtilitySectionTitle}>思考过程</Text>
+              <View style={styles.assistantUtilityThoughts}>
+                {thinkingSteps.map((step, index) => (
+                  <View key={`${step}-${index}`} style={styles.assistantUtilityThoughtRow}>
+                    <Ionicons name="checkmark-circle" size={13} color={C.green500} />
+                    <Text style={txt.assistantUtilityThought}>{step}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          ) : null}
+          {hasExecutionDetails ? (
+            <View style={styles.assistantUtilitySection}>
+              <Text style={txt.assistantUtilitySectionTitle}>执行过程</Text>
           {profile.bands.length > 0 ? (
             <>
               <View style={styles.transparencyBar}>
@@ -2047,14 +2349,16 @@ function AgentTransparencyPanel({ profile }: { profile: AgentTransparencyProfile
             </View>
           ))}
           {profile.sources.length > 0 ? (
-            <View style={styles.transparencyRow}>
-              <Text style={txt.transparencyLabel}>引用数据</Text>
-              <View style={{ flex: 1, gap: 3 }}>
-                {profile.sources.slice(0, 8).map(source => (
-                  <Text key={source} style={txt.transparencyValue}>· {source}</Text>
-                ))}
+            sourceCount === 0 ? (
+              <View style={styles.transparencyRow}>
+                <Text style={txt.transparencyLabel}>引用数据</Text>
+                <View style={{ flex: 1, gap: 3 }}>
+                  {profile.sources.slice(0, 8).map(source => (
+                    <Text key={source} style={txt.transparencyValue}>· {source}</Text>
+                  ))}
+                </View>
               </View>
-            </View>
+            ) : null
           ) : null}
           {profile.tools.length > 0 ? (
             <View style={styles.transparencyRow}>
@@ -2068,8 +2372,10 @@ function AgentTransparencyPanel({ profile }: { profile: AgentTransparencyProfile
               </View>
             </View>
           ) : null}
+            </View>
+          ) : null}
         </View>
-      )}
+      ) : null}
     </View>
   );
 }

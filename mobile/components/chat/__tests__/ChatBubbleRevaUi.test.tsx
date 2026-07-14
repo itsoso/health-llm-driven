@@ -49,7 +49,12 @@ jest.mock('../AttributionChips', () => {
   const { View } = require('react-native');
   const MockAttributionChips = () => <View />;
   MockAttributionChips.displayName = 'MockAttributionChips';
-  return MockAttributionChips;
+  return {
+    __esModule: true,
+    default: MockAttributionChips,
+    AttributionDetails: MockAttributionChips,
+    normalizedAttributionCount: (sources?: unknown[]) => sources?.length || 0,
+  };
 });
 jest.mock('../../../services/actionCards', () => ({
   createInterventionDraft: jest.fn(),

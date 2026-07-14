@@ -51,7 +51,12 @@ jest.mock('../AttributionChips', () => {
   const { View } = require('react-native');
   const MockAttributionChips = () => <View />;
   MockAttributionChips.displayName = 'MockAttributionChips';
-  return MockAttributionChips;
+  return {
+    __esModule: true,
+    default: MockAttributionChips,
+    AttributionDetails: MockAttributionChips,
+    normalizedAttributionCount: (sources?: unknown[]) => sources?.length || 0,
+  };
 });
 
 jest.mock('../cards', () => ({
@@ -110,9 +115,11 @@ describe('ChatBubble speech playback', () => {
   it('recovers the speech button when native speech startup throws', async () => {
     mockSpeakWithUserVoice.mockRejectedValue(new Error('speech unavailable'));
 
-    const { getByLabelText } = renderBubble();
+    const { getByLabelText, queryByLabelText } = renderBubble();
 
+    expect(queryByLabelText('语音播报')).toBeNull();
+    fireEvent(getByLabelText(`AI: ${baseMessage.content}`), 'longPress');
     expect(() => fireEvent.press(getByLabelText('语音播报'))).not.toThrow();
-    await waitFor(() => expect(getByLabelText('语音播报')).toBeTruthy());
+    await waitFor(() => expect(mockSpeakWithUserVoice).toHaveBeenCalled());
   });
 });

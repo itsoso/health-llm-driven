@@ -1273,6 +1273,10 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     return acceptedByServer;
   }, [isStreaming, conversationId, opts.contextData, recoverConversationFromServer]);
 
+  const stopStreaming = useCallback(() => {
+    abortRef.current?.abort();
+  }, []);
+
   const newChat = useCallback(() => {
     setMessages([]);
     setConversationId(undefined);
@@ -1297,6 +1301,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     activeTurn,
     conversationId,
     sendMessage,
+    stopStreaming,
     newChat,
     loadLatestConversation,
     loadConversation,

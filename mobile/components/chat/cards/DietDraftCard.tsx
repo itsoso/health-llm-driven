@@ -150,6 +150,23 @@ function confidenceLabel(value: unknown): string | undefined {
   return `置信度 ${Math.round(Math.min(100, normalized))}%`;
 }
 
+function confidenceBadge(value: unknown): string {
+  const confidence = numberValue(value);
+  if (confidence == null) return '请核对';
+  const normalized = confidence <= 1 ? confidence * 100 : confidence;
+  return normalized >= 80 ? '高置信' : '请核对';
+}
+
+function compactMealTitle(items: string[], fallback: string): string {
+  const labels = items
+    .map(item => item
+      .replace(/[（(][^）)]*[）)]/g, '')
+      .replace(/\b\d+(?:\.\d+)?\s*(?:g|克|ml|毫升|份|个|只|碗|杯)\b/gi, '')
+      .trim())
+    .filter(Boolean);
+  return labels.slice(0, 3).join(' · ') || fallback;
+}
+
 function sourceLabel(value: unknown): string | undefined {
   const source = text(value);
   if (!source) return undefined;
@@ -261,6 +278,95 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
     if (fat != null) next.fat = fat;
     onDraftChange?.(next);
   }, [data, draftCalories, draftCarbs, draftFat, draftFood, draftMealType, draftProtein]);
+
+  if (!isRecorded && !editing) {
+    return (
+      <CardShell
+        icon={MEAL_ICONS[mealType]}
+        iconColor={C.green600}
+        title={`${mealLabel}草稿 · 识别完成`}
+        badge={confidenceBadge(data.confidence)}
+        badgeColor={C.green500}
+        bg={C.paper}
+        style={styles.compactCard}
+      >
+        <View style={styles.compactTitleRow}>
+          <View style={styles.compactTitleCopy}>
+            <Text maxFontSizeMultiplier={1.16} style={styles.compactMealTitle} numberOfLines={2}>
+              {compactMealTitle(chips, draftFood || mealLabel)}
+            </Text>
+            <Text maxFontSizeMultiplier={1.14} style={styles.compactMealSubtitle}>
+              已识别 {Math.max(chips.length, 1)} 项，可直接调整份量
+            </Text>
+          </View>
+          <Pressable
+            onPress={() => setEditing(true)}
+            accessibilityRole="button"
+            accessibilityLabel="修正饮食草稿"
+            style={({ pressed }) => [styles.compactEditButton, pressed && styles.editButtonPressed]}
+          >
+            <Ionicons name="create-outline" size={13} color={C.green700} />
+            <Text style={styles.compactEditText}>修正</Text>
+          </Pressable>
+        </View>
+
+        <View style={styles.compactIngredientList}>
+          {(chips.length > 0 ? chips : [draftFood || '待确认餐食']).slice(0, 4).map(item => (
+            <View key={item} style={styles.compactIngredientRow}>
+              <View style={styles.compactIngredientDot} />
+              <Text maxFontSizeMultiplier={1.13} style={styles.compactIngredientText} numberOfLines={1}>
+                {item}
+              </Text>
+            </View>
+          ))}
+        </View>
+
+        <View style={styles.compactNutritionStrip}>
+          <View style={styles.compactNutritionItem}>
+            <Text style={styles.compactNutritionLabel}>估算热量</Text>
+            <Text style={styles.compactNutritionValue}>{caloriesValue == null ? '--' : Math.round(caloriesValue)} kcal</Text>
+          </View>
+          <View style={styles.compactNutritionItem}>
+            <Text style={styles.compactNutritionLabel}>蛋白</Text>
+            <Text style={[styles.compactNutritionValue, { color: C.green600 }]}>
+              {numberValue(data.protein) == null ? '--' : `${Math.round(numberValue(data.protein)!)}g`}
+            </Text>
+          </View>
+          <View style={styles.compactNutritionItem}>
+            <Text style={styles.compactNutritionLabel}>碳水</Text>
+            <Text style={styles.compactNutritionValue}>
+              {numberValue(data.carbs) == null ? '--' : `${Math.round(numberValue(data.carbs)!)}g`}
+            </Text>
+          </View>
+        </View>
+
+        {showNextMealDetail && nextMealDetail ? (
+          <View style={styles.compactNextMeal}>
+            <View style={styles.compactNextMealHeader}>
+              <Ionicons name="restaurant-outline" size={13} color={C.green600} />
+              <Text style={styles.compactNextMealTitle}>{text(nextMealDetail.title) || '下一餐建议'}</Text>
+            </View>
+            {text(nextMealDetail.summary) ? (
+              <Text style={styles.compactNextMealSummary}>{text(nextMealDetail.summary)}</Text>
+            ) : null}
+            {listText(nextMealDetail.options).map((item, index) => (
+              <View key={`${item}-${index}`} style={styles.compactNextMealOption}>
+                <Text style={styles.compactNextMealIndex}>{index + 1}</Text>
+                <Text style={styles.compactNextMealOptionText}>{item}</Text>
+              </View>
+            ))}
+            {text(nextMealDetail.continue_prompt) ? (
+              <Text style={styles.compactContinuePrompt}>{text(nextMealDetail.continue_prompt)}</Text>
+            ) : null}
+          </View>
+        ) : null}
+
+        <Text maxFontSizeMultiplier={1.12} style={styles.compactBoundary}>
+          营养为估算值，保存前可继续修正
+        </Text>
+      </CardShell>
+    );
+  }
 
   return (
     <CardShell
@@ -658,6 +764,152 @@ function DraftNumberInput({
 }
 
 const styles = StyleSheet.create({
+  compactCard: {
+    paddingHorizontal: 13,
+    paddingVertical: 12,
+  },
+  compactTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  compactTitleCopy: { flex: 1, minWidth: 0, gap: 3 },
+  compactMealTitle: {
+    fontFamily: revaFonts.sans,
+    fontSize: 18,
+    lineHeight: 24,
+    fontWeight: '900',
+    color: C.ink1,
+  } as TextStyle,
+  compactMealSubtitle: {
+    fontFamily: revaFonts.sans,
+    fontSize: 11.5,
+    lineHeight: 16,
+    color: C.ink3,
+  } as TextStyle,
+  compactEditButton: {
+    minHeight: 30,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderRadius: revaRadii.pill,
+    backgroundColor: C.green50,
+    paddingHorizontal: 9,
+  },
+  compactEditText: {
+    fontFamily: revaFonts.sans,
+    fontSize: 11.5,
+    lineHeight: 15,
+    fontWeight: '900',
+    color: C.green700,
+  } as TextStyle,
+  compactIngredientList: {
+    marginTop: 12,
+    paddingTop: 9,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: C.line,
+    gap: 7,
+  },
+  compactIngredientRow: {
+    minHeight: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  compactIngredientDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: C.green500,
+  },
+  compactIngredientText: {
+    flex: 1,
+    fontFamily: revaFonts.sans,
+    fontSize: 12.5,
+    lineHeight: 18,
+    fontWeight: '700',
+    color: C.ink2,
+  } as TextStyle,
+  compactNutritionStrip: {
+    marginTop: 11,
+    minHeight: 56,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 10,
+    backgroundColor: C.paper2,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  compactNutritionItem: { flex: 1, gap: 2 },
+  compactNutritionLabel: {
+    fontFamily: revaFonts.sans,
+    fontSize: 9.5,
+    lineHeight: 13,
+    fontWeight: '700',
+    color: C.ink3,
+  } as TextStyle,
+  compactNutritionValue: {
+    fontFamily: revaFonts.mono,
+    fontSize: 13,
+    lineHeight: 17,
+    fontWeight: '900',
+    color: C.ink1,
+  } as TextStyle,
+  compactBoundary: {
+    marginTop: 8,
+    fontFamily: revaFonts.sans,
+    fontSize: 10.5,
+    lineHeight: 15,
+    color: C.ink3,
+  } as TextStyle,
+  compactNextMeal: {
+    marginTop: 10,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.green100,
+    backgroundColor: C.green50,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    gap: 6,
+  },
+  compactNextMealHeader: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  compactNextMealTitle: {
+    fontFamily: revaFonts.sans,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '900',
+    color: C.green700,
+  } as TextStyle,
+  compactNextMealSummary: {
+    fontFamily: revaFonts.sans,
+    fontSize: 11.5,
+    lineHeight: 17,
+    fontWeight: '700',
+    color: C.ink2,
+  } as TextStyle,
+  compactNextMealOption: { flexDirection: 'row', alignItems: 'flex-start', gap: 7 },
+  compactNextMealIndex: {
+    width: 17,
+    fontFamily: revaFonts.mono,
+    fontSize: 10.5,
+    lineHeight: 16,
+    fontWeight: '900',
+    color: C.green600,
+  } as TextStyle,
+  compactNextMealOptionText: {
+    flex: 1,
+    fontFamily: revaFonts.sans,
+    fontSize: 11.5,
+    lineHeight: 17,
+    color: C.ink2,
+  } as TextStyle,
+  compactContinuePrompt: {
+    fontFamily: revaFonts.sans,
+    fontSize: 10.5,
+    lineHeight: 15,
+    color: C.green700,
+    fontWeight: '700',
+  } as TextStyle,
   heroRow: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -1,14 +1,12 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, TextStyle } from 'react-native';
+import { View, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import LlmModelPicker from './LlmModelPicker';
 import XiaoBaAvatar from './XiaoBaAvatar';
 import type { ModelOption } from '../../services/llmPreference';
 import {
   revaColors as C,
-  revaRadii,
   revaSpacing,
-  revaFonts,
 } from '../../constants/revaTheme';
 
 // header 里只露品牌名/压缩模型名 — 去掉尾部速度档 + 「· 供应商」后缀。
@@ -33,7 +31,8 @@ interface ChatHeaderProps {
 }
 
 /**
- * 会诊页顶部 header surface：模型选择器 (小巴 ⌄) + 回复中徽标 + 新建/历史/工具三个动作。
+ * 会诊页顶部 header surface：模型选择器 (小巴 ⌄) + 新建/历史/工具三个动作。
+ * 当前轮运行状态只在 assistant turn 内展示，避免顶部和消息区重复。
  * 纯 props 驱动, 无本地状态。testID 「chat-header-surface」+ a11y 标签保持稳定 (测试引用)。
  */
 export default function ChatHeader({
@@ -42,7 +41,6 @@ export default function ChatHeader({
   llmOptions,
   llmSaving,
   llmError,
-  isStreaming,
   onSelectModel,
   onNewChat,
   onOpenHistory,
@@ -63,12 +61,6 @@ export default function ChatHeader({
           onSelect={onSelectModel}
         />
         <View style={styles.headerRight}>
-          {isStreaming && (
-            <View style={styles.streamingBadge} accessibilityLabel="回复中">
-              <View style={styles.streamingDot} />
-              <Text style={txt.streamingBadge}>回复中</Text>
-            </View>
-          )}
           <TouchableOpacity
             onPress={onNewChat}
             hitSlop={8}
@@ -136,24 +128,4 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  streamingBadge: {
-    minHeight: 26,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 9,
-    borderRadius: revaRadii.pill,
-    backgroundColor: C.green50,
-    marginRight: 2,
-  },
-  streamingDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: C.green500,
-  },
 });
-
-const txt = {
-  streamingBadge: { fontFamily: revaFonts.sans, fontSize: 11, color: C.green500, fontWeight: '700' } as TextStyle,
-};

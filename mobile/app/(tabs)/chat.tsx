@@ -138,6 +138,7 @@ export default function ChatScreen() {
     activeTurn,
     conversationId,
     sendMessage,
+    stopStreaming,
     newChat,
     loadLatestConversation,
     loadConversation,
@@ -664,6 +665,11 @@ export default function ChatScreen() {
     setSelectedMessageIds(new Set([id]));
   }, []);
 
+  const sendSuggestedPrompt = useCallback((prompt: string) => {
+    if (isStreaming) return;
+    void sendMessage(prompt, null);
+  }, [isStreaming, sendMessage]);
+
   const shareSelectedMessages = useCallback(async () => {
     const message = buildSelectedChatShareMessage(messages, selectedMessageIds);
     if (!message || sharing) return;
@@ -689,9 +695,11 @@ export default function ChatScreen() {
         selected={selectedMessageIds.has(item.id)}
         onToggleSelected={toggleMessageSelection}
         onEnterSelection={!selectionMode && shareable ? enterSelectionWith : undefined}
+        onSendSuggestedPrompt={sendSuggestedPrompt}
+        onStopStreaming={stopStreaming}
       />
     );
-  }, [authToken, selectedMessageIds, selectionMode, toggleMessageSelection, enterSelectionWith]);
+  }, [authToken, selectedMessageIds, selectionMode, toggleMessageSelection, enterSelectionWith, sendSuggestedPrompt, stopStreaming]);
 
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();

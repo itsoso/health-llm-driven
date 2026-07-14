@@ -258,6 +258,39 @@ Expected: PASS，微信式文字/语音输入、长按和布局测试不变。
 
 **Step 5: 更新 Dossier 并提交**
 
+## Task 7: 把原型三种成品状态落到真实组件
+
+**Files:**
+- Modify: `mobile/components/chat/ChatBubble.tsx`
+- Modify: `mobile/components/chat/AttributionChips.tsx`
+- Modify: `mobile/components/chat/cards/DietDraftCard.tsx`
+- Modify: `mobile/hooks/useChatEngine.ts`
+- Modify: `mobile/app/(tabs)/chat.tsx`
+- Modify: 对应 Jest tests
+
+**完成契约:**
+
+- 普通完成回复首段提升为“小巴结论”，不与后续正文重复。
+- 结构化指标改为稳定网格，第一建议改为深色单行动卡；主动作通过现有 Agent 对话继续执行，不直接绕过确认写入。
+- 流式态使用全宽单一分析面板，显示当前步骤、已完成步骤、稳定骨架和显式停止入口。
+- 完成态思考步骤与数据来源、执行透视合并进“依据与过程”。
+- “依据与过程 / 微信 / 小红书”合为一条低干扰工具栏。
+- 饮食草稿收敛为识别摘要，保留修正、确认、下一餐展开和回执能力。
+
+**验证:**
+
+```bash
+cd mobile && npx jest --runInBand --silent --runTestsByPath \
+  components/chat/__tests__/AttributionChips.test.tsx \
+  components/chat/__tests__/ChatBubbleStreaming.test.tsx \
+  components/chat/__tests__/ChatBubbleStructuredSummary.test.tsx \
+  components/chat/__tests__/ChatBubbleToolsUsed.test.tsx \
+  components/chat/cards/__tests__/registry.test.tsx \
+  app/'(tabs)'/__tests__/chat.test.tsx
+```
+
+Expected: PASS；并用 production OTA 后的 Simulator 实际历史对话截图复核。
+
 只暂存本任务文件，记录测试、截图、commit 与 Gate 裁决；不得暂存无关 PRD 草稿。
 
 **Step 6: 发布 production OTA**

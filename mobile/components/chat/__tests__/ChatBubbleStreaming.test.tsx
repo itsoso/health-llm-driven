@@ -55,7 +55,12 @@ jest.mock('../AttributionChips', () => {
   const { View } = require('react-native');
   const MockAttributionChips = () => <View />;
   MockAttributionChips.displayName = 'MockAttributionChips';
-  return MockAttributionChips;
+  return {
+    __esModule: true,
+    default: MockAttributionChips,
+    AttributionDetails: MockAttributionChips,
+    normalizedAttributionCount: (sources?: unknown[]) => sources?.length || 0,
+  };
 });
 jest.mock('../cards', () => ({
   renderCard: jest.fn(() => null),
@@ -147,9 +152,26 @@ describe('ChatBubble streaming degraded render', () => {
     expect(getByText('正在整理建议。').props.selectable).not.toBe(true);
   });
 
-  it('long press on an assistant message opens copy-first actions instead of selecting immediately', () => {
+  it('renders a normal assistant reply as an unframed content surface', () => {
+    const { getByTestId, getByText, queryByTestId } = renderBubble({
+      id: 'assistant-unframed',
+      role: 'assistant',
+      content: '今天先补水 300ml，再做 10 分钟轻活动。',
+      streaming: false,
+    });
+
+    const style = StyleSheet.flatten(getByTestId('assistant-message-surface').props.style);
+    expect(style.backgroundColor).toBe('transparent');
+    expect(style.shadowOpacity ?? 0).toBe(0);
+    expect(style.paddingHorizontal).toBe(0);
+    expect(getByText('小巴结论')).toBeTruthy();
+    expect(getByTestId('assistant-conclusion')).toBeTruthy();
+    expect(queryByTestId('assistant-avatar')).toBeNull();
+  });
+
+  it('long press on an assistant message opens copy-first progressive actions instead of selecting immediately', () => {
     const onEnterSelection = jest.fn();
-    const { getByLabelText } = render(
+    const { getByLabelText, queryByLabelText } = render(
       <QueryClientProvider client={new QueryClient()}>
         <ChatBubble
           item={{
@@ -163,11 +185,15 @@ describe('ChatBubble streaming degraded render', () => {
       </QueryClientProvider>,
     );
 
+    expect(queryByLabelText('分享这条回复')).toBeNull();
+    expect(queryByLabelText('语音播报')).toBeNull();
     fireEvent(getByLabelText('AI: 建议今天午后散步 10 分钟。'), 'longPress');
 
     expect(onEnterSelection).not.toHaveBeenCalled();
     expect(getByLabelText('复制全文')).toBeTruthy();
     expect(getByLabelText('选择这条消息')).toBeTruthy();
+    expect(getByLabelText('分享这条回复')).toBeTruthy();
+    expect(getByLabelText('语音播报')).toBeTruthy();
 
     fireEvent.press(getByLabelText('选择这条消息'));
     expect(onEnterSelection).toHaveBeenCalledWith('assistant-action-menu');
@@ -175,7 +201,7 @@ describe('ChatBubble streaming degraded render', () => {
 
   it('long press on a user message opens copy-first actions and keeps selection secondary', () => {
     const onEnterSelection = jest.fn();
-    const { getByLabelText } = render(
+    const { getByLabelText, queryByLabelText } = render(
       <QueryClientProvider client={new QueryClient()}>
         <ChatBubble
           item={{
@@ -192,6 +218,8 @@ describe('ChatBubble streaming degraded render', () => {
     fireEvent(getByLabelText('你: 早餐吃了鸡蛋和咖啡'), 'longPress');
 
     expect(onEnterSelection).not.toHaveBeenCalled();
+    expect(getByLabelText('分享这条消息')).toBeTruthy();
+    expect(queryByLabelText('语音播报')).toBeNull();
     fireEvent.press(getByLabelText('复制全文'));
     expect(Clipboard.setStringAsync).toHaveBeenCalledWith('早餐吃了鸡蛋和咖啡');
 
@@ -201,7 +229,7 @@ describe('ChatBubble streaming degraded render', () => {
   });
 
   it('renders one unified streaming status before the first token', () => {
-    const { getByTestId, getByText, queryByTestId } = renderBubble({
+    const { getAllByTestId, getByTestId, getByText, queryByTestId } = renderBubble({
       id: 'assistant-status-line',
       role: 'assistant',
       content: '⏳ AI 正在思考中...',
@@ -211,10 +239,27 @@ describe('ChatBubble streaming degraded render', () => {
 
     // 统一处理状态出现, 文案即 currentStatus; 不再叠一个独立 status line。
     expect(getByTestId('assistant-thinking-panel')).toBeTruthy();
+    expect(getAllByTestId('assistant-thinking-indicator')).toHaveLength(1);
+    expect(getByText('正在分析')).toBeTruthy();
     expect(getByText('查看步数数据…')).toBeTruthy();
+    expect(getByTestId('assistant-thinking-skeleton')).toBeTruthy();
     expect(queryByTestId('assistant-status-line')).toBeNull();
     // 未出正文 → 不走富 markdown。
     expect(queryByTestId('rich-markdown')).toBeNull();
+  });
+
+  it('uses the same thinking panel while waiting for the first status event', () => {
+    const { getAllByTestId, getByTestId, getByText, queryByTestId } = renderBubble({
+      id: 'assistant-waiting-for-status',
+      role: 'assistant',
+      content: '',
+      streaming: true,
+    });
+
+    expect(getByTestId('assistant-thinking-panel')).toBeTruthy();
+    expect(getAllByTestId('assistant-thinking-indicator')).toHaveLength(1);
+    expect(getByText('正在理解你的问题…')).toBeTruthy();
+    expect(queryByTestId('assistant-status-line')).toBeNull();
   });
 
   it('hides the status line once the assistant text is present (first token cleared it)', () => {
@@ -244,7 +289,7 @@ describe('ChatBubble streaming degraded render', () => {
     expect(queryByTestId('assistant-status-line')).toBeNull();
   });
 
-  it('renders streaming thinking steps as a compact expandable row above the assistant text', () => {
+  it('renders streaming thinking steps as one stable analysis panel above the assistant text', () => {
     const { getByLabelText, getByTestId, getByText, queryByText, queryByTestId } = renderBubble({
       id: 'assistant-streaming-thinking',
       role: 'assistant',
@@ -254,24 +299,17 @@ describe('ChatBubble streaming degraded render', () => {
     });
 
     expect(queryByTestId('rich-markdown')).toBeNull();
-    expect(getByText('小巴处理中 · 2 步')).toBeTruthy();
+    expect(getByText('正在分析')).toBeTruthy();
     expect(getByText('读取健康数据')).toBeTruthy();
     expect(queryByText('小巴正在思考')).toBeNull();
     expect(queryByText('2/2')).toBeNull();
-    expect(queryByText('正在理解你的问题')).toBeNull();
+    expect(getByText('正在理解你的问题')).toBeTruthy();
     expect(getByLabelText(/当前步骤:读取健康数据/)).toBeTruthy();
     const panelStyle = StyleSheet.flatten(getByTestId('assistant-thinking-panel').props.style);
-    expect(panelStyle.alignSelf).toBe('flex-start');
-    expect(panelStyle.width).toBeUndefined();
-    expect(panelStyle.maxWidth).toBe('100%');
-    expect(panelStyle.minWidth).toBeGreaterThanOrEqual(200);
+    expect(panelStyle.alignSelf).toBe('stretch');
+    expect(panelStyle.width).toBe('100%');
+    expect(getByTestId('assistant-thinking-skeleton')).toBeTruthy();
     expect(getByText('今晚优先固定睡眠时间。')).toBeTruthy();
-
-    fireEvent.press(getByLabelText('展开思考步骤'));
-    expect(getByText('正在理解你的问题')).toBeTruthy();
-    const expandedStyle = StyleSheet.flatten(getByTestId('assistant-thinking-panel').props.style);
-    expect(expandedStyle.alignSelf).toBe('stretch');
-    expect(expandedStyle.borderRadius).toBeLessThanOrEqual(12);
   });
 
   it('uses one unified streaming status when currentStatus and thinking steps arrive together', () => {
@@ -290,8 +328,8 @@ describe('ChatBubble streaming degraded render', () => {
     expect(queryByText('⏳ AI 正在思考中...')).toBeNull();
   });
 
-  it('collapses completed thinking steps into an inline status row (expand to reveal steps)', () => {
-    const { getByLabelText, getByTestId, getByText, queryByText, queryByLabelText } = renderBubble({
+  it('keeps completed thinking steps inside the combined evidence and process drawer', () => {
+    const { getByLabelText, getByTestId, getByText, queryByText, queryByTestId } = renderBubble({
       id: 'assistant-finished-thinking',
       role: 'assistant',
       content: '今天饮食总结如下。',
@@ -299,31 +337,19 @@ describe('ChatBubble streaming degraded render', () => {
       thinkingSteps: ['正在理解你的问题', '读取记录信息', '整理回复中'],
     });
 
-    // 完成态默认折叠成低干扰胶囊: 明确显示「思考完成」和步数, 步骤列表隐藏.
-    expect(getByText('思考完成')).toBeTruthy();
-    expect(getByText(' · 3 步')).toBeTruthy();
-    const panelStyle = StyleSheet.flatten(getByTestId('assistant-thinking-panel').props.style);
-    expect(panelStyle.alignSelf).toBe('flex-start');
-    expect(panelStyle.borderRadius).toBeGreaterThanOrEqual(14);
-    expect(panelStyle.borderWidth ?? 0).toBe(0);
-    expect(panelStyle.backgroundColor).not.toBe('transparent');
+    expect(queryByTestId('assistant-thinking-panel')).toBeNull();
+    expect(queryByText('思考完成')).toBeNull();
+    expect(getByTestId('assistant-utility-panel')).toBeTruthy();
     expect(queryByText('正在理解你的问题')).toBeNull();
-    expect(queryByLabelText('已完成步骤:整理回复中')).toBeNull();
-    // 助手正文不受折叠影响, 始终可见.
     expect(getByText('今天饮食总结如下。')).toBeTruthy();
 
-    // 点 pill 展开 → 步骤列表出现.
-    fireEvent.press(getByLabelText('展开思考步骤'));
+    fireEvent.press(getByLabelText('展开依据与过程'));
+    expect(getByText('思考过程')).toBeTruthy();
     expect(getByText('正在理解你的问题')).toBeTruthy();
     expect(getByText('读取记录信息')).toBeTruthy();
     expect(getByText('整理回复中')).toBeTruthy();
-    expect(getByLabelText('已完成步骤:整理回复中')).toBeTruthy();
-    const expandedPanelStyle = StyleSheet.flatten(getByTestId('assistant-thinking-panel').props.style);
-    expect(expandedPanelStyle.alignSelf).toBe('stretch');
-    expect(expandedPanelStyle.borderRadius).toBeLessThanOrEqual(12);
 
-    // 再点收起 → 步骤列表重新隐藏.
-    fireEvent.press(getByLabelText('收起思考步骤'));
+    fireEvent.press(getByLabelText('收起依据与过程'));
     expect(queryByText('读取记录信息')).toBeNull();
   });
 
@@ -452,7 +478,7 @@ describe('ChatBubble streaming degraded render', () => {
   ].join('\n');
 
   it('normalizes dirty LLM markdown into a parseable rich tree on the done first frame', () => {
-    const { getByTestId, queryByText } = renderBubble({
+    const { getByTestId, getByText, queryByText } = renderBubble({
       id: 'assistant-done-dirty',
       role: 'assistant',
       content: DIRTY_MARKDOWN,
@@ -466,7 +492,9 @@ describe('ChatBubble streaming degraded render', () => {
     // renderedMarkdown 非空且已补空格标题 / 拆开表格黏连行。
     expect(typeof rendered).toBe('string');
     expect(rendered.length).toBeGreaterThan(0);
-    expect(rendered).toContain('## 今日状态总览');
+    expect(getByTestId('assistant-conclusion')).toBeTruthy();
+    expect(getByText('今日状态总览')).toBeTruthy();
+    expect(rendered).not.toContain('## 今日状态总览');
     expect(rendered).toContain('### 1. 今晚早睡');
     // 无空格黏连标题不再残留。
     expect(rendered).not.toMatch(/^##今日/m);

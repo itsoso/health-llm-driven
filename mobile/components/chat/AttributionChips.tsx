@@ -15,6 +15,10 @@ interface Props {
   onOpenMemory?: () => void;
 }
 
+interface DetailsProps extends Props {
+  maxVisible?: number;
+}
+
 type SourceKind = 'memory' | 'genetic' | 'lab' | 'medication' | 'trend' | 'record' | 'knowledge' | 'data';
 
 interface StructuredSource {
@@ -47,6 +51,10 @@ function normalizeSources(sources: readonly string[] | undefined): StructuredSou
   return normalized;
 }
 
+export function normalizedAttributionCount(sources: readonly string[] | undefined): number {
+  return normalizeSources(sources).length;
+}
+
 function sourceMeta(kind: SourceKind) {
   switch (kind) {
     case 'memory':
@@ -73,8 +81,6 @@ export default function AttributionChips({ sources, onOpenMemory }: Props) {
   const items = useMemo(() => normalizeSources(sources), [sources]);
   if (items.length === 0) return null;
 
-  const visible = items.slice(0, MAX_VISIBLE);
-  const hiddenCount = items.length - visible.length;
   return (
     <View style={styles.wrap} accessibilityLabel="AI 用到了你的数据">
       <Pressable
@@ -89,19 +95,30 @@ export default function AttributionChips({ sources, onOpenMemory }: Props) {
         <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={12} color={C.ink3} />
       </Pressable>
       {expanded ? (
-        <View style={styles.chipsRow}>
-          {visible.map(item => (
-            <SourceChip
-              key={item.label}
-              item={item}
-              onOpenMemory={item.kind === 'memory' ? onOpenMemory : undefined}
-            />
-          ))}
-          {hiddenCount > 0 ? (
-            <View style={[styles.chip, { backgroundColor: C.paper2 }]}>
-              <Text style={txt.chipMore}>+{hiddenCount}</Text>
-            </View>
-          ) : null}
+        <AttributionDetails sources={sources} onOpenMemory={onOpenMemory} maxVisible={MAX_VISIBLE} />
+      ) : null}
+    </View>
+  );
+}
+
+export function AttributionDetails({ sources, onOpenMemory, maxVisible = 8 }: DetailsProps) {
+  const items = useMemo(() => normalizeSources(sources), [sources]);
+  const visible = items.slice(0, maxVisible);
+  const hiddenCount = items.length - visible.length;
+  if (items.length === 0) return null;
+
+  return (
+    <View style={styles.chipsRow} testID="assistant-attribution-details">
+      {visible.map(item => (
+        <SourceChip
+          key={item.label}
+          item={item}
+          onOpenMemory={item.kind === 'memory' ? onOpenMemory : undefined}
+        />
+      ))}
+      {hiddenCount > 0 ? (
+        <View style={[styles.chip, { backgroundColor: C.paper2 }]}>
+          <Text style={txt.chipMore}>+{hiddenCount}</Text>
         </View>
       ) : null}
     </View>

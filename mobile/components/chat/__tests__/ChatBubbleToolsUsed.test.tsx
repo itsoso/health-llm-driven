@@ -43,7 +43,12 @@ jest.mock('../AttributionChips', () => {
   const { View } = require('react-native');
   const MockAttributionChips = () => <View />;
   MockAttributionChips.displayName = 'MockAttributionChips';
-  return MockAttributionChips;
+  return {
+    __esModule: true,
+    default: MockAttributionChips,
+    AttributionDetails: MockAttributionChips,
+    normalizedAttributionCount: (sources?: unknown[]) => sources?.length || 0,
+  };
 });
 jest.mock('../cards', () => ({
   renderCard: jest.fn(() => null),
@@ -80,7 +85,7 @@ const CONTENT = '已为你记录今天的体重。';
 
 // 透视面板 (AgentTransparencyPanel) 折叠头的展开按钮 accessibilityLabel —
 // toolsUsed 现在经 buildAgentTransparency 收进这个面板, 展开后以 "调用 Skill" 行 + chip 呈现.
-const EXPAND_LABEL = '展开执行透视';
+const EXPAND_LABEL = '展开依据与过程';
 
 describe('ChatBubble 调用 Skill 展示 (透视面板)', () => {
   it('toolsUsed 非空且非流式 → 渲染透视面板, 展开后可见 "调用 Skill" + 每个 Skill 名', () => {
@@ -95,14 +100,14 @@ describe('ChatBubble 调用 Skill 展示 (透视面板)', () => {
     // 面板默认折叠: 头部可见, Skill 明细尚未展开
     const expander = getByLabelText(EXPAND_LABEL);
     expect(expander).toBeTruthy();
-    expect(getByTestId('agent-transparency-panel')).toHaveStyle({
-      alignSelf: 'flex-start',
+    expect(getByTestId('assistant-utility-panel')).toHaveStyle({
+      alignSelf: 'stretch',
     });
     expect(queryByText('调用 Skill')).toBeNull();
 
     // 展开 → Skill 名对用户可见
     fireEvent.press(expander);
-    expect(getByTestId('agent-transparency-panel')).toHaveStyle({
+    expect(getByTestId('assistant-utility-panel')).toHaveStyle({
       alignSelf: 'stretch',
     });
     expect(getByText('调用 Skill')).toBeTruthy();

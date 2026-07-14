@@ -22,4 +22,23 @@ describe('ChatHeader', () => {
 
     expect(getByLabelText('小巴形象')).toBeTruthy();
   });
+
+  it('keeps streaming state inside the active assistant turn instead of the header', () => {
+    const { queryByLabelText } = render(
+      <ChatHeader
+        activeLlmLabel="Qwen3.7 Plus"
+        llmModelId="qwen3.7-plus"
+        llmOptions={[]}
+        llmSaving={null}
+        llmError={null}
+        isStreaming
+        onSelectModel={jest.fn()}
+        onNewChat={jest.fn()}
+        onOpenHistory={jest.fn()}
+        onOpenToolMenu={jest.fn()}
+      />,
+    );
+
+    expect(queryByLabelText('回复中')).toBeNull();
+  });
 });

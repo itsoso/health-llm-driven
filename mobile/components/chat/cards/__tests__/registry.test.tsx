@@ -257,25 +257,17 @@ describe('renderCard 安全降级', () => {
     expect(element).not.toBeNull();
 
     const { getByText, queryByText } = render(element!);
-    // 结构化餐食卡: 标题带餐次 + 状态, 草稿态有「草稿」chip。
-    expect(getByText('午餐 · 待确认')).toBeTruthy();
-    expect(getByText('草稿')).toBeTruthy();
-    // food_items 拆成独立食材 chip。
+    // 拍照草稿按原型收敛为识别摘要,不再堆满营养与建议模块。
+    expect(getByText('午餐草稿 · 识别完成')).toBeTruthy();
+    expect(getByText('高置信')).toBeTruthy();
     expect(getByText('煎牛肉能量碗')).toBeTruthy();
     expect(getByText('姜黄鲜柠维C茶')).toBeTruthy();
-    // 卡路里 hero(数字 + 单位)。
     expect(getByText('kcal', { exact: false })).toBeTruthy();
-    // 2×2 营养网格: 标签 + 克数分开渲染。
-    expect(getByText('蛋白质')).toBeTruthy();
+    expect(getByText('蛋白')).toBeTruthy();
     expect(getByText('30g')).toBeTruthy();
-    expect(getByText('置信度 82% · 来源: 对话/图片')).toBeTruthy();
-    expect(getByText('已带营养估算，核对后计入今日')).toBeTruthy();
-    expect(queryByText('已带营养估算，确认后计入今日')).toBeNull();
-    expect(getByText('核对前可修正餐次、食物和营养估算')).toBeTruthy();
-    expect(queryByText('确认前可修正餐次、食物和营养估算')).toBeNull();
-    expect(getByText('餐后轻走 10 分钟')).toBeTruthy();
-    expect(getByText('营养为估算值,核对后写入今日饮食记录。')).toBeTruthy();
-    expect(queryByText('营养为估算值,确认后写入今日饮食记录。')).toBeNull();
+    expect(getByText('营养为估算值，保存前可继续修正')).toBeTruthy();
+    expect(getByText('修正')).toBeTruthy();
+    expect(queryByText('餐后轻走 10 分钟')).toBeNull();
 
     fireEvent.press(getByText('确认记录'));
     expect(onAction).toHaveBeenCalledWith(
@@ -516,11 +508,10 @@ describe('renderCard 安全降级', () => {
     expect(getByText('鸡胸肉 200g')).toBeTruthy();
     expect(getByText('杂粮饭 100g')).toBeTruthy();
     expect(getByText('西兰花')).toBeTruthy();
-    // 餐次进标题, 草稿态有「草稿」chip。
-    expect(getByText('晚餐 · 待确认')).toBeTruthy();
-    expect(getByText('蛋白质')).toBeTruthy();
+    expect(getByText('晚餐草稿 · 识别完成')).toBeTruthy();
+    expect(getByText('蛋白')).toBeTruthy();
     expect(getByText('46g')).toBeTruthy();
-    expect(getByText('已带营养估算，确认后计入今日')).toBeTruthy();
+    expect(getByText('营养为估算值，保存前可继续修正')).toBeTruthy();
   });
 
   it('marks incomplete agent diet drafts as pending nutrition backfill', () => {
@@ -551,8 +542,8 @@ describe('renderCard 安全降级', () => {
 
     expect(element).not.toBeNull();
     const { getByText } = render(element!);
-    expect(getByText('午餐 · 待确认')).toBeTruthy();
-    expect(getByText('确认后先记录，营养后台估算')).toBeTruthy();
+    expect(getByText('午餐草稿 · 识别完成')).toBeTruthy();
+    expect(getByText('营养为估算值，保存前可继续修正')).toBeTruthy();
   });
 
   it('does not render diet drafts built from captured UI copy instead of food', () => {
