@@ -687,6 +687,8 @@ async def test_recovered_turn_reuses_its_already_persisted_chat_images(
         client_turn_id="turn-image-recovered",
     )
 
+    persisted = next(event for event in events if event.get("event") == "request_persisted")
+    assert persisted["data"]["image_urls"] == [stored_url]
     assert any(event.get("event") == "done" for event in events)
 
 

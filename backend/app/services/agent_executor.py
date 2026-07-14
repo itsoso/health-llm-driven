@@ -3640,7 +3640,6 @@ class AgentExecutor:
             "conversation_id": conv.id,
             "user_message_id": user_msg.id,
             "client_turn_id": client_turn_id,
-            "image_urls": saved_image_urls,
             "recovered": recovered_user_message is not None,
         }}
 
@@ -4335,6 +4334,7 @@ class AgentExecutor:
             "conversation_id": conv.id,
             "user_message_id": user_msg.id,
             "client_turn_id": client_turn_id,
+            "image_urls": saved_image_urls,
             "recovered": recovered_user_message is not None,
         }}
 
