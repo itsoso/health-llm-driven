@@ -3,8 +3,8 @@
 | Field | Value |
 |---|---|
 | slug | `kbase-feedback-outbox` |
-| stage | S4 review |
-| status | in_progress |
+| stage | S8 complete |
+| status | complete |
 | owner | Codex |
 
 ## Intake
@@ -37,12 +37,29 @@ Knowledge Release.
   pass. The full local backend run reported 6510 passed, 44 failed, and 2
   skipped; the same failed-file set on clean `origin/main` reproduced 40
   baseline failures, primarily because the shared test database lacks current
-  columns. CI remains the authoritative clean-environment gate.
+  columns. Main CI run `29299983644` is the authoritative clean-environment
+  gate and passed all 24 jobs. A concurrent chat-image change initially put an
+  image acknowledgement on the wrong execution path; a focused regression
+  test, 39 related tests, blocking Ruff checks, and the required live-LLM gate
+  all pass (`12/12` invariants, `50/50` health-agent cases, `5/5`
+  orchestrator cases).
 - G4 review: **PASS.** Reviewed the producer identity mapping, audit-to-event
   projection, privacy boundary, cursor semantics, deterministic idempotency,
   failure behavior, task registration, and generated architecture drift.
-- G5 deployment health: **PENDING.**
-- G6 production verification: **PENDING.**
+- G5 deployment health: **PASS.** Standard backend deploy published main
+  commit `6d13dd62d`, created and integrity-checked a PostgreSQL backup,
+  applied managed migrations, rebuilt the System KB index (`895` documents),
+  restarted the backend plus Celery worker and beat, and finished at health
+  score `60/60`. All three services are active and the deployed skills
+  manifest matches all `22` local skills.
+- G6 production verification: **PASS.** The production worker reports
+  `flush_dedao_kbase_feedback` as registered and beat contains its schedule.
+  A server-local run returned `up_to_date` at cursor `997` with no pending
+  posts. The latest durable `dedao_kbase_feedback_flush` audit was written by
+  `celery:dedao_kbase_feedback`; it scanned `46` source audits, advanced the
+  cursor to `997`, and posted no event because none mapped to an eligible
+  release outcome. No user content or health data was emitted during the
+  verification.
 
 ## Artifacts
 
