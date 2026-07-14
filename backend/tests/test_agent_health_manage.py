@@ -98,6 +98,51 @@ async def test_health_manage_lists_diet_candidates_by_explicit_meal_type(db):
 
 
 @pytest.mark.asyncio
+async def test_health_manage_list_auto_deletes_numbered_diet_candidate(db):
+    from app.services.agent_executor import AgentExecutor
+
+    executor = AgentExecutor(db)
+    executor._current_user_id = 3
+    executor._current_turn_user_message = "删除早餐 1"
+
+    captured = {"deleted": []}
+
+    async def fake_get(url, headers):
+        captured["list_url"] = url
+        return json.dumps([
+            {"id": 701, "meal_type": "breakfast", "food_items": "大米粥"},
+            {"id": 702, "meal_type": "breakfast", "food_items": "咸鸭蛋"},
+        ], ensure_ascii=False)
+
+    async def fake_delete(url, headers):
+        captured["deleted"].append(url)
+        return '{"message":"Record deleted successfully"}'
+
+    with (
+        patch.object(executor, "_api_get", new=AsyncMock(side_effect=fake_get)),
+        patch.object(executor, "_api_delete", new=AsyncMock(side_effect=fake_delete)),
+    ):
+        result = await executor._execute_tool(
+            tool_name="health_manage",
+            args_raw=json.dumps({
+                "record_type": "diet",
+                "operation": "list",
+                "date": "today",
+                "meal_type": "breakfast",
+            }),
+            user_token="test-token",
+        )
+
+    assert "start_date=today" not in captured["list_url"]
+    assert len(captured["deleted"]) == 1
+    assert captured["deleted"][0].endswith("/diet/records/701")
+    payload = json.loads(result)
+    assert payload["id"] == 701
+    assert payload["record_id"] == 701
+    assert payload["resource_type"] == "diet_record"
+
+
+@pytest.mark.asyncio
 async def test_health_manage_update_normalizes_zh_diet_meal_type_patch(db):
     from app.services.agent_executor import AgentExecutor
 

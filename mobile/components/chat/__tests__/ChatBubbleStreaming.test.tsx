@@ -31,7 +31,7 @@ jest.mock('../../../hooks/useToast', () => ({
 jest.mock('expo-router', () => ({
   router: { push: jest.fn() },
 }));
-// Spy on the markdown component so we can assert it is NOT mounted while streaming.
+// Spy on the markdown component so we can assert streaming replies render as Markdown.
 const mockMarkdownMount = jest.fn();
 jest.mock('react-native-markdown-display', () => {
   const React = require('react');
@@ -105,19 +105,17 @@ describe('ChatBubble streaming degraded render', () => {
     jest.clearAllMocks();
   });
 
-  it('renders plain text (no rich Markdown tree) while the assistant reply is streaming', () => {
-    const { getByText, queryByTestId } = renderBubble({
+  it('renders rich Markdown while the assistant reply is streaming', () => {
+    const { getByTestId } = renderBubble({
       id: 'assistant-streaming',
       role: 'assistant',
       content: CONTENT,
       streaming: true,
     });
 
-    // Rich markdown component must NOT be mounted during streaming (the perf fix).
-    expect(queryByTestId('rich-markdown')).toBeNull();
-    expect(mockMarkdownMount).not.toHaveBeenCalled();
-    // Raw content shows as plain text, newlines preserved (literal markdown markers visible).
-    expect(getByText(CONTENT)).toBeTruthy();
+    expect(getByTestId('rich-markdown')).toBeTruthy();
+    expect(mockMarkdownMount).toHaveBeenCalled();
+    expect(mockMarkdownMount).toHaveBeenLastCalledWith(CONTENT);
   });
 
   it('does not enable native text selection inside bubbles, so long press stays on the custom message menu', () => {
@@ -246,6 +244,7 @@ describe('ChatBubble streaming degraded render', () => {
     expect(queryByTestId('assistant-status-line')).toBeNull();
     // 未出正文 → 不走富 markdown。
     expect(queryByTestId('rich-markdown')).toBeNull();
+    expect(mockMarkdownMount).not.toHaveBeenCalled();
   });
 
   it('uses the same thinking panel while waiting for the first status event', () => {
@@ -298,7 +297,8 @@ describe('ChatBubble streaming degraded render', () => {
       thinkingSteps: ['正在理解你的问题', '读取健康数据'],
     });
 
-    expect(queryByTestId('rich-markdown')).toBeNull();
+    expect(getByTestId('rich-markdown')).toBeTruthy();
+    expect(mockMarkdownMount).toHaveBeenCalled();
     expect(getByText('正在分析')).toBeTruthy();
     expect(getByText('读取健康数据')).toBeTruthy();
     expect(queryByText('小巴正在思考')).toBeNull();
@@ -364,8 +364,8 @@ describe('ChatBubble streaming degraded render', () => {
     '```',
   ].join('\n');
 
-  it('skips sanitize/extract while streaming (原文直渲, 无 reva-ui 卡片)', () => {
-    const { queryByTestId, getByText } = renderBubble({
+  it('skips sanitize/extract while streaming but still renders Markdown', () => {
+    const { queryByTestId, getByTestId } = renderBubble({
       id: 'assistant-streaming-markers',
       role: 'assistant',
       content: CONTENT_WITH_MARKERS,
@@ -374,11 +374,9 @@ describe('ChatBubble streaming degraded render', () => {
 
     // 未跑 extract → 不生成 reva-ui 卡片视图.
     expect(queryByTestId('assistant-reva-ui-cards')).toBeNull();
-    // 未跑 sanitize → [附图: …] 与 ```reva-ui``` fence 原样出现在纯文本里.
-    expect(getByText(CONTENT_WITH_MARKERS)).toBeTruthy();
-    // 仍是纯 Text 降级路径, 无富 Markdown.
-    expect(queryByTestId('rich-markdown')).toBeNull();
-    expect(mockMarkdownMount).not.toHaveBeenCalled();
+    // 流式期仍暂不抽卡,但正文必须走 Markdown renderer.
+    expect(getByTestId('rich-markdown')).toBeTruthy();
+    expect(mockMarkdownMount).toHaveBeenCalled();
   });
 
   it('runs sanitize/extract once streaming finishes (剥附图 + 抽 reva-ui 卡片)', () => {
@@ -500,6 +498,24 @@ describe('ChatBubble streaming degraded render', () => {
     expect(rendered).not.toMatch(/^##今日/m);
     expect(rendered).not.toMatch(/^###1\./m);
     // 黏连表格分隔已被拆开处理, 不再逐字出现原始生 markdown 原文。
+    expect(queryByText(DIRTY_MARKDOWN)).toBeNull();
+  });
+
+  it('normalizes dirty LLM markdown while streaming so raw heading markers do not show', () => {
+    const { getByTestId, queryByText } = renderBubble({
+      id: 'assistant-streaming-dirty',
+      role: 'assistant',
+      content: DIRTY_MARKDOWN,
+      streaming: true,
+    });
+
+    expect(getByTestId('rich-markdown')).toBeTruthy();
+    expect(mockMarkdownMount).toHaveBeenCalled();
+    const rendered = mockMarkdownMount.mock.calls[mockMarkdownMount.mock.calls.length - 1][0];
+    expect(rendered).toContain('## 今日状态总览');
+    expect(rendered).toContain('### 1. 今晚早睡');
+    expect(rendered).not.toMatch(/^##今日/m);
+    expect(rendered).not.toMatch(/^###1\./m);
     expect(queryByText(DIRTY_MARKDOWN)).toBeNull();
   });
 });

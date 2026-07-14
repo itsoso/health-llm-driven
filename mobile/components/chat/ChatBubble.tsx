@@ -105,9 +105,8 @@ function ChatBubbleInner({
   const speechHandleRef = useRef<SpeakHandle | null>(null);
   // 流式期间跳过 sanitizeAiContent + extractRevaUiBlocks 这两条 O(n) 正则:
   // 每个 token 批次都对全量累积文本重跑一遍 → 整轮回复退化为 O(n²), 长回复打满
-  // JS 线程 (镜像 113-121 行 "流式期间纯 Text, done 后才 Markdown" 的既有策略).
-  // 流式降级路径 (468 行) 用的就是纯文本, 而 reva-ui 块本就只在 done 后可用 →
-  // 流式中用原始 item.content 直渲, 终态 (item.streaming 转 false) 才跑全量处理, 行为无损.
+  // JS 线程。正文仍走 Markdown 渲染, 但 reva-ui 块本就只在 done 后可用。
+  // 流式中用原始 item.content 作为正文源, 终态 (item.streaming 转 false) 才跑全量处理。
   const streamingBubble = !isUser && !!item.streaming;
   const displayText = useMemo(
     () => (streamingBubble ? item.content : sanitizeAiContent(item.content)),
@@ -170,15 +169,9 @@ function ChatBubbleInner({
     ? rawVisibleAssistantMarkdown
     : advisorPresentation?.details ?? rawVisibleAssistantMarkdown;
   const assistantTextForActions = assistantText.trim();
-  // 流式期间故意不跑 preprocessMarkdownTables + <Markdown> 整树渲染:
-  // visibleMarkdown 每个 token 批次都变, memo 会失效 → 每秒 10-20 次全量
-  // markdown 预处理 + react-native-markdown-display 整树重渲, 长回复打满 JS 线程,
-  // 帧率掉/触摸输入迟滞 (mac 端同类病见 #129/#132). 流式中降级为 plain <Text>
-  // (保留换行), 流完 (item.streaming 转 false) 才走富 markdown —— 终态结果不变.
-  const isStreaming = streamingBubble;
   const renderedMarkdown = useMemo(
-    () => (isStreaming ? '' : preprocessMarkdownTables(visibleAssistantMarkdown)),
-    [isStreaming, visibleAssistantMarkdown],
+    () => preprocessMarkdownTables(visibleAssistantMarkdown),
+    [visibleAssistantMarkdown],
   );
   const images = item.imageUris;
   const transparency = useMemo(
@@ -877,10 +870,7 @@ function ChatBubbleInner({
                 onSendSuggestedPrompt={onSendSuggestedPrompt}
               />
             ) : null}
-            {visibleAssistantMarkdown && isStreaming ? (
-              // 流式降级: plain text, 保留换行, 不做 markdown 解析/整树渲染
-              <Text style={txt.streaming}>{visibleAssistantMarkdown}</Text>
-            ) : visibleAssistantMarkdown ? (
+            {visibleAssistantMarkdown ? (
               <SafeMarkdown content={renderedMarkdown} fallbackText={visibleAssistantMarkdown} />
             ) : !item.streaming && !displayText ? (
               <Text style={txt.fallback}>抱歉，这条回复没能送达。你可以重新提问。</Text>

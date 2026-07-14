@@ -592,8 +592,52 @@ _INVOKE_PARAM_RE = re.compile(
 _INVOKE_STRIP_RE = re.compile(r"<invoke\b.*?</invoke\s*>", re.S | re.I)
 # 悬空 `<minimax:tool_call>` / `</minimax:tool_call>`(含无开标签的孤立闭标签)也一并剥掉。
 _MINIMAX_TAG_STRIP_RE = re.compile(r"</?\s*minimax:tool_call\s*>", re.I)
-# 流式期前缀检测:`<invoke` 或 `<minimax:tool_call` 一出现就抑制 live 下发(逐 token 泄漏兜底)。
-_XML_TOOLCALL_PREFIX_RE = re.compile(r"<\s*(?:invoke\b|/?\s*minimax:tool_call\b)", re.I)
+
+# 通用 `<tool>` 伪标签工具调用泄漏(qwen 系经代理偶发)。既非 `<invoke>` 也非
+# `<minimax:tool_call>`,上面两张网都漏。生产实锤(founder 截图 2026-07-14,mac app,
+# qwen3.7-max/qwen3.6-flash 工具轮),原文一字未改:
+#   <tool> {"name": "health_manage", "arguments": {"record_type<tool> {"name<tool> {"name":health_manage(record_type='diet', operation='list', date='today', meal_type='breakfast')
+# 特征:一个或多个 `<tool>`/`<tool_call>`/`<function_call>` 伪标签,与残缺/嵌套的 JSON
+# (`{"name":`)或函数签名(`name(args)`)交织,全程只有机器语法(无自然语言散文)。
+# well-formed 的 `<tool>{"name":...}` 已被 `_extract_inline_tool_call` 的 JSON 扫描恢复成真
+# tool_call(先执行,content 置空),这里只处理**无法恢复**的残缺 blob 的**展示剥离**
+# ——三层防御的展示兜底层,不是唯一防线(见 `_is_botched_text_tool_call` 的重提示层 +
+# `_force_no_tools_synthesis` 的 fast 丢弃层)。
+# 安全边界(测试锁死):
+#   · 门控——`<tool>` 标签后必须**紧跟**工具调用形状(`{` / 另一个 tool 标签 / `name(`),
+#     否则整段不动 → 保护文档里的 `<tool>example</tool>` 与代码块里的 `<tool>`(见测试
+#     doc_tag_no_shape / code_fence_*);`<toolbar>`/`<toolkit>` 因 `\btool\b` 词边界天然不匹配。
+#   · JSON/签名片段止于 `<` 或 CJK 表意文字(`一-鿿`)→ 绝不吞后续中文散文
+#     (见测试 blob_then_prose_suffix);带引号字符串(值可含中文)整体消费。
+#   · 各分支首字符互斥(`<` / `{` / 字母 / 标点集)→ 无灾难性回溯(ReDoS smoke 已验)。
+_TOOL_TAG_ATOM = r"<\s*/?\s*(?:tool|tool_call|function_call)\b[^>{]{0,200}>?"
+_TOOL_LEAK_QSTR = r"(?:\"[^\"<]*\"|'[^'<]*')"  # 引号串(CJK 安全,止于 `<`)
+_TOOL_LEAK_TAIL = (
+    r"(?:"
+    + _TOOL_TAG_ATOM                                               # 更多 tool 伪标签
+    + r"|\{(?:" + _TOOL_LEAK_QSTR + r"|[^<一-鿿])*"        # JSON 对象体(截断安全,止于 `<`/CJK)
+    + r"|[A-Za-z_][\w.]*\s*\((?:" + _TOOL_LEAK_QSTR + r"|[^)<一-鿿])*\)?"  # name(args) 签名
+    + r"|[\s\"'`:,}\]=]"                                           # 零散 JSON 标点/空白
+    + r")*"
+)
+_GENERIC_TOOL_TAG_LEAK_RE = re.compile(
+    _TOOL_TAG_ATOM + r"\s*"
+    + r"(?=\{|" + _TOOL_TAG_ATOM + r"|[A-Za-z_][\w.]*\s*\()"        # 门控:标签后是工具调用形状才算泄漏
+    + _TOOL_LEAK_TAIL,
+    re.I,
+)
+# 便宜预检:整段是否可能含 `<tool>`-家族泄漏(供 strip / botched 检测短路)。`<tool` 覆盖
+# `<tool`/`<tool_call`,`<function_call` 单列。词边界靠上面的正则,这里只做粗筛。
+def _maybe_generic_tool_tag(text: str) -> bool:
+    low = (text or "").lower()
+    return "<tool" in low or "<function_call" in low
+
+# 流式期前缀检测:`<invoke` / `<minimax:tool_call` / `<tool` / `<tool_call` / `<function_call`
+# 一出现就抑制 live 下发(逐 token 泄漏兜底 —— founder 截图正是逐 token live 泄漏)。
+_XML_TOOLCALL_PREFIX_RE = re.compile(
+    r"<\s*(?:invoke\b|/?\s*minimax:tool_call\b|/?\s*tool\b|/?\s*tool_call\b|/?\s*function_call\b)",
+    re.I,
+)
 
 # Markdown 清单式工具调用:`Tool calls:\n- health_query`(无括号、无参数)。实测
 # Claude-Opus-4.7 经 langbridge 代理时**偶发**(多数仍结构化)把工具调用降级成这种文本 —
@@ -1260,7 +1304,12 @@ def _extract_inline_tool_call(text: str, tools: List[Dict]) -> Optional[Dict[str
         if not isinstance(payload, dict):
             return None
         fn = payload.get("function") if isinstance(payload.get("function"), dict) else None
-        name = payload.get("name") or payload.get("tool") or (fn or {}).get("name")
+        name = (
+            payload.get("name")
+            or payload.get("tool")
+            or payload.get("tool_code")
+            or (fn or {}).get("name")
+        )
         if name not in allowed:
             # 模型可能直接吐 record 的裸 data(无 name 包装,无 record_type)。
             # 按字段推断 record_type → 包成 health_record 调用,既写库又不泄漏 JSON。
@@ -1908,6 +1957,28 @@ def _write_tool_completed(tool_name: str, args: Any, result: Any) -> bool:
     return _write_receipt_from_tool_result(tool_name, record_type, result) is not None
 
 
+def _health_manage_auto_delete_args(
+    parsed_args: Dict[str, Any],
+    result: Any,
+) -> Optional[Dict[str, Any]]:
+    """Recognize a list call that safely upgraded itself to a verified delete."""
+    if (
+        parsed_args.get("record_type") != "diet"
+        or parsed_args.get("operation") != "list"
+    ):
+        return None
+    payload = _write_result_payload(result)
+    if not payload or payload.get("auto_deleted_from_list") is not True:
+        return None
+    record_id = payload.get("record_id") or payload.get("id")
+    if record_id in (None, "", False):
+        return None
+    amended = dict(parsed_args)
+    amended["operation"] = "delete"
+    amended["record_id"] = record_id
+    return amended
+
+
 # health_record 的 record_type 里，个别是**触发动作**而非写记录 —— 它们没有
 # resource id，不产写回执，绝不能进写诚实闸(否则真成功 / MFA 失败 / 未绑定都会被
 # 误判成"未取得可验证写入回执"，把真因盖掉、还驱动无谓重试)。garmin_sync = 异步
@@ -2433,6 +2504,50 @@ def _normalize_diet_meal_type(value: Any) -> Optional[str]:
         return None
     key = str(value).strip().lower()
     return _MEAL_TYPE_ALIASES.get(key)
+
+
+_DIET_DELETE_WORD_RE = re.compile(r"(删除|删掉|删了|移除|去掉|撤销|清掉|delete|remove)", re.I)
+_MEAL_TYPE_LABELS = {
+    "breakfast": ("早餐", "早饭", "早晨", "breakfast"),
+    "lunch": ("午餐", "午饭", "中餐", "lunch"),
+    "dinner": ("晚餐", "晚饭", "dinner"),
+    "snack": ("加餐", "零食", "snack"),
+}
+_ZH_ORDINAL_NUMBERS = {
+    "一": 1, "二": 2, "两": 2, "三": 3, "四": 4,
+    "五": 5, "六": 6, "七": 7, "八": 8, "九": 9,
+    "十": 10,
+}
+
+
+def _diet_delete_ordinal_from_message(
+    message: str,
+    meal_type: Optional[str],
+) -> Optional[int]:
+    """Parse commands like “删除早餐 1” into a 1-based candidate index.
+
+    This is intentionally narrow. It only arms when the user text has a delete
+    verb, an explicit meal label, and an explicit ordinal/number.
+    """
+    text = (message or "").strip()
+    if not text or not _DIET_DELETE_WORD_RE.search(text):
+        return None
+    labels = _MEAL_TYPE_LABELS.get(meal_type or "")
+    if not labels or not any(label.lower() in text.lower() for label in labels):
+        return None
+    number_patterns = (
+        r"(?:第\s*)?(\d{1,2})\s*(?:条|个|项|份|餐|$)",
+        r"(?:第\s*)?([一二两三四五六七八九十])\s*(?:条|个|项|份|餐)",
+    )
+    for pattern in number_patterns:
+        match = re.search(pattern, text)
+        if not match:
+            continue
+        raw = match.group(1)
+        value = int(raw) if raw.isdigit() else _ZH_ORDINAL_NUMBERS.get(raw)
+        if value and value > 0:
+            return value
+    return None
 
 
 # 相对日期词 → 相对今天的天数偏移 (lower() 后匹配; 中文不受 lower 影响)。
@@ -3244,6 +3359,7 @@ class AgentExecutor:
         self._http_client: Optional[httpx.AsyncClient] = None
         self._request_model_id: Optional[str] = None
         self._turn_channel: Optional[str] = None
+        self._current_turn_user_message = ""
         self._prefer_fast_record_model = False
         # 本回合是否被 fast-route 到快模型 (简单记录/查询)。仅用于把答案 max_tokens
         # 从 ANSWER_MAX_TOKENS 收紧到 FAST_ROUTE_ANSWER_MAX_TOKENS —— 见 _answer_max_tokens。
@@ -3815,6 +3931,16 @@ class AgentExecutor:
                                     result = _hb_val
                             if write_fingerprint:
                                 write_results_by_fingerprint[write_fingerprint] = result
+                        amended_write_args = (
+                            _health_manage_auto_delete_args(parsed_args, result)
+                            if fn == "health_manage" else None
+                        )
+                        if amended_write_args:
+                            parsed_args = amended_write_args
+                            write_attempted = True
+                            write_fingerprint = _write_operation_fingerprint(fn, parsed_args)
+                            replayed_write = False
+                            write_results_by_fingerprint[write_fingerprint] = result
                         lead_messages.append({"role": "tool", "tool_call_id": tc["id"], "content": result})
                         lbl = _TOOL_TO_SOURCE_LABEL.get(fn)
                         if lbl and lbl not in sources_used:
@@ -4016,6 +4142,7 @@ class AgentExecutor:
         runs the same synthesis pipeline but can never mutate user data.
         """
         yield self._progress_event("accepted")
+        self._current_turn_user_message = message or ""
         recovered_user_message = None
         claimed_turn = False
         turn_service = None
@@ -5268,6 +5395,17 @@ class AgentExecutor:
                                     result += f"\n\n⚠️ 安全提示: {alert_msgs}"
                             except Exception as e:
                                 logger.warning(f"Safety check after write failed: {e}")
+                        amended_write_args = (
+                            _health_manage_auto_delete_args(parsed_tool_args, result_for_record_card)
+                            if func_name == "health_manage" else None
+                        )
+                        if amended_write_args:
+                            parsed_tool_args = amended_write_args
+                            write_attempted = True
+                            write_fingerprint = _write_operation_fingerprint(
+                                func_name, parsed_tool_args,
+                            )
+                            replayed_write = False
                         if write_fingerprint and not replayed_write:
                             write_results_by_fingerprint[write_fingerprint] = (
                                 result,
@@ -8794,22 +8932,13 @@ class AgentExecutor:
             "supplement", "supplement_definition", "exercise", "symptom", "medication_log",
             "reminder", "goal",
         }
-
-        if operation == "list":
-            path = list_paths.get(record_type)
-            if not path:
-                return f"Error: 不支持查询 {record_type}"
-            return await self._api_get(f"{base}{path}", headers)
-
         path_tmpl = record_paths.get(record_type)
-        if not path_tmpl:
-            return f"Error: 不支持管理 {record_type}"
-        if not record_id:
-            return "Error: 修改或删除必须提供 record_id. 请先查询候选记录并确认 ID."
-        path = path_tmpl.format(id=record_id)
 
-        if operation == "delete":
-            result = await self._api_delete(f"{base}{path}", headers)
+        async def _delete_record_by_id(resolved_record_id: Any) -> str:
+            if not path_tmpl:
+                return f"Error: 不支持管理 {record_type}"
+            delete_path = path_tmpl.format(id=resolved_record_id)
+            result = await self._api_delete(f"{base}{delete_path}", headers)
             if str(result).startswith("Error:"):
                 return result
             if result:
@@ -8821,14 +8950,50 @@ class AgentExecutor:
                     return result
             else:
                 payload = {"message": "删除成功"}
-            payload.setdefault("record_id", record_id)
-            payload.setdefault("id", record_id)
+            payload.setdefault("record_id", resolved_record_id)
+            payload.setdefault("id", resolved_record_id)
             normalized_record_type = str(record_type or "").strip().lower()
             resource_type = _RESOURCE_TYPE_BY_RECORD_TYPE.get(normalized_record_type)
             if resource_type:
                 payload.setdefault("resource_type", resource_type)
             self._invalidate_twin_after_mutation()
             return json.dumps(payload, ensure_ascii=False)
+
+        if operation == "list":
+            path = list_paths.get(record_type)
+            if not path:
+                return f"Error: 不支持查询 {record_type}"
+            result = await self._api_get(f"{base}{path}", headers)
+            ordinal = _diet_delete_ordinal_from_message(
+                getattr(self, "_current_turn_user_message", ""),
+                target_meal_type,
+            ) if record_type == "diet" else None
+            if ordinal:
+                payload = _recover_tool_result_payload(result)
+                if isinstance(payload, list) and 1 <= ordinal <= len(payload):
+                    selected = payload[ordinal - 1]
+                    selected_id = (
+                        selected.get("id") or selected.get("record_id")
+                        if isinstance(selected, dict) else None
+                    )
+                    if selected_id not in (None, "", False):
+                        deleted = await _delete_record_by_id(selected_id)
+                        deleted_payload = _write_result_payload(deleted)
+                        if deleted_payload is not None:
+                            deleted_payload["auto_deleted_from_list"] = True
+                            deleted_payload["selected_ordinal"] = ordinal
+                            return json.dumps(deleted_payload, ensure_ascii=False)
+                        return deleted
+            return result
+
+        if not path_tmpl:
+            return f"Error: 不支持管理 {record_type}"
+        if not record_id:
+            return "Error: 修改或删除必须提供 record_id. 请先查询候选记录并确认 ID."
+        path = path_tmpl.format(id=record_id)
+
+        if operation == "delete":
+            return await _delete_record_by_id(record_id)
 
         if operation == "update":
             if record_type not in update_supported:

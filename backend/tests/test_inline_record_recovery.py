@@ -20,6 +20,7 @@ from app.services.agent_executor import (
 _TOOLS = [
     {"type": "function", "function": {"name": "health_record"}},
     {"type": "function", "function": {"name": "health_query"}},
+    {"type": "function", "function": {"name": "health_manage"}},
 ]
 
 
@@ -61,6 +62,20 @@ def test_named_tool_call_still_recovered():
     recovered = _extract_inline_tool_call(text, _TOOLS)
     assert recovered is not None
     assert recovered["function"]["name"] == "health_query"
+
+
+def test_tool_code_tool_call_recovered():
+    text = (
+        '{"tool_code":"health_manage","arguments":{'
+        '"record_type":"diet","operation":"list","date":"today",'
+        '"meal_type":"breakfast"}}'
+    )
+    recovered = _extract_inline_tool_call(text, _TOOLS)
+    assert recovered is not None
+    assert recovered["function"]["name"] == "health_manage"
+    args = json.loads(recovered["function"]["arguments"])
+    assert args["record_type"] == "diet"
+    assert args["operation"] == "list"
 
 
 def test_plain_text_not_treated_as_tool_call():
