@@ -4,8 +4,8 @@
 |---|---|
 | slug | `xiaoba-health-advisor-chat-ui` |
 | 创建日期 | 2026-07-13 |
-| 当前阶段 | S3 规划 |
-| 状态 | defining |
+| 当前阶段 | S4 需求分解 |
+| 状态 | building |
 | 负责 | Codex |
 | 反馈环 | Mobile 本地测试 -> iOS Simulator 视觉验收 -> production OTA |
 
@@ -43,7 +43,7 @@
 
 ## S3 · 规划
 
-- 链接：设计规格提交后进入实施计划编写。
+- 链接：`docs/plans/2026-07-13-xiaoba-health-advisor-chat-ui-implementation-plan.md`
 - 反馈环路由：纯 JS/TS/UI，走 production OTA，不走 TestFlight。
 
 ## G2 · 可行性 + 安全压测
@@ -56,7 +56,13 @@
 ## S4 · 研发任务分解
 
 - 跨端 API 契约：无变化。
-- 任务表：待实施计划生成后回写。
+- 任务表：
+  - [ ] T1 移除顶部重复运行状态。
+  - [ ] T2 回复辅助动作进入长按菜单。
+  - [ ] T3 普通 assistant 回答改为无框内容层。
+  - [ ] T4 卡片分享改为渐进披露。
+  - [ ] T5 思考面板统一为单一进度源。
+  - [ ] T6 测试、模拟器视觉验收和 production OTA。
 - 并发检查：已 `git fetch` 并审查远端 4 个提交，均为后端工具、Garmin 和图表改动，与本切片不冲突。
 
 ## S5 · 实现
