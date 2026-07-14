@@ -30389,6 +30389,14 @@ export interface components {
         TranscribeResponse: {
             /** Text */
             text: string;
+            /** Provider */
+            provider?: string | null;
+            /** Model */
+            model?: string | null;
+            /** Duration Ms */
+            duration_ms?: number | null;
+            /** Confidence */
+            confidence?: string | null;
         };
         /** TreatmentEffectItem */
         TreatmentEffectItem: {
