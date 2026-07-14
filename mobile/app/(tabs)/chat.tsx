@@ -656,7 +656,7 @@ export default function ChatScreen() {
     }
   }, [selectedMessageIds]);
 
-  // 微信式: 长按某条消息 → 进入多选模式并默认选中该条.
+  // 微信式: 气泡长按先出操作区; 点"选择"后进入多选并默认选中该条.
   const enterSelectionWith = useCallback((id: string) => {
     setSelectionMode(true);
     setSelectedMessageIds(new Set([id]));
