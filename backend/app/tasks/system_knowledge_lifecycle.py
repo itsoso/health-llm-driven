@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 from app.celery_app import celery_app
 from app.config import settings
 from app.database import SessionLocal
-from app.models.system_knowledge import KBAudit
+from app.models.system_knowledge import KBAudit, KBDocument
 from app.services.dedao_kbase_export_importer import (
     compile_dedao_kbase_export_payload_artifacts,
     fetch_dedao_kbase_export_payload,
@@ -49,6 +49,13 @@ from app.services.system_knowledge_service import (
 )
 
 logger = logging.getLogger(__name__)
+
+DEDAO_KBASE_FEEDBACK_FLUSH_OP = "dedao_kbase_feedback_flush"
+DEDAO_KBASE_FEEDBACK_SOURCE_OPS = (
+    "kb_citation_usage",
+    "dedao_kbase_claim_adjudicated",
+    "dedao_kbase_verification_applied",
+)
 
 
 def _default_system_kb_artifact_dir() -> Path:
@@ -143,6 +150,133 @@ def _list_release_records(
         if not next_cursor or next_cursor == cursor:
             raise ValueError("dedao-kbase release replay cursor did not advance")
         cursor = next_cursor
+
+
+def _feedback_event_id(audit_id: int, release_id: str) -> str:
+    release_digest = hashlib.sha256(release_id.encode("utf-8")).hexdigest()[:12]
+    return f"health-kb-audit-{audit_id}-{release_digest}"
+
+
+def _feedback_events_for_audit(db: Session, audit: KBAudit) -> list[dict[str, Any]]:
+    diff = audit.diff if isinstance(audit.diff, dict) else {}
+    if audit.op == "kb_citation_usage":
+        used_ids = [str(item) for item in diff.get("used_ids") or [] if str(item).strip()]
+        if not used_ids:
+            return []
+        documents = db.query(KBDocument).filter(KBDocument.doc_id.in_(used_ids)).all()
+        metadata_by_doc_id = {
+            document.doc_id: document.metadata_json
+            for document in documents
+            if isinstance(document.metadata_json, dict)
+        }
+        claims_by_release: dict[str, list[str]] = {}
+        for doc_id in used_ids:
+            metadata = metadata_by_doc_id.get(doc_id) or {}
+            if metadata.get("origin") != "dedao-kbase-release":
+                continue
+            release_id = str(metadata.get("release_id") or "").strip()
+            release_claim_id = str(metadata.get("release_claim_id") or "").strip()
+            if not release_id or not release_claim_id:
+                continue
+            claim_ids = claims_by_release.setdefault(release_id, [])
+            if release_claim_id not in claim_ids:
+                claim_ids.append(release_claim_id)
+        return [
+            {
+                "release_id": release_id,
+                "outcome": "used",
+                "claim_ids": claim_ids,
+                "reason_code": "used_for_answer",
+            }
+            for release_id, claim_ids in claims_by_release.items()
+        ]
+
+    decision = str(diff.get("decision") or "")
+    if decision not in {"reject", "background_only"}:
+        return []
+    release_id = str(diff.get("release_id") or "").strip()
+    if not release_id:
+        return []
+    release_claim_id = str(diff.get("release_claim_id") or "").strip()
+    return [
+        {
+            "release_id": release_id,
+            "outcome": "rejected",
+            "claim_ids": [release_claim_id] if release_claim_id else [],
+            "reason_code": "out_of_scope" if decision == "background_only" else "",
+        }
+    ]
+
+
+def flush_dedao_kbase_feedback_once(
+    db: Session,
+    *,
+    base_url: str | None,
+    auth_token: str | None,
+    actor: str = "system",
+    limit: int = 100,
+    client: DedaoKBaseReleaseClient | None = None,
+) -> dict[str, Any]:
+    """Flush bounded, privacy-safe KBase feedback events from the durable audit log."""
+    if not 1 <= limit <= 500:
+        raise ValueError("feedback flush limit must be between 1 and 500")
+    base_url = (base_url or "").strip()
+    if not base_url:
+        return {"status": "skipped", "reason": "missing_release_base_url"}
+
+    latest = (
+        db.query(KBAudit)
+        .filter(KBAudit.op == DEDAO_KBASE_FEEDBACK_FLUSH_OP)
+        .order_by(KBAudit.id.desc())
+        .first()
+    )
+    previous_cursor = int((latest.diff or {}).get("cursor") or 0) if latest else 0
+    audits = (
+        db.query(KBAudit)
+        .filter(
+            KBAudit.id > previous_cursor,
+            KBAudit.op.in_(DEDAO_KBASE_FEEDBACK_SOURCE_OPS),
+        )
+        .order_by(KBAudit.id.asc())
+        .limit(limit)
+        .all()
+    )
+    if not audits:
+        return {
+            "status": "up_to_date",
+            "cursor": previous_cursor,
+            "scanned": 0,
+            "posted": 0,
+            "outcomes": {},
+        }
+
+    producer = client or DedaoKBaseReleaseClient(base_url, auth_token=auth_token)
+    outcomes: dict[str, int] = {}
+    posted = 0
+    for audit in audits:
+        for event in _feedback_events_for_audit(db, audit):
+            producer.post_feedback(
+                event["release_id"],
+                event_id=_feedback_event_id(audit.id, event["release_id"]),
+                consumer="health-llm-driven",
+                outcome=event["outcome"],
+                claim_ids=event["claim_ids"],
+                reason_code=event["reason_code"],
+            )
+            posted += 1
+            outcomes[event["outcome"]] = outcomes.get(event["outcome"], 0) + 1
+
+    cursor = audits[-1].id
+    report = {
+        "status": "flushed",
+        "cursor": cursor,
+        "scanned": len(audits),
+        "posted": posted,
+        "outcomes": dict(sorted(outcomes.items())),
+    }
+    db.add(KBAudit(doc_id=None, op=DEDAO_KBASE_FEEDBACK_FLUSH_OP, actor=actor, diff=report))
+    db.commit()
+    return report
 
 
 def sync_dedao_kbase_export_draft_once(
@@ -437,6 +571,20 @@ def run_system_kb_reindex() -> dict[str, Any]:
     with SessionLocal() as db:
         result = run_system_kb_reindex_once(db, actor="celery:system_kb_reindex")
     logger.info("[system_kb_reindex] done: %s", result.get("reindex"))
+    return result
+
+
+@celery_app.task(time_limit=300, name="app.tasks.system_knowledge_lifecycle.flush_dedao_kbase_feedback")
+def flush_dedao_kbase_feedback() -> dict[str, Any]:
+    logger.info("[dedao_kbase_feedback] start")
+    with SessionLocal() as db:
+        result = flush_dedao_kbase_feedback_once(
+            db,
+            base_url=settings.dedao_kbase_release_base_url,
+            auth_token=settings.dedao_kbase_auth_token,
+            actor="celery:dedao_kbase_feedback",
+        )
+    logger.info("[dedao_kbase_feedback] done: %s", result.get("status"))
     return result
 
 

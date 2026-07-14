@@ -72,6 +72,7 @@ def _write_dedao_review_workspace(artifact_dir):
                 "metadata": {
                     "review_status": "draft",
                     "release_id": "release-abc",
+                    "release_claim_id": "claim-1",
                     "usage_policy": "evidence_only",
                     "citation_ids": ["citation-1"],
                 },
@@ -1446,6 +1447,8 @@ def test_admin_dedao_kbase_claim_adjudication_records_metadata_only_audit(
     audit = db.query(KBAudit).filter(KBAudit.op == "dedao_kbase_claim_adjudicated").one()
     assert audit.doc_id == "claim:release-abc-claim-1"
     assert audit.diff["decision"] == "approve"
+    assert audit.diff["release_id"] == "release-abc"
+    assert audit.diff["release_claim_id"] == "claim-1"
     assert audit.diff["evidence"]["source"] == "pubmed:12345"
     assert "body" not in json.dumps(audit.diff, ensure_ascii=False)
     assert "不应写入审计" not in json.dumps(audit.diff, ensure_ascii=False)
@@ -1578,6 +1581,8 @@ def test_admin_dedao_kbase_applies_only_ready_current_verification_packet(
     audit = db.query(KBAudit).filter(KBAudit.op == "dedao_kbase_verification_applied").one()
     assert len(audit.op) <= 40
     assert audit.diff["decision"] == "needs_evidence"
+    assert audit.diff["release_id"] == "release-abc"
+    assert audit.diff["release_claim_id"] == "claim-1"
     assert "晚间咖啡因" not in json.dumps(audit.diff, ensure_ascii=False)
 
     stale_apply = client.post(

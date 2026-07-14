@@ -293,6 +293,12 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=4, minute=10, day_of_week=1),
     },
 
+    # 每五分钟发送去标识化的实际引用和人工拒绝反馈；失败保留 outbox 游标供下次重试。
+    "dedao-kbase-feedback-flush": {
+        "task": "app.tasks.system_knowledge_lifecycle.flush_dedao_kbase_feedback",
+        "schedule": crontab(minute="*/5"),
+    },
+
     # 每周一 04:30 系统级 KB 生命周期维护:
     # lint + confidence decay + multi-user crystallize draft report.
     "system-kb-lifecycle": {

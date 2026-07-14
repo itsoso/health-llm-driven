@@ -790,6 +790,8 @@ def apply_dedao_kbase_verification_packet(
         diff={
             "packet_id": request.packet_id,
             "decision": result["decision"],
+            "release_id": result.get("release_id"),
+            "release_claim_id": result.get("release_claim_id"),
             "note": request.note,
             "workspace_fingerprint": result["workspace_fingerprint"],
         },
@@ -827,6 +829,8 @@ def adjudicate_dedao_kbase_draft_review_item(
         actor=f"admin:{admin_user.id}",
         diff={
             "decision": request.decision,
+            "release_id": result.get("release_id"),
+            "release_claim_id": result.get("release_claim_id"),
             "note": request.note,
             "evidence": evidence,
             "evidence_level": request.evidence_level,

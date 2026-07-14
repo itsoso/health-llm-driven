@@ -162,6 +162,7 @@ def list_review_claims(
                     "review_status": metadata.get("review_status"),
                     "decision": claim_decision,
                     "release_id": metadata.get("release_id"),
+                    "release_claim_id": metadata.get("release_claim_id"),
                     "usage_policy": metadata.get("usage_policy"),
                     "citation_ids": metadata.get("citation_ids") or [],
                 }
@@ -238,6 +239,8 @@ def adjudicate_review_claim(
             metadata = claim.setdefault("metadata", {})
             if metadata.get("review_status") not in {"draft", "reviewed"}:
                 raise ValueError(f"claim cannot be adjudicated from status: {metadata.get('review_status')}")
+            release_id = metadata.get("release_id")
+            release_claim_id = metadata.get("release_claim_id")
 
             timestamp = (decided_at or datetime.now(UTC)).isoformat()
             if decision == "approve":
@@ -298,6 +301,8 @@ def adjudicate_review_claim(
             "artifact_dir": str(root),
             "doc_id": doc_id,
             "decision": decision,
+            "release_id": release_id,
+            "release_claim_id": release_claim_id,
             "workspace_fingerprint": workspace_content_fingerprint(root),
             "gate": validate_artifact_review_gate(root),
         }

@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 import pytest
 
-from app.models.system_knowledge import KBAudit
+from app.models.system_knowledge import KBAudit, KBDocument
 
 
 def _release_payload(release_id: str = "release-abc", *, usage_policy: str = "evidence_only") -> dict:
@@ -76,6 +76,147 @@ def test_release_client_lists_fetches_and_posts_feedback():
     assert requests[-1][2]["outcome"] == "used"
 
 
+class _FeedbackClient:
+    def __init__(self, *, fail: bool = False):
+        self.fail = fail
+        self.calls = []
+
+    def post_feedback(self, release_id, **payload):
+        self.calls.append((release_id, payload))
+        if self.fail:
+            raise RuntimeError("producer unavailable")
+        return {"status": "accepted"}
+
+
+def test_feedback_flusher_groups_actual_use_and_rejection_and_advances_past_no_signal(db):
+    from app.tasks.system_knowledge_lifecycle import flush_dedao_kbase_feedback_once
+
+    db.add_all(
+        [
+            KBDocument(
+                doc_id="claim:health-a",
+                doc_type="claim",
+                metadata_json={
+                    "origin": "dedao-kbase-release",
+                    "release_id": "release-a",
+                    "release_claim_id": "claim-a",
+                },
+            ),
+            KBDocument(
+                doc_id="claim:health-b",
+                doc_type="claim",
+                metadata_json={
+                    "origin": "dedao-kbase-release",
+                    "release_id": "release-a",
+                    "release_claim_id": "claim-b",
+                },
+            ),
+        ]
+    )
+    db.flush()
+    db.add_all(
+        [
+            KBAudit(
+                op="kb_citation_usage",
+                actor="system",
+                diff={"used_ids": ["claim:health-a", "claim:health-b"]},
+            ),
+            KBAudit(
+                doc_id="claim:health-rejected",
+                op="dedao_kbase_claim_adjudicated",
+                actor="admin:1",
+                diff={
+                    "decision": "background_only",
+                    "release_id": "release-b",
+                    "release_claim_id": "claim-rejected",
+                },
+            ),
+            KBAudit(
+                doc_id="claim:health-needs-evidence",
+                op="dedao_kbase_verification_applied",
+                actor="admin:1",
+                diff={
+                    "decision": "needs_evidence",
+                    "release_id": "release-c",
+                    "release_claim_id": "claim-pending",
+                },
+            ),
+        ]
+    )
+    db.commit()
+    expected_cursor = db.query(KBAudit.id).order_by(KBAudit.id.desc()).first()[0]
+    client = _FeedbackClient()
+
+    result = flush_dedao_kbase_feedback_once(
+        db,
+        base_url="https://kbase.example",
+        auth_token="secret",
+        client=client,
+        actor="test",
+    )
+
+    assert result == {
+        "status": "flushed",
+        "cursor": expected_cursor,
+        "scanned": 3,
+        "posted": 2,
+        "outcomes": {"rejected": 1, "used": 1},
+    }
+    assert [(release_id, payload["outcome"], payload.get("claim_ids"), payload.get("reason_code"))
+            for release_id, payload in client.calls] == [
+        ("release-a", "used", ["claim-a", "claim-b"], "used_for_answer"),
+        ("release-b", "rejected", ["claim-rejected"], "out_of_scope"),
+    ]
+    assert all("note" not in payload and "actor" not in payload for _, payload in client.calls)
+    assert flush_dedao_kbase_feedback_once(
+        db,
+        base_url="https://kbase.example",
+        auth_token="secret",
+        client=client,
+        actor="test",
+    )["status"] == "up_to_date"
+    assert len(client.calls) == 2
+
+
+def test_feedback_flusher_keeps_cursor_and_reuses_event_id_after_failure(db):
+    from app.tasks.system_knowledge_lifecycle import flush_dedao_kbase_feedback_once
+
+    db.add(
+        KBAudit(
+            doc_id="claim:health-rejected",
+            op="dedao_kbase_claim_adjudicated",
+            actor="admin:1",
+            diff={
+                "decision": "reject",
+                "release_id": "release-a",
+                "release_claim_id": "claim-a",
+            },
+        )
+    )
+    db.commit()
+    failing = _FeedbackClient(fail=True)
+
+    with pytest.raises(RuntimeError, match="producer unavailable"):
+        flush_dedao_kbase_feedback_once(
+            db,
+            base_url="https://kbase.example",
+            auth_token="secret",
+            client=failing,
+            actor="test",
+        )
+
+    assert db.query(KBAudit).filter(KBAudit.op == "dedao_kbase_feedback_flush").count() == 0
+    retry = _FeedbackClient()
+    flush_dedao_kbase_feedback_once(
+        db,
+        base_url="https://kbase.example",
+        auth_token="secret",
+        client=retry,
+        actor="test",
+    )
+    assert retry.calls[0][1]["event_id"] == failing.calls[0][1]["event_id"]
+
+
 def test_compile_release_preserves_evidence_only_policy_and_provenance(tmp_path):
     from app.integrations.dedao_kbase_release_consumer import compile_knowledge_release_artifacts
 
@@ -90,10 +231,12 @@ def test_compile_release_preserves_evidence_only_policy_and_provenance(tmp_path)
     claim = result.claims[0]
     assert claim["metadata"]["origin"] == "dedao-kbase-release"
     assert claim["metadata"]["release_id"] == "release-abc"
+    assert claim["metadata"]["release_claim_id"] == "claim-1"
     assert claim["metadata"]["usage_policy"] == "evidence_only"
     assert claim["metadata"]["review_status"] == "draft"
     assert claim["metadata"]["citation_ids"] == ["citation-1"]
     assert result.manifest["ingest"]["serving_allowed"] is False
+    assert result.relations[0]["metadata"]["release_claim_id"] == "claim-1"
 
 
 @pytest.mark.parametrize(
@@ -534,6 +677,7 @@ def test_list_review_claims_returns_bounded_release_claims(tmp_path):
             "review_status": "draft",
             "decision": None,
             "release_id": "release-abc",
+            "release_claim_id": "claim-1",
             "usage_policy": "evidence_only",
             "citation_ids": ["citation-1"],
         }
@@ -590,6 +734,8 @@ def test_adjudicate_review_claim_approves_with_structured_evidence(tmp_path):
     )
 
     assert result["decision"] == "approve"
+    assert result["release_id"] == "release-abc"
+    assert result["release_claim_id"] == "claim-1"
     assert result["workspace_fingerprint"] != before
     item = list_review_claims(workspace, offset=0, limit=20)["items"][0]
     assert item["decision"] == "approve"

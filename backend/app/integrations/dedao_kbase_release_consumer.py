@@ -109,6 +109,9 @@ def compile_knowledge_release_artifacts(
         export_ref=f"knowledge-release:{release['release_id']}",
         now=current_time,
     )
+    claim_metadata_by_doc_id = {
+        str(row.get("doc_id") or ""): dict(row.get("metadata") or {}) for row in result.claims
+    }
     for row in [*result.pages, *result.entities, *result.claims, *result.relations]:
         metadata = dict(row.get("metadata") or {})
         metadata.update(
@@ -121,6 +124,11 @@ def compile_knowledge_release_artifacts(
             }
         )
         row["metadata"] = metadata
+    for relation in result.relations:
+        target_metadata = claim_metadata_by_doc_id.get(str(relation.get("dst_doc_id") or ""), {})
+        release_claim_id = target_metadata.get("release_claim_id")
+        if release_claim_id:
+            relation["metadata"]["release_claim_id"] = release_claim_id
     result.manifest["ingest"].update(
         {
             "pipeline": RELEASE_PIPELINE_NAME,
@@ -191,10 +199,12 @@ def _release_as_system_kb_export(release: dict[str, Any], now: datetime) -> dict
     relations = []
     entity_doc_id = f"entity:knowledge_source:{book_id}"
     for claim in analysis["claims"]:
-        claim_id = f"{_safe_id(release_id)}-{_safe_id(str(claim.get('id') or 'claim'))}"
+        release_claim_id = str(claim.get("id") or "").strip()
+        claim_id = f"{_safe_id(release_id)}-{_safe_id(release_claim_id)}"
         citation_ids = [str(item) for item in claim.get("citation_ids") or []]
         metadata = {
             "release_id": release_id,
+            "release_claim_id": release_claim_id,
             "content_hash": release["content_hash"],
             "usage_policy": release["usage_policy"],
             "citation_ids": citation_ids,
