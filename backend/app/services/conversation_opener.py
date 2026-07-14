@@ -46,6 +46,21 @@ _TITLE_METRIC_KEY_PREFIX = re.compile(r"^\s*[\[［]\s*[A-Za-z][A-Za-z0-9_]*\s*[\
 # 截断时优先切在这些子句边界之后
 _TITLE_CLAUSE_BOUNDARY = "，,。；;、"
 _TITLE_MAX_LEN = 24
+_NON_ACTION_TITLE_EXACT = {
+    "已为您记录",
+    "已记录",
+    "记录成功",
+    "已保存",
+    "保存成功",
+    "已写入",
+    "写入成功",
+    "已确认",
+    "确认成功",
+}
+_NON_ACTION_TITLE_PATTERNS = (
+    re.compile(r"^已为(你|您)?记录$"),
+    re.compile(r"^(已|已经)?(帮你|帮您)?(记录|保存|写入|确认)(成功|好了|完成)?$"),
+)
 
 
 def humanize_card_title(title: str) -> str:
@@ -86,6 +101,17 @@ def humanize_card_title(title: str) -> str:
     if last_boundary >= 6:
         return window[:last_boundary].rstrip("，,。；;、：: ") + "…"
     return window.rstrip("，,。；;、：: ") + "…"
+
+
+def _is_non_action_title(title: str) -> bool:
+    """Return True for system receipt/status labels that are not user actions."""
+    s = (title or "").strip()
+    if not s:
+        return True
+    compact = re.sub(r"\s+", "", s).strip("。.!！")
+    if compact in _NON_ACTION_TITLE_EXACT:
+        return True
+    return any(pattern.match(compact) for pattern in _NON_ACTION_TITLE_PATTERNS)
 
 
 # Cold-start quick-reply actions. Items carrying one of these are handled by
@@ -198,7 +224,7 @@ def _try_action_card_due(db: Session, user_id: int) -> Optional[OpenerSuggestion
     now = datetime.now(timezone.utc)
     soon = now + timedelta(days=2)
 
-    card = (
+    cards = (
         db.query(ActionCard)
         .filter(
             ActionCard.user_id == user_id,
@@ -210,35 +236,40 @@ def _try_action_card_due(db: Session, user_id: int) -> Optional[OpenerSuggestion
             ActionCard.user_decision.is_(None),
         )
         .order_by(ActionCard.check_back_date.asc())
-        .first()
+        .limit(10)
+        .all()
     )
-    if not card:
+    if not cards:
         return None
+    for card in cards:
+        # 卡标题可能是告警文案 ("…（阈值 95%），请注意"), 内联前人性化。
+        # 系统回执 ("已为您记录") 不是行动目标, 不能套"检验日"模板。
+        title = humanize_card_title((card.title or "").strip()[:40])
+        if _is_non_action_title(title):
+            continue
 
-    # 距 check_back 还有几天 (中国时间)
-    chk = card.check_back_date
-    if chk.tzinfo is None:
-        chk = chk.replace(tzinfo=timezone.utc)
-    days_until = max(0, (chk.astimezone(CHINA_TZ).date() - datetime.now(CHINA_TZ).date()).days)
+        # 距 check_back 还有几天 (中国时间)
+        chk = card.check_back_date
+        if chk.tzinfo is None:
+            chk = chk.replace(tzinfo=timezone.utc)
+        days_until = max(0, (chk.astimezone(CHINA_TZ).date() - datetime.now(CHINA_TZ).date()).days)
 
-    # 卡标题可能是告警文案 ("…（阈值 95%），请注意"), 内联前人性化。
-    title = humanize_card_title((card.title or "").strip()[:40]) or "之前的建议"
+        if days_until == 0:
+            text = f"今天就是「{title}」的检验日，做到了吗？"
+        elif days_until == 1:
+            text = f"明天就到「{title}」的检验日，目前情况怎么样？"
+        else:  # 2
+            text = f"还有 {days_until} 天到「{title}」检验日，进展如何？"
 
-    if days_until == 0:
-        text = f"今天就是「{title}」的检验日，做到了吗？"
-    elif days_until == 1:
-        text = f"明天就到「{title}」的检验日，目前情况怎么样？"
-    else:  # 2
-        text = f"还有 {days_until} 天到「{title}」检验日，进展如何？"
-
-    return OpenerSuggestion(
-        text=text,
-        source="action_card_due",
-        source_id=card.id,
-        quick_replies=["做到了 ✅", "没做 ❌", "调整下计划"],
-        deep_link=f"/action-cards/{card.id}",
-        priority=100,
-    )
+        return OpenerSuggestion(
+            text=text,
+            source="action_card_due",
+            source_id=card.id,
+            quick_replies=["做到了 ✅", "没做 ❌", "调整下计划"],
+            deep_link=f"/action-cards/{card.id}",
+            priority=100,
+        )
+    return None
 
 
 # ─────────────── strategy 2: recent anomaly ───────────────

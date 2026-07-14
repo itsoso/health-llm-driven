@@ -1007,8 +1007,9 @@ _CATEGORY_BY_KEY: dict[str, str] = {
     "acwr": "training",
     "workout": "training",
     "recovery_history": "recovery",
-    # nutrition / intake
-    "water": "nutrition",
+    # intake gaps: hydration and diet are both daily core signals, so they should
+    # not collapse each other out of the four starter slots.
+    "water": "hydration",
     "diet": "nutrition",
     "supplement": "supplement",
     # labs / exams / chronic problems (the grounded "check/compare" threads)

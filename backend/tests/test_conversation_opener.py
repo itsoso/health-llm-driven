@@ -81,6 +81,55 @@ def test_action_card_due_humanizes_noisy_alert_title(db):
     assert "请注意" not in out.text
 
 
+def test_action_card_due_skips_receipt_title(db):
+    """系统回执文案不能被当作行动标题生成"检验日" opener."""
+    from app.models.action_card import ActionCard
+
+    now = datetime.now(timezone.utc)
+    db.add(ActionCard(
+        user_id=1,
+        title="已为您记录",
+        content="...",
+        status="active",
+        source_type="orchestrator",
+        check_back_date=now,
+    ))
+    db.commit()
+
+    assert compute_conversation_opener(db, user_id=1) is None
+
+
+def test_action_card_due_uses_next_valid_card_after_receipt_title(db):
+    from app.models.action_card import ActionCard
+
+    now = datetime.now(timezone.utc)
+    db.add_all([
+        ActionCard(
+            user_id=1,
+            title="已为您记录",
+            content="...",
+            status="active",
+            source_type="orchestrator",
+            check_back_date=now,
+        ),
+        ActionCard(
+            user_id=1,
+            title="晚餐后散步 15 分钟",
+            content="...",
+            status="active",
+            source_type="orchestrator",
+            check_back_date=now + timedelta(minutes=1),
+        ),
+    ])
+    db.commit()
+
+    out = compute_conversation_opener(db, user_id=1)
+
+    assert out is not None
+    assert "晚餐后散步 15 分钟" in out.text
+    assert "已为您记录" not in out.text
+
+
 def test_humanize_card_title_shortens_long_clause_at_boundary():
     title = "长期高强度训练安排需要调整，结合最近睡眠和 HRV 明显恢复不足，请注意"
 
