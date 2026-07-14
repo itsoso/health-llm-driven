@@ -8422,6 +8422,11 @@ class AgentExecutor:
             raw = await self._read_in_process(art.read_life_events, uid, days=days)
         elif dim == "supplements":
             raw = await self._read_in_process(art.read_supplement_stats, uid, days=days)
+        # 增量 B2(Tier-5 敏感): genetic 变异位点。user_id + active-profile 双重隔离;
+        # indicator 传入按 gene_name 过滤(镜像旧 genetic+indicator 特殊路径)。flag 关时落回
+        # 下面 endpoint_map + 旧特殊路径 HTTP。
+        elif dim == "genetic":
+            raw = await self._read_in_process(art.read_genetic_variants, uid, indicator=indicator)
         # 增量 B1(非敏感确定性分析维度): comprehensive/sleep 复用 GarminAnalysisService,
         # spo2 两维复刻 app/api/spo2.py 确定性算法(见 agent_read_tools_analysis)。
         elif dim == "comprehensive":

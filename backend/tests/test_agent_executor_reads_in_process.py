@@ -36,7 +36,7 @@ from app.models.daily_health import (
     WorkoutRecord,
 )
 from app.models.episode import HealthEpisode
-from app.models.genetic_data import GeneticProfile
+from app.models.genetic_data import GeneticProfile, GeneticVariant
 from app.models.supplement import SupplementDefinition, SupplementRecord
 from app.models.user import User
 from app.models.weight import WeightRecord
@@ -1094,3 +1094,88 @@ def test_analysis_readers_fail_loud_without_user():
     assert arta.read_sleep_analysis(None, None).startswith("Error")
     assert arta.read_latest_night_spo2(None, None).startswith("Error")
     assert arta.read_spo2_sleep_correlation(None, None).startswith("Error")
+
+
+# ── 增量 B2: genetic 变异位点(Tier-5 敏感)────────────────────────────────────────
+
+
+def _seed_genetic(db, user, *, gene, genotype, category="drug_sensitivity"):
+    profile = GeneticProfile(user_id=user.id, test_provider="WeGene", test_date=date.today())
+    db.add(profile)
+    db.commit()
+    db.refresh(profile)
+    db.add(
+        GeneticVariant(
+            user_id=user.id, profile_id=profile.id, category=category, gene_name=gene,
+            rsid="rs1801133", genotype=genotype, raw_genotype=genotype, result_label="示例",
+        )
+    )
+    db.commit()
+    return profile
+
+
+def test_genetic_variants_parity_via_testclient(db, client):
+    user = _make_user(db)
+    _seed_genetic(db, user, gene="MTHFR", genotype="CT")
+    app.dependency_overrides[get_current_user_required] = lambda: user
+
+    http = client.get("/api/v1/genetic/variants/me").json()
+    inproc = json.loads(art.read_genetic_variants(db, user.id))
+
+    assert inproc == http  # 14 字段逐字段数据等价(含解密后的 genotype)
+    assert inproc[0]["gene_name"] == "MTHFR"
+    assert inproc[0]["genotype"] == "CT"
+
+
+def test_genetic_variants_killswitch_false_uses_http(db, monkeypatch):
+    user = _make_user(db)
+    monkeypatch.setattr(settings, "reads_in_process", False, raising=False)
+    ex = AgentExecutor(db)
+    ex._current_user_id = user.id
+    calls = {}
+
+    async def fake_api_get(url, headers):
+        calls["url"] = url
+        return "[]"
+
+    ex._api_get = fake_api_get
+    _run(ex._exec_health_query("http://x/api/v1", {}, {"dimension": "genetic"}))
+    assert calls["url"].endswith("/genetic/variants/me")
+
+
+def test_genetic_variants_user_scoping_no_cross_user_genotype_leak(db):
+    """Tier-5 硬隔离:A 的会话绝不可能拿到 B 的变异/基因型(最敏感字段)。"""
+    a = _make_user(db)
+    b = _make_user(db)
+    _seed_genetic(db, a, gene="MTHFR", genotype="AA_secret_A")
+    _seed_genetic(db, b, gene="APOE", genotype="ZZ_secret_B")
+
+    a_out = art.read_genetic_variants(db, a.id)
+    assert "AA_secret_A" in a_out and "MTHFR" in a_out
+    assert "ZZ_secret_B" not in a_out and "APOE" not in a_out  # B 的基因型绝不泄漏给 A
+
+    b_out = art.read_genetic_variants(db, b.id)
+    assert "ZZ_secret_B" in b_out
+    assert "AA_secret_A" not in b_out and "MTHFR" not in b_out
+
+
+def test_genetic_variants_indicator_filters_by_gene(db):
+    user = _make_user(db)
+    profile = GeneticProfile(user_id=user.id, test_provider="WeGene", test_date=date.today())
+    db.add(profile)
+    db.commit()
+    db.refresh(profile)
+    db.add_all([
+        GeneticVariant(user_id=user.id, profile_id=profile.id, category="drug_sensitivity",
+                       gene_name="MTHFR", rsid="rs1", genotype="CT"),
+        GeneticVariant(user_id=user.id, profile_id=profile.id, category="nutrition",
+                       gene_name="APOE", rsid="rs2", genotype="E3"),
+    ])
+    db.commit()
+
+    out = json.loads(art.read_genetic_variants(db, user.id, indicator="MTHFR"))
+    assert [v["gene_name"] for v in out] == ["MTHFR"]  # 命中项只返回 MTHFR
+
+
+def test_genetic_variants_fail_loud_without_user():
+    assert art.read_genetic_variants(None, None).startswith("Error")

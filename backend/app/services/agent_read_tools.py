@@ -89,6 +89,60 @@ def read_genetic_profiles(db: Session, user_id: Optional[int]) -> str:
     return json.dumps(payload, ensure_ascii=False, default=str)
 
 
+def read_genetic_variants(
+    db: Session, user_id: Optional[int], *, category: str = "", indicator: str = ""
+) -> str:
+    """基因变异位点列表 — 镜像 GET /genetic/variants/me (genetic_data.py::list_variants)。
+
+    **Tier-5 敏感**:严格 user_id + active-profile 双重隔离(profile 也按 user_id 解析,
+    再 filter profile_id)——A 的会话绝不可能拿到 B 的变异。逐字段复刻端点的 14 字段 dict 投影。
+
+    indicator 传入时按 gene_name 过滤(镜像 _exec_health_query 的 genetic+indicator 特殊路径:
+    命中则只返回命中项;无命中回退全量,与旧路径数据等价)。
+    """
+    if user_id is None:
+        return "Error: 当前会话无 user_id, 无法查询基因变异"
+    from app.models.genetic_data import GeneticVariant
+    from app.services.genetic_report import _resolve_active_profile
+
+    profile = _resolve_active_profile(db, user_id)
+    if profile is None:
+        variants = []
+    else:
+        q = db.query(GeneticVariant).filter(
+            GeneticVariant.user_id == user_id,
+            GeneticVariant.profile_id == profile.id,
+        )
+        if category:
+            q = q.filter(GeneticVariant.category == category)
+        variants = q.order_by(GeneticVariant.category, GeneticVariant.gene_name).all()
+    payload = [
+        {
+            "id": v.id,
+            "profile_id": v.profile_id,
+            "rsid": v.rsid,
+            "category": v.category,
+            "gene_name": v.gene_name,
+            "variant_name": v.variant_name,
+            "genotype": v.genotype,
+            "raw_genotype": v.raw_genotype,
+            "result_label": v.result_label,
+            "risk_level": v.risk_level,
+            "mapping_source": v.mapping_source,
+            "evidence_level": v.evidence_level,
+            "description": v.description,
+            "health_implications": v.health_implications,
+        }
+        for v in variants
+    ]
+    if indicator:
+        up = indicator.upper()
+        matched = [d for d in payload if up in str(d.get("gene_name") or "").upper()]
+        if matched:
+            return json.dumps(matched, ensure_ascii=False, default=str)
+    return json.dumps(payload, ensure_ascii=False, default=str)
+
+
 def read_supplement_daily_guide(db: Session, user_id: Optional[int]) -> str:
     """每日补剂动态指南 — 镜像 GET /supplements/daily-guide
     (supplements.py::get_supplement_daily_guide → get_daily_supplement_guide)。
