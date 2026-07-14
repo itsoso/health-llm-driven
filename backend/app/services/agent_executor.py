@@ -2435,6 +2435,44 @@ def _normalize_diet_meal_type(value: Any) -> Optional[str]:
     return _MEAL_TYPE_ALIASES.get(key)
 
 
+# 相对日期词 → 相对今天的天数偏移 (lower() 后匹配; 中文不受 lower 影响)。
+_RELATIVE_DATE_OFFSETS = {
+    "today": 0, "今天": 0, "今日": 0, "本日": 0, "当天": 0, "当日": 0, "now": 0,
+    "yesterday": -1, "昨天": -1, "昨日": -1,
+    "前天": -2, "day before yesterday": -2,
+    "tomorrow": 1, "明天": 1, "明日": 1,
+}
+
+
+def _normalize_relative_date(value: Any) -> Optional[str]:
+    """把 date 参数归一成 ISO date 串 (YYYY-MM-DD)。
+
+    LLM 常传相对词 'today'/'昨天' 或 date/datetime 对象; 但端点把 date 当真日期解析, 传字面
+    'today' → 422 date_from_datetime_parsing (founder 实测「修改早餐」失败根因)。
+    - date/datetime → isoformat 日期。
+    - 相对词(today/昨天/前天/明天…) → 按北京时区今天折算。
+    - 已是合法 ISO 日期(可带时间) → 取日期部分。
+    - 解析不出 → None (调用方据此**不带**该日期过滤, 列近期而非 422 报错; 诚实降级)。
+    """
+    from datetime import date as _d
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date().isoformat()
+    if isinstance(value, _d):
+        return value.isoformat()
+    s = str(value).strip().lower()
+    if not s:
+        return None
+    if s in _RELATIVE_DATE_OFFSETS:
+        today = datetime.now(BEIJING_TZ).date()
+        return (today + timedelta(days=_RELATIVE_DATE_OFFSETS[s])).isoformat()
+    try:
+        return _d.fromisoformat(s[:10]).isoformat()
+    except ValueError:
+        return None
+
+
 def _summarize_record_data(kind: str, record_data: Any) -> str:
     """Build a clean human summary from the structured args the model wrote.
 
@@ -8689,7 +8727,9 @@ class AgentExecutor:
         operation = args.get("operation")
         record_id = args.get("record_id")
         data = args.get("data") or {}
-        target_date = args.get("date")
+        # LLM 常传字面 'today'/'昨天'; 端点要真日期, 传 'today' → 422。归一成 ISO 日期,
+        # 解析不出则不带日期过滤(列近期), 绝不把相对词当 start_date 发出去。
+        target_date = _normalize_relative_date(args.get("date"))
         target_meal_type = _normalize_diet_meal_type(args.get("meal_type") or data.get("meal_type"))
         if record_type == "diet" and target_meal_type:
             data["meal_type"] = target_meal_type
