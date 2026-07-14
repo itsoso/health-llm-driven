@@ -2,15 +2,21 @@ import React from 'react';
 import { Alert, StyleSheet } from 'react-native';
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import * as Clipboard from 'expo-clipboard';
 
 import type { UIMessage } from '../../../hooks/useChatEngine';
 
 /* eslint-disable @typescript-eslint/no-require-imports */
 jest.mock('expo-speech', () => ({ stop: jest.fn() }));
+jest.mock('expo-clipboard', () => ({
+  setStringAsync: jest.fn().mockResolvedValue(undefined),
+}));
 jest.mock('expo-audio', () => ({ setAudioModeAsync: jest.fn() }));
 jest.mock('expo-haptics', () => ({
   selectionAsync: jest.fn(),
   notificationAsync: jest.fn(),
+  impactAsync: jest.fn(),
+  ImpactFeedbackStyle: { Medium: 'medium' },
   NotificationFeedbackType: { Success: 'success' },
 }));
 jest.mock('../../../services/speakWithUserVoice', () => ({
@@ -138,6 +144,59 @@ describe('ChatBubble streaming degraded render', () => {
     );
 
     expect(getByText('正在整理建议。').props.selectable).not.toBe(true);
+  });
+
+  it('long press on an assistant message opens copy-first actions instead of selecting immediately', () => {
+    const onEnterSelection = jest.fn();
+    const { getByLabelText } = render(
+      <QueryClientProvider client={new QueryClient()}>
+        <ChatBubble
+          item={{
+            id: 'assistant-action-menu',
+            role: 'assistant',
+            content: '建议今天午后散步 10 分钟。',
+            streaming: false,
+          }}
+          onEnterSelection={onEnterSelection}
+        />
+      </QueryClientProvider>,
+    );
+
+    fireEvent(getByLabelText('AI: 建议今天午后散步 10 分钟。'), 'longPress');
+
+    expect(onEnterSelection).not.toHaveBeenCalled();
+    expect(getByLabelText('复制全文')).toBeTruthy();
+    expect(getByLabelText('选择这条消息')).toBeTruthy();
+
+    fireEvent.press(getByLabelText('选择这条消息'));
+    expect(onEnterSelection).toHaveBeenCalledWith('assistant-action-menu');
+  });
+
+  it('long press on a user message opens copy-first actions and keeps selection secondary', () => {
+    const onEnterSelection = jest.fn();
+    const { getByLabelText } = render(
+      <QueryClientProvider client={new QueryClient()}>
+        <ChatBubble
+          item={{
+            id: 'user-action-menu',
+            role: 'user',
+            content: '早餐吃了鸡蛋和咖啡',
+            streaming: false,
+          }}
+          onEnterSelection={onEnterSelection}
+        />
+      </QueryClientProvider>,
+    );
+
+    fireEvent(getByLabelText('你: 早餐吃了鸡蛋和咖啡'), 'longPress');
+
+    expect(onEnterSelection).not.toHaveBeenCalled();
+    fireEvent.press(getByLabelText('复制全文'));
+    expect(Clipboard.setStringAsync).toHaveBeenCalledWith('早餐吃了鸡蛋和咖啡');
+
+    fireEvent(getByLabelText('你: 早餐吃了鸡蛋和咖啡'), 'longPress');
+    fireEvent.press(getByLabelText('选择这条消息'));
+    expect(onEnterSelection).toHaveBeenCalledWith('user-action-menu');
   });
 
   it('renders one unified streaming status before the first token', () => {

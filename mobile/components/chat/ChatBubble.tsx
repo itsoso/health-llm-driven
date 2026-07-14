@@ -486,6 +486,7 @@ function ChatBubbleInner({ item, onViewImage, imageAuthToken, selectionMode = fa
   const handleCopy = () => {
     Clipboard.setStringAsync(item.content);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setShowActions(false);
     Alert.alert('已复制');
   };
 
@@ -550,29 +551,22 @@ function ChatBubbleInner({ item, onViewImage, imageAuthToken, selectionMode = fa
     );
   };
 
-  const handleLongPress = () => {
+  const openMessageActions = () => {
     if (selectionMode) {
       onToggleSelected?.(item.id);
-      return;
-    }
-    // 微信式: 长按可分享的消息直接进入多选模式并选中该条.
-    if (onEnterSelection) {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      onEnterSelection(item.id);
       return;
     }
     Haptics.selectionAsync();
     setShowActions(prev => !prev);
   };
 
-  // 用户气泡长按: 可进多选则进多选 (微信式), 否则保留复制.
-  const handleUserLongPress = () => {
-    if (onEnterSelection) {
+  const handleSelectMessage = () => {
+    if (!onEnterSelection) return;
+    setShowActions(false);
+    try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      onEnterSelection(item.id);
-      return;
-    }
-    handleCopy();
+    } catch {}
+    onEnterSelection(item.id);
   };
 
   // 播报当前 AI 气泡内容. 同 bubble 再点 = 停; 切其他气泡播报会接管 (Speech 是单例, 自动 stop 旧的).
@@ -637,7 +631,44 @@ function ChatBubbleInner({ item, onViewImage, imageAuthToken, selectionMode = fa
   };
 
   const handleBubblePress = () => {
-    if (selectionMode) onToggleSelected?.(item.id);
+    if (selectionMode) {
+      onToggleSelected?.(item.id);
+      return;
+    }
+    if (showActions) setShowActions(false);
+  };
+
+  const renderMessageActions = () => {
+    if (!showActions || selectionMode) return null;
+    const canCopy = item.content.trim().length > 0;
+    const canSelect = !!onEnterSelection;
+    if (!canCopy && !canSelect) return null;
+    return (
+      <View style={[styles.actionsRow, isUser && styles.actionsRowUser]}>
+        {canCopy ? (
+          <Pressable
+            style={({ pressed }) => [styles.actionBtn, isUser && styles.actionBtnOnUser, pressed && styles.actionBtnPressed]}
+            onPress={handleCopy}
+            accessibilityRole="button"
+            accessibilityLabel="复制全文"
+          >
+            <Ionicons name="copy-outline" size={14} color={isUser ? C.green700 : C.green500} />
+            <Text style={[txt.actionBtn, isUser && txt.actionBtnOnUser]}>复制</Text>
+          </Pressable>
+        ) : null}
+        {canSelect ? (
+          <Pressable
+            style={({ pressed }) => [styles.actionBtn, isUser && styles.actionBtnOnUser, pressed && styles.actionBtnPressed]}
+            onPress={handleSelectMessage}
+            accessibilityRole="button"
+            accessibilityLabel="选择这条消息"
+          >
+            <Ionicons name="checkbox-outline" size={14} color={isUser ? C.green700 : C.green500} />
+            <Text style={[txt.actionBtn, isUser && txt.actionBtnOnUser]}>选择</Text>
+          </Pressable>
+        ) : null}
+      </View>
+    );
   };
 
   return (
@@ -665,7 +696,7 @@ function ChatBubbleInner({ item, onViewImage, imageAuthToken, selectionMode = fa
             style={[styles.bubble, styles.bubbleUser, selected && styles.bubbleSelected]}
             activeOpacity={0.8}
             onPress={handleBubblePress}
-            onLongPress={selectionMode ? undefined : handleUserLongPress}
+            onLongPress={selectionMode ? undefined : openMessageActions}
             accessibilityRole="text"
             accessibilityLabel={`你: ${item.content}${item.fromSiri ? ' (来自 Siri)' : ''}`}
             accessibilityState={selectionMode ? { selected } : undefined}
@@ -677,13 +708,14 @@ function ChatBubbleInner({ item, onViewImage, imageAuthToken, selectionMode = fa
             )}
             {renderMessageImages()}
             {displayText ? <Text style={txt.bubbleUser}>{displayText}</Text> : null}
+            {renderMessageActions()}
           </TouchableOpacity>
         ) : (
           <TouchableOpacity
             style={[styles.bubble, styles.bubbleAI, hasTable && styles.bubbleAIWide, selected && styles.bubbleSelected]}
             activeOpacity={0.95}
             onPress={handleBubblePress}
-            onLongPress={handleLongPress}
+            onLongPress={openMessageActions}
             accessibilityRole="text"
             accessibilityLabel={`AI: ${assistantTextForActions || (revaUiContent.cards.length > 0 ? '图表卡片' : item.content)}`}
             accessibilityState={selectionMode ? { selected } : undefined}
@@ -727,19 +759,7 @@ function ChatBubbleInner({ item, onViewImage, imageAuthToken, selectionMode = fa
             {!item.streaming && assistantTextForActions && transparency.visible ? (
               <AgentTransparencyPanel profile={transparency} />
             ) : null}
-            {assistantTextForActions && showActions ? (
-              <View style={styles.actionsRow}>
-                <Pressable
-                  style={({ pressed }) => [styles.actionBtn, pressed && styles.actionBtnPressed]}
-                  onPress={handleCopy}
-                  accessibilityRole="button"
-                  accessibilityLabel="复制全文"
-                >
-                  <Ionicons name="copy-outline" size={14} color={C.green500} />
-                  <Text style={txt.actionBtn}>复制</Text>
-                </Pressable>
-              </View>
-            ) : null}
+            {renderMessageActions()}
             {item.streaming && !showProcessingPanel && !visibleAssistantMarkdown ? (
               <ActivityIndicator size="small" color={C.green500} style={{ marginTop: 4 }} />
             ) : null}
@@ -1607,6 +1627,10 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: C.line,
   },
+  actionsRowUser: {
+    borderTopColor: 'rgba(255,255,255,0.24)',
+    justifyContent: 'flex-end',
+  },
   actionBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1615,6 +1639,9 @@ const styles = StyleSheet.create({
     backgroundColor: C.green50,
     paddingHorizontal: 10,
     paddingVertical: 6,
+  },
+  actionBtnOnUser: {
+    backgroundColor: 'rgba(255,255,255,0.92)',
   },
   actionBtnPressed: { opacity: 0.82 },
   assistantShareActions: {
@@ -1748,6 +1775,7 @@ const txt = {
   thinkingStepIndexActive: { color: C.greenOn } as TextStyle,
   thinkingStep: { flex: 1, fontFamily: revaFonts.sans, fontSize: 12.2, lineHeight: 18, color: C.ink2, fontWeight: '600' } as TextStyle,
   actionBtn: { fontFamily: revaFonts.sans, fontSize: 12, fontWeight: '700', color: C.green500 } as TextStyle,
+  actionBtnOnUser: { color: C.green700 } as TextStyle,
   cardShareButton: { fontFamily: revaFonts.sans, fontSize: 11.5, lineHeight: 15, fontWeight: '900', color: C.green700 } as TextStyle,
   cardSaveButton: { fontFamily: revaFonts.sans, fontSize: 11.5, lineHeight: 15, fontWeight: '900', color: C.ink3 } as TextStyle,
   cardWechatShareButton: { fontFamily: revaFonts.sans, fontSize: 11.5, lineHeight: 15, fontWeight: '900', color: '#fff' } as TextStyle,
