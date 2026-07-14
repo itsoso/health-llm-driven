@@ -24,7 +24,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 from statistics import mean
 from typing import Callable, Dict, List, Optional, Tuple
 
@@ -32,7 +32,7 @@ from sqlalchemy.orm import Session
 
 from app.models.basic_health import BasicHealthData
 from app.models.blood_pressure import BloodPressureRecord
-from app.models.daily_health import GarminData
+from app.models.daily_health import GarminData, SpO2Sample
 from app.models.waist import WaistRecord
 from app.models.weight import WeightRecord
 
@@ -248,6 +248,86 @@ def detect_chart_requests(query: str) -> List[Tuple[str, str]]:
         return []
 
     return [(m, rng) for m in metrics[:MAX_MULTI_METRICS]]
+
+
+# ---------------------------------------------------------------------------
+# 单晚 / 整晚 intra-night 曲线 (spo2 逐分钟) — 区别于日/月度趋势
+#
+# bug 背景: 用户「绘制昨晚整晚的血氧曲线」→ detect_chart_requests 只识别 metric+范围提示,
+# 「整晚/昨晚」不命中任何 range → 默认回退 6m 月度趋势 = 答非所问。这里加一条**优先**分支:
+# 命中单晚线索 → 走逐分钟 intra-night 曲线; 无数据则诚实兜底(绝不回退月度趋势)。
+# ---------------------------------------------------------------------------
+
+# 单晚线索: 明确指向"某一整晚"而非跨日趋势。
+_NOCTURNAL_CUE = re.compile(
+    r"(整晚|整夜|一整晚|一整夜|单晚|单夜|昨晚|昨天晚上|今晚|今天晚上|前晚|前天晚上|通宵|overnight|夜间血氧|睡眠血氧|睡眠时?的?血氧)",
+    re.IGNORECASE,
+)
+# 目前只有 spo2 有逐分钟夜间采样表 (spo2_samples); 心率样本表在, 先只做血氧。
+_NOCTURNAL_METRIC = re.compile(r"(血氧饱和度|血氧|spo2|spO2|氧饱和)", re.IGNORECASE)
+
+# 显式完整日期: 2026-7-13 / 2026/7/13 / 2026 7 13 / 2026年7月13日
+_DATE_FULL_RE = re.compile(r"(20\d{2})\s*[-/年.\s]\s*(\d{1,2})\s*[-/月.\s]\s*(\d{1,2})")
+# 仅月日: 7月13日 / 7/13 / 7-13 (年份用 today 推断)
+_DATE_MD_RE = re.compile(r"(?<!\d)(\d{1,2})\s*[月/\-]\s*(\d{1,2})\s*日?(?!\d)")
+
+
+def _parse_target_night(query: str, today: date) -> Optional[date]:
+    """从 query 解析用户所指"某一整晚"的**傍晚归属日** (evening_date)。
+
+    显式日期优先, 否则相对词 (昨晚=today-1 / 今晚=today / 前晚=today-2), 都没有 → None。
+    返回的是用户口中的"那一晚"(傍晚日); 实际逐分钟采样归在哪个 record_date 由 builder 端
+    在 {evening_date, evening_date+1} 里按样本密度解析 (Garmin 常把整夜数据挂在**醒来的
+    次日** record_date, 见 build_nocturnal_spo2_curve)。
+    """
+    m = _DATE_FULL_RE.search(query)
+    if m:
+        try:
+            return date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        except ValueError:
+            pass
+    m = _DATE_MD_RE.search(query)
+    if m:
+        try:
+            mo, d = int(m.group(1)), int(m.group(2))
+            cand = date(today.year, mo, d)
+            if cand > today:  # 该月日晚于今天 → 去年
+                cand = date(today.year - 1, mo, d)
+            return cand
+        except ValueError:
+            pass
+    if re.search(r"(前晚|前天晚上)", query):
+        return today - timedelta(days=2)
+    if re.search(r"(今晚|今天晚上)", query):
+        return today
+    if re.search(r"(昨晚|昨天晚上|整晚|整夜|一整晚|一整夜|单晚|单夜|通宵|overnight)", query, re.IGNORECASE):
+        return today - timedelta(days=1)
+    return None
+
+
+def detect_nocturnal_curve_request(
+    query: str, today: Optional[date] = None
+) -> Optional[Tuple[str, date]]:
+    """检测"某一整晚的血氧曲线"意图 (逐分钟 intra-night, 区别于日/月度趋势)。
+
+    命中(全需): 图表名词(曲线/趋势/图...) + 血氧 metric + 单晚线索(整晚/昨晚/...)。
+    返回 ("spo2", evening_date); 未命中 → None。
+
+    **调用方必须先查本函数**, 命中即走 intra-night 分支、不再 fall through 到
+    detect_chart_requests —— 否则单晚请求被误判成近半年月度趋势 (正是本 bug)。
+    """
+    if not query:
+        return None
+    if not _CHART_NOUN.search(query):
+        return None
+    if not _NOCTURNAL_METRIC.search(query):
+        return None
+    if not _NOCTURNAL_CUE.search(query):
+        return None
+    target = _parse_target_night(query, today or date.today())
+    if target is None:
+        return None
+    return ("spo2", target)
 
 
 # ---------------------------------------------------------------------------
@@ -724,6 +804,118 @@ def build_multi_metric_chart(
     }
     # 多指标叠加沿用第一个 metric 作 component contract 的 metric 标识 (客户端仅用于分析埋点)
     return _apply_component_contract(block, per_metric[0][0].key, range, component)
+
+
+# 单晚曲线: 按**绝对时间窗**选夜, 逐分钟采样过密 → 等时间分桶取桶均值 (与趋势图同款均值
+# 口径, 避免单点腕式伪影放大, 见 spo2_min 需持续负荷佐证的教训)。annotation 标最低/最高桶。
+_NOCTURNAL_MAX_BUCKETS = 60
+_NOCTURNAL_MIN_SAMPLES = 12  # 少于此 → 数据不足, 不画 (诚实兜底, 绝不回退月度趋势)
+_NIGHT_START_HOUR = 18       # 傍晚起点 (evening_date 当天 18:00)
+_NIGHT_END_HOUR = 12         # 次日中午止 (覆盖晚睡→晚起, 且不吞下一整夜)
+_SPO2_WARN_BELOW = 92        # 桶均值低于此才标红, 否则中性 (避免正常夜 over-alarm)
+
+
+def build_nocturnal_spo2_curve(
+    db: Session, user_id: int, evening_date: date
+) -> Optional[dict]:
+    """构建某一整晚的逐分钟血氧曲线 (x=时刻 HH:MM, y=血氧%)。零 LLM, 全来自 spo2_samples。
+
+    **选夜=绝对时间窗** [evening_date 18:00 → 次日 12:00]: 查 evening_date 与次日两个
+    record_date 的样本, 用 epoch_ms(缺则 record_date+sample_time)算**绝对时刻**, 只保留落在
+    窗内的点。无论厂商把整夜挂在傍晚日还是醒来次日都能精确取到"所问那一夜", 且**绝不把相邻夜
+    (前一夜/下一夜)冒充进来**(替代早先按样本数 argmax 挑 record_date —— 相邻夜都密时会挑错夜,
+    见安全评审)。
+
+    - 值域 sanity 50-100; 同一绝对分钟同源去重; 按绝对时刻升序 (天然跨零点正确)。
+    - 等时间分桶 (≤60) 取桶均值 (整数%); x 轴 = 桶起始 HH:MM。
+    - annotation: 最低桶 (仅当 <92% 标红, 否则中性) + 最高桶。
+    - 窗内采样 < _NOCTURNAL_MIN_SAMPLES / 桶 < MIN_BUCKETS → None (诚实兜底, 绝不回退月度趋势)。
+    """
+    win_start = datetime.combine(evening_date, time(_NIGHT_START_HOUR, 0))
+    win_end = datetime.combine(evening_date + timedelta(days=1), time(_NIGHT_END_HOUR, 0))
+
+    rows = (
+        db.query(SpO2Sample)
+        .filter(
+            SpO2Sample.user_id == user_id,
+            SpO2Sample.record_date.in_([evening_date, evening_date + timedelta(days=1)]),
+        )
+        .all()
+    )
+    pts: List[Tuple[datetime, float, str]] = []  # (abs_ts, value, source)
+    for r in rows:
+        v = r.spo2_value
+        if v is None or not (50 <= v <= 100):
+            continue
+        if r.epoch_ms:
+            ts = datetime.fromtimestamp(r.epoch_ms / 1000)
+        else:
+            ts = datetime.combine(r.record_date, r.sample_time)
+        if not (win_start <= ts <= win_end):
+            continue  # 窗外(白天点检 / 相邻夜)一律剔除, 只留所问那一夜
+        pts.append((ts, float(v), r.source or ""))
+    if len(pts) < _NOCTURNAL_MIN_SAMPLES:
+        return None
+
+    pts.sort(key=lambda p: p[0])
+    dedup: List[Tuple[datetime, float]] = []
+    seen: set = set()
+    src: Optional[str] = None
+    for ts, v, s in pts:  # 同一绝对分钟同源去重 (多设备同分钟不同源正常并存)
+        key = (ts.replace(second=0, microsecond=0), s)
+        if key in seen:
+            continue
+        seen.add(key)
+        dedup.append((ts, v))
+        if src is None:
+            src = s
+    if len(dedup) < _NOCTURNAL_MIN_SAMPLES:
+        return None
+
+    t0 = dedup[0][0]
+    span_min = max(1, int((dedup[-1][0] - t0).total_seconds() // 60))
+    width = max(1, -(-span_min // _NOCTURNAL_MAX_BUCKETS))  # ceil div
+
+    buckets: Dict[int, List[float]] = {}
+    bucket_ts: Dict[int, datetime] = {}
+    for ts, v in dedup:
+        b = int((ts - t0).total_seconds() // 60) // width
+        buckets.setdefault(b, []).append(v)
+        if b not in bucket_ts:
+            bucket_ts[b] = ts  # 桶起始时刻 (dedup 已按时刻升序)
+
+    x_labels: List[str] = []
+    points: List[float] = []
+    for b in sorted(buckets):
+        x_labels.append(bucket_ts[b].strftime("%H:%M"))
+        points.append(round(mean(buckets[b])))
+    if len(points) < MIN_BUCKETS:
+        return None
+
+    pairs = list(zip(x_labels, points))
+    lo_lbl, lo_val = min(pairs, key=lambda t: t[1])
+    hi_lbl, hi_val = max(pairs, key=lambda t: t[1])
+    annotations: List[dict] = []
+    if lo_lbl != hi_lbl:
+        annotations.append({
+            "x": lo_lbl,
+            "label": f"最低 {lo_val}%",
+            "kind": "warn" if lo_val < _SPO2_WARN_BELOW else "good",
+        })
+        annotations.append({"x": hi_lbl, "label": f"最高 {hi_val}%", "kind": "good"})
+
+    disp_night = f"{evening_date.month}月{evening_date.day}日"
+    return {
+        "v": 1,
+        "component": "line_chart",
+        "title": f"{disp_night}整晚血氧",
+        "unit": "%",
+        "x": x_labels,
+        "series": [{"name": "夜间逐时血氧", "points": points}],
+        "annotations": annotations,
+        "source": src or "garmin",
+        "data_note": f"基于当晚 {len(dedup)} 个真实采样点",
+    }
 
 
 def build_empty_state(metric: str, range: str = "6m") -> Optional[dict]:

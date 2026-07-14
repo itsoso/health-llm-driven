@@ -103,9 +103,35 @@ def _maybe_build_genui_chart(
     from app.services.genui import (
         build_line_chart,
         build_multi_metric_chart,
+        build_nocturnal_spo2_curve,
         detect_chart_requests,
+        detect_nocturnal_curve_request,
         render_reva_ui_block,
     )
+
+    # 单晚/整晚 intra-night 血氧曲线优先 (bug 修: 「昨晚整晚血氧」曾被误判成近半年月度趋势)。
+    # 命中即走逐分钟分支; 该夜无数据则诚实兜底走全流程, 绝不回退月度趋势。
+    nocturnal = detect_nocturnal_curve_request(req.query)
+    if nocturnal is not None:
+        _noct_evening = nocturnal[1]
+        block = build_nocturnal_spo2_curve(db, user_id, _noct_evening)
+        if block is None:
+            return None
+        note = block.get("data_note", "")
+        synthesis = (
+            f"已根据你的设备逐分钟采样绘制 {_noct_evening.month}月{_noct_evening.day}日整晚血氧曲线（{note}）。"
+            f"图中为当晚各时段实测均值，未做任何推断填充。"
+            f"\n\n{render_reva_ui_block(block)}"
+        )
+        return OrchestratorResponse(
+            query=req.query,
+            intent=classify_intent(req.query),
+            findings=[],
+            synthesis=synthesis,
+            used_specialists=[],
+            twin_build_ms=0,
+            total_ms=0,
+        )
 
     detected = detect_chart_requests(req.query)
     if not detected:

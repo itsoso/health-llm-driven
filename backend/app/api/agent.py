@@ -335,55 +335,72 @@ def _maybe_genui_chart_events(
         build_empty_state,
         build_line_chart,
         build_multi_metric_chart,
+        build_nocturnal_spo2_curve,
         detect_chart_requests,
+        detect_nocturnal_curve_request,
         render_reva_ui_block,
     )
 
-    detected = detect_chart_requests(message)
-    if not detected:
-        return None
-
-    rng = detected[0][1]
-    range_label = _GENUI_RANGE_LABEL.get(rng, rng)
-    component = "metric_line_chart" if GENUI_COMPONENTS_CAP in (caps or []) else "line_chart"
-
-    if len(detected) >= 2:
-        # 多指标叠加: 一张 line_chart 叠多条 metric 7 日滚动均值对比线 (无 LLM)。
-        metrics = [m for m, _ in detected]
-        block = build_multi_metric_chart(db, user_id, metrics, range=rng, component=component)
+    # 单晚/整晚 intra-night 血氧曲线优先 (bug 修: 「昨晚整晚血氧」曾被误判成近半年月度趋势)。
+    # 命中即走逐分钟分支, 不再 fall through 到区间趋势检测。
+    nocturnal = detect_nocturnal_curve_request(message)
+    if nocturnal is not None:
+        _noct_evening = nocturnal[1]
+        block = build_nocturnal_spo2_curve(db, user_id, _noct_evening)
         if block is None:
-            # 可用 metric < 1 → fall through (返回 None), 走普通路径 (永不断聊天)。
+            # 诚实兜底: 该夜无逐分钟血氧采样 → 不回退月度趋势, 走普通 LLM 路径 (永不答非所问)。
             return None
-        note = block.get("data_note", "")
         intro = (
-            f"近{range_label}多指标趋势对比（数据来自你的设备，{note}）："
-            if note
-            else f"近{range_label}多指标趋势对比（数据来自你的设备）："
+            f"{_noct_evening.month}月{_noct_evening.day}日整晚血氧曲线"
+            f"（数据来自你的设备，逐分钟采样）："
         )
         full_reply = f"{intro}\n\n{render_reva_ui_block(block)}"
     else:
-        metric, _rng = detected[0]
-        block = build_line_chart(db, user_id, metric, range=rng, component=component)
-        if block is None:
-            if GENUI_COMPONENTS_CAP not in (caps or []):
-                # 旧端只声明 line_chart, 不认识空状态组件, 保持历史回退行为。
-                return None
-            block = build_empty_state(metric, range=rng)
-            if block is None:
-                return None
+        detected = detect_chart_requests(message)
+        if not detected:
+            return None
 
-        metric_label = _GENUI_METRIC_LABEL.get(metric, metric)
-        note = block.get("data_note", "")
-        # 确定性模板叙事 (无 LLM); 图表数值只来自 block。
-        if block.get("component") == "metric_empty_state":
-            intro = f"{range_label}{metric_label}暂无足够数据："
-        else:
+        rng = detected[0][1]
+        range_label = _GENUI_RANGE_LABEL.get(rng, rng)
+        component = "metric_line_chart" if GENUI_COMPONENTS_CAP in (caps or []) else "line_chart"
+
+        if len(detected) >= 2:
+            # 多指标叠加: 一张 line_chart 叠多条 metric 7 日滚动均值对比线 (无 LLM)。
+            metrics = [m for m, _ in detected]
+            block = build_multi_metric_chart(db, user_id, metrics, range=rng, component=component)
+            if block is None:
+                # 可用 metric < 1 → fall through (返回 None), 走普通路径 (永不断聊天)。
+                return None
+            note = block.get("data_note", "")
             intro = (
-                f"{range_label}{metric_label}趋势（数据来自你的设备，{note}）："
+                f"近{range_label}多指标趋势对比（数据来自你的设备，{note}）："
                 if note
-                else f"{range_label}{metric_label}趋势（数据来自你的设备）："
+                else f"近{range_label}多指标趋势对比（数据来自你的设备）："
             )
-        full_reply = f"{intro}\n\n{render_reva_ui_block(block)}"
+            full_reply = f"{intro}\n\n{render_reva_ui_block(block)}"
+        else:
+            metric, _rng = detected[0]
+            block = build_line_chart(db, user_id, metric, range=rng, component=component)
+            if block is None:
+                if GENUI_COMPONENTS_CAP not in (caps or []):
+                    # 旧端只声明 line_chart, 不认识空状态组件, 保持历史回退行为。
+                    return None
+                block = build_empty_state(metric, range=rng)
+                if block is None:
+                    return None
+
+            metric_label = _GENUI_METRIC_LABEL.get(metric, metric)
+            note = block.get("data_note", "")
+            # 确定性模板叙事 (无 LLM); 图表数值只来自 block。
+            if block.get("component") == "metric_empty_state":
+                intro = f"{range_label}{metric_label}暂无足够数据："
+            else:
+                intro = (
+                    f"{range_label}{metric_label}趋势（数据来自你的设备，{note}）："
+                    if note
+                    else f"{range_label}{metric_label}趋势（数据来自你的设备）："
+                )
+            full_reply = f"{intro}\n\n{render_reva_ui_block(block)}"
 
     # 持久化: 与 AgentExecutor.run_stream 相同的 AgentConversationService 会话/消息存储。
     from app.services.agent_conversation_service import AgentConversationService
