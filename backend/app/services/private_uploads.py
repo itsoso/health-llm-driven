@@ -15,6 +15,29 @@ from app.config import settings
 PRIVATE_UPLOAD_URL_TTL_SECONDS = 5 * 60
 PRIVATE_UPLOAD_CATEGORIES = frozenset({"chat", "diet", "medical", "other"})
 
+# Per-category capability-URL TTL(2026-07-15).
+# 病灶:签名 URL 只活 5 分钟,但 mac 把整个会话(含签名 URL)缓存进 UserDefaults 并从
+# 缓存重渲染 transcript —— 5 分钟后 URL 过期 → WebView 拿 401 → 图片显示成 broken
+# "attached image"(founder 实测:小米粥+蔬菜饼那餐)。web/mobile 同样缓存渲染会中招。
+# 修法:给会话图片附件一个能覆盖"客户端缓存回放缝"的 TTL(每次从后端加载会话历史
+# refresh_chat_image_url_value 都会重签,静态窗口只需覆盖两次服务端同步之间的间隔)。
+#
+# ⚠️ 敏感度取舍(勿照抄"低敏感"前提放宽):chat 是**万能通道**,用户在对话里可能发
+# 化验单/皮肤病灶/处方/药盒(= §5 的 L3 机密医疗影像),diet 的 category 也是用户可控
+# 标签、可被夹带医疗图。故 chat/diet 只给 7 天(不是 30 天)—— 平衡缓存回放体验与:
+#   ① 泄露 bearer URL 的有效窗口;② 公开分享页(shared_conversation)撤销后已提取的
+#      capability URL 仍可用最长一个 TTL(verify 只查签名+expiry、不查分享状态)。
+# medical(化验/体检扫描)+ other(未知)保持 5 分钟纵深防御不变。
+# 伪造防护:expiry 进 HMAC 签名,客户端改 query 里的 expires 会致签名不符 → 拒。
+_PRIVATE_UPLOAD_CATEGORY_TTL_SECONDS: dict[str, int] = {
+    "chat": 7 * 24 * 60 * 60,
+    "diet": 7 * 24 * 60 * 60,
+}
+
+
+def _ttl_for_category(category: str) -> int:
+    return _PRIVATE_UPLOAD_CATEGORY_TTL_SECONDS.get(category, PRIVATE_UPLOAD_URL_TTL_SECONDS)
+
 
 def _normalized_category(category: str) -> str:
     normalized = str(category or "").strip().lower()
@@ -48,7 +71,7 @@ def build_signed_private_upload_url(
 ) -> str:
     normalized_category = _normalized_category(category)
     safe_filename = os.path.basename(filename)
-    expiry = int(expires or (time.time() + PRIVATE_UPLOAD_URL_TTL_SECONDS))
+    expiry = int(expires or (time.time() + _ttl_for_category(normalized_category)))
     signature = _private_upload_signature(
         normalized_category,
         owner_id,

@@ -54,7 +54,11 @@ def test_chat_image_requires_its_owner(client, db, auth_user_and_headers, tmp_pa
     from urllib.parse import parse_qs, urlparse
 
     expires = int(parse_qs(urlparse(signed_url).query)["expires"][0])
-    assert 0 < expires - int(time()) <= 5 * 60
+    # 客户端(mac/web/mobile)缓存整段会话并从缓存重渲染 transcript,5 分钟 TTL 会被
+    # 缓存渲染撞过期 → WebView 401 → 图片 broken(2026-07-15 founder 实测)。chat 走
+    # 7 天 capability 窗口覆盖缓存回放缝(chat 可含 L3 医疗影像 + 公开分享撤销窗口,
+    # 故不给更长)。
+    assert 6 * 24 * 60 * 60 < expires - int(time()) <= 7 * 24 * 60 * 60
 
 
 def test_legacy_chat_image_is_never_served_by_the_public_route(client, tmp_path, monkeypatch):
