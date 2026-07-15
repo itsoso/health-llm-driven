@@ -67,7 +67,12 @@ describe('LoginScreen phone-first auth', () => {
     const { getByLabelText, getByText } = render(<LoginScreen />);
 
     fireEvent.press(getByText('账号密码登录'));
-    fireEvent.changeText(getByLabelText('用户名输入框'), 'alice');
+    const usernameInput = getByLabelText('用户名输入框');
+    expect(usernameInput.props.keyboardType).toBe('default');
+    expect(usernameInput.props.textContentType).toBe('username');
+    expect(usernameInput.props.autoComplete).toBe('username');
+
+    fireEvent.changeText(usernameInput, 'alice');
     fireEvent.changeText(getByLabelText('密码输入框'), 'hunter2');
     fireEvent.press(getByText('登录'));
 

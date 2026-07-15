@@ -140,6 +140,7 @@ export default function LoginScreen() {
                   style={styles.inputIcon}
                 />
                 <TextInput
+                  key="phone-login-input"
                   style={styles.input}
                   placeholder="请输入手机号"
                   placeholderTextColor={c.labelTertiary}
@@ -215,9 +216,13 @@ export default function LoginScreen() {
                   style={styles.inputIcon}
                 />
                 <TextInput
+                  key="account-login-input"
                   style={styles.input}
                   placeholder="用户名 / 邮箱 / 手机号"
                   placeholderTextColor={c.labelTertiary}
+                  keyboardType="default"
+                  textContentType="username"
+                  autoComplete="username"
                   autoCapitalize="none"
                   autoCorrect={false}
                   value={username}
