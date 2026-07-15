@@ -112,3 +112,6 @@ RequirementAdmission:
 - 回归证据：`useChatEngine` 38 项、`ChatInputBar` 42 项、语音 hooks/router 27 项、SSE parser 18 项、ChatScreen 38 项及 TypeScript 检查通过。G6 仍需在 Build 226 + 最新 production OTA 上复测真实设备语音提交。
 - 语音可靠性发布：前后端生产运行 `c26ddcebb`，部署健康度 60/60，公开健康接口返回 200，未登录 `/api/v1/auth/me` 返回 401；production OTA 更新组 `7e7512c2-c017-4ea0-8521-da5a532557ec`，iOS update `019f6376-4d6a-7f55-98b1-49503bae9eba`，runtime `1.3.1`。
 - 真机复测标准：Build 226 冷启动或后台 30 秒后拉取 OTA，右侧麦克风只提交一次；消息被服务端接受后立即清空输入框且不弹“发送失败”，即使后续助手流中断也不得恢复同一语音草稿或诱导重复发送。
+- 修复图片饮食识别后的对话纠正：明确的“修改早餐/午餐/晚餐为……”现在以用户原话中的日期、餐次和新食物定位原记录；恰好一条候选时转成 `health_manage update`，零条或多条候选只查询不写入，模型误发 `health_record` 也不会创建重复饮食。
+- 裸露的 `health_manage` 参数不再被 `meal_type` 误判成新饮食；同参 `health_manage(operation=list)` 回合内只执行一次，`update/delete` 继续走写入回执状态机。食物变化后沿用饮食 API 的纠正规则，清空旧识别营养值与 AI provenance，并向用户明确回复“已更新早餐”。
+- 发布证据：代码运行提交与生产均为 `bc9254e60`，后端部署健康度 60/60；重放远端并行提交后联合回归 348 项通过，Ruff 与 Python 编译通过。生产错误记录 `diet_records#821` 已按原请求修正为“一碗小米粥 一个蔬菜饼”，旧 730 kcal 与宏量营养估算已清空，`source=user_corrected`。
