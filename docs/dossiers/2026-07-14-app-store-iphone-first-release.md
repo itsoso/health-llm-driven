@@ -5,7 +5,7 @@
 | slug | `app-store-iphone-first-release` |
 | 创建日期 | 2026-07-14 |
 | 当前阶段 | S6 测试与部署 |
-| 状态 | testflight_pending_physical_retest |
+| 状态 | testflight_ota_pending_physical_retest |
 | 负责 | Codex |
 | 目标版本 | iPhone App Store RC |
 
@@ -87,7 +87,7 @@ RequirementAdmission:
 | G2 可行性/安全 | PASS | 已冻结范围与医疗/隐私边界 |
 | G3 测试 | PASS | 合并后后端联合回归 381 项、Mobile 全量 1717 项、TypeScript、Lint、iOS 原生模拟器构建与启动通过；全量回归见发布记录 |
 | G4 安全 | PASS | 生产包无后台录音/持续定位；账号删除、隐私清单、写入回执 fail-closed 已复核 |
-| G5 部署健康 | PASS | 生产运行提交 `16d0517f1`；前后端部署健康度 60/60；EAS Build 226 构建成功并上传 App Store Connect |
+| G5 部署健康 | PASS | 生产运行提交 `c26ddcebb`；前后端部署健康度 60/60；EAS Build 226 已上传，production OTA `7e7512c2-c017-4ea0-8521-da5a532557ec` 已发布 |
 | G6 真机验证 | BLOCKED | 必须在同一 TestFlight build 完成真实 iPhone 语音/拍照/微信与小红书分享/写入/删除状态证据 |
 
 ## Correction Block
@@ -110,3 +110,5 @@ RequirementAdmission:
 - 真机发现语音提交回执竞态：服务端已记录/开始回复，但客户端在缺少 `request_persisted` 或最终 `done` 时把同一请求误判为发送失败，保留转写并诱导重复提交。
 - 修复后将“用户消息已被服务端接受”和“助手回复是否完整结束”拆成两个状态：新版继续优先使用 `request_persisted`，兼容链路允许带 `conversation_id` 的 `agent_start` 证明提交成功；后续流中断只标记回复可重试，不再弹发送失败或要求重复提交。
 - 回归证据：`useChatEngine` 38 项、`ChatInputBar` 42 项、语音 hooks/router 27 项、SSE parser 18 项、ChatScreen 38 项及 TypeScript 检查通过。G6 仍需在 Build 226 + 最新 production OTA 上复测真实设备语音提交。
+- 语音可靠性发布：前后端生产运行 `c26ddcebb`，部署健康度 60/60，公开健康接口返回 200，未登录 `/api/v1/auth/me` 返回 401；production OTA 更新组 `7e7512c2-c017-4ea0-8521-da5a532557ec`，iOS update `019f6376-4d6a-7f55-98b1-49503bae9eba`，runtime `1.3.1`。
+- 真机复测标准：Build 226 冷启动或后台 30 秒后拉取 OTA，右侧麦克风只提交一次；消息被服务端接受后立即清空输入框且不弹“发送失败”，即使后续助手流中断也不得恢复同一语音草稿或诱导重复发送。
