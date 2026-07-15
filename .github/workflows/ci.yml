@@ -22,7 +22,9 @@ jobs:
           # then isolate agent tests in two deterministic processes.
           - label: a-b-rest
             paths: "tests"
-            extra_args: "--ignore=tests/services --ignore-glob='tests/test_[c-z]*.py' --ignore-glob='tests/test_agent_*.py'"
+            extra_args: "--ignore=tests/services --ignore=tests/test_app_store_demo_account.py --ignore-glob='tests/test_[c-z]*.py' --ignore-glob='tests/test_agent_*.py'"
+          - label: app-store-demo-account
+            paths: "tests/test_app_store_demo_account.py"
           - label: agent-a-h
             paths: "tests/test_agent_[a-h]*.py"
           - label: agent-i-z

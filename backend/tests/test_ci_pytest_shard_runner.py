@@ -5,8 +5,28 @@ from __future__ import annotations
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 import pytest
+import yaml
+
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def test_app_store_demo_account_runs_in_an_isolated_ci_process():
+    workflow = yaml.safe_load(
+        (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    )
+    shards = workflow["jobs"]["backend-test-shards"]["strategy"]["matrix"]["include"]
+    by_label = {shard["label"]: shard for shard in shards}
+
+    assert by_label["app-store-demo-account"]["paths"] == (
+        "tests/test_app_store_demo_account.py"
+    )
+    assert "--ignore=tests/test_app_store_demo_account.py" in by_label["a-b-rest"][
+        "extra_args"
+    ]
 
 
 def test_build_pytest_command_keeps_the_shard_in_one_process():
