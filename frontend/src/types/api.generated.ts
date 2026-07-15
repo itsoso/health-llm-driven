@@ -152,7 +152,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** 查询账号与数据删除请求 */
+        get: operations["get_account_deletion_request_api_v1_auth_me_deletion_request_get"];
         put?: never;
         /**
          * 发起账号与数据删除请求
@@ -869,6 +870,40 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/account-deletion-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 账号删除请求队列 */
+        get: operations["list_account_deletion_requests_api_v1_admin_account_deletion_requests_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/account-deletion-requests/{request_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** 更新账号删除请求 */
+        patch: operations["update_account_deletion_request_api_v1_admin_account_deletion_requests__request_id__patch"];
         trace?: never;
     };
     "/api/v1/admin/stats": {
@@ -11607,7 +11642,7 @@ export interface paths {
         put?: never;
         /**
          * 语音转文字
-         * @description 将语音音频转为文字，使用 OpenAI Whisper API
+         * @description 将短语音转为文字;按隐私配置使用有时限的 ASR 通道。
          */
         post: operations["transcribe_audio_api_v1_chat_transcribe_post"];
         delete?: never;
@@ -16669,6 +16704,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/reminders/me/window": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 创建时间窗循环提醒
+         * @description Create a complete reminder window and make identical retries idempotent.
+         */
+        post: operations["create_reminder_window_api_v1_reminders_me_window_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/reminders/{reminder_id}": {
         parameters: {
             query?: never;
@@ -18853,6 +18908,23 @@ export interface components {
              */
             period: string;
         };
+        /** AccountDeletionRequestUpdate */
+        AccountDeletionRequestUpdate: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "requested" | "processing" | "completed" | "rejected";
+            /** Note */
+            note?: string | null;
+            /**
+             * Data Deletion Verified
+             * @default false
+             */
+            data_deletion_verified: boolean;
+            /** Verification Reference */
+            verification_reference?: string | null;
+        };
         /**
          * ActionCardAdherence
          * @description 用户/系统设置这张卡的执行依从度.
@@ -18909,6 +18981,11 @@ export interface components {
             checklist?: components["schemas"]["ChecklistItem"][];
             /** Evidence Refs */
             evidence_refs?: string[];
+            /**
+             * Accepted
+             * @default false
+             */
+            accepted: boolean;
             /** Creator Specialist */
             creator_specialist?: string | null;
             /** Check Back Date */
@@ -28263,6 +28340,49 @@ export interface components {
              */
             status?: string | null;
         };
+        /**
+         * ReminderWindowCreateRequest
+         * @description Create one recurring reminder at every slot in a daily time window.
+         */
+        ReminderWindowCreateRequest: {
+            /**
+             * Title
+             * @description 提醒标题
+             */
+            title: string;
+            /**
+             * Message
+             * @description 提醒详情
+             */
+            message?: string | null;
+            /**
+             * Start Time
+             * @description 每日开始时间 HH:MM
+             */
+            start_time: string;
+            /**
+             * End Time
+             * @description 每日结束时间 HH:MM
+             */
+            end_time: string;
+            /**
+             * Interval Minutes
+             * @description 提醒间隔分钟数
+             */
+            interval_minutes: number;
+            /**
+             * Priority
+             * @description 优先级: low/normal/high/urgent
+             * @default normal
+             */
+            priority: string;
+            /**
+             * Recurrence
+             * @description 重复: daily/weekdays/weekly:1,3,5
+             * @default daily
+             */
+            recurrence: string;
+        };
         /** ReportUploadRequest */
         ReportUploadRequest: {
             /**
@@ -32615,6 +32735,26 @@ export interface operations {
             };
         };
     };
+    get_account_deletion_request_api_v1_auth_me_deletion_request_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     request_account_deletion_api_v1_auth_me_deletion_request_post: {
         parameters: {
             query?: never;
@@ -33718,6 +33858,73 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    list_account_deletion_requests_api_v1_admin_account_deletion_requests_get: {
+        parameters: {
+            query?: {
+                status?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_account_deletion_request_api_v1_admin_account_deletion_requests__request_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                request_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AccountDeletionRequestUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -59016,6 +59223,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ReminderCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_reminder_window_api_v1_reminders_me_window_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReminderWindowCreateRequest"];
             };
         };
         responses: {

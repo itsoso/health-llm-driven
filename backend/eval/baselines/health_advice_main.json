@@ -732,13 +732,12 @@
         "output": {
           "allowed": false,
           "decision": "blocked",
-          "reason": "high_risk_missing_evidence",
+          "reason": "medical_boundary_violation",
           "required_changes": [
-            "evidence_refs",
-            "verification_metric"
+            "remove_self_medication_change"
           ],
           "audit_tags": [
-            "unsupported_high_risk_advice"
+            "medical_boundary_violation"
           ],
           "displayed_text": ""
         },

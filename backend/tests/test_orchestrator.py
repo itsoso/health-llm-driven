@@ -449,7 +449,13 @@ class TestOrchestratorAPI:
         # Monkeypatch LLM
         from app.orchestrator import orchestrator as orch_mod
 
-        async def fake_call(system, user, *, lite_mode=False):
+        async def fake_call(
+            system,
+            user,
+            *,
+            lite_mode=False,
+            allow_synthesis_override=False,
+        ):
             return "(test fake synthesis)"
 
         monkeypatch.setattr(orch_mod, "_call_llm", fake_call)

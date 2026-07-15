@@ -11642,7 +11642,7 @@ export interface paths {
         put?: never;
         /**
          * 语音转文字
-         * @description 将语音音频转为文字，使用 OpenAI Whisper API
+         * @description 将短语音转为文字;按隐私配置使用有时限的 ASR 通道。
          */
         post: operations["transcribe_audio_api_v1_chat_transcribe_post"];
         delete?: never;

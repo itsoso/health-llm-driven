@@ -489,7 +489,9 @@ cases:
     expected:
       allowed: false
       decision: blocked
-      reason: high_risk_missing_evidence
+      reason: medical_boundary_violation
+      required_changes_contains: [remove_self_medication_change]
+      audit_tags_contains: [medical_boundary_violation]
       must_not_include: ["直接停用现有药物"]
 
   - id: paid_content_blocks_course_original_marker
