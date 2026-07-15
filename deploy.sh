@@ -343,20 +343,22 @@ restart_services() {
 push_code() {
     print_step "推送代码到 GitHub..."
 
-    # 检查是否有未提交的更改
-    if [[ -n $(git status -s) ]]; then
-        print_warning "检测到未提交的更改"
-        git status -s
-        echo ""
-        read -p "是否添加并提交所有更改? (y/n): " confirm
-        if [[ "$confirm" == "y" || "$confirm" == "Y" ]]; then
-            read -p "请输入提交信息: " commit_msg
-            git add -A
-            git commit -m "$commit_msg"
-        else
-            print_error "请先提交更改后再部署"
-            exit 1
-        fi
+    # 部署只允许已提交的 tracked 内容。未跟踪文件不会进入 git push 或
+    # 远端 checkout，因此仅提示并忽略；绝不能在发布脚本里 git add -A，
+    # 否则会误收并发会话或用户尚未准备提交的文件。
+    local tracked_changes
+    tracked_changes="$(git status --short --untracked-files=no)"
+    if [[ -n "$tracked_changes" ]]; then
+        print_error "检测到未提交的已跟踪更改，请先明确提交后再部署"
+        echo "$tracked_changes"
+        exit 1
+    fi
+
+    local untracked_files
+    untracked_files="$(git ls-files --others --exclude-standard)"
+    if [[ -n "$untracked_files" ]]; then
+        print_warning "忽略未跟踪文件（不会进入本次部署）"
+        echo "$untracked_files"
     fi
 
     git push
