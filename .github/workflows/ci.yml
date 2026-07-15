@@ -41,10 +41,11 @@ jobs:
             paths: "tests/test_p*.py"
           - label: q-r
             paths: "tests/test_[q-r]*.py"
-          # Keep telegram and timeline families in separate pytest processes.
-          # A Linux-only teardown leak between them can otherwise stall the
-          # combined shard after test_telegram_webhook.py completes. Twin tests
-          # also need a clean process after the earlier t* modules.
+          # Keep telegram, timeline, and today families in separate pytest
+          # processes. Linux runners can retain background process state between
+          # these families; once the combined t-f-v shard grew to 279 tests it
+          # repeatedly exhausted both 600-second attempts without an assertion
+          # failure. Twin tests also need a clean process after earlier t* files.
           - label: s-a-b
             paths: "tests/test_s[a-b]*.py"
           - label: s-c-k
@@ -54,8 +55,26 @@ jobs:
             paths: "tests/test_s[l-z]*.py"
           - label: t-a-e
             paths: "tests/test_t[a-e]*.py"
-          - label: t-f-v
-            paths: "tests/test_t[f-v]*.py"
+          - label: timeline-core
+            paths: "tests/test_timeline_agenda_lifecycle.py tests/test_timeline_driver_schedule.py"
+          - label: timeline-medications
+            paths: "tests/test_timeline_spine_medications.py"
+          - label: today-core
+            paths: "tests/test_today_dynamic_view.py tests/test_today_spine_honest_counts.py"
+          - label: today-timeline
+            paths: "tests/test_today_timeline.py"
+          - label: t-f-v-rest
+            paths: >-
+              tests/test_timezone_user_tz.py
+              tests/test_timing_adapter.py
+              tests/test_timing_solver.py
+              tests/test_token_optimization_slices.py
+              tests/test_tool_execution_classes.py
+              tests/test_tool_tag_call_recovery.py
+              tests/test_tool_validator.py
+              tests/test_trajectory_watch.py
+              tests/test_treatment_effect.py
+              tests/test_tts_normalize.py
           - label: t-w-z
             paths: "tests/test_t[w-z]*.py"
             extra_args: "-vv"
