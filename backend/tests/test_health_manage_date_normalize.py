@@ -12,7 +12,9 @@ import pytest
 from app.services.agent_executor import (
     AgentExecutor,
     _is_explicit_latest_diet_delete,
+    _parse_explicit_diet_correction,
     _normalize_relative_date,
+    _tool_call_is_read_only,
 )
 
 BJ = timezone(timedelta(hours=8))
@@ -50,6 +52,148 @@ def test_unparseable_returns_none_not_garbage():
     assert _normalize_relative_date("") is None
     assert _normalize_relative_date(None) is None
     assert _normalize_relative_date("2026-13-99") is None  # 非法日期
+
+
+@pytest.mark.parametrize(
+    ("message", "meal_type", "food_items"),
+    [
+        ("修改早餐：一碗小米粥 一个蔬菜饼", "breakfast", "一碗小米粥 一个蔬菜饼"),
+        ("午餐改成 牛肉面一碗", "lunch", "牛肉面一碗"),
+        ("把昨天晚餐修改为清蒸鱼和米饭", "dinner", "清蒸鱼和米饭"),
+        ("把早餐从西米露改成小米粥", "breakfast", "小米粥"),
+    ],
+)
+def test_parse_explicit_diet_correction(message, meal_type, food_items):
+    parsed = _parse_explicit_diet_correction(message)
+
+    assert parsed is not None
+    assert parsed["meal_type"] == meal_type
+    assert parsed["food_items"] == food_items
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "怎么修改早餐？",
+        "先别修改早餐：一碗粥",
+        "早餐吃了一碗粥",
+        "修改一下饮食",
+        "修改早餐热量为400卡",
+        "把早餐时间调整为8点",
+    ],
+)
+def test_diet_correction_requires_unambiguous_write_intent(message):
+    assert _parse_explicit_diet_correction(message) is None
+
+
+@pytest.mark.asyncio
+async def test_explicit_diet_correction_resolves_list_to_one_verified_update():
+    executor = AgentExecutor(MagicMock())
+    executor._current_turn_user_message = "修改早餐：一碗小米粥 一个蔬菜饼"
+    executor._api_get_json = AsyncMock(return_value=([{
+        "id": 821,
+        "meal_type": "breakfast",
+        "food_items": "西米露 约1碗 + 炒饭 约1份",
+    }], None))
+
+    calls = await executor._normalize_explicit_diet_update_tool_calls([{
+        "id": "call-1",
+        "type": "function",
+        "function": {
+            "name": "health_manage",
+            "arguments": json.dumps({
+                "record_type": "diet",
+                "operation": "list",
+                "date": "2026-07-10",
+                "meal_type": "breakfast",
+            }),
+        },
+    }], "test-token")
+
+    args = json.loads(calls[0]["function"]["arguments"])
+    assert args == {
+        "record_type": "diet",
+        "operation": "update",
+        "record_id": 821,
+        "data": {
+            "meal_type": "breakfast",
+            "food_items": "一碗小米粥 一个蔬菜饼",
+        },
+    }
+    request_url = executor._api_get_json.await_args.args[0]
+    assert f"start_date={datetime.now(BJ).date().isoformat()}" in request_url
+    assert "2026-07-10" not in request_url
+
+
+@pytest.mark.asyncio
+async def test_explicit_diet_correction_stays_read_only_when_target_is_ambiguous():
+    executor = AgentExecutor(MagicMock())
+    executor._current_turn_user_message = "修改早餐：一碗小米粥 一个蔬菜饼"
+    executor._api_get_json = AsyncMock(return_value=([
+        {"id": 821, "meal_type": "breakfast"},
+        {"id": 820, "meal_type": "breakfast"},
+    ], None))
+    original_args = {
+        "record_type": "diet",
+        "operation": "list",
+        "date": "today",
+        "meal_type": "breakfast",
+    }
+
+    calls = await executor._normalize_explicit_diet_update_tool_calls([{
+        "id": "call-1",
+        "type": "function",
+        "function": {
+            "name": "health_manage",
+            "arguments": json.dumps(original_args),
+        },
+    }], "test-token")
+
+    assert json.loads(calls[0]["function"]["arguments"]) == {
+        "record_type": "diet",
+        "operation": "list",
+        "date": datetime.now(BJ).date().isoformat(),
+        "meal_type": "breakfast",
+        "limit": 20,
+    }
+
+
+@pytest.mark.asyncio
+async def test_explicit_diet_correction_never_creates_a_duplicate_record():
+    executor = AgentExecutor(MagicMock())
+    executor._current_turn_user_message = "修改早餐：一碗小米粥 一个蔬菜饼"
+    executor._api_get_json = AsyncMock(return_value=([{"id": 821}], None))
+
+    calls = await executor._normalize_explicit_diet_update_tool_calls([{
+        "id": "call-1",
+        "type": "function",
+        "function": {
+            "name": "health_record",
+            "arguments": json.dumps({
+                "record_type": "diet",
+                "data": {
+                    "meal_type": "breakfast",
+                    "food_items": "一碗小米粥 一个蔬菜饼",
+                },
+            }),
+        },
+    }], "test-token")
+
+    assert calls[0]["function"]["name"] == "health_manage"
+    args = json.loads(calls[0]["function"]["arguments"])
+    assert args["operation"] == "update"
+    assert args["record_id"] == 821
+
+
+def test_health_manage_list_is_read_only_but_update_is_not():
+    assert _tool_call_is_read_only("health_manage", {
+        "record_type": "diet",
+        "operation": "list",
+    }) is True
+    assert _tool_call_is_read_only("health_manage", {
+        "record_type": "diet",
+        "operation": "update",
+    }) is False
 
 
 @pytest.mark.asyncio

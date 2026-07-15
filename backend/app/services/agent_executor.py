@@ -562,6 +562,15 @@ def _infer_record_type_from_payload(payload: Dict[str, Any]) -> Optional[str]:
     def has(key: str) -> bool:
         return payload.get(key) not in (None, "", [])
 
+    # A management payload describes an operation on an existing record, not a
+    # new record's data. Treating it as a naked diet record can create a
+    # duplicate after an update/list tool call is printed as text.
+    if (
+        payload.get("record_type")
+        and str(payload.get("operation") or "").strip().lower()
+        in {"list", "update", "delete"}
+    ):
+        return None
     if has("food_items") or payload.get("meal_type"):
         return "diet"
     if has("systolic") and has("diastolic"):
@@ -1627,6 +1636,24 @@ def _extract_inline_tool_call(
             or (fn or {}).get("name")
         )
         if name not in allowed:
+            # Weak models sometimes print health_manage's arguments without a
+            # name wrapper. Recover the management operation before attempting
+            # naked health_record inference, otherwise meal_type misclassifies a
+            # read/update as a new diet write.
+            operation = str(payload.get("operation") or "").strip().lower()
+            if (
+                "health_manage" in allowed
+                and payload.get("record_type")
+                and operation in {"list", "update", "delete"}
+            ):
+                return {
+                    "id": "inline_tool_call_0",
+                    "type": "function",
+                    "function": {
+                        "name": "health_manage",
+                        "arguments": json.dumps(payload, ensure_ascii=False),
+                    },
+                }
             # 模型可能直接吐 record 的裸 data(无 name 包装,无 record_type)。
             # 按字段推断 record_type → 包成 health_record 调用,既写库又不泄漏 JSON。
             if "health_record" in allowed:
@@ -2192,16 +2219,26 @@ def _read_operation_fingerprint(tool_name: str, parsed_args: Dict[str, Any]) -> 
     return _write_operation_fingerprint(tool_name, parsed_args)
 
 
+def _tool_call_is_read_only(tool_name: str, parsed_args: Dict[str, Any]) -> bool:
+    """Classify mixed read/write tools by operation instead of only by name."""
+    if tool_name == "health_manage":
+        return str(parsed_args.get("operation") or "").strip().lower() == "list"
+    return (
+        tool_name in _READ_ONLY_TURN_ALLOWED_TOOLS
+        and tool_name not in _WRITE_RECEIPT_TOOL_NAMES
+    )
+
+
 def _is_seen_readonly_call(tc: Dict[str, Any], seen_read_fps: Dict[str, Any]) -> bool:
     """本轮 tool_call 是否是"本回合已跑过"的只读调用(收敛护栏用: 全是则强制进合成停 loop)。"""
     fn = tc.get("function") or {}
     name = fn.get("name")
-    if name not in _READ_ONLY_TURN_ALLOWED_TOOLS or name in _WRITE_RECEIPT_TOOL_NAMES:
-        return False
     raw = fn.get("arguments")
     try:
         args = json.loads(raw) if isinstance(raw, str) else dict(raw or {})
     except (json.JSONDecodeError, TypeError, ValueError):
+        return False
+    if not _tool_call_is_read_only(name, args):
         return False
     return _read_operation_fingerprint(name, args) in seen_read_fps
 
@@ -3023,6 +3060,86 @@ def _has_explicit_update_intent(message: str) -> bool:
         and _UPDATE_WORD_RE.search(text)
         and not _write_request_is_negated_or_instructional(text)
     )
+
+
+_DIET_CORRECTION_MEAL_RE = re.compile(
+    "|".join(
+        re.escape(alias)
+        for alias in sorted(
+            (
+                alias
+                for alias, normalized in _MEAL_TYPE_ALIASES.items()
+                if normalized in {"breakfast", "lunch", "dinner", "snack"}
+            ),
+            key=len,
+            reverse=True,
+        )
+    ),
+    re.I,
+)
+_DIET_CORRECTION_PREFIX_RE = re.compile(
+    r"^(?:(?:记录|内容)\s*)?"
+    r"(?:修改成|修改为|更正为|更新为|调整为|改成|改为|修改|更正|更新|调整|改)?"
+    r"\s*(?:成|为)?\s*[:：,，;；\-—]*\s*",
+    re.I,
+)
+_DIET_CORRECTION_REPLACEMENT_RE = re.compile(
+    r"(?:修改成|修改为|更正为|更新为|调整为|改成|改为)(?P<replacement>.+)$",
+    re.I,
+)
+_DIET_NON_FOOD_FIELD_RE = re.compile(
+    r"^(?:的)?(?:热量|卡路里|蛋白质?|碳水|脂肪|膳食纤维|纤维|时间|餐时|份量|重量)",
+    re.I,
+)
+_MESSAGE_DATE_RE = re.compile(
+    r"(\d{4}-\d{2}-\d{2}|day before yesterday|yesterday|today|"
+    r"前天|昨天|昨日|今天|今日|本日|当天|当日)",
+    re.I,
+)
+
+
+def _parse_explicit_diet_correction(message: str) -> Optional[Dict[str, str]]:
+    """Extract a concrete meal correction from the user's own words.
+
+    This intentionally accepts only an explicit update verb, a named meal and
+    non-empty replacement food text. Ambiguous requests stay on the read-only
+    lookup path rather than risking a duplicate or editing the wrong record.
+    """
+    text = " ".join((message or "").strip().split())
+    if not _has_explicit_update_intent(text):
+        return None
+    meal_match = _DIET_CORRECTION_MEAL_RE.search(text)
+    if not meal_match:
+        return None
+    meal_type = _normalize_diet_meal_type(meal_match.group(0))
+    if not meal_type:
+        return None
+
+    raw_replacement = text[meal_match.end():].strip()
+    if _DIET_NON_FOOD_FIELD_RE.search(raw_replacement):
+        return None
+    nested_update = _DIET_CORRECTION_REPLACEMENT_RE.search(raw_replacement)
+    if nested_update:
+        replacement = nested_update.group("replacement")
+    else:
+        replacement = _DIET_CORRECTION_PREFIX_RE.sub(
+            "", raw_replacement, count=1,
+        )
+    replacement = replacement.strip(" \t\r\n:：,，;；。")
+    if not replacement or replacement in {"一下", "记录", "内容"}:
+        return None
+
+    date_match = _MESSAGE_DATE_RE.search(text)
+    target_date = _normalize_relative_date(
+        date_match.group(0) if date_match else "today"
+    )
+    if not target_date:
+        return None
+    return {
+        "date": target_date,
+        "meal_type": meal_type,
+        "food_items": replacement,
+    }
 
 
 def _is_explicit_latest_diet_delete(message: str) -> bool:
@@ -4364,6 +4481,10 @@ class AgentExecutor:
                         tool_calls,
                         user_auth_token,
                     )
+                    tool_calls = await self._normalize_explicit_diet_update_tool_calls(
+                        tool_calls,
+                        user_auth_token,
+                    )
                     planned_writes: List[tuple[str, Dict[str, Any]]] = []
                     for tc in tool_calls:
                         fn = tc["function"]["name"]
@@ -5700,6 +5821,10 @@ class AgentExecutor:
                         tool_calls,
                         user_auth_token,
                     )
+                    tool_calls = await self._normalize_explicit_diet_update_tool_calls(
+                        tool_calls,
+                        user_auth_token,
+                    )
 
                     planned_writes: List[tuple[str, Dict[str, Any]]] = []
                     for tc in tool_calls:
@@ -5798,8 +5923,10 @@ class AgentExecutor:
                         # 只读去重: 只对只读工具(与写集天然不相交, belt-and-suspenders 再排一次写集)。
                         read_attempted = (
                             _READ_DEDUP_ENABLED
-                            and func_name in _READ_ONLY_TURN_ALLOWED_TOOLS
-                            and func_name not in _WRITE_RECEIPT_TOOL_NAMES
+                            and _tool_call_is_read_only(
+                                func_name,
+                                parsed_tool_args,
+                            )
                         )
                         read_fingerprint = (
                             _read_operation_fingerprint(func_name, parsed_tool_args)
@@ -8499,6 +8626,127 @@ class AgentExecutor:
             })
         return normalized
 
+    async def _normalize_explicit_diet_update_tool_calls(
+        self,
+        tool_calls: List[Dict[str, Any]],
+        user_auth_token: Optional[str],
+    ) -> List[Dict[str, Any]]:
+        """Resolve a concrete meal correction to one existing record and update it.
+
+        The target date, meal and replacement food are parsed from the user's
+        message, never from model-authored arguments. Exactly one server-side
+        candidate is required. Zero or multiple candidates are converted to a
+        read-only lookup so a model mistake cannot create a duplicate or edit an
+        arbitrary meal.
+        """
+        correction = _parse_explicit_diet_correction(
+            getattr(self, "_current_turn_user_message", "")
+        )
+        if not correction:
+            return tool_calls
+
+        base_url = settings.health_api_base_url or "http://localhost:8000/api/v1"
+        headers = (
+            {"Authorization": f"Bearer {user_auth_token}"}
+            if user_auth_token else {}
+        )
+        query = {
+            "limit": 20,
+            "start_date": correction["date"],
+            "end_date": correction["date"],
+            "meal_type": correction["meal_type"],
+        }
+        records: Any = None
+        lookup_error: Optional[str] = None
+        lookup_done = False
+
+        async def _lookup_records() -> tuple[Any, Optional[str]]:
+            nonlocal records, lookup_error, lookup_done
+            if not lookup_done:
+                records, lookup_error = await self._api_get_json(
+                    f"{base_url}/diet/records/me?{urlencode(query)}",
+                    headers,
+                )
+                lookup_done = True
+            return records, lookup_error
+
+        normalized: List[Dict[str, Any]] = []
+        for tool_call in tool_calls:
+            function = tool_call.get("function") or {}
+            tool_name = function.get("name")
+            raw_args = function.get("arguments")
+            try:
+                args = (
+                    json.loads(raw_args)
+                    if isinstance(raw_args, str)
+                    else dict(raw_args or {})
+                )
+            except (json.JSONDecodeError, TypeError, ValueError):
+                normalized.append(tool_call)
+                continue
+
+            is_diet_manage = (
+                tool_name == "health_manage"
+                and args.get("record_type") == "diet"
+                and args.get("operation") in {"list", "update"}
+            )
+            is_diet_create = (
+                tool_name == "health_record"
+                and args.get("record_type") == "diet"
+            )
+            if not is_diet_manage and not is_diet_create:
+                normalized.append(tool_call)
+                continue
+
+            candidates, error = await _lookup_records()
+            candidate_rows = [
+                row for row in (candidates if isinstance(candidates, list) else [])
+                if isinstance(row, dict)
+                and (row.get("id") or row.get("record_id")) not in (None, "", False)
+            ]
+            if not error and len(candidate_rows) == 1:
+                record_id = candidate_rows[0].get("id") or candidate_rows[0].get("record_id")
+                resolved_args = {
+                    "record_type": "diet",
+                    "operation": "update",
+                    "record_id": record_id,
+                    "data": {
+                        "meal_type": correction["meal_type"],
+                        "food_items": correction["food_items"],
+                    },
+                }
+                logger.info(
+                    "[health_manage] resolved explicit diet correction user=%s record_id=%s meal=%s",
+                    self._current_user_id,
+                    record_id,
+                    correction["meal_type"],
+                )
+            else:
+                resolved_args = {
+                    "record_type": "diet",
+                    "operation": "list",
+                    "date": correction["date"],
+                    "meal_type": correction["meal_type"],
+                    "limit": 20,
+                }
+                logger.warning(
+                    "[health_manage] diet correction target unresolved user=%s meal=%s candidates=%s error=%s",
+                    self._current_user_id,
+                    correction["meal_type"],
+                    len(candidate_rows),
+                    error or "ambiguous_target",
+                )
+
+            normalized.append({
+                **tool_call,
+                "function": {
+                    **function,
+                    "name": "health_manage",
+                    "arguments": json.dumps(resolved_args, ensure_ascii=False),
+                },
+            })
+        return normalized
+
     async def _run_tool_with_progress(
         self,
         func_name: str,
@@ -9697,6 +9945,19 @@ class AgentExecutor:
                 return f"Error: {record_type} 暂不支持 update, 可先删除后重记."
             result = await self._api_put(f"{base}{path}", headers, data)
             self._invalidate_twin_after_mutation()
+            if record_type == "diet" and not str(result).startswith("Error:"):
+                try:
+                    payload = json.loads(result)
+                except (json.JSONDecodeError, TypeError, ValueError):
+                    payload = None
+                if isinstance(payload, dict):
+                    meal_label = _MEAL_TYPE_ZH.get(target_meal_type or "", "饮食")
+                    food_items = str(data.get("food_items") or "").strip()
+                    payload["message"] = (
+                        f"已更新{meal_label}：{food_items}"
+                        if food_items else f"已更新{meal_label}记录"
+                    )
+                    result = json.dumps(payload, ensure_ascii=False)
             return result
 
         return f"Error: 不支持的操作 {operation}"

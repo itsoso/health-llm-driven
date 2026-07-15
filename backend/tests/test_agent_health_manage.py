@@ -63,6 +63,7 @@ async def test_health_manage_updates_diet_record_by_id(db):
     assert captured["url"].endswith("/diet/records/605")
     assert captured["payload"]["calories"] == 378
     assert json.loads(result)["id"] == 605
+    assert json.loads(result)["message"] == "已更新饮食：鳕鱼 50g + 鲍鱼 2个"
 
 
 @pytest.mark.asyncio

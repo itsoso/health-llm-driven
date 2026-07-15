@@ -78,6 +78,26 @@ def test_tool_code_tool_call_recovered():
     assert args["operation"] == "list"
 
 
+def test_naked_health_manage_args_are_not_misclassified_as_new_diet():
+    text = (
+        '{"record_type":"diet","operation":"list","date":"today",'
+        '"meal_type":"breakfast"}'
+    )
+
+    recovered = _extract_inline_tool_call(
+        text,
+        _TOOLS,
+        user_message="修改早餐：一碗小米粥 一个蔬菜饼",
+    )
+
+    assert recovered is not None
+    assert recovered["function"]["name"] == "health_manage"
+    args = json.loads(recovered["function"]["arguments"])
+    assert args["record_type"] == "diet"
+    assert args["operation"] == "list"
+    assert _infer_record_type_from_payload(json.loads(text)) is None
+
+
 def test_plain_text_not_treated_as_tool_call():
     assert _extract_inline_tool_call("你今天血压偏高,建议休息。", _TOOLS) is None
 

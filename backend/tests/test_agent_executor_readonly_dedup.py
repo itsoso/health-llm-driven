@@ -45,12 +45,18 @@ def test_fingerprint_distinguishes_different_args():
     assert a != c
 
 
-def test_is_seen_readonly_excludes_write_tools():
-    seen = {_read_operation_fingerprint("health_query", {"dimension": "water"}): ("r", "r")}
+def test_is_seen_readonly_classifies_health_manage_by_operation():
+    list_args = {"record_type": "diet", "operation": "list", "date": "today"}
+    seen = {
+        _read_operation_fingerprint("health_query", {"dimension": "water"}): ("r", "r"),
+        _read_operation_fingerprint("health_manage", list_args): ("r", "r"),
+    }
     read_tc = {"function": {"name": "health_query", "arguments": '{"dimension":"water"}'}}
-    write_tc = {"function": {"name": "health_manage", "arguments": '{"record_type":"water","operation":"list"}'}}
+    list_tc = {"function": {"name": "health_manage", "arguments": '{"record_type":"diet","operation":"list","date":"today"}'}}
+    update_tc = {"function": {"name": "health_manage", "arguments": '{"record_type":"diet","operation":"update","record_id":1,"data":{"food_items":"粥"}}'}}
     assert _is_seen_readonly_call(read_tc, seen) is True
-    assert _is_seen_readonly_call(write_tc, seen) is False  # 写工具绝不进读去重
+    assert _is_seen_readonly_call(list_tc, seen) is True
+    assert _is_seen_readonly_call(update_tc, seen) is False
 
 
 # ── 全 loop 去重 ──
@@ -95,6 +101,49 @@ async def test_repeated_water_query_executed_once_and_terminates(db, auth_user_a
         e["data"].get("content", "") for e in events if e.get("event") == "token"
     )
     assert rendered.strip(), "应产出最终答案文本"
+
+
+@pytest.mark.asyncio
+async def test_repeated_health_manage_list_executes_once(db, auth_user_and_headers):
+    """health_manage 是混合工具；list 要去重，update/delete 仍走写入状态机。"""
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    exec_calls: list[str] = []
+
+    async def fake_call_llm(messages, tools):
+        last = str(messages[-1].get("content") or "")
+        if "工具查询轮次已经用完" in last:
+            return "已找到今天的早餐。"
+        return {
+            "content": "",
+            "tool_calls": [{
+                "id": f"c{len(exec_calls)}",
+                "type": "function",
+                "function": {
+                    "name": "health_manage",
+                    "arguments": '{"record_type":"diet","operation":"list","date":"today","meal_type":"breakfast"}',
+                },
+            }],
+        }
+
+    async def fake_execute_tool(tool_name, args_raw, user_token):
+        exec_calls.append(tool_name)
+        return '[{"id":821,"meal_type":"breakfast"}]'
+
+    executor._call_llm = fake_call_llm
+    executor._call_llm_stream = _stream_from(fake_call_llm)
+    executor._execute_tool = fake_execute_tool
+
+    events = [
+        e async for e in executor.run_stream(
+            user_id=user.id,
+            message="列出今天早餐",
+            user_auth_token=None,
+        )
+    ]
+
+    assert exec_calls.count("health_manage") == 1
+    assert any(event.get("event") == "done" for event in events)
 
 
 @pytest.mark.asyncio
