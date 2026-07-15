@@ -269,7 +269,7 @@ def _forced_report_req():
 async def test_off_mode_byte_identical_mega(monkeypatch, db):
     monkeypatch.setattr(orch_mod.settings, "orchestrator_parallel_synthesis", "off", raising=False)
 
-    async def fake_call_llm(system_prompt, user_prompt, *, lite_mode=False):
+    async def fake_call_llm(system_prompt, user_prompt, *, lite_mode=False, **kwargs):
         assert _MEGA_MARK in user_prompt  # off → 只走 mega
         return "MEGA综合结论文本, 足够长以通过安全校验的占位文本。"
 
@@ -284,7 +284,7 @@ async def test_on_mode_serves_sectioned(monkeypatch, db):
     monkeypatch.setattr(orch_mod.settings, "orchestrator_parallel_synthesis", "on", raising=False)
     seen = []
 
-    async def fake_call_llm(system_prompt, user_prompt, *, lite_mode=False):
+    async def fake_call_llm(system_prompt, user_prompt, *, lite_mode=False, **kwargs):
         seen.append(user_prompt)
         return "分项结论文本, 足够长的占位。"
 
@@ -303,7 +303,7 @@ async def test_on_mode_safety_wrap_on_assembled_whole(monkeypatch, db):
     """某段含黑名单术语 → 拼接整体过 _safety_wrap, 句级遮蔽 + disclaimer (与 mega 同)。"""
     monkeypatch.setattr(orch_mod.settings, "orchestrator_parallel_synthesis", "on", raising=False)
 
-    async def fake_call_llm(system_prompt, user_prompt, *, lite_mode=False):
+    async def fake_call_llm(system_prompt, user_prompt, *, lite_mode=False, **kwargs):
         if "【本段专家维度】营养" in user_prompt:
             return "坚持这个补充方案就可以治愈你的高血压问题。"
         return "根据你的恢复数据, 建议今晚早点休息, 保证睡眠七小时以上, 明天再评估训练强度。"
@@ -334,7 +334,7 @@ async def test_shadow_serves_mega_and_persists(monkeypatch, db):
     # worker lazy-imports log_shadow_synthesis from audit module → patch there
     monkeypatch.setattr("app.agents.audit.log_shadow_synthesis", fake_log)
 
-    async def fake_call_llm(system_prompt, user_prompt, *, lite_mode=False):
+    async def fake_call_llm(system_prompt, user_prompt, *, lite_mode=False, **kwargs):
         if _MEGA_MARK in user_prompt:
             return "MEGA服务文本, 足够长的占位以通过校验。"
         return "分项结论文本占位。"
@@ -357,7 +357,7 @@ async def test_shadow_serves_mega_and_persists(monkeypatch, db):
 async def test_shadow_failure_never_affects_served_turn(monkeypatch, db):
     monkeypatch.setattr(orch_mod.settings, "orchestrator_parallel_synthesis", "shadow", raising=False)
 
-    async def fake_call_llm(system_prompt, user_prompt, *, lite_mode=False):
+    async def fake_call_llm(system_prompt, user_prompt, *, lite_mode=False, **kwargs):
         if _MEGA_MARK in user_prompt:
             return "MEGA服务文本占位, 足够长以过校验。"
         raise RuntimeError("section boom in shadow")
@@ -376,7 +376,7 @@ async def test_on_mode_empty_sections_falls_back_to_mega(monkeypatch, db):
     """'on' 全段失败(空产出)→ fail-closed 回落 mega, 回合仍有正文。"""
     monkeypatch.setattr(orch_mod.settings, "orchestrator_parallel_synthesis", "on", raising=False)
 
-    async def fake_call_llm(system_prompt, user_prompt, *, lite_mode=False):
+    async def fake_call_llm(system_prompt, user_prompt, *, lite_mode=False, **kwargs):
         if _MEGA_MARK in user_prompt:  # mega 回落
             return "MEGA回落文本占位, 足够长以过校验。"
         raise RuntimeError("all sections boom")  # 段落全失败
@@ -394,7 +394,7 @@ async def test_non_report_shaped_uses_mega_even_when_on(monkeypatch, db):
     monkeypatch.setattr(orch_mod.settings, "orchestrator_parallel_synthesis", "on", raising=False)
     seen = []
 
-    async def fake_call_llm(system_prompt, user_prompt, *, lite_mode=False):
+    async def fake_call_llm(system_prompt, user_prompt, *, lite_mode=False, **kwargs):
         seen.append(user_prompt)
         return "MEGA单专家文本占位, 足够长。"
 
@@ -580,7 +580,7 @@ async def test_shadow_meta_enriched_thinking_cache_mega(monkeypatch, db):
 
     monkeypatch.setattr("app.agents.audit.log_shadow_synthesis", fake_log)
 
-    async def fake_call_llm(system_prompt, user_prompt, *, lite_mode=False):
+    async def fake_call_llm(system_prompt, user_prompt, *, lite_mode=False, **kwargs):
         if _MEGA_MARK in user_prompt:
             return "MEGA服务文本, 足够长的占位以通过校验。"
         return "分项结论文本占位。"

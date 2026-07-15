@@ -759,8 +759,11 @@ def _build_synthesis_prompt(
             "2. 把各个 specialist 的发现合成一个中文自然语言回答\n"
             "3. 严重度高的优先说，轻的收尾\n"
             "4. 数字和规则名不要凭空捏造，只用 specialist 给你的事实\n"
-            "5. 给出 2-4 个具体的下一步行动（时间/频率/剂量要具体）\n"
-            "6. 涉及药物/剂量调整时，明确说需要和医生确认\n"
+            "5. 给出 2-4 个具体的下一步行动（时间/频率要具体）\n"
+            "6. **补剂/药物一律不写具体剂量数字 (2026-07-15 R4 硬化, 对齐确定性剂量护栏)**: "
+            "任何补剂或药物只给种类/形式 (如 活性叶酸、维生素D3) 与随餐时机, **绝不输出剂量数字** "
+            "(mg/μg/IU/g/毫克/单位/'每日X'/'X~Y'), 具体剂量交由临床医生; 涉及药物调整明确说需和医生确认。"
+            "禁止引入 specialist findings 中未提及的补剂。\n"
             "7. 不超过 500 字，简洁有力，避免废话\n"
             "8. **信任校准**: 你下方会看到过去 30 天各 specialist 的预测命中率."
             " 命中率 ≥ 70% 的 specialist 建议优先采纳;"
@@ -1267,6 +1270,7 @@ def _strip_llm_reva_ui(text: str) -> str:
 
 async def _call_llm(
     system_prompt: str, user_prompt: str, *, lite_mode: bool = False,
+    allow_synthesis_override: bool = False,
 ) -> str:
     """调用 LLM，失败时尝试 openai fallback。返回空字符串表示失败。
 
@@ -1291,12 +1295,26 @@ async def _call_llm(
             if provider_type:
                 provider = create_llm_provider(provider_type)
             else:
-                pref = _user_pref_ctx.get()
-                if pref is not None:
-                    uid, _db = pref
-                    provider = create_provider_for_user(uid, _db, task_tier=_task_tier_ctx.get())
+                # 深报告 mega 合成模型覆盖(2026-07-15, D 组换快):仅当调用方显式
+                # allow_synthesis_override=True(= run_orchestrator 的报告 mega 合成)且 settings
+                # 非空时,用指定 model_id 建 provider(绕过 per-user/task_tier),走更快的
+                # deepseek-v4-flash。**不作用于 Siri 语音 / 冲突仲裁 / 段落合成**(它们不传此开关)——
+                # 安全评审要求:覆盖范围必须与"深报告"注释一致,不静默扩到未验证的产品面。
+                # 默认空/未开 → 存量行为;失败仍走下方 openai fallback(provider_type)。
+                _synth_model = (
+                    (getattr(settings, "orchestrator_synthesis_model_id", "") or "").strip()
+                    if allow_synthesis_override else ""
+                )
+                if _synth_model:
+                    from app.services.llm.factory import create_provider_for_model_id
+                    provider = create_provider_for_model_id(_synth_model)
                 else:
-                    provider = get_llm_provider()
+                    pref = _user_pref_ctx.get()
+                    if pref is not None:
+                        uid, _db = pref
+                        provider = create_provider_for_user(uid, _db, task_tier=_task_tier_ctx.get())
+                    else:
+                        provider = get_llm_provider()
             # rank11 段落调用:在 ctx 内则按本次真实 model 加思考/缓存控制(门控 fail-closed;
             # MEGA 调用不在 ctx 内 → extra 恒空,payload 逐字节不变)。failover 到不同 model 时
             # 按该 provider 的 model 再各自门控,不会把控制误带给不支持的兜底端点。
@@ -1412,6 +1430,9 @@ async def _stream_llm(
             from app.services.llm import get_llm_provider
             from app.services.llm.factory import create_llm_provider, create_provider_for_user
 
+            # 合成模型覆盖**不作用于 _stream_llm**(stream_orchestrator/web + Siri 流式共用
+            # 此函数):安全评审指出全局覆盖会静默把 Siri 语音换到未在该面验证的模型。覆盖只
+            # 限定在 _call_llm 的**深报告 mega 合成**(allow_synthesis_override=True 显式开)。
             if provider_type:
                 provider = create_llm_provider(provider_type)
             else:
@@ -1666,10 +1687,16 @@ async def run_orchestrator(
         perf["parallel_synthesis"] = _sec_meta
         if not (synthesis or "").strip():
             logger.warning("[orchestrator] parallel synthesis 空产出, 回落 mega-synthesis")
-            synthesis = await _call_llm(system_prompt, user_prompt, lite_mode=lite_mode)
+            synthesis = await _call_llm(
+                system_prompt, user_prompt, lite_mode=lite_mode,
+                allow_synthesis_override=True,
+            )
             perf["parallel_synthesis_fallback"] = "empty_sections"
     else:
-        synthesis = await _call_llm(system_prompt, user_prompt, lite_mode=lite_mode)
+        synthesis = await _call_llm(
+            system_prompt, user_prompt, lite_mode=lite_mode,
+            allow_synthesis_override=True,
+        )
     perf["llm_full_ms"] = int((time.monotonic() - t_llm) * 1000)
     synthesis = _strip_llm_reva_ui(synthesis)  # R4 护栏: 剥 LLM 伪造图表 block
 

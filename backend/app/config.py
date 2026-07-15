@@ -300,6 +300,18 @@ class Settings(BaseSettings):
     # 控制,payload 逐字节不变)。MEGA synthesis 从不带思考控制(那条实验已被服务答案否决)。
     # 未知值 fail-closed 归一到 'on'(= 不改思考,见 parallel_synthesis.resolve_section_thinking)。
     parallel_synthesis_section_thinking: str = "off"
+    # 深报告 mega 合成模型覆盖(2026-07-15,D 组换快模型):非空时**仅** run_orchestrator 的
+    # 报告 mega 合成(_call_llm(allow_synthesis_override=True))用该 model_id 建 provider,绕过
+    # per-user/task_tier。**范围严格限定深报告**——Siri 语音 / 冲突仲裁 / 段落合成 / _stream_llm
+    # (web+Siri 流式)都**不受影响**(安全评审要求:覆盖范围与注释一致,不静默扩到未验证产品面)。
+    # 真网探针实证:deepseek-v4-flash 合成比 qwen3.7-max 快~2×(40s vs 80s,TTFT 9.5s vs 57s),
+    # 硬化合成 prompt(rule5/6)后 R4 剂量 0 句、质量可比。默认空=零变更(存量行为)。
+    # 医疗正文来源例外:"医疗正文绝不来自 fast"原是为 qwen3.6-flash 那种垃圾 fast 定的经验护栏;
+    # deepseek-v4-flash 是能产高质量+R4干净合成的 fast(评估+安全评审已证),此覆盖是有据的刻意例外。
+    # 失败仍走 _call_llm 既有 openai fallback。**注意 R4 承重点**:_safety_wrap 只拦药物处方/调量
+    # 术语,**不兜底裸补剂剂量数字**——补剂 R4 靠 rule6 硬化 prompt + 该模型的深报告验证承载,
+    # 故任何 prompt/模型变更必须重跑深报告 R4 验证(不能假设确定性层兜底所有剂量)。
+    orchestrator_synthesis_model_id: str = ""
     # 多模型 panel(高风险裁决多模型投票):primitive,默认关
     multi_model_panel: bool = False
 

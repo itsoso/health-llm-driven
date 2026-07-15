@@ -350,7 +350,7 @@ async def test_run_orchestrator_monkeypatched_llm(monkeypatch, db):
     db.refresh(user)
 
     # Monkeypatch LLM 调用 — 接受可选 lite_mode kwarg (2026-05-28 加)
-    async def fake_call_llm(system_prompt, user_prompt, *, lite_mode=False):
+    async def fake_call_llm(system_prompt, user_prompt, *, lite_mode=False, **kwargs):
         return "这是伪造的 LLM 合并结果：建议复查肝功能。"
 
     from app.orchestrator import orchestrator as orch_mod
@@ -401,7 +401,7 @@ async def test_broad_synthesis_not_replaced_by_refusal_template(monkeypatch, db)
     # 伪 LLM: 模拟真实合成形态 —— 引用 ≥2 个 specialist 的裁决 + 结尾边界话术。
     # 边界话术含黑名单术语 (确诊/诊断/停药) 的否定/转诊用法, 这正是 prod 被
     # 误杀的形态; 修复前本测试会拿到拒答模板而失败。
-    async def fake_call_llm(system_prompt, user_prompt, *, lite_mode=False):
+    async def fake_call_llm(system_prompt, user_prompt, *, lite_mode=False, **kwargs):
         assert "【专家裁决】" in user_prompt
         return (
             "综合各专家会诊结论如下:\n"

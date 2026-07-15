@@ -724,8 +724,8 @@ async def test_orchestrator_propagates_readiness(monkeypatch, db):
     db.commit()
     db.refresh(user)
 
-    # 伪造 LLM (signature 跟随 _call_llm: 2026-05-28 起新增 keyword-only lite_mode)
-    async def fake_llm(sp, up, *, lite_mode=False):
+    # 伪造 LLM (signature 跟随 _call_llm: lite_mode + 2026-07-15 起 allow_synthesis_override)
+    async def fake_llm(sp, up, *, lite_mode=False, **kwargs):
         return "(fake synthesis)"
 
     monkeypatch.setattr(orch_mod, "_call_llm", fake_llm)
