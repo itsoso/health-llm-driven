@@ -58,7 +58,12 @@ def load_manifest(directory: Path) -> dict[str, Any]:
     return payload
 
 
-def validate(directory: Path, *, app_store_ready: bool) -> list[str]:
+def validate(
+    directory: Path,
+    *,
+    app_store_ready: bool,
+    expected_build_id: str | None = None,
+) -> list[str]:
     failures: list[str] = []
 
     if not directory.exists() or not directory.is_dir():
@@ -78,6 +83,17 @@ def validate(directory: Path, *, app_store_ready: bool) -> list[str]:
             failures.append("privacy_status must be demo or sanitized for App Store ready screenshots")
         if manifest.get("app_store_ready") is not True:
             failures.append("manifest app_store_ready must be true for App Store ready screenshots")
+
+    if expected_build_id is not None:
+        expected = str(expected_build_id).strip()
+        actual_value = manifest.get("build_id")
+        actual = str(actual_value).strip() if actual_value is not None else ""
+        if actual != expected:
+            rendered_actual = repr(actual) if actual else "missing"
+            failures.append(
+                "manifest build_id must match expected build: "
+                f"expected {expected!r}, got {rendered_actual}"
+            )
 
     screens = manifest.get("screens")
     if not isinstance(screens, list):
@@ -131,9 +147,17 @@ def main() -> int:
         action="store_true",
         help="Require demo/sanitized manifest status and Apple 6.9-inch accepted dimensions.",
     )
+    parser.add_argument(
+        "--build-id",
+        help="Require manifest build_id to match this App Store/TestFlight build number.",
+    )
     args = parser.parse_args()
 
-    failures = validate(args.screenshot_dir, app_store_ready=args.app_store_ready)
+    failures = validate(
+        args.screenshot_dir,
+        app_store_ready=args.app_store_ready,
+        expected_build_id=args.build_id,
+    )
     if failures:
         print("App Store screenshot check failed:", file=sys.stderr)
         for failure in failures:

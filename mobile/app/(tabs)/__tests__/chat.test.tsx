@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-require-imports, import/first */
 import React from 'react';
-import { Keyboard, StyleSheet } from 'react-native';
+import { Alert, Keyboard, StyleSheet } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 
 const mockOpenHistory = jest.fn();
@@ -15,6 +15,7 @@ const mockNewChat = jest.fn();
 const mockSetMessages = jest.fn();
 const mockSetParams = jest.fn();
 const mockLoadLatestConversation = jest.fn();
+const mockSaveChatImageToLibrary = jest.fn();
 let mockRouteParams: Record<string, string | undefined> = {};
 let mockLlmPreference: any = { model_id: null, options: [] };
 let mockMessages: any[] = [];
@@ -106,6 +107,14 @@ jest.mock('../../../services/actionCards', () => ({
   recordCardDecision: (...args: any[]) => mockRecordCardDecision(...args),
 }));
 
+jest.mock('../../../hooks/useAuth', () => ({
+  useAuth: () => ({ token: 'review-token' }),
+}));
+
+jest.mock('../../../services/chatImageSave', () => ({
+  saveChatImageToLibrary: (...args: any[]) => mockSaveChatImageToLibrary(...args),
+}));
+
 jest.mock('../../../hooks/useTheme', () => ({
   useTheme: () => ({
     c: {
@@ -125,16 +134,24 @@ jest.mock('../../../hooks/useTheme', () => ({
 jest.mock('../../../components/chat/ChatBubble', () => {
   const React = require('react');
   const { Pressable, Text } = require('react-native');
-  const MockChatBubble = ({ item, selectionMode, selected, onToggleSelected, onEnterSelection }: any) => (
-    <Pressable
-      accessibilityLabel={`message-${item.id}`}
-      accessibilityState={selectionMode ? { selected } : undefined}
-      onLongPress={() => onEnterSelection?.(item.id)}
-      onPress={() => onToggleSelected?.(item.id)}
-    >
-      <Text>{item.content}</Text>
-      <Text>{selectionMode ? (selected ? 'selected' : 'unselected') : 'normal'}</Text>
-    </Pressable>
+  const MockChatBubble = ({ item, selectionMode, selected, onToggleSelected, onEnterSelection, onViewImage }: any) => (
+    <>
+      <Pressable
+        accessibilityLabel={`message-${item.id}`}
+        accessibilityState={selectionMode ? { selected } : undefined}
+        onLongPress={() => onEnterSelection?.(item.id)}
+        onPress={() => onToggleSelected?.(item.id)}
+      >
+        <Text>{item.content}</Text>
+        <Text>{selectionMode ? (selected ? 'selected' : 'unselected') : 'normal'}</Text>
+      </Pressable>
+      {item.imageUris?.[0] ? (
+        <Pressable
+          accessibilityLabel={`open-image-${item.id}`}
+          onPress={() => onViewImage?.(item.imageUris[0])}
+        />
+      ) : null}
+    </>
   );
   MockChatBubble.displayName = 'MockChatBubble';
   return MockChatBubble;
@@ -169,6 +186,32 @@ describe('ChatScreen', () => {
     mockTodayDynamicViewData = undefined;
     mockDailyPlanData = undefined;
     mockLoadLatestConversation.mockResolvedValue(undefined);
+    mockSaveChatImageToLibrary.mockResolvedValue(undefined);
+  });
+
+  it('lets the reviewer save an image from the full-screen preview', async () => {
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(jest.fn());
+    mockMessages = [{
+      id: 'photo-1',
+      role: 'user',
+      content: '午餐照片',
+      imageUris: ['https://health.executor.life/api/v1/upload/files/chat/7/meal.jpg'],
+    }];
+    const view = render(<ChatScreen />);
+
+    fireEvent.press(view.getByLabelText('open-image-photo-1'));
+    fireEvent(view.getByLabelText('预览图片，长按可保存'), 'longPress');
+
+    const actions = alertSpy.mock.calls.at(-1)?.[2] as any[];
+    await act(async () => {
+      actions.find(action => action.text === '保存到相册').onPress();
+      await Promise.resolve();
+    });
+
+    expect(mockSaveChatImageToLibrary).toHaveBeenCalledWith({
+      uri: 'https://health.executor.life/api/v1/upload/files/chat/7/meal.jpg',
+      headers: { Authorization: 'Bearer review-token' },
+    });
   });
 
   it('keeps one stable bootstrap shell until history, opener, and memory settle', async () => {
@@ -1159,7 +1202,7 @@ describe('ChatScreen', () => {
 
     expect(queryByText('新建对话')).toBeNull();
     expect(queryByText('对话历史')).toBeNull();
-    expect(getByText('会诊工具')).toBeTruthy();
+    expect(getByText('更多操作')).toBeTruthy();
   });
 
   it('starts a new conversation when opened from an Agent context entry', async () => {

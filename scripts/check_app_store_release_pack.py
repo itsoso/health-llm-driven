@@ -8,6 +8,8 @@ import os
 import re
 import subprocess
 import sys
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Mapping
 
@@ -80,13 +82,20 @@ REVIEW_CONTACT_PHONE_ENV = "APP_STORE_REVIEW_CONTACT_PHONE"
 REVIEW_CONTACT_PHONE_RE = re.compile(r"^\+[1-9]\d{1,14}(?:[\s-]\d+)*$")
 REAL_DEVICE_EVIDENCE_ENV = "APP_STORE_REAL_DEVICE_EVIDENCE"
 APP_STORE_BUILD_ID_ENV = "APP_STORE_BUILD_ID"
+DEMO_API_BASE_ENV = "APP_STORE_REVIEW_API_BASE"
+DEFAULT_DEMO_API_BASE = "https://health.executor.life/api/v1"
 REAL_DEVICE_CHECKS = (
+    "demo_account_login",
+    "today_briefing_expand_collapse",
+    "agent_text_conversation",
     "realtime_dictation_toggle",
     "hold_to_talk_send_cancel_text",
     "camera_photo_persistence",
     "wechat_share_handoff",
     "xiaohongshu_share_handoff",
     "confirmed_database_write",
+    "personal_center_privacy_policy",
+    "optional_permission_denial_text_chat",
     "account_deletion_status",
 )
 CURRENT_AGENT_NATIVE_ENTRY_TERMS = [
@@ -112,7 +121,10 @@ APP_REVIEW_REDLINE_GLOBS = [
     "frontend/src/app/privacy/page.tsx",
     "mobile/app/**/*.tsx",
     "mobile/components/**/*.tsx",
+    "mobile/hooks/**/*.ts",
+    "mobile/hooks/**/*.tsx",
     "mobile/services/**/*.ts",
+    "mobile/strings/**/*.ts",
     "mobile/utils/**/*.ts",
 ]
 APP_REVIEW_REDLINE_EXCLUDED_PARTS = {
@@ -122,6 +134,10 @@ APP_REVIEW_REDLINE_EXCLUDED_PARTS = {
     "api.generated.ts",
 }
 APP_REVIEW_REDLINE_RULES = [
+    (
+        "legacy app brand",
+        [r"\bHealthPilot\b"],
+    ),
     (
         "non-iOS platform term",
         [
@@ -341,6 +357,81 @@ def validate_demo_review_credentials(
     return failures
 
 
+def _resolved_demo_credentials(
+    review_notes: str,
+    env: Mapping[str, str],
+) -> tuple[str, str] | None:
+    values: list[str] = []
+    for label, placeholder, env_key in DEMO_CREDENTIAL_LINES:
+        value = _parse_demo_credential_value(review_notes, label)
+        if value == placeholder:
+            value = env.get(env_key, "").strip()
+        if not value or value in DEMO_PLACEHOLDERS:
+            return None
+        values.append(value)
+    return values[0], values[1]
+
+
+def _request_json(
+    url: str,
+    *,
+    method: str = "GET",
+    token: str | None = None,
+    payload: dict | None = None,
+    timeout: float = 10,
+) -> dict:
+    body = json.dumps(payload).encode("utf-8") if payload is not None else None
+    headers = {"Accept": "application/json"}
+    if body is not None:
+        headers["Content-Type"] = "application/json"
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    request = urllib.request.Request(url, data=body, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        raise RuntimeError(f"HTTP {exc.code}") from exc
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+        raise RuntimeError(str(exc)) from exc
+
+
+def validate_demo_account_live(
+    account: str,
+    password: str,
+    *,
+    api_base: str = DEFAULT_DEMO_API_BASE,
+) -> list[str]:
+    """Prove the exact reviewer credential against production read paths."""
+    base = api_base.rstrip("/")
+    try:
+        login = _request_json(
+            f"{base}/auth/login/json",
+            method="POST",
+            payload={"username": account, "password": password},
+        )
+        token = str(login.get("access_token") or "").strip()
+        login_user_id = (login.get("user") or {}).get("id")
+        if not token or login_user_id is None:
+            return ["live demo account login response is missing access_token or user id"]
+
+        me = _request_json(f"{base}/auth/me", token=token)
+        if me.get("id") != login_user_id:
+            return ["live demo account /auth/me identity does not match login response"]
+
+        plan = _request_json(f"{base}/daily-plan/me", token=token)
+        if not isinstance(plan.get("actions"), list) or not plan["actions"]:
+            return ["live demo account daily plan has no reviewer-visible actions"]
+
+        artifact = _request_json(f"{base}/daily-artifact/me", token=token)
+        top_action = artifact.get("top_action")
+        if not isinstance(top_action, dict) or not str(top_action.get("title") or "").strip():
+            return ["live demo account daily artifact has no reviewer-visible top action"]
+    except Exception as exc:
+        return [f"live demo account check failed: {exc}"]
+    return []
+
+
 def validate_real_device_evidence(path: Path, *, expected_build_id: str) -> list[str]:
     failures: list[str] = []
     if not path.is_file():
@@ -355,7 +446,7 @@ def validate_real_device_evidence(path: Path, *, expected_build_id: str) -> list
             "real-device evidence build_id does not match APP_STORE_BUILD_ID: "
             f"evidence={evidence.get('build_id')!r}, expected={expected_build_id!r}"
         )
-    for field in ("device_model", "ios_version", "tested_at"):
+    for field in ("device_model", "ios_version", "tested_at", "tester"):
         if not str(evidence.get(field) or "").strip():
             failures.append(f"real-device evidence missing {field}")
     checks = evidence.get("checks")
@@ -364,6 +455,23 @@ def validate_real_device_evidence(path: Path, *, expected_build_id: str) -> list
     for check in REAL_DEVICE_CHECKS:
         if checks.get(check) is not True:
             failures.append(f"real-device acceptance check not passed: {check}")
+    return failures
+
+
+def validate_final_submission_material_state(
+    *,
+    submission_pack: str,
+    review_notes: str,
+) -> list[str]:
+    failures: list[str] = []
+    if "Status: ready for App Store submission." not in submission_pack:
+        failures.append(
+            "submission pack is not marked ready; replace the draft status only after G6 passes"
+        )
+    if re.search(r"^#\s+App Store Review Notes\s+Draft\s*$", review_notes, re.MULTILINE):
+        failures.append("review notes are still marked Draft")
+    if not re.search(r"^#\s+App Store Review Notes\s*$", review_notes, re.MULTILINE):
+        failures.append("review notes are not marked final")
     return failures
 
 
@@ -475,12 +583,30 @@ def main() -> int:
         if url not in submission and url not in read_text("docs/plans/2026-06-28-app-store-mvp-release-batch2-plan.md"):
             failures.append(f"missing official reference URL: {url}")
 
-    failures.extend(
-        validate_demo_review_credentials(
-            review_notes,
-            final_submit=args.final_submit,
-        )
+    demo_credential_failures = validate_demo_review_credentials(
+        review_notes,
+        final_submit=args.final_submit,
     )
+    failures.extend(demo_credential_failures)
+    if args.final_submit:
+        failures.extend(
+            validate_final_submission_material_state(
+                submission_pack=submission,
+                review_notes=review_notes,
+            )
+        )
+    if args.final_submit and not demo_credential_failures:
+        credentials = _resolved_demo_credentials(review_notes, os.environ)
+        if credentials is None:
+            failures.append("final submit could not resolve demo credentials for live validation")
+        else:
+            failures.extend(
+                validate_demo_account_live(
+                    credentials[0],
+                    credentials[1],
+                    api_base=os.environ.get(DEMO_API_BASE_ENV, DEFAULT_DEMO_API_BASE),
+                )
+            )
 
     ios_preflight_args = [
         sys.executable,
@@ -502,17 +628,21 @@ def main() -> int:
     if ios_preflight.returncode != 0:
         failures.append(f"iOS App Store submission preflight failed\n{ios_preflight.stderr.strip()}")
 
+    build_id = args.build_id or os.environ.get(APP_STORE_BUILD_ID_ENV, "").strip()
     screenshot_dir = args.screenshot_dir or os.environ.get("APP_STORE_SCREENSHOT_DIR")
     if args.final_submit and not screenshot_dir:
         failures.append("final submit requires APP_STORE_SCREENSHOT_DIR or --screenshot-dir")
     if screenshot_dir:
+        screenshot_args = [
+            sys.executable,
+            str(ROOT / "scripts/check_app_store_screenshots.py"),
+            screenshot_dir,
+            "--app-store-ready",
+        ]
+        if args.final_submit and build_id:
+            screenshot_args.extend(["--build-id", build_id])
         result = subprocess.run(
-            [
-                sys.executable,
-                str(ROOT / "scripts/check_app_store_screenshots.py"),
-                screenshot_dir,
-                "--app-store-ready",
-            ],
+            screenshot_args,
             cwd=ROOT,
             text=True,
             stdout=subprocess.PIPE,
@@ -529,7 +659,6 @@ def main() -> int:
 
     if args.final_submit:
         evidence_path = args.real_device_evidence or os.environ.get(REAL_DEVICE_EVIDENCE_ENV, "").strip()
-        build_id = args.build_id or os.environ.get(APP_STORE_BUILD_ID_ENV, "").strip()
         if not evidence_path:
             failures.append(
                 "final submit requires real-device acceptance evidence via "

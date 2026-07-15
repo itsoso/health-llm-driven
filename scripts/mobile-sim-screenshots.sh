@@ -14,6 +14,7 @@ OUTPUT_DIR="${ROOT}/design/screenshots/app-store/$(date +%Y%m%d-%H%M%S)"
 URL_SCHEME="${IOS_SIM_URL_SCHEME:-}"
 PRIVACY_STATUS="${APP_STORE_SCREENSHOT_PRIVACY_STATUS:-private}"
 APP_STORE_READY=0
+BUILD_ID="${APP_STORE_BUILD_ID:-}"
 
 usage() {
   sed -n '1,12p' "$0"
@@ -40,6 +41,10 @@ while [ "$#" -gt 0 ]; do
     --app-store-ready)
       APP_STORE_READY=1
       shift
+      ;;
+    --build-id)
+      BUILD_ID="${2:?missing --build-id value}"
+      shift 2
       ;;
     -h|--help)
       usage
@@ -97,6 +102,22 @@ fi
 
 APP_CONTAINER="$(xcrun simctl get_app_container "${DEVICE_ID}" "${BUNDLE_ID}" app)"
 APP_INFO="${APP_CONTAINER}/Info.plist"
+if [ -z "${BUILD_ID}" ]; then
+  BUILD_ID="$(python3 - "${APP_INFO}" <<'PY'
+import plistlib
+import sys
+
+with open(sys.argv[1], "rb") as handle:
+    info = plistlib.load(handle)
+
+print(str(info.get("CFBundleVersion", "")).strip())
+PY
+)"
+fi
+if [ -z "${BUILD_ID}" ]; then
+  echo "Unable to determine CFBundleVersion; pass --build-id explicitly." >&2
+  exit 2
+fi
 if [ -z "${URL_SCHEME}" ]; then
   URL_SCHEME="$(python3 - "${APP_INFO}" <<'PY'
 import plistlib
@@ -173,16 +194,17 @@ cat > "${OUTPUT_DIR}/README.md" <<EOF
 - URL scheme: ${URL_SCHEME}
 - Privacy status: ${PRIVACY_STATUS}
 - App Store ready: $([ "${APP_STORE_READY}" = "1" ] && echo "yes" || echo "no")
+- Build ID: ${BUILD_ID}
 
 Review each image before committing. Do not commit screenshots with private user data. App Store ready sets must use a demo account or sanitized data.
 EOF
 
-python3 - "${OUTPUT_DIR}/manifest.json" "${DEVICE_ID}" "${BUNDLE_ID}" "${URL_SCHEME}" "${PRIVACY_STATUS}" "${APP_STORE_READY}" <<'PY'
+python3 - "${OUTPUT_DIR}/manifest.json" "${DEVICE_ID}" "${BUNDLE_ID}" "${URL_SCHEME}" "${PRIVACY_STATUS}" "${APP_STORE_READY}" "${BUILD_ID}" <<'PY'
 import json
 import sys
 from datetime import datetime, timezone
 
-manifest_path, simulator, bundle_id, url_scheme, privacy_status, ready = sys.argv[1:]
+manifest_path, simulator, bundle_id, url_scheme, privacy_status, ready, build_id = sys.argv[1:]
 routes = [
     ("00-launch", "launch"),
     ("01-today", "/"),
@@ -199,6 +221,7 @@ payload = {
     "url_scheme": url_scheme,
     "privacy_status": privacy_status,
     "app_store_ready": ready == "1",
+    "build_id": build_id,
     "screens": [
         {"name": name, "route": route, "file": f"{name}.png"}
         for name, route in routes

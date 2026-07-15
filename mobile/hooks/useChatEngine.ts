@@ -926,6 +926,15 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
           queueThought(evt.thought);
         }
         if (evt.type === 'start') {
+          // The backend emits agent_start only after the user message commit.
+          // Some older gateways can omit request_persisted from the client
+          // stream, so a start carrying its conversation id is also durable
+          // acceptance evidence. Reply completion remains a separate state:
+          // a later stream interruption must not invite a duplicate submit.
+          if (typeof evt.conversationId === 'number') {
+            settleAcceptance(true);
+            await acknowledgeContinuityOnce();
+          }
           dispatchAgentTurn({
             type: 'accepted',
             at: Date.now(),
@@ -943,8 +952,11 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
             continue;
           }
           if (evt.imageUrls?.length) {
+            const persistedImageUris = evt.imageUrls
+              .map(uri => absolutizeHistoryImageUri(uri, IMAGE_HOST))
+              .filter((uri): uri is string => !!uri);
             setMessages(prev => prev.map(m => (
-              m.id === userMsg.id ? { ...m, imageUris: evt.imageUrls } : m
+              m.id === userMsg.id ? { ...m, imageUris: persistedImageUris } : m
             )));
           }
           settleAcceptance(true);

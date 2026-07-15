@@ -1,4 +1,5 @@
 import { act, renderHook, waitFor } from '@testing-library/react-native';
+import Voice from '@react-native-voice/voice';
 import { synthesize as cloudSynthesize } from '../../services/cloudTts';
 import { splitTextForCloudTts } from '../../utils/ttsText';
 import { useVoiceConversation } from '../useVoiceConversation';
@@ -65,6 +66,7 @@ jest.mock('../../services/chat', () => ({
 }));
 
 const mockCloudSynthesize = cloudSynthesize as jest.MockedFunction<typeof cloudSynthesize>;
+const mockedVoice = Voice as any;
 
 describe('useVoiceConversation', () => {
   beforeEach(() => {
@@ -93,5 +95,25 @@ describe('useVoiceConversation', () => {
     expect(mockSpeechSpeak).not.toHaveBeenCalled();
 
     unmount();
+  });
+
+  it('does not clear process-wide speech listeners when the voice screen closes', async () => {
+    const { result, unmount } = renderHook(() => useVoiceConversation());
+
+    await act(async () => {
+      await result.current.startListening();
+    });
+    act(() => {
+      mockedVoice.onSpeechPartialResults({ value: ['正在记录这句话'] });
+    });
+    expect(result.current.transcript).toBe('正在记录这句话');
+
+    await act(async () => {
+      unmount();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mockVoiceRemoveAllListeners).not.toHaveBeenCalled();
   });
 });

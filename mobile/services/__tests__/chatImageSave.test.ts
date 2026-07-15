@@ -1,6 +1,7 @@
 const mockRequestPermissionsAsync = jest.fn();
 const mockSaveToLibraryAsync = jest.fn();
 const mockDownloadAsync = jest.fn();
+const mockDeleteAsync = jest.fn();
 
 jest.mock('expo-media-library', () => ({
   requestPermissionsAsync: (...args: any[]) => mockRequestPermissionsAsync(...args),
@@ -10,6 +11,7 @@ jest.mock('expo-media-library', () => ({
 jest.mock('expo-file-system/legacy', () => ({
   cacheDirectory: 'file:///cache/',
   downloadAsync: (...args: any[]) => mockDownloadAsync(...args),
+  deleteAsync: (...args: any[]) => mockDeleteAsync(...args),
 }));
 
 import { saveChatImageToLibrary } from '../chatImageSave';
@@ -36,6 +38,7 @@ describe('saveChatImageToLibrary', () => {
       { headers: { Authorization: 'Bearer token' } },
     );
     expect(mockSaveToLibraryAsync).toHaveBeenCalledWith('file:///cache/chat-image.jpg');
+    expect(mockDeleteAsync).toHaveBeenCalledWith('file:///cache/chat-image.jpg', { idempotent: true });
   });
 
   it('does not save a failed remote download response as a photo', async () => {
@@ -47,6 +50,7 @@ describe('saveChatImageToLibrary', () => {
     })).rejects.toThrow('image_download_failed');
 
     expect(mockSaveToLibraryAsync).not.toHaveBeenCalled();
+    expect(mockDeleteAsync).toHaveBeenCalledWith('file:///cache/chat-image.jpg', { idempotent: true });
   });
 
   it('saves a local image directly without downloading it again', async () => {

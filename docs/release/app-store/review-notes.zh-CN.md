@@ -12,7 +12,7 @@ If the reviewer cannot sign in, please contact support@executor.life.
 
 ## What To Test
 
-1. Open the app and sign in with the demo account. The app opens directly into 小巴.
+1. Open the app, tap `账号密码登录`, and sign in with the demo account. The app opens directly into 小巴.
 2. The 今日简报 at the top shows the current health focus. It can be collapsed and reopened.
 3. Ask 小巴: `今天应该先做什么健康行动？`
 4. Tap the `+` button beside the input bar to photograph or select a meal image. The recognized result remains an editable draft until the user confirms it.

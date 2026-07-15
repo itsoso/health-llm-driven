@@ -52,25 +52,28 @@ def _write_manifest(
     app_store_ready: bool | None = None,
     width: int = 1290,
     height: int = 2796,
+    build_id: str | None = None,
 ) -> None:
     screens = []
     for name in REQUIRED_NAMES:
         _write_png(directory / f"{name}.png", width=width, height=height)
         screens.append({"name": name, "file": f"{name}.png", "route": "/"})
 
-    (directory / "manifest.json").write_text(
-        json.dumps(
-            {
-                "captured_at": "2026-06-28T16:30:00Z",
-                "privacy_status": privacy_status,
-                "app_store_ready": (
-                    privacy_status in {"demo", "sanitized"}
-                    if app_store_ready is None
-                    else app_store_ready
-                ),
-                "screens": screens,
-            }
+    manifest = {
+        "captured_at": "2026-06-28T16:30:00Z",
+        "privacy_status": privacy_status,
+        "app_store_ready": (
+            privacy_status in {"demo", "sanitized"}
+            if app_store_ready is None
+            else app_store_ready
         ),
+        "screens": screens,
+    }
+    if build_id is not None:
+        manifest["build_id"] = build_id
+
+    (directory / "manifest.json").write_text(
+        json.dumps(manifest),
         encoding="utf-8",
     )
 
@@ -170,6 +173,42 @@ def test_app_store_screenshot_checker_rejects_wrong_store_size(tmp_path: Path):
 
     assert result.returncode == 1
     assert "02-chat.png has unsupported App Store size 1206x2622" in result.stderr
+
+
+def test_app_store_screenshot_checker_requires_matching_build_when_requested(tmp_path: Path):
+    root = Path(__file__).resolve().parents[2]
+    screenshot_dir = tmp_path / "screens"
+    screenshot_dir.mkdir()
+    _write_manifest(screenshot_dir, privacy_status="demo", build_id="225")
+
+    result = _run_checker(
+        root,
+        screenshot_dir,
+        "--app-store-ready",
+        "--build-id",
+        "226",
+    )
+
+    assert result.returncode == 1
+    assert "manifest build_id must match expected build: expected '226', got '225'" in result.stderr
+
+
+def test_app_store_screenshot_checker_rejects_missing_build_when_requested(tmp_path: Path):
+    root = Path(__file__).resolve().parents[2]
+    screenshot_dir = tmp_path / "screens"
+    screenshot_dir.mkdir()
+    _write_manifest(screenshot_dir, privacy_status="sanitized")
+
+    result = _run_checker(
+        root,
+        screenshot_dir,
+        "--app-store-ready",
+        "--build-id",
+        "226",
+    )
+
+    assert result.returncode == 1
+    assert "manifest build_id must match expected build: expected '226', got missing" in result.stderr
 
 
 def test_prepare_app_store_screenshots_creates_ready_sized_demo_set(tmp_path: Path):

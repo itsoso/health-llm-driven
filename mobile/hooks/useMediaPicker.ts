@@ -88,7 +88,7 @@ export function useMediaPicker() {
     try {
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!perm.granted) {
-        Alert.alert('需要相册权限', '请在系统设置中允许 HealthPilot 访问相册');
+        Alert.alert('需要相册权限', '请在系统设置中允许小巴访问相册');
         return;
       }
       const remaining = MAX_IMAGES - (pendingImages?.length || 0);
@@ -126,7 +126,7 @@ export function useMediaPicker() {
       }
       const perm = await ImagePicker.requestCameraPermissionsAsync();
       if (!perm.granted) {
-        Alert.alert('需要相机权限', '请在系统设置中允许 HealthPilot 使用相机');
+        Alert.alert('需要相机权限', '请在系统设置中允许小巴使用相机');
         return [];
       }
       const result = await ImagePicker.launchCameraAsync({

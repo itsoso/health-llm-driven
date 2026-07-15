@@ -136,6 +136,25 @@ describe('useVoiceRecording audio session release (Bug 2: 语音后键盘失效)
     });
   });
 
+  it('releases the recording audio session when the native recorder fails to stop', async () => {
+    mockStop.mockRejectedValueOnce(new Error('native stop failed'));
+    const { result } = renderHook(() => useVoiceRecording({ onTranscript: jest.fn() }));
+
+    await act(async () => {
+      await result.current.startRecording();
+    });
+    mockSetAudioModeAsync.mockClear();
+
+    await act(async () => {
+      await result.current.stopAndTranscribe();
+    });
+
+    expect(releasedRecordingSession()).toBe(true);
+    expect(result.current.isRecording).toBe(false);
+    expect(result.current.isTranscribing).toBe(false);
+    expect(mockTranscribe).not.toHaveBeenCalled();
+  });
+
   it('releases the recording audio session after cancelRecording', async () => {
     const { result } = renderHook(() => useVoiceRecording({ onTranscript: jest.fn() }));
 

@@ -118,7 +118,7 @@ export function useVoiceRecording(opts?: {
       }
       if (!perm.granted) {
         emitTerminal('failed', 'microphone_permission_denied');
-        Alert.alert('需要麦克风权限', '请在 iPhone 设置 → HealthPilot → 麦克风 中开启权限');
+        Alert.alert('需要麦克风权限', '请在 iPhone 设置 → 小巴 → 麦克风 中开启权限');
         return false;
       }
 
@@ -186,11 +186,13 @@ export function useVoiceRecording(opts?: {
     transcriptionSeqRef.current = transcriptionSeq;
     setIsTranscribing(true);
     try {
-      await recorder.stop();
-      readyRef.current = false;
-      // 停录音后立刻放回 session (在转写网络请求之前) —— 转写可能耗时几秒,
-      // 期间键盘/输入应已可用, 不必等转写回来才释放麦克风占用。
-      await releaseAudioSession();
+      try {
+        await recorder.stop();
+      } finally {
+        readyRef.current = false;
+        // 原生 stop 失败也必须释放 session, 否则下一次键盘和录音都会被占用。
+        await releaseAudioSession();
+      }
       const uri = recorder.uri;
 
       if (!uri) {

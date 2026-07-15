@@ -23,7 +23,7 @@ jest.mock('../../modules/shared-keychain', () => ({
 }));
 
 import { AuthProvider, useAuth } from '../useAuth';
-import { getToken, fetchCurrentUser } from '../../services/auth';
+import { getToken, fetchCurrentUser, logout } from '../../services/auth';
 
 function Probe() {
   const auth = useAuth();
@@ -53,7 +53,7 @@ describe('useAuth update resilience', () => {
     }) as never);
   });
 
-  it('keeps the app authenticated when a saved token exists but user hydration gets a transient 401', async () => {
+  it('clears an expired saved token when user hydration returns 401', async () => {
     (getToken as jest.Mock).mockResolvedValueOnce('tok_saved');
     (fetchCurrentUser as jest.Mock).mockRejectedValueOnce({ response: { status: 401 } });
 
@@ -63,7 +63,8 @@ describe('useAuth update resilience', () => {
       </AuthProvider>,
     );
 
-    await waitFor(() => expect(screen.getByTestId('state')).toHaveTextContent('auth'));
+    await waitFor(() => expect(screen.getByTestId('state')).toHaveTextContent('guest'));
+    expect(logout).toHaveBeenCalledTimes(1);
   });
 
   it('keeps the app authenticated when token storage is briefly unavailable after an update', async () => {
@@ -82,7 +83,7 @@ describe('useAuth update resilience', () => {
     expect(getToken).toHaveBeenCalledTimes(2);
   });
 
-  it('does not force guest state from a global incidental 401 while a token is loaded', async () => {
+  it('clears the current session after an authenticated API returns 401', async () => {
     (getToken as jest.Mock).mockResolvedValueOnce('tok_saved');
     (fetchCurrentUser as jest.Mock).mockResolvedValueOnce({ id: 3, username: 'q' });
 
@@ -97,7 +98,8 @@ describe('useAuth update resilience', () => {
       unauthorizedHandler?.();
     });
 
-    expect(screen.getByTestId('state')).toHaveTextContent('auth');
+    await waitFor(() => expect(screen.getByTestId('state')).toHaveTextContent('guest'));
+    expect(logout).toHaveBeenCalledTimes(1);
   });
 
   it('foreground self-heal: token becomes readable after a failed cold-start restore', async () => {

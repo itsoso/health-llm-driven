@@ -175,8 +175,12 @@ export default function ChatInputBar({
   const voiceNativeActiveRef = useRef(false);
   const voiceDraftRef = useRef<VoiceDraft | null>(null);
   const draftPersistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const draftHydratedRef = useRef(false);
+  const draftSnapshotRef = useRef({ text: input, images: pendingImages });
   const justSentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   composerRef.current = composer;
+  draftHydratedRef.current = draftHydrated;
+  draftSnapshotRef.current = { text: input, images: pendingImages };
   const canSend = (!!input.trim() || pendingImages.length > 0)
     && !isStreaming
     && composer.phase !== 'submitting';
@@ -576,6 +580,16 @@ export default function ChatInputBar({
   React.useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState) => {
       if (nextState !== 'background' && nextState !== 'inactive') return;
+      if (draftHydratedRef.current) {
+        if (draftPersistTimerRef.current) {
+          clearTimeout(draftPersistTimerRef.current);
+          draftPersistTimerRef.current = null;
+        }
+        const snapshot = draftSnapshotRef.current;
+        void persistChatDraft(snapshot.text, snapshot.images).catch((e) => {
+          if (__DEV__) console.warn('[ChatInputBar] background draft persistence failed:', e);
+        });
+      }
       const phase = composerRef.current.phase;
       cancelledRef.current = true;
       voiceGestureActiveRef.current = false;

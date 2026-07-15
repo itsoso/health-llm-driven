@@ -8,28 +8,46 @@ interface SharePlainTextOptions {
   message: string;
 }
 
-async function createTextSharePage(title: string | undefined, message: string) {
-  const res = await api.post<{ share_url: string }>('/shared/create-text', {
+interface TextSharePage {
+  share_token: string;
+  share_url: string;
+}
+
+async function createTextSharePage(title: string | undefined, message: string): Promise<TextSharePage> {
+  const res = await api.post<TextSharePage>('/shared/create-text', {
     title,
     message,
   });
-  return res.data.share_url;
+  return res.data;
+}
+
+async function revokeTextSharePage(shareToken: string): Promise<void> {
+  await api.delete(`/shared/${encodeURIComponent(shareToken)}`);
 }
 
 export async function sharePlainText({ title, message }: SharePlainTextOptions) {
-  const shareUrl = await createTextSharePage(title, message);
+  const { share_token: shareToken, share_url: shareUrl } = await createTextSharePage(title, message);
   await Clipboard.setStringAsync(message).catch(() => {});
   const shareMessage = title ? `${title}\n${shareUrl}` : shareUrl;
 
-  if (Platform.OS === 'ios') {
-    return Share.share({
-      title,
-      message: shareMessage,
-      url: shareUrl,
-    });
+  let result: Awaited<ReturnType<typeof Share.share>>;
+  try {
+    result = Platform.OS === 'ios'
+      ? await Share.share({ title, message: shareMessage, url: shareUrl })
+      : await Share.share({ title, message: shareMessage });
+  } catch (error) {
+    try {
+      await revokeTextSharePage(shareToken);
+    } catch (cleanupError) {
+      if (__DEV__) console.warn('[share] failed to revoke abandoned share page', cleanupError);
+    }
+    throw error;
   }
 
-  return Share.share({ title, message: shareMessage });
+  if (result.action === Share.dismissedAction) {
+    await revokeTextSharePage(shareToken);
+  }
+  return result;
 }
 
 export async function sharePlainCaption({ title, message }: SharePlainTextOptions) {

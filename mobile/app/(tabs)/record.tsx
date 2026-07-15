@@ -33,6 +33,7 @@ import StrengthCard from '../../components/dashboard/StrengthCard';
 import SymptomCard from '../../components/dashboard/SymptomCard';
 import HealthCard from '../../components/design-system/HealthCard';
 import AgentFeedbackLink from '../../components/agent/AgentFeedbackLink';
+import { getReleaseCapabilities } from '../../config/releaseCapabilities';
 import {
   revaColors as C,
   revaRadii,
@@ -75,6 +76,7 @@ type RecordGapState = {
 
 export default function RecordScreen() {
   const router = useRouter();
+  const rokidEnabled = getReleaseCapabilities().rokid;
   const qc = useQueryClient();
   const { data, refetch, isRefetching } = useQuery({ queryKey: queryKeys.dashboard, queryFn: fetchDashboardData, staleTime: 60_000 });
   const [bodyDietTab, setBodyDietTab] = useState<'diet' | 'body'>('diet');
@@ -154,19 +156,22 @@ export default function RecordScreen() {
         priority: recordGaps.isPreWorkoutWindow ? 72 : 18,
         onPress: () => router.push('/voice-chat?intent=preworkout&workout_type=running' as any),
       },
-      {
+    ];
+
+    if (rokidEnabled) {
+      entries.push({
         key: 'pushup',
         icon: 'barbell-outline',
         label: '俯卧撑',
-        hint: '本地/眼镜计数',
+        hint: '眼镜计数',
         color: CAT_HUES.pink,
         priority: 36,
         onPress: () => router.push('/rokid-pushup-coach' as any),
-      },
-    ];
+      });
+    }
 
     return entries.sort((a, b) => b.priority - a.priority);
-  }, [recordGaps, router]);
+  }, [recordGaps, rokidEnabled, router]);
   const recommendedRecord = highFrequencyRecords[0];
   const shouldShowRecommendedRecord = recommendedRecord?.priority >= 60;
 

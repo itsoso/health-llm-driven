@@ -841,6 +841,24 @@ describe('ChatInputBar', () => {
     });
   });
 
+  it('flushes the latest draft immediately when iOS moves to the background', async () => {
+    mockLoadChatDraft.mockResolvedValueOnce({ text: '', images: [] });
+    const { getByLabelText } = render(
+      <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
+    );
+
+    await waitFor(() => expect(mockSetPendingImages).toHaveBeenCalledWith([]));
+    fireEvent.changeText(getByLabelText('消息输入框'), '切后台前必须保存');
+
+    act(() => {
+      appStateHandler?.('background');
+    });
+
+    await waitFor(() => {
+      expect(mockPersistChatDraft).toHaveBeenCalledWith('切后台前必须保存', []);
+    });
+  });
+
   it('hydrates private image bytes before send and clears only after acceptance', async () => {
     const storedImage = {
       uri: 'file:///documents/chat-drafts/lunch.jpeg',

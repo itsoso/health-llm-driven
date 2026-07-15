@@ -10,7 +10,7 @@ Status: draft for the next App Store submission.
 | Bundle ID | `life.executor.health` |
 | SKU | `life.executor.health` |
 | App name | `小巴` |
-| Internal product name | `中和知微`(公司:睿为健康;内部代号 HealthPilot)|
+| Internal product name | `中和知微`(公司:睿为健康)|
 | Primary language | Simplified Chinese |
 | Category | Health & Fitness |
 | Privacy policy URL | `https://health.executor.life/privacy` |
@@ -84,7 +84,7 @@ python3 scripts/check_app_store_release_pack.py
 
 The adapted review checklist is `docs/release/app-store/adapted-review-checklist.md`. It is included in the release-pack gate and maps operational App Review risks to automated and manual checks.
 
-Immediately before an App Store submission, run the stricter final gate. It must fail if demo credentials are still placeholders, App Store Connect credentials are unavailable, or no App Store-ready screenshot set is provided:
+Immediately before an App Store submission, run the stricter final gate. It must fail if the submission pack or review notes are still marked draft, demo credentials are still placeholders, App Store Connect credentials are unavailable, or no App Store-ready screenshot and physical-iPhone evidence set is provided:
 
 ```bash
 export APP_STORE_REVIEW_DEMO_ACCOUNT="..."
@@ -98,7 +98,7 @@ python3 scripts/check_app_store_release_pack.py \
   --screenshot-dir design/screenshots/app-store/<build-id>-ready
 ```
 
-Create the external evidence file from `docs/release/app-store/real-device-acceptance.template.json`. It must refer to the exact TestFlight build and every physical-iPhone check must be `true`. Do not commit tester evidence containing device or account details.
+Create the external evidence file from `docs/release/app-store/real-device-acceptance.template.json`. It must refer to the exact TestFlight build, identify the tester, and mark every physical-iPhone check `true`, including demo login, briefing, text fallback after denied permissions, voice, photo, sharing, confirmed write, privacy and deletion paths. Do not commit tester evidence containing device or account details.
 
 ## Privacy Nutrition Label
 
@@ -163,6 +163,7 @@ Do not submit until:
       `APP_STORE_SCREENSHOT_DIR=design/screenshots/app-store/<build-id>-ready python3 scripts/check_app_store_release_pack.py`.
 - [ ] Privacy policy URL is publicly reachable: `curl -fsSI https://health.executor.life/privacy`.
 - [ ] A production IPA or EAS build is visible in App Store Connect.
-- [ ] A physical iPhone has passed real-time dictation toggle, hold-to-talk send/cancel/text conversion, camera/photo persistence, WeChat/Xiaohongshu share handoff, confirmed database write, and deletion-request status checks.
+- [ ] A physical iPhone has passed demo login, briefing expand/collapse, Agent text conversation, text fallback after denied optional permissions, real-time dictation toggle, hold-to-talk send/cancel/text conversion, camera/photo persistence, WeChat/Xiaohongshu share handoff, confirmed database write, personal-center/privacy and deletion-request status checks.
+- [ ] Only after the same-build physical-iPhone run and final screenshot review pass, change the submission pack status to `ready for App Store submission` and remove `Draft` from the Review Notes heading.
 - [ ] `docs/release/app-store/dependency-risk-review.md` still matches a fresh production dependency audit.
 - [ ] The release machine has `APP_STORE_REVIEW_DEMO_ACCOUNT`, `APP_STORE_REVIEW_DEMO_PASSWORD`, and `APP_STORE_REVIEW_CONTACT_PHONE`, or a human has filled the equivalent Review Detail fields in App Store Connect.

@@ -15,8 +15,9 @@ The core is `seed_demo(db, ...)` so the proof test
 in-memory test DB.
 
 Usage (from backend/, venv active):
-    python scripts/seed_demo_account.py \
-        --email demo@reva.health --password Demo1234! --name 演示用户 --days 7
+    APP_STORE_REVIEW_DEMO_PASSWORD='<unique secret>' \
+        python scripts/seed_demo_account.py \
+        --email reviewer@example.com --name 演示用户 --days 7
 
 Re-runnable: if the email already exists, the user is reused and its synthetic
 data is reset (idempotent).
@@ -50,7 +51,6 @@ from app.services.onboarding_bootstrap import ensure_initial_health_loop
 FIXTURE_PATH = Path(__file__).resolve().parent.parent / "fixtures" / "demo_user_minimal.json"
 
 DEFAULT_EMAIL = "demo@reva.health"
-DEFAULT_PASSWORD = "Demo1234!"
 DEFAULT_NAME = "演示用户"
 DEFAULT_DAYS = 7
 
@@ -91,7 +91,15 @@ def _reset_synthetic_data(db: Session, user_id: int) -> None:
     db.commit()
 
 
-def _get_or_create_user(db: Session, email: str, password: str, name: str, profile_cfg: dict) -> User:
+def _get_or_create_user(
+    db: Session,
+    email: str,
+    password: str,
+    name: str,
+    profile_cfg: dict,
+    *,
+    rotate_password: bool = False,
+) -> User:
     user = db.query(User).filter(User.email == email).first()
     birth_date = date.fromisoformat(profile_cfg["birth_date"])
     gender_zh = profile_cfg.get("gender_zh", "男")
@@ -112,8 +120,19 @@ def _get_or_create_user(db: Session, email: str, password: str, name: str, profi
         db.commit()
         db.refresh(user)
     else:
-        # Reuse: refresh credentials + identity so the printed login always works.
-        user.hashed_password = AuthService.get_password_hash(password)
+        # Re-seeding data must not silently rotate a production review account.
+        # A credential change is deliberate and explicit via --rotate-password.
+        password_matches = bool(
+            user.hashed_password
+            and AuthService.verify_password(password, user.hashed_password)
+        )
+        if not password_matches and not rotate_password:
+            raise RuntimeError(
+                "existing demo account password does not match; "
+                "use --rotate-password for an intentional credential rotation"
+            )
+        if rotate_password:
+            user.hashed_password = AuthService.get_password_hash(password)
         user.name = name
         user.birth_date = birth_date
         user.gender = gender_zh
@@ -224,10 +243,11 @@ def seed_demo(
     db: Session,
     *,
     email: str = DEFAULT_EMAIL,
-    password: str = DEFAULT_PASSWORD,
+    password: str | None = None,
     name: str = DEFAULT_NAME,
     days: int = DEFAULT_DAYS,
     fixture: dict[str, Any] | None = None,
+    rotate_password: bool = False,
 ) -> dict[str, Any]:
     """Core seeder. Build a fully-populated demo user against `db` and VERIFY
     the three review surfaces are non-empty. Fails loud (raises) if any is empty.
@@ -235,9 +255,18 @@ def seed_demo(
     Returns the JSON-serializable summary dict.
     """
     days = max(1, min(int(days or DEFAULT_DAYS), 30))
+    if not password:
+        raise ValueError("a unique demo password is required")
     fixture = fixture or _load_fixture()
 
-    user = _get_or_create_user(db, email, password, name, fixture["profile"])
+    user = _get_or_create_user(
+        db,
+        email,
+        password,
+        name,
+        fixture["profile"],
+        rotate_password=rotate_password,
+    )
     _reset_synthetic_data(db, user.id)
     _inject_observations(db, user.id, fixture, days)
     _inject_timeline_seed(db, user.id, fixture)
@@ -272,7 +301,6 @@ def seed_demo(
     return {
         "user_id": user.id,
         "email": email,
-        "password": password,
         "onboarding_completed": bool(user.onboarding_completed),
         "daily_plan_actions": len(plan_actions),
         "timeline_events": len(timeline),
@@ -286,10 +314,20 @@ def seed_demo(
 def main() -> int:
     parser = argparse.ArgumentParser(description="Seed an App Store review demo account.")
     parser.add_argument("--email", default=DEFAULT_EMAIL)
-    parser.add_argument("--password", default=DEFAULT_PASSWORD)
+    parser.add_argument("--password", default=os.getenv("APP_STORE_REVIEW_DEMO_PASSWORD"))
+    parser.add_argument(
+        "--rotate-password",
+        action="store_true",
+        help="Intentionally replace an existing demo account password",
+    )
     parser.add_argument("--name", default=DEFAULT_NAME)
     parser.add_argument("--days", type=int, default=DEFAULT_DAYS, help="Days of synthetic observations (1-30)")
     args = parser.parse_args()
+    if not args.password:
+        parser.error(
+            "provide --password or APP_STORE_REVIEW_DEMO_PASSWORD; "
+            "there is no public default credential"
+        )
 
     from app.database import SessionLocal
 
@@ -301,6 +339,7 @@ def main() -> int:
             password=args.password,
             name=args.name,
             days=args.days,
+            rotate_password=args.rotate_password,
         )
     except Exception:
         db.rollback()

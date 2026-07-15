@@ -332,6 +332,12 @@ async def login_json(request: Request, login_data: UserLogin, db: Session = Depe
             detail="账户已被禁用"
         )
 
+    if not user.is_approved:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="账户尚未通过管理员审核，请等待审核通过后再登录"
+        )
+
     return _issue_token_response(user, db)
 
 

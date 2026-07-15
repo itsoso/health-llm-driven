@@ -10,6 +10,8 @@ from scripts.check_app_store_release_pack import (
     REQUIRED_FILES,
     validate_app_review_redlines,
     validate_demo_review_credentials,
+    validate_demo_account_live,
+    validate_final_submission_material_state,
     validate_privacy_policy_copy,
     validate_real_device_evidence,
     validate_release_narrative,
@@ -49,21 +51,28 @@ def _write_png(path: Path, *, width: int = 1290, height: int = 2796) -> None:
     )
 
 
-def _write_manifest(directory: Path, *, privacy_status: str = "demo") -> None:
+def _write_manifest(
+    directory: Path,
+    *,
+    privacy_status: str = "demo",
+    build_id: str | None = None,
+) -> None:
     screens = []
     for name in REQUIRED_SCREENSHOT_NAMES:
         _write_png(directory / f"{name}.png")
         screens.append({"name": name, "file": f"{name}.png", "route": "/"})
 
+    manifest = {
+        "captured_at": "2026-06-28T16:30:00Z",
+        "privacy_status": privacy_status,
+        "app_store_ready": privacy_status in {"demo", "sanitized"},
+        "screens": screens,
+    }
+    if build_id is not None:
+        manifest["build_id"] = build_id
+
     (directory / "manifest.json").write_text(
-        json.dumps(
-            {
-                "captured_at": "2026-06-28T16:30:00Z",
-                "privacy_status": privacy_status,
-                "app_store_ready": privacy_status in {"demo", "sanitized"},
-                "screens": screens,
-            }
-        ),
+        json.dumps(manifest),
         encoding="utf-8",
     )
 
@@ -154,6 +163,75 @@ def test_app_store_release_pack_final_submit_fails_loud_without_human_materials(
     assert "final submit requires real-device acceptance evidence" in result.stderr
 
 
+def test_app_store_release_pack_final_submit_rejects_screenshots_from_another_build(
+    tmp_path: Path,
+):
+    root = Path(__file__).resolve().parents[2]
+    screenshot_dir = tmp_path / "screens"
+    screenshot_dir.mkdir()
+    _write_manifest(screenshot_dir, privacy_status="demo", build_id="225")
+
+    evidence = tmp_path / "real-device.json"
+    evidence.write_text(
+        json.dumps(
+            {
+                "build_id": "226",
+                "device_model": "iPhone 15 Pro",
+                "ios_version": "18.5",
+                "tested_at": "2026-07-14T12:00:00Z",
+                "tester": "release-owner",
+                "checks": {
+                    "demo_account_login": True,
+                    "today_briefing_expand_collapse": True,
+                    "agent_text_conversation": True,
+                    "realtime_dictation_toggle": True,
+                    "hold_to_talk_send_cancel_text": True,
+                    "camera_photo_persistence": True,
+                    "wechat_share_handoff": True,
+                    "xiaohongshu_share_handoff": True,
+                    "confirmed_database_write": True,
+                    "personal_center_privacy_policy": True,
+                    "optional_permission_denial_text_chat": True,
+                    "account_deletion_status": True,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/check_app_store_release_pack.py",
+            "--final-submit",
+            "--screenshot-dir",
+            str(screenshot_dir),
+            "--real-device-evidence",
+            str(evidence),
+            "--build-id",
+            "226",
+        ],
+        cwd=root,
+        env={
+            **os.environ,
+            "APP_STORE_REVIEW_DEMO_ACCOUNT": "app-review@example.com",
+            "APP_STORE_REVIEW_DEMO_PASSWORD": "review-password",
+            "APP_STORE_REVIEW_CONTACT_PHONE": "+8613800138000",
+            "APP_STORE_REVIEW_API_BASE": "http://127.0.0.1:1",
+            "ASC_KEY_ID": "test-key",
+            "ASC_ISSUER_ID": "test-issuer",
+            "ASC_PRIVATE_KEY_BASE64": "test-private-key",
+        },
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "manifest build_id must match expected build" in result.stderr
+
+
 def test_real_device_evidence_requires_current_build_and_all_core_flows(tmp_path: Path):
     evidence = tmp_path / "real-device.json"
     evidence.write_text(
@@ -163,13 +241,19 @@ def test_real_device_evidence_requires_current_build_and_all_core_flows(tmp_path
                 "device_model": "iPhone 15 Pro",
                 "ios_version": "18.5",
                 "tested_at": "2026-07-14T12:00:00Z",
+                "tester": "release-owner",
                 "checks": {
+                    "demo_account_login": True,
+                    "today_briefing_expand_collapse": True,
+                    "agent_text_conversation": True,
                     "realtime_dictation_toggle": True,
                     "hold_to_talk_send_cancel_text": True,
                     "camera_photo_persistence": True,
                     "wechat_share_handoff": True,
                     "xiaohongshu_share_handoff": False,
                     "confirmed_database_write": True,
+                    "personal_center_privacy_policy": True,
+                    "optional_permission_denial_text_chat": True,
                     "account_deletion_status": True,
                 },
             },
@@ -192,13 +276,19 @@ def test_real_device_evidence_accepts_complete_matching_build(tmp_path: Path):
                 "device_model": "iPhone 15 Pro",
                 "ios_version": "18.5",
                 "tested_at": "2026-07-14T12:00:00Z",
+                "tester": "release-owner",
                 "checks": {
+                    "demo_account_login": True,
+                    "today_briefing_expand_collapse": True,
+                    "agent_text_conversation": True,
                     "realtime_dictation_toggle": True,
                     "hold_to_talk_send_cancel_text": True,
                     "camera_photo_persistence": True,
                     "wechat_share_handoff": True,
                     "xiaohongshu_share_handoff": True,
                     "confirmed_database_write": True,
+                    "personal_center_privacy_policy": True,
+                    "optional_permission_denial_text_chat": True,
                     "account_deletion_status": True,
                 },
             },
@@ -208,6 +298,50 @@ def test_real_device_evidence_accepts_complete_matching_build(tmp_path: Path):
     )
 
     assert validate_real_device_evidence(evidence, expected_build_id="226") == []
+
+
+def test_real_device_evidence_requires_named_tester_and_reviewer_paths(tmp_path: Path):
+    evidence = tmp_path / "real-device.json"
+    evidence.write_text(
+        json.dumps(
+            {
+                "build_id": "226",
+                "device_model": "iPhone 15 Pro",
+                "ios_version": "18.5",
+                "tested_at": "2026-07-14T12:00:00Z",
+                "checks": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    failures = validate_real_device_evidence(evidence, expected_build_id="226")
+    joined = "\n".join(failures)
+
+    assert "missing tester" in joined
+    assert "demo_account_login" in joined
+    assert "today_briefing_expand_collapse" in joined
+    assert "agent_text_conversation" in joined
+    assert "personal_center_privacy_policy" in joined
+    assert "optional_permission_denial_text_chat" in joined
+
+
+def test_final_submission_material_state_rejects_drafts():
+    failures = validate_final_submission_material_state(
+        submission_pack="Status: draft for the next App Store submission.",
+        review_notes="# App Store Review Notes Draft",
+    )
+
+    joined = "\n".join(failures)
+    assert "submission pack is not marked ready" in joined
+    assert "review notes are still marked Draft" in joined
+
+
+def test_final_submission_material_state_accepts_ready_materials():
+    assert validate_final_submission_material_state(
+        submission_pack="Status: ready for App Store submission.",
+        review_notes="# App Store Review Notes",
+    ) == []
 
 
 def test_demo_review_credentials_accept_env_for_final_submit_with_placeholder_notes():
@@ -227,6 +361,61 @@ def test_demo_review_credentials_accept_env_for_final_submit_with_placeholder_no
     )
 
     assert failures == []
+
+
+def test_live_demo_account_gate_proves_login_identity_and_seeded_review_surfaces(monkeypatch):
+    calls: list[tuple[str, str]] = []
+
+    def fake_request(url, *, method="GET", token=None, payload=None, timeout=10):
+        calls.append((method, url))
+        if url.endswith("/auth/login/json"):
+            assert payload == {"username": "reviewer@example.com", "password": "private-password"}
+            return {"access_token": "token", "user": {"id": 17}}
+        assert token == "token"
+        if url.endswith("/auth/me"):
+            return {"id": 17}
+        if url.endswith("/daily-plan/me"):
+            return {"actions": [{"title": "今日重点"}]}
+        if url.endswith("/daily-artifact/me"):
+            return {"top_action": {"title": "晨起记录"}}
+        raise AssertionError(url)
+
+    monkeypatch.setattr(
+        "scripts.check_app_store_release_pack._request_json",
+        fake_request,
+    )
+
+    failures = validate_demo_account_live(
+        "reviewer@example.com",
+        "private-password",
+        api_base="https://health.example.test/api/v1",
+    )
+
+    assert failures == []
+    assert calls == [
+        ("POST", "https://health.example.test/api/v1/auth/login/json"),
+        ("GET", "https://health.example.test/api/v1/auth/me"),
+        ("GET", "https://health.example.test/api/v1/daily-plan/me"),
+        ("GET", "https://health.example.test/api/v1/daily-artifact/me"),
+    ]
+
+
+def test_live_demo_account_gate_fails_closed_when_login_is_rejected(monkeypatch):
+    def reject_login(*_args, **_kwargs):
+        raise RuntimeError("HTTP 403")
+
+    monkeypatch.setattr(
+        "scripts.check_app_store_release_pack._request_json",
+        reject_login,
+    )
+
+    failures = validate_demo_account_live(
+        "reviewer@example.com",
+        "wrong-password",
+        api_base="https://health.example.test/api/v1",
+    )
+
+    assert "live demo account check failed" in "\n".join(failures)
 
 
 def test_demo_review_credentials_final_submit_accepts_real_values_in_notes():
@@ -344,6 +533,14 @@ def test_app_review_redlines_reject_high_confidence_review_risks():
     assert "forced permission wording" in "\n".join(failures)
     assert "unfinished or placeholder product copy" in "\n".join(failures)
     assert "unsafe medical claim wording" in "\n".join(failures)
+
+
+def test_app_review_redlines_reject_legacy_healthpilot_brand_in_permission_copy():
+    failures = validate_app_review_redlines(
+        {"mobile/hooks/useMediaPicker.ts": "请在系统设置中允许 HealthPilot 访问相册"}
+    )
+
+    assert "legacy app brand" in "\n".join(failures)
 
 
 def test_app_review_redlines_allow_current_medical_boundary_disclaimers():

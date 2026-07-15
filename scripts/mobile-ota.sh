@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# OTA 推送 mobile/ JS bundle 到已安装的 HealthPilot
+# OTA 推送 mobile/ JS bundle 到已安装的小巴
 #
 # 何时用:
 #   - 改了 .ts/.tsx/.js (JS 逻辑/UI/RN 组件) → 用本脚本, 30 秒内到设备

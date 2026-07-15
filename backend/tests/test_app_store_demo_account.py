@@ -11,6 +11,10 @@ synthetic dataset is proven to produce populated review surfaces.
 # Base.metadata BEFORE the `db` fixture runs create_all. The agenda/daily-plan
 # read chain queries action_cards; without this the in-memory schema lacks it.
 from app.models.action_card import ActionCard  # noqa: F401
+from app.models.user import User
+from app.services.auth import AuthService
+
+import pytest
 
 from scripts.seed_demo_account import seed_demo
 
@@ -38,6 +42,7 @@ def test_demo_account_surfaces_are_non_empty(db):
 
     assert summary["verification"] == "PASS"
     assert summary["user_id"] > 0
+    assert "password" not in summary
 
 
 def test_demo_seed_is_idempotent(db):
@@ -50,3 +55,15 @@ def test_demo_seed_is_idempotent(db):
     assert second["timeline_events"] > 0
     assert second["daily_artifact_top_action"]
     assert second["verification"] == "PASS"
+
+
+def test_demo_seed_does_not_silently_rotate_an_existing_password(db):
+    email = "review-password-policy@reva.health"
+    original = "unique-original-review-password"
+    seed_demo(db, email=email, password=original, name="演示", days=1)
+
+    with pytest.raises(RuntimeError, match="password"):
+        seed_demo(db, email=email, password="unexpected-new-password", name="演示", days=1)
+
+    user = db.query(User).filter(User.email == email).one()
+    assert AuthService.verify_password(original, user.hashed_password)

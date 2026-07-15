@@ -18,8 +18,12 @@ jest.mock('../../services/api', () => ({
   __esModule: true,
   default: {
     post: jest.fn().mockResolvedValue({
-      data: { share_url: 'https://health.executor.life/shared/token123' },
+      data: {
+        share_token: 'token123',
+        share_url: 'https://health.executor.life/shared/token123',
+      },
     }),
+    delete: jest.fn().mockResolvedValue({ data: { message: '已撤销分享' } }),
   },
 }));
 
@@ -73,6 +77,29 @@ describe('sharePlainText', () => {
       title: '健康 Agent',
       message: '健康 Agent\nhttps://health.executor.life/shared/token123',
     });
+  });
+
+  it('revokes the public page when the native share sheet is dismissed', async () => {
+    jest.spyOn(Share, 'share').mockResolvedValueOnce({ action: Share.dismissedAction });
+
+    const result = await sharePlainText({
+      title: '小巴 · 对话节选',
+      message: '这次没有真的分享出去',
+    });
+
+    expect(result.action).toBe(Share.dismissedAction);
+    expect(api.delete).toHaveBeenCalledWith('/shared/token123');
+  });
+
+  it('revokes the public page when opening the native share sheet fails', async () => {
+    jest.spyOn(Share, 'share').mockRejectedValueOnce(new Error('share sheet failed'));
+
+    await expect(sharePlainText({
+      title: '小巴 · 对话节选',
+      message: '系统分享失败',
+    })).rejects.toThrow('share sheet failed');
+
+    expect(api.delete).toHaveBeenCalledWith('/shared/token123');
   });
 });
 

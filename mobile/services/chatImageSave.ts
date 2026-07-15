@@ -40,12 +40,22 @@ export async function saveChatImageToLibrary(source: ChatImageSaveSource): Promi
 
   const ext = extensionFromUri(uri);
   const localUri = `${FileSystem.cacheDirectory}chat-image-${Date.now()}.${ext}`;
-  const download = await FileSystem.downloadAsync(uri, localUri, {
-    headers: source.headers,
-  });
-  const status = typeof download.status === 'number' ? download.status : 200;
-  if (status < 200 || status >= 300) {
-    throw new Error('image_download_failed');
+  let cleanupUri = localUri;
+  try {
+    const download = await FileSystem.downloadAsync(uri, localUri, {
+      headers: source.headers,
+    });
+    cleanupUri = download.uri || localUri;
+    const status = typeof download.status === 'number' ? download.status : 200;
+    if (status < 200 || status >= 300) {
+      throw new Error('image_download_failed');
+    }
+    await MediaLibrary.saveToLibraryAsync(download.uri);
+  } finally {
+    try {
+      await FileSystem.deleteAsync(cleanupUri, { idempotent: true });
+    } catch (error) {
+      if (__DEV__) console.warn('[chatImageSave] temporary file cleanup failed', error);
+    }
   }
-  await MediaLibrary.saveToLibraryAsync(download.uri);
 }

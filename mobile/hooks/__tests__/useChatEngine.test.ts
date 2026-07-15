@@ -69,15 +69,27 @@ async function* streamStartThenWait() {
 }
 
 async function* streamStartWaitForPersistenceThenDone(...args: any[]) {
-  yield { type: 'start', conversationId: 777 };
   await new Promise<void>((resolve) => {
     persistStream = resolve;
   });
+  yield { type: 'start', conversationId: 777 };
   yield {
     type: 'persisted',
     conversationId: 777,
     userMessageId: 41,
     clientTurnId: args[6],
+  };
+  yield { type: 'done', conversationId: 777, messageId: 42 };
+}
+
+async function* streamPersistsRelativeImageUrl(...args: any[]) {
+  yield { type: 'start', conversationId: 777 };
+  yield {
+    type: 'persisted',
+    conversationId: 777,
+    userMessageId: 41,
+    clientTurnId: args[6],
+    imageUrls: ['/api/v1/chat/uploads/private-photo.jpg'],
   };
   yield { type: 'done', conversationId: 777, messageId: 42 };
 }
@@ -91,7 +103,7 @@ async function* streamStartThenTimeout() {
 }
 
 async function* streamInterruptedWithoutPersistence() {
-  yield { type: 'start', conversationId: 777 };
+  yield { type: 'start' };
   yield {
     type: 'done',
     conversationId: 777,
@@ -100,8 +112,16 @@ async function* streamInterruptedWithoutPersistence() {
   };
 }
 
-async function* streamDoneExplicitlyNotPersisted() {
+async function* streamAcceptedThenEndsWithoutDone() {
+  // Compatibility path used by older gateways: agent_start is emitted only
+  // after the user message has been persisted, but request_persisted may be
+  // absent from the client-visible stream.
   yield { type: 'start', conversationId: 777 };
+  yield { type: 'token', content: '已经收到，我正在查询。' };
+}
+
+async function* streamDoneExplicitlyNotPersisted() {
+  yield { type: 'start' };
   yield {
     type: 'card',
     card: {
@@ -566,7 +586,7 @@ describe('useChatEngine', () => {
     });
   });
 
-  it('does not acknowledge or clear the composer until the user message is durably persisted', async () => {
+  it('does not acknowledge or clear the composer until the server accepts the persisted turn', async () => {
     mockStreamChat.mockImplementation(streamStartWaitForPersistenceThenDone);
     const onAccepted = jest.fn();
     const { result } = renderHook(() => useChatEngine());
@@ -576,7 +596,7 @@ describe('useChatEngine', () => {
     });
 
     await waitFor(() => {
-      expect(result.current.conversationId).toBe(777);
+      expect(mockStreamChat).toHaveBeenCalled();
     });
     expect(onAccepted).not.toHaveBeenCalled();
     expect(mockStreamChat).toHaveBeenCalledWith(
@@ -597,7 +617,26 @@ describe('useChatEngine', () => {
     await waitFor(() => {
       expect(onAccepted).toHaveBeenCalledTimes(1);
       expect(onAccepted).toHaveBeenCalledWith(true);
+      expect(result.current.conversationId).toBe(777);
     });
+  });
+
+  it('keeps a newly uploaded image visible when persistence returns a relative URL', async () => {
+    mockStreamChat.mockImplementation(streamPersistsRelativeImageUrl);
+    const { result } = renderHook(() => useChatEngine());
+
+    await act(async () => {
+      await result.current.sendMessage('请分析这张照片', [
+        { uri: 'file:///private-photo.jpg', base64: 'abc123', type: 'jpeg' },
+      ]);
+    });
+
+    expect(result.current.messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        role: 'user',
+        imageUris: ['https://example.test/api/v1/chat/uploads/private-photo.jpg'],
+      }),
+    ]));
   });
 
   it('forwards a voice transcript as the voice transport channel', async () => {
@@ -668,6 +707,33 @@ describe('useChatEngine', () => {
       completionStatus: 'interrupted',
     });
     expect(result.current.messages.filter(message => message.cardType)).toHaveLength(0);
+  });
+
+  it('keeps an accepted voice turn submitted when the reply stream ends before done', async () => {
+    mockStreamChat.mockImplementation(streamAcceptedThenEndsWithoutDone);
+    const onAccepted = jest.fn();
+    const { result } = renderHook(() => useChatEngine());
+    let accepted: boolean | undefined;
+
+    await act(async () => {
+      accepted = await result.current.sendMessage(
+        '昨天晚上我睡得怎么样？',
+        null,
+        { channel: 'voice', onAccepted } as any,
+      );
+    });
+
+    expect(accepted).toBe(true);
+    expect(onAccepted).toHaveBeenCalledTimes(1);
+    expect(onAccepted).toHaveBeenCalledWith(true);
+    expect(result.current.activeTurn).toMatchObject({
+      phase: 'interrupted',
+      recoverable: true,
+    });
+    expect(result.current.messages.find(message => message.role === 'assistant')).toMatchObject({
+      completionStatus: 'interrupted',
+      content: expect.stringContaining('已保留已接收内容'),
+    });
   });
 
   it('does not acknowledge done ids when the server explicitly says request was not persisted', async () => {
@@ -1482,14 +1548,13 @@ describe('useChatEngine', () => {
         }),
       },
     }));
-    expect(mockAsyncStorage[scopedStorageKey('chat:conversation_continuity:v2')]).toBeDefined();
+    await waitFor(() => {
+      expect(mockAsyncStorage[scopedStorageKey('chat:conversation_continuity:v2')]).toBeUndefined();
+    });
 
     await act(async () => {
       finishStream?.();
       await Promise.resolve();
-    });
-    await waitFor(() => {
-      expect(mockAsyncStorage[scopedStorageKey('chat:conversation_continuity:v2')]).toBeUndefined();
     });
   });
 

@@ -5,7 +5,7 @@
 | slug | `app-store-iphone-first-release` |
 | 创建日期 | 2026-07-14 |
 | 当前阶段 | S6 测试与部署 |
-| 状态 | testflight_pending_physical_acceptance |
+| 状态 | testflight_pending_physical_retest |
 | 负责 | Codex |
 | 目标版本 | iPhone App Store RC |
 
@@ -107,3 +107,6 @@ RequirementAdmission:
 - 对“9点到20点”这类补充回答增加确定性上下文恢复：仅在当前消息明确给出时间范围时继承最近一轮已确认的频率，避免模型把整段计划收缩成单个 09:00 提醒。
 - 生产部署:服务器 `main`=`16d0517f1`，API/数据库/Redis/Celery 均 healthy；提醒时间窗与账号删除路由均返回鉴权状态，账号删除表已执行幂等 PostgreSQL 迁移并验证存在。
 - iOS production:App Version 1.3.1，Build 226，EAS Build ID `8ad0eea2-6c0f-45ba-98c0-1c0e682c306f`；IPA 构建成功并由 Submission `448c0120-fc37-49b8-aab6-bfcd6246abe6` 上传 App Store Connect，等待 Apple 处理。
+- 真机发现语音提交回执竞态：服务端已记录/开始回复，但客户端在缺少 `request_persisted` 或最终 `done` 时把同一请求误判为发送失败，保留转写并诱导重复提交。
+- 修复后将“用户消息已被服务端接受”和“助手回复是否完整结束”拆成两个状态：新版继续优先使用 `request_persisted`，兼容链路允许带 `conversation_id` 的 `agent_start` 证明提交成功；后续流中断只标记回复可重试，不再弹发送失败或要求重复提交。
+- 回归证据：`useChatEngine` 38 项、`ChatInputBar` 42 项、语音 hooks/router 27 项、SSE parser 18 项、ChatScreen 38 项及 TypeScript 检查通过。G6 仍需在 Build 226 + 最新 production OTA 上复测真实设备语音提交。

@@ -12,6 +12,13 @@ import {
 import { synthesize as cloudSynthesize, cleanupTmpTts } from '../services/cloudTts';
 import { estimateTtsFallbackMs, shouldFinishAudioPlayback } from '../utils/audioPlayback';
 import { splitTextForCloudTts } from '../utils/ttsText';
+import {
+  bindVoiceEventHandlers,
+  isVoiceEventHandlerOwner,
+  releaseVoiceEventHandlers,
+  type VoiceEventHandlers,
+  type VoiceEventLease,
+} from '../services/voiceEventRouter';
 
 /**
  * 语音连续对话状态机.
@@ -182,6 +189,8 @@ export function useVoiceConversation() {
   // prefetch: 当前句在播时, 提前合成队列下一句的音频, 消除句间 network gap
   const preSynthRef = useRef<{ text: string; promise: Promise<string> } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const voiceEventLeaseRef = useRef<VoiceEventLease | null>(null);
+  const voiceHandlersRef = useRef<VoiceEventHandlers>({});
 
   // I Phase 2: 本次会话内成功 health_record 的录入摘要 (关闭 voice-chat 时弹 summary 卡用)
   // 记 record_type + 简短描述 + 原始 record_data (撤销用)
@@ -525,6 +534,8 @@ export function useVoiceConversation() {
           // 看到 justSubmittedRef=true 就跳过, 不再 submit.
           justSubmittedRef.current = true;
           latestPartialRef.current = '';
+          releaseVoiceEventHandlers(voiceEventLeaseRef.current);
+          voiceEventLeaseRef.current = null;
           Voice.stop().catch(() => {});
           setPlaybackMode();
           submitRef.current(text);
@@ -532,52 +543,63 @@ export function useVoiceConversation() {
       }, SILENCE_AUTO_SUBMIT_MS);
     };
 
-    Voice.onSpeechPartialResults = (e: SpeechResultsEvent) => {
-      // silence timer 已触发 submit → 接下来的 partial 全部忽略, 直到下次 startListening 重置
-      if (justSubmittedRef.current) return;
-      const val = e.value?.[0] || '';
-      if (val && val !== latestPartialRef.current) {
+    voiceHandlersRef.current = {
+      onSpeechPartialResults: (e: SpeechResultsEvent) => {
+        // silence timer 已触发 submit → 接下来的 partial 全部忽略, 直到下次 startListening 重置
+        if (justSubmittedRef.current) return;
+        const val = e.value?.[0] || '';
+        if (val && val !== latestPartialRef.current) {
+          latestPartialRef.current = val;
+          setTranscript(val);
+          armSilenceTimer();
+        }
+      },
+      onSpeechResults: (e: SpeechResultsEvent) => {
+        if (justSubmittedRef.current) return;
+        const val = e.value?.[0] || latestPartialRef.current;
         latestPartialRef.current = val;
         setTranscript(val);
         armSilenceTimer();
-      }
-    };
-    Voice.onSpeechResults = (e: SpeechResultsEvent) => {
-      if (justSubmittedRef.current) return;
-      const val = e.value?.[0] || latestPartialRef.current;
-      latestPartialRef.current = val;
-      setTranscript(val);
-      armSilenceTimer();
-    };
-    Voice.onSpeechEnd = () => {
-      // silence timer 可能已经先触发提交了 → 跳过, 不重发
-      if (silenceTimerRef.current) {
-        clearTimeout(silenceTimerRef.current);
-        silenceTimerRef.current = null;
-      }
-      if (justSubmittedRef.current) {
-        // 自然说完: 切回 playback 让后续 LLM reply TTS 走外放. 不 submit.
+      },
+      onSpeechEnd: () => {
+        // silence timer 可能已经先触发提交了 → 跳过, 不重发
+        if (silenceTimerRef.current) {
+          clearTimeout(silenceTimerRef.current);
+          silenceTimerRef.current = null;
+        }
+        if (justSubmittedRef.current) {
+          // 自然说完: 切回 playback 让后续 LLM reply TTS 走外放. 不 submit.
+          releaseVoiceEventHandlers(voiceEventLeaseRef.current);
+          voiceEventLeaseRef.current = null;
+          setPlaybackMode();
+          return;
+        }
+        const text = (latestPartialRef.current || '').trim();
+        releaseVoiceEventHandlers(voiceEventLeaseRef.current);
+        voiceEventLeaseRef.current = null;
         setPlaybackMode();
-        return;
-      }
-      const text = (latestPartialRef.current || '').trim();
-      setPlaybackMode();
-      if (text) submitRef.current(text);
-      else if (stateRef.current !== 'thinking' && stateRef.current !== 'speaking') setState('idle');
-    };
-    Voice.onSpeechError = (e: SpeechErrorEvent) => {
-      if (silenceTimerRef.current) {
-        clearTimeout(silenceTimerRef.current);
-        silenceTimerRef.current = null;
-      }
-      const msg = e.error?.message || '语音识别失败';
-      setError(msg);
-      setState('error');
-      setPlaybackMode();
+        if (text) submitRef.current(text);
+        else if (stateRef.current !== 'thinking' && stateRef.current !== 'speaking') setState('idle');
+      },
+      onSpeechError: (e: SpeechErrorEvent) => {
+        if (silenceTimerRef.current) {
+          clearTimeout(silenceTimerRef.current);
+          silenceTimerRef.current = null;
+        }
+        const msg = e.error?.message || '语音识别失败';
+        releaseVoiceEventHandlers(voiceEventLeaseRef.current);
+        voiceEventLeaseRef.current = null;
+        setError(msg);
+        setState('error');
+        setPlaybackMode();
+      },
     };
     return () => {
       if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-      Voice.destroy().then(() => Voice.removeAllListeners());
+      const ownsNativeSession = isVoiceEventHandlerOwner(voiceEventLeaseRef.current);
+      releaseVoiceEventHandlers(voiceEventLeaseRef.current);
+      voiceEventLeaseRef.current = null;
+      if (ownsNativeSession) Voice.destroy().catch(() => undefined);
       stopCurrentSpeech();
       abortRef.current?.abort();
       cleanupTmpTts().catch(() => {});
@@ -601,9 +623,13 @@ export function useVoiceConversation() {
       justSubmittedRef.current = false;  // 新一轮开始, 解锁 listener
       // 先切到 .playAndRecord, 再启动 Voice — 顺序很重要, Voice.start 依赖 session 已经就绪
       await setRecordingMode();
+      releaseVoiceEventHandlers(voiceEventLeaseRef.current);
+      voiceEventLeaseRef.current = bindVoiceEventHandlers(voiceHandlersRef.current);
       setState('listening');
       await Voice.start('zh-CN');
     } catch (e: any) {
+      releaseVoiceEventHandlers(voiceEventLeaseRef.current);
+      voiceEventLeaseRef.current = null;
       setError(String(e?.message || e));
       setState('error');
       // 失败也切回 playback, 免得下次 TTS 又走听筒
@@ -633,6 +659,8 @@ export function useVoiceConversation() {
     assistantTextRef.current = '';
     recordedItemsRef.current = [];
     abortRef.current?.abort();
+    releaseVoiceEventHandlers(voiceEventLeaseRef.current);
+    voiceEventLeaseRef.current = null;
     Voice.stop().catch(() => {});
     Voice.cancel?.().catch(() => {});
     setPlaybackMode();

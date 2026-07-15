@@ -43,7 +43,8 @@ For App Store candidate screenshots, use a dedicated demo account or a sanitized
 ```bash
 ./scripts/mobile-sim-screenshots.sh \
   --output design/screenshots/app-store/<build-id>-raw \
-  --privacy-status demo
+  --privacy-status demo \
+  --build-id <build-id>
 ```
 
 If a demo account is not available yet, a private QA set can be turned into a review-required sanitized candidate. This is a fallback, not an automatic approval:
@@ -80,13 +81,17 @@ python3 scripts/check_app_store_screenshots.py design/screenshots/app-store/<bui
 Validate an App Store candidate set:
 
 ```bash
-python3 scripts/check_app_store_screenshots.py design/screenshots/app-store/<build-id>-ready --app-store-ready
+python3 scripts/check_app_store_screenshots.py \
+  design/screenshots/app-store/<build-id>-ready \
+  --app-store-ready \
+  --build-id <build-id>
 ```
 
 The App Store-ready gate requires:
 
 - `privacy_status` is `demo` or `sanitized`.
 - `app_store_ready` is `true`.
+- `build_id` matches the exact TestFlight/App Store build under review.
 - all seven core screenshots exist in `manifest.json`.
 - each PNG uses an accepted 6.9-inch portrait size: 1260 x 2736, 1290 x 2796, or 1320 x 2868.
 - sanitized candidates created from private QA screenshots have passed human visual review before prepare.

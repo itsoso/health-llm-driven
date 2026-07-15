@@ -41,6 +41,7 @@ describe('useRealtimeDictation', () => {
     mockVoiceIsAvailable.mockResolvedValue(1);
     mockedVoice.onSpeechPartialResults = undefined;
     mockedVoice.onSpeechResults = undefined;
+    mockedVoice.onSpeechRecognized = undefined;
     mockedVoice.onSpeechEnd = undefined;
     mockedVoice.onSpeechError = undefined;
   });
@@ -224,6 +225,42 @@ describe('useRealtimeDictation', () => {
     expect(finalTranscript).toBe('停止前补齐的最终文字');
     expect(onTranscript).toHaveBeenLastCalledWith('停止前补齐的最终文字');
     expect(result.current.isDictating).toBe(false);
+  });
+
+  it('waits for the native final marker instead of submitting the first interim result', async () => {
+    const onTranscript = jest.fn();
+    const { result } = renderHook(() => useRealtimeDictation({ onTranscript }));
+
+    await act(async () => {
+      await result.current.startDictation();
+    });
+
+    let settled = false;
+    let finalTranscript = '';
+    let stopPromise!: Promise<string>;
+    act(() => {
+      stopPromise = result.current.stopDictation();
+      void stopPromise.then(value => {
+        settled = true;
+        finalTranscript = value;
+      });
+    });
+
+    await act(async () => {
+      mockedVoice.onSpeechResults({ value: ['先到达的中间结果'] });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(settled).toBe(false);
+
+    await act(async () => {
+      mockedVoice.onSpeechResults({ value: ['补齐尾字后的最终结果'] });
+      mockedVoice.onSpeechRecognized({ isFinal: true });
+      await stopPromise;
+    });
+
+    expect(finalTranscript).toBe('补齐尾字后的最终结果');
+    expect(onTranscript).toHaveBeenLastCalledWith('补齐尾字后的最终结果');
   });
 
   it('accepts final speech results that arrive after native speech-end during stop', async () => {

@@ -5,12 +5,17 @@
   "tested_at": "REPLACE_WITH_ISO_8601_TIMESTAMP",
   "tester": "REPLACE_WITH_TESTER",
   "checks": {
+    "demo_account_login": false,
+    "today_briefing_expand_collapse": false,
+    "agent_text_conversation": false,
     "realtime_dictation_toggle": false,
     "hold_to_talk_send_cancel_text": false,
     "camera_photo_persistence": false,
     "wechat_share_handoff": false,
     "xiaohongshu_share_handoff": false,
     "confirmed_database_write": false,
+    "personal_center_privacy_policy": false,
+    "optional_permission_denial_text_chat": false,
     "account_deletion_status": false
   },
   "notes": "Set a check to true only after it passes on this exact build."

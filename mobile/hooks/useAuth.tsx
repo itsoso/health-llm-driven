@@ -56,16 +56,29 @@ async function restoreSavedToken(): Promise<string | null> {
   return null;
 }
 
+function isUnauthorizedError(error: unknown): boolean {
+  return (error as { response?: { status?: number } } | null)?.response?.status === 401;
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Register 401 handler. Do not erase the persisted token here: a single
-  // incidental 401 during backend deploy/OTA reload should not log the user out.
+  const clearSession = useCallback(async () => {
+    setToken(null);
+    setUser(null);
+    await logoutApi();
+  }, []);
+
+  // A 401 from an authenticated endpoint means the persisted credential is no
+  // longer usable. Keeping it would route the user into an authenticated shell
+  // where every request fails and there is no reliable path back to login.
   useEffect(() => {
     setOnUnauthorized(() => {
+      setToken(null);
       setUser(null);
+      void logoutApi();
     });
   }, []);
 
@@ -82,11 +95,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           try {
             const me = await fetchCurrentUser();
             if (mounted) setUser(me);
-          } catch {
-            // Keep token-authenticated state. Most startup failures after an
-            // app update are transient; explicit logout is the only path that
-            // should delete the persisted token.
-            if (mounted) setUser(null);
+          } catch (error) {
+            if (isUnauthorizedError(error)) {
+              await clearSession();
+            } else if (mounted) {
+              // Preserve the token for offline/transient failures and retry on
+              // the next foreground transition.
+              setUser(null);
+            }
           }
         }
       } catch {
@@ -99,7 +115,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [clearSession]);
 
   // 回前台自愈:冷启动窗口 keychain 瞬时读失败会把人留在登录页,
   // transient 401/断网会让 user 悬空 —— 两者都不该需要手动重登。
@@ -119,13 +135,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           } else if (!user) {
             setUser(await fetchCurrentUser());
           }
-        } catch {
-          // transient — 下次回前台再试
+        } catch (error) {
+          if (isUnauthorizedError(error)) {
+            await clearSession();
+          }
         }
       })();
     });
     return () => sub.remove();
-  }, [token, user, isLoading]);
+  }, [token, user, isLoading, clearSession]);
 
   const login = useCallback(async (username: string, password: string) => {
     const result = await loginApi(username, password);

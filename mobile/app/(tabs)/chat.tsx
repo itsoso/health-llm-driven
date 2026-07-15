@@ -58,6 +58,7 @@ import type { ChatMedicalExamImportSkillResult } from '../../services/chatMedica
 import { loadAgentHomeBootstrap } from '../../services/agentHomeBootstrap';
 import { useAuth } from '../../hooks/useAuth';
 import { buildChatImageSource } from '../../utils/chatImageSource';
+import { saveChatImageToLibrary } from '../../services/chatImageSave';
 
 type SuggestionCard = {
   icon: keyof typeof Ionicons.glyphMap;
@@ -190,6 +191,33 @@ export default function ChatScreen() {
   const [sharing, setSharing] = useState(false);
   const [toolMenuVisible, setToolMenuVisible] = useState(false);
   const [todayFocusHidden, setTodayFocusHidden] = useState(false);
+
+  const saveViewingImage = useCallback(async (uri: string) => {
+    const source = buildChatImageSource(uri, authToken);
+    if (!source) {
+      Alert.alert('无法保存', '请重新登录后再试。');
+      return;
+    }
+    try {
+      await saveChatImageToLibrary(source);
+      Alert.alert('已保存到相册');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error || '');
+      if (message === 'photo_permission_denied') {
+        Alert.alert('需要照片权限', '请在 iPhone 设置中允许小巴添加照片。');
+      } else {
+        Alert.alert('保存失败', '请稍后重试。');
+      }
+    }
+  }, [authToken]);
+
+  const handleViewingImageLongPress = useCallback(() => {
+    if (!viewingImage) return;
+    Alert.alert('图片', undefined, [
+      { text: '保存到相册', onPress: () => { void saveViewingImage(viewingImage); } },
+      { text: '取消', style: 'cancel' },
+    ]);
+  }, [saveViewingImage, viewingImage]);
 
   // Context from alert / push / Siri deep-link. Read ONCE on first mount, then cleared.
   // autoSend=1 (from Siri HealthAnalysisOpenIntent) → directly send instead of prefilling.
@@ -872,11 +900,18 @@ export default function ChatScreen() {
       <Modal visible={!!viewingImage} transparent animationType="fade" onRequestClose={() => setViewingImage(null)}>
         <Pressable style={styles.imageViewerOverlay} onPress={() => setViewingImage(null)}>
           {viewingImage && (
-            <Image
-              source={buildChatImageSource(viewingImage, authToken)}
-              style={{ width: windowWidth - 32, height: windowHeight * 0.7 }}
-              contentFit="contain"
-            />
+            <Pressable
+              onPress={(event) => event.stopPropagation()}
+              onLongPress={handleViewingImageLongPress}
+              accessibilityRole="imagebutton"
+              accessibilityLabel="预览图片，长按可保存"
+            >
+              <Image
+                source={buildChatImageSource(viewingImage, authToken)}
+                style={{ width: windowWidth - 32, height: windowHeight * 0.7 }}
+                contentFit="contain"
+              />
+            </Pressable>
           )}
           <TouchableOpacity style={styles.imageViewerClose} onPress={() => setViewingImage(null)}>
             <Ionicons name="close-circle" size={32} color="#fff" />
@@ -888,10 +923,10 @@ export default function ChatScreen() {
           <Pressable style={styles.toolSheet}>
             <View style={styles.toolSheetHeader}>
               <View>
-                <Text style={txt.toolSheetTitle}>会诊工具</Text>
-                <Text style={txt.toolSheetSub}>个人中心、分享、删除等低频操作</Text>
+                <Text style={txt.toolSheetTitle}>更多操作</Text>
+                <Text style={txt.toolSheetSub}>个人中心、分享与对话管理</Text>
               </View>
-              <TouchableOpacity onPress={() => setToolMenuVisible(false)} hitSlop={8} accessibilityLabel="关闭会诊工具">
+              <TouchableOpacity onPress={() => setToolMenuVisible(false)} hitSlop={8} accessibilityLabel="关闭更多操作">
                 <Ionicons name="close" size={22} color={C.ink2} />
               </TouchableOpacity>
             </View>
