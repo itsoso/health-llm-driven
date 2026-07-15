@@ -119,6 +119,27 @@ def _normalize_thinking_steps(steps: list | None) -> list[str]:
     return out[-_MAX_THINKING_STEPS:]
 
 
+_MD_TABLE_RE = __import__("re").compile(r"^\s*\|.*\|.*\|\s*$", __import__("re").MULTILINE)
+_MD_TABLE_SEP_RE = __import__("re").compile(r"^\s*\|?\s*:?-{2,}", __import__("re").MULTILINE)
+
+
+def _answer_owns_its_visualization(answer_text: str, tools_used: list | None) -> bool:
+    """本轮 LLM 是否已自带可视化 → 该压掉冗余的关键词单日快照卡。
+
+    信号(任一命中):① 答案含 markdown 表格(≥2 表行 + 分隔行,如"睡眠与HRV对照"表);
+    ② 本轮跑过 health_analysis(深分析,正文即多段分析)。
+    这两种情况下快照卡(sleep/weight/bp…)只会与更好的正文重复且常错配窗口
+    (founder 截图:问"上周睡眠不好吗", 却贴今晚单晚快照)。
+    直接单指标速查(答案是一句话、无表)不命中 → 快照卡照常出(卡即答案)。
+    """
+    text = answer_text or ""
+    if _MD_TABLE_SEP_RE.search(text) and len(_MD_TABLE_RE.findall(text)) >= 2:
+        return True
+    if isinstance(tools_used, list) and "health_analysis" in tools_used:
+        return True
+    return False
+
+
 def _merge_card_descriptors(*groups: list | None) -> list:
     """Merge SSE card descriptors without duplicating identical payloads."""
 
@@ -821,11 +842,17 @@ async def agent_stream(
                                     suppress = set(suppress) | {
                                         "medication", "supplement", "diet",
                                     }
+                                # 分析轮(LLM 正文已自带表格/多段分析)压掉冗余单日快照卡
+                                suppress_snapshots = _answer_owns_its_visualization(
+                                    "".join(full_text_buf),
+                                    done_data.get("tools_used"),
+                                )
                                 cards = build_cards(
                                     bg_db,
                                     user_id,
                                     msg_text,
                                     suppress_intake_kinds=suppress,
+                                    suppress_snapshot_cards=suppress_snapshots,
                                 )
                                 # LLM 主动输出的卡片优先，其次保留 AgentExecutor 已写入的
                                 # system-KB evidence，再追加 query 派生卡片。历史恢复依赖

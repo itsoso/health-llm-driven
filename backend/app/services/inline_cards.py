@@ -1016,6 +1016,15 @@ _DRAFT_KIND_BY_CARD = {
     "supplement_draft": "supplement",
 }
 
+# 单日「快照卡」:纯按 query 关键词触发,拉当天单日快照。适合直接单指标速查
+# (「我昨晚睡得怎么样」——卡即答案),但在**分析轮**(LLM 已在正文里给出自己的
+# 多日对照表/可视化)就是冗余且常错配(founder 截图:问"上周睡眠不好吗", 却贴
+# 今晚单晚 8h 快照)。分析轮由调用方 suppress_snapshot_cards 压掉整类。
+# 草稿卡(*_draft)/图表(metric_chart)/复盘/议程不在此列——它们是结构化产物。
+_SNAPSHOT_CARD_TYPES = {
+    "sleep", "weight", "blood_pressure", "supplement_status", "diet", "vitals",
+}
+
 
 def recorded_intake_kinds(*card_lists: Any) -> set:
     """本轮已完成写入的摄入类 kind 集合(diet/medication/supplement)。
@@ -1056,6 +1065,7 @@ def build_cards(
     query: str,
     *,
     suppress_intake_kinds: Optional[set] = None,
+    suppress_snapshot_cards: bool = False,
 ) -> List[Dict[str, Any]]:
     """根据用户输入和 Twin 数据, 构造动态卡片列表
 
@@ -1077,6 +1087,9 @@ def build_cards(
             continue
         if _DRAFT_KIND_BY_CARD.get(card_type) in suppressed:
             dropped.append({"type": card_type, "reason": "already_recorded_this_turn"})
+            continue
+        if suppress_snapshot_cards and card_type in _SNAPSHOT_CARD_TYPES:
+            dropped.append({"type": card_type, "reason": "analysis_turn_llm_owns_visualization"})
             continue
         considered.append(card_type)
         try:
