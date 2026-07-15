@@ -77,7 +77,7 @@ RequirementAdmission:
 - [ ] R4 Agent 核心写入、语音、拍照、分享和渲染回归（自动化与模拟器已过；真机待测）。
 - [x] R5 安全、依赖、可访问性和审核材料 Gate。
 - [x] R6 commit/push、前后端部署、新 EAS production build 与 TestFlight 上传。
-- [ ] R7 在 Build 226 上完成真机 G6 并补齐 App Review 材料。
+- [ ] R7 在 Build 227 上完成真机 G6 并补齐 App Review 材料。
 
 ## Gate Ledger
 
@@ -85,10 +85,10 @@ RequirementAdmission:
 |---|---|---|
 | G1 准入 | PASS | iPhone-first 核心闭环与一等对象映射明确 |
 | G2 可行性/安全 | PASS | 已冻结范围与医疗/隐私边界 |
-| G3 测试 | PASS | 合并后后端联合回归 381 项、Mobile 全量 1717 项、TypeScript、Lint、iOS 原生模拟器构建与启动通过；全量回归见发布记录 |
+| G3 测试 | PASS | `main`=`838bfa9bb` 的 GitHub Actions run `29414534477` 28/28 jobs 一次通过；Mobile 245 suites / 1731 tests、Web 43 files / 243 tests、TypeScript、Lint、生产构建通过；Harness invariants 12/12、core 50/50、live orchestrator 5/5 通过 |
 | G4 安全 | PASS | 生产包无后台录音/持续定位；账号删除、隐私清单、写入回执 fail-closed 已复核 |
-| G5 部署健康 | PASS | 生产运行提交 `c26ddcebb`；前后端部署健康度 60/60；EAS Build 226 已上传，production OTA `7e7512c2-c017-4ea0-8521-da5a532557ec` 已发布 |
-| G6 真机验证 | BLOCKED | 必须在同一 TestFlight build 完成真实 iPhone 语音/拍照/微信与小红书分享/写入/删除状态证据 |
+| G5 部署健康 | PASS | 生产运行提交 `c26ddcebb`，前后端部署健康度 60/60；EAS Build 227 从 `838bfa9bb` 构建完成，Submission `16964993-cfdf-442d-8655-cf9104ca0235` 已被 App Store Connect 接收 |
+| G6 真机验证 | BLOCKED | 必须在同一 TestFlight Build 227 完成真实 iPhone 语音/拍照/微信与小红书分享/写入/删除状态证据 |
 
 ## Correction Block
 
@@ -127,3 +127,13 @@ RequirementAdmission:
 - 基础发布 Gate、截图 Gate、ASC 凭证 Gate 均通过。自动化严格最终 Gate 按预期仅剩三类阻断：材料仍标记 draft、Review Notes 尚未转 final、缺 Build 226 真实 iPhone 验收文件。
 - App Privacy 的逐项回答不在 App Store Connect 公共 API Key 可读范围内；`privacy-nutrition-label.draft.json` 仍需在登录态页面逐项比对并确认已发布，作为最终人工 Gate，不能由本地隐私清单或 API 404 推断已完成。
 - 当前已登记的 iPhone `suntice` 仍为 `unavailable`。因此 G6 继续 `BLOCKED`，不得用模拟器替代真实麦克风、相机/相册持久化、微信/小红书分享跳转、确认写入及账号删除状态验收，也不得点击 Submit for Review。
+
+## 2026-07-15 Build 227 Release Candidate
+
+- CI 先修复三项发布阻断：OpenAPI 生成类型漂移、orchestrator 测试桩的新参数兼容、健康建议安全分类基线；随后把 Linux 上会互相污染并超时的 timeline/today 测试拆成五个覆盖无遗漏的独立 shard。权威 run `29414534477` 在 `main`=`838bfa9bb` 上 28/28 jobs 成功。
+- Live LLM 变更闸门在仓库根环境执行：invariants 12/12、health agent core 50/50、live orchestrator 5/5 通过；临时 CI 确认变量在验证后已删除，未留作永久绕过。
+- App Store 预检与基础 release-pack gate 通过。EAS production 将远端 build number 从 226 自动递增为 227；Build ID `247e924c-3050-4981-b5b7-74e3e4e63545`，App Version 1.3.1，Git commit `838bfa9bb201491ce804ac48be789b96ffc16cfe`，构建状态 `FINISHED`。
+- EAS Submission `16964993-cfdf-442d-8655-cf9104ca0235` 已成功上传，App Store Connect 已接受二进制并进入 Apple 处理阶段；这不等于提交审核，未触发 Submit for Review。
+- 下载并检查确切 Build 227 IPA：`CFBundleVersion=227`、`UIDeviceFamily=[1]`、仅 portrait、production APNs、HealthKit、`applinks:health.executor.life`、`get-task-allow=false`；无后台模式和始终定位能力。主 App `PrivacyInfo.xcprivacy` 包含健康、健身、邮箱、用户 ID、用户内容、照片/视频、精确位置、崩溃和性能数据声明，tracking=false。
+- `Expo.plist` 指向 production channel，runtime 1.3.1，`EXUpdatesCheckOnLaunch=ALWAYS`。与 Build 226 不同，Build 227 已直接内嵌当前主干 Mobile 代码，首次启动不再依赖 OTA 才获得近期语音、流式 Markdown、图片和 UI 修复。
+- 下一闸门保持 G6 `BLOCKED`：必须安装并验证确切 TestFlight Build 227；至少覆盖拒绝权限后的文字降级、右侧实时听写开/关及提交后关闭、左侧按住说话、照片持久化、微信/小红书分享、确认写入/纠正/删除、账号删除和前后台恢复。完成前不得点击 Submit for Review。
