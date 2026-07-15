@@ -9,7 +9,7 @@ import { dispatchCard, renderServerCards } from '../components/chat/cards';
 import type { ChatCardActionDescriptor, ServerCardDescriptor } from '../components/chat/cards/types';
 import api, { BASE_URL } from '../services/api';
 import { durationBucket, emitClientEvent } from '../services/clientEvents';
-import { sanitizeChatErrorMessage } from '../utils/chatErrorMessage';
+import { sanitizeChatErrorMessage, sanitizeChatStreamToken } from '../utils/chatErrorMessage';
 import {
   createIdleAgentTurn,
   isAgentTurnTerminal,
@@ -1035,7 +1035,10 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
               });
             }
           }
-          const incoming = sanitizeChatErrorMessage(evt.content || '', '');
+          // Token 是正文分片，不是完整错误消息。必须保留首尾空格和换行，否则
+          // Markdown 表格/列表跨 token 边界时会被粘成一行，首次流式渲染失败。
+          // 真正的 provider 错误仍由 stream-token sanitizer 安全替换。
+          const incoming = sanitizeChatStreamToken(evt.content || '');
           if (incoming) {
             if (!gotFirstToken) {
               gotFirstToken = true;

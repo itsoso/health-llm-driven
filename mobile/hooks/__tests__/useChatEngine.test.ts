@@ -247,6 +247,24 @@ async function* streamLastTokenThenDoneAtomic() {
   yield { type: 'done', conversationId: 777, messageId: 2 };
 }
 
+// Markdown 的结构字符经常刚好落在 provider token 边界。客户端必须逐字保留
+// 分片首尾空白，否则表格的换行会被粘掉，直播首帧显示成生 Markdown；重新进入
+// 对话读取后端完整消息时却又恢复正常。
+const EXECUTABLE_ACTION_MARKDOWN_TOKENS = [
+  '行动拆解（晨起记录方案）：\n',
+  '| 步骤 | 操作 | 记录字段 |\n',
+  '| --- | --- | --- |\n',
+  '| 1 | 晨起后排空大小便 | - |\n',
+  '| 2 | 脱鞋站上体重秤 | weight |',
+];
+async function* streamMarkdownTokenBoundariesThenDone() {
+  yield { type: 'start', conversationId: 777 };
+  for (const content of EXECUTABLE_ACTION_MARKDOWN_TOKENS) {
+    yield { type: 'token', content };
+  }
+  yield { type: 'done', conversationId: 777, messageId: 2 };
+}
+
 // 攒批后走 error 分支: 已接收 token 必须先 flush, 再拼错误尾巴.
 async function* streamTokenBurstThenError() {
   yield { type: 'start', conversationId: 777 };
@@ -1170,11 +1188,10 @@ describe('useChatEngine', () => {
 
     // done 之后: 最后一批 token 不丢, streaming 已翻 false —— 二者同一帧完成。
     // (若非原子, 会短暂出现 content 缺 "最后一段" 但 streaming:false 的中间态。)
-    // 注: 每个 token 经 sanitizeChatErrorMessage 会 trim, 故首批尾部空格被吃掉,
-    //     两批直接相接 —— 关键是两批都在、顺序对、streaming 已 false。
+    // token 首尾空白属于正文，必须原样保留；两批都在、顺序对、streaming 已 false。
     await waitFor(() => {
       const assistant = result.current.messages.find(m => m.role === 'assistant');
-      expect(assistant?.content).toBe('## 今日状态总览这是最后一段正文。');
+      expect(assistant?.content).toBe('## 今日状态总览 这是最后一段正文。');
       expect(assistant?.streaming).toBe(false);
     });
 
@@ -1183,6 +1200,22 @@ describe('useChatEngine', () => {
     expect(assistant?.content).not.toContain('⏳');
     expect(assistant?.content).toContain('## 今日状态总览');
     expect(assistant?.content).toContain('这是最后一段正文。');
+  });
+
+  it('preserves token-boundary whitespace so Markdown renders correctly on the first pass', async () => {
+    mockStreamChat.mockImplementation(streamMarkdownTokenBoundariesThenDone);
+
+    const { result } = renderHook(() => useChatEngine());
+
+    act(() => {
+      void result.current.sendMessage('把晨起测量拆成可执行步骤');
+    });
+
+    await waitFor(() => {
+      const assistant = result.current.messages.find(m => m.role === 'assistant');
+      expect(assistant?.streaming).toBe(false);
+      expect(assistant?.content).toBe(EXECUTABLE_ACTION_MARKDOWN_TOKENS.join(''));
+    });
   });
 
   it('flushes buffered tokens before an error tail (攒批不吞已接收内容)', async () => {
