@@ -25,6 +25,33 @@ _ASYNC_CLIENT_CACHE: Dict[tuple, Any] = {}
 _CLIENT_CACHE_LOCK = threading.Lock()
 
 
+# ── 每调用硬超时 (2026-07-15: 治无界 LLM 轮冻结) ─────────────────────────────────
+# openai SDK 默认 timeout=600s + max_retries=2 → 单个卡住的请求最坏 600s×3 才放弃,
+# 生产实测出现过 362s 整回合冻结 (弱模型/代理挂住)。这里给共享客户端设显式硬边界:
+# read 帽按当日真实 llm_ms 分布定 —— 合法单轮 p95≈56s、最慢合法 88s,120s 留 ~36% 余量
+# **不误杀正常慢合成**;而卡住的请求在 read 帽处被斩,连既有 provider failover 重路由。
+# max_retries=1:留一次瞬时网络抖动重试,但不再 ×3 放大冻结。connect 帽 10s 快速判死端点。
+# 仅当 caller 未显式传 timeout/max_retries 时套用 (per-call 覆盖优先)。
+_DEFAULT_HTTP_TIMEOUT: Any = None  # 惰性构造 (import httpx 放函数内, 避免顶层依赖顺序问题)
+_DEFAULT_MAX_RETRIES = 1
+
+
+def _apply_client_defaults(client_kwargs: Dict[str, Any]) -> Dict[str, Any]:
+    """返回补齐硬超时/重试上限默认值的新 dict (不改 caller 原 dict)。"""
+    global _DEFAULT_HTTP_TIMEOUT
+    kw = dict(client_kwargs)
+    if "timeout" not in kw:
+        if _DEFAULT_HTTP_TIMEOUT is None:
+            import httpx
+
+            _DEFAULT_HTTP_TIMEOUT = httpx.Timeout(
+                connect=10.0, read=120.0, write=30.0, pool=10.0
+            )
+        kw["timeout"] = _DEFAULT_HTTP_TIMEOUT
+    kw.setdefault("max_retries", _DEFAULT_MAX_RETRIES)
+    return kw
+
+
 def _client_cache_key(client_kwargs: Dict[str, Any]) -> tuple:
     """稳定 memo key:client 级 kwarg 全参与 (排序去顺序敏感)。
 
@@ -45,7 +72,7 @@ def _get_shared_sync_client(client_kwargs: Dict[str, Any]):
         if client is None:
             from openai import OpenAI
 
-            client = OpenAI(**client_kwargs)
+            client = OpenAI(**_apply_client_defaults(client_kwargs))
             _SYNC_CLIENT_CACHE[key] = client
             logger.info(
                 "[OpenAI Provider] 新建共享同步客户端 base_url=%s (连接池复用)",
@@ -69,7 +96,7 @@ def _get_shared_async_client(client_kwargs: Dict[str, Any]):
         if client is None:
             from openai import AsyncOpenAI
 
-            client = AsyncOpenAI(**client_kwargs)
+            client = AsyncOpenAI(**_apply_client_defaults(client_kwargs))
             _ASYNC_CLIENT_CACHE[key] = client
             logger.info(
                 "[OpenAI Provider] 新建共享异步客户端 base_url=%s (连接池复用)",

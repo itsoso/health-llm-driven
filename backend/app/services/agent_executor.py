@@ -2324,6 +2324,21 @@ def _write_tool_completed(tool_name: str, args: Any, result: Any) -> bool:
 _NON_WRITE_RECORD_TYPES: frozenset[str] = frozenset({"garmin_sync"})
 
 
+# Apple 健康(HealthKit)数据只能由 iPhone 上的 App 在前台读取后**上传**到后端 ——
+# 后端物理上无法主动"拉取"HealthKit。弱模型会把"同步 apple healthkit"塌缩成
+# record_type='garmin_sync',触发 Garmin 同步、并让 LLM 谎报"后台正在拉取 Apple
+# Health"(结构性 honesty 违规:该动作不可能为真)。命中此意图 → 返回确定性真话指引,
+# 绝不入队 garmin sync、绝不谎称后台拉取。锚在用户原话(非模型参数),不受弱模型塌缩影响。
+_HEALTHKIT_SYNC_RE = re.compile(
+    r"(healthkit|health\s*kit|apple\s*health|苹果\s*健康|苹果健康数据)", re.I
+)
+
+
+def _is_healthkit_sync_intent(text: Optional[str]) -> bool:
+    """用户原话是否明确指向 Apple 健康/HealthKit 同步(而非 Garmin/通用同步)。"""
+    return bool(text) and bool(_HEALTHKIT_SYNC_RE.search(text))
+
+
 def _write_tool_attempted(tool_name: str, args: Any) -> bool:
     """Return whether this invocation crossed a write boundary, even if it failed."""
     if tool_name not in _WRITE_RECEIPT_TOOL_NAMES:
@@ -2945,11 +2960,21 @@ def _looks_like_medical_report_image_context(text: str) -> bool:
     return any(keyword in normalized for keyword in _MEDICAL_REPORT_IMAGE_KEYWORDS)
 
 
-def _record_write_failed_user_message(record_text: str) -> str:
+def _record_intent_needs_detail_message(record_text: str) -> str:
+    """fast-record 被路由但 0 工具执行 = **没有发生任何写入尝试**(模型没吐出有效记录调用,
+    通常因为内容太笼统,如"记录饮食"没说吃了什么)。
+
+    诚实双约束:① 绝不谎报成功(honesty 硬闸,与旧行为一致);② 也不该谎称"没有成功写入
+    数据库"—— 什么都没写过、根本没到端点,说"写库失败"会误导用户以为发生了 DB 错误
+    (founder 2026-07-14 实测:'记录饮食' 被误报写库失败)。如实说"还没记下来"+ 请补具体。"""
     text = (record_text or "").strip()
+    hint = "(比如「早餐燕麦粥一碗+鸡蛋2个」「喝水300ml」「俯卧撑20个」)"
     if text:
-        return f"我识别到你想记录：{text}。但这次没有成功写入数据库，请重新提交或点确认记录。"
-    return "我识别到你想记录健康数据，但这次没有成功写入数据库，请重新提交或点确认记录。"
+        return (
+            f"我看你想记录「{text}」,但还没记下来 —— 需要更具体一点我才能准确记:"
+            f"具体是什么、多少?{hint}你补充一下,或点确认记录。"
+        )
+    return f"我看你想记录一条健康数据,但还没记下来 —— 你想记什么、多少?{hint}"
 
 
 def _normalize_diet_meal_type(value: Any) -> Optional[str]:
@@ -6293,7 +6318,7 @@ class AgentExecutor:
                         if not final_text.strip():
                             final_text = "我这次没有收到模型的有效回复，请稍后重试或切换模型。"
                     if self._prefer_fast_record_model and tool_executed_count == 0:
-                        final_text = _record_write_failed_user_message(message)
+                        final_text = _record_intent_needs_detail_message(message)
                         streamed_to_client = False
                     if streamed_to_client and final_text.startswith(streamed_text):
                         # 正文已实时下发,只补 interrupted notice 等未流式的后缀。
@@ -6392,7 +6417,7 @@ class AgentExecutor:
             self._prefer_fast_record_model and tool_executed_count == 0
         )
         if record_intent_no_tool:
-            fail_closed_reply = _record_write_failed_user_message(message)
+            fail_closed_reply = _record_intent_needs_detail_message(message)
             if full_reply.strip() != fail_closed_reply:
                 full_reply = fail_closed_reply
             logger.warning(
@@ -9429,6 +9454,18 @@ class AgentExecutor:
         # 里同步 def 拉 Garmin,10–90s 冻死 event loop、全程无进度 → 手机永久转圈)。
         # 新执行模型:本地 precondition fail-loud → Celery enqueue → 乐观 ack 立即返回。
         if rtype == "garmin_sync":
+            # HealthKit(Apple 健康)不是 Garmin,后端拉不了 —— 弱模型把两者都塌缩成
+            # garmin_sync。命中 Apple 健康意图 → 返回真话指引(打开 App 前台上传),
+            # 绝不入队 Garmin 同步、绝不谎称"后台正在拉取 Apple Health"。
+            if _is_healthkit_sync_intent(getattr(self, "_current_turn_user_message", "")):
+                # 条件化措辞(safety 评审):前台同步对未授权/未连接用户会静默 skip,
+                # 所以不能无条件承诺"会上传"。已连接→打开 App 自动传;未连接→先去连接。
+                return (
+                    "Apple 健康(HealthKit)的数据是由你 iPhone 上的 App 在前台读取后上传的,"
+                    "后端没法主动去拉取。如果你已经在设置里连接了 Apple 健康,打开 App 在前台"
+                    "停留几秒,它会自动把最新数据上传上来;如果还没连接,先到「设置 → 设备」"
+                    "连接 Apple 健康。传好之后我就能用这些数据帮你查看和分析了。"
+                )
             return await self._trigger_garmin_sync()
 
         record_map = {

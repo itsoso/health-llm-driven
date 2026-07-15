@@ -300,9 +300,13 @@ class TestOpenAIProvider:
         mock_instance = MagicMock()
         with patch("openai.OpenAI", return_value=mock_instance) as mock_cls:
             client = p._get_client()
-            mock_cls.assert_called_once_with(
-                api_key="sk-test", base_url="https://proxy.com/v1"
-            )
+            # 基础 kwargs + 硬超时默认 (2026-07-15: 消无界 LLM 轮冻结) 一并注入。
+            assert mock_cls.call_count == 1
+            _, kwargs = mock_cls.call_args
+            assert kwargs["api_key"] == "sk-test"
+            assert kwargs["base_url"] == "https://proxy.com/v1"
+            assert kwargs["max_retries"] == 1
+            assert "timeout" in kwargs
             assert p._client is client
             assert client is mock_instance
 

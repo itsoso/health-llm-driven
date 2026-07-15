@@ -146,7 +146,9 @@ async def test_repeated_client_turn_replays_without_executing_the_agent_twice(
         for event in second
         if event.get("event") == "token"
     )
-    assert "没有成功写入数据库" in second_text
+    # record 意图但 0 工具执行 → 如实"还没记下来"(不谎报成功、也不谎称写库失败)
+    assert "还没记下来" in second_text
+    assert "没有成功写入数据库" not in second_text
     assert "只执行一次" not in second_text
 
 

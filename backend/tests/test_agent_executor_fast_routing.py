@@ -18,7 +18,7 @@ from app.services.agent_executor import (
     _build_fast_record_messages,
     _is_fast_eligible_turn,
     _looks_like_medical_report_image_context,
-    _record_write_failed_user_message,
+    _record_intent_needs_detail_message,
 )
 from app.services.llm import model_registry as reg
 
@@ -33,9 +33,17 @@ def test_generic_or_food_photo_prompts_skip_medical_report_ocr():
     assert _looks_like_medical_report_image_context("体检化验单指标导入") is True
 
 
-def test_record_write_fail_closed_message_is_user_visible():
-    assert "没有成功写入数据库" in _record_write_failed_user_message("午餐吃了牛肉面")
-    assert "请重新提交" in _record_write_failed_user_message("")
+def test_record_intent_needs_detail_message_is_honest_and_actionable():
+    # fast-record 0 工具 = 从未写入。honesty 双约束:①不谎报成功 ②不谎称"写库失败"。
+    msg = _record_intent_needs_detail_message("午餐吃了牛肉面")
+    assert "还没记下来" in msg  # 如实:未记录
+    assert "牛肉面" in msg  # 回显用户意图
+    # 绝不谎报成功,也不谎称发生了 DB 写入失败(什么都没写过)
+    for forbidden in ("已记录", "已经完成", "写入成功", "没有成功写入数据库", "写库失败"):
+        assert forbidden not in msg
+    empty = _record_intent_needs_detail_message("")
+    assert "还没记下来" in empty
+    assert "没有成功写入数据库" not in empty
 
 
 @pytest.mark.parametrize(

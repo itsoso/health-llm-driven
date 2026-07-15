@@ -1391,7 +1391,8 @@ def _generate_daily_briefing_for_user(user_id: int, target_date: date):
 
         # 睡眠
         sleep = garmin.sleep_score
-        sleep_label = "优秀" if (sleep and sleep >= 80) else ("良好" if (sleep and sleep >= 60) else "待改善")
+        # 缺值必须显式"无数据"(对齐 ❓ emoji);否则 None 会 fall through 到"待改善"= 误导性坏读数
+        sleep_label = "无数据" if sleep is None else ("优秀" if sleep >= 80 else ("良好" if sleep >= 60 else "待改善"))
         sleep_emoji = _status_emoji(sleep, 80, 60, higher_is_better=True)
         lines.append(f"| 睡眠 | {sleep or '-'}分 | {sleep_emoji} {sleep_label} |")
 
@@ -1419,13 +1420,13 @@ def _generate_daily_briefing_for_user(user_id: int, target_date: date):
         # 压力
         stress = garmin.stress_level
         stress_emoji = _status_emoji(stress, 40, 60, higher_is_better=False)
-        stress_label = "正常" if (stress and stress <= 40) else ("偏高" if (stress and stress <= 60) else "高")
+        stress_label = "无数据" if stress is None else ("正常" if stress <= 40 else ("偏高" if stress <= 60 else "高"))
         lines.append(f"| 压力 | {stress or '-'} | {stress_emoji} {stress_label} |")
 
         # 身体电量
         battery = garmin.body_battery_most_charged
         battery_emoji = _status_emoji(battery, 80, 50, higher_is_better=True)
-        battery_label = "充沛" if (battery and battery >= 80) else ("中等" if (battery and battery >= 50) else "偏低")
+        battery_label = "无数据" if battery is None else ("充沛" if battery >= 80 else ("中等" if battery >= 50 else "偏低"))
         lines.append(f"| 身体电量 | 峰值{battery or '-'} | {battery_emoji} {battery_label} |")
 
         # 饮水

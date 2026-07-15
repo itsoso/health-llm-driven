@@ -216,7 +216,7 @@ plan 结构:
                                  "diet", "supplement", "supplement_group", "rhinitis",
                                  "waist", "sleep", "excretion",
                                  "mood", "medication", "illness", "symptom",
-                                 "garmin_sync", "reminder", "goal"],
+                                 "garmin_sync", "reminder", "goal", "event"],
                         "description": """记录类型:
 - water: 饮水 ("喝了杯水" / "喝了咖啡")
 - diet: 饮食 ("早餐吃了…" / "吃了牛排")
@@ -236,7 +236,8 @@ plan 结构:
 - garmin_sync: 触发 Garmin 数据立即同步
 - reminder: 设置提醒
 - goal: 设置健康目标 ("从今天开始每天快走30分钟" / "90天把腰围降到82cm")
-- event: 生活事件/行程节点 (出发/落地/到店/药品送达/发现症状的时刻)。**带发生时间**,时间线总结靠它;occurred_at 直接放用户原话("下午"/"刚才"/"21:07"/ISO),后端确定性折算,绝不自己编时刻""",
+- event: 生活事件/行程节点 (出发/落地/到店/药品送达/发现症状的时刻)。**带发生时间**,时间线总结靠它;occurred_at 直接放用户原话("下午"/"刚才"/"21:07"/ISO),后端确定性折算,绝不自己编时刻。
+  裸陈述的行程/状态句直接记 event,别犹豫、别回问、别误当查询: "到杭州了"→{"title":"到达杭州"}、"飞机准备起飞"→{"title":"航班起飞"}、"在去公司路上"→{"title":"前往公司途中"}、"明天12:30飞机CA1714飞杭州"→{"title":"航班 CA1714 飞杭州","occurred_at":"明天12:30"}""",
                     },
                     "data": {
                         "type": "object",
