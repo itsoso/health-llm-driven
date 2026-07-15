@@ -124,5 +124,6 @@ RequirementAdmission:
 - 5 张新截图已上传到 App Store Connect 的 `en-US / APP_IPHONE_67` 集合，并通过 API 回读确认数量为 5。Fastlane Precheck 在排除 API Key 暂不支持的 IAP 检查后全部通过，无占位文本、坏链接、竞品或未来功能承诺问题。
 - 下载并检查实际 EAS IPA：版本 1.3.1、Build 226、iPhone-only、portrait-only、production APNs、HealthKit 和 `applinks:health.executor.life` entitlement 正常；无后台模式、始终定位说明，`PrivacyInfo.xcprivacy` 存在。
 - App Review 登录路径的文字键盘修复已合入并推送 `main`=`2945e1b2d`，production OTA 更新组 `1a8a7aba-3281-4caa-a561-ff2edb88b12d` 已发布到 runtime 1.3.1；登录回归 2 项和 TypeScript 检查通过。
-- 基础发布 Gate、截图 Gate、ASC 凭证 Gate 均通过。严格最终 Gate 按预期仅剩三类阻断：材料仍标记 draft、Review Notes 尚未转 final、缺 Build 226 真实 iPhone 验收文件。
+- 基础发布 Gate、截图 Gate、ASC 凭证 Gate 均通过。自动化严格最终 Gate 按预期仅剩三类阻断：材料仍标记 draft、Review Notes 尚未转 final、缺 Build 226 真实 iPhone 验收文件。
+- App Privacy 的逐项回答不在 App Store Connect 公共 API Key 可读范围内；`privacy-nutrition-label.draft.json` 仍需在登录态页面逐项比对并确认已发布，作为最终人工 Gate，不能由本地隐私清单或 API 404 推断已完成。
 - 当前已登记的 iPhone `suntice` 仍为 `unavailable`。因此 G6 继续 `BLOCKED`，不得用模拟器替代真实麦克风、相机/相册持久化、微信/小红书分享跳转、确认写入及账号删除状态验收，也不得点击 Submit for Review。
