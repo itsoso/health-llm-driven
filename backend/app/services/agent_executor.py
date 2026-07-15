@@ -3014,6 +3014,19 @@ def _record_intent_needs_detail_message(record_text: str) -> str:
     return f"我看你想记录一条健康数据,但还没记下来 —— 你想记什么、多少?{hint}"
 
 
+def _destructive_or_sync_not_performed_message(message: str) -> str:
+    """破坏性(删/改/撤销)或同步意图被路由但 0 工具执行 = 动作**未执行**。
+
+    honesty(与 record 版同源、加层不减层):破坏性/同步意图从 fast 路径排除后(留强模型),
+    若强模型这一轮既没调起对应工具、又没被写回执诚实闸接住(0 工具 = 从未尝试),必须如实
+    说"没执行成功、数据无改动",绝不谎报已删/已改/已同步。写回执诚实闸只管**尝试过**的写
+    (count≥1);这条补上**从未尝试**(count==0)的破坏性/同步意图缺口。"""
+    return (
+        "这次我没有执行成功 —— 没有调起对应的删除/修改/同步动作,你的数据没有任何改动。"
+        "请再说清楚一点(比如要删哪一条、改成什么),我重试。"
+    )
+
+
 def _normalize_diet_meal_type(value: Any) -> Optional[str]:
     if value in (None, "", []):
         return None
@@ -3646,6 +3659,38 @@ _SIMPLE_QUERY_INTENT_RE = re.compile(
     r"今天|昨天|本周|这周|最近|昨晚|列出|显示|告诉我|我的.{0,6}(数据|记录|情况|状态))"
 )
 
+# 破坏性(删/改/撤销)+ 同步 意图 —— 这类工具决策弱 fast 模型不可靠:生产实测(2026-07-14)
+# 「删除早餐/删除重复」「帮我同步/同步garmin」被降到 qwen3.6-flash 后反复失败(没吐出
+# 对的 tool call → 0 工具 → 诚实守卫报错),而强模型(qwen3.7-max)在 23:19 同句 status=complete
+# 自证可靠。命中 → **三条 fast 路径统一排除**(_prefer_fast_record_model / _is_fast_eligible_turn /
+# _maybe_fast_route_tool_round),留强模型做工具决策。误报只损失一点延迟(强模型更慢但更对),
+# 不损正确性 —— 对破坏性/同步操作,可靠 >> 快。同步类命中后仍由 A2 HealthKit 分支 / garmin_sync
+# 异步 job 各自正确落地;删除类命中后由强模型可靠调 health_manage(未来接删除确认卡)。
+_DESTRUCTIVE_OR_SYNC_INTENT_RE = re.compile(
+    r"(删除|删掉|删了|移除|去掉|撤销|清掉|修改|改成|改为|更新|调整|更正"
+    r"|同步|sync|拉取.{0,4}数据|刷新.{0,4}数据)",
+    re.I,
+)
+
+
+def _needs_reliable_tool_model(message: Optional[str]) -> bool:
+    """破坏性(删/改/撤销)或同步意图 → 工具决策必须用强模型(fast 模型不可靠,生产实证)。
+
+    先排除**分析/建议**语境:"综合分析…我该怎么**调整**""**更新**一下认知"里的 调整/更新/修改
+    是建议动词、不是记录级删改,不该被判成破坏性(否则误伤分析轮的工具决策快路由)。分析类
+    本就走强模型答正文,工具决策轮该保留既有 fast 优化。真正的记录级删改("删除早餐""修改
+    早餐内容")不含分析词,不受影响。"""
+    if not message:
+        return False
+    if _ADVICE_OR_ANALYSIS_RE.search(message):
+        return False
+    # 疑问句("我删除早餐了吗?""同步了吗?""有更新吗?")= 查询,不是破坏性命令 —— 与 record
+    # 路径同门(_RECORD_INTERROGATIVE_GUARD_RE)。否则 backstop 会把这类查询的有效回答误
+    # 覆盖成"我没执行成功"(方向安全但困惑);record 路径 2026-07-13 turn-6334 正为此加了此门。
+    if _RECORD_INTERROGATIVE_GUARD_RE.search(message):
+        return False
+    return bool(_DESTRUCTIVE_OR_SYNC_INTENT_RE.search(message))
+
 
 def _is_fast_eligible_turn(
     message: str,
@@ -3665,6 +3710,9 @@ def _is_fast_eligible_turn(
     if has_images or has_file:
         return False
     if _ADVICE_OR_ANALYSIS_RE.search(text):
+        return False
+    # 破坏性/同步意图 → 必须强模型做工具决策(弱 fast 不可靠),整轮不降 fast。
+    if _needs_reliable_tool_model(text):
         return False
     return bool(_RECORD_INTENT_RE.search(text) or _SIMPLE_QUERY_INTENT_RE.search(text))
 
@@ -4970,6 +5018,8 @@ class AgentExecutor:
             and not bool(_ADVICE_OR_ANALYSIS_RE.search(message or ""))
             # 疑问句("喝了多少水"/"吃了什么")= 查询,不是记录 —— 见守卫正则注释。
             and not bool(_RECORD_INTERROGATIVE_GUARD_RE.search(message or ""))
+            # 破坏性(删/改/撤销)不走 fast 记录路径 —— 弱模型删改不可靠,留强模型。
+            and not _needs_reliable_tool_model(message or "")
         )
         # 2026-07-02: FAST-MODEL 路由 — 简单记录/查询回合走最快的可靠工具调用模型,
         # 建议/分析/复盘等仍用用户偏好的质量模型 (qwen3.7-plus)。
@@ -6447,6 +6497,10 @@ class AgentExecutor:
                     if self._prefer_fast_record_model and tool_executed_count == 0:
                         final_text = _record_intent_needs_detail_message(message)
                         streamed_to_client = False
+                    elif _needs_reliable_tool_model(message or "") and tool_executed_count == 0:
+                        # 破坏性/同步意图但 0 工具执行 = 动作未执行 → 诚实覆盖(加层不减层)。
+                        final_text = _destructive_or_sync_not_performed_message(message)
+                        streamed_to_client = False
                     if streamed_to_client and final_text.startswith(streamed_text):
                         # 正文已实时下发,只补 interrupted notice 等未流式的后缀。
                         tail = final_text[len(streamed_text):]
@@ -6543,6 +6597,13 @@ class AgentExecutor:
         record_intent_no_tool = bool(
             self._prefer_fast_record_model and tool_executed_count == 0
         )
+        # 破坏性/同步意图从 fast-record 集排除后(留强模型),其 0-工具 缺口在此补上,
+        # 与 record_intent_no_tool 加层不减层(不与之重叠:record 集已被上面判掉)。
+        destructive_or_sync_no_tool = bool(
+            not record_intent_no_tool
+            and _needs_reliable_tool_model(message or "")
+            and tool_executed_count == 0
+        )
         if record_intent_no_tool:
             fail_closed_reply = _record_intent_needs_detail_message(message)
             if full_reply.strip() != fail_closed_reply:
@@ -6550,6 +6611,17 @@ class AgentExecutor:
             logger.warning(
                 "[agent_executor] RECORD INTENT but 0 tools executed — possible silent "
                 "data loss (model may have claimed success without writing). user=%s msg=%r",
+                user_id,
+                (message or "")[:80],
+            )
+        elif destructive_or_sync_no_tool:
+            fail_closed_reply = _destructive_or_sync_not_performed_message(message)
+            if full_reply.strip() != fail_closed_reply:
+                full_reply = fail_closed_reply
+            logger.warning(
+                "[agent_executor] DESTRUCTIVE/SYNC INTENT but 0 tools executed — action "
+                "not performed (model may have claimed 已删/已改/已同步 without acting). "
+                "user=%s msg=%r",
                 user_id,
                 (message or "")[:80],
             )
@@ -7515,6 +7587,11 @@ class AgentExecutor:
         # 豁免 —— 只有下面 _turn_any_tool_executed 门放行的**首个工具决策轮**会被降 fast,
         # 答案轮由该门 + round_tools=[] 保证仍落在显式模型上。
         if self._prefer_fast_record_model or self._fast_route_simple_turn:
+            return None
+        # 破坏性(删/改/撤销)/ 同步意图 → 工具决策留强模型(弱 fast 不可靠,生产实证:
+        # 「帮我同步」「删除早餐」被降 fast 后反复失败;强模型 23:19 同句 status=complete)。
+        # 这是 sync 簇的实际失败路径(「同步」不在 record/query 意图正则里 → 只经此工具轮快路由)。
+        if _needs_reliable_tool_model(getattr(self, "_current_turn_user_message", "")):
             return None
         # 只降**首个工具决策轮**: 默认路径下合成轮仍带 tools, 一旦跑过工具就留强模型
         # (安全: 工具后那一轮多半是写医疗正文的合成轮)。首轮直接答文本→安全兜底丢弃重合成。
