@@ -133,7 +133,7 @@ RequirementAdmission:
 - CI 先修复三项发布阻断：OpenAPI 生成类型漂移、orchestrator 测试桩的新参数兼容、健康建议安全分类基线；随后把 Linux 上会互相污染并超时的 timeline/today 测试拆成五个覆盖无遗漏的独立 shard。权威 run `29414534477` 在 `main`=`838bfa9bb` 上 28/28 jobs 成功。
 - Live LLM 变更闸门在仓库根环境执行：invariants 12/12、health agent core 50/50、live orchestrator 5/5 通过；临时 CI 确认变量在验证后已删除，未留作永久绕过。
 - App Store 预检与基础 release-pack gate 通过。EAS production 将远端 build number 从 226 自动递增为 227；Build ID `247e924c-3050-4981-b5b7-74e3e4e63545`，App Version 1.3.1，Git commit `838bfa9bb201491ce804ac48be789b96ffc16cfe`，构建状态 `FINISHED`。
-- EAS Submission `16964993-cfdf-442d-8655-cf9104ca0235` 已成功上传，App Store Connect 已接受二进制并进入 Apple 处理阶段；这不等于提交审核，未触发 Submit for Review。
+- EAS Submission `16964993-cfdf-442d-8655-cf9104ca0235` 已成功上传；Apple 处理完成后通过 App Store Connect API 回读 Build 227 为 `VALID`，`expired=false`，`usesNonExemptEncryption=false`。版本 1.3.1 已从 Build 226 切换并绑定 Build 227，状态仍为 `PREPARE_FOR_SUBMISSION`；这不等于提交审核，未触发 Submit for Review。
 - 下载并检查确切 Build 227 IPA：`CFBundleVersion=227`、`UIDeviceFamily=[1]`、仅 portrait、production APNs、HealthKit、`applinks:health.executor.life`、`get-task-allow=false`；无后台模式和始终定位能力。主 App `PrivacyInfo.xcprivacy` 包含健康、健身、邮箱、用户 ID、用户内容、照片/视频、精确位置、崩溃和性能数据声明，tracking=false。
 - `Expo.plist` 指向 production channel，runtime 1.3.1，`EXUpdatesCheckOnLaunch=ALWAYS`。与 Build 226 不同，Build 227 已直接内嵌当前主干 Mobile 代码，首次启动不再依赖 OTA 才获得近期语音、流式 Markdown、图片和 UI 修复。
 - 下一闸门保持 G6 `BLOCKED`：必须安装并验证确切 TestFlight Build 227；至少覆盖拒绝权限后的文字降级、右侧实时听写开/关及提交后关闭、左侧按住说话、照片持久化、微信/小红书分享、确认写入/纠正/删除、账号删除和前后台恢复。完成前不得点击 Submit for Review。
