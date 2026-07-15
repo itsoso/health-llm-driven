@@ -120,3 +120,32 @@ def test_pure_question_item_rejected_second_layer():
     result = classify_intake_intent("午餐吃了啥")
     assert result.kind == "unknown"
     assert result.text != "啥"  # 绝不带纯疑问 token 落草稿
+
+
+@pytest.mark.parametrize("query", [
+    # founder 2026-07-14 截图实锤:整句被误判成 diet 草稿
+    "下次不吃那个牛肋骨面了，我感觉里边有一定的兴奋剂，罂粟啥的，我吃完晚上就睡不着觉了，昨晚2点才睡着",
+    "下次不喝奶茶了",
+    "别再吃火锅了太上火",
+    "我不想吃晚饭了",
+    # 以食物为病因的症状吐槽(无记录动词)
+    "这碗面吃完我就拉肚子了",
+])
+def test_intake_reflection_and_complaint_never_draft(query):
+    """否定/吐槽/症状反馈绝不落 intake 写草稿(不是记一餐)。"""
+    result = classify_intake_intent(query)
+    assert result.kind not in ("diet", "medication", "supplement", "water"), \
+        f"{query!r} 是反思/吐槽,不应产出记录草稿,实为 {result.kind}"
+
+
+@pytest.mark.parametrize(("query", "kind"), [
+    # 真记录带轻微症状注释不能被误杀(有明确记录动词 "吃了")
+    ("晚饭吃了牛肉面，吃完有点反酸", "diet"),
+    ("晚餐吃了牛肋骨面", "diet"),
+    ("记录午餐 鸡胸肉200g", "diet"),
+    ("早上吃了替普瑞酮胶囊", "medication"),
+])
+def test_real_records_with_notes_survive_reflection_guard(query, kind):
+    """否定/吐槽守卫不得误伤带注释的真实记录。"""
+    result = classify_intake_intent(query)
+    assert result.kind == kind, f"{query!r} 应为 {kind},实为 {result.kind}"

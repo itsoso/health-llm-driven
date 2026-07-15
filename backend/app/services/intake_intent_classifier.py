@@ -159,6 +159,13 @@ def classify_intake_intent(query: Any) -> IntakeIntent:
     if not _has_any(normalized, DIET_MANAGEMENT_MARKERS) and _is_intake_question(normalized):
         return IntakeIntent("unknown", 0.3, "intake_question", raw)
 
+    # 否定/吐槽守卫(2026-07-14 founder 截图: "下次不吃那个牛肋骨面了…我吃完
+    # 晚上就睡不着觉了" 被误判成 diet 草稿, 整句塞进 food_items)。反思("下次不
+    # 吃X了")/决心("再也不喝")/以食物为病因的症状吐槽("吃完就睡不着/拉肚子")
+    # 都不是记一餐/一次摄入 —— 与提问守卫同层, 绝不落 intake 写草稿。
+    if not _has_any(normalized, DIET_MANAGEMENT_MARKERS) and _is_intake_negation_or_complaint(normalized):
+        return IntakeIntent("unknown", 0.3, "intake_reflection", raw)
+
     if _has_any(normalized, DIET_MANAGEMENT_MARKERS):
         return IntakeIntent("diet_management", 0.95, "diet_management", raw)
 
@@ -274,6 +281,33 @@ def _looks_like_supplement(raw: str, normalized: str) -> bool:
                 return True
             continue
         if lowered in normalized:
+            return True
+    return False
+
+
+# 摄入否定:反思/决心不再吃喝(未来时否定),不是当次记录。
+_INTAKE_NEGATION_RE = re.compile(
+    r"(?:下次|以后|再也|从此|今后)(?:都)?不(?:吃|喝|碰)"
+    r"|(?:下次|以后|再也|从此|今后)?(?:都)?别(?:吃|喝|碰)"
+    r"|不(?:应该|想|该|能|要|会|再)(?:吃|喝|碰)"
+    r"|不(?:吃|喝|碰)\S{0,10}了"
+)
+# 以食物为病因的症状吐槽词(含用户对食物质量的怀疑)。
+_INTAKE_SYMPTOM_RE = re.compile(
+    r"睡不着|失眠|睡不好|拉肚子|腹泻|胃疼|胃痛|反酸|烧心|恶心|想吐|呕吐|"
+    r"过敏|难受|不舒服|头晕|心悸|上头|兴奋剂|罂粟"
+)
+# 明确「记一餐/一次摄入」的记录结构 —— 有它就是真记录, 症状吐槽守卫放行。
+_INTAKE_LOG_VERB_RE = re.compile(r"记录|打卡|打个卡|吃了|点了|吃的是|服用了|喝了(?!.{0,3}就)")
+
+
+def _is_intake_negation_or_complaint(normalized: str) -> bool:
+    if _INTAKE_NEGATION_RE.search(normalized):
+        return True
+    # 症状吐槽:有症状/病因词且是摄入语境,但没有明确记录结构 → 判反馈而非记录。
+    # (保护真记录:"晚饭吃了牛肉面, 吃完有点反酸" 有 "吃了" → 不误杀。)
+    if _INTAKE_SYMPTOM_RE.search(normalized) and re.search(r"吃|喝", normalized):
+        if not _INTAKE_LOG_VERB_RE.search(normalized):
             return True
     return False
 
