@@ -1,6 +1,8 @@
 # App Store Review Notes Draft
 
 > Demo account credentials stay outside git. At final submit, provide them through `APP_STORE_REVIEW_DEMO_ACCOUNT` and `APP_STORE_REVIEW_DEMO_PASSWORD`.
+>
+> App Store Connect version 1.3.1 already contains the demo account, password, reviewer contact and these review notes. This checked-in draft intentionally retains placeholders so secrets are not committed; change the heading to final only after Build 226 physical-iPhone G6 passes.
 
 ## Reviewer Access
 

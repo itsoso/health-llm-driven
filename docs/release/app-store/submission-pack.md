@@ -11,7 +11,7 @@ Status: draft for the next App Store submission.
 | SKU | `life.executor.health` |
 | App name | `小巴` |
 | Internal product name | `中和知微`(公司:睿为健康)|
-| Primary language | Simplified Chinese |
+| App Store Connect primary locale | English (U.S.) record with Simplified Chinese customer-facing metadata |
 | Category | Health & Fitness |
 | Privacy policy URL | `https://health.executor.life/privacy` |
 
@@ -105,6 +105,16 @@ Create the external evidence file from `docs/release/app-store/real-device-accep
 Use `docs/release/app-store/privacy-nutrition-label.draft.json` as the working source. App Store Connect remains the final source of truth after manual entry.
 
 ## Screenshot Set
+
+Build 226 current App Store Connect set (uploaded and API-verified on 2026-07-15):
+
+1. Agent home and today's priority.
+2. Expanded today action and decision basis.
+3. Agent conversation with rendered Markdown and message timestamps.
+4. Mobile-first health record entry points.
+5. Health archive import.
+
+The uploaded set uses the demo account, contains no private user health data, and targets `APP_IPHONE_67` at 1290 x 2796. The settings screenshot containing the demo login identifier and the privacy-policy screenshot were validated locally but intentionally excluded from marketing assets.
 
 Use `docs/release/app-store/screenshot-runbook.md`. Required first pass:
 

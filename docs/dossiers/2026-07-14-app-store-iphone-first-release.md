@@ -4,8 +4,8 @@
 |---|---|
 | slug | `app-store-iphone-first-release` |
 | 创建日期 | 2026-07-14 |
-| 当前阶段 | S6 测试与部署 |
-| 状态 | testflight_ota_pending_physical_retest |
+| 当前阶段 | S7 上线验证 |
+| 状态 | app_store_connect_ready_pending_physical_g6 |
 | 负责 | Codex |
 | 目标版本 | iPhone App Store RC |
 
@@ -106,7 +106,7 @@ RequirementAdmission:
 - 新增时间窗原子提醒:支持 `start_time + end_time + interval_minutes`，09:00–20:00 每 90 分钟确定性生成 8 个时点；同一用户重复提交幂等复用已有记录。
 - 对“9点到20点”这类补充回答增加确定性上下文恢复：仅在当前消息明确给出时间范围时继承最近一轮已确认的频率，避免模型把整段计划收缩成单个 09:00 提醒。
 - 生产部署:服务器 `main`=`16d0517f1`，API/数据库/Redis/Celery 均 healthy；提醒时间窗与账号删除路由均返回鉴权状态，账号删除表已执行幂等 PostgreSQL 迁移并验证存在。
-- iOS production:App Version 1.3.1，Build 226，EAS Build ID `8ad0eea2-6c0f-45ba-98c0-1c0e682c306f`；IPA 构建成功并由 Submission `448c0120-fc37-49b8-aab6-bfcd6246abe6` 上传 App Store Connect，等待 Apple 处理。
+- iOS production:App Version 1.3.1，Build 226，EAS Build ID `8ad0eea2-6c0f-45ba-98c0-1c0e682c306f`；IPA 构建成功并由 Submission `448c0120-fc37-49b8-aab6-bfcd6246abe6` 上传 App Store Connect，Apple 处理状态为 `VALID`，已绑定版本 1.3.1。
 - 真机发现语音提交回执竞态：服务端已记录/开始回复，但客户端在缺少 `request_persisted` 或最终 `done` 时把同一请求误判为发送失败，保留转写并诱导重复提交。
 - 修复后将“用户消息已被服务端接受”和“助手回复是否完整结束”拆成两个状态：新版继续优先使用 `request_persisted`，兼容链路允许带 `conversation_id` 的 `agent_start` 证明提交成功；后续流中断只标记回复可重试，不再弹发送失败或要求重复提交。
 - 回归证据：`useChatEngine` 38 项、`ChatInputBar` 42 项、语音 hooks/router 27 项、SSE parser 18 项、ChatScreen 38 项及 TypeScript 检查通过。G6 仍需在 Build 226 + 最新 production OTA 上复测真实设备语音提交。
@@ -115,3 +115,14 @@ RequirementAdmission:
 - 修复图片饮食识别后的对话纠正：明确的“修改早餐/午餐/晚餐为……”现在以用户原话中的日期、餐次和新食物定位原记录；恰好一条候选时转成 `health_manage update`，零条或多条候选只查询不写入，模型误发 `health_record` 也不会创建重复饮食。
 - 裸露的 `health_manage` 参数不再被 `meal_type` 误判成新饮食；同参 `health_manage(operation=list)` 回合内只执行一次，`update/delete` 继续走写入回执状态机。食物变化后沿用饮食 API 的纠正规则，清空旧识别营养值与 AI provenance，并向用户明确回复“已更新早餐”。
 - 发布证据：代码运行提交与生产均为 `bc9254e60`，后端部署健康度 60/60；重放远端并行提交后联合回归 348 项通过，Ruff 与 Python 编译通过。生产错误记录 `diet_records#821` 已按原请求修正为“一碗小米粥 一个蔬菜饼”，旧 730 kcal 与宏量营养估算已清空，`source=user_corrected`。
+
+## 2026-07-15 App Store Connect Readiness
+
+- 从当前 `main` 构建 iPhone 17 Pro Release 模拟器包，确认正式包不包含开发环境浮动调试入口；使用 Computer Use 逐页验证小巴首页、今日行动、历史 Agent 对话、健康记录、档案导入和隐私政策。
+- 使用演示账号生成无私人健康数据的 Build 226 截图候选；最终营销集合保留首页、今日行动、Agent 对话、健康记录、档案导入 5 张，均为 1290 x 2796，`privacy_status=demo`，截图 Gate 通过。含演示邮箱的设置页与隐私政策页未上传为营销截图。
+- App Store Connect 版本 1.3.1 已绑定 Build 226；Build 状态 `VALID`，审核账号、密码、联系人和 Review Notes 均已填写；版本描述、关键词、支持 URL、营销 URL和推广文本均已填写。
+- 5 张新截图已上传到 App Store Connect 的 `en-US / APP_IPHONE_67` 集合，并通过 API 回读确认数量为 5。Fastlane Precheck 在排除 API Key 暂不支持的 IAP 检查后全部通过，无占位文本、坏链接、竞品或未来功能承诺问题。
+- 下载并检查实际 EAS IPA：版本 1.3.1、Build 226、iPhone-only、portrait-only、production APNs、HealthKit 和 `applinks:health.executor.life` entitlement 正常；无后台模式、始终定位说明，`PrivacyInfo.xcprivacy` 存在。
+- App Review 登录路径的文字键盘修复已合入并推送 `main`=`2945e1b2d`，production OTA 更新组 `1a8a7aba-3281-4caa-a561-ff2edb88b12d` 已发布到 runtime 1.3.1；登录回归 2 项和 TypeScript 检查通过。
+- 基础发布 Gate、截图 Gate、ASC 凭证 Gate 均通过。严格最终 Gate 按预期仅剩三类阻断：材料仍标记 draft、Review Notes 尚未转 final、缺 Build 226 真实 iPhone 验收文件。
+- 当前已登记的 iPhone `suntice` 仍为 `unavailable`。因此 G6 继续 `BLOCKED`，不得用模拟器替代真实麦克风、相机/相册持久化、微信/小红书分享跳转、确认写入及账号删除状态验收，也不得点击 Submit for Review。
