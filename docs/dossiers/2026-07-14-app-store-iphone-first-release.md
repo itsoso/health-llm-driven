@@ -85,7 +85,7 @@ RequirementAdmission:
 |---|---|---|
 | G1 准入 | PASS | iPhone-first 核心闭环与一等对象映射明确 |
 | G2 可行性/安全 | PASS | 已冻结范围与医疗/隐私边界 |
-| G3 测试 | PASS | `main`=`838bfa9bb` 的 GitHub Actions run `29414534477` 28/28 jobs 一次通过；Mobile 245 suites / 1731 tests、Web 43 files / 243 tests、TypeScript、Lint、生产构建通过；Harness invariants 12/12、core 50/50、live orchestrator 5/5 通过 |
+| G3 测试 | PASS | 当前 `main`=`56875570b` 的 GitHub Actions run `29417247062` 28/28 jobs 通过；Mobile 245 suites / 1731 tests、Web 43 files / 243 tests、TypeScript、Lint、生产构建通过；Harness invariants 12/12、core 50/50、live orchestrator 5/5 通过 |
 | G4 安全 | PASS | 生产包无后台录音/持续定位；账号删除、隐私清单、写入回执 fail-closed 已复核 |
 | G5 部署健康 | PASS | 生产运行提交 `c26ddcebb`，前后端部署健康度 60/60；EAS Build 227 从 `838bfa9bb` 构建完成，Submission `16964993-cfdf-442d-8655-cf9104ca0235` 已被 App Store Connect 接收 |
 | G6 真机验证 | BLOCKED | 必须在同一 TestFlight Build 227 完成真实 iPhone 语音/拍照/微信与小红书分享/写入/删除状态证据 |
@@ -137,3 +137,11 @@ RequirementAdmission:
 - 下载并检查确切 Build 227 IPA：`CFBundleVersion=227`、`UIDeviceFamily=[1]`、仅 portrait、production APNs、HealthKit、`applinks:health.executor.life`、`get-task-allow=false`；无后台模式和始终定位能力。主 App `PrivacyInfo.xcprivacy` 包含健康、健身、邮箱、用户 ID、用户内容、照片/视频、精确位置、崩溃和性能数据声明，tracking=false。
 - `Expo.plist` 指向 production channel，runtime 1.3.1，`EXUpdatesCheckOnLaunch=ALWAYS`。与 Build 226 不同，Build 227 已直接内嵌当前主干 Mobile 代码，首次启动不再依赖 OTA 才获得近期语音、流式 Markdown、图片和 UI 修复。
 - 下一闸门保持 G6 `BLOCKED`：必须安装并验证确切 TestFlight Build 227；至少覆盖拒绝权限后的文字降级、右侧实时听写开/关及提交后关闭、左侧按住说话、照片持久化、微信/小红书分享、确认写入/纠正/删除、账号删除和前后台恢复。完成前不得点击 Submit for Review。
+
+## 2026-07-15 Final Compliance Delta
+
+- Apple 2026 年新增 Health & Fitness / Medical 类应用的受监管医疗器械声明。按小巴“不诊断、不预防或治疗疾病、不替代医疗器械、不处方或决定药物剂量”的发布边界，本版本应在 App Store Connect 选择 `Regulated Medical Devices: No`；若实际判断为 `Yes`，必须停止提交并进入独立法规审查。
+- 最终发布检查新增两个人工确认：`APP_STORE_PRIVACY_RESPONSES_PUBLISHED=1` 只可在 App Privacy 全量答案与 `privacy-nutrition-label.draft.json` 对齐并点击 Publish 后设置；`APP_STORE_REGULATED_MEDICAL_DEVICE_STATUS=no` 只可在 App Information 保存上述声明后设置。新增 7 项单测，发布包草稿 Gate 和 iOS 配置 Gate 均通过。
+- 用 Build 227 运行严格 final-submit Gate，确认现有 `226-ready` 截图 manifest 会因 build 不一致被拒绝。Apple 要求截图准确反映当前核心体验；本项目继续采用更严格的同 Build 证据，不通过改 manifest 绕过，待真机可用后从 Build 227 重新确认或采集截图。
+- App Store Connect 浏览器会话当前返回登录失败，未代替发布负责人登录或提交声明。已上传的 Build 227 保持 `VALID`、绑定 1.3.1 且未 Submit for Review。
+- 当前剩余四项：Build 227 真实 iPhone G6、Build 227 截图证据、App Privacy 发布确认、受监管医疗器械状态 `No`。上述四项未完成前，submission pack 和 Review Notes 必须保持 Draft。

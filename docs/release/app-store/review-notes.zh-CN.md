@@ -35,6 +35,8 @@ The standard iPhone release does not include an Apple Watch companion app, Rokid
 
 The app provides health records, trend explanation, lifestyle suggestions and action drafts. It does not provide diagnosis, emergency triage, prescriptions, treatment plans or medication dosage changes. Users are directed to qualified clinicians for medical decisions and emergency services for urgent symptoms.
 
+App Store Connect declaration: No. 小巴 is not a regulated medical device and does not claim to replace one or to diagnose, prevent or treat disease.
+
 ## Account Deletion
 
 The in-app path is:

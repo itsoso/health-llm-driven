@@ -92,6 +92,8 @@ export APP_STORE_REVIEW_DEMO_PASSWORD="..."
 export APP_STORE_REVIEW_CONTACT_PHONE="+8613800138000"
 export APP_STORE_BUILD_ID="..."
 export APP_STORE_REAL_DEVICE_EVIDENCE="/secure/path/real-device-acceptance.json"
+export APP_STORE_PRIVACY_RESPONSES_PUBLISHED="1"
+export APP_STORE_REGULATED_MEDICAL_DEVICE_STATUS="no"
 
 python3 scripts/check_app_store_release_pack.py \
   --final-submit \
@@ -103,6 +105,16 @@ Create the external evidence file from `docs/release/app-store/real-device-accep
 ## Privacy Nutrition Label
 
 Use `docs/release/app-store/privacy-nutrition-label.draft.json` as the working source. App Store Connect remains the final source of truth after manual entry.
+
+Before final submission, compare every App Store Connect data type and purpose with the checked-in declaration, click Publish, and set `APP_STORE_PRIVACY_RESPONSES_PUBLISHED=1` only after the published product-page preview is visible.
+
+## Regulated Medical Device Declaration
+
+小巴 is not a regulated medical device. It supports personal health records, trend explanation and lifestyle action drafts, but does not claim to diagnose, prevent or treat disease, replace a medical device, prescribe treatment, or determine medication dosage.
+
+Because the app is categorized as Health & Fitness and is intended for United States availability, App Store Connect requires an explicit declaration. In `App Information -> App Store Regulations & Permits -> Regulated Medical Devices`, select `No`, save it, then set `APP_STORE_REGULATED_MEDICAL_DEVICE_STATUS=no` on the release machine. A `yes` value must stop this release and trigger a separate regulatory review.
+
+Official requirement: https://developer.apple.com/help/app-store-connect/manage-app-information/declare-regulated-medical-device-status
 
 ## Screenshot Set
 
@@ -173,6 +185,8 @@ Do not submit until:
       `APP_STORE_SCREENSHOT_DIR=design/screenshots/app-store/<build-id>-ready python3 scripts/check_app_store_release_pack.py`.
 - [ ] Privacy policy URL is publicly reachable: `curl -fsSI https://health.executor.life/privacy`.
 - [ ] A production IPA or EAS build is visible in App Store Connect.
+- [ ] App Privacy answers exactly match `privacy-nutrition-label.draft.json`, have been published, and the product-page preview has been reviewed.
+- [ ] App Information declares `Regulated Medical Devices: No` for this release; any `Yes` determination stops submission pending regulatory review.
 - [ ] A physical iPhone has passed demo login, briefing expand/collapse, Agent text conversation, text fallback after denied optional permissions, real-time dictation toggle, hold-to-talk send/cancel/text conversion, camera/photo persistence, WeChat/Xiaohongshu share handoff, confirmed database write, personal-center/privacy and deletion-request status checks.
 - [ ] Only after the same-build physical-iPhone run and final screenshot review pass, change the submission pack status to `ready for App Store submission` and remove `Draft` from the Review Notes heading.
 - [ ] `docs/release/app-store/dependency-risk-review.md` still matches a fresh production dependency audit.

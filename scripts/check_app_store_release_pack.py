@@ -61,6 +61,7 @@ OFFICIAL_REFERENCE_URLS = [
     "https://developer.apple.com/support/offering-account-deletion-in-your-app/",
     "https://developer.apple.com/help/app-store-connect/reference/screenshot-specifications/",
     "https://developer.apple.com/help/app-store-connect/manage-app-privacy/app-privacy-details/",
+    "https://developer.apple.com/help/app-store-connect/manage-app-information/declare-regulated-medical-device-status",
     "https://developer.apple.com/app-store/review/guidelines/",
 ]
 
@@ -80,6 +81,8 @@ DEMO_CREDENTIAL_LINES = [
 ]
 REVIEW_CONTACT_PHONE_ENV = "APP_STORE_REVIEW_CONTACT_PHONE"
 REVIEW_CONTACT_PHONE_RE = re.compile(r"^\+[1-9]\d{1,14}(?:[\s-]\d+)*$")
+APP_STORE_PRIVACY_RESPONSES_PUBLISHED_ENV = "APP_STORE_PRIVACY_RESPONSES_PUBLISHED"
+REGULATED_MEDICAL_DEVICE_STATUS_ENV = "APP_STORE_REGULATED_MEDICAL_DEVICE_STATUS"
 REAL_DEVICE_EVIDENCE_ENV = "APP_STORE_REAL_DEVICE_EVIDENCE"
 APP_STORE_BUILD_ID_ENV = "APP_STORE_BUILD_ID"
 DEMO_API_BASE_ENV = "APP_STORE_REVIEW_API_BASE"
@@ -475,6 +478,45 @@ def validate_final_submission_material_state(
     return failures
 
 
+def validate_app_store_privacy_publication(
+    *,
+    final_submit: bool,
+    env: Mapping[str, str] = os.environ,
+) -> list[str]:
+    if not final_submit:
+        return []
+    if env.get(APP_STORE_PRIVACY_RESPONSES_PUBLISHED_ENV, "").strip() != "1":
+        return [
+            "final submit requires APP_STORE_PRIVACY_RESPONSES_PUBLISHED=1 after the "
+            "App Store Connect privacy responses have been compared with "
+            "privacy-nutrition-label.draft.json and published"
+        ]
+    return []
+
+
+def validate_regulated_medical_device_declaration(
+    *,
+    final_submit: bool,
+    env: Mapping[str, str] = os.environ,
+) -> list[str]:
+    if not final_submit:
+        return []
+
+    status = env.get(REGULATED_MEDICAL_DEVICE_STATUS_ENV, "").strip().lower()
+    if not status:
+        return [
+            "final submit requires APP_STORE_REGULATED_MEDICAL_DEVICE_STATUS=no after "
+            "App Store Connect records the regulated medical device declaration"
+        ]
+    if status != "no":
+        return [
+            "release scope declares the app is not a regulated medical device; set "
+            "APP_STORE_REGULATED_MEDICAL_DEVICE_STATUS=no only after selecting No in "
+            "App Store Connect, or stop submission and complete a regulatory review"
+        ]
+    return []
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -595,6 +637,8 @@ def main() -> int:
                 review_notes=review_notes,
             )
         )
+        failures.extend(validate_app_store_privacy_publication(final_submit=True))
+        failures.extend(validate_regulated_medical_device_declaration(final_submit=True))
     if args.final_submit and not demo_credential_failures:
         credentials = _resolved_demo_credentials(review_notes, os.environ)
         if credentials is None:

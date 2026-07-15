@@ -9,11 +9,13 @@ from pathlib import Path
 from scripts.check_app_store_release_pack import (
     REQUIRED_FILES,
     validate_app_review_redlines,
+    validate_app_store_privacy_publication,
     validate_demo_review_credentials,
     validate_demo_account_live,
     validate_final_submission_material_state,
     validate_privacy_policy_copy,
     validate_real_device_evidence,
+    validate_regulated_medical_device_declaration,
     validate_release_narrative,
 )
 
@@ -161,6 +163,8 @@ def test_app_store_release_pack_final_submit_fails_loud_without_human_materials(
     assert "final submit requires replacing demo account placeholders" in result.stderr
     assert "missing App Store Connect credentials" in result.stderr
     assert "final submit requires real-device acceptance evidence" in result.stderr
+    assert "APP_STORE_PRIVACY_RESPONSES_PUBLISHED=1" in result.stderr
+    assert "APP_STORE_REGULATED_MEDICAL_DEVICE_STATUS=no" in result.stderr
 
 
 def test_app_store_release_pack_final_submit_rejects_screenshots_from_another_build(
@@ -341,6 +345,61 @@ def test_final_submission_material_state_accepts_ready_materials():
     assert validate_final_submission_material_state(
         submission_pack="Status: ready for App Store submission.",
         review_notes="# App Store Review Notes",
+    ) == []
+
+
+def test_regulated_medical_device_declaration_is_required_for_final_submit():
+    failures = validate_regulated_medical_device_declaration(
+        final_submit=True,
+        env={},
+    )
+
+    assert "APP_STORE_REGULATED_MEDICAL_DEVICE_STATUS=no" in "\n".join(failures)
+
+
+def test_regulated_medical_device_declaration_accepts_not_regulated_status():
+    assert validate_regulated_medical_device_declaration(
+        final_submit=True,
+        env={"APP_STORE_REGULATED_MEDICAL_DEVICE_STATUS": "no"},
+    ) == []
+
+
+def test_regulated_medical_device_declaration_rejects_regulated_status_for_this_release():
+    failures = validate_regulated_medical_device_declaration(
+        final_submit=True,
+        env={"APP_STORE_REGULATED_MEDICAL_DEVICE_STATUS": "yes"},
+    )
+
+    assert "release scope declares the app is not a regulated medical device" in "\n".join(failures)
+
+
+def test_regulated_medical_device_declaration_is_not_required_for_draft_checks():
+    assert validate_regulated_medical_device_declaration(
+        final_submit=False,
+        env={},
+    ) == []
+
+
+def test_app_store_privacy_publication_is_required_for_final_submit():
+    failures = validate_app_store_privacy_publication(
+        final_submit=True,
+        env={},
+    )
+
+    assert "APP_STORE_PRIVACY_RESPONSES_PUBLISHED=1" in "\n".join(failures)
+
+
+def test_app_store_privacy_publication_accepts_explicit_confirmation():
+    assert validate_app_store_privacy_publication(
+        final_submit=True,
+        env={"APP_STORE_PRIVACY_RESPONSES_PUBLISHED": "1"},
+    ) == []
+
+
+def test_app_store_privacy_publication_is_not_required_for_draft_checks():
+    assert validate_app_store_privacy_publication(
+        final_submit=False,
+        env={},
     ) == []
 
 

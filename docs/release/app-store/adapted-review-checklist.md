@@ -29,6 +29,8 @@ Before upload or submit for review, the release owner must check:
 - Any paywall, subscription, or purchase copy uses Apple-compliant wording and does not route to external payment.
 - Medical boundary is visible: 小巴 provides health records, trend interpretation, and lifestyle suggestions, not diagnosis, emergency triage, prescriptions, or medication-dose decisions.
 - The standard binary is iPhone portrait only and does not contain Watch, Rokid, Siri intents or background location capabilities.
+- App Privacy responses match the checked-in nutrition-label declaration and have been published, not merely saved as a draft.
+- App Information declares the regulated medical device status. This release must be `No`; a `Yes` assessment requires regulatory evidence and blocks submission.
 - A physical iPhone has passed both voice paths, photo persistence, database write verification, and WeChat/Xiaohongshu share handoff.
 
 ## Borrowed Practices
@@ -49,6 +51,7 @@ The Kuaishou review checklist is useful for Aheng in four ways:
 | Forced permissions | Onboarding, recording, HealthKit, notification prompts | Contextual request only; no app-wide blocking copy |
 | Empty or unfinished pages | Settings, detail routes, dynamic cards | No dead-end route in submitted build |
 | Unsafe medical claims | 小巴 chat, DynamicView cards, health reports | Medical boundary copy plus deterministic safety rules |
+| Missing regulatory declaration | App Information, Health & Fitness category | Explicit `Regulated Medical Devices: No` confirmation or stop for regulatory review |
 | Reviewer cannot reproduce core flow | Review Notes, demo account, seed data | Final-submit gate and manual reviewer walkthrough |
 
 ## Skill Sedimentation

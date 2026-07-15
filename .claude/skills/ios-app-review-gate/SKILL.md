@@ -27,6 +27,7 @@ Use this skill as the final App Store review gate for `mobile/`. It converts App
    ```
 5. Visually inspect screenshots. Sanitized screenshots from private QA are not ready until `prepare_app_store_screenshots.py --confirm-sanitized-reviewed` has been run after human review.
 6. Verify reviewer access: demo credentials replaced, login succeeds, seeded data exists, and the reviewer can reach every flow named in Review Notes without MFA, risk-control blocks, or blank pages.
+7. For Health & Fitness or Medical category apps distributed in the US, UK, or EU/EEA, verify the App Store Connect regulated medical device declaration. This release must declare `No`; a `Yes` determination is a stop condition requiring regulatory review and evidence.
 
 ## Redlines
 
@@ -56,5 +57,6 @@ Stop before submission when:
 - Any virtual-good/payment/redeem-code language appears without an IAP decision.
 - Health guidance implies diagnosis, treatment, prescription, or dosage adjustment.
 - Permission denial dead-ends the whole app instead of the specific feature.
+- App Privacy responses are unpublished or the regulated medical device declaration is missing.
 
 This skill is based on an internal Kuaishou checklist adapted for 阿衡. Treat that checklist as operational experience, not Apple policy; verify current policy against Apple documentation when changing hard gates.

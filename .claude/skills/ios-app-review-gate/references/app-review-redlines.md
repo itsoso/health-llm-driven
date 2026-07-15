@@ -20,6 +20,7 @@ This reference adapts the attached Kuaishou App Review checklist to 阿衡. It i
 - Dynamic UI cards and Agent actions disclose review-relevant functionality and do not hide executable features.
 - Permission-denied states preserve the app shell and show a feature-scoped fallback.
 - If third-party login is introduced, Sign in with Apple requirements are checked before submission.
+- App Privacy answers are published and the regulated medical device status is explicitly declared for every required region. 小巴's current release must declare `No`.
 - If UGC, lottery, mini apps, H5 games, or plugin marketplaces are introduced, run a separate product/legal review before App Review.
 
 ## Current Project Gates
