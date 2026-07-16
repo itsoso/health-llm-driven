@@ -103,6 +103,7 @@
 - 发布前加固：单个模型响应的完整写计划在任何工具执行前封存；恢复时 `planned / in_flight / uncertain` 一律 fail-closed；会话图片引用、删除和 tombstone 清理使用跨线程/跨进程生命周期锁并在文件锁后读取最新 DB 引用；非持久化 Agent 请求在 HTTP 与 Mobile 消息终态上统一为可重试中断。
 - 语音与工具恢复加固：服务端语音转写改为 DashScope Qwen ASR 主路径，OpenAI Whisper 仅在独立隐私开关显式启用时备用，并设置供应商/总请求超时；裸写工具文本必须匹配用户明确意图；显式“删除最后一餐”在写 checkpoint 前用未截断查询解析为精确 ID，`list` 永不隐式删除，含混/否定/教学式请求均 fail-closed。
 - 2026-07-16 中间失败恢复加固：生产 `run_790af0ae63724445` 先收到一次参数不完整的 `health_manage` 失败事件，随后以 `record_id=829` 重试删除成功并取得 verified receipt；服务端持久化正文与终态均为成功，但 Mobile 曾把中间失败事件提前拼进永久正文。客户端现仅用工具事件更新进度/状态，整轮失败继续由后端终态文本或流级 `error` 呈现，避免“先失败、后成功”同时出现在一条回复中。
+- 2026-07-16 北京时间饮食查询加固：生产 `run_2076443f42b949f6` 把“重新列出今天吃的东西”误生成为 `health_manage update`，且后续 `run_47f2d072877a4fc2` 把“今天”错误解析为历史日期 `2026-07-14`。现于两条 Agent 工具执行链的写计划封存前加入只读查询护栏：无明确写命令时，饮食调用确定性降级为 `list`；今天/昨天/前天由服务端按北京时间覆盖模型日期。明确修改或删除仍走原写回执状态机。
 
 ## G3 · 测试闸
 
@@ -111,6 +112,7 @@
 - 静态检查：Mobile `tsc --noEmit`、Backend `ruff` / `py_compile`、`git diff --check` 均通过。
 - 2026-07-14 增量回归：Backend 受影响面 `243 passed`；Mobile 全量 `244 suites / 1720 tests passed`；DashScope 合成音频经真实配置返回非空转写；iPhone 17 Pro Simulator 原生构建 `0 errors` 并完成页面截图验收。
 - 2026-07-16 中间工具失败恢复回归：新增失败事件后 verified retry 的 SSE 顺序用例；`chatStream`、`useChatEngine`、`useVoiceConversation` 共 `60 passed`，Mobile TypeScript、受影响文件 ESLint 与 `git diff --check` 通过。
+- 2026-07-16 北京时间饮食查询回归：只读误更新、模型旧日期覆盖、“饮食记录”名词消歧、明确写入不误降级及写回执状态机共 `68 passed`。
 - 真实 PostgreSQL：主业务连接池保持未占用；turn lock 专用池 `pool_size=8 / max_overflow=0`；跨 worker 全局槽上限 `16`，超限 fail-closed。
 - 文档闸：42 份 Dossier 一致性通过；system-map/doc drift 检查通过。
 - **裁决：PASS**。模拟器视觉与真机音频验证归入 T8 / G6，不替代自动化测试结论。

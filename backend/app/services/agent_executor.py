@@ -3659,6 +3659,62 @@ _SIMPLE_QUERY_INTENT_RE = re.compile(
     r"今天|昨天|本周|这周|最近|昨晚|列出|显示|告诉我|我的.{0,6}(数据|记录|情况|状态))"
 )
 
+# 明确的只读取数命令。模型偶尔会把“晚餐是昨天的，重新列出今天饮食”理解成
+# 修改 record_date；没有用户写命令时，必须在写计划封存前降级为查询。
+_QUERY_ONLY_COMMAND_RE = re.compile(
+    r"(重新列出|列出|查询|查看|看一下|显示|告诉我|汇总|"
+    r"吃了什么|吃的什么|喝了多少|有哪些|是多少|多少)"
+)
+_QUERY_ONLY_MUTATION_RE = re.compile(
+    r"(删除|删掉|删了|移除|去掉|撤销|清掉|修改|更正|改成|改为|改到|"
+    r"更新|调整为|挪到|移到|归到|记下|打卡|新增|录入|保存)"
+)
+_QUERY_ONLY_RECORD_ACTION_RE = re.compile(
+    r"(?:^|[，,；;。]|帮我|请|给我|再|并|然后)\s*记录"
+    r"(?:一下|下来|为|到|成|我|饮水|喝水|早餐|早饭|午餐|午饭|晚餐|晚饭|"
+    r"加餐|体重|症状|用药|服药|补剂|睡眠|运动|吃|喝|\d|[一二两三四五六七八九十百半])"
+)
+_QUERY_RELATIVE_DATE_RE = re.compile(r"(今天|今日|昨天|昨日|前天)")
+
+
+def _query_only_health_manage_scope(message: Optional[str]) -> Optional[Dict[str, str]]:
+    """Return deterministic list filters for an explicit read-only request."""
+    text = str(message or "").strip()
+    query_matches = list(_QUERY_ONLY_COMMAND_RE.finditer(text))
+    if (
+        not query_matches
+        or _QUERY_ONLY_MUTATION_RE.search(text)
+        or _QUERY_ONLY_RECORD_ACTION_RE.search(text)
+    ):
+        return None
+
+    target_text = text[query_matches[-1].end():]
+    relative_dates = _QUERY_RELATIVE_DATE_RE.findall(target_text)
+    if not relative_dates:
+        all_dates = _QUERY_RELATIVE_DATE_RE.findall(text)
+        if len(set(all_dates)) == 1:
+            relative_dates = all_dates
+
+    scope: Dict[str, str] = {}
+    if relative_dates and len(set(relative_dates)) == 1:
+        target_date = _normalize_relative_date(relative_dates[0])
+        if target_date:
+            scope["date"] = target_date
+
+    target_meal_type = _normalize_diet_meal_type(
+        next(
+            (
+                label
+                for label in ("早餐", "早饭", "午餐", "午饭", "晚餐", "晚饭", "加餐")
+                if label in target_text
+            ),
+            None,
+        )
+    )
+    if target_meal_type:
+        scope["meal_type"] = target_meal_type
+    return scope
+
 # 破坏性(删/改/撤销)+ 同步 意图 —— 这类工具决策弱 fast 模型不可靠:生产实测(2026-07-14)
 # 「删除早餐/删除重复」「帮我同步/同步garmin」被降到 qwen3.6-flash 后反复失败(没吐出
 # 对的 tool call → 0 工具 → 诚实守卫报错),而强模型(qwen3.7-max)在 23:19 同句 status=complete
@@ -4525,6 +4581,9 @@ class AgentExecutor:
                         continue
                     content = _strip_text_tool_call(content)
                 if tool_calls:
+                    tool_calls = self._normalize_query_only_health_manage_tool_calls(
+                        tool_calls,
+                    )
                     tool_calls = await self._normalize_latest_diet_delete_tool_calls(
                         tool_calls,
                         user_auth_token,
@@ -5867,6 +5926,9 @@ class AgentExecutor:
                             self._record_model_fallback_reason("fast_subset_upgraded_full_tools")
                             continue
 
+                    tool_calls = self._normalize_query_only_health_manage_tool_calls(
+                        tool_calls,
+                    )
                     tool_calls = await self._normalize_latest_diet_delete_tool_calls(
                         tool_calls,
                         user_auth_token,
@@ -8622,6 +8684,76 @@ class AgentExecutor:
             except Exception:
                 pass
             return None
+
+    def _normalize_query_only_health_manage_tool_calls(
+        self,
+        tool_calls: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """Keep explicit diet queries read-only and resolve relative dates locally."""
+        scope = _query_only_health_manage_scope(
+            getattr(self, "_current_turn_user_message", "")
+        )
+        if scope is None:
+            return tool_calls
+
+        normalized: List[Dict[str, Any]] = []
+        for tool_call in tool_calls:
+            function = tool_call.get("function") or {}
+            if function.get("name") != "health_manage":
+                normalized.append(tool_call)
+                continue
+
+            raw_args = function.get("arguments")
+            try:
+                args = (
+                    json.loads(raw_args)
+                    if isinstance(raw_args, str)
+                    else dict(raw_args or {})
+                )
+            except (json.JSONDecodeError, TypeError, ValueError):
+                normalized.append(tool_call)
+                continue
+            if args.get("record_type") != "diet":
+                normalized.append(tool_call)
+                continue
+
+            list_args: Dict[str, Any] = {
+                "record_type": "diet",
+                "operation": "list",
+            }
+            target_date = scope.get("date")
+            if target_date:
+                list_args["date"] = target_date
+            elif args.get("operation") == "list":
+                model_date = _normalize_relative_date(args.get("date"))
+                if model_date:
+                    list_args["date"] = model_date
+            if scope.get("meal_type"):
+                list_args["meal_type"] = scope["meal_type"]
+            elif args.get("operation") == "list":
+                model_meal_type = _normalize_diet_meal_type(args.get("meal_type"))
+                if model_meal_type:
+                    list_args["meal_type"] = model_meal_type
+            limit = args.get("limit")
+            if isinstance(limit, int) and not isinstance(limit, bool) and limit > 0:
+                list_args["limit"] = limit
+
+            if args != list_args:
+                logger.warning(
+                    "[agent_executor] query-only health_manage normalized to list: "
+                    "operation=%s date=%s -> date=%s",
+                    args.get("operation"),
+                    args.get("date"),
+                    list_args.get("date"),
+                )
+            normalized.append({
+                **tool_call,
+                "function": {
+                    **function,
+                    "arguments": json.dumps(list_args, ensure_ascii=False),
+                },
+            })
+        return normalized
 
     async def _normalize_latest_diet_delete_tool_calls(
         self,

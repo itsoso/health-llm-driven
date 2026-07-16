@@ -196,6 +196,101 @@ def test_health_manage_list_is_read_only_but_update_is_not():
     }) is False
 
 
+def test_query_only_diet_turn_downgrades_model_update_to_beijing_today_list():
+    executor = AgentExecutor(MagicMock())
+    executor._current_turn_user_message = "晚餐是昨天的晚餐，按北京时间重新列出今天吃的东西"
+
+    calls = executor._normalize_query_only_health_manage_tool_calls([{
+        "id": "call-1",
+        "type": "function",
+        "function": {
+            "name": "health_manage",
+            "arguments": json.dumps({
+                "id": "825",
+                "record_type": "diet",
+                "operation": "update",
+                "data": {"record_date": "2026-07-15"},
+            }),
+        },
+    }])
+
+    args = json.loads(calls[0]["function"]["arguments"])
+    assert args == {
+        "record_type": "diet",
+        "operation": "list",
+        "date": datetime.now(BJ).date().isoformat(),
+    }
+
+
+def test_query_only_diet_turn_overrides_stale_model_date_with_beijing_today():
+    executor = AgentExecutor(MagicMock())
+    executor._current_turn_user_message = "列出我今天的饮食，按照北京时间"
+
+    calls = executor._normalize_query_only_health_manage_tool_calls([{
+        "id": "call-1",
+        "type": "function",
+        "function": {
+            "name": "health_manage",
+            "arguments": json.dumps({
+                "record_type": "diet",
+                "operation": "list",
+                "date": "2026-07-14",
+                "limit": 20,
+            }),
+        },
+    }])
+
+    args = json.loads(calls[0]["function"]["arguments"])
+    assert args == {
+        "record_type": "diet",
+        "operation": "list",
+        "date": datetime.now(BJ).date().isoformat(),
+        "limit": 20,
+    }
+
+
+def test_explicit_diet_update_is_not_downgraded_by_query_only_guard():
+    executor = AgentExecutor(MagicMock())
+    executor._current_turn_user_message = "把晚餐改到昨天，再列出今天吃的东西"
+    original = [{
+        "id": "call-1",
+        "type": "function",
+        "function": {
+            "name": "health_manage",
+            "arguments": json.dumps({
+                "record_type": "diet",
+                "operation": "update",
+                "record_id": 825,
+                "data": {"record_date": "2026-07-15"},
+            }),
+        },
+    }]
+
+    assert executor._normalize_query_only_health_manage_tool_calls(original) is original
+
+
+def test_diet_record_used_as_query_noun_still_uses_beijing_today():
+    executor = AgentExecutor(MagicMock())
+    executor._current_turn_user_message = "查询我今天的饮食记录"
+
+    calls = executor._normalize_query_only_health_manage_tool_calls([{
+        "id": "call-1",
+        "type": "function",
+        "function": {
+            "name": "health_manage",
+            "arguments": json.dumps({
+                "record_type": "diet",
+                "operation": "list",
+                "date": "2026-07-14",
+            }),
+        },
+    }])
+
+    assert json.loads(calls[0]["function"]["arguments"])["date"] == (
+        datetime.now(BJ).date().isoformat()
+    )
+
+
 @pytest.mark.asyncio
 async def test_latest_meal_is_resolved_before_the_write_state_machine():
     executor = AgentExecutor(MagicMock())
