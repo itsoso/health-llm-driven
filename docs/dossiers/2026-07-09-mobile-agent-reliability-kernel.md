@@ -130,10 +130,12 @@
 ## S6 · 部署
 
 - 2026-07-16 北京时间饮食查询护栏随 `0da73b2dc` 通过标准 `./deploy.sh -b` 发布。首次尝试被 env 完整性守卫拦截（本地缺少生产已有的 `ORCHESTRATOR_SYNTHESIS_MODEL_ID`）；从生产安全收敛该键到本地配置后重新执行，未使用强制绕过。
+- 2026-07-16 日期显示二次加固随 `6fcc9ca86` 通过标准 `./deploy.sh -b` 发布；仅后端逻辑与测试变化，无需 Mobile OTA 或原生包更新。
 
 ## G5 · 部署健康闸
 
 - 2026-07-16 部署健康度 `60/60 PASS`，skills manifest 本地/线上 `22/22`；服务器实际提交 `0da73b2dc`，`health-backend` 为 active，内网与公网 `/api/v1/health` 均确认 API、PostgreSQL、Redis、Celery 正常。
+- 2026-07-16 二次发布健康度 `60/60 PASS`，skills manifest 本地/线上 `22/22`；服务器实际提交 `6fcc9ca86`，`health-backend` 为 active，内网与公网 `/api/v1/health` 再次确认全部依赖正常。
 - **裁决：PASS**。
 
 ## S7 · 上线验证
