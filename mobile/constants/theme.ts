@@ -1,6 +1,10 @@
 /**
  * HealthPilot Design System Tokens
  */
+// 复元 Reva 字型:typography 是 AppText 原语(+15 消费者)的底座,此前无 fontFamily →
+// 永远系统 SF,越"用 AppText 统一"越回退。这里补齐设计字族(文本 Manrope、数字 mono),
+// 一处修好全部消费者。字族名与 useRevaFonts 注册的一致('Manrope'/'IBMPlexMono')。
+import { revaFonts } from './revaTheme';
 
 // ── Colors ──────────────────────────────────────────────
 
@@ -114,16 +118,18 @@ export type SemanticPalette = typeof semanticColors;
 // ── Typography ──────────────────────────────────────────
 
 export const typography = {
-  heroScore: { fontSize: 48, fontWeight: '700' as const, lineHeight: 56 },
-  titleLarge: { fontSize: 34, fontWeight: '700' as const, lineHeight: 41 },
-  titleMedium: { fontSize: 22, fontWeight: '700' as const, lineHeight: 28 },
-  titleSmall: { fontSize: 17, fontWeight: '600' as const, lineHeight: 22 },
-  bodyLarge: { fontSize: 17, fontWeight: '400' as const, lineHeight: 25 },
-  bodyMedium: { fontSize: 15, fontWeight: '400' as const, lineHeight: 22 },
-  bodySmall: { fontSize: 13, fontWeight: '400' as const, lineHeight: 18 },
-  caption: { fontSize: 11, fontWeight: '500' as const, lineHeight: 13 },
-  metric: { fontSize: 28, fontWeight: '700' as const, lineHeight: 34, fontVariant: ['tabular-nums'] as const },
-  metricSmall: { fontSize: 20, fontWeight: '700' as const, lineHeight: 24, fontVariant: ['tabular-nums'] as const },
+  heroScore: { fontFamily: revaFonts.mono, fontSize: 48, fontWeight: '700' as const, lineHeight: 56 },
+  titleLarge: { fontFamily: revaFonts.sans, fontSize: 34, fontWeight: '700' as const, lineHeight: 41 },
+  titleMedium: { fontFamily: revaFonts.sans, fontSize: 22, fontWeight: '700' as const, lineHeight: 28 },
+  titleSmall: { fontFamily: revaFonts.sans, fontSize: 17, fontWeight: '600' as const, lineHeight: 22 },
+  bodyLarge: { fontFamily: revaFonts.sans, fontSize: 17, fontWeight: '400' as const, lineHeight: 25 },
+  bodyMedium: { fontFamily: revaFonts.sans, fontSize: 15, fontWeight: '400' as const, lineHeight: 22 },
+  bodySmall: { fontFamily: revaFonts.sans, fontSize: 13, fontWeight: '400' as const, lineHeight: 18 },
+  caption: { fontFamily: revaFonts.sans, fontSize: 11, fontWeight: '500' as const, lineHeight: 13 },
+  // 数字走 mono(tabular)—— app 的"临床仪表"招牌。IBMPlexMono 打包了 Regular/Medium;
+  // 700 会假粗,形态仍是等宽 tabular(重字重精度留待后续切补打 Mono SemiBold)。
+  metric: { fontFamily: revaFonts.mono, fontSize: 28, fontWeight: '700' as const, lineHeight: 34, fontVariant: ['tabular-nums'] as const },
+  metricSmall: { fontFamily: revaFonts.mono, fontSize: 20, fontWeight: '700' as const, lineHeight: 24, fontVariant: ['tabular-nums'] as const },
 } as const;
 
 // ── Dynamic Type 上限 ───────────────────────────────────

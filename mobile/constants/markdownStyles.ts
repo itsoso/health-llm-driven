@@ -1,6 +1,13 @@
 import { StyleSheet } from 'react-native';
 import type { ColorPalette } from '../hooks/useTheme';
 import { colors } from './theme';
+import { revaFonts } from './revaTheme';
+
+// 复元 Reva 字型贯彻:AI 回复正文是 chat 首屏最大文本面,此前无 fontFamily → 永远
+// 回退系统 SF,与卡片里的 Manrope 眉标割裂。react-native-markdown-display 把 body/heading
+// 渲染成 <View>(fontFamily 不级联),但所有行内文本都过 `textgroup` <Text> 包裹器 —— 故
+// 在 textgroup 设 Manrope 即全量文本继承;代码块从硬编码 Menlo 换成设计 mono(IBMPlexMono,
+// 已打包)。(字重精度——headings 600/700 变量轴假粗——留待打包静态 Manrope 字重的后续切。)
 
 /**
  * 主题感知的 markdown 样式 factory.
@@ -18,6 +25,8 @@ import { colors } from './theme';
  */
 export function createMdStylesChat(c: ColorPalette) {
   return StyleSheet.create({
+    // 全量行内文本字族(textgroup 是 markdown-display 的通用 <Text> 包裹器)。
+    textgroup: { fontFamily: revaFonts.sans },
     body: { fontSize: 15, lineHeight: 23, color: c.labelPrimary },
     heading1: { fontSize: 18, fontWeight: '700', color: c.labelPrimary, marginTop: 10, marginBottom: 6 },
     heading2: {
@@ -36,11 +45,11 @@ export function createMdStylesChat(c: ColorPalette) {
     ordered_list_icon: { color: c.labelSecondary, marginLeft: 4, marginRight: 6 },
     code_inline: {
       backgroundColor: c.fill, borderRadius: 4, paddingHorizontal: 4,
-      fontFamily: 'Menlo', fontSize: 13, color: c.brand,
+      fontFamily: revaFonts.mono, fontSize: 13, color: c.brand,
     },
     fence: {
       backgroundColor: c.fill, borderRadius: 6, padding: 8,
-      fontFamily: 'Menlo', fontSize: 12, marginVertical: 4, color: c.labelPrimary,
+      fontFamily: revaFonts.mono, fontSize: 12, marginVertical: 4, color: c.labelPrimary,
     },
     paragraph: { marginVertical: 3, color: c.labelPrimary },
     link: { color: c.brand },
@@ -74,6 +83,7 @@ export function createMdStylesChat(c: ColorPalette) {
 
 export function createMdStylesCompact(c: ColorPalette) {
   return StyleSheet.create({
+    textgroup: { fontFamily: revaFonts.sans },
     body: { fontSize: 14, lineHeight: 20, color: c.labelPrimary },
     heading1: { fontSize: 17, fontWeight: '700', color: c.labelPrimary, marginTop: 6, marginBottom: 3 },
     heading2: { fontSize: 15, fontWeight: '700', color: c.labelPrimary, marginTop: 4, marginBottom: 2 },
@@ -87,11 +97,11 @@ export function createMdStylesCompact(c: ColorPalette) {
     ordered_list_icon: { color: c.labelSecondary, marginLeft: 4, marginRight: 6 },
     code_inline: {
       backgroundColor: c.fill, borderRadius: 4, paddingHorizontal: 3,
-      fontFamily: 'Menlo', fontSize: 12, color: c.brand,
+      fontFamily: revaFonts.mono, fontSize: 12, color: c.brand,
     },
     fence: {
       backgroundColor: c.fill, borderRadius: 6, padding: 8,
-      fontFamily: 'Menlo', fontSize: 12, marginVertical: 4, color: c.labelPrimary,
+      fontFamily: revaFonts.mono, fontSize: 12, marginVertical: 4, color: c.labelPrimary,
     },
     paragraph: { marginVertical: 2, color: c.labelPrimary },
     link: { color: c.brand },
