@@ -541,3 +541,129 @@ async def test_health_manage_lists_updates_and_deletes_goals(db):
     assert json.loads(updated)["status"] == "paused"
     assert captured["delete_url"].endswith("/goals/22")
     assert json.loads(deleted)["record_id"] == 22
+
+
+@pytest.mark.asyncio
+async def test_health_manage_resolves_illness_normalizes_relative_end_date(db):
+    """病症痊愈: data.end_date='昨天' 必须在工具边界折算成 ISO。
+
+    否则相对词字面命中 IllnessEpisodePatch.end_date: date → 422 → 失败标记 →
+    写入回执守卫误报「没取得可验证写入回执」(founder 实测「舌尖溃疡昨天好了,
+    修改记录」失败根因)。顶层 args['date'] 早已归一,data 内 date 字段之前没有。
+    """
+    from app.services.agent_executor import AgentExecutor, _normalize_relative_date
+
+    executor = AgentExecutor(db)
+    executor._current_user_id = 3
+
+    captured = {}
+
+    async def fake_put(url, headers, payload):
+        captured["url"] = url
+        captured["payload"] = payload
+        return json.dumps({
+            "id": 71, "name": "舌尖溃疡", "start_date": "2026-07-10",
+            "end_date": payload.get("end_date"), "status": "resolved", "severity": 2,
+        }, ensure_ascii=False)
+
+    with patch.object(executor, "_api_put", new=AsyncMock(side_effect=fake_put)):
+        result = await executor._execute_tool(
+            tool_name="health_manage",
+            args_raw=json.dumps({
+                "record_type": "illness",
+                "operation": "update",
+                "record_id": 71,
+                "data": {"status": "resolved", "end_date": "昨天"},
+            }),
+            user_token="test-token",
+        )
+
+    assert captured["url"].endswith("/illness/episodes/71")
+    # 关键: 相对词被折算成 ISO, 绝不原样发出(否则 422)
+    assert captured["payload"]["end_date"] == _normalize_relative_date("昨天")
+    assert captured["payload"]["end_date"] != "昨天"
+    assert captured["payload"]["status"] == "resolved"
+    parsed = json.loads(result)
+    assert parsed["id"] == 71 and parsed["status"] == "resolved"
+
+
+@pytest.mark.asyncio
+async def test_health_manage_resolve_illness_drops_unparseable_end_date(db):
+    """折不出的相对词字段丢弃(降级到后端默认: resolved 自动补 today), 绝不发垃圾串 422。"""
+    from app.services.agent_executor import AgentExecutor
+
+    executor = AgentExecutor(db)
+    executor._current_user_id = 3
+    captured = {}
+
+    async def fake_put(url, headers, payload):
+        captured["payload"] = payload
+        return json.dumps({
+            "id": 9, "name": "口腔溃疡", "start_date": "2026-07-08",
+            "status": "resolved", "severity": 1,
+        }, ensure_ascii=False)
+
+    with patch.object(executor, "_api_put", new=AsyncMock(side_effect=fake_put)):
+        await executor._execute_tool(
+            tool_name="health_manage",
+            args_raw=json.dumps({
+                "record_type": "illness", "operation": "update", "record_id": 9,
+                "data": {"status": "resolved", "end_date": "过一阵子"},
+            }),
+            user_token="test-token",
+        )
+
+    assert "end_date" not in captured["payload"]   # 丢弃, 不触发 422
+    assert captured["payload"]["status"] == "resolved"
+
+
+def test_illness_update_result_recognized_as_write_receipt():
+    """成功的病症痊愈 update 必须被识别为可验证写入回执。
+
+    否则即使真写成功, 写入诚实守卫(_write_tool_completed→_unverified_write_message)
+    也会误报『没取得写入回执』, 就是截图那句兜底文案。这是回执层的回归护栏。
+    """
+    from app.services.agent_executor import (
+        _write_tool_completed, _write_receipt_from_tool_result,
+    )
+
+    args = json.dumps({
+        "record_type": "illness", "operation": "update", "record_id": 71,
+        "data": {"status": "resolved"},
+    })
+    result = json.dumps({
+        "id": 71, "name": "舌尖溃疡", "start_date": "2026-07-10",
+        "end_date": "2026-07-15", "status": "resolved", "severity": 2,
+    }, ensure_ascii=False)
+
+    assert _write_tool_completed("health_manage", args, result) is True
+    receipt = _write_receipt_from_tool_result("health_manage", "illness", result)
+    assert receipt is not None
+    assert receipt["resource_type"] == "illness_episode"
+    assert receipt["resource_id"] == "71"
+    assert receipt["verified"] is True
+
+
+def test_illness_guidance_routes_local_healing_conditions():
+    """回归护栏: 口腔溃疡这类"有起病→痊愈周期的局部病灶"指引必须落在 illness(可 resolve),
+    不在 symptom catch-all; health_manage 必须有痊愈→resolve 的流程指引。
+    (根因: 指引把口腔溃疡推向无 status/end_date 的 SymptomEntry → 无对象可标痊愈。)
+    """
+    from app.services.tool_schema_registry import get_health_tools
+
+    tools = get_health_tools()
+    # record_type/data 指引在嵌套 property description 里, 全量序列化后再断言
+    by_name = {t["function"]["name"]: json.dumps(t, ensure_ascii=False) for t in tools}
+    rec = by_name["health_record"]
+    mng = by_name["health_manage"]
+
+    # 局部愈合病灶明确锚定到 illness 段
+    assert "口腔溃疡" in rec
+    assert "局部会愈合的病灶" in rec
+    # symptom 不再是"任何偶发症状都走这个"的 catch-all
+    assert "任何偶发症状都走这个" not in rec
+    # 安全加固: 急性危险症状硬分流护栏(绝不因"会不会好"误归 illness)
+    assert "急性危险症状永远走 symptom" in rec
+    # health_manage 有痊愈/resolve 的显式流程指引
+    assert "病症痊愈/好转" in mng
+    assert "resolved" in mng

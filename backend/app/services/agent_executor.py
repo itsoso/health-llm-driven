@@ -10180,6 +10180,18 @@ class AgentExecutor:
         target_meal_type = _normalize_diet_meal_type(args.get("meal_type") or data.get("meal_type"))
         if record_type == "diet" and target_meal_type:
             data["meal_type"] = target_meal_type
+        # illness update: data.end_date 常是 '昨天'/'yesterday' 相对词。IllnessEpisodePatch
+        # 的 end_date: date 收到相对词字面 → 422; 与顶层 args["date"] 一样在工具边界折算 ISO
+        # (founder 实测「舌尖溃疡昨天好了」需 end_date=昨天)。折不出的相对词删掉该字段,降级
+        # 到后端默认(status=resolved 自动补 end_date=today), 绝不把相对词原样发出去触发 422
+        # → 写入回执守卫误报「无回执」。(IllnessEpisodePatch 只有 end_date, 无 start_date;
+        # start_date 只在 create 路径有意义, 那条路径另有归一, 此处不处理。)
+        if record_type == "illness" and isinstance(data, dict) and data.get("end_date") not in (None, ""):
+            _normalized_end = _normalize_relative_date(data.get("end_date"))
+            if _normalized_end:
+                data["end_date"] = _normalized_end
+            else:
+                data.pop("end_date", None)
         try:
             limit = int(args.get("limit") or 20)
         except (TypeError, ValueError):

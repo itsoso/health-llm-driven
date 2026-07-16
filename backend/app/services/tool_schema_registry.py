@@ -231,8 +231,9 @@ plan 结构:
 - rhinitis: 鼻炎症状 (喷嚏/鼻塞/流涕)
 - mood: 情绪
 - medication: 服药一次
-- illness: 生病 / 急性症状周期 (感冒/流感/发烧). 用户明确说"我感冒了/生病了/发烧了"优先记录 illness
-- symptom: 身体症状记录 (咳嗽/嗓子疼/鼻塞/流涕/眼痒/膝盖痛/皮肤起疹 等). **不需要慢病档案**, 任何偶发症状都走这个；感冒相关症状用 body_part=respiratory/general
+- illness: 有**起止周期、会痊愈**的病症 (记状态, 之后能标记"好了")。不只全身性生病 (感冒/流感/发烧), 也包括**局部会愈合的病灶**: 口腔溃疡/舌尖溃疡/嘴唇起泡/湿疹/麦粒肿/甲沟炎/烫伤/水泡/伤口/带状疱疹/痘痘发作 等。判据: 用户会关心它"什么时候好"、之后会说"好了/痊愈/好转"→ 走 illness。用户说"我感冒了/生病了/发烧了/长了个溃疡/起了个疱"都优先记 illness
+- symptom: **一次性/当下**的身体感觉记录, 不追踪痊愈 (今天眼睛痒/打了个喷嚏/嗓子有点干/膝盖突然痛一下)。**不需要慢病档案**; 感冒相关的即时症状用 body_part=respiratory/general。**拿不准 illness 还是 symptom**: 问"用户之后会不会说'它好了'?会 → illness, 不会 → symptom"
+- **急性危险症状永远走 symptom, 绝不记 illness**: 胸痛/胸闷伴放射痛或冷汗、突发呼吸困难、剧烈腹痛、卒中样(面瘫/言语不清/单侧肢体无力)、大出血 —— 这类要触发急救红线, 不是"会慢慢好"的病灶, 别因"会不会好"的判据误归 illness
 - garmin_sync: 触发 Garmin 数据立即同步
 - reminder: 设置提醒
 - goal: 设置健康目标 ("从今天开始每天快走30分钟" / "90天把腰围降到82cm")
@@ -300,6 +301,15 @@ goal:             {"title": "每日快走30分钟", "goal_type": "exercise|diet|
 
 当用户说"删掉 ID 605"、"删除重复午餐"、"把午餐热量改成 378"时必须调用本工具,
 不能回答"没有删除功能"。如果用户只说"删除一条"但有多条候选, 先用 list 查出 ID 并让用户确认。
+
+**病症痊愈/好转**("口腔溃疡好了"、"舌尖溃疡昨天好的"、"感冒好多了"、"修改记录"):
+先 health_manage(record_type='illness', operation='list') 按名字找到对应 episode 的 id,
+再 update —— 已痊愈 data={"status":"resolved"}(说"昨天/前天好的"就带 data={"status":"resolved","end_date":"昨天"},
+后端会把相对词折算成日期); 好转未愈 data={"status":"improving","severity":<新严重度>}。
+多个病症(口腔溃疡+舌尖溃疡)**分别** update 各自的 id。若 list 查不到对应病症(之前记成了
+symptom 或没记过), 就直接 health_record(record_type='illness') 补一条 data={"name":"口腔溃疡",
+"status":"resolved","start_date":"<起病日估计>"}(end_date 后端在 resolved 时自动补)。**别只用文字
+说"已帮你修改"而不真的调用工具** —— 没有工具写入回执 = 没记上。
 
 支持 record_type:
 - diet, water, weight, waist, blood_pressure, sleep, mood, excretion, supplement: 支持 list/update/delete
