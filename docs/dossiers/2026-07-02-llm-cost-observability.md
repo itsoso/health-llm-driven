@@ -177,5 +177,7 @@ npm run generate-types # mobile
   - `llm_usage_logs` 持久化 TokenPlan Credits、套餐容量成本、按量价对照、套餐参数和估算来源。
   - Admin 最近调用与 run 明细优先读取写入时快照，旧日志保留模型/token 回退重算。
   - Web/Mobile/Mac 对小于 1 分钱的调用统一显示 `约¥0.01以内`；未知模型显示“暂无法估算”。
-  - 受控迁移: `20260716_120000_add_llm_usage_tokenplan_cost` 已加入，待部署时应用。
-- G5/G6:待本次提交、部署、OTA 与线上检查完成后回写。
+  - 受控迁移: `20260716_120000_add_llm_usage_tokenplan_cost` 已加入并在生产完成应用。
+- G5:PASS。提交 `a838ae28c` 已推送 `main`；`./deploy.sh -b` 与 `./deploy.sh -f` 均成功，后端健康度 `60/60 PASS`，线上 Skills `22=22`。
+- G6:PASS。生产后端本机 `/health` 返回 `200`，`/api/v1/monitoring/health` 返回 `200`，Admin 新路由返回 `401`（鉴权生效），Web 首页返回 `200`；Mobile production OTA 基于最新 `origin/main` `cca08cc93` 发布，runtime `1.3.1`，update group `45bb5393-7b69-45d6-a93f-132d397fc2d2`，iOS update `019f69fd-8dee-7248-a36a-04a2af66087e`；Mac `HealthAgentMacCoreTests` 395 项执行、0 失败，已安装并启动 `/Applications/小巴.app`。
+- 发布备注: `origin/main` 在成本提交后新增了仅 Mobile 字体相关的 `cca08cc93`，OTA 以该最新提交为基线，避免覆盖并行改动；本地工作树未跟踪的探针脚本与 PRD 未进入发布。
