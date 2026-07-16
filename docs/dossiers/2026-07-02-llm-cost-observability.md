@@ -16,6 +16,9 @@
 - "类似于mac app上做的透视"
 - "继续执行"
 - "可以 按照顺序执行"
+- "我的计费逻辑是怎样的，如何估算Token成本的，我走的是阿里云的TokenPlan，月订阅费是 698 元 RMB。"
+- "我还是想直接看到多少钱，帮我做转化"
+- "可以"
 
 ## G1 · 准入裁决
 
@@ -155,3 +158,12 @@ npm run generate-types # mobile
 
 - 2026-07-02: 已完成测试、部署、线上健康检查和 Mobile OTA。
 - 2026-07-02: 第二轮已完成预算水位、恢复 trace、三端透视验证、Web/Backend 部署、Mobile OTA 与 Mac 重启。
+
+## 2026-07-16 · 人民币容量成本扩展
+
+- 当前阶段:S3 规划。
+- 状态:building。
+- 设计:`docs/plans/2026-07-16-tokenplan-rmb-cost-visibility-design.md`。
+- 计划:`docs/plans/2026-07-16-tokenplan-rmb-cost-visibility-plan.md`。
+- G1:PASS。复用 `AdminObservability` 与 `ChatMessage`，只增加成本解释，不新增健康行为或写路径。
+- G2:PASS。主金额采用 `Credits × ¥698 / 100000`；Credits 暂按公开模型人民币价格估算并始终标记“约”，按量价保留为对照，原始 Token 不降精度。
