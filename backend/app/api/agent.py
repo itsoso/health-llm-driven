@@ -561,6 +561,14 @@ class ImageItem(BaseModel):
     type: str = "jpeg"
 
 
+class ClientTimeContext(BaseModel):
+    # 客户端看到的本地时间；只做 prompt 辅助，不作为写库安全时间源。
+    client_now_iso: Optional[str] = Field(default=None, max_length=80)
+    timezone: Optional[str] = Field(default=None, max_length=64)
+    timezone_offset_minutes: Optional[int] = Field(default=None, ge=-14 * 60, le=14 * 60)
+    locale: Optional[str] = Field(default=None, max_length=32)
+
+
 class AgentRequest(BaseModel):
     message: str = Field(max_length=10000)
     conversation_id: Optional[int] = None
@@ -581,6 +589,7 @@ class AgentRequest(BaseModel):
         max_length=80,
         pattern=r"^[A-Za-z0-9._:-]+$",
     )
+    client_time_context: Optional[ClientTimeContext] = None
 
     @field_validator("image_base64")
     @classmethod
@@ -805,6 +814,10 @@ async def agent_stream(
                     channel=chan,
                     client_turn_id=client_turn_id,
                     client_caps=caps,
+                    client_time_context=(
+                        req.client_time_context.model_dump(exclude_none=True)
+                        if req.client_time_context else None
+                    ),
                 ):
                     if event.get("event") == "token":
                         tc = event.get("data", {}).get("content")
@@ -1063,6 +1076,10 @@ async def agent_send(
                 channel=req.channel,
                 client_turn_id=req.client_turn_id,
                 client_caps=send_caps,
+                client_time_context=(
+                    req.client_time_context.model_dump(exclude_none=True)
+                    if req.client_time_context else None
+                ),
             ):
                 if event.get("event") == "token":
                     content = event.get("data", {}).get("content")

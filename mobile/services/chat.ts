@@ -10,6 +10,13 @@ export interface ChatMessage {
   content: string;
 }
 
+interface ClientTimeContext {
+  client_now_iso: string;
+  timezone?: string;
+  timezone_offset_minutes: number;
+  locale?: string;
+}
+
 export interface Conversation {
   id: number;
   title?: string;
@@ -157,6 +164,27 @@ function writeAttemptFromToolCall(toolName: string, rawArgs: unknown): boolean |
   }
 }
 
+function buildClientTimeContext(): ClientTimeContext {
+  const now = new Date();
+  let timezone: string | undefined;
+  let locale: string | undefined;
+  try {
+    const resolved = Intl.DateTimeFormat().resolvedOptions();
+    timezone = typeof resolved.timeZone === 'string' ? resolved.timeZone : undefined;
+    locale = typeof resolved.locale === 'string' ? resolved.locale : undefined;
+  } catch {
+    timezone = undefined;
+    locale = undefined;
+  }
+  return {
+    client_now_iso: now.toISOString(),
+    timezone,
+    // Date#getTimezoneOffset is minutes west of UTC. Store minutes east of UTC.
+    timezone_offset_minutes: -now.getTimezoneOffset(),
+    locale,
+  };
+}
+
 /**
  * P0-1 渐进渲染 · status 行 (刀⑤): 把 status SSE 事件映射成气泡顶部的单行进度标签。
  *
@@ -206,7 +234,7 @@ export async function* streamChat(
   const token = await getToken();
   // channel = 传输层输入通道声明(非 LLM 参数):打字免症状二次确认;
   // 语音(转写有失真风险)fail-closed 保留确认 —— 语音入口必须显式传 'voice'。
-  const body: Record<string, any> = { message, channel };
+  const body: Record<string, any> = { message, channel, client_time_context: buildClientTimeContext() };
   if (clientTurnId) body.client_turn_id = clientTurnId;
   if (conversationId) body.conversation_id = conversationId;
   if (extraContext && extraContext.trim()) body.extra_context = extraContext.trim();

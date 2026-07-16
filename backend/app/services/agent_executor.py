@@ -114,6 +114,97 @@ AGENT_MODEL = "NousResearch/Hermes-3-Llama-3.1-8B"
 BEIJING_TZ = timezone(timedelta(hours=8))
 
 
+def _weekday_cn(dt: datetime) -> str:
+    names = ("周一", "周二", "周三", "周四", "周五", "周六", "周日")
+    return names[dt.weekday()]
+
+
+def _period_cn(hour: int) -> str:
+    if 5 <= hour < 9:
+        return "早晨"
+    if 9 <= hour < 12:
+        return "上午"
+    if 12 <= hour < 14:
+        return "中午"
+    if 14 <= hour < 18:
+        return "下午"
+    if 18 <= hour < 22:
+        return "晚上"
+    return "夜间"
+
+
+def _user_timezone_label(tz: timezone) -> str:
+    key = getattr(tz, "key", None)
+    if isinstance(key, str) and key:
+        return key
+    try:
+        if tz.utcoffset(datetime.now(UTC)) == timedelta(hours=8):
+            return "Asia/Shanghai"
+    except Exception:  # noqa: BLE001
+        pass
+    return str(tz)
+
+
+def _build_turn_time_context_prompt(
+    db: Session,
+    user_id: int,
+    *,
+    client_time_context: Optional[Dict[str, Any]] = None,
+    now_utc: Optional[datetime] = None,
+) -> str:
+    """Build deterministic current-time context for one Agent turn.
+
+    This is turn-scoped, not system-prompt-scoped: exact timestamps change on
+    every request, so injecting them into the final user message preserves the
+    stable provider prefix while preventing the model from guessing "now".
+    """
+
+    generated_utc = now_utc or datetime.now(UTC)
+    if generated_utc.tzinfo is None:
+        generated_utc = generated_utc.replace(tzinfo=UTC)
+    generated_utc = generated_utc.astimezone(UTC)
+    try:
+        from app.utils.timezone import get_user_timezone
+
+        user_tz = get_user_timezone(db, user_id)
+    except Exception:  # noqa: BLE001
+        user_tz = BEIJING_TZ
+    user_now = generated_utc.astimezone(user_tz)
+    tz_label = _user_timezone_label(user_tz)
+
+    client_lines: list[str] = []
+    if isinstance(client_time_context, dict):
+        client_now = str(client_time_context.get("client_now_iso") or "").strip()[:80]
+        client_tz = str(client_time_context.get("timezone") or "").strip()[:64]
+        client_locale = str(client_time_context.get("locale") or "").strip()[:32]
+        raw_offset = client_time_context.get("timezone_offset_minutes")
+        offset_text = ""
+        if isinstance(raw_offset, (int, float)):
+            offset_text = f"，UTC offset minutes={int(raw_offset)}"
+        if client_now or client_tz or offset_text or client_locale:
+            client_lines.append(
+                "- 客户端上报本地时间: "
+                f"{client_now or '未提供'}"
+                f"{f'，timezone={client_tz}' if client_tz else ''}"
+                f"{offset_text}"
+                f"{f'，locale={client_locale}' if client_locale else ''}"
+            )
+
+    client_block = "\n".join(client_lines) if client_lines else "- 客户端上报本地时间: 未提供"
+    return (
+        "## 当前时间上下文（系统生成，最高优先级）\n"
+        f"- 本轮执行生成时间 UTC: {generated_utc.isoformat(timespec='seconds')}\n"
+        f"- 用户生效时区: {tz_label}\n"
+        f"- 用户本地当前时间: {user_now.isoformat(timespec='seconds')}\n"
+        f"- 用户本地今天: {user_now.date().isoformat()}（{_weekday_cn(user_now)}），当前时段: {_period_cn(user_now.hour)}\n"
+        f"{client_block}\n"
+        "时间规则:\n"
+        "1. 所有今天/昨天/明天/昨晚/刚才/几小时后/几点提醒/起床或入睡建议，必须以上面的“用户本地当前时间”为基准。\n"
+        "2. 回答任何时间相关问题时，先使用该当前时间做推导；不得猜测“现在约几点”，不得沿用历史消息里的旧日期或旧时间。\n"
+        "3. 如果客户端上报时间与服务器生成的用户本地时间明显不一致，提示用户可能存在设备时间或时区差异，并以服务器生成时间为主。"
+    )
+
+
 def _truncate_for_display(text: str) -> str:
     """把给 LLM 当上下文的长文本做"显示截断"(list 取前 10 / dict 内 list 各取前 10 /
     兜底字符截断)。
@@ -4543,6 +4634,7 @@ class AgentExecutor:
         extra_context: Optional[str],
         client_turn_id: Optional[str] = None,
         recovered_user_message: Any = None,
+        client_time_context: Optional[Dict[str, Any]] = None,
     ) -> AsyncGenerator[Dict, None]:
         """多模型综合分析 (商用三强 panel)。
 
@@ -4602,6 +4694,15 @@ class AgentExecutor:
         yield {"event": "agent_start", "data": {"message": "多模型综合分析中…", "conversation_id": conv.id}}
 
         system_content = self._build_system_prompt(user_id, conv.id, user_auth_token)
+        turn_time_context = _build_turn_time_context_prompt(
+            self.db,
+            user_id,
+            client_time_context=client_time_context,
+        )
+        message_with_time_context = (
+            f"[系统附注 — 本回合参考上下文,非用户输入]\n{turn_time_context}\n"
+            f"[用户消息]\n{message}"
+        )
         tools = get_health_tools()
         full_reply = ""
         completion_status = "complete"
@@ -4616,7 +4717,7 @@ class AgentExecutor:
             self._request_model_id = MULTI_MODEL_LEAD_ID
             lead_messages: List[Dict[str, Any]] = [
                 {"role": "system", "content": system_content},
-                {"role": "user", "content": message},
+                {"role": "user", "content": message_with_time_context},
             ]
             lead_text = ""
             for _round in range(MULTI_MODEL_MAX_LEAD_ROUNDS):
@@ -4788,7 +4889,7 @@ class AgentExecutor:
                 "（300-600 字）。只用给定数据，不要编造；没有数据时给出审慎的一般性建议。"
             )
             persp_user = (
-                f"用户问题：{message}\n\n已查到的用户健康数据：\n"
+                f"{turn_time_context}\n\n用户问题：{message}\n\n已查到的用户健康数据：\n"
                 f"{data_ctx or '（本次未取到额外数据）'}\n\n请给出你的独立分析。"
             )
             persp_messages = [
@@ -4915,6 +5016,7 @@ class AgentExecutor:
         channel: Optional[str] = None,
         client_turn_id: Optional[str] = None,
         client_caps: Optional[List[str]] = None,
+        client_time_context: Optional[Dict[str, Any]] = None,
         read_only_tools: bool = False,
     ) -> AsyncGenerator[Dict, None]:
         """Run one durable client turn, taking over an ACKed turn after worker loss.
@@ -5063,6 +5165,7 @@ class AgentExecutor:
                 client_turn_id=client_turn_id,
                 recovered_user_message=recovered_user_message,
                 client_caps=client_caps,
+                client_time_context=client_time_context,
                 read_only_tools=read_only_tools,
             ):
                 yield event
@@ -5084,6 +5187,7 @@ class AgentExecutor:
         client_turn_id: Optional[str] = None,
         recovered_user_message: Any = None,
         client_caps: Optional[List[str]] = None,
+        client_time_context: Optional[Dict[str, Any]] = None,
         read_only_tools: bool = False,
     ) -> AsyncGenerator[Dict, None]:
         """运行 Agent 循环，SSE 流式输出"""
@@ -5128,6 +5232,7 @@ class AgentExecutor:
                 extra_context,
                 client_turn_id,
                 recovered_user_message,
+                client_time_context,
             ):
                 yield evt
             return
@@ -5415,6 +5520,13 @@ class AgentExecutor:
         # 29.2%)。改为注入**最后一条 user 消息**:前缀 = system+tools+旧历史 保持
         # 字节稳定,turn 内容落在增长尾部,天然不破坏前缀匹配。块文本逐字保留。
         turn_context_parts: List[str] = []
+        turn_context_parts.append(
+            _build_turn_time_context_prompt(
+                self.db,
+                user_id,
+                client_time_context=client_time_context,
+            )
+        )
         if opener_quick_reply_note:
             turn_context_parts.append(
                 "## 入口动作处理结果\n"
@@ -7332,8 +7444,10 @@ class AgentExecutor:
             "你是用户的 AI 健康助理。你可以通过工具调用获取、记录和分析用户的健康数据。",
             "你是唯一的对话入口——用户的所有健康相关请求（记录数据、查询指标、深度分析、图片识别）都由你处理。",
             (
-                f"当前北京时间日期: {datetime.now(BEIJING_TZ).date().isoformat()}。"
-                "解析今天、昨天、前天时必须以此日期为唯一基准，不得沿用历史消息中的旧日期。"
+                "每轮用户消息前会附带系统生成的本轮时间信息。"
+                "解析今天、昨天、前天、明天、昨晚、刚才、几点提醒、起床或入睡建议时，"
+                "必须以其中的用户本地当前时间为唯一基准；若本轮时间信息缺失，不得猜测当前日期或时间。"
+                "不得沿用历史消息中的旧日期或旧时间。"
             ),
             "",
             "## 工作方式",

@@ -652,6 +652,10 @@ final class AgentStreamClientTests: XCTestCase {
             let body = try JSONSerialization.jsonObject(with: request.bodyDataForTesting ?? Data()) as? [String: Any]
             XCTAssertEqual(body?["message"] as? String, "分析今天状态")
             XCTAssertEqual(body?["conversation_id"] as? Int, 7)
+            let timeContext = try XCTUnwrap(body?["client_time_context"] as? [String: Any])
+            XCTAssertFalse((timeContext["client_now_iso"] as? String ?? "").isEmpty)
+            XCTAssertFalse((timeContext["timezone"] as? String ?? "").isEmpty)
+            XCTAssertNotNil(timeContext["timezone_offset_minutes"] as? Int)
 
             let data = """
             data: {"event":"agent_start","data":{"conversation_id":7}}

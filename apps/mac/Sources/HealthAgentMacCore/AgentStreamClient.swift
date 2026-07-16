@@ -13,6 +13,43 @@ public struct AgentChatImage: Encodable, Equatable, Sendable {
     }
 }
 
+public struct AgentClientTimeContext: Encodable, Equatable, Sendable {
+    public let clientNowISO: String
+    public let timezone: String?
+    public let timezoneOffsetMinutes: Int
+    public let locale: String?
+
+    public init(
+        clientNowISO: String,
+        timezone: String? = TimeZone.current.identifier,
+        timezoneOffsetMinutes: Int = TimeZone.current.secondsFromGMT() / 60,
+        locale: String? = Locale.current.identifier
+    ) {
+        self.clientNowISO = clientNowISO
+        self.timezone = timezone
+        self.timezoneOffsetMinutes = timezoneOffsetMinutes
+        self.locale = locale
+    }
+
+    public static func current(now: Date = Date()) -> AgentClientTimeContext {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return AgentClientTimeContext(
+            clientNowISO: formatter.string(from: now),
+            timezone: TimeZone.current.identifier,
+            timezoneOffsetMinutes: TimeZone.current.secondsFromGMT(for: now) / 60,
+            locale: Locale.current.identifier
+        )
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case clientNowISO = "client_now_iso"
+        case timezone
+        case timezoneOffsetMinutes = "timezone_offset_minutes"
+        case locale
+    }
+}
+
 public struct AgentStreamRequest: Encodable, Equatable, Sendable {
     public let message: String
     public let conversationID: Int?
@@ -24,19 +61,24 @@ public struct AgentStreamRequest: Encodable, Equatable, Sendable {
     /// `AgentRequest` schema: a single image → `image_base64` + `image_type`;
     /// two or more → `images: [{base64, type}]`. Same shape mobile sends.
     public let images: [AgentChatImage]
+    /// Device-local current time for this turn. The backend still generates the
+    /// authoritative server timestamp; this helps resolve user-local time zone.
+    public let clientTimeContext: AgentClientTimeContext
 
     public init(
         message: String,
         conversationID: Int? = nil,
         extraContext: String? = nil,
         channel: String = "typed",
-        images: [AgentChatImage] = []
+        images: [AgentChatImage] = [],
+        clientTimeContext: AgentClientTimeContext = .current()
     ) {
         self.message = message
         self.conversationID = conversationID
         self.extraContext = extraContext
         self.channel = channel
         self.images = images
+        self.clientTimeContext = clientTimeContext
     }
 
     enum CodingKeys: String, CodingKey {
@@ -44,6 +86,7 @@ public struct AgentStreamRequest: Encodable, Equatable, Sendable {
         case conversationID = "conversation_id"
         case extraContext = "extra_context"
         case channel
+        case clientTimeContext = "client_time_context"
         case imageBase64 = "image_base64"
         case imageType = "image_type"
         case images
@@ -55,6 +98,7 @@ public struct AgentStreamRequest: Encodable, Equatable, Sendable {
         try container.encodeIfPresent(conversationID, forKey: .conversationID)
         try container.encodeIfPresent(extraContext, forKey: .extraContext)
         try container.encode(channel, forKey: .channel)
+        try container.encode(clientTimeContext, forKey: .clientTimeContext)
         // Match the backend contract exactly: single image on the legacy
         // image_base64/image_type fields, multiple on images[]. Zero images ⇒
         // neither key is emitted (byte-identical to the old request).

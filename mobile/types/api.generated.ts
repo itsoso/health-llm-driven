@@ -19397,6 +19397,7 @@ export interface components {
             channel?: string | null;
             /** Client Turn Id */
             client_turn_id?: string | null;
+            client_time_context?: components["schemas"]["ClientTimeContext"] | null;
         };
         /** AmbientAudioInputResponse */
         AmbientAudioInputResponse: {
@@ -20992,6 +20993,17 @@ export interface components {
             message: string;
             /** Deleted Count */
             deleted_count: number;
+        };
+        /** ClientTimeContext */
+        ClientTimeContext: {
+            /** Client Now Iso */
+            client_now_iso?: string | null;
+            /** Timezone */
+            timezone?: string | null;
+            /** Timezone Offset Minutes */
+            timezone_offset_minutes?: number | null;
+            /** Locale */
+            locale?: string | null;
         };
         /** CoachPersonaRequest */
         CoachPersonaRequest: {

@@ -8,6 +8,34 @@ const REVA_UI_TABLE_CAP_ENABLED = true;
 const BASE_CLIENT_CAPS = 'genui-v1, genui-components-v1';
 const CLIENT_CAPS = REVA_UI_TABLE_CAP_ENABLED ? `${BASE_CLIENT_CAPS}, genui-table-v1` : BASE_CLIENT_CAPS;
 
+interface ClientTimeContext {
+  client_now_iso: string;
+  timezone?: string;
+  timezone_offset_minutes: number;
+  locale?: string;
+}
+
+function buildClientTimeContext(): ClientTimeContext {
+  const now = new Date();
+  let timezone: string | undefined;
+  let locale: string | undefined;
+  try {
+    const resolved = Intl.DateTimeFormat().resolvedOptions();
+    timezone = typeof resolved.timeZone === 'string' ? resolved.timeZone : undefined;
+    locale = typeof resolved.locale === 'string' ? resolved.locale : undefined;
+  } catch {
+    timezone = undefined;
+    locale = undefined;
+  }
+  return {
+    client_now_iso: now.toISOString(),
+    timezone,
+    // Date#getTimezoneOffset is minutes west of UTC. Store minutes east of UTC.
+    timezone_offset_minutes: -now.getTimezoneOffset(),
+    locale,
+  };
+}
+
 export interface ActivitySavedData {
   type: string;
   status: string;
@@ -200,7 +228,11 @@ export const agentApi = {
     extraContext?: string,
   ) {
     const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
-    const body: Record<string, any> = { message, conversation_id: conversationId };
+    const body: Record<string, any> = {
+      message,
+      conversation_id: conversationId,
+      client_time_context: buildClientTimeContext(),
+    };
     if (imageBase64) { body.image_base64 = imageBase64; body.image_type = imageType || 'jpeg'; }
     if (fileBase64) { body.file_base64 = fileBase64; body.file_name = fileName; }
     // opener quick-reply 上下文: 让后端 apply_opener_quick_reply_context 能把

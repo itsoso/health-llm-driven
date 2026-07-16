@@ -42,12 +42,13 @@ def _install_message_capture(executor, monkeypatch):
     return captured
 
 
-async def _drain(executor, message, user_id, extra_context=None):
+async def _drain(executor, message, user_id, extra_context=None, client_time_context=None):
     async for _ in executor.run_stream(
         user_id=user_id,
         message=message,
         user_auth_token="test-token",
         extra_context=extra_context,
+        client_time_context=client_time_context,
     ):
         pass
 
@@ -153,3 +154,40 @@ async def test_desktop_instruction_and_entry_context_land_in_user_message(
     assert "ENTRY_CONTEXT_PLAN_ITEM_42" not in sys_entry
     assert "ENTRY_CONTEXT_PLAN_ITEM_42" in user_entry
     assert "入口上下文" in user_entry
+
+
+@pytest.mark.asyncio
+async def test_current_time_context_is_turn_scoped_and_not_system_prompt(
+    db, monkeypatch
+):
+    """Every Agent turn gets deterministic current-time context in the last user
+    message. It must not be appended to the system prompt, or the exact time
+    would destroy the stable provider prefix on every request."""
+    user, _ = create_authenticated_user(db)
+    executor = AgentExecutor(db)
+    captured = _install_message_capture(executor, monkeypatch)
+    monkeypatch.setattr(
+        executor, "_build_system_knowledge_prompt_context", lambda user_id, message: ""
+    )
+
+    await _drain(
+        executor,
+        "我明天几点起床比较合理？",
+        user.id,
+        client_time_context={
+            "client_now_iso": "2026-07-16T15:40:00.000Z",
+            "timezone": "Asia/Shanghai",
+            "timezone_offset_minutes": 480,
+        },
+    )
+
+    assert len(captured) == 1
+    system_content, user_content = _system_and_last_user(captured[0])
+    assert "当前时间上下文" not in system_content
+    assert "当前北京时间日期" not in system_content
+    assert "2026-07-16T15:40:00.000Z" not in system_content
+    assert "当前时间上下文" in user_content
+    assert "用户本地当前时间" in user_content
+    assert "客户端上报本地时间" in user_content
+    assert "2026-07-16T15:40:00.000Z" in user_content
+    assert "今天/昨天/明天/昨晚/刚才/几小时后" in user_content

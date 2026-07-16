@@ -1391,7 +1391,7 @@ export interface paths {
          * @description 管理员视角的 LLM 使用账本.
          *
          *     - 全局/单用户 token、调用数、成功率、延迟。
-         *     - TokenPlan 固定月费按窗口内 token 份额分摊,用于观察 698/月套餐的有效单价。
+         *     - TokenPlan 公开规则估算 Credits，再按 698/100000 折算人民币容量成本。
          *     - 兼容历史日志: provider=openai 但 model 属于 TokenPlan 注册模型时,仍归入 TokenPlan。
          */
         get: operations["usage_dashboard_api_v1_admin_llm_usage_dashboard_get"];
@@ -15559,6 +15559,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/app-release-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 读取当前客户端发布策略 */
+        get: operations["read_release_policy_api_v1_app_release_policy_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/app-release-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 管理员读取发布策略 */
+        get: operations["read_admin_release_policy_api_v1_admin_app_release_policy_get"];
+        /** 管理员发布新的应用策略 */
+        put: operations["update_release_policy_api_v1_admin_app_release_policy_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/desktop/bootstrap": {
         parameters: {
             query?: never;
@@ -19362,6 +19397,7 @@ export interface components {
             channel?: string | null;
             /** Client Turn Id */
             client_turn_id?: string | null;
+            client_time_context?: components["schemas"]["ClientTimeContext"] | null;
         };
         /** AmbientAudioInputResponse */
         AmbientAudioInputResponse: {
@@ -20957,6 +20993,17 @@ export interface components {
             message: string;
             /** Deleted Count */
             deleted_count: number;
+        };
+        /** ClientTimeContext */
+        ClientTimeContext: {
+            /** Client Now Iso */
+            client_now_iso?: string | null;
+            /** Timezone */
+            timezone?: string | null;
+            /** Timezone Offset Minutes */
+            timezone_offset_minutes?: number | null;
+            /** Locale */
+            locale?: string | null;
         };
         /** CoachPersonaRequest */
         CoachPersonaRequest: {
@@ -26438,6 +26485,8 @@ export interface components {
         MedicationLogCreate: {
             /** Medication Id */
             medication_id: number;
+            /** Taken Date */
+            taken_date?: string | null;
             /** Taken Time */
             taken_time: string;
             /**
@@ -28240,6 +28289,78 @@ export interface components {
             confidence: number;
             /** Notes */
             notes?: string | null;
+        };
+        /** ReleasePolicyResponse */
+        ReleasePolicyResponse: {
+            /** Config Version */
+            config_version: number;
+            /** Platform */
+            platform: string;
+            /** Channel */
+            channel: string;
+            /** Ota Enabled */
+            ota_enabled: boolean;
+            /** Rollout Percent */
+            rollout_percent: number;
+            /** Minimum Native Build */
+            minimum_native_build?: string | null;
+            /** Recommended Native Build */
+            recommended_native_build?: string | null;
+            /** Native Update Url */
+            native_update_url?: string | null;
+            /** Forced Update */
+            forced_update: boolean;
+            /** Kill Switches */
+            kill_switches: {
+                [key: string]: boolean;
+            };
+            /** Rollback Update Id */
+            rollback_update_id?: string | null;
+            /** Expires At */
+            expires_at?: string | null;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "remote" | "safe_default";
+        };
+        /** ReleasePolicyUpdate */
+        ReleasePolicyUpdate: {
+            /** Platform */
+            platform: string;
+            /** Channel */
+            channel: string;
+            /** Expected Config Version */
+            expected_config_version: number;
+            /**
+             * Ota Enabled
+             * @default true
+             */
+            ota_enabled: boolean;
+            /**
+             * Rollout Percent
+             * @default 100
+             */
+            rollout_percent: number;
+            /** Minimum Native Build */
+            minimum_native_build?: string | null;
+            /** Recommended Native Build */
+            recommended_native_build?: string | null;
+            /** Native Update Url */
+            native_update_url?: string | null;
+            /**
+             * Forced Update
+             * @default false
+             */
+            forced_update: boolean;
+            /** Kill Switches */
+            kill_switches?: {
+                [key: string]: boolean;
+            };
+            /** Rollback Update Id */
+            rollback_update_id?: string | null;
+            /** Expires At */
+            expires_at?: string | null;
         };
         /**
          * ReminderCreate
@@ -57315,6 +57436,103 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_release_policy_api_v1_app_release_policy_get: {
+        parameters: {
+            query?: {
+                platform?: string;
+                channel?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReleasePolicyResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_admin_release_policy_api_v1_admin_app_release_policy_get: {
+        parameters: {
+            query?: {
+                platform?: string;
+                channel?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReleasePolicyResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_release_policy_api_v1_admin_app_release_policy_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReleasePolicyUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReleasePolicyResponse"];
                 };
             };
             /** @description Validation Error */

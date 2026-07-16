@@ -42,6 +42,7 @@ describe('streamChat', () => {
 
   afterEach(() => {
     (global as any).XMLHttpRequest = OriginalXHR;
+    jest.useRealTimers();
     jest.clearAllMocks();
   });
 
@@ -95,6 +96,29 @@ describe('streamChat', () => {
       },
       done: false,
     });
+    await iter.return?.(undefined as any);
+  });
+
+  it('sends device current time context with every stream request', async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-07-16T15:40:00.000Z'));
+
+    const iter = streamChat('我明天几点起床比较合理？');
+    const first = iter.next();
+
+    await Promise.resolve();
+    const xhr = MockXMLHttpRequest.instances[0];
+    const body = JSON.parse(xhr.send.mock.calls[0][0]);
+    expect(body.client_time_context).toMatchObject({
+      client_now_iso: '2026-07-16T15:40:00.000Z',
+    });
+    expect(typeof body.client_time_context.timezone).toBe('string');
+    expect(typeof body.client_time_context.timezone_offset_minutes).toBe('number');
+
+    xhr.responseText =
+      'data: {"event":"done","data":{"conversation_id":1,"message_id":2}}\n\n';
+    xhr.onprogress?.();
+    await first;
     await iter.return?.(undefined as any);
   });
 

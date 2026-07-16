@@ -226,6 +226,41 @@ def test_agent_send_forwards_client_turn_id(client, auth_user_and_headers, monke
     assert res.status_code == 200
 
 
+def test_agent_send_forwards_client_time_context(client, auth_user_and_headers, monkeypatch):
+    _, headers = auth_user_and_headers
+
+    async def fake_run_stream(self, **kwargs):
+        assert kwargs["client_time_context"] == {
+            "client_now_iso": "2026-07-16T15:40:00.000Z",
+            "timezone": "Asia/Shanghai",
+            "timezone_offset_minutes": 480,
+            "locale": "zh-CN",
+        }
+        yield {"event": "token", "data": {"content": "ok"}}
+        yield {"event": "done", "data": {"conversation_id": 7, "message_id": 8}}
+
+    monkeypatch.setattr(
+        "app.services.agent_executor.AgentExecutor.run_stream",
+        fake_run_stream,
+    )
+
+    res = client.post(
+        "/api/v1/agent/send",
+        headers=headers,
+        json={
+            "message": "test",
+            "client_time_context": {
+                "client_now_iso": "2026-07-16T15:40:00.000Z",
+                "timezone": "Asia/Shanghai",
+                "timezone_offset_minutes": 480,
+                "locale": "zh-CN",
+            },
+        },
+    )
+
+    assert res.status_code == 200
+
+
 def test_agent_send_returns_503_when_request_was_not_persisted(
     client, auth_user_and_headers, monkeypatch
 ):

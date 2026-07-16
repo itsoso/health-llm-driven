@@ -5,6 +5,7 @@ import { agentApi } from './ai';
 
 describe('agentApi.streamMessage', () => {
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
     localStorage.clear();
   });
@@ -39,5 +40,23 @@ describe('agentApi.streamMessage', () => {
 
     const caps = (fetchMock.mock.calls[0][1]?.headers as Record<string, string>)['X-Reva-Client-Caps'];
     expect(caps).toContain('genui-table-v1');
+  });
+
+  it('sends device current time context with every stream request', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-16T15:40:00.000Z'));
+    const stream = new ReadableStream({ start(controller) { controller.close(); } });
+    const fetchMock = vi.fn().mockResolvedValue(new Response(stream, { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const iterator = agentApi.streamMessage('我明天几点起床比较合理？');
+    await iterator.next();
+
+    const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+    expect(body.client_time_context).toMatchObject({
+      client_now_iso: '2026-07-16T15:40:00.000Z',
+    });
+    expect(typeof body.client_time_context.timezone).toBe('string');
+    expect(typeof body.client_time_context.timezone_offset_minutes).toBe('number');
   });
 });
