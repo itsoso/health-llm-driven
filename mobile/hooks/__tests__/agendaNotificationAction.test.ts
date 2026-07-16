@@ -20,6 +20,11 @@ jest.mock('../../services/agenda', () => ({
   completeAgendaItem: jest.fn(),
 }));
 
+jest.mock('../../services/medications', () => ({
+  __esModule: true,
+  logMedication: jest.fn(),
+}));
+
 // queryClient 单例:只关心 invalidateQueries 被怎么调。
 jest.mock('../../applib/queryClient', () => ({
   __esModule: true,
@@ -37,6 +42,8 @@ jest.mock('expo-notifications', () => ({
   getDevicePushTokenAsync: jest.fn().mockResolvedValue({ data: 'tok' }),
   addNotificationReceivedListener: jest.fn(() => ({ remove: jest.fn() })),
   addNotificationResponseReceivedListener: jest.fn(() => ({ remove: jest.fn() })),
+  getLastNotificationResponseAsync: jest.fn().mockResolvedValue(null),
+  clearLastNotificationResponseAsync: jest.fn().mockResolvedValue(undefined),
   DEFAULT_ACTION_IDENTIFIER: 'expo.modules.notifications.actions.DEFAULT',
 }));
 
@@ -46,14 +53,27 @@ jest.mock('../../services/notifications', () => ({ bindIOSToken: jest.fn() }));
 jest.mock('../../services/clientEvents', () => ({ emitClientEvent: jest.fn() }));
 jest.mock('../../services/notificationRoutes', () => ({ resolveNotificationRoute: jest.fn() }));
 
-import { handleAgendaAction } from '../useNotifications';
+import * as Notifications from 'expo-notifications';
+import {
+  consumeLastNotificationResponse,
+  handleAgendaAction,
+  handleMedicationReminderAction,
+  registerNotificationCategories,
+} from '../useNotifications';
 import { completeAgendaItem } from '../../services/agenda';
+import { logMedication } from '../../services/medications';
 import { queryClient } from '../../applib/queryClient';
 import { emitClientEvent } from '../../services/clientEvents';
 
 const mockCompleteAgendaItem = completeAgendaItem as jest.Mock;
 const mockInvalidateQueries = queryClient.invalidateQueries as jest.Mock;
 const mockEmitClientEvent = emitClientEvent as jest.Mock;
+const mockLogMedication = logMedication as jest.Mock;
+const mockNotifications = Notifications as unknown as {
+  setNotificationCategoryAsync: jest.Mock;
+  getLastNotificationResponseAsync: jest.Mock;
+  clearLastNotificationResponseAsync: jest.Mock;
+};
 
 const REF = { object_type: 'health_protocol', object_id: 42 };
 
@@ -151,6 +171,101 @@ describe('handleAgendaAction (AGENDA_ACTION background action)', () => {
       }),
     );
     expect(mockInvalidateQueries).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+});
+
+describe('Watch medication reminder action', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockLogMedication.mockResolvedValue({ id: 88, medication_id: 7, status: 'taken' });
+    mockNotifications.getLastNotificationResponseAsync.mockResolvedValue(null);
+    mockNotifications.clearLastNotificationResponseAsync.mockResolvedValue(undefined);
+  });
+
+  it('registers 服用 as a reliable action that wakes a terminated iOS app', async () => {
+    await registerNotificationCategories();
+
+    const medicationCall = mockNotifications.setNotificationCategoryAsync.mock.calls
+      .find(([identifier]) => identifier === 'MEDICATION_REMINDER');
+    expect(medicationCall).toBeTruthy();
+    expect(medicationCall[1]).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        identifier: 'TAKEN',
+        buttonTitle: '服用',
+        options: expect.objectContaining({ opensAppToForeground: true }),
+      }),
+    ]));
+  });
+
+  it('writes a taken MedicationLog with the reminder slot and refreshes medication state', async () => {
+    await handleMedicationReminderAction('TAKEN', {
+      reminder_type: 'medication',
+      medication_id: '7',
+      scheduled_time: '08:30',
+    });
+
+    expect(mockLogMedication).toHaveBeenCalledWith({
+      medication_id: 7,
+      taken_time: '08:30',
+      status: 'taken',
+    });
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ['medications'] });
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ['medicationToday'] });
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ['timeline', 'today'] });
+  });
+
+  it('consumes a cold-start Watch action and clears it to prevent a second write', async () => {
+    const response = {
+      actionIdentifier: 'TAKEN',
+      notification: {
+        request: {
+          identifier: 'medication-reminder-7-0830',
+          content: {
+            data: {
+              reminder_type: 'medication',
+              medication_id: 7,
+              scheduled_time: '08:30',
+            },
+          },
+        },
+      },
+    };
+    mockNotifications.getLastNotificationResponseAsync.mockResolvedValue(response);
+
+    await consumeLastNotificationResponse();
+
+    expect(mockLogMedication).toHaveBeenCalledTimes(1);
+    expect(mockNotifications.clearLastNotificationResponseAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a failed cold-start Watch action available for a later retry', async () => {
+    mockLogMedication.mockRejectedValueOnce(new Error('offline'));
+    mockNotifications.getLastNotificationResponseAsync.mockResolvedValue({
+      actionIdentifier: 'TAKEN',
+      notification: {
+        request: {
+          identifier: 'medication-reminder-7-0900',
+          content: {
+            data: {
+              reminder_type: 'medication',
+              medication_id: 7,
+              scheduled_time: '09:00',
+            },
+          },
+        },
+      },
+    });
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await consumeLastNotificationResponse();
+
+    expect(mockLogMedication).toHaveBeenCalledTimes(1);
+    expect(mockNotifications.clearLastNotificationResponseAsync).not.toHaveBeenCalled();
+    expect(mockEmitClientEvent).toHaveBeenCalledWith(
+      'watch_action_failed',
+      expect.objectContaining({ reason: 'request_failed', kind: 'medication' }),
+    );
     warn.mockRestore();
   });
 });

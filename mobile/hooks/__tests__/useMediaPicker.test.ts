@@ -268,6 +268,32 @@ describe('useMediaPicker', () => {
       expect(camOpts).toEqual(expect.objectContaining({ mediaTypes: ['images'] }));
     });
 
+    it('keeps the first photo while a second camera capture is added', async () => {
+      mockRequestCameraPermissions.mockResolvedValue({ granted: true });
+      mockLaunchCamera
+        .mockResolvedValueOnce({
+          canceled: false,
+          assets: [{ uri: 'file:///camera-1.jpg', width: 4032, height: 3024 }],
+        })
+        .mockResolvedValueOnce({
+          canceled: false,
+          assets: [{ uri: 'file:///camera-2.jpg', width: 4032, height: 3024 }],
+        });
+      mockManipulateAsync
+        .mockResolvedValueOnce({ uri: 'file:///cam-1-small.jpg', base64: 'cam-1', width: 1568, height: 1176 })
+        .mockResolvedValueOnce({ uri: 'file:///cam-2-small.jpg', base64: 'cam-2', width: 1568, height: 1176 });
+
+      const { result } = renderHook(() => useMediaPicker());
+      await act(async () => { await result.current.takePhoto(); });
+      await act(async () => { await result.current.takePhoto(); });
+
+      expect(result.current.pendingImages).toEqual([
+        expect.objectContaining({ uri: 'file:///cam-1-small.jpg', base64: 'cam-1' }),
+        expect.objectContaining({ uri: 'file:///cam-2-small.jpg', base64: 'cam-2' }),
+      ]);
+      expect(mockLaunchCamera).toHaveBeenCalledTimes(2);
+    });
+
     it('EXCLUDES the photo and alerts when manipulation yields no base64 (no empty image sent)', async () => {
       mockRequestCameraPermissions.mockResolvedValue({ granted: true });
       mockLaunchCamera.mockResolvedValue({

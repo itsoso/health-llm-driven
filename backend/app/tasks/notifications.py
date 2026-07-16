@@ -2061,7 +2061,7 @@ def scan_medication_reminders():
                 timing = medication_timing_label(med.timing_relation, med.meal_anchor)
                 if timing:
                     body_parts.append(timing)
-                body_parts.append(f"现在 {cur_hhmm} 有一次用药到点了，点「已服用」自动打卡。")
+                body_parts.append(f"现在 {cur_hhmm} 有一次用药到点了，点「服用」自动打卡。")
                 body = "，".join(body_parts)
 
                 run_async(push_service.send_notification(

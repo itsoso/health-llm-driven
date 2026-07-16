@@ -135,9 +135,13 @@ def test_medication_reminder_no_drug_name_on_lock_screen(db):
     assert "二甲双胍" not in kwargs["title"]
     assert "二甲双胍" not in kwargs["content"]
     assert "500mg" not in kwargs["content"]
+    assert "点「服用」自动打卡" in kwargs["content"]
     # 名称/剂量在 data payload(App 解锁后渲染)
     assert kwargs["data"]["medication_name"] == "二甲双胍"
     assert kwargs["data"]["dosage"] == "500mg"
+    assert kwargs["data"]["category"] == "MEDICATION_REMINDER"
+    assert kwargs["data"]["reminder_type"] == "medication"
+    assert kwargs["data"]["scheduled_time"] == cur_hhmm
     # title 泛化后 dedup 必须有 per 药×日×时点的 rule_id,防同日第二种药被 title 去重吞
     assert str(med.id) in kwargs["data"]["rule_id"]
     assert cur_hhmm in kwargs["data"]["rule_id"]

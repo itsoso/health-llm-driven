@@ -9,6 +9,7 @@ import { emitClientEvent } from '../services/clientEvents';
 import { resolveNotificationRoute } from '../services/notificationRoutes';
 import { queryClient } from '../applib/queryClient';
 import { completeAgendaItem } from '../services/agenda';
+import { logMedication } from '../services/medications';
 
 const SILENT_SCREENS = new Set(['home']);
 
@@ -27,10 +28,6 @@ Notifications.setNotificationHandler({
   },
 });
 
-type NotificationTapCallback = (
-  notification: Notifications.Notification,
-) => void;
-
 let _onForeground: ((n: Notifications.Notification) => void) | null = null;
 
 export function setOnForegroundNotification(
@@ -47,7 +44,10 @@ export function useNotifications(isAuthenticated: boolean) {
     if (!isAuthenticated) return;
 
     void syncGrantedPushRegistration();
-    registerNotificationCategories();
+    void registerNotificationCategories().catch((error) => {
+      console.warn('[useNotifications] failed to register notification categories', error);
+    });
+    void consumeLastNotificationResponse();
 
     receivedSub.current = Notifications.addNotificationReceivedListener(
       (notification) => {
@@ -57,7 +57,7 @@ export function useNotifications(isAuthenticated: boolean) {
 
     responseSub.current = Notifications.addNotificationResponseReceivedListener(
       (response) => {
-        handleNotificationResponse(response);
+        void handleNotificationResponse(response);
       },
     );
 
@@ -108,14 +108,16 @@ export async function requestPushPermissionAndRegister(): Promise<PushRegistrati
   return bindCurrentIOSToken();
 }
 
-async function registerNotificationCategories() {
+export async function registerNotificationCategories() {
   if (Platform.OS !== 'ios') return;
   await Notifications.setNotificationCategoryAsync('SUPPLEMENT_REMINDER', [
     { identifier: 'TAKEN', buttonTitle: '已服用', options: { opensAppToForeground: false } },
     { identifier: 'SKIP', buttonTitle: '跳过', options: { opensAppToForeground: false } },
   ]);
   await Notifications.setNotificationCategoryAsync('MEDICATION_REMINDER', [
-    { identifier: 'TAKEN', buttonTitle: '已服用', options: { opensAppToForeground: false } },
+    // iOS 上 false 会在 App 被终止时直接丢失 response listener。服用是医疗级
+    // 依从事实,必须唤醒进程并由冷启动补偿消费;Watch 镜像同一 category/action。
+    { identifier: 'TAKEN', buttonTitle: '服用', options: { opensAppToForeground: true } },
     { identifier: 'SKIP', buttonTitle: '跳过', options: { opensAppToForeground: false } },
   ]);
   // Open-Loop Manager (主动循环推送): 3 actions 无需打开 app
@@ -143,7 +145,24 @@ async function registerNotificationCategories() {
   ]);
 }
 
-function handleNotificationResponse(response: Notifications.NotificationResponse) {
+const processedNotificationResponses = new Set<string>();
+const inFlightNotificationResponses = new Map<string, Promise<boolean>>();
+const MAX_PROCESSED_NOTIFICATION_RESPONSES = 128;
+
+function markNotificationResponseProcessed(key: string) {
+  processedNotificationResponses.add(key);
+  if (processedNotificationResponses.size <= MAX_PROCESSED_NOTIFICATION_RESPONSES) return;
+  const oldest = processedNotificationResponses.values().next().value;
+  if (oldest) processedNotificationResponses.delete(oldest);
+}
+
+function notificationResponseKey(response: Notifications.NotificationResponse): string {
+  return `${response.notification.request.identifier}:${response.actionIdentifier}`;
+}
+
+async function processNotificationResponse(
+  response: Notifications.NotificationResponse,
+): Promise<boolean> {
   const notification = response.notification;
   const actionId = response.actionIdentifier;
   const data = notification.request.content.data as Record<string, any> | undefined;
@@ -156,27 +175,30 @@ function handleNotificationResponse(response: Notifications.NotificationResponse
     (actionId === 'COMPLETE' || actionId === 'SKIP') &&
     (data?.category === 'AGENDA_ACTION' || data?.complete_ref)
   ) {
-    handleAgendaAction(actionId === 'COMPLETE' ? 'done' : 'skipped', data);
-    return;
+    await handleAgendaAction(actionId === 'COMPLETE' ? 'done' : 'skipped', data);
+    return true;
   }
 
   // Handle actionable notification buttons (background actions)
   if (actionId === 'TAKEN' || actionId === 'SKIP') {
-    handleQuickAction(actionId, data);
-    return;
+    if (data?.reminder_type === 'medication') {
+      return handleMedicationReminderAction(actionId, data);
+    }
+    await handleQuickAction(actionId, data);
+    return true;
   }
   if (actionId === 'DONE' || actionId === 'SNOOZE_7D' || actionId === 'NOT_INTERESTED') {
-    handleOpenLoopAction(actionId, data);
-    return;
+    await handleOpenLoopAction(actionId, data);
+    return true;
   }
   if (actionId === 'LOOP_DONE' || actionId === 'LOOP_LATER' || actionId === 'LOOP_SKIP') {
-    handleBehaviorLoopAction(actionId, data);
-    return;
+    await handleBehaviorLoopAction(actionId, data);
+    return true;
   }
   if (actionId === 'VIEW_PROGRESS') {
     const link = resolveNotificationRoute(data) ?? '/intervention-cycle';
     try { router.push(link as any); } catch { router.push('/(tabs)' as any); }
-    return;
+    return true;
   }
 
   // Phase 0.4: 用户从推送进 app (default tap action) — emit 看板能算 push CTR.
@@ -195,6 +217,37 @@ function handleNotificationResponse(response: Notifications.NotificationResponse
     router.push((route ?? '/(tabs)') as any);
   } catch {
     router.push('/(tabs)' as any);
+  }
+  return true;
+}
+
+export async function handleNotificationResponse(
+  response: Notifications.NotificationResponse,
+): Promise<boolean> {
+  const key = notificationResponseKey(response);
+  if (processedNotificationResponses.has(key)) return true;
+  const existing = inFlightNotificationResponses.get(key);
+  if (existing) return existing;
+
+  const task = processNotificationResponse(response);
+  inFlightNotificationResponses.set(key, task);
+  try {
+    const handled = await task;
+    if (handled) markNotificationResponseProcessed(key);
+    return handled;
+  } finally {
+    inFlightNotificationResponses.delete(key);
+  }
+}
+
+export async function consumeLastNotificationResponse(): Promise<void> {
+  try {
+    const response = await Notifications.getLastNotificationResponseAsync();
+    if (!response) return;
+    const handled = await handleNotificationResponse(response);
+    if (handled) await Notifications.clearLastNotificationResponseAsync();
+  } catch (error) {
+    console.warn('[useNotifications] cold-start notification action failed', error);
   }
 }
 
@@ -259,20 +312,80 @@ async function handleQuickAction(action: string, data?: Record<string, any>) {
   if (!data) return;
   try {
     const { default: api } = await import('../services/api');
-    const type = data.reminder_type; // 'supplement' | 'medication'
-    if (type === 'supplement' && data.supplement_id) {
+    if (data.reminder_type === 'supplement' && data.supplement_id) {
       await api.post('/supplements/me/checkin', {
         supplement_id: data.supplement_id,
         action: action === 'TAKEN' ? 'take' : 'skip',
       });
-    } else if (type === 'medication' && data.medication_id) {
-      await api.post('/medication/logs', {
-        medication_id: data.medication_id,
-        status: action === 'TAKEN' ? 'taken' : 'skipped',
-      });
     }
   } catch {
     // Background action failed silently — user can check in the app later
+  }
+}
+
+function normalizeMedicationReminderTime(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const match = raw.trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return null;
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+}
+
+function currentLocalHHMM(now = new Date()): string {
+  return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+}
+
+export async function handleMedicationReminderAction(
+  action: 'TAKEN' | 'SKIP',
+  data?: Record<string, any>,
+): Promise<boolean> {
+  const medicationId = normalizeAgendaActionObjectId(data?.medication_id);
+  if (medicationId == null) {
+    await emitClientEvent('watch_action_failed', {
+      reason: 'invalid_medication_id',
+      kind: 'medication',
+      medication_id: data?.medication_id ?? null,
+      action,
+    });
+    return false;
+  }
+  const takenTime = normalizeMedicationReminderTime(data?.taken_time)
+    ?? normalizeMedicationReminderTime(data?.scheduled_time)
+    ?? currentLocalHHMM();
+  const status = action === 'TAKEN' ? 'taken' : 'skipped';
+
+  try {
+    await logMedication({
+      medication_id: medicationId,
+      taken_time: takenTime,
+      status,
+    });
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['medications'] }),
+      queryClient.invalidateQueries({ queryKey: ['medicationToday'] }),
+      queryClient.invalidateQueries({ queryKey: ['timeline', 'today'] }),
+      queryClient.invalidateQueries({ queryKey: ['agenda', 'today'] }),
+    ]);
+    await emitClientEvent('quick_record_logged', {
+      kind: 'medication',
+      status,
+      scheduled_time: takenTime,
+      source: 'watch_notification',
+    });
+    return true;
+  } catch (error) {
+    console.warn('[useNotifications] medication reminder action failed', error);
+    await emitClientEvent('watch_action_failed', {
+      reason: 'request_failed',
+      action_id: `medication-${medicationId}-${takenTime}`,
+      kind: 'medication',
+      action,
+      scheduled_time: takenTime,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return false;
   }
 }
 

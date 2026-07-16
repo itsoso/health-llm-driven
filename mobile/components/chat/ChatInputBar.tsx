@@ -83,6 +83,25 @@ const MODE_PLACEHOLDER: Record<ChatAgentMode, string> = {
   vision: '拍照/报告后问小巴',
 };
 
+const MEAL_PHOTO_CONTEXT = {
+  source: 'mobile_chat_meal_photo',
+  intent: 'diet_photo_record',
+  instruction: '把本轮全部餐食照片作为同一餐的上下文,综合识别食物和份量,生成一张可确认的饮食记录卡片。',
+};
+
+function mergePhotoContext(base: string | undefined, photoContext: Record<string, string>): string {
+  if (!base) return JSON.stringify(photoContext);
+  try {
+    const parsed = JSON.parse(base);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return JSON.stringify({ ...parsed, ...photoContext });
+    }
+  } catch {
+    // Preserve non-JSON caller context instead of dropping it.
+  }
+  return JSON.stringify({ prior_context: base, ...photoContext });
+}
+
 function buildAgentModeOptions(mode: ChatAgentMode): ChatInputSendOptions | undefined {
   if (mode === 'daily') return undefined;
   const instruction = mode === 'deep'
@@ -155,7 +174,6 @@ export default function ChatInputBar({
     pendingImages,
     setPendingImages,
     removeImage,
-    clearImages,
     releaseImagesAfterSend,
     pickImage,
     takePhoto,
@@ -175,6 +193,7 @@ export default function ChatInputBar({
   const dictationNativeActiveRef = useRef(false);
   const voiceNativeActiveRef = useRef(false);
   const voiceDraftRef = useRef<VoiceDraft | null>(null);
+  const pendingPhotoContextRef = useRef<Record<string, string> | null>(null);
   const draftPersistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const draftHydratedRef = useRef(false);
   const draftSnapshotRef = useRef({ text: input, images: pendingImages });
@@ -312,6 +331,12 @@ export default function ChatInputBar({
         ...(sendOptions || {}),
         ...(effectiveChannel !== 'typed' ? { channel: effectiveChannel } : {}),
       };
+      if (sendImages.length > 0 && pendingPhotoContextRef.current) {
+        outboundOptions.extraContext = mergePhotoContext(
+          outboundOptions.extraContext,
+          pendingPhotoContextRef.current,
+        );
+      }
       if (voiceDraftForSend) {
         outboundOptions.extraContext = mergeExtraContext(
           sendOptions?.extraContext ?? modeOptions?.extraContext,
@@ -354,6 +379,7 @@ export default function ChatInputBar({
     setInput('');
     inputChannelRef.current = 'typed';
     voiceDraftRef.current = null;
+    pendingPhotoContextRef.current = null;
     releaseImagesAfterSend();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setJustSent(true);
@@ -645,58 +671,36 @@ export default function ChatInputBar({
   }, []);
 
   const handlePickImage = useCallback(async () => { setShowMenu(false); await pickImage(); }, [pickImage]);
-  const markJustSent = useCallback(() => {
-    setJustSent(true);
-    if (justSentTimerRef.current) clearTimeout(justSentTimerRef.current);
-    justSentTimerRef.current = setTimeout(() => {
-      justSentTimerRef.current = null;
-      setJustSent(false);
-    }, 1000);
-  }, []);
-  const sendCapturedMealPhoto = useCallback(async () => {
+  const stageCameraPhoto = useCallback(async (mealPhoto: boolean) => {
     setShowMenu(false);
     if (isStreaming) {
       Alert.alert('小巴还在回复', '等这一轮结束后再拍照记录。');
-      return;
+      return [];
     }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     const photos = await takePhoto();
-    if (!photos || photos.length === 0) return;
-    try {
-      const accepted = await Promise.resolve(onSend('记录这餐', photos, {
-        extraContext: JSON.stringify({
-          source: 'mobile_chat_meal_photo',
-          intent: 'diet_photo_record',
-          instruction: '先把用户上传的餐食照片作为本轮对话上下文,识别食物和份量,生成可确认的饮食记录卡片。',
-        }),
-      }));
-      if (accepted === false) {
-        Alert.alert('发送失败', '照片已保留在输入框里，请稍后重试。');
-        return;
-      }
-      releaseImagesAfterSend();
-      markJustSent();
-      try {
-        await clearPersistedChatDraft();
-      } catch (e) {
-        if (__DEV__) console.warn('[ChatInputBar] meal photo draft cleanup failed:', e);
-      }
-    } catch (e) {
-      Alert.alert('发送失败', '照片已保留在输入框里，请稍后重试。');
-      if (__DEV__) console.warn('[ChatInputBar] meal photo send rejected:', e);
+    if (!photos || photos.length === 0) return [];
+    if (mealPhoto) {
+      pendingPhotoContextRef.current = MEAL_PHOTO_CONTEXT;
+      inputChannelRef.current = 'typed';
+      setInput(current => current.trim() ? current : '记录这餐');
     }
-  }, [isStreaming, markJustSent, onSend, releaseImagesAfterSend, takePhoto]);
+    return photos;
+  }, [isStreaming, takePhoto]);
   const handleCaptureMealPhoto = useCallback(() => {
-    void sendCapturedMealPhoto();
-  }, [sendCapturedMealPhoto]);
+    void stageCameraPhoto(true);
+  }, [stageCameraPhoto]);
+  const handleContinueCamera = useCallback(() => {
+    void stageCameraPhoto(false);
+  }, [stageCameraPhoto]);
 
   const lastCaptureMealPhotoTokenRef = useRef(captureMealPhotoToken ?? 0);
   React.useEffect(() => {
     const token = Number(captureMealPhotoToken || 0);
     if (token <= 0 || token === lastCaptureMealPhotoTokenRef.current) return;
     lastCaptureMealPhotoTokenRef.current = token;
-    void sendCapturedMealPhoto();
-  }, [captureMealPhotoToken, sendCapturedMealPhoto]);
+    void stageCameraPhoto(true);
+  }, [captureMealPhotoToken, stageCameraPhoto]);
   const handlePickFile = useCallback(async () => {
     setShowMenu(false);
     try {
@@ -807,15 +811,37 @@ export default function ChatInputBar({
           {pendingImages.map((img, i) => (
             <View key={img.uri} style={styles.previewItem}>
               <Image source={{ uri: img.uri }} style={styles.previewImg} />
-              <TouchableOpacity style={styles.previewRemove} onPress={() => { void removeImage(i); }} hitSlop={6}>
+              <TouchableOpacity
+                style={styles.previewRemove}
+                onPress={() => {
+                  if (pendingImages.length === 1) pendingPhotoContextRef.current = null;
+                  void removeImage(i);
+                }}
+                hitSlop={6}
+              >
                 <Ionicons name="close-circle" size={18} color={revaSemantic.risk.fg} />
               </TouchableOpacity>
             </View>
           ))}
           {pendingImages.length < 9 && (
-            <TouchableOpacity style={styles.previewAddBtn} onPress={pickImage}>
-              <Ionicons name="add" size={20} color={C.ink2} />
-            </TouchableOpacity>
+            <View style={styles.previewActionGroup}>
+              <TouchableOpacity
+                style={styles.previewAddBtn}
+                onPress={handleContinueCamera}
+                accessibilityRole="button"
+                accessibilityLabel="继续拍照"
+              >
+                <Ionicons name="camera-outline" size={20} color={C.ink2} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.previewAddBtn}
+                onPress={pickImage}
+                accessibilityRole="button"
+                accessibilityLabel="继续从相册选择"
+              >
+                <Ionicons name="images-outline" size={20} color={C.ink2} />
+              </TouchableOpacity>
+            </View>
           )}
           <Text style={styles.previewCount}>{pendingImages.length}/9</Text>
         </ScrollView>
@@ -1331,6 +1357,7 @@ const styles = StyleSheet.create({
   previewItem: { position: 'relative' },
   previewImg: { width: 52, height: 52, borderRadius: 8 },
   previewRemove: { position: 'absolute', top: -6, right: -6 },
+  previewActionGroup: { flexDirection: 'row', gap: 6 },
   previewAddBtn: {
     width: 52, height: 52, borderRadius: 8,
     borderWidth: 1.5, borderColor: C.line, borderStyle: 'dashed',

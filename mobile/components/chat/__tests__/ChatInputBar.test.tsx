@@ -36,6 +36,7 @@ const mockRemoveImage = jest.fn();
 const mockClearImages = jest.fn().mockResolvedValue(undefined);
 const mockReleaseImagesAfterSend = jest.fn();
 const mockTakePhoto = jest.fn();
+const mockPickImage = jest.fn();
 const mockLoadChatDraft = jest.fn();
 const mockPersistChatDraft = jest.fn().mockResolvedValue(undefined);
 const mockHydrateDraftImages = jest.fn();
@@ -49,7 +50,7 @@ jest.mock('../../../hooks/useMediaPicker', () => ({
     removeImage: mockRemoveImage,
     clearImages: mockClearImages,
     releaseImagesAfterSend: mockReleaseImagesAfterSend,
-    pickImage: jest.fn(),
+    pickImage: (...args: any[]) => mockPickImage(...args),
     takePhoto: (...args: any[]) => mockTakePhoto(...args),
   }),
 }));
@@ -130,6 +131,7 @@ describe('ChatInputBar', () => {
     mockSetPendingImages.mockReset();
     mockClearImages.mockResolvedValue(undefined);
     mockTakePhoto.mockReset();
+    mockPickImage.mockReset();
     mockLoadChatDraft.mockImplementation(() => new Promise(() => {}));
     mockPersistChatDraft.mockResolvedValue(undefined);
     mockHydrateDraftImages.mockImplementation(async (images: any[]) => images);
@@ -200,7 +202,7 @@ describe('ChatInputBar', () => {
     expect(getByLabelText('导入体检报告')).toBeTruthy();
   });
 
-  it('sends meal photos into the current chat instead of routing to diet', async () => {
+  it('stages a meal photo so the user can continue shooting before one combined send', async () => {
     const photo = { uri: 'file:///meal.jpg', base64: 'base64-meal', type: 'jpeg' };
     mockTakePhoto.mockResolvedValueOnce([photo]);
     const onSend = jest.fn().mockResolvedValue(true);
@@ -215,14 +217,67 @@ describe('ChatInputBar', () => {
     });
 
     expect(mockRouterPush).not.toHaveBeenCalled();
+    expect(mockTakePhoto).toHaveBeenCalledTimes(1);
+    expect(onSend).not.toHaveBeenCalled();
+    expect(mockReleaseImagesAfterSend).not.toHaveBeenCalled();
+  });
+
+  it('offers separate camera and library actions after the first photo is staged', async () => {
+    mockPendingImages = [
+      { uri: 'file:///meal-1.jpg', base64: 'meal-1', type: 'jpeg' },
+    ];
+    mockTakePhoto.mockResolvedValueOnce([
+      { uri: 'file:///meal-2.jpg', base64: 'meal-2', type: 'jpeg' },
+    ]);
+
+    const { getByLabelText } = render(
+      <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
+    );
+
+    await act(async () => {
+      fireEvent.press(getByLabelText('继续拍照'));
+      await Promise.resolve();
+    });
+    await act(async () => {
+      fireEvent.press(getByLabelText('继续从相册选择'));
+      await Promise.resolve();
+    });
+
+    expect(mockTakePhoto).toHaveBeenCalledTimes(1);
+    expect(mockPickImage).toHaveBeenCalledTimes(1);
+  });
+
+  it('submits all staged meal photos once with one meal-record context', async () => {
+    const firstPhoto = { uri: 'file:///meal-1.jpg', base64: 'meal-1', type: 'jpeg' };
+    const secondPhoto = { uri: 'file:///meal-2.jpg', base64: 'meal-2', type: 'jpeg' };
+    mockTakePhoto.mockResolvedValueOnce([firstPhoto]);
+    const onSend = jest.fn().mockResolvedValue(true);
+    const view = render(
+      <ChatInputBar onSend={onSend} isStreaming={false} />,
+    );
+
+    fireEvent.press(view.getByLabelText('附件菜单'));
+    await act(async () => {
+      fireEvent.press(view.getByLabelText('拍照记餐'));
+      await Promise.resolve();
+    });
+
+    mockPendingImages = [firstPhoto, secondPhoto];
+    view.rerender(<ChatInputBar onSend={onSend} isStreaming={false} />);
+    await act(async () => {
+      fireEvent.press(view.getByLabelText('发送消息'));
+      await Promise.resolve();
+    });
+
+    expect(onSend).toHaveBeenCalledTimes(1);
     expect(onSend).toHaveBeenCalledWith(
       '记录这餐',
-      [photo],
+      [firstPhoto, secondPhoto],
       expect.objectContaining({
-        extraContext: expect.stringContaining('mobile_chat_meal_photo'),
+        extraContext: expect.stringContaining('diet_photo_record'),
       }),
     );
-    expect(mockReleaseImagesAfterSend).toHaveBeenCalled();
+    expect(mockReleaseImagesAfterSend).toHaveBeenCalledTimes(1);
   });
 
   it('renders only one compact composer row by default', () => {
