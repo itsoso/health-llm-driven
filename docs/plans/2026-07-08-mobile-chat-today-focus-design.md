@@ -151,3 +151,45 @@ Implement in three small steps:
 3. Add expanded evidence from richer Today data, including weather and air quality only when real fields exist.
 
 This keeps the first release useful while avoiding a broad dashboard rewrite.
+
+## 2026-07-16 Revision: Contextual Status Strip
+
+The original always-on Today Focus region solved discoverability but created a
+new problem: it repeated the same action and counters above every conversation.
+Rotating the wording would only disguise the repetition. The mobile Agent page
+should therefore stop treating Today Focus as permanent navigation.
+
+### Revised Default
+
+- Normal conversation: render no Today Focus card, launcher, or loading shell.
+- New conversation: also start directly with the Agent surface; do not reserve
+  empty vertical space for a possible focus item.
+- Stable access: add `今日计划` to the header overflow menu. Counts and full plan
+  detail belong on the Today surface, not in the conversation header.
+
+### Conditional Strip
+
+Render one compact, single-row context strip only when the state is timely:
+
+1. Safety or material health-state change.
+2. Agent processing or recoverable failure.
+3. An action is due or overdue now.
+4. A precisely scheduled action starts within 90 minutes.
+
+The strip uses direct copy instead of an eyebrow plus counters:
+
+- `恢复偏低 · 今天降低训练强度`
+- `08:30 · 记录体重和腰围`
+- `正在整理你的饮食记录…`
+
+Priority is `safety > agent state > due now > near action > hidden`. A dismissed
+action strip disappears completely; it must not become an `已隐藏` placeholder.
+Agent processing strips disappear with the turn and error strips retain the
+existing retry action. The full plan remains reachable from `更多操作 > 今日计划`.
+
+### Data And Safety Boundary
+
+The client may derive strip visibility only from existing timeline status,
+severity, and scheduled timestamps. It must not infer a medical state, invent a
+time, or promote an unscheduled pending item merely because it is first in the
+timeline. No backend contract or health write path changes in this revision.

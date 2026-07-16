@@ -10,6 +10,78 @@
 
 ---
 
+## 2026-07-16 Revision Plan: Contextual Status Strip
+
+**Goal:** Remove the permanent Today Focus surface from Mobile Agent chat and
+show a compact strip only for active Agent state, safety changes, due actions,
+or actions scheduled within 90 minutes.
+
+**Architecture:** Keep the existing Today resolver as the source adapter, add a
+pure context-strip visibility policy, and make `ChatTodayFocusCard` nullable.
+`ChatScreen` removes the launcher/loading placeholder and exposes the full plan
+through the existing header overflow sheet.
+
+### Revision Task 1: Lock The Visibility Policy
+
+**Files:**
+- Modify: `mobile/components/chat/__tests__/todayFocus.test.ts`
+- Modify: `mobile/components/chat/todayFocus.ts`
+
+1. Add failing tests for default hidden, overdue/due, high-severity, and
+   scheduled-within-90-minutes behavior.
+2. Run the resolver test and verify the new assertions fail because no context
+   strip exists.
+3. Add the minimal `contextStrip` model and deterministic priority resolver.
+4. Re-run the resolver test and verify it passes.
+
+### Revision Task 2: Replace The Permanent Card
+
+**Files:**
+- Modify: `mobile/components/chat/__tests__/ChatTodayFocusCard.test.tsx`
+- Modify: `mobile/components/chat/ChatTodayFocusCard.tsx`
+
+1. Add failing tests proving empty state renders nothing, active turn renders a
+   single-row status, and dismissing an action does not render a launcher.
+2. Run the component test and verify it fails against the current full/compact
+   card implementation.
+3. Replace the full/compact/launcher variants with one conditional strip while
+   retaining retry and Today navigation callbacks.
+4. Re-run the component test and verify it passes.
+
+### Revision Task 3: Wire The Stable Entry
+
+**Files:**
+- Modify: `mobile/app/(tabs)/__tests__/chat.test.tsx`
+- Modify: `mobile/app/(tabs)/chat.tsx`
+
+1. Add failing screen tests for no reserved focus space, complete dismissal,
+   and `更多操作 > 今日计划` navigation.
+2. Remove the loading shell and launcher state from the screen.
+3. Add the menu row and semantic-key dismissal state.
+4. Run the focused screen tests, then the full Mobile validation set.
+
+### Verification Commands
+
+```bash
+pnpm --dir mobile exec jest --runTestsByPath \
+  components/chat/__tests__/todayFocus.test.ts \
+  components/chat/__tests__/ChatTodayFocusCard.test.tsx \
+  'app/(tabs)/__tests__/chat.test.tsx' --runInBand
+pnpm --dir mobile exec tsc --noEmit
+pnpm --dir mobile exec eslint \
+  components/chat/todayFocus.ts \
+  components/chat/ChatTodayFocusCard.tsx \
+  'app/(tabs)/chat.tsx'
+git diff --check
+```
+
+Manual verification uses an iPhone simulator in four states: normal
+conversation, processing, recoverable failure, and due action. Normal
+conversation must begin without a top placeholder, and `今日计划` must remain
+reachable from the overflow menu.
+
+---
+
 ## Task 1: Add the Focus Resolver
 
 **Files:**

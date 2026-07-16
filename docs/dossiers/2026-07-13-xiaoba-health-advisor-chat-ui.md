@@ -114,3 +114,13 @@
 ## S8 · 沉淀
 
 - 待回写。
+
+## 2026-07-16 · 今日重点条件状态条修订
+
+- 用户问题：顶部“今日重点”长期重复同一行动和计数，关闭后仍显示占位入口，形成视觉疲劳。
+- 方案：正常对话默认不显示；仅在安全/状态变化、Agent 运行或可恢复失败、到期/逾期、90 分钟内精确排程时显示单行状态条；完整计划从 `更多操作 > 今日计划` 打开。
+- Feature Spec：`docs/specs/active/2026-07-16-mobile-chat-context-strip.md`。
+- 设计与计划：更新 `docs/plans/2026-07-08-mobile-chat-today-focus-design.md` 和 `docs/plans/2026-07-08-mobile-chat-today-focus-implementation-plan.md`。
+- G1：PASS。映射 `HealthAgendaItem / LeverageAction`，Mobile surface，safety `low`，无新写路径。
+- G2：PASS。沿用现有 Today timeline 和 Agent turn state；缺失或含糊的排程时间不触发状态条；安全状态优先。
+- 当前状态：S3 规划完成，进入 S4 测试先行研发。
