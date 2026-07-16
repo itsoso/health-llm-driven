@@ -515,6 +515,7 @@ _R4_MARKER = "## 安全与边界 (R4"          # 医疗边界章节标题
 _ANTI_ECHO_MARKER = "绝对不要把工具返回的原始 JSON"   # 防回显规则 (R4 里那条)
 _RECORD_GUIDANCE_MARKER = "data 参数必须包含具体内容"  # 记录 worked-example / 单位默认指引
 _LITE_HEALTH_MARKER = "当前时段:"           # build_lite_health_context 路径注入
+_BEIJING_DATE_MARKER = "当前北京时间日期:"
 # full-only marker (lite 必须不含):
 _WORLDVIEW_MARKER = "【健康世界观"          # worldview_prompt_blob (full 恒注入)
 
@@ -531,6 +532,10 @@ def test_lite_prompt_keeps_core_persona_and_record_guidance(db, auth_user_and_he
     assert _ANTI_ECHO_MARKER in lite
     assert _RECORD_GUIDANCE_MARKER in lite
     assert _LITE_HEALTH_MARKER in lite
+    assert (
+        f"{_BEIJING_DATE_MARKER} {ae.datetime.now(ae.BEIJING_TZ).date().isoformat()}"
+        in lite
+    )
     # SKIP: 分析 blob (世界观是 full 恒注入的最稳 marker)
     assert _WORLDVIEW_MARKER not in lite
 
@@ -548,6 +553,7 @@ def test_full_prompt_unchanged_contains_analysis_blobs(db, auth_user_and_headers
     assert _R4_MARKER in full
     assert _ANTI_ECHO_MARKER in full
     assert _RECORD_GUIDANCE_MARKER in full
+    assert _BEIJING_DATE_MARKER in full
 
 
 def test_default_prompt_equals_full_byte_for_byte(db, auth_user_and_headers):

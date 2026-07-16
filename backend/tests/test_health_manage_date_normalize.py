@@ -11,7 +11,9 @@ import pytest
 
 from app.services.agent_executor import (
     AgentExecutor,
+    _ground_query_response_date_labels,
     _is_explicit_latest_diet_delete,
+    _model_tool_result_content,
     _parse_explicit_diet_correction,
     _normalize_relative_date,
     _tool_call_is_read_only,
@@ -289,6 +291,43 @@ def test_diet_record_used_as_query_noun_still_uses_beijing_today():
     assert json.loads(calls[0]["function"]["arguments"])["date"] == (
         datetime.now(BJ).date().isoformat()
     )
+
+
+def test_diet_query_tool_result_tells_synthesis_exact_beijing_date():
+    today = datetime.now(BJ).date().isoformat()
+
+    content = _model_tool_result_content(
+        "health_manage",
+        {"record_type": "diet", "operation": "list", "date": today},
+        '[{"id": 1, "record_date": "' + today + '"}]',
+    )
+
+    assert f"查询日期: {today}" in content
+    assert "时区: Asia/Shanghai" in content
+    assert content.endswith('}]')
+
+
+def test_stale_beijing_date_in_query_response_is_grounded_before_streaming():
+    today = datetime.now(BJ).date()
+    stale_day = 14 if today.day != 14 else 13
+    text = f"# 今日饮食汇总（北京时间 7月{stale_day}日）\n\n早餐……"
+
+    grounded = _ground_query_response_date_labels(
+        text,
+        "列出我今天的饮食，按照北京时间",
+    )
+
+    assert f"北京时间 {today.month}月{today.day}日" in grounded
+    assert f"北京时间 7月{stale_day}日" not in grounded
+
+
+def test_explicit_diet_update_response_date_is_not_rewritten():
+    original = "已把 7月14日 的晚餐改到北京时间 7月15日"
+
+    assert _ground_query_response_date_labels(
+        original,
+        "把晚餐改到昨天，再列出今天吃的东西",
+    ) == original
 
 
 @pytest.mark.asyncio

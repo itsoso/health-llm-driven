@@ -15,7 +15,7 @@ import json
 import logging
 import re
 import time
-from datetime import UTC, datetime, timezone, timedelta
+from datetime import UTC, date, datetime, timezone, timedelta
 from typing import AsyncGenerator, Dict, Any, List, Optional, Tuple
 from urllib.parse import urlencode
 
@@ -3715,6 +3715,53 @@ def _query_only_health_manage_scope(message: Optional[str]) -> Optional[Dict[str
         scope["meal_type"] = target_meal_type
     return scope
 
+
+_BEIJING_DATE_LABEL_RE = re.compile(
+    r"(?P<prefix>北京时间\s*)(?P<year>\d{4}年)?\d{1,2}月\d{1,2}日"
+)
+
+
+def _ground_query_response_date_labels(text: str, message: str) -> str:
+    """Ground Beijing date labels for an explicit read-only relative-date query."""
+    scope = _query_only_health_manage_scope(message)
+    target_date = (scope or {}).get("date")
+    if not target_date or not text:
+        return text
+    try:
+        target = date.fromisoformat(target_date)
+    except ValueError:
+        return text
+
+    def _replacement(match: re.Match[str]) -> str:
+        year = f"{target.year}年" if match.group("year") else ""
+        return f"{match.group('prefix')}{year}{target.month}月{target.day}日"
+
+    return _BEIJING_DATE_LABEL_RE.sub(_replacement, text)
+
+
+def _model_tool_result_content(
+    tool_name: str,
+    args: Dict[str, Any],
+    result: str,
+) -> str:
+    """Add deterministic query scope to the model-only tool result."""
+    if (
+        tool_name != "health_manage"
+        or args.get("record_type") != "diet"
+        or args.get("operation") != "list"
+    ):
+        return result
+    target_date = _normalize_relative_date(args.get("date"))
+    if not target_date:
+        return result
+    return (
+        "[系统查询口径]\n"
+        "时区: Asia/Shanghai (北京时间)\n"
+        f"查询日期: {target_date}\n"
+        "回答中如写日期，只能使用该查询日期，不得沿用历史消息中的日期。\n"
+        f"[查询结果]\n{result}"
+    )
+
 # 破坏性(删/改/撤销)+ 同步 意图 —— 这类工具决策弱 fast 模型不可靠:生产实测(2026-07-14)
 # 「删除早餐/删除重复」「帮我同步/同步garmin」被降到 qwen3.6-flash 后反复失败(没吐出
 # 对的 tool call → 0 工具 → 诚实守卫报错),而强模型(qwen3.7-max)在 23:19 同句 status=complete
@@ -4651,7 +4698,11 @@ class AgentExecutor:
                                     result = _hb_val
                             if write_fingerprint:
                                 write_results_by_fingerprint[write_fingerprint] = result
-                        lead_messages.append({"role": "tool", "tool_call_id": tc["id"], "content": result})
+                        lead_messages.append({
+                            "role": "tool",
+                            "tool_call_id": tc["id"],
+                            "content": _model_tool_result_content(fn, parsed_args, result),
+                        })
                         lbl = _TOOL_TO_SOURCE_LABEL.get(fn)
                         if lbl and lbl not in sources_used:
                             sources_used.append(lbl)
@@ -4761,6 +4812,7 @@ class AgentExecutor:
 
             if not final_text.strip():
                 final_text = lead_text or "多模型综合分析未能生成最终结论，请重试。"
+            final_text = _ground_query_response_date_labels(final_text, message)
             for i in range(0, len(final_text), 24):
                 yield {"event": "token", "data": {"content": final_text[i:i + 24]}}
             full_reply = final_text
@@ -4783,6 +4835,7 @@ class AgentExecutor:
         full_reply = _strip_reva_ui_from_llm_text(full_reply)
         full_reply = _strip_botched_text_tool_leak(full_reply)
         full_reply = _strip_scope_refusal_preamble(full_reply)
+        full_reply = _ground_query_response_date_labels(full_reply, message)
         ai_msg = svc.save_message(
             conv.id,
             "assistant",
@@ -6190,7 +6243,11 @@ class AgentExecutor:
                         messages.append({
                             "role": "tool",
                             "tool_call_id": tool_id,
-                            "content": result,
+                            "content": _model_tool_result_content(
+                                func_name,
+                                parsed_tool_args,
+                                result,
+                            ),
                         })
 
                         # GenUI metric_table (rank1): 记下只读数据查询工具的
@@ -6656,6 +6713,7 @@ class AgentExecutor:
         full_reply = _strip_reva_ui_from_llm_text(full_reply)
         full_reply = _strip_botched_text_tool_leak(full_reply)
         full_reply = _strip_scope_refusal_preamble(full_reply)
+        full_reply = _ground_query_response_date_labels(full_reply, message)
         record_intent_no_tool = bool(
             self._prefer_fast_record_model and tool_executed_count == 0
         )
@@ -7191,6 +7249,10 @@ class AgentExecutor:
         parts = [
             "你是用户的 AI 健康助理。你可以通过工具调用获取、记录和分析用户的健康数据。",
             "你是唯一的对话入口——用户的所有健康相关请求（记录数据、查询指标、深度分析、图片识别）都由你处理。",
+            (
+                f"当前北京时间日期: {datetime.now(BEIJING_TZ).date().isoformat()}。"
+                "解析今天、昨天、前天时必须以此日期为唯一基准，不得沿用历史消息中的旧日期。"
+            ),
             "",
             "## 工作方式",
             "1. 分析用户请求，决定需要调用哪些工具",
