@@ -326,10 +326,11 @@ export async function* streamChat(
           ? parsed.data.write_attempted
           : undefined;
         const receipt = normalizeWriteReceipt(parsed.data?.receipt);
-        // 成功静默 (AI token 流会接着讲), 失败才给用户可见的简短提示
+        // 工具结果是回合内的中间状态，失败后 Agent 仍可能纠正参数并重试成功。
+        // 不把临时失败写进永久正文；整轮失败由后端终态文本或 error 事件呈现。
         return {
           type: 'tool',
-          content: ok ? '' : '⚠️ 操作未成功，请稍后重试\n\n',
+          content: '',
           toolName: tool,
           toolSuccess: ok,
           ...(typeof writeAttempted === 'boolean' ? { writeAttempted } : {}),

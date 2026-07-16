@@ -182,6 +182,53 @@ describe('streamChat', () => {
     await iter.return?.(undefined as any);
   });
 
+  it('keeps a recoverable tool failure out of the assistant body before a verified retry', async () => {
+    const iter = streamChat('删除旧午餐，保留刚才这一餐');
+    const failedAttempt = iter.next();
+
+    await Promise.resolve();
+    const xhr = MockXMLHttpRequest.instances[0];
+    xhr.responseText =
+      'data: {"event":"tool_result","data":{"tool":"health_manage","success":false,"write_attempted":true,"write_completed":false,"preview":"参数不完整"}}\n\n';
+    xhr.onprogress?.();
+
+    await expect(failedAttempt).resolves.toEqual({
+      value: {
+        type: 'tool',
+        content: '',
+        toolName: 'health_manage',
+        toolSuccess: false,
+        writeAttempted: true,
+        writeCompleted: false,
+        recordType: undefined,
+        recordData: undefined,
+        thought: '健康记录暂时不可用',
+      },
+      done: false,
+    });
+
+    const successfulRetry = iter.next();
+    xhr.responseText +=
+      'data: {"event":"tool_result","data":{"tool":"health_manage","success":true,"write_attempted":true,"write_completed":true,"receipt":{"operation_id":"health_manage:diet_record:829","status":"verified","resource_type":"diet_record","resource_id":"829","completed_at":"2026-07-16T04:17:31.825611+00:00","verified":true}}}\n\n';
+    xhr.onprogress?.();
+
+    await expect(successfulRetry).resolves.toEqual({
+      value: expect.objectContaining({
+        type: 'tool',
+        content: '',
+        toolName: 'health_manage',
+        toolSuccess: true,
+        writeCompleted: true,
+        receipt: expect.objectContaining({
+          operationId: 'health_manage:diet_record:829',
+          verified: true,
+        }),
+      }),
+      done: false,
+    });
+    await iter.return?.(undefined as any);
+  });
+
   it('distinguishes health-manage queries from writes at tool-call time', async () => {
     const queryIter = streamChat('查询饮食');
     const queryEvent = queryIter.next();
