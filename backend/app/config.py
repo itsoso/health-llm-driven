@@ -214,7 +214,7 @@ class Settings(BaseSettings):
     # 任务分级模型路由(成本/延迟):开后按 task_tier 选模型;默认关=零行为变更
     task_tiered_routing: bool = False
     # GenUI metric_table 卡片(延迟, Phase-2 rank1)服务端 kill-switch:关=后端绝不发
-    # metric_table 卡片、也不注入 ≤500字 契约(逐字节现状)。**主门是 caps 协商**
+    # metric_table 卡片、也不注入 GenUI 正文格式契约(逐字节现状)。**主门是 caps 协商**
     # (客户端声明 genui-table-v1);本 flag 只是无需客户端发版即可服务端全局停用的开关。
     # 默认开:声明了 cap 的客户端才受影响,旧端不声明 → 零行为变更。
     genui_table_enabled: bool = True

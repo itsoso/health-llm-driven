@@ -168,6 +168,8 @@ class TestLiteModePromptSkipsDbBlocks:
         assert persona_called == []
         # prompt 仍然能正常构建 (twin_blob + 默认 system_prompt)
         assert "首席分析师" in sp
+        assert "不超过 500 字" not in sp
+        assert "按问题完整回答" in sp
         assert "用户原始问题" in up
 
     def test_lite_mode_inject_memory_skips_hybrid(self, monkeypatch, db):

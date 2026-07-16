@@ -6,7 +6,7 @@
   1. 建表器确定性 (单元格逐字来自工具结果字段) + 对抗 (字段缺失 → 绝不编造行)。
   2. strip 护栏覆盖伪造的 metric_table fence (与图表同一 R4 剥离器)。
   3. cap 缺失 → 零 emission + prompt 保持现状 (mac 指令原样); cap 声明 → fence 追加 +
-     ≤500字 契约注入 + mac 指令被覆盖。
+     GenUI 格式契约注入 + mac 指令被覆盖，且不截断正文。
   4. 伪造 fence 被剥、确定性 fence 保留; kill-switch 关 → 即便声明 cap 也不发。
   5. R4 纪律: LLM 合成抛错 → 表格仍从工具结果确定性建出 (数值不来自 LLM)。
 
@@ -663,7 +663,9 @@ def _batch_round_stream(captured):
 
 
 @pytest.mark.asyncio
-async def test_cap_on_injects_500_contract_and_supersedes_mac(db, auth_user_and_headers, monkeypatch):
+async def test_cap_on_injects_genui_contract_without_truncating_narrative_and_supersedes_mac(
+    db, auth_user_and_headers, monkeypatch
+):
     user, _ = auth_user_and_headers
     executor = AgentExecutor(db)
     _wire(executor, monkeypatch)
@@ -675,7 +677,9 @@ async def test_cap_on_injects_500_contract_and_supersedes_mac(db, auth_user_and_
                extra_context=_MAC_CTX, user_id=user.id)
 
     prompt = "\n".join(c for msgs in captured for c in msgs if isinstance(c, str))
-    assert "数据回答格式要求" in prompt and "不超过 500 字" in prompt
+    assert "数据回答格式要求" in prompt
+    assert "不超过 500 字" not in prompt
+    assert "正文按问题完整回答" in prompt
     # mac 大表指令被覆盖: 声明了 cap → 不注入桌面端 markdown 表格强制指令
     assert "必须用大 markdown 表格逐行列出所有数值" not in prompt
     assert "桌面端回复格式要求" not in prompt
@@ -683,7 +687,7 @@ async def test_cap_on_injects_500_contract_and_supersedes_mac(db, auth_user_and_
 
 @pytest.mark.asyncio
 async def test_cap_off_preserves_mac_instruction_no_contract(db, auth_user_and_headers, monkeypatch):
-    """cap 缺失 → 现状: mac 指令原样注入, 无 ≤500字 契约 (prompt 未被本特性改动)。"""
+    """cap 缺失 → mac 指令原样注入, 不注入 GenUI 专属格式契约。"""
     user, _ = auth_user_and_headers
     executor = AgentExecutor(db)
     _wire(executor, monkeypatch)
@@ -696,7 +700,8 @@ async def test_cap_off_preserves_mac_instruction_no_contract(db, auth_user_and_h
 
     prompt = "\n".join(c for msgs in captured for c in msgs if isinstance(c, str))
     assert "必须用大 markdown 表格逐行列出所有数值" in prompt  # mac 指令保留
-    assert "数据回答格式要求" not in prompt and "不超过 500 字" not in prompt
+    assert "数据回答格式要求" not in prompt
+    assert "不超过 500 字" not in prompt
     assert "reva-ui" not in _tokens(events)  # 零 emission
 
 
@@ -797,7 +802,7 @@ async def test_kill_switch_off_no_fence_even_with_cap(db, auth_user_and_headers,
     events = await _run(executor, "对比我这周和上周的 HRV", client_caps=[GENUI_TABLE_CAP], user_id=user.id)
     rendered = _tokens(events)
     assert "reva-ui" not in rendered
-    # flag 关 → 也不注入 ≤500字 契约 (逐字节现状)
+    # flag 关 → 也不注入 GenUI 契约
     prompt = "\n".join(c for msgs in captured for c in msgs if isinstance(c, str))
     assert "数据回答格式要求" not in prompt
 
@@ -907,7 +912,7 @@ _CARVEOUT_MARKER = "必须在正文中明确说出具体数值"
 
 @pytest.mark.asyncio
 async def test_cap_on_crisis_bp_injects_carveout(db, auth_user_and_headers, monkeypatch):
-    """Condition 1: cap on + BP 高分级结果 → ≤500字 契约携带"危急值必须复述"安全例外,
+    """Condition 1: cap on + BP 高分级结果 → GenUI 契约携带"危急值必须复述"安全例外,
     且既有"不复述数值行"与"安全边界照常表达"两行未被削弱; BP 路径仍确定性出卡片。"""
     user, _ = auth_user_and_headers
     executor = AgentExecutor(db)
@@ -919,7 +924,9 @@ async def test_cap_on_crisis_bp_injects_carveout(db, auth_user_and_headers, monk
     events = await _run(executor, "看看我的血压", client_caps=[GENUI_TABLE_CAP], user_id=user.id)
 
     prompt = "\n".join(c for msgs in captured for c in msgs if isinstance(c, str))
-    assert "数据回答格式要求" in prompt and "不超过 500 字" in prompt
+    assert "数据回答格式要求" in prompt
+    assert "不超过 500 字" not in prompt
+    assert "正文按问题完整回答" in prompt
     assert _CARVEOUT_MARKER in prompt and "安全例外" in prompt        # 安全例外落进 prompt
     assert "高血压2-3级" in prompt                                    # 例外示例用真实分级词
     # 既有边界不被削弱: 两行原样保留
@@ -933,7 +940,7 @@ async def test_cap_on_crisis_bp_injects_carveout(db, auth_user_and_headers, monk
 
 @pytest.mark.asyncio
 async def test_cap_off_no_carveout(db, auth_user_and_headers, monkeypatch):
-    """对称: cap 缺失 → ≤500字 契约整体不注入, 因此安全例外碎片也不存在。"""
+    """对称: cap 缺失 → GenUI 契约整体不注入, 因此安全例外碎片也不存在。"""
     user, _ = auth_user_and_headers
     executor = AgentExecutor(db)
     _wire(executor, monkeypatch)

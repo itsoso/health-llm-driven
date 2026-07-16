@@ -1217,7 +1217,8 @@ final class AgentStreamClientTests: XCTestCase {
         XCTAssertEqual(json["response_format"] as? String, "markdown")
         let instruction = try XCTUnwrap(json["desktop_markdown_response_instruction"] as? String)
         XCTAssertTrue(instruction.contains("Markdown"))
-        XCTAssertTrue(instruction.contains("正文控制在 500 字以内"))
+        XCTAssertTrue(instruction.contains("按问题完整展开必要的证据"))
+        XCTAssertFalse(instruction.contains("正文控制在 500 字以内"))
         XCTAssertTrue(instruction.contains("不确定性边界"))
     }
 

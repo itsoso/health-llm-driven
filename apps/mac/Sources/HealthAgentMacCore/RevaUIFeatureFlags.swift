@@ -2,7 +2,7 @@ import Foundation
 
 /// GenUI reva-ui 组件的编译期能力开关。
 ///
-/// rank1 「GenUI-first」把 ≤500字叙事 + `metric_table` 卡片作为深分析的默认呈现。渲染器
+/// rank1 「GenUI-first」把结构化叙事 + `metric_table` 卡片作为深分析的默认呈现。渲染器
 /// (chat-transcript.html 的 JS builder + CSS)**随包发布**,但能力协商 cap 与桌面指令
 /// 的切换默认**暗着**——只有 prose eval gate 过后,才用一行提交把 `tableCapEnabled` 翻 true。
 ///

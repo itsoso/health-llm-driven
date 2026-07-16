@@ -5076,7 +5076,8 @@ class AgentExecutor:
         # 非法/未声明一律 None → fail-closed(症状保留确认)。
         self._turn_channel = channel if channel in ("typed", "voice", "siri") else None
         # GenUI metric_table (rank1): 客户端声明 genui-table-v1 且未被 kill-switch 关闭时,
-        # 工具结果确定性打成表格卡片 (合成后追加 fence) + 正文改走 ≤500字 契约。
+        # 工具结果确定性打成表格卡片 (合成后追加 fence)。正文仍按问题完整回答，避免
+        # 把卡片优化误变成用户可见的 500 字硬截断。
         # 无 cap / flag 关 → 逐字节现状 (不追踪、不注入、不追加)。fail-open。
         from app.services.genui import GENUI_TABLE_CAP as _GENUI_TABLE_CAP
         genui_table_on = (
@@ -5389,15 +5390,15 @@ class AgentExecutor:
                 sources_used.append("ActionCard")
         if genui_table_on:
             # GenUI metric_table (rank1): 客户端声明 genui-table-v1 → 数据由后端确定性
-            # 表格卡片直接呈现, 正文改走 ≤500字 结论先行契约。**服务端硬门**: 即便旧客户端
+            # 表格卡片直接呈现。正文按问题完整回答，只需避免逐行重复。**服务端硬门**: 即便旧客户端
             # 仍在 extra_context 里塞 mac "最高优先级要求生成大 markdown 表", 声明了 cap 就
             # 以本契约为准并**覆盖**那条指令 —— 否则旧指令会一边索要 4000 字表格、一边又声明
-            # cap, 自伤 decode 税 (rank1 要消灭的正是这份税)。
+            # cap, 也不能同时要求两种互相冲突的展示格式。
             turn_context_parts.append(
                 "## 数据回答格式要求（最高优先级）\n"
                 "本回合若涉及健康数据查询，系统已用表格卡片把数值直接呈现给用户。因此：\n"
-                "- 正文**不超过 500 字**；\n"
-                "- **结论先行**：先给 2-3 条关键要点，再给可执行的行动建议；\n"
+                "- **正文按问题完整回答**：结论先行，按需展开背景、证据、风险、边界和行动，不因卡片存在而截断；\n"
+                "- **结构清晰**：先给 2-3 条关键要点，再给必要的解读与可执行行动建议；\n"
                 "- **绝不逐行复述表格中的数值行**（用户已在卡片里看到），只做解读、趋势、对比与行动指引；\n"
                 "- **安全例外**：异常或危急数值（如血压达高血压2-3级、血氧过低、血糖过高或过低、"
                 "化验危急值等）**必须在正文中明确说出具体数值**并给出对应行动建议，不受上面"

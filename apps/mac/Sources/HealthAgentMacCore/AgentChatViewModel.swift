@@ -1957,7 +1957,7 @@ public final class AgentChatViewModel {
     private static let medicalExamImportSafetyNote = "OCR/AI 解析结果需要复核后再用于判断。"
 
     private static let desktopMarkdownResponseInstruction = """
-    请用适合桌面阅读的中文 Markdown 回复：先给 2-3 条关键结论；正文控制在 500 字以内；再用二级/三级标题分段；比较或分项判断优先用表格；行动建议用编号列表；关键数值和结论加粗。每段最多 3 行，标题、段落、列表之间必须留空行。不要输出密集长段落，不要用长破折号把所有判断串成一段。最后必须包含「不确定性边界」和「下一步」；不要把基因风险当诊断，不要直接给用药决定。若需要执行结构化动作，自然语言说明后再给可确认动作。
+    请用适合桌面阅读的中文 Markdown 回复：先给 2-3 条关键结论；按问题完整展开必要的证据、风险边界和下一步，不要因篇幅主动截断；再用二级/三级标题分段；比较或分项判断优先用表格；行动建议用编号列表；关键数值和结论加粗。每段最多 3 行，标题、段落、列表之间必须留空行。不要输出密集长段落，不要用长破折号把所有判断串成一段。最后必须包含「不确定性边界」和「下一步」；不要把基因风险当诊断，不要直接给用药决定。若需要执行结构化动作，自然语言说明后再给可确认动作。
     """
 
     private static func visibleDraft(text: String, contextItems: [AgentContextItem]) -> String {

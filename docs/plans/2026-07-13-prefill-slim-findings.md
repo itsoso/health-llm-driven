@@ -39,7 +39,7 @@
 
 合成轮时间是 **decode-dominated**(qwen3.7-max ~12-13 tok/s 写 1800-5200 字符 = 45-130s)。缓存命中只降 **prefill encode(~1-3s)+ 成本(~5×)**,**几乎不动 decode**。所以:
 - **#2 prefill 缓存工作 = 成本优化 + 少量延迟**,near-zero-risk,值得做但不是延迟大杠杆。
-- **合成轮延迟的真杠杆 = 更短的输出**:GenUI-first metric_table 的 ≤500 字契约 + 确定性卡片承载数字 → 合成写更短 → 少 decode。这是 **1a(点亮已建好但暗置的 metric_table cap)** 的事,是 advice/analysis 回合真正的延迟改善。
+- **合成轮延迟的真杠杆 = 减少无效重复**:GenUI-first metric_table 由确定性卡片承载数字，正文只做结论、趋势、风险边界和行动，不逐行复述卡片；正文不再设置 500 字硬上限，避免深度建议被截断。**1a(点亮已建好但暗置的 metric_table cap)** 仍通过减少重复来降低 decode，但不牺牲完整性。
 
 ## 未做的更大杠杆(按 节省/风险 排,留待评估)
 
