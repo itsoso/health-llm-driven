@@ -51,6 +51,17 @@ def create_health_checkin(
                 else:
                     setattr(existing, key, value)
 
+        # rhinitis 单条/日:带了 sneeze_times 时,sneeze_count 从合并后的 ledger 求和并
+        # **单调递增**派生 —— 防止"增量口语"经 last-writer-wins 把当天累计写小(under-count
+        # 会压掉 rhinitis_trend 的 worsening 就医推送)。前端/移动/chat 三端统一为
+        # "增量入账、count=总和";只发 count 无 sneeze_times 的移动端 +1 路径不受影响。
+        if checkin.sneeze_times:
+            merged_times = getattr(existing, "sneeze_times", None) or []
+            derived = sum(
+                int(it.get("count") or 0) for it in merged_times if isinstance(it, dict)
+            )
+            existing.sneeze_count = max(existing.sneeze_count or 0, derived)
+
         db.commit()
         db.refresh(existing)
         return existing
@@ -58,6 +69,12 @@ def create_health_checkin(
     # 创建新记录
     checkin_data = checkin.model_dump()
     checkin_data["user_id"] = user_id
+
+    # 首次当日打卡:带 sneeze_times 但没显式 sneeze_count → 从 times 求和派生(与更新分支一致)。
+    if checkin.sneeze_times and not checkin_data.get("sneeze_count"):
+        checkin_data["sneeze_count"] = sum(
+            int(it.get("count") or 0) for it in checkin.sneeze_times if isinstance(it, dict)
+        )
 
     # 个性化建议改为异步生成（不阻塞打卡保存）
     # 同步 LLM 调用曾导致 POST /checkin/ 耗时 20-35 秒

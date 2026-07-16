@@ -9906,15 +9906,16 @@ class AgentExecutor:
             data.setdefault("status", "active")
             data.setdefault("priority", 5)
 
-        # rhinitis: 症状计数转 illness_episode (复用 illness 流程, 跟 rhinitis-tracker skill 对齐)
+        # rhinitis: 鼻炎每日打卡 → upsert 当天 HealthCheckin(单条/日滚动),不再每次
+        # mint 一条 illness_episode "鼻炎发作"。旧设计每次打卡建新 episode → 无界堆积
+        # active(实测 36 条卡死),且 RhinitisSpecialist / rhinitis_trend 读的是
+        # HealthCheckin(rhinitis_today),根本收不到 chat 打卡 —— 打卡既堆噪声又喂不到分析。
+        # HealthCheckin 按 checkin_date upsert(sneeze_times 按 time 合并,不覆盖当日其它
+        # 打卡字段;只在 value 非 None 时 setattr),是鼻炎打卡的规范单日存储。
         if rtype == "rhinitis":
             sneezing = int(data.get("sneezing", 0) or 0)
             congestion = int(data.get("congestion", 0) or 0)
             runny_nose = int(data.get("runny_nose", 0) or 0)
-            # 严重度取 congestion/runny_nose 的 1-10 量表 max, 无则按喷嚏频率兜底
-            severity_vals = [v for v in (congestion, runny_nose) if v and 0 < v <= 10]
-            severity = (max(severity_vals) if severity_vals
-                        else (min(8, max(3, sneezing // 3)) if sneezing else 2))
             parts = []
             if sneezing:
                 parts.append(f"喷嚏 {sneezing} 次")
@@ -9922,14 +9923,24 @@ class AgentExecutor:
                 parts.append(f"鼻塞 {congestion}/10")
             if runny_nose:
                 parts.append(f"流涕 {runny_nose} 次")
-            notes = data.get("notes") or "、".join(parts) or "鼻炎症状"
-            payload = {
-                "illness_name": "鼻炎发作",
-                "severity": severity,
-                "notes": notes,
-                "start_date": data.get("record_date") or today,
+            # 详情走 sneeze_times(合并追加,保留 congestion/runny_nose),不动 notes(避免
+            # 覆盖当日其它打卡备注)。sneeze_count 取本次报的今日累计次数(端点 setattr 覆盖)。
+            entry: Dict[str, Any] = {
+                "time": datetime.now(BEIJING_TZ).strftime("%H:%M"),
+                "count": sneezing,
+                "summary": "、".join(parts) or (data.get("notes") or "鼻炎打卡"),
             }
-            return await self._api_post(f"{base}/illness/episodes", headers, payload)
+            if congestion:
+                entry["congestion"] = congestion
+            if runny_nose:
+                entry["runny_nose"] = runny_nose
+            # sneeze_count 不在此设 —— 端点从合并后的 sneeze_times 单调派生(单一真源,
+            # 防"增量口语"经 last-writer-wins 把当天累计写小)。entry.count = 本次新增次数。
+            payload: Dict[str, Any] = {
+                "checkin_date": data.get("record_date") or today,
+                "sneeze_times": [entry],
+            }
+            return await self._api_post(f"{base}/checkin/", headers, payload)
 
         # supplement_group: 按时段批量打卡
         if rtype == "supplement_group":

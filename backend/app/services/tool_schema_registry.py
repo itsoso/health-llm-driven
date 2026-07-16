@@ -228,7 +228,7 @@ plan 结构:
 - sleep: 手动补录睡眠 (必须有入睡/醒来时间和质量)
 - excretion: 排便/排尿记录
 - exercise: 用户手动录的简单锻炼 (俯卧撑/瑜伽等). 注意: Garmin 跑步手表自动同步, 不要让用户走这个
-- rhinitis: 鼻炎症状 (喷嚏/鼻塞/流涕)
+- rhinitis: 鼻炎每日打卡 (喷嚏次数/鼻塞/流涕). **单条/日**滚动 —— 同一天多次报自动累加进当天那一条, 不会堆多条。改/删当日打卡走 App 打卡页, 别用 health_manage 删(会误删遗留 illness episode 或空删), 也别只用文字说"已撤销打卡"
 - mood: 情绪
 - medication: 服药一次
 - illness: 有**起止周期、会痊愈**的病症 (记状态, 之后能标记"好了")。不只全身性生病 (感冒/流感/发烧), 也包括**局部会愈合的病灶**: 口腔溃疡/舌尖溃疡/嘴唇起泡/湿疹/麦粒肿/甲沟炎/烫伤/水泡/伤口/带状疱疹/痘痘发作 等。判据: 用户会关心它"什么时候好"、之后会说"好了/痊愈/好转"→ 走 illness。用户说"我感冒了/生病了/发烧了/长了个溃疡/起了个疱"都优先记 illness
@@ -263,7 +263,7 @@ excretion:        {"type": "bowel|urine", "record_date": "2026-05-05",
                    "record_time": "08:30:00", "stool_type": 4, "notes": "正常"}
 exercise:         {"exercise_type": "俯卧撑", "reps": 10, "sets": 1}
                   或 {"exercise_type": "running", "duration": 30, "distance": 5.0}
-rhinitis:         {"sneezing": 2, "congestion": 1, "runny_nose": 0}  // 0-3 级
+rhinitis:         {"sneezing": 5, "congestion": 1, "runny_nose": 0}  // sneezing=这次新打的喷嚏次数(增量, 端点自动累加当天); congestion/runny_nose 0-3 级. 每日一条
 mood:             {"score": 7, "notes": "心情不错"}    // score 1-10
 medication:       {"medication_name": "布洛芬", "taken_time": "08:00"}
 illness:          {"name": "感冒", "severity": 5, "start_date": "2026-05-05", "status": "active"}

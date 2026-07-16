@@ -232,20 +232,23 @@ AGENT_OPS: Dict[str, Dict[str, Any]] = {
                    "via": "DELETE /symptoms/{id}"},
     },
     "rhinitis": {
-        # rhinitis 打卡转 illness_episode(illness_name=鼻炎发作),管理面复用 illness。
+        # rhinitis 每日打卡 → HealthCheckin(按 checkin_date upsert,单条/日滚动),
+        # 直接喂 RhinitisSpecialist(rhinitis_today)+ rhinitis_trend。旧设计每次打卡 mint
+        # 一条 "鼻炎发作" illness_episode → 无界堆积 active 且喂不到 specialist,已弃用。
+        # 遗留 鼻炎发作 episode 仍可经 illness 管理面收尾(不再新增)。
         "create": {
             "tool": "health_record", "record_type": "rhinitis", "confirm": "typed_only",
-            "via": "health_record(rhinitis) → POST /illness/episodes(illness_name=鼻炎发作)",
-            "undo": "health_manage(delete illness {record_id})",
+            "via": "health_record(rhinitis) → POST /checkin/(按 checkin_date upsert)",
+            "undo": "前端打卡页 / health_checkin API 编辑当日打卡",
         },
         "read": {"tool": "health_manage", "record_type": "illness",
-                 "via": "复用 illness:health_manage(list illness)"},
+                 "via": "遗留 鼻炎发作 episode:health_manage(list illness);当日打卡走 rhinitis_trend"},
         "list": {"tool": "health_manage", "record_type": "illness",
-                 "via": "GET /illness/episodes/all"},
+                 "via": "遗留:GET /illness/episodes/all(新打卡在 HealthCheckin,不在此)"},
         "update": {"tool": "health_manage", "record_type": "illness",
-                   "via": "PUT /illness/episodes/{id}"},
+                   "via": "遗留 episode:PUT /illness/episodes/{id}"},
         "delete": {"tool": "health_manage", "record_type": "illness",
-                   "via": "DELETE /illness/episodes/{id}"},
+                   "via": "遗留 episode:DELETE /illness/episodes/{id}"},
     },
     "illness": {
         "create": {
