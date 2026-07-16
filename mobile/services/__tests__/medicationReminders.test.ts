@@ -98,7 +98,7 @@ describe('scheduleMedicationReminders', () => {
 
     const firstCall = mockNotif.scheduleNotificationAsync.mock.calls[0][0];
     expect(firstCall.trigger).toEqual({ type: 'daily', hour: 9, minute: 0 });
-    expect(firstCall.content.categoryIdentifier).toBe('MEDICATION_REMINDER');
+    expect(firstCall.content.categoryIdentifier).toBeUndefined();
     expect(firstCall.content.data).toMatchObject({
       reminder_type: 'medication',
       medication_id: 1,

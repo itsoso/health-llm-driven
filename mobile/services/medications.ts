@@ -99,6 +99,7 @@ export interface MedicationLogResult {
 
 export interface LogMedicationInput {
   medication_id: number;
+  taken_date?: string; // "YYYY-MM-DD"; Watch 通知必须回写提醒实际发生日
   taken_time: string; // "HH:MM"
   status: 'taken' | 'skipped';
   skip_reason?: string;

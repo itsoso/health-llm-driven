@@ -4,7 +4,7 @@
 |---|---|
 | slug | `watch-medication-push-checkin` |
 | 创建日期 | 2026-07-16 |
-| 当前阶段 | G4 安全闸 |
+| 当前阶段 | G4 安全复审 |
 | 状态 | building |
 | 负责 | Codex |
 | 反馈环 | backend deploy -> Mobile production OTA -> iPhone + Apple Watch 真机验证 |
@@ -34,25 +34,29 @@
 ## S4 / S5 · 实现
 
 - [x] 用药通知动作改为“服用”，允许唤醒被终止的 iOS App。
-- [x] 动作统一走 typed `logMedication`，携带提醒时间槽，不再走旧的无时间写路径。
-- [x] 成功后刷新今日用药、时间线、议程；失败上报且不清 cold response。
-- [x] response 以 notification id + action id 去重，服务端继续做同槽幂等。
+- [x] 动作统一走 typed `logMedication`，携带提醒发生日期、时间槽和时区，不再走旧的无时间写路径。
+- [x] 成功后刷新今日用药、时间线、议程；失败提示、保留 cold response，并在联网恢复/回前台时重试。
+- [x] response 以 occurrence `rule_id` + action id 去重，避免 iOS 复用重复通知 id 吞掉次日动作；服务端继续做同槽幂等。
 - [x] 锁屏文案与按钮统一为“服用”，保持药名/剂量只在 data payload。
+- [x] 后端在写日志前按认证用户校验药物归属；旧日期打卡只落依从事实，不误完成今天议程。
+- [x] 每日重复的本地通知取消直写 category；只有带完整 occurrence identity 的远程推送提供腕上“服用”。
 
 ## G3 · 测试闸
 
-- Mobile focused Jest：5 suites / 86 tests PASS。
-- Mobile TypeScript：PASS；target ESLint：0 errors（既有 warnings 保留）。
-- Backend focused pytest：64 passed（用药推送隐私、`MedicationLog` 幂等、多剂时间槽与议程回写）。
+- Mobile focused Jest：4 suites / 85 tests PASS（连续多图、媒体草稿、通知动作、本地提醒）。
+- Mobile TypeScript：PASS。
+- Backend focused pytest：117 passed（用药推送隐私、用户隔离、明确发生日、`MedicationLog` 幂等、多剂时间槽、议程回写与并发）。
 - `git diff --check`：PASS。
-- Dossier 一致性闸：55 份全部自洽。
+- Dossier 一致性闸：54 份全部自洽。
 - **裁决：绿。**
 
 ## G4 · 安全闸
 
 - 触发：用药依从写路径、跨 Watch/Mobile notification contract。
 - 必审：用户归属、同槽幂等、失败不伪成功、锁屏隐私、不得把提醒动作解释为处方或已验证吞咽。
-- **裁决：待独立 safety/privacy review。**
+- 首轮独立 review：**NO-GO**。阻断项为：(1) 缺日期/时区时错误回退手机当前时间；(2) 写入失败缺少用户可见状态和自动重试；(3) 以可能复用的 iOS request id 去重会吞次日动作。
+- 修正证据：远程 payload 补齐 `scheduled_date/time/timezone/rule_id` 并严格匹配；失败保留 response、显示通用失败通知和 toast、联网/前台自动重试；去重键改为 `rule_id + action`；本地重复提醒取消直写；后端补用户归属校验。
+- **裁决：等待独立复审，复审前禁止发布。**
 
 ## S6 / G5 · 部署
 

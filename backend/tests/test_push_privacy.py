@@ -141,7 +141,9 @@ def test_medication_reminder_no_drug_name_on_lock_screen(db):
     assert kwargs["data"]["dosage"] == "500mg"
     assert kwargs["data"]["category"] == "MEDICATION_REMINDER"
     assert kwargs["data"]["reminder_type"] == "medication"
+    assert kwargs["data"]["scheduled_date"] == fixed_now.date().isoformat()
     assert kwargs["data"]["scheduled_time"] == cur_hhmm
+    assert kwargs["data"]["scheduled_timezone"] == "Asia/Shanghai"
     # title 泛化后 dedup 必须有 per 药×日×时点的 rule_id,防同日第二种药被 title 去重吞
     assert str(med.id) in kwargs["data"]["rule_id"]
     assert cur_hhmm in kwargs["data"]["rule_id"]

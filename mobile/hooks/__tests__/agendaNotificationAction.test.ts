@@ -44,6 +44,8 @@ jest.mock('expo-notifications', () => ({
   addNotificationResponseReceivedListener: jest.fn(() => ({ remove: jest.fn() })),
   getLastNotificationResponseAsync: jest.fn().mockResolvedValue(null),
   clearLastNotificationResponseAsync: jest.fn().mockResolvedValue(undefined),
+  scheduleNotificationAsync: jest.fn().mockResolvedValue('medication-action-failed'),
+  dismissNotificationAsync: jest.fn().mockResolvedValue(undefined),
   DEFAULT_ACTION_IDENTIFIER: 'expo.modules.notifications.actions.DEFAULT',
 }));
 
@@ -56,6 +58,7 @@ jest.mock('../../services/notificationRoutes', () => ({ resolveNotificationRoute
 import * as Notifications from 'expo-notifications';
 import {
   consumeLastNotificationResponse,
+  consumeNotificationResponse,
   handleAgendaAction,
   handleMedicationReminderAction,
   registerNotificationCategories,
@@ -73,6 +76,8 @@ const mockNotifications = Notifications as unknown as {
   setNotificationCategoryAsync: jest.Mock;
   getLastNotificationResponseAsync: jest.Mock;
   clearLastNotificationResponseAsync: jest.Mock;
+  scheduleNotificationAsync: jest.Mock;
+  dismissNotificationAsync: jest.Mock;
 };
 
 const REF = { object_type: 'health_protocol', object_id: 42 };
@@ -181,6 +186,8 @@ describe('Watch medication reminder action', () => {
     mockLogMedication.mockResolvedValue({ id: 88, medication_id: 7, status: 'taken' });
     mockNotifications.getLastNotificationResponseAsync.mockResolvedValue(null);
     mockNotifications.clearLastNotificationResponseAsync.mockResolvedValue(undefined);
+    mockNotifications.scheduleNotificationAsync.mockResolvedValue('medication-action-failed');
+    mockNotifications.dismissNotificationAsync.mockResolvedValue(undefined);
   });
 
   it('registers 服用 as a reliable action that wakes a terminated iOS app', async () => {
@@ -202,11 +209,15 @@ describe('Watch medication reminder action', () => {
     await handleMedicationReminderAction('TAKEN', {
       reminder_type: 'medication',
       medication_id: '7',
+      scheduled_date: '2026-07-16',
       scheduled_time: '08:30',
+      scheduled_timezone: 'Asia/Shanghai',
+      rule_id: 'medication_reminder.7.2026-07-16.08:30',
     });
 
     expect(mockLogMedication).toHaveBeenCalledWith({
       medication_id: 7,
+      taken_date: '2026-07-16',
       taken_time: '08:30',
       status: 'taken',
     });
@@ -225,7 +236,10 @@ describe('Watch medication reminder action', () => {
             data: {
               reminder_type: 'medication',
               medication_id: 7,
+              scheduled_date: '2026-07-16',
               scheduled_time: '08:30',
+              scheduled_timezone: 'Asia/Shanghai',
+              rule_id: 'medication_reminder.7.2026-07-16.08:30',
             },
           },
         },
@@ -250,7 +264,10 @@ describe('Watch medication reminder action', () => {
             data: {
               reminder_type: 'medication',
               medication_id: 7,
+              scheduled_date: '2026-07-16',
               scheduled_time: '09:00',
+              scheduled_timezone: 'Asia/Shanghai',
+              rule_id: 'medication_reminder.7.2026-07-16.09:00',
             },
           },
         },
@@ -266,6 +283,65 @@ describe('Watch medication reminder action', () => {
       'watch_action_failed',
       expect.objectContaining({ reason: 'request_failed', kind: 'medication' }),
     );
+    expect(mockNotifications.scheduleNotificationAsync).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: expect.objectContaining({
+          title: '用药打卡未保存',
+          body: expect.not.stringContaining('药'),
+        }),
+        trigger: null,
+      }),
+    );
+
+    mockLogMedication.mockResolvedValueOnce({ id: 89, medication_id: 7, status: 'taken' });
+    await consumeLastNotificationResponse();
+
+    expect(mockLogMedication).toHaveBeenCalledTimes(2);
+    expect(mockNotifications.clearLastNotificationResponseAsync).toHaveBeenCalledTimes(1);
+    expect(mockNotifications.dismissNotificationAsync).toHaveBeenCalled();
     warn.mockRestore();
+  });
+
+  it('fails closed when the medication occurrence date, timezone or rule id is missing', async () => {
+    await expect(handleMedicationReminderAction('TAKEN', {
+      reminder_type: 'medication',
+      medication_id: 7,
+      scheduled_time: '08:30',
+    })).resolves.toBe(false);
+
+    expect(mockLogMedication).not.toHaveBeenCalled();
+    expect(mockEmitClientEvent).toHaveBeenCalledWith(
+      'watch_action_failed',
+      expect.objectContaining({ reason: 'invalid_medication_occurrence' }),
+    );
+  });
+
+  it('uses rule_id rather than a reused iOS request id to deduplicate daily occurrences', async () => {
+    const responseFor = (date: string) => ({
+      actionIdentifier: 'TAKEN',
+      notification: {
+        date: Date.parse(`${date}T08:30:00+08:00`),
+        request: {
+          identifier: 'repeating-medication-request-7',
+          content: {
+            data: {
+              reminder_type: 'medication',
+              medication_id: 7,
+              scheduled_date: date,
+              scheduled_time: '08:30',
+              scheduled_timezone: 'Asia/Shanghai',
+              rule_id: `medication_reminder.7.${date}.08:30`,
+            },
+          },
+        },
+      },
+    });
+
+    await consumeNotificationResponse(responseFor('2026-07-18') as any);
+    await consumeNotificationResponse(responseFor('2026-07-19') as any);
+
+    expect(mockLogMedication).toHaveBeenCalledTimes(2);
+    expect(mockLogMedication).toHaveBeenNthCalledWith(1, expect.objectContaining({ taken_date: '2026-07-18' }));
+    expect(mockLogMedication).toHaveBeenNthCalledWith(2, expect.objectContaining({ taken_date: '2026-07-19' }));
   });
 });

@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from typing import Dict, Any, List, Optional
 from pydantic import BaseModel, field_validator
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from app.agents.safety_guardian.engine import evaluate_rules_with_status
 from app.agents.safety_guardian.schema import Alert, Severity
@@ -16,6 +16,7 @@ from app.api.deps import get_current_user_required
 from app.services.medication_service import medication_service
 from app.twin import builder as twin_builder
 from app.twin.schema import HealthTwin, TwinMeta
+from app.utils.timezone import get_user_today
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +67,7 @@ class MedicationUpdate(BaseModel):
 
 class MedicationLogCreate(BaseModel):
     medication_id: int
+    taken_date: Optional[date] = None
     taken_time: str
     status: str = "taken"
     skip_reason: Optional[str] = None
@@ -247,6 +249,11 @@ def _writeback_agenda_completion(
     from app.services import timeline_agenda_service as tas
     from app.services.timing_adapter import _domain
 
+    # 延迟点击旧通知时，服药事实属于提醒发生日。时间线完成接口只面向“今天”，
+    # 因此旧日期仅写 MedicationLog，绝不能把今天同一药物的待办误标完成。
+    if data.taken_date is not None and data.taken_date != get_user_today(db, user_id):
+        return
+
     object_type = _domain(med)  # 'supplement' 或 'medication'(category 权威映射)
     agenda_status = "skipped" if data.status == "skipped" else "done"
     skip_reason = data.skip_reason if agenda_status == "skipped" else None
@@ -272,6 +279,9 @@ async def log_medication(
 ):
     """记录服药"""
     logger.info(f"[MedAPI] 用户 {current_user.id} 记录服药: med={data.medication_id}")
+    med = medication_service.get_medication(db, data.medication_id, current_user.id)
+    if med is None:
+        raise HTTPException(status_code=404, detail="药品不存在")
     log = medication_service.log_medication(
         db=db,
         user_id=current_user.id,
@@ -281,11 +291,10 @@ async def log_medication(
         skip_reason=data.skip_reason,
         actual_dosage=data.actual_dosage,
         notes=data.notes,
+        taken_date=data.taken_date,
     )
-    # 反向完成链:打卡后翻时间线对应 HealthEvent(仅当药存在且属本人;log 已落库,完成链失败不 500)。
-    med = medication_service.get_medication(db, data.medication_id, current_user.id)
-    if med is not None:
-        _writeback_agenda_completion(db, current_user.id, med, data)
+    # 反向完成链:药物归属已在写日志前验证；完成链失败不拖垮已落库事实。
+    _writeback_agenda_completion(db, current_user.id, med, data)
     _invalidate_twin(current_user.id)
     return {
         "id": log.id,

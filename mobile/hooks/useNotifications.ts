@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
-import { Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
+import NetInfo from '@react-native-community/netinfo';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
@@ -10,6 +11,7 @@ import { resolveNotificationRoute } from '../services/notificationRoutes';
 import { queryClient } from '../applib/queryClient';
 import { completeAgendaItem } from '../services/agenda';
 import { logMedication } from '../services/medications';
+import { useToast } from './useToast';
 
 const SILENT_SCREENS = new Set(['home']);
 
@@ -37,6 +39,7 @@ export function setOnForegroundNotification(
 }
 
 export function useNotifications(isAuthenticated: boolean) {
+  const { show } = useToast();
   const receivedSub = useRef<Notifications.EventSubscription | null>(null);
   const responseSub = useRef<Notifications.EventSubscription | null>(null);
 
@@ -47,7 +50,14 @@ export function useNotifications(isAuthenticated: boolean) {
     void registerNotificationCategories().catch((error) => {
       console.warn('[useNotifications] failed to register notification categories', error);
     });
-    void consumeLastNotificationResponse();
+    const feedback: NotificationActionFeedback = {
+      onMedicationSuccess: (action) => show(action === 'TAKEN' ? '已记录服用' : '已记录跳过', 'success'),
+      onMedicationFailure: () => show('服用记录未保存，联网后会自动重试', 'error'),
+    };
+    const retryPendingAction = () => {
+      void consumeLastNotificationResponse(feedback);
+    };
+    retryPendingAction();
 
     receivedSub.current = Notifications.addNotificationReceivedListener(
       (notification) => {
@@ -57,15 +67,24 @@ export function useNotifications(isAuthenticated: boolean) {
 
     responseSub.current = Notifications.addNotificationResponseReceivedListener(
       (response) => {
-        void handleNotificationResponse(response);
+        void consumeNotificationResponse(response, feedback);
       },
     );
+
+    const unsubscribeNetwork = NetInfo.addEventListener((state) => {
+      if (state.isConnected) retryPendingAction();
+    });
+    const appStateSub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') retryPendingAction();
+    });
 
     return () => {
       receivedSub.current?.remove();
       responseSub.current?.remove();
+      unsubscribeNetwork();
+      appStateSub.remove();
     };
-  }, [isAuthenticated]);
+  }, [isAuthenticated, show]);
 }
 
 export type PushRegistrationResult = {
@@ -157,7 +176,55 @@ function markNotificationResponseProcessed(key: string) {
 }
 
 function notificationResponseKey(response: Notifications.NotificationResponse): string {
+  const data = response.notification.request.content.data as Record<string, any> | undefined;
+  if (data?.reminder_type === 'medication' && typeof data.rule_id === 'string') {
+    return `${data.rule_id}:${response.actionIdentifier}`;
+  }
   return `${response.notification.request.identifier}:${response.actionIdentifier}`;
+}
+
+interface NotificationActionFeedback {
+  onMedicationSuccess?: (action: 'TAKEN' | 'SKIP') => void;
+  onMedicationFailure?: () => void;
+}
+
+function isMedicationActionResponse(response: Notifications.NotificationResponse): boolean {
+  const data = response.notification.request.content.data as Record<string, any> | undefined;
+  return data?.reminder_type === 'medication'
+    && (response.actionIdentifier === 'TAKEN' || response.actionIdentifier === 'SKIP');
+}
+
+function medicationFailureNotificationId(data?: Record<string, any>): string | null {
+  if (typeof data?.rule_id !== 'string' || !data.rule_id.trim()) return null;
+  return `watch-medication-action-failed-${data.rule_id}`;
+}
+
+async function dismissMedicationFailureNotification(data?: Record<string, any>) {
+  const identifier = medicationFailureNotificationId(data);
+  if (!identifier) return;
+  try {
+    await Notifications.dismissNotificationAsync(identifier);
+  } catch (error) {
+    console.warn('[useNotifications] failed to dismiss medication retry notice', error);
+  }
+}
+
+async function showMedicationFailureNotification(data?: Record<string, any>) {
+  const identifier = medicationFailureNotificationId(data);
+  if (!identifier) return;
+  try {
+    await Notifications.scheduleNotificationAsync({
+      identifier,
+      content: {
+        title: '用药打卡未保存',
+        body: '网络恢复后会自动重试，请勿重复操作。',
+        data: { kind: 'medication_action_retry' },
+      },
+      trigger: null,
+    });
+  } catch (error) {
+    console.warn('[useNotifications] failed to show medication retry notice', error);
+  }
 }
 
 async function processNotificationResponse(
@@ -240,12 +307,38 @@ export async function handleNotificationResponse(
   }
 }
 
-export async function consumeLastNotificationResponse(): Promise<void> {
+export async function consumeNotificationResponse(
+  response: Notifications.NotificationResponse,
+  feedback?: NotificationActionFeedback,
+): Promise<boolean> {
+  const medicationAction = isMedicationActionResponse(response);
+  const data = response.notification.request.content.data as Record<string, any> | undefined;
+  try {
+    const handled = await handleNotificationResponse(response);
+    if (handled) {
+      await Notifications.clearLastNotificationResponseAsync();
+      if (medicationAction) {
+        await dismissMedicationFailureNotification(data);
+        feedback?.onMedicationSuccess?.(response.actionIdentifier as 'TAKEN' | 'SKIP');
+      }
+      return true;
+    }
+    if (medicationAction) feedback?.onMedicationFailure?.();
+    return false;
+  } catch (error) {
+    console.warn('[useNotifications] notification action failed', error);
+    if (medicationAction) feedback?.onMedicationFailure?.();
+    return false;
+  }
+}
+
+export async function consumeLastNotificationResponse(
+  feedback?: NotificationActionFeedback,
+): Promise<void> {
   try {
     const response = await Notifications.getLastNotificationResponseAsync();
     if (!response) return;
-    const handled = await handleNotificationResponse(response);
-    if (handled) await Notifications.clearLastNotificationResponseAsync();
+    await consumeNotificationResponse(response, feedback);
   } catch (error) {
     console.warn('[useNotifications] cold-start notification action failed', error);
   }
@@ -333,8 +426,20 @@ function normalizeMedicationReminderTime(raw: unknown): string | null {
   return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
 }
 
-function currentLocalHHMM(now = new Date()): string {
-  return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+function normalizeMedicationReminderDate(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const match = raw.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  if (
+    parsed.getUTCFullYear() !== year
+    || parsed.getUTCMonth() !== month - 1
+    || parsed.getUTCDate() !== day
+  ) return null;
+  return `${match[1]}-${match[2]}-${match[3]}`;
 }
 
 export async function handleMedicationReminderAction(
@@ -351,14 +456,35 @@ export async function handleMedicationReminderAction(
     });
     return false;
   }
-  const takenTime = normalizeMedicationReminderTime(data?.taken_time)
-    ?? normalizeMedicationReminderTime(data?.scheduled_time)
-    ?? currentLocalHHMM();
+  const takenDate = normalizeMedicationReminderDate(data?.scheduled_date);
+  const takenTime = normalizeMedicationReminderTime(data?.scheduled_time);
+  const timezone = data?.scheduled_timezone;
+  const expectedRuleId = takenDate && takenTime
+    ? `medication_reminder.${medicationId}.${takenDate}.${takenTime}`
+    : null;
+  if (
+    !takenDate
+    || !takenTime
+    || timezone !== 'Asia/Shanghai'
+    || data?.rule_id !== expectedRuleId
+  ) {
+    await emitClientEvent('watch_action_failed', {
+      reason: 'invalid_medication_occurrence',
+      kind: 'medication',
+      medication_id: medicationId,
+      action,
+      scheduled_date: data?.scheduled_date ?? null,
+      scheduled_time: data?.scheduled_time ?? null,
+      scheduled_timezone: timezone ?? null,
+    });
+    return false;
+  }
   const status = action === 'TAKEN' ? 'taken' : 'skipped';
 
   try {
     await logMedication({
       medication_id: medicationId,
+      taken_date: takenDate,
       taken_time: takenTime,
       status,
     });
@@ -371,6 +497,7 @@ export async function handleMedicationReminderAction(
     await emitClientEvent('quick_record_logged', {
       kind: 'medication',
       status,
+      scheduled_date: takenDate,
       scheduled_time: takenTime,
       source: 'watch_notification',
     });
@@ -382,9 +509,11 @@ export async function handleMedicationReminderAction(
       action_id: `medication-${medicationId}-${takenTime}`,
       kind: 'medication',
       action,
+      scheduled_date: takenDate,
       scheduled_time: takenTime,
       error: error instanceof Error ? error.message : String(error),
     });
+    await showMedicationFailureNotification(data);
     return false;
   }
 }

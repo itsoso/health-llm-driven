@@ -189,6 +189,7 @@ class MedicationService:
         actual_dosage: Optional[str] = None,
         notes: Optional[str] = None,
         commit: bool = True,
+        taken_date: Optional[date] = None,
     ) -> MedicationLog:
         """记录服药。
 
@@ -207,7 +208,7 @@ class MedicationService:
         log = MedicationLog(
             user_id=user_id,
             medication_id=medication_id,
-            taken_date=date.today(),
+            taken_date=taken_date or date.today(),
             taken_time=taken_time,
             status=status,
             skip_reason=skip_reason,

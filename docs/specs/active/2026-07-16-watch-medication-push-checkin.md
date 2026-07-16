@@ -44,7 +44,7 @@ RequirementAdmission:
 
 | Surface | Responsibility | Contract |
 |---|---|---|
-| Backend | 提醒与持久化真源 | 可见文案不含药名/剂量；data 带 `medication_id`、`scheduled_time`、`rule_id`；`/medication/logs` 校验用户归属并按日+时点幂等 |
+| Backend | 提醒与持久化真源 | 可见文案不含药名/剂量；data 带 `medication_id`、`scheduled_date`、`scheduled_time`、`scheduled_timezone`、`rule_id`；`/medication/logs` 校验用户归属并按日+时点幂等 |
 | Watch | 最短执行面 | 显示 iOS 镜像的“服用”动作，只表达用户确认，不作医疗判断 |
 | Mobile | 可靠动作桥接 | 注册 category；动作唤醒或恢复后写入；成功才清 cold-start response；刷新今日用药、时间线和议程 |
 
@@ -55,7 +55,8 @@ RequirementAdmission:
   -> Apple Watch 显示“服用”
   -> 用户明确点击
   -> iOS/Expo 交付 notification response
-  -> POST /medication/logs(medication_id, scheduled_time, taken)
+  -> 严格校验 occurrence identity(date/time/timezone/rule_id)
+  -> POST /medication/logs(medication_id, scheduled_date, scheduled_time, taken)
   -> PostgreSQL MedicationLog 幂等写入 + agenda writeback
   -> Mobile 今日用药/时间线/议程刷新
 ```
@@ -65,7 +66,9 @@ RequirementAdmission:
 - 点击“服用”只记录依从事实，不代表系统证明用户已吞咽，也不改变药名、剂量、频次或处方。
 - 锁屏可见 title/content 只到“用药提醒”类别和时机，不暴露药名、剂量或诊断线索。
 - `medication_id` 由认证用户的后端接口再次校验归属；客户端不能指定其他用户。
-- 网络或鉴权失败时不得清理冷启动动作、不得伪报已打卡；保留后续重试信号并记录失败事件。
+- 发生日期、时间、时区和 `rule_id` 缺一或不一致时 fail closed，不以手机点击时刻猜测服用槽。
+- 网络或鉴权失败时不得清理冷启动动作、不得伪报已打卡；应用内显示失败、保留 response，并在联网恢复或 App 回前台时重试。
+- 每日重复的本地通知没有稳定 occurrence date，不提供“服用”直写动作；只有后端远程推送可承载腕上打卡。
 - 服务端用 `(user_id, medication_id, taken_date, taken_time)` 语义幂等，防止 Watch/iPhone 重复回调产生双记录。
 
 ## 7. Acceptance Criteria
@@ -74,6 +77,10 @@ RequirementAdmission:
 Given 用药提醒已镜像到 Apple Watch
 When 用户点击“服用”
 Then 系统以提醒的 medication_id 和 scheduled_time 写入 taken MedicationLog
+
+Given 用户跨午夜或旅行后点击旧提醒
+When 客户端处理“服用”
+Then 系统按 payload 的 scheduled_date/time/timezone 写入原发生日，且不误完成今天议程
 
 Given 同一通知 response 被重复交付
 When 客户端再次消费
@@ -85,7 +92,7 @@ Then 客户端消费最后一条 response，写入成功后才清除 response
 
 Given 写入失败
 When 冷启动动作处理结束
-Then response 保留、失败事件可观测，界面不显示成功状态
+Then response 保留、失败事件可观测，界面提示未保存，并在联网恢复或回前台时自动重试
 ```
 
 ## 8. Verification And Rollout
@@ -106,3 +113,4 @@ git diff --check
 | Date | Change | Reason |
 |---|---|---|
 | 2026-07-16 | Initial implementation | 让腕上明确确认直接形成系统依从事实，并补足 terminated-app 可靠性 |
+| 2026-07-16 | Safety hardening | occurrence identity fail-closed、失败反馈与重试、跨用户隔离、本地重复通知取消直写动作 |

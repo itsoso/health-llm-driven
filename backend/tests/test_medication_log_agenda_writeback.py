@@ -14,10 +14,11 @@
 环形终止:complete_by_ref(skip_writeback=True) 只做原子 claim + 生命周期翻态,不经
 complete_item 二次回写领域行 —— 同一「已服」永远只落一条 MedicationLog。
 """
-from datetime import date
+from datetime import date, timedelta
 
 from app.models.health_event import HealthEvent
 from app.models.medication import Medication, MedicationLog
+from app.models.user import User
 from app.services import timeline_agenda_service as tas
 from app.utils.timezone import get_china_today
 
@@ -246,3 +247,59 @@ def test_repeated_log_same_slot_stays_single_log_and_event(client, db, auth_user
     assert len(_taken_logs(db, user.id, med.id)) == 1
     evs = _agenda_events(db, user.id, med.id, "medication")
     assert len(evs) == 1 and evs[0].agenda_status == "done"
+
+
+def test_explicit_occurrence_date_is_persisted_without_completing_today_agenda(
+    client, db, auth_user_and_headers,
+):
+    """跨午夜点击旧提醒:写到提醒发生日,不得误完成今天的议程。"""
+    user, h = auth_user_and_headers
+    med = _seed_med(db, user.id)
+    occurrence_date = get_china_today() - timedelta(days=1)
+
+    r = client.post("/api/v1/medication/logs", headers=h, json={
+        "medication_id": med.id,
+        "taken_date": occurrence_date.isoformat(),
+        "taken_time": "23:59",
+        "status": "taken",
+    })
+
+    assert r.status_code == 200, r.text
+    assert r.json()["taken_date"] == occurrence_date.isoformat()
+    row = db.query(MedicationLog).filter(
+        MedicationLog.user_id == user.id,
+        MedicationLog.medication_id == med.id,
+        MedicationLog.taken_date == occurrence_date,
+        MedicationLog.taken_time == "23:59",
+    ).one()
+    assert row.status == "taken"
+    assert _agenda_events(db, user.id, med.id, "medication") == []
+
+
+def test_log_rejects_medication_owned_by_another_user(client, db, auth_user_and_headers):
+    """客户端 payload 里的 medication_id 必须再次按认证用户隔离。"""
+    user, h = auth_user_and_headers
+    other = User(
+        username="watch_med_other",
+        email="watch_med_other@example.com",
+        hashed_password="x",
+        name="watch_med_other",
+        is_active=True,
+        is_approved=True,
+    )
+    db.add(other)
+    db.commit()
+    foreign_med = _seed_med(db, other.id, name="foreign medication")
+
+    r = client.post("/api/v1/medication/logs", headers=h, json={
+        "medication_id": foreign_med.id,
+        "taken_date": get_china_today().isoformat(),
+        "taken_time": "08:30",
+        "status": "taken",
+    })
+
+    assert r.status_code == 404
+    assert db.query(MedicationLog).filter(
+        MedicationLog.user_id == user.id,
+        MedicationLog.medication_id == foreign_med.id,
+    ).count() == 0

@@ -115,7 +115,9 @@ export async function scheduleMedicationReminders(meds: ReminderSource[]): Promi
           // §5 推送隐私 (AGENTS.md §5.6): 锁屏可见的 body 不带药名/剂量 ——
           // 药名可反推诊断 (二甲双胍→糖尿病)。名称/剂量只进 data, 解锁后应用内渲染。
           body: `有一次用药到点了（${e.time}），点开查看`,
-          categoryIdentifier: 'MEDICATION_REMINDER',
+          // 每日重复的本地通知没有稳定的 occurrence date/timezone，不能提供
+          // “服用”直写动作；点开 App 后再由当天页面确认。可操作打卡只由后端
+          // 带完整 occurrence identity 的远程推送承载。
           data: {
             kind: MED_REMINDER_KIND,
             reminder_type: 'medication',
