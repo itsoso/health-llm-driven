@@ -71,7 +71,18 @@ Existing Expo Dev Client, Expo Updates, Xcode, `devicectl`, and EAS channels cov
 
 ## S3 Plan
 
-Implementation plan: pending.
+Implementation plan: `docs/plans/2026-07-15-mobile-fast-feedback-loop.md`.
+
+## S4 · 研发任务分解
+
+- [ ] T1 Expo Update adapter and state machine.
+- [ ] T2 Foreground download and explicit apply banner.
+- [ ] T3 Settings update control and real version.
+- [ ] T4 Changed-file fast test command.
+- [ ] T5 Cached USB device Release command.
+- [ ] T6 OTA narrow retry and published-ID verification.
+- [ ] T7 Integrated physical-device and production evidence.
+- 并发检查:current `main`; unrelated untracked backend and PRD files remain out of scope.
 
 ## Delivery Gates
 
