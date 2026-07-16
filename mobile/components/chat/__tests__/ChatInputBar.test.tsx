@@ -701,6 +701,29 @@ describe('ChatInputBar', () => {
     });
   });
 
+  it('does not let a late realtime transcript overwrite text edited by the user', async () => {
+    const onSend = jest.fn().mockResolvedValue(true);
+    const { getByLabelText } = render(
+      <ChatInputBar onSend={onSend} isStreaming={false} />,
+    );
+
+    await act(async () => {
+      fireEvent.press(getByLabelText('实时语音转文字'));
+      await Promise.resolve();
+    });
+    act(() => {
+      latestRealtimeDictationOptions.onTranscript('记录今天喝水');
+    });
+
+    fireEvent.changeText(getByLabelText('消息输入框'), '改成记录今天喝咖啡');
+    act(() => {
+      // iOS may deliver a final/late ASR event after the TextInput has changed.
+      latestRealtimeDictationOptions.onTranscript('记录今天喝水 500 毫升');
+    });
+
+    expect(getByLabelText('消息输入框').props.value).toBe('改成记录今天喝咖啡');
+  });
+
   it('keeps realtime microphone text editable when voice submit is rejected', async () => {
     const onSend = jest.fn().mockResolvedValue(false);
     const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(jest.fn());

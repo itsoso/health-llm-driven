@@ -166,6 +166,7 @@ export default function ChatInputBar({
   const voiceGestureActiveRef = useRef(false);
   const voiceCommitModeRef = useRef<'send' | 'text'>('send');
   const realtimeBaseInputRef = useRef('');
+  const realtimeInputEditedRef = useRef(false);
   const inputChannelRef = useRef<'typed' | 'voice'>('typed');
   const composerRef = useRef(composer);
   const stopDictationRef = useRef<() => Promise<string>>(async () => '');
@@ -370,6 +371,7 @@ export default function ChatInputBar({
   }, [agentMode, input, pendingImages, onSend, releaseImagesAfterSend, restoreVoiceTranscriptDraft]);
 
   const handleRealtimeTranscript = useCallback((text: string) => {
+    if (realtimeInputEditedRef.current) return;
     const clean = text.trim();
     const base = realtimeBaseInputRef.current.trim();
     applyVoiceTranscript('realtime_mic', base ? `${base} ${clean}` : clean);
@@ -404,6 +406,7 @@ export default function ChatInputBar({
       return;
     }
     if (!canStartDictation(state)) return;
+    realtimeInputEditedRef.current = false;
     realtimeBaseInputRef.current = input.trim();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     dispatchComposer({ type: 'dictation_start' });
@@ -621,6 +624,21 @@ export default function ChatInputBar({
   }, []);
 
   const handleInputChange = useCallback((text: string) => {
+    const realtimeDictationActive =
+      composerRef.current.phase === 'live_dictating'
+      || dictationNativeActiveRef.current;
+    if (realtimeDictationActive) {
+      // iOS can deliver a final ASR callback after TextInput.onChangeText.
+      // Invalidate first so stopping the native recognizer cannot overwrite
+      // the text the user just edited.
+      realtimeInputEditedRef.current = true;
+      dispatchComposer({ type: 'dictation_stop' });
+      void stopDictationRef.current().catch((error) => {
+        if (__DEV__) {
+          console.warn('[ChatInputBar] stop realtime dictation after text edit failed:', error);
+        }
+      });
+    }
     inputChannelRef.current = 'typed';
     voiceDraftRef.current = null;
     setInput(text);
