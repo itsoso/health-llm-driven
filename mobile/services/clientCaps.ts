@@ -17,8 +17,9 @@
 /** metric_table 客户端能力位。false = 渲染器就绪但暗置 (不声明 genui-table-v1)。 */
 export const REVA_UI_TABLE_CAP_ENABLED = true;
 
-/** diet_daily_summary 客户端能力位。false = 渲染器就绪但暗置 (不声明 genui-diet-summary-v1)。 */
-export const REVA_UI_DIET_SUMMARY_CAP_ENABLED = false;
+/** diet_daily_summary 客户端能力位。点亮 (2026-07-16):composer/renderer/契约/emission 就绪,
+ *  后端 emission e2e + 黄金样本闸绿、安全评审 GO → 声明 genui-diet-summary-v1。 */
+export const REVA_UI_DIET_SUMMARY_CAP_ENABLED = true;
 
 /** 存量已上线的能力位 —— 顺序 / 分隔与历史请求头保持一致 (byte-for-byte)。 */
 const BASE_CLIENT_CAPS = 'genui-v1, genui-components-v1, genui-record-quality-v1';

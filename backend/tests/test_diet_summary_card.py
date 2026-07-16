@@ -60,6 +60,43 @@ def test_descriptor_shape_matches_mobile_contract():
         assert o["severity"] in {"normal", "caution", "risk"}
 
 
+def test_descriptor_golden_exact():
+    """黄金样本:整个 descriptor 逐字段钉死 —— 任一字段改名/重排/观察文案漂移都在此炸,
+    补住"字段集对但取值/顺序悄悄变"的盲区(reviewer advisory §3)。"""
+    d = build_diet_daily_summary(
+        _summary(), water={"current_ml": 500, "target_ml": 2000}, weight_kg=71.2
+    )
+    assert d == {
+        "type": "diet_daily_summary",
+        "v": "v1",
+        "data": {
+            "record_date": "2026-07-16",
+            "meals": [
+                {"meal_type": "breakfast", "name": "早餐",
+                 "detail": "山药小米粥·蒸蛋羹×2·焯青菜",
+                 "calories": 400, "protein": 23, "carbs": 38, "fat": 13},
+                {"meal_type": "lunch", "name": "午餐",
+                 "detail": "三文鱼香草芝士鸡肉餐",
+                 "calories": 580, "protein": 32, "carbs": 28, "fat": 36},
+                {"meal_type": "dinner", "name": "晚餐",
+                 "detail": "牛肋排·汉堡面包·生菜",
+                 "calories": 730, "protein": 37, "carbs": 75, "fat": 26},
+            ],
+            "totals": {"calories": 1710, "protein": 92, "carbs": 141,
+                       "fat": 75, "fiber": 4},
+            "observations": [
+                {"severity": "normal", "label": "蛋白质充足",
+                 "detail": "全天 92g(约 1.29g/kg)。"},
+                {"severity": "caution", "label": "脂肪偏高",
+                 "detail": "全天 75g,占总热量约 39%。"},
+                {"severity": "caution", "label": "膳食纤维不足",
+                 "detail": "约 4g,一般建议 25g+。"},
+            ],
+            "water": {"current_ml": 500, "target_ml": 2000},
+        },
+    }
+
+
 def test_observations_deterministic_and_factual():
     s = _summary()
     a = build_diet_daily_summary(s, weight_kg=71.2)["data"]["observations"]

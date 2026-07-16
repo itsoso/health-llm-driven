@@ -5101,6 +5101,13 @@ class AgentExecutor:
             getattr(settings, "genui_table_enabled", True)
             and _GENUI_TABLE_CAP in (client_caps or [])
         )
+        # 汇总类卡结构化 v1:客户端声明 genui-diet-summary-v1 时,health_query(diet) 结果
+        # 走结构化 diet_summary 卡(而非通用 metric_table)。cap 是主门控(客户端暗置时不发)。
+        from app.services.genui import GENUI_DIET_SUMMARY_CAP as _GENUI_DIET_SUMMARY_CAP
+        genui_diet_summary_on = (
+            getattr(settings, "genui_diet_summary_enabled", True)
+            and _GENUI_DIET_SUMMARY_CAP in (client_caps or [])
+        )
         # 本回合已执行的只读数据查询工具 (name, args, result) —— 供合成后确定性建表。
         genui_tool_calls: List[Tuple[str, Optional[dict], str]] = []
         # 多模型综合分析 (商用三强 panel)。仅纯文本分析回合走此路径;
@@ -5409,9 +5416,10 @@ class AgentExecutor:
             )
             if "ActionCard" not in sources_used:
                 sources_used.append("ActionCard")
-        if genui_table_on:
+        if genui_table_on or genui_diet_summary_on:
             # GenUI metric_table (rank1): 客户端声明 genui-table-v1 → 数据由后端确定性
-            # 表格卡片直接呈现。正文按问题完整回答，只需避免逐行重复。**服务端硬门**: 即便旧客户端
+            # 表格卡片直接呈现。diet_daily_summary 卡同理(cap 开时 diet 查询走结构化卡)。
+            # 正文按问题完整回答，只需避免逐行重复。**服务端硬门**: 即便旧客户端
             # 仍在 extra_context 里塞 mac "最高优先级要求生成大 markdown 表", 声明了 cap 就
             # 以本契约为准并**覆盖**那条指令 —— 否则旧指令会一边索要 4000 字表格、一边又声明
             # cap, 也不能同时要求两种互相冲突的展示格式。
@@ -6273,9 +6281,9 @@ class AgentExecutor:
                         })
 
                         # GenUI metric_table (rank1): 记下只读数据查询工具的
-                        # (name, args, result), 合成后确定性建表 (零 LLM)。仅在客户端
-                        # 声明 genui-table-v1 时追踪 (无 cap → 零开销)。
-                        if genui_table_on and func_name in _GENUI_TABLE_TOOLS and not replayed_read:
+                        # (name, args, result), 合成后确定性建表/卡 (零 LLM)。声明
+                        # genui-table-v1 或 genui-diet-summary-v1 任一即追踪 (无 cap → 零开销)。
+                        if (genui_table_on or genui_diet_summary_on) and func_name in _GENUI_TABLE_TOOLS and not replayed_read:
                             genui_tool_calls.append((func_name, parsed_tool_args, result))
 
                         # tool_result 事件给前端用. health_record 时附 args 让前端能识别
@@ -6771,22 +6779,46 @@ class AgentExecutor:
         # reva-ui 表格卡片, 追加到答案末尾 (镜像图表 "叙事在前、卡片在后" 的顺序)。
         # 数值全部来自工具结果具名字段 (R4); 在 _strip_reva_ui_from_llm_text **之后**追加
         # → 确定性 fence 不会被防伪造剥离器吃掉。fail-open: 无表/任何异常 → 逐字节现状。
-        if genui_table_on and genui_tool_calls:
+        if genui_tool_calls and (genui_table_on or genui_diet_summary_on):
             try:
                 from app.services.genui import (
                     build_tables_from_tool_calls,
                     render_metric_table_block,
+                    build_diet_daily_summary,
+                    render_diet_summary_block,
+                    load_tool_result_json,
                 )
-                for _tbl in build_tables_from_tool_calls(genui_tool_calls):
-                    _fence = render_metric_table_block(_tbl)
+                _fences: List[str] = []
+                _table_calls: List[Tuple[str, Optional[dict], str]] = []
+                for _fn, _args, _res in genui_tool_calls:
+                    # health_query(diet) 且 cap 开 → 结构化 diet_summary 卡(而非通用表)。
+                    # 用与 metric_table 同一宽松 JSON 解析真源(剥截断尾注),两路不漂移。
+                    _is_diet = (
+                        _fn == "health_query"
+                        and str((_args or {}).get("dimension") or "") == "diet"
+                    )
+                    if _is_diet and genui_diet_summary_on:
+                        _summary = load_tool_result_json(_res)
+                        _desc = (
+                            build_diet_daily_summary(_summary)
+                            if isinstance(_summary, dict) else None
+                        )
+                        if _desc:
+                            _fences.append(render_diet_summary_block(_desc))
+                            continue  # diet 走结构化卡,不再落 metric_table
+                    _table_calls.append((_fn, _args, _res))
+                if genui_table_on and _table_calls:
+                    for _tbl in build_tables_from_tool_calls(_table_calls):
+                        _fences.append(render_metric_table_block(_tbl))
+                for _fence in _fences:
                     _chunk = f"\n\n{_fence}" if full_reply.strip() else _fence
                     if first_token_at is None:
                         first_token_at = time.time()
                     yield {"event": "token", "data": {"content": _chunk}}
                     full_reply += _chunk
-            except Exception as e:  # noqa: BLE001 — 建表/emit 失败绝不断回合
+            except Exception as e:  # noqa: BLE001 — 建卡/建表/emit 失败绝不断回合
                 logger.warning(
-                    "[agent_executor] GenUI metric_table build/emit failed: %s", e
+                    "[agent_executor] GenUI card/table build/emit failed: %s", e
                 )
         ai_msg = svc.save_message(
             conv.id,

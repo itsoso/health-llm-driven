@@ -15,6 +15,7 @@ import json
 from typing import Any, Optional
 
 DIET_SUMMARY_TYPE = "diet_daily_summary"
+GENUI_DIET_SUMMARY_CAP = "genui-diet-summary-v1"  # 客户端能力位(点亮门控)
 _VERSION = "v1"
 
 # MealType.value → mobile 期望键(extra=加餐 → snack);未知 → snack。
@@ -46,10 +47,19 @@ def _derive_observations(totals: dict, *, weight_kg: Optional[float] = None) -> 
     R4:不写命令式("必须/务必…")、不判医学诊断;只陈述测得值与通用阈值的关系。
     """
     obs: list[dict] = []
-    cal = totals.get("calories") or 0
-    protein = totals.get("protein")
-    fat = totals.get("fat")
-    fiber = totals.get("fiber")
+    # 健壮性(safety advisory):真实 DailyDietSummary 宏量非负,但入参负数/垃圾会渲染出
+    # 无意义串 → 一律钳到 ≥0;非数值视作缺值(None)。
+    def _nn(x):
+        try:
+            f = float(x)
+        except (TypeError, ValueError):
+            return None
+        return max(0.0, f)
+
+    cal = _nn(totals.get("calories")) or 0
+    protein = _nn(totals.get("protein"))
+    fat = _nn(totals.get("fat"))
+    fiber = _nn(totals.get("fiber"))
 
     if protein is not None:
         if weight_kg and weight_kg > 0:

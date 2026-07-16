@@ -28,6 +28,7 @@ from app.services.genui.table_builder import (
     build_table_from_tool_call,
     build_tables_from_tool_calls,
     GENUI_TABLE_CAP,
+    load_tool_result_json,
     METRIC_TABLE_TYPE,
     render_metric_table_block,
 )
@@ -35,6 +36,7 @@ from app.services.genui.diet_summary import (
     build_diet_daily_summary,
     render_diet_summary_block,
     DIET_SUMMARY_TYPE,
+    GENUI_DIET_SUMMARY_CAP,
 )
 
 __all__ = [
@@ -55,10 +57,12 @@ __all__ = [
     "compute_chart_rich",
     "build_table_from_tool_call",
     "build_tables_from_tool_calls",
+    "load_tool_result_json",
     "render_metric_table_block",
     "GENUI_TABLE_CAP",
     "build_diet_daily_summary",
     "render_diet_summary_block",
     "DIET_SUMMARY_TYPE",
+    "GENUI_DIET_SUMMARY_CAP",
     "METRIC_TABLE_TYPE",
 ]

@@ -519,6 +519,15 @@ _SINGLE_QUERY_TABLE = {
 }
 
 
+def load_tool_result_json(result: str) -> Optional[Any]:
+    """公开:宽松解析已执行工具的结果字符串(剥 `_api_get`/`_truncate_for_display` 显示截断尾注)。
+
+    供 diet_summary 等其它 GenUI 卡的 emission 复用,与 metric_table 走**同一** JSON 解析真源
+    —— 传输/截断行为若变,两条卡路径同步跟随,不会一条能出卡、另一条静默回退散文。
+    """
+    return _load_json_lenient(result)
+
+
 def build_table_from_tool_call(
     tool_name: str, args: Optional[dict], result: str
 ) -> Optional[dict]:

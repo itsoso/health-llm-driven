@@ -21,6 +21,7 @@ import pytest
 from app.services.agent_executor import AgentExecutor
 from app.services.genui import (
     GENUI_TABLE_CAP,
+    GENUI_DIET_SUMMARY_CAP,
     build_table_from_tool_call,
     build_tables_from_tool_calls,
     render_metric_table_block,
@@ -954,3 +955,110 @@ async def test_cap_off_no_carveout(db, auth_user_and_headers, monkeypatch):
     assert "数据回答格式要求" not in prompt
     assert _CARVEOUT_MARKER not in prompt        # 契约缺失 → 无安全例外碎片
     assert "高血压2-3级" not in prompt            # 例外示例词也随契约整体缺席 (present iff cap on)
+
+
+# ---------------------------------------------------------------------------
+# F. diet_daily_summary 结构化卡 (汇总类卡结构化 v1) — emission 消费者级 e2e
+#    证明: 接线真的触发、cap 门控生效、diet flag 关/cap 缺失 → 回退通用 metric_table。
+# ---------------------------------------------------------------------------
+
+def _diet_summary_result():
+    """read_daily_diet 的 DailyDietSummary 形状 (逐餐 + 宏量合计)。"""
+    return json.dumps({
+        "record_date": "2026-07-16",
+        "total_calories": 980, "total_protein": 55, "total_carbs": 66,
+        "total_fat": 49, "total_fiber": 3, "meals_count": 2,
+        "meals": [
+            {"meal_type": "breakfast", "food_items": "山药小米粥·蒸蛋羹",
+             "calories": 400, "protein": 23, "carbs": 38, "fat": 13, "fiber": 1},
+            {"meal_type": "lunch", "food_items": "三文鱼鸡肉餐",
+             "calories": 580, "protein": 32, "carbs": 28, "fat": 36, "fiber": 2},
+        ],
+    }, ensure_ascii=False)
+
+
+def _diet_round_stream(captured):
+    """round1 → health_query(diet) tool_call; round2 → synthesis text。"""
+    state = {"n": 0}
+
+    async def fake_stream(messages, round_tools):
+        state["n"] += 1
+        captured.append([m.get("content") for m in messages])
+        if state["n"] == 1:
+            yield {"type": "tool_calls", "tool_calls": [{
+                "id": "d1",
+                "function": {"name": "health_query", "arguments": '{"dimension":"diet"}'},
+            }]}
+            yield {"type": "finish", "finish_reason": "tool_calls"}
+        else:
+            yield {"type": "content", "text": "结论：今天蛋白质到位，脂肪略高。"}
+            yield {"type": "finish", "finish_reason": "stop"}
+
+    return fake_stream
+
+
+@pytest.mark.asyncio
+async def test_diet_cap_on_emits_diet_summary_card(db, auth_user_and_headers, monkeypatch):
+    """diet cap 声明 → health_query(diet) 走结构化 diet_daily_summary 卡, 不落 metric_table;
+    叙事在前、卡片在后; 卡片数值来自工具结果具名字段 (R4, 不来自 LLM)。"""
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    _wire(executor, monkeypatch)
+    captured: list = []
+    monkeypatch.setattr(executor, "_call_llm_stream", _diet_round_stream(captured))
+    monkeypatch.setattr(executor, "_execute_tool", _exec_returns(_diet_summary_result()))
+
+    events = await _run(executor, "我今天吃了啥",
+                        client_caps=[GENUI_TABLE_CAP, GENUI_DIET_SUMMARY_CAP], user_id=user.id)
+    rendered = _tokens(events)
+
+    assert "结论：今天蛋白质" in rendered
+    assert "```reva-ui" in rendered and '"type":"diet_daily_summary"' in rendered
+    assert '"type":"metric_table"' not in rendered          # diet 不再走通用表
+    assert rendered.index("结论") < rendered.index("reva-ui")
+    # 数值/文本来自工具结果具名字段 (fence 用 separators=(",",":"))
+    assert '"calories":400' in rendered and "山药小米粥·蒸蛋羹" in rendered
+    # 确定性派生观察落卡 (脂肪 49g/980kcal≈45%>35% → 脂肪偏高 caution)
+    assert "脂肪偏高" in rendered
+    # 持久化的 assistant 消息也带 diet fence
+    from app.models.agent_conversation import AgentMessage
+    assistant = (
+        db.query(AgentMessage).filter(AgentMessage.role == "assistant")
+        .order_by(AgentMessage.id.desc()).first()
+    )
+    assert '"type":"diet_daily_summary"' in (assistant.content or "")
+
+
+@pytest.mark.asyncio
+async def test_diet_cap_off_falls_back_to_metric_table(db, auth_user_and_headers, monkeypatch):
+    """只有 table cap、diet cap 暗置 → diet 查询回退通用 metric_table (今日饮食), 不出结构化卡。"""
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    _wire(executor, monkeypatch)
+    captured: list = []
+    monkeypatch.setattr(executor, "_call_llm_stream", _diet_round_stream(captured))
+    monkeypatch.setattr(executor, "_execute_tool", _exec_returns(_diet_summary_result()))
+
+    events = await _run(executor, "我今天吃了啥", client_caps=[GENUI_TABLE_CAP], user_id=user.id)
+    rendered = _tokens(events)
+    assert '"type":"metric_table"' in rendered and "今日饮食" in rendered
+    assert "diet_daily_summary" not in rendered
+
+
+@pytest.mark.asyncio
+async def test_diet_kill_switch_off_falls_back_to_metric_table(db, auth_user_and_headers, monkeypatch):
+    """diet flag 关 (即便声明 diet cap) → 不出结构化卡, 回退 metric_table (table cap 仍在)。"""
+    user, _ = auth_user_and_headers
+    monkeypatch.setattr(
+        "app.services.agent_executor.settings.genui_diet_summary_enabled", False, raising=False)
+    executor = AgentExecutor(db)
+    _wire(executor, monkeypatch)
+    captured: list = []
+    monkeypatch.setattr(executor, "_call_llm_stream", _diet_round_stream(captured))
+    monkeypatch.setattr(executor, "_execute_tool", _exec_returns(_diet_summary_result()))
+
+    events = await _run(executor, "我今天吃了啥",
+                        client_caps=[GENUI_TABLE_CAP, GENUI_DIET_SUMMARY_CAP], user_id=user.id)
+    rendered = _tokens(events)
+    assert "diet_daily_summary" not in rendered
+    assert '"type":"metric_table"' in rendered
