@@ -36,6 +36,49 @@ describe('getConversationsPage', () => {
     expect(decodeURIComponent(url)).toContain('title_like=简报');
   });
 
+  it('passes search (title∪content) through as query param', async () => {
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ items: [], total: 0, limit: 20, offset: 0 }),
+    });
+    global.fetch = fetchMock as any;
+
+    await getConversationsPage({ search: '胃痛' });
+
+    const url: string = fetchMock.mock.calls[0][0];
+    expect(url).toContain('search=');
+    expect(decodeURIComponent(url)).toContain('search=胃痛');
+    expect(url).not.toContain('title_like');
+  });
+
+  it('search takes precedence over title_like when both given', async () => {
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ items: [], total: 0, limit: 20, offset: 0 }),
+    });
+    global.fetch = fetchMock as any;
+
+    await getConversationsPage({ search: '喷嚏', titleLike: '简报' });
+
+    const url: string = fetchMock.mock.calls[0][0];
+    expect(decodeURIComponent(url)).toContain('search=喷嚏');
+    // search 生效时不再发 title_like(后端 search 已覆盖标题)
+    expect(url).not.toContain('title_like');
+  });
+
+  it('omits search when empty string', async () => {
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ items: [], total: 0, limit: 20, offset: 0 }),
+    });
+    global.fetch = fetchMock as any;
+
+    await getConversationsPage({ search: '' });
+
+    const url: string = fetchMock.mock.calls[0][0];
+    expect(url).not.toContain('search=');
+  });
+
   it('defaults offset=0 limit=20 and omits title_like when absent', async () => {
     const fetchMock = jest.fn().mockResolvedValue({
       ok: true,

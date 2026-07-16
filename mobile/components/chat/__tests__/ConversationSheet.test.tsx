@@ -117,6 +117,60 @@ describe('ConversationSheet pinning', () => {
   });
 });
 
+describe('ConversationSheet 搜索', () => {
+  it('未提供 onSearchChange → 不渲染搜索框 (旧行为逐字节不变)', () => {
+    const { queryByLabelText } = render(
+      <ConversationSheet {...baseProps} conversations={[] as any} />
+    );
+    expect(queryByLabelText('搜索对话')).toBeNull();
+  });
+
+  it('提供 onSearchChange → 渲染搜索框, 输入回调受控值', () => {
+    const onSearchChange = jest.fn();
+    const { getByLabelText } = render(
+      <ConversationSheet
+        {...baseProps}
+        conversations={[] as any}
+        searchValue=""
+        onSearchChange={onSearchChange}
+      />
+    );
+    fireEvent.changeText(getByLabelText('搜索对话'), '胃痛');
+    expect(onSearchChange).toHaveBeenCalledWith('胃痛');
+  });
+
+  it('清除按钮在有值时出现, 点击回调空串', () => {
+    const onSearchChange = jest.fn();
+    const { getByLabelText } = render(
+      <ConversationSheet
+        {...baseProps}
+        conversations={[] as any}
+        searchValue="喷嚏"
+        onSearchChange={onSearchChange}
+      />
+    );
+    fireEvent.press(getByLabelText('清除搜索'));
+    expect(onSearchChange).toHaveBeenCalledWith('');
+  });
+
+  it('搜索无结果 → "未找到匹配的对话"; 无搜索空列表 → "还没有历史对话"', () => {
+    const withSearch = render(
+      <ConversationSheet
+        {...baseProps}
+        conversations={[] as any}
+        searchValue="不存在的词"
+        onSearchChange={jest.fn()}
+      />
+    );
+    expect(withSearch.getByText('未找到匹配的对话')).toBeTruthy();
+
+    const noSearch = render(
+      <ConversationSheet {...baseProps} conversations={[] as any} />
+    );
+    expect(noSearch.getByText('还没有历史对话')).toBeTruthy();
+  });
+});
+
 // 生成一页普通对话 (非置顶, 保持相对顺序稳定)
 function makeConvs(ids: number[]) {
   return ids.map(id => ({

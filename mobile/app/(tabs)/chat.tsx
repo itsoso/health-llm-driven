@@ -159,6 +159,11 @@ export default function ChatScreen() {
   const [historyTotal, setHistoryTotal] = useState(0);
   const [historyLoadingMore, setHistoryLoadingMore] = useState(false);
   const [historyLoadMoreError, setHistoryLoadMoreError] = useState(false);
+  // 对话历史搜索(标题∪内容)。historySearch = 输入框受控值;ref = 当前生效检索词,
+  // 供 loadMore 分页读到最新词(避免闭包读旧值);debounce ref 折叠连续输入的重拉。
+  const [historySearch, setHistorySearch] = useState('');
+  const historySearchRef = useRef('');
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [llmModelId, setLlmModelId] = useState<string | null>(null);
   const [llmOptions, setLlmOptions] = useState<ModelOption[]>([]);
   const [llmSaving, setLlmSaving] = useState<string | null>(null);
@@ -524,12 +529,17 @@ export default function ChatScreen() {
   }, [opener, injectOpeningContinuity, refreshCoachHomeState, sendMessage]);
 
   // 加载第一页 (打开 sheet / 重试 / 搜索变化时调用) — 重置所有分页状态。
-  const loadConversationHistory = useCallback(async () => {
+  // search 可显式传入(搜索变化);缺省(如 onRetry 传进来的按压事件对象)→ 读 ref 里的生效词。
+  const loadConversationHistory = useCallback(async (search?: string) => {
+    const q = (typeof search === 'string' ? search : historySearchRef.current).trim();
+    historySearchRef.current = q;
     setHistoryLoading(true);
     setHistoryError(null);
     setHistoryLoadMoreError(false);
     try {
-      const { items, total } = await getConversationsPage({ offset: 0, limit: HISTORY_PAGE_SIZE });
+      const { items, total } = await getConversationsPage({
+        offset: 0, limit: HISTORY_PAGE_SIZE, search: q || undefined,
+      });
       setConversations(items);
       setHistoryTotal(total);
     } catch {
@@ -552,6 +562,7 @@ export default function ChatScreen() {
       const { items, total } = await getConversationsPage({
         offset: currentLen,
         limit: HISTORY_PAGE_SIZE,
+        search: historySearchRef.current || undefined,
       });
       setHistoryTotal(total);
       setConversations(prev => {
@@ -566,11 +577,29 @@ export default function ChatScreen() {
     }
   }, [historyLoading, historyLoadingMore, historyTotal]);
 
+  // 搜索输入变化:立即更新受控值(输入跟手),debounce 300ms 后按新词重拉第一页。
+  const handleHistorySearchChange = useCallback((text: string) => {
+    setHistorySearch(text);
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    searchDebounceRef.current = setTimeout(() => {
+      loadConversationHistory(text);
+    }, 300);
+  }, [loadConversationHistory]);
+
   const openHistory = useCallback(() => {
     setToolMenuVisible(false);
     setHistoryVisible(true);
-    loadConversationHistory();
+    // 每次打开清空上次检索词,回到"全部对话"起点(避免复用旧过滤困惑用户)。
+    setHistorySearch('');
+    historySearchRef.current = '';
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    loadConversationHistory('');
   }, [loadConversationHistory]);
+
+  // 卸载时清掉未触发的 debounce timer,避免对已卸载组件 setState。
+  useEffect(() => () => {
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+  }, []);
 
   const exitSelectionMode = useCallback(() => {
     setSelectionMode(false);
@@ -934,12 +963,14 @@ export default function ChatScreen() {
         onRenameConversation={handleRenameConversation}
         loading={historyLoading}
         error={historyError}
-        onRetry={loadConversationHistory}
+        onRetry={() => loadConversationHistory()}
         hasMore={conversations.length < historyTotal}
         loadingMore={historyLoadingMore}
         loadMoreError={historyLoadMoreError}
         onLoadMore={loadMoreConversations}
         total={historyTotal}
+        searchValue={historySearch}
+        onSearchChange={handleHistorySearchChange}
       />
     </SafeAreaView>
   );
