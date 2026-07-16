@@ -279,6 +279,10 @@ jobs:
         working-directory: mobile
         run: npx tsc --noEmit
 
+      - name: Design token gate (复元 Reva ratchet)
+        working-directory: mobile
+        run: npm run design:check
+
       - name: Test (jest)
         working-directory: mobile
         run: npx jest --silent --passWithNoTests
