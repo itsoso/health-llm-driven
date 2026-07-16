@@ -40,9 +40,12 @@
 ### Task 5：部署与上线验证
 
 - [x] 提交只包含本切片文件，保留并发未跟踪文件；
-- 按项目 `deploy.sh -b -y` 部署后端；
-- 验证迁移无新增、`/api/v1/health` healthy、Admin 观察看板可返回新字段；
-- 回写 Dossier Gate 状态。
+- [x] 按项目 `deploy.sh -b -y` 部署后端；
+- [x] 验证迁移无新增、`/api/v1/health` healthy、Admin 观察看板可返回新字段；
+- [x] 回写 Dossier Gate 状态。
+
+部署证据：生产健康度 `60/60 PASS`；skills manifest `22 = 22`；生产 `client_events_stats` 返回
+`release_health.status=observe`、`launches=3`、`emergency_launches=0`、`terminal_failures=0`。
 
 ## 3. Gate
 

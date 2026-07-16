@@ -4,8 +4,8 @@
 |---|---|
 | slug | `release-health-gate` |
 | 创建日期 | 2026-07-16 |
-| 当前阶段 | G5 部署健康 |
-| 状态 | building |
+| 当前阶段 | S7 上线验证 |
+| 状态 | verified |
 | 负责 | Codex |
 | 反馈环 | backend tests -> doc drift -> backend deploy -> production admin verification |
 
@@ -47,21 +47,22 @@
 
 ## G3 / G4 / G5 / G6 · 交付 Gate
 
-状态：G3/G4 通过，G5 部署健康进行中，G6 待执行。
+状态：G3/G4/G5/G6 通过。
 
 - G4 关注：管理员鉴权、用户过滤、阈值解释和埋点字段不扩张；
 - G3 证据：81 个相关后端测试通过；Ruff、Python 编译、架构漂移、Dossier 一致性和 diff check 通过；
 - G4 裁决：PASS。无新权限、无用户健康正文、只读聚合，沿用现有 Admin 看板鉴权；
-- G5 目标：生产部署健康检查通过；
-- G6 验收：生产 Admin 观察看板中出现 `client_events.app_update.release_health`，空窗口状态为 `observe`。
+- G5 裁决：PASS。`deploy.sh -b -y` 返回生产健康度 `60/60 PASS`，skills manifest `22 = 22`，受控迁移无新增；
+- G6 裁决：PASS。生产只读聚合返回 `release_health.status=observe`、`launches=3`、`emergency_launches=0`、`terminal_failures=0`，原因明确为样本不足；Admin 未授权请求返回 401。
 
 ## 4. 变更索引
 
-待实现：
+已实现：
 
 - `backend/app/services/observability_service.py`
 - `backend/tests/test_client_events.py`
 - `backend/tests/test_observability_client_events.py`
+- `backend/tests/test_observability_service.py`
 
 ## 5. 后续
 
