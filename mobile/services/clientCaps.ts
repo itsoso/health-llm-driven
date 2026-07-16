@@ -21,6 +21,10 @@ export const REVA_UI_TABLE_CAP_ENABLED = true;
  *  后端 emission e2e + 黄金样本闸绿、安全评审 GO → 声明 genui-diet-summary-v1。 */
 export const REVA_UI_DIET_SUMMARY_CAP_ENABLED = true;
 
+/** sleep_summary 客户端能力位(汇总卡族·睡眠)。点亮:renderer(SleepSummaryCard)+ parser
+ *  分支(v===1)+ 后端 composer/emission/契约就绪 → 声明 genui-sleep-summary-v1。 */
+export const REVA_UI_SLEEP_SUMMARY_CAP_ENABLED = true;
+
 /** 存量已上线的能力位 —— 顺序 / 分隔与历史请求头保持一致 (byte-for-byte)。 */
 const BASE_CLIENT_CAPS = 'genui-v1, genui-components-v1, genui-record-quality-v1';
 
@@ -32,5 +36,6 @@ export function buildClientCapsHeader(): string {
   const caps = [BASE_CLIENT_CAPS];
   if (REVA_UI_TABLE_CAP_ENABLED) caps.push('genui-table-v1');
   if (REVA_UI_DIET_SUMMARY_CAP_ENABLED) caps.push('genui-diet-summary-v1');
+  if (REVA_UI_SLEEP_SUMMARY_CAP_ENABLED) caps.push('genui-sleep-summary-v1');
   return caps.join(', ');
 }

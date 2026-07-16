@@ -22,6 +22,7 @@ from app.services.agent_executor import AgentExecutor
 from app.services.genui import (
     GENUI_TABLE_CAP,
     GENUI_DIET_SUMMARY_CAP,
+    GENUI_SLEEP_SUMMARY_CAP,
     build_table_from_tool_call,
     build_tables_from_tool_calls,
     render_metric_table_block,
@@ -1101,3 +1102,39 @@ async def test_diet_cap_on_empty_meals_falls_through_no_card(db, auth_user_and_h
     rendered = _tokens(events)
     assert "结论：今天蛋白质" in rendered      # 叙事仍在
     assert "reva-ui" not in rendered           # 无卡无表
+
+
+@pytest.mark.asyncio
+async def test_sleep_cap_on_emits_sleep_summary_card(db, auth_user_and_headers, monkeypatch):
+    """sleep cap 声明 → health_query(sleep) 走结构化 sleep_summary 卡, 不落 metric_table;
+    信封 v 整数 1(移动端 parser 校验 v===1);服务端 quality_assessment 不泄漏。"""
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    _wire(executor, monkeypatch)
+    captured: list = []
+    monkeypatch.setattr(executor, "_call_llm_stream", _sleep_round_stream(captured))
+    monkeypatch.setattr(executor, "_execute_tool", _exec_returns(_sleep_result()))
+
+    events = await _run(executor, "看看我最近睡眠",
+                        client_caps=[GENUI_TABLE_CAP, GENUI_SLEEP_SUMMARY_CAP], user_id=user.id)
+    rendered = _tokens(events)
+    assert '"type":"sleep_summary"' in rendered
+    assert '"type":"metric_table"' not in rendered      # sleep 不再走通用表
+    assert '"v":1' in rendered and '"v":"v1"' not in rendered
+    assert "良好" not in rendered                        # quality_assessment 不泄漏
+
+
+@pytest.mark.asyncio
+async def test_sleep_cap_off_falls_back_to_metric_table(db, auth_user_and_headers, monkeypatch):
+    """只 table cap、sleep cap 暗置 → sleep 查询回退通用 metric_table(睡眠记录), 不出结构化卡。"""
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    _wire(executor, monkeypatch)
+    captured: list = []
+    monkeypatch.setattr(executor, "_call_llm_stream", _sleep_round_stream(captured))
+    monkeypatch.setattr(executor, "_execute_tool", _exec_returns(_sleep_result()))
+
+    events = await _run(executor, "看看我最近睡眠", client_caps=[GENUI_TABLE_CAP], user_id=user.id)
+    rendered = _tokens(events)
+    assert '"type":"metric_table"' in rendered and "睡眠记录" in rendered
+    assert "sleep_summary" not in rendered

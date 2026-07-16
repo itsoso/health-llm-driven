@@ -256,4 +256,36 @@ describe('extractRevaUiBlocks', () => {
     expect(result.text).toBe('前言\n结尾');
     expect(result.cards).toEqual([]);
   });
+
+  // 汇总卡族 · sleep_summary fence → 卡片(同 diet 的跨端消费者测试:parser 必须有 sleep 分支 + 整数 v:1)。
+  it('turns a fenced reva-ui sleep_summary into a sleep card descriptor (inner data)', () => {
+    const payload =
+      '{"type":"sleep_summary","v":1,"data":{"range_label":"近3天",' +
+      '"nights":[{"date":"2026-07-12","score":82,"duration_h":7.4,"deep_min":98}],' +
+      '"averages":{"score":80,"duration_h":7.4,"deep_min":95},' +
+      '"duration":{"current_h":7.4,"target_h":8},' +
+      '"observations":[{"severity":"normal","label":"睡眠时长充足","detail":"平均 7.4h"}]}}';
+    const result = extractRevaUiBlocks(`最近睡眠:\n\n\`\`\`reva-ui\n${payload}\n\`\`\`\n\n仅供参考。`);
+
+    expect(result.text).toBe('最近睡眠:\n\n仅供参考。');
+    expect(result.cards).toHaveLength(1);
+    expect(result.cards[0].type).toBe('sleep_summary');
+    expect(result.cards[0].data).toEqual(
+      expect.objectContaining({
+        range_label: '近3天',
+        nights: expect.arrayContaining([
+          expect.objectContaining({ date: '2026-07-12', score: 82, duration_h: 7.4 }),
+        ]),
+        averages: expect.objectContaining({ duration_h: 7.4 }),
+      }),
+    );
+  });
+
+  it('rejects a sleep_summary fence with string version "v1" (must be integer 1)', () => {
+    const result = extractRevaUiBlocks(
+      '前言\n```reva-ui\n{"type":"sleep_summary","v":"v1","data":{"nights":[{"date":"x"}]}}\n```\n结尾',
+    );
+    expect(result.text).toBe('前言\n结尾');
+    expect(result.cards).toEqual([]);
+  });
 });

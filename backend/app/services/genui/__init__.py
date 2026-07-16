@@ -38,6 +38,12 @@ from app.services.genui.diet_summary import (
     DIET_SUMMARY_TYPE,
     GENUI_DIET_SUMMARY_CAP,
 )
+from app.services.genui.sleep_summary import (
+    build_sleep_summary,
+    render_sleep_summary_block,
+    SLEEP_SUMMARY_TYPE,
+    GENUI_SLEEP_SUMMARY_CAP,
+)
 
 __all__ = [
     "build_line_chart",
@@ -64,5 +70,9 @@ __all__ = [
     "render_diet_summary_block",
     "DIET_SUMMARY_TYPE",
     "GENUI_DIET_SUMMARY_CAP",
+    "build_sleep_summary",
+    "render_sleep_summary_block",
+    "SLEEP_SUMMARY_TYPE",
+    "GENUI_SLEEP_SUMMARY_CAP",
     "METRIC_TABLE_TYPE",
 ]

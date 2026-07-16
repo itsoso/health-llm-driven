@@ -222,6 +222,9 @@ class Settings(BaseSettings):
     # 把 health_query(diet) 打成结构化 diet 卡(回退通用 metric_table / 散文)。**主门仍是 caps
     # 协商**(客户端声明 genui-diet-summary-v1);本 flag 是无需客户端发版即可全局停用的开关。
     genui_diet_summary_enabled: bool = True
+    # GenUI sleep_summary 结构化卡(汇总类卡族·睡眠)服务端 kill-switch:关=后端绝不把
+    # health_query(sleep) 打成结构化睡眠卡(回退通用 metric_table)。**主门仍是 caps 协商**。
+    genui_sleep_summary_enabled: bool = True
     # 并行工具调用(延迟, Phase-2 rank5):开后对**携带 tools 的** chat/chat_stream 请求
     # 传 parallel_tool_calls=true, 让 DashScope 一轮回多个 tool_call(默认每响应只回一个,
     # 而 fast-record prompt 早在索要 "一次性发起多个 tool_call")。多条目 record/query 回合

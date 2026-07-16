@@ -89,6 +89,22 @@ CAPABILITIES: tuple[AtomicCapability, ...] = (
         telemetry_events=("impression", "open"),
         execution="read_only_route_open",
     ),
+    AtomicCapability(
+        # 汇总类卡结构化 v1:睡眠概览(逐夜评分/时长/深睡 + 均值 + 时长目标 + 确定性观察)。
+        # data 形状 = genui.sleep_summary.build_sleep_summary 的 descriptor.data,与 mobile
+        # SleepSummaryCard 契约对齐。观察确定性派生(factual、非诊断,R4;绝不消费服务端
+        # quality_assessment);唯一动作是 route.open(查看睡眠详情)—— 只读,永不携带写路径。
+        id="sleep_summary",
+        version="v1",
+        card_type="sleep_summary",
+        first_class_objects=("HealthTwin",),
+        surfaces=("mobile.chat",),
+        data_required_fields=("range_label", "nights", "averages"),
+        action_types=("route.open",),
+        safety_boundary="suggest_only",
+        telemetry_events=("impression", "open"),
+        execution="read_only_route_open",
+    ),
 )
 
 _CAPABILITY_BY_CARD_TYPE = {capability.card_type: capability for capability in CAPABILITIES}

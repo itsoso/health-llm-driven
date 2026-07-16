@@ -63,6 +63,14 @@ function descriptorFromPayload(payload: string): ServerCardDescriptor | null {
     return { type: 'diet_daily_summary', data };
   }
 
+  // 汇总卡族 · sleep_summary(同 type 键 + 整数 v:1 契约)。data 透给 SleepSummaryCardView。
+  if (block.type === 'sleep_summary') {
+    if (block.v !== 1) return null;
+    const data = block.data;
+    if (!data || typeof data !== 'object') return null;
+    return { type: 'sleep_summary', data };
+  }
+
   const component = typeof block.component === 'string' ? block.component : '';
   const type = REVA_UI_COMPONENT_TYPES[component];
   if (block.v !== 1 || !type) return null;

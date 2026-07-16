@@ -45,6 +45,7 @@ import { OperatingReviewCardSpec } from './OperatingReviewCard';
 import { MetricChartCardSpec, MetricEmptyStateCardSpec, MetricLineChartCardSpec, RevaUiLineChartCardSpec } from './MetricChartCard';
 import { MetricTableCardSpec } from './MetricTableCard';
 import { DietSummaryCardSpec } from './DietSummaryCard';
+import { SleepSummaryCardSpec } from './SleepSummaryCard';
 import { DiscoveryCardSpec } from './DiscoveryCard';
 import { SafetyCardSpec } from './SafetyCard';
 import { SaveRecipeCardSpec } from './SaveRecipeCard';
@@ -73,6 +74,7 @@ export const CARD_REGISTRY: CardSpec[] = [
   MetricChartCardSpec,
   MetricTableCardSpec, // 仅后端下发 (reva-ui fence, cap 点亮后)
   DietSummaryCardSpec, // 汇总类卡 v1 · 仅后端下发 (reva-ui fence, cap 点亮后)
+  SleepSummaryCardSpec, // 汇总卡族·睡眠 · 仅后端下发 (reva-ui fence, cap 点亮后)
   DiscoveryCardSpec,
   SafetyCardSpec,
   MenuShareCardSpec,   // 不本地匹配, 仅接受后端下发
