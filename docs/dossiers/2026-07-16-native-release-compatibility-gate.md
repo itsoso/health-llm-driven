@@ -83,6 +83,6 @@
 
 ## G6 · 上线验证
 
-- Mobile OTA 已发布：runtime `1.3.1`，group `3ad04246-9480-4380-9e12-94ea1d553b7c`，iOS update `019f6afa-7f57-71dd-88c2-b582f05f79d2`。
-- EAS `update:view` 返回 commit `5af4053a1f0400fd2cc111bfcd34104b90d4e464`，与生产 `main` 一致。
+- Mobile OTA 已发布：runtime `1.3.1`，group `505cdf3d-2c42-4233-a189-eb02b30fd49e`，iOS update `019f6b01-bd40-7bee-8947-eb0a44626eec`。
+- EAS `update:view` 返回 commit `52b00ce6693703a72a086b6f343221f09a516400`，与生产 `main` 一致。
 - **裁决：PASS。**

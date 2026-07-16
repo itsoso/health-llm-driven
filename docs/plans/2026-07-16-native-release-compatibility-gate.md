@@ -63,4 +63,4 @@
 
 - 提交 `5af4053a1`，未带入并发未跟踪文件。
 - 推送 `main` 并部署后端；新 migration 已应用，随后从合入并发提交后的 `26fc7bb2d` 主干再次部署，production health `60/60 PASS`。
-- Mobile JS OTA 已发布；没有原生二进制变化。EAS group `3ad04246-9480-4380-9e12-94ea1d553b7c`，iOS update `019f6afa-7f57-71dd-88c2-b582f05f79d2`。
+- Mobile JS OTA 已发布；没有原生二进制变化。合并主干后的最终 OTA group `505cdf3d-2c42-4233-a189-eb02b30fd49e`，iOS update `019f6b01-bd40-7bee-8947-eb0a44626eec`。
