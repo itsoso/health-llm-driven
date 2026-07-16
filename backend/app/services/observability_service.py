@@ -507,6 +507,7 @@ def client_events_stats(db: Session, since: datetime, user_id: Optional[int]) ->
     app_update_by_phase: Dict[str, int] = {}
     app_update_by_launch_source: Dict[str, int] = {}
     app_update_checks = 0
+    app_update_outcome_terminals = 0
     app_update_ready = 0
     app_update_failures = 0
 
@@ -574,8 +575,10 @@ def client_events_stats(db: Session, since: datetime, user_id: Optional[int]) ->
                 app_update_checks += 1
                 if phase == "ready":
                     app_update_ready += 1
+                    app_update_outcome_terminals += 1
                 elif phase == "failed":
                     app_update_failures += 1
+                    app_update_outcome_terminals += 1
         elif name == "app_update_launch":
             launch_source = meta.get("launch_source")
             if isinstance(launch_source, str):
@@ -644,7 +647,7 @@ def client_events_stats(db: Session, since: datetime, user_id: Optional[int]) ->
             "release_health": app_update_release_health(
                 launches=app_update_launches,
                 emergency_launches=app_update_by_launch_source.get("emergency", 0),
-                terminal_attempts=app_update_checks,
+                terminal_attempts=app_update_outcome_terminals,
                 terminal_failures=app_update_failures,
             ),
         },

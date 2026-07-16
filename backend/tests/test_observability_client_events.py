@@ -219,3 +219,36 @@ def test_app_update_release_health_keeps_missing_terminal_denominator_null():
     assert result["status"] == "healthy"
     assert result["terminal_failure_rate_pct"] is None
     assert result["reasons"] == ["发布启动与更新终态均在阈值内"]
+
+
+def test_app_update_release_health_excludes_non_outcome_terminal_phases(db):
+    from app.models.user import User
+    from app.services.observability_service import client_events_stats, utc_now
+
+    user = User(
+        username="release-health",
+        email="release-health@test.com",
+        hashed_password="x",
+        name="release-health",
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    for _ in range(20):
+        _seed(db, user.id, "app_update_launch", {"launch_source": "ota"})
+    _seed(db, user.id, "app_update_terminal", {"phase": "current"})
+    for _ in range(18):
+        _seed(db, user.id, "app_update_terminal", {"phase": "ready"})
+    for _ in range(2):
+        _seed(db, user.id, "app_update_terminal", {"phase": "failed"})
+    db.commit()
+
+    health = client_events_stats(db, utc_now() - timedelta(days=7), user_id=None)[
+        "app_update"
+    ]["release_health"]
+
+    assert health["terminal_attempts"] == 20
+    assert health["terminal_failures"] == 2
+    assert health["terminal_failure_rate_pct"] == 10.0
+    assert health["status"] == "pause_rollout"

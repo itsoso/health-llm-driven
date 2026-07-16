@@ -35,7 +35,7 @@
 - 先补纯函数边界测试；
 - 补 `client_events_stats` 空窗口、健康、暂停三类聚合测试；
 - 执行后端相关测试和漂移检查。
-- [x] 相关测试 `81 passed`；Ruff、编译、doc drift、Dossier consistency、diff check 通过。
+- [x] 相关测试 `82 passed`；Ruff、编译、doc drift、Dossier consistency、diff check 通过。
 
 ### Task 5：部署与上线验证
 
