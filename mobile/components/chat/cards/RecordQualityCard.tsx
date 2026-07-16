@@ -143,6 +143,13 @@ export function RecordQualityCardView(props: RecordQualityViewProps) {
   const caloriesTotal = progressValue(data.progress, 'calories_total');
   const mealsCount = progressValue(data.progress, 'meals_count');
   const hasProgress = Boolean(proteinTotal && proteinTarget);
+  // 蛋白进度条填充比(截图目标):total/target 折算 0–100%,越界钳住;非数值不画条。
+  const proteinPct = (() => {
+    const t = parseFloat(String(proteinTotal ?? ''));
+    const g = parseFloat(String(proteinTarget ?? ''));
+    if (!isFinite(t) || !isFinite(g) || g <= 0) return null;
+    return Math.max(0, Math.min(100, (t / g) * 100));
+  })();
   const judgement = text(data.primary_judgement);
   const cautions = textList(data.personal_cautions);
   const nextAction = text(data.next_action);
@@ -197,6 +204,11 @@ export function RecordQualityCardView(props: RecordQualityViewProps) {
               {proteinTotal}/{proteinTarget}g
             </Text>
           </View>
+          {proteinPct != null ? (
+            <View style={styles.progressTrack}>
+              <View style={[styles.progressFill, { width: `${proteinPct}%` }]} />
+            </View>
+          ) : null}
           <Text maxFontSizeMultiplier={1.1} style={styles.progressHint}>
             {[
               caloriesTotal ? `已记 ${caloriesTotal} kcal` : null,
@@ -584,20 +596,23 @@ const styles = StyleSheet.create({
     color: C.ink1,
     lineHeight: 20,
   } as TextStyle,
+  // 等宽临床网格(截图目标):label 在上、value 在下,数字等宽 tabular 列对齐。
   metricRow: {
-    marginTop: 8,
+    marginTop: 10,
     flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: 6,
   },
   metricPill: {
-    flexDirection: 'row',
+    flex: 1,
+    flexBasis: 0,
+    minWidth: 0,
+    flexDirection: 'column',
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
+    gap: 3,
+    paddingHorizontal: 3,
+    paddingVertical: 9,
     borderRadius: revaRadii.sm,
-    backgroundColor: 'rgba(255,255,255,0.78)',
+    backgroundColor: C.surface2,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.line,
   },
@@ -605,14 +620,15 @@ const styles = StyleSheet.create({
     fontFamily: revaFonts.sans,
     fontSize: 10,
     color: C.ink3,
-    lineHeight: 14,
+    lineHeight: 13,
   } as TextStyle,
   metricValue: {
     fontFamily: revaFonts.mono,
-    fontSize: 11,
-    fontWeight: '800',
+    fontSize: 13.5,
+    fontWeight: '600',
     color: C.ink1,
-    lineHeight: 14,
+    lineHeight: 17,
+    fontVariant: ['tabular-nums'] as const,
   } as TextStyle,
   progressBox: {
     marginTop: 8,
@@ -638,11 +654,25 @@ const styles = StyleSheet.create({
   } as TextStyle,
   progressValue: {
     fontFamily: revaFonts.mono,
-    fontSize: 12,
-    fontWeight: '900',
+    fontSize: 13,
+    fontWeight: '700',
     color: C.green700,
-    lineHeight: 15,
+    lineHeight: 16,
+    fontVariant: ['tabular-nums'] as const,
   } as TextStyle,
+  progressTrack: {
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: C.green100,
+    overflow: 'hidden',
+    marginTop: 3,
+    marginBottom: 1,
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 3,
+    backgroundColor: C.green500,
+  },
   progressHint: {
     fontFamily: revaFonts.sans,
     fontSize: 10,
@@ -749,10 +779,11 @@ const styles = StyleSheet.create({
   } as TextStyle,
   shareMetricValue: {
     fontFamily: revaFonts.mono,
-    fontSize: 13,
-    fontWeight: '900',
+    fontSize: 15,
+    fontWeight: '600',
     color: C.ink1,
-    lineHeight: 17,
+    lineHeight: 19,
+    fontVariant: ['tabular-nums'] as const,
   } as TextStyle,
   shareNextRow: {
     gap: 3,
