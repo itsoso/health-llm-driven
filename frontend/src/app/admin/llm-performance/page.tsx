@@ -33,9 +33,17 @@ interface UsageRollup {
   completion_tokens: number;
   total_tokens: number;
   tokenplan_calls: number;
+  tokenplan_priced_calls: number;
+  tokenplan_unpriced_calls: number;
   tokenplan_tokens: number;
   cost_usd: number;
   cost_cny_estimate: number;
+  tokenplan_credits_estimate: number | null;
+  tokenplan_capacity_cost_cny: number | null;
+  tokenplan_payg_value_cny: number | null;
+  cost_savings_vs_payg_cny: number | null;
+  tokenplan_cost_estimated: boolean;
+  tokenplan_cost_coverage_complete: boolean;
   allocated_plan_cost_cny: number;
   effective_cny_per_1k_tokens: number | null;
   avg_latency_ms: number;
@@ -86,6 +94,8 @@ interface UsageDashboard {
     name: string;
     currency: string;
     monthly_budget_cny: number;
+    monthly_credits: number;
+    capacity_cny_per_credit: number | null;
     allocation_basis: string;
     tokenplan_model_names: string[];
     legacy_provider_note: string;
@@ -127,6 +137,9 @@ interface RecentCall extends Failure {
   cost_cny: number;
   cost_estimated: boolean;
   cost_source?: string | null;
+  tokenplan_credits_estimate?: number | null;
+  tokenplan_capacity_cost_cny?: number | null;
+  tokenplan_payg_value_cny?: number | null;
   success: boolean;
 }
 
@@ -203,7 +216,11 @@ function LLMPerformanceInner() {
   const fmt = (v: number | null | undefined) => v == null ? '—' : String(v);
   const fmtPct = (v: number | null) => v == null ? '—' : `${(v * 100).toFixed(1)}%`;
   const fmtTokens = (v: number) => v >= 1_000_000 ? `${(v / 1_000_000).toFixed(2)}M` : `${(v / 1000).toFixed(1)}k`;
-  const fmtCny = (v: number | null | undefined) => v == null ? '—' : `¥${v.toFixed(2)}`;
+  const fmtCny = (v: number | null | undefined) => v == null ? '—' : v > 0 && v < 0.01 ? '¥0.01以内' : `¥${v.toFixed(2)}`;
+  const fmtCredits = (v: number | null | undefined) => v == null ? '—' : v.toFixed(2).replace(/\.00$/, '');
+  const fmtPlanCny = (row: UsageRollup) => row.tokenplan_unpriced_calls > 0
+    ? row.tokenplan_capacity_cost_cny == null ? '无法估算' : `${fmtCny(row.tokenplan_capacity_cost_cny)}*`
+    : fmtCny(row.tokenplan_capacity_cost_cny);
   const fmtUsd = (v: number | null | undefined) => v == null ? '—' : `$${v.toFixed(4)}`;
   const fmtTrace = (v: string | null | undefined) => v ? v.slice(0, 18) : '—';
   const pctColor = (v: number | null) => v == null ? 'text-slate-400'
@@ -280,23 +297,26 @@ function LLMPerformanceInner() {
                     </p>
                   </div>
                   <div className="bg-white rounded-lg border p-4">
-                    <p className="text-xs text-slate-500">TokenPlan tokens</p>
-                    <p className="mt-1 text-2xl font-semibold text-slate-900">{fmtTokens(usage.overall.tokenplan_tokens)}</p>
-                    <p className="mt-2 text-sm text-slate-500">全部 tokens {fmtTokens(usage.overall.total_tokens)}</p>
+                    <p className="text-xs text-slate-500">本窗口套餐折算</p>
+                    <p className="mt-1 text-2xl font-semibold text-emerald-700">{fmtPlanCny(usage.overall)}</p>
+                    <p className="mt-2 text-sm text-slate-500">
+                      约 {fmtCredits(usage.overall.tokenplan_credits_estimate)} Credits
+                      {usage.overall.tokenplan_unpriced_calls > 0 ? ` · ${usage.overall.tokenplan_unpriced_calls} 次未估价` : ''}
+                    </p>
                   </div>
                   <div className="bg-white rounded-lg border p-4">
-                    <p className="text-xs text-slate-500">有效单价</p>
+                    <p className="text-xs text-slate-500">较按量价节省</p>
                     <p className="mt-1 text-2xl font-semibold text-emerald-700">
-                      {usage.overall.effective_cny_per_1k_tokens == null ? '—' : fmtCny(usage.overall.effective_cny_per_1k_tokens)}
+                      {fmtCny(usage.overall.cost_savings_vs_payg_cny)}
                     </p>
-                    <p className="mt-2 text-sm text-slate-500">每 1k TokenPlan token</p>
+                    <p className="mt-2 text-sm text-slate-500">按量价对照 {fmtCny(usage.overall.tokenplan_payg_value_cny)}</p>
                   </div>
                 </div>
 
                 <div className={`rounded-lg border p-4 mb-6 ${guardTone(usage.plan.quota_guard?.level)}`}>
                   <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3">
                     <div>
-                      <div className="text-xs font-medium opacity-80">TokenPlan 额度治理</div>
+                      <div className="text-xs font-medium opacity-80">Token 观测（非 Credits 额度）</div>
                       <div className="mt-1 text-xl font-semibold">
                         {usage.plan.quota_guard.level.toUpperCase()} · {usage.plan.quota_guard.recommended_runtime_policy}
                       </div>
@@ -337,9 +357,9 @@ function LLMPerformanceInner() {
                           <th className="px-4 py-2">用户</th>
                           <th className="px-4 py-2 text-right">调用</th>
                           <th className="px-4 py-2 text-right">tokens</th>
-                          <th className="px-4 py-2 text-right">TokenPlan</th>
-                          <th className="px-4 py-2 text-right">份额</th>
-                          <th className="px-4 py-2 text-right">摊销成本</th>
+                          <th className="px-4 py-2 text-right">Credits</th>
+                          <th className="px-4 py-2 text-right">按量价</th>
+                          <th className="px-4 py-2 text-right">套餐折算</th>
                           <th className="px-4 py-2 text-right">成功率</th>
                           <th className="px-4 py-2 text-right">最近</th>
                         </tr>
@@ -355,9 +375,9 @@ function LLMPerformanceInner() {
                             </td>
                             <td className="px-4 py-2 text-right font-mono">{row.calls}</td>
                             <td className="px-4 py-2 text-right font-mono">{fmtTokens(row.total_tokens)}</td>
-                            <td className="px-4 py-2 text-right font-mono">{fmtTokens(row.tokenplan_tokens)}</td>
-                            <td className="px-4 py-2 text-right font-mono">{(row.share_pct * 100).toFixed(1)}%</td>
-                            <td className="px-4 py-2 text-right font-mono text-emerald-700">{fmtCny(row.allocated_plan_cost_cny)}</td>
+                            <td className="px-4 py-2 text-right font-mono">{fmtCredits(row.tokenplan_credits_estimate)}</td>
+                            <td className="px-4 py-2 text-right font-mono">{fmtCny(row.tokenplan_payg_value_cny)}</td>
+                            <td className="px-4 py-2 text-right font-mono text-emerald-700">{fmtPlanCny(row)}</td>
                             <td className={`px-4 py-2 text-right font-mono ${pctColor(row.success_rate)}`}>{fmtPct(row.success_rate)}</td>
                             <td className="px-4 py-2 text-right text-xs text-slate-500">
                               {row.last_seen_at ? new Date(row.last_seen_at).toLocaleString('zh-CN', { hour12: false }) : '—'}
@@ -373,7 +393,7 @@ function LLMPerformanceInner() {
                   <div className="bg-white rounded-lg border overflow-hidden">
                     <div className="px-4 py-3 border-b bg-slate-50">
                       <h2 className="font-semibold text-slate-900">模型成本排行</h2>
-                      <p className="text-xs text-slate-500 mt-0.5">按窗口内 total tokens 排序, TokenPlan 模型按 ¥698 月费分摊</p>
+                      <p className="text-xs text-slate-500 mt-0.5">按窗口内 total tokens 排序，成本按 Credits 容量折算</p>
                     </div>
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
@@ -382,7 +402,7 @@ function LLMPerformanceInner() {
                             <th className="px-4 py-2">模型</th>
                             <th className="px-4 py-2 text-right">调用</th>
                             <th className="px-4 py-2 text-right">tokens</th>
-                            <th className="px-4 py-2 text-right">¥摊销</th>
+                            <th className="px-4 py-2 text-right">套餐折算</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -394,7 +414,7 @@ function LLMPerformanceInner() {
                               </td>
                               <td className="px-4 py-2 text-right font-mono">{row.calls}</td>
                               <td className="px-4 py-2 text-right font-mono">{fmtTokens(row.total_tokens)}</td>
-                              <td className="px-4 py-2 text-right font-mono text-emerald-700">{fmtCny(row.allocated_plan_cost_cny)}</td>
+                              <td className="px-4 py-2 text-right font-mono text-emerald-700">{fmtPlanCny(row)}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -421,7 +441,7 @@ function LLMPerformanceInner() {
                             />
                           </div>
                           <div className="mt-1 text-xs text-slate-500">
-                            {row.provider} · {row.calls} 次 · {fmtCny(row.allocated_plan_cost_cny)} · {fmtUsd(row.cost_usd)}
+                            {row.provider} · {row.calls} 次 · 套餐 {fmtPlanCny(row)} · 按量 {fmtCny(row.tokenplan_payg_value_cny)}
                           </div>
                         </div>
                       ))}
@@ -585,6 +605,7 @@ function LLMPerformanceInner() {
                       <th className="px-4 py-2">run / caller</th>
                       <th className="px-4 py-2">模型</th>
                       <th className="px-4 py-2 text-right">tokens</th>
+                      <th className="px-4 py-2 text-right">成本</th>
                       <th className="px-4 py-2 text-right">延迟</th>
                       <th className="px-4 py-2">状态</th>
                       <th className="px-4 py-2">错误摘要</th>
@@ -592,7 +613,7 @@ function LLMPerformanceInner() {
                   </thead>
                   <tbody>
                     {recentCalls.length === 0 ? (
-                      <tr><td colSpan={8} className="px-4 py-8 text-center text-slate-400">暂无调用</td></tr>
+                      <tr><td colSpan={9} className="px-4 py-8 text-center text-slate-400">暂无调用</td></tr>
                     ) : recentCalls.map(call => (
                       <tr key={call.id} className="border-t hover:bg-slate-50">
                         <td className="px-4 py-2 font-mono text-xs text-slate-500 whitespace-nowrap">
@@ -623,6 +644,10 @@ function LLMPerformanceInner() {
                         <td className="px-4 py-2 text-right font-mono">
                           <div>{fmtTokens(call.total_tokens)}</div>
                           <div className="text-xs text-slate-400">in {fmtTokens(call.prompt_tokens)} / out {fmtTokens(call.completion_tokens)}</div>
+                        </td>
+                        <td className="px-4 py-2 text-right font-mono">
+                          <div className="text-emerald-700">{fmtCny(call.tokenplan_capacity_cost_cny)}</div>
+                          <div className="text-xs text-slate-400">按量 {fmtCny(call.tokenplan_payg_value_cny)}</div>
                         </td>
                         <td className="px-4 py-2 text-right font-mono text-slate-500">
                           {call.latency_ms != null ? `${call.latency_ms}ms` : '—'}

@@ -161,9 +161,21 @@ npm run generate-types # mobile
 
 ## 2026-07-16 · 人民币容量成本扩展
 
-- 当前阶段:S3 规划。
-- 状态:building。
+- 当前阶段:S6 上线验证前。
+- 状态:verified。
 - 设计:`docs/plans/2026-07-16-tokenplan-rmb-cost-visibility-design.md`。
 - 计划:`docs/plans/2026-07-16-tokenplan-rmb-cost-visibility-plan.md`。
 - G1:PASS。复用 `AdminObservability` 与 `ChatMessage`，只增加成本解释，不新增健康行为或写路径。
-- G2:PASS。主金额采用 `Credits × ¥698 / 100000`；Credits 暂按公开模型人民币价格估算并始终标记“约”，按量价保留为对照，原始 Token 不降精度。
+- G2:PASS。主金额采用 `Credits × ¥698 / 100000`；Credits 按公开原价和套餐活动估算，按量活动价独立对照，避免折扣叠乘；未知模型或缓存口径不明确时不伪造金额，原始 Token 不降精度。
+- G3:PASS。后端 43 项聚焦测试通过；Mobile TypeScript 通过；Web production build 通过；Mac 38 项聚焦测试通过。
+- G4:GO。仅增加成本观测字段，不记录 prompt/回复正文，不改变模型路由、健康建议或写路径。
+- 实现结果:
+  - 单次调用记录 Credits、套餐容量成本、官方人民币按量价对照和估算来源。
+  - Admin 全局、用户、模型、调用方和最近调用直接显示人民币。
+  - Mobile/Web/Mac 折叠态优先显示 `约¥x.xx`，展开后显示双账本与 Token 明细。
+- 本轮直接金额闭环补强:
+  - `llm_usage_logs` 持久化 TokenPlan Credits、套餐容量成本、按量价对照、套餐参数和估算来源。
+  - Admin 最近调用与 run 明细优先读取写入时快照，旧日志保留模型/token 回退重算。
+  - Web/Mobile/Mac 对小于 1 分钱的调用统一显示 `约¥0.01以内`；未知模型显示“暂无法估算”。
+  - 受控迁移: `20260716_120000_add_llm_usage_tokenplan_cost` 已加入，待部署时应用。
+- G5/G6:待本次提交、部署、OTA 与线上检查完成后回写。

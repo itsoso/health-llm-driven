@@ -1,6 +1,19 @@
 # LLM Token 成本 & Eval 度量体系
 
-_最后更新: 2026-07-02_
+_最后更新: 2026-07-16_
+
+## 2026-07-16 TokenPlan 人民币容量成本
+
+TokenPlan 698 元/月包含 100,000 Credits。系统统一按以下口径展示：
+
+- `1 Credit = ¥698 / 100000 = ¥0.00698`。
+- 单次调用用公开原价估算 Credits，再换算套餐容量成本；当前按量活动价独立计算，只作对照，两个折扣不叠乘。
+- 当前 `qwen3.7-max` 活动期内按隐式缓存命中价 20% 估算，并分别应用 Credits 5 折和按量 5 折；`qwen3.7-plus` 按量对照采用当前 8 折，Credits 仍按套餐口径估算。
+- 系统未创建显式缓存。出现套餐文档未明确支持的缓存记录时显示“无法估算”，不会按 0 元或自行猜测 10%/20% 折扣。
+- 对话折叠态直接显示 `约¥x.xx · 耗时 · 轮次 · 模型`；展开后显示套餐折算、按量价对照和 Token 明细。
+- Admin 看板按全局、用户、模型和调用方展示 `tokenplan_credits_estimate`、`tokenplan_capacity_cost_cny`、按量价对照与节省估算。
+- 阿里云 API 暂不返回逐次 Credits，因此所有套餐金额必须标记为“约”；控制台明细仍是最终真值。
+- `allocated_plan_cost_cny` 和 `effective_cny_per_1k_tokens` 仅作旧客户端兼容，不再用于主要展示或成本判断。
 
 ## 2026-07 Admin 成本看板增量
 
@@ -9,11 +22,14 @@ _最后更新: 2026-07-02_
 当前度量口径:
 
 - `LlmUsageLog` 仍是单次调用真源,记录 provider / model / caller / user_id / prompt tokens / completion tokens / latency / success。
-- TokenPlan 月套餐按 `TOKENPLAN_MONTHLY_BUDGET_CNY` 摊销,默认 `698.0`;套餐名由 `TOKENPLAN_PLAN_NAME` 控制,默认 `TokenPlan 698/月`。
+- TokenPlan 月套餐由 `TOKENPLAN_MONTHLY_BUDGET_CNY` 和 `TOKENPLAN_MONTHLY_CREDITS` 配置,默认 `698.0 / 100000 Credits`;套餐名由 `TOKENPLAN_PLAN_NAME` 控制,默认 `TokenPlan 698/月`。
 - Admin 看板同时输出全局、按用户、按 provider、按 model、按 caller、按天的聚合。
-- TokenPlan 兼容 OpenAI 协议,历史日志里可能有 `provider=openai` 但 model 实际属于 TokenPlan;看板会按 TokenPlan 模型名归类,避免 698 月费账本漏数。
+- TokenPlan 兼容 OpenAI 协议,历史日志里可能有 `provider=openai` 但 model 实际属于 TokenPlan;看板使用内置历史价格表与当前模型注册表共同归类,避免模型下线后 698 月费账本漏数。
 - 新调用从 provider factory 开始会把 TokenPlan / Moonshot / Zhipu / LangBridge 等 OpenAI-compatible 代理写成真实 provider,不再全部混成 `openai`。
-- `allocated_plan_cost_cny` 是按窗口内 TokenPlan token 份额分摊月费,不是边际消耗;`effective_cny_per_1k_tokens` 用于观察当前套餐利用率。
+- `tokenplan_capacity_cost_cny` 是当前主要口径；旧的 `allocated_plan_cost_cny` 只为接口兼容保留。
+- 新写入的 `llm_usage_logs` 会持久化 `tokenplan_credits_estimate`、`tokenplan_cost_cny`、
+  `tokenplan_payg_value_cny`、套餐参数和估算来源。Admin 最近调用/单次 run 优先读取这组
+  写入时快照，旧日志仍按记录的模型、Token 和时间回退重算，避免未来价格表变化改写历史金额。
 
 ## 2026-07 消息级 Token Profile 增量
 
@@ -22,7 +38,9 @@ _最后更新: 2026-07-02_
 - `LlmUsageLog` 仍是**单次调用真源**;每次 LLM 调用继续独立写入 provider / model / caller / user_id / prompt tokens / completion tokens / latency / success。
 - `/agent/stream` 后台任务会开启请求级 capture,把本轮回复内多次 LLM 调用汇总到 SSE `done.data.llm_usage`。
 - 同一份汇总会持久化到 assistant 消息 `message.meta.llm_usage`,用于 Web / Mobile / Mac 历史会话恢复。
-- 端上只展示简要摘要:输入 token、输出 token、调用次数;单次调用明细仅放在 tooltip / details 中,不展示 prompt 或回答正文。
+- 端上折叠态直接展示套餐人民币金额、耗时、轮次和模型；输入/输出 Token、按量价及单次调用明细放在 details 中,不展示 prompt 或回答正文。
+- 小于 1 分钱的调用显示为 `约¥0.01以内`，而不是 `¥0.00`；模型或缓存计费口径未知时显示
+  `套餐折算 暂无法估算`，不把未知成本伪装成免费。
 - 该 profile 是**端上本轮成本/性能可解释层**,不是 Admin 聚合账本的替代;Admin 仍以 `llm_usage_logs` 做全局和用户级统计。
 
 ## 一、现状（已建成，不要重做）

@@ -59,6 +59,9 @@ def _build_usage(usage_summary: Optional[Dict[str, Any]]) -> Optional[Dict[str, 
         "output_tokens": completion,
         "total_tokens": total,
         "calls": calls,
+        "models": list(usage_summary.get("models") or []) if isinstance(usage_summary.get("models"), list) else [],
+        "providers": list(usage_summary.get("providers") or []) if isinstance(usage_summary.get("providers"), list) else [],
+        "items": list(usage_summary.get("items") or []) if isinstance(usage_summary.get("items"), list) else [],
     }
 
 
@@ -75,19 +78,46 @@ def _build_cost(usage_summary: Optional[Dict[str, Any]]) -> Optional[Dict[str, A
     if not isinstance(usage_summary, dict) or not usage_summary:
         return None
     cost_usd = usage_summary.get("cost_usd")
-    if not isinstance(cost_usd, (int, float)):
+    tokenplan_cny = usage_summary.get("tokenplan_cost_cny")
+    if not isinstance(cost_usd, (int, float)) and not isinstance(tokenplan_cny, (int, float)):
         return None
     sources = usage_summary.get("cost_sources")
     sources = [str(s) for s in sources] if isinstance(sources, list) else []
+    tokenplan_source = str(usage_summary.get("tokenplan_cost_source") or "").strip().lower()
+    tokenplan_priced = (
+        isinstance(tokenplan_cny, (int, float))
+        and float(tokenplan_cny) > 0
+        and tokenplan_source
+        and not tokenplan_source.startswith("unpriced")
+    )
+    if sources and all(source.strip().lower().startswith("unpriced") for source in sources):
+        tokenplan_priced = False
     # 无正成本 + 无本地免费来源 = 定价缺失,诚实报 null。
-    priced = float(cost_usd) > 0 or any(s == "local_provider" for s in sources)
+    priced = (
+        (isinstance(cost_usd, (int, float)) and float(cost_usd) > 0)
+        or tokenplan_priced
+        or any(s == "local_provider" for s in sources)
+    )
     if not priced:
         return None
     return {
-        "value_usd": round(float(cost_usd), 8),
+        "value_usd": round(float(cost_usd or 0.0), 8),
         "currency": "USD",
         "estimated": bool(usage_summary.get("cost_estimated", True)),
         "sources": sources,
+        "payg_value_cny": round(float(
+            usage_summary.get("tokenplan_payg_value_cny")
+            or usage_summary.get("cost_cny")
+            or 0.0
+        ), 6),
+        "tokenplan_value_cny": usage_summary.get("tokenplan_cost_cny"),
+        "tokenplan_cost_cny": usage_summary.get("tokenplan_cost_cny"),
+        "tokenplan_capacity_cost_cny": usage_summary.get("tokenplan_cost_cny"),
+        "tokenplan_credits_estimate": usage_summary.get("tokenplan_credits_estimate"),
+        "tokenplan_estimated": usage_summary.get("tokenplan_cost_estimated"),
+        "tokenplan_source": usage_summary.get("tokenplan_cost_source"),
+        "tokenplan_monthly_fee_cny": usage_summary.get("tokenplan_monthly_fee_cny"),
+        "tokenplan_monthly_credits": usage_summary.get("tokenplan_monthly_credits"),
     }
 
 

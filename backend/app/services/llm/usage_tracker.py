@@ -17,6 +17,8 @@ from dataclasses import dataclass
 from contextvars import ContextVar, Token
 from typing import Any, Dict, List, Optional, Tuple
 
+from app.services.llm.tokenplan_cost import estimate_tokenplan_cost
+
 logger = logging.getLogger(__name__)
 
 # 默认估算表: $/1M tokens (input, output). 真实账单以 provider / TokenPlan 后台为准。
@@ -153,6 +155,20 @@ def summarize_usage_capture() -> Optional[Dict[str, Any]]:
     total_tokens = sum(int(item.get("total_tokens") or 0) for item in captured)
     cost_usd = sum(float(item.get("cost_usd") or 0.0) for item in captured)
     cost_cny = sum(float(item.get("cost_cny") or 0.0) for item in captured)
+    tokenplan_items = [
+        item for item in captured
+        if isinstance(item.get("tokenplan_cost_cny"), (int, float))
+    ]
+    tokenplan_credits = sum(float(item.get("tokenplan_credits_estimate") or 0.0) for item in tokenplan_items)
+    tokenplan_cost_cny = sum(float(item.get("tokenplan_cost_cny") or 0.0) for item in tokenplan_items)
+    tokenplan_payg_value_cny = sum(
+        float(item.get("tokenplan_payg_value_cny") or 0.0) for item in tokenplan_items
+    )
+    tokenplan_sources = sorted({
+        str(item.get("tokenplan_cost_source") or "").strip()
+        for item in tokenplan_items
+        if str(item.get("tokenplan_cost_source") or "").strip()
+    })
     latency_values = [
         int(item["latency_ms"])
         for item in captured
@@ -183,6 +199,18 @@ def summarize_usage_capture() -> Optional[Dict[str, Any]]:
             for item in captured
             if str(item.get("cost_source") or "").strip()
         }),
+        "tokenplan_credits_estimate": round(tokenplan_credits, 6) if tokenplan_items else None,
+        "tokenplan_cost_cny": round(tokenplan_cost_cny, 6) if tokenplan_items else None,
+        "tokenplan_payg_value_cny": round(tokenplan_payg_value_cny, 6) if tokenplan_items else None,
+        "tokenplan_cost_estimated": any(
+            bool(item.get("tokenplan_cost_estimated", True)) for item in tokenplan_items
+        ) if tokenplan_items else None,
+        "tokenplan_cost_source": tokenplan_sources[0] if len(tokenplan_sources) == 1 else (
+            "mixed" if tokenplan_sources else None
+        ),
+        "tokenplan_cost_sources": tokenplan_sources,
+        "tokenplan_monthly_fee_cny": tokenplan_items[0].get("tokenplan_monthly_fee_cny") if tokenplan_items else None,
+        "tokenplan_monthly_credits": tokenplan_items[0].get("tokenplan_monthly_credits") if tokenplan_items else None,
         "latency_ms": sum(latency_values) if latency_values else None,
         "failed_calls": sum(1 for item in captured if not item.get("success", True)),
         "models": models,
@@ -439,6 +467,13 @@ def record_usage(
         completion_tokens = _estimate_tokens(completion_text, model)
         token_source = "estimate"
     cost = estimate_usage_cost(provider, model, prompt_tokens, completion_tokens)
+    tokenplan_cost = estimate_tokenplan_cost(
+        provider=provider,
+        model=model,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        cached_tokens=cached_tokens,
+    )
     resolved_caller = caller or _caller_ctx.get() or "unknown"
     resolved_user_id = user_id if user_id is not None else _user_id_ctx.get()
     resolved_run_id = run_id if run_id is not None else _run_id_ctx.get()
@@ -460,6 +495,13 @@ def record_usage(
         "pricing_unit": cost.pricing_unit,
         "input_usd_per_million": cost.input_usd_per_million,
         "output_usd_per_million": cost.output_usd_per_million,
+        "tokenplan_credits_estimate": round(tokenplan_cost.credits, 6) if tokenplan_cost else None,
+        "tokenplan_cost_cny": round(tokenplan_cost.cost_cny, 6) if tokenplan_cost else None,
+        "tokenplan_payg_value_cny": round(tokenplan_cost.payg_value_cny, 6) if tokenplan_cost else None,
+        "tokenplan_cost_estimated": tokenplan_cost.estimated if tokenplan_cost else None,
+        "tokenplan_cost_source": tokenplan_cost.source if tokenplan_cost else None,
+        "tokenplan_monthly_fee_cny": tokenplan_cost.monthly_fee_cny if tokenplan_cost else None,
+        "tokenplan_monthly_credits": tokenplan_cost.monthly_credits if tokenplan_cost else None,
         "latency_ms": latency_ms,
         "success": bool(success),
         "error_class": error_class,
@@ -494,6 +536,13 @@ def record_usage(
                 cached_tokens=cached_tokens,
                 token_source=token_source,
                 cost_usd=cost.cost_usd,
+                tokenplan_credits_estimate=tokenplan_cost.credits if tokenplan_cost else None,
+                tokenplan_cost_cny=tokenplan_cost.cost_cny if tokenplan_cost else None,
+                tokenplan_payg_value_cny=tokenplan_cost.payg_value_cny if tokenplan_cost else None,
+                tokenplan_cost_estimated=(1 if tokenplan_cost.estimated else 0) if tokenplan_cost else None,
+                tokenplan_cost_source=tokenplan_cost.source if tokenplan_cost else None,
+                tokenplan_monthly_fee_cny=tokenplan_cost.monthly_fee_cny if tokenplan_cost else None,
+                tokenplan_monthly_credits=tokenplan_cost.monthly_credits if tokenplan_cost else None,
                 latency_ms=latency_ms,
                 success=1 if success else 0,
                 error_class=error_class,

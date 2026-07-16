@@ -1,6 +1,7 @@
 """LLM 用量追踪器测试 - 覆盖 model 名称解析 + caller 绑定 + unknown 诊断."""
 import asyncio
 import logging
+from datetime import datetime, timezone
 
 import pytest
 
@@ -13,6 +14,7 @@ from app.services.llm.usage_tracker import (
     set_run_id,
     wrap_provider,
     record_usage,
+    estimate_tokenplan_cost,
     estimate_usage_cost,
     _caller_ctx,
 )
@@ -235,12 +237,159 @@ def test_tokenplan_qwen_cost_is_estimated_and_exposed(patch_session):
 
     row = patch_session.query(LlmUsageLog).one()
     assert row.cost_usd > 0
+    assert row.tokenplan_credits_estimate is not None
+    assert row.tokenplan_cost_cny is not None
+    assert row.tokenplan_cost_cny > 0
+    assert row.tokenplan_payg_value_cny is not None
+    assert row.tokenplan_cost_estimated == 1
+    assert row.tokenplan_monthly_fee_cny == 698.0
+    assert row.tokenplan_monthly_credits == 100_000
     assert summary is not None
     assert summary["cost_usd"] > 0
     assert summary["cost_cny"] > 0
     assert summary["cost_estimated"] is True
     assert "builtin:qwen3.7-plus" in summary["cost_sources"]
     assert summary["items"][0]["cost_source"] == "builtin:qwen3.7-plus"
+
+
+def test_non_tokenplan_does_not_claim_tokenplan_rmb_cost(patch_session):
+    record_usage(
+        provider="openai",
+        model="gpt-4o-mini",
+        prompt_text="hello",
+        completion_text="ok",
+        caller="test.non_tokenplan",
+    )
+
+    row = patch_session.query(LlmUsageLog).one()
+    assert row.tokenplan_cost_cny is None
+    assert row.tokenplan_credits_estimate is None
+    assert row.tokenplan_cost_estimated is None
+
+
+def test_tokenplan_qwen36_without_cache_converts_credits_to_rmb(monkeypatch):
+    """普通 Token 用公开原价估 Credits，再按套餐容量折算人民币。"""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "tokenplan_monthly_budget_cny", 698.0)
+    monkeypatch.setattr(settings, "tokenplan_monthly_credits", 100_000)
+    estimate = estimate_tokenplan_cost(
+        provider="tokenplan",
+        model="qwen3.6-plus",
+        prompt_tokens=8_349,
+        completion_tokens=573,
+    )
+
+    assert estimate is not None
+    assert estimate.estimated is True
+    assert estimate.credits == pytest.approx(2.3574)
+    assert estimate.cost_cny == pytest.approx(0.016455, abs=0.000001)
+    assert estimate.payg_value_cny == pytest.approx(0.023574)
+    assert estimate.monthly_fee_cny == 698.0
+    assert estimate.monthly_credits == 100_000
+    assert estimate.source.startswith("public_credit_basis_cny_rate:qwen3.6-plus")
+
+
+def test_tokenplan_qwen37_max_applies_implicit_cache_and_both_promotions(monkeypatch):
+    """qwen3.7-max 活动期内：隐式缓存 20%，Credits 与按量均各自 5 折。"""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "tokenplan_monthly_budget_cny", 698.0)
+    monkeypatch.setattr(settings, "tokenplan_monthly_credits", 100_000)
+    estimate = estimate_tokenplan_cost(
+        provider="tokenplan",
+        model="qwen3.7-max",
+        prompt_tokens=1_000_000,
+        completion_tokens=0,
+        cached_tokens=500_000,
+        at=datetime(2026, 7, 16, tzinfo=timezone.utc),
+    )
+
+    assert estimate is not None
+    assert estimate.credits == pytest.approx(360.0)
+    assert estimate.cost_cny == pytest.approx(2.5128)
+    assert estimate.payg_value_cny == pytest.approx(3.6)
+    assert "implicit_cache_0.2" in estimate.source
+
+
+def test_tokenplan_qwen37_max_promotions_expire_without_becoming_permanent(monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "tokenplan_monthly_budget_cny", 698.0)
+    monkeypatch.setattr(settings, "tokenplan_monthly_credits", 100_000)
+    estimate = estimate_tokenplan_cost(
+        provider="tokenplan",
+        model="qwen3.7-max",
+        prompt_tokens=1_000_000,
+        completion_tokens=0,
+        at=datetime(2026, 7, 23, tzinfo=timezone.utc),
+    )
+
+    assert estimate is not None
+    assert estimate.credits == pytest.approx(1_200.0)
+    assert estimate.cost_cny == pytest.approx(8.376)
+    assert estimate.payg_value_cny == pytest.approx(12.0)
+    assert estimate.source.endswith("standard:standard")
+
+
+def test_tokenplan_does_not_guess_unknown_cache_billing():
+    estimate = estimate_tokenplan_cost(
+        provider="tokenplan",
+        model="qwen3.6-plus",
+        prompt_tokens=10_000,
+        completion_tokens=100,
+        cached_tokens=5_000,
+    )
+
+    assert estimate is None
+
+
+def test_tokenplan_qwen37_plus_keeps_credit_basis_separate_from_payg_promo(monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "tokenplan_monthly_budget_cny", 698.0)
+    monkeypatch.setattr(settings, "tokenplan_monthly_credits", 100_000)
+    estimate = estimate_tokenplan_cost(
+        provider="tokenplan",
+        model="qwen3.7-plus",
+        prompt_tokens=1_000_000,
+        completion_tokens=0,
+    )
+
+    assert estimate is not None
+    assert estimate.credits == pytest.approx(600.0)
+    assert estimate.cost_cny == pytest.approx(4.188)
+    assert estimate.payg_value_cny == pytest.approx(4.8)
+
+
+def test_tokenplan_capture_exposes_rmb_capacity_cost(patch_session, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "tokenplan_monthly_budget_cny", 698.0)
+    monkeypatch.setattr(settings, "tokenplan_monthly_credits", 100_000)
+    token = begin_usage_capture()
+    try:
+        record_usage(
+            provider="tokenplan",
+            model="qwen3.7-plus",
+            prompt_text="hello " * 1000,
+            completion_text="ok " * 200,
+            caller="test.plan-cost",
+            user_id=3,
+        )
+        summary = summarize_usage_capture()
+    finally:
+        end_usage_capture(token)
+
+    assert summary is not None
+    assert summary["tokenplan_credits_estimate"] > 0
+    assert summary["tokenplan_cost_cny"] > 0
+    assert summary["tokenplan_payg_value_cny"] > 0
+    assert summary["tokenplan_cost_estimated"] is True
+    assert summary["tokenplan_monthly_fee_cny"] == 698.0
+    assert summary["tokenplan_monthly_credits"] == 100_000
+    assert summary["items"][0]["tokenplan_cost_cny"] > 0
+    assert summary["items"][0]["tokenplan_payg_value_cny"] > 0
 
 
 def test_model_pricing_json_override(monkeypatch):

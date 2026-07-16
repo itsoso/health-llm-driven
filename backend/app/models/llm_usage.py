@@ -23,6 +23,14 @@ class LlmUsageLog(Base):
     token_source = Column(String(16), nullable=True)
     # 单次估算成本 (USD), 由 model 价格表算出
     cost_usd = Column(Float, nullable=False, default=0.0)
+    # TokenPlan 套餐容量账本:均为估算值,按量价格只作为对照。
+    tokenplan_credits_estimate = Column(Float, nullable=True)
+    tokenplan_cost_cny = Column(Float, nullable=True)
+    tokenplan_payg_value_cny = Column(Float, nullable=True)
+    tokenplan_cost_estimated = Column(Integer, nullable=True)  # 0/1; NULL=无套餐估算
+    tokenplan_cost_source = Column(String(500), nullable=True)
+    tokenplan_monthly_fee_cny = Column(Float, nullable=True)
+    tokenplan_monthly_credits = Column(Integer, nullable=True)
     latency_ms = Column(Integer, nullable=True)
     success = Column(Integer, nullable=False, default=1)  # 0/1, 失败也记
     run_id = Column(String(64), nullable=True)

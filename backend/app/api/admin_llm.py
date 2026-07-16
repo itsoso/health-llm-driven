@@ -14,7 +14,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import case, func, or_
+from sqlalchemy import and_, case, func, or_
 from sqlalchemy.orm import Session
 
 from app.api.admin import get_admin_user
@@ -23,6 +23,12 @@ from app.config import settings
 from app.models.llm_usage import LlmUsageLog
 from app.models.user import User
 from app.services.llm.usage_tracker import estimate_usage_cost
+from app.services.llm.tokenplan_cost import (
+    QWEN37_MAX_PROMO_END_UTC,
+    estimate_tokenplan_cost,
+    tokenplan_cny_rate_table,
+    tokenplan_payg_cny_rate_table,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin/llm", tags=["admin"])
@@ -51,20 +57,20 @@ def _tokenplan_model_names() -> list[str]:
 
     Admin 成本看板用模型名兜底归类,保证旧日志不会从 698/月套餐账本里漏掉.
     """
-    names = {settings.tokenplan_model}
+    names = {settings.tokenplan_model, *tokenplan_cny_rate_table().keys()}
     try:
         from app.services.llm.model_registry import MODELS
 
         names.update(m.model for m in MODELS if m.provider == "tokenplan")
     except Exception:
         logger.debug("[admin.llm.usage] model registry unavailable", exc_info=True)
-    return sorted(name for name in names if name)
+    return sorted(str(name).strip().lower() for name in names if str(name).strip())
 
 
 def _tokenplan_condition(tokenplan_models: list[str]):
-    clauses = [LlmUsageLog.provider == "tokenplan"]
+    clauses = [func.lower(LlmUsageLog.provider) == "tokenplan"]
     if tokenplan_models:
-        clauses.append(LlmUsageLog.model.in_(tokenplan_models))
+        clauses.append(func.lower(LlmUsageLog.model).in_(tokenplan_models))
     return or_(*clauses)
 
 
@@ -137,10 +143,107 @@ def _usage_cost_sql_expr():
     return case((LlmUsageLog.cost_usd > 0, LlmUsageLog.cost_usd), else_=estimated)
 
 
+def _tokenplan_cost_sql_expr(tokenplan_condition):
+    """按公开 TokenPlan 规则估算历史日志的 Credits、容量成本和按量价。"""
+    model = func.lower(LlmUsageLog.model)
+    prompt = func.coalesce(LlmUsageLog.prompt_tokens, 0)
+    completion = func.coalesce(LlmUsageLog.completion_tokens, 0)
+    cached_raw = func.coalesce(LlmUsageLog.cached_tokens, 0)
+    cached = case(
+        (cached_raw < 0, 0),
+        (cached_raw > prompt, prompt),
+        else_=cached_raw,
+    )
+
+    def price_exprs(rate_table):
+        input_whens = []
+        output_whens = []
+        for model_name, tiers in rate_table.items():
+            for index, (limit, input_rate, output_rate) in enumerate(tiers):
+                condition = model == model_name
+                if index < len(tiers) - 1:
+                    condition = and_(condition, prompt <= limit)
+                input_whens.append((condition, input_rate))
+                output_whens.append((condition, output_rate))
+        return case(*input_whens, else_=0.0), case(*output_whens, else_=0.0)
+
+    credit_input_rate, credit_output_rate = price_exprs(tokenplan_cny_rate_table())
+    payg_input_rate, payg_output_rate = price_exprs(tokenplan_payg_cny_rate_table())
+    cache_supported = or_(
+        cached == 0,
+        and_(
+            model == "qwen3.7-max",
+            LlmUsageLog.created_at <= QWEN37_MAX_PROMO_END_UTC,
+        ),
+    )
+    cache_multiplier = case(
+        (
+            and_(
+                cached > 0,
+                model == "qwen3.7-max",
+                LlmUsageLog.created_at <= QWEN37_MAX_PROMO_END_UTC,
+            ),
+            0.2,
+        ),
+        else_=1.0,
+    )
+    credit_basis_cny = (
+        (prompt - cached) * credit_input_rate
+        + cached * credit_input_rate * cache_multiplier
+        + completion * credit_output_rate
+    ) / 1_000_000.0
+    payg_base_cny = (
+        (prompt - cached) * payg_input_rate
+        + cached * payg_input_rate * cache_multiplier
+        + completion * payg_output_rate
+    ) / 1_000_000.0
+    promo_multiplier = case(
+        (
+            and_(
+                model == "qwen3.7-max",
+                LlmUsageLog.created_at <= QWEN37_MAX_PROMO_END_UTC,
+            ),
+            0.5,
+        ),
+        else_=1.0,
+    )
+    payg_multiplier = case(
+        (
+            and_(
+                model == "qwen3.7-max",
+                LlmUsageLog.created_at <= QWEN37_MAX_PROMO_END_UTC,
+            ),
+            0.5,
+        ),
+        else_=1.0,
+    )
+    payg_cny = payg_base_cny * payg_multiplier
+    credits_per_cny = float(getattr(settings, "tokenplan_credits_per_cny", 100.0) or 0.0)
+    monthly_fee = float(getattr(settings, "tokenplan_monthly_budget_cny", 698.0) or 0.0)
+    monthly_credits = int(getattr(settings, "tokenplan_monthly_credits", 100_000) or 0)
+    credits = case(
+        (
+            and_(tokenplan_condition, cache_supported),
+            credit_basis_cny * credits_per_cny * promo_multiplier,
+        ),
+        else_=0.0,
+    )
+    capacity_cost = credits * monthly_fee / monthly_credits if monthly_credits > 0 else credits * 0
+    tokenplan_payg = case(
+        (and_(tokenplan_condition, cache_supported), payg_cny),
+        else_=0.0,
+    )
+    # 新账本优先使用写入时的估算;旧行才走上面的 SQL 价格表回退。
+    persisted_credits = func.coalesce(LlmUsageLog.tokenplan_credits_estimate, credits)
+    persisted_capacity = func.coalesce(LlmUsageLog.tokenplan_cost_cny, capacity_cost)
+    persisted_payg = func.coalesce(LlmUsageLog.tokenplan_payg_value_cny, tokenplan_payg)
+    return persisted_credits, persisted_capacity, persisted_payg, cache_supported
+
+
 def _provider_family_expr(tokenplan_models: list[str]):
-    whens = [(LlmUsageLog.provider == "tokenplan", "tokenplan")]
+    whens = [(func.lower(LlmUsageLog.provider) == "tokenplan", "tokenplan")]
     if tokenplan_models:
-        whens.append((LlmUsageLog.model.in_(tokenplan_models), "tokenplan"))
+        whens.append((func.lower(LlmUsageLog.model).in_(tokenplan_models), "tokenplan"))
     return case(*whens, else_=LlmUsageLog.provider)
 
 
@@ -231,6 +334,13 @@ def _rollup_row(row, *, tokenplan_tokens_total: int, monthly_budget_cny: float) 
         else None
     )
     cost_usd = _safe_float(row.cost_usd, 6)
+    tokenplan_calls = _safe_int(row.tokenplan_calls)
+    tokenplan_priced_calls = _safe_int(row.tokenplan_priced_calls)
+    tokenplan_unpriced_calls = _safe_int(row.tokenplan_unpriced_calls)
+    has_plan_price = tokenplan_priced_calls > 0
+    tokenplan_credits = _safe_float(row.tokenplan_credits_estimate, 4) if has_plan_price else None
+    tokenplan_capacity_cost = _safe_float(row.tokenplan_capacity_cost_cny, 4) if has_plan_price else None
+    tokenplan_payg_value = _safe_float(row.tokenplan_payg_value_cny, 4) if has_plan_price else None
     return {
         "calls": calls,
         "success_calls": success_calls,
@@ -239,10 +349,19 @@ def _rollup_row(row, *, tokenplan_tokens_total: int, monthly_budget_cny: float) 
         "prompt_tokens": _safe_int(row.prompt_tokens),
         "completion_tokens": _safe_int(row.completion_tokens),
         "total_tokens": _safe_int(row.total_tokens),
-        "tokenplan_calls": _safe_int(row.tokenplan_calls),
+        "tokenplan_calls": tokenplan_calls,
+        "tokenplan_priced_calls": tokenplan_priced_calls,
+        "tokenplan_unpriced_calls": tokenplan_unpriced_calls,
         "tokenplan_tokens": tokenplan_tokens,
         "cost_usd": cost_usd,
         "cost_cny_estimate": round(_cost_cny_from_usd(cost_usd), 4),
+        "tokenplan_credits_estimate": tokenplan_credits,
+        "tokenplan_capacity_cost_cny": tokenplan_capacity_cost,
+        "tokenplan_payg_value_cny": tokenplan_payg_value,
+        "cost_savings_vs_payg_cny": round(max(0.0, tokenplan_payg_value - tokenplan_capacity_cost), 4)
+        if has_plan_price else None,
+        "tokenplan_cost_estimated": has_plan_price,
+        "tokenplan_cost_coverage_complete": tokenplan_unpriced_calls == 0,
         "allocated_plan_cost_cny": round(allocated, 2),
         "effective_cny_per_1k_tokens": round(effective, 4) if effective is not None else None,
         "avg_latency_ms": _safe_int(row.avg_latency_ms),
@@ -253,8 +372,25 @@ def _rollup_row(row, *, tokenplan_tokens_total: int, monthly_budget_cny: float) 
 def _usage_aggregates(tokenplan_condition):
     success_expr = case((LlmUsageLog.success == 1, 1), else_=0)
     tokenplan_call_expr = case((tokenplan_condition, 1), else_=0)
+    _, _, _, cache_supported = _tokenplan_cost_sql_expr(tokenplan_condition)
+    priced_condition = and_(
+        tokenplan_condition,
+        or_(
+            LlmUsageLog.tokenplan_cost_cny.isnot(None),
+            func.lower(LlmUsageLog.model).in_(list(tokenplan_cny_rate_table().keys())),
+        ),
+        cache_supported,
+    )
+    tokenplan_priced_call_expr = case((priced_condition, 1), else_=0)
+    tokenplan_unpriced_call_expr = case(
+        (and_(tokenplan_condition, ~priced_condition), 1),
+        else_=0,
+    )
     tokenplan_token_expr = case((tokenplan_condition, LlmUsageLog.total_tokens), else_=0)
     cost_expr = _usage_cost_sql_expr()
+    tokenplan_credits_expr, tokenplan_capacity_expr, tokenplan_payg_expr, _ = _tokenplan_cost_sql_expr(
+        tokenplan_condition
+    )
     return [
         func.count(LlmUsageLog.id).label("calls"),
         func.coalesce(func.sum(success_expr), 0).label("success_calls"),
@@ -262,8 +398,13 @@ def _usage_aggregates(tokenplan_condition):
         func.coalesce(func.sum(LlmUsageLog.completion_tokens), 0).label("completion_tokens"),
         func.coalesce(func.sum(LlmUsageLog.total_tokens), 0).label("total_tokens"),
         func.coalesce(func.sum(tokenplan_call_expr), 0).label("tokenplan_calls"),
+        func.coalesce(func.sum(tokenplan_priced_call_expr), 0).label("tokenplan_priced_calls"),
+        func.coalesce(func.sum(tokenplan_unpriced_call_expr), 0).label("tokenplan_unpriced_calls"),
         func.coalesce(func.sum(tokenplan_token_expr), 0).label("tokenplan_tokens"),
         func.coalesce(func.sum(cost_expr), 0.0).label("cost_usd"),
+        func.coalesce(func.sum(tokenplan_credits_expr), 0.0).label("tokenplan_credits_estimate"),
+        func.coalesce(func.sum(tokenplan_capacity_expr), 0.0).label("tokenplan_capacity_cost_cny"),
+        func.coalesce(func.sum(tokenplan_payg_expr), 0.0).label("tokenplan_payg_value_cny"),
         func.coalesce(func.avg(LlmUsageLog.latency_ms), 0).label("avg_latency_ms"),
         func.max(LlmUsageLog.created_at).label("last_seen_at"),
     ]
@@ -286,6 +427,39 @@ def _usage_log_payload(row: LlmUsageLog, user: User | None = None) -> dict:
         cost_cny = estimate.cost_cny
         cost_estimated = estimate.estimated
         cost_source = estimate.source
+    provider_for_plan = (
+        "tokenplan"
+        if str(row.provider or "").lower() == "tokenplan"
+        or str(row.model or "").lower() in _tokenplan_model_names()
+        else row.provider
+    )
+    # 新行优先读取写入时的套餐估算,保证历史账本不受未来价格表改动影响。
+    # 旧行没有这些列值时再按当时记录的模型/token 回退重算。
+    persisted_plan_cost = row.tokenplan_cost_cny
+    if persisted_plan_cost is not None:
+        plan_estimate = None
+    else:
+        plan_estimate = estimate_tokenplan_cost(
+            provider=provider_for_plan,
+            model=row.model,
+            prompt_tokens=_safe_int(row.prompt_tokens),
+            completion_tokens=_safe_int(row.completion_tokens),
+            cached_tokens=_safe_int(row.cached_tokens),
+            at=row.created_at,
+        )
+    plan_credits = row.tokenplan_credits_estimate if persisted_plan_cost is not None else (
+        plan_estimate.credits if plan_estimate else None
+    )
+    plan_cost_cny = persisted_plan_cost if persisted_plan_cost is not None else (
+        plan_estimate.cost_cny if plan_estimate else None
+    )
+    plan_payg_cny = row.tokenplan_payg_value_cny if persisted_plan_cost is not None else (
+        plan_estimate.payg_value_cny if plan_estimate else None
+    )
+    plan_estimated = bool(row.tokenplan_cost_estimated) if persisted_plan_cost is not None else bool(plan_estimate)
+    plan_source = row.tokenplan_cost_source if persisted_plan_cost is not None else (
+        plan_estimate.source if plan_estimate else None
+    )
     return {
         "id": row.id,
         "provider": row.provider,
@@ -303,6 +477,18 @@ def _usage_log_payload(row: LlmUsageLog, user: User | None = None) -> dict:
         "cost_cny": round(cost_cny, 6),
         "cost_estimated": cost_estimated,
         "cost_source": cost_source,
+        "tokenplan_credits_estimate": round(plan_credits, 4) if plan_credits is not None else None,
+        "tokenplan_capacity_cost_cny": round(plan_cost_cny, 6) if plan_cost_cny is not None else None,
+        "tokenplan_cost_cny": round(plan_cost_cny, 6) if plan_cost_cny is not None else None,
+        "tokenplan_payg_value_cny": round(plan_payg_cny, 6) if plan_payg_cny is not None else None,
+        "tokenplan_cost_estimated": plan_estimated,
+        "tokenplan_cost_source": plan_source,
+        "tokenplan_monthly_fee_cny": row.tokenplan_monthly_fee_cny if persisted_plan_cost is not None else (
+            plan_estimate.monthly_fee_cny if plan_estimate else None
+        ),
+        "tokenplan_monthly_credits": row.tokenplan_monthly_credits if persisted_plan_cost is not None else (
+            plan_estimate.monthly_credits if plan_estimate else None
+        ),
         "latency_ms": row.latency_ms,
         "success": bool(row.success),
         "error_class": row.error_class,
@@ -346,7 +532,7 @@ def usage_dashboard(
     """管理员视角的 LLM 使用账本.
 
     - 全局/单用户 token、调用数、成功率、延迟。
-    - TokenPlan 固定月费按窗口内 token 份额分摊,用于观察 698/月套餐的有效单价。
+    - TokenPlan 公开规则估算 Credits，再按 698/100000 折算人民币容量成本。
     - 兼容历史日志: provider=openai 但 model 属于 TokenPlan 注册模型时,仍归入 TokenPlan。
     """
     until = datetime.now(timezone.utc)
@@ -357,6 +543,7 @@ def usage_dashboard(
     filters = _usage_filters(since, until, user_id)
     global_filters = _usage_filters(since, until)
     monthly_budget_cny = float(getattr(settings, "tokenplan_monthly_budget_cny", 698.0) or 0.0)
+    monthly_credits = int(getattr(settings, "tokenplan_monthly_credits", 100_000) or 0)
     monthly_token_quota = int(getattr(settings, "tokenplan_monthly_token_quota", 0) or 0)
 
     tokenplan_tokens_total = _safe_int(
@@ -505,7 +692,10 @@ def usage_dashboard(
             "name": getattr(settings, "tokenplan_plan_name", "TokenPlan 698/月"),
             "currency": "CNY",
             "monthly_budget_cny": round(monthly_budget_cny, 2),
-            "allocation_basis": "窗口内 TokenPlan token 占全局 TokenPlan token 份额分摊月费",
+            "monthly_credits": monthly_credits,
+            "capacity_cny_per_credit": round(monthly_budget_cny / monthly_credits, 6)
+            if monthly_credits > 0 else None,
+            "allocation_basis": "逐次 Credits 估算 × 月费 / 月 Credits；控制台用量明细为最终真值",
             "tokenplan_model_names": tokenplan_models,
             "legacy_provider_note": "历史 openai provider + TokenPlan 模型名的日志会自动归入 TokenPlan",
             "quota_guard": _budget_guard(

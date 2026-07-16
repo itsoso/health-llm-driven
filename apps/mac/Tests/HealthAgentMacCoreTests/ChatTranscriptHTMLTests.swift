@@ -205,6 +205,10 @@ final class ChatTranscriptHTMLTests: XCTestCase {
             costUsd: 0.0004,
             costCny: 0.0029,
             costEstimated: true,
+            tokenplanCreditsEstimate: 3.18,
+            tokenplanCostCny: 0.0222,
+            tokenplanPaygValueCny: 0.0029,
+            tokenplanCostEstimated: true,
             latencyMs: 1200,
             models: ["qwen3.7-plus"],
             providers: ["tokenplan"],
@@ -232,9 +236,11 @@ final class ChatTranscriptHTMLTests: XCTestCase {
             toolsUsed: [],
             llmUsage: usage
         )
+        XCTAssertTrue(html.contains("约¥0.02"))
+        XCTAssertTrue(html.contains("套餐折算"))
         XCTAssertTrue(html.contains("Token 输入 1.8k"))
         XCTAssertTrue(html.contains("输出 420"))
-        XCTAssertTrue(html.contains("约¥0.0029"))
+        XCTAssertTrue(html.contains("按量价对照 约¥0.01以内"))
         XCTAssertTrue(html.contains("qwen3.7-plus"))
     }
 

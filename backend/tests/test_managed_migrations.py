@@ -42,6 +42,38 @@ def test_apply_managed_migrations_runs_matching_dialect_once(tmp_path: Path):
     assert count == 1
 
 
+def test_tokenplan_cost_migration_adds_rmb_columns(tmp_path: Path):
+    migrations_dir = Path(__file__).resolve().parents[1] / "migrations" / "managed"
+    migration = migrations_dir / "20260716_120000_add_llm_usage_tokenplan_cost.sqlite.sql"
+    assert migration.exists()
+
+    isolated = tmp_path / "managed"
+    isolated.mkdir()
+    (isolated / migration.name).write_text(migration.read_text(encoding="utf-8"), encoding="utf-8")
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        conn.execute(text(
+            "CREATE TABLE llm_usage_logs (id INTEGER PRIMARY KEY, provider VARCHAR(32), "
+            "model VARCHAR(64), prompt_tokens INTEGER, completion_tokens INTEGER, "
+            "total_tokens INTEGER, cost_usd REAL)"
+        ))
+
+    result = apply_managed_migrations(engine, isolated)
+    assert [migration.id for migration in result.applied] == [
+        "20260716_120000_add_llm_usage_tokenplan_cost"
+    ]
+    columns = {column["name"] for column in inspect(engine).get_columns("llm_usage_logs")}
+    assert {
+        "tokenplan_credits_estimate",
+        "tokenplan_cost_cny",
+        "tokenplan_payg_value_cny",
+        "tokenplan_cost_estimated",
+        "tokenplan_cost_source",
+        "tokenplan_monthly_fee_cny",
+        "tokenplan_monthly_credits",
+    } <= columns
+
+
 def test_diet_card_idempotency_migration_adds_user_scoped_unique_key(tmp_path: Path):
     from sqlalchemy.exc import IntegrityError
 

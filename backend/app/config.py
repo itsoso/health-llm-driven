@@ -17,7 +17,10 @@ class Settings(BaseSettings):
     llm_cost_usd_to_cny: float = 7.2  # 端上/看板把按量美元估算换算成人民币展示
     llm_model_pricing_json: Optional[str] = None  # 可覆盖模型价格: {"qwen3.7-plus":[0.4,1.2]} ($/1M input/output)
     tokenplan_plan_name: str = "TokenPlan 698/月"
-    tokenplan_monthly_budget_cny: float = 698.0  # 阿里云百炼 TokenPlan 月套餐成本,用于 Admin 成本摊销
+    tokenplan_monthly_budget_cny: float = 698.0  # 阿里云百炼 TokenPlan 固定月费
+    tokenplan_monthly_credits: int = 100_000  # 高级坐席月度 Credits 容量
+    tokenplan_credits_per_cny: float = 100.0  # 官方示例口径:按量价值 ¥1 约对应 100 Credits
+    tokenplan_model_pricing_cny_json: Optional[str] = None  # 覆盖公开人民币单价:{"model":[input,output]}
     tokenplan_monthly_token_quota: int = 0  # 0=未知;配置后 Admin 才能做额度阈值预警
     llm_auto_recovery_enabled: bool = True  # quota/rate_limit/timeout/provider_error 自动尝试备用模型
     llm_recovery_model_id: Optional[str] = None  # 为空则按可用模型自动挑选非 TokenPlan/快速可靠模型

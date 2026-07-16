@@ -35,6 +35,11 @@ export interface LlmUsageCall {
   cost_cny?: number;
   cost_estimated?: boolean;
   cost_source?: string;
+  tokenplan_credits_estimate?: number;
+  tokenplan_cost_cny?: number;
+  tokenplan_payg_value_cny?: number;
+  tokenplan_cost_estimated?: boolean;
+  tokenplan_cost_source?: string;
   latency_ms?: number | null;
   success?: boolean;
   error_class?: string | null;
@@ -55,6 +60,13 @@ export interface LlmUsageProfile {
   cost_cny?: number;
   cost_estimated?: boolean;
   cost_sources?: string[];
+  tokenplan_credits_estimate?: number;
+  tokenplan_cost_cny?: number;
+  tokenplan_payg_value_cny?: number;
+  tokenplan_cost_estimated?: boolean;
+  tokenplan_cost_source?: string;
+  tokenplan_monthly_fee_cny?: number;
+  tokenplan_monthly_credits?: number;
   latency_ms?: number | null;
   failed_calls?: number;
   models?: string[];

@@ -6,6 +6,8 @@
 
 **Architecture:** 后端在 `usage_tracker` 的单次调用 choke point 计算 Credits 与人民币容量成本，通过现有 `llm_usage` 附加字段传到三端。Admin 使用同一价格规则构建 SQL 聚合，保留按量价对照，但不再把原始 Token 等权当作成本。
 
+**执行补充（2026-07-16）:** 为保证历史消息、Admin 最近调用和未来价格表变更下的口径稳定，套餐估算会写入 `llm_usage_logs` 快照；旧日志没有快照时才回退重算。受控迁移为 `20260716_120000_add_llm_usage_tokenplan_cost`。
+
 **Tech Stack:** FastAPI、SQLAlchemy、pytest、React/TypeScript、React Native、Swift Package/XCTest。
 
 ---
@@ -14,13 +16,17 @@
 
 **Files:**
 - Modify: `backend/tests/test_llm_usage_tracker.py`
+- Modify: `backend/app/models/llm_usage.py`
 - Modify: `backend/app/services/llm/usage_tracker.py`
 - Modify: `backend/app/config.py`
+- Add: `backend/migrations/managed/20260716_120000_add_llm_usage_tokenplan_cost.*.sql`
 
 1. 写失败测试，断言 TokenPlan 调用返回 Credits、容量成本、来源和套餐参数。
 2. 运行聚焦测试并确认因字段缺失而失败。
 3. 增加人民币价格表、阶梯选择、缓存折扣和 `Credits × 月费/额度` 换算。
 4. 运行聚焦测试并确认通过。
+
+**当前状态:** 已实现并通过后端计费、Admin、迁移聚焦测试；生产迁移待部署。
 
 ### Task 2: 接入 Agent 响应与历史消息
 
@@ -79,4 +85,3 @@
 2. 运行后端聚焦 pytest、Mobile Jest/tsc、Frontend Vitest/tsc、Mac XCTest、doc drift 和 `git diff --check`。
 3. 仅提交本功能文件并推送 `main`。
 4. 后端/Web 部署后验证健康端点和 Admin 页面；Mobile 走 production OTA；Mac 重新打包、安装并启动。
-

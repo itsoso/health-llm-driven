@@ -368,21 +368,45 @@ public enum ChatTranscriptHTML {
         let failed = usage.failedCalls ?? usage.items.filter { $0.success == false }.count
         guard prompt > 0 || completion > 0 || failed > 0 else { return "" }
 
-        var summary = "Token 输入 \(tokenCountLabel(prompt)) · 输出 \(tokenCountLabel(completion))"
+        var summaryParts: [String] = []
+        if let planCost = costDisplayLabel(
+            cny: usage.tokenplanCostCny,
+            usd: nil,
+            estimated: usage.tokenplanCostEstimated
+        ) {
+            summaryParts.append(planCost)
+        } else if usage.providers.contains(where: { $0.lowercased() == "tokenplan" })
+            || usage.items.contains(where: { ($0.provider ?? "").lowercased() == "tokenplan" }) {
+            summaryParts.append("套餐折算 暂无法估算")
+        }
+        summaryParts.append("Token 输入 \(tokenCountLabel(prompt)) · 输出 \(tokenCountLabel(completion))")
         if let calls = usage.calls, calls > 1 {
-            summary += " · \(calls)次"
+            summaryParts.append("\(calls)次")
         }
         if failed > 0 {
-            summary += " · 失败 \(failed)次"
+            summaryParts.append("失败 \(failed)次")
         }
         if let runID = cleanMetaValue(usage.runID ?? usage.items.compactMap(\.runID).first), !runID.isEmpty {
-            summary += " · run \(String(runID.prefix(18)))"
+            summaryParts.append("run \(String(runID.prefix(18)))")
         }
-        if let cost = costDisplayLabel(cny: usage.costCny, usd: usage.costUsd, estimated: usage.costEstimated) {
-            summary += " · \(cost)"
-        }
+        let summary = summaryParts.joined(separator: " · ")
 
-        let rows = usage.items.enumerated().map { index, item -> String in
+        var detailRows: [String] = []
+        if let planCost = costDisplayLabel(
+            cny: usage.tokenplanCostCny,
+            usd: nil,
+            estimated: usage.tokenplanCostEstimated
+        ) {
+            detailRows.append("<li>套餐折算 \(escape(planCost))</li>")
+        }
+        if let paygCost = costDisplayLabel(
+            cny: usage.tokenplanPaygValueCny ?? usage.costCny,
+            usd: usage.costUsd,
+            estimated: usage.costEstimated
+        ) {
+            detailRows.append("<li>按量价对照 \(escape(paygCost))</li>")
+        }
+        detailRows.append(contentsOf: usage.items.enumerated().map { index, item -> String in
             let model = item.model?.trimmingCharacters(in: .whitespacesAndNewlines)
             let provider = item.provider?.trimmingCharacters(in: .whitespacesAndNewlines)
             let name = (!(model ?? "").isEmpty ? model : provider) ?? "调用 \(index + 1)"
@@ -403,7 +427,8 @@ public enum ChatTranscriptHTML {
                 value += " · 备用 \(recoveryModel)"
             }
             return "<li>\(escape(name))：\(escape(value))</li>"
-        }.joined()
+        })
+        let rows = detailRows.joined()
 
         if rows.isEmpty {
             return "<div class=\"meta-line\">\(escape(summary))</div>"
@@ -441,17 +466,14 @@ public enum ChatTranscriptHTML {
 
     private static func costLabel(_ value: Double) -> String {
         if value < 0.01 {
-            return String(format: "$%.4f", value)
+            return "<$0.01"
         }
         return String(format: "$%.2f", value)
     }
 
     private static func cnyCostLabel(_ value: Double) -> String {
         if value < 0.01 {
-            let formatted = String(format: "¥%.4f", value)
-            return formatted
-                .replacingOccurrences(of: "0+$", with: "", options: .regularExpression)
-                .replacingOccurrences(of: "\\.$", with: "", options: .regularExpression)
+            return "¥0.01以内"
         }
         return String(format: "¥%.2f", value)
     }

@@ -14,6 +14,10 @@ describe('chatTransparency', () => {
         cost_usd: 0.0042,
         cost_cny: 0.0302,
         cost_estimated: true,
+        tokenplan_credits_estimate: 3.18,
+        tokenplan_cost_cny: 0.0222,
+        tokenplan_payg_value_cny: 0.0302,
+        tokenplan_cost_estimated: true,
       },
       sourcesUsed: ['Garmin 数据 (14 天 HRV/睡眠/RHR)', '化验报告 (23 次)'],
       toolsUsed: ['health_manage', 'health_record'],
@@ -35,8 +39,9 @@ describe('chatTransparency', () => {
     });
 
     expect(profile.visible).toBe(true);
-    expect(profile.headline).toBe('29.2s · 5轮 · qwen3.7-plus');
-    expect(profile.tokenLine).toBe('Token 输入 1.8k · 输出 620 · 总 2.5k · 5次 · 约¥0.03');
+    expect(profile.headline).toBe('约¥0.02 · 29.2s · 5轮 · qwen3.7-plus');
+    expect(profile.costLine).toBe('套餐折算 约¥0.02 · 按量价对照 约¥0.03');
+    expect(profile.tokenLine).toBe('输入 1.8k · 输出 620 · 总 2.5k · 5次');
     expect(profile.sources).toEqual(['Garmin 数据 (14 天 HRV/睡眠/RHR)', '化验报告 (23 次)']);
     expect(profile.tools).toEqual(['health_manage', 'health_record']);
     expect(profile.bands.map(b => b.label)).toEqual(['组装', '首字节', '生成', '工具']);
@@ -57,6 +62,31 @@ describe('chatTransparency', () => {
     expect(profile.visible).toBe(true);
     expect(profile.headline).toBe('3.2s · 1轮');
     expect(profile.bands).toEqual([{ kind: 'total', label: '总耗时', ms: 3200, ratio: 1 }]);
+  });
+
+  it('shows sub-cent RMB costs without false zeroes or extra decimals', () => {
+    const profile = buildAgentTransparency({
+      elapsedMs: 900,
+      llmUsage: {
+        tokenplan_cost_cny: 0.0029,
+        tokenplan_payg_value_cny: 0.0042,
+        tokenplan_cost_estimated: true,
+        cost_estimated: true,
+      },
+    });
+
+    expect(profile.headline).toBe('约¥0.01以内 · 900ms');
+    expect(profile.costLine).toBe('套餐折算 约¥0.01以内 · 按量价对照 约¥0.01以内');
+  });
+
+  it('does not turn an unknown TokenPlan model into a fake zero cost', () => {
+    const profile = buildAgentTransparency({
+      elapsedMs: 800,
+      llmUsage: { providers: ['tokenplan'], prompt_tokens: 120 },
+    });
+
+    expect(profile.costLine).toBe('套餐折算 暂无法估算');
+    expect(profile.headline).toBe('800ms');
   });
 
   it('summarizes failed LLM calls for client-side diagnosis', () => {

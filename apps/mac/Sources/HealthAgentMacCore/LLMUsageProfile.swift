@@ -12,6 +12,11 @@ public struct LLMUsageCall: Codable, Equatable, Sendable {
     public let costCny: Double?
     public let costEstimated: Bool?
     public let costSource: String?
+    public let tokenplanCreditsEstimate: Double?
+    public let tokenplanCostCny: Double?
+    public let tokenplanPaygValueCny: Double?
+    public let tokenplanCostEstimated: Bool?
+    public let tokenplanCostSource: String?
     public let latencyMs: Int?
     public let success: Bool?
     public let errorType: String?
@@ -30,6 +35,11 @@ public struct LLMUsageCall: Codable, Equatable, Sendable {
         case costCny = "cost_cny"
         case costEstimated = "cost_estimated"
         case costSource = "cost_source"
+        case tokenplanCreditsEstimate = "tokenplan_credits_estimate"
+        case tokenplanCostCny = "tokenplan_cost_cny"
+        case tokenplanPaygValueCny = "tokenplan_payg_value_cny"
+        case tokenplanCostEstimated = "tokenplan_cost_estimated"
+        case tokenplanCostSource = "tokenplan_cost_source"
         case latencyMs = "latency_ms"
         case errorType = "error_type"
         case errorCode = "error_code"
@@ -50,6 +60,11 @@ public struct LLMUsageCall: Codable, Equatable, Sendable {
         costCny: Double? = nil,
         costEstimated: Bool? = nil,
         costSource: String? = nil,
+        tokenplanCreditsEstimate: Double? = nil,
+        tokenplanCostCny: Double? = nil,
+        tokenplanPaygValueCny: Double? = nil,
+        tokenplanCostEstimated: Bool? = nil,
+        tokenplanCostSource: String? = nil,
         latencyMs: Int? = nil,
         success: Bool? = nil,
         errorType: String? = nil,
@@ -69,6 +84,11 @@ public struct LLMUsageCall: Codable, Equatable, Sendable {
         self.costCny = costCny
         self.costEstimated = costEstimated
         self.costSource = costSource
+        self.tokenplanCreditsEstimate = tokenplanCreditsEstimate
+        self.tokenplanCostCny = tokenplanCostCny
+        self.tokenplanPaygValueCny = tokenplanPaygValueCny
+        self.tokenplanCostEstimated = tokenplanCostEstimated
+        self.tokenplanCostSource = tokenplanCostSource
         self.latencyMs = latencyMs
         self.success = success
         self.errorType = errorType
@@ -89,6 +109,11 @@ public struct LLMUsageProfile: Codable, Equatable, Sendable {
     public let costCny: Double?
     public let costEstimated: Bool?
     public let costSources: [String]
+    public let tokenplanCreditsEstimate: Double?
+    public let tokenplanCostCny: Double?
+    public let tokenplanPaygValueCny: Double?
+    public let tokenplanCostEstimated: Bool?
+    public let tokenplanCostSource: String?
     public let latencyMs: Int?
     public let failedCalls: Int?
     public let models: [String]
@@ -105,6 +130,11 @@ public struct LLMUsageProfile: Codable, Equatable, Sendable {
         case costCny = "cost_cny"
         case costEstimated = "cost_estimated"
         case costSources = "cost_sources"
+        case tokenplanCreditsEstimate = "tokenplan_credits_estimate"
+        case tokenplanCostCny = "tokenplan_cost_cny"
+        case tokenplanPaygValueCny = "tokenplan_payg_value_cny"
+        case tokenplanCostEstimated = "tokenplan_cost_estimated"
+        case tokenplanCostSource = "tokenplan_cost_source"
         case latencyMs = "latency_ms"
         case failedCalls = "failed_calls"
     }
@@ -119,6 +149,11 @@ public struct LLMUsageProfile: Codable, Equatable, Sendable {
         costCny: Double? = nil,
         costEstimated: Bool? = nil,
         costSources: [String] = [],
+        tokenplanCreditsEstimate: Double? = nil,
+        tokenplanCostCny: Double? = nil,
+        tokenplanPaygValueCny: Double? = nil,
+        tokenplanCostEstimated: Bool? = nil,
+        tokenplanCostSource: String? = nil,
         latencyMs: Int? = nil,
         failedCalls: Int? = nil,
         models: [String] = [],
@@ -134,6 +169,11 @@ public struct LLMUsageProfile: Codable, Equatable, Sendable {
         self.costCny = costCny
         self.costEstimated = costEstimated
         self.costSources = costSources
+        self.tokenplanCreditsEstimate = tokenplanCreditsEstimate
+        self.tokenplanCostCny = tokenplanCostCny
+        self.tokenplanPaygValueCny = tokenplanPaygValueCny
+        self.tokenplanCostEstimated = tokenplanCostEstimated
+        self.tokenplanCostSource = tokenplanCostSource
         self.latencyMs = latencyMs
         self.failedCalls = failedCalls
         self.models = models
@@ -152,6 +192,11 @@ public struct LLMUsageProfile: Codable, Equatable, Sendable {
         costCny = try? c.decode(Double.self, forKey: .costCny)
         costEstimated = try? c.decode(Bool.self, forKey: .costEstimated)
         costSources = (try? c.decode([String].self, forKey: .costSources)) ?? []
+        tokenplanCreditsEstimate = try? c.decode(Double.self, forKey: .tokenplanCreditsEstimate)
+        tokenplanCostCny = try? c.decode(Double.self, forKey: .tokenplanCostCny)
+        tokenplanPaygValueCny = try? c.decode(Double.self, forKey: .tokenplanPaygValueCny)
+        tokenplanCostEstimated = try? c.decode(Bool.self, forKey: .tokenplanCostEstimated)
+        tokenplanCostSource = try? c.decode(String.self, forKey: .tokenplanCostSource)
         latencyMs = try? c.decode(Int.self, forKey: .latencyMs)
         failedCalls = try? c.decode(Int.self, forKey: .failedCalls)
         models = (try? c.decode([String].self, forKey: .models)) ?? []

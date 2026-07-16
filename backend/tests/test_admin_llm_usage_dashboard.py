@@ -3,6 +3,8 @@ from datetime import datetime, timezone
 import math
 import uuid
 
+import pytest
+
 from app.models.llm_usage import LlmUsageLog
 from app.models.user import User
 from app.services.auth import auth_service
@@ -38,12 +40,21 @@ def _log(
     caller: str,
     prompt_tokens: int,
     completion_tokens: int,
+    cached_tokens: int | None = None,
     success: int = 1,
     latency_ms: int = 1200,
     cost_usd: float = 0.01,
     error_type: str | None = None,
     error_code: str | None = None,
     error_message: str | None = None,
+    tokenplan_credits_estimate: float | None = None,
+    tokenplan_cost_cny: float | None = None,
+    tokenplan_payg_value_cny: float | None = None,
+    tokenplan_cost_estimated: int | None = None,
+    tokenplan_cost_source: str | None = None,
+    tokenplan_monthly_fee_cny: float | None = None,
+    tokenplan_monthly_credits: int | None = None,
+    created_at: datetime | None = None,
 ) -> None:
     db.add(
         LlmUsageLog(
@@ -54,13 +65,21 @@ def _log(
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
             total_tokens=prompt_tokens + completion_tokens,
+            cached_tokens=cached_tokens,
             cost_usd=cost_usd,
             latency_ms=latency_ms,
             success=success,
             error_type=error_type,
             error_code=error_code,
             error_message=error_message,
-            created_at=datetime.now(timezone.utc),
+            tokenplan_credits_estimate=tokenplan_credits_estimate,
+            tokenplan_cost_cny=tokenplan_cost_cny,
+            tokenplan_payg_value_cny=tokenplan_payg_value_cny,
+            tokenplan_cost_estimated=tokenplan_cost_estimated,
+            tokenplan_cost_source=tokenplan_cost_source,
+            tokenplan_monthly_fee_cny=tokenplan_monthly_fee_cny,
+            tokenplan_monthly_credits=tokenplan_monthly_credits,
+            created_at=created_at or datetime.now(timezone.utc),
         )
     )
     db.commit()
@@ -213,6 +232,148 @@ def test_usage_dashboard_estimates_cost_for_legacy_zero_cost_rows(client, db):
     assert payload["by_user"][0]["cost_usd"] == 1.0
 
 
+def test_usage_dashboard_converts_tokenplan_credits_to_capacity_rmb(client, db, monkeypatch):
+    admin = _make_user(db, admin=True, name="管理员")
+    user = _make_user(db, name="Alice")
+    monkeypatch.setattr("app.api.admin_llm.settings.tokenplan_monthly_budget_cny", 698.0)
+    monkeypatch.setattr("app.api.admin_llm.settings.tokenplan_monthly_credits", 100_000)
+    monkeypatch.setattr("app.api.admin_llm.settings.tokenplan_credits_per_cny", 100.0)
+    _log(
+        db,
+        user_id=user.id,
+        provider="tokenplan",
+        model="qwen3.7-max",
+        caller="agent.chat",
+        prompt_tokens=1_000_000,
+        completion_tokens=0,
+        cached_tokens=500_000,
+        created_at=datetime(2026, 7, 16, tzinfo=timezone.utc),
+    )
+
+    response = client.get(
+        "/api/v1/admin/llm/usage-dashboard?days=30",
+        headers=_headers(admin),
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["plan"]["monthly_credits"] == 100_000
+    assert payload["plan"]["capacity_cny_per_credit"] == pytest.approx(0.00698)
+    assert payload["overall"]["tokenplan_credits_estimate"] == pytest.approx(360.0)
+    assert payload["overall"]["tokenplan_capacity_cost_cny"] == pytest.approx(2.5128)
+    assert payload["overall"]["tokenplan_payg_value_cny"] == pytest.approx(3.6)
+    assert payload["overall"]["cost_savings_vs_payg_cny"] > 0
+    assert payload["by_user"][0]["tokenplan_capacity_cost_cny"] == pytest.approx(2.5128)
+
+
+def test_usage_dashboard_does_not_price_unsupported_cached_rows(client, db):
+    admin = _make_user(db, admin=True, name="管理员")
+    user = _make_user(db, name="Alice")
+    _log(
+        db,
+        user_id=user.id,
+        provider="tokenplan",
+        model="qwen3.6-plus",
+        caller="agent.chat",
+        prompt_tokens=10_000,
+        completion_tokens=100,
+        cached_tokens=5_000,
+    )
+
+    response = client.get(
+        "/api/v1/admin/llm/usage-dashboard?days=30",
+        headers=_headers(admin),
+    )
+
+    assert response.status_code == 200
+    overall = response.json()["overall"]
+    assert overall["tokenplan_priced_calls"] == 0
+    assert overall["tokenplan_unpriced_calls"] == 1
+    assert overall["tokenplan_capacity_cost_cny"] is None
+
+
+def test_usage_dashboard_uses_same_tokenplan_price_override_as_single_calls(client, db, monkeypatch):
+    admin = _make_user(db, admin=True, name="管理员")
+    user = _make_user(db, name="Alice")
+    monkeypatch.setattr(
+        "app.api.admin_llm.settings.tokenplan_model_pricing_cny_json",
+        '{"qwen3.6-plus":[10,20]}',
+    )
+    _log(
+        db,
+        user_id=user.id,
+        provider="tokenplan",
+        model="qwen3.6-plus",
+        caller="agent.chat",
+        prompt_tokens=1_000_000,
+        completion_tokens=0,
+    )
+
+    response = client.get(
+        "/api/v1/admin/llm/usage-dashboard?days=30",
+        headers=_headers(admin),
+    )
+
+    assert response.status_code == 200
+    overall = response.json()["overall"]
+    assert overall["tokenplan_payg_value_cny"] == pytest.approx(10.0)
+    assert overall["tokenplan_credits_estimate"] == pytest.approx(1_000.0)
+    assert overall["tokenplan_capacity_cost_cny"] == pytest.approx(6.98)
+
+
+def test_usage_dashboard_marks_unpriced_tokenplan_models_instead_of_fake_zero(client, db):
+    admin = _make_user(db, admin=True, name="管理员")
+    user = _make_user(db, name="Alice")
+    _log(
+        db,
+        user_id=user.id,
+        provider="tokenplan",
+        model="future-model-without-price",
+        caller="agent.chat",
+        prompt_tokens=1_000,
+        completion_tokens=100,
+    )
+
+    response = client.get(
+        "/api/v1/admin/llm/usage-dashboard?days=30",
+        headers=_headers(admin),
+    )
+
+    assert response.status_code == 200
+    overall = response.json()["overall"]
+    assert overall["tokenplan_priced_calls"] == 0
+    assert overall["tokenplan_unpriced_calls"] == 1
+    assert overall["tokenplan_capacity_cost_cny"] is None
+    assert overall["tokenplan_payg_value_cny"] is None
+    assert overall["tokenplan_cost_coverage_complete"] is False
+
+
+def test_usage_dashboard_keeps_historical_models_when_registry_changes(client, db, monkeypatch):
+    admin = _make_user(db, admin=True, name="管理员")
+    user = _make_user(db, name="Alice")
+    monkeypatch.setattr("app.services.llm.model_registry.MODELS", [])
+    monkeypatch.setattr("app.api.admin_llm.settings.tokenplan_model", "MiniMax-M2.5")
+    _log(
+        db,
+        user_id=user.id,
+        provider="openai",
+        model="qwen3.6-plus",
+        caller="watch.ask",
+        prompt_tokens=1_000,
+        completion_tokens=100,
+    )
+
+    response = client.get(
+        "/api/v1/admin/llm/usage-dashboard?days=30",
+        headers=_headers(admin),
+    )
+
+    assert response.status_code == 200
+    overall = response.json()["overall"]
+    assert overall["tokenplan_calls"] == 1
+    assert overall["tokenplan_priced_calls"] == 1
+
+
 def test_performance_stats_is_sqlite_safe_and_normalizes_tokenplan_provider(client, db):
     admin = _make_user(db, admin=True, name="管理员")
     user = _make_user(db, name="Alice")
@@ -328,3 +489,37 @@ def test_run_detail_groups_llm_calls_by_run_id(client, db):
     assert payload["summary"]["calls"] == 2
     assert payload["summary"]["total_tokens"] == 2300
     assert payload["calls"][0]["run_id"] == run_id
+
+
+def test_recent_calls_prefers_persisted_tokenplan_cost(client, db):
+    admin = _make_user(db, admin=True, name="管理员")
+    user = _make_user(db, name="Alice")
+    _log(
+        db,
+        user_id=user.id,
+        provider="tokenplan",
+        model="qwen3.7-plus",
+        caller="agent.stream",
+        prompt_tokens=1000,
+        completion_tokens=200,
+        tokenplan_credits_estimate=7.5,
+        tokenplan_cost_cny=0.05235,
+        tokenplan_payg_value_cny=0.081,
+        tokenplan_cost_estimated=1,
+        tokenplan_cost_source="persisted:test-rate",
+        tokenplan_monthly_fee_cny=698.0,
+        tokenplan_monthly_credits=100_000,
+    )
+
+    response = client.get(
+        "/api/v1/admin/llm/recent-calls?days=30&limit=10",
+        headers=_headers(admin),
+    )
+
+    assert response.status_code == 200
+    call = response.json()["calls"][0]
+    assert call["tokenplan_capacity_cost_cny"] == 0.05235
+    assert call["tokenplan_cost_cny"] == 0.05235
+    assert call["tokenplan_credits_estimate"] == 7.5
+    assert call["tokenplan_payg_value_cny"] == 0.081
+    assert call["tokenplan_cost_source"] == "persisted:test-rate"

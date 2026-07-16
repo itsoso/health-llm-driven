@@ -510,6 +510,7 @@ function AssistantTransparencyPanel({ msg }: { msg: ChatMessage }) {
             {profile.rounds.length > 0 && (
               <MetaRow label="LLM 轮次" value={profile.rounds.map(r => `${r.label} ${r.value}`).join('\n')} preserveLines />
             )}
+            {profile.costLine && <MetaRow label="成本" value={profile.costLine} />}
             {profile.tokenLine && <MetaRow label="Token" value={profile.tokenLine} />}
             {profile.errorLine && <MetaRow label="失败" value={profile.errorLine} />}
             {profile.traceLine && <MetaRow label="追踪" value={profile.traceLine} />}

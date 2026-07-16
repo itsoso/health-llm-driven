@@ -44,6 +44,13 @@ def _usage_summary(cost_usd: float = 0.00123, source: str = "builtin:qwen3.7-plu
         "cost_sources": [source],
         "models": ["qwen3.7-plus"],
         "providers": ["tokenplan"],
+        "tokenplan_credits_estimate": 3.18,
+        "tokenplan_cost_cny": 0.0222,
+        "tokenplan_payg_value_cny": 0.03024,
+        "tokenplan_cost_estimated": True,
+        "tokenplan_cost_source": "public_cny_rate:qwen3.7-plus",
+        "tokenplan_monthly_fee_cny": 698.0,
+        "tokenplan_monthly_credits": 100_000,
     }
 
 
@@ -72,6 +79,13 @@ def test_build_meta_cost_present_when_priced():
     assert cost["value_usd"] == 0.0042
     assert cost["currency"] == "USD"
     assert cost["estimated"] is True
+    assert cost["payg_value_cny"] == 0.03024
+    assert cost["tokenplan_value_cny"] == 0.0222
+    assert cost["tokenplan_cost_cny"] == 0.0222
+    assert cost["tokenplan_capacity_cost_cny"] == 0.0222
+    assert cost["tokenplan_credits_estimate"] == 3.18
+    assert cost["tokenplan_monthly_fee_cny"] == 698.0
+    assert cost["tokenplan_monthly_credits"] == 100_000
 
 
 def test_build_meta_cost_is_null_not_zero_when_unpriced():

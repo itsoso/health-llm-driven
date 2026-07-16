@@ -2430,6 +2430,7 @@ function AssistantUtilityPanel({
   const rows = [
     ...(profile.stages.length > 0 ? [{ label: '继续阶段', value: profile.stages.map(s => `${s.label} ${s.value}`).join(' · ') }] : []),
     ...(profile.rounds.length > 0 ? [{ label: 'LLM 轮次', value: profile.rounds.map(r => `${r.label} ${r.value}`).join('\n') }] : []),
+    ...(profile.costLine ? [{ label: '成本', value: profile.costLine }] : []),
     ...(profile.tokenLine ? [{ label: 'Token', value: profile.tokenLine }] : []),
     ...(profile.errorLine ? [{ label: '失败', value: profile.errorLine }] : []),
     ...(profile.traceLine ? [{ label: '追踪', value: profile.traceLine }] : []),
@@ -2455,7 +2456,9 @@ function AssistantUtilityPanel({
           >
             <Ionicons name="layers-outline" size={13} color={C.ink3} />
             <Text style={txt.assistantUtilityEvidence} numberOfLines={1}>
-              依据与过程{sourceCount > 0 ? ` · ${sourceCount}` : ''}
+              {profile.costLine
+                ? profile.headline
+                : `依据与过程${sourceCount > 0 ? ` · ${sourceCount}` : ''}`}
             </Text>
             <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={13} color={C.ink3} />
           </Pressable>

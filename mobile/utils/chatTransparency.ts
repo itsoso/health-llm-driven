@@ -1,5 +1,7 @@
 export interface LlmUsageCallLike {
   run_id?: string | null;
+  provider?: string | null;
+  model?: string | null;
   success?: boolean | null;
   error_class?: string | null;
   error_type?: string | null;
@@ -18,6 +20,11 @@ export interface LlmUsageProfileLike {
   cost_usd?: number | null;
   cost_cny?: number | null;
   cost_estimated?: boolean | null;
+  tokenplan_credits_estimate?: number | null;
+  tokenplan_cost_cny?: number | null;
+  tokenplan_payg_value_cny?: number | null;
+  tokenplan_cost_estimated?: boolean | null;
+  providers?: string[] | null;
   failed_calls?: number | null;
   items?: LlmUsageCallLike[] | null;
 }
@@ -66,6 +73,7 @@ export interface AgentTransparencyRow {
 export interface AgentTransparencyProfile {
   visible: boolean;
   headline: string;
+  costLine?: string;
   tokenLine?: string;
   errorLine?: string;
   traceLine?: string;
@@ -131,13 +139,19 @@ export function formatTokenCount(value?: number | null): string {
 
 function formatCostUsd(value?: number | null): string | null {
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return null;
-  return `$${value.toFixed(6).replace(/0+$/, '').replace(/\.$/, '')}`;
+  if (value < 0.01) return '<$0.01';
+  return `$${value.toFixed(2)}`;
 }
 
 function formatCostCny(value?: number | null): string | null {
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return null;
-  if (value < 0.01) return `¥${value.toFixed(4).replace(/0+$/, '').replace(/\.$/, '')}`;
+  if (value < 0.01) return '¥0.01以内';
   return `¥${value.toFixed(2)}`;
+}
+
+function hasTokenPlanUsage(usage: LlmUsageProfileLike): boolean {
+  return (usage.providers || []).some(provider => String(provider || '').toLowerCase() === 'tokenplan')
+    || (usage.items || []).some(item => String(item?.provider || '').toLowerCase() === 'tokenplan');
 }
 
 function buildTokenLine(usage?: LlmUsageProfileLike | null): string | undefined {
@@ -147,15 +161,26 @@ function buildTokenLine(usage?: LlmUsageProfileLike | null): string | undefined 
   const total = positive(usage.total_tokens) || input + output;
   if (!input && !output && !total) return undefined;
   const parts = [
-    `Token 输入 ${formatTokenCount(input)}`,
+    `输入 ${formatTokenCount(input)}`,
     `输出 ${formatTokenCount(output)}`,
     `总 ${formatTokenCount(total)}`,
   ];
   const calls = positive(usage.calls);
   if (calls > 1) parts.push(`${Math.round(calls)}次`);
-  const cost = formatCostCny(usage.cost_cny) || formatCostUsd(usage.cost_usd);
-  if (cost) parts.push(`${usage.cost_estimated === false ? '' : '约'}${cost}`);
   return parts.join(' · ');
+}
+
+function buildCostLine(usage?: LlmUsageProfileLike | null): string | undefined {
+  if (!usage) return undefined;
+  const plan = formatCostCny(usage.tokenplan_cost_cny);
+  const payg = formatCostCny(usage.tokenplan_payg_value_cny)
+    || formatCostCny(usage.cost_cny)
+    || formatCostUsd(usage.cost_usd);
+  const parts: string[] = [];
+  if (plan) parts.push(`套餐折算 ${usage.tokenplan_cost_estimated === false ? '' : '约'}${plan}`);
+  else if (hasTokenPlanUsage(usage)) parts.push('套餐折算 暂无法估算');
+  if (payg) parts.push(`按量价对照 ${usage.cost_estimated === false ? '' : '约'}${payg}`);
+  return parts.length ? parts.join(' · ') : undefined;
 }
 
 function cleanText(value: unknown): string {
@@ -254,9 +279,11 @@ export function buildAgentTransparency(input: AgentTransparencyInput): AgentTran
   const total = positive(input.perf?.total_ms) || positive(input.elapsedMs);
   const roundsCount = positive(input.llmRounds) || positive(input.perf?.rounds?.length);
   const headlineParts: string[] = [];
+  const model = String(input.model || '').trim();
+  const planCost = formatCostCny(input.llmUsage?.tokenplan_cost_cny);
+  if (planCost) headlineParts.push(`约${planCost}`);
   if (total) headlineParts.push(formatDurationMs(total));
   if (roundsCount) headlineParts.push(`${Math.round(roundsCount)}轮`);
-  const model = String(input.model || '').trim();
   if (model) headlineParts.push(model);
 
   const sources = uniqueClean(input.sourcesUsed);
@@ -264,16 +291,18 @@ export function buildAgentTransparency(input: AgentTransparencyInput): AgentTran
   // 去重在映射之后:不同 reason 可能映射同一中文标签(如 stream/chat failed)。
   const routing = uniqueClean((input.fallbackReasons || []).map(routingReasonLabel));
   const tokenLine = buildTokenLine(input.llmUsage);
+  const costLine = buildCostLine(input.llmUsage);
   const errorLine = buildErrorLine(input.llmUsage);
   const traceLine = buildTraceLine(input.llmUsage);
   const bands = buildBands(input.perf, total);
   const stages = buildStages(input.perf);
   const rounds = buildRounds(input);
-  const visible = headlineParts.length > 0 || !!tokenLine || !!errorLine || !!traceLine || sources.length > 0 || tools.length > 0 || routing.length > 0;
+  const visible = headlineParts.length > 0 || !!costLine || !!tokenLine || !!errorLine || !!traceLine || sources.length > 0 || tools.length > 0 || routing.length > 0;
 
   return {
     visible,
     headline: headlineParts.join(' · '),
+    costLine,
     tokenLine,
     errorLine,
     traceLine,
