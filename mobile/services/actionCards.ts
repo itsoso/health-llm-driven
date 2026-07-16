@@ -96,11 +96,21 @@ function getSeverityKey(severity: unknown): string {
 }
 
 export function getActionCardProgress(card: ActionCard): { completed: number; total: number } | null {
-  if (!Array.isArray(card.checklist) || card.checklist.length === 0) return null;
+  const checklist = getActionCardChecklist(card);
+  if (checklist.length === 0) return null;
   return {
-    completed: card.checklist.filter(item => item.done).length,
-    total: card.checklist.length,
+    completed: checklist.filter(item => item.done).length,
+    total: checklist.length,
   };
+}
+
+/**
+ * 后端历史行动卡可能带空字符串 checklist 占位项。
+ * 空项不是用户步骤:不应参与进度,也不应渲染成空圆点。
+ */
+export function getActionCardChecklist(card: ActionCard): { item: string; done: boolean }[] {
+  if (!Array.isArray(card.checklist)) return [];
+  return card.checklist.filter(item => typeof item?.item === 'string' && item.item.trim().length > 0);
 }
 
 export function getActionCardVerificationLabel(card: ActionCard): string | null {

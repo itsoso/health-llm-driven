@@ -31,6 +31,18 @@ describe('actionCards helpers', () => {
     expect(getActionCardProgress(card)).toEqual({ completed: 1, total: 2 });
   });
 
+  it('ignores blank checklist placeholders in progress', () => {
+    const card = {
+      checklist: [
+        { item: '', done: false },
+        { item: '  ', done: false },
+        { item: '预约复查', done: true },
+      ],
+    } as ActionCard;
+
+    expect(getActionCardProgress(card)).toEqual({ completed: 1, total: 1 });
+  });
+
   it('returns null progress when checklist is missing', () => {
     expect(getActionCardProgress({} as ActionCard)).toBeNull();
   });

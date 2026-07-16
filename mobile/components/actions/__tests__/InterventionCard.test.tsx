@@ -41,6 +41,21 @@ describe('InterventionCard', () => {
     expect(getByText('待验证 2026-05-03')).toBeTruthy();
   });
 
+  it('does not show empty checklist placeholders as progress or rows', () => {
+    const malformedCard: ActionCard = {
+      ...card,
+      checklist: [
+        { item: '', done: false },
+        { item: '  ', done: false },
+      ],
+    };
+    const { getByText, queryByText } = render(<InterventionCard card={malformedCard} onComplete={jest.fn()} />);
+
+    fireEvent.press(getByText('连续记录晚餐时间'));
+
+    expect(queryByText('0/2')).toBeNull();
+  });
+
   it('calls onComplete from the expanded action button', () => {
     const onComplete = jest.fn();
     const immediateCard = { ...card, expires_at: null, latest_assessment: null };

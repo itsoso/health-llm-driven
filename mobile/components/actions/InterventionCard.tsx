@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import {
+  getActionCardChecklist,
   getActionCardProgress,
   getActionCardVerificationLabel,
   type ActionCard,
@@ -86,6 +87,7 @@ export default function InterventionCard({ card, onComplete, onReview }: Props) 
   const [executing, setExecuting] = useState(false);
   const cfg = CARD_TYPE[card.card_type] || CARD_TYPE.insight;
   const progress = getActionCardProgress(card);
+  const checklist = getActionCardChecklist(card);
   const verification = getActionCardVerificationLabel(card);
   const assessment = card.latest_assessment;
   const reviewDraft = verification ? buildActionCardOutcomeDraft(card) : null;
@@ -182,9 +184,9 @@ export default function InterventionCard({ card, onComplete, onReview }: Props) 
             <ActionEvidenceRow label="最近评估" value={assessment.summary} tone="good" icon="pulse-outline" />
           ) : null}
 
-          {progress && card.checklist ? (
+          {checklist.length > 0 ? (
             <View style={styles.checklist}>
-              {card.checklist.map((item, index) => (
+              {checklist.map((item, index) => (
                 <View key={`${item.item}-${index}`} style={styles.checkRow}>
                   <Ionicons
                     name={item.done ? 'checkmark-circle' : 'ellipse-outline'}
