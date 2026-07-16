@@ -63,6 +63,11 @@ PY
   )
 fi
 
+if [[ -z "${TARGET_GROUP_ID}" || -z "${TARGET_UPDATE_ID}" ]]; then
+  echo "✗ manifest 没有 previous_known_good group/update，当前没有可安全回滚的目标" >&2
+  exit 1
+fi
+
 UUID_PATTERN='^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
 [[ "${TARGET_GROUP_ID}" =~ ${UUID_PATTERN} ]] || { echo "✗ 无效的目标 EAS group ID" >&2; exit 2; }
 [[ "${TARGET_UPDATE_ID}" =~ ${UUID_PATTERN} ]] || { echo "✗ 无效的目标 iOS update ID" >&2; exit 2; }

@@ -270,6 +270,25 @@ def test_ota_rollback_defaults_to_dry_run(tmp_path: Path) -> None:
     assert not called.exists()
 
 
+def test_ota_rollback_explains_when_manifest_has_no_known_good_target(tmp_path: Path) -> None:
+    manifest = tmp_path / "release-manifest.json"
+    manifest.write_text(json.dumps({
+        "status": "published",
+        "active_group_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "active_update_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    }))
+
+    env = os.environ.copy()
+    env["OTA_MANIFEST_FILE"] = str(manifest)
+    result = subprocess.run(
+        [str(ROOT / "scripts" / "mobile-ota-rollback.sh"), "production"],
+        cwd=ROOT, env=env, text=True, capture_output=True, check=False,
+    )
+
+    assert result.returncode != 0
+    assert "没有 previous_known_good" in result.stderr
+
+
 def test_ota_rollback_confirm_republishes_and_records_state(tmp_path: Path) -> None:
     manifest = tmp_path / "release-manifest.json"
     manifest.write_text(json.dumps({

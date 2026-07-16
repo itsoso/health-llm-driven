@@ -119,7 +119,7 @@
 
 ### Task 6: Verification and release gates
 
-**Status: in progress** — 本地 G3/G4 已通过；待完成提交、后端部署健康和 production OTA 上线证据。
+**Status: completed** — G3/G4 本地通过，G5 后端部署健康通过，G6 production OTA 与回滚 dry-run 证据已留存。
 
 **Files:**
 - Modify: `docs/dossiers/2026-07-16-controlled-app-update-plane.md`
@@ -131,5 +131,5 @@
 2. Run the project doc drift checker and dossier consistency checker.
 3. Run the CI-mode backend integration gate with `TZ=Asia/Shanghai` and in-memory DB where supported.
 4. Perform security review for admin auth, config poisoning, stale policy and telemetry minimization.
-5. Commit only files owned by this slice, push `main`, then deploy backend and run production health verification.
-6. Publish Mobile OTA only after backend and tests are green; record update group/id and rollback target in the Dossier.
+5. Commit only files owned by this slice, push `main`, then deploy backend and run production health verification. **已完成**。
+6. Publish Mobile OTA only after backend and tests are green; record update group/id and rollback target in the Dossier. **已完成**。

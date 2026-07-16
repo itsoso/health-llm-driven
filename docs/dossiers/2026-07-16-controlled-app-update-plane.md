@@ -4,8 +4,8 @@
 |---|---|
 | slug | `controlled-app-update-plane` |
 | 创建日期 | 2026-07-16 |
-| 当前阶段 | S5 实现 / 待发布 |
-| 状态 | release-candidate |
+| 当前阶段 | S7 上线验证 |
+| 状态 | verified |
 | 负责 | Codex + 用户确认 |
 | 反馈环 | backend pytest / Mobile Jest / TypeScript / deploy health / Mobile OTA |
 
@@ -60,7 +60,7 @@
 ## S5 · 实现
 
 - 分支：`main`（按项目约束直接在 main 开发；保留并发 WIP 不触碰）
-- commit：待完成
+- 代码 commit：`fdb71e893`；与远端 Claude Mobile 视觉提交合并为 `2c61b638c` 并推送。
 
 ## G3 · 测试闸
 
@@ -78,6 +78,24 @@
 - 策略发布写入 `AgentAuditLog`，不写健康正文；API 响应和请求已生成前端类型。
 - **裁决**：PASS（本地代码级 G4；生产凭证仍需 G5/G6）。
 
-## S6 / G5 / S7 / G6
+## G5 · 部署健康
 
-- 待 commit/push 后填写 backend deploy health、production OTA group/update ID、manifest 和 rollback dry-run 证据；不以本地测试替代生产健康和 OTA 证据。
+- `./deploy.sh -b -y` 完成；生产 managed migration `20260716_180000_add_app_release_policies` 已应用。
+- 生产后端健康分：`60/60 PASS`。
+- 线上 skills manifest：本地 `22` = 线上 `22`。
+- 线上 `/api/v1/health`：`healthy`，API/database/redis/celery 均正常。
+- **裁决**：PASS。
+
+## S7 / G6 · 上线验证
+
+- production OTA 已发布，runtime `1.3.1`。
+- EAS group：`c0868df9-a54b-4cfa-a39d-4f681e4f0ed2`。
+- iOS update：`019f6a9a-35cf-7b71-a493-0bff788a4136`。
+- `eas update:view <group> --json` 返回上述 update、channel `production`、commit `2c61b638c`，证据有效。
+- 上一组已验证回滚目标：group `1e3308a8-bd79-4064-b53f-8f6a084957f3`，iOS update `019f6a55-89cd-75c8-9eb2-d3d48c48db98`；已写入本地 ignored manifest。
+- `./scripts/mobile-ota-rollback.sh production` dry-run 成功，未调用 EAS；本次没有执行破坏性回滚。
+- **裁决**：PASS。后续若生产异常，必须人工确认后再执行 `--confirm`。
+
+## S8 · 后续未纳入本批
+
+- 自动 crash-loop 回滚、原生 App Store 强制升级页、自动灰度推进和跨端（Mac/Web）统一发布策略，进入下一期，不由本批 Remote Config 伪装实现。
