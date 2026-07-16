@@ -96,9 +96,9 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.line,
     backgroundColor: C.surface,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginVertical: 6,
+    paddingHorizontal: 15,
+    paddingVertical: 13,
+    marginVertical: 8,
     minWidth: 240,
     ...revaShadows.sm,
   },
@@ -122,7 +122,7 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 7,
+    paddingVertical: 9,
     gap: 8,
   },
   headRow: {

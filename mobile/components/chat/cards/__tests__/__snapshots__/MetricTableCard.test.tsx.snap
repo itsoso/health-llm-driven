@@ -9,10 +9,10 @@ exports[`MetricTableCardView matches snapshot for the fixture rows 1`] = `
       "borderRadius": 18,
       "borderWidth": 0.5,
       "elevation": 1,
-      "marginVertical": 6,
+      "marginVertical": 8,
       "minWidth": 240,
-      "paddingHorizontal": 12,
-      "paddingVertical": 10,
+      "paddingHorizontal": 15,
+      "paddingVertical": 13,
       "shadowColor": "#142019",
       "shadowOffset": {
         "height": 1,
@@ -70,7 +70,7 @@ exports[`MetricTableCardView matches snapshot for the fixture rows 1`] = `
             "alignItems": "center",
             "flexDirection": "row",
             "gap": 8,
-            "paddingVertical": 7,
+            "paddingVertical": 9,
           },
           {
             "paddingBottom": 6,
@@ -150,7 +150,7 @@ exports[`MetricTableCardView matches snapshot for the fixture rows 1`] = `
             "alignItems": "center",
             "flexDirection": "row",
             "gap": 8,
-            "paddingVertical": 7,
+            "paddingVertical": 9,
           },
           {
             "borderBottomColor": "#E7E5DE",
@@ -233,7 +233,7 @@ exports[`MetricTableCardView matches snapshot for the fixture rows 1`] = `
             "alignItems": "center",
             "flexDirection": "row",
             "gap": 8,
-            "paddingVertical": 7,
+            "paddingVertical": 9,
           },
           {
             "borderBottomColor": "#E7E5DE",
@@ -316,7 +316,7 @@ exports[`MetricTableCardView matches snapshot for the fixture rows 1`] = `
             "alignItems": "center",
             "flexDirection": "row",
             "gap": 8,
-            "paddingVertical": 7,
+            "paddingVertical": 9,
           },
           null,
         ]
