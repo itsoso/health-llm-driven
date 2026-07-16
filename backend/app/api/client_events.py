@@ -56,6 +56,10 @@ _ALLOWED_EVENTS = frozenset({
     "diet_photo_recognition_terminal",
     "diet_photo_confirmation_terminal",
     "diet_share_terminal",
+    # App update control plane — content-free lifecycle telemetry only.
+    "app_update_phase",
+    "app_update_terminal",
+    "app_update_launch",
     # N-of-1 闭环北极星 (2026-06-17) — 已验证闭环数 (verified closed loops)
     "verified_loop",              # meta: { cycle_id, verdict_count, total } 复查产出 ≥1 个非 pending 裁决
 })
@@ -63,6 +67,30 @@ _ALLOWED_EVENTS = frozenset({
 _DURATION_BUCKETS = frozenset({"lt_1s", "1_3s", "3_10s", "10_30s", "gte_30s"})
 _SAFE_TOKEN = re.compile(r"^[a-z0-9][a-z0-9_.:-]{0,63}$")
 _DIET_SHARE_TARGETS = frozenset({"generic", "wechat", "xiaohongshu"})
+_APP_UPDATE_EVENT_SCHEMAS = {
+    "app_update_phase": {
+        "allowed": frozenset({
+            "phase", "platform", "channel", "runtime", "native_build", "update_id",
+        }),
+        "required": frozenset({"phase"}),
+        "phases": frozenset({"checking", "downloading", "applying"}),
+    },
+    "app_update_terminal": {
+        "allowed": frozenset({
+            "phase", "duration_bucket", "platform", "channel", "runtime", "native_build",
+            "update_id", "error_code",
+        }),
+        "required": frozenset({"phase", "duration_bucket"}),
+        "phases": frozenset({"disabled", "current", "ready", "failed", "applied"}),
+    },
+    "app_update_launch": {
+        "allowed": frozenset({
+            "launch_source", "platform", "channel", "runtime", "native_build", "update_id",
+        }),
+        "required": frozenset({"launch_source"}),
+        "launch_sources": frozenset({"embedded", "ota", "emergency", "unknown"}),
+    },
+}
 _RELIABILITY_EVENT_SCHEMAS = {
     "agent_turn_terminal": {
         "allowed": frozenset({"phase", "duration_bucket", "error_code"}),
@@ -138,6 +166,37 @@ class EventIn(BaseModel):
 
     @model_validator(mode="after")
     def _validate_reliability_meta(self):
+        app_update_schema = _APP_UPDATE_EVENT_SCHEMAS.get(self.event_name)
+        if app_update_schema is not None:
+            if self.meta is None:
+                raise ValueError("app update event meta is required")
+
+            keys = set(self.meta)
+            extra = keys - app_update_schema["allowed"]
+            missing = app_update_schema["required"] - keys
+            if extra:
+                raise ValueError(f"app update event meta has forbidden fields: {sorted(extra)}")
+            if missing:
+                raise ValueError(f"app update event meta missing fields: {sorted(missing)}")
+
+            if self.event_name == "app_update_launch":
+                if self.meta.get("launch_source") not in app_update_schema["launch_sources"]:
+                    raise ValueError("invalid app update launch_source")
+            elif self.meta.get("phase") not in app_update_schema["phases"]:
+                raise ValueError("invalid app update phase")
+
+            if "duration_bucket" in self.meta and self.meta["duration_bucket"] not in _DURATION_BUCKETS:
+                raise ValueError("invalid app update duration_bucket")
+            for key in (
+                "platform", "channel", "runtime", "native_build", "update_id", "error_code",
+            ):
+                value = self.meta.get(key)
+                if value is not None and (
+                    not isinstance(value, str) or _SAFE_TOKEN.fullmatch(value) is None
+                ):
+                    raise ValueError(f"invalid app update {key}")
+            return self
+
         schema = _RELIABILITY_EVENT_SCHEMAS.get(self.event_name)
         if schema is not None:
             if self.meta is None:

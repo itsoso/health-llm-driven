@@ -121,4 +121,50 @@ describe('client reliability events', () => {
     const meta = { source: 'chat', has_image: false };
     expect(sanitizeClientEventMeta('chat_message_sent', meta)).toBe(meta);
   });
+
+  it('keeps app update telemetry content-free and normalizes invalid values', () => {
+    expect(sanitizeClientEventMeta('app_update_terminal', {
+      phase: 'ready',
+      duration_bucket: '3_10s',
+      platform: 'ios',
+      channel: 'production',
+      runtime: '1.3.1',
+      native_build: '190',
+      update_id: '01234567-89ab-cdef-0123-456789abcdef',
+      error_message: '用户的健康数据',
+      health_record: 'private',
+    })).toEqual({
+      phase: 'ready',
+      duration_bucket: '3_10s',
+      platform: 'ios',
+      channel: 'production',
+      runtime: '1.3.1',
+      native_build: '190',
+      update_id: '01234567-89ab-cdef-0123-456789abcdef',
+    });
+
+    expect(sanitizeClientEventMeta('app_update_phase', {
+      phase: 'downloaded',
+      platform: 'iOS',
+      update_id: 'file:///private/health.db',
+    })).toEqual({});
+  });
+
+  it('posts app update terminal telemetry without leaking error text', async () => {
+    await emitClientEvent('app_update_terminal', {
+      phase: 'failed',
+      duration_bucket: '10_30s',
+      error_code: 'check_failed',
+      error_message: 'token plan quota exhausted',
+    });
+
+    expect(mockPost).toHaveBeenCalledWith('/client-events', {
+      event_name: 'app_update_terminal',
+      meta: {
+        phase: 'failed',
+        duration_bucket: '10_30s',
+        error_code: 'check_failed',
+      },
+    });
+  });
 });

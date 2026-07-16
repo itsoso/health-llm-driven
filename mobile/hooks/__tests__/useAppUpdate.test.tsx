@@ -6,13 +6,48 @@ import { act, renderHook, waitFor } from '@testing-library/react-native';
 jest.mock('../../services/appUpdate', () => ({
   downloadAvailableUpdate: jest.fn(),
   applyDownloadedUpdate: jest.fn(),
+  getAppUpdateLaunchSource: jest.fn().mockReturnValue('embedded'),
+  getAppUpdateTelemetryContext: jest.fn().mockReturnValue({
+    platform: 'ios',
+    channel: 'production',
+    runtime: '1.3.1',
+    native_build: '190',
+  }),
+}));
+
+jest.mock('../../services/clientEvents', () => ({
+  durationBucket: jest.fn().mockReturnValue('lt_1s'),
+  emitClientEvent: jest.fn(),
+}));
+
+jest.mock('../../services/remoteConfig', () => ({
+  getReleasePolicyRolloutBucket: jest.fn().mockResolvedValue(0),
+  isReleasePolicyEligible: jest.fn().mockReturnValue(true),
+  loadReleasePolicy: jest.fn().mockResolvedValue({
+    config_version: 0,
+    platform: 'ios',
+    channel: 'production',
+    ota_enabled: true,
+    rollout_percent: 100,
+    minimum_native_build: null,
+    recommended_native_build: null,
+    forced_update: false,
+    kill_switches: {},
+    rollback_update_id: null,
+    expires_at: null,
+    source: 'safe_default',
+  }),
 }));
 
 import { applyDownloadedUpdate, downloadAvailableUpdate } from '../../services/appUpdate';
+import { emitClientEvent } from '../../services/clientEvents';
+import { loadReleasePolicy } from '../../services/remoteConfig';
 import { AppUpdateProvider, useAppUpdate } from '../useAppUpdate';
 
 const mockedDownload = downloadAvailableUpdate as jest.Mock;
 const mockedApply = applyDownloadedUpdate as jest.Mock;
+const mockedEmit = emitClientEvent as jest.Mock;
+const mockedLoadPolicy = loadReleasePolicy as jest.Mock;
 
 describe('AppUpdateProvider', () => {
   let appStateListener: ((state: string) => void) | undefined;
@@ -28,6 +63,20 @@ describe('AppUpdateProvider', () => {
     });
     mockedDownload.mockResolvedValue('current');
     mockedApply.mockResolvedValue(undefined);
+    mockedLoadPolicy.mockResolvedValue({
+      config_version: 0,
+      platform: 'ios',
+      channel: 'production',
+      ota_enabled: true,
+      rollout_percent: 100,
+      minimum_native_build: null,
+      recommended_native_build: null,
+      forced_update: false,
+      kill_switches: {},
+      rollback_update_id: null,
+      expires_at: null,
+      source: 'safe_default',
+    });
   });
 
   afterEach(() => {
@@ -53,6 +102,12 @@ describe('AppUpdateProvider', () => {
 
     await waitFor(() => expect(result.current.status).toBe('ready'));
     expect(mockedDownload).toHaveBeenCalledTimes(1);
+    expect(mockedEmit).toHaveBeenCalledWith('app_update_launch', expect.objectContaining({
+      launch_source: 'embedded',
+    }));
+    expect(mockedEmit).toHaveBeenCalledWith('app_update_terminal', expect.objectContaining({
+      phase: 'ready',
+    }));
   });
 
   it('throttles foreground checks within five minutes', async () => {
@@ -91,6 +146,31 @@ describe('AppUpdateProvider', () => {
     expect(mockedApply).toHaveBeenCalledTimes(1);
     expect(result.current.status).toBe('failed');
     expect(result.current.error).toBe('reload failed');
+  });
+
+  it('keeps a forced update non-dismissible after the bundle is ready', async () => {
+    mockedLoadPolicy.mockResolvedValue({
+      config_version: 1,
+      platform: 'ios',
+      channel: 'production',
+      ota_enabled: true,
+      rollout_percent: 100,
+      minimum_native_build: null,
+      recommended_native_build: null,
+      forced_update: true,
+      kill_switches: {},
+      rollback_update_id: null,
+      expires_at: null,
+      source: 'remote',
+    });
+    mockedDownload.mockResolvedValue('ready');
+    const { result } = renderHook(() => useAppUpdate(), { wrapper });
+
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    expect(result.current.isForced).toBe(true);
+
+    act(() => result.current.dismiss());
+    expect(result.current.status).toBe('ready');
   });
 
   it('can apply immediately after a forced check without waiting for another render', async () => {

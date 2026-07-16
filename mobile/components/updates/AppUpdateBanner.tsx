@@ -7,7 +7,7 @@ import { useAppUpdate } from '../../hooks/useAppUpdate';
 import { useTheme, type ColorPalette } from '../../hooks/useTheme';
 
 export default function AppUpdateBanner() {
-  const { status, applyUpdate, dismiss } = useAppUpdate();
+  const { status, isForced, applyUpdate, dismiss } = useAppUpdate();
   const { c } = useTheme();
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => createStyles(c), [c]);
@@ -22,8 +22,10 @@ export default function AppUpdateBanner() {
     >
       <Ionicons name="arrow-down-circle-outline" size={20} color={c.brand} />
       <View style={styles.copy}>
-        <Text style={styles.title}>新版本已准备好</Text>
-        <Text style={styles.body}>现在更新，几秒后回到当前页面</Text>
+        <Text style={styles.title}>{isForced ? '请完成应用更新' : '新版本已准备好'}</Text>
+        <Text style={styles.body}>
+          {isForced ? '为保证当前版本兼容，请更新后继续使用' : '现在更新，几秒后回到当前页面'}
+        </Text>
       </View>
       <TouchableOpacity
         style={styles.primaryAction}
@@ -33,7 +35,7 @@ export default function AppUpdateBanner() {
       >
         <Text style={styles.primaryActionText}>{status === 'applying' ? '更新中' : '立即更新'}</Text>
       </TouchableOpacity>
-      {status !== 'applying' ? (
+      {!isForced && status !== 'applying' ? (
         <TouchableOpacity onPress={dismiss} accessibilityRole="button" hitSlop={8}>
           <Text style={styles.secondaryActionText}>稍后</Text>
         </TouchableOpacity>

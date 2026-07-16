@@ -86,6 +86,7 @@
 | `backend/app/database.py` | 数据库连接、`get_db` 依赖 |
 | `backend/app/config.py` | Pydantic Settings, 所有 env 定义 |
 | `backend/app/models/*.py` | SQLAlchemy ORM 模型；数量见生成的 system-map |
+| `backend/app/models/app_release_policy.py` | 按 platform/channel 保存版本化发布策略；只控制更新路由，不控制医疗规则 |
 | `backend/app/twin/schema.py` | HealthTwin 分区 Pydantic schema |
 | `backend/main.py` 中间件 | 安全头 / CORS / 限流 / request context |
 | `backend/tests/conftest.py` | 测试基础设施 |
@@ -625,7 +626,8 @@ APNs payload `data.deep_link` → mobile `useNotifications` 接收 → `router.p
 
 - 后端日志: systemd journal (`journalctl -u health-backend`)
 - `agent_audit_log` 表: 每次 Safety/Orchestrator 评估写一条 (旁路, 失败不影响业务)
-- `client_events` 表: mobile 埋点 (voice_opened, chip_clicked, record_logged 等)
+- `client_events` 表: mobile 埋点 (voice_opened, chip_clicked, record_logged、app_update 生命周期等)
+- `app_release_policies` 表: Admin 版本化 Remote Config；客户端读取失败降级到安全默认，策略变更写 AgentAuditLog
 - Perf: `metric: llm_call ...` 日志行可 grep 聚合
 - Sentry: 生产 enabled (`SENTRY_DSN`), dev 可 `SENTRY_DISABLE_AUTO_UPLOAD=true` 禁用 source map 上传
 

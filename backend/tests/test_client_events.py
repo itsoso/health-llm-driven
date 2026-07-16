@@ -98,6 +98,15 @@ def test_client_events_stats_empty(db):
     assert stats == {
         "total": 0,
         "by_event": {},
+        "app_update": {
+            "launches": 0,
+            "checks": 0,
+            "ready": 0,
+            "failures": 0,
+            "failure_rate_pct": None,
+            "by_phase": {},
+            "by_launch_source": {},
+        },
         "starter_ctr": {},
         "home_cold_start_ms": {"n": 0, "p50": None, "p95": None, "incomplete": 0},
         "diet_capture_ms": {
@@ -128,6 +137,107 @@ def test_client_events_stats_empty(db):
                 },
             },
         },
+    }
+
+
+@pytest.mark.parametrize("event_name,meta", [
+    ("app_update_phase", {
+        "phase": "downloading",
+        "platform": "ios",
+        "channel": "production",
+        "runtime": "1.3.1",
+        "native_build": "190",
+        "update_id": "01234567-89ab-cdef-0123-456789abcdef",
+    }),
+    ("app_update_terminal", {
+        "phase": "ready",
+        "duration_bucket": "3_10s",
+        "platform": "ios",
+        "channel": "production",
+    }),
+    ("app_update_launch", {
+        "launch_source": "ota",
+        "platform": "ios",
+        "channel": "production",
+        "runtime": "1.3.1",
+    }),
+])
+def test_app_update_events_accept_content_free_meta(
+    client, db, auth_user_and_headers, event_name, meta
+):
+    _, headers = auth_user_and_headers
+    response = client.post(
+        "/api/v1/client-events",
+        headers=headers,
+        json={"event_name": event_name, "meta": meta},
+    )
+
+    assert response.status_code == 202, response.text
+    row = db.query(ClientEvent).order_by(ClientEvent.id.desc()).first()
+    assert row.event_name == event_name
+    assert row.meta == meta
+
+
+@pytest.mark.parametrize("event_name,meta", [
+    ("app_update_terminal", {
+        "phase": "ready",
+        "duration_bucket": "3_10s",
+        "error_message": "用户的健康数据",
+    }),
+    ("app_update_launch", {
+        "launch_source": "ota",
+        "update_id": "file:///private/health.db",
+    }),
+    ("app_update_phase", {
+        "phase": "downloaded",
+        "platform": "iOS",
+    }),
+])
+def test_app_update_events_reject_private_or_invalid_meta(
+    client, auth_user_and_headers, event_name, meta
+):
+    _, headers = auth_user_and_headers
+    response = client.post(
+        "/api/v1/client-events",
+        headers=headers,
+        json={"event_name": event_name, "meta": meta},
+    )
+
+    assert response.status_code == 422, response.text
+
+
+def test_client_events_stats_counts_app_update_outcomes(db, auth_user_and_headers):
+    from app.models.user import User
+    from app.services.observability_service import client_events_stats
+
+    user = db.query(User).first()
+    now = datetime.now(timezone.utc)
+    db.add_all([
+        ClientEvent(user_id=user.id, event_name="app_update_launch", meta={
+            "launch_source": "ota",
+        }, created_at=now - timedelta(hours=1)),
+        ClientEvent(user_id=user.id, event_name="app_update_terminal", meta={
+            "phase": "ready", "duration_bucket": "3_10s",
+        }, created_at=now - timedelta(hours=1)),
+        ClientEvent(user_id=user.id, event_name="app_update_terminal", meta={
+            "phase": "failed", "duration_bucket": "gte_30s",
+        }, created_at=now - timedelta(hours=2)),
+        ClientEvent(user_id=user.id, event_name="app_update_phase", meta={
+            "phase": "downloading",
+        }, created_at=now - timedelta(hours=2)),
+    ])
+    db.commit()
+
+    stats = client_events_stats(db, now - timedelta(days=7), user_id=None)
+
+    assert stats["app_update"] == {
+        "launches": 1,
+        "checks": 2,
+        "ready": 1,
+        "failures": 1,
+        "failure_rate_pct": 50.0,
+        "by_phase": {"downloading": 1, "ready": 1, "failed": 1},
+        "by_launch_source": {"ota": 1},
     }
 
 

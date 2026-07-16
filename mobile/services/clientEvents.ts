@@ -34,6 +34,10 @@ export type ClientEventName =
   | 'diet_photo_recognition_terminal'
   | 'diet_photo_confirmation_terminal'
   | 'diet_share_terminal'
+  // App update control plane — content-free lifecycle telemetry only
+  | 'app_update_phase'
+  | 'app_update_terminal'
+  | 'app_update_launch'
   // N-of-1 闭环北极星 (2026-06-17) — 已验证闭环数
   | 'verified_loop';              // meta: { cycle_id, verdict_count, total } 复查产出 ≥1 非 pending 裁决
 
@@ -52,6 +56,11 @@ const DIET_CAPTURE_PHASES = {
   diet_share_terminal: new Set(['completed', 'failed']),
 } as const;
 const DIET_SHARE_TARGETS = new Set(['generic', 'wechat', 'xiaohongshu']);
+const APP_UPDATE_PHASES = {
+  app_update_phase: new Set(['checking', 'downloading', 'applying']),
+  app_update_terminal: new Set(['disabled', 'current', 'ready', 'failed', 'applied']),
+} as const;
+const APP_UPDATE_LAUNCH_SOURCES = new Set(['embedded', 'ota', 'emergency', 'unknown']);
 
 type ReliabilityEventName = keyof typeof RELIABILITY_PHASES;
 
@@ -83,12 +92,43 @@ function isDietCaptureEvent(name: ClientEventName): name is DietCaptureEventName
   return Object.prototype.hasOwnProperty.call(DIET_CAPTURE_PHASES, name);
 }
 
+function isAppUpdateEvent(name: ClientEventName): boolean {
+  return name === 'app_update_phase' || name === 'app_update_terminal' || name === 'app_update_launch';
+}
+
 /** Reliability events are deliberately content-free and identifier-free. */
 export function sanitizeClientEventMeta(
   name: ClientEventName,
   meta?: Record<string, unknown>,
 ): Record<string, unknown> | undefined {
   if (!meta) return meta;
+  if (isAppUpdateEvent(name)) {
+    const sanitized: Record<string, unknown> = {};
+    if (name === 'app_update_launch') {
+      if (typeof meta.launch_source === 'string' && APP_UPDATE_LAUNCH_SOURCES.has(meta.launch_source)) {
+        sanitized.launch_source = meta.launch_source;
+      }
+    } else {
+      const allowedPhases = name === 'app_update_phase'
+        ? APP_UPDATE_PHASES.app_update_phase
+        : APP_UPDATE_PHASES.app_update_terminal;
+      if (typeof meta.phase === 'string' && allowedPhases.has(meta.phase)) {
+        sanitized.phase = meta.phase;
+      }
+    }
+    if (
+      name === 'app_update_terminal'
+      && typeof meta.duration_bucket === 'string'
+      && DURATION_BUCKETS.has(meta.duration_bucket as DurationBucket)
+    ) {
+      sanitized.duration_bucket = meta.duration_bucket;
+    }
+    for (const key of ['platform', 'channel', 'runtime', 'native_build', 'update_id', 'error_code']) {
+      const value = meta[key];
+      if (typeof value === 'string' && SAFE_TOKEN.test(value)) sanitized[key] = value;
+    }
+    return sanitized;
+  }
   if (isDietCaptureEvent(name)) {
     const phase = typeof meta.phase === 'string' && DIET_CAPTURE_PHASES[name].has(meta.phase as never)
       ? meta.phase

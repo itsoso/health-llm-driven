@@ -150,6 +150,7 @@ from app.models.write_intent import WriteIntent
 # Write 自治层每日上限硬保证计数表(cap-TOCTOU 封口,见 write_autonomy._reserve_autonomy_slot)
 from app.models.autonomy_daily_counter import AutonomyDailyCounter
 from app.models.client_event import ClientEvent
+from app.models.app_release_policy import AppReleasePolicy
 from app.models.ambient_wearable import (
     AudioInputEvent,
     GlanceCard,
@@ -195,6 +196,7 @@ __all__ = [
     "GlanceCard",
     "RokidOperation",
     "ClientEvent",
+    "AppReleasePolicy",
     "RokidPushupSession",
     "RokidPushupEvent",
     "DiseaseRecord",

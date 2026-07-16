@@ -17,6 +17,14 @@ type NativeVersionSource = {
   nativeBuildVersion?: string | null;
 };
 
+export type AppUpdateTelemetryContext = {
+  platform: string;
+  channel: string;
+  runtime: string;
+  native_build: string;
+  update_id?: string;
+};
+
 const expoAppUpdateAdapter: AppUpdateAdapter = {
   get isEnabled() {
     return Platform.OS !== 'web' && Updates.isEnabled;
@@ -34,6 +42,29 @@ export function getNativeVersionLabel(source: NativeVersionSource = {
   const build = source.nativeBuildVersion?.trim();
   if (version && build) return `${version} (${build})`;
   return version || build || '未知版本';
+}
+
+/** Only expose release identity fields; never include user or health content. */
+export function getAppUpdateTelemetryContext(): AppUpdateTelemetryContext {
+  const updateId = typeof Updates.updateId === 'string' ? Updates.updateId.trim() : '';
+  return {
+    platform: Platform.OS,
+    channel: typeof Updates.channel === 'string' && Updates.channel.trim()
+      ? Updates.channel.trim()
+      : 'unknown',
+    runtime: typeof Updates.runtimeVersion === 'string' && Updates.runtimeVersion.trim()
+      ? Updates.runtimeVersion.trim()
+      : 'unknown',
+    native_build: Constants.nativeBuildVersion?.trim() || 'unknown',
+    ...(updateId ? { update_id: updateId } : {}),
+  };
+}
+
+export function getAppUpdateLaunchSource(): 'embedded' | 'ota' | 'emergency' | 'unknown' {
+  if (Updates.isEmergencyLaunch) return 'emergency';
+  if (Updates.isEmbeddedLaunch) return 'embedded';
+  if (Updates.updateId) return 'ota';
+  return 'unknown';
 }
 
 export async function downloadAvailableUpdate(

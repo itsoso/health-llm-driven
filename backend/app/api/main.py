@@ -157,6 +157,7 @@ from app.api import (
     insights,
     judgment_feedback,
     client_events,
+    app_release_policy,
     desktop,
     ambient,
     rokid,
@@ -323,6 +324,7 @@ api_router.include_router(reasoning_trace.router)
 api_router.include_router(insights.router)
 api_router.include_router(judgment_feedback.router)
 api_router.include_router(client_events.router)
+api_router.include_router(app_release_policy.router)
 api_router.include_router(desktop.router)
 api_router.include_router(ambient.router)
 api_router.include_router(rokid.router)

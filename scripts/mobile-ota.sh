@@ -28,6 +28,7 @@ esac
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ANCHOR_FILE="${OTA_ANCHOR_FILE:-${REPO_ROOT}/.last-ota-commit}"
+MANIFEST_FILE="${OTA_MANIFEST_FILE:-${REPO_ROOT}/.mobile-release-manifest.json}"
 
 # ── 发版前置守卫(2026-07-11 评审加固):OTA 打的是**工作树**,不是 HEAD ──
 # 两类历史事故:① 脏树 WIP 泄进生产 bundle;② 落后 origin/main 的树整包回滚他人已上线工作。
@@ -65,9 +66,9 @@ trap 'rm -f "${UPDATE_LOG}"' EXIT
 run_update_attempt() {
   set +e
   if [[ -n "${OTA_EAS_RUNNER:-}" ]]; then
-    "${OTA_EAS_RUNNER}" update --branch "${CHANNEL}" --message "${MESSAGE}" --platform ios --environment "${ENVIRONMENT}" --non-interactive 2>&1 | tee "${UPDATE_LOG}"
+    "${OTA_EAS_RUNNER}" update --channel "${CHANNEL}" --message "${MESSAGE}" --platform ios --environment "${ENVIRONMENT}" --non-interactive 2>&1 | tee "${UPDATE_LOG}"
   else
-    npx eas-cli update --branch "${CHANNEL}" --message "${MESSAGE}" --platform ios --environment "${ENVIRONMENT}" --non-interactive 2>&1 | tee "${UPDATE_LOG}"
+    npx eas-cli update --channel "${CHANNEL}" --message "${MESSAGE}" --platform ios --environment "${ENVIRONMENT}" --non-interactive 2>&1 | tee "${UPDATE_LOG}"
   fi
   local exit_code=$?
   set -e
@@ -109,10 +110,66 @@ fi
 echo "    verified update group: ${GROUP_ID}"
 echo "    verified iOS update: ${IOS_UPDATE_ID}"
 
-# 记录这次 OTA 对应的 commit, 让 deploy.sh 检测后续 mobile/ 漂移
+# 记录可审计的发布事实和上一组已知可回滚更新。文件默认被 gitignore，
+# 生产回滚只依赖 EAS group/update ID，不依赖当前工作树是否还保留发布代码。
+RUNTIME_VERSION="${MOBILE_RUNTIME_VERSION:-$(python3 - "${REPO_ROOT}/mobile/app.json" <<'PY'
+import json
+import sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as handle:
+        value = json.load(handle).get("expo", {}).get("version")
+except (OSError, ValueError, TypeError):
+    value = None
+print(value or "unknown")
+PY
+)}"
+python3 - "${MANIFEST_FILE}" "${CHANNEL}" "${ENVIRONMENT}" "${GROUP_ID}" "${IOS_UPDATE_ID}" "$(git -C "${REPO_ROOT}" rev-parse HEAD)" "${RUNTIME_VERSION}" <<'PY'
+import json
+import os
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+path, channel, environment, group_id, update_id, commit_sha, runtime_version = sys.argv[1:]
+manifest_path = Path(path)
+previous = {}
+if manifest_path.exists():
+    try:
+        previous = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        previous = {}
+
+previous_update_id = previous.get("active_update_id") or previous.get("update_id")
+previous_group_id = previous.get("active_group_id") or previous.get("group_id")
+payload = {
+    "schema_version": 1,
+    "status": "published",
+    "platform": "ios",
+    "channel": channel,
+    "environment": environment,
+    "runtime_version": runtime_version,
+    "group_id": group_id,
+    "update_id": update_id,
+    "active_group_id": group_id,
+    "active_update_id": update_id,
+    "commit_sha": commit_sha,
+    "published_at": datetime.now(timezone.utc).isoformat(),
+    "previous_known_good_group_id": previous_group_id,
+    "previous_known_good_update_id": previous_update_id,
+}
+manifest_path.parent.mkdir(parents=True, exist_ok=True)
+tmp_path = manifest_path.with_name(f".{manifest_path.name}.tmp")
+tmp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+os.replace(tmp_path, manifest_path)
+PY
+echo "    release manifest 写入 ${MANIFEST_FILE}"
+
+# 只有 EAS 标识验证和 manifest 原子写入都成功后，才记录这次 OTA 对应的
+# commit，避免 deploy.sh 把一条不完整的发布记录当作已发布状态。
 if [ "${CHANNEL}" = "production" ]; then
   CURRENT_COMMIT=$(git -C "${REPO_ROOT}" rev-parse HEAD)
-  echo "${CURRENT_COMMIT}" > "${ANCHOR_FILE}"
+  printf '%s\n' "${CURRENT_COMMIT}" > "${ANCHOR_FILE}"
   echo "    anchor 写入 ${ANCHOR_FILE} (${CURRENT_COMMIT:0:8})"
 fi
 

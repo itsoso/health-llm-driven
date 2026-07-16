@@ -17,6 +17,7 @@ describe('AppUpdateBanner', () => {
     jest.clearAllMocks();
     (useAppUpdate as jest.Mock).mockReturnValue({
       status: 'idle',
+      isForced: false,
       applyUpdate,
       dismiss,
     });
@@ -28,7 +29,7 @@ describe('AppUpdateBanner', () => {
   });
 
   it('offers explicit apply and dismiss actions for a ready update', () => {
-    (useAppUpdate as jest.Mock).mockReturnValue({ status: 'ready', applyUpdate, dismiss });
+    (useAppUpdate as jest.Mock).mockReturnValue({ status: 'ready', isForced: false, applyUpdate, dismiss });
     const { getByText, getByTestId } = render(<AppUpdateBanner />);
 
     expect(getByTestId('app-update-banner')).toBeTruthy();
@@ -37,5 +38,13 @@ describe('AppUpdateBanner', () => {
 
     expect(applyUpdate).toHaveBeenCalledTimes(1);
     expect(dismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not offer a dismiss action for a forced update', () => {
+    (useAppUpdate as jest.Mock).mockReturnValue({ status: 'ready', isForced: true, applyUpdate, dismiss });
+    const { getByText, queryByText } = render(<AppUpdateBanner />);
+
+    expect(getByText('请完成应用更新')).toBeTruthy();
+    expect(queryByText('稍后')).toBeNull();
   });
 });

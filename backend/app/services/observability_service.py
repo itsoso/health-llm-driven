@@ -419,6 +419,11 @@ def client_events_stats(db: Session, since: datetime, user_id: Optional[int]) ->
         target: {"attempts": 0, "completed": 0, "with_photo": 0, "failures": 0}
         for target in diet_share_targets
     }
+    app_update_by_phase: Dict[str, int] = {}
+    app_update_by_launch_source: Dict[str, int] = {}
+    app_update_checks = 0
+    app_update_ready = 0
+    app_update_failures = 0
 
     for name, meta in rows:
         by_event[name] = by_event.get(name, 0) + 1
@@ -476,6 +481,22 @@ def client_events_stats(db: Session, since: datetime, user_id: Optional[int]) ->
                     diet_prepare_ms.append(float(prepare_ms))
                 if isinstance(payload_bytes, (int, float)) and not isinstance(payload_bytes, bool):
                     diet_payload_kb.append(float(payload_bytes) / 1024.0)
+        elif name in {"app_update_phase", "app_update_terminal"}:
+            phase = meta.get("phase")
+            if isinstance(phase, str):
+                app_update_by_phase[phase] = app_update_by_phase.get(phase, 0) + 1
+            if name == "app_update_terminal":
+                app_update_checks += 1
+                if phase == "ready":
+                    app_update_ready += 1
+                elif phase == "failed":
+                    app_update_failures += 1
+        elif name == "app_update_launch":
+            launch_source = meta.get("launch_source")
+            if isinstance(launch_source, str):
+                app_update_by_launch_source[launch_source] = (
+                    app_update_by_launch_source.get(launch_source, 0) + 1
+                )
 
     starter_ctr: Dict[str, dict] = {}
     for key in sorted(set(impressions) | set(clicks)):
@@ -523,6 +544,18 @@ def client_events_stats(db: Session, since: datetime, user_id: Optional[int]) ->
     return {
         "total": sum(by_event.values()),
         "by_event": by_event,
+        "app_update": {
+            "launches": sum(app_update_by_launch_source.values()),
+            "checks": app_update_checks,
+            "ready": app_update_ready,
+            "failures": app_update_failures,
+            "failure_rate_pct": (
+                round(100.0 * app_update_failures / app_update_checks, 1)
+                if app_update_checks else None
+            ),
+            "by_phase": app_update_by_phase,
+            "by_launch_source": app_update_by_launch_source,
+        },
         "starter_ctr": starter_ctr,
         "home_cold_start_ms": {
             "n": len(cold_start_ms),

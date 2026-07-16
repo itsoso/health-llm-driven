@@ -1,3 +1,4 @@
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -171,15 +172,17 @@ echo \"iOS update ID    22222222-2222-4222-8222-222222222222\"
     return runner, counter
 
 
-def run_ota(tmp_path: Path, mode: str) -> tuple[subprocess.CompletedProcess[str], Path, Path]:
+def run_ota(tmp_path: Path, mode: str) -> tuple[subprocess.CompletedProcess[str], Path, Path, Path]:
     runner, counter = make_ota_runner(tmp_path, mode)
     anchor = tmp_path / "last-ota-commit"
+    manifest = tmp_path / "release-manifest.json"
     env = os.environ.copy()
     env.update(
         {
             "OTA_ALLOW_DIRTY": "1",
             "OTA_EAS_RUNNER": str(runner),
             "OTA_ANCHOR_FILE": str(anchor),
+            "OTA_MANIFEST_FILE": str(manifest),
             "OTA_TEST_COUNTER": str(counter),
             "OTA_TEST_MODE": mode,
             "PATH": "/usr/bin:/bin",
@@ -193,31 +196,106 @@ def run_ota(tmp_path: Path, mode: str) -> tuple[subprocess.CompletedProcess[str]
         capture_output=True,
         check=False,
     )
-    return result, counter, anchor
+    return result, counter, anchor, manifest
 
 
 def test_ota_retries_one_transient_failure_and_verifies_ids(tmp_path: Path) -> None:
-    result, counter, anchor = run_ota(tmp_path, "transient")
+    result, counter, anchor, manifest = run_ota(tmp_path, "transient")
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert counter.read_text().strip() == "2"
     assert "11111111-1111-4111-8111-111111111111" in result.stdout
     assert "22222222-2222-4222-8222-222222222222" in result.stdout
     assert anchor.exists()
+    payload = json.loads(manifest.read_text())
+    assert payload["status"] == "published"
+    assert payload["active_update_id"] == "22222222-2222-4222-8222-222222222222"
+    assert payload["previous_known_good_update_id"] is None
 
 
 def test_ota_does_not_retry_authentication_failures(tmp_path: Path) -> None:
-    result, counter, anchor = run_ota(tmp_path, "auth")
+    result, counter, anchor, manifest = run_ota(tmp_path, "auth")
 
     assert result.returncode != 0
     assert counter.read_text().strip() == "1"
     assert not anchor.exists()
+    assert not manifest.exists()
 
 
 def test_ota_rejects_success_without_published_update_ids(tmp_path: Path) -> None:
-    result, counter, anchor = run_ota(tmp_path, "missing-ids")
+    result, counter, anchor, manifest = run_ota(tmp_path, "missing-ids")
 
     assert result.returncode != 0
     assert counter.read_text().strip() == "1"
     assert "published identifier verification failed" in (result.stdout + result.stderr).lower()
     assert not anchor.exists()
+    assert not manifest.exists()
+
+
+def test_ota_manifest_keeps_previous_known_good_update(tmp_path: Path) -> None:
+    first, _, _, manifest = run_ota(tmp_path, "success")
+    assert first.returncode == 0, first.stdout + first.stderr
+
+    second, _, _, _ = run_ota(tmp_path, "success")
+    assert second.returncode == 0, second.stdout + second.stderr
+
+    payload = json.loads(manifest.read_text())
+    assert payload["previous_known_good_group_id"] == "11111111-1111-4111-8111-111111111111"
+    assert payload["previous_known_good_update_id"] == "22222222-2222-4222-8222-222222222222"
+
+
+def test_ota_rollback_defaults_to_dry_run(tmp_path: Path) -> None:
+    manifest = tmp_path / "release-manifest.json"
+    manifest.write_text(json.dumps({
+        "status": "published",
+        "active_group_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "active_update_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        "previous_known_good_group_id": "11111111-1111-4111-8111-111111111111",
+        "previous_known_good_update_id": "22222222-2222-4222-8222-222222222222",
+    }))
+    runner = tmp_path / "rollback-runner"
+    called = tmp_path / "called"
+    runner.write_text(f"#!/usr/bin/env bash\nprintf '%s' \"$*\" > '{called}'\n")
+    runner.chmod(0o755)
+    env = os.environ.copy()
+    env.update({"OTA_MANIFEST_FILE": str(manifest), "OTA_EAS_RUNNER": str(runner)})
+
+    result = subprocess.run(
+        [str(ROOT / "scripts" / "mobile-ota-rollback.sh"), "production"],
+        cwd=ROOT, env=env, text=True, capture_output=True, check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "dry-run" in result.stdout
+    assert not called.exists()
+
+
+def test_ota_rollback_confirm_republishes_and_records_state(tmp_path: Path) -> None:
+    manifest = tmp_path / "release-manifest.json"
+    manifest.write_text(json.dumps({
+        "status": "published",
+        "active_group_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "active_update_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        "previous_known_good_group_id": "11111111-1111-4111-8111-111111111111",
+        "previous_known_good_update_id": "22222222-2222-4222-8222-222222222222",
+    }))
+    runner = tmp_path / "rollback-runner"
+    called = tmp_path / "called"
+    runner.write_text(f"#!/usr/bin/env bash\nprintf '%s' \"$*\" > '{called}'\n")
+    runner.chmod(0o755)
+    env = os.environ.copy()
+    env.update({"OTA_MANIFEST_FILE": str(manifest), "OTA_EAS_RUNNER": str(runner)})
+
+    result = subprocess.run(
+        [str(ROOT / "scripts" / "mobile-ota-rollback.sh"), "production", "--confirm"],
+        cwd=ROOT, env=env, text=True, capture_output=True, check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    command = called.read_text()
+    assert "update:republish" in command
+    assert "--group 11111111-1111-4111-8111-111111111111" in command
+    assert "--destination-channel production" in command
+    payload = json.loads(manifest.read_text())
+    assert payload["status"] == "rolled_back"
+    assert payload["active_update_id"] == "22222222-2222-4222-8222-222222222222"
