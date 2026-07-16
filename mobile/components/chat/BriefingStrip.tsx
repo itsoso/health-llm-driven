@@ -7,7 +7,6 @@ import {
   revaColors as C,
   revaRadii,
   revaSpacing,
-  revaShadows,
   revaFonts,
 } from '../../constants/revaTheme';
 
@@ -44,6 +43,7 @@ export default function BriefingStrip({
   const briefingSummary = buildBriefingSummary(timeline);
   return (
     <TouchableOpacity
+      testID="briefing-strip"
       style={[styles.briefingStrip, expanded && styles.briefingStripExpanded]}
       onPress={onPress ?? (() => router.navigate('/today-sheet' as any))}
       activeOpacity={0.75}
@@ -83,25 +83,24 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: revaSpacing.s2,
-    marginHorizontal: revaSpacing.s3,
-    marginTop: 2,
-    marginBottom: 4,
-    paddingHorizontal: revaSpacing.s3,
-    paddingVertical: 8,
-    borderRadius: revaRadii.lg,
-    backgroundColor: C.surface,
+    marginHorizontal: revaSpacing.s4,
+    marginTop: 1,
+    marginBottom: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: revaRadii.xs,
+    backgroundColor: C.surface2,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.line,
-    ...revaShadows.sm,
   },
   briefingStripExpanded: {
-    borderColor: C.green500,
+    borderColor: C.green100,
     backgroundColor: C.green50,
   },
   briefingIconWrap: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 26,
+    height: 26,
+    borderRadius: revaRadii.xs,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: C.green50,
@@ -111,13 +110,13 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   briefingDismiss: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
+    width: 24,
+    height: 24,
+    borderRadius: revaRadii.xs,
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 2,
-    backgroundColor: C.paper2,
+    backgroundColor: 'transparent',
   },
 });
 

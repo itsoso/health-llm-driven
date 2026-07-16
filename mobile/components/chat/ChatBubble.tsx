@@ -1549,8 +1549,12 @@ function StructuredSummaryCard({
       ) : null}
       {summary.metrics.length > 0 ? (
           <View testID="assistant-metric-grid" style={summaryStyles.metrics}>
-            {summary.metrics.map(metric => (
-              <View key={`${metric.label}-${metric.value}`} style={summaryStyles.metricCell}>
+            {summary.metrics.map((metric, index) => (
+              <View
+                key={`${metric.label}-${metric.value}`}
+                testID={`assistant-metric-cell-${index}`}
+                style={summaryStyles.metricCell}
+              >
                 <Text style={summaryStyles.metricLabel} numberOfLines={1}>
                   {metric.label}
                 </Text>
@@ -1632,16 +1636,18 @@ const summaryStyles = StyleSheet.create({
   },
   conclusionLabel: {
     fontFamily: revaFonts.sans,
-    fontSize: 11.5,
+    fontSize: 12,
     lineHeight: 16,
-    fontWeight: '900',
+    fontWeight: '700',
+    letterSpacing: 0,
     color: C.green600,
   } as TextStyle,
   conclusionText: {
     fontFamily: revaFonts.sans,
-    fontSize: 19,
-    lineHeight: 27,
-    fontWeight: '800',
+    fontSize: 16,
+    lineHeight: 25,
+    fontWeight: '500',
+    letterSpacing: 0,
     color: C.ink1,
   } as TextStyle,
   card: {
@@ -1661,9 +1667,9 @@ const summaryStyles = StyleSheet.create({
     minWidth: '33.333%',
     flexGrow: 1,
     flexBasis: 0,
-    minHeight: 88,
+    minHeight: 74,
     paddingHorizontal: 10,
-    paddingVertical: 10,
+    paddingVertical: 8,
     borderRightWidth: StyleSheet.hairlineWidth,
     borderRightColor: C.line,
   },
@@ -1766,7 +1772,7 @@ const summaryStyles = StyleSheet.create({
 
 // Reva 设计语言: 用户气泡 green500, AI 正文无框,结构化对象使用独立卡片. 数字/耗时走 mono.
 const styles = StyleSheet.create({
-  msgRow: { flexDirection: 'row', marginBottom: 12, alignItems: 'flex-end' },
+  msgRow: { flexDirection: 'row', marginBottom: 14, alignItems: 'flex-end' },
   msgRowUser: { justifyContent: 'flex-end' },
   msgRowAI: { justifyContent: 'flex-start' },
   cardFrame: { flex: 1, minWidth: 0, maxWidth: '100%' },
@@ -1848,8 +1854,8 @@ const styles = StyleSheet.create({
     color: revaSemantic.caution.fg,
     fontWeight: '600',
   } as TextStyle,
-  bubble: { maxWidth: '88%', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10 },
-  bubbleUser: { backgroundColor: C.green500, borderBottomRightRadius: 4 },
+  bubble: { maxWidth: '82%', borderRadius: 14, paddingHorizontal: 13, paddingVertical: 9 },
+  bubbleUser: { backgroundColor: C.green500, borderBottomRightRadius: 5 },
   messageTime: {
     marginTop: 6,
     fontFamily: revaFonts.mono,
@@ -1930,25 +1936,27 @@ const styles = StyleSheet.create({
   thinkingAnalysisCard: {
     alignSelf: 'stretch',
     width: '100%',
-    marginBottom: 14,
-    borderRadius: 14,
+    marginBottom: 12,
+    borderRadius: revaRadii.xs,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.line,
-    backgroundColor: C.paper,
+    borderLeftWidth: 3,
+    borderLeftColor: C.green300,
+    backgroundColor: C.surface2,
     overflow: 'hidden',
   },
   thinkingAnalysisHeader: {
-    minHeight: 74,
+    minHeight: 58,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    paddingHorizontal: 13,
-    paddingVertical: 12,
+    paddingHorizontal: 11,
+    paddingVertical: 9,
   },
   thinkingIndicatorWrap: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+    width: 26,
+    height: 26,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: C.green50,
@@ -1956,9 +1964,9 @@ const styles = StyleSheet.create({
   thinkingAnalysisCopy: { flex: 1, minWidth: 0, gap: 2 },
   thinkingStopButton: { minHeight: 32, justifyContent: 'center', paddingHorizontal: 4 },
   thinkingAnalysisSteps: {
-    gap: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: C.line,
   },
@@ -1968,9 +1976,9 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   thinkingAnalysisStepIcon: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+    width: 18,
+    height: 18,
+    borderRadius: 6,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: C.green500,
@@ -1981,14 +1989,14 @@ const styles = StyleSheet.create({
     borderColor: C.green500,
   },
   thinkingSkeleton: {
-    gap: 9,
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 16,
+    gap: 7,
+    paddingHorizontal: 12,
+    paddingTop: 3,
+    paddingBottom: 11,
   },
   thinkingSkeletonLine: {
-    height: 12,
-    borderRadius: 6,
+    height: 8,
+    borderRadius: 4,
     backgroundColor: C.paper2,
   },
   // 完成态: 低干扰内联状态行, 展开时在下方补步骤列表.
@@ -2339,11 +2347,13 @@ function ThinkingStepsPanel({
           })}
           </View>
         ) : null}
-        <View testID="assistant-thinking-skeleton" style={styles.thinkingSkeleton}>
-          <View style={[styles.thinkingSkeletonLine, { width: '88%' }]} />
-          <View style={[styles.thinkingSkeletonLine, { width: '66%' }]} />
-          <View style={[styles.thinkingSkeletonLine, { width: '78%' }]} />
-        </View>
+        {steps.length === 0 ? (
+          <View testID="assistant-thinking-skeleton" style={styles.thinkingSkeleton}>
+            <View style={[styles.thinkingSkeletonLine, { width: '88%' }]} />
+            <View style={[styles.thinkingSkeletonLine, { width: '66%' }]} />
+            <View style={[styles.thinkingSkeletonLine, { width: '78%' }]} />
+          </View>
+        ) : null}
       </View>
     );
   }

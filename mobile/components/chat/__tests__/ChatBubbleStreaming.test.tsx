@@ -344,7 +344,9 @@ describe('ChatBubble streaming degraded render', () => {
     const panelStyle = StyleSheet.flatten(getByTestId('assistant-thinking-panel').props.style);
     expect(panelStyle.alignSelf).toBe('stretch');
     expect(panelStyle.width).toBe('100%');
-    expect(getByTestId('assistant-thinking-skeleton')).toBeTruthy();
+    expect(panelStyle.borderRadius).toBeLessThanOrEqual(10);
+    expect(panelStyle.borderLeftWidth).toBeGreaterThanOrEqual(2);
+    expect(queryByTestId('assistant-thinking-skeleton')).toBeNull();
     expect(getByText('今晚优先固定睡眠时间。')).toBeTruthy();
   });
 

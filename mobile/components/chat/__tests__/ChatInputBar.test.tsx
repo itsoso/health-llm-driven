@@ -237,6 +237,19 @@ describe('ChatInputBar', () => {
     expect(queryByLabelText('Agent 模式')).toBeNull();
   });
 
+  it('keeps the primary composer controls visually compact', () => {
+    const { getByTestId } = render(
+      <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
+    );
+
+    const voice = StyleSheet.flatten(getByTestId('composer-voice-mode').props.style);
+    const input = StyleSheet.flatten(getByTestId('wechat-composer-input').props.style);
+    const plus = StyleSheet.flatten(getByTestId('composer-plus').props.style);
+    expect(voice.width).toBeLessThanOrEqual(40);
+    expect(input.minHeight).toBe(48);
+    expect(plus.width).toBeLessThanOrEqual(40);
+  });
+
   it('uses Reva warm surfaces for the mobile composer input instead of dark chrome', () => {
     const { getByLabelText, getByTestId } = render(
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,

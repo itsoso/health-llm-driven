@@ -182,6 +182,23 @@ describe('ChatBubble structured summary', () => {
     expect(queryByText(/\| 指标 \| 数值 \| 状态 \|/)).toBeNull();
   });
 
+  it('keeps metric cells dense enough to scan without dominating the conversation', () => {
+    const { getAllByTestId } = renderBubble(`
+| 指标 | 数值 | 状态 |
+| --- | --- | --- |
+| 睡眠 | 89 分 | ✅ 优秀 |
+| HRV | 62ms | ✅ 正常 |
+`);
+
+    const cells = getAllByTestId(/^assistant-metric-cell-/);
+    expect(cells.length).toBe(2);
+    cells.forEach(cell => {
+      const style = StyleSheet.flatten(cell.props.style);
+      expect(style.minHeight).toBeLessThanOrEqual(76);
+      expect(style.paddingVertical).toBeLessThanOrEqual(8);
+    });
+  });
+
   it('strips markdown heading/list/bold markers from today advice items', () => {
     const { getByText, queryByText } = renderBubble(`
 📌 今日建议：
@@ -209,6 +226,17 @@ describe('ChatBubble structured summary', () => {
     );
     expect(actionCardStyle.backgroundColor).toBe('#FBFAF7');
     expect(actionTitleStyle.color).toBe('#16201B');
+  });
+
+  it('keeps the assistant conclusion at a calm reading scale', () => {
+    const { getByText } = renderBubble('今晚先补水 300ml，再散步 10 分钟。');
+
+    const conclusionStyle = StyleSheet.flatten(
+      getByText('今晚先补水 300ml，再散步 10 分钟。').props.style,
+    );
+    expect(conclusionStyle.fontSize).toBeLessThanOrEqual(16);
+    expect(conclusionStyle.lineHeight).toBeGreaterThanOrEqual(24);
+    expect(Number(conclusionStyle.fontWeight)).toBeLessThanOrEqual(600);
   });
 
   it('does not render an action card for placeholder advice', () => {

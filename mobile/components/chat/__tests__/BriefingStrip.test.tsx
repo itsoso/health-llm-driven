@@ -1,4 +1,5 @@
 import React from 'react';
+import { StyleSheet } from 'react-native';
 import { render, fireEvent } from '@testing-library/react-native';
 
 const mockNavigate = jest.fn();
@@ -61,5 +62,16 @@ describe('BriefingStrip', () => {
     expect(
       buildBriefingSummary({ counts: { actionable: 0 }, past: { completed_count: 0 } } as any),
     ).toBe('今天暂无待办 · 查看身体信号');
+  });
+
+  it('uses a compact editorial strip instead of a floating card', () => {
+    const { getByTestId } = render(
+      <BriefingStrip timeline={undefined} onDismiss={jest.fn()} />,
+    );
+
+    const style = StyleSheet.flatten(getByTestId('briefing-strip').props.style);
+    expect(style.borderRadius).toBeLessThanOrEqual(10);
+    expect(style.paddingVertical).toBeLessThanOrEqual(7);
+    expect(style.shadowOpacity ?? 0).toBe(0);
   });
 });

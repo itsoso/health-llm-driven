@@ -90,7 +90,7 @@ describe('ChatTodayFocusCard', () => {
   });
 
   it('renders a stable single-line compact variant during an active conversation', () => {
-    const { getByText, getByLabelText, queryByText, queryByLabelText } = render(
+    const { getByText, getByLabelText, getByTestId, queryByText, queryByLabelText } = render(
       <ChatTodayFocusCard model={focusModel()} variant="compact" />,
     );
 
@@ -100,6 +100,11 @@ describe('ChatTodayFocusCard', () => {
     expect(queryByText('昨晚恢复不足，今天优先降低训练负荷。')).toBeNull();
     expect(queryByLabelText(/执行今日重点/)).toBeNull();
     expect(queryByLabelText(/问小巴/)).toBeNull();
+
+    const style = StyleSheet.flatten(getByTestId('chat-today-focus-card').props.style);
+    expect(style.borderRadius).toBeLessThanOrEqual(10);
+    expect(style.minHeight).toBeLessThanOrEqual(58);
+    expect(style.shadowOpacity ?? 0).toBe(0);
   });
 
   it('shows one Agent turn status line and a retry command for recoverable failures', () => {

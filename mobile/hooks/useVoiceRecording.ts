@@ -95,7 +95,17 @@ export function useVoiceRecording(opts?: {
       startSeqRef.current += 1;
       transcriptionSeqRef.current += 1;
       clearTimer();
-      try { recorder.stop(); } catch {}
+      const shouldStopRecorder = readyRef.current;
+      readyRef.current = false;
+      if (shouldStopRecorder) {
+        try {
+          void Promise.resolve(recorder.stop()).catch((error) => {
+            if (__DEV__) console.warn('[useVoiceRecording] unmount stop failed:', error);
+          });
+        } catch (error) {
+          if (__DEV__) console.warn('[useVoiceRecording] unmount stop failed:', error);
+        }
+      }
       // 卸载时若还占着录音 session, 放回来 (不阻塞卸载, fire-and-forget)。
       void setAudioModeAsync({ allowsRecording: false }).catch(() => {});
     };

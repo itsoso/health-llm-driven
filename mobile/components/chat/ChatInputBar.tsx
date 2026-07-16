@@ -863,6 +863,7 @@ export default function ChatInputBar({
         {/* 输入栏 */}
         <View style={styles.inputBar}>
           <Pressable
+            testID="composer-voice-mode"
             onPress={handleVoiceModeToggle}
             style={({ pressed }) => [
               styles.voiceModeBtn,
@@ -873,7 +874,7 @@ export default function ChatInputBar({
             accessibilityLabel={voiceModeToggleLabel}
             accessibilityHint={isVoiceMode ? '切换回键盘文字输入' : '切换到按住说话'}
           >
-            <Ionicons name={isVoiceMode ? 'keypad-outline' : 'volume-medium-outline'} size={25} color={COMPOSER_ICON} />
+            <Ionicons name={isVoiceMode ? 'keypad-outline' : 'volume-medium-outline'} size={23} color={COMPOSER_ICON} />
           </Pressable>
 
           {isVoiceMode ? (
@@ -958,8 +959,8 @@ export default function ChatInputBar({
               <Ionicons name="checkmark" size={20} color="#fff" />
             </View>
           ) : (
-            <TouchableOpacity onPress={toggleMenu} style={styles.plusBtn} hitSlop={COMPOSER_HIT_SLOP} accessibilityLabel="附件菜单">
-              <Ionicons name={showMenu ? 'close' : 'add'} size={28} color={COMPOSER_ICON} />
+            <TouchableOpacity testID="composer-plus" onPress={toggleMenu} style={styles.plusBtn} hitSlop={COMPOSER_HIT_SLOP} accessibilityLabel="附件菜单">
+              <Ionicons name={showMenu ? 'close' : 'add'} size={26} color={COMPOSER_ICON} />
             </TouchableOpacity>
           )}
         </View>
@@ -1107,15 +1108,15 @@ const styles = StyleSheet.create({
     borderTopColor: C.line,
   },
   inputBar: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
+    flexDirection: 'row', alignItems: 'center', gap: 8,
     paddingHorizontal: 10,
-    paddingTop: 9,
-    paddingBottom: 9,
+    paddingTop: 7,
+    paddingBottom: 7,
     backgroundColor: COMPOSER_BAR_BG,
   },
   voiceModeBtn: {
-    width: 42, height: 42, borderRadius: 21,
-    borderWidth: 2, borderColor: C.lineStrong,
+    width: 40, height: 40, borderRadius: 20,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: C.lineStrong,
     backgroundColor: COMPOSER_BUTTON_BG,
     alignItems: 'center', justifyContent: 'center',
   },
@@ -1124,8 +1125,8 @@ const styles = StyleSheet.create({
     backgroundColor: COMPOSER_BUTTON_BG_ACTIVE,
   },
   plusBtn: {
-    width: 42, height: 42, borderRadius: 21,
-    backgroundColor: COMPOSER_BUTTON_BG, borderWidth: 2, borderColor: C.lineStrong,
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: COMPOSER_BUTTON_BG, borderWidth: StyleSheet.hairlineWidth, borderColor: C.lineStrong,
     alignItems: 'center', justifyContent: 'center',
   },
   inputWrap: {
@@ -1133,7 +1134,7 @@ const styles = StyleSheet.create({
     flex: 1, flexDirection: 'row', alignItems: 'center',
     backgroundColor: COMPOSER_INPUT_BG, borderRadius: 8,
     borderWidth: StyleSheet.hairlineWidth, borderColor: C.lineStrong,
-    paddingLeft: 16, paddingRight: 5, paddingVertical: 4,
+    paddingLeft: 14, paddingRight: 4, paddingVertical: 3,
   },
   inputWrapPressed: {
     backgroundColor: COMPOSER_INPUT_BG_PRESSED,
@@ -1155,9 +1156,9 @@ const styles = StyleSheet.create({
     flex: 1,
     textAlign: 'center',
     fontFamily: revaFonts.sans,
-    fontSize: 18,
-    lineHeight: 24,
-    fontWeight: '800',
+    fontSize: 16,
+    lineHeight: 22,
+    fontWeight: '700',
     color: C.ink1,
   } as TextStyle,
   textInput: {

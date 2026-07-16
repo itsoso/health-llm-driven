@@ -115,6 +115,22 @@ describe('useVoiceRecording audio session release (Bug 2: 语音后键盘失效)
     expect(started).toBe(true);
   });
 
+  it('does not stop the native recorder when unmounted before recording is ready', async () => {
+    mockRequestPerm.mockResolvedValueOnce({ granted: false });
+    const { result, unmount } = renderHook(() => useVoiceRecording({ onTranscript: jest.fn() }));
+
+    await act(async () => {
+      await result.current.startRecording();
+    });
+    unmount();
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(mockPrepare).not.toHaveBeenCalled();
+    expect(mockStop).not.toHaveBeenCalled();
+  });
+
   it('still releases the session when transcription yields no text', async () => {
     mockTranscribe.mockResolvedValueOnce('');
     const { result } = renderHook(() => useVoiceRecording({ onTranscript: jest.fn() }));
