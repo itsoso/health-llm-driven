@@ -107,7 +107,7 @@ export function reduceComposerState(state: ComposerState, event: ComposerEvent):
       };
     case 'submit_complete':
       if (state.phase !== 'submitting') return state;
-      return { ...state, phase: 'idle', gesture: null };
+      return { ...state, phase: 'idle', dictationEnabled: true, gesture: null };
     case 'background':
       return {
         ...state,

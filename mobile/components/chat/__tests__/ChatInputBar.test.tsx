@@ -655,7 +655,7 @@ describe('ChatInputBar', () => {
     await waitFor(() => expect(getByLabelText('按住说话')).toBeTruthy());
   });
 
-  it('stops realtime dictation and disables the microphone after submit', async () => {
+  it('stops realtime dictation after submit and keeps the microphone available', async () => {
     const onSend = jest.fn();
     mockRealtimeDictationState = { isDictating: true, error: null };
     const { getByLabelText, rerender } = render(
@@ -676,7 +676,36 @@ describe('ChatInputBar', () => {
 
     mockRealtimeDictationState = { isDictating: false, error: null };
     rerender(<ChatInputBar onSend={onSend} isStreaming={true} />);
-    expect(getByLabelText('语音监听已禁用')).toBeTruthy();
+    expect(getByLabelText('实时语音转文字')).toBeTruthy();
+  });
+
+  it('keeps typed send available while 小巴 is streaming', async () => {
+    const onSend = jest.fn().mockResolvedValue(true);
+    const { getByLabelText } = render(
+      <ChatInputBar onSend={onSend} isStreaming />,
+    );
+
+    fireEvent.changeText(getByLabelText('消息输入框'), '继续补充一个问题');
+
+    await act(async () => {
+      fireEvent.press(getByLabelText('发送消息'));
+      await Promise.resolve();
+    });
+
+    expect(onSend).toHaveBeenCalledWith('继续补充一个问题', null, undefined);
+  });
+
+  it('allows realtime dictation to start while 小巴 is streaming', async () => {
+    const { getByLabelText } = render(
+      <ChatInputBar onSend={jest.fn()} isStreaming />,
+    );
+
+    await act(async () => {
+      fireEvent.press(getByLabelText('实时语音转文字'));
+      await Promise.resolve();
+    });
+
+    expect(mockStartDictation).toHaveBeenCalledTimes(1);
   });
 
   it('submits realtime microphone transcription through the voice channel', async () => {

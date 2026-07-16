@@ -80,6 +80,12 @@ interface ConversationOpener {
   priority?: number;
 }
 
+interface QueuedWebPrompt {
+  text: string;
+  userMessageId: number;
+  assistantMessageId: number;
+}
+
 const OPENER_SOURCE_LABEL: Record<string, string> = {
   action_card_due: '今日检验',
   anomaly: '数据异常',
@@ -137,6 +143,7 @@ function AIAssistantInner() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
+  const [queuedPromptCount, setQueuedPromptCount] = useState(0);
   // 2026-07-02: 实时状态行 (status SSE 事件 → 中文短语), 首 token 到达清空。纯加法。
   const [statusText, setStatusText] = useState<string | null>(null);
   const [doneIds, setDoneIds] = useState<Set<number>>(new Set());
@@ -151,6 +158,9 @@ function AIAssistantInner() {
   const [selectedMessageIds, setSelectedMessageIds] = useState<Set<number>>(new Set());
   const [sharing, setSharing] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const streamingRef = useRef(false);
+  const activeConvIdRef = useRef<number | undefined>(undefined);
+  const queuedPromptsRef = useRef<QueuedWebPrompt[]>([]);
   // 状态行去抖: for-await 循环内读闭包会拿到陈旧 statusText, 用 ref 避免重复 setState。
   const statusRef = useRef<string | null>(null);
   const medicalExamInputRef = useRef<HTMLInputElement | null>(null);
@@ -158,6 +168,14 @@ function AIAssistantInner() {
   const [opener, setOpener] = useState<ConversationOpener | null>(null);
   const [medicalExamImporting, setMedicalExamImporting] = useState(false);
   const [medicalExamImportError, setMedicalExamImportError] = useState<string | null>(null);
+
+  useEffect(() => {
+    streamingRef.current = streaming;
+  }, [streaming]);
+
+  useEffect(() => {
+    activeConvIdRef.current = activeConvId;
+  }, [activeConvId]);
 
   // 自动滚到底
   useEffect(() => {
@@ -295,29 +313,55 @@ function AIAssistantInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeConvId]);
 
-  const sendMessage = async (overrideText?: string) => {
+  const sendMessage = async (overrideText?: string, queuedPrompt?: QueuedWebPrompt) => {
     const text = (overrideText ?? input).trim();
-    if (!text || streaming) return;
-    setInput('');
+    if (!text) return;
+
+    if (streamingRef.current && !queuedPrompt) {
+      setInput('');
+      const stamp = Date.now();
+      const userMessageId = -stamp;
+      const assistantMessageId = -stamp - 1;
+      const now = new Date().toISOString();
+      queuedPromptsRef.current.push({ text, userMessageId, assistantMessageId });
+      setQueuedPromptCount(queuedPromptsRef.current.length);
+      setMessages(prev => [
+        ...prev,
+        { id: userMessageId, role: 'user', content: text, created_at: now },
+        { id: assistantMessageId, role: 'assistant', content: '小巴处理中，已加入队列。', created_at: now },
+      ]);
+      return;
+    }
+
+    if (!queuedPrompt) setInput('');
     setStreaming(true);
+    streamingRef.current = true;
     setStatusText(null);
 
     // 本地先插用户消息 + assistant 占位
-    const tempUserId = -Date.now();
-    const tempAssistantId = -Date.now() - 1;
+    const tempUserId = queuedPrompt?.userMessageId ?? -Date.now();
+    const tempAssistantId = queuedPrompt?.assistantMessageId ?? -Date.now() - 1;
     const now = new Date().toISOString();
-    setMessages(prev => [
-      ...prev,
-      { id: tempUserId, role: 'user', content: text, created_at: now },
-      { id: tempAssistantId, role: 'assistant', content: '', created_at: now },
-    ]);
+    if (queuedPrompt) {
+      setMessages(prev => prev.map(message => (
+        message.id === tempAssistantId
+          ? { ...message, content: '', created_at: now }
+          : message
+      )));
+    } else {
+      setMessages(prev => [
+        ...prev,
+        { id: tempUserId, role: 'user', content: text, created_at: now },
+        { id: tempAssistantId, role: 'assistant', content: '', created_at: now },
+      ]);
+    }
 
     let assistantBuf = '';
-    let realConvId = activeConvId;
+    let realConvId = activeConvIdRef.current;
     statusRef.current = null;
 
     try {
-      for await (const evt of agentApi.streamMessage(text, activeConvId)) {
+      for await (const evt of agentApi.streamMessage(text, activeConvIdRef.current)) {
         if (!evt) continue;
         // /agent/stream event shape: { event, data: {content, conversation_id, ...} }
         const type = evt.event ?? evt.type;
@@ -379,17 +423,32 @@ function AIAssistantInner() {
       );
     } finally {
       setStreaming(false);
+      streamingRef.current = false;
       statusRef.current = null;
       setStatusText(null);
-      if (!activeConvId && realConvId) {
+      if (!activeConvIdRef.current && realConvId) {
+        activeConvIdRef.current = realConvId;
         setActiveConvId(realConvId);
         syncConvUrl(realConvId); // 首条消息拿到 realConvId 后写 ?c=<id>
       }
       refreshConversations();
+      setTimeout(() => pumpQueuedPrompt(), 0);
     }
   };
 
+  function pumpQueuedPrompt() {
+    if (streamingRef.current) return;
+    const next = queuedPromptsRef.current.shift();
+    if (!next) return;
+    setQueuedPromptCount(queuedPromptsRef.current.length);
+    void sendMessage(next.text, next);
+  }
+
   const startNewConversation = () => {
+    queuedPromptsRef.current = [];
+    setQueuedPromptCount(0);
+    streamingRef.current = false;
+    activeConvIdRef.current = undefined;
     setActiveConvId(undefined);
     setMessages([]);
     setShareSelectionMode(false);
@@ -418,6 +477,7 @@ function AIAssistantInner() {
       sources_used: m.meta?.sources_used,
       tools_used: m.meta?.tools_used,
     })) as ChatMessage[];
+    activeConvIdRef.current = conversationId;
     setActiveConvId(conversationId);
     setMessages(loaded);
     setDoneIds(new Set(loaded.filter(m => m.role === 'assistant').map(m => m.id)));
@@ -450,7 +510,6 @@ function AIAssistantInner() {
   };
 
   const submitSuggestion = (text: string) => {
-    if (streaming) return;
     sendMessage(text);
   };
 
@@ -670,7 +729,7 @@ function AIAssistantInner() {
               <ChatView
                 messages={messages}
                 loading={streaming}
-                statusText={statusText}
+                statusText={statusText || (queuedPromptCount > 0 ? `${queuedPromptCount} 个排队` : null)}
                 doneMessageIds={doneIds}
                 messageFeedback={{}}
                 onFeedback={() => {}}
@@ -752,14 +811,13 @@ function AIAssistantInner() {
                     sendMessage();
                   }
                 }}
-                placeholder={streaming ? '回答中…' : '发消息 (Enter 发送, Shift+Enter 换行)'}
-                disabled={streaming}
+                placeholder="发消息 (Enter 发送, Shift+Enter 换行)"
                 rows={1}
-                className="max-h-36 min-h-10 flex-1 resize-none bg-transparent px-3 py-2.5 text-[15px] leading-6 text-[#16201B] placeholder:text-[#8A938D] focus:outline-none disabled:opacity-50"
+                className="max-h-36 min-h-10 flex-1 resize-none bg-transparent px-3 py-2.5 text-[15px] leading-6 text-[#16201B] placeholder:text-[#8A938D] focus:outline-none"
               />
               <button
                 type="submit"
-                disabled={!input.trim() || streaming}
+                disabled={!input.trim()}
                 className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#1F8A5B] text-[#FFFFFF] transition-colors hover:bg-[#176F49] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1F8A5B]/40 disabled:bg-[#E7E5DE] disabled:text-[#B7BDB7]"
                 title="发送"
               >

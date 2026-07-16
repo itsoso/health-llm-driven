@@ -538,6 +538,48 @@ describe('useChatEngine', () => {
     });
   });
 
+  it('accepts a second message while the current turn is still streaming', async () => {
+    mockStreamChat.mockImplementation(streamStartThenWait);
+    const onAccepted = jest.fn();
+
+    const { result } = renderHook(() => useChatEngine());
+
+    act(() => {
+      void result.current.sendMessage('第一条先慢慢分析');
+    });
+
+    await waitFor(() => {
+      expect(result.current.isStreaming).toBe(true);
+      expect(mockStreamChat).toHaveBeenCalledTimes(1);
+    });
+
+    let accepted: boolean | undefined;
+    await act(async () => {
+      accepted = await result.current.sendMessage('第二条继续补充', null, { onAccepted } as any);
+    });
+
+    expect(accepted).toBe(true);
+    expect(onAccepted).toHaveBeenCalledWith(true);
+    expect(result.current.queuedCount).toBe(1);
+    expect(result.current.messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ role: 'user', content: '第二条继续补充' }),
+        expect.objectContaining({ role: 'assistant', content: '小巴处理中，已加入队列。' }),
+      ]),
+    );
+    expect(mockStreamChat).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      finishStream?.();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(mockStreamChat).toHaveBeenCalledTimes(2);
+    });
+  });
+
   it('tracks and persists the active Agent turn through stream completion', async () => {
     mockStreamChat.mockImplementation(streamStatusThenWait);
 

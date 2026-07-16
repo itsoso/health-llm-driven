@@ -216,6 +216,27 @@ interface UseChatEngineOptions {
   contextData?: Record<string, any>;
 }
 
+interface SendMessageOptions {
+  fromSiri?: boolean;
+  extraContext?: string;
+  forceNewConversation?: boolean;
+  channel?: 'typed' | 'voice' | 'siri';
+  onAccepted?: (accepted: boolean) => void;
+  __queuedTurnId?: string;
+  __localUserMessageId?: string;
+  __localAssistantMessageId?: string;
+  __precreatedLocalMessages?: boolean;
+}
+
+interface QueuedChatTurn {
+  turnId: string;
+  text: string;
+  pendingImages?: { uri: string; base64?: string; type?: string }[] | null;
+  options?: SendMessageOptions;
+  userMessageId: string;
+  assistantMessageId: string;
+}
+
 const BRIEFING_CONVERSATION_TITLE = '每日健康简报';
 const DEFAULT_WINDOW_DAYS = 7;
 const LAST_CONVERSATION_ID_KEY = 'chat:last_conversation_id:v1';
@@ -223,6 +244,7 @@ const PENDING_STREAM_STARTED_AT_KEY = 'chat:pending_stream_started_at:v1';
 const ACTIVE_TURN_KEY = 'chat:active_turn:v1';
 const PENDING_STREAM_TTL_MS = 10 * 60 * 1000;
 const THINKING_PLACEHOLDER = '⏳ AI 正在思考中...';
+const QUEUED_TURN_PLACEHOLDER = '小巴处理中，已加入队列。';
 const MAX_THINKING_STEPS = 8;
 // P0-5 竞态守卫: 本地 stream 活跃且未超过此窗口时, focus-reload / app-active-reload
 // 不得用服务端半截 partial 覆盖本地流式态。超过窗口 (慢流 / 卡死) 才放行服务端恢复,
@@ -364,8 +386,14 @@ async function hasFreshPendingStream(): Promise<boolean> {
 export function useChatEngine(opts: UseChatEngineOptions = {}) {
   const [messages, setMessages] = useState<UIMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [queuedCount, setQueuedCount] = useState(0);
+  const [runningTurnId, setRunningTurnId] = useState<string | undefined>(undefined);
   const [activeTurn, reduceAgentTurnDispatch] = useReducer(reduceAgentTurn, undefined, createIdleAgentTurn);
   const activeTurnRef = useRef(activeTurn);
+  const queuedTurnsRef = useRef<QueuedChatTurn[]>([]);
+  const pumpQueuedTurnsRef = useRef<() => void>(() => undefined);
+  const isStreamingRef = useRef(false);
+  const runningTurnIdRef = useRef<string | undefined>(undefined);
   const terminalTelemetryKeysRef = useRef<Set<string>>(new Set());
   const emitAgentTurnTerminal = useCallback((
     turnId: string,
@@ -400,11 +428,15 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
   }, []);
   const [activeTurnHydrated, setActiveTurnHydrated] = useState(false);
   const [conversationId, setConversationId] = useState<number | undefined>(undefined);
+  const conversationIdRef = useRef<number | undefined>(undefined);
   const [windowDays, setWindowDays] = useState<number | undefined>(DEFAULT_WINDOW_DAYS);
   const [hasMoreHistory, setHasMoreHistory] = useState(false);
   const briefingInjected = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
   useEffect(() => { activeTurnRef.current = activeTurn; }, [activeTurn]);
+  useEffect(() => { isStreamingRef.current = isStreaming; }, [isStreaming]);
+  useEffect(() => { runningTurnIdRef.current = runningTurnId; }, [runningTurnId]);
+  useEffect(() => { conversationIdRef.current = conversationId; }, [conversationId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -575,6 +607,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       const assistantAnswer = assistantMessageForTurn(msgs, turnId);
       if (!assistantAnswer) return false;
 
+      conversationIdRef.current = id;
       setConversationId(id);
       void rememberConversationId(id);
       setHasMoreHistory(total_messages > msgs.length);
@@ -607,6 +640,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     setHasMoreHistory(total_messages > msgs.length);
     if (msgs.length === 0 && total_messages === 0) return false;
 
+    conversationIdRef.current = id;
     setConversationId(id);
     void rememberConversationId(id);
     const restored = restoreMessagesFromHistory(msgs, IMAGE_HOST, idPrefix);
@@ -711,13 +745,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
   const sendMessage = useCallback(async (
     text: string,
     pendingImages?: { uri: string; base64?: string; type?: string }[] | null,
-    sendOpts?: {
-      fromSiri?: boolean;
-      extraContext?: string;
-      forceNewConversation?: boolean;
-      channel?: 'typed' | 'voice' | 'siri';
-      onAccepted?: (accepted: boolean) => void;
-    },
+    sendOpts?: SendMessageOptions,
   ) => {
     let acceptanceSettled = false;
     let acceptedByServer = false;
@@ -733,21 +761,65 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       settleAcceptance(false);
       return false;
     }
-    if (isStreaming) {
-      settleAcceptance(false);
-      return false;
-    }
 
     const finalMsg = msg || (hasImages ? '请分析这些图片' : '');
     const requestFingerprint = buildTurnRequestFingerprint(finalMsg, pendingImages);
     const forceNewConversation = !!sendOpts?.forceNewConversation;
     const previousTurn = activeTurnRef.current;
-    const turnId = (
+    const reusableTurnId = (
       !forceNewConversation
       && previousTurn.recoverable
       && previousTurn.turnId
       && previousTurn.requestFingerprint === requestFingerprint
-    ) ? previousTurn.turnId : nextTurnId();
+    ) ? previousTurn.turnId : undefined;
+    const turnId = sendOpts?.__queuedTurnId ?? reusableTurnId ?? nextTurnId();
+
+    if (isStreamingRef.current && !sendOpts?.__precreatedLocalMessages) {
+      const userMessageId = nextId();
+      const assistantMessageId = nextId();
+      const uris = hasImages ? pendingImages.map(i => i.uri) : undefined;
+      const queuedUserMsg: UIMessage = {
+        id: userMessageId,
+        role: 'user',
+        content: finalMsg,
+        imageUris: uris,
+        fromSiri: sendOpts?.fromSiri,
+      };
+      const queuedAssistantMsg: UIMessage = {
+        id: assistantMessageId,
+        role: 'assistant',
+        content: QUEUED_TURN_PLACEHOLDER,
+        currentStatus: '排队中',
+        sourceTurnId: turnId,
+      };
+      queuedTurnsRef.current.push({
+        turnId,
+        text: finalMsg,
+        pendingImages,
+        userMessageId,
+        assistantMessageId,
+        options: {
+          ...sendOpts,
+          onAccepted: undefined,
+          __queuedTurnId: turnId,
+          __localUserMessageId: userMessageId,
+          __localAssistantMessageId: assistantMessageId,
+          __precreatedLocalMessages: true,
+        },
+      });
+      setQueuedCount(queuedTurnsRef.current.length);
+      setMessages(prev => [...prev, queuedUserMsg, queuedAssistantMsg]);
+      try {
+        emitClientEvent('chat_turn_queued', {
+          surface: 'mobile',
+          channel: sendOpts?.fromSiri ? 'siri' : (sendOpts?.channel ?? 'typed'),
+          queue_depth_at_submit: queuedTurnsRef.current.length,
+        });
+      } catch { /* noop */ }
+      settleAcceptance(true);
+      return true;
+    }
+
     const turnStartedAt = Date.now();
     const emitAgentTerminal = (
       phase: 'completed' | 'failed' | 'interrupted',
@@ -797,8 +869,9 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       });
     } catch { /* noop */ }
 
-    const targetConversationId = forceNewConversation ? undefined : conversationId;
+    const targetConversationId = forceNewConversation ? undefined : conversationIdRef.current;
     if (forceNewConversation) {
+      conversationIdRef.current = undefined;
       setConversationId(undefined);
       void forgetConversationId();
       void clearPendingStream();
@@ -806,18 +879,39 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     }
 
     const uris = hasImages ? pendingImages.map(i => i.uri) : undefined;
-    const userMsg: UIMessage = { id: nextId(), role: 'user', content: finalMsg, imageUris: uris, fromSiri: sendOpts?.fromSiri };
-    const aId = nextId();
+    const userMsg: UIMessage = {
+      id: sendOpts?.__localUserMessageId ?? nextId(),
+      role: 'user',
+      content: finalMsg,
+      imageUris: uris,
+      fromSiri: sendOpts?.fromSiri,
+    };
+    const aId = sendOpts?.__localAssistantMessageId ?? nextId();
     const aiMsg: UIMessage = {
       id: aId,
       role: 'assistant',
       content: THINKING_PLACEHOLDER,
       streaming: true,
       thinkingSteps: ['正在理解你的问题'],
+      sourceTurnId: turnId,
     };
 
-    setMessages(prev => forceNewConversation ? [userMsg, aiMsg] : [...prev, userMsg, aiMsg]);
+    if (sendOpts?.__precreatedLocalMessages) {
+      setMessages(prev => {
+        if (forceNewConversation) return [userMsg, aiMsg];
+        return prev.map(message => {
+          if (message.id === userMsg.id) return userMsg;
+          if (message.id === aId) return aiMsg;
+          return message;
+        });
+      });
+    } else {
+      setMessages(prev => forceNewConversation ? [userMsg, aiMsg] : [...prev, userMsg, aiMsg]);
+    }
     setIsStreaming(true);
+    isStreamingRef.current = true;
+    setRunningTurnId(turnId);
+    runningTurnIdRef.current = turnId;
     streamingRef.current = true;
     streamStartedAtRef.current = Date.now();  // P0-5: 记录流开始时刻, 供 30s 竞态守卫。
     void markPendingStream();
@@ -943,7 +1037,10 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
           });
           if (evt.conversationId) {
             streamConversationId = evt.conversationId;
-            if (!targetConversationId) setConversationId(evt.conversationId);
+            if (!targetConversationId) {
+              conversationIdRef.current = evt.conversationId;
+              setConversationId(evt.conversationId);
+            }
             void rememberConversationId(evt.conversationId);
           }
         } else if (evt.type === 'persisted') {
@@ -969,7 +1066,10 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
           });
           if (evt.conversationId) {
             streamConversationId = evt.conversationId;
-            if (!targetConversationId) setConversationId(evt.conversationId);
+            if (!targetConversationId) {
+              conversationIdRef.current = evt.conversationId;
+              setConversationId(evt.conversationId);
+            }
             void rememberConversationId(evt.conversationId);
           }
         } else if (evt.type === 'status') {
@@ -1126,7 +1226,10 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
           flushThinkingBuffer();  // 收尾: 把节流缓冲里最后的思考步骤落盘 (done 可能覆盖为服务端权威列表)。
           if (evt.conversationId) {
             streamConversationId = evt.conversationId;
-            if (!targetConversationId) setConversationId(evt.conversationId);
+            if (!targetConversationId) {
+              conversationIdRef.current = evt.conversationId;
+              setConversationId(evt.conversationId);
+            }
             void rememberConversationId(evt.conversationId);
           }
           // 把耗时 + 模型名写入当前 assistant 消息 (ChatBubble 渲染 footer)。清空 status 行 (收进思考完成态 pill)。
@@ -1279,21 +1382,60 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       clearTimeout(slowTimer);
       abortRef.current = null;
       streamingRef.current = false;
+      isStreamingRef.current = false;
+      runningTurnIdRef.current = undefined;
+      setRunningTurnId(undefined);
       streamStartedAtRef.current = 0;  // P0-5: 流结束, 解除本地态霸占 → 允许服务端 reload 恢复。
       void clearPendingStream();
       // 终态: 停 streaming + 兜底清 status 行 (无论 done/error/interrupt 都不残留状态行)。
       setMessages(prev => prev.map(m => m.id === aId ? { ...m, streaming: false, currentStatus: undefined } : m));
       setIsStreaming(false);
+      setTimeout(() => pumpQueuedTurnsRef.current(), 0);
     }
     return acceptedByServer;
-  }, [isStreaming, conversationId, opts.contextData, recoverConversationFromServer]);
+  }, [opts.contextData, recoverConversationFromServer]);
+
+  pumpQueuedTurnsRef.current = () => {
+    if (isStreamingRef.current) return;
+    const next = queuedTurnsRef.current.shift();
+    if (!next) {
+      return;
+    }
+    setQueuedCount(queuedTurnsRef.current.length);
+    void sendMessage(next.text, next.pendingImages, next.options);
+  };
 
   const stopStreaming = useCallback(() => {
     abortRef.current?.abort();
   }, []);
 
+  const cancelActiveTurn = useCallback(() => {
+    abortRef.current?.abort();
+  }, []);
+
+  const cancelTurn = useCallback((turnId: string) => {
+    if (runningTurnIdRef.current === turnId) {
+      abortRef.current?.abort();
+      return;
+    }
+    const queued = queuedTurnsRef.current.find(turn => turn.turnId === turnId);
+    if (!queued) return;
+    queuedTurnsRef.current = queuedTurnsRef.current.filter(turn => turn.turnId !== turnId);
+    setQueuedCount(queuedTurnsRef.current.length);
+    setMessages(prev => prev.filter(message => (
+      message.id !== queued.userMessageId
+      && message.id !== queued.assistantMessageId
+    )));
+  }, []);
+
+
   const newChat = useCallback(() => {
+    queuedTurnsRef.current = [];
+    setQueuedCount(0);
+    runningTurnIdRef.current = undefined;
+    setRunningTurnId(undefined);
     setMessages([]);
+    conversationIdRef.current = undefined;
     setConversationId(undefined);
     dispatchAgentTurn({ type: 'reset' });
     void forgetConversationId();
@@ -1313,10 +1455,14 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
   return {
     messages,
     isStreaming,
+    queuedCount,
+    runningTurnId,
     activeTurn,
     conversationId,
     sendMessage,
     stopStreaming,
+    cancelActiveTurn,
+    cancelTurn,
     newChat,
     loadLatestConversation,
     loadConversation,

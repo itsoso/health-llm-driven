@@ -204,7 +204,6 @@ export default function ChatInputBar({
   draftHydratedRef.current = draftHydrated;
   draftSnapshotRef.current = { text: input, images: pendingImages };
   const canSend = (!!input.trim() || pendingImages.length > 0)
-    && !isStreaming
     && composer.phase !== 'submitting';
 
   React.useEffect(() => {
@@ -294,15 +293,13 @@ export default function ChatInputBar({
 
   // GPT/Gemini 式默认唤起键盘: chat.tsx 在「空对话获得焦点」时递增 token。
   // (2026-07-04 founder 拍板反转旧「不 auto-focus」设计 — 仅限空对话, 回到有
-  //  历史的对话不弹, 不打断阅读。)延迟等 tab 过渡完成; 流式/语音时不抢焦点。
+  //  历史的对话不弹, 不打断阅读。)延迟等 tab 过渡完成。
   React.useEffect(() => {
     if (!autoFocusToken) return;
-    if (isStreaming) return;
     const t = setTimeout(() => {
       textInputRef.current?.focus();
     }, 380);
     return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoFocusToken]);
 
   const handleSend = useCallback(async (text?: string, sendOptions?: ChatInputSendOptions) => {
@@ -451,7 +448,6 @@ export default function ChatInputBar({
   }, [realtimeDictation.isDictating]);
 
   const handleRealtimeMicPress = useCallback(async () => {
-    if (isStreaming) return;
     const state = composerRef.current;
     if (state.phase === 'live_dictating' || realtimeDictation.isDictating) {
       dispatchComposer({ type: 'dictation_stop' });
@@ -468,7 +464,7 @@ export default function ChatInputBar({
     if (started === false) {
       dispatchComposer({ type: 'fail', errorCode: realtimeDictation.error || 'dictation_start_failed' });
     }
-  }, [input, isStreaming, realtimeDictation]);
+  }, [input, realtimeDictation]);
 
   const handleKeyboardSubmit = useCallback(() => {
     if (!canSend) return;
@@ -539,7 +535,7 @@ export default function ChatInputBar({
   const startYRef = useRef(0);
 
   const handleHoldStart = useCallback(async (pageX: number, pageY: number) => {
-    if (isStreaming || !canStartHold(composerRef.current) || dictationNativeActiveRef.current) return;
+    if (!canStartHold(composerRef.current) || dictationNativeActiveRef.current) return;
     cancelledRef.current = false;
     voiceGestureActiveRef.current = true;
     voiceCommitModeRef.current = 'send';
@@ -556,7 +552,7 @@ export default function ChatInputBar({
       return;
     }
     dispatchComposer({ type: 'hold_ready' });
-  }, [isStreaming, voice]);
+  }, [voice]);
 
   const handleHoldMove = useCallback((pageX: number, pageY: number) => {
     if (!voiceGestureActiveRef.current || cancelledRef.current) return;
@@ -611,8 +607,7 @@ export default function ChatInputBar({
   const handleVoiceModeToggle = useCallback(async () => {
     const state = composerRef.current;
     if (
-      isStreaming
-      || state.phase === 'hold_starting'
+      state.phase === 'hold_starting'
       || state.phase === 'hold_recording'
       || state.phase === 'hold_transcribing'
       || state.phase === 'submitting'
@@ -632,7 +627,7 @@ export default function ChatInputBar({
     } else {
       setTimeout(() => textInputRef.current?.focus(), 30);
     }
-  }, [isStreaming]);
+  }, []);
 
   React.useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState) => {
@@ -701,10 +696,6 @@ export default function ChatInputBar({
   const handlePickImage = useCallback(async () => { setShowMenu(false); await pickImage(); }, [pickImage]);
   const stageCameraPhoto = useCallback(async (mealPhoto: boolean) => {
     setShowMenu(false);
-    if (isStreaming) {
-      Alert.alert('小巴还在回复', '等这一轮结束后再拍照记录。');
-      return [];
-    }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     const photos = await takePhoto();
     if (!photos || photos.length === 0) return [];
@@ -714,7 +705,7 @@ export default function ChatInputBar({
       setInput(current => current.trim() ? current : '记录这餐');
     }
     return photos;
-  }, [isStreaming, takePhoto]);
+  }, [takePhoto]);
   const handleCaptureMealPhoto = useCallback(() => {
     void stageCameraPhoto(true);
   }, [stageCameraPhoto]);
@@ -957,7 +948,7 @@ export default function ChatInputBar({
                 styles.holdToTalk,
                 voiceGesture != null && styles.holdToTalkActive,
               ]}
-              onStartShouldSetResponder={() => !isStreaming}
+              onStartShouldSetResponder={() => true}
               onMoveShouldSetResponder={() => true}
               onResponderGrant={handleHoldStartEvent}
               onResponderMove={handleHoldMoveEvent}

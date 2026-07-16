@@ -27,6 +27,7 @@ export type ClientEventName =
   | 'watch_action_failed'
   | 'agenda_action_failed'
   // Mobile Agent 可靠性闭环 (2026-07-09) — 只允许无正文、无资源标识的终态元数据
+  | 'chat_turn_queued'
   | 'agent_turn_terminal'
   | 'voice_input_terminal'
   | 'voice_asr_terminal'

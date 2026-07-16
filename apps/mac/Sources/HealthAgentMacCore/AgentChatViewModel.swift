@@ -701,13 +701,60 @@ public struct ThinkingStep: Equatable, Identifiable, Sendable {
     }
 }
 
+public enum AgentTurnRunStatus: Equatable, Sendable {
+    case queued
+    case streaming
+    case completed
+    case failed(String)
+    case cancelled
+}
+
+public struct AgentTurnRun: Identifiable, Equatable, Sendable {
+    public let id: UUID
+    public let clientTurnID: String
+    public let userMessageID: UUID
+    public let assistantMessageID: UUID
+    public var status: AgentTurnRunStatus
+    public var queuedAt: Date
+    public var startedAt: Date?
+
+    public init(
+        id: UUID = UUID(),
+        clientTurnID: String = UUID().uuidString,
+        userMessageID: UUID,
+        assistantMessageID: UUID,
+        status: AgentTurnRunStatus = .queued,
+        queuedAt: Date = Date(),
+        startedAt: Date? = nil
+    ) {
+        self.id = id
+        self.clientTurnID = clientTurnID
+        self.userMessageID = userMessageID
+        self.assistantMessageID = assistantMessageID
+        self.status = status
+        self.queuedAt = queuedAt
+        self.startedAt = startedAt
+    }
+}
+
+private struct PendingAgentTurn: Sendable {
+    let prompt: String
+    let runID: UUID
+    let userMessageID: UUID
+    let assistantMessageID: UUID
+}
+
 @Observable
 @MainActor
 public final class AgentChatViewModel {
     public static let maxLiveThinkingSteps = 8
 
     public var isStreaming = false
+    public private(set) var queuedTurnCount = 0
+    public private(set) var turnRuns: [AgentTurnRun] = []
+    public var streamingAssistantMessageID: UUID?
     private var streamingTask: Task<Void, Never>?
+    @ObservationIgnored private var pendingTurns: [PendingAgentTurn] = []
     public var runState: AgentRunState = .idle
     public var selectedModelID: String?
     public var webSearchEnabled = false
@@ -764,6 +811,7 @@ public final class AgentChatViewModel {
     @ObservationIgnored private var _transcriptCache: [ChatTranscriptHTML.RenderedMessage] = []
     @ObservationIgnored private var _transcriptCacheMessages: [AgentChatMessage] = []
     @ObservationIgnored private var _transcriptCacheStreaming = false
+    @ObservationIgnored private var _transcriptCacheStreamingAssistantID: UUID?
     @ObservationIgnored private var _transcriptCacheProposed: [AgentProposedAction] = []
     @ObservationIgnored private var _transcriptCacheThinkingSteps: [ThinkingStep] = []
     @ObservationIgnored private var _transcriptCacheLanguage = ""
@@ -864,7 +912,7 @@ public final class AgentChatViewModel {
     }
 
     public func canSubmit(_ text: String) -> Bool {
-        !isStreaming && !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     public func addAttachment(_ item: FileIntakeItem) {
@@ -927,15 +975,63 @@ public final class AgentChatViewModel {
         persistContextBundles()
     }
 
-    /// Fire-and-forget entry point for the UI: wraps `send` in a tracked Task so
-    /// the composer's Stop button can cancel an in-flight stream via
-    /// `cancelStreaming()`. Cancelling the task unwinds the `for try await` loop,
-    /// which terminates the AsyncThrowingStream and cancels the URLSession task.
+    /// Fire-and-forget entry point for the UI. When a turn is already streaming,
+    /// the new prompt is kept visible as a queued turn and runs FIFO after the
+    /// current stream finishes.
     public func submit(_ text: String) {
-        streamingTask?.cancel()
-        streamingTask = Task { [weak self] in
-            await self?.send(text)
+        let message = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !message.isEmpty else { return }
+        if isStreaming {
+            enqueueTurn(message)
+            return
         }
+        startStreamingTask(prompt: message)
+    }
+
+    private func enqueueTurn(_ prompt: String) {
+        let now = Date()
+        let userID = UUID()
+        let assistantID = UUID()
+        let run = AgentTurnRun(
+            userMessageID: userID,
+            assistantMessageID: assistantID,
+            status: .queued,
+            queuedAt: now
+        )
+        turnRuns.append(run)
+        pendingTurns.append(PendingAgentTurn(
+            prompt: prompt,
+            runID: run.id,
+            userMessageID: userID,
+            assistantMessageID: assistantID
+        ))
+        queuedTurnCount = pendingTurns.count
+        messages.append(.init(id: userID, role: .user, content: prompt, createdAt: now))
+        messages.append(.init(id: assistantID, role: .assistant, content: "小巴处理中，已加入队列。", createdAt: now))
+    }
+
+    private func startStreamingTask(prompt: String) {
+        streamingTask = Task { [weak self] in
+            await self?.send(prompt)
+        }
+    }
+
+    private func startStreamingTask(turn: PendingAgentTurn) {
+        streamingTask = Task { [weak self] in
+            await self?.runTurn(
+                turn.prompt,
+                precreatedRunID: turn.runID,
+                precreatedUserMessageID: turn.userMessageID,
+                precreatedAssistantMessageID: turn.assistantMessageID
+            )
+        }
+    }
+
+    private func pumpTurnQueue() {
+        guard !isStreaming, streamingTask == nil, !pendingTurns.isEmpty else { return }
+        let next = pendingTurns.removeFirst()
+        queuedTurnCount = pendingTurns.count
+        startStreamingTask(turn: next)
     }
 
     /// Stops the current stream. Partial content already received stays on screen
@@ -952,6 +1048,15 @@ public final class AgentChatViewModel {
     }
 
     public func send(_ text: String) async {
+        await runTurn(text)
+    }
+
+    private func runTurn(
+        _ text: String,
+        precreatedRunID: UUID? = nil,
+        precreatedUserMessageID: UUID? = nil,
+        precreatedAssistantMessageID: UUID? = nil
+    ) async {
         let message = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !message.isEmpty, let streamService else {
             return
@@ -965,12 +1070,39 @@ public final class AgentChatViewModel {
         runState = .preparing
         lastPrompt = message
         let turnStartedAt = Date()
-        messages.append(.init(role: .user, content: message, createdAt: turnStartedAt))
-        messages.append(.init(role: .assistant, content: "", createdAt: turnStartedAt))
-        // Track the streaming assistant message by its stable id, not a captured
-        // index: New Chat / loading a conversation / sending again resets `messages`
-        // mid-stream, which would make a captured index stale and crash on next token.
-        let assistantID = messages[messages.index(before: messages.endIndex)].id
+        let assistantID: UUID
+        if let precreatedAssistantMessageID {
+            assistantID = precreatedAssistantMessageID
+            if let precreatedUserMessageID,
+               let userIndex = messages.firstIndex(where: { $0.id == precreatedUserMessageID }) {
+                messages[userIndex].content = message
+                messages[userIndex].createdAt = turnStartedAt
+            }
+            if let idx = messages.firstIndex(where: { $0.id == precreatedAssistantMessageID }) {
+                messages[idx].content = ""
+                messages[idx].createdAt = turnStartedAt
+            }
+            if let precreatedRunID,
+               let runIndex = turnRuns.firstIndex(where: { $0.id == precreatedRunID }) {
+                turnRuns[runIndex].status = .streaming
+                turnRuns[runIndex].startedAt = turnStartedAt
+            }
+        } else {
+            messages.append(.init(role: .user, content: message, createdAt: turnStartedAt))
+            messages.append(.init(role: .assistant, content: "", createdAt: turnStartedAt))
+            // Track the streaming assistant message by its stable id, not a captured
+            // index: New Chat / loading a conversation / sending again resets `messages`
+            // mid-stream, which would make a captured index stale and crash on next token.
+            assistantID = messages[messages.index(before: messages.endIndex)].id
+        }
+        streamingAssistantMessageID = assistantID
+        defer {
+            streamingTask = nil
+            if streamingAssistantMessageID == assistantID {
+                streamingAssistantMessageID = nil
+            }
+            pumpTurnQueue()
+        }
 
         // 流式 token 合批:真 token 流式下每个 token 都改 @Published messages 会触发
         // SwiftUI 每 token 全量重排(聊天气泡布局昂贵)→ 每秒数十次重排 → 100% CPU 卡死。
@@ -1150,6 +1282,13 @@ public final class AgentChatViewModel {
     }
 
     public func startNewConversation() {
+        streamingTask?.cancel()
+        streamingTask = nil
+        pendingTurns = []
+        queuedTurnCount = 0
+        turnRuns = []
+        streamingAssistantMessageID = nil
+        isStreaming = false
         messages = []
         _completedThinkingSteps = [:]
         conversationID = nil
@@ -1452,15 +1591,17 @@ public final class AgentChatViewModel {
     /// 流式中的最后一条助手消息走 plain text(streaming=true);其余走富 markdown。
     public func renderedTranscript(language: String = AppLanguage.defaultLanguage.rawValue) -> [ChatTranscriptHTML.RenderedMessage] {
         if isStreaming == _transcriptCacheStreaming
+            && streamingAssistantMessageID == _transcriptCacheStreamingAssistantID
             && messages == _transcriptCacheMessages
             && proposedActions == _transcriptCacheProposed
             && thinkingSteps == _transcriptCacheThinkingSteps
             && language == _transcriptCacheLanguage {
             return _transcriptCache
         }
-        let lastID = messages.last?.id
+        let fallbackStreamingAssistantID = messages.last(where: { $0.role == .assistant })?.id
+        let streamingTargetID = streamingAssistantMessageID ?? fallbackStreamingAssistantID
         let rendered = messages.map { message -> ChatTranscriptHTML.RenderedMessage in
-            let isStreamingThis = isStreaming && message.id == lastID && message.role == .assistant
+            let isStreamingThis = isStreaming && message.id == streamingTargetID && message.role == .assistant
             let content = displayContent(for: message)
             let cardHTML = message.role == .assistant
                 ? ChatTranscriptHTML.dynamicCardHTML(
@@ -1538,6 +1679,7 @@ public final class AgentChatViewModel {
         }
         _transcriptCacheMessages = messages
         _transcriptCacheStreaming = isStreaming
+        _transcriptCacheStreamingAssistantID = streamingAssistantMessageID
         _transcriptCacheProposed = proposedActions
         _transcriptCacheThinkingSteps = thinkingSteps
         _transcriptCacheLanguage = language

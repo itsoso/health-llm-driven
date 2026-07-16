@@ -100,8 +100,16 @@ describe('composerState', () => {
     const backgrounded = reduceComposerState(recording, { type: 'background' });
 
     expect(submitting).toMatchObject({ phase: 'submitting', dictationEnabled: false, gesture: null });
-    expect(submitted).toMatchObject({ phase: 'idle', dictationEnabled: false });
+    expect(submitted).toMatchObject({ phase: 'idle', dictationEnabled: true });
     expect(backgrounded).toMatchObject({ mode: 'hold', phase: 'idle', gesture: null, dictationEnabled: false });
+  });
+
+  it('re-enables dictation after an accepted submit so the next voice input can start immediately', () => {
+    const submitting = reduceComposerState(createInitialComposerState(), { type: 'submit' });
+    const submitted = reduceComposerState(submitting, { type: 'submit_complete' });
+
+    expect(submitted).toMatchObject({ phase: 'idle', dictationEnabled: true });
+    expect(canStartDictation(submitted)).toBe(true);
   });
 
   it('ignores hold completion events that arrive after cancellation', () => {

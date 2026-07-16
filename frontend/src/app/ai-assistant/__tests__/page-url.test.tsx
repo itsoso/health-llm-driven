@@ -17,11 +17,12 @@ vi.mock('next/navigation', () => ({
 
 const getConversation = vi.fn();
 const getConversations = vi.fn();
+const streamMessage = vi.fn();
 vi.mock('@/services/api/ai', () => ({
   agentApi: {
     getConversation: (...a: unknown[]) => getConversation(...a),
     getConversations: (...a: unknown[]) => getConversations(...a),
-    streamMessage: vi.fn(),
+    streamMessage: (...a: unknown[]) => streamMessage(...a),
     deleteConversation: vi.fn(),
     updateConversationTitle: vi.fn(),
   },
@@ -45,6 +46,9 @@ beforeEach(() => {
   apiGet.mockResolvedValue({ data: {} });
   getConversations.mockResolvedValue({ data: { items: [], total: 0 } });
   getConversation.mockResolvedValue({ data: { messages: [] } });
+  streamMessage.mockImplementation(async function* () {
+    yield { event: 'done', data: { conversation_id: 88 } };
+  });
 });
 
 describe('ai-assistant URL state', () => {
@@ -124,5 +128,38 @@ describe('ai-assistant URL state', () => {
     await waitFor(() => expect(executeMedicalExamImportSkillForFile).toHaveBeenCalledWith(file));
     expect(await screen.findByText('体检报告已导入')).toBeInTheDocument();
     expect(screen.getByDisplayValue('请基于我刚导入的体检报告，解释异常/关键指标。')).toBeInTheDocument();
+  });
+
+  it('keeps web composer input available and queues a second prompt while streaming', async () => {
+    searchParamsGet.mockReturnValue(null);
+    let finishFirst: (() => void) | undefined;
+    streamMessage.mockImplementation(async function* (text: string) {
+      if (text === '第一条') {
+        yield { event: 'start', data: { conversation_id: 88 } };
+        await new Promise<void>((resolve) => { finishFirst = resolve; });
+        yield { event: 'done', data: { conversation_id: 88 } };
+        return;
+      }
+      yield { event: 'done', data: { conversation_id: 88 } };
+    });
+
+    render(<AIAssistantPage />);
+
+    fireEvent.change(screen.getByPlaceholderText(/发消息/), { target: { value: '第一条' } });
+    fireEvent.click(screen.getByTitle('发送'));
+
+    await waitFor(() => expect(streamMessage).toHaveBeenCalledTimes(1));
+    const textarea = screen.getByPlaceholderText(/发消息|回答中/);
+    expect(textarea).not.toBeDisabled();
+
+    fireEvent.change(textarea, { target: { value: '第二条' } });
+    fireEvent.click(screen.getByTitle('发送'));
+
+    expect(screen.getByText('第二条')).toBeInTheDocument();
+    expect(screen.getByText('小巴处理中，已加入队列。')).toBeInTheDocument();
+    expect(streamMessage).toHaveBeenCalledTimes(1);
+
+    finishFirst?.();
+    await waitFor(() => expect(streamMessage).toHaveBeenCalledTimes(2));
   });
 });

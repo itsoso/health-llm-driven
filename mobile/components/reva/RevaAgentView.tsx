@@ -51,7 +51,7 @@ function RevaBubble({ message }: { message: UIMessage }) {
 }
 
 export function RevaAgentView({ bottomInset = 0 }: { bottomInset?: number }) {
-  const { messages, isStreaming, sendMessage } = useChatEngine();
+  const { messages, sendMessage } = useChatEngine();
   const [draft, setDraft] = useState('');
   const scrollRef = useRef<ScrollView>(null);
 
@@ -62,10 +62,10 @@ export function RevaAgentView({ bottomInset = 0 }: { bottomInset?: number }) {
 
   const submit = useCallback((text?: string) => {
     const t = (text ?? draft).trim();
-    if (!t || isStreaming) return;
+    if (!t) return;
     setDraft('');
     void sendMessage(t);
-  }, [draft, isStreaming, sendMessage]);
+  }, [draft, sendMessage]);
 
   return (
     <View style={styles.root}>
@@ -101,7 +101,7 @@ export function RevaAgentView({ bottomInset = 0 }: { bottomInset?: number }) {
         <View style={[styles.composer, { paddingBottom: 10 + bottomInset }]}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.quicks}>
             {QUICKS.map(q => (
-              <Pressable key={q} onPress={() => submit(q)} style={styles.chip} disabled={isStreaming}>
+              <Pressable key={q} onPress={() => submit(q)} style={styles.chip}>
                 <Text style={styles.chipText}>{q}</Text>
               </Pressable>
             ))}
@@ -109,10 +109,16 @@ export function RevaAgentView({ bottomInset = 0 }: { bottomInset?: number }) {
           <View style={styles.inputBar}>
             <TextInput
               value={draft} onChangeText={setDraft} placeholder="问问小巴…" placeholderTextColor={C.ink3}
-              style={styles.input} returnKeyType="send" onSubmitEditing={() => submit()} editable={!isStreaming}
+              style={styles.input} returnKeyType="send" onSubmitEditing={() => submit()}
             />
-            <Pressable onPress={() => submit()} style={[styles.send, (!draft.trim() || isStreaming) && styles.sendDisabled]} disabled={!draft.trim() || isStreaming}>
-              {isStreaming ? <ActivityIndicator size="small" color={C.greenOn} /> : <Ionicons name="arrow-up" size={20} color={C.greenOn} />}
+            <Pressable
+              onPress={() => submit()}
+              style={[styles.send, !draft.trim() && styles.sendDisabled]}
+              disabled={!draft.trim()}
+              accessibilityRole="button"
+              accessibilityLabel="发送消息"
+            >
+              <Ionicons name="arrow-up" size={20} color={C.greenOn} />
             </Pressable>
           </View>
         </View>

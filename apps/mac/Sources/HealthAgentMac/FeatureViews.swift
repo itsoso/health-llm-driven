@@ -136,6 +136,17 @@ struct AgentChatView: View {
             if viewModel.isStreaming {
                 ProgressView()
                     .controlSize(.small)
+                Button {
+                    viewModel.cancelStreaming()
+                } label: {
+                    Image(systemName: "stop.fill")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(.primary)
+                        .frame(width: 24, height: 24)
+                        .background(Color.secondary.opacity(0.18), in: Circle())
+                }
+                .buttonStyle(.plain)
+                .help(appText("Stop generating", appLanguageRaw))
             }
             Spacer()
             statusChip
@@ -332,37 +343,24 @@ struct AgentChatView: View {
     }
 
     // ChatGPT-style round button at the input's bottom-right: ↑ to send,
-    // ■ to stop while streaming. ↩ (and ⌘↩) sends; ⇧↩ inserts a newline.
+    // ↩ (and ⌘↩) sends; ⇧↩ inserts a newline. Stop lives in the status bar so
+    // the composer remains usable while a turn is streaming.
     @ViewBuilder
     private var composerSendButton: some View {
-        if viewModel.isStreaming {
-            Button {
-                viewModel.cancelStreaming()
-            } label: {
-                Image(systemName: "stop.fill")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(.primary)
-                    .frame(width: 30, height: 30)
-                    .background(Color.secondary.opacity(0.22), in: Circle())
-            }
-            .buttonStyle(.plain)
-            .help(appText("Stop generating", appLanguageRaw))
-        } else {
-            let canSend = viewModel.canSubmit(draft)
-            Button {
-                sendDraft()
-            } label: {
-                Image(systemName: "arrow.up")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 30, height: 30)
-                    .background(canSend ? Color.accentColor : Color.secondary.opacity(0.35), in: Circle())
-            }
-            .buttonStyle(.plain)
-            .disabled(!canSend)
-            .keyboardShortcut(.return, modifiers: .command)
-            .help("Command-Return")
+        let canSend = viewModel.canSubmit(draft)
+        Button {
+            sendDraft()
+        } label: {
+            Image(systemName: "arrow.up")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 30, height: 30)
+                .background(canSend ? Color.accentColor : Color.secondary.opacity(0.35), in: Circle())
         }
+        .buttonStyle(.plain)
+        .disabled(!canSend)
+        .keyboardShortcut(.return, modifiers: .command)
+        .help("Command-Return")
     }
 
     // Contextual line below the input — only appears on error / retry, so the
@@ -452,7 +450,6 @@ struct AgentChatView: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
                 .background(Color.secondary.opacity(0.09), in: Capsule())
-                .disabled(viewModel.isStreaming)
             }
         }
     }

@@ -682,14 +682,14 @@ final class AgentStreamClientTests: XCTestCase {
     }
 
     @MainActor
-    func testAgentChatViewModelSubmitEligibilityTrimsWhitespaceAndStreaming() {
+    func testAgentChatViewModelSubmitEligibilityTrimsWhitespaceButAllowsStreamingQueue() {
         let model = AgentChatViewModel()
 
         XCTAssertFalse(model.canSubmit("   \n  "))
         XCTAssertTrue(model.canSubmit("如何正确测量腰围?"))
 
         model.isStreaming = true
-        XCTAssertFalse(model.canSubmit("如何正确测量腰围?"))
+        XCTAssertTrue(model.canSubmit("如何正确测量腰围?"))
     }
 
     @MainActor
@@ -810,6 +810,58 @@ final class AgentStreamClientTests: XCTestCase {
         XCTAssertEqual(model.lastCompletionStatus, "complete")
         XCTAssertEqual(model.lastModel, "commercial/Claude-Opus-4.7")
         XCTAssertEqual(model.lastSourcesUsed, ["系统知识库"])
+    }
+
+    @MainActor
+    func testAgentChatViewModelQueuesSecondSubmitWithoutCancellingCurrentStream() async {
+        let firstBox = StreamContinuationBox()
+        let secondBox = StreamContinuationBox()
+        let service = SequencedAgentStreamService(streams: [
+            AsyncThrowingStream<AgentStreamEvent, Error> { continuation in
+                firstBox.continuation = continuation
+            },
+            AsyncThrowingStream<AgentStreamEvent, Error> { continuation in
+                secondBox.continuation = continuation
+            },
+        ])
+        let model = AgentChatViewModel(streamService: service)
+
+        model.submit("第一条")
+        await Task.yield()
+        firstBox.continuation?.yield(.start(conversationID: 77))
+        await Task.yield()
+
+        XCTAssertTrue(model.isStreaming)
+        XCTAssertTrue(model.canSubmit("第二条"))
+
+        model.submit("第二条")
+
+        XCTAssertEqual(model.messages.map(\.role), [.user, .assistant, .user, .assistant])
+        XCTAssertEqual(model.messages[2].content, "第二条")
+        XCTAssertEqual(model.messages[3].content, "小巴处理中，已加入队列。")
+        XCTAssertEqual(service.messages, ["第一条"])
+
+        firstBox.continuation?.yield(.token("第一条回答"))
+        firstBox.continuation?.yield(.done(conversationID: 77, messageID: 88, completionStatus: "complete", model: nil, sourcesUsed: [], toolsUsed: [], elapsedMs: nil, llmRounds: nil))
+        firstBox.continuation?.finish()
+
+        for _ in 0..<20 where service.messages.count < 2 {
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+
+        XCTAssertEqual(service.messages, ["第一条", "第二条"])
+        XCTAssertEqual(model.queuedTurnCount, 0)
+
+        secondBox.continuation?.yield(.token("第二条回答"))
+        secondBox.continuation?.yield(.done(conversationID: 77, messageID: 89, completionStatus: "complete", model: nil, sourcesUsed: [], toolsUsed: [], elapsedMs: nil, llmRounds: nil))
+        secondBox.continuation?.finish()
+
+        for _ in 0..<20 where model.isStreaming {
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+
+        XCTAssertEqual(model.messages.last?.content, "第二条回答")
+        XCTAssertFalse(model.isStreaming)
     }
 
     @MainActor
