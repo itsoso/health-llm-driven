@@ -1,31 +1,38 @@
 import { act, renderHook, waitFor } from '@testing-library/react-native';
-import Voice from '@react-native-voice/voice';
 import { useRealtimeDictation } from '../useRealtimeDictation';
 
-const mockVoiceStart = jest.fn().mockResolvedValue(undefined);
-const mockVoiceStop = jest.fn().mockResolvedValue(undefined);
-const mockVoiceCancel = jest.fn().mockResolvedValue(undefined);
-const mockVoiceDestroy = jest.fn().mockResolvedValue(undefined);
-const mockVoiceRemoveAllListeners = jest.fn();
-const mockVoiceIsAvailable = jest.fn().mockResolvedValue(1);
 const mockSetAudioModeAsync = jest.fn().mockResolvedValue(undefined);
+const mockRequestPerm = jest.fn().mockResolvedValue({ granted: true });
+const mockPrepare = jest.fn().mockResolvedValue(undefined);
+const mockRecord = jest.fn();
+const mockStop = jest.fn().mockResolvedValue(undefined);
+const mockTranscribe = jest.fn().mockResolvedValue({
+  text: '记录今天喝水 500 毫升',
+  provider: 'dashscope_qwen_asr',
+  model: 'qwen3-asr-flash',
+  durationMs: 1560,
+  confidence: 'high',
+  empty: false,
+});
 const mockEmitClientEvent = jest.fn().mockResolvedValue(undefined);
 const mockDurationBucket = jest.fn().mockReturnValue('1_3s');
 
-jest.mock('@react-native-voice/voice', () => ({
-  __esModule: true,
-  default: {
-    start: (...args: any[]) => mockVoiceStart(...args),
-    stop: (...args: any[]) => mockVoiceStop(...args),
-    cancel: (...args: any[]) => mockVoiceCancel(...args),
-    destroy: (...args: any[]) => mockVoiceDestroy(...args),
-    isAvailable: (...args: any[]) => mockVoiceIsAvailable(...args),
-    removeAllListeners: (...args: any[]) => mockVoiceRemoveAllListeners(...args),
-  },
-}));
+const recorder = {
+  prepareToRecordAsync: (...args: any[]) => mockPrepare(...args),
+  record: (...args: any[]) => mockRecord(...args),
+  stop: (...args: any[]) => mockStop(...args),
+  uri: 'file:///tmp/realtime.m4a',
+};
 
 jest.mock('expo-audio', () => ({
+  useAudioRecorder: () => recorder,
+  RecordingPresets: { HIGH_QUALITY: {} },
   setAudioModeAsync: (...args: any[]) => mockSetAudioModeAsync(...args),
+  requestRecordingPermissionsAsync: (...args: any[]) => mockRequestPerm(...args),
+}));
+
+jest.mock('../../services/transcribe', () => ({
+  transcribeAudioDetailed: (...args: any[]) => mockTranscribe(...args),
 }));
 
 jest.mock('../../services/clientEvents', () => ({
@@ -33,321 +40,94 @@ jest.mock('../../services/clientEvents', () => ({
   durationBucket: (...args: any[]) => mockDurationBucket(...args),
 }));
 
-const mockedVoice = Voice as any;
+function releasedRecordingSession(): boolean {
+  return mockSetAudioModeAsync.mock.calls.some(
+    ([mode]) => mode && mode.allowsRecording === false,
+  );
+}
 
 describe('useRealtimeDictation', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockVoiceIsAvailable.mockResolvedValue(1);
-    mockedVoice.onSpeechPartialResults = undefined;
-    mockedVoice.onSpeechResults = undefined;
-    mockedVoice.onSpeechRecognized = undefined;
-    mockedVoice.onSpeechEnd = undefined;
-    mockedVoice.onSpeechError = undefined;
-  });
-
-  it('starts native speech recognition in recording audio mode', async () => {
-    const { result } = renderHook(() => useRealtimeDictation({ onTranscript: jest.fn() }));
-
-    await act(async () => {
-      await result.current.startDictation();
-    });
-
-    expect(mockSetAudioModeAsync).toHaveBeenCalledWith(
-      expect.objectContaining({ allowsRecording: true }),
-    );
-    expect(mockVoiceStart).toHaveBeenCalledWith('zh-CN');
-    expect(result.current.isDictating).toBe(true);
-  });
-
-  it('cancels a pending native start so a second mic tap cannot re-enable listening', async () => {
-    let resolveAvailability!: (value: number) => void;
-    mockVoiceIsAvailable.mockReturnValueOnce(new Promise<number>((resolve) => {
-      resolveAvailability = resolve;
-    }));
-    const { result } = renderHook(() => useRealtimeDictation({ onTranscript: jest.fn() }));
-
-    let started: boolean | undefined;
-    act(() => {
-      void result.current.startDictation().then(value => { started = value; });
-    });
-    await act(async () => {
-      await result.current.stopDictation();
-      resolveAvailability(1);
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    expect(started).toBe(false);
-    expect(mockVoiceStart).not.toHaveBeenCalled();
-    expect(result.current.isDictating).toBe(false);
-    expect(mockEmitClientEvent).toHaveBeenCalledWith('voice_input_terminal', {
-      phase: 'cancelled',
-      duration_bucket: '1_3s',
-      action_type: 'dictation',
-      error_code: 'start_cancelled',
-    });
-  });
-
-  it('does not enter realtime dictation when native speech recognition is unavailable', async () => {
-    mockVoiceIsAvailable.mockResolvedValueOnce(0);
-    const { result } = renderHook(() => useRealtimeDictation({ onTranscript: jest.fn() }));
-
-    await act(async () => {
-      await result.current.startDictation();
-    });
-
-    expect(mockVoiceIsAvailable).toHaveBeenCalled();
-    expect(mockVoiceStart).not.toHaveBeenCalled();
-    expect(result.current.isDictating).toBe(false);
-    expect(result.current.error).toBe('当前设备不可用语音识别');
-    expect(mockEmitClientEvent).toHaveBeenCalledWith('voice_input_terminal', {
-      phase: 'failed',
-      duration_bucket: '1_3s',
-      action_type: 'dictation',
-      error_code: 'speech_recognition_unavailable',
-    });
-  });
-
-  it('emits partial speech results as realtime composer text', async () => {
-    const onTranscript = jest.fn();
-    const { result } = renderHook(() => useRealtimeDictation({ onTranscript }));
-
-    await act(async () => {
-      await result.current.startDictation();
-    });
-    act(() => {
-      mockedVoice.onSpeechPartialResults({ value: ['记录今天喝水 500 毫升'] });
-    });
-
-    expect(onTranscript).toHaveBeenCalledWith('记录今天喝水 500 毫升');
-  });
-
-  it('uses the longest result when final speech text arrives after a partial', async () => {
-    const onTranscript = jest.fn();
-    const { result } = renderHook(() => useRealtimeDictation({ onTranscript }));
-
-    await act(async () => {
-      await result.current.startDictation();
-    });
-    act(() => {
-      mockedVoice.onSpeechPartialResults({ value: ['记录今天'] });
-      mockedVoice.onSpeechResults({ value: ['记录今天喝水 500 毫升'] });
-    });
-
-    expect(onTranscript).toHaveBeenLastCalledWith('记录今天喝水 500 毫升');
-  });
-
-  it('treats a shorter final result as the authoritative native correction', async () => {
-    const onTranscript = jest.fn();
-    const { result } = renderHook(() => useRealtimeDictation({ onTranscript }));
-
-    await act(async () => {
-      await result.current.startDictation();
-    });
-    act(() => {
-      mockedVoice.onSpeechPartialResults({ value: ['吃了十五个鸡蛋'] });
-      mockedVoice.onSpeechResults({ value: ['吃了五个鸡蛋'] });
-    });
-
-    expect(onTranscript).toHaveBeenLastCalledWith('吃了五个鸡蛋');
-  });
-
-  it('stops recognition and releases the recording audio session', async () => {
-    const { result } = renderHook(() => useRealtimeDictation({ onTranscript: jest.fn() }));
-
-    await act(async () => {
-      await result.current.startDictation();
-    });
-    mockSetAudioModeAsync.mockClear();
-    await act(async () => {
-      await result.current.stopDictation();
-    });
-
-    expect(mockVoiceStop).toHaveBeenCalled();
-    expect(mockSetAudioModeAsync).toHaveBeenCalledWith(
-      expect.objectContaining({ allowsRecording: false }),
-    );
-    await waitFor(() => expect(result.current.isDictating).toBe(false));
-    expect(mockEmitClientEvent).toHaveBeenCalledWith('voice_input_terminal', {
-      phase: 'completed',
-      duration_bucket: '1_3s',
-      action_type: 'dictation',
-    });
-  });
-
-  it('emits content-free ASR quality metadata when realtime dictation stops', async () => {
-    const { result } = renderHook(() => useRealtimeDictation({ onTranscript: jest.fn() }));
-
-    await act(async () => {
-      await result.current.startDictation();
-    });
-    act(() => {
-      mockedVoice.onSpeechResults({ value: ['记录今天喝水 500 毫升'] });
-    });
-    await act(async () => {
-      await result.current.stopDictation();
-    });
-
-    expect(mockEmitClientEvent).toHaveBeenCalledWith('voice_asr_terminal', {
-      phase: 'completed',
-      duration_bucket: '1_3s',
-      action_type: 'dictation',
-      provider: 'native_realtime',
-      confidence: 'medium',
+    mockRequestPerm.mockResolvedValue({ granted: true });
+    mockPrepare.mockResolvedValue(undefined);
+    mockStop.mockResolvedValue(undefined);
+    mockTranscribe.mockResolvedValue({
+      text: '记录今天喝水 500 毫升',
+      provider: 'dashscope_qwen_asr',
+      model: 'qwen3-asr-flash',
+      durationMs: 1560,
+      confidence: 'high',
       empty: false,
     });
   });
 
-  it('keeps the final native transcript delivered while stop is completing', async () => {
-    const onTranscript = jest.fn();
-    let resolveStop!: () => void;
-    mockVoiceStop.mockImplementationOnce(() => new Promise<void>((resolve) => {
-      resolveStop = resolve;
-    }));
-    const { result } = renderHook(() => useRealtimeDictation({ onTranscript }));
-
-    await act(async () => {
-      await result.current.startDictation();
-    });
-    let finalTranscript: string | undefined;
-    let stopPromise!: Promise<string>;
-    act(() => {
-      stopPromise = result.current.stopDictation();
-      void stopPromise.then(value => { finalTranscript = value; });
-    });
-    await act(async () => {
-      mockedVoice.onSpeechResults({ value: ['停止前补齐的最终文字'] });
-      resolveStop();
-      await stopPromise;
-    });
-
-    expect(finalTranscript).toBe('停止前补齐的最终文字');
-    expect(onTranscript).toHaveBeenLastCalledWith('停止前补齐的最终文字');
-    expect(result.current.isDictating).toBe(false);
-  });
-
-  it('waits for the native final marker instead of submitting the first interim result', async () => {
-    const onTranscript = jest.fn();
-    const { result } = renderHook(() => useRealtimeDictation({ onTranscript }));
-
-    await act(async () => {
-      await result.current.startDictation();
-    });
-
-    let settled = false;
-    let finalTranscript = '';
-    let stopPromise!: Promise<string>;
-    act(() => {
-      stopPromise = result.current.stopDictation();
-      void stopPromise.then(value => {
-        settled = true;
-        finalTranscript = value;
-      });
-    });
-
-    await act(async () => {
-      mockedVoice.onSpeechResults({ value: ['先到达的中间结果'] });
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-    expect(settled).toBe(false);
-
-    await act(async () => {
-      mockedVoice.onSpeechResults({ value: ['补齐尾字后的最终结果'] });
-      mockedVoice.onSpeechRecognized({ isFinal: true });
-      await stopPromise;
-    });
-
-    expect(finalTranscript).toBe('补齐尾字后的最终结果');
-    expect(onTranscript).toHaveBeenLastCalledWith('补齐尾字后的最终结果');
-  });
-
-  it('accepts final speech results that arrive after native speech-end during stop', async () => {
-    const onTranscript = jest.fn();
-    const { result } = renderHook(() => useRealtimeDictation({ onTranscript }));
-
-    await act(async () => {
-      await result.current.startDictation();
-    });
-    let stopPromise!: Promise<string>;
-    act(() => {
-      stopPromise = result.current.stopDictation();
-      mockedVoice.onSpeechEnd();
-      mockedVoice.onSpeechResults({ value: ['语音结束事件之后到达的尾字'] });
-    });
-    let finalTranscript = '';
-    await act(async () => {
-      finalTranscript = await stopPromise;
-    });
-
-    expect(finalTranscript).toBe('语音结束事件之后到达的尾字');
-    expect(onTranscript).toHaveBeenLastCalledWith('语音结束事件之后到达的尾字');
-  });
-
-  it('keeps the final transcript when speech-end happens before submit stops dictation', async () => {
-    const onTranscript = jest.fn();
-    const { result } = renderHook(() => useRealtimeDictation({ onTranscript }));
-
-    await act(async () => {
-      await result.current.startDictation();
-    });
-    act(() => {
-      mockedVoice.onSpeechEnd();
-    });
-
-    let stopPromise!: Promise<string>;
-    act(() => {
-      stopPromise = result.current.stopDictation();
-      mockedVoice.onSpeechResults({ value: ['先结束后提交仍要保留的尾字'] });
-    });
-    let finalTranscript = '';
-    await act(async () => {
-      finalTranscript = await stopPromise;
-    });
-
-    expect(finalTranscript).toBe('先结束后提交仍要保留的尾字');
-    expect(onTranscript).toHaveBeenLastCalledWith('先结束后提交仍要保留的尾字');
-  });
-
-  it('stops a native recognizer that finishes starting after cancellation', async () => {
-    let resolveStart!: () => void;
-    mockVoiceStart.mockImplementationOnce(() => new Promise<void>((resolve) => {
-      resolveStart = resolve;
-    }));
-    const { result } = renderHook(() => useRealtimeDictation({ onTranscript: jest.fn() }));
-
-    let startResult: boolean | undefined;
-    act(() => {
-      void result.current.startDictation().then(value => { startResult = value; });
-    });
-    await waitFor(() => expect(mockVoiceStart).toHaveBeenCalled());
-    await act(async () => {
-      await result.current.cancelDictation();
-      resolveStart();
-      await Promise.resolve();
-    });
-
-    expect(startResult).toBe(false);
-    expect(mockVoiceStop).toHaveBeenCalled();
-    expect(result.current.isDictating).toBe(false);
-  });
-
-  it('cancels recognition and releases the recording audio session', async () => {
+  it('starts realtime dictation by recording local audio for cloud ASR', async () => {
     const { result } = renderHook(() => useRealtimeDictation({ onTranscript: jest.fn() }));
 
     await act(async () => {
       await result.current.startDictation();
     });
-    mockSetAudioModeAsync.mockClear();
-    await act(async () => {
-      await result.current.cancelDictation();
-    });
 
-    expect(mockVoiceCancel).toHaveBeenCalled();
+    expect(mockRequestPerm).toHaveBeenCalled();
     expect(mockSetAudioModeAsync).toHaveBeenCalledWith(
-      expect.objectContaining({ allowsRecording: false }),
+      expect.objectContaining({ allowsRecording: true }),
     );
+    expect(mockPrepare).toHaveBeenCalled();
+    expect(mockRecord).toHaveBeenCalled();
+    expect(result.current.isDictating).toBe(true);
+  });
+
+  it('stops recording, transcribes with DashScope ASR, and returns ASR metadata', async () => {
+    const onTranscript = jest.fn();
+    const { result } = renderHook(() => useRealtimeDictation({ onTranscript }));
+
+    await act(async () => {
+      await result.current.startDictation();
+    });
+    await act(async () => {
+      const text = await result.current.stopDictation();
+      expect(text).toBe('记录今天喝水 500 毫升');
+    });
+
+    expect(mockStop).toHaveBeenCalled();
+    expect(releasedRecordingSession()).toBe(true);
+    expect(mockTranscribe).toHaveBeenCalledWith('file:///tmp/realtime.m4a');
+    await waitFor(() => expect(onTranscript).toHaveBeenCalledWith(
+      '记录今天喝水 500 毫升',
+      expect.objectContaining({
+        provider: 'dashscope_qwen_asr',
+        model: 'qwen3-asr-flash',
+      }),
+    ));
+    expect(mockEmitClientEvent).toHaveBeenCalledWith('voice_asr_terminal', {
+      phase: 'completed',
+      duration_bucket: '1_3s',
+      action_type: 'dictation',
+      provider: 'dashscope_qwen_asr',
+      confidence: 'high',
+      empty: false,
+    });
+    expect(mockEmitClientEvent).toHaveBeenCalledWith('voice_input_terminal', {
+      phase: 'completed',
+      duration_bucket: '1_3s',
+      action_type: 'dictation',
+    });
+  });
+
+  it('does not transcribe after realtime dictation is cancelled', async () => {
+    const { result } = renderHook(() => useRealtimeDictation({ onTranscript: jest.fn() }));
+
+    await act(async () => {
+      await result.current.startDictation();
+    });
+    await act(async () => {
+      await result.current.cancelDictation();
+    });
+
+    expect(mockStop).toHaveBeenCalled();
+    expect(mockTranscribe).not.toHaveBeenCalled();
+    expect(releasedRecordingSession()).toBe(true);
     expect(result.current.isDictating).toBe(false);
     expect(mockEmitClientEvent).toHaveBeenCalledWith('voice_input_terminal', {
       phase: 'cancelled',
@@ -356,50 +136,26 @@ describe('useRealtimeDictation', () => {
     });
   });
 
-  it('notifies the controller after native speech ends and audio is released', async () => {
-    const onEnd = jest.fn();
-    const { result } = renderHook(() => useRealtimeDictation({ onTranscript: jest.fn(), onEnd }));
+  it('fails before recording when microphone permission is denied', async () => {
+    const onError = jest.fn();
+    mockRequestPerm.mockResolvedValueOnce({ granted: false });
+    const { result } = renderHook(() => useRealtimeDictation({ onTranscript: jest.fn(), onError }));
 
+    let started = true;
     await act(async () => {
-      await result.current.startDictation();
-    });
-    mockSetAudioModeAsync.mockClear();
-    act(() => {
-      mockedVoice.onSpeechEnd();
+      started = await result.current.startDictation();
     });
 
-    await waitFor(() => expect(onEnd).toHaveBeenCalled());
-    expect(mockSetAudioModeAsync).toHaveBeenCalledWith(
-      expect.objectContaining({ allowsRecording: false }),
-    );
-    expect(mockEmitClientEvent).toHaveBeenCalledWith('voice_input_terminal', {
-      phase: 'completed',
-      duration_bucket: '1_3s',
-      action_type: 'dictation',
-    });
-  });
-
-  it('releases the audio session when speech recognition fails', async () => {
-    const { result } = renderHook(() => useRealtimeDictation({ onTranscript: jest.fn() }));
-
-    await act(async () => {
-      await result.current.startDictation();
-    });
-    mockSetAudioModeAsync.mockClear();
-    act(() => {
-      mockedVoice.onSpeechError({ error: { message: 'speech denied' } });
-    });
-
-    expect(mockSetAudioModeAsync).toHaveBeenCalledWith(
-      expect.objectContaining({ allowsRecording: false }),
-    );
-    expect(result.current.error).toBe('speech denied');
-    expect(result.current.isDictating).toBe(false);
+    expect(started).toBe(false);
+    expect(mockPrepare).not.toHaveBeenCalled();
+    expect(mockTranscribe).not.toHaveBeenCalled();
+    expect(result.current.error).toBe('需要麦克风权限才能实时听写');
+    expect(onError).toHaveBeenCalledWith('需要麦克风权限才能实时听写');
     expect(mockEmitClientEvent).toHaveBeenCalledWith('voice_input_terminal', {
       phase: 'failed',
       duration_bucket: '1_3s',
       action_type: 'dictation',
-      error_code: 'speech_recognition_failed',
+      error_code: 'microphone_permission_denied',
     });
   });
 });

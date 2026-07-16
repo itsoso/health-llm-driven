@@ -690,19 +690,36 @@ describe('ChatInputBar', () => {
       await Promise.resolve();
     });
     act(() => {
-      latestRealtimeDictationOptions.onTranscript('记录今天喝水 500 毫升');
+      latestRealtimeDictationOptions.onTranscript('记录今天喝水 500 毫升', {
+        provider: 'dashscope_qwen_asr',
+        model: 'qwen3-asr-flash',
+        durationMs: 1560,
+        confidence: 'high',
+      });
     });
     await act(async () => {
       fireEvent.press(getByLabelText('发送消息'));
       await Promise.resolve();
+      await Promise.resolve();
     });
 
     await waitFor(() => {
+      const [, , options] = onSend.mock.calls[0];
       expect(onSend).toHaveBeenCalledWith(
         '记录今天喝水 500ml',
         null,
         expect.objectContaining({ channel: 'voice', extraContext: expect.any(String) }),
       );
+      const context = JSON.parse(options.extraContext);
+      expect(context.voice_draft).toMatchObject({
+        source: 'realtime_mic',
+        raw: '记录今天喝水 500 毫升',
+        normalized: '记录今天喝水 500ml',
+        confidence: 'high',
+        asr_provider: 'dashscope_qwen_asr',
+        asr_model: 'qwen3-asr-flash',
+        asr_duration_ms: 1560,
+      });
     });
   });
 

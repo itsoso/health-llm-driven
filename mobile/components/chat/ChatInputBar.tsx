@@ -46,6 +46,7 @@ import {
   type VoiceDraft,
   type VoiceInputSource,
 } from '../../services/voiceDraft';
+import type { TranscribeAudioResult } from '../../services/transcribe';
 
 const CANCEL_THRESHOLD = 80;
 const VOICE_SLIDE_THRESHOLD = 88;
@@ -185,6 +186,7 @@ export default function ChatInputBar({
   const voiceCommitModeRef = useRef<'send' | 'text'>('send');
   const realtimeBaseInputRef = useRef('');
   const realtimeInputEditedRef = useRef(false);
+  const realtimeAsrResultRef = useRef<TranscribeAudioResult | undefined>(undefined);
   const inputChannelRef = useRef<'typed' | 'voice'>('typed');
   const composerRef = useRef(composer);
   const stopDictationRef = useRef<() => Promise<string>>(async () => '');
@@ -267,8 +269,23 @@ export default function ChatInputBar({
     setTimeout(() => textInputRef.current?.focus(), 30);
   }, []);
 
-  const applyVoiceTranscript = useCallback((source: VoiceInputSource, rawTranscript: string) => {
-    const draft = buildVoiceDraft({ source, rawTranscript });
+  const applyVoiceTranscript = useCallback((
+    source: VoiceInputSource,
+    rawTranscript: string,
+    asr?: TranscribeAudioResult,
+  ) => {
+    const draft = buildVoiceDraft({
+      source,
+      rawTranscript,
+      asr: asr
+        ? {
+          provider: asr.provider,
+          model: asr.model,
+          durationMs: asr.durationMs,
+          confidence: asr.confidence,
+        }
+        : undefined,
+    });
     voiceDraftRef.current = draft;
     inputChannelRef.current = 'voice';
     setInput(draft.normalizedText);
@@ -301,7 +318,7 @@ export default function ChatInputBar({
         if (!text && finalTranscript) {
           const base = realtimeBaseInputRef.current.trim();
           const raw = base ? `${base} ${finalTranscript}` : finalTranscript;
-          voiceDraftForSend = applyVoiceTranscript('realtime_mic', raw);
+          voiceDraftForSend = applyVoiceTranscript('realtime_mic', raw, realtimeAsrResultRef.current);
           msg = voiceDraftForSend.normalizedText;
         }
       } else if (phase === 'hold_starting' || phase === 'hold_recording') {
@@ -379,6 +396,7 @@ export default function ChatInputBar({
     setInput('');
     inputChannelRef.current = 'typed';
     voiceDraftRef.current = null;
+    realtimeAsrResultRef.current = undefined;
     pendingPhotoContextRef.current = null;
     releaseImagesAfterSend();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -394,13 +412,22 @@ export default function ChatInputBar({
     } catch (e) {
       if (__DEV__) console.warn('[ChatInputBar] sent draft cleanup failed:', e);
     }
-  }, [agentMode, input, pendingImages, onSend, releaseImagesAfterSend, restoreVoiceTranscriptDraft]);
+  }, [
+    agentMode,
+    applyVoiceTranscript,
+    input,
+    pendingImages,
+    onSend,
+    releaseImagesAfterSend,
+    restoreVoiceTranscriptDraft,
+  ]);
 
-  const handleRealtimeTranscript = useCallback((text: string) => {
+  const handleRealtimeTranscript = useCallback((text: string, asr?: TranscribeAudioResult) => {
     if (realtimeInputEditedRef.current) return;
     const clean = text.trim();
     const base = realtimeBaseInputRef.current.trim();
-    applyVoiceTranscript('realtime_mic', base ? `${base} ${clean}` : clean);
+    realtimeAsrResultRef.current = asr;
+    applyVoiceTranscript('realtime_mic', base ? `${base} ${clean}` : clean, asr);
   }, [applyVoiceTranscript]);
 
   const realtimeDictation = useRealtimeDictation({
@@ -433,6 +460,7 @@ export default function ChatInputBar({
     }
     if (!canStartDictation(state)) return;
     realtimeInputEditedRef.current = false;
+    realtimeAsrResultRef.current = undefined;
     realtimeBaseInputRef.current = input.trim();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     dispatchComposer({ type: 'dictation_start' });

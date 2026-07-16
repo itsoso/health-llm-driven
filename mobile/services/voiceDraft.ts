@@ -58,7 +58,7 @@ export function buildVoiceDraft(args: {
     rawTranscript,
     normalizedText,
     confidence: args.asr?.confidence ?? estimateVoiceDraftConfidence(normalizedText),
-    asrProvider: args.asr?.provider || (args.source === 'realtime_mic' ? 'native_realtime' : 'cloud_asr'),
+    asrProvider: args.asr?.provider || 'cloud_asr',
     ...(args.asr?.model ? { asrModel: args.asr.model } : {}),
     ...(asrDurationMs !== undefined ? { asrDurationMs } : {}),
     state: args.state ?? 'editable',

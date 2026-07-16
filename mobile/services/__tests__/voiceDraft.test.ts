@@ -44,7 +44,7 @@ describe('voiceDraft', () => {
         raw: '机场贵宾厅吃了番茄鸡蛋面',
         normalized: '机场贵宾厅吃了番茄鸡蛋面',
         confidence: 'medium',
-        asr_provider: 'native_realtime',
+        asr_provider: 'cloud_asr',
       },
       instruction: expect.stringContaining('优先按 normalized 理解'),
     });
