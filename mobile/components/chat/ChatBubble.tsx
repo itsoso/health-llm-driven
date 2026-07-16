@@ -1287,6 +1287,11 @@ interface StructuredHealthSummary {
   advice: string[];
 }
 
+interface ParsedTodayAdvice {
+  items: string[];
+  consumedLineIndexes: Set<number>;
+}
+
 function splitMarkdownTableRow(line: string): string[] {
   return line
     .trim()
@@ -1323,21 +1328,7 @@ function parseStructuredHealthSummary(text: string): StructuredHealthSummary | n
     break;
   }
 
-  const advice: string[] = [];
-  const adviceStart = lines.findIndex(line => /今日建议|建议/.test(line));
-  if (adviceStart >= 0) {
-    for (const line of lines.slice(adviceStart + 1)) {
-      if (/^\s*\|/.test(line)) continue;        // 跳过表格行
-      const cleaned = cleanAdviceMarkdown(line);
-      if (!cleaned) {
-        if (advice.length > 0) break;
-        continue;
-      }
-      if (!isMeaningfulAdvice(cleaned)) continue;
-      advice.push(cleaned);
-      if (advice.length >= 3) break;
-    }
-  }
+  const advice = parseTodayAdvice(lines).items;
 
   if (metrics.length === 0 && advice.length === 0) return null;
   return { metrics, advice };
@@ -1376,6 +1367,129 @@ function cleanAdviceMarkdown(line: string): string {
     .trim();
 }
 
+function normalizeAdviceHeader(line: string): string {
+  return line
+    .trim()
+    .replace(/^#{1,6}\s*/, '')
+    .replace(/^>\s*/, '')
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/__(.+?)__/g, '$1')
+    .replace(/^[📌💡✅🌿✨]\uFE0F?\s*/u, '')
+    .replace(/[：:]\s*$/, '')
+    .trim();
+}
+
+function isTodayAdviceHeader(line: string): boolean {
+  return /^(?:今日|今天)(?:建议|行动)$/.test(normalizeAdviceHeader(line));
+}
+
+function isSectionTitleAdvice(rawLine: string, cleaned: string): boolean {
+  const normalized = cleaned
+    .replace(/^[^\u3400-\u9FFFA-Za-z0-9]*/u, '')
+    .trim();
+  if (/^#{1,6}\s*/.test(rawLine.trim())) return true;
+  if (/^[一二三四五六七八九十]+[、.．)]/.test(normalized)) return true;
+  if (normalized.length <= 28 && /(?:状态|概况|清单|总结|分析|说明|注意事项|方案|安排|原则|策略|重点)$/.test(normalized)) {
+    return true;
+  }
+  return false;
+}
+
+function isMedicationAdvice(value: string): boolean {
+  const medicationTerm = /药|服用|处方|剂量|加量|减量|胶囊|注射|胰岛素|喷剂|滴剂|补剂|补充剂|保健品|维生素|益生菌|鱼油|叶酸/i;
+  const medicationDose = /\d+(?:\.\d+)?\s*(?:mg|毫克|iu|单位)/i;
+  return medicationTerm.test(value) || medicationDose.test(value);
+}
+
+function isBounded(value: string | undefined, min: number, max: number): boolean {
+  if (!value) return false;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= min && parsed <= max;
+}
+
+function isSafeHydrationAction(value: string): boolean {
+  const match = value.match(
+    /^(?:饮水未达标[，,]\s*)?(?:(?:今天|今日|今晚|上午|下午|早上|中午|睡前|起床后|饭后|餐后)\s*)?(?:先|优先|记得|请)?(?:补充|补水|喝水|饮水)\s*(?:约\s*)?(\d{2,4})\s*(?:ml|毫升)$/i,
+  );
+  return isBounded(match?.[1], 100, 500);
+}
+
+function isSafeMovementAction(value: string): boolean {
+  const match = value.match(
+    /^(?:(?:今天|今日|今晚|上午|下午|饭后|餐后)\s*)?(?:先|优先|只做|安排)?\s*(?:轻松|低强度)?(?:步行|散步|走路|拉伸|轻活动|恢复活动)\s*(?:约\s*)?(\d+)\s*(分钟|步)$/,
+  );
+  if (!match) return false;
+  return match[2] === '分钟'
+    ? isBounded(match[1], 5, 60)
+    : isBounded(match[1], 100, 5000);
+}
+
+function isSafeSleepAction(value: string): boolean {
+  const match = value.match(
+    /^(?:今天|今日|今晚)\s*(?:提前\s*)?(\d{1,2})(?::(\d{2})|点(半)?)\s*(?:前)?(?:上床|睡觉|休息)$/,
+  );
+  if (!match) return false;
+  const hour = Number(match[1]);
+  const minute = match[2] ? Number(match[2]) : match[3] ? 30 : 0;
+  return hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59;
+}
+
+function isSafeScreenCutoffAction(value: string): boolean {
+  const match = value.match(
+    /^(?:睡前|今晚睡前)\s*(\d+)\s*分钟(?:停止|暂停)(?:看|使用)?(?:手机|屏幕|电子设备)$/,
+  );
+  return isBounded(match?.[1], 10, 180);
+}
+
+function isSafeMeasurementAction(value: string): boolean {
+  return /^(?:今天|今日|今晚|明早|起床后)\s*(?:记录|测量|监测)\s*(?:体重|腰围|血压|血糖|症状|饮水|睡眠)(?:\s*(?:一次|1次))?$/.test(value)
+    || /^(?:记录|测量|监测)\s*(?:体重|腰围|血压|血糖|症状|饮水|睡眠)\s*(?:一次|1次)$/.test(value);
+}
+
+function isSafeCareContactAction(value: string): boolean {
+  return /^(?:今天|今日|本周)\s*(?:预约|联系|咨询)\s*(?:医生|门诊|科室|体检|复查)$/.test(value);
+}
+
+function isExecutableTodayAdvice(value: string): boolean {
+  if (value.length > 96 || /[：:]\s*$/.test(value) || isMedicationAdvice(value)) return false;
+  const normalized = value.replace(/^[✅⚠️❌🌿✨]\uFE0F?\s*/u, '').trim();
+  return isSafeHydrationAction(normalized)
+    || isSafeMovementAction(normalized)
+    || /^(?:今天|今日|今晚)\s*(?:先|优先)?\s*(?:暂停|停止)高强度(?:训练|运动)[，,]\s*(?:优先)?(?:睡眠|休息|轻活动|恢复活动)(?:与(?:睡眠|休息|轻活动|恢复活动))*$/.test(normalized)
+    || isSafeSleepAction(normalized)
+    || isSafeScreenCutoffAction(normalized)
+    || isSafeMeasurementAction(normalized)
+    || isSafeCareContactAction(normalized);
+}
+
+function parseTodayAdvice(lines: string[]): ParsedTodayAdvice {
+  const headerIndex = lines.findIndex(isTodayAdviceHeader);
+  if (headerIndex < 0) return { items: [], consumedLineIndexes: new Set() };
+
+  const items: string[] = [];
+  const consumedLineIndexes = new Set<number>([headerIndex]);
+  for (let index = headerIndex + 1; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (/^\s*\|/.test(line)) continue;
+    const cleaned = cleanAdviceMarkdown(line);
+    if (!cleaned) {
+      continue;
+    }
+    if (isSectionTitleAdvice(line, cleaned)) {
+      return { items: [], consumedLineIndexes: new Set() };
+    }
+    if (!isMeaningfulAdvice(cleaned) || !isExecutableTodayAdvice(cleaned)) {
+      return { items: [], consumedLineIndexes: new Set() };
+    }
+    if (items.length >= 3) return { items: [], consumedLineIndexes: new Set() };
+    items.push(cleaned);
+    consumedLineIndexes.add(index);
+  }
+
+  if (items.length === 0) return { items: [], consumedLineIndexes: new Set() };
+  return { items, consumedLineIndexes };
+}
+
 function isMetricTableStart(lines: string[], index: number): boolean {
   const header = splitMarkdownTableRow(lines[index]);
   const divider = lines[index + 1]?.trim() ?? '';
@@ -1388,11 +1502,13 @@ function stripStructuredHealthSummary(text: string): string {
   const lines = text.split('\n');
   const kept: string[] = [];
   let skipTable = false;
-  let skipAdvice = false;
+  const adviceLineIndexes = parseTodayAdvice(lines).consumedLineIndexes;
 
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i];
     const trimmed = line.trim();
+
+    if (adviceLineIndexes.has(i)) continue;
 
     if (isMetricTableStart(lines, i)) {
       skipTable = true;
@@ -1402,19 +1518,6 @@ function stripStructuredHealthSummary(text: string): string {
     if (skipTable) {
       if (trimmed.startsWith('|')) continue;
       skipTable = false;
-    }
-
-    if (/今日建议|建议/.test(trimmed)) {
-      skipAdvice = true;
-      continue;
-    }
-    if (skipAdvice) {
-      if (!trimmed) {
-        skipAdvice = false;
-        continue;
-      }
-      if (/^(?:[-*]|\d+[.)、])\s*/.test(trimmed)) continue;
-      skipAdvice = false;
     }
 
     kept.push(line);
@@ -1509,7 +1612,6 @@ function AssistantConclusion({ text }: { text: string }) {
   return (
     <View testID="assistant-conclusion" style={summaryStyles.conclusion}>
       <View style={summaryStyles.conclusionLabelRow}>
-        <View style={summaryStyles.conclusionDot} />
         <Text style={summaryStyles.conclusionLabel}>小巴结论</Text>
       </View>
       <Text style={summaryStyles.conclusionText}>{text}</Text>
@@ -1544,7 +1646,6 @@ function StructuredSummaryCard({
     <View style={summaryStyles.card}>
       {showEyebrow ? (
         <View style={summaryStyles.conclusionLabelRow}>
-          <View style={summaryStyles.conclusionDot} />
           <Text style={summaryStyles.conclusionLabel}>小巴结论</Text>
         </View>
       ) : null}
@@ -1627,27 +1728,20 @@ const summaryStyles = StyleSheet.create({
   conclusionLabelRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 7,
-  },
-  conclusionDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: C.green500,
   },
   conclusionLabel: {
     fontFamily: revaFonts.sans,
-    fontSize: 12,
-    lineHeight: 16,
-    fontWeight: '700',
+    fontSize: 13,
+    lineHeight: 19,
+    fontWeight: '500',
     letterSpacing: 0,
-    color: C.green600,
+    color: C.ink2,
   } as TextStyle,
   conclusionText: {
     fontFamily: revaFonts.sans,
-    fontSize: 16,
-    lineHeight: 25,
-    fontWeight: '500',
+    fontSize: 15,
+    lineHeight: 23,
+    fontWeight: '400',
     letterSpacing: 0,
     color: C.ink1,
   } as TextStyle,

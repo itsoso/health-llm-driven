@@ -169,7 +169,7 @@ describe('ChatBubble structured summary', () => {
 
 📌 今日建议：
 1. 饮水未达标，上午补充 500ml
-2. 基因提示：MTHFR TT 影响叶酸代谢
+2. 饭后散步 10 分钟
 `);
 
     expect(getByText('小巴结论')).toBeTruthy();
@@ -179,6 +179,7 @@ describe('ChatBubble structured summary', () => {
     expect(getByText('89 分')).toBeTruthy();
     expect(getByText('今天只做')).toBeTruthy();
     expect(getByText('饮水未达标，上午补充 500ml')).toBeTruthy();
+    expect(getByText('饭后散步 10 分钟')).toBeTruthy();
     expect(queryByText(/\| 指标 \| 数值 \| 状态 \|/)).toBeNull();
   });
 
@@ -202,17 +203,187 @@ describe('ChatBubble structured summary', () => {
   it('strips markdown heading/list/bold markers from today advice items', () => {
     const { getByText, queryByText } = renderBubble(`
 📌 今日建议：
-1. ### ✅ 你已有的（继续保持）
-2. **补水** 上午 500ml
+1. ### ✅ 饭后散步 10 分钟
+2. **上午补水 500ml**
 `);
 
     expect(getByText('今天只做')).toBeTruthy();
     // "### " heading marker stripped
-    expect(getByText('✅ 你已有的（继续保持）')).toBeTruthy();
+    expect(getByText('✅ 饭后散步 10 分钟')).toBeTruthy();
     // "**bold**" emphasis stripped
-    expect(getByText('补水 上午 500ml')).toBeTruthy();
+    expect(getByText('上午补水 500ml')).toBeTruthy();
     // no literal markdown markers leak into the card
     expect(queryByText(/###/)).toBeNull();
+  });
+
+  it('does not mistake an informational mention of advice for a today action', () => {
+    const { queryByTestId, getByText } = renderBubble(`
+根据你最近的记录，为你整理了当前的用药方案、身体状况及关键建议与注意事项。
+
+### 💊 一、近期主要用药清单
+
+加斯清：按医生处方使用。
+
+### 🏥 二、当前主要病症与身体状态
+
+胃肠道修复中，需要继续观察。
+`);
+
+    expect(queryByTestId('assistant-action-card')).toBeNull();
+    expect(getByText(/当前主要病症与身体状态/)).toBeTruthy();
+  });
+
+  it('does not turn a section title under today advice into an executable action', () => {
+    const { queryByTestId, getByText } = renderBubble(`
+📌 今日建议：
+
+### 二、当前主要病症与身体状态
+
+胃部仍在修复期，继续观察即可。
+`);
+
+    expect(queryByTestId('assistant-action-card')).toBeNull();
+    expect(getByText(/当前主要病症与身体状态/)).toBeTruthy();
+  });
+
+  it.each([
+    '今晚将处方药增加为两片并继续服用',
+    '今晚吃阿司匹林一片',
+    '二甲双胍改为两片',
+    '补充辅酶Q10一粒',
+  ])('never turns free-form medication guidance into an add-to-today action: %s', (medicationAdvice) => {
+    const { queryByTestId, getByText } = renderBubble(`
+📌 今日建议：
+1. ${medicationAdvice}
+`);
+
+    expect(queryByTestId('assistant-action-card')).toBeNull();
+    expect(getByText(new RegExp(medicationAdvice))).toBeTruthy();
+  });
+
+  it('does not turn a short noun plan into an executable action', () => {
+    const { queryByTestId, getByText } = renderBubble(`
+📌 今日建议：
+1. 睡眠与训练计划
+`);
+
+    expect(queryByTestId('assistant-action-card')).toBeNull();
+    expect(getByText(/睡眠与训练计划/)).toBeTruthy();
+  });
+
+  it.each([
+    '今天补水 9999ml',
+    '睡前补水 1500ml',
+    '饭后散步 999999分钟',
+    '今晚低强度走路 180分钟',
+    '今晚低强度走路 30000步',
+    '今晚 99点前睡觉',
+    '晚餐增加盐 500克',
+    '晚餐增加蛋白质 500克',
+    '下一餐多吃主食 500g',
+    '下一餐多吃糖 500g',
+  ])('rejects unsafe or impossible action values: %s', unsafeAdvice => {
+    const { queryByTestId, getByText } = renderBubble(`
+📌 今日建议：
+1. ${unsafeAdvice}
+`);
+
+    expect(queryByTestId('assistant-action-card')).toBeNull();
+    expect(getByText(new RegExp(unsafeAdvice))).toBeTruthy();
+  });
+
+  it.each([
+    '睡前休息',
+    '记录症状',
+    '监测血压',
+  ])('does not treat an unscoped action-like section title as a today action: %s', sectionTitle => {
+    const { queryByTestId, getByText } = renderBubble(`
+📌 今日建议：
+${sectionTitle}
+睡眠情况需要持续观察。
+`);
+
+    expect(queryByTestId('assistant-action-card')).toBeNull();
+    expect(getByText(new RegExp(sectionTitle))).toBeTruthy();
+  });
+
+  it('preserves the complete markdown section when safe and medication advice are mixed', () => {
+    const { queryByTestId, getByText } = renderBubble(`
+📌 今日建议：
+1. 饭后散步 10 分钟
+2. 今晚服用阿司匹林一片
+`);
+
+    expect(queryByTestId('assistant-action-card')).toBeNull();
+    expect(getByText(/今日建议/)).toBeTruthy();
+    expect(getByText(/饭后散步 10 分钟/)).toBeTruthy();
+    expect(getByText(/今晚服用阿司匹林一片/)).toBeTruthy();
+  });
+
+  it('does not let a blank line bypass complete section validation', () => {
+    const { queryByTestId, getByText } = renderBubble(`
+📌 今日建议：
+1. 饭后散步 10 分钟
+
+2. 今晚服用阿司匹林一片
+`);
+
+    expect(queryByTestId('assistant-action-card')).toBeNull();
+    expect(getByText(/今日建议/)).toBeTruthy();
+    expect(getByText(/饭后散步 10 分钟/)).toBeTruthy();
+    expect(getByText(/今晚服用阿司匹林一片/)).toBeTruthy();
+  });
+
+  it('accepts a time-scoped low-risk 今日行动 header', () => {
+    const { getByTestId, getByText } = renderBubble(`
+📌 今日行动：
+1. 饭后散步 10 分钟
+`);
+
+    expect(getByTestId('assistant-action-card')).toBeTruthy();
+    expect(getByText('饭后散步 10 分钟')).toBeTruthy();
+  });
+
+  it('does not infer a today action from a bare 行动 header', () => {
+    const { queryByTestId, getByText } = renderBubble(`
+行动：
+1. 饭后散步 10 分钟
+`);
+
+    expect(queryByTestId('assistant-action-card')).toBeNull();
+    expect(getByText(/饭后散步 10 分钟/)).toBeTruthy();
+  });
+
+  it('keeps standalone markdown headings out of the action affordance', () => {
+    const { queryByTestId, getByText } = renderBubble(`
+📌 今日建议：
+
+### 睡眠与训练安排
+
+今晚根据恢复状态再决定训练内容。
+`);
+
+    expect(queryByTestId('assistant-action-card')).toBeNull();
+    expect(getByText(/睡眠与训练安排/)).toBeTruthy();
+  });
+
+  it('preserves rejected advice markdown when metric extraction still runs', () => {
+    const { queryByTestId, getByText, queryByText } = renderBubble(`
+| 指标 | 数值 | 状态 |
+| --- | --- | --- |
+| 睡眠 | 75 分 | 一般 |
+
+📌 今日建议：
+
+### 用药与监测安排
+
+继续按医生处方执行，任何剂量调整先咨询医生。
+`);
+
+    expect(queryByTestId('assistant-action-card')).toBeNull();
+    expect(getByText(/用药与监测安排/)).toBeTruthy();
+    expect(getByText(/任何剂量调整先咨询医生/)).toBeTruthy();
+    expect(queryByText(/\| 指标 \| 数值 \| 状态 \|/)).toBeNull();
   });
 
   it('uses a calm light action surface instead of a dark hero card', () => {
@@ -231,12 +402,24 @@ describe('ChatBubble structured summary', () => {
   it('keeps the assistant conclusion at a calm reading scale', () => {
     const { getByText } = renderBubble('今晚先补水 300ml，再散步 10 分钟。');
 
-    const conclusionStyle = StyleSheet.flatten(
-      getByText('今晚先补水 300ml，再散步 10 分钟。').props.style,
-    );
-    expect(conclusionStyle.fontSize).toBeLessThanOrEqual(16);
-    expect(conclusionStyle.lineHeight).toBeGreaterThanOrEqual(24);
-    expect(Number(conclusionStyle.fontWeight)).toBeLessThanOrEqual(600);
+    const label = getByText('小巴结论');
+    const conclusion = getByText('今晚先补水 300ml，再散步 10 分钟。');
+    const labelStyle = StyleSheet.flatten(label.props.style);
+    const conclusionStyle = StyleSheet.flatten(conclusion.props.style);
+    expect(labelStyle).toMatchObject({
+      fontSize: 13,
+      lineHeight: 19,
+      fontWeight: '500',
+      color: '#5C6660',
+    });
+    expect(conclusionStyle).toMatchObject({
+      fontSize: 15,
+      lineHeight: 23,
+      fontWeight: '400',
+    });
+    expect(label.props.allowFontScaling).not.toBe(false);
+    expect(conclusion.props.allowFontScaling).not.toBe(false);
+    expect(conclusion.props.numberOfLines).toBeUndefined();
   });
 
   it('does not render an action card for placeholder advice', () => {
