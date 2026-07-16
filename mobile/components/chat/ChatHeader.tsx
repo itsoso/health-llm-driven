@@ -61,37 +61,40 @@ export default function ChatHeader({
           onSelect={onSelectModel}
         />
         <View style={styles.headerRight}>
-          <TouchableOpacity
-            onPress={onNewChat}
-            hitSlop={8}
-            style={styles.headerAction}
-            activeOpacity={0.55}
-            accessibilityLabel="新建对话"
-            accessibilityRole="button"
-          >
-            <Ionicons name="create-outline" size={19} color={C.ink2} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={onOpenHistory}
-            hitSlop={8}
-            style={styles.headerAction}
-            activeOpacity={0.55}
-            accessibilityLabel="对话历史"
-            accessibilityHint="查看和切换历史对话"
-            accessibilityRole="button"
-          >
-            <Ionicons name="time-outline" size={19} color={C.ink2} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={onOpenToolMenu}
-            hitSlop={8}
-            style={styles.headerAction}
-            activeOpacity={0.55}
-            accessibilityLabel="更多会诊操作"
-            accessibilityRole="button"
-          >
-            <Ionicons name="ellipsis-horizontal" size={19} color={C.ink2} />
-          </TouchableOpacity>
+          <View testID="chat-header-action-group" style={styles.headerActionGroup}>
+            <TouchableOpacity
+              onPress={onNewChat}
+              hitSlop={8}
+              style={styles.headerAction}
+              activeOpacity={0.55}
+              accessibilityLabel="新建对话"
+              accessibilityRole="button"
+            >
+              <Ionicons name="pencil-outline" size={18} color={C.ink2} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={onOpenHistory}
+              hitSlop={8}
+              style={styles.headerAction}
+              activeOpacity={0.55}
+              accessibilityLabel="对话历史"
+              accessibilityHint="查看和切换历史对话"
+              accessibilityRole="button"
+            >
+              <Ionicons name="time-outline" size={18} color={C.ink2} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={onOpenToolMenu}
+              hitSlop={8}
+              style={styles.headerAction}
+              activeOpacity={0.55}
+              accessibilityLabel="更多会诊操作"
+              accessibilityHint="打开设置与更多操作"
+              accessibilityRole="button"
+            >
+              <Ionicons name="settings-outline" size={18} color={C.ink2} />
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
     </View>
@@ -117,14 +120,23 @@ const styles = StyleSheet.create({
   headerRight: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 2,
+    marginLeft: 'auto',
   },
-  // 三个动作统一为无边框图标钮(founder:加号/历史两个按钮不好看 → 去掉不一致的
-  // 绿色底 + 描边圆圈,归一为极简同款,靠 hitSlop 保证触达)。
+  // 三个一级动作收拢为同一组,让右上角像一个完整的控制器而不是三个散落的按钮。
+  headerActionGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    padding: 3,
+    backgroundColor: C.paper2,
+    borderRadius: revaSpacing.s6,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
+  },
   headerAction: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },

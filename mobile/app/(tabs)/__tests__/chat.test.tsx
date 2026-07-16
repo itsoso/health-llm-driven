@@ -486,9 +486,9 @@ describe('ChatScreen', () => {
     };
 
     expect(styleOf(getByTestId('chat-header-surface')).minHeight).toBeLessThanOrEqual(40);
-    expect(styleOf(getByLabelText('新建对话')).width).toBeLessThanOrEqual(28);
-    expect(styleOf(getByLabelText('对话历史')).width).toBeLessThanOrEqual(28);
-    expect(styleOf(getByLabelText('更多会诊操作')).width).toBeLessThanOrEqual(28);
+    expect(styleOf(getByLabelText('新建对话')).width).toBe(32);
+    expect(styleOf(getByLabelText('对话历史')).width).toBe(32);
+    expect(styleOf(getByLabelText('更多会诊操作')).width).toBe(32);
     expect(minHitSlop(getByLabelText('新建对话'))).toBeGreaterThanOrEqual(8);
     expect(minHitSlop(getByLabelText('对话历史'))).toBeGreaterThanOrEqual(8);
     expect(minHitSlop(getByLabelText('更多会诊操作'))).toBeGreaterThanOrEqual(8);
@@ -582,9 +582,9 @@ describe('ChatScreen', () => {
     const headerSurface = StyleSheet.flatten(getByTestId('chat-header-surface').props.style);
     expect(headerSurface.minHeight).toBeLessThanOrEqual(42);
     expect(headerSurface.paddingVertical).toBeLessThanOrEqual(2);
-    expect(StyleSheet.flatten(getByLabelText('新建对话').props.style).width).toBeLessThanOrEqual(30);
-    expect(StyleSheet.flatten(getByLabelText('对话历史').props.style).width).toBeLessThanOrEqual(30);
-    expect(StyleSheet.flatten(getByLabelText('更多会诊操作').props.style).width).toBeLessThanOrEqual(30);
+    expect(StyleSheet.flatten(getByLabelText('新建对话').props.style).width).toBe(32);
+    expect(StyleSheet.flatten(getByLabelText('对话历史').props.style).width).toBe(32);
+    expect(StyleSheet.flatten(getByLabelText('更多会诊操作').props.style).width).toBe(32);
   });
 
   it('starts a new chat from a first-level header action', async () => {
