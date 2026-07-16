@@ -148,3 +148,74 @@ def test_client_events_stats_computes_diet_capture_latency_and_failures(db):
         "wechat": {"attempts": 2, "completed": 1, "with_photo": 1, "failures": 1},
         "xiaohongshu": {"attempts": 1, "completed": 1, "with_photo": 1, "failures": 0},
     }
+
+
+def test_app_update_release_health_observes_until_minimum_sample():
+    from app.services.observability_service import app_update_release_health
+
+    result = app_update_release_health(
+        launches=19,
+        emergency_launches=19,
+        terminal_attempts=2,
+        terminal_failures=2,
+    )
+
+    assert result["status"] == "observe"
+    assert result["sample_sufficient"] is False
+    assert result["emergency_rate_pct"] == 100.0
+    assert result["terminal_failure_rate_pct"] == 100.0
+    assert result["reasons"] == ["发布启动样本不足 20，继续观察"]
+
+
+def test_app_update_release_health_marks_stable_sample_healthy():
+    from app.services.observability_service import app_update_release_health
+
+    result = app_update_release_health(
+        launches=20,
+        emergency_launches=0,
+        terminal_attempts=20,
+        terminal_failures=1,
+    )
+
+    assert result["status"] == "healthy"
+    assert result["sample_sufficient"] is True
+    assert result["emergency_rate_pct"] == 0.0
+    assert result["terminal_failure_rate_pct"] == 5.0
+    assert result["reasons"] == ["发布启动与更新终态均在阈值内"]
+
+
+def test_app_update_release_health_pauses_on_emergency_or_terminal_failures():
+    from app.services.observability_service import app_update_release_health
+
+    emergency_result = app_update_release_health(
+        launches=20,
+        emergency_launches=1,
+        terminal_attempts=20,
+        terminal_failures=0,
+    )
+    failure_result = app_update_release_health(
+        launches=20,
+        emergency_launches=0,
+        terminal_attempts=20,
+        terminal_failures=2,
+    )
+
+    assert emergency_result["status"] == "pause_rollout"
+    assert emergency_result["reasons"] == ["紧急启动率 5.0% 达到暂停阈值 5.0%"]
+    assert failure_result["status"] == "pause_rollout"
+    assert failure_result["reasons"] == ["更新失败率 10.0% 达到暂停阈值 10.0%"]
+
+
+def test_app_update_release_health_keeps_missing_terminal_denominator_null():
+    from app.services.observability_service import app_update_release_health
+
+    result = app_update_release_health(
+        launches=20,
+        emergency_launches=0,
+        terminal_attempts=0,
+        terminal_failures=0,
+    )
+
+    assert result["status"] == "healthy"
+    assert result["terminal_failure_rate_pct"] is None
+    assert result["reasons"] == ["发布启动与更新终态均在阈值内"]

@@ -185,6 +185,18 @@ def test_actionable_suggestions_shape_on_empty(db):
     assert all(isinstance(s, str) for s in lines)
 
 
+def test_actionable_suggestions_flags_release_health_pause(db):
+    report = collect_dashboard(db, days=7, user_id=None, include_journalctl=False)
+    report["client_events"]["app_update"]["release_health"] = {
+        "status": "pause_rollout",
+        "reasons": ["紧急启动率 5.0% 达到暂停阈值 5.0%"],
+    }
+
+    lines = actionable_suggestions(report)
+
+    assert lines[0] == "🔴 发布健康门建议暂停放量：紧急启动率 5.0% 达到暂停阈值 5.0%"
+
+
 # ----------------------------------------------------------------
 # 有数据: 聚合 SQL 必须和朴素 Python 逻辑等价
 # ----------------------------------------------------------------

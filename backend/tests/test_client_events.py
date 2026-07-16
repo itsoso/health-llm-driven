@@ -106,6 +106,22 @@ def test_client_events_stats_empty(db):
             "failure_rate_pct": None,
             "by_phase": {},
             "by_launch_source": {},
+            "release_health": {
+                "status": "observe",
+                "sample_sufficient": False,
+                "thresholds": {
+                    "min_launches": 20,
+                    "emergency_rate_pct": 5.0,
+                    "terminal_failure_rate_pct": 10.0,
+                },
+                "launches": 0,
+                "emergency_launches": 0,
+                "emergency_rate_pct": None,
+                "terminal_attempts": 0,
+                "terminal_failures": 0,
+                "terminal_failure_rate_pct": None,
+                "reasons": ["发布启动样本不足 20，继续观察"],
+            },
         },
         "starter_ctr": {},
         "home_cold_start_ms": {"n": 0, "p50": None, "p95": None, "incomplete": 0},
@@ -238,6 +254,22 @@ def test_client_events_stats_counts_app_update_outcomes(db, auth_user_and_header
         "failure_rate_pct": 50.0,
         "by_phase": {"downloading": 1, "ready": 1, "failed": 1},
         "by_launch_source": {"ota": 1},
+        "release_health": {
+            "status": "observe",
+            "sample_sufficient": False,
+            "thresholds": {
+                "min_launches": 20,
+                "emergency_rate_pct": 5.0,
+                "terminal_failure_rate_pct": 10.0,
+            },
+            "launches": 1,
+            "emergency_launches": 0,
+            "emergency_rate_pct": 0.0,
+            "terminal_attempts": 2,
+            "terminal_failures": 1,
+            "terminal_failure_rate_pct": 50.0,
+            "reasons": ["发布启动样本不足 20，继续观察"],
+        },
     }
 
 

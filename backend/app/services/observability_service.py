@@ -380,6 +380,91 @@ def _percentile(values: list, pct: float) -> Optional[float]:
     return float(s[lo]) + (float(s[hi]) - float(s[lo])) * (k - lo)
 
 
+APP_UPDATE_HEALTH_MIN_LAUNCHES = 20
+APP_UPDATE_HEALTH_EMERGENCY_RATE_PCT = 5.0
+APP_UPDATE_HEALTH_TERMINAL_FAILURE_RATE_PCT = 10.0
+
+
+def app_update_release_health(
+    *,
+    launches: int,
+    emergency_launches: int,
+    terminal_attempts: int,
+    terminal_failures: int,
+) -> dict:
+    """判定发布后的客户端更新健康度.
+
+    这是一个只读、可解释的运维信号，不执行暂停、回滚或 Remote Config 写入。
+    启动样本作为最低分母；更新终态没有数据时保留 ``None``，避免伪造成功率。
+    """
+    safe_launches = max(0, int(launches))
+    safe_emergency = min(safe_launches, max(0, int(emergency_launches)))
+    safe_terminal_attempts = max(0, int(terminal_attempts))
+    safe_terminal_failures = min(
+        safe_terminal_attempts,
+        max(0, int(terminal_failures)),
+    )
+    emergency_rate = (
+        round(100.0 * safe_emergency / safe_launches, 1)
+        if safe_launches else None
+    )
+    terminal_failure_rate = (
+        round(100.0 * safe_terminal_failures / safe_terminal_attempts, 1)
+        if safe_terminal_attempts else None
+    )
+    sample_sufficient = safe_launches >= APP_UPDATE_HEALTH_MIN_LAUNCHES
+
+    reasons: list[str] = []
+    if not sample_sufficient:
+        reasons.append(
+            f"发布启动样本不足 {APP_UPDATE_HEALTH_MIN_LAUNCHES}，继续观察"
+        )
+    else:
+        if (
+            emergency_rate is not None
+            and emergency_rate >= APP_UPDATE_HEALTH_EMERGENCY_RATE_PCT
+        ):
+            reasons.append(
+                f"紧急启动率 {emergency_rate:.1f}% 达到暂停阈值 "
+                f"{APP_UPDATE_HEALTH_EMERGENCY_RATE_PCT:.1f}%"
+            )
+        if (
+            terminal_failure_rate is not None
+            and terminal_failure_rate >= APP_UPDATE_HEALTH_TERMINAL_FAILURE_RATE_PCT
+        ):
+            reasons.append(
+                f"更新失败率 {terminal_failure_rate:.1f}% 达到暂停阈值 "
+                f"{APP_UPDATE_HEALTH_TERMINAL_FAILURE_RATE_PCT:.1f}%"
+            )
+        if not reasons:
+            reasons.append("发布启动与更新终态均在阈值内")
+
+    has_pause_reason = any("达到暂停阈值" in reason for reason in reasons)
+    if not sample_sufficient:
+        status = "observe"
+    elif has_pause_reason:
+        status = "pause_rollout"
+    else:
+        status = "healthy"
+
+    return {
+        "status": status,
+        "sample_sufficient": sample_sufficient,
+        "thresholds": {
+            "min_launches": APP_UPDATE_HEALTH_MIN_LAUNCHES,
+            "emergency_rate_pct": APP_UPDATE_HEALTH_EMERGENCY_RATE_PCT,
+            "terminal_failure_rate_pct": APP_UPDATE_HEALTH_TERMINAL_FAILURE_RATE_PCT,
+        },
+        "launches": safe_launches,
+        "emergency_launches": safe_emergency,
+        "emergency_rate_pct": emergency_rate,
+        "terminal_attempts": safe_terminal_attempts,
+        "terminal_failures": safe_terminal_failures,
+        "terminal_failure_rate_pct": terminal_failure_rate,
+        "reasons": reasons,
+    }
+
+
 def client_events_stats(db: Session, since: datetime, user_id: Optional[int]) -> dict:
     """Aggregate UI telemetry.
 
@@ -541,11 +626,12 @@ def client_events_stats(db: Session, since: datetime, user_id: Optional[int]) ->
         ),
     })
     diet_capture_ms["share"]["by_target"] = diet_share_by_target
+    app_update_launches = sum(app_update_by_launch_source.values())
     return {
         "total": sum(by_event.values()),
         "by_event": by_event,
         "app_update": {
-            "launches": sum(app_update_by_launch_source.values()),
+            "launches": app_update_launches,
             "checks": app_update_checks,
             "ready": app_update_ready,
             "failures": app_update_failures,
@@ -555,6 +641,12 @@ def client_events_stats(db: Session, since: datetime, user_id: Optional[int]) ->
             ),
             "by_phase": app_update_by_phase,
             "by_launch_source": app_update_by_launch_source,
+            "release_health": app_update_release_health(
+                launches=app_update_launches,
+                emergency_launches=app_update_by_launch_source.get("emergency", 0),
+                terminal_attempts=app_update_checks,
+                terminal_failures=app_update_failures,
+            ),
         },
         "starter_ctr": starter_ctr,
         "home_cold_start_ms": {
@@ -632,7 +724,7 @@ def actionable_suggestions(report: dict) -> list[str]:
     if cj["total_entries"] > 0 and len(cj["by_creator"]) == 1:
         only_creator = next(iter(cj["by_creator"].keys()))
         if only_creator == "briefing_task":
-            out.append(f"🟡 Journal 只有 briefing_task 产 SOAP, orchestrator 对话没触发")
+            out.append("🟡 Journal 只有 briefing_task 产 SOAP, orchestrator 对话没触发")
 
     mk = report["memory_kg"]
     if mk["facts_total"] < 20 and mk["entities_total"] < 20:
@@ -675,6 +767,10 @@ def actionable_suggestions(report: dict) -> list[str]:
     # Task 9: client-event 行为率 — 判断 feature 是否真被用户看见 / 点击
     ce = report.get("client_events", {})
     by_ev = (ce or {}).get("by_event", {})
+    release_health = (ce or {}).get("app_update", {}).get("release_health", {})
+    if release_health.get("status") == "pause_rollout":
+        reasons = "；".join(release_health.get("reasons") or ["发布健康门命中暂停阈值"])
+        out.insert(0, f"🔴 发布健康门建议暂停放量：{reasons}")
 
     # reasoning 抽屉: 点击次数 / Safety 告警累计 (每条告警都显示"为什么?" 按钮)
     sg_total = report.get("safety_guardian", {}).get("total_alerts_raised", 0)
