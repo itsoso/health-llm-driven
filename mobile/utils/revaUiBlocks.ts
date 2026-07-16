@@ -54,6 +54,15 @@ function descriptorFromPayload(payload: string): ServerCardDescriptor | null {
     return table ? { type: 'metric_table', data: table } : null;
   }
 
+  // 汇总类卡 v1 · diet_daily_summary 同样用 `type` 键 + 顶层 `data`(非 component,
+  // 与 metric_table 一致的 reva-ui fence 契约)。data 直接透给 DietSummaryCardView。
+  if (block.type === 'diet_daily_summary') {
+    if (block.v !== 1) return null;
+    const data = block.data;
+    if (!data || typeof data !== 'object') return null;
+    return { type: 'diet_daily_summary', data };
+  }
+
   const component = typeof block.component === 'string' ? block.component : '';
   const type = REVA_UI_COMPONENT_TYPES[component];
   if (block.v !== 1 || !type) return null;

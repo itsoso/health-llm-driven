@@ -6793,12 +6793,17 @@ class AgentExecutor:
                 for _fn, _args, _res in genui_tool_calls:
                     # health_query(diet) 且 cap 开 → 结构化 diet_summary 卡(而非通用表)。
                     # 用与 metric_table 同一宽松 JSON 解析真源(剥截断尾注),两路不漂移。
+                    # dimension 归一化 .strip().lower() 与 metric_table dispatcher 对齐 ——
+                    # 弱模型吐 'Diet'/' diet '/'DIET' 时不会静默降级回通用表。
                     _is_diet = (
                         _fn == "health_query"
-                        and str((_args or {}).get("dimension") or "") == "diet"
+                        and str((_args or {}).get("dimension") or "").strip().lower() == "diet"
                     )
                     if _is_diet and genui_diet_summary_on:
                         _summary = load_tool_result_json(_res)
+                        # v1:只喂饮食汇总本身。water/weight_kg 暂不透传(read_daily_diet
+                        # 结果无此字段)→ 卡片按契约优雅降级(不显饮水条、蛋白只报克数);
+                        # 二者是后续增量(接今日饮水快照 + 用户体重),composer 侧已支持。
                         _desc = (
                             build_diet_daily_summary(_summary)
                             if isinstance(_summary, dict) else None

@@ -1062,3 +1062,42 @@ async def test_diet_kill_switch_off_falls_back_to_metric_table(db, auth_user_and
     rendered = _tokens(events)
     assert "diet_daily_summary" not in rendered
     assert '"type":"metric_table"' in rendered
+
+
+@pytest.mark.asyncio
+async def test_diet_cap_only_emits_diet_summary_card(db, auth_user_and_headers, monkeypatch):
+    """只声明 diet cap(无 table cap)→ diet 查询仍出结构化卡(证明 diet 路径不依赖 table cap)。"""
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    _wire(executor, monkeypatch)
+    captured: list = []
+    monkeypatch.setattr(executor, "_call_llm_stream", _diet_round_stream(captured))
+    monkeypatch.setattr(executor, "_execute_tool", _exec_returns(_diet_summary_result()))
+
+    events = await _run(executor, "我今天吃了啥",
+                        client_caps=[GENUI_DIET_SUMMARY_CAP], user_id=user.id)
+    rendered = _tokens(events)
+    assert '"type":"diet_daily_summary"' in rendered
+    assert '"type":"metric_table"' not in rendered
+    # 契约版本必须是整数 1(移动端 parser 校验 v===1;字符串 "v1" 会被静默丢弃)
+    assert '"v":1' in rendered and '"v":"v1"' not in rendered
+
+
+@pytest.mark.asyncio
+async def test_diet_cap_on_empty_meals_falls_through_no_card(db, auth_user_and_headers, monkeypatch):
+    """diet 结果无餐次 → build 返回 None → 不出结构化卡;落回 _table_calls 但空饮食也无表 →
+    纯散文(fail-open,既不出卡也不谎报)。"""
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    _wire(executor, monkeypatch)
+    captured: list = []
+    empty = json.dumps({"record_date": "2026-07-16", "total_calories": 0,
+                        "meals_count": 0, "meals": []}, ensure_ascii=False)
+    monkeypatch.setattr(executor, "_call_llm_stream", _diet_round_stream(captured))
+    monkeypatch.setattr(executor, "_execute_tool", _exec_returns(empty))
+
+    events = await _run(executor, "我今天吃了啥",
+                        client_caps=[GENUI_TABLE_CAP, GENUI_DIET_SUMMARY_CAP], user_id=user.id)
+    rendered = _tokens(events)
+    assert "结论：今天蛋白质" in rendered      # 叙事仍在
+    assert "reva-ui" not in rendered           # 无卡无表

@@ -12,11 +12,14 @@ calories/protein/carbs/fat · totals · water.current_ml/target_ml · observatio
 from __future__ import annotations
 
 import json
+import math
 from typing import Any, Optional
 
 DIET_SUMMARY_TYPE = "diet_daily_summary"
 GENUI_DIET_SUMMARY_CAP = "genui-diet-summary-v1"  # 客户端能力位(点亮门控)
-_VERSION = "v1"
+# reva-ui 信封版本 = 整数 1(与 metric_table/charts 同一契约;移动端 fence parser 校验 v===1)。
+# 注意:cap token 用 "genui-diet-summary-v1" 字符串,但**块内 v 是整数**,别混。
+_VERSION = 1
 
 # MealType.value → mobile 期望键(extra=加餐 → snack);未知 → snack。
 _MEAL_KEY = {
@@ -38,6 +41,10 @@ def _round(v: Any, nd: int = 1) -> Optional[float]:
         f = float(v)
     except (TypeError, ValueError):
         return None
+    # nan/inf → 视作缺值:int(round(nan)) 会抛(拖垮整回合所有卡),json.dumps 又会吐
+    # 非法的 NaN/Infinity token(移动端 JSON.parse 崩)。一律钳成 None 走缺值降级。
+    if not math.isfinite(f):
+        return None
     return int(round(f)) if nd == 0 else round(f, nd)
 
 
@@ -48,11 +55,13 @@ def _derive_observations(totals: dict, *, weight_kg: Optional[float] = None) -> 
     """
     obs: list[dict] = []
     # 健壮性(safety advisory):真实 DailyDietSummary 宏量非负,但入参负数/垃圾会渲染出
-    # 无意义串 → 一律钳到 ≥0;非数值视作缺值(None)。
+    # 无意义串 → 一律钳到 ≥0;非数值/nan/inf 视作缺值(None)。
     def _nn(x):
         try:
             f = float(x)
         except (TypeError, ValueError):
+            return None
+        if not math.isfinite(f):
             return None
         return max(0.0, f)
 
@@ -61,7 +70,10 @@ def _derive_observations(totals: dict, *, weight_kg: Optional[float] = None) -> 
     fat = _nn(totals.get("fat"))
     fiber = _nn(totals.get("fiber"))
 
-    if protein is not None:
+    # 关键:read_daily_diet 用 sum(r.x or 0),未记录的宏量汇总成 0(而非 None)——
+    # 0 无法区分"确实没吃"与"没记录"。为守 R4 factual,**只在值 > 0 时**才出观察,
+    # 绝不对一个可能仅是未登记的 0 断言"…不足"。(全为真实非负浮点,truthy 即 > 0。)
+    if protein:
         if weight_kg and weight_kg > 0:
             gkg = protein / weight_kg
             caution = gkg < _PROTEIN_GKG_LOW
@@ -74,7 +86,7 @@ def _derive_observations(totals: dict, *, weight_kg: Optional[float] = None) -> 
             obs.append({"severity": "normal", "label": "蛋白质",
                         "detail": f"全天 {protein:.0f}g。"})
 
-    if fat is not None and cal and cal > 0:
+    if fat and cal and cal > 0:
         pct = (fat * 9.0) / cal * 100.0
         caution = pct > _FAT_PCT_CAUTION
         obs.append({
@@ -83,7 +95,7 @@ def _derive_observations(totals: dict, *, weight_kg: Optional[float] = None) -> 
             "detail": f"全天 {fat:.0f}g,占总热量约 {pct:.0f}%。",
         })
 
-    if fiber is not None:
+    if fiber:
         caution = fiber < _FIBER_TARGET_G
         obs.append({
             "severity": "caution" if caution else "normal",

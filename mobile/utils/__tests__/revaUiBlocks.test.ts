@@ -209,4 +209,51 @@ describe('extractRevaUiBlocks', () => {
     expect(result.text).toBe('前言\n结尾');
     expect(result.cards).toEqual([]);
   });
+
+  // 汇总类卡 v1 · diet_daily_summary fence → 卡片。这是 7e261d795 缺失的跨端消费者测试:
+  // 后端只经 reva-ui fence 下发该卡,曾因 parser 无 diet 分支 + v 用字符串 "v1" 而 100% 静默丢弃。
+  it('turns a fenced reva-ui diet_daily_summary into a diet card descriptor (inner data)', () => {
+    const payload =
+      '{"type":"diet_daily_summary","v":1,"data":{"record_date":"2026-07-16",' +
+      '"meals":[{"meal_type":"breakfast","name":"早餐","detail":"山药小米粥·蒸蛋羹",' +
+      '"calories":400,"protein":23,"carbs":38,"fat":13},' +
+      '{"meal_type":"lunch","name":"午餐","detail":"三文鱼鸡肉餐",' +
+      '"calories":580,"protein":32,"carbs":28,"fat":36}],' +
+      '"totals":{"calories":980,"protein":55,"carbs":66,"fat":49,"fiber":3},' +
+      '"observations":[{"severity":"caution","label":"脂肪偏高","detail":"全天 49g,占总热量约 45%。"}]}}';
+    const result = extractRevaUiBlocks(`今天吃得不错:\n\n\`\`\`reva-ui\n${payload}\n\`\`\`\n\n仅供参考。`);
+
+    expect(result.text).toBe('今天吃得不错:\n\n仅供参考。');
+    expect(result.cards).toHaveLength(1);
+    expect(result.cards[0].type).toBe('diet_daily_summary');
+    // data 是 descriptor 的**内层 data**(非整块),逐字透给 DietSummaryCardView。
+    expect(result.cards[0].data).toEqual(
+      expect.objectContaining({
+        record_date: '2026-07-16',
+        meals: expect.arrayContaining([
+          expect.objectContaining({ meal_type: 'breakfast', detail: '山药小米粥·蒸蛋羹', calories: 400 }),
+        ]),
+        totals: expect.objectContaining({ calories: 980, fiber: 3 }),
+        observations: expect.arrayContaining([
+          expect.objectContaining({ severity: 'caution', label: '脂肪偏高' }),
+        ]),
+      }),
+    );
+  });
+
+  it('rejects a diet_daily_summary fence with string version "v1" (contract must be integer 1)', () => {
+    const result = extractRevaUiBlocks(
+      '前言\n```reva-ui\n{"type":"diet_daily_summary","v":"v1","data":{"meals":[{"meal_type":"lunch","name":"午餐"}]}}\n```\n结尾',
+    );
+    expect(result.text).toBe('前言\n结尾');
+    expect(result.cards).toEqual([]);
+  });
+
+  it('rejects a diet_daily_summary fence whose data is missing/non-object', () => {
+    const result = extractRevaUiBlocks(
+      '前言\n```reva-ui\n{"type":"diet_daily_summary","v":1}\n```\n结尾',
+    );
+    expect(result.text).toBe('前言\n结尾');
+    expect(result.cards).toEqual([]);
+  });
 });

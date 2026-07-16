@@ -68,7 +68,7 @@ def test_descriptor_golden_exact():
     )
     assert d == {
         "type": "diet_daily_summary",
-        "v": "v1",
+        "v": 1,
         "data": {
             "record_date": "2026-07-16",
             "meals": [
@@ -114,6 +114,43 @@ def test_observations_deterministic_and_factual():
     assert labels.get("蛋白质充足") == "normal"
 
 
+def test_zero_macros_emit_no_misleading_deficit_observation():
+    """read_daily_diet 用 sum(r.x or 0) → 未记录宏量汇总成 0(非 None)。0 不能断言
+    "不足"(分不清没吃 vs 没记录)→ 只在 > 0 时出观察,避免误报"膳食纤维不足 约 0g"。"""
+    s = {
+        "record_date": "2026-07-16",
+        "total_calories": 500, "total_protein": 0, "total_carbs": 60,
+        "total_fat": 0, "total_fiber": 0,
+        "meals": [{"meal_type": "lunch", "food_items": "白米饭", "calories": 500,
+                   "protein": 0, "carbs": 60, "fat": 0, "fiber": 0}],
+    }
+    obs = build_diet_daily_summary(s)["data"]["observations"]
+    labels = {o["label"] for o in obs}
+    assert "膳食纤维不足" not in labels        # fiber=0 → 不报不足
+    assert not (labels & {"蛋白质", "蛋白质偏低", "脂肪偏高", "脂肪适中"})  # 0 宏量不出观察
+    assert obs == []
+
+
+def test_nan_inf_macros_degrade_to_none_not_crash():
+    """宏量含 NaN/Infinity(不该出现,但 json.loads 接受这些 token)→ 钳成缺值,
+    绝不让 int(round(nan)) 抛错拖垮整回合,也不吐非法 JSON 崩移动端 parse。"""
+    s = {
+        "record_date": "2026-07-16",
+        "total_calories": float("nan"), "total_protein": float("inf"),
+        "total_carbs": 30, "total_fat": 20, "total_fiber": 5,
+        "meals": [{"meal_type": "lunch", "food_items": "x",
+                   "calories": float("nan"), "protein": float("inf"),
+                   "carbs": 30, "fat": 20, "fiber": 5}],
+    }
+    d = build_diet_daily_summary(s)  # 不抛
+    assert d is not None
+    block = render_diet_summary_block(d)
+    assert "NaN" not in block and "Infinity" not in block  # 合法 JSON
+    # 缺值宏量落 null(而非 NaN token)
+    assert d["data"]["totals"]["calories"] is None
+    assert d["data"]["meals"][0]["protein"] is None
+
+
 def test_no_weight_degrades_protein_to_grams_only():
     obs = build_diet_daily_summary(_summary())["data"]["observations"]
     prot = [o for o in obs if o["label"] == "蛋白质"]
@@ -154,3 +191,7 @@ def test_render_block_is_reva_ui_fence():
     assert block.startswith("```reva-ui\n")
     assert block.rstrip().endswith("```")
     assert '"type":"diet_daily_summary"' in block
+    # 信封版本必须是**整数** 1(移动端 fence parser 校验 v===1);曾误用字符串 "v1"
+    # 导致卡片在客户端被判 malformed 静默丢弃 —— 这条断言锁死跨端契约。
+    assert '"v":1' in block
+    assert '"v":"v1"' not in block

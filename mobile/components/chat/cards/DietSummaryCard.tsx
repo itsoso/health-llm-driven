@@ -1,9 +1,10 @@
 /**
  * DietSummaryCard — 「今日饮食汇总」结构化卡 (汇总类卡 v1, Reva 设计语言)。
  *
- * 后端在 done.cards / message.meta.cards 里下发
- *   {"type":"diet_daily_summary","data":{...}}
- * → renderServerCards → renderCard → 本卡渲染 (仅后端下发, match/build 恒 null)。
+ * 后端经 ```reva-ui fence 内联下发(与 metric_table 同一通道):
+ *   {"type":"diet_daily_summary","v":1,"data":{...}}
+ * → ChatBubble extractRevaUiBlocks(utils/revaUiBlocks.ts 有 diet 分支)→ renderCard
+ * → 本卡渲染 (仅后端下发, match/build 恒 null)。**v 是整数 1**,parser 校验 v===1。
  *
  * 视觉:2 行头(📋 + 标题 + 北京时间副行) → 餐次×宏量表(右列 mono tabular 右对齐)
  * → 全天合计(粗 + 顶发丝) → 关键观察(三步临床语义色) → 饮水进度(info 蓝条)。
