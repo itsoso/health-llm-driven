@@ -14,6 +14,7 @@ import {
   revaColors as C,
   revaRadii,
   revaShadows,
+  revaSpacing,
   revaFonts,
 } from '../../../constants/revaTheme';
 
@@ -69,17 +70,19 @@ const styles = StyleSheet.create({
   card: {
     borderRadius: revaRadii.lg,
     borderWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginVertical: 6,
+    // premium-feel:所有卡片共享此壳,内边距解压 +40% 竖向呼吸(12/10→16/14,
+    // marginV 6→8),裸数字换 revaSpacing token,对齐 4px 节奏。
+    paddingHorizontal: revaSpacing.s4,
+    paddingVertical: revaSpacing.s3 + 2,
+    marginVertical: revaSpacing.s2,
     minWidth: 240,
     ...revaShadows.sm,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    marginBottom: 8,
+    gap: revaSpacing.s2,
+    marginBottom: revaSpacing.s3,
   },
   badge: {
     paddingHorizontal: 6,

@@ -177,3 +177,29 @@ recovery. It should feel as trustworthy as a good clinic and as personal as a co
    and type classes (`.h1`, `.display`, `.data-label`) — don't hard‑code hexes.
 3. Pull UI from `ui_kits/mobile-app/` — components are cosmetic, modular, reusable.
 4. Numbers in mono, Chinese‑primary copy, three‑step semantics for any health state.
+
+---
+
+## 强制契约(Enforcement) — 规范只有被闸守住才产生约束
+
+> 2026-07-16 加固:premium-feel 审计发现"有 token、没约束"是移动端掉一档的根因
+> (~597 处裸 hex、67 处裸 fontFamily 绕过 token)。规范文档不产生约束——**闸才产生约束**。
+
+**单一真源(RN 侧):** `mobile/constants/revaTheme.ts` 是本 CSS 的忠实移植(colors/type/spacing/
+radii/shadows/motion)。字体经 `mobile/components/reva/useRevaFonts.ts` 加载(Manrope + IBM Plex
+Mono);字型 token 必须走 `revaFonts.sans/mono`,数字走 mono(tabular)。
+
+**三层贯彻:**
+1. **单一真源** — 颜色只用 `revaColors` / `theme` 语义 token;字型只用 `revaFonts`;间距只用 `revaSpacing`。
+2. **强制原语** — 文字走 `AppText`(variant),卡片走 `CardShell` / 卡片原语,不手写裸样式。屏 = 组合原语。
+3. **防漂移 CI 闸** — `mobile/scripts/check_design_tokens.js`(ratchet:存量债 grandfather 进 BASELINE,
+   **新增裸 hex / fontFamily → 退出非零**)。跑 `npm run design:check`(ratchet)/ `design:report`(列 top 违规)。
+   迁一批屏到原语后,用新计数**调低 BASELINE** 并提交——只减不增,与"加层不减层 / 只 TIGHTEN"同构。
+
+**内容层规则(不止视觉——审计发现的"工程味"泄漏):**
+- **一次事件一个确认**:一条记录不要用"正文 + 回执 + 卡片"三种表示叠着说(啰嗦=不精致)。留一个干净确认。
+- **不露原始 id**:UI 里不出现 `#671` 这种 DB 主键;要么人话化("已记入今日饮水"),要么不显示。
+- **透明化/meta 行默认收起**:模型名 / 轮次 / 耗时 / 分享入口是 power-user 信息,默认折叠(展开才看),别每轮挂一条灰噪声。
+- **数字即仪表**:健康数字一律 mono + tabular-nums,列对齐、不抖动。
+
+任何 agent(Claude/Codex/其他)在移动端建新屏 / 改样式,以上为**硬契约**:先读本节,产出走原语,过 `design:check`。
