@@ -60,7 +60,7 @@
 ## S5 · 实现
 
 - 分支：`main`
-- 代码提交：`5af4053a1`，已推送 `origin/main`
+- 代码提交：`5af4053a1`；并发提交以普通 merge 合入，最终生产主干为 `26fc7bb2d`，已推送 `origin/main`
 
 ## G3 · 测试闸
 
@@ -76,7 +76,7 @@
 
 ## G5 · 部署健康
 
-- `./deploy.sh -b -y` 完成；managed migration `20260716_210000_add_native_update_url` 已应用。
+- `./deploy.sh -b -y` 完成；managed migration `20260716_210000_add_native_update_url` 已应用，随后从最终主干 `26fc7bb2d` 再次部署并确认已跳过该 migration。
 - production `/api/v1/health` 返回 `healthy`，API/database/redis/celery 均正常；部署健康 `60/60 PASS`。
 - 远程 `information_schema` 已确认 `native_update_url` 列存在。
 - **裁决：PASS。**
