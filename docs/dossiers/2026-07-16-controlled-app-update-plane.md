@@ -55,7 +55,7 @@
 - [x] T3 OTA lifecycle telemetry
 - [x] T4 manifest 与 rollback command
 - [x] T5 本地测试、审计和发布前检查
-- [ ] T6 部署、OTA、上线验证
+- [x] T6 部署、OTA、上线验证
 
 ## S5 · 实现
 
@@ -98,4 +98,5 @@
 
 ## S8 · 后续未纳入本批
 
-- 自动 crash-loop 回滚、原生 App Store 强制升级页、自动灰度推进和跨端（Mac/Web）统一发布策略，进入下一期，不由本批 Remote Config 伪装实现。
+- 自动 crash-loop 回滚、自动灰度推进和跨端（Mac/Web）统一发布策略仍进入后续阶段。
+- 原生版本兼容门已由独立 dossier [`2026-07-16-native-release-compatibility-gate.md`](2026-07-16-native-release-compatibility-gate.md) 完成：策略能阻断不兼容 OTA，并在客户端显示原生升级提示。
