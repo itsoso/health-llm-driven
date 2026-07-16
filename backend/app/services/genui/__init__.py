@@ -31,6 +31,11 @@ from app.services.genui.table_builder import (
     METRIC_TABLE_TYPE,
     render_metric_table_block,
 )
+from app.services.genui.diet_summary import (
+    build_diet_daily_summary,
+    render_diet_summary_block,
+    DIET_SUMMARY_TYPE,
+)
 
 __all__ = [
     "build_line_chart",
@@ -52,5 +57,8 @@ __all__ = [
     "build_tables_from_tool_calls",
     "render_metric_table_block",
     "GENUI_TABLE_CAP",
+    "build_diet_daily_summary",
+    "render_diet_summary_block",
+    "DIET_SUMMARY_TYPE",
     "METRIC_TABLE_TYPE",
 ]

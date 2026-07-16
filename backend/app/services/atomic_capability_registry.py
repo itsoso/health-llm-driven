@@ -73,6 +73,22 @@ CAPABILITIES: tuple[AtomicCapability, ...] = (
         telemetry_events=("impression", "open"),
         execution="read_only_route_open",
     ),
+    AtomicCapability(
+        # 汇总类卡结构化 v1:今日饮食汇总(餐次记录 + 宏量合计 + 确定性派生观察 + 饮水)。
+        # data 形状 = genui.diet_summary.build_diet_daily_summary 的 descriptor.data,
+        # 与 mobile DietSummaryCard 契约对齐。观察确定性派生(factual、非诊断,R4);
+        # 唯一动作是 route.open(查看详细数据/明日计划)—— 只读,永不携带写路径。
+        id="diet_daily_summary",
+        version="v1",
+        card_type="diet_daily_summary",
+        first_class_objects=("DietRecord",),
+        surfaces=("mobile.chat",),
+        data_required_fields=("record_date", "meals", "totals"),
+        action_types=("route.open",),
+        safety_boundary="suggest_only",
+        telemetry_events=("impression", "open"),
+        execution="read_only_route_open",
+    ),
 )
 
 _CAPABILITY_BY_CARD_TYPE = {capability.card_type: capability for capability in CAPABILITIES}
