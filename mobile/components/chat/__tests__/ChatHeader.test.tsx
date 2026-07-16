@@ -64,13 +64,15 @@ describe('ChatHeader', () => {
     expect(groupStyle.flexDirection).toBe('row');
     expect(groupStyle.borderRadius).toBeGreaterThanOrEqual(16);
     expect(groupStyle.padding).toBeGreaterThanOrEqual(2);
+    expect(StyleSheet.flatten(getByLabelText('新建对话').props.style).backgroundColor).toBeTruthy();
+    expect(StyleSheet.flatten(getByLabelText('对话历史').props.style).borderWidth).toBeGreaterThan(0);
     expect(getByTestId('icon-pencil-outline')).toBeTruthy();
     expect(getByTestId('icon-time-outline')).toBeTruthy();
     expect(getByTestId('icon-settings-outline')).toBeTruthy();
 
-    expect(StyleSheet.flatten(getByLabelText('新建对话').props.style).width).toBe(32);
-    expect(StyleSheet.flatten(getByLabelText('对话历史').props.style).width).toBe(32);
-    expect(StyleSheet.flatten(getByLabelText('更多会诊操作').props.style).width).toBe(32);
+    expect(StyleSheet.flatten(getByLabelText('新建对话').props.style).width).toBe(42);
+    expect(StyleSheet.flatten(getByLabelText('对话历史').props.style).width).toBe(42);
+    expect(StyleSheet.flatten(getByLabelText('更多会诊操作').props.style).width).toBe(42);
 
     fireEvent.press(getByLabelText('更多会诊操作'));
     expect(onOpenToolMenu).toHaveBeenCalledTimes(1);

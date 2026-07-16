@@ -134,10 +134,13 @@ const styles = StyleSheet.create({
     borderColor: C.line,
   },
   headerAction: {
-    width: 32,
+    width: 42,
     height: 32,
     borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: C.surface2,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
   },
 });
