@@ -9,7 +9,6 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, router, useFocusEffect } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
 import { deleteConversation, getConversationsPage, updateConversationTitle } from '../../services/chat';
 import { useChatEngine, type UIMessage } from '../../hooks/useChatEngine';
 import ChatInputBar, { type ChatInputSendOptions } from '../../components/chat/ChatInputBar';
@@ -17,10 +16,7 @@ import ChatBubble from '../../components/chat/ChatBubble';
 import ConversationSheet from '../../components/chat/ConversationSheet';
 import ChatHeader from '../../components/chat/ChatHeader';
 import ChatTodayFocusCard from '../../components/chat/ChatTodayFocusCard';
-import {
-  buildTodayFocusModel,
-  type TodayFocusPrimary,
-} from '../../components/chat/todayFocus';
+import { buildTodayFocusModel } from '../../components/chat/todayFocus';
 import EmptyStateHome, {
   greetingForHour,
   formatMemoryOpenerText,
@@ -42,8 +38,6 @@ import { fetchMemoryOpener, type MemoryOpenerItem } from '../../services/memoryO
 import { updateLlmPreference, type ModelOption } from '../../services/llmPreference';
 import { recordCardAdherence, recordCardDecision } from '../../services/actionCards';
 import { useTodayTimeline } from '../../hooks/useTodayTimeline';
-import { getDailyOperatingPlan } from '../../services/dailyPlan';
-import { getTodayDynamicView } from '../../services/todayDynamicView';
 import {
   revaColors as C,
   revaRadii,
@@ -147,30 +141,13 @@ export default function ChatScreen() {
   } = chat;
   const flatListRef = useRef<FlatList>(null);
   const isNearBottom = useRef(true);
-  // 今日焦点：优先 dynamic Today / daily plan, 退化到 /timeline/today; 不伪造指标。
+  // 对话页只消费明确、及时的 timeline 状态；完整计划留在 Today surface。
   const todayTimeline = useTodayTimeline();
-  const todayDynamicViewQuery = useQuery({
-    queryKey: ['today-dynamic-view', 'mobile.today'],
-    queryFn: () => getTodayDynamicView({
-      trigger: 'open',
-      clientContext: { surface: 'mobile.chat', entry: 'today_focus' },
-    }),
-    staleTime: 30 * 1000,
-    retry: 1,
-  });
-  const dailyPlanQuery = useQuery({
-    queryKey: ['daily-plan', 'me'],
-    queryFn: getDailyOperatingPlan,
-    staleTime: 60 * 1000,
-    retry: 1,
-  });
   const todayFocusModel = useMemo(
     () => buildTodayFocusModel({
-      dynamicView: todayDynamicViewQuery.data,
-      dailyPlan: dailyPlanQuery.data,
       timeline: todayTimeline.data,
     }),
-    [dailyPlanQuery.data, todayDynamicViewQuery.data, todayTimeline.data],
+    [todayTimeline.data],
   );
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
@@ -190,7 +167,7 @@ export default function ChatScreen() {
   const [selectedMessageIds, setSelectedMessageIds] = useState<Set<string>>(new Set());
   const [sharing, setSharing] = useState(false);
   const [toolMenuVisible, setToolMenuVisible] = useState(false);
-  const [todayFocusHidden, setTodayFocusHidden] = useState(false);
+  const [dismissedTodayFocusKey, setDismissedTodayFocusKey] = useState<string | null>(null);
 
   const saveViewingImage = useCallback(async (uri: string) => {
     const source = buildChatImageSource(uri, authToken);
@@ -609,18 +586,6 @@ export default function ChatScreen() {
     void refreshCoachHomeState();
   }, [exitSelectionMode, newChat, refreshCoachHomeState]);
 
-  const handleTodayFocusExecute = useCallback((primary: TodayFocusPrimary) => {
-    const target = primary.deepLink || '/(tabs)/today';
-    router.navigate(target as any);
-  }, []);
-
-  const handleTodayFocusAsk = useCallback((primary: TodayFocusPrimary) => {
-    setInitialInput(`围绕「${primary.title}」帮我拆成今天可执行的一步，并说明依据。`);
-    setInitialInputKey(key => key + 1);
-    setContextBadge('今日重点');
-    setComposerFocusToken((n) => n + 1);
-  }, []);
-
   const handleOpenToday = useCallback(() => {
     router.navigate('/(tabs)/today');
   }, []);
@@ -747,9 +712,6 @@ export default function ChatScreen() {
     && message.content !== '(图片)'
     && (!message.imageUris || message.imageUris.length === 0)
   ));
-  const todayFocusVariant = messages.length === 0 && !keyboardVisible && !activeTurnVisible
-    ? 'full'
-    : 'compact';
   const turnStatus = activeTurnVisible
     ? {
         label: activeTurn.label || (
@@ -768,11 +730,9 @@ export default function ChatScreen() {
         ),
       }
     : undefined;
-  const todayFocusInitialLoading = Boolean(
-    todayDynamicViewQuery.isLoading
-    || dailyPlanQuery.isLoading
-    || todayTimeline.isLoading
-  );
+  const visibleTodayFocusModel = todayFocusModel.contextStrip?.key === dismissedTodayFocusKey
+    ? { ...todayFocusModel, contextStrip: null }
+    : todayFocusModel;
   const retryLastTextTurn = () => {
     if (!lastRetryableUserMessage || isStreaming) return;
     void sendMessage(lastRetryableUserMessage.content, null);
@@ -794,21 +754,15 @@ export default function ChatScreen() {
         onOpenToolMenu={() => setToolMenuVisible(true)}
       />
 
-      {todayFocusInitialLoading ? (
-        <ChatTodayFocusLoading />
-      ) : (
-        <ChatTodayFocusCard
-          model={todayFocusModel}
-          variant={todayFocusHidden ? 'launcher' : todayFocusVariant}
-          turnStatus={turnStatus}
-          onRetry={turnStatus?.retryable ? retryLastTextTurn : undefined}
-          onExecute={handleTodayFocusExecute}
-          onAsk={handleTodayFocusAsk}
-          onOpenToday={handleOpenToday}
-          onDismiss={() => setTodayFocusHidden(true)}
-          onRestore={() => setTodayFocusHidden(false)}
-        />
-      )}
+      <ChatTodayFocusCard
+        model={visibleTodayFocusModel}
+        turnStatus={turnStatus}
+        onRetry={turnStatus?.retryable ? retryLastTextTurn : undefined}
+        onOpenToday={handleOpenToday}
+        onDismiss={visibleTodayFocusModel.contextStrip
+          ? () => setDismissedTodayFocusKey(visibleTodayFocusModel.contextStrip?.key ?? null)
+          : undefined}
+      />
 
       <View style={{ flex: 1 }}>
         <FlatList
@@ -932,6 +886,14 @@ export default function ChatScreen() {
               </TouchableOpacity>
             </View>
             <ToolMenuRow
+              icon="calendar-outline"
+              label="今日计划"
+              onPress={() => {
+                setToolMenuVisible(false);
+                handleOpenToday();
+              }}
+            />
+            <ToolMenuRow
               icon="person-circle-outline"
               label="我 · 个人中心与设置"
               onPress={() => {
@@ -983,22 +945,6 @@ export default function ChatScreen() {
   );
 }
 
-function ChatTodayFocusLoading() {
-  return (
-    <View
-      testID="chat-today-focus-loading"
-      accessibilityLabel="正在加载今日重点"
-      style={styles.focusLoading}
-    >
-      <View style={styles.loadingIcon} />
-      <View style={styles.loadingCopy}>
-        <View style={[styles.loadingLine, { width: 76 }]} />
-        <View style={[styles.loadingLine, { width: '72%' }]} />
-      </View>
-    </View>
-  );
-}
-
 function AgentHomeBootstrapLoading() {
   return (
     <View accessibilityLabel="正在准备小巴" style={styles.bootstrapLoading}>
@@ -1039,32 +985,6 @@ function ToolMenuRow({
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.paper },
   messageList: { padding: revaSpacing.s4, paddingBottom: 8 },
-  focusLoading: {
-    minHeight: 64,
-    marginHorizontal: revaSpacing.s3,
-    marginTop: 2,
-    marginBottom: revaSpacing.s2,
-    paddingHorizontal: revaSpacing.s3,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: revaSpacing.s2,
-    borderRadius: revaRadii.lg,
-    backgroundColor: C.surface,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.line,
-  },
-  loadingIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: C.green50,
-  },
-  loadingCopy: { flex: 1, gap: 7 },
-  loadingLine: {
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: C.paper2,
-  },
   bootstrapLoading: {
     minHeight: 112,
     alignItems: 'center',

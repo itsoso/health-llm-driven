@@ -123,4 +123,8 @@
 - 设计与计划：更新 `docs/plans/2026-07-08-mobile-chat-today-focus-design.md` 和 `docs/plans/2026-07-08-mobile-chat-today-focus-implementation-plan.md`。
 - G1：PASS。映射 `HealthAgendaItem / LeverageAction`，Mobile surface，safety `low`，无新写路径。
 - G2：PASS。沿用现有 Today timeline 和 Agent turn state；缺失或含糊的排程时间不触发状态条；安全状态优先。
-- 当前状态：S3 规划完成，进入 S4 测试先行研发。
+- S4 / S5：完成测试先行研发。移除常驻“今日重点”卡片、折叠占位入口和首屏加载骨架；新增按 `安全 > Agent 状态 > 到期/逾期 > 90 分钟内精确排程` 选择的单行状态条，关闭后完全释放空间；`更多操作 > 今日计划` 保留稳定入口。
+- G3：PASS。相关 Jest `3 suites / 52 tests` 通过；TypeScript `tsc --noEmit` 通过；目标文件 ESLint 通过；`git diff --check` 通过。
+- G5 本地构建：PASS。设置 `SENTRY_DISABLE_AUTO_UPLOAD=true` 后 iPhone 17 Pro 模拟器 Debug build 成功安装；Sentry 上传要求组织配置，不影响本地编译产物。
+- G6 模拟器验证：PASS。逾期状态显示为单行 `已过时段 · 复查:血脂四项`，无常驻标题、计数或空占位，对话与输入栏未被遮挡。证据：`/tmp/mobile-chat-context-strip-final.png`。
+- 当前状态：S6 待生产 OTA 与冷启动验证。

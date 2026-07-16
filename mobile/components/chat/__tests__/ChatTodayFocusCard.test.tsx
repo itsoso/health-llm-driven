@@ -1,3 +1,4 @@
+/* eslint-disable import/first */
 import React from 'react';
 import { fireEvent, render } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
@@ -7,7 +8,7 @@ jest.mock('@expo/vector-icons', () => ({ Ionicons: 'Ionicons' }));
 import ChatTodayFocusCard from '../ChatTodayFocusCard';
 import type { TodayFocusModel } from '../todayFocus';
 
-const focusModel = (): TodayFocusModel => ({
+const focusModel = (withStrip = true): TodayFocusModel => ({
   emptyTitle: '今日暂无重点行动',
   primary: {
     key: 'movement.recovery',
@@ -23,130 +24,104 @@ const focusModel = (): TodayFocusModel => ({
     completed: 1,
     overdue: 0,
   },
+  contextStrip: withStrip ? {
+    key: 'movement.recovery',
+    label: '现在',
+    title: '降低今天的训练强度',
+    tone: 'normal',
+    deepLink: '/fitness-plan',
+  } : null,
 });
 
 describe('ChatTodayFocusCard', () => {
-  it('renders one compact primary action with real status counts', () => {
-    const { getByText, getByTestId } = render(
+  it('renders nothing when there is no qualified context or Agent state', () => {
+    const { queryByTestId, queryByText } = render(
+      <ChatTodayFocusCard model={focusModel(false)} />,
+    );
+
+    expect(queryByTestId('chat-today-focus-card')).toBeNull();
+    expect(queryByText('今日重点')).toBeNull();
+  });
+
+  it('renders a compact direct context strip without counts or an eyebrow', () => {
+    const { getByText, getByTestId, queryByText } = render(
       <ChatTodayFocusCard model={focusModel()} />,
     );
 
-    expect(getByText('现在最重要')).toBeTruthy();
-    expect(getByText('恢复/休息：暂停高强度')).toBeTruthy();
-    expect(getByText('昨晚恢复不足，今天优先降低训练负荷。')).toBeTruthy();
-    expect(getByText('接下来 3')).toBeTruthy();
-    expect(getByText('已完成 1')).toBeTruthy();
-
-    const rootStyle = StyleSheet.flatten(getByTestId('chat-today-focus-card').props.style);
-    expect(rootStyle.marginHorizontal).toBeGreaterThanOrEqual(12);
-    expect(rootStyle.paddingVertical).toBeLessThanOrEqual(14);
-  });
-
-  it('routes execute and ask actions to the parent with the selected primary action', () => {
-    const onExecute = jest.fn();
-    const onAsk = jest.fn();
-    const model = focusModel();
-    const { getByLabelText } = render(
-      <ChatTodayFocusCard model={model} onExecute={onExecute} onAsk={onAsk} />,
-    );
-
-    fireEvent.press(getByLabelText('执行今日重点：恢复/休息：暂停高强度'));
-    expect(onExecute).toHaveBeenCalledWith(model.primary);
-
-    fireEvent.press(getByLabelText('问小巴：恢复/休息：暂停高强度'));
-    expect(onAsk).toHaveBeenCalledWith(model.primary);
-  });
-
-  it('expands evidence and verification only after tapping why', () => {
-    const { getByLabelText, getByText, queryByText } = render(
-      <ChatTodayFocusCard model={focusModel()} />,
-    );
-
-    expect(queryByText('依据')).toBeNull();
-    fireEvent.press(getByLabelText('查看今日重点依据'));
-    expect(getByText('依据')).toBeTruthy();
-    expect(getByText('睡眠恢复偏弱')).toBeTruthy();
-    expect(getByText('验证')).toBeTruthy();
-    expect(getByText('今晚睡眠')).toBeTruthy();
-  });
-
-  it('shows an honest empty state when no primary action exists', () => {
-    const onOpenToday = jest.fn();
-    const { getByText, getByLabelText, queryByLabelText } = render(
-      <ChatTodayFocusCard
-        model={{
-          emptyTitle: '今日暂无重点行动',
-          primary: null,
-          status: { actionable: 0, completed: 0, overdue: 0 },
-        }}
-        onOpenToday={onOpenToday}
-      />,
-    );
-
-    expect(getByText('今日暂无重点行动')).toBeTruthy();
-    expect(queryByLabelText(/执行今日重点/)).toBeNull();
-    fireEvent.press(getByLabelText('打开今日详情'));
-    expect(onOpenToday).toHaveBeenCalledTimes(1);
-  });
-
-  it('renders a stable single-line compact variant during an active conversation', () => {
-    const { getByText, getByLabelText, getByTestId, queryByText, queryByLabelText } = render(
-      <ChatTodayFocusCard model={focusModel()} variant="compact" />,
-    );
-
-    expect(getByLabelText('今日重点，已收起')).toBeTruthy();
-    expect(getByText('恢复/休息：暂停高强度')).toBeTruthy();
-    expect(getByText('接下来 3 · 已完成 1')).toBeTruthy();
-    expect(queryByText('昨晚恢复不足，今天优先降低训练负荷。')).toBeNull();
-    expect(queryByLabelText(/执行今日重点/)).toBeNull();
-    expect(queryByLabelText(/问小巴/)).toBeNull();
+    expect(getByText('现在')).toBeTruthy();
+    expect(getByText('降低今天的训练强度')).toBeTruthy();
+    expect(queryByText('今日重点')).toBeNull();
+    expect(queryByText(/接下来/)).toBeNull();
+    expect(queryByText(/已完成/)).toBeNull();
 
     const style = StyleSheet.flatten(getByTestId('chat-today-focus-card').props.style);
     expect(style.borderRadius).toBeLessThanOrEqual(10);
-    expect(style.minHeight).toBeLessThanOrEqual(58);
+    expect(style.minHeight).toBeLessThanOrEqual(48);
     expect(style.shadowOpacity ?? 0).toBe(0);
   });
 
-  it('shows one Agent turn status line and a retry command for recoverable failures', () => {
+  it('opens Today and lets the parent dismiss an action without a launcher state', () => {
+    const onOpenToday = jest.fn();
+    const onDismiss = jest.fn();
+    const { getByLabelText, queryByText } = render(
+      <ChatTodayFocusCard
+        model={focusModel()}
+        onOpenToday={onOpenToday}
+        onDismiss={onDismiss}
+      />,
+    );
+
+    fireEvent.press(getByLabelText('打开今日计划'));
+    expect(onOpenToday).toHaveBeenCalledTimes(1);
+    fireEvent.press(getByLabelText('关闭当前提示'));
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+    expect(queryByText('已隐藏，点此展开')).toBeNull();
+  });
+
+  it('shows one transient Agent status instead of the timeline context', () => {
+    const { getByText, queryByText } = render(
+      <ChatTodayFocusCard
+        model={focusModel()}
+        turnStatus={{ label: '正在整理你的饮食记录…', tone: 'active' }}
+      />,
+    );
+
+    expect(getByText('正在整理你的饮食记录…')).toBeTruthy();
+    expect(queryByText('降低今天的训练强度')).toBeNull();
+    expect(queryByText('今日重点')).toBeNull();
+  });
+
+  it('keeps a high-severity context visible above an active Agent turn', () => {
+    const model = focusModel();
+    model.contextStrip = {
+      key: 'safety-1',
+      label: '需要关注',
+      title: '恢复状态明显下降',
+      tone: 'risk',
+    };
+    const { getByText, queryByText } = render(
+      <ChatTodayFocusCard
+        model={model}
+        turnStatus={{ label: '正在整理你的饮食记录…', tone: 'active' }}
+      />,
+    );
+
+    expect(getByText('恢复状态明显下降')).toBeTruthy();
+    expect(queryByText('正在整理你的饮食记录…')).toBeNull();
+  });
+
+  it('keeps a recoverable Agent failure visible with a retry command', () => {
     const onRetry = jest.fn();
     const { getByText, getByLabelText } = render(
       <ChatTodayFocusCard
-        model={focusModel()}
-        variant="compact"
-        turnStatus={{ label: '网络中断，已保留内容', tone: 'error', retryable: true }}
+        model={focusModel(false)}
+        turnStatus={{ label: '网络中断，内容已保留', tone: 'error', retryable: true }}
         onRetry={onRetry}
       />,
     );
 
-    expect(getByText('网络中断，已保留内容')).toBeTruthy();
+    expect(getByText('网络中断，内容已保留')).toBeTruthy();
     fireEvent.press(getByLabelText('重试上一轮'));
     expect(onRetry).toHaveBeenCalledTimes(1);
-  });
-
-  it('lets the parent close the focus card from the full state', () => {
-    const onDismiss = jest.fn();
-    const { getByLabelText } = render(
-      <ChatTodayFocusCard model={focusModel()} onDismiss={onDismiss} />,
-    );
-
-    fireEvent.press(getByLabelText('关闭今日重点'));
-    expect(onDismiss).toHaveBeenCalledTimes(1);
-  });
-
-  it('renders a small launcher when the focus card is hidden and can reopen it', () => {
-    const onRestore = jest.fn();
-    const { getByText, getByLabelText, queryByLabelText } = render(
-      <ChatTodayFocusCard
-        model={focusModel()}
-        variant="launcher"
-        onRestore={onRestore}
-      />,
-    );
-
-    expect(getByText('今日重点')).toBeTruthy();
-    expect(getByText('已隐藏，点此展开')).toBeTruthy();
-    expect(queryByLabelText('关闭今日重点')).toBeNull();
-    fireEvent.press(getByLabelText('展开今日重点'));
-    expect(onRestore).toHaveBeenCalledTimes(1);
   });
 });

@@ -14,8 +14,19 @@ export interface TodayFocusPrimary {
   verification: string[];
 }
 
+export type TodayFocusContextTone = 'normal' | 'caution' | 'risk';
+
+export interface TodayFocusContextStrip {
+  key: string;
+  label: string;
+  title: string;
+  tone: TodayFocusContextTone;
+  deepLink?: string | null;
+}
+
 export interface TodayFocusModel {
   primary: TodayFocusPrimary | null;
+  contextStrip: TodayFocusContextStrip | null;
   emptyTitle: string;
   status: {
     actionable: number;
@@ -35,6 +46,7 @@ export function buildTodayFocusModel(args: {
   dynamicView?: TodayDynamicView | null;
   dailyPlan?: DailyOperatingPlan | null;
   timeline?: TodayTimelineResponse | null;
+  now?: Date;
 }): TodayFocusModel {
   const primary =
     readDynamicPrimary(args.dynamicView) ??
@@ -45,6 +57,7 @@ export function buildTodayFocusModel(args: {
 
   return {
     primary,
+    contextStrip: readTimelineContextStrip(args.timeline, args.now ?? new Date()),
     emptyTitle: '今日暂无重点行动',
     status: {
       actionable: Math.max(0, actionable - promotedInTimeline),
@@ -52,6 +65,102 @@ export function buildTodayFocusModel(args: {
       overdue: nonNegativeCount(args.timeline?.counts?.overdue),
     },
   };
+}
+
+function readTimelineContextStrip(
+  timeline: TodayTimelineResponse | null | undefined,
+  now: Date,
+): TodayFocusContextStrip | null {
+  const candidates = (timeline?.items ?? [])
+    .filter(isRenderableTimelineItem)
+    .map((item, index) => contextCandidate(item, timeline?.date, now, index))
+    .filter((item): item is ContextCandidate => item !== null)
+    .sort((left, right) => (
+      left.rank - right.rank
+      || right.priority - left.priority
+      || left.index - right.index
+    ));
+
+  const selected = candidates[0];
+  if (!selected) return null;
+  return {
+    key: selected.item.id || normalizeTodayFocusKey(selected.item.title),
+    label: selected.label,
+    title: selected.item.title,
+    tone: selected.tone,
+    deepLink: selected.item.deep_link,
+  };
+}
+
+interface ContextCandidate {
+  item: TodayTimelineItem;
+  label: string;
+  tone: TodayFocusContextTone;
+  rank: number;
+  priority: number;
+  index: number;
+}
+
+function contextCandidate(
+  item: TodayTimelineItem,
+  timelineDate: string | undefined,
+  now: Date,
+  index: number,
+): ContextCandidate | null {
+  const severity = readText(item.severity).toLowerCase();
+  if (severity === 'critical' || severity === 'high' || severity === 'severe') {
+    return candidate(item, '需要关注', 'risk', 0, index);
+  }
+
+  const status = readText(item.status).toLowerCase();
+  if (status === 'due') return candidate(item, '现在', 'normal', 1, index);
+  if (status === 'overdue') return candidate(item, '已过时段', 'caution', 1, index);
+
+  const scheduledLabel = nearTermScheduleLabel(item.scheduled_for, timelineDate, now);
+  if (scheduledLabel) return candidate(item, scheduledLabel, 'normal', 2, index);
+  return null;
+}
+
+function candidate(
+  item: TodayTimelineItem,
+  label: string,
+  tone: TodayFocusContextTone,
+  rank: number,
+  index: number,
+): ContextCandidate {
+  return {
+    item,
+    label,
+    tone,
+    rank,
+    priority: Number.isFinite(item.priority) ? item.priority : 0,
+    index,
+  };
+}
+
+function nearTermScheduleLabel(
+  scheduledFor: string | null | undefined,
+  timelineDate: string | undefined,
+  now: Date,
+): string | null {
+  const match = /^(\d{2}):(\d{2})$/.exec(readText(scheduledFor));
+  if (!match || timelineDate !== localDateKey(now)) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (hours > 23 || minutes > 59) return null;
+
+  const scheduled = new Date(now);
+  scheduled.setHours(hours, minutes, 0, 0);
+  const minutesUntil = (scheduled.getTime() - now.getTime()) / 60_000;
+  if (minutesUntil < 0 || minutesUntil > 90) return null;
+  return `${match[1]}:${match[2]}`;
+}
+
+function localDateKey(value: Date): string {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, '0');
+  const day = String(value.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 function readDynamicPrimary(view?: TodayDynamicView | null): TodayFocusPrimary | null {

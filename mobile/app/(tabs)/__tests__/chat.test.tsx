@@ -325,9 +325,9 @@ describe('ChatScreen', () => {
     expect(bar().props.autoFocusToken).toBe(0);
   });
 
-  it('shows Today Focus from the real timeline current action', async () => {
+  it('does not reserve conversation header space for an unscheduled pending action', () => {
     mockTodayTimelineData = {
-      date: '2026-07-08',
+      date: '2026-07-16',
       current_window: 'afternoon',
       now: 'timeline-1',
       items: [{
@@ -350,49 +350,36 @@ describe('ChatScreen', () => {
       counts: { actionable: 2, overdue: 0, info: 0 },
     };
 
-    const { getByText } = render(<ChatScreen />);
+    const { queryByTestId, queryByText } = render(<ChatScreen />);
 
-    expect(getByText('现在最重要')).toBeTruthy();
-    expect(getByText('餐后步行 10 分钟')).toBeTruthy();
-    expect(getByText('接下来 1')).toBeTruthy();
-    expect(getByText('已完成 1')).toBeTruthy();
+    expect(queryByTestId('chat-today-focus-card')).toBeNull();
+    expect(queryByText('餐后步行 10 分钟')).toBeNull();
+    expect(queryByText('今日重点')).toBeNull();
   });
 
-  it('collapses Today Focus for messages and restores it after the empty-state keyboard hides', async () => {
-    const keyboardListeners: Record<string, (event: any) => void> = {};
-    jest.spyOn(Keyboard, 'addListener').mockImplementation((eventName: any, callback: any) => {
-      keyboardListeners[String(eventName)] = callback;
-      return { remove: jest.fn() } as any;
-    });
+  it('shows one direct context strip for a due action', () => {
     mockTodayTimelineData = {
       items: [{
-        id: 'timeline-1', kind: 'action', title: '餐后步行 10 分钟', subtitle: '现在可以做',
-        status: 'pending', priority: 9, can_complete: true, deep_link: '/agenda',
+        id: 'timeline-1', kind: 'action', title: '记录体重和腰围', subtitle: '现在可以做',
+        status: 'due', priority: 9, can_complete: true, deep_link: '/agenda',
       }],
       past: { completed_count: 0, events: [] },
       counts: { actionable: 1, overdue: 0, info: 0 },
     };
-    mockMessages = [{ id: 'u1', role: 'user', content: '今天怎么安排？' }];
-    const view = render(<ChatScreen />);
 
-    expect(view.getByLabelText('今日重点，已收起')).toBeTruthy();
+    const { getByText, queryByText } = render(<ChatScreen />);
 
-    mockMessages = [];
-    view.rerender(<ChatScreen />);
-    expect(view.getByLabelText('今日重点，已展开')).toBeTruthy();
-
-    act(() => keyboardListeners.keyboardDidShow({ endCoordinates: { height: 320 } }));
-    expect(view.getByLabelText('今日重点，已收起')).toBeTruthy();
-
-    act(() => keyboardListeners.keyboardDidHide({}));
-    expect(view.getByLabelText('今日重点，已展开')).toBeTruthy();
+    expect(getByText('现在')).toBeTruthy();
+    expect(getByText('记录体重和腰围')).toBeTruthy();
+    expect(queryByText('现在最重要')).toBeNull();
+    expect(queryByText(/接下来/)).toBeNull();
   });
 
-  it('lets the user hide Today Focus and reopen it from the launcher', async () => {
+  it('dismisses a due hint completely and keeps Today available in more actions', async () => {
     mockTodayTimelineData = {
       items: [{
-        id: 'timeline-1', kind: 'action', title: '晨起记录体重和腰围', subtitle: '今日重点',
-        status: 'pending', priority: 9, can_complete: true, deep_link: '/agenda',
+        id: 'timeline-1', kind: 'action', title: '记录体重和腰围', subtitle: '现在可以做',
+        status: 'due', priority: 9, can_complete: true, deep_link: '/agenda',
       }],
       past: { completed_count: 0, events: [] },
       counts: { actionable: 1, overdue: 0, info: 0 },
@@ -400,13 +387,14 @@ describe('ChatScreen', () => {
 
     const view = render(<ChatScreen />);
 
-    expect(view.getByText('晨起记录体重和腰围')).toBeTruthy();
-    fireEvent.press(view.getByLabelText('关闭今日重点'));
-    expect(view.getByText('已隐藏，点此展开')).toBeTruthy();
-    expect(view.queryByText('晨起记录体重和腰围')).toBeNull();
+    expect(view.getByText('记录体重和腰围')).toBeTruthy();
+    fireEvent.press(view.getByLabelText('关闭当前提示'));
+    expect(view.queryByTestId('chat-today-focus-card')).toBeNull();
+    expect(view.queryByText('已隐藏，点此展开')).toBeNull();
 
-    fireEvent.press(view.getByLabelText('展开今日重点'));
-    expect(view.getByText('晨起记录体重和腰围')).toBeTruthy();
+    fireEvent.press(view.getByLabelText('更多会诊操作'));
+    fireEvent.press(view.getByText('今日计划'));
+    expect(mockPush).toHaveBeenCalledWith('/(tabs)/today');
   });
 
   it('shows a recoverable Agent failure and retries only the latest text message', async () => {
@@ -428,183 +416,6 @@ describe('ChatScreen', () => {
     expect(getByText('网络中断，已保留内容')).toBeTruthy();
     fireEvent.press(getByLabelText('重试上一轮'));
     await waitFor(() => expect(mockSendMessage).toHaveBeenCalledWith('查询今天饮食', null));
-  });
-
-  it('keeps Today Focus visible after 新建对话', async () => {
-    mockTodayTimelineData = {
-      date: '2026-07-08',
-      current_window: 'morning',
-      now: 'timeline-1',
-      items: [{
-        id: 'timeline-1',
-        kind: 'action',
-        time_window: 'morning',
-        title: '晨起补水并看今日重点',
-        subtitle: '先补水',
-        icon: 'water-outline',
-        color: '#1F8A5B',
-        status: 'pending',
-        priority: 10,
-        can_complete: true,
-        complete_ref: null,
-        deep_link: '/agenda',
-        severity: null,
-        proof: null,
-      }],
-      past: { completed_count: 0, events: [] },
-      counts: { actionable: 1, overdue: 0, info: 0 },
-    };
-
-    const { getByLabelText, getByText } = render(<ChatScreen />);
-    expect(getByText('晨起补水并看今日重点')).toBeTruthy();
-
-    await act(async () => {
-      fireEvent.press(getByLabelText('新建对话'));
-    });
-    expect(mockNewChat).toHaveBeenCalled();
-    expect(getByText('晨起补水并看今日重点')).toBeTruthy();
-  });
-
-  it('routes Today Focus execute and ask actions through the chat shell', async () => {
-    mockTodayTimelineData = {
-      date: '2026-07-08',
-      current_window: 'afternoon',
-      now: 'timeline-1',
-      items: [{
-        id: 'timeline-1',
-        kind: 'action',
-        time_window: 'afternoon',
-        title: '餐后步行 10 分钟',
-        subtitle: '现在可以做',
-        icon: 'walk-outline',
-        color: '#1F8A5B',
-        status: 'pending',
-        priority: 9,
-        can_complete: true,
-        complete_ref: null,
-        deep_link: '/agenda',
-        severity: null,
-        proof: null,
-      }],
-      past: { completed_count: 1, events: [] },
-      counts: { actionable: 2, overdue: 0, info: 0 },
-    };
-
-    const { UNSAFE_getAllByType, getByLabelText } = render(<ChatScreen />);
-    const bar = () => UNSAFE_getAllByType('ChatInputBar' as any)[0];
-
-    await act(async () => {
-      fireEvent.press(getByLabelText('执行今日重点：餐后步行 10 分钟'));
-    });
-    expect(mockPush).toHaveBeenCalledWith('/agenda');
-
-    await act(async () => {
-      fireEvent.press(getByLabelText('问小巴：餐后步行 10 分钟'));
-    });
-    expect(bar().props.initialText).toContain('餐后步行 10 分钟');
-    expect(bar().props.autoFocusToken).toBeGreaterThan(0);
-  });
-
-  it('prefers dynamic Today action over daily plan and timeline in Today Focus', async () => {
-    mockTodayDynamicViewData = {
-      view_id: 'v1',
-      surface: 'mobile.today',
-      trigger: 'open',
-      generated_by: 'test',
-      context_hash: 'hash',
-      sections: [{
-        slot: 'primary',
-        priority: 10,
-        cards: [{
-          id: 'dynamic-1',
-          type: 'agent_atom',
-          render: { atom: 'daily_artifact' },
-          data: {
-            title: '暂停高强度训练',
-            why_now: '睡眠恢复偏弱。',
-            next_action: { title: '暂停高强度训练', deep_link: '/fitness-plan' },
-          },
-        }],
-      }],
-    };
-    mockDailyPlanData = {
-      plan_date: '2026-07-08',
-      primary_goal: 'metabolic_health',
-      status: 'active',
-      state_summary: {},
-      actions: [{ action_key: 'water', domain: 'nutrition', title: '补水并轻活动', why: '训练负荷偏高。' }],
-    };
-    mockTodayTimelineData = {
-      date: '2026-07-08',
-      current_window: 'afternoon',
-      now: 'timeline-1',
-      items: [{
-        id: 'timeline-1',
-        kind: 'action',
-        time_window: 'afternoon',
-        title: '餐后步行 10 分钟',
-        subtitle: '现在可以做',
-        icon: 'walk-outline',
-        color: '#1F8A5B',
-        status: 'pending',
-        priority: 9,
-        can_complete: true,
-        complete_ref: null,
-        deep_link: '/agenda',
-        severity: null,
-        proof: null,
-      }],
-      past: { completed_count: 1, events: [] },
-      counts: { actionable: 2, overdue: 0, info: 0 },
-    };
-
-    const { getByText, queryByText, getByLabelText } = render(<ChatScreen />);
-
-    expect(getByText('暂停高强度训练')).toBeTruthy();
-    expect(queryByText('补水并轻活动')).toBeNull();
-    expect(queryByText('餐后步行 10 分钟')).toBeNull();
-    await act(async () => {
-      fireEvent.press(getByLabelText('执行今日重点：暂停高强度训练'));
-    });
-    expect(mockPush).toHaveBeenCalledWith('/fitness-plan');
-  });
-
-  it('falls back to daily plan when dynamic Today has no action', async () => {
-    mockDailyPlanData = {
-      plan_date: '2026-07-08',
-      primary_goal: 'metabolic_health',
-      status: 'active',
-      state_summary: {},
-      actions: [{ action_key: 'water', domain: 'nutrition', title: '补水并轻活动', why: '训练负荷偏高。' }],
-    };
-    mockTodayTimelineData = {
-      date: '2026-07-08',
-      current_window: 'afternoon',
-      now: 'timeline-1',
-      items: [{
-        id: 'timeline-1',
-        kind: 'action',
-        time_window: 'afternoon',
-        title: '餐后步行 10 分钟',
-        subtitle: '现在可以做',
-        icon: 'walk-outline',
-        color: '#1F8A5B',
-        status: 'pending',
-        priority: 9,
-        can_complete: true,
-        complete_ref: null,
-        deep_link: '/agenda',
-        severity: null,
-        proof: null,
-      }],
-      past: { completed_count: 1, events: [] },
-      counts: { actionable: 2, overdue: 0, info: 0 },
-    };
-
-    const { getByText, queryByText } = render(<ChatScreen />);
-
-    expect(getByText('补水并轻活动')).toBeTruthy();
-    expect(queryByText('餐后步行 10 分钟')).toBeNull();
   });
 
   it('shows a visible history entry on the private coach page', async () => {

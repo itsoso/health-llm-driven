@@ -68,6 +68,10 @@ const timeline = (title: string): TodayTimelineResponse => ({
   counts: { actionable: 2, overdue: 0, info: 0 },
 });
 
+const atLocalTime = (hour: number, minute: number): Date => (
+  new Date(2026, 6, 16, hour, minute, 0, 0)
+);
+
 describe('todayFocus resolver', () => {
   it('prefers dynamic Today primary action over daily plan and timeline', () => {
     const model = buildTodayFocusModel({
@@ -144,5 +148,82 @@ describe('todayFocus resolver', () => {
 
   it('normalizes duplicate keys consistently', () => {
     expect(normalizeTodayFocusKey('  晨起启动：补水并看今日重点 ')).toBe('晨起启动:补水并看今日重点');
+  });
+
+  it('keeps an unscheduled pending item out of the conversation header', () => {
+    const pendingTimeline = timeline('晨起记录体重和腰围');
+    pendingTimeline.date = '2026-07-16';
+
+    const model = buildTodayFocusModel({
+      timeline: pendingTimeline,
+      now: atLocalTime(15, 0),
+    });
+
+    expect(model.contextStrip).toBeNull();
+  });
+
+  it('shows a due item with direct now copy', () => {
+    const dueTimeline = timeline('记录体重和腰围');
+    dueTimeline.date = '2026-07-16';
+    dueTimeline.items[0].status = 'due';
+
+    const model = buildTodayFocusModel({
+      timeline: dueTimeline,
+      now: atLocalTime(8, 30),
+    });
+
+    expect(model.contextStrip).toEqual(expect.objectContaining({
+      key: 'timeline-1',
+      label: '现在',
+      title: '记录体重和腰围',
+      tone: 'normal',
+    }));
+  });
+
+  it('prioritizes a high-severity state over a due action', () => {
+    const safetyTimeline = timeline('记录体重和腰围');
+    safetyTimeline.date = '2026-07-16';
+    safetyTimeline.items[0].status = 'due';
+    safetyTimeline.items.push({
+      ...safetyTimeline.items[0],
+      id: 'safety-1',
+      title: '恢复状态明显下降',
+      status: 'info',
+      severity: 'high',
+      priority: 2,
+    });
+
+    const model = buildTodayFocusModel({
+      timeline: safetyTimeline,
+      now: atLocalTime(8, 30),
+    });
+
+    expect(model.contextStrip).toEqual(expect.objectContaining({
+      key: 'safety-1',
+      label: '需要关注',
+      title: '恢复状态明显下降',
+      tone: 'risk',
+    }));
+  });
+
+  it('shows only precisely scheduled actions within the next 90 minutes', () => {
+    const nearTimeline = timeline('记录午餐');
+    nearTimeline.date = '2026-07-16';
+    nearTimeline.items[0].scheduled_for = '09:30';
+
+    const nearModel = buildTodayFocusModel({
+      timeline: nearTimeline,
+      now: atLocalTime(8, 15),
+    });
+    const farModel = buildTodayFocusModel({
+      timeline: nearTimeline,
+      now: atLocalTime(7, 30),
+    });
+
+    expect(nearModel.contextStrip).toEqual(expect.objectContaining({
+      label: '09:30',
+      title: '记录午餐',
+    }));
+    expect(farModel.contextStrip).toBeNull();
   });
 });
