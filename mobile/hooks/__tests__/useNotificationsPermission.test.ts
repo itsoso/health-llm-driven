@@ -4,7 +4,10 @@ const mockRequestPermissionsAsync = jest.fn();
 const mockGetDevicePushTokenAsync = jest.fn();
 const mockBindIOSToken = jest.fn();
 
-jest.mock('react-native', () => ({ Platform: { OS: 'ios' } }));
+jest.mock('react-native', () => ({
+  Platform: { OS: 'ios' },
+  StyleSheet: { create: (styles: unknown) => styles },
+}));
 jest.mock('expo-device', () => ({ isDevice: true }));
 jest.mock('expo-constants', () => ({
   expoConfig: { ios: { bundleIdentifier: 'life.executor.health' } },
