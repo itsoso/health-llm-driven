@@ -34,6 +34,7 @@ import {
   revaSemantic,
   revaFonts,
 } from '../../constants/revaTheme';
+import { SOCIAL_BRAND } from '../../constants/brand';
 import { useToast } from '../../hooks/useToast';
 import { shareLocalImage, sharePlainCaption, sharePlainText } from '../../utils/share';
 import { buildAiShareMessage, buildXiaohongshuShareMessage } from '../../utils/aiShareText';
@@ -2169,8 +2170,20 @@ const styles = StyleSheet.create({
     minHeight: 38,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 5,
     paddingHorizontal: 8,
+  },
+  // 分享入口品牌 badge:白色 glyph 落在平台品牌色圆角块上(微信绿 / 小红书红),
+  // 品牌色由 SOCIAL_BRAND(constants/brand.ts)提供,组件不裸写 hex(过 design 闸)。
+  shareBadgeWeChat: {
+    width: 18, height: 18, borderRadius: 5,
+    backgroundColor: SOCIAL_BRAND.wechat,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  shareBadgeXhs: {
+    width: 18, height: 18, borderRadius: 5,
+    backgroundColor: SOCIAL_BRAND.xiaohongshu,
+    alignItems: 'center', justifyContent: 'center',
   },
   assistantUtilityDetails: {
     marginTop: 7,
@@ -2272,7 +2285,7 @@ const txt = {
   actionBtn: { fontFamily: revaFonts.sans, fontSize: 12, fontWeight: '700', color: C.green500 } as TextStyle,
   actionBtnOnUser: { color: C.green700 } as TextStyle,
   assistantUtilityEvidence: { flex: 1, minWidth: 0, fontFamily: revaFonts.sans, fontSize: 11.5, lineHeight: 16, fontWeight: '800', color: C.ink2 } as TextStyle,
-  assistantUtilityShare: { fontFamily: revaFonts.sans, fontSize: 11, lineHeight: 15, fontWeight: '800', color: C.green700 } as TextStyle,
+  assistantUtilityShare: { fontFamily: revaFonts.sans, fontSize: 11, lineHeight: 15, fontWeight: '700', color: C.ink2 } as TextStyle,
   assistantUtilitySectionTitle: { fontFamily: revaFonts.sans, fontSize: 10.5, lineHeight: 14, fontWeight: '900', color: C.ink3 } as TextStyle,
   assistantUtilityThought: { flex: 1, fontFamily: revaFonts.sans, fontSize: 11.5, lineHeight: 17, fontWeight: '700', color: C.ink2 } as TextStyle,
   cardShareButton: { fontFamily: revaFonts.sans, fontSize: 11.5, lineHeight: 15, fontWeight: '900', color: C.green700 } as TextStyle,
@@ -2455,10 +2468,10 @@ function AssistantUtilityPanel({
             accessibilityState={{ expanded: open }}
           >
             <Ionicons name="layers-outline" size={13} color={C.ink3} />
+            {/* 第一部分只留干净入口"依据与过程 · N";耗时/轮次/模型名(profile.headline)
+                太技术,收进展开面(下方 执行过程 顶部),不在常显行透出。 */}
             <Text style={txt.assistantUtilityEvidence} numberOfLines={1}>
-              {profile.costLine
-                ? profile.headline
-                : `依据与过程${sourceCount > 0 ? ` · ${sourceCount}` : ''}`}
+              {`依据与过程${sourceCount > 0 ? ` · ${sourceCount}` : ''}`}
             </Text>
             <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={13} color={C.ink3} />
           </Pressable>
@@ -2470,7 +2483,9 @@ function AssistantUtilityPanel({
           accessibilityLabel="微信分享这条回复"
           style={({ pressed }) => [styles.assistantUtilityShare, pressed && styles.actionBtnPressed]}
         >
-          <Ionicons name="logo-wechat" size={14} color={C.green600} />
+          <View style={styles.shareBadgeWeChat}>
+            <Ionicons name="logo-wechat" size={12} color={C.greenOn} />
+          </View>
           <Text style={txt.assistantUtilityShare}>微信</Text>
         </Pressable>
         <Pressable
@@ -2479,12 +2494,18 @@ function AssistantUtilityPanel({
           accessibilityLabel="小红书分享这条回复"
           style={({ pressed }) => [styles.assistantUtilityShare, pressed && styles.actionBtnPressed]}
         >
-          <Ionicons name="book-outline" size={14} color={C.green600} />
+          <View style={styles.shareBadgeXhs}>
+            <Ionicons name="book" size={11} color={C.greenOn} />
+          </View>
           <Text style={txt.assistantUtilityShare}>小红书</Text>
         </Pressable>
       </View>
       {open && hasDetails ? (
         <View style={styles.assistantUtilityDetails}>
+          {/* 耗时/轮次/模型名从常显行下放到这里(展开才见):透明化不丢,只是不喧闹。 */}
+          {profile.headline ? (
+            <Text style={txt.transparencyMono} numberOfLines={1}>{profile.headline}</Text>
+          ) : null}
           {sourceCount > 0 ? (
             <View style={styles.assistantUtilitySection}>
               <Text style={txt.assistantUtilitySectionTitle}>使用数据</Text>
