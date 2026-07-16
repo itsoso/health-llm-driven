@@ -9,10 +9,12 @@
   4. 将 tool_result 返回模型 → 循环直到无更多 tool_call
   5. 最终回答通过 SSE 流式输出
 """
+import ast
 import asyncio
 import hashlib
 import json
 import logging
+import math
 import re
 import time
 from datetime import UTC, date, datetime, timezone, timedelta
@@ -819,6 +821,18 @@ _CODE_SPAN_RE = re.compile(
     re.S,
 )
 
+# 少数代理模型会把 function calling 降级成 Python 伪代码:
+# `<tool_code>print(health_record(...))</tool_code>`。完整块可在严格白名单下恢复;
+# 残缺块只用于重试/展示剥离,绝不执行任意 Python。
+_TOOL_CODE_BLOCK_RE = re.compile(
+    r"<\s*tool_code\b[^>]*>(.*?)<\s*/\s*tool_code\s*>",
+    re.I | re.S,
+)
+_TOOL_CODE_LEAK_RE = re.compile(
+    r"<\s*tool_code\b[^>]*>.*?(?:<\s*/\s*tool_code\s*>|\Z)",
+    re.I | re.S,
+)
+
 
 def _apply_outside_code_spans(fn, text: str) -> str:
     """只在代码区(fenced ``` / 行内 `code`)**之外**的片段跑 `fn`,代码区原样保留。"""
@@ -846,10 +860,23 @@ def _search_outside_code_spans(regex: "re.Pattern", text: str) -> bool:
     return bool(regex.search(text[last:]))
 
 
+def _matches_outside_code_spans(regex: "re.Pattern", text: str) -> List[re.Match]:
+    """Return regex matches outside fenced/inline Markdown code spans."""
+    if "`" not in text:
+        return list(regex.finditer(text))
+    matches: List[re.Match] = []
+    last = 0
+    for code in _CODE_SPAN_RE.finditer(text):
+        matches.extend(regex.finditer(text[last:code.start()]))
+        last = code.end()
+    matches.extend(regex.finditer(text[last:]))
+    return matches
+
+
 # 流式期前缀检测:`<invoke` / `<minimax:tool_call` / `<tool` / `<tool_call` / `<function_call`
 # 一出现就抑制 live 下发(逐 token 泄漏兜底 —— founder 截图正是逐 token live 泄漏)。
 _XML_TOOLCALL_PREFIX_RE = re.compile(
-    r"<\s*(?:invoke\b|/?\s*minimax:tool_call\b|/?\s*tool\b|/?\s*tool_call\b|/?\s*function_call\b)",
+    r"<\s*(?:invoke\b|/?\s*minimax:tool_call\b|/?\s*tool_code\b|/?\s*tool\b|/?\s*tool_call\b|/?\s*function_call\b)",
     re.I,
 )
 
@@ -899,6 +926,12 @@ def _is_botched_text_tool_call(content: Optional[str], tools: Optional[List[Dict
     # (b) 畸形 `<tool>` 伪标签 blob(门控确保是工具调用形状;fenced/行内代码里的 `<tool>` 是
     #     文档/示例,由 `_search_outside_code_spans` 豁免 → 不误当成"该重试的工具调用")。
     if _maybe_generic_tool_tag(content) and _search_outside_code_spans(_GENERIC_TOOL_TAG_LEAK_RE, content):
+        return True
+    # (c) `<tool_code>` Python 伪调用。完整且安全的形态会在此函数之前被恢复;
+    # 走到这里说明语法残缺/越权,应要求模型重试结构化调用并禁止原文外泄。
+    if "<tool_code" in content.lower() and _search_outside_code_spans(
+        _TOOL_CODE_LEAK_RE, content
+    ):
         return True
     return False
 
@@ -1053,6 +1086,100 @@ def _extract_bare_tool_call(raw: str, allowed: set) -> Optional[Dict[str, Any]]:
     }
 
 
+def _is_json_literal(value: Any) -> bool:
+    """Whether an ``ast.literal_eval`` result is JSON-compatible and inert."""
+    if isinstance(value, float):
+        return math.isfinite(value)
+    if value is None or isinstance(value, (str, int, bool)):
+        return True
+    if isinstance(value, list):
+        return all(_is_json_literal(item) for item in value)
+    if isinstance(value, dict):
+        return all(
+            isinstance(key, str) and _is_json_literal(item)
+            for key, item in value.items()
+        )
+    return False
+
+
+def _has_explicit_text_record_intent(user_message: Optional[str]) -> bool:
+    """Authorize recovered textual health_record calls only for explicit writes."""
+    message = str(user_message or "").strip()
+    return bool(message and _RECORD_INTENT_RE.search(message))
+
+
+def _extract_tool_code_call(
+    raw: str,
+    allowed: set,
+    *,
+    user_message: Optional[str],
+) -> Optional[Dict[str, Any]]:
+    """Recover a strict `<tool_code>print(tool(key=literal))</tool_code>` call.
+
+    This is a protocol-repair parser, not a Python evaluator. It accepts one
+    registered function call, an optional one-argument ``print`` wrapper, no
+    positional or ``**`` arguments, and JSON-compatible literal values only.
+    Text-recovered writes additionally require explicit user record intent.
+    """
+    for match in _matches_outside_code_spans(_TOOL_CODE_BLOCK_RE, raw or ""):
+        body = (match.group(1) or "").strip()
+        if not body:
+            continue
+        try:
+            expression = ast.parse(body, mode="eval").body
+        except (SyntaxError, ValueError):
+            continue
+
+        if (
+            isinstance(expression, ast.Call)
+            and isinstance(expression.func, ast.Name)
+            and expression.func.id == "print"
+            and len(expression.args) == 1
+            and not expression.keywords
+        ):
+            expression = expression.args[0]
+
+        if (
+            not isinstance(expression, ast.Call)
+            or not isinstance(expression.func, ast.Name)
+            or expression.func.id not in allowed
+            or expression.args
+        ):
+            continue
+
+        name = expression.func.id
+        if name == "health_record" and not _has_explicit_text_record_intent(user_message):
+            continue
+
+        args: Dict[str, Any] = {}
+        valid = True
+        for keyword in expression.keywords:
+            if keyword.arg is None or keyword.arg in args:
+                valid = False
+                break
+            try:
+                value = ast.literal_eval(keyword.value)
+            except (ValueError, TypeError, SyntaxError, MemoryError, RecursionError):
+                valid = False
+                break
+            if not _is_json_literal(value):
+                valid = False
+                break
+            args[keyword.arg] = value
+        if not valid:
+            continue
+
+        return {
+            "id": "inline_tool_call_0",
+            "type": "function",
+            "function": {
+                "name": name,
+                "arguments": json.dumps(args, ensure_ascii=False),
+            },
+        }
+    return None
+
+
 def _strip_bracket_tool_markers(text: str) -> str:
     """Strip naked ``[工具调用: ...]`` markers from final user-visible output.
 
@@ -1188,10 +1315,16 @@ def _strip_xml_tool_markers(text: str) -> str:
     if (
         "<invoke" not in low
         and "minimax:tool_call" not in low
+        and "<tool_code" not in low
         and not _maybe_generic_tool_tag(text)
     ):
         return text
-    stripped = _INVOKE_STRIP_RE.sub("", text)
+    stripped = text
+    if "<tool_code" in low:
+        stripped = _apply_outside_code_spans(
+            lambda seg: _TOOL_CODE_LEAK_RE.sub("", seg), stripped
+        )
+    stripped = _INVOKE_STRIP_RE.sub("", stripped)
     stripped = _MINIMAX_TAG_STRIP_RE.sub("", stripped)
     # 通用 `<tool>`/`<tool_call>`/`<function_call>` 伪标签泄漏(残缺/嵌套 JSON+签名混合,
     # 恢复不出结构化调用)—— 展示兜底剥离(founder 截图 2026-07-14)。`_GENERIC_TOOL_TAG_LEAK_RE`
@@ -1710,6 +1843,12 @@ def _extract_inline_tool_call(
 
     def _authorized(call: Dict[str, Any]) -> bool:
         return _text_tool_call_write_is_authorized(call, user_message)
+
+    # Python 风格 `<tool_code>print(tool(...))</tool_code>` 先走严格 AST 白名单恢复。
+    # 只读取语法树字面量,绝不 eval/exec;health_record 还需用户明确记录意图。
+    tool_code = _extract_tool_code_call(raw, allowed, user_message=user_message)
+    if tool_code is not None:
+        return tool_code if _authorized(tool_code) else None
 
     # XML/`<invoke>` 格式先尝试:它以 `<` 开头,与 JSON(`{`)/括号(`(`)路径互不干扰。
     xml = _extract_xml_tool_call(raw, tools, allowed)
@@ -7459,6 +7598,7 @@ class AgentExecutor:
             "",
             "## 数据记录规则",
             "- **核心原则：所有记录操作必须调用 health_record 工具才算完成。绝对不能口头说'已记录'而不调用工具。**",
+            "- **必须使用系统提供的结构化工具调用；禁止输出 `<tool_code>`、`print(...)`、Python 代码或其他伪代码来表示调用。伪代码不会被视为完成记录。**",
             "- **新增记录**调用 health_record；**修改/删除已有记录**必须调用 health_manage。不要说'没有删除功能'。",
             "- 用户要删除重复记录时: 先 health_manage(list) 或 health_query(diet) 查候选 ID；如果用户已明确 ID, 直接 health_manage(delete)。",
             "- 用户说'删除这一餐'、'撤销这顿'、'我刚才不小心删除了'、'把晚餐删掉/恢复'时,这是管理已有饮食记录,绝不能把这句话作为 diet.food_items 新增一条晚餐;先查候选记录并确认。",

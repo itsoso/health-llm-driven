@@ -1631,6 +1631,72 @@ async def test_agent_stream_executes_inline_diet_record_json_with_nutrition(db, 
 
 
 @pytest.mark.asyncio
+async def test_agent_stream_executes_founder_sneeze_tool_code_and_returns_receipt(
+    db, auth_user_and_headers
+):
+    """Founder 2026-07-16: Python-style pseudo tool call must become a real write."""
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    executed = []
+
+    async def fake_call_llm(messages, tools):
+        if not executed:
+            return {
+                "content": (
+                    "<tool_code>\n"
+                    "print(health_record(record_type='symptom', "
+                    "data={'description': '打喷嚏', 'body_part': 'respiratory'}))\n"
+                    "</tool_code>"
+                ),
+                "finish_reason": "stop",
+            }
+        return {"content": "已记录症状：打喷嚏。", "finish_reason": "stop"}
+
+    async def fake_execute_tool(tool_name, args_raw, user_token):
+        executed.append((tool_name, json.loads(args_raw), user_token))
+        return json.dumps(
+            {
+                "id": 75,
+                "body_part": "respiratory",
+                "description": "打喷嚏",
+                "severity": 1,
+            },
+            ensure_ascii=False,
+        )
+
+    executor._call_llm = fake_call_llm
+    executor._call_llm_stream = _stream_from(fake_call_llm)
+    executor._execute_tool = fake_execute_tool
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="我准备睡觉了，记录刚才我打了一个喷嚏。",
+            user_auth_token="test-token",
+            extra_context=json.dumps({"client": "mobile"}),
+            channel="typed",
+        )
+    ]
+    rendered = "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+
+    assert executed[0][0] == "health_record"
+    assert executed[0][1]["record_type"] == "symptom"
+    assert executed[0][1]["data"]["description"] == "打喷嚏"
+    assert executed[0][2] == "test-token"
+    assert "<tool_code>" not in rendered and "print(health_record" not in rendered
+    assert "已记录症状：打喷嚏" in rendered
+    done = next(event for event in events if event.get("event") == "done")
+    assert done["data"]["write_receipts"][0]["resource_type"] == "symptom_record"
+    assert done["data"]["write_receipts"][0]["resource_id"] == "75"
+    assert done["data"]["write_receipts"][0]["verified"] is True
+
+
+@pytest.mark.asyncio
 async def test_agent_stream_strips_leading_inline_tool_json_then_prose(db, auth_user_and_headers):
     """Regression: weaker fast-record models emit the tool-call JSON FIRST and a
     human-readable confirmation/analysis AFTER it. Previously the inline extractor

@@ -1,12 +1,23 @@
-"""恢复 `<tool>funcname {args}</tool>` 形态的工具调用 — 修 founder 2026-07-14「列出喝水记录」。
+"""恢复文本形态的工具调用,同时拒绝执行任意伪代码。
+
+覆盖 `<tool>funcname {args}</tool>` 与 founder 2026-07-16 截图中的
+`<tool_code>print(health_record(...))</tool_code>`。后者只能在用户明确要求记录时恢复,
+且只接受注册工具 + 纯字面量关键字参数。
 
 现象: 模型把 health_query 写成 `<tool>health_query {"dimension":"water"}</tool>` 文本(而非
 结构化 tool_calls)。既有恢复三路(invoke/bracket/JSON-with-name)都不认 → 工具**未执行**
 (无水数据)+ 原始标记泄漏进显示。本 fix 让它被恢复成真调用: 执行(有数据)且不泄漏。
 """
-from app.services.agent_executor import _extract_inline_tool_call
+import json
+
+from app.services.agent_executor import (
+    _extract_inline_tool_call,
+    _is_botched_text_tool_call,
+    _strip_xml_tool_markers,
+)
 
 _TOOLS = [
+    {"type": "function", "function": {"name": "health_record", "parameters": {}}},
     {"type": "function", "function": {"name": "health_query", "parameters": {}}},
     {"type": "function", "function": {"name": "health_manage", "parameters": {}}},
 ]
@@ -69,3 +80,58 @@ def test_negatives_stay_visible():
     assert _fn('see <tool> in the docs for {json} syntax') is None
     # 函数名后 { 不紧跟(相隔散文)→ 不当调用
     assert _fn('<tool>health_query</tool> 然后我会解释这个 {概念}') is None
+
+
+def test_founder_sneeze_tool_code_print_is_recovered_as_real_record_call():
+    text = """<tool_code>
+print(health_record(record_type='symptom',
+data={'description': '打喷嚏', 'body_part': 'respiratory'}))
+</tool_code>"""
+
+    fn = _fn(text, user_message="我准备睡觉了，记录刚才我打了一个喷嚏。")
+
+    assert fn is not None and fn["name"] == "health_record"
+    args = json.loads(fn["arguments"])
+    assert args == {
+        "record_type": "symptom",
+        "data": {"description": "打喷嚏", "body_part": "respiratory"},
+    }
+
+
+def test_tool_code_health_record_requires_explicit_user_record_intent():
+    text = (
+        "<tool_code>print(health_record(record_type='symptom', "
+        "data={'description': '打喷嚏'}))</tool_code>"
+    )
+
+    assert _fn(text, user_message="这段代码是什么意思？") is None
+    assert _fn(text, user_message=None) is None
+
+
+def test_tool_code_rejects_arbitrary_python_unknown_tools_and_positional_args():
+    cases = (
+        "<tool_code>import os; os.system('id')</tool_code>",
+        "<tool_code>print(os.system('id'))</tool_code>",
+        "<tool_code>print(unknown_tool(value=1))</tool_code>",
+        "<tool_code>print(health_record('symptom', data={}))</tool_code>",
+        "<tool_code>print(health_record(record_type=get_type(), data={}))</tool_code>",
+        "<tool_code>print(health_record(record_type='symptom', data={'severity': 1e999}))</tool_code>",
+    )
+
+    for text in cases:
+        assert _fn(text, user_message="记录一下") is None
+
+
+def test_tool_code_inside_markdown_code_sample_is_not_executed_or_stripped():
+    text = "```python\n<tool_code>print(health_record(record_type='symptom'))</tool_code>\n```"
+
+    assert _fn(text, user_message="记录一下") is None
+    assert _strip_xml_tool_markers(text) == text
+
+
+def test_unparseable_tool_code_is_retryable_and_never_user_visible():
+    text = "<tool_code>print(health_record(record_type='symptom', data=))</tool_code>"
+
+    assert _fn(text, user_message="记录刚才打了一个喷嚏") is None
+    assert _is_botched_text_tool_call(text, _TOOLS) is True
+    assert _strip_xml_tool_markers(text) == ""
