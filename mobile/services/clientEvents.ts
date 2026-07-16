@@ -58,7 +58,15 @@ const DIET_CAPTURE_PHASES = {
 const DIET_SHARE_TARGETS = new Set(['generic', 'wechat', 'xiaohongshu']);
 const APP_UPDATE_PHASES = {
   app_update_phase: new Set(['checking', 'downloading', 'applying']),
-  app_update_terminal: new Set(['disabled', 'current', 'ready', 'failed', 'applied']),
+  app_update_terminal: new Set([
+    'disabled',
+    'current',
+    'ready',
+    'failed',
+    'applied',
+    'native_update_required',
+    'native_update_recommended',
+  ]),
 } as const;
 const APP_UPDATE_LAUNCH_SOURCES = new Set(['embedded', 'ota', 'emergency', 'unknown']);
 

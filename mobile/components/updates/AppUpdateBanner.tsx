@@ -7,10 +7,62 @@ import { useAppUpdate } from '../../hooks/useAppUpdate';
 import { useTheme, type ColorPalette } from '../../hooks/useTheme';
 
 export default function AppUpdateBanner() {
-  const { status, isForced, applyUpdate, dismiss } = useAppUpdate();
-  const { c } = useTheme();
+  const {
+    status,
+    error,
+    isForced,
+    nativeUpdateRequirement = 'none',
+    nativeUpdateUrl = null,
+    openNativeUpdate = async () => false,
+    applyUpdate,
+    dismiss,
+  } = useAppUpdate();
+  const { c, s } = useTheme();
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => createStyles(c), [c]);
+
+  const showNativeGate = nativeUpdateRequirement !== 'none'
+    && status !== 'ready'
+    && status !== 'applying';
+
+  if (showNativeGate) {
+    const isRequired = nativeUpdateRequirement === 'required';
+    return (
+      <View
+        testID="native-update-banner"
+        style={[styles.banner, { top: insets.top + spacing.sm }]}
+        accessibilityLiveRegion="assertive"
+      >
+        <Ionicons
+          name={isRequired ? 'alert-circle-outline' : 'cloud-download-outline'}
+          size={20}
+          color={isRequired ? s.warning.solid : c.brand}
+        />
+        <View style={styles.copy}>
+          <Text style={styles.title}>{isRequired ? '需要更新小巴' : '建议更新小巴'}</Text>
+          <Text style={styles.body}>
+            {error ?? (isRequired
+              ? '当前版本需要原生升级后才能继续获得新能力'
+              : '有一个原生版本可选，不影响当前使用')}
+          </Text>
+        </View>
+        {nativeUpdateUrl ? (
+          <TouchableOpacity
+            style={styles.primaryAction}
+            onPress={() => void openNativeUpdate()}
+            accessibilityRole="button"
+          >
+            <Text style={styles.primaryActionText}>去更新</Text>
+          </TouchableOpacity>
+        ) : null}
+        {!isRequired ? (
+          <TouchableOpacity onPress={dismiss} accessibilityRole="button" hitSlop={8}>
+            <Text style={styles.secondaryActionText}>稍后</Text>
+          </TouchableOpacity>
+        ) : null}
+      </View>
+    );
+  }
 
   if (status !== 'ready' && status !== 'applying') return null;
 

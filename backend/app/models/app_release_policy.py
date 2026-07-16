@@ -21,6 +21,7 @@ class AppReleasePolicy(Base):
     rollout_percent = Column(Integer, nullable=False, default=100)
     minimum_native_build = Column(String(32), nullable=True)
     recommended_native_build = Column(String(32), nullable=True)
+    native_update_url = Column(String(512), nullable=True)
     forced_update = Column(Boolean, nullable=False, default=False)
     kill_switches = Column(JSONColumn, nullable=False, default=dict)
     rollback_update_id = Column(String(128), nullable=True)

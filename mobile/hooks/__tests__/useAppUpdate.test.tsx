@@ -15,6 +15,11 @@ jest.mock('../../services/appUpdate', () => ({
   }),
 }));
 
+jest.mock('expo-linking', () => ({
+  canOpenURL: jest.fn().mockResolvedValue(true),
+  openURL: jest.fn().mockResolvedValue(undefined),
+}));
+
 jest.mock('../../services/clientEvents', () => ({
   durationBucket: jest.fn().mockReturnValue('lt_1s'),
   emitClientEvent: jest.fn(),
@@ -22,6 +27,7 @@ jest.mock('../../services/clientEvents', () => ({
 
 jest.mock('../../services/remoteConfig', () => ({
   getReleasePolicyRolloutBucket: jest.fn().mockResolvedValue(0),
+  getNativeUpdateRequirement: jest.fn().mockReturnValue('none'),
   isReleasePolicyEligible: jest.fn().mockReturnValue(true),
   loadReleasePolicy: jest.fn().mockResolvedValue({
     config_version: 0,
@@ -55,6 +61,10 @@ describe('AppUpdateProvider', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    const { getNativeUpdateRequirement } = jest.requireMock('../../services/remoteConfig') as {
+      getNativeUpdateRequirement: jest.Mock;
+    };
+    getNativeUpdateRequirement.mockReturnValue('none');
     now = 1_000_000;
     appStateListener = undefined;
     jest.spyOn(AppState, 'addEventListener').mockImplementation((_, listener: any) => {
@@ -171,6 +181,62 @@ describe('AppUpdateProvider', () => {
 
     act(() => result.current.dismiss());
     expect(result.current.status).toBe('ready');
+  });
+
+  it('does not download OTA when the native build is below the minimum', async () => {
+    const { getNativeUpdateRequirement } = jest.requireMock('../../services/remoteConfig') as {
+      getNativeUpdateRequirement: jest.Mock;
+    };
+    getNativeUpdateRequirement.mockReturnValue('required');
+    mockedLoadPolicy.mockResolvedValue({
+      config_version: 2,
+      platform: 'ios',
+      channel: 'production',
+      ota_enabled: true,
+      rollout_percent: 100,
+      minimum_native_build: '227',
+      recommended_native_build: '228',
+      native_update_url: 'https://apps.apple.com/app/id123456789',
+      forced_update: false,
+      kill_switches: {},
+      rollback_update_id: null,
+      expires_at: null,
+      source: 'remote',
+    });
+
+    const { result } = renderHook(() => useAppUpdate(), { wrapper });
+
+    await waitFor(() => expect(result.current.nativeUpdateRequirement).toBe('required'));
+    expect(result.current.status).toBe('idle');
+    expect(result.current.nativeUpdateUrl).toBe('https://apps.apple.com/app/id123456789');
+    expect(mockedDownload).not.toHaveBeenCalled();
+  });
+
+  it('allows OTA while exposing a recommended native update', async () => {
+    const { getNativeUpdateRequirement } = jest.requireMock('../../services/remoteConfig') as {
+      getNativeUpdateRequirement: jest.Mock;
+    };
+    getNativeUpdateRequirement.mockReturnValue('recommended');
+    mockedLoadPolicy.mockResolvedValue({
+      config_version: 2,
+      platform: 'ios',
+      channel: 'production',
+      ota_enabled: true,
+      rollout_percent: 100,
+      minimum_native_build: '190',
+      recommended_native_build: '228',
+      native_update_url: 'https://apps.apple.com/app/id123456789',
+      forced_update: false,
+      kill_switches: {},
+      rollback_update_id: null,
+      expires_at: null,
+      source: 'remote',
+    });
+
+    const { result } = renderHook(() => useAppUpdate(), { wrapper });
+
+    await waitFor(() => expect(mockedDownload).toHaveBeenCalledTimes(1));
+    expect(result.current.nativeUpdateRequirement).toBe('recommended');
   });
 
   it('can apply immediately after a forced check without waiting for another render', async () => {

@@ -1,5 +1,7 @@
 import {
   getReleasePolicyRolloutBucket,
+  getNativeUpdateRequirement,
+  isOfficialNativeUpdateUrl,
   isReleasePolicyEligible,
   SAFE_RELEASE_POLICY,
   loadReleasePolicy,
@@ -14,6 +16,7 @@ const validPolicy: ReleasePolicy = {
   rollout_percent: 25,
   minimum_native_build: '227',
   recommended_native_build: '228',
+  native_update_url: 'https://apps.apple.com/app/id123456789',
   forced_update: false,
   kill_switches: { dynamic_cards: true },
   rollback_update_id: '019f-good-update',
@@ -103,6 +106,24 @@ describe('loadReleasePolicy', () => {
 });
 
 describe('release policy controls', () => {
+  it.each([
+    ['190', 'required'],
+    ['227', 'recommended'],
+    ['228', 'none'],
+    ['not-a-build', 'required'],
+  ])('classifies native update requirement for build %s', (nativeBuild, expected) => {
+    expect(getNativeUpdateRequirement(validPolicy, nativeBuild)).toBe(expected);
+  });
+
+  it.each([
+    ['https://apps.apple.com/app/id123456789', true],
+    ['https://play.google.com/store/apps/details?id=life.executor.health', true],
+    ['https://example.com/update', false],
+    ['itms-apps://itunes.apple.com/app/id123456789', false],
+  ])('validates official native update URL %s', (url, expected) => {
+    expect(isOfficialNativeUpdateUrl(url)).toBe(expected);
+  });
+
   it('persists a stable rollout bucket without using health or account data', async () => {
     const store = storage();
 

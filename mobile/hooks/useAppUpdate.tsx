@@ -7,6 +7,7 @@ import React, {
   useState,
 } from 'react';
 import { AppState, type AppStateStatus } from 'react-native';
+import * as Linking from 'expo-linking';
 import {
   applyDownloadedUpdate,
   downloadAvailableUpdate,
@@ -17,8 +18,10 @@ import {
 import { durationBucket, emitClientEvent } from '../services/clientEvents';
 import {
   getReleasePolicyRolloutBucket,
+  getNativeUpdateRequirement,
   isReleasePolicyEligible,
   loadReleasePolicy,
+  type NativeUpdateRequirement,
 } from '../services/remoteConfig';
 
 const DEFAULT_MINIMUM_INTERVAL_MS = 5 * 60 * 1000;
@@ -31,14 +34,20 @@ export type AppUpdateStatus =
   | 'applying'
   | 'failed';
 
-export type AppUpdateCheckResult = AppUpdateDownloadResult | 'throttled' | 'failed';
+export type AppUpdateCheckResult = AppUpdateDownloadResult
+  | 'throttled'
+  | 'failed'
+  | 'native_update_required';
 
 type AppUpdateContextValue = {
   status: AppUpdateStatus;
   error: string | null;
   isForced: boolean;
+  nativeUpdateRequirement: NativeUpdateRequirement;
+  nativeUpdateUrl: string | null;
   checkNow: (options?: { force?: boolean }) => Promise<AppUpdateCheckResult>;
   applyUpdate: () => Promise<void>;
+  openNativeUpdate: () => Promise<boolean>;
   dismiss: () => void;
 };
 
@@ -60,6 +69,8 @@ export function AppUpdateProvider({
   const [status, setStatus] = useState<AppUpdateStatus>('idle');
   const [error, setError] = useState<string | null>(null);
   const [isForced, setIsForced] = useState(false);
+  const [nativeUpdateRequirement, setNativeUpdateRequirement] = useState<NativeUpdateRequirement>('none');
+  const [nativeUpdateUrl, setNativeUpdateUrl] = useState<string | null>(null);
   const statusRef = useRef<AppUpdateStatus>('idle');
   const lastCheckAtRef = useRef<number | null>(null);
   const checkPromiseRef = useRef<Promise<AppUpdateCheckResult> | null>(null);
@@ -90,12 +101,22 @@ export function AppUpdateProvider({
 
     lastCheckAtRef.current = checkedAt;
     const startedAt = checkedAt;
+    let requirement: NativeUpdateRequirement = 'none';
     setError(null);
     setIsForced(false);
+    setNativeUpdateRequirement('none');
+    setNativeUpdateUrl(null);
     const promise = loadReleasePolicy()
       .then(async (policy) => {
         const rolloutBucket = await getReleasePolicyRolloutBucket();
         const nativeBuild = getAppUpdateTelemetryContext().native_build;
+        requirement = getNativeUpdateRequirement(policy, nativeBuild);
+        setNativeUpdateRequirement(requirement);
+        setNativeUpdateUrl(policy.native_update_url ?? null);
+        if (requirement === 'required') {
+          transitionTo('idle');
+          return 'native_update_required' as const;
+        }
         if (!isReleasePolicyEligible(policy, nativeBuild, rolloutBucket)) {
           setIsForced(false);
           transitionTo('idle');
@@ -109,6 +130,12 @@ export function AppUpdateProvider({
       })
       .then((result): AppUpdateCheckResult => {
         transitionTo(result === 'ready' ? 'ready' : 'idle');
+        if (requirement === 'recommended') {
+          emitUpdateEvent('app_update_terminal', {
+            phase: 'native_update_recommended',
+            duration_bucket: durationBucket(startedAt, now()),
+          });
+        }
         emitUpdateEvent('app_update_terminal', {
           phase: result,
           duration_bucket: durationBucket(startedAt, now()),
@@ -159,10 +186,26 @@ export function AppUpdateProvider({
   }, [emitUpdateEvent, now, transitionTo]);
 
   const dismiss = useCallback(() => {
-    if (isForced) return;
+    if (isForced || nativeUpdateRequirement === 'required') return;
     setError(null);
     transitionTo('idle');
-  }, [isForced, transitionTo]);
+    setNativeUpdateRequirement('none');
+    setNativeUpdateUrl(null);
+  }, [isForced, nativeUpdateRequirement, transitionTo]);
+
+  const openNativeUpdate = useCallback(async (): Promise<boolean> => {
+    if (!nativeUpdateUrl) return false;
+    try {
+      if (!(await Linking.canOpenURL(nativeUpdateUrl))) {
+        throw new Error('official store URL cannot be opened');
+      }
+      await Linking.openURL(nativeUpdateUrl);
+      return true;
+    } catch {
+      setError('无法打开应用商店，请手动更新');
+      return false;
+    }
+  }, [nativeUpdateUrl]);
 
   useEffect(() => {
     emitUpdateEvent('app_update_launch', {
@@ -176,7 +219,17 @@ export function AppUpdateProvider({
   }, [checkNow, emitUpdateEvent]);
 
   return (
-    <AppUpdateContext.Provider value={{ status, error, isForced, checkNow, applyUpdate, dismiss }}>
+    <AppUpdateContext.Provider value={{
+      status,
+      error,
+      isForced,
+      nativeUpdateRequirement,
+      nativeUpdateUrl,
+      checkNow,
+      applyUpdate,
+      openNativeUpdate,
+      dismiss,
+    }}>
       {children}
     </AppUpdateContext.Provider>
   );

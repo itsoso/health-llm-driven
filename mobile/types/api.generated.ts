@@ -26473,6 +26473,8 @@ export interface components {
         MedicationLogCreate: {
             /** Medication Id */
             medication_id: number;
+            /** Taken Date */
+            taken_date?: string | null;
             /** Taken Time */
             taken_time: string;
             /**
@@ -28292,6 +28294,8 @@ export interface components {
             minimum_native_build?: string | null;
             /** Recommended Native Build */
             recommended_native_build?: string | null;
+            /** Native Update Url */
+            native_update_url?: string | null;
             /** Forced Update */
             forced_update: boolean;
             /** Kill Switches */
@@ -28330,6 +28334,8 @@ export interface components {
             minimum_native_build?: string | null;
             /** Recommended Native Build */
             recommended_native_build?: string | null;
+            /** Native Update Url */
+            native_update_url?: string | null;
             /**
              * Forced Update
              * @default false

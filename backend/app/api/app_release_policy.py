@@ -32,6 +32,7 @@ class ReleasePolicyUpdate(BaseModel):
     rollout_percent: int = Field(default=100, ge=0, le=100)
     minimum_native_build: Optional[str] = Field(default=None, max_length=32)
     recommended_native_build: Optional[str] = Field(default=None, max_length=32)
+    native_update_url: Optional[str] = Field(default=None, max_length=512)
     forced_update: StrictBool = False
     kill_switches: dict[str, StrictBool] = Field(default_factory=dict)
     rollback_update_id: Optional[str] = Field(default=None, max_length=128)
@@ -46,6 +47,7 @@ class ReleasePolicyResponse(BaseModel):
     rollout_percent: int
     minimum_native_build: Optional[str] = None
     recommended_native_build: Optional[str] = None
+    native_update_url: Optional[str] = None
     forced_update: bool
     kill_switches: dict[str, bool]
     rollback_update_id: Optional[str] = None
@@ -101,6 +103,7 @@ def update_release_policy(
             rollout_percent=body.rollout_percent,
             minimum_native_build=body.minimum_native_build,
             recommended_native_build=body.recommended_native_build,
+            native_update_url=body.native_update_url,
             forced_update=body.forced_update,
             kill_switches=body.kill_switches,
             rollback_update_id=body.rollback_update_id,

@@ -4,6 +4,7 @@ import { fireEvent, render } from '@testing-library/react-native';
 
 const applyUpdate = jest.fn();
 const dismiss = jest.fn();
+const openNativeUpdate = jest.fn().mockResolvedValue(true);
 
 jest.mock('../../../hooks/useAppUpdate', () => ({
   useAppUpdate: jest.fn(),
@@ -20,6 +21,9 @@ describe('AppUpdateBanner', () => {
       isForced: false,
       applyUpdate,
       dismiss,
+      nativeUpdateRequirement: 'none',
+      nativeUpdateUrl: null,
+      openNativeUpdate,
     });
   });
 
@@ -46,5 +50,55 @@ describe('AppUpdateBanner', () => {
 
     expect(getByText('请完成应用更新')).toBeTruthy();
     expect(queryByText('稍后')).toBeNull();
+  });
+
+  it('shows a non-dismissible native update gate and opens the official store', () => {
+    (useAppUpdate as jest.Mock).mockReturnValue({
+      status: 'idle',
+      isForced: false,
+      nativeUpdateRequirement: 'required',
+      nativeUpdateUrl: 'https://apps.apple.com/app/id123456789',
+      openNativeUpdate,
+      applyUpdate,
+      dismiss,
+    });
+
+    const { getByTestId, getByText, queryByText } = render(<AppUpdateBanner />);
+    expect(getByTestId('native-update-banner')).toBeTruthy();
+    fireEvent.press(getByText('去更新'));
+    expect(openNativeUpdate).toHaveBeenCalledTimes(1);
+    expect(queryByText('稍后')).toBeNull();
+  });
+
+  it('keeps the native gate visible without rendering a fake button when URL is absent', () => {
+    (useAppUpdate as jest.Mock).mockReturnValue({
+      status: 'idle',
+      isForced: false,
+      nativeUpdateRequirement: 'required',
+      nativeUpdateUrl: null,
+      openNativeUpdate,
+      applyUpdate,
+      dismiss,
+    });
+
+    const { getByTestId, queryByText } = render(<AppUpdateBanner />);
+    expect(getByTestId('native-update-banner')).toBeTruthy();
+    expect(queryByText('去更新')).toBeNull();
+  });
+
+  it('allows a recommended native update to be dismissed', () => {
+    (useAppUpdate as jest.Mock).mockReturnValue({
+      status: 'idle',
+      isForced: false,
+      nativeUpdateRequirement: 'recommended',
+      nativeUpdateUrl: 'https://apps.apple.com/app/id123456789',
+      openNativeUpdate,
+      applyUpdate,
+      dismiss,
+    });
+
+    const { getByText } = render(<AppUpdateBanner />);
+    fireEvent.press(getByText('稍后'));
+    expect(dismiss).toHaveBeenCalledTimes(1);
   });
 });

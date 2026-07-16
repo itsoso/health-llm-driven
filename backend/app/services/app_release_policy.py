@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 import re
 from typing import Any, Optional
+from urllib.parse import urlsplit
 
 from sqlalchemy import desc
 from sqlalchemy.exc import IntegrityError
@@ -33,6 +34,7 @@ _FORBIDDEN_KILL_SWITCH_PARTS = frozenset({
     "clinical",
     "red_line",
 })
+_ALLOWED_NATIVE_UPDATE_HOSTS = frozenset({"apps.apple.com", "play.google.com"})
 
 
 class PolicyVersionConflict(ValueError):
@@ -76,6 +78,23 @@ def _validate_kill_switches(value: Optional[dict[str, Any]]) -> dict[str, bool]:
     return result
 
 
+def _normalize_native_update_url(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    candidate = value.strip()
+    parsed = urlsplit(candidate)
+    if (
+        not candidate
+        or parsed.scheme != "https"
+        or parsed.hostname not in _ALLOWED_NATIVE_UPDATE_HOSTS
+        or parsed.username is not None
+        or parsed.password is not None
+        or not parsed.path.startswith("/")
+    ):
+        raise PolicyValidationError("native_update_url 必须是官方应用商店 HTTPS 链接")
+    return candidate
+
+
 def validate_policy_input(
     *,
     platform: str,
@@ -83,6 +102,7 @@ def validate_policy_input(
     rollout_percent: int,
     minimum_native_build: Optional[str],
     recommended_native_build: Optional[str],
+    native_update_url: Optional[str],
     kill_switches: Optional[dict[str, Any]],
 ) -> tuple[str, str, dict[str, bool]]:
     platform, channel = _validate_scope(platform, channel)
@@ -94,6 +114,7 @@ def validate_policy_input(
     ):
         if version is not None and (not version.strip() or len(version.strip()) > 32):
             raise PolicyValidationError(f"{name} 格式不合法")
+    _normalize_native_update_url(native_update_url)
     return platform, channel, _validate_kill_switches(kill_switches)
 
 
@@ -106,6 +127,7 @@ def _safe_default(platform: str, channel: str) -> dict[str, Any]:
         "rollout_percent": 100,
         "minimum_native_build": None,
         "recommended_native_build": None,
+        "native_update_url": None,
         "forced_update": False,
         "kill_switches": {},
         "rollback_update_id": None,
@@ -127,6 +149,7 @@ def policy_to_public(policy: AppReleasePolicy, *, now: Optional[datetime] = None
         "rollout_percent": int(policy.rollout_percent),
         "minimum_native_build": policy.minimum_native_build,
         "recommended_native_build": policy.recommended_native_build,
+        "native_update_url": policy.native_update_url,
         "forced_update": bool(policy.forced_update),
         "kill_switches": dict(policy.kill_switches or {}),
         "rollback_update_id": policy.rollback_update_id,
@@ -148,6 +171,7 @@ def get_release_policy(
         rollout_percent=100,
         minimum_native_build=None,
         recommended_native_build=None,
+        native_update_url=None,
         kill_switches={},
     )
     policy = (
@@ -176,6 +200,7 @@ def get_current_policy_revision(
         rollout_percent=100,
         minimum_native_build=None,
         recommended_native_build=None,
+        native_update_url=None,
         kill_switches={},
     )
     return (
@@ -199,6 +224,7 @@ def publish_release_policy(
     rollout_percent: int,
     minimum_native_build: Optional[str],
     recommended_native_build: Optional[str],
+    native_update_url: Optional[str],
     forced_update: bool,
     kill_switches: Optional[dict[str, Any]],
     rollback_update_id: Optional[str],
@@ -211,6 +237,7 @@ def publish_release_policy(
         rollout_percent=rollout_percent,
         minimum_native_build=minimum_native_build,
         recommended_native_build=recommended_native_build,
+        native_update_url=native_update_url,
         kill_switches=kill_switches,
     )
     if expected_config_version < 0:
@@ -233,6 +260,7 @@ def publish_release_policy(
         rollout_percent=rollout_percent,
         minimum_native_build=minimum_native_build.strip() if minimum_native_build else None,
         recommended_native_build=recommended_native_build.strip() if recommended_native_build else None,
+        native_update_url=_normalize_native_update_url(native_update_url),
         forced_update=forced_update,
         kill_switches=kill_switches,
         rollback_update_id=rollback_update_id.strip() if rollback_update_id else None,
@@ -253,6 +281,7 @@ def publish_release_policy(
             "rollout_percent": rollout_percent,
             "minimum_native_build": minimum_native_build,
             "recommended_native_build": recommended_native_build,
+            "native_update_url": native_update_url,
             "forced_update": forced_update,
             "kill_switches": kill_switches,
             "rollback_update_id": rollback_update_id,

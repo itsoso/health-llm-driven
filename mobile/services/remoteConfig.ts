@@ -14,6 +14,7 @@ export type ReleasePolicy = {
   rollout_percent: number;
   minimum_native_build: string | null;
   recommended_native_build: string | null;
+  native_update_url?: string | null;
   forced_update: boolean;
   kill_switches: Record<string, boolean>;
   rollback_update_id: string | null;
@@ -52,6 +53,7 @@ export const SAFE_RELEASE_POLICY: Omit<ReleasePolicy, 'platform' | 'channel'> = 
   rollout_percent: 100,
   minimum_native_build: null,
   recommended_native_build: null,
+  native_update_url: null,
   forced_update: false,
   kill_switches: {},
   rollback_update_id: null,
@@ -78,6 +80,25 @@ function isExpired(value: string | null, now: number): boolean {
   return !Number.isFinite(parsed) || parsed <= now;
 }
 
+export type NativeUpdateRequirement = 'none' | 'recommended' | 'required';
+
+/** Only accept the two official stores before exposing a remote link to users. */
+export function isOfficialNativeUpdateUrl(value: unknown): value is string {
+  if (typeof value !== 'string' || !value.trim()) return false;
+  try {
+    const url = new URL(value.trim());
+    return (
+      url.protocol === 'https:'
+      && !url.username
+      && !url.password
+      && (url.hostname === 'apps.apple.com' || url.hostname === 'play.google.com')
+      && url.pathname.startsWith('/')
+    );
+  } catch {
+    return false;
+  }
+}
+
 function isPolicy(value: unknown, now: number): value is ReleasePolicy {
   if (!value || typeof value !== 'object') return false;
   const policy = value as Partial<ReleasePolicy>;
@@ -93,6 +114,9 @@ function isPolicy(value: unknown, now: number): value is ReleasePolicy {
     || typeof policy.forced_update !== 'boolean'
     || (policy.minimum_native_build !== null && typeof policy.minimum_native_build !== 'string')
     || (policy.recommended_native_build !== null && typeof policy.recommended_native_build !== 'string')
+    || (policy.native_update_url !== undefined
+      && policy.native_update_url !== null
+      && !isOfficialNativeUpdateUrl(policy.native_update_url))
     || (policy.rollback_update_id !== null && typeof policy.rollback_update_id !== 'string')
     || (policy.expires_at !== null && typeof policy.expires_at !== 'string')
     || (policy.source !== 'remote' && policy.source !== 'safe_default')
@@ -153,6 +177,21 @@ function compareNativeBuilds(current: string, minimum: string): number | null {
   return currentNumber - minimumNumber;
 }
 
+export function getNativeUpdateRequirement(
+  policy: ReleasePolicy,
+  nativeBuild: string,
+): NativeUpdateRequirement {
+  if (policy.minimum_native_build) {
+    const comparison = compareNativeBuilds(nativeBuild, policy.minimum_native_build);
+    if (comparison === null || comparison < 0) return 'required';
+  }
+  if (policy.recommended_native_build) {
+    const comparison = compareNativeBuilds(nativeBuild, policy.recommended_native_build);
+    if (comparison === null || comparison < 0) return 'recommended';
+  }
+  return 'none';
+}
+
 /** Fail closed when a rollout or native compatibility guard does not match. */
 export function isReleasePolicyEligible(
   policy: ReleasePolicy,
@@ -162,11 +201,7 @@ export function isReleasePolicyEligible(
   if (!policy.ota_enabled || policy.rollout_percent <= 0) return false;
   if (!Number.isInteger(rolloutBucket) || rolloutBucket < 0 || rolloutBucket >= 100) return false;
   if (rolloutBucket >= policy.rollout_percent) return false;
-  if (policy.minimum_native_build) {
-    const comparison = compareNativeBuilds(nativeBuild, policy.minimum_native_build);
-    if (comparison === null || comparison < 0) return false;
-  }
-  return true;
+  return getNativeUpdateRequirement(policy, nativeBuild) !== 'required';
 }
 
 export async function loadReleasePolicy(

@@ -171,6 +171,12 @@ def test_client_events_stats_empty(db):
         "platform": "ios",
         "channel": "production",
     }),
+    ("app_update_terminal", {
+        "phase": "native_update_required",
+        "duration_bucket": "lt_1s",
+        "platform": "ios",
+        "channel": "production",
+    }),
     ("app_update_launch", {
         "launch_source": "ota",
         "platform": "ios",
@@ -271,6 +277,41 @@ def test_client_events_stats_counts_app_update_outcomes(db, auth_user_and_header
             "reasons": ["发布启动样本不足 20，继续观察"],
         },
     }
+
+
+def test_client_events_stats_does_not_dilute_ota_failure_rate_with_native_gate(
+    db, auth_user_and_headers,
+):
+    from app.services.observability_service import client_events_stats
+
+    user, _ = auth_user_and_headers
+    now = datetime.now(timezone.utc)
+    events = [
+        ClientEvent(user_id=user.id, event_name="app_update_terminal", meta={
+            "phase": "ready", "duration_bucket": "3_10s",
+        }, created_at=now - timedelta(hours=1))
+        for _ in range(18)
+    ]
+    events.extend(
+        ClientEvent(user_id=user.id, event_name="app_update_terminal", meta={
+            "phase": "failed", "duration_bucket": "gte_30s",
+        }, created_at=now - timedelta(hours=1))
+        for _ in range(2)
+    )
+    events.extend(
+        ClientEvent(user_id=user.id, event_name="app_update_terminal", meta={
+            "phase": "native_update_required", "duration_bucket": "lt_1s",
+        }, created_at=now - timedelta(hours=1))
+        for _ in range(10)
+    )
+    db.add_all(events)
+    db.commit()
+
+    stats = client_events_stats(db, now - timedelta(days=7), user_id=None)
+
+    assert stats["app_update"]["checks"] == 30
+    assert stats["app_update"]["failure_rate_pct"] == 10.0
+    assert stats["app_update"]["release_health"]["terminal_failure_rate_pct"] == 10.0
 
 
 # ─────────────── Phase 0.4: 5 种新事件白名单 ───────────────

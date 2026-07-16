@@ -38,6 +38,7 @@ def _policy_payload(**overrides):
         "rollout_percent": 25,
         "minimum_native_build": "227",
         "recommended_native_build": "228",
+        "native_update_url": "https://apps.apple.com/app/id123456789",
         "forced_update": False,
         "kill_switches": {"dynamic_cards": True},
         "rollback_update_id": "019f-good-update",
@@ -64,6 +65,7 @@ def test_client_gets_safe_default_when_no_policy_exists(client, db):
         "rollout_percent": 100,
         "minimum_native_build": None,
         "recommended_native_build": None,
+        "native_update_url": None,
         "forced_update": False,
         "kill_switches": {},
         "rollback_update_id": None,
@@ -100,6 +102,34 @@ def test_admin_publishes_versioned_policy_and_client_reads_it(client, db):
     assert client_response.status_code == 200
     assert client_response.json()["source"] == "remote"
     assert client_response.json()["kill_switches"] == {"dynamic_cards": True}
+    assert client_response.json()["native_update_url"] == "https://apps.apple.com/app/id123456789"
+
+
+def test_admin_rejects_non_official_native_update_url(client, db):
+    admin = _user(db, is_admin=True)
+
+    response = client.put(
+        "/api/v1/admin/app-release-policy",
+        headers=_headers(admin),
+        json=_policy_payload(native_update_url="https://example.com/update"),
+    )
+
+    assert response.status_code == 422
+
+
+def test_admin_accepts_play_store_native_update_url(client, db):
+    admin = _user(db, is_admin=True)
+
+    response = client.put(
+        "/api/v1/admin/app-release-policy",
+        headers=_headers(admin),
+        json=_policy_payload(
+            native_update_url="https://play.google.com/store/apps/details?id=life.executor.health"
+        ),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["native_update_url"].startswith("https://play.google.com/")
 
 
 def test_non_admin_cannot_publish_policy(client, db):

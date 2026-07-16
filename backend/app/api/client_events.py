@@ -81,7 +81,10 @@ _APP_UPDATE_EVENT_SCHEMAS = {
             "update_id", "error_code",
         }),
         "required": frozenset({"phase", "duration_bucket"}),
-        "phases": frozenset({"disabled", "current", "ready", "failed", "applied"}),
+        "phases": frozenset({
+            "disabled", "current", "ready", "failed", "applied",
+            "native_update_required", "native_update_recommended",
+        }),
     },
     "app_update_launch": {
         "allowed": frozenset({

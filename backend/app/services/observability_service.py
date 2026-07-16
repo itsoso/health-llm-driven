@@ -639,8 +639,8 @@ def client_events_stats(db: Session, since: datetime, user_id: Optional[int]) ->
             "ready": app_update_ready,
             "failures": app_update_failures,
             "failure_rate_pct": (
-                round(100.0 * app_update_failures / app_update_checks, 1)
-                if app_update_checks else None
+                round(100.0 * app_update_failures / app_update_outcome_terminals, 1)
+                if app_update_outcome_terminals else None
             ),
             "by_phase": app_update_by_phase,
             "by_launch_source": app_update_by_launch_source,
