@@ -127,4 +127,5 @@
 - G3：PASS。相关 Jest `3 suites / 52 tests` 通过；TypeScript `tsc --noEmit` 通过；目标文件 ESLint 通过；`git diff --check` 通过。
 - G5 本地构建：PASS。设置 `SENTRY_DISABLE_AUTO_UPLOAD=true` 后 iPhone 17 Pro 模拟器 Debug build 成功安装；Sentry 上传要求组织配置，不影响本地编译产物。
 - G6 模拟器验证：PASS。逾期状态显示为单行 `已过时段 · 复查:血脂四项`，无常驻标题、计数或空占位，对话与输入栏未被遮挡。证据：`/tmp/mobile-chat-context-strip-final.png`。
-- 当前状态：S6 待生产 OTA 与冷启动验证。
+- G5 生产 OTA：PASS。`production` / runtime `1.3.1`，update group `c79a55aa-fd14-4192-8894-b7ad71a6f457`，iOS update `019f6a31-9e36-787d-b4e2-c36786c3b170`，脚本已回读校验发布结果。
+- 当前状态：S7 已发布，待真实设备冷启动完成最终 G6 触控与视觉确认。
