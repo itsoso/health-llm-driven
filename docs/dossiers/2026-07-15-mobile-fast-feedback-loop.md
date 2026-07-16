@@ -82,17 +82,17 @@ Implementation plan: `docs/plans/2026-07-15-mobile-fast-feedback-loop.md`.
 - [x] T4 Changed-file fast test command.
 - [x] T5 Cached USB device Release command.
 - [x] T6 OTA narrow retry and published-ID verification.
-- [ ] T7 Integrated physical-device and production evidence.
+- [ ] T7 Integrated physical-device and production evidence. Production OTA is verified; physical-device UI acceptance is waiting for Xcode device services.
 - 并发检查:current `main`; unrelated untracked backend and PRD files remain out of scope.
 
 ## Delivery Gates
 
 | Gate | Status | Evidence |
 |---|---|---|
-| G3 tests | PASS | 248 Jest suites / 1745 tests; focused 21 tests; TypeScript PASS; lint 0 errors; 9 script tests |
+| G3 tests | PASS | 248 Jest suites / 1745 tests; focused 21 tests; TypeScript PASS; lint 0 errors; 10 script tests |
 | G4 safety | not required | No health/safety/write behavior |
-| G5 deployment | pending | USB install + verified EAS update ID |
-| G6 device validation | pending | Connected iPhone update banner and apply flow |
+| G5 deployment | PASS | Production group `c1f5c338-2756-4373-aaef-978ef23604c4`; iOS update `019f692d-b167-77ae-880f-8af137440c4e`; runtime `1.3.1` |
+| G6 device validation | pending | iPhone is paired but `ddiServicesAvailable=false`; USB script now fails before Xcode with a direct connect/unlock instruction |
 
 ### G3 Evidence
 
@@ -100,7 +100,15 @@ Implementation plan: `docs/plans/2026-07-15-mobile-fast-feedback-loop.md`.
 - Full Jest: 248 suites and 1745 tests PASS. The historical suite leaves asynchronous handles open after assertions; the local `--all` helper uses explicit `--forceExit`, while CI remains the authoritative no-force-exit gate.
 - `npm run lint`: PASS with 0 errors. Existing repository warnings remain unchanged outside this scope.
 - Incremental `tsc --noEmit`: PASS.
-- `python3 -m pytest scripts/test_mobile_fast_feedback_scripts.py -q`: 9 PASS.
+- `python3 -m pytest scripts/test_mobile_fast_feedback_scripts.py -q`: 10 PASS.
+
+### G5 Evidence
+
+- Commit deployed: `e07f421cc8c6256a3f8de1860ba6ff9feeed0d24`.
+- EAS production update group: `c1f5c338-2756-4373-aaef-978ef23604c4`.
+- EAS iOS update: `019f692d-b167-77ae-880f-8af137440c4e`.
+- EAS runtime: `1.3.1`.
+- USB acceptance stopped before build because the paired iPhone was not an available Xcode destination. No device-success claim is made.
 
 ## Constraints
 
