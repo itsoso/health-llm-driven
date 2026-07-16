@@ -95,6 +95,20 @@ def test_short_sleep_and_low_deep_flag_caution():
     assert labels.get("深睡偏少") == "caution"
 
 
+def test_range_label_from_days_analyzed_and_single_night_is_recent_not_yesterday():
+    # 单夜 → 「最近一晚」(不谎称昨晚,稀疏同步下可能是几天前)
+    one = {"days_analyzed": 1, "daily_data": [
+        {"date": "2026-07-09", "sleep_score": 80, "total_sleep_duration": 445}]}
+    assert build_sleep_summary(one)["data"]["range_label"] == "最近一晚"
+    # 标签用 days_analyzed(与 averages 窗口一致),即便展示夜数被 _MAX_NIGHTS 截断
+    many = {"days_analyzed": 30, "average_sleep_duration_hours": 7.0,
+            "daily_data": [{"date": f"2026-06-{d:02d}", "sleep_score": 80,
+                            "total_sleep_duration": 420} for d in range(1, 13)]}
+    out = build_sleep_summary(many)["data"]
+    assert out["range_label"] == "近30天"
+    assert len(out["nights"]) == 7  # 表只展示最近 7 夜,但标签反映真实 30 天窗口
+
+
 def test_empty_daily_data_returns_none_fail_open():
     assert build_sleep_summary({"daily_data": []}) is None
     assert build_sleep_summary({}) is None

@@ -8,6 +8,7 @@ jest.mock('../api', () => ({
 }));
 
 import { streamChat } from '../chat';
+import { buildClientCapsHeader } from '../clientCaps';
 
 class MockXMLHttpRequest {
   static instances: MockXMLHttpRequest[] = [];
@@ -272,9 +273,19 @@ describe('streamChat', () => {
     await Promise.resolve();
     const xhr = MockXMLHttpRequest.instances[0];
 
-    expect(xhr.setRequestHeader).toHaveBeenCalledWith('X-Reva-Client-Caps', expect.stringContaining('genui-v1'));
-    expect(xhr.setRequestHeader).toHaveBeenCalledWith('X-Reva-Client-Caps', expect.stringContaining('genui-components-v1'));
-    expect(xhr.setRequestHeader).toHaveBeenCalledWith('X-Reva-Client-Caps', expect.stringContaining('genui-record-quality-v1'));
+    // caps 头 = buildClientCapsHeader 单一真源(此前硬编码基础 caps → 结构化卡 cap 从不到后端,
+    // 卡在生产死。这条锁死:点亮的 metric_table / diet / sleep caps 必须真的发出去,禁止再硬编码)。
+    const capsCall = (xhr.setRequestHeader as jest.Mock).mock.calls.find(
+      (c: any[]) => c[0] === 'X-Reva-Client-Caps',
+    );
+    expect(capsCall).toBeTruthy();
+    expect(capsCall![1]).toBe(buildClientCapsHeader());
+    for (const token of [
+      'genui-v1', 'genui-components-v1', 'genui-record-quality-v1',
+      'genui-table-v1', 'genui-diet-summary-v1', 'genui-sleep-summary-v1',
+    ]) {
+      expect(capsCall![1]).toContain(token);
+    }
 
     xhr.responseText =
       'data: {"event":"done","data":{"conversation_id":42,"message_id":99}}\n\n';

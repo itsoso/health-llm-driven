@@ -24,8 +24,7 @@ import {
   pickNum,
 } from './statusSummary';
 
-// 表列顺序 = 契约字段 → 表头。评分为设备分, 时长为 h, 深睡为分钟(见 unitLegend)。
-const NIGHT_COLS = ['score', 'duration_h', 'deep_min'] as const;
+// 表头顺序 = 契约字段(score/duration_h/deep_min)对应列。评分设备分 · 时长 h · 深睡分钟。
 const NIGHT_HEADERS = ['评分', '时长', '深睡'] as const;
 
 interface Night {

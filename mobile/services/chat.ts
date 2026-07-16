@@ -1,5 +1,6 @@
 import { getToken } from './auth';
 import { BASE_URL } from './api';
+import { buildClientCapsHeader } from './clientCaps';
 import { sanitizeChatErrorMessage } from '../utils/chatErrorMessage';
 import type { AgentPerfProfileLike } from '../utils/chatTransparency';
 import { normalizeWriteReceipt, type WriteReceipt } from './writeReceipt';
@@ -230,7 +231,10 @@ export async function* streamChat(
   xhr.open('POST', `${BASE_URL}/agent/stream`);
   xhr.setRequestHeader('Content-Type', 'application/json');
   if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
-  xhr.setRequestHeader('X-Reva-Client-Caps', 'genui-v1, genui-components-v1, genui-record-quality-v1');
+  // 客户端 GenUI 能力声明:走 buildClientCapsHeader 单一真源(含点亮的 metric_table /
+  // diet_summary / sleep_summary caps)。此前这里硬编码基础 caps、buildClientCapsHeader 是死代码,
+  // 导致所有结构化卡的 cap 从未到达后端 —— 卡在生产从不出现。别再硬编码。
+  xhr.setRequestHeader('X-Reva-Client-Caps', buildClientCapsHeader());
   xhr.responseType = 'text';
 
   // Wire up abort signal

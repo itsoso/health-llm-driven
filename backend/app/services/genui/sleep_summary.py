@@ -123,8 +123,13 @@ def build_sleep_summary(analysis: dict) -> Optional[dict]:
     avg_dur_h = _round(analysis.get("average_sleep_duration_hours"))
     avg_deep_min = _round(analysis.get("average_deep_sleep_minutes"), 0)
 
+    # 标签用「分析窗口的有数据夜数」(days_analyzed),与 averages 的窗口一致;缺失回退可见夜数。
+    # 单夜用「最近一晚」而非「昨晚」—— 稀疏同步下唯一那晚可能是几天前,别谎称昨晚(honesty)。
+    _analyzed = _round(analysis.get("days_analyzed"), 0)
+    _span = int(_analyzed) if (_analyzed and _analyzed > 0) else len(nights)
+
     data: dict[str, Any] = {
-        "range_label": f"近{len(nights)}天" if len(nights) > 1 else "昨晚",
+        "range_label": "最近一晚" if _span <= 1 else f"近{_span}天",
         "nights": nights,
         "averages": {"score": avg_score, "duration_h": avg_dur_h, "deep_min": avg_deep_min},
         "observations": _derive_sleep_observations(
