@@ -56,9 +56,11 @@ jest.mock('../../services/clientEvents', () => ({ emitClientEvent: jest.fn() }))
 jest.mock('../../services/notificationRoutes', () => ({ resolveNotificationRoute: jest.fn() }));
 
 import * as Notifications from 'expo-notifications';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   consumeLastNotificationResponse,
   consumeNotificationResponse,
+  drainPendingMedicationActions,
   handleAgendaAction,
   handleMedicationReminderAction,
   registerNotificationCategories,
@@ -67,6 +69,7 @@ import { completeAgendaItem } from '../../services/agenda';
 import { logMedication } from '../../services/medications';
 import { queryClient } from '../../applib/queryClient';
 import { emitClientEvent } from '../../services/clientEvents';
+import { listPendingMedicationActions } from '../../services/pendingMedicationActions';
 
 const mockCompleteAgendaItem = completeAgendaItem as jest.Mock;
 const mockInvalidateQueries = queryClient.invalidateQueries as jest.Mock;
@@ -181,9 +184,16 @@ describe('handleAgendaAction (AGENDA_ACTION background action)', () => {
 });
 
 describe('Watch medication reminder action', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     jest.clearAllMocks();
-    mockLogMedication.mockResolvedValue({ id: 88, medication_id: 7, status: 'taken' });
+    await AsyncStorage.clear();
+    mockLogMedication.mockImplementation(async (input) => ({
+      id: 88,
+      medication_id: input.medication_id,
+      taken_date: input.taken_date,
+      taken_time: input.taken_time,
+      status: input.status,
+    }));
     mockNotifications.getLastNotificationResponseAsync.mockResolvedValue(null);
     mockNotifications.clearLastNotificationResponseAsync.mockResolvedValue(undefined);
     mockNotifications.scheduleNotificationAsync.mockResolvedValue('medication-action-failed');
@@ -293,7 +303,13 @@ describe('Watch medication reminder action', () => {
       }),
     );
 
-    mockLogMedication.mockResolvedValueOnce({ id: 89, medication_id: 7, status: 'taken' });
+    mockLogMedication.mockResolvedValueOnce({
+      id: 89,
+      medication_id: 7,
+      taken_date: '2026-07-16',
+      taken_time: '09:00',
+      status: 'taken',
+    });
     await consumeLastNotificationResponse();
 
     expect(mockLogMedication).toHaveBeenCalledTimes(2);
@@ -314,6 +330,31 @@ describe('Watch medication reminder action', () => {
       'watch_action_failed',
       expect.objectContaining({ reason: 'invalid_medication_occurrence' }),
     );
+  });
+
+  it('does not acknowledge 服用 when the backend returns a conflicting status', async () => {
+    mockLogMedication.mockResolvedValueOnce({
+      id: 90,
+      medication_id: 7,
+      taken_date: '2026-07-20',
+      taken_time: '08:30',
+      status: 'skipped',
+    });
+
+    await expect(handleMedicationReminderAction('TAKEN', {
+      reminder_type: 'medication',
+      medication_id: 7,
+      scheduled_date: '2026-07-20',
+      scheduled_time: '08:30',
+      scheduled_timezone: 'Asia/Shanghai',
+      rule_id: 'medication_reminder.7.2026-07-20.08:30',
+    })).resolves.toBe(false);
+
+    expect(mockEmitClientEvent).toHaveBeenCalledWith(
+      'watch_action_failed',
+      expect.objectContaining({ reason: 'response_mismatch', kind: 'medication' }),
+    );
+    expect(mockNotifications.scheduleNotificationAsync).toHaveBeenCalled();
   });
 
   it('uses rule_id rather than a reused iOS request id to deduplicate daily occurrences', async () => {
@@ -343,5 +384,46 @@ describe('Watch medication reminder action', () => {
     expect(mockLogMedication).toHaveBeenCalledTimes(2);
     expect(mockLogMedication).toHaveBeenNthCalledWith(1, expect.objectContaining({ taken_date: '2026-07-18' }));
     expect(mockLogMedication).toHaveBeenNthCalledWith(2, expect.objectContaining({ taken_date: '2026-07-19' }));
+  });
+
+  it('durably drains every offline medication occurrence instead of keeping only the latest', async () => {
+    const responseFor = (date: string) => ({
+      actionIdentifier: 'TAKEN',
+      notification: {
+        request: {
+          identifier: 'reused-ios-request-7',
+          content: {
+            data: {
+              reminder_type: 'medication',
+              medication_id: 7,
+              scheduled_date: date,
+              scheduled_time: '08:30',
+              scheduled_timezone: 'Asia/Shanghai',
+              rule_id: `medication_reminder.7.${date}.08:30`,
+            },
+          },
+        },
+      },
+    });
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockLogMedication.mockRejectedValue(new Error('offline'));
+
+    await consumeNotificationResponse(responseFor('2026-07-23') as any);
+    await consumeNotificationResponse(responseFor('2026-07-24') as any);
+
+    expect(await listPendingMedicationActions()).toHaveLength(2);
+    mockLogMedication.mockImplementation(async (input) => ({
+      id: 91,
+      medication_id: input.medication_id,
+      taken_date: input.taken_date,
+      taken_time: input.taken_time,
+      status: input.status,
+    }));
+
+    await drainPendingMedicationActions();
+
+    expect(mockLogMedication).toHaveBeenCalledTimes(4);
+    expect(await listPendingMedicationActions()).toEqual([]);
+    warn.mockRestore();
   });
 });

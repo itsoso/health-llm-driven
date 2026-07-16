@@ -40,12 +40,15 @@
 - [x] 锁屏文案与按钮统一为“服用”，保持药名/剂量只在 data payload。
 - [x] 后端在写日志前按认证用户校验药物归属；旧日期打卡只落依从事实，不误完成今天议程。
 - [x] 每日重复的本地通知取消直写 category；只有带完整 occurrence identity 的远程推送提供腕上“服用”。
+- [x] 待处理动作先进入端上持久队列；连续点击多个离线提醒时按 occurrence 逐条补写，不依赖 iOS 只保留一条的 last response。
+- [x] 同一时点原为“跳过/延后”时，“服用”会把该唯一记录纠正为 `taken`；客户端同时校验回执状态、药物、日期和时间，禁止冲突回执伪成功。
 
 ## G3 · 测试闸
 
-- Mobile focused Jest：4 suites / 85 tests PASS（连续多图、媒体草稿、通知动作、本地提醒）。
+- Mobile focused Jest：5 suites / 90 tests PASS（连续多图、媒体草稿、通知动作、持久重试队列、本地提醒）。
 - Mobile TypeScript：PASS。
-- Backend focused pytest：117 passed（用药推送隐私、用户隔离、明确发生日、`MedicationLog` 幂等、多剂时间槽、议程回写与并发）。
+- Backend focused pytest：138 passed（用药推送隐私、用户隔离、明确发生日、状态纠正、`MedicationLog` 幂等、多剂时间槽、议程回写、并发和图片记餐确认闸门）。
+- Mobile 目标 ESLint：0 errors（测试文件保留 10 个既有 import-order warnings）。
 - `git diff --check`：PASS。
 - Dossier 一致性闸：54 份全部自洽。
 - **裁决：绿。**
@@ -56,6 +59,8 @@
 - 必审：用户归属、同槽幂等、失败不伪成功、锁屏隐私、不得把提醒动作解释为处方或已验证吞咽。
 - 首轮独立 review：**NO-GO**。阻断项为：(1) 缺日期/时区时错误回退手机当前时间；(2) 写入失败缺少用户可见状态和自动重试；(3) 以可能复用的 iOS request id 去重会吞次日动作。
 - 修正证据：远程 payload 补齐 `scheduled_date/time/timezone/rule_id` 并严格匹配；失败保留 response、显示通用失败通知和 toast、联网/前台自动重试；去重键改为 `rule_id + action`；本地重复提醒取消直写；后端补用户归属校验。
+- 第二轮独立 review：**NO-GO**。阻断项为：(1) 同槽已有 `skipped/delayed` 时“服用”可能返回旧状态却提示成功；(2) iOS last response 无法保存连续多个离线动作；(3) 多图记餐仅靠提示词要求草稿，模型仍可能在首轮直接写库。
+- 第二轮修正证据：服务端将同槽 `skipped/delayed -> taken` 原位纠正且保持单行；客户端严格核对写回结果；端上新增非敏感 occurrence 持久队列并串行排空，且不设静默截断上限；Agent executor 对 mobile 图片记餐首轮实施确定性 draft-only 闸门，即使模型自行传 `confirmed=true` 也禁止写入。
 - **裁决：等待独立复审，复审前禁止发布。**
 
 ## S6 / G5 · 部署
@@ -66,5 +71,5 @@
 ## S7 / G6 · 上线验证
 
 - 自动化覆盖 notification category、冷启动消费、失败保留、MedicationLog contract。
-- 真机待验：iPhone + Apple Watch 收到用药提醒 -> Watch 点击“服用” -> 今日用药和数据库同时间槽出现 taken 记录。
+- 真机待验：iPhone + Apple Watch 收到用药提醒 -> Watch 点击“服用” -> 今日用药和数据库同时间槽出现 taken 记录；离线连续点两个不同时点后联网，两条均补写且不重复。
 - **裁决：待用户真机确认。**

@@ -11,6 +11,13 @@ import { resolveNotificationRoute } from '../services/notificationRoutes';
 import { queryClient } from '../applib/queryClient';
 import { completeAgendaItem } from '../services/agenda';
 import { logMedication } from '../services/medications';
+import {
+  enqueuePendingMedicationAction,
+  listPendingMedicationActions,
+  removePendingMedicationAction,
+  type PendingMedicationAction,
+  type PendingMedicationActionData,
+} from '../services/pendingMedicationActions';
 import { useToast } from './useToast';
 
 const SILENT_SCREENS = new Set(['home']);
@@ -55,7 +62,10 @@ export function useNotifications(isAuthenticated: boolean) {
       onMedicationFailure: () => show('服用记录未保存，联网后会自动重试', 'error'),
     };
     const retryPendingAction = () => {
-      void consumeLastNotificationResponse(feedback);
+      void (async () => {
+        const drained = await drainPendingMedicationActions(feedback);
+        if (drained) await consumeLastNotificationResponse(feedback);
+      })();
     };
     retryPendingAction();
 
@@ -188,10 +198,41 @@ interface NotificationActionFeedback {
   onMedicationFailure?: () => void;
 }
 
+interface ConsumeNotificationResponseOptions {
+  clearNativeResponse?: boolean;
+}
+
 function isMedicationActionResponse(response: Notifications.NotificationResponse): boolean {
   const data = response.notification.request.content.data as Record<string, any> | undefined;
   return data?.reminder_type === 'medication'
     && (response.actionIdentifier === 'TAKEN' || response.actionIdentifier === 'SKIP');
+}
+
+function pendingMedicationActionFromResponse(
+  response: Notifications.NotificationResponse,
+): Pick<PendingMedicationAction, 'action' | 'data'> | null {
+  if (!isMedicationActionResponse(response)) return null;
+  const source = response.notification.request.content.data as Record<string, any> | undefined;
+  const medicationId = normalizeAgendaActionObjectId(source?.medication_id);
+  const scheduledDate = normalizeMedicationReminderDate(source?.scheduled_date);
+  const scheduledTime = normalizeMedicationReminderTime(source?.scheduled_time);
+  const action = response.actionIdentifier as 'TAKEN' | 'SKIP';
+  if (
+    medicationId == null
+    || !scheduledDate
+    || !scheduledTime
+    || source?.scheduled_timezone !== 'Asia/Shanghai'
+    || source?.rule_id !== `medication_reminder.${medicationId}.${scheduledDate}.${scheduledTime}`
+  ) return null;
+  const data: PendingMedicationActionData = {
+    reminder_type: 'medication',
+    medication_id: medicationId,
+    scheduled_date: scheduledDate,
+    scheduled_time: scheduledTime,
+    scheduled_timezone: 'Asia/Shanghai',
+    rule_id: source.rule_id,
+  };
+  return { action, data };
 }
 
 function medicationFailureNotificationId(data?: Record<string, any>): string | null {
@@ -310,13 +351,38 @@ export async function handleNotificationResponse(
 export async function consumeNotificationResponse(
   response: Notifications.NotificationResponse,
   feedback?: NotificationActionFeedback,
+  options: ConsumeNotificationResponseOptions = {},
 ): Promise<boolean> {
   const medicationAction = isMedicationActionResponse(response);
   const data = response.notification.request.content.data as Record<string, any> | undefined;
+  const pendingInput = pendingMedicationActionFromResponse(response);
+  let pendingKey: string | null = null;
+  if (pendingInput) {
+    try {
+      pendingKey = (await enqueuePendingMedicationAction(pendingInput)).key;
+    } catch (error) {
+      console.warn('[useNotifications] failed to persist medication action', error);
+      await emitClientEvent('watch_action_failed', {
+        reason: 'retry_queue_failed',
+        kind: 'medication',
+        action: response.actionIdentifier,
+        rule_id: pendingInput.data.rule_id,
+      });
+    }
+  }
   try {
     const handled = await handleNotificationResponse(response);
     if (handled) {
-      await Notifications.clearLastNotificationResponseAsync();
+      if (pendingKey) {
+        try {
+          await removePendingMedicationAction(pendingKey);
+        } catch (error) {
+          console.warn('[useNotifications] failed to clear persisted medication action', error);
+        }
+      }
+      if (options.clearNativeResponse !== false) {
+        await Notifications.clearLastNotificationResponseAsync();
+      }
       if (medicationAction) {
         await dismissMedicationFailureNotification(data);
         feedback?.onMedicationSuccess?.(response.actionIdentifier as 'TAKEN' | 'SKIP');
@@ -334,14 +400,44 @@ export async function consumeNotificationResponse(
 
 export async function consumeLastNotificationResponse(
   feedback?: NotificationActionFeedback,
-): Promise<void> {
+): Promise<boolean | null> {
   try {
     const response = await Notifications.getLastNotificationResponseAsync();
-    if (!response) return;
-    await consumeNotificationResponse(response, feedback);
+    if (!response) return null;
+    return consumeNotificationResponse(response, feedback);
   } catch (error) {
     console.warn('[useNotifications] cold-start notification action failed', error);
+    return false;
   }
+}
+
+export async function drainPendingMedicationActions(
+  feedback?: NotificationActionFeedback,
+): Promise<boolean> {
+  let pending: PendingMedicationAction[];
+  try {
+    pending = await listPendingMedicationActions();
+  } catch (error) {
+    console.warn('[useNotifications] failed to load persisted medication actions', error);
+    return false;
+  }
+  for (const item of pending) {
+    const response = {
+      actionIdentifier: item.action,
+      notification: {
+        date: Date.parse(`${item.data.scheduled_date}T${item.data.scheduled_time}:00+08:00`),
+        request: {
+          identifier: item.key,
+          content: { data: item.data },
+        },
+      },
+    } as unknown as Notifications.NotificationResponse;
+    const handled = await consumeNotificationResponse(response, feedback, {
+      clearNativeResponse: false,
+    });
+    if (!handled) return false;
+  }
+  return true;
 }
 
 // 统一议程闭环: AGENDA_ACTION 通知的「完成 / 跳过」后台动作。
@@ -482,12 +578,30 @@ export async function handleMedicationReminderAction(
   const status = action === 'TAKEN' ? 'taken' : 'skipped';
 
   try {
-    await logMedication({
+    const result = await logMedication({
       medication_id: medicationId,
       taken_date: takenDate,
       taken_time: takenTime,
       status,
     });
+    if (
+      result.status !== status
+      || result.medication_id !== medicationId
+      || result.taken_date !== takenDate
+      || result.taken_time !== takenTime
+    ) {
+      await emitClientEvent('watch_action_failed', {
+        reason: 'response_mismatch',
+        kind: 'medication',
+        medication_id: medicationId,
+        action,
+        scheduled_date: takenDate,
+        scheduled_time: takenTime,
+        response_status: result.status,
+      });
+      await showMedicationFailureNotification(data);
+      return false;
+    }
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ['medications'] }),
       queryClient.invalidateQueries({ queryKey: ['medicationToday'] }),

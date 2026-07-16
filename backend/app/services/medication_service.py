@@ -234,6 +234,18 @@ class MedicationService:
                 existing = q.order_by(MedicationLog.id.desc()).first()
                 if existing is None:  # 撞唯一约束却查不到 → 反常, fail loud
                     raise
+                # 同槽先跳过/延迟、后确认已服：以更强的用户执行事实 supersede，
+                # 仍只保留一行。反向的 taken→skipped 不在快捷动作里降级，调用方
+                # 会从响应 status 看见冲突并要求在 App 内显式修正。
+                if status == "taken" and existing.status in {"skipped", "delayed"}:
+                    existing.status = "taken"
+                    existing.skip_reason = None
+                    if actual_dosage is not None:
+                        existing.actual_dosage = actual_dosage
+                    if notes is not None:
+                        existing.notes = notes
+                    db.commit()
+                    db.refresh(existing)
                 return existing
             db.refresh(log)
         else:

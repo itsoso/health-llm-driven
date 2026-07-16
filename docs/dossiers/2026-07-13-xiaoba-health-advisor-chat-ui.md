@@ -120,8 +120,8 @@
 - 用户问题：从“拍照记餐”进入后第一张照片立即触发发送，Agent 流式回复期间第二次相机入口被阻断；预览区的加号还只会打开相册。
 - 根因：相机采集与消息提交耦合，无法形成“一轮多图、一次 Agent 请求”的明确状态。
 - 修复：第一张和后续照片统一进入可持久化草稿，预览区分别提供“继续拍照”和“继续从相册选择”；最多 9 张，用户点击发送后才把全部图片作为同一餐上下文提交。
-- 数据边界：照片只是同一轮识别上下文，仍由 Agent 生成可确认饮食记录卡片，不因拍照直接写入 `DietRecord`。
-- G3：相关 Jest 3 suites 与本轮通知回归合计 5 suites / 86 tests PASS；`tsc --noEmit` PASS；`git diff --check` PASS。
+- 数据边界：照片只是同一轮识别上下文。除提示词约束外，Agent executor 已增加 mobile 图片记餐首轮的确定性 draft-only 闸门；即使模型自行传入 `confirmed=true` 也只生成待确认草稿，不写入 `DietRecord`，后续用户明确确认才允许写入。
+- G3：相关 Mobile 回归合计 5 suites / 90 tests PASS；Backend 确认闸门纳入 138 项 focused pytest 并通过；`tsc --noEmit` PASS；`git diff --check` PASS。
 - 发布路由：纯 Mobile TS，随本轮 production OTA 发布；真机相机连续调用待 G6 确认。
 
 ## 2026-07-16 · 今日重点条件状态条修订

@@ -249,6 +249,40 @@ def test_repeated_log_same_slot_stays_single_log_and_event(client, db, auth_user
     assert len(evs) == 1 and evs[0].agenda_status == "done"
 
 
+def test_skipped_then_taken_same_occurrence_supersedes_without_false_success(
+    client, db, auth_user_and_headers,
+):
+    """同一提醒先跳过后确认服用:源行必须改成 taken，议程与响应不可分裂。"""
+    user, h = auth_user_and_headers
+    med = _seed_med(db, user.id)
+    payload = {
+        "medication_id": med.id,
+        "taken_date": get_china_today().isoformat(),
+        "taken_time": "09:00",
+    }
+
+    skipped = client.post("/api/v1/medication/logs", headers=h, json={
+        **payload, "status": "skipped", "skip_reason": "no_time",
+    })
+    taken = client.post("/api/v1/medication/logs", headers=h, json={
+        **payload, "status": "taken",
+    })
+
+    assert skipped.status_code == 200, skipped.text
+    assert taken.status_code == 200, taken.text
+    assert taken.json()["status"] == "taken"
+    rows = db.query(MedicationLog).filter(
+        MedicationLog.user_id == user.id,
+        MedicationLog.medication_id == med.id,
+        MedicationLog.taken_date == get_china_today(),
+        MedicationLog.taken_time == "09:00",
+    ).all()
+    assert len(rows) == 1
+    assert rows[0].status == "taken"
+    evs = _agenda_events(db, user.id, med.id, "medication")
+    assert len(evs) == 1 and evs[0].agenda_status == "done"
+
+
 def test_explicit_occurrence_date_is_persisted_without_completing_today_agenda(
     client, db, auth_user_and_headers,
 ):

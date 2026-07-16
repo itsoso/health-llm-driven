@@ -46,7 +46,7 @@ RequirementAdmission:
 |---|---|---|
 | Backend | 提醒与持久化真源 | 可见文案不含药名/剂量；data 带 `medication_id`、`scheduled_date`、`scheduled_time`、`scheduled_timezone`、`rule_id`；`/medication/logs` 校验用户归属并按日+时点幂等 |
 | Watch | 最短执行面 | 显示 iOS 镜像的“服用”动作，只表达用户确认，不作医疗判断 |
-| Mobile | 可靠动作桥接 | 注册 category；动作唤醒或恢复后写入；成功才清 cold-start response；刷新今日用药、时间线和议程 |
+| Mobile | 可靠动作桥接 | 注册 category；动作先进入 occurrence 持久队列，唤醒或恢复后逐条写入；成功才移除队列项；刷新今日用药、时间线和议程 |
 
 ## 5. User Flow
 
@@ -68,8 +68,10 @@ RequirementAdmission:
 - `medication_id` 由认证用户的后端接口再次校验归属；客户端不能指定其他用户。
 - 发生日期、时间、时区和 `rule_id` 缺一或不一致时 fail closed，不以手机点击时刻猜测服用槽。
 - 网络或鉴权失败时不得清理冷启动动作、不得伪报已打卡；应用内显示失败、保留 response，并在联网恢复或 App 回前台时重试。
+- 待处理队列只保存药物 id 和发生日期/时间/时区/rule id，不保存药名、剂量或诊断；连续多个离线动作必须分别保留并按序重试。
 - 每日重复的本地通知没有稳定 occurrence date，不提供“服用”直写动作；只有后端远程推送可承载腕上打卡。
 - 服务端用 `(user_id, medication_id, taken_date, taken_time)` 语义幂等，防止 Watch/iPhone 重复回调产生双记录。
+- 同槽已有 `skipped` 或 `delayed` 时，后续用户明确点击“服用”将唯一行纠正为 `taken`；客户端必须核验服务端回执与请求的药物、状态、日期和时间完全一致后才显示成功。
 
 ## 7. Acceptance Criteria
 
@@ -93,6 +95,14 @@ Then 客户端消费最后一条 response，写入成功后才清除 response
 Given 写入失败
 When 冷启动动作处理结束
 Then response 保留、失败事件可观测，界面提示未保存，并在联网恢复或回前台时自动重试
+
+Given 用户离线时依次点击两个不同用药提醒的“服用”
+When 网络恢复或 App 回到前台
+Then 两个 occurrence 都从持久队列逐条补写，各自只产生一条 taken 记录
+
+Given 同一时间槽之前已记录为 skipped 或 delayed
+When 用户随后在 Watch 点击“服用”
+Then 系统把同一唯一记录纠正为 taken，且只有回执完全匹配时客户端才提示成功
 ```
 
 ## 8. Verification And Rollout
@@ -114,3 +124,4 @@ git diff --check
 |---|---|---|
 | 2026-07-16 | Initial implementation | 让腕上明确确认直接形成系统依从事实，并补足 terminated-app 可靠性 |
 | 2026-07-16 | Safety hardening | occurrence identity fail-closed、失败反馈与重试、跨用户隔离、本地重复通知取消直写动作 |
+| 2026-07-16 | Reliability hardening | 持久化多 occurrence 重试队列、冲突状态原位纠正、服务端回执严格核验 |

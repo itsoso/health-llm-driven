@@ -11,6 +11,46 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 
+def test_mobile_meal_photo_context_enables_deterministic_draft_gate():
+    from app.services.agent_executor import _is_diet_photo_draft_turn
+
+    context = json.dumps({
+        "source": "mobile_chat_meal_photo",
+        "intent": "diet_photo_record",
+    })
+    assert _is_diet_photo_draft_turn(context, has_images=True) is True
+    assert _is_diet_photo_draft_turn(context, has_images=False) is False
+
+
+@pytest.mark.asyncio
+async def test_initial_meal_photo_turn_cannot_write_even_if_model_sets_confirmed(db):
+    """初始识图轮是草稿：模型自带 confirmed=true 也不能 POST DietRecord。"""
+    from app.services.agent_executor import AgentExecutor
+
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._diet_photo_draft_only = True
+
+    with patch.object(executor, "_api_post", new=AsyncMock()) as post:
+        result = await executor._execute_tool(
+            tool_name="health_record",
+            args_raw=json.dumps({
+                "record_type": "diet",
+                "confirmed": True,
+                "data": {
+                    "meal_type": "lunch",
+                    "food_items": "米饭 1 碗",
+                    "calories": 250,
+                    "confirmed": True,
+                },
+            }),
+            user_token=None,
+        )
+
+    assert "NEEDS_CONFIRMATION" in str(result)
+    post.assert_not_called()
+
+
 @pytest.mark.asyncio
 async def test_water_record_posts_amount_as_query_param(db):
     """water quick endpoint requires amount in query string, not JSON body."""

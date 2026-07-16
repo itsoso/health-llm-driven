@@ -168,6 +168,21 @@ def _extract_multi_model_flag(extra_context: Optional[str]) -> bool:
     return bool(isinstance(payload, dict) and payload.get("multi_model"))
 
 
+def _is_diet_photo_draft_turn(extra_context: Optional[str], *, has_images: bool) -> bool:
+    """Mobile 餐食拍照初始轮只产草稿，绝不直接写 DietRecord。"""
+    if not has_images or not extra_context:
+        return False
+    try:
+        payload = json.loads(extra_context)
+    except Exception:
+        return False
+    return bool(
+        isinstance(payload, dict)
+        and payload.get("source") == "mobile_chat_meal_photo"
+        and payload.get("intent") == "diet_photo_record"
+    )
+
+
 def _gathered_data_context(messages: List[Dict[str, Any]], limit: int = 6000) -> str:
     """从 lead 回合的 messages 里抽出工具结果文本, 作为给其它模型的共享数据上下文。"""
     chunks: list[str] = []
@@ -3502,6 +3517,7 @@ def _safety_alert_card_descriptor(alert: Any) -> Optional[dict]:
 
 def _health_record_confirmation_preview(rtype: str, args: dict, data: dict) -> str:
     label = {
+        "diet": "饮食",
         "illness": "疾病/不适周期",
         "medication": "用药",
         "mood": "心情",
@@ -3512,7 +3528,7 @@ def _health_record_confirmation_preview(rtype: str, args: dict, data: dict) -> s
     }.get(rtype, f"{rtype} 记录")
 
     name = (
-        data.get("description") or data.get("medication_name") or data.get("name")
+        data.get("description") or data.get("food_items") or data.get("medication_name") or data.get("name")
         or data.get("illness_name") or data.get("title") or args.get("name")
     )
     if name:
@@ -4114,6 +4130,7 @@ class AgentExecutor:
         self._turn_channel: Optional[str] = None
         self._current_turn_user_message = ""
         self._current_turn_recent_messages: list[dict] = []
+        self._diet_photo_draft_only = False
         self._prefer_fast_record_model = False
         # 本回合是否被 fast-route 到快模型 (简单记录/查询)。仅用于把答案 max_tokens
         # 从 ANSWER_MAX_TOKENS 收紧到 FAST_ROUTE_ANSWER_MAX_TOKENS —— 见 _answer_max_tokens。
@@ -5103,6 +5120,10 @@ class AgentExecutor:
 
         start_time = time.time()
         self._current_user_id = user_id
+        self._diet_photo_draft_only = _is_diet_photo_draft_turn(
+            extra_context,
+            has_images=bool(images),
+        )
         self._request_model_id = _extract_model_id_from_extra_context(extra_context)
         self._request_model_tool_fallback_used = False
         self._fast_route_simple_turn = False
@@ -9533,6 +9554,19 @@ class AgentExecutor:
             except (json.JSONDecodeError, ValueError):
                 data = {}
         today = datetime.now(BEIJING_TZ).strftime("%Y-%m-%d")
+
+        # Mobile 多图餐食的第一轮必须先生成可确认草稿。该门禁由回合状态
+        # 决定，并强制移除模型自报的 confirmed，避免提示词漂移直接写 DietRecord。
+        if rtype == "diet" and self._diet_photo_draft_only:
+            args.pop("confirmed", None)
+            args.pop("confirm", None)
+            data.pop("confirmed", None)
+            data.pop("confirm", None)
+            return _confirm_or_describe(
+                args,
+                data,
+                preview=_health_record_confirmation_preview(rtype, args, data),
+            )
 
         # medication 是医疗级写入:无论快/慢路径恒确认前置。快路径由 gate 置 flag;
         # 慢路径(quality 模型 / telegram 直调)此前 medication 无任何确认 ——
