@@ -10,6 +10,7 @@ import { getAccountDeletionRequest, requestAccountDeletion } from '../services/a
 import { connectionStatusSummary, fetchDataConnections } from '../services/dataConnections';
 import { useAuth } from '../hooks/useAuth';
 import { useBiometricLock } from '../hooks/useBiometricLock';
+import { useAppUpdate } from '../hooks/useAppUpdate';
 import { invalidateHealthSnapshot, queryKeys } from '../applib/queryKeys';
 import {
   revaColors as C,
@@ -22,6 +23,7 @@ import {
 import { APP_DISPLAY_NAME } from '../constants/brand';
 import { AppleHealthRow } from '../components/AppleHealthRow';
 import { getReleaseCapabilities } from '../config/releaseCapabilities';
+import { getNativeVersionLabel } from '../services/appUpdate';
 
 export default function SettingsScreen() {
   const router = useRouter();
@@ -30,6 +32,7 @@ export default function SettingsScreen() {
   const [syncing, setSyncing] = useState(false);
   const [deletionRequesting, setDeletionRequesting] = useState(false);
   const releaseCapabilities = getReleaseCapabilities();
+  const { status: updateStatus, checkNow: checkForUpdate, applyUpdate } = useAppUpdate();
   const { isEnabled: bioEnabled, isSupported: bioSupported, toggleEnabled: toggleBio } = useBiometricLock(isAuthenticated);
 
   const { data: profile } = useQuery({ queryKey: queryKeys.profile, queryFn: () => api.get('/profile/me').then(r => r.data), staleTime: 600_000 });
@@ -149,6 +152,37 @@ export default function SettingsScreen() {
       [{ text: '知道了' }],
     );
   };
+
+  const handleCheckForUpdate = async () => {
+    if (updateStatus === 'checking' || updateStatus === 'downloading' || updateStatus === 'applying') return;
+    if (updateStatus === 'ready') {
+      await applyUpdate();
+      return;
+    }
+
+    const result = await checkForUpdate({ force: true });
+    if (result === 'ready') {
+      Alert.alert('更新已准备好', '新版本已经下载，是否现在重新打开应用？', [
+        { text: '稍后', style: 'cancel' },
+        { text: '立即更新', onPress: () => void applyUpdate() },
+      ]);
+    } else if (result === 'current') {
+      Alert.alert('已是最新版本', '当前没有需要下载的更新。');
+    } else if (result === 'disabled') {
+      Alert.alert('当前无法在线更新', '开发版本或本地调试模式请通过 USB 或开发服务器更新。');
+    } else if (result === 'failed') {
+      Alert.alert('检查失败', '网络或更新服务暂时不可用，请稍后重试。');
+    }
+  };
+
+  const updateStatusLabel = (() => {
+    if (updateStatus === 'checking') return '检查中...';
+    if (updateStatus === 'downloading') return '下载中...';
+    if (updateStatus === 'ready') return '立即应用';
+    if (updateStatus === 'applying') return '更新中...';
+    if (updateStatus === 'failed') return '重新检查';
+    return '手动检查';
+  })();
 
   // 同一组件被 /settings (stack) 和 (tabs)/me 共用. tab 模式下没"上一级"
   // 可回, 隐藏返回按钮; stack 模式 (env card 齿轮 push) 保留.
@@ -325,12 +359,21 @@ export default function SettingsScreen() {
                 onPress={() => router.push('/rokid-diagnostics' as any)} />
             </>
           ) : null}
-          <SettingRow icon="bug-outline" label="App 诊断"
-            onPress={() => router.push('/app-diagnostics' as any)} />
-          <SettingRow icon="information-circle-outline" label="版本" value="1.0.0" />
           </View>
           </>
         ) : null}
+
+        <Text style={txt.sectionLabel}>应用</Text>
+        <View style={styles.card}>
+          <SettingRow icon="cloud-download-outline" label="检查更新"
+            value={updateStatusLabel}
+            onPress={() => void handleCheckForUpdate()} />
+          <SettingRow icon="information-circle-outline" label="版本" value={getNativeVersionLabel()} />
+          {releaseCapabilities.advancedSettings ? (
+            <SettingRow icon="bug-outline" label="App 诊断"
+              onPress={() => router.push('/app-diagnostics' as any)} />
+          ) : null}
+        </View>
 
         {/* Logout */}
         <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.7}>

@@ -8,6 +8,7 @@ const mockPush = jest.fn();
 const mockLogout = jest.fn();
 const mockRequestAccountDeletion = jest.fn();
 const mockGetAccountDeletionRequest = jest.fn();
+const mockCheckNow = jest.fn();
 let mockGarminStatus: any = { health: 'healthy', minutes_since_last_sync: 3 };
 
 jest.mock('expo-router', () => ({
@@ -52,6 +53,24 @@ jest.mock('../../hooks/useBiometricLock', () => ({
     isSupported: false,
     toggleEnabled: jest.fn(),
   }),
+}));
+
+jest.mock('../../hooks/useAppUpdate', () => ({
+  useAppUpdate: () => ({
+    status: 'idle',
+    error: null,
+    checkNow: mockCheckNow,
+    applyUpdate: jest.fn(),
+    dismiss: jest.fn(),
+  }),
+}));
+
+jest.mock('expo-constants', () => ({
+  __esModule: true,
+  default: {
+    nativeAppVersion: '1.4.0',
+    nativeBuildVersion: '231',
+  },
 }));
 
 jest.mock('../../hooks/useTheme', () => ({
@@ -107,6 +126,7 @@ describe('SettingsScreen', () => {
       requested_at: '2026-06-28T00:00:00Z',
     });
     mockGetAccountDeletionRequest.mockResolvedValue({ status: 'none' });
+    mockCheckNow.mockResolvedValue('current');
   });
 
   it('surfaces GPS and city positioning as one explicit clickable entry', () => {
@@ -194,5 +214,17 @@ describe('SettingsScreen', () => {
 
     expect(queryByText('-471 分钟前')).toBeNull();
     expect(getByText('刚刚同步')).toBeTruthy();
+  });
+
+  it('shows the real build and allows a manual update check', async () => {
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+    const { getByText } = render(<SettingsScreen />);
+
+    expect(getByText('1.4.0 (231)')).toBeTruthy();
+    fireEvent.press(getByText('检查更新'));
+
+    await waitFor(() => expect(mockCheckNow).toHaveBeenCalledWith({ force: true }));
+    expect(alertSpy).toHaveBeenCalledWith('已是最新版本', '当前没有需要下载的更新。');
+    alertSpy.mockRestore();
   });
 });

@@ -2,7 +2,7 @@
 # 本地 Xcode build → 装到真机 iPhone (绕开 EAS, $0)
 #
 # 何时用:
-#   - 真机 dev-client 装机 (Apple Watch / HealthKit / Siri / push 真机验证)
+#   - 第一次真机 dev-client 装机,或 native plugins / Pods / entitlements 改动后重建
 #   - JS 改动后已经在设备上的 dev-client 跑 OTA / Metro 即可, 不必每次重 build
 #
 # 何时还得走 EAS:
@@ -69,9 +69,10 @@ cat <<EOF
   4. Cmd+R 跑 → 会自动 build + 装到 iPhone (3-10 分钟)
 
 后续日常迭代 (装机后):
-  - 改 JS/TS  → ./scripts/mobile-ota.sh production "..."  (秒级到设备)
-  - 改 native → 重跑这个脚本 (本地 build, 0 美元)
-  - 跑 Metro  → cd mobile && npx expo start --dev-client (热重载)
+  - 开发内环  → ./scripts/mobile-fast-device.sh metro (Fast Refresh)
+  - JS/TS 验收 → ./scripts/mobile-ota.sh production "..." (设备前台下载,确认后应用)
+  - Release 验收 → ./scripts/mobile-fast-device.sh release (复用 DerivedData,不重装 Pods)
+  - native 结构变化 → 才重跑本脚本 (prebuild + Pods)
 
 完全不再消耗 EAS build credit. 只有发 TestFlight 才需要 EAS (或 eas build --local).
 EOF

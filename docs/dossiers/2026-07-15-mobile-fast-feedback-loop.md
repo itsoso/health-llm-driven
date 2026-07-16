@@ -4,8 +4,8 @@
 |---|---|
 | slug | `mobile-fast-feedback-loop` |
 | 创建日期 | 2026-07-15 |
-| 当前阶段 | S3 规划 |
-| 状态 | defining |
+| 当前阶段 | S5 验证与部署 |
+| 状态 | validating |
 | 负责 | Codex |
 | 反馈环 | Fast Refresh / focused tests / USB Release / Mobile OTA |
 
@@ -51,7 +51,8 @@ success_metric: warm feedback duration and verified artifact identity
 - spec_required: yes, because the app gains an update apply affordance
 - smallest_end_to_end_slice: focused tests + cached USB build + verified OTA + explicit apply
 - stale_surface_to_remove: manual OTA rerun and restart-only adoption instructions
-- **裁决**:☒ PASS ☐ REFRAME ☐ REJECT —— 理由:engineering infrastructure plus a low-risk update affordance; no health recommendation, safety decision, or write autonomy changes
+- 裁决: PASS。Engineering infrastructure plus a low-risk update affordance; no health recommendation, safety decision, or write autonomy changes.
+- 备选结果: ☐ REFRAME ☐ REJECT
 - 用户确认:☒
 
 ## S2 Design
@@ -65,7 +66,7 @@ success_metric: warm feedback duration and verified artifact identity
 - 评审方式:☒ codex challenge
 - 硬阻断:fast checks cannot replace production gates; reload must remain explicit
 - **待拍板分叉(STOP 问人)**:none
-- **裁决**:☒ PASS ☐ 需 reframe —— 用户确认:☒
+- 裁决: PASS。用户确认:☒
 
 Existing Expo Dev Client, Expo Updates, Xcode, `devicectl`, and EAS channels cover the proposed behavior. Explicit apply prevents draft loss. Fast checks remain separate from release gates.
 
@@ -75,12 +76,12 @@ Implementation plan: `docs/plans/2026-07-15-mobile-fast-feedback-loop.md`.
 
 ## S4 · 研发任务分解
 
-- [ ] T1 Expo Update adapter and state machine.
-- [ ] T2 Foreground download and explicit apply banner.
-- [ ] T3 Settings update control and real version.
-- [ ] T4 Changed-file fast test command.
-- [ ] T5 Cached USB device Release command.
-- [ ] T6 OTA narrow retry and published-ID verification.
+- [x] T1 Expo Update adapter and state machine.
+- [x] T2 Foreground download and explicit apply banner.
+- [x] T3 Settings update control and real version.
+- [x] T4 Changed-file fast test command.
+- [x] T5 Cached USB device Release command.
+- [x] T6 OTA narrow retry and published-ID verification.
 - [ ] T7 Integrated physical-device and production evidence.
 - 并发检查:current `main`; unrelated untracked backend and PRD files remain out of scope.
 
@@ -88,10 +89,18 @@ Implementation plan: `docs/plans/2026-07-15-mobile-fast-feedback-loop.md`.
 
 | Gate | Status | Evidence |
 |---|---|---|
-| G3 tests | pending | Related Jest, incremental TypeScript, changed-file lint, script tests |
+| G3 tests | PASS | 248 Jest suites / 1745 tests; focused 21 tests; TypeScript PASS; lint 0 errors; 9 script tests |
 | G4 safety | not required | No health/safety/write behavior |
 | G5 deployment | pending | USB install + verified EAS update ID |
 | G6 device validation | pending | Connected iPhone update banner and apply flow |
+
+### G3 Evidence
+
+- `./scripts/mobile-fast-test.sh`: PASS in about 12 seconds for the current diff; 4 related suites and 21 tests.
+- Full Jest: 248 suites and 1745 tests PASS. The historical suite leaves asynchronous handles open after assertions; the local `--all` helper uses explicit `--forceExit`, while CI remains the authoritative no-force-exit gate.
+- `npm run lint`: PASS with 0 errors. Existing repository warnings remain unchanged outside this scope.
+- Incremental `tsc --noEmit`: PASS.
+- `python3 -m pytest scripts/test_mobile_fast_feedback_scripts.py -q`: 9 PASS.
 
 ## Constraints
 

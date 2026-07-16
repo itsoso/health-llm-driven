@@ -11,6 +11,7 @@ import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client
 import { queryClient, persistOptions } from '../applib/queryClient';
 import { AuthProvider, useAuth } from '../hooks/useAuth';
 import { ToastProvider } from '../hooks/useToast';
+import { AppUpdateProvider } from '../hooks/useAppUpdate';
 import { useNotifications } from '../hooks/useNotifications';
 import { useEyeBreakReminders } from '../hooks/useEyeBreakReminders';
 import { useBiometricLock } from '../hooks/useBiometricLock';
@@ -21,6 +22,7 @@ import { useRevaFonts } from '../components/reva/useRevaFonts';
 import AppLockScreen from '../components/AppLockScreen';
 import NotificationBanner from '../components/notifications/NotificationBanner';
 import NetworkBanner from '../components/NetworkBanner';
+import AppUpdateBanner from '../components/updates/AppUpdateBanner';
 import RootErrorBoundary from '../components/RootErrorBoundary';
 import LoginScreen from './login';
 // Side-effect import: TaskManager.defineTask 必须在 module load 时跑 (React 树挂载前).
@@ -159,6 +161,7 @@ function AppContent() {
         <Stack.Screen name="exercise-guide/[key]" options={{ headerShown: false }} />
       </Stack>
       <NotificationBanner />
+      <AppUpdateBanner />
       <NetworkBanner />
     </>
   );
@@ -183,9 +186,11 @@ function RootLayout() {
       <RootErrorBoundary>
         <AuthProvider>
           <ToastProvider>
-            {/* dark mode 下卡片用 darkColors, 状态栏 auto 让系统按背景选 icon 颜色 */}
-            <StatusBar style="auto" />
-            <AppContent />
+            <AppUpdateProvider>
+              {/* dark mode 下卡片用 darkColors, 状态栏 auto 让系统按背景选 icon 颜色 */}
+              <StatusBar style="auto" />
+              <AppContent />
+            </AppUpdateProvider>
           </ToastProvider>
         </AuthProvider>
       </RootErrorBoundary>
