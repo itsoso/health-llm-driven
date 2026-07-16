@@ -81,7 +81,14 @@ export function RevaAgentView({ bottomInset = 0 }: { bottomInset?: number }) {
       </View>
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={8}>
-        <ScrollView ref={scrollRef} style={{ flex: 1 }} contentContainerStyle={styles.scrollContent} keyboardDismissMode="interactive">
+        <ScrollView
+          ref={scrollRef}
+          testID="reva-agent-transcript"
+          style={{ flex: 1 }}
+          contentContainerStyle={styles.scrollContent}
+          keyboardDismissMode="interactive"
+          keyboardShouldPersistTaps="always"
+        >
           {messages.length === 0 ? (
             <View style={styles.empty}>
               <Text style={styles.emptyText}>问问小巴 —— 它了解你的体检异常项、手环数据和 90 天计划。</Text>

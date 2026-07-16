@@ -405,8 +405,11 @@ describe('renderCard 安全降级', () => {
     const element = renderCard(descriptor, { onAction });
     expect(element).not.toBeNull();
 
-    const { getByText, getByLabelText } = render(element!);
+    const { getByText, getByLabelText, getByTestId } = render(element!);
     fireEvent.press(getByText('修正'));
+    const stopPropagation = jest.fn();
+    fireEvent(getByTestId('diet-draft-inline-editor'), 'touchStart', { stopPropagation });
+    expect(stopPropagation).toHaveBeenCalledTimes(1);
     fireEvent.press(getByText('晚餐'));
     fireEvent.changeText(getByLabelText('食物描述'), '鸡胸肉 200g + 杂粮饭 100g');
     fireEvent.changeText(getByLabelText('蛋白'), '46');

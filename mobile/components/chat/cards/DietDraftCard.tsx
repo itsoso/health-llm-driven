@@ -479,7 +479,11 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
       ) : null}
 
       {editing ? (
-        <View style={styles.editor}>
+        <View
+          testID="diet-draft-inline-editor"
+          style={styles.editor}
+          onTouchStart={(event) => event.stopPropagation()}
+        >
           <View style={styles.mealTypeRow}>
             {(Object.keys(MEAL_LABELS) as MealType[]).map((key) => (
               <Pressable

@@ -33,9 +33,10 @@ describe('RevaAgentView', () => {
   });
 
   it('renders dynamic UI cards inside the standalone Reva chat surface', () => {
-    const { getByText } = render(<RevaAgentView />);
+    const { getByTestId, getByText } = render(<RevaAgentView />);
 
     expect(getByText('动态卡片已渲染')).toBeTruthy();
+    expect(getByTestId('reva-agent-transcript').props.keyboardShouldPersistTaps).toBe('always');
     expect(mockRenderCard).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'vitals', data: { sleep: '8h' } }),
     );

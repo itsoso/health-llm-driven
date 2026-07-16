@@ -65,7 +65,7 @@ describe('RecordQualityCard inline diet adjuster', () => {
   });
 
   it('renders the inline editor seeded from adjust_record when expanded', () => {
-    const { getByLabelText, getByText } = render(
+    const { getByLabelText, getByTestId, getByText } = render(
       <RecordQualityCardView {...(baseAdjustCard() as any)} onCardDataChange={jest.fn()} />,
     );
 
@@ -76,6 +76,10 @@ describe('RecordQualityCard inline diet adjuster', () => {
     expect((getByLabelText('蛋白').props as any).value).toBe('3');
     expect(getByText('保存修正')).toBeTruthy();
     expect(getByText('加餐')).toBeTruthy();
+
+    const stopPropagation = jest.fn();
+    fireEvent(getByTestId('diet-adjust-inline-editor'), 'touchStart', { stopPropagation });
+    expect(stopPropagation).toHaveBeenCalledTimes(1);
   });
 
   it('does not render the editor without the adjust_record expanded section', () => {

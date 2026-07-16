@@ -425,7 +425,11 @@ function AdjustRecordEditor({
   if (collapsed) return null;
 
   return (
-    <View style={styles.adjustPanel}>
+    <View
+      testID="diet-adjust-inline-editor"
+      style={styles.adjustPanel}
+      onTouchStart={(event) => event.stopPropagation()}
+    >
       <Text maxFontSizeMultiplier={1.15} style={styles.adjustHint}>就地修正这条记录，保存后直接更新</Text>
       <View style={styles.mealTypeRow}>
         {(Object.keys(MEAL_LABELS) as MealType[]).map((key) => (
