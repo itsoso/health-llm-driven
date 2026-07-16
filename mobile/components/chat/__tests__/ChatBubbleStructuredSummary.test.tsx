@@ -556,6 +556,40 @@ describe('ChatBubble structured summary', () => {
     });
   });
 
+  it('does not put an editable diet draft inside the message long-press responder', () => {
+    renderCard.mockReturnValue(__mockCard);
+    const qc = new QueryClient();
+    const message: UIMessage = {
+      id: 'assistant-editable-diet-draft',
+      role: 'assistant',
+      content: '',
+      streaming: false,
+      cardType: 'diet_draft',
+      cardData: {
+        meal_type: 'lunch',
+        food_items: '待修正午餐',
+        calories: 650,
+      },
+      cardActions: [{
+        id: 'confirm-editable-diet-draft',
+        label: '确认记录',
+        action: 'diet_record.create',
+        endpoint: '/diet/records',
+        requires_manual_confirm: true,
+        payload: { record: { meal_type: 'lunch', food_items: '待修正午餐' } },
+      }],
+    };
+
+    const { getByTestId, queryByTestId } = render(
+      <QueryClientProvider client={qc}>
+        <ChatBubble item={message} />
+      </QueryClientProvider>,
+    );
+
+    expect(getByTestId('assistant-editable-card-interaction-surface')).toBeTruthy();
+    expect(queryByTestId('assistant-card-interaction-surface')).toBeNull();
+  });
+
   it('does not share an unconfirmed diet draft as a completed meal record', () => {
     renderCard.mockReturnValue(__mockCard);
     const qc = new QueryClient();
@@ -580,13 +614,14 @@ describe('ChatBubble structured summary', () => {
       }],
     };
 
-    const { getByTestId, queryByLabelText } = render(
+    const { getByTestId, queryByLabelText, queryByTestId } = render(
       <QueryClientProvider client={qc}>
         <ChatBubble item={message} />
       </QueryClientProvider>,
     );
 
-    fireEvent(getByTestId('assistant-card-interaction-surface'), 'longPress');
+    expect(getByTestId('assistant-editable-card-interaction-surface')).toBeTruthy();
+    expect(queryByTestId('assistant-card-interaction-surface')).toBeNull();
     expect(queryByLabelText('分享卡片正文')).toBeNull();
   });
 

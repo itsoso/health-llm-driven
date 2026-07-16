@@ -497,29 +497,58 @@ function ChatBubbleInner({
     setShowCardActions(true);
   }, [cardSharePayload, selectionMode]);
 
+  const cardDataRecord = item.cardData && typeof item.cardData === 'object' && !Array.isArray(item.cardData)
+    ? item.cardData as Record<string, unknown>
+    : null;
+  const hasPendingDietDraftEditor = item.cardType === 'diet_draft'
+    && latestWriteReceipt?.status !== 'verified';
+  const hasRecordAdjustEditor = item.cardType === 'record_quality' && Boolean(
+    cardDataRecord?.adjust_record
+    || (Array.isArray(cardDataRecord?.expanded_sections)
+      && cardDataRecord.expanded_sections.includes('adjust_record'))
+    || item.cardActions?.some((action) => (
+      action.action === 'ui.inline.expand'
+      && action.payload?.target === 'adjust_record'
+    )),
+  );
+  const hasEmbeddedCardEditor = hasPendingDietDraftEditor || hasRecordAdjustEditor;
+
   if (item.cardType && item.cardData) {
     const rendered = renderCard(
       { type: item.cardType, data: item.cardData, actions: item.cardActions },
       { onAction: handleCardAction, actionStateByKey: cardActionStateByKey },
     );
     if (rendered) {
+      const cardContents = (
+        <View ref={cardFrameRef} testID="assistant-card-capture-frame" collapsable={false}>
+          {rendered}
+          {latestWriteReceipt ? <WriteReceiptLine receipt={latestWriteReceipt} /> : null}
+          {cardReceiptPersistenceWarning ? <WriteReceiptPersistenceWarning /> : null}
+          <MessageTime label={sentTimeShort} isUser={false} />
+        </View>
+      );
       return (
         <View style={[styles.msgRow, styles.msgRowAI]}>
           <View testID="assistant-card-frame" style={styles.cardFrame}>
-            <Pressable
-              testID="assistant-card-interaction-surface"
-              onLongPress={openCardActions}
-              delayLongPress={350}
-              accessibilityRole="summary"
-              accessibilityLabel={cardSharePayload ? '长按卡片打开分享操作' : '健康卡片'}
-            >
-              <View ref={cardFrameRef} testID="assistant-card-capture-frame" collapsable={false}>
-                {rendered}
-                {latestWriteReceipt ? <WriteReceiptLine receipt={latestWriteReceipt} /> : null}
-                {cardReceiptPersistenceWarning ? <WriteReceiptPersistenceWarning /> : null}
-                <MessageTime label={sentTimeShort} isUser={false} />
+            {hasEmbeddedCardEditor ? (
+              <View
+                testID="assistant-editable-card-interaction-surface"
+                accessibilityRole="summary"
+                accessibilityLabel="可编辑健康卡片"
+              >
+                {cardContents}
               </View>
-            </Pressable>
+            ) : (
+              <Pressable
+                testID="assistant-card-interaction-surface"
+                onLongPress={openCardActions}
+                delayLongPress={350}
+                accessibilityRole="summary"
+                accessibilityLabel={cardSharePayload ? '长按卡片打开分享操作' : '健康卡片'}
+              >
+                {cardContents}
+              </Pressable>
+            )}
             {showCardActions && cardSharePayload && !selectionMode ? (
               <View testID="assistant-card-share-actions" style={styles.cardShareActions}>
                 <Pressable
