@@ -70,6 +70,7 @@ def run_fast_device(*args: str) -> subprocess.CompletedProcess[str]:
             "MOBILE_FAST_DEVICE_DRY_RUN": "1",
             "MOBILE_FAST_DEVICE_DEVICE_ID": "01177F59-4E5B-50D4-A900-2AC9A4D5F372",
             "MOBILE_FAST_DEVICE_XCODE_UDID": "00008150-00112D220E32401C",
+            "MOBILE_FAST_DEVICE_DDI_AVAILABLE": "true",
             "MOBILE_FAST_DEVICE_WORKSPACE": "ios/app.xcworkspace",
             "MOBILE_FAST_DEVICE_SCHEME": "app",
             "MOBILE_FAST_DEVICE_APP_PATH": "/tmp/RevaFastDevice/app.app",
@@ -108,6 +109,32 @@ def test_fast_device_metro_supports_lan_and_explicit_tunnel() -> None:
     assert "expo start --dev-client --lan" in lan.stdout
     assert tunnel.returncode == 0, tunnel.stderr
     assert "expo start --dev-client --tunnel" in tunnel.stdout
+
+
+def test_fast_device_rejects_an_unavailable_xcode_device_before_build() -> None:
+    env = os.environ.copy()
+    env.update(
+        {
+            "MOBILE_FAST_DEVICE_DRY_RUN": "1",
+            "MOBILE_FAST_DEVICE_DEVICE_ID": "device-id",
+            "MOBILE_FAST_DEVICE_XCODE_UDID": "xcode-udid",
+            "MOBILE_FAST_DEVICE_DDI_AVAILABLE": "false",
+            "MOBILE_FAST_DEVICE_WORKSPACE": "ios/app.xcworkspace",
+            "MOBILE_FAST_DEVICE_SCHEME": "app",
+        }
+    )
+    result = subprocess.run(
+        [str(FAST_DEVICE), "release"],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "connect and unlock" in result.stderr.lower()
+    assert "xcodebuild" not in result.stdout
 
 
 def make_ota_runner(tmp_path: Path, mode: str) -> tuple[Path, Path]:

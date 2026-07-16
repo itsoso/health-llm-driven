@@ -68,6 +68,7 @@ fi
 
 DEVICE_ID="${MOBILE_FAST_DEVICE_DEVICE_ID:-}"
 XCODE_UDID="${MOBILE_FAST_DEVICE_XCODE_UDID:-}"
+DDI_AVAILABLE="${MOBILE_FAST_DEVICE_DDI_AVAILABLE:-}"
 if [[ -z "${DEVICE_ID}" || -z "${XCODE_UDID}" ]]; then
   DEVICE_JSON="$(mktemp)"
   trap 'rm -f "${DEVICE_JSON}"' EXIT
@@ -95,16 +96,21 @@ if iphones:
         device.get("identifier", ""),
         device.get("hardwareProperties", {}).get("udid", ""),
         device.get("deviceProperties", {}).get("name", "iPhone"),
+        str(bool(device.get("deviceProperties", {}).get("ddiServicesAvailable"))).lower(),
     ]))
 PY
 )"
-  IFS=$'\t' read -r DEVICE_ID XCODE_UDID DEVICE_NAME <<< "${DEVICE_ROW}"
+  IFS=$'\t' read -r DEVICE_ID XCODE_UDID DEVICE_NAME DDI_AVAILABLE <<< "${DEVICE_ROW}"
 else
   DEVICE_NAME="configured iPhone"
 fi
 
 if [[ -z "${DEVICE_ID}" || -z "${XCODE_UDID}" ]]; then
   echo "✗ No paired iPhone found. Connect and unlock the phone, then trust this Mac." >&2
+  exit 1
+fi
+if [[ "${DDI_AVAILABLE}" == "false" ]]; then
+  echo "✗ Xcode device services are unavailable. Connect and unlock the iPhone, then reopen Xcode once." >&2
   exit 1
 fi
 
