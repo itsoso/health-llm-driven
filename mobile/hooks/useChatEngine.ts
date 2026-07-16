@@ -245,6 +245,8 @@ const ACTIVE_TURN_KEY = 'chat:active_turn:v1';
 const PENDING_STREAM_TTL_MS = 10 * 60 * 1000;
 const THINKING_PLACEHOLDER = '⏳ AI 正在思考中...';
 const QUEUED_TURN_PLACEHOLDER = '小巴处理中，已加入队列。';
+const BACKGROUND_RECOVERY_NOTICE = '小巴还在后台处理，回到 App 后会自动同步完整回答。';
+const BACKGROUND_RECOVERY_SUFFIX = '\n\n[已在后台继续处理，回到 App 后会自动同步完整回答]';
 const MAX_THINKING_STEPS = 8;
 // P0-5 竞态守卫: 本地 stream 活跃且未超过此窗口时, focus-reload / app-active-reload
 // 不得用服务端半截 partial 覆盖本地流式态。超过窗口 (慢流 / 卡死) 才放行服务端恢复,
@@ -948,7 +950,29 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     }, 8000);
 
     let streamConversationId = targetConversationId;
+    let keepPendingStreamForRecovery = false;
     const writeToolStartedAt = new Map<string, number>();
+    const emitRecoveredTerminal = (phase: 'completed' | 'failed' | 'interrupted') => {
+      if (phase === 'failed') {
+        emitAgentTerminal('failed', 'recovered_server_error');
+      } else if (phase === 'interrupted') {
+        emitAgentTerminal('interrupted', 'recovered_server_interrupted');
+      } else {
+        emitAgentTerminal('completed');
+      }
+    };
+    const scheduleServerRecovery = (conversationToRecover: number) => {
+      [1500, 4000, 9000].forEach((delayMs) => {
+        const timer = setTimeout(() => {
+          const current = activeTurnRef.current;
+          if (current.turnId !== turnId || current.phase === 'completed') return;
+          void recoverConversationFromServer(conversationToRecover, turnId).then((recovered) => {
+            if (recovered) emitRecoveredTerminal(recovered.terminalPhase);
+          });
+        }, delayMs);
+        (timer as any)?.unref?.();
+      });
+    };
 
     // Token 攒批: 快路由 (deepseek-v4-flash) 后每个 SSE chunk 到达快得多, 逐 chunk
     // setMessages 全数组 map 是热点. 累积到缓冲, 每 ~80ms flush 一次; done/error/card/
@@ -1340,19 +1364,36 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
         message => !message.cardType || message.sourceTurnId !== turnId,
       ));
       const isAbort = err?.message === 'aborted';
-      if (!isAbort && streamConversationId) {
+      if (streamConversationId) {
         const recovered = await recoverConversationFromServer(streamConversationId, turnId);
         if (recovered) {
           settleAcceptance(true);
-          if (recovered.terminalPhase === 'failed') {
-            emitAgentTerminal('failed', 'recovered_server_error');
-          } else if (recovered.terminalPhase === 'interrupted') {
-            emitAgentTerminal('interrupted', 'recovered_server_interrupted');
-          } else {
-            emitAgentTerminal('completed');
-          }
+          emitRecoveredTerminal(recovered.terminalPhase);
           return true;
         }
+      }
+      const isAcceptedAbort = isAbort && acceptedByServer && !!streamConversationId;
+      if (isAcceptedAbort && streamConversationId) {
+        keepPendingStreamForRecovery = true;
+        scheduleServerRecovery(streamConversationId);
+        settleAcceptance(true);
+        dispatchAgentTurn({
+          type: 'interrupt',
+          at: Date.now(),
+          errorCode: 'app_backgrounded',
+          label: BACKGROUND_RECOVERY_NOTICE,
+        });
+        setMessages(prev => prev.map(m => {
+          if (m.id !== aId) return m;
+          const currentContent = stripThinkingPlaceholder(m.content).trim();
+          return {
+            ...m,
+            currentStatus: undefined,
+            completionStatus: 'interrupted',
+            content: currentContent ? `${currentContent}${BACKGROUND_RECOVERY_SUFFIX}` : BACKGROUND_RECOVERY_NOTICE,
+          };
+        }));
+        return true;
       }
       settleAcceptance(false);
       dispatchAgentTurn(isAbort
@@ -1386,7 +1427,11 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       runningTurnIdRef.current = undefined;
       setRunningTurnId(undefined);
       streamStartedAtRef.current = 0;  // P0-5: 流结束, 解除本地态霸占 → 允许服务端 reload 恢复。
-      void clearPendingStream();
+      if (keepPendingStreamForRecovery) {
+        void markPendingStream();
+      } else {
+        void clearPendingStream();
+      }
       // 终态: 停 streaming + 兜底清 status 行 (无论 done/error/interrupt 都不残留状态行)。
       setMessages(prev => prev.map(m => m.id === aId ? { ...m, streaming: false, currentStatus: undefined } : m));
       setIsStreaming(false);

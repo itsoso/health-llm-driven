@@ -1,4 +1,5 @@
 import { act, renderHook, waitFor } from '@testing-library/react-native';
+import { AppState } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
@@ -100,6 +101,14 @@ async function* streamStartThenTimeout() {
     failStream = resolve;
   });
   throw new Error('请求超时');
+}
+
+async function* streamStartThenAbort() {
+  yield { type: 'start', conversationId: 777 };
+  await new Promise<void>((resolve) => {
+    failStream = resolve;
+  });
+  throw new Error('aborted');
 }
 
 async function* streamInterruptedWithoutPersistence() {
@@ -393,6 +402,10 @@ describe('useChatEngine', () => {
     (SecureStore.deleteItemAsync as jest.Mock).mockImplementation(
       async (key: string) => { delete mockAsyncStorage[key]; },
     );
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
   });
 
   it('restores persisted safe thinking steps from assistant history meta', () => {
@@ -1449,6 +1462,98 @@ describe('useChatEngine', () => {
       ]),
     );
     expect(mockGetConversationMessages).toHaveBeenCalledWith(777, { days: 7 });
+  });
+
+  it('recovers an accepted background-aborted stream from server history on foreground', async () => {
+    let appStateListener: ((state: string) => void) | undefined;
+    jest.spyOn(AppState, 'addEventListener').mockImplementation(((_event: string, handler: (state: string) => void) => {
+      appStateListener = handler;
+      return { remove: jest.fn() } as any;
+    }) as any);
+    mockStreamChat.mockImplementation(streamStartThenAbort);
+    let serverAnswerReady = false;
+    mockGetConversationMessages.mockImplementation(async () => {
+      const clientTurnId = mockStreamChat.mock.calls[0]?.[6];
+      if (!serverAnswerReady) {
+        return {
+          total_messages: 1,
+          messages: [
+            {
+              id: 1,
+              role: 'user',
+              content: '离开 App 后继续输出',
+              created_at: '2026-07-16T15:40:00Z',
+              meta: { client_turn_id: clientTurnId },
+            },
+          ],
+        };
+      }
+      return {
+        total_messages: 2,
+        messages: [
+          {
+            id: 1,
+            role: 'user',
+            content: '离开 App 后继续输出',
+            created_at: '2026-07-16T15:40:00Z',
+            meta: { client_turn_id: clientTurnId },
+          },
+          {
+            id: 2,
+            role: 'assistant',
+            content: '服务端后台完成的完整回答',
+            created_at: '2026-07-16T15:40:20Z',
+            meta: { client_turn_id: clientTurnId, completion_status: 'complete' },
+          },
+        ],
+      };
+    });
+    const { result } = renderHook(() => useChatEngine());
+
+    act(() => {
+      void result.current.sendMessage('离开 App 后继续输出');
+    });
+
+    await waitFor(() => {
+      expect(result.current.conversationId).toBe(777);
+    });
+
+    act(() => {
+      appStateListener?.('background');
+    });
+
+    await act(async () => {
+      failStream?.();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      const assistant = result.current.messages.find(message => message.role === 'assistant');
+      expect(assistant?.content).not.toContain('请重新提问');
+      expect(result.current.activeTurn).toMatchObject({
+        phase: 'interrupted',
+        recoverable: true,
+      });
+    });
+
+    await act(async () => {
+      serverAnswerReady = true;
+      appStateListener?.('active');
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(result.current.messages).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ role: 'assistant', content: '服务端后台完成的完整回答' }),
+        ]),
+      );
+      expect(result.current.activeTurn).toMatchObject({
+        phase: 'completed',
+        messageId: 2,
+        recoverable: false,
+      });
+    });
   });
 
   // ── P0-5 竞态守卫: 流式活跃时 focus-reload 不用服务端半截 partial 覆盖本地流 ──

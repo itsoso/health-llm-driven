@@ -18,9 +18,11 @@ exact `messages` array handed to the LLM (`_call_llm_stream`) and assert
 Regression guard: if a future edit re-appends turn-scoped content to the system
 prompt tail (the exact pre-rank-6 bug), assertion (1) or (2) fails.
 """
+from datetime import UTC, datetime
+
 import pytest
 
-from app.services.agent_executor import AgentExecutor
+from app.services.agent_executor import AgentExecutor, _build_turn_time_context_prompt
 from tests.conftest import create_authenticated_user
 
 
@@ -191,3 +193,25 @@ async def test_current_time_context_is_turn_scoped_and_not_system_prompt(
     assert "客户端上报本地时间" in user_content
     assert "2026-07-16T15:40:00.000Z" in user_content
     assert "今天/昨天/明天/昨晚/刚才/几小时后" in user_content
+
+
+def test_current_time_context_pins_exact_minute_and_no_past_windows(db):
+    """Sleep/time advice must not round 23:40 down to "23 点" or suggest a
+    window that already started before the current local minute."""
+    user, _ = create_authenticated_user(db)
+
+    prompt = _build_turn_time_context_prompt(
+        db,
+        user.id,
+        client_time_context={
+            "client_now_iso": "2026-07-16T23:40:00+08:00",
+            "timezone": "Asia/Shanghai",
+            "timezone_offset_minutes": 480,
+        },
+        now_utc=datetime(2026, 7, 16, 15, 40, tzinfo=UTC),
+    )
+
+    assert "用户本地当前时刻（可直接对用户引用）: 23:40" in prompt
+    assert "不得只说“现在23点”" in prompt
+    assert "开始时间不得早于用户本地当前时间" in prompt
+    assert "已经过去" in prompt
