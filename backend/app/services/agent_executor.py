@@ -5615,6 +5615,15 @@ class AgentExecutor:
             # 破坏性(删/改/撤销)不走 fast 记录路径 —— 弱模型删改不可靠,留强模型。
             and not _needs_reliable_tool_model(message or "")
         )
+        # 合成轮关思考门(2026-07-17, founder「列出胃药」实测合成轮 qwen3.7-max 思考 23–47s):
+        # reasoning 模型(qwen3.7-max)的思考阶段对**简单查询/列表**是纯浪费。判据复用
+        # _is_fast_eligible_turn(记录或简单查询意图, 且**非**建议/分析)—— 与快路由同一分类,
+        # 但**独立于模型选择**: 用户显式选了 qwen3.7-max(尊重其选择, 仍用该模型)也在合成轮
+        # 关思考。分析/建议/深度分析回合(此判据 False, 或本轮调 health_analysis)保留完整思考,
+        # 规避全局思考封顶伤分析质量被 A/B 否决的老坑。探针实证 TTFT ~36s→~1.6s。
+        self._turn_synthesis_skip_thinking = _is_fast_eligible_turn(
+            message or "", has_images=bool(images), has_file=bool(file_base64)
+        )
         # 2026-07-02: FAST-MODEL 路由 — 简单记录/查询回合走最快的可靠工具调用模型,
         # 建议/分析/复盘等仍用用户偏好的质量模型 (qwen3.7-plus)。
         # 只替换"默认"模型: 用户在 UI 显式选了模型 (_request_model_id 已由 extra_context
@@ -8687,9 +8696,7 @@ class AgentExecutor:
         try:
             from app.config import settings
 
-            budget = int(getattr(settings, "synthesis_thinking_budget", 0) or 0)
-            if budget <= 0:
-                return
+            # 深度分析/安全裁决可能真需长思考 → fail-closed 保留完整思考(两条路径共用前置)。
             if self._turn_invoked_deep_analysis:
                 return
             model_id = self._last_effective_model_id
@@ -8699,6 +8706,20 @@ class AgentExecutor:
 
             entry = get_model(model_id)
             if entry is None or not getattr(entry, "supports_thinking_budget", False):
+                return
+            # (A) 简单查询/列表回合 → 合成轮直接关思考(探针实证 TTFT ~36s→~1.6s)。
+            # 只对 _is_fast_eligible_turn 判定的简单回合(已排除建议/分析)生效, 分析轮不碰 →
+            # 规避全局思考封顶伤分析质量的 A/B 否决。尊重用户模型选择, 只去无谓的思考阶段。
+            if getattr(self, "_turn_synthesis_skip_thinking", False):
+                stream_kwargs["enable_thinking"] = False
+                logger.info(
+                    "[agent_executor] 简单查询合成轮关思考 model=%s user=%s",
+                    model_id, self._current_user_id,
+                )
+                return
+            # (B) 全局思考封顶(flag 门控, 默认 0=关; 命中即含分析轮, 慎开)。
+            budget = int(getattr(settings, "synthesis_thinking_budget", 0) or 0)
+            if budget <= 0:
                 return
             stream_kwargs["thinking_budget"] = budget
             logger.info(
