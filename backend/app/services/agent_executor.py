@@ -25,7 +25,11 @@ import httpx
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.services.tool_schema_registry import FAST_TURN_TOOL_NAMES, get_health_tools
+from app.services.tool_schema_registry import (
+    ANALYSIS_TURN_TOOL_NAMES,
+    FAST_TURN_TOOL_NAMES,
+    get_health_tools,
+)
 from app.services.lab_plausibility import annotate_if_implausible
 from app.services.llm.error_messages import safe_llm_error_message
 from app.services.health_query_dimensions import normalize_health_query_args
@@ -4324,6 +4328,55 @@ def _is_fast_eligible_turn(
     return bool(_RECORD_INTENT_RE.search(text) or _SIMPLE_QUERY_INTENT_RE.search(text))
 
 
+def _is_analysis_only_turn(message: str, *, has_images: bool, has_file: bool) -> bool:
+    """R5:本回合是否纯分析/知识轮(可裁到只读工具子集)。
+
+    纯分析 = 无图/附件 且 命中分析/建议意图 且 **无**记录/破坏性/同步意图。
+    保守优先:只要沾一点写意图(记录/删改/同步)就返回 False,发全集(升级护栏是兜底不是常态)。
+    与 fast 简单轮互斥(fast 已有自己的 big-3 子集;调用点再排除)。
+    """
+    text = message or ""
+    if has_images or has_file:
+        return False
+    if not _ADVICE_OR_ANALYSIS_RE.search(text):
+        return False
+    # 有记录意图(吃了/喝了/记录…)→ 可能要写,不裁 —— 留全集。
+    if _RECORD_INTENT_RE.search(text):
+        return False
+    # 破坏性/同步(删/改/撤销/同步)→ 要写,不裁。
+    if _needs_reliable_tool_model(text):
+        return False
+    return True
+
+
+def _tool_subset_withheld_upgrade(
+    tool_calls: List[Dict[str, Any]],
+    sent_tools: List[Dict[str, Any]],
+    *,
+    live_text_already_sent: bool,
+) -> tuple:
+    """工具子集守卫决策(纯函数,fast + R5 analysis 共用,可单测)。
+
+    返回 (withheld_names, action):
+    - action='none'  : 模型请求的工具都在已发子集里(或幻觉工具全集也没有)→ 照常执行;
+    - action='rerun' : 有「全集里真有但被子集扣下」的工具,且本轮未 live 发正文 → 升级回全集重跑;
+    - action='fallthrough': 同上但本轮已 live 流式正文(analysis 轮)→ 不重跑(避免双发),
+      放行让被扣工具按名执行(dispatch 按 name,不受已发子集限制;写门/R4 草稿确认仍生效)。
+
+    只对「全集真有、被子集扣下」升级;幻觉工具名(全集也没有)不算 withheld,走原未知工具路径。
+    """
+    sent = {(t.get("function") or {}).get("name") for t in sent_tools}
+    full = {(t.get("function") or {}).get("name") for t in get_health_tools()}
+    withheld = [
+        name
+        for name in ((tc.get("function") or {}).get("name") for tc in tool_calls)
+        if name not in sent and name in full
+    ]
+    if not withheld:
+        return [], "none"
+    return withheld, ("fallthrough" if live_text_already_sent else "rerun")
+
+
 def _allow_twin_evidence_fallback(message: str) -> bool:
     """Whether to attach system-KB evidence from the user's Twin.
 
@@ -5686,6 +5739,7 @@ class AgentExecutor:
         self._request_model_id = _extract_model_id_from_extra_context(extra_context)
         self._request_model_tool_fallback_used = False
         self._fast_route_simple_turn = False
+        self._analysis_turn_subset = False  # R5:纯分析轮只读工具子集(flag 门控,下方设定)
         self._tool_round_fast_routed = False
         self._lite_tool_round_messages = None
         self._turn_any_tool_executed = False
@@ -5749,6 +5803,18 @@ class AgentExecutor:
                     )
             except Exception as e:  # noqa: BLE001 — 快路由失败绝不断主链路, 退回默认模型
                 logger.warning("[agent_executor] fast-route failed, keep default: %s", e)
+        # R5 分析轮只读工具子集(flag 门控,默认关=零行为)。纯分析/知识轮不裁模型(仍用质量
+        # 模型答正文),只裁**工具集** → 首轮只发只读工具,省 health_record/manage/upload schema。
+        # 与 fast 简单轮互斥(fast 已有 big-3 子集)。模型要写 → 下方 withheld-upgrade 升级回全集。
+        if (
+            getattr(settings, "analysis_turn_tool_subset", False)
+            and not self._fast_route_simple_turn
+            and _is_analysis_only_turn(
+                message or "", has_images=bool(images), has_file=bool(file_base64)
+            )
+        ):
+            self._analysis_turn_subset = True
+            self._record_model_fallback_reason("analysis_turn_tool_subset")
         self._last_provider_model_name = None
         # 可解释性: 记录本次回答用到的数据源. 必须在 system prompt / inspection 前初始化.
         sources_used: list = []
@@ -6161,9 +6227,13 @@ class AgentExecutor:
         # 下面 round loop 里升级回全集重跑该轮(fail-open,绝不静默丢调用)。
         if self._fast_route_simple_turn:
             tools = get_health_tools(subset=list(FAST_TURN_TOOL_NAMES))
+        elif self._analysis_turn_subset:
+            # R5:纯分析轮只发只读工具子集(省写/上传/管理 schema)。模型要写→下方升级回全集。
+            tools = get_health_tools(subset=list(ANALYSIS_TURN_TOOL_NAMES))
         else:
             tools = get_health_tools()
-        fast_subset_active = self._fast_route_simple_turn
+        # 任一子集(fast big-3 或 analysis 只读)激活 → 走同一 withheld-upgrade 护栏。
+        tool_subset_active = self._fast_route_simple_turn or self._analysis_turn_subset
 
         # 5. Agent 循环
         full_reply = ""
@@ -6548,36 +6618,33 @@ class AgentExecutor:
                     tool_calls = response["tool_calls"]
                     text_content = response.get("content") or ""
 
-                    # fast 子集守卫(token 优化 #2):模型想调的工具不在 big-3 白名单
-                    # (意图误判/幻觉工具名)→ 升级回全集重跑本轮。fail-open:
-                    # 绝不因裁剪静默丢调用或喂"未知工具"错误。fast 轮直答文本
-                    # 本就被丢弃重合成,重跑不会双发内容。
-                    if fast_subset_active:
-                        _sent_tool_names = {
-                            (t.get("function") or {}).get("name") for t in tools
-                        }
-                        _full_tool_names = {
-                            (t.get("function") or {}).get("name")
-                            for t in get_health_tools()
-                        }
-                        # 只对「全集里真有、但被子集扣下」的名字升级;幻觉工具名
-                        # (全集也没有)走原有未知工具错误路径,升级救不了它。
-                        _withheld = [
-                            name
-                            for name in (
-                                (tc.get("function") or {}).get("name")
-                                for tc in tool_calls
+                    # 工具子集守卫(token 优化 #2 fast + R5 analysis):模型想调的工具不在
+                    # 已发子集(意图误判/幻觉工具名/分析轮要写)→ 升级回全集重跑本轮。fail-open:
+                    # 绝不因裁剪静默丢调用或喂"未知工具"错误。
+                    if tool_subset_active:
+                        # 双发防护:fast 轮正文被 _tool_round_fast_routed 抑制(未 live 下发)→ 重跑安全;
+                        # analysis 轮正文 live 流式,本轮已发可见正文再重跑会双发 → fallthrough 不重跑。
+                        _withheld, _action = _tool_subset_withheld_upgrade(
+                            tool_calls, tools,
+                            live_text_already_sent=(
+                                bool(streamed_text.strip())
+                                and not self._tool_round_fast_routed
+                            ),
+                        )
+                        if _action == "fallthrough":
+                            logger.warning(
+                                "[agent_executor] 工具子集升级但本轮已 live 流式正文,"
+                                "放行不重跑避免双发 (模型请求: %s)", _withheld,
                             )
-                            if name not in _sent_tool_names and name in _full_tool_names
-                        ]
-                        if _withheld:
+                            tool_subset_active = False  # 本轮后不再守卫,被扣工具按 name 执行
+                        elif _action == "rerun":
                             logger.info(
-                                "[agent_executor] fast 工具子集升级回全集重跑本轮 (模型请求: %s)",
+                                "[agent_executor] 工具子集升级回全集重跑本轮 (模型请求: %s)",
                                 _withheld,
                             )
                             tools = get_health_tools()
-                            fast_subset_active = False
-                            self._record_model_fallback_reason("fast_subset_upgraded_full_tools")
+                            tool_subset_active = False
+                            self._record_model_fallback_reason("tool_subset_upgraded_full_tools")
                             continue
 
                     tool_calls = self._normalize_query_only_health_manage_tool_calls(

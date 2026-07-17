@@ -759,6 +759,22 @@ action 选择:
 # fast 模型若吐出子集外工具名 → agent 侧升级回全集重跑该轮(fail-open)。
 FAST_TURN_TOOL_NAMES: tuple = ("health_record", "health_query", "health_manage")
 
+# R5 分析轮只读工具子集(fast 子集的对称补全)。纯分析/知识轮不含写/上传/管理动作,
+# 只发只读工具 → 省下 health_record(~2k)/health_manage(~1k)/upload_*/manage_plan 的 schema。
+# 模型若在分析轮请求被扣下的写工具 → 走同一 withheld-upgrade 护栏升级回全集(见 agent_executor)。
+# 固定子集(不随消息变)以保前缀字节稳定,不拆 provider 前缀缓存。
+ANALYSIS_TURN_TOOL_NAMES: tuple = (
+    "health_query",
+    "health_query_batch",
+    "health_analysis",
+    "query_lab_indicators",
+    "query_genetic_profile",
+    "knowledge_search",
+    "realtime_search",
+    "environment_check",
+    "supplement_guide",
+)
+
 
 def get_health_tools(subset: Optional[List[str]] = None) -> List[Dict[str, Any]]:
     """获取健康工具定义。

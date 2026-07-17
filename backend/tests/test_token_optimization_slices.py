@@ -6,11 +6,16 @@
 import json
 
 from app.services.tool_schema_registry import (
+    ANALYSIS_TURN_TOOL_NAMES,
     FAST_TURN_TOOL_NAMES,
     HEALTH_TOOLS,
     get_health_tools,
 )
-from app.services.agent_executor import _project_orchestrator_result
+from app.services.agent_executor import (
+    _is_analysis_only_turn,
+    _project_orchestrator_result,
+    _tool_subset_withheld_upgrade,
+)
 
 
 def test_fast_subset_returns_exactly_big3_in_stable_order():
@@ -30,6 +35,96 @@ def test_subset_saves_majority_of_schema_bytes():
     full = len(json.dumps(get_health_tools(), ensure_ascii=False))
     small = len(json.dumps(get_health_tools(subset=list(FAST_TURN_TOOL_NAMES)), ensure_ascii=False))
     assert small < full * 0.55  # 实测 ~37%, 松断言防 schema 演化误红
+
+
+# ── R5 分析轮只读工具子集 ──────────────────────────────────────────
+
+def test_analysis_subset_is_read_only():
+    """分析子集绝不含写/上传/管理工具(否则纯分析轮可能静默写)。"""
+    WRITE = {"health_record", "health_manage", "upload_genetic_txt",
+             "upload_medical_exam_text", "manage_plan", "intervention_cycle"}
+    assert not (set(ANALYSIS_TURN_TOOL_NAMES) & WRITE)
+
+
+def test_analysis_subset_all_exist_and_trim():
+    full = {t["function"]["name"] for t in get_health_tools()}
+    assert set(ANALYSIS_TURN_TOOL_NAMES) <= full  # 子集工具都真实存在
+    sub = get_health_tools(subset=list(ANALYSIS_TURN_TOOL_NAMES))
+    assert len(sub) < len(full)  # 真裁剪
+    # 顺序稳定(前缀缓存友好):两次调用完全一致
+    sub2 = get_health_tools(subset=list(ANALYSIS_TURN_TOOL_NAMES))
+    assert [t["function"]["name"] for t in sub] == [t["function"]["name"] for t in sub2]
+
+
+def test_analysis_subset_saves_schema_bytes():
+    full = len(json.dumps(get_health_tools(), ensure_ascii=False))
+    small = len(json.dumps(get_health_tools(subset=list(ANALYSIS_TURN_TOOL_NAMES)), ensure_ascii=False))
+    assert small < full  # 分析子集省下 record/manage/upload/plan schema
+
+
+def test_is_analysis_only_turn_detection():
+    f = _is_analysis_only_turn
+    # 纯分析/建议 → True
+    assert f("综合分析我最近的睡眠趋势", has_images=False, has_file=False)
+    assert f("解读一下我的化验报告", has_images=False, has_file=False)
+    assert f("为什么最近血压偏高?该怎么调整", has_images=False, has_file=False)
+    # 记录/破坏性意图 → False(可能要写,不裁)
+    assert not f("记录我今天血压120/80", has_images=False, has_file=False)
+    assert not f("分析后帮我删除重复早餐", has_images=False, has_file=False)
+    assert not f("喝了300ml水", has_images=False, has_file=False)
+    # 多模态 → False
+    assert not f("分析我的睡眠", has_images=True, has_file=False)
+    assert not f("解读报告", has_images=False, has_file=True)
+
+
+def test_ships_off_by_default():
+    from app.config import Settings
+    assert Settings.model_fields["analysis_turn_tool_subset"].default is False
+
+
+# ── R5 withheld-upgrade 护栏(fast + analysis 共用)──────────────────
+
+def _tc(name):  # 造一个 tool_call
+    return {"function": {"name": name, "arguments": "{}"}}
+
+
+def test_upgrade_none_when_requested_tool_in_subset():
+    sub = get_health_tools(subset=list(ANALYSIS_TURN_TOOL_NAMES))
+    withheld, action = _tool_subset_withheld_upgrade(
+        [_tc("health_query")], sub, live_text_already_sent=False)
+    assert action == "none" and withheld == []
+
+
+def test_upgrade_rerun_when_withheld_write_tool_and_no_live_text():
+    """分析轮请求被扣下的写工具 + 本轮未 live 正文 → rerun(升级回全集重跑,拿对 schema)。"""
+    sub = get_health_tools(subset=list(ANALYSIS_TURN_TOOL_NAMES))
+    withheld, action = _tool_subset_withheld_upgrade(
+        [_tc("health_record")], sub, live_text_already_sent=False)
+    assert action == "rerun" and withheld == ["health_record"]
+
+
+def test_upgrade_fallthrough_when_live_text_already_sent():
+    """已 live 流式正文 + 请求被扣工具 → fallthrough(不重跑避免双发,被扣工具按 name 执行)。"""
+    sub = get_health_tools(subset=list(ANALYSIS_TURN_TOOL_NAMES))
+    withheld, action = _tool_subset_withheld_upgrade(
+        [_tc("health_manage")], sub, live_text_already_sent=True)
+    assert action == "fallthrough" and withheld == ["health_manage"]
+
+
+def test_upgrade_ignores_hallucinated_tool_not_in_full_set():
+    """幻觉工具名(全集也没有)不算 withheld → none(走原未知工具路径,升级救不了它)。"""
+    sub = get_health_tools(subset=list(ANALYSIS_TURN_TOOL_NAMES))
+    withheld, action = _tool_subset_withheld_upgrade(
+        [_tc("totally_made_up_tool")], sub, live_text_already_sent=False)
+    assert action == "none" and withheld == []
+
+
+def test_upgrade_works_for_fast_big3_subset_too():
+    """同一护栏对 fast big-3 子集也成立(请求 health_analysis 被扣 → rerun)。"""
+    sub = get_health_tools(subset=list(FAST_TURN_TOOL_NAMES))
+    withheld, action = _tool_subset_withheld_upgrade(
+        [_tc("health_analysis")], sub, live_text_already_sent=False)
+    assert action == "rerun" and "health_analysis" in withheld
 
 
 def _fake_orchestrator_json() -> str:
