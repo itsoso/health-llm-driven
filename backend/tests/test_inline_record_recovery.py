@@ -48,12 +48,45 @@ def test_naked_diet_json_recovered_as_health_record_call():
     text = ('{"record_date":"2026-06-09","meal_type":"breakfast",'
             '"food_items":"一杯豆浆 + 葱油饼 100克","calories":400.0,'
             '"protein":13.0,"carbs":46.0,"fat":19.0}')
-    recovered = _extract_inline_tool_call(text, _TOOLS)
+    # 真实场景带记录意图("记录早餐…")—— 裸对象推断成写入必须有明确记录意图门(防幽灵写)。
+    recovered = _extract_inline_tool_call(
+        text, _TOOLS, user_message="记录早餐:一杯豆浆 一块100克葱油饼")
     assert recovered is not None
     assert recovered["function"]["name"] == "health_record"
     args = json.loads(recovered["function"]["arguments"])
     assert args["record_type"] == "diet"
     assert args["data"]["food_items"].startswith("一杯豆浆")
+
+
+def test_naked_record_object_without_intent_is_not_a_phantom_write():
+    """只读问句("我体重多少")模型回显 {"weight":72.5} —— 无记录意图 → 绝不推断成
+    health_record 写入(否则问句造幽灵/重复记录)。裸对象推断门必须要求明确记录意图。"""
+    text = '你的体重是 {"weight":72.5,"record_date":"2026-07-17"}'
+    # 无记录意图(纯查询)→ 不恢复成写入
+    assert _extract_inline_tool_call(text, _TOOLS, user_message="我体重多少?") is None
+    assert _extract_inline_tool_call(text, _TOOLS, user_message=None) is None
+    # 有记录意图 → 恢复成 weight 写入
+    got = _extract_inline_tool_call(text, _TOOLS, user_message="记录我体重72.5")
+    assert got is not None and got["function"]["name"] == "health_record"
+
+
+def test_flattened_sibling_args_not_dropped():
+    """{"tool_name":"health_query","dimension":"diet","days":7}(参数平铺无容器)—— 此前
+    dimension 被丢 → 默认 comprehensive 答错题。现在把 sibling 键当 args 保住。"""
+    got = _extract_inline_tool_call(
+        '{"tool_name":"health_query","dimension":"diet","days":7}',
+        _TOOLS, user_message="查一下今天的饮食")
+    assert got is not None and got["function"]["name"] == "health_query"
+    args = json.loads(got["function"]["arguments"])
+    assert args.get("dimension") == "diet" and args.get("days") == 7
+
+
+def test_tool_input_container_recognized():
+    """Anthropic 风格 tool_input 容器键也识别(此前只认 parameters/params/arguments/input/args)。"""
+    got = _extract_inline_tool_call(
+        '{"name":"health_query","tool_input":{"dimension":"sleep","days":7}}',
+        _TOOLS, user_message="看看睡眠")
+    assert got is not None and json.loads(got["function"]["arguments"]).get("dimension") == "sleep"
 
 
 def test_named_tool_call_still_recovered():

@@ -41,7 +41,7 @@ def test_pure_record_no_prior_assistant_stays_compact():
 
 
 def test_long_prior_assistant_truncated():
-    long = "鼻炎相关说明" + "啰嗦" * 1000
+    long = "鼻炎相关说明" + "啰嗦" * 1000 + "要记录吗?"  # 以提问结尾 → 会折入
     messages = [
         {"role": "assistant", "content": long},
         {"role": "user", "content": "记录"},
@@ -50,6 +50,19 @@ def test_long_prior_assistant_truncated():
     # 折进的助手上下文截断 ≤400(整条 user 含包装文字略长,但助手原文被截)
     assert "啰嗦" * 1000 not in out[-1]["content"]
     assert out[-1]["content"].count("啰嗦") <= 400
+
+
+def test_non_question_prior_assistant_not_folded_no_context_bleed():
+    """上一轮是分析/陈述(非提问)→ 不折进,防上下文串味。founder 2026-07-17 实测:
+    刚分析完麦当劳那餐后记录喷嚏,被幻觉成「麦当劳店记录打了喷嚏」。"""
+    messages = [
+        {"role": "assistant", "content": "这一餐脂肪偏高,主要来自麦当劳的芝士和薯条,建议下一餐清淡些。"},
+        {"role": "user", "content": "记录刚才打了一个喷嚏"},
+    ]
+    out = _build_fast_record_messages(messages)
+    u = out[-1]["content"]
+    assert "麦当劳" not in u and "上一轮助手" not in u   # 陈述不折进
+    assert u == "记录刚才打了一个喷嚏"                    # 自足记录原样
 
 
 def test_empty_assistant_turn_skipped():

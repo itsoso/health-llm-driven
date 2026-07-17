@@ -58,5 +58,7 @@ describe('agentApi.streamMessage', () => {
     });
     expect(typeof body.client_time_context.timezone).toBe('string');
     expect(typeof body.client_time_context.timezone_offset_minutes).toBe('number');
+    // Web 恒打字通道 → 后端 symptom/rhinitis 免确认(漏传 channel=None 会 fail-closed 重复追问)。
+    expect(body.channel).toBe('typed');
   });
 });

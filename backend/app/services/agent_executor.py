@@ -1904,7 +1904,10 @@ def _extract_inline_tool_call(
                 }
             # 模型可能直接吐 record 的裸 data(无 name 包装,无 record_type)。
             # 按字段推断 record_type → 包成 health_record 调用,既写库又不泄漏 JSON。
-            if "health_record" in allowed:
+            # **仅在用户明确表达记录意图时**才把裸对象猜成写入 —— 否则只读问句("我体重多少")
+            # 模型回显 {"weight":72.5,…} 会被误当 health_record 写入 → 幽灵/重复记录。
+            # 镜像 <tool_code> 路径(_extract_tool_code_call)对 health_record 的同一意图门。
+            if "health_record" in allowed and _has_explicit_text_record_intent(user_message):
                 inferred = _infer_record_type_from_payload(payload)
                 if inferred:
                     return {
@@ -1925,12 +1928,20 @@ def _extract_inline_tool_call(
         # {"tool":"health_query","params":{...}} —— 只认 parameters/arguments 会把
         # args 丢成 {},下游 dimension 默认 comprehensive → 拿睡眠数据答 MRI 问题。
         args: Any = None
-        for container_key in ("parameters", "params", "arguments", "input", "args"):
+        for container_key in ("parameters", "params", "arguments", "input", "tool_input", "args"):
             if container_key in payload:
                 args = payload[container_key]
                 break
         if args is None:
-            args = (fn or {}).get("arguments", {})
+            args = (fn or {}).get("arguments")
+        if args is None:
+            # 平铺 sibling 参数:{"tool_name":"health_query","dimension":"diet","days":7}
+            # (无参数容器)。此前落回 {} → dimension 丢 → 默认 comprehensive 答错题。
+            # 把非元数据键当 args。
+            _meta = {"name", "tool", "tool_name", "tool_code", "function",
+                     "parameters", "params", "arguments", "input", "tool_input", "args"}
+            _siblings = {k: v for k, v in payload.items() if k not in _meta}
+            args = _siblings if _siblings else {}
         if isinstance(args, str):
             try:
                 args = _loads_lenient(args)  # 弯/全角引号 + 截断兜底
@@ -2126,6 +2137,21 @@ def _fallback_text_from_tool_results(
     return ""
 
 
+_QUESTION_TAIL_RE = re.compile(
+    r"[?？]|要不要|是否|需不需要|要记录吗|记录吗|对吗|是吗|好吗|可以吗|吗\s*[?？]?\s*$|呢\s*[?？]?\s*$"
+)
+
+
+def _assistant_turn_is_question(text: str) -> bool:
+    """上一轮助手是否在向用户提问(需用户下一轮回答来消歧)。只看结尾一段,避免长分析正文里
+    偶含「吗」误判。用于 fast-record 折叠门:非提问的上一轮(分析/陈述)不折进,防上下文串味
+    (founder 2026-07-17「麦当劳店记录喷嚏」根因)。"""
+    s = (text or "").strip()
+    if not s:
+        return False
+    return bool(_QUESTION_TAIL_RE.search(s[-80:]))
+
+
 def _build_fast_record_messages(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Compact prompt for pure record/CRUD turns.
 
@@ -2155,9 +2181,14 @@ def _build_fast_record_messages(messages: List[Dict[str, Any]]) -> List[Dict[str
         ),
         None,
     )
+    # **只在上一轮助手确实在提问时才折进它做消歧** —— 否则上一轮是分析/陈述(如刚分析完
+    # 麦当劳那餐)时,把它折进一条自足的新记录("记录刚才打了一个喷嚏")会串味,让模型
+    # 幻觉出「麦当劳店记录打了喷嚏」(founder 2026-07-17 实测)。跟进确认(助手问「要不要
+    # 记录鼻炎症状?」→ 用户答「记录」)仍照旧折入,消歧不丢。
     if last_assistant:
-        prior = str(last_assistant.get("content") or "").strip()[:400]  # 截断,保持 compact
-        user_content = f"[上一轮助手问我:{prior}]\n我的回复:{user_content}"
+        prior = str(last_assistant.get("content") or "").strip()
+        if _assistant_turn_is_question(prior):
+            user_content = f"[上一轮助手问我:{prior[:400]}]\n我的回复:{user_content}"
 
     return [
         {
@@ -2269,7 +2300,7 @@ def _friendly_record_confirmation(record: Dict[str, Any]) -> str:
         return f"已记录血糖 {record.get('glucose_mg_dl')} mg/dL"
     # mood
     if s("mood_score") is not None:
-        return f"已记录心情 {record.get('mood_score')}/10"
+        return f"已记录心情 {record.get('mood_score')}/5"  # mood_score 量表 1-5(models/mood.py),非 /10
     # water
     if s("amount") is not None and "drink_type" in record:
         return f"已记录饮水 {record.get('amount')}ml"
@@ -6515,7 +6546,13 @@ class AgentExecutor:
                                     ]
                                     result += f"\n\n⚠️ 安全提示: {alert_msgs}"
                             except Exception as e:
-                                logger.warning(f"Safety check after write failed: {e}")
+                                # 安全筛查是记录后的确定性护栏 —— 它抛错绝不能静默"已记录"放行
+                                # (否则刚记的血压危象/卒中症状零告警)。fail-loud:ERROR + 兜底提醒。
+                                logger.error("Safety check after write failed: %s", e, exc_info=True)
+                                result += (
+                                    "\n\n⚠️ 安全提示: 记录已保存,但自动安全筛查暂未完成。"
+                                    "如你此刻有明显不适、或刚记录的数值明显异常,请及时就医。"
+                                )
                         if write_fingerprint and not replayed_write:
                             write_results_by_fingerprint[write_fingerprint] = (
                                 result,
@@ -7460,7 +7497,12 @@ class AgentExecutor:
                         if card
                     ]
             except Exception as e:  # noqa: BLE001
-                logger.warning(f"Safety check after recipe replay failed: {e}")
+                # fail-loud:安全筛查抛错不静默放行(同写后主路径)。
+                logger.error("Safety check after recipe replay failed: %s", e, exc_info=True)
+                safety_suffix = (
+                    "\n\n⚠️ 安全提示: 记录已保存,但自动安全筛查暂未完成。"
+                    "如你此刻有明显不适、或刚记录的数值明显异常,请及时就医。"
+                )
 
         reply_parts = [f"按配方「{recipe.name}」执行了 {len(step_lines)} 步:"]
         reply_parts.extend(step_lines)

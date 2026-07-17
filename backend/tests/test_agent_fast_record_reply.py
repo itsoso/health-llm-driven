@@ -44,7 +44,7 @@ def test_friendly_confirmation_covers_common_record_shapes():
     assert _friendly_record_confirmation({"weight": 71.2}) == "已记录体重 71.2 kg"
     assert _friendly_record_confirmation({"exercise_type": "俯卧撑", "reps": 20}) == "已记录运动：俯卧撑 20 次"
     assert _friendly_record_confirmation({"glucose_mg_dl": 99.1}) == "已记录血糖 99.1 mg/dL"
-    assert _friendly_record_confirmation({"mood_score": 8}) == "已记录心情 8/10"
+    assert _friendly_record_confirmation({"mood_score": 4}) == "已记录心情 4/5"  # mood 量表 1-5
     assert _friendly_record_confirmation({
         "title": "臀中肌训练",
         "remind_at": "2026-06-30T10:30:00+08:00",

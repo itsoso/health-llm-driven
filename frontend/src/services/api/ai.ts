@@ -232,6 +232,9 @@ export const agentApi = {
       message,
       conversation_id: conversationId,
       client_time_context: buildClientTimeContext(),
+      // Web 聊天恒为打字输入(键盘逐字敲)→ 声明 typed 通道,后端才走 symptom/rhinitis 免确认;
+      // 漏传 → channel=None 走 fail-closed → web 每条症状/鼻炎消息都被二次追问(手机/Mac 正常)。
+      channel: 'typed',
     };
     if (imageBase64) { body.image_base64 = imageBase64; body.image_type = imageType || 'jpeg'; }
     if (fileBase64) { body.file_base64 = fileBase64; body.file_name = fileName; }
