@@ -4,6 +4,7 @@ import {
   useAudioRecorder,
   RecordingPresets,
   setAudioModeAsync,
+  setIsAudioActiveAsync,
   requestRecordingPermissionsAsync,
 } from 'expo-audio';
 import * as Haptics from 'expo-haptics';
@@ -31,6 +32,7 @@ export function useVoiceRecording(opts?: {
   const transcriptionSeqRef = useRef(0);
   const sessionStartedAtRef = useRef(0);
   const terminalSentRef = useRef(false);
+  const audioSessionOwnedRef = useRef(false);
 
   const emitTerminal = useCallback((
     phase: 'completed' | 'failed' | 'cancelled',
@@ -73,17 +75,28 @@ export function useVoiceRecording(opts?: {
     }
   }, []);
 
-  // 录音结束后把 audio session 从「录音模式」放回来 (allowsRecording:false)。
-  // iOS 上录音期间 session 是 record/playAndRecord 类别, 占着麦克风; 不显式释放,
-  // 下次点输入框键盘可能弹不出 / TextInput 摸不到 (键盘与麦克风 audio session 互斥)。
-  // stopAndTranscribe / cancelRecording 都必须走这里 —— 否则语音后键盘失效。
+  // doNotMix 会暂停其他 App。结束时必须 deactivate 并通知 iOS, 外部音频才会恢复。
   const releaseAudioSession = useCallback(async () => {
+    if (!audioSessionOwnedRef.current) return;
+    let released = true;
     try {
-      await setAudioModeAsync({ allowsRecording: false });
-    } catch {
-      // 释放失败不阻断 UI; 但不静默吞掉调试信息。
-      if (__DEV__) console.warn('[useVoiceRecording] release audio session failed');
+      await setIsAudioActiveAsync(false);
+    } catch (error) {
+      released = false;
+      if (__DEV__) console.warn('[useVoiceRecording] deactivate audio session failed:', error);
     }
+    try {
+      await setAudioModeAsync({
+        allowsRecording: false,
+        playsInSilentMode: false,
+        shouldPlayInBackground: false,
+        interruptionMode: 'mixWithOthers',
+      });
+    } catch (error) {
+      released = false;
+      if (__DEV__) console.warn('[useVoiceRecording] restore audio mode failed:', error);
+    }
+    if (released) audioSessionOwnedRef.current = false;
   }, []);
 
   // Cleanup on unmount
@@ -97,19 +110,18 @@ export function useVoiceRecording(opts?: {
       clearTimer();
       const shouldStopRecorder = readyRef.current;
       readyRef.current = false;
-      if (shouldStopRecorder) {
-        try {
-          void Promise.resolve(recorder.stop()).catch((error) => {
+      void (async () => {
+        if (shouldStopRecorder) {
+          try {
+            await recorder.stop();
+          } catch (error) {
             if (__DEV__) console.warn('[useVoiceRecording] unmount stop failed:', error);
-          });
-        } catch (error) {
-          if (__DEV__) console.warn('[useVoiceRecording] unmount stop failed:', error);
+          }
         }
-      }
-      // 卸载时若还占着录音 session, 放回来 (不阻塞卸载, fire-and-forget)。
-      void setAudioModeAsync({ allowsRecording: false }).catch(() => {});
+        await releaseAudioSession();
+      })();
     };
-  }, [clearTimer, emitTerminal, recorder]);
+  }, [clearTimer, emitTerminal, recorder, releaseAudioSession]);
 
   const startRecording = useCallback(async () => {
     sessionStartedAtRef.current = Date.now();
@@ -132,9 +144,12 @@ export function useVoiceRecording(opts?: {
         return false;
       }
 
+      audioSessionOwnedRef.current = true;
       await setAudioModeAsync({
         allowsRecording: true,
         playsInSilentMode: true,
+        shouldPlayInBackground: false,
+        interruptionMode: 'doNotMix',
       });
       if (!isCurrentStart()) {
         await releaseAudioSession();
@@ -161,7 +176,7 @@ export function useVoiceRecording(opts?: {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       return true;
     } catch (err: any) {
-      try { await setAudioModeAsync({ allowsRecording: false }); } catch {}
+      await releaseAudioSession();
       readyRef.current = false;
       setIsRecording(false);
       clearTimer();

@@ -1,10 +1,10 @@
 import { act, renderHook, waitFor } from '@testing-library/react-native';
 
-// Bug 2: 语音结束后 iOS audio session 若停在录音模式 (allowsRecording:true), 会占着
-// 麦克风, 导致下次点输入框键盘弹不出 / TextInput 摸不到。stopAndTranscribe 与
-// cancelRecording 都必须显式把 session 放回 allowsRecording:false。这些测试钉死该释放。
+// iOS 按住说话必须独占 audio session；停止、取消和异常都要 deactivate，
+// 让外部播放器恢复，同时把 session 放回非录音模式，避免后续键盘/麦克风失效。
 
 const mockSetAudioModeAsync = jest.fn().mockResolvedValue(undefined);
+const mockSetIsAudioActiveAsync = jest.fn().mockResolvedValue(undefined);
 const mockRequestPerm = jest.fn().mockResolvedValue({ granted: true });
 const mockPrepare = jest.fn().mockResolvedValue(undefined);
 const mockRecord = jest.fn();
@@ -24,6 +24,7 @@ jest.mock('expo-audio', () => ({
   useAudioRecorder: () => recorder,
   RecordingPresets: { HIGH_QUALITY: {} },
   setAudioModeAsync: (...a: any[]) => mockSetAudioModeAsync(...a),
+  setIsAudioActiveAsync: (...a: any[]) => mockSetIsAudioActiveAsync(...a),
   requestRecordingPermissionsAsync: (...a: any[]) => mockRequestPerm(...a),
 }));
 
@@ -66,6 +67,10 @@ function releasedRecordingSession(): boolean {
   );
 }
 
+function releasedAudioFocus(): boolean {
+  return mockSetIsAudioActiveAsync.mock.calls.some(([active]) => active === false);
+}
+
 describe('useVoiceRecording audio session release (Bug 2: 语音后键盘失效)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -73,6 +78,24 @@ describe('useVoiceRecording audio session release (Bug 2: 语音后键盘失效)
     mockPrepare.mockResolvedValue(undefined);
     mockStop.mockResolvedValue(undefined);
     mockTranscribe.mockResolvedValue('识别出的文字');
+  });
+
+  it('requests exclusive iOS audio focus before preparing push-to-talk recording', async () => {
+    const { result } = renderHook(() => useVoiceRecording({ onTranscript: jest.fn() }));
+
+    await act(async () => {
+      await result.current.startRecording();
+    });
+
+    expect(mockSetAudioModeAsync).toHaveBeenCalledWith({
+      allowsRecording: true,
+      playsInSilentMode: true,
+      shouldPlayInBackground: false,
+      interruptionMode: 'doNotMix',
+    });
+    expect(mockSetAudioModeAsync.mock.invocationCallOrder[0]).toBeLessThan(
+      mockPrepare.mock.invocationCallOrder[0],
+    );
   });
 
   it('releases the recording audio session after stopAndTranscribe', async () => {
@@ -93,6 +116,7 @@ describe('useVoiceRecording audio session release (Bug 2: 语音后键盘失效)
 
     // 关键: 转写完后 session 被放回 allowsRecording:false, 键盘才能再弹。
     expect(releasedRecordingSession()).toBe(true);
+    expect(releasedAudioFocus()).toBe(true);
     await waitFor(() => expect(onTranscript).toHaveBeenCalledWith(
       '识别出的文字',
       expect.objectContaining({ provider: 'openai_whisper', durationMs: 1234 }),
@@ -184,12 +208,55 @@ describe('useVoiceRecording audio session release (Bug 2: 语音后键盘失效)
 
     // 取消同样要释放 session。
     expect(releasedRecordingSession()).toBe(true);
+    expect(releasedAudioFocus()).toBe(true);
     expect(mockTranscribe).not.toHaveBeenCalled();
     expect(mockEmitClientEvent).toHaveBeenCalledWith('voice_input_terminal', {
       phase: 'cancelled',
       duration_bucket: '3_10s',
       action_type: 'hold',
     });
+  });
+
+  it('releases audio focus when recording preparation fails after focus configuration', async () => {
+    mockPrepare.mockRejectedValueOnce(new Error('prepare failed'));
+    const { result } = renderHook(() => useVoiceRecording({ onTranscript: jest.fn() }));
+
+    await act(async () => {
+      await result.current.startRecording();
+    });
+
+    expect(result.current.isRecording).toBe(false);
+    expect(releasedRecordingSession()).toBe(true);
+    expect(releasedAudioFocus()).toBe(true);
+  });
+
+  it('releases audio focus when the recording hook unmounts while holding to talk', async () => {
+    let resolveStop!: () => void;
+    mockStop.mockImplementationOnce(() => new Promise<void>((resolve) => {
+      resolveStop = resolve;
+    }));
+    const { result, unmount } = renderHook(() => useVoiceRecording({ onTranscript: jest.fn() }));
+
+    await act(async () => {
+      await result.current.startRecording();
+    });
+    mockSetAudioModeAsync.mockClear();
+    mockSetIsAudioActiveAsync.mockClear();
+
+    unmount();
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(releasedAudioFocus()).toBe(false);
+
+    resolveStop();
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(releasedRecordingSession()).toBe(true);
+    expect(releasedAudioFocus()).toBe(true);
   });
 
   it('drops a late transcription result after cancellation or background cleanup', async () => {
