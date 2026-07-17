@@ -13,7 +13,9 @@ import app.services.watch_summary as ws
 from app.models.agent_audit_log import AgentAuditLog
 from app.models.daily_health import GarminData
 from app.models.health_protocol import HealthProtocol, HealthProtocolEvent
+from app.models.smart_reminder import SmartReminder
 from app.models.user import User
+from app.utils.timezone import get_user_now
 
 
 @pytest.fixture
@@ -207,6 +209,42 @@ def test_due_items_preserve_source_for_watch_completion(db, auth, monkeypatch):
         "object_type": "health_protocol",
         "object_id": 8,
     }
+
+
+def test_agent_water_reminder_enters_watch_due_items(db, auth, monkeypatch):
+    """Agent 创建的饮水提醒应进入 Watch 动态任务流,而不是只停在手机推送文案。"""
+    user, _ = auth
+    now = get_user_now(db, user.id)
+    reminder = SmartReminder(
+        user_id=user.id,
+        title="定时饮水提醒",
+        message="喝 200ml 水",
+        remind_at=now + timedelta(minutes=10),
+        recurrence="daily",
+        priority="normal",
+        status="pending",
+        source="agent_skill",
+        extra_data={"watch_kind": "hydration"},
+    )
+    db.add(reminder)
+    db.commit()
+    db.refresh(reminder)
+    monkeypatch.setattr(
+        ws.agenda_service,
+        "runtime_range_view",
+        lambda d, u, days=1, max_items_per_day=3: _runtime_projection([]),
+    )
+
+    s = ws.build_watch_summary(db, user.id)
+
+    by_title = {i["title"]: i for i in s["due_items"]}
+    item = by_title["定时饮水提醒"]
+    assert item["kind"] == "hydration"
+    assert item["action_id"] == f"agenda-smart_reminder-{reminder.id}"
+    assert item["source"] == {"object_type": "smart_reminder", "object_id": reminder.id}
+    assert item["delivery_status"]["watch"]["route"] == "watch_summary_due_item"
+    assert item["delivery_status"]["watch"]["delivery_confirmed"] is False
+    assert any(p["source"]["object_type"] == "smart_reminder" for p in s["push_items"])
 
 
 def test_push_tiering_and_cap(db, auth, monkeypatch):

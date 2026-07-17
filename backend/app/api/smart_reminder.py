@@ -13,6 +13,7 @@ from app.database import get_db
 from app.api.deps import get_current_user_required
 from app.models.user import User
 from app.models.smart_reminder import SmartReminder
+from app.services.reminder_delivery_status import reminder_delivery_status
 from app.utils.timezone import get_china_now
 
 logger = logging.getLogger(__name__)
@@ -148,6 +149,7 @@ async def create_reminder(
         "priority": reminder.priority,
         "recurrence": reminder.recurrence,
         "status": "pending",
+        "delivery_status": reminder_delivery_status(),
         "created_at": reminder.created_at.isoformat() if reminder.created_at else None,
     }
 
@@ -221,6 +223,7 @@ async def create_reminder_window(
         "message": request.message or request.title,
         "priority": request.priority,
         "recurrence": request.recurrence,
+        "delivery_status": reminder_delivery_status(),
         "created_at": datetime.now(_BEIJING_TZ).isoformat(),
     }
 

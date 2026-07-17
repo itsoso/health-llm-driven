@@ -100,11 +100,15 @@ public struct WatchStatus: Codable, Sendable {
     }
 }
 
-/// 可在腕上「一键完成」的 kind(= health_protocol 域:处方药/补剂/喝水/餐协议/微运动)。
-/// 训练决策、复查、测量等非 health_protocol 来源只读不可勾,与后端回写边界一致。
+/// 可在腕上「一键完成」的 kind(= health_protocol 或 SmartReminder 域)。
+/// 训练决策、复查、测量等非可回写来源只读不可勾,与后端回写边界一致。
 public let watchCompletableKinds: Set<String> = [
     "medication", "supplement", "hydration", "diet",
-    "training", "activity", "exercise",
+    "training", "activity", "exercise", "reminder",
+]
+
+public let watchCompletableSourceTypes: Set<String> = [
+    "health_protocol", "smart_reminder",
 ]
 
 /// cut A:movement 处方(后端 `prescription`)。各端按形态渲染;腕上用 intensityLabel 出强度 chip。
@@ -326,10 +330,10 @@ public struct WatchTopAction: Codable, Sendable {
         self.runtimeContext = runtimeContext
     }
 
-    /// 可一键完成 = 有 action_id 且 kind 属于 health_protocol 可回写域。非可完成项只渲染只读。
+    /// 可一键完成 = 有 action_id 且来源/kind 属于后端可回写域。非可完成项只渲染只读。
     public var isCompletable: Bool {
         guard let id = actionId, !id.isEmpty else { return false }
-        guard source?.objectType == "health_protocol" else { return false }
+        guard let objectType = source?.objectType, watchCompletableSourceTypes.contains(objectType) else { return false }
         return watchCompletableKinds.contains(kind)
     }
 
@@ -376,7 +380,7 @@ public struct WatchDueItem: Codable, Sendable, Identifiable {
 
     public var isCompletable: Bool {
         guard let id = actionId, !id.isEmpty else { return false }
-        guard source?.objectType == "health_protocol" else { return false }
+        guard let objectType = source?.objectType, watchCompletableSourceTypes.contains(objectType) else { return false }
         return watchCompletableKinds.contains(kind)
     }
 

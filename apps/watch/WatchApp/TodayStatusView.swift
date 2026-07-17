@@ -101,7 +101,7 @@ struct TodayStatusView: View {
     }
 
     // MARK: - Top action (醒目圆角行)
-    // 可完成项(有 action_id 且 health_protocol 域)→ 可点 tile,点击「一键已做」;
+    // 可完成项(有 action_id 且协议/智能提醒可回写域)→ 可点 tile,点击「一键已做」;
     // 非可完成项(action_id=null,如复查/训练)→ 只读行,不给完成按钮(对齐后端边界)。
 
     @ViewBuilder

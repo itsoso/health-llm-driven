@@ -20,10 +20,12 @@ from sqlalchemy.orm import Session
 from app.models.agent_audit_log import AgentAuditLog
 from app.models.daily_health import GarminData
 from app.models.health_protocol import HealthProtocolEvent
+from app.models.smart_reminder import SmartReminder
 from app.models.user import GarminCredential
 from app.services import agenda_service, proactive_coordinator
 from app.services.action_ranker import rank_agenda_actions
-from app.utils.timezone import get_user_today
+from app.services.reminder_delivery_status import reminder_delivery_status
+from app.utils.timezone import get_user_now, get_user_today
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +48,7 @@ _LIGHT_HEADLINE = {
     "red": "今日建议以休息为主",
 }
 _PUSH_CAP = 3   # 手腕小屏:最多 3 条关键推送(对齐 R15 稀缺中断预算)
+_WATCH_REMINDER_CAP = 3
 _WATCH_BEHAVIOR_NUDGE_CAPS = {"exercise": 3, "training": 3, "activity": 3}
 _WATCH_SKIP_DOWNRANK_REASONS = {"too_tired", "too_hard", "unwell"}
 
@@ -54,6 +57,7 @@ def _push_tier(item: Dict[str, Any]) -> Optional[str]:
     """该议程项是否值得推到手腕 + 分级(P0 必响应 / P1 可忽略)。其余不推。"""
     t = item.get("type")
     st = item.get("status")
+    src = item.get("source") or {}
     if t == "checkup" and st == "overdue":
         return "P0"                      # 逾期复查
     if t == "training" and item.get("light") == "red":
@@ -66,6 +70,8 @@ def _push_tier(item: Dict[str, Any]) -> Optional[str]:
         return "P1"                      # 餐后散步 / 微运动 nudge
     if t == "movement" and st == "pending":
         return "P1"                      # timing-solver 当日锻炼块(cut 6)
+    if src.get("object_type") == "smart_reminder" and st == "pending":
+        return "P1"                      # Agent 创建的可执行提醒,腕上可见但不声称已送达
     return None
 
 
@@ -98,6 +104,8 @@ def _action_view(item: Dict[str, Any]) -> Dict[str, Any]:
     }
     if item.get("runtime_context"):
         view["runtime_context"] = item.get("runtime_context")
+    if item.get("delivery_status"):
+        view["delivery_status"] = item.get("delivery_status")
     return view
 
 
@@ -114,17 +122,22 @@ def _due_view(item: Dict[str, Any]) -> Dict[str, Any]:
         view["prescription"] = item["prescription"]  # cut A:腕上渲染强度 chip
     if item.get("runtime_context"):
         view["runtime_context"] = item.get("runtime_context")
+    if item.get("delivery_status"):
+        view["delivery_status"] = item.get("delivery_status")
     return view
 
 
 def _push_view(item: Dict[str, Any], tier: str) -> Dict[str, Any]:
-    return {
+    view = {
         "tier": tier,
         "title": item.get("title"),
         "detail": item.get("detail"),
         "kind": item.get("type"),
         "source": item.get("source"),
     }
+    if item.get("delivery_status"):
+        view["delivery_status"] = item.get("delivery_status")
+    return view
 
 
 def _runtime_contract(runtime_projection: Dict[str, Any]) -> Dict[str, Any]:
@@ -169,7 +182,77 @@ def _is_exercise_behavior_nudge(item: Dict[str, Any]) -> bool:
 
 
 def _is_required_execution_nudge(item: Dict[str, Any]) -> bool:
+    if (item.get("source") or {}).get("object_type") == "smart_reminder":
+        return item.get("status") == "pending"
     return item.get("status") == "pending" and item.get("type") == "medication"
+
+
+def _reminder_local_time(reminder: SmartReminder, user_now: datetime) -> datetime:
+    remind_at = reminder.remind_at
+    if remind_at.tzinfo is None:
+        remind_at = remind_at.replace(tzinfo=timezone.utc)
+    return remind_at.astimezone(user_now.tzinfo)
+
+
+def _reminder_kind(reminder: SmartReminder) -> str:
+    extra = reminder.extra_data or {}
+    explicit = str(extra.get("watch_kind") or "").strip()
+    if explicit:
+        return explicit
+    text = f"{reminder.title or ''} {reminder.message or ''}".lower()
+    if any(term in text for term in ("喝水", "饮水", "补水", "water", "hydration")):
+        return "hydration"
+    return "reminder"
+
+
+def _reminder_priority(reminder: SmartReminder) -> int:
+    return {
+        "urgent": 95,
+        "high": 80,
+        "normal": 55,
+        "low": 35,
+    }.get(str(reminder.priority or "normal"), 55)
+
+
+def _agent_reminder_items(db: Session, user_id: int) -> List[Dict[str, Any]]:
+    """Project Agent-created SmartReminder rows into today's Watch task stream."""
+    user_now = get_user_now(db, user_id)
+    visible_after = user_now - timedelta(hours=1)
+    rows = (
+        db.query(SmartReminder)
+        .filter(
+            SmartReminder.user_id == user_id,
+            SmartReminder.status == "pending",
+        )
+        .order_by(SmartReminder.remind_at.asc())
+        .limit(50)
+        .all()
+    )
+    items: List[Dict[str, Any]] = []
+    for reminder in rows:
+        local_at = _reminder_local_time(reminder, user_now)
+        if local_at.date() != user_now.date():
+            continue
+        if local_at < visible_after:
+            continue
+        items.append({
+            "type": _reminder_kind(reminder),
+            "title": reminder.title,
+            "detail": reminder.message,
+            "status": "pending",
+            "priority": _reminder_priority(reminder),
+            "time_window": local_at.strftime("%H:%M"),
+            "source": {"object_type": "smart_reminder", "object_id": reminder.id},
+            "runtime_context": {
+                "current_state_summary": "小巴已创建的提醒,手表刷新今日摘要时可执行。",
+                "replan_reason": "agent_scheduled_reminder",
+                "safety_boundary": "这是提醒任务,不代表手表通知已实际送达。",
+            },
+            "delivery_status": reminder_delivery_status(),
+        })
+        if len(items) >= _WATCH_REMINDER_CAP:
+            break
+    return items
 
 
 def _watch_behavior_nudges_sent_today(db: Session, user_id: int, kind: str) -> int:
@@ -377,6 +460,7 @@ def build_watch_summary(db: Session, user_id: int) -> Dict[str, Any]:
     items = _runtime_projection_items(runtime_projection)
     # 加层不减层:补回投影截断掉的今日到期协议/锻炼块(含事件触发非 daily 协议)。
     _merge_due_protocol_items(db, user_id, items)
+    items.extend(_agent_reminder_items(db, user_id))
 
     training = next((i for i in items if i.get("type") == "training"), None)
     light = (training or {}).get("light") or "gray"
@@ -385,7 +469,11 @@ def build_watch_summary(db: Session, user_id: int) -> Dict[str, Any]:
     actionable = [
         i for i in items
         if i.get("status") == "pending"
-        and (i.get("source") or {}).get("object_type") in ("health_protocol", "day_schedule_workout")
+        and (i.get("source") or {}).get("object_type") in (
+            "health_protocol",
+            "day_schedule_workout",
+            "smart_reminder",
+        )
     ]
     ranked_actions = rank_agenda_actions(actionable)
     top_action = _action_view(ranked_actions[0]) if ranked_actions else None

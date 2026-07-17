@@ -47,6 +47,10 @@ class TestReminderCreateAPI:
         assert data["title"] == "吃药"
         assert data["status"] == "pending"
         assert "id" in data
+        assert data["delivery_status"]["agent_claim"] == "created_not_device_delivered"
+        assert data["delivery_status"]["iphone_notification"]["status"] == "will_attempt_when_due"
+        assert data["delivery_status"]["watch"]["route"] == "watch_summary_due_item"
+        assert data["delivery_status"]["watch"]["delivery_confirmed"] is False
 
     def test_create_reminder_minimal(self, client, auth_headers):
         tomorrow = (datetime.now() + timedelta(days=1)).isoformat()
@@ -125,6 +129,10 @@ class TestReminderCreateAPI:
         first_data = first.json()
         assert first_data["status"] == "scheduled"
         assert first_data["resource_type"] == "smart_reminder"
+        assert first_data["delivery_status"]["agent_claim"] == "created_not_device_delivered"
+        assert first_data["delivery_status"]["iphone_notification"]["status"] == "will_attempt_when_due"
+        assert first_data["delivery_status"]["watch"]["route"] == "watch_summary_due_item"
+        assert first_data["delivery_status"]["watch"]["delivery_confirmed"] is False
         assert first_data["created_count"] == 8
         assert first_data["existing_count"] == 0
         assert first_data["times"] == [

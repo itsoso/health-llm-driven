@@ -154,7 +154,7 @@ final class WatchStore: ObservableObject {
         await submit { try QuickRecord.symptomVoice(rawText: rawText) }
     }
 
-    /// 「一键已做」:把到点项标记完成。仅可完成项(有 action_id 且 health_protocol 域)调用。
+    /// 「一键已做」:把到点项标记完成。仅可完成项(有 action_id 且协议/智能提醒可回写域)调用。
     /// 走与 submit 同一 fail-loud 链路;完成确认成功(lastRecordOK==true)后才发 completed 埋点。
     func completeAction(_ action: WatchTopAction) async {
         guard let actionId = action.actionId,

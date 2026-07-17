@@ -298,6 +298,25 @@ final class WatchSummaryTests: XCTestCase {
         XCTAssertEqual(s.dueItems.first?.isCompletable, false, "非 health_protocol 来源不可腕上完成/稍后/跳过")
     }
 
+    func testSmartReminderDueItemIsCompletable() throws {
+        let data = Data("""
+        {"status":{"light":"green","readiness_score":80,"headline":"h"},
+         "top_action":null,
+         "agenda":{"total":1,"pending":1},
+         "due_items":[
+           {"title":"定时饮水提醒","kind":"hydration","time_window":"13:30",
+            "action_id":"agenda-smart_reminder-9",
+            "source":{"object_type":"smart_reminder","object_id":9}}
+         ],
+         "quick_actions":[],"push_items":[],"generated_at":"x"}
+        """.utf8)
+
+        let s = try WatchSummary.decode(data)
+
+        XCTAssertEqual(s.dueItems.first?.actionId, "agenda-smart_reminder-9")
+        XCTAssertEqual(s.dueItems.first?.isCompletable, true)
+    }
+
     func testDecodeStatusFreshness() throws {
         let data = Data("""
         {"status":{"light":"green","readiness_score":78,"headline":"h",

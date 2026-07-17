@@ -18,6 +18,7 @@ import pytest
 
 import app.services.watch_summary as ws
 from app.models.medication import Medication, MedicationLog
+from app.models.smart_reminder import SmartReminder
 from app.models.supplement import SupplementDefinition, SupplementRecord
 from app.models.user import User
 from app.services import health_protocol_service as proto_svc
@@ -174,6 +175,104 @@ def test_snooze_protocol_action_marks_today_snoozed(client, db):
     assert logs == [], "稍后不是完成,不能落 MedicationLog"
     today = proto_svc.today_status(db, user.id)
     assert today[0]["today_status"] == "snoozed"
+
+
+def test_complete_smart_reminder_action_marks_reminder_fired_idempotently(client, db):
+    """Watch 完成 Agent 提醒只关闭提醒本身,不伪造成医疗/饮食领域记录。"""
+    user = _mk_user(db)
+    reminder = SmartReminder(
+        user_id=user.id,
+        title="定时饮水提醒",
+        message="喝 200ml 水",
+        remind_at=datetime.now(UTC) + timedelta(minutes=10),
+        recurrence="daily",
+        priority="normal",
+        status="pending",
+        source="agent_skill",
+    )
+    db.add(reminder)
+    db.commit()
+    db.refresh(reminder)
+    url = f"/api/v1/watch/actions/agenda-smart_reminder-{reminder.id}/complete"
+
+    r1 = client.post(url, headers=_headers(user))
+    r2 = client.post(url, headers=_headers(user))
+
+    assert r1.status_code == 200, r1.text
+    assert r2.status_code == 200, r2.text
+    assert r1.json()["written"] == "smart_reminder"
+    assert r2.json()["idempotent"] is True
+    db.refresh(reminder)
+    assert reminder.status == "fired"
+    assert reminder.fired_at is not None
+    next_count = db.query(SmartReminder).filter(
+        SmartReminder.user_id == user.id,
+        SmartReminder.title == reminder.title,
+        SmartReminder.status == "pending",
+    ).count()
+    assert next_count == 1
+
+
+def test_skip_smart_reminder_action_cancels_current_occurrence(client, db):
+    user = _mk_user(db)
+    reminder = SmartReminder(
+        user_id=user.id,
+        title="下午喝水提醒",
+        message="喝 200ml 水",
+        remind_at=datetime.now(UTC) + timedelta(minutes=10),
+        priority="normal",
+        status="pending",
+        source="agent_skill",
+    )
+    db.add(reminder)
+    db.commit()
+    db.refresh(reminder)
+
+    r = client.post(
+        f"/api/v1/watch/actions/agenda-smart_reminder-{reminder.id}/skip",
+        headers=_headers(user),
+        json={"reason": "no_time"},
+    )
+
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "cancelled"
+    assert r.json()["skip_reason"] == "no_time"
+    db.refresh(reminder)
+    assert reminder.status == "cancelled"
+
+
+def test_snooze_smart_reminder_action_moves_remind_at(client, db):
+    user = _mk_user(db)
+    original = datetime.now(UTC) + timedelta(minutes=10)
+    reminder = SmartReminder(
+        user_id=user.id,
+        title="下午喝水提醒",
+        message="喝 200ml 水",
+        remind_at=original,
+        priority="normal",
+        status="pending",
+        source="agent_skill",
+    )
+    db.add(reminder)
+    db.commit()
+    db.refresh(reminder)
+
+    r = client.post(
+        f"/api/v1/watch/actions/agenda-smart_reminder-{reminder.id}/snooze",
+        headers=_headers(user),
+        json={"minutes": 45},
+    )
+
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["status"] == "pending"
+    assert body["minutes"] == 45
+    assert body["snoozed_until"]
+    db.refresh(reminder)
+    stored = reminder.remind_at
+    if stored.tzinfo is None:
+        stored = stored.replace(tzinfo=UTC)
+    assert stored > original
 
 
 def test_expired_snooze_returns_to_pending(db):

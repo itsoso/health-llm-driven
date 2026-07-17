@@ -8,7 +8,7 @@ W1.5:到点项一键完成 + 服药/补剂依从回写。
 """
 import logging
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -21,6 +21,7 @@ from app.agents.safety_guardian.engine import (
 from app.agents.safety_guardian.schema import Alert, Severity
 from app.api.deps import get_current_user_required
 from app.database import get_db
+from app.models.smart_reminder import SmartReminder
 from app.models.symptom_entry import SymptomEntry
 from app.models.user import User
 from app.services import health_protocol_service as proto_svc
@@ -98,12 +99,108 @@ def _parse_action_id(action_id: str) -> tuple[str, int]:
 
 
 def _written_label(object_type: str, object_id: int, user_id: int, db: Session) -> str:
+    if object_type == "smart_reminder":
+        return "smart_reminder"
     if object_type == "health_protocol":
         p = proto_svc.get_protocol(db, object_id, user_id)
         return _WRITTEN_BY_SOURCE_MODEL.get(p.source_model, "none") if p else "none"
     if object_type in ("medication", "supplement"):
         return "medication_log"
     return "none"
+
+
+def _smart_reminder_or_404(db: Session, user_id: int, reminder_id: int) -> SmartReminder:
+    reminder = (
+        db.query(SmartReminder)
+        .filter(SmartReminder.id == reminder_id, SmartReminder.user_id == user_id)
+        .first()
+    )
+    if reminder is None:
+        raise HTTPException(status_code=404, detail="提醒不存在")
+    return reminder
+
+
+def _schedule_next_smart_reminder(db: Session, reminder: SmartReminder) -> None:
+    if not reminder.recurrence:
+        return
+    from app.services.reminder_service import ReminderService
+
+    ReminderService(db)._schedule_next(reminder)
+
+
+def _complete_smart_reminder(
+    db: Session, user_id: int, action_id: str, reminder_id: int
+) -> dict:
+    reminder = _smart_reminder_or_404(db, user_id, reminder_id)
+    idempotent = reminder.status != "pending"
+    if not idempotent:
+        reminder.status = "fired"
+        reminder.fired_at = datetime.now(UTC)
+        db.commit()
+        _schedule_next_smart_reminder(db, reminder)
+    return {
+        "action_id": action_id,
+        "object_type": "smart_reminder",
+        "object_id": reminder_id,
+        "status": "completed",
+        "written": "smart_reminder",
+        "event_id": None,
+        "idempotent": idempotent,
+    }
+
+
+def _skip_smart_reminder(
+    db: Session, user_id: int, action_id: str, reminder_id: int, reason: str | None
+) -> dict:
+    reminder = _smart_reminder_or_404(db, user_id, reminder_id)
+    idempotent = reminder.status != "pending"
+    if not idempotent:
+        reminder.status = "cancelled"
+        extra = dict(reminder.extra_data or {})
+        extra["watch_skip_reason"] = reason or "no_time"
+        reminder.extra_data = extra
+        db.commit()
+        _schedule_next_smart_reminder(db, reminder)
+    return {
+        "action_id": action_id,
+        "object_type": "smart_reminder",
+        "object_id": reminder_id,
+        "status": reminder.status,
+        "skip_reason": reason or "no_time",
+        "idempotent": idempotent,
+    }
+
+
+def _snooze_smart_reminder(
+    db: Session, user_id: int, action_id: str, reminder_id: int, minutes: int
+) -> dict:
+    reminder = _smart_reminder_or_404(db, user_id, reminder_id)
+    if reminder.status != "pending":
+        return {
+            "action_id": action_id,
+            "object_type": "smart_reminder",
+            "object_id": reminder_id,
+            "status": reminder.status,
+            "minutes": minutes,
+            "snoozed_until": None,
+            "idempotent": True,
+        }
+    snoozed_until = datetime.now(UTC) + timedelta(minutes=minutes)
+    reminder.remind_at = snoozed_until
+    extra = dict(reminder.extra_data or {})
+    extra["watch_snoozed_until"] = snoozed_until.isoformat()
+    extra["watch_snooze_minutes"] = minutes
+    reminder.extra_data = extra
+    db.commit()
+    return {
+        "action_id": action_id,
+        "object_type": "smart_reminder",
+        "object_id": reminder_id,
+        "status": "pending",
+        "minutes": minutes,
+        "snoozed_until": snoozed_until.isoformat(),
+        "idempotent": False,
+    }
 
 
 def _watch_ask_needs_phone(text: str) -> bool:
@@ -305,6 +402,8 @@ async def complete_action(
     - 请求内禁 build_twin(本端点只操作协议/领域表)。
     """
     object_type, object_id = _parse_action_id(action_id)
+    if object_type == "smart_reminder":
+        return _complete_smart_reminder(db, current_user.id, action_id, object_id)
 
     try:
         result = tas.complete_by_ref(
@@ -343,6 +442,9 @@ async def skip_action(
     """腕上「跳过」→ 标记今日协议 skipped,不写领域完成记录。"""
     object_type, object_id = _parse_action_id(action_id)
 
+    if object_type == "smart_reminder":
+        return _skip_smart_reminder(db, current_user.id, action_id, object_id, body.reason)
+
     if object_type != "health_protocol":
         raise HTTPException(status_code=400, detail="该来源不支持腕上跳过")
 
@@ -371,6 +473,9 @@ async def snooze_action(
 ):
     """腕上「稍后」→ 暂停今日协议一段时间,到期后重新进入 pending。"""
     object_type, object_id = _parse_action_id(action_id)
+
+    if object_type == "smart_reminder":
+        return _snooze_smart_reminder(db, current_user.id, action_id, object_id, body.minutes)
 
     if object_type != "health_protocol":
         raise HTTPException(status_code=400, detail="该来源不支持腕上稍后")
