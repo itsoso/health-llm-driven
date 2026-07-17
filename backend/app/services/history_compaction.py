@@ -126,10 +126,17 @@ async def _summarize(prior_summary: str, turns: List[Dict[str, str]]) -> Optiona
             messages=[{"role": "user", "content": prompt}],
             model=None, temperature=0.2, max_tokens=1200, stream=False,
         )
-        text = (resp.get("content") if isinstance(resp, dict) else
-                getattr(getattr(resp.choices[0], "message", None), "content", None)
-                if hasattr(resp, "choices") else None)
-        text = (text or "").strip()
+        # provider.chat(stream=False) 无 return_metadata → 返回**纯字符串**;带 metadata → dict。
+        if isinstance(resp, str):
+            text = resp
+        elif isinstance(resp, dict):
+            text = resp.get("content") or ""
+        else:  # 兜底: SDK 对象
+            text = getattr(
+                getattr(getattr(resp, "choices", [None])[0], "message", None),
+                "content", "",
+            ) or ""
+        text = text.strip()
         return text[:_SUMMARY_MAX_CHARS] or None
     except Exception as e:  # noqa: BLE001
         logger.warning("[history_compaction] 折叠 LLM 失败(fail-open 保留现状): %s", e)

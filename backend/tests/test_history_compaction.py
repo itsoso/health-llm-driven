@@ -163,6 +163,36 @@ async def test_refresh_fold_llm_failure_keeps_old_cache(db, fake_cache, monkeypa
     assert fake_cache.get(cid)["summary"] == "旧"  # fail-open: 保留旧缓存不覆盖
 
 
+@pytest.mark.asyncio
+async def test_summarize_parses_plain_string_response(monkeypatch):
+    """回归(真 flash 实测抓出): provider.chat(stream=False) 返回**纯字符串**, 不是
+    dict/对象。若解析成 None → _refresh_fold 恒判失败 → R1 生产静默 no-op(单测因 mock
+    _summarize 而漏掉)。此测用返回 str 的假 provider 打真解析路径。"""
+    class _StrProvider:
+        async def chat(self, **kw):
+            return "  折叠后的叙事摘要  "   # 真实 shape:strip 前的纯 str
+
+    monkeypatch.setattr(
+        "app.services.llm.factory.create_provider_for_extraction",
+        lambda mid: _StrProvider(),
+    )
+    out = await hc._summarize("", [{"role": "user", "content": "x"}])
+    assert out == "折叠后的叙事摘要"  # 解析出非空(不是 None)
+
+
+@pytest.mark.asyncio
+async def test_summarize_dict_and_object_shapes(monkeypatch):
+    """带 return_metadata 的 dict 形态 + SDK 对象形态也要解析出内容(兜底不回归)。"""
+    class _DictProvider:
+        async def chat(self, **kw):
+            return {"content": "dict叙事"}
+    monkeypatch.setattr(
+        "app.services.llm.factory.create_provider_for_extraction",
+        lambda mid: _DictProvider(),
+    )
+    assert await hc._summarize("", [{"role": "user", "content": "x"}]) == "dict叙事"
+
+
 def test_ships_off_by_default():
     from app.config import Settings
     assert Settings.model_fields["llm_history_compaction"].default is False
