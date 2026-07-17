@@ -20,7 +20,7 @@ BATTERY = Path(__file__).resolve().parents[1] / "evals" / "behavior" / "xiaoba_c
 _KNOWN_CHECKS = {
     "intake_intent", "confirm_tier", "fallback_shape",
     "remember_redirect", "owns_visualization", "fast_subset",
-    "fast_context_retained",
+    "fast_context_retained", "prefer_fast_record",
 }
 
 
@@ -99,6 +99,21 @@ def _run_check(case_id: str, query: str, chk: dict) -> None:
         assert list(FAST_TURN_TOOL_NAMES) == list(chk["expect"]), (
             f"{case_id}: fast 子集漂移 {FAST_TURN_TOOL_NAMES},期望 {chk['expect']}"
             "(变更须显式改 battery=有意决策)")
+
+    elif t == "prefer_fast_record":
+        # 复现 run_stream 的 _prefer_fast_record_model 门(四条排除),独立于模型选择。
+        # expect=false 的否定用例:「别记录」不走 fast-record → 不被 R2 force 逼出记录。
+        import app.services.agent_executor as ae
+        got = (
+            bool(ae._RECORD_INTENT_RE.search(query))
+            and not bool(ae._ADVICE_OR_ANALYSIS_RE.search(query))
+            and not bool(ae._RECORD_INTERROGATIVE_GUARD_RE.search(query))
+            and not bool(ae._RECORD_NEGATION_GUARD_RE.search(query))
+            and not ae._needs_reliable_tool_model(query)
+        )
+        assert got is chk["expect"], (
+            f"{case_id}: prefer_fast_record={got},期望 {chk['expect']}"
+            "(False=否定/疑问/分析→降级全模型,不被 R2 force 逼记)")
 
     elif t == "fast_context_retained":
         # 实现语义:上轮 assistant **提问**时,把它折进末条 user 消息

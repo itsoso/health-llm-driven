@@ -1646,9 +1646,9 @@ function SafeMarkdown({ content, fallbackText }: { content: string; fallbackText
 
 function AssistantConclusionLabel() {
   return (
-    <View testID="assistant-conclusion-label" style={summaryStyles.conclusionLabelRow}>
+    <View style={summaryStyles.conclusionLabelRow}>
       <View testID="assistant-conclusion-dot" style={summaryStyles.conclusionDot} />
-      <Text style={summaryStyles.conclusionLabel}>小巴结论</Text>
+      <Text style={summaryStyles.conclusionLabel}>小巴</Text>
     </View>
   );
 }
@@ -1763,20 +1763,13 @@ export default ChatBubble;
 
 const summaryStyles = StyleSheet.create({
   conclusion: {
-    marginBottom: 12,
-    gap: 5,
+    marginBottom: 10,
+    gap: 4,
   },
   conclusionLabelRow: {
-    alignSelf: 'flex-start',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: revaRadii.pill,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.green100,
-    backgroundColor: C.green50,
   },
   conclusionDot: {
     width: 4,
@@ -1787,8 +1780,8 @@ const summaryStyles = StyleSheet.create({
   conclusionLabel: {
     fontFamily: revaFonts.sans,
     fontSize: 11,
-    lineHeight: 15,
-    fontWeight: '700',
+    lineHeight: 16,
+    fontWeight: '600',
     letterSpacing: 0,
     color: C.green600,
   } as TextStyle,
@@ -2300,7 +2293,6 @@ const styles = StyleSheet.create({
   },
   conclusionCopyRow: {
     flexDirection: 'row',
-    alignItems: 'center',
     marginTop: 10,
     paddingTop: 8,
     borderTopWidth: StyleSheet.hairlineWidth,

@@ -198,7 +198,7 @@ describe('ChatBubble streaming degraded render', () => {
     expect(style.backgroundColor).toBe('transparent');
     expect(style.shadowOpacity ?? 0).toBe(0);
     expect(style.paddingHorizontal).toBe(0);
-    expect(getByText('小巴结论')).toBeTruthy();
+    expect(getByText('小巴')).toBeTruthy();
     expect(getByTestId('assistant-conclusion')).toBeTruthy();
     expect(queryByTestId('assistant-avatar')).toBeNull();
   });

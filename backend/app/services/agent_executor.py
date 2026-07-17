@@ -1105,9 +1105,17 @@ def _is_json_literal(value: Any) -> bool:
 
 
 def _has_explicit_text_record_intent(user_message: Optional[str]) -> bool:
-    """Authorize recovered textual health_record calls only for explicit writes."""
+    """Authorize recovered textual health_record calls only for explicit writes.
+
+    否定守卫同样在此把关:用户说「别记/记在心里」时,即便弱模型把 health_record 吐成文本,
+    也不授权其恢复执行(否则绕过 fast-path 门,仍会对「别记录」写库+谎报)。
+    """
     message = str(user_message or "").strip()
-    return bool(message and _RECORD_INTENT_RE.search(message))
+    if not message or not _RECORD_INTENT_RE.search(message):
+        return False
+    if _RECORD_NEGATION_GUARD_RE.search(message):
+        return False
+    return True
 
 
 def _extract_tool_code_call(
@@ -4113,6 +4121,17 @@ _RECORD_INTENT_RE = re.compile(
 _RECORD_INTERROGATIVE_GUARD_RE = re.compile(
     r"(多少|什么|啥|哪些|哪个|几[个次杯步条克组天分]|有没有|是不是|多不多|够不够|吗|[??])"
 )
+# 否定守卫:用户明确说「别记/不用记/记在心里就行」时,绝不能走 fast-record 强制路径。
+# R2 force 会**确定性**逼出 health_record 调用 —— 弱模型再想不记也不行 → 对「别记录」回
+# 「✅ 已记录」(2026-07-17 生产 20 轮召回测试实测,储物柜密码「别记录」被记 + 谎报已记)。
+# 命中 → 降级到全模型自行判断(不 force、不压缩上下文):**不抑制记录本身**,只把「要不要记」
+# 的裁量权还给强模型 + 系统提示。故误命中成本仅延迟,绝不丢真记录(「不要记错/别忘了记录/
+# 别记成午饭」这类想记的说法用负向 lookahead + 词界排除,已在 battery 双向验证)。
+_RECORD_NEGATION_GUARD_RE = re.compile(
+    r"(别|不要|不用|无需|勿|甭)\s*(记|存|写|录)(?!错|混|漏|岔|成|为)"
+    r"|记(在|到)?\s*心里"
+    r"|(别|不用|无需)\s*(帮我|给我)?\s*(记下来|写下来|存下来|录进去|写进去)"
+)
 _ADVICE_OR_ANALYSIS_RE = re.compile(
     r"(分析|解读|建议|方案|风险|评估|为什么|怎么|如何|基于|结合|补剂|叶酸|训练|运动|饮食方案|适合"
     r"|复盘|综合|趋势|规划|计划安排|该不该|要不要|值不值|意味着|说明什么)"
@@ -4296,6 +4315,11 @@ def _is_fast_eligible_turn(
         return False
     # 破坏性/同步意图 → 必须强模型做工具决策(弱 fast 不可靠),整轮不降 fast。
     if _needs_reliable_tool_model(text):
+        return False
+    # 否定("别记/记在心里")→ 全模型自行裁量地更可靠(弱 fast 模型只靠 tool-schema 软指令
+    # 拒记,不稳)。整轮不降 fast,让强模型稳妥地"不记 + 不谎报已记"(2026-07-17 生产实测:
+    # 否定轮被降到 qwen3.6-flash,虽本次正确拒记,但 health_record 仍在工具集里,软护栏不牢)。
+    if _RECORD_NEGATION_GUARD_RE.search(text):
         return False
     return bool(_RECORD_INTENT_RE.search(text) or _SIMPLE_QUERY_INTENT_RE.search(text))
 
@@ -5687,6 +5711,9 @@ class AgentExecutor:
             and not bool(_ADVICE_OR_ANALYSIS_RE.search(message or ""))
             # 疑问句("喝了多少水"/"吃了什么")= 查询,不是记录 —— 见守卫正则注释。
             and not bool(_RECORD_INTERROGATIVE_GUARD_RE.search(message or ""))
+            # 否定("别记/不用记/记在心里")不走 fast 记录路径,更不能被 R2 force 逼出记录 ——
+            # 把裁量权还给全模型(不抑制记录本身,只是不强制)。见 _RECORD_NEGATION_GUARD_RE 注释。
+            and not bool(_RECORD_NEGATION_GUARD_RE.search(message or ""))
             # 破坏性(删/改/撤销)不走 fast 记录路径 —— 弱模型删改不可靠,留强模型。
             and not _needs_reliable_tool_model(message or "")
         )
@@ -8385,6 +8412,12 @@ class AgentExecutor:
         # 「帮我同步」「删除早餐」被降 fast 后反复失败;强模型 23:19 同句 status=complete)。
         # 这是 sync 簇的实际失败路径(「同步」不在 record/query 意图正则里 → 只经此工具轮快路由)。
         if _needs_reliable_tool_model(getattr(self, "_current_turn_user_message", "")):
+            return None
+        # 否定("别记/记在心里")→ 工具决策留强模型(与整轮快路由同门):弱 fast 只靠 tool-schema
+        # 软指令拒记不稳,强模型更可靠地"不记 + 不谎报已记"。三条 fast 路径统一排除的第三条。
+        if _RECORD_NEGATION_GUARD_RE.search(
+            getattr(self, "_current_turn_user_message", "") or ""
+        ):
             return None
         # 只降**首个工具决策轮**: 默认路径下合成轮仍带 tools, 一旦跑过工具就留强模型
         # (安全: 工具后那一轮多半是写医疗正文的合成轮)。首轮直接答文本→安全兜底丢弃重合成。

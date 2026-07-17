@@ -12,6 +12,7 @@
 #   retro_1 卡片误发(分析题带 markdown 表格仍发睡眠快照卡)
 #   retro_2 兜底话术饮食偏见(记鞋码被要求补早餐)
 #   retro_3 食物抱怨误记饮食(「下次不吃辣了」建 diet 草稿)
+#   retro_4 否定被 force 逼记(「记在心里就行别记录」被 R2 force 逼出 health_record + 谎报已记)
 #
 # 每题字段:
 #   id / family        family ∈ record/query/analysis/safety/resolve/profile/multi_turn
@@ -28,7 +29,7 @@
 meta:
   version: 1
   purpose: deterministic-behavior-regression
-  quota: { record: 5, query: 4, analysis: 4, safety: 3, resolve: 2, profile: 2, multi_turn: 2 }
+  quota: { record: 6, query: 4, analysis: 4, safety: 3, resolve: 2, profile: 2, multi_turn: 2 }
 
 cases:
   # ───────────────── record ×5(记录意图正确分类 + 档位)─────────────────
@@ -67,6 +68,15 @@ cases:
     checks:
       - { type: confirm_tier, kind: illness, expect: never_auto }
     notes: 病症=医疗级确认前置;分类指引已把局部愈合病灶归 illness(2026-07-16 修复)。
+
+  - id: record_negation_no_force
+    family: record
+    query: 储物柜密码4731,记在心里就行别记录
+    checks:
+      - { type: prefer_fast_record, expect: false }
+    notes: >-
+      retro_4:2026-07-17 生产 20 轮召回测试实测,「别记录」被 R2 force 确定性逼出 health_record
+      + 回「✅ 已记录」。否定守卫抑制 fast-record → 降级全模型自裁量(不抑制记录本身,误命中仅延迟)。
 
   # ───────────────── query ×4(查询绝不触发写路径)─────────────────
   - id: query_water_is_question
