@@ -941,18 +941,6 @@ export default function ChatInputBar({
           <Text style={styles.recordingDuration}>
             {Math.floor(realtimeDictation.durationMs / 1000)}″
           </Text>
-          <View style={styles.wechatVoiceActions}>
-            <View style={[styles.wechatVoiceActionPill, voiceGesture === 'cancel' && styles.wechatVoiceActionActive]}>
-              <Text style={[styles.wechatVoiceActionText, voiceGesture === 'cancel' && styles.wechatVoiceActionTextActive]}>
-                取消
-              </Text>
-            </View>
-            <View style={[styles.wechatVoiceActionPill, voiceGesture === 'text' && styles.wechatVoiceActionActive]}>
-              <Text style={[styles.wechatVoiceActionText, voiceGesture === 'text' && styles.wechatVoiceActionTextActive]}>
-                转为文字
-              </Text>
-            </View>
-          </View>
           <View style={styles.wechatReleaseDock}>
             <Text style={styles.wechatReleaseText}>
               {cancelHint || voiceGesture === 'cancel' ? '松开 取消' : voiceGesture === 'text' ? '松开 转文字' : '松开 发送'}
@@ -1370,42 +1358,7 @@ const styles = StyleSheet.create({
   },
   recordingDuration: {
     fontFamily: revaFonts.mono, fontSize: 16, fontWeight: '700', color: C.ink2,
-    marginBottom: 170,
-  } as TextStyle,
-  wechatVoiceActions: {
-    position: 'absolute',
-    left: 18,
-    right: 18,
-    bottom: 116,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  wechatVoiceActionPill: {
-    minWidth: 132,
-    minHeight: 62,
-    borderRadius: 31,
-    backgroundColor: C.surface2,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.lineStrong,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 18,
-    transform: [{ rotate: '-7deg' }],
-  },
-  wechatVoiceActionActive: {
-    backgroundColor: C.green50,
-    borderWidth: 1,
-    borderColor: C.greenBright,
-  },
-  wechatVoiceActionText: {
-    fontFamily: revaFonts.sans,
-    fontSize: 16,
-    color: C.ink2,
-    fontWeight: '700',
-  } as TextStyle,
-  wechatVoiceActionTextActive: {
-    color: C.greenBright,
+    marginBottom: 96,
   } as TextStyle,
   wechatReleaseDock: {
     position: 'absolute',

@@ -149,7 +149,7 @@ describe('ChatInputBar', () => {
   it('shows wrapping cloud transcript while holding and submits the final text on release', async () => {
     const onSend = jest.fn().mockResolvedValue(true);
     mockStopDictation.mockResolvedValueOnce('记录今天在机场吃了一份番茄鸡蛋面并喝了五百毫升水');
-    const { getByLabelText, getByTestId } = render(
+    const { getByLabelText, getByTestId, queryByText } = render(
       <ChatInputBar onSend={onSend} isStreaming={false} />,
     );
 
@@ -171,6 +171,8 @@ describe('ChatInputBar', () => {
     expect(StyleSheet.flatten(transcript.props.style)).toEqual(expect.objectContaining({
       flexShrink: 1,
     }));
+    expect(queryByText('取消')).toBeNull();
+    expect(queryByText('转为文字')).toBeNull();
 
     await act(async () => {
       fireEvent(getByLabelText('按住说话'), 'responderRelease');
