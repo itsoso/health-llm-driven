@@ -324,3 +324,262 @@ class TestDedup:
                 channels=["ios_apns"],
             ))
         assert result.get("reason") != "dedup"
+
+
+class TestCriticalDedupNarrowedWindow:
+    """#4 under-alarm 修复 (2026-07-17): 持续危急值不能被 24h 去重静默丢弃.
+
+    真实场景: Garmin 每 2h 同步 (09/11/13/.../23 点) → regenerate_briefing_for_user
+    → evaluate_and_push_safety 重新检出 BP 220/130 → send_notification(severity="critical",
+    rule_id="vitals.bp_crisis", 默认 dedup_window_hours=24).
+
+    修复前: 09:01 推一条, 11:01~次日 09:00 的每次重新检出全部命中 24h 去重被静默跳过
+    —— 持续的危及生命状态一天只提醒一次。
+    修复后: critical 窗口收窄到 CRITICAL_DEDUP_WINDOW_HOURS(3h), 稳定"隔一次同步重推"。
+    """
+
+    def _seed_prior_critical(self, db, user_id, sent_at):
+        db.add(NotificationLog(
+            user_id=user_id,
+            notification_type="health_alert",
+            channel="ios_apns",
+            title="⚠️ 血压危急",
+            content="220/130",
+            status=NotificationStatus.SENT.value,
+            sent_at=sent_at,
+            data={"rule_id": "vitals.bp_crisis"},
+        ))
+        db.commit()
+
+    @patch("app.services.notification.push_service.get_china_now")
+    def test_persistent_critical_realerts_after_narrowed_window(self, mock_now, db):
+        """09:01 已推 → 13:01 BP 仍 220/130 → 必须重新提醒 (修复前被 24h 去重丢弃)."""
+        mock_now.return_value = datetime(2026, 5, 1, 13, 1)
+        user_id = _make_user(db)
+        _make_settings(db, user_id)
+        self._seed_prior_critical(db, user_id, datetime(2026, 5, 1, 9, 1))
+
+        svc = PushService(db)
+        with patch.object(PushService, "_send_ios", return_value={"success": True}):
+            result = asyncio.run(svc.send_notification(
+                user_id=user_id,
+                notification_type="health_alert",
+                title="⚠️ 血压危急",
+                content="220/130 仍未缓解",
+                severity="critical",
+                data={"rule_id": "vitals.bp_crisis"},
+                channels=["ios_apns"],
+            ))
+        assert result.get("reason") != "dedup"
+        assert result.get("success") is True
+
+    @patch("app.services.notification.push_service.get_china_now")
+    def test_critical_still_deduped_inside_narrowed_window(self, mock_now, db):
+        """收窄 ≠ 取消: 09:01 已推 → 11:01 同一 rule 仍在 3h 窗口内 → 跳过, 不刷屏."""
+        mock_now.return_value = datetime(2026, 5, 1, 11, 1)
+        user_id = _make_user(db)
+        _make_settings(db, user_id)
+        self._seed_prior_critical(db, user_id, datetime(2026, 5, 1, 9, 1))
+
+        svc = PushService(db)
+        with patch.object(PushService, "_send_ios", return_value={"success": True}):
+            result = asyncio.run(svc.send_notification(
+                user_id=user_id,
+                notification_type="health_alert",
+                title="⚠️ 血压危急",
+                content="220/130 仍未缓解",
+                severity="critical",
+                data={"rule_id": "vitals.bp_crisis"},
+                channels=["ios_apns"],
+            ))
+        assert result["success"] is False
+        assert result["reason"] == "dedup"
+
+    @patch("app.services.notification.push_service.get_china_now")
+    def test_non_critical_keeps_24h_dedup(self, mock_now, db):
+        """加层不减层: 只对 critical 放宽。high 在 4h 后仍走原 24h 去重, 行为零变化."""
+        mock_now.return_value = datetime(2026, 5, 1, 13, 1)
+        user_id = _make_user(db)
+        _make_settings(db, user_id)
+        db.add(NotificationLog(
+            user_id=user_id,
+            notification_type="health_alert",
+            channel="ios_apns",
+            title="⚠️ 训练负荷偏高",
+            content="ACWR 1.6",
+            status=NotificationStatus.SENT.value,
+            sent_at=datetime(2026, 5, 1, 9, 1),
+            data={"rule_id": "training_load.acwr_high"},
+        ))
+        db.commit()
+
+        svc = PushService(db)
+        with patch.object(PushService, "_send_ios", return_value={"success": True}):
+            result = asyncio.run(svc.send_notification(
+                user_id=user_id,
+                notification_type="health_alert",
+                title="⚠️ 训练负荷偏高",
+                content="ACWR 1.6",
+                severity="high",
+                data={"rule_id": "training_load.acwr_high"},
+                channels=["ios_apns"],
+            ))
+        assert result["success"] is False
+        assert result["reason"] == "dedup"
+
+    @patch("app.services.notification.push_service.get_china_now")
+    def test_critical_does_not_add_dedup_when_caller_disabled_it(self, mock_now, db):
+        """dedup_window_hours=0 (调用方显式关去重) 不能因为 critical 被"补"上 3h 抑制."""
+        mock_now.return_value = datetime(2026, 5, 1, 9, 31)
+        user_id = _make_user(db)
+        _make_settings(db, user_id)
+        self._seed_prior_critical(db, user_id, datetime(2026, 5, 1, 9, 1))
+
+        svc = PushService(db)
+        with patch.object(PushService, "_send_ios", return_value={"success": True}):
+            result = asyncio.run(svc.send_notification(
+                user_id=user_id,
+                notification_type="health_alert",
+                title="⚠️ 血压危急",
+                content="220/130 仍未缓解",
+                severity="critical",
+                data={"rule_id": "vitals.bp_crisis"},
+                dedup_window_hours=0,
+                channels=["ios_apns"],
+            ))
+        assert result.get("reason") != "dedup"
+
+    @patch("app.services.notification.push_service.get_china_now")
+    def test_critical_narrower_caller_window_not_widened(self, mock_now, db):
+        """min() 语义: 调用方给的 1h 比 3h 更窄 → 保持 1h, 绝不被放大成 3h 抑制."""
+        mock_now.return_value = datetime(2026, 5, 1, 11, 1)
+        user_id = _make_user(db)
+        _make_settings(db, user_id)
+        self._seed_prior_critical(db, user_id, datetime(2026, 5, 1, 9, 1))
+
+        svc = PushService(db)
+        with patch.object(PushService, "_send_ios", return_value={"success": True}):
+            result = asyncio.run(svc.send_notification(
+                user_id=user_id,
+                notification_type="health_alert",
+                title="⚠️ 血压危急",
+                content="220/130 仍未缓解",
+                severity="critical",
+                data={"rule_id": "vitals.bp_crisis"},
+                dedup_window_hours=1,
+                channels=["ios_apns"],
+            ))
+        assert result.get("reason") != "dedup"
+
+    @patch("app.services.notification.push_service.get_china_now")
+    def test_night_critical_does_not_pile_up_delayed_rows(self, mock_now, db):
+        """收窄窗口不能让夜间 critical 堆成多条 delayed → 09:00 一起 flush 刷屏.
+
+        这是 send_notification "去重检查必须先于 quiet-hours 延迟队列" 那段注释要防的
+        不变量。正确性依赖 _find_dedup_log 的过滤**只有下界**: delayed row 的
+        dedup_time = coalesce(sent_at=NULL, scheduled_at=09:00) 是未来时刻, 恒 >=
+        任何过去的 window_start, 所以窗口再窄也命中。若有人给 _find_dedup_log 加
+        `dedup_time <= now` 上界, 这个测试会红。
+        """
+        user_id = _make_user(db)
+        _make_settings(db, user_id)  # quiet 22:00–09:00
+        svc = PushService(db)
+
+        # 夜间同一 rule 反复触发 (真实来源: wscla escalate, crontab(minute=15) 每小时)
+        for hh, mm in [(0, 15), (2, 15), (5, 15), (7, 15)]:
+            mock_now.return_value = datetime(2026, 5, 1, hh, mm)
+            with patch.object(PushService, "_send_ios", return_value={"success": True}):
+                asyncio.run(svc.send_notification(
+                    user_id=user_id,
+                    notification_type="health_alert",
+                    title="⚠️ 血压危急",
+                    content="220/130 仍未缓解",
+                    severity="critical",
+                    data={"rule_id": "vitals.bp_crisis"},
+                    channels=["ios_apns"],
+                ))
+
+        delayed = db.query(NotificationLog).filter(
+            NotificationLog.user_id == user_id,
+            NotificationLog.status == NotificationStatus.DELAYED.value,
+        ).count()
+        assert delayed == 1, f"夜间 delayed 堆积成 {delayed} 条 → 09:00 会刷屏"
+
+    @patch("app.services.notification.push_service.get_china_now")
+    def test_persistent_critical_realert_ladder_over_real_sync_cadence(self, mock_now, db):
+        """CRITICAL_DEDUP_WINDOW_HOURS=3 这个魔数的可执行论证.
+
+        按真实 Garmin crontab (北京 09/11/13/15/17/19/21/23 点 :01) 跑一整天持续
+        BP 220/130 → 必须稳定"隔一次同步重推" = 09/13/17/21, 共 4 条/天,
+        与产品 owner 选的"每 4 小时重新提醒一次"一致。
+        窗口若取 2h 整数倍(如 4h)会正好落在同步刻度上 → 秒级抖动决定命中与否。
+        """
+        user_id = _make_user(db)
+        _make_settings(db, user_id)
+        svc = PushService(db)
+
+        sent_hours = []
+        for hh in [9, 11, 13, 15, 17, 19, 21, 23]:
+            mock_now.return_value = datetime(2026, 5, 1, hh, 1)
+            with patch.object(PushService, "_send_ios", return_value={"success": True}):
+                result = asyncio.run(svc.send_notification(
+                    user_id=user_id,
+                    notification_type="health_alert",
+                    title="⚠️ 血压危急",
+                    content="220/130 仍未缓解",
+                    severity="critical",
+                    data={"rule_id": "vitals.bp_crisis"},
+                    channels=["ios_apns"],
+                ))
+            if result.get("reason") != "dedup":
+                sent_hours.append(hh)
+
+        assert sent_hours == [9, 13, 17, 21], f"重提醒阶梯漂移: {sent_hours}"
+
+    @patch("app.services.notification.push_service.get_china_now")
+    def test_critical_min_overrides_caller_long_window(self, mock_now, db):
+        """契约: min() 会无差别压掉调用方显式设的长窗口 (garmin_sync 的 168h → 3h).
+
+        钉成"已知且有意"。今天 _push_episode_created 有 Episode 幂等闸 +
+        每 episode 唯一 rule_id, 那 168h 从未被行使 → 行为零变化。
+        若将来真需要长抑制的 critical, 必须显式豁免, 不能默默依赖 min()。
+        """
+        mock_now.return_value = datetime(2026, 5, 1, 13, 1)
+        user_id = _make_user(db)
+        _make_settings(db, user_id)
+        self._seed_prior_critical(db, user_id, datetime(2026, 5, 1, 9, 1))
+
+        svc = PushService(db)
+        with patch.object(PushService, "_send_ios", return_value={"success": True}):
+            result = asyncio.run(svc.send_notification(
+                user_id=user_id,
+                notification_type="health_alert",
+                title="⚠️ 血压危急",
+                content="220/130 仍未缓解",
+                severity="critical",
+                data={"rule_id": "vitals.bp_crisis"},
+                dedup_window_hours=168,  # 调用方要 7 天; critical 下实际生效 3h
+                channels=["ios_apns"],
+            ))
+        assert result.get("reason") != "dedup"
+
+    @patch("app.services.notification.push_service.get_china_now")
+    def test_uppercase_critical_still_narrowed(self, mock_now, db):
+        """_severity_rank 走 .lower(): "CRITICAL" 也必须收窄, 不能漏成 24h."""
+        mock_now.return_value = datetime(2026, 5, 1, 13, 1)
+        user_id = _make_user(db)
+        _make_settings(db, user_id)
+        self._seed_prior_critical(db, user_id, datetime(2026, 5, 1, 9, 1))
+
+        svc = PushService(db)
+        with patch.object(PushService, "_send_ios", return_value={"success": True}):
+            result = asyncio.run(svc.send_notification(
+                user_id=user_id,
+                notification_type="health_alert",
+                title="⚠️ 血压危急",
+                content="220/130 仍未缓解",
+                severity="CRITICAL",
+                data={"rule_id": "vitals.bp_crisis"},
+                channels=["ios_apns"],
+            ))
+        assert result.get("reason") != "dedup"

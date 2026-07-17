@@ -47,6 +47,17 @@ _TELEGRAM_FALLBACK_BLOCKED_TYPES = {
     "plan_reminder",
 }
 
+# 持续危急值必须重复提醒: BP≥180/120 一整天不降是持续的危及生命状态,
+# 默认 24h 去重会让它只推一条 (2026-07-17 R4 架构映射查出的 under-alarm)。
+# critical 的去重窗口收窄到本值, 非 critical 仍走调用方给的窗口 (默认 24h) 不变。
+#
+# 取 3h 而非 4h: 唯一触发源 evaluate_and_push_safety 挂在 Garmin 同步后,
+# 同步每 2h 一次 (09/11/.../23 点)。窗口若取 2h 的整数倍会正好落在同步刻度上
+# (13:01 检查时 window_start≈09:01, 而上一条 sent_at 也≈09:01), 命中与否取决于
+# 秒级抖动。3h ∈ (2h, 4h) → 稳定"隔一次同步重推", 实际重提醒间隔 4h。
+# 同时对任何高频调用方兜底: 最多 8 条/天。
+CRITICAL_DEDUP_WINDOW_HOURS = 3
+
 
 def _severity_rank(s: Optional[str]) -> int:
     return _SEVERITY_ORDER.get((s or "info").lower(), 0)
@@ -408,6 +419,15 @@ class PushService:
                                 有 rule_id 时按 (user_id, notification_type, rule_id) 去重;
                                 否则按 (user_id, notification_type, title) 去重.
                                 传 0 或负数则禁用去重。
+                                severity="critical" 时窗口收窄到
+                                min(本值, CRITICAL_DEDUP_WINDOW_HOURS) —— 持续危急值
+                                必须重复提醒, 不能 24h 只推一条。注意这个 min() 会
+                                无差别覆盖调用方显式设的**长**窗口: critical + 传 168
+                                → 实际 3h。今天唯一这么传的 garmin_sync
+                                _push_episode_created (L4→critical, 168h) 有 Episode
+                                幂等闸 + 每 episode 唯一 rule_id, 那 168h 从未被行使,
+                                故行为零变化; 若将来有调用方真需要长抑制的 critical,
+                                得在这里给它开显式豁免, 别默默依赖 min()。
             log_delivery: 是否新写 NotificationLog. flush delayed push 时为 False,
                           由原 delayed row 承接 sent/failed 状态, 避免重复展示。
 
@@ -486,12 +506,18 @@ class PushService:
         # 去重检查必须先于 quiet-hours 延迟队列。
         # 否则夜间同一提醒会被重复写成多条 delayed, 到 09:00 一起 flush 出去。
         if dedup_window_hours and dedup_window_hours > 0:
+            # critical 只收窄窗口, 不取消去重 (取消 → 高频调用方可刷屏)。
+            # min() 保证只对 critical 放宽、绝不给任何 severity 加长抑制;
+            # dedup_window_hours<=0 (调用方显式关去重) 不进这个分支, 不会被"补"上抑制。
+            effective_dedup_hours = dedup_window_hours
+            if not is_non_critical:
+                effective_dedup_hours = min(dedup_window_hours, CRITICAL_DEDUP_WINDOW_HOURS)
             existing = self._find_dedup_log(
                 user_id=user_id,
                 notification_type=notification_type,
                 title=title,
                 rule_id=rule_id,
-                window_start=get_china_now() - timedelta(hours=dedup_window_hours),
+                window_start=get_china_now() - timedelta(hours=effective_dedup_hours),
                 statuses=[
                     NotificationStatus.SENT.value,
                     NotificationStatus.FAILED.value,
@@ -503,7 +529,7 @@ class PushService:
                 key = f"rule_id={rule_id}" if rule_id else f"title={title!r}"
                 logger.info(
                     f"用户 {user_id} 相同推送 {notification_type}/{key} "
-                    f"在 {dedup_window_hours}h 窗口内已有记录 (log_id={existing.id})，跳过"
+                    f"在 {effective_dedup_hours}h 窗口内已有记录 (log_id={existing.id})，跳过"
                 )
                 return {"success": False, "reason": "dedup"}
 
@@ -646,6 +672,16 @@ class PushService:
 
         rule_id 优先; 没有 rule_id 时按 title 退化。生产 PostgreSQL 走 JSONB 提取,
         本机 SQLite 测试用 LIKE 降级。
+
+        ⚠️ 不变量: 过滤只有下界 (dedup_time >= window_start), **不能加上界**。
+        delayed row 的 dedup_time = coalesce(sent_at=NULL, scheduled_at) = 未来时刻
+        (被 quiet-hours / 晨间地板推到的 09:00), 恒 >= 任何过去的 window_start。
+        靠这条, 夜间同一 rule 反复触发只会命中已有的 delayed row 而被去重,
+        不会堆成多条 delayed 到 09:00 一起 flush 刷屏 (见 send_notification 里
+        "去重检查必须先于 quiet-hours 延迟队列" 那段)。
+        若给这里加 `dedup_time <= now` 之类的上界 (看着像"修 bug"), 未来的
+        scheduled_at 会被排除 → 夜间 delayed 堆积 → 09:00 推送风暴。
+        test_night_critical_does_not_pile_up_delayed_rows 锁这条。
         """
         dedup_time = func.coalesce(
             NotificationLog.sent_at,
