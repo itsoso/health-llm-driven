@@ -49,6 +49,7 @@ import type { TranscribeAudioResult } from '../../services/transcribe';
 
 const CANCEL_THRESHOLD = 80;
 const VOICE_SLIDE_THRESHOLD = 88;
+const INPUT_HOLD_DICTATION_DELAY_MS = 260;
 const COMPOSER_HIT_SLOP = { top: 6, right: 6, bottom: 6, left: 6 };
 const COMPOSER_BAR_BG = C.paper;
 const COMPOSER_INPUT_BG = C.surface;
@@ -188,6 +189,8 @@ export default function ChatInputBar({
   const realtimeInputEditedRef = useRef(false);
   const realtimeAsrResultRef = useRef<TranscribeAudioResult | undefined>(undefined);
   const activeVoiceSourceRef = useRef<'hold' | 'dictation' | null>(null);
+  const inputHoldDictationActiveRef = useRef(false);
+  const inputHoldDictationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dictationStopRequestedRef = useRef(false);
   const holdTranscriptRef = useRef('');
   const inputChannelRef = useRef<'typed' | 'voice'>('typed');
@@ -469,16 +472,9 @@ export default function ChatInputBar({
     }
   }, [composer.mode, composer.phase, realtimeDictation.isDictating]);
 
-  const handleRealtimeMicPress = useCallback(async () => {
+  const startRealtimeDictation = useCallback(async () => {
     const state = composerRef.current;
-    if (state.phase === 'live_dictating' || realtimeDictation.isDictating) {
-      dictationStopRequestedRef.current = true;
-      dispatchComposer({ type: 'dictation_stop' });
-      await realtimeDictation.stopDictation();
-      activeVoiceSourceRef.current = null;
-      return;
-    }
-    if (!canStartDictation(state)) return;
+    if (!canStartDictation(state)) return false;
     realtimeInputEditedRef.current = false;
     dictationStopRequestedRef.current = false;
     realtimeAsrResultRef.current = undefined;
@@ -489,8 +485,70 @@ export default function ChatInputBar({
     const started = await realtimeDictation.startDictation();
     if (started === false) {
       dispatchComposer({ type: 'fail', errorCode: realtimeDictation.error || 'dictation_start_failed' });
+      activeVoiceSourceRef.current = null;
+      return false;
     }
+    return true;
   }, [input, realtimeDictation]);
+
+  const applyRealtimeFinalTranscript = useCallback((finalTranscript: string) => {
+    const clean = finalTranscript.trim();
+    if (!clean || realtimeInputEditedRef.current) return;
+    const base = realtimeBaseInputRef.current.trim();
+    applyVoiceTranscript('realtime_mic', base ? `${base} ${clean}` : clean, realtimeAsrResultRef.current);
+  }, [applyVoiceTranscript]);
+
+  const handleRealtimeMicPress = useCallback(async () => {
+    const state = composerRef.current;
+    if (state.phase === 'live_dictating' || realtimeDictation.isDictating) {
+      dictationStopRequestedRef.current = true;
+      dispatchComposer({ type: 'dictation_stop' });
+      await realtimeDictation.stopDictation();
+      activeVoiceSourceRef.current = null;
+      return;
+    }
+    await startRealtimeDictation();
+  }, [realtimeDictation, startRealtimeDictation]);
+
+  const handleInputLongPressDictation = useCallback(async () => {
+    const state = composerRef.current;
+    if (
+      inputHoldDictationActiveRef.current
+      || state.mode !== 'text'
+      || state.phase === 'live_dictating'
+      || realtimeDictation.isDictating
+    ) return;
+    inputHoldDictationActiveRef.current = true;
+    const started = await startRealtimeDictation();
+    if (!started) {
+      inputHoldDictationActiveRef.current = false;
+    }
+  }, [realtimeDictation.isDictating, startRealtimeDictation]);
+
+  const clearInputHoldDictationTimer = useCallback(() => {
+    if (!inputHoldDictationTimerRef.current) return;
+    clearTimeout(inputHoldDictationTimerRef.current);
+    inputHoldDictationTimerRef.current = null;
+  }, []);
+
+  const handleInputPressInDictation = useCallback(() => {
+    clearInputHoldDictationTimer();
+    inputHoldDictationTimerRef.current = setTimeout(() => {
+      inputHoldDictationTimerRef.current = null;
+      void handleInputLongPressDictation();
+    }, INPUT_HOLD_DICTATION_DELAY_MS);
+  }, [clearInputHoldDictationTimer, handleInputLongPressDictation]);
+
+  const handleInputPressOutDictation = useCallback(async () => {
+    clearInputHoldDictationTimer();
+    if (!inputHoldDictationActiveRef.current) return;
+    inputHoldDictationActiveRef.current = false;
+    dictationStopRequestedRef.current = true;
+    const finalTranscript = String(await realtimeDictation.stopDictation() || '').trim();
+    applyRealtimeFinalTranscript(finalTranscript);
+    activeVoiceSourceRef.current = null;
+    dispatchComposer({ type: 'dictation_end' });
+  }, [applyRealtimeFinalTranscript, clearInputHoldDictationTimer, realtimeDictation]);
 
   const handleKeyboardSubmit = useCallback(() => {
     if (!canSend) return;
@@ -712,6 +770,7 @@ export default function ChatInputBar({
 
   React.useEffect(() => () => {
     if (justSentTimerRef.current) clearTimeout(justSentTimerRef.current);
+    if (inputHoldDictationTimerRef.current) clearTimeout(inputHoldDictationTimerRef.current);
   }, []);
 
   const focusTextInput = useCallback(() => {
@@ -1020,9 +1079,12 @@ export default function ChatInputBar({
                 pressed && styles.inputWrapPressed,
               ]}
               onPress={focusTextInput}
+              onLongPress={handleInputLongPressDictation}
+              onPressOut={handleInputPressOutDictation}
+              delayLongPress={INPUT_HOLD_DICTATION_DELAY_MS}
               accessibilityRole="button"
               accessibilityLabel="消息输入框容器"
-              accessibilityHint="点击输入文字，点右侧麦克风实时转文字"
+              accessibilityHint="点击输入文字，长按实时语音输入，点右侧麦克风持续转文字"
             >
               <TextInput
                 ref={textInputRef}
@@ -1031,6 +1093,8 @@ export default function ChatInputBar({
                 placeholderTextColor={C.ink3}
                 value={input}
                 onChangeText={handleInputChange}
+                onPressIn={handleInputPressInDictation}
+                onPressOut={handleInputPressOutDictation}
                 onKeyPress={handleTextInputKeyPress}
                 onSubmitEditing={handleKeyboardSubmit}
                 returnKeyType="send"

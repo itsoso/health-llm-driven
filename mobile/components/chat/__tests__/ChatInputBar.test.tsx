@@ -132,6 +132,7 @@ describe('ChatInputBar', () => {
   });
 
   afterEach(() => {
+    jest.useRealTimers();
     jest.restoreAllMocks();
   });
 
@@ -619,6 +620,80 @@ describe('ChatInputBar', () => {
 
     expect(mockStartDictation).toHaveBeenCalled();
     expect(getByLabelText('消息输入框').props.value).toBe('记录今天喝水 500ml');
+  });
+
+  it('starts realtime dictation by holding the input field while the keyboard composer stays active', async () => {
+    const onSend = jest.fn();
+    mockStopDictation.mockResolvedValueOnce('记录今天喝水 500 毫升');
+    const view = render(
+      <ChatInputBar onSend={onSend} isStreaming={false} />,
+    );
+    enterKeyboardMode(view);
+    const { getByLabelText, getByTestId } = view;
+    const inputSurface = getByTestId('wechat-composer-input');
+
+    await act(async () => {
+      fireEvent(inputSurface, 'longPress');
+      await Promise.resolve();
+    });
+    act(() => {
+      latestRealtimeDictationOptions.onTranscript('记录今天喝水 300 毫升');
+    });
+
+    expect(mockStartDictation).toHaveBeenCalledTimes(1);
+    expect(getByLabelText('消息输入框').props.value).toBe('记录今天喝水 300ml');
+
+    await act(async () => {
+      fireEvent(inputSurface, 'pressOut');
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mockStopDictation).toHaveBeenCalledTimes(1);
+    expect(getByLabelText('消息输入框').props.value).toBe('记录今天喝水 500ml');
+    expect(getByLabelText('切换到语音输入')).toBeTruthy();
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it('starts realtime dictation from the text input body only after the hold threshold', async () => {
+    jest.useFakeTimers();
+    const onSend = jest.fn();
+    mockStopDictation.mockResolvedValueOnce('记录今天喝水 500 毫升');
+    const view = render(
+      <ChatInputBar onSend={onSend} isStreaming={false} />,
+    );
+    enterKeyboardMode(view);
+    const { getByLabelText } = view;
+    const textInput = getByLabelText('消息输入框');
+
+    await act(async () => {
+      fireEvent(textInput, 'pressIn');
+      jest.advanceTimersByTime(259);
+      await Promise.resolve();
+    });
+    expect(mockStartDictation).not.toHaveBeenCalled();
+
+    await act(async () => {
+      jest.advanceTimersByTime(1);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    act(() => {
+      latestRealtimeDictationOptions.onTranscript('记录今天喝水 300 毫升');
+    });
+
+    expect(mockStartDictation).toHaveBeenCalledTimes(1);
+    expect(getByLabelText('消息输入框').props.value).toBe('记录今天喝水 300ml');
+
+    await act(async () => {
+      fireEvent(textInput, 'pressOut');
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mockStopDictation).toHaveBeenCalledTimes(1);
+    expect(getByLabelText('消息输入框').props.value).toBe('记录今天喝水 500ml');
+    expect(onSend).not.toHaveBeenCalled();
   });
 
   it('stops realtime dictation from the active microphone button', async () => {
