@@ -2206,30 +2206,31 @@ def _extract_reminder_delivery_status_from_result(result: Any) -> Optional[Dict[
 
 def _should_force_record_tool_choice(
     prefer_fast_record: bool,
-    round_messages: List[Dict[str, Any]],
+    original_messages: List[Dict[str, Any]],
     pass_tools: Optional[List[Dict[str, Any]]],
-    model_name: Any,
+    supports_forced_tool_choice: bool,
 ) -> bool:
     """R2 门控(纯函数, battery 可测): 高置信记录轮的**首个**工具轮才 force tool_choice。
 
     四个条件全真才 force:
     - prefer_fast_record: 确定性记录意图门(已排除疑问句/删改/分析)已命中;
-    - 首轮: round_messages 里**无 tool 结果消息** —— 后续轮再 force 会造成无限工具循环
-      (每轮都被迫再调一次工具, 永远到不了合成);
+    - 首轮: **原始 messages**(跨轮累积 tool 结果的那份, 非 _messages_for_round 压缩版
+      ——fast-record 压缩版恒为 [system,user], 判不出轮次; 安全评审 2026-07-17 抓出)
+      里无 tool 结果消息 —— 后续轮再 force 会造成无限工具循环;
     - pass_tools 里确实有 health_record(被工具子集裁掉时 force 一个不存在的工具=400);
-    - qwen 系模型(探针验证过 enable_thinking=false + named force 的家族);其余 provider
-      不带 kwarg = 行为逐字节不变(镜像显式缓存"验证过的模型才开"纪律)。
+    - ModelEntry.supports_forced_tool_choice=True(真网探针验证过的模型, registry flag,
+      与 supports_thinking_budget 同款纪律; 不用模型名子串——安全评审抓出的口径不一)。
     """
     if not prefer_fast_record:
         return False
-    if any(m.get("role") == "tool" for m in round_messages or []):
+    if any(m.get("role") == "tool" for m in original_messages or []):
         return False
     if not any(
         (t.get("function") or {}).get("name") == "health_record"
         for t in (pass_tools or [])
     ):
         return False
-    return "qwen" in str(model_name or "").lower()
+    return bool(supports_forced_tool_choice)
 
 
 def _build_fast_record_messages(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -8635,22 +8636,9 @@ class AgentExecutor:
             or getattr(provider, "default_model", None)
             or getattr(provider, "provider_name", None)
         )
-        # R2(ships-OFF): 高置信记录轮首个工具轮 force tool_choice + 关思考(必须成对:
-        # qwen thinking 模式下 tool_choice=object 400 —— probe_tool_choice_strict.py 实测)。
-        # 门控纯函数 _should_force_record_tool_choice(首轮/含 health_record/qwen 系)。
-        if (
-            getattr(settings, "llm_force_record_tool_choice", False)
-            and _should_force_record_tool_choice(
-                self._prefer_fast_record_model,
-                round_messages,
-                chat_kwargs.get("tools"),
-                self._last_provider_model_name,
-            )
-        ):
-            chat_kwargs["tool_choice"] = {
-                "type": "function", "function": {"name": "health_record"},
-            }
-            chat_kwargs["enable_thinking"] = False
+        # R2 force tool_choice 不接这里: 记录路径全走 run_stream → _call_llm_stream
+        # (/agent/stream 与 /agent/send 都是), 本非流式方法的调用点(multi_model/无 tools)
+        # 四条件恒不可能同真 —— 安全评审 2026-07-17 抓出死接线, 已挪到 _call_llm_stream。
         try:
             return await provider.chat(**chat_kwargs)
         except Exception as e:  # noqa: BLE001
@@ -8660,10 +8648,6 @@ class AgentExecutor:
             # 不回退的话用户一选商用模型整个 agent 就不可用。二次失败再抛给上层兜底。
             # F2: pass_tools 时回退目标经可靠工具模型选择 (_stable_fallback_provider),
             # 不再无脑落到默认 tokenplan(MiniMax 弱工具模型)。
-            # R2 fail-open: force kwargs 可能就是失败原因(变体端点拒 tool_choice),
-            # 回退调用前剥除 —— 绝不让 force 让整轮不可用。
-            chat_kwargs.pop("tool_choice", None)
-            chat_kwargs.pop("enable_thinking", None)
             logger.warning(
                 "[agent_executor] 选定 provider chat() 失败,回退稳定 provider: %s", e
             )
@@ -8719,6 +8703,12 @@ class AgentExecutor:
             # 报错);flag 关时 payload 逐字节不变。
             if getattr(settings, "llm_parallel_tool_calls", False):
                 stream_kwargs["parallel_tool_calls"] = True
+            # R2(ships-OFF): 高置信记录轮**首个**工具轮 force tool_choice=health_record
+            # + 关思考(恒成对: qwen thinking 模式下 tool_choice=object 400 ——
+            # probe_tool_choice_strict.py 实测)。首轮判据打**原始 messages**(跨轮累积
+            # tool 结果), 模型门控走 ModelEntry.supports_forced_tool_choice registry flag。
+            # flag 关 / 模型未验证 / 非首轮 = 不设 kwarg, payload 逐字节不变。
+            self._maybe_force_record_tool_choice(stream_kwargs, messages)
         else:
             # 合成/答案轮(无 tools): 可选给 qwen 思考阶段封顶(flag 门控, fail-closed)。
             # 只在这里调=天然只碰无工具的合成轮, 绝不碰工具决策轮。
@@ -8780,6 +8770,37 @@ class AgentExecutor:
                 self._record_model_fallback_reason("selected_model_tool_stream_failed")
             async for evt in self._stream_via_stable_fallback(stream_kwargs, pass_tools):
                 yield evt
+
+    def _maybe_force_record_tool_choice(
+        self, stream_kwargs: Dict[str, Any], original_messages: List[Dict[str, Any]]
+    ) -> None:
+        """R2: 高置信记录轮首个工具轮 → stream_kwargs 注入 named tool_choice + 关思考。
+
+        全部条件(flag + _should_force_record_tool_choice 四条件)才注入, 否则零行为变更。
+        模型门控走 ModelEntry.supports_forced_tool_choice(真网探针验证过才 True,
+        与 supports_thinking_budget 同款 registry 纪律)。fail-soft: 判定异常不注入。
+        """
+        try:
+            if not getattr(settings, "llm_force_record_tool_choice", False):
+                return
+            model_id = self._last_effective_model_id
+            if not model_id:
+                return
+            from app.services.llm.model_registry import get_model
+            entry = get_model(model_id)
+            supports = bool(entry and getattr(entry, "supports_forced_tool_choice", False))
+            if _should_force_record_tool_choice(
+                self._prefer_fast_record_model,
+                original_messages,
+                stream_kwargs.get("tools"),
+                supports,
+            ):
+                stream_kwargs["tool_choice"] = {
+                    "type": "function", "function": {"name": "health_record"},
+                }
+                stream_kwargs["enable_thinking"] = False
+        except Exception:  # noqa: BLE001
+            return
 
     def _maybe_apply_synthesis_thinking_budget(self, stream_kwargs: Dict[str, Any]) -> None:
         """合成/答案轮 → 给 qwen 思考阶段封顶(flag 门控, fail-closed)。
@@ -8909,6 +8930,10 @@ class AgentExecutor:
         回退目标 (F2: 带工具走可靠工具模型) 若非流式则用 chat() 单块产出, 否则真流式。
         fail-open: 回退 provider 再失败也要产出一个 finish 事件让上层收尾, 不把回合打死。
         """
+        # R2 fail-open: force kwargs(tool_choice+关思考)可能就是主 provider 失败原因,
+        # 且回退目标未必过探针验证 —— 回退前剥除, 绝不让 force 把整轮打死。
+        stream_kwargs.pop("tool_choice", None)
+        stream_kwargs.pop("enable_thinking", None)
         fb = self._stable_fallback_provider(bool(pass_tools))
         fb_non_streaming = self._provider_is_non_streaming(fb)
         try:

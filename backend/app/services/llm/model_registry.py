@@ -46,6 +46,11 @@ class ModelEntry:
     #   (SYNTHESIS_THINKING_BUDGET, 砍 in-call TTFT)。fail-closed 默认 False: 只对
     #   **真网络探针验证过**该参数的模型置 True (见 scripts/probe_qwen_thinking_budget.py),
     #   未验证模型置 True 会让端点 400 打死合成轮。拿不准时保守留 False。
+    supports_forced_tool_choice: bool = False
+    # ↑ 该模型是否接受 named-function tool_choice(须与 enable_thinking=false 成对:
+    #   qwen 系 thinking 模式下 tool_choice=object/required 会 400)。fail-closed 默认
+    #   False: 只对真网探针验证过的模型置 True(scripts/probe_tool_choice_strict.py,
+    #   2026-07-17 双模型 PASS 且参数合法)。R2 记录轮 force 只对 True 模型生效。
     supports_explicit_cache: bool = False
     # ↑ 该模型是否支持 DashScope compatible-mode 的显式上下文缓存 (Anthropic 式
     #   cache_control ephemeral 断点)。True 才允许 agent_executor 在 flag 开时给该模型
@@ -92,6 +97,9 @@ MODELS: List[ModelEntry] = [
         # 探针实证 (probe_explicit_cache.py, 2026-07-13): cache_control 被接受,
         # callB cached_tokens=7282 钉死命中 (flash 隐式基线为 0,显式=纯增益)。
         supports_explicit_cache=True,
+        # 探针实证 (probe_tool_choice_strict.py, 2026-07-17): enable_thinking=false 下
+        # named tool_choice PASS 且参数合法。
+        supports_forced_tool_choice=True,
     ),
     ModelEntry(
         id="qwen3.6-plus",
@@ -117,6 +125,8 @@ MODELS: List[ModelEntry] = [
         # 探针实证 (probe_explicit_cache.py, 2026-07-13): cache_control 被接受,
         # callB cached_tokens=7282 钉死命中 (flash 隐式基线为 0,显式=纯增益)。
         supports_explicit_cache=True,
+        # 探针实证 (probe_tool_choice_strict.py, 2026-07-17): 同上双模型 PASS。
+        supports_forced_tool_choice=True,
     ),
     ModelEntry(
         id="qwen-image-2.0",
