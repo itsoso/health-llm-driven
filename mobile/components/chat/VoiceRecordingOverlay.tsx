@@ -38,7 +38,7 @@ export interface VoiceRecordingOverlayProps {
   suggestions?: string[];
   /** 可选:真实音频振幅历史(0..1),长度不限,取尾部 BAR_COUNT 段驱动波形。 */
   levels?: number[];
-  /** Android 返回 / Modal 关闭回调。 */
+  /** 系统返回或 Modal 关闭回调。 */
   onRequestClose?: () => void;
 }
 
