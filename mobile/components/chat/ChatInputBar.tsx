@@ -5,13 +5,12 @@ import {
   Alert, AppState, Keyboard,
 } from 'react-native';
 import { Image } from 'expo-image';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import ReAnimated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming } from 'react-native-reanimated';
 import { useMediaPicker, type PendingImage } from '../../hooks/useMediaPicker';
-import { useVoiceRecording } from '../../hooks/useVoiceRecording';
 import { useRealtimeDictation } from '../../hooks/useRealtimeDictation';
 import {
   canStartDictation,
@@ -164,6 +163,7 @@ export default function ChatInputBar({
   const [medicalImportBusy, setMedicalImportBusy] = useState(false);
   const [agentMode, setAgentMode] = useState<ChatAgentMode>('daily');
   const [cancelHint, setCancelHint] = useState(false);
+  const [holdTranscript, setHoldTranscript] = useState('');
   const [composer, dispatchComposer] = React.useReducer(
     reduceComposerState,
     undefined,
@@ -187,6 +187,9 @@ export default function ChatInputBar({
   const realtimeBaseInputRef = useRef('');
   const realtimeInputEditedRef = useRef(false);
   const realtimeAsrResultRef = useRef<TranscribeAudioResult | undefined>(undefined);
+  const activeVoiceSourceRef = useRef<'hold' | 'dictation' | null>(null);
+  const dictationStopRequestedRef = useRef(false);
+  const holdTranscriptRef = useRef('');
   const inputChannelRef = useRef<'typed' | 'voice'>('typed');
   const composerRef = useRef(composer);
   const stopDictationRef = useRef<() => Promise<string>>(async () => '');
@@ -210,6 +213,9 @@ export default function ChatInputBar({
     if (initialText == null) return;
     inputChannelRef.current = 'typed';
     setInput(prev => (prev === initialText ? prev : initialText));
+    if (initialText.trim() && composerRef.current.mode === 'hold') {
+      dispatchComposer({ type: 'toggle_mode' });
+    }
   }, [initialText, initialTextKey]);
 
   React.useEffect(() => {
@@ -221,6 +227,9 @@ export default function ChatInputBar({
         if (initialText == null) {
           inputChannelRef.current = 'typed';
           setInput(prev => prev || draft.text);
+          if (draft.text.trim() && composerRef.current.mode === 'hold') {
+            dispatchComposer({ type: 'toggle_mode' });
+          }
         }
         setPendingImages(draft.images);
         void cleanupAbandonedChatDraftFiles(draft.images.map(image => image.uri));
@@ -291,11 +300,12 @@ export default function ChatInputBar({
     return draft;
   }, []);
 
-  // GPT/Gemini 式默认唤起键盘: chat.tsx 在「空对话获得焦点」时递增 token。
-  // (2026-07-04 founder 拍板反转旧「不 auto-focus」设计 — 仅限空对话, 回到有
-  //  历史的对话不弹, 不打断阅读。)延迟等 tab 过渡完成。
+  // Explicit focus requests enter text mode first; ordinary chat entry stays voice-first.
   React.useEffect(() => {
     if (!autoFocusToken) return;
+    if (composerRef.current.mode === 'hold') {
+      dispatchComposer({ type: 'toggle_mode' });
+    }
     const t = setTimeout(() => {
       textInputRef.current?.focus();
     }, 380);
@@ -311,7 +321,9 @@ export default function ChatInputBar({
     try {
       let voiceDraftForSend: VoiceDraft | null = null;
       if (phase === 'live_dictating' || dictationNativeActiveRef.current) {
+        dictationStopRequestedRef.current = true;
         const finalTranscript = String(await stopDictationRef.current() || '').trim();
+        activeVoiceSourceRef.current = null;
         if (!text && finalTranscript) {
           const base = realtimeBaseInputRef.current.trim();
           const raw = base ? `${base} ${finalTranscript}` : finalTranscript;
@@ -420,16 +432,25 @@ export default function ChatInputBar({
   ]);
 
   const handleRealtimeTranscript = useCallback((text: string, asr?: TranscribeAudioResult) => {
-    if (realtimeInputEditedRef.current) return;
     const clean = text.trim();
-    const base = realtimeBaseInputRef.current.trim();
     realtimeAsrResultRef.current = asr;
+    if (activeVoiceSourceRef.current === 'hold') {
+      holdTranscriptRef.current = clean;
+      setHoldTranscript(clean);
+      return;
+    }
+    if (realtimeInputEditedRef.current) return;
+    const base = realtimeBaseInputRef.current.trim();
     applyVoiceTranscript('realtime_mic', base ? `${base} ${clean}` : clean, asr);
   }, [applyVoiceTranscript]);
 
   const realtimeDictation = useRealtimeDictation({
     onTranscript: handleRealtimeTranscript,
-    onEnd: () => dispatchComposer({ type: 'dictation_end' }),
+    onEnd: () => {
+      if (activeVoiceSourceRef.current === 'dictation') {
+        dispatchComposer({ type: 'dictation_end' });
+      }
+    },
     onError: (message) => dispatchComposer({ type: 'fail', errorCode: message || 'dictation_failed' }),
   });
 
@@ -440,24 +461,29 @@ export default function ChatInputBar({
   React.useEffect(() => {
     if (
       realtimeDictation.isDictating
+      && !dictationStopRequestedRef.current
       && composerRef.current.mode === 'text'
       && composerRef.current.phase === 'idle'
     ) {
       dispatchComposer({ type: 'dictation_start' });
     }
-  }, [realtimeDictation.isDictating]);
+  }, [composer.mode, composer.phase, realtimeDictation.isDictating]);
 
   const handleRealtimeMicPress = useCallback(async () => {
     const state = composerRef.current;
     if (state.phase === 'live_dictating' || realtimeDictation.isDictating) {
+      dictationStopRequestedRef.current = true;
       dispatchComposer({ type: 'dictation_stop' });
       await realtimeDictation.stopDictation();
+      activeVoiceSourceRef.current = null;
       return;
     }
     if (!canStartDictation(state)) return;
     realtimeInputEditedRef.current = false;
+    dictationStopRequestedRef.current = false;
     realtimeAsrResultRef.current = undefined;
     realtimeBaseInputRef.current = input.trim();
+    activeVoiceSourceRef.current = 'dictation';
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     dispatchComposer({ type: 'dictation_start' });
     const started = await realtimeDictation.startDictation();
@@ -498,38 +524,15 @@ export default function ChatInputBar({
   const voiceGesture = composer.gesture;
   const voiceModeToggleLabel = isVoiceMode ? '切换到键盘输入' : '切换到语音输入';
 
-  const voice = useVoiceRecording({
-    onTranscript: (text, asr) => {
-      const clean = text.trim();
-      if (!clean) return;
-      const draft = buildVoiceDraft({
-        source: 'hold_to_talk',
-        rawTranscript: clean,
-        asr: asr
-          ? {
-            provider: asr.provider,
-            model: asr.model,
-            durationMs: asr.durationMs,
-            confidence: asr.confidence,
-          }
-          : undefined,
-      });
-      voiceDraftRef.current = draft;
-      if (voiceCommitModeRef.current === 'send') {
-        void handleSend(draft.normalizedText, { channel: 'voice' });
-        return;
-      }
-      dispatchComposer({ type: 'hold_transcribed' });
-      const previous = input.trim();
-      applyVoiceTranscript('hold_to_talk', previous ? `${previous} ${clean}` : clean);
-      setTimeout(() => textInputRef.current?.focus(), 30);
-    },
-  });
-
-  cancelVoiceRef.current = voice.cancelRecording;
-  voiceNativeActiveRef.current = voice.isRecording || voice.isTranscribing;
-  const holdRecordingActive = composer.phase === 'hold_recording' || voice.isRecording;
-  const holdTranscribing = composer.phase === 'hold_transcribing' || voice.isTranscribing;
+  cancelVoiceRef.current = realtimeDictation.cancelDictation;
+  voiceNativeActiveRef.current = realtimeDictation.isDictating
+    && activeVoiceSourceRef.current === 'hold';
+  const holdRecordingActive = (
+    composer.phase === 'hold_starting'
+    || composer.phase === 'hold_recording'
+  ) && activeVoiceSourceRef.current === 'hold';
+  const holdTranscribing = composer.phase === 'hold_transcribing'
+    && activeVoiceSourceRef.current === 'hold';
 
   const cancelledRef = useRef(false);
   const startYRef = useRef(0);
@@ -539,11 +542,15 @@ export default function ChatInputBar({
     cancelledRef.current = false;
     voiceGestureActiveRef.current = true;
     voiceCommitModeRef.current = 'send';
+    activeVoiceSourceRef.current = 'hold';
+    holdTranscriptRef.current = '';
+    setHoldTranscript('');
+    realtimeAsrResultRef.current = undefined;
     holdStartXRef.current = pageX;
     startYRef.current = pageY;
     dispatchComposer({ type: 'hold_start' });
     setCancelHint(false);
-    const started = await voice.startRecording();
+    const started = await realtimeDictation.startDictation();
     if (started === false) {
       voiceGestureActiveRef.current = false;
       if (composerRef.current.phase === 'hold_starting') {
@@ -552,7 +559,7 @@ export default function ChatInputBar({
       return;
     }
     dispatchComposer({ type: 'hold_ready' });
-  }, [voice]);
+  }, [realtimeDictation]);
 
   const handleHoldMove = useCallback((pageX: number, pageY: number) => {
     if (!voiceGestureActiveRef.current || cancelledRef.current) return;
@@ -563,7 +570,8 @@ export default function ChatInputBar({
       voiceGestureActiveRef.current = false;
       dispatchComposer({ type: 'hold_move', gesture: 'cancel' });
       setCancelHint(false);
-      void Promise.resolve(voice.cancelRecording())
+      activeVoiceSourceRef.current = null;
+      void Promise.resolve(realtimeDictation.cancelDictation())
         .finally(() => dispatchComposer({ type: 'hold_cancel' }));
     } else if (dx > VOICE_SLIDE_THRESHOLD) {
       voiceCommitModeRef.current = 'text';
@@ -574,17 +582,50 @@ export default function ChatInputBar({
       dispatchComposer({ type: 'hold_move', gesture: 'send' });
       setCancelHint(dy > 30);
     }
-  }, [voice]);
+  }, [realtimeDictation]);
 
-  const handleHoldEnd = useCallback(() => {
+  const handleHoldEnd = useCallback(async () => {
     setCancelHint(false);
     if (cancelledRef.current) return;
     if (!voiceGestureActiveRef.current) return;
     voiceGestureActiveRef.current = false;
     dispatchComposer({ type: 'hold_release' });
-    void Promise.resolve(voice.stopAndTranscribe())
-      .finally(() => dispatchComposer({ type: 'hold_transcribed' }));
-  }, [voice]);
+    const commitMode = voiceCommitModeRef.current;
+    const finalText = String(await realtimeDictation.stopDictation() || '').trim();
+    const transcript = finalText || holdTranscriptRef.current.trim();
+    activeVoiceSourceRef.current = null;
+    if (!transcript) {
+      dispatchComposer({ type: 'fail', errorCode: 'empty_voice_transcript' });
+      return;
+    }
+    const draft = buildVoiceDraft({
+      source: 'hold_to_talk',
+      rawTranscript: transcript,
+      asr: realtimeAsrResultRef.current
+        ? {
+          provider: realtimeAsrResultRef.current.provider,
+          model: realtimeAsrResultRef.current.model,
+          durationMs: realtimeAsrResultRef.current.durationMs,
+          confidence: realtimeAsrResultRef.current.confidence,
+        }
+        : undefined,
+    });
+    voiceDraftRef.current = draft;
+    if (commitMode === 'send') {
+      await handleSend(draft.normalizedText, { channel: 'voice' });
+    } else {
+      const previous = input.trim();
+      applyVoiceTranscript(
+        'hold_to_talk',
+        previous ? `${previous} ${transcript}` : transcript,
+        realtimeAsrResultRef.current,
+      );
+      setTimeout(() => textInputRef.current?.focus(), 30);
+    }
+    holdTranscriptRef.current = '';
+    setHoldTranscript('');
+    dispatchComposer({ type: 'hold_transcribed' });
+  }, [applyVoiceTranscript, handleSend, input, realtimeDictation]);
 
   const handleHoldTerminate = useCallback(() => {
     if (!voiceGestureActiveRef.current) return;
@@ -592,9 +633,10 @@ export default function ChatInputBar({
     voiceGestureActiveRef.current = false;
     setCancelHint(false);
     dispatchComposer({ type: 'hold_move', gesture: 'cancel' });
-    void Promise.resolve(voice.cancelRecording())
+    activeVoiceSourceRef.current = null;
+    void Promise.resolve(realtimeDictation.cancelDictation())
       .finally(() => dispatchComposer({ type: 'hold_cancel' }));
-  }, [voice]);
+  }, [realtimeDictation]);
 
   const handleHoldStartEvent = useCallback((event: any) => {
     handleHoldStart(event.nativeEvent.pageX ?? 0, event.nativeEvent.pageY ?? 0);
@@ -616,7 +658,10 @@ export default function ChatInputBar({
       return;
     }
     if (state.phase === 'live_dictating' || dictationNativeActiveRef.current) {
+      dictationStopRequestedRef.current = true;
       await stopDictationRef.current();
+      activeVoiceSourceRef.current = null;
+      dictationStopRequestedRef.current = true;
       dispatchComposer({ type: 'dictation_stop' });
     }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -645,19 +690,20 @@ export default function ChatInputBar({
       const phase = composerRef.current.phase;
       cancelledRef.current = true;
       voiceGestureActiveRef.current = false;
+      dictationStopRequestedRef.current = true;
+      activeVoiceSourceRef.current = null;
       setCancelHint(false);
       dispatchComposer({ type: 'background' });
       void (async () => {
-        if (phase === 'live_dictating' || dictationNativeActiveRef.current) {
-          await cancelDictationRef.current();
-        }
         if (
-          phase === 'hold_starting'
+          phase === 'live_dictating'
+          || phase === 'hold_starting'
           || phase === 'hold_recording'
           || phase === 'hold_transcribing'
+          || dictationNativeActiveRef.current
           || voiceNativeActiveRef.current
         ) {
-          await cancelVoiceRef.current();
+          await cancelDictationRef.current();
         }
       })();
     });
@@ -866,26 +912,34 @@ export default function ChatInputBar({
         </ScrollView>
       )}
 
-      {/* 录音中全屏蒙层 */}
+      {/* 云端实时语音输入 */}
       {holdRecordingActive && (
         <View style={styles.recordingOverlay}>
           <View style={styles.wechatVoiceBubble}>
+            <Text
+              testID="voice-live-transcript"
+              style={styles.voiceLiveTranscript}
+            >
+              {holdTranscript || '正在听，请说话'}
+            </Text>
             <View style={styles.wechatWaveRow}>
               {VOICE_WAVE_BARS.map((bar) => (
                 <View
                   key={bar}
                   style={[
                     styles.wechatWaveBar,
-                    { height: 8 + ((bar * 7) % 18) },
+                    {
+                      height: 5 + ((bar * 7) % 10)
+                        + Math.round(realtimeDictation.audioLevel * (bar % 3 === 0 ? 16 : 9)),
+                    },
                     bar > 18 && styles.wechatWaveBarLoud,
                   ]}
                 />
               ))}
             </View>
-            <View style={styles.wechatBubbleTail} />
           </View>
           <Text style={styles.recordingDuration}>
-            {Math.floor(voice.durationMs / 1000)}″
+            {Math.floor(realtimeDictation.durationMs / 1000)}″
           </Text>
           <View style={styles.wechatVoiceActions}>
             <View style={[styles.wechatVoiceActionPill, voiceGesture === 'cancel' && styles.wechatVoiceActionActive]}>
@@ -895,7 +949,7 @@ export default function ChatInputBar({
             </View>
             <View style={[styles.wechatVoiceActionPill, voiceGesture === 'text' && styles.wechatVoiceActionActive]}>
               <Text style={[styles.wechatVoiceActionText, voiceGesture === 'text' && styles.wechatVoiceActionTextActive]}>
-                滑到这里 转文字
+                转为文字
               </Text>
             </View>
           </View>
@@ -930,14 +984,23 @@ export default function ChatInputBar({
             onPress={handleVoiceModeToggle}
             style={({ pressed }) => [
               styles.voiceModeBtn,
-              (pressed || isVoiceMode) && styles.voiceModeBtnActive,
+              pressed && styles.voiceModeBtnActive,
             ]}
             hitSlop={COMPOSER_HIT_SLOP}
             accessibilityRole="button"
             accessibilityLabel={voiceModeToggleLabel}
             accessibilityHint={isVoiceMode ? '切换回键盘文字输入' : '切换到按住说话'}
           >
-            <Ionicons name={isVoiceMode ? 'keypad-outline' : 'volume-medium-outline'} size={23} color={COMPOSER_ICON} />
+            {isVoiceMode ? (
+              <MaterialCommunityIcons
+                testID="voice-keyboard-icon"
+                name="keyboard-outline"
+                size={22}
+                color={COMPOSER_ICON}
+              />
+            ) : (
+              <Ionicons name="volume-medium-outline" size={22} color={COMPOSER_ICON} />
+            )}
           </Pressable>
 
           {isVoiceMode ? (
@@ -1158,7 +1221,7 @@ function MenuItem({ icon, label, desc, onPress }: { icon: any; label: string; de
 }
 
 // Reva 设计语言: 暖白 paper 输入栏 / surface 卡 / green500 发送 / ink 文字.
-// 录音蒙层的红色/灰色为固定 mic 录音态语义, 不走主题 token.
+// 实时录音态沿用 Reva 的纸张、墨色与健康绿,避免脱离对话页主题.
 const styles = StyleSheet.create({
   /* ── 输入栏 ── */
   composerSurface: {
@@ -1253,7 +1316,7 @@ const styles = StyleSheet.create({
   /* ── 录音中蒙层 ── */
   recordingOverlay: {
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.78)',
+    backgroundColor: 'rgba(247,247,243,0.96)',
     zIndex: 100,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1265,23 +1328,31 @@ const styles = StyleSheet.create({
     borderWidth: 2, borderColor: 'rgba(58,210,159,0.5)',
   },
   wechatVoiceBubble: {
-    minWidth: 210,
-    minHeight: 92,
-    borderRadius: 20,
-    backgroundColor: '#45C681',
+    width: '100%',
+    maxWidth: 520,
+    minHeight: 174,
+    maxHeight: 320,
+    borderRadius: 16,
+    backgroundColor: C.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.lineStrong,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 30,
+    paddingHorizontal: 24,
+    paddingVertical: 24,
     marginBottom: 18,
+    ...revaShadows.md,
   },
-  wechatBubbleTail: {
-    position: 'absolute',
-    bottom: -10,
-    width: 20,
-    height: 20,
-    borderRadius: 4,
-    backgroundColor: '#45C681',
-    transform: [{ rotate: '45deg' }],
+  voiceLiveTranscript: {
+    width: '100%',
+    flexShrink: 1,
+    fontFamily: revaFonts.sans,
+    fontSize: 20,
+    lineHeight: 30,
+    fontWeight: '600',
+    color: C.ink1,
+    textAlign: 'center',
+    marginBottom: 22,
   },
   wechatWaveRow: {
     height: 36,
@@ -1292,13 +1363,13 @@ const styles = StyleSheet.create({
   wechatWaveBar: {
     width: 3,
     borderRadius: 2,
-    backgroundColor: 'rgba(11,87,51,0.55)',
+    backgroundColor: C.greenBright,
   },
   wechatWaveBarLoud: {
-    backgroundColor: 'rgba(11,87,51,0.75)',
+    backgroundColor: C.green500,
   },
   recordingDuration: {
-    fontFamily: revaFonts.mono, fontSize: 20, fontWeight: '700', color: '#EDEDED',
+    fontFamily: revaFonts.mono, fontSize: 16, fontWeight: '700', color: C.ink2,
     marginBottom: 170,
   } as TextStyle,
   wechatVoiceActions: {
@@ -1314,21 +1385,23 @@ const styles = StyleSheet.create({
     minWidth: 132,
     minHeight: 62,
     borderRadius: 31,
-    backgroundColor: '#222222',
+    backgroundColor: C.surface2,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.lineStrong,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 18,
     transform: [{ rotate: '-7deg' }],
   },
   wechatVoiceActionActive: {
-    backgroundColor: '#303A34',
+    backgroundColor: C.green50,
     borderWidth: 1,
     borderColor: C.greenBright,
   },
   wechatVoiceActionText: {
     fontFamily: revaFonts.sans,
     fontSize: 16,
-    color: '#EDEDED',
+    color: C.ink2,
     fontWeight: '700',
   } as TextStyle,
   wechatVoiceActionTextActive: {
@@ -1342,7 +1415,9 @@ const styles = StyleSheet.create({
     minHeight: 88,
     borderTopLeftRadius: 120,
     borderTopRightRadius: 120,
-    backgroundColor: 'rgba(240,240,240,0.82)',
+    backgroundColor: C.paper2,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: C.lineStrong,
     alignItems: 'center',
     justifyContent: 'center',
     paddingBottom: 10,
@@ -1350,7 +1425,7 @@ const styles = StyleSheet.create({
   wechatReleaseText: {
     fontFamily: revaFonts.sans,
     fontSize: 18,
-    color: '#111111',
+    color: C.ink1,
     fontWeight: '800',
   } as TextStyle,
 

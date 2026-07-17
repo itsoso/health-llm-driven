@@ -9,7 +9,8 @@ import {
 
 describe('composerState', () => {
   it('allows either voice path to retry directly after a recoverable error', () => {
-    const textError = reduceComposerState(createInitialComposerState(), {
+    const text = reduceComposerState(createInitialComposerState(), { type: 'toggle_mode' });
+    const textError = reduceComposerState(text, {
       type: 'fail', errorCode: 'dictation_start_failed',
     });
     const holdError = {
@@ -20,22 +21,22 @@ describe('composerState', () => {
     expect(canStartDictation(textError)).toBe(true);
     expect(canStartHold(holdError)).toBe(true);
   });
-  it('starts in text mode with an available realtime microphone', () => {
+  it('starts in hold-to-talk mode and keeps keyboard entry one tap away', () => {
     const state = createInitialComposerState();
 
     expect(state).toEqual({
-      mode: 'text',
+      mode: 'hold',
       phase: 'idle',
       dictationEnabled: true,
       gesture: null,
     });
-    expect(canStartDictation(state)).toBe(true);
-    expect(canStartHold(state)).toBe(false);
+    expect(canStartDictation(state)).toBe(false);
+    expect(canStartHold(state)).toBe(true);
     expect(isComposerBusy(state)).toBe(false);
   });
 
-  it('toggles into hold mode and moves through record and transcribe states', () => {
-    const hold = reduceComposerState(createInitialComposerState(), { type: 'toggle_mode' });
+  it('moves through hold record and transcribe states before switching to editable text', () => {
+    const hold = createInitialComposerState();
     const starting = reduceComposerState(hold, { type: 'hold_start' });
     const recording = reduceComposerState(starting, { type: 'hold_ready' });
     const moved = reduceComposerState(recording, { type: 'hold_move', gesture: 'text' });
@@ -55,7 +56,8 @@ describe('composerState', () => {
   });
 
   it('keeps hold and realtime dictation mutually exclusive', () => {
-    const dictating = reduceComposerState(createInitialComposerState(), { type: 'dictation_start' });
+    const text = reduceComposerState(createInitialComposerState(), { type: 'toggle_mode' });
+    const dictating = reduceComposerState(text, { type: 'dictation_start' });
     const rejectedHold = reduceComposerState(dictating, { type: 'hold_start' });
     const rejectedToggle = reduceComposerState(dictating, { type: 'toggle_mode' });
 
@@ -66,7 +68,8 @@ describe('composerState', () => {
   });
 
   it('turns the realtime microphone into an explicit disabled state on second click', () => {
-    const dictating = reduceComposerState(createInitialComposerState(), { type: 'dictation_start' });
+    const text = reduceComposerState(createInitialComposerState(), { type: 'toggle_mode' });
+    const dictating = reduceComposerState(text, { type: 'dictation_start' });
     const stopped = reduceComposerState(dictating, { type: 'dictation_stop' });
 
     expect(stopped).toMatchObject({ phase: 'idle', dictationEnabled: false });
@@ -75,7 +78,7 @@ describe('composerState', () => {
   });
 
   it('moves a rejected hold-to-talk transcript back into editable text mode', () => {
-    const hold = reduceComposerState(createInitialComposerState(), { type: 'toggle_mode' });
+    const hold = createInitialComposerState();
     const submitting = reduceComposerState(hold, { type: 'submit' });
     const draftReady = reduceComposerState(submitting, { type: 'voice_draft_ready' });
 
@@ -89,10 +92,11 @@ describe('composerState', () => {
   });
 
   it('cleans active audio state when submitting or moving to the background', () => {
-    const dictating = reduceComposerState(createInitialComposerState(), { type: 'dictation_start' });
+    const text = reduceComposerState(createInitialComposerState(), { type: 'toggle_mode' });
+    const dictating = reduceComposerState(text, { type: 'dictation_start' });
     const submitting = reduceComposerState(dictating, { type: 'submit' });
     const submitted = reduceComposerState(submitting, { type: 'submit_complete' });
-    const hold = reduceComposerState(createInitialComposerState(), { type: 'toggle_mode' });
+    const hold = createInitialComposerState();
     const recording = reduceComposerState(
       reduceComposerState(hold, { type: 'hold_start' }),
       { type: 'hold_ready' },
@@ -105,7 +109,8 @@ describe('composerState', () => {
   });
 
   it('re-enables dictation after an accepted submit so the next voice input can start immediately', () => {
-    const submitting = reduceComposerState(createInitialComposerState(), { type: 'submit' });
+    const text = reduceComposerState(createInitialComposerState(), { type: 'toggle_mode' });
+    const submitting = reduceComposerState(text, { type: 'submit' });
     const submitted = reduceComposerState(submitting, { type: 'submit_complete' });
 
     expect(submitted).toMatchObject({ phase: 'idle', dictationEnabled: true });
@@ -113,7 +118,7 @@ describe('composerState', () => {
   });
 
   it('ignores hold completion events that arrive after cancellation', () => {
-    const hold = reduceComposerState(createInitialComposerState(), { type: 'toggle_mode' });
+    const hold = createInitialComposerState();
     const starting = reduceComposerState(hold, { type: 'hold_start' });
     const cancelled = reduceComposerState(starting, { type: 'hold_cancel' });
 

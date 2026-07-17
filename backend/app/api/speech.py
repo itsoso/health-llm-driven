@@ -5,7 +5,7 @@ import asyncio
 import logging
 import time
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -19,11 +19,73 @@ from app.services.speech_transcription import (
     SpeechTranscriptionUnavailable,
     transcribe_audio_bytes,
 )
+from app.services.auth import auth_service
+from app.services.realtime_speech_transcription import proxy_realtime_asr
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/chat", tags=["speech"])
 
 limiter = Limiter(key_func=get_remote_address)
+
+
+def _bearer_token(authorization: str | None) -> str | None:
+    if not authorization:
+        return None
+    scheme, separator, token = authorization.partition(" ")
+    if not separator or scheme.lower() != "bearer":
+        return None
+    clean = token.strip()
+    return clean or None
+
+
+@router.websocket("/transcribe/realtime", name="transcribe_audio_realtime")
+async def transcribe_audio_realtime(
+    websocket: WebSocket,
+    db: Session = Depends(get_db),
+):
+    """Proxy one explicit microphone session to cloud realtime ASR."""
+    token = _bearer_token(websocket.headers.get("authorization"))
+    payload = auth_service.decode_token(token) if token else None
+    user_id = payload.get("sub") if payload else None
+    try:
+        current_user = auth_service.get_user_by_id(db, int(user_id)) if user_id else None
+    except (TypeError, ValueError):
+        current_user = None
+    if not current_user:
+        await websocket.close(code=4401, reason="未登录或登录已过期")
+        return
+    if not current_user.is_active or not current_user.is_approved:
+        await websocket.close(code=4403, reason="账户不可用")
+        return
+
+    await websocket.accept()
+    logger.info("Realtime ASR session started - user_id=%s", current_user.id)
+    try:
+        await proxy_realtime_asr(websocket.receive_json, websocket.send_json)
+    except WebSocketDisconnect:
+        logger.info("Realtime ASR client disconnected - user_id=%s", current_user.id)
+    except (TimeoutError, ValueError) as exc:
+        logger.warning(
+            "Realtime ASR request rejected - user_id=%s error_type=%s",
+            current_user.id,
+            type(exc).__name__,
+        )
+        try:
+            await websocket.send_json({"type": "error", "message": str(exc)})
+        except (RuntimeError, WebSocketDisconnect):
+            pass
+    except Exception as exc:  # noqa: BLE001 - return a bounded generic error to the mobile client
+        logger.error(
+            "Realtime ASR session failed - user_id=%s error_type=%s",
+            current_user.id,
+            type(exc).__name__,
+        )
+        try:
+            await websocket.send_json({"type": "error", "message": "语音识别服务暂不可用，请稍后重试"})
+        except (RuntimeError, WebSocketDisconnect):
+            pass
+    finally:
+        logger.info("Realtime ASR session ended - user_id=%s", current_user.id)
 
 
 def _transcript_confidence(text: str) -> str:

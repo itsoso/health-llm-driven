@@ -1,12 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  RecordingPresets,
-  requestRecordingPermissionsAsync,
-  setAudioModeAsync,
-  useAudioRecorder,
-} from 'expo-audio';
+
 import { durationBucket, emitClientEvent } from '../services/clientEvents';
-import { transcribeAudioDetailed, type TranscribeAudioResult } from '../services/transcribe';
+import { createCloudRealtimeAsrSession } from '../services/cloudRealtimeAsr';
+import type { TranscribeAudioResult } from '../services/transcribe';
 
 interface UseRealtimeDictationOptions {
   onTranscript: (text: string, result?: TranscribeAudioResult) => void;
@@ -15,21 +11,21 @@ interface UseRealtimeDictationOptions {
   locale?: string;
 }
 
+type CloudSession = ReturnType<typeof createCloudRealtimeAsrSession>;
+
 export function useRealtimeDictation({
   onTranscript,
   onEnd,
   onError,
 }: UseRealtimeDictationOptions) {
   const [isDictating, setIsDictating] = useState(false);
+  const [durationMs, setDurationMs] = useState(0);
+  const [audioLevel, setAudioLevel] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
-
-  const readyRef = useRef(false);
+  const sessionRef = useRef<CloudSession | null>(null);
   const startingRef = useRef(false);
-  const transcribingRef = useRef(false);
-  const cancelledRef = useRef(false);
-  const startSeqRef = useRef(0);
-  const transcriptionSeqRef = useRef(0);
+  const stoppingRef = useRef(false);
+  const mountedRef = useRef(true);
   const sessionStartedAtRef = useRef(0);
   const terminalSentRef = useRef(false);
   const asrTerminalSentRef = useRef(false);
@@ -43,13 +39,13 @@ export function useRealtimeDictation({
     onErrorRef.current = onError;
   }, [onEnd, onError, onTranscript]);
 
-  const releaseRecordingMode = useCallback(async () => {
-    try {
-      await setAudioModeAsync({ allowsRecording: false });
-    } catch (e) {
-      if (__DEV__) console.warn('[useRealtimeDictation] release audio session failed:', e);
-    }
-  }, []);
+  useEffect(() => {
+    if (!isDictating) return;
+    const timer = setInterval(() => {
+      setDurationMs(Math.max(0, Date.now() - sessionStartedAtRef.current));
+    }, 200);
+    return () => clearInterval(timer);
+  }, [isDictating]);
 
   const emitTerminal = useCallback((
     phase: 'completed' | 'failed' | 'cancelled',
@@ -88,186 +84,115 @@ export function useRealtimeDictation({
     });
   }, []);
 
-  useEffect(() => {
-    return () => {
-      const hadSession = startingRef.current || readyRef.current || transcribingRef.current;
-      startSeqRef.current += 1;
-      transcriptionSeqRef.current += 1;
-      startingRef.current = false;
-      cancelledRef.current = true;
-      if (hadSession) emitTerminal('cancelled', 'component_unmounted');
-      const shouldStopRecorder = readyRef.current;
-      readyRef.current = false;
-      setIsDictating(false);
-      if (shouldStopRecorder) {
-        try {
-          void Promise.resolve(recorder.stop()).catch((e) => {
-            if (__DEV__) console.warn('[useRealtimeDictation] unmount stop failed:', e);
-          });
-        } catch (e) {
-          if (__DEV__) console.warn('[useRealtimeDictation] unmount stop failed:', e);
-        }
-      }
-      void releaseRecordingMode();
-    };
-  }, [emitTerminal, recorder, releaseRecordingMode]);
-
-  const startDictation = useCallback(async () => {
-    if (startingRef.current || readyRef.current || transcribingRef.current) return false;
-    const seq = startSeqRef.current + 1;
-    startSeqRef.current = seq;
+  const startDictation = useCallback(async (): Promise<boolean> => {
+    if (startingRef.current || stoppingRef.current || sessionRef.current) return false;
     startingRef.current = true;
-    cancelledRef.current = false;
     sessionStartedAtRef.current = Date.now();
     terminalSentRef.current = false;
     asrTerminalSentRef.current = false;
+    setDurationMs(0);
+    setAudioLevel(0);
     setError(null);
 
-    const isCurrentStart = () => startSeqRef.current === seq;
-
+    const session = createCloudRealtimeAsrSession({
+      onTranscript: (text, result) => onTranscriptRef.current(text, result),
+      onLevel: level => {
+        if (mountedRef.current) setAudioLevel(Math.max(0, Math.min(1, level)));
+      },
+    });
+    sessionRef.current = session;
     try {
-      const perm = await requestRecordingPermissionsAsync();
-      if (!isCurrentStart()) {
-        await releaseRecordingMode();
+      const started = await session.start();
+      if (sessionRef.current !== session) return false;
+      if (!started) {
+        sessionRef.current = null;
+        emitTerminal('failed', 'realtime_session_not_started');
         return false;
       }
-      if (!perm.granted) {
-        const message = '需要麦克风权限才能实时听写';
-        setError(message);
-        emitTerminal('failed', 'microphone_permission_denied');
-        onErrorRef.current?.(message);
-        return false;
-      }
-
-      await setAudioModeAsync({
-        allowsRecording: true,
-        playsInSilentMode: true,
-      });
-      if (!isCurrentStart()) {
-        await releaseRecordingMode();
-        return false;
-      }
-
-      await recorder.prepareToRecordAsync();
-      if (!isCurrentStart()) {
-        await releaseRecordingMode();
-        return false;
-      }
-
-      recorder.record();
-      readyRef.current = true;
-      setIsDictating(true);
+      if (mountedRef.current) setIsDictating(true);
       return true;
-    } catch (e: any) {
-      readyRef.current = false;
-      setIsDictating(false);
-      await releaseRecordingMode();
-      const message = e?.message || String(e);
-      setError(message);
-      emitTerminal('failed', 'recording_start_failed');
+    } catch (caught: any) {
+      if (sessionRef.current !== session) return false;
+      sessionRef.current = null;
+      const message = caught?.message || '云端实时语音识别启动失败';
+      if (mountedRef.current) {
+        setIsDictating(false);
+        setError(message);
+      }
+      emitTerminal('failed', 'realtime_session_start_failed');
       onErrorRef.current?.(message);
       return false;
     } finally {
-      if (isCurrentStart()) startingRef.current = false;
+      startingRef.current = false;
     }
-  }, [emitTerminal, recorder, releaseRecordingMode]);
+  }, [emitTerminal]);
 
   const stopDictation = useCallback(async (): Promise<string> => {
-    const wasStarting = startingRef.current;
-    if (wasStarting) {
-      startSeqRef.current += 1;
-      startingRef.current = false;
-    }
-
-    if (!readyRef.current) {
-      setIsDictating(false);
-      await releaseRecordingMode();
-      if (wasStarting) emitTerminal('cancelled', 'start_cancelled');
-      return '';
-    }
-
-    const transcriptionSeq = transcriptionSeqRef.current + 1;
-    transcriptionSeqRef.current = transcriptionSeq;
-    transcribingRef.current = true;
-    cancelledRef.current = false;
-    setIsDictating(false);
-
+    const session = sessionRef.current;
+    if (!session || stoppingRef.current) return '';
+    stoppingRef.current = true;
+    if (mountedRef.current) setIsDictating(false);
     try {
-      try {
-        await recorder.stop();
-      } finally {
-        readyRef.current = false;
-        await releaseRecordingMode();
-      }
-
-      const uri = recorder.uri;
-      if (!uri) {
-        emitAsrTerminal('failed', undefined, 'recording_uri_missing');
-        emitTerminal('failed', 'recording_uri_missing');
-        return '';
-      }
-
-      const result = await transcribeAudioDetailed(uri);
-      if (transcriptionSeqRef.current !== transcriptionSeq || cancelledRef.current) {
-        return '';
-      }
-
+      const result = await session.stop();
+      if (sessionRef.current !== session) return '';
+      sessionRef.current = null;
       const text = result.text.trim();
-      if (text) {
-        onTranscriptRef.current(text, result);
-        emitAsrTerminal('completed', result);
-        emitTerminal('completed');
-        onEndRef.current?.();
-        return text;
+      if (!text) {
+        emitAsrTerminal('failed', result, 'empty_transcript');
+        emitTerminal('failed', 'empty_transcript');
+        return '';
       }
-
-      emitAsrTerminal('failed', result, 'empty_transcript');
-      emitTerminal('failed', 'empty_transcript');
-      return '';
-    } catch (e: any) {
-      readyRef.current = false;
-      if (transcriptionSeqRef.current === transcriptionSeq && !cancelledRef.current) {
-        const message = e?.message || '语音识别失败';
-        setError(message);
-        emitAsrTerminal('failed', undefined, 'transcription_failed');
-        emitTerminal('failed', 'transcription_failed');
-        onErrorRef.current?.(message);
-      }
+      emitAsrTerminal('completed', result);
+      emitTerminal('completed');
+      onEndRef.current?.();
+      return text;
+    } catch (caught: any) {
+      if (sessionRef.current !== session) return '';
+      sessionRef.current = null;
+      const message = caught?.message || '云端实时语音识别失败';
+      if (mountedRef.current) setError(message);
+      emitAsrTerminal('failed', undefined, 'transcription_failed');
+      emitTerminal('failed', 'transcription_failed');
+      onErrorRef.current?.(message);
       return '';
     } finally {
-      if (transcriptionSeqRef.current === transcriptionSeq) {
-        transcribingRef.current = false;
-      }
+      stoppingRef.current = false;
+      if (mountedRef.current) setAudioLevel(0);
     }
-  }, [emitAsrTerminal, emitTerminal, recorder, releaseRecordingMode]);
+  }, [emitAsrTerminal, emitTerminal]);
 
-  const cancelDictation = useCallback(async () => {
-    const wasStarting = startingRef.current;
-    if (wasStarting) {
-      startSeqRef.current += 1;
-      startingRef.current = false;
+  const cancelDictation = useCallback(async (): Promise<void> => {
+    const session = sessionRef.current;
+    sessionRef.current = null;
+    if (mountedRef.current) {
+      setIsDictating(false);
+      setAudioLevel(0);
     }
-    const wasReady = readyRef.current;
-    cancelledRef.current = true;
-    transcriptionSeqRef.current += 1;
-    readyRef.current = false;
-    transcribingRef.current = false;
-    setIsDictating(false);
-
+    if (!session) return;
     try {
-      if (wasReady) await recorder.stop();
-    } catch (e) {
-      if (__DEV__) console.warn('[useRealtimeDictation] cancel stop failed:', e);
+      await session.cancel();
     } finally {
-      await releaseRecordingMode();
-      if (wasStarting || wasReady) {
-        emitTerminal('cancelled', wasStarting ? 'start_cancelled' : undefined);
-      }
+      emitTerminal('cancelled');
     }
-  }, [emitTerminal, recorder, releaseRecordingMode]);
+  }, [emitTerminal]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      const session = sessionRef.current;
+      sessionRef.current = null;
+      if (session) {
+        emitTerminal('cancelled', 'component_unmounted');
+        void session.cancel();
+      }
+    };
+  }, [emitTerminal]);
 
   return {
     isDictating,
+    durationMs,
+    audioLevel,
     error,
     startDictation,
     stopDictation,

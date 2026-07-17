@@ -1,38 +1,26 @@
-import { act, renderHook, waitFor } from '@testing-library/react-native';
+import { act, renderHook } from '@testing-library/react-native';
 import { useRealtimeDictation } from '../useRealtimeDictation';
 
-const mockSetAudioModeAsync = jest.fn().mockResolvedValue(undefined);
-const mockRequestPerm = jest.fn().mockResolvedValue({ granted: true });
-const mockPrepare = jest.fn().mockResolvedValue(undefined);
-const mockRecord = jest.fn();
-const mockStop = jest.fn().mockResolvedValue(undefined);
-const mockTranscribe = jest.fn().mockResolvedValue({
+const mockStart = jest.fn().mockResolvedValue(true);
+const mockStop = jest.fn().mockResolvedValue({
   text: '记录今天喝水 500 毫升',
-  provider: 'dashscope_qwen_asr',
-  model: 'qwen3-asr-flash',
-  durationMs: 1560,
+  provider: 'dashscope_qwen_asr_realtime',
+  model: 'qwen3-asr-flash-realtime',
+  durationMs: 920,
   confidence: 'high',
   empty: false,
 });
+const mockCancel = jest.fn().mockResolvedValue(undefined);
+const mockCreateSession = jest.fn();
 const mockEmitClientEvent = jest.fn().mockResolvedValue(undefined);
 const mockDurationBucket = jest.fn().mockReturnValue('1_3s');
+let latestSessionOptions: any;
 
-const recorder = {
-  prepareToRecordAsync: (...args: any[]) => mockPrepare(...args),
-  record: (...args: any[]) => mockRecord(...args),
-  stop: (...args: any[]) => mockStop(...args),
-  uri: 'file:///tmp/realtime.m4a',
-};
-
-jest.mock('expo-audio', () => ({
-  useAudioRecorder: () => recorder,
-  RecordingPresets: { HIGH_QUALITY: {} },
-  setAudioModeAsync: (...args: any[]) => mockSetAudioModeAsync(...args),
-  requestRecordingPermissionsAsync: (...args: any[]) => mockRequestPerm(...args),
-}));
-
-jest.mock('../../services/transcribe', () => ({
-  transcribeAudioDetailed: (...args: any[]) => mockTranscribe(...args),
+jest.mock('../../services/cloudRealtimeAsr', () => ({
+  createCloudRealtimeAsrSession: (options: any) => {
+    latestSessionOptions = options;
+    return mockCreateSession(options);
+  },
 }));
 
 jest.mock('../../services/clientEvents', () => ({
@@ -40,94 +28,96 @@ jest.mock('../../services/clientEvents', () => ({
   durationBucket: (...args: any[]) => mockDurationBucket(...args),
 }));
 
-function releasedRecordingSession(): boolean {
-  return mockSetAudioModeAsync.mock.calls.some(
-    ([mode]) => mode && mode.allowsRecording === false,
-  );
-}
-
 describe('useRealtimeDictation', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockRequestPerm.mockResolvedValue({ granted: true });
-    mockPrepare.mockResolvedValue(undefined);
-    mockStop.mockResolvedValue(undefined);
-    mockTranscribe.mockResolvedValue({
+    latestSessionOptions = undefined;
+    mockStart.mockResolvedValue(true);
+    mockStop.mockResolvedValue({
       text: '记录今天喝水 500 毫升',
-      provider: 'dashscope_qwen_asr',
-      model: 'qwen3-asr-flash',
-      durationMs: 1560,
+      provider: 'dashscope_qwen_asr_realtime',
+      model: 'qwen3-asr-flash-realtime',
+      durationMs: 920,
       confidence: 'high',
       empty: false,
     });
+    mockCancel.mockResolvedValue(undefined);
+    mockCreateSession.mockReturnValue({
+      start: mockStart,
+      stop: mockStop,
+      cancel: mockCancel,
+    });
   });
 
-  it('starts realtime dictation by recording local audio for cloud ASR', async () => {
+  it('starts a cloud realtime session instead of iPhone speech recognition', async () => {
     const { result } = renderHook(() => useRealtimeDictation({ onTranscript: jest.fn() }));
 
     await act(async () => {
       await result.current.startDictation();
     });
 
-    expect(mockRequestPerm).toHaveBeenCalled();
-    expect(mockSetAudioModeAsync).toHaveBeenCalledWith(
-      expect.objectContaining({ allowsRecording: true }),
-    );
-    expect(mockPrepare).toHaveBeenCalled();
-    expect(mockRecord).toHaveBeenCalled();
+    expect(mockCreateSession).toHaveBeenCalledTimes(1);
+    expect(mockStart).toHaveBeenCalledTimes(1);
     expect(result.current.isDictating).toBe(true);
   });
 
-  it('stops recording, transcribes with DashScope ASR, and returns ASR metadata', async () => {
+  it('forwards partial cloud transcripts while the user is still speaking', async () => {
     const onTranscript = jest.fn();
     const { result } = renderHook(() => useRealtimeDictation({ onTranscript }));
-
     await act(async () => {
       await result.current.startDictation();
     });
-    await act(async () => {
-      const text = await result.current.stopDictation();
-      expect(text).toBe('记录今天喝水 500 毫升');
+
+    act(() => {
+      latestSessionOptions.onTranscript('记录今天喝水', {
+        text: '记录今天喝水',
+        provider: 'dashscope_qwen_asr_realtime',
+        model: 'qwen3-asr-flash-realtime',
+        durationMs: 420,
+        empty: false,
+      });
     });
 
-    expect(mockStop).toHaveBeenCalled();
-    expect(releasedRecordingSession()).toBe(true);
-    expect(mockTranscribe).toHaveBeenCalledWith('file:///tmp/realtime.m4a');
-    await waitFor(() => expect(onTranscript).toHaveBeenCalledWith(
-      '记录今天喝水 500 毫升',
-      expect.objectContaining({
-        provider: 'dashscope_qwen_asr',
-        model: 'qwen3-asr-flash',
-      }),
-    ));
+    expect(onTranscript).toHaveBeenCalledWith(
+      '记录今天喝水',
+      expect.objectContaining({ provider: 'dashscope_qwen_asr_realtime' }),
+    );
+  });
+
+  it('commits the cloud session on release and returns the final transcript', async () => {
+    const onEnd = jest.fn();
+    const { result } = renderHook(() => useRealtimeDictation({ onTranscript: jest.fn(), onEnd }));
+    await act(async () => {
+      await result.current.startDictation();
+    });
+
+    let text = '';
+    await act(async () => {
+      text = await result.current.stopDictation();
+    });
+
+    expect(text).toBe('记录今天喝水 500 毫升');
+    expect(result.current.isDictating).toBe(false);
+    expect(onEnd).toHaveBeenCalledTimes(1);
     expect(mockEmitClientEvent).toHaveBeenCalledWith('voice_asr_terminal', {
       phase: 'completed',
       duration_bucket: '1_3s',
       action_type: 'dictation',
-      provider: 'dashscope_qwen_asr',
+      provider: 'dashscope_qwen_asr_realtime',
       confidence: 'high',
       empty: false,
     });
-    expect(mockEmitClientEvent).toHaveBeenCalledWith('voice_input_terminal', {
-      phase: 'completed',
-      duration_bucket: '1_3s',
-      action_type: 'dictation',
-    });
   });
 
-  it('does not transcribe after realtime dictation is cancelled', async () => {
+  it('cancels cloud audio without returning a transcript', async () => {
     const { result } = renderHook(() => useRealtimeDictation({ onTranscript: jest.fn() }));
-
     await act(async () => {
       await result.current.startDictation();
-    });
-    await act(async () => {
       await result.current.cancelDictation();
     });
 
-    expect(mockStop).toHaveBeenCalled();
-    expect(mockTranscribe).not.toHaveBeenCalled();
-    expect(releasedRecordingSession()).toBe(true);
+    expect(mockCancel).toHaveBeenCalledTimes(1);
+    expect(mockStop).not.toHaveBeenCalled();
     expect(result.current.isDictating).toBe(false);
     expect(mockEmitClientEvent).toHaveBeenCalledWith('voice_input_terminal', {
       phase: 'cancelled',
@@ -136,9 +126,9 @@ describe('useRealtimeDictation', () => {
     });
   });
 
-  it('fails before recording when microphone permission is denied', async () => {
+  it('surfaces cloud session startup errors without enabling dictation', async () => {
     const onError = jest.fn();
-    mockRequestPerm.mockResolvedValueOnce({ granted: false });
+    mockStart.mockRejectedValueOnce(new Error('云端连接失败'));
     const { result } = renderHook(() => useRealtimeDictation({ onTranscript: jest.fn(), onError }));
 
     let started = true;
@@ -147,15 +137,8 @@ describe('useRealtimeDictation', () => {
     });
 
     expect(started).toBe(false);
-    expect(mockPrepare).not.toHaveBeenCalled();
-    expect(mockTranscribe).not.toHaveBeenCalled();
-    expect(result.current.error).toBe('需要麦克风权限才能实时听写');
-    expect(onError).toHaveBeenCalledWith('需要麦克风权限才能实时听写');
-    expect(mockEmitClientEvent).toHaveBeenCalledWith('voice_input_terminal', {
-      phase: 'failed',
-      duration_bucket: '1_3s',
-      action_type: 'dictation',
-      error_code: 'microphone_permission_denied',
-    });
+    expect(result.current.isDictating).toBe(false);
+    expect(result.current.error).toBe('云端连接失败');
+    expect(onError).toHaveBeenCalledWith('云端连接失败');
   });
 });

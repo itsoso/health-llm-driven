@@ -62,6 +62,10 @@ class Settings(BaseSettings):
     # 语音识别:短按住说话优先走国内 DashScope,失败再回退 OpenAI Whisper。
     asr_dashscope_model: str = "qwen3-asr-flash"
     asr_dashscope_base_url: str = "https://dashscope.aliyuncs.com/api/v1"
+    asr_realtime_model: str = "qwen3-asr-flash-realtime"
+    asr_realtime_base_url: str = "wss://dashscope.aliyuncs.com/api-ws/v1/realtime"
+    asr_realtime_connect_timeout_seconds: float = 8.0
+    asr_realtime_final_timeout_seconds: float = 15.0
     asr_openai_model: str = "whisper-1"
     asr_openai_fallback_enabled: bool = False
     asr_provider_timeout_seconds: float = 12.0

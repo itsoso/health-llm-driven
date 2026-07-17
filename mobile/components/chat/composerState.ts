@@ -37,7 +37,7 @@ export type ComposerEvent =
 
 export function createInitialComposerState(): ComposerState {
   return {
-    mode: 'text',
+    mode: 'hold',
     phase: 'idle',
     dictationEnabled: true,
     gesture: null,
