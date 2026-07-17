@@ -549,10 +549,19 @@ async def sync_all_devices(
     if results:
         _invalidate_twin(current_user.id)
 
+    # 诚实性: 每个设备的 result 各带自己的 success。无条件 success=True + "已同步 N 个"
+    # 会把鉴权失败的设备也计入"已同步"。按实际成功设备数派生。
+    ok = [r for r in results if r.get("success")]
+    failed = [r for r in results if not r.get("success")]
+    message = f"同步完成：{len(ok)}/{len(results)} 个设备成功"
+    if failed:
+        failed_types = ", ".join(str(r.get("device", "unknown")) for r in failed)
+        message += f"（失败: {failed_types}）"
+
     return {
-        "success": True,
+        "success": (len(results) == 0) or len(ok) > 0,
         "results": results,
-        "message": f"已同步 {len(results)} 个设备"
+        "message": message,
     }
 
 
@@ -702,9 +711,17 @@ async def import_apple_health(
         db.commit()
         _invalidate_twin(current_user.id)
 
+        # 诚实性: 按实际落库天数派生 success。逐日 try/except 累加, synced=0 时无一天落库
+        # (全失败, 或 `if data:` 全跳过空数据日), 无条件 "导入成功：0 天" 是谎报。
+        import_ok = synced > 0
+        if import_ok:
+            message = f"导入成功：{synced} 天数据已导入，{failed} 天失败"
+        else:
+            message = f"导入失败：0 天成功，{failed} 天失败（数据未落库）"
+
         return {
-            "success": True,
-            "message": f"导入成功：{synced} 天数据已导入，{failed} 天失败",
+            "success": import_ok,
+            "message": message,
             "data_days": len(parsed_data),
             "synced_days": synced,
             "failed_days": failed,
@@ -1206,12 +1223,40 @@ async def healthkit_import(
         records=records,
     )
     result = HealthKitAdapter.batch_save(db, current_user.id, records)
-    record_sync_result(
-        db,
-        user_id=current_user.id,
-        connection_id=connection.id,
-        success=True,
-    )
+    # 诚实性: 按实际落库量派生 success。batch_save 逐条独立 try/except、从不抛异常,
+    # 整批失败时 imported_count/ecg/bp/spo2 全 0 且 errors 非空。无条件 success=True
+    # 会把连接置 active、抹掉真实 sync_error → 设备源 UI 谎报"刚同步成功"、agent 新鲜度
+    # 误判 fresh, 实为 noop。空批(无记录无错误)保持 success=True。
+    imported_any = (
+        result["imported_count"]
+        + result["ecg_imported_count"]
+        + result["blood_pressure_imported_count"]
+        + result["spo2_sample_imported_count"]
+    ) > 0
+    if not imported_any and result["errors"]:
+        # 脱敏: connection.sync_error 是明文 Text 列, 且经 GET /devices 系列反复回吐 + 进备份。
+        # errors[i]['error'] = f"{type(e).__name__}: {e}", 其中 {e} 的 SQLAlchemy repr 可能内嵌
+        # 绑定参数=原始健康值(BP/体重/SpO2/ECG 分类)。只持久化 kind + 异常类名(冒号前 token,
+        # 恒无值)——诚实性(连接置 degraded + 失败类别)完全保留, 不回灌原始测量值。§5 硬线。
+        _first = result["errors"][0]
+        _reason = (_first.get("error") or "").split(":", 1)[0].strip() or "unknown"
+        record_sync_result(
+            db,
+            user_id=current_user.id,
+            connection_id=connection.id,
+            success=False,
+            error_message=(
+                f"{len(result['errors'])}条全部导入失败: "
+                f"{_first.get('kind', '?')}/{_reason}"
+            ),
+        )
+    else:
+        record_sync_result(
+            db,
+            user_id=current_user.id,
+            connection_id=connection.id,
+            success=True,
+        )
     _invalidate_twin(current_user.id)
 
     logger.info(
