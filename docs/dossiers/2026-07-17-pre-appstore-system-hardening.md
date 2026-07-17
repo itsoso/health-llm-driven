@@ -49,7 +49,8 @@
 - [x] T3 open-loop 统一 PushService 与锁屏隐私文案。
 - [x] T4 readiness、删除验证和 admin 诊断入口。
 - [x] T5 前后台/网络/图片/Agent 幂等回归与测试闸。
-- [ ] T6 文档生成、main 提交推送和发布前阻断核对。
+- [x] T6 文档生成、main 提交推送和发布前阻断核对。
+- T6 代码提交已推送到 `main`：`a9a59d1a0`。
 
 ## G3 · 测试
 
