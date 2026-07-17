@@ -446,7 +446,7 @@ _ANALYSIS_TYPES = {
     "recovery_status", "risk_factors", "trend",
     "supplement_effectiveness", "orchestrator",
 }
-_ENV_CHECK_TYPES = {"weather", "air_quality", "outdoor_suitability"}
+_ENV_CHECK_TYPES = {"weather", "forecast", "air_quality", "outdoor_suitability"}
 _PLAN_ACTIONS = {"generate_weekly", "complete_item", "save_to_card"}
 _MANAGE_RECORD_TYPES = {
     "diet", "water", "weight", "waist", "blood_pressure",
@@ -558,6 +558,21 @@ def _validate_environment(
 ) -> Optional[str]:
     _coerce_enum("environment_check", args, "check_type", _ENV_CHECK_TYPES,
                  "weather", warnings)
+    # 兼容旧模型偶发使用 location；对外协议统一为 city。
+    if not args.get("city") and isinstance(args.get("location"), str):
+        args["city"] = args["location"]
+    args.pop("location", None)
+
+    if "city" in args:
+        city = args.get("city")
+        if not isinstance(city, str) or not city.strip():
+            args.pop("city", None)
+        else:
+            args["city"] = city.strip()[:64]
+
+    _coerce_int_range("environment_check", args, "days", 1, 7, 3, warnings)
+    if args.get("check_type") != "forecast":
+        args.pop("days", None)
     return None
 
 

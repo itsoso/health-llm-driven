@@ -10747,9 +10747,21 @@ class AgentExecutor:
             "outdoor_suitability": "/environment/advice",
             "exercise_suitability": "/environment/exercise-suitability",
             "morning_briefing": "/environment/morning-briefing",
-            "forecast": "/environment/weather/forecast?days=3",
+            "forecast": "/environment/weather/forecast",
         }
         path = path_map.get(ctype, "/environment/weather")
+        params: Dict[str, Any] = {}
+        city = str(args.get("city") or "").strip()
+        if city:
+            params["city"] = city
+        if ctype == "forecast":
+            try:
+                days = int(args.get("days", 3))
+            except (TypeError, ValueError):
+                days = 3
+            params["days"] = min(max(days, 1), 7)
+        if params:
+            path = f"{path}?{urlencode(params)}"
         return await self._api_get(f"{base}{path}", headers)
 
     async def _exec_supplement_guide(

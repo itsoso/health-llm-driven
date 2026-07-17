@@ -428,14 +428,29 @@ goal: {"title":"每日快走 30 分钟","status":"paused","notes":"膝盖恢复�
         "type": "function",
         "function": {
             "name": "environment_check",
-            "description": "查询当前天气、空气质量、户外运动适宜度等环境数据。",
+            "description": (
+                "查询指定城市或用户当前位置的实时天气、未来天气预报、空气质量、"
+                "户外运动适宜度。用户问明天/未来天气时必须使用 forecast；"
+                "用户明确城市时必须原样传入 city，不要改用用户默认位置。"
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "check_type": {
                         "type": "string",
-                        "enum": ["weather", "air_quality", "outdoor_suitability"],
-                        "description": "查询类型",
+                        "enum": ["weather", "forecast", "air_quality", "outdoor_suitability"],
+                        "description": "查询类型；明天或未来几天天气使用 forecast。",
+                    },
+                    "city": {
+                        "type": "string",
+                        "description": "用户明确指定的城市，如北京、上海；未指定时省略。",
+                    },
+                    "days": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 7,
+                        "default": 3,
+                        "description": "预报天数，仅 forecast 使用；查询明天时传 2 或 3 均可。",
                     },
                 },
                 "required": ["check_type"],
