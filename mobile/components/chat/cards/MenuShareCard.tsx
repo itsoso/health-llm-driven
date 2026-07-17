@@ -35,6 +35,7 @@ interface MenuItem {
   protein?: number;
   carbs?: number;
   fat?: number;
+  fiber?: number;
 }
 
 interface MenuShareData {
@@ -71,18 +72,23 @@ export function buildShareText(d: MenuShareData): string {
 }
 
 export function buildXiaohongshuShareText(d: MenuShareData): string {
-  const lines: string[] = ['小巴给我的一餐建议', '', d.title || '这一餐'];
-  if (d.reason) lines.push(d.reason);
+  const lines: string[] = [
+    '小巴给我的一餐建议',
+    '',
+    `这餐: ${d.title || '这一餐'}`,
+  ];
+  if (d.reason) lines.push(`为什么这样搭: ${d.reason}`);
   const items = Array.isArray(d.items) ? d.items : [];
   if (items.length > 0) {
-    lines.push('');
-    for (const it of items.slice(0, 4)) {
+    lines.push('', '吃什么:');
+    for (const [index, it] of items.entries()) {
       const parts = [
         it.name,
         it.qty,
         it.kcal != null ? `${Math.round(it.kcal)} kcal` : null,
+        it.protein != null ? `蛋白 ${it.protein.toFixed(0)}g` : null,
       ].filter(Boolean);
-      lines.push(parts.join(' · '));
+      lines.push(`${index + 1}. ${parts.join(' · ')}`);
     }
   }
   if (d.totals) {
@@ -92,9 +98,18 @@ export function buildXiaohongshuShareText(d: MenuShareData): string {
     if (t.protein != null) parts.push(`蛋白 ${t.protein.toFixed(0)}g`);
     if (t.carbs != null) parts.push(`碳水 ${t.carbs.toFixed(0)}g`);
     if (t.fat != null) parts.push(`脂肪 ${t.fat.toFixed(0)}g`);
+    if (t.fiber != null) parts.push(`纤维 ${t.fiber.toFixed(0)}g`);
     if (parts.length) lines.push('', `营养概览：${parts.join(' · ')}`);
   }
-  lines.push('', '仅作健康管理参考，不替代医生诊疗。', '#健康饮食 #饮食记录 #小巴');
+  const shoppingList = Array.isArray(d.shopping_list) ? d.shopping_list.filter(Boolean) : [];
+  if (shoppingList.length > 0) {
+    lines.push('', `买菜清单: ${shoppingList.join(' / ')}`);
+  }
+  lines.push(
+    '',
+    '仅作健康管理参考，不替代医生诊疗。',
+    '#小巴饮食建议 #健康饮食 #饮食记录',
+  );
   return lines.join('\n');
 }
 
@@ -134,7 +149,7 @@ export function MenuShareCardView(d: MenuShareData) {
         {items.map((it, i) => (
           <View key={i} style={styles.itemRow}>
             <View style={[styles.itemDot, { backgroundColor: MENU_ACCENT }]} />
-            <Text maxFontSizeMultiplier={1.3} style={styles.itemName} numberOfLines={1} ellipsizeMode="tail">
+            <Text maxFontSizeMultiplier={1.25} style={styles.itemName}>
               {it.name}
             </Text>
             {it.qty ? (
