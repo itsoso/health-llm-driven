@@ -1337,6 +1337,7 @@ public enum ChatTranscriptHTML {
         /// Short hover label (HH:mm) and full tooltip/accessibility label.
         public let sentAtShort: String
         public let sentAtFull: String
+        public let sentAtEpochMs: Int64?
 
         public init(
             id: String,
@@ -1346,7 +1347,8 @@ public enum ChatTranscriptHTML {
             showCopy: Bool,
             footerHTML: String = "",
             sentAtShort: String = "",
-            sentAtFull: String = ""
+            sentAtFull: String = "",
+            sentAtEpochMs: Int64? = nil
         ) {
             self.id = id
             self.role = role
@@ -1356,11 +1358,13 @@ public enum ChatTranscriptHTML {
             self.footerHTML = footerHTML
             self.sentAtShort = sentAtShort
             self.sentAtFull = sentAtFull
+            self.sentAtEpochMs = sentAtEpochMs
         }
 
         /// 序列化为 JS 对象字面量字符串(不依赖 Foundation JSONEncoder 的键序,字段固定)。
         public var jsonObject: String {
-            "{\"id\":\(Self.jsString(id)),\"role\":\(Self.jsString(role)),\"html\":\(Self.jsString(bodyHTML)),\"streaming\":\(isStreaming ? "true" : "false"),\"copy\":\(showCopy ? "true" : "false"),\"footer\":\(Self.jsString(footerHTML)),\"sentAtShort\":\(Self.jsString(sentAtShort)),\"sentAtFull\":\(Self.jsString(sentAtFull))}"
+            let sentAtEpoch = sentAtEpochMs.map(String.init) ?? "null"
+            return "{\"id\":\(Self.jsString(id)),\"role\":\(Self.jsString(role)),\"html\":\(Self.jsString(bodyHTML)),\"streaming\":\(isStreaming ? "true" : "false"),\"copy\":\(showCopy ? "true" : "false"),\"footer\":\(Self.jsString(footerHTML)),\"sentAtShort\":\(Self.jsString(sentAtShort)),\"sentAtFull\":\(Self.jsString(sentAtFull)),\"sentAtEpochMs\":\(sentAtEpoch)}"
         }
 
         /// JSON 字符串字面量编码(含引号)。用于安全注入 evaluateJavaScript 的字符串实参。

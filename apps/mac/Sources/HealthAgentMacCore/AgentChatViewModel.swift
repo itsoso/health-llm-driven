@@ -1660,6 +1660,7 @@ public final class AgentChatViewModel {
                 footerHTML = ""
             }
             let timeLabels = ChatTranscriptHTML.messageTimeLabels(for: message.createdAt)
+            let sentAtEpochMs = message.createdAt.map { Int64($0.timeIntervalSince1970 * 1000) }
             return ChatTranscriptHTML.RenderedMessage(
                 id: message.id.uuidString,
                 role: message.role == .user ? "user" : "assistant",
@@ -1668,7 +1669,8 @@ public final class AgentChatViewModel {
                 showCopy: showCopy,
                 footerHTML: footerHTML,
                 sentAtShort: timeLabels?.short ?? "",
-                sentAtFull: timeLabels?.full ?? ""
+                sentAtFull: timeLabels?.full ?? "",
+                sentAtEpochMs: sentAtEpochMs
             )
         }
         let visibleRendered = rendered.filter { message in

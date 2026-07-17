@@ -118,8 +118,8 @@ describe('ChatBubble streaming degraded render', () => {
     expect(mockMarkdownMount).toHaveBeenLastCalledWith(CONTENT);
   });
 
-  it('shows a subtle message time for user and assistant bubbles', () => {
-    const { getByLabelText, getByTestId, rerender } = render(
+  it('reveals message time only after tapping user and assistant bubbles', () => {
+    const user = render(
       <QueryClientProvider client={new QueryClient()}>
         <ChatBubble
           item={{
@@ -133,10 +133,12 @@ describe('ChatBubble streaming degraded render', () => {
       </QueryClientProvider>,
     );
 
-    expect(getByTestId('message-time').props.children).toBe('12:30');
-    expect(getByLabelText(/你发送于/)).toBeTruthy();
+    expect(user.queryByTestId('message-time')).toBeNull();
+    fireEvent.press(user.getByLabelText(/你发送于/));
+    expect(user.getByTestId('message-time').props.children).toBe('12:30');
+    user.unmount();
 
-    rerender(
+    const assistant = render(
       <QueryClientProvider client={new QueryClient()}>
         <ChatBubble
           item={{
@@ -150,8 +152,9 @@ describe('ChatBubble streaming degraded render', () => {
       </QueryClientProvider>,
     );
 
-    expect(getByTestId('message-time').props.children).toBe('12:31');
-    expect(getByLabelText(/小巴回复于/)).toBeTruthy();
+    expect(assistant.queryByTestId('message-time')).toBeNull();
+    fireEvent.press(assistant.getByLabelText(/小巴回复于/));
+    expect(assistant.getByTestId('message-time').props.children).toBe('12:31');
   });
 
   it('does not enable native text selection inside bubbles, so long press stays on the custom message menu', () => {

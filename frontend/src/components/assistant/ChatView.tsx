@@ -32,6 +32,7 @@ interface ChatViewProps {
 
 /** 长按计时: pointer 持续按住约 500ms 触发, 移动/松开/离开均取消. */
 const LONG_PRESS_MS = 500;
+const MESSAGE_TIME_DIVIDER_GAP_MS = 5 * 60 * 1000;
 
 const STYLE = {
   assistantTextClass: 'text-[#29261F]',
@@ -76,16 +77,60 @@ function formatMessageFullTime(value?: string | null): string {
   });
 }
 
-function MessageTimePill({ value }: { value?: string | null }) {
+function sameLocalDate(a: Date, b: Date): boolean {
+  return a.getFullYear() === b.getFullYear()
+    && a.getMonth() === b.getMonth()
+    && a.getDate() === b.getDate();
+}
+
+function shouldShowMessageTimeDivider(previous?: string | null, current?: string | null): boolean {
+  const currentDate = parseMessageDate(current);
+  if (!currentDate) return false;
+  const previousDate = parseMessageDate(previous);
+  if (!previousDate) return true;
+  return !sameLocalDate(previousDate, currentDate)
+    || currentDate.getTime() - previousDate.getTime() >= MESSAGE_TIME_DIVIDER_GAP_MS;
+}
+
+function formatMessageTimeDivider(value?: string | null, now = new Date()): string {
+  const date = parseMessageDate(value);
+  if (!date) return '';
+  const time = date.toLocaleTimeString('zh-CN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+  if (sameLocalDate(date, now)) return `今天 ${time}`;
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (sameLocalDate(date, yesterday)) return `昨天 ${time}`;
+  return `${date.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })} ${time}`;
+}
+
+function MessageTimePill({ value, side }: { value?: string | null; side: 'user' | 'assistant' }) {
   const label = formatMessageShortTime(value);
   if (!label) return null;
   return (
     <span
       data-testid="message-hover-time"
-      className="self-center shrink-0 select-none rounded-full bg-[#F0EDE4]/90 px-2 py-0.5 text-[11px] leading-4 text-[#948F80] opacity-0 shadow-sm ring-1 ring-[#E5E1D5]/70 transition-opacity group-hover:opacity-100"
+      className={`pointer-events-none absolute -top-4 select-none rounded-full bg-[#F0EDE4]/95 px-2 py-0.5 text-[11px] leading-4 text-[#948F80] opacity-0 shadow-sm ring-1 ring-[#E5E1D5]/70 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 ${
+        side === 'user' ? 'right-2' : 'left-10'
+      }`}
     >
       {label}
     </span>
+  );
+}
+
+function MessageTimeDivider({ value }: { value?: string | null }) {
+  const label = formatMessageTimeDivider(value);
+  if (!label) return null;
+  return (
+    <div className="flex justify-center" data-testid="message-time-divider">
+      <span className="rounded-full border border-[#E5E1D5] bg-[#F8F6EF] px-3 py-1 font-mono text-[11px] font-semibold leading-4 text-[#948F80] shadow-sm">
+        {label}
+      </span>
+    </div>
   );
 }
 
@@ -165,26 +210,30 @@ export default function ChatView({
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
-      {visibleMessages.map(msg => (
-        <MessageRow
-          key={msg.id}
-          msg={msg}
-          done={doneMessageIds.has(msg.id)}
-          copied={copiedMessageId === msg.id}
-          canSelectForShare={shareableMessageIds.has(msg.id)}
-          selectedForShare={selectedMessageIds.has(msg.id)}
-          shareSelectionMode={shareSelectionMode}
-          feedback={messageFeedback[msg.id]}
-          onFeedback={onFeedback}
-          onCopy={handleCopyMessage}
-          onPinMessage={onPinMessage}
-          onToggleMessageSelection={onToggleMessageSelection}
-          onEnterSelectionWith={onEnterSelectionWith}
-          onShareMessages={onShareMessages}
-          enterFor={enterFor}
-          handlePointerDown={handlePointerDown}
-          cancelLongPress={cancelLongPress}
-        />
+      {visibleMessages.map((msg, index) => (
+        <Fragment key={msg.id}>
+          {shouldShowMessageTimeDivider(visibleMessages[index - 1]?.created_at, msg.created_at) && (
+            <MessageTimeDivider value={msg.created_at} />
+          )}
+          <MessageRow
+            msg={msg}
+            done={doneMessageIds.has(msg.id)}
+            copied={copiedMessageId === msg.id}
+            canSelectForShare={shareableMessageIds.has(msg.id)}
+            selectedForShare={selectedMessageIds.has(msg.id)}
+            shareSelectionMode={shareSelectionMode}
+            feedback={messageFeedback[msg.id]}
+            onFeedback={onFeedback}
+            onCopy={handleCopyMessage}
+            onPinMessage={onPinMessage}
+            onToggleMessageSelection={onToggleMessageSelection}
+            onEnterSelectionWith={onEnterSelectionWith}
+            onShareMessages={onShareMessages}
+            enterFor={enterFor}
+            handlePointerDown={handlePointerDown}
+            cancelLongPress={cancelLongPress}
+          />
+        </Fragment>
       ))}
       {loading && (
         <div className="flex gap-3.5">
@@ -258,20 +307,20 @@ const MessageRow = memo(function MessageRow({
     if (cardEl) {
       return (
         <div
-          className="group flex gap-3.5 justify-start"
+          className="group relative flex gap-3.5 justify-start"
           title={sentAtFull || undefined}
           aria-label={sentAtFull ? `${accessibilityPrefix} ${sentAtFull}` : undefined}
         >
           <AssistantAvatar className="mt-1" />
           <div className="min-w-0 flex-1">{cardEl}</div>
-          <MessageTimePill value={msg.created_at} />
+          <MessageTimePill value={msg.created_at} side="assistant" />
         </div>
       );
     }
   }
   return (
     <div
-      className={`group flex gap-3.5 ${msg.role === 'user' ? 'justify-end' : 'justify-start'} ${shareSelectionMode && selectedForShare ? 'rounded-2xl bg-[#F3E4DC]/60 ring-1 ring-[#C96442]/25' : ''}`}
+      className={`group relative flex gap-3.5 ${msg.role === 'user' ? 'justify-end' : 'justify-start'} ${shareSelectionMode && selectedForShare ? 'rounded-2xl bg-[#F3E4DC]/60 ring-1 ring-[#C96442]/25' : ''}`}
       title={sentAtFull || undefined}
       aria-label={sentAtFull ? `${accessibilityPrefix} ${sentAtFull}` : undefined}
       onContextMenu={
@@ -306,7 +355,7 @@ const MessageRow = memo(function MessageRow({
         </button>
       )}
       {msg.role === 'assistant' && <AssistantAvatar className="mt-0.5" />}
-      {msg.role === 'user' && <MessageTimePill value={msg.created_at} />}
+      {msg.role === 'user' && <MessageTimePill value={msg.created_at} side="user" />}
       <div className={`${msg.role === 'user' ? 'max-w-[min(80%,34rem)] rounded-[1.25rem] px-4 py-2.5' : 'min-w-0 flex-1'} ${msg.role === 'user' ? STYLE.userBubbleClass : STYLE.assistantTextClass}`}>
         {msg.role === 'assistant' ? (
           <div>
@@ -329,7 +378,7 @@ const MessageRow = memo(function MessageRow({
           </div>
         )}
       </div>
-      {msg.role === 'assistant' && <MessageTimePill value={msg.created_at} />}
+      {msg.role === 'assistant' && <MessageTimePill value={msg.created_at} side="assistant" />}
       {msg.role === 'assistant' && msg.content && done && (
         <div className="ml-1 mt-1 flex items-center gap-0.5 self-end opacity-0 transition-opacity group-hover:opacity-100">
           <button

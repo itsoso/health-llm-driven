@@ -134,13 +134,15 @@ final class ChatTranscriptHTMLTests: XCTestCase {
             isStreaming: false,
             showCopy: true,
             sentAtShort: "12:31",
-            sentAtFull: "2026年7月14日 12:31"
+            sentAtFull: "2026年7月14日 12:31",
+            sentAtEpochMs: 1_720_960_260_000
         )
 
         let json = msg.jsonObject
 
         XCTAssertTrue(json.contains("\"sentAtShort\":\"12:31\""))
         XCTAssertTrue(json.contains("\"sentAtFull\":\"2026年7月14日 12:31\""))
+        XCTAssertTrue(json.contains("\"sentAtEpochMs\":1720960260000"))
     }
 
     func testRenderedMessageKeepsCopyCapabilityForCompletedAssistantReply() {
@@ -168,6 +170,38 @@ final class ChatTranscriptHTMLTests: XCTestCase {
         XCTAssertTrue(source.contains("copy-btn-icon"))
         XCTAssertTrue(source.contains("aria-label"))
         XCTAssertFalse(source.contains("btn.textContent = \"Copy\""))
+    }
+
+    func testBundledTranscriptMessageTimeDoesNotReserveLayoutSpace() throws {
+        let packageRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let resourceURL = packageRoot
+            .appendingPathComponent("Sources/HealthAgentMac/Resources/chat-transcript.html")
+        let source = try String(contentsOf: resourceURL, encoding: .utf8)
+        let start = try XCTUnwrap(source.range(of: "  .message-time {"))
+        let end = try XCTUnwrap(source.range(of: "  .row:hover", range: start.upperBound..<source.endIndex))
+        let messageTimeCSS = String(source[start.lowerBound..<end.lowerBound])
+
+        XCTAssertTrue(messageTimeCSS.contains("position: absolute;"))
+        XCTAssertTrue(source.contains("row.appendChild(userTime);"))
+        XCTAssertFalse(messageTimeCSS.contains("flex: 0 0 auto;"))
+        XCTAssertFalse(messageTimeCSS.contains("margin-right: 8px;"))
+    }
+
+    func testBundledTranscriptRendersSparseTimeDividers() throws {
+        let packageRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let resourceURL = packageRoot
+            .appendingPathComponent("Sources/HealthAgentMac/Resources/chat-transcript.html")
+        let source = try String(contentsOf: resourceURL, encoding: .utf8)
+
+        XCTAssertTrue(source.contains("message-time-divider"))
+        XCTAssertTrue(source.contains("shouldShowTimeDivider"))
+        XCTAssertTrue(source.contains("makeTimeDivider"))
     }
 
     // MARK: - meta footer (模型 · 轮数 · 耗时 / 数据源 / Skill)

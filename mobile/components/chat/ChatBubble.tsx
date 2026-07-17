@@ -103,6 +103,7 @@ function ChatBubbleInner({
   const [showActions, setShowActions] = useState(false);  // 长按显示操作
   const [showShareActions, setShowShareActions] = useState(false);
   const [showCardActions, setShowCardActions] = useState(false);
+  const [timeRevealed, setTimeRevealed] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [copied, setCopied] = useState(false);
   const [cardActionStateByKey, setCardActionStateByKey] = useState<Record<string, ChatCardActionRuntimeState>>({});
@@ -116,6 +117,7 @@ function ChatBubbleInner({
   const speechActiveRef = useRef(false);
   const speechHandleRef = useRef<SpeakHandle | null>(null);
   const copyResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const timeRevealTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // 流式期间跳过 sanitizeAiContent + extractRevaUiBlocks 这两条 O(n) 正则:
   // 每个 token 批次都对全量累积文本重跑一遍 → 整轮回复退化为 O(n²), 长回复打满
   // JS 线程。正文仍走 Markdown 渲染, 但 reva-ui 块本就只在 done 后可用。
@@ -214,6 +216,16 @@ function ChatBubbleInner({
   const timeAccessibilityPrefix = sentTimeFull
     ? `${isUser ? '你发送于' : '小巴回复于'} ${sentTimeFull}. `
     : '';
+  const revealMessageTime = useCallback(() => {
+    if (!sentTimeShort) return;
+    setTimeRevealed(true);
+    if (timeRevealTimerRef.current) clearTimeout(timeRevealTimerRef.current);
+    timeRevealTimerRef.current = setTimeout(() => {
+      setTimeRevealed(false);
+      timeRevealTimerRef.current = null;
+    }, 2200);
+  }, [sentTimeShort]);
+  const showMessageTime = !!sentTimeShort && (timeRevealed || showActions || showCardActions);
 
   const openTodayPlanDraft = useCallback((advice: string) => {
     const cleanAdvice = advice.trim();
@@ -282,6 +294,10 @@ function ChatBubbleInner({
       if (copyResetTimerRef.current) {
         clearTimeout(copyResetTimerRef.current);
         copyResetTimerRef.current = null;
+      }
+      if (timeRevealTimerRef.current) {
+        clearTimeout(timeRevealTimerRef.current);
+        timeRevealTimerRef.current = null;
       }
     };
   }, [clearSpeechTimeout]);
@@ -501,8 +517,9 @@ function ChatBubbleInner({
   const openCardActions = useCallback(() => {
     if (!cardSharePayload || selectionMode) return;
     try { Haptics.selectionAsync(); } catch {}
+    revealMessageTime();
     setShowCardActions(true);
-  }, [cardSharePayload, selectionMode]);
+  }, [cardSharePayload, revealMessageTime, selectionMode]);
 
   const cardDataRecord = item.cardData && typeof item.cardData === 'object' && !Array.isArray(item.cardData)
     ? item.cardData as Record<string, unknown>
@@ -549,7 +566,6 @@ function ChatBubbleInner({
           {rendered}
           {latestWriteReceipt ? <WriteReceiptLine receipt={latestWriteReceipt} /> : null}
           {cardReceiptPersistenceWarning ? <WriteReceiptPersistenceWarning /> : null}
-          <MessageTime label={sentTimeShort} isUser={false} />
         </View>
       );
       return (
@@ -566,6 +582,7 @@ function ChatBubbleInner({
             ) : (
               <Pressable
                 testID="assistant-card-interaction-surface"
+                onPress={revealMessageTime}
                 onLongPress={openCardActions}
                 delayLongPress={350}
                 accessibilityRole="summary"
@@ -574,6 +591,7 @@ function ChatBubbleInner({
                 {cardContents}
               </Pressable>
             )}
+            {showMessageTime ? <MessageTime label={sentTimeShort} isUser={false} /> : null}
             {showCardActions && cardSharePayload && !selectionMode ? (
               <View testID="assistant-card-share-actions" style={styles.cardShareActions}>
                 <Pressable
@@ -693,6 +711,7 @@ function ChatBubbleInner({
       return;
     }
     Haptics.selectionAsync();
+    revealMessageTime();
     setShowShareActions(false);
     setShowActions(prev => !prev);
   };
@@ -798,6 +817,7 @@ function ChatBubbleInner({
       onToggleSelected?.(item.id);
       return;
     }
+    revealMessageTime();
     if (showActions) {
       setShowActions(false);
       setShowShareActions(false);
@@ -941,7 +961,7 @@ function ChatBubbleInner({
             )}
             {renderMessageImages()}
             {displayText ? <Text style={txt.bubbleUser}>{displayText}</Text> : null}
-            <MessageTime label={sentTimeShort} isUser />
+            {showMessageTime ? <MessageTime label={sentTimeShort} isUser /> : null}
             {renderMessageActions()}
           </TouchableOpacity>
         ) : (
@@ -1006,7 +1026,7 @@ function ChatBubbleInner({
                 copied={copied}
               />
             ) : null}
-            <MessageTime label={sentTimeShort} isUser={false} />
+            {showMessageTime ? <MessageTime label={sentTimeShort} isUser={false} /> : null}
             {renderMessageActions()}
           </TouchableOpacity>
         )}
@@ -1900,7 +1920,7 @@ const styles = StyleSheet.create({
   msgRow: { flexDirection: 'row', marginBottom: 14, alignItems: 'flex-end' },
   msgRowUser: { justifyContent: 'flex-end' },
   msgRowAI: { justifyContent: 'flex-start' },
-  cardFrame: { flex: 1, minWidth: 0, maxWidth: '100%' },
+  cardFrame: { flex: 1, minWidth: 0, maxWidth: '100%', position: 'relative' },
   cardShareActions: {
     marginTop: 8,
     flexDirection: 'row',
@@ -1979,22 +1999,29 @@ const styles = StyleSheet.create({
     color: revaSemantic.caution.fg,
     fontWeight: '600',
   } as TextStyle,
-  bubble: { maxWidth: '82%', borderRadius: 14, paddingHorizontal: 13, paddingVertical: 9 },
+  bubble: { maxWidth: '82%', borderRadius: 14, paddingHorizontal: 13, paddingVertical: 9, position: 'relative' },
   bubbleUser: { backgroundColor: C.green500, borderBottomRightRadius: 5 },
   messageTime: {
-    marginTop: 6,
+    position: 'absolute',
+    bottom: -16,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: revaRadii.pill,
+    backgroundColor: 'rgba(252,251,247,0.92)',
     fontFamily: revaFonts.mono,
     fontSize: 10.5,
     lineHeight: 14,
     fontWeight: '600',
     letterSpacing: 0,
+    zIndex: 3,
   } as TextStyle,
   messageTimeUser: {
-    alignSelf: 'flex-end',
-    color: 'rgba(255,255,255,0.72)',
+    right: 0,
+    color: 'rgba(255,255,255,0.86)',
+    backgroundColor: 'rgba(17,92,64,0.78)',
   } as TextStyle,
   messageTimeAI: {
-    alignSelf: 'flex-start',
+    left: 0,
     color: C.ink3,
   } as TextStyle,
   bubbleSelected: {

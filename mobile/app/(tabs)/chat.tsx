@@ -10,13 +10,17 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, router, useFocusEffect } from 'expo-router';
 import { deleteConversation, getConversationsPage, updateConversationTitle } from '../../services/chat';
-import { useChatEngine, type UIMessage } from '../../hooks/useChatEngine';
+import { useChatEngine } from '../../hooks/useChatEngine';
 import ChatInputBar, { type ChatInputSendOptions } from '../../components/chat/ChatInputBar';
 import ChatBubble from '../../components/chat/ChatBubble';
 import ConversationSheet from '../../components/chat/ConversationSheet';
 import ChatHeader from '../../components/chat/ChatHeader';
 import ChatTodayFocusCard from '../../components/chat/ChatTodayFocusCard';
 import { buildTodayFocusModel } from '../../components/chat/todayFocus';
+import {
+  buildMessageTimeDividerItems,
+  type ChatMessageListItem,
+} from '../../components/chat/messageTime';
 import EmptyStateHome, {
   greetingForHour,
   formatMemoryOpenerText,
@@ -124,6 +128,14 @@ function buildOpeningContinuityText(
     return `${greeting}。${memoryText}`;
   }
   return null;
+}
+
+function ChatTimeDivider({ label }: { label: string }) {
+  return (
+    <View testID="message-time-divider" style={styles.timeDivider}>
+      <Text style={txt.timeDivider}>{label}</Text>
+    </View>
+  );
 }
 
 export default function ChatScreen() {
@@ -748,15 +760,19 @@ export default function ChatScreen() {
     }, 280);
   }, [exitSelectionMode, messages, selectedMessageIds, sharing]);
 
-  const renderMessage = useCallback(({ item }: { item: UIMessage }) => {
-    const shareable = isShareableChatMessage(item);
+  const renderMessage = useCallback(({ item }: { item: ChatMessageListItem }) => {
+    if (item.type === 'divider') {
+      return <ChatTimeDivider label={item.label} />;
+    }
+    const message = item.message;
+    const shareable = isShareableChatMessage(message);
     return (
       <ChatBubble
-        item={item}
+        item={message}
         onViewImage={setViewingImage}
         imageAuthToken={authToken}
         selectionMode={selectionMode && shareable}
-        selected={selectedMessageIds.has(item.id)}
+        selected={selectedMessageIds.has(message.id)}
         onToggleSelected={toggleMessageSelection}
         onEnterSelection={!selectionMode && shareable ? enterSelectionWith : undefined}
         onSendSuggestedPrompt={sendSuggestedPrompt}
@@ -804,6 +820,10 @@ export default function ChatScreen() {
   const visibleTodayFocusModel = todayFocusModel.contextStrip?.key === dismissedTodayFocusKey
     ? { ...todayFocusModel, contextStrip: null }
     : todayFocusModel;
+  const messageListItems = useMemo(
+    () => buildMessageTimeDividerItems(messages),
+    [messages],
+  );
   const retryLastTextTurn = () => {
     if (!lastRetryableUserMessage || isStreaming) return;
     void sendMessage(lastRetryableUserMessage.content, null);
@@ -839,7 +859,7 @@ export default function ChatScreen() {
         <FlatList
           ref={flatListRef}
           testID="chat-message-list"
-          data={messages}
+          data={messageListItems}
           keyExtractor={item => item.id}
           renderItem={renderMessage}
           contentContainerStyle={styles.messageList}
@@ -1080,6 +1100,17 @@ function ToolMenuRow({
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.paper },
   messageList: { padding: revaSpacing.s4, paddingBottom: 8 },
+  timeDivider: {
+    alignSelf: 'center',
+    marginTop: 2,
+    marginBottom: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: revaRadii.pill,
+    backgroundColor: C.paper2,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
+  },
   bootstrapLoading: {
     minHeight: 112,
     alignItems: 'center',
@@ -1172,6 +1203,7 @@ const styles = StyleSheet.create({
 
 const txt = {
   bootstrapLoading: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink2, fontWeight: '700' } as TextStyle,
+  timeDivider: { fontFamily: revaFonts.mono, fontSize: 10.5, lineHeight: 14, color: C.ink3, fontWeight: '700' } as TextStyle,
   contextBanner: { fontFamily: revaFonts.sans, fontSize: 12, color: C.green500, flex: 1, fontWeight: '500' } as TextStyle,
   shareBarTitle: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink1, fontWeight: '700' } as TextStyle,
   shareBarSub: { fontFamily: revaFonts.sans, fontSize: 11, color: C.ink3, marginTop: 2 } as TextStyle,

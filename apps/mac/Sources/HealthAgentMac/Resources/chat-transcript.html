@@ -87,9 +87,26 @@
     max-width: 860px;
     margin: 0 auto;
   }
-  .row { display: flex; }
+  .row { display: flex; position: relative; }
   .row.user { justify-content: flex-end; }
   .row.assistant { justify-content: flex-start; }
+  .message-time-divider {
+    display: flex;
+    justify-content: center;
+    margin: 2px 0 2px;
+    pointer-events: none;
+  }
+  .message-time-divider span {
+    font-family: "SF Mono", ui-monospace, Menlo, monospace;
+    font-size: 0.74em;
+    font-weight: 650;
+    color: var(--secondary);
+    background: var(--assistant-bubble);
+    border: 1px solid var(--assistant-border);
+    border-radius: 999px;
+    padding: 2px 9px;
+    box-shadow: 0 1px 3px var(--assistant-shadow);
+  }
 
   .bubble {
     border-radius: var(--bubble-radius);
@@ -132,7 +149,8 @@
     gap: 8px;
   }
   .message-time {
-    flex: 0 0 auto;
+    position: absolute;
+    top: -14px;
     font-family: "SF Mono", ui-monospace, Menlo, monospace;
     font-size: 0.78em;
     font-weight: 600;
@@ -141,11 +159,18 @@
     transition: opacity 0.16s ease;
     white-space: nowrap;
     pointer-events: none;
+    padding: 1px 7px;
+    border-radius: 999px;
+    background: var(--assistant-bubble);
+    border: 1px solid var(--assistant-border);
+    box-shadow: 0 1px 4px var(--assistant-shadow);
   }
   .row:hover .message-time { opacity: 0.72; }
   .row.user .message-time {
-    align-self: center;
-    margin-right: 8px;
+    right: 4px;
+  }
+  .row.assistant .message-time {
+    left: 42px;
   }
   .copy-btn {
     display: inline-flex;
@@ -1496,6 +1521,7 @@
     var row = document.createElement("div");
     row.className = "row " + (msg.role === "user" ? "user" : "assistant");
     row.setAttribute("data-id", msg.id);
+    if (msg.sentAtEpochMs) row.setAttribute("data-sent-at-epoch-ms", String(msg.sentAtEpochMs));
     if (msg.sentAtFull) {
       row.setAttribute("title", msg.sentAtFull);
       row.setAttribute("aria-label", (msg.role === "user" ? "你发送于 " : "小巴回复于 ") + msg.sentAtFull);
@@ -1564,6 +1590,55 @@
     return row;
   }
 
+  var TIME_DIVIDER_GAP_MS = 5 * 60 * 1000;
+  function sameLocalDate(a, b) {
+    return a.getFullYear() === b.getFullYear()
+      && a.getMonth() === b.getMonth()
+      && a.getDate() === b.getDate();
+  }
+  function shouldShowTimeDivider(previous, current) {
+    if (!current || !current.sentAtEpochMs) return false;
+    var currentDate = new Date(current.sentAtEpochMs);
+    if (!previous || !previous.sentAtEpochMs) return true;
+    var previousDate = new Date(previous.sentAtEpochMs);
+    return !sameLocalDate(previousDate, currentDate)
+      || currentDate.getTime() - previousDate.getTime() >= TIME_DIVIDER_GAP_MS;
+  }
+  function timeDividerLabel(msg) {
+    if (!msg || !msg.sentAtEpochMs || !msg.sentAtShort) return "";
+    var date = new Date(msg.sentAtEpochMs);
+    var now = new Date();
+    if (sameLocalDate(date, now)) return "今天 " + msg.sentAtShort;
+    var yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+    if (sameLocalDate(date, yesterday)) return "昨天 " + msg.sentAtShort;
+    return new Intl.DateTimeFormat("zh-CN", { month: "numeric", day: "numeric" }).format(date) + " " + msg.sentAtShort;
+  }
+  function makeTimeDivider(msg) {
+    var label = timeDividerLabel(msg);
+    if (!label) return null;
+    var wrap = document.createElement("div");
+    wrap.className = "message-time-divider";
+    var text = document.createElement("span");
+    text.textContent = label;
+    wrap.appendChild(text);
+    return wrap;
+  }
+  function appendMessageWithOptionalDivider(msg, previous) {
+    if (shouldShowTimeDivider(previous, msg)) {
+      var divider = makeTimeDivider(msg);
+      if (divider) root.appendChild(divider);
+    }
+    root.appendChild(makeRow(msg));
+  }
+  function previousMessageMeta() {
+    var rows = root.querySelectorAll(".row");
+    if (!rows.length) return null;
+    var last = rows[rows.length - 1];
+    var raw = Number(last.getAttribute("data-sent-at-epoch-ms"));
+    return raw ? { sentAtEpochMs: raw } : null;
+  }
+
   function findRow(id) {
     return root.querySelector('.row[data-id="' + (window.CSS && CSS.escape ? CSS.escape(id) : id) + '"]');
   }
@@ -1572,8 +1647,10 @@
     // 全量替换(切换会话 / 历史加载)。messages: 数组,字段见 RenderedMessage。
     setMessages: function (messages) {
       root.innerHTML = "";
+      var previous = null;
       for (var i = 0; i < messages.length; i++) {
-        root.appendChild(makeRow(messages[i]));
+        appendMessageWithOptionalDivider(messages[i], previous);
+        previous = messages[i];
       }
       scrollToBottomIfNeeded(true);
     },
@@ -1587,7 +1664,7 @@
         scrollToBottomIfNeeded(false);
       } else {
         // 追加新消息(用户刚发送 / 新回合开始):必须强制滚到底,让新内容可见。
-        root.appendChild(makeRow(msg));
+        appendMessageWithOptionalDivider(msg, previousMessageMeta());
         scrollToBottomIfNeeded(true);
       }
     },
