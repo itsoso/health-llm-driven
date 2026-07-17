@@ -1,5 +1,6 @@
 import React from 'react';
 import { fireEvent, render } from '@testing-library/react-native';
+import { StyleSheet } from 'react-native';
 
 import LlmModelPicker, { ModelOption } from '../LlmModelPicker';
 
@@ -45,6 +46,24 @@ describe('Mobile LlmModelPicker', () => {
 
     expect(getByText('小巴')).toBeTruthy();
     expect(queryByText('健康 Agent')).toBeNull();
+  });
+
+  it('renders the header 小巴 title with stronger brand scale', () => {
+    const onSelect = jest.fn();
+    const { getByText } = render(
+      <LlmModelPicker
+        variant="header"
+        currentLabel="Qwen3.7 Plus"
+        currentModelId="qwen3.7-plus"
+        options={options}
+        savingModelId={null}
+        onSelect={onSelect}
+      />,
+    );
+
+    const titleStyle = StyleSheet.flatten(getByText('小巴').props.style);
+    expect(titleStyle.fontSize).toBeGreaterThanOrEqual(23);
+    expect(titleStyle.lineHeight).toBeGreaterThanOrEqual(29);
   });
 
   it('opens options and selects a model inline', () => {
