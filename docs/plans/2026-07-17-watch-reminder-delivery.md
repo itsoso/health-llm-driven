@@ -128,3 +128,19 @@ Run:
 - `cd apps/watch && swift test`
 
 Only after both pass, report exact status and remaining limitation: no direct Watch APNs receipt exists; Watch availability is via dynamic summary plus iOS notification mirroring.
+
+### Task 6: Agent Delivery Wording Boundary
+
+**Files:**
+- Modify: `backend/app/services/agent_executor.py`
+- Modify: `backend/skills/reminder-setter/SKILL.md`
+- Test: `backend/tests/test_agent_fast_record_reply.py`
+- Test: `backend/tests/test_agent_executor_record_card.py`
+- Test: `backend/tests/test_health_manage_date_normalize.py`
+
+**Goal:** When a reminder is created, Agent replies and record cards must translate `delivery_status` honestly: reminder created, phone will attempt notification at due time, Watch can execute it after today's summary refresh. The Agent must not say "sent/synced/delivered to Watch" unless a future client-side `delivery_confirmed=true` receipt exists.
+
+**Verification:**
+
+- `DATABASE_URL=sqlite:///:memory: TZ=Asia/Shanghai backend/venv/bin/python -m pytest backend/tests/test_agent_fast_record_reply.py backend/tests/test_agent_executor_record_card.py backend/tests/test_health_manage_date_normalize.py -q --no-cov`
+- `backend/venv/bin/python -m ruff check backend/app/services/agent_executor.py backend/tests/test_agent_fast_record_reply.py backend/tests/test_agent_executor_record_card.py backend/tests/test_health_manage_date_normalize.py`

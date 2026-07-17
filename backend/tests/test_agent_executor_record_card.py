@@ -77,5 +77,39 @@ def test_reminder_summary_from_args():
     assert card["data"]["detail"] == "已设置每日提醒：臀中肌训练"
 
 
+def test_reminder_card_includes_honest_watch_delivery_boundary():
+    result = json.dumps({
+        "id": 7,
+        "title": "喝水提醒",
+        "recurrence": "daily",
+        "delivery_status": {
+            "agent_claim": "created_not_device_delivered",
+            "iphone_notification": {
+                "status": "will_attempt_when_due",
+                "delivery_confirmed": False,
+            },
+            "watch": {
+                "route": "watch_summary_due_item",
+                "status": "visible_when_watch_summary_refreshes",
+                "delivery_confirmed": False,
+            },
+        },
+    }, ensure_ascii=False)
+
+    card = _health_record_card_descriptor(
+        "reminder",
+        {"title": "喝水提醒", "recurrence": "daily", "remind_at": "2026-07-17T13:30:00+08:00"},
+        result,
+    )
+
+    assert card is not None
+    assert card["data"]["detail"] == (
+        "已设置每日提醒：喝水提醒；手机到点会尝试提醒；"
+        "手表刷新今日摘要后可执行（未确认已送达手表）"
+    )
+    assert "已发送到手表" not in card["data"]["detail"]
+    assert "已同步到手表" not in card["data"]["detail"]
+
+
 def test_error_result_returns_none():
     assert _health_record_card_descriptor("diet", {}, "Error: boom") is None

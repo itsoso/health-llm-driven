@@ -2152,6 +2152,55 @@ def _assistant_turn_is_question(text: str) -> bool:
     return bool(_QUESTION_TAIL_RE.search(s[-80:]))
 
 
+def _reminder_delivery_status_tail(delivery_status: Any) -> str:
+    """Translate reminder delivery capability into an honest user-facing tail.
+
+    Reminder creation is verifiable server-side. Watch display is currently via
+    `/watch/summary`, not a confirmed APNs/watchOS delivery receipt.
+    """
+    if not isinstance(delivery_status, dict):
+        return ""
+
+    parts: List[str] = []
+    iphone = delivery_status.get("iphone_notification")
+    if isinstance(iphone, dict):
+        if iphone.get("delivery_confirmed") is True:
+            parts.append("手机提醒已确认")
+        elif str(iphone.get("status") or "").strip() == "will_attempt_when_due":
+            parts.append("手机到点会尝试提醒")
+
+    watch = delivery_status.get("watch")
+    if isinstance(watch, dict):
+        if watch.get("delivery_confirmed") is True:
+            parts.append("已确认送达手表")
+        elif (
+            str(watch.get("route") or "").strip() == "watch_summary_due_item"
+            or str(watch.get("status") or "").strip() == "visible_when_watch_summary_refreshes"
+        ):
+            parts.append("手表刷新今日摘要后可执行（未确认已送达手表）")
+
+    if not parts and delivery_status.get("agent_claim") == "created_not_device_delivered":
+        parts.append("提醒已创建（未确认已送达手表）")
+
+    return f"；{'；'.join(parts)}" if parts else ""
+
+
+def _extract_reminder_delivery_status_from_result(result: Any) -> Optional[Dict[str, Any]]:
+    if isinstance(result, dict):
+        payload = result
+    elif isinstance(result, str):
+        try:
+            payload = json.loads(result)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            return None
+    else:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    delivery_status = payload.get("delivery_status")
+    return delivery_status if isinstance(delivery_status, dict) else None
+
+
 def _build_fast_record_messages(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Compact prompt for pure record/CRUD turns.
 
@@ -2308,7 +2357,7 @@ def _friendly_record_confirmation(record: Dict[str, Any]) -> str:
     if s("title") is not None and ("remind_at" in record or "recurrence" in record):
         recurrence = str(record.get("recurrence") or "").strip().lower()
         prefix = "已设置每日提醒" if recurrence == "daily" else "已设置提醒"
-        return f"{prefix}：{record.get('title')}"
+        return f"{prefix}：{record.get('title')}{_reminder_delivery_status_tail(record.get('delivery_status'))}"
     # illness episode
     if s("illness_name") is not None or (s("name") is not None and "start_date" in record):
         return f"已记录：{record.get('illness_name') or record.get('name')}"
@@ -3551,7 +3600,12 @@ def _normalize_relative_date(value: Any) -> Optional[str]:
         return None
 
 
-def _summarize_record_data(kind: str, record_data: Any) -> str:
+def _summarize_record_data(
+    kind: str,
+    record_data: Any,
+    *,
+    delivery_status: Optional[Dict[str, Any]] = None,
+) -> str:
     """Build a clean human summary from the structured args the model wrote.
 
     `record_data` is the tool's `data` argument — structured and reliable — so it
@@ -3582,7 +3636,10 @@ def _summarize_record_data(kind: str, record_data: Any) -> str:
         title = str(record_data.get("title") or record_data.get("message") or "").strip()
         recurrence = str(record_data.get("recurrence") or "").strip().lower()
         if title:
-            return f"{'已设置每日提醒' if recurrence == 'daily' else '已设置提醒'}：{title}"
+            return (
+                f"{'已设置每日提醒' if recurrence == 'daily' else '已设置提醒'}：{title}"
+                f"{_reminder_delivery_status_tail(delivery_status)}"
+            )
     return ""
 
 
@@ -3618,9 +3675,26 @@ def _health_record_card_descriptor(record_type: Any, record_data: Any, result: s
             detail = str(payload.get("message") or "").strip()
     except Exception:
         parsed_is_json = False
+        payload = None
+    delivery_status = (
+        payload.get("delivery_status")
+        if kind == "reminder" and isinstance(payload, dict) else None
+    )
+    delivery_tail = _reminder_delivery_status_tail(delivery_status)
+    if (
+        detail
+        and delivery_tail
+        and "未确认已送达手表" not in detail
+        and "已确认送达手表" not in detail
+    ):
+        detail = f"{detail}{delivery_tail}"
     # 2) No usable message → synthesize from the structured args (never raw JSON).
     if not detail:
-        detail = _summarize_record_data(kind, record_data)
+        detail = _summarize_record_data(
+            kind,
+            record_data,
+            delivery_status=delivery_status if isinstance(delivery_status, dict) else None,
+        )
     # 3) Plain-text result (not JSON) → first line is safe. A JSON blob is NOT:
     #    dumping it leaks `{"record_date":...,"food_items":...}` into the card.
     if not detail and not parsed_is_json:
@@ -4105,6 +4179,20 @@ def _model_tool_result_content(
     result: str,
 ) -> str:
     """Add deterministic query scope to the model-only tool result."""
+    record_type = str(args.get("record_type") or args.get("type") or "").strip().lower()
+    if tool_name == "health_record" and record_type == "reminder":
+        delivery_status = _extract_reminder_delivery_status_from_result(result)
+        if delivery_status:
+            return (
+                f"{result}\n\n"
+                "[系统递送边界]\n"
+                f"delivery_status.agent_claim={delivery_status.get('agent_claim') or ''}。"
+                "提醒创建已完成,但这不是手表送达回执。"
+                "回复用户时可以说:手机到点会尝试提醒；手表刷新今日摘要后可执行"
+                "（未确认已送达手表）。"
+                "除非 delivery_status.watch.delivery_confirmed=true,不得说已发送到手表、"
+                "已同步到手表或已送达到手表。"
+            )
     if (
         tool_name != "health_manage"
         or args.get("record_type") != "diet"

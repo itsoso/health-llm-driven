@@ -102,4 +102,5 @@ curl -s -X DELETE \
 2. 一次性提醒的 remind_at **必须**是未来时间
 3. 重复提醒的首次 remind_at 可以是今天
 4. 创建成功后回复用户确认（标题 + 时间 + 是否重复）
-5. 如果用户说的时间模糊（"过几天"），主动确认具体日期
+5. 如果接口返回 `delivery_status.agent_claim = "created_not_device_delivered"`，只能说提醒已创建、手机到点会尝试提醒、手表刷新今日摘要后可执行；**不得**说“已发送到手表 / 已同步到手表 / 已送达到手表”，除非 `delivery_status.watch.delivery_confirmed = true`
+6. 如果用户说的时间模糊（"过几天"），主动确认具体日期

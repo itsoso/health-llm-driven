@@ -307,6 +307,30 @@ def test_diet_query_tool_result_tells_synthesis_exact_beijing_date():
     assert content.endswith('}]')
 
 
+def test_reminder_tool_result_tells_synthesis_not_to_claim_watch_delivery():
+    content = _model_tool_result_content(
+        "health_record",
+        {"record_type": "reminder"},
+        json.dumps({
+            "id": 7,
+            "title": "喝水提醒",
+            "recurrence": "daily",
+            "delivery_status": {
+                "agent_claim": "created_not_device_delivered",
+                "iphone_notification": {"status": "will_attempt_when_due"},
+                "watch": {
+                    "route": "watch_summary_due_item",
+                    "delivery_confirmed": False,
+                },
+            },
+        }, ensure_ascii=False),
+    )
+
+    assert "不得说已发送到手表" in content
+    assert "手表刷新今日摘要后可执行" in content
+    assert "created_not_device_delivered" in content
+
+
 def test_stale_beijing_date_in_query_response_is_grounded_before_streaming():
     today = datetime.now(BJ).date()
     stale_day = 14 if today.day != 14 else 13

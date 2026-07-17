@@ -54,6 +54,34 @@ def test_friendly_confirmation_covers_common_record_shapes():
     assert _friendly_record_confirmation({"id": 1, "foo": "bar"}) == "✅ 已记录"
 
 
+def test_reminder_confirmation_includes_honest_watch_delivery_boundary():
+    reply = _friendly_record_confirmation({
+        "id": 7,
+        "title": "喝水提醒",
+        "remind_at": "2026-07-17T13:30:00+08:00",
+        "recurrence": "daily",
+        "delivery_status": {
+            "agent_claim": "created_not_device_delivered",
+            "iphone_notification": {
+                "status": "will_attempt_when_due",
+                "delivery_confirmed": False,
+            },
+            "watch": {
+                "route": "watch_summary_due_item",
+                "status": "visible_when_watch_summary_refreshes",
+                "delivery_confirmed": False,
+            },
+        },
+    })
+
+    assert reply == (
+        "已设置每日提醒：喝水提醒；手机到点会尝试提醒；"
+        "手表刷新今日摘要后可执行（未确认已送达手表）"
+    )
+    assert "已发送到手表" not in reply
+    assert "已同步到手表" not in reply
+
+
 def test_array_result_reports_lookup_not_creation():
     # 数组只来自 health_manage list(无创建路径返回数组)。对抗评审实测:
     # 撤销回合的 list 结果曾被答成"✅已记录 2 条"= 假写入宣称。
