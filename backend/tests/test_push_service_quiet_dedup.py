@@ -140,6 +140,44 @@ class TestQuietHoursSeverity:
         assert delayed == 0
 
     @patch("app.services.notification.push_service.get_china_now")
+    def test_delayed_log_persists_severity_for_flush(self, mock_now, db):
+        """delayed log 必须把 severity 落进 data —— flush_delayed_pushes 靠它回放.
+
+        severity 是 send_notification 的独立入参, 调用方通常不放进 data
+        (见 tasks/notifications.py 实时安全评估: data 只有 rule_id/deep_link).
+        _log_notification_delayed 负责注入; 若哪天丢了这行, flush 会把 critical
+        读成 "info" 并按 info 回放 → 静默降级 (under-alarm).
+        """
+        # 08:00 在晨间地板 (09:00) 前 → 即便 critical 也被强制进 delayed 队列
+        mock_now.return_value = datetime(2026, 5, 1, 8, 0)
+        user_id = _make_user(db)
+        _make_settings(db, user_id)
+        svc = PushService(db)
+
+        result = asyncio.run(svc.send_notification(
+            user_id=user_id,
+            notification_type="health_alert",
+            title="critical 告警",
+            content="x",
+            severity="critical",
+            data={"rule_id": "test.critical_floor"},  # 注意: 调用方没放 severity
+        ))
+        assert result["success"] is False
+        assert result["reason"] == "delayed_for_quiet_hours"
+
+        log = (
+            db.query(NotificationLog)
+            .filter(
+                NotificationLog.user_id == user_id,
+                NotificationLog.status == NotificationStatus.DELAYED.value,
+            )
+            .one()
+        )
+        assert (log.data or {}).get("severity") == "critical", (
+            "delayed log 丢了 severity → flush 会把 critical 当 info 回放"
+        )
+
+    @patch("app.services.notification.push_service.get_china_now")
     def test_default_quiet_hours_covers_0830(self, mock_now, db):
         """默认 22:00–09:00：08:30 仍算夜间，09:00 算白天."""
         user_id = _make_user(db)

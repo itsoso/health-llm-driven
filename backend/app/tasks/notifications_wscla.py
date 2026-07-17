@@ -27,6 +27,14 @@ from app.utils.timezone import get_china_now
 
 logger = logging.getLogger(__name__)
 
+# 未 success 但仍算"这次升级已交付"的 reason: 推送已写 status='delayed' 的 log,
+# flush_delayed_pushes 会在 morning floor 后真发出去 → 消耗名额是对的.
+# 其余 reason (dedup / gatekeeper_budget / advice_guard_* / 无渠道 ...) 都是
+# 用户什么都没收到 → 不能消耗 escalation 名额.
+# 这是本模块唯一硬编码的 push_service reason, 其余一律按"未送达"处理, 避免
+# 在两处维护同一份 reason 表而漂移.
+_DELIVERED_LATER_REASONS = {"delayed_for_quiet_hours"}
+
 
 def flush_delayed_pushes_impl():
     """每 5 分钟扫一次 NotificationLog 里 status='delayed' 且 scheduled_at <= now 的记录,
@@ -72,6 +80,7 @@ def escalate_critical_unresolved_impl():
         push_service = PushService(db)
         escalated = 0
         skipped = 0
+        undelivered = 0
 
         for card in cards:
             meta = dict(card.latest_assessment or {})
@@ -101,7 +110,7 @@ def escalate_critical_unresolved_impl():
                 else:
                     esc_title = f"⚠️ 仍未处理: {card.title}"
                     esc_content = card.content
-                run_async(push_service.send_notification(
+                result = run_async(push_service.send_notification(
                     user_id=card.user_id,
                     notification_type="health_alert",
                     title=esc_title,
@@ -113,7 +122,26 @@ def escalate_critical_unresolved_impl():
                         "escalation": True,
                         "escalation_count": escalation_count + 1,
                     },
-                ))
+                )) or {}
+
+                # MAX_ESCALATIONS 是"用户真收到 N 次"的预算, 不是"尝试 N 次".
+                # 推送被丢弃却 +1 → 名额被静默烧光, 用户再也收不到升级 (under-alarm).
+                #
+                # 未送达时故意不 stamp last_escalated_at: 下个整点 tick 会再试,
+                # 直到真发出去。dedup 是最常见的丢弃原因 (MIN_GAP_HOURS=12 <
+                # send_notification 默认 dedup 24h → 第 2 次升级必然撞窗),
+                # 每小时重试能在 dedup 窗口一滑开就送达; 若在这里 stamp/退避,
+                # critical 升级会被推迟整整一个 MIN_GAP → 又变成 under-alarm.
+                reason = result.get("reason")
+                if not (result.get("success") or reason in _DELIVERED_LATER_REASONS):
+                    undelivered += 1
+                    logger.warning(
+                        "[escalate_critical] card=%s 升级推送未送达 reason=%s → "
+                        "不消耗 escalation 名额 (count 仍为 %s), 下个 tick 重试",
+                        card.id, reason or "unknown", escalation_count,
+                    )
+                    continue
+
                 meta["escalation_count"] = escalation_count + 1
                 meta["last_escalated_at"] = now.isoformat()
                 card.latest_assessment = meta
@@ -124,12 +152,12 @@ def escalate_critical_unresolved_impl():
                     f"[escalate_critical] card={card.id} 失败: {e}"
                 )
 
-    if escalated or skipped:
+    if escalated or skipped or undelivered:
         logger.info(
             f"[escalate_critical] escalated={escalated} skipped={skipped} "
-            f"checked={len(cards) if cards else 0}"
+            f"undelivered={undelivered} checked={len(cards) if cards else 0}"
         )
-    return {"escalated": escalated, "skipped": skipped}
+    return {"escalated": escalated, "skipped": skipped, "undelivered": undelivered}
 
 
 def weekly_advisor_run_impl():
