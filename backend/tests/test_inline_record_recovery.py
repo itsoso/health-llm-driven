@@ -264,3 +264,42 @@ def test_inline_recovery_of_truncated_named_tool_call():
     args = json.loads(recovered["function"]["arguments"])
     assert args["record_type"] == "rhinitis"
     assert args["data"]["sneezing"] == 1
+
+
+# ── founder 2026-07-17 截图根因:tool_name-包装的工具调用泄漏 + 记录静默丢 ──────────
+def test_recovers_tool_name_wrapped_symptom_call_from_leaked_text():
+    """弱模型吐 {"tool_name":"health_record","arguments":{…}}(还嵌在 {"name":```json…}```
+    fence 里),recovery 之前只认 name/tool 不认 tool_name → 症状没写库 + JSON 泄漏给用户。
+    加 tool_name 后必须恢复成真 health_record 调用(既写库又不泄漏)。"""
+    leaked = (
+        '{\n  "name":```json\n'
+        '{\n  "tool_name": "health_record",\n'
+        '  "arguments": {\n    "record_type": "symptom",\n'
+        '    "data": {\n      "description": "打喷嚏"\n    }\n  }\n}\n'
+        '```已查到相关数据,但这轮没能整理成回答;请再问一次或换个问法。'
+    )
+    call = _extract_inline_tool_call(leaked, _TOOLS, user_message="记录刚才打了一个喷嚏。")
+    assert call is not None, "tool_name-wrapped 调用必须被恢复, 不能泄漏成文本"
+    assert call["function"]["name"] == "health_record"
+    args = json.loads(call["function"]["arguments"])
+    assert args["record_type"] == "symptom"
+    assert args["data"]["description"] == "打喷嚏"
+
+
+def test_recovers_plain_tool_name_query_call():
+    """最小 tool_name shape(只读, 无需写授权):{"tool_name":"health_query","arguments":{…}}。"""
+    call = _extract_inline_tool_call(
+        '让我查一下。{"tool_name":"health_query","arguments":{"dimension":"diet"}}',
+        _TOOLS, user_message="查一下今天的饮食",
+    )
+    assert call is not None and call["function"]["name"] == "health_query"
+    assert json.loads(call["function"]["arguments"])["dimension"] == "diet"
+
+
+def test_tool_name_still_gated_by_registered_allowlist():
+    """tool_name 值不是已注册工具 → 不当调用恢复(不因加 tool_name 而误伤普通 JSON)。"""
+    call = _extract_inline_tool_call(
+        '{"tool_name":"send_email","arguments":{"to":"x"}}',
+        _TOOLS, user_message="随便说说",
+    )
+    assert call is None

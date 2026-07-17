@@ -1879,6 +1879,7 @@ def _extract_inline_tool_call(
         name = (
             payload.get("name")
             or payload.get("tool")
+            or payload.get("tool_name")  # 弱模型常吐 {"tool_name":"health_record","arguments":{…}}
             or payload.get("tool_code")
             or (fn or {}).get("name")
         )
