@@ -2204,6 +2204,34 @@ def _extract_reminder_delivery_status_from_result(result: Any) -> Optional[Dict[
     return delivery_status if isinstance(delivery_status, dict) else None
 
 
+def _should_force_record_tool_choice(
+    prefer_fast_record: bool,
+    round_messages: List[Dict[str, Any]],
+    pass_tools: Optional[List[Dict[str, Any]]],
+    model_name: Any,
+) -> bool:
+    """R2 门控(纯函数, battery 可测): 高置信记录轮的**首个**工具轮才 force tool_choice。
+
+    四个条件全真才 force:
+    - prefer_fast_record: 确定性记录意图门(已排除疑问句/删改/分析)已命中;
+    - 首轮: round_messages 里**无 tool 结果消息** —— 后续轮再 force 会造成无限工具循环
+      (每轮都被迫再调一次工具, 永远到不了合成);
+    - pass_tools 里确实有 health_record(被工具子集裁掉时 force 一个不存在的工具=400);
+    - qwen 系模型(探针验证过 enable_thinking=false + named force 的家族);其余 provider
+      不带 kwarg = 行为逐字节不变(镜像显式缓存"验证过的模型才开"纪律)。
+    """
+    if not prefer_fast_record:
+        return False
+    if any(m.get("role") == "tool" for m in round_messages or []):
+        return False
+    if not any(
+        (t.get("function") or {}).get("name") == "health_record"
+        for t in (pass_tools or [])
+    ):
+        return False
+    return "qwen" in str(model_name or "").lower()
+
+
 def _build_fast_record_messages(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Compact prompt for pure record/CRUD turns.
 
@@ -8557,6 +8585,22 @@ class AgentExecutor:
             or getattr(provider, "default_model", None)
             or getattr(provider, "provider_name", None)
         )
+        # R2(ships-OFF): 高置信记录轮首个工具轮 force tool_choice + 关思考(必须成对:
+        # qwen thinking 模式下 tool_choice=object 400 —— probe_tool_choice_strict.py 实测)。
+        # 门控纯函数 _should_force_record_tool_choice(首轮/含 health_record/qwen 系)。
+        if (
+            getattr(settings, "llm_force_record_tool_choice", False)
+            and _should_force_record_tool_choice(
+                self._prefer_fast_record_model,
+                round_messages,
+                chat_kwargs.get("tools"),
+                self._last_provider_model_name,
+            )
+        ):
+            chat_kwargs["tool_choice"] = {
+                "type": "function", "function": {"name": "health_record"},
+            }
+            chat_kwargs["enable_thinking"] = False
         try:
             return await provider.chat(**chat_kwargs)
         except Exception as e:  # noqa: BLE001
@@ -8566,6 +8610,10 @@ class AgentExecutor:
             # 不回退的话用户一选商用模型整个 agent 就不可用。二次失败再抛给上层兜底。
             # F2: pass_tools 时回退目标经可靠工具模型选择 (_stable_fallback_provider),
             # 不再无脑落到默认 tokenplan(MiniMax 弱工具模型)。
+            # R2 fail-open: force kwargs 可能就是失败原因(变体端点拒 tool_choice),
+            # 回退调用前剥除 —— 绝不让 force 让整轮不可用。
+            chat_kwargs.pop("tool_choice", None)
+            chat_kwargs.pop("enable_thinking", None)
             logger.warning(
                 "[agent_executor] 选定 provider chat() 失败,回退稳定 provider: %s", e
             )

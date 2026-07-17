@@ -236,6 +236,13 @@ class Settings(BaseSettings):
     # 才带该参数(无 tools 时带会 SDK 报错)。prod 翻开前先跑真网 eval:
     #   python3 backend/scripts/smoke_fast_tool_model.py --parallel
     llm_parallel_tool_calls: bool = False
+    # R2(agent 能力路线图 Wave 1): 高置信记录轮首个工具轮 force tool_choice=health_record
+    # + 关思考(两者**必须成对**: 探针实测 TokenPlan qwen 系 thinking 模式下 tool_choice=
+    # object/required 400, enable_thinking=false 后 named force 双模型 PASS 且参数合法 ——
+    # backend/scripts/probe_tool_choice_strict.py 2026-07-17)。仅对 qwen 系模型生效,
+    # 其余 provider 不带该 kwarg = 逐字节不变。治: 弱模型"决定先聊一句不调工具"→ 0 工具
+    # 调用落兜底话术。ships-OFF, 翻开前 battery 全绿。
+    llm_force_record_tool_choice: bool = False
     # 确定性查询直出(延迟, Phase-2 rank2):开后对 fast-route 的**只读**查询回合, 执行完
     # health_query 后若本回合所有工具结果都被 query_readouts 的 top-5 维度格式化器
     # (水/体重/睡眠/步数活动/血压)覆盖, 直接从真实 tool result 渲染人话读数 + break,
