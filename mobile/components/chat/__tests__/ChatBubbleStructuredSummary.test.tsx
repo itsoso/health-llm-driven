@@ -400,17 +400,25 @@ ${sectionTitle}
   });
 
   it('keeps the assistant conclusion at a calm reading scale', () => {
-    const { getByText } = renderBubble('今晚先补水 300ml，再散步 10 分钟。');
+    const { getByText, getByTestId } = renderBubble('今晚先补水 300ml，再散步 10 分钟。');
 
     const label = getByText('小巴结论');
+    const dot = getByTestId('assistant-conclusion-dot');
     const conclusion = getByText('今晚先补水 300ml，再散步 10 分钟。');
     const labelStyle = StyleSheet.flatten(label.props.style);
+    const dotStyle = StyleSheet.flatten(dot.props.style);
     const conclusionStyle = StyleSheet.flatten(conclusion.props.style);
     expect(labelStyle).toMatchObject({
-      fontSize: 13,
-      lineHeight: 19,
-      fontWeight: '500',
-      color: '#5C6660',
+      fontSize: 12,
+      lineHeight: 17,
+      fontWeight: '600',
+      color: '#176F49',
+    });
+    expect(dotStyle).toMatchObject({
+      width: 5,
+      height: 5,
+      borderRadius: 3,
+      backgroundColor: '#1F8A5B',
     });
     expect(conclusionStyle).toMatchObject({
       fontSize: 15,

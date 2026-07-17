@@ -1625,12 +1625,19 @@ function SafeMarkdown({ content, fallbackText }: { content: string; fallbackText
   );
 }
 
+function AssistantConclusionLabel() {
+  return (
+    <View style={summaryStyles.conclusionLabelRow}>
+      <View testID="assistant-conclusion-dot" style={summaryStyles.conclusionDot} />
+      <Text style={summaryStyles.conclusionLabel}>小巴结论</Text>
+    </View>
+  );
+}
+
 function AssistantConclusion({ text }: { text: string }) {
   return (
     <View testID="assistant-conclusion" style={summaryStyles.conclusion}>
-      <View style={summaryStyles.conclusionLabelRow}>
-        <Text style={summaryStyles.conclusionLabel}>小巴结论</Text>
-      </View>
+      <AssistantConclusionLabel />
       <Text style={summaryStyles.conclusionText}>{text}</Text>
     </View>
   );
@@ -1662,9 +1669,7 @@ function StructuredSummaryCard({
   return (
     <View style={summaryStyles.card}>
       {showEyebrow ? (
-        <View style={summaryStyles.conclusionLabelRow}>
-          <Text style={summaryStyles.conclusionLabel}>小巴结论</Text>
-        </View>
+        <AssistantConclusionLabel />
       ) : null}
       {summary.metrics.length > 0 ? (
           <View testID="assistant-metric-grid" style={summaryStyles.metrics}>
@@ -1745,14 +1750,21 @@ const summaryStyles = StyleSheet.create({
   conclusionLabelRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 6,
+  },
+  conclusionDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: C.green500,
   },
   conclusionLabel: {
     fontFamily: revaFonts.sans,
-    fontSize: 13,
-    lineHeight: 19,
-    fontWeight: '500',
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '600',
     letterSpacing: 0,
-    color: C.ink2,
+    color: C.green600,
   } as TextStyle,
   conclusionText: {
     fontFamily: revaFonts.sans,
