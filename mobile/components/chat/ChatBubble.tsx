@@ -607,7 +607,7 @@ function ChatBubbleInner({
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setShowActions(false);
     setShowShareActions(false);
-    Alert.alert('已复制');
+    toast.show('已复制', 'success');
   };
 
   const handleSaveImage = async (uri: string) => {
@@ -987,6 +987,23 @@ function ChatBubbleInner({
                 onShareWeChat={() => { void handleShare('wechat'); }}
                 onShareXiaohongshu={() => { void handleShare('xiaohongshu'); }}
               />
+            ) : null}
+            {!item.streaming
+              && item.completionStatus !== 'interrupted'
+              && item.completionStatus !== 'error'
+              && assistantTextForActions ? (
+              <View style={styles.conclusionCopyRow}>
+                <Pressable
+                  style={({ pressed }) => [styles.actionBtn, pressed && styles.actionBtnPressed]}
+                  onPress={handleCopy}
+                  accessibilityRole="button"
+                  accessibilityLabel="复制回答"
+                  hitSlop={6}
+                >
+                  <Ionicons name="copy-outline" size={14} color={C.green500} />
+                  <Text style={txt.actionBtn}>复制</Text>
+                </Pressable>
+              </View>
             ) : null}
             <MessageTime label={sentTimeShort} isUser={false} />
             {renderMessageActions()}
@@ -2232,6 +2249,13 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.92)',
   },
   actionBtnPressed: { opacity: 0.82 },
+  conclusionCopyRow: {
+    flexDirection: 'row',
+    marginTop: 10,
+    paddingTop: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: C.line,
+  },
   assistantUtilityPanel: {
     alignSelf: 'stretch',
     width: '100%',

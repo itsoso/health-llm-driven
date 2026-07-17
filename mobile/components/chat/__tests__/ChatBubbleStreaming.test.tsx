@@ -262,6 +262,34 @@ describe('ChatBubble streaming degraded render', () => {
     expect(onEnterSelection).toHaveBeenCalledWith('user-action-menu');
   });
 
+  it('shows an always-visible copy button on a completed assistant answer (no long-press)', () => {
+    const { getByLabelText, queryByLabelText } = renderBubble({
+      id: 'assistant-conclusion-copy',
+      role: 'assistant',
+      content: '建议今天午后散步 10 分钟。',
+      streaming: false,
+    });
+
+    // 常驻复制按钮无需长按即可见 (label 与长按菜单的「复制全文」区分,避免选择器歧义)
+    const copyBtn = getByLabelText('复制回答');
+    expect(copyBtn).toBeTruthy();
+    // 长按菜单尚未展开 → 没有「复制全文」
+    expect(queryByLabelText('复制全文')).toBeNull();
+
+    fireEvent.press(copyBtn);
+    expect(Clipboard.setStringAsync).toHaveBeenCalledWith('建议今天午后散步 10 分钟。');
+  });
+
+  it('hides the conclusion copy button while the assistant reply is still streaming', () => {
+    const { queryByLabelText } = renderBubble({
+      id: 'assistant-streaming-no-copy',
+      role: 'assistant',
+      content: '正在分析…',
+      streaming: true,
+    });
+    expect(queryByLabelText('复制回答')).toBeNull();
+  });
+
   it('renders one unified streaming status before the first token', () => {
     const { getAllByTestId, getByTestId, getByText, queryByTestId } = renderBubble({
       id: 'assistant-status-line',
