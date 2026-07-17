@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, memo, useCallback, useMemo, useRef, useState } from 'react';
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Bookmark, Check, ChevronDown, Copy, Share2, ThumbsDown, ThumbsUp } from 'lucide-react';
 import { ChatMessage } from '@/services/api/ai';
 import MarkdownRenderer from '@/components/assistant/MarkdownRenderer';
@@ -110,6 +110,27 @@ export default function ChatView({
   );
   // P1: 稳定 Set 引用 — 否则每 token 重算的新 Set 会击穿下面 MessageRow 的 memo。
   const shareableMessageIds = useMemo(() => getShareableMessageIds(visibleMessages), [visibleMessages]);
+  const [copiedMessageId, setCopiedMessageId] = useState<number | null>(null);
+  const copyResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => {
+    if (copyResetTimer.current) clearTimeout(copyResetTimer.current);
+  }, []);
+
+  const handleCopyMessage = useCallback(async (message: ChatMessage) => {
+    if (!navigator.clipboard) return;
+    try {
+      await navigator.clipboard.writeText(message.content);
+      setCopiedMessageId(message.id);
+      if (copyResetTimer.current) clearTimeout(copyResetTimer.current);
+      copyResetTimer.current = setTimeout(() => {
+        setCopiedMessageId(null);
+        copyResetTimer.current = null;
+      }, 1500);
+    } catch (error) {
+      console.error('[chat] copy failed', error);
+    }
+  }, []);
 
   // 长按计时器 (触屏补充入口). 右键是桌面主入口, 见下方 onContextMenu.
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -149,11 +170,13 @@ export default function ChatView({
           key={msg.id}
           msg={msg}
           done={doneMessageIds.has(msg.id)}
+          copied={copiedMessageId === msg.id}
           canSelectForShare={shareableMessageIds.has(msg.id)}
           selectedForShare={selectedMessageIds.has(msg.id)}
           shareSelectionMode={shareSelectionMode}
           feedback={messageFeedback[msg.id]}
           onFeedback={onFeedback}
+          onCopy={handleCopyMessage}
           onPinMessage={onPinMessage}
           onToggleMessageSelection={onToggleMessageSelection}
           onEnterSelectionWith={onEnterSelectionWith}
@@ -185,11 +208,13 @@ export default function ChatView({
 interface MessageRowProps {
   msg: ChatMessage;
   done: boolean;
+  copied: boolean;
   canSelectForShare: boolean;
   selectedForShare: boolean;
   shareSelectionMode: boolean;
   feedback?: 1 | 5;
   onFeedback: (msgId: number, rating: 1 | 5) => void;
+  onCopy: (message: ChatMessage) => void;
   onPinMessage?: (content: string, msgId: number) => void;
   onToggleMessageSelection?: (msgId: number) => void;
   onEnterSelectionWith?: (msgId: number) => void;
@@ -210,11 +235,13 @@ interface MessageRowProps {
 const MessageRow = memo(function MessageRow({
   msg,
   done,
+  copied,
   canSelectForShare,
   selectedForShare,
   shareSelectionMode,
   feedback,
   onFeedback,
+  onCopy,
   onPinMessage,
   onToggleMessageSelection,
   onEnterSelectionWith,
@@ -305,8 +332,14 @@ const MessageRow = memo(function MessageRow({
       {msg.role === 'assistant' && <MessageTimePill value={msg.created_at} />}
       {msg.role === 'assistant' && msg.content && done && (
         <div className="ml-1 mt-1 flex items-center gap-0.5 self-end opacity-0 transition-opacity group-hover:opacity-100">
-          <button onClick={() => navigator.clipboard?.writeText(msg.content)} className="rounded-lg p-1.5 text-[#948F80] transition-all hover:bg-[#F0EDE4] hover:text-[#29261F]" title="复制">
-            <Copy className="h-3.5 w-3.5" />
+          <button
+            type="button"
+            onClick={() => onCopy(msg)}
+            className={`rounded-lg p-1.5 transition-all ${copied ? 'bg-[#E4EDDD] text-[#5B7B4E]' : 'text-[#948F80] hover:bg-[#F0EDE4] hover:text-[#29261F]'}`}
+            title={copied ? '已复制' : '复制'}
+            aria-label={copied ? '已复制' : '复制'}
+          >
+            {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
           </button>
           {onShareMessages && (
             <button onClick={() => onShareMessages([msg.id])} className="rounded-lg p-1.5 text-[#948F80] transition-all hover:bg-[#F0EDE4] hover:text-[#C96442]" title="分享这条">
@@ -356,6 +389,7 @@ function areMessageRowEqual(prev: MessageRowProps, next: MessageRowProps): boole
     a.sources_used === b.sources_used &&
     a.tools_used === b.tools_used &&
     prev.done === next.done &&
+    prev.copied === next.copied &&
     prev.canSelectForShare === next.canSelectForShare &&
     prev.selectedForShare === next.selectedForShare &&
     prev.shareSelectionMode === next.shareSelectionMode &&

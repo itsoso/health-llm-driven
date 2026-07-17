@@ -1,6 +1,6 @@
 import React from 'react';
 import { Alert, StyleSheet, TextInput } from 'react-native';
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import * as Clipboard from 'expo-clipboard';
 
@@ -233,7 +233,7 @@ describe('ChatBubble streaming degraded render', () => {
     expect(onEnterSelection).toHaveBeenCalledWith('assistant-action-menu');
   });
 
-  it('long press on a user message opens copy-first actions and keeps selection secondary', () => {
+  it('long press on a user message opens copy-first actions and keeps selection secondary', async () => {
     const onEnterSelection = jest.fn();
     const { getByLabelText, queryByLabelText } = render(
       <QueryClientProvider client={new QueryClient()}>
@@ -254,7 +254,10 @@ describe('ChatBubble streaming degraded render', () => {
     expect(onEnterSelection).not.toHaveBeenCalled();
     expect(getByLabelText('分享这条消息')).toBeTruthy();
     expect(queryByLabelText('语音播报')).toBeNull();
-    fireEvent.press(getByLabelText('复制全文'));
+    await act(async () => {
+      fireEvent.press(getByLabelText('复制全文'));
+      await Promise.resolve();
+    });
     expect(Clipboard.setStringAsync).toHaveBeenCalledWith('早餐吃了鸡蛋和咖啡');
 
     fireEvent(getByLabelText('你: 早餐吃了鸡蛋和咖啡'), 'longPress');
@@ -262,7 +265,7 @@ describe('ChatBubble streaming degraded render', () => {
     expect(onEnterSelection).toHaveBeenCalledWith('user-action-menu');
   });
 
-  it('shows an always-visible copy button on a completed assistant answer (no long-press)', () => {
+  it('shows a compact copy action that changes in place after copying', async () => {
     const { getByLabelText, queryByLabelText } = renderBubble({
       id: 'assistant-conclusion-copy',
       role: 'assistant',
@@ -270,14 +273,18 @@ describe('ChatBubble streaming degraded render', () => {
       streaming: false,
     });
 
-    // 常驻复制按钮无需长按即可见 (label 与长按菜单的「复制全文」区分,避免选择器歧义)
+    // 完成回复直接显示紧凑复制图标,不需要长按。
     const copyBtn = getByLabelText('复制回答');
     expect(copyBtn).toBeTruthy();
     // 长按菜单尚未展开 → 没有「复制全文」
     expect(queryByLabelText('复制全文')).toBeNull();
 
-    fireEvent.press(copyBtn);
+    await act(async () => {
+      fireEvent.press(copyBtn);
+      await Promise.resolve();
+    });
     expect(Clipboard.setStringAsync).toHaveBeenCalledWith('建议今天午后散步 10 分钟。');
+    await waitFor(() => expect(getByLabelText('已复制')).toBeTruthy());
   });
 
   it('hides the conclusion copy button while the assistant reply is still streaming', () => {

@@ -143,6 +143,33 @@ final class ChatTranscriptHTMLTests: XCTestCase {
         XCTAssertTrue(json.contains("\"sentAtFull\":\"2026年7月14日 12:31\""))
     }
 
+    func testRenderedMessageKeepsCopyCapabilityForCompletedAssistantReply() {
+        let msg = ChatTranscriptHTML.RenderedMessage(
+            id: "assistant-copy",
+            role: "assistant",
+            bodyHTML: "<p>已完成</p>",
+            isStreaming: false,
+            showCopy: true
+        )
+
+        XCTAssertTrue(msg.jsonObject.contains("\"copy\":true"))
+        XCTAssertFalse(msg.jsonObject.contains("\"streaming\":true"))
+    }
+
+    func testBundledTranscriptCopyActionUsesAccessibleIconOnlyStates() throws {
+        let packageRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let resourceURL = packageRoot
+            .appendingPathComponent("Sources/HealthAgentMac/Resources/chat-transcript.html")
+        let source = try String(contentsOf: resourceURL, encoding: .utf8)
+
+        XCTAssertTrue(source.contains("copy-btn-icon"))
+        XCTAssertTrue(source.contains("aria-label"))
+        XCTAssertFalse(source.contains("btn.textContent = \"Copy\""))
+    }
+
     // MARK: - meta footer (模型 · 轮数 · 耗时 / 数据源 / Skill)
 
     func testMetaFooterRendersModelRoundsElapsed() {

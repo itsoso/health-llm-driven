@@ -148,16 +148,29 @@
     margin-right: 8px;
   }
   .copy-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
     cursor: pointer;
     border: none;
     background: transparent;
     color: var(--secondary);
-    font-size: 0.95em;
-    padding: 2px 6px;
+    padding: 0;
     border-radius: 6px;
   }
   .copy-btn:hover { background: var(--code-bg); color: var(--accent); }
-  .copy-btn.copied { color: #5F7A55; }
+  .copy-btn.copied { background: #E4EDDD; color: #5F7A55; }
+  .copy-btn-icon {
+    width: 15px;
+    height: 15px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
 
   .body > *:first-child { margin-top: 0; }
   .body > *:last-child { margin-bottom: 0; }
@@ -993,6 +1006,15 @@
     } catch (e) {}
   }
 
+  function setCopyButtonState(button, copied) {
+    button.classList.toggle("copied", copied);
+    button.setAttribute("aria-label", copied ? "已复制" : "复制");
+    button.setAttribute("title", copied ? "已复制" : "复制");
+    button.innerHTML = copied
+      ? '<svg class="copy-btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg>'
+      : '<svg class="copy-btn-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3"/></svg>';
+  }
+
   function postRouteOpen(route) {
     try {
       if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.routeOpen) {
@@ -1500,14 +1522,13 @@
       if (msg.copy) {
         var btn = document.createElement("button");
         btn.className = "copy-btn";
-        btn.textContent = "Copy";
+        btn.type = "button";
+        setCopyButtonState(btn, false);
         btn.addEventListener("click", function () {
           postCopy(msg.id);
-          btn.classList.add("copied");
-          btn.textContent = "Copied";
+          setCopyButtonState(btn, true);
           setTimeout(function () {
-            btn.classList.remove("copied");
-            btn.textContent = "Copy";
+            setCopyButtonState(btn, false);
           }, 1500);
         });
         meta.appendChild(btn);

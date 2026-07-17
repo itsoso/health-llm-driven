@@ -104,6 +104,7 @@ function ChatBubbleInner({
   const [showShareActions, setShowShareActions] = useState(false);
   const [showCardActions, setShowCardActions] = useState(false);
   const [speaking, setSpeaking] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [cardActionStateByKey, setCardActionStateByKey] = useState<Record<string, ChatCardActionRuntimeState>>({});
   const [cardReceiptByKey, setCardReceiptByKey] = useState<Record<string, WriteReceipt>>({});
   const [cardReceiptPersistenceWarning, setCardReceiptPersistenceWarning] = useState(false);
@@ -114,6 +115,7 @@ function ChatBubbleInner({
   const speechTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const speechActiveRef = useRef(false);
   const speechHandleRef = useRef<SpeakHandle | null>(null);
+  const copyResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // 流式期间跳过 sanitizeAiContent + extractRevaUiBlocks 这两条 O(n) 正则:
   // 每个 token 批次都对全量累积文本重跑一遍 → 整轮回复退化为 O(n²), 长回复打满
   // JS 线程。正文仍走 Markdown 渲染, 但 reva-ui 块本就只在 done 后可用。
@@ -276,6 +278,10 @@ function ChatBubbleInner({
       if (speechActiveRef.current) {
         try { speechHandleRef.current?.cancel(); } catch {}
         try { Speech.stop(); } catch {}
+      }
+      if (copyResetTimerRef.current) {
+        clearTimeout(copyResetTimerRef.current);
+        copyResetTimerRef.current = null;
       }
     };
   }, [clearSpeechTimeout]);
@@ -514,6 +520,24 @@ function ChatBubbleInner({
   );
   const hasEmbeddedCardEditor = hasPendingDietDraftEditor || hasRecordAdjustEditor;
 
+  const handleCopy = useCallback(async () => {
+    // 先收起长按菜单，避免异步剪贴板写入期间再次长按时仍处于旧菜单状态。
+    setShowActions(false);
+    setShowShareActions(false);
+    try {
+      await Clipboard.setStringAsync(item.content);
+      setCopied(true);
+      if (copyResetTimerRef.current) clearTimeout(copyResetTimerRef.current);
+      copyResetTimerRef.current = setTimeout(() => {
+        setCopied(false);
+        copyResetTimerRef.current = null;
+      }, 1500);
+      try { await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); } catch {}
+    } catch {
+      toast.show('复制失败，请重试', 'error');
+    }
+  }, [item.content, toast]);
+
   if (item.cardType && item.cardData) {
     const rendered = renderCard(
       { type: item.cardType, data: item.cardData, actions: item.cardActions },
@@ -601,14 +625,6 @@ function ChatBubbleInner({
   }
 
   const hasTable = !isUser && containsMarkdownTable(displayText);
-
-  const handleCopy = () => {
-    Clipboard.setStringAsync(item.content);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    setShowActions(false);
-    setShowShareActions(false);
-    toast.show('已复制', 'success');
-  };
 
   const handleSaveImage = async (uri: string) => {
     const source = buildChatImageSource(uri, imageAuthToken);
@@ -994,14 +1010,17 @@ function ChatBubbleInner({
               && assistantTextForActions ? (
               <View style={styles.conclusionCopyRow}>
                 <Pressable
-                  style={({ pressed }) => [styles.actionBtn, pressed && styles.actionBtnPressed]}
-                  onPress={handleCopy}
+                  style={({ pressed }) => [
+                    styles.copyAction,
+                    copied && styles.copyActionDone,
+                    pressed && styles.actionBtnPressed,
+                  ]}
+                  onPress={() => { void handleCopy(); }}
                   accessibilityRole="button"
-                  accessibilityLabel="复制回答"
+                  accessibilityLabel={copied ? '已复制' : '复制回答'}
                   hitSlop={6}
                 >
-                  <Ionicons name="copy-outline" size={14} color={C.green500} />
-                  <Text style={txt.actionBtn}>复制</Text>
+                  <Ionicons name={copied ? 'checkmark' : 'copy-outline'} size={15} color={copied ? C.green700 : C.ink3} />
                 </Pressable>
               </View>
             ) : null}
@@ -1627,7 +1646,7 @@ function SafeMarkdown({ content, fallbackText }: { content: string; fallbackText
 
 function AssistantConclusionLabel() {
   return (
-    <View style={summaryStyles.conclusionLabelRow}>
+    <View testID="assistant-conclusion-label" style={summaryStyles.conclusionLabelRow}>
       <View testID="assistant-conclusion-dot" style={summaryStyles.conclusionDot} />
       <Text style={summaryStyles.conclusionLabel}>小巴结论</Text>
     </View>
@@ -1748,21 +1767,28 @@ const summaryStyles = StyleSheet.create({
     gap: 5,
   },
   conclusionLabelRow: {
+    alignSelf: 'flex-start',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: revaRadii.pill,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.green100,
+    backgroundColor: C.green50,
   },
   conclusionDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 3,
+    width: 4,
+    height: 4,
+    borderRadius: 2,
     backgroundColor: C.green500,
   },
   conclusionLabel: {
     fontFamily: revaFonts.sans,
-    fontSize: 12,
-    lineHeight: 17,
-    fontWeight: '600',
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: '700',
     letterSpacing: 0,
     color: C.green600,
   } as TextStyle,
@@ -2261,8 +2287,20 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.92)',
   },
   actionBtnPressed: { opacity: 0.82 },
+  copyAction: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: revaRadii.pill,
+    backgroundColor: C.paper2,
+  },
+  copyActionDone: {
+    backgroundColor: C.green50,
+  },
   conclusionCopyRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     marginTop: 10,
     paddingTop: 8,
     borderTopWidth: StyleSheet.hairlineWidth,
