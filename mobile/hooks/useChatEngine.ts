@@ -245,8 +245,8 @@ const ACTIVE_TURN_KEY = 'chat:active_turn:v1';
 const PENDING_STREAM_TTL_MS = 10 * 60 * 1000;
 const THINKING_PLACEHOLDER = '⏳ AI 正在思考中...';
 const QUEUED_TURN_PLACEHOLDER = '小巴处理中，已加入队列。';
-const BACKGROUND_RECOVERY_NOTICE = '小巴还在后台处理，回到 App 后会自动同步完整回答。';
-const BACKGROUND_RECOVERY_SUFFIX = '\n\n[已在后台继续处理，回到 App 后会自动同步完整回答]';
+const STREAM_RECOVERY_NOTICE = '小巴还在处理，正在同步完整回答。';
+const STREAM_RECOVERY_SUFFIX = '\n\n[连接短暂中断，正在同步完整回答]';
 const MAX_THINKING_STEPS = 8;
 // P0-5 竞态守卫: 本地 stream 活跃且未超过此窗口时, focus-reload / app-active-reload
 // 不得用服务端半截 partial 覆盖本地流式态。超过窗口 (慢流 / 卡死) 才放行服务端恢复,
@@ -1372,16 +1372,20 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
           return true;
         }
       }
-      const isAcceptedAbort = isAbort && acceptedByServer && !!streamConversationId;
-      if (isAcceptedAbort && streamConversationId) {
+      // iOS can report XHR onerror with status 200 when an accepted SSE stream is
+      // suspended in the background. The request is already durable at this point,
+      // so treat every post-accept transport interruption as recoverable instead of
+      // surfacing a false send failure or inviting a duplicate submission.
+      const isAcceptedTransportInterruption = acceptedByServer && !!streamConversationId;
+      if (isAcceptedTransportInterruption && streamConversationId) {
         keepPendingStreamForRecovery = true;
         scheduleServerRecovery(streamConversationId);
         settleAcceptance(true);
         dispatchAgentTurn({
           type: 'interrupt',
           at: Date.now(),
-          errorCode: 'app_backgrounded',
-          label: BACKGROUND_RECOVERY_NOTICE,
+          errorCode: isAbort ? 'app_backgrounded' : 'stream_transport_interrupted',
+          label: STREAM_RECOVERY_NOTICE,
         });
         setMessages(prev => prev.map(m => {
           if (m.id !== aId) return m;
@@ -1390,7 +1394,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
             ...m,
             currentStatus: undefined,
             completionStatus: 'interrupted',
-            content: currentContent ? `${currentContent}${BACKGROUND_RECOVERY_SUFFIX}` : BACKGROUND_RECOVERY_NOTICE,
+            content: currentContent ? `${currentContent}${STREAM_RECOVERY_SUFFIX}` : STREAM_RECOVERY_NOTICE,
           };
         }));
         return true;

@@ -111,6 +111,14 @@ async function* streamStartThenAbort() {
   throw new Error('aborted');
 }
 
+async function* streamStartThenStatus200Failure() {
+  yield { type: 'start', conversationId: 777 };
+  await new Promise<void>((resolve) => {
+    failStream = resolve;
+  });
+  throw new Error('网络请求失败 (status: 200)');
+}
+
 async function* streamInterruptedWithoutPersistence() {
   yield { type: 'start' };
   yield {
@@ -1546,6 +1554,78 @@ describe('useChatEngine', () => {
       expect(result.current.messages).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ role: 'assistant', content: '服务端后台完成的完整回答' }),
+        ]),
+      );
+      expect(result.current.activeTurn).toMatchObject({
+        phase: 'completed',
+        messageId: 2,
+        recoverable: false,
+      });
+    });
+  });
+
+  it('does not surface status 200 as a network failure after an accepted stream is backgrounded', async () => {
+    let appStateListener: ((state: string) => void) | undefined;
+    jest.spyOn(AppState, 'addEventListener').mockImplementation(((_event: string, handler: (state: string) => void) => {
+      appStateListener = handler;
+      return { remove: jest.fn() } as any;
+    }) as any);
+    mockStreamChat.mockImplementation(streamStartThenStatus200Failure);
+    let serverAnswerReady = false;
+    mockGetConversationMessages.mockImplementation(async () => {
+      const clientTurnId = mockStreamChat.mock.calls[0]?.[6];
+      return {
+        total_messages: serverAnswerReady ? 2 : 1,
+        messages: [
+          {
+            id: 1,
+            role: 'user',
+            content: '切换 App 后继续回复',
+            created_at: '2026-07-17T17:00:00Z',
+            meta: { client_turn_id: clientTurnId },
+          },
+          ...(serverAnswerReady ? [{
+            id: 2,
+            role: 'assistant',
+            content: '切回 App 后恢复的完整回答',
+            created_at: '2026-07-17T17:00:20Z',
+            meta: { client_turn_id: clientTurnId, completion_status: 'complete' },
+          }] : []),
+        ],
+      };
+    });
+    const { result } = renderHook(() => useChatEngine());
+
+    act(() => {
+      void result.current.sendMessage('切换 App 后继续回复');
+    });
+    await waitFor(() => expect(result.current.conversationId).toBe(777));
+
+    act(() => appStateListener?.('background'));
+    await act(async () => {
+      failStream?.();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(result.current.messages.map(message => message.content).join('\n'))
+        .not.toContain('网络请求失败');
+      expect(result.current.activeTurn).toMatchObject({
+        phase: 'interrupted',
+        recoverable: true,
+      });
+    });
+
+    await act(async () => {
+      serverAnswerReady = true;
+      appStateListener?.('active');
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(result.current.messages).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ role: 'assistant', content: '切回 App 后恢复的完整回答' }),
         ]),
       );
       expect(result.current.activeTurn).toMatchObject({
