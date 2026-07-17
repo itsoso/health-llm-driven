@@ -5628,6 +5628,13 @@ class AgentExecutor:
             getattr(settings, "genui_sleep_summary_enabled", True)
             and _GENUI_SLEEP_SUMMARY_CAP in (client_caps or [])
         )
+        # 汇总类卡结构化 v1(用药):客户端声明 genui-medication-list-v1 时,health_query(medication)
+        # 走结构化 medication_list 卡(而非通用 metric_table)。cap 主门控,与 diet/sleep 同机制。
+        from app.services.genui import GENUI_MEDICATION_LIST_CAP as _GENUI_MEDICATION_LIST_CAP
+        genui_medication_list_on = (
+            getattr(settings, "genui_medication_list_enabled", True)
+            and _GENUI_MEDICATION_LIST_CAP in (client_caps or [])
+        )
         # 本回合已执行的只读数据查询工具 (name, args, result) —— 供合成后确定性建表。
         genui_tool_calls: List[Tuple[str, Optional[dict], str]] = []
         # 多模型综合分析 (商用三强 panel)。仅纯文本分析回合走此路径;
@@ -5953,7 +5960,7 @@ class AgentExecutor:
             )
             if "ActionCard" not in sources_used:
                 sources_used.append("ActionCard")
-        if genui_table_on or genui_diet_summary_on or genui_sleep_summary_on:
+        if genui_table_on or genui_diet_summary_on or genui_sleep_summary_on or genui_medication_list_on:
             # GenUI metric_table (rank1): 客户端声明 genui-table-v1 → 数据由后端确定性
             # 表格卡片直接呈现。diet_daily_summary 卡同理(cap 开时 diet 查询走结构化卡)。
             # 正文按问题完整回答，只需避免逐行重复。**服务端硬门**: 即便旧客户端
@@ -6831,7 +6838,7 @@ class AgentExecutor:
                         # GenUI metric_table (rank1): 记下只读数据查询工具的
                         # (name, args, result), 合成后确定性建表/卡 (零 LLM)。声明
                         # genui-table-v1 或 genui-diet-summary-v1 任一即追踪 (无 cap → 零开销)。
-                        if (genui_table_on or genui_diet_summary_on or genui_sleep_summary_on) and func_name in _GENUI_TABLE_TOOLS and not replayed_read:
+                        if (genui_table_on or genui_diet_summary_on or genui_sleep_summary_on or genui_medication_list_on) and func_name in _GENUI_TABLE_TOOLS and not replayed_read:
                             genui_tool_calls.append((func_name, parsed_tool_args, result))
 
                         # tool_result 事件给前端用. health_record 时附 args 让前端能识别
@@ -7341,7 +7348,7 @@ class AgentExecutor:
         # reva-ui 表格卡片, 追加到答案末尾 (镜像图表 "叙事在前、卡片在后" 的顺序)。
         # 数值全部来自工具结果具名字段 (R4); 在 _strip_reva_ui_from_llm_text **之后**追加
         # → 确定性 fence 不会被防伪造剥离器吃掉。fail-open: 无表/任何异常 → 逐字节现状。
-        if genui_tool_calls and (genui_table_on or genui_diet_summary_on or genui_sleep_summary_on):
+        if genui_tool_calls and (genui_table_on or genui_diet_summary_on or genui_sleep_summary_on or genui_medication_list_on):
             try:
                 from app.services.genui import (
                     build_tables_from_tool_calls,
@@ -7350,6 +7357,8 @@ class AgentExecutor:
                     render_diet_summary_block,
                     build_sleep_summary,
                     render_sleep_summary_block,
+                    build_medication_list,
+                    render_medication_list_block,
                     load_tool_result_json,
                 )
                 _fences: List[str] = []
@@ -7389,6 +7398,21 @@ class AgentExecutor:
                         if _sdesc:
                             _fences.append(render_sleep_summary_block(_sdesc))
                             continue  # sleep 走结构化卡,不再落 metric_table
+                    # health_query(medication) 且 cap 开 → 结构化 medication_list 卡。
+                    # 与 diet/sleep 的差异:该端点返回**数组**(不是 dict),故这里判 list。
+                    _is_medication = (
+                        _fn == "health_query"
+                        and str((_args or {}).get("dimension") or "").strip().lower() == "medication"
+                    )
+                    if _is_medication and genui_medication_list_on:
+                        _meds = load_tool_result_json(_res)
+                        _mdesc = (
+                            build_medication_list(_meds)
+                            if isinstance(_meds, list) else None
+                        )
+                        if _mdesc:
+                            _fences.append(render_medication_list_block(_mdesc))
+                            continue  # medication 走结构化卡,不再落 metric_table
                     _table_calls.append((_fn, _args, _res))
                 if genui_table_on and _table_calls:
                     for _tbl in build_tables_from_tool_calls(_table_calls):

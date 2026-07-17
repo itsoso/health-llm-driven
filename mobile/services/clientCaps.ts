@@ -25,6 +25,10 @@ export const REVA_UI_DIET_SUMMARY_CAP_ENABLED = true;
  *  分支(v===1)+ 后端 composer/emission/契约就绪 → 声明 genui-sleep-summary-v1。 */
 export const REVA_UI_SLEEP_SUMMARY_CAP_ENABLED = true;
 
+/** medication_list 客户端能力位(汇总卡族·在用药物)。点亮:renderer(MedicationListCard)+
+ *  parser 分支(v===1)+ 后端确定性取数/emission 就绪 → 声明 genui-medication-list-v1。 */
+export const REVA_UI_MEDICATION_LIST_CAP_ENABLED = true;
+
 /** 存量已上线的能力位 —— 顺序 / 分隔与历史请求头保持一致 (byte-for-byte)。 */
 const BASE_CLIENT_CAPS = 'genui-v1, genui-components-v1, genui-record-quality-v1';
 
@@ -37,5 +41,6 @@ export function buildClientCapsHeader(): string {
   if (REVA_UI_TABLE_CAP_ENABLED) caps.push('genui-table-v1');
   if (REVA_UI_DIET_SUMMARY_CAP_ENABLED) caps.push('genui-diet-summary-v1');
   if (REVA_UI_SLEEP_SUMMARY_CAP_ENABLED) caps.push('genui-sleep-summary-v1');
+  if (REVA_UI_MEDICATION_LIST_CAP_ENABLED) caps.push('genui-medication-list-v1');
   return caps.join(', ');
 }

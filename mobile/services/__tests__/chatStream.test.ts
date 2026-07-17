@@ -307,6 +307,7 @@ describe('streamChat', () => {
     for (const token of [
       'genui-v1', 'genui-components-v1', 'genui-record-quality-v1',
       'genui-table-v1', 'genui-diet-summary-v1', 'genui-sleep-summary-v1',
+      'genui-medication-list-v1',
     ]) {
       expect(capsCall![1]).toContain(token);
     }

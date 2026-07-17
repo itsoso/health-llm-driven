@@ -44,6 +44,12 @@ from app.services.genui.sleep_summary import (
     SLEEP_SUMMARY_TYPE,
     GENUI_SLEEP_SUMMARY_CAP,
 )
+from app.services.genui.medication_list import (
+    build_medication_list,
+    render_medication_list_block,
+    MEDICATION_LIST_TYPE,
+    GENUI_MEDICATION_LIST_CAP,
+)
 
 __all__ = [
     "build_line_chart",
@@ -74,5 +80,9 @@ __all__ = [
     "render_sleep_summary_block",
     "SLEEP_SUMMARY_TYPE",
     "GENUI_SLEEP_SUMMARY_CAP",
+    "build_medication_list",
+    "render_medication_list_block",
+    "MEDICATION_LIST_TYPE",
+    "GENUI_MEDICATION_LIST_CAP",
     "METRIC_TABLE_TYPE",
 ]

@@ -12,6 +12,16 @@ const REVA_UI_COMPONENT_TYPES: Record<string, ServerCardDescriptor['type']> = {
   meal_quality: 'record_quality',
 };
 
+/**
+ * 汇总卡族的 fence `type` 白名单 —— 契约同构:{"type":<此集合>,"v":1,"data":{...}}。
+ * 没登记进来 = parser 静默丢弃该卡(本仓库栽过的坑),新卡上线必须同时加这一条。
+ */
+const REVA_UI_DATA_CARD_TYPES = new Set<string>([
+  'diet_daily_summary',
+  'sleep_summary',
+  'medication_list',
+]);
+
 export interface ExtractedRevaUiBlocks {
   text: string;
   cards: ServerCardDescriptor[];
@@ -54,21 +64,15 @@ function descriptorFromPayload(payload: string): ServerCardDescriptor | null {
     return table ? { type: 'metric_table', data: table } : null;
   }
 
-  // 汇总类卡 v1 · diet_daily_summary 同样用 `type` 键 + 顶层 `data`(非 component,
-  // 与 metric_table 一致的 reva-ui fence 契约)。data 直接透给 DietSummaryCardView。
-  if (block.type === 'diet_daily_summary') {
+  // 汇总卡族(diet / sleep / medication…):同用 `type` 键 + 顶层 `data`(非 component,
+  // 与 metric_table 一致的 reva-ui fence 契约),data 原样透给对应 CardView。
+  // **v 必须是整数 1** —— 后端曾发字符串 "v1" 导致卡片静默丢弃;新卡加进这个集合即可,
+  // 走同一条 v 校验,不会再有哪张卡漏掉守卫。
+  if (typeof block.type === 'string' && REVA_UI_DATA_CARD_TYPES.has(block.type)) {
     if (block.v !== 1) return null;
     const data = block.data;
     if (!data || typeof data !== 'object') return null;
-    return { type: 'diet_daily_summary', data };
-  }
-
-  // 汇总卡族 · sleep_summary(同 type 键 + 整数 v:1 契约)。data 透给 SleepSummaryCardView。
-  if (block.type === 'sleep_summary') {
-    if (block.v !== 1) return null;
-    const data = block.data;
-    if (!data || typeof data !== 'object') return null;
-    return { type: 'sleep_summary', data };
+    return { type: block.type, data };
   }
 
   const component = typeof block.component === 'string' ? block.component : '';
