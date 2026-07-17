@@ -1002,27 +1002,9 @@ function ChatBubbleInner({
                 onOpenMemory={() => router.push('/memory')}
                 onShareWeChat={() => { void handleShare('wechat'); }}
                 onShareXiaohongshu={() => { void handleShare('xiaohongshu'); }}
+                onCopy={() => { void handleCopy(); }}
+                copied={copied}
               />
-            ) : null}
-            {!item.streaming
-              && item.completionStatus !== 'interrupted'
-              && item.completionStatus !== 'error'
-              && assistantTextForActions ? (
-              <View style={styles.conclusionCopyRow}>
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.copyAction,
-                    copied && styles.copyActionDone,
-                    pressed && styles.actionBtnPressed,
-                  ]}
-                  onPress={() => { void handleCopy(); }}
-                  accessibilityRole="button"
-                  accessibilityLabel={copied ? '已复制' : '复制回答'}
-                  hitSlop={6}
-                >
-                  <Ionicons name={copied ? 'checkmark' : 'copy-outline'} size={15} color={copied ? C.green700 : C.ink3} />
-                </Pressable>
-              </View>
             ) : null}
             <MessageTime label={sentTimeShort} isUser={false} />
             {renderMessageActions()}
@@ -1779,8 +1761,8 @@ const summaryStyles = StyleSheet.create({
   },
   conclusionLabel: {
     fontFamily: revaFonts.sans,
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
     fontWeight: '600',
     letterSpacing: 0,
     color: C.green600,
@@ -2280,24 +2262,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.92)',
   },
   actionBtnPressed: { opacity: 0.82 },
-  copyAction: {
-    width: 32,
-    height: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: revaRadii.pill,
-    backgroundColor: C.paper2,
-  },
-  copyActionDone: {
-    backgroundColor: C.green50,
-  },
-  conclusionCopyRow: {
-    flexDirection: 'row',
-    marginTop: 10,
-    paddingTop: 8,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: C.line,
-  },
   assistantUtilityPanel: {
     alignSelf: 'stretch',
     width: '100%',
@@ -2332,6 +2296,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 5,
     paddingHorizontal: 8,
+  },
+  assistantUtilityCopy: {
+    width: 30,
+    height: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: revaRadii.pill,
+    backgroundColor: C.paper,
+  },
+  assistantUtilityCopyDone: {
+    backgroundColor: C.green50,
   },
   // 分享入口品牌 badge:白色 glyph 落在平台品牌色圆角块上(微信绿 / 小红书红),
   // 品牌色由 SOCIAL_BRAND(constants/brand.ts)提供,组件不裸写 hex(过 design 闸)。
@@ -2590,6 +2565,8 @@ function AssistantUtilityPanel({
   onOpenMemory,
   onShareWeChat,
   onShareXiaohongshu,
+  onCopy,
+  copied,
 }: {
   profile: AgentTransparencyProfile;
   sources?: readonly string[];
@@ -2597,6 +2574,8 @@ function AssistantUtilityPanel({
   onOpenMemory: () => void;
   onShareWeChat: () => void;
   onShareXiaohongshu: () => void;
+  onCopy: () => void;
+  copied: boolean;
 }) {
   const [open, setOpen] = React.useState(false);
   const sourceCount = normalizedAttributionCount(sources);
@@ -2658,6 +2637,19 @@ function AssistantUtilityPanel({
             <Ionicons name="book" size={11} color={C.greenOn} />
           </View>
           <Text style={txt.assistantUtilityShare}>小红书</Text>
+        </Pressable>
+        <Pressable
+          onPress={onCopy}
+          accessibilityRole="button"
+          accessibilityLabel={copied ? '已复制' : '复制回答'}
+          hitSlop={6}
+          style={({ pressed }) => [
+            styles.assistantUtilityCopy,
+            copied && styles.assistantUtilityCopyDone,
+            pressed && styles.actionBtnPressed,
+          ]}
+        >
+          <Ionicons name={copied ? 'checkmark' : 'copy-outline'} size={14} color={copied ? C.green700 : C.ink3} />
         </Pressable>
       </View>
       {open && hasDetails ? (

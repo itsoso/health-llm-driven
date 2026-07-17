@@ -409,8 +409,8 @@ ${sectionTitle}
     const dotStyle = StyleSheet.flatten(dot.props.style);
     const conclusionStyle = StyleSheet.flatten(conclusion.props.style);
     expect(labelStyle).toMatchObject({
-      fontSize: 11,
-      lineHeight: 16,
+      fontSize: 13,
+      lineHeight: 18,
       fontWeight: '600',
       color: '#176F49',
     });
