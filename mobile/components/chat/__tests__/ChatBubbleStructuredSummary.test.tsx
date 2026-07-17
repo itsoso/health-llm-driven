@@ -172,7 +172,7 @@ describe('ChatBubble structured summary', () => {
 2. 饭后散步 10 分钟
 `);
 
-    expect(getByText('小巴结论')).toBeTruthy();
+    expect(getByText('小巴')).toBeTruthy();
     expect(getByTestId('assistant-metric-grid')).toBeTruthy();
     expect(getByTestId('assistant-action-card')).toBeTruthy();
     expect(getByText('睡眠')).toBeTruthy();
@@ -402,22 +402,22 @@ ${sectionTitle}
   it('keeps the assistant conclusion at a calm reading scale', () => {
     const { getByText, getByTestId } = renderBubble('今晚先补水 300ml，再散步 10 分钟。');
 
-    const label = getByText('小巴结论');
+    const label = getByText('小巴');
     const dot = getByTestId('assistant-conclusion-dot');
     const conclusion = getByText('今晚先补水 300ml，再散步 10 分钟。');
     const labelStyle = StyleSheet.flatten(label.props.style);
     const dotStyle = StyleSheet.flatten(dot.props.style);
     const conclusionStyle = StyleSheet.flatten(conclusion.props.style);
     expect(labelStyle).toMatchObject({
-      fontSize: 12,
-      lineHeight: 17,
+      fontSize: 11,
+      lineHeight: 16,
       fontWeight: '600',
       color: '#176F49',
     });
     expect(dotStyle).toMatchObject({
-      width: 5,
-      height: 5,
-      borderRadius: 3,
+      width: 4,
+      height: 4,
+      borderRadius: 2,
       backgroundColor: '#1F8A5B',
     });
     expect(conclusionStyle).toMatchObject({

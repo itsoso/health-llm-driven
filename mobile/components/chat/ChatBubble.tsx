@@ -1629,7 +1629,7 @@ function AssistantConclusionLabel() {
   return (
     <View style={summaryStyles.conclusionLabelRow}>
       <View testID="assistant-conclusion-dot" style={summaryStyles.conclusionDot} />
-      <Text style={summaryStyles.conclusionLabel}>小巴结论</Text>
+      <Text style={summaryStyles.conclusionLabel}>小巴</Text>
     </View>
   );
 }
@@ -1744,24 +1744,24 @@ export default ChatBubble;
 
 const summaryStyles = StyleSheet.create({
   conclusion: {
-    marginBottom: 12,
-    gap: 5,
+    marginBottom: 10,
+    gap: 4,
   },
   conclusionLabelRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 5,
   },
   conclusionDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 3,
+    width: 4,
+    height: 4,
+    borderRadius: 2,
     backgroundColor: C.green500,
   },
   conclusionLabel: {
     fontFamily: revaFonts.sans,
-    fontSize: 12,
-    lineHeight: 17,
+    fontSize: 11,
+    lineHeight: 16,
     fontWeight: '600',
     letterSpacing: 0,
     color: C.green600,
