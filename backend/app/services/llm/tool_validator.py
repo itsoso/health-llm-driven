@@ -103,11 +103,11 @@ NUMERIC_RANGES: Dict[str, Dict[str, tuple]] = {
     },
     "rhinitis": {
         "sneezing": (0, 200, 0),
-        "congestion": (0, 10, 0),
-        "runny_nose": (0, 200, 0),
+        "congestion": (0, 3, 0),               # 0-3 级 (schema/显示统一; 曾 0-10 与 schema 背离)
+        "runny_nose": (0, 3, 0),               # 0-3 级 (曾 0-200; 无消费端, 收紧到契约量表)
     },
     "mood": {
-        "score": (1, 10, None),
+        "mood_score": (1, 5, None),            # 端点/显示真源 1-5 (曾 score 1-10, 字段名+量表双错→每次 422)
     },
     "illness": {
         "severity": (1, 10, None),
@@ -144,6 +144,34 @@ def _validate_numeric(rtype: str, data: Dict[str, Any], warnings: list) -> None:
             logger.warning(msg)
             _metric(rtype, field, "out_of_range", action="rejected")
             data.pop(field, None)
+
+
+def _normalize_mood_fields(data: Dict[str, Any], warnings: list) -> None:
+    """mood 写入字段归一到 /mood/records 契约 (mood_score 1-5 + journal)。
+
+    弱模型按旧 schema 吐 {"score": 7, "notes": "..."} —— 字段名(score/notes)与量表(1-10)
+    都跟 MoodRecordCreate(mood_score 必填 ge=1 le=5, journal 是日记字段)背离,历史上**每一次**
+    经聊天记录心情都 422('field required' / le=5 超界),显示层 /5 早修但从没被触达。
+    单向归一(尽量让心情记录能落库,而非静默 422):
+    - score → mood_score (仅当 mood_score 缺失)。
+    - mood_score/score 值 > 5 → 视为旧 1-10 量表, 折半到 1-5; 最终 clamp [1,5]。
+    - notes → journal (仅当 journal 缺失)。
+    """
+    if "mood_score" not in data and "score" in data:
+        data["mood_score"] = data.get("score")
+    data.pop("score", None)
+    v = data.get("mood_score")
+    if v is not None:
+        try:
+            num = float(v)
+            if num > 5:                        # 旧 1-10 量表 → 1-5
+                num = num / 2.0
+            data["mood_score"] = max(1, min(5, int(round(num))))
+        except (TypeError, ValueError):
+            data.pop("mood_score", None)
+            warnings.append(f"[tool_validator] mood.mood_score={v!r} 非数值, 丢弃")
+    if "journal" not in data and data.get("notes"):
+        data["journal"] = data.pop("notes")
 
 
 def _validate_date(
@@ -347,6 +375,11 @@ def validate_health_record(
     # 回退一天。完整 datetime 原样不动。
     if rtype == "sleep":
         _normalize_sleep_clock_fields(data, warnings, today)
+
+    # 1.6 mood 字段/量表归一: score→mood_score, notes→journal, 1-10→1-5
+    # (必须在 _validate_numeric 之前, 否则 score 1-10 会被当 mood_score 超界丢弃 → 422)
+    if rtype == "mood":
+        _normalize_mood_fields(data, warnings)
 
     # 2. 数值范围
     _validate_numeric(rtype, data, warnings)
@@ -725,7 +758,9 @@ def validate_tool_call(
 
     try:
         if tool_name == "health_record":
-            rtype = args.get("record_type", "")
+            # record_type / type 别名并存(模型常吐 type=mood); 与 _exec_health_record 的
+            # 归一保持一致, 否则 type=mood 会绕过 validate_health_record → 心情归一失效 → 422。
+            rtype = args.get("record_type") or args.get("type") or ""
             data = args.get("data") or {}
             if not isinstance(data, dict):
                 data = {}

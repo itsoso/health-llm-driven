@@ -3892,6 +3892,17 @@ def _prepare_health_record_args_for_validation(tool_name: str, args: Any) -> Any
         if fallback_type:
             data["exercise_type"] = fallback_type
 
+    # 相对日期字面量归一 (record_date/start_date/end_date): 弱模型把 '昨天'/'前天' 当字面
+    # 塞进 data。health_query/health_manage 早在工具边界过 _normalize_relative_date, 但 record
+    # 创建路径漏了 —— 结果 diet/sleep 等 record_date='昨天' 被 _validate_date 静默吞成今天
+    # (违反 fail-loud), illness/goal 的 start_date='前天' 原样发出 → 端点 date 解析 422。
+    # 这里在校验前折成真 ISO 日期; 解析不出(返回 None)才留给下游默认, 不覆盖。
+    for _dk in ("record_date", "start_date", "end_date"):
+        if data.get(_dk):
+            _iso = _normalize_relative_date(data[_dk])
+            if _iso:
+                data[_dk] = _iso
+
     return args
 
 
@@ -10288,9 +10299,9 @@ class AgentExecutor:
             if sneezing:
                 parts.append(f"喷嚏 {sneezing} 次")
             if congestion:
-                parts.append(f"鼻塞 {congestion}/10")
+                parts.append(f"鼻塞 {congestion}/3")     # 0-3 级(schema/validator 统一), 非 0-10
             if runny_nose:
-                parts.append(f"流涕 {runny_nose} 次")
+                parts.append(f"流涕 {runny_nose}/3")      # 0-3 级, 非计数('次'会被读成流涕次数)
             # 详情走 sneeze_times(合并追加,保留 congestion/runny_nose),不动 notes(避免
             # 覆盖当日其它打卡备注)。sneeze_count 取本次报的今日累计次数(端点 setattr 覆盖)。
             entry: Dict[str, Any] = {
@@ -10621,7 +10632,8 @@ class AgentExecutor:
         # (founder 实测「舌尖溃疡昨天好了」需 end_date=昨天)。折不出的相对词删掉该字段,降级
         # 到后端默认(status=resolved 自动补 end_date=today), 绝不把相对词原样发出去触发 422
         # → 写入回执守卫误报「无回执」。(IllnessEpisodePatch 只有 end_date, 无 start_date;
-        # start_date 只在 create 路径有意义, 那条路径另有归一, 此处不处理。)
+        # start_date 只在 create 路径有意义, 已在 _prepare_health_record_args_for_validation 里
+        # 对 record_date/start_date/end_date 统一归一, 此处 manage 路径只补 end_date。)
         if record_type == "illness" and isinstance(data, dict) and data.get("end_date") not in (None, ""):
             _normalized_end = _normalize_relative_date(data.get("end_date"))
             if _normalized_end:

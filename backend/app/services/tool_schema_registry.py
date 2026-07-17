@@ -265,7 +265,7 @@ excretion:        {"type": "bowel|urine", "record_date": "2026-05-05",
 exercise:         {"exercise_type": "俯卧撑", "reps": 10, "sets": 1}
                   或 {"exercise_type": "running", "duration": 30, "distance": 5.0}
 rhinitis:         {"sneezing": 5, "congestion": 1, "runny_nose": 0}  // sneezing=这次新打的喷嚏次数(增量, 端点自动累加当天); congestion/runny_nose 0-3 级. 每日一条
-mood:             {"score": 7, "notes": "心情不错"}    // score 1-10
+mood:             {"mood_score": 4, "journal": "心情不错"}    // mood_score 1-5 (1=很差 5=很好), journal=可选心情日记
 medication:       {"medication_name": "布洛芬", "taken_time": "08:00"}
 illness:          {"name": "感冒", "severity": 5, "start_date": "2026-05-05", "status": "active"}
 symptom:          {"body_part": "eye|respiratory|skin|digestive|musculoskeletal|head|general|other",
