@@ -7,11 +7,13 @@ import json
 
 from app.services.tool_schema_registry import (
     ANALYSIS_TURN_TOOL_NAMES,
+    FAST_READ_TURN_TOOL_NAMES,
     FAST_TURN_TOOL_NAMES,
     HEALTH_TOOLS,
     get_health_tools,
 )
 from app.services.agent_executor import (
+    _fast_turn_tool_names_for_message,
     _is_analysis_only_turn,
     _project_orchestrator_result,
     _tool_subset_withheld_upgrade,
@@ -24,6 +26,20 @@ def test_fast_subset_returns_exactly_big3_in_stable_order():
     assert set(names) == {"health_record", "health_query", "health_manage"}
     # 顺序=HEALTH_TOOLS 定义序(字节稳定 → 前缀缓存友好), 两次调用完全一致
     assert names == [t["function"]["name"] for t in get_health_tools(subset=list(FAST_TURN_TOOL_NAMES))]
+
+
+def test_fast_read_turn_omits_write_tool():
+    names = _fast_turn_tool_names_for_message("今天我的饮食的记录，帮我列个表格出来。")
+
+    assert names == FAST_READ_TURN_TOOL_NAMES
+    assert "health_record" not in names
+
+
+def test_fast_write_turn_keeps_record_tool():
+    names = _fast_turn_tool_names_for_message("记录午餐吃了牛肉面")
+
+    assert names == FAST_TURN_TOOL_NAMES
+    assert "health_record" in names
 
 
 def test_full_toolset_unchanged_by_subset_param():

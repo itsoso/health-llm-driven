@@ -1,0 +1,82 @@
+from datetime import datetime, timedelta, timezone
+from inspect import getsource
+
+import app.services.utterance_intent_classifier as utterance_intent_classifier
+from app.services.utterance_intent_classifier import classify_agent_utterance
+
+BJ = timezone(timedelta(hours=8))
+
+
+def test_read_only_diet_record_noun_is_not_a_write_intent():
+    intent = classify_agent_utterance("今天我的饮食的记录，帮我列个表格出来。")
+
+    assert intent.primary == "read"
+    assert intent.domain == "diet"
+    assert intent.operation == "list"
+    assert intent.scope == {"date": datetime.now(BJ).date().isoformat()}
+    assert intent.is_write is False
+
+
+def test_contrastive_correction_stays_read_only():
+    intent = classify_agent_utterance("不是记录，是列出我今天吃的所有东西。")
+
+    assert intent.primary == "read"
+    assert intent.domain == "diet"
+    assert intent.operation == "list"
+    assert intent.is_write is False
+
+
+def test_real_record_command_is_write_intent():
+    intent = classify_agent_utterance("记录午餐吃了牛肉面")
+
+    assert intent.primary == "write"
+    assert intent.domain == "diet"
+    assert intent.operation == "create"
+    assert intent.is_write is True
+
+
+def test_negated_record_command_is_not_write_intent():
+    intent = classify_agent_utterance("这个不用记录")
+
+    assert intent.is_write is False
+    assert intent.primary != "write"
+
+
+def test_mutation_question_is_read_not_a_mutation_command():
+    intent = classify_agent_utterance("我删除早餐了吗?")
+
+    assert intent.primary == "read"
+    assert intent.operation == "ask"
+    assert intent.requires_reliable_tool_model is False
+
+
+def test_destructive_command_requires_reliable_tool_model():
+    intent = classify_agent_utterance("删除早餐 1")
+
+    assert intent.primary == "mutate"
+    assert intent.operation == "delete"
+    assert intent.requires_reliable_tool_model is True
+
+
+def test_analysis_adjustment_is_advice_not_mutation_command():
+    intent = classify_agent_utterance("综合分析我最近的睡眠趋势，我该怎么调整")
+
+    assert intent.primary == "advice"
+    assert intent.operation == "analyze"
+    assert intent.requires_reliable_tool_model is False
+
+
+def test_destructive_command_after_analysis_preface_stays_mutation():
+    intent = classify_agent_utterance("分析后帮我删除重复早餐")
+
+    assert intent.primary == "mutate"
+    assert intent.operation == "delete"
+    assert intent.requires_reliable_tool_model is True
+
+
+def test_classifier_surface_does_not_use_regex():
+    source = getsource(utterance_intent_classifier)
+
+    assert "import re" not in source
+    assert "re." not in source
+    assert "re.compile" not in source

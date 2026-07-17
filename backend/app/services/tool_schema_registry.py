@@ -759,6 +759,10 @@ action 选择:
 # fast 模型若吐出子集外工具名 → agent 侧升级回全集重跑该轮(fail-open)。
 FAST_TURN_TOOL_NAMES: tuple = ("health_record", "health_query", "health_manage")
 
+# fast 只读回合的工具白名单。语义分类为查询/列表时不暴露 health_record, 避免
+# “饮食的记录,列个表格”这类名词性“记录”被模型误写成提醒/健康记录。
+FAST_READ_TURN_TOOL_NAMES: tuple = ("health_query", "health_manage")
+
 # R5 分析轮只读工具子集(fast 子集的对称补全)。纯分析/知识轮不含写/上传/管理动作,
 # 只发只读工具 → 省下 health_record(~2k)/health_manage(~1k)/upload_*/manage_plan 的 schema。
 # 模型若在分析轮请求被扣下的写工具 → 走同一 withheld-upgrade 护栏升级回全集(见 agent_executor)。

@@ -27,6 +27,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.services.tool_schema_registry import (
     ANALYSIS_TURN_TOOL_NAMES,
+    FAST_READ_TURN_TOOL_NAMES,
     FAST_TURN_TOOL_NAMES,
     get_health_tools,
 )
@@ -37,6 +38,7 @@ from app.services.post_record_quality import (
     build_post_record_quality_response,
     combine_post_record_quality_responses,
 )
+from app.services.utterance_intent_classifier import classify_agent_utterance
 
 logger = logging.getLogger(__name__)
 
@@ -4207,67 +4209,26 @@ _QUERY_RELATIVE_DATE_RE = re.compile(r"(今天|今日|昨天|昨日|前天)")
 
 def _query_only_health_manage_scope(message: Optional[str]) -> Optional[Dict[str, str]]:
     """Return deterministic list filters for an explicit read-only request."""
-    text = str(message or "").strip()
-    query_matches = list(_QUERY_ONLY_COMMAND_RE.finditer(text))
-    if (
-        not query_matches
-        or _QUERY_ONLY_MUTATION_RE.search(text)
-        or _QUERY_ONLY_RECORD_ACTION_RE.search(text)
-    ):
+    intent = classify_agent_utterance(message)
+    if intent.primary != "read" or intent.domain != "diet":
         return None
-
-    target_text = text[query_matches[-1].end():]
-    relative_dates = _QUERY_RELATIVE_DATE_RE.findall(target_text)
-    if not relative_dates:
-        all_dates = _QUERY_RELATIVE_DATE_RE.findall(text)
-        if len(set(all_dates)) == 1:
-            relative_dates = all_dates
-
-    scope: Dict[str, str] = {}
-    if relative_dates and len(set(relative_dates)) == 1:
-        target_date = _normalize_relative_date(relative_dates[0])
-        if target_date:
-            scope["date"] = target_date
-
-    target_meal_type = _normalize_diet_meal_type(
-        next(
-            (
-                label
-                for label in ("早餐", "早饭", "午餐", "午饭", "晚餐", "晚饭", "加餐")
-                if label in target_text
-            ),
-            None,
-        )
-    )
-    if target_meal_type:
-        scope["meal_type"] = target_meal_type
-    return scope
+    return dict(intent.scope)
 
 
 def _has_explicit_record_write_intent(message: Optional[str]) -> bool:
     """Whether the user's '记录' means writing, not naming existing records."""
-    text = str(message or "").strip()
-    if not text or not _RECORD_INTENT_RE.search(text):
-        return False
-    if _query_only_health_manage_scope(text) is not None:
-        return False
-    if _RECORD_INTERROGATIVE_GUARD_RE.search(text):
-        return False
-    if _RECORD_NEGATION_GUARD_RE.search(text):
-        return False
-    return True
+    intent = classify_agent_utterance(message)
+    return intent.primary == "write" and intent.is_write
 
 
 def _has_fast_record_write_intent(message: Optional[str]) -> bool:
     """Fast-record is only for clear writes; query nouns stay on the read path."""
-    text = str(message or "").strip()
-    if not _has_explicit_record_write_intent(text):
-        return False
-    if _ADVICE_OR_ANALYSIS_RE.search(text):
-        return False
-    if _needs_reliable_tool_model(text):
-        return False
-    return True
+    intent = classify_agent_utterance(message)
+    return (
+        intent.primary == "write"
+        and intent.is_write
+        and not intent.requires_reliable_tool_model
+    )
 
 
 _BEIJING_DATE_LABEL_RE = re.compile(
@@ -4351,16 +4312,7 @@ def _needs_reliable_tool_model(message: Optional[str]) -> bool:
     是建议动词、不是记录级删改,不该被判成破坏性(否则误伤分析轮的工具决策快路由)。分析类
     本就走强模型答正文,工具决策轮该保留既有 fast 优化。真正的记录级删改("删除早餐""修改
     早餐内容")不含分析词,不受影响。"""
-    if not message:
-        return False
-    if _ADVICE_OR_ANALYSIS_RE.search(message):
-        return False
-    # 疑问句("我删除早餐了吗?""同步了吗?""有更新吗?")= 查询,不是破坏性命令 —— 与 record
-    # 路径同门(_RECORD_INTERROGATIVE_GUARD_RE)。否则 backstop 会把这类查询的有效回答误
-    # 覆盖成"我没执行成功"(方向安全但困惑);record 路径 2026-07-13 turn-6334 正为此加了此门。
-    if _RECORD_INTERROGATIVE_GUARD_RE.search(message):
-        return False
-    return bool(_DESTRUCTIVE_OR_SYNC_INTENT_RE.search(message))
+    return classify_agent_utterance(message).requires_reliable_tool_model
 
 
 def _is_fast_eligible_turn(
@@ -4377,20 +4329,30 @@ def _is_fast_eligible_turn(
     保守优先: 拿不准 (既非记录也非简单查询, 或命中 advice) → False = 用质量模型。
     宁可慢而对, 不要快而错。
     """
-    text = message or ""
     if has_images or has_file:
         return False
-    if _ADVICE_OR_ANALYSIS_RE.search(text):
+    intent = classify_agent_utterance(message)
+    if intent.primary == "advice":
         return False
     # 破坏性/同步意图 → 必须强模型做工具决策(弱 fast 不可靠),整轮不降 fast。
-    if _needs_reliable_tool_model(text):
+    if intent.requires_reliable_tool_model:
         return False
     # 否定("别记/记在心里")→ 全模型自行裁量地更可靠(弱 fast 模型只靠 tool-schema 软指令
     # 拒记,不稳)。整轮不降 fast,让强模型稳妥地"不记 + 不谎报已记"(2026-07-17 生产实测:
     # 否定轮被降到 qwen3.6-flash,虽本次正确拒记,但 health_record 仍在工具集里,软护栏不牢)。
-    if _RECORD_NEGATION_GUARD_RE.search(text):
+    if intent.reason == "negated_write":
         return False
-    return bool(_has_fast_record_write_intent(text) or _SIMPLE_QUERY_INTENT_RE.search(text))
+    if intent.primary == "write" and intent.is_write:
+        return True
+    return intent.primary == "read" and intent.domain != "unknown"
+
+
+def _fast_turn_tool_names_for_message(message: Optional[str]) -> tuple:
+    """Expose write tools only to semantic write turns."""
+    intent = classify_agent_utterance(message)
+    if intent.primary == "read" and not intent.is_write:
+        return FAST_READ_TURN_TOOL_NAMES
+    return FAST_TURN_TOOL_NAMES
 
 
 def _is_analysis_only_turn(message: str, *, has_images: bool, has_file: bool) -> bool:
@@ -4400,16 +4362,16 @@ def _is_analysis_only_turn(message: str, *, has_images: bool, has_file: bool) ->
     保守优先:只要沾一点写意图(记录/删改/同步)就返回 False,发全集(升级护栏是兜底不是常态)。
     与 fast 简单轮互斥(fast 已有自己的 big-3 子集;调用点再排除)。
     """
-    text = message or ""
     if has_images or has_file:
         return False
-    if not _ADVICE_OR_ANALYSIS_RE.search(text):
+    intent = classify_agent_utterance(message)
+    if intent.primary != "advice":
         return False
     # 有记录意图(吃了/喝了/记录…)→ 可能要写,不裁 —— 留全集。
-    if _RECORD_INTENT_RE.search(text):
+    if intent.is_write:
         return False
     # 破坏性/同步(删/改/撤销/同步)→ 要写,不裁。
-    if _needs_reliable_tool_model(text):
+    if intent.requires_reliable_tool_model:
         return False
     return True
 
@@ -4454,11 +4416,10 @@ def _allow_twin_evidence_fallback(message: str) -> bool:
     text = (message or "").strip()
     if not text:
         return False
-    has_record_intent = bool(_RECORD_INTENT_RE.search(text))
-    has_advice_intent = bool(_ADVICE_OR_ANALYSIS_RE.search(text))
-    if has_record_intent and not has_advice_intent:
+    intent = classify_agent_utterance(text)
+    if intent.is_write and intent.primary != "advice":
         return False
-    return has_advice_intent
+    return intent.primary == "advice"
 
 
 _BLOOD_PRESSURE_INDICATOR_ALIASES = {
@@ -6283,7 +6244,7 @@ class AgentExecutor:
         # 保前缀字节稳定(不拆 provider 前缀缓存)。模型若吐出子集外工具名 →
         # 下面 round loop 里升级回全集重跑该轮(fail-open,绝不静默丢调用)。
         if self._fast_route_simple_turn:
-            tools = get_health_tools(subset=list(FAST_TURN_TOOL_NAMES))
+            tools = get_health_tools(subset=list(_fast_turn_tool_names_for_message(message)))
         elif self._analysis_turn_subset:
             # R5:纯分析轮只发只读工具子集(省写/上传/管理 schema)。模型要写→下方升级回全集。
             tools = get_health_tools(subset=list(ANALYSIS_TURN_TOOL_NAMES))
@@ -8576,9 +8537,9 @@ class AgentExecutor:
             return None
         # 否定("别记/记在心里")→ 工具决策留强模型(与整轮快路由同门):弱 fast 只靠 tool-schema
         # 软指令拒记不稳,强模型更可靠地"不记 + 不谎报已记"。三条 fast 路径统一排除的第三条。
-        if _RECORD_NEGATION_GUARD_RE.search(
+        if classify_agent_utterance(
             getattr(self, "_current_turn_user_message", "") or ""
-        ):
+        ).reason == "negated_write":
             return None
         # 只降**首个工具决策轮**: 默认路径下合成轮仍带 tools, 一旦跑过工具就留强模型
         # (安全: 工具后那一轮多半是写医疗正文的合成轮)。首轮直接答文本→安全兜底丢弃重合成。
