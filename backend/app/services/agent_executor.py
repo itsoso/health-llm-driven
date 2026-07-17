@@ -6604,7 +6604,12 @@ class AgentExecutor:
                         if (
                             not replayed_write
                             and
-                            func_name == "health_record"
+                            # 写后内联安全筛查覆盖**所有**写工具(health_record/health_manage/
+                            # intervention_cycle), 不只 health_record。此前按 func_name=="health_record"
+                            # 判定 →「把刚才那条血压改成 190/120」走 health_manage(update) 漏筛
+                            # (under-alarm: 高血压危象零告警)。_write_tool_completed 精确判"确有可
+                            # 验证写回执"(operation=list / 读操作不触发), 与配方重放路径 any_write 同源。
+                            _write_tool_completed(func_name, parsed_tool_args, result)
                             and "Error" not in result
                             and not result.startswith("[NEEDS_CONFIRMATION]")
                             and not _soft_fail
