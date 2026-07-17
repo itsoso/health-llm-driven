@@ -342,15 +342,25 @@ export default function ChatScreen() {
     }
   }, [newChat, params.prompt, params.badge, params.autoSend, params.context, params.newChat, params.promptNonce, sendMessage]);
 
-  // 点"小巴" tab 进来时滚到对话最后, 方便看最新消息.
-  // useFocusEffect 在每次 tab 获得 focus 时触发 (包括首次 mount).
-  // 用 setTimeout 推迟一帧, 等 FlatList 排版完才能滚到正确位置.
+  // 点"小巴" tab 进来时滚到对话最后, 默认看到最新那段回答.
+  // useFocusEffect 在每次 tab 获得 focus 时触发 (包括首次 mount)。
+  // 单发 setTimeout(120ms) 对长对话不可靠: markdown/卡片/图片异步排版未 settle 时,
+  // scrollToEnd 打到的是过时(偏短)的 contentHeight, 停在半路。故:
+  //   ① focus 时把 isNearBottom 置 true → onContentSizeChange(见 FlatList)会随内容
+  //      持续排版把列表钉在底部, 直到 settle; 用户一旦上滑, onScroll 翻回 false 即松开。
+  //   ② 多档重试 scrollToEnd 兜底"内容已 settle、onContentSizeChange 不再触发"的情形。
+  // 与 handleSelectConversation 切换对话的贴底逻辑同源。
   useFocusEffect(
     useCallback(() => {
-      const t = setTimeout(() => {
-        try { flatListRef.current?.scrollToEnd({ animated: false }); } catch {}
-      }, 120);
-      return () => clearTimeout(t);
+      isNearBottom.current = true;
+      const timers = [60, 220, 480].map((d) =>
+        setTimeout(() => {
+          if (isNearBottom.current) {
+            try { flatListRef.current?.scrollToEnd({ animated: false }); } catch {}
+          }
+        }, d)
+      );
+      return () => timers.forEach(clearTimeout);
     }, [])
   );
 
