@@ -8799,6 +8799,11 @@ class AgentExecutor:
                     "type": "function", "function": {"name": "health_record"},
                 }
                 stream_kwargs["enable_thinking"] = False
+                # 真网验证锚点(复审 GO 附带条件): 翻 flag 后 journalctl grep 此行,
+                # 确认 force 在生产真实触发(而非 flag 开了却 under-fire 空转)。
+                logger.info(
+                    "[agent_executor] R2 force tool_choice applied model=%s", model_id
+                )
         except Exception:  # noqa: BLE001
             return
 
@@ -8909,7 +8914,12 @@ class AgentExecutor:
 
     @staticmethod
     async def _call_llm_nonstream_for_bridge(provider, stream_kwargs: Dict[str, Any], pass_tools) -> Any:
-        """非流式桥: 用 stream_kwargs 组一次非流式 chat() 调用, 返回整块结果。"""
+        """非流式桥: 用 stream_kwargs 组一次非流式 chat() 调用, 返回整块结果。
+
+        **刻意重建 kwargs 只挑五键, 不透传 tool_choice/enable_thinking/parallel_tool_calls**
+        —— 桥服务的是非流式商用模型(Opus/GPT/Gemini, 未过 force 探针), R2 force kwargs
+        在此被丢弃是结构性 fail-safe(安全复审 2026-07-17 依赖此行为, 改成透传须回炉评审)。
+        """
         chat_kwargs = {
             "messages": stream_kwargs["messages"],
             "model": stream_kwargs.get("model"),
