@@ -461,16 +461,19 @@ _NEEDS_SKILL_RE = re.compile(
 
 业界主流的 LLM 工程 stack 里，下面几项我们当前**没有**或**只有一半**，列出来诚实标记：
 
-### 11.1 LLM-as-judge eval 套件 ❌
+### 11.1 LLM-as-judge eval 套件 ✅(两层,2026-07-17 R3 补齐行为层)
 
 **业界做法**：Anthropic 在 multi-agent 文里把 LLM-as-judge 列为最 scalable 的 eval 方式 — 一个 rubric prompt 出 0.0–1.0 分 + pass/fail，配合 ~20 个 representative queries 就能复现 30% → 80% 的差异。
 
-**我们现状**：
-- 单元测试：`test_safety_guardian.py` / `test_specialists.py` 覆盖规则层（确定性）
-- 集成测试：`test_orchestrator.py` 跑 e2e 但只校验 shape，不校验 LLM 输出质量
-- **没有**：query → expected behavior 的标注集，没有自动跑分对比新旧 prompt
-
-**Todo**：建 `backend/evals/` 放 ~20 条 representative query（rhinitis/sleep/recovery/safety alert 各几条），再写一个 LLM-as-judge runner（rubric: 是否引用基因/化验/历史、是否 specialist 引用准确、是否避开未确认数据）。
+**我们现状(两层分工)**：
+- **质量层**:`backend/evals/comparative/`(16 题六家族 battery + LLM judge + cadence 例行,
+  只读打生产)——评"答案好不好"。
+- **行为层**:`backend/evals/behavior/xiaoba_core.yaml`(22 题七家族)+
+  `tests/test_behavior_battery.py`——断言意图分类/确认档位/工具子集/卡片门控/兜底话术/
+  remember 医疗硬闸/快路由上下文这些**确定性层**,零 LLM 零网络,CI 阻断常跑。
+  三条历史 regression(卡片误发/兜底饮食偏见/食物抱怨误记)编入回溯校准。
+- **流程强制**:改 prompt/路由的增量(R1 compaction / R5 渐进披露)翻 flag 前:
+  行为 battery 全绿 + comparative battery 无回退。
 
 ### 11.2 OpenAI Strict Mode ❌
 

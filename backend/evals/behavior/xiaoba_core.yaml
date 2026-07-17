@@ -1,0 +1,211 @@
+# 小巴核心行为 battery — R3(agent 能力路线图 Wave 1 底座)
+#
+# 与 evals/comparative/(只读、打生产、LLM judge 评质量)分工:
+#   本 battery = **确定性行为回归**:断言意图分类/确认档位/工具子集/卡片门控/兜底话术/
+#   医疗硬闸这些**确定性层**,零 LLM 零网络零写库,进 CI 常跑(pytest 阻断)。
+#   质量评分(答案好不好)继续走 comparative cadence,不在这里。
+#
+# 用途:R1(compaction)/ R5(渐进披露)等改 prompt/路由的增量,翻 flag 前必须本 battery
+# 全绿 + comparative battery 无回退 —— "一次性成功"的机械保障。
+#
+# 回溯校准(验收标准):三条已知历史 regression 编入题库,battery 必须能抓到:
+#   retro_1 卡片误发(分析题带 markdown 表格仍发睡眠快照卡)
+#   retro_2 兜底话术饮食偏见(记鞋码被要求补早餐)
+#   retro_3 食物抱怨误记饮食(「下次不吃辣了」建 diet 草稿)
+#
+# 每题字段:
+#   id / family        family ∈ record/query/analysis/safety/resolve/profile/multi_turn
+#   query              代表性用户输入(中文原话)
+#   checks             确定性断言列表,type ∈
+#     intake_intent        — classify_intake_intent(query).kind == expect(或 in expect_any)
+#     confirm_tier         — kind 的确认档位 ∈ {auto, typed_only, never_auto}(活集合断言)
+#     fallback_shape       — _record_intent_needs_detail_message(query) 必含/必不含子串
+#     remember_redirect    — _remember_structured_medical_redirect(predicate,value) blocked/allowed
+#     owns_visualization   — _answer_owns_its_visualization(answer, tools) == expect(卡片抑制)
+#     fast_context_retained— _build_fast_record_messages 保留紧邻 assistant 回合
+#   notes              为什么选这条(锚定的真实场景/历史 bug)
+
+meta:
+  version: 1
+  purpose: deterministic-behavior-regression
+  quota: { record: 5, query: 4, analysis: 4, safety: 3, resolve: 2, profile: 2, multi_turn: 2 }
+
+cases:
+  # ───────────────── record ×5(记录意图正确分类 + 档位)─────────────────
+  - id: record_water_auto
+    family: record
+    query: 喝了300ml水
+    checks:
+      - { type: intake_intent, expect: water }
+      - { type: confirm_tier, kind: water, expect: auto }
+    notes: 最高频记录;水是 AUTO 档(可逆低风险)。
+
+  - id: record_diet_auto
+    family: record
+    query: 午饭吃了鳕鱼50g和米饭一碗
+    checks:
+      - { type: confirm_tier, kind: diet, expect: auto }
+    notes: 饮食 AUTO;意图分类留给 LLM(classifier 只兜简单形),不断言 kind。
+
+  - id: record_medication_never_auto
+    family: record
+    query: 吃了一片奥美拉唑
+    checks:
+      - { type: confirm_tier, kind: medication, expect: never_auto }
+    notes: 用药=医疗级,永远确认前置(R4)。
+
+  - id: record_symptom_typed_only
+    family: record
+    query: 今天嗓子有点疼
+    checks:
+      - { type: confirm_tier, kind: symptom, expect: typed_only }
+    notes: 症状 typed 通道免确认(founder 2026-07-02 裁决),语音仍确认。
+
+  - id: record_illness_never_auto
+    family: record
+    query: 我长了个口腔溃疡
+    checks:
+      - { type: confirm_tier, kind: illness, expect: never_auto }
+    notes: 病症=医疗级确认前置;分类指引已把局部愈合病灶归 illness(2026-07-16 修复)。
+
+  # ───────────────── query ×4(查询绝不触发写路径)─────────────────
+  - id: query_water_is_question
+    family: query
+    query: 我今天喝了多少水?
+    checks:
+      - { type: intake_intent, expect: unknown }
+    notes: 疑问句必须被 question guard 拦下,不进记录路径(查询回合绝不写)。
+
+  - id: query_weight_trend_question
+    family: query
+    query: 我最近体重是涨了还是降了?
+    checks:
+      - { type: intake_intent, expect: unknown }
+    notes: 趋势疑问,同上。
+
+  - id: query_diet_review_question
+    family: query
+    query: 帮我看看这周饮食记录得全不全?
+    checks:
+      - { type: intake_intent, expect: unknown }
+    notes: 「记录」出现在疑问句里也不得误判为写意图(历史坑:查询轮谎报写)。
+
+  - id: query_negation_complaint_not_diet
+    family: query
+    query: 昨晚吃完火锅拉肚子了,下次不吃辣了
+    checks:
+      - { type: intake_intent, expect: unknown }
+    notes: retro_3 回溯:食物抱怨/否定曾误建 diet 草稿;负向守卫必须拦住。
+
+  # ───────────────── analysis ×4(分析轮卡片门控)─────────────────
+  - id: analysis_table_owns_visualization
+    family: analysis
+    query: 分析一下我最近的睡眠质量
+    checks:
+      - type: owns_visualization
+        answer: "近 7 天睡眠:\n\n| 日期 | 时长 | 深睡 |\n| --- | --- | --- |\n| 07-15 | 7.2h | 1.8h |\n| 07-16 | 6.9h | 1.5h |\n\n整体稳定。"
+        tools: [health_query]
+        expect: true
+    notes: retro_1 回溯:答案自带 markdown 表格时,快照卡必须抑制(analysis_turn_llm_owns_visualization)。
+
+  - id: analysis_health_analysis_tool_owns
+    family: analysis
+    query: 深入分析我的恢复状态
+    checks:
+      - type: owns_visualization
+        answer: "你的 HRV 均值 52ms,恢复中等。"
+        tools: [health_analysis]
+        expect: true
+    notes: 走了 health_analysis 工具的轮次,LLM 拥有可视化,快照卡抑制。
+
+  - id: analysis_plain_lookup_keeps_cards
+    family: analysis
+    query: 我昨晚睡得怎么样
+    checks:
+      - type: owns_visualization
+        answer: "你昨晚睡了 7 小时 12 分,深睡 1.8 小时,质量不错。"
+        tools: [health_query]
+        expect: false
+    notes: 快查短答(无表格/无分析工具)→ 快照卡照常(别把有用的卡也杀了,加层不减层)。
+
+  - id: analysis_fast_subset_frozen
+    family: analysis
+    query: (机制断言,无用户输入)
+    checks:
+      - { type: fast_subset, expect: [health_record, health_query, health_manage] }
+    notes: 简单轮工具子集冻结为 3(token 战役 #2);变更须显式改本题=有意决策。
+
+  # ───────────────── safety ×3(医疗硬闸)─────────────────
+  - id: safety_remember_blocks_bp
+    family: safety
+    query: 记住我血压150/95
+    checks:
+      - { type: remember_redirect, predicate: 血压, value: 150/95, expect: blocked }
+    notes: remember 绝不收结构化医疗数据(绕过安全脑);服务端硬闸,非软指引。
+
+  - id: safety_remember_blocks_drug
+    family: safety
+    query: 记住我在吃华法林
+    checks:
+      - { type: remember_redirect, predicate: 在用, value: 华法林, expect: blocked }
+    notes: 药名经 drug_lexicon 专名匹配拦截(含非词表英文名走给药动词兜底)。
+
+  - id: safety_remember_allows_benign
+    family: safety
+    query: 记一下我鞋码42.5
+    checks:
+      - { type: remember_redirect, predicate: 鞋码, value: "42.5", expect: allowed }
+      - { type: confirm_tier, kind: remember, expect: typed_only }
+    notes: 良性档案属性放行(over-alarm 收窄:药剂师/在吃素/卡号都不误杀)。
+
+  # ───────────────── resolve ×2(痊愈/修改链路)─────────────────
+  - id: resolve_illness_update_supported
+    family: resolve
+    query: 口腔溃疡已经好了,修改记录
+    checks:
+      - { type: intake_intent, expect: unknown }
+    notes: 修改/痊愈不是新记录意图,须交给强模型走 health_manage(list→update);
+      分类器硬拦成记录=会重复建条目。
+
+  - id: resolve_rhinitis_checkin_rolling
+    family: resolve
+    query: 今天又打了5个喷嚏
+    checks:
+      - { type: confirm_tier, kind: rhinitis, expect: typed_only }
+    notes: 鼻炎打卡单条/日滚动(HealthCheckin upsert),不再堆 illness episode。
+
+  # ───────────────── profile ×2(档案属性 + 兜底话术)─────────────────
+  - id: profile_fallback_no_diet_bias
+    family: profile
+    query: 鞋子尺码:42.5 记录下来
+    checks:
+      - type: fallback_shape
+        must_contain: [鞋子尺码]
+        must_not_contain: [燕麦粥, 俯卧撑, 鸡蛋]
+    notes: retro_2 回溯:兜底话术曾硬编码饮食例子(记鞋码被要求补早餐);已去偏见。
+
+  - id: profile_fallback_generic_neutral
+    family: profile
+    query: ""
+    checks:
+      - type: fallback_shape
+        must_contain: [鞋码]
+        must_not_contain: [燕麦粥, 俯卧撑]
+    notes: 空输入的通用兜底也必须跨领域举例(含档案属性例)。
+
+  # ───────────────── multi_turn ×2(跟进上下文)─────────────────
+  - id: multiturn_fast_keeps_prior_assistant
+    family: multi_turn
+    query: 打喷嚏3次
+    checks:
+      - type: fast_context_retained
+        prior_assistant: 要不要记录鼻炎症状(打喷嚏/流鼻涕)?
+    notes: 跟进式记录必须保留紧邻 assistant 回合(历史 bug:快路由丢上下文反问「什么症状?」)。
+
+  - id: multiturn_fast_keeps_assistant_after_tool
+    family: multi_turn
+    query: 嗯,记吧
+    checks:
+      - type: fast_context_retained
+        prior_assistant: 我查到你今天已有 2 条饮水记录,要补记这一杯吗?
+    notes: 确认式跟进同样依赖上一条 assistant;丢失=模型不知道「记什么」。
