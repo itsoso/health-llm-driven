@@ -46,8 +46,10 @@ import {
   revaSemantic,
   revaFonts,
 } from '../../constants/revaTheme';
-import { sharePlainText } from '../../utils/share';
+import { sharePlainText, shareLocalImage } from '../../utils/share';
 import { buildSelectedChatShareMessage, isShareableChatMessage } from '../../utils/chatShareSelection';
+import { captureRef } from 'react-native-view-shot';
+import ConversationShareImage, { type ShareImageMessage } from '../../components/chat/ConversationShareImage';
 import type { ChatMedicalExamImportSkillResult } from '../../services/chatMedicalExamImportSkill';
 import { loadAgentHomeBootstrap } from '../../services/agentHomeBootstrap';
 import { useAuth } from '../../hooks/useAuth';
@@ -171,6 +173,9 @@ export default function ChatScreen() {
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedMessageIds, setSelectedMessageIds] = useState<Set<string>>(new Set());
   const [sharing, setSharing] = useState(false);
+  // 「选一段对话成图」离屏渲染层的数据 + 截图 ref(非空时挂载 ConversationShareImage)。
+  const [imageExportMessages, setImageExportMessages] = useState<ShareImageMessage[] | null>(null);
+  const shareImageRef = useRef<View>(null);
   const [toolMenuVisible, setToolMenuVisible] = useState(false);
   const [dismissedTodayFocusKey, setDismissedTodayFocusKey] = useState<string | null>(null);
 
@@ -716,6 +721,33 @@ export default function ChatScreen() {
     }
   }, [exitSelectionMode, messages, selectedMessageIds, sharing]);
 
+  // 「选一段对话成图」:把选中消息渲染进离屏品牌长图 → captureRef 截 PNG → 分享/存图。
+  const exportSelectedImage = useCallback(async () => {
+    if (sharing) return;
+    const selected: ShareImageMessage[] = messages
+      .filter((m) => selectedMessageIds.has(m.id) && isShareableChatMessage(m))
+      .map((m) => ({ id: m.id, role: m.role, content: m.content, imageUris: m.imageUris }));
+    if (selected.length === 0) return;
+    setSharing(true);
+    setImageExportMessages(selected);
+    // 等离屏层排版完(markdown/长内容异步),再截。捕获后清理离屏层。
+    setTimeout(async () => {
+      try {
+        if (!shareImageRef.current) throw new Error('share image not mounted');
+        const uri = await captureRef(shareImageRef.current, {
+          format: 'png', quality: 1, result: 'tmpfile',
+        });
+        await shareLocalImage(uri);
+        exitSelectionMode();
+      } catch {
+        Alert.alert('生成长图失败', '请稍后重试');
+      } finally {
+        setImageExportMessages(null);
+        setSharing(false);
+      }
+    }, 280);
+  }, [exitSelectionMode, messages, selectedMessageIds, sharing]);
+
   const renderMessage = useCallback(({ item }: { item: UIMessage }) => {
     const shareable = isShareableChatMessage(item);
     return (
@@ -859,6 +891,16 @@ export default function ChatScreen() {
               <Text style={txt.shareBarSub}>按当前对话顺序生成分享链接</Text>
             </View>
             <TouchableOpacity
+              onPress={exportSelectedImage}
+              disabled={selectedMessageIds.size === 0 || sharing}
+              style={[styles.cancelSelectionButton, (selectedMessageIds.size === 0 || sharing) && styles.shareButtonDisabled]}
+              accessibilityLabel="选中消息生成长图"
+              accessibilityRole="button"
+            >
+              <Ionicons name="image-outline" size={16} color={C.green500} />
+              <Text style={txt.cancelSelectionButton}>长图</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
               onPress={shareSelectedMessages}
               disabled={selectedMessageIds.size === 0 || sharing}
               style={[styles.shareButton, (selectedMessageIds.size === 0 || sharing) && styles.shareButtonDisabled]}
@@ -868,6 +910,18 @@ export default function ChatScreen() {
               <Ionicons name="share-outline" size={16} color="#fff" />
               <Text style={txt.shareButton}>{sharing ? '生成中' : '分享'}</Text>
             </TouchableOpacity>
+          </View>
+        )}
+
+        {/* 「选一段对话成图」离屏渲染层 —— 非空时挂载, captureRef 截图后清空。off-screen
+            定位(不遮挡 UI)但完整排版, captureRef 拿全高长图。 */}
+        {imageExportMessages && (
+          <View style={styles.offscreenCapture} pointerEvents="none">
+            <ConversationShareImage
+              ref={shareImageRef}
+              messages={imageExportMessages}
+              dateLabel={new Date().toLocaleDateString('zh-CN')}
+            />
           </View>
         )}
         {bootstrapReady && messages.length === 0 && !selectionMode && (
@@ -1072,6 +1126,11 @@ const styles = StyleSheet.create({
     marginHorizontal: revaSpacing.s4, marginBottom: 4,
     paddingHorizontal: revaSpacing.s3, paddingVertical: 6,
     backgroundColor: C.green50, borderRadius: revaRadii.md,
+  },
+  offscreenCapture: {
+    position: 'absolute',
+    left: -10000,
+    top: 0,
   },
   shareBar: {
     flexDirection: 'row',
