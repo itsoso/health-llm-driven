@@ -2559,6 +2559,41 @@ def _write_result_payload(
     return payload
 
 
+def _result_with_resource_type(result: Any, resource_type: str) -> Any:
+    """Attach receipt identity when an endpoint response has id but no resource_type."""
+    if not isinstance(result, str):
+        return result
+    try:
+        payload = json.loads(result)
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return result
+    if not isinstance(payload, dict):
+        return result
+    payload.setdefault("resource_type", resource_type)
+    return json.dumps(payload, ensure_ascii=False)
+
+
+_SLEEP_START_EVENT_RE = re.compile(
+    r"(?:准备|开始|要|打算|现在|刚刚|刚才|记录).{0,8}(?:睡觉|睡眠|入睡|上床)"
+    r"|(?:睡觉|睡眠|入睡|上床).{0,8}(?:开始|准备|了|啦)"
+)
+_PAST_SLEEP_EVENT_RE = re.compile(r"(?:昨晚|昨夜|昨天|前天|上周|上个月|之前)")
+
+
+def _looks_like_sleep_start_event(user_message: Any, data: Any) -> bool:
+    """Current sleep-start utterances are life events, not complete sleep records."""
+    parts = [str(user_message or "")]
+    if isinstance(data, dict):
+        for key in ("title", "name", "event", "notes", "description"):
+            value = data.get(key)
+            if value not in (None, ""):
+                parts.append(str(value))
+    text = " ".join(part.strip() for part in parts if part and str(part).strip())
+    if not text or _PAST_SLEEP_EVENT_RE.search(text):
+        return False
+    return bool(_SLEEP_START_EVENT_RE.search(text))
+
+
 def _write_checkpoint_status_after_dispatch(
     result: Any,
     receipt: Optional[Dict[str, Any]],
@@ -8083,6 +8118,7 @@ class AgentExecutor:
             "- 如果上一轮已在问提醒时段,用户只回复'9点到20点'或'10:30'这类时间,要继承上一轮的任务标题、内容和间隔,直接创建 reminder; 不要丢失上下文或重复询问。",
             "- 模糊数量：'几杯水' → 追问具体杯数再记录；'130多' → 追问具体数值",
             "- 时间归属：'昨天' → 记到昨天日期；'刚才' → 当前时间；未说明 → 今天",
+            "- 用户说'准备开始睡觉/开始睡眠/上床睡觉/准备入睡'这类当前开始睡眠事件 → 调用 health_record(record_type=event, data={title:'准备开始睡觉', occurred_at:'刚才或用户给出的时间'}); 不要用 record_type=sleep。record_type=sleep 只用于事后完整睡眠补录,必须有 bedtime、wake_time、sleep_quality。",
             "- 图片：用户发食物照片时，先用你的视觉能力识别图片中的食物名称和份量，然后调用 health_record(type=diet, data={meal_type, food_items, calories, protein, carbs, fat, fiber, record_date}) 记录。必须在 data 中填写完整的 food_items 字符串，不能传空 data。",
             "- **饮食记录必须包含热量和营养估算：识别食物后，根据食物种类和常见份量估算总热量(kcal)、蛋白质(g)、碳水(g)、脂肪(g)、膳食纤维(g)，填入 data.calories/protein/carbs/fat/fiber 字段一起保存。不要记完再问用户'要不要算热量'。**",
             "- **重要：调用 health_record 时 data 参数必须包含具体内容，不能为空对象 {}。如果你不确定内容，先问用户再记录。**",
@@ -10623,6 +10659,31 @@ class AgentExecutor:
                 if data.get(field) in (None, "")
             ]
             if missing:
+                if _looks_like_sleep_start_event(
+                    getattr(self, "_current_turn_user_message", ""),
+                    data,
+                ):
+                    title = str(
+                        data.get("title")
+                        or data.get("name")
+                        or data.get("event")
+                        or "准备开始睡觉"
+                    ).strip()
+                    payload: Dict[str, Any] = {"title": title[:80] or "准备开始睡觉"}
+                    occurred_at = (
+                        data.get("occurred_at")
+                        or data.get("bedtime")
+                        or data.get("time")
+                    )
+                    if occurred_at not in (None, ""):
+                        payload["occurred_at"] = str(occurred_at)[:64]
+                    notes = data.get("notes") or data.get("description")
+                    if notes not in (None, ""):
+                        payload["notes"] = str(notes)[:500]
+                    result = await self._api_post(
+                        f"{base}/episodes/life-event", headers, payload
+                    )
+                    return _result_with_resource_type(result, "health_episode")
                 return (
                     "Error: sleep 记录必须提供 bedtime、wake_time、sleep_quality(1-5). "
                     f"缺少: {', '.join(missing)}. 例如 "
@@ -10921,7 +10982,8 @@ class AgentExecutor:
                 payload["occurred_at"] = str(data["occurred_at"])[:64]
             if data.get("notes"):
                 payload["notes"] = str(data["notes"])[:500]
-            return await self._api_post(f"{base}/episodes/life-event", headers, payload)
+            result = await self._api_post(f"{base}/episodes/life-event", headers, payload)
+            return _result_with_resource_type(result, "health_episode")
 
         if rtype == "illness":
             payload = dict(data)

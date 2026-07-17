@@ -389,6 +389,50 @@ async def test_agent_health_record_sleep_missing_times_fails_loud(db):
     post.assert_not_called()
 
 
+@pytest.mark.asyncio
+async def test_agent_health_record_sleep_start_intent_records_life_event(db):
+    """“准备开始睡觉”是开始事件,不是事后完整睡眠补录;应写 life_event 且给可验证回执。"""
+    from app.services.agent_executor import (
+        AgentExecutor,
+        _write_receipt_from_tool_result,
+    )
+
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._current_turn_user_message = "准备开始睡觉了。"
+    captured = {}
+
+    async def fake_post(url, headers, body):
+        captured["url"] = url
+        captured["payload"] = body
+        return json.dumps({
+            "id": 42,
+            "title": "准备开始睡觉",
+            "occurred_at": "2026-07-17T14:57:00+00:00",
+            "occurred_precision": "exact",
+            "occurred_display": "今天 22:57",
+        }, ensure_ascii=False)
+
+    with patch.object(executor, "_api_post", new=AsyncMock(side_effect=fake_post)):
+        result = await executor._execute_tool(
+            tool_name="health_record",
+            args_raw=json.dumps({
+                "record_type": "sleep",
+                "data": {"bedtime": "2026-07-17T22:57:00+08:00"},
+            }, ensure_ascii=False),
+            user_token=None,
+        )
+
+    assert "Error" not in str(result)
+    assert captured["url"].endswith("/episodes/life-event")
+    assert captured["payload"]["title"] == "准备开始睡觉"
+    assert captured["payload"]["occurred_at"] == "2026-07-17T22:57:00+08:00"
+    receipt = _write_receipt_from_tool_result("health_record", "sleep", result)
+    assert receipt is not None
+    assert receipt["resource_type"] == "health_episode"
+    assert receipt["resource_id"] == "42"
+
+
 def test_agent_system_prompt_teaches_reminder_write_flow(db):
     """共享对话失败点: 不应说接口限制;应调用 health_record(reminder)."""
     from app.services.agent_executor import AgentExecutor
@@ -402,6 +446,21 @@ def test_agent_system_prompt_teaches_reminder_write_flow(db):
     assert "record_type=reminder" in prompt
     assert "recurrence=daily" in prompt
     assert "不能回复“系统接口限制”" in prompt
+
+
+def test_agent_system_prompt_teaches_sleep_start_event_flow(db):
+    """提示词要区分开始睡觉事件与事后完整睡眠补录。"""
+    from app.services.agent_executor import AgentExecutor
+
+    prompt = AgentExecutor(db)._build_system_prompt(
+        user_id=1,
+        conv_id=1,
+        user_auth_token="token",
+    )
+
+    assert "准备开始睡觉" in prompt
+    assert "record_type=event" in prompt
+    assert "record_type=sleep" in prompt
 
 
 def test_reminder_fast_record_is_auto_confirmed():
