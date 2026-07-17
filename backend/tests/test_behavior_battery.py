@@ -104,13 +104,7 @@ def _run_check(case_id: str, query: str, chk: dict) -> None:
         # 复现 run_stream 的 _prefer_fast_record_model 门(四条排除),独立于模型选择。
         # expect=false 的否定用例:「别记录」不走 fast-record → 不被 R2 force 逼出记录。
         import app.services.agent_executor as ae
-        got = (
-            bool(ae._RECORD_INTENT_RE.search(query))
-            and not bool(ae._ADVICE_OR_ANALYSIS_RE.search(query))
-            and not bool(ae._RECORD_INTERROGATIVE_GUARD_RE.search(query))
-            and not bool(ae._RECORD_NEGATION_GUARD_RE.search(query))
-            and not ae._needs_reliable_tool_model(query)
-        )
+        got = ae._has_fast_record_write_intent(query)
         assert got is chk["expect"], (
             f"{case_id}: prefer_fast_record={got},期望 {chk['expect']}"
             "(False=否定/疑问/分析→降级全模型,不被 R2 force 逼记)")

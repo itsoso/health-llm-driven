@@ -66,13 +66,20 @@ def test_ships_off_by_default():
 def _prefer_fast_record(msg: str) -> bool:
     """复现 run_stream 里 _prefer_fast_record_model 的确定性门(四条排除),独立于模型选择。"""
     import app.services.agent_executor as ae
-    return (
-        bool(ae._RECORD_INTENT_RE.search(msg))
-        and not bool(ae._ADVICE_OR_ANALYSIS_RE.search(msg))
-        and not bool(ae._RECORD_INTERROGATIVE_GUARD_RE.search(msg))
-        and not bool(ae._RECORD_NEGATION_GUARD_RE.search(msg))
-        and not ae._needs_reliable_tool_model(msg)
-    )
+    return ae._has_fast_record_write_intent(msg)
+
+
+def test_query_noun_record_suppresses_prefer_fast_record():
+    """「饮食记录/列表格」里的记录是名词,必须走查询,不能进 fast-record 写入门。"""
+    import app.services.agent_executor as ae
+
+    for msg in [
+        "今天我的饮食的记录，帮我列个表格出来。",
+        "不是记录，是列出我今天吃的所有东西。",
+        "查询我今天的饮食记录",
+    ]:
+        assert _prefer_fast_record(msg) is False, msg
+        assert ae._is_fast_eligible_turn(msg, has_images=False, has_file=False) is True
 
 
 def test_negation_suppresses_prefer_fast_record():

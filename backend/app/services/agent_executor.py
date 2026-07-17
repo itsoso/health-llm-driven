@@ -1123,12 +1123,7 @@ def _has_explicit_text_record_intent(user_message: Optional[str]) -> bool:
     否定守卫同样在此把关:用户说「别记/记在心里」时,即便弱模型把 health_record 吐成文本,
     也不授权其恢复执行(否则绕过 fast-path 门,仍会对「别记录」写库+谎报)。
     """
-    message = str(user_message or "").strip()
-    if not message or not _RECORD_INTENT_RE.search(message):
-        return False
-    if _RECORD_NEGATION_GUARD_RE.search(message):
-        return False
-    return True
+    return _has_explicit_record_write_intent(user_message)
 
 
 def _extract_tool_code_call(
@@ -4189,13 +4184,13 @@ _ADVICE_OR_ANALYSIS_RE = re.compile(
 # 保守: 只列明确的取数动词/疑问词, 复盘/综合/趋势等已在 advice 正则里被排除。
 _SIMPLE_QUERY_INTENT_RE = re.compile(
     r"(查一?下|查询|查看|看一?下|多少|几次|几步|有没有|是多少|多高|多重|多长|"
-    r"今天|昨天|本周|这周|最近|昨晚|列出|显示|告诉我|我的.{0,6}(数据|记录|情况|状态))"
+    r"今天|昨天|本周|这周|最近|昨晚|列出|列表|表格|显示|告诉我|我的.{0,6}(数据|记录|情况|状态))"
 )
 
 # 明确的只读取数命令。模型偶尔会把“晚餐是昨天的，重新列出今天饮食”理解成
 # 修改 record_date；没有用户写命令时，必须在写计划封存前降级为查询。
 _QUERY_ONLY_COMMAND_RE = re.compile(
-    r"(重新列出|列出|查询|查看|看一下|显示|告诉我|汇总|"
+    r"(重新列出|列出|列表|列(?:个|一下)?表格|列成表格|整理成表格|表格|查询|查看|看一下|显示|告诉我|汇总|"
     r"吃了什么|吃的什么|喝了多少|有哪些|是多少|多少)"
 )
 _QUERY_ONLY_MUTATION_RE = re.compile(
@@ -4247,6 +4242,32 @@ def _query_only_health_manage_scope(message: Optional[str]) -> Optional[Dict[str
     if target_meal_type:
         scope["meal_type"] = target_meal_type
     return scope
+
+
+def _has_explicit_record_write_intent(message: Optional[str]) -> bool:
+    """Whether the user's '记录' means writing, not naming existing records."""
+    text = str(message or "").strip()
+    if not text or not _RECORD_INTENT_RE.search(text):
+        return False
+    if _query_only_health_manage_scope(text) is not None:
+        return False
+    if _RECORD_INTERROGATIVE_GUARD_RE.search(text):
+        return False
+    if _RECORD_NEGATION_GUARD_RE.search(text):
+        return False
+    return True
+
+
+def _has_fast_record_write_intent(message: Optional[str]) -> bool:
+    """Fast-record is only for clear writes; query nouns stay on the read path."""
+    text = str(message or "").strip()
+    if not _has_explicit_record_write_intent(text):
+        return False
+    if _ADVICE_OR_ANALYSIS_RE.search(text):
+        return False
+    if _needs_reliable_tool_model(text):
+        return False
+    return True
 
 
 _BEIJING_DATE_LABEL_RE = re.compile(
@@ -4369,7 +4390,7 @@ def _is_fast_eligible_turn(
     # 否定轮被降到 qwen3.6-flash,虽本次正确拒记,但 health_record 仍在工具集里,软护栏不牢)。
     if _RECORD_NEGATION_GUARD_RE.search(text):
         return False
-    return bool(_RECORD_INTENT_RE.search(text) or _SIMPLE_QUERY_INTENT_RE.search(text))
+    return bool(_has_fast_record_write_intent(text) or _SIMPLE_QUERY_INTENT_RE.search(text))
 
 
 def _is_analysis_only_turn(message: str, *, has_images: bool, has_file: bool) -> bool:
@@ -5805,15 +5826,7 @@ class AgentExecutor:
         self._prefer_fast_record_model = (
             not images
             and not file_base64
-            and bool(_RECORD_INTENT_RE.search(message or ""))
-            and not bool(_ADVICE_OR_ANALYSIS_RE.search(message or ""))
-            # 疑问句("喝了多少水"/"吃了什么")= 查询,不是记录 —— 见守卫正则注释。
-            and not bool(_RECORD_INTERROGATIVE_GUARD_RE.search(message or ""))
-            # 否定("别记/不用记/记在心里")不走 fast 记录路径,更不能被 R2 force 逼出记录 ——
-            # 把裁量权还给全模型(不抑制记录本身,只是不强制)。见 _RECORD_NEGATION_GUARD_RE 注释。
-            and not bool(_RECORD_NEGATION_GUARD_RE.search(message or ""))
-            # 破坏性(删/改/撤销)不走 fast 记录路径 —— 弱模型删改不可靠,留强模型。
-            and not _needs_reliable_tool_model(message or "")
+            and _has_fast_record_write_intent(message or "")
         )
         # 合成轮关思考门(2026-07-17, founder「列出胃药」实测合成轮 qwen3.7-max 思考 23–47s):
         # reasoning 模型(qwen3.7-max)的思考阶段对**简单查询/列表**是纯浪费。判据复用
@@ -9674,27 +9687,7 @@ class AgentExecutor:
         if scope is None:
             return tool_calls
 
-        normalized: List[Dict[str, Any]] = []
-        for tool_call in tool_calls:
-            function = tool_call.get("function") or {}
-            if function.get("name") != "health_manage":
-                normalized.append(tool_call)
-                continue
-
-            raw_args = function.get("arguments")
-            try:
-                args = (
-                    json.loads(raw_args)
-                    if isinstance(raw_args, str)
-                    else dict(raw_args or {})
-                )
-            except (json.JSONDecodeError, TypeError, ValueError):
-                normalized.append(tool_call)
-                continue
-            if args.get("record_type") != "diet":
-                normalized.append(tool_call)
-                continue
-
+        def _list_args_from_scope(args: Dict[str, Any]) -> Dict[str, Any]:
             list_args: Dict[str, Any] = {
                 "record_type": "diet",
                 "operation": "list",
@@ -9715,7 +9708,46 @@ class AgentExecutor:
             limit = args.get("limit")
             if isinstance(limit, int) and not isinstance(limit, bool) and limit > 0:
                 list_args["limit"] = limit
+            return list_args
 
+        normalized: List[Dict[str, Any]] = []
+        for tool_call in tool_calls:
+            function = tool_call.get("function") or {}
+            tool_name = function.get("name")
+            raw_args = function.get("arguments")
+            try:
+                args = (
+                    json.loads(raw_args)
+                    if isinstance(raw_args, str)
+                    else dict(raw_args or {})
+                )
+            except (json.JSONDecodeError, TypeError, ValueError):
+                normalized.append(tool_call)
+                continue
+
+            if tool_name == "health_record":
+                list_args = _list_args_from_scope({})
+                logger.warning(
+                    "[agent_executor] query-only model write normalized to diet list: "
+                    "tool=%s record_type=%s",
+                    tool_name,
+                    args.get("record_type") or args.get("type"),
+                )
+                normalized.append({
+                    **tool_call,
+                    "function": {
+                        **function,
+                        "name": "health_manage",
+                        "arguments": json.dumps(list_args, ensure_ascii=False),
+                    },
+                })
+                continue
+
+            if tool_name != "health_manage" or args.get("record_type") != "diet":
+                normalized.append(tool_call)
+                continue
+
+            list_args = _list_args_from_scope(args)
             if args != list_args:
                 logger.warning(
                     "[agent_executor] query-only health_manage normalized to list: "

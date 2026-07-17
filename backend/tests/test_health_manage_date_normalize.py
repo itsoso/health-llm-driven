@@ -293,6 +293,33 @@ def test_diet_record_used_as_query_noun_still_uses_beijing_today():
     )
 
 
+def test_query_only_diet_turn_downgrades_model_health_record_to_list():
+    executor = AgentExecutor(MagicMock())
+    executor._current_turn_user_message = "今天我的饮食的记录，帮我列个表格出来。"
+
+    calls = executor._normalize_query_only_health_manage_tool_calls([{
+        "id": "call-1",
+        "type": "function",
+        "function": {
+            "name": "health_record",
+            "arguments": json.dumps({
+                "record_type": "reminder",
+                "data": {
+                    "title": "请记录今天的饮食",
+                    "message": "包括早餐、午餐、晚餐和加餐",
+                },
+            }, ensure_ascii=False),
+        },
+    }])
+
+    assert calls[0]["function"]["name"] == "health_manage"
+    assert json.loads(calls[0]["function"]["arguments"]) == {
+        "record_type": "diet",
+        "operation": "list",
+        "date": datetime.now(BJ).date().isoformat(),
+    }
+
+
 def test_diet_query_tool_result_tells_synthesis_exact_beijing_date():
     today = datetime.now(BJ).date().isoformat()
 
