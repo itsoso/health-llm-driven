@@ -64,6 +64,12 @@ final class WatchEventClient {
         emit("watch_action_skipped", meta)
     }
 
+    func smartReminderVisible(_ summary: WatchSummary) {
+        for meta in watchSmartReminderVisibleEventMetas(summary) {
+            emit("watch_smart_reminder_visible", meta)
+        }
+    }
+
     private func emit(_ name: String, _ meta: [String: String]) {
         Task { [connectivity] in
             // 埋点失败静默吞——但这是「旁路诚实」例外:埋点不是业务结果,失败不该让用户看到错误。

@@ -82,6 +82,29 @@ def test_reminder_confirmation_includes_honest_watch_delivery_boundary():
     assert "已同步到手表" not in reply
 
 
+def test_reminder_confirmation_uses_summary_receipt_not_notification_delivery():
+    reply = _friendly_record_confirmation({
+        "id": 7,
+        "title": "喝水提醒",
+        "remind_at": "2026-07-17T13:30:00+08:00",
+        "recurrence": "daily",
+        "delivery_status": {
+            "agent_claim": "created_watch_summary_visible",
+            "iphone_notification": {"status": "will_attempt_when_due"},
+            "watch": {
+                "route": "watch_summary_due_item",
+                "status": "visible_on_watch_summary",
+                "delivery_confirmed": True,
+                "receipt_type": "watch_summary_visible",
+            },
+        },
+    })
+
+    assert reply == "已设置每日提醒：喝水提醒；手机到点会尝试提醒；手表已刷新到这条提醒"
+    assert "已确认送达手表" not in reply
+    assert "已发送到手表" not in reply
+
+
 def test_array_result_reports_lookup_not_creation():
     # 数组只来自 health_manage list(无创建路径返回数组)。对抗评审实测:
     # 撤销回合的 list 结果曾被答成"✅已记录 2 条"= 假写入宣称。

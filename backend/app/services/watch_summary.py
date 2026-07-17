@@ -217,6 +217,7 @@ def _reminder_priority(reminder: SmartReminder) -> int:
 def _agent_reminder_items(db: Session, user_id: int) -> List[Dict[str, Any]]:
     """Project Agent-created SmartReminder rows into today's Watch task stream."""
     user_now = get_user_now(db, user_id)
+    user_day_start = user_now.replace(hour=0, minute=0, second=0, microsecond=0)
     visible_after = user_now - timedelta(hours=1)
     rows = (
         db.query(SmartReminder)
@@ -248,7 +249,12 @@ def _agent_reminder_items(db: Session, user_id: int) -> List[Dict[str, Any]]:
                 "replan_reason": "agent_scheduled_reminder",
                 "safety_boundary": "这是提醒任务,不代表手表通知已实际送达。",
             },
-            "delivery_status": reminder_delivery_status(),
+            "delivery_status": reminder_delivery_status(
+                db=db,
+                user_id=user_id,
+                reminder_id=reminder.id,
+                since=user_day_start,
+            ),
         })
         if len(items) >= _WATCH_REMINDER_CAP:
             break

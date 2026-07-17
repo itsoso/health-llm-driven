@@ -47,6 +47,7 @@ _ALLOWED_EVENTS = frozenset({
     "watch_action_snoozed",       # meta: { action_id, kind, priority_tier, minutes? }
     "watch_action_skipped",       # meta: { action_id, kind, priority_tier, reason? }
     "watch_action_failed",        # meta: { action_id, kind, priority_tier, error? }
+    "watch_smart_reminder_visible",  # meta: { action_id, reminder_id, kind, surface }
     "agenda_action_failed",
     # Mobile Agent 可靠性终态. meta 严格限制为无正文、无资源标识的字段.
     "agent_turn_terminal",

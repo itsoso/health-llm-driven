@@ -545,3 +545,20 @@ public struct WatchSummary: Codable, Sendable {
         try JSONDecoder().decode(WatchSummary.self, from: data)
     }
 }
+
+public func watchSmartReminderVisibleEventMetas(_ summary: WatchSummary) -> [[String: String]] {
+    summary.dueItems.compactMap { item in
+        guard item.source?.objectType == "smart_reminder",
+              let reminderId = item.source?.objectId,
+              let actionId = item.actionId,
+              !actionId.isEmpty else {
+            return nil
+        }
+        return [
+            "action_id": actionId,
+            "reminder_id": String(reminderId),
+            "kind": item.kind,
+            "surface": "watch_summary",
+        ]
+    }
+}

@@ -2172,7 +2172,10 @@ def _reminder_delivery_status_tail(delivery_status: Any) -> str:
     watch = delivery_status.get("watch")
     if isinstance(watch, dict):
         if watch.get("delivery_confirmed") is True:
-            parts.append("已确认送达手表")
+            if str(watch.get("receipt_type") or "") == "watch_summary_visible":
+                parts.append("手表已刷新到这条提醒")
+            else:
+                parts.append("已确认送达手表")
         elif (
             str(watch.get("route") or "").strip() == "watch_summary_due_item"
             or str(watch.get("status") or "").strip() == "visible_when_watch_summary_refreshes"

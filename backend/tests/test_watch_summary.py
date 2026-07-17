@@ -247,6 +247,54 @@ def test_agent_water_reminder_enters_watch_due_items(db, auth, monkeypatch):
     assert any(p["source"]["object_type"] == "smart_reminder" for p in s["push_items"])
 
 
+def test_smart_reminder_delivery_confirmed_after_watch_visible_event(db, auth, monkeypatch):
+    """Watch 摘要刷新到具体提醒后,下一次摘要应带已看见 receipt."""
+    from app.models.client_event import ClientEvent
+
+    user, _ = auth
+    now = get_user_now(db, user.id)
+    reminder = SmartReminder(
+        user_id=user.id,
+        title="定时饮水提醒",
+        message="喝 200ml 水",
+        remind_at=now + timedelta(minutes=10),
+        recurrence="daily",
+        priority="normal",
+        status="pending",
+        source="agent_skill",
+        extra_data={"watch_kind": "hydration"},
+    )
+    db.add(reminder)
+    db.commit()
+    db.refresh(reminder)
+    db.add(ClientEvent(
+        user_id=user.id,
+        event_name="watch_smart_reminder_visible",
+        meta={
+            "action_id": f"agenda-smart_reminder-{reminder.id}",
+            "reminder_id": str(reminder.id),
+            "kind": "hydration",
+            "surface": "watch_summary",
+        },
+        created_at=now,
+    ))
+    db.commit()
+    monkeypatch.setattr(
+        ws.agenda_service,
+        "runtime_range_view",
+        lambda d, u, days=1, max_items_per_day=3: _runtime_projection([]),
+    )
+
+    summary = ws.build_watch_summary(db, user.id)
+
+    item = next(i for i in summary["due_items"] if i["source"]["object_id"] == reminder.id)
+    watch_status = item["delivery_status"]["watch"]
+    assert watch_status["delivery_confirmed"] is True
+    assert watch_status["status"] == "visible_on_watch_summary"
+    assert watch_status["receipt_event_id"]
+    assert watch_status["confirmed_at"]
+
+
 def test_push_tiering_and_cap(db, auth, monkeypatch):
     user, _ = auth
     items = [

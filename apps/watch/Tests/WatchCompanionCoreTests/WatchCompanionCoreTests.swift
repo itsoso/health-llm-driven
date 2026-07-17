@@ -317,6 +317,33 @@ final class WatchSummaryTests: XCTestCase {
         XCTAssertEqual(s.dueItems.first?.isCompletable, true)
     }
 
+    func testSmartReminderVisibleEventMetasFromSummary() throws {
+        let data = Data("""
+        {"status":{"light":"green","readiness_score":80,"headline":"h"},
+         "top_action":null,
+         "agenda":{"total":2,"pending":2},
+         "due_items":[
+           {"title":"定时饮水提醒","kind":"hydration","time_window":"13:30",
+            "action_id":"agenda-smart_reminder-9",
+            "source":{"object_type":"smart_reminder","object_id":9}},
+           {"title":"补剂","kind":"supplement","time_window":"09:00",
+            "action_id":"agenda-health_protocol-8",
+            "source":{"object_type":"health_protocol","object_id":8}}
+         ],
+         "quick_actions":[],"push_items":[],"generated_at":"x"}
+        """.utf8)
+
+        let s = try WatchSummary.decode(data)
+        let metas = watchSmartReminderVisibleEventMetas(s)
+
+        XCTAssertEqual(metas, [[
+            "action_id": "agenda-smart_reminder-9",
+            "reminder_id": "9",
+            "kind": "hydration",
+            "surface": "watch_summary",
+        ]])
+    }
+
     func testDecodeStatusFreshness() throws {
         let data = Data("""
         {"status":{"light":"green","readiness_score":78,"headline":"h",

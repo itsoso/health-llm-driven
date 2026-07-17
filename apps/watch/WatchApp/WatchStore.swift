@@ -47,6 +47,7 @@ final class WatchStore: ObservableObject {
             summary = decoded
             summaryCache.save(decoded)
             ComplicationCache.save(ComplicationState.from(decoded))
+            events.smartReminderVisible(decoded)
             reloadComplicationTimelines()
         } catch {
             lastError = Self.fetchErrorMessage(for: error)

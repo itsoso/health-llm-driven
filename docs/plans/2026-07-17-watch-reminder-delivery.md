@@ -144,3 +144,26 @@ Only after both pass, report exact status and remaining limitation: no direct Wa
 
 - `DATABASE_URL=sqlite:///:memory: TZ=Asia/Shanghai backend/venv/bin/python -m pytest backend/tests/test_agent_fast_record_reply.py backend/tests/test_agent_executor_record_card.py backend/tests/test_health_manage_date_normalize.py -q --no-cov`
 - `backend/venv/bin/python -m ruff check backend/app/services/agent_executor.py backend/tests/test_agent_fast_record_reply.py backend/tests/test_agent_executor_record_card.py backend/tests/test_health_manage_date_normalize.py`
+
+### Task 7: Watch Summary Visibility Receipt
+
+**Files:**
+- Modify: `backend/app/api/client_events.py`
+- Modify: `backend/app/services/reminder_delivery_status.py`
+- Modify: `backend/app/services/watch_summary.py`
+- Modify: `backend/app/services/agent_executor.py`
+- Modify: `apps/watch/Sources/WatchCompanionCore/WatchSummary.swift`
+- Modify: `apps/watch/WatchApp/WatchEventClient.swift`
+- Modify: `apps/watch/WatchApp/WatchStore.swift`
+- Test: `backend/tests/test_client_events.py`
+- Test: `backend/tests/test_watch_summary.py`
+- Test: `backend/tests/test_agent_fast_record_reply.py`
+- Test: `apps/watch/Tests/WatchCompanionCoreTests/WatchCompanionCoreTests.swift`
+
+**Goal:** Close the first verifiable Watch loop without pretending APNs delivery: when Watch successfully decodes a summary containing a `smart_reminder`, it emits `watch_smart_reminder_visible`; the backend uses that event to mark `delivery_status.watch.delivery_confirmed=true` with `receipt_type=watch_summary_visible`.
+
+**Verification:**
+
+- `DATABASE_URL=sqlite:///:memory: TZ=Asia/Shanghai backend/venv/bin/python -m pytest backend/tests/test_agent_fast_record_reply.py backend/tests/test_agent_executor_record_card.py backend/tests/test_health_manage_date_normalize.py backend/tests/test_client_events.py backend/tests/test_watch_summary.py backend/tests/test_watch_actions.py backend/tests/test_reminder_create_api.py -q --no-cov`
+- `cd apps/watch && swift test`
+- `backend/venv/bin/python -m ruff check backend/app/services/reminder_delivery_status.py backend/app/services/watch_summary.py backend/app/api/client_events.py backend/app/services/agent_executor.py backend/tests/test_agent_fast_record_reply.py backend/tests/test_client_events.py backend/tests/test_watch_summary.py`

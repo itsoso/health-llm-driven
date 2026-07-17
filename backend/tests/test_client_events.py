@@ -390,6 +390,27 @@ def test_watch_action_events_accepted(client, db, auth_user_and_headers, event_n
     assert r.json()["ok"] is True
 
 
+def test_watch_smart_reminder_visible_event_accepted(client, db, auth_user_and_headers):
+    """Watch 成功刷新到某条智能提醒时,必须能上报可见 receipt."""
+    _, headers = auth_user_and_headers
+    r = client.post(
+        "/api/v1/client-events",
+        headers=headers,
+        json={
+            "event_name": "watch_smart_reminder_visible",
+            "meta": {
+                "action_id": "agenda-smart_reminder-12",
+                "reminder_id": "12",
+                "kind": "hydration",
+                "surface": "watch_summary",
+            },
+        },
+    )
+
+    assert r.status_code == 202, r.text
+    assert r.json()["ok"] is True
+
+
 @pytest.mark.parametrize("event_name,meta", [
     ("agent_turn_terminal", {
         "phase": "completed",
