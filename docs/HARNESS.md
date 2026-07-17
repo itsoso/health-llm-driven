@@ -483,13 +483,17 @@ _NEEDS_SKILL_RE = re.compile(
 
 **Todo**：试 `health_record` 一个工具开启 strict，跑回归看是否减少 schema 错误（最直接收益是减少 `data` 字段缺字段的兜底分支）。
 
-### 11.3 Compaction / Tool result clearing ❌
+### 11.3 Compaction / Tool result clearing ⚙️(R1 已建,flag 待翻,2026-07-17)
 
 **业界做法**：Anthropic 推荐接近 context limit 时压缩对话；tool_call 老 output 丢弃。我们 voice-chat 长对话场景已经会触到这条边界。
 
 **我们现状**：`memory_extractor` 在对话结束时抽事实写 memory_facts（✅ 部分实现 *structured note-taking*），但**没有运行中的 compaction** — 单次对话内 turn 数多了仍会积累。
 
-**Todo**：voice-chat 加 turn count 阈值，到 N turn 自动压缩；或对话退出时不只抽 facts 也抽"未解决任务"。
+**R1 落地(2026-07-17,ships-OFF)**:`app/services/history_compaction.py` —— build_messages
+超窗溢出(现状静默丢弃)折叠成前情摘要消息:flash 档后台预算(save_message 触发,读路径零
+LLM)、Redis 缓存增量折叠、回执行代码逐字保留(不经 LLM)、陈旧缓存绝不冒充(fail-open 回退
+截断)。窗口内行为逐字节不变。翻 flag 前置:comparative battery 无回退。
+遗留 todo:对话退出时抽"未解决任务"(→ 路线图 R6 commitments)。
 
 ### 11.4 Force tool_choice ⚠️
 

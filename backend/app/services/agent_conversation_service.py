@@ -13,6 +13,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.exc import IntegrityError, TimeoutError as SQLAlchemyTimeoutError
 from sqlalchemy.orm import Session, joinedload
 
+from app.config import settings
 from app.models.agent_conversation import AgentConversation, AgentMessage
 
 
@@ -464,6 +465,14 @@ class AgentConversationService:
             self.db.add(msg)
             self.db.commit()
             self.db.refresh(msg)
+            # R1 长对话折叠(ships-OFF): assistant 落库 = 回合收尾 → 后台预算下一轮
+            # 前情摘要(flag 关/无事件循环/异常 = 全部静默跳过, 零行为变化)。
+            if role == "assistant":
+                try:
+                    from app.services.history_compaction import schedule_fold_refresh
+                    schedule_fold_refresh(conversation_id, keep_recent=15)
+                except Exception:  # noqa: BLE001
+                    pass
             return msg
 
     def update_user_message_after_image_upload(
@@ -631,7 +640,23 @@ class AgentConversationService:
             .all()
         )
         recent = history[-limit:] if len(history) > limit else history
-        return [{"role": m.role, "content": m.content} for m in recent]
+        out = [{"role": m.role, "content": m.content} for m in recent]
+        # R1 长对话折叠(ships-OFF): 溢出部分现状是**静默丢弃**;flag 开且后台已折叠好
+        # 恰到最后一条溢出消息时, 前置一条前情摘要(纯增益)。缓存无效/异常 = 现状截断
+        # (fail-open, 下一轮后台自愈)。读路径零 LLM 零网络(只读 Redis)。
+        if len(history) > limit and getattr(settings, "llm_history_compaction", False):
+            try:
+                from app.services.history_compaction import (
+                    build_summary_message, get_valid_fold_summary,
+                )
+                summary = get_valid_fold_summary(
+                    conversation_id, last_overflow_id=history[-limit - 1].id
+                )
+                if summary:
+                    out = [build_summary_message(summary)] + out
+            except Exception:  # noqa: BLE001
+                pass
+        return out
 
     @staticmethod
     def compress_image_base64(

@@ -243,6 +243,12 @@ class Settings(BaseSettings):
     # 其余 provider 不带该 kwarg = 逐字节不变。治: 弱模型"决定先聊一句不调工具"→ 0 工具
     # 调用落兜底话术。ships-OFF, 翻开前 battery 全绿。
     llm_force_record_tool_choice: bool = False
+    # R1(agent 能力路线图 Wave 1): 长对话溢出"截断→摘要"。现状 build_messages(limit=15)
+    # 超窗静默丢弃;开后把溢出轮次折叠成一条前情摘要消息(flash 档后台预算, Redis 缓存,
+    # 增量折叠;读路径零 LLM)。fail-open: 摘要不可用 = 现状截断。窗口内行为逐字节不变。
+    # ships-OFF, 翻开前 battery 全绿 + comparative 无回退。
+    llm_history_compaction: bool = False
+    history_compaction_model_id: str = "deepseek-v4-flash"
     # 确定性查询直出(延迟, Phase-2 rank2):开后对 fast-route 的**只读**查询回合, 执行完
     # health_query 后若本回合所有工具结果都被 query_readouts 的 top-5 维度格式化器
     # (水/体重/睡眠/步数活动/血压)覆盖, 直接从真实 tool result 渲染人话读数 + break,
