@@ -2404,6 +2404,7 @@ _RESOURCE_TYPE_BY_RECORD_TYPE = {
     "medication": "medication_log",
     "mood": "mood_record",
     "reminder": "smart_reminder",
+    "remember": "memory_fact",
     "rhinitis": "illness_episode",
     "sleep": "sleep_record",
     "supplement": "supplement_log",
@@ -2917,12 +2918,17 @@ _FAST_RECORD_AUTO_CONFIRM_KINDS = {
     # 不经此快路由 confirm 门(无 garmin_sync 关键词分类器);登记于此仅为镜像
     # agent_ops_registry 的 confirm=auto,并让任何路径达此 kind 时免确认前置。
     "garmin_sync",
+    # remember(档案属性/个人事实):typed_only —— 可逆(memory 有 dismiss soft-delete)、
+    # 非医疗(结构化医疗/化验/基因/用药已被 _remember_structured_medical_redirect 服务端硬闸
+    # 挡在 remember 外)。加入 AUTO 集满足不变量 typed_only ⊆ AUTO(否则 typed 通道也恒确认 →
+    # fast 模式确认死循环,见 safety review IMPORTANT-3)。
+    "remember",
 }
 # 症状类仅打字通道免确认;语音/未声明通道保留确认前置(转写失真 + Siri 单轮
 # 无法撤销)。channel 由客户端传输层声明(AgentRequest.channel),绝不读 LLM
 # 工具参数——对抗评审证伪过 arg-based 守卫(schema 无 source 字段,模型是该
 # 字段唯一可能作者=不可信=生产死代码)。
-_TYPED_ONLY_AUTO_CONFIRM_KINDS = {"symptom", "rhinitis", "goal"}
+_TYPED_ONLY_AUTO_CONFIRM_KINDS = {"symptom", "rhinitis", "goal", "remember"}
 
 
 # 医疗级/不可逆/资金类:永远确认前置。unknown kind 也走确认(fail-closed,
@@ -3284,13 +3290,16 @@ def _record_intent_needs_detail_message(record_text: str) -> str:
     数据库"—— 什么都没写过、根本没到端点,说"写库失败"会误导用户以为发生了 DB 错误
     (founder 2026-07-14 实测:'记录饮食' 被误报写库失败)。如实说"还没记下来"+ 请补具体。"""
     text = (record_text or "").strip()
-    hint = "(比如「早餐燕麦粥一碗+鸡蛋2个」「喝水300ml」「俯卧撑20个」)"
+    # 例子跨多领域(饮食/饮水/体测/档案属性/血压), 不再只给饮食/运动 —— 否则记鞋码却被要求
+    # 补早餐(founder 2026-07-17 实测)。档案属性/个人事实(鞋码/衣码/喜好)现在走 remember,
+    # 一般不会落到这里; 落到这里的多是真·笼统输入。
+    hint = "(比如「午饭鳕鱼50g」「喝水300ml」「体重71.4kg」「鞋码42.5」「血压120/80」)"
     if text:
         return (
-            f"我看你想记录「{text}」,但还没记下来 —— 需要更具体一点我才能准确记:"
-            f"具体是什么、多少?{hint}你补充一下,或点确认记录。"
+            f"我看你想记录「{text}」,但还没记下来 —— 我得能对上一个记录项才能存下。"
+            f"你想记的是哪类、值是多少?{hint}补一句,或点确认记录。"
         )
-    return f"我看你想记录一条健康数据,但还没记下来 —— 你想记什么、多少?{hint}"
+    return f"我看你想记一条,但还没记下来 —— 你想记什么、值是多少?{hint}"
 
 
 def _destructive_or_sync_not_performed_message(message: str) -> str:
@@ -3304,6 +3313,66 @@ def _destructive_or_sync_not_performed_message(message: str) -> str:
         "这次我没有执行成功 —— 没有调起对应的删除/修改/同步动作,你的数据没有任何改动。"
         "请再说清楚一点(比如要删哪一条、改成什么),我重试。"
     )
+
+
+_REMEMBER_BP_RE = re.compile(r"\d{2,3}\s*/\s*\d{2,3}")
+_REMEMBER_DOSE_RE = re.compile(r"\d+(?:\.\d+)?\s*(?:mg|mcg|µg|ug|iu|ml)\b", re.IGNORECASE)
+_REMEMBER_RS_RE = re.compile(r"\brs\d{3,}\b", re.IGNORECASE)
+# 用药:给药动词(服用/用药类)。**不含** '在吃'(多是饮食偏好, 如"在吃素")—— 具体药名靠
+# drug_lexicon.contains_drug_name(专名, 不含泛称'药' → 不误伤 药剂师/药企/医药代表)。
+_REMEMBER_MED_KW = ("服用", "在服", "正在服", "长期服", "用药", "在用药", "处方", "吃药", "在用", "正在用")
+_REMEMBER_GENE_KW = ("基因", "基因型", "genotype", "snp", "等位", "纯合", "杂合", "变异位点", "突变")
+# 化验:CJK 词作子串安全;短英文缩写(psa/tsh/…)必须词边界, 否则 ca**psa**icin 误命中。
+_REMEMBER_LAB_CJK = (
+    "血压", "血糖", "血脂", "胆固醇", "甘油三酯", "尿酸", "糖化", "转氨酶", "肝功", "肾功",
+    "肌酐", "白细胞", "红细胞", "血红蛋白", "白蛋白", "胆红素", "甲状腺", "化验", "检验值", "指标值",
+)
+_REMEMBER_LAB_EN_RE = re.compile(r"\b(?:hba1c|a1c|egfr|ldl|hdl|tsh|psa)\b", re.IGNORECASE)
+
+
+def _fold_fullwidth(s: str) -> str:
+    """全角 → 半角(斜杠/数字/字母),防 150／95(U+FF0F)这类全角标点绕过形状正则。"""
+    out = []
+    for ch in s:
+        o = ord(ch)
+        if o == 0xFF0F:                       # 全角斜杠 ／
+            out.append("/")
+        elif 0xFF10 <= o <= 0xFF19 or 0xFF21 <= o <= 0xFF5A:  # 全角数字/字母
+            out.append(chr(o - 0xFEE0))
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
+def _remember_structured_medical_redirect(
+    predicate: Any, object_value: Any, object_unit: Any = None
+) -> Optional[str]:
+    """BLOCKING backstop(safety review 2026-07-17 + 复审加固):remember 绝不能记结构化医疗/
+    化验/基因/用药数据 —— 那些喂 Safety Guardian(读结构化 Twin 分区,**不读** memory_facts)
+    且走加密/RLS 路径。软指引挡不住(本仓库裁决:LLM 自动动作闸=服务端硬闸)。命中 → fail-loud
+    redirect,绝不写 memory_fact 绕过安全。全角归一 + 扫 pred+val+unit 全 blob(闭 fail-open);
+    专名/给药动词/词边界(收 over-alarm, 良性 职业/饮食偏好/卡号/喜好 放行)。"""
+    from app.services import drug_lexicon  # 懒导入避免循环
+    blob = _fold_fullwidth(f"{predicate or ''} {object_value or ''} {object_unit or ''}")
+    low = blob.lower()
+    # 用药/剂量:具体药名(专名, 非泛称'药')+ 剂量形状 + 给药动词
+    if (drug_lexicon.contains_drug_name(blob)
+            or _REMEMBER_DOSE_RE.search(blob)
+            or any(k in blob for k in _REMEMBER_MED_KW)):
+        return ('Error: 这像用药/剂量 —— 请走结构化用药记录 '
+                'health_record(record_type="medication"),不用 remember(否则绕过用药安全规则)。')
+    # 基因:词表 OR rs 位点(rs\d{3,} 无歧义)。C282Y/星等位 只在基因上下文才算(避免误伤
+    # 流水号 A2024B / 评分 *5)—— 基因上下文由 _REMEMBER_GENE_KW 覆盖,故无需独立形状正则。
+    if any(k in low for k in _REMEMBER_GENE_KW) or _REMEMBER_RS_RE.search(blob):
+        return ('Error: 基因/基因型数据请走基因档案上传路径,不用 remember'
+                '(基因数据需独立授权 + 加密隔离)。')
+    # 血压/化验:BP 形状(扫全 blob, 含 unit)OR CJK 化验词 OR 英文化验缩写(词边界)
+    if (_REMEMBER_BP_RE.search(blob)
+            or any(k in blob for k in _REMEMBER_LAB_CJK)
+            or _REMEMBER_LAB_EN_RE.search(blob)):
+        return ('Error: 这像血压/化验指标 —— 请走结构化记录(blood_pressure 或化验上传),'
+                '不用 remember(否则绕过高血压/化验安全规则)。')
+    return None
 
 
 def _normalize_diet_meal_type(value: Any) -> Optional[str]:
@@ -10240,6 +10309,40 @@ class AgentExecutor:
                 "sneeze_times": [entry],
             }
             return await self._api_post(f"{base}/checkin/", headers, payload)
+
+        # remember: 无结构化类型的个人属性/事实(鞋码/衣码/喜好/习惯/生日昵称等)→ 写
+        # MemoryFact 三元组(可召回)。补齐"档案属性"缺口 —— 此前小巴会主动说"补充进档案"
+        # 却无工具可写, 用户给了值也 0 工具调用 → 落进饮食味的兜底话术(founder 2026-07-17
+        # 实测:鞋码 42.5 记不下来还被要求补早餐)。subject 默认"用户", tier=semantic(稳定属性)。
+        if rtype == "remember":
+            predicate = (
+                data.get("predicate") or data.get("attribute")
+                or data.get("key") or data.get("name")
+            )
+            object_value = data.get("object_value")
+            if object_value is None:
+                object_value = data.get("value")
+            if not predicate or object_value in (None, ""):
+                return (
+                    "Error: 记档案属性需要属性名和值 —— 例如 "
+                    'health_record(record_type="remember", data={"predicate":"鞋码","object_value":"42.5"})'
+                )
+            # 硬闸:结构化医疗/化验/基因/用药数据绝不走 memory_fact(会绕过 Safety Guardian +
+            # 加密/RLS)。命中 → fail-loud redirect 到对应结构化记录(服务端硬闸,非软指引)。
+            _redirect = _remember_structured_medical_redirect(
+                predicate, object_value, data.get("object_unit") or data.get("unit"))
+            if _redirect:
+                return _redirect
+            payload = {
+                "tier": "semantic",
+                "subject": (data.get("subject") or "用户"),
+                "predicate": str(predicate),
+                "object_value": str(object_value),
+                "object_unit": (data.get("object_unit") or data.get("unit") or None),
+                "confidence": 0.9,  # 用户明说 → 高置信
+                "is_sensitive": bool(data.get("is_sensitive", False)),
+            }
+            return await self._api_post(f"{base}/memory-facts", headers, payload)
 
         # supplement_group: 按时段批量打卡
         if rtype == "supplement_group":

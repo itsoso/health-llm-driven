@@ -456,6 +456,21 @@ AGENT_OPS: Dict[str, Dict[str, Any]] = {
         "delete": {"tool": "health_manage", "record_type": "goal",
                    "via": "DELETE /goals/{id}"},
     },
+    "remember": {
+        # 无结构化类型的个人属性/事实(鞋码/衣码/喜好/习惯等)→ MemoryFact 三元组(可召回)。
+        # 补齐"档案属性"缺口:此前小巴主动说"补充进档案"却无工具可写, 用户给了值也 0 工具调用。
+        "create": {
+            "tool": "health_record", "record_type": "remember", "confirm": "typed_only",
+            "via": "health_record(remember) → POST /memory-facts(写 MemoryFact 三元组)",
+            "undo": "POST /memory-facts/{id}/dismiss(用户标记'这条不对', soft-delete)",
+        },
+        # 记忆事实经 memory 面(GET /memory-facts/me + 记忆 UI)读写, 暂无 health_manage/
+        # health_query 通路, 显式挂账为 gap(诚实盘点, 不假装有 agent CRUD 通路)。
+        "read": {"gap": True, "reason": "读取走 GET /memory-facts/me + 记忆 UI, 非 health_query dimension"},
+        "list": {"gap": True, "reason": "同 read:/memory-facts/me"},
+        "update": {"gap": True, "reason": "记忆用 supersede/reinforce 语义, 非 health_manage update"},
+        "delete": {"gap": True, "reason": "soft-delete 走 POST /memory-facts/{id}/dismiss, 非 health_manage delete"},
+    },
 }
 
 

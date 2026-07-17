@@ -216,7 +216,7 @@ plan 结构:
                                  "diet", "supplement", "supplement_group", "rhinitis",
                                  "waist", "sleep", "excretion",
                                  "mood", "medication", "illness", "symptom",
-                                 "garmin_sync", "reminder", "goal", "event"],
+                                 "garmin_sync", "reminder", "goal", "event", "remember"],
                         "description": """记录类型:
 - water: 饮水 ("喝了杯水" / "喝了咖啡")
 - diet: 饮食 ("早餐吃了…" / "吃了牛排")
@@ -237,6 +237,7 @@ plan 结构:
 - garmin_sync: 触发 Garmin 数据立即同步
 - reminder: 设置提醒
 - goal: 设置健康目标 ("从今天开始每天快走30分钟" / "90天把腰围降到82cm")
+- remember: 无结构化类型的**个人属性/事实**(鞋码/衣服尺码/喜好/习惯/生日/昵称/血型/职业等)。用户说"记一下我鞋码42.5""记住我不吃香菜"、或你主动问了档案属性用户答了 → 走 remember 存进档案(可日后召回)。判据:**不是**饮食/体重/血压/睡眠/运动/症状/用药这些结构化健康数据,而是"关于我的一条稳定事实"。属性名+值齐了就直接记,别当成"太笼统"去追问;**绝不承诺存不了的东西**——要记的就走 remember。
 - event: 生活事件/行程节点 (出发/落地/到店/药品送达/发现症状的时刻)。**带发生时间**,时间线总结靠它;occurred_at 直接放用户原话("下午"/"刚才"/"21:07"/ISO),后端确定性折算,绝不自己编时刻。
   裸陈述的行程/状态句直接记 event,别犹豫、别回问、别误当查询: "到杭州了"→{"title":"到达杭州"}、"飞机准备起飞"→{"title":"航班起飞"}、"在去公司路上"→{"title":"前往公司途中"}、"明天12:30飞机CA1714飞杭州"→{"title":"航班 CA1714 飞杭州","occurred_at":"明天12:30"}""",
                     },
@@ -272,6 +273,7 @@ symptom:          {"body_part": "eye|respiratory|skin|digestive|musculoskeletal|
                    "triggers": ["pollen", "dust"],            // 可选
                    "occurred_at": "2026-05-08T09:00:00+08:00"} // 可选, 默认现在
 garmin_sync:      {}
+remember:         {"predicate": "鞋码", "object_value": "42.5"}  // 属性名+值; 可选 object_unit / subject(默认"用户"). 例:{"predicate":"忌口","object_value":"不吃香菜"}
 reminder:         {"title": "臀中肌训练", "message": "蚌式开合、侧卧抬腿、臀桥",
                    "remind_at": "2026-06-30T10:30:00+08:00",
                    "recurrence": "daily", "priority": "normal"}
