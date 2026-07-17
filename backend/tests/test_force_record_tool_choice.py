@@ -59,3 +59,47 @@ def test_never_forces_without_record_intent():
 def test_ships_off_by_default():
     from app.config import Settings
     assert Settings.model_fields["llm_force_record_tool_choice"].default is False
+
+
+# ── 否定守卫(2026-07-17 生产 20 轮召回测试实测:「别记录」被 force 逼出记录 + 谎报已记)──
+
+def _prefer_fast_record(msg: str) -> bool:
+    """复现 run_stream 里 _prefer_fast_record_model 的确定性门(四条排除),独立于模型选择。"""
+    import app.services.agent_executor as ae
+    return (
+        bool(ae._RECORD_INTENT_RE.search(msg))
+        and not bool(ae._ADVICE_OR_ANALYSIS_RE.search(msg))
+        and not bool(ae._RECORD_INTERROGATIVE_GUARD_RE.search(msg))
+        and not bool(ae._RECORD_NEGATION_GUARD_RE.search(msg))
+        and not ae._needs_reliable_tool_model(msg)
+    )
+
+
+def test_negation_suppresses_prefer_fast_record():
+    """「别记录/记在心里」→ 不走 fast-record → 不被 R2 force 逼出记录(降级全模型自裁量)。"""
+    for msg in [
+        "我的健身房储物柜密码是蓝色的4731,记在心里就行别记录",
+        "这个不用记录",
+        "算了别记了",
+        "别写进去",
+    ]:
+        assert _prefer_fast_record(msg) is False, msg
+
+
+def test_negation_guard_allows_genuine_records():
+    """误命中成本必须为零:想记的说法(不要记错/别忘了记录/别记成)绝不被守卫误杀。"""
+    import app.services.agent_executor as ae
+    for msg in [
+        "记录喝水500ml",
+        "帮我记录午饭鳕鱼50g",
+        "别忘了记录我今天的体重",   # 命令式:要记
+        "别记成午饭,是晚饭",         # 改归类:要记
+    ]:
+        assert ae._RECORD_NEGATION_GUARD_RE.search(msg) is None, msg
+
+
+def test_negation_blocks_recovered_textual_record_authorization():
+    """弱模型把 health_record 吐成文本时,「别记录」也不授权恢复执行(绕 fast-path 的第二道门)。"""
+    import app.services.agent_executor as ae
+    assert ae._has_explicit_text_record_intent("储物柜密码4731别记录") is False
+    assert ae._has_explicit_text_record_intent("记录体重71.4kg") is True
