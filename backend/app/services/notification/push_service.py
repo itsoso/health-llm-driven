@@ -14,6 +14,7 @@ from app.models.notification import (
     NotificationStatus
 )
 from app.services.advice_guard import AdviceCandidate, guard_and_record_advice
+from app.services.notification.gatekeeper import gate_proactive_notification
 from app.utils.timezone import get_china_now
 
 logger = logging.getLogger(__name__)
@@ -419,6 +420,18 @@ class PushService:
             severity, quiet_hours_policy, respect_quiet_hours
         )
         is_non_critical = _severity_rank(severity) < _severity_rank("critical")
+
+        # R4 主动触达统一预算网关(ships-OFF: mode="off" 时零行为)。observe 只算+记决策日志,
+        # suppress 恒 False → 投递逐字节不变;enforce 且超预算且非 critical/safety 才真拦。
+        # CRITICAL/safety 恒 bypass(硬红线)。fail-open:网关异常绝不吞通知。
+        _gate = gate_proactive_notification(self.db, user_id, notification_type, severity)
+        if _gate.suppress:
+            logger.info(
+                "[push] 用户 %s 触达预算超限丢弃 type=%s cat=%s count=%s/%s",
+                user_id, notification_type, _gate.category, _gate.count_today, _gate.budget,
+            )
+            return {"success": False, "reason": "gatekeeper_budget"}
+
         # 用户明确要求 09:00 前不要 push。这里比普通 quiet-hours 更硬:
         # 即使 critical / 显式 bypass, 也先延迟到 morning floor。
         if (

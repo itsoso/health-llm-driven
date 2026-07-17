@@ -215,6 +215,10 @@ class Settings(BaseSettings):
     # R15 三级通知预算:P0 必响应(处方药/复查当天/异常血压)周上限;全局周上限(跨所有 tier)
     proactive_p0_weekly_budget: int = 3
     proactive_global_weekly_budget: int = 15
+    # R4 主动触达统一 Gatekeeper(每类每日预算)。off=零行为(默认,ships-OFF);
+    # observe=算+记 would_drop 决策日志不实际拦(投递逐字节不变);enforce=超预算非 critical 才丢。
+    # CRITICAL/safety 类别恒 bypass。翻 observe→enforce 需 founder 看两周日志后决定。
+    notification_gatekeeper_mode: str = "off"
     # 任务分级模型路由(成本/延迟):开后按 task_tier 选模型;默认关=零行为变更
     task_tiered_routing: bool = False
     # GenUI metric_table 卡片(延迟, Phase-2 rank1)服务端 kill-switch:关=后端绝不发
