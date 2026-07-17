@@ -47,7 +47,7 @@ RequirementAdmission:
 
 | Object | Change |
 |---|---|
-| `HealthAgendaItem` | Show only when due, overdue, safety-relevant, or precisely near-term. |
+| `HealthAgendaItem` | Show only when due, overdue, safety-relevant, or precisely near-term and executable. |
 | `LeverageAction` | Full action remains available on the Today surface. |
 
 ## 5. User Flow
@@ -88,6 +88,10 @@ Given a due, overdue, high-severity, or precisely scheduled near-term item
 When the timeline loads
 Then one direct context strip appears using deterministic priority
 
+Given a time-window-only advisory or non-executable rhythm item
+When it is within the near-term horizon
+Then it does not occupy the Mobile Agent header
+
 Given the user dismisses an action strip
 When the strip closes
 Then no hidden placeholder replaces it and the full plan remains available at 更多操作 > 今日计划
@@ -105,3 +109,4 @@ bundle; no data migration is required.
 | Date | Change | Reason |
 |---|---|---|
 | 2026-07-16 | Approved conditional context strip | Remove repeated first-screen UI while preserving timely state. |
+| 2026-07-17 | Restricted near-term strip to executable precise schedules | Keep time-window rhythm guidance from becoming a repetitive chat notification. |

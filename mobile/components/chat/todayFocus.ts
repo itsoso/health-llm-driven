@@ -116,7 +116,7 @@ function contextCandidate(
   if (status === 'due') return candidate(item, '现在', 'normal', 1, index);
   if (status === 'overdue') return candidate(item, '待处理', 'caution', 1, index);
 
-  const scheduledLabel = nearTermScheduleLabel(item.scheduled_for, timelineDate, now);
+  const scheduledLabel = nearTermScheduleLabel(item, timelineDate, now);
   if (scheduledLabel) return candidate(item, scheduledLabel, 'normal', 2, index);
   return null;
 }
@@ -139,10 +139,14 @@ function candidate(
 }
 
 function nearTermScheduleLabel(
-  scheduledFor: string | null | undefined,
+  item: TodayTimelineItem,
   timelineDate: string | undefined,
   now: Date,
 ): string | null {
+  // 时间窗 advisory 只是节奏提示,没有一个用户可直接完成的动作;
+  // 只有后端给出 pending 且可完成的精确排程,才允许占用聊天顶部空间。
+  if (readText(item.status).toLowerCase() !== 'pending' || !item.can_complete) return null;
+  const scheduledFor = item.scheduled_for;
   const match = /^(\d{2}):(\d{2})$/.exec(readText(scheduledFor));
   if (!match || timelineDate !== localDateKey(now)) return null;
   const hours = Number(match[1]);

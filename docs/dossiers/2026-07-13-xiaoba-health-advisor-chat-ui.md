@@ -138,3 +138,10 @@
 - G6 模拟器验证：PASS。逾期状态显示为单行 `已过时段 · 复查:血脂四项`，无常驻标题、计数或空占位，对话与输入栏未被遮挡。证据：`/tmp/mobile-chat-context-strip-final.png`。
 - G5 生产 OTA：PASS。`production` / runtime `1.3.1`，update group `c79a55aa-fd14-4192-8894-b7ad71a6f457`，iOS update `019f6a31-9e36-787d-b4e2-c36786c3b170`，脚本已回读校验发布结果。
 - 当前状态：S7 已发布，待真实设备冷启动完成最终 G6 触控与视觉确认。
+
+## 2026-07-17 · 时间段提醒边界优化
+
+- 用户问题：顶部时间段提醒是否合理，避免把时间骨架提示误显示成聊天提醒。
+- 根因：90 分钟近期开关只检查 `scheduled_for`，没有排除 `status=info` 或不可执行的 advisory。
+- 调整：保留 90 分钟精确排程窗口，但仅允许 `pending + can_complete` 的可执行项进入 Agent 顶部；纯时间窗提示继续留在 Today 时间线。
+- 验证：Mobile context resolver / context strip 20 项测试通过，TypeScript 检查通过，diff 校验通过。

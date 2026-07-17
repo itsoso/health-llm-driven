@@ -243,4 +243,24 @@ describe('todayFocus resolver', () => {
     }));
     expect(farModel.contextStrip).toBeNull();
   });
+
+  it('does not promote a time-window advisory into the chat header', () => {
+    const rhythmTimeline = timeline('晚间收口：补齐饮食和用药记录');
+    rhythmTimeline.date = '2026-07-16';
+    rhythmTimeline.items[0] = {
+      ...rhythmTimeline.items[0],
+      kind: 'advisory',
+      status: 'info',
+      can_complete: false,
+      scheduled_for: '13:00',
+      time_window: 'afternoon',
+    };
+
+    const model = buildTodayFocusModel({
+      timeline: rhythmTimeline,
+      now: atLocalTime(12, 15),
+    });
+
+    expect(model.contextStrip).toBeNull();
+  });
 });
