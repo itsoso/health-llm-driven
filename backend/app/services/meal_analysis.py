@@ -208,12 +208,14 @@ def post_meal_observational_summary(
     return {"text": text, "fuel_summary": fuel_summary, "fuel_findings": fuel_findings}
 
 
-def run_guidance_rules(db: Session, user_id: int, text: str) -> List[Dict[str, Any]]:
-    """Run the SafetyGuardian guidance red-line rules over candidate text.
+def evaluate_guidance_rules(user_id: int, text: str) -> List[Dict[str, Any]]:
+    """纯规则求值:裸 twin + 两条 guidance 红线。**无 db、无审计、无副作用**。
 
-    Defense-in-depth behind ``sanitize_guidance``: even after the validator
-    strips text, we evaluate the candidate so any residual prescriptive/imperative
-    token becomes an auditable CRITICAL/HIGH alert.
+    单一真源:``run_guidance_rules``(求值 + 审计)与主对话的影子探针共用它 ——
+    避免第三次复制这段 twin 样板(rokid_pushup_review 已复制过一次 = 已有漂移风险)。
+    影子探针**必须**用这个纯函数而非 ``run_guidance_rules``:后者会 ``db.commit()``
+    写审计行,插进主回合的 session 会在助手消息落库前 rollback,且误命中会把真实
+    safety 评估挤出 /safety/audit 默认窗口(= 审计面 under-alarm)。
     """
     from app.agents.safety_guardian.rules.guidance_red_lines import (
         diet_prescription_red_line,
@@ -231,6 +233,17 @@ def run_guidance_rules(db: Session, user_id: int, text: str) -> List[Dict[str, A
         alert = rule(twin)
         if alert is not None:
             alerts.append(alert.model_dump_for_api())
+    return alerts
+
+
+def run_guidance_rules(db: Session, user_id: int, text: str) -> List[Dict[str, Any]]:
+    """Run the SafetyGuardian guidance red-line rules over candidate text.
+
+    Defense-in-depth behind ``sanitize_guidance``: even after the validator
+    strips text, we evaluate the candidate so any residual prescriptive/imperative
+    token becomes an auditable CRITICAL/HIGH alert.
+    """
+    alerts = evaluate_guidance_rules(user_id, text)
     if alerts:
         audit.log_safety_evaluation(
             db,

@@ -4514,6 +4514,42 @@ def _confirm_or_describe(args: dict, data: dict, *, preview: str) -> str | None:
     )
 
 
+def _guidance_shadow_probe(user_id: int, answer_text: str) -> None:
+    """[guidance-probe] 主对话答案跑 R4 guidance 红线 —— **纯影子, 只打 log**。
+
+    背景: diet_prescription_red_line(CRITICAL)/movement_imperative_red_line 只扫
+    twin.acute.pending_guidance_texts, builder 永不填充、agent_executor 零调用 →
+    这条确定性 R4 规则在最大流量出口(主对话)上全程是暗的。
+
+    为什么只打 log(不写审计/不进 meta/不追加提示/不改正文):
+    - 现有饮食正则在**开放域**主对话实测 9/15 误命中(回显用户自己的记录/目标、转述
+      医嘱与 KB、甚至提问句)。原护栏是在**餐食确定性模板**域调的, 外推到开放域即噪声源。
+    - 写审计行会把真实 safety 评估挤出 /safety/audit 默认 20 条窗口 = 审计面 under-alarm
+      (违反加层不减层); 且审计写入的 rollback 会回滚本轮尚未落库的助手消息。
+    故先量分布, 再决定收紧正则 / 是否开拦截。**本函数不关闭那个 R4 洞, 只是给它装仪表。**
+
+    用 evaluate_guidance_rules(纯求值, 无 db/无审计)而非 run_guidance_rules(带审计写入)。
+    fail-soft: 影子层绝不打死回合; 但异常仍 log(不静默绿, 免这层自己变成新的藏身处)。
+    """
+    if not answer_text or not answer_text.strip():
+        return
+    try:
+        from app.services.meal_analysis import evaluate_guidance_rules
+
+        alerts = evaluate_guidance_rules(user_id, answer_text)
+        if not alerts:
+            return
+        logger.warning(
+            "[guidance-probe] 主对话答案命中 R4 guidance 红线 %d 条 user=%s rules=%s matched=%s",
+            len(alerts),
+            user_id,
+            [a.get("rule_id") for a in alerts],
+            [((a.get("data_citation") or {}).get("matched") or [])[:4] for a in alerts],
+        )
+    except Exception as e:  # noqa: BLE001 — 影子探针绝不断回合, 但不静默
+        logger.warning("[guidance-probe] 影子扫描失败(不影响本回合): %s", e)
+
+
 def _citation_anchor_shadow_meta(db, user_id: int, answer_text: str) -> Optional[Dict[str, Any]]:
     """P1 数字锚定核验(shadow)。核验最终答案里引用的个人数值能否锚定到 Twin,
     只观测不干预:返回一个可放进 done.meta 的 additive 摘要 dict(客户端不读不炸)。
@@ -7286,6 +7322,20 @@ class AgentExecutor:
                 user_id,
                 (message or "")[:80],
             )
+        # [guidance-probe · 2026-07-17] 主对话 R4 guidance 红线的**纯影子测量**(只打 log)。
+        # 现状(对抗评审揪出): diet_prescription_red_line(CRITICAL) / movement_imperative_red_line
+        # 只扫 twin.acute.pending_guidance_texts, 而 builder 永不填充、agent_executor 零调用
+        # → 这条确定性 R4 规则在**最大流量出口(主对话)上全程是暗的**。
+        # 但实测: 现有饮食正则在开放域主对话 9/15 误命中(回显用户自己的记录/目标、转述医嘱/KB、
+        # 甚至提问句), 直接上 alert/审计会 (a) 把真实 safety 评估挤出 /safety/audit 默认窗口
+        # = 审计面 under-alarm, (b) 审计写入的 rollback 会回滚本轮还没落库的助手消息。
+        # 故本切片**只打 log**: 不写审计行、不进 meta、不追加提示、不碰 db session、不改正文。
+        # 目的 = 先量出真实分布(真处方 vs 转述/回显噪声), 再决定是否收紧正则/开拦截。
+        # 位置: 在 GenUI fence 追加**之前**扫散文 —— 确定性卡片行(如 `| 每日摄入 | 50 克 |`)
+        # 会命中 _PRESCRIPTIVE_QTY, 不该算进噪声分母。(LLM 自写的 markdown 表仍会命中 = 已知噪声。)
+        # 时机: 此处 token 已全部下发, 不影响 TTFT。
+        _guidance_shadow_probe(user_id, full_reply)
+
         # GenUI metric_table (rank1): 合成完成后, 把本回合只读数据查询结果确定性打成
         # reva-ui 表格卡片, 追加到答案末尾 (镜像图表 "叙事在前、卡片在后" 的顺序)。
         # 数值全部来自工具结果具名字段 (R4); 在 _strip_reva_ui_from_llm_text **之后**追加
@@ -10170,6 +10220,33 @@ class AgentExecutor:
                 args,
                 data,
                 preview=_health_record_confirmation_preview(rtype, args, data),
+            )
+
+        # [R4-probe · 2026-07-17] **只观测不干预** —— 量化「model 自报 confirmed 绕过确认门」的真实频率。
+        # 通路(对抗评审揪出): confirmed 剥离器 _auto_confirm_fast_record_args 只在
+        # self._prefer_fast_record_model 分支跑(:6497/:6563), 而该 flag 在**有图片/附件**、或消息命中
+        # advice/analysis/疑问守卫时为 False → NEVER_AUTO kind(medication/illness) 带着模型自报的
+        # confirmed 直抵确认门 → _confirm_or_describe(:4470-4478) 无条件放行 → 首轮直写 = R4 逃逸。
+        # 反证: Gate A 若跑过, confirmed 早被 pop → **此处仍带 confirmed 就等于 Gate A 没跑** = 逃逸通路。
+        # 本探针**不改行为**(不剥离、不阻断): 通路可达已确证, 但模型实际伪造频率**无生产证据** ——
+        # 先测真实命中率与句式分布, 再决定完整修法(服务端签发跨轮凭证 + 读用户原话的否定优先判据)。
+        # 判读: msg 像「是的/对」= 真实跨轮确认(良性, 今天靠 flag 巧合放行);
+        #       像首轮记录/带图/带「分析·怎么」= 真逃逸(该堵)。
+        if rtype in _FAST_RECORD_NEVER_AUTO_CONFIRM_KINDS and (
+            args.get("confirmed") is True
+            or args.get("confirm") is True
+            or (
+                isinstance(data, dict)
+                and (data.get("confirmed") is True or data.get("confirm") is True)
+            )
+        ):
+            logger.warning(
+                "[R4-probe] NEVER_AUTO kind=%s 带 model 自报 confirmed 抵达确认门 "
+                "(Gate A 未剥离; prefer_fast=%s) user=%s msg=%r",
+                rtype,
+                self._prefer_fast_record_model,
+                self._current_user_id,
+                (getattr(self, "_current_turn_user_message", "") or "")[:60],
             )
 
         # medication 是医疗级写入:无论快/慢路径恒确认前置。快路径由 gate 置 flag;
