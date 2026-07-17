@@ -113,7 +113,8 @@ def sources_summary(db, user_id: int, days: int = 30) -> dict[str, Any]:
     每源:
       - days_covered: 窗口内 distinct record_date 数
       - latest_date:  窗口内最新一天
-      - metrics:      每指标取窗口内"最近一天的非空值" (按 record_date 倒序第一个非空)
+      - latest_day_metrics: 只取 latest_date 当天的指标,不跨日拼接
+      - metrics:      每指标取窗口内最近非空值,保留给旧客户端兼容
     按 days_covered 降序排列 (主力设备在前).
     """
     from app.models.daily_health import GarminData
@@ -132,15 +133,24 @@ def sources_summary(db, user_id: int, days: int = 30) -> dict[str, Any]:
     for r in rows:
         src = r.data_source or "garmin"
         agg = by_source.setdefault(
-            src, {"dates": set(), "latest_date": None, "metrics": {}}
+            src,
+            {
+                "dates": set(),
+                "latest_date": None,
+                "latest_day_metrics": {},
+                "metrics": {},
+            },
         )
         agg["dates"].add(r.record_date)
         if agg["latest_date"] is None or r.record_date > agg["latest_date"]:
             agg["latest_date"] = r.record_date
+            agg["latest_day_metrics"] = {}
         for key in _SUMMARY_METRICS:
+            v = getattr(r, key, None)
+            if r.record_date == agg["latest_date"] and v is not None:
+                agg["latest_day_metrics"][key] = v
             if key in agg["metrics"]:
                 continue  # 已拿到更近的非空值 (rows 已按日期倒序)
-            v = getattr(r, key, None)
             if v is not None:
                 agg["metrics"][key] = v
 
@@ -149,6 +159,7 @@ def sources_summary(db, user_id: int, days: int = 30) -> dict[str, Any]:
             "data_source": src,
             "days_covered": len(agg["dates"]),
             "latest_date": agg["latest_date"].isoformat() if agg["latest_date"] else None,
+            "latest_day_metrics": agg["latest_day_metrics"],
             "metrics": agg["metrics"],
         }
         for src, agg in by_source.items()

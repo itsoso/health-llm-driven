@@ -8,6 +8,8 @@ export interface DeviceSourceSummary {
   data_source: string;
   days_covered: number;
   latest_date: string | null;
+  latest_day_metrics?: Record<string, number>;
+  /** @deprecated 旧客户端兼容字段:每个指标分别取窗口内最近非空值,可能跨日。 */
   metrics: Record<string, number>;
 }
 export interface DeviceSourcesResponse {
@@ -56,6 +58,11 @@ export function orderedMetrics(metrics: Record<string, number> | null | undefine
     .filter((k) => metrics[k] != null)
     .map((k) => formatMetric(k, metrics[k])!)
     .filter(Boolean);
+}
+
+/** 严格展示该来源最近一天的同日快照,不使用可能跨日的兼容字段 metrics。 */
+export function latestDayMetrics(source: DeviceSourceSummary): { key: string; label: string; text: string }[] {
+  return orderedMetrics(source.latest_day_metrics);
 }
 
 /** 源按覆盖天数降序(主力设备在前);后端已排,前端兜底。 */

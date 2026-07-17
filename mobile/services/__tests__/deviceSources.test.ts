@@ -1,11 +1,12 @@
-jest.mock('../api', () => ({ __esModule: true, default: { get: jest.fn() } }));
-
 import {
   orderedMetrics,
   sortedSources,
   formatMetric,
+  latestDayMetrics,
   type DeviceSourcesResponse,
 } from '../deviceSources';
+
+jest.mock('../api', () => ({ __esModule: true, default: { get: jest.fn() } }));
 
 describe('formatMetric', () => {
   it('格式化各指标 + 单位', () => {
@@ -51,5 +52,19 @@ describe('sortedSources', () => {
   it('空 → []', () => {
     expect(sortedSources(null)).toEqual([]);
     expect(sortedSources(undefined)).toEqual([]);
+  });
+});
+
+describe('latestDayMetrics', () => {
+  it('只展示来源最近一天的同日指标,不回退到跨日聚合值', () => {
+    const source = {
+      data_source: 'apple-watch',
+      days_covered: 8,
+      latest_date: '2026-07-17',
+      metrics: { steps: 3822, hrv: 54 },
+      latest_day_metrics: { steps: 38 },
+    };
+
+    expect(latestDayMetrics(source)).toEqual([{ key: 'steps', label: '步数', text: '38' }]);
   });
 });

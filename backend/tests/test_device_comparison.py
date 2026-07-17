@@ -110,6 +110,8 @@ def test_sources_summary_latest_nonnull_picks_most_recent(db):
     g = out["sources"][0]
     assert g["metrics"]["hrv"] == 40.0
     assert g["metrics"]["steps"] == 5000
+    # 最近一天视图必须是同一天的真实快照，不能混入前一天的步数。
+    assert g["latest_day_metrics"] == {"hrv": 40.0}
 
 
 def test_sources_summary_endpoint_requires_auth(client):

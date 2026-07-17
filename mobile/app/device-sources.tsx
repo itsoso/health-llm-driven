@@ -23,7 +23,7 @@ import { useQuery } from '@tanstack/react-query';
 import {
   getDeviceSourcesSummary,
   sortedSources,
-  orderedMetrics,
+  latestDayMetrics,
   type DeviceSourceSummary,
 } from '../services/deviceSources';
 import { sourceLabel } from '../services/deviceCompare';
@@ -48,7 +48,7 @@ function sourceIcon(src: string): keyof typeof Ionicons.glyphMap {
 function SourceCard({ source }: { source: DeviceSourceSummary }) {
   const { c } = useTheme();
   const styles = createStyles(c);
-  const metrics = orderedMetrics(source.metrics);
+  const metrics = latestDayMetrics(source);
   const isUnknown = source.data_source === 'unknown';
   return (
     <View style={[styles.card, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
@@ -61,7 +61,7 @@ function SourceCard({ source }: { source: DeviceSourceSummary }) {
             {sourceLabel(source.data_source)}
           </Text>
           <Text style={[styles.sub, { color: c.labelTertiary }]} numberOfLines={1}>
-            覆盖 {source.days_covered} 天{source.latest_date ? ` · 最新 ${source.latest_date}` : ''}
+            覆盖 {source.days_covered} 天
           </Text>
         </View>
       </View>
@@ -72,18 +72,23 @@ function SourceCard({ source }: { source: DeviceSourceSummary }) {
         </Text>
       )}
 
-      {metrics.length > 0 ? (
-        <View style={styles.metricGrid}>
-          {metrics.map((m) => (
-            <View key={m.key} style={styles.metricCell}>
-              <Text style={[styles.metricVal, { color: c.labelPrimary }]} numberOfLines={1}>{m.text}</Text>
-              <Text style={[styles.metricLabel, { color: c.labelTertiary }]} numberOfLines={1}>{m.label}</Text>
-            </View>
-          ))}
-        </View>
-      ) : (
-        <Text style={[styles.sub, { color: c.labelTertiary }]}>窗口内无指标数据</Text>
-      )}
+      <View style={[styles.latestDivider, { borderTopColor: c.separator }]}>
+        <Text style={[styles.latestTitle, { color: c.labelSecondary }]}>
+          {source.latest_date ? `最近一天 · ${source.latest_date}` : '最近一天'}
+        </Text>
+        {metrics.length > 0 ? (
+          <View style={styles.metricGrid}>
+            {metrics.map((m) => (
+              <View key={m.key} style={styles.metricCell}>
+                <Text style={[styles.metricVal, { color: c.labelPrimary }]} numberOfLines={1}>{m.text}</Text>
+                <Text style={[styles.metricLabel, { color: c.labelTertiary }]} numberOfLines={1}>{m.label}</Text>
+              </View>
+            ))}
+          </View>
+        ) : (
+          <Text style={[styles.sub, { color: c.labelTertiary }]}>最近一天无可展示指标</Text>
+        )}
+      </View>
     </View>
   );
 }
@@ -144,7 +149,7 @@ export default function DeviceSourcesScreen() {
         ) : (
           <>
             <Text style={[styles.hint, { color: c.labelTertiary }]}>
-              近 {data?.window_days ?? days} 天,每个设备各自贡献的数据(同戴多设备时各占一行)
+              近 {data?.window_days ?? days} 天统计覆盖;卡片展示各来源最近一天的同日数据
             </Text>
             {sources.map((s) => (
               <SourceCard key={s.data_source} source={s} />
@@ -178,6 +183,8 @@ const createStyles = (c: ColorPalette) =>
     sourceName: { fontSize: 15, fontWeight: '800' },
     sub: { fontSize: 12, fontWeight: '500' },
     unknownNote: { fontSize: 11, lineHeight: 15 },
+    latestDivider: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 10, gap: 9 },
+    latestTitle: { fontSize: 12, fontWeight: '600' },
     metricGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
     metricCell: { width: '30%', minWidth: 90 },
     metricVal: { fontSize: 15, fontWeight: '700' },
