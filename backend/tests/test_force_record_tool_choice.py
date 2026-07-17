@@ -103,3 +103,14 @@ def test_negation_blocks_recovered_textual_record_authorization():
     import app.services.agent_executor as ae
     assert ae._has_explicit_text_record_intent("储物柜密码4731别记录") is False
     assert ae._has_explicit_text_record_intent("记录体重71.4kg") is True
+
+
+def test_negation_excludes_fast_eligible_turn():
+    """三条 fast 路径统一排除的第二条:否定轮不降 fast 模型 → 留强模型可靠拒记(生产实测:
+    降到 qwen3.6-flash 时 health_record 仍在工具集,软护栏不牢)。真记录/查询仍 fast-eligible。"""
+    import app.services.agent_executor as ae
+    assert ae._is_fast_eligible_turn("记在心里就行别记录", has_images=False, has_file=False) is False
+    assert ae._is_fast_eligible_turn("这个不用记录", has_images=False, has_file=False) is False
+    # 未被误杀:真记录 + 简单查询仍走 fast
+    assert ae._is_fast_eligible_turn("记录喝水500ml", has_images=False, has_file=False) is True
+    assert ae._is_fast_eligible_turn("我今天喝了多少水", has_images=False, has_file=False) is True

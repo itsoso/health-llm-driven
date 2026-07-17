@@ -4316,6 +4316,11 @@ def _is_fast_eligible_turn(
     # 破坏性/同步意图 → 必须强模型做工具决策(弱 fast 不可靠),整轮不降 fast。
     if _needs_reliable_tool_model(text):
         return False
+    # 否定("别记/记在心里")→ 全模型自行裁量地更可靠(弱 fast 模型只靠 tool-schema 软指令
+    # 拒记,不稳)。整轮不降 fast,让强模型稳妥地"不记 + 不谎报已记"(2026-07-17 生产实测:
+    # 否定轮被降到 qwen3.6-flash,虽本次正确拒记,但 health_record 仍在工具集里,软护栏不牢)。
+    if _RECORD_NEGATION_GUARD_RE.search(text):
+        return False
     return bool(_RECORD_INTENT_RE.search(text) or _SIMPLE_QUERY_INTENT_RE.search(text))
 
 
@@ -8407,6 +8412,12 @@ class AgentExecutor:
         # 「帮我同步」「删除早餐」被降 fast 后反复失败;强模型 23:19 同句 status=complete)。
         # 这是 sync 簇的实际失败路径(「同步」不在 record/query 意图正则里 → 只经此工具轮快路由)。
         if _needs_reliable_tool_model(getattr(self, "_current_turn_user_message", "")):
+            return None
+        # 否定("别记/记在心里")→ 工具决策留强模型(与整轮快路由同门):弱 fast 只靠 tool-schema
+        # 软指令拒记不稳,强模型更可靠地"不记 + 不谎报已记"。三条 fast 路径统一排除的第三条。
+        if _RECORD_NEGATION_GUARD_RE.search(
+            getattr(self, "_current_turn_user_message", "") or ""
+        ):
             return None
         # 只降**首个工具决策轮**: 默认路径下合成轮仍带 tools, 一旦跑过工具就留强模型
         # (安全: 工具后那一轮多半是写医疗正文的合成轮)。首轮直接答文本→安全兜底丢弃重合成。
