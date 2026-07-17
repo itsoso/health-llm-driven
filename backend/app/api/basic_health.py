@@ -15,9 +15,18 @@ router = APIRouter()
 @router.post("/", response_model=BasicHealthDataResponse)
 def create_basic_health_data(
     data: BasicHealthDataCreate,
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
-    """创建基础健康数据"""
+    """创建基础健康数据。
+
+    user_id remains in the request schema for backwards compatibility, but the
+    authenticated identity is the authority.  Admins may write on behalf of a
+    managed user; ordinary users may only write their own record.
+    """
+    if data.user_id != current_user.id and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="只能写入自己的基础健康数据")
+
     # 如果未提供BMI，自动计算
     if data.weight and data.height and not data.bmi:
         data.bmi = data.weight / ((data.height / 100) ** 2)
@@ -66,9 +75,13 @@ def get_user_basic_health_data(
     user_id: int,
     skip: int = 0,
     limit: int = 100,
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
-    """获取用户的基础健康数据"""
+    """获取用户的基础健康数据（本人或管理员）。"""
+    if user_id != current_user.id and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="无权访问该用户的基础健康数据")
+
     data_list = db.query(BasicHealthData).filter(
         BasicHealthData.user_id == user_id
     ).order_by(BasicHealthData.record_date.desc()).offset(skip).limit(limit).all()
@@ -78,9 +91,13 @@ def get_user_basic_health_data(
 @router.get("/user/{user_id}/latest", response_model=BasicHealthDataResponse)
 def get_latest_basic_health_data(
     user_id: int,
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
-    """获取用户最新的基础健康数据"""
+    """获取用户最新的基础健康数据（本人或管理员）。"""
+    if user_id != current_user.id and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="无权访问该用户的基础健康数据")
+
     data = db.query(BasicHealthData).filter(
         BasicHealthData.user_id == user_id
     ).order_by(BasicHealthData.record_date.desc()).first()

@@ -370,6 +370,7 @@ class PushService:
             NotificationType.HEALTH_ALERT.value: settings.health_alert_enabled,
             NotificationType.AI_ADVICE.value: settings.ai_advice_enabled,
             NotificationType.WORKOUT_ANALYSIS.value: getattr(settings, "workout_analysis_enabled", True),
+            "open_loop": settings.health_alert_enabled,
         }
 
         return type_switches.get(notification_type, True)

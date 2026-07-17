@@ -62,11 +62,11 @@ def test_open_loop_apns_payload_uses_deep_link_key_with_underscore(db, captured_
         deeplink="health://medical-exams/upload",
     )
 
-    # 关键: _push_loop 内部 from ... import IOSPushService → asyncio.run(service.send_push(...))
-    # 我们 patch class 而非实例
+    # PushService 延迟加载 IOSPushService，patch class 仍能捕获统一管线的 APNs 入参。
     with patch("app.services.notification.ios_push.IOSPushService", return_value=mock_service), \
          patch("app.tasks.open_loop_manager._is_recently_pushed_or_snoozed", return_value=False), \
-         patch("app.tasks.open_loop_manager._is_in_quiet_hours_now", return_value=False):
+         patch("app.tasks.open_loop_manager._is_in_quiet_hours_now", return_value=False), \
+         patch("app.services.notification.push_service.PushService.is_quiet_hours", return_value=False):
         ok = _push_loop(db, user_id=1, loop=loop)
 
     assert ok is True
@@ -84,6 +84,34 @@ def test_open_loop_apns_payload_uses_deep_link_key_with_underscore(db, captured_
     )
 
 
+def test_open_loop_lock_screen_copy_is_generic(db, captured_send_push_kwargs):
+    """化验项目和值不得出现在锁屏可见 title/body，详细数据走 data。"""
+    captured, mock_service = captured_send_push_kwargs
+    db.add(_make_setting(user_id=1))
+    db.commit()
+
+    loop = OpenLoop(
+        user_id=1,
+        kind="lab_overdue",
+        signal_key="LDL",
+        score=160,
+        title="LDL 是时候复查了",
+        body="180 天前是 4.1",
+        deeplink="health://medical-exams/upload",
+        metadata={"code": "LDL", "last_value": 4.1},
+    )
+    with patch("app.services.notification.ios_push.IOSPushService", return_value=mock_service), \
+         patch("app.tasks.open_loop_manager._is_recently_pushed_or_snoozed", return_value=False), \
+         patch("app.tasks.open_loop_manager._is_in_quiet_hours_now", return_value=False), \
+         patch("app.services.notification.push_service.PushService.is_quiet_hours", return_value=False):
+        assert _push_loop(db, user_id=1, loop=loop) is True
+
+    assert captured["title"] == "化验指标提醒"
+    assert "LDL" not in captured["title"]
+    assert "4.1" not in captured["body"]
+    assert captured["data"]["metadata"]["code"] == "LDL"
+
+
 def test_open_loop_apns_payload_includes_history_id(db, captured_send_push_kwargs):
     """history_id 必须随 payload 下发, mobile 才能 POST feedback."""
     captured, mock_service = captured_send_push_kwargs
@@ -98,7 +126,8 @@ def test_open_loop_apns_payload_includes_history_id(db, captured_send_push_kwarg
 
     with patch("app.services.notification.ios_push.IOSPushService", return_value=mock_service), \
          patch("app.tasks.open_loop_manager._is_recently_pushed_or_snoozed", return_value=False), \
-         patch("app.tasks.open_loop_manager._is_in_quiet_hours_now", return_value=False):
+         patch("app.tasks.open_loop_manager._is_in_quiet_hours_now", return_value=False), \
+         patch("app.services.notification.push_service.PushService.is_quiet_hours", return_value=False):
         _push_loop(db, user_id=1, loop=loop)
 
     data = captured.get("data", {})
@@ -121,7 +150,8 @@ def test_open_loop_empty_deeplink_passes_empty_string(db, captured_send_push_kwa
 
     with patch("app.services.notification.ios_push.IOSPushService", return_value=mock_service), \
          patch("app.tasks.open_loop_manager._is_recently_pushed_or_snoozed", return_value=False), \
-         patch("app.tasks.open_loop_manager._is_in_quiet_hours_now", return_value=False):
+         patch("app.tasks.open_loop_manager._is_in_quiet_hours_now", return_value=False), \
+         patch("app.services.notification.push_service.PushService.is_quiet_hours", return_value=False):
         ok = _push_loop(db, user_id=1, loop=loop)
 
     assert ok is True

@@ -62,7 +62,7 @@ ADD COLUMN IF NOT EXISTS ios_device_token VARCHAR(200);
 
 ```bash
 ssh root@39.98.206.178
-PGPASSWORD='HealthDB2026Pass' psql -h localhost -U health_user -d health_db
+PGPASSWORD='<production-db-secret>' psql -h localhost -U health_user -d health_db
 ```
 
 ### 2. 查看当前表结构
@@ -189,7 +189,7 @@ alembic init alembic
 在 `alembic.ini` 中配置数据库连接：
 
 ```ini
-sqlalchemy.url = postgresql://health_user:HealthDB2026Pass@localhost/health_db
+sqlalchemy.url = postgresql://health_user:<production-db-secret>@localhost/health_db
 ```
 
 ### 2. 生成迁移脚本

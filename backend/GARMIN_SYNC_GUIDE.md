@@ -9,12 +9,12 @@
 ```bash
 cd backend
 source venv/bin/activate
-python scripts/sync_garmin_full.py itsoso@126.com Sisi1124 1 2
+python scripts/sync_garmin_full.py itsoso@126.com <garmin-password> 1 2
 ```
 
 **参数说明：**
 - `itsoso@126.com` - Garmin Connect邮箱
-- `Sisi1124` - Garmin Connect密码
+- `<garmin-password>` - Garmin Connect密码
 - `1` - user_id
 - `2` - 同步过去2年的数据
 
@@ -30,7 +30,7 @@ python scripts/sync_garmin_full.py itsoso@126.com Sisi1124 1 2
 只同步缺失的日期：
 
 ```bash
-python scripts/sync_garmin_resume.py itsoso@126.com Sisi1124 1 2
+python scripts/sync_garmin_resume.py itsoso@126.com <garmin-password> 1 2
 ```
 
 **特点：**
@@ -42,7 +42,7 @@ python scripts/sync_garmin_resume.py itsoso@126.com Sisi1124 1 2
 ### 方法3：使用原始脚本（同步最近N天）
 
 ```bash
-python scripts/sync_garmin.py itsoso@126.com Sisi1124 1 730
+python scripts/sync_garmin.py itsoso@126.com <garmin-password> 1 730
 ```
 
 同步最近730天（约2年）的数据。

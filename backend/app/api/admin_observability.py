@@ -19,6 +19,7 @@ from app.models.user import User
 from app.services.celery_health import celery_health_snapshot
 from app.services.garmin_sync_health import garmin_sync_health_snapshot
 from app.services.sentry_status import sentry_status_snapshot
+from app.services.release_readiness import release_readiness_snapshot
 from app.services.observability_service import (
     actionable_suggestions,
     collect_dashboard,
@@ -31,6 +32,12 @@ logger = logging.getLogger(__name__)
 
 # 单次聚合跑 6 个 SQL 聚合 + 可选 journalctl, 线上 5-10 秒. admin 反复刷不重算.
 _CACHE_TTL_SECONDS = 180
+
+
+@router.get("/release-readiness", summary="发布就绪检查 — 安全/监控/预算/人工闸门")
+async def get_release_readiness(admin: User = Depends(get_admin_user)):
+    """Return a secret-free release report; never conflates it with liveness."""
+    return release_readiness_snapshot()
 
 
 def _cache_key(days: int, user_id: Optional[int], include_journalctl: bool) -> str:
@@ -104,6 +111,7 @@ async def get_observation_dashboard(
         "celery_health": celery_health_snapshot(db),
         "garmin_sync_health": garmin_sync_health_snapshot(db),
         "sentry_status": sentry_status_snapshot(),
+        "release_readiness": release_readiness_snapshot(),
         "cached": False,
     }
     try:

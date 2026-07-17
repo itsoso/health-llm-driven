@@ -32,6 +32,8 @@ def diagnose_llm_error(error: BaseException | str | None) -> LLMErrorDiagnosis:
     text = _error_text(error)
     if not text:
         return LLMErrorDiagnosis("unknown", False, "surface_error")
+    if "monthly token quota" in text or "llm_budget_exceeded" in text:
+        return LLMErrorDiagnosis("budget_exhausted", False, "alert_admin")
     if "insufficient_quota" in text or "quota" in text or "token-plan quota" in text:
         return LLMErrorDiagnosis("quota_exhausted", True, "fallback_model")
     if "rate_limit" in text or "rate limit" in text or "429" in text:
@@ -85,7 +87,7 @@ async def try_recover_chat(
 ) -> tuple[bool, Optional[Any], Optional[str], LLMErrorDiagnosis]:
     """Try one fallback chat call. Returns (ok, result, recovery_model_id, diagnosis)."""
     diagnosis = diagnose_llm_error(error)
-    if not getattr(settings, "llm_auto_recovery_enabled", True):
+    if not getattr(settings, "llm_auto_recovery_enabled", False):
         return False, None, None, diagnosis
     if not diagnosis.recoverable:
         return False, None, None, diagnosis

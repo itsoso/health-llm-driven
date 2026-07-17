@@ -14,12 +14,12 @@
 - ✅ PostgreSQL 14 已安装并运行
 - ✅ 创建数据库: `health_db`
 - ✅ 创建用户: `health_user`
-- ✅ 密码: `HealthDB2026Pass`
+- ✅ 密码: `<production-db-secret>`
 - ✅ 权限已配置
 
 **验证命令**:
 ```bash
-PGPASSWORD='HealthDB2026Pass' psql -U health_user -d health_db -h localhost -c 'SELECT 1;'
+PGPASSWORD='<production-db-secret>' psql -U health_user -d health_db -h localhost -c 'SELECT 1;'
 ```
 
 #### 1.2 Redis 配置
@@ -59,7 +59,7 @@ POSTGRES_HOST=localhost
 POSTGRES_PORT=5432
 POSTGRES_DB=health_db
 POSTGRES_USER=health_user
-POSTGRES_PASSWORD=HealthDB2026Pass
+POSTGRES_PASSWORD=<production-db-secret>
 
 # Redis 配置
 REDIS_URL=redis://localhost:6379/0
@@ -178,7 +178,7 @@ python3 -m celery -A app.celery_app beat --loglevel=info &
 ```bash
 # PostgreSQL
 systemctl status postgresql
-PGPASSWORD='HealthDB2026Pass' psql -U health_user -d health_db -h localhost -c '\dt'
+PGPASSWORD='<production-db-secret>' psql -U health_user -d health_db -h localhost -c '\dt'
 
 # Redis
 systemctl status redis-server
@@ -206,7 +206,7 @@ sudo systemctl restart celery-beat
 ### 数据库操作
 ```bash
 # 连接数据库
-PGPASSWORD='HealthDB2026Pass' psql -U health_user -d health_db -h localhost
+PGPASSWORD='<production-db-secret>' psql -U health_user -d health_db -h localhost
 
 # 查看表
 \dt
@@ -260,7 +260,7 @@ SELECT COUNT(*) FROM garmin_data;
 - Port: 5432
 - Database: health_db
 - User: health_user
-- Password: HealthDB2026Pass
+- Password: <production-db-secret>
 
 **Redis**:
 - Host: localhost
@@ -279,7 +279,7 @@ SELECT COUNT(*) FROM garmin_data;
 
 ### 数据库连接失败
 1. 检查 PostgreSQL 状态: `systemctl status postgresql`
-2. 测试连接: `PGPASSWORD='HealthDB2026Pass' psql -U health_user -d health_db -h localhost -c 'SELECT 1;'`
+2. 测试连接: `PGPASSWORD='<production-db-secret>' psql -U health_user -d health_db -h localhost -c 'SELECT 1;'`
 3. 检查 `.env` 配置: `cat /opt/health-app/backend/.env | grep POSTGRES`
 
 ### Redis 连接失败

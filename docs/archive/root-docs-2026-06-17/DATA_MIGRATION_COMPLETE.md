@@ -368,7 +368,7 @@ BACKUP_DIR="/opt/health-app/backups"
 DATE=$(date +%Y%m%d_%H%M%S)
 BACKUP_FILE="$BACKUP_DIR/health_db_$DATE.sql.gz"
 
-PGPASSWORD=HealthDB2026Pass pg_dump -h localhost -U health_user health_db | gzip > $BACKUP_FILE
+PGPASSWORD=<production-db-secret> pg_dump -h localhost -U health_user health_db | gzip > $BACKUP_FILE
 find $BACKUP_DIR -name "health_db_*.sql.gz" -mtime +7 -delete
 EOF
 

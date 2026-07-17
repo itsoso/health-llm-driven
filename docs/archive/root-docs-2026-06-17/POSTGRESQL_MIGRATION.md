@@ -38,14 +38,14 @@ POSTGRES_HOST=localhost
 POSTGRES_PORT=5432
 POSTGRES_DB=health_db
 POSTGRES_USER=health_user
-POSTGRES_PASSWORD=HealthDB2026Pass
+POSTGRES_PASSWORD=<production-db-secret>
 ```
 
 ### 2. 执行数据库迁移
 
 ```bash
 cd /opt/health-app/backend
-PGPASSWORD=HealthDB2026Pass psql -h localhost -U health_user -d health_db \
+PGPASSWORD=<production-db-secret> psql -h localhost -U health_user -d health_db \
   -f migrations/create_performance_tables.sql
 ```
 
@@ -84,7 +84,7 @@ python3 -c 'from app.config import settings; print(settings.effective_database_u
 
 **输出**:
 ```
-postgresql://health_user:HealthDB2026Pass@localhost:5432/health_db
+postgresql://health_user:<production-db-secret>@localhost:5432/health_db
 ```
 
 ✅ 确认使用 PostgreSQL

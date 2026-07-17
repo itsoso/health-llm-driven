@@ -64,11 +64,18 @@ echo ""
 
 echo -e "${YELLOW}Step 5: 创建数据库和用户...${NC}"
 
+# 凭据必须由调用方提供，脚本不内置生产/开发通用密码。
+DB_PASSWORD="${POSTGRES_PASSWORD:-${DB_PASSWORD:-}}"
+if [ -z "$DB_PASSWORD" ]; then
+    echo -e "${RED}✗ 未设置 POSTGRES_PASSWORD/DB_PASSWORD，拒绝创建数据库用户${NC}"
+    exit 1
+fi
+
 # 创建用户
 if psql postgres -tAc "SELECT 1 FROM pg_roles WHERE rolname='health_user'" | grep -q 1; then
     echo "用户 health_user 已存在"
 else
-    psql postgres -c "CREATE USER health_user WITH PASSWORD 'health_password_2026';"
+    psql postgres -v db_password="$DB_PASSWORD" -c "CREATE USER health_user WITH PASSWORD :'db_password';"
     echo -e "${GREEN}✓ 用户创建成功${NC}"
 fi
 
@@ -86,7 +93,7 @@ echo -e "${GREEN}✓ 权限配置完成${NC}"
 echo ""
 
 echo -e "${YELLOW}Step 6: 验证 PostgreSQL 连接...${NC}"
-if PGPASSWORD=health_password_2026 psql -U health_user -d health_db -c "SELECT version();" > /dev/null 2>&1; then
+if PGPASSWORD="$DB_PASSWORD" psql -U health_user -d health_db -c "SELECT version();" > /dev/null 2>&1; then
     echo -e "${GREEN}✓ PostgreSQL 连接测试成功${NC}"
 else
     echo -e "${RED}✗ PostgreSQL 连接测试失败${NC}"
@@ -133,7 +140,7 @@ if ! grep -q "POSTGRES_HOST" "$ENV_FILE"; then
     echo "POSTGRES_PORT=5432" >> "$ENV_FILE"
     echo "POSTGRES_DB=health_db" >> "$ENV_FILE"
     echo "POSTGRES_USER=health_user" >> "$ENV_FILE"
-    echo "POSTGRES_PASSWORD=health_password_2026" >> "$ENV_FILE"
+    echo "POSTGRES_PASSWORD=$DB_PASSWORD" >> "$ENV_FILE"
     echo -e "${GREEN}✓ PostgreSQL 配置已添加到 .env${NC}"
 else
     echo "PostgreSQL 配置已存在"

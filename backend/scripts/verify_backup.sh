@@ -18,7 +18,11 @@ ENV_FILE="$SCRIPT_DIR/../.env"
 if [ -f "$ENV_FILE" ]; then
     DATABASE_URL=$(grep "^DATABASE_URL=" "$ENV_FILE" | cut -d= -f2-)
 fi
-DATABASE_URL="${DATABASE_URL:-postgresql://health_user:health2026@localhost:5432/health_db}"
+DATABASE_URL="${DATABASE_URL:-}"
+if [ -z "$DATABASE_URL" ]; then
+    echo "[$(date)] 🚨 DATABASE_URL 未配置，无法验证或补建备份"
+    exit 1
+fi
 DB_NAME=$(echo "$DATABASE_URL" | sed 's|.*/||')
 
 DISK=$(df -h "$BACKUP_DIR" 2>/dev/null | awk 'NR==2{print $4" 可用 ("$5" 已用)"}')

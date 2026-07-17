@@ -34,7 +34,7 @@
 ```bash
 cd backend
 source venv/bin/activate
-python scripts/sync_garmin.py itsoso@126.com Sisi1124 1 30
+python scripts/sync_garmin.py itsoso@126.com <garmin-password> 1 30
 ```
 
 ## 数据解析说明

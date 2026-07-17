@@ -14,6 +14,7 @@ from app.models.medical_exam import MedicalExam
 from app.models.account_deletion_request import AccountDeletionRequest
 from app.models.agent_audit_log import AgentAuditLog
 from app.api.auth import get_current_user_required
+from app.services.account_deletion import build_deletion_verification_report
 
 import logging
 
@@ -151,6 +152,31 @@ async def list_account_deletion_requests(
     return {"total": len(rows), "requests": [_admin_deletion_request_payload(row) for row in rows]}
 
 
+@router.get(
+    "/account-deletion-requests/{request_id}/verification-report",
+    summary="生成账号删除核验报告",
+)
+async def get_account_deletion_verification_report(
+    request_id: int,
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Return a redacted, machine-generated purge verification report."""
+    request = (
+        db.query(AccountDeletionRequest)
+        .filter(AccountDeletionRequest.id == request_id)
+        .first()
+    )
+    if request is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="删除请求不存在")
+    return {
+        "request_id": request.id,
+        "user_id": request.user_id,
+        "status": request.status,
+        "report": build_deletion_verification_report(db, request.user_id),
+    }
+
+
 @router.patch("/account-deletion-requests/{request_id}", summary="更新账号删除请求")
 async def update_account_deletion_request(
     request_id: int,
@@ -178,6 +204,16 @@ async def update_account_deletion_request(
             status_code=status.HTTP_409_CONFLICT,
             detail="完成删除请求前必须提供数据清除核验结果和核验引用",
         )
+    if update.status == "completed":
+        verification = build_deletion_verification_report(db, request.user_id)
+        if not verification["can_finalize"]:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "删除核验未通过，请先清理账号、用户数据、私有文件和缓存；"
+                    f"scope_digest={verification['scope_digest']}"
+                ),
+            )
 
     now = datetime.now(UTC)
     request.status = update.status

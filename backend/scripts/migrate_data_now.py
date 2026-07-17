@@ -20,7 +20,9 @@ import json
 
 # 数据库连接配置
 SQLITE_DB = "/opt/health-app/backend/health.db"
-POSTGRES_URL = "postgresql://health_user:HealthDB2026Pass@localhost/health_db"
+POSTGRES_URL = os.getenv("POSTGRES_URL") or os.getenv("DATABASE_URL")
+if not POSTGRES_URL:
+    raise RuntimeError("POSTGRES_URL or DATABASE_URL must be set; no database credential is embedded in this script")
 
 print("=" * 80)
 print("🚀 开始数据迁移: SQLite → PostgreSQL")

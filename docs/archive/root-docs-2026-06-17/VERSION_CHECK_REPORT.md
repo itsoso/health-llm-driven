@@ -150,10 +150,10 @@ ssh root@39.98.206.178 "ps aux | grep celery"
 ### 4. 验证数据库
 ```bash
 # 连接 PostgreSQL
-ssh root@39.98.206.178 "PGPASSWORD='HealthDB2026Pass' psql -U health_user -d health_db -h localhost -c 'SELECT COUNT(*) FROM users;'"
+ssh root@39.98.206.178 "PGPASSWORD='<production-db-secret>' psql -U health_user -d health_db -h localhost -c 'SELECT COUNT(*) FROM users;'"
 
 # 检查最近的数据
-ssh root@39.98.206.178 "PGPASSWORD='HealthDB2026Pass' psql -U health_user -d health_db -h localhost -c 'SELECT COUNT(*) FROM garmin_data WHERE record_date >= CURRENT_DATE - INTERVAL 7 days;'"
+ssh root@39.98.206.178 "PGPASSWORD='<production-db-secret>' psql -U health_user -d health_db -h localhost -c 'SELECT COUNT(*) FROM garmin_data WHERE record_date >= CURRENT_DATE - INTERVAL 7 days;'"
 ```
 
 ---
@@ -267,7 +267,7 @@ ssh root@39.98.206.178 "tail -50 /var/log/celery/worker.log | grep -E '(成功|�
 ### 每周检查
 ```bash
 # 检查数据增长
-ssh root@39.98.206.178 "PGPASSWORD='HealthDB2026Pass' psql -U health_user -d health_db -h localhost -c 'SELECT COUNT(*) as total_records, MAX(record_date) as latest_date FROM garmin_data;'"
+ssh root@39.98.206.178 "PGPASSWORD='<production-db-secret>' psql -U health_user -d health_db -h localhost -c 'SELECT COUNT(*) as total_records, MAX(record_date) as latest_date FROM garmin_data;'"
 
 # 检查错误日志
 ssh root@39.98.206.178 "tail -100 /var/log/celery/worker.log | grep ERROR"

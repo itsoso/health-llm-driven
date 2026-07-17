@@ -46,20 +46,20 @@ python scripts/update_hrv_data.py <email> <password> <user_id>
 
 ```bash
 # 更新最近 30 天的数据
-python scripts/update_hrv_data.py itsoso@126.com Sisi1124 1 --days 30
+python scripts/update_hrv_data.py itsoso@126.com <garmin-password> 1 --days 30
 
 # 更新最近 90 天的数据
-python scripts/update_hrv_data.py itsoso@126.com Sisi1124 1 --days 90
+python scripts/update_hrv_data.py itsoso@126.com <garmin-password> 1 --days 90
 
 # 更新最近 180 天的数据
-python scripts/update_hrv_data.py itsoso@126.com Sisi1124 1 --days 180
+python scripts/update_hrv_data.py itsoso@126.com <garmin-password> 1 --days 180
 ```
 
 #### 更新所有历史数据
 
 ```bash
 # 更新所有缺少 HRV 的记录（可能需要较长时间）
-python scripts/update_hrv_data.py itsoso@126.com Sisi1124 1
+python scripts/update_hrv_data.py itsoso@126.com <garmin-password> 1
 ```
 
 ### 脚本功能

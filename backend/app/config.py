@@ -22,8 +22,9 @@ class Settings(BaseSettings):
     tokenplan_credits_per_cny: float = 100.0  # 官方示例口径:按量价值 ¥1 约对应 100 Credits
     tokenplan_model_pricing_cny_json: Optional[str] = None  # 覆盖公开人民币单价:{"model":[input,output]}
     tokenplan_monthly_token_quota: int = 0  # 0=未知;配置后 Admin 才能做额度阈值预警
-    llm_auto_recovery_enabled: bool = True  # quota/rate_limit/timeout/provider_error 自动尝试备用模型
-    llm_recovery_model_id: Optional[str] = None  # 为空则按可用模型自动挑选非 TokenPlan/快速可靠模型
+    # 备用模型可能产生额外费用；必须显式开启且指定模型，默认关闭。
+    llm_auto_recovery_enabled: bool = False
+    llm_recovery_model_id: Optional[str] = None
 
     # === LLM Provider 统一配置 ===
     llm_provider: str = "tokenplan"  # tokenplan (默认, 阿里云 MiniMax) | openai | ollama
@@ -190,7 +191,7 @@ class Settings(BaseSettings):
 
     # 应用配置
     app_env: str = "development"
-    debug: bool = True
+    debug: bool = False
 
     # JWT密钥（用于用户认证token签名）
     secret_key: str = ""
@@ -451,8 +452,15 @@ class Settings(BaseSettings):
         if len(self.secret_key) < 32:
             raise ValueError("SECRET_KEY must be at least 32 characters long")
 
-        # 生产环境必须设置独立的加密密钥
-        if self.app_env == "production":
+        # 生产环境标识按大小写不敏感处理，避免 `PRODUCTION` 绕过安全校验。
+        if (self.app_env or "").strip().lower() == "production":
+            if self.debug:
+                raise ValueError("DEBUG must be false in production")
+            if self.llm_auto_recovery_enabled and not (self.llm_recovery_model_id or "").strip():
+                raise ValueError(
+                    "LLM_RECOVERY_MODEL_ID must be explicitly configured when "
+                    "LLM_AUTO_RECOVERY_ENABLED is enabled in production"
+                )
             if not self.garmin_encryption_key:
                 raise ValueError(
                     "GARMIN_ENCRYPTION_KEY must be set in production. "

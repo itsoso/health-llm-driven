@@ -1,7 +1,7 @@
 """R4 · 主动触达统一 Gatekeeper(观测模式先行,ships-OFF)。
 
-现状(2026-07-17 架构映射结论):~40 个主动触达任务经 PushService.send_notification 收口,
-但**没有**任何每日触达预算/频控——quiet-hours + 晨间地板 + dedup + 类型开关是仅有的抑制器。
+现状(2026-07-17 架构映射结论):主动触达任务经 PushService.send_notification 收口,
+并由本模块提供可观测/可切换的每日触达预算；quiet-hours + 晨间地板 + dedup + 类型开关仍是基础抑制器。
 本模块加**一层统一预算决策**:每类主动内容(洞察/总结/建议…)设每日上限,超限则
 (enforce)丢弃 /(observe)只记决策日志。
 
@@ -16,9 +16,8 @@
   故 dedup/quiet-hours-delay/禁用 的未投递尝试不消耗预算(镜像 agent_loop"发后才计"语义,
   但用 DB 派生计数避开 Redis 计数漂移 + 自增时序坑)。
 
-**已知覆盖缺口(观测阶段诚实标注,非静默)**:open_loop_manager._push_loop 直接调
-IOSPushService.send_push 绕开 send_notification(架构映射 gotcha),本模块**暂不覆盖**该路径;
-enforce 阶段将把 open_loop 路由回 send_notification(删代码收口)再一并纳入预算。
+open-loop 已经通过 PushService 收口；新增主动通知类型必须先显式分类，否则按
+`other` fail-safe 放行，不能在未知类型上意外启用预算拦截。
 """
 from __future__ import annotations
 
@@ -68,6 +67,7 @@ _CATEGORY_BY_TYPE: Dict[str, str] = {
     "trend_report": "insight",
     "prediction_verified": "insight",
     "workout_analysis": "insight",
+    "open_loop": "insight",
     # —— summary ——
     "morning_briefing": "summary",
     "doctor_weekly_summary": "summary",

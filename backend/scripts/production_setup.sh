@@ -107,8 +107,7 @@ echo ""
 
 # 生成随机密码
 DB_PASSWORD=$(openssl rand -base64 16)
-echo "生成的数据库密码: $DB_PASSWORD"
-echo "请保存此密码！"
+echo "已生成随机数据库密码，并写入 backend/.env"
 echo ""
 
 # 创建数据库和用户
@@ -185,9 +184,6 @@ echo -e "==========================================${NC}"
 echo ""
 
 if [ -f "health.db" ]; then
-    # 更新迁移脚本中的密码
-    sed -i.bak "s/health_password_2026/$DB_PASSWORD/" scripts/migrate_sqlite_to_postgres.py
-
     echo "开始数据迁移..."
     echo "yes" | python scripts/migrate_sqlite_to_postgres.py
 
@@ -300,8 +296,7 @@ echo -e "${GREEN}=========================================="
 echo "部署完成！"
 echo -e "==========================================${NC}"
 echo ""
-echo "数据库密码: $DB_PASSWORD"
-echo "请妥善保存此密码！"
+echo "数据库凭据已写入 backend/.env；请通过受控密钥管理保存，不要复制到日志或聊天。"
 echo ""
 echo "服务状态检查:"
 echo "  sudo systemctl status postgresql"

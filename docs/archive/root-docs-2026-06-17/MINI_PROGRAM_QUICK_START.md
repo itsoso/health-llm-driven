@@ -72,7 +72,7 @@ ssh root@39.98.206.178 "sudo -u postgres psql -d health_db -c \"SELECT user_id, 
 # 获取 token
 TOKEN=$(curl -s -X POST 'https://health.westwetlandtech.com/api/auth/login' \
   -H 'Content-Type: application/json' \
-  -d '{"email":"itsoso@126.com","password":"Aa123456"}' | jq -r '.access_token')
+  -d '{"email":"itsoso@126.com","password":"<redacted-test-password>"}' | jq -r '.access_token')
 
 # 查询订阅设置
 curl -X GET 'https://health.westwetlandtech.com/api/wechat/subscribe/settings' \

@@ -145,7 +145,7 @@ python scripts/create_user.py "张三" "1990-01-01" "男"
 # 输出: 用户ID: 1
 
 # 2. 同步Garmin数据（使用user_id=1）
-python scripts/sync_garmin.py itsoso@126.com Sisi1124 1 30
+python scripts/sync_garmin.py itsoso@126.com <garmin-password> 1 30
 ```
 
 ## 常见问题

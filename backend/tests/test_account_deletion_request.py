@@ -88,7 +88,7 @@ def test_account_deletion_request_admin_can_claim_processing(client, db, auth_us
     assert request.processing_note == "已进入人工核验"
 
 
-def test_account_deletion_request_cannot_complete_without_verified_purge(client, db, auth_user_and_headers):
+def test_account_deletion_request_cannot_complete_without_verified_purge(client, db, auth_user_and_headers, monkeypatch):
     user, headers = auth_user_and_headers
     user.is_admin = True
     db.commit()
@@ -105,6 +105,10 @@ def test_account_deletion_request_cannot_complete_without_verified_purge(client,
         f"/api/v1/admin/account-deletion-requests/{request_id}",
         headers=headers,
         json={"status": "completed", "note": "完成"},
+    )
+    monkeypatch.setattr(
+        "app.api.admin.build_deletion_verification_report",
+        lambda db, user_id: {"can_finalize": True, "scope_digest": "a" * 64},
     )
     verified = client.patch(
         f"/api/v1/admin/account-deletion-requests/{request_id}",

@@ -17,14 +17,18 @@ set -euo pipefail
 # 否则 ECS 上任何本地用户可读基因字节。umask 077 让本脚本新建的文件默认 0600、目录 0700。
 umask 077
 
-# 配置（从 .env 读取或使用默认值）
+# 配置（从 .env 或进程环境读取；生产禁止内置数据库凭据）
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="$SCRIPT_DIR/../.env"
 
 if [ -f "$ENV_FILE" ]; then
     DATABASE_URL=$(grep "^DATABASE_URL=" "$ENV_FILE" | cut -d= -f2-)
 fi
-DATABASE_URL="${DATABASE_URL:-postgresql://health_user:health2026@localhost:5432/health_db}"
+DATABASE_URL="${DATABASE_URL:-}"
+if [ -z "$DATABASE_URL" ]; then
+    echo "[$(date)] ❌ DATABASE_URL 未配置，拒绝执行备份"
+    exit 1
+fi
 
 BACKUP_DIR="/opt/health-app/backups"
 TIMESTAMP=$(date +%Y-%m-%d_%H-%M)

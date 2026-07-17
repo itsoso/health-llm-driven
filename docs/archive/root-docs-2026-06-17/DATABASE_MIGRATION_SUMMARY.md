@@ -43,7 +43,7 @@ POSTGRES_HOST=localhost
 POSTGRES_PORT=5432
 POSTGRES_DB=health_db
 POSTGRES_USER=health_user
-POSTGRES_PASSWORD=HealthDB2026Pass
+POSTGRES_PASSWORD=<production-db-secret>
 ```
 
 ### 2. 数据库迁移
@@ -96,7 +96,7 @@ python3 -c 'from app.config import settings; print(settings.effective_database_u
 
 **输出**:
 ```
-postgresql://health_user:HealthDB2026Pass@localhost:5432/health_db
+postgresql://health_user:<production-db-secret>@localhost:5432/health_db
 ```
 
 ✅ 确认使用 PostgreSQL
@@ -339,7 +339,7 @@ DATE=$(date +%Y%m%d_%H%M%S)
 BACKUP_FILE="$BACKUP_DIR/health_db_$DATE.sql.gz"
 
 # 创建备份
-PGPASSWORD=HealthDB2026Pass pg_dump -h localhost -U health_user health_db | gzip > $BACKUP_FILE
+PGPASSWORD=<production-db-secret> pg_dump -h localhost -U health_user health_db | gzip > $BACKUP_FILE
 
 # 保留最近 7 天的备份
 find $BACKUP_DIR -name "health_db_*.sql.gz" -mtime +7 -delete

@@ -31,6 +31,7 @@ import app.models.monthly_report  # noqa: F401 - 月度复盘报告
 import app.api.nfc  # noqa: F401 - ensure BowelTimer table creation
 
 logger = logging.getLogger(__name__)
+_IS_PRODUCTION = (settings.app_env or "").strip().lower() == "production"
 
 # 设置日志，使用北京时间
 setup_beijing_logging()
@@ -105,9 +106,11 @@ app = FastAPI(
 - Celery (异步任务)
     """,
     version="1.0.0",
-    docs_url="/api/docs",  # Swagger UI 路径
-    redoc_url="/api/redoc",  # ReDoc 路径
-    openapi_url="/api/openapi.json",  # OpenAPI schema 路径
+    # Production does not expose the complete API surface publicly. Local and
+    # test environments keep the docs for development ergonomics.
+    docs_url=None if _IS_PRODUCTION else "/api/docs",
+    redoc_url=None if _IS_PRODUCTION else "/api/redoc",
+    openapi_url=None if _IS_PRODUCTION else "/api/openapi.json",
     contact={
         "name": "健康管理系统",
         "url": "https://github.com/yourusername/health-llm-driven",
@@ -298,7 +301,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        # Web Agent 需要在用户明确操作后使用同源相机/麦克风；跨源页面仍被禁止。
+        response.headers["Permissions-Policy"] = "camera=(self), microphone=(self), geolocation=(self)"
         if not request.url.path.startswith("/api/docs"):
             response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         return response
@@ -406,7 +410,7 @@ def root():
         "message": "健康管理系统 API",
         "version": "1.0.0",
         "status": "running",
-        "docs": {
+        "docs": {} if _IS_PRODUCTION else {
             "swagger": "/api/docs",
             "redoc": "/api/redoc",
             "openapi_schema": "/api/openapi.json"

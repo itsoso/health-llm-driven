@@ -23,7 +23,10 @@ import time
 import os
 
 # 快速失败阈值（低于此分数应触发回滚）
-FAIL_THRESHOLD = 60
+# The deployment contract uses 35 as the minimum score.  Keep this constant
+# aligned with the dossier/G5 gate instead of exposing a different threshold
+# in the JSON report and the shell exit code.
+FAIL_THRESHOLD = 35
 
 # ============================================================
 # 评分函数
@@ -233,8 +236,7 @@ def calculate_health_score(base_url: str = "http://localhost:8000", skip_tests: 
     return {
         "total_score": round(total, 1),
         "max_possible": max_possible,
-        # skip_tests gate: 35 (老的 40 在 cold-start P95>2000ms 时无法达到, 频繁误判 fail)
-        "pass": total >= FAIL_THRESHOLD or (skip_tests and total >= 35),
+        "pass": total >= FAIL_THRESHOLD,
         "threshold": FAIL_THRESHOLD,
         "dimensions": results,
     }

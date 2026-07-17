@@ -294,11 +294,15 @@ async def test_orphaned_acknowledged_turn_is_taken_over_without_duplicate_user_m
     )
 
     assert calls == 1
-    assert "新 worker 已接管并完成。" in "".join(
+    replayed_text = "".join(
         event["data"].get("content", "")
         for event in events
         if event.get("event") == "token"
     )
+    # 接管后仍然没有真实写入工具回执时，记录意图必须保持 fail-closed；
+    # 不能因为新 worker 的自然语言声称而把操作当作已完成。
+    assert "还没记下来" in replayed_text
+    assert "新 worker 已接管并完成。" not in replayed_text
     saved = (
         db.query(AgentMessage)
         .filter(AgentMessage.conversation_id == conv.id)

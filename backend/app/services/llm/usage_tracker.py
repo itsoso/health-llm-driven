@@ -76,6 +76,75 @@ _usage_capture_ctx: ContextVar[Optional[List[Dict[str, Any]]]] = ContextVar(
 _MAX_CAPTURE_ITEMS = 20
 
 
+class LLMBudgetExceeded(RuntimeError):
+    """Raised before a paid LLM call would exceed the configured month quota."""
+
+    error_code = "llm_budget_exceeded"
+
+
+def _enforce_monthly_token_quota(
+    *,
+    provider: str,
+    model: Optional[str],
+    messages: List[Dict[str, Any]],
+    max_tokens: int,
+) -> None:
+    """Fail closed when an explicit production TokenPlan quota is exhausted.
+
+    ``0`` means the operator has not configured a quota and is intentionally
+    handled by release readiness rather than silently treated as unlimited.
+    The guard is a preflight estimate, so it protects against ordinary runaway
+    calls; production budget dashboards still remain the billing source of truth.
+    """
+    try:
+        from app.config import settings
+
+        if str(provider or "").strip().lower() != "tokenplan":
+            return
+        quota = int(getattr(settings, "tokenplan_monthly_token_quota", 0) or 0)
+        if quota <= 0:
+            return
+
+        from datetime import datetime, timezone
+        from sqlalchemy import func
+        from app.database import SessionLocal
+        from app.models.llm_usage import LlmUsageLog
+
+        now = datetime.now(timezone.utc)
+        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        with SessionLocal() as db:
+            used = int(
+                db.query(func.coalesce(func.sum(LlmUsageLog.total_tokens), 0))
+                .filter(
+                    LlmUsageLog.provider == "tokenplan",
+                    LlmUsageLog.created_at >= month_start,
+                )
+                .scalar()
+                or 0
+            )
+
+        estimated_request = _estimate_tokens(_messages_to_text(messages), model or "gpt-4o-mini")
+        estimated_request += max(0, int(max_tokens or 0))
+        if used + estimated_request > quota:
+            logger.error(
+                "[LLM Budget] monthly token quota exceeded provider=tokenplan used=%s "
+                "estimate=%s quota=%s",
+                used,
+                estimated_request,
+                quota,
+            )
+            raise LLMBudgetExceeded("monthly token quota exceeded")
+    except LLMBudgetExceeded:
+        raise
+    except Exception as exc:
+        from app.config import settings
+
+        if (settings.app_env or "").strip().lower() == "production":
+            logger.error("[LLM Budget] quota guard unavailable; blocking production call: %s", exc)
+            raise LLMBudgetExceeded("llm budget guard unavailable") from exc
+        logger.warning("[LLM Budget] quota guard unavailable in non-production: %s", exc)
+
+
 def set_caller(caller: str, user_id: Optional[int] = None) -> None:
     """在调用 LLM 前调用, 标注本次调用归属哪个业务."""
     _caller_ctx.set(caller)
@@ -572,6 +641,12 @@ def wrap_provider(provider):
         return provider
 
     async def chat_with_tracking(messages, model=None, temperature=0.7, max_tokens=2000, stream=False, **kwargs):
+        _enforce_monthly_token_quota(
+            provider=getattr(provider, "provider_name", ""),
+            model=model or getattr(provider, "model", None),
+            messages=messages,
+            max_tokens=max_tokens,
+        )
         if stream:
             # 流式不追踪 (会破坏 AsyncIterator 语义); 流式调用本身少
             return await original_chat(messages, model=model, temperature=temperature,
@@ -604,7 +679,7 @@ def wrap_provider(provider):
 
                 diagnosis = diagnose_llm_error(exc)
                 recovery_model = None
-                if getattr(settings, "llm_auto_recovery_enabled", True) and diagnosis.recoverable:
+                if getattr(settings, "llm_auto_recovery_enabled", False) and diagnosis.recoverable:
                     recovery_model = pick_recovery_model_id(
                         diagnosis,
                         primary_provider=getattr(provider, "provider_name", None),

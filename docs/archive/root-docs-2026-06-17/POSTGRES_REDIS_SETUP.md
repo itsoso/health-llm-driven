@@ -74,7 +74,7 @@ redis-cli ping
 export PATH="/usr/local/opt/postgresql@15/bin:$PATH"
 
 # 创建用户
-psql postgres -c "CREATE USER health_user WITH PASSWORD 'health_password_2026';"
+psql postgres -c "CREATE USER health_user WITH PASSWORD '<production-db-secret>';"
 
 # 创建数据库
 psql postgres -c "CREATE DATABASE health_db OWNER health_user;"
@@ -96,7 +96,7 @@ POSTGRES_HOST=localhost
 POSTGRES_PORT=5432
 POSTGRES_DB=health_db
 POSTGRES_USER=health_user
-POSTGRES_PASSWORD=health_password_2026
+POSTGRES_PASSWORD=<production-db-secret>
 
 # Redis 配置
 REDIS_URL=redis://localhost:6379/0
@@ -140,7 +140,7 @@ python scripts/migrate_sqlite_to_postgres.py
 
 # 方式2: 使用 pgloader（如果安装了）
 brew install pgloader
-pgloader health.db postgresql://health_user:health_password_2026@localhost/health_db
+pgloader health.db postgresql://health_user:<production-db-secret>@localhost/health_db
 ```
 
 ### Step 3: 验证数据迁移

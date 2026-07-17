@@ -258,7 +258,7 @@ POSTGRES_HOST=localhost
 POSTGRES_PORT=5432
 POSTGRES_DB=health_db
 POSTGRES_USER=health_user
-POSTGRES_PASSWORD=health_password_2026
+POSTGRES_PASSWORD=<production-db-secret>
 
 # Redis 配置
 REDIS_URL=redis://localhost:6379/0

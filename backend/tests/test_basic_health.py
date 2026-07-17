@@ -36,7 +36,7 @@ def test_create_basic_health_data(client, db, sample_basic_health_data):
     user_id, headers = _create_admin_and_user(db, client)
     sample_basic_health_data["user_id"] = user_id
 
-    response = client.post("/api/v1/basic-health", json=sample_basic_health_data)
+    response = client.post("/api/v1/basic-health", json=sample_basic_health_data, headers=headers)
     assert response.status_code == 200
     data = response.json()
     assert data["user_id"] == user_id
@@ -49,9 +49,9 @@ def test_get_user_basic_health_data(client, db, sample_basic_health_data):
     user_id, headers = _create_admin_and_user(db, client)
     sample_basic_health_data["user_id"] = user_id
 
-    client.post("/api/v1/basic-health", json=sample_basic_health_data)
+    client.post("/api/v1/basic-health", json=sample_basic_health_data, headers=headers)
 
-    response = client.get(f"/api/v1/basic-health/user/{user_id}")
+    response = client.get(f"/api/v1/basic-health/user/{user_id}", headers=headers)
     assert response.status_code == 200
     data = response.json()
     assert isinstance(data, list)
@@ -63,9 +63,9 @@ def test_get_latest_basic_health_data(client, db, sample_basic_health_data):
     user_id, headers = _create_admin_and_user(db, client)
     sample_basic_health_data["user_id"] = user_id
 
-    client.post("/api/v1/basic-health", json=sample_basic_health_data)
+    client.post("/api/v1/basic-health", json=sample_basic_health_data, headers=headers)
 
-    response = client.get(f"/api/v1/basic-health/user/{user_id}/latest")
+    response = client.get(f"/api/v1/basic-health/user/{user_id}/latest", headers=headers)
     assert response.status_code == 200
     data = response.json()
     assert data["user_id"] == user_id
@@ -82,8 +82,46 @@ def test_bmi_auto_calculation(client, db):
         "record_date": "2024-01-01"
     }
 
-    response = client.post("/api/v1/basic-health", json=health_data)
+    response = client.post("/api/v1/basic-health", json=health_data, headers=headers)
     assert response.status_code == 200
     data = response.json()
     assert data["bmi"] is not None
     assert abs(data["bmi"] - 22.86) < 0.01
+
+
+def test_basic_health_rejects_unauthenticated_access(client, sample_basic_health_data):
+    assert client.post("/api/v1/basic-health", json=sample_basic_health_data).status_code == 401
+    assert client.get("/api/v1/basic-health/user/1").status_code == 401
+    assert client.get("/api/v1/basic-health/user/1/latest").status_code == 401
+
+
+def test_basic_health_rejects_cross_user_write_and_read(client, db, sample_basic_health_data):
+    owner_id, owner_headers = _create_admin_and_user(db, client)
+    from app.models.user import User
+
+    other = User(
+        username=f"other_{uuid.uuid4().hex[:8]}",
+        email=f"other_{uuid.uuid4().hex[:8]}@example.com",
+        hashed_password="hashed_password",
+        name="另一个用户",
+        is_active=True,
+        is_approved=True,
+    )
+    db.add(other)
+    db.commit()
+    db.refresh(other)
+    other_token = auth_service.create_access_token({"sub": str(other.id)})
+    other_headers = {"Authorization": f"Bearer {other_token}"}
+
+    sample_basic_health_data["user_id"] = owner_id
+    assert client.post(
+        "/api/v1/basic-health", json=sample_basic_health_data, headers=other_headers
+    ).status_code == 403
+    assert client.get(
+        f"/api/v1/basic-health/user/{owner_id}", headers=other_headers
+    ).status_code == 403
+
+    # Admin access is intentionally preserved for support/managed-user workflows.
+    assert client.get(
+        f"/api/v1/basic-health/user/{owner_id}", headers=owner_headers
+    ).status_code == 200

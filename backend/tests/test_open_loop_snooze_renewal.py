@@ -51,7 +51,8 @@ def test_recently_expired_snooze_adds_renewal_prefix(db):
     mock_service.send_push = fake_send
 
     with patch("app.services.notification.ios_push.IOSPushService", return_value=mock_service), \
-         patch("app.tasks.open_loop_manager._is_in_quiet_hours_now", return_value=False):
+         patch("app.tasks.open_loop_manager._is_in_quiet_hours_now", return_value=False), \
+         patch("app.services.notification.push_service.PushService.is_quiet_hours", return_value=False):
         ok = _push_loop(db, user_id=1, loop=loop)
 
     assert ok is True
@@ -82,7 +83,8 @@ def test_no_snooze_history_no_prefix(db):
 
     with patch("app.services.notification.ios_push.IOSPushService", return_value=mock_service), \
          patch("app.tasks.open_loop_manager._is_recently_pushed_or_snoozed", return_value=False), \
-         patch("app.tasks.open_loop_manager._is_in_quiet_hours_now", return_value=False):
+         patch("app.tasks.open_loop_manager._is_in_quiet_hours_now", return_value=False), \
+         patch("app.services.notification.push_service.PushService.is_quiet_hours", return_value=False):
         ok = _push_loop(db, user_id=1, loop=loop)
 
     assert ok is True

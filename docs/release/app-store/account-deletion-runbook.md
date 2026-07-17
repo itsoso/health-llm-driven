@@ -16,6 +16,11 @@
 
 ## 3. 清除用户数据
 
+在执行第 5 步前，管理员必须调用
+`GET /api/v1/admin/account-deletion-requests/{request_id}/verification-report`。
+该接口只返回表名、行数、缓存数量、私有文件数量和 `scope_digest`，不返回健康正文。
+报告中的 `can_finalize` 必须为 `true`；否则后台完成接口会拒绝请求。
+
 在生产 PostgreSQL 的受控维护窗口内执行经评审的用户删除脚本或 SQL。清除范围至少包括：
 
 - 账号凭证、登录会话、API Key 和设备凭证。

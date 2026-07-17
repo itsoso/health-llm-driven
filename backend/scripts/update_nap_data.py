@@ -89,8 +89,8 @@ def update_nap_for_date(
 def main():
     if len(sys.argv) < 4:
         print("用法: python update_nap_data.py <email> <password> <user_id> [--days N]")
-        print("示例: python update_nap_data.py itsoso@126.com Sisi1124 1")
-        print("      python update_nap_data.py itsoso@126.com Sisi1124 1 --days 30")
+        print("示例: python update_nap_data.py itsoso@126.com <garmin-password> 1")
+        print("      python update_nap_data.py itsoso@126.com <garmin-password> 1 --days 30")
         sys.exit(1)
 
     email = sys.argv[1]
