@@ -114,7 +114,7 @@ function contextCandidate(
 
   const status = readText(item.status).toLowerCase();
   if (status === 'due') return candidate(item, '现在', 'normal', 1, index);
-  if (status === 'overdue') return candidate(item, '已过时段', 'caution', 1, index);
+  if (status === 'overdue') return candidate(item, '待处理', 'caution', 1, index);
 
   const scheduledLabel = nearTermScheduleLabel(item.scheduled_for, timelineDate, now);
   if (scheduledLabel) return candidate(item, scheduledLabel, 'normal', 2, index);
@@ -253,7 +253,7 @@ function isPrimaryRepresentedInTimeline(
 }
 
 function timelineStatusReason(status: string | null | undefined): string | null {
-  if (status === 'overdue') return '这项已经过时段，建议先处理或跳过。';
+  if (status === 'overdue') return '这项还没完成，建议今天处理或跳过。';
   if (status === 'due') return '现在是处理这项的合适时段。';
   return null;
 }

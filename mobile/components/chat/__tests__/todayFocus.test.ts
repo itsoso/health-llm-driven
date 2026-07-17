@@ -180,6 +180,23 @@ describe('todayFocus resolver', () => {
     }));
   });
 
+  it('uses action-oriented copy for overdue context instead of technical period wording', () => {
+    const overdueTimeline = timeline('复查：血脂四项');
+    overdueTimeline.date = '2026-07-16';
+    overdueTimeline.items[0].status = 'overdue';
+
+    const model = buildTodayFocusModel({
+      timeline: overdueTimeline,
+      now: atLocalTime(12, 30),
+    });
+
+    expect(model.contextStrip).toEqual(expect.objectContaining({
+      label: '待处理',
+      title: '复查：血脂四项',
+      tone: 'caution',
+    }));
+  });
+
   it('prioritizes a high-severity state over a due action', () => {
     const safetyTimeline = timeline('记录体重和腰围');
     safetyTimeline.date = '2026-07-16';
