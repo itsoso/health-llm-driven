@@ -110,7 +110,10 @@ def build_twin(db: Session, user_id: int, use_cache: bool = True) -> HealthTwin:
         try:
             fn(thread_db)
         except Exception as e:
-            logger.warning(f"[twin] {name} 并行执行失败: {e}")
+            # 通用兜底(各 _fill_* 自己的 try/except 先接;这里只捕漏网的)。
+            # 同样记进 failed_partitions —— 否则「分区评估失败」与「无数据」不可分辨。
+            logger.error(f"[twin] {name} 并行执行失败: {e}", exc_info=True)
+            twin.meta.failed_partitions.append(name)
         finally:
             thread_db.close()
 
@@ -624,7 +627,10 @@ def _fill_sleep_deep(db: Session, user_id: int, twin: HealthTwin, sources: Set[s
         if arch or consistency or hrv_recovery:
             sources.add("sleep")
     except Exception as e:
-        logger.warning(f"[twin] sleep_deep 失败: {e}")
+        # 仍降级不上抛(一个分区崩不该打死整个 Twin),但**必须留下可分辨的失败痕迹**:
+        # 只 log warning 的话,失败与「无睡眠数据」在 Twin 上长得一模一样 → 静默 5 周。
+        logger.error(f"[twin] sleep_deep 失败: {e}", exc_info=True)
+        twin.meta.failed_partitions.append("sleep_deep")
 
 
 # ─────────────────────────── 4. 药物 on-board ─────────────────────────
@@ -920,6 +926,14 @@ def _fill_environment(db: Session, user_id: int, twin: HealthTwin, sources: Set[
         aqi_data = env.get("aqi") or env.get("air_quality") or {}
         if isinstance(aqi_data, dict) and "current" in aqi_data:
             aqi_data = aqi_data["current"] or {}
+
+        # available=False → 里面的 aqi/pm25 是 `_get_default_aqi()` 的占位常量(aqi=50
+        # "良"),不是测得的真值。写进 Twin 就会被 RhinitisSpecialist 当真做症状-环境
+        # 因果归因、被 formatter 讲给用户 —— 编造。宁可没有,不可编造 → 当作无环境数据。
+        # 只在**显式** False 时丢弃(不是 `not aqi_data.get("available")`):上游 shape
+        # 不确定时缺 key 不该误杀真实 AQI(get_comprehensive_advice 恒显式给该键)。
+        if isinstance(aqi_data, dict) and aqi_data.get("available") is False:
+            aqi_data = {}
 
         e = twin.environment
         e.city = env.get("city") or weather.get("city")

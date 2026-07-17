@@ -105,6 +105,12 @@ def _fetch_sleep_data(db: Session, user_id: int, days: int) -> List[Any]:
     return merged_daily_rows(
         db, user_id, since=start_date, until=end_date,
         require_metrics=["total_sleep_duration"],
+        # 合并行只暴露 METRIC_SOURCE_PRIORITY 的 key + require/extra_metrics。本模块还读
+        # hrv_status / sleep_start_time,两者都是 GarminData 真列但**不在**优先级表里 ——
+        # 不显式声明 → SimpleNamespace 上属性不存在 → AttributeError 打死整个分析
+        # (生产实测 24h 内 698 次)。新增对合并行的属性访问时必须同步加进这里,
+        # 由 tests/test_sleep_merged_row_contract.py 的契约测试兜底。
+        extra_metrics=["hrv_status", "sleep_start_time"],
     )
 
 
@@ -130,6 +136,13 @@ class SleepAnalysisService:
         # Architecture percentages
         stage_pcts = _calc_stage_pcts(records)
         architecture = {f"{k}_pct": v for k, v in stage_pcts.items()}
+        # 深睡**小时**均值 (twin builder 读 architecture["deep_hours"] 填
+        # physiological.sleep_deep_h_avg_14d;formatter 按 "{:.1f}h" 渲染,
+        # cross_review 按 <0.8h 判冲突 —— 单位必须是小时,不是上面的百分比)。
+        # 无深睡数据时给 None 而非 0.0:0.0 会被 cross_review 当成"深睡严重不足"
+        # 触发假冲突(把"不知道"讲成"很差"= 编造)。
+        _deep_mins = [r.deep_sleep_duration for r in records if r.deep_sleep_duration is not None]
+        architecture["deep_hours"] = round(_safe_avg(_deep_mins) / 60, 2) if _deep_mins else None
 
         # Architecture assessment vs norms
         arch_assessment = {}

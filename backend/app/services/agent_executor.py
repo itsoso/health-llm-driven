@@ -93,6 +93,15 @@ def _prompt_prefix_signature(messages: List[Dict]) -> Dict[str, Any]:
 
 MAX_TOOL_ROUNDS = 8
 
+# 整轮快路由(_fast_route_simple_turn)的**逃生门**:弱模型转不出来就别让它转满 MAX_TOOL_ROUNDS。
+# 生产实锤(2026-07-17, founder user=3):全天最慢的 4 个回合**全是最简单的记录、全在快路由上**,
+# 全部 rounds=9(= 打满 MAX_TOOL_ROUNDS 后还多一轮收尾):
+#   「记录刚才打了一个喷嚏。」total=203s · 「今天我吃了那些胃药。」total=140s
+# 分布:qwen3.6-flash p50=8.9s(快路由的真收益,别撤)但 p90=41s / **max=203s**,
+# 比强模型(qwen3.7-max)的 max=119s 还差 1.7 倍 —— 问题只在**尾部**,故只砍尾部。
+# 语义:用掉这么多轮还没收敛 = 弱模型这题做不出来,换强模型跑完剩下的轮,别陪它空转。
+FAST_ROUTE_ESCALATE_AFTER_ROUNDS = 2
+
 # Wave 2(2026-07-14):慢工具执行的心跳 + per-tool 超时预算。
 # 病灶:慢工具(health_analysis 走 orchestrator、knowledge_search 走 ChromaDB 等)内联
 # await 期间 SSE 流零事件 → nginx idle read-timeout 可掐断连接 + 用户看冻结转圈。
@@ -6304,6 +6313,26 @@ class AgentExecutor:
         self._http_client = httpx.AsyncClient(timeout=90.0)
         try:
             for round_idx in range(MAX_TOOL_ROUNDS):
+                # 快路由逃生门(见 FAST_ROUTE_ESCALATE_AFTER_ROUNDS 常量注释):整轮快路由用掉
+                # N 轮仍未收敛 → 换回强模型跑完剩下的轮。恢复 _request_model_id=None 即回到
+                # 快路由介入**前**的默认路由(admin global / user pref)—— 因为快路由本就只在
+                # _request_model_id is None 时才接管(:5735),故这是精确还原、不是新路由。
+                # 只作用于**整轮**快路由:显式选模型(_request_model_id 由 extra_context 填)
+                # 与工具轮快路由(_tool_round_fast_routed,每轮自行判定)都不受影响。
+                # 加层不减层:换模型后既有的安全/R4/诚实门原样生效(它们与模型无关)。
+                if (
+                    self._fast_route_simple_turn
+                    and round_idx >= FAST_ROUTE_ESCALATE_AFTER_ROUNDS
+                ):
+                    self._fast_route_simple_turn = False
+                    self._request_model_id = None
+                    self._record_model_fallback_reason("fast_route_simple_turn_escalated")
+                    logger.warning(
+                        "[agent_executor] 快路由 %d 轮未收敛 → 升级强模型 user=%s msg=%r",
+                        round_idx,
+                        user_id,
+                        (message or "")[:60],
+                    )
                 # 真流式调用 LLM：content delta 实时 yield 给客户端,同时累积 tool_calls。
                 # _call_llm_stream 内部已做 provider 路由 + failover (镜像 _call_llm)。
                 # round_tools = 本轮**发给模型**的工具; _detect_tools = 扫描模型**输出**用的
@@ -6438,10 +6467,26 @@ class AgentExecutor:
                         ):
                             inline_suppressed = True
                             streamed_to_client = False
+                        # 记录意图整轮快路由 + 尚无工具执行: content 绝不 live 下发。
+                        # 生产实锤(2026-07-17, user=3 ×2/24h): 弱模型对「麦当劳店记录打了一个
+                        # 喷嚏。」直接吐出「✅ **症状已记录**:打喷嚏(上午 09:21)」却**一个工具都没调**
+                        # (它调的是只读 health_query) → 用户看到绿对勾, 不会重记, 那条症状永久丢失。
+                        # :7228 的诚实覆盖(final_text=_record_intent_needs_detail_message +
+                        # streamed_to_client=False)本身是对的, 但它跑在 token 已经 yield 出去之后 ——
+                        # 只改了落库消息, **救不回已经流到屏幕上的字**。故必须在下发前就抑制:
+                        # 工具真跑过(tool_executed_count>0)之后的轮照常 live 流(那时"已记录"才是真的)。
+                        # 与上面 _tool_round_fast_routed 同一范式(先抑制、后按真实结果补发)。
+                        _record_claim_unverified = (
+                            self._prefer_fast_record_model and tool_executed_count == 0
+                        )
                         # 工具决策轮快路由 (fast 模型): 本轮输出只当工具决策, content 绝不
                         # live 下发 —— 若最终是直接答文本 (无 tool_calls), 会被丢弃并在强模型
                         # 重合成 (安全不变量: 面向用户的医疗正文绝不来自 fast 模型)。
-                        if not inline_suppressed and not self._tool_round_fast_routed:
+                        if (
+                            not inline_suppressed
+                            and not self._tool_round_fast_routed
+                            and not _record_claim_unverified
+                        ):
                             streamed_to_client = True
                             # 2026-07-01: TTFT — 第一个真正下发给客户端的 token 时刻 (纯埋点)。
                             if first_token_at is None:

@@ -228,3 +228,61 @@ async def test_verified_write_still_confirms_record(db, auth_user_and_headers):
     assert "已记录" in reply, reply
     # 单轮直出,未被逼进合成轮 (证明 gate 没把真写入误当只读)。
     assert len(rounds) == 1, rounds
+
+
+# ── Test 4: 生产实锤 — 记录意图 + **零工具** → 「✅ 症状已记录」绝不 live 下发 ──
+
+
+async def test_record_turn_with_zero_tools_never_streams_the_claim(db, auth_user_and_headers):
+    """founder 2026-07-17 09:21 生产现场逐字复现(user=3, 24h 内 2 次)。
+
+    弱模型对「麦当劳店记录打了一个喷嚏。」**一个工具都没调**, 直接吐出
+    「✅ **症状已记录**:打喷嚏(上午 09:21)」—— 这段字**已经流到屏幕上**。
+    founder 看到绿对勾就不会重记, 那条带环境线索(油烟)的喷嚏永久丢失。
+
+    此前 :7228 的诚实覆盖(final_text=_record_intent_needs_detail_message +
+    streamed_to_client=False)**本身是对的**, 但它跑在 token 已 yield 之后 —— 只改了落库
+    消息, 救不回已下发的字。修法 = 在 :6374 的下发门里加 not (_prefer_fast_record_model
+    and tool_executed_count == 0), 让既有的覆盖真正生效。
+
+    这条测试打的是**下发出去的 token**(非落库消息), 所以它能捕获那个 bug;
+    把 :6374 的门去掉 → 本测试必红。
+    """
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+
+    sneeze_msg = "麦当劳店记录打了一个喷嚏。"
+    from app.services import agent_executor as ae
+    # 前置断言: 该句确实走整轮记录快路由(否则测的不是本洞)。
+    assert ae._RECORD_INTENT_RE.search(sneeze_msg)
+    assert not ae._ADVICE_OR_ANALYSIS_RE.search(sneeze_msg)
+
+    the_lie = "✅ **症状已记录**:打喷嚏(上午 09:21)\n\n是在店里闻到油烟味诱发的吗?"
+    tools_called = []
+
+    async def fake_call_llm_stream(messages, tools):
+        # 生产现场:零 tool_calls, 直接把"已记录"当答案吐出来。
+        for ch in the_lie:
+            yield {"type": "content", "text": ch}
+        yield {"type": "finish", "finish_reason": "stop"}
+
+    async def fake_execute_tool(tool_name, args_raw, user_token):
+        tools_called.append(tool_name)
+        raise AssertionError("本回合不应有任何工具执行")
+
+    executor._call_llm_stream = fake_call_llm_stream
+    executor._execute_tool = fake_execute_tool
+
+    events = [
+        e async for e in executor.run_stream(
+            user_id=user.id, message=sneeze_msg, user_auth_token="test-token",
+        )
+    ]
+    reply = _tokens(events)
+
+    assert tools_called == [], "前提:本回合零工具执行"
+    # 承重墙: 未经验证的写入声明**绝不**出现在下发给用户的 token 流里。
+    assert "已记录" not in reply, f"未验证的『已记录』流到了用户屏幕上: {reply!r}"
+    assert "✅" not in reply, reply
+    # 而且要给出诚实的替代文案(不是留空)。
+    assert reply.strip(), "抑制之后必须补发诚实回复, 不能什么都不发"

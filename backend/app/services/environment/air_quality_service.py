@@ -102,7 +102,13 @@ class AirQualityService:
             空气质量数据
         """
         if lat is None or lon is None:
-            lat, lon = self._city_to_coords(city)
+            coords = self._city_to_coords(city)
+            if coords is None:
+                # 坐标未知就**不去取真 AQI** —— 用猜的坐标拿回来的是别处的真实数值,
+                # 调用方无从分辨,等于编造。诚实降级: available=False。
+                logger.info(f"无法解析城市 '{city}' 坐标, 返回 unavailable (不猜坐标)")
+                return self._get_default_aqi(error=f"无法解析城市 '{city}' 的坐标,未获取空气质量")
+            lat, lon = coords
 
         cache_key = f"aqi_{city or f'{lat},{lon}'}"
         cached = self._get_cache(cache_key)
@@ -427,8 +433,15 @@ class AirQualityService:
                 "caution": "尽量待在室内，使用空气净化器"
             }
 
-    def _city_to_coords(self, city: str) -> tuple:
-        """城市名转经纬度"""
+    def _city_to_coords(self, city: str) -> Optional[tuple]:
+        """城市名转经纬度. 未知 city → None (而非硬编杭州坐标).
+
+        2026-07-17 改: 对齐 weather_service._city_to_coords 在 2026-05-17 就做过的同一处
+        修正 —— 本文件当时被漏掉了。老的默认杭州 (30.27, 120.16) 会拿**猜的坐标**去取
+        **真的 AQI**,返回值里没有任何标记说坐标是猜的,调用方无从分辨。RhinitisSpecialist
+        拿 AQI 做症状-环境因果归因,城市解析成省名("浙江",生产 10次/24h)时那条归因就是编的。
+        现在统一返 None, caller 走 `_get_default_aqi()` 的诚实降级 (available=False)。
+        """
         city_coords = {
             "北京": (39.9042, 116.4074),
             "上海": (31.2304, 121.4737),
@@ -441,12 +454,18 @@ class AirQualityService:
             "西安": (34.3416, 108.9398),
             "重庆": (29.4316, 106.9123),
         }
-        if city not in city_coords:
-            logger.warning(f"城市 '{city}' 不在空气质量坐标映射中，默认使用杭州坐标")
-        return city_coords.get(city, (30.2741, 120.1551))  # 默认杭州
+        if city in city_coords:
+            return city_coords[city]
+        logger.warning(f"城市 '{city}' 不在空气质量坐标映射中, 跳过 (不再默认杭州)")
+        return None
 
-    def _get_default_aqi(self) -> Dict[str, Any]:
-        """返回默认空气质量数据"""
+    def _get_default_aqi(self, error: str = "无法获取空气质量数据") -> Dict[str, Any]:
+        """返回默认空气质量数据.
+
+        `available=False` 是给调用方的**诚实信号**:这里的 aqi/pm25 是占位常量,不是
+        测得的真值。所有调用方都必须先判 `available` 再用数值 (env advisor / weather_service
+        / api.environment / smart_plan / twin._fill_environment 均已如此)。
+        """
         return {
             "available": False,
             "source": "default",
@@ -455,7 +474,7 @@ class AirQualityService:
             "aqi_description": "良",
             "pm25": 0,
             "pm10": 0,
-            "error": "无法获取空气质量数据"
+            "error": error,
         }
 
     def get_rhinitis_advice(self, aqi_data: Dict[str, Any]) -> Dict[str, Any]:

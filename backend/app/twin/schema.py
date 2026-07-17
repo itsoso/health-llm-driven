@@ -25,6 +25,13 @@ class TwinMeta(BaseModel):
     data_sources: List[str] = Field(default_factory=list)  # 实际有数据的来源
     build_ms: int = 0
     cache_status: str = "miss"  # hit / miss / partial
+    # 本次构建中抛异常被降级跳过的分区名 (如 "sleep_deep")。**关键信号**,与 safety
+    # engine 的 `failed_rule_count` 同一口径:各 _fill_* 的 try/except 吞异常保护 Twin
+    # 韧性(一个分区崩不该打死整个 Twin),但吞掉后该分区字段全 None、`data_sources` 里
+    # 也不会出现对应源 —— 与「用户本来就没这项数据」在结果上**完全不可分辨**。
+    # sleep_deep 正是这样静默死了 5 周(生产 698 次/24h AttributeError 没人发现)。
+    # 语义: 分区名在此 list 里 = 「该分区评估失败,状态未知」,≠「无数据」。
+    failed_partitions: List[str] = Field(default_factory=list)
 
 
 # ──────────────────────────── Physiological ────────────────────────────
