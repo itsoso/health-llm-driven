@@ -6,7 +6,7 @@
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, or_
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user_required
@@ -63,11 +63,12 @@ def specialist_hit_rate(
     by_specialist.sort(key=lambda x: x["hit_rate"], reverse=True)
 
     # 待评分计数
-    pending = db.query(func.count(ActionCard.id)).filter(
+    pending_cards = db.query(ActionCard).filter(
         ActionCard.user_id == current_user.id,
         ActionCard.check_back_date.isnot(None),
         ActionCard.graded_at.is_(None),
-    ).scalar() or 0
+    ).all()
+    pending = sum(is_efficacy_score_eligible_card(card) for card in pending_cards)
 
     # best_specialist 必须有足够样本量 (≥3)
     best = next((s["specialist"] for s in by_specialist if s["is_significant"]), None)
@@ -76,7 +77,7 @@ def specialist_hit_rate(
         "since": since.isoformat(),
         "days": days,
         "by_specialist": by_specialist,
-        "pending_grading": int(pending),
+        "pending_grading": pending,
         "best_specialist": best,
     }
 
@@ -92,7 +93,10 @@ def my_recent_graded_cards(
         ActionCard.graded_at.isnot(None),
     ).order_by(ActionCard.graded_at.desc()).limit(limit).all()
 
-    from app.services.outcome_safety import is_efficacy_score_eligible_card
+    from app.services.outcome_safety import (
+        clinician_review_display_note,
+        is_efficacy_score_eligible_card,
+    )
     return [{
         "id": c.id,
         "title": c.title,
@@ -103,7 +107,11 @@ def my_recent_graded_cards(
         "actual": c.actual_value,
         "accuracy_score": c.accuracy_score if is_efficacy_score_eligible_card(c) else None,
         "graded_at": c.graded_at.isoformat() if c.graded_at else None,
-        "notes": c.grading_notes,
+        "notes": (
+            c.grading_notes
+            if is_efficacy_score_eligible_card(c)
+            else clinician_review_display_note(c.metric_key)
+        ),
         "adherence_kind": c.adherence_kind,
         "adherence_confidence": c.adherence_confidence,
         "score_status": "clinician_review" if not is_efficacy_score_eligible_card(c) else "eligible",
@@ -159,21 +167,28 @@ def specialist_scorecard(
         .all()
     )
 
-    from app.services.outcome_safety import is_efficacy_score_eligible_card
+    from app.services.outcome_safety import (
+        clinician_review_display_note,
+        is_efficacy_score_eligible_card,
+    )
 
     graded = [
         card for card in cards
         if card.accuracy_score is not None and is_efficacy_score_eligible_card(card)
     ]
-    proposed_count = len(cards)
+    eligible_cards = [card for card in cards if is_efficacy_score_eligible_card(card)]
+    proposed_count = len(eligible_cards)
     graded_count = len(graded)
 
     avg_acc = (
         sum(c.accuracy_score for c in graded) / graded_count
         if graded_count else None
     )
-    # hit_rate: graded / proposed (给 UI 展示"多少建议最后拿到了评分")
-    hit_rate = round(graded_count / proposed_count, 2) if proposed_count else 0.0
+    hits = sum(c.accuracy_score >= 70 for c in graded)
+    # 命中率只代表已评分、可归因建议的命中表现；评分覆盖率单独给出，避免把
+    # "已评分/建议数"误标成命中率，更不能让临床复核卡影响任一比例。
+    hit_rate = round(hits / graded_count, 2) if graded_count else None
+    grading_coverage = round(graded_count / proposed_count, 2) if proposed_count else 0.0
 
     return {
         "specialist": name,
@@ -181,6 +196,8 @@ def specialist_scorecard(
         "proposed_count": proposed_count,
         "graded_count": graded_count,
         "hit_rate": hit_rate,
+        "grading_coverage": grading_coverage,
+        "clinical_review_count": len(cards) - proposed_count,
         "avg_accuracy": round(avg_acc, 1) if avg_acc is not None else None,
         "cards": [
             {
@@ -195,7 +212,11 @@ def specialist_scorecard(
                 "score_status": "clinician_review" if not is_efficacy_score_eligible_card(c) else "eligible",
                 "adherence_kind": c.adherence_kind,
                 "adherence_confidence": c.adherence_confidence,
-                "why_short": (c.grading_notes or "")[:120] or None,
+                "why_short": (
+                    (c.grading_notes or "")[:120] or None
+                    if is_efficacy_score_eligible_card(c)
+                    else clinician_review_display_note(c.metric_key)
+                ),
             }
             for c in cards
         ],

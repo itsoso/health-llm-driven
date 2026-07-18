@@ -18,6 +18,7 @@ export interface ScorecardCard {
   target_value: string | null;
   actual_value: string | null;
   accuracy_score: number | null;
+  score_status: 'eligible' | 'clinician_review';
   adherence_kind: string | null;
   adherence_confidence: number | null;
   why_short: string | null;
@@ -28,7 +29,9 @@ export interface ScorecardResponse {
   window_days: number;
   proposed_count: number;
   graded_count: number;
-  hit_rate: number;
+  hit_rate: number | null;
+  grading_coverage: number;
+  clinical_review_count: number;
   avg_accuracy: number | null;
   cards: ScorecardCard[];
 }

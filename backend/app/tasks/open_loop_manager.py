@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone, date
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 from app.celery_app import celery_app
@@ -128,9 +128,15 @@ def _detect_action_card_due(db, user_id: int) -> List[OpenLoop]:
         ActionCard.graded_at >= today_dt - timedelta(days=2),  # 最近 2 天才评分的
     ).all()
 
+    from app.services.outcome_safety import is_efficacy_score_eligible_card
+
     loops: List[OpenLoop] = []
     for c in cards:
-        score_val = c.accuracy_score or 0
+        # 临床管理混杂指标只能保留测量供专业人员解读，不能推送为 AI 成功/失败，
+        # 也不能把未评分的 None 默认成 0 分。
+        if c.accuracy_score is None or not is_efficacy_score_eligible_card(c):
+            continue
+        score_val = c.accuracy_score
         title_short = c.title[:24] if c.title else "之前那条建议"
         # P2 故事化: 按命中度给不同语气, 让用户感受 AI 在"复盘" 而非"通报"
         if score_val >= 70:

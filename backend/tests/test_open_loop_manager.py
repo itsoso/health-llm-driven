@@ -138,6 +138,21 @@ def test_action_card_old_grading_not_pushed(db):
     assert _detect_action_card_due(db, user_id=6) == []
 
 
+def test_clinician_gated_action_card_is_not_pushed_as_ai_success_or_failure(db):
+    from app.models.action_card import ActionCard
+
+    now = datetime.now(timezone.utc)
+    db.add(ActionCard(
+        user_id=61, title="降低 LDL", content="...", metric_key="ldl",
+        check_back_date=now - timedelta(hours=6),
+        graded_at=now - timedelta(hours=2), accuracy_score=None,
+        outcome="inconclusive",
+    ))
+    db.commit()
+
+    assert _detect_action_card_due(db, user_id=61) == []
+
+
 # ────── trend_anomaly ──────
 
 

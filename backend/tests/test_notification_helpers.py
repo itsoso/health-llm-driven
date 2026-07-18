@@ -85,6 +85,19 @@ class TestBuildHitRateBlock:
         assert "| recovery_coach |" in result
         assert "| fuel_strategist |" in result
 
+    def test_clinician_gated_cards_do_not_enter_specialist_ranking(self, db):
+        from app.models.action_card import ActionCard
+
+        u = _mk_user(db)
+        db.add(ActionCard(
+            user_id=u.id, title="降低 LDL", content="x", metric_key="ldl",
+            creator_specialist="metabolic_specialist", accuracy_score=0,
+            graded_at=datetime.now(UTC) - timedelta(days=1),
+        ))
+        db.commit()
+
+        assert build_hit_rate_block(db, u.id) == ""
+
 
 # ─────── build_medication_adherence_block ───────
 

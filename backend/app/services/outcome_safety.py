@@ -43,3 +43,11 @@ def clinician_review_grading_note(metric_key: Any) -> str:
         f"{metric_key or '该指标'} 受用药或临床管理混杂影响；系统仅保留测量记录，"
         "不将其计入建议命中率或有效性结论，需由临床专业人员综合解读。"
     )
+
+
+def clinician_review_display_note(metric_key: Any) -> str:
+    """Neutral copy for any user-facing legacy card detail."""
+    return (
+        f"{metric_key or '该指标'} 受用药或临床管理等因素影响；"
+        "本次仅保留测量记录，不将其解读为建议有效或无效。"
+    )

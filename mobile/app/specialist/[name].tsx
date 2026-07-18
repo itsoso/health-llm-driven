@@ -54,7 +54,9 @@ function CardRow({ card, c }: { card: ScorecardCard; c: ColorPalette }) {
           </Text>
         </View>
       ) : (
-        <Text style={styles.pending}>等待评分</Text>
+        <Text style={styles.pending}>
+          {card.score_status === 'clinician_review' ? '需临床复核' : '等待评分'}
+        </Text>
       )}
 
       {card.why_short && <Text style={styles.why}>{card.why_short}</Text>}
@@ -140,6 +142,10 @@ function SpecialistScorecardContent({ name }: { name: string }) {
               <Text style={styles.stat}>
                 近 {data.window_days} 天: {data.proposed_count} 条建议 · {data.graded_count} 条评分
               </Text>
+              <Text style={styles.stat}>
+                评分覆盖 {Math.round(data.grading_coverage * 100)}%
+                {data.clinical_review_count > 0 ? ` · ${data.clinical_review_count} 条需临床复核` : ''}
+              </Text>
               {data.avg_accuracy !== null && (
                 <Text style={styles.stat}>
                   平均命中度{' '}
@@ -154,9 +160,9 @@ function SpecialistScorecardContent({ name }: { name: string }) {
             <AgentFeedbackLink
               label="跟小巴复盘这个专家建议"
               accessibilityLabel="跟小巴复盘这个专家建议"
-              prompt={`请基于${label}方向近 30 天的建议成绩单，分析哪些建议有效、哪些偏离，并给出下一轮建议应如何调整。`}
+              prompt={`请基于${label}方向近 30 天可归因建议的成绩单，分析哪些建议有效、哪些偏离，并给出下一轮建议应如何调整。需要临床复核的指标不做自动有效性判断。`}
               context={createSpecialistScorecardAgentContext({ label, data: data as any })}
-              badge={`${label}命中率 ${data.hit_rate.toFixed(0)}%`}
+              badge={data.hit_rate === null ? `${label}暂无可归因评分` : `${label}命中率 ${data.hit_rate.toFixed(0)}%`}
               style={styles.agentLink}
             />
 

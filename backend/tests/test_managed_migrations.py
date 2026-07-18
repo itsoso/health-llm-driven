@@ -44,6 +44,10 @@ def test_clinician_gated_outcome_sqlite_migration_neutralizes_legacy_scores(tmp_
             "VALUES (1, 'responds_to', 0.9, '[]', '用户血压', '降压建议')"
         ))
         conn.execute(text(
+            "INSERT INTO memory_facts (id, predicate, confidence, tags, subject, object_value) "
+            "VALUES (2, 'responds_to', 0.9, '[]', '用户 TSH', '甲状腺调理建议')"
+        ))
+        conn.execute(text(
             "INSERT INTO action_cards (id, metric_key, accuracy_score, outcome, effect_size, grading_notes) "
             "VALUES (1, 'ldl', 95, 'improved', 0.8, '旧评分'), "
             "(2, 'hrv', 80, 'improved', 0.5, '恢复评分')"
@@ -58,6 +62,9 @@ def test_clinician_gated_outcome_sqlite_migration_neutralizes_legacy_scores(tmp_
         fact = conn.execute(text(
             "SELECT predicate, confidence, tags FROM memory_facts WHERE id = 1"
         )).one()
+        tsh_fact = conn.execute(text(
+            "SELECT predicate, confidence, tags FROM memory_facts WHERE id = 2"
+        )).one()
         ldl_card = conn.execute(text(
             "SELECT accuracy_score, outcome, effect_size, grading_notes FROM action_cards WHERE id = 1"
         )).one()
@@ -68,6 +75,9 @@ def test_clinician_gated_outcome_sqlite_migration_neutralizes_legacy_scores(tmp_
     assert fact.predicate == "observed_change"
     assert fact.confidence == 0.4
     assert "clinician_review" in fact.tags
+    assert tsh_fact.predicate == "observed_change"
+    assert tsh_fact.confidence == 0.4
+    assert "clinician_review" in tsh_fact.tags
     assert ldl_card.accuracy_score is None
     assert ldl_card.outcome == "inconclusive"
     assert ldl_card.effect_size is None

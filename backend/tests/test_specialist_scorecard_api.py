@@ -18,7 +18,8 @@ def test_scorecard_empty(client, auth_user_and_headers):
     assert b["window_days"] == 30
     assert b["proposed_count"] == 0
     assert b["graded_count"] == 0
-    assert b["hit_rate"] == 0.0
+    assert b["hit_rate"] is None
+    assert b["grading_coverage"] == 0.0
     assert b["avg_accuracy"] is None
     assert b["cards"] == []
 
@@ -58,7 +59,8 @@ def test_scorecard_mixed_graded_and_pending(client, db, auth_user_and_headers):
     assert b["proposed_count"] == 2
     assert b["graded_count"] == 1
     assert b["avg_accuracy"] == 85.0
-    assert b["hit_rate"] == 0.5  # 1 graded / 2 proposed
+    assert b["hit_rate"] == 1.0  # 1/1 已评分建议命中
+    assert b["grading_coverage"] == 0.5  # 1 graded / 2 proposed
     assert len(b["cards"]) == 2
 
     graded_card = next(c for c in b["cards"] if c["accuracy_score"] is not None)
@@ -102,8 +104,11 @@ def test_scorecard_hides_legacy_clinician_gated_hit_score(client, db, auth_user_
     body = response.json()
     assert body["graded_count"] == 0
     assert body["avg_accuracy"] is None
+    assert body["hit_rate"] is None
+    assert body["clinical_review_count"] == 1
     assert body["cards"][0]["accuracy_score"] is None
     assert body["cards"][0]["score_status"] == "clinician_review"
+    assert "不将其解读为建议有效或无效" in body["cards"][0]["why_short"]
 
 
 def test_personal_scorecard_excludes_legacy_clinician_gated_score(client, db, auth_user_and_headers):

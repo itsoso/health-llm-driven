@@ -30,38 +30,41 @@ def build_hit_rate_block(db, user_id: int, days: int = 30) -> str:
     空串 iff 用户无 graded ActionCard 且无 pending card.
     """
     from app.models.action_card import ActionCard
-    from sqlalchemy import func, Integer
+    from collections import defaultdict
+    from app.services.outcome_safety import is_efficacy_score_eligible_card
 
     since = datetime.now(UTC) - timedelta(days=days)
 
-    rows = db.query(
-        ActionCard.creator_specialist,
-        func.count(ActionCard.id).label("total"),
-        func.avg(ActionCard.accuracy_score).label("avg_score"),
-        func.sum((ActionCard.accuracy_score >= 70).cast(Integer)).label("hits"),
-    ).filter(
+    cards = db.query(ActionCard).filter(
         ActionCard.user_id == user_id,
         ActionCard.graded_at.isnot(None),
         ActionCard.graded_at >= since,
         ActionCard.creator_specialist.isnot(None),
-    ).group_by(ActionCard.creator_specialist).all()
+        ActionCard.accuracy_score.isnot(None),
+    ).all()
+    grouped = defaultdict(list)
+    for card in cards:
+        if is_efficacy_score_eligible_card(card):
+            grouped[card.creator_specialist].append(int(card.accuracy_score))
 
-    pending = db.query(func.count(ActionCard.id)).filter(
+    pending_cards = db.query(ActionCard).filter(
         ActionCard.user_id == user_id,
         ActionCard.check_back_date.isnot(None),
         ActionCard.graded_at.is_(None),
-    ).scalar() or 0
+    ).all()
+    pending = sum(is_efficacy_score_eligible_card(card) for card in pending_cards)
 
-    if not rows and pending == 0:
+    if not grouped and pending == 0:
         return ""
 
     lines = [f"### 🎯 Specialist 信用 (最近 {days} 天)"]
 
-    if rows:
+    if grouped:
         ranked = sorted(
-            [(r.creator_specialist, int(r.total),
-              int(r.hits or 0), float(r.avg_score or 0))
-             for r in rows],
+            [
+                (name, len(scores), sum(score >= 70 for score in scores), sum(scores) / len(scores))
+                for name, scores in grouped.items()
+            ],
             key=lambda x: (x[2] / x[1] if x[1] else 0),
             reverse=True,
         )

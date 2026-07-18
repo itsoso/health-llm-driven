@@ -72,6 +72,21 @@ class TestCrystallize:
         db.refresh(f)
         assert f.tier == "working"
 
+    def test_clinician_review_fact_never_crystallizes(self, db):
+        f = MemoryFact(
+            user_id=1, tier="working", subject="用户 TSH", predicate="observed_change",
+            object_value="下降", confidence=0.95, reinforcement_count=6,
+            tags=["clinician_review"],
+        )
+        db.add(f)
+        db.commit()
+
+        result = _crystallize_loop(db)
+
+        assert result["working_to_episodic"] == 0
+        db.refresh(f)
+        assert f.tier == "working"
+
 
 # ─────────── stale entity ───────────
 

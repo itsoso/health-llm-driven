@@ -22,7 +22,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
-from sqlalchemy import or_, and_
+from sqlalchemy import or_
 
 from app.celery_app import celery_app
 from app.database import SessionLocal
@@ -37,6 +37,10 @@ def _crystallize_loop(db) -> dict:
     """
     from app.models.memory_fact import MemoryFact
 
+    def is_clinician_review_fact(fact) -> bool:
+        tags = fact.tags if isinstance(fact.tags, list) else []
+        return "clinician_review" in tags
+
     w2e = 0
     e2s = 0
 
@@ -50,6 +54,8 @@ def _crystallize_loop(db) -> dict:
         ),
     ).all()
     for f in rows:
+        if is_clinician_review_fact(f):
+            continue
         f.tier = "episodic"
         w2e += 1
 
@@ -61,6 +67,8 @@ def _crystallize_loop(db) -> dict:
         MemoryFact.confidence >= 0.6,
     ).all()
     for f in rows:
+        if is_clinician_review_fact(f):
+            continue
         f.tier = "semantic"
         e2s += 1
 
