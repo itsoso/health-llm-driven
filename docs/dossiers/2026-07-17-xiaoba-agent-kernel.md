@@ -202,6 +202,14 @@ T3 ToolGateway 部署：
 - 本轮仅后端工具执行策略变化，无客户端改动。
 - **裁决：PASS**。
 
+T4 Telegram 执行入口部署：
+
+- 后端提交：`34b3a61cc fix(agent): route Telegram records through tool gateway`
+- 部署方式：`./deploy.sh -b`
+- 结果：部署完成，后端健康度 `60/60 PASS`，skills manifest 本地/线上 `22/22`。
+- 本轮仅后端 Telegram inbound 路由变化，无客户端改动。
+- **裁决：PASS**。
+
 ## G6 · 上线验证
 
 - 待执行。需要至少覆盖：
