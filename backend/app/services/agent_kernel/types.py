@@ -1,0 +1,124 @@
+"""Typed contracts for XiaoBa Agent Kernel routing and tool policy."""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
+from typing import Any, Optional
+
+BJ = timezone(timedelta(hours=8))
+
+
+@dataclass(frozen=True)
+class AgentEnvelope:
+    """Surface-normalized user input before LLM/provider conversion."""
+
+    user_id: Optional[int]
+    channel: str
+    text: str = ""
+    media: tuple[dict[str, Any], ...] = ()
+    source_message_id: Optional[str] = None
+    client_capabilities: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class ExecutionContext:
+    """Immutable execution parameters for one turn."""
+
+    current_time: datetime
+    timezone: str
+    user_id: Optional[int]
+    channel: str
+    safety_level: str = "l3_health"
+    autonomy_tier: str = "manual_confirm"
+
+    @property
+    def current_time_iso(self) -> str:
+        return self.current_time.isoformat()
+
+    @classmethod
+    def now(
+        cls,
+        *,
+        user_id: Optional[int],
+        channel: str,
+        timezone_name: str = "Asia/Shanghai",
+    ) -> "ExecutionContext":
+        return cls(
+            current_time=datetime.now(BJ),
+            timezone=timezone_name,
+            user_id=user_id,
+            channel=channel,
+        )
+
+    @classmethod
+    def for_test(
+        cls,
+        *,
+        user_id: Optional[int],
+        channel: str,
+        timezone_name: str = "Asia/Shanghai",
+    ) -> "ExecutionContext":
+        return cls(
+            current_time=datetime(2026, 7, 17, 12, 0, tzinfo=BJ),
+            timezone=timezone_name,
+            user_id=user_id,
+            channel=channel,
+        )
+
+
+@dataclass(frozen=True)
+class IntentFrame:
+    """Semantic intent frame used by all surfaces before tool execution."""
+
+    raw: str
+    normalized: str
+    primary: str
+    domain: str
+    operation: str
+    confidence: float
+    evidence: tuple[str, ...] = ()
+    ambiguity: tuple[str, ...] = ()
+    scope: dict[str, str] = field(default_factory=dict)
+    is_write: bool = False
+    requires_reliable_tool_model: bool = False
+
+
+@dataclass(frozen=True)
+class TurnSnapshot:
+    """The stable routing state for one provider/tool boundary."""
+
+    envelope: AgentEnvelope
+    context: ExecutionContext
+    intent: IntentFrame
+    policy_mode: str = "enforce"
+
+
+@dataclass(frozen=True)
+class ToolExecutionRequest:
+    """Normalized tool request before capability policy."""
+
+    tool_name: str
+    arguments: Any = field(default_factory=dict)
+    source: str = "structured"
+    tool_call_id: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class CapabilityDecision:
+    """Tool execution policy result."""
+
+    action: str
+    reason: str
+    normalized_tool_name: Optional[str] = None
+    normalized_args: dict[str, Any] = field(default_factory=dict)
+    receipt_required: bool = False
+
+
+@dataclass(frozen=True)
+class ToolExecutionResult:
+    """Post-tool result shape for the future ToolGateway."""
+
+    tool_name: str
+    content: Any
+    receipt: Optional[dict[str, Any]] = None
+    decision: Optional[CapabilityDecision] = None

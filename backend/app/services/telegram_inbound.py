@@ -4,7 +4,7 @@ Telegram inbound 处理器 — 把用户在 Telegram 发的语音/文字解析�
 流程:
   用户 → Telegram → bot 转发到 webhook
   → 如果是 voice 消息: getFile + 下载 ogg → Whisper STT → 文字
-  → 意图分类 (关键词):
+  → 意图分类 (共享 Agent Kernel 语义帧):
       directive → user_directives (走 directive_parser, 老路径)
       record    → 调 health_record 工具 (LLM tool calling, 单次)
       query/chat → LLM 直接回复 (≤80 字, 适合 IM)
@@ -28,40 +28,40 @@ from typing import Optional
 import httpx
 
 from app.config import settings
+from app.services.agent_kernel.intent_frame import build_intent_frame
+from app.services.agent_kernel.types import AgentEnvelope, ExecutionContext
 
 logger = logging.getLogger(__name__)
 
 
-# 意图标签 — 简单关键词路由 (够用, 后续可换 LLM 分类器)
+# 意图标签 — directive 暂留老规则; record/query 使用共享 Agent Kernel.
 _DIRECTIVE_HINTS = (
     "控制在", "目标", "戒酒", "戒烟", "限制",
     "不要再推", "不要给我", "禁止",
     "之前我说过", "再次强调", "记住",
 )
-_RECORD_HINTS = (
-    "吃了", "喝了", "刚吃", "刚喝", "刚跑", "做了",
-    "记一下", "记一条", "记录",
-    "体重", "血压", "血氧", "血糖", "心率",
-    "kg", "公斤", "毫升", "mmHg",
-    "心情", "压力大", "失眠",
-    "感冒", "头疼", "牙疼", "肚子疼",
-)
-_QUERY_HINTS = (
-    "怎么样", "如何", "为什么", "是不是", "查一下", "看一下",
-    "最近", "今天", "昨天", "这周", "这月",
-)
 
 
 def classify_intent(text: str) -> str:
-    """粗分类: directive / record / query / chat"""
+    """粗分类: directive / record / query / chat.
+
+    Health record routing must use the shared semantic frame. A keyword such as
+    "记录" is not enough to grant the record path, because it is often a noun in
+    read-only requests.
+    """
     t = text.strip()
     if not t:
         return "chat"
     if any(h in t for h in _DIRECTIVE_HINTS):
         return "directive"
-    if any(h in t for h in _RECORD_HINTS):
+
+    envelope = AgentEnvelope(user_id=None, channel="telegram", text=t)
+    context = ExecutionContext.now(user_id=None, channel="telegram")
+    frame = build_intent_frame(envelope, context)
+
+    if frame.primary == "write" and frame.operation == "create":
         return "record"
-    if any(h in t for h in _QUERY_HINTS) or "?" in t or "？" in t:
+    if frame.primary in {"read", "advice", "mutate"}:
         return "query"
     return "chat"
 

@@ -1,0 +1,42 @@
+[
+  {
+    "text": "今天我的饮食的记录，帮我列个表格出来。",
+    "channel": "chat",
+    "primary": "read",
+    "domain": "diet",
+    "operation": "list",
+    "is_write": false
+  },
+  {
+    "text": "不是记录，是列出我今天吃的所有东西。",
+    "channel": "voice",
+    "primary": "read",
+    "domain": "diet",
+    "operation": "list",
+    "is_write": false
+  },
+  {
+    "text": "我记录里有哪些饮食？",
+    "channel": "telegram",
+    "primary": "read",
+    "domain": "diet",
+    "operation": "ask",
+    "is_write": false
+  },
+  {
+    "text": "记录午餐吃了牛肉面",
+    "channel": "chat",
+    "primary": "write",
+    "domain": "diet",
+    "operation": "create",
+    "is_write": true
+  },
+  {
+    "text": "删除上一餐",
+    "channel": "chat",
+    "primary": "mutate",
+    "domain": "diet",
+    "operation": "delete",
+    "is_write": true
+  }
+]
