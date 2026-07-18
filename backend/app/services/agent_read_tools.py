@@ -162,14 +162,18 @@ def read_blood_pressure(db: Session, user_id: Optional[int], *, limit: int = 10)
     (blood_pressure.py::get_my_blood_pressure_records)。
 
     tool 只传 limit(不传 start/end), order by record_date desc, 经
-    BloodPressureRecordResponse 序列化, **每条补 category=classify_blood_pressure(sys,dia)**
-    —— 与端点逐字段一致(golden-master 校验)。
+    BloodPressureRecordResponse 序列化，并复用 API 的权威展示/安全字段
+    （category、category_color、safety_guidance）—— 与端点逐字段一致
+    (golden-master 校验)。
     """
     if user_id is None:
         return "Error: 当前会话无 user_id, 无法查询血压"
     from app.models.blood_pressure import BloodPressureRecord
-    from app.schemas.blood_pressure import BloodPressureRecordResponse
-    from app.utils.blood_pressure_classify import classify_blood_pressure
+    from app.schemas.blood_pressure import (
+        BloodPressureRecordResponse,
+        BloodPressureSafetyGuidance,
+    )
+    from app.utils.blood_pressure_classify import blood_pressure_display
 
     records = (
         db.query(BloodPressureRecord)
@@ -181,7 +185,15 @@ def read_blood_pressure(db: Session, user_id: Optional[int], *, limit: int = 10)
     payload = []
     for r in records:
         resp = BloodPressureRecordResponse.model_validate(r)
-        resp.category = classify_blood_pressure(r.systolic, r.diastolic)
+        display = blood_pressure_display(r.systolic, r.diastolic)
+        resp.category = display["category"]
+        resp.category_color = display["category_color"]
+        safety_guidance = display["safety_guidance"]
+        resp.safety_guidance = (
+            BloodPressureSafetyGuidance.model_validate(safety_guidance)
+            if safety_guidance is not None
+            else None
+        )
         payload.append(resp.model_dump(mode="json"))
     return json.dumps(payload, ensure_ascii=False, default=str)
 

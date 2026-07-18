@@ -23,9 +23,12 @@ write_receipts(可验证写入回执,与 turn 6334 修复同一权威判定)传�
 """
 import json
 
-import pytest
-
-from app.services.agent_executor import AgentExecutor, _fallback_text_from_tool_results
+from app.services.agent_executor import (
+    AgentExecutor,
+    _fallback_text_from_tool_results,
+    _has_fast_record_write_intent,
+)
+from app.services.utterance_intent_classifier import classify_agent_utterance
 from app.models.agent_conversation import AgentMessage
 
 _WRITE_CLAIMS = ("已完成记录", "已完成操作", "已记录")
@@ -170,9 +173,9 @@ async def test_query_turn_double_empty_retry_fallback_never_claims_write(db, aut
     rounds = []
 
     query_question = "我今天早餐吃了什么?"
-    from app.services import agent_executor as ae
-    # 前置断言: 疑问守卫命中("什么"+"?"),这确实是查询回合而非记录回合。
-    assert ae._RECORD_INTERROGATIVE_GUARD_RE.search(query_question)
+    # 前置断言: 语义分类确认这是查询而非写入回合。
+    assert classify_agent_utterance(query_question).primary == "read"
+    assert not _has_fast_record_write_intent(query_question)
 
     async def fake_call_llm_stream(messages, tools):
         rounds.append(len(rounds))
@@ -279,9 +282,9 @@ async def test_verified_write_double_empty_retry_still_confirms(db, auth_user_an
     rounds = []
 
     record_message = "晚饭吃的牛排和沙拉,帮我登记一下。"
-    from app.services import agent_executor as ae
-    # 前置断言: 不命中记录意图正则 → 走普通(非 fast-record)路径,才能到空回复重试链。
-    assert not ae._RECORD_INTENT_RE.search(record_message)
+    # 前置断言: 这条自然语言写入并非 fast-record 的受限子集，
+    # 因而会走普通路径并覆盖空回复重试链。
+    assert not _has_fast_record_write_intent(record_message)
 
     async def fake_call_llm_stream(messages, tools):
         rounds.append(len(rounds))

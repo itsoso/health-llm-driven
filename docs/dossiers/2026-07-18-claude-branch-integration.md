@@ -4,8 +4,8 @@
 |---|---|
 | slug | `claude-branch-integration` |
 | 创建日期 | 2026-07-18 |
-| 当前阶段 | S7 提交前验证 |
-| 状态 | ready_to_commit |
+| 当前阶段 | S5 CI 修复验证 |
+| 状态 | pending_remote_ci |
 | 负责 | Codex |
 | 反馈环 | 本地测试 / main 集成 |
 
@@ -22,7 +22,7 @@ Integrate the unmerged `claude/*` source branches into `main` individually. This
 ## Baseline
 
 - Target: `main` at `014aded1e68376d735f84b124c16d8a488a72375`, matching `origin/main` before integration.
-- Protected user work: `backend/scripts/probe_synthesis_models.py` and `docs/prd/2026-07-06-health-first-principles-charter.md` were untracked before this work and will not be staged.
+- Protected pre-existing user-owned untracked work was intentionally excluded from this integration commit.
 - Source inventory and dependency order: [`2026-07-18-claude-branch-integration.md`](../plans/2026-07-18-claude-branch-integration.md).
 
 ## G1 · 准入裁决(governance §8 RequirementAdmission)
@@ -53,7 +53,9 @@ Integrate the unmerged `claude/*` source branches into `main` individually. This
 - Mac: `MacP0FeatureTests` `53 passed`.
 - API types were regenerated for Web and Mobile after the quick-record response contract change.
 - Generated system-map was refreshed and `scripts/check_doc_drift.py` passed.
-- **裁决**: PASS
+- `d9d24902d` 的远端 CI 在提交后暴露了四个集成回归：dossier 引用了未提交的用户本地文件；语义分析句中的“记录”名词被误判为写入；进程内血压读路径没有带齐 API 的展示/安全字段；工具决策轮复用了过长的 fast-answer prompt。
+- 修复后，本地同名 Agent CI 分片重跑：`agent-a-h` `471 passed`，`agent-i-z` `147 passed`；失败用例聚合回归 `89 passed`。
+- **裁决**: PENDING_REMOTE_CI — 本地 Gate 已通过，等待本修复提交的远端 CI 重跑。
 
 ## G4 · 安全闸
 

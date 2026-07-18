@@ -267,6 +267,7 @@ def classify_agent_utterance(
     )
     has_question = _has_question_signal(normalized)
     has_write = _has_any(normalized, WRITE_ACTIONS)
+    has_write_command = _has_explicit_write_command(normalized)
     has_negated_write = _has_negated_write(normalized)
     mutation = _mutation_operation(normalized)
     has_negated_mutation = _has_negated_mutation(normalized, mutation)
@@ -313,7 +314,7 @@ def classify_agent_utterance(
         # 但 ToolGateway 会把 health_record 当成 advice 回合的越权写入而拦掉，
         # 用户最终只看到拒答。带问号的“吃了某药有什么副作用”仍是纯问答，
         # 不应因为“吃了”这个观察词而误记一笔健康记录。
-        if has_write and not has_question:
+        if has_write_command:
             return _intent(
                 raw,
                 normalized,
@@ -410,6 +411,76 @@ def _has_negated_write(text: str) -> bool:
     if _has_any(text, WRITE_NEGATION_EXCEPTIONS):
         return False
     return _has_any(text, WRITE_NEGATIONS)
+
+
+def _has_explicit_write_command(text: str) -> bool:
+    """Distinguish a record command from a record used as evidence or a noun.
+
+    ``记录`` is overloaded in Chinese: "根据 HRV 记录推断" names historical
+    evidence, while "记录一下晚餐" asks us to persist data. Advice turns may
+    contain either form, so only an imperative frame keeps write capability.
+    This stays deliberately lexical and structural rather than falling back to
+    a broad regex keyword router.
+    """
+    command_actions = (
+        "记录",
+        "记一下",
+        "记下",
+        "打个卡",
+        "打卡",
+        "新增",
+        "录入",
+        "保存",
+        "写入",
+        "存下来",
+    )
+    command_prefixes = (
+        "帮我",
+        "请",
+        "给我",
+        "麻烦",
+        "先",
+        "再",
+        "然后",
+        "并",
+        "顺便",
+        "要",
+        "把",
+        "我想",
+        "想",
+        "希望",
+        "需要",
+    )
+    record_noun_suffixes = (
+        "出发",
+        "显示",
+        "表明",
+        "提示",
+        "证明",
+        "分析",
+        "推断",
+        "里",
+        "中",
+        "上",
+        "的",
+    )
+
+    for action in command_actions:
+        start = text.find(action)
+        while start >= 0:
+            left_context = text[:start]
+            after = text[start + len(action):]
+            if action == "记录" and after.startswith(record_noun_suffixes):
+                start = text.find(action, start + len(action))
+                continue
+            if (
+                start == 0
+                or left_context.endswith(command_prefixes)
+                or (action == "记录" and after.startswith(("一下", "下来", "为", "到")))
+            ):
+                return True
+            start = text.find(action, start + len(action))
+    return False
 
 
 def _mutation_operation(text: str) -> Optional[str]:

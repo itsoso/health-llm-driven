@@ -2319,8 +2319,8 @@ def _build_lite_tool_round_messages(
     但仍背着 ~14k-token 全量栈 (full system prompt 含 8 个分析 blob + 最后一条 user
     里折进的 KB 证据 + 15 轮历史 + 18KB tool schema), flash 白付 6-8s prefill。
     该轮只需从用户消息 + 最近上下文里**挑一个工具、填参数** —— 不需要分析 blob / KB。
-    把**这一轮**换成 lite 栈: lite system prompt (人格 + 记录/工具规则 + R4 + 基础画像,
-    见 _build_system_prompt(lite=True), 无分析 blob / 无 KB) + 只保留最新 user 消息
+    把**这一轮**换成 lite 栈: 专用的工具决策 system prompt（人格、时间、最小写入边界，
+    无分析 blob / 无 KB / 无画像）+ 只保留最新 user 消息
     (调用方在 KB/turn-context 折进最后一条 user **之前**快照, 故 KB 天然缺席),
     并把紧邻的上一条非空 assistant 折进 user 做消歧上下文。
 
@@ -6402,9 +6402,7 @@ class AgentExecutor:
             and not self._prefer_fast_record_model
         ):
             try:
-                lite_system = self._build_system_prompt(
-                    user_id, conv.id, user_auth_token, lite=True, intent_query=message,
-                )
+                lite_system = self._build_tool_decision_system_prompt()
                 self._lite_tool_round_messages = _build_lite_tool_round_messages(
                     lite_system, messages,
                 )
@@ -8279,6 +8277,23 @@ class AgentExecutor:
             or self._is_default_image_analysis_prompt(message)
             or self._looks_like_image_record_intent(message)
         )
+
+    def _build_tool_decision_system_prompt(self) -> str:
+        """Build the compact, grounded prompt for a tool-selection-only round.
+
+        Fast tool rounds never produce user-facing health content. They only
+        select tools, so the full fast answer prompt would waste prefill budget
+        without improving the later synthesis answer.
+        """
+        current_time = self._agent_kernel_reference_now().isoformat(timespec="seconds")
+        return "\n".join((
+            "你是用户的 AI 健康助理。本轮只负责选择并调用工具，不直接回答用户。",
+            f"当前用户本地时间：{current_time}。相对时间必须以此为准，不得猜测。",
+            "需要查询真实数据时调用 health_query；没有工具结果时不得编造数据。",
+            "只有用户明确要求新增记录时才调用 health_record；修改或删除已有记录才调用 health_manage。",
+            "纯查询、历史记录作为分析依据、或健康建议不得触发写入。",
+            "工具调用后由后续模型生成面向用户的解释与安全建议。",
+        ))
 
     def _build_system_prompt(
         self, user_id: int, conv_id: int, user_auth_token: Optional[str],

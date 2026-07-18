@@ -45,6 +45,16 @@ def test_compound_record_and_analysis_keeps_write_capability():
     assert intent.is_write is True
 
 
+def test_analysis_using_record_as_evidence_does_not_become_a_write():
+    intent = classify_agent_utterance(
+        "从我的基因、生活习惯、睡眠、心率、HRV 记录出发，推断一下我胃溃疡的根因。"
+    )
+
+    assert intent.primary == "advice"
+    assert intent.operation == "analyze"
+    assert intent.is_write is False
+
+
 def test_medication_side_effect_question_does_not_become_a_write():
     intent = classify_agent_utterance("吃了布洛芬后胃不舒服怎么办？")
 
