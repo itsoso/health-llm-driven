@@ -794,7 +794,7 @@ interface AIGCMediaJobData {
 }
 
 const AIGC_ACTIVE_STATUSES = new Set(['queued', 'running']);
-const AIGC_POLL_INTERVAL_MS = 4500;
+const AIGC_POLL_INTERVAL_MS = 6000;
 
 function aigcKindLabel(kind: string): string {
   switch (kind) {
@@ -812,6 +812,7 @@ function aigcStatusMeta(status: string): { label: string; color: string } {
     case 'succeeded': return { label: '已完成', color: '#16805C' };
     case 'failed': return { label: '未完成', color: '#C84B3C' };
     case 'cancelled': return { label: '已取消', color: '#8E8E93' };
+    case 'submission_unknown': return { label: '提交待核验', color: '#B7791F' };
     default: return { label: '排队中', color: '#4B8F72' };
   }
 }
@@ -871,6 +872,8 @@ export function AIGCMediaJobCardView(initialData: AIGCMediaJobData) {
       ? '生成完成后会自动保存到你的私有空间。'
       : status === 'succeeded'
         ? '结果仅对当前账号可见。'
+        : status === 'submission_unknown'
+          ? '提交结果待核验，已停止自动重试以避免重复生成。'
         : (data.error_message || '本次创作未完成，修改描述后可以重新生成。');
 
   return (

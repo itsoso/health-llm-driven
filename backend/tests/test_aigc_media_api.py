@@ -96,3 +96,26 @@ def test_aigc_media_job_rejects_cancel_after_completion(client, db, auth_user_an
 
     assert response.status_code == 409
     assert "完成" in response.text
+
+
+def test_aigc_confirmation_returns_429_when_dispatch_budget_is_exhausted(
+    client, auth_user_and_headers, monkeypatch,
+):
+    from app.api import aigc_media
+    from app.services.aigc_media_job_service import AIGCMediaJobQuotaExceeded
+
+    _, headers = auth_user_and_headers
+
+    class BudgetedService:
+        def __init__(self, _db):
+            pass
+
+        async def confirm_and_dispatch(self, **_kwargs):
+            raise AIGCMediaJobQuotaExceeded("你已有进行中的创作任务，请等待结果后再试")
+
+    monkeypatch.setattr(aigc_media, "AIGCMediaJobService", BudgetedService)
+
+    response = client.post("/api/v1/aigc/media/confirmations/aigc_confirm_1/confirm", headers=headers)
+
+    assert response.status_code == 429
+    assert "进行中的创作任务" in response.text

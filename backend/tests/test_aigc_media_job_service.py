@@ -105,6 +105,7 @@ async def test_image_to_video_uses_owned_short_lived_source_and_persists_task(
         "prompt": "把这张早餐照片做成 5 秒竖屏短视频",
         "duration_seconds": 5,
         "ratio": "9:16",
+        "model": "wan2.7-i2v",
     }
     transient_url = provider.video_requests[0]["source_url"]
     assert transient_url.startswith("https://health.example.test/api/v1/upload/files/chat/")
@@ -371,3 +372,277 @@ async def test_result_download_rejects_oversized_content_before_buffering(db, au
     with pytest.raises(AIGCMediaProviderError, match="result download failed"):
         await service._download_provider_result("https://result.aliyuncs.com/image.png", "text_to_image")
     assert user.id > 0
+
+
+@pytest.mark.asyncio
+async def test_active_job_budget_blocks_a_second_billable_dispatch(
+    db, auth_user_and_headers, monkeypatch,
+):
+    from app.config import settings
+    from app.models.aigc_media_job import AIGCMediaJob
+    from app.services.aigc_media_job_service import (
+        AIGCMediaJobQuotaExceeded,
+        AIGCMediaJobRequest,
+        AIGCMediaJobService,
+    )
+
+    user, _ = auth_user_and_headers
+    db.add(AIGCMediaJob(
+        id="aigc-budget-active",
+        user_id=user.id,
+        kind="text_to_video",
+        status="running",
+        progress=25,
+        model="wan2.7-t2v",
+        provider_task_id="task-budget-active",
+        idempotency_key="budget-active",
+        request_fingerprint="a" * 64,
+    ))
+    db.commit()
+    monkeypatch.setattr(settings, "dashscope_aigc_max_active_jobs_per_user", 1)
+    service = AIGCMediaJobService(db, provider_factory=_FakeProvider)
+    confirmation = await service.issue_confirmation(
+        user_id=user.id,
+        request=AIGCMediaJobRequest(
+            kind="text_to_image",
+            purpose="meal_visual",
+            prompt="制作一张早餐备餐步骤图",
+        ),
+    )
+
+    with pytest.raises(AIGCMediaJobQuotaExceeded, match="进行中的创作任务"):
+        await service.confirm_and_dispatch(user_id=user.id, confirmation_id=confirmation.id)
+
+
+@pytest.mark.asyncio
+async def test_global_and_daily_aigc_budgets_are_enforced_before_dispatch(
+    db, auth_user_and_headers, monkeypatch,
+):
+    from datetime import UTC, datetime
+
+    from app.config import settings
+    from app.models.aigc_media_job import AIGCMediaJob
+    from app.services.aigc_media_job_service import (
+        AIGCMediaJobQuotaExceeded,
+        AIGCMediaJobRequest,
+        AIGCMediaJobService,
+    )
+    from tests.conftest import create_authenticated_user
+
+    user, _ = auth_user_and_headers
+    other, _ = create_authenticated_user(db)
+    service = AIGCMediaJobService(db, provider_factory=_FakeProvider)
+    request = AIGCMediaJobRequest(
+        kind="text_to_image",
+        purpose="meal_visual",
+        prompt="制作一张早餐备餐步骤图",
+    )
+    db.add(AIGCMediaJob(
+        id="aigc-global-active",
+        user_id=other.id,
+        kind="text_to_video",
+        status="running",
+        progress=25,
+        model="wan2.7-t2v",
+        provider_task_id="task-global-active",
+        idempotency_key="global-active",
+        request_fingerprint="g" * 64,
+    ))
+    db.commit()
+    monkeypatch.setattr(settings, "dashscope_aigc_max_active_jobs_global", 1)
+    confirmation = await service.issue_confirmation(user_id=user.id, request=request)
+    with pytest.raises(AIGCMediaJobQuotaExceeded, match="任务繁忙"):
+        await service.confirm_and_dispatch(user_id=user.id, confirmation_id=confirmation.id)
+
+    db.query(AIGCMediaJob).filter_by(id="aigc-global-active").update({"status": "succeeded"})
+    db.add(AIGCMediaJob(
+        id="aigc-daily-complete",
+        user_id=user.id,
+        kind="text_to_image",
+        status="succeeded",
+        progress=100,
+        model="wan2.7-image",
+        idempotency_key="daily-complete",
+        request_fingerprint="h" * 64,
+        created_at=datetime.now(UTC),
+    ))
+    db.commit()
+    monkeypatch.setattr(settings, "dashscope_aigc_max_active_jobs_global", 20)
+    monkeypatch.setattr(settings, "dashscope_aigc_max_dispatches_per_user_per_day", 1)
+    daily_confirmation = await service.issue_confirmation(
+        user_id=user.id,
+        request=AIGCMediaJobRequest(
+            kind="text_to_image",
+            purpose="meal_visual",
+            prompt="制作一张早餐摆盘海报",
+        ),
+    )
+    with pytest.raises(AIGCMediaJobQuotaExceeded, match="今日创作次数"):
+        await service.confirm_and_dispatch(user_id=user.id, confirmation_id=daily_confirmation.id)
+
+
+@pytest.mark.asyncio
+async def test_refresh_respects_the_provider_poll_minimum_interval(
+    db, auth_user_and_headers, monkeypatch,
+):
+    from datetime import UTC, datetime
+
+    from app.config import settings
+    from app.models.aigc_media_job import AIGCMediaJob
+    from app.services.aigc_media_job_service import AIGCMediaJobService
+
+    class NoPollProvider(_FakeProvider):
+        async def get_task(self, _task_id: str):
+            raise AssertionError("poll interval should have prevented this request")
+
+    user, _ = auth_user_and_headers
+    job = AIGCMediaJob(
+        id="aigc-poll-throttled",
+        user_id=user.id,
+        kind="text_to_video",
+        status="running",
+        progress=25,
+        model="wan2.7-t2v",
+        provider_task_id="task-poll-throttled",
+        idempotency_key="poll-throttled",
+        request_fingerprint="b" * 64,
+        last_provider_checked_at=datetime.now(UTC),
+    )
+    db.add(job)
+    db.commit()
+    monkeypatch.setattr(settings, "dashscope_aigc_poll_min_interval_seconds", 60)
+
+    refreshed = await AIGCMediaJobService(db, provider_factory=NoPollProvider).refresh(job)
+
+    assert refreshed.status == "running"
+
+
+@pytest.mark.asyncio
+async def test_refresh_claims_a_durable_poll_lease_before_provider_request(
+    db, auth_user_and_headers, monkeypatch,
+):
+    from app.config import settings
+    from app.models.aigc_media_job import AIGCMediaJob
+    from app.services.aigc_media_job_service import AIGCMediaJobService
+
+    user, _ = auth_user_and_headers
+    job = AIGCMediaJob(
+        id="aigc-poll-lease",
+        user_id=user.id,
+        kind="text_to_video",
+        status="running",
+        progress=25,
+        model="wan2.7-t2v",
+        provider_task_id="task-poll-lease",
+        idempotency_key="poll-lease",
+        request_fingerprint="l" * 64,
+    )
+    db.add(job)
+    db.commit()
+    monkeypatch.setattr(settings, "dashscope_aigc_poll_min_interval_seconds", 60)
+    monkeypatch.setattr(settings, "dashscope_aigc_global_poll_min_interval_seconds", 1)
+
+    calls = 0
+
+    class LeaseProvider(_FakeProvider):
+        async def get_task(self, _task_id: str):
+            nonlocal calls
+            calls += 1
+            # A second surface polling the same job after the first request has
+            # claimed its lease must not make a second provider request.
+            await AIGCMediaJobService(db, provider_factory=NoPollProvider).refresh(job)
+            return {"output": {"task_status": "RUNNING"}}
+
+    class NoPollProvider(_FakeProvider):
+        async def get_task(self, _task_id: str):
+            raise AssertionError("durable poll lease should prevent a duplicate provider call")
+
+    refreshed = await AIGCMediaJobService(db, provider_factory=LeaseProvider).refresh(job)
+
+    assert refreshed.status == "running"
+    assert calls == 1
+
+
+@pytest.mark.asyncio
+async def test_refresh_applies_an_account_global_poll_lease(
+    db, auth_user_and_headers, monkeypatch,
+):
+    from app.config import settings
+    from app.models.aigc_media_job import AIGCMediaJob
+    from app.services.aigc_media_job_service import AIGCMediaJobService
+
+    user, _ = auth_user_and_headers
+    first = AIGCMediaJob(
+        id="aigc-global-poll-first",
+        user_id=user.id,
+        kind="text_to_video",
+        status="running",
+        progress=25,
+        model="wan2.7-t2v",
+        provider_task_id="task-global-poll-first",
+        idempotency_key="global-poll-first",
+        request_fingerprint="m" * 64,
+    )
+    second = AIGCMediaJob(
+        id="aigc-global-poll-second",
+        user_id=user.id,
+        kind="text_to_video",
+        status="running",
+        progress=25,
+        model="wan2.7-t2v",
+        provider_task_id="task-global-poll-second",
+        idempotency_key="global-poll-second",
+        request_fingerprint="n" * 64,
+    )
+    db.add_all([first, second])
+    db.commit()
+    monkeypatch.setattr(settings, "dashscope_aigc_poll_min_interval_seconds", 1)
+    monkeypatch.setattr(settings, "dashscope_aigc_global_poll_min_interval_seconds", 60)
+
+    class FirstProvider(_FakeProvider):
+        async def get_task(self, _task_id: str):
+            return {"output": {"task_status": "RUNNING"}}
+
+    class NoPollProvider(_FakeProvider):
+        async def get_task(self, _task_id: str):
+            raise AssertionError("account-global poll lease should prevent this provider call")
+
+    await AIGCMediaJobService(db, provider_factory=FirstProvider).refresh(first)
+    refreshed = await AIGCMediaJobService(db, provider_factory=NoPollProvider).refresh(second)
+
+    assert refreshed.status == "running"
+
+
+def test_database_rejects_duplicate_billable_request_fingerprints(db, auth_user_and_headers):
+    from sqlalchemy.exc import IntegrityError
+
+    from app.models.aigc_media_job import AIGCMediaJob
+
+    user, _ = auth_user_and_headers
+    first = AIGCMediaJob(
+        id="aigc-fingerprint-first",
+        user_id=user.id,
+        kind="text_to_image",
+        status="submission_unknown",
+        progress=0,
+        model="wan2.7-image",
+        idempotency_key="fingerprint-first",
+        request_fingerprint="o" * 64,
+    )
+    duplicate = AIGCMediaJob(
+        id="aigc-fingerprint-duplicate",
+        user_id=user.id,
+        kind="text_to_image",
+        status="submission_unknown",
+        progress=0,
+        model="wan2.7-image",
+        idempotency_key="fingerprint-duplicate",
+        request_fingerprint="o" * 64,
+    )
+    db.add(first)
+    db.commit()
+    db.add(duplicate)
+
+    with pytest.raises(IntegrityError):
+        db.commit()
+    db.rollback()

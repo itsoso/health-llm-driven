@@ -95,3 +95,42 @@ backend source of truth.
 3. Commit only feature files; push `main`; deploy backend first, verify health
    and owner-scoped production endpoint behavior; then issue a mobile OTA if the
    card changes are JavaScript-only.
+
+### Task 6: G4 Safety Remediation And Re-review
+
+**Trigger:** Independent security review rejected the initial implementation.
+This task is a release gate, not discretionary hardening.
+
+**Files:**
+- Modify: `backend/app/services/aigc_media_policy.py`,
+  `backend/app/services/aigc_media_job_service.py`,
+  `backend/app/services/aigc_media_service.py`, `backend/app/config.py`
+- Modify: `backend/app/models/aigc_media_job.py`, paired managed migrations,
+  API/task projections, Mobile/Web/Mac status renderers
+- Modify: `apps/mac/Sources/HealthAgentMacCore/{AIGCMediaJobClient,AgentChatViewModel,ChatTranscriptHTML}.swift`
+- Test: backend AIGC service/API tests and Mac Core transcript/card tests
+
+1. Treat provider dispatch as a narrow deterministic authorization boundary,
+   rather than conversational intent recognition. Normalize invisible Unicode
+   format characters, then reject medication classes/entities, clinical
+   procedures, diagnosis/treatment requests, and dose/schedule instructions in
+   Chinese and English before any provider call; add bypass regressions.
+2. Bind the selected Wan model into the encrypted confirmation and request
+   fingerprint. Confirmation must call that same model even if runtime settings
+   change before the user clicks confirm.
+3. Persist a `dispatching` job before making the provider request. A transport
+   failure or incomplete 2xx response after request start becomes
+   `submission_unknown`, never an automatic retry or a new paid task. Serialize
+   the post-lock fingerprint lookup and enforce the same owner/fingerprint pair
+   with a database unique constraint, so a duplicate confirmation returns its
+   existing job even across processes.
+4. Add configuration-backed per-user/global active-job limits, per-user daily
+   dispatch budget, plus task-level and account-level provider-poll leases.
+   Production PostgreSQL uses advisory transaction locks and atomic timestamp
+   claims, so concurrent workers cannot exceed the shared account budget or
+   task-query rate limit.
+5. Keep provider output URLs transient. Mac persists only media metadata in
+   the conversation; signed URLs exist only in memory for a non-persistent
+   transcript web view and are re-fetched from the owner-scoped job endpoint.
+6. Re-run G3, conduct a fresh independent G4 review, then update the dossier.
+   No push/deploy until G4 is `PASS` and the production key/domain gates pass.

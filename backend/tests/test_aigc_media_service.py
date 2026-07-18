@@ -98,3 +98,50 @@ async def test_creates_wan27_image_to_video_asynchronous_task():
             "watermark": False,
         },
     }
+
+
+@pytest.mark.asyncio
+async def test_malformed_success_response_is_indeterminate_not_retryable_failure():
+    from app.services.aigc_media_service import (
+        AIGCMediaProvider,
+        AIGCMediaProviderIndeterminateError,
+    )
+
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=b"not-json")
+
+    provider = AIGCMediaProvider(
+        api_key="test-payg-key",
+        api_base_url="https://dashscope.aliyuncs.com/api/v1",
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+    )
+    try:
+        with pytest.raises(AIGCMediaProviderIndeterminateError, match="outcome is unknown"):
+            await provider.generate_image(prompt="生成一张早餐备餐步骤图")
+    finally:
+        await provider.aclose()
+
+
+@pytest.mark.asyncio
+async def test_video_success_response_without_task_id_is_indeterminate_not_retryable_failure():
+    from app.services.aigc_media_service import (
+        AIGCMediaProvider,
+        AIGCMediaProviderIndeterminateError,
+    )
+
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"output": {"task_status": "PENDING"}})
+
+    provider = AIGCMediaProvider(
+        api_key="test-payg-key",
+        api_base_url="https://dashscope.aliyuncs.com/api/v1",
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+    )
+    try:
+        with pytest.raises(AIGCMediaProviderIndeterminateError, match="outcome is unknown"):
+            await provider.create_video_task(
+                kind="text_to_video",
+                prompt="生成一段 5 秒晨间拉伸演示视频",
+            )
+    finally:
+        await provider.aclose()

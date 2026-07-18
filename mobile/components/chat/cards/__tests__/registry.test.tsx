@@ -154,6 +154,26 @@ describe('renderCard 安全降级', () => {
     screen.unmount();
   });
 
+  it('renders an indeterminate AIGC submission as terminal and does not claim failure', () => {
+    const element = renderCard({
+      type: 'aigc_media_job',
+      data: {
+        job_id: 'aigc_unknown_1',
+        kind: 'text_to_video',
+        status: 'submission_unknown',
+        progress: 0,
+        error_message: '提交结果待核验，已停止自动重试以避免重复生成',
+        result: { media_type: null, url: null },
+      },
+    });
+
+    const screen = render(element!);
+
+    expect(screen.getByText('提交待核验')).toBeTruthy();
+    expect(screen.getByText(/已停止自动重试/)).toBeTruthy();
+    screen.unmount();
+  });
+
   it('renders reminder record cards from chat tool results', () => {
     const r = renderCard({
       type: 'record',

@@ -183,6 +183,23 @@ describe('renderCard', () => {
     expect(html).not.toContain('aliyuncs.com');
   });
 
+  it('renders an indeterminate AIGC submission without claiming a retryable failure', () => {
+    const r = renderCard({
+      type: 'aigc_media_job',
+      data: {
+        job_id: 'aigc_unknown_1',
+        kind: 'text_to_video',
+        status: 'submission_unknown',
+        progress: 0,
+        error_message: '提交结果待核验，已停止自动重试以避免重复生成',
+      },
+    });
+
+    const html = renderToStaticMarkup(r!);
+    expect(html).toContain('提交待核验');
+    expect(html).toContain('已停止自动重试');
+  });
+
   it('renders safe route actions below backend cards', () => {
     const r = renderCard({
       type: 'record_quality',

@@ -30,6 +30,10 @@ class AIGCMediaProviderError(RuntimeError):
     """Safe provider error that never embeds a prompt, media URL, or API key."""
 
 
+class AIGCMediaProviderIndeterminateError(AIGCMediaProviderError):
+    """The provider may have accepted a billed task but its response was lost."""
+
+
 @dataclass(frozen=True)
 class AIGCTask:
     task_id: str
@@ -145,7 +149,10 @@ class AIGCMediaProvider:
         data = await self._post_json(path, payload)
         urls = _extract_result_urls(data)
         if not urls:
-            raise AIGCMediaProviderError("Model Studio image generation returned no result")
+            # The provider acknowledged a successful request but did not give
+            # us an asset reference. Retrying could create a second billable
+            # request, so persist an indeterminate job instead.
+            raise AIGCMediaProviderIndeterminateError("Model Studio image outcome is unknown")
         return urls
 
     async def create_video_task(
@@ -156,6 +163,7 @@ class AIGCMediaProvider:
         source_url: str | None = None,
         duration_seconds: int = 5,
         ratio: str = "9:16",
+        model: str | None = None,
     ) -> AIGCTask:
         if kind not in VIDEO_KINDS:
             raise AIGCMediaConfigurationError("Unsupported AIGC video kind")
@@ -168,7 +176,11 @@ class AIGCMediaProvider:
         input_payload: dict[str, Any] = {"prompt": _bounded_text(prompt, maximum=5000, field="prompt")}
         if kind == "image_to_video":
             input_payload["media"] = [{"type": "first_frame", "url": str(source_url)}]
-        model = self.image_to_video_model if kind == "image_to_video" else self.text_to_video_model
+        model = str(
+            model or (self.image_to_video_model if kind == "image_to_video" else self.text_to_video_model)
+        ).strip()
+        if not model:
+            raise AIGCMediaConfigurationError("Wan video model ID is required")
         data = await self._post_json(
             "/services/aigc/video-generation/video-synthesis",
             {
@@ -188,7 +200,10 @@ class AIGCMediaProvider:
         task_id = str((output or {}).get("task_id") or "").strip()
         status = str((output or {}).get("task_status") or "PENDING").strip().upper()
         if not task_id:
-            raise AIGCMediaProviderError("Model Studio video task was not accepted")
+            # A 2xx response without the durable task ID cannot prove that the
+            # provider rejected the request. Treat it as unknown to prevent an
+            # automatic or user-guided duplicate submission.
+            raise AIGCMediaProviderIndeterminateError("Model Studio video outcome is unknown")
         return AIGCTask(task_id=task_id, status=status)
 
     async def get_task(self, task_id: str) -> dict[str, Any]:
@@ -234,7 +249,12 @@ class AIGCMediaProvider:
                 json=payload,
             )
         except httpx.HTTPError as exc:
-            raise AIGCMediaProviderError("Model Studio media request failed") from exc
+            # A transport failure is not proof that the provider rejected the
+            # task. The job layer records an indeterminate submission and
+            # refuses automatic replay to prevent duplicate billing.
+            raise AIGCMediaProviderIndeterminateError(
+                "Model Studio media request outcome is unknown"
+            ) from exc
         return self._response_json(response, operation="media_generation")
 
     @staticmethod
@@ -245,8 +265,16 @@ class AIGCMediaProvider:
         try:
             payload = response.json()
         except ValueError as exc:
+            if operation == "media_generation":
+                raise AIGCMediaProviderIndeterminateError(
+                    "Model Studio media request outcome is unknown"
+                ) from exc
             raise AIGCMediaProviderError("Model Studio returned an invalid response") from exc
         if not isinstance(payload, dict):
+            if operation == "media_generation":
+                raise AIGCMediaProviderIndeterminateError(
+                    "Model Studio media request outcome is unknown"
+                )
             raise AIGCMediaProviderError("Model Studio returned an invalid response")
         return payload
 

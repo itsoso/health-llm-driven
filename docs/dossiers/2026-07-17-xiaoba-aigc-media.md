@@ -5,7 +5,7 @@
 | 标识 | `xiaoba-aigc-media` |
 | 创建日期 | 2026-07-17 |
 | 当前阶段 | S5 验证 |
-| 状态 | building |
+| 状态 | blocked_on_production_configuration |
 | 负责人 | product-engineering |
 | 发布策略 | Backend deploy after independent Model Studio credential and HTTPS source URL are configured; JS clients can follow with OTA |
 
@@ -105,12 +105,13 @@ health claims.
 
 **裁决**: PARTIAL - feature gates pass; full Mac release suite has an unrelated snapshot baseline failure.
 
-- Backend AIGC/Agent Kernel/migration/AtomicCapability suite: `112 passed, 1
+- Backend AIGC/Agent Kernel/migration/AtomicCapability suite: `141 passed, 1
   skipped` under in-memory SQLite. Multi-model stream and send-observability
-  regression suite: `19 passed`.
-- Mobile confirmation-card regressions: `75 passed`; TypeScript type check
-  passes. Web production build passes. Mac build and the AIGC transcript-card
-  suite pass (`45` tests).
+  regression suite: `19 passed`. The focused AIGC hardening suite passes with
+  `44` tests; `ruff` passes for all changed backend modules.
+- Mobile confirmation-card regressions: `76 passed`; TypeScript type check
+  passes. Web inline-card suite (`27` tests) and production build pass. Mac
+  Core transcript/card verification passes (`405` tests, `1` skipped).
 - The full Mac suite is currently red: `432` tests with `14` snapshot
   mismatches in pre-existing SpO2, Wearable, and related presentation snapshot
   suites. Those source/snapshot files are outside this feature diff; snapshots
@@ -119,22 +120,35 @@ health claims.
 
 ## G4 Security Review
 
-**裁决**: PENDING independent re-review after remediation.
+**裁决**: PASS
 
 The first review found six release blockers: model-controlled confirmation,
 Token Plan credential reuse, instructional-only medical restrictions,
 cancel/complete races, permanent failure on transient polling errors, and
-unbounded result buffering. The redesign addresses them with a one-time
-server-issued confirmation ledger, constant-time credential equality rejection,
-deterministic provider safety policy, compare-and-set job transitions,
-retryable polling, and capped streaming downloads. A fresh reviewer must judge
-the revised diff before push/deploy.
+unbounded result buffering. The first remediation re-review then found four
+dispatch-specific blockers: Unicode/clinical-policy bypasses, cross-process
+duplicate billing, incomplete 2xx provider receipts, and non-atomic polling.
+
+The final independent review passes after: invisible Unicode normalization and
+clinical/medication/dose backstops; a post-lock fingerprint recheck plus
+database uniqueness; `submission_unknown` for indeterminate successful
+responses; and task/account-level durable poll leases. The reviewer directly
+verified the original bypass prompts and ran `67` targeted tests with no
+release-blocking finding.
 
 ## G5 Deployment Health
 
 Blocked on production configuration: an independent
 `DASHSCOPE_AIGC_API_KEY` with Wan access, plus public HTTPS `SITE_BASE_URL` for
 image-to-video source retrieval. No production call or deployment has occurred.
+
+Domain verification on 2026-07-18: `health.executor.com` has no public A record
+via Cloudflare DNS; the local resolver returns reserved benchmark address
+`198.18.13.99` and TLS fails. It cannot be used as a Model Studio-fetchable
+source URL. `https://health.executor.life` resolves to the production Alibaba
+Cloud host, has valid HTTPS, and returns a healthy API response. Configure
+`SITE_BASE_URL=https://health.executor.life` unless the `.com` DNS and TLS
+configuration is completed and independently re-verified.
 
 ## G6 Production Verification
 

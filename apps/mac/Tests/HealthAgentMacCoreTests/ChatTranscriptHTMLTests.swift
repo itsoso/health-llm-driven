@@ -640,6 +640,17 @@ final class ChatTranscriptHTMLTests: XCTestCase {
         XCTAssertFalse(html.contains("aliyuncs.com"))
     }
 
+    func testAIGCProjectionCardDataDoesNotPersistASignedResultURL() throws {
+        let payload = """
+        {"id":"aigc_1","kind":"text_to_video","status":"succeeded","progress":100,
+         "result":{"media_type":"video/mp4","url":"/api/v1/upload/files/aigc/7/output.mp4?signature=secret"}}
+        """.data(using: .utf8)!
+        let projection = try JSONDecoder().decode(AIGCMediaJobProjection.self, from: payload)
+
+        XCTAssertEqual(try XCTUnwrap(projection.persistedCardData()["result"]?["url"]), .null)
+        XCTAssertEqual(projection.resultURL, "/api/v1/upload/files/aigc/7/output.mp4?signature=secret")
+    }
+
     func testAIGCMediaConfirmationCardUsesOnlyOpaqueID() throws {
         let html = try XCTUnwrap(ChatTranscriptHTML.dynamicCardHTML(
             type: "aigc_media_confirmation",

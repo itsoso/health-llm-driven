@@ -693,6 +693,7 @@ public enum ChatTranscriptHTML {
         case "succeeded": statusLabel = "已完成"
         case "failed": statusLabel = "未完成"
         case "cancelled": statusLabel = "已取消"
+        case "submission_unknown": statusLabel = "提交待核验"
         default: statusLabel = "排队中"
         }
         let errorMessage = cardText(data["error_message"])

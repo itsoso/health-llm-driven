@@ -25,7 +25,7 @@ async def reconcile_active_aigc_media_jobs(
     """Poll only active jobs and copy successful outputs into private storage."""
     jobs = (
         db.query(AIGCMediaJob)
-        .filter(AIGCMediaJob.status.in_(("queued", "running")))
+        .filter(AIGCMediaJob.status.in_(("dispatching", "queued", "running")))
         .order_by(AIGCMediaJob.created_at.asc())
         .limit(max(1, min(int(limit), 500)))
         .all()

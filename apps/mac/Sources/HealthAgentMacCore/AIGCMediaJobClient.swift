@@ -26,10 +26,14 @@ public struct AIGCMediaJobProjection: Decodable, Equatable, Sendable {
     }
 
     public var isTerminal: Bool {
-        ["succeeded", "failed", "cancelled"].contains(status.lowercased())
+        ["succeeded", "failed", "cancelled", "submission_unknown"].contains(status.lowercased())
     }
 
-    public func cardData(title: String = "小巴创作") -> AgentDynamicCardValue {
+    /// This URL is an owner-scoped short-lived capability. It must stay in
+    /// memory and never be copied into an AgentChatMessage/UserDefaults card.
+    public var resultURL: String? { result?.url }
+
+    public func persistedCardData(title: String = "小巴创作") -> AgentDynamicCardValue {
         var values: [String: AgentDynamicCardValue] = [
             "job_id": .string(id),
             "kind": .string(kind),
@@ -40,7 +44,7 @@ public struct AIGCMediaJobProjection: Decodable, Equatable, Sendable {
         if let result {
             values["result"] = .object([
                 "media_type": result.mediaType.map(AgentDynamicCardValue.string) ?? .null,
-                "url": result.url.map(AgentDynamicCardValue.string) ?? .null,
+                "url": .null,
             ])
         }
         if let errorMessage, !errorMessage.isEmpty {

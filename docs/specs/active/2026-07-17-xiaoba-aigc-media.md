@@ -38,23 +38,36 @@ key/media type/result metadata; and terminal timestamps/error state.
 
 `aigc_media_confirmations` stores the one-time draft: owner/conversation/source
 reference, kind/purpose/model, encrypted prompt, HMAC prompt fingerprint,
-duration/ratio, expiry, consumption state, and linked job ID. Raw prompt text
-is never accepted from the confirmation endpoint or written to audit records.
+duration/ratio, expiry, consumption state, and linked job ID. The selected Wan
+model is frozen before the user confirms and participates in the fingerprint;
+runtime configuration changes cannot silently change a confirmed billable job.
+Raw prompt text is never accepted from the confirmation endpoint or written to
+audit records.
+
+`aigc_media_jobs` enforces a unique `(user_id, request_fingerprint)` pair. The
+service repeats its fingerprint lookup under a PostgreSQL advisory transaction
+lock before capacity reservation, and the database constraint is the final
+cross-process guarantee against a second charge for an immutable request.
 
 ## State Machine
 
 ```text
 confirmation: pending -> dispatching -> dispatched
-job: queued -> running -> succeeded
-                -> failed
-     queued/running -> cancelled
+                                -> deduplicated (same immutable draft already has a job)
+job: dispatching -> queued -> running -> succeeded
+                   |          |          -> failed
+                   |          -> cancelled
+                   -> submission_unknown
 ```
 
 Only the server moves these states. Terminal job transitions use conditional
 updates, so cancellation cannot later become success. `succeeded` requires a
 provider result and a successful private-output persistence receipt. Temporary
 polling errors keep the job active for retry; only a provider terminal failure
-marks it failed.
+marks it failed. A request transport failure, malformed successful provider
+response, or process failure after external submission becomes
+`submission_unknown`: the system does not automatically retry it or create a
+second task for the same immutable fingerprint.
 
 ## Agent Contract
 
@@ -81,6 +94,17 @@ the service rejects equality with the Token Plan credential. It uses the
 official Wan 2.7 image endpoint for synchronous images and asynchronous video
 task endpoint for video. The provider boundary deterministically allows only
 bounded wellness-action purposes and rejects diagnosis, prescription, dose,
-treatment-decision, and health-outcome guarantee media before any external
-request. Result downloads are streamed with image/video size caps and accepted
-only from Alibaba Cloud HTTPS hosts.
+treatment-decision, medication entity, and health-outcome guarantee media
+before any external request. This deterministic check is a narrow provider
+authorization backstop, not Xiaoba's conversational intent classifier. Result
+downloads are streamed with image/video size caps and accepted only from
+Alibaba Cloud HTTPS hosts.
+
+Provider dispatch enforces configuration-backed per-user and global active-job
+limits, a per-user daily dispatch budget, and a minimum task-poll interval.
+Task and account poll leases are claimed atomically before each provider HTTP
+request; PostgreSQL serializes those claims with advisory transaction locks.
+Default limits keep the account below the documented task-query rate ceiling. A
+public valid-HTTPS `SITE_BASE_URL` is additionally required for image-to-video
+source retrieval; it must be deployed and verified before that capability is
+enabled.

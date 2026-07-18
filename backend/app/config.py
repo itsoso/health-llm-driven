@@ -87,6 +87,15 @@ class Settings(BaseSettings):
     dashscope_aigc_text_to_video_model: str = "wan2.7-t2v"
     dashscope_aigc_image_to_video_model: str = "wan2.7-i2v"
     dashscope_aigc_source_url_ttl_seconds: int = 600
+    # AIGC is billable and its task API is account-scoped. These limits are
+    # enforced at provider dispatch, not merely surfaced in a client UI.
+    dashscope_aigc_max_active_jobs_per_user: int = 2
+    dashscope_aigc_max_active_jobs_global: int = 20
+    dashscope_aigc_max_dispatches_per_user_per_day: int = 5
+    dashscope_aigc_poll_min_interval_seconds: int = 6
+    # DashScope task polling is account-scoped. Serialize poll leases through
+    # PostgreSQL and leave at least this much spacing between any two calls.
+    dashscope_aigc_global_poll_min_interval_seconds: int = 1
 
     # 月之暗面 Kimi (兼容 OpenAI 协议)
     moonshot_api_key: Optional[str] = None

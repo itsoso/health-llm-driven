@@ -40,6 +40,9 @@ class AIGCMediaJob(Base):
 
     __table_args__ = (
         UniqueConstraint("user_id", "idempotency_key", name="uq_aigc_media_jobs_user_idempotency"),
+        # A second confirmation for an identical immutable request must open
+        # the original ledger row rather than submit a second billed task.
+        UniqueConstraint("user_id", "request_fingerprint", name="uq_aigc_media_jobs_user_fingerprint"),
         Index("idx_aigc_media_jobs_user_created", "user_id", "created_at"),
         Index("idx_aigc_media_jobs_user_status", "user_id", "status"),
     )

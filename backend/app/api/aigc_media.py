@@ -17,6 +17,7 @@ from app.models.user import User
 from app.services.aigc_media_job_service import (
     AIGCMediaJobConflict,
     AIGCMediaJobError,
+    AIGCMediaJobQuotaExceeded,
     AIGCMediaJobService,
 )
 from app.services.aigc_media_service import AIGCMediaConfigurationError
@@ -53,6 +54,8 @@ async def confirm_aigc_media_draft(
         raise HTTPException(status_code=503, detail="AIGC 媒体服务暂不可用") from exc
     except AIGCMediaJobConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except AIGCMediaJobQuotaExceeded as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
     except AIGCMediaJobError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return service.project(job)
@@ -69,7 +72,9 @@ async def get_aigc_media_job(
     # Historical rows remain readable during a credential outage.  Do not turn
     # an existing status into a false failure merely because this request cannot
     # poll the provider at this moment.
-    if settings.dashscope_aigc_api_key and job.status not in {"succeeded", "failed", "cancelled"}:
+    if settings.dashscope_aigc_api_key and job.status not in {
+        "succeeded", "failed", "cancelled", "submission_unknown",
+    }:
         try:
             job = await service.refresh(job)
         except AIGCMediaConfigurationError as exc:

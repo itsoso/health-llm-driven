@@ -179,3 +179,151 @@ async def test_medical_decision_prompt_is_rejected_before_external_dispatch(db, 
             ),
         )
     assert provider.image_requests == []
+
+
+@pytest.mark.asyncio
+async def test_confirmation_binds_the_wan_model_before_a_user_confirms(
+    db, auth_user_and_headers, monkeypatch, tmp_path,
+):
+    from app.config import settings
+    from app.services import aigc_media_job_service
+    from app.services.aigc_media_job_service import AIGCMediaJobRequest, AIGCMediaJobService
+
+    user, _ = auth_user_and_headers
+    provider = _Provider()
+    monkeypatch.setattr(aigc_media_job_service, "_AIGC_UPLOAD_ROOT", tmp_path)
+    monkeypatch.setattr(settings, "dashscope_aigc_image_model", "wan2.7-image")
+
+    async def download(_url: str, _kind: str):
+        return b"png", "image/png", "png"
+
+    service = AIGCMediaJobService(db, provider_factory=lambda: provider, result_downloader=download)
+    confirmation = await service.issue_confirmation(
+        user_id=user.id,
+        request=AIGCMediaJobRequest(
+            kind="text_to_image",
+            purpose="meal_visual",
+            prompt="制作一张早餐备餐步骤图",
+        ),
+    )
+    monkeypatch.setattr(settings, "dashscope_aigc_image_model", "wan2.7-image-pro")
+
+    job = await service.confirm_and_dispatch(user_id=user.id, confirmation_id=confirmation.id)
+
+    assert confirmation.model == "wan2.7-image"
+    assert job.model == "wan2.7-image"
+    assert provider.image_requests == [{
+        "prompt": "制作一张早餐备餐步骤图",
+        "image_data_uri": None,
+        "model": "wan2.7-image",
+    }]
+
+
+@pytest.mark.asyncio
+async def test_uncertain_provider_submission_is_not_replayed_by_a_second_confirmation(
+    db, auth_user_and_headers,
+):
+    from app.services.aigc_media_job_service import AIGCMediaJobRequest, AIGCMediaJobService
+    from app.services.aigc_media_service import AIGCMediaProviderIndeterminateError
+
+    class UncertainProvider(_Provider):
+        async def generate_image(self, **kwargs):
+            self.image_requests.append(kwargs)
+            raise AIGCMediaProviderIndeterminateError("response lost after submission")
+
+    user, _ = auth_user_and_headers
+    provider = UncertainProvider()
+    service = AIGCMediaJobService(db, provider_factory=lambda: provider)
+    request = AIGCMediaJobRequest(
+        kind="text_to_image",
+        purpose="meal_visual",
+        prompt="制作一张早餐备餐步骤图",
+    )
+    first_confirmation = await service.issue_confirmation(user_id=user.id, request=request)
+    first_job = await service.confirm_and_dispatch(user_id=user.id, confirmation_id=first_confirmation.id)
+
+    duplicate_confirmation = await service.issue_confirmation(user_id=user.id, request=request)
+    duplicate_job = await service.confirm_and_dispatch(user_id=user.id, confirmation_id=duplicate_confirmation.id)
+    retried_duplicate_job = await service.confirm_and_dispatch(
+        user_id=user.id,
+        confirmation_id=duplicate_confirmation.id,
+    )
+
+    assert first_job.status == "submission_unknown"
+    assert duplicate_job.id == first_job.id
+    assert retried_duplicate_job.id == first_job.id
+    assert len(provider.image_requests) == 1
+
+
+@pytest.mark.asyncio
+async def test_dispatch_rechecks_the_fingerprint_after_acquiring_the_cost_lock(
+    db, auth_user_and_headers,
+):
+    from app.models.aigc_media_job import AIGCMediaJob
+    from app.services.aigc_media_job_service import AIGCMediaJobRequest, AIGCMediaJobService
+
+    user, _ = auth_user_and_headers
+    provider = _Provider()
+    service = AIGCMediaJobService(db, provider_factory=lambda: provider)
+    confirmation = await service.issue_confirmation(
+        user_id=user.id,
+        request=AIGCMediaJobRequest(
+            kind="text_to_image",
+            purpose="meal_visual",
+            prompt="制作一张早餐备餐步骤图",
+        ),
+    )
+    original_reserve = service._reserve_dispatch_capacity
+
+    def reserve_then_simulate_a_racing_committed_job(*, user_id: int, lock_acquired: bool = False) -> None:
+        original_reserve(user_id=user_id, lock_acquired=lock_acquired)
+        db.add(AIGCMediaJob(
+            id="aigc-racing-fingerprint",
+            user_id=user_id,
+            kind=confirmation.kind,
+            status="submission_unknown",
+            progress=0,
+            model=confirmation.model,
+            idempotency_key="racing-confirmation",
+            request_fingerprint=confirmation.prompt_fingerprint,
+        ))
+        db.commit()
+
+    service._reserve_dispatch_capacity = reserve_then_simulate_a_racing_committed_job  # type: ignore[method-assign]
+
+    job = await service.confirm_and_dispatch(user_id=user.id, confirmation_id=confirmation.id)
+
+    assert job.id == "aigc-racing-fingerprint"
+    assert provider.image_requests == []
+
+
+@pytest.mark.asyncio
+async def test_unexpected_failure_after_provider_request_links_an_unknown_job_to_confirmation(
+    db, auth_user_and_headers,
+):
+    from app.models.aigc_media_confirmation import AIGCMediaConfirmation
+    from app.services.aigc_media_job_service import AIGCMediaJobRequest, AIGCMediaJobService
+
+    class CrashingProvider(_Provider):
+        async def generate_image(self, **kwargs):
+            self.image_requests.append(kwargs)
+            raise RuntimeError("connection closed after request")
+
+    user, _ = auth_user_and_headers
+    provider = CrashingProvider()
+    service = AIGCMediaJobService(db, provider_factory=lambda: provider)
+    confirmation = await service.issue_confirmation(
+        user_id=user.id,
+        request=AIGCMediaJobRequest(
+            kind="text_to_image",
+            purpose="meal_visual",
+            prompt="制作一张早餐备餐步骤图",
+        ),
+    )
+
+    job = await service.confirm_and_dispatch(user_id=user.id, confirmation_id=confirmation.id)
+    persisted_confirmation = db.query(AIGCMediaConfirmation).filter_by(id=confirmation.id).one()
+
+    assert job.status == "submission_unknown"
+    assert persisted_confirmation.job_id == job.id
+    assert len(provider.image_requests) == 1

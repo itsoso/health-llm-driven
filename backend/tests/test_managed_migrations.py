@@ -105,6 +105,26 @@ def test_aigc_media_job_migrations_create_private_owner_ledger(tmp_path: Path):
     assert {"idx_aigc_media_jobs_user_created", "idx_aigc_media_jobs_user_status"} <= indexes
 
 
+def test_aigc_media_job_hardening_migration_adds_duplicate_dispatch_guard(tmp_path: Path):
+    migrations_dir = Path(__file__).resolve().parents[1] / "migrations" / "managed"
+    create_sqlite = migrations_dir / "20260717_120000_create_aigc_media_jobs.sqlite.sql"
+    hardening_sqlite = migrations_dir / "20260718_060000_harden_aigc_media_dispatch.sqlite.sql"
+    hardening_postgres = migrations_dir / "20260718_060000_harden_aigc_media_dispatch.postgresql.sql"
+    assert hardening_sqlite.exists()
+    assert hardening_postgres.exists()
+    assert "uq_aigc_media_jobs_user_fingerprint" in hardening_postgres.read_text(encoding="utf-8")
+
+    isolated = tmp_path / "managed"
+    isolated.mkdir()
+    for migration in (create_sqlite, hardening_sqlite):
+        (isolated / migration.name).write_text(migration.read_text(encoding="utf-8"), encoding="utf-8")
+    engine = create_engine("sqlite:///:memory:")
+    apply_managed_migrations(engine, isolated)
+
+    indexes = {index["name"] for index in inspect(engine).get_indexes("aigc_media_jobs")}
+    assert "uq_aigc_media_jobs_user_fingerprint" in indexes
+
+
 def test_aigc_confirmation_migrations_create_one_time_owner_ledger(tmp_path: Path):
     migrations_dir = Path(__file__).resolve().parents[1] / "migrations" / "managed"
     sqlite_file = migrations_dir / "20260717_130000_create_aigc_media_confirmations.sqlite.sql"

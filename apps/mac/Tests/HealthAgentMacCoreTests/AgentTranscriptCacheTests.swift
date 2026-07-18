@@ -121,4 +121,26 @@ final class AgentTranscriptCacheTests: XCTestCase {
         XCTAssertTrue(html.contains("src=\"https://example.test/api/v1/upload/files/chat/dinner.jpg\""))
         XCTAssertTrue(html.contains("记录晚餐"))
     }
+
+    func testAIGCResultURLIsRemovedBeforeConversationPersistence() {
+        let signedURL = "/api/v1/upload/files/aigc/7/output.mp4?expires=1&signature=secret"
+        let message = AgentChatMessage(
+            role: .assistant,
+            content: "创作已完成",
+            cardType: "aigc_media_job",
+            cardData: .object([
+                "job_id": .string("aigc_1"),
+                "status": .string("succeeded"),
+                "result": .object([
+                    "media_type": .string("video/mp4"),
+                    "url": .string(signedURL),
+                ]),
+            ])
+        )
+
+        let persisted = AgentChatViewModel.redactedMessagesForLocalPersistence([message])
+
+        XCTAssertEqual(try XCTUnwrap(persisted[0].cardData?["result"]?["url"]), .null)
+        XCTAssertFalse(String(describing: persisted).contains("signature=secret"))
+    }
 }

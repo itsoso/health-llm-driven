@@ -56,6 +56,13 @@ that match the configured workspace.
   sharing by default.
 - On cancellation/failure the job status is durable and visible. No background
   retry occurs without a fresh user confirmation.
+- If the provider request outcome cannot be proved, the job shows "提交待核验"
+  and stops automatic retries. The same immutable draft resolves to that job
+  rather than creating a possible duplicate billable request.
+- A confirmation freezes the selected Wan model. Per-user/global active-job
+  limits, a daily dispatch budget, a database-enforced immutable request
+  fingerprint, and task/account poll leases protect the shared account before
+  an external request is made.
 
 ## Cross-surface Contract
 
@@ -65,7 +72,7 @@ Mobile/Web/Mac attachment
   -> Agent draft -> encrypted AIGCMediaConfirmation
   -> owner click consumes one-time confirmation ID
   -> internal job dispatch
-  -> AIGCMediaJob {queued|running|succeeded|failed|cancelled}
+  -> AIGCMediaJob {dispatching|queued|running|succeeded|failed|cancelled|submission_unknown}
   -> DynamicCard {aigc_media_job}
   -> GET /aigc/media/jobs/{id} polling
   -> private image/video URL
@@ -87,6 +94,9 @@ short-lived private media URL at display time.
 - A user must click a one-time confirmation card before source media crosses
   the provider boundary; confirmation is bound to the original source and
   cannot be replayed or altered by the client/model.
+- An uncertain provider submission is never automatically re-sent, and an
+  identical second confirmation returns the existing task instead of creating
+  another paid task.
 - Tests cover text-to-image request construction, image-to-video creation,
   status transitions, cancellation, owner isolation, tool policy, and mobile
   card rendering.

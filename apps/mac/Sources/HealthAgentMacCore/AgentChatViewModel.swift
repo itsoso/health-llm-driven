@@ -815,6 +815,7 @@ public final class AgentChatViewModel {
     @ObservationIgnored private var _transcriptCacheProposed: [AgentProposedAction] = []
     @ObservationIgnored private var _transcriptCacheThinkingSteps: [ThinkingStep] = []
     @ObservationIgnored private var _transcriptCacheLanguage = ""
+    @ObservationIgnored private var _transcriptCacheAIGCResultURLs: [String: String] = [:]
     /// Per-message snapshot of the finished thinking trace, so a completed answer
     /// keeps a collapsible, reviewable "思考过程" (mobile-style) instead of it
     /// vanishing when the answer streams in. Keyed by assistant message id; session
@@ -845,6 +846,10 @@ public final class AgentChatViewModel {
     private let aigcMediaClient: AIGCMediaJobLoading?
     @ObservationIgnored
     private var aigcRefreshTasks: [String: Task<Void, Never>] = [:]
+    /// Owner-scoped signed result URLs stay in memory only. Conversation cards
+    /// persist media metadata and re-fetch a fresh URL from the job endpoint.
+    @ObservationIgnored
+    private var aigcResultURLs: [String: String] = [:]
     @ObservationIgnored
     private var currentConversationSnapshotID: UUID?
 
@@ -879,7 +884,13 @@ public final class AgentChatViewModel {
         self.savedContextBundles = contextBundleStore?.loadContextBundles() ?? []
         // Seed from the local cache so the list isn't empty before the first
         // backend fetch returns; `refreshConversationHistory()` replaces it.
-        self.conversationHistory = conversationStore?.loadConversations() ?? []
+        let cachedConversations = conversationStore?.loadConversations() ?? []
+        self.conversationHistory = cachedConversations.map {
+            $0.replacingMessages(Self.redactedMessagesForLocalPersistence($0.messages))
+        }
+        if conversationHistory != cachedConversations {
+            conversationStore?.saveConversations(conversationHistory)
+        }
         if let latest = conversationHistory.first {
             self.currentConversationSnapshotID = latest.id
             self.conversationID = latest.conversationID
@@ -1593,6 +1604,57 @@ public final class AgentChatViewModel {
         proposedActions.filter { $0.messageID == message.id && $0.status != .dismissed }
     }
 
+    /// Removes short-lived AIGC result capabilities before a snapshot crosses
+    /// the UserDefaults/offline-cache boundary. This is deliberately separate
+    /// from transcript rendering, which may attach a fresh in-memory URL.
+    static func redactedMessagesForLocalPersistence(_ messages: [AgentChatMessage]) -> [AgentChatMessage] {
+        messages.map { message in
+            guard message.cardType == "aigc_media_job",
+                  case .object(var card)? = message.cardData,
+                  case .object(var result)? = card["result"] else {
+                return message
+            }
+            result["url"] = .null
+            card["result"] = .object(result)
+            var redacted = message
+            redacted.cardData = .object(card)
+            return redacted
+        }
+    }
+
+    private func cardDataForTranscript(_ message: AgentChatMessage) -> AgentDynamicCardValue? {
+        guard message.cardType == "aigc_media_job",
+              let jobID = message.cardData?["job_id"]?.stringValue,
+              let resultURL = aigcResultURLs[jobID],
+              case .object(var card)? = message.cardData else {
+            return message.cardData
+        }
+        var result: [String: AgentDynamicCardValue]
+        if case .object(let existing)? = card["result"] {
+            result = existing
+        } else {
+            result = [:]
+        }
+        result["url"] = .string(resultURL)
+        card["result"] = .object(result)
+        return .object(card)
+    }
+
+    private func moveAIGCResultURLToMemory(_ data: AgentDynamicCardValue) -> AgentDynamicCardValue {
+        guard case .object(var card) = data,
+              let jobID = card["job_id"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !jobID.isEmpty,
+              case .object(var result)? = card["result"] else {
+            return data
+        }
+        if let url = result["url"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines), !url.isEmpty {
+            aigcResultURLs[jobID] = url
+        }
+        result["url"] = .null
+        card["result"] = .object(result)
+        return .object(card)
+    }
+
     /// WebView transcript 喂入的安全 HTML 信封(带内容缓存,见上面缓存字段说明)。
     /// 在 View.body 里调用:读 messages/isStreaming/proposedActions 建立 Observation 依赖,
     /// 这三者真正变化才重渲;打字(只改 View 的 draft)命中缓存,不再每键重 parse markdown。
@@ -1603,7 +1665,8 @@ public final class AgentChatViewModel {
             && messages == _transcriptCacheMessages
             && proposedActions == _transcriptCacheProposed
             && thinkingSteps == _transcriptCacheThinkingSteps
-            && language == _transcriptCacheLanguage {
+            && language == _transcriptCacheLanguage
+            && aigcResultURLs == _transcriptCacheAIGCResultURLs {
             return _transcriptCache
         }
         let fallbackStreamingAssistantID = messages.last(where: { $0.role == .assistant })?.id
@@ -1615,7 +1678,7 @@ public final class AgentChatViewModel {
                 ? ChatTranscriptHTML.dynamicCardHTML(
                     type: message.cardType,
                     render: message.cardRender,
-                    data: message.cardData,
+                    data: cardDataForTranscript(message),
                     actions: message.cardActions
                 ) ?? ""
                 : ""
@@ -1693,6 +1756,7 @@ public final class AgentChatViewModel {
         _transcriptCacheProposed = proposedActions
         _transcriptCacheThinkingSteps = thinkingSteps
         _transcriptCacheLanguage = language
+        _transcriptCacheAIGCResultURLs = aigcResultURLs
         _transcriptCache = visibleRendered
         return visibleRendered
     }
@@ -1738,7 +1802,7 @@ public final class AgentChatViewModel {
             id: snapshotID,
             conversationID: conversationID,
             title: conversationTitle(from: messages),
-            messages: messages,
+            messages: Self.redactedMessagesForLocalPersistence(messages),
             updatedAt: Date()
         )
         conversationHistory.removeAll { $0.id == snapshot.id }
@@ -1944,7 +2008,9 @@ public final class AgentChatViewModel {
         }
         messages[idx].cardType = card.type
         messages[idx].cardRender = card.render
-        messages[idx].cardData = card.data
+        messages[idx].cardData = card.type == "aigc_media_job"
+            ? moveAIGCResultURLToMemory(card.data)
+            : card.data
         messages[idx].cardActions = card.actions
         scheduleAIGCMediaRefreshIfNeeded(for: messageID)
         if let toolName {
@@ -1980,9 +2046,15 @@ public final class AgentChatViewModel {
                     guard let self else { return }
                     if let index = self.messages.firstIndex(where: { $0.id == messageID }),
                        self.messages[index].cardType == "aigc_media_job" {
-                        self.messages[index].cardData = projection.cardData(
+                        self.messages[index].cardData = projection.persistedCardData(
                             title: self.messages[index].cardData?["title"]?.stringValue ?? "小巴创作"
                         )
+                        if let resultURL = projection.resultURL {
+                            self.aigcResultURLs[jobID] = resultURL
+                        } else {
+                            self.aigcResultURLs.removeValue(forKey: jobID)
+                        }
+                        self.persistCurrentConversation()
                     }
                     if projection.isTerminal { return }
                 } catch APIError.unauthorized {
@@ -1991,7 +2063,7 @@ public final class AgentChatViewModel {
                     // Keep the last private projection visible. A later poll may
                     // succeed; the server remains the source of terminal state.
                 }
-                try? await Task.sleep(for: .milliseconds(4500))
+                try? await Task.sleep(for: .milliseconds(6000))
             }
         }
     }
@@ -2008,8 +2080,14 @@ public final class AgentChatViewModel {
                 $0.cardData?["confirmation_id"]?.stringValue == id
             }) else { return }
             messages[index].cardType = "aigc_media_job"
-            messages[index].cardData = projection.cardData(title: "小巴创作")
+            messages[index].cardData = projection.persistedCardData(title: "小巴创作")
+            if let resultURL = projection.resultURL {
+                aigcResultURLs[projection.id] = resultURL
+            } else {
+                aigcResultURLs.removeValue(forKey: projection.id)
+            }
             messages[index].cardActions = []
+            persistCurrentConversation()
             scheduleAIGCMediaRefreshIfNeeded(for: messages[index].id)
         } catch {
             // Keep the confirmation card intact. It can be retried and must not

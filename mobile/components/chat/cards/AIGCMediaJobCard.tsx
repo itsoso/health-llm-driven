@@ -21,7 +21,7 @@ import {
   revaSpacing,
 } from '../../../constants/revaTheme';
 
-type AIGCStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
+type AIGCStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'submission_unknown';
 
 export interface AIGCMediaJobCardData {
   job_id: string;
@@ -37,11 +37,11 @@ export interface AIGCMediaJobCardData {
 }
 
 const ACTIVE_STATUSES = new Set<AIGCStatus>(['queued', 'running']);
-const POLL_INTERVAL_MS = 4500;
+const POLL_INTERVAL_MS = 6000;
 
 function statusOf(value: unknown): AIGCStatus {
   const normalized = String(value || '').trim().toLowerCase();
-  return ['queued', 'running', 'succeeded', 'failed', 'cancelled'].includes(normalized)
+  return ['queued', 'running', 'succeeded', 'failed', 'cancelled', 'submission_unknown'].includes(normalized)
     ? normalized as AIGCStatus
     : 'queued';
 }
@@ -76,6 +76,7 @@ function statusMeta(status: AIGCStatus): { label: string; color: string; icon: k
     case 'succeeded': return { label: '已完成', color: C.green600, icon: 'checkmark-circle' };
     case 'failed': return { label: '未完成', color: '#C84B3C', icon: 'alert-circle-outline' };
     case 'cancelled': return { label: '已取消', color: C.ink3, icon: 'close-circle-outline' };
+    case 'submission_unknown': return { label: '提交待核验', color: '#B7791F', icon: 'help-circle-outline' };
   }
 }
 
@@ -130,6 +131,7 @@ export function AIGCMediaJobCardView(initialData: AIGCMediaJobCardData) {
     if (status === 'queued') return '小巴已提交任务，正在等待百炼处理。';
     if (status === 'running') return '生成完成后会自动保存到你的私有空间。';
     if (status === 'succeeded') return '结果仅对当前账号可见。';
+    if (status === 'submission_unknown') return '提交结果待核验，已停止自动重试以避免重复生成。';
     return data.error_message || '本次创作未完成，修改描述后可以重新生成。';
   }, [data.error_message, status]);
 
