@@ -59,8 +59,8 @@
 
 - 设计：`docs/plans/2026-07-18-local-first-private-mode-design.md`
 - 实施计划：`docs/plans/2026-07-18-local-first-private-mode.md`
-- 顺序：G2 spike -> 本地身份 -> 加密内核 -> 饮食仓储 -> 食物库 -> 离线记录 -> 端侧模型/Vision -> 出站断路器 -> 导出恢复 -> 新 iOS 包。
-- 长杆：食物数据授权、加密恢复威胁模型、Apple 模型设备覆盖、真实设备内存/延迟。
+- 顺序：G2 spike -> 加密内核 -> 本地身份 -> 饮食仓储 -> 食物库 -> 离线记录 -> 端侧模型/Vision -> 出站断路器 -> 导出恢复 -> 新 iOS 包。
+- 长杆：Apple 模型设备覆盖、真实设备内存/延迟和中文餐食覆盖评测。
 
 ## G2 · 可行性 + 安全压测
 
@@ -73,16 +73,17 @@
   - iPhone 17 Pro Simulator / iOS 26.4：系统模型探针报告可用，Vision 可用；模拟器结果不外推到真机。
   - 详情与评测 Schema：`docs/evals/local-diet/README.md`、`docs/evals/local-diet/on-device-eval-contract.json`。
 - 已焊进规划的硬阻断：
-  - 生产食物数据库的再分发授权未解决前不得扩大数据包。
-  - CryptoKit/Keychain/恢复设计未过威胁模型前不得承诺可恢复加密；本次评审新增三个明确阻断：明文行为索引、恢复口令 KDF、卸载/Keychain 生命周期。
+  - 生产食物数据库必须来自可再分发来源，并逐行保存来源/version；G2 已选定 USDA FoodData Central CC0 子集，现有人工 seed 仍禁止进入生产包。
+  - 本地保险库必须要求设备密码；使用 App 生成的 256-bit 恢复密钥、Keychain `WhenPasscodeSetThisDeviceOnly`、完整文件保护、HMAC blind index 和空库原子恢复。用户于 2026-07-18 已确认这两个产品取舍。
   - 系统模型不可用必须降级到确定性/手工，而不是强制云端。
   - 自定义视觉模型必须经过纠正成本、内存、温升和下载体积 Gate。
 - 仍缺证据：
   - 当前已登记 iPhone 真机均为 `unavailable`，未取得真机可用性、冷/热推理时延、峰值内存和温升。
-  - 尚未选定并核验可随 App 再分发的生产营养数据库。
-  - 尚未修订并复核 blind index、memory-hard 恢复 KDF、删除/重装行为和 envelope AAD/回滚方案。
+- 已解除的阻断：
+  - 数据授权：USDA FoodData Central 官方许可明确为 public domain / CC0 1.0；使用 Foundation Foods/SR Legacy 固定版本子集，App 运行时不取数。
+  - 安全设计：设备密码为前置条件；独立派生 record/index key；恢复密钥为随机高熵而非用户弱口令；只恢复到空库；删除 crypto-shred；完整设计见 `docs/plans/2026-07-18-local-first-private-mode-design.md`。
 - **待拍板分叉**：无；用户已接受旧设备的严格本地照片能力可能较弱。
-- **裁决**：**BLOCK**。能力探针本身可行，但安全、数据授权和真机性能三项硬证据未通过；按 Gate 契约停止在 S3，不进入 Task 2/S4。
+- **裁决**：**BLOCK**。安全设计与数据授权已在定义层通过，剩余硬阻断是真机推理性能证据；按 Gate 契约停止在 S3，不进入 Task 2/S4。
 
 ## S4 · 研发任务分解
 

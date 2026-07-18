@@ -5,7 +5,7 @@
 
 ## 结论
 
-当前 SDK 足以支撑“手工/确定性路径 + Vision + 有条件的系统文字模型”，但不足以把 Foundation Models 多模态能力当作当前产品依赖。G2 仍为 **BLOCK**：没有可用真机性能证据，生产食物库再分发授权未解决，恢复口令 KDF 与本地索引泄露边界未通过安全评审。
+当前 SDK 足以支撑“手工/确定性路径 + Vision + 有条件的系统文字模型”，但不足以把 Foundation Models 多模态能力当作当前产品依赖。营养数据授权和本地存储威胁模型已有明确解法；G2 仍为 **BLOCK**，原因收敛为没有可用 iPhone 真机的推理时延、内存和温升证据。
 
 这不否定完全本地饮食方向。它把首版可保证的能力收敛为：所有设备均可手工/确定性记录；Vision 用于 OCR、条码和通用分类；iOS 26 且运行时可用时，系统语言模型只增强文字草稿。
 
@@ -61,24 +61,34 @@ Apple 参考：
 
 | 面 | 当前设计 | G2 评审 |
 |---|---|---|
-| 内容机密性 | CryptoKit AES-GCM 加密健康 payload；设备密钥放 Keychain | 方向可行，但实现必须使用随机 nonce、认证失败即硬失败，禁止明文日志 |
-| 锁屏保护 | 受保护文件 + Keychain | 必须明确为 `NSFileProtectionComplete` 与 `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`，尚未形成测试证据 |
-| 可查询索引 | 当前设计允许日期、餐次、状态等明文索引 | **BLOCK**：这些元数据仍可暴露健康行为；需改为最小明文字段 + 从设备密钥独立派生的 HMAC blind index，或明确接受并更新隐私承诺 |
-| 导出恢复 | 用户口令派生独立恢复密钥，不导出设备密钥 | **BLOCK**：CryptoKit 没有适合口令的 memory-hard KDF；必须选定并评审 Argon2id/scrypt 实现、参数、salt、版本化与暴力破解预算 |
-| 删除/重装 | 本地身份、数据库、Keychain 生命周期 | **BLOCK**：需定义卸载后残留 Keychain 项、孤儿数据库、全量删除与恢复失败的确定行为 |
-| 完整性与回滚 | AES-GCM 和版本化 envelope | 需绑定 schema/object/version 为 AAD，并测试篡改、重复导入、旧快照回滚和部分写入 |
+| 内容机密性 | 随机 256-bit root；HKDF 分离 record/index keys；AES-GCM 自动随机 nonce | **PASS（设计）**：AAD 绑定 schema/table/object/version；认证失败硬失败，禁止明文日志 |
+| 锁屏保护 | `NSFileProtectionComplete` + `kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly` | **PASS（设计）**：用户已确认本地模式要求设备密码；禁止弱保护回退 |
+| 可查询索引 | 随机 ID 与 envelope 元数据明文；日期、餐次、状态使用独立 index key 的 HMAC blind index | **PASS（设计）**：显示与排序值保留在密文；实现需配无明文与相同值稳定匹配测试 |
+| 导出恢复 | 每次导出由 App 生成新的 256-bit 恢复密钥，HKDF 派生 export key；恢复密钥不进入导出文件 | **PASS（设计）**：不接受弱口令，因此无需第三方 password KDF；恢复必须同时持有导出文件与对应密钥 |
+| 删除/重装 | root key crypto-shred 后删文件；install sentinel 缺失时清理 service-scoped orphan keys | **PASS（设计）**：现有库缺 key 时只开放恢复，绝不生成新 key 覆盖旧库 |
+| 完整性与回滚 | 先全量认证/校验，后单事务恢复并以新设备 key 重加密 | **PASS（设计）**：v1 仅恢复到空保险库，不合并、不覆盖现有记录 |
 | 服务端边界 | 只接收用户主动上传的密文或单次授权推理载荷 | 可行，但在产品实现前仍需出站断路器与零违规抓包证据 |
 
-因此，Task 3 的加密内核不能按现有简写直接开工。先修订密钥生命周期、blind index 和恢复 KDF 方案，再写密码学与生命周期测试。
+用户于 2026-07-18 选择 App 生成高熵恢复密钥，并确认没有设备密码时拒绝创建本地保险库。以上为 G2 设计级 PASS；密码学、锁屏、删除和恢复测试仍是 G3/G4 硬闸。
+
+Apple 依据：
+
+- <https://developer.apple.com/documentation/security/restricting-keychain-item-accessibility>
+- <https://developer.apple.com/documentation/foundation/fileprotectiontype/complete>
+- <https://developer.apple.com/documentation/cryptokit/aes/gcm>
+- <https://developer.apple.com/documentation/cryptokit/hkdf>
 
 ## 营养数据授权
 
-现有服务端 seed 只能用于接口/测试，不足以作为生产端侧食物库，也没有在本次 spike 中证明可随 App 再分发。生产数据源必须记录来源、版本、再分发条款、署名要求和中国餐食覆盖；未完成前，Task 5 和 G2 保持阻断。
+首版生产基线选定 USDA FoodData Central 的 Foundation Foods 与 SR Legacy 版本化子集。USDA 明确声明 FoodData Central 数据属于公共领域并以 CC0 1.0 发布，可随 App 离线分发；manifest 仍须保留 release、FDC ID、转换版本和 USDA attribution。构建脚本联网取数，App 运行时不联网。
+
+中文名称、别名与复合菜配方由项目自行编写；复合菜营养必须由有来源的 FDC 食材与明确重量计算。现有 `china_food_composition_manual_v1` 继续只用于测试，不能直接进入生产包。授权问题在 G2 源级别 PASS，实际 manifest/provenance 检查留在 G3/G4。
+
+- <https://fdc.nal.usda.gov/api-guide/>
+- <https://fdc.nal.usda.gov/download-datasets/>
 
 ## 解除 G2 的最小证据
 
 1. 在至少一台可用 iPhone 真机运行能力探针，并记录系统模型状态。
 2. 用最小文字结构化推理 spike 采集冷/热时延、峰值内存和温升；不可用设备验证确定性降级。
-3. 选定生产食物数据源并由授权条款明确允许 App 内再分发。
-4. 修订并通过本页列出的密钥生命周期、blind index、恢复 KDF 和删除/重装威胁模型。
-5. 在 `on-device-eval-contract.json` 中补齐真机内存上限，重新裁决 G2。
+3. 在 `on-device-eval-contract.json` 中补齐真机内存上限，重新裁决 G2。
