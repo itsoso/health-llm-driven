@@ -16,6 +16,19 @@ def _as_json(args: dict) -> str:
     return json.dumps(args, ensure_ascii=False)
 
 
+@pytest.fixture(autouse=True)
+def _declare_explicit_turn_for_raw_watch_record_contracts(monkeypatch):
+    original = AgentExecutor._execute_tool
+
+    async def with_explicit_test_turn(self, tool_name, args_raw, user_token):
+        self._current_user_id = self._current_user_id or 1
+        if not getattr(self, "_current_turn_user_message", ""):
+            self._current_turn_user_message = "记录俯卧撑20次"
+        return await original(self, tool_name, args_raw, user_token)
+
+    monkeypatch.setattr(AgentExecutor, "_execute_tool", with_explicit_test_turn)
+
+
 def test_fast_record_auto_confirms_allowed_watch_record_types():
     for record_type in ("water", "weight", "bp", "blood_pressure", "diet", "exercise", "supplement"):
         out = _auto_confirm_fast_record_args(

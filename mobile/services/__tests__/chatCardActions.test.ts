@@ -22,6 +22,25 @@ jest.mock('../writeIntents', () => ({
 
 import { dispatchChatCardAction } from '../chatCardActions';
 
+const AGENDA_WRITE_POLICY = {
+  capability_id: 'runtime_agenda.v1',
+  required_receipt: true,
+  autonomy_tier: 'manual_confirm',
+  policy_reason: 'manual_confirm_write',
+};
+const DIET_WRITE_POLICY = {
+  capability_id: 'diet_draft.v1',
+  required_receipt: true,
+  autonomy_tier: 'manual_confirm',
+  policy_reason: 'manual_confirm_write',
+};
+const WRITE_INTENT_POLICY = {
+  capability_id: 'write_intent.v1',
+  required_receipt: true,
+  autonomy_tier: 'manual_confirm',
+  policy_reason: 'manual_confirm_write',
+};
+
 describe('dispatchChatCardAction', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -38,6 +57,7 @@ describe('dispatchChatCardAction', () => {
       action: 'agenda.complete',
       endpoint: '/agenda/complete',
       requires_manual_confirm: true,
+      ...AGENDA_WRITE_POLICY,
       payload: {
         source: { object_type: 'health_protocol', object_id: 7 },
       },
@@ -73,12 +93,27 @@ describe('dispatchChatCardAction', () => {
     expect(mockApiPost).not.toHaveBeenCalled();
   });
 
+  it('rejects manual-confirmed writes without a registered capability policy', async () => {
+    await expect(dispatchChatCardAction({
+      label: '完成',
+      action: 'agenda.complete',
+      endpoint: '/agenda/complete',
+      requires_manual_confirm: true,
+      payload: {
+        source: { object_type: 'health_protocol', object_id: 7 },
+      },
+    })).rejects.toThrow('registered_write_policy_required');
+
+    expect(mockApiPost).not.toHaveBeenCalled();
+  });
+
   it('rejects arbitrary endpoints instead of forwarding model-chosen writes', async () => {
     await expect(dispatchChatCardAction({
       label: '危险写入',
       action: 'agenda.complete',
       endpoint: '/medications/7/dose',
       requires_manual_confirm: true,
+      ...AGENDA_WRITE_POLICY,
       payload: {
         source: { object_type: 'health_protocol', object_id: 7 },
       },
@@ -97,6 +132,7 @@ describe('dispatchChatCardAction', () => {
       action: 'daily_plan_action.complete',
       endpoint: '/daily-plan/actions/intervention.card.42/events',
       requires_manual_confirm: true,
+      ...AGENDA_WRITE_POLICY,
       payload: { action_id: 'intervention.card.42', event_type: 'completed' },
     })).resolves.toEqual(expect.objectContaining({
       status: 'completed',
@@ -119,6 +155,7 @@ describe('dispatchChatCardAction', () => {
       action: 'daily_plan_action.complete',
       endpoint: '/daily-plan/actions/other.action/events',
       requires_manual_confirm: true,
+      ...AGENDA_WRITE_POLICY,
       payload: { action_id: 'intervention.card.42', event_type: 'completed' },
     })).rejects.toThrow('unsupported_card_action_endpoint');
 
@@ -131,6 +168,7 @@ describe('dispatchChatCardAction', () => {
       action: 'write_intent.confirm',
       endpoint: '/write-intents/42/confirm',
       requires_manual_confirm: true,
+      ...WRITE_INTENT_POLICY,
       payload: { write_intent_id: 42 },
     })).resolves.toEqual(expect.objectContaining({
       status: 'completed',
@@ -157,6 +195,7 @@ describe('dispatchChatCardAction', () => {
       action: 'write_intent.confirm',
       endpoint: '/write-intents/42/confirm',
       requires_manual_confirm: true,
+      ...WRITE_INTENT_POLICY,
       payload: { write_intent_id: 42 },
     })).resolves.toEqual(expect.objectContaining({
       status: 'completed',
@@ -224,6 +263,7 @@ describe('dispatchChatCardAction', () => {
       action: 'diet_record.create',
       endpoint: '/diet/records',
       requires_manual_confirm: true,
+      ...DIET_WRITE_POLICY,
       payload: {
         record: {
           food_items: '煎牛肉能量碗 + 姜黄鲜柠维C茶',
@@ -266,6 +306,7 @@ describe('dispatchChatCardAction', () => {
       action: 'diet_record.create',
       endpoint: '/diet/records',
       requires_manual_confirm: true,
+      ...DIET_WRITE_POLICY,
       payload: {
         record: {
           food_items: ['鸡胸肉 200g', '杂粮饭 100g', '西兰花'],
@@ -290,6 +331,7 @@ describe('dispatchChatCardAction', () => {
       action: 'diet_record.create',
       endpoint: '/diet/records',
       requires_manual_confirm: true,
+      ...DIET_WRITE_POLICY,
       payload: {
         record: {
           food_items: '测试snack',
@@ -312,6 +354,7 @@ describe('dispatchChatCardAction', () => {
       action: 'diet_record.create',
       endpoint: '/diet/records',
       requires_manual_confirm: true,
+      ...DIET_WRITE_POLICY,
       payload: {
         record: {
           food_items: '牛肉面',
@@ -343,6 +386,7 @@ describe('dispatchChatCardAction', () => {
       action: 'diet_record.create',
       endpoint: '/diet/records',
       requires_manual_confirm: true,
+      ...DIET_WRITE_POLICY,
       payload: {
         record: {
           food_items: '牛肉面',
@@ -378,6 +422,7 @@ describe('dispatchChatCardAction', () => {
       action: 'diet_record.create',
       endpoint: '/diet/records',
       requires_manual_confirm: true,
+      ...DIET_WRITE_POLICY,
       payload: {
         record: {
           food_items: '鸡蛋 2 个',
@@ -402,6 +447,7 @@ describe('dispatchChatCardAction', () => {
       action: 'diet_record.create',
       endpoint: '/medications/7/dose',
       requires_manual_confirm: true,
+      ...DIET_WRITE_POLICY,
       payload: {
         record: {
           food_items: '鸡蛋 2 个',
@@ -426,6 +472,7 @@ describe('dispatchChatCardAction', () => {
       action: 'diet_record.create',
       endpoint: '/diet/records',
       requires_manual_confirm: true,
+      ...DIET_WRITE_POLICY,
       payload: {
         record: {
           food_items: foodItems,

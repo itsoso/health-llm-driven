@@ -4,6 +4,23 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _declare_explicit_turn_for_raw_manage_handler_contracts(monkeypatch):
+    from app.services.agent_executor import AgentExecutor
+
+    original = AgentExecutor._execute_tool
+
+    async def with_explicit_test_turn(self, tool_name, args_raw, user_token):
+        self._current_user_id = self._current_user_id or 1
+        if not getattr(self, "_current_turn_user_message", ""):
+            self._current_turn_user_message = (
+                "记录测试健康目标" if tool_name == "health_record" else "修改测试健康记录"
+            )
+        return await original(self, tool_name, args_raw, user_token)
+
+    monkeypatch.setattr(AgentExecutor, "_execute_tool", with_explicit_test_turn)
+
+
 @pytest.mark.asyncio
 async def test_health_manage_deletes_diet_record_by_id(db):
     from app.services.agent_executor import AgentExecutor

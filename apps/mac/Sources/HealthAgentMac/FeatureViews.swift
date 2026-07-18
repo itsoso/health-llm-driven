@@ -602,7 +602,10 @@ struct AgentChatView: View {
             messages: viewModel.renderedTranscript(language: appLanguageRaw),
             fontScale: AppFontScale(level: appFontScaleLevel).pointScale,
             onCopy: { id in handleWebCopy(messageID: id) },
-            onRouteOpen: { route in handleWebRouteOpen(route) }
+            onRouteOpen: { route in handleWebRouteOpen(route) },
+            onAIGCConfirm: { confirmationID in
+                Task { await viewModel.confirmAIGCMediaDraft(id: confirmationID) }
+            }
         )
     }
 

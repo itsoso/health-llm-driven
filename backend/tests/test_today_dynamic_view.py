@@ -1,6 +1,18 @@
 """Today DynamicView contract composed by Aheng."""
 
 
+def _without_kernel_action_policy(value):
+    if isinstance(value, list):
+        return [_without_kernel_action_policy(item) for item in value]
+    if not isinstance(value, dict):
+        return value
+    return {
+        key: item
+        for key, item in value.items()
+        if key not in {"capability_id", "required_receipt", "autonomy_tier", "policy_reason"}
+    }
+
+
 def test_today_dynamic_view_suppresses_runtime_duplicate_of_daily_artifact(
     client,
     auth_user_and_headers,
@@ -99,7 +111,7 @@ def test_today_dynamic_view_keeps_distinct_runtime_atom(client, auth_user_and_he
     assert card["data"]["generated_by"] == "rolling_health_runtime_v1"
     assert card["data"]["presentation_mode"] == "today"
     assert card["data"]["next_action"]["replan_reason"] == "today_smart_rank"
-    assert card["actions"] == [
+    assert _without_kernel_action_policy(card["actions"]) == [
         {
             "id": "complete-daily-plan-action",
             "label": "完成这一步",

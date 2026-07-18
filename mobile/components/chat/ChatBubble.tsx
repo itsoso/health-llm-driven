@@ -1228,6 +1228,7 @@ function isWriteCardAction(action: ChatCardActionDescriptor): boolean {
     'diet_record.create',
     'write_intent.confirm',
     'write_intent.dismiss',
+    'aigc_media.confirm',
   ].includes(action.action);
 }
 

@@ -20,9 +20,11 @@ struct ChatTranscriptWebView: NSViewRepresentable {
     let onCopy: (String) -> Void
     /// 动态卡片动作回调:JS 拦截安全内部 route.open → 上层解释 route。
     let onRouteOpen: (String) -> Void
+    /// AIGC 确认卡只传 opaque confirmation ID, never prompt/source data.
+    let onAIGCConfirm: (String) -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onCopy: onCopy, onRouteOpen: onRouteOpen)
+        Coordinator(onCopy: onCopy, onRouteOpen: onRouteOpen, onAIGCConfirm: onAIGCConfirm)
     }
 
     func makeNSView(context: Context) -> WKWebView {
@@ -35,6 +37,7 @@ struct ChatTranscriptWebView: NSViewRepresentable {
         let controller = WKUserContentController()
         controller.add(context.coordinator, name: "copy")
         controller.add(context.coordinator, name: "routeOpen")
+        controller.add(context.coordinator, name: "aigcConfirm")
         controller.add(context.coordinator, name: "ready")
         config.userContentController = controller
 
@@ -51,6 +54,7 @@ struct ChatTranscriptWebView: NSViewRepresentable {
     func updateNSView(_ nsView: WKWebView, context: Context) {
         context.coordinator.onCopy = onCopy
         context.coordinator.onRouteOpen = onRouteOpen
+        context.coordinator.onAIGCConfirm = onAIGCConfirm
         context.coordinator.apply(messages: messages, fontScale: fontScale)
     }
 
@@ -58,6 +62,7 @@ struct ChatTranscriptWebView: NSViewRepresentable {
     final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         var onCopy: (String) -> Void
         var onRouteOpen: (String) -> Void
+        var onAIGCConfirm: (String) -> Void
         weak var webView: WKWebView?
 
         private var isReady = false
@@ -69,9 +74,14 @@ struct ChatTranscriptWebView: NSViewRepresentable {
         // 已同步进 DOM 的整组消息;用于「内容未变就别重推」的闸(见 apply)。
         private var lastSyncedMessages: [ChatTranscriptHTML.RenderedMessage] = []
 
-        init(onCopy: @escaping (String) -> Void, onRouteOpen: @escaping (String) -> Void) {
+        init(
+            onCopy: @escaping (String) -> Void,
+            onRouteOpen: @escaping (String) -> Void,
+            onAIGCConfirm: @escaping (String) -> Void
+        ) {
             self.onCopy = onCopy
             self.onRouteOpen = onRouteOpen
+            self.onAIGCConfirm = onAIGCConfirm
         }
 
         func loadShell() {
@@ -143,6 +153,10 @@ struct ChatTranscriptWebView: NSViewRepresentable {
             case "routeOpen":
                 if let route = message.body as? String {
                     onRouteOpen(route)
+                }
+            case "aigcConfirm":
+                if let confirmationID = message.body as? String {
+                    onAIGCConfirm(confirmationID)
                 }
             default:
                 break
@@ -254,7 +268,8 @@ private func previewOrchestratorMessage() -> ChatTranscriptHTML.RenderedMessage 
         ],
         fontScale: 1.0,
         onCopy: { _ in },
-        onRouteOpen: { _ in }
+        onRouteOpen: { _ in },
+        onAIGCConfirm: { _ in }
     )
     .frame(width: 560, height: 520)
 }

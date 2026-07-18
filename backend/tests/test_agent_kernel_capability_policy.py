@@ -74,6 +74,17 @@ def test_write_turn_allows_health_record_with_receipt():
     assert decision.receipt_required is True
 
 
+def test_ambiguous_turn_blocks_health_record_even_when_arguments_look_valid():
+    decision = decide_tool_capability(
+        _snapshot("嗯"),
+        _request("health_record", {"record_type": "water", "data": {"amount": 300}}),
+    )
+
+    assert decision.action == "block"
+    assert decision.reason == "write_tool_without_write_intent"
+    assert decision.receipt_required is True
+
+
 def test_advice_turn_blocks_intervention_cycle_write():
     decision = decide_tool_capability(
         _snapshot("帮我分析下今天训练计划"),
@@ -82,3 +93,57 @@ def test_advice_turn_blocks_intervention_cycle_write():
 
     assert decision.action == "block"
     assert decision.reason == "intervention_write_without_mutation_intent"
+
+
+def test_media_draft_is_a_receipted_write_capability_before_manual_provider_confirmation():
+    snapshot = _snapshot("把这张早餐图片做成 5 秒竖屏短视频")
+    decision = decide_tool_capability(
+        snapshot,
+        _request(
+            "draft_aigc_media",
+            {
+                "kind": "image_to_video",
+                "prompt": "做成晨间饮水提醒短视频",
+                "purpose": "hydration_reminder",
+            },
+        ),
+    )
+
+    assert snapshot.intent.primary == "write"
+    assert snapshot.intent.domain == "aigc_media"
+    assert decision.action == "allow"
+    assert decision.receipt_required is True
+
+
+def test_media_advice_cannot_trigger_draft():
+    decision = decide_tool_capability(
+        _snapshot("AIGC 短视频怎么做？"),
+        _request(
+            "draft_aigc_media",
+            {
+                "kind": "text_to_video",
+                "prompt": "晨间拉伸短视频",
+                "purpose": "movement_routine",
+            },
+        ),
+    )
+
+    assert decision.action == "block"
+    assert decision.reason == "aigc_media_without_explicit_draft_intent"
+
+
+def test_media_draft_never_uses_model_controlled_provider_confirmation_flag():
+    decision = decide_tool_capability(
+        _snapshot("把这张早餐图片做成短视频"),
+        _request(
+            "draft_aigc_media",
+            {
+                "kind": "image_to_video",
+                "prompt": "做成晨间饮水提醒短视频",
+                "purpose": "hydration_reminder",
+            },
+        ),
+    )
+
+    assert decision.action == "allow"
+    assert decision.reason == "explicit_aigc_media_draft"

@@ -55,6 +55,7 @@ celery_app = Celery(
         "app.tasks.twin_snapshot",
         "app.tasks.contextual_heartbeat",
         "app.tasks.life_event_extraction",
+        "app.tasks.aigc_media",
     ]
 )
 
@@ -445,6 +446,12 @@ celery_app.conf.beat_schedule = {
     "contextual-heartbeat": {
         "task": "app.tasks.contextual_heartbeat.contextual_heartbeat",
         "schedule": crontab(minute="0,30"),  # 每 30 分钟(Asia/Shanghai)
+    },
+
+    # Wan 短视频为异步任务；每分钟轮询 active 状态并把短期 Provider 结果转存为私有文件。
+    "aigc-media-reconcile": {
+        "task": "app.tasks.aigc_media.reconcile_aigc_media_jobs",
+        "schedule": crontab(minute="*"),
     },
 }
 

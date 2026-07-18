@@ -16,7 +16,7 @@ READ_ONLY_TOOLS = frozenset({
     "query_lab_indicators",
     "health_analysis",
 })
-WRITE_TOOL_NAMES = frozenset({"health_record", "health_manage", "intervention_cycle"})
+WRITE_TOOL_NAMES = frozenset({"health_record", "health_manage", "intervention_cycle", "draft_aigc_media"})
 MANAGE_WRITE_OPERATIONS = frozenset({"update", "delete"})
 INTERVENTION_WRITE_ACTIONS = frozenset({"start", "update", "cancel"})
 
@@ -71,14 +71,6 @@ def decide_tool_capability(
                 args,
                 receipt_required=True,
             )
-        if primary == "unknown":
-            return _decision(
-                "allow",
-                "legacy_unknown_intent_write",
-                tool_name,
-                args,
-                receipt_required=True,
-            )
         return _decision(
             "block",
             "write_tool_without_write_intent",
@@ -98,14 +90,6 @@ def decide_tool_capability(
                     args,
                     receipt_required=True,
                 )
-            if primary == "unknown":
-                return _decision(
-                    "allow",
-                    "legacy_unknown_intent_intervention_write",
-                    tool_name,
-                    args,
-                    receipt_required=True,
-                )
             return _decision(
                 "block",
                 "intervention_write_without_mutation_intent",
@@ -114,6 +98,27 @@ def decide_tool_capability(
                 receipt_required=True,
             )
         return _decision("allow", "intervention_read_or_unknown_action", tool_name, args)
+
+    if tool_name == "draft_aigc_media":
+        if (
+            primary == "write"
+            and snapshot.intent.domain == "aigc_media"
+            and snapshot.intent.operation == "create"
+        ):
+            return _decision(
+                "allow",
+                "explicit_aigc_media_draft",
+                tool_name,
+                args,
+                receipt_required=True,
+            )
+        return _decision(
+            "block",
+            "aigc_media_without_explicit_draft_intent",
+            tool_name,
+            args,
+            receipt_required=True,
+        )
 
     if tool_name in WRITE_TOOL_NAMES:
         return _decision("block", "unhandled_write_tool", tool_name, args, receipt_required=True)

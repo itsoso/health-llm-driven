@@ -8,6 +8,15 @@ import { createVerifiedWriteReceipt, type WriteReceipt } from './writeReceipt';
 
 type DietNutritionStatus = 'not_needed' | 'estimated' | 'estimate_failed';
 
+const WRITE_CARD_ACTIONS = new Set([
+  'agenda.complete',
+  'daily_plan_action.complete',
+  'diet_record.create',
+  'write_intent.confirm',
+  'write_intent.dismiss',
+  'aigc_media.confirm',
+]);
+
 export interface ChatCardActionResult {
   status: 'completed' | 'dismissed' | 'opened';
   route?: string;
@@ -23,6 +32,7 @@ export async function dispatchChatCardAction(
   switch (action.action) {
     case 'agenda.complete':
       assertManualConfirm(action);
+      assertRegisteredWritePolicy(action);
       assertEndpoint(action, '/agenda/complete');
       return {
         status: 'completed',
@@ -30,12 +40,14 @@ export async function dispatchChatCardAction(
       };
     case 'daily_plan_action.complete':
       assertManualConfirm(action);
+      assertRegisteredWritePolicy(action);
       return {
         status: 'completed',
         receipt: receiptFromDailyPlanResult(action, await completeDailyPlanActionFromCard(action)),
       };
     case 'diet_record.create':
       assertManualConfirm(action);
+      assertRegisteredWritePolicy(action);
       assertEndpoint(action, '/diet/records');
       {
         const result = await createDietRecordFromCard(action, idempotencyKey);
@@ -51,6 +63,7 @@ export async function dispatchChatCardAction(
       }
     case 'write_intent.confirm':
       assertManualConfirm(action);
+      assertRegisteredWritePolicy(action);
       {
         const intentId = readWriteIntentId(action);
         const result = await confirmWriteIntent(intentId);
@@ -69,6 +82,7 @@ export async function dispatchChatCardAction(
       }
     case 'write_intent.dismiss':
       assertManualConfirm(action);
+      assertRegisteredWritePolicy(action);
       {
         const intentId = readWriteIntentId(action);
         const result = await dismissWriteIntent(intentId);
@@ -80,6 +94,24 @@ export async function dispatchChatCardAction(
             status: 'dismissed',
             resourceType: 'write_intent',
             resourceId: intentId,
+          }),
+        };
+      }
+    case 'aigc_media.confirm':
+      assertManualConfirm(action);
+      assertRegisteredWritePolicy(action);
+      {
+        const confirmationID = readAIGCMediaConfirmationID(action);
+        const { data } = await api.post(`/aigc/media/confirmations/${encodeURIComponent(confirmationID)}/confirm`);
+        const jobID = optionalText(data?.id);
+        if (!jobID) throw new Error('aigc_media_confirmation_missing_job');
+        return {
+          status: 'completed',
+          patch: { dispatched_job_id: jobID },
+          receipt: createVerifiedWriteReceipt({
+            operationId: action.id || `aigc_media.confirm:${confirmationID}`,
+            resourceType: 'aigc_media_job',
+            resourceId: jobID,
           }),
         };
       }
@@ -178,6 +210,19 @@ function assertManualConfirm(action: ChatCardActionDescriptor): void {
   }
 }
 
+function assertRegisteredWritePolicy(action: ChatCardActionDescriptor): void {
+  if (!WRITE_CARD_ACTIONS.has(action.action)) return;
+  const capabilityId = typeof action.capability_id === 'string' ? action.capability_id : '';
+  if (
+    !/^[a-z][a-z0-9_]*\.v\d+$/.test(capabilityId) ||
+    action.required_receipt !== true ||
+    action.autonomy_tier !== 'manual_confirm' ||
+    action.policy_reason !== 'manual_confirm_write'
+  ) {
+    throw new Error('registered_write_policy_required');
+  }
+}
+
 function assertEndpoint(action: ChatCardActionDescriptor, expected: string): void {
   if (action.endpoint && action.endpoint !== expected) {
     throw new Error('unsupported_card_action_endpoint');
@@ -261,6 +306,19 @@ function readWriteIntentId(action: ChatCardActionDescriptor): number {
   if (action.endpoint && action.endpoint !== expectedSuffix) {
     throw new Error('unsupported_card_action_endpoint');
   }
+  return id;
+}
+
+function readAIGCMediaConfirmationID(action: ChatCardActionDescriptor): string {
+  const prefix = 'aigc_media.confirm:';
+  const id = optionalText(action.id)?.startsWith(prefix)
+    ? optionalText(action.id)!.slice(prefix.length)
+    : undefined;
+  if (!id || !/^[A-Za-z0-9_-]{1,80}$/.test(id)) {
+    throw new Error('invalid_aigc_media_confirmation_id');
+  }
+  const endpoint = `/aigc/media/confirmations/${encodeURIComponent(id)}/confirm`;
+  assertEndpoint(action, endpoint);
   return id;
 }
 

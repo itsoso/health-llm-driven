@@ -161,6 +161,28 @@ describe('renderCard', () => {
     expect(r).not.toBeNull();
   });
 
+  it('renders a completed private AIGC image job without exposing provider data', () => {
+    const r = renderCard({
+      type: 'aigc_media_job',
+      data: {
+        job_id: 'aigc_1',
+        kind: 'text_to_image',
+        status: 'succeeded',
+        progress: 100,
+        result: {
+          media_type: 'image/png',
+          url: '/api/v1/upload/files/aigc/7/output.png?expires=123&signature=abc',
+        },
+      },
+    });
+
+    const html = renderToStaticMarkup(r!);
+    expect(html).toContain('小巴创作');
+    expect(html).toContain('已完成');
+    expect(html).toContain('/api/v1/upload/files/aigc/7/output.png');
+    expect(html).not.toContain('aliyuncs.com');
+  });
+
   it('renders safe route actions below backend cards', () => {
     const r = renderCard({
       type: 'record_quality',

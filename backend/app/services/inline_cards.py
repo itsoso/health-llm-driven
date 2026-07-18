@@ -21,6 +21,7 @@ from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from app.services import agenda_service
+from app.services.atomic_capability_registry import attach_action_policy_metadata
 from app.services.health_operating_review import build_health_operating_review
 from app.services.intake_intent_classifier import classify_intake_intent
 from app.services.metric_chart_cards import build_metric_chart
@@ -29,6 +30,13 @@ from app.utils.number_format import format_card_numbers
 logger = logging.getLogger(__name__)
 
 MAX_CARDS = 3
+
+def attach_card_action_policy_metadata(
+    card_type: str,
+    actions: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Compatibility export for existing inline-card callers and tests."""
+    return attach_action_policy_metadata(card_type, actions)
 
 
 def _is_record_intent(q: str) -> bool:
@@ -1130,6 +1138,11 @@ def build_cards(
                         "style": "secondary",
                     }
                 ]
+            if "actions" in card:
+                card["actions"] = attach_card_action_policy_metadata(
+                    card_type,
+                    card["actions"],
+                )
             # 展示精度统一(AGENTS.md §14): 面向用户的卡片数字最多 2 位小数(整数保持整数)。
             # 在 actions 已构建之后才格式化 data —— actions 的写入 payload 保留原始精度,
             # 只有 data(展示层)被规范。单一 choke point 覆盖所有卡片所有字段。

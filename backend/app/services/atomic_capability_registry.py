@@ -105,13 +105,135 @@ CAPABILITIES: tuple[AtomicCapability, ...] = (
         telemetry_events=("impression", "open"),
         execution="read_only_route_open",
     ),
+    AtomicCapability(
+        id="diet_draft",
+        version="v1",
+        card_type="diet_draft",
+        first_class_objects=("DietRecord",),
+        surfaces=("mobile.chat", "web.chat", "mac.chat"),
+        data_required_fields=("meal_type", "food_items"),
+        action_types=("diet_record.create", "ui.inline.expand", "route.open"),
+        safety_boundary="manual_confirm_write",
+        telemetry_events=("impression", "confirm", "write_receipt", "open"),
+        execution="manual_confirm_diet_record_create",
+    ),
+    AtomicCapability(
+        id="medication_draft",
+        version="v1",
+        card_type="medication_draft",
+        first_class_objects=("Medication", "MedicationLog"),
+        surfaces=("mobile.chat", "web.chat", "mac.chat"),
+        data_required_fields=("medication_name",),
+        action_types=("route.open",),
+        safety_boundary="suggest_only",
+        telemetry_events=("impression", "open"),
+        execution="read_only_route_open",
+    ),
+    AtomicCapability(
+        id="supplement_draft",
+        version="v1",
+        card_type="supplement_draft",
+        first_class_objects=("SupplementDefinition", "SupplementRecord"),
+        surfaces=("mobile.chat", "web.chat", "mac.chat"),
+        data_required_fields=("supplement_name",),
+        action_types=("route.open",),
+        safety_boundary="suggest_only",
+        telemetry_events=("impression", "open"),
+        execution="read_only_route_open",
+    ),
+    AtomicCapability(
+        id="operating_review",
+        version="v1",
+        card_type="operating_review",
+        first_class_objects=("HealthTwin", "HealthAgendaItem", "InterventionCycle"),
+        surfaces=("mobile.chat", "web.chat", "mac.chat"),
+        data_required_fields=("window_days", "execution"),
+        action_types=("route.open",),
+        safety_boundary="suggest_only",
+        telemetry_events=("impression", "open"),
+        execution="read_only_route_open",
+    ),
+    AtomicCapability(
+        id="metric_chart",
+        version="v1",
+        card_type="metric_chart",
+        first_class_objects=("HealthTwin",),
+        surfaces=("mobile.chat", "web.chat", "mac.chat"),
+        data_required_fields=("metric",),
+        action_types=("route.open",),
+        safety_boundary="suggest_only",
+        telemetry_events=("impression", "open"),
+        execution="read_only_route_open",
+    ),
+    AtomicCapability(
+        # 草稿只暴露一条手动确认动作。客户端不携带 prompt/source/provider
+        # 参数，后端只消费 owner-scoped 的一次性确认记录。
+        id="aigc_media_confirmation",
+        version="v1",
+        card_type="aigc_media_confirmation",
+        first_class_objects=("AIGCMediaConfirmation",),
+        surfaces=("mobile.chat", "web.chat", "mac.chat"),
+        data_required_fields=("confirmation_id", "kind", "status", "title", "provider", "source_attached"),
+        action_types=("aigc_media.confirm",),
+        safety_boundary="manual_owner_confirmation_for_external_provider",
+        telemetry_events=("impression", "manual_confirm", "provider_dispatch"),
+        execution="owner_scoped_one_time_confirmation",
+    ),
+    AtomicCapability(
+        # AIGC 结果只作为 owner-scoped 任务投影显示；卡片不持久化签名 URL。
+        id="aigc_media_job",
+        version="v1",
+        card_type="aigc_media_job",
+        first_class_objects=("AIGCMediaJob",),
+        surfaces=("mobile.chat", "web.chat", "mac.chat"),
+        data_required_fields=("job_id", "kind", "status", "progress", "title", "result"),
+        action_types=(),
+        safety_boundary="owner_scoped_private_media",
+        telemetry_events=("impression", "status_refresh", "result_open"),
+        execution="read_only_private_job_projection",
+    ),
 )
 
 _CAPABILITY_BY_CARD_TYPE = {capability.card_type: capability for capability in CAPABILITIES}
+_WRITE_ACTION_TYPES = frozenset({
+    "agenda.complete",
+    "daily_plan_action.complete",
+    "diet_record.create",
+    "write_intent.confirm",
+    "write_intent.dismiss",
+    "aigc_media.confirm",
+})
 
 
 def get_atomic_capability(card_type: str) -> AtomicCapability | None:
     return _CAPABILITY_BY_CARD_TYPE.get(str(card_type or "").strip())
+
+
+def attach_action_policy_metadata(
+    card_type: str,
+    actions: list[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    """Attach the registered capability policy to each executable action."""
+    capability = get_atomic_capability(card_type)
+    if capability is None:
+        raise ValueError(f"unknown card capability: {card_type}")
+    allowed_actions = set(capability.action_types)
+    output: list[dict[str, Any]] = []
+    for action in actions:
+        action_type = str(action.get("action") or "").strip()
+        if action_type not in allowed_actions:
+            raise ValueError(
+                f"action {action_type!r} is not registered for card type {card_type!r}"
+            )
+        is_write = action_type in _WRITE_ACTION_TYPES
+        output.append({
+            **dict(action),
+            "capability_id": f"{capability.id}.{capability.version}",
+            "required_receipt": is_write,
+            "autonomy_tier": "manual_confirm" if is_write else "suggest",
+            "policy_reason": "manual_confirm_write" if is_write else "registered_read_action",
+        })
+    return output
 
 
 def validate_dynamic_view(view: Mapping[str, Any]) -> list[str]:
@@ -187,7 +309,17 @@ def _validate_actions(
                 f"{action_path}: action '{action_type}' is not allowed for {capability.card_type}"
             )
             continue
-        if action_type in {"agenda.complete", "daily_plan_action.complete"}:
+        is_write = action_type in _WRITE_ACTION_TYPES
+        expected_capability_id = f"{capability.id}.{capability.version}"
+        if action.get("capability_id") != expected_capability_id:
+            violations.append(f"{action_path}: action capability_id does not match {expected_capability_id}")
+        if action.get("required_receipt") is not is_write:
+            violations.append(f"{action_path}: action required_receipt does not match capability policy")
+        if action.get("autonomy_tier") != ("manual_confirm" if is_write else "suggest"):
+            violations.append(f"{action_path}: action autonomy_tier does not match capability policy")
+        if action.get("policy_reason") != ("manual_confirm_write" if is_write else "registered_read_action"):
+            violations.append(f"{action_path}: action policy_reason does not match capability policy")
+        if is_write:
             if action.get("requires_manual_confirm") is not True:
                 violations.append(f"{action_path}: write action requires manual confirmation")
                 continue

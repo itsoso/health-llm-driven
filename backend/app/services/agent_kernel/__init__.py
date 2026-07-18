@@ -6,6 +6,8 @@ frames, and capability policy decides whether a tool may execute.
 """
 
 from app.services.agent_kernel.intent_frame import build_intent_frame
+from app.services.agent_kernel.context import build_execution_context, build_turn_snapshot, format_turn_time_context_prompt
+from app.services.agent_kernel.events import AgentEventBus, AgentKernelEvent
 from app.services.agent_kernel.tool_gateway import ToolGateway
 from app.services.agent_kernel.types import (
     AgentEnvelope,
@@ -19,6 +21,8 @@ from app.services.agent_kernel.types import (
 
 __all__ = [
     "AgentEnvelope",
+    "AgentEventBus",
+    "AgentKernelEvent",
     "CapabilityDecision",
     "ExecutionContext",
     "IntentFrame",
@@ -27,4 +31,7 @@ __all__ = [
     "ToolGateway",
     "TurnSnapshot",
     "build_intent_frame",
+    "build_execution_context",
+    "build_turn_snapshot",
+    "format_turn_time_context_prompt",
 ]

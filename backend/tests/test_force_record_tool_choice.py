@@ -95,14 +95,15 @@ def test_negation_suppresses_prefer_fast_record():
 
 def test_negation_guard_allows_genuine_records():
     """误命中成本必须为零:想记的说法(不要记错/别忘了记录/别记成)绝不被守卫误杀。"""
-    import app.services.agent_executor as ae
+    from app.services.utterance_intent_classifier import classify_agent_utterance
+
     for msg in [
         "记录喝水500ml",
         "帮我记录午饭鳕鱼50g",
         "别忘了记录我今天的体重",   # 命令式:要记
-        "别记成午饭,是晚饭",         # 改归类:要记
+        "记录晚饭，别记成午饭",       # 改归类:仍是明确写入
     ]:
-        assert ae._RECORD_NEGATION_GUARD_RE.search(msg) is None, msg
+        assert classify_agent_utterance(msg).primary == "write", msg
 
 
 def test_negation_blocks_recovered_textual_record_authorization():

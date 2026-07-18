@@ -16,7 +16,7 @@ def build_intent_frame(
     classifier internals without changing callers.
     """
     text = envelope.text
-    intent = classify_agent_utterance(text)
+    intent = classify_agent_utterance(text, reference_now=context.current_time)
     ambiguity: list[str] = []
     if intent.primary == "unknown" or intent.confidence < 0.6:
         ambiguity.append("low_confidence")

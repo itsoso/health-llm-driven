@@ -73,7 +73,8 @@ struct AppServices {
             // Backend conversation list/detail so Mac matches web/mobile; the local
             // store above is now only the offline fallback.
             remoteSource: AgentConversationClient(apiClient: apiClient),
-            labUploadService: labUploadClient
+            labUploadService: labUploadClient,
+            aigcMediaClient: AIGCMediaJobClient(apiClient: apiClient)
         )
         self.recordClient = RecordClient(apiClient: apiClient)
         self.supplementProductClient = SupplementProductLibraryClient(apiClient: apiClient)

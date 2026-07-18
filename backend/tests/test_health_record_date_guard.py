@@ -10,6 +10,21 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _declare_explicit_turn_for_raw_date_guard_contracts(monkeypatch):
+    from app.services.agent_executor import AgentExecutor
+
+    original = AgentExecutor._execute_tool
+
+    async def with_explicit_test_turn(self, tool_name, args_raw, user_token):
+        self._current_user_id = self._current_user_id or 1
+        if not getattr(self, "_current_turn_user_message", ""):
+            self._current_turn_user_message = "记录测试饮食"
+        return await original(self, tool_name, args_raw, user_token)
+
+    monkeypatch.setattr(AgentExecutor, "_execute_tool", with_explicit_test_turn)
+
+
 @pytest.mark.asyncio
 async def test_overrides_record_date_when_far_past(db):
     """LLM 给 record_date=2023-10-09, 应覆盖为今天."""

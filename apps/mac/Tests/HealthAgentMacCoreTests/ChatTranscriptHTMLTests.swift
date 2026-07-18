@@ -617,6 +617,48 @@ final class ChatTranscriptHTMLTests: XCTestCase {
         XCTAssertFalse(html.contains(">agent_atom<"))
     }
 
+    func testAIGCMediaJobCardRendersOnlySignedPrivateResult() throws {
+        let html = try XCTUnwrap(ChatTranscriptHTML.dynamicCardHTML(
+            type: "aigc_media_job",
+            data: .object([
+                "job_id": .string("aigc_1"),
+                "kind": .string("text_to_video"),
+                "status": .string("succeeded"),
+                "progress": .int(100),
+                "result": .object([
+                    "media_type": .string("video/mp4"),
+                    "url": .string("/api/v1/upload/files/aigc/7/output.mp4?expires=1&signature=test")
+                ])
+            ])
+        ))
+
+        XCTAssertTrue(html.contains("小巴创作"))
+        XCTAssertTrue(html.contains("文生短视频"))
+        XCTAssertTrue(html.contains("已完成"))
+        XCTAssertTrue(html.contains("打开短视频"))
+        XCTAssertTrue(html.contains("https://health.executor.life/api/v1/upload/files/aigc/7/output.mp4"))
+        XCTAssertFalse(html.contains("aliyuncs.com"))
+    }
+
+    func testAIGCMediaConfirmationCardUsesOnlyOpaqueID() throws {
+        let html = try XCTUnwrap(ChatTranscriptHTML.dynamicCardHTML(
+            type: "aigc_media_confirmation",
+            data: .object([
+                "confirmation_id": .string("aigc_confirm_opaque_1"),
+                "kind": .string("image_to_video"),
+                "status": .string("pending"),
+                "title": .string("小巴创作草稿"),
+                "provider": .string("百炼 Wan"),
+                "source_attached": .bool(true)
+            ])
+        ))
+
+        XCTAssertTrue(html.contains("xiaoba-aigc-confirm://aigc_confirm_opaque_1"))
+        XCTAssertTrue(html.contains("发送给百炼并生成"))
+        XCTAssertFalse(html.contains("prompt"))
+        XCTAssertFalse(html.contains("signature="))
+    }
+
     func testMetaFooterOmitsEmptySourcesAndToolsBlocks() {
         // 有模型行,但 sources/tools 空 → 只出 meta-line,不出 details / meta-tools
         let html = ChatTranscriptHTML.metaFooterHTML(
@@ -684,6 +726,26 @@ final class ChatTranscriptHTMLTests: XCTestCase {
 // MARK: - mac 死键防线:不可执行的 route.open 不画按钮(2026-07-05)
 
 extension ChatTranscriptHTMLTests {
+    func testDynamicCardActionDecodesKernelPolicyMetadata() throws {
+        let raw = Data("""
+        {
+          "id":"confirm-diet-draft",
+          "label":"确认记录",
+          "action":"diet_record.create",
+          "capability_id":"diet_draft.v1",
+          "required_receipt":true,
+          "autonomy_tier":"manual_confirm",
+          "policy_reason":"manual_confirm_write"
+        }
+        """.utf8)
+        let action = try JSONDecoder().decode(AgentDynamicCardActionDescriptor.self, from: raw)
+
+        XCTAssertEqual(action.capabilityID, "diet_draft.v1")
+        XCTAssertEqual(action.requiredReceipt, true)
+        XCTAssertEqual(action.autonomyTier, "manual_confirm")
+        XCTAssertEqual(action.policyReason, "manual_confirm_write")
+    }
+
     func testUnactionableRouteOpenButtonIsNotRendered() {
         let actions = [
             AgentDynamicCardActionDescriptor(

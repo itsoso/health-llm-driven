@@ -11,6 +11,22 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _declare_explicit_turn_for_raw_record_handler_contracts(monkeypatch):
+    """These legacy handler tests exercise transport/normalization, not intent."""
+    from app.services.agent_executor import AgentExecutor
+
+    original = AgentExecutor._execute_tool
+
+    async def with_explicit_test_turn(self, tool_name, args_raw, user_token):
+        self._current_user_id = self._current_user_id or 1
+        if not getattr(self, "_current_turn_user_message", ""):
+            self._current_turn_user_message = "记录测试健康数据"
+        return await original(self, tool_name, args_raw, user_token)
+
+    monkeypatch.setattr(AgentExecutor, "_execute_tool", with_explicit_test_turn)
+
+
 def test_mobile_meal_photo_context_enables_deterministic_draft_gate():
     from app.services.agent_executor import _is_diet_photo_draft_turn
 

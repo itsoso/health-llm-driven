@@ -842,6 +842,10 @@ public final class AgentChatViewModel {
     @ObservationIgnored
     private let labUploadService: LabUploadServicing?
     @ObservationIgnored
+    private let aigcMediaClient: AIGCMediaJobLoading?
+    @ObservationIgnored
+    private var aigcRefreshTasks: [String: Task<Void, Never>] = [:]
+    @ObservationIgnored
     private var currentConversationSnapshotID: UUID?
 
     public var canRetry: Bool {
@@ -862,7 +866,8 @@ public final class AgentChatViewModel {
         contextBundleStore: AgentContextBundleStoring? = nil,
         conversationStore: AgentConversationStoring? = nil,
         remoteSource: AgentConversationRemoteSourcing? = nil,
-        labUploadService: LabUploadServicing? = nil
+        labUploadService: LabUploadServicing? = nil,
+        aigcMediaClient: AIGCMediaJobLoading? = nil
     ) {
         self.selectedModelID = selectedModelID
         self.streamService = streamService
@@ -870,6 +875,7 @@ public final class AgentChatViewModel {
         self.conversationStore = conversationStore
         self.remoteSource = remoteSource
         self.labUploadService = labUploadService
+        self.aigcMediaClient = aigcMediaClient
         self.savedContextBundles = contextBundleStore?.loadContextBundles() ?? []
         // Seed from the local cache so the list isn't empty before the first
         // backend fetch returns; `refreshConversationHistory()` replaces it.
@@ -1223,6 +1229,7 @@ public final class AgentChatViewModel {
                             messages[idx].cardRender = firstCard.render
                             messages[idx].cardData = firstCard.data
                             messages[idx].cardActions = firstCard.actions
+                            scheduleAIGCMediaRefreshIfNeeded(for: assistantID)
                         }
                     }
                     livePreLLMPerf = nil
@@ -1401,6 +1408,7 @@ public final class AgentChatViewModel {
             lastPrompt = detail.last(where: { $0.role == .user })?.content
             rehydrateLastAssistantMeta()
             rebuildProposedActions()
+            scheduleAIGCMediaRefreshesForVisibleMessages()
             historyNotice = nil
             cacheLoadedMessages(detail, for: conversation)
         } catch {
@@ -1938,11 +1946,74 @@ public final class AgentChatViewModel {
         messages[idx].cardRender = card.render
         messages[idx].cardData = card.data
         messages[idx].cardActions = card.actions
+        scheduleAIGCMediaRefreshIfNeeded(for: messageID)
         if let toolName {
             messages[idx].toolsUsed = Self.mergedToolNames(
                 existing: messages[idx].toolsUsed,
                 incoming: [toolName]
             )
+        }
+    }
+
+    private func scheduleAIGCMediaRefreshesForVisibleMessages() {
+        for message in messages where message.cardType == "aigc_media_job" {
+            scheduleAIGCMediaRefreshIfNeeded(for: message.id)
+        }
+    }
+
+    private func scheduleAIGCMediaRefreshIfNeeded(for messageID: UUID) {
+        guard let aigcMediaClient,
+              let message = messages.first(where: { $0.id == messageID }),
+              message.cardType == "aigc_media_job",
+              let jobID = message.cardData?["job_id"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !jobID.isEmpty,
+              aigcRefreshTasks[jobID] == nil else {
+            return
+        }
+
+        aigcRefreshTasks[jobID] = Task { [weak self, aigcMediaClient] in
+            defer { self?.aigcRefreshTasks[jobID] = nil }
+            for _ in 0..<80 {
+                guard !Task.isCancelled else { return }
+                do {
+                    let projection = try await aigcMediaClient.getJob(id: jobID)
+                    guard let self else { return }
+                    if let index = self.messages.firstIndex(where: { $0.id == messageID }),
+                       self.messages[index].cardType == "aigc_media_job" {
+                        self.messages[index].cardData = projection.cardData(
+                            title: self.messages[index].cardData?["title"]?.stringValue ?? "小巴创作"
+                        )
+                    }
+                    if projection.isTerminal { return }
+                } catch APIError.unauthorized {
+                    return
+                } catch {
+                    // Keep the last private projection visible. A later poll may
+                    // succeed; the server remains the source of terminal state.
+                }
+                try? await Task.sleep(for: .milliseconds(4500))
+            }
+        }
+    }
+
+    /// Consume the server-issued AIGC draft after a direct UI gesture. The
+    /// client sends only the opaque confirmation ID; prompt/source remain bound
+    /// to the encrypted server draft.
+    public func confirmAIGCMediaDraft(id: String) async {
+        guard let aigcMediaClient, !id.isEmpty else { return }
+        do {
+            let projection = try await aigcMediaClient.confirmDraft(id: id)
+            guard let index = messages.firstIndex(where: {
+                $0.cardType == "aigc_media_confirmation" &&
+                $0.cardData?["confirmation_id"]?.stringValue == id
+            }) else { return }
+            messages[index].cardType = "aigc_media_job"
+            messages[index].cardData = projection.cardData(title: "小巴创作")
+            messages[index].cardActions = []
+            scheduleAIGCMediaRefreshIfNeeded(for: messages[index].id)
+        } catch {
+            // Keep the confirmation card intact. It can be retried and must not
+            // claim dispatch unless the owner-scoped API returns a job.
         }
     }
 

@@ -1,4 +1,5 @@
 import json
+from types import SimpleNamespace
 
 import pytest
 
@@ -42,7 +43,7 @@ async def test_execute_tool_blocks_policy_denied_health_record_before_dispatch(d
 
     monkeypatch.setattr(
         "app.services.llm.tool_validator.validate_tool_call",
-        lambda tool_name, args, db, user_id: {"error": None, "data": args},
+        lambda tool_name, args, db, user_id, reference_now=None: {"error": None, "data": args},
     )
 
     async def should_not_run(*args, **kwargs):
@@ -68,7 +69,7 @@ async def test_execute_tool_blocks_health_manage_update_in_read_turn(db, monkeyp
 
     monkeypatch.setattr(
         "app.services.llm.tool_validator.validate_tool_call",
-        lambda tool_name, args, db, user_id: {"error": None, "data": args},
+        lambda tool_name, args, db, user_id, reference_now=None: {"error": None, "data": args},
     )
 
     async def should_not_run(*args, **kwargs):
@@ -95,7 +96,7 @@ async def test_execute_tool_allows_explicit_health_record_write(db, monkeypatch)
 
     monkeypatch.setattr(
         "app.services.llm.tool_validator.validate_tool_call",
-        lambda tool_name, args, db, user_id: {"error": None, "data": args},
+        lambda tool_name, args, db, user_id, reference_now=None: {"error": None, "data": args},
     )
 
     async def fake_exec(base, headers, args):
@@ -112,3 +113,133 @@ async def test_execute_tool_allows_explicit_health_record_write(db, monkeypatch)
 
     assert calls == [{"record_type": "diet", "data": {"food_items": "牛肉面"}}]
     assert '"id": 1' in result
+
+
+@pytest.mark.asyncio
+async def test_execute_tool_emits_receipt_for_json_encoded_write_arguments(db, monkeypatch):
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._current_turn_user_message = "记录午餐吃了牛肉面"
+
+    monkeypatch.setattr(
+        "app.services.llm.tool_validator.validate_tool_call",
+        lambda tool_name, args, db, user_id, reference_now=None: {"error": None, "data": args},
+    )
+
+    async def fake_exec(base, headers, args):
+        return '{"id": 9, "resource_type": "diet_record", "food_items": "牛肉面"}'
+
+    monkeypatch.setattr(executor, "_exec_health_record", fake_exec)
+
+    await executor._execute_tool(
+        "health_record",
+        json.dumps({"record_type": "diet", "data": {"food_items": "牛肉面"}}, ensure_ascii=False),
+        None,
+    )
+
+    assert executor._agent_kernel_event_bus is not None
+    events = executor._agent_kernel_event_bus.events
+    receipt = next(event for event in events if event.name == "agent.write_receipt_verified")
+    assert receipt.data["operation_id"] == "health_record:diet_record:9"
+    assert receipt.data["resource_id"] == "9"
+
+
+@pytest.mark.asyncio
+async def test_shadow_policy_observes_denied_write_without_blocking_dispatch(db, monkeypatch):
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._current_turn_user_message = "列出今天的饮食记录"
+    calls = []
+    monkeypatch.setattr("app.services.agent_executor.settings.agent_kernel_policy_mode", "shadow")
+    monkeypatch.setattr(
+        "app.services.llm.tool_validator.validate_tool_call",
+        lambda tool_name, args, db, user_id, reference_now=None: {"error": None, "data": args},
+    )
+
+    async def fake_exec(base, headers, args):
+        calls.append(args)
+        return '{"id": 10, "resource_type": "diet_record"}'
+
+    monkeypatch.setattr(executor, "_exec_health_record", fake_exec)
+
+    await executor._execute_tool(
+        "health_record",
+        {"record_type": "diet", "data": {"food_items": "牛肉面"}},
+        None,
+    )
+
+    assert calls == [{"record_type": "diet", "data": {"food_items": "牛肉面"}}]
+    assert executor._agent_kernel_event_bus is not None
+    assert "agent.tool_blocked" in [event.name for event in executor._agent_kernel_event_bus.events]
+
+
+@pytest.mark.asyncio
+async def test_agent_media_tool_uses_current_image_and_emits_manual_confirmation_card(db, monkeypatch):
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._current_turn_user_message = "确认把这张早餐图片发送给百炼，生成 5 秒竖屏短视频"
+    executor._current_turn_source_message_id = 88
+    executor._current_turn_image_urls = ["/api/v1/upload/files/chat/1/example.jpg"]
+
+    class FakeMediaService:
+        requested = None
+
+        def __init__(self, _db):
+            pass
+
+        async def issue_confirmation(self, *, user_id, request):
+            FakeMediaService.requested = (user_id, request)
+            return SimpleNamespace(
+                id="aigc_confirm_1",
+                kind=request.kind,
+                source_message_id=request.source_message_id,
+            )
+
+    monkeypatch.setattr(
+        "app.services.aigc_media_job_service.AIGCMediaJobService",
+        FakeMediaService,
+    )
+
+    result = await executor._execute_tool(
+        "draft_aigc_media",
+        {
+            "kind": "image_to_video",
+            "prompt": "做成晨间饮水提醒短视频",
+            "duration_seconds": 5,
+            "ratio": "9:16",
+            "purpose": "hydration_reminder",
+        },
+        None,
+    )
+
+    assert json.loads(result)["resource_type"] == "aigc_media_confirmation"
+    assert FakeMediaService.requested[0] == 1
+    assert FakeMediaService.requested[1].source_message_id == 88
+    assert executor._turn_aigc_media_cards == [{
+        "type": "aigc_media_confirmation",
+        "data": {
+            "confirmation_id": "aigc_confirm_1",
+            "kind": "image_to_video",
+            "title": "小巴创作草稿",
+            "provider": "百炼 Wan",
+            "source_attached": True,
+            "status": "pending",
+        },
+        "actions": [{
+            "id": "aigc_media.confirm:aigc_confirm_1",
+            "label": "发送给百炼并生成",
+            "action": "aigc_media.confirm",
+            "endpoint": "/aigc/media/confirmations/aigc_confirm_1/confirm",
+            "requires_manual_confirm": True,
+            "capability_id": "aigc_media_confirmation.v1",
+            "required_receipt": True,
+            "autonomy_tier": "manual_confirm",
+            "policy_reason": "manual_confirm_write",
+        }],
+    }]
+    assert executor._agent_kernel_event_bus is not None
+    receipt = next(
+        event for event in executor._agent_kernel_event_bus.events
+        if event.name == "agent.write_receipt_verified"
+    )
+    assert receipt.data["resource_id"] == "aigc_confirm_1"

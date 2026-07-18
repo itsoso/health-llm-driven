@@ -1,0 +1,181 @@
+"""External AIGC dispatch requires an owner click on a one-time server draft."""
+from datetime import UTC, datetime, timedelta
+
+import pytest
+from cryptography.fernet import InvalidToken
+
+
+class _Provider:
+    def __init__(self) -> None:
+        self.image_requests: list[dict] = []
+
+    async def generate_image(self, **kwargs):
+        self.image_requests.append(kwargs)
+        return ["https://result.aliyuncs.com/generated.png"]
+
+    async def create_video_task(self, **_kwargs):  # pragma: no cover - test only creates images
+        raise AssertionError("unexpected video generation")
+
+    async def get_task(self, _task_id: str):  # pragma: no cover
+        raise AssertionError("unexpected task polling")
+
+    async def cancel_task(self, _task_id: str):  # pragma: no cover
+        raise AssertionError("unexpected task cancellation")
+
+    async def aclose(self):
+        return None
+
+
+def test_aigc_confirmation_ciphertext_uses_a_separate_tenant_crypto_context():
+    from app.services.tenant_crypto import (
+        decrypt_aigc_confirmation_for,
+        decrypt_for,
+        encrypt_aigc_confirmation_for,
+    )
+
+    token = encrypt_aigc_confirmation_for(42, "制作一张早餐备餐步骤图")
+
+    assert decrypt_aigc_confirmation_for(42, token) == "制作一张早餐备餐步骤图"
+    with pytest.raises(InvalidToken):
+        decrypt_for(42, token)
+
+
+@pytest.mark.asyncio
+async def test_confirmation_is_encrypted_and_single_use_before_provider_dispatch(
+    db, auth_user_and_headers, monkeypatch, tmp_path,
+):
+    from app.models.aigc_media_confirmation import AIGCMediaConfirmation
+    from app.services import aigc_media_job_service
+    from app.services.aigc_media_job_service import AIGCMediaJobRequest, AIGCMediaJobService
+
+    user, _ = auth_user_and_headers
+    provider = _Provider()
+    prompt = "制作一张早餐备餐步骤图"
+    monkeypatch.setattr(aigc_media_job_service, "_AIGC_UPLOAD_ROOT", tmp_path)
+
+    async def download(_url: str, _kind: str):
+        return b"png", "image/png", "png"
+
+    service = AIGCMediaJobService(db, provider_factory=lambda: provider, result_downloader=download)
+    confirmation = await service.issue_confirmation(
+        user_id=user.id,
+        request=AIGCMediaJobRequest(
+            kind="text_to_image",
+            purpose="meal_visual",
+            prompt=prompt,
+        ),
+    )
+
+    stored = db.query(AIGCMediaConfirmation).filter_by(id=confirmation.id).one()
+    assert stored.status == "pending"
+    assert stored.prompt_ciphertext != prompt
+    assert prompt not in stored.prompt_ciphertext
+    assert provider.image_requests == []
+
+    first = await service.confirm_and_dispatch(user_id=user.id, confirmation_id=confirmation.id)
+    second = await service.confirm_and_dispatch(user_id=user.id, confirmation_id=confirmation.id)
+
+    assert first.id == second.id
+    assert first.status == "succeeded"
+    assert len(provider.image_requests) == 1
+    assert provider.image_requests[0]["prompt"] == prompt
+
+
+@pytest.mark.asyncio
+async def test_expired_confirmation_cannot_contact_provider(db, auth_user_and_headers):
+    from app.models.aigc_media_confirmation import AIGCMediaConfirmation
+    from app.services.aigc_media_job_service import (
+        AIGCMediaJobConflict,
+        AIGCMediaJobRequest,
+        AIGCMediaJobService,
+    )
+
+    user, _ = auth_user_and_headers
+    provider = _Provider()
+    service = AIGCMediaJobService(db, provider_factory=lambda: provider)
+    confirmation = await service.issue_confirmation(
+        user_id=user.id,
+        request=AIGCMediaJobRequest(
+            kind="text_to_image",
+            purpose="wellness_story",
+            prompt="制作一张早晨散步的温和插画",
+        ),
+    )
+    db.query(AIGCMediaConfirmation).filter_by(id=confirmation.id).update(
+        {"expires_at": datetime.now(UTC) - timedelta(seconds=1)}
+    )
+    db.commit()
+
+    with pytest.raises(AIGCMediaJobConflict, match="已过期"):
+        await service.confirm_and_dispatch(user_id=user.id, confirmation_id=confirmation.id)
+    assert provider.image_requests == []
+
+
+@pytest.mark.asyncio
+async def test_retry_recovers_job_persisted_before_confirmation_link(db, auth_user_and_headers, monkeypatch, tmp_path):
+    """A crash after job persistence must not leave the user-facing draft spinning."""
+    from app.models.aigc_media_confirmation import AIGCMediaConfirmation
+    from app.services import aigc_media_job_service
+    from app.services.aigc_media_job_service import AIGCMediaJobRequest, AIGCMediaJobService
+    from app.services.tenant_crypto import decrypt_aigc_confirmation_for
+
+    user, _ = auth_user_and_headers
+    provider = _Provider()
+    monkeypatch.setattr(aigc_media_job_service, "_AIGC_UPLOAD_ROOT", tmp_path)
+
+    async def download(_url: str, _kind: str):
+        return b"png", "image/png", "png"
+
+    service = AIGCMediaJobService(db, provider_factory=lambda: provider, result_downloader=download)
+    confirmation = await service.issue_confirmation(
+        user_id=user.id,
+        request=AIGCMediaJobRequest(
+            kind="text_to_image",
+            purpose="meal_visual",
+            prompt="制作一张早餐备餐步骤图",
+        ),
+    )
+    request = AIGCMediaJobRequest(
+        kind=confirmation.kind,
+        purpose=confirmation.purpose,
+        prompt=decrypt_aigc_confirmation_for(user.id, confirmation.prompt_ciphertext),
+        duration_seconds=confirmation.duration_seconds,
+        ratio=confirmation.ratio,
+    )
+    job = await service._dispatch_confirmed(
+        user_id=user.id,
+        request=request,
+        confirmation_id=confirmation.id,
+    )
+
+    # Simulate process death between durable job creation and confirmation.job_id.
+    db.query(AIGCMediaConfirmation).filter_by(id=confirmation.id).update(
+        {"status": "dispatching", "job_id": None, "consumed_at": datetime.now(UTC)}
+    )
+    db.commit()
+
+    recovered = await service.confirm_and_dispatch(user_id=user.id, confirmation_id=confirmation.id)
+    persisted = db.query(AIGCMediaConfirmation).filter_by(id=confirmation.id).one()
+
+    assert recovered.id == job.id
+    assert persisted.status == "dispatched"
+    assert persisted.job_id == job.id
+    assert len(provider.image_requests) == 1
+
+
+@pytest.mark.asyncio
+async def test_medical_decision_prompt_is_rejected_before_external_dispatch(db, auth_user_and_headers):
+    from app.services.aigc_media_job_service import AIGCMediaJobRequest, AIGCMediaJobRequestError, AIGCMediaJobService
+
+    user, _ = auth_user_and_headers
+    provider = _Provider()
+    with pytest.raises(AIGCMediaJobRequestError, match="不能生成诊断"):
+        await AIGCMediaJobService(db, provider_factory=lambda: provider).issue_confirmation(
+            user_id=user.id,
+            request=AIGCMediaJobRequest(
+                kind="text_to_video",
+                purpose="wellness_story",
+                prompt="为我的高血压诊断并给出降压药剂量的短视频",
+            ),
+        )
+    assert provider.image_requests == []

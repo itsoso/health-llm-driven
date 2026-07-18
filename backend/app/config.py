@@ -78,6 +78,16 @@ class Settings(BaseSettings):
     tokenplan_base_url: str = "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
     tokenplan_model: str = "MiniMax-M2.5"
 
+    # Wan / Model Studio AIGC: must be a pay-as-you-go Model Studio key. It is
+    # deliberately separate from Token Plan because the latter is text-only and
+    # may not be used from a custom application backend.
+    dashscope_aigc_api_key: Optional[str] = None
+    dashscope_aigc_base_url: str = "https://dashscope.aliyuncs.com/api/v1"
+    dashscope_aigc_image_model: str = "wan2.7-image"
+    dashscope_aigc_text_to_video_model: str = "wan2.7-t2v"
+    dashscope_aigc_image_to_video_model: str = "wan2.7-i2v"
+    dashscope_aigc_source_url_ttl_seconds: int = 600
+
     # 月之暗面 Kimi (兼容 OpenAI 协议)
     moonshot_api_key: Optional[str] = None
     moonshot_base_url: str = "https://api.moonshot.cn/v1"
@@ -225,6 +235,9 @@ class Settings(BaseSettings):
     # R5 分析轮只读工具子集(token 优化,fast 子集的对称补全)。开后纯分析/知识轮首轮
     # 只发只读工具;模型要写→withheld-upgrade 升级回全集重跑。默认关=逐字节现状。
     analysis_turn_tool_subset: bool = False
+    # XiaoBa Agent Kernel: shadow keeps decisions observable but does not block;
+    # enforce blocks policy-denied write tools at the single execution choke point.
+    agent_kernel_policy_mode: str = "enforce"
     # GenUI metric_table 卡片(延迟, Phase-2 rank1)服务端 kill-switch:关=后端绝不发
     # metric_table 卡片、也不注入 GenUI 正文格式契约(逐字节现状)。**主门是 caps 协商**
     # (客户端声明 genui-table-v1);本 flag 只是无需客户端发版即可服务端全局停用的开关。

@@ -11,7 +11,10 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.services import agenda_service, daily_artifact_service
-from app.services.atomic_capability_registry import validate_dynamic_view
+from app.services.atomic_capability_registry import (
+    attach_action_policy_metadata,
+    validate_dynamic_view,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -196,13 +199,13 @@ def _safety_unavailable_card() -> dict[str, Any]:
 
 
 def _open_safety_alerts_action() -> dict[str, Any]:
-    return {
+    return attach_action_policy_metadata("safety", [{
         "id": "open-safety-alerts",
         "label": "查看安全提醒",
         "action": "route.open",
         "payload": {"route": SAFETY_ALERTS_ROUTE},
         "style": "primary",
-    }
+    }])[0]
 
 
 def _assert_registered_capabilities(view: dict[str, Any]) -> None:
@@ -284,7 +287,10 @@ def _runtime_agenda_card(runtime: dict[str, Any]) -> dict[str, Any] | None:
         "id": f"runtime-agenda:{start}:{action_id}",
         "type": "runtime_agenda",
         "data": data,
-        "actions": _runtime_agenda_actions(data),
+        "actions": attach_action_policy_metadata(
+            "runtime_agenda",
+            _runtime_agenda_actions(data),
+        ),
         "render": {
             "atom": "runtime_agenda",
             "priority": 80,

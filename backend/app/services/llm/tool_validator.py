@@ -349,6 +349,7 @@ def validate_health_record(
     data: Dict[str, Any],
     db=None,
     user_id: Optional[int] = None,
+    reference_now: Optional[datetime] = None,
 ) -> Dict[str, Any]:
     """
     主入口. 修改 data 原对象 (in-place), 也返回它便于链式.
@@ -360,7 +361,10 @@ def validate_health_record(
     }
     """
     warnings: list = []
-    today = datetime.now(BEIJING_TZ).date()
+    if reference_now is None:
+        today = datetime.now(BEIJING_TZ).date()
+    else:
+        today = reference_now.date()
 
     if rtype == "illness" and "name" not in data and data.get("illness_name"):
         data["name"] = data["illness_name"]
@@ -724,6 +728,38 @@ def _validate_health_manage(
     return None
 
 
+def _validate_aigc_media(
+    args: Dict[str, Any], warnings: list, db, user_id: Optional[int],
+) -> Optional[str]:
+    allowed_kinds = {"text_to_image", "image_to_image", "text_to_video", "image_to_video"}
+    allowed_ratios = {"16:9", "9:16", "1:1", "4:3", "3:4"}
+    kind = str(args.get("kind") or "").strip()
+    if kind not in allowed_kinds:
+        return "Error: draft_aigc_media.kind 必须是受支持的图片或短视频类型。"
+    prompt = args.get("prompt")
+    if not isinstance(prompt, str) or not prompt.strip():
+        return "Error: draft_aigc_media 必须提供 prompt。"
+    if len(prompt.strip()) > 5000:
+        return "Error: draft_aigc_media.prompt 不能超过 5000 字符。"
+    args["prompt"] = prompt.strip()
+    purpose = str(args.get("purpose") or "").strip()
+    if purpose not in {"meal_visual", "movement_routine", "hydration_reminder", "sleep_routine", "wellness_story"}:
+        return "Error: draft_aigc_media.purpose 必须是支持的健康行动沟通用途。"
+    args["purpose"] = purpose
+    ratio = str(args.get("ratio") or "9:16").strip()
+    if ratio not in allowed_ratios:
+        return "Error: draft_aigc_media.ratio 不受支持。"
+    args["ratio"] = ratio
+    try:
+        duration = int(args.get("duration_seconds", 5))
+    except (TypeError, ValueError):
+        return "Error: draft_aigc_media.duration_seconds 必须是 2 到 15 的整数。"
+    if kind in {"text_to_video", "image_to_video"} and not 2 <= duration <= 15:
+        return "Error: draft_aigc_media.duration_seconds 必须在 2 到 15 秒之间。"
+    args["duration_seconds"] = duration
+    return None
+
+
 # 工具名 → 校验函数分发表
 _TOOL_VALIDATORS: Dict[str, Any] = {
     "health_query": _validate_query,
@@ -732,6 +768,7 @@ _TOOL_VALIDATORS: Dict[str, Any] = {
     "environment_check": _validate_environment,
     "supplement_guide": _validate_supplement_guide,
     "manage_plan": _validate_manage_plan,
+    "draft_aigc_media": _validate_aigc_media,
 }
 
 
@@ -740,6 +777,7 @@ def validate_tool_call(
     args: Dict[str, Any],
     db=None,
     user_id: Optional[int] = None,
+    reference_now: Optional[datetime] = None,
 ) -> Dict[str, Any]:
     """
     所有 LLM tool_call 的统一守门入口.
@@ -765,7 +803,13 @@ def validate_tool_call(
             if not isinstance(data, dict):
                 data = {}
                 args["data"] = data
-            v = validate_health_record(rtype, data, db=db, user_id=user_id)
+            v = validate_health_record(
+                rtype,
+                data,
+                db=db,
+                user_id=user_id,
+                reference_now=reference_now,
+            )
             return {"data": args, "warnings": v["warnings"], "error": v["error"]}
 
         validator = _TOOL_VALIDATORS.get(tool_name)

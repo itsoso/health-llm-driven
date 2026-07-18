@@ -503,6 +503,31 @@ LLM)、Redis 缓存增量折叠、回执行代码逐字保留(不经 LLM)、陈�
 
 **Todo**：体重/血压等高风险记录路径，识别意图后强制 tool_choice，避免 LLM "决定先聊一句不调工具"。
 
+### 11.4.1 XiaoBa Agent Kernel ✅（2026-07-17）
+
+健康 Agent 采用 Pi harness 的边界做法：用户输入、模型消息和工具执行是不同阶段，prompt、关键词或 UI 文案不能兼任权限系统。
+
+```text
+surface input
+  -> AgentEnvelope
+  -> immutable TurnSnapshot (server time + user timezone + channel)
+  -> IntentFrame (read/write/mutate/advice/unknown)
+  -> ToolGateway + CapabilityPolicy
+  -> deterministic confirmation / receipt
+  -> response and atomic dynamic UI actions
+```
+
+硬规则：
+
+- `health_record`、`health_manage(update/delete)`、`intervention_cycle` 都必须经过 `ToolGateway`；文本工具恢复只解析，不能授权。
+- `unknown`、读取、分析、否定或教程语境不能写入。上下文补全只允许在已挂起的动作中发生，例如上一轮收集提醒时段后的 `9点到20点`。
+- 每轮只生成一次系统时间和用户时区；相对日期、时间提示和工具归一共享 `ExecutionContext`。
+- 语音快捷入口只产生带数值的记录草稿，并经同一网关进入确认态；不得直接写库或声称完成。
+- 动态卡片的 action 必须携带 `capability_id`、`required_receipt`、`autonomy_tier`、`policy_reason`；客户端缺任一字段不得执行写入。
+- 生命周期日志只记录 run/turn、意图、策略决定和回执元数据，不记录原始健康文本。
+
+新增 surface、工具、卡片或语音路径时，先接入 `AgentEnvelope -> TurnSnapshot -> ToolGateway`。领域数值/实体解析可独立演进，但永远不是最终写入授权。
+
 ### 11.5 Mid-flight steering ❌
 
 **业界做法**：Anthropic Multi-Agent 文里指出 lead agent 同步等所有子 agent 是 bottleneck，理想是子 agent 出第一批结果时 lead 能调整剩下的。

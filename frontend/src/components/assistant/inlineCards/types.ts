@@ -46,4 +46,8 @@ export interface ChatCardActionDescriptor {
   style?: ChatCardActionStyle;
   requires_manual_confirm?: boolean;
   disabled_reason?: string | null;
+  capability_id?: string;
+  required_receipt?: boolean;
+  autonomy_tier?: 'suggest' | 'manual_confirm' | string;
+  policy_reason?: string;
 }

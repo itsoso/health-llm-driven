@@ -46,6 +46,12 @@ const ALLOWED_DYNAMIC_ACTIONS = new Set([
   'route.open',
   'ui.inline.expand',
 ]);
+const WRITE_DYNAMIC_ACTIONS = new Set([
+  'agenda.complete',
+  'daily_plan_action.complete',
+  'write_intent.confirm',
+  'write_intent.dismiss',
+]);
 
 export async function getTodayDynamicView(
   options: GetTodayDynamicViewOptions = {},
@@ -165,11 +171,23 @@ function isSafeAction(action: ChatCardActionDescriptor): boolean {
     const actionId = action.payload?.action_id;
     return Boolean(
       action.requires_manual_confirm === true &&
+      hasRegisteredWritePolicy(action) &&
       typeof actionId === 'string' &&
       actionId.length > 0 &&
       action.payload?.event_type === 'completed' &&
       action.endpoint === `/daily-plan/actions/${encodeURIComponent(actionId)}/events`,
     );
   }
-  return action.requires_manual_confirm === true;
+  return action.requires_manual_confirm === true && hasRegisteredWritePolicy(action);
+}
+
+function hasRegisteredWritePolicy(action: ChatCardActionDescriptor): boolean {
+  if (!WRITE_DYNAMIC_ACTIONS.has(action.action)) return true;
+  return Boolean(
+    typeof action.capability_id === 'string' &&
+    /^[a-z][a-z0-9_]*\.v\d+$/.test(action.capability_id) &&
+    action.required_receipt === true &&
+    action.autonomy_tier === 'manual_confirm' &&
+    action.policy_reason === 'manual_confirm_write',
+  );
 }

@@ -32,11 +32,51 @@
     "is_write": true
   },
   {
+    "text": "喝水300ml",
+    "channel": "voice",
+    "primary": "write",
+    "domain": "water",
+    "operation": "create",
+    "is_write": true
+  },
+  {
+    "text": "体重72.5kg",
+    "channel": "voice",
+    "primary": "write",
+    "domain": "metric",
+    "operation": "create",
+    "is_write": true
+  },
+  {
+    "text": "血压120/80正常吗？",
+    "channel": "voice",
+    "primary": "read",
+    "domain": "metric",
+    "operation": "ask",
+    "is_write": false
+  },
+  {
+    "text": "准备开始睡觉了",
+    "channel": "chat",
+    "primary": "write",
+    "domain": "unknown",
+    "operation": "create",
+    "is_write": true
+  },
+  {
     "text": "删除上一餐",
     "channel": "chat",
     "primary": "mutate",
     "domain": "diet",
     "operation": "delete",
     "is_write": true
+  },
+  {
+    "text": "不要删除最后一餐",
+    "channel": "chat",
+    "primary": "chat",
+    "domain": "diet",
+    "operation": "none",
+    "is_write": false
   }
 ]

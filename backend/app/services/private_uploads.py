@@ -13,7 +13,7 @@ from app.config import settings
 
 
 PRIVATE_UPLOAD_URL_TTL_SECONDS = 5 * 60
-PRIVATE_UPLOAD_CATEGORIES = frozenset({"chat", "diet", "medical", "other"})
+PRIVATE_UPLOAD_CATEGORIES = frozenset({"chat", "diet", "medical", "other", "aigc"})
 
 # Per-category capability-URL TTL(2026-07-15).
 # 病灶:签名 URL 只活 5 分钟,但 mac 把整个会话(含签名 URL)缓存进 UserDefaults 并从

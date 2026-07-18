@@ -634,6 +634,10 @@ public enum ChatTranscriptHTML {
             html = safetyCardHTML(data)
         case "record_quality":
             html = recordQualityCardHTML(data)
+        case "aigc_media_job":
+            html = aigcMediaJobCardHTML(data)
+        case "aigc_media_confirmation":
+            html = aigcMediaConfirmationCardHTML(data)
         case "menu_share":
             html = menuShareCardHTML(data)
         default:
@@ -664,8 +668,101 @@ public enum ChatTranscriptHTML {
         "system_knowledge_evidence",
         "safety",
         "record_quality",
+        "aigc_media_job",
+        "aigc_media_confirmation",
         "menu_share"
     ]
+
+    private static func aigcMediaJobCardHTML(_ data: AgentDynamicCardValue) -> String? {
+        guard case .object = data else { return nil }
+        let kind = data["kind"]?.stringValue ?? ""
+        let status = (data["status"]?.stringValue ?? "queued").lowercased()
+        let title = cardText(data["title"]) ?? "小巴创作"
+        let progress = min(max(data["progress"]?.intValue ?? 0, 0), 100)
+        let kindLabel: String
+        switch kind {
+        case "text_to_image": kindLabel = "文生图"
+        case "image_to_image": kindLabel = "图片创作"
+        case "text_to_video": kindLabel = "文生短视频"
+        case "image_to_video": kindLabel = "图生短视频"
+        default: kindLabel = "媒体创作"
+        }
+        let statusLabel: String
+        switch status {
+        case "running": statusLabel = "生成中"
+        case "succeeded": statusLabel = "已完成"
+        case "failed": statusLabel = "未完成"
+        case "cancelled": statusLabel = "已取消"
+        default: statusLabel = "排队中"
+        }
+        let errorMessage = cardText(data["error_message"])
+        let result = data["result"]
+        let mediaType = result?["media_type"]?.stringValue?.lowercased() ?? ""
+        let resultURL = privateAIGCMediaURL(result?["url"]?.stringValue)
+
+        var html = """
+        <div class="dynamic-card aigc-media-card">
+          <div class="dynamic-card-top">
+            <div>
+              <div class="dynamic-card-eyebrow">小巴创作</div>
+              <div class="dynamic-card-title">\(escape(title))</div>
+            </div>
+            <span class="dynamic-card-badge neutral">\(escape(kindLabel))</span>
+          </div>
+          <div class="dynamic-card-conclusion">\(escape(statusLabel))</div>
+        """
+        if status == "queued" || status == "running" {
+            html += "<div class=\"dynamic-card-detail\">\(escape("生成进度 \(progress)%"))</div>"
+        } else if status == "succeeded" {
+            html += "<div class=\"dynamic-card-detail\">结果仅对当前账号可见。</div>"
+        } else if let errorMessage {
+            html += "<div class=\"dynamic-card-warning\">\(escape(errorMessage))</div>"
+        }
+        if let resultURL {
+            if mediaType.hasPrefix("image/") {
+                html += "<a class=\"aigc-media-result\" href=\"\(escape(resultURL))\" target=\"_blank\" rel=\"noreferrer\"><img class=\"aigc-media-image\" src=\"\(escape(resultURL))\" alt=\"小巴生成的图片\"/></a>"
+            } else if mediaType.hasPrefix("video/") {
+                html += "<a class=\"dynamic-card-action primary\" href=\"\(escape(resultURL))\" target=\"_blank\" rel=\"noreferrer\">打开短视频</a>"
+            }
+        }
+        return html + "</div>"
+    }
+
+    private static func aigcMediaConfirmationCardHTML(_ data: AgentDynamicCardValue) -> String? {
+        guard case .object = data,
+              let id = data["confirmation_id"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !id.isEmpty else { return nil }
+        let kind = data["kind"]?.stringValue ?? ""
+        let kindLabel: String
+        switch kind {
+        case "text_to_image": kindLabel = "文生图"
+        case "image_to_image": kindLabel = "图片创作"
+        case "text_to_video": kindLabel = "文生短视频"
+        case "image_to_video": kindLabel = "图生短视频"
+        default: kindLabel = "媒体创作"
+        }
+        let provider = cardText(data["provider"]) ?? "百炼 Wan"
+        let sourceAttached = data["source_attached"]?.boolValue == true
+        let sentContent = sourceAttached ? "你的创作描述和当前图片" : "你的创作描述"
+        return """
+        <div class="dynamic-card aigc-media-card">
+          <div class="dynamic-card-top">
+            <div><div class="dynamic-card-eyebrow">小巴创作</div><div class="dynamic-card-title">小巴创作草稿</div></div>
+            <span class="dynamic-card-badge neutral">\(escape(kindLabel))</span>
+          </div>
+          <div class="dynamic-card-detail">将发送\(escape(sentContent))给\(escape(provider))生成。</div>
+          <a class="dynamic-card-action primary" href="xiaoba-aigc-confirm://\(escape(id))">发送给百炼并生成</a>
+        </div>
+        """
+    }
+
+    private static func privateAIGCMediaURL(_ raw: String?) -> String? {
+        guard let raw = raw?.trimmingCharacters(in: .whitespacesAndNewlines),
+              raw.hasPrefix("/api/v1/upload/files/aigc/") else {
+            return nil
+        }
+        return URL(string: raw, relativeTo: APIEndpoint.resolvedBaseURL())?.absoluteURL.absoluteString
+    }
 
     private static func medicalExamImportCardHTML(_ data: AgentDynamicCardValue) -> String? {
         guard case .object = data else {

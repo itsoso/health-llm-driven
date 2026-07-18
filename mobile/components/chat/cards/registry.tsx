@@ -50,6 +50,8 @@ import { MedicationListCardSpec } from './MedicationListCard';
 import { DiscoveryCardSpec } from './DiscoveryCard';
 import { SafetyCardSpec } from './SafetyCard';
 import { SaveRecipeCardSpec } from './SaveRecipeCard';
+import { AIGCMediaJobCardSpec } from './AIGCMediaJobCard';
+import { AIGCMediaConfirmationCardSpec } from './AIGCMediaConfirmationCard';
 
 /** 全量卡片注册表. 数组前面的优先级越高时越靠前 (便于可读), 实际按 match() 返回值排序 */
 export const CARD_REGISTRY: CardSpec[] = [
@@ -81,6 +83,8 @@ export const CARD_REGISTRY: CardSpec[] = [
   SafetyCardSpec,
   MenuShareCardSpec,   // 不本地匹配, 仅接受后端下发
   SaveRecipeCardSpec,  // 不本地匹配, 仅接受后端下发 (Slice 3 存为配方入口)
+  AIGCMediaJobCardSpec, // 不本地匹配, 百炼异步媒体任务状态
+  AIGCMediaConfirmationCardSpec, // 用户点击后才会向百炼发送绑定草稿
   WeatherCardSpec,
   ScoreCardSpec,
   VitalsCardSpec,      // 最通用的兜底
@@ -96,8 +100,17 @@ const ALLOWED_ACTIONS = new Set([
   'diet_record.create',
   'write_intent.confirm',
   'write_intent.dismiss',
+  'aigc_media.confirm',
   'route.open',
   'ui.inline.expand',
+]);
+const WRITE_ACTIONS = new Set([
+  'agenda.complete',
+  'daily_plan_action.complete',
+  'diet_record.create',
+  'write_intent.confirm',
+  'write_intent.dismiss',
+  'aigc_media.confirm',
 ]);
 
 /**
@@ -189,7 +202,9 @@ function StatefulCardRenderer({
         options.onAction?.(action, currentDescriptor);
       },
     });
-    if (!actions.length || !options.onAction) return rendered;
+    // AIGC confirmation owns its button so it can replace itself with the
+    // private job projection after the one-time confirmation succeeds.
+    if (descriptor.type === 'aigc_media_confirmation' || !actions.length || !options.onAction) return rendered;
     const visibleActions = actions.filter((action) => {
       const actionKey = getCardActionRuntimeKey(action, descriptor);
       const actionState = options.actionStateByKey?.[actionKey];
@@ -351,7 +366,18 @@ function normalizeCardActions(actions: ServerCardDescriptor['actions']): ChatCar
 function isSafeVisibleAction(action: ChatCardActionDescriptor): boolean {
   if (action.action === 'route.open') return isSafeInternalRoute(action.payload?.route);
   if (action.action === 'ui.inline.expand') return readInlineExpandPatch(action) != null;
-  return action.requires_manual_confirm === true;
+  return action.requires_manual_confirm === true && hasRegisteredWritePolicy(action);
+}
+
+function hasRegisteredWritePolicy(action: ChatCardActionDescriptor): boolean {
+  if (!WRITE_ACTIONS.has(action.action)) return true;
+  return Boolean(
+    typeof action.capability_id === 'string' &&
+    /^[a-z][a-z0-9_]*\.v\d+$/.test(action.capability_id) &&
+    action.required_receipt === true &&
+    action.autonomy_tier === 'manual_confirm' &&
+    action.policy_reason === 'manual_confirm_write',
+  );
 }
 
 function readInlineExpandPatch(action: ChatCardActionDescriptor): Record<string, unknown> | null {

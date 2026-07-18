@@ -220,9 +220,18 @@ async def execute_health_record(
         token = create_access_token(user_id)
         executor._turn_channel = "telegram"
         executor._current_turn_user_message = source_text or ""
+        executor._start_agent_kernel_turn(
+            user_id=user_id,
+            message=source_text or "",
+            channel="telegram",
+        )
         result = await executor._execute_tool("health_record", args, token)
+        executor._finish_agent_kernel_turn(
+            status="failed" if str(result).startswith("Error:") else "complete"
+        )
         return result or "✅ 已记录"
     except Exception as e:
+        executor._finish_agent_kernel_turn(status="failed")
         logger.warning(
             f"[telegram-inbound] _exec_health_record failed: {e}", exc_info=True
         )

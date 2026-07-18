@@ -31,6 +31,7 @@ import json
 import pytest
 
 from app.services.agent_executor import AgentExecutor
+from app.services.utterance_intent_classifier import classify_agent_utterance
 from app.models.agent_conversation import AgentMessage
 
 
@@ -51,12 +52,9 @@ async def test_analysis_turn_with_read_only_tools_never_claims_record(db, auth_u
     executor = AgentExecutor(db)
     rounds = []
 
-    # 分析问句(与 prod 逐字一致): 命中 _RECORD_INTENT_RE 的名词"记录", 不命中 advice 正则。
+    # 分析问句(与 prod 逐字一致): 即使含“记录”名词，也必须落到语义分析回合。
     analysis_question = "从我的基因、生活习惯、睡眠、心率、HRV 记录出发,推断一下我胃溃疡的根因。"
-    # 前置断言: 该问句确实会被误路由为记录意图 (否则测的不是本洞)。
-    from app.services import agent_executor as ae
-    assert ae._RECORD_INTENT_RE.search(analysis_question)
-    assert not ae._ADVICE_OR_ANALYSIS_RE.search(analysis_question)
+    assert classify_agent_utterance(analysis_question).primary == "advice"
 
     honest_analysis = "根据你的 HRV、睡眠与作息数据,胃溃疡更可能与压力和不规律饮食相关(相关非因果)。"
 
@@ -142,8 +140,8 @@ async def test_record_modify_list_lookup_round_never_claims_record(db, auth_user
     rounds = []
 
     modify_question = "删除今天下午加餐那条记录。"
-    from app.services import agent_executor as ae
-    assert ae._RECORD_INTENT_RE.search(modify_question)  # 命中"删除"/"记录"
+    intent = classify_agent_utterance(modify_question)
+    assert (intent.primary, intent.operation) == ("mutate", "delete")
 
     honest_lookup = "找到今天下午加餐那条记录(记录号 34),确认要删除吗?"
 
@@ -192,8 +190,7 @@ async def test_verified_write_still_confirms_record(db, auth_user_and_headers):
     rounds = []
 
     record_question = "记录一下我喝了 500ml 水。"
-    from app.services import agent_executor as ae
-    assert ae._RECORD_INTENT_RE.search(record_question)
+    assert classify_agent_utterance(record_question).primary == "write"
 
     async def fake_call_llm_stream(messages, tools):
         rounds.append(len(rounds))
@@ -252,10 +249,8 @@ async def test_record_turn_with_zero_tools_never_streams_the_claim(db, auth_user
     executor = AgentExecutor(db)
 
     sneeze_msg = "麦当劳店记录打了一个喷嚏。"
-    from app.services import agent_executor as ae
-    # 前置断言: 该句确实走整轮记录快路由(否则测的不是本洞)。
-    assert ae._RECORD_INTENT_RE.search(sneeze_msg)
-    assert not ae._ADVICE_OR_ANALYSIS_RE.search(sneeze_msg)
+    # 前置断言: 该句仍是明确写入回合，不能因无工具调用而谎称成功。
+    assert classify_agent_utterance(sneeze_msg).primary == "write"
 
     the_lie = "✅ **症状已记录**:打喷嚏(上午 09:21)\n\n是在店里闻到油烟味诱发的吗?"
     tools_called = []

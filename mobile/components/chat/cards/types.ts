@@ -88,6 +88,14 @@ export interface ChatCardActionDescriptor {
   };
   optimistic?: boolean;
   disabled_reason?: string | null;
+  /** Server-issued AtomicCapability identity, e.g. diet_draft.v1. */
+  capability_id?: string;
+  /** Write actions must return a verifiable receipt after execution. */
+  required_receipt?: boolean;
+  /** Agent autonomy boundary selected by backend capability policy. */
+  autonomy_tier?: 'suggest' | 'manual_confirm' | string;
+  /** Non-sensitive policy explanation for the executable action. */
+  policy_reason?: string;
 }
 
 export interface CardRenderOptions {

@@ -70,6 +70,10 @@ public struct AgentDynamicCardActionDescriptor: Codable, Equatable, Sendable {
     public let style: String?
     public let requiresManualConfirm: Bool?
     public let disabledReason: String?
+    public let capabilityID: String?
+    public let requiredReceipt: Bool?
+    public let autonomyTier: String?
+    public let policyReason: String?
 
     public init(
         id: String? = nil,
@@ -79,7 +83,11 @@ public struct AgentDynamicCardActionDescriptor: Codable, Equatable, Sendable {
         payload: AgentDynamicCardValue? = nil,
         style: String? = nil,
         requiresManualConfirm: Bool? = nil,
-        disabledReason: String? = nil
+        disabledReason: String? = nil,
+        capabilityID: String? = nil,
+        requiredReceipt: Bool? = nil,
+        autonomyTier: String? = nil,
+        policyReason: String? = nil
     ) {
         self.id = id
         self.label = label
@@ -89,12 +97,20 @@ public struct AgentDynamicCardActionDescriptor: Codable, Equatable, Sendable {
         self.style = style
         self.requiresManualConfirm = requiresManualConfirm
         self.disabledReason = disabledReason
+        self.capabilityID = capabilityID
+        self.requiredReceipt = requiredReceipt
+        self.autonomyTier = autonomyTier
+        self.policyReason = policyReason
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, label, action, endpoint, payload, style
         case requiresManualConfirm = "requires_manual_confirm"
         case disabledReason = "disabled_reason"
+        case capabilityID = "capability_id"
+        case requiredReceipt = "required_receipt"
+        case autonomyTier = "autonomy_tier"
+        case policyReason = "policy_reason"
     }
 
     public init(from decoder: Decoder) throws {
@@ -109,6 +125,10 @@ public struct AgentDynamicCardActionDescriptor: Codable, Equatable, Sendable {
         style = try? c.decode(String.self, forKey: .style)
         requiresManualConfirm = try? c.decode(Bool.self, forKey: .requiresManualConfirm)
         disabledReason = try? c.decode(String.self, forKey: .disabledReason)
+        capabilityID = try? c.decode(String.self, forKey: .capabilityID)
+        requiredReceipt = try? c.decode(Bool.self, forKey: .requiredReceipt)
+        autonomyTier = try? c.decode(String.self, forKey: .autonomyTier)
+        policyReason = try? c.decode(String.self, forKey: .policyReason)
     }
 }
 

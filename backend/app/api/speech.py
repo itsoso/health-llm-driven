@@ -145,7 +145,7 @@ async def voice_command(
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ):
-    """语音转文字后，尝试匹配快捷指令直接执行"""
+    """语音转文字后，构造需确认的记录草稿并走 Agent Kernel。"""
     from app.services.voice_command_service import VoiceCommandService
 
     text = (req.get("text") or "").strip()
@@ -153,7 +153,10 @@ async def voice_command(
         return {"matched": False}
 
     svc = VoiceCommandService(db, current_user.id)
-    result = svc.try_execute(text)
+    result = await svc.execute(
+        text,
+        user_auth_token=_bearer_token(request.headers.get("authorization")),
+    )
     if result:
         return {"matched": True, **result}
     return {"matched": False}

@@ -11,6 +11,7 @@
 """
 import ast
 import asyncio
+from dataclasses import replace
 import hashlib
 import json
 import logging
@@ -39,6 +40,16 @@ from app.services.post_record_quality import (
     combine_post_record_quality_responses,
 )
 from app.services.utterance_intent_classifier import classify_agent_utterance
+from app.services.agent_kernel.context import (
+    build_turn_snapshot,
+    format_turn_time_context_prompt,
+)
+from app.services.agent_kernel.events import AgentEventBus
+from app.services.agent_kernel.types import (
+    CapabilityDecision,
+    ToolExecutionRequest,
+    TurnSnapshot,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -176,51 +187,17 @@ def _build_turn_time_context_prompt(
     stable provider prefix while preventing the model from guessing "now".
     """
 
-    generated_utc = now_utc or datetime.now(UTC)
-    if generated_utc.tzinfo is None:
-        generated_utc = generated_utc.replace(tzinfo=UTC)
-    generated_utc = generated_utc.astimezone(UTC)
-    try:
-        from app.utils.timezone import get_user_timezone
-
-        user_tz = get_user_timezone(db, user_id)
-    except Exception:  # noqa: BLE001
-        user_tz = BEIJING_TZ
-    user_now = generated_utc.astimezone(user_tz)
-    tz_label = _user_timezone_label(user_tz)
-
-    client_lines: list[str] = []
-    if isinstance(client_time_context, dict):
-        client_now = str(client_time_context.get("client_now_iso") or "").strip()[:80]
-        client_tz = str(client_time_context.get("timezone") or "").strip()[:64]
-        client_locale = str(client_time_context.get("locale") or "").strip()[:32]
-        raw_offset = client_time_context.get("timezone_offset_minutes")
-        offset_text = ""
-        if isinstance(raw_offset, (int, float)):
-            offset_text = f"，UTC offset minutes={int(raw_offset)}"
-        if client_now or client_tz or offset_text or client_locale:
-            client_lines.append(
-                "- 客户端上报本地时间: "
-                f"{client_now or '未提供'}"
-                f"{f'，timezone={client_tz}' if client_tz else ''}"
-                f"{offset_text}"
-                f"{f'，locale={client_locale}' if client_locale else ''}"
-            )
-
-    client_block = "\n".join(client_lines) if client_lines else "- 客户端上报本地时间: 未提供"
-    return (
-        "## 当前时间上下文（系统生成，最高优先级）\n"
-        f"- 本轮执行生成时间 UTC: {generated_utc.isoformat(timespec='seconds')}\n"
-        f"- 用户生效时区: {tz_label}\n"
-        f"- 用户本地当前时间: {user_now.isoformat(timespec='seconds')}\n"
-        f"- 用户本地当前时刻（可直接对用户引用）: {user_now:%H:%M}\n"
-        f"- 用户本地今天: {user_now.date().isoformat()}（{_weekday_cn(user_now)}），当前时段: {_period_cn(user_now.hour)}\n"
-        f"{client_block}\n"
-        "时间规则:\n"
-        "1. 所有今天/昨天/明天/昨晚/刚才/几小时后/几点提醒/起床或入睡建议，必须以上面的“用户本地当前时间”为基准。\n"
-        "2. 回答任何时间相关问题时，先使用该当前时间做推导；必须精确到分钟，不得只说“现在23点”，不得猜测“现在约几点”，不得沿用历史消息里的旧日期或旧时间。\n"
-        "3. 推荐今晚/今天剩余的入睡、起床准备、饮食、训练、用药或提醒窗口时，开始时间不得早于用户本地当前时间；如果理想窗口已经过去，必须明确说已经过去，并给出从当前时刻往后的可执行窗口或改为明天方案。\n"
-        "4. 如果客户端上报时间与服务器生成的用户本地时间明显不一致，提示用户可能存在设备时间或时区差异，并以服务器生成时间为主。"
+    snapshot = build_turn_snapshot(
+        db,
+        user_id=user_id,
+        channel="chat",
+        text="",
+        client_time_context=client_time_context,
+        now_utc=now_utc,
+    )
+    return format_turn_time_context_prompt(
+        snapshot.context,
+        client_time_context=client_time_context,
     )
 
 
@@ -1810,11 +1787,31 @@ def _loads_lenient(raw: str) -> Any:
     raise last_err if last_err else json.JSONDecodeError("empty", raw or "", 0)
 
 
+def _parse_tool_arguments_for_telemetry(args_raw: Any) -> dict[str, Any]:
+    """Recover normalized argument shape for receipt detection without logging it."""
+    if isinstance(args_raw, dict):
+        return args_raw
+    if not isinstance(args_raw, str):
+        return {}
+    try:
+        parsed = json.loads(args_raw)
+    except json.JSONDecodeError:
+        try:
+            parsed = _loads_lenient(args_raw)
+        except json.JSONDecodeError:
+            return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
 def _text_tool_call_write_is_authorized(
     call: Dict[str, Any],
     user_message: Optional[str],
 ) -> bool:
-    """Require matching user intent before recovering any textual manage write."""
+    """Require the shared semantic frame before recovering a manage write.
+
+    Text recovery is only a protocol parser.  It must not carry its own keyword
+    authorization logic; ToolGateway remains the final execution boundary.
+    """
     function = call.get("function") or {}
     if function.get("name") != "health_manage":
         return True
@@ -1822,11 +1819,10 @@ def _text_tool_call_write_is_authorized(
         args = json.loads(function.get("arguments") or "{}")
     except (json.JSONDecodeError, TypeError, ValueError):
         return False
-    operation = args.get("operation")
-    if operation == "delete":
-        return _has_explicit_delete_intent(user_message or "")
-    if operation == "update":
-        return _has_explicit_update_intent(user_message or "")
+    operation = str(args.get("operation") or "").strip().lower()
+    if operation in {"delete", "update"}:
+        intent = classify_agent_utterance(user_message)
+        return intent.primary == "mutate" and intent.operation == operation
     return True
 
 
@@ -2417,7 +2413,12 @@ def _friendly_record_confirmation(record: Dict[str, Any]) -> str:
 # A4: 每回合系统知识库证据卡 memo 的未命中哨兵 (区别于 None = "算过, 无卡")。
 _TURN_CARD_UNSET = object()
 
-_WRITE_RECEIPT_TOOL_NAMES = {"health_record", "health_manage", "intervention_cycle"}
+_WRITE_RECEIPT_TOOL_NAMES = {
+    "health_record",
+    "health_manage",
+    "intervention_cycle",
+    "draft_aigc_media",
+}
 
 # Read-only-turn allowlist (starter answer pre-generation · rank7). A pregen turn
 # runs the FULL pipeline but must never mutate user data — starter chips are
@@ -2459,6 +2460,8 @@ _RECEIPT_TYPE_LABELS = {
     "blood_pressure_record": "血压",
     "medication_log": "用药",
     "supplement_log": "补剂",
+    "aigc_media_confirmation": "小巴创作草稿",
+    "aigc_media_job": "小巴创作",
     "mood_record": "心情",
     "smart_reminder": "提醒",
 }
@@ -2807,6 +2810,8 @@ def _write_tool_attempted(tool_name: str, args: Any) -> bool:
         return parsed_args.get("operation") in {"update", "delete"}
     if tool_name == "intervention_cycle":
         return parsed_args.get("action") in {"start", "update", "cancel"}
+    if tool_name == "draft_aigc_media":
+        return True
     return False
 
 
@@ -3111,25 +3116,30 @@ def _fast_record_kind(args: dict) -> str:
     return ""
 
 
-def _parse_time_only_to_next_beijing(raw: Any) -> Optional[str]:
-    """Normalize a time-only reminder like 10:30 into the next Beijing datetime."""
+def _parse_time_only_to_next_beijing(
+    raw: Any,
+    *,
+    reference_now: Optional[datetime] = None,
+) -> Optional[str]:
+    """Normalize a time-only reminder relative to the frozen turn clock."""
+    effective_tz = (reference_now.tzinfo if reference_now is not None else None) or BEIJING_TZ
     if raw is None:
         return None
     if isinstance(raw, datetime):
-        dt = raw if raw.tzinfo else raw.replace(tzinfo=BEIJING_TZ)
-        return dt.astimezone(BEIJING_TZ).isoformat(timespec="seconds")
+        dt = raw if raw.tzinfo else raw.replace(tzinfo=effective_tz)
+        return dt.astimezone(effective_tz).isoformat(timespec="seconds")
 
     s = str(raw).strip()
     if not s:
         return None
 
-    # Full ISO datetime: keep it, adding Beijing tz when omitted.
+    # Full ISO datetime: keep it, adding the frozen user timezone when omitted.
     try:
         if re.search(r"\d{4}-\d{2}-\d{2}", s):
             dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
             if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=BEIJING_TZ)
-            return dt.astimezone(BEIJING_TZ).isoformat(timespec="seconds")
+                dt = dt.replace(tzinfo=effective_tz)
+            return dt.astimezone(effective_tz).isoformat(timespec="seconds")
     except ValueError:
         pass
 
@@ -3151,7 +3161,7 @@ def _parse_time_only_to_next_beijing(raw: Any) -> Optional[str]:
     if hour > 23 or minute > 59:
         return None
 
-    now = datetime.now(BEIJING_TZ)
+    now = reference_now or datetime.now(BEIJING_TZ)
     target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
     if target <= now + timedelta(minutes=1):
         target += timedelta(days=1)
@@ -3203,6 +3213,7 @@ def _enrich_reminder_window_from_turn(
     *,
     user_message: str,
     recent_messages: list[dict],
+    reference_now: Optional[datetime] = None,
 ) -> dict:
     """Recover an explicit follow-up window without inventing its interval."""
     out = dict(data or {})
@@ -3214,8 +3225,12 @@ def _enrich_reminder_window_from_turn(
     window_match = _REMINDER_WINDOW_RE.search(user_message or "")
     if not window_match:
         return out
-    start = _parse_time_only_to_next_beijing(window_match.group("start"))
-    end = _parse_time_only_to_next_beijing(window_match.group("end"))
+    start = _parse_time_only_to_next_beijing(
+        window_match.group("start"), reference_now=reference_now,
+    )
+    end = _parse_time_only_to_next_beijing(
+        window_match.group("end"), reference_now=reference_now,
+    )
     if not start or not end:
         return out
 
@@ -3242,7 +3257,11 @@ def _enrich_reminder_window_from_turn(
     return out
 
 
-def _normalize_reminder_record_data(data: dict) -> dict:
+def _normalize_reminder_record_data(
+    data: dict,
+    *,
+    reference_now: Optional[datetime] = None,
+) -> dict:
     """Make LLM reminder args match /reminders/me without inventing reminders."""
     out = dict(data or {})
     title = (
@@ -3273,17 +3292,20 @@ def _normalize_reminder_record_data(data: dict) -> dict:
         or out.get("alarm_time")
         or out.get("reminder_time")
         or out.get("time")
-        or out.get("at")
+        or out.get("at"),
+        reference_now=reference_now,
     )
     if remind_at:
         out["remind_at"] = remind_at
 
     def normalize_clock(raw: Any) -> Optional[str]:
-        parsed = _parse_time_only_to_next_beijing(raw)
+        parsed = _parse_time_only_to_next_beijing(raw, reference_now=reference_now)
         if not parsed:
             return None
         try:
-            return datetime.fromisoformat(parsed).astimezone(BEIJING_TZ).strftime("%H:%M")
+            return datetime.fromisoformat(parsed).astimezone(
+                reference_now.tzinfo if reference_now is not None else BEIJING_TZ
+            ).strftime("%H:%M")
         except (TypeError, ValueError):
             return None
 
@@ -3593,7 +3615,11 @@ _MESSAGE_DATE_RE = re.compile(
 )
 
 
-def _parse_explicit_diet_correction(message: str) -> Optional[Dict[str, str]]:
+def _parse_explicit_diet_correction(
+    message: str,
+    *,
+    reference_now: Optional[datetime] = None,
+) -> Optional[Dict[str, str]]:
     """Extract a concrete meal correction from the user's own words.
 
     This intentionally accepts only an explicit update verb, a named meal and
@@ -3626,7 +3652,8 @@ def _parse_explicit_diet_correction(message: str) -> Optional[Dict[str, str]]:
 
     date_match = _MESSAGE_DATE_RE.search(text)
     target_date = _normalize_relative_date(
-        date_match.group(0) if date_match else "today"
+        date_match.group(0) if date_match else "today",
+        reference_now=reference_now,
     )
     if not target_date:
         return None
@@ -3656,7 +3683,11 @@ _RELATIVE_DATE_OFFSETS = {
 }
 
 
-def _normalize_relative_date(value: Any) -> Optional[str]:
+def _normalize_relative_date(
+    value: Any,
+    *,
+    reference_now: Optional[datetime] = None,
+) -> Optional[str]:
     """把 date 参数归一成 ISO date 串 (YYYY-MM-DD)。
 
     LLM 常传相对词 'today'/'昨天' 或 date/datetime 对象; 但端点把 date 当真日期解析, 传字面
@@ -3677,7 +3708,7 @@ def _normalize_relative_date(value: Any) -> Optional[str]:
     if not s:
         return None
     if s in _RELATIVE_DATE_OFFSETS:
-        today = datetime.now(BEIJING_TZ).date()
+        today = (reference_now or datetime.now(BEIJING_TZ)).date()
         return (today + timedelta(days=_RELATIVE_DATE_OFFSETS[s])).isoformat()
     try:
         return _d.fromisoformat(s[:10]).isoformat()
@@ -4028,7 +4059,12 @@ def _health_record_confirmation_preview(rtype: str, args: dict, data: dict) -> s
     return label
 
 
-def _prepare_health_record_args_for_validation(tool_name: str, args: Any) -> Any:
+def _prepare_health_record_args_for_validation(
+    tool_name: str,
+    args: Any,
+    *,
+    reference_now: Optional[datetime] = None,
+) -> Any:
     if tool_name != "health_record" or not isinstance(args, dict):
         return args
 
@@ -4058,7 +4094,7 @@ def _prepare_health_record_args_for_validation(tool_name: str, args: Any) -> Any
     # 这里在校验前折成真 ISO 日期; 解析不出(返回 None)才留给下游默认, 不覆盖。
     for _dk in ("record_date", "start_date", "end_date"):
         if data.get(_dk):
-            _iso = _normalize_relative_date(data[_dk])
+            _iso = _normalize_relative_date(data[_dk], reference_now=reference_now)
             if _iso:
                 data[_dk] = _iso
 
@@ -4136,6 +4172,7 @@ _TOOL_PROGRESS_LABEL = {
     "knowledge_search": "检索知识库…",
     "realtime_search": "联网搜索中…",
     "manage_plan": "整理健康计划…",
+    "draft_aigc_media": "正在准备创作草稿…",
     # specialist 分析工具 (specialist_tools.specialist_tool_schemas, flag 开时才注册)
     "analyze_recovery": "评估恢复状态…",
     "analyze_fuel": "分析营养方案…",
@@ -4157,59 +4194,33 @@ def _tool_progress_label(func_name: Optional[str]) -> str:
     return _TOOL_PROGRESS_LABEL.get(func_name, _TOOL_PROGRESS_FALLBACK)
 
 
-_RECORD_INTENT_RE = re.compile(
-    r"(记录|打卡|新增|录入|保存|吃了|喝了|服药|已服用|已吃|已喝|删除|修改|撤销|更新)"
-)
-# 疑问守卫:"我今天**喝了多少**水"/"**吃了什么**"是查询不是记录 —— record 动词(吃了/喝了)
-# 命中但句子是疑问形态时,绝不能按记录意图走(否则确定性回复对查询回"✅ 已记录",
-# 实测线上截图复现)。守卫只列把陈述翻成疑问的词,"记录喝水500ml"等真记录不受影响。
-_RECORD_INTERROGATIVE_GUARD_RE = re.compile(
-    r"(多少|什么|啥|哪些|哪个|几[个次杯步条克组天分]|有没有|是不是|多不多|够不够|吗|[??])"
-)
-# 否定守卫:用户明确说「别记/不用记/记在心里就行」时,绝不能走 fast-record 强制路径。
-# R2 force 会**确定性**逼出 health_record 调用 —— 弱模型再想不记也不行 → 对「别记录」回
-# 「✅ 已记录」(2026-07-17 生产 20 轮召回测试实测,储物柜密码「别记录」被记 + 谎报已记)。
-# 命中 → 降级到全模型自行判断(不 force、不压缩上下文):**不抑制记录本身**,只把「要不要记」
-# 的裁量权还给强模型 + 系统提示。故误命中成本仅延迟,绝不丢真记录(「不要记错/别忘了记录/
-# 别记成午饭」这类想记的说法用负向 lookahead + 词界排除,已在 battery 双向验证)。
-_RECORD_NEGATION_GUARD_RE = re.compile(
-    r"(别|不要|不用|无需|勿|甭)\s*(记|存|写|录)(?!错|混|漏|岔|成|为)"
-    r"|记(在|到)?\s*心里"
-    r"|(别|不用|无需)\s*(帮我|给我)?\s*(记下来|写下来|存下来|录进去|写进去)"
-)
-_ADVICE_OR_ANALYSIS_RE = re.compile(
-    r"(分析|解读|建议|方案|风险|评估|为什么|怎么|如何|基于|结合|补剂|叶酸|训练|运动|饮食方案|适合"
-    r"|复盘|综合|趋势|规划|计划安排|该不该|要不要|值不值|意味着|说明什么)"
-)
-# 简单查询意图 — "我今天喝了多少水" / "查一下我的体重" / "最近血压是多少" 这类
-# 单次取数回合。命中这些词但**不**命中 _ADVICE_OR_ANALYSIS_RE 时算 fast-eligible。
-# 保守: 只列明确的取数动词/疑问词, 复盘/综合/趋势等已在 advice 正则里被排除。
-_SIMPLE_QUERY_INTENT_RE = re.compile(
-    r"(查一?下|查询|查看|看一?下|多少|几次|几步|有没有|是多少|多高|多重|多长|"
-    r"今天|昨天|本周|这周|最近|昨晚|列出|列表|表格|显示|告诉我|我的.{0,6}(数据|记录|情况|状态))"
-)
-
-# 明确的只读取数命令。模型偶尔会把“晚餐是昨天的，重新列出今天饮食”理解成
-# 修改 record_date；没有用户写命令时，必须在写计划封存前降级为查询。
-_QUERY_ONLY_COMMAND_RE = re.compile(
-    r"(重新列出|列出|列表|列(?:个|一下)?表格|列成表格|整理成表格|表格|查询|查看|看一下|显示|告诉我|汇总|"
-    r"吃了什么|吃的什么|喝了多少|有哪些|是多少|多少)"
-)
-_QUERY_ONLY_MUTATION_RE = re.compile(
-    r"(删除|删掉|删了|移除|去掉|撤销|清掉|修改|更正|改成|改为|改到|"
-    r"更新|调整为|挪到|移到|归到|记下|打卡|新增|录入|保存)"
-)
-_QUERY_ONLY_RECORD_ACTION_RE = re.compile(
-    r"(?:^|[，,；;。]|帮我|请|给我|再|并|然后)\s*记录"
-    r"(?:一下|下来|为|到|成|我|饮水|喝水|早餐|早饭|午餐|午饭|晚餐|晚饭|"
-    r"加餐|体重|症状|用药|服药|补剂|睡眠|运动|吃|喝|\d|[一二两三四五六七八九十百半])"
-)
-_QUERY_RELATIVE_DATE_RE = re.compile(r"(今天|今日|昨天|昨日|前天)")
+def _is_reminder_schedule_continuation(
+    message: str,
+    recent_messages: Any,
+) -> bool:
+    """Return True only for a timing reply to a pending reminder question."""
+    text = "".join(str(message or "").split()).lower()
+    if not text or not any(char.isdigit() for char in text):
+        return False
+    if not any(marker in text for marker in ("点", ":", "到", "至", "-", "~")):
+        return False
+    if not isinstance(recent_messages, list):
+        return False
+    assistant_context = " ".join(
+        str(item.get("content") or "")
+        for item in recent_messages
+        if isinstance(item, dict) and item.get("role") == "assistant"
+    ).lower()
+    return any(marker in assistant_context for marker in ("提醒", "闹钟", "提醒时间", "开始和结束", "时间段"))
 
 
-def _query_only_health_manage_scope(message: Optional[str]) -> Optional[Dict[str, str]]:
+def _query_only_health_manage_scope(
+    message: Optional[str],
+    *,
+    reference_now: Optional[datetime] = None,
+) -> Optional[Dict[str, str]]:
     """Return deterministic list filters for an explicit read-only request."""
-    intent = classify_agent_utterance(message)
+    intent = classify_agent_utterance(message, reference_now=reference_now)
     if intent.primary != "read" or intent.domain != "diet":
         return None
     return dict(intent.scope)
@@ -4236,9 +4247,14 @@ _BEIJING_DATE_LABEL_RE = re.compile(
 )
 
 
-def _ground_query_response_date_labels(text: str, message: str) -> str:
+def _ground_query_response_date_labels(
+    text: str,
+    message: str,
+    *,
+    reference_now: Optional[datetime] = None,
+) -> str:
     """Ground Beijing date labels for an explicit read-only relative-date query."""
-    scope = _query_only_health_manage_scope(message)
+    scope = _query_only_health_manage_scope(message, reference_now=reference_now)
     target_date = (scope or {}).get("date")
     if not target_date or not text:
         return text
@@ -4258,6 +4274,9 @@ def _model_tool_result_content(
     tool_name: str,
     args: Dict[str, Any],
     result: str,
+    *,
+    reference_now: Optional[datetime] = None,
+    timezone_label: str = "Asia/Shanghai",
 ) -> str:
     """Add deterministic query scope to the model-only tool result."""
     record_type = str(args.get("record_type") or args.get("type") or "").strip().lower()
@@ -4280,30 +4299,19 @@ def _model_tool_result_content(
         or args.get("operation") != "list"
     ):
         return result
-    target_date = _normalize_relative_date(args.get("date"))
+    target_date = _normalize_relative_date(
+        args.get("date"),
+        reference_now=reference_now,
+    )
     if not target_date:
         return result
     return (
         "[系统查询口径]\n"
-        "时区: Asia/Shanghai (北京时间)\n"
+        f"时区: {timezone_label}\n"
         f"查询日期: {target_date}\n"
         "回答中如写日期，只能使用该查询日期，不得沿用历史消息中的日期。\n"
         f"[查询结果]\n{result}"
     )
-
-# 破坏性(删/改/撤销)+ 同步 意图 —— 这类工具决策弱 fast 模型不可靠:生产实测(2026-07-14)
-# 「删除早餐/删除重复」「帮我同步/同步garmin」被降到 qwen3.6-flash 后反复失败(没吐出
-# 对的 tool call → 0 工具 → 诚实守卫报错),而强模型(qwen3.7-max)在 23:19 同句 status=complete
-# 自证可靠。命中 → **三条 fast 路径统一排除**(_prefer_fast_record_model / _is_fast_eligible_turn /
-# _maybe_fast_route_tool_round),留强模型做工具决策。误报只损失一点延迟(强模型更慢但更对),
-# 不损正确性 —— 对破坏性/同步操作,可靠 >> 快。同步类命中后仍由 A2 HealthKit 分支 / garmin_sync
-# 异步 job 各自正确落地;删除类命中后由强模型可靠调 health_manage(未来接删除确认卡)。
-_DESTRUCTIVE_OR_SYNC_INTENT_RE = re.compile(
-    r"(删除|删掉|删了|移除|去掉|撤销|清掉|修改|改成|改为|更新|调整|更正"
-    r"|同步|sync|拉取.{0,4}数据|刷新.{0,4}数据)",
-    re.I,
-)
-
 
 def _needs_reliable_tool_model(message: Optional[str]) -> bool:
     """破坏性(删/改/撤销)或同步意图 → 工具决策必须用强模型(fast 模型不可靠,生产实证)。
@@ -4733,6 +4741,10 @@ class AgentExecutor:
         self._turn_channel: Optional[str] = None
         self._current_turn_user_message = ""
         self._current_turn_recent_messages: list[dict] = []
+        self._current_turn_source_message_id: Optional[int] = None
+        self._current_turn_conversation_id: Optional[int] = None
+        self._current_turn_image_urls: list[str] = []
+        self._turn_aigc_media_cards: list[dict] = []
         self._diet_photo_draft_only = False
         self._prefer_fast_record_model = False
         # 本回合是否被 fast-route 到快模型 (简单记录/查询)。仅用于把答案 max_tokens
@@ -4786,6 +4798,10 @@ class AgentExecutor:
         # 封顶 (SYNTHESIS_THINKING_BUDGET) fail-closed 跳过这类回合——深度分析可能确实
         # 需要长思考, 不该被封顶。每回合入口重置。
         self._turn_invoked_deep_analysis = False
+        self._current_turn_source_message_id = None
+        self._current_turn_conversation_id = None
+        self._current_turn_image_urls = []
+        self._turn_aigc_media_cards = []
         # Read-only turn (starter answer pre-generation · rank7). When True, the
         # single tool-dispatch choke (_execute_tool) blocks any tool NOT on
         # _READ_ONLY_TURN_ALLOWED_TOOLS (fail-closed) and raises
@@ -4793,6 +4809,142 @@ class AgentExecutor:
         # store nothing. Default False = zero behavior change for live turns.
         self._read_only_turn = False
         self._read_only_turn_write_attempted = False
+        # XiaoBa Agent Kernel state. A turn snapshots intent, timezone and current
+        # time exactly once; every later tool call consumes this immutable state.
+        self._agent_kernel_snapshot: Optional[TurnSnapshot] = None
+        self._agent_kernel_event_bus: Optional[AgentEventBus] = None
+        self._agent_kernel_turn_finished = False
+        self._agent_kernel_last_decision: Optional[CapabilityDecision] = None
+
+    def _start_agent_kernel_turn(
+        self,
+        *,
+        user_id: int,
+        message: str,
+        channel: Optional[str],
+        client_caps: Optional[List[str]] = None,
+        client_time_context: Optional[Dict[str, Any]] = None,
+    ) -> TurnSnapshot:
+        """Freeze a complete kernel snapshot before any model or tool work."""
+        resolved_channel = str(channel or "chat").strip() or "chat"
+        self._agent_kernel_snapshot = build_turn_snapshot(
+            self.db,
+            user_id=user_id,
+            channel=resolved_channel,
+            text=message or "",
+            client_capabilities={cap: True for cap in (client_caps or [])},
+            client_time_context=client_time_context,
+            policy_mode=settings.agent_kernel_policy_mode,
+        )
+        self._agent_kernel_event_bus = AgentEventBus(self._agent_kernel_snapshot)
+        self._agent_kernel_turn_finished = False
+        self._agent_kernel_last_decision = None
+        self._agent_kernel_event_bus.turn_started()
+        self._agent_kernel_event_bus.intent_decided()
+        return self._refine_agent_kernel_continuation(self._agent_kernel_snapshot)
+
+    def _ensure_agent_kernel_turn(self, *, channel: Optional[str] = None) -> TurnSnapshot:
+        """Support non-chat adapters while keeping the same single-turn contract."""
+        user_id = self._current_user_id
+        if user_id is None:
+            raise RuntimeError("Agent Kernel requires a user_id before tool execution")
+        message = getattr(self, "_current_turn_user_message", "") or ""
+        resolved_channel = str(channel or self._turn_channel or "chat").strip() or "chat"
+        snapshot = self._agent_kernel_snapshot
+        if (
+            snapshot is None
+            or snapshot.context.user_id != user_id
+            or snapshot.envelope.text != message
+            or snapshot.context.channel != resolved_channel
+        ):
+            return self._start_agent_kernel_turn(
+                user_id=user_id,
+                message=message,
+                channel=resolved_channel,
+            )
+        return self._refine_agent_kernel_continuation(snapshot)
+
+    def _refine_agent_kernel_continuation(self, snapshot: TurnSnapshot) -> TurnSnapshot:
+        """Turn an explicit follow-up schedule into a typed continuation write.
+
+        A reply such as ``9点到20点`` is intentionally ambiguous in isolation.
+        It becomes a write only when the immediately preceding assistant turn
+        asked for reminder timing.  This is deterministic conversation state,
+        not a keyword authorization bypass; ToolGateway still evaluates the
+        resulting tool request and confirmation/receipt rules.
+        """
+        if (
+            snapshot.intent.primary != "unknown"
+            or not _is_reminder_schedule_continuation(
+                snapshot.envelope.text,
+                getattr(self, "_current_turn_recent_messages", []),
+            )
+        ):
+            return snapshot
+        refined_intent = replace(
+            snapshot.intent,
+            primary="write",
+            domain="reminder",
+            operation="create",
+            confidence=0.86,
+            evidence=(*snapshot.intent.evidence, "continuation:reminder_schedule"),
+            ambiguity=tuple(flag for flag in snapshot.intent.ambiguity if flag != "low_confidence"),
+            is_write=True,
+        )
+        refined = replace(snapshot, intent=refined_intent)
+        self._agent_kernel_snapshot = refined
+        if self._agent_kernel_event_bus is not None:
+            self._agent_kernel_event_bus.rebind_snapshot(
+                refined,
+                reason="reminder_schedule_continuation",
+            )
+        return refined
+
+    def _finish_agent_kernel_turn(self, *, status: str) -> None:
+        if self._agent_kernel_event_bus is None or self._agent_kernel_turn_finished:
+            return
+        self._agent_kernel_event_bus.turn_ended(status=status)
+        self._agent_kernel_turn_finished = True
+
+    def _agent_kernel_reference_now(self) -> datetime:
+        snapshot = self._agent_kernel_snapshot
+        return snapshot.context.current_time if snapshot is not None else datetime.now(BEIJING_TZ)
+
+    def _agent_kernel_time_context(
+        self,
+        client_time_context: Optional[Dict[str, Any]],
+    ) -> str:
+        snapshot = self._ensure_agent_kernel_turn()
+        return format_turn_time_context_prompt(
+            snapshot.context,
+            client_time_context=client_time_context,
+        )
+
+    def _agent_kernel_record_tool_result(
+        self,
+        tool_name: str,
+        args: Any,
+        result: str,
+    ) -> str:
+        """Emit outcome metadata only; health payload stays out of telemetry."""
+        bus = self._agent_kernel_event_bus
+        if bus is None:
+            return result
+        parsed_args = args if isinstance(args, dict) else {}
+        decision = self._agent_kernel_last_decision
+        receipt = None
+        if decision is not None and decision.receipt_required:
+            receipt = _write_receipt_from_tool_result(
+                tool_name,
+                parsed_args.get("record_type") or parsed_args.get("type"),
+                result,
+            )
+        bus.tool_result(
+            tool_name=tool_name,
+            success=not str(result).startswith("Error:"),
+            receipt=receipt,
+        )
+        return result
 
     def _display_model_name_for_id(self, model_id: Optional[str]) -> Optional[str]:
         if not model_id:
@@ -5173,6 +5325,7 @@ class AgentExecutor:
         self._tool_dead_provider_model_ids = set()
         self._last_effective_model_id = None
         self._current_turn_user_message = message or ""
+        self._ensure_agent_kernel_turn()
         sources_used: list = ["多模型综合 (Claude Opus 4.7 · GPT-5.5 · Gemini 3.1 Pro)"]
         write_receipts: list[Dict[str, Any]] = []
         write_results_by_fingerprint: dict[str, str] = {}
@@ -5203,15 +5356,14 @@ class AgentExecutor:
             "client_turn_id": client_turn_id,
             "recovered": recovered_user_message is not None,
         }}
+        self._current_turn_source_message_id = int(user_msg.id)
+        self._current_turn_conversation_id = int(conv.id)
+        self._current_turn_image_urls = []
 
         yield {"event": "agent_start", "data": {"message": "多模型综合分析中…", "conversation_id": conv.id}}
 
         system_content = self._build_system_prompt(user_id, conv.id, user_auth_token)
-        turn_time_context = _build_turn_time_context_prompt(
-            self.db,
-            user_id,
-            client_time_context=client_time_context,
-        )
+        turn_time_context = self._agent_kernel_time_context(client_time_context)
         message_with_time_context = (
             f"[系统附注 — 本回合参考上下文,非用户输入]\n{turn_time_context}\n"
             f"[用户消息]\n{message}"
@@ -5332,7 +5484,13 @@ class AgentExecutor:
                         lead_messages.append({
                             "role": "tool",
                             "tool_call_id": tc["id"],
-                            "content": _model_tool_result_content(fn, parsed_args, result),
+                            "content": _model_tool_result_content(
+                                fn,
+                                parsed_args,
+                                result,
+                                reference_now=self._agent_kernel_reference_now(),
+                                timezone_label=self._ensure_agent_kernel_turn().context.timezone,
+                            ),
                         })
                         lbl = _TOOL_TO_SOURCE_LABEL.get(fn)
                         if lbl and lbl not in sources_used:
@@ -5443,7 +5601,11 @@ class AgentExecutor:
 
             if not final_text.strip():
                 final_text = lead_text or "多模型综合分析未能生成最终结论，请重试。"
-            final_text = _ground_query_response_date_labels(final_text, message)
+            final_text = _ground_query_response_date_labels(
+                final_text,
+                message,
+                reference_now=self._agent_kernel_reference_now(),
+            )
             for i in range(0, len(final_text), 24):
                 yield {"event": "token", "data": {"content": final_text[i:i + 24]}}
             full_reply = final_text
@@ -5466,7 +5628,11 @@ class AgentExecutor:
         full_reply = _strip_reva_ui_from_llm_text(full_reply)
         full_reply = _strip_botched_text_tool_leak(full_reply)
         full_reply = _strip_scope_refusal_preamble(full_reply)
-        full_reply = _ground_query_response_date_labels(full_reply, message)
+        full_reply = _ground_query_response_date_labels(
+            full_reply,
+            message,
+            reference_now=self._agent_kernel_reference_now(),
+        )
         ai_msg = svc.save_message(
             conv.id,
             "assistant",
@@ -5539,8 +5705,17 @@ class AgentExecutor:
         runs the same synthesis pipeline but can never mutate user data.
         """
         yield self._progress_event("accepted")
+        self._current_user_id = user_id
         self._current_turn_user_message = message or ""
         self._current_turn_recent_messages = []
+        self._start_agent_kernel_turn(
+            user_id=user_id,
+            message=message,
+            channel=channel,
+            client_caps=client_caps,
+            client_time_context=client_time_context,
+        )
+        kernel_completion_status = "interrupted"
         recovered_user_message = None
         claimed_turn = False
         turn_service = None
@@ -5560,6 +5735,7 @@ class AgentExecutor:
                     turn_service, user_id, existing_turn, client_turn_id,
                 ):
                     yield replay_event
+                self._finish_agent_kernel_turn(status="replayed")
                 return
 
             claimed_turn = turn_service.try_acquire_client_turn_execution(
@@ -5588,6 +5764,7 @@ class AgentExecutor:
                         turn_service, user_id, existing_turn, client_turn_id,
                     ):
                         yield replay_event
+                    self._finish_agent_kernel_turn(status="replayed")
                     return
                 if not claimed_turn:
                     yield {"event": "done", "data": {
@@ -5598,6 +5775,7 @@ class AgentExecutor:
                         "replayed": True,
                         "request_persisted": False,
                     }}
+                    self._finish_agent_kernel_turn(status="interrupted")
                     return
 
             try:
@@ -5621,6 +5799,7 @@ class AgentExecutor:
                         yield replay_event
                     turn_service.release_client_turn_execution(user_id, client_turn_id)
                     claimed_turn = False
+                    self._finish_agent_kernel_turn(status="replayed")
                     return
                 if existing_turn is not None:
                     turn_service.discard_unfinalized_assistant_by_client_turn(
@@ -5632,6 +5811,7 @@ class AgentExecutor:
                 if claimed_turn:
                     turn_service.release_client_turn_execution(user_id, client_turn_id)
                     claimed_turn = False
+                self._finish_agent_kernel_turn(status="failed")
                 raise
 
         try:
@@ -5681,10 +5861,15 @@ class AgentExecutor:
                 client_time_context=client_time_context,
                 read_only_tools=read_only_tools,
             ):
+                if event.get("event") == "done":
+                    kernel_completion_status = str(
+                        (event.get("data") or {}).get("completion_status") or "complete"
+                    )
                 yield event
         finally:
             if claimed_turn and turn_service is not None and client_turn_id:
                 turn_service.release_client_turn_execution(user_id, client_turn_id)
+            self._finish_agent_kernel_turn(status=kernel_completion_status)
 
     async def _run_stream_impl(
         self,
@@ -5709,6 +5894,9 @@ class AgentExecutor:
         # 输入通道(客户端传输层声明,typed/voice/siri):症状类记录的确认策略依赖它。
         # 非法/未声明一律 None → fail-closed(症状保留确认)。
         self._turn_channel = channel if channel in ("typed", "voice", "siri") else None
+        self._current_user_id = user_id
+        self._current_turn_user_message = message or ""
+        self._ensure_agent_kernel_turn(channel=channel)
         # GenUI metric_table (rank1): 客户端声明 genui-table-v1 且未被 kill-switch 关闭时,
         # 工具结果确定性打成表格卡片 (合成后追加 fence)。正文仍按问题完整回答，避免
         # 把卡片优化误变成用户可见的 500 字硬截断。
@@ -6058,13 +6246,7 @@ class AgentExecutor:
         # 29.2%)。改为注入**最后一条 user 消息**:前缀 = system+tools+旧历史 保持
         # 字节稳定,turn 内容落在增长尾部,天然不破坏前缀匹配。块文本逐字保留。
         turn_context_parts: List[str] = []
-        turn_context_parts.append(
-            _build_turn_time_context_prompt(
-                self.db,
-                user_id,
-                client_time_context=client_time_context,
-            )
-        )
+        turn_context_parts.append(self._agent_kernel_time_context(client_time_context))
         if opener_quick_reply_note:
             turn_context_parts.append(
                 "## 入口动作处理结果\n"
@@ -6982,6 +7164,8 @@ class AgentExecutor:
                                 func_name,
                                 parsed_tool_args,
                                 result,
+                                reference_now=self._agent_kernel_reference_now(),
+                                timezone_label=self._ensure_agent_kernel_turn().context.timezone,
                             ),
                         })
 
@@ -7158,8 +7342,8 @@ class AgentExecutor:
                     # (write_receipts,由 _write_tool_attempted / _write_receipt_from_tool_result 判定)
                     # 后出现。名字级判断(工具名 ∈ {health_record, health_manage})会把 health_manage
                     # 的 list/query(读,用来找记录 ID)误判为写 —— 2026-07-13 prod turn 6334 实锤:
-                    # 分析问句「从 HRV 记录…推断胃溃疡根因」被 _prefer_fast_record_model 误判为记录意图
-                    # (记录=名词命中 _RECORD_INTENT_RE),本轮只调 health_query×5 + health_manage(list),
+                    # 分析问句「从 HRV 记录…推断胃溃疡根因」曾被旧关键词路由误判为记录意图，
+                    # 本轮只调 health_query×5 + health_manage(list),
                     # 无任何写入(write_receipts=[]),却吐出假"✅ 已记录"+记录味兜底("请再说一次要改哪一条")。
                     # 上面 unverified_write_tools 已先行拦掉"尝试写但无回执"的情形,故走到这里时
                     # write_receipts 非空 ⟺ 本轮确有可验证写入。无回执 → fall through 到 continue,
@@ -7448,7 +7632,11 @@ class AgentExecutor:
         full_reply = _strip_reva_ui_from_llm_text(full_reply)
         full_reply = _strip_botched_text_tool_leak(full_reply)
         full_reply = _strip_scope_refusal_preamble(full_reply)
-        full_reply = _ground_query_response_date_labels(full_reply, message)
+        full_reply = _ground_query_response_date_labels(
+            full_reply,
+            message,
+            reference_now=self._agent_kernel_reference_now(),
+        )
         record_intent_no_tool = bool(
             self._prefer_fast_record_model and tool_executed_count == 0
         )
@@ -7646,6 +7834,11 @@ class AgentExecutor:
             if completion_status == "complete"
             else []
         )
+        if completion_status == "complete" and self._turn_aigc_media_cards:
+            response_cards = _merge_agent_card_descriptors(
+                self._turn_aigc_media_cards,
+                response_cards,
+            )
 
         # Slice 3: 一轮完成 ≥2 个写类工具 → done 附 save_recipe 描述符 (仅描述符,
         # 移动端渲染"存为配方"入口)。候选步骤持久化到 message.meta.recipe_candidate,
@@ -8098,6 +8291,9 @@ class AgentExecutor:
             "- 图片：用户发食物照片时，先用你的视觉能力识别图片中的食物名称和份量，然后调用 health_record(type=diet, data={meal_type, food_items, calories, protein, carbs, fat, fiber, record_date}) 记录。必须在 data 中填写完整的 food_items 字符串，不能传空 data。",
             "- **饮食记录必须包含热量和营养估算：识别食物后，根据食物种类和常见份量估算总热量(kcal)、蛋白质(g)、碳水(g)、脂肪(g)、膳食纤维(g)，填入 data.calories/protein/carbs/fat/fiber 字段一起保存。不要记完再问用户'要不要算热量'。**",
             "- **重要：调用 health_record 时 data 参数必须包含具体内容，不能为空对象 {}。如果你不确定内容，先问用户再记录。**",
+            "- 用户明确要求制作健康行动相关图片、封面或 2-15 秒短视频时，可以使用 draft_aigc_media 创建确认草稿。它不会发送任何内容给百炼；确认卡片必须由用户亲自点击，后端才会向百炼 Wan 发送草稿绑定的提示词和图生模式下当前消息的图片，并可能产生费用。不能以文字中的“确认”代替卡片点击，也不能声称已经生成。",
+            "- 图生图片/图生视频只能用当前消息中附带的第一张图；没有图时请用户重新上传。生成完成前只能说“生成中”，不能把任务已接受说成“已生成”。",
+            "- AIGC 内容只用于健康行动沟通（如饮食建议封面、晨间拉伸提示、补水提醒短视频）。不得生成医疗诊断、疗效承诺、处方或公开暴露个人健康隐私的素材。",
             "",
             "## 分析规则",
             "- 简单查询（'今天步数多少'）→ health_query",
@@ -9469,8 +9665,7 @@ class AgentExecutor:
             "food_items 只能使用真实食物名称和份量, 绝对不要包含营养卡、保存并确认、今日饮食等界面文案。"
         )
 
-    @staticmethod
-    def _infer_meal_type_for_food_image(user_message: str) -> str:
+    def _infer_meal_type_for_food_image(self, user_message: str) -> str:
         text = (user_message or "").lower()
         if re.search(r"早餐|早饭|早上|breakfast", text):
             return "breakfast"
@@ -9480,7 +9675,7 @@ class AgentExecutor:
             return "dinner"
         if re.search(r"加餐|零食|下午茶|夜宵|snack", text):
             return "snack"
-        hour = datetime.now(BEIJING_TZ).hour
+        hour = self._agent_kernel_reference_now().hour
         if hour < 10:
             return "breakfast"
         if hour < 14:
@@ -9555,7 +9750,7 @@ class AgentExecutor:
                     self.db,
                     user_id=user_id,
                     items_data=items,
-                    exam_date=exam_date or datetime.now(BEIJING_TZ).date(),
+                    exam_date=exam_date or self._agent_kernel_reference_now().date(),
                     exam_type=result.get("report_type") or "medical_report",
                     hospital_name=result.get("institution"),
                     notes="从聊天图片 OCR 自动导入",
@@ -9645,7 +9840,8 @@ class AgentExecutor:
     ) -> List[Dict[str, Any]]:
         """Keep explicit diet queries read-only and resolve relative dates locally."""
         scope = _query_only_health_manage_scope(
-            getattr(self, "_current_turn_user_message", "")
+            getattr(self, "_current_turn_user_message", ""),
+            reference_now=self._agent_kernel_reference_now(),
         )
         if scope is None:
             return tool_calls
@@ -9659,7 +9855,10 @@ class AgentExecutor:
             if target_date:
                 list_args["date"] = target_date
             elif args.get("operation") == "list":
-                model_date = _normalize_relative_date(args.get("date"))
+                model_date = _normalize_relative_date(
+                    args.get("date"),
+                    reference_now=self._agent_kernel_reference_now(),
+                )
                 if model_date:
                     list_args["date"] = model_date
             if scope.get("meal_type"):
@@ -9767,7 +9966,10 @@ class AgentExecutor:
                 continue
 
             query: Dict[str, Any] = {"limit": 1}
-            target_date = _normalize_relative_date(args.get("date"))
+            target_date = _normalize_relative_date(
+                args.get("date"),
+                reference_now=self._agent_kernel_reference_now(),
+            )
             target_meal_type = _normalize_diet_meal_type(args.get("meal_type"))
             if target_date:
                 query["start_date"] = target_date
@@ -9822,7 +10024,8 @@ class AgentExecutor:
         arbitrary meal.
         """
         correction = _parse_explicit_diet_correction(
-            getattr(self, "_current_turn_user_message", "")
+            getattr(self, "_current_turn_user_message", ""),
+            reference_now=self._agent_kernel_reference_now(),
         )
         if not correction:
             return tool_calls
@@ -10001,6 +10204,27 @@ class AgentExecutor:
     async def _execute_tool(
         self, tool_name: str, args_raw: Any, user_token: Optional[str]
     ) -> str:
+        """Kernel-instrumented tool boundary used by every executable surface."""
+        self._ensure_agent_kernel_turn()
+        self._agent_kernel_last_decision = None
+        if self._agent_kernel_event_bus is not None:
+            self._agent_kernel_event_bus.tool_requested(
+                ToolExecutionRequest(
+                    tool_name=tool_name,
+                    arguments=args_raw,
+                    source="structured_or_recovered",
+                )
+            )
+        result = await self._execute_tool_impl(tool_name, args_raw, user_token)
+        return self._agent_kernel_record_tool_result(
+            tool_name,
+            _parse_tool_arguments_for_telemetry(args_raw),
+            result,
+        )
+
+    async def _execute_tool_impl(
+        self, tool_name: str, args_raw: Any, user_token: Optional[str]
+    ) -> str:
         """执行工具调用，返回结果文本"""
         try:
             if isinstance(args_raw, str):
@@ -10027,15 +10251,21 @@ class AgentExecutor:
         # 日期/数值/枚举/引用 ID 存在性/越权 / 必填 — 触发 coerce 只 log,
         # 必填缺失或越权才返回 error 给 LLM (它会重试).
         from app.services.llm.tool_validator import validate_tool_call
-        args = _prepare_health_record_args_for_validation(tool_name, args)
-        v = validate_tool_call(tool_name, args, db=self.db, user_id=self._current_user_id)
+        args = _prepare_health_record_args_for_validation(
+            tool_name,
+            args,
+            reference_now=self._agent_kernel_reference_now(),
+        )
+        v = validate_tool_call(
+            tool_name,
+            args,
+            db=self.db,
+            user_id=self._current_user_id,
+            reference_now=self._agent_kernel_reference_now(),
+        )
         if v["error"]:
             return v["error"]
         args = v["data"]
-
-        gateway_block = self._agent_kernel_preflight_tool(tool_name, args)
-        if gateway_block:
-            return gateway_block
 
         # === Read-only pregen guard (rank7) — fail-CLOSED single choke ===
         # In a starter-answer pre-generation turn ONLY read-only analysis tools may
@@ -10053,6 +10283,10 @@ class AgentExecutor:
                     tool_name, self._current_user_id,
                 )
                 return f"Error: 只读预生成回合不执行写入/变更操作（{tool_name}）"
+
+        gateway_block = self._agent_kernel_preflight_tool(tool_name, args)
+        if gateway_block:
+            return gateway_block
 
         base_url = settings.health_api_base_url or "http://localhost:8000/api/v1"
         headers = {"Authorization": f"Bearer {user_token}"} if user_token else {}
@@ -10085,6 +10319,8 @@ class AgentExecutor:
                 return await self._exec_manage_plan(base_url, headers, args)
             elif tool_name == "intervention_cycle":
                 return await self._exec_intervention_cycle(args)
+            elif tool_name == "draft_aigc_media":
+                return await self._exec_draft_aigc_media(args)
             elif tool_name == "upload_genetic_txt":
                 return await self._exec_upload_genetic_txt(base_url, headers, args)
             elif tool_name == "query_genetic_profile":
@@ -10110,41 +10346,23 @@ class AgentExecutor:
 
     def _agent_kernel_preflight_tool(self, tool_name: str, args: Any) -> Optional[str]:
         """Run XiaoBa Agent Kernel policy before dispatching an executable tool."""
-        user_message = (getattr(self, "_current_turn_user_message", "") or "").strip()
-        if not user_message:
-            return None
         try:
-            from app.services.agent_kernel.intent_frame import build_intent_frame
             from app.services.agent_kernel.tool_gateway import ToolGateway, blocked_tool_result
-            from app.services.agent_kernel.types import (
-                AgentEnvelope,
-                ExecutionContext,
-                ToolExecutionRequest,
-                TurnSnapshot,
-            )
 
-            channel = getattr(self, "_turn_channel", None) or "chat"
-            envelope = AgentEnvelope(
-                user_id=self._current_user_id,
-                channel=channel,
-                text=user_message,
-            )
-            context = ExecutionContext.now(
-                user_id=self._current_user_id,
-                channel=channel,
-            )
-            snapshot = TurnSnapshot(
-                envelope=envelope,
-                context=context,
-                intent=build_intent_frame(envelope, context),
-                policy_mode=getattr(settings, "agent_kernel_policy_mode", "enforce"),
-            )
+            snapshot = self._ensure_agent_kernel_turn()
             request = ToolExecutionRequest(
                 tool_name=tool_name,
                 arguments=args,
                 source="structured_or_recovered",
             )
             decision = ToolGateway(snapshot).preflight(request)
+            self._agent_kernel_last_decision = decision
+            if self._agent_kernel_event_bus is not None:
+                self._agent_kernel_event_bus.capability_decided(
+                    tool_name=decision.normalized_tool_name or tool_name,
+                    action=decision.action,
+                    reason=decision.reason,
+                )
             if decision.action == "block" and snapshot.policy_mode == "enforce":
                 logger.warning(
                     "[agent_kernel] blocked tool=%s user=%s reason=%s intent=%s/%s/%s",
@@ -10316,7 +10534,7 @@ class AgentExecutor:
             keyword = " ".join(str(x) for x in keyword if x)
         uploaded_since = args.get("uploaded_since") or args.get("created_since") or ""
         uploaded_days = args.get("uploaded_days") or args.get("created_days")
-        today = datetime.now(BEIJING_TZ).strftime("%Y-%m-%d")
+        today = self._agent_kernel_reference_now().strftime("%Y-%m-%d")
 
         # Canonical 归一读层 (docs/design-canonical-read-layer.md): 已迁维度直读
         # service/repo 层 (与 Twin 同源, 不截断), 未迁维度返回 None → 回退旧 _api_get.
@@ -10505,7 +10723,7 @@ class AgentExecutor:
                 data = json.loads(data)
             except (json.JSONDecodeError, ValueError):
                 data = {}
-        today = datetime.now(BEIJING_TZ).strftime("%Y-%m-%d")
+        today = self._agent_kernel_reference_now().strftime("%Y-%m-%d")
 
         # Mobile 多图餐食的第一轮必须先生成可确认草稿。该门禁由回合状态
         # 决定，并强制移除模型自报的 confirmed，避免提示词漂移直接写 DietRecord。
@@ -10772,8 +10990,12 @@ class AgentExecutor:
                 data,
                 user_message=getattr(self, "_current_turn_user_message", ""),
                 recent_messages=getattr(self, "_current_turn_recent_messages", []),
+                reference_now=self._agent_kernel_reference_now(),
             )
-            data = _normalize_reminder_record_data(data)
+            data = _normalize_reminder_record_data(
+                data,
+                reference_now=self._agent_kernel_reference_now(),
+            )
             has_window_field = any(
                 data.get(key) not in (None, "")
                 for key in ("start_time", "end_time", "interval_minutes")
@@ -10870,7 +11092,7 @@ class AgentExecutor:
             # 详情走 sneeze_times(合并追加,保留 congestion/runny_nose),不动 notes(避免
             # 覆盖当日其它打卡备注)。sneeze_count 取本次报的今日累计次数(端点 setattr 覆盖)。
             entry: Dict[str, Any] = {
-                "time": datetime.now(BEIJING_TZ).strftime("%H:%M"),
+                "time": self._agent_kernel_reference_now().strftime("%H:%M"),
                 "count": sneezing,
                 "summary": "、".join(parts) or (data.get("notes") or "鼻炎打卡"),
             }
@@ -11021,7 +11243,7 @@ class AgentExecutor:
                 logger.warning("[health_record] taken_time 无法解析,回退当前时刻: %r", data.get("taken_time"))
                 taken_time = None
             if not taken_time:
-                taken_time = datetime.now(BEIJING_TZ).strftime("%H:%M")
+                taken_time = self._agent_kernel_reference_now().strftime("%H:%M")
             return await self._api_post(
                 f"{base}/medication/logs", headers,
                 {"medication_id": matched["id"], "taken_time": taken_time, "status": "taken"}
@@ -11047,7 +11269,7 @@ class AgentExecutor:
             payload = dict(data)
             if "name" not in payload and payload.get("illness_name"):
                 payload["name"] = payload.pop("illness_name")
-            payload.setdefault("start_date", datetime.now(BEIJING_TZ).date().isoformat())
+            payload.setdefault("start_date", self._agent_kernel_reference_now().date().isoformat())
             payload.setdefault("status", "active")
             if not payload.get("name"):
                 return "Error: illness 必须提供 name (如 '感冒' / '发烧')"
@@ -11189,7 +11411,10 @@ class AgentExecutor:
         data = args.get("data") or {}
         # LLM 常传字面 'today'/'昨天'; 端点要真日期, 传 'today' → 422。归一成 ISO 日期,
         # 解析不出则不带日期过滤(列近期), 绝不把相对词当 start_date 发出去。
-        target_date = _normalize_relative_date(args.get("date"))
+        target_date = _normalize_relative_date(
+            args.get("date"),
+            reference_now=self._agent_kernel_reference_now(),
+        )
         target_meal_type = _normalize_diet_meal_type(args.get("meal_type") or data.get("meal_type"))
         if record_type == "diet" and target_meal_type:
             data["meal_type"] = target_meal_type
@@ -11201,7 +11426,10 @@ class AgentExecutor:
         # start_date 只在 create 路径有意义, 已在 _prepare_health_record_args_for_validation 里
         # 对 record_date/start_date/end_date 统一归一, 此处 manage 路径只补 end_date。)
         if record_type == "illness" and isinstance(data, dict) and data.get("end_date") not in (None, ""):
-            _normalized_end = _normalize_relative_date(data.get("end_date"))
+            _normalized_end = _normalize_relative_date(
+                data.get("end_date"),
+                reference_now=self._agent_kernel_reference_now(),
+            )
             if _normalized_end:
                 data["end_date"] = _normalized_end
             else:
@@ -11593,6 +11821,85 @@ class AgentExecutor:
 
         return f"Error: 不支持的干预周期操作 {action}"
 
+    async def _exec_draft_aigc_media(self, args: dict) -> str:
+        """Create a server-bound AIGC draft; a user click dispatches it later."""
+        from app.services.aigc_media_job_service import (
+            AIGCMediaJobError,
+            AIGCMediaJobRequest,
+            AIGCMediaJobRequestError,
+            AIGCMediaJobService,
+        )
+        from app.services.aigc_media_service import AIGCMediaConfigurationError
+
+        user_id = self._current_user_id
+        if user_id is None:
+            return "Error: 缺少用户身份，无法创建 AIGC 创作草稿。"
+        kind = str(args.get("kind") or "").strip()
+        requires_source = kind in {"image_to_image", "image_to_video"}
+        source_message_id = self._current_turn_source_message_id if requires_source else None
+        if requires_source and (source_message_id is None or not self._current_turn_image_urls):
+            return "Error: 图生图片或图生视频需要在当前消息附上一张图片，请上传后重新创建草稿。"
+        service = AIGCMediaJobService(self.db)
+        try:
+            confirmation = await service.issue_confirmation(
+                user_id=user_id,
+                request=AIGCMediaJobRequest(
+                    kind=kind,
+                    purpose=str(args.get("purpose") or ""),
+                    prompt=str(args.get("prompt") or ""),
+                    source_message_id=source_message_id,
+                    source_image_index=0,
+                    duration_seconds=int(args.get("duration_seconds") or 5),
+                    ratio=str(args.get("ratio") or "9:16"),
+                ),
+            )
+        except AIGCMediaConfigurationError:
+            return "Error: AIGC 媒体服务尚未配置百炼按量 API Key。"
+        except AIGCMediaJobRequestError as exc:
+            return f"Error: {exc}"
+        except AIGCMediaJobError as exc:
+            return f"Error: {exc}"
+
+        card_data = {
+            "confirmation_id": confirmation.id,
+            "kind": confirmation.kind,
+            "title": "小巴创作草稿",
+            "provider": "百炼 Wan",
+            "source_attached": confirmation.source_message_id is not None,
+            "status": "pending",
+        }
+        descriptor = {
+            "type": "aigc_media_confirmation",
+            "data": card_data,
+            "actions": [
+                {
+                    "id": f"aigc_media.confirm:{confirmation.id}",
+                    "label": "发送给百炼并生成",
+                    "action": "aigc_media.confirm",
+                    "endpoint": f"/aigc/media/confirmations/{confirmation.id}/confirm",
+                    "requires_manual_confirm": True,
+                    "capability_id": "aigc_media_confirmation.v1",
+                    "required_receipt": True,
+                    "autonomy_tier": "manual_confirm",
+                    "policy_reason": "manual_confirm_write",
+                }
+            ],
+        }
+        self._turn_aigc_media_cards = _merge_agent_card_descriptors(
+            self._turn_aigc_media_cards,
+            [descriptor],
+        )
+        return json.dumps(
+            {
+                "id": confirmation.id,
+                "resource_type": "aigc_media_confirmation",
+                "operation_id": f"draft_aigc_media:{confirmation.id}",
+                "status": "pending_user_confirmation",
+                "kind": confirmation.kind,
+            },
+            ensure_ascii=False,
+        )
+
     def _intervention_list(self, user_id: int, status: str, limit: int) -> str:
         """列出当前用户干预周期历史。"""
         from app.services import intervention_cycle_service as ics
@@ -11795,7 +12102,7 @@ class AgentExecutor:
         txt = args.get("txt_content") or ""
         if len(txt) < 50:
             return "Error: txt_content 太短, 不像是 23andMe/WeGene 原始数据 (应是含 rsid 的 tab 分隔行)"
-        today = datetime.now(BEIJING_TZ).strftime("%Y-%m-%d")
+        today = self._agent_kernel_reference_now().strftime("%Y-%m-%d")
         payload = {
             "test_provider": args.get("test_provider") or "unknown",
             "test_date": args.get("test_date") or today,

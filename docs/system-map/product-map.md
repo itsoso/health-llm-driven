@@ -2,7 +2,7 @@
      端 roster / surface 名 / 流程 = 叙事,改了 bump 下方 last-reviewed。 -->
 ---
 doc: system-map/product-map
-last-reviewed: 2026-06-29
+last-reviewed: 2026-07-17
 generated-source: docs/_generated/system-map.json
 authoritative-surface-doc: docs/specs/active/2026-06-26-surface-ownership-inventory.md
 ---
@@ -15,7 +15,7 @@ authoritative-surface-doc: docs/specs/active/2026-06-26-surface-ownership-invent
 
 | 端 | 栈 | 入口 | 角色 |
 |---|---|---|---|
-| **backend** | FastAPI + SQLAlchemy + Celery (py3.12) | `backend/main.py`;`app/api/main.py` 挂 159 router | 产品真源(Twin/Safety Gate/Agenda/Router/Write 自治),无 UI |
+| **backend** | FastAPI + SQLAlchemy + Celery (py3.12) | `backend/main.py`;`app/api/main.py` | 产品真源(Twin/Safety Gate/Agenda/Router/Write 自治),无 UI |
 | **mobile** | Expo SDK 55 + expo-router + RN 0.83 | `mobile/app/` 文件路由 | **主日常产品**(iPhone/iPad 唯一原生 App) |
 | **frontend** | Next.js 14 App Router | `frontend/src/app/` | Web(PC);收敛向 admin/history/doctor/family |
 | **mac** | Swift 6 / SwiftUI / SPM | `apps/mac/Sources/HealthAgentMac/HealthAgentMacApp.swift` | 工作台(文件/化验导入、长 agent 流、trace) |
@@ -40,11 +40,12 @@ authoritative-surface-doc: docs/specs/active/2026-06-26-surface-ownership-invent
 
 > ⚠️ CLAUDE.md 的「AI Chat Routing」前端 `needsSkill` 分流图**已部分过时** —— 现状是 mobile+web 统一打 `/agent/stream`,**服务端 tool-calling 路由**;`_needs_skill` 仅是弱模型(无 tool 支持)的兜底。
 
-1. **AI 对话(统一 agent chat,主流)**:mobile `mobile/services/chat.ts` `POST /agent/stream` · web `frontend/src/services/api/ai.ts` `agentApi.streamMessage` → `backend/app/api/agent.py` `POST /agent/stream` → `agent_executor.py:AgentExecutor.run_stream`(暴露 `health_record`/`health_query`/`health_analysis`,LLM tool-call;写前 `_confirm_or_describe` 注 `[NEEDS_CONFIRMATION]` 守 R4)。
+1. **AI 对话(统一 agent chat,主流)**:mobile `mobile/services/chat.ts` `POST /agent/stream` · web `frontend/src/services/api/ai.ts` `agentApi.streamMessage` → `backend/app/api/agent.py` `POST /agent/stream` → `agent_executor.py:AgentExecutor.run_stream`(暴露 `health_record`/`health_query`/`health_analysis`/`draft_aigc_media`; AIGC 工具只能创建确认草稿，真正外部调用由用户卡片点击消费一次性确认记录)。
 2. **记录饮食**:`mobile/app/diet.tsx` → `backend/app/api/diet.py`:`POST /diet/records`(确认写)· `POST /diet/voice/parse`(**只产草稿不写库**,R4)· `POST /diet/recognize[-and-save]`(照片)。
 3. **完成议程闭环**:`mobile/app/agenda.tsx` `POST /agenda/complete` + `POST /timeline/events/{id}/complete` → 单核 `timeline_agenda_service.py:complete_agenda_event`(DB 原子认领防虚高依从 → `agenda_service.complete_item` 写真实领域行,确定性 taken_time;失败回滚不翻态)。
 4. **安全告警**:`mobile/app/(tabs)/alerts.tsx` / web `SafetyPanel.tsx` → `backend/app/api/safety.py` `GET /safety/me` → `guardian.py:evaluate_safety(twin)` → `evaluate_rules` 跑 `rules/` 下 `@register`(计数见 `_generated`);确定性、无 LLM、按 severity 排序、带 `failed_rule_count` fail-loud。
 5. **HealthKit 同步(iOS)**:`mobile/services/appleHealth.ts` `fetchDailyRecords` → `toApiRecord`(生成 schema 标注)→ `POST /devices/healthkit/import` → `device_adapters/healthkit.py`。(自动同步规划见 reva mobile/watch/healthkit experience plan)
+6. **私有 AIGC 媒体任务**:Mobile/Web/Mac 在既有对话中上传素材 → Agent Kernel 的 `draft_aigc_media` 创建加密 `AIGCMediaConfirmation` → 用户卡片点击 `POST /aigc/media/confirmations/{id}/confirm`(仅 opaque ID) → `AIGCMediaJob` → owner-scoped `GET/cancel /aigc/media/jobs` → `aigc_media_confirmation.v1`/`aigc_media_job.v1` 动态卡片。仅向确认过的百炼 Wan 请求传出绑定的提示词与当回合图像；输出拷贝到用户私有存储，卡片按需换取短期结果链接。
 
 ## 4. 系统流(内部架构)
 

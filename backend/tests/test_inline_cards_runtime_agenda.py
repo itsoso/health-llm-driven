@@ -3,6 +3,18 @@
 import pytest
 
 
+def _without_kernel_action_policy(value):
+    if isinstance(value, list):
+        return [_without_kernel_action_policy(item) for item in value]
+    if not isinstance(value, dict):
+        return value
+    return {
+        key: item
+        for key, item in value.items()
+        if key not in {"capability_id", "required_receipt", "autonomy_tier", "policy_reason"}
+    }
+
+
 def test_inline_cards_builds_runtime_agenda_card(monkeypatch):
     from app.services import inline_cards
 
@@ -65,7 +77,7 @@ def test_inline_cards_builds_runtime_agenda_card(monkeypatch):
     ]
     assert cards[0]["actions"][0]["action"] == "daily_plan_action.complete"
     assert cards[0]["actions"][0]["payload"] == {"action_id": "walk", "event_type": "completed"}
-    assert cards[0]["actions"][1] == {
+    assert _without_kernel_action_policy(cards[0]["actions"][1]) == {
         "id": "open-runtime-agenda",
         "label": "查看完整计划",
         "action": "route.open",
@@ -108,7 +120,7 @@ def test_inline_cards_runtime_agenda_emits_manual_confirm_complete_action(monkey
 
     assert cards[0]["type"] == "runtime_agenda"
     assert cards[0]["data"]["presentation_mode"] == "today"
-    assert cards[0]["actions"][0] == {
+    assert _without_kernel_action_policy(cards[0]["actions"][0]) == {
         "id": "complete-runtime-action",
         "label": "完成这一步",
         "action": "agenda.complete",
@@ -128,7 +140,7 @@ def test_inline_cards_runtime_agenda_emits_manual_confirm_complete_action(monkey
         },
         "optimistic": True,
     }
-    assert cards[0]["actions"][1] == {
+    assert _without_kernel_action_policy(cards[0]["actions"][1]) == {
         "id": "open-runtime-agenda",
         "label": "管理今日行动",
         "action": "route.open",
@@ -163,7 +175,7 @@ def test_inline_cards_runtime_agenda_can_complete_daily_plan_action(monkeypatch)
 
     card = inline_cards.build_cards(db=None, user_id=3, query="我现在下一步该做什么？")[0]
 
-    assert card["actions"][0] == {
+    assert _without_kernel_action_policy(card["actions"][0]) == {
         "id": "complete-daily-plan-action",
         "label": "完成这一步",
         "action": "daily_plan_action.complete",
@@ -343,7 +355,7 @@ def test_inline_cards_builds_confirmable_diet_draft_card():
         "post_meal_walk": {"recommended": True, "minutes": 10},
         "boundary": "营养为估算值,确认后写入今日饮食记录。",
     }
-    assert cards[0]["actions"][0] == {
+    assert _without_kernel_action_policy(cards[0]["actions"][0]) == {
         "id": "confirm-diet-draft",
         "label": "确认记录",
         "action": "diet_record.create",
@@ -369,7 +381,7 @@ def test_inline_cards_builds_confirmable_diet_draft_card():
         },
         "optimistic": True,
     }
-    assert cards[0]["actions"][1] == {
+    assert _without_kernel_action_policy(cards[0]["actions"][1]) == {
         "id": "expand-next-meal",
         "label": "看下一餐建议",
         "action": "ui.inline.expand",
@@ -382,7 +394,7 @@ def test_inline_cards_builds_confirmable_diet_draft_card():
         },
         "style": "secondary",
     }
-    assert cards[0]["actions"][2] == {
+    assert _without_kernel_action_policy(cards[0]["actions"][2]) == {
         "id": "open-diet-edit",
         "label": "去饮食页修正",
         "action": "route.open",
@@ -423,7 +435,7 @@ def test_inline_cards_builds_medication_draft_for_medication_intake():
     assert cards[0]["data"]["medication_name"] == "替普瑞酮胶囊（施维舒）"
     assert cards[0]["data"]["source"] == "chat"
     assert cards[0]["data"]["confidence"] == 0.9
-    assert cards[0]["actions"] == [
+    assert _without_kernel_action_policy(cards[0]["actions"]) == [
         {
             "id": "open-medication-draft",
             "label": "去用药页记录",
@@ -467,7 +479,7 @@ def test_inline_cards_builds_supplement_draft_for_supplement_intake():
     assert cards[0]["data"]["supplement_name"] == "鱼油"
     assert cards[0]["data"]["source"] == "chat"
     assert cards[0]["data"]["confidence"] == 0.82
-    assert cards[0]["actions"] == [
+    assert _without_kernel_action_policy(cards[0]["actions"]) == [
         {
             "id": "open-supplement-draft",
             "label": "去补剂页记录",
@@ -574,7 +586,7 @@ def test_inline_cards_builds_operating_review_card(monkeypatch):
     assert cards[0]["data"]["prediction_backtest"]["results"][0]["prediction_id"] == "pred-waist-7d"
     assert cards[0]["data"]["metrics"][0]["metric"] == "waist_cm"
     assert cards[0]["data"]["causal_memory"]["notes"][0]["text"] == "晚餐提前之后 HRV 改善(相关非因果)"
-    assert cards[0]["actions"] == [
+    assert _without_kernel_action_policy(cards[0]["actions"]) == [
         {
             "id": "open-operating-review",
             "label": "查看复盘详情",
@@ -645,7 +657,7 @@ def test_inline_cards_builds_hrv_metric_chart_card(monkeypatch):
         "value": 56.0,
         "source": "apple-watch",
     }
-    assert cards[0]["actions"] == [
+    assert _without_kernel_action_policy(cards[0]["actions"]) == [
         {
             "id": "open-hrv-history",
             "label": "查看HRV历史",
@@ -679,7 +691,7 @@ def test_inline_cards_metric_chart_uses_metric_specific_history_action(monkeypat
 
     cards = inline_cards.build_cards(db="db", user_id=3, query="画最近7天睡眠评分趋势")
 
-    assert cards[0]["actions"] == [
+    assert _without_kernel_action_policy(cards[0]["actions"]) == [
         {
             "id": "open-sleep_score-history",
             "label": "查看睡眠评分历史",

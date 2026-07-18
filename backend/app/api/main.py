@@ -162,6 +162,7 @@ from app.api import (
     ambient,
     rokid,
     device_observation,
+    aigc_media,
 )
 
 api_router = APIRouter()
@@ -269,6 +270,7 @@ api_router.include_router(fitness_snapshot.router, prefix="/fitness-snapshot", t
 api_router.include_router(sleep_spo2_analysis.router, prefix="/sleep/spo2", tags=["sleep-spo2-analysis"])
 api_router.include_router(nfc.router)
 api_router.include_router(upload.router, prefix="/upload", tags=["upload"])
+api_router.include_router(aigc_media.router)
 
 # ── AI & Agent System ──────────────────────────────────────────────
 api_router.include_router(twin.router, tags=["twin"])

@@ -1,6 +1,6 @@
 # Feature Spec: XiaoBa Agent Kernel
 
-> Status: draft
+> Status: implemented_pending_release
 > Owner: Codex
 > Updated: 2026-07-17
 > Related PRD/PDD: `docs/plans/2026-07-17-xiaoba-agent-kernel-redesign.md`
@@ -103,6 +103,7 @@ apis:
 events:
   - agent.turn_start
   - agent.intent_decided
+  - agent.intent_refined
   - agent.capability_decided
   - agent.tool_requested
   - agent.tool_allowed
@@ -143,6 +144,8 @@ This feature touches health records, reminders, medications, supplements, labs a
 - Every create/update/delete must have a deterministic receipt before XiaoBa says it completed.
 - Push/watch language must not claim delivery without client or device receipt.
 - All current-time dependent prompts/tools receive `ExecutionContext.current_time_iso` and `timezone`.
+- Voice shortcut parsing may extract a bounded numeric observation, but only ToolGateway can move it to confirmation or execution.
+- A standalone time fragment remains ambiguous; it becomes a write only when deterministic prior-turn state identifies an active reminder scheduling continuation.
 
 ## 10. AI Behavior
 
@@ -186,12 +189,16 @@ Then the answer can cite only the verified resource IDs or executed refs from th
 ```bash
 # Backend
 DATABASE_URL=sqlite:///:memory: TZ=Asia/Shanghai backend/venv/bin/python -m pytest \
-  backend/tests/test_utterance_intent_classifier.py \
+  backend/tests/test_agent_kernel_intent_corpus.py \
+  backend/tests/test_agent_kernel_turn_snapshot.py \
+  backend/tests/test_agent_event_stream.py \
   backend/tests/test_health_manage_date_normalize.py \
   backend/tests/test_force_record_tool_choice.py \
   backend/tests/test_agent_kernel_capability_policy.py \
   backend/tests/test_agent_kernel_tool_gateway.py \
   backend/tests/test_telegram_inbound_intent_gate.py \
+  backend/tests/test_voice_command.py \
+  backend/tests/test_watch_actions.py \
   -q --no-cov
 
 # Static

@@ -1,7 +1,9 @@
 'use client';
 import React from 'react';
+import Image from 'next/image';
 import { CardShell } from './CardShell';
 import type { CardSpec } from './types';
+import { api } from '@/services/api/client';
 
 // ────────────────────────────────────────────────────────────────
 // 1. VitalsCard - 今日综合生理
@@ -776,4 +778,214 @@ export const MedicalExamImportResultCardSpec: CardSpec<MedicalExamImportResultDa
     return null;
   },
   render: (d) => <MedicalExamImportResultCardView {...d} />,
+};
+
+// ────────────────────────────────────────────────────────────────
+// 11. AIGCMediaJobCard - Xiaoba private Wan creation task
+// ────────────────────────────────────────────────────────────────
+interface AIGCMediaJobData {
+  job_id: string;
+  kind: string;
+  status: string;
+  progress: number;
+  title?: string;
+  result?: { media_type?: string | null; url?: string | null } | null;
+  error_message?: string | null;
+}
+
+const AIGC_ACTIVE_STATUSES = new Set(['queued', 'running']);
+const AIGC_POLL_INTERVAL_MS = 4500;
+
+function aigcKindLabel(kind: string): string {
+  switch (kind) {
+    case 'text_to_image': return '文生图';
+    case 'image_to_image': return '图片创作';
+    case 'text_to_video': return '文生短视频';
+    case 'image_to_video': return '图生短视频';
+    default: return '媒体创作';
+  }
+}
+
+function aigcStatusMeta(status: string): { label: string; color: string } {
+  switch (status) {
+    case 'running': return { label: '生成中', color: '#16805C' };
+    case 'succeeded': return { label: '已完成', color: '#16805C' };
+    case 'failed': return { label: '未完成', color: '#C84B3C' };
+    case 'cancelled': return { label: '已取消', color: '#8E8E93' };
+    default: return { label: '排队中', color: '#4B8F72' };
+  }
+}
+
+function normalizeAIGCMediaJob(raw: unknown, fallback: AIGCMediaJobData): AIGCMediaJobData | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const value = raw as Record<string, unknown>;
+  const id = typeof value.id === 'string' ? value.id : fallback.job_id;
+  return {
+    ...fallback,
+    ...value,
+    job_id: typeof value.job_id === 'string' ? value.job_id : id,
+  } as AIGCMediaJobData;
+}
+
+export function AIGCMediaJobCardView(initialData: AIGCMediaJobData) {
+  const [data, setData] = React.useState(initialData);
+
+  React.useEffect(() => {
+    setData(initialData);
+  }, [initialData]);
+
+  React.useEffect(() => {
+    const jobID = String(initialData.job_id || '').trim();
+    if (!jobID) return;
+    let active = true;
+    const refresh = async () => {
+      try {
+        const response = await api.get(`/aigc/media/jobs/${encodeURIComponent(jobID)}`);
+        const next = normalizeAIGCMediaJob(response.data, initialData);
+        if (active && next) setData(next);
+      } catch {
+        // Keep the last valid projection. The result URL is short-lived and the
+        // next successful refresh will replace it before display.
+      }
+    };
+    void refresh();
+    const timer = window.setInterval(() => {
+      if (AIGC_ACTIVE_STATUSES.has(String(data.status || '').toLowerCase())) void refresh();
+    }, AIGC_POLL_INTERVAL_MS);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [data.status, initialData]);
+
+  const status = String(data.status || 'queued').toLowerCase();
+  const statusMeta = aigcStatusMeta(status);
+  const progress = Math.max(0, Math.min(100, Math.round(Number(data.progress) || 0)));
+  const resultURL = typeof data.result?.url === 'string' ? data.result.url : null;
+  const mediaType = String(data.result?.media_type || '').toLowerCase();
+  const isImage = mediaType.startsWith('image/');
+  const isVideo = mediaType.startsWith('video/');
+  const detail = status === 'queued'
+    ? '小巴已提交任务，正在等待百炼处理。'
+    : status === 'running'
+      ? '生成完成后会自动保存到你的私有空间。'
+      : status === 'succeeded'
+        ? '结果仅对当前账号可见。'
+        : (data.error_message || '本次创作未完成，修改描述后可以重新生成。');
+
+  return (
+    <CardShell
+      emoji="✦"
+      title={data.title || '小巴创作'}
+      badge={aigcKindLabel(String(data.kind || ''))}
+      badgeColor="#16805C"
+      bg="#F1FAF5"
+      border="#BFE4D1"
+    >
+      <div className="flex items-start gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-extrabold" style={{ color: statusMeta.color }}>{statusMeta.label}</div>
+          <div className="mt-0.5 text-[11px] leading-5 text-slate-500">{detail}</div>
+        </div>
+      </div>
+      {AIGC_ACTIVE_STATUSES.has(status) && (
+        <div className="mt-2 flex items-center gap-2">
+          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-emerald-100">
+            <div className="h-full rounded-full bg-emerald-600 transition-all" style={{ width: `${Math.max(progress, 4)}%` }} />
+          </div>
+          <span className="w-8 text-right text-[10px] font-bold tabular-nums text-slate-500">{progress}%</span>
+        </div>
+      )}
+      {resultURL && isImage && (
+        <a href={resultURL} target="_blank" rel="noreferrer" className="mt-3 block overflow-hidden rounded-xl ring-1 ring-emerald-100">
+          <Image
+            src={resultURL}
+            alt="小巴生成的图片"
+            width={768}
+            height={768}
+            unoptimized
+            className="aspect-square w-full object-cover"
+          />
+        </a>
+      )}
+      {resultURL && isVideo && (
+        <a
+          href={resultURL}
+          target="_blank"
+          rel="noreferrer"
+          className="mt-3 flex min-h-11 items-center justify-between rounded-xl bg-white px-3 text-xs font-bold text-emerald-700 ring-1 ring-emerald-100"
+        >
+          <span>打开短视频</span><span aria-hidden="true">↗</span>
+        </a>
+      )}
+    </CardShell>
+  );
+}
+
+export const AIGCMediaJobCardSpec: CardSpec<AIGCMediaJobData> = {
+  type: 'aigc_media_job',
+  label: '小巴创作任务',
+  match() { return null; },
+  build() { return null; },
+  render: (data) => <AIGCMediaJobCardView {...data} />,
+};
+
+interface AIGCMediaConfirmationData {
+  confirmation_id: string;
+  kind: string;
+  status?: string;
+  title?: string;
+  provider?: string;
+  source_attached?: boolean;
+}
+
+export function AIGCMediaConfirmationCardView(data: AIGCMediaConfirmationData) {
+  const [submitting, setSubmitting] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+  const [job, setJob] = React.useState<AIGCMediaJobData | null>(null);
+  const confirmationID = String(data.confirmation_id || '').trim();
+
+  const confirm = async () => {
+    if (!confirmationID || submitting) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const response = await api.post(`/aigc/media/confirmations/${encodeURIComponent(confirmationID)}/confirm`);
+      const payload = response.data;
+      if (!payload || typeof payload !== 'object' || typeof payload.id !== 'string') {
+        throw new Error('aigc_confirmation_missing_job');
+      }
+      setJob({ ...(payload as Record<string, unknown>), job_id: payload.id } as AIGCMediaJobData);
+    } catch {
+      setError('提交未完成，请稍后重试。');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (job) return <AIGCMediaJobCardView {...job} />;
+  return (
+    <CardShell emoji="✦" title={data.title || '小巴创作草稿'} badge={aigcKindLabel(String(data.kind || ''))} badgeColor="#16805C" bg="#F1FAF5" border="#BFE4D1">
+      <div className="rounded-lg bg-emerald-50 px-3 py-2 text-xs leading-5 text-slate-600">
+        将发送你的创作描述{data.source_attached ? '和当前图片' : ''}给{data.provider || '百炼 Wan'}生成。
+      </div>
+      {error && <div className="mt-2 text-xs text-red-600">{error}</div>}
+      <button
+        type="button"
+        onClick={() => { void confirm(); }}
+        disabled={!confirmationID || submitting}
+        className="mt-3 flex min-h-11 w-full items-center justify-center rounded-lg bg-emerald-700 px-3 text-sm font-extrabold text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        {submitting ? '正在提交…' : '发送给百炼并生成'}
+      </button>
+    </CardShell>
+  );
+}
+
+export const AIGCMediaConfirmationCardSpec: CardSpec<AIGCMediaConfirmationData> = {
+  type: 'aigc_media_confirmation',
+  label: '小巴创作确认',
+  match() { return null; },
+  build() { return null; },
+  render: (data) => <AIGCMediaConfirmationCardView {...data} />,
 };

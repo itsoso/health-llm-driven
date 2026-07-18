@@ -401,6 +401,20 @@
   .dynamic-card-action.secondary {
     color: #4B6242;
   }
+  .aigc-media-result {
+    display: block;
+    margin-top: 10px;
+    overflow: hidden;
+    border-radius: 10px;
+    border: 1px solid rgba(95, 122, 85, 0.20);
+  }
+  .aigc-media-image {
+    display: block;
+    width: 100%;
+    max-height: 360px;
+    object-fit: cover;
+    background: var(--code-bg);
+  }
   .evidence-card,
   .generic-card {
     border-color: rgba(201, 100, 66, 0.22);
@@ -1048,6 +1062,14 @@
     } catch (e) {}
   }
 
+  function postAIGCConfirm(confirmationID) {
+    try {
+      if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.aigcConfirm) {
+        window.webkit.messageHandlers.aigcConfirm.postMessage(String(confirmationID));
+      }
+    } catch (e) {}
+  }
+
   function isSafeInternalRoute(route) {
     return typeof route === "string" && route.indexOf("/") === 0 && route.indexOf("//") !== 0 &&
       !/[\u0000-\u001f\u007f]/.test(route);
@@ -1059,6 +1081,14 @@
     for (var i = 0; i < actions.length; i++) {
       actions[i].addEventListener("click", function (ev) {
         var route = ev.currentTarget.getAttribute("href") || "";
+        if (route.indexOf("xiaoba-aigc-confirm://") === 0) {
+          var confirmationID = route.substring("xiaoba-aigc-confirm://".length);
+          if (confirmationID && /^[A-Za-z0-9_-]+$/.test(confirmationID)) {
+            ev.preventDefault();
+            postAIGCConfirm(confirmationID);
+          }
+          return;
+        }
         if (!isSafeInternalRoute(route)) return;
         ev.preventDefault();
         postRouteOpen(route);

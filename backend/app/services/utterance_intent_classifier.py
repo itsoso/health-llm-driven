@@ -64,6 +64,10 @@ QUESTION_SIGNALS = (
     "多高",
     "多重",
     "多久",
+    "高不高",
+    "正常吗",
+    "有问题吗",
+    "怎么样",
 )
 WRITE_ACTIONS = (
     "记录",
@@ -81,6 +85,31 @@ WRITE_ACTIONS = (
     "已服用",
     "已吃",
     "已喝",
+)
+MEDIA_TERMS = (
+    "aigc",
+    "百炼",
+    "万相",
+    "wan",
+    "图片",
+    "图像",
+    "海报",
+    "封面",
+    "短视频",
+    "视频",
+    "图生视频",
+    "文生图",
+    "文生视频",
+)
+MEDIA_CREATE_ACTIONS = (
+    "生成",
+    "制作",
+    "做成",
+    "做一个",
+    "创作",
+    "创作一个",
+    "渲染",
+    "变成",
 )
 WRITE_NEGATIONS = (
     "别记录",
@@ -109,6 +138,21 @@ MUTATE_ACTIONS = {
     "update": ("修改", "改成", "改为", "改到", "更新", "调整", "更正"),
     "sync": ("同步", "sync", "拉取最新数据", "刷新一下数据", "刷新数据"),
 }
+MUTATION_NEGATIONS = (
+    "不要",
+    "别",
+    "不用",
+    "无需",
+    "不需要",
+    "不想",
+    "先别",
+    "暂不",
+    "不能",
+    "不可",
+    "禁止",
+    "避免",
+)
+MUTATION_NEGATION_EXCEPTIONS = ("别忘了", "不要忘了")
 ADVICE_ACTIONS = (
     "分析",
     "解读",
@@ -133,6 +177,8 @@ ADVICE_ACTIONS = (
     "冲突",
     "相互作用",
     "禁忌",
+    "推断",
+    "根因",
 )
 DIET_TERMS = (
     "饮食",
@@ -173,6 +219,14 @@ METRIC_TERMS = (
     "腰围",
     "心率",
     "hrv",
+    "kg",
+    "公斤",
+    "千克",
+    "斤",
+    "高压",
+    "低压",
+    "收缩压",
+    "舒张压",
 )
 MEAL_TYPES = {
     "breakfast": ("早餐", "早饭", "早上"),
@@ -182,22 +236,48 @@ MEAL_TYPES = {
 }
 
 
-def classify_agent_utterance(message: Any) -> AgentUtteranceIntent:
+def classify_agent_utterance(
+    message: Any,
+    *,
+    reference_now: Optional[datetime] = None,
+) -> AgentUtteranceIntent:
     raw = "" if message is None else str(message).strip()
     normalized = _normalize(raw)
     if not normalized:
         return _intent(raw, normalized, "unknown", "unknown", "none", 0.0, "empty")
 
     domain = _infer_domain(normalized)
+    if _is_media_generation_request(normalized):
+        return _intent(
+            raw,
+            normalized,
+            "write",
+            "aigc_media",
+            "create",
+            0.92,
+            "media_generation_request",
+            is_write=True,
+            requires_reliable_tool_model=True,
+        )
     has_read = _has_any(normalized, READ_ACTIONS)
-    scope = _build_scope(normalized, focus=(_read_focus(normalized) if has_read else None))
+    scope = _build_scope(
+        normalized,
+        focus=(_read_focus(normalized) if has_read else None),
+        reference_now=reference_now,
+    )
     has_question = _has_question_signal(normalized)
     has_write = _has_any(normalized, WRITE_ACTIONS)
     has_negated_write = _has_negated_write(normalized)
     mutation = _mutation_operation(normalized)
+    has_negated_mutation = _has_negated_mutation(normalized, mutation)
     has_advice = _has_any(normalized, ADVICE_ACTIONS)
 
-    if mutation and has_question and not has_advice:
+    if has_negated_mutation:
+        return _intent(raw, normalized, "chat", domain, "none", 0.82, "negated_mutation", scope)
+
+    if mutation and (has_question or has_advice):
+        if has_advice:
+            return _intent(raw, normalized, "advice", domain, "analyze", 0.86, "mutation_advice", scope)
         return _intent(raw, normalized, "read", domain, "ask", 0.82, "mutation_question", scope)
 
     if mutation in {"delete", "sync"}:
@@ -214,12 +294,6 @@ def classify_agent_utterance(message: Any) -> AgentUtteranceIntent:
             requires_reliable_tool_model=True,
         )
 
-    if has_advice:
-        return _intent(raw, normalized, "advice", domain, "analyze", 0.86, "advice_frame", scope)
-
-    if mutation and has_question:
-        return _intent(raw, normalized, "read", domain, "ask", 0.82, "mutation_question", scope)
-
     if mutation:
         return _intent(
             raw,
@@ -234,7 +308,13 @@ def classify_agent_utterance(message: Any) -> AgentUtteranceIntent:
             requires_reliable_tool_model=True,
         )
 
-    if has_read or _is_data_question(normalized, domain, has_question):
+    if has_advice:
+        return _intent(raw, normalized, "advice", domain, "analyze", 0.86, "advice_frame", scope)
+
+    if has_read or (
+        _is_data_question(normalized, domain, has_question)
+        and (not has_write or has_question)
+    ):
         operation = "list" if has_read and not has_question else "ask"
         if _wants_table_or_list(normalized):
             operation = "list"
@@ -243,7 +323,11 @@ def classify_agent_utterance(message: Any) -> AgentUtteranceIntent:
     if has_negated_write:
         return _intent(raw, normalized, "chat", domain, "none", 0.78, "negated_write", scope)
 
-    if has_write:
+    if (
+        has_write
+        or _has_explicit_observation_write(normalized, domain)
+        or _has_explicit_event_write(normalized)
+    ):
         return _intent(
             raw,
             normalized,
@@ -251,7 +335,7 @@ def classify_agent_utterance(message: Any) -> AgentUtteranceIntent:
             domain,
             "create",
             0.84,
-            "write_frame",
+            "write_frame" if has_write else "observed_measurement_frame",
             scope,
             is_write=True,
         )
@@ -318,7 +402,27 @@ def _mutation_operation(text: str) -> Optional[str]:
     return None
 
 
+def _has_negated_mutation(text: str, operation: Optional[str]) -> bool:
+    if not operation or _has_any(text, MUTATION_NEGATION_EXCEPTIONS):
+        return False
+    action_positions = [
+        text.find(phrase.lower())
+        for phrase in MUTATE_ACTIONS[operation]
+        if text.find(phrase.lower()) >= 0
+    ]
+    if not action_positions:
+        return False
+    first_action = min(action_positions)
+    return any(
+        0 <= first_action - text.find(negation) <= 12
+        for negation in MUTATION_NEGATIONS
+        if text.find(negation) >= 0
+    )
+
+
 def _infer_domain(text: str) -> str:
+    if _has_any(text, MEDIA_TERMS):
+        return "aigc_media"
     if _has_any(text, WATER_TERMS):
         return "water"
     if _has_any(text, MEDICATION_TERMS):
@@ -332,12 +436,67 @@ def _infer_domain(text: str) -> str:
     return "unknown"
 
 
+def _is_media_generation_request(text: str) -> bool:
+    """Recognize an explicit creative request without making media Q&A a write.
+
+    This follows the semantic-frame approach used for health intents: an
+    external media target plus a creation action is required.  A question such
+    as "AIGC 短视频怎么做" remains advice/read unless the user also supplies an
+    affirmative provider disclosure for the requested generation.
+    """
+    if not _has_any(text, MEDIA_TERMS):
+        return False
+    has_confirmation = (
+        "确认" in text
+        and ("发送" in text or "交给" in text or "授权" in text)
+        and ("百炼" in text or "万相" in text or "wan" in text)
+    )
+    if _has_question_signal(text) and not has_confirmation:
+        return False
+    return has_confirmation or _has_any(text, MEDIA_CREATE_ACTIONS)
+
+
 def _is_data_question(text: str, domain: str, has_question: bool) -> bool:
     if has_question and domain != "unknown":
         return True
     if domain == "unknown":
         return False
     return _has_any(text, ("今天", "昨天", "本周", "这周", "最近", "昨晚", "数据", "情况", "状态"))
+
+
+def _has_explicit_observation_write(text: str, domain: str) -> bool:
+    """Recognize a stated observation without promoting a query into a write.
+
+    This composes domain, observation and quantity signals.  It is deliberately
+    not a command regular-expression router: capability policy remains the
+    authority for whether a resulting tool request may run.
+    """
+    has_ascii_number = any(char.isdigit() for char in text)
+    if domain == "water":
+        has_drink_action = any(token in text for token in ("喝", "饮"))
+        has_amount = has_ascii_number or any(
+            phrase in text for phrase in ("一杯", "两杯", "三杯", "半杯", "一瓶", "半瓶")
+        )
+        return has_drink_action and has_amount
+    if domain != "metric" or not has_ascii_number:
+        return False
+    return any(
+        marker in text
+        for marker in ("体重", "kg", "公斤", "千克", "斤", "血压", "高压", "低压", "收缩压", "舒张压")
+    )
+
+
+def _has_explicit_event_write(text: str) -> bool:
+    return any(
+        phrase in text
+        for phrase in (
+            "准备开始睡觉",
+            "准备入睡",
+            "开始睡眠",
+            "开始入睡",
+            "上床睡觉",
+        )
+    )
 
 
 def _read_focus(text: str) -> str:
@@ -349,10 +508,17 @@ def _read_focus(text: str) -> str:
     return text[last_end:] if last_end >= 0 else text
 
 
-def _build_scope(text: str, *, focus: Optional[str] = None) -> dict[str, str]:
+def _build_scope(
+    text: str,
+    *,
+    focus: Optional[str] = None,
+    reference_now: Optional[datetime] = None,
+) -> dict[str, str]:
     scope_text = focus if focus is not None else text
     scope: dict[str, str] = {}
-    date_value = _relative_date(scope_text) or (None if focus is None else _relative_date(text))
+    date_value = _relative_date(scope_text, reference_now=reference_now) or (
+        None if focus is None else _relative_date(text, reference_now=reference_now)
+    )
     if date_value:
         scope["date"] = date_value
     meal_type = _meal_type(scope_text)
@@ -361,8 +527,12 @@ def _build_scope(text: str, *, focus: Optional[str] = None) -> dict[str, str]:
     return scope
 
 
-def _relative_date(text: str) -> Optional[str]:
-    today = datetime.now(BJ).date()
+def _relative_date(
+    text: str,
+    *,
+    reference_now: Optional[datetime] = None,
+) -> Optional[str]:
+    today = (reference_now or datetime.now(BJ)).date()
     candidates: list[tuple[int, str]] = []
     for label, value in (
         ("前天", (today - timedelta(days=2)).isoformat()),

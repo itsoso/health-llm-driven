@@ -383,6 +383,7 @@ def test_live_turn_unaffected_by_guard(db, monkeypatch):
     )
     ex = ae.AgentExecutor(db)
     ex._current_user_id = 1
+    ex._current_turn_user_message = "记录喝水500ml"
     # _read_only_turn defaults False from __init__.
     assert ex._read_only_turn is False
 

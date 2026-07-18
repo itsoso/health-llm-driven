@@ -1,6 +1,33 @@
+jest.mock('../../../../services/api', () => ({
+  __esModule: true,
+  default: { get: jest.fn(), post: jest.fn() },
+}));
+
 import { CARD_REGISTRY, CARD_MAP, dispatchCard, renderCard, renderServerCards } from '../registry';
 import type { CardContext } from '../types';
-import { fireEvent, render } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import api from '../../../../services/api';
+
+const DIET_WRITE_POLICY = {
+  capability_id: 'diet_draft.v1',
+  required_receipt: true,
+  autonomy_tier: 'manual_confirm',
+  policy_reason: 'manual_confirm_write',
+};
+
+const RUNTIME_AGENDA_WRITE_POLICY = {
+  capability_id: 'runtime_agenda.v1',
+  required_receipt: true,
+  autonomy_tier: 'manual_confirm',
+  policy_reason: 'manual_confirm_write',
+};
+
+const WRITE_INTENT_POLICY = {
+  capability_id: 'write_intent.v1',
+  required_receipt: true,
+  autonomy_tier: 'manual_confirm',
+  policy_reason: 'manual_confirm_write',
+};
 
 function makeContext(query: string, overrides?: Partial<CardContext>): CardContext {
   return {
@@ -87,6 +114,44 @@ describe('renderCard 安全降级', () => {
   it('已知 type → 返回 React 元素', () => {
     const r = renderCard({ type: 'vitals', data: { sleep: '8h' } });
     expect(r).not.toBeNull();
+  });
+
+  it('renders and refreshes a private AIGC media job card', async () => {
+    let resolveRequest: ((value: unknown) => void) | undefined;
+    (api.get as jest.Mock).mockImplementationOnce(() => new Promise((resolve) => {
+      resolveRequest = resolve;
+    }));
+    const element = renderCard({
+      type: 'aigc_media_job',
+      data: {
+        job_id: 'aigc_1',
+        kind: 'image_to_video',
+        status: 'queued',
+        progress: 10,
+        title: '小巴创作',
+        result: { media_type: null, url: null },
+      },
+    });
+
+    expect(element).not.toBeNull();
+    const screen = render(element!);
+    await waitFor(() => expect(api.get).toHaveBeenCalledWith('/aigc/media/jobs/aigc_1'));
+    await act(async () => {
+      resolveRequest?.({
+        data: {
+          id: 'aigc_1',
+          kind: 'image_to_video',
+          status: 'running',
+          progress: 56,
+          title: '小巴创作',
+          result: { media_type: null, url: null },
+        },
+      });
+      await Promise.resolve();
+    });
+    expect(screen.getByText('生成中')).toBeTruthy();
+    expect(screen.getByText('56%')).toBeTruthy();
+    screen.unmount();
   });
 
   it('renders reminder record cards from chat tool results', () => {
@@ -231,6 +296,7 @@ describe('renderCard 安全降级', () => {
           action: 'diet_record.create',
           endpoint: '/diet/records',
           requires_manual_confirm: true,
+          ...DIET_WRITE_POLICY,
           style: 'primary',
           payload: {
             record: {
@@ -387,6 +453,7 @@ describe('renderCard 安全降级', () => {
           action: 'diet_record.create',
           endpoint: '/diet/records',
           requires_manual_confirm: true,
+          ...DIET_WRITE_POLICY,
           style: 'primary',
           payload: {
             record: {
@@ -452,6 +519,7 @@ describe('renderCard 安全降级', () => {
           action: 'diet_record.create',
           endpoint: '/diet/records',
           requires_manual_confirm: true,
+          ...DIET_WRITE_POLICY,
           style: 'primary',
           payload: {
             record: {
@@ -532,6 +600,7 @@ describe('renderCard 安全降级', () => {
           action: 'diet_record.create',
           endpoint: '/diet/records',
           requires_manual_confirm: true,
+          ...DIET_WRITE_POLICY,
           style: 'primary',
           payload: {
             record: {
@@ -566,6 +635,7 @@ describe('renderCard 安全降级', () => {
         action: 'diet_record.create',
         endpoint: '/diet/records',
         requires_manual_confirm: true,
+        ...DIET_WRITE_POLICY,
         payload: {
           record: {
             meal_type: 'lunch',
@@ -590,6 +660,7 @@ describe('renderCard 安全降级', () => {
           action: 'agenda.complete',
           endpoint: '/agenda/complete',
           requires_manual_confirm: true,
+          ...RUNTIME_AGENDA_WRITE_POLICY,
           payload: {
             source: { object_type: 'health_protocol', object_id: 7 },
           },
@@ -620,6 +691,7 @@ describe('renderCard 安全降级', () => {
             action: 'write_intent.confirm',
             endpoint: '/write-intents/42/confirm',
             requires_manual_confirm: true,
+            ...WRITE_INTENT_POLICY,
             payload: { write_intent_id: 42 },
             confirmation: {
               title: '记录 30 个俯卧撑？',
@@ -652,6 +724,7 @@ describe('renderCard 安全降级', () => {
           action: 'agenda.complete',
           endpoint: '/agenda/complete',
           requires_manual_confirm: true,
+          ...RUNTIME_AGENDA_WRITE_POLICY,
           disabled_reason: '缺少可完成的行动来源',
           payload: {},
         },
@@ -680,6 +753,7 @@ describe('renderCard 安全降级', () => {
           action: 'agenda.complete',
           endpoint: '/agenda/complete',
           requires_manual_confirm: true,
+          ...RUNTIME_AGENDA_WRITE_POLICY,
           payload: {
             source: { object_type: 'health_protocol', object_id: 7 },
           },
@@ -711,6 +785,7 @@ describe('renderCard 安全降级', () => {
           action: 'diet_record.create',
           endpoint: '/diet/records',
           requires_manual_confirm: true,
+          ...DIET_WRITE_POLICY,
           payload: { record: { food_items: '鸡胸肉 200g', meal_type: 'lunch' } },
         },
       ],
@@ -749,6 +824,7 @@ describe('renderCard 安全降级', () => {
           action: 'diet_record.create',
           endpoint: '/diet/records',
           requires_manual_confirm: true,
+          ...DIET_WRITE_POLICY,
           payload: {
             record: {
               meal_type: 'dinner',
@@ -790,6 +866,7 @@ describe('renderCard 安全降级', () => {
           action: 'diet_record.create',
           endpoint: '/diet/records',
           requires_manual_confirm: true,
+          ...DIET_WRITE_POLICY,
           payload: {
             record: {
               food_items: '煎牛肉能量碗 + 姜黄鲜柠维C茶',
@@ -1339,6 +1416,7 @@ describe('renderServerCards 防御', () => {
             action: 'agenda.complete',
             endpoint: '/agenda/complete',
             requires_manual_confirm: true,
+            ...RUNTIME_AGENDA_WRITE_POLICY,
             payload: { source: { object_type: 'health_protocol', object_id: 7 } },
           },
         ],
@@ -1362,6 +1440,7 @@ describe('renderServerCards 防御', () => {
             action: 'diet_record.create',
             endpoint: '/diet/records',
             requires_manual_confirm: true,
+            ...DIET_WRITE_POLICY,
             payload: {
               record: { food_items: '鸡蛋 2 个', meal_type: 'breakfast', protein: 12 },
             },
@@ -1409,6 +1488,7 @@ describe('renderServerCards 防御', () => {
             action: 'write_intent.confirm',
             endpoint: '/write-intents/42/confirm',
             requires_manual_confirm: true,
+            ...WRITE_INTENT_POLICY,
             payload: { write_intent_id: 42 },
           },
         ],

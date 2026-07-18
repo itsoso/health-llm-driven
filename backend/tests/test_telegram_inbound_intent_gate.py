@@ -19,7 +19,7 @@ async def test_telegram_execute_record_uses_agent_tool_gateway(db, monkeypatch):
 
     monkeypatch.setattr(
         "app.services.llm.tool_validator.validate_tool_call",
-        lambda tool_name, args, db, user_id: {"error": None, "data": args},
+        lambda tool_name, args, db, user_id, **kwargs: {"error": None, "data": args},
     )
 
     async def should_not_dispatch(self, base, headers, args):

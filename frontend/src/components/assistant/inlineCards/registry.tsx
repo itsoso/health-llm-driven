@@ -5,12 +5,16 @@ import {
   VitalsCardSpec, SleepCardSpec, WeightCardSpec, SupplementCardSpec,
   WeatherCardSpec, BPCardSpec, ScoreCardSpec, RecordCardSpec, DietCardSpec,
   MedicalExamImportResultCardSpec, RecordQualityCardSpec,
+  AIGCMediaJobCardSpec,
+  AIGCMediaConfirmationCardSpec,
 } from './cards';
 
 /** 全量卡片注册表. 数组顺序不决定优先级, 以 match() 返回值为准. */
 export const CARD_REGISTRY: CardSpec[] = [
   RecordCardSpec,
   RecordQualityCardSpec,
+  AIGCMediaJobCardSpec,
+  AIGCMediaConfirmationCardSpec,
   MedicalExamImportResultCardSpec,
   SleepCardSpec,
   WeightCardSpec,

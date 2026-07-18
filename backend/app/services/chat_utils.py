@@ -216,6 +216,64 @@ def _chat_image_file_path(relative_url: str, user_id: int) -> str | None:
     return candidate
 
 
+def read_owned_chat_image_data_uri(
+    relative_url: str,
+    user_id: int,
+    *,
+    max_bytes: int = 20 * 1024 * 1024,
+) -> str:
+    """Read an owner's persisted chat image as a bounded image data URI.
+
+    This is for an already-authorized server-side provider call.  It does not
+    accept arbitrary filesystem paths or URLs, and never logs source bytes.
+    """
+    path = _chat_image_file_path(relative_url, user_id)
+    if not path or not os.path.isfile(path):
+        raise ValueError("owned_chat_image_not_found")
+    size = os.path.getsize(path)
+    if size <= 0 or size > max_bytes:
+        raise ValueError("owned_chat_image_size_invalid")
+    extension = os.path.splitext(path)[1].lower().lstrip(".")
+    mime_types = {
+        "jpg": "image/jpeg",
+        "jpeg": "image/jpeg",
+        "png": "image/png",
+        "gif": "image/gif",
+        "webp": "image/webp",
+    }
+    mime_type = mime_types.get(extension)
+    if not mime_type:
+        raise ValueError("owned_chat_image_type_invalid")
+    with open(path, "rb") as file_handle:
+        encoded = base64.b64encode(file_handle.read()).decode("ascii")
+    return f"data:{mime_type};base64,{encoded}"
+
+
+def build_short_lived_chat_image_provider_url(
+    relative_url: str,
+    user_id: int,
+    *,
+    public_base_url: str,
+    ttl_seconds: int,
+) -> str:
+    """Issue a provider-fetchable, short-lived URL for an owned chat image."""
+    path = _chat_image_file_path(relative_url, user_id)
+    if not path or not os.path.isfile(path):
+        raise ValueError("owned_chat_image_not_found")
+    base = str(public_base_url or "").strip().rstrip("/")
+    parsed = urlsplit(base)
+    if parsed.scheme != "https" or not parsed.netloc or parsed.query or parsed.fragment:
+        raise ValueError("public_https_base_url_required")
+    safe_ttl = max(60, min(int(ttl_seconds), 15 * 60))
+    filename = os.path.basename(path)
+    signed_path = build_signed_chat_image_url(
+        int(user_id),
+        filename,
+        expires=int(time.time()) + safe_ttl,
+    )
+    return f"{base}{signed_path}"
+
+
 StagedChatImageDeletion = tuple[str, str, int]
 
 

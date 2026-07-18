@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 BJ = timezone(timedelta(hours=8))
 
@@ -28,6 +29,8 @@ class ExecutionContext:
     timezone: str
     user_id: Optional[int]
     channel: str
+    run_id: str = ""
+    turn_id: str = ""
     safety_level: str = "l3_health"
     autonomy_tier: str = "manual_confirm"
 
@@ -42,12 +45,25 @@ class ExecutionContext:
         user_id: Optional[int],
         channel: str,
         timezone_name: str = "Asia/Shanghai",
+        now_utc: Optional[datetime] = None,
+        run_id: str = "",
+        turn_id: str = "",
     ) -> "ExecutionContext":
+        generated_utc = now_utc or datetime.now(timezone.utc)
+        if generated_utc.tzinfo is None:
+            generated_utc = generated_utc.replace(tzinfo=timezone.utc)
+        try:
+            user_timezone = ZoneInfo(timezone_name)
+        except ZoneInfoNotFoundError:
+            user_timezone = BJ
+            timezone_name = "Asia/Shanghai"
         return cls(
-            current_time=datetime.now(BJ),
+            current_time=generated_utc.astimezone(user_timezone),
             timezone=timezone_name,
             user_id=user_id,
             channel=channel,
+            run_id=run_id,
+            turn_id=turn_id,
         )
 
     @classmethod
@@ -57,12 +73,16 @@ class ExecutionContext:
         user_id: Optional[int],
         channel: str,
         timezone_name: str = "Asia/Shanghai",
+        run_id: str = "",
+        turn_id: str = "",
     ) -> "ExecutionContext":
         return cls(
             current_time=datetime(2026, 7, 17, 12, 0, tzinfo=BJ),
             timezone=timezone_name,
             user_id=user_id,
             channel=channel,
+            run_id=run_id,
+            turn_id=turn_id,
         )
 
 

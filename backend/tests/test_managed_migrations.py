@@ -74,6 +74,59 @@ def test_tokenplan_cost_migration_adds_rmb_columns(tmp_path: Path):
     } <= columns
 
 
+def test_aigc_media_job_migrations_create_private_owner_ledger(tmp_path: Path):
+    migrations_dir = Path(__file__).resolve().parents[1] / "migrations" / "managed"
+    sqlite_file = migrations_dir / "20260717_120000_create_aigc_media_jobs.sqlite.sql"
+    postgres_file = migrations_dir / "20260717_120000_create_aigc_media_jobs.postgresql.sql"
+    assert sqlite_file.exists()
+    assert postgres_file.exists()
+    assert "result_metadata JSONB" in postgres_file.read_text(encoding="utf-8")
+    assert "uq_aigc_media_jobs_user_idempotency" in postgres_file.read_text(encoding="utf-8")
+
+    isolated = tmp_path / "managed"
+    isolated.mkdir()
+    (isolated / sqlite_file.name).write_text(sqlite_file.read_text(encoding="utf-8"), encoding="utf-8")
+    engine = create_engine("sqlite:///:memory:")
+    result = apply_managed_migrations(engine, isolated)
+
+    assert [migration.id for migration in result.applied] == ["20260717_120000_create_aigc_media_jobs"]
+    columns = {column["name"] for column in inspect(engine).get_columns("aigc_media_jobs")}
+    assert {
+        "user_id",
+        "source_message_id",
+        "kind",
+        "status",
+        "provider_task_id",
+        "request_fingerprint",
+        "output_filename",
+        "last_provider_checked_at",
+    } <= columns
+    indexes = {index["name"] for index in inspect(engine).get_indexes("aigc_media_jobs")}
+    assert {"idx_aigc_media_jobs_user_created", "idx_aigc_media_jobs_user_status"} <= indexes
+
+
+def test_aigc_confirmation_migrations_create_one_time_owner_ledger(tmp_path: Path):
+    migrations_dir = Path(__file__).resolve().parents[1] / "migrations" / "managed"
+    sqlite_file = migrations_dir / "20260717_130000_create_aigc_media_confirmations.sqlite.sql"
+    postgres_file = migrations_dir / "20260717_130000_create_aigc_media_confirmations.postgresql.sql"
+    assert sqlite_file.exists()
+    assert postgres_file.exists()
+    assert "prompt_ciphertext TEXT NOT NULL" in postgres_file.read_text(encoding="utf-8")
+
+    isolated = tmp_path / "managed"
+    isolated.mkdir()
+    (isolated / sqlite_file.name).write_text(sqlite_file.read_text(encoding="utf-8"), encoding="utf-8")
+    engine = create_engine("sqlite:///:memory:")
+    result = apply_managed_migrations(engine, isolated)
+
+    assert [migration.id for migration in result.applied] == ["20260717_130000_create_aigc_media_confirmations"]
+    columns = {column["name"] for column in inspect(engine).get_columns("aigc_media_confirmations")}
+    assert {
+        "user_id", "source_message_id", "purpose", "prompt_ciphertext", "prompt_fingerprint",
+        "status", "job_id", "expires_at", "consumed_at",
+    } <= columns
+
+
 def test_diet_card_idempotency_migration_adds_user_scoped_unique_key(tmp_path: Path):
     from sqlalchemy.exc import IntegrityError
 

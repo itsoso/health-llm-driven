@@ -750,6 +750,50 @@ action 选择:
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "draft_aigc_media",
+            "description": """为用户明确要求的健康行动图片或 2-15 秒短视频创建一个待确认草稿（例如饮食建议封面、晨间拉伸短视频）。该工具不会调用百炼，也不会发送提示词或图片；它只会展示一张确认卡片。仅当用户亲自在确认卡片上点击后，后端才会向百炼 Wan 发送该草稿绑定的提示词和当前图片，并产生费用。
+
+硬规则：
+- 仅在用户明确要求创作图片或短视频时调用，不能用于介绍 AIGC 功能或泛化聊天。
+- image_to_image/image_to_video 只使用当前这条用户消息附带的第一张图片；没有附件时请用户重新上传。
+- 只制作健康管理、行动沟通相关内容，不生成医疗诊断、治疗承诺或含隐私健康数据的公开素材。""",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "kind": {
+                        "type": "string",
+                        "enum": ["text_to_image", "image_to_image", "text_to_video", "image_to_video"],
+                        "description": "生成类型。当前消息含图片时可选 image_to_image/image_to_video。",
+                    },
+                    "prompt": {
+                        "type": "string",
+                        "description": "简洁的健康行动视觉描述，不包含用户个人身份或详细医疗隐私。",
+                    },
+                    "purpose": {
+                        "type": "string",
+                        "enum": ["meal_visual", "movement_routine", "hydration_reminder", "sleep_routine", "wellness_story"],
+                        "description": "健康行动沟通用途，用于服务端安全边界。",
+                    },
+                    "duration_seconds": {
+                        "type": "integer",
+                        "minimum": 2,
+                        "maximum": 15,
+                        "default": 5,
+                        "description": "仅视频，2-15 秒。",
+                    },
+                    "ratio": {
+                        "type": "string",
+                        "enum": ["16:9", "9:16", "1:1", "4:3", "3:4"],
+                        "default": "9:16",
+                    },
+                },
+                "required": ["kind", "prompt", "purpose"],
+            },
+        },
+    },
 ]
 
 
