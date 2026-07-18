@@ -29,6 +29,33 @@ from app.models.memory_fact import MemoryFact
 logger = logging.getLogger(__name__)
 
 
+CAUSAL_EFFECT_PREDICATES = frozenset({
+    "responds_to",
+    "does_not_respond_to",
+    "partially_responds_to",
+})
+
+
+def effective_memory_predicate(
+    predicate: str,
+    *,
+    object_value: str = "",
+    tags: Optional[List[str]] = None,
+) -> str:
+    """Return the safe presentation predicate for a stored memory fact.
+
+    Old rows may predate the clinician-confounding guard. Every presentation
+    surface calls this helper, so those rows cannot re-enter prompts or user
+    views as efficacy claims before the data migration is applied.
+    """
+    if predicate not in CAUSAL_EFFECT_PREDICATES:
+        return predicate
+    from app.services.personal_models.intervention_priors import gate_text_for_clinician
+
+    context = " ".join([object_value or "", *(tags or [])])
+    return "observed_change" if gate_text_for_clinician(context) else predicate
+
+
 # 标准 predicates — LLM extraction 应优先使用这些
 STANDARD_PREDICATES = {
     # 度量值
@@ -39,7 +66,8 @@ STANDARD_PREDICATES = {
     "interacts_with", "contradicts", "depends_on", "supersedes",
     # 用户态
     "has_history", "takes_medication", "has_genotype",
-    "responds_to", "does_not_respond_to",
+    "responds_to", "does_not_respond_to", "partially_responds_to",
+    "observed_change",
     # ActionCard outcome
     "intervention_succeeded", "intervention_failed",
 }
@@ -346,8 +374,11 @@ def render_facts_for_prompt(
         cflag = "🟢" if conf >= 0.7 else "🟡" if conf >= 0.4 else "⚪"
         unit = f" {f.object_unit}" if f.object_unit else ""
         n_src = len(f.sources or [])
+        predicate = effective_memory_predicate(
+            f.predicate, object_value=f.object_value, tags=f.tags or [],
+        )
         lines.append(
-            f"{cflag} {f.subject} **{f.predicate}** {f.object_value}{unit}  "
+            f"{cflag} {f.subject} **{predicate}** {f.object_value}{unit}  "
             f"(conf={conf:.2f}, sources={n_src})"
         )
     return "\n".join(lines)

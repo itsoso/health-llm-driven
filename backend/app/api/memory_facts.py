@@ -39,11 +39,15 @@ class FactReinforce(BaseModel):
 
 
 def _to_dict(f: MemoryFact) -> dict:
+    from app.services.memory_service import effective_memory_predicate
+
     return {
         "id": f.id,
         "tier": f.tier,
         "subject": f.subject,
-        "predicate": f.predicate,
+        "predicate": effective_memory_predicate(
+            f.predicate, object_value=f.object_value, tags=f.tags or [],
+        ),
         "object_value": f.object_value,
         "object_unit": f.object_unit,
         "confidence": f.confidence,

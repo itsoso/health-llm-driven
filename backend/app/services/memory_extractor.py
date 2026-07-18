@@ -132,7 +132,7 @@ def extract_from_action_card_outcome(
 ) -> Optional[int]:
     """评分后的 ActionCard → procedural memory fact.
 
-    三段式:
+    三段式 (仅非处方混杂指标):
       score >= 70 → responds_to        (干预有效, 下次同类优先)
       30 < score < 70 → partially_responds_to  (勉强, 可调剂量/方式再试)
       score <= 30 → does_not_respond_to (无效, 下次避开或显著改变)
@@ -146,12 +146,19 @@ def extract_from_action_card_outcome(
         return None
     from app.services.memory_service import write_fact
 
+    from app.services.personal_models.intervention_priors import is_clinician_gated_metric
+
     score = card.accuracy_score
     metric = card.metric_key or "unknown"
     specialist = card.creator_specialist or "unknown"
     title = (card.title or "")[:60]
 
-    if score >= 70:
+    if is_clinician_gated_metric(metric):
+        # 这类指标可能主要受处方药、激素或其他临床处理影响。评分只能说明
+        # 观察到了变化，不能证明该行动对用户有效或无效。
+        predicate = "observed_change"
+        confidence = 0.4
+    elif score >= 70:
         predicate = "responds_to"
         confidence = min(0.8, 0.5 + score / 200)
     elif score <= 30:
@@ -163,6 +170,10 @@ def extract_from_action_card_outcome(
         confidence = 0.4
 
     obj = f"{title} → {metric}" if title else metric
+
+    tags = [specialist, metric] if metric != "unknown" else [specialist]
+    if predicate == "observed_change":
+        tags.append("clinician_review")
 
     f = _safe_call(
         write_fact, db,
@@ -176,7 +187,7 @@ def extract_from_action_card_outcome(
             "id": card.id,
             "weight": 0.7,
         },
-        tags=[specialist, metric] if metric != "unknown" else [specialist],
+        tags=tags,
         decay_rate=0.005,  # 长记忆, 慢衰减
     )
     return f.id if f else None

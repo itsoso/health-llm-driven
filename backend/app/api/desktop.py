@@ -75,11 +75,15 @@ def _action_card_to_dict(card: ActionCard) -> dict[str, Any]:
 
 
 def _memory_fact_to_dict(fact: MemoryFact) -> dict[str, Any]:
+    from app.services.memory_service import effective_memory_predicate
+
     return {
         "id": fact.id,
         "tier": fact.tier,
         "subject": fact.subject,
-        "predicate": fact.predicate,
+        "predicate": effective_memory_predicate(
+            fact.predicate, object_value=fact.object_value, tags=fact.tags or [],
+        ),
         "object_value": fact.object_value,
         "object_unit": fact.object_unit,
         "confidence": fact.confidence,

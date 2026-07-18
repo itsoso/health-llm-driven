@@ -89,6 +89,21 @@ class TestExtractOutcomeTiered:
         assert extract_from_action_card_outcome(db, card) is None
 
 
+class TestClinicianGatedOutcomeMemory:
+    """处方/药物混杂指标不得沉淀为干预有效性结论。"""
+
+    @pytest.mark.parametrize("metric", ["apo_b", " Apo B ", "lp-a", " LP A "])
+    def test_metric_aliases_write_neutral_observation(self, db, metric):
+        card = _make_card(db, metric=metric, score=85, title="减少夜宵")
+
+        fact_id = extract_from_action_card_outcome(db, card)
+
+        fact = db.query(MemoryFact).filter(MemoryFact.id == fact_id).one()
+        assert fact.predicate == "observed_change"
+        assert fact.confidence == pytest.approx(0.4)
+        assert "clinician_review" in (fact.tags or [])
+
+
 # ─────────── per-specialist track block 拼装 ───────────
 
 

@@ -2,7 +2,7 @@
 import pytest
 
 from app.services.hybrid_search import (
-    _tokenize, MiniBM25, Doc, reciprocal_rank_fusion,
+    _build_user_corpus, _tokenize, MiniBM25, Doc, reciprocal_rank_fusion,
     hybrid_retrieve, render_hits_for_prompt,
 )
 
@@ -192,3 +192,25 @@ class TestEdge:
         hits = hybrid_retrieve(db, 88, "独立药品")
         assert hits
         assert hits[0].source_type == "entity"
+
+
+def test_historical_gated_causal_fact_is_neutralized_before_prompt_corpus(db):
+    """历史事实也不能经 hybrid 检索把处方混杂指标表述成"有效"。"""
+    from app.services.memory_service import write_fact
+
+    write_fact(
+        db,
+        user_id=73,
+        tier="procedural",
+        subject="用户",
+        predicate="responds_to",
+        object_value="减少夜宵 → Apo B",
+        confidence=0.8,
+        tags=[" Apo B "],
+    )
+
+    docs = _build_user_corpus(db, 73)
+
+    assert len(docs) == 1
+    assert "observed_change" in docs[0].text
+    assert "responds_to" not in docs[0].text

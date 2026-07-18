@@ -231,3 +231,15 @@ class TestRender:
         assert "⚪" in out  # low
         # 最高 confidence 应该排第一
         assert out.index("A") < out.index("B") < out.index("C")
+
+    def test_historical_gated_effect_is_rendered_as_neutral_observation(self, db):
+        fact = write_fact(
+            db, user_id=1, tier="procedural", subject="用户",
+            predicate="responds_to", object_value="减少夜宵 → LP A",
+            confidence=0.8, tags=["lp-a"],
+        )
+
+        out = render_facts_for_prompt([fact])
+
+        assert "**observed_change**" in out
+        assert "**responds_to**" not in out

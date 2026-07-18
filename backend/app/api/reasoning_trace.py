@@ -95,6 +95,8 @@ def _build_anomaly_trace(db: Session, alert: AnomalyAlert) -> Dict[str, Any]:
     severity = (alert.severity or "info").lower()
     conf = _SEV_CONF.get(severity, 0.7)
 
+    from app.services.memory_service import effective_memory_predicate
+
     return {
         "id": f"anomaly_{alert.id}",
         "timestamp": alert.detection_date.isoformat() if alert.detection_date else None,
@@ -136,7 +138,9 @@ def _build_anomaly_trace(db: Session, alert: AnomalyAlert) -> Dict[str, Any]:
                 "id": f.id,
                 "tier": f.tier,
                 "subject": f.subject,
-                "predicate": f.predicate,
+                "predicate": effective_memory_predicate(
+                    f.predicate, object_value=f.object_value, tags=f.tags or [],
+                ),
                 "object_value": f.object_value,
                 "object_unit": f.object_unit,
                 "confidence": f.confidence,
@@ -354,10 +358,14 @@ def trace_detail(
             like = f"%{alert.metric_name}%"
             q = q.filter(MemoryFact.subject.ilike(like))
         wider_facts = q.order_by(MemoryFact.created_at.desc()).limit(20).all()
+        from app.services.memory_service import effective_memory_predicate
+
         trace["related_memory"] = [
             {
                 "id": f.id, "tier": f.tier, "subject": f.subject,
-                "predicate": f.predicate, "object_value": f.object_value,
+                "predicate": effective_memory_predicate(
+                    f.predicate, object_value=f.object_value, tags=f.tags or [],
+                ), "object_value": f.object_value,
                 "object_unit": f.object_unit, "confidence": f.confidence,
                 "created_at": f.created_at.isoformat() if f.created_at else None,
             }

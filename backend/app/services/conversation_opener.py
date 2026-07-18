@@ -476,7 +476,11 @@ def _try_recent_memory_fact(db: Session, user_id: int) -> Optional[OpenerSuggest
 
     # 简单拼: subject predicate object — "你 提到 鼻炎"
     subj = (fact.subject or "你").strip()[:30]
-    pred = _predicate_human(fact.predicate)
+    from app.services.memory_service import effective_memory_predicate
+
+    pred = _predicate_human(effective_memory_predicate(
+        fact.predicate, object_value=fact.object_value, tags=fact.tags or [],
+    ))
     # object_value 可能是上游过度提取残留的 JSON blob — serve 前整形。
     # 整形后没剩下有意义内容 → 跳过这条 opener (没线索好过一坨垃圾)。
     obj = sanitize_memory_snippet(fact.object_value, max_len=50)
@@ -504,4 +508,5 @@ def _predicate_human(predicate: str) -> str:
         "avoids": "避开",
         "history_of": "有过",
         "responds_to": "对...有反应",
+        "observed_change": "观察到变化",
     }.get(predicate, predicate)

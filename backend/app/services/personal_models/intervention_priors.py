@@ -118,14 +118,17 @@ _CLINICIAN_GATED_EXACT_CODES = frozenset({
     "ua", "uric_acid",
     "alt", "ast",
     "ggt",
+    "apo_b", "lp_a",
 })
 
 
 def _is_clinician_gated_code(metric_code: str) -> bool:
-    code = (metric_code or "").lower()
-    if code in _CLINICIAN_GATED_EXACT_CODES:
+    code = str(metric_code or "").strip().lower()
+    compact = re.sub(r"[\s_-]+", "", code)
+    exact_compact = {re.sub(r"[\s_-]+", "", item) for item in _CLINICIAN_GATED_EXACT_CODES}
+    if code in _CLINICIAN_GATED_EXACT_CODES or compact in exact_compact:
         return True
-    return any(kw in code for kw in _CLINICIAN_GATED_KEYWORDS)
+    return any(re.sub(r"[\s_-]+", "", kw) in compact for kw in _CLINICIAN_GATED_KEYWORDS)
 
 
 def is_clinician_gated_metric(metric_code: str) -> bool:
