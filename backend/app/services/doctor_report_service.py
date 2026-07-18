@@ -12,7 +12,7 @@ import logging
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import Integer, func
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.action_card import ActionCard
@@ -21,6 +21,7 @@ from app.models.clinical_journal import ClinicalJournalEntry
 from app.models.daily_health import GarminData
 from app.models.user import User
 from app.models.user_directive import UserDirective
+from app.services.outcome_safety import is_efficacy_score_eligible_card
 
 logger = logging.getLogger(__name__)
 
@@ -151,24 +152,25 @@ def _top_alerts(
 
 def _scorecard(db: Session, user_id: int, start: date) -> Dict[str, Any]:
     start_dt = datetime.combine(start, datetime.min.time(), tzinfo=timezone.utc)
-    row = db.query(
-        func.count(ActionCard.id).label("total"),
-        func.avg(ActionCard.accuracy_score).label("avg"),
-        func.sum((ActionCard.accuracy_score >= 70).cast(Integer)).label("hits"),
-    ).filter(
+    scored_cards = db.query(ActionCard).filter(
         ActionCard.user_id == user_id,
         ActionCard.graded_at.isnot(None),
         ActionCard.graded_at >= start_dt,
         ActionCard.accuracy_score.isnot(None),
-    ).first()
+    ).all()
+    scores = [
+        int(card.accuracy_score)
+        for card in scored_cards
+        if is_efficacy_score_eligible_card(card)
+    ]
 
-    total = int(row.total or 0) if row else 0
-    hits = int(row.hits or 0) if row else 0
+    total = len(scores)
+    hits = sum(score >= 70 for score in scores)
     return {
         "total_graded": total,
         "hit_count": hits,
         "hit_rate_pct": round(hits / total * 100, 1) if total else 0.0,
-        "avg_score": round(float(row.avg or 0), 1) if row else 0.0,
+        "avg_score": round(sum(scores) / total, 1) if total else 0.0,
     }
 
 
@@ -226,9 +228,12 @@ def _render_markdown(p: Dict[str, Any]) -> str:
     lines.append(f"- 窗口: {w.get('start','?')} → {w.get('end','?')}")
     if u:
         info = []
-        if u.get("name"): info.append(u["name"])
-        if u.get("gender"): info.append(u["gender"])
-        if u.get("age") is not None: info.append(f"{u['age']} 岁")
+        if u.get("name"):
+            info.append(u["name"])
+        if u.get("gender"):
+            info.append(u["gender"])
+        if u.get("age") is not None:
+            info.append(f"{u['age']} 岁")
         if info:
             lines.append(f"- 用户: {' · '.join(info)}")
     lines.append("")
@@ -279,8 +284,10 @@ def _render_markdown(p: Dict[str, Any]) -> str:
         for d in ds[:10]:
             bits = [d.get("instruction", "") or ""]
             tags = []
-            if d.get("severity"): tags.append(d["severity"])
-            if d.get("source"): tags.append(d["source"])
+            if d.get("severity"):
+                tags.append(d["severity"])
+            if d.get("source"):
+                tags.append(d["source"])
             if tags:
                 bits.append(f"({' · '.join(tags)})")
             lines.append(f"- {' '.join(bits).strip()}")

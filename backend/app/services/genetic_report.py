@@ -36,6 +36,7 @@ from app.models.action_card import ActionCard
 from app.models.system_knowledge import KBDocument, KBEdge
 from app.models.genetic_data import GeneticProfile, GeneticVariant
 from app.services.genetic_risk import clinical_status, effective_risk_level
+from app.services.outcome_safety import user_facing_efficacy_fields
 
 logger = logging.getLogger(__name__)
 
@@ -185,14 +186,13 @@ def _card_matches_gene(card: ActionCard, keys: List[str]) -> bool:
 
 def _card_to_dict(card: ActionCard) -> Dict[str, Any]:
     """精简 card 序列化, 只取 Mobile Why 面板需要的字段."""
+    efficacy_fields = user_facing_efficacy_fields(card)
     return {
         "id": card.id,
         "title": card.title,
         "status": card.status,
         "user_decision": card.user_decision,
-        "outcome": card.outcome,
-        "effect_size": card.effect_size,
-        "accuracy_score": card.accuracy_score,
+        **efficacy_fields,
         "metric_key": card.metric_key,
         "baseline_value": card.baseline_value,
         "actual_value": card.actual_value,

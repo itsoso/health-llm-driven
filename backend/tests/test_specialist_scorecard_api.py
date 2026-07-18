@@ -75,6 +75,68 @@ def test_scorecard_mixed_graded_and_pending(client, db, auth_user_and_headers):
     assert pending_card["graded_at"] is None
 
 
+def test_scorecard_hides_legacy_clinician_gated_hit_score(client, db, auth_user_and_headers):
+    _, headers = auth_user_and_headers
+    user = db.query(User).first()
+    now = datetime.now(timezone.utc)
+    db.add(ActionCard(
+        user_id=user.id,
+        title="降低 LDL",
+        content="c",
+        creator_specialist="recovery_coach",
+        created_at=now - timedelta(days=5),
+        graded_at=now - timedelta(days=1),
+        accuracy_score=95,
+        metric_key="ldl",
+        target_value="<3.0",
+        actual_value="2.8",
+    ))
+    db.commit()
+
+    response = client.get(
+        "/api/v1/specialists/recovery_coach/scorecard?days=30",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["graded_count"] == 0
+    assert body["avg_accuracy"] is None
+    assert body["cards"][0]["accuracy_score"] is None
+    assert body["cards"][0]["score_status"] == "clinician_review"
+
+
+def test_personal_scorecard_excludes_legacy_clinician_gated_score(client, db, auth_user_and_headers):
+    _, headers = auth_user_and_headers
+    user = db.query(User).first()
+    now = datetime.now(timezone.utc)
+    db.add_all([
+        ActionCard(
+            user_id=user.id, title="降低 LDL", content="c",
+            creator_specialist="metabolic_specialist",
+            created_at=now - timedelta(days=5),
+            graded_at=now - timedelta(days=1),
+            accuracy_score=95, metric_key="ldl",
+        ),
+        ActionCard(
+            user_id=user.id, title="睡眠恢复", content="c",
+            creator_specialist="recovery_coach",
+            created_at=now - timedelta(days=4),
+            graded_at=now - timedelta(days=1),
+            accuracy_score=80, metric_key="hrv",
+        ),
+    ])
+    db.commit()
+
+    response = client.get("/api/v1/personal-outcome/me/scorecard?days=30", headers=headers)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["overall"]["total"] == 1
+    assert body["overall"]["hit_rate"] == 100.0
+    assert [card["metric"] for card in body["top_hits"]] == ["hrv"]
+
+
 def test_scorecard_unknown_specialist_404(client, auth_user_and_headers):
     """非法 specialist name 返回 404, detail 含 legal_specialists 列表."""
     _, headers = auth_user_and_headers

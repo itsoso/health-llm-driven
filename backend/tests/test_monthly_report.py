@@ -7,8 +7,7 @@
 - get_or_generate 幂等 + force 重建
 - _previous_month 跨年
 """
-from datetime import date, datetime, timezone, timedelta
-import pytest
+from datetime import date, datetime, timezone
 
 from app.services.monthly_report_service import (
     MonthlyReportService,
@@ -17,7 +16,6 @@ from app.services.monthly_report_service import (
 )
 from app.tasks.monthly_report import _previous_month
 from app.models.action_card import ActionCard
-from app.models.monthly_report import MonthlyReport
 
 
 class TestHelpers:
@@ -111,6 +109,23 @@ class TestScorecard:
         row = svc.get_or_generate(db, 1, 2026, 3)
         assert row.report_data["ai_scorecard"]["overall"]["total_graded"] == 1
 
+    def test_clinician_gated_scores_are_excluded(self, db):
+        mar_15 = datetime(2026, 3, 15, 12, 0, tzinfo=timezone.utc)
+        db.add(_mk_card(1, "metabolic_specialist", 95, metric="ldl", graded_at=mar_15))
+        db.add(_mk_card(1, "recovery_coach", 80, metric="hrv", graded_at=mar_15))
+        db.commit()
+
+        row = MonthlyReportService().get_or_generate(db, 1, 2026, 3)
+        scorecard = row.report_data["ai_scorecard"]
+        assert scorecard["overall"]["total_graded"] == 1
+        assert scorecard["overall"]["hit_count"] == 1
+        assert len(scorecard["top_hits"]) == 1
+        top_hit = scorecard["top_hits"][0]
+        assert top_hit["title"] == "测试建议"
+        assert top_hit["metric"] == "hrv"
+        assert top_hit["score"] == 80
+        assert top_hit["specialist"] == "recovery_coach"
+
 
 class TestIdempotency:
     def test_get_or_generate_returns_existing(self, db):
@@ -123,7 +138,6 @@ class TestIdempotency:
     def test_force_regen_updates_timestamp(self, db):
         svc = MonthlyReportService()
         r1 = svc.get_or_generate(db, 1, 2026, 3)
-        t0 = r1.generated_at
         # 加一张卡再重建
         db.add(_mk_card(
             1, "fuel_strategist", 90,

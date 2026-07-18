@@ -12,11 +12,11 @@ from calendar import monthrange
 from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import Integer, func
 from sqlalchemy.orm import Session
 
 from app.models.action_card import ActionCard
 from app.models.monthly_report import MonthlyReport
+from app.services.outcome_safety import is_efficacy_score_eligible_card
 from app.services.personal_outcome_service import PersonalOutcomeService
 
 logger = logging.getLogger(__name__)
@@ -201,64 +201,53 @@ class MonthlyReportService:
         start_dt = datetime.combine(start, datetime.min.time(), tzinfo=timezone.utc)
         end_dt = datetime.combine(end, datetime.max.time(), tzinfo=timezone.utc)
 
-        base_q = db.query(ActionCard).filter(
+        scored_cards = db.query(ActionCard).filter(
             ActionCard.user_id == user_id,
             ActionCard.graded_at.isnot(None),
             ActionCard.graded_at >= start_dt,
             ActionCard.graded_at <= end_dt,
             ActionCard.accuracy_score.isnot(None),
-        )
-
-        overall_row = db.query(
-            func.count(ActionCard.id).label("total"),
-            func.avg(ActionCard.accuracy_score).label("avg_score"),
-            func.sum((ActionCard.accuracy_score >= 70).cast(Integer)).label("hits"),
-            func.sum((ActionCard.accuracy_score <= 30).cast(Integer)).label("misses"),
-        ).filter(
-            ActionCard.user_id == user_id,
-            ActionCard.graded_at.isnot(None),
-            ActionCard.graded_at >= start_dt,
-            ActionCard.graded_at <= end_dt,
-            ActionCard.accuracy_score.isnot(None),
-        ).first()
-
-        total = int(overall_row.total or 0) if overall_row else 0
-        hits = int(overall_row.hits or 0) if overall_row else 0
-        misses = int(overall_row.misses or 0) if overall_row else 0
+        ).all()
+        eligible_cards = [
+            card for card in scored_cards if is_efficacy_score_eligible_card(card)
+        ]
+        scores = [int(card.accuracy_score) for card in eligible_cards]
+        total = len(scores)
+        hits = sum(score >= 70 for score in scores)
+        misses = sum(score <= 30 for score in scores)
 
         overall = {
             "total_graded": total,
             "hit_count": hits,
             "miss_count": misses,
-            "avg_score": round(float(overall_row.avg_score or 0), 1) if overall_row else 0.0,
+            "avg_score": round(sum(scores) / total, 1) if total else 0.0,
             "hit_rate": round(hits / total * 100, 1) if total else 0.0,
         }
 
-        by_sp_rows = db.query(
-            ActionCard.creator_specialist,
-            func.count(ActionCard.id).label("total"),
-            func.avg(ActionCard.accuracy_score).label("avg_score"),
-            func.sum((ActionCard.accuracy_score >= 70).cast(Integer)).label("hits"),
-        ).filter(
-            ActionCard.user_id == user_id,
-            ActionCard.graded_at.isnot(None),
-            ActionCard.graded_at >= start_dt,
-            ActionCard.graded_at <= end_dt,
-            ActionCard.accuracy_score.isnot(None),
-            ActionCard.creator_specialist.isnot(None),
-        ).group_by(ActionCard.creator_specialist).all()
+        by_specialist_scores: dict[str, list[int]] = {}
+        for card in eligible_cards:
+            if card.creator_specialist:
+                by_specialist_scores.setdefault(card.creator_specialist, []).append(
+                    int(card.accuracy_score)
+                )
 
         by_specialist = sorted(
             [
                 {
-                    "name": r.creator_specialist,
-                    "label": SPECIALIST_LABEL.get(r.creator_specialist, r.creator_specialist),
-                    "total": int(r.total),
-                    "hits": int(r.hits or 0),
-                    "hit_rate": round(int(r.hits or 0) / int(r.total) * 100, 1) if r.total else 0.0,
-                    "avg_score": round(float(r.avg_score or 0), 1),
+                    "name": specialist,
+                    "label": SPECIALIST_LABEL.get(specialist, specialist),
+                    "total": len(specialist_scores),
+                    "hits": sum(score >= 70 for score in specialist_scores),
+                    "hit_rate": round(
+                        sum(score >= 70 for score in specialist_scores)
+                        / len(specialist_scores) * 100,
+                        1,
+                    ),
+                    "avg_score": round(
+                        sum(specialist_scores) / len(specialist_scores), 1
+                    ),
                 }
-                for r in by_sp_rows
+                for specialist, specialist_scores in by_specialist_scores.items()
             ],
             key=lambda x: -x["hit_rate"],
         )
@@ -273,10 +262,15 @@ class MonthlyReportService:
                 "graded_at": c.graded_at.isoformat() if c.graded_at else None,
             }
 
-        top_hits = base_q.filter(ActionCard.accuracy_score >= 70)\
-            .order_by(ActionCard.accuracy_score.desc()).limit(3).all()
-        top_misses = base_q.filter(ActionCard.accuracy_score <= 30)\
-            .order_by(ActionCard.accuracy_score.asc()).limit(3).all()
+        top_hits = sorted(
+            (card for card in eligible_cards if card.accuracy_score >= 70),
+            key=lambda card: card.accuracy_score,
+            reverse=True,
+        )[:3]
+        top_misses = sorted(
+            (card for card in eligible_cards if card.accuracy_score <= 30),
+            key=lambda card: card.accuracy_score,
+        )[:3]
 
         return {
             "overall": overall,

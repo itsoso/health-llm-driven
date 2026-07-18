@@ -145,6 +145,32 @@ class TestGradeFlow:
         assert card.graded_at is None
         assert card.check_back_date > original_check_back
 
+    def test_clinician_gated_metric_is_recorded_but_not_scored_as_efficacy(self, db):
+        from app.models.action_card import ActionCard
+        from app.tasks.outcome_grader import grade_single_card
+
+        now = datetime.now(timezone.utc)
+        card = ActionCard(
+            user_id=7,
+            title="降低 LDL",
+            content="...",
+            metric_key="ldl",
+            baseline_value="3.5",
+            target_value="<3.0",
+            creator_specialist="fuel_strategist",
+            check_back_date=now - timedelta(hours=1),
+        )
+        db.add(card)
+        db.commit()
+
+        result = grade_single_card(db, card, now)
+
+        assert result["status"] == "clinician_review"
+        assert result["pushed"] is False
+        assert card.accuracy_score is None
+        assert card.outcome == "inconclusive"
+        assert "混杂" in card.grading_notes
+
 
 class TestP0Fixes:
     """P0 bugs: timezone / stale data floor / BP dual-value."""
@@ -204,8 +230,8 @@ class TestP0Fixes:
         assert card.graded_at is not None
         assert card.actual_value == "80"
 
-    def test_bp_dual_grading_takes_worse(self, db):
-        """BP 评分: systolic 好、diastolic 反向 → 取较差那个 → 低分."""
+    def test_bp_dual_grading_requires_clinician_review(self, db):
+        """血压受临床管理混杂：保留读数，但不生成 Agent 有效性评分。"""
         from app.models.action_card import ActionCard
         from app.models.basic_health import BasicHealthData
         from app.tasks.outcome_grader import _grade_loop
@@ -231,13 +257,13 @@ class TestP0Fixes:
         assert result["graded"] >= 1
 
         db.refresh(card)
-        # systolic 完全达成 (140→120), 但 diastolic 反向 (90→100), 应取较差
-        assert card.accuracy_score is not None
-        assert card.accuracy_score < 50, f"BP 双指标应取较差, 当前 {card.accuracy_score}"
-        assert "diastolic" in (card.grading_notes or "").lower() or "反向" in (card.grading_notes or "")
+        assert card.actual_value == "120"
+        assert card.accuracy_score is None
+        assert card.outcome == "inconclusive"
+        assert "混杂" in (card.grading_notes or "")
 
-    def test_bp_single_value_fallback(self, db):
-        """BP target 只写单值 (如 '<130') → 按 systolic 单指标评."""
+    def test_bp_single_value_requires_clinician_review(self, db):
+        """单项收缩压同样不能变成 Agent 命中率。"""
         from app.models.action_card import ActionCard
         from app.models.basic_health import BasicHealthData
         from app.tasks.outcome_grader import _grade_loop
@@ -263,9 +289,10 @@ class TestP0Fixes:
         assert result["graded"] >= 1
 
         db.refresh(card)
-        # 140→125, target<130: 达成
-        assert card.accuracy_score is not None
-        assert card.accuracy_score >= 70
+        assert card.actual_value == "125"
+        assert card.accuracy_score is None
+        assert card.outcome == "inconclusive"
+        assert "混杂" in (card.grading_notes or "")
 
     def test_timezone_shanghai_date_used(self, db):
         """边界: UTC 23:30 (= Shanghai 07:30 次日).

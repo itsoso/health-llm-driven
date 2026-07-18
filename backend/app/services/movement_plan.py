@@ -21,14 +21,14 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from app.models.action_card import ActionCard
-from app.orchestrator.intent import classify_intent
 from app.orchestrator.schema import Intent
+from app.services.outcome_safety import user_facing_efficacy_fields
 
 logger = logging.getLogger(__name__)
 
@@ -79,14 +79,13 @@ def _fetch_movement_related_cards(db: Session, user_id: int) -> List[ActionCard]
 
 
 def _card_to_dict(card: ActionCard) -> Dict[str, Any]:
+    efficacy_fields = user_facing_efficacy_fields(card)
     return {
         "id": card.id,
         "title": card.title,
         "status": card.status,
         "user_decision": card.user_decision,
-        "outcome": card.outcome,
-        "effect_size": card.effect_size,
-        "accuracy_score": card.accuracy_score,
+        **efficacy_fields,
         "metric_key": card.metric_key,
         "baseline_value": card.baseline_value,
         "actual_value": card.actual_value,

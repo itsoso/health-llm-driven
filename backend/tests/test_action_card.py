@@ -306,6 +306,35 @@ def test_get_active_action_cards_archives_expired_cards(client, db, auth_user_an
     assert expired.is_visible is False
 
 
+def test_action_card_api_hides_legacy_clinician_gated_score(client, db, auth_user_and_headers):
+    user, headers = auth_user_and_headers
+
+    from app.models.action_card import ActionCard
+
+    card = ActionCard(
+        user_id=user.id,
+        title="降低 LDL",
+        content="保留测量供临床复盘。",
+        status="active",
+        is_visible=True,
+        metric_key="ldl",
+        accuracy_score=95,
+        outcome="improved",
+        effect_size=0.8,
+    )
+    db.add(card)
+    db.commit()
+
+    response = client.get("/api/v1/action-cards/me?status=active", headers=headers)
+
+    assert response.status_code == 200
+    payload = next(item for item in response.json() if item["id"] == card.id)
+    assert payload["accuracy_score"] is None
+    assert payload["score_status"] == "clinician_review"
+    assert payload["outcome"] == "inconclusive"
+    assert payload["effect_size"] is None
+
+
 def test_get_active_action_cards_archives_legacy_weekly_cards_without_expires(client, db, auth_user_and_headers):
     user, headers = auth_user_and_headers
 

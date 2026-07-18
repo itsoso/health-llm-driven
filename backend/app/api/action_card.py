@@ -24,6 +24,11 @@ from app.api.deps import get_current_user_required
 from app.database import get_db
 from app.models.action_card import ActionCard
 from app.models.user import User
+from app.services.outcome_safety import (
+    clinician_review_grading_note,
+    is_efficacy_score_eligible_card,
+    user_facing_efficacy_fields,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -728,6 +733,8 @@ def record_card_push_click(
 
 
 def _card_to_dict(card: ActionCard) -> dict:
+    efficacy_score_eligible = is_efficacy_score_eligible_card(card)
+    efficacy_fields = user_facing_efficacy_fields(card)
     return {
         "id": card.id,
         "title": card.title,
@@ -750,9 +757,13 @@ def _card_to_dict(card: ActionCard) -> dict:
         "creator_specialist": card.creator_specialist,
         "check_back_date": card.check_back_date.isoformat() if card.check_back_date else None,
         "actual_value": card.actual_value,
-        "accuracy_score": card.accuracy_score,
+        **efficacy_fields,
         "graded_at": card.graded_at.isoformat() if card.graded_at else None,
-        "grading_notes": card.grading_notes,
+        "grading_notes": (
+            card.grading_notes
+            if efficacy_score_eligible
+            else clinician_review_grading_note(card.metric_key)
+        ),
         "adherence_kind": card.adherence_kind,
         "adherence_confidence": card.adherence_confidence,
         # WSCLA 生命周期 (Phase 0/1)
@@ -762,8 +773,6 @@ def _card_to_dict(card: ActionCard) -> dict:
         "user_decision": card.user_decision,
         "decided_at": card.decided_at.isoformat() if card.decided_at else None,
         "decision_reason": card.decision_reason,
-        "outcome": card.outcome,
-        "effect_size": card.effect_size,
         "seen_at": card.seen_at.isoformat() if card.seen_at else None,
         "push_sent_at": card.push_sent_at.isoformat() if card.push_sent_at else None,
         "push_delivered_at": card.push_delivered_at.isoformat() if card.push_delivered_at else None,

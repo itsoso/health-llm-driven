@@ -85,7 +85,8 @@ class TestExtractOutcomeTiered:
             user_id=1, title="x", content="", creator_specialist="fuel_strategist",
             metric_key="hrv", accuracy_score=None,
         )
-        db.add(card); db.commit()
+        db.add(card)
+        db.commit()
         assert extract_from_action_card_outcome(db, card) is None
 
 
@@ -144,6 +145,15 @@ class TestTrackBlock:
         # 30 < score < 70 不进高低命中 (只 partially_responds_to 到 memory)
         assert block == ""
 
+    def test_clinician_gated_metric_never_enters_hit_or_miss_track(self, db):
+        _make_card(db, metric="ldl", score=85, title="降低 LDL 的建议")
+        _make_card(db, metric="hrv", score=20, title="恢复建议")
+
+        block = _build_per_specialist_track_block(db, 1, ["fuel_strategist"], days=90)
+
+        assert "降低 LDL 的建议" not in block
+        assert "恢复建议" in block
+
     def test_window_filter_excludes_old_cards(self, db):
         # 365 天前的 card, 90 天窗口应过滤掉
         _make_card(
@@ -163,5 +173,5 @@ class TestTrackBlock:
             db, 1, ["fuel_strategist"], days=90, top_n=2,
         )
         # 5 条高命中只取 top 2
-        high_lines = [l for l in block.splitlines() if "✅" in l]
+        high_lines = [line for line in block.splitlines() if "✅" in line]
         assert len(high_lines) == 2

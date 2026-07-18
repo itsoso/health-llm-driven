@@ -7,6 +7,74 @@ from sqlalchemy import create_engine, inspect, text
 from app.services.managed_migrations import _split_sql_statements, apply_managed_migrations
 
 
+def test_clinician_gated_outcome_migration_has_managed_dialect_pair():
+    migrations_dir = Path(__file__).resolve().parents[1] / "migrations" / "managed"
+    postgres = migrations_dir / "20260718_130000_neutralize_clinician_gated_outcomes.postgresql.sql"
+    sqlite = migrations_dir / "20260718_130000_neutralize_clinician_gated_outcomes.sqlite.sql"
+
+    assert postgres.exists()
+    assert sqlite.exists()
+    for migration in (postgres, sqlite):
+        sql = migration.read_text(encoding="utf-8")
+        assert "UPDATE memory_facts" in sql
+        assert "UPDATE action_cards" in sql
+
+
+def test_clinician_gated_outcome_sqlite_migration_neutralizes_legacy_scores(tmp_path: Path):
+    migrations_dir = Path(__file__).resolve().parents[1] / "migrations" / "managed"
+    migration = migrations_dir / "20260718_130000_neutralize_clinician_gated_outcomes.sqlite.sql"
+    isolated = tmp_path / "managed"
+    isolated.mkdir()
+    (isolated / migration.name).write_text(migration.read_text(encoding="utf-8"), encoding="utf-8")
+
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        conn.execute(text(
+            "CREATE TABLE memory_facts ("
+            "id INTEGER PRIMARY KEY, predicate TEXT, confidence REAL, tags TEXT, "
+            "updated_at TEXT, subject TEXT, object_value TEXT)"
+        ))
+        conn.execute(text(
+            "CREATE TABLE action_cards ("
+            "id INTEGER PRIMARY KEY, metric_key TEXT, accuracy_score INTEGER, outcome TEXT, "
+            "effect_size REAL, grading_notes TEXT, updated_at TEXT)"
+        ))
+        conn.execute(text(
+            "INSERT INTO memory_facts (id, predicate, confidence, tags, subject, object_value) "
+            "VALUES (1, 'responds_to', 0.9, '[]', '用户血压', '降压建议')"
+        ))
+        conn.execute(text(
+            "INSERT INTO action_cards (id, metric_key, accuracy_score, outcome, effect_size, grading_notes) "
+            "VALUES (1, 'ldl', 95, 'improved', 0.8, '旧评分'), "
+            "(2, 'hrv', 80, 'improved', 0.5, '恢复评分')"
+        ))
+
+    result = apply_managed_migrations(engine, isolated)
+    assert [item.id for item in result.applied] == [
+        "20260718_130000_neutralize_clinician_gated_outcomes"
+    ]
+
+    with engine.connect() as conn:
+        fact = conn.execute(text(
+            "SELECT predicate, confidence, tags FROM memory_facts WHERE id = 1"
+        )).one()
+        ldl_card = conn.execute(text(
+            "SELECT accuracy_score, outcome, effect_size, grading_notes FROM action_cards WHERE id = 1"
+        )).one()
+        hrv_card = conn.execute(text(
+            "SELECT accuracy_score, outcome FROM action_cards WHERE id = 2"
+        )).one()
+
+    assert fact.predicate == "observed_change"
+    assert fact.confidence == 0.4
+    assert "clinician_review" in fact.tags
+    assert ldl_card.accuracy_score is None
+    assert ldl_card.outcome == "inconclusive"
+    assert ldl_card.effect_size is None
+    assert "不计入建议命中率" in ldl_card.grading_notes
+    assert tuple(hrv_card) == (80, "improved")
+
+
 def test_apply_managed_migrations_runs_matching_dialect_once(tmp_path: Path):
     migrations_dir = tmp_path / "managed"
     migrations_dir.mkdir()

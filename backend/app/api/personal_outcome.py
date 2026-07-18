@@ -89,67 +89,49 @@ def get_my_scorecard(
       top_hits:   [{card_id, title, metric, score, graded_at, specialist}]
       top_misses: [{...}]
     """
+    from collections import defaultdict
     from datetime import datetime, timezone, timedelta
-    from sqlalchemy import func, Integer
     from app.models.action_card import ActionCard
+    from app.services.outcome_safety import is_efficacy_score_eligible_card
 
     since = datetime.now(timezone.utc) - timedelta(days=days)
 
-    graded_q = db.query(ActionCard).filter(
+    graded_cards = db.query(ActionCard).filter(
         ActionCard.user_id == current_user.id,
         ActionCard.graded_at.isnot(None),
         ActionCard.graded_at >= since,
         ActionCard.accuracy_score.isnot(None),
-    )
-
-    # Overall
-    overall_row = db.query(
-        func.count(ActionCard.id).label("total"),
-        func.avg(ActionCard.accuracy_score).label("avg_score"),
-        func.sum((ActionCard.accuracy_score >= 70).cast(Integer)).label("hits"),
-        func.sum((ActionCard.accuracy_score <= 30).cast(Integer)).label("misses"),
-    ).filter(
-        ActionCard.user_id == current_user.id,
-        ActionCard.graded_at.isnot(None),
-        ActionCard.graded_at >= since,
-        ActionCard.accuracy_score.isnot(None),
-    ).first()
-
-    total = int(overall_row.total or 0)
-    hits = int(overall_row.hits or 0)
-    misses = int(overall_row.misses or 0)
+    ).all()
+    eligible_cards = [card for card in graded_cards if is_efficacy_score_eligible_card(card)]
+    scores = [int(card.accuracy_score) for card in eligible_cards]
+    total = len(scores)
+    hits = sum(score >= 70 for score in scores)
+    misses = sum(score <= 30 for score in scores)
     overall = {
         "total": total,
         "high_count": hits,
         "low_count": misses,
-        "avg_score": round(float(overall_row.avg_score or 0), 1),
+        "avg_score": round(sum(scores) / total, 1) if total else 0.0,
         "hit_rate": round(hits / total * 100, 1) if total else 0.0,
     }
 
     # By specialist
-    sp_rows = db.query(
-        ActionCard.creator_specialist,
-        func.count(ActionCard.id).label("total"),
-        func.avg(ActionCard.accuracy_score).label("avg_score"),
-        func.sum((ActionCard.accuracy_score >= 70).cast(Integer)).label("hits"),
-    ).filter(
-        ActionCard.user_id == current_user.id,
-        ActionCard.graded_at.isnot(None),
-        ActionCard.graded_at >= since,
-        ActionCard.accuracy_score.isnot(None),
-        ActionCard.creator_specialist.isnot(None),
-    ).group_by(ActionCard.creator_specialist).all()
-
-    by_specialist = [
-        {
-            "name": r.creator_specialist,
-            "total": int(r.total),
-            "hits": int(r.hits or 0),
-            "hit_rate": round(int(r.hits or 0) / int(r.total) * 100, 1) if r.total else 0.0,
-            "avg_score": round(float(r.avg_score or 0), 1),
-        }
-        for r in sorted(sp_rows, key=lambda x: -(int(x.hits or 0) / (int(x.total) or 1)))
-    ]
+    grouped = defaultdict(list)
+    for card in eligible_cards:
+        if card.creator_specialist:
+            grouped[card.creator_specialist].append(int(card.accuracy_score))
+    by_specialist = []
+    for specialist, specialist_scores in grouped.items():
+        specialist_hits = sum(score >= 70 for score in specialist_scores)
+        specialist_total = len(specialist_scores)
+        by_specialist.append({
+            "name": specialist,
+            "total": specialist_total,
+            "hits": specialist_hits,
+            "hit_rate": round(specialist_hits / specialist_total * 100, 1),
+            "avg_score": round(sum(specialist_scores) / specialist_total, 1),
+        })
+    by_specialist.sort(key=lambda row: row["hit_rate"], reverse=True)
 
     def _card_summary(c: ActionCard) -> dict:
         return {
@@ -161,10 +143,15 @@ def get_my_scorecard(
             "specialist": c.creator_specialist,
         }
 
-    top_hits = graded_q.filter(ActionCard.accuracy_score >= 70)\
-        .order_by(ActionCard.accuracy_score.desc()).limit(top_n).all()
-    top_misses = graded_q.filter(ActionCard.accuracy_score <= 30)\
-        .order_by(ActionCard.accuracy_score.asc()).limit(top_n).all()
+    top_hits = sorted(
+        (card for card in eligible_cards if card.accuracy_score >= 70),
+        key=lambda card: card.accuracy_score,
+        reverse=True,
+    )[:top_n]
+    top_misses = sorted(
+        (card for card in eligible_cards if card.accuracy_score <= 30),
+        key=lambda card: card.accuracy_score,
+    )[:top_n]
 
     return {
         "window_days": days,

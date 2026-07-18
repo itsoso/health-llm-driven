@@ -467,31 +467,32 @@ def _persist_proposed_cards(
 def _build_specialist_credit_block(db: Session, user_id: int, days: int = 30) -> str:
     """生成 specialist 命中率简短文本, 供 LLM 决策时参考 (信任循环反馈)."""
     try:
-        from sqlalchemy import func, Integer
+        from collections import defaultdict
         from datetime import datetime, timezone, timedelta as _td
         from app.models.action_card import ActionCard
+        from app.services.outcome_safety import is_efficacy_score_eligible_card
 
         since = datetime.now(timezone.utc) - _td(days=days)
-        rows = db.query(
-            ActionCard.creator_specialist,
-            func.count(ActionCard.id).label("total"),
-            func.avg(ActionCard.accuracy_score).label("avg_score"),
-            func.sum((ActionCard.accuracy_score >= 70).cast(Integer)).label("hits"),
-        ).filter(
+        cards = db.query(ActionCard).filter(
             ActionCard.user_id == user_id,
             ActionCard.graded_at.isnot(None),
             ActionCard.graded_at >= since,
             ActionCard.creator_specialist.isnot(None),
-        ).group_by(ActionCard.creator_specialist).all()
+            ActionCard.accuracy_score.isnot(None),
+        ).all()
+        eligible = [card for card in cards if is_efficacy_score_eligible_card(card)]
 
-        if not rows:
+        if not eligible:
             return ""
+        by_specialist = defaultdict(list)
+        for card in eligible:
+            by_specialist[card.creator_specialist].append(int(card.accuracy_score))
         parts = []
-        for r in rows:
-            total = int(r.total)
-            hits = int(r.hits or 0)
+        for specialist, scores in by_specialist.items():
+            total = len(scores)
+            hits = sum(score >= 70 for score in scores)
             rate = (hits / total * 100) if total else 0
-            parts.append(f"{r.creator_specialist}={rate:.0f}% ({hits}/{total}, avg {float(r.avg_score or 0):.0f})")
+            parts.append(f"{specialist}={rate:.0f}% ({hits}/{total}, avg {sum(scores) / total:.0f})")
         return " | ".join(parts)
     except Exception as e:
         logger.warning(f"[orchestrator] credit block 失败 (旁路): {e}")
@@ -518,6 +519,7 @@ def _build_per_specialist_track_block(
     try:
         from datetime import datetime, timezone, timedelta as _td
         from app.models.action_card import ActionCard
+        from app.services.outcome_safety import is_efficacy_score_eligible_card
 
         since = datetime.now(timezone.utc) - _td(days=days)
         now = datetime.now(timezone.utc)
@@ -545,10 +547,16 @@ def _build_per_specialist_track_block(
                 ActionCard.graded_at >= since,
                 ActionCard.accuracy_score.isnot(None),
             )
-            highs = base_q.filter(ActionCard.accuracy_score >= 70)\
-                .order_by(ActionCard.accuracy_score.desc()).limit(top_n).all()
-            lows = base_q.filter(ActionCard.accuracy_score <= 30)\
-                .order_by(ActionCard.accuracy_score.asc()).limit(top_n).all()
+            cards = [card for card in base_q.all() if is_efficacy_score_eligible_card(card)]
+            highs = sorted(
+                (card for card in cards if card.accuracy_score >= 70),
+                key=lambda card: card.accuracy_score,
+                reverse=True,
+            )[:top_n]
+            lows = sorted(
+                (card for card in cards if card.accuracy_score <= 30),
+                key=lambda card: card.accuracy_score,
+            )[:top_n]
             if not highs and not lows:
                 continue
             lines = [f"- {sp}:"]

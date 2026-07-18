@@ -313,6 +313,10 @@ def _notify_prediction_hit(db, card: ActionCard) -> bool:
 
     Returns: True 推送成功 (或被 quiet/dedup 静默吞掉, 算正常路径); False 异常.
     """
+    from app.services.outcome_safety import is_efficacy_score_eligible_card
+
+    if not is_efficacy_score_eligible_card(card):
+        return False
     if card.accuracy_score is None or card.accuracy_score < 70:
         return False
     if not card.creator_specialist:
@@ -379,6 +383,32 @@ def grade_single_card(db, card: ActionCard, now: datetime) -> dict:
     replies, where the user answers "做到了/没做" and expects the specific card
     they are looking at to be verified immediately.
     """
+    from app.services.outcome_safety import (
+        clinician_review_grading_note,
+        is_efficacy_score_eligible_card,
+    )
+
+    if not is_efficacy_score_eligible_card(card):
+        actual = _fetch_metric(db, card.user_id, card.metric_key, now)
+        if actual is not None:
+            card.actual_value = f"{actual:g}"
+        card.accuracy_score = None
+        card.outcome = "inconclusive"
+        card.effect_size = None
+        card.graded_at = now
+        card.grading_notes = clinician_review_grading_note(card.metric_key)
+        logger.info(
+            "[OutcomeGrader] card #%s metric=%s requires clinician review; "
+            "excluded from efficacy scoring",
+            card.id,
+            card.metric_key,
+        )
+        return {
+            "status": "clinician_review",
+            "pushed": False,
+            "note": card.grading_notes,
+        }
+
     if card.metric_key == "bp" and card.target_value and "/" in card.target_value:
         score, note = _grade_bp_dual(
             db, card.user_id, card.baseline_value or "", card.target_value, now,

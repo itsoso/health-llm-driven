@@ -14,6 +14,7 @@ from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from app.models.action_card import ActionCard
+from app.services.outcome_safety import user_facing_efficacy_fields
 
 logger = logging.getLogger(__name__)
 
@@ -67,13 +68,13 @@ def _fetch_diet_related_cards(db: Session, user_id: int) -> List[ActionCard]:
 
 
 def _card_to_dict(card: ActionCard) -> Dict[str, Any]:
+    efficacy_fields = user_facing_efficacy_fields(card)
     return {
         "id": card.id,
         "title": card.title,
         "status": card.status,
         "user_decision": card.user_decision,
-        "outcome": card.outcome,
-        "effect_size": card.effect_size,
+        **efficacy_fields,
         "metric_key": card.metric_key,
         "baseline_value": card.baseline_value,
         "actual_value": card.actual_value,

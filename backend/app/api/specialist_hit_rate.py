@@ -6,7 +6,7 @@
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import Integer, func, or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user_required
@@ -24,38 +24,38 @@ def specialist_hit_rate(
     db: Session = Depends(get_db),
 ):
     since = datetime.now(timezone.utc) - timedelta(days=days)
+    from collections import defaultdict
+    from app.services.outcome_safety import is_efficacy_score_eligible_card
 
     # 已评分卡片按 specialist 聚合
     # 过滤低依从度卡 (adherence_confidence < 30): 用户根本没做的不算 specialist 准不准
-    rows = db.query(
-        ActionCard.creator_specialist,
-        func.count(ActionCard.id).label("total"),
-        func.avg(ActionCard.accuracy_score).label("avg_score"),
-        func.sum(
-            (ActionCard.accuracy_score >= 70).cast(Integer)
-        ).label("hits"),
-    ).filter(
+    cards = db.query(ActionCard).filter(
         ActionCard.user_id == current_user.id,
         ActionCard.graded_at.isnot(None),
         ActionCard.graded_at >= since,
         ActionCard.creator_specialist.isnot(None),
+        ActionCard.accuracy_score.isnot(None),
         # adherence_confidence 为 NULL (兼容旧卡) 或 >= 30
         or_(
             ActionCard.adherence_confidence.is_(None),
             ActionCard.adherence_confidence >= 30,
         ),
-    ).group_by(ActionCard.creator_specialist).all()
+    ).all()
 
+    grouped = defaultdict(list)
+    for card in cards:
+        if is_efficacy_score_eligible_card(card):
+            grouped[card.creator_specialist].append(int(card.accuracy_score))
     by_specialist = []
-    for r in rows:
-        total = int(r.total)
-        hits = int(r.hits or 0)
+    for specialist, scores in grouped.items():
+        total = len(scores)
+        hits = sum(score >= 70 for score in scores)
         # 样本量 < 3 不参与 best_specialist 排名, 但仍展示数据
         by_specialist.append({
-            "specialist": r.creator_specialist,
+            "specialist": specialist,
             "total_graded": total,
             "hit_rate": round(hits / total, 2) if total else 0,
-            "avg_accuracy_score": round(float(r.avg_score or 0), 1),
+            "avg_accuracy_score": round(sum(scores) / total, 1),
             "hits": hits,
             "is_significant": total >= 3,  # 样本量充足才可信
         })
@@ -92,6 +92,7 @@ def my_recent_graded_cards(
         ActionCard.graded_at.isnot(None),
     ).order_by(ActionCard.graded_at.desc()).limit(limit).all()
 
+    from app.services.outcome_safety import is_efficacy_score_eligible_card
     return [{
         "id": c.id,
         "title": c.title,
@@ -100,11 +101,12 @@ def my_recent_graded_cards(
         "baseline": c.baseline_value,
         "target": c.target_value,
         "actual": c.actual_value,
-        "accuracy_score": c.accuracy_score,
+        "accuracy_score": c.accuracy_score if is_efficacy_score_eligible_card(c) else None,
         "graded_at": c.graded_at.isoformat() if c.graded_at else None,
         "notes": c.grading_notes,
         "adherence_kind": c.adherence_kind,
         "adherence_confidence": c.adherence_confidence,
+        "score_status": "clinician_review" if not is_efficacy_score_eligible_card(c) else "eligible",
     } for c in cards]
 
 
@@ -157,7 +159,12 @@ def specialist_scorecard(
         .all()
     )
 
-    graded = [c for c in cards if c.accuracy_score is not None]
+    from app.services.outcome_safety import is_efficacy_score_eligible_card
+
+    graded = [
+        card for card in cards
+        if card.accuracy_score is not None and is_efficacy_score_eligible_card(card)
+    ]
     proposed_count = len(cards)
     graded_count = len(graded)
 
@@ -184,7 +191,8 @@ def specialist_scorecard(
                 "metric_key": c.metric_key,
                 "target_value": c.target_value,
                 "actual_value": c.actual_value,
-                "accuracy_score": c.accuracy_score,
+                "accuracy_score": c.accuracy_score if is_efficacy_score_eligible_card(c) else None,
+                "score_status": "clinician_review" if not is_efficacy_score_eligible_card(c) else "eligible",
                 "adherence_kind": c.adherence_kind,
                 "adherence_confidence": c.adherence_confidence,
                 "why_short": (c.grading_notes or "")[:120] or None,

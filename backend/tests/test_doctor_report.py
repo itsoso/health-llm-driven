@@ -20,7 +20,8 @@ def user(db):
         birth_date=date(1982, 3, 15),
         gender="男",
     )
-    db.add(u); db.commit()
+    db.add(u)
+    db.commit()
     return u
 
 
@@ -116,6 +117,28 @@ class TestExport:
         assert sc["hit_count"] == 2
         assert sc["hit_rate_pct"] == 50.0
 
+    def test_scorecard_excludes_clinician_gated_metric(self, db, user):
+        now = datetime.now(timezone.utc)
+        db.add_all([
+            ActionCard(
+                user_id=user.id, title="LDL", content="", metric_key="ldl",
+                accuracy_score=95, graded_at=now - timedelta(days=2),
+            ),
+            ActionCard(
+                user_id=user.id, title="恢复", content="", metric_key="hrv",
+                accuracy_score=80, graded_at=now - timedelta(days=2),
+            ),
+        ])
+        db.commit()
+
+        scorecard = build_doctor_export(db, user.id, days=30)["ai_scorecard"]
+        assert scorecard == {
+            "total_graded": 1,
+            "hit_count": 1,
+            "hit_rate_pct": 100.0,
+            "avg_score": 80.0,
+        }
+
 
 class TestFeedback:
     def test_record_and_list(self, db, user):
@@ -150,7 +173,8 @@ class TestFeedback:
 
     def test_scoped_per_user(self, db, user):
         other = User(id=2, username="u2", name="李四")
-        db.add(other); db.commit()
+        db.add(other)
+        db.commit()
 
         record_doctor_feedback(db, user.id, summary="", assessment="A", plan="")
         record_doctor_feedback(db, other.id, summary="", assessment="B", plan="")
