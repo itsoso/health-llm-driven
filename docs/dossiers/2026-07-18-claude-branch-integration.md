@@ -4,8 +4,8 @@
 |---|---|
 | slug | `claude-branch-integration` |
 | 创建日期 | 2026-07-18 |
-| 当前阶段 | S5 CI 修复验证 |
-| 状态 | pending_remote_ci |
+| 当前阶段 | S6 远端 CI 验证 |
+| 状态 | complete |
 | 负责 | Codex |
 | 反馈环 | 本地测试 / main 集成 |
 
@@ -59,7 +59,9 @@ Integrate the unmerged `claude/*` source branches into `main` individually. This
 - `d9d24902d` 后的远端 CI 又暴露了确定性回归：离线合成测试未隔离默认 provider、集成测试漏鉴权、健康分数边界仍引用旧阈值，以及配方重放被 Kernel 的通用写入策略误拦。修复后受影响回归 `67 passed`；`agent-a-h` `471 passed`、`p` `332 passed` 均在 CI shard 的干净进程重试后通过。首次分片停滞由既有进程资源残留触发，重试脚本的 fail-loud 重建进程机制生效。
 - 提交前独立安全审查发现并修复三项阻断问题：配方回放不能创建提醒/目标/同步/档案等长期副作用；配方 source 不再存于跨 `await` 的执行器实例状态；公开的按 `user_id` 生成目标路由已删除，仅保留已鉴权的 `/me/generate-from-analysis`。新增对抗测试覆盖毒化配方行、并发 source 泄漏和路由移除，Mobile OpenAPI 类型已重新生成。
 - 最新高风险 LLM 运行时实模型证据（2026-07-19）：完整 Gate 通过；`invariants` `12/12`、`health_agent_core` `50/50`、真实 `orchestrator` `5/5`，平均分 `0.94`，相对 `main` 无回归。期间一次 `4/5` 结果经逐项复跑恢复为 `5/5`，确认是非确定性评分波动；未以失败结果放行。
-- **裁决**: PENDING_REMOTE_CI — 本地 Gate 已通过，等待本修复提交的远端 CI 重跑。
+- 本次接口收敛删除旧的公开目标生成路由后，首轮远端 CI 发现 Web OpenAPI 生成类型未同步；已补齐 `frontend/src/types/api.generated.ts`，本地按 CI 同一命令重新生成 Web/Mobile 类型并确认无漂移。
+- 最终远端 CI：[run 29657781045](https://github.com/itsoso/health-llm-driven/actions/runs/29657781045) 对提交 `15e1c0f08` 全部通过。`agent-a-h` 分片首次进程超过 10 分钟后按既有 fail-loud 机制在干净进程重试并成功，未掩盖或跳过测试。
+- **裁决**: PASS — 本地与远端完整验证均通过。
 
 ## G4 · 安全闸
 
