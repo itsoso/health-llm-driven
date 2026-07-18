@@ -117,7 +117,13 @@ class TestSecurityHeaders:
         assert headers.get("X-Content-Type-Options") == "nosniff"
         assert headers.get("X-XSS-Protection") == "1; mode=block"
         assert headers.get("Referrer-Policy") == "strict-origin-when-cross-origin"
-        assert "camera=()" in headers.get("Permissions-Policy", "")
+        policy = headers.get("Permissions-Policy", "")
+        # 小巴在用户主动触发时支持同源图片上传与实时语音；不得放开给跨源页面。
+        assert "camera=(self)" in policy
+        assert "microphone=(self)" in policy
+        assert "geolocation=(self)" in policy
+        assert "camera=*" not in policy
+        assert "microphone=*" not in policy
 
     def test_hsts_header_on_api(self, client):
         """API 路径应包含 HSTS 头"""
