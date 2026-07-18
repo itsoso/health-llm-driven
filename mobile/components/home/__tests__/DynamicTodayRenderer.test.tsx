@@ -327,6 +327,10 @@ describe('DynamicTodayRenderer', () => {
             action: 'daily_plan_action.complete',
             endpoint: '/daily-plan/actions/intervention.card.9/events',
             requires_manual_confirm: true,
+            capability_id: 'runtime_agenda.v1',
+            required_receipt: true,
+            autonomy_tier: 'manual_confirm',
+            policy_reason: 'manual_confirm_write',
             payload: { action_id: 'intervention.card.9', event_type: 'completed' },
             confirmation: {
               title: '确认完成？',
