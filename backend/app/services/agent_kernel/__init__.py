@@ -6,6 +6,7 @@ frames, and capability policy decides whether a tool may execute.
 """
 
 from app.services.agent_kernel.intent_frame import build_intent_frame
+from app.services.agent_kernel.tool_gateway import ToolGateway
 from app.services.agent_kernel.types import (
     AgentEnvelope,
     CapabilityDecision,
@@ -23,6 +24,7 @@ __all__ = [
     "IntentFrame",
     "ToolExecutionRequest",
     "ToolExecutionResult",
+    "ToolGateway",
     "TurnSnapshot",
     "build_intent_frame",
 ]

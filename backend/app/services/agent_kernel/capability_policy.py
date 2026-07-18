@@ -71,6 +71,14 @@ def decide_tool_capability(
                 args,
                 receipt_required=True,
             )
+        if primary == "unknown":
+            return _decision(
+                "allow",
+                "legacy_unknown_intent_write",
+                tool_name,
+                args,
+                receipt_required=True,
+            )
         return _decision(
             "block",
             "write_tool_without_write_intent",
@@ -90,6 +98,14 @@ def decide_tool_capability(
                     args,
                     receipt_required=True,
                 )
+            if primary == "unknown":
+                return _decision(
+                    "allow",
+                    "legacy_unknown_intent_intervention_write",
+                    tool_name,
+                    args,
+                    receipt_required=True,
+                )
             return _decision(
                 "block",
                 "intervention_write_without_mutation_intent",
@@ -102,7 +118,7 @@ def decide_tool_capability(
     if tool_name in WRITE_TOOL_NAMES:
         return _decision("block", "unhandled_write_tool", tool_name, args, receipt_required=True)
 
-    return _decision("block", "unknown_tool", tool_name, args)
+    return _decision("allow", "non_write_tool_not_policy_gated", tool_name, args)
 
 
 def _decision(

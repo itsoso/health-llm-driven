@@ -5172,6 +5172,7 @@ class AgentExecutor:
         self._dead_provider_model_ids = set()
         self._tool_dead_provider_model_ids = set()
         self._last_effective_model_id = None
+        self._current_turn_user_message = message or ""
         sources_used: list = ["多模型综合 (Claude Opus 4.7 · GPT-5.5 · Gemini 3.1 Pro)"]
         write_receipts: list[Dict[str, Any]] = []
         write_results_by_fingerprint: dict[str, str] = {}
@@ -5784,6 +5785,7 @@ class AgentExecutor:
         # the pregen orchestrator discards the answer instead of serving it.
         self._read_only_turn = bool(read_only_tools)
         self._read_only_turn_write_attempted = False
+        self._current_turn_user_message = message or ""
         self._prefer_fast_record_model = (
             not images
             and not file_base64
@@ -10031,6 +10033,10 @@ class AgentExecutor:
             return v["error"]
         args = v["data"]
 
+        gateway_block = self._agent_kernel_preflight_tool(tool_name, args)
+        if gateway_block:
+            return gateway_block
+
         # === Read-only pregen guard (rank7) — fail-CLOSED single choke ===
         # In a starter-answer pre-generation turn ONLY read-only analysis tools may
         # run. Any tool not on the allowlist (write tools, uploads, unknown, future)
@@ -10101,6 +10107,65 @@ class AgentExecutor:
         except Exception as e:
             logger.error(f"工具执行失败 {tool_name}: {e}")
             return f"Error: {tool_name} 执行失败: {str(e)}"
+
+    def _agent_kernel_preflight_tool(self, tool_name: str, args: Any) -> Optional[str]:
+        """Run XiaoBa Agent Kernel policy before dispatching an executable tool."""
+        user_message = (getattr(self, "_current_turn_user_message", "") or "").strip()
+        if not user_message:
+            return None
+        try:
+            from app.services.agent_kernel.intent_frame import build_intent_frame
+            from app.services.agent_kernel.tool_gateway import ToolGateway, blocked_tool_result
+            from app.services.agent_kernel.types import (
+                AgentEnvelope,
+                ExecutionContext,
+                ToolExecutionRequest,
+                TurnSnapshot,
+            )
+
+            channel = getattr(self, "_turn_channel", None) or "chat"
+            envelope = AgentEnvelope(
+                user_id=self._current_user_id,
+                channel=channel,
+                text=user_message,
+            )
+            context = ExecutionContext.now(
+                user_id=self._current_user_id,
+                channel=channel,
+            )
+            snapshot = TurnSnapshot(
+                envelope=envelope,
+                context=context,
+                intent=build_intent_frame(envelope, context),
+                policy_mode=getattr(settings, "agent_kernel_policy_mode", "enforce"),
+            )
+            request = ToolExecutionRequest(
+                tool_name=tool_name,
+                arguments=args,
+                source="structured_or_recovered",
+            )
+            decision = ToolGateway(snapshot).preflight(request)
+            if decision.action == "block" and snapshot.policy_mode == "enforce":
+                logger.warning(
+                    "[agent_kernel] blocked tool=%s user=%s reason=%s intent=%s/%s/%s",
+                    tool_name,
+                    self._current_user_id,
+                    decision.reason,
+                    snapshot.intent.primary,
+                    snapshot.intent.domain,
+                    snapshot.intent.operation,
+                )
+                return blocked_tool_result(decision)
+        except Exception as exc:  # noqa: BLE001
+            logger.error(
+                "[agent_kernel] preflight failed tool=%s user=%s error=%s",
+                tool_name,
+                self._current_user_id,
+                exc,
+                exc_info=True,
+            )
+            return "Error: 工具调用策略检查失败,已阻止执行。"
+        return None
 
     async def _exec_knowledge_search(self, args: dict) -> str:
         """检索两路知识库, fail-honest, 不静默返回空:
