@@ -39,6 +39,7 @@ from app.services.post_record_quality import (
     build_post_record_quality_response,
     combine_post_record_quality_responses,
 )
+from app.services.agent_turn_recovery import should_retry_tool_failure
 from app.services.agent_turn_outcome import classify_agent_turn_outcome
 from app.services.utterance_intent_classifier import classify_agent_utterance
 from app.services.agent_kernel.context import (
@@ -4819,6 +4820,7 @@ class AgentExecutor:
         self._agent_kernel_capability_block_reasons: List[str] = []
         self._agent_kernel_tool_failure_tools: List[str] = []
         self._agent_kernel_pending_confirmation_tools: List[str] = []
+        self._agent_kernel_tool_retry_count = 0
 
     def _start_agent_kernel_turn(
         self,
@@ -4846,6 +4848,7 @@ class AgentExecutor:
         self._agent_kernel_capability_block_reasons = []
         self._agent_kernel_tool_failure_tools = []
         self._agent_kernel_pending_confirmation_tools = []
+        self._agent_kernel_tool_retry_count = 0
         self._agent_kernel_event_bus.turn_started()
         self._agent_kernel_event_bus.intent_decided()
         return self._refine_agent_kernel_continuation(self._agent_kernel_snapshot)
@@ -7952,6 +7955,9 @@ class AgentExecutor:
                 "completion_status": completion_status,
                 "record_intent_no_tool": record_intent_no_tool,
                 "turn_outcome": turn_outcome,
+                "recovery": {
+                    "tool_retry_count": self._agent_kernel_tool_retry_count,
+                },
                 "perf": perf,
                 **({"citation_anchor": citation_anchor} if citation_anchor else {}),
                 **({"recipe_candidate": recipe_candidate_meta} if recipe_candidate_meta else {}),
@@ -7987,6 +7993,9 @@ class AgentExecutor:
                 "completion_status": completion_status,
                 "record_intent_no_tool": record_intent_no_tool,
                 "turn_outcome": turn_outcome,
+                "recovery": {
+                    "tool_retry_count": self._agent_kernel_tool_retry_count,
+                },
                 "perf": perf,
                 **({"citation_anchor": citation_anchor} if citation_anchor else {}),
                 **({"synthesis_passthrough": synthesis_passthrough_meta} if synthesis_passthrough_meta else {}),
@@ -10179,32 +10188,68 @@ class AgentExecutor:
         契约:无论成功/超时/异常,末尾必产出一个 ('result', str),调用方据此赋值 result。
         finally 里取消未完成 task,保证消费方提前关闭生成器(客户端断连)时不泄漏。
         """
-        timeout_s = _TOOL_TIMEOUT_OVERRIDES.get(func_name, _TOOL_TIMEOUT_DEFAULT_S)
-        task = asyncio.create_task(
-            self._execute_tool(func_name, func_args, user_auth_token)
-        )
-        waited = 0.0
-        try:
-            while not task.done():
-                await asyncio.wait({task}, timeout=_TOOL_HEARTBEAT_INTERVAL_S)
-                if task.done():
-                    break
-                waited += _TOOL_HEARTBEAT_INTERVAL_S
-                if waited >= timeout_s:
-                    task.cancel()
-                    try:
-                        await task
-                    except (asyncio.CancelledError, Exception):  # noqa: BLE001
-                        pass
-                    logger.warning(
-                        f"[tool timeout] {func_name} 超过 {timeout_s:.0f}s 被中止"
-                    )
+        retry_attempt = 0
+        while True:
+            timeout_s = _TOOL_TIMEOUT_OVERRIDES.get(func_name, _TOOL_TIMEOUT_DEFAULT_S)
+            task = asyncio.create_task(
+                self._execute_tool(func_name, func_args, user_auth_token)
+            )
+            waited = 0.0
+            result = ""
+            try:
+                while not task.done():
+                    await asyncio.wait({task}, timeout=_TOOL_HEARTBEAT_INTERVAL_S)
+                    if task.done():
+                        break
+                    waited += _TOOL_HEARTBEAT_INTERVAL_S
+                    if waited >= timeout_s:
+                        task.cancel()
+                        try:
+                            await task
+                        except (asyncio.CancelledError, Exception):  # noqa: BLE001
+                            pass
+                        logger.warning(
+                            f"[tool timeout] {func_name} 超过 {timeout_s:.0f}s 被中止"
+                        )
+                        result = (
+                            f"Error: {progress_label}耗时过长(超过 {int(timeout_s)} 秒),"
+                            "已中止。请稍后重试。"
+                        )
+                        break
+                    # 心跳 status(与既有 stage=tool 契约同源:客户端显示进度 label + 保活)
                     yield (
-                        "result",
-                        f"Error: {progress_label}耗时过长(超过 {int(timeout_s)} 秒),已中止。请稍后重试。",
+                        "heartbeat",
+                        {
+                            "event": "status",
+                            "data": {
+                                "stage": "tool",
+                                "label": progress_label,
+                                "detail": "running",
+                            },
+                        },
                     )
-                    return
-                # 心跳 status(与既有 stage=tool 契约同源:客户端显示进度 label + 保活)
+                if not result:
+                    try:
+                        result = task.result()
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception as e:  # noqa: BLE001
+                        logger.warning(
+                            f"[tool exec] {func_name} 抛异常: {type(e).__name__}: {str(e)[:120]}"
+                        )
+                        result = f"Error: {progress_label}执行失败,请稍后重试。"
+            finally:
+                if not task.done():
+                    task.cancel()
+
+            if should_retry_tool_failure(func_name, result, attempt=retry_attempt):
+                retry_attempt += 1
+                self._agent_kernel_tool_retry_count += 1
+                logger.warning(
+                    "[tool recovery] retrying transient read failure tool=%s attempt=%d",
+                    func_name,
+                    retry_attempt,
+                )
                 yield (
                     "heartbeat",
                     {
@@ -10212,23 +10257,14 @@ class AgentExecutor:
                         "data": {
                             "stage": "tool",
                             "label": progress_label,
-                            "detail": "running",
+                            "detail": "retrying",
                         },
                     },
                 )
-            try:
-                result = task.result()
-            except asyncio.CancelledError:
-                raise
-            except Exception as e:  # noqa: BLE001
-                logger.warning(
-                    f"[tool exec] {func_name} 抛异常: {type(e).__name__}: {str(e)[:120]}"
-                )
-                result = f"Error: {progress_label}执行失败,请稍后重试。"
+                continue
+
             yield ("result", result)
-        finally:
-            if not task.done():
-                task.cancel()
+            return
 
     async def _execute_tool(
         self, tool_name: str, args_raw: Any, user_token: Optional[str]
