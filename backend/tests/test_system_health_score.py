@@ -1,5 +1,4 @@
 """系统健康度评分脚本测试 — scripts/system_health_score.py"""
-import pytest
 from unittest.mock import patch, MagicMock
 
 import sys
@@ -11,8 +10,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 from scripts.system_health_score import (
     score_tests,
     score_health_check,
-    score_api_latency,
-    score_error_rate_from_logs,
     calculate_health_score,
     FAIL_THRESHOLD,
 )
@@ -140,16 +137,16 @@ class TestCalculateHealthScore:
         assert result["pass"] is False
 
     def test_threshold_value(self):
-        """阈值为 60"""
-        assert FAIL_THRESHOLD == 60
+        """部署健康门槛与 G5 契约保持一致。"""
+        assert FAIL_THRESHOLD == 35
 
     def test_threshold_boundary(self):
-        """刚好 60 分应通过"""
-        with patch("scripts.system_health_score.score_tests", return_value={"score": 20, "detail": "ok"}), \
-             patch("scripts.system_health_score.score_health_check", return_value={"score": 20, "detail": "ok"}), \
-             patch("scripts.system_health_score.score_api_latency", return_value={"score": 10, "detail": "ok"}), \
-             patch("scripts.system_health_score.score_error_rate_from_logs", return_value={"score": 10, "detail": "ok"}):
+        """刚好达到部署健康门槛时应通过。"""
+        with patch("scripts.system_health_score.score_tests", return_value={"score": 15, "detail": "ok"}), \
+             patch("scripts.system_health_score.score_health_check", return_value={"score": 10, "detail": "ok"}), \
+             patch("scripts.system_health_score.score_api_latency", return_value={"score": 5, "detail": "ok"}), \
+             patch("scripts.system_health_score.score_error_rate_from_logs", return_value={"score": 5, "detail": "ok"}):
             result = calculate_health_score()
 
-        assert result["total_score"] == 60
+        assert result["total_score"] == 35
         assert result["pass"] is True

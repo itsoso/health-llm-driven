@@ -91,6 +91,14 @@ def _wire(executor, monkeypatch, provider_factory):
         "app.services.llm.factory.create_provider_for_model_id",
         provider_factory,
     )
+    # Every provider path used by this integration test must stay local.  The
+    # second (synthesis) round resolves the user's default provider rather than
+    # the fast tool provider, so only stubbing the model-id factory would make
+    # this test depend on a configured TokenPlan key.
+    monkeypatch.setattr(
+        "app.services.llm.factory.create_provider_for_user",
+        lambda *_args, **_kwargs: provider_factory("test-default"),
+    )
     monkeypatch.setattr(executor, "_build_system_prompt", lambda *a, **k: "SYS")
 
 

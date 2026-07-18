@@ -16,9 +16,11 @@
   5. lite 栈显著小于全量栈 (prefill 预算)。
 """
 import copy
+from datetime import UTC, datetime
 
 import pytest
 
+from app.services import agent_executor as executor_module
 from app.services.agent_executor import AgentExecutor, _build_lite_tool_round_messages
 from app.services.llm import model_registry as reg
 from tests.conftest import create_authenticated_user
@@ -341,6 +343,15 @@ async def test_synthesis_round_byte_identical_flag_off_vs_on(db, monkeypatch):
     assistant_toolcall, tool_result]) 必须相同。工具决策轮: flag 开 = lite, flag 关 = 全量 → 不同。
     """
     user, _ = create_authenticated_user(db)
+    original_build_turn_snapshot = executor_module.build_turn_snapshot
+
+    def build_snapshot_with_fixed_clock(*args, **kwargs):
+        kwargs.setdefault("now_utc", datetime(2026, 7, 17, 4, 0, tzinfo=UTC))
+        return original_build_turn_snapshot(*args, **kwargs)
+
+    monkeypatch.setattr(
+        executor_module, "build_turn_snapshot", build_snapshot_with_fixed_clock
+    )
 
     def _run_once(flag_on):
         executor = AgentExecutor(db)

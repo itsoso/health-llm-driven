@@ -10282,7 +10282,12 @@ class AgentExecutor:
             return
 
     async def _execute_tool(
-        self, tool_name: str, args_raw: Any, user_token: Optional[str]
+        self,
+        tool_name: str,
+        args_raw: Any,
+        user_token: Optional[str],
+        *,
+        source: str = "structured_or_recovered",
     ) -> str:
         """Kernel-instrumented tool boundary used by every executable surface."""
         self._ensure_agent_kernel_turn()
@@ -10292,18 +10297,36 @@ class AgentExecutor:
                 ToolExecutionRequest(
                     tool_name=tool_name,
                     arguments=args_raw,
-                    source="structured_or_recovered",
+                    source=source,
                 )
             )
-        result = await self._execute_tool_impl(tool_name, args_raw, user_token)
+        result = await self._execute_tool_impl(
+            tool_name, args_raw, user_token, source=source
+        )
         return self._agent_kernel_record_tool_result(
             tool_name,
             _parse_tool_arguments_for_telemetry(args_raw),
             result,
         )
 
-    async def _execute_tool_impl(
+    async def _execute_recipe_step(
         self, tool_name: str, args_raw: Any, user_token: Optional[str]
+    ) -> str:
+        """Execute a server-stored recipe step under its narrow policy source."""
+        return await self._execute_tool(
+            tool_name,
+            args_raw,
+            user_token,
+            source="procedure_recipe_replay",
+        )
+
+    async def _execute_tool_impl(
+        self,
+        tool_name: str,
+        args_raw: Any,
+        user_token: Optional[str],
+        *,
+        source: str = "structured_or_recovered",
     ) -> str:
         """执行工具调用，返回结果文本"""
         try:
@@ -10364,7 +10387,7 @@ class AgentExecutor:
                 )
                 return f"Error: 只读预生成回合不执行写入/变更操作（{tool_name}）"
 
-        gateway_block = self._agent_kernel_preflight_tool(tool_name, args)
+        gateway_block = self._agent_kernel_preflight_tool(tool_name, args, source=source)
         if gateway_block:
             return gateway_block
 
@@ -10424,7 +10447,13 @@ class AgentExecutor:
             logger.error(f"工具执行失败 {tool_name}: {e}")
             return f"Error: {tool_name} 执行失败: {str(e)}"
 
-    def _agent_kernel_preflight_tool(self, tool_name: str, args: Any) -> Optional[str]:
+    def _agent_kernel_preflight_tool(
+        self,
+        tool_name: str,
+        args: Any,
+        *,
+        source: str = "structured_or_recovered",
+    ) -> Optional[str]:
         """Run XiaoBa Agent Kernel policy before dispatching an executable tool."""
         try:
             from app.services.agent_kernel.tool_gateway import ToolGateway, blocked_tool_result
@@ -10433,7 +10462,7 @@ class AgentExecutor:
             request = ToolExecutionRequest(
                 tool_name=tool_name,
                 arguments=args,
-                source="structured_or_recovered",
+                source=source,
             )
             decision = ToolGateway(snapshot).preflight(request)
             self._agent_kernel_last_decision = decision

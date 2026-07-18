@@ -5,8 +5,8 @@ from typing import List, Optional, Dict, Any
 from datetime import date
 from pydantic import BaseModel
 from app.database import get_db
-from app.schemas.goal import GoalCreate, GoalResponse, GoalProgressCreate, GoalUpdate
-from app.models.goal import Goal, GoalProgress, GoalStatus, GoalType, GoalPeriod
+from app.schemas.goal import GoalCreate, GoalResponse, GoalUpdate
+from app.models.goal import GoalStatus, GoalType, GoalPeriod
 from app.models.user import User
 from app.services.goal_management import GoalManagementService
 from app.services.goal_guidance import goal_guidance_service
@@ -161,11 +161,16 @@ def update_goal_progress(
     goal_id: int,
     progress_date: date,
     progress_value: Optional[float] = None,
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
-    """更新目标进展"""
+    """更新当前用户目标的进展。"""
     service = GoalManagementService()
-    progress = service.update_goal_progress(db, goal_id, progress_date, progress_value)
+    progress = service.update_goal_progress_for_user(
+        db, current_user.id, goal_id, progress_date, progress_value
+    )
+    if not progress:
+        raise HTTPException(status_code=404, detail="目标不存在")
     return {"message": "更新成功", "progress_id": progress.id}
 
 
@@ -174,11 +179,16 @@ def get_goal_progress(
     goal_id: int,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
-    """获取目标进展记录"""
+    """获取当前用户目标的进展记录。"""
     service = GoalManagementService()
-    progress_list = service.get_goal_progress(db, goal_id, start_date, end_date)
+    progress_list = service.get_goal_progress_for_user(
+        db, current_user.id, goal_id, start_date, end_date
+    )
+    if progress_list is None:
+        raise HTTPException(status_code=404, detail="目标不存在")
     return [
         {
             "id": p.id,
@@ -188,17 +198,6 @@ def get_goal_progress(
         }
         for p in progress_list
     ]
-
-
-@router.post("/generate-from-analysis/{user_id}", response_model=List[GoalResponse])
-def generate_goals_from_analysis(
-    user_id: int,
-    db: Session = Depends(get_db)
-):
-    """基于健康分析结果自动生成目标"""
-    service = GoalManagementService()
-    goals = service.generate_goals_from_analysis(db, user_id)
-    return goals
 
 
 @router.post("/me/generate-from-analysis", response_model=List[GoalResponse])
@@ -250,8 +249,14 @@ def get_goal_guidance(
 def check_goal_completion(
     goal_id: int,
     check_date: Optional[date] = None,
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
-    """检查目标完成情况"""
+    """检查当前用户目标的完成情况。"""
     service = GoalManagementService()
-    return service.check_goal_completion(db, goal_id, check_date)
+    completion = service.check_goal_completion_for_user(
+        db, current_user.id, goal_id, check_date
+    )
+    if completion is None:
+        raise HTTPException(status_code=404, detail="目标不存在")
+    return completion

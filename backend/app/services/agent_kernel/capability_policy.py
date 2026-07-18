@@ -20,6 +20,28 @@ WRITE_TOOL_NAMES = frozenset({"health_record", "health_manage", "intervention_cy
 MANAGE_WRITE_OPERATIONS = frozenset({"update", "delete"})
 INTERVENTION_WRITE_ACTIONS = frozenset({"start", "update", "cancel"})
 
+# Procedure recipes are exact-triggered routines. Their scope is intentionally
+# narrower than normal one-shot health_record calls: no long-lived reminders or
+# goals, no account/profile mutation, and no external ingestion jobs.
+RECIPE_REPLAY_ALLOWED_RECORD_TYPES = frozenset({
+    "water",
+    "weight",
+    "blood_pressure",
+    "diet",
+    "exercise",
+    "waist",
+    "sleep",
+    "excretion",
+    "mood",
+    "symptom",
+    "rhinitis",
+})
+_RECIPE_RECORD_TYPE_ALIASES = {
+    "bp": "blood_pressure",
+    "blood-pressure": "blood_pressure",
+    "bloodpressure": "blood_pressure",
+}
+
 
 def decide_tool_capability(
     snapshot: TurnSnapshot,
@@ -36,6 +58,35 @@ def decide_tool_capability(
 
     if not tool_name:
         return _decision("block", "missing_tool_name", tool_name, args)
+
+    # Procedure recipes are user-owned, exact-triggered, server-stored tool
+    # sequences. Their AUTO/typed-only confirmation semantics are still applied
+    # by the recipe executor before this policy runs. This source is internal to
+    # AgentExecutor and deliberately authorizes only the recipe allowlisted tool.
+    if request.source == "procedure_recipe_replay":
+        if tool_name != "health_record":
+            return _decision(
+                "block",
+                "recipe_replay_tool_not_allowed",
+                tool_name,
+                args,
+                receipt_required=True,
+            )
+        if recipe_replay_record_type(args) not in RECIPE_REPLAY_ALLOWED_RECORD_TYPES:
+            return _decision(
+                "block",
+                "recipe_replay_record_type_not_allowed",
+                tool_name,
+                args,
+                receipt_required=True,
+            )
+        return _decision(
+            "allow",
+            "prevalidated_recipe_replay",
+            tool_name,
+            args,
+            receipt_required=True,
+        )
 
     if tool_name in READ_ONLY_TOOLS:
         return _decision("allow", "read_only_tool", tool_name, args)
@@ -159,3 +210,20 @@ def _parse_args(raw: Any) -> dict[str, Any]:
         return dict(raw or {})
     except (TypeError, ValueError):
         return {}
+
+
+def recipe_replay_record_type(args: dict[str, Any]) -> str:
+    """Return the normalized health_record type used by recipe policy checks."""
+    data = args.get("data") if isinstance(args.get("data"), dict) else {}
+    for value in (
+        args.get("record_type"),
+        args.get("type"),
+        args.get("kind"),
+        data.get("record_type"),
+        data.get("type"),
+        data.get("kind"),
+    ):
+        if value is not None:
+            record_type = str(value).strip().lower()
+            return _RECIPE_RECORD_TYPE_ALIASES.get(record_type, record_type)
+    return ""

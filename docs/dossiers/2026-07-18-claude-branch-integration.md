@@ -56,6 +56,9 @@ Integrate the unmerged `claude/*` source branches into `main` individually. This
 - `d9d24902d` 的远端 CI 在提交后暴露了四个集成回归：dossier 引用了未提交的用户本地文件；语义分析句中的“记录”名词被误判为写入；进程内血压读路径没有带齐 API 的展示/安全字段；工具决策轮复用了过长的 fast-answer prompt。
 - 修复后，本地同名 Agent CI 分片重跑：`agent-a-h` `471 passed`，`agent-i-z` `147 passed`；失败用例聚合回归 `89 passed`。
 - 高风险 LLM 运行时改动的实模型证据（2026-07-18）：`DATABASE_URL=sqlite:///:memory: backend/venv/bin/python scripts/harness_llm_regression_gate.py --include-live-llm --json` 返回通过；`invariants` `12/12`、`health_agent_core` `50/50`、真实 `orchestrator` `5/5`，平均分 `0.96`，相对 `main` 无回归。评估期间 usage telemetry 因临时 SQLite 未建日志表而按既有旁路策略记录警告，模型调用、评分与 Gate 结果均成功。
+- `d9d24902d` 后的远端 CI 又暴露了确定性回归：离线合成测试未隔离默认 provider、集成测试漏鉴权、健康分数边界仍引用旧阈值，以及配方重放被 Kernel 的通用写入策略误拦。修复后受影响回归 `67 passed`；`agent-a-h` `471 passed`、`p` `332 passed` 均在 CI shard 的干净进程重试后通过。首次分片停滞由既有进程资源残留触发，重试脚本的 fail-loud 重建进程机制生效。
+- 提交前独立安全审查发现并修复三项阻断问题：配方回放不能创建提醒/目标/同步/档案等长期副作用；配方 source 不再存于跨 `await` 的执行器实例状态；公开的按 `user_id` 生成目标路由已删除，仅保留已鉴权的 `/me/generate-from-analysis`。新增对抗测试覆盖毒化配方行、并发 source 泄漏和路由移除，Mobile OpenAPI 类型已重新生成。
+- 最新高风险 LLM 运行时实模型证据（2026-07-19）：完整 Gate 通过；`invariants` `12/12`、`health_agent_core` `50/50`、真实 `orchestrator` `5/5`，平均分 `0.94`，相对 `main` 无回归。期间一次 `4/5` 结果经逐项复跑恢复为 `5/5`，确认是非确定性评分波动；未以失败结果放行。
 - **裁决**: PENDING_REMOTE_CI — 本地 Gate 已通过，等待本修复提交的远端 CI 重跑。
 
 ## G4 · 安全闸
@@ -100,4 +103,8 @@ Integrate the unmerged `claude/*` source branches into `main` individually. This
   - user-timezone timeline testing is clock-controlled rather than tied to the host date;
   - safety feedback is shown immediately after a verified write receipt, before noncritical cache invalidation;
   - assistant-message record saving is available only for completed, non-error turns.
+- Follow-up strict-review fixes:
+  - procedure recipes now allow only bounded daily health observations and reject both new and historical poisoned persistent/external record types;
+  - recipe replay source is an explicit per-call parameter, so concurrent ordinary tool execution cannot inherit replay authorization;
+  - goal progress/completion and goal generation no longer expose cross-user or public-ID write/read paths.
 - Intentionally excluded or superseded source branches remain excluded; no partial or unreviewed branch changes are staged.

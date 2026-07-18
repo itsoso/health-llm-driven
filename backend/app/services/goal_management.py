@@ -1,10 +1,9 @@
 """目标管理服务"""
 from typing import List, Dict, Any, Optional
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from sqlalchemy.orm import Session
-from sqlalchemy import and_
 from app.models.goal import Goal, GoalProgress, GoalType, GoalPeriod, GoalStatus
-from app.schemas.goal import GoalCreate, GoalProgressCreate
+from app.schemas.goal import GoalCreate
 from app.services.health_analysis import HealthAnalysisService
 
 
@@ -218,6 +217,19 @@ class GoalManagementService:
 
             return progress
 
+    def update_goal_progress_for_user(
+        self,
+        db: Session,
+        user_id: int,
+        goal_id: int,
+        progress_date: date,
+        progress_value: Optional[float] = None,
+    ) -> Optional[GoalProgress]:
+        """Update progress only when the target goal belongs to the caller."""
+        if not self.get_goal_for_user(db, user_id, goal_id):
+            return None
+        return self.update_goal_progress(db, goal_id, progress_date, progress_value)
+
     def get_goal_progress(
         self,
         db: Session,
@@ -234,6 +246,19 @@ class GoalManagementService:
             query = query.filter(GoalProgress.progress_date <= end_date)
 
         return query.order_by(GoalProgress.progress_date.desc()).all()
+
+    def get_goal_progress_for_user(
+        self,
+        db: Session,
+        user_id: int,
+        goal_id: int,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
+    ) -> Optional[List[GoalProgress]]:
+        """List progress only when the target goal belongs to the caller."""
+        if not self.get_goal_for_user(db, user_id, goal_id):
+            return None
+        return self.get_goal_progress(db, goal_id, start_date, end_date)
 
     def generate_goals_from_analysis(
         self,
@@ -354,3 +379,15 @@ class GoalManagementService:
             "is_completed": is_completed,
             "check_date": check_date.isoformat()
         }
+
+    def check_goal_completion_for_user(
+        self,
+        db: Session,
+        user_id: int,
+        goal_id: int,
+        check_date: Optional[date] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Return completion only when the target goal belongs to the caller."""
+        if not self.get_goal_for_user(db, user_id, goal_id):
+            return None
+        return self.check_goal_completion(db, goal_id, check_date)

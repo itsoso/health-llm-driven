@@ -1,3 +1,5 @@
+import pytest
+
 from app.services.agent_kernel.capability_policy import decide_tool_capability
 from app.services.agent_kernel.intent_frame import build_intent_frame
 from app.services.agent_kernel.types import (
@@ -18,8 +20,8 @@ def _snapshot(text: str, channel: str = "chat") -> TurnSnapshot:
     )
 
 
-def _request(name: str, args: dict) -> ToolExecutionRequest:
-    return ToolExecutionRequest(tool_name=name, arguments=args, source="structured")
+def _request(name: str, args: dict, *, source: str = "structured") -> ToolExecutionRequest:
+    return ToolExecutionRequest(tool_name=name, arguments=args, source=source)
 
 
 def test_read_turn_blocks_health_record_even_if_model_requests_it():
@@ -94,6 +96,52 @@ def test_ambiguous_turn_blocks_health_record_even_when_arguments_look_valid():
     assert decision.action == "block"
     assert decision.reason == "write_tool_without_write_intent"
     assert decision.receipt_required is True
+
+
+def test_exact_recipe_replay_allows_only_prevalidated_record_step():
+    """已保存、精确命中的配方可在短语本身不含“记录”时重放 AUTO 步骤。"""
+    decision = decide_tool_capability(
+        _snapshot("晨间套餐", channel="typed"),
+        _request(
+            "health_record",
+            {"record_type": "water", "data": {"amount": 250, "confirmed": True}},
+            source="procedure_recipe_replay",
+        ),
+    )
+
+    assert decision.action == "allow"
+    assert decision.reason == "prevalidated_recipe_replay"
+    assert decision.receipt_required is True
+
+
+def test_recipe_replay_source_cannot_authorize_other_write_tools():
+    decision = decide_tool_capability(
+        _snapshot("晨间套餐", channel="typed"),
+        _request(
+            "health_manage",
+            {"record_type": "diet", "operation": "delete", "record_id": 1},
+            source="procedure_recipe_replay",
+        ),
+    )
+
+    assert decision.action == "block"
+    assert decision.reason == "recipe_replay_tool_not_allowed"
+
+
+@pytest.mark.parametrize("record_type", ["reminder", "goal", "garmin_sync", "remember"])
+def test_recipe_replay_source_cannot_authorize_persistent_or_external_record_types(record_type):
+    """精确短语只授权日常健康记录，不能创建长期副作用。"""
+    decision = decide_tool_capability(
+        _snapshot("晨间套餐", channel="typed"),
+        _request(
+            "health_record",
+            {"record_type": record_type, "data": {"title": "不应执行"}},
+            source="procedure_recipe_replay",
+        ),
+    )
+
+    assert decision.action == "block"
+    assert decision.reason == "recipe_replay_record_type_not_allowed"
 
 
 def test_advice_turn_blocks_intervention_cycle_write():

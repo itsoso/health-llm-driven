@@ -9,6 +9,7 @@
 3. 触发短语精确匹配(strip 后等值),近似短语不命中 —— 控误触发。
 4. 跨用户隔离:匹配/列表/删除/save-from-conversation 都只见自己的数据。
 """
+import asyncio
 import json
 from datetime import datetime, timedelta, timezone
 
@@ -232,6 +233,23 @@ def test_validate_steps_rejects_never_auto_kind_at_save(db):
         )
 
 
+@pytest.mark.parametrize("record_type", ["reminder", "goal", "garmin_sync", "remember"])
+def test_validate_steps_rejects_persistent_or_external_record_types(db, record_type):
+    """配方不得固化提醒、目标、同步或个人档案等跨本轮副作用。"""
+    user, _ = create_authenticated_user(db)
+    with pytest.raises(ValueError, match="不支持存入配方"):
+        recipe_svc.create_recipe(
+            db,
+            user.id,
+            name=f"{record_type} 配方",
+            trigger_phrases=[f"执行 {record_type} 配方"],
+            steps=[{
+                "tool": "health_record",
+                "args_template": {"record_type": record_type, "data": {"title": "不应执行"}},
+            }],
+        )
+
+
 # ─────────────────────────── 确定性重放 ───────────────────────────
 
 @pytest.mark.asyncio
@@ -383,6 +401,67 @@ async def test_replay_rejects_non_allowlisted_tool_in_db(
     assert len(tool_results) == 1
     assert tool_results[0]["result"].startswith("Error")
     assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_replay_rejects_persistent_record_type_in_poisoned_db(
+    db, auth_user_and_headers, monkeypatch
+):
+    """历史/手改数据库中的提醒步骤也不得借精确触发创建长期副作用。"""
+    user, _ = auth_user_and_headers
+    _insert_recipe(
+        db,
+        user.id,
+        phrases=["执行晚间提醒"],
+        steps=[{
+            "tool": "health_record",
+            "args_template": {
+                "record_type": "reminder",
+                "data": {"title": "喝水", "remind_at": "2026-07-18T20:00:00+08:00"},
+            },
+        }],
+    )
+    executor = AgentExecutor(db)
+    _mock_llm_never_called(executor, monkeypatch)
+    calls = _capture_api(executor, monkeypatch)
+
+    events = await _run(executor, user.id, "执行晚间提醒", channel="typed")
+
+    tool_results = [e["data"] for e in events if e.get("event") == "tool_result"]
+    assert len(tool_results) == 1
+    assert tool_results[0]["result"].startswith("Error")
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_recipe_execution_source_is_not_shared_with_parallel_tool_execution(db, monkeypatch):
+    """配方的内部来源只绑定该调用，不能跨 await 赋权给普通工具调用。"""
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._current_turn_user_message = "晨间套餐"
+    executor._turn_channel = "typed"
+    recipe_started = asyncio.Event()
+    allow_recipe_to_finish = asyncio.Event()
+    observed_sources = []
+
+    async def fake_execute_tool_impl(tool_name, args_raw, user_token, *, source=None):
+        observed_sources.append(source)
+        if source == "procedure_recipe_replay":
+            recipe_started.set()
+            await allow_recipe_to_finish.wait()
+        return "{}"
+
+    monkeypatch.setattr(executor, "_execute_tool_impl", fake_execute_tool_impl)
+
+    recipe_task = asyncio.create_task(
+        executor._execute_recipe_step("health_record", {"record_type": "water"}, "test-token")
+    )
+    await asyncio.wait_for(recipe_started.wait(), timeout=0.2)
+    await executor._execute_tool("health_record", {"record_type": "water"}, "test-token")
+    allow_recipe_to_finish.set()
+    await recipe_task
+
+    assert observed_sources == ["procedure_recipe_replay", "structured_or_recovered"]
 
 
 # ─────────────────────────── 「存为配方」入口 ───────────────────────────

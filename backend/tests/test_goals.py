@@ -1,6 +1,5 @@
 """目标管理API测试"""
-import pytest
-from datetime import date, timedelta
+from datetime import date
 
 
 def test_create_goal(client, auth_user_and_headers):
@@ -123,7 +122,8 @@ def test_update_goal_progress(client, auth_user_and_headers):
     progress_date = date.today().isoformat()
     response = client.post(
         f"/api/v1/goals/{goal_id}/progress",
-        params={"progress_date": progress_date, "progress_value": 25.0}
+        params={"progress_date": progress_date, "progress_value": 25.0},
+        headers=headers,
     )
     assert response.status_code == 200
     data = response.json()
@@ -149,10 +149,11 @@ def test_get_goal_progress(client, auth_user_and_headers):
     progress_date = date.today().isoformat()
     client.post(
         f"/api/v1/goals/{goal_id}/progress",
-        params={"progress_date": progress_date, "progress_value": 25.0}
+        params={"progress_date": progress_date, "progress_value": 25.0},
+        headers=headers,
     )
 
-    response = client.get(f"/api/v1/goals/{goal_id}/progress")
+    response = client.get(f"/api/v1/goals/{goal_id}/progress", headers=headers)
     assert response.status_code == 200
     data = response.json()
     assert isinstance(data, list)
@@ -175,9 +176,71 @@ def test_check_goal_completion(client, auth_user_and_headers):
     goal_response = client.post("/api/v1/goals", json=goal_data, headers=headers)
     goal_id = goal_response.json()["id"]
 
-    response = client.get(f"/api/v1/goals/{goal_id}/completion")
+    response = client.get(f"/api/v1/goals/{goal_id}/completion", headers=headers)
     assert response.status_code == 200
     data = response.json()
     assert "goal_id" in data
     assert "completion_percentage" in data
     assert "is_completed" in data
+
+
+def test_goal_progress_and_completion_are_user_scoped(client, db, auth_user_and_headers):
+    """目标进展和完成状态同样不得通过猜测 ID 跨用户读取或写入。"""
+    from tests.conftest import create_authenticated_user
+
+    user, headers = auth_user_and_headers
+    other_user, other_token = create_authenticated_user(db)
+    other_headers = {"Authorization": f"Bearer {other_token}"}
+    created = client.post(
+        "/api/v1/goals",
+        json={
+            "user_id": user.id,
+            "goal_type": "exercise",
+            "goal_period": "daily",
+            "title": "每日运动",
+            "target_value": 30.0,
+            "target_unit": "分钟",
+            "start_date": date.today().isoformat(),
+        },
+        headers=headers,
+    )
+    assert created.status_code == 200
+    goal_id = created.json()["id"]
+
+    own_update = client.post(
+        f"/api/v1/goals/{goal_id}/progress",
+        params={"progress_date": date.today().isoformat(), "progress_value": 20.0},
+        headers=headers,
+    )
+    assert own_update.status_code == 200
+
+    assert client.post(
+        f"/api/v1/goals/{goal_id}/progress",
+        params={"progress_date": date.today().isoformat(), "progress_value": 30.0},
+        headers=other_headers,
+    ).status_code == 404
+    assert client.get(
+        f"/api/v1/goals/{goal_id}/progress", headers=other_headers
+    ).status_code == 404
+    assert client.get(
+        f"/api/v1/goals/{goal_id}/completion", headers=other_headers
+    ).status_code == 404
+
+
+def test_goal_generation_has_no_public_user_id_route(client, auth_user_and_headers, monkeypatch):
+    """目标自动生成只允许当前用户端点，不能通过 URL 传任意用户 ID。"""
+    from app.services.goal_management import GoalManagementService
+
+    user, _ = auth_user_and_headers
+    generated_for = []
+
+    def fake_generate(_self, _db, user_id):
+        generated_for.append(user_id)
+        return []
+
+    monkeypatch.setattr(GoalManagementService, "generate_goals_from_analysis", fake_generate)
+
+    response = client.post(f"/api/v1/goals/generate-from-analysis/{user.id}")
+
+    assert response.status_code == 404
+    assert generated_for == []

@@ -110,7 +110,8 @@ curl "http://localhost:8000/api/v1/goals/1/completion"
 根据健康分析结果自动生成目标：
 
 ```bash
-curl -X POST "http://localhost:8000/api/v1/goals/generate-from-analysis/1"
+curl -X POST "http://localhost:8000/api/v1/goals/me/generate-from-analysis" \
+  -H "Authorization: Bearer <access-token>"
 ```
 
 ### 3. 前端页面
@@ -301,4 +302,3 @@ curl -X POST "http://localhost:8000/api/v1/goals/generate-from-analysis/1"
 ✅ 保持健康习惯
 
 开始使用目标管理，让 AI 助力你的健康自律之旅！
-

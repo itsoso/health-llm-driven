@@ -168,25 +168,31 @@ def validate_steps(steps: Any) -> List[Dict[str, Any]]:
                 f"步骤 {index} 工具「{tool or '(空)'}」不允许入配方"
                 f"(允许: {sorted(ALLOWED_RECIPE_TOOLS)})"
             )
-        # 安全评审硬化:never_auto kind(用药等)重放永远要求确认、永不可能自动执行,
-        # 存进配方是纯死重量,且把药名/剂量多写进一处明文 JSONB。存入时直接拒绝。
-        # 函数级 import 避免与 agent_executor 的相互引用成环(对方也函数级引本模块)。
-        from app.services.agent_executor import (
-            _fast_record_kind,
-            _FAST_RECORD_NEVER_AUTO_CONFIRM_KINDS,
-        )
         raw_args = step.get("args_template")
-        step_kind = _fast_record_kind(raw_args if isinstance(raw_args, dict) else {})
+        if not isinstance(raw_args, dict) or not raw_args:
+            raise ValueError(f"步骤 {index} 缺少 args_template")
+
+        # 函数级 import 避免与 agent_executor 的相互引用成环(对方也函数级引本模块)。
+        from app.services.agent_executor import _FAST_RECORD_NEVER_AUTO_CONFIRM_KINDS
+        from app.services.agent_kernel.capability_policy import (
+            RECIPE_REPLAY_ALLOWED_RECORD_TYPES,
+            recipe_replay_record_type,
+        )
+
+        step_kind = recipe_replay_record_type(raw_args)
+        # never_auto kind(用药等)重放永远要求确认、永不可能自动执行,
+        # 存进配方是纯死重量,且把药名/剂量多写进一处明文 JSONB。存入时直接拒绝。
         if step_kind in _FAST_RECORD_NEVER_AUTO_CONFIRM_KINDS:
             raise ValueError(
                 f"步骤 {index} 类型「{step_kind}」需逐次人工确认,不支持存入配方"
             )
-        args_template = step.get("args_template")
-        if not isinstance(args_template, dict) or not args_template:
-            raise ValueError(f"步骤 {index} 缺少 args_template")
+        if step_kind not in RECIPE_REPLAY_ALLOWED_RECORD_TYPES:
+            raise ValueError(
+                f"步骤 {index} 类型「{step_kind or '未知'}」不支持存入配方"
+            )
         normalized.append({
             "tool": tool,
-            "args_template": template_step_args(sanitize_step_args(args_template)),
+            "args_template": template_step_args(sanitize_step_args(raw_args)),
         })
     return normalized
 
@@ -362,6 +368,10 @@ async def replay(
     """
     # 懒 import 防循环(executor 亦懒 import 本模块)
     from app.services.agent_executor import _auto_confirm_fast_record_args
+    from app.services.agent_kernel.capability_policy import (
+        RECIPE_REPLAY_ALLOWED_RECORD_TYPES,
+        recipe_replay_record_type,
+    )
 
     for index, step in enumerate(recipe.steps or [], 1):
         tool = str((step or {}).get("tool") or "").strip()
@@ -384,13 +394,46 @@ async def replay(
                 gated_args = json.loads(gated_args)
             except (json.JSONDecodeError, TypeError, ValueError):
                 gated_args = args
+        record_type = recipe_replay_record_type(gated_args)
+        if record_type not in RECIPE_REPLAY_ALLOWED_RECORD_TYPES:
+            yield {
+                "phase": "start",
+                "step_index": index,
+                "tool": tool,
+                "args": gated_args,
+            }
+            if gated_args.get("_fast_record_requires_confirmation"):
+                yield {
+                    "phase": "result",
+                    "step_index": index,
+                    "tool": tool,
+                    "args": gated_args,
+                    "result": (
+                        "[NEEDS_CONFIRMATION] 此步骤需要你逐次确认，未执行写入。"
+                    ),
+                    "needs_confirmation": True,
+                    "error": False,
+                }
+                continue
+            yield {
+                "phase": "result",
+                "step_index": index,
+                "tool": tool,
+                "args": gated_args,
+                "result": (
+                    f"Error: 配方步骤记录类型「{record_type or '未知'}」不允许重放"
+                ),
+                "needs_confirmation": False,
+                "error": True,
+            }
+            continue
         yield {
             "phase": "start",
             "step_index": index,
             "tool": tool,
             "args": gated_args,
         }
-        result = await executor._execute_tool(
+        result = await executor._execute_recipe_step(
             tool, json.dumps(gated_args, ensure_ascii=False), user_auth_token
         )
         result_text = str(result or "")

@@ -1,5 +1,4 @@
 """集成测试"""
-import pytest
 from datetime import date
 
 
@@ -9,7 +8,9 @@ def test_full_user_workflow(client, auth_user_and_headers, sample_basic_health_d
 
     # 2. 录入基础健康数据
     sample_basic_health_data["user_id"] = user.id
-    health_response = client.post("/api/v1/basic-health", json=sample_basic_health_data)
+    health_response = client.post(
+        "/api/v1/basic-health", json=sample_basic_health_data, headers=headers
+    )
     assert health_response.status_code == 200
 
     # 3. 创建目标
@@ -29,7 +30,8 @@ def test_full_user_workflow(client, auth_user_and_headers, sample_basic_health_d
     # 4. 更新目标进展
     progress_response = client.post(
         f"/api/v1/goals/{goal_id}/progress",
-        params={"progress_date": date.today().isoformat(), "progress_value": 25.0}
+        params={"progress_date": date.today().isoformat(), "progress_value": 25.0},
+        headers=headers,
     )
     assert progress_response.status_code == 200
 
@@ -84,22 +86,24 @@ def test_goal_completion_tracking(client, auth_user_and_headers):
     # 更新进展（未完成）
     client.post(
         f"/api/v1/goals/{goal_id}/progress",
-        params={"progress_date": date.today().isoformat(), "progress_value": 25.0}
+        params={"progress_date": date.today().isoformat(), "progress_value": 25.0},
+        headers=headers,
     )
 
-    completion = client.get(f"/api/v1/goals/{goal_id}/completion")
+    completion = client.get(f"/api/v1/goals/{goal_id}/completion", headers=headers)
     assert completion.status_code == 200
     completion_data = completion.json()
-    assert completion_data["is_completed"] == False
+    assert not completion_data["is_completed"]
     assert completion_data["completion_percentage"] < 100
 
     # 更新进展（完成）
     client.post(
         f"/api/v1/goals/{goal_id}/progress",
-        params={"progress_date": date.today().isoformat(), "progress_value": 30.0}
+        params={"progress_date": date.today().isoformat(), "progress_value": 30.0},
+        headers=headers,
     )
 
-    completion = client.get(f"/api/v1/goals/{goal_id}/completion")
+    completion = client.get(f"/api/v1/goals/{goal_id}/completion", headers=headers)
     completion_data = completion.json()
-    assert completion_data["is_completed"] == True
+    assert completion_data["is_completed"]
     assert completion_data["completion_percentage"] >= 100
