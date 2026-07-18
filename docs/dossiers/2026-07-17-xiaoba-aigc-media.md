@@ -5,7 +5,7 @@
 | 标识 | `xiaoba-aigc-media` |
 | 创建日期 | 2026-07-17 |
 | 当前阶段 | S5 验证 |
-| 状态 | blocked_on_production_configuration |
+| 状态 | ready_for_production_deploy |
 | 负责人 | product-engineering |
 | 发布策略 | Backend deploy after independent Model Studio credential and HTTPS source URL are configured; JS clients can follow with OTA |
 
@@ -138,9 +138,13 @@ release-blocking finding.
 
 ## G5 Deployment Health
 
-Blocked on production configuration: an independent
-`DASHSCOPE_AIGC_API_KEY` with Wan access, plus public HTTPS `SITE_BASE_URL` for
-image-to-video source retrieval. No production call or deployment has occurred.
+**裁决**: PENDING deployment
+
+Local deployment configuration now binds `DASHSCOPE_AIGC_API_KEY` to the
+existing independent DashScope vision credential. It is verified distinct from
+`TOKENPLAN_API_KEY`, accepted by a non-billable Model Studio task probe, and
+uses public HTTPS `SITE_BASE_URL=https://health.executor.life` for image-to-video
+source retrieval. No billable generation or production deployment has occurred.
 
 Domain verification on 2026-07-18: `health.executor.com` has no public A record
 via Cloudflare DNS; the local resolver returns reserved benchmark address
