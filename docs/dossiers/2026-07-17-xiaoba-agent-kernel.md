@@ -169,6 +169,14 @@ DATABASE_URL=sqlite:///:memory: TZ=Asia/Shanghai backend/venv/bin/python -m pyte
 - 本轮无 Mobile/Mac/Web/Watch 客户端改动，无需 OTA 或 TestFlight。
 - **裁决：PASS**。
 
+T3 ToolGateway 部署：
+
+- 后端提交：`866ab4dce feat(agent): gate tool dispatch through kernel policy`
+- 部署方式：`./deploy.sh -b`
+- 结果：部署完成，后端健康度 `60/60 PASS`，skills manifest 本地/线上 `22/22`。
+- 本轮仅后端工具执行策略变化，无客户端改动。
+- **裁决：PASS**。
+
 ## G6 · 上线验证
 
 - 待执行。需要至少覆盖：
