@@ -255,8 +255,8 @@ def _extract_multi_model_flag(extra_context: Optional[str]) -> bool:
     return bool(isinstance(payload, dict) and payload.get("multi_model"))
 
 
-def _is_diet_photo_draft_turn(extra_context: Optional[str], *, has_images: bool) -> bool:
-    """Mobile 餐食拍照初始轮只产草稿，绝不直接写 DietRecord。"""
+def _is_diet_photo_auto_save_turn(extra_context: Optional[str], *, has_images: bool) -> bool:
+    """识别 Mobile 明确发起的拍照记餐动作，允许识别后直接保存。"""
     if not has_images or not extra_context:
         return False
     try:
@@ -4745,7 +4745,7 @@ class AgentExecutor:
         self._current_turn_conversation_id: Optional[int] = None
         self._current_turn_image_urls: list[str] = []
         self._turn_aigc_media_cards: list[dict] = []
-        self._diet_photo_draft_only = False
+        self._diet_photo_auto_save = False
         self._prefer_fast_record_model = False
         # 本回合是否被 fast-route 到快模型 (简单记录/查询)。仅用于把答案 max_tokens
         # 从 ANSWER_MAX_TOKENS 收紧到 FAST_ROUTE_ANSWER_MAX_TOKENS —— 见 _answer_max_tokens。
@@ -5947,7 +5947,7 @@ class AgentExecutor:
 
         start_time = time.time()
         self._current_user_id = user_id
-        self._diet_photo_draft_only = _is_diet_photo_draft_turn(
+        self._diet_photo_auto_save = _is_diet_photo_auto_save_turn(
             extra_context,
             has_images=bool(images),
         )
@@ -10725,18 +10725,14 @@ class AgentExecutor:
                 data = {}
         today = self._agent_kernel_reference_now().strftime("%Y-%m-%d")
 
-        # Mobile 多图餐食的第一轮必须先生成可确认草稿。该门禁由回合状态
-        # 决定，并强制移除模型自报的 confirmed，避免提示词漂移直接写 DietRecord。
-        if rtype == "diet" and self._diet_photo_draft_only:
+        # Mobile 相机入口是用户已经明确点击“拍照记餐”发起的动作，不再创建
+        # 二次确认草稿。仍剥掉仅供 Agent 内部使用的确认标记，避免把控制字段
+        # 透传给 DietRecord API；真实是否保存由下方 API 回执决定。
+        if rtype == "diet" and self._diet_photo_auto_save:
             args.pop("confirmed", None)
             args.pop("confirm", None)
             data.pop("confirmed", None)
             data.pop("confirm", None)
-            return _confirm_or_describe(
-                args,
-                data,
-                preview=_health_record_confirmation_preview(rtype, args, data),
-            )
 
         # [R4-probe · 2026-07-17] **只观测不干预** —— 量化「model 自报 confirmed 绕过确认门」的真实频率。
         # 通路(对抗评审揪出): confirmed 剥离器 _auto_confirm_fast_record_args 只在

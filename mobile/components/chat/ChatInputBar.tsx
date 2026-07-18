@@ -87,7 +87,7 @@ const MODE_PLACEHOLDER: Record<ChatAgentMode, string> = {
 const MEAL_PHOTO_CONTEXT = {
   source: 'mobile_chat_meal_photo',
   intent: 'diet_photo_record',
-  instruction: '把本轮全部餐食照片作为同一餐的上下文,综合识别食物和份量,生成一张可确认的饮食记录卡片。',
+  instruction: '用户刚通过拍照记餐明确发起记录。把本轮全部餐食照片作为同一餐的上下文,综合识别食物和份量,识别完成后直接保存为今日饮食记录,不要等待二次确认。保存成功后返回已保存的结构化饮食卡,并注明营养值为估算值,允许用户稍后调整。',
 };
 
 function mergePhotoContext(base: string | undefined, photoContext: Record<string, string>): string {

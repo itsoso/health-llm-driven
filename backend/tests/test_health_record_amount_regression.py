@@ -27,44 +27,46 @@ def _declare_explicit_turn_for_raw_record_handler_contracts(monkeypatch):
     monkeypatch.setattr(AgentExecutor, "_execute_tool", with_explicit_test_turn)
 
 
-def test_mobile_meal_photo_context_enables_deterministic_draft_gate():
-    from app.services.agent_executor import _is_diet_photo_draft_turn
+def test_mobile_meal_photo_context_enables_auto_save_intent():
+    from app.services.agent_executor import _is_diet_photo_auto_save_turn
 
     context = json.dumps({
         "source": "mobile_chat_meal_photo",
         "intent": "diet_photo_record",
     })
-    assert _is_diet_photo_draft_turn(context, has_images=True) is True
-    assert _is_diet_photo_draft_turn(context, has_images=False) is False
+    assert _is_diet_photo_auto_save_turn(context, has_images=True) is True
+    assert _is_diet_photo_auto_save_turn(context, has_images=False) is False
 
 
 @pytest.mark.asyncio
-async def test_initial_meal_photo_turn_cannot_write_even_if_model_sets_confirmed(db):
-    """初始识图轮是草稿：模型自带 confirmed=true 也不能 POST DietRecord。"""
+async def test_initial_meal_photo_turn_writes_without_a_second_confirmation(db):
+    """拍照记餐是用户明确动作：识别后直接写 DietRecord，不再卡在确认前置。"""
     from app.services.agent_executor import AgentExecutor
 
     executor = AgentExecutor(db)
     executor._current_user_id = 1
-    executor._diet_photo_draft_only = True
+    executor._diet_photo_auto_save = True
 
-    with patch.object(executor, "_api_post", new=AsyncMock()) as post:
+    with patch.object(
+        executor,
+        "_api_post",
+        new=AsyncMock(return_value=json.dumps({"id": 123, "meal_type": "lunch"})),
+    ) as post:
         result = await executor._execute_tool(
             tool_name="health_record",
             args_raw=json.dumps({
                 "record_type": "diet",
-                "confirmed": True,
                 "data": {
                     "meal_type": "lunch",
                     "food_items": "米饭 1 碗",
                     "calories": 250,
-                    "confirmed": True,
                 },
             }),
             user_token=None,
         )
 
-    assert "NEEDS_CONFIRMATION" in str(result)
-    post.assert_not_called()
+    assert "NEEDS_CONFIRMATION" not in str(result)
+    post.assert_awaited_once()
 
 
 @pytest.mark.asyncio
