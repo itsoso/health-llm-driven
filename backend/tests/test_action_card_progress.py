@@ -3,6 +3,8 @@
 import uuid
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
 from app.models.action_card import ActionCard
 from app.models.user import User
 from app.services.auth import auth_service
@@ -129,11 +131,17 @@ def test_progress_requires_auth(client):
     assert resp.status_code in (401, 403)
 
 
-def test_progress_excludes_clinician_gated_legacy_outcome_from_efficacy_rates(client, db):
+@pytest.mark.parametrize(
+    ("metric_key", "title"),
+    [("ldl", "降低 LDL"), ("blood_glucose", "控制血糖")],
+)
+def test_progress_excludes_clinician_gated_legacy_outcome_from_efficacy_rates(
+    client, db, metric_key, title,
+):
     user, headers = _make_user(db, "clinician_progress")
     now = datetime.now(timezone.utc)
     _add_card(
-        db, user.id, title="降低 LDL", metric_key="ldl", user_decision="accepted",
+        db, user.id, title=title, metric_key=metric_key, user_decision="accepted",
         completed_at=now - timedelta(days=1), graded_at=now,
         outcome="improved", accuracy_score=95,
     )

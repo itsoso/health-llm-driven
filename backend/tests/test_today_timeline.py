@@ -8,6 +8,8 @@
 """
 from datetime import date, datetime, timezone
 
+import pytest
+
 from app.services.today_timeline_service import build_today_spine
 
 TOP_KEYS = {"date", "current_window", "now", "items", "past", "counts"}
@@ -254,12 +256,18 @@ def test_critical_severity_card_not_in_items(db, auth_user_and_headers):
         "critical severity 卡不应渲染成 outcome 庆祝项"
 
 
-def test_clinician_gated_legacy_card_not_rendered_as_outcome_trophy(db, auth_user_and_headers):
+@pytest.mark.parametrize(
+    ("metric_key", "title"),
+    [("ldl", "降低 LDL"), ("blood_glucose", "控制血糖")],
+)
+def test_clinician_gated_legacy_card_not_rendered_as_outcome_trophy(
+    db, auth_user_and_headers, metric_key, title,
+):
     from app.models.action_card import ActionCard
 
     user, _ = auth_user_and_headers
     db.add(ActionCard(
-        user_id=user.id, title="降低 LDL", content="x", metric_key="ldl",
+        user_id=user.id, title=title, content="x", metric_key=metric_key,
         baseline_value="4.2", actual_value="2.8", outcome="improved",
         graded_at=datetime.now(timezone.utc),
     ))

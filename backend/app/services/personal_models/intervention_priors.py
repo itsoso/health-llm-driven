@@ -119,6 +119,7 @@ _CLINICIAN_GATED_EXACT_CODES = frozenset({
     "alt", "ast",
     "ggt",
     "apo_b", "lp_a",
+    "blood_glucose",
 })
 
 

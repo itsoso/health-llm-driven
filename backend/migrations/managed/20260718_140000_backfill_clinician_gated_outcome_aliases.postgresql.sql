@@ -12,7 +12,7 @@ SET
 WHERE predicate IN ('responds_to', 'does_not_respond_to', 'partially_responds_to')
   AND (
       lower(COALESCE(subject, '') || ' ' || COALESCE(object_value, '') || ' ' || COALESCE(tags::text, '')) ~
-          '(^|[^a-z0-9])(lp[ _-]?a|a1c|tsh|ft4|testosterone|cortisol|glucose[ _-]?fasting|fasting[ _-]?glucose|blood[ _-]?glucose|systolic|diastolic|blood[ _-]?pressure)([^a-z0-9]|$)'
+          '(^|[^a-z0-9])(apolipoprotein|lp[ _-]?a|a1c|tsh|ft4|testosterone|cortisol|glucose[ _-]?fasting|fasting[ _-]?glucose|blood[ _-]?glucose|systolic|diastolic|blood[ _-]?pressure)([^a-z0-9]|$)'
       OR COALESCE(subject, '') || ' ' || COALESCE(object_value, '') || ' ' || COALESCE(tags::text, '') ~
           '(甲状腺|睾酮|皮质醇)'
   );

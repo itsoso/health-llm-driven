@@ -15,7 +15,8 @@ SET
     updated_at = CURRENT_TIMESTAMP
 WHERE predicate IN ('responds_to', 'does_not_respond_to', 'partially_responds_to')
   AND (
-      lower(COALESCE(subject, '') || ' ' || COALESCE(object_value, '') || ' ' || COALESCE(tags, '')) LIKE '%lp-a%'
+      lower(COALESCE(subject, '') || ' ' || COALESCE(object_value, '') || ' ' || COALESCE(tags, '')) LIKE '%apolipoprotein%'
+      OR lower(COALESCE(subject, '') || ' ' || COALESCE(object_value, '') || ' ' || COALESCE(tags, '')) LIKE '%lp-a%'
       OR lower(COALESCE(subject, '') || ' ' || COALESCE(object_value, '') || ' ' || COALESCE(tags, '')) LIKE '%lp_a%'
       OR lower(COALESCE(subject, '') || ' ' || COALESCE(object_value, '') || ' ' || COALESCE(tags, '')) LIKE '%lpa%'
       OR lower(COALESCE(subject, '') || ' ' || COALESCE(object_value, '') || ' ' || COALESCE(tags, '')) LIKE '%a1c%'

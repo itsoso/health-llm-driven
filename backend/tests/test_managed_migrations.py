@@ -20,6 +20,8 @@ def test_clinician_gated_outcome_migration_has_managed_dialect_pair():
         sql = migration.read_text(encoding="utf-8")
         assert "UPDATE memory_facts" in sql
         assert "UPDATE action_cards" in sql
+    assert "apolipoprotein" in alias_postgres.read_text(encoding="utf-8")
+    assert "apolipoprotein" in alias_sqlite.read_text(encoding="utf-8")
 
 
 def test_clinician_gated_outcome_sqlite_migration_neutralizes_legacy_scores(tmp_path: Path):
