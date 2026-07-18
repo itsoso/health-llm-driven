@@ -69,6 +69,15 @@ def test_fast_eligible_excludes_destructive_and_sync():
     assert _is_fast_eligible_turn("列出我的饮水记录", has_images=False, has_file=False)
 
 
+def test_fast_eligible_excludes_compound_write_and_analysis():
+    # 复合回合既要可靠写入，又要完整分析，不能走只为记录优化的 fast 路由。
+    assert not _is_fast_eligible_turn(
+        "记录晚餐牛肉面，帮我分析今天的热量和蛋白质",
+        has_images=False,
+        has_file=False,
+    )
+
+
 def test_not_performed_message_is_honest():
     # 破坏性/同步 0 工具执行的兜底文案:不谎报已删/已改/已同步 + 明确数据无改动
     msg = _destructive_or_sync_not_performed_message("删除早餐 1")

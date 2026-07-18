@@ -275,7 +275,7 @@ def classify_agent_utterance(
     if has_negated_mutation:
         return _intent(raw, normalized, "chat", domain, "none", 0.82, "negated_mutation", scope)
 
-    if mutation and (has_question or has_advice):
+    if mutation and has_question:
         if has_advice:
             return _intent(raw, normalized, "advice", domain, "analyze", 0.86, "mutation_advice", scope)
         return _intent(raw, normalized, "read", domain, "ask", 0.82, "mutation_question", scope)
@@ -309,6 +309,23 @@ def classify_agent_utterance(
         )
 
     if has_advice:
+        # 复合请求必须保留明确的写入能力。否则模型虽然理解了“记录后分析”，
+        # 但 ToolGateway 会把 health_record 当成 advice 回合的越权写入而拦掉，
+        # 用户最终只看到拒答。带问号的“吃了某药有什么副作用”仍是纯问答，
+        # 不应因为“吃了”这个观察词而误记一笔健康记录。
+        if has_write and not has_question:
+            return _intent(
+                raw,
+                normalized,
+                "write",
+                domain,
+                "create",
+                0.84,
+                "compound_write_advice_frame",
+                scope,
+                is_write=True,
+                requires_reliable_tool_model=True,
+            )
         return _intent(raw, normalized, "advice", domain, "analyze", 0.86, "advice_frame", scope)
 
     if has_read or (

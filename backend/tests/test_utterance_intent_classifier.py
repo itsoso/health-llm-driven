@@ -35,6 +35,23 @@ def test_real_record_command_is_write_intent():
     assert intent.is_write is True
 
 
+def test_compound_record_and_analysis_keeps_write_capability():
+    intent = classify_agent_utterance(
+        "记录晚餐牛肉面，帮我分析今天的热量和蛋白质"
+    )
+
+    assert intent.primary == "write"
+    assert intent.operation == "create"
+    assert intent.is_write is True
+
+
+def test_medication_side_effect_question_does_not_become_a_write():
+    intent = classify_agent_utterance("吃了布洛芬后胃不舒服怎么办？")
+
+    assert intent.primary == "advice"
+    assert intent.is_write is False
+
+
 def test_negated_record_command_is_not_write_intent():
     intent = classify_agent_utterance("这个不用记录")
 
