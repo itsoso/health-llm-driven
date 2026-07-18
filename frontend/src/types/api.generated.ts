@@ -18823,35 +18823,15 @@ export interface paths {
         };
         /**
          * Get Goal Progress
-         * @description 获取目标进展记录
+         * @description 获取当前用户目标的进展记录。
          */
         get: operations["get_goal_progress_api_v1_goals__goal_id__progress_get"];
         put?: never;
         /**
          * Update Goal Progress
-         * @description 更新目标进展
+         * @description 更新当前用户目标的进展。
          */
         post: operations["update_goal_progress_api_v1_goals__goal_id__progress_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/goals/generate-from-analysis/{user_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Generate Goals From Analysis
-         * @description 基于健康分析结果自动生成目标
-         */
-        post: operations["generate_goals_from_analysis_api_v1_goals_generate_from_analysis__user_id__post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -18915,7 +18895,7 @@ export interface paths {
         };
         /**
          * Check Goal Completion
-         * @description 检查目标完成情况
+         * @description 检查当前用户目标的完成情况。
          */
         get: operations["check_goal_completion_api_v1_goals__goal_id__completion_get"];
         put?: never;
@@ -63049,37 +63029,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": Record<string, never>;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    generate_goals_from_analysis_api_v1_goals_generate_from_analysis__user_id__post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                user_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["GoalResponse"][];
                 };
             };
             /** @description Validation Error */
