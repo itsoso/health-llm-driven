@@ -3,6 +3,27 @@ import XCTest
 @testable import HealthAgentMacCore
 
 final class MacP0FeatureTests: XCTestCase {
+    func testQuickRecordDisplayMessagePreservesSevereBloodPressureGuidance() {
+        let guidance = BloodPressureSafetyGuidance(
+            severity: "high",
+            title: "血压严重升高，请复测",
+            recheckInstruction: "请静坐至少 1 分钟后复测。",
+            emergencyInstruction: "若同时出现胸痛，请立即拨打急救电话。",
+            actionPath: "/blood-pressure"
+        )
+        let result = QuickRecordResult(
+            type: "bp",
+            message: "已记录血压 185/85 mmHg",
+            success: true,
+            safetyGuidance: guidance
+        )
+
+        XCTAssertEqual(
+            result.displayMessage,
+            "已记录血压 185/85 mmHg\n请静坐至少 1 分钟后复测。\n若同时出现胸痛，请立即拨打急救电话。"
+        )
+    }
+
     func testAgentStreamParserParsesTokenDoneAndErrorEvents() throws {
         let payload = """
         event: token
@@ -503,6 +524,26 @@ final class MacP0FeatureTests: XCTestCase {
 
         XCTAssertEqual(result.type, "water")
         XCTAssertTrue(result.success)
+    }
+
+    func testRecordClientDecodesSevereBloodPressureQuickRecordGuidance() async throws {
+        URLProtocolStub.handler = { request in
+            XCTAssertEqual(request.url?.absoluteString, "https://example.test/api/v1/quick-record")
+            let data = ##"{"type":"bp","message":"已记录血压 185/85 mmHg","success":true,"category":"血压严重升高","category_color":"#FF3B30","safety_guidance":{"severity":"high","title":"血压严重升高，请复测","recheck_instruction":"请静坐至少 1 分钟后复测。","emergency_instruction":"若同时出现胸痛，请立即拨打急救电话。","action_path":"/blood-pressure"}}"##.data(using: .utf8)!
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, data)
+        }
+        let client = APIClient(
+            baseURL: URL(string: "https://example.test/api/v1")!,
+            tokenProvider: StaticTokenProvider(token: "token"),
+            session: URLSession(configuration: .ephemeralWithStub)
+        )
+
+        let result = try await RecordClient(apiClient: client).quickRecord(text: "血压185/85")
+
+        XCTAssertEqual(result.category, "血压严重升高")
+        XCTAssertEqual(result.safetyGuidance?.severity, "high")
+        XCTAssertTrue(result.displayMessage.contains("复测"))
+        XCTAssertTrue(result.displayMessage.contains("胸痛"))
     }
 
     func testRecordClientParsesVoiceDietDraft() async throws {

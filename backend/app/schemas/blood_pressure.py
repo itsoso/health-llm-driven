@@ -1,6 +1,6 @@
 """血压追踪模式"""
 from pydantic import BaseModel, ConfigDict
-from typing import Optional, List
+from typing import Literal, Optional
 from datetime import date, datetime, time
 
 
@@ -17,8 +17,10 @@ class BloodPressureRecordBase(BaseModel):
 
 
 class BloodPressureRecordCreate(BloodPressureRecordBase):
-    """创建血压记录"""
-    user_id: int
+    """创建血压记录；认证接口始终以当前登录用户为准。"""
+
+    # 兼容旧客户端显式携带 user_id；路由会无条件覆盖为 current_user.id。
+    user_id: Optional[int] = None
 
 
 class BloodPressureRecordUpdate(BaseModel):
@@ -31,6 +33,16 @@ class BloodPressureRecordUpdate(BaseModel):
     notes: Optional[str] = None
 
 
+class BloodPressureSafetyGuidance(BaseModel):
+    """Deterministic, non-diagnostic instructions for a severe reading."""
+
+    severity: Literal["high"]
+    title: str
+    recheck_instruction: str
+    emergency_instruction: str
+    action_path: str
+
+
 class BloodPressureRecordResponse(BloodPressureRecordBase):
     """血压记录响应"""
     id: int
@@ -40,6 +52,8 @@ class BloodPressureRecordResponse(BloodPressureRecordBase):
 
     # 血压分类
     category: Optional[str] = None
+    category_color: Optional[str] = None
+    safety_guidance: Optional[BloodPressureSafetyGuidance] = None
 
     model_config = ConfigDict(from_attributes=True)
 

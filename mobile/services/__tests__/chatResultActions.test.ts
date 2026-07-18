@@ -84,6 +84,35 @@ describe('chatResultActions', () => {
     });
   });
 
+  it('preserves severe blood-pressure recheck and symptom triage in chat record feedback', async () => {
+    (api.post as jest.Mock).mockResolvedValueOnce({
+      data: {
+        type: 'bp',
+        message: '已记录血压 185/85 mmHg',
+        record_id: 92,
+        undo_path: 'blood-pressure/records/92',
+        category: '血压严重升高',
+        category_color: '#FF3B30',
+        safety_guidance: {
+          severity: 'high',
+          title: '血压严重升高，请复测',
+          recheck_instruction: '请静坐至少 1 分钟后复测。',
+          emergency_instruction: '若同时出现胸痛，请立即拨打急救电话。',
+          action_path: '/blood-pressure',
+        },
+      },
+    });
+
+    await expect(createRecordFromAssistantReply('血压185/85')).resolves.toMatchObject({
+      status: 'created',
+      type: 'bp',
+      category: '血压严重升高',
+      categoryColor: '#FF3B30',
+      safetyGuidance: { severity: 'high', action_path: '/blood-pressure' },
+      message: expect.stringContaining('复测'),
+    });
+  });
+
   it('falls back to the record page when no quick record can be inferred', async () => {
     await expect(createRecordFromAssistantReply('这是一段泛化建议，不包含明确记录。')).resolves.toEqual({
       status: 'needs_manual',

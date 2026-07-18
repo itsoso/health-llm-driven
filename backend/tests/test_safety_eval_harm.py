@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 """安全 eval(red-team)+ 群体 harm 信号(反向飞轮)回归 — Next Horizon Tier 3。"""
-from datetime import datetime
 
 
 # ───────────── 安全 eval(red-team 规则覆盖)─────────────
@@ -15,6 +14,16 @@ def test_safety_eval_all_pass():
         assert s["passed"] and s["max_severity_found"] >= s["expected_min_severity"]
 
 
+def test_safety_eval_models_a_single_severe_bp_reading_as_high_not_diagnosis():
+    from app.services.safety_eval import run_safety_eval
+
+    out = run_safety_eval()
+    scenario = next(s for s in out["scenarios"] if s["name"] == "severe_bp_reading")
+
+    assert scenario["expected_min_severity"] == 3
+    assert "危象" not in scenario["desc"]
+
+
 def test_safety_eval_endpoint_admin(client, db):
     import uuid
     from datetime import date as _date
@@ -23,7 +32,9 @@ def test_safety_eval_endpoint_admin(client, db):
     admin = User(username=f"a_{uuid.uuid4().hex[:8]}", email=f"a_{uuid.uuid4().hex[:8]}@x.com",
                  hashed_password="x", name="a", birth_date=_date(1990, 1, 1), gender="男",
                  is_active=True, is_approved=True, is_admin=True)
-    db.add(admin); db.commit(); db.refresh(admin)
+    db.add(admin)
+    db.commit()
+    db.refresh(admin)
     token = auth_service.create_access_token({"sub": str(admin.id)})
     r = client.get("/api/v1/admin/observability/safety-eval",
                    headers={"Authorization": f"Bearer {token}"})

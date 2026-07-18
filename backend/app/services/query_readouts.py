@@ -185,6 +185,10 @@ def _format_blood_pressure(content: str) -> Optional[str]:
     dia = _as_int(latest.get("diastolic"))
     if sys is None or dia is None:
         return None
+    from app.utils.blood_pressure_classify import is_severe_blood_pressure_record
+
+    if any(is_severe_blood_pressure_record(record) for record in records):
+        return None
     line = f"最新血压 {sys}/{dia} mmHg"
     pulse = _as_int(latest.get("pulse"))
     if pulse:

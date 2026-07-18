@@ -8,8 +8,6 @@
 """
 import json
 
-import pytest
-
 from app.services import query_readouts as qr
 
 
@@ -146,14 +144,14 @@ def test_weight_non_list_falls_open():
 def test_bp_latest_with_category_reference():
     records = [
         {"id": 5, "record_date": "2026-07-12", "systolic": 135, "diastolic": 88,
-         "pulse": 72, "category": "高血压前期"},
+         "pulse": 72, "category": "高血压1级"},
         {"id": 4, "record_date": "2026-07-10", "systolic": 120, "diastolic": 80,
          "category": "正常偏高"},
     ]
     out = qr._format_blood_pressure(json.dumps(records))
     assert "最新血压 135/88 mmHg" in out
     assert "脉搏 72次/分" in out
-    assert "高血压前期" in out  # 引用服务端 ACC/AHA category, 不新造
+    assert "高血压1级" in out  # 引用服务端 ACC/AHA category, 不新造
     assert "2026-07-12" in out
 
 
@@ -171,6 +169,12 @@ def test_bp_empty_is_honest():
 def test_bp_missing_systolic_falls_open():
     # systolic/diastolic 是渲染核心, 缺任一 → 无有效最新记录 → 诚实空。
     assert qr._format_blood_pressure(json.dumps([{"record_date": "2026-07-12", "diastolic": 80}])) == "还没有血压记录。"
+
+
+def test_bp_severe_reading_defers_to_safety_guidance():
+    records = [{"record_date": "2026-07-12", "systolic": 185, "diastolic": 85,
+                "category": "血压严重升高"}]
+    assert qr._format_blood_pressure(json.dumps(records)) is None
 
 
 # ──────────────────────── sleep ────────────────────────

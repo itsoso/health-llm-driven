@@ -97,7 +97,7 @@ def test_count_and_order_and_rule_id_unchanged():
 
 def test_bp_alert_not_annotated_single_source():
     """BP 单源(Withings)不在跨源指标 → 即便有别的跨源偏离也不标。"""
-    alerts = [_alert("vitals.bp_hypertensive_crisis", severity=Severity.CRITICAL)]
+    alerts = [_alert("vitals.bp_severe_reading", severity=Severity.HIGH)]
     annotate_cross_source_suspect(alerts, _twin([_div("spo2_avg", "SpO2")]))
     assert CAVEAT_MARKER not in alerts[0].message
 

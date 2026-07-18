@@ -1,7 +1,7 @@
 """血压追踪API"""
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func, desc
+from sqlalchemy import desc
 from typing import List, Optional
 from datetime import date, timedelta
 
@@ -13,18 +13,17 @@ from app.schemas.blood_pressure import (
     BloodPressureRecordCreate,
     BloodPressureRecordUpdate,
     BloodPressureRecordResponse,
+    BloodPressureSafetyGuidance,
     BloodPressureStats,
 )
 from app.utils.health_record import (
     verify_user_access,
     verify_record_ownership,
     get_record_or_404,
-    apply_date_filter,
-    get_records_in_days,
 )
 # D1(garmin-sync 治理 Wave 3): 血压分类抽到 utils 做单一真源, 供 api 与进程内 reader 共用。
 # 保留同名 re-export, 既有 `from app.api.blood_pressure import classify_blood_pressure` 不破。
-from app.utils.blood_pressure_classify import classify_blood_pressure
+from app.utils.blood_pressure_classify import blood_pressure_display, classify_blood_pressure
 
 router = APIRouter()
 
@@ -38,6 +37,21 @@ def _invalidate_twin(user_id: int) -> None:
         pass
 
 
+def _record_response(record: BloodPressureRecord) -> BloodPressureRecordResponse:
+    """Apply the canonical display and safety payload on every record response."""
+    response = BloodPressureRecordResponse.model_validate(record)
+    display = blood_pressure_display(record.systolic, record.diastolic)
+    response.category = display["category"]
+    response.category_color = display["category_color"]
+    safety_guidance = display["safety_guidance"]
+    response.safety_guidance = (
+        BloodPressureSafetyGuidance.model_validate(safety_guidance)
+        if safety_guidance is not None
+        else None
+    )
+    return response
+
+
 @router.post("/records", response_model=BloodPressureRecordResponse)
 def create_blood_pressure_record(
     record: BloodPressureRecordCreate,
@@ -45,7 +59,7 @@ def create_blood_pressure_record(
     db: Session = Depends(get_db)
 ):
     """创建血压记录（需要登录）"""
-    from datetime import datetime, time as dt_time
+    from datetime import datetime
 
     record_data = record.model_dump()
     record_data["user_id"] = current_user.id
@@ -75,10 +89,7 @@ def create_blood_pressure_record(
     db.refresh(db_record)
     _invalidate_twin(current_user.id)
 
-    # 添加血压分类
-    response = BloodPressureRecordResponse.model_validate(db_record)
-    response.category = classify_blood_pressure(db_record.systolic, db_record.diastolic)
-    return response
+    return _record_response(db_record)
 
 
 @router.get("/records/user/{user_id}", response_model=List[BloodPressureRecordResponse])
@@ -103,14 +114,7 @@ def get_user_blood_pressure_records(
 
     records = query.order_by(desc(BloodPressureRecord.record_date)).limit(limit).all()
 
-    # 添加血压分类
-    results = []
-    for record in records:
-        response = BloodPressureRecordResponse.model_validate(record)
-        response.category = classify_blood_pressure(record.systolic, record.diastolic)
-        results.append(response)
-
-    return results
+    return [_record_response(record) for record in records]
 
 
 @router.get("/records/me", response_model=List[BloodPressureRecordResponse])
@@ -131,14 +135,7 @@ def get_my_blood_pressure_records(
 
     records = query.order_by(desc(BloodPressureRecord.record_date)).limit(limit).all()
 
-    # 添加血压分类
-    results = []
-    for record in records:
-        response = BloodPressureRecordResponse.model_validate(record)
-        response.category = classify_blood_pressure(record.systolic, record.diastolic)
-        results.append(response)
-
-    return results
+    return [_record_response(record) for record in records]
 
 
 @router.get("/records/me/stats", response_model=BloodPressureStats)
@@ -171,7 +168,7 @@ def get_my_blood_pressure_stats(
         category = classify_blood_pressure(r.systolic, r.diastolic)
         if category == "正常":
             normal_count += 1
-        elif category in ["正常偏高", "高血压前期"]:
+        elif category == "正常偏高":
             elevated_count += 1
         else:
             high_count += 1
@@ -206,9 +203,7 @@ def get_latest_blood_pressure(
     ).order_by(desc(BloodPressureRecord.record_date)).first()
 
     if record:
-        response = BloodPressureRecordResponse.model_validate(record)
-        response.category = classify_blood_pressure(record.systolic, record.diastolic)
-        return response
+        return _record_response(record)
     return None
 
 
@@ -246,7 +241,7 @@ def get_blood_pressure_stats(
         category = classify_blood_pressure(r.systolic, r.diastolic)
         if category == "正常":
             normal_count += 1
-        elif category in ["正常偏高", "高血压前期"]:
+        elif category == "正常偏高":
             elevated_count += 1
         else:
             high_count += 1
@@ -285,9 +280,7 @@ def update_blood_pressure_record(
     db.refresh(record)
     _invalidate_twin(current_user.id)
 
-    response = BloodPressureRecordResponse.model_validate(record)
-    response.category = classify_blood_pressure(record.systolic, record.diastolic)
-    return response
+    return _record_response(record)
 
 
 @router.delete("/records/{record_id}")

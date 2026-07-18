@@ -153,7 +153,7 @@ def test_today_dynamic_view_rejects_unknown_surface(client, auth_user_and_header
 # ── R4 安全地板(pin_safety_floor)不变量 ──
 
 
-def test_today_dynamic_view_pins_safety_floor_above_hero_on_critical(
+def test_today_dynamic_view_pins_safety_floor_above_hero_on_high_alert(
     client,
     auth_user_and_headers,
     monkeypatch,
@@ -165,7 +165,7 @@ def test_today_dynamic_view_pins_safety_floor_above_hero_on_critical(
     monkeypatch.setattr(
         today_dynamic_view_service,
         "_evaluate_safety_alerts",
-        lambda db, user_id: ([_critical_alert()], 0),
+        lambda db, user_id: ([_high_alert()], 0),
     )
 
     resp = client.post("/api/v1/dynamic-views/today", headers=headers, json=_request_body())
@@ -182,21 +182,21 @@ def test_today_dynamic_view_pins_safety_floor_above_hero_on_critical(
 
     card = safety_section["cards"][0]
     assert card["type"] == "safety"
-    assert card["id"] == "safety-alert:bp_hypertensive_crisis"
+    assert card["id"] == "safety-alert:bp_severe_reading"
     assert card["render"]["atom"] == "safety"
     assert card["render"]["priority"] == 120
-    assert card["data"]["title"] == "血压达到高血压危象水平"
-    assert card["data"]["severity"] == "critical"
+    assert card["data"]["title"] == "血压严重升高"
+    assert card["data"]["severity"] == "high"
     assert card["data"]["requires_medical_attention"] is True
     assert card["data"]["boundary"]
-    assert card["data"]["rule_id"] == "bp_hypertensive_crisis"
+    assert card["data"]["rule_id"] == "bp_severe_reading"
 
     # 安全卡唯一允许的动作:route.open 到安全告警页,绝无写路径
     assert [a["action"] for a in card["actions"]] == ["route.open"]
     assert card["actions"][0]["payload"] == {"route": "/(tabs)/alerts"}
 
-    # CRITICAL 活跃 → TTL 归零,客户端缓存立即过期(不许 60s 藏 CRITICAL)
-    assert body["expires_at"] == body["generated_at"]
+    # 单次严重读数为 High 而非自动诊断的 Critical；安全卡仍置顶，常规 TTL 可保留。
+    assert body["expires_at"] > body["generated_at"]
 
 
 def test_today_dynamic_view_no_alerts_no_safety_section_and_normal_ttl(
@@ -303,7 +303,7 @@ def test_today_dynamic_view_context_hash_changes_when_alert_appears(
     monkeypatch.setattr(
         today_dynamic_view_service,
         "_evaluate_safety_alerts",
-        lambda db, user_id: ([_critical_alert()], 0),
+        lambda db, user_id: ([_high_alert()], 0),
     )
     alerted = client.post("/api/v1/dynamic-views/today", headers=headers, json=_request_body())
     assert alerted.status_code == 200, alerted.text
@@ -337,16 +337,16 @@ def _request_body():
     }
 
 
-def _critical_alert():
+def _high_alert():
     from app.agents.safety_guardian.schema import Alert, Severity
 
     return Alert(
-        rule_id="bp_hypertensive_crisis",
+        rule_id="bp_severe_reading",
         category="vitals",
-        severity=Severity.CRITICAL,
-        title="血压达到高血压危象水平",
-        message="收缩压 ≥ 180 mmHg,建议立即处理。",
-        action="立即静坐休息 5 分钟后复测;若仍 ≥180/120 或伴随胸痛/视物模糊,立即就医。",
+        severity=Severity.HIGH,
+        title="血压严重升高",
+        message="发现收缩压 ≥ 180 mmHg 的严重升高读数。",
+        action="静坐至少 1 分钟后复测；伴随胸痛或视力改变时立即急救。",
         requires_medical_attention=True,
     )
 

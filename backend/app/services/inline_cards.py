@@ -906,25 +906,16 @@ def _build_bp(db: Session, user_id: int, q: str) -> Optional[Dict[str, Any]]:
                .first())
         if not r or r.systolic is None or r.diastolic is None:
             return None
+        from app.utils.blood_pressure_classify import blood_pressure_display
+
         s, d = r.systolic, r.diastolic
-        if s >= 180 or d >= 120:
-            cat, col = "高血压急症", "#AF52DE"
-        elif s >= 140 or d >= 90:
-            cat, col = "高血压 2 期", "#FF453A"
-        elif s >= 130 or d >= 80:
-            cat, col = "高血压 1 期", "#FF6723"
-        elif s >= 120 and d < 80:
-            cat, col = "血压升高", "#FF9F0A"
-        elif s < 90 or d < 60:
-            cat, col = "偏低", "#5AC8FA"
-        else:
-            cat, col = "正常", "#30D158"
+        display = blood_pressure_display(s, d)
         m = r.measured_at
         return {
             "systolic": s, "diastolic": d,
             "pulse": getattr(r, "pulse", None),
             "measured_at": m.strftime("%m-%d %H:%M") if isinstance(m, datetime) else None,
-            "category": cat, "category_color": col,
+            **display,
         }
     except Exception as e:
         logger.debug("bp card failed: %s", e)

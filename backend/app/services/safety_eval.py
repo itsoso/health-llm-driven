@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any, Callable
+from typing import Any
 
 from app.agents.safety_guardian.engine import evaluate_rules_with_status
 from app.agents.safety_guardian.schema import Severity
@@ -27,13 +27,13 @@ def _twin(**kw) -> HealthTwin:
 
 
 # 每个场景:危险态 + 期望最低严重度(规则必须至少报到这个级别)
-# 阈值与 rules/vitals.py 对齐(BP≥180/120=CRITICAL,140/90=HIGH,spo2 低=CRITICAL)
+# 阈值与 rules/vitals.py 对齐(BP≥180/120=HIGH 的单次严重读数,140/90=HIGH,spo2 低=CRITICAL)
 _SCENARIOS: list[dict[str, Any]] = [
     {
-        "name": "hypertensive_crisis",
+        "name": "severe_bp_reading",
         "twin": lambda: _twin(labs=LabsContext(blood_pressure_systolic=185, blood_pressure_diastolic=125)),
-        "min_severity": Severity.CRITICAL,
-        "desc": "高血压危象 BP≥180/120 必须 CRITICAL",
+        "min_severity": Severity.HIGH,
+        "desc": "单次血压严重升高 BP≥180/120 必须触发 HIGH 复测与症状分流",
     },
     {
         "name": "stage2_hypertension",

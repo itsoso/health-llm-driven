@@ -8,18 +8,14 @@ All LLM interaction here uses a fake provider — NO network.
 """
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
 
 from app.services import starter_polish
-from app.services.starter_polish import (
-    PolishedCard,
-    build_polish_input,
-    polish_starters,
-    verify_polished,
-)
+from app.services.starter_polish import build_polish_input, polish_starters, verify_polished
+from app.services.starter_polish import verify_polished as _vp
 from app.services.conversation_starters import SuggestionCandidate
 
 
@@ -337,6 +333,60 @@ def test_endpoint_cache_hit_serves_polished_true(
     assert exam_cards[0]["text"] == "最近体检有异常，要一起看看吗？"
 
 
+def test_cached_synthesis_replaces_the_lowest_priority_chip_within_display_limit():
+    from app.api.agent import _merge_cached_polish
+    from app.services.conversation_starters import SuggestionCandidate
+
+    cards = [
+        SuggestionCandidate(100, "严重读数", "safety"),
+        SuggestionCandidate(80, "恢复", "recovery"),
+        SuggestionCandidate(60, "饮水", "water"),
+        SuggestionCandidate(10, "默认建议", "default"),
+    ]
+    cached = [
+        {"key": "safety", "text": "严重读数", "polished": True},
+        {"key": "recovery", "text": "恢复", "polished": True},
+        {"key": "water", "text": "饮水", "polished": True},
+        {"key": "default", "text": "默认建议", "polished": True},
+        {
+            "key": "synthesis",
+            "text": "恢复和饮水怎么一起安排？",
+            "priority": 80,
+            "combines": ["recovery", "water"],
+        },
+    ]
+
+    merged = _merge_cached_polish(cards, cached)
+
+    assert len(merged) == len(cards)
+    assert {item["key"] for item in merged} == {"safety", "recovery", "water", "synthesis"}
+
+
+def test_cached_synthesis_never_replaces_one_of_its_source_chips():
+    from app.api.agent import _merge_cached_polish
+    from app.services.conversation_starters import SuggestionCandidate
+
+    cards = [
+        SuggestionCandidate(80, "代谢", "metabolic"),
+        SuggestionCandidate(70, "饮食", "diet"),
+        SuggestionCandidate(60, "目标", "goal"),
+        SuggestionCandidate(10, "饮水", "water"),
+    ]
+    cached = [
+        {"key": card.key, "text": card.text, "polished": True}
+        for card in cards
+    ] + [{
+        "key": "synthesis",
+        "text": "目标和饮水怎么一起安排？",
+        "priority": 60,
+        "combines": ["goal", "water"],
+    }]
+
+    merged = _merge_cached_polish(cards, cached)
+
+    assert {item["key"] for item in merged} == {"metabolic", "diet", "goal", "water"}
+
+
 def test_endpoint_flag_off_is_byte_identical_to_legacy(
     client, db, auth_user_and_headers, monkeypatch
 ):
@@ -366,9 +416,6 @@ def test_endpoint_flag_off_is_byte_identical_to_legacy(
 
 # ── 对抗评审复现 battery (2026-07-04 FIX-FIRST 五修) ─────────────────────
 # 每条都是评审员在旧闸上实测放行的 exploit; 修复后必须全部 REJECT。
-
-from app.services.starter_polish import verify_polished as _vp
-
 
 class TestAdversarialGateHardening:
     def test_substring_number_borrowing_rejected(self):

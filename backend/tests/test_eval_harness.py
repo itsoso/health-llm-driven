@@ -1,11 +1,10 @@
 """Eval harness 测试 — scorer / runner / regression detection."""
 import json
-from pathlib import Path
 
 import pytest
 
-from eval.models import GoldenCase, SuiteReport, CaseResult
-from eval.runner import run_case, run_suite, write_baseline, load_suite, _BASELINES_DIR
+from eval.models import GoldenCase
+from eval.runner import run_case, run_suite, write_baseline, load_suite
 from eval.scorers.exact_match import score_rule_set
 from eval.scorers.grounding import score_grounding
 from eval.scorers.keywords import score_keywords
@@ -140,7 +139,7 @@ class TestRegression:
         original = runner_mod._RUNNERS["safety"]
 
         def buggy_runner(inputs):
-            return {"rule_ids": ["vitals.bp_hypertensive_crisis"]}  # 故意误触发
+            return {"rule_ids": ["vitals.bp_severe_reading"]}  # 故意误触发
 
         monkeypatch.setitem(runner_mod._RUNNERS, "safety", buggy_runner)
         report = run_suite("safety", baseline="fake")

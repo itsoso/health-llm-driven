@@ -1,8 +1,9 @@
 """血压追踪模型"""
-from sqlalchemy import Column, Integer, Float, String, DateTime, Date, ForeignKey, Text, Time, Index, UniqueConstraint
+from sqlalchemy import Column, Integer, DateTime, Date, ForeignKey, Text, Index, UniqueConstraint
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.database import Base
+from app.utils.blood_pressure_classify import classify_blood_pressure
 
 
 class BloodPressureRecord(Base):
@@ -54,13 +55,4 @@ class BloodPressureRecord(Base):
     @property
     def category(self):
         """血压分类"""
-        if self.systolic < 120 and self.diastolic < 80:
-            return "正常"
-        elif 120 <= self.systolic < 130 and self.diastolic < 80:
-            return "正常偏高"
-        elif (130 <= self.systolic < 140) or (80 <= self.diastolic < 90):
-            return "高血压前期"
-        elif self.systolic >= 140 or self.diastolic >= 90:
-            return "高血压"
-        else:
-            return "未知"
+        return classify_blood_pressure(self.systolic, self.diastolic)

@@ -18,6 +18,7 @@ import { createMdStylesChat } from '../../constants/markdownStyles';
 import type { ColorPalette } from '../../hooks/useTheme';
 import type { UIMessage } from '../../hooks/useChatEngine';
 import { speakWithUserVoice, type SpeakHandle } from '../../services/speakWithUserVoice';
+import { createRecordFromAssistantReply } from '../../services/chatResultActions';
 import { dispatchChatCardAction, type ChatCardActionResult } from '../../services/chatCardActions';
 import { rememberVerifiedWriteReceipt } from '../../services/conversationContinuity';
 import {
@@ -39,6 +40,7 @@ import { useToast } from '../../hooks/useToast';
 import { shareLocalImage, sharePlainCaption, sharePlainText } from '../../utils/share';
 import { buildAiShareMessage, buildXiaohongshuShareMessage } from '../../utils/aiShareText';
 import { buildChatImageSource } from '../../utils/chatImageSource';
+import { bloodPressureSaveAlert } from '../../utils/bloodPressureSafety';
 import { containsMarkdownTable, preprocessMarkdownTables } from '../../utils/markdownTables';
 import { prepareSafeMarkdown, safeMarkdownIt } from '../../utils/safeMarkdown';
 import { extractRevaUiBlocks } from '../../utils/revaUiBlocks';
@@ -105,6 +107,7 @@ function ChatBubbleInner({
   const [showCardActions, setShowCardActions] = useState(false);
   const [timeRevealed, setTimeRevealed] = useState(false);
   const [speaking, setSpeaking] = useState(false);
+  const [isSavingMessageRecord, setIsSavingMessageRecord] = useState(false);
   const [copied, setCopied] = useState(false);
   const [cardActionStateByKey, setCardActionStateByKey] = useState<Record<string, ChatCardActionRuntimeState>>({});
   const [cardReceiptByKey, setCardReceiptByKey] = useState<Record<string, WriteReceipt>>({});
@@ -812,6 +815,47 @@ function ChatBubbleInner({
     void handleSpeak();
   };
 
+  const handleCreateRecordFromMessage = async () => {
+    if (!assistantTextForActions || isSavingMessageRecord) return;
+    setIsSavingMessageRecord(true);
+    setShowActions(false);
+    setShowShareActions(false);
+    try {
+      const result = await createRecordFromAssistantReply(assistantTextForActions);
+      if (result.status === 'created') {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+        const safetyAlert = bloodPressureSaveAlert(result.safetyGuidance);
+        if (safetyAlert) {
+          Alert.alert(safetyAlert.title, result.message);
+        } else {
+          toast.show(result.message || '已生成记录', 'success');
+        }
+        try {
+          await invalidateQueryKeys(qc, [
+            queryKeys.dashboard,
+            queryKeys.dataHealth,
+            queryKeys.todayCoachRoot,
+            queryKeys.agentAgendaRoot,
+            ['timeline', 'today'],
+            ['diet'],
+            ['today-dynamic-view', 'mobile.today'],
+          ]);
+        } catch {
+          // The write receipt is authoritative; a stale view must not undo its safety feedback.
+          toast.show('记录已保存，页面数据稍后刷新', 'info');
+        }
+        return;
+      }
+
+      toast.show(result.message, 'info');
+      router.push(result.route as any);
+    } catch {
+      toast.show('保存记录失败，请稍后重试', 'error');
+    } finally {
+      setIsSavingMessageRecord(false);
+    }
+  };
+
   const handleBubblePress = () => {
     if (selectionMode) {
       onToggleSelected?.(item.id);
@@ -833,6 +877,10 @@ function ChatBubbleInner({
       || (item.completionStatus !== 'interrupted' && item.completionStatus !== 'error')
     );
     const canSpeak = !isUser && !!assistantTextForActions;
+    const canSaveAssistantRecord = canSpeak
+      && !item.streaming
+      && item.completionStatus !== 'interrupted'
+      && item.completionStatus !== 'error';
     if (!canCopy && !canSelect && !canShare && !canSpeak) return null;
 
     if (showShareActions && !isUser) {
@@ -923,6 +971,22 @@ function ChatBubbleInner({
               color={C.green500}
             />
             <Text style={txt.actionBtn}>{speaking ? '停止' : '朗读'}</Text>
+          </Pressable>
+        ) : null}
+        {canSaveAssistantRecord ? (
+          <Pressable
+            style={({ pressed }) => [styles.actionBtn, pressed && styles.actionBtnPressed]}
+            onPress={() => { void handleCreateRecordFromMessage(); }}
+            disabled={isSavingMessageRecord}
+            accessibilityRole="button"
+            accessibilityLabel="保存为记录"
+          >
+            {isSavingMessageRecord ? (
+              <ActivityIndicator size="small" color={C.green500} />
+            ) : (
+              <Ionicons name="archive-outline" size={14} color={C.green500} />
+            )}
+            <Text style={txt.actionBtn}>保存记录</Text>
           </Pressable>
         ) : null}
       </View>

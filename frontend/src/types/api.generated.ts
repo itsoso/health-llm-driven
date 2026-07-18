@@ -889,6 +889,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/account-deletion-requests/{request_id}/verification-report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 生成账号删除核验报告
+         * @description Return a redacted, machine-generated purge verification report.
+         */
+        get: operations["get_account_deletion_verification_report_api_v1_admin_account_deletion_requests__request_id__verification_report_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/account-deletion-requests/{request_id}": {
         parameters: {
             query?: never;
@@ -1291,6 +1311,26 @@ export interface paths {
          *     - target_user 继承两个账号的微信/Web登录能力
          */
         post: operations["admin_merge_users_api_v1_admin_users_merge_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/observability/release-readiness": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 发布就绪检查 — 安全/监控/预算/人工闸门
+         * @description Return a secret-free release report; never conflates it with liveness.
+         */
+        get: operations["get_release_readiness_api_v1_admin_observability_release_readiness_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2929,7 +2969,11 @@ export interface paths {
         put?: never;
         /**
          * Create Basic Health Data
-         * @description 创建基础健康数据
+         * @description 创建基础健康数据。
+         *
+         *     user_id remains in the request schema for backwards compatibility, but the
+         *     authenticated identity is the authority.  Admins may write on behalf of a
+         *     managed user; ordinary users may only write their own record.
          */
         post: operations["create_basic_health_data_api_v1_basic_health__post"];
         delete?: never;
@@ -2987,7 +3031,7 @@ export interface paths {
         };
         /**
          * Get User Basic Health Data
-         * @description 获取用户的基础健康数据
+         * @description 获取用户的基础健康数据（本人或管理员）。
          */
         get: operations["get_user_basic_health_data_api_v1_basic_health_user__user_id__get"];
         put?: never;
@@ -3007,7 +3051,7 @@ export interface paths {
         };
         /**
          * Get Latest Basic Health Data
-         * @description 获取用户最新的基础健康数据
+         * @description 获取用户最新的基础健康数据（本人或管理员）。
          */
         get: operations["get_latest_basic_health_data_api_v1_basic_health_user__user_id__latest_get"];
         put?: never;
@@ -9296,8 +9340,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * 每数据源覆盖天数 + 最新指标快照
-         * @description 近 days 天,按 data_source 分组:覆盖天数 / 最新日期 / 每指标最近非空值。
+         * 每数据源覆盖天数 + 最近一天指标快照
+         * @description 近 days 天,按 data_source 分组:覆盖天数 / 最新日期 / 最近一天同日指标。
          *
          *     客户端用此区分「记录来自哪个设备」并展示每源的数据量。
          */
@@ -10602,6 +10646,60 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/aigc/media/confirmations/{confirmation_id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm Aigc Media Draft
+         * @description Consume an owner-bound draft after a direct user confirmation gesture.
+         */
+        post: operations["confirm_aigc_media_draft_api_v1_aigc_media_confirmations__confirmation_id__confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/aigc/media/jobs/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Aigc Media Job */
+        get: operations["get_aigc_media_job_api_v1_aigc_media_jobs__job_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/aigc/media/jobs/{job_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Aigc Media Job */
+        post: operations["cancel_aigc_media_job_api_v1_aigc_media_jobs__job_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/twin/me": {
         parameters: {
             query?: never;
@@ -11662,7 +11760,7 @@ export interface paths {
         put?: never;
         /**
          * 语音指令快速执行
-         * @description 语音转文字后，尝试匹配快捷指令直接执行
+         * @description 语音转文字后，构造需确认的记录草稿并走 Agent Kernel。
          */
         post: operations["voice_command_api_v1_chat_voice_command_post"];
         delete?: never;
@@ -13330,8 +13428,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * 因果记忆:事件×指标变化(时序相关,非因果)
-         * @description 从近期干预事件 × 指标前后对比,沉淀可召回的记忆条(observational,相关非因果)。
+         * 事件观察:指标变化(时序相关,非因果)
+         * @description 仅在证据完整时返回事件前后观察，不做因果归因。
          */
         get: operations["get_my_causal_notes_api_v1_personal_outcome_me_causal_notes_get"];
         put?: never;
@@ -19892,7 +19990,7 @@ export interface components {
         };
         /**
          * BloodPressureRecordCreate
-         * @description 创建血压记录
+         * @description 创建血压记录；认证接口始终以当前登录用户为准。
          */
         BloodPressureRecordCreate: {
             /**
@@ -19915,7 +20013,7 @@ export interface components {
             /** Notes */
             notes?: string | null;
             /** User Id */
-            user_id: number;
+            user_id?: number | null;
         };
         /**
          * BloodPressureRecordResponse
@@ -19951,6 +20049,9 @@ export interface components {
             updated_at?: string | null;
             /** Category */
             category?: string | null;
+            /** Category Color */
+            category_color?: string | null;
+            safety_guidance?: components["schemas"]["BloodPressureSafetyGuidance"] | null;
         };
         /**
          * BloodPressureRecordUpdate
@@ -19969,6 +20070,26 @@ export interface components {
             arm?: string | null;
             /** Notes */
             notes?: string | null;
+        };
+        /**
+         * BloodPressureSafetyGuidance
+         * @description Deterministic, non-diagnostic instructions for a severe reading.
+         */
+        BloodPressureSafetyGuidance: {
+            /**
+             * Severity
+             * @constant
+             * @enum {string}
+             */
+            severity: "high";
+            /** Title */
+            title: string;
+            /** Recheck Instruction */
+            recheck_instruction: string;
+            /** Emergency Instruction */
+            emergency_instruction: string;
+            /** Action Path */
+            action_path: string;
         };
         /**
          * BloodPressureStats
@@ -28120,6 +28241,11 @@ export interface components {
             record_id?: number | null;
             /** Undo Path */
             undo_path?: string | null;
+            /** Category */
+            category?: string | null;
+            /** Category Color */
+            category_color?: string | null;
+            safety_guidance?: components["schemas"]["BloodPressureSafetyGuidance"] | null;
         };
         /**
          * RAGQuery
@@ -34015,6 +34141,37 @@ export interface operations {
             };
         };
     };
+    get_account_deletion_verification_report_api_v1_admin_account_deletion_requests__request_id__verification_report_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                request_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     update_account_deletion_request_api_v1_admin_account_deletion_requests__request_id__patch: {
         parameters: {
             query?: never;
@@ -34626,6 +34783,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_release_readiness_api_v1_admin_observability_release_readiness_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };
@@ -49699,6 +49876,99 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    confirm_aigc_media_draft_api_v1_aigc_media_confirmations__confirmation_id__confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                confirmation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_aigc_media_job_api_v1_aigc_media_jobs__job_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_aigc_media_job_api_v1_aigc_media_jobs__job_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
                 };
             };
             /** @description Validation Error */

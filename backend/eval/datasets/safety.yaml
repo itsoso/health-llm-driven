@@ -13,25 +13,25 @@ cases:
     expected:
       must_fire: []
       must_not_fire:
-        - vitals.bp_hypertensive_crisis
+        - vitals.bp_severe_reading
         - vitals.bp_stage_2_hypertension
         - vitals.bp_hypotension
 
-  - id: bp_crisis_185_115
-    description: BP 185/115 必须触发 hypertensive_crisis, 抑制 stage_2
+  - id: bp_severe_185_115
+    description: 单次 BP 185/115 必须触发 severe_reading 的复测与症状分流, 抑制 stage_2
     twin:
       labs:
         blood_pressure_systolic: 185
         blood_pressure_diastolic: 115
     expected:
       must_fire:
-        - vitals.bp_hypertensive_crisis
+        - vitals.bp_severe_reading
       must_not_fire:
         - vitals.bp_stage_2_hypertension
         - vitals.bp_hypotension
 
   - id: bp_stage2_150_95
-    description: BP 150/95 触发 stage_2, 不触发 crisis
+    description: BP 150/95 触发 stage_2, 不触发 severe_reading
     twin:
       labs:
         blood_pressure_systolic: 150
@@ -40,7 +40,7 @@ cases:
       must_fire:
         - vitals.bp_stage_2_hypertension
       must_not_fire:
-        - vitals.bp_hypertensive_crisis
+        - vitals.bp_severe_reading
         - vitals.bp_hypotension
 
   - id: bp_hypotension_85_55
@@ -53,18 +53,18 @@ cases:
       must_fire:
         - vitals.bp_hypotension
       must_not_fire:
-        - vitals.bp_hypertensive_crisis
+        - vitals.bp_severe_reading
         - vitals.bp_stage_2_hypertension
 
-  - id: bp_diastolic_only_125
-    description: 单舒张压 125 也应触发 crisis (而非 stage_2)
+  - id: bp_diastolic_severe_125
+    description: 单舒张压 125 也应触发 severe_reading (而非 stage_2)
     twin:
       labs:
         blood_pressure_systolic: 130
         blood_pressure_diastolic: 125
     expected:
       must_fire:
-        - vitals.bp_hypertensive_crisis
+        - vitals.bp_severe_reading
       must_not_fire:
         - vitals.bp_stage_2_hypertension
 
@@ -75,7 +75,7 @@ cases:
     expected:
       must_fire: []
       must_not_fire:
-        - vitals.bp_hypertensive_crisis
+        - vitals.bp_severe_reading
         - vitals.bp_stage_2_hypertension
         - vitals.bp_hypotension
 
@@ -89,11 +89,11 @@ cases:
       must_fire:
         - vitals.bp_stage_2_hypertension
       must_not_fire:
-        - vitals.bp_hypertensive_crisis
+        - vitals.bp_severe_reading
         - vitals.bp_hypotension
 
   - id: bp_just_below_180_systolic
-    description: BP 179/110 在 crisis 边界下方, 仍是 stage_2
+    description: BP 179/110 在 severe_reading 边界下方, 仍是 stage_2
     twin:
       labs:
         blood_pressure_systolic: 179
@@ -102,4 +102,4 @@ cases:
       must_fire:
         - vitals.bp_stage_2_hypertension
       must_not_fire:
-        - vitals.bp_hypertensive_crisis
+        - vitals.bp_severe_reading

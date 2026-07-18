@@ -17,6 +17,7 @@ import {
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
+import { bloodPressureSaveFeedback } from './saveFeedback';
 
 // 使用相对路径，通过Next.js代理到后端
 const API_BASE = '/api';
@@ -80,12 +81,13 @@ function BloodPressureContent() {
       }
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (record) => {
       queryClient.invalidateQueries({ queryKey: ['blood-pressure-records'] });
       queryClient.invalidateQueries({ queryKey: ['blood-pressure-stats'] });
       setShowForm(false);
       setFormData({ systolic: '', diastolic: '', pulse: '', measurement_position: '坐', arm: '左', notes: '' });
-      showToast('血压记录保存成功！', 'success');
+      const feedback = bloodPressureSaveFeedback(record);
+      showToast(feedback.message, feedback.type);
     },
     onError: (error) => {
       showToast('保存失败，请重试', 'error');
@@ -275,8 +277,9 @@ function BloodPressureContent() {
           <div className="flex flex-wrap gap-2 text-xs">
             <span className="px-2 py-1 bg-green-100 text-green-800 rounded">正常: &lt;120/80</span>
             <span className="px-2 py-1 bg-yellow-100 text-yellow-800 rounded">正常偏高: 120-129/&lt;80</span>
-            <span className="px-2 py-1 bg-orange-100 text-orange-800 rounded">高血压前期: 130-139/80-89</span>
-            <span className="px-2 py-1 bg-red-100 text-red-800 rounded">高血压: ≥140/90</span>
+            <span className="px-2 py-1 bg-orange-100 text-orange-800 rounded">高血压1级: 130-139/80-89</span>
+            <span className="px-2 py-1 bg-red-100 text-red-800 rounded">高血压2级: ≥140/90</span>
+            <span className="px-2 py-1 bg-red-100 text-red-800 rounded">严重升高: ≥180 或 ≥120，先复测并按症状分流</span>
           </div>
         </div>
 

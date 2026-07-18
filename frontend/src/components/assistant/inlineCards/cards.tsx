@@ -332,21 +332,32 @@ export const WeatherCardSpec: CardSpec<WeatherData> = {
 // ────────────────────────────────────────────────────────────────
 // 6. BPCard (ACC/AHA 2017 分级)
 // ────────────────────────────────────────────────────────────────
-interface BPData { systolic: number; diastolic: number; pulse?: number; measured_at?: string; category: string; category_color: string; }
-function classifyBP(s: number, d: number) {
-  if (s >= 180 || d >= 120) return { label: '高血压急症', color: '#AF52DE' };
-  if (s >= 140 || d >= 90) return { label: '高血压 2 期', color: '#FF453A' };
-  if (s >= 130 || d >= 80) return { label: '高血压 1 期', color: '#FF6723' };
-  if (s >= 120 && d < 80) return { label: '血压升高', color: '#FF9F0A' };
-  if (s < 90 || d < 60) return { label: '偏低', color: '#5AC8FA' };
-  return { label: '正常', color: '#30D158' };
+interface BPSafetyGuidance {
+  severity: 'high';
+  title?: string;
+  recheck_instruction: string;
+  emergency_instruction: string;
+  action_path: string;
 }
-export function BPCardView({ systolic, diastolic, pulse, measured_at, category, category_color }: BPData) {
+interface BPData {
+  systolic: number;
+  diastolic: number;
+  pulse?: number;
+  measured_at?: string;
+  category?: string;
+  category_color?: string;
+  safety_guidance?: BPSafetyGuidance | null;
+}
+const BP_FALLBACK_COLOR = '#64748B';
+
+export function BPCardView({ systolic, diastolic, pulse, measured_at, category, category_color, safety_guidance }: BPData) {
+  const displayCategory = category || '未分类';
+  const displayColor = category_color || BP_FALLBACK_COLOR;
   return (
-    <CardShell emoji="🩺" title="血压" badge={category} badgeColor={category_color} bg="#FFF5F5" border="#FECACA">
+    <CardShell emoji="🩺" title="血压" badge={displayCategory} badgeColor={displayColor} bg="#FFF5F5" border="#FECACA">
       <div className="flex items-center justify-between">
         <div className="flex items-baseline gap-1.5">
-          <span className="text-2xl font-extrabold tabular-nums" style={{ color: category_color }}>
+          <span className="text-2xl font-extrabold tabular-nums" style={{ color: displayColor }}>
             {systolic}<span className="text-lg font-normal text-slate-400"> / </span>{diastolic}
           </span>
           <span className="text-[10px] text-slate-400">mmHg</span>
@@ -359,6 +370,13 @@ export function BPCardView({ systolic, diastolic, pulse, measured_at, category, 
         )}
       </div>
       {measured_at && <div className="text-[10px] text-slate-400 mt-1">{measured_at}</div>}
+      {safety_guidance && (
+        <div className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs leading-5 text-red-900" role="alert">
+          <div>{safety_guidance.recheck_instruction}</div>
+          <div className="mt-1">{safety_guidance.emergency_instruction}</div>
+          <a className="mt-1 inline-block font-semibold text-red-800 underline" href={safety_guidance.action_path}>复测后记录</a>
+        </div>
+      )}
     </CardShell>
   );
 }
@@ -369,14 +387,15 @@ export const BPCardSpec: CardSpec<BPData> = {
   },
   async build({ api }) {
     try {
-      const res = await api.get('/blood-pressure/me/latest');
-      const r = res.data;
+      const res = await api.get('/blood-pressure/records/me', { params: { limit: 1 } });
+      const r = Array.isArray(res.data) ? res.data[0] : null;
       if (!r || r.systolic == null || r.diastolic == null) return null;
-      const c = classifyBP(r.systolic, r.diastolic);
       return {
         systolic: r.systolic, diastolic: r.diastolic, pulse: r.pulse,
-        measured_at: r.measured_at ? r.measured_at.slice(5, 16).replace('T', ' ') : undefined,
-        category: c.label, category_color: c.color,
+        measured_at: r.record_date ? String(r.record_date) : undefined,
+        category: r.category || undefined,
+        category_color: r.category_color || undefined,
+        safety_guidance: r.safety_guidance || undefined,
       } as BPData;
     } catch { return null; }
   },

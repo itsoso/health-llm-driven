@@ -6288,7 +6288,7 @@ class AgentExecutor:
                 "- **正文按问题完整回答**：结论先行，按需展开背景、证据、风险、边界和行动，不因卡片存在而截断；\n"
                 "- **结构清晰**：先给 2-3 条关键要点，再给必要的解读与可执行行动建议；\n"
                 "- **绝不逐行复述表格中的数值行**（用户已在卡片里看到），只做解读、趋势、对比与行动指引；\n"
-                "- **安全例外**：异常或危急数值（如血压达高血压2-3级、血氧过低、血糖过高或过低、"
+                "- **安全例外**：异常或需立即分流的数值（如血压严重升高、血氧过低、血糖过高或过低、"
                 "化验危急值等）**必须在正文中明确说出具体数值**并给出对应行动建议，不受上面"
                 "\"不复述表格数值\"约束；是否异常/危急以系统安全提示（⚠️ 安全提示）与卡片中的"
                 "分级/异常标注为准，不要给系统标注为正常的数值自行加危急判断；\n"
@@ -7131,7 +7131,7 @@ class AgentExecutor:
                             # 写后内联安全筛查覆盖**所有**写工具(health_record/health_manage/
                             # intervention_cycle), 不只 health_record。此前按 func_name=="health_record"
                             # 判定 →「把刚才那条血压改成 190/120」走 health_manage(update) 漏筛
-                            # (under-alarm: 高血压危象零告警)。_write_tool_completed 精确判"确有可
+                            # (under-alarm: 严重血压读数零告警)。_write_tool_completed 精确判"确有可
                             # 验证写回执"(operation=list / 读操作不触发), 与配方重放路径 any_write 同源。
                             _write_tool_completed(func_name, parsed_tool_args, result)
                             and "Error" not in result
@@ -10605,6 +10605,13 @@ class AgentExecutor:
         uploaded_days = args.get("uploaded_days") or args.get("created_days")
         today = self._agent_kernel_reference_now().strftime("%Y-%m-%d")
 
+        def with_blood_pressure_safety(result: str) -> str:
+            if dim != "blood_pressure":
+                return result
+            from app.utils.blood_pressure_classify import append_severe_bp_reading_warning
+
+            return append_severe_bp_reading_warning(result)
+
         # Canonical 归一读层 (docs/design-canonical-read-layer.md): 已迁维度直读
         # service/repo 层 (与 Twin 同源, 不截断), 未迁维度返回 None → 回退旧 _api_get.
         #   - medical_exam: 读归一化 MedicalIndicator (与 Twin fetch_latest_labs 同源)
@@ -10624,7 +10631,7 @@ class AgentExecutor:
             uploaded_days=uploaded_days,
         )
         if canonical is not None:
-            return canonical
+            return with_blood_pressure_safety(canonical)
 
         # D1(garmin-sync 治理 Wave 3):已迁移到进程内直读的维度 → 绕 localhost 回环。
         # flag 关 → inproc 返回 None,落到下面旧 HTTP endpoint_map 路径(逐 release 可回退)。
@@ -10633,7 +10640,7 @@ class AgentExecutor:
                 dim, days=days, indicator=indicator
             )
             if inproc is not None:
-                return inproc
+                return with_blood_pressure_safety(inproc)
 
         endpoint_map = {
             "comprehensive": f"/garmin-analysis/me/comprehensive?days={days}",
@@ -10700,7 +10707,7 @@ class AgentExecutor:
                 except Exception:
                     pass
 
-        return await self._api_get(f"{base}{path}", headers)
+        return with_blood_pressure_safety(await self._api_get(f"{base}{path}", headers))
 
     async def _read_health_query_dim_in_process(
         self, dim: str, *, days, indicator: str
@@ -12358,17 +12365,23 @@ class AgentExecutor:
                 by_name = {n: self._query_one_lab_indicator(n, since, limit) for n in names}
                 total = sum(v.get("count", 0) for v in by_name.values())
                 truncated = len([x for x in raw_names if str(x or "").strip()]) > self._MAX_LAB_BATCH_NAMES
-                return json.dumps(
+                result = json.dumps(
                     {"batch": True, "count": total, "queried": names,
                      "by_name": by_name, "truncated": truncated},
                     ensure_ascii=False,
                 )
+                from app.utils.blood_pressure_classify import append_severe_bp_reading_warning
+
+                return append_severe_bp_reading_warning(result)
 
         # 单指标(向后兼容:返回原 shape)
-        return json.dumps(
+        result = json.dumps(
             self._query_one_lab_indicator(args.get("name"), since, limit),
             ensure_ascii=False,
         )
+        from app.utils.blood_pressure_classify import append_severe_bp_reading_warning
+
+        return append_severe_bp_reading_warning(result)
 
     async def _read_in_process(self, reader, *args, **kwargs) -> str:
         """D1 读拉类进程内直调统一入口 —— 在 fresh SessionLocal 里跑一个同步只读函数。

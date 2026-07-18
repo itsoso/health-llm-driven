@@ -3764,7 +3764,7 @@ struct RecordHubView: View {
     }
 
     private func handleRecordResult(_ result: QuickRecordResult, fallbackText: String) -> Bool {
-        resultMessage = result.message
+        resultMessage = result.displayMessage
         if result.success {
             lastSavedRecord = result.undoPath == nil ? nil : result
             quickText = ""

@@ -5342,7 +5342,7 @@ struct MenuBarRootView: View {
                 Text(quickRecordMessage)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .lineLimit(2)
+                    .lineLimit(nil)
             }
             Divider()
             Button {
@@ -5419,8 +5419,8 @@ struct MenuBarRootView: View {
         Task {
             do {
                 let result = try await recordClient.quickRecord(text: text)
-                quickRecordMessage = result.message
-                sendMenuBarNotification(title: appText("Saved", appLanguageRaw), body: result.message)
+                quickRecordMessage = result.displayMessage
+                sendMenuBarNotification(title: appText("Saved", appLanguageRaw), body: result.displayMessage)
                 await viewModel.refresh()
             } catch {
                 quickRecordMessage = error.localizedDescription

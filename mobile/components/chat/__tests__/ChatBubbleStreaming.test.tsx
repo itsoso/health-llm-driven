@@ -6,6 +6,8 @@ import * as Clipboard from 'expo-clipboard';
 
 import type { UIMessage } from '../../../hooks/useChatEngine';
 
+const mockToastShow = jest.fn();
+
 /* eslint-disable @typescript-eslint/no-require-imports */
 jest.mock('expo-speech', () => ({ stop: jest.fn() }));
 jest.mock('expo-clipboard', () => ({
@@ -14,7 +16,7 @@ jest.mock('expo-clipboard', () => ({
 jest.mock('expo-audio', () => ({ setAudioModeAsync: jest.fn() }));
 jest.mock('expo-haptics', () => ({
   selectionAsync: jest.fn(),
-  notificationAsync: jest.fn(),
+  notificationAsync: jest.fn().mockResolvedValue(undefined),
   impactAsync: jest.fn(),
   ImpactFeedbackStyle: { Medium: 'medium' },
   NotificationFeedbackType: { Success: 'success' },
@@ -24,9 +26,10 @@ jest.mock('../../../services/speakWithUserVoice', () => ({
 }));
 jest.mock('../../../services/chatResultActions', () => ({
   saveAssistantReplyAsMemory: jest.fn(),
+  createRecordFromAssistantReply: jest.fn(),
 }));
 jest.mock('../../../hooks/useToast', () => ({
-  useToast: () => ({ show: jest.fn() }),
+  useToast: () => ({ show: mockToastShow }),
 }));
 jest.mock('expo-router', () => ({
   router: { push: jest.fn() },
@@ -88,6 +91,7 @@ jest.mock('../../actions/InterventionDraftSheet', () => {
 
 const ChatBubble = require('../ChatBubble').default;
 const { renderCard } = require('../cards');
+const { createRecordFromAssistantReply } = require('../../../services/chatResultActions');
 
 function renderBubble(message: UIMessage) {
   const qc = new QueryClient();
@@ -234,6 +238,88 @@ describe('ChatBubble streaming degraded render', () => {
 
     fireEvent.press(getByLabelText('选择这条消息'));
     expect(onEnterSelection).toHaveBeenCalledWith('assistant-action-menu');
+  });
+
+  it('preserves severe blood-pressure recheck and symptom triage when saving an assistant reply', async () => {
+    const alertSpy = jest.spyOn(Alert, 'alert');
+    createRecordFromAssistantReply.mockResolvedValueOnce({
+      status: 'created',
+      type: 'bp',
+      message: '已记录血压 185/85 mmHg\n请静坐至少 1 分钟后复测。\n若同时出现胸痛，请立即拨打急救电话。',
+      safetyGuidance: {
+        severity: 'high',
+        title: '血压严重升高，请复测',
+        recheck_instruction: '请静坐至少 1 分钟后复测。',
+        emergency_instruction: '若同时出现胸痛，请立即拨打急救电话。',
+        action_path: '/blood-pressure',
+      },
+    });
+    const { getByLabelText } = renderBubble({
+      id: 'assistant-severe-bp-record',
+      role: 'assistant',
+      content: '已记录血压 185/85 mmHg。',
+      streaming: false,
+    });
+
+    fireEvent(getByLabelText('AI: 已记录血压 185/85 mmHg。'), 'longPress');
+    await act(async () => {
+      fireEvent.press(getByLabelText('保存为记录'));
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(createRecordFromAssistantReply).toHaveBeenCalledWith('已记录血压 185/85 mmHg。');
+      expect(alertSpy).toHaveBeenCalledWith(
+        '血压严重升高，请复测',
+        expect.stringContaining('复测'),
+      );
+    });
+    expect(mockToastShow).not.toHaveBeenCalledWith(expect.stringContaining('已记录血压'), 'success');
+    alertSpy.mockRestore();
+  });
+
+  it('never exposes record saving for streaming, interrupted, or failed assistant output', () => {
+    const { getByLabelText, queryByLabelText, rerender } = renderBubble({
+      id: 'assistant-streaming-bp-fragment',
+      role: 'assistant',
+      content: '血压 185/85',
+      streaming: true,
+    });
+
+    fireEvent(getByLabelText('AI: 血压 185/85'), 'longPress');
+    expect(queryByLabelText('保存为记录')).toBeNull();
+
+    rerender(
+      <QueryClientProvider client={new QueryClient()}>
+        <ChatBubble
+          item={{
+            id: 'assistant-interrupted-bp-fragment',
+            role: 'assistant',
+            content: '血压 185/85',
+            streaming: false,
+            completionStatus: 'interrupted',
+          }}
+        />
+      </QueryClientProvider>,
+    );
+    fireEvent(getByLabelText('AI: 血压 185/85'), 'longPress');
+    expect(queryByLabelText('保存为记录')).toBeNull();
+
+    rerender(
+      <QueryClientProvider client={new QueryClient()}>
+        <ChatBubble
+          item={{
+            id: 'assistant-error-bp-fragment',
+            role: 'assistant',
+            content: '血压 185/85',
+            streaming: false,
+            completionStatus: 'error',
+          }}
+        />
+      </QueryClientProvider>,
+    );
+    fireEvent(getByLabelText('AI: 血压 185/85'), 'longPress');
+    expect(queryByLabelText('保存为记录')).toBeNull();
   });
 
   it('long press on a user message opens copy-first actions and keeps selection secondary', async () => {

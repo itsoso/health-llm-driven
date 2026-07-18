@@ -30,7 +30,7 @@ def _bp_stage(sys_bp: Optional[int], dia_bp: Optional[int]) -> str:
     s = sys_bp or 0
     d = dia_bp or 0
     if s >= 180 or d >= 120:
-        return "crisis"
+        return "severe"
     if s >= 140 or d >= 90:
         return "stage2"
     if s >= 130 or d >= 80:
@@ -127,7 +127,7 @@ class HypertensionSpecialist:
                 "elevated": "血压偏高",
                 "stage1": "一级高血压",
                 "stage2": "二级高血压",
-                "crisis": "高血压急症",
+                "severe": "血压严重升高",
                 "unknown": "未测量",
             }[stage]
             if sys_bp and dia_bp:
@@ -216,10 +216,10 @@ class HypertensionSpecialist:
 
 
 def _actions_for_stage(stage: str, has_med: bool) -> List[str]:
-    if stage == "crisis":
+    if stage == "severe":
         return [
-            "立即就医评估 —— 高血压急症是真正的急症。",
-            "平静休息复测；出现胸痛、剧烈头痛、视物模糊、意识改变拨打 120。",
+            "停止剧烈活动，静坐至少 1 分钟后复测并记录结果。",
+            "若复测仍处于严重升高范围，尽快联系医疗专业人员；如伴胸痛、气促、背痛、麻木或无力、视力改变或说话困难，立即拨打急救电话。",
         ]
     if stage == "stage2":
         return [

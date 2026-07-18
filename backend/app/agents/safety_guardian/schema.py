@@ -23,7 +23,7 @@ class Severity(IntEnum):
     LOW = 1         # 低风险（例如：补剂时机建议）
     MEDIUM = 2      # 中风险（例如：肝酶轻度偏高）
     HIGH = 3        # 高风险（例如：GLP-1 与磺脲类合用）
-    CRITICAL = 4    # 紧急（例如：BP ≥ 180/120，建议立即就医）
+    CRITICAL = 4    # 紧急（例如：严重低血糖等需立即分流的红旗信号）
 
     @property
     def label(self) -> str:

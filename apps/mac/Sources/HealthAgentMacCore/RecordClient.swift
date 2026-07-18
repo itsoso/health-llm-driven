@@ -1,11 +1,30 @@
 import Foundation
 
+public struct BloodPressureSafetyGuidance: Decodable, Equatable, Sendable {
+    public let severity: String
+    public let title: String
+    public let recheckInstruction: String
+    public let emergencyInstruction: String
+    public let actionPath: String
+
+    enum CodingKeys: String, CodingKey {
+        case severity
+        case title
+        case recheckInstruction = "recheck_instruction"
+        case emergencyInstruction = "emergency_instruction"
+        case actionPath = "action_path"
+    }
+}
+
 public struct QuickRecordResult: Decodable, Equatable, Sendable {
     public let type: String
     public let message: String
     public let success: Bool
     public let recordID: Int?
     public let undoPath: String?
+    public let category: String?
+    public let categoryColor: String?
+    public let safetyGuidance: BloodPressureSafetyGuidance?
 
     enum CodingKeys: String, CodingKey {
         case type
@@ -13,14 +32,35 @@ public struct QuickRecordResult: Decodable, Equatable, Sendable {
         case success
         case recordID = "record_id"
         case undoPath = "undo_path"
+        case category
+        case categoryColor = "category_color"
+        case safetyGuidance = "safety_guidance"
     }
 
-    init(type: String, message: String, success: Bool, recordID: Int? = nil, undoPath: String? = nil) {
+    public var displayMessage: String {
+        guard let safetyGuidance else { return message }
+        return [message, safetyGuidance.recheckInstruction, safetyGuidance.emergencyInstruction]
+            .joined(separator: "\n")
+    }
+
+    init(
+        type: String,
+        message: String,
+        success: Bool,
+        recordID: Int? = nil,
+        undoPath: String? = nil,
+        category: String? = nil,
+        categoryColor: String? = nil,
+        safetyGuidance: BloodPressureSafetyGuidance? = nil
+    ) {
         self.type = type
         self.message = message
         self.success = success
         self.recordID = recordID
         self.undoPath = undoPath
+        self.category = category
+        self.categoryColor = categoryColor
+        self.safetyGuidance = safetyGuidance
     }
 }
 
@@ -74,6 +114,16 @@ private struct VoiceFoodParseRequest: Encodable {
 
 private struct SavedRecordResponse: Decodable {
     let id: Int?
+    let category: String?
+    let categoryColor: String?
+    let safetyGuidance: BloodPressureSafetyGuidance?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case category
+        case categoryColor = "category_color"
+        case safetyGuidance = "safety_guidance"
+    }
 }
 
 private struct DietRecordRequest: Encodable {
@@ -478,7 +528,10 @@ public final class RecordClient: Sendable {
             message: "已记录血压 \(systolic)/\(diastolic) mmHg",
             success: true,
             recordID: saved.id,
-            undoPath: undoPath(prefix: "blood-pressure/records", recordID: saved.id)
+            undoPath: undoPath(prefix: "blood-pressure/records", recordID: saved.id),
+            category: saved.category,
+            categoryColor: saved.categoryColor,
+            safetyGuidance: saved.safetyGuidance
         )
     }
 

@@ -13,7 +13,9 @@ from app.models.daily_health import DietRecord, WaterIntake
 from app.models.weight import WeightRecord
 from app.models.blood_pressure import BloodPressureRecord
 from app.api.deps import get_current_user_required
+from app.schemas.blood_pressure import BloodPressureSafetyGuidance
 from app.services.intake_intent_classifier import classify_intake_intent
+from app.utils.blood_pressure_classify import blood_pressure_display
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +41,9 @@ class QuickRecordResponse(BaseModel):
     success: bool
     record_id: Optional[int] = None
     undo_path: Optional[str] = None
+    category: Optional[str] = None
+    category_color: Optional[str] = None
+    safety_guidance: Optional[BloodPressureSafetyGuidance] = None
 
 
 def _quick_record_response(
@@ -46,6 +51,9 @@ def _quick_record_response(
     message: str,
     record_id: Optional[int] = None,
     undo_prefix: Optional[str] = None,
+    category: Optional[str] = None,
+    category_color: Optional[str] = None,
+    safety_guidance: Optional[BloodPressureSafetyGuidance] = None,
 ) -> QuickRecordResponse:
     return QuickRecordResponse(
         type=record_type,
@@ -53,6 +61,9 @@ def _quick_record_response(
         success=True,
         record_id=record_id,
         undo_path=f"{undo_prefix}/{record_id}" if undo_prefix and record_id else None,
+        category=category,
+        category_color=category_color,
+        safety_guidance=safety_guidance,
     )
 
 
@@ -320,11 +331,20 @@ def quick_record(
             db.commit()
             db.refresh(record)
             _invalidate_twin(current_user.id)
+            display = blood_pressure_display(record.systolic, record.diastolic)
+            safety_guidance = display["safety_guidance"]
             return _quick_record_response(
                 record_type="bp",
                 message=f"已记录血压 {data['systolic']}/{data['diastolic']} mmHg",
                 record_id=record.id,
                 undo_prefix="blood-pressure/records",
+                category=display["category"],
+                category_color=display["category_color"],
+                safety_guidance=(
+                    BloodPressureSafetyGuidance.model_validate(safety_guidance)
+                    if safety_guidance is not None
+                    else None
+                ),
             )
 
         elif record_type == "supplement":

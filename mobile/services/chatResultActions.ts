@@ -1,5 +1,6 @@
 import api from './api';
 import { isMedicationRecordItem } from './medicationFilters';
+import { bloodPressureSaveAlert, type BloodPressureSafetyGuidance } from '../utils/bloodPressureSafety';
 
 export type AssistantRecordActionResult =
   | {
@@ -8,6 +9,9 @@ export type AssistantRecordActionResult =
       message: string;
       recordId?: number;
       undoPath?: string;
+      category?: string;
+      categoryColor?: string;
+      safetyGuidance?: BloodPressureSafetyGuidance;
     }
   | {
       status: 'needs_manual';
@@ -46,12 +50,18 @@ export async function createRecordFromAssistantReply(text: string): Promise<Assi
 
   try {
     const { data } = await api.post('/quick-record', { text: quickRecordText });
+    const safetyGuidance = readBloodPressureSafetyGuidance(data?.safety_guidance);
+    const alert = bloodPressureSaveAlert(safetyGuidance);
+    const message = String(data?.message || '已生成记录');
     return {
       status: 'created',
       type: String(data?.type || 'record'),
-      message: String(data?.message || '已生成记录'),
+      message: alert ? `${message}\n${alert.message}` : message,
       recordId: typeof data?.record_id === 'number' ? data.record_id : undefined,
       undoPath: typeof data?.undo_path === 'string' ? data.undo_path : undefined,
+      category: typeof data?.category === 'string' ? data.category : undefined,
+      categoryColor: typeof data?.category_color === 'string' ? data.category_color : undefined,
+      safetyGuidance,
     };
   } catch (error: any) {
     if (error?.response?.status === 400) {
@@ -59,6 +69,24 @@ export async function createRecordFromAssistantReply(text: string): Promise<Assi
     }
     throw error;
   }
+}
+
+function readBloodPressureSafetyGuidance(value: unknown): BloodPressureSafetyGuidance | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const guidance = value as Record<string, unknown>;
+  if (
+    guidance.severity !== 'high'
+    || typeof guidance.recheck_instruction !== 'string'
+    || typeof guidance.emergency_instruction !== 'string'
+    || typeof guidance.action_path !== 'string'
+  ) return undefined;
+  return {
+    severity: 'high',
+    title: typeof guidance.title === 'string' ? guidance.title : undefined,
+    recheck_instruction: guidance.recheck_instruction,
+    emergency_instruction: guidance.emergency_instruction,
+    action_path: guidance.action_path,
+  };
 }
 
 export function buildQuickRecordTextFromAssistantReply(text: string): string | null {

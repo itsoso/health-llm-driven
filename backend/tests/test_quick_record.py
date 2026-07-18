@@ -1,5 +1,4 @@
 """快捷记录 API 测试"""
-import pytest
 from app.api.quick_record import _parse_quick_record, _estimate_nutrition
 
 
@@ -155,6 +154,23 @@ class TestQuickRecordAPI:
         assert data["success"] is True
         assert isinstance(data["record_id"], int)
         assert data["undo_path"] == f"blood-pressure/records/{data['record_id']}"
+
+    def test_record_severe_blood_pressure_returns_recheck_and_symptom_triage(self, client, db):
+        from tests.conftest import create_authenticated_user
+        user, token = create_authenticated_user(db)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        resp = client.post("/api/v1/quick-record", json={"text": "血压185/85"}, headers=headers)
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["type"] == "bp"
+        assert data["category"] == "血压严重升高"
+        assert data["category_color"]
+        assert data["safety_guidance"]["severity"] == "high"
+        assert "复测" in data["safety_guidance"]["recheck_instruction"]
+        assert "胸痛" in data["safety_guidance"]["emergency_instruction"]
+        assert "高血压急症" not in str(data)
 
     def test_record_supplement_returns_record_id_without_undo_path(self, client, db):
         from tests.conftest import create_authenticated_user

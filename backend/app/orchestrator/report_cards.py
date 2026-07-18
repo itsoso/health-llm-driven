@@ -100,7 +100,7 @@ def _safety_card(finding: SpecialistFinding) -> Optional[dict]:
 # 与 hypertension.py 的 stage_zh 对齐(单一真源在那边;此处是卡片投影)。
 _BP_STAGE_ZH = {
     "normal": "正常", "elevated": "血压偏高", "stage1": "一级高血压",
-    "stage2": "二级高血压", "crisis": "高血压急症", "unknown": "未测量",
+    "stage2": "二级高血压", "severe": "血压严重升高", "unknown": "未测量",
 }
 
 

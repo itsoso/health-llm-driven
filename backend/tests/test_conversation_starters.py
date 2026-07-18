@@ -5,7 +5,6 @@ recent user data (exams/workouts/supplements/sleep) with a safe default fallback
 """
 
 import random
-from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
 
 import pytest
@@ -255,6 +254,11 @@ def test_endpoint_prioritizes_goal_water_and_diet_gaps(client, db, auth_user_and
     from app.models.goal import Goal, GoalPeriod, GoalStatus, GoalType
     import app.services.conversation_starters as cs
 
+    # This case asserts deterministic rule selection and its factual source text.
+    # Cached LLM polish is covered separately and must not make this test depend
+    # on whatever Redis contains from a prior run.
+    monkeypatch.setattr("app.config.settings.starter_llm_polish_enabled", False, raising=False)
+
     # Freeze the module clock to a weekday afternoon (Wed 2026-05-27 15:00) so no
     # time-of-day / weekday generator fires. This user already has 3 data signals
     # (goal+water+diet); if a time generator added a 4th/5th, the pool would exceed
@@ -304,11 +308,15 @@ def test_endpoint_prioritizes_goal_water_and_diet_gaps(client, db, auth_user_and
     assert any("还没记录饮食" in t for t in texts)
 
 
-def test_endpoint_includes_latest_workout_detail_and_gene_risk(client, db, auth_user_and_headers):
+def test_endpoint_includes_latest_workout_detail_and_gene_risk(
+    client, db, auth_user_and_headers, monkeypatch
+):
     from app.models.daily_health import WorkoutRecord
     from app.models.genetic_data import GeneticProfile, GeneticVariant
 
     user, headers = auth_user_and_headers
+    # Assert deterministic signal selection, not wording from a Redis polish cache.
+    monkeypatch.setattr("app.config.settings.starter_llm_polish_enabled", False, raising=False)
     today = date.today()
 
     db.add(WorkoutRecord(
@@ -475,11 +483,14 @@ def test_acute_illness_name_ending_in_symptom_no_stutter():
     assert cands[0].text == "我有过敏症状，今天该怎么休息和恢复？"
 
 
-def test_bp_stage2_is_critical_and_normal_bp_is_lower_priority():
+def test_bp_severe_reading_is_urgent_and_stage2_is_not_labeled_critical():
     from app.services.conversation_starters import _build_candidates
 
-    crit = _build_candidates(_make_signals(systolic_bp=165, diastolic_bp=102))
-    assert any(c.priority >= 100 and "165/102" in c.text for c in crit)
+    severe = _build_candidates(_make_signals(systolic_bp=185, diastolic_bp=115))
+    assert any(c.priority >= 100 and "185/115" in c.text and "复测" in c.text for c in severe)
+
+    stage2 = _build_candidates(_make_signals(systolic_bp=165, diastolic_bp=102))
+    assert any(c.priority < 100 and "165/102" in c.text for c in stage2)
 
     norm = _build_candidates(_make_signals(systolic_bp=118, diastolic_bp=76))
     bp_cands = [c for c in norm if "血压" in c.text]

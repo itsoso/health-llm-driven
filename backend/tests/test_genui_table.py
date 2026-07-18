@@ -25,7 +25,6 @@ from app.services.genui import (
     GENUI_SLEEP_SUMMARY_CAP,
     build_table_from_tool_call,
     build_tables_from_tool_calls,
-    render_metric_table_block,
     strip_reva_ui_blocks,
     placeholder_reva_ui_blocks,
 )
@@ -285,11 +284,11 @@ def test_bp_status_column_relays_server_category_verbatim():
     """危险 affordance: 服务端 classify_blood_pressure 已算好的 `category` 逐字进"状态"列。
 
     Condition 2: builder 引用服务端分级, 绝不自行判定血压等级。用真实分级器输出
-    (185/122→高血压3级, 158/99→高血压2级; 分级器天花板=高血压3级, 无"危象"档) 逐字透传。
+    (185/122→血压严重升高, 158/99→高血压2级) 逐字透传。
     """
     result = json.dumps([
         {"record_date": "2026-07-01", "systolic": 185, "diastolic": 122,
-         "pulse": 88, "category": "高血压3级"},
+         "pulse": 88, "category": "血压严重升高"},
         {"record_date": "2026-06-30", "systolic": 158, "diastolic": 99,
          "pulse": 80, "category": "高血压2级"},
     ], ensure_ascii=False)
@@ -297,7 +296,7 @@ def test_bp_status_column_relays_server_category_verbatim():
     assert block is not None
     assert [c["key"] for c in block["columns"]] == ["date", "bp", "pulse", "status"]
     # 服务端分级字符串逐字透传, builder 未改写/未重判
-    assert block["rows"][0]["status"] == "高血压3级"
+    assert block["rows"][0]["status"] == "血压严重升高"
     assert block["rows"][1]["status"] == "高血压2级"
     assert block["rows"][0]["bp"] == "185/122 mmHg"
 
@@ -767,11 +766,12 @@ async def test_cap_on_emits_sleep_metric_table(db, auth_user_and_headers, monkey
     events = await _run(executor, "看看我最近睡眠", client_caps=[GENUI_TABLE_CAP], user_id=user.id)
     rendered = _tokens(events)
 
-    # 叙事在前、卡片在后
-    assert "结论：你近两晚" in rendered
+    # 确定性快读或合成叙事都必须在卡片前；两者都只基于真实工具数据。
+    narrative = rendered.split("```reva-ui", 1)[0].strip()
+    assert narrative
     assert "```reva-ui" in rendered and '"type":"metric_table"' in rendered
     assert "睡眠记录" in rendered
-    assert rendered.index("结论") < rendered.index("reva-ui")
+    assert rendered.index(narrative) < rendered.index("reva-ui")
     # 数值来自工具结果 daily_data (时长 445 分钟 / 评分 82), 不来自 LLM 文本
     assert "445 分钟" in rendered and '"score":"82"' in rendered
     # quality_assessment (服务端质量判定) 不泄漏进卡片
@@ -833,7 +833,7 @@ async def test_forged_fence_stripped_but_deterministic_appended(db, auth_user_an
     monkeypatch.setattr(executor, "_call_llm_stream", fake_stream)
     monkeypatch.setattr(executor, "_execute_tool", _exec_returns(_batch_result()))
 
-    events = await _run(executor, "看看 HRV", client_caps=[GENUI_TABLE_CAP], user_id=user.id)
+    await _run(executor, "看看 HRV", client_caps=[GENUI_TABLE_CAP], user_id=user.id)
     from app.models.agent_conversation import AgentMessage
     assistant = (
         db.query(AgentMessage).filter(AgentMessage.role == "assistant")
@@ -876,14 +876,11 @@ async def test_llm_synthesis_raise_tables_still_build(db, auth_user_and_headers,
 # E. Condition 1 — crisis-value carve-out reaches prose contract (safety review)
 # ---------------------------------------------------------------------------
 
-def _bp_crisis_result():
-    """BP tool result carrying a server-computed high-grade category (185/122→高血压3级)。
-
-    "高血压3级" 是 classify_blood_pressure 的真实天花板输出 (无"危象"档), 用它而非合成词。
-    """
+def _bp_severe_result():
+    """BP tool result carrying the server-computed severe-reading category."""
     return json.dumps([
         {"record_date": "2026-07-01", "systolic": 185, "diastolic": 122,
-         "pulse": 92, "category": "高血压3级"},
+         "pulse": 92, "category": "血压严重升高"},
     ], ensure_ascii=False)
 
 
@@ -902,7 +899,7 @@ def _bp_round_stream(captured):
             }]}
             yield {"type": "finish", "finish_reason": "tool_calls"}
         else:
-            yield {"type": "content", "text": "结论：你的血压处于高血压3级水平，请及时就医。"}
+            yield {"type": "content", "text": "结论：血压严重升高，请先复测并按症状决定是否需要急诊。"}
             yield {"type": "finish", "finish_reason": "stop"}
 
     return fake_stream
@@ -913,15 +910,15 @@ _CARVEOUT_MARKER = "必须在正文中明确说出具体数值"
 
 
 @pytest.mark.asyncio
-async def test_cap_on_crisis_bp_injects_carveout(db, auth_user_and_headers, monkeypatch):
-    """Condition 1: cap on + BP 高分级结果 → GenUI 契约携带"危急值必须复述"安全例外,
+async def test_cap_on_severe_bp_injects_carveout(db, auth_user_and_headers, monkeypatch):
+    """Condition 1: cap on + severe BP result → GenUI 契约携带"危急值必须复述"安全例外,
     且既有"不复述数值行"与"安全边界照常表达"两行未被削弱; BP 路径仍确定性出卡片。"""
     user, _ = auth_user_and_headers
     executor = AgentExecutor(db)
     _wire(executor, monkeypatch)
     captured: list = []
     monkeypatch.setattr(executor, "_call_llm_stream", _bp_round_stream(captured))
-    monkeypatch.setattr(executor, "_execute_tool", _exec_returns(_bp_crisis_result()))
+    monkeypatch.setattr(executor, "_execute_tool", _exec_returns(_bp_severe_result()))
 
     events = await _run(executor, "看看我的血压", client_caps=[GENUI_TABLE_CAP], user_id=user.id)
 
@@ -930,7 +927,7 @@ async def test_cap_on_crisis_bp_injects_carveout(db, auth_user_and_headers, monk
     assert "不超过 500 字" not in prompt
     assert "正文按问题完整回答" in prompt
     assert _CARVEOUT_MARKER in prompt and "安全例外" in prompt        # 安全例外落进 prompt
-    assert "高血压2-3级" in prompt                                    # 例外示例用真实分级词
+    assert "血压严重升高" in prompt                                    # 例外示例用真实分级词
     # 既有边界不被削弱: 两行原样保留
     assert "绝不逐行复述表格中的数值行" in prompt
     assert "不确定性与安全边界照常表达" in prompt
@@ -948,14 +945,15 @@ async def test_cap_off_no_carveout(db, auth_user_and_headers, monkeypatch):
     _wire(executor, monkeypatch)
     captured: list = []
     monkeypatch.setattr(executor, "_call_llm_stream", _bp_round_stream(captured))
-    monkeypatch.setattr(executor, "_execute_tool", _exec_returns(_bp_crisis_result()))
+    monkeypatch.setattr(executor, "_execute_tool", _exec_returns(_bp_severe_result()))
 
     await _run(executor, "看看我的血压", client_caps=[], user_id=user.id)
 
     prompt = "\n".join(c for msgs in captured for c in msgs if isinstance(c, str))
     assert "数据回答格式要求" not in prompt
     assert _CARVEOUT_MARKER not in prompt        # 契约缺失 → 无安全例外碎片
-    assert "高血压2-3级" not in prompt            # 例外示例词也随契约整体缺席 (present iff cap on)
+    # 工具结果本身会含服务端分级；这里只验证 cap 专属的格式契约未注入。
+    assert "异常或需立即分流的数值" not in prompt
 
 
 # ---------------------------------------------------------------------------

@@ -10,35 +10,38 @@ interface BPData {
   diastolic: number;
   pulse?: number;
   measured_at?: string;
-  category: string;
-  category_color: string;
+  category?: string;
+  category_color?: string;
+  safety_guidance?: BPSafetyGuidance | null;
 }
 
-/** ACC/AHA 2017 血压分级. 颜色为 6 级医学语义 (红=高/绿=正常), 固定 hex 不随主题切换. */
-function classify(s: number, d: number): { label: string; color: string } {
-  if (s >= 180 || d >= 120) return { label: '高血压急症', color: '#AF52DE' };
-  if (s >= 140 || d >= 90) return { label: '高血压 2 期', color: '#FF453A' };
-  if (s >= 130 || d >= 80) return { label: '高血压 1 期', color: '#FF6723' };
-  if (s >= 120 && d < 80) return { label: '血压升高', color: '#FF9F0A' };
-  if (s < 90 || d < 60) return { label: '偏低', color: '#5AC8FA' };
-  return { label: '正常', color: '#30D158' };
+interface BPSafetyGuidance {
+  severity: 'high';
+  title?: string;
+  recheck_instruction: string;
+  emergency_instruction: string;
+  action_path: string;
 }
 
-export function BPCardView({ systolic, diastolic, pulse, measured_at, category, category_color }: BPData) {
+const BP_FALLBACK_COLOR = '#64748B';
+
+export function BPCardView({ systolic, diastolic, pulse, measured_at, category, category_color, safety_guidance }: BPData) {
   const router = useRouter();
+  const displayCategory = category || '未分类';
+  const displayColor = category_color || BP_FALLBACK_COLOR;
   return (
     <CardShell
       icon="heart"
       iconColor={revaSemantic.risk.fg}
       title="血压"
-      badge={category}
-      badgeColor={category_color}
+      badge={displayCategory}
+      badgeColor={displayColor}
       bg={revaSemantic.risk.bg}
-      onPress={() => router.push({ pathname: '/indicator-history', params: { type: 'blood_pressure' } })}
+      onPress={() => router.push(safety_guidance ? '/(tabs)/record' : { pathname: '/indicator-history', params: { type: 'blood_pressure' } })}
     >
       <View style={styles.row}>
         <View style={styles.bpBlock}>
-          <Text maxFontSizeMultiplier={1.3} style={[styles.bpNum, { color: category_color }]}>
+          <Text maxFontSizeMultiplier={1.3} style={[styles.bpNum, { color: displayColor }]}>
             {systolic}
             <Text style={styles.bpSlash}> / </Text>
             {diastolic}
@@ -54,6 +57,13 @@ export function BPCardView({ systolic, diastolic, pulse, measured_at, category, 
       </View>
       {measured_at && (
         <Text maxFontSizeMultiplier={1.3} style={styles.time}>{measured_at}</Text>
+      )}
+      {safety_guidance && (
+        <View accessibilityRole="alert" style={styles.safetyGuidance}>
+          <Text maxFontSizeMultiplier={1.3} style={styles.safetyText}>{safety_guidance.recheck_instruction}</Text>
+          <Text maxFontSizeMultiplier={1.3} style={styles.safetyText}>{safety_guidance.emergency_instruction}</Text>
+          <Text maxFontSizeMultiplier={1.3} style={styles.safetyLink}>点此复测后记录</Text>
+        </View>
       )}
     </CardShell>
   );
@@ -73,14 +83,14 @@ export const BPCardSpec: CardSpec<BPData> = {
       if (!Array.isArray(list) || list.length === 0) return null;
       const r = list[0];
       if (!r || r.systolic == null || r.diastolic == null) return null;
-      const cls = classify(r.systolic, r.diastolic);
       return {
         systolic: r.systolic,
         diastolic: r.diastolic,
         pulse: r.pulse,
         measured_at: r.record_date ? String(r.record_date) : undefined,
-        category: cls.label,
-        category_color: cls.color,
+        category: r.category || undefined,
+        category_color: r.category_color || undefined,
+        safety_guidance: r.safety_guidance || undefined,
       } as BPData;
     } catch {
       return null;
@@ -99,4 +109,7 @@ const styles = StyleSheet.create({
   pulseNum: { fontFamily: revaFonts.mono, fontSize: 18, fontWeight: '700', color: C.ink1, fontVariant: ['tabular-nums'] as const } as TextStyle,
   pulseLabel: { fontFamily: revaFonts.sans, fontSize: 9, color: C.ink3 } as TextStyle,
   time: { fontFamily: revaFonts.sans, fontSize: 10, color: C.ink3, marginTop: 4 } as TextStyle,
+  safetyGuidance: { marginTop: 10, padding: 9, borderRadius: 6, backgroundColor: '#FEE2E2', gap: 4 },
+  safetyText: { fontFamily: revaFonts.sans, fontSize: 11, lineHeight: 17, color: '#991B1B' } as TextStyle,
+  safetyLink: { fontFamily: revaFonts.sans, fontSize: 11, fontWeight: '700', color: '#991B1B', marginTop: 2 } as TextStyle,
 });

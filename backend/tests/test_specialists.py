@@ -10,7 +10,6 @@
 """
 
 from datetime import datetime
-from typing import List
 
 import pytest
 
@@ -24,7 +23,6 @@ from app.orchestrator.specialists import all_specialists
 from app.twin.schema import (
     BehavioralState,
     BodyCompositionState,
-    CgmContext,
     EnvironmentalState,
     GeneticContext,
     HealthTwin,
@@ -32,7 +30,6 @@ from app.twin.schema import (
     MedicationState,
     MentalState,
     PhysiologicalState,
-    SupplementState,
     TwinMeta,
     AcuteHealthState,
     ProblemRedLine,
@@ -519,7 +516,7 @@ class TestHypertensionSpecialist:
         assert _bp_stage(125, 78) == "elevated"
         assert _bp_stage(135, 85) == "stage1"
         assert _bp_stage(155, 95) == "stage2"
-        assert _bp_stage(185, 125) == "crisis"
+        assert _bp_stage(185, 125) == "severe"
         assert _bp_stage(None, None) == "unknown"
 
     def test_specialist_produces_findings(self):

@@ -7,20 +7,15 @@ Safety Guardian 单元测试。
 from datetime import date, datetime
 from typing import List
 
-import pytest
-
 from app.agents.safety_guardian import evaluate_safety
 from app.agents.safety_guardian.engine import registry
 from app.agents.safety_guardian.schema import Alert, Severity
 from app.twin.schema import (
     BehavioralState,
-    BodyCompositionState,
-    EnvironmentalState,
     GeneticContext,
     HealthTwin,
     LabsContext,
     MedicationState,
-    MentalState,
     PhysiologicalState,
     SupplementState,
     TwinMeta,
@@ -127,16 +122,18 @@ class TestProblemRedLines:
 
 
 class TestVitalsRules:
-    def test_bp_hypertensive_crisis(self):
+    def test_bp_severe_reading_requires_recheck_and_symptom_triage(self):
         twin = _empty_twin()
         twin.labs = LabsContext(blood_pressure_systolic=185, blood_pressure_diastolic=125)
         report = evaluate_safety(twin)
         rule_ids = _rule_ids(report.alerts)
-        assert "vitals.bp_hypertensive_crisis" in rule_ids
-        crisis = next(a for a in report.alerts if a.rule_id == "vitals.bp_hypertensive_crisis")
-        assert crisis.severity == Severity.CRITICAL
-        assert crisis.requires_medical_attention is True
-        # 高血压急症应该不触发 stage 2（互斥）
+        assert "vitals.bp_severe_reading" in rule_ids
+        severe = next(a for a in report.alerts if a.rule_id == "vitals.bp_severe_reading")
+        assert severe.severity == Severity.HIGH
+        assert severe.requires_medical_attention is True
+        assert "复测" in severe.action
+        assert "胸痛" in severe.action
+        assert "高血压急症" not in severe.title + severe.message
         assert "vitals.bp_stage_2_hypertension" not in rule_ids
 
     def test_bp_stage_2(self):
@@ -145,14 +142,14 @@ class TestVitalsRules:
         alerts = evaluate_safety(twin).alerts
         rule_ids = _rule_ids(alerts)
         assert "vitals.bp_stage_2_hypertension" in rule_ids
-        assert "vitals.bp_hypertensive_crisis" not in rule_ids
+        assert "vitals.bp_severe_reading" not in rule_ids
 
     def test_bp_normal_no_alert(self):
         twin = _empty_twin()
         twin.labs = LabsContext(blood_pressure_systolic=118, blood_pressure_diastolic=76)
         alerts = evaluate_safety(twin).alerts
         rule_ids = _rule_ids(alerts)
-        assert "vitals.bp_hypertensive_crisis" not in rule_ids
+        assert "vitals.bp_severe_reading" not in rule_ids
         assert "vitals.bp_stage_2_hypertension" not in rule_ids
         assert "vitals.bp_hypotension" not in rule_ids
 
@@ -1312,7 +1309,7 @@ class TestReportOrdering:
         twin = _empty_twin()
         # 触发多级别
         twin.labs = LabsContext(
-            blood_pressure_systolic=185,  # CRITICAL
+            blood_pressure_systolic=185,  # HIGH: 单次严重升高，需复测和症状分流
             blood_pressure_diastolic=125,
         )
         twin.physiological = PhysiologicalState(
@@ -1323,7 +1320,7 @@ class TestReportOrdering:
         # 第一条应该是严重度最高的
         severities = [int(a.severity) for a in report.alerts]
         assert severities == sorted(severities, reverse=True)
-        assert report.critical_count >= 1
+        assert report.high_count >= 1
 
 
 # ─────────────────────── API shape ────────────────────────

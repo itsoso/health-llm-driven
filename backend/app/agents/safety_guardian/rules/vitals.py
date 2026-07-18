@@ -7,7 +7,7 @@
 - HR: European Society of Cardiology resting HR guidance
 """
 
-from typing import List, Optional
+from typing import Optional
 
 from app.agents.safety_guardian.engine import register
 from app.agents.safety_guardian.schema import Alert, Severity
@@ -18,11 +18,8 @@ from app.twin.schema import HealthTwin
 
 
 @register
-def bp_hypertensive_crisis(twin: HealthTwin) -> Optional[Alert]:
-    """
-    高血压急症 (Hypertensive Crisis) —— ≥180/120。
-    立即建议就医。
-    """
+def bp_severe_reading(twin: HealthTwin) -> Optional[Alert]:
+    """Single severe blood-pressure reading: recheck and symptom-based triage."""
     sys_bp = twin.labs.blood_pressure_systolic
     dia_bp = twin.labs.blood_pressure_diastolic
     if sys_bp is None and dia_bp is None:
@@ -30,15 +27,18 @@ def bp_hypertensive_crisis(twin: HealthTwin) -> Optional[Alert]:
 
     if (sys_bp and sys_bp >= 180) or (dia_bp and dia_bp >= 120):
         return Alert(
-            rule_id="vitals.bp_hypertensive_crisis",
+            rule_id="vitals.bp_severe_reading",
             category="vitals",
-            severity=Severity.CRITICAL,
-            title="血压达到高血压急症水平",
+            severity=Severity.HIGH,
+            title="血压严重升高",
             message=(
-                f"测得血压 {sys_bp}/{dia_bp} mmHg，达到高血压急症（≥180/120）水平。"
-                "这可能是急性心脑血管事件的前兆，即使没有症状也需要立即医疗评估。"
+                f"测得血压 {sys_bp}/{dia_bp} mmHg，达到严重升高范围（收缩压≥180 或舒张压≥120）。"
+                "单次读数不能独立判断是否存在需要急诊处置的情况。"
             ),
-            action="立即停止剧烈活动，平静休息后复测；若复测仍高或出现胸痛、头痛、视物模糊、意识改变，立即就医或拨打急救电话。",
+            action=(
+                "停止剧烈活动，静坐至少 1 分钟后复测；若复测仍处于此范围，请尽快联系医疗专业人员。"
+                "若出现胸痛、气促、背痛、麻木或无力、视力改变或说话困难，请立即拨打急救电话。"
+            ),
             data_citation={"systolic": sys_bp, "diastolic": dia_bp, "date": str(twin.labs.blood_pressure_date)},
             references=[
                 "https://www.ahajournals.org/doi/10.1161/HYP.0000000000000065",
@@ -56,7 +56,7 @@ def bp_stage_2_hypertension(twin: HealthTwin) -> Optional[Alert]:
     if sys_bp is None and dia_bp is None:
         return None
 
-    # 已经被 crisis 捕获的跳过
+    # 已被 severe-reading rule 捕获的跳过
     if (sys_bp and sys_bp >= 180) or (dia_bp and dia_bp >= 120):
         return None
 

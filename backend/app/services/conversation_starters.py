@@ -19,7 +19,7 @@ from __future__ import annotations
 import random
 import re
 from dataclasses import dataclass, field, replace
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
 from typing import Optional
 from zoneinfo import ZoneInfo
 
@@ -48,7 +48,7 @@ ONBOARDING_SUGGESTIONS: list[str] = [
 ]
 
 # Priority bands (higher = more likely to appear, critical always included):
-#   100+  critical / safety — readiness<40, BP critical, AQI hazardous, ACWR danger
+#   100+  critical / safety — readiness<40, BP severe reading, AQI hazardous, ACWR danger
 #    80   today body state — readiness/HRV/body battery/stress notable
 #    70   today environment — AQI/UV/weather opportunity
 #    60   personalized data signals — exam abnormal, gene, active goal
@@ -206,8 +206,8 @@ def compute_salient_signals(
     push takes top criticals). Returning the raw ranked candidates here lets each
     caller apply its own selection without re-deriving thresholds.
 
-    Critical signals carry priority >= 100 (readiness crash, acute illness, BP
-    critical, ACWR danger, hazardous AQI). Fail-soft: returns [] on any error.
+    Critical signals carry priority >= 100 (readiness crash, acute illness, severe
+    BP reading, ACWR danger, hazardous AQI). Fail-soft: returns [] on any error.
     """
     try:
         candidates = _build_candidates(_collect_signals(db, user_id))
@@ -791,10 +791,12 @@ def _suggest_bp(signals: StarterSignals) -> Optional[SuggestionCandidate]:
     dia_bp = signals.diastolic_bp
     if sys_bp is None and dia_bp is None:
         return None
-    # ACC/AHA thresholds
-    if (sys_bp is not None and sys_bp >= 160) or (dia_bp is not None and dia_bp >= 100):
+    if (sys_bp is not None and sys_bp >= 180) or (dia_bp is not None and dia_bp >= 120):
         bp_text = f"{sys_bp or '?'}/{dia_bp or '?'}"
-        return SuggestionCandidate(100, f"最近一次血压 {bp_text} 偏高，我需要怎么处理？")
+        return SuggestionCandidate(
+            100,
+            f"最近一次血压 {bp_text} 严重升高，请先复测；如伴胸痛、气促、视力或言语变化请立即求助",
+        )
     if (sys_bp is not None and sys_bp >= 140) or (dia_bp is not None and dia_bp >= 90):
         bp_text = f"{sys_bp or '?'}/{dia_bp or '?'}"
         return SuggestionCandidate(80, f"最近一次血压 {bp_text}，帮我分析趋势和生活方式调整")

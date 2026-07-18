@@ -37,12 +37,21 @@ def _add_today_workout(db, user_id: int):
     return w
 
 
-def test_empty_user_valid_shape(db, auth_user_and_headers):
+def test_empty_user_valid_shape(db, auth_user_and_headers, monkeypatch):
+    import app.services.today_timeline_service as svc
+
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            base = datetime(2026, 6, 16, 2, 30, tzinfo=timezone.utc)
+            return base.astimezone(tz) if tz else base.replace(tzinfo=None)
+
+    monkeypatch.setattr(svc, "datetime", FixedDateTime)
     user, _ = auth_user_and_headers
     spine = build_today_spine(db, user.id)
     assert set(spine.keys()) == TOP_KEYS
     assert _rhythm_items(spine), "空用户也应有低打扰日内时间骨架"
-    assert spine["date"] == str(date.today())
+    assert spine["date"] == "2026-06-16"
     assert spine["current_window"] in {
         "morning", "noon", "afternoon", "evening", "bedtime", "anytime"}
     assert spine["past"]["events"] == []

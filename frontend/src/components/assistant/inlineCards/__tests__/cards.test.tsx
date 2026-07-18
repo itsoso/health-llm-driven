@@ -44,6 +44,34 @@ describe('BPCardSpec.match', () => {
   it('无关键词 → null', () => expect(BPCardSpec.match(mkCtx('心率'))).toBeNull());
 });
 
+describe('BPCardSpec.build', () => {
+  it('uses the server category, color, and severe-reading guidance from the latest record', async () => {
+    const api = { get: vi.fn().mockResolvedValue({ data: [{
+      systolic: 185,
+      diastolic: 85,
+      pulse: 72,
+      record_date: '2026-07-18',
+      category: '血压严重升高',
+      category_color: '#B42318',
+      safety_guidance: {
+        severity: 'high',
+        recheck_instruction: '请静坐至少 1 分钟后复测。',
+        emergency_instruction: '若同时出现胸痛，请立即拨打急救电话。',
+        action_path: '/blood-pressure',
+      },
+    }] }) };
+
+    const card = await BPCardSpec.build(mkCtx('血压', { api }));
+
+    expect(api.get).toHaveBeenCalledWith('/blood-pressure/records/me', { params: { limit: 1 } });
+    expect(card).toMatchObject({
+      category: '血压严重升高',
+      category_color: '#B42318',
+      safety_guidance: { severity: 'high', action_path: '/blood-pressure' },
+    });
+  });
+});
+
 describe('SupplementCardSpec.match', () => {
   it('"补剂吃了吗" → 15', () => expect(SupplementCardSpec.match(mkCtx('补剂吃了吗'))).toBe(15));
   it('"今天吃了什么补剂" → 15', () => expect(SupplementCardSpec.match(mkCtx('今天吃了什么补剂'))).toBe(15));

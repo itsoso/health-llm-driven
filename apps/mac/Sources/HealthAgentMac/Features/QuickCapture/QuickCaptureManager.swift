@@ -168,10 +168,14 @@ struct QuickCaptureView: View {
         resultMessage = nil
         Task {
             do {
-                _ = try await client.quickRecord(text: payload)
-                resultMessage = appText("Saved.", appLanguageRaw)
+                let result = try await client.quickRecord(text: payload)
+                resultMessage = result.displayMessage
                 resultIsError = false
                 text = ""
+                if result.safetyGuidance != nil {
+                    isSubmitting = false
+                    return
+                }
                 try? await Task.sleep(nanoseconds: 600_000_000)
                 onDismiss()
             } catch {

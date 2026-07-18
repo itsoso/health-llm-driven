@@ -1596,10 +1596,10 @@ def _resolve_starter_suggestions(cards, user_id, background_tasks, settings) -> 
 def _merge_cached_polish(cards, cached: list) -> list[dict]:
     """Overlay cached polished text onto the current rule cards.
 
-    Rule cards remain the source of truth for which chips exist and their order.
-    For each rule card, if the cache has a polished entry for its key, serve the
-    polished text (+ polished flag); otherwise serve rule text. A cached
-    synthesis item (key not among rule cards) is appended at the end.
+    Rule cards remain the source of truth for the display slot count. For each
+    rule card, if the cache has a polished entry for its key, serve the polished
+    text (+ polished flag); otherwise serve rule text. A cached synthesis item
+    can replace the lowest-priority rule card only when it is more salient.
     """
     by_key = {}
     synthesis_entries = []
@@ -1629,19 +1629,36 @@ def _merge_cached_polish(cards, cached: list) -> list[dict]:
                 {"text": c.text, "key": c.key, "priority": c.priority, "polished": False}
             )
 
+    synthesis_card = None
     for syn in synthesis_entries[:1]:  # at most one synthesis
         if syn.get("text"):
-            out.append(
-                {
-                    "text": str(syn["text"]),
-                    "key": "synthesis",
-                    "priority": int(syn.get("priority") or 0),
-                    "polished": True,
-                    "synthesis": True,
-                    "combines": list(syn.get("combines") or []),
-                }
-            )
-    return out
+            synthesis_card = {
+                "text": str(syn["text"]),
+                "key": "synthesis",
+                "priority": int(syn.get("priority") or 0),
+                "polished": True,
+                "synthesis": True,
+                "combines": list(syn.get("combines") or []),
+            }
+
+    if synthesis_card and out:
+        source_keys = set(synthesis_card["combines"])
+        replaceable_indices = [
+            index for index, item in enumerate(out) if item["key"] not in source_keys
+        ]
+        lowest_index = min(
+            replaceable_indices,
+            key=lambda index: (int(out[index]["priority"]), -index),
+            default=None,
+        )
+        if (
+            lowest_index is not None
+            and synthesis_card["priority"] > out[lowest_index]["priority"]
+        ):
+            out[lowest_index] = synthesis_card
+
+    out.sort(key=lambda item: int(item["priority"]), reverse=True)
+    return out[:len(cards)]
 
 
 @router.get("/tools", summary="列出可用工具")

@@ -8,6 +8,7 @@ import { fetchDashboardData } from '../../services/dashboard';
 import api from '../../services/api';
 import { useRouter } from 'expo-router';
 import { emitClientEvent } from '../../services/clientEvents';
+import { bloodPressureSaveAlert } from '../../utils/bloodPressureSafety';
 import {
   recordWater,
   deleteWater,
@@ -466,9 +467,11 @@ export default function RecordScreen() {
                   if (!sys || !dia || sys < 60 || sys > 250 || dia < 30 || dia > 150) { Alert.alert('请输入有效血压'); return; }
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
                   try {
-                    await api.post('/blood-pressure/records', { systolic: sys, diastolic: dia, record_date: new Date().toISOString().split('T')[0] });
+                    const response = await api.post('/blood-pressure/records', { systolic: sys, diastolic: dia, record_date: new Date().toISOString().split('T')[0] });
                     emitClientEvent('quick_record_logged', { kind: 'bp' }); // Phase 0.4
                     setBpSysInput(''); setBpDiaInput(''); await invalidateRecordMutation(qc);
+                    const alert = bloodPressureSaveAlert(response.data?.safety_guidance);
+                    if (alert) Alert.alert(alert.title, alert.message);
                   } catch { Alert.alert('记录失败'); }
                 }} activeOpacity={0.7}><Text style={txt.quickSaveTxt}>记录</Text></TouchableOpacity>
               </View>

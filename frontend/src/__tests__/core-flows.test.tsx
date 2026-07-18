@@ -107,6 +107,13 @@ describe('Dashboard', () => {
     expect(screen.getByText('总览')).toBeDefined();
   });
 
+  it('keeps blood pressure available in the home quick-record entry', async () => {
+    const Page = (await import('@/app/dashboard/page')).default;
+    render(<Page />);
+
+    expect(screen.getByPlaceholderText(/血压120\/80/)).toBeDefined();
+  });
+
   it('navigates on quick action click', async () => {
     const Page = (await import('@/app/dashboard/page')).default;
     render(<Page />);

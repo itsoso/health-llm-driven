@@ -22,6 +22,7 @@ import {
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
+import { bloodPressureSaveFeedback } from '../blood-pressure/saveFeedback';
 
 function DashboardContent() {
   const router = useRouter();
@@ -50,17 +51,22 @@ function DashboardContent() {
   // 快速记录
   const [quickInput, setQuickInput] = useState('');
   const [quickToast, setQuickToast] = useState('');
+  const [quickToastType, setQuickToastType] = useState<'success' | 'warning' | 'error'>('success');
   const quickRecordMutation = useMutation({
     mutationFn: (text: string) => api.post('/quick-record', { text }),
     onSuccess: (res) => {
-      const msg = res.data?.message || '记录成功';
-      setQuickToast(msg);
+      const feedback = res.data?.type === 'bp'
+        ? bloodPressureSaveFeedback(res.data)
+        : { message: res.data?.message || '记录成功', type: 'success' as const };
+      setQuickToast(feedback.message);
+      setQuickToastType(feedback.type);
       setQuickInput('');
-      setTimeout(() => setQuickToast(''), 3000);
+      setTimeout(() => setQuickToast(''), feedback.type === 'warning' ? 9000 : 3000);
     },
     onError: (err: any) => {
       const detail = err?.response?.data?.detail || '记录失败，请检查格式';
       setQuickToast(detail);
+      setQuickToastType('error');
       setTimeout(() => setQuickToast(''), 4000);
     },
   });
@@ -578,7 +584,7 @@ function DashboardContent() {
               type="text"
               value={quickInput}
               onChange={(e) => setQuickInput(e.target.value)}
-              placeholder="午餐牛肉面 / 吃了鸡胸肉 / 喝水500 / 体重71.5 / 吃了维生素D"
+              placeholder="午餐牛肉面 / 血压120/80 / 喝水500 / 体重71.5 / 吃了维生素D"
               className="flex-1 px-4 py-3 rounded-xl border border-gray-200 bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent text-sm text-gray-700 placeholder-gray-400"
               disabled={quickRecordMutation.isPending}
             />
@@ -599,10 +605,12 @@ function DashboardContent() {
           </form>
           {quickToast && (
             <div className="absolute top-full left-0 right-0 mt-2 z-10">
-              <div className={`inline-block px-4 py-2 rounded-lg text-sm font-medium shadow-md ${
-                quickToast.includes('失败') || quickToast.includes('无法')
+              <div className={`inline-block max-w-full px-4 py-2 rounded-lg text-sm font-medium shadow-md ${
+                quickToastType === 'error'
                   ? 'bg-red-50 text-red-700 border border-red-200'
-                  : 'bg-green-50 text-green-700 border border-green-200'
+                  : quickToastType === 'warning'
+                    ? 'bg-amber-50 text-amber-900 border border-amber-300 whitespace-pre-line'
+                    : 'bg-green-50 text-green-700 border border-green-200'
               }`}>
                 {quickToast}
               </div>

@@ -736,6 +736,30 @@ async def test_query_lab_indicators_bridges_blood_pressure_alias_to_standardized
 
 
 @pytest.mark.asyncio
+async def test_query_lab_indicators_severe_bp_appends_recheck_and_symptom_triage(
+    db,
+    auth_user_and_headers,
+):
+    user, _headers = auth_user_and_headers
+    db.add(BloodPressureRecord(
+        user_id=user.id,
+        record_date=date.today(),
+        systolic=185,
+        diastolic=85,
+    ))
+    db.commit()
+
+    executor = AgentExecutor(db)
+    executor._current_user_id = user.id
+    result = await executor._exec_query_lab_indicators("", {}, {"name": "血压"})
+
+    assert "⚠️ 安全提示" in result
+    assert "复测" in result
+    assert "胸痛" in result
+    assert "高血压急症" not in result
+
+
+@pytest.mark.asyncio
 async def test_agent_call_llm_omits_empty_tools_for_commercial_retries(db, auth_user_and_headers, monkeypatch):
     """Empty no-tool retry must not send tools=[] to OpenAI-compatible gateways."""
     user, _headers = auth_user_and_headers

@@ -37,6 +37,7 @@ import json
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.services.genui.chart_builder import render_reva_ui_block
+from app.utils.blood_pressure_classify import SAFETY_WARNING_MARKER
 from app.utils.number_format import format_display_number
 
 # 客户端在 X-Reva-Client-Caps 声明本 token 才发 metric_table (与图表的 genui-v1 并列)。
@@ -116,12 +117,17 @@ def _fmt_num(value: Any, unit: Any = None) -> Optional[str]:
 
 
 def _load_json_lenient(result: str) -> Optional[Any]:
-    """严格 json.loads; 失败则剥掉 _api_get 的显示截断尾注再试。全失败 → None。"""
+    """Parse JSON while preserving safety text for the model response itself."""
     if not isinstance(result, str):
         return None
     text = result.strip()
     if not text or text.startswith("Error"):
         return None
+    marker_index = text.find(SAFETY_WARNING_MARKER)
+    if marker_index >= 0:
+        text = text[:marker_index].rstrip()
+        if not text:
+            return None
     try:
         return json.loads(text)
     except (json.JSONDecodeError, ValueError):
