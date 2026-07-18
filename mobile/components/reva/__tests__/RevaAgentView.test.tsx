@@ -6,6 +6,10 @@ const mockSendMessage = jest.fn();
 const mockRenderCard = jest.fn(() => <Text>动态卡片已渲染</Text>);
 let mockIsStreaming = false;
 
+jest.mock('expo-router', () => ({
+  useFocusEffect: (callback: () => void | (() => void)) => callback(),
+}));
+
 jest.mock('../../../hooks/useChatEngine', () => ({
   useChatEngine: () => ({
     messages: [

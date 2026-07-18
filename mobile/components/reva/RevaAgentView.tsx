@@ -6,16 +6,19 @@
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView,
+  ActivityIndicator, AppState, KeyboardAvoidingView, Platform, Pressable, ScrollView,
   StyleSheet, Text, TextInput, View,
+  type AppStateStatus,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from 'expo-router';
 import Markdown from 'react-native-markdown-display';
 import { prepareSafeMarkdown, safeMarkdownIt } from '../../utils/safeMarkdown';
 import { useChatEngine, type UIMessage } from '../../hooks/useChatEngine';
 import { renderCard } from '../chat/cards';
 import { revaColors as C, revaRadii, revaShadows } from '../../constants/revaTheme';
 import { RevaMark } from './RevaKit';
+import { cancelChatScrollOnUserDrag, shouldScrollChatToEnd } from '../../utils/chatScroll';
 
 const QUICKS = ['今天能跑步吗？', '解读我的血糖', '这周吃得怎么样？'];
 
@@ -54,11 +57,73 @@ export function RevaAgentView({ bottomInset = 0 }: { bottomInset?: number }) {
   const { messages, sendMessage } = useChatEngine();
   const [draft, setDraft] = useState('');
   const scrollRef = useRef<ScrollView>(null);
+  const isNearBottom = useRef(true);
+  const forceScrollPending = useRef(false);
+  const scrollTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  const clearScrollTimers = useCallback(() => {
+    scrollTimersRef.current.forEach(clearTimeout);
+    scrollTimersRef.current = [];
+  }, []);
+
+  const scheduleScrollToEnd = useCallback((force = false) => {
+    if (force) {
+      forceScrollPending.current = true;
+      isNearBottom.current = true;
+    } else if (!shouldScrollChatToEnd({
+      forcePending: forceScrollPending.current,
+      isNearBottom: isNearBottom.current,
+    })) {
+      return;
+    }
+    clearScrollTimers();
+    const delays = [0, 80, 220, 480, 900];
+    scrollTimersRef.current = delays.map((delay, index) => setTimeout(() => {
+      if (!shouldScrollChatToEnd({
+        forcePending: forceScrollPending.current,
+        isNearBottom: isNearBottom.current,
+      })) return;
+      try { scrollRef.current?.scrollToEnd({ animated: true }); } catch {}
+      if (index === delays.length - 1) forceScrollPending.current = false;
+    }, delay));
+  }, [clearScrollTimers]);
+
+  const cancelForcedScrollOnUserDrag = useCallback(() => {
+    const state = {
+      forcePending: forceScrollPending.current,
+      isNearBottom: isNearBottom.current,
+    };
+    cancelChatScrollOnUserDrag(state);
+    forceScrollPending.current = state.forcePending;
+  }, []);
+
+  useEffect(() => () => {
+    clearScrollTimers();
+    forceScrollPending.current = false;
+  }, [clearScrollTimers]);
+
+  useFocusEffect(
+    useCallback(() => {
+      scheduleScrollToEnd(true);
+      return clearScrollTimers;
+    }, [clearScrollTimers, scheduleScrollToEnd])
+  );
+
+  const appStateRef = useRef<AppStateStatus>(AppState.currentState);
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      const previousState = appStateRef.current;
+      appStateRef.current = nextState;
+      if ((previousState === 'background' || previousState === 'inactive') && nextState === 'active') {
+        scheduleScrollToEnd(true);
+      }
+    });
+    return () => subscription.remove();
+  }, [scheduleScrollToEnd]);
 
   useEffect(() => {
-    const t = setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 60);
-    return () => clearTimeout(t);
-  }, [messages]);
+    scheduleScrollToEnd();
+  }, [messages, scheduleScrollToEnd]);
 
   const submit = useCallback((text?: string) => {
     const t = (text ?? draft).trim();
@@ -88,6 +153,21 @@ export function RevaAgentView({ bottomInset = 0 }: { bottomInset?: number }) {
           contentContainerStyle={styles.scrollContent}
           keyboardDismissMode="interactive"
           keyboardShouldPersistTaps="always"
+          onContentSizeChange={() => {
+            if (shouldScrollChatToEnd({
+              forcePending: forceScrollPending.current,
+              isNearBottom: isNearBottom.current,
+            })) {
+              try { scrollRef.current?.scrollToEnd({ animated: true }); } catch {}
+            }
+          }}
+          onScrollBeginDrag={cancelForcedScrollOnUserDrag}
+          onScroll={(event) => {
+            if (forceScrollPending.current) return;
+            const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
+            isNearBottom.current = contentSize.height - contentOffset.y - layoutMeasurement.height < 120;
+          }}
+          scrollEventThrottle={100}
         >
           {messages.length === 0 ? (
             <View style={styles.empty}>

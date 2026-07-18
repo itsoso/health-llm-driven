@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import {
   View, Text, TouchableOpacity, FlatList, StyleSheet,
-  Platform, TextStyle,
+  Platform, TextStyle, AppState, type AppStateStatus,
   ActivityIndicator, Alert, Keyboard, Modal, Pressable, useWindowDimensions,
 } from 'react-native';
 import { Image } from 'expo-image';
@@ -59,6 +59,7 @@ import { loadAgentHomeBootstrap } from '../../services/agentHomeBootstrap';
 import { useAuth } from '../../hooks/useAuth';
 import { buildChatImageSource } from '../../utils/chatImageSource';
 import { saveChatImageToLibrary } from '../../services/chatImageSave';
+import { cancelChatScrollOnUserDrag, shouldScrollChatToEnd } from '../../utils/chatScroll';
 
 type SuggestionCard = {
   icon: keyof typeof Ionicons.glyphMap;
@@ -155,6 +156,8 @@ export default function ChatScreen() {
   } = chat;
   const flatListRef = useRef<FlatList>(null);
   const isNearBottom = useRef(true);
+  const forceScrollPending = useRef(false);
+  const scrollTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   // 对话页只消费明确、及时的 timeline 状态；完整计划留在 Today surface。
   const todayTimeline = useTodayTimeline();
   const todayFocusModel = useMemo(
@@ -359,27 +362,73 @@ export default function ChatScreen() {
     }
   }, [newChat, params.prompt, params.badge, params.autoSend, params.context, params.newChat, params.promptNonce, sendMessage]);
 
-  // 点"小巴" tab 进来时滚到对话最后, 默认看到最新那段回答.
-  // useFocusEffect 在每次 tab 获得 focus 时触发 (包括首次 mount)。
-  // 单发 setTimeout(120ms) 对长对话不可靠: markdown/卡片/图片异步排版未 settle 时,
-  // scrollToEnd 打到的是过时(偏短)的 contentHeight, 停在半路。故:
-  //   ① focus 时把 isNearBottom 置 true → onContentSizeChange(见 FlatList)会随内容
-  //      持续排版把列表钉在底部, 直到 settle; 用户一旦上滑, onScroll 翻回 false 即松开。
-  //   ② 多档重试 scrollToEnd 兜底"内容已 settle、onContentSizeChange 不再触发"的情形。
-  // 与 handleSelectConversation 切换对话的贴底逻辑同源。
+  const clearChatScrollTimers = useCallback(() => {
+    scrollTimersRef.current.forEach(clearTimeout);
+    scrollTimersRef.current = [];
+  }, []);
+
+  // Markdown/card/image layout can settle in several passes. Keep a forced scroll
+  // pending until the final retry, while ignoring non-user initial onScroll events.
+  // A real drag cancels this flag immediately so history reading is never hijacked.
+  const scheduleScrollToEnd = useCallback((options: { force?: boolean; animated?: boolean } = {}) => {
+    const force = options.force ?? false;
+    const animated = options.animated ?? false;
+    if (force) {
+      forceScrollPending.current = true;
+      isNearBottom.current = true;
+    } else if (!shouldScrollChatToEnd({
+      forcePending: forceScrollPending.current,
+      isNearBottom: isNearBottom.current,
+    })) {
+      return;
+    }
+
+    clearChatScrollTimers();
+    const delays = [0, 80, 220, 480, 900];
+    scrollTimersRef.current = delays.map((delay, index) => setTimeout(() => {
+      if (!shouldScrollChatToEnd({
+        forcePending: forceScrollPending.current,
+        isNearBottom: isNearBottom.current,
+      })) return;
+      try { flatListRef.current?.scrollToEnd({ animated }); } catch {}
+      if (index === delays.length - 1) forceScrollPending.current = false;
+    }, delay));
+  }, [clearChatScrollTimers]);
+
+  const cancelForcedScrollOnUserDrag = useCallback(() => {
+    const state = {
+      forcePending: forceScrollPending.current,
+      isNearBottom: isNearBottom.current,
+    };
+    cancelChatScrollOnUserDrag(state);
+    forceScrollPending.current = state.forcePending;
+  }, []);
+
+  useEffect(() => () => {
+    clearChatScrollTimers();
+    forceScrollPending.current = false;
+  }, [clearChatScrollTimers]);
+
+  // Page focus and app foreground both mean the user expects the newest answer.
+  // Content-size changes continue the same request while streamed Markdown settles.
   useFocusEffect(
     useCallback(() => {
-      isNearBottom.current = true;
-      const timers = [60, 220, 480].map((d) =>
-        setTimeout(() => {
-          if (isNearBottom.current) {
-            try { flatListRef.current?.scrollToEnd({ animated: false }); } catch {}
-          }
-        }, d)
-      );
-      return () => timers.forEach(clearTimeout);
-    }, [])
+      scheduleScrollToEnd({ force: true });
+      return clearChatScrollTimers;
+    }, [clearChatScrollTimers, scheduleScrollToEnd])
   );
+
+  const appStateRef = useRef<AppStateStatus>(AppState.currentState);
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      const previousState = appStateRef.current;
+      appStateRef.current = nextState;
+      if ((previousState === 'background' || previousState === 'inactive') && nextState === 'active') {
+        scheduleScrollToEnd({ force: true });
+      }
+    });
+    return () => subscription.remove();
+  }, [scheduleScrollToEnd]);
 
   // 「小巴先开口」键盘礼仪 (State A, 2026-07):
   // 只在小巴没话可说时(无 opener 且无记忆)才默认唤起键盘 —— 小巴有开场消息时
@@ -426,14 +475,14 @@ export default function ChatScreen() {
     const showSub = Keyboard.addListener('keyboardDidShow', (event) => {
       setKeyboardVisible(true);
       setKeyboardHeight(event.endCoordinates?.height || 0);
-      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+      scheduleScrollToEnd({ animated: true });
     });
     const hideSub = Keyboard.addListener('keyboardDidHide', () => {
       setKeyboardVisible(false);
       setKeyboardHeight(0);
     });
     return () => { showSub.remove(); hideSub.remove(); };
-  }, []);
+  }, [scheduleScrollToEnd]);
 
   // State A: 用户发第一条消息时(空状态 + 有可见开场气泡), 把开场文本作为
   // 合成 assistant 消息注入到流顶, 让被回答的那句话不随空状态卸载而消失。
@@ -459,7 +508,7 @@ export default function ChatScreen() {
   const handleSend = useCallback((text: string, images?: any, options?: ChatInputSendOptions) => {
     isNearBottom.current = true;
     injectOpeningContinuity(openerRef.current);
-    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
+    scheduleScrollToEnd({ animated: true });
     return new Promise<boolean>((resolve) => {
       let settled = false;
       const resolveOnce = (accepted: boolean) => {
@@ -474,7 +523,7 @@ export default function ChatScreen() {
         onAccepted: resolveOnce,
       })).then(resolveOnce).catch(() => resolveOnce(false));
     });
-  }, [injectOpeningContinuity, sendMessage]);
+  }, [injectOpeningContinuity, scheduleScrollToEnd, sendMessage]);
 
   const handleStarterPress = useCallback((s: EmptyStateSuggestion, position: number) => {
     // 点击埋点 (CTR 分子) — 旁路, 不阻塞发送
@@ -514,8 +563,8 @@ export default function ChatScreen() {
         card_type: result.card.type,
       });
     } catch { /* noop */ }
-    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 80);
-  }, [setMessages]);
+    scheduleScrollToEnd({ animated: true });
+  }, [scheduleScrollToEnd, setMessages]);
 
   const handleOpenerQuickReply = useCallback((text: string) => {
     isNearBottom.current = true;
@@ -552,8 +601,8 @@ export default function ChatScreen() {
     const messageText = activeOpener ? buildConversationOpenerReplyMessage(activeOpener, text) : text;
     injectOpeningContinuity(activeOpener);
     sendMessage(messageText, null, extraContext ? { extraContext } : undefined);
-    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
-  }, [opener, injectOpeningContinuity, refreshCoachHomeState, sendMessage]);
+    scheduleScrollToEnd({ animated: true });
+  }, [opener, injectOpeningContinuity, refreshCoachHomeState, scheduleScrollToEnd, sendMessage]);
 
   // 加载第一页 (打开 sheet / 重试 / 搜索变化时调用) — 重置所有分页状态。
   // search 可显式传入(搜索变化);缺省(如 onRetry 传进来的按压事件对象)→ 读 ref 里的生效词。
@@ -660,12 +709,11 @@ export default function ChatScreen() {
 
   const handleSelectConversation = useCallback(async (id: number) => {
     await loadConversation(id);
-    isNearBottom.current = true;
+    scheduleScrollToEnd({ force: true });
     setContextBadge(null);
     setSelectionMode(false);
     setSelectedMessageIds(new Set());
-    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 120);
-  }, [loadConversation]);
+  }, [loadConversation, scheduleScrollToEnd]);
 
   const handleDeleteConversation = useCallback(async (id: number) => {
     const ok = await deleteConversation(id);
@@ -865,8 +913,22 @@ export default function ChatScreen() {
           contentContainerStyle={styles.messageList}
           keyboardDismissMode="on-drag"
           keyboardShouldPersistTaps="always"
-          onContentSizeChange={() => { if (isNearBottom.current) flatListRef.current?.scrollToEnd({ animated: true }); }}
-          onScroll={(e) => { const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent; isNearBottom.current = contentSize.height - contentOffset.y - layoutMeasurement.height < 120; }}
+          onContentSizeChange={() => {
+            if (shouldScrollChatToEnd({
+              forcePending: forceScrollPending.current,
+              isNearBottom: isNearBottom.current,
+            })) {
+              try { flatListRef.current?.scrollToEnd({ animated: true }); } catch {}
+            }
+          }}
+          onScrollBeginDrag={cancelForcedScrollOnUserDrag}
+          onScroll={(e) => {
+            // The first layout can emit an offset=0 scroll event before the forced
+            // opening scroll runs. It is not user intent and must not cancel it.
+            if (forceScrollPending.current) return;
+            const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
+            isNearBottom.current = contentSize.height - contentOffset.y - layoutMeasurement.height < 120;
+          }}
           scrollEventThrottle={100}
           ListEmptyComponent={
             bootstrapReady ? (
