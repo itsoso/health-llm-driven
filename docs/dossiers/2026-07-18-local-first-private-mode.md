@@ -4,7 +4,7 @@
 |---|---|
 | slug | `local-first-private-mode` |
 | 创建日期 | 2026-07-18 |
-| 当前阶段 | S3 规划 |
+| 当前阶段 | S3 G2 可行性压测 |
 | 状态 | defining |
 | 负责 | User / Codex |
 | 反馈环 | iOS real-device spike / EAS-TestFlight / airplane-mode validation |
@@ -64,14 +64,25 @@
 
 ## G2 · 可行性 + 安全压测
 
-- 评审方式：Codex challenge 完成初步架构压测；正式安全评审待 Task 1。
+- 评审方式：Codex challenge + Task 1 Swift capability spike + 本地存储/恢复威胁模型评审。
+- Task 1 证据：
+  - 新增可独立运行的 Swift Package 探针测试壳；先确认因探针不存在而 RED，再以最小实现转绿。
+  - macOS 与 iOS Simulator 均通过 7 个能力契约测试；探针为系统模型不可用返回明确原因，不抛错、不静默走云。
+  - Xcode 26.5 / iPhoneOS SDK 26.5 下，Foundation Models 多模态明确为 `sdk_not_supported`；当前照片路线只能是 Vision 或另行评测的 Core ML。
+  - Mac 26.4.1：系统模型 `device_not_eligible`，Vision OCR/分类/条码可用。
+  - iPhone 17 Pro Simulator / iOS 26.4：系统模型探针报告可用，Vision 可用；模拟器结果不外推到真机。
+  - 详情与评测 Schema：`docs/evals/local-diet/README.md`、`docs/evals/local-diet/on-device-eval-contract.json`。
 - 已焊进规划的硬阻断：
   - 生产食物数据库的再分发授权未解决前不得扩大数据包。
-  - CryptoKit/Keychain/恢复设计未过威胁模型前不得承诺可恢复加密。
+  - CryptoKit/Keychain/恢复设计未过威胁模型前不得承诺可恢复加密；本次评审新增三个明确阻断：明文行为索引、恢复口令 KDF、卸载/Keychain 生命周期。
   - 系统模型不可用必须降级到确定性/手工，而不是强制云端。
   - 自定义视觉模型必须经过纠正成本、内存、温升和下载体积 Gate。
+- 仍缺证据：
+  - 当前已登记 iPhone 真机均为 `unavailable`，未取得真机可用性、冷/热推理时延、峰值内存和温升。
+  - 尚未选定并核验可随 App 再分发的生产营养数据库。
+  - 尚未修订并复核 blind index、memory-hard 恢复 KDF、删除/重装行为和 envelope AAD/回滚方案。
 - **待拍板分叉**：无；用户已接受旧设备的严格本地照片能力可能较弱。
-- **裁决**：待 Task 1 证据；未进入 S4。
+- **裁决**：**BLOCK**。能力探针本身可行，但安全、数据授权和真机性能三项硬证据未通过；按 Gate 契约停止在 S3，不进入 Task 2/S4。
 
 ## S4 · 研发任务分解
 
@@ -80,7 +91,7 @@
 
 ## S5 · 实现
 
-- 未开始。
+- 产品实现未开始；仅完成不读写健康数据、不执行推理的 G2 capability probe。
 
 ## G3 · 测试闸
 

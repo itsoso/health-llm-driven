@@ -1,0 +1,277 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://executor.life/schemas/local-diet-on-device-eval-v1.json",
+  "title": "Local diet on-device evaluation run",
+  "description": "Evidence contract for a versioned local diet extraction or recognition engine. Model output is candidate data only and is never a nutrition source of truth.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contractVersion",
+    "runId",
+    "recordedAt",
+    "dataset",
+    "device",
+    "capabilities",
+    "modelProfile",
+    "caseResults",
+    "summary"
+  ],
+  "properties": {
+    "contractVersion": {
+      "const": "1.0.0"
+    },
+    "runId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "recordedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "dataset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "licenseStatus", "containsPrivateUserData"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 },
+        "licenseStatus": {
+          "enum": ["licensed_for_evaluation", "public_domain", "synthetic"]
+        },
+        "containsPrivateUserData": { "const": false }
+      }
+    },
+    "device": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "hardwareIdentifier",
+        "deviceClass",
+        "osVersion",
+        "isSimulator",
+        "appBuild"
+      ],
+      "properties": {
+        "hardwareIdentifier": { "type": "string", "minLength": 1 },
+        "deviceClass": { "enum": ["phone", "tablet", "mac", "other"] },
+        "osVersion": { "type": "string", "minLength": 1 },
+        "isSimulator": { "type": "boolean" },
+        "appBuild": { "type": "string", "minLength": 1 }
+      }
+    },
+    "capabilities": {
+      "$ref": "#/$defs/capabilityProfile"
+    },
+    "modelProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["engine", "identifier", "version", "downloadBytes"],
+      "properties": {
+        "engine": {
+          "enum": [
+            "deterministic",
+            "apple_foundation_models",
+            "apple_vision",
+            "custom_core_ml",
+            "manual"
+          ]
+        },
+        "identifier": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 },
+        "downloadBytes": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "caseResults": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/caseResult" }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "caseCount",
+        "crashFreeCompletionRate",
+        "validTypedDraftRate",
+        "foodIdentityPrecision",
+        "missingItemRate",
+        "nonFoodRejectionRate",
+        "medianCorrectionCount",
+        "p90CorrectionCount",
+        "textP95WarmLatencyMs",
+        "visionP95WarmLatencyMs",
+        "maxPeakMemoryDeltaMb",
+        "worstThermalState",
+        "gateVerdict"
+      ],
+      "properties": {
+        "caseCount": { "type": "integer", "minimum": 1 },
+        "crashFreeCompletionRate": { "$ref": "#/$defs/rate" },
+        "validTypedDraftRate": { "$ref": "#/$defs/rate" },
+        "foodIdentityPrecision": { "$ref": "#/$defs/rate" },
+        "missingItemRate": { "$ref": "#/$defs/rate" },
+        "nonFoodRejectionRate": { "$ref": "#/$defs/rate" },
+        "medianCorrectionCount": { "type": "number", "minimum": 0 },
+        "p90CorrectionCount": { "type": "number", "minimum": 0 },
+        "textP95WarmLatencyMs": { "type": ["number", "null"], "minimum": 0 },
+        "visionP95WarmLatencyMs": { "type": ["number", "null"], "minimum": 0 },
+        "maxPeakMemoryDeltaMb": { "type": "number", "minimum": 0 },
+        "worstThermalState": {
+          "enum": ["nominal", "fair", "serious", "critical", "unknown"]
+        },
+        "gateVerdict": { "enum": ["pass", "fail", "blocked"] },
+        "notes": { "type": "string" }
+      }
+    }
+  },
+  "$defs": {
+    "rate": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "availability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["available"],
+      "properties": {
+        "available": { "type": "boolean" },
+        "reason": {
+          "enum": [
+            "os_unsupported",
+            "framework_unavailable",
+            "device_not_eligible",
+            "apple_intelligence_not_enabled",
+            "model_not_ready",
+            "unknown_unavailable",
+            "sdk_not_supported"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "available": { "const": false } },
+            "required": ["available"]
+          },
+          "then": { "required": ["reason"] }
+        },
+        {
+          "if": {
+            "properties": { "available": { "const": true } },
+            "required": ["available"]
+          },
+          "then": { "not": { "required": ["reason"] } }
+        }
+      ]
+    },
+    "capabilityProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "osVersion",
+        "deviceClass",
+        "isSimulator",
+        "systemLanguageModel",
+        "multimodalLanguageModel",
+        "vision"
+      ],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "osVersion": { "type": "string", "minLength": 1 },
+        "deviceClass": { "type": "string", "minLength": 1 },
+        "isSimulator": { "type": "boolean" },
+        "systemLanguageModel": { "$ref": "#/$defs/availability" },
+        "multimodalLanguageModel": { "$ref": "#/$defs/availability" },
+        "vision": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["textRecognition", "imageClassification", "barcodeDetection"],
+          "properties": {
+            "textRecognition": { "type": "boolean" },
+            "imageClassification": { "type": "boolean" },
+            "barcodeDetection": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "caseResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "caseId",
+        "inputModality",
+        "fixtureRef",
+        "expectedFoodIdentities",
+        "allowedAliases",
+        "quantityAmbiguity",
+        "nonFood",
+        "predictedFoodIdentities",
+        "validTypedDraft",
+        "correctionCount",
+        "coldLatencyMs",
+        "warmLatencyMs",
+        "peakMemoryDeltaMb",
+        "thermalStateBefore",
+        "thermalStateAfter",
+        "crashed"
+      ],
+      "properties": {
+        "caseId": { "type": "string", "minLength": 1 },
+        "inputModality": { "enum": ["text", "photo", "barcode", "ocr", "voice"] },
+        "fixtureRef": { "type": "string", "minLength": 1 },
+        "expectedFoodIdentities": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "allowedAliases": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 },
+            "uniqueItems": true
+          }
+        },
+        "quantityAmbiguity": {
+          "enum": ["none", "range", "unknown", "unsupported_unit"]
+        },
+        "nonFood": { "type": "boolean" },
+        "predictedFoodIdentities": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "validTypedDraft": { "type": "boolean" },
+        "correctionCount": { "type": "integer", "minimum": 0 },
+        "coldLatencyMs": { "type": "number", "minimum": 0 },
+        "warmLatencyMs": { "type": "number", "minimum": 0 },
+        "peakMemoryDeltaMb": { "type": "number", "minimum": 0 },
+        "thermalStateBefore": {
+          "enum": ["nominal", "fair", "serious", "critical", "unknown"]
+        },
+        "thermalStateAfter": {
+          "enum": ["nominal", "fair", "serious", "critical", "unknown"]
+        },
+        "crashed": { "type": "boolean" },
+        "notes": { "type": "string" }
+      }
+    }
+  },
+  "x-initial-acceptance-policy": {
+    "crashFreeCompletionRate": { "minimum": 1 },
+    "validTypedDraftRate": { "minimum": 0.95 },
+    "foodIdentityPrecision": { "minimum": 0.85 },
+    "missingItemRate": { "maximum": 0.1 },
+    "nonFoodRejectionRate": { "minimum": 0.98 },
+    "medianCorrectionCount": { "maximum": 1 },
+    "p90CorrectionCount": { "maximum": 2 },
+    "textP95WarmLatencyMs": { "maximum": 2000 },
+    "visionP95WarmLatencyMs": { "maximum": 4000 },
+    "maxPeakMemoryDeltaMb": {
+      "maximum": null,
+      "note": "Must be set from representative real-device baselines before G2 can pass."
+    },
+    "allowedWorstThermalState": ["nominal", "fair"]
+  }
+}

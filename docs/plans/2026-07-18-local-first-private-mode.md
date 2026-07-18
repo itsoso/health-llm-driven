@@ -22,8 +22,9 @@
 ### Task 1: Run G2 feasibility and privacy spikes
 
 **Files:**
+- Create: `mobile/modules/local-health-kernel/Package.swift`
 - Create: `mobile/modules/local-health-kernel/ios/LocalHealthCapabilityProbe.swift`
-- Create: `mobile/modules/local-health-kernel/ios/LocalHealthCapabilityProbeTests.swift`
+- Create: `mobile/modules/local-health-kernel/Tests/LocalHealthCapabilityProbeTests.swift`
 - Create: `docs/evals/local-diet/on-device-eval-contract.json`
 - Create: `docs/evals/local-diet/README.md`
 - Modify: `docs/dossiers/2026-07-18-local-first-private-mode.md`
@@ -34,7 +35,7 @@ Test that the probe returns explicit profiles for system-language-model availabi
 
 **Step 2: Run the focused native test and confirm RED**
 
-Run the module test command selected by the spike harness. Expected: FAIL because `LocalHealthCapabilityProbe` does not exist.
+Run `swift test` from `mobile/modules/local-health-kernel`. Expected: FAIL because `LocalHealthCapabilityProbe` does not exist. The standalone Swift Package is a spike/test harness only; the production source remains under `ios/` for later Expo-module integration.
 
 **Step 3: Implement the smallest availability-only probe**
 
