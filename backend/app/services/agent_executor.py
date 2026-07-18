@@ -39,6 +39,7 @@ from app.services.post_record_quality import (
     build_post_record_quality_response,
     combine_post_record_quality_responses,
 )
+from app.services.agent_turn_outcome import classify_agent_turn_outcome
 from app.services.utterance_intent_classifier import classify_agent_utterance
 from app.services.agent_kernel.context import (
     build_turn_snapshot,
@@ -4815,6 +4816,9 @@ class AgentExecutor:
         self._agent_kernel_event_bus: Optional[AgentEventBus] = None
         self._agent_kernel_turn_finished = False
         self._agent_kernel_last_decision: Optional[CapabilityDecision] = None
+        self._agent_kernel_capability_block_reasons: List[str] = []
+        self._agent_kernel_tool_failure_tools: List[str] = []
+        self._agent_kernel_pending_confirmation_tools: List[str] = []
 
     def _start_agent_kernel_turn(
         self,
@@ -4839,6 +4843,9 @@ class AgentExecutor:
         self._agent_kernel_event_bus = AgentEventBus(self._agent_kernel_snapshot)
         self._agent_kernel_turn_finished = False
         self._agent_kernel_last_decision = None
+        self._agent_kernel_capability_block_reasons = []
+        self._agent_kernel_tool_failure_tools = []
+        self._agent_kernel_pending_confirmation_tools = []
         self._agent_kernel_event_bus.turn_started()
         self._agent_kernel_event_bus.intent_decided()
         return self._refine_agent_kernel_continuation(self._agent_kernel_snapshot)
@@ -4932,6 +4939,16 @@ class AgentExecutor:
             return result
         parsed_args = args if isinstance(args, dict) else {}
         decision = self._agent_kernel_last_decision
+        result_text = str(result or "").lstrip()
+        if result_text.startswith("[NEEDS_CONFIRMATION]"):
+            if tool_name not in self._agent_kernel_pending_confirmation_tools:
+                self._agent_kernel_pending_confirmation_tools.append(tool_name)
+        elif result_text.startswith("Error:"):
+            if tool_name not in self._agent_kernel_tool_failure_tools:
+                self._agent_kernel_tool_failure_tools.append(tool_name)
+        elif tool_name in self._agent_kernel_tool_failure_tools:
+            # 同一工具后续重试成功时，只保留未恢复的失败，避免把成功回合计入拒答率。
+            self._agent_kernel_tool_failure_tools.remove(tool_name)
         receipt = None
         if decision is not None and decision.receipt_required:
             receipt = _write_receipt_from_tool_result(
@@ -7805,6 +7822,16 @@ class AgentExecutor:
             pass
 
         completion_status = _completion_status_from_finish_reason(final_finish_reason)
+        turn_outcome = classify_agent_turn_outcome(
+            completion_status=completion_status,
+            final_text=full_reply,
+            capability_block_reasons=self._agent_kernel_capability_block_reasons,
+            tool_failure_tools=self._agent_kernel_tool_failure_tools,
+            pending_confirmation_tools=self._agent_kernel_pending_confirmation_tools,
+            write_receipts=write_receipts,
+            record_intent_no_tool=record_intent_no_tool,
+            destructive_or_sync_no_tool=destructive_or_sync_no_tool,
+        )
         answer_model = model_name
         selected_model = self._display_model_name_for_id(self._request_model_id) or answer_model
         tool_models = list(self._tool_model_names)
@@ -7924,6 +7951,7 @@ class AgentExecutor:
                 "finish_reason": final_finish_reason,
                 "completion_status": completion_status,
                 "record_intent_no_tool": record_intent_no_tool,
+                "turn_outcome": turn_outcome,
                 "perf": perf,
                 **({"citation_anchor": citation_anchor} if citation_anchor else {}),
                 **({"recipe_candidate": recipe_candidate_meta} if recipe_candidate_meta else {}),
@@ -7958,6 +7986,7 @@ class AgentExecutor:
                 "finish_reason": final_finish_reason,
                 "completion_status": completion_status,
                 "record_intent_no_tool": record_intent_no_tool,
+                "turn_outcome": turn_outcome,
                 "perf": perf,
                 **({"citation_anchor": citation_anchor} if citation_anchor else {}),
                 **({"synthesis_passthrough": synthesis_passthrough_meta} if synthesis_passthrough_meta else {}),
@@ -10364,6 +10393,8 @@ class AgentExecutor:
                     reason=decision.reason,
                 )
             if decision.action == "block" and snapshot.policy_mode == "enforce":
+                if decision.reason not in self._agent_kernel_capability_block_reasons:
+                    self._agent_kernel_capability_block_reasons.append(decision.reason)
                 logger.warning(
                     "[agent_kernel] blocked tool=%s user=%s reason=%s intent=%s/%s/%s",
                     tool_name,
@@ -10375,6 +10406,8 @@ class AgentExecutor:
                 )
                 return blocked_tool_result(decision)
         except Exception as exc:  # noqa: BLE001
+            if "policy_check_failed" not in self._agent_kernel_capability_block_reasons:
+                self._agent_kernel_capability_block_reasons.append("policy_check_failed")
             logger.error(
                 "[agent_kernel] preflight failed tool=%s user=%s error=%s",
                 tool_name,
