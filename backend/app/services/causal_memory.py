@@ -1,16 +1,19 @@
 # -*- coding: utf-8 -*-
-"""因果记忆(RFC 方向二)—— 从"事件 × 指标变化"沉淀可召回的记忆条。
+"""事件观察记忆——只沉淀穿过证据地板的时序观察。
 
 "上次你血糖高是因为聚餐" 这类记忆此前没系统化。本服务复用 personal_outcome 的
 事件前后指标对比(get_event_impact),把"某事件后某指标显著变化"沉淀成 agent 可召回
 的结构化记忆条,供 orchestrator memory 注入 / 对话引用。
 
-诚实:这是**时序相关**记忆(事件先于变化),**非证明因果**;窗口均值对比、带样本,
-evidence_tier=observational,文案明标"相关非因果",不说"因为"。
+诚实:这是**时序相关**记忆,不是因果结论。每一条都必须有事件前对照、
+事件前窗口、事件后窗口的按指标有效样本和波动估计；任一条件缺失即不生成。
 """
 from __future__ import annotations
 
+import math
 from typing import Any, Optional
+
+from app.services.personal_models.intervention_priors import is_clinician_gated_metric
 
 # 指标中文名 + 方向(True=越高越好)。与 metrics.HIGHER_IS_BETTER 同源语义。
 _METRIC_META = {
@@ -21,24 +24,81 @@ _METRIC_META = {
     "steps": ("步数", True),
 }
 
-# 显著变化阈值(相对 %)
+# 观察条目的最低证据地板。达不到时宁可不说，也不能把噪声写成个人规律。
 _MIN_PCT = 0.05
+_MIN_SAMPLES = 5
+_Z_95 = 1.96
+
+
+def _metric_sample_count(impact: dict[str, Any], period: str, metric: str) -> Optional[int]:
+    """读取按指标样本数；不接受旧的整窗行数作为替代。"""
+    counts = impact.get("metric_samples")
+    if not isinstance(counts, dict):
+        return None
+    period_counts = counts.get(period)
+    if not isinstance(period_counts, dict):
+        return None
+    value = period_counts.get(metric)
+    if isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _noise_band(sd: Any, *, before_n: int, after_n: int, baseline_n: int) -> Optional[float]:
+    """Difference-in-differences 的 95% 个体内噪声带。"""
+    if isinstance(sd, bool):
+        return None
+    try:
+        deviation = float(sd)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(deviation) or deviation < 0:
+        return None
+    standard_error = deviation * math.sqrt(
+        1 / after_n + 4 / before_n + 1 / baseline_n
+    )
+    return _Z_95 * standard_error
 
 
 def notes_from_impact(impact: dict[str, Any], min_pct: float = _MIN_PCT) -> list[dict[str, Any]]:
-    """从单个事件的 before/after 指标对比,产出显著变化的记忆条(纯函数,可测)。
-
-    direction=改善/恶化 由指标方向决定;|pct|<阈值 → 跳过;缺值/零基线 → 跳过。
-    """
+    """从完整事件观察产生非因果记忆条；证据不完整时 fail closed。"""
     title = impact.get("title") or "某次干预"
     before = impact.get("before") or {}
     after = impact.get("after") or {}
+    baseline = impact.get("baseline") or {}
+    noise = impact.get("noise") or {}
     notes: list[dict[str, Any]] = []
     for key, (zh, higher_better) in _METRIC_META.items():
-        b, a = before.get(key), after.get(key)
-        if b is None or a is None or b == 0:
+        b, a, control = before.get(key), after.get(key), baseline.get(key)
+        if b is None or a is None or control is None or b == 0:
             continue
-        pct = (a - b) / abs(b)
+        if is_clinician_gated_metric(key):
+            continue
+        before_n = _metric_sample_count(impact, "before", key)
+        after_n = _metric_sample_count(impact, "after", key)
+        baseline_n = _metric_sample_count(impact, "baseline", key)
+        if any(count is None or count < _MIN_SAMPLES for count in (before_n, after_n, baseline_n)):
+            continue
+        band = _noise_band(
+            noise.get(key),
+            before_n=before_n,
+            after_n=after_n,
+            baseline_n=baseline_n,
+        )
+        if band is None:
+            continue
+        try:
+            raw_delta = float(a) - float(b)
+            control_delta = float(b) - float(control)
+        except (TypeError, ValueError):
+            continue
+        net_delta = raw_delta - control_delta
+        if abs(net_delta) <= band:
+            continue
+        pct = net_delta / abs(float(b))
         if abs(pct) < min_pct:
             continue
         toward_good = pct if higher_better else -pct
@@ -49,9 +109,11 @@ def notes_from_impact(impact: dict[str, Any], min_pct: float = _MIN_PCT) -> list
             "after": round(float(a), 1),
             "pct": round(pct, 3),
             "direction": direction,
+            "evidence_tier": "observational",
             "text": (
-                f"「{title}」之后,{zh} 从 {round(float(b),1)} → {round(float(a),1)}"
-                f"({direction};{impact.get('window_days', 30)} 天窗口,相关非因果)"
+                f"「{title}」前后观察窗内,{zh} 从 {round(float(b),1)} → {round(float(a),1)}"
+                f";扣除事件前趋势后呈{direction}"
+                f"({impact.get('window_days', 30)} 天窗口,相关非因果,数据不足以判断因果)"
             ),
         })
     return notes
@@ -86,5 +148,8 @@ def derive_causal_notes(db, user_id: int, max_events: int = 5, window_days: int 
     return {
         "notes": all_notes,
         "evidence_tier": "observational",
-        "claim_boundary": "事件先于指标变化的时序相关,非证明因果;窗口均值对比,不替代医学结论。",
+        "claim_boundary": (
+            "仅展示具有按指标样本、事件前匹配对照和个体内噪声检验的时序观察;"
+            "相关非因果,不替代医学结论。"
+        ),
     }

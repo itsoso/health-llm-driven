@@ -13,6 +13,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, asdict
 from datetime import date, timedelta
+from statistics import stdev
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy import func
@@ -70,6 +71,24 @@ def _avg(values: List[Optional[float]]) -> Optional[float]:
     if not clean:
         return None
     return round(sum(clean) / len(clean), 2)
+
+
+def _std(values: List[Optional[float]]) -> Optional[float]:
+    """Sample standard deviation; fewer than two readings cannot estimate noise."""
+    clean = [float(value) for value in values if value is not None]
+    if len(clean) < 2:
+        return None
+    return round(stdev(clean), 3)
+
+
+def _pooled_std(parts: List[tuple[Optional[float], int]]) -> Optional[float]:
+    """Pool within-window variation without treating a level shift as noise."""
+    usable = [(sd, count) for sd, count in parts if sd is not None and count >= 2]
+    degrees_of_freedom = sum(count - 1 for _, count in usable)
+    if not usable or degrees_of_freedom <= 0:
+        return None
+    variance = sum((count - 1) * float(sd) ** 2 for sd, count in usable)
+    return round((variance / degrees_of_freedom) ** 0.5, 3)
 
 
 # ---------------------------------------------------------------------------
@@ -507,23 +526,46 @@ class PersonalOutcomeService:
         if not event_date:
             return {"error": "event_not_found"}
 
+        baseline_start = event_date - timedelta(days=window_days * 2)
+        baseline_end = event_date - timedelta(days=window_days + 1)
         before_start = event_date - timedelta(days=window_days)
         before_end = event_date - timedelta(days=1)
         after_start = event_date
         after_end = event_date + timedelta(days=window_days)
 
-        def _window_avg(start: date, end: date) -> Dict[str, Optional[float]]:
-            # 多源按日合并 → samples=真实天数, 各指标均值不被多设备重复拉偏
+        metric_columns = (
+            ("hrv", "hrv"),
+            ("rhr", "resting_heart_rate"),
+            ("sleep_score", "sleep_score"),
+            ("deep_sleep_min", "deep_sleep_duration"),
+            ("steps", "steps"),
+        )
+
+        def _window_stats(start: date, end: date) -> Dict[str, Any]:
+            # 多源按日合并；均值保留旧 UI 合约，样本数按指标另行返回给证据层。
             from app.services.garmin_daily_merged import merged_daily_rows
             rows = merged_daily_rows(db, user_id, since=start, until=end)
-            return {
-                "hrv": _avg([r.hrv for r in rows]),
-                "rhr": _avg([r.resting_heart_rate for r in rows]),
-                "sleep_score": _avg([r.sleep_score for r in rows]),
-                "deep_sleep_min": _avg([r.deep_sleep_duration for r in rows]),
-                "steps": _avg([r.steps for r in rows]),
-                "samples": len(rows),
-            }
+            means: Dict[str, Optional[float]] = {"samples": len(rows)}
+            counts: Dict[str, int] = {}
+            deviations: Dict[str, Optional[float]] = {}
+            for key, column in metric_columns:
+                values = [getattr(row, column) for row in rows]
+                means[key] = _avg(values)
+                counts[key] = len([value for value in values if value is not None])
+                deviations[key] = _std(values)
+            return {"means": means, "counts": counts, "deviations": deviations}
+
+        baseline_stats = _window_stats(baseline_start, baseline_end)
+        before_stats = _window_stats(before_start, before_end)
+        after_stats = _window_stats(after_start, after_end)
+        noise = {
+            key: _pooled_std([
+                (baseline_stats["deviations"][key], baseline_stats["counts"][key]),
+                (before_stats["deviations"][key], before_stats["counts"][key]),
+                (after_stats["deviations"][key], after_stats["counts"][key]),
+            ])
+            for key, _ in metric_columns
+        }
 
         return {
             "event_id": event_id,
@@ -531,6 +573,13 @@ class PersonalOutcomeService:
             "detail": detail,
             "event_date": event_date.isoformat(),
             "window_days": window_days,
-            "before": _window_avg(before_start, before_end),
-            "after": _window_avg(after_start, after_end),
+            "baseline": baseline_stats["means"],
+            "before": before_stats["means"],
+            "after": after_stats["means"],
+            "metric_samples": {
+                "baseline": baseline_stats["counts"],
+                "before": before_stats["counts"],
+                "after": after_stats["counts"],
+            },
+            "noise": noise,
         }

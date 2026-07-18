@@ -15,12 +15,12 @@ router = APIRouter(prefix="/personal-outcome", tags=["personal-outcome"])
 _service = PersonalOutcomeService()
 
 
-@router.get("/me/causal-notes", summary="因果记忆:事件×指标变化(时序相关,非因果)")
+@router.get("/me/causal-notes", summary="事件观察:指标变化(时序相关,非因果)")
 def get_my_causal_notes(
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ):
-    """从近期干预事件 × 指标前后对比,沉淀可召回的记忆条(observational,相关非因果)。"""
+    """仅在证据完整时返回事件前后观察，不做因果归因。"""
     from app.services.causal_memory import derive_causal_notes
 
     return derive_causal_notes(db, current_user.id)
