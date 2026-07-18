@@ -12,9 +12,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Optional
-
-from fastapi import APIRouter, BackgroundTasks, Depends, Query
+from fastapi import APIRouter, BackgroundTasks, Depends
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
@@ -23,6 +21,7 @@ from app.database import get_db
 from app.models.action_card import ActionCard
 from app.models.user import User
 from app.models.user_profile import UserProfile
+from app.services.outcome_safety import user_facing_efficacy_fields
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -35,6 +34,7 @@ def _week_start_utc(now: datetime) -> datetime:
 
 
 def _card_to_dict(c: ActionCard) -> dict:
+    efficacy_fields = user_facing_efficacy_fields(c)
     return {
         "id": c.id,
         "title": c.title,
@@ -45,7 +45,8 @@ def _card_to_dict(c: ActionCard) -> dict:
         "actual_value": getattr(c, "actual_value", None),
         "verification_days": c.verification_days,
         "evidence_level": getattr(c, "evidence_level", None),
-        "outcome": getattr(c, "outcome", None),
+        "outcome": efficacy_fields["outcome"],
+        "score_status": efficacy_fields["score_status"],
         "status": c.status,
         "user_decision": getattr(c, "user_decision", None),
         "created_at": c.created_at.isoformat() if c.created_at else None,
@@ -83,7 +84,10 @@ def get_weekly_briefing(
 
     accepted = sum(1 for c in cards if (c.user_decision or "") == "accepted")
     completed = sum(1 for c in cards if c.completed_at is not None)
-    improved = sum(1 for c in cards if (c.outcome or "") == "improved")
+    improved = sum(
+        1 for c in cards
+        if user_facing_efficacy_fields(c)["outcome"] == "improved"
+    )
 
     last_run_at = cards[0].created_at if cards else None
 

@@ -254,6 +254,22 @@ def test_critical_severity_card_not_in_items(db, auth_user_and_headers):
         "critical severity 卡不应渲染成 outcome 庆祝项"
 
 
+def test_clinician_gated_legacy_card_not_rendered_as_outcome_trophy(db, auth_user_and_headers):
+    from app.models.action_card import ActionCard
+
+    user, _ = auth_user_and_headers
+    db.add(ActionCard(
+        user_id=user.id, title="降低 LDL", content="x", metric_key="ldl",
+        baseline_value="4.2", actual_value="2.8", outcome="improved",
+        graded_at=datetime.now(timezone.utc),
+    ))
+    db.commit()
+
+    spine = build_today_spine(db, user.id)
+
+    assert all(it["kind"] != "outcome" for it in spine["items"])
+
+
 def test_api_shape(client, auth_user_and_headers):
     _, h = auth_user_and_headers
     r = client.get("/api/v1/timeline/today", headers=h)

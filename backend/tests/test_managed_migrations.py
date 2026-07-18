@@ -11,10 +11,12 @@ def test_clinician_gated_outcome_migration_has_managed_dialect_pair():
     migrations_dir = Path(__file__).resolve().parents[1] / "migrations" / "managed"
     postgres = migrations_dir / "20260718_130000_neutralize_clinician_gated_outcomes.postgresql.sql"
     sqlite = migrations_dir / "20260718_130000_neutralize_clinician_gated_outcomes.sqlite.sql"
+    alias_postgres = migrations_dir / "20260718_140000_backfill_clinician_gated_outcome_aliases.postgresql.sql"
+    alias_sqlite = migrations_dir / "20260718_140000_backfill_clinician_gated_outcome_aliases.sqlite.sql"
 
     assert postgres.exists()
     assert sqlite.exists()
-    for migration in (postgres, sqlite):
+    for migration in (postgres, sqlite, alias_postgres, alias_sqlite):
         sql = migration.read_text(encoding="utf-8")
         assert "UPDATE memory_facts" in sql
         assert "UPDATE action_cards" in sql
@@ -23,9 +25,11 @@ def test_clinician_gated_outcome_migration_has_managed_dialect_pair():
 def test_clinician_gated_outcome_sqlite_migration_neutralizes_legacy_scores(tmp_path: Path):
     migrations_dir = Path(__file__).resolve().parents[1] / "migrations" / "managed"
     migration = migrations_dir / "20260718_130000_neutralize_clinician_gated_outcomes.sqlite.sql"
+    alias_migration = migrations_dir / "20260718_140000_backfill_clinician_gated_outcome_aliases.sqlite.sql"
     isolated = tmp_path / "managed"
     isolated.mkdir()
     (isolated / migration.name).write_text(migration.read_text(encoding="utf-8"), encoding="utf-8")
+    (isolated / alias_migration.name).write_text(alias_migration.read_text(encoding="utf-8"), encoding="utf-8")
 
     engine = create_engine("sqlite:///:memory:")
     with engine.begin() as conn:
@@ -48,6 +52,10 @@ def test_clinician_gated_outcome_sqlite_migration_neutralizes_legacy_scores(tmp_
             "VALUES (2, 'responds_to', 0.9, '[]', '用户 TSH', '甲状腺调理建议')"
         ))
         conn.execute(text(
+            "INSERT INTO memory_facts (id, predicate, confidence, tags, subject, object_value) "
+            "VALUES (3, 'responds_to', 0.9, '[]', '用户 LP-A', '降脂建议')"
+        ))
+        conn.execute(text(
             "INSERT INTO action_cards (id, metric_key, accuracy_score, outcome, effect_size, grading_notes) "
             "VALUES (1, 'ldl', 95, 'improved', 0.8, '旧评分'), "
             "(2, 'hrv', 80, 'improved', 0.5, '恢复评分')"
@@ -55,7 +63,8 @@ def test_clinician_gated_outcome_sqlite_migration_neutralizes_legacy_scores(tmp_
 
     result = apply_managed_migrations(engine, isolated)
     assert [item.id for item in result.applied] == [
-        "20260718_130000_neutralize_clinician_gated_outcomes"
+        "20260718_130000_neutralize_clinician_gated_outcomes",
+        "20260718_140000_backfill_clinician_gated_outcome_aliases",
     ]
 
     with engine.connect() as conn:
@@ -64,6 +73,9 @@ def test_clinician_gated_outcome_sqlite_migration_neutralizes_legacy_scores(tmp_
         )).one()
         tsh_fact = conn.execute(text(
             "SELECT predicate, confidence, tags FROM memory_facts WHERE id = 2"
+        )).one()
+        lpa_fact = conn.execute(text(
+            "SELECT predicate, confidence, tags FROM memory_facts WHERE id = 3"
         )).one()
         ldl_card = conn.execute(text(
             "SELECT accuracy_score, outcome, effect_size, grading_notes FROM action_cards WHERE id = 1"
@@ -78,6 +90,9 @@ def test_clinician_gated_outcome_sqlite_migration_neutralizes_legacy_scores(tmp_
     assert tsh_fact.predicate == "observed_change"
     assert tsh_fact.confidence == 0.4
     assert "clinician_review" in tsh_fact.tags
+    assert lpa_fact.predicate == "observed_change"
+    assert lpa_fact.confidence == 0.4
+    assert "clinician_review" in lpa_fact.tags
     assert ldl_card.accuracy_score is None
     assert ldl_card.outcome == "inconclusive"
     assert ldl_card.effect_size is None

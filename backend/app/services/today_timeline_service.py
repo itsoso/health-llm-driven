@@ -19,7 +19,6 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy.orm import Session
 
 from app.services import agenda_service
-from app.services.agenda_service import _TW_ORDER  # 复用议程时间窗排序
 from app.services.caldav_sync import today_busy_blocks
 from app.services.events_timeline_service import build_timeline
 from app.services.today_spine_meds import (
@@ -219,6 +218,9 @@ def _outcome_items(db: Session, user_id: int) -> List[Dict[str, Any]]:
             .limit(5)
             .all()
         )
+        from app.services.outcome_safety import is_efficacy_score_eligible_card
+
+        rows = [card for card in rows if is_efficacy_score_eligible_card(card)]
     except Exception as e:  # noqa: BLE001 — 增强项,失败降级
         logger.warning("[today_timeline] outcome attribution load failed for user=%s: %s", user_id, e)
         return []

@@ -18,23 +18,12 @@ WHERE predicate IN ('responds_to', 'does_not_respond_to', 'partially_responds_to
       lower(COALESCE(subject, '') || ' ' || COALESCE(object_value, '') || ' ' || COALESCE(tags, '')) LIKE '%ldl%'
       OR lower(COALESCE(subject, '') || ' ' || COALESCE(object_value, '') || ' ' || COALESCE(tags, '')) LIKE '%apo%'
       OR lower(COALESCE(subject, '') || ' ' || COALESCE(object_value, '') || ' ' || COALESCE(tags, '')) LIKE '%hba1c%'
-      OR lower(COALESCE(subject, '') || ' ' || COALESCE(object_value, '') || ' ' || COALESCE(tags, '')) LIKE '%a1c%'
-      OR lower(COALESCE(subject, '') || ' ' || COALESCE(object_value, '') || ' ' || COALESCE(tags, '')) LIKE '%tsh%'
-      OR lower(COALESCE(subject, '') || ' ' || COALESCE(object_value, '') || ' ' || COALESCE(tags, '')) LIKE '%ft4%'
-      OR lower(COALESCE(subject, '') || ' ' || COALESCE(object_value, '') || ' ' || COALESCE(tags, '')) LIKE '%testosterone%'
-      OR lower(COALESCE(subject, '') || ' ' || COALESCE(object_value, '') || ' ' || COALESCE(tags, '')) LIKE '%cortisol%'
-      OR lower(COALESCE(subject, '') || ' ' || COALESCE(object_value, '') || ' ' || COALESCE(tags, '')) LIKE '%blood glucose%'
-      OR lower(COALESCE(subject, '') || ' ' || COALESCE(object_value, '') || ' ' || COALESCE(tags, '')) LIKE '%systolic%'
-      OR lower(COALESCE(subject, '') || ' ' || COALESCE(object_value, '') || ' ' || COALESCE(tags, '')) LIKE '%diastolic%'
       OR lower(COALESCE(subject, '') || ' ' || COALESCE(object_value, '') || ' ' || COALESCE(tags, '')) LIKE '%blood pressure%'
       OR COALESCE(subject, '') || ' ' || COALESCE(object_value, '') || ' ' || COALESCE(tags, '') LIKE '%血压%'
       OR COALESCE(subject, '') || ' ' || COALESCE(object_value, '') || ' ' || COALESCE(tags, '') LIKE '%血糖%'
       OR COALESCE(subject, '') || ' ' || COALESCE(object_value, '') || ' ' || COALESCE(tags, '') LIKE '%胆固醇%'
       OR COALESCE(subject, '') || ' ' || COALESCE(object_value, '') || ' ' || COALESCE(tags, '') LIKE '%转氨酶%'
       OR COALESCE(subject, '') || ' ' || COALESCE(object_value, '') || ' ' || COALESCE(tags, '') LIKE '%尿酸%'
-      OR COALESCE(subject, '') || ' ' || COALESCE(object_value, '') || ' ' || COALESCE(tags, '') LIKE '%甲状腺%'
-      OR COALESCE(subject, '') || ' ' || COALESCE(object_value, '') || ' ' || COALESCE(tags, '') LIKE '%睾酮%'
-      OR COALESCE(subject, '') || ' ' || COALESCE(object_value, '') || ' ' || COALESCE(tags, '') LIKE '%皮质醇%'
   );
 
 UPDATE action_cards

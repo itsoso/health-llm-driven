@@ -822,11 +822,14 @@ def get_my_progress(
         ActionCard.user_decision == "accepted",
         ActionCard.completed_at.isnot(None),
     ).count()
-    graded = base.filter(ActionCard.graded_at.isnot(None)).count()
-    improved = base.filter(ActionCard.outcome == "improved").count()
-    unchanged = base.filter(ActionCard.outcome == "unchanged").count()
-    worsened = base.filter(ActionCard.outcome == "worsened").count()
-    inconclusive = base.filter(ActionCard.outcome == "inconclusive").count()
+    graded_cards = base.filter(ActionCard.graded_at.isnot(None)).all()
+    efficacy_cards = [card for card in graded_cards if is_efficacy_score_eligible_card(card)]
+    outcomes = [user_facing_efficacy_fields(card)["outcome"] for card in efficacy_cards]
+    graded = len(efficacy_cards)
+    improved = sum(outcome == "improved" for outcome in outcomes)
+    unchanged = sum(outcome == "unchanged" for outcome in outcomes)
+    worsened = sum(outcome == "worsened" for outcome in outcomes)
+    inconclusive = sum(outcome == "inconclusive" for outcome in outcomes)
 
     decided = accepted + declined
     accept_rate = round(accepted / decided, 4) if decided > 0 else None

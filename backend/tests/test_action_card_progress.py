@@ -127,3 +127,20 @@ def test_window_excludes_old(client, db):
 def test_progress_requires_auth(client):
     resp = client.get("/api/v1/action-cards/me/progress")
     assert resp.status_code in (401, 403)
+
+
+def test_progress_excludes_clinician_gated_legacy_outcome_from_efficacy_rates(client, db):
+    user, headers = _make_user(db, "clinician_progress")
+    now = datetime.now(timezone.utc)
+    _add_card(
+        db, user.id, title="降低 LDL", metric_key="ldl", user_decision="accepted",
+        completed_at=now - timedelta(days=1), graded_at=now,
+        outcome="improved", accuracy_score=95,
+    )
+
+    body = client.get("/api/v1/action-cards/me/progress", headers=headers).json()
+
+    assert body["stats"]["graded"] == 0
+    assert body["stats"]["improved"] == 0
+    assert body["stats"]["improvement_rate"] is None
+    assert body["closed_cards"][0]["outcome"] == "inconclusive"
