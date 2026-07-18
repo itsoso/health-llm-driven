@@ -159,6 +159,13 @@ rebuilt and restarted through `deploy.sh -f` from the same revision. After the
 restart, `https://health.executor.life/` returned `200`; the public health
 endpoint remained healthy with database, Redis, and Celery connected.
 
+iOS TestFlight build `1.3.1 (232)` was built from `379322f6a` through the
+production EAS profile and submitted to App Store Connect on 2026-07-18. EAS
+confirmed the submission finished without an upload error. The release input
+passed the App Store pack preflight, TypeScript validation, and `260` mobile
+test suites (`1,895` passed, `1` skipped). Apple processing remains external
+to this deployment gate before the build becomes selectable in TestFlight.
+
 Domain verification on 2026-07-18: `health.executor.com` has no public A record
 via Cloudflare DNS; the local resolver returns reserved benchmark address
 `198.18.13.99` and TLS fails. It cannot be used as a Model Studio-fetchable
