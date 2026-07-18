@@ -55,6 +55,7 @@ Integrate the unmerged `claude/*` source branches into `main` individually. This
 - Generated system-map was refreshed and `scripts/check_doc_drift.py` passed.
 - `d9d24902d` 的远端 CI 在提交后暴露了四个集成回归：dossier 引用了未提交的用户本地文件；语义分析句中的“记录”名词被误判为写入；进程内血压读路径没有带齐 API 的展示/安全字段；工具决策轮复用了过长的 fast-answer prompt。
 - 修复后，本地同名 Agent CI 分片重跑：`agent-a-h` `471 passed`，`agent-i-z` `147 passed`；失败用例聚合回归 `89 passed`。
+- 高风险 LLM 运行时改动的实模型证据（2026-07-18）：`DATABASE_URL=sqlite:///:memory: backend/venv/bin/python scripts/harness_llm_regression_gate.py --include-live-llm --json` 返回通过；`invariants` `12/12`、`health_agent_core` `50/50`、真实 `orchestrator` `5/5`，平均分 `0.96`，相对 `main` 无回归。评估期间 usage telemetry 因临时 SQLite 未建日志表而按既有旁路策略记录警告，模型调用、评分与 Gate 结果均成功。
 - **裁决**: PENDING_REMOTE_CI — 本地 Gate 已通过，等待本修复提交的远端 CI 重跑。
 
 ## G4 · 安全闸
