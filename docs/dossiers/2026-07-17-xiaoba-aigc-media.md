@@ -153,6 +153,12 @@ The public owner-scoped AIGC job route returns `401` without authentication,
 and the production process verifies the independent credential, non-Token Plan
 identity, validated Model Studio base URL, and `.life` source base URL.
 
+The client surfaces are also live: the Mobile OTA for runtime `1.3.1` was
+published to the production channel from `2deb17b47`, and the Web frontend was
+rebuilt and restarted through `deploy.sh -f` from the same revision. After the
+restart, `https://health.executor.life/` returned `200`; the public health
+endpoint remained healthy with database, Redis, and Celery connected.
+
 Domain verification on 2026-07-18: `health.executor.com` has no public A record
 via Cloudflare DNS; the local resolver returns reserved benchmark address
 `198.18.13.99` and TLS fails. It cannot be used as a Model Studio-fetchable
@@ -171,8 +177,8 @@ after its prior URL expires. This Gate deliberately requires a real user card
 click because a synthetic backend request would bypass the product's explicit
 paid-generation consent boundary.
 
-## Open Configuration Required
+## Configuration Record
 
-Production must set a Model Studio pay-as-you-go key with Wan access. A Token
-Plan key is intentionally rejected for this use. No secret is stored in source
-or copied into this dossier.
+Production uses an existing independent Model Studio pay-as-you-go credential
+with Wan access. A Token Plan key is intentionally rejected for this use. No
+secret is stored in source or copied into this dossier.
