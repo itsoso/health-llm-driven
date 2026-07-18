@@ -7,6 +7,7 @@ from unittest.mock import patch, AsyncMock
 import pytest
 
 from app.models.action_card import ActionCard
+from app.models.notification import NotificationLog, NotificationStatus
 from app.models.user import User
 from app.services.notification.push_service import PushService
 from app.tasks.notifications import escalate_critical_unresolved
@@ -187,12 +188,8 @@ def test_dedup_drop_does_not_burn_escalation_slot(db):
     assert result["escalated"] == 0, "用户没收到推送, 不能报 escalated"
 
 
-def test_quiet_hours_delay_counts_as_escalation(db):
-    """delayed_for_quiet_hours = 已入延迟队列, 稍后必达 → 算一次 escalation.
-
-    与 dedup 不同: 这条推送已写 status='delayed' 的 log,
-    flush_delayed_pushes 会在 morning floor 后真发出去。
-    """
+def test_quiet_hours_delay_waits_for_actual_delivery_before_counting(db):
+    """仅入延迟队列不能提前消耗升级次数，flush 真正发送成功后才记账。"""
     user = _make_user(db, "esc_delayed")
     now = datetime.now(timezone.utc)
     card = _make_critical_card(
@@ -209,9 +206,158 @@ def test_quiet_hours_delay_counts_as_escalation(db):
 
     db.refresh(card)
     meta = card.latest_assessment or {}
-    assert meta.get("escalation_count") == 1
-    assert meta.get("last_escalated_at") is not None
-    assert result["escalated"] == 1
+    assert meta.get("escalation_count", 0) == 0
+    assert datetime.fromisoformat(meta["escalation_pending_delivery_at"]).tzinfo is not None
+    assert result["escalated"] == 0
+    assert result["pending"] == 1
+
+
+def test_sent_delayed_escalation_is_accounted_once_after_flush(db):
+    """延迟推送状态变为 SENT 后，才为对应卡片记一次升级，重复 flush 不得重复记账。"""
+    from app.tasks.notifications_wscla import _account_sent_delayed_escalations
+
+    user = _make_user(db, "esc_delayed_sent")
+    now = datetime.now(timezone.utc)
+    card = _make_critical_card(
+        db, user.id, push_sent_at=now - timedelta(hours=25),
+        latest_assessment={
+            "escalation_count": 0,
+            "escalation_pending_delivery_at": (now - timedelta(minutes=5)).isoformat(),
+            "escalation_pending_expected_count": 1,
+        },
+    )
+    log = NotificationLog(
+        user_id=user.id,
+        notification_type="health_alert",
+        channel="ios_apns",
+        title="critical 告警",
+        content="x",
+        status=NotificationStatus.SENT.value,
+        sent_at=now,
+        data={
+            "rule_id": card.source_id,
+            "escalation_action_card_id": card.id,
+            "escalation_expected_count": 1,
+        },
+    )
+    db.add(log)
+    db.commit()
+
+    assert _account_sent_delayed_escalations(db, now) == 1
+    db.refresh(card)
+    db.refresh(log)
+    assert (card.latest_assessment or {}).get("escalation_count") == 1
+    assert (card.latest_assessment or {}).get("last_escalated_at") == now.isoformat()
+    assert "escalation_pending_delivery_at" not in (card.latest_assessment or {})
+    assert (log.data or {}).get("escalation_delivery_accounted") is True
+
+    assert _account_sent_delayed_escalations(db, now) == 0
+    db.refresh(card)
+    assert (card.latest_assessment or {}).get("escalation_count") == 1
+
+
+def test_sent_delayed_escalation_never_accounts_another_users_card(db):
+    """日志中的 card id 必须同时属于该推送用户，不能跨用户记账。"""
+    from app.tasks.notifications_wscla import _account_sent_delayed_escalations
+
+    sender = _make_user(db, "esc_sender")
+    owner = _make_user(db, "esc_owner")
+    now = datetime.now(timezone.utc)
+    owner_card = _make_critical_card(
+        db, owner.id, push_sent_at=now - timedelta(hours=25),
+    )
+    log = NotificationLog(
+        user_id=sender.id,
+        notification_type="health_alert",
+        channel="ios_apns",
+        title="critical 告警",
+        content="x",
+        status=NotificationStatus.SENT.value,
+        sent_at=now,
+        data={
+            "rule_id": owner_card.source_id,
+            "escalation_action_card_id": owner_card.id,
+            "escalation_expected_count": 1,
+        },
+    )
+    db.add(log)
+    db.commit()
+
+    assert _account_sent_delayed_escalations(db, now) == 0
+    db.refresh(owner_card)
+    db.refresh(log)
+    assert (owner_card.latest_assessment or {}).get("escalation_count", 0) == 0
+    assert (log.data or {}).get("escalation_delivery_accounted") is True
+
+
+def test_sent_delayed_escalation_query_locks_rows_on_postgres(db):
+    """并发 flush 必须以 SKIP LOCKED 串行化同一条 SENT escalation log 的记账。"""
+    from sqlalchemy.dialects import postgresql
+
+    from app.tasks.notifications_wscla import _sent_escalation_logs_for_update
+
+    statement = _sent_escalation_logs_for_update(db).statement
+    sql = str(statement.compile(dialect=postgresql.dialect()))
+    assert "FOR UPDATE SKIP LOCKED" in sql
+
+
+def test_permanently_undelivered_escalation_stops_after_bounded_retries(db):
+    """无渠道等永久失败只退避有限次，不能每小时无限重试。"""
+    from app.tasks import notifications_wscla
+
+    user = _make_user(db, "esc_bounded")
+    base = datetime.now(timezone.utc).replace(microsecond=0)
+    card = _make_critical_card(
+        db, user.id, push_sent_at=base - timedelta(hours=25),
+    )
+    fake_send = AsyncMock(return_value={"success": False, "reason": "no_channels"})
+
+    with patch.object(PushService, "send_notification", new=fake_send), \
+            patch.object(
+                notifications_wscla,
+                "get_china_now",
+                side_effect=[base, base + timedelta(hours=1), base + timedelta(hours=3), base + timedelta(hours=7)],
+            ):
+        first = escalate_critical_unresolved()
+        second = escalate_critical_unresolved()
+        third = escalate_critical_unresolved()
+        fourth = escalate_critical_unresolved()
+
+    assert [first["undelivered"], second["undelivered"], third["undelivered"]] == [1, 1, 1]
+    assert fourth["undelivered"] == 0
+    assert fake_send.await_count == 3
+    db.refresh(card)
+    meta = card.latest_assessment or {}
+    assert meta.get("escalation_delivery_blocked_at") == (base + timedelta(hours=3)).isoformat()
+
+
+def test_dedup_retry_waits_for_critical_dedup_window(db):
+    """dedup 后不按小时空转，等当前 critical 的 3h 去重窗口滑开再试。"""
+    from app.tasks import notifications_wscla
+
+    user = _make_user(db, "esc_dedup_backoff")
+    base = datetime.now(timezone.utc).replace(microsecond=0)
+    _make_critical_card(db, user.id, push_sent_at=base - timedelta(hours=25))
+    fake_send = AsyncMock(side_effect=[
+        {"success": False, "reason": "dedup"},
+        {"success": True},
+    ])
+
+    with patch.object(PushService, "send_notification", new=fake_send), \
+            patch.object(
+                notifications_wscla,
+                "get_china_now",
+                side_effect=[base, base + timedelta(hours=2), base + timedelta(hours=3)],
+            ):
+        first = escalate_critical_unresolved()
+        second = escalate_critical_unresolved()
+        third = escalate_critical_unresolved()
+
+    assert first["undelivered"] == 1
+    assert second["undelivered"] == 0
+    assert second["skipped"] == 1
+    assert third["escalated"] == 1
+    assert fake_send.await_count == 2
 
 
 def test_gatekeeper_drop_does_not_burn_escalation_slot(db):

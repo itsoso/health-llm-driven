@@ -13,27 +13,126 @@ notifications.py 里的同名任务 wrapper 保留 'app.tasks.notifications.X' t
 import logging
 from datetime import datetime, timedelta
 
-from sqlalchemy import distinct
+from sqlalchemy import Text, cast, distinct
 
 from app.database import SessionLocal
 from app.models.action_card import ActionCard
 from app.models.daily_health import GarminData
+from app.models.notification import NotificationLog, NotificationStatus
 from app.models.user import User
 from app.services.notification.push_privacy import is_sensitive_alert
-from app.services.notification.push_service import PushService
+from app.services.notification.push_service import CRITICAL_DEDUP_WINDOW_HOURS, PushService
 from app.services.weekly_advisor import generate_weekly_advice
 from app.utils.async_helpers import run_async
 from app.utils.timezone import get_china_now
 
 logger = logging.getLogger(__name__)
 
-# 未 success 但仍算"这次升级已交付"的 reason: 推送已写 status='delayed' 的 log,
-# flush_delayed_pushes 会在 morning floor 后真发出去 → 消耗名额是对的.
-# 其余 reason (dedup / gatekeeper_budget / advice_guard_* / 无渠道 ...) 都是
-# 用户什么都没收到 → 不能消耗 escalation 名额.
-# 这是本模块唯一硬编码的 push_service reason, 其余一律按"未送达"处理, 避免
-# 在两处维护同一份 reason 表而漂移.
-_DELIVERED_LATER_REASONS = {"delayed_for_quiet_hours"}
+MAX_UNDELIVERED_ESCALATION_RETRIES = 3
+PENDING_DELIVERY_GRACE_HOURS = 1
+
+
+def _parse_timestamp(value: object) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _apply_undelivered_retry(meta: dict, now: datetime, reason: str | None) -> bool:
+    """Record one undelivered escalation and return whether the retry budget is exhausted."""
+    failures = max(0, int(meta.get("escalation_delivery_failures") or 0)) + 1
+    meta["escalation_delivery_failures"] = failures
+    meta["last_escalation_delivery_failure_at"] = now.isoformat()
+    meta["last_escalation_delivery_failure_reason"] = reason or "unknown"
+    meta.pop("escalation_pending_delivery_at", None)
+    meta.pop("escalation_pending_expected_count", None)
+    meta.pop("escalation_pending_until", None)
+
+    if failures >= MAX_UNDELIVERED_ESCALATION_RETRIES:
+        meta["escalation_delivery_blocked_at"] = now.isoformat()
+        meta.pop("escalation_retry_after", None)
+        return True
+
+    # A critical dedup may only clear after the dedicated 3h window. Other failures
+    # retry with bounded exponential backoff: 1h, then 2h, then stop.
+    retry_hours = (
+        CRITICAL_DEDUP_WINDOW_HOURS
+        if reason == "dedup"
+        else 2 ** (failures - 1)
+    )
+    meta["escalation_retry_after"] = (now + timedelta(hours=retry_hours)).isoformat()
+    return False
+
+
+def _sent_escalation_logs_for_update(db):
+    """Return only sent escalation logs and lock them for one flush worker.
+
+    A blanket lock over all sent notification logs would turn a five-minute
+    maintenance task into a global notification bottleneck. JSON is stored as
+    text in SQLite tests and JSONB in PostgreSQL, so casting to text keeps the
+    marker filter portable while the Python guard remains the final authority.
+    """
+    return db.query(NotificationLog).filter(
+        NotificationLog.status == NotificationStatus.SENT.value,
+        NotificationLog.notification_type == "health_alert",
+        cast(NotificationLog.data, Text).like('%"escalation_action_card_id"%'),
+    ).with_for_update(skip_locked=True)
+
+
+def _account_sent_delayed_escalations(db, now: datetime) -> int:
+    """Commit an escalation slot only after a delayed NotificationLog becomes SENT.
+
+    The delayed queue only promises a future attempt. A transport or channel failure
+    during flush must not silently consume a user's critical-escalation budget.
+    """
+    accounted = 0
+    logs = _sent_escalation_logs_for_update(db).all()
+    for log in logs:
+        data = dict(log.data or {})
+        if data.get("escalation_delivery_accounted"):
+            continue
+        card_id = data.get("escalation_action_card_id")
+        expected_count = data.get("escalation_expected_count")
+        if not isinstance(card_id, int) or not isinstance(expected_count, int):
+            continue
+
+        card = db.query(ActionCard).filter(
+            ActionCard.id == card_id,
+            ActionCard.user_id == log.user_id,
+        ).one_or_none()
+        if card and card.status == "active" and card.user_decision is None:
+            meta = dict(card.latest_assessment or {})
+            current_count = max(0, int(meta.get("escalation_count") or 0))
+            if expected_count > current_count:
+                sent_at = log.sent_at
+                # SQLite test storage may round-trip a timezone-aware datetime as
+                # naive, while PostgreSQL preserves the offset. Metadata must remain
+                # timezone-aware on both paths.
+                if sent_at is None or sent_at.tzinfo is None:
+                    sent_at = now
+                meta["escalation_count"] = expected_count
+                meta["last_escalated_at"] = sent_at.isoformat()
+                meta["escalation_delivery_failures"] = 0
+                meta.pop("escalation_pending_delivery_at", None)
+                meta.pop("escalation_pending_expected_count", None)
+                meta.pop("escalation_pending_until", None)
+                meta.pop("escalation_retry_after", None)
+                card.latest_assessment = meta
+                accounted += 1
+
+        # Mark even if the card was resolved or already advanced: replaying a SENT log
+        # must never increment an escalation budget twice.
+        data["escalation_delivery_accounted"] = True
+        log.data = data
+
+    if accounted or any(
+        (log.data or {}).get("escalation_delivery_accounted") for log in logs
+    ):
+        db.commit()
+    return accounted
 
 
 def flush_delayed_pushes_impl():
@@ -47,6 +146,9 @@ def flush_delayed_pushes_impl():
         push_service = PushService(db)
         try:
             result = run_async(push_service.flush_delayed_pushes())
+            result["escalation_accounted"] = _account_sent_delayed_escalations(
+                db, get_china_now()
+            )
             if result.get("flushed", 0) > 0:
                 logger.info(f"[FlushDelayedPushes] {result}")
             return result
@@ -81,11 +183,43 @@ def escalate_critical_unresolved_impl():
         escalated = 0
         skipped = 0
         undelivered = 0
+        pending = 0
+        delivery_blocked = 0
 
         for card in cards:
             meta = dict(card.latest_assessment or {})
             escalation_count = meta.get("escalation_count", 0)
             last_escalated_at = meta.get("last_escalated_at")
+
+            if meta.get("escalation_delivery_blocked_at"):
+                skipped += 1
+                delivery_blocked += 1
+                continue
+
+            retry_after = _parse_timestamp(meta.get("escalation_retry_after"))
+            if retry_after and now < retry_after.replace(tzinfo=now.tzinfo):
+                skipped += 1
+                continue
+
+            pending_until = _parse_timestamp(meta.get("escalation_pending_until"))
+            if pending_until:
+                grace_until = pending_until + timedelta(hours=PENDING_DELIVERY_GRACE_HOURS)
+                if now <= grace_until.replace(tzinfo=now.tzinfo):
+                    skipped += 1
+                    continue
+                blocked = _apply_undelivered_retry(
+                    meta, now, "delayed_delivery_unconfirmed"
+                )
+                card.latest_assessment = meta
+                db.commit()
+                undelivered += 1
+                delivery_blocked += int(blocked)
+                logger.warning(
+                    "[escalate_critical] card=%s delayed escalation was not confirmed "
+                    "by flush → retry state recorded",
+                    card.id,
+                )
+                continue
 
             if escalation_count >= MAX_ESCALATIONS:
                 skipped += 1
@@ -121,29 +255,42 @@ def escalate_critical_unresolved_impl():
                         "action_card_id": card.id,
                         "escalation": True,
                         "escalation_count": escalation_count + 1,
+                        "escalation_action_card_id": card.id,
+                        "escalation_expected_count": escalation_count + 1,
                     },
                 )) or {}
 
-                # MAX_ESCALATIONS 是"用户真收到 N 次"的预算, 不是"尝试 N 次".
-                # 推送被丢弃却 +1 → 名额被静默烧光, 用户再也收不到升级 (under-alarm).
-                #
-                # 未送达时故意不 stamp last_escalated_at: 下个整点 tick 会再试,
-                # 直到真发出去。dedup 是最常见的丢弃原因 (MIN_GAP_HOURS=12 <
-                # send_notification 默认 dedup 24h → 第 2 次升级必然撞窗),
-                # 每小时重试能在 dedup 窗口一滑开就送达; 若在这里 stamp/退避,
-                # critical 升级会被推迟整整一个 MIN_GAP → 又变成 under-alarm.
                 reason = result.get("reason")
-                if not (result.get("success") or reason in _DELIVERED_LATER_REASONS):
+                if reason == "delayed_for_quiet_hours":
+                    scheduled_at = _parse_timestamp(result.get("scheduled_at")) or now
+                    meta["escalation_pending_delivery_at"] = now.isoformat()
+                    meta["escalation_pending_expected_count"] = escalation_count + 1
+                    meta["escalation_pending_until"] = scheduled_at.isoformat()
+                    card.latest_assessment = meta
+                    db.commit()
+                    pending += 1
+                    continue
+
+                if not result.get("success"):
                     undelivered += 1
+                    blocked = _apply_undelivered_retry(meta, now, reason)
+                    card.latest_assessment = meta
+                    db.commit()
+                    delivery_blocked += int(blocked)
                     logger.warning(
                         "[escalate_critical] card=%s 升级推送未送达 reason=%s → "
-                        "不消耗 escalation 名额 (count 仍为 %s), 下个 tick 重试",
-                        card.id, reason or "unknown", escalation_count,
+                        "不消耗 escalation 名额 (count 仍为 %s), %s",
+                        card.id,
+                        reason or "unknown",
+                        escalation_count,
+                        "已停止自动重试" if blocked else "已记录退避后重试",
                     )
                     continue
 
                 meta["escalation_count"] = escalation_count + 1
                 meta["last_escalated_at"] = now.isoformat()
+                meta["escalation_delivery_failures"] = 0
+                meta.pop("escalation_retry_after", None)
                 card.latest_assessment = meta
                 db.commit()
                 escalated += 1
@@ -152,12 +299,19 @@ def escalate_critical_unresolved_impl():
                     f"[escalate_critical] card={card.id} 失败: {e}"
                 )
 
-    if escalated or skipped or undelivered:
+    if escalated or skipped or undelivered or pending:
         logger.info(
             f"[escalate_critical] escalated={escalated} skipped={skipped} "
-            f"undelivered={undelivered} checked={len(cards) if cards else 0}"
+            f"undelivered={undelivered} pending={pending} blocked={delivery_blocked} "
+            f"checked={len(cards) if cards else 0}"
         )
-    return {"escalated": escalated, "skipped": skipped, "undelivered": undelivered}
+    return {
+        "escalated": escalated,
+        "skipped": skipped,
+        "undelivered": undelivered,
+        "pending": pending,
+        "delivery_blocked": delivery_blocked,
+    }
 
 
 def weekly_advisor_run_impl():
