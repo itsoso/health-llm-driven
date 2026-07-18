@@ -5,7 +5,7 @@
 | 标识 | `xiaoba-aigc-media` |
 | 创建日期 | 2026-07-17 |
 | 当前阶段 | S5 验证 |
-| 状态 | ready_for_production_deploy |
+| 状态 | production_deployed_pending_manual_e2e |
 | 负责人 | product-engineering |
 | 发布策略 | Backend deploy after independent Model Studio credential and HTTPS source URL are configured; JS clients can follow with OTA |
 
@@ -138,13 +138,20 @@ release-blocking finding.
 
 ## G5 Deployment Health
 
-**裁决**: PENDING deployment
+**裁决**: PASS
 
 Local deployment configuration now binds `DASHSCOPE_AIGC_API_KEY` to the
 existing independent DashScope vision credential. It is verified distinct from
 `TOKENPLAN_API_KEY`, accepted by a non-billable Model Studio task probe, and
 uses public HTTPS `SITE_BASE_URL=https://health.executor.life` for image-to-video
-source retrieval. No billable generation or production deployment has occurred.
+source retrieval. No billable generation occurred before deployment.
+
+Production deployment completed through `deploy.sh -b` at commit `ec47d141b`.
+Managed migrations for the AIGC job ledger, confirmation ledger, and duplicate
+dispatch guard applied successfully; backend deployment health scored `60/60`.
+The public owner-scoped AIGC job route returns `401` without authentication,
+and the production process verifies the independent credential, non-Token Plan
+identity, validated Model Studio base URL, and `.life` source base URL.
 
 Domain verification on 2026-07-18: `health.executor.com` has no public A record
 via Cloudflare DNS; the local resolver returns reserved benchmark address
@@ -156,9 +163,13 @@ configuration is completed and independently re-verified.
 
 ## G6 Production Verification
 
-Blocked until G5. Verify one confirmed text-to-image and one confirmed
-image-to-video task from Mobile, Web, and Mac; verify owner isolation and a
-private-result URL refresh after its prior URL expires.
+**裁决**: PENDING manual owner confirmation
+
+Verify one confirmed text-to-image and one confirmed image-to-video task from
+Mobile, Web, and Mac; verify owner isolation and a private-result URL refresh
+after its prior URL expires. This Gate deliberately requires a real user card
+click because a synthetic backend request would bypass the product's explicit
+paid-generation consent boundary.
 
 ## Open Configuration Required
 
