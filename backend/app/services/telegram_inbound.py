@@ -200,7 +200,13 @@ async def llm_extract_record(text: str) -> Optional[dict]:
         return None
 
 
-async def execute_health_record(db, user_id: int, args: dict) -> str:
+async def execute_health_record(
+    db,
+    user_id: int,
+    args: dict,
+    *,
+    source_text: str = "",
+) -> str:
     """
     调 agent_executor 内部的 _exec_health_record (复用 schema/校验/确认逻辑).
 
@@ -210,11 +216,11 @@ async def execute_health_record(db, user_id: int, args: dict) -> str:
     executor = AgentExecutor(db)
     executor._current_user_id = user_id
     try:
-        base = (settings.health_api_base_url or "http://localhost:8000/api/v1").rstrip("/")
         from app.api.wechat import create_access_token
         token = create_access_token(user_id)
-        headers = {"Authorization": f"Bearer {token}"}
-        result = await executor._exec_health_record(base, headers, args)
+        executor._turn_channel = "telegram"
+        executor._current_turn_user_message = source_text or ""
+        result = await executor._execute_tool("health_record", args, token)
         return result or "✅ 已记录"
     except Exception as e:
         logger.warning(
@@ -297,7 +303,12 @@ async def handle_inbound_text(
         args = await llm_extract_record(text)
         if not args or "record_type" not in args:
             return "ℹ️ 没识别出可记录的健康数据. 用更具体的话, 例: '体重 71.2', '吃了 2 个鸡蛋'"
-        result = await execute_health_record(db, user_id, args)
+        result = await execute_health_record(
+            db,
+            user_id,
+            args,
+            source_text=text,
+        )
         # 处理 NEEDS_CONFIRMATION (L8 weight 确认) 这种半结构化返回
         if "[NEEDS_CONFIRMATION]" in result:
             return f"🤔 {result.replace('[NEEDS_CONFIRMATION]', '').strip()}\n\n回复 '确认' 完成记录."

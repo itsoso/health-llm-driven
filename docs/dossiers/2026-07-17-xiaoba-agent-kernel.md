@@ -83,7 +83,7 @@
 - [x] T1 `agent_kernel/types.py` 与 `intent_frame.py`。
 - [x] T2 `capability_policy.py` 和写/读/澄清矩阵。
 - [x] T3 `tool_gateway.py` 包住 AgentExecutor 工具执行。
-- [ ] T4 Telegram 移除关键词写路由。
+- [x] T4 Telegram 移除关键词写路由。
 - [ ] T5 统一时间/时区 `ExecutionContext`。
 - [ ] T6 dynamic UI action capability metadata。
 - [ ] T7 legacy gates 清理和静态覆盖测试。
@@ -96,7 +96,7 @@
 - 明确 `read/advice/chat` 意图下的 `health_record` 与 `health_manage(update/delete)` 会在执行前被 block；`unknown` 先兼容放行，避免误杀历史隐式记录句式，后续靠语料和澄清策略收紧。
 - 已新增 `backend/tests/fixtures/agent_intent_corpus.json`，覆盖 "记录" 名词查询、对比纠正、明确记录和明确删除。
 - 已把 `backend/app/services/telegram_inbound.py` 的 record/query 分流接到共享语义帧；`记录` 关键词不再单独决定写入路由。
-- T4 只完成 Telegram 的入口分流收敛；后续还需把 Telegram 的执行入口也改成显式 `AgentEnvelope` / `ToolExecutionRequest`，避免靠设置 executor 内部字段。
+- 已把 Telegram `execute_health_record` 从直接调用 `_exec_health_record` 改为调用 `_execute_tool("health_record", ...)`，并传入原始 source text / telegram channel，让 validator、ToolGateway、read-only guard 和 receipt 逻辑统一覆盖。
 
 ## G3 · 测试
 
@@ -137,6 +137,31 @@ DATABASE_URL=sqlite:///:memory: TZ=Asia/Shanghai backend/venv/bin/python -m pyte
 ```
 
 - 结果：`75 passed, 6 warnings`。
+- T4 Telegram 执行绕行回归：
+
+```bash
+DATABASE_URL=sqlite:///:memory: TZ=Asia/Shanghai backend/venv/bin/python -m pytest \
+  backend/tests/test_telegram_inbound_intent_gate.py \
+  backend/tests/test_agent_kernel_tool_gateway.py \
+  -q --no-cov
+```
+
+- 结果：`8 passed, 6 warnings`。
+- T4 叠加 kernel 回归：
+
+```bash
+DATABASE_URL=sqlite:///:memory: TZ=Asia/Shanghai backend/venv/bin/python -m pytest \
+  backend/tests/test_agent_kernel_intent_corpus.py \
+  backend/tests/test_agent_kernel_capability_policy.py \
+  backend/tests/test_agent_kernel_tool_gateway.py \
+  backend/tests/test_telegram_inbound_intent_gate.py \
+  backend/tests/test_utterance_intent_classifier.py \
+  backend/tests/test_health_manage_date_normalize.py \
+  backend/tests/test_force_record_tool_choice.py \
+  -q --no-cov
+```
+
+- 结果：`76 passed, 6 warnings`。
 - 直接 `_execute_tool` 历史回归：
 
 ```bash
