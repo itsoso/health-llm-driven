@@ -243,3 +243,41 @@ class TestRender:
 
         assert "**observed_change**" in out
         assert "**responds_to**" not in out
+
+    def test_subject_only_gated_effect_is_neutral_and_confidence_capped(self, db):
+        fact = write_fact(
+            db, user_id=1, tier="procedural", subject="用户 LP A",
+            predicate="responds_to", object_value="减少夜宵",
+            confidence=0.8,
+        )
+
+        out = render_facts_for_prompt([fact])
+
+        assert "**observed_change**" in out
+        assert "conf=0.40" in out
+
+    def test_non_gated_effect_keeps_its_predicate_and_confidence(self, db):
+        fact = write_fact(
+            db, user_id=1, tier="procedural", subject="用户",
+            predicate="responds_to", object_value="早睡 → HRV",
+            confidence=0.8, tags=["hrv"],
+        )
+
+        out = render_facts_for_prompt([fact])
+
+        assert "**responds_to**" in out
+        assert "conf=0.80" in out
+
+    def test_api_projection_neutralizes_subject_only_gated_effect(self, db):
+        from app.api.memory_facts import _to_dict
+
+        fact = write_fact(
+            db, user_id=1, tier="procedural", subject="用户 Apo B",
+            predicate="responds_to", object_value="减少夜宵", confidence=0.8,
+        )
+
+        payload = _to_dict(fact)
+
+        assert payload["predicate"] == "observed_change"
+        assert payload["confidence"] == 0.4
+        assert payload["effective_confidence"] == 0.4

@@ -432,7 +432,7 @@ def _gen_llm_pattern_mining(db: Session, user_id: int) -> Optional[InsightCandid
     from app.services.memory_service import effective_memory_predicate
 
     facts_block = "\n".join(
-        f"- [fact#{f.id}] {f.subject} {effective_memory_predicate(f.predicate, object_value=f.object_value, tags=f.tags or [])} {f.object_value}"
+        f"- [fact#{f.id}] {f.subject} {effective_memory_predicate(f.predicate, subject=f.subject, object_value=f.object_value, tags=f.tags or [])} {f.object_value}"
         f"{f' ' + f.object_unit if f.object_unit else ''} (conf={f.confidence:.2f}, tier={f.tier})"
         for f in facts[:30]
     )

@@ -479,7 +479,7 @@ def _try_recent_memory_fact(db: Session, user_id: int) -> Optional[OpenerSuggest
     from app.services.memory_service import effective_memory_predicate
 
     pred = _predicate_human(effective_memory_predicate(
-        fact.predicate, object_value=fact.object_value, tags=fact.tags or [],
+        fact.predicate, subject=fact.subject, object_value=fact.object_value, tags=fact.tags or [],
     ))
     # object_value 可能是上游过度提取残留的 JSON blob — serve 前整形。
     # 整形后没剩下有意义内容 → 跳过这条 opener (没线索好过一坨垃圾)。

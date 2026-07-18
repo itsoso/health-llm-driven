@@ -214,3 +214,45 @@ def test_historical_gated_causal_fact_is_neutralized_before_prompt_corpus(db):
     assert len(docs) == 1
     assert "observed_change" in docs[0].text
     assert "responds_to" not in docs[0].text
+
+
+def test_subject_only_gated_effect_is_neutralized_and_confidence_capped(db):
+    """历史行即使只在 subject 标注指标，也不能以高置信效果结论进入 prompt。"""
+    from app.services.memory_service import write_fact
+
+    write_fact(
+        db,
+        user_id=74,
+        tier="procedural",
+        subject="用户 Apo B",
+        predicate="responds_to",
+        object_value="减少夜宵",
+        confidence=0.8,
+    )
+
+    docs = _build_user_corpus(db, 74)
+
+    assert len(docs) == 1
+    assert "observed_change" in docs[0].text
+    assert docs[0].metadata["confidence"] == pytest.approx(0.4)
+
+
+def test_desktop_projection_neutralizes_subject_only_gated_effect(db):
+    from app.api.desktop import _memory_fact_to_dict
+    from app.services.memory_service import write_fact
+
+    fact = write_fact(
+        db,
+        user_id=74,
+        tier="procedural",
+        subject="用户 LP A",
+        predicate="responds_to",
+        object_value="减少夜宵",
+        confidence=0.8,
+    )
+
+    payload = _memory_fact_to_dict(fact)
+
+    assert payload["predicate"] == "observed_change"
+    assert payload["confidence"] == pytest.approx(0.4)
+    assert payload["effective_confidence"] == pytest.approx(0.4)

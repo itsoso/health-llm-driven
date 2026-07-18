@@ -312,7 +312,7 @@ def weekly_insight_loop(db: Session, only_user_id: int | None = None) -> Dict[st
         from app.services.memory_service import effective_memory_predicate
 
         summary_lines = [
-            f"- {f.subject} {effective_memory_predicate(f.predicate, object_value=f.object_value, tags=f.tags or [])} {f.object_value}"
+            f"- {f.subject} {effective_memory_predicate(f.predicate, subject=f.subject, object_value=f.object_value, tags=f.tags or [])} {f.object_value}"
             for f in week_facts
         ]
         summary = "\n".join(summary_lines)

@@ -75,19 +75,28 @@ def _action_card_to_dict(card: ActionCard) -> dict[str, Any]:
 
 
 def _memory_fact_to_dict(fact: MemoryFact) -> dict[str, Any]:
-    from app.services.memory_service import effective_memory_predicate
+    from app.services.memory_service import (
+        effective_memory_confidence,
+        effective_memory_predicate,
+    )
 
     return {
         "id": fact.id,
         "tier": fact.tier,
         "subject": fact.subject,
         "predicate": effective_memory_predicate(
-            fact.predicate, object_value=fact.object_value, tags=fact.tags or [],
+            fact.predicate, subject=fact.subject, object_value=fact.object_value, tags=fact.tags or [],
         ),
         "object_value": fact.object_value,
         "object_unit": fact.object_unit,
-        "confidence": fact.confidence,
-        "effective_confidence": round(fact.effective_confidence, 3),
+        "confidence": effective_memory_confidence(
+            fact.confidence, predicate=fact.predicate, subject=fact.subject,
+            object_value=fact.object_value, tags=fact.tags or [],
+        ),
+        "effective_confidence": round(effective_memory_confidence(
+            fact.effective_confidence, predicate=fact.predicate, subject=fact.subject,
+            object_value=fact.object_value, tags=fact.tags or [],
+        ), 3),
         "tags": fact.tags or [],
         "is_sensitive": fact.is_sensitive,
         "created_at": fact.created_at.isoformat() if fact.created_at else None,

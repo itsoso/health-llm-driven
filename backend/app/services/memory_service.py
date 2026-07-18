@@ -39,6 +39,7 @@ CAUSAL_EFFECT_PREDICATES = frozenset({
 def effective_memory_predicate(
     predicate: str,
     *,
+    subject: str = "",
     object_value: str = "",
     tags: Optional[List[str]] = None,
 ) -> str:
@@ -52,8 +53,23 @@ def effective_memory_predicate(
         return predicate
     from app.services.personal_models.intervention_priors import gate_text_for_clinician
 
-    context = " ".join([object_value or "", *(tags or [])])
+    context = " ".join([subject or "", object_value or "", *(tags or [])])
     return "observed_change" if gate_text_for_clinician(context) else predicate
+
+
+def effective_memory_confidence(
+    confidence: float,
+    *,
+    predicate: str,
+    subject: str = "",
+    object_value: str = "",
+    tags: Optional[List[str]] = None,
+) -> float:
+    """Cap presentation confidence for a confounded historical effect claim."""
+    safe_predicate = effective_memory_predicate(
+        predicate, subject=subject, object_value=object_value, tags=tags,
+    )
+    return min(float(confidence), 0.4) if safe_predicate == "observed_change" and predicate in CAUSAL_EFFECT_PREDICATES else float(confidence)
 
 
 # 标准 predicates — LLM extraction 应优先使用这些
@@ -367,15 +383,31 @@ def render_facts_for_prompt(
     """格式化事实给 LLM prompt 注入. 按 effective_confidence 排序."""
     if not facts:
         return ""
-    sorted_facts = sorted(facts, key=lambda f: f.effective_confidence, reverse=True)[:max_lines]
+    sorted_facts = sorted(
+        facts,
+        key=lambda f: effective_memory_confidence(
+            f.effective_confidence,
+            predicate=f.predicate,
+            subject=f.subject,
+            object_value=f.object_value,
+            tags=f.tags or [],
+        ),
+        reverse=True,
+    )[:max_lines]
     lines = ["## 个人知识 (来自历史观察, 按可信度排)"]
     for f in sorted_facts:
-        conf = f.effective_confidence
+        conf = effective_memory_confidence(
+            f.effective_confidence,
+            predicate=f.predicate,
+            subject=f.subject,
+            object_value=f.object_value,
+            tags=f.tags or [],
+        )
         cflag = "🟢" if conf >= 0.7 else "🟡" if conf >= 0.4 else "⚪"
         unit = f" {f.object_unit}" if f.object_unit else ""
         n_src = len(f.sources or [])
         predicate = effective_memory_predicate(
-            f.predicate, object_value=f.object_value, tags=f.tags or [],
+            f.predicate, subject=f.subject, object_value=f.object_value, tags=f.tags or [],
         )
         lines.append(
             f"{cflag} {f.subject} **{predicate}** {f.object_value}{unit}  "

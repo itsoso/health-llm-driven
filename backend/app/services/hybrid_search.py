@@ -155,11 +155,21 @@ def _build_user_corpus(db: Session, user_id: int) -> List[Doc]:
         MemoryFact.user_id == user_id,
         MemoryFact.superseded_at.is_(None),
     ).all()
-    from app.services.memory_service import effective_memory_predicate
+    from app.services.memory_service import (
+        effective_memory_confidence,
+        effective_memory_predicate,
+    )
 
     for f in facts:
         predicate = effective_memory_predicate(
-            f.predicate, object_value=f.object_value, tags=f.tags or [],
+            f.predicate, subject=f.subject, object_value=f.object_value, tags=f.tags or [],
+        )
+        confidence = effective_memory_confidence(
+            f.effective_confidence,
+            predicate=f.predicate,
+            subject=f.subject,
+            object_value=f.object_value,
+            tags=f.tags or [],
         )
         text = f"{f.subject} {predicate} {f.object_value} {f.object_unit or ''} " + \
                " ".join(f.tags or [])
@@ -172,7 +182,7 @@ def _build_user_corpus(db: Session, user_id: int) -> List[Doc]:
             metadata={
                 "tier": f.tier,
                 "predicate": predicate,
-                "confidence": f.effective_confidence,
+                "confidence": confidence,
                 "tags": f.tags,
             },
         )

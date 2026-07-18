@@ -139,7 +139,7 @@ def _build_anomaly_trace(db: Session, alert: AnomalyAlert) -> Dict[str, Any]:
                 "tier": f.tier,
                 "subject": f.subject,
                 "predicate": effective_memory_predicate(
-                    f.predicate, object_value=f.object_value, tags=f.tags or [],
+                    f.predicate, subject=f.subject, object_value=f.object_value, tags=f.tags or [],
                 ),
                 "object_value": f.object_value,
                 "object_unit": f.object_unit,
@@ -364,7 +364,7 @@ def trace_detail(
             {
                 "id": f.id, "tier": f.tier, "subject": f.subject,
                 "predicate": effective_memory_predicate(
-                    f.predicate, object_value=f.object_value, tags=f.tags or [],
+                    f.predicate, subject=f.subject, object_value=f.object_value, tags=f.tags or [],
                 ), "object_value": f.object_value,
                 "object_unit": f.object_unit, "confidence": f.confidence,
                 "created_at": f.created_at.isoformat() if f.created_at else None,
