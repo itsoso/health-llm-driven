@@ -133,7 +133,11 @@ DATABASE_URL=sqlite:///:memory: TZ=Asia/Shanghai backend/venv/bin/python -m pyte
 
 ## S6/G5 · 部署
 
-- 当前未部署。本轮先完成规划与 P0-P3 研发后再决定是否只后端发布或同时 OTA。
+- 后端提交：`a924fa925 feat(agent): add Xiaoba agent kernel policy foundation`
+- 部署方式：`./deploy.sh -b`
+- 结果：部署完成，后端健康度 `60/60 PASS`，skills manifest 本地/线上 `22/22`。
+- 本轮无 Mobile/Mac/Web/Watch 客户端改动，无需 OTA 或 TestFlight。
+- **裁决：PASS**。
 
 ## G6 · 上线验证
 
