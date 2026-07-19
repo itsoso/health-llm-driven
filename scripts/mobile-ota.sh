@@ -53,6 +53,14 @@ fi
 
 cd "${REPO_ROOT}/mobile"
 
+# Some worktrees reuse a dependency directory where Expo keeps @expo/cli nested
+# under expo/. EAS otherwise mistakes this for the legacy CLI and passes flags
+# that current Expo exports no longer accept.
+NESTED_EXPO_CLI_NODE_PATH="${REPO_ROOT}/mobile/node_modules/expo/node_modules"
+if [[ -d "${NESTED_EXPO_CLI_NODE_PATH}/@expo/cli" ]]; then
+  export NODE_PATH="${NESTED_EXPO_CLI_NODE_PATH}${NODE_PATH:+:${NODE_PATH}}"
+fi
+
 echo "==> EAS Update → channel=${CHANNEL}"
 echo "    environment: ${ENVIRONMENT}"
 echo "    message: ${MESSAGE}"
