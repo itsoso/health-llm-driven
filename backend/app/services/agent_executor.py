@@ -4215,6 +4215,99 @@ _SYMPTOM_BODY_PART_MARKERS = (
     )),
 )
 
+_SYMPTOM_NEGATION_MARKERS = (
+    "没有",
+    "没",
+    "不",
+    "无",
+    "未",
+    "否认",
+    "不再",
+    "好了",
+    "缓解",
+    "消失",
+    "排除",
+)
+_SYMPTOM_NON_SELF_MARKERS = (
+    "朋友",
+    "家人",
+    "爸爸",
+    "妈妈",
+    "父亲",
+    "母亲",
+    "孩子",
+    "他人",
+    "别人",
+    "同事",
+    "同学",
+    "邻居",
+    "室友",
+    "老婆",
+    "妻子",
+    "老公",
+    "丈夫",
+    "儿子",
+    "女儿",
+    "哥哥",
+    "姐姐",
+    "弟弟",
+    "妹妹",
+    "爷爷",
+    "奶奶",
+    "外公",
+    "外婆",
+    "叔叔",
+    "阿姨",
+    "患者",
+    "病人",
+    "医生说",
+    "报告",
+    "检查提示",
+    "病历",
+    "附件",
+    "图片",
+    "照片",
+)
+
+
+def _symptom_text_has_non_self_reference(normalized: str) -> bool:
+    if any(marker in normalized for marker in _SYMPTOM_NON_SELF_MARKERS):
+        return True
+    return bool(
+        re.search(
+            r"(?:^|[，,。！？!?；;：:、])(?:他|她|他们|她们)"
+            r"(?:有|出现|一直|最近|今天|的|头|腰|背|肩|膝|关|症状|不适|难受|疼|痛)",
+            normalized,
+        )
+    )
+
+
+def _symptom_text_is_current_self_observation(normalized: str) -> bool:
+    """Reject negated or third-party/report symptom mentions before auto-write."""
+    if _symptom_text_has_non_self_reference(normalized):
+        return False
+    symptom_markers = tuple(
+        marker
+        for _, markers in _SYMPTOM_BODY_PART_MARKERS
+        for marker in markers
+    ) + ("症状", "不适", "难受", "不舒服")
+    for symptom_marker in symptom_markers:
+        start = 0
+        while True:
+            index = normalized.find(symptom_marker, start)
+            if index < 0:
+                break
+            window = normalized[max(0, index - 8): index + len(symptom_marker) + 8]
+            preceding = normalized[max(0, index - 8):index]
+            if any(
+                negation in window
+                for negation in _SYMPTOM_NEGATION_MARKERS
+                if negation != "不"
+            ) or "不" in preceding:
+                return False
+            start = index + len(symptom_marker)
+    return True
+
 
 def _normalize_symptom_body_part(data: Dict[str, Any]) -> None:
     """Normalize explicit Chinese symptom locations without inventing unknown ones.
@@ -4263,6 +4356,8 @@ def _extract_clear_symptom_record(message: Any) -> Optional[Dict[str, str]]:
         return None
 
     normalized = "".join(raw.split()).lower()
+    if not _symptom_text_is_current_self_observation(normalized):
+        return None
     for body_part, markers in _SYMPTOM_BODY_PART_MARKERS:
         if any(marker in normalized for marker in markers):
             return {
@@ -4302,6 +4397,86 @@ def _recover_clear_symptom_args(args: Any, message: Any) -> Any:
         if data.get(key) in (None, ""):
             data[key] = value
     return args
+
+
+def _build_deterministic_symptom_tool_call(
+    message: Any,
+    *,
+    write_receipts: Sequence[dict[str, Any]],
+    has_attachment: bool = False,
+) -> Optional[Dict[str, Any]]:
+    """Build one write call when a clear symptom was answered without a tool.
+
+    The fast-record path already classifies a declarative symptom as a write, but
+    a weak model can still return prose or only run a read tool. In that case the
+    user's own sentence is the only trusted payload we need: it is normalized by
+    the same narrow extractor used by malformed-call recovery, then sent through
+    the normal health_record validator, gateway, write checkpoint, and receipt
+    path. Questions remain on the advice path, and an existing receipt prevents a
+    second write.
+    """
+    if write_receipts or has_attachment:
+        return None
+    extracted = _extract_clear_symptom_record(message)
+    if not extracted:
+        return None
+    description = extracted["description"]
+    return {
+        "id": f"deterministic-symptom-{_sha12(description)}",
+        "type": "function",
+        "function": {
+            "name": "health_record",
+            "arguments": json.dumps(
+                {
+                    "record_type": "symptom",
+                    "data": extracted,
+                },
+                ensure_ascii=False,
+            ),
+        },
+    }
+
+
+def _symptom_write_authorized_by_current_turn(
+    message: Any,
+    recent_messages: Any,
+) -> bool:
+    """Whether the current turn authorizes a symptom write."""
+    return _symptom_write_authorization(message, recent_messages) is not None
+
+
+def _symptom_write_authorization(
+    message: Any,
+    recent_messages: Any,
+) -> Optional[Dict[str, str]]:
+    """Return the exact symptom payload explicitly stated in this turn, if any.
+
+    A standalone confirmation is intentionally not an authorization source: a
+    conversational transcript cannot safely bind it to one pending symptom. The
+    caller must ask the user to repeat the symptom in the current turn instead.
+    """
+    del recent_messages
+    raw = str(message or "").strip()
+    if not raw:
+        return None
+    current_record = _extract_clear_symptom_record(raw)
+    if current_record:
+        return current_record
+    return None
+
+
+def _apply_authorized_symptom_payload(
+    args: Any,
+    authorization: Dict[str, str],
+) -> Optional[Dict[str, Any]]:
+    """Replace model-authored symptom fields with the current-turn payload."""
+    if not isinstance(args, dict):
+        return None
+    data = {
+        "body_part": authorization["body_part"],
+        "description": authorization["description"],
+    }
+    return {"record_type": "symptom", "data": data}
 
 
 def _prepare_health_record_args_for_validation(
@@ -4992,6 +5167,7 @@ class AgentExecutor:
         self._current_turn_source_message_id: Optional[int] = None
         self._current_turn_conversation_id: Optional[int] = None
         self._current_turn_image_urls: list[str] = []
+        self._current_turn_has_attachment = False
         self._turn_aigc_media_cards: list[dict] = []
         self._turn_contextual_diet_receipts: list[dict] = []
         self._turn_contextual_diet_cards: list[dict] = []
@@ -5052,6 +5228,7 @@ class AgentExecutor:
         self._current_turn_source_message_id = None
         self._current_turn_conversation_id = None
         self._current_turn_image_urls = []
+        self._current_turn_has_attachment = False
         self._turn_aigc_media_cards = []
         # Read-only turn (starter answer pre-generation · rank7). When True, the
         # single tool-dispatch choke (_execute_tool) blocks any tool NOT on
@@ -5294,8 +5471,13 @@ class AgentExecutor:
         assistant_meta = raw_assistant_meta
         if not assistant_meta:
             return True
-        if assistant_meta.get("client_turn_finalized") is not True:
-            return False
+        if source_message is None:
+            return True
+        is_partial = assistant_meta.get("client_turn_finalized") is False
+        if not is_partial and assistant_meta.get("client_turn_finalized") is not True:
+            # Non-empty legacy metadata without a finalization marker is not
+            # evidence of a write-free failure; keep the durable replay path.
+            return True
         raw_source_meta = getattr(source_message, "meta", None)
         if raw_source_meta is not None and not isinstance(raw_source_meta, dict):
             return True
@@ -5320,15 +5502,20 @@ class AgentExecutor:
         # Current finalized assistant rows always carry an explicit list of
         # verified receipts. Missing or malformed data is legacy/ambiguous and
         # must remain fail-closed rather than being re-executed.
-        if not isinstance(assistant_meta.get("write_receipts"), list):
+        if not is_partial and not isinstance(assistant_meta.get("write_receipts"), list):
             return True
         if has_write_checkpoint_or_ambiguity(
             assistant_meta,
-            allow_empty_receipts=True,
+            allow_empty_receipts=not is_partial,
         ):
             return True
         if source_meta is not None and has_write_checkpoint_or_ambiguity(source_meta):
             return True
+
+        # An explicitly partial row is safe to take over only after both sides
+        # have passed the write-metadata barrier above.
+        if is_partial:
+            return False
 
         outcome = assistant_meta.get("turn_outcome") or {}
         if isinstance(outcome, dict) and outcome:
@@ -5361,7 +5548,10 @@ class AgentExecutor:
             "replayed": True,
         }}
         assistant = svc.find_assistant_message_by_client_turn(user_id, client_turn_id)
-        if assistant is not None and not (assistant.meta or {}).get("client_turn_finalized"):
+        if assistant is not None and not self._should_replay_finalized_assistant(
+            assistant,
+            user_message,
+        ):
             assistant = None
         deadline = time.monotonic() + CLIENT_TURN_REPLAY_WAIT_SECONDS
         while assistant is None and time.monotonic() < deadline:
@@ -5369,7 +5559,10 @@ class AgentExecutor:
             await asyncio.sleep(0.25)
             self.db.expire_all()
             assistant = svc.find_assistant_message_by_client_turn(user_id, client_turn_id)
-            if assistant is not None and not (assistant.meta or {}).get("client_turn_finalized"):
+            if assistant is not None and not self._should_replay_finalized_assistant(
+                assistant,
+                user_message,
+            ):
                 assistant = None
         if assistant is None:
             yield {"event": "done", "data": {
@@ -5382,7 +5575,7 @@ class AgentExecutor:
             return
         if assistant.content:
             yield {"event": "token", "data": {"content": assistant.content}}
-        done_data = dict(assistant.meta or {})
+        done_data = dict(assistant.meta) if isinstance(assistant.meta, dict) else {}
         done_data.update({
             "conversation_id": assistant.conversation_id,
             "message_id": assistant.id,
@@ -6108,6 +6301,7 @@ class AgentExecutor:
         self._current_user_id = user_id
         self._current_turn_user_message = message or ""
         self._current_turn_recent_messages = []
+        self._current_turn_has_attachment = bool(images or file_base64)
         self._start_agent_kernel_turn(
             user_id=user_id,
             message=message,
@@ -6741,8 +6935,16 @@ class AgentExecutor:
         # 3. 构建对话历史
         _t_stage = time.time()
         messages = svc.build_messages(conv.id, limit=15)
+        recent_messages = messages
+        if (
+            recent_messages
+            and isinstance(recent_messages[-1], dict)
+            and recent_messages[-1].get("role") == "user"
+            and recent_messages[-1].get("content") == user_content
+        ):
+            recent_messages = recent_messages[:-1]
         self._current_turn_recent_messages = [
-            dict(item) for item in messages[-6:] if isinstance(item, dict)
+            dict(item) for item in recent_messages[-6:] if isinstance(item, dict)
         ]
         # 确定性护栏 (R4): 历史里助手消息带过 ```reva-ui``` 图表 block —— 若原样喂回
         # LLM, 它会**模仿**这个格式并**编造**图表数据 (实测: 编 "Apple Watch + Garmin +
@@ -6892,6 +7094,7 @@ class AgentExecutor:
         # 后置校验: record 意图的 turn 必须真的执行了写工具。0 次 = 模型可能只是
         # 嘴上说"已记录"却没调工具(弱模型把 tool-call 当正文吐出 → 静默丢数据)。
         tool_executed_count = 0
+        deterministic_symptom_fallback_attempted = False
         # 本轮 agent 实际调用过的工具/Skill 名, 去重、按首次调用顺序。供 mac/mobile
         # 展示"调用了哪些 Skills"。与 sources_used (引用了哪些数据源) 独立。
         tools_used: List[str] = []
@@ -7242,6 +7445,36 @@ class AgentExecutor:
                         continue  # 进入下一轮,模型用结构化 tool_calls 重试
                     # 轮次用尽仍是文本式 → 剥掉标记避免泄漏(用户至少不看到裸 "Tool calls:")。
                     response = {**response, "content": _strip_text_tool_call(botched)}
+
+                # 确定性症状写入兜底:当前用户句子已经被分类为明确症状陈述,
+                # 但模型只返回文字/只读查询时,不能把这条症状降级成“还没记下来”。
+                # 合成一个最小 health_record 调用,仍沿用下方完整的 validator、
+                # ToolGateway、write_state、receipt 和安全检查;只尝试一次,避免
+                # 上游返回异常时产生重复写入。问题句(如“腰疼怎么办”)不会命中
+                # _extract_clear_symptom_record,仍保持建议路径。
+                if (
+                    isinstance(response, dict)
+                    and not response.get("tool_calls")
+                    and not deterministic_symptom_fallback_attempted
+                ):
+                    deterministic_symptom_call = _build_deterministic_symptom_tool_call(
+                        message,
+                        write_receipts=write_receipts,
+                        has_attachment=bool(images or file_base64),
+                    )
+                    if deterministic_symptom_call:
+                        deterministic_symptom_fallback_attempted = True
+                        response = {
+                            **response,
+                            "content": "",
+                            "finish_reason": "tool_calls",
+                            "tool_calls": [deterministic_symptom_call],
+                        }
+                        logger.info(
+                            "[agent_executor] deterministic symptom write fallback user=%s msg=%r",
+                            user_id,
+                            (message or "")[:80],
+                        )
 
                 # ──── 工具决策轮快路由安全兜底: fast 模型直接答文本时丢弃, 强模型重合成 ────
                 # 到这里所有 tool-call 恢复 (结构化 / inline JSON / 文本式重试) 都已尝试完。
@@ -11111,6 +11344,52 @@ class AgentExecutor:
             args,
             getattr(self, "_current_turn_user_message", ""),
         )
+        symptom_authorization = _symptom_write_authorization(
+            getattr(self, "_current_turn_user_message", ""),
+            getattr(self, "_current_turn_recent_messages", []),
+        )
+        if (
+            tool_name == "health_record"
+            and isinstance(args, dict)
+            and _fast_record_kind(args) == "symptom"
+            and getattr(self, "_current_turn_has_attachment", False)
+        ):
+            logger.warning(
+                "[_execute_tool] blocked symptom write on attachment turn user=%s",
+                self._current_user_id,
+            )
+            return (
+                "Error: 带附件的症状内容暂不自动写入，请在不带附件的消息中直接复述"
+                "要记录的本人症状。"
+            )
+        if (
+            tool_name == "health_record"
+            and isinstance(args, dict)
+            and _fast_record_kind(args) == "symptom"
+            and symptom_authorization is None
+        ):
+            logger.warning(
+                "[_execute_tool] blocked symptom write without current-turn authorization "
+                "user=%s msg=%r",
+                self._current_user_id,
+                (getattr(self, "_current_turn_user_message", "") or "")[:80],
+            )
+            return (
+                "Error: 这段话不是明确的本人症状记录请求，已阻止自动写入。"
+                "如果你希望记录，请直接说出当前要记录的本人症状。"
+            )
+        if (
+            tool_name == "health_record"
+            and isinstance(args, dict)
+            and _fast_record_kind(args) == "symptom"
+        ):
+            authorized_args = _apply_authorized_symptom_payload(
+                args,
+                symptom_authorization,
+            )
+            if authorized_args is None:
+                return "Error: 症状记录参数无效，已阻止自动写入。"
+            args = authorized_args
         args = _prepare_health_record_args_for_validation(
             tool_name,
             args,

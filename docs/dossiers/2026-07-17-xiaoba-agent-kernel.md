@@ -4,7 +4,7 @@
 |---|---|
 | slug | `xiaoba-agent-kernel` |
 | 创建日期 | 2026-07-17 |
-| 当前阶段 | S4 研发 |
+| 当前阶段 | S6/G5 发布收口，G6 待真实设备验证 |
 | 状态 | building |
 | 负责 | Codex |
 | 反馈环 | backend pytest / ruff / Mobile-Mac-Web smoke / Watch XCTest / deploy health |
@@ -103,6 +103,9 @@
 - 2026-07-19 发布闸门收口：修复 AIGC 无 provider task id 的历史任务误刷新、SQLite naive 时间被误当 UTC、Celery 测试替身污染 `app.tasks.notifications` 父包属性、Watch SmartReminder 用户本地时间误转 UTC。快照阶段同时固化 `client_time_context`、`client_turn_id`、媒体元数据和持久化来源消息 ID；未显式提供 channel 时沿用已有快照，避免恢复/多模型路径重建快照。
 - 2026-07-19 Trace 收口：EventBus 增加无健康正文的 `trace_summary`，将事件计数、工具失败/阻断、已验证回执、run/turn/channel/policy 和回合耗时写入 assistant `meta` 与 `done`；保留详细结构化事件日志，不把客户端媒体 payload 写入 Trace。
 - 2026-07-19 发布前错误收口：工具异常统一通过 `safe_tool_error_message` 脱敏，避免把上游状态码、请求 ID 或内部响应直接写入对话；保留超时、网络、限流和权限的可操作提示。
+- 2026-07-19 当前顺序执行收口：Kernel 快照、统一回合关联、ToolGateway 静态守门、Trace 汇总和错误脱敏均已合入；回放兼容修复 `94e5d9c4b` 的定向回归 `43/43` 通过，进入部署后的 G6 真实设备验证准备。
+- 2026-07-19 App Store 原生预检收口：修复 `scripts/preflight-eas.sh` 仍硬编码旧 `ios/HealthPilot` 工程名的问题；当前 Expo 原生工程 `ios/app` 的 Info.plist、HealthKit entitlements 和 Podfile.lock 检查均已通过，并新增脚本回归测试防止工程重命名后再次误报。
+- 2026-07-19 明确症状写入收口：当用户明确自述当前症状而模型只返回文本时，Executor 生成一次最小 `health_record` 调用并继续走原有 validator、ToolGateway、写入检查和 receipt；否定句、第三方/报告内容、提问和带附件输入均不会触发兜底，相关回归 `96/96` 通过。
 
 ## G3 · 测试
 
@@ -212,6 +215,7 @@ DATABASE_URL=sqlite:///:memory: TZ=Asia/Shanghai backend/venv/bin/python -m pyte
 - **G3 裁决：PASS（后端完整闸门已绿；第二阶段快照变更已有定向回归）**。
 - T7 静态覆盖与跨 surface 回归：`57 passed, 6 warnings`；覆盖 Executor 写实现唯一 choke point、所有 `app` surface 禁止直接调用健康写实现、Telegram/Voice 共享策略及注册工具能力映射。
 - **G3 增量裁决：PASS（T7 遗留写入口静态闸门已绿；仍需部署后线上样本验证）**。
+- Mobile 发布预检回归：`1 passed, 6 warnings`；`./scripts/preflight-eas.sh` 已通过当前 `ios/app` 工程的 usage descriptions、HealthKit entitlements 和关键 Pods 检查。
 
 ## G4 · 安全
 
@@ -225,9 +229,9 @@ DATABASE_URL=sqlite:///:memory: TZ=Asia/Shanghai backend/venv/bin/python -m pyte
 
 ## S6/G5 · 部署
 
-- 后端提交：`a924fa925 feat(agent): add Xiaoba agent kernel policy foundation`
-- 部署方式：`./deploy.sh -b`
-- 结果：部署完成，后端健康度 `60/60 PASS`，skills manifest 本地/线上 `22/22`。
+- 后端提交：`94e5d9c4b fix(agent): make replay tolerant of malformed metadata`
+- 部署方式：`./deploy.sh -b -y`
+- 结果：远端已切换到 `94e5d9c4b`，数据库备份完整性校验通过，后端健康度 `60/60 PASS`，skills manifest 本地/线上 `22/22`。
 - 本轮无 Mobile/Mac/Web/Watch 客户端改动，无需 OTA 或 TestFlight。
 - **裁决：PASS**。
 
@@ -249,12 +253,15 @@ T4 Telegram 执行入口部署：
 
 ## G6 · 上线验证
 
-- 待执行。需要至少覆盖：
+- 部署健康与公开 skills manifest 已验证；真实业务样本和真实设备验证仍待执行。需要至少覆盖：
   - Mobile/Mac/Web 同一句读请求不写库。
   - Telegram 同一句读请求不写库。
   - 明确记录饮食仍能写入并返回 receipt。
   - 明确删除/修改仍先查候选或确认，不编造 ID。
   - Watch reminder wording 与 delivery receipt 一致。
+  - 真机切换前后台后继续输入、拍照多图、麦克风权限与按住说话链路。
+- **裁决：PENDING（设备与跨端业务样本尚未执行；不代表通过，不能以本地测试或健康接口替代）**。
+- 已完成本地模拟器补充烟测：iPhone 17 Pro / iOS 26.4 原生构建成功（0 error，5 个既有 Xcode warning），启动与杀进程重启后均回到最后一段 Agent 输出；语音模式与键盘模式可双向切换。模拟器不计入真实麦克风、相机、通知和 Watch 验收。
 
 ## S8 · 沉淀
 

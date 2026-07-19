@@ -450,12 +450,25 @@ class AgentConversationService:
         else:
             lifecycle_context = nullcontext()
         with lifecycle_context:
+            message_meta = meta
+            if role == "assistant" and client_turn_id:
+                # Mark the row as partial before any final response metadata is
+                # attached. A worker crash can then be taken over safely, while
+                # legacy rows with missing metadata remain replay-only.
+                message_meta = {
+                    **(meta if isinstance(meta, dict) else {}),
+                    "client_turn_finalized": (
+                        meta.get("client_turn_finalized") is True
+                        if isinstance(meta, dict)
+                        else False
+                    ),
+                }
             msg = AgentMessage(
                 conversation_id=conversation_id,
                 role=role,
                 content=content,
                 image_url=image_url,
-                meta=meta,
+                meta=message_meta,
                 client_turn_id=(
                     self._client_turn_storage_key(client_turn_user_id, client_turn_id)
                     if client_turn_id and client_turn_user_id is not None
