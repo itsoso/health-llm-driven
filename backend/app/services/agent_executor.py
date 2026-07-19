@@ -47,6 +47,7 @@ from app.services.agent_turn_recovery import (
     should_retry_tool_failure,
 )
 from app.services.agent_turn_outcome import classify_agent_turn_outcome
+from app.services.agent_write_outcome import classify_write_execution
 from app.services.utterance_intent_classifier import classify_agent_utterance
 from app.services.agent_kernel.context import (
     build_turn_snapshot,
@@ -2457,15 +2458,6 @@ _WRITE_RESULT_FAILURE_MARKERS = (
 # These errors are produced by the local argument/policy gates before an
 # external write endpoint is invoked. They must not be presented as a write
 # that may already have happened.
-_PRE_DISPATCH_VALIDATION_MARKERS = (
-    "参数解析失败",
-    "只读预生成回合不执行写入/变更操作",
-    "工具调用策略检查失败",
-    "必须提供",
-    "需要提供",
-    "缺少",
-    "不支持",
-)
 _UNVERIFIED_WRITE_USER_MESSAGE = (
     "本次操作没有取得可验证的写入回执，我不能确认已经完成。"
     "为避免重复写入，请先查询现有记录；确认缺失后再重试。"
@@ -2517,11 +2509,8 @@ class _UnverifiedWriteResult(RuntimeError):
 
 
 def _write_result_is_pre_dispatch_validation_error(result: Any) -> bool:
-    """Return whether a write was rejected locally before external dispatch."""
-    text = str(result or "").strip()
-    return text.startswith("Error:") and any(
-        marker in text for marker in _PRE_DISPATCH_VALIDATION_MARKERS
-    )
+    """Compatibility wrapper for callers that need the terminal rejection bit."""
+    return classify_write_execution(result).status == "rejected"
 
 
 _RESOURCE_TYPE_BY_RECORD_TYPE = {
@@ -2628,14 +2617,8 @@ def _write_checkpoint_status_after_dispatch(
     result: Any,
     receipt: Optional[Dict[str, Any]],
 ) -> str:
-    """Classify a write only after execution crossed the dispatch boundary."""
-    if receipt:
-        return "verified"
-    if _write_result_is_pre_dispatch_validation_error(result):
-        return "rejected"
-    if str(result).startswith("[NEEDS_CONFIRMATION]"):
-        return "failed"
-    return "uncertain"
+    """Return the durable status from the structured write outcome."""
+    return classify_write_execution(result, receipt=receipt).status
 
 
 def _write_operation_fingerprint(
@@ -5201,12 +5184,20 @@ class AgentExecutor:
             if item.get("operation_id")
         }
         if write_plan.get("sealed") is True and planned_fingerprints:
-            fully_verified = all(
+            def operation_verified(fingerprint: str) -> bool:
+                operation = operations.get(fingerprint) or {}
+                return (
+                    operation.get("status") == "verified"
+                    and str(operation.get("receipt_operation_id") or "") in receipt_ids
+                )
+
+            fully_verified = all(operation_verified(fingerprint) for fingerprint in planned_fingerprints)
+            all_resolved = all(
                 fingerprint in operations
-                and operations[fingerprint].get("status") == "verified"
-                and str(
-                    operations[fingerprint].get("receipt_operation_id") or ""
-                ) in receipt_ids
+                and (
+                    operation_verified(fingerprint)
+                    or operations[fingerprint].get("status") in {"rejected", "failed"}
+                )
                 for fingerprint in planned_fingerprints
             )
             partially_verified = bool(receipts) or any(
@@ -5229,6 +5220,24 @@ class AgentExecutor:
             content = "写入已完成，已从持久化回执恢复本轮结果，没有重复执行写入。"
             completion_status = "complete"
             recovery_reason = "write_checkpoint_verified"
+        elif write_plan.get("sealed") is True and planned_fingerprints and all_resolved:
+            rejected_count = sum(
+                1
+                for fingerprint in planned_fingerprints
+                if operations.get(fingerprint, {}).get("status") in {"rejected", "failed"}
+            )
+            verified_part = (
+                f"已确认 {len(receipts)} 项写入不会重复执行。"
+                if receipts
+                else "本轮没有写入项获得回执。"
+            )
+            content = (
+                f"写入状态已恢复：{verified_part}"
+                f"另有 {rejected_count} 项因参数校验或需要确认而未执行，结果不是未知状态。"
+                "请补充信息或确认后再提交。"
+            )
+            completion_status = "error"
+            recovery_reason = "write_checkpoint_rejected"
         elif partially_verified:
             content = (
                 "本轮已有部分写入获得回执，但中断时另一次写入状态未知。"
@@ -5589,9 +5598,7 @@ class AgentExecutor:
                         yield {"event": "tool_result", "data": tool_event_data}
                         if (
                             write_attempted
-                            and receipt is None
-                            and not str(result).startswith("[NEEDS_CONFIRMATION]")
-                            and not _write_result_is_pre_dispatch_validation_error(result)
+                            and checkpoint_status == "uncertain"
                         ):
                             raise _UnverifiedWriteResult()
                     continue
@@ -7295,13 +7302,7 @@ class AgentExecutor:
                                     receipt=receipt,
                                 )
                                 if (
-                                    receipt is None
-                                    and not str(result_for_record_card).startswith(
-                                        "[NEEDS_CONFIRMATION]"
-                                    )
-                                    and not _write_result_is_pre_dispatch_validation_error(
-                                        result_for_record_card
-                                    )
+                                    checkpoint_status == "uncertain"
                                     and func_name not in unverified_write_tools
                                 ):
                                     unverified_write_tools.append(func_name)

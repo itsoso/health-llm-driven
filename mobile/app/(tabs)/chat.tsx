@@ -59,7 +59,11 @@ import { loadAgentHomeBootstrap } from '../../services/agentHomeBootstrap';
 import { useAuth } from '../../hooks/useAuth';
 import { buildChatImageSource } from '../../utils/chatImageSource';
 import { saveChatImageToLibrary } from '../../services/chatImageSave';
-import { cancelChatScrollOnUserDrag, shouldScrollChatToEnd } from '../../utils/chatScroll';
+import {
+  cancelChatScrollOnUserDrag,
+  shouldForceScrollAfterHydration,
+  shouldScrollChatToEnd,
+} from '../../utils/chatScroll';
 
 type SuggestionCard = {
   icon: keyof typeof Ionicons.glyphMap;
@@ -157,6 +161,7 @@ export default function ChatScreen() {
   const flatListRef = useRef<FlatList>(null);
   const isNearBottom = useRef(true);
   const forceScrollPending = useRef(false);
+  const previousMessageCountRef = useRef(messages.length);
   const scrollTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   // 对话页只消费明确、及时的 timeline 状态；完整计划留在 Today surface。
   const todayTimeline = useTodayTimeline();
@@ -394,6 +399,14 @@ export default function ChatScreen() {
       if (index === delays.length - 1) forceScrollPending.current = false;
     }, delay));
   }, [clearChatScrollTimers]);
+
+  useEffect(() => {
+    const previousCount = previousMessageCountRef.current;
+    if (shouldForceScrollAfterHydration(previousCount, messages.length)) {
+      scheduleScrollToEnd({ force: true });
+    }
+    previousMessageCountRef.current = messages.length;
+  }, [messages.length, scheduleScrollToEnd]);
 
   const cancelForcedScrollOnUserDrag = useCallback(() => {
     const state = {

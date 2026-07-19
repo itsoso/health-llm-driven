@@ -331,6 +331,7 @@ def classify_agent_utterance(
 
     if has_read or (
         _is_data_question(normalized, domain, has_question)
+        and not _looks_like_observation_statement(normalized, domain, has_question)
         and (not has_write or has_question)
     ):
         operation = "list" if has_read and not has_question else "ask"
@@ -550,6 +551,34 @@ def _is_data_question(text: str, domain: str, has_question: bool) -> bool:
     if domain == "unknown":
         return False
     return _has_any(text, ("今天", "昨天", "本周", "这周", "最近", "昨晚", "数据", "情况", "状态"))
+
+
+def _looks_like_observation_statement(text: str, domain: str, has_question: bool) -> bool:
+    """Keep a bare health observation out of the read route.
+
+    Temporal words such as ``昨晚`` are useful query scope, but they also occur
+    in statements like ``昨晚睡了十个小时``. Without this guard the classifier
+    turns an observation into an implicit query, and a downstream model may try
+    to write it with incomplete fields or answer the wrong question.
+    """
+    if has_question or domain != "metric":
+        return False
+    return _has_any(
+        text,
+        (
+            "睡了",
+            "睡得",
+            "睡眠很好",
+            "睡眠不错",
+            "睡眠不好",
+            "醒了",
+            "跑了",
+            "走了",
+            "训练了",
+            "运动了",
+            "锻炼了",
+        ),
+    )
 
 
 def _has_explicit_observation_write(text: str, domain: str) -> bool:

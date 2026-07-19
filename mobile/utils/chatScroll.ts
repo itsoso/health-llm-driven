@@ -11,6 +11,14 @@ export function shouldScrollChatToEnd(state: ChatScrollState): boolean {
   return state.forcePending || state.isNearBottom;
 }
 
+/** Initial history hydration should win over the list's default offset. */
+export function shouldForceScrollAfterHydration(
+  previousMessageCount: number,
+  nextMessageCount: number,
+): boolean {
+  return previousMessageCount === 0 && nextMessageCount > 0;
+}
+
 /** User intent takes precedence over a pending automatic scroll. */
 export function cancelChatScrollOnUserDrag(state: ChatScrollState): void {
   state.forcePending = false;

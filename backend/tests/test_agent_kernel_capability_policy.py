@@ -94,8 +94,31 @@ def test_ambiguous_turn_blocks_health_record_even_when_arguments_look_valid():
     )
 
     assert decision.action == "block"
-    assert decision.reason == "write_tool_without_write_intent"
+    assert decision.reason == "ambiguous_intent_requires_clarification"
     assert decision.receipt_required is True
+
+
+def test_ambiguous_health_observation_requires_clarification_before_write():
+    snapshot = _snapshot("我昨晚睡了十个小时，睡眠很好")
+    decision = decide_tool_capability(
+        snapshot,
+        _request("health_record", {"record_type": "sleep", "data": {"duration": 10}}),
+    )
+
+    assert snapshot.intent.primary == "unknown"
+    assert decision.action == "block"
+    assert decision.reason == "ambiguous_intent_requires_clarification"
+    assert decision.receipt_required is True
+
+
+def test_ambiguous_health_observation_can_still_use_read_only_tools():
+    decision = decide_tool_capability(
+        _snapshot("我昨晚睡了十个小时，睡眠很好"),
+        _request("health_query", {"dimension": "sleep", "days": 1}),
+    )
+
+    assert decision.action == "allow"
+    assert decision.reason == "read_only_tool"
 
 
 def test_exact_recipe_replay_allows_only_prevalidated_record_step():

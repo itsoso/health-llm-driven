@@ -504,6 +504,56 @@ async def test_recovery_reports_partial_when_one_of_multiple_writes_is_uncertain
 
 
 @pytest.mark.asyncio
+async def test_recovery_reports_terminal_rejection_instead_of_unknown_write(
+    db, auth_user_and_headers
+):
+    from app.services.agent_conversation_service import AgentConversationService
+
+    user, _ = auth_user_and_headers
+    service = AgentConversationService(db)
+    conversation = service.get_or_create_conversation(user.id, None, title="拒绝写入恢复")
+    user_message, _ = service.save_user_message_once(
+        conversation.id,
+        user.id,
+        "记录睡眠",
+        client_turn_id="turn-rejected-write-recovery",
+    )
+    executor = AgentExecutor(db)
+    planned_args = {
+        "record_type": "sleep",
+        "data": {"sleep_quality": 5},
+    }
+    executor._persist_turn_expected_writes(
+        user_message,
+        [("health_record", planned_args)],
+    )
+    executor._persist_turn_write_state(
+        user_message,
+        status="rejected",
+        tool_name="health_record",
+        parsed_args=planned_args,
+    )
+
+    events = [
+        event
+        async for event in executor._recover_client_turn_write_checkpoint(
+            service,
+            user.id,
+            user_message,
+            "turn-rejected-write-recovery",
+        )
+    ]
+    content = next(
+        event for event in events if event.get("event") == "token"
+    )["data"]["content"]
+
+    assert "状态未知" not in content
+    assert "未执行" in content or "拒绝" in content
+    assert events[-1]["data"]["completion_status"] == "error"
+    assert events[-1]["data"]["write_recovery"] == "write_checkpoint_rejected"
+
+
+@pytest.mark.asyncio
 async def test_legacy_verified_checkpoint_without_sealed_plan_never_reports_complete(
     db, auth_user_and_headers
 ):

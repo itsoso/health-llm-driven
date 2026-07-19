@@ -5,6 +5,7 @@ from app.services.agent_kernel.context import (
     build_turn_snapshot,
     format_turn_time_context_prompt,
 )
+from app.services.agent_kernel.types import ExecutionContext
 
 
 def test_turn_snapshot_uses_one_user_local_time_for_prompt_and_tool_context(db, auth_user_and_headers):
@@ -31,6 +32,17 @@ def test_turn_snapshot_uses_one_user_local_time_for_prompt_and_tool_context(db, 
     prompt = format_turn_time_context_prompt(snapshot.context)
     assert "用户本地当前时间: 2026-07-16T22:30:00-04:00" in prompt
     assert "用户本地今天: 2026-07-16" in prompt
+
+
+def test_test_context_converts_the_frozen_time_into_requested_timezone():
+    context = ExecutionContext.for_test(
+        user_id=1,
+        channel="typed",
+        timezone_name="America/New_York",
+    )
+
+    assert context.timezone == "America/New_York"
+    assert context.current_time.isoformat() == "2026-07-17T00:00:00-04:00"
 
 
 def test_turn_snapshot_reference_time_normalizes_relative_record_dates(db, auth_user_and_headers):

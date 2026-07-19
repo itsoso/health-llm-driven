@@ -76,8 +76,14 @@ class ExecutionContext:
         run_id: str = "",
         turn_id: str = "",
     ) -> "ExecutionContext":
+        try:
+            user_timezone = ZoneInfo(timezone_name)
+        except ZoneInfoNotFoundError:
+            user_timezone = BJ
+            timezone_name = "Asia/Shanghai"
+        frozen_utc = datetime(2026, 7, 17, 4, 0, tzinfo=timezone.utc)
         return cls(
-            current_time=datetime(2026, 7, 17, 12, 0, tzinfo=BJ),
+            current_time=frozen_utc.astimezone(user_timezone),
             timezone=timezone_name,
             user_id=user_id,
             channel=channel,

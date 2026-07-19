@@ -62,6 +62,14 @@ def test_medication_side_effect_question_does_not_become_a_write():
     assert intent.is_write is False
 
 
+def test_sleep_observation_without_a_request_is_not_misread_as_a_query():
+    intent = classify_agent_utterance("我昨晚睡了十个小时，睡眠很好")
+
+    assert intent.primary == "unknown"
+    assert intent.operation == "none"
+    assert intent.is_write is False
+
+
 def test_negated_record_command_is_not_write_intent():
     intent = classify_agent_utterance("这个不用记录")
 

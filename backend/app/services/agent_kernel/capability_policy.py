@@ -106,7 +106,11 @@ def decide_tool_capability(
                 )
             return _decision(
                 "block",
-                "manage_write_without_mutate_intent",
+                (
+                    "ambiguous_intent_requires_clarification"
+                    if primary == "unknown"
+                    else "manage_write_without_mutate_intent"
+                ),
                 tool_name,
                 args,
                 receipt_required=True,
@@ -124,7 +128,11 @@ def decide_tool_capability(
             )
         return _decision(
             "block",
-            "write_tool_without_write_intent",
+            (
+                "ambiguous_intent_requires_clarification"
+                if primary == "unknown"
+                else "write_tool_without_write_intent"
+            ),
             tool_name,
             args,
             receipt_required=True,
@@ -143,7 +151,11 @@ def decide_tool_capability(
                 )
             return _decision(
                 "block",
-                "intervention_write_without_mutation_intent",
+                (
+                    "ambiguous_intent_requires_clarification"
+                    if primary == "unknown"
+                    else "intervention_write_without_mutation_intent"
+                ),
                 tool_name,
                 args,
                 receipt_required=True,

@@ -1,5 +1,6 @@
 import {
   cancelChatScrollOnUserDrag,
+  shouldForceScrollAfterHydration,
   shouldScrollChatToEnd,
   type ChatScrollState,
 } from '../chatScroll';
@@ -13,6 +14,12 @@ describe('chat scroll policy', () => {
 
   it('still follows streamed layout changes when the user is already near the end', () => {
     expect(shouldScrollChatToEnd({ forcePending: false, isNearBottom: true })).toBe(true);
+  });
+
+  it('forces the first scroll after an async history load', () => {
+    expect(shouldForceScrollAfterHydration(0, 4)).toBe(true);
+    expect(shouldForceScrollAfterHydration(0, 0)).toBe(false);
+    expect(shouldForceScrollAfterHydration(4, 5)).toBe(false);
   });
 
   it('stops the forced scroll as soon as the user starts reading history', () => {
