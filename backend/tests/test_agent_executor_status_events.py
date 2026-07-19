@@ -174,6 +174,7 @@ async def test_retryable_finalized_turn_reexecutes_without_write_checkpoint(
         "assistant",
         "旧的失败回复",
         meta={
+            "write_receipts": [],
             "completion_status": "error",
             "turn_outcome": {
                 "category": "tool_blocked",
@@ -243,6 +244,7 @@ async def test_finalized_turn_with_user_write_checkpoint_still_replays(
         "assistant",
         "旧的未知状态回复",
         meta={
+            "write_receipts": [],
             "completion_status": "error",
             "turn_outcome": {
                 "category": "tool_failed",
@@ -273,6 +275,60 @@ async def test_finalized_turn_with_user_write_checkpoint_still_replays(
     done = next(event for event in events if event.get("event") == "done")
     assert done["data"].get("replayed") is True
     assert "旧的未知状态回复" in "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+
+
+@pytest.mark.asyncio
+async def test_legacy_finalized_error_without_write_metadata_still_replays(
+    db, auth_user_and_headers, monkeypatch
+):
+    """旧回合缺少写入证据时只能重放，不能把缺失当成未写入。"""
+    from app.services.agent_conversation_service import AgentConversationService
+
+    user, _ = auth_user_and_headers
+    service = AgentConversationService(db)
+    conv = service.get_or_create_conversation(user.id, None, title="旧失败回合")
+    service.save_user_message_once(
+        conv.id,
+        user.id,
+        "还是有腰疼的症状。",
+        client_turn_id="turn-legacy-finalized-error",
+        meta={"client_turn_id": "turn-legacy-finalized-error"},
+    )
+    service.save_message(
+        conv.id,
+        "assistant",
+        "旧版本失败回复",
+        meta={
+            "completion_status": "error",
+            "client_turn_finalized": True,
+            "client_turn_id": "turn-legacy-finalized-error",
+        },
+        client_turn_id="turn-legacy-finalized-error",
+        client_turn_user_id=user.id,
+    )
+
+    executor = AgentExecutor(db)
+    _wire_min(executor, monkeypatch)
+
+    async def must_not_call_llm(*args, **kwargs):
+        raise AssertionError("legacy finalized error must stay fail-closed")
+        yield  # pragma: no cover
+
+    monkeypatch.setattr(executor, "_call_llm_stream", must_not_call_llm)
+    events = await _run(
+        executor,
+        "还是有腰疼的症状。",
+        user_id=user.id,
+        client_turn_id="turn-legacy-finalized-error",
+    )
+
+    done = next(event for event in events if event.get("event") == "done")
+    assert done["data"].get("replayed") is True
+    assert "旧版本失败回复" in "".join(
         event["data"].get("content", "")
         for event in events
         if event.get("event") == "token"

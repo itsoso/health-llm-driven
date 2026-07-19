@@ -5236,25 +5236,53 @@ class AgentExecutor:
         ):
             return False
         source_meta = getattr(source_message, "meta", None) or {}
-        metas = [assistant_meta]
-        if isinstance(source_meta, dict):
-            metas.append(source_meta)
 
-        for meta in metas:
-            if meta.get("write_receipts"):
-                return True
-            write_state = meta.get("write_state") or {}
-            if isinstance(write_state, dict) and write_state.get("status") in {
-                "in_flight", "uncertain", "verified",
-            }:
-                return True
-            write_operations = meta.get("write_operations") or {}
-            if isinstance(write_operations, dict) and any(
-                isinstance(operation, dict)
-                and operation.get("status") in {"in_flight", "uncertain", "verified"}
-                for operation in write_operations.values()
-            ):
-                return True
+        def has_write_checkpoint_or_ambiguity(meta: dict[str, Any]) -> bool:
+            """Treat any non-terminal write metadata as a replay barrier."""
+            receipts = meta.get("write_receipts")
+            if receipts is not None:
+                if not isinstance(receipts, list) or receipts:
+                    return True
+
+            if "write_state" in meta:
+                write_state = meta["write_state"]
+                if not isinstance(write_state, dict):
+                    return True
+                if write_state.get("status") not in {
+                    "rejected", "not_attempted", "not_started", "skipped",
+                }:
+                    return True
+
+            if "write_operations" in meta:
+                write_operations = meta["write_operations"]
+                if not isinstance(write_operations, dict):
+                    return True
+                if any(
+                    not isinstance(operation, dict)
+                    or operation.get("status") not in {"rejected"}
+                    for operation in write_operations.values()
+                ):
+                    return True
+
+            if "write_plan" in meta:
+                write_plan = meta["write_plan"]
+                if not isinstance(write_plan, dict):
+                    return True
+                if write_plan.get("sealed") is True or write_plan.get("fingerprints"):
+                    return True
+            return False
+
+        # Current finalized assistant rows always carry an explicit list of
+        # verified receipts. Missing or malformed data is legacy/ambiguous and
+        # must remain fail-closed rather than being re-executed.
+        if not isinstance(assistant_meta.get("write_receipts"), list):
+            return True
+        if has_write_checkpoint_or_ambiguity(assistant_meta):
+            return True
+        if source_meta and not isinstance(source_meta, dict):
+            return True
+        if isinstance(source_meta, dict) and has_write_checkpoint_or_ambiguity(source_meta):
+            return True
 
         outcome = assistant_meta.get("turn_outcome") or {}
         if isinstance(outcome, dict) and outcome:
