@@ -29,6 +29,30 @@ public struct AgentDynamicCardDescriptor: Codable, Equatable, Sendable {
         data = try c.decode(AgentDynamicCardValue.self, forKey: .data)
         actions = (try? c.decode([AgentDynamicCardActionDescriptor].self, forKey: .actions)) ?? []
     }
+
+    /// The backend can return more than one atomic capability for one reply.
+    /// Preserve them as a renderable group rather than letting the client drop
+    /// every descriptor after the first one.
+    public static func grouped(_ cards: [AgentDynamicCardDescriptor]) -> AgentDynamicCardDescriptor? {
+        guard !cards.isEmpty else { return nil }
+        if cards.count == 1 { return cards[0] }
+        let encodedCards = cards.compactMap { $0.groupValue() }
+        guard !encodedCards.isEmpty else { return nil }
+        return AgentDynamicCardDescriptor(
+            type: "cards_group",
+            data: .object(["cards": .array(encodedCards)])
+        )
+    }
+
+    static func fromGroupValue(_ value: AgentDynamicCardValue) -> AgentDynamicCardDescriptor? {
+        guard let data = try? JSONEncoder().encode(value) else { return nil }
+        return try? JSONDecoder().decode(AgentDynamicCardDescriptor.self, from: data)
+    }
+
+    func groupValue() -> AgentDynamicCardValue? {
+        guard let data = try? JSONEncoder().encode(self) else { return nil }
+        return try? JSONDecoder().decode(AgentDynamicCardValue.self, from: data)
+    }
 }
 
 public struct AgentDynamicCardRenderDescriptor: Codable, Equatable, Sendable {

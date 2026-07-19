@@ -98,6 +98,109 @@ public struct VoiceFoodParseResponse: Decodable, Equatable, Sendable {
     }
 }
 
+/// Receipt returned only after the owner-scoped diet draft has been committed.
+/// The client submits the opaque server-bound draft token, never the image bytes
+/// or a user-editable reconstruction of the record.
+public struct DietDraftConfirmationReceipt: Decodable, Equatable, Sendable {
+    public let id: Int
+    public let displayMessage: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case displayMessage = "display_message"
+    }
+
+    public init(id: Int, displayMessage: String? = nil) {
+        self.id = id
+        self.displayMessage = displayMessage
+    }
+}
+
+/// Canonical photo asset returned with a diet history row. The URL is a
+/// short-lived owner-scoped capability issued at read time, never a storage key.
+public struct DietPhotoAsset: Decodable, Equatable, Sendable, Identifiable {
+    public let id: String
+    public let url: String
+    public let ordinal: Int
+    public let mediaType: String?
+    public let origin: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, url, ordinal, origin
+        case mediaType = "media_type"
+    }
+}
+
+/// A compact, read-only diet history row for the Mac record surface.
+/// `displayPhotoURLs` is resolved only from canonical diet paths and stays in
+/// memory; conversation/offline persistence never receives these capabilities.
+public struct DietHistoryRecord: Decodable, Equatable, Sendable, Identifiable {
+    public let id: Int
+    public let recordDate: String
+    public let mealType: String
+    public let foodItems: String
+    public let calories: Double?
+    public let protein: Double?
+    public let imageURL: String?
+    public let imageURLs: [String]
+    public let photoAssets: [DietPhotoAsset]
+    public private(set) var displayPhotoURLs: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case recordDate = "record_date"
+        case mealType = "meal_type"
+        case foodItems = "food_items"
+        case calories, protein
+        case imageURL = "image_url"
+        case imageURLs = "image_urls"
+        case photoAssets = "photo_assets"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(Int.self, forKey: .id)
+        recordDate = try values.decode(String.self, forKey: .recordDate)
+        mealType = try values.decode(String.self, forKey: .mealType)
+        foodItems = try values.decode(String.self, forKey: .foodItems)
+        calories = try values.decodeIfPresent(Double.self, forKey: .calories)
+        protein = try values.decodeIfPresent(Double.self, forKey: .protein)
+        imageURL = try values.decodeIfPresent(String.self, forKey: .imageURL)
+        imageURLs = try values.decodeIfPresent([String].self, forKey: .imageURLs) ?? []
+        photoAssets = try values.decodeIfPresent([DietPhotoAsset].self, forKey: .photoAssets) ?? []
+        displayPhotoURLs = []
+    }
+
+    fileprivate func resolvingPrivatePhotoURLs(baseURL: URL) -> DietHistoryRecord {
+        var copy = self
+        let rawURLs = photoAssets.map(\.url) + imageURLs + [imageURL].compactMap { $0 }
+        var seen = Set<String>()
+        copy.displayPhotoURLs = rawURLs.compactMap { raw in
+            guard let url = Self.resolveCanonicalDietPhotoURL(raw, baseURL: baseURL),
+                  seen.insert(url).inserted else {
+                return nil
+            }
+            return url
+        }
+        return copy
+    }
+
+    private static func resolveCanonicalDietPhotoURL(_ raw: String, baseURL: URL) -> String? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("/api/v1/upload/files/diet/"),
+              let resolved = URL(string: trimmed, relativeTo: baseURL)?.absoluteURL,
+              resolved.host == baseURL.host,
+              resolved.path.hasPrefix("/api/v1/upload/files/diet/") else {
+            return nil
+        }
+        return resolved.absoluteString
+    }
+}
+
+public protocol DietDraftConfirming: Sendable {
+    func confirmDietDraft(action: AgentDynamicCardActionDescriptor) async throws -> DietDraftConfirmationReceipt
+}
+
 private struct QuickRecordRequest: Encodable {
     let text: String
 }
@@ -139,6 +242,82 @@ private struct DietRecordRequest: Encodable {
         case foodItems = "food_items"
         case calories
         case protein
+    }
+}
+
+private struct DietDraftConfirmationRequest: Encodable {
+    let recordDate: String
+    let mealType: String
+    let foodItems: String
+    let calories: Double?
+    let protein: Double?
+    let carbs: Double?
+    let fat: Double?
+    let fiber: Double?
+    let source: String?
+    let aiRecognized: Int?
+    let aiConfidence: Double?
+    let aiRawResult: AgentDynamicCardValue?
+    let healthTips: String?
+    let photoDraftToken: String
+
+    enum CodingKeys: String, CodingKey {
+        case recordDate = "record_date"
+        case mealType = "meal_type"
+        case foodItems = "food_items"
+        case calories, protein, carbs, fat, fiber, source
+        case aiRecognized = "ai_recognized"
+        case aiConfidence = "ai_confidence"
+        case aiRawResult = "ai_raw_result"
+        case healthTips = "health_tips"
+        case photoDraftToken = "photo_draft_token"
+    }
+
+    init?(action: AgentDynamicCardActionDescriptor) {
+        guard action.action == "diet_record.create",
+              action.requiresManualConfirm == true,
+              action.requiredReceipt == true,
+              action.capabilityID == "diet_draft.v1",
+              let record = action.payload?["record"],
+              let recordDate = Self.requiredText(record["record_date"]),
+              let mealType = Self.requiredText(record["meal_type"]),
+              let foodItems = Self.requiredText(record["food_items"]),
+              let photoDraftToken = Self.requiredText(record["photo_draft_token"]) else {
+            return nil
+        }
+        self.recordDate = recordDate
+        self.mealType = mealType
+        self.foodItems = foodItems
+        self.calories = Self.number(record["calories"])
+        self.protein = Self.number(record["protein"])
+        self.carbs = Self.number(record["carbs"])
+        self.fat = Self.number(record["fat"])
+        self.fiber = Self.number(record["fiber"])
+        self.source = Self.text(record["source"])
+        self.aiRecognized = record["ai_recognized"]?.boolValue.map { $0 ? 1 : 0 }
+            ?? record["ai_recognized"]?.intValue.map { $0 == 0 ? 0 : 1 }
+        self.aiConfidence = Self.number(record["ai_confidence"])
+        self.aiRawResult = record["ai_raw_result"]
+        self.healthTips = Self.text(record["health_tips"])
+        self.photoDraftToken = photoDraftToken
+    }
+
+    private static func requiredText(_ value: AgentDynamicCardValue?) -> String? {
+        let text = value?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return text.isEmpty ? nil : text
+    }
+
+    private static func text(_ value: AgentDynamicCardValue?) -> String? {
+        requiredText(value)
+    }
+
+    private static func number(_ value: AgentDynamicCardValue?) -> Double? {
+        switch value {
+        case .int(let number): return Double(number)
+        case .double(let number): return number
+        case .string(let number): return Double(number)
+        default: return nil
+        }
     }
 }
 
@@ -411,7 +590,7 @@ public struct FrequentWater: Decodable, Equatable, Sendable, Identifiable {
     }
 }
 
-public final class RecordClient: Sendable {
+public final class RecordClient: DietDraftConfirming, Sendable {
     private let apiClient: APIClient
 
     public init(apiClient: APIClient) {
@@ -447,6 +626,23 @@ public final class RecordClient: Sendable {
             recordID: saved.id,
             undoPath: undoPath(prefix: "diet/records", recordID: saved.id)
         )
+    }
+
+    /// Read the user's own most recent diet rows, including freshly signed photo
+    /// capabilities from the canonical `DietPhotoAsset` ledger.
+    public func fetchRecentDietRecords(limit: Int = 12) async throws -> [DietHistoryRecord] {
+        let safeLimit = min(max(limit, 1), 50)
+        let records: [DietHistoryRecord] = try await apiClient.get(
+            "diet/records/me?limit=\(safeLimit)"
+        )
+        return records.map { $0.resolvingPrivatePhotoURLs(baseURL: apiClient.resourceBaseURL) }
+    }
+
+    public func confirmDietDraft(action: AgentDynamicCardActionDescriptor) async throws -> DietDraftConfirmationReceipt {
+        guard let request = DietDraftConfirmationRequest(action: action) else {
+            throw APIError.emptyResponse
+        }
+        return try await apiClient.post("diet/records", body: request)
     }
 
     public func recordWater(amountMl: Int, drinkType: String = "水") async throws -> QuickRecordResult {

@@ -2,8 +2,9 @@
 from datetime import date, datetime, timedelta, timezone
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 from app.models.user import User
-from app.models.daily_health import DietPhotoDraft, DietRecord
+from app.models.daily_health import DietPhotoAsset, DietPhotoDraft, DietRecord
 from app.models.food_nutrition import FoodItem, FoodNutrient
 
 
@@ -86,6 +87,168 @@ class TestDietAPI:
         assert data["meal_type"] == "lunch"
         assert data["food_items"] == "米饭,青菜"
         assert data["calories"] is None
+
+    def test_direct_photo_record_creates_attached_photo_asset(
+        self, client, db, auth_headers, sample_diet_data, tmp_path, monkeypatch
+    ):
+        from app.api import upload as upload_api
+
+        monkeypatch.setattr(upload_api, "UPLOAD_DIR", str(tmp_path / "uploads"))
+        response = client.post(
+            "/api/v1/diet/records",
+            json={
+                **sample_diet_data,
+                "image_base64": VALID_PNG_BASE64,
+                "image_type": "png",
+            },
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        asset = db.query(DietPhotoAsset).one()
+        assert asset.diet_record_id == body["id"]
+        assert asset.photo_draft_token is None
+        assert asset.lifecycle == "attached"
+        assert asset.storage_key.startswith("/api/v1/upload/files/diet/")
+        assert body["photo_assets"][0]["id"] == asset.id
+        assert body["image_urls"] == [body["photo_assets"][0]["url"]]
+
+    def test_diet_record_returns_ordered_signed_photo_assets(
+        self, client, db, auth_headers, test_user, sample_diet_data
+    ):
+        created = client.post(
+            "/api/v1/diet/records",
+            json=sample_diet_data,
+            headers=auth_headers,
+        )
+        assert created.status_code == 200
+        record_id = created.json()["id"]
+        canonical_cover = (
+            f"/api/v1/upload/files/diet/{test_user.id}/lunch-cover.jpg"
+        )
+        canonical_second = (
+            f"/api/v1/upload/files/diet/{test_user.id}/lunch-side.jpg"
+        )
+        db.add_all([
+            DietPhotoAsset(
+                id="diet-asset-cover",
+                user_id=test_user.id,
+                diet_record_id=record_id,
+                storage_key=canonical_cover,
+                content_sha256="a" * 64,
+                media_type="image/jpeg",
+                origin="chat",
+                ordinal=0,
+                classification="food",
+                recognition_confidence=0.94,
+                intent_decision="auto_record",
+                recognition_snapshot={"food_count": 2},
+                lifecycle="attached",
+            ),
+            DietPhotoAsset(
+                id="diet-asset-side",
+                user_id=test_user.id,
+                diet_record_id=record_id,
+                storage_key=canonical_second,
+                content_sha256="b" * 64,
+                media_type="image/jpeg",
+                origin="chat",
+                ordinal=1,
+                classification="food",
+                recognition_confidence=0.94,
+                intent_decision="auto_record",
+                recognition_snapshot={"food_count": 2},
+                lifecycle="attached",
+            ),
+        ])
+        db.commit()
+
+        response = client.get("/api/v1/diet/records/me", headers=auth_headers)
+
+        assert response.status_code == 200
+        payload = next(item for item in response.json() if item["id"] == record_id)
+        assert [asset["id"] for asset in payload["photo_assets"]] == [
+            "diet-asset-cover",
+            "diet-asset-side",
+        ]
+        assert [asset["ordinal"] for asset in payload["photo_assets"]] == [0, 1]
+        assert payload["image_url"].startswith(canonical_cover + "?")
+        assert payload["image_urls"] == [
+            payload["photo_assets"][0]["url"],
+            payload["photo_assets"][1]["url"],
+        ]
+        assert all("?expires=" in url for url in payload["image_urls"])
+        assert db.query(DietPhotoAsset).filter_by(id="diet-asset-cover").one().storage_key == canonical_cover
+
+    def test_diet_photo_asset_rejects_signed_url_as_persistent_storage_key(
+        self, db, test_user
+    ):
+        db.add(DietPhotoAsset(
+            id="diet-asset-signed-url",
+            user_id=test_user.id,
+            storage_key=(
+                f"/api/v1/upload/files/diet/{test_user.id}/meal.jpg?expires=1&signature=x"
+            ),
+            content_sha256="c" * 64,
+            media_type="image/jpeg",
+            origin="chat",
+            ordinal=0,
+            classification="food",
+            intent_decision="confirm",
+            recognition_snapshot={},
+            lifecycle="pending",
+        ))
+
+        with pytest.raises(IntegrityError):
+            db.commit()
+        db.rollback()
+
+    def test_confirming_photo_draft_attaches_pending_asset_to_created_record(
+        self, client, db, auth_headers, test_user, sample_diet_data
+    ):
+        token = "contextual-photo-draft-token-0001"
+        canonical_path = f"/api/v1/upload/files/diet/{test_user.id}/pending-lunch.jpg"
+        draft = DietPhotoDraft(
+            token=token,
+            user_id=test_user.id,
+            image_url=canonical_path,
+            image_type="jpeg",
+            recognition_result={"food_items": "鸡胸肉 120g"},
+            status="pending",
+            expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+        )
+        asset = DietPhotoAsset(
+            id="diet-asset-pending-confirmation",
+            user_id=test_user.id,
+            photo_draft_token=token,
+            storage_key=canonical_path,
+            content_sha256="d" * 64,
+            media_type="image/jpeg",
+            origin="chat",
+            ordinal=0,
+            classification="food",
+            recognition_confidence=0.91,
+            intent_decision="confirm",
+            recognition_snapshot={"food_count": 1},
+            lifecycle="pending",
+        )
+        db.add_all([draft, asset])
+        db.commit()
+
+        response = client.post(
+            "/api/v1/diet/records",
+            json={**sample_diet_data, "photo_draft_token": token},
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 200
+        record_id = response.json()["id"]
+        db.refresh(asset)
+        assert asset.diet_record_id == record_id
+        assert asset.photo_draft_token is None
+        assert asset.lifecycle == "attached"
+        assert response.json()["image_urls"] == [response.json()["photo_assets"][0]["url"]]
 
     def test_create_diet_record_reuses_user_scoped_idempotency_key(
         self, client, db, auth_headers, sample_diet_data
@@ -303,6 +466,52 @@ class TestDietAPI:
         assert deleted.status_code == 200
         assert not files[0].exists()
 
+    def test_delete_diet_record_removes_all_attached_photo_assets(
+        self, client, db, auth_headers, test_user, sample_diet_data, tmp_path, monkeypatch
+    ):
+        from app.api import upload as upload_api
+
+        upload_root = tmp_path / "uploads"
+        owner_root = upload_root / "diet" / str(test_user.id)
+        owner_root.mkdir(parents=True)
+        monkeypatch.setattr(upload_api, "UPLOAD_DIR", str(upload_root))
+        created = client.post(
+            "/api/v1/diet/records",
+            json=sample_diet_data,
+            headers=auth_headers,
+        )
+        assert created.status_code == 200
+        record_id = created.json()["id"]
+
+        cover = owner_root / "cover.jpg"
+        side = owner_root / "side.jpg"
+        cover.write_bytes(b"cover")
+        side.write_bytes(b"side")
+        db.add_all([
+            DietPhotoAsset(
+                id="delete-cover", user_id=test_user.id, diet_record_id=record_id,
+                storage_key=f"/api/v1/upload/files/diet/{test_user.id}/cover.jpg",
+                content_sha256="c" * 64, media_type="image/jpeg", origin="chat",
+                ordinal=0, classification="food", recognition_confidence=0.9,
+                intent_decision="auto_record", lifecycle="attached",
+            ),
+            DietPhotoAsset(
+                id="delete-side", user_id=test_user.id, diet_record_id=record_id,
+                storage_key=f"/api/v1/upload/files/diet/{test_user.id}/side.jpg",
+                content_sha256="s" * 64, media_type="image/jpeg", origin="chat",
+                ordinal=1, classification="food", recognition_confidence=0.9,
+                intent_decision="auto_record", lifecycle="attached",
+            ),
+        ])
+        db.commit()
+
+        deleted = client.delete(f"/api/v1/diet/records/{record_id}", headers=auth_headers)
+
+        assert deleted.status_code == 200
+        assert not cover.exists()
+        assert not side.exists()
+        assert db.query(DietPhotoAsset).filter(DietPhotoAsset.id.in_(["delete-cover", "delete-side"])).count() == 0
+
     def test_delete_diet_record_retries_a_failed_private_image_cleanup(
         self, client, db, auth_headers, test_user, sample_diet_data, tmp_path, monkeypatch
     ):
@@ -502,9 +711,37 @@ class TestDietAPI:
         )
 
         assert response.status_code == 410
-        db.refresh(draft)
-        assert draft.status == "expired"
-        assert draft.recognition_result == {}
+        assert db.query(DietPhotoDraft).filter_by(token=draft.token).first() is None
+
+    def test_legacy_diet_image_fields_reject_signed_urls(self, db, test_user):
+        signed_url = (
+            f"/api/v1/upload/files/diet/{test_user.id}/meal.jpg?expires=1&signature=x"
+        )
+        db.add(DietRecord(
+            user_id=test_user.id,
+            record_date=date.today(),
+            meal_type="lunch",
+            food_name="签名路径测试",
+            food_items="签名路径测试",
+            image_url=signed_url,
+        ))
+
+        with pytest.raises(IntegrityError):
+            db.commit()
+        db.rollback()
+
+        db.add(DietPhotoDraft(
+            token="signed-url-photo-draft-123456",
+            user_id=test_user.id,
+            image_url=signed_url,
+            image_type="jpeg",
+            recognition_result={},
+            status="pending",
+            expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+        ))
+        with pytest.raises(IntegrityError):
+            db.commit()
+        db.rollback()
 
     def test_implausible_past_record_date_is_clamped_to_server_today(
         self, client, auth_headers, caplog
@@ -846,6 +1083,11 @@ class TestDietAPI:
         assert draft.token == token
         assert draft.status == "pending"
         assert draft.image_url.startswith(f"/api/v1/upload/files/diet/{draft.user_id}/")
+        asset = db.query(DietPhotoAsset).one()
+        assert asset.photo_draft_token == token
+        assert asset.diet_record_id is None
+        assert asset.lifecycle == "pending"
+        assert asset.storage_key == draft.image_url
         assert len(list(upload_root.rglob("*.png"))) == 1
 
     def test_photo_draft_confirmation_reuses_image_and_is_idempotent(
@@ -905,6 +1147,10 @@ class TestDietAPI:
         assert second.json()["id"] == first.json()["id"]
         assert first.json()["image_url"]
         assert db.query(DietRecord).count() == 1
+        asset = db.query(DietPhotoAsset).one()
+        assert asset.diet_record_id == first.json()["id"]
+        assert asset.photo_draft_token is None
+        assert asset.lifecycle == "attached"
         assert len(list(upload_root.rglob("*.png"))) == 1
         assert db.query(DietPhotoDraft).count() == 0
         cancelled_after_confirm = client.delete(

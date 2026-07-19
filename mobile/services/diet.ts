@@ -3,6 +3,15 @@ import api from './api';
 export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack';
 export type VoiceMealType = MealType | 'extra';
 
+export interface DietPhotoAsset {
+  id: string;
+  /** Short-lived private URL returned at read time; never a persisted client value. */
+  url: string;
+  ordinal: number;
+  captured_at: string | null;
+  origin: string;
+}
+
 export interface DietRecord {
   id: number;
   user_id: number;
@@ -18,10 +27,34 @@ export interface DietRecord {
   fiber: number | null;
   alcohol_units: number | null;
   image_url: string | null;
+  image_urls?: string[];
+  photo_assets?: DietPhotoAsset[];
   notes: string | null;
   health_tips: string | null;
   ai_recognized?: number | null;
   ai_confidence?: number | null;
+}
+
+/**
+ * Resolve display-order photos while retaining the old single-image contract.
+ * Assets are authoritative because they carry stable ordinal ordering; records
+ * created before the asset table retain only `image_url`.
+ */
+export function dietRecordImageUrls(record: Pick<DietRecord, 'image_url' | 'image_urls' | 'photo_assets'>): string[] {
+  const assetUrls = (record.photo_assets ?? [])
+    .slice()
+    .sort((left, right) => left.ordinal - right.ordinal)
+    .map((asset) => asset.url);
+  const candidates = assetUrls.length > 0
+    ? assetUrls
+    : [...(record.image_urls ?? []), record.image_url ?? ''];
+  const seen = new Set<string>();
+  return candidates.filter((url) => {
+    const normalized = String(url ?? '').trim();
+    if (!normalized || seen.has(normalized)) return false;
+    seen.add(normalized);
+    return true;
+  });
 }
 
 export interface DietRecordCreate {

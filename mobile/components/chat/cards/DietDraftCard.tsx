@@ -1,5 +1,6 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, TextInput, TextStyle, View } from 'react-native';
+import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { CardShell } from './CardShell';
 import { MEAL_ICONS, MACRO_HUES, MacroBar, IngredientChips } from './mealCardVisuals';
@@ -10,6 +11,7 @@ import type {
   ChatCardActionRuntimeState,
 } from './types';
 import { revaColors as C, revaFonts, revaRadii, revaSemantic } from '../../../constants/revaTheme';
+import { BASE_URL } from '../../../services/api';
 
 // 饮食类目 accent (橙) = 「是饮食卡」装饰色, 保留字面量 (= legacy orange/tintOrange).
 const DIET_ACCENT = '#C97A2E';
@@ -48,6 +50,10 @@ interface DietDraftData {
   boundary?: unknown;
   time?: unknown;
   recorded_at?: unknown;
+  photo_url?: unknown;
+  recorded?: unknown;
+  receipt_message?: unknown;
+  auto_save_fallback?: unknown;
 }
 
 interface DietDraftCardViewProps extends DietDraftData {
@@ -173,6 +179,14 @@ function sourceLabel(value: unknown): string | undefined {
   return `来源: ${SOURCE_LABELS[source] || source}`;
 }
 
+function privatePhotoUri(value: unknown): string | undefined {
+  const raw = text(value);
+  if (!raw) return undefined;
+  if (/^https?:\/\//i.test(raw)) return raw;
+  const origin = BASE_URL.replace(/\/api\/?$/i, '');
+  return `${origin}${raw.startsWith('/') ? raw : `/${raw}`}`;
+}
+
 function isPhotoSource(value: unknown): boolean {
   const source = text(value)?.toLowerCase();
   return Boolean(source && (source.includes('photo') || source.includes('image') || source.includes('vision')));
@@ -250,7 +264,9 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
   );
   const boundary = boundaryText(data);
   const editHint = editHintText(data);
-  const isRecorded = data.confirmActionState === 'done';
+  const photoUri = privatePhotoUri(data.photo_url);
+  const isRecorded = data.recorded === true || data.confirmActionState === 'done';
+  const receiptMessage = text(data.receipt_message);
   const canConfirmFromEditor = Boolean(data.confirmAction && data.onConfirmAction && !data.confirmAction.disabled_reason);
   const recordedNextStep = walkText || suggestions[0] || '下一餐按目标补足蛋白和蔬菜';
   const publishDraftChange = React.useCallback((overrides: Partial<DraftEditValues> = {}) => {
@@ -284,13 +300,23 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
       <CardShell
         icon={MEAL_ICONS[mealType]}
         iconColor={C.green600}
-        title={`${mealLabel}草稿 · 识别完成`}
+        title={data.auto_save_fallback === true ? `${mealLabel}草稿 · 自动保存待确认` : `${mealLabel}草稿 · 识别完成`}
         badge={confidenceBadge(data.confidence)}
         badgeColor={C.green500}
         bg={C.paper}
         style={styles.compactCard}
       >
         <View style={styles.compactTitleRow}>
+          {photoUri ? (
+            <Image
+              testID="diet-draft-photo"
+              source={{ uri: photoUri }}
+              style={styles.compactPhoto}
+              contentFit="cover"
+              transition={120}
+              accessibilityLabel="本次识别的餐食照片"
+            />
+          ) : null}
           <View style={styles.compactTitleCopy}>
             <Text maxFontSizeMultiplier={1.16} style={styles.compactMealTitle} numberOfLines={2}>
               {compactMealTitle(chips, draftFood || mealLabel)}
@@ -379,6 +405,16 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
       badgeColor={revaSemantic.caution.fg}
       bg={DIET_TINT}
     >
+      {photoUri ? (
+        <Image
+          testID="diet-draft-photo"
+          source={{ uri: photoUri }}
+          style={styles.detailPhoto}
+          contentFit="cover"
+          transition={120}
+          accessibilityLabel="本次识别的餐食照片"
+        />
+      ) : null}
       {/* 卡尔路里 hero：大号等宽数字 + 单位。无每日目标字段 → 不造「占今日 X%」。 */}
       <View style={styles.heroRow}>
         <View style={styles.heroLeft}>
@@ -411,7 +447,7 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
         <View style={styles.recordedProgressPill}>
           <Ionicons name="checkmark-done-circle" size={13} color={C.green600} />
           <Text maxFontSizeMultiplier={1.12} style={styles.recordedProgressText}>
-            已进入今日饮食进度
+            {receiptMessage || '已进入今日饮食进度'}
           </Text>
         </View>
       ) : null}
@@ -777,6 +813,12 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     gap: 10,
   },
+  compactPhoto: {
+    width: 58,
+    height: 58,
+    borderRadius: revaRadii.sm,
+    backgroundColor: C.paper2,
+  },
   compactTitleCopy: { flex: 1, minWidth: 0, gap: 3 },
   compactMealTitle: {
     fontFamily: revaFonts.sans,
@@ -919,6 +961,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 8,
+  },
+  detailPhoto: {
+    width: '100%',
+    height: 152,
+    borderRadius: revaRadii.md,
+    backgroundColor: C.paper2,
+    marginBottom: 10,
   },
   heroLeft: {
     flexDirection: 'row',

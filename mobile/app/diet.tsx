@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, RefreshControl, TextStyle, Alert, ActivityIndicator } from 'react-native';
+import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -8,7 +9,7 @@ import * as Haptics from 'expo-haptics';
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 import { useDailyDiet } from '../hooks/useDiet';
 import { useDietEstimate, type EstimateSource } from '../hooks/useDietEstimate';
-import { createDietRecord, updateDietRecord, deleteDietRecord, discardDietPhotoDraft, getDietPhotoDraftStatus, getFrequentFoods, recognizeFood, type DietRecord, type DietRecordCreate, type DietRecordUpdate, type FoodItem, type FrequentFood } from '../services/diet';
+import { createDietRecord, updateDietRecord, deleteDietRecord, dietRecordImageUrls, discardDietPhotoDraft, getDietPhotoDraftStatus, getFrequentFoods, recognizeFood, type DietRecord, type DietRecordCreate, type DietRecordUpdate, type FoodItem, type FrequentFood } from '../services/diet';
 import { computeDietTotals, isPendingNutrition } from '../utils/dietTotals';
 import * as ImagePicker from 'expo-image-picker';
 import type { ImagePickerAsset } from 'expo-image-picker';
@@ -293,6 +294,8 @@ function buildShareRecordFromConfirmation(created: DietRecord, draft: DietRecord
     fiber: created.fiber ?? draft.fiber ?? null,
     alcohol_units: created.alcohol_units ?? draft.alcohol_units ?? null,
     image_url: created.image_url ?? null,
+    image_urls: created.image_urls ?? [],
+    photo_assets: created.photo_assets ?? [],
     notes: created.notes ?? draft.notes ?? null,
     health_tips: created.health_tips ?? draft.health_tips ?? null,
     ai_recognized: created.ai_recognized ?? draft.ai_recognized ?? null,
@@ -1180,7 +1183,7 @@ export default function DietScreen() {
   const showDietFab = !showForm && !quickDraft && !photoCaptureBusy && photoCaptureStage !== 'failed';
   const shareImageSource = shareRecord
     ? buildChatImageSource(
-      absoluteApiAssetUrl(shareRecord.image_url) ?? shareImageUriOverride ?? '',
+      absoluteApiAssetUrl(dietRecordImageUrls(shareRecord)[0]) ?? shareImageUriOverride ?? '',
       authToken,
     )
     : undefined;
@@ -1329,6 +1332,8 @@ export default function DietScreen() {
             const pending = isPendingNutrition(r);
             const isEstimating = pendingIds.has(r.id);
             const failed = failedIds.has(r.id);
+            const imageUrls = dietRecordImageUrls(r);
+            const primaryImageUrl = absoluteApiAssetUrl(imageUrls[0]);
             return (
               <ReanimatedSwipeable
                 key={r.id}
@@ -1359,6 +1364,22 @@ export default function DietScreen() {
               >
                 <View style={styles.mealRow}>
                   <View style={styles.mealDot} />
+                  {primaryImageUrl ? (
+                    <View style={styles.mealPhotoWrap} accessibilityLabel={`本餐包含 ${imageUrls.length} 张照片`}>
+                      <Image
+                        source={{ uri: primaryImageUrl }}
+                        style={styles.mealPhoto}
+                        contentFit="cover"
+                        transition={120}
+                        accessibilityLabel="饮食记录照片"
+                      />
+                      {imageUrls.length > 1 ? (
+                        <View style={styles.mealPhotoCount}>
+                          <Text style={txt.mealPhotoCount}>+{imageUrls.length - 1}</Text>
+                        </View>
+                      ) : null}
+                    </View>
+                  ) : null}
                   <View style={{ flex: 1 }}>
                     <Text style={txt.mealType}>{MEAL_LABEL[r.meal_type] || r.meal_type}</Text>
                     <Text style={txt.mealFood} numberOfLines={2}>{r.food_items}</Text>
@@ -1900,6 +1921,14 @@ const styles = StyleSheet.create({
     padding: revaSpacing.s4, marginBottom: revaSpacing.s2, ...revaShadows.sm,
   },
   mealDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: C.green500 },
+  mealPhotoWrap: { width: 54, height: 54, position: 'relative' },
+  mealPhoto: { width: 54, height: 54, borderRadius: revaRadii.sm, backgroundColor: C.paper2 },
+  mealPhotoCount: {
+    position: 'absolute', right: -3, bottom: -3,
+    minWidth: 19, height: 19, borderRadius: 10,
+    paddingHorizontal: 4, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: C.green700, borderWidth: 1, borderColor: C.surface,
+  },
   pendingChip: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   retryBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
@@ -2162,6 +2191,7 @@ const txt = {
   pendingNote: { fontFamily: revaFonts.sans, fontSize: 11, color: C.ink3, textAlign: 'center', marginTop: -revaSpacing.s3, marginBottom: revaSpacing.s4 } as TextStyle,
   mealType: { fontFamily: revaFonts.sans, fontSize: 13, fontWeight: '600', color: C.ink1 } as TextStyle,
   mealFood: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink2, marginTop: 2 } as TextStyle,
+  mealPhotoCount: { fontFamily: revaFonts.mono, fontSize: 9, fontWeight: '800', color: C.surface } as TextStyle,
   mealCal: { fontFamily: revaFonts.mono, fontSize: 13, fontWeight: '600', color: '#FF6723' } as TextStyle,
   pendingChipText: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink3 } as TextStyle,
   retryText: { fontFamily: revaFonts.sans, fontSize: 12, fontWeight: '600' } as TextStyle,

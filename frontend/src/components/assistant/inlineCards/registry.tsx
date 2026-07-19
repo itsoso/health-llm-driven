@@ -4,6 +4,7 @@ import type { CardSpec, CardContext, ChatCardActionDescriptor, ServerCardDescrip
 import {
   VitalsCardSpec, SleepCardSpec, WeightCardSpec, SupplementCardSpec,
   WeatherCardSpec, BPCardSpec, ScoreCardSpec, RecordCardSpec, DietCardSpec,
+  DietDraftCardSpec,
   MedicalExamImportResultCardSpec, RecordQualityCardSpec,
   AIGCMediaJobCardSpec,
   AIGCMediaConfirmationCardSpec,
@@ -21,6 +22,7 @@ export const CARD_REGISTRY: CardSpec[] = [
   BPCardSpec,
   SupplementCardSpec,
   DietCardSpec,
+  DietDraftCardSpec,
   WeatherCardSpec,
   ScoreCardSpec,
   VitalsCardSpec,
@@ -30,7 +32,11 @@ export const CARD_MAP: Record<string, CardSpec> = Object.fromEntries(
   CARD_REGISTRY.map(c => [c.type, c]),
 );
 
-const ALLOWED_ACTIONS = new Set(['route.open', 'ui.inline.expand']);
+const ALLOWED_ACTIONS = new Set(['route.open', 'ui.inline.expand', 'diet_record.create']);
+
+export interface CardRenderOptions {
+  onAction?: (action: ChatCardActionDescriptor) => void | Promise<void>;
+}
 
 /** 派发: 本地关键词 + 数据可用性双门限, 第一张 build 成功的卡片胜出 */
 export async function dispatchCard(ctx: CardContext): Promise<{ type: string; data: any } | null> {
@@ -51,11 +57,14 @@ export async function dispatchCard(ctx: CardContext): Promise<{ type: string; da
 }
 
 /** 渲染一张卡片 - 未知 type 安全降级返回 null. 特殊 type: cards_group 渲染网格 */
-export function renderCard(desc: ServerCardDescriptor): React.ReactElement | null {
+export function renderCard(
+  desc: ServerCardDescriptor,
+  options: CardRenderOptions = {},
+): React.ReactElement | null {
   // 多卡片组: iPad 上双列, 手机上单列
   if (desc.type === 'cards_group' && Array.isArray(desc.data?.cards)) {
     const items = (desc.data.cards as ServerCardDescriptor[])
-      .map((c, i) => ({ key: i, el: renderCard(c) }))
+      .map((c, i) => ({ key: i, el: renderCard(c, options) }))
       .filter(x => x.el != null);
     if (items.length === 0) return null;
     if (items.length === 1) return items[0].el;
@@ -79,6 +88,24 @@ export function renderCard(desc: ServerCardDescriptor): React.ReactElement | nul
             const route = readRouteAction(action);
             if (action.action === 'ui.inline.expand') {
               return renderInlineExpandAction(action);
+            }
+            if (action.action === 'diet_record.create') {
+              return (
+                <button
+                  key={action.id || `${action.action}:${action.label}`}
+                  type="button"
+                  disabled={!options.onAction || Boolean(action.disabled_reason)}
+                  onClick={() => { void options.onAction?.(action); }}
+                  className={[
+                    'inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50',
+                    action.style === 'primary'
+                      ? 'border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700'
+                      : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50',
+                  ].join(' ')}
+                >
+                  {action.label}
+                </button>
+              );
             }
             if (!route) return null;
             return (
@@ -140,7 +167,20 @@ function normalizeCardActions(actions: ServerCardDescriptor['actions']): ChatCar
 function isSafeAction(action: ChatCardActionDescriptor): boolean {
   if (action.action === 'route.open') return readRouteAction(action) != null;
   if (action.action === 'ui.inline.expand') return readInlineNextMealDetail(action) != null;
+  if (action.action === 'diet_record.create') return isSafeDietRecordCreateAction(action);
   return false;
+}
+
+function isSafeDietRecordCreateAction(action: ChatCardActionDescriptor): boolean {
+  if (action.endpoint !== '/diet/records') return false;
+  if (!action.requires_manual_confirm || !action.required_receipt || action.capability_id !== 'diet_draft.v1') {
+    return false;
+  }
+  const record = action.payload?.record;
+  if (!record || typeof record !== 'object' || Array.isArray(record)) return false;
+  return ['record_date', 'meal_type', 'food_items', 'photo_draft_token'].every((field) => (
+    typeof record[field] === 'string' && record[field].trim().length > 0 && record[field].length <= 1000
+  ));
 }
 
 function readRouteAction(action: ChatCardActionDescriptor): string | null {

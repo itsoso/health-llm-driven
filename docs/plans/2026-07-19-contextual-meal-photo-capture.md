@@ -43,14 +43,14 @@
 ### Task 3: Extract a single write-and-receipt service
 
 **Files:**
-- Create: `backend/app/services/diet_record_service.py`
+- Create: `backend/app/services/contextual_meal_photo_service.py`
 - Modify: `backend/app/api/diet.py`
 - Modify: `backend/app/services/agent_executor.py`
 - Test: `backend/tests/test_diet.py`, `backend/tests/test_agent_executor*.py`
 
 **Step 1:** Write failing tests for API, direct photo draft, and Agent chat paths sharing the same owner lock, idempotency key and receipt behavior.
 
-**Step 2:** Extract record creation/attachment into one service; preserve draft cleanup, transaction rollback and legacy endpoint behavior.
+**Step 2:** Add a dedicated contextual chat-photo persistence service for media copying, record/draft creation and source-message idempotency; retain the existing `POST /diet/records` path as the only consumer of a manual draft token, preserving cleanup, rollback and legacy endpoint behavior.
 
 **Step 3:** Add chat-image-to-diet-asset copying from the current raw upload, never by accepting arbitrary URLs.
 
@@ -88,7 +88,7 @@
 
 **Step 2:** Render cover thumbnail plus accessible gallery trigger; preserve no-image fallback.
 
-**Step 3:** Add undo action to auto receipt using owner-scoped delete/restore semantics, without any optimistic “saved” state before server receipt.
+**Step 3:** Use the existing verified write-receipt surface for automatic saves and retain the existing owner-scoped record deletion flow in diet history; do not add a second optimistic undo path before a dedicated restore policy is specified.
 
 **Step 4:** Regenerate types and run TypeScript/Web/Mac checks.
 
@@ -104,4 +104,4 @@
 
 **Step 3:** Deploy backend from clean main, verify migrations and private-media owner isolation, regenerate types, then publish Mobile OTA.
 
-**Step 4:** Verify on a real device with four cases: local lunch auto receipt, low-confidence lunch confirmation, non-food rejection, and history photo rendering/undo.
+**Step 4:** Verify on a real device with four cases: local lunch auto receipt, low-confidence lunch confirmation, non-food rejection, and history photo rendering/deletion.

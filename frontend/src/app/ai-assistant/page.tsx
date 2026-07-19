@@ -38,6 +38,10 @@ import {
 import { executeMedicalExamImportSkillForFile } from '@/services/chatMedicalExamImportSkill';
 import { pickPastedMedicalImportFile } from '@/services/pastedMedicalImportFile';
 import { statusStagePhrase } from '@/components/assistant/statusStagePhrase';
+import {
+  type ChatCardActionDescriptor,
+} from '@/components/assistant/inlineCards';
+import { projectServerCards } from '@/components/assistant/inlineCards/serverCardProjection';
 
 // Reva 暖色亮色系 —— 照抄 mobile/constants/revaTheme.ts (founder 已认可)。
 // 局部定义, 不引全局 token 文件; 值就近用 Tailwind arbitrary values 引用下面这张表。
@@ -391,6 +395,7 @@ function AIAssistantInner() {
           // 用户感知: 显示"调用工具中"提示一行 (灰色 italic), 不污染主回答
         } else if (type === 'done') {
           if (data.conversation_id) realConvId = data.conversation_id;
+          const serverCard = projectServerCards(data.cards);
           // 2026-05-13: 写性能字段, ChatView footer 显示
           const perf = {
             elapsed_ms: typeof data.elapsed_ms === 'number' ? data.elapsed_ms : undefined,
@@ -405,7 +410,15 @@ function AIAssistantInner() {
             tools_used: Array.isArray(data.tools_used) ? data.tools_used : undefined,
           };
           setMessages(prev =>
-            prev.map(m => (m.id === tempAssistantId ? { ...m, ...perf } : m)),
+            prev.map(m => (m.id === tempAssistantId ? {
+              ...m,
+              ...perf,
+              ...(serverCard ? {
+                card_type: serverCard.type,
+                card_data: serverCard.data,
+                card_actions: serverCard.actions,
+              } : {}),
+            } : m)),
           );
           setDoneIds(prev => new Set(prev).add(tempAssistantId));
         } else if (type === 'error') {
@@ -461,7 +474,9 @@ function AIAssistantInner() {
   const loadConversation = async (conversationId: number) => {
     if (streaming) return;
     const res = await agentApi.getConversation(conversationId);
-    const loaded = (res.data.messages || []).map((m: any) => ({
+    const loaded = (res.data.messages || []).map((m: any) => {
+      const serverCard = projectServerCards(m.meta?.cards);
+      return {
       id: m.id,
       role: m.role,
       content: m.content,
@@ -476,7 +491,13 @@ function AIAssistantInner() {
       perf: m.meta?.perf,
       sources_used: m.meta?.sources_used,
       tools_used: m.meta?.tools_used,
-    })) as ChatMessage[];
+      ...(serverCard ? {
+        card_type: serverCard.type,
+        card_data: serverCard.data,
+        card_actions: serverCard.actions,
+      } : {}),
+    };
+    }) as ChatMessage[];
     activeConvIdRef.current = conversationId;
     setActiveConvId(conversationId);
     setMessages(loaded);
@@ -511,6 +532,36 @@ function AIAssistantInner() {
 
   const submitSuggestion = (text: string) => {
     sendMessage(text);
+  };
+
+  const handleCardAction = async (
+    messageId: number,
+    action: ChatCardActionDescriptor,
+  ) => {
+    if (action.action !== 'diet_record.create' || action.endpoint !== '/diet/records') return;
+    const record = action.payload?.record;
+    if (!record || typeof record !== 'object' || Array.isArray(record)) return;
+    if (!window.confirm('确认记录这顿餐食？')) return;
+    try {
+      const response = await api.post('/diet/records', record);
+      const receipt = response.data;
+      setMessages(prev => prev.map(message => (
+        message.id === messageId
+          ? {
+            ...message,
+            card_data: {
+              ...(message.card_data || {}),
+              recorded: true,
+              record_id: receipt.id,
+              receipt_message: receipt.display_message,
+            },
+            card_actions: [],
+          }
+          : message
+      )));
+    } catch (error: any) {
+      window.alert(error?.response?.data?.detail || '饮食记录失败，请稍后重试。');
+    }
   };
 
   const toggleMessageSelection = (messageId: number) => {
@@ -738,6 +789,7 @@ function AIAssistantInner() {
                 onToggleMessageSelection={toggleMessageSelection}
                 onEnterSelectionWith={enterSelectionWith}
                 onShareMessages={ids => shareMessages(ids)}
+                onCardAction={handleCardAction}
               />
             )}
           </div>

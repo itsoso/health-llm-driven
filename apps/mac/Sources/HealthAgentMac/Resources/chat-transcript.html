@@ -379,6 +379,12 @@
     gap: 8px;
     margin-top: 10px;
   }
+  /* A server reply may contain several atomic capabilities. This is a layout
+     stack, not another visual card, so each capability keeps its own boundary. */
+  .dynamic-card-group {
+    display: grid;
+    gap: 10px;
+  }
   .dynamic-card-action {
     display: inline-flex;
     align-items: center;
@@ -413,6 +419,16 @@
     width: 100%;
     max-height: 360px;
     object-fit: cover;
+    background: var(--code-bg);
+  }
+  .diet-draft-photo {
+    display: block;
+    width: 100%;
+    max-height: 260px;
+    margin: 10px 0;
+    object-fit: cover;
+    border-radius: 10px;
+    border: 1px solid rgba(95, 122, 85, 0.20);
     background: var(--code-bg);
   }
   .evidence-card,
@@ -1070,6 +1086,14 @@
     } catch (e) {}
   }
 
+  function postDietDraftConfirm(actionID) {
+    try {
+      if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.dietDraftConfirm) {
+        window.webkit.messageHandlers.dietDraftConfirm.postMessage(String(actionID));
+      }
+    } catch (e) {}
+  }
+
   function isSafeInternalRoute(route) {
     return typeof route === "string" && route.indexOf("/") === 0 && route.indexOf("//") !== 0 &&
       !/[\u0000-\u001f\u007f]/.test(route);
@@ -1086,6 +1110,14 @@
           if (confirmationID && /^[A-Za-z0-9_-]+$/.test(confirmationID)) {
             ev.preventDefault();
             postAIGCConfirm(confirmationID);
+          }
+          return;
+        }
+        if (route.indexOf("xiaoba-diet-confirm://") === 0) {
+          var actionID = route.substring("xiaoba-diet-confirm://".length);
+          if (actionID && /^[A-Za-z0-9_:-]+$/.test(actionID)) {
+            ev.preventDefault();
+            postDietDraftConfirm(actionID);
           }
           return;
         }

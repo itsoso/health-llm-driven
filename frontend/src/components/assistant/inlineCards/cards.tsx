@@ -701,7 +701,98 @@ export const DietCardSpec: CardSpec<DietData> = {
 };
 
 // ────────────────────────────────────────────────────────────────
-// 10. MedicalExamImportResultCard - runtime skill import result
+// 10. DietDraftCard - server-issued, current-page photo confirmation
+// ────────────────────────────────────────────────────────────────
+interface DietDraftData {
+  meal_type?: string;
+  food_items?: string | string[];
+  calories?: number;
+  protein?: number;
+  carbs?: number;
+  fat?: number;
+  fiber?: number;
+  confidence?: number;
+  photo_url?: string;
+  boundary?: string;
+  recorded?: boolean;
+  record_id?: number;
+  receipt_message?: string;
+}
+
+const DIET_DRAFT_MEALS: Record<string, string> = {
+  breakfast: '早餐', lunch: '午餐', dinner: '晚餐', snack: '加餐',
+};
+
+function dietDraftPhotoURL(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed.startsWith('/api/v1/upload/files/diet/') ? trimmed : null;
+}
+
+function displayDietNumber(value: unknown): string | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+  return Number.isInteger(value) ? String(value) : String(Math.round(value * 100) / 100);
+}
+
+export function DietDraftCardView(data: DietDraftData) {
+  const foodItems = Array.isArray(data.food_items)
+    ? data.food_items.filter((item): item is string => typeof item === 'string').join(' + ')
+    : data.food_items;
+  const photoURL = dietDraftPhotoURL(data.photo_url);
+  const metrics = [
+    ['热量', displayDietNumber(data.calories), 'kcal'],
+    ['蛋白', displayDietNumber(data.protein), 'g'],
+    ['碳水', displayDietNumber(data.carbs), 'g'],
+    ['脂肪', displayDietNumber(data.fat), 'g'],
+  ].filter((metric): metric is [string, string, string] => Boolean(metric[1]));
+  const meal = DIET_DRAFT_MEALS[data.meal_type || ''] || '这餐';
+  const receipt = data.receipt_message || (data.record_id ? `已保存到今日饮食 · 记录 #${data.record_id}` : '已保存到今日饮食');
+
+  return (
+    <CardShell
+      emoji="🍽️"
+      title={data.recorded ? `${meal}已记录` : `${meal}待确认`}
+      badge={data.recorded ? '已保存' : '图像估算'}
+      badgeColor={data.recorded ? '#1F8A5B' : '#C97A2E'}
+      bg="#FFF7F0"
+      border="#FED7AA"
+    >
+      {photoURL ? (
+        <img
+          src={photoURL}
+          alt="本次识别的餐食照片"
+          className="mb-3 aspect-[4/3] w-full rounded-lg border border-[#F1DFC9] object-cover"
+        />
+      ) : null}
+      <div className="text-sm font-semibold leading-6 text-[#29261F]">{foodItems || '待核对餐食'}</div>
+      {metrics.length > 0 ? (
+        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {metrics.map(([label, value, unit]) => (
+            <div key={label} className="rounded-lg bg-white/75 px-2.5 py-2 ring-1 ring-[#F1E2CF]">
+              <div className="text-[10px] text-[#948F80]">{label}</div>
+              <div className="mt-0.5 text-sm font-extrabold tabular-nums text-[#29261F]">{value}<span className="ml-0.5 text-[10px] font-medium text-[#948F80]">{unit}</span></div>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {data.recorded ? (
+        <div className="mt-3 text-xs font-semibold text-[#176F49]">✓ {receipt}</div>
+      ) : data.boundary ? (
+        <div className="mt-3 text-[11px] leading-5 text-[#8A5D14]">{data.boundary}</div>
+      ) : null}
+    </CardShell>
+  );
+}
+
+export const DietDraftCardSpec: CardSpec<DietDraftData> = {
+  type: 'diet_draft', label: '饮食确认',
+  match: () => null,
+  build: () => null,
+  render: (data) => <DietDraftCardView {...data} />,
+};
+
+// ────────────────────────────────────────────────────────────────
+// 11. MedicalExamImportResultCard - runtime skill import result
 // ────────────────────────────────────────────────────────────────
 interface MedicalExamImportResultData {
   exam_id: number;

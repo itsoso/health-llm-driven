@@ -605,6 +605,9 @@ struct AgentChatView: View {
             onRouteOpen: { route in handleWebRouteOpen(route) },
             onAIGCConfirm: { confirmationID in
                 Task { await viewModel.confirmAIGCMediaDraft(id: confirmationID) }
+            },
+            onDietDraftConfirm: { actionID in
+                Task { await viewModel.confirmDietDraft(actionID: actionID) }
             }
         )
     }
@@ -2208,6 +2211,9 @@ struct RecordHubView: View {
     @State private var supplementProductMessage: String?
     @State private var frequentSupplements: [FrequentSupplement] = []
     @State private var frequentWater: [FrequentWater] = []
+    @State private var recentDietRecords: [DietHistoryRecord] = []
+    @State private var isLoadingDietHistory = false
+    @State private var dietHistoryError: String?
     @State private var weightKg = ""
     @State private var systolic = ""
     @State private var diastolic = ""
@@ -2263,6 +2269,7 @@ struct RecordHubView: View {
 
                             VStack(alignment: .leading, spacing: 16) {
                                 saveStatusPanel
+                                dietPhotoHistoryPanel
                                 recentRecordsPanel
                             }
                             .frame(width: 360, alignment: .topLeading)
@@ -2273,6 +2280,7 @@ struct RecordHubView: View {
                             labUploadCard
                             structuredCaptureCard
                             saveStatusPanel
+                            dietPhotoHistoryPanel
                             recentRecordsPanel
                         }
                     }
@@ -2297,7 +2305,10 @@ struct RecordHubView: View {
                     Task { await viewModel.refresh() }
                 }
             }
-            .task { await loadFrequentSuggestions() }
+            .task {
+                await loadFrequentSuggestions()
+                await loadRecentDietHistory()
+            }
         }
         .fileImporter(
             isPresented: $isLabImporterPresented,
@@ -2316,6 +2327,18 @@ struct RecordHubView: View {
         frequentSupplements = await supplements ?? []
         frequentWater = await water ?? []
         myMedications = await meds
+    }
+
+    private func loadRecentDietHistory() async {
+        isLoadingDietHistory = true
+        dietHistoryError = nil
+        defer { isLoadingDietHistory = false }
+        do {
+            recentDietRecords = try await client.fetchRecentDietRecords()
+        } catch {
+            recentDietRecords = []
+            dietHistoryError = userFacingError(error, appLanguageRaw)
+        }
     }
 
     private var recordHeader: some View {
@@ -2947,6 +2970,127 @@ struct RecordHubView: View {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .stroke(Color.secondary.opacity(0.10), lineWidth: 1)
         }
+    }
+
+    private var dietPhotoHistoryPanel: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Label(appText("Meal Photo History", appLanguageRaw), systemImage: "photo.on.rectangle.angled")
+                    .font(.headline)
+                Spacer()
+                if isLoadingDietHistory {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Text("\(recentDietRecords.count)")
+                        .font(.caption.bold())
+                        .foregroundStyle(.secondary)
+                }
+                Button {
+                    Task { await loadRecentDietHistory() }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .buttonStyle(.borderless)
+                .disabled(isLoadingDietHistory)
+                .help(appText("Refresh", appLanguageRaw))
+            }
+
+            if recentDietRecords.isEmpty {
+                if let dietHistoryError {
+                    Text("\(appText("Unable to load meal photo history", appLanguageRaw)): \(dietHistoryError)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
+                } else {
+                    Text(appText(
+                        isLoadingDietHistory
+                            ? "Loading saved meal photos..."
+                            : "Saved meal photos will appear here with their diet record.",
+                        appLanguageRaw
+                    ))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
+                }
+            } else {
+                ForEach(recentDietRecords.prefix(8)) { record in
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text(dietHistoryMealLabel(record.mealType))
+                                .font(.caption.bold())
+                                .foregroundStyle(.green)
+                            Text(record.recordDate)
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            if let calories = dietHistoryMetric(record.calories, unit: "kcal") {
+                                Text(calories)
+                                    .font(.caption.monospacedDigit())
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        Text(record.foodItems)
+                            .font(.callout.weight(.medium))
+                            .lineLimit(2)
+                        if !record.displayPhotoURLs.isEmpty {
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 8) {
+                                    ForEach(Array(record.displayPhotoURLs.enumerated()), id: \.offset) { _, photoURL in
+                                        AsyncImage(url: URL(string: photoURL)) { phase in
+                                            switch phase {
+                                            case .success(let image):
+                                                image
+                                                    .resizable()
+                                                    .scaledToFill()
+                                            case .failure:
+                                                Image(systemName: "photo")
+                                                    .foregroundStyle(.secondary)
+                                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                            default:
+                                                ProgressView()
+                                                    .controlSize(.small)
+                                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                            }
+                                        }
+                                        .frame(width: 72, height: 54)
+                                        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                        .accessibilityLabel("\(dietHistoryMealLabel(record.mealType))餐食照片")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .padding(10)
+                    .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+            }
+        }
+        .padding(18)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.secondary.opacity(0.10), lineWidth: 1)
+        }
+    }
+
+    private func dietHistoryMealLabel(_ mealType: String) -> String {
+        switch mealType {
+        case "breakfast": return "早餐"
+        case "lunch": return "午餐"
+        case "dinner": return "晚餐"
+        default: return "加餐"
+        }
+    }
+
+    private func dietHistoryMetric(_ value: Double?, unit: String) -> String? {
+        guard let value, value.isFinite else { return nil }
+        let rounded = (value * 100).rounded() / 100
+        let display = rounded.rounded() == rounded
+            ? String(Int(rounded))
+            : String(rounded)
+        return "\(display) \(unit)"
     }
 
     private func savedRecordCard(_ record: QuickRecordResult) -> some View {

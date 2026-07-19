@@ -53,6 +53,8 @@ export interface ChatMessage {
   card_type?: string;
   /** 卡片数据 payload (跟 card_type 匹配) */
   card_data?: any;
+  /** 服务端签发的动态卡片动作；只允许经本地 capability 校验后执行。 */
+  card_actions?: Array<Record<string, any>>;
   /** 2026-05-13 性能可观测性: assistant 消息完成后填. 显示在气泡 footer */
   elapsed_ms?: number;
   llm_ms?: number;

@@ -54,8 +54,8 @@ struct BackendConversationMessageMeta: Decodable, Sendable {
     let cardData: AgentDynamicCardValue?
 
     var firstCard: AgentDynamicCardDescriptor? {
-        if let first = cards.first {
-            return first
+        if let grouped = AgentDynamicCardDescriptor.grouped(cards) {
+            return grouped
         }
         if let cardType, let cardData {
             return AgentDynamicCardDescriptor(type: cardType, data: cardData)

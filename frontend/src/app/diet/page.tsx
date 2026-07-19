@@ -7,6 +7,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import { voiceDraftToDietForm, type VoiceFoodParseResponse } from '@/components/diet/voiceFoodDraft';
+import { dietRecordPhotoUrls } from '@/components/diet/dietPhotoAssets';
 
 // 使用相对路径，通过Next.js代理到后端
 const API_BASE = '/api';
@@ -757,18 +758,33 @@ function DietContent() {
             <div className="space-y-4">
               {dailySummary.meals.map((meal: any) => {
                 const mealInfo = getMealInfo(meal.meal_type);
+                const photoUrls = dietRecordPhotoUrls(meal);
                 return (
                   <div key={meal.id} className="flex gap-4 p-4 bg-gray-50 rounded-lg border border-gray-100">
                     {/* 食物图片 */}
-                    {meal.image_url && (
-                      <div className="flex-shrink-0">
-                        <img
-                          src={meal.image_url}
-                          alt={meal.food_items}
-                          className="w-32 h-32 object-cover rounded-lg shadow-md cursor-pointer hover:scale-105 transition-transform"
-                          onClick={() => window.open(meal.image_url, '_blank')}
-                          title="点击查看大图"
-                        />
+                    {photoUrls.length > 0 && (
+                      <div className="grid w-32 shrink-0 grid-cols-2 gap-1 self-start" aria-label={`${meal.food_items} 照片`}>
+                        {photoUrls.slice(0, 4).map((photoUrl, index) => (
+                          <button
+                            key={photoUrl}
+                            type="button"
+                            onClick={() => window.open(photoUrl, '_blank', 'noopener,noreferrer')}
+                            className="relative aspect-square overflow-hidden rounded-md border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-orange-500"
+                            title={`查看第 ${index + 1} 张餐食照片`}
+                            aria-label={`查看第 ${index + 1} 张餐食照片`}
+                          >
+                            <img
+                              src={photoUrl}
+                              alt={`${meal.food_items} · 照片 ${index + 1}`}
+                              className="h-full w-full object-cover transition-transform hover:scale-105"
+                            />
+                            {index === 3 && photoUrls.length > 4 && (
+                              <span className="absolute inset-0 flex items-center justify-center bg-black/55 text-sm font-semibold text-white">
+                                +{photoUrls.length - 4}
+                              </span>
+                            )}
+                          </button>
+                        ))}
                       </div>
                     )}
 

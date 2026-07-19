@@ -22442,6 +22442,19 @@ export interface components {
              */
             timezone: string;
         };
+        /** DietPhotoAssetResponse */
+        DietPhotoAssetResponse: {
+            /** Id */
+            id: string;
+            /** Url */
+            url: string;
+            /** Ordinal */
+            ordinal: number;
+            /** Captured At */
+            captured_at?: string | null;
+            /** Origin */
+            origin: string;
+        };
         /** DietPhotoDraftStatusResponse */
         DietPhotoDraftStatusResponse: {
             /** Status */
@@ -22502,6 +22515,10 @@ export interface components {
             user_id: number;
             /** Image Url */
             image_url?: string | null;
+            /** Image Urls */
+            image_urls?: string[];
+            /** Photo Assets */
+            photo_assets?: components["schemas"]["DietPhotoAssetResponse"][];
             /** Created At */
             created_at?: string | null;
             /** Updated At */

@@ -1,5 +1,6 @@
 jest.mock('../../../../services/api', () => ({
   __esModule: true,
+  BASE_URL: 'https://health.executor.life/api',
   default: { get: jest.fn(), post: jest.fn() },
 }));
 
@@ -114,6 +115,49 @@ describe('renderCard 安全降级', () => {
   it('已知 type → 返回 React 元素', () => {
     const r = renderCard({ type: 'vitals', data: { sleep: '8h' } });
     expect(r).not.toBeNull();
+  });
+
+  it('renders the private meal photo supplied with a contextual diet draft', () => {
+    const element = renderCard({
+      type: 'diet_draft',
+      data: {
+        meal_type: 'lunch',
+        food_items: '鸡胸肉 + 杂粮饭',
+        calories: 560,
+        protein: 42,
+        source: 'chat_photo',
+        photo_url: '/api/v1/upload/files/diet/1/lunch.jpg?expires=1&signature=signed',
+      },
+    });
+
+    const screen = render(element!);
+    expect(screen.getByTestId('diet-draft-photo')).toHaveProp(
+      'source',
+      expect.arrayContaining([
+        expect.objectContaining({
+          uri: 'https://health.executor.life/api/v1/upload/files/diet/1/lunch.jpg?expires=1&signature=signed',
+        }),
+      ]),
+    );
+  });
+
+  it('renders an automatic contextual meal save as a visible receipt without an action', () => {
+    const element = renderCard({
+      type: 'diet_draft',
+      data: {
+        meal_type: 'lunch',
+        food_items: '鸡胸肉 + 杂粮饭',
+        recorded: true,
+        record_id: 76,
+        receipt_message: '已自动记录到今日午餐',
+        source: 'chat_photo',
+      },
+    });
+
+    const screen = render(element!);
+    expect(screen.getByText('午餐已记录')).toBeTruthy();
+    expect(screen.getByText('已自动记录到今日午餐')).toBeTruthy();
+    expect(screen.queryByText('确认记录')).toBeNull();
   });
 
   it('renders and refreshes a private AIGC media job card', async () => {

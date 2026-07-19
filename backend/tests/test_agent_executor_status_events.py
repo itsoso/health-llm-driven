@@ -21,7 +21,9 @@ from app.services.agent_executor import (
     ANSWER_MAX_TOKENS,
     FAST_ROUTE_ANSWER_MAX_TOKENS,
     AgentExecutor,
+    _apply_authorized_symptom_payload,
     _build_deterministic_symptom_tool_call,
+    _symptom_write_authorized_by_current_turn,
     _tool_status_label,
 )
 from app.services.llm import model_registry as reg
@@ -110,6 +112,10 @@ def test_deterministic_symptom_tool_call_keeps_questions_on_advice_path():
         "我不头疼。",
         "不头痛。",
         "我朋友头痛。",
+        "同事头痛，帮我记录一下。",
+        "我老婆腰疼，记录一下。",
+        "他头痛。",
+        "她腰疼。",
         "检查报告提示膝盖疼。",
         "附件里记录了腰疼。",
     ],
@@ -127,6 +133,172 @@ def test_deterministic_symptom_tool_call_rejects_attachments():
         write_receipts=[],
         has_attachment=True,
     ) is None
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "没有腰疼的症状。",
+        "我不头疼。",
+        "我朋友头痛。",
+        "同事头痛，帮我记录一下。",
+        "我老婆腰疼，记录一下。",
+        "他头痛。",
+        "她腰疼。",
+        "检查报告提示膝盖疼。",
+    ],
+)
+def test_symptom_write_authorization_rejects_unsafe_current_turns(message):
+    assert not _symptom_write_authorized_by_current_turn(message, [])
+
+
+def test_symptom_write_authorization_requires_current_statement_not_confirmation():
+    assert not _symptom_write_authorized_by_current_turn(
+        "确认",
+        [{"role": "assistant", "content": "我准备记录症状：还是有腰疼。要不要记录？"}],
+    )
+
+
+def test_symptom_write_authorization_rejects_stale_confirmation_after_user_message():
+    assert not _symptom_write_authorized_by_current_turn(
+        "确认",
+        [
+            {"role": "assistant", "content": "我准备记录症状：头痛。要不要记录？"},
+            {"role": "user", "content": "不是这个"},
+        ],
+    )
+
+
+def test_symptom_write_authorization_rejects_non_symptom_confirmation_prompt():
+    assert not _symptom_write_authorized_by_current_turn(
+        "确认",
+        [{"role": "assistant", "content": "我已确认症状，接下来继续分析。"}],
+    )
+
+
+def test_authorized_symptom_payload_discards_model_inference():
+    payload = _apply_authorized_symptom_payload(
+        {
+            "record_type": "symptom",
+            "data": {
+                "body_part": "musculoskeletal",
+                "description": "MRI报告显示右膝半月板损伤",
+                "overall_severity": 8,
+            },
+        },
+        {"body_part": "musculoskeletal", "description": "腰疼"},
+    )
+
+    assert payload == {
+        "record_type": "symptom",
+        "data": {"body_part": "musculoskeletal", "description": "腰疼"},
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "message",
+    [
+        "没有腰疼的症状。",
+        "我不头疼。",
+        "我朋友头痛。",
+        "检查报告提示膝盖疼。",
+    ],
+)
+async def test_structured_symptom_write_is_blocked_before_gateway(
+    db, message
+):
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._current_turn_user_message = message
+    executor._current_turn_recent_messages = []
+
+    result = await executor._execute_tool_impl(
+        "health_record",
+        {
+            "record_type": "symptom",
+            "data": {
+                "body_part": "musculoskeletal",
+                "description": "模型自行生成的症状",
+            },
+        },
+        "test-token",
+    )
+
+    assert result.startswith("Error: 这段话不是明确的本人症状记录请求")
+
+
+@pytest.mark.asyncio
+async def test_structured_symptom_write_uses_current_statement_before_api(
+    db, monkeypatch
+):
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._current_turn_user_message = "还是有腰疼的症状。"
+    executor._current_turn_recent_messages = []
+    executor._agent_kernel_preflight_tool = lambda *args, **kwargs: None
+    captured = {}
+
+    def fake_validate(tool_name, args, **kwargs):
+        return {"error": None, "data": args}
+
+    async def fake_health_record(base_url, headers, args):
+        captured.update(args)
+        return '{"id": 7, "resource_type": "symptom"}'
+
+    monkeypatch.setattr(
+        "app.services.llm.tool_validator.validate_tool_call",
+        fake_validate,
+    )
+    monkeypatch.setattr(executor, "_exec_health_record", fake_health_record)
+
+    result = await executor._execute_tool_impl(
+        "health_record",
+        {
+            "record_type": "symptom",
+            "data": {
+                "body_part": "musculoskeletal",
+                "description": "MRI报告显示右膝半月板损伤",
+                "overall_severity": 8,
+            },
+        },
+        "test-token",
+    )
+
+    assert '"id": 7' in result
+    assert captured == {
+        "record_type": "symptom",
+        "data": {
+            "body_part": "musculoskeletal",
+            "description": "还是有腰疼的症状",
+        },
+    }
+
+
+@pytest.mark.asyncio
+async def test_structured_symptom_write_is_blocked_on_attachment_turn(db):
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._current_turn_user_message = "还是有腰疼的症状。"
+    executor._current_turn_recent_messages = []
+    executor._current_turn_has_attachment = True
+
+    result = await executor._execute_tool_impl(
+        "health_record",
+        {
+            "record_type": "symptom",
+            "data": {
+                "body_part": "musculoskeletal",
+                "description": "还是有腰疼的症状",
+            },
+        },
+        "test-token",
+    )
+
+    assert result == (
+        "Error: 带附件的症状内容暂不自动写入，请在不带附件的消息中直接复述"
+        "要记录的本人症状。"
+    )
 
 
 @pytest.mark.asyncio

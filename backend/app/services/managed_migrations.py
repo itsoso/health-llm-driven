@@ -26,6 +26,11 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 """
 
 _DOLLAR_QUOTE_RE = re.compile(r"\$[A-Za-z_][A-Za-z_0-9]*\$|\$\$")
+_SQLITE_TRIGGER_BLOCK_RE = re.compile(
+    r"^\s*CREATE\s+(?:TEMP(?:ORARY)?\s+)?TRIGGER\b[\s\S]*\bBEGIN\b",
+    re.IGNORECASE,
+)
+_SQLITE_TRIGGER_END_RE = re.compile(r"\bEND\s*$", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -158,6 +163,16 @@ def _split_sql_statements(sql: str) -> list[str]:
 
         if char == ";":
             statement = "".join(buffer).strip()
+            # SQLite trigger bodies can contain ordinary semicolon-terminated
+            # statements. Keep a CREATE TRIGGER ... BEGIN ... END block intact;
+            # the PostgreSQL trigger grammar does not use this form.
+            if (
+                _SQLITE_TRIGGER_BLOCK_RE.match(statement)
+                and not _SQLITE_TRIGGER_END_RE.search(statement)
+            ):
+                buffer.append(char)
+                index += 1
+                continue
             if statement:
                 statements.append(statement)
             buffer = []
