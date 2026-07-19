@@ -17,6 +17,8 @@ Task 1 已固定可重复的上游来源：模型 revision `717ba215769231e53b9b
 
 `model-manifests/chinese-clip-rn50.json` 把分发边界焊死为 `image_encoder`，文本塔和 tokenizer 仅允许构建时使用。仓库 MIT 文本、模型卡的 Apache-2.0 声明和标准许可证文本均已保存并校验摘要。该证据允许继续技术评测，但不是法律意见；对外分发仍需最终授权审查。
 
+Task 2 的 `ModelSources/chinese-clip-food-labels-v1.json` 只含 owner-authored canonical ID、中文名、别名与类别，构建器会递归拒绝营养和份量字段。固定 RBT3 文本塔已在构建机生成 `CCLBV1` 单位向量库；二次完整生成得到相同 SHA-256。生成向量继续留在 `.build/models/`，仓库只保存 `model-manifests/chinese-clip-label-bank-v1.json` 的来源、维度、行数和输出摘要。
+
 ## 可重复的能力证据
 
 探针与基准位于 `mobile/modules/local-health-kernel/`。探针只查询可用性；基准只有在 `LOCAL_DIET_ENABLE_LIVE_BENCHMARK=1` 时才执行推理。它固定使用一条合成中文餐食，只输出食物名、数量、单位和设备性能，不读取健康数据、相册或营养值，也没有网络降级路径。Swift Package 是 G2 测试壳，不是生产功能。
