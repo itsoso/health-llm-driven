@@ -11,6 +11,12 @@
 
 2026-07-18 已为照片智能增强选定 `OFA-Sys/chinese-clip-rn50`，不再做 TinyCLIP 首轮对照实现。设备端只计划运行 Core ML 视觉塔，中文文本塔仅在构建阶段生成版本化标签向量。选择已确定，但放行状态不变：checkpoint/许可证、转换一致性、压缩质量、中文餐食质量和代表性真机性能全部取得证据前仍为 **BLOCK**。设计见 `docs/plans/2026-07-18-chinese-clip-local-food-vision-design.md`。
 
+## Chinese-CLIP 来源锁定
+
+Task 1 已固定可重复的上游来源：模型 revision `717ba215769231e53b9b7c6b9d329b9cc5944418`，代码 revision `31863c707501bf1605d36842f43deb78793dbc5d`。原始 `clip_cn_rn50.pt` 为 308316425 bytes，SHA-256 为 `b196ee3ee528b70be1158ab1aafb1d2f1c801ad2d9ffb3bae31b0d305f82fc88`；文件只保存在被 Git 忽略的 `.build/models/`。
+
+`model-manifests/chinese-clip-rn50.json` 把分发边界焊死为 `image_encoder`，文本塔和 tokenizer 仅允许构建时使用。仓库 MIT 文本、模型卡的 Apache-2.0 声明和标准许可证文本均已保存并校验摘要。该证据允许继续技术评测，但不是法律意见；对外分发仍需最终授权审查。
+
 ## 可重复的能力证据
 
 探针与基准位于 `mobile/modules/local-health-kernel/`。探针只查询可用性；基准只有在 `LOCAL_DIET_ENABLE_LIVE_BENCHMARK=1` 时才执行推理。它固定使用一条合成中文餐食，只输出食物名、数量、单位和设备性能，不读取健康数据、相册或营养值，也没有网络降级路径。Swift Package 是 G2 测试壳，不是生产功能。
