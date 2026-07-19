@@ -2,13 +2,13 @@
 
 > Status: implementing
 > Owner: Codex
-> Updated: 2026-07-16
+> Updated: 2026-07-18
 > Related PRD/PDD: docs/specs/reva-product-governance-spec.md
-> Related code: mobile/components/chat/ChatInputBar.tsx, mobile/hooks/useRealtimeDictation.ts, mobile/services/cloudRealtimeAsr.ts, mobile/modules/reva-pcm-stream, backend/app/services/realtime_speech_transcription.py
+> Related code: mobile/components/chat/ChatInputBar.tsx, mobile/hooks/useRealtimeDictation.ts, mobile/hooks/useVoiceRecording.ts, mobile/services/cloudRealtimeAsr.ts, mobile/modules/reva-pcm-stream, backend/app/services/realtime_speech_transcription.py
 
 ## 1. Decision
 
-Change the Mobile chat composer to a WeChat-style voice-first input bar. iOS captures PCM only; authenticated backend infrastructure streams it to Qwen realtime ASR so both hold-to-talk and the inline microphone receive cloud partial and final transcripts without relying on Apple speech recognition.
+Change the Mobile chat composer to a WeChat-style voice-first input bar. The default iOS path uses Speech.framework through the existing native voice module so short hold-to-talk phrases get local partial and final results without a network round-trip. The authenticated PCM/WebSocket Qwen path remains available as a bounded fallback/experiment and must not silently replace the local path without an ASR quality comparison.
 
 ## 2. Problem
 
@@ -34,7 +34,7 @@ RequirementAdmission:
   success_metric: user can start voice input from a visible left icon or realtime dictation from the right mic, then submit typed/transcribed text with Enter
   added_user_burden: low
   burden_justification: makes voice input more visible while preserving text input and attachment menu
-  non_goals: no new health-write path, no automatic medical action, no Rokid or voice-chat page change, no Apple Speech framework recognition
+  non_goals: no new health-write path, no automatic medical action, no Rokid or voice-chat page change
   smallest_end_to_end_slice: ChatInputBar UI + PCM capture module + authenticated realtime ASR proxy + focused tests
   stale_surface_to_remove_or_archive: previous empty-field long-press is superseded by the visible left voice button
   spec_required: yes
@@ -45,7 +45,7 @@ RequirementAdmission:
 - Do not send raw audio messages.
 - Do not bypass existing chat or health-record safety behavior.
 - Do not change `voice-chat` continuous assistant conversations.
-- Do not use `Speech` / `SFSpeechRecognizer` or treat iPhone-native recognition as an ASR provider.
+- The default composer path may use the existing iPhone Speech.framework integration. Keep provider credentials on the backend for the cloud fallback, and do not make the mobile client depend on a DashScope key.
 - Do not remove the attachment menu.
 
 ## 5. Product Object Mapping
@@ -59,7 +59,7 @@ RequirementAdmission:
 ```text
 open Mobile chat in default voice mode
   -> hold the center voice surface for voice input
-  -> iOS captures mono 16 kHz PCM and the backend streams it to Qwen realtime ASR
+  -> iOS first uses native realtime recognition; the authenticated mono 16 kHz PCM path is a bounded cloud fallback
   -> partial transcript wraps inside the recording panel while the user speaks
   -> slide left to cancel or slide right to keep transcript as editable text
   -> tap the icon-only keyboard switch to enter text mode
@@ -72,9 +72,9 @@ open Mobile chat in default voice mode
 
 | Surface | Responsibility | Contract |
 |---|---|---|
-| Mobile | Owns visible composer controls, PCM capture, gestures and transcript presentation. | Default is hold-to-talk. The left icon switches to text input; right mic toggles cloud realtime dictation; Enter submits current text. |
-| Backend | Authenticates the session, holds provider credentials and proxies bounded audio. | `/chat/transcribe/realtime` accepts transient base64 PCM chunks over WebSocket and emits partial/final text; `/chat/transcribe` is the final-result fallback. |
-| DashScope | Performs speech recognition. | Qwen realtime ASR consumes mono 16 kHz PCM in manual commit mode. |
+| Mobile | Owns visible composer controls, native realtime recognition, gestures and transcript presentation. | Default is hold-to-talk. The left icon switches to text input; right mic toggles native realtime dictation; Enter submits current text. |
+| Backend | Authenticates the cloud fallback, holds provider credentials and proxies bounded audio. | `/chat/transcribe/realtime` accepts transient base64 PCM chunks over WebSocket and emits partial/final text; `/chat/transcribe` remains the file-based fallback. |
+| DashScope | Performs cloud fallback speech recognition. | Qwen realtime ASR consumes mono 16 kHz PCM in manual commit mode when the native path is unavailable or explicitly enabled for comparison. |
 
 ## 8. Data Contract
 
@@ -105,7 +105,7 @@ Then hold-to-talk is the default mode
 And the left control is a compact icon-only keyboard switch
 
 Given the user holds the voice surface
-When Qwen realtime ASR returns partial text
+When native speech recognition returns partial text
 Then the transcript updates while speaking
 And long text wraps without resizing or obscuring the controls
 
@@ -138,7 +138,7 @@ git diff --check
 
 ## 13. Rollout And Rollback
 
-The backend WebSocket proxy must deploy before the client. Because PCM capture is a new iOS native module, the complete capability requires a new signed iOS/TestFlight build and cannot be delivered by OTA alone. The final non-realtime ASR path remains a bounded fallback when the realtime upstream is unavailable. Rollback disables the new client build or restores the previous composer and proxy; no schema rollback is needed.
+The backend WebSocket proxy must deploy before the cloud fallback is enabled. The native composer path is JavaScript-controlled and can be repaired by OTA; the PCM capture module still requires a new signed iOS build when it changes. Rollback switches the composer back to native-only and leaves no schema rollback requirement.
 
 ## 14. Open Questions
 
@@ -151,4 +151,5 @@ The backend WebSocket proxy must deploy before the client. Because PCM capture i
 |---|---|---|
 | 2026-07-06 | Initial spec | Admit WeChat-style Mobile voice composer as a narrow Mobile Capture improvement. |
 | 2026-07-14 | Add bounded server-side ASR routing | Keep both voice entry paths available on DashScope while making any cross-provider fallback explicit and time-bounded. |
-| 2026-07-16 | Make voice the default and use Qwen realtime ASR | Avoid weaker device recognition while preserving explicit capture, live text, cancel/edit/send gestures and server-held credentials. |
+| 2026-07-16 | Make voice the default and use Qwen realtime ASR | Historical cloud-primary experiment; later quality review restored native-primary routing for short composer utterances. |
+| 2026-07-18 | Restore native-primary composer ASR | Short utterances regain low-latency local partial/final results; cloud PCM/WebSocket remains a bounded fallback and comparison path. |
