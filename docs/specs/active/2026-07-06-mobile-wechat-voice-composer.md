@@ -64,6 +64,7 @@ open Mobile chat in default voice mode
   -> slide left to cancel or slide right to keep transcript as editable text
   -> tap the icon-only keyboard switch to enter text mode
   -> tap the text field to expand the smart composer and show the keyboard
+  -> use the focused quick actions for meal photo, water, or exercise capture when the draft is empty
   -> optionally tap the microphone inside the text field for realtime dictation
   -> transcribed text appears in the composer
   -> press Enter to submit through the existing chat pipeline
@@ -73,7 +74,7 @@ open Mobile chat in default voice mode
 
 | Surface | Responsibility | Contract |
 |---|---|---|
-| Mobile | Owns visible composer controls, PCM capture, gestures and transcript presentation. | Default is hold-to-talk. The left icon switches to text input; tapping the text field expands the editable composer without starting recording; right mic toggles Qwen realtime dictation; Enter submits current text. |
+| Mobile | Owns visible composer controls, PCM capture, gestures and transcript presentation. | Default is hold-to-talk. The left icon switches to text input; tapping the text field expands the editable composer without starting recording; an empty focused draft exposes meal, water, and exercise shortcuts; right mic toggles Qwen realtime dictation; Enter submits current text. |
 | Backend | Authenticates the ASR session, holds provider credentials and proxies bounded audio. | `/chat/transcribe/realtime` accepts transient base64 PCM chunks over WebSocket and emits partial/final text; it does not switch to another provider on upstream failure. |
 | DashScope | Performs the single cloud speech-recognition operation. | Qwen realtime ASR consumes mono 16 kHz PCM in manual commit mode and returns partial/final text. |
 
@@ -124,6 +125,11 @@ When the user starts realtime dictation
 Then the transcript is appended to the existing draft
 And the complete draft remains editable before sending
 
+Given the text field is focused and the draft is empty
+When the quick action row is shown
+Then meal photo, water, and exercise actions are available
+And the row disappears as soon as the user starts entering a draft
+
 Given the composer has dictated text
 When Enter is pressed
 Then the existing onSend callback receives the dictated text
@@ -165,3 +171,4 @@ The backend WebSocket proxy must deploy before the cloud composer is enabled. Th
 | 2026-07-16 | Make voice the default and use Qwen realtime ASR | Establish the authenticated cloud realtime path for the composer. |
 | 2026-07-18 | Make Qwen realtime ASR the only composer provider | Remove native recognition and silent provider switching so the chain stays measurable and predictable. |
 | 2026-07-19 | Add click-to-expand smart text composer | Match the familiar iPhone AI chat interaction while keeping microphone activation explicit. |
+| 2026-07-19 | Add minimal focused quick capture actions | Reduce friction for high-frequency meal, water, and exercise records without adding a new write API. |

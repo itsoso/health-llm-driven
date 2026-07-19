@@ -84,6 +84,16 @@ const MODE_PLACEHOLDER: Record<ChatAgentMode, string> = {
   vision: '拍照/报告后问小巴',
 };
 
+const SMART_QUICK_ACTIONS: {
+  id: 'meal' | 'water' | 'exercise';
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+}[] = [
+  { id: 'meal', label: '拍照记餐', icon: 'camera-outline' },
+  { id: 'water', label: '记录喝水', icon: 'water-outline' },
+  { id: 'exercise', label: '记录运动', icon: 'walk-outline' },
+];
+
 const MEAL_PHOTO_CONTEXT = {
   source: 'mobile_chat_meal_photo',
   intent: 'diet_photo_record',
@@ -593,6 +603,10 @@ export default function ChatInputBar({
     || pendingImages.length > 0
     || realtimeActive
   );
+  const showSmartQuickActions = textComposerExpanded
+    && !input.trim()
+    && pendingImages.length === 0
+    && !realtimeActive;
   const voiceGesture = composer.gesture;
   const voiceModeToggleLabel = isVoiceMode ? '切换到键盘输入' : '切换到语音输入';
 
@@ -825,6 +839,11 @@ export default function ChatInputBar({
     setInput(text);
   }, []);
 
+  const handleQuickTypedAction = useCallback((prompt: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    void handleSend(prompt, { channel: 'typed' });
+  }, [handleSend]);
+
   const handlePickImage = useCallback(async () => { setShowMenu(false); await pickImage(); }, [pickImage]);
   const stageCameraPhoto = useCallback(async (mealPhoto: boolean) => {
     setShowMenu(false);
@@ -1051,6 +1070,31 @@ export default function ChatInputBar({
       )}
 
       <View testID="chat-composer-surface" style={styles.composerSurface}>
+        {showSmartQuickActions && (
+          <ScrollView
+            testID="smart-composer-quick-actions"
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.quickActionsContent}
+            style={styles.quickActionsBar}
+            keyboardShouldPersistTaps="always"
+          >
+            {SMART_QUICK_ACTIONS.map(action => (
+              <QuickComposerAction
+                key={action.id}
+                icon={action.icon}
+                label={action.label}
+                onPress={() => {
+                  if (action.id === 'meal') {
+                    void stageCameraPhoto(true);
+                  } else {
+                    handleQuickTypedAction(action.id === 'water' ? '记录喝水' : '记录今天的运动');
+                  }
+                }}
+              />
+            ))}
+          </ScrollView>
+        )}
         {/* 输入栏 */}
         <View style={styles.inputBar}>
           <Pressable
@@ -1269,6 +1313,29 @@ function ModeSegmentItem({
   );
 }
 
+function QuickComposerAction({
+  icon,
+  label,
+  onPress,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      style={styles.quickAction}
+      onPress={onPress}
+      activeOpacity={0.68}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+    >
+      <Ionicons name={icon} size={15} color={C.green500} />
+      <Text style={styles.quickActionLabel}>{label}</Text>
+    </TouchableOpacity>
+  );
+}
+
 function AttachmentGridItem({ icon, label, desc, onPress }: { icon: any; label: string; desc: string; onPress: () => void }) {
   return (
     <TouchableOpacity
@@ -1323,6 +1390,34 @@ const styles = StyleSheet.create({
     paddingBottom: 7,
     backgroundColor: COMPOSER_BAR_BG,
   },
+  quickActionsBar: {
+    maxHeight: 40,
+  },
+  quickActionsContent: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 10,
+    paddingTop: 6,
+    paddingBottom: 2,
+  },
+  quickAction: {
+    minHeight: 32,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
+    backgroundColor: C.surface,
+  },
+  quickActionLabel: {
+    fontFamily: revaFonts.sans,
+    fontSize: 13,
+    lineHeight: 18,
+    color: C.ink2,
+    fontWeight: '600',
+  } as TextStyle,
   voiceModeBtn: {
     width: 40, height: 40, borderRadius: 20,
     borderWidth: StyleSheet.hairlineWidth, borderColor: C.lineStrong,

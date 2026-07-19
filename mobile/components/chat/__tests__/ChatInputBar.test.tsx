@@ -458,6 +458,66 @@ describe('ChatInputBar', () => {
     expect(getByLabelText('消息输入框').props.placeholder).toBe('问小巴，或点麦克风说话');
   });
 
+  it('shows minimal quick capture actions only while the empty composer is focused', () => {
+    const view = render(
+      <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
+    );
+    enterKeyboardMode(view);
+    const { getByLabelText, getByTestId, queryByTestId } = view;
+
+    expect(queryByTestId('smart-composer-quick-actions')).toBeNull();
+    fireEvent.press(getByTestId('wechat-composer-input'));
+
+    expect(getByTestId('smart-composer-quick-actions')).toBeTruthy();
+    expect(getByLabelText('拍照记餐')).toBeTruthy();
+    expect(getByLabelText('记录喝水')).toBeTruthy();
+    expect(getByLabelText('记录运动')).toBeTruthy();
+
+    fireEvent.changeText(getByLabelText('消息输入框'), '已有健康问题');
+    expect(queryByTestId('smart-composer-quick-actions')).toBeNull();
+  });
+
+  it('routes the quick water action through the typed chat pipeline', async () => {
+    const onSend = jest.fn().mockResolvedValue(true);
+    const view = render(
+      <ChatInputBar onSend={onSend} isStreaming={false} />,
+    );
+    enterKeyboardMode(view);
+    fireEvent.press(view.getByTestId('wechat-composer-input'));
+
+    await act(async () => {
+      fireEvent.press(view.getByLabelText('记录喝水'));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(onSend).toHaveBeenCalledWith(
+      '记录喝水',
+      null,
+      expect.objectContaining({ channel: 'typed' }),
+    );
+  });
+
+  it('starts meal photo capture from the focused quick action rail', async () => {
+    const photo = { uri: 'file:///quick-meal.jpg', base64: 'quick-meal', type: 'jpeg' };
+    mockTakePhoto.mockResolvedValueOnce([photo]);
+    const onSend = jest.fn();
+    const view = render(
+      <ChatInputBar onSend={onSend} isStreaming={false} />,
+    );
+    enterKeyboardMode(view);
+    fireEvent.press(view.getByTestId('wechat-composer-input'));
+
+    await act(async () => {
+      fireEvent.press(view.getByLabelText('拍照记餐'));
+      await Promise.resolve();
+    });
+
+    expect(mockTakePhoto).toHaveBeenCalledTimes(1);
+    expect(onSend).not.toHaveBeenCalled();
+    expect(view.getByLabelText('消息输入框').props.value).toBe('记录这餐');
+  });
+
   it('toggles from keyboard input back into WeChat hold-to-talk mode', () => {
     const { getByLabelText, getByTestId, queryByLabelText } = render(
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
