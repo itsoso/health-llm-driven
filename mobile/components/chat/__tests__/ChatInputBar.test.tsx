@@ -444,6 +444,20 @@ describe('ChatInputBar', () => {
     expect(mockStartDictation).not.toHaveBeenCalled();
   });
 
+  it('makes the focused composer voice action discoverable without implying hold-to-talk', () => {
+    const view = render(
+      <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
+    );
+    enterKeyboardMode(view);
+    const { getByLabelText, getByTestId } = view;
+
+    fireEvent.press(getByTestId('wechat-composer-input'));
+
+    const surface = StyleSheet.flatten(getByTestId('wechat-composer-input').props.style);
+    expect(surface.borderColor).toBe(revaColors.green500);
+    expect(getByLabelText('消息输入框').props.placeholder).toBe('问小巴，或点麦克风说话');
+  });
+
   it('toggles from keyboard input back into WeChat hold-to-talk mode', () => {
     const { getByLabelText, getByTestId, queryByLabelText } = render(
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,

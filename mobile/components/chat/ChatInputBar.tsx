@@ -79,7 +79,7 @@ const AGENT_MODES: {
 ];
 
 const MODE_PLACEHOLDER: Record<ChatAgentMode, string> = {
-  daily: '问小巴，或按住说话',
+  daily: '问小巴，或点麦克风说话',
   deep: '让小巴深思一个计划',
   vision: '拍照/报告后问小巴',
 };
@@ -586,6 +586,7 @@ export default function ChatInputBar({
       : '点击开启语音监听并实时转文字';
   const realtimeMicIcon = realtimeDictationDisabled ? 'mic-off' : 'mic';
   const isVoiceMode = composer.mode === 'hold';
+  const textComposerActive = !isVoiceMode && (textInputFocused || realtimeActive);
   const textComposerExpanded = !isVoiceMode && (
     textInputFocused
     || input.trim().length > 0
@@ -1102,6 +1103,7 @@ export default function ChatInputBar({
               style={({ pressed }) => [
                 styles.inputWrap,
                 textComposerExpanded && styles.inputWrapExpanded,
+                textComposerActive && styles.inputWrapFocused,
                 realtimeActive && styles.inputWrapDictating,
                 pressed && styles.inputWrapPressed,
               ]}
@@ -1353,6 +1355,9 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     paddingTop: 8,
     paddingBottom: 8,
+  },
+  inputWrapFocused: {
+    borderColor: C.green500,
   },
   inputWrapDictating: {
     backgroundColor: COMPOSER_INPUT_BG_ACTIVE,
