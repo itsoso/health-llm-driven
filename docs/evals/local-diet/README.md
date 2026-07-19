@@ -128,6 +128,24 @@ ruby scripts/generate_food_vision_device_host.rb \
 backend/venv/bin/python scripts/test_local_diet_eval_contract.py
 ```
 
+## Chinese-CLIP 质量集与校准状态
+
+`chinese-clip-dataset-contract.json` 冻结了质量数据的准入边界：至少 300 个已授权、非私人 case；提交清单只保存不透明 case/fixture ID、授权状态、冻结身份、校准/测试 split 和分层，不保存图片、来源 URL 或文件路径。七个分层必须分别可报告：常见单品、复合菜、混合餐盘、包装食品/饮料、易混淆对、非食物对抗样本、退化/对抗输入。混合餐盘必须至少有两个期望身份，非食物不得带食物身份。
+
+确定性计分器位于 `mobile/modules/local-health-kernel/scripts/score_local_food_vision_run.py`。它对每个 case 先去重预测，再计算身份 precision、missing-item、非食物拒绝、纠正次数、Top-1/Top-3、每个分层、crash-free、P95 热时延和 1 秒完成率。遗漏混合餐盘项目一定增加 missing-item，重复输出不能虚增 precision。质量阈值直接固定在代码中，CLI 不提供降低阈值的参数。
+
+阈值搜索只读取 calibration split，最低分数/间隔不得低于 `0.5/0.03`；选定后必须冻结 calibration/test case ID 摘要，held-out test 只运行一次。FP16 与压缩模型必须使用同一 test split；压缩模型只有在绝对身份 precision 差异不超过 `0.02`、全部绝对质量门通过且模型加标签不超过 50 MiB 时才可选。
+
+```bash
+cd mobile/modules/local-health-kernel
+python3 scripts/tests/test_score_local_food_vision_run.py
+python3 scripts/score_local_food_vision_run.py score \
+  --dataset "$AUTHORIZED_REDACTED_DATASET_MANIFEST" \
+  --run "$CUSTOM_CORE_ML_RUN_JSON"
+```
+
+当前工作区没有授权的 300-case 中文餐食集，环境中也没有 `AUTHORIZED_FOOD_EVAL_DIR`。因此 `model-manifests/chinese-clip-calibration-v1.json` 明确保持 `blocked_pending_authorized_dataset`：`selectedThresholds`、两个 split 摘要、FP16/压缩质量报告和选择结果全部为 `null`。这不是实现失败，而是数据 Gate 的预期拒绝；不能用用户私照、许可不明的网页图片、转换 cosine 或合成元数据伪装质量证据。当前 `0.5/0.03` 只是测试宿主的保守 policy floor，不是已校准的生产阈值。
+
 ## 安全威胁模型评审
 
 目标边界是防止未授权的文件/备份读取、服务端运营者读取和普通设备丢失后的静态数据暴露；不承诺抵御已越狱设备、已解锁设备上的恶意操作者或系统级攻陷。
