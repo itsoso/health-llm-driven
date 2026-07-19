@@ -4,8 +4,8 @@
 |---|---|
 | slug | `local-first-private-mode` |
 | 创建日期 | 2026-07-18 |
-| 当前阶段 | G3/G4 已通过；G5 原生包构建中 |
-| 状态 | 本地产品切片 PASS；Chinese-CLIP 手工候选 PASS；自动识别 BLOCK；G6 待真机确认 |
+| 当前阶段 | G3/G4/G5 已通过；G6 待真机确认 |
+| 状态 | 本地产品切片 PASS；Chinese-CLIP 手工候选 PASS；自动识别 BLOCK；同构建真机验收待执行 |
 | 负责 | User / Codex |
 | 反馈环 | iOS native build / local QR / airplane-mode validation |
 
@@ -124,7 +124,7 @@
 - 实施任务见 `docs/plans/2026-07-18-local-first-private-mode.md`。
 - Chinese-CLIP 独立 spike 已按 `docs/plans/2026-07-18-chinese-clip-local-food-vision.md` 完成八阶段实现与裁决；自动识别结果为 BLOCK。生产接入被收窄为用户授权的探索性手工候选，不复用自动识别声明。
 - 用户已授权把 Chinese-CLIP 作为低风险、手工确认候选继续纳入本地饮食实施；该授权不包括自动写入或营养/份量推断。
-- Task 2–10 已按顺序完成；Task 11 正在执行原生发布与真机闸。Task 12 的 E2EE 同步仍遵守“G6 后另立项”，未夹带实现。
+- Task 2–10 已按顺序完成；Task 11 已完成签名原生包，正在执行同构建真机闸。Task 12 的 E2EE 同步仍遵守“G6 后另立项”，未夹带实现。
 
 ## S5 · 实现
 
@@ -138,7 +138,7 @@
 ## G3 · 测试闸
 
 - 当前裁决：**PASS**。
-- 自动化证据：Swift Package 全套测试通过（含 1 个只在显式真机环境运行的 benchmark skipped）；Mobile Jest 全套、TypeScript、USDA 构建器测试均通过；generic iOS Simulator 原生 App 构建通过。
+- 自动化证据：Swift Package 60 tests / 0 failures / 1 个只在显式真机环境运行的 benchmark skipped；Mobile Jest 279 suites / 1981 passed / 1 skipped，使用 `--forceExit` 取得明确 0 退出码（仓库既有异步句柄会阻止普通 Jest 自动退出）；TypeScript、USDA 构建器测试、文档漂移、dossier 一致性和 iOS 发布预检均通过；generic iOS Simulator 原生 App 构建通过。
 - App artifact 检查确认包含编译后的 Chinese-CLIP 模型、冻结标签库和资源 manifest；标签库摘要与冻结值一致。
 
 ## G4 · 安全闸
@@ -153,16 +153,22 @@
 ## S6 · 部署
 
 - 路由：新增原生模块，使用本地 QR 新包；不能只 OTA。
-- iOS Simulator 原生 App 已构建成功；本地 QR Release/IPA 尚在执行。
+- iOS Simulator 原生 App 已构建成功。
+- 2026-07-19 从提交 `61605d8ef` 生成 Release archive，`** ARCHIVE SUCCEEDED **`；Sentry sourcemap 自动上传按本地发布规范禁用。
+- ad-hoc 导出因本机 Apple 账号缺少 `life.executor.health` 分发 profile 明确失败，脚本没有伪装成功，按规范回退 development 导出并取得 `** EXPORT SUCCEEDED **`。
+- 构建 `20260719-080400-61605d8ef`：bundle id `life.executor.health`，版本 `1.3.1 (1)`，IPA 132775200 bytes，SHA-256 `65dfea329e15ba4dc4561618d3189b9f2f2a2e62bcc63178d0d611ad9c613713`。
+- development profile `iOS Team Provisioning Profile: life.executor.health` 有效期至 2027-05-31，已包含目标真机 `00008150-00112D220E32401C`；该签名只允许已登记设备安装。
+- 包体核验：`codesign --verify --deep --strict` 通过；IPA 含 Chinese-CLIP RN50 int8 image tower、标签库与资源 manifest。包内 weight SHA-256 为 `faa172bb17dd83ce1c2da0e0854bfdb7a4a2e014c355c7313b4661fee9b40a70`，标签库 SHA-256 为 `dbf211703545159038de1d8b74772cf005186ed16e5ff7f1fceaac1614b135f9`，与冻结清单一致。
 
 ## G5 · 部署健康闸
 
-- PENDING：等待同一提交的签名 IPA 和安装资源检查。
+- **PASS**：同一提交的 Release archive、development 签名 IPA、正式 bundle id、模型/标签/manifest、安装页与 `itms-services` manifest 均已检查通过。
+- 公开上传尚未执行；必须先发布该提交和 LFS 模型对象，再复用已验证 IPA 发布，不能重打不同二进制冒充同构建。
 
 ## S7 · 上线验证
 
 - Anchor：真机飞行模式首次启动、首餐确认、重启读取、模型不可用、导出恢复、网络抓包零违规出站。
-- 未开始。
+- 已准备同构建安装包；目标真机当前在 Xcode 中显示 offline，待重新连接、解锁后安装。
 
 ## G6 · 验证闸
 
