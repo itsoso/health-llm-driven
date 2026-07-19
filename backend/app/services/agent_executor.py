@@ -5238,39 +5238,15 @@ class AgentExecutor:
         source_meta = getattr(source_message, "meta", None) or {}
 
         def has_write_checkpoint_or_ambiguity(meta: dict[str, Any]) -> bool:
-            """Treat any non-terminal write metadata as a replay barrier."""
+            """Treat all write metadata other than assistant's empty receipts as a barrier."""
+            if any(
+                key in meta for key in ("write_state", "write_operations", "write_plan")
+            ):
+                return True
             receipts = meta.get("write_receipts")
-            if receipts is not None:
-                if not isinstance(receipts, list) or receipts:
-                    return True
-
-            if "write_state" in meta:
-                write_state = meta["write_state"]
-                if not isinstance(write_state, dict):
-                    return True
-                if write_state.get("status") not in {
-                    "rejected", "not_attempted", "not_started", "skipped",
-                }:
-                    return True
-
-            if "write_operations" in meta:
-                write_operations = meta["write_operations"]
-                if not isinstance(write_operations, dict):
-                    return True
-                if any(
-                    not isinstance(operation, dict)
-                    or operation.get("status") not in {"rejected"}
-                    for operation in write_operations.values()
-                ):
-                    return True
-
-            if "write_plan" in meta:
-                write_plan = meta["write_plan"]
-                if not isinstance(write_plan, dict):
-                    return True
-                if write_plan.get("sealed") is True or write_plan.get("fingerprints"):
-                    return True
-            return False
+            return receipts is not None and (
+                not isinstance(receipts, list) or bool(receipts)
+            )
 
         # Current finalized assistant rows always carry an explicit list of
         # verified receipts. Missing or malformed data is legacy/ambiguous and
@@ -5281,7 +5257,10 @@ class AgentExecutor:
             return True
         if source_meta and not isinstance(source_meta, dict):
             return True
-        if isinstance(source_meta, dict) and has_write_checkpoint_or_ambiguity(source_meta):
+        if isinstance(source_meta, dict) and (
+            has_write_checkpoint_or_ambiguity(source_meta)
+            or "write_receipts" in source_meta
+        ):
             return True
 
         outcome = assistant_meta.get("turn_outcome") or {}
@@ -5295,10 +5274,9 @@ class AgentExecutor:
             }:
                 return False
             return True
-        if assistant_meta.get("completion_status") in {"error", "interrupted"}:
-            # Legacy rows predate turn_outcome. Without a write checkpoint they
-            # are safe to retry and should not pin the client to stale text.
-            return False
+        # Legacy rows without the explicit current-version no-write marker stay
+        # on the durable replay path. A missing checkpoint is not proof that a
+        # previous worker never reached an external write.
         return True
 
     async def _replay_client_turn(

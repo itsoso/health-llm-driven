@@ -335,6 +335,32 @@ async def test_legacy_finalized_error_without_write_metadata_still_replays(
     )
 
 
+@pytest.mark.parametrize(
+    "malformed_meta",
+    [
+        {"write_plan": {}},
+        {"write_plan": {"sealed": False}},
+        {"write_operations": {"fingerprint": {"status": "rejected"}}},
+        {"write_operations": []},
+    ],
+)
+def test_finalized_turn_replay_policy_blocks_any_write_metadata_shape(malformed_meta):
+    """写入元数据只要出现就不允许靠形状猜测安全地重执行。"""
+    from types import SimpleNamespace
+
+    assistant = SimpleNamespace(
+        meta={
+            "client_turn_finalized": True,
+            "write_receipts": [],
+            "turn_outcome": {"category": "tool_failed", "retryable": True},
+            **malformed_meta,
+        }
+    )
+    source = SimpleNamespace(meta={})
+
+    assert AgentExecutor._should_replay_finalized_assistant(assistant, source) is True
+
+
 @pytest.mark.asyncio
 async def test_same_client_turn_id_is_isolated_between_accounts(
     db, auth_user_and_headers, monkeypatch
