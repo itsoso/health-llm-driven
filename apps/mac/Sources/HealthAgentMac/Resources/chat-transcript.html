@@ -379,6 +379,12 @@
     gap: 8px;
     margin-top: 10px;
   }
+  /* A server reply may contain several atomic capabilities. This is a layout
+     stack, not another visual card, so each capability keeps its own boundary. */
+  .dynamic-card-group {
+    display: grid;
+    gap: 10px;
+  }
   .dynamic-card-action {
     display: inline-flex;
     align-items: center;

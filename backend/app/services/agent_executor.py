@@ -10256,12 +10256,50 @@ class AgentExecutor:
             }
             if receipt not in self._turn_contextual_diet_receipts:
                 self._turn_contextual_diet_receipts.append(receipt)
+            # ``write_receipts`` are an audit contract, not a user-facing UI
+            # contract. Emit the same portable meal-photo card used for manual
+            # confirmation so Web, Mobile and Mac all show a deterministic
+            # receipt immediately and after conversation reload.
+            self._turn_contextual_diet_cards.append(
+                self._contextual_diet_recorded_card(result)
+            )
             self._invalidate_twin_after_mutation()
         elif result.photo_draft is not None:
             self._turn_contextual_diet_cards.append(
                 self._contextual_diet_confirmation_card(result)
             )
         return result
+
+    def _contextual_diet_recorded_card(self, result: Any) -> Dict[str, Any]:
+        """Build an owner-scoped, durable visual receipt for an auto-save."""
+        from app.utils.diet_image_url import diet_response_image_url
+
+        record = result.record
+        asset = result.photo_asset
+        if record is None or asset is None:
+            raise ValueError("contextual_diet_recorded_card_missing_receipt")
+        return {
+            "type": "diet_draft",
+            "data": format_card_numbers({
+                "recorded": True,
+                "record_id": record.id,
+                "record_date": record.record_date.isoformat(),
+                "meal_type": record.meal_type,
+                "food_items": record.food_items,
+                "calories": record.calories,
+                "protein": record.protein,
+                "carbs": record.carbs,
+                "fat": record.fat,
+                "fiber": record.fiber,
+                "confidence": record.ai_confidence,
+                "source": "chat_photo",
+                "photo_asset_id": asset.id,
+                "photo_url": diet_response_image_url(asset.storage_key, asset.user_id),
+                "receipt_message": "已保存到今日饮食，餐食照片已关联到这条记录。",
+                "boundary": "营养为图像估算；可在饮食记录中继续修正。",
+            }),
+            "actions": [],
+        }
 
     def _contextual_diet_confirmation_card(self, result: Any) -> Dict[str, Any]:
         """Build the current-chat confirmation card from an owner-bound draft."""
@@ -10311,7 +10349,12 @@ class AgentExecutor:
                 "photo_asset_id": asset.id,
                 "photo_url": diet_response_image_url(asset.storage_key, asset.user_id),
                 "photo_draft_token": draft.token,
-                "boundary": "营养为图像估算；确认后才写入今日饮食记录。",
+                "auto_save_fallback": bool(result.fallback_from_auto),
+                "boundary": (
+                    "自动保存未完成；这张照片已保留为确认草稿，确认后才写入今日饮食记录。"
+                    if result.fallback_from_auto
+                    else "营养为图像估算；确认后才写入今日饮食记录。"
+                ),
             }),
             "actions": actions,
         }

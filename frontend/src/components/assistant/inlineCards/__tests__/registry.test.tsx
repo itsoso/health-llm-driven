@@ -203,6 +203,24 @@ describe('renderCard', () => {
     expect(html).toContain('鸡胸肉 120g');
   });
 
+  it('renders an automatic contextual meal save as an explicit receipt', () => {
+    const card = renderCard({
+      type: 'diet_draft',
+      data: {
+        meal_type: 'lunch',
+        food_items: '鸡胸肉 120g + 米饭',
+        recorded: true,
+        record_id: 76,
+        receipt_message: '已自动记录到今日午餐',
+      },
+    });
+
+    const html = renderToStaticMarkup(card!);
+    expect(html).toContain('午餐已记录');
+    expect(html).toContain('已自动记录到今日午餐');
+    expect(html).not.toContain('确认记录');
+  });
+
   it('forwards a validated diet confirmation action when the user clicks the card', () => {
     const onAction = vi.fn();
     const action = {

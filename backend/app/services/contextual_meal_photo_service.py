@@ -48,6 +48,10 @@ class ContextualMealPhotoCaptureResult:
     photo_draft: DietPhotoDraft | None = None
     photo_asset: DietPhotoAsset | None = None
     replayed: bool = False
+    # Automatic capture is allowed to degrade to the same owner-bound manual
+    # confirmation protocol.  This retains the analyzed photo and gives every
+    # client a real recovery action instead of silently losing the meal.
+    fallback_from_auto: bool = False
 
 
 class ContextualMealPhotoService:
@@ -81,91 +85,183 @@ class ContextualMealPhotoService:
             except ValueError as exc:
                 raise ContextualMealPhotoServiceError(str(exc)) from exc
 
-            asset = DietPhotoAsset(
-                id=uuid.uuid4().hex,
-                user_id=capture.user_id,
-                storage_key=stored.storage_key,
-                content_sha256=stored.content_sha256,
-                media_type=stored.media_type,
-                origin="chat",
-                origin_message_id=capture.source_message_id,
-                ordinal=capture.source_image_index,
-                captured_at=decision.local_time,
-                captured_timezone=decision.timezone_name,
-                classification="food",
-                recognition_confidence=record_data["ai_confidence"],
-                intent_decision=decision.decision,
-                recognition_snapshot=snapshot,
-                lifecycle="pending",
-            )
-
             if decision.decision == "auto_record":
-                record = DietRecord(
-                    user_id=capture.user_id,
-                    record_date=decision.local_time.date(),
-                    meal_type=decision.meal_type,
-                    meal_time=decision.local_time.timetz().replace(tzinfo=None),
-                    food_name=record_data["food_items"][:100],
-                    food_items=record_data["food_items"],
-                    source="chat_photo",
-                    calories=record_data.get("calories"),
-                    protein=record_data.get("protein"),
-                    carbs=record_data.get("carbs"),
-                    fat=record_data.get("fat"),
-                    fiber=record_data.get("fiber"),
-                    image_url=stored.storage_key,
-                    client_action_id=self._record_idempotency_key(capture),
-                    ai_recognized=True,
-                    ai_confidence=record_data["ai_confidence"],
-                    ai_raw_result=json.dumps(snapshot, ensure_ascii=False),
-                    health_tips=record_data.get("health_tips"),
-                )
-                asset.diet_record = record
-                asset.lifecycle = "attached"
-                asset.attached_at = datetime.now(timezone.utc)
-                self.db.add_all([record, asset])
-                self.db.commit()
-                self.db.refresh(record)
-                self.db.refresh(asset)
-                self._create_postmeal_protocol(record)
-                return ContextualMealPhotoCaptureResult(
-                    decision=decision,
-                    record=record,
-                    photo_asset=asset,
-                )
+                try:
+                    return self._persist_auto_record(
+                        capture, decision, record_data, snapshot, stored,
+                    )
+                except Exception as auto_error:  # noqa: BLE001 - recovery is part of this write protocol
+                    self.db.rollback()
+                    existing = self._existing_capture(capture)
+                    if existing is not None:
+                        self._remove_duplicate_copy(stored, existing)
+                        if existing.record is not None:
+                            self._create_postmeal_protocol(existing.record)
+                        return existing
+                    logger.warning(
+                        "contextual meal photo auto-record failed; preserving confirmation draft: "
+                        "user_id=%s source_message_id=%s error=%s",
+                        capture.user_id,
+                        capture.source_message_id,
+                        auto_error,
+                    )
+                    try:
+                        return self._persist_confirmation_draft(
+                            capture,
+                            decision,
+                            record_data,
+                            snapshot,
+                            stored,
+                            fallback_from_auto=True,
+                        )
+                    except Exception:
+                        self.db.rollback()
+                        existing = self._existing_capture(capture)
+                        if existing is not None:
+                            self._remove_duplicate_copy(stored, existing)
+                            return existing
+                        remove_diet_image_file(stored.file_path)
+                        raise
 
-            draft = DietPhotoDraft(
-                token=secrets.token_urlsafe(32),
-                user_id=capture.user_id,
-                image_url=stored.storage_key,
-                image_type=_image_type_from_media_type(stored.media_type),
-                recognition_result=record_data,
-                status="pending",
-                expires_at=datetime.now(timezone.utc) + PHOTO_DRAFT_TTL,
-            )
-            asset.photo_draft_token = draft.token
-            self.db.add_all([draft, asset])
-            self.db.commit()
-            self.db.refresh(draft)
-            self.db.refresh(asset)
-            return ContextualMealPhotoCaptureResult(
-                decision=decision,
-                photo_draft=draft,
-                photo_asset=asset,
+            return self._persist_confirmation_draft(
+                capture,
+                decision,
+                record_data,
+                snapshot,
+                stored,
             )
         except IntegrityError:
             self.db.rollback()
-            if stored is not None:
-                remove_diet_image_file(stored.file_path)
             existing = self._existing_capture(capture)
             if existing is not None:
+                if stored is not None:
+                    self._remove_duplicate_copy(stored, existing)
                 return existing
+            if stored is not None:
+                remove_diet_image_file(stored.file_path)
             raise
         except Exception:
             self.db.rollback()
             if stored is not None:
                 remove_diet_image_file(stored.file_path)
             raise
+
+    @staticmethod
+    def _remove_duplicate_copy(
+        stored: StoredDietPhoto,
+        existing: ContextualMealPhotoCaptureResult,
+    ) -> None:
+        """Delete only a raced duplicate, never the existing asset's file.
+
+        A database driver can report an error after a commit has already been
+        accepted.  In that ambiguous case the reloaded capture may reference
+        the same copied file, so unconditional cleanup would turn a valid meal
+        record into a broken image link.
+        """
+        if existing.photo_asset is not None and existing.photo_asset.storage_key == stored.storage_key:
+            return
+        remove_diet_image_file(stored.file_path)
+
+    def _persist_auto_record(
+        self,
+        capture: ContextualMealPhotoCapture,
+        decision: MealPhotoDecision,
+        record_data: dict[str, Any],
+        snapshot: dict[str, Any],
+        stored: StoredDietPhoto,
+    ) -> ContextualMealPhotoCaptureResult:
+        asset = self._new_asset(capture, decision, record_data, snapshot, stored)
+        record = DietRecord(
+            user_id=capture.user_id,
+            record_date=decision.local_time.date(),
+            meal_type=decision.meal_type,
+            meal_time=decision.local_time.timetz().replace(tzinfo=None),
+            food_name=record_data["food_items"][:100],
+            food_items=record_data["food_items"],
+            source="chat_photo",
+            calories=record_data.get("calories"),
+            protein=record_data.get("protein"),
+            carbs=record_data.get("carbs"),
+            fat=record_data.get("fat"),
+            fiber=record_data.get("fiber"),
+            image_url=stored.storage_key,
+            client_action_id=self._record_idempotency_key(capture),
+            ai_recognized=True,
+            ai_confidence=record_data["ai_confidence"],
+            ai_raw_result=json.dumps(snapshot, ensure_ascii=False),
+            health_tips=record_data.get("health_tips"),
+        )
+        asset.diet_record = record
+        asset.lifecycle = "attached"
+        asset.attached_at = datetime.now(timezone.utc)
+        self.db.add_all([record, asset])
+        self.db.commit()
+        self.db.refresh(record)
+        self.db.refresh(asset)
+        self._create_postmeal_protocol(record)
+        return ContextualMealPhotoCaptureResult(
+            decision=decision,
+            record=record,
+            photo_asset=asset,
+        )
+
+    def _persist_confirmation_draft(
+        self,
+        capture: ContextualMealPhotoCapture,
+        decision: MealPhotoDecision,
+        record_data: dict[str, Any],
+        snapshot: dict[str, Any],
+        stored: StoredDietPhoto,
+        *,
+        fallback_from_auto: bool = False,
+    ) -> ContextualMealPhotoCaptureResult:
+        asset = self._new_asset(capture, decision, record_data, snapshot, stored)
+        draft = DietPhotoDraft(
+            token=secrets.token_urlsafe(32),
+            user_id=capture.user_id,
+            image_url=stored.storage_key,
+            image_type=_image_type_from_media_type(stored.media_type),
+            recognition_result=record_data,
+            status="pending",
+            expires_at=datetime.now(timezone.utc) + PHOTO_DRAFT_TTL,
+        )
+        asset.photo_draft_token = draft.token
+        self.db.add_all([draft, asset])
+        self.db.commit()
+        self.db.refresh(draft)
+        self.db.refresh(asset)
+        return ContextualMealPhotoCaptureResult(
+            decision=decision,
+            photo_draft=draft,
+            photo_asset=asset,
+            fallback_from_auto=fallback_from_auto,
+        )
+
+    @staticmethod
+    def _new_asset(
+        capture: ContextualMealPhotoCapture,
+        decision: MealPhotoDecision,
+        record_data: dict[str, Any],
+        snapshot: dict[str, Any],
+        stored: StoredDietPhoto,
+    ) -> DietPhotoAsset:
+        return DietPhotoAsset(
+            id=uuid.uuid4().hex,
+            user_id=capture.user_id,
+            storage_key=stored.storage_key,
+            content_sha256=stored.content_sha256,
+            media_type=stored.media_type,
+            origin="chat",
+            origin_message_id=capture.source_message_id,
+            ordinal=capture.source_image_index,
+            captured_at=decision.local_time,
+            captured_timezone=decision.timezone_name,
+            classification="food",
+            recognition_confidence=record_data["ai_confidence"],
+            intent_decision=decision.decision,
+            recognition_snapshot=snapshot,
+            lifecycle="pending",
+        )
 
     def _existing_capture(
         self,

@@ -1,4 +1,5 @@
 """Persistence contracts for contextual chat meal photos."""
+import os
 from datetime import datetime, timezone
 
 import pytest
@@ -176,6 +177,122 @@ def test_food_photo_outside_auto_window_creates_owner_bound_confirmation_draft(
     assert asset.photo_draft_token == draft.token
     assert asset.diet_record_id is None
     assert asset.lifecycle == "pending"
+
+
+def test_auto_capture_write_failure_falls_back_to_owner_bound_confirmation_draft(
+    db, test_user, tmp_path, monkeypatch
+):
+    """A failed automatic write must remain recoverable in the current chat."""
+    source_url = _source_image(tmp_path, monkeypatch, test_user.id)
+    real_commit = db.commit
+    commits = 0
+
+    def fail_first_capture_commit():
+        nonlocal commits
+        commits += 1
+        if commits == 1:
+            raise RuntimeError("simulated automatic record write failure")
+        return real_commit()
+
+    monkeypatch.setattr(db, "commit", fail_first_capture_commit)
+    service = ContextualMealPhotoService(db)
+    capture = ContextualMealPhotoCapture(
+        user_id=test_user.id,
+        source_message_id=705,
+        source_image_url=source_url,
+        source_image_index=0,
+        decision=_decision(at=datetime(2026, 7, 19, 16, 30, tzinfo=timezone.utc)),
+        vision_result=_vision_result(),
+    )
+
+    result = service.capture(capture)
+
+    assert result.record is None
+    assert result.photo_draft is not None
+    assert result.fallback_from_auto is True
+    assert db.query(DietRecord).count() == 0
+    asset = db.query(DietPhotoAsset).one()
+    assert asset.photo_draft_token == result.photo_draft.token
+    assert asset.diet_record_id is None
+    assert asset.lifecycle == "pending"
+
+
+def test_auto_capture_ambiguous_commit_keeps_the_committed_photo_asset(
+    db, test_user, tmp_path, monkeypatch
+):
+    """A driver error after commit must not delete the committed image copy."""
+    source_url = _source_image(tmp_path, monkeypatch, test_user.id)
+    real_commit = db.commit
+    commits = 0
+
+    def commit_then_report_failure():
+        nonlocal commits
+        commits += 1
+        if commits == 1:
+            real_commit()
+            raise RuntimeError("simulated commit acknowledgement failure")
+        return real_commit()
+
+    monkeypatch.setattr(db, "commit", commit_then_report_failure)
+    service = ContextualMealPhotoService(db)
+    capture = ContextualMealPhotoCapture(
+        user_id=test_user.id,
+        source_message_id=706,
+        source_image_url=source_url,
+        source_image_index=0,
+        decision=_decision(at=datetime(2026, 7, 19, 16, 30, tzinfo=timezone.utc)),
+        vision_result=_vision_result(),
+    )
+
+    result = service.capture(capture)
+
+    assert result.record is not None
+    assert result.replayed is True
+    asset = db.query(DietPhotoAsset).one()
+    from app.api import upload as upload_api
+
+    relative_path = asset.storage_key.split("/files/", 1)[1]
+    assert os.path.exists(os.path.join(upload_api.UPLOAD_DIR, relative_path))
+
+
+def test_auto_capture_fallback_ambiguous_commit_keeps_the_pending_draft(
+    db, test_user, tmp_path, monkeypatch
+):
+    """The recovery draft is equally protected from post-commit errors."""
+    source_url = _source_image(tmp_path, monkeypatch, test_user.id)
+    real_commit = db.commit
+    commits = 0
+
+    def auto_then_draft_commit_failure():
+        nonlocal commits
+        commits += 1
+        if commits == 1:
+            raise RuntimeError("automatic write failed")
+        if commits == 2:
+            real_commit()
+            raise RuntimeError("draft commit acknowledgement failure")
+        return real_commit()
+
+    monkeypatch.setattr(db, "commit", auto_then_draft_commit_failure)
+    service = ContextualMealPhotoService(db)
+    capture = ContextualMealPhotoCapture(
+        user_id=test_user.id,
+        source_message_id=707,
+        source_image_url=source_url,
+        source_image_index=0,
+        decision=_decision(at=datetime(2026, 7, 19, 16, 30, tzinfo=timezone.utc)),
+        vision_result=_vision_result(),
+    )
+
+    result = service.capture(capture)
+
+    assert result.photo_draft is not None
+    assert result.replayed is True
+    asset = db.query(DietPhotoAsset).one()
+    from app.api import upload as upload_api
+
+    relative_path = asset.storage_key.split("/files/", 1)[1]
+    assert os.path.exists(os.path.join(upload_api.UPLOAD_DIR, relative_path))
 
 
 def test_capture_rejects_a_chat_image_not_owned_by_the_target_user(

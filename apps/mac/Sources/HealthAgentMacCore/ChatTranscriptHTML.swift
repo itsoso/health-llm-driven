@@ -626,6 +626,8 @@ public enum ChatTranscriptHTML {
         let rendererType = dynamicCardRendererType(type: type, render: render)
         let html: String?
         switch rendererType {
+        case "cards_group":
+            html = dynamicCardGroupHTML(data)
         case "medical_exam_import_result":
             html = medicalExamImportCardHTML(data)
         case "system_knowledge_evidence":
@@ -649,6 +651,24 @@ public enum ChatTranscriptHTML {
             return nil
         }
         return appendDynamicCardActions(to: html, actions: actions)
+    }
+
+    private static func dynamicCardGroupHTML(_ data: AgentDynamicCardValue) -> String? {
+        guard case .object(let value) = data,
+              case .array(let rawCards)? = value["cards"] else {
+            return nil
+        }
+        let cards = rawCards.compactMap(AgentDynamicCardDescriptor.fromGroupValue)
+        let items = cards.compactMap { card in
+            dynamicCardHTML(
+                type: card.type,
+                render: card.render,
+                data: card.data,
+                actions: card.actions
+            )
+        }
+        guard !items.isEmpty else { return nil }
+        return "<div class=\"dynamic-card-group\">\(items.joined())</div>"
     }
 
     private static func dynamicCardRendererType(

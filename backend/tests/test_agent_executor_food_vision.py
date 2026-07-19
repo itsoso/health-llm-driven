@@ -82,6 +82,12 @@ def test_agent_auto_captures_empty_high_confidence_lunch_photo_with_receipt(
         "resource_id": str(result.record.id),
         "verified": True,
     }]
+    card = executor._turn_contextual_diet_cards[0]
+    assert card["type"] == "diet_draft"
+    assert card["data"]["recorded"] is True
+    assert card["data"]["record_id"] == result.record.id
+    assert card["actions"] == []
+    assert "photo_url" not in cards_for_persistence([card])[0]["data"]
 
 
 def test_agent_analysis_intent_never_auto_captures_food_photo(db, tmp_path, monkeypatch):
@@ -124,6 +130,32 @@ def test_agent_creates_owner_bound_confirmation_card_outside_meal_window(
     assert action["payload"]["record"]["source"] == "chat_photo"
     assert action["payload"]["record"]["photo_draft_token"] == result.photo_draft.token
     assert "photo_url" not in cards_for_persistence([card])[0]["data"]
+
+
+def test_agent_auto_capture_failure_surfaces_the_recoverable_confirmation_card(
+    db, tmp_path, monkeypatch
+):
+    executor, _user = _food_photo_executor(db, tmp_path, monkeypatch)
+    real_commit = db.commit
+    commits = 0
+
+    def fail_first_capture_commit():
+        nonlocal commits
+        commits += 1
+        if commits == 1:
+            raise RuntimeError("simulated automatic record write failure")
+        return real_commit()
+
+    monkeypatch.setattr(db, "commit", fail_first_capture_commit)
+    result = executor._capture_contextual_meal_photo("", _food_result(), image_index=0)
+
+    assert result is not None
+    assert result.record is None
+    assert result.photo_draft is not None
+    card = executor._turn_contextual_diet_cards[0]
+    assert card["type"] == "diet_draft"
+    assert card["data"]["auto_save_fallback"] is True
+    assert card["actions"][0]["action"] == "diet_record.create"
 
 
 @pytest.mark.asyncio

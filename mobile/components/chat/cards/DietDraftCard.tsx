@@ -51,6 +51,9 @@ interface DietDraftData {
   time?: unknown;
   recorded_at?: unknown;
   photo_url?: unknown;
+  recorded?: unknown;
+  receipt_message?: unknown;
+  auto_save_fallback?: unknown;
 }
 
 interface DietDraftCardViewProps extends DietDraftData {
@@ -262,7 +265,8 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
   const boundary = boundaryText(data);
   const editHint = editHintText(data);
   const photoUri = privatePhotoUri(data.photo_url);
-  const isRecorded = data.confirmActionState === 'done';
+  const isRecorded = data.recorded === true || data.confirmActionState === 'done';
+  const receiptMessage = text(data.receipt_message);
   const canConfirmFromEditor = Boolean(data.confirmAction && data.onConfirmAction && !data.confirmAction.disabled_reason);
   const recordedNextStep = walkText || suggestions[0] || '下一餐按目标补足蛋白和蔬菜';
   const publishDraftChange = React.useCallback((overrides: Partial<DraftEditValues> = {}) => {
@@ -296,7 +300,7 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
       <CardShell
         icon={MEAL_ICONS[mealType]}
         iconColor={C.green600}
-        title={`${mealLabel}草稿 · 识别完成`}
+        title={data.auto_save_fallback === true ? `${mealLabel}草稿 · 自动保存待确认` : `${mealLabel}草稿 · 识别完成`}
         badge={confidenceBadge(data.confidence)}
         badgeColor={C.green500}
         bg={C.paper}
@@ -443,7 +447,7 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
         <View style={styles.recordedProgressPill}>
           <Ionicons name="checkmark-done-circle" size={13} color={C.green600} />
           <Text maxFontSizeMultiplier={1.12} style={styles.recordedProgressText}>
-            已进入今日饮食进度
+            {receiptMessage || '已进入今日饮食进度'}
           </Text>
         </View>
       ) : null}

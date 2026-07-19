@@ -576,6 +576,37 @@ final class ChatTranscriptHTMLTests: XCTestCase {
         XCTAssertFalse(html.contains("<tag>"))
     }
 
+    func testDynamicCardGroupRendersEveryChildIncludingDietReceipt() throws {
+        let html = try XCTUnwrap(ChatTranscriptHTML.dynamicCardHTML(
+            type: "cards_group",
+            data: .object([
+                "cards": .array([
+                    .object([
+                        "type": .string("aigc_media_job"),
+                        "data": .object([
+                            "kind": .string("text_to_image"),
+                            "title": .string("早餐海报"),
+                            "status": .string("queued"),
+                            "progress": .int(0),
+                        ]),
+                    ]),
+                    .object([
+                        "type": .string("diet_draft"),
+                        "data": .object([
+                            "meal_type": .string("breakfast"),
+                            "food_items": .string("鸡蛋和全麦面包"),
+                            "recorded": .bool(true),
+                        ]),
+                    ]),
+                ]),
+            ])
+        ))
+
+        XCTAssertTrue(html.contains("早餐海报"))
+        XCTAssertTrue(html.contains("鸡蛋和全麦面包"))
+        XCTAssertTrue(html.contains("早餐 · 已记录"))
+    }
+
     func testDynamicCardUnknownRenderAtomFallsBackToRegisteredTypeRenderer() throws {
         let html = try XCTUnwrap(ChatTranscriptHTML.dynamicCardHTML(
             type: "system_knowledge_evidence",

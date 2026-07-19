@@ -1239,11 +1239,14 @@ public final class AgentChatViewModel {
                         }
                         // perf 缺失(老后端)→ 保留 nil,footer 行为不变。
                         if let perf { messages[idx].perf = perf }
-                        if messages[idx].cardType == nil, let firstCard = cards.first {
-                            messages[idx].cardType = firstCard.type
-                            messages[idx].cardRender = firstCard.render
-                            messages[idx].cardData = firstCard.data
-                            messages[idx].cardActions = firstCard.actions
+                        // `done.cards` is the authoritative atomic-UI composition for
+                        // this turn. A streamed tool card can arrive before `done`; do
+                        // not let that provisional first card hide the remaining cards.
+                        if let card = AgentDynamicCardDescriptor.grouped(cards) {
+                            messages[idx].cardType = card.type
+                            messages[idx].cardRender = card.render
+                            messages[idx].cardData = card.data
+                            messages[idx].cardActions = card.actions
                             scheduleAIGCMediaRefreshIfNeeded(for: assistantID)
                         }
                     }
@@ -1613,39 +1616,108 @@ public final class AgentChatViewModel {
     /// transcript rendering, which may attach a fresh in-memory URL.
     static func redactedMessagesForLocalPersistence(_ messages: [AgentChatMessage]) -> [AgentChatMessage] {
         messages.map { message in
-            guard case .object(var card)? = message.cardData else {
-                return message
-            }
-            if message.cardType == "aigc_media_job",
-               case .object(var result)? = card["result"] {
-                result["url"] = .null
-                card["result"] = .object(result)
-            } else if message.cardType == "diet_draft" {
-                card["photo_url"] = .null
-            } else {
+            guard let cardType = message.cardType,
+                  let cardData = message.cardData,
+                  let redactedData = redactedCardDataForLocalPersistence(
+                    type: cardType,
+                    data: cardData
+                  ) else {
                 return message
             }
             var redacted = message
-            redacted.cardData = .object(card)
+            redacted.cardData = redactedData
             return redacted
         }
     }
 
+    private static func redactedCardDataForLocalPersistence(
+        type: String,
+        data: AgentDynamicCardValue
+    ) -> AgentDynamicCardValue? {
+        guard case .object(var card) = data else { return nil }
+        if type == "aigc_media_job",
+           case .object(var result)? = card["result"] {
+            result["url"] = .null
+            card["result"] = .object(result)
+            return .object(card)
+        }
+        if type == "diet_draft" {
+            card["photo_url"] = .null
+            return .object(card)
+        }
+        guard type == "cards_group",
+              case .array(let rawCards)? = card["cards"] else {
+            return nil
+        }
+        let redactedCards = rawCards.map { raw in
+            guard let descriptor = AgentDynamicCardDescriptor.fromGroupValue(raw) else {
+                return raw
+            }
+            let redactedData = redactedCardDataForLocalPersistence(
+                type: descriptor.type,
+                data: descriptor.data
+            ) ?? descriptor.data
+            return AgentDynamicCardDescriptor(
+                type: descriptor.type,
+                render: descriptor.render,
+                data: redactedData,
+                actions: descriptor.actions
+            ).groupValue() ?? raw
+        }
+        card["cards"] = .array(redactedCards)
+        return .object(card)
+    }
+
     private func cardDataForTranscript(_ message: AgentChatMessage) -> AgentDynamicCardValue? {
-        guard message.cardType == "aigc_media_job",
-              let jobID = message.cardData?["job_id"]?.stringValue,
-              let resultURL = aigcResultURLs[jobID],
-              case .object(var card)? = message.cardData else {
+        guard let type = message.cardType, let data = message.cardData else {
             return message.cardData
         }
-        var result: [String: AgentDynamicCardValue]
-        if case .object(let existing)? = card["result"] {
-            result = existing
-        } else {
-            result = [:]
+        return Self.hydratingAIGCResultURLs(
+            type: type,
+            data: data,
+            resultURLs: aigcResultURLs
+        )
+    }
+
+    private static func hydratingAIGCResultURLs(
+        type: String,
+        data: AgentDynamicCardValue,
+        resultURLs: [String: String]
+    ) -> AgentDynamicCardValue {
+        guard case .object(var card) = data else { return data }
+        if type == "aigc_media_job",
+           let jobID = card["job_id"]?.stringValue,
+           let resultURL = resultURLs[jobID] {
+            var result: [String: AgentDynamicCardValue]
+            if case .object(let existing)? = card["result"] {
+                result = existing
+            } else {
+                result = [:]
+            }
+            result["url"] = .string(resultURL)
+            card["result"] = .object(result)
+            return .object(card)
         }
-        result["url"] = .string(resultURL)
-        card["result"] = .object(result)
+        guard type == "cards_group",
+              case .array(let rawCards)? = card["cards"] else {
+            return data
+        }
+        card["cards"] = .array(rawCards.map { raw in
+            guard let descriptor = AgentDynamicCardDescriptor.fromGroupValue(raw) else {
+                return raw
+            }
+            let hydrated = hydratingAIGCResultURLs(
+                type: descriptor.type,
+                data: descriptor.data,
+                resultURLs: resultURLs
+            )
+            return AgentDynamicCardDescriptor(
+                type: descriptor.type,
+                render: descriptor.render,
+                data: hydrated,
+                actions: descriptor.actions
+            ).groupValue() ?? raw
+        })
         return .object(card)
     }
 
@@ -2031,50 +2103,120 @@ public final class AgentChatViewModel {
     }
 
     private func scheduleAIGCMediaRefreshesForVisibleMessages() {
-        for message in messages where message.cardType == "aigc_media_job" {
+        for message in messages where !Self.aigcMediaJobIDs(in: message).isEmpty {
             scheduleAIGCMediaRefreshIfNeeded(for: message.id)
         }
     }
 
     private func scheduleAIGCMediaRefreshIfNeeded(for messageID: UUID) {
         guard let aigcMediaClient,
-              let message = messages.first(where: { $0.id == messageID }),
-              message.cardType == "aigc_media_job",
-              let jobID = message.cardData?["job_id"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !jobID.isEmpty,
-              aigcRefreshTasks[jobID] == nil else {
+              let message = messages.first(where: { $0.id == messageID }) else {
             return
         }
 
-        aigcRefreshTasks[jobID] = Task { [weak self, aigcMediaClient] in
-            defer { self?.aigcRefreshTasks[jobID] = nil }
-            for _ in 0..<80 {
-                guard !Task.isCancelled else { return }
-                do {
-                    let projection = try await aigcMediaClient.getJob(id: jobID)
-                    guard let self else { return }
-                    if let index = self.messages.firstIndex(where: { $0.id == messageID }),
-                       self.messages[index].cardType == "aigc_media_job" {
-                        self.messages[index].cardData = projection.persistedCardData(
-                            title: self.messages[index].cardData?["title"]?.stringValue ?? "小巴创作"
-                        )
-                        if let resultURL = projection.resultURL {
-                            self.aigcResultURLs[jobID] = resultURL
-                        } else {
-                            self.aigcResultURLs.removeValue(forKey: jobID)
+        for jobID in Self.aigcMediaJobIDs(in: message) where aigcRefreshTasks[jobID] == nil {
+            aigcRefreshTasks[jobID] = Task { [weak self, aigcMediaClient] in
+                defer { self?.aigcRefreshTasks[jobID] = nil }
+                for _ in 0..<80 {
+                    guard !Task.isCancelled else { return }
+                    do {
+                        let projection = try await aigcMediaClient.getJob(id: jobID)
+                        guard let self else { return }
+                        if let index = self.messages.firstIndex(where: { $0.id == messageID }),
+                           let type = self.messages[index].cardType,
+                           let data = self.messages[index].cardData,
+                           let updated = Self.replacingAIGCMediaJob(
+                            type: type,
+                            data: data,
+                            jobID: jobID,
+                            replacement: projection.persistedCardData(
+                                title: Self.aigcCardTitle(in: self.messages[index], jobID: jobID) ?? "小巴创作"
+                            )
+                           ) {
+                            self.messages[index].cardData = updated
+                            if let resultURL = projection.resultURL {
+                                self.aigcResultURLs[jobID] = resultURL
+                            } else {
+                                self.aigcResultURLs.removeValue(forKey: jobID)
+                            }
+                            self.persistCurrentConversation()
                         }
-                        self.persistCurrentConversation()
+                        if projection.isTerminal { return }
+                    } catch APIError.unauthorized {
+                        return
+                    } catch {
+                        // Keep the last private projection visible. A later poll may
+                        // succeed; the server remains the source of terminal state.
                     }
-                    if projection.isTerminal { return }
-                } catch APIError.unauthorized {
-                    return
-                } catch {
-                    // Keep the last private projection visible. A later poll may
-                    // succeed; the server remains the source of terminal state.
+                    try? await Task.sleep(for: .milliseconds(6000))
                 }
-                try? await Task.sleep(for: .milliseconds(6000))
             }
         }
+    }
+
+    private static func aigcMediaJobIDs(in message: AgentChatMessage) -> [String] {
+        guard let type = message.cardType, let data = message.cardData else { return [] }
+        if type == "aigc_media_job",
+           let jobID = data["job_id"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !jobID.isEmpty {
+            return [jobID]
+        }
+        guard type == "cards_group",
+              case .array(let rawCards)? = data["cards"] else {
+            return []
+        }
+        return rawCards.compactMap(AgentDynamicCardDescriptor.fromGroupValue).compactMap { descriptor in
+            guard descriptor.type == "aigc_media_job" else { return nil }
+            let jobID = descriptor.data["job_id"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return jobID.isEmpty ? nil : jobID
+        }
+    }
+
+    private static func aigcCardTitle(in message: AgentChatMessage, jobID: String) -> String? {
+        guard let type = message.cardType, let data = message.cardData else { return nil }
+        if type == "aigc_media_job", data["job_id"]?.stringValue == jobID {
+            return data["title"]?.stringValue
+        }
+        guard type == "cards_group",
+              case .array(let rawCards)? = data["cards"] else {
+            return nil
+        }
+        return rawCards
+            .compactMap(AgentDynamicCardDescriptor.fromGroupValue)
+            .first(where: { $0.type == "aigc_media_job" && $0.data["job_id"]?.stringValue == jobID })?
+            .data["title"]?.stringValue
+    }
+
+    private static func replacingAIGCMediaJob(
+        type: String,
+        data: AgentDynamicCardValue,
+        jobID: String,
+        replacement: AgentDynamicCardValue
+    ) -> AgentDynamicCardValue? {
+        if type == "aigc_media_job" {
+            return data["job_id"]?.stringValue == jobID ? replacement : nil
+        }
+        guard type == "cards_group",
+              case .object(var group) = data,
+              case .array(let rawCards)? = group["cards"] else {
+            return nil
+        }
+        var didUpdate = false
+        group["cards"] = .array(rawCards.map { raw in
+            guard let descriptor = AgentDynamicCardDescriptor.fromGroupValue(raw),
+                  descriptor.type == "aigc_media_job",
+                  descriptor.data["job_id"]?.stringValue == jobID else {
+                return raw
+            }
+            didUpdate = true
+            return AgentDynamicCardDescriptor(
+                type: descriptor.type,
+                render: descriptor.render,
+                data: replacement,
+                actions: descriptor.actions
+            ).groupValue() ?? raw
+        })
+        return didUpdate ? .object(group) : nil
     }
 
     /// Consume the server-issued AIGC draft after a direct UI gesture. The
@@ -2084,18 +2226,31 @@ public final class AgentChatViewModel {
         guard let aigcMediaClient, !id.isEmpty else { return }
         do {
             let projection = try await aigcMediaClient.confirmDraft(id: id)
-            guard let index = messages.firstIndex(where: {
-                $0.cardType == "aigc_media_confirmation" &&
-                $0.cardData?["confirmation_id"]?.stringValue == id
+            guard let index = messages.indices.first(where: {
+                Self.containsAIGCMediaConfirmation(in: messages[$0], confirmationID: id)
             }) else { return }
-            messages[index].cardType = "aigc_media_job"
-            messages[index].cardData = projection.persistedCardData(title: "小巴创作")
+            let jobData = projection.persistedCardData(title: "小巴创作")
+            if messages[index].cardType == "aigc_media_confirmation" {
+                messages[index].cardType = "aigc_media_job"
+                messages[index].cardData = jobData
+                messages[index].cardActions = []
+            } else if let type = messages[index].cardType,
+                      let data = messages[index].cardData,
+                      let updated = Self.replacingAIGCMediaConfirmation(
+                        type: type,
+                        data: data,
+                        confirmationID: id,
+                        jobData: jobData
+                      ) {
+                messages[index].cardData = updated
+            } else {
+                return
+            }
             if let resultURL = projection.resultURL {
                 aigcResultURLs[projection.id] = resultURL
             } else {
                 aigcResultURLs.removeValue(forKey: projection.id)
             }
-            messages[index].cardActions = []
             persistCurrentConversation()
             scheduleAIGCMediaRefreshIfNeeded(for: messages[index].id)
         } catch {
@@ -2104,33 +2259,155 @@ public final class AgentChatViewModel {
         }
     }
 
+    private static func containsAIGCMediaConfirmation(
+        in message: AgentChatMessage,
+        confirmationID: String
+    ) -> Bool {
+        guard let type = message.cardType, let data = message.cardData else { return false }
+        if type == "aigc_media_confirmation" {
+            return data["confirmation_id"]?.stringValue == confirmationID
+        }
+        guard type == "cards_group",
+              case .array(let rawCards)? = data["cards"] else {
+            return false
+        }
+        return rawCards
+            .compactMap(AgentDynamicCardDescriptor.fromGroupValue)
+            .contains { descriptor in
+                descriptor.type == "aigc_media_confirmation"
+                    && descriptor.data["confirmation_id"]?.stringValue == confirmationID
+            }
+    }
+
+    private static func replacingAIGCMediaConfirmation(
+        type: String,
+        data: AgentDynamicCardValue,
+        confirmationID: String,
+        jobData: AgentDynamicCardValue
+    ) -> AgentDynamicCardValue? {
+        guard type == "cards_group",
+              case .object(var group) = data,
+              case .array(let rawCards)? = group["cards"] else {
+            return nil
+        }
+        var didUpdate = false
+        group["cards"] = .array(rawCards.map { raw in
+            guard !didUpdate,
+                  let descriptor = AgentDynamicCardDescriptor.fromGroupValue(raw),
+                  descriptor.type == "aigc_media_confirmation",
+                  descriptor.data["confirmation_id"]?.stringValue == confirmationID else {
+                return raw
+            }
+            didUpdate = true
+            return AgentDynamicCardDescriptor(
+                type: "aigc_media_job",
+                render: descriptor.render,
+                data: jobData,
+                actions: []
+            ).groupValue() ?? raw
+        })
+        return didUpdate ? .object(group) : nil
+    }
+
     /// Commit a server-issued photo diet draft after an explicit Mac UI gesture.
     /// The action is looked up from the rendered card so arbitrary payloads can
     /// never be forged by the WebView bridge.
     public func confirmDietDraft(actionID: String) async {
         guard let dietDraftClient, !actionID.isEmpty,
               let index = messages.indices.first(where: { index in
-                  messages[index].cardType == "diet_draft" &&
-                  messages[index].cardActions.contains(where: { $0.id == actionID })
+                  Self.dietDraftAction(in: messages[index], actionID: actionID) != nil
               }),
-              let action = messages[index].cardActions.first(where: { $0.id == actionID }) else {
+              let action = Self.dietDraftAction(in: messages[index], actionID: actionID) else {
             return
         }
         do {
             let receipt = try await dietDraftClient.confirmDietDraft(action: action)
-            guard case .object(var cardData) = messages[index].cardData else { return }
-            cardData["recorded"] = .bool(true)
-            cardData["record_id"] = .int(receipt.id)
-            if let message = receipt.displayMessage?.trimmingCharacters(in: .whitespacesAndNewlines), !message.isEmpty {
-                cardData["receipt_message"] = .string(message)
+            guard let type = messages[index].cardType,
+                  let cardData = messages[index].cardData,
+                  let updated = Self.markDietDraftConfirmed(
+                    type: type,
+                    data: cardData,
+                    actionID: actionID,
+                    receipt: receipt
+                  ) else { return }
+            messages[index].cardData = updated
+            if type == "diet_draft" {
+                messages[index].cardActions = []
             }
-            messages[index].cardData = .object(cardData)
-            messages[index].cardActions = []
             errorMessage = nil
             persistCurrentConversation()
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    private static func dietDraftAction(
+        in message: AgentChatMessage,
+        actionID: String
+    ) -> AgentDynamicCardActionDescriptor? {
+        guard let type = message.cardType else { return nil }
+        if type == "diet_draft" {
+            return message.cardActions.first(where: { $0.id == actionID })
+        }
+        guard type == "cards_group",
+              case .array(let rawCards)? = message.cardData?["cards"] else {
+            return nil
+        }
+        return rawCards
+            .compactMap(AgentDynamicCardDescriptor.fromGroupValue)
+            .lazy
+            .filter { $0.type == "diet_draft" }
+            .compactMap { $0.actions.first(where: { $0.id == actionID }) }
+            .first
+    }
+
+    private static func markDietDraftConfirmed(
+        type: String,
+        data: AgentDynamicCardValue,
+        actionID: String,
+        receipt: DietDraftConfirmationReceipt
+    ) -> AgentDynamicCardValue? {
+        if type == "diet_draft" {
+            guard case .object(var cardData) = data else { return nil }
+            cardData["recorded"] = .bool(true)
+            cardData["record_id"] = .int(receipt.id)
+            if let message = receipt.displayMessage?.trimmingCharacters(in: .whitespacesAndNewlines), !message.isEmpty {
+                cardData["receipt_message"] = .string(message)
+            }
+            return .object(cardData)
+        }
+        guard type == "cards_group",
+              case .object(var group) = data,
+              case .array(let rawCards)? = group["cards"] else {
+            return nil
+        }
+        var didUpdate = false
+        let updatedCards = rawCards.map { raw in
+            guard let descriptor = AgentDynamicCardDescriptor.fromGroupValue(raw) else {
+                return raw
+            }
+            guard !didUpdate,
+                  descriptor.type == "diet_draft",
+                  descriptor.actions.contains(where: { $0.id == actionID }),
+                  let updatedData = markDietDraftConfirmed(
+                    type: descriptor.type,
+                    data: descriptor.data,
+                    actionID: actionID,
+                    receipt: receipt
+                  ) else {
+                return raw
+            }
+            didUpdate = true
+            return AgentDynamicCardDescriptor(
+                type: descriptor.type,
+                render: descriptor.render,
+                data: updatedData,
+                actions: []
+            ).groupValue() ?? raw
+        }
+        guard didUpdate else { return nil }
+        group["cards"] = .array(updatedCards)
+        return .object(group)
     }
 
     private func medicalExamImportDynamicCard(for item: LabReportImportContext) -> AgentDynamicCardDescriptor {

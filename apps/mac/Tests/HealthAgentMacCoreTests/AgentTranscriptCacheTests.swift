@@ -163,4 +163,38 @@ final class AgentTranscriptCacheTests: XCTestCase {
         XCTAssertEqual(persisted[0].cardData?["photo_asset_id"], .string("photo-1"))
         XCTAssertFalse(String(describing: persisted).contains("signature=secret"))
     }
+
+    func testGroupedCardsAlsoRedactDietPhotoCapabilitiesBeforePersistence() throws {
+        let diet = AgentDynamicCardDescriptor(
+            type: "diet_draft",
+            data: .object([
+                "photo_url": .string("/api/v1/upload/files/diet/7/lunch.jpg?signature=secret"),
+                "food_items": .string("鸡胸肉"),
+            ])
+        )
+        let media = AgentDynamicCardDescriptor(
+            type: "aigc_media_job",
+            data: .object([
+                "job_id": .string("job-1"),
+                "result": .object([
+                    "url": .string("/api/v1/upload/files/aigc/7/out.jpg?signature=secret"),
+                ]),
+            ])
+        )
+        let group = try XCTUnwrap(AgentDynamicCardDescriptor.grouped([diet, media]))
+        let message = AgentChatMessage(
+            role: .assistant,
+            content: "已处理",
+            cardType: group.type,
+            cardData: group.data
+        )
+
+        let persisted = AgentChatViewModel.redactedMessagesForLocalPersistence([message])
+        let cards = try XCTUnwrap(persisted[0].cardData?["cards"]?.arrayValue)
+            .compactMap(AgentDynamicCardDescriptor.fromGroupValue)
+
+        XCTAssertEqual(cards.first(where: { $0.type == "diet_draft" })?.data["photo_url"], .null)
+        XCTAssertEqual(cards.first(where: { $0.type == "aigc_media_job" })?.data["result"]?["url"], .null)
+        XCTAssertFalse(String(describing: persisted).contains("signature=secret"))
+    }
 }

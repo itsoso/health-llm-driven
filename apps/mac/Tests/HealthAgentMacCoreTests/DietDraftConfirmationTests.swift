@@ -9,6 +9,30 @@ private struct SuccessfulDietDraftClient: DietDraftConfirming {
     }
 }
 
+private struct SuccessfulAIGCMediaClient: AIGCMediaJobLoading {
+    func getJob(id: String) async throws -> AIGCMediaJobProjection {
+        AIGCMediaJobProjection(
+            id: id,
+            kind: "text_to_image",
+            status: "succeeded",
+            progress: 100,
+            result: nil,
+            errorMessage: nil
+        )
+    }
+
+    func confirmDraft(id: String) async throws -> AIGCMediaJobProjection {
+        AIGCMediaJobProjection(
+            id: "job-1",
+            kind: "text_to_image",
+            status: "succeeded",
+            progress: 100,
+            result: nil,
+            errorMessage: nil
+        )
+    }
+}
+
 final class DietDraftConfirmationTests: XCTestCase {
     override func setUp() {
         super.setUp()
@@ -101,5 +125,88 @@ final class DietDraftConfirmationTests: XCTestCase {
         let receipt = try await client.confirmDietDraft(action: action)
 
         XCTAssertEqual(receipt, DietDraftConfirmationReceipt(id: 73, displayMessage: "已记录午餐"))
+    }
+
+    @MainActor
+    func testGroupedDietDraftConfirmationKeepsItsActionReachable() async throws {
+        let action = AgentDynamicCardActionDescriptor(
+            id: "confirm-diet-draft",
+            label: "确认记录",
+            action: "diet_record.create",
+            endpoint: "/diet/records",
+            payload: .object([
+                "record": .object([
+                    "record_date": .string("2026-07-19"),
+                    "meal_type": .string("lunch"),
+                    "food_items": .string("鸡胸肉"),
+                    "photo_draft_token": .string("draft-token"),
+                ]),
+            ]),
+            style: "primary",
+            requiresManualConfirm: true,
+            capabilityID: "diet_draft.v1",
+            requiredReceipt: true
+        )
+        let diet = AgentDynamicCardDescriptor(
+            type: "diet_draft",
+            data: .object(["food_items": .string("鸡胸肉")]),
+            actions: [action]
+        )
+        let media = AgentDynamicCardDescriptor(
+            type: "aigc_media_job",
+            data: .object(["job_id": .string("job-1")])
+        )
+        let group = try XCTUnwrap(AgentDynamicCardDescriptor.grouped([media, diet]))
+        let viewModel = AgentChatViewModel(dietDraftClient: SuccessfulDietDraftClient())
+        viewModel.messages = [
+            AgentChatMessage(
+                role: .assistant,
+                content: "",
+                cardType: group.type,
+                cardData: group.data
+            ),
+        ]
+
+        await viewModel.confirmDietDraft(actionID: "confirm-diet-draft")
+
+        let rawCards = try XCTUnwrap(viewModel.messages[0].cardData?["cards"]?.arrayValue)
+        let savedDiet = try XCTUnwrap(
+            rawCards.compactMap(AgentDynamicCardDescriptor.fromGroupValue)
+                .first(where: { $0.type == "diet_draft" })
+        )
+        XCTAssertEqual(savedDiet.data["recorded"]?.boolValue, true)
+        XCTAssertEqual(savedDiet.data["record_id"]?.intValue, 73)
+        XCTAssertTrue(savedDiet.actions.isEmpty)
+    }
+
+    @MainActor
+    func testGroupedAIGCConfirmationPreservesSiblingDietReceipt() async throws {
+        let confirmation = AgentDynamicCardDescriptor(
+            type: "aigc_media_confirmation",
+            data: .object(["confirmation_id": .string("confirm-1")])
+        )
+        let diet = AgentDynamicCardDescriptor(
+            type: "diet_draft",
+            data: .object([
+                "food_items": .string("鸡胸肉"),
+                "recorded": .bool(true),
+                "receipt_message": .string("已记录午餐"),
+            ])
+        )
+        let group = try XCTUnwrap(AgentDynamicCardDescriptor.grouped([confirmation, diet]))
+        let viewModel = AgentChatViewModel(aigcMediaClient: SuccessfulAIGCMediaClient())
+        viewModel.messages = [
+            AgentChatMessage(role: .assistant, content: "", cardType: group.type, cardData: group.data),
+        ]
+
+        await viewModel.confirmAIGCMediaDraft(id: "confirm-1")
+
+        let cards = try XCTUnwrap(viewModel.messages[0].cardData?["cards"]?.arrayValue)
+            .compactMap(AgentDynamicCardDescriptor.fromGroupValue)
+        let media = try XCTUnwrap(cards.first(where: { $0.type == "aigc_media_job" }))
+        let preservedDiet = try XCTUnwrap(cards.first(where: { $0.type == "diet_draft" }))
+        XCTAssertEqual(media.data["job_id"]?.stringValue, "job-1")
+        XCTAssertEqual(preservedDiet.data["recorded"]?.boolValue, true)
+        XCTAssertEqual(preservedDiet.data["receipt_message"]?.stringValue, "已记录午餐")
     }
 }

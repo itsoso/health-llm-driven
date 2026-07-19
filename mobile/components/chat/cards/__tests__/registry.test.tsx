@@ -141,6 +141,25 @@ describe('renderCard 安全降级', () => {
     );
   });
 
+  it('renders an automatic contextual meal save as a visible receipt without an action', () => {
+    const element = renderCard({
+      type: 'diet_draft',
+      data: {
+        meal_type: 'lunch',
+        food_items: '鸡胸肉 + 杂粮饭',
+        recorded: true,
+        record_id: 76,
+        receipt_message: '已自动记录到今日午餐',
+        source: 'chat_photo',
+      },
+    });
+
+    const screen = render(element!);
+    expect(screen.getByText('午餐已记录')).toBeTruthy();
+    expect(screen.getByText('已自动记录到今日午餐')).toBeTruthy();
+    expect(screen.queryByText('确认记录')).toBeNull();
+  });
+
   it('renders and refreshes a private AIGC media job card', async () => {
     let resolveRequest: ((value: unknown) => void) | undefined;
     (api.get as jest.Mock).mockImplementationOnce(() => new Promise((resolve) => {

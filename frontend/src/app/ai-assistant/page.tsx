@@ -39,10 +39,9 @@ import { executeMedicalExamImportSkillForFile } from '@/services/chatMedicalExam
 import { pickPastedMedicalImportFile } from '@/services/pastedMedicalImportFile';
 import { statusStagePhrase } from '@/components/assistant/statusStagePhrase';
 import {
-  renderServerCards,
   type ChatCardActionDescriptor,
-  type ServerCardDescriptor,
 } from '@/components/assistant/inlineCards';
+import { projectServerCards } from '@/components/assistant/inlineCards/serverCardProjection';
 
 // Reva 暖色亮色系 —— 照抄 mobile/constants/revaTheme.ts (founder 已认可)。
 // 局部定义, 不引全局 token 文件; 值就近用 Tailwind arbitrary values 引用下面这张表。
@@ -103,11 +102,6 @@ const OPENER_QUICK_REPLY_ACTIONS = new Set<OpenerQuickReplyAction>([
   'record_weight',
   'connect_device',
 ]);
-
-function firstServerCard(value: unknown): ServerCardDescriptor | null {
-  const cards = renderServerCards(value as ServerCardDescriptor[] | null | undefined);
-  return cards[0] ?? null;
-}
 
 function normalizeOpenerQuickReply(reply: unknown): OpenerQuickReply | null {
   if (typeof reply === 'string') {
@@ -401,7 +395,7 @@ function AIAssistantInner() {
           // 用户感知: 显示"调用工具中"提示一行 (灰色 italic), 不污染主回答
         } else if (type === 'done') {
           if (data.conversation_id) realConvId = data.conversation_id;
-          const serverCard = firstServerCard(data.cards);
+          const serverCard = projectServerCards(data.cards);
           // 2026-05-13: 写性能字段, ChatView footer 显示
           const perf = {
             elapsed_ms: typeof data.elapsed_ms === 'number' ? data.elapsed_ms : undefined,
@@ -481,7 +475,7 @@ function AIAssistantInner() {
     if (streaming) return;
     const res = await agentApi.getConversation(conversationId);
     const loaded = (res.data.messages || []).map((m: any) => {
-      const serverCard = firstServerCard(m.meta?.cards);
+      const serverCard = projectServerCards(m.meta?.cards);
       return {
       id: m.id,
       role: m.role,
