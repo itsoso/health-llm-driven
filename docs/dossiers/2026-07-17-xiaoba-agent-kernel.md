@@ -86,7 +86,8 @@
 - [x] T4 Telegram 移除关键词写路由。
 - [x] T5 统一时间/时区 `ExecutionContext`。
 - [x] T6 dynamic UI action capability metadata。
-- [ ] T7 legacy gates 清理和静态覆盖测试。
+- [x] T6.5 完整后端发布闸门与测试隔离收口。
+- [x] T7 legacy gates 清理和静态覆盖测试。
 - [ ] T8 shadow/enforce 发布与线上验证。
 
 进展：
@@ -98,7 +99,10 @@
 - 已把 `backend/app/services/telegram_inbound.py` 的 record/query 分流接到共享语义帧；`记录` 关键词不再单独决定写入路由。
 - 已把 Telegram `execute_health_record` 从直接调用 `_exec_health_record` 改为调用 `_execute_tool("health_record", ...)`，并传入原始 source text / telegram channel，让 validator、ToolGateway、read-only guard 和 receipt 逻辑统一覆盖。
 - 2026-07-18 P0/P1 复核：Mobile 已移除从 Agent 回复正文推断健康写入的遗留入口；排队埋点 `chat_turn_queued` 已纳入后端白名单并使用严格、无正文的 surface/channel/queue-depth 合约。剩余重点是 T7 遗留门静态清理与 T8 发布/线上验证，不能以客户端隐藏入口代替统一 ToolGateway 授权。
-- 2026-07-19 Kernel 完整性收口：`manage_plan`、`upload_genetic_txt`、`upload_medical_exam_text` 纳入统一写入回执和完成判定；`supplement_guide` 与 specialist 只读工具纳入预生成白名单；未知工具、未知干预/计划 action 默认 fail-closed；拦截结果增加面向模型的澄清/恢复指引。新增注册工具能力分类与 Executor/专家适配器静态覆盖，防止新工具“注册后不可执行”或“默认放行”。T7 仍保留 legacy gate 清理项，T8 仍需真实线上 shadow/enforce 与跨端验证。
+- 2026-07-19 Kernel 完整性收口：`manage_plan`、`upload_genetic_txt`、`upload_medical_exam_text` 纳入统一写入回执和完成判定；`supplement_guide` 与 specialist 只读工具纳入预生成白名单；未知工具、未知干预/计划 action 默认 fail-closed；拦截结果增加面向模型的澄清/恢复指引。新增注册工具能力分类与 Executor/专家适配器静态覆盖，防止新工具“注册后不可执行”或“默认放行”。T7 静态清理已完成，T8 仍需真实线上 shadow/enforce 与跨端验证。
+- 2026-07-19 发布闸门收口：修复 AIGC 无 provider task id 的历史任务误刷新、SQLite naive 时间被误当 UTC、Celery 测试替身污染 `app.tasks.notifications` 父包属性、Watch SmartReminder 用户本地时间误转 UTC。快照阶段同时固化 `client_time_context`、`client_turn_id`、媒体元数据和持久化来源消息 ID；未显式提供 channel 时沿用已有快照，避免恢复/多模型路径重建快照。
+- 2026-07-19 Trace 收口：EventBus 增加无健康正文的 `trace_summary`，将事件计数、工具失败/阻断、已验证回执、run/turn/channel/policy 和回合耗时写入 assistant `meta` 与 `done`；保留详细结构化事件日志，不把客户端媒体 payload 写入 Trace。
+- 2026-07-19 发布前错误收口：工具异常统一通过 `safe_tool_error_message` 脱敏，避免把上游状态码、请求 ID 或内部响应直接写入对话；保留超时、网络、限流和权限的可操作提示。
 
 ## G3 · 测试
 
@@ -155,7 +159,16 @@ PYTHONPATH=. ../backend/venv/bin/python -m pytest \
 ```
 
 - 结果：`76 passed, 6 warnings`；`ruff` 相关文件检查通过。
-- Mobile 输入/语音/滚动定向回归：`69 passed`；Mobile 全量回归：`262 suites / 1917 tests passed`。全量 Jest 在结果输出后因测试环境存在异步句柄未自动退出，已结束进程；不是业务测试失败。
+- 2026-07-19 后端完整发布闸门：
+
+```bash
+PYTHONPATH=. ../backend/venv/bin/python -m pytest -q --no-cov --tb=short --maxfail=5
+```
+
+- 结果：`7529 passed, 2 skipped, 548 warnings`，收集 `7531` 项，耗时 `17m11s`。此前 6 个失败已全部定位并修复，本轮新增工具错误脱敏回归也通过；2 个 skip 为既有环境条件跳过，不是失败。
+- TurnSnapshot 元数据与时间权威回归：`12 passed, 6 warnings`。
+- Kernel Trace 与真实 Executor 关联回归：`9 passed, 6 warnings`；验证 `client_turn_id`、落库 `source_message_id`、回合 Trace 同源且可随重放返回。
+- Mobile 输入/语音/滚动定向回归：`69 passed`；Mobile 全量回归：`262 suites / 1922 tests / 1 snapshot passed`，使用 `--forceExit` 正常退出。普通运行同样全部通过，但测试环境存在既有异步句柄未自动退出提示。
 - T4 Telegram 执行绕行回归：
 
 ```bash
@@ -196,14 +209,19 @@ DATABASE_URL=sqlite:///:memory: TZ=Asia/Shanghai backend/venv/bin/python -m pyte
 - 结果：`85 passed, 7 warnings`。
 - 静态检查：`ruff check` 覆盖新增 kernel、Telegram、classifier 和新增测试，PASS。
 - `git diff --check`：PASS。
+- **G3 裁决：PASS（后端完整闸门已绿；第二阶段快照变更已有定向回归）**。
+- T7 静态覆盖与跨 surface 回归：`57 passed, 6 warnings`；覆盖 Executor 写实现唯一 choke point、所有 `app` surface 禁止直接调用健康写实现、Telegram/Voice 共享策略及注册工具能力映射。
+- **G3 增量裁决：PASS（T7 遗留写入口静态闸门已绿；仍需部署后线上样本验证）**。
 
 ## G4 · 安全
 
-- 待执行。重点审查：
+- 代码级审查已完成，重点结果：
   - `health_record`、`health_manage(update/delete)`、`intervention_cycle` 不存在绕 ToolGateway 路径。
   - LLM textual tool recovery 只解析，不授权。
   - Watch/推送文案不越权宣称已送达。
   - user_id 隔离和写回执仍由现有确定性 API 保障。
+- 工具异常现在统一走用户可见错误脱敏，原始上游响应只进入服务端日志。
+- **裁决：PASS（代码与测试层）；仍需 T8 真机/线上故障样本验证。**
 
 ## S6/G5 · 部署
 

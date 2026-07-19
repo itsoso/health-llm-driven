@@ -105,6 +105,13 @@ async def test_request_persisted_event_and_messages_keep_client_turn_identity(
     assert [message.role for message in saved] == ["user", "assistant"]
     assert saved[0].meta["client_turn_id"] == "turn-mobile-42"
     assert saved[1].meta["client_turn_id"] == "turn-mobile-42"
+    snapshot = executor._agent_kernel_snapshot
+    assert snapshot is not None
+    assert snapshot.envelope.client_turn_id == "turn-mobile-42"
+    assert snapshot.envelope.source_message_id == str(persisted["data"]["user_message_id"])
+    done = next(event for event in events if event.get("event") == "done")
+    assert done["data"]["kernel_trace"]["run_id"] == snapshot.context.run_id
+    assert done["data"]["kernel_trace"]["blocked_tools"] == 0
 
 
 @pytest.mark.asyncio

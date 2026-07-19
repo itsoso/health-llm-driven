@@ -128,7 +128,15 @@ def resolve_occurred_at(
 
 def precision_display(occurred_at: datetime, precision: str, raw: Optional[str] = None) -> str:
     """按精度诚实展示:part_of_day 显示原话时段,不假装精确到分。"""
-    bj = occurred_at.astimezone(BEIJING_TZ)
+    # PostgreSQL preserves timezone-aware values, but SQLite's DateTime
+    # compatibility path returns a naive datetime.  Stored life-event times
+    # are always normalized to Beijing time, so a naive value must be attached
+    # to Beijing rather than interpreted in the server's local timezone.
+    bj = (
+        occurred_at.replace(tzinfo=BEIJING_TZ)
+        if occurred_at.tzinfo is None
+        else occurred_at.astimezone(BEIJING_TZ)
+    )
     if precision == "exact":
         return bj.strftime("%H:%M")
     if precision == "hour":

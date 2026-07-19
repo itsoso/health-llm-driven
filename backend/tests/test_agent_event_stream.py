@@ -41,3 +41,13 @@ def test_agent_event_bus_emits_traceable_tool_and_receipt_events(db, auth_user_a
         assert event.turn_id == "turn-42"
         assert event.user_id == user.id
         assert event.channel == "typed"
+
+    summary = bus.trace_summary(status="complete")
+    assert summary["run_id"] == "run-42"
+    assert summary["turn_id"] == "turn-42"
+    assert summary["status"] == "complete"
+    assert summary["event_counts"]["agent.tool_requested"] == 1
+    assert summary["tool_requests"] == 1
+    assert summary["tool_results"] == 1
+    assert summary["verified_receipts"] == 1
+    assert summary["blocked_tools"] == 0

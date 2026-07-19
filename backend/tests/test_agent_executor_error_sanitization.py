@@ -3,6 +3,7 @@
 
 from app.models.agent_conversation import AgentMessage
 from app.services.agent_executor import AgentExecutor
+from app.services.llm.error_messages import safe_tool_error_message
 
 
 RAW_TOKENPLAN_QUOTA_ERROR = (
@@ -53,3 +54,23 @@ async def test_run_stream_sanitizes_tokenplan_quota_error_token_and_storage(
     assert "token-plan quota" not in saved.content
     assert "Error code: 429" not in saved.content
     assert "模型额度" in saved.content
+
+
+def test_safe_tool_error_message_hides_upstream_details_and_remains_actionable():
+    message = safe_tool_error_message(
+        "health_record",
+        "HTTP 200 status: 200 upstream payload contains request_id=secret-123",
+    )
+
+    assert message == "健康记录暂时无法完成，请稍后重试。"
+    assert "status: 200" not in message
+    assert "secret-123" not in message
+
+
+def test_safe_tool_error_message_distinguishes_timeout_and_network_failures():
+    assert safe_tool_error_message("health_query", TimeoutError("read timed out")) == (
+        "健康数据查询处理超时，请稍后重试。"
+    )
+    assert safe_tool_error_message("health_query", "connection reset by peer") == (
+        "健康数据查询暂时无法连接服务，请检查网络后重试。"
+    )

@@ -24,6 +24,25 @@ def test_health_record_and_manage_dispatch_only_from_executor_gateway_choke_poin
     assert {name for name, _line in direct_calls} == {"_execute_tool_impl"}
 
 
+def test_no_surface_calls_health_write_implementation_directly():
+    direct_calls: list[tuple[str, str, int]] = []
+    for path in (ROOT / "app").rglob("*.py"):
+        if path == EXECUTOR:
+            continue
+        tree = ast.parse(path.read_text())
+        for function in (
+            node for node in ast.walk(tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        ):
+            for node in ast.walk(function):
+                if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+                    continue
+                if node.func.attr in {"_exec_health_record", "_exec_health_manage"}:
+                    direct_calls.append((str(path.relative_to(ROOT)), function.name, node.lineno))
+
+    assert direct_calls == []
+
+
 def test_executor_no_longer_declares_regex_write_intent_gates():
     source = EXECUTOR.read_text()
     retired = (

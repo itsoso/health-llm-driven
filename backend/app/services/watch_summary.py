@@ -190,7 +190,12 @@ def _is_required_execution_nudge(item: Dict[str, Any]) -> bool:
 def _reminder_local_time(reminder: SmartReminder, user_now: datetime) -> datetime:
     remind_at = reminder.remind_at
     if remind_at.tzinfo is None:
-        remind_at = remind_at.replace(tzinfo=timezone.utc)
+        # PostgreSQL preserves the timezone, while SQLite's DateTime
+        # compatibility path returns the stored local wall-clock value as
+        # naive.  SmartReminder inputs are normalized to the user's local
+        # timezone, so attaching UTC here shifts same-day reminders across
+        # midnight and removes them from the Watch summary.
+        remind_at = remind_at.replace(tzinfo=user_now.tzinfo or timezone.utc)
     return remind_at.astimezone(user_now.tzinfo)
 
 

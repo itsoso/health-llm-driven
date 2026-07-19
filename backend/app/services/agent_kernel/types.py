@@ -19,6 +19,8 @@ class AgentEnvelope:
     media: tuple[dict[str, Any], ...] = ()
     source_message_id: Optional[str] = None
     client_capabilities: dict[str, Any] = field(default_factory=dict)
+    client_time_context: dict[str, Any] = field(default_factory=dict)
+    client_turn_id: Optional[str] = None
 
 
 @dataclass(frozen=True)

@@ -34,6 +34,62 @@ def test_turn_snapshot_uses_one_user_local_time_for_prompt_and_tool_context(db, 
     assert "用户本地今天: 2026-07-16" in prompt
 
 
+def test_turn_snapshot_retains_client_context_and_message_metadata(db, auth_user_and_headers):
+    user, _headers = auth_user_and_headers
+    client_time_context = {
+        "client_now_iso": "2026-07-17T12:30:00+08:00",
+        "timezone": "Asia/Shanghai",
+        "timezone_offset_minutes": 480,
+        "locale": "zh-CN",
+    }
+    media = ({"kind": "image", "asset_id": "asset-1"},)
+
+    snapshot = build_turn_snapshot(
+        db,
+        user_id=user.id,
+        channel="mobile",
+        text="列出今天的饮食",
+        client_capabilities={"voice_input": True},
+        client_time_context=client_time_context,
+        media=media,
+        source_message_id="message-1",
+        client_turn_id="turn-client-1",
+    )
+
+    assert snapshot.envelope.client_time_context == client_time_context
+    assert snapshot.envelope.media == media
+    assert snapshot.envelope.source_message_id == "message-1"
+    assert snapshot.envelope.client_turn_id == "turn-client-1"
+
+
+def test_agent_executor_time_prompt_uses_the_snapshotted_client_context(
+    db,
+    auth_user_and_headers,
+):
+    from app.services.agent_executor import AgentExecutor
+
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    executor._current_user_id = user.id
+    executor._current_turn_user_message = "现在几点？"
+    executor._start_agent_kernel_turn(
+        user_id=user.id,
+        message=executor._current_turn_user_message,
+        channel="typed",
+        client_time_context={
+            "client_now_iso": "2026-07-17T12:30:00+08:00",
+            "timezone": "Asia/Shanghai",
+        },
+    )
+
+    prompt = executor._agent_kernel_time_context(
+        {"client_now_iso": "2020-01-01T00:00:00+00:00", "timezone": "UTC"}
+    )
+
+    assert "2026-07-17T12:30:00+08:00" in prompt
+    assert "2020-01-01T00:00:00+00:00" not in prompt
+
+
 def test_test_context_converts_the_frozen_time_into_requested_timezone():
     context = ExecutionContext.for_test(
         user_id=1,

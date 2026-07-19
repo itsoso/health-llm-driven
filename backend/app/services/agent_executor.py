@@ -19,7 +19,7 @@ import math
 import re
 import time
 from datetime import UTC, date, datetime, timezone, timedelta
-from typing import AsyncGenerator, Dict, Any, List, Optional, Tuple
+from typing import AsyncGenerator, Dict, Any, List, Optional, Sequence, Tuple
 from urllib.parse import urlencode
 
 import httpx
@@ -33,7 +33,7 @@ from app.services.tool_schema_registry import (
     get_health_tools,
 )
 from app.services.lab_plausibility import annotate_if_implausible
-from app.services.llm.error_messages import safe_llm_error_message
+from app.services.llm.error_messages import safe_llm_error_message, safe_tool_error_message
 from app.services.health_query_dimensions import normalize_health_query_args
 from app.services.post_record_quality import (
     build_post_record_quality_response,
@@ -66,6 +66,30 @@ logger = logging.getLogger(__name__)
 def _sha12(text: str) -> str:
     """sha256 的前 12 hex (可观测性用短指纹, 非安全哈希)。"""
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
+
+
+def _kernel_media_metadata(
+    images: Optional[Sequence[dict[str, Any]]],
+    *,
+    has_file: bool,
+    file_name: Optional[str],
+) -> tuple[dict[str, Any], ...]:
+    """Keep attachment identity in the turn envelope without retaining payload bytes."""
+    items = [
+        {
+            "kind": "image",
+            "index": index,
+            "type": str(image.get("type") or "jpeg"),
+        }
+        for index, image in enumerate(images or ())
+        if isinstance(image, dict)
+    ]
+    if has_file:
+        items.append({
+            "kind": "file",
+            "name": str(file_name or "attachment")[:160],
+        })
+    return tuple(items)
 
 
 def _stringify_message_content(content: Any) -> str:
@@ -5050,6 +5074,8 @@ class AgentExecutor:
         channel: Optional[str],
         client_caps: Optional[List[str]] = None,
         client_time_context: Optional[Dict[str, Any]] = None,
+        media: Optional[Sequence[dict[str, Any]]] = None,
+        client_turn_id: Optional[str] = None,
     ) -> TurnSnapshot:
         """Freeze a complete kernel snapshot before any model or tool work."""
         resolved_channel = str(channel or "chat").strip() or "chat"
@@ -5060,6 +5086,8 @@ class AgentExecutor:
             text=message or "",
             client_capabilities={cap: True for cap in (client_caps or [])},
             client_time_context=client_time_context,
+            media=media,
+            client_turn_id=client_turn_id,
             policy_mode=settings.agent_kernel_policy_mode,
         )
         self._agent_kernel_event_bus = AgentEventBus(self._agent_kernel_snapshot)
@@ -5073,14 +5101,32 @@ class AgentExecutor:
         self._agent_kernel_event_bus.intent_decided()
         return self._refine_agent_kernel_continuation(self._agent_kernel_snapshot)
 
+    def _bind_agent_kernel_source_message(self, source_message_id: Optional[int]) -> None:
+        """Bind the durable user-message id before any model/tool work begins."""
+        snapshot = self._agent_kernel_snapshot
+        if snapshot is None or source_message_id is None:
+            return
+        source_id = str(source_message_id)
+        if snapshot.envelope.source_message_id == source_id:
+            return
+        envelope = replace(snapshot.envelope, source_message_id=source_id)
+        bound = replace(snapshot, envelope=envelope)
+        self._agent_kernel_snapshot = bound
+        if self._agent_kernel_event_bus is not None:
+            self._agent_kernel_event_bus.snapshot = bound
+
     def _ensure_agent_kernel_turn(self, *, channel: Optional[str] = None) -> TurnSnapshot:
         """Support non-chat adapters while keeping the same single-turn contract."""
         user_id = self._current_user_id
         if user_id is None:
             raise RuntimeError("Agent Kernel requires a user_id before tool execution")
         message = getattr(self, "_current_turn_user_message", "") or ""
-        resolved_channel = str(channel or self._turn_channel or "chat").strip() or "chat"
         snapshot = self._agent_kernel_snapshot
+        resolved_channel = str(
+            channel
+            or self._turn_channel
+            or (snapshot.context.channel if snapshot is not None else "chat")
+        ).strip() or "chat"
         if (
             snapshot is None
             or snapshot.context.user_id != user_id
@@ -5136,6 +5182,12 @@ class AgentExecutor:
         self._agent_kernel_event_bus.turn_ended(status=status)
         self._agent_kernel_turn_finished = True
 
+    def _agent_kernel_trace_summary(self, *, status: Optional[str] = None) -> dict[str, Any]:
+        bus = self._agent_kernel_event_bus
+        if bus is None:
+            return {}
+        return bus.trace_summary(status=status)
+
     def _agent_kernel_reference_now(self) -> datetime:
         snapshot = self._agent_kernel_snapshot
         return snapshot.context.current_time if snapshot is not None else datetime.now(BEIJING_TZ)
@@ -5147,7 +5199,7 @@ class AgentExecutor:
         snapshot = self._ensure_agent_kernel_turn()
         return format_turn_time_context_prompt(
             snapshot.context,
-            client_time_context=client_time_context,
+            client_time_context=snapshot.envelope.client_time_context,
         )
 
     def _agent_kernel_record_tool_result(
@@ -5699,6 +5751,7 @@ class AgentExecutor:
         self._current_turn_source_message_id = int(user_msg.id)
         self._current_turn_conversation_id = int(conv.id)
         self._current_turn_image_urls = []
+        self._bind_agent_kernel_source_message(user_msg.id)
 
         yield {"event": "agent_start", "data": {"message": "多模型综合分析中…", "conversation_id": conv.id}}
 
@@ -5983,6 +6036,7 @@ class AgentExecutor:
         elapsed_ms = int((time.time() - start_time) * 1000)
         # P1 数字锚定核验(shadow, additive; fail-soft 见 helper)。
         citation_anchor = _citation_anchor_shadow_meta(self.db, user_id, full_reply)
+        kernel_trace = self._agent_kernel_trace_summary(status=completion_status)
         try:
             ai_msg.meta = {
                 "elapsed_ms": elapsed_ms,
@@ -5994,6 +6048,7 @@ class AgentExecutor:
                 "sources_used": sources_used,
                 "mode": "multi_model",
                 **({"citation_anchor": citation_anchor} if citation_anchor else {}),
+                **({"kernel_trace": kernel_trace} if kernel_trace else {}),
                 "write_receipts": write_receipts,
                 "completion_status": completion_status,
                 "client_turn_finalized": True,
@@ -6015,6 +6070,7 @@ class AgentExecutor:
             "sources_used": sources_used,
             "mode": "multi_model",
             **({"citation_anchor": citation_anchor} if citation_anchor else {}),
+            **({"kernel_trace": kernel_trace} if kernel_trace else {}),
             "write_receipts": write_receipts,
             "completion_status": completion_status,
             "client_turn_finalized": True,
@@ -6053,6 +6109,12 @@ class AgentExecutor:
             channel=channel,
             client_caps=client_caps,
             client_time_context=client_time_context,
+            media=_kernel_media_metadata(
+                images,
+                has_file=bool(file_base64),
+                file_name=file_name,
+            ),
+            client_turn_id=client_turn_id,
         )
         kernel_completion_status = "interrupted"
         recovered_user_message = None
@@ -6517,6 +6579,11 @@ class AgentExecutor:
             "image_urls": saved_image_urls,
             "recovered": recovered_user_message is not None,
         }}
+
+        self._current_turn_source_message_id = int(user_msg.id)
+        self._current_turn_conversation_id = int(conv.id)
+        self._current_turn_image_urls = list(saved_image_urls)
+        self._bind_agent_kernel_source_message(user_msg.id)
 
         # ── Slice 3 程序性配方: 触发短语精确匹配 (先于 fast-path/LLM)。
         # strip 后等值才命中 (不做模糊匹配, 控误触发); 命中 → 确定性逐步重放,
@@ -8256,6 +8323,7 @@ class AgentExecutor:
         # P1 数字锚定核验(shadow): 观测最终答案里的个人数值能否锚定到 Twin。additive
         # 摘要进 meta + done, 客户端不读不炸。内部全 fail-soft, 绝不打死回合。
         citation_anchor = _citation_anchor_shadow_meta(self.db, user_id, full_reply)
+        kernel_trace = self._agent_kernel_trace_summary(status=completion_status)
 
         # rank7: passthrough 观测/标记进 meta(offline judge 读)。shadow 落 would-be
         # passthrough 文本(截 4000 char)+ 两侧壁钟;on 落一个轻量 taken 标记。
@@ -8301,6 +8369,7 @@ class AgentExecutor:
                     "tool_retry_count": self._agent_kernel_tool_retry_count,
                 },
                 "perf": perf,
+                **({"kernel_trace": kernel_trace} if kernel_trace else {}),
                 **({"citation_anchor": citation_anchor} if citation_anchor else {}),
                 **({"recipe_candidate": recipe_candidate_meta} if recipe_candidate_meta else {}),
                 **({"shadow_passthrough": shadow_passthrough_meta} if shadow_passthrough_meta else {}),
@@ -8339,6 +8408,7 @@ class AgentExecutor:
                     "tool_retry_count": self._agent_kernel_tool_retry_count,
                 },
                 "perf": perf,
+                **({"kernel_trace": kernel_trace} if kernel_trace else {}),
                 **({"citation_anchor": citation_anchor} if citation_anchor else {}),
                 **({"synthesis_passthrough": synthesis_passthrough_meta} if synthesis_passthrough_meta else {}),
                 "client_turn_finalized": True,
@@ -8540,6 +8610,7 @@ class AgentExecutor:
         conv.updated_at = datetime.now(UTC)
         elapsed_ms = int((time.time() - start_time) * 1000)
         response_cards = _merge_agent_card_descriptors(record_cards, safety_cards)
+        kernel_trace = self._agent_kernel_trace_summary(status="complete")
         meta_payload: Dict[str, Any] = {
             "elapsed_ms": elapsed_ms,
             "llm_ms": 0,
@@ -8552,6 +8623,7 @@ class AgentExecutor:
             "sources_used": ["程序性配方"],
             "tools_used": tools_used,
             "write_receipts": write_receipts,
+            "kernel_trace": kernel_trace,
             "cards": response_cards,
             "completion_status": "complete",
             "client_turn_finalized": True,
@@ -10867,7 +10939,7 @@ class AgentExecutor:
                 return f"Error: 未知工具 {tool_name}"
         except Exception as e:
             logger.error(f"工具执行失败 {tool_name}: {e}")
-            return f"Error: {tool_name} 执行失败: {str(e)}"
+            return f"Error: {safe_tool_error_message(tool_name, e)}"
 
     def _agent_kernel_preflight_tool(
         self,

@@ -20,7 +20,8 @@ def mock_celery():
 
     celery_mock.task = task_decorator
 
-    needs_mock = "celery" not in sys.modules
+    orig_celery = sys.modules.get("celery")
+    needs_mock = orig_celery is None
     if needs_mock:
         sys.modules["celery"] = MagicMock()
 
@@ -30,6 +31,13 @@ def mock_celery():
     # 这里被孤儿化的旧 dict,于是后续测试 patch("app.tasks.notifications.X")
     # 全部打空(曾让 test_push_privacy 的任务打到真 Postgres)。
     orig_notifications = sys.modules.get("app.tasks.notifications")
+    tasks_package = sys.modules.get("app.tasks")
+    missing = object()
+    orig_package_notification = (
+        getattr(tasks_package, "notifications", missing)
+        if tasks_package is not None
+        else missing
+    )
 
     # Ensure app.celery_app module has a proper celery_app with task decorator
     with patch.dict(sys.modules, {
@@ -45,6 +53,25 @@ def mock_celery():
         sys.modules["app.tasks.notifications"] = orig_notifications
     elif "app.tasks.notifications" in sys.modules:
         del sys.modules["app.tasks.notifications"]
+
+    # importlib also caches child modules as attributes on their parent package.
+    # Restoring only sys.modules leaves app.tasks.notifications pointing at the
+    # temporary fake module, so `from app.tasks import notifications` can still
+    # bypass the restored real module in later tests.
+    if tasks_package is not None:
+        if orig_package_notification is missing:
+            if hasattr(tasks_package, "notifications"):
+                delattr(tasks_package, "notifications")
+        else:
+            setattr(tasks_package, "notifications", orig_package_notification)
+
+    # The fake Celery module is process-global.  Leaving it behind makes the
+    # next test import `celery.schedules` from a MagicMock and turns Celery
+    # task objects into plain functions with no `.run` entrypoint.
+    if orig_celery is not None:
+        sys.modules["celery"] = orig_celery
+    elif "celery" in sys.modules:
+        del sys.modules["celery"]
 
 
 class TestSendSleepReminders:

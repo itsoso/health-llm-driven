@@ -9,6 +9,20 @@ from __future__ import annotations
 from typing import Any
 
 
+_TOOL_LABELS = {
+    "health_query": "健康数据查询",
+    "health_query_batch": "健康数据查询",
+    "health_record": "健康记录",
+    "health_manage": "健康记录",
+    "health_analysis": "健康分析",
+    "knowledge_search": "知识查询",
+    "realtime_search": "实时查询",
+    "environment_check": "环境查询",
+    "supplement_guide": "补剂建议",
+    "manage_plan": "计划管理",
+}
+
+
 def _error_text(error: Any) -> str:
     if error is None:
         return ""
@@ -49,3 +63,19 @@ def safe_llm_error_message(error: Any) -> str:
     if "timeout" in text or "timed out" in text or "超时" in text:
         return "模型服务响应超时。请稍后重试；本轮没有生成可靠健康建议。"
     return "模型服务暂时不可用。请稍后重试；本轮没有生成可靠健康建议。"
+
+
+def safe_tool_error_message(tool_name: str, error: Any) -> str:
+    """Return a short, actionable tool error without exposing upstream details."""
+
+    label = _TOOL_LABELS.get(str(tool_name), "这项操作")
+    text = _error_text(error).lower()
+    if "timeout" in text or "timed out" in text or "超时" in text:
+        return f"{label}处理超时，请稍后重试。"
+    if any(marker in text for marker in ("connection", "network", "连接", "网络", "dns")):
+        return f"{label}暂时无法连接服务，请检查网络后重试。"
+    if "429" in text or "rate limit" in text or "too many requests" in text or "限流" in text:
+        return f"{label}服务繁忙，请稍后重试。"
+    if "403" in text or "401" in text or "permission" in text or "权限" in text:
+        return f"暂时没有权限完成{label}，请检查账号状态后重试。"
+    return f"{label}暂时无法完成，请稍后重试。"

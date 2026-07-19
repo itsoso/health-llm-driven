@@ -3,7 +3,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from collections import Counter
 import logging
+import time
 from typing import Any, Optional
 
 from app.services.agent_kernel.types import ToolExecutionRequest, TurnSnapshot
@@ -30,6 +32,7 @@ class AgentEventBus:
     def __init__(self, snapshot: TurnSnapshot):
         self.snapshot = snapshot
         self.events: list[AgentKernelEvent] = []
+        self._started_monotonic = time.monotonic()
 
     def emit(self, name: str, **data: Any) -> AgentKernelEvent:
         context = self.snapshot.context
@@ -122,3 +125,37 @@ class AgentEventBus:
 
     def turn_ended(self, *, status: str) -> AgentKernelEvent:
         return self.emit("agent.turn_end", status=status)
+
+    def trace_summary(self, *, status: Optional[str] = None) -> dict[str, Any]:
+        """Return a compact, health-content-free summary for monitoring and replay."""
+        counts = Counter(event.name for event in self.events)
+        tool_results = [
+            event for event in self.events if event.name == "agent.tool_result"
+        ]
+        return {
+            "schema_version": 1,
+            "run_id": self.snapshot.context.run_id,
+            "turn_id": self.snapshot.context.turn_id,
+            "channel": self.snapshot.context.channel,
+            "policy_mode": self.snapshot.policy_mode,
+            "status": status or next(
+                (
+                    str(event.data.get("status"))
+                    for event in reversed(self.events)
+                    if event.name == "agent.turn_end" and event.data.get("status")
+                ),
+                "unknown",
+            ),
+            "duration_ms": max(
+                0,
+                int((time.monotonic() - self._started_monotonic) * 1000),
+            ),
+            "event_counts": dict(counts),
+            "tool_requests": counts.get("agent.tool_requested", 0),
+            "tool_results": len(tool_results),
+            "tool_failures": sum(
+                1 for event in tool_results if event.data.get("success") is False
+            ),
+            "blocked_tools": counts.get("agent.tool_blocked", 0),
+            "verified_receipts": counts.get("agent.write_receipt_verified", 0),
+        }

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta, timezone
 import logging
-from typing import Any, Optional
+from typing import Any, Optional, Sequence
 from uuid import uuid4
 
 from sqlalchemy.orm import Session
@@ -56,6 +56,9 @@ def build_turn_snapshot(
     text: str,
     client_capabilities: Optional[dict[str, Any]] = None,
     client_time_context: Optional[dict[str, Any]] = None,
+    media: Optional[Sequence[dict[str, Any]]] = None,
+    source_message_id: Optional[str] = None,
+    client_turn_id: Optional[str] = None,
     now_utc: Optional[datetime] = None,
     run_id: Optional[str] = None,
     turn_id: Optional[str] = None,
@@ -70,11 +73,20 @@ def build_turn_snapshot(
         run_id=run_id,
         turn_id=turn_id,
     )
+    media_items = tuple(
+        dict(item)
+        for item in (media or ())
+        if isinstance(item, dict)
+    )
     envelope = AgentEnvelope(
         user_id=user_id,
         channel=channel,
         text=text or "",
         client_capabilities=dict(client_capabilities or {}),
+        client_time_context=dict(client_time_context or {}),
+        media=media_items,
+        source_message_id=(str(source_message_id).strip() or None) if source_message_id else None,
+        client_turn_id=(str(client_turn_id).strip() or None) if client_turn_id else None,
     )
     return TurnSnapshot(
         envelope=envelope,
