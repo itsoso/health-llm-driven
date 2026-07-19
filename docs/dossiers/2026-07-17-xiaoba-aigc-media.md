@@ -203,6 +203,19 @@ The IPA's `CFBundleIdentifier` is `life.executor.health` and its
 `CFBundleShortVersionString` is `1.3.2`. Manual playback on an owner device
 remains the final G6 verification.
 
+Production OTA release evidence: EAS update group
+`d9652ea4-c15f-4f42-b0f6-b26723b0a428` (iOS update
+`019f7ac5-8a8c-7c0a-82f1-1cc349e96787`) was published to the `production`
+channel for runtime `1.3.2` from `7203a3da2` on 2026-07-19. The prior `1.3.1`
+runtime remains isolated and cannot receive this native-player bundle.
+
+TestFlight release evidence: EAS iOS build
+`bcf8066b-1b0c-47c9-9a48-40623eebb766` completed as `1.3.2 (233)` for
+runtime `1.3.2`. App Store Connect accepted Apple build
+`fc46279b-3c88-4abb-9305-63c98f56b672` with processing state `VALID` and
+internal TestFlight state `IN_BETA_TESTING`. No external beta-review
+submission was created.
+
 ## Configuration Record
 
 Production uses an existing independent Model Studio pay-as-you-go credential
