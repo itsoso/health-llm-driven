@@ -3,6 +3,18 @@ import XCTest
 @testable import LocalHealthCapabilityProbe
 
 final class LocalChineseClipVisionEngineTests: XCTestCase {
+    func testPhotoLoaderDeletesOnlyOwnedTemporaryCopies() throws {
+        #if canImport(CoreGraphics) && canImport(ImageIO)
+        let file = FileManager.default.temporaryDirectory
+            .appendingPathComponent("local-food-photo-\(UUID().uuidString).jpg")
+        try Data([0x00]).write(to: file)
+
+        try LocalFoodPhotoLoader().deleteTemporaryCopyIfOwned(fileURL: file)
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
+        #endif
+    }
+
     func testPreprocessorMatchesPinnedChineseClipBicubicGolden() throws {
         let image = LocalFoodRGBAImage(
             width: 3,

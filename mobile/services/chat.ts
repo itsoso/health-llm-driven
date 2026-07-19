@@ -4,6 +4,7 @@ import { buildClientCapsHeader } from './clientCaps';
 import { sanitizeChatErrorMessage } from '../utils/chatErrorMessage';
 import type { AgentPerfProfileLike } from '../utils/chatTransparency';
 import { normalizeWriteReceipt, type WriteReceipt } from './writeReceipt';
+import { assertAppEgressAllowed, enforceAppEgressAllowed } from './egressPolicy';
 
 export interface ChatMessage {
   role: 'user' | 'assistant';
@@ -230,7 +231,15 @@ export async function* streamChat(
   extraContext?: string,
   channel: 'typed' | 'voice' | 'siri' = 'typed',
   clientTurnId?: string,
+  egressIntent: { explicitCloudAI?: boolean } = {},
 ): AsyncGenerator<StreamEvent, void, unknown> {
+  try {
+    assertAppEgressAllowed(egressIntent);
+  } catch {
+    // Blocked paths wait for the local audit write before rejecting; allowed
+    // cloud paths stay synchronous here so streaming startup is unchanged.
+    await enforceAppEgressAllowed(egressIntent);
+  }
   const token = await getToken();
   // channel = 传输层输入通道声明(非 LLM 参数):打字免症状二次确认;
   // 语音(转写有失真风险)fail-closed 保留确认 —— 语音入口必须显式传 'voice'。
@@ -525,6 +534,7 @@ export async function getConversationsPage({
   titleLike,
   search,
 }: { offset?: number; limit?: number; titleLike?: string; search?: string } = {}): Promise<ConversationsPage> {
+  await enforceAppEgressAllowed();
   const token = await getToken();
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
   // search 匹配标题 ∪ 消息正文(后端 _apply_search);title_like 仅标题(旧参数,search 优先)。
@@ -559,6 +569,7 @@ export async function getConversationMessages(
   conversationId: number,
   opts?: { days?: number },
 ): Promise<{ messages: ChatMessage[]; total_messages: number }> {
+  await enforceAppEgressAllowed();
   const token = await getToken();
   const qs = opts?.days ? `?days=${opts.days}` : '';
   const res = await fetch(`${BASE_URL}/agent/conversations/${conversationId}${qs}`, {
@@ -573,6 +584,7 @@ export async function getConversationMessages(
 }
 
 export async function deleteConversation(conversationId: number): Promise<boolean> {
+  await enforceAppEgressAllowed();
   const token = await getToken();
   const res = await fetch(`${BASE_URL}/agent/conversations/${conversationId}`, {
     method: 'DELETE',
@@ -585,6 +597,7 @@ export async function updateConversationTitle(
   conversationId: number,
   title: string,
 ): Promise<Conversation | null> {
+  await enforceAppEgressAllowed();
   const token = await getToken();
   const res = await fetch(`${BASE_URL}/agent/conversations/${conversationId}`, {
     method: 'PATCH',

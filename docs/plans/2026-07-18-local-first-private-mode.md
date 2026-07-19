@@ -350,33 +350,16 @@ git add mobile/services/localDietDraft.ts mobile/services/__tests__/localDietDra
 git commit -m "feat(diet): record meals fully offline"
 ```
 
-### Task 7: Add Apple system-model text extraction
+### Task 7: Resolve the local text path without depending on Apple system models
+
+**2026-07-19 correction:** The connected target iPhone reports `device_not_eligible` for Apple's system language model. The user explicitly chose a simpler guaranteed path instead of widening the compatibility matrix. Task 7 therefore ships the bounded deterministic Chinese meal parser and local USDA lookup behind `localModelRouter`; Apple system generation remains a capability probe, not a production dependency.
 
 **Files:**
-- Create: `mobile/modules/local-health-kernel/ios/LocalDietLanguageModel.swift`
-- Create: `mobile/modules/local-health-kernel/Tests/LocalDietLanguageModelTests.swift`
 - Create: `mobile/services/localModelRouter.ts`
 - Create: `mobile/services/__tests__/localModelRouter.test.ts`
 - Modify: `mobile/services/localDietDraft.ts`
 
-**Step 1: Write failing typed-output and fallback tests**
-
-Cover eligible device, Apple Intelligence disabled, model not ready, invalid output, OS model-profile change and strict-local mode. Expected output is a bounded draft with confidence and model profile.
-
-**Step 2: Implement availability-gated guided generation**
-
-Use Foundation Models only behind runtime availability checks. Give the model a local food lookup tool; do not ask it to recall nutrients.
-
-**Step 3: Verify model behavior offline**
-
-Run deterministic unit tests and the licensed/synthetic eval corpus on real devices. Record correction burden and model profile in the dossier.
-
-**Step 4: Commit**
-
-```bash
-git add mobile/modules/local-health-kernel/ios/LocalDietLanguageModel.swift mobile/modules/local-health-kernel/Tests/LocalDietLanguageModelTests.swift mobile/services/localModelRouter.ts mobile/services/__tests__/localModelRouter.test.ts mobile/services/localDietDraft.ts
-git commit -m "feat(diet): parse meal text with on-device models"
-```
+**Acceptance:** Common meal text produces a typed local draft; unsupported food or quantity stays unknown; strict-local never falls through to cloud; the same path works when every system model is unavailable.
 
 ### Task 8: Add Vision barcode, OCR and candidate-photo paths
 
@@ -392,15 +375,15 @@ git commit -m "feat(diet): parse meal text with on-device models"
 
 Cover barcode/OCR results, non-food images, multiple candidates, low-confidence portion, private photo lifecycle and model unavailability.
 
-**Step 2: Implement Vision-only candidate extraction**
+**Step 2: Implement private local candidate extraction**
 
-Return candidates and confidence, never authoritative nutrients. Keep images in the private container and apply the configured deletion policy.
+Return at most three identity candidates and confidence, never authoritative nutrients or portion. Keep the picker copy in the private container and delete it after recognition.
 
 **Step 3: Benchmark before adding a downloaded model**
 
 The selected candidate is `OFA-Sys/chinese-clip-rn50`, with only its Core ML image tower shipped and its text tower restricted to build-time label embedding. Execute `docs/plans/2026-07-18-chinese-clip-local-food-vision.md` as an isolated spike before wiring Chinese-CLIP into the production diet page. Compare it against Vision/history/manual on identity precision, mixed-plate omissions, non-food rejection, correction burden, latency, peak memory, thermal behavior and installed assets. Do not ship or silently cloud-fallback a model that fails the recorded Gate.
 
-**Chinese-CLIP isolated-spike outcome (2026-07-19):** The eight-stage implementation and pre-device verification are complete. Immutable provenance, Core ML parity, 39,626,225-byte int8 installed asset budget, local-only orchestration, failure handling, evidence schemas, scoring, calibration search and the isolated iOS host all pass their deterministic gates. The enhancement verdict remains **BLOCK** because no authorized 300-case Chinese-food set is available, FP16-to-int8 identity precision has not been measured on a frozen held-out split, every registered physical device was unavailable, and the required low/mid/high iPhone plus airplane-mode/privacy evidence is absent. Keep Chinese-CLIP out of `mobile/app/diet.tsx`; Task 8 continues to guarantee Vision/OCR/barcode/manual behavior only. Resume the spike from the frozen dataset and device gates rather than redoing model conversion.
+**Chinese-CLIP product outcome (2026-07-19):** The eight-stage spike froze provenance, conversion and a 39.66 MB int8 image-tower package. The connected high-end iPhone exploratory run showed useful but imperfect results, and the user explicitly accepted that limitation. The model is therefore integrated only as an exploratory local candidate source: at most three labels, always manual confirmation, no portion or nutrition inference, no auto-save, no cloud fallback and deletion of the picker copy after inference. Formal automatic-recognition quality remains **BLOCK**; that BLOCK no longer prevents this narrower manual-candidate product boundary.
 
 **Step 4: Verify and commit**
 
@@ -497,7 +480,7 @@ Review encryption, egress, deletion, recovery, photo retention, logs, model clai
 
 **Step 3: Build a new iOS binary**
 
-Run the project TestFlight or local QR release path. OTA is insufficient because this plan adds native modules.
+Run the project local QR release path. OTA is insufficient because this plan adds native modules; TestFlight is not required for this internal validation unless the user asks for it.
 
 **Step 4: Run G5/G6 on real devices**
 

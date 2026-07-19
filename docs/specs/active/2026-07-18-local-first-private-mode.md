@@ -1,10 +1,10 @@
 # Feature Spec: 本地优先私有模式与完全本地饮食
 
-> Status: draft
+> Status: implemented; native release validation
 > Owner: Codex
-> Updated: 2026-07-18
+> Updated: 2026-07-19
 > Related PRD/PDD: `docs/prd/2026-07-18-local-first-private-mode.md`, `docs/prd/reva-personal-health-os-prd.md`
-> Related code: `mobile/app/_layout.tsx`, `mobile/hooks/useAuth.tsx`, `mobile/services/api.ts`, `mobile/services/diet.ts`, `mobile/app/diet.tsx`, `backend/app/api/diet.py`
+> Related code: `mobile/hooks/useAppSession.tsx`, `mobile/components/local-mode/`, `mobile/services/localDietRepository.ts`, `mobile/services/egressPolicy.ts`, `mobile/modules/local-health-kernel/`
 
 ## 1. Decision
 
@@ -66,7 +66,7 @@ G1 verdict: **PASS**. The user approved the local-first option and the fully loc
 
 ```text
 first launch
-  -> choose "立即开始" or "登录并同步"
+  -> choose strict local, local-first or cloud account
   -> verify device passcode protection
   -> create device-local identity
   -> capture text/manual/barcode/photo candidate
@@ -84,7 +84,7 @@ Strict-local mode must remain usable with networking disabled before launch.
 | Surface | Responsibility | Contract |
 |---|---|---|
 | Mobile | Mode choice, capture, correction, confirmation, privacy controls, export/restore | Never require an account for the local slice; never show saved without a local receipt. |
-| iOS native module | Key management, protected local storage, capability probes, system model/Vision bridges | Require device passcode; no plaintext health payload or query metadata in logs/storage; availability failures degrade explicitly. |
+| iOS native module | Key management, protected local storage and Chinese-CLIP/Core ML photo candidates | Require device passcode; no plaintext health payload or query metadata in logs/storage; model failures return explicitly and never fall through to cloud. |
 | Backend | Preserve existing cloud users; later accept opaque encrypted sync blobs and explicit inference requests | Must not receive local health data unless the user enables a named capability. |
 | Watch/Mac/Web | Deferred | Must not imply local data is synchronized before sync ships. |
 
@@ -115,7 +115,7 @@ blind_index_fields: [day_blind_index, meal_type_blind_index, lifecycle_blind_ind
 encrypted_domain_fields: [record_date, meal_type, provenance, model_profile, created_at, updated_at]
 enums:
   app_mode: strict_local | local_first | cloud_account
-  inference_path: deterministic | apple_system | downloaded_model | explicit_cloud
+  inference_path: deterministic | downloaded_model | explicit_cloud
 backward_compatibility:
   existing authenticated users stay on the current remote repositories
   no automatic remote-to-local migration in the first release
@@ -155,7 +155,7 @@ Forbidden:
 - send data to cloud when strict-local mode is active;
 - hide model unavailability or silently switch inference paths.
 
-The capability router order is deterministic/history -> Apple system model -> optional downloaded model -> manual confirmation -> explicit cloud enhancement. A user may disable any later stage.
+The shipped v1 router is deterministic/history for text and the bundled Chinese-CLIP RN50 int8 image tower for photo candidates, followed by mandatory manual confirmation. Apple's system model is not a dependency because the connected target device reported `device_not_eligible`. Explicit cloud enhancement is permitted only in `local_first`, only after a user action, and is blocked entirely in `strict_local`.
 
 ## 11. Acceptance Criteria
 
@@ -172,13 +172,13 @@ Given strict-local mode
 When any API, telemetry, push-registration or remote-config path attempts health-data egress
 Then the request is blocked and a privacy_egress_blocked event is stored locally
 
-Given a supported device with the system model available
+Given every Apple system model is unavailable
 When the user says "午饭半碗米饭两个鸡蛋"
-Then the model returns a typed draft and the local food table, not model memory, supplies attributable nutrients
+Then the deterministic parser returns a typed draft and the local food table supplies attributable nutrients
 
-Given the system model is disabled or the device is ineligible
-When the same capture starts
-Then the app offers deterministic/manual capture without a login or cloud requirement
+Given a local meal photo
+When Chinese-CLIP returns candidates
+Then the app shows at most three identities, deletes the picker copy, and writes nothing until the user confirms a separate draft
 
 Given a meal photo with uncertain portion
 When local vision identifies candidate foods
@@ -202,7 +202,7 @@ Then records and audit events are restored with stable IDs and no duplicate conf
 ```bash
 # Mobile JS behavior
 cd mobile
-npm test -- --runInBand app/__tests__/localMode.test.tsx services/__tests__/localDietRepository.test.ts services/__tests__/privacyEgressPolicy.test.ts
+npm test -- --runInBand app/__tests__/localMode.test.tsx services/__tests__/localDietRepository.test.ts services/__tests__/egressPolicy.test.ts
 npx tsc --noEmit
 
 # iOS native module
@@ -224,21 +224,18 @@ Manual gates include airplane-mode first launch, process restart, device lock/un
 
 ## 13. Rollout And Rollback
 
-- Ship behind a local capability flag in a new iOS binary.
-- Start with internal devices and strict-local text/manual capture.
+- Ship the selectable modes in a new iOS binary and start with internal devices.
+- Keep Chinese-CLIP behind the manual-candidate boundary; never describe it as automatic meal recognition.
 - Keep existing remote repositories as the default for authenticated users.
-- Do not enable downloaded vision models until benchmark, memory and licensing gates pass.
+- A model-quality rollback hides the photo button but preserves text/manual capture and all local records.
 - Rollback hides local onboarding for new users but must preserve access/export for users who already created local data.
 - Local schema migrations are forward-only and versioned; rollback must never delete local health records.
 
 ## 14. Open Questions
 
-Blocking before implementation:
-
-- Establish the minimum supported hardware for system and downloadable model paths.
-
 Non-blocking for the first slice:
 
+- Establish a broader supported-hardware/performance matrix before expanding beyond the current internal cohort.
 - Whether E2EE sync is subscription-only.
 - Whether retained meal images use a separate user-configurable storage quota.
 - Whether Android gets a separate model/runtime strategy.
@@ -249,3 +246,4 @@ Non-blocking for the first slice:
 |---|---|---|
 | 2026-07-18 | Initial draft | User approved local-first mode and a fully local diet wedge. |
 | 2026-07-18 | Require device passcode; use per-export App-generated recovery keys; select USDA FoodData Central CC0 | User approved the security trade-offs and official source licensing resolved redistribution. |
+| 2026-07-19 | Implement selectable modes, encrypted local diet, bundled Chinese-CLIP manual candidates and local data lifecycle | Target iPhone cannot use the Apple system model; user chose the simpler fully local Chinese-CLIP boundary. |

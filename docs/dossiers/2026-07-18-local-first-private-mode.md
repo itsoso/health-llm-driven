@@ -4,16 +4,16 @@
 |---|---|
 | slug | `local-first-private-mode` |
 | 创建日期 | 2026-07-18 |
-| 当前阶段 | G2 Chinese-CLIP 探索性候选验证完成 |
-| 状态 | 本地基线 PASS；Chinese-CLIP 手工确认候选 PASS；自动识别 BLOCK |
+| 当前阶段 | G3/G4 已通过；G5 原生包构建中 |
+| 状态 | 本地产品切片 PASS；Chinese-CLIP 手工候选 PASS；自动识别 BLOCK；G6 待真机确认 |
 | 负责 | User / Codex |
-| 反馈环 | iOS real-device spike / EAS-TestFlight / airplane-mode validation |
+| 反馈环 | iOS native build / local QR / airplane-mode validation |
 
 ## Correct Course
 
 - [x] Correction Block：真机证明系统模型不可通用依赖；G2 拆为本地基线与智能增强两个范围。
 - [x] 2026-07-18 用户选定 Chinese-CLIP RN50 作为唯一首轮打包视觉模型；只分发视觉塔，文本塔仅用于构建标签向量。
-- [x] 2026-07-19 Chinese-CLIP 八阶段 spike 已执行到裁决；工程与可重复性闸通过，授权质量集和代表性真机证据缺失，按规则保持 BLOCK，未接生产饮食页。
+- [x] 2026-07-19 Chinese-CLIP 八阶段 spike 已执行到裁决；工程与可重复性闸通过，授权质量集和代表性分层真机证据缺失，自动识别保持 BLOCK。随后按用户明确接受的低精度边界，仅接入“最多三个候选 + 必须人工确认”的生产路径。
 - [x] 2026-07-19 已按“识别质量 → 非食物拒识 → 证据链”顺序完成优化。复核固定 Chinese-CLIP revision 后纠正旧假设：官方预处理是 `Resize((224, 224), BICUBIC)`，不是等比中心裁切；实现现已匹配官方方形 bicubic 语义。v2 标签库加入本地非食物负类；FP16/int8 差值改为由两份完整冻结报告确定性派生。优化设计与实施计划见 `docs/plans/2026-07-19-chinese-clip-local-food-vision-optimization-design.md`、`docs/plans/2026-07-19-chinese-clip-local-food-vision-optimization.md`。本 correction 已完成 S3/S5 与预设备 G3，未改变既有 G2 BLOCK。
 - [x] 2026-07-19 用户明确把目标收窄为“本地模型给候选、允许不精确、用户确认后再记录”。隔离宿主增加 `exploratory` 模式，不伪造 300-case 校准：高端 iPhone 用真实 int8 模型试跑 5 张非私人样图，炒饭、粽子、香蕉 Top-1 命中，椅子正确拒识，白米饭误判为非食物。该结果允许把 Chinese-CLIP 作为可选候选来源，不允许自动写入。
 
@@ -117,36 +117,47 @@
   - Chinese-CLIP 作为最多三个候选、始终人工确认、失败可手工输入的本地辅助：**PASS（产品方向）**；不得自动创建饮食记录，不推断份量或营养。
   - Chinese-CLIP 自动识别或免确认写入：**BLOCK**，仍须通过正式质量、纠正成本、包体和代表性真机性能 Gate。
   - 该拆分不是降低标准：智能增强从首版保证路径移除，运行时不得静默走云；基础路径可在模型完全不可用时成立。
-  - 2026-07-19 Chinese-CLIP 最终独立裁决：provenance/license、转换 parity、包体和工程失败模式 **PASS**；授权质量、压缩质量差值、分层真机性能与物理隐私检查 **BLOCK**。总裁决按最弱维度为 **BLOCK**，不是 FAIL，也不允许生产集成。
+  - 2026-07-19 Chinese-CLIP 最终独立裁决：provenance/license、转换 parity、包体和工程失败模式 **PASS**；授权质量、压缩质量差值、分层真机性能与自动识别物理验收 **BLOCK**。因此它不具备自动写入资格；用户随后授权的手工候选边界不依赖这项被阻断的产品声明。
 
 ## S4 · 研发任务分解
 
 - 实施任务见 `docs/plans/2026-07-18-local-first-private-mode.md`。
-- Chinese-CLIP 独立 spike 已按 `docs/plans/2026-07-18-chinese-clip-local-food-vision.md` 完成八阶段实现与裁决；结果为 BLOCK，继续不得接入生产饮食页。
+- Chinese-CLIP 独立 spike 已按 `docs/plans/2026-07-18-chinese-clip-local-food-vision.md` 完成八阶段实现与裁决；自动识别结果为 BLOCK。生产接入被收窄为用户授权的探索性手工候选，不复用自动识别声明。
 - 用户已授权把 Chinese-CLIP 作为低风险、手工确认候选继续纳入本地饮食实施；该授权不包括自动写入或营养/份量推断。
-- G2 已授权进入 Task 2 加密 Local Health Kernel；智能增强继续留在独立评测支线。
+- Task 2–10 已按顺序完成；Task 11 正在执行原生发布与真机闸。Task 12 的 E2EE 同步仍遵守“G6 后另立项”，未夹带实现。
 
 ## S5 · 实现
 
-- 产品实现未开始；已完成不读写健康数据的 G2 capability probe、系统模型合成 benchmark、Chinese-CLIP Core ML 纯本地引擎和隔离真机宿主。探索性宿主已经真实加载 int8 模型并推理非私人样图；它仍是测试壳，不进入生产 App、不读 Local Health 数据、不访问相册、不提供云端 fallback。
+- 已实现三种用户可切换模式：`strict_local`、`local_first`、`cloud_account`。新用户可不注册创建本地身份；既有云端用户路径保持不变，切换不自动迁移数据。
+- 已实现设备密码前置的 Keychain 根密钥、HKDF 域分离、AES-GCM 加密记录、HMAC blind index、受保护 SQLite、原子 `DietRecord + ExecutionEvent`、crypto-shred、独立恢复密钥导出和空库恢复。
+- 已实现 USDA SR Legacy CC0 固定子集、确定性中文饮食草稿、未知营养不按 0 展示、本地日汇总和历史记录。
+- 已将 Chinese-CLIP RN50 int8 image tower 与冻结标签库打入 App；只返回最多三个身份候选，不估份量/营养、不自动保存、不云回退，推理结束删除照片选择器临时副本。
+- 已实现统一出站策略：Axios、fetch、XHR、Sentry、云会话恢复、推送、远程配置和云端 providers 均受模式约束；被拒请求只写不含健康 payload 的本地审计事件。
+- 已实现本地数据管理页和运行模式配置；备份文件与恢复密钥分开展示，复制密钥必须由用户显式点击。
 
 ## G3 · 测试闸
 
-- Chinese-CLIP 独立 spike、本轮优化与探索模式：PASS（Swift 37 tests / 1 skipped；视觉宿主生成器 8 tests / 81 assertions；generic iOS 16 与签名真机构建成功）；完整产品计划 G3 未开始。
+- 当前裁决：**PASS**。
+- 自动化证据：Swift Package 全套测试通过（含 1 个只在显式真机环境运行的 benchmark skipped）；Mobile Jest 全套、TypeScript、USDA 构建器测试均通过；generic iOS Simulator 原生 App 构建通过。
+- App artifact 检查确认包含编译后的 Chinese-CLIP 模型、冻结标签库和资源 manifest；标签库摘要与冻结值一致。
 
 ## G4 · 安全闸
 
-- 必须触发：认证边界、健康数据本地写入、照片、模型出站、加密恢复。
-- Chinese-CLIP 宿主静态边界与错误/取消测试：PASS；用户确认飞行模式下的宿主离线启动：PASS（只到启动级）；模型推理期间真机抓包与物理隐私：BLOCK。完整产品 G4 未开始。
+- 当前裁决：**PASS（允许进入原生打包）**。
+- 认证与隔离：本地身份仅在保险库创建成功后持久化；云端 session restore 在本地模式禁用；既有账号不自动迁移。
+- 加密与恢复：设备密码是硬前置，密钥不可同步；密文/AAD 篡改、错密钥、非空库恢复、失败事务和删除顺序均有 fail-closed 测试。
+- 照片与模型：无 URLSession/日志/像素或 embedding 输出；只接受本地文件；临时选择副本在推理成功或失败后清理；输出强制人工确认。
+- 出站：代码扫描确认移动端仅有的 Axios、fetch、XHR 三类网络入口均接统一策略；strict-local 拦截先于凭据读取/请求创建并落本地无 payload 审计。Sentry、通知、远程配置和云 providers 不在本地根树挂载。
+- 真机飞行模式、重启、导出恢复和网络观察属于同一二进制 G6 验收，尚未伪造为已完成。
 
 ## S6 · 部署
 
-- 路由：新增原生模块，必须 EAS/TestFlight 或本地 QR 新包；不能只 OTA。
-- 未开始。
+- 路由：新增原生模块，使用本地 QR 新包；不能只 OTA。
+- iOS Simulator 原生 App 已构建成功；本地 QR Release/IPA 尚在执行。
 
 ## G5 · 部署健康闸
 
-- 未开始。
+- PENDING：等待同一提交的签名 IPA 和安装资源检查。
 
 ## S7 · 上线验证
 

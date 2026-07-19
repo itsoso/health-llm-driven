@@ -1,5 +1,9 @@
 import '@testing-library/jest-native/extend-expect';
 
+// Legacy service tests exercise the existing cloud-account paths directly.
+// Individual local-mode tests override this explicitly and verify fail-closed behavior.
+require('./services/egressPolicy').setAppEgressMode('cloud_account');
+
 // Jest runs in a Node environment where Axios may select its fetch adapter.
 // Axios's fetch adapter performs a ReadableStream capability probe that can
 // trigger an unhandled rejection with Expo's virtual ReadableStream

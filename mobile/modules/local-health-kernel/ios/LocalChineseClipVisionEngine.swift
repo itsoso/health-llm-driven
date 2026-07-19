@@ -468,7 +468,8 @@ public struct LocalFoodVisionSaliencyProposer: LocalFoodRegionProposing, Sendabl
                 bitsPerPixel: 32,
                 bytesPerRow: image.width * 4,
                 space: CGColorSpaceCreateDeviceRGB(),
-                bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.last.rawValue),
+                bitmapInfo: CGBitmapInfo.byteOrder32Big
+                    .union(CGBitmapInfo(rawValue: CGImageAlphaInfo.last.rawValue)),
                 provider: provider,
                 decode: nil,
                 shouldInterpolate: true,

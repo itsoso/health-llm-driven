@@ -1,1 +1,2 @@
 mobile/assets/rokid/*.apk filter=lfs diff=lfs merge=lfs -text
+mobile/modules/local-health-kernel/ios/Resources/**/*.bin filter=lfs diff=lfs merge=lfs -text

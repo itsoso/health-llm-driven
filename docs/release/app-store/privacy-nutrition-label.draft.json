@@ -6,6 +6,21 @@
   "data_not_used_for_tracking": true,
   "data_not_used_for_third_party_advertising": true,
   "healthkit_advertising_use": false,
+  "device_only_processing": {
+    "not_collected_by_developer": true,
+    "applies_to_modes": [
+      "strict_local",
+      "local_first"
+    ],
+    "examples": [
+      "local_diet_records",
+      "local_execution_events",
+      "selected_food_photo_temporary_copy",
+      "chinese_clip_food_candidates",
+      "encrypted_local_backup"
+    ],
+    "notes": "These items stay inside the app container unless the user explicitly shares an encrypted backup. The photo picker copy is deleted after on-device inference."
+  },
   "data_types": [
     {
       "category": "Health",
@@ -112,6 +127,7 @@
   ],
   "manual_review_required_before_submission": [
     "Confirm that the App Store Connect privacy answers exactly match this checked-in declaration before submission.",
+    "Confirm that data processed only on device is not incorrectly declared as collected by the developer.",
     "Re-run the privacy review whenever a new SDK, analytics provider, advertising feature, or data category is added."
   ]
 }

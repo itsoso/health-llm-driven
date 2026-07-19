@@ -1,0 +1,99 @@
+{
+  "schema_version": 1,
+  "source": "USDA FoodData Central",
+  "release": "SR Legacy 2018-04",
+  "license": "CC0-1.0",
+  "attribution": "U.S. Department of Agriculture, Agricultural Research Service. FoodData Central, 2019. fdc.nal.usda.gov.",
+  "foods": [
+    {
+      "food_id": "fdc-168878",
+      "fdc_id": 168878,
+      "description": "Rice, white, long-grain, regular, enriched, cooked",
+      "data_type": "SR Legacy",
+      "canonical_name": "白米饭",
+      "aliases": ["米饭", "大米饭"],
+      "nutrients_per_100g": {"calories": 130, "protein": 2.69, "carbs": 28.2, "fat": 0.28, "fiber": 0.4},
+      "portions": [
+        {"unit": "碗", "grams": 158, "basis": "localized_estimate", "source_modifier": "localized alias of USDA 1 cup cooked rice = 158 g"}
+      ]
+    },
+    {
+      "food_id": "fdc-169967",
+      "fdc_id": 169967,
+      "description": "Broccoli, cooked, boiled, drained, without salt",
+      "data_type": "SR Legacy",
+      "canonical_name": "熟西兰花",
+      "aliases": ["西兰花", "煮西兰花"],
+      "nutrients_per_100g": {"calories": 35, "protein": 2.38, "carbs": 7.18, "fat": 0.41, "fiber": 3.3},
+      "portions": [
+        {"unit": "杯", "grams": 156, "basis": "source_portion", "source_modifier": "USDA 0.5 cup chopped = 78 g"}
+      ]
+    },
+    {
+      "food_id": "fdc-171265",
+      "fdc_id": 171265,
+      "description": "Milk, whole, 3.25% milkfat, with added vitamin D",
+      "data_type": "SR Legacy",
+      "canonical_name": "全脂牛奶",
+      "aliases": ["牛奶", "全脂奶"],
+      "nutrients_per_100g": {"calories": 61, "protein": 3.15, "carbs": 4.8, "fat": 3.25, "fiber": 0},
+      "portions": [
+        {"unit": "杯", "grams": 244, "basis": "source_portion", "source_modifier": "USDA 1 cup = 244 g"}
+      ]
+    },
+    {
+      "food_id": "fdc-171477",
+      "fdc_id": 171477,
+      "description": "Chicken, broilers or fryers, breast, meat only, cooked, roasted",
+      "data_type": "SR Legacy",
+      "canonical_name": "烤鸡胸肉",
+      "aliases": ["鸡胸肉", "熟鸡胸肉"],
+      "nutrients_per_100g": {"calories": 165, "protein": 31, "carbs": 0, "fat": 3.57, "fiber": 0},
+      "portions": []
+    },
+    {
+      "food_id": "fdc-172475",
+      "fdc_id": 172475,
+      "description": "Tofu, raw, firm, prepared with calcium sulfate",
+      "data_type": "SR Legacy",
+      "canonical_name": "硬豆腐",
+      "aliases": ["豆腐", "北豆腐"],
+      "nutrients_per_100g": {"calories": 144, "protein": 17.3, "carbs": 2.78, "fat": 8.72, "fiber": 2.3},
+      "portions": []
+    },
+    {
+      "food_id": "fdc-173424",
+      "fdc_id": 173424,
+      "description": "Egg, whole, cooked, hard-boiled",
+      "data_type": "SR Legacy",
+      "canonical_name": "水煮鸡蛋",
+      "aliases": ["鸡蛋", "水煮蛋", "煮鸡蛋"],
+      "nutrients_per_100g": {"calories": 155, "protein": 12.6, "carbs": 1.12, "fat": 10.6, "fiber": 0},
+      "portions": [
+        {"unit": "个", "grams": 50, "basis": "source_portion", "source_modifier": "USDA 1 large egg = 50 g"}
+      ]
+    },
+    {
+      "food_id": "fdc-173944",
+      "fdc_id": 173944,
+      "description": "Bananas, raw",
+      "data_type": "SR Legacy",
+      "canonical_name": "香蕉",
+      "aliases": ["中等香蕉"],
+      "nutrients_per_100g": {"calories": 89, "protein": 1.09, "carbs": 22.8, "fat": 0.33, "fiber": 2.6},
+      "portions": [
+        {"unit": "根", "grams": 118, "basis": "source_portion", "source_modifier": "USDA 1 medium banana = 118 g"}
+      ]
+    },
+    {
+      "food_id": "fdc-175168",
+      "fdc_id": 175168,
+      "description": "Fish, salmon, Atlantic, farmed, cooked, dry heat",
+      "data_type": "SR Legacy",
+      "canonical_name": "熟大西洋三文鱼",
+      "aliases": ["三文鱼", "大西洋三文鱼"],
+      "nutrients_per_100g": {"calories": 206, "protein": 22.1, "carbs": 0, "fat": 12.4, "fiber": 0},
+      "portions": []
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 # 小巴本地优先私有模式 PRD
 
-> Status: draft baseline
-> Updated: 2026-07-18
+> Status: implemented; native validation
+> Updated: 2026-07-19
 > Canonical product: `docs/prd/reva-personal-health-os-prd.md`
 > Feature spec: `docs/specs/active/2026-07-18-local-first-private-mode.md`
 
@@ -84,9 +84,9 @@
 
 ### 7.2 端侧智能
 
-- 系统端侧语言模型：从中文口语提取食物、数量、单位和餐次；
-- Vision：条码、OCR、通用图片分类；
-- 可选领域模型包：只有离线评测通过后才开放下载；
+- 确定性中文解析器：从常见口语提取食物、数量、单位和餐次，保证旧设备离线可用；
+- Chinese-CLIP RN50 int8：随 App 打包，只返回最多三个图片身份候选；
+- 图片候选必须由用户选择后再生成独立草稿，不估份量、不算营养、不自动保存；
 - 用户历史：同一常吃餐的纠正结果优先于再次推理。
 
 ### 7.3 不做
@@ -120,4 +120,4 @@
 
 ## 10. 发布策略
 
-先做内部 capability spike，再通过 feature flag 开放严格本地饮食。第一阶段涉及本地数据库和原生模型桥接，必须走新 iOS 包，不能只走 OTA。任何扩大到其他健康域的工作必须基于饮食切片的真实纠正率、离线完成率和数据恢复证据重新过 Gate。
+内部 capability spike 已证明目标真机不能依赖 Apple 系统模型，并完成 Chinese-CLIP 探索推理。第一阶段通过可见模式配置开放严格本地、本地优先和云端账号三种路径；因包含本地数据库与原生模型桥，必须走新 iOS 包，不能只走 OTA。任何扩大到其他健康域的工作必须基于饮食切片的真实纠正率、离线完成率和数据恢复证据重新过 Gate。
