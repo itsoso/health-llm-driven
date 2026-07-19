@@ -153,6 +153,133 @@ async def test_repeated_client_turn_replays_without_executing_the_agent_twice(
 
 
 @pytest.mark.asyncio
+async def test_retryable_finalized_turn_reexecutes_without_write_checkpoint(
+    db, auth_user_and_headers, monkeypatch
+):
+    """可重试的历史失败回合不能把旧错误原样 replay 给用户。"""
+    from app.services.agent_conversation_service import AgentConversationService
+
+    user, _ = auth_user_and_headers
+    service = AgentConversationService(db)
+    conv = service.get_or_create_conversation(user.id, None, title="失败后重试")
+    service.save_user_message_once(
+        conv.id,
+        user.id,
+        "刚才请求",
+        client_turn_id="turn-retryable-finalized",
+        meta={"client_turn_id": "turn-retryable-finalized"},
+    )
+    service.save_message(
+        conv.id,
+        "assistant",
+        "旧的失败回复",
+        meta={
+            "completion_status": "error",
+            "turn_outcome": {
+                "category": "tool_blocked",
+                "retryable": True,
+            },
+            "client_turn_finalized": True,
+            "client_turn_id": "turn-retryable-finalized",
+        },
+        client_turn_id="turn-retryable-finalized",
+        client_turn_user_id=user.id,
+    )
+
+    executor = AgentExecutor(db)
+    _wire_min(executor, monkeypatch)
+    calls = 0
+
+    async def fake_stream(messages, round_tools):
+        nonlocal calls
+        calls += 1
+        yield {"type": "content", "text": "重新执行成功"}
+        yield {"type": "finish", "finish_reason": "stop"}
+
+    monkeypatch.setattr(executor, "_call_llm_stream", fake_stream)
+    events = await _run(
+        executor,
+        "刚才请求",
+        user_id=user.id,
+        client_turn_id="turn-retryable-finalized",
+    )
+
+    assert calls == 1
+    done = next(event for event in events if event.get("event") == "done")
+    assert done["data"].get("replayed") is not True
+    assert "重新执行成功" in "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+
+
+@pytest.mark.asyncio
+async def test_finalized_turn_with_user_write_checkpoint_still_replays(
+    db, auth_user_and_headers, monkeypatch
+):
+    """用户消息上的未知写入检查点优先于助手侧的可重试标记。"""
+    from app.services.agent_conversation_service import AgentConversationService
+
+    user, _ = auth_user_and_headers
+    service = AgentConversationService(db)
+    conv = service.get_or_create_conversation(user.id, None, title="未知写入状态")
+    service.save_user_message_once(
+        conv.id,
+        user.id,
+        "记录午餐",
+        client_turn_id="turn-user-write-checkpoint",
+        meta={
+            "client_turn_id": "turn-user-write-checkpoint",
+            "write_state": {
+                "status": "in_flight",
+                "tool": "health_record",
+                "fingerprint": "write-uncertain",
+            },
+        },
+    )
+    service.save_message(
+        conv.id,
+        "assistant",
+        "旧的未知状态回复",
+        meta={
+            "completion_status": "error",
+            "turn_outcome": {
+                "category": "tool_failed",
+                "retryable": True,
+            },
+            "client_turn_finalized": True,
+            "client_turn_id": "turn-user-write-checkpoint",
+        },
+        client_turn_id="turn-user-write-checkpoint",
+        client_turn_user_id=user.id,
+    )
+
+    executor = AgentExecutor(db)
+    _wire_min(executor, monkeypatch)
+
+    async def must_not_call_llm(*args, **kwargs):
+        raise AssertionError("unknown write state must not be executed again")
+        yield  # pragma: no cover
+
+    monkeypatch.setattr(executor, "_call_llm_stream", must_not_call_llm)
+    events = await _run(
+        executor,
+        "记录午餐",
+        user_id=user.id,
+        client_turn_id="turn-user-write-checkpoint",
+    )
+
+    done = next(event for event in events if event.get("event") == "done")
+    assert done["data"].get("replayed") is True
+    assert "旧的未知状态回复" in "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+
+
+@pytest.mark.asyncio
 async def test_same_client_turn_id_is_isolated_between_accounts(
     db, auth_user_and_headers, monkeypatch
 ):

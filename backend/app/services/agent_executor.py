@@ -5215,6 +5215,64 @@ class AgentExecutor:
             else ANSWER_MAX_TOKENS
         )
 
+    @staticmethod
+    def _should_replay_finalized_assistant(
+        assistant: Any,
+        source_message: Any = None,
+    ) -> bool:
+        """Replay only durable results; let retryable no-write failures run again.
+
+        A finalized assistant row is normally the idempotency anchor.  But a
+        model/policy failure with no write checkpoint is retryable: replaying it
+        forever makes a client reconnect show the same stale error and prevents
+        the user from recovering the turn.  Any write receipt or unresolved
+        write checkpoint on either the assistant or source user message keeps
+        the fail-closed replay behavior.
+        """
+        assistant_meta = getattr(assistant, "meta", None) or {}
+        if (
+            not isinstance(assistant_meta, dict)
+            or assistant_meta.get("client_turn_finalized") is not True
+        ):
+            return False
+        source_meta = getattr(source_message, "meta", None) or {}
+        metas = [assistant_meta]
+        if isinstance(source_meta, dict):
+            metas.append(source_meta)
+
+        for meta in metas:
+            if meta.get("write_receipts"):
+                return True
+            write_state = meta.get("write_state") or {}
+            if isinstance(write_state, dict) and write_state.get("status") in {
+                "in_flight", "uncertain", "verified",
+            }:
+                return True
+            write_operations = meta.get("write_operations") or {}
+            if isinstance(write_operations, dict) and any(
+                isinstance(operation, dict)
+                and operation.get("status") in {"in_flight", "uncertain", "verified"}
+                for operation in write_operations.values()
+            ):
+                return True
+
+        outcome = assistant_meta.get("turn_outcome") or {}
+        if isinstance(outcome, dict) and outcome:
+            # A policy/tool failure can benefit from retrying the same durable
+            # request.  ``action_not_executed`` is different: the model never
+            # attempted a write, so the same request should remain replayable
+            # until the client sends a new, clarified turn.
+            if outcome.get("retryable") is True and outcome.get("category") in {
+                "tool_blocked", "tool_failed", "execution_error", "no_answer",
+            }:
+                return False
+            return True
+        if assistant_meta.get("completion_status") in {"error", "interrupted"}:
+            # Legacy rows predate turn_outcome. Without a write checkpoint they
+            # are safe to retry and should not pin the client to stale text.
+            return False
+        return True
+
     async def _replay_client_turn(
         self,
         svc,
@@ -5994,7 +6052,7 @@ class AgentExecutor:
             if (
                 existing_turn is not None
                 and assistant is not None
-                and (assistant.meta or {}).get("client_turn_finalized")
+                and self._should_replay_finalized_assistant(assistant, existing_turn)
             ):
                 async for replay_event in self._replay_client_turn(
                     turn_service, user_id, existing_turn, client_turn_id,
@@ -6056,7 +6114,7 @@ class AgentExecutor:
                 if (
                     existing_turn is not None
                     and assistant is not None
-                    and (assistant.meta or {}).get("client_turn_finalized")
+                    and self._should_replay_finalized_assistant(assistant, existing_turn)
                 ):
                     async for replay_event in self._replay_client_turn(
                         turn_service, user_id, existing_turn, client_turn_id,
