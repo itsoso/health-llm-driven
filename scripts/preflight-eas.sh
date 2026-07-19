@@ -10,8 +10,8 @@
 # 默认不会改 ios/, 只读检查. 如果 ios/ 缺失 → 提示先跑 mobile-local-device.sh
 #
 # 检查项:
-#   - ios/HealthPilot/Info.plist 含必须 key (NSHealthShareUsage / Camera / Microphone / Location)
-#   - ios/HealthPilot/HealthPilot.entitlements 含 com.apple.developer.healthkit
+#   - 当前 iOS 主应用目录的 Info.plist 含必须 key (NSHealthShareUsage / Camera / Microphone / Location)
+#   - 当前 iOS 主应用目录的 entitlements 含 com.apple.developer.healthkit
 #   - entitlements **不含** com.apple.developer.healthkit.access (空 array 会 fail provisioning profile)
 #   - ios/Podfile.lock 含关键 native module (RNAppleHealthKit, ExpoSecureStore)
 
@@ -34,14 +34,29 @@ if [ ${REBUILD} -eq 1 ]; then
   echo ""
 fi
 
-if [ ! -d "ios/HealthPilot" ]; then
-  echo "✗ ios/HealthPilot 不存在 — 先跑 ./scripts/mobile-local-device.sh 生成" >&2
+IOS_APP_DIR=""
+for candidate in ios/app ios/HealthPilot; do
+  if [[ -d "${candidate}" && -f "${candidate}/Info.plist" ]]; then
+    IOS_APP_DIR="${candidate}"
+    break
+  fi
+done
+
+if [[ -z "${IOS_APP_DIR}" ]]; then
+  echo "✗ 未找到 iOS 主应用目录（已尝试 ios/app 和 ios/HealthPilot）— 先跑 ./scripts/mobile-local-device.sh 生成" >&2
   exit 1
 fi
 
-INFO_PLIST="ios/HealthPilot/Info.plist"
-ENTITLEMENTS="ios/HealthPilot/HealthPilot.entitlements"
+INFO_PLIST="${IOS_APP_DIR}/Info.plist"
+ENTITLEMENTS="$(find "${IOS_APP_DIR}" -maxdepth 1 -type f -name '*.entitlements' -print -quit)"
 PODFILE_LOCK="ios/Podfile.lock"
+
+if [[ -z "${ENTITLEMENTS}" ]]; then
+  echo "✗ ${IOS_APP_DIR} 下未找到 entitlements 文件" >&2
+  exit 1
+fi
+
+echo "    ✓ iOS app target: ${IOS_APP_DIR}"
 
 echo "==> [1/3] Info.plist 关键 usage description"
 fail=0

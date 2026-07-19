@@ -104,6 +104,7 @@
 - 2026-07-19 Trace 收口：EventBus 增加无健康正文的 `trace_summary`，将事件计数、工具失败/阻断、已验证回执、run/turn/channel/policy 和回合耗时写入 assistant `meta` 与 `done`；保留详细结构化事件日志，不把客户端媒体 payload 写入 Trace。
 - 2026-07-19 发布前错误收口：工具异常统一通过 `safe_tool_error_message` 脱敏，避免把上游状态码、请求 ID 或内部响应直接写入对话；保留超时、网络、限流和权限的可操作提示。
 - 2026-07-19 当前顺序执行收口：Kernel 快照、统一回合关联、ToolGateway 静态守门、Trace 汇总和错误脱敏均已合入；回放兼容修复 `94e5d9c4b` 的定向回归 `43/43` 通过，进入部署后的 G6 真实设备验证准备。
+- 2026-07-19 App Store 原生预检收口：修复 `scripts/preflight-eas.sh` 仍硬编码旧 `ios/HealthPilot` 工程名的问题；当前 Expo 原生工程 `ios/app` 的 Info.plist、HealthKit entitlements 和 Podfile.lock 检查均已通过，并新增脚本回归测试防止工程重命名后再次误报。
 
 ## G3 · 测试
 
@@ -213,6 +214,7 @@ DATABASE_URL=sqlite:///:memory: TZ=Asia/Shanghai backend/venv/bin/python -m pyte
 - **G3 裁决：PASS（后端完整闸门已绿；第二阶段快照变更已有定向回归）**。
 - T7 静态覆盖与跨 surface 回归：`57 passed, 6 warnings`；覆盖 Executor 写实现唯一 choke point、所有 `app` surface 禁止直接调用健康写实现、Telegram/Voice 共享策略及注册工具能力映射。
 - **G3 增量裁决：PASS（T7 遗留写入口静态闸门已绿；仍需部署后线上样本验证）**。
+- Mobile 发布预检回归：`1 passed, 6 warnings`；`./scripts/preflight-eas.sh` 已通过当前 `ios/app` 工程的 usage descriptions、HealthKit entitlements 和关键 Pods 检查。
 
 ## G4 · 安全
 
