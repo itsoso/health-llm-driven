@@ -46,6 +46,24 @@ _NON_RETRYABLE_FAILURE_MARKERS = (
     "需要确认",
 )
 
+_MODEL_SCOPE_REFUSAL_MARKERS = (
+    "只能记录",
+    "只能查询",
+    "只能帮你记录",
+    "无法提供分析",
+    "不能提供分析",
+    "无法提供建议",
+    "不能提供建议",
+)
+
+_SAFETY_REFUSAL_MARKERS = (
+    "诊断",
+    "处方",
+    "停药",
+    "医生",
+    "医疗判断",
+)
+
 
 def should_retry_tool_failure(
     tool_name: str,
@@ -69,3 +87,31 @@ def should_retry_tool_failure(
         return False
     lowered = text.lower()
     return any(marker in text or marker in lowered for marker in _TRANSIENT_FAILURE_MARKERS)
+
+
+def is_model_scope_refusal(text: str) -> bool:
+    """Return whether a model incorrectly narrows the Agent to record/query only.
+
+    This is intentionally narrower than the general refusal classifier. Safety
+    boundary refusals must remain visible and must never be auto-re-asked.
+    """
+    normalized = " ".join(str(text or "").split())
+    if not normalized or len(normalized) > 600:
+        return False
+    if not normalized.startswith(("抱歉", "很抱歉")):
+        return False
+    if is_safety_boundary_refusal(normalized):
+        return False
+    return any(marker in normalized[:240] for marker in _MODEL_SCOPE_REFUSAL_MARKERS)
+
+
+def is_safety_boundary_refusal(text: str) -> bool:
+    """Return whether a refusal touches a medical safety boundary."""
+    normalized = " ".join(str(text or "").split())
+    return bool(normalized and any(marker in normalized for marker in _SAFETY_REFUSAL_MARKERS))
+
+
+def should_buffer_refusal_response(text: str) -> bool:
+    """Return whether an apology-prefixed answer should wait for classification."""
+    normalized = " ".join(str(text or "").split())
+    return bool(normalized.startswith(("抱歉", "很抱歉")) and len(normalized) <= 240)

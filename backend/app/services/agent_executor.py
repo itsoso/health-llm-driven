@@ -39,7 +39,12 @@ from app.services.post_record_quality import (
     build_post_record_quality_response,
     combine_post_record_quality_responses,
 )
-from app.services.agent_turn_recovery import should_retry_tool_failure
+from app.services.agent_turn_recovery import (
+    is_model_scope_refusal,
+    is_safety_boundary_refusal,
+    should_buffer_refusal_response,
+    should_retry_tool_failure,
+)
 from app.services.agent_turn_outcome import classify_agent_turn_outcome
 from app.services.utterance_intent_classifier import classify_agent_utterance
 from app.services.agent_kernel.context import (
@@ -6521,6 +6526,8 @@ class AgentExecutor:
         # (下面 botched 文本式工具调用被识别), 置位 → 本回合后续轮重新带上工具。
         # 正确性 > 省 token: 多轮链式工具回合 (orchestrator 后还想 knowledge_search 等) 不被裁掉。
         keep_tools_after_synthesis_miss = False
+        # 能力范围误判只允许一次恢复，避免拒答重问形成循环或放宽安全边界。
+        model_scope_recovery_attempted = False
         self._http_client = httpx.AsyncClient(timeout=90.0)
         try:
             for round_idx in range(MAX_TOOL_ROUNDS):
@@ -6630,6 +6637,7 @@ class AgentExecutor:
                 # 并撤回已发标记 —— 这段 JSON 后面会被恢复成真正的 tool_call (content 置空),
                 # 绝不能泄漏给用户。结构化 tool_calls 的正常模型不受影响。
                 inline_suppressed = False
+                model_refusal_buffered = False
                 async for evt in self._call_llm_stream(messages, round_tools):
                     etype = evt.get("type")
                     if etype == "content":
@@ -6637,6 +6645,9 @@ class AgentExecutor:
                         if not delta:
                             continue
                         streamed_text += delta
+                        if not model_refusal_buffered and should_buffer_refusal_response(streamed_text):
+                            # 先不把可能需要恢复的道歉式拒答发到客户端。
+                            model_refusal_buffered = True
                         if (
                             not inline_suppressed
                             and not streamed_tool_calls
@@ -6697,6 +6708,7 @@ class AgentExecutor:
                             not inline_suppressed
                             and not self._tool_round_fast_routed
                             and not _record_claim_unverified
+                            and not model_refusal_buffered
                         ):
                             streamed_to_client = True
                             # 2026-07-01: TTFT — 第一个真正下发给客户端的 token 时刻 (纯埋点)。
@@ -7485,6 +7497,16 @@ class AgentExecutor:
                         final_text = _natural_language_from_tool_results(messages) or (
                             "已查到相关数据,但这轮没能整理成回答;请再问一次或换个问法。"
                         )
+                    if (
+                        not model_scope_recovery_attempted
+                        and is_model_scope_refusal(final_text)
+                    ):
+                        model_scope_recovery_attempted = True
+                        recovered_text = await self._recover_model_scope_refusal(messages)
+                        if recovered_text:
+                            final_text = recovered_text
+                            streamed_to_client = False
+                            self._record_model_fallback_reason("model_scope_refusal_recovered")
                     if not final_text.strip():
                         # 空回复 → 走非流式重试链 (这些是新生成文本,需要 emit)。
                         streamed_to_client = False
@@ -9420,6 +9442,37 @@ class AgentExecutor:
             if text:
                 yield {"type": "content", "text": text}
             yield {"type": "finish", "finish_reason": "stop"}
+
+    async def _recover_model_scope_refusal(self, messages: List[Dict]) -> str:
+        """Re-ask once when the model incorrectly narrows the Agent's scope.
+
+        The original tool results and safety instructions remain in ``messages``;
+        the extra instruction only corrects the model's capability framing. A
+        second refusal is discarded so this recovery cannot loop or weaken the
+        medical safety boundary.
+        """
+        recovery_messages = list(messages)
+        recovery_messages.append(
+            {
+                "role": "user",
+                "content": (
+                    "上一轮回答把本 Agent 的能力范围误判为只能记录。请直接回答用户原问题："
+                    "可以基于上文已有数据进行分析、解释和下一步建议；不要给出诊断、处方或停药指令。"
+                    "如果关键数据缺失，明确指出缺什么，只提出一个最小澄清问题。"
+                    "不要再次说明只能记录或只能查询。"
+                ),
+            }
+        )
+        try:
+            response = await self._call_llm_fallback_provider(recovery_messages)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "[agent recovery] model scope refusal fallback failed: %s",
+                type(exc).__name__,
+            )
+            return ""
+        text = _response_text(response).strip()
+        return "" if is_model_scope_refusal(text) or is_safety_boundary_refusal(text) else text
 
     async def _call_llm_fallback_provider(self, messages: List[Dict]) -> Any:
         """Use the stable global provider when a selected gateway keeps empty-answering."""
