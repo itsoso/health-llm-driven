@@ -290,10 +290,19 @@ def _bounded_text(value: str, *, maximum: int, field: str) -> str:
 
 def _extract_result_urls(payload: dict[str, Any]) -> list[str]:
     output = payload.get("output") if isinstance(payload, dict) else None
-    results = (output or {}).get("results") if isinstance(output, dict) else None
-    if not isinstance(results, list):
-        return []
     urls: list[str] = []
+    if not isinstance(output, dict):
+        return urls
+
+    # Wan video tasks return a single output.video_url, while image generation
+    # returns output.results[].url. Normalize both provider result shapes here.
+    video_url = str(output.get("video_url") or "").strip()
+    if video_url.startswith(("https://", "http://")):
+        urls.append(video_url)
+
+    results = output.get("results")
+    if not isinstance(results, list):
+        return urls
     for result in results:
         url = str((result or {}).get("url") or "").strip() if isinstance(result, dict) else ""
         if url.startswith(("https://", "http://")):

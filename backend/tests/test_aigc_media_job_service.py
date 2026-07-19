@@ -236,6 +236,14 @@ async def test_refresh_and_cancel_use_provider_task_state(
 
     user, _ = auth_user_and_headers
     provider = _FakeProvider()
+    # Wan video task polling returns output.video_url, rather than the image
+    # generation output.results[].url shape.
+    provider.task_payload = {
+        "output": {
+            "task_status": "SUCCEEDED",
+            "video_url": "https://result.aliyuncs.com/generated.mp4",
+        }
+    }
     monkeypatch.setattr(aigc_media_job_service, "_AIGC_UPLOAD_ROOT", tmp_path)
     job = AIGCMediaJob(
         id="aigc-task-refresh",
