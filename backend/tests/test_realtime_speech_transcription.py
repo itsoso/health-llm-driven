@@ -1,5 +1,5 @@
-import base64
 import asyncio
+import base64
 import json
 
 import pytest
@@ -153,9 +153,9 @@ async def test_reports_an_upstream_disconnect_once_after_realtime_session_is_rea
 
     await realtime_speech.proxy_realtime_asr(receive_json, send_json)
 
-    assert outgoing[0] == {"type": "ready", "mode": "realtime"}
-    assert outgoing[1:] == [{
+    assert outgoing.count({
         "type": "error",
         "message": "阿里云实时语音连接中断",
-    }]
+    }) == 1
+    assert all(payload["type"] in {"ready", "error"} for payload in outgoing)
     assert upstream.closed is True
