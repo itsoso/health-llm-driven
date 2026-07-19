@@ -68,6 +68,9 @@ QUESTION_SIGNALS = (
     "高不高",
     "正常吗",
     "有问题吗",
+    "能否",
+    "可否",
+    "可不可以",
     "怎么样",
 )
 WRITE_ACTIONS = (
@@ -411,6 +414,11 @@ def classify_agent_utterance(
     if has_read or (
         _is_data_question(normalized, domain, has_question)
         and not _looks_like_observation_statement(normalized, domain, has_question)
+        and not (
+            domain == "symptom"
+            and not has_question
+            and _has_explicit_symptom_observation(normalized, domain, has_question)
+        )
         and (not has_write or has_question)
     ):
         operation = "list" if has_read and not has_question else "ask"

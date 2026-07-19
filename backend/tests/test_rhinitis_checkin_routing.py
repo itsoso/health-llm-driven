@@ -13,7 +13,7 @@ import pytest
 
 @pytest.mark.asyncio
 async def test_rhinitis_routes_to_healthcheckin_not_illness_episode(db):
-    from app.services.agent_executor import AgentExecutor
+    from app.services.agent_executor import AgentExecutor, _write_receipt_from_tool_result
 
     executor = AgentExecutor(db)
     executor._current_user_id = 7
@@ -46,6 +46,10 @@ async def test_rhinitis_routes_to_healthcheckin_not_illness_episode(db):
     assert "notes" not in p
     # 成功写入被识别为回执(id-based)
     assert json.loads(result).get("id") == 55
+    receipt = _write_receipt_from_tool_result("health_record", "rhinitis", result)
+    assert receipt is not None
+    assert receipt["resource_type"] == "health_checkin"
+    assert receipt["resource_id"] == "55"
 
 
 @pytest.mark.asyncio
@@ -101,3 +105,49 @@ def test_checkin_endpoint_sneeze_count_monotonic_from_ledger(client, auth_user_a
     })
     assert r3.status_code == 200, r3.text
     assert r3.json()["sneeze_count"] == 9
+
+
+def test_undo_latest_rhinitis_event_is_scoped_and_keeps_the_day(client, db, auth_user_and_headers):
+    from app.models.health_checkin import HealthCheckin
+    from app.models.user import User
+    from app.services.auth import auth_service
+
+    user, headers = auth_user_and_headers
+    day = "2026-07-17"
+    created = client.post("/api/v1/checkin/", headers=headers, json={
+        "checkin_date": day,
+        "sneeze_times": [
+            {"time": "09:00", "count": 1},
+            {"time": "14:00", "count": 2},
+        ],
+    })
+    assert created.status_code == 200, created.text
+    checkin_id = created.json()["id"]
+
+    undone = client.delete(
+        f"/api/v1/checkin/{checkin_id}/rhinitis/latest",
+        headers=headers,
+    )
+    assert undone.status_code == 200, undone.text
+    assert undone.json()["resource_type"] == "health_checkin"
+    assert undone.json()["undone"]["count"] == 2
+    row = db.query(HealthCheckin).filter(HealthCheckin.id == checkin_id).one()
+    assert row.sneeze_times == [{"time": "09:00", "count": 1}]
+    assert row.sneeze_count == 1
+
+    other = User(
+        username="rhinitis_other",
+        email="rhinitis_other@example.com",
+        hashed_password="hashed_password",
+        name="其他用户",
+        is_active=True,
+        is_approved=True,
+    )
+    db.add(other)
+    db.commit()
+    other_token = auth_service.create_access_token({"sub": str(other.id)})
+    forbidden = client.delete(
+        f"/api/v1/checkin/{checkin_id}/rhinitis/latest",
+        headers={"Authorization": f"Bearer {other_token}"},
+    )
+    assert forbidden.status_code == 404

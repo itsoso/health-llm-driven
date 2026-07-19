@@ -22,7 +22,9 @@ from app.services.agent_executor import (
     FAST_ROUTE_ANSWER_MAX_TOKENS,
     AgentExecutor,
     _apply_authorized_symptom_payload,
+    _apply_authorized_rhinitis_payload,
     _build_deterministic_symptom_tool_call,
+    _extract_clear_rhinitis_record,
     _symptom_write_authorized_by_current_turn,
     _tool_status_label,
 )
@@ -138,7 +140,13 @@ def test_deterministic_symptom_tool_call_keeps_questions_on_advice_path():
         "她腰疼。",
         "他打了一个喷嚏。",
         "她打了一个喷嚏。",
+        "我说他打喷嚏，帮我记录一下。",
+        "小王打喷嚏，帮我记录一下。",
+        "我爸打喷嚏，帮我记录一下。",
         "检查报告提示膝盖疼。",
+        "能否记录我刚才打了一个喷嚏？",
+        "可否记录我刚才打了一个喷嚏？",
+        "可不可以记录我刚才打了一个喷嚏？",
         "附件里记录了腰疼。",
     ],
 )
@@ -169,6 +177,9 @@ def test_deterministic_symptom_tool_call_rejects_attachments():
         "他头痛。",
         "她腰疼。",
         "检查报告提示膝盖疼。",
+        "能否记录我刚才打了一个喷嚏？",
+        "可否记录我刚才打了一个喷嚏？",
+        "可不可以记录我刚才打了一个喷嚏？",
     ],
 )
 def test_symptom_write_authorization_rejects_unsafe_current_turns(message):
@@ -218,6 +229,31 @@ def test_authorized_symptom_payload_discards_model_inference():
     }
 
 
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        ("记录下来刚才打了一个喷嚏。", {"sneezing": 1}),
+        ("我刚才连续打了3个喷嚏，记录一下。", {"sneezing": 3}),
+        ("今天有鼻塞，程度3级。", {"congestion": 3}),
+        ("今天流鼻涕。", {"runny_nose": 1}),
+    ],
+)
+def test_clear_rhinitis_record_extracts_only_explicit_user_fields(message, expected):
+    assert _extract_clear_rhinitis_record(message) == expected
+
+
+def test_authorized_rhinitis_payload_discards_model_inference():
+    payload = _apply_authorized_rhinitis_payload(
+        {
+            "record_type": "rhinitis",
+            "data": {"sneezing": 99, "congestion": 3, "runny_nose": 3},
+        },
+        {"sneezing": 1},
+    )
+
+    assert payload == {"record_type": "rhinitis", "data": {"sneezing": 1}}
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "message",
@@ -249,6 +285,38 @@ async def test_structured_symptom_write_is_blocked_before_gateway(
     )
 
     assert result.startswith("Error: 这段话不是明确的本人症状记录请求")
+
+
+@pytest.mark.asyncio
+async def test_rhinitis_write_uses_user_values_not_model_values(db, monkeypatch):
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._current_turn_user_message = "记录下来刚才打了一个喷嚏。"
+    executor._current_turn_recent_messages = []
+    executor._current_turn_has_attachment = False
+    executor._agent_kernel_preflight_tool = lambda *args, **kwargs: None
+    captured = {}
+
+    async def fake_health_record(base, headers, args):
+        captured["args"] = args
+        return '{"id": 55, "status": "recorded"}'
+
+    monkeypatch.setattr(executor, "_exec_health_record", fake_health_record)
+    result = await executor._execute_tool_impl(
+        "health_record",
+        {
+            "record_type": "rhinitis",
+            "data": {"sneezing": 99, "congestion": 3, "runny_nose": 3},
+        },
+        "test-token",
+    )
+
+    assert '"id": 55' in result
+    assert captured["args"]["record_type"] == "rhinitis"
+    assert captured["args"]["data"]["sneezing"] == 1
+    assert captured["args"]["data"]["congestion"] == 0
+    assert captured["args"]["data"]["runny_nose"] == 0
+    assert captured["args"]["data"].get("sneezing") != 99
 
 
 @pytest.mark.asyncio

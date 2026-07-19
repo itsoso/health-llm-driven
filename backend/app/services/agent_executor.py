@@ -2550,6 +2550,7 @@ _RECEIPT_TYPE_LABELS = {
     "aigc_media_confirmation": "小巴创作草稿",
     "aigc_media_job": "小巴创作",
     "mood_record": "心情",
+    "health_checkin": "鼻炎打卡",
     "smart_reminder": "提醒",
 }
 
@@ -2601,7 +2602,7 @@ _RESOURCE_TYPE_BY_RECORD_TYPE = {
     "mood": "mood_record",
     "reminder": "smart_reminder",
     "remember": "memory_fact",
-    "rhinitis": "illness_episode",
+    "rhinitis": "health_checkin",
     "sleep": "sleep_record",
     "supplement": "supplement_log",
     "supplement_group": "supplement_log",
@@ -4241,6 +4242,9 @@ _SYMPTOM_QUESTION_MARKERS = (
     "能不能",
     "需要吗",
     "该不该",
+    "能否",
+    "可否",
+    "可不可以",
     "吗",
     "呢",
     "？",
@@ -4249,6 +4253,8 @@ _SYMPTOM_QUESTION_MARKERS = (
 _SYMPTOM_NON_SELF_MARKERS = (
     "朋友",
     "家人",
+    "我爸",
+    "我妈",
     "爸爸",
     "妈妈",
     "父亲",
@@ -4291,13 +4297,31 @@ _SYMPTOM_NON_SELF_MARKERS = (
 def _symptom_text_has_non_self_reference(normalized: str) -> bool:
     if any(marker in normalized for marker in _SYMPTOM_NON_SELF_MARKERS):
         return True
-    return bool(
-        re.search(
-            r"(?:^|[，,。！？!?；;：:、])(?:他|她|他们|她们)"
-            r"(?:有|出现|一直|最近|今天|的|打|打了|头|腰|背|肩|膝|关|症状|不适|难受|疼|痛)",
-            normalized,
-        )
+    symptom_markers = tuple(
+        marker
+        for _, markers in _SYMPTOM_BODY_PART_MARKERS
+        for marker in markers
     )
+    # 只看症状词前的短上下文，覆盖“他/小王/我爸打喷嚏”，
+    # 同时不把“我说我打喷嚏”误判为第三方。
+    subject_re = re.compile(
+        r"(?:他|她|他们|她们|我爸|我妈|我父亲|我母亲|爸爸|妈妈|朋友|同事|家人|"
+        r"患者|病人|小[\u4e00-\u9fff]{1,3})"
+        r"(?:有|出现|一直|最近|今天|的|打|打了|头|腰|背|肩|膝|关|症状|不适|难受|疼|痛)"
+        r"[^，,。！？!?；;：:、]{0,8}$"
+        r"|(?:他|她|他们|她们|我爸|我妈|我父亲|我母亲|爸爸|妈妈|朋友|同事|家人|患者|病人)$"
+    )
+    for marker in symptom_markers:
+        start = 0
+        while True:
+            index = normalized.find(marker, start)
+            if index < 0:
+                break
+            prefix = normalized[max(0, index - 12):index]
+            if subject_re.search(prefix):
+                return True
+            start = index + len(marker)
+    return False
 
 
 def _symptom_text_is_current_self_observation(normalized: str) -> bool:
@@ -4395,6 +4419,64 @@ def _extract_clear_symptom_record(message: Any) -> Optional[Dict[str, str]]:
             "description": raw.strip("。！？!?；;，, ")[:500],
         }
     return None
+
+
+_RHINITIS_COUNT_RE = re.compile(
+    r"(?:打|连打|连续打)(?:了)?(?P<count>\d+|零|一|两|二|三|四|五|六|七|八|九|十)(?:个|次)?喷嚏"
+)
+_RHINITIS_SEVERITY_RE = re.compile(
+    r"[^，,。！？!?；;：:、]{0,3}(?:程度|等级|级别)?(?:是|为)?"
+    r"(?P<severity>[0-3])(?:级|分)"
+)
+_RHINITIS_CN_NUMBERS = {
+    "零": 0,
+    "一": 1,
+    "两": 2,
+    "二": 2,
+    "三": 3,
+    "四": 4,
+    "五": 5,
+    "六": 6,
+    "七": 7,
+    "八": 8,
+    "九": 9,
+    "十": 10,
+}
+
+
+def _extract_clear_rhinitis_record(message: Any) -> Optional[Dict[str, int]]:
+    """Extract explicit rhinitis fields from the current user turn only.
+
+    The model may choose ``record_type=rhinitis`` but it is never trusted to
+    decide the count or severity. This helper is deliberately narrow: a
+    current self-observation must contain ``喷嚏``/``鼻塞``/``流鼻涕`` and pass
+    the same question, negation, attachment, and third-party checks as symptoms.
+    """
+    symptom = _extract_clear_symptom_record(message)
+    if not symptom or symptom.get("body_part") != "respiratory":
+        return None
+    normalized = "".join(str(message or "").split()).lower()
+    data: Dict[str, int] = {}
+    if "喷嚏" in normalized:
+        match = _RHINITIS_COUNT_RE.search(normalized)
+        raw_count = match.group("count") if match else "一"
+        count = _RHINITIS_CN_NUMBERS.get(raw_count)
+        if count is None:
+            count = int(raw_count)
+        if count > 0:
+            data["sneezing"] = count
+    if "鼻塞" in normalized:
+        marker_end = normalized.find("鼻塞") + len("鼻塞")
+        suffix = normalized[marker_end:marker_end + 12].lstrip("，,。！？!?；;：:、")
+        match = _RHINITIS_SEVERITY_RE.search(suffix)
+        data["congestion"] = int(match.group("severity")) if match else 1
+    if "流鼻涕" in normalized or "流涕" in normalized:
+        marker = "流鼻涕" if "流鼻涕" in normalized else "流涕"
+        marker_end = normalized.find(marker) + len(marker)
+        suffix = normalized[marker_end:marker_end + 12].lstrip("，,。！？!?；;：:、")
+        match = _RHINITIS_SEVERITY_RE.search(suffix)
+        data["runny_nose"] = int(match.group("severity")) if match else 1
+    return data or None
 
 
 def _recover_clear_symptom_args(args: Any, message: Any) -> Any:
@@ -4497,6 +4579,16 @@ def _apply_authorized_symptom_payload(
         "description": authorization["description"],
     }
     return {"record_type": "symptom", "data": data}
+
+
+def _apply_authorized_rhinitis_payload(
+    args: Any,
+    authorization: Dict[str, int],
+) -> Optional[Dict[str, Any]]:
+    """Replace all model-authored rhinitis values with current-turn values."""
+    if not isinstance(args, dict) or not authorization:
+        return None
+    return {"record_type": "rhinitis", "data": dict(authorization)}
 
 
 def _prepare_health_record_args_for_validation(
@@ -11479,6 +11571,51 @@ class AgentExecutor:
             getattr(self, "_current_turn_user_message", ""),
             getattr(self, "_current_turn_recent_messages", []),
         )
+        rhinitis_authorization = _extract_clear_rhinitis_record(
+            getattr(self, "_current_turn_user_message", "")
+        )
+        if (
+            tool_name == "health_record"
+            and isinstance(args, dict)
+            and _fast_record_kind(args) == "rhinitis"
+            and getattr(self, "_current_turn_has_attachment", False)
+        ):
+            logger.warning(
+                "[_execute_tool] blocked rhinitis write on attachment turn user=%s",
+                self._current_user_id,
+            )
+            return (
+                "Error: 带附件的鼻炎症状暂不自动写入，请在不带附件的消息中直接复述"
+                "要记录的本人喷嚏、鼻塞或流鼻涕情况。"
+            )
+        if (
+            tool_name == "health_record"
+            and isinstance(args, dict)
+            and _fast_record_kind(args) == "rhinitis"
+            and rhinitis_authorization is None
+        ):
+            logger.warning(
+                "[_execute_tool] blocked rhinitis write without current-turn authorization "
+                "user=%s msg=%r",
+                self._current_user_id,
+                (getattr(self, "_current_turn_user_message", "") or "")[:80],
+            )
+            return (
+                "Error: 这段话不是明确的本人鼻炎症状记录请求，已阻止自动写入。"
+                "请直接说出当前的喷嚏、鼻塞或流鼻涕情况。"
+            )
+        if (
+            tool_name == "health_record"
+            and isinstance(args, dict)
+            and _fast_record_kind(args) == "rhinitis"
+        ):
+            authorized_args = _apply_authorized_rhinitis_payload(
+                args,
+                rhinitis_authorization,
+            )
+            if authorized_args is None:
+                return "Error: 鼻炎打卡参数无效，已阻止自动写入。"
+            args = authorized_args
         if (
             tool_name == "health_record"
             and isinstance(args, dict)
@@ -12773,6 +12910,7 @@ class AgentExecutor:
             "goal": "/goals/me",
             "medical_exam": f"/medical-exams/me/reports?limit={limit}",
             "event": "/episodes/me/life-events?days=30",
+            "rhinitis": "/checkin/me/history?days=30",
         }
         record_paths = {
             "diet": "/diet/records/{id}",
@@ -12795,6 +12933,7 @@ class AgentExecutor:
             # event 只开 list/delete(undo 通路);update 不开——occurred_at 由
             # 确定性代码折算,改动走删除后重记(registry update 格 gap 挂账)。
             "event": "/episodes/life-event/{id}",
+            "rhinitis": "/checkin/{id}/rhinitis/latest",
         }
         update_supported = {
             "diet", "water", "weight", "waist", "blood_pressure",

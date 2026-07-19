@@ -88,6 +88,42 @@ def create_health_checkin(
     return db_checkin
 
 
+@router.delete("/{checkin_id}/rhinitis/latest")
+def undo_latest_rhinitis_checkin(
+    checkin_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """撤销当前用户指定打卡日最近一次鼻炎事件,不删除整日打卡。"""
+    checkin = db.query(HealthCheckin).filter(
+        HealthCheckin.id == checkin_id,
+        HealthCheckin.user_id == current_user.id,
+    ).first()
+    if not checkin:
+        raise HTTPException(status_code=404, detail="打卡记录不存在")
+
+    entries = list(checkin.sneeze_times or [])
+    if not entries:
+        raise HTTPException(status_code=404, detail="没有可撤销的鼻炎事件")
+
+    removed = entries.pop()
+    checkin.sneeze_times = entries or None
+    remaining_total = sum(
+        int(item.get("count") or 0) for item in entries if isinstance(item, dict)
+    )
+    checkin.sneeze_count = remaining_total or None
+    db.commit()
+    db.refresh(checkin)
+    return {
+        "id": checkin.id,
+        "record_id": checkin.id,
+        "resource_type": "health_checkin",
+        "status": "recorded",
+        "message": "已撤销最近一次鼻炎打卡",
+        "undone": removed,
+    }
+
+
 # ========== /me 端点必须在 /user/{user_id} 之前定义 ==========
 
 @router.get("/me/today", response_model=Optional[HealthCheckinResponse])
@@ -140,7 +176,6 @@ def get_my_checkin_stats(
 ):
     """获取当前用户的健康打卡统计（需要登录）"""
     from datetime import timedelta
-    from sqlalchemy import func
 
     today = date.today()
     start_date = today - timedelta(days=days)
