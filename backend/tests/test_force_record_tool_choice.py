@@ -7,7 +7,11 @@ enable_thinking=false 后 named force 双模型(qwen3.6-flash / qwen3.7-max)PASS
 (安全评审 2026-07-17:不用模型名子串)。首轮判据打**原始 messages**(跨轮累积 tool 结果;
 fast-record 压缩版恒 [system,user] 判不出轮次——同评审抓出)。
 """
-from app.services.agent_executor import _should_force_record_tool_choice
+from app.services.agent_executor import (
+    _should_force_explicit_aigc_media_tool_choice,
+    _should_force_record_tool_choice,
+    _tool_names_for_turn,
+)
 
 _TOOLS = [
     {"type": "function", "function": {"name": "health_record"}},
@@ -50,6 +54,31 @@ def test_never_forces_without_health_record_tool():
     only_query = [{"type": "function", "function": {"name": "health_query"}}]
     assert _should_force_record_tool_choice(True, _FIRST_ROUND, only_query, True) is False
     assert _should_force_record_tool_choice(True, _FIRST_ROUND, None, True) is False
+
+
+def test_explicit_aigc_photo_turn_exposes_only_the_draft_tool():
+    assert _tool_names_for_turn(
+        "基于这张照片生成今天活动的短视频，以此照片为开头。",
+        fast_route=False,
+        analysis_subset=False,
+    ) == ("draft_aigc_media",)
+
+
+def test_explicit_aigc_photo_turn_forces_only_the_draft_tool_on_first_round():
+    tools = [{"type": "function", "function": {"name": "draft_aigc_media"}}]
+
+    assert _should_force_explicit_aigc_media_tool_choice(
+        "基于这张照片生成今天活动的短视频，以此照片为开头。",
+        _FIRST_ROUND,
+        tools,
+        True,
+    ) is True
+    assert _should_force_explicit_aigc_media_tool_choice(
+        "基于这张照片生成今天活动的短视频，以此照片为开头。",
+        _LATER_ROUND,
+        tools,
+        True,
+    ) is False
 
 
 def test_never_forces_without_record_intent():

@@ -105,7 +105,7 @@ async def test_image_to_video_uses_owned_short_lived_source_and_persists_task(
         "prompt": "把这张早餐照片做成 5 秒竖屏短视频",
         "duration_seconds": 5,
         "ratio": "9:16",
-        "model": "wan2.7-i2v",
+        "model": "wan2.7-i2v-2026-04-25",
     }
     transient_url = provider.video_requests[0]["source_url"]
     assert transient_url.startswith("https://health.example.test/api/v1/upload/files/chat/")
@@ -154,7 +154,7 @@ async def test_confirmed_provider_dispatch_writes_prompt_free_audit_evidence(
     assert audit.result_detail == {
         "job_id": job.id,
         "kind": "image_to_video",
-        "model": "wan2.7-i2v",
+        "model": "wan2.7-i2v-2026-04-25",
         "source_attached": True,
     }
     assert prompt not in str(audit.result_detail)

@@ -85,7 +85,7 @@ async def test_creates_wan27_image_to_video_asynchronous_task():
     assert captured["url"].endswith("/services/aigc/video-generation/video-synthesis")
     assert captured["headers"]["x-dashscope-async"] == "enable"
     assert captured["body"] == {
-        "model": "wan2.7-i2v",
+        "model": "wan2.7-i2v-2026-04-25",
         "input": {
             "prompt": "把参考图片做成 5 秒竖屏晨间准备短视频",
             "media": [{"type": "first_frame", "url": "https://example.invalid/private-source.jpg?signature=temporary"}],
@@ -98,6 +98,33 @@ async def test_creates_wan27_image_to_video_asynchronous_task():
             "watermark": False,
         },
     }
+
+
+@pytest.mark.asyncio
+async def test_creates_wan27_text_to_video_with_the_versioned_default_model():
+    from app.services.aigc_media_service import AIGCMediaProvider
+
+    captured: dict = {}
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, json={"output": {"task_id": "task-456", "task_status": "PENDING"}})
+
+    provider = AIGCMediaProvider(
+        api_key="test-payg-key",
+        api_base_url="https://dashscope.aliyuncs.com/api/v1",
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+    )
+    try:
+        created = await provider.create_video_task(
+            kind="text_to_video",
+            prompt="生成一段 5 秒晨间拉伸演示视频",
+        )
+    finally:
+        await provider.aclose()
+
+    assert created.task_id == "task-456"
+    assert captured["body"]["model"] == "wan2.7-t2v-2026-06-12"
 
 
 @pytest.mark.asyncio

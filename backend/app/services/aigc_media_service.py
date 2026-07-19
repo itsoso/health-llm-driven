@@ -67,8 +67,8 @@ class AIGCMediaProvider:
         api_key: str | None,
         api_base_url: str,
         image_model: str = "wan2.7-image",
-        text_to_video_model: str = "wan2.7-t2v",
-        image_to_video_model: str = "wan2.7-i2v",
+        text_to_video_model: str = "wan2.7-t2v-2026-06-12",
+        image_to_video_model: str = "wan2.7-i2v-2026-04-25",
         blocked_api_keys: Iterable[str | None] = (),
         http_client: httpx.AsyncClient | None = None,
     ) -> None:
