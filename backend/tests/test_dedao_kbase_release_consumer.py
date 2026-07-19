@@ -43,6 +43,48 @@ def _release_payload(release_id: str = "release-abc", *, usage_policy: str = "ev
     }
 
 
+def _agent_package_payload(*, release: dict | None = None) -> dict:
+    release = release or _release_payload()
+    return {
+        "schema_version": "agent-package.v1",
+        "package_id": "health-book",
+        "version": "1.0.0",
+        "content_hash": "sha256:agent-package-health-book",
+        "lifecycle_state": "published",
+        "published_at": "2026-07-19T12:00:00Z",
+        "releases": [
+            {
+                "release_id": release["release_id"],
+                "content_hash": release["content_hash"],
+                "citation_ids": ["citation-1"],
+            }
+        ],
+        "retrieval_policy": {
+            "strategy": "hybrid",
+            "allowed_source_types": ["dedao_ebook"],
+            "require_citations": True,
+            "max_context_chunks": 4,
+        },
+        "model_policy": {
+            "preferred_capability": "grounded_reasoning",
+            "max_cost_usd": 0.1,
+            "timeout_ms": 30_000,
+        },
+        "prompt_profiles": [{"profile_id": "health-evidence", "output_schema": "claim-set.v1"}],
+        "tool_policy": {"tools": []},
+        "safety_policy": {
+            "usage_policy": "evidence_only",
+            "abstention_reasons": ["insufficient_evidence", "conflicting_evidence"],
+            "escalation_target": "health-domain-review",
+        },
+        "evaluation_policy": {
+            "suite_version": "health-agent-eval.v1",
+            "minimum_scores": {"citations": 1.0, "abstention": 1.0},
+        },
+        "ui_manifest": {"capabilities": ["evidence"]},
+    }
+
+
 def test_release_client_lists_fetches_and_posts_feedback():
     from app.integrations.dedao_kbase_release_consumer import DedaoKBaseReleaseClient
 
@@ -260,6 +302,161 @@ def test_compile_release_rejects_non_publishable_contracts(tmp_path, mutate, mes
             base_artifact_dir=tmp_path / "artifacts",
             source_root=tmp_path / "source",
         )
+
+
+def test_agent_package_client_lists_and_fetches_published_version():
+    from app.integrations.dedao_kbase_release_consumer import DedaoKBaseReleaseClient
+
+    release = _release_payload()
+    package = _agent_package_payload(release=release)
+    requests: list[tuple[str, str, dict | None]] = []
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _agent_package_handler(package, release, requests))
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        client = DedaoKBaseReleaseClient(
+            f"http://127.0.0.1:{server.server_port}", auth_token="secret-token"
+        )
+        records = client.list_agent_packages(after="previous@0.9.0", limit=1)
+        detail = client.get_agent_package("health-book", version="1.0.0")
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+    assert records[0]["package_id"] == "health-book"
+    assert detail["safety_policy"]["usage_policy"] == "evidence_only"
+    assert requests[:2] == [
+        ("GET", "/api/agent-packages?after=previous%400.9.0&limit=1", None),
+        ("GET", "/api/agent-packages/health-book?version=1.0.0", None),
+    ]
+
+
+def test_compile_agent_package_preserves_review_and_safety_provenance(tmp_path):
+    from app.integrations.dedao_kbase_release_consumer import compile_agent_package_artifacts
+
+    release = _release_payload()
+    package = _agent_package_payload(release=release)
+    result = compile_agent_package_artifacts(
+        package=package,
+        releases=[release],
+        base_artifact_dir=tmp_path / "artifacts",
+        source_root=tmp_path / "source",
+        now=datetime(2026, 7, 19, 13, tzinfo=UTC),
+    )
+
+    assert result.manifest["ingest"] == {
+        "pipeline": "dedao_kbase_agent_package_v1",
+        "review_status": "draft",
+        "requires_review": True,
+        "serving_allowed": False,
+    }
+    assert result.manifest["agent_package"] == {
+        "package_id": "health-book",
+        "version": "1.0.0",
+        "content_hash": "sha256:agent-package-health-book",
+        "evaluation_status": "passed",
+        "evaluation_suite_version": "health-agent-eval.v1",
+        "release_ids": ["release-abc"],
+    }
+    claim = result.claims[0]
+    assert claim["metadata"]["origin"] == "dedao-kbase-agent-package"
+    assert claim["metadata"]["package_version"] == "1.0.0"
+    assert claim["metadata"]["release_id"] == "release-abc"
+    assert claim["metadata"]["evaluation_status"] == "passed"
+    assert claim["metadata"]["safety_flags"] == {
+        "usage_policy": "evidence_only",
+        "abstention_reasons": ["insufficient_evidence", "conflicting_evidence"],
+        "escalation_target": "health-domain-review",
+    }
+    assert result.protocols == []
+    assert result.contraindications == []
+
+
+@pytest.mark.parametrize(
+    "mutate, reason",
+    [
+        (lambda package, release: package.update(lifecycle_state="superseded"), "stale"),
+        (
+            lambda package, release: package["releases"][0].update(content_hash="content-conflict"),
+            "conflict",
+        ),
+        (lambda package, release: package.update(evaluation_policy={}), "unevaluated"),
+        (
+            lambda package, release: package["safety_policy"].update(usage_policy="standard"),
+            "non_evidence_only",
+        ),
+    ],
+)
+def test_compile_agent_package_holds_ineligible_packages(tmp_path, mutate, reason):
+    from app.integrations.dedao_kbase_release_consumer import compile_agent_package_artifacts
+
+    release = _release_payload()
+    package = _agent_package_payload(release=release)
+    mutate(package, release)
+
+    with pytest.raises(ValueError, match=rf"held.*{reason}"):
+        compile_agent_package_artifacts(
+            package=package,
+            releases=[release],
+            base_artifact_dir=tmp_path / "artifacts",
+            source_root=tmp_path / "source",
+        )
+
+
+def test_agent_package_sync_writes_draft_without_serving_or_personal_data_mutation(tmp_path, db):
+    from app.tasks.system_knowledge_lifecycle import sync_dedao_kbase_agent_packages_draft_once
+
+    release = _release_payload()
+    package = _agent_package_payload(release=release)
+    requests: list[tuple[str, str, dict | None]] = []
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _agent_package_handler(package, release, requests))
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    canonical = tmp_path / "canonical"
+    workspace = tmp_path / "agent-package-review"
+    _write_canonical_artifacts(canonical, marker="trusted-base")
+    try:
+        result = sync_dedao_kbase_agent_packages_draft_once(
+            db,
+            base_url=f"http://127.0.0.1:{server.server_port}",
+            auth_token="secret-token",
+            artifact_dir=workspace,
+            base_artifact_dir=canonical,
+            source_root=tmp_path / "source",
+            actor="test:agent-package-sync",
+            limit=1,
+            now=datetime(2026, 7, 19, 13, tzinfo=UTC),
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+    assert result["status"] == "draft_written"
+    assert result["cursor"] == "health-book@1.0.0"
+    assert result["package_count"] == 1
+    assert result["held_packages"] == []
+    assert result["gate"]["serving_allowed"] is False
+    assert json.loads((canonical / "pages.jsonl").read_text().splitlines()[0])["title"] == "trusted-base"
+    draft_claim = json.loads((workspace / "claims.jsonl").read_text().splitlines()[-1])
+    assert draft_claim["metadata"]["package_id"] == "health-book"
+    assert draft_claim["metadata"]["review_status"] == "draft"
+    assert db.query(KBDocument).count() == 0
+    audit = db.query(KBAudit).filter(KBAudit.op == "dedao_kbase_agent_package_sync_draft").one()
+    assert audit.diff["gate"]["serving_allowed"] is False
+
+
+def test_agent_package_draft_sync_is_explicitly_registered_not_auto_published():
+    from app.celery_app import celery_app
+    from app.tasks.system_knowledge_lifecycle import sync_dedao_kbase_agent_packages_draft  # noqa: F401
+
+    task_name = "app.tasks.system_knowledge_lifecycle.sync_dedao_kbase_agent_packages_draft"
+    assert task_name in celery_app.tasks
+    assert all(
+        entry.get("task") != task_name
+        for entry in (celery_app.conf.beat_schedule or {}).values()
+    )
 
 
 def test_incremental_release_sync_writes_draft_and_advances_cursor_without_false_usage_feedback(tmp_path, db):
@@ -1117,3 +1314,63 @@ def _release_handler(release: dict, requests: list[tuple[str, str, dict | None]]
             return
 
     return ReleaseHandler
+
+
+def _agent_package_handler(
+    package: dict,
+    release: dict,
+    requests: list[tuple[str, str, dict | None]],
+):
+    package_ref = f"{package['package_id']}@{package['version']}"
+
+    class AgentPackageHandler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            requests.append(("GET", self.path, None))
+            if self.headers.get("Authorization") != "Bearer secret-token":
+                self._write(401, {"error": "unauthorized"})
+                return
+            if self.path.startswith("/api/agent-packages?"):
+                if f"after={package_ref.replace('@', '%40')}" in self.path:
+                    self._write(200, {"packages": [], "next_cursor": ""})
+                    return
+                self._write(
+                    200,
+                    {
+                        "packages": [
+                            {
+                                "package_id": package["package_id"],
+                                "version": package["version"],
+                                "content_hash": package["content_hash"],
+                                "lifecycle_state": package["lifecycle_state"],
+                                "url": (
+                                    f"/api/agent-packages/{package['package_id']}"
+                                    f"?version={package['version']}"
+                                ),
+                            }
+                        ],
+                        "next_cursor": package_ref,
+                    },
+                )
+                return
+            if self.path == (
+                f"/api/agent-packages/{package['package_id']}?version={package['version']}"
+            ):
+                self._write(200, package)
+                return
+            if self.path == f"/api/knowledge/releases/{release['release_id']}":
+                self._write(200, release)
+                return
+            self._write(404, {"error": "not found"})
+
+        def _write(self, status: int, payload: object):
+            body = json.dumps(payload).encode()
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, format, *args):
+            return
+
+    return AgentPackageHandler

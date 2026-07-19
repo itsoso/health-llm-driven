@@ -30,7 +30,9 @@ from app.services.dedao_kbase_export_importer import (
 )
 from app.integrations.dedao_kbase_release_consumer import (
     DedaoKBaseReleaseClient,
+    assess_agent_package_for_health,
     combine_release_results,
+    compile_agent_package_artifacts,
     compile_knowledge_release_artifacts,
 )
 from app.services.system_knowledge_crystallize import draft_crystallized_claim_candidates
@@ -511,6 +513,189 @@ def _sync_dedao_kbase_releases_draft_locked(
     return report
 
 
+def sync_dedao_kbase_agent_packages_draft_once(
+    db: Session,
+    *,
+    base_url: str | None,
+    auth_token: str | None,
+    artifact_dir: str | Path,
+    base_artifact_dir: str | Path,
+    source_root: str | Path,
+    actor: str = "system",
+    now: datetime | None = None,
+    limit: int = 50,
+) -> dict[str, Any]:
+    """Import eligible evidence-only Agent Packages into a draft workspace.
+
+    This path writes only review artifacts plus an audit receipt. It never
+    mutates the serving index or any per-user health model.
+    """
+    with review_workspace_lock(artifact_dir):
+        base_url = (base_url or "").strip()
+        if not base_url:
+            return {
+                "status": "skipped",
+                "reason": "missing_release_base_url",
+                "artifact_dir": str(artifact_dir),
+            }
+        if not 1 <= limit <= 200:
+            raise ValueError("agent package sync limit must be between 1 and 200")
+
+        target = Path(artifact_dir)
+        canonical = Path(base_artifact_dir)
+        target_resolved = target.expanduser().resolve()
+        canonical_resolved = canonical.expanduser().resolve()
+        if (
+            target_resolved == canonical_resolved
+            or target_resolved in canonical_resolved.parents
+            or canonical_resolved in target_resolved.parents
+        ):
+            raise ValueError("dedao-kbase Agent Package review workspace must not overlap canonical artifacts")
+
+        latest = (
+            db.query(KBAudit)
+            .filter(KBAudit.op == "dedao_kbase_agent_package_sync_draft")
+            .order_by(KBAudit.ts.desc(), KBAudit.id.desc())
+            .first()
+        )
+        previous_cursor = str((latest.diff or {}).get("cursor") or "") if latest else ""
+        client = DedaoKBaseReleaseClient(base_url, auth_token=auth_token)
+        records = client.list_agent_packages(after=previous_cursor, limit=limit)
+        if not records:
+            return {
+                "status": "up_to_date",
+                "cursor": previous_cursor,
+                "package_count": 0,
+                "held_packages": [],
+            }
+
+        eligible: list[tuple[dict[str, Any], list[dict[str, Any]]]] = []
+        held_packages: list[dict[str, Any]] = []
+        for record in records:
+            package_id = str(record.get("package_id") or "").strip()
+            version = str(record.get("version") or "").strip()
+            package = client.get_agent_package(package_id, version=version)
+            releases = [
+                client.get_release(str(reference.get("release_id") or ""))
+                for reference in package.get("releases") or []
+            ]
+            assessment = assess_agent_package_for_health(package, releases)
+            if assessment["eligible"]:
+                eligible.append((package, releases))
+            else:
+                held_packages.append(
+                    {
+                        "package_id": package_id,
+                        "version": version,
+                        "reasons": assessment["hold_reasons"],
+                    }
+                )
+
+        cursor = f"{records[-1].get('package_id', '')}@{records[-1].get('version', '')}"
+        gate = {
+            "serving_allowed": False,
+            "blocking_reasons": ["human_domain_review_required"],
+        }
+        if not eligible:
+            report = {
+                "status": "held",
+                "base_url": base_url,
+                "artifact_dir": str(target),
+                "base_artifact_dir": str(canonical),
+                "previous_cursor": previous_cursor,
+                "cursor": cursor,
+                "package_count": 0,
+                "package_ids": [],
+                "held_packages": held_packages,
+                "gate": gate,
+            }
+            db.add(
+                KBAudit(
+                    doc_id=None,
+                    op="dedao_kbase_agent_package_sync_draft",
+                    actor=actor,
+                    diff=report,
+                )
+            )
+            db.commit()
+            return report
+
+        current_time = now or datetime.now(UTC)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        candidate = Path(tempfile.mkdtemp(prefix=f".{target.name}.candidate-", dir=target.parent))
+        try:
+            if canonical.exists():
+                shutil.copytree(canonical, candidate, dirs_exist_ok=True)
+            _normalize_canonical_review_status(candidate)
+            package_results = [
+                compile_agent_package_artifacts(
+                    package=package,
+                    releases=releases,
+                    base_artifact_dir=candidate,
+                    source_root=source_root,
+                    now=current_time,
+                )
+                for package, releases in eligible
+            ]
+            combined = combine_release_results(package_results)
+            draft_manifest = write_draft_artifacts(
+                combined,
+                candidate,
+                extractor=f"dedao-kbase-agent-package:{base_url}",
+                created_at=current_time,
+                note="evidence-only Agent Packages synced as drafts; domain review remains required.",
+            )
+            draft_manifest.update(
+                {
+                    "cursor": cursor,
+                    "producer_base_url": base_url,
+                    "agent_packages": [
+                        {
+                            "package_id": package["package_id"],
+                            "version": package["version"],
+                            "content_hash": package["content_hash"],
+                            "evaluation_status": "passed",
+                        }
+                        for package, _ in eligible
+                    ],
+                }
+            )
+            (candidate / "draft_manifest.json").write_text(
+                json.dumps(draft_manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            gate = validate_artifact_review_gate(candidate)
+            _replace_workspace(candidate, target)
+        finally:
+            if candidate.exists():
+                shutil.rmtree(candidate)
+
+        report = {
+            "status": "draft_written",
+            "base_url": base_url,
+            "artifact_dir": str(target),
+            "base_artifact_dir": str(canonical),
+            "previous_cursor": previous_cursor,
+            "cursor": cursor,
+            "package_count": len(eligible),
+            "package_ids": [package["package_id"] for package, _ in eligible],
+            "held_packages": held_packages,
+            "diff": combined.diff,
+            "draft_manifest": draft_manifest,
+            "gate": gate,
+        }
+        db.add(
+            KBAudit(
+                doc_id=None,
+                op="dedao_kbase_agent_package_sync_draft",
+                actor=actor,
+                diff=report,
+            )
+        )
+        db.commit()
+        return report
+
+
 def run_system_kb_lifecycle_once(
     db: Session,
     *,
@@ -621,4 +806,26 @@ def sync_dedao_kbase_export_draft() -> dict[str, Any]:
                 actor="celery:dedao_kbase_export_sync",
             )
     logger.info("[dedao_kbase_export_sync] done: %s", result.get("status"))
+    return result
+
+
+@celery_app.task(
+    time_limit=600,
+    name="app.tasks.system_knowledge_lifecycle.sync_dedao_kbase_agent_packages_draft",
+)
+def sync_dedao_kbase_agent_packages_draft() -> dict[str, Any]:
+    """Explicit pilot task for Agent Packages; never scheduled or auto-published."""
+    logger.info("[dedao_kbase_agent_package_sync] start")
+    with SessionLocal() as db:
+        result = sync_dedao_kbase_agent_packages_draft_once(
+            db,
+            base_url=settings.dedao_kbase_release_base_url,
+            auth_token=settings.dedao_kbase_auth_token,
+            artifact_dir=_dedao_kbase_review_artifact_dir(),
+            base_artifact_dir=_default_system_kb_artifact_dir(),
+            source_root=settings.dedao_kbase_source_root,
+            actor="celery:dedao_kbase_agent_package_sync",
+            limit=settings.dedao_kbase_release_batch_size,
+        )
+    logger.info("[dedao_kbase_agent_package_sync] done: %s", result.get("status"))
     return result
