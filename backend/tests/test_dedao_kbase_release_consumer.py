@@ -533,6 +533,60 @@ def test_agent_package_sync_preserves_previous_unreviewed_batch(tmp_path, db):
     ]
 
 
+def test_agent_package_sync_preserves_lineage_for_sequential_overlapping_packages(tmp_path, db):
+    from app.tasks.system_knowledge_lifecycle import sync_dedao_kbase_agent_packages_draft_once
+
+    release = _release_payload()
+    packages = [_agent_package_payload(release=release, package_id="health-book-one")]
+    requests: list[tuple[str, str, dict | None]] = []
+    server = ThreadingHTTPServer(
+        ("127.0.0.1", 0),
+        _agent_package_sequence_handler(packages, {release["release_id"]: release}, requests),
+    )
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    canonical = tmp_path / "canonical"
+    workspace = tmp_path / "agent-package-review"
+    _write_canonical_artifacts(canonical, marker="trusted-base")
+    try:
+        sync_dedao_kbase_agent_packages_draft_once(
+            db,
+            base_url=f"http://127.0.0.1:{server.server_port}",
+            auth_token="secret-token",
+            artifact_dir=workspace,
+            base_artifact_dir=canonical,
+            source_root=tmp_path / "source",
+            actor="test:agent-package-sync",
+            limit=1,
+        )
+        packages.append(_agent_package_payload(release=release, package_id="health-book-two"))
+        sync_dedao_kbase_agent_packages_draft_once(
+            db,
+            base_url=f"http://127.0.0.1:{server.server_port}",
+            auth_token="secret-token",
+            artifact_dir=workspace,
+            base_artifact_dir=canonical,
+            source_root=tmp_path / "source",
+            actor="test:agent-package-sync",
+            limit=1,
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+    claim = json.loads((workspace / "claims.jsonl").read_text().splitlines()[-1])
+    assert [
+        item["package_id"] for item in claim["metadata"]["agent_package_lineage"]
+    ] == ["health-book-one", "health-book-two"]
+    for manifest_name in ("manifest.json", "draft_manifest.json"):
+        manifest = json.loads((workspace / manifest_name).read_text())
+        assert [item["package_id"] for item in manifest["agent_packages"]] == [
+            "health-book-one",
+            "health-book-two",
+        ]
+
+
 def test_overlapping_agent_packages_preserve_all_package_lineage(tmp_path):
     from app.integrations.dedao_kbase_release_consumer import (
         combine_release_results,

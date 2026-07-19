@@ -132,6 +132,110 @@ def _normalize_canonical_review_status(artifact_dir: str | Path) -> None:
         path.write_text(("\n".join(normalized) + "\n") if normalized else "", encoding="utf-8")
 
 
+def _agent_package_lineages_by_release(artifact_dir: str | Path) -> dict[str, list[dict[str, Any]]]:
+    lineages: dict[str, dict[tuple[str, str, str], dict[str, Any]]] = {}
+    root = Path(artifact_dir)
+    for name in ARTIFACT_FILES:
+        path = root / name
+        if not path.exists():
+            continue
+        for raw_line in path.read_text(encoding="utf-8").splitlines():
+            if not raw_line.strip():
+                continue
+            row = json.loads(raw_line)
+            metadata = row.get("metadata") if isinstance(row, dict) else None
+            if not isinstance(metadata, dict):
+                continue
+            release_id = str(metadata.get("release_id") or "").strip()
+            if not release_id:
+                continue
+            release_lineages = lineages.setdefault(release_id, {})
+            for item in metadata.get("agent_package_lineage") or []:
+                if not isinstance(item, dict):
+                    continue
+                key = (
+                    str(item.get("package_id") or ""),
+                    str(item.get("version") or ""),
+                    str(item.get("content_hash") or ""),
+                )
+                if all(key):
+                    release_lineages[key] = item
+    return {
+        release_id: [items[key] for key in sorted(items)]
+        for release_id, items in lineages.items()
+    }
+
+
+def _preserve_agent_package_lineage(
+    result: Any,
+    existing_by_release: dict[str, list[dict[str, Any]]],
+) -> dict[str, list[dict[str, Any]]]:
+    by_release = {
+        release_id: {
+            (
+                str(item.get("package_id") or ""),
+                str(item.get("version") or ""),
+                str(item.get("content_hash") or ""),
+            ): item
+            for item in items
+            if isinstance(item, dict)
+        }
+        for release_id, items in existing_by_release.items()
+    }
+    for item in result.manifest.get("agent_packages") or []:
+        if not isinstance(item, dict):
+            continue
+        key = (
+            str(item.get("package_id") or ""),
+            str(item.get("version") or ""),
+            str(item.get("content_hash") or ""),
+        )
+        if not all(key):
+            continue
+        for release_id in item.get("release_ids") or []:
+            by_release.setdefault(str(release_id), {})[key] = item
+    for row in [
+        *result.pages,
+        *result.entities,
+        *result.claims,
+        *result.relations,
+    ]:
+        metadata = dict(row.get("metadata") or {})
+        release_id = str(metadata.get("release_id") or "").strip()
+        if release_id in by_release:
+            metadata["agent_package_lineage"] = [
+                by_release[release_id][key] for key in sorted(by_release[release_id])
+            ]
+            row["metadata"] = metadata
+    return {
+        release_id: [items[key] for key in sorted(items)]
+        for release_id, items in by_release.items()
+    }
+
+
+def _write_agent_package_lineage_to_artifacts(
+    artifact_dir: str | Path,
+    lineages_by_release: dict[str, list[dict[str, Any]]],
+) -> None:
+    root = Path(artifact_dir)
+    for name in ARTIFACT_FILES:
+        path = root / name
+        if not path.exists():
+            continue
+        rows: list[str] = []
+        for raw_line in path.read_text(encoding="utf-8").splitlines():
+            if not raw_line.strip():
+                continue
+            row = json.loads(raw_line)
+            metadata = dict(row.get("metadata") or {})
+            release_id = str(metadata.get("release_id") or "").strip()
+            if release_id in lineages_by_release:
+                metadata["agent_package_lineage"] = lineages_by_release[release_id]
+                row["metadata"] = metadata
+            rows.append(json.dumps(row, ensure_ascii=False, sort_keys=True))
+        path.write_text(("\n".join(rows) + "\n") if rows else "", encoding="utf-8")
+
+
 def _list_release_records(
     client: DedaoKBaseReleaseClient,
     *,
@@ -670,6 +774,7 @@ def sync_dedao_kbase_agent_packages_draft_once(
                 shutil.copytree(source, candidate, dirs_exist_ok=True)
             if mode == "rebuild":
                 _normalize_canonical_review_status(candidate)
+            existing_lineages = _agent_package_lineages_by_release(candidate)
             package_results = [
                 compile_agent_package_artifacts(
                     package=package,
@@ -681,6 +786,8 @@ def sync_dedao_kbase_agent_packages_draft_once(
                 for package, releases in eligible
             ]
             combined = combine_release_results(package_results)
+            merged_lineages = _preserve_agent_package_lineage(combined, existing_lineages)
+            _write_agent_package_lineage_to_artifacts(candidate, merged_lineages)
             previous_packages = (
                 workspace_metadata.get("agent_packages") or [] if mode == "incremental" else []
             )
