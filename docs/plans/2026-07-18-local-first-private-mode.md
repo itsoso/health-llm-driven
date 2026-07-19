@@ -72,6 +72,8 @@ Record availability, cold/warm latency and peak memory in the dossier. Expected:
 
 Security-review the storage/recovery threat model and record the nutrition-data licensing status. If either remains blocked, stop before production implementation.
 
+**Task 1 outcome (2026-07-18):** The signed host ran on an iPhone 17 Pro Max with iOS 26.6 Beta. Vision was available, while the Apple system language model returned `device_not_eligible`; no latency or memory values were fabricated. G2 therefore passes only for the model-independent local baseline and authorizes Task 2. Every generative enhancement remains disabled behind its own BLOCK until a system or bundled model passes the quality, correction-cost, package-size and representative-device performance contract.
+
 **Step 10: Commit**
 
 ```bash

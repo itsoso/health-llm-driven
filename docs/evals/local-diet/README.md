@@ -5,9 +5,9 @@
 
 ## 结论
 
-当前 SDK 足以支撑“手工/确定性路径 + Vision + 有条件的系统文字模型”，但不足以把 Foundation Models 多模态能力当作当前产品依赖。营养数据授权和本地存储威胁模型已有明确解法；结构化文字推理基准也已具备真机执行条件。G2 仍为 **BLOCK**，原因收敛为没有可用 iPhone 真机的推理时延、内存和温升证据。
+当前 SDK 足以支撑“手工/确定性路径 + Vision + 有条件的系统文字模型”，但不足以把 Foundation Models 当作当前产品依赖。2026-07-18 的 iPhone 17 Pro Max 真机运行返回 `device_not_eligible`；这证明即使新款硬件也不能获得通用可用性保证。
 
-这不否定完全本地饮食方向。它把首版可保证的能力收敛为：所有设备均可手工/确定性记录；Vision 用于 OCR、条码和通用分类；iOS 26 且运行时可用时，系统语言模型只增强文字草稿。
+因此 G2 被拆成两个范围：不依赖生成模型的本地饮食基线 **PASS**，可进入加密 Local Health Kernel；系统/小模型智能增强仍为独立 **BLOCK**，必须先有可用真机的质量、时延、内存、温升和包体证据。首版可保证的能力收敛为：所有设备均可手工/确定性记录；Vision 用于 OCR、条码和通用分类；系统语言模型只在运行时报告可用时增强文字草稿。
 
 ## 可重复的能力证据
 
@@ -30,9 +30,9 @@ xcodebuild \
 |---|---|---|---|---|---|
 | Apple Silicon Mac | 26.4.1 | 不可用：`device_not_eligible` | 不可用：`sdk_not_supported` | OCR/分类/条码可用 | 编译 + 运行时探针 |
 | iPhone 17 Pro Simulator | iOS 26.4 | 探针报告可用 | 不可用：`sdk_not_supported` | OCR/分类/条码可用 | iOS 16 deployment 编译 + 模拟器测试 |
-| 已登记 iPhone 17 Pro Max | 未采集 | 未采集 | 未采集 | 未采集 | 设备当前 `unavailable`，不可作为证据 |
+| iPhone 17 Pro Max（iPhone18,2） | iOS 26.6 Beta | 不可用：`device_not_eligible` | 不可用：`sdk_not_supported` | OCR/分类/条码可用 | 已签名安装并真机运行 |
 
-模拟器的“系统模型可用”不能外推到真机。Apple 的运行时状态还会因设备资格、Apple Intelligence 开关和模型下载状态而变化，探针分别返回 `device_not_eligible`、`apple_intelligence_not_enabled` 和 `model_not_ready`，不会抛错或静默切云。
+模拟器的“系统模型可用”不能外推到真机。Apple 的运行时状态还会因设备资格、Apple Intelligence 开关和模型下载状态而变化，探针分别返回 `device_not_eligible`、`apple_intelligence_not_enabled` 和 `model_not_ready`，不会抛错或静默切云。Apple 对 `deviceNotEligible` 的定义是设备不支持 Apple Intelligence；Apple 同时说明，中国大陆购买的受支持设备目前无法使用 Apple Intelligence。因此产品只消费运行时结果，不根据机型猜测资格。
 
 Xcode 26.5 本地 Foundation Models 接口只提供当前已编译的文字模型能力；本探针因此把多模态明确标为 `sdk_not_supported`。照片路径当前只允许走 Vision 或未来通过独立评测的 Core ML 模型。
 
@@ -42,25 +42,39 @@ Xcode 26.5 本地 Foundation Models 接口只提供当前已编译的文字模�
 
 确定性测试注入假模型、时钟、峰值内存和温度状态，覆盖：不可用原因、冷/热时延、峰值内存增量、温度、JSON round-trip、模型失败透传、指标失败透传和显式开关。2026-07-18 的证据为：macOS 完整 Swift Package 15 tests / 0 failures / 1 live test skipped；iPhone 17 Pro Simulator iOS 26.4 测试通过；generic iOS 16 deployment build 通过。模拟器仍不构成性能证据。
 
-真机连接、解锁并信任此 Mac 后执行：
+Swift Package 的独立测试 target 在真机上没有宿主 App，Xcode 会以 `Tool-hosted testing is unavailable on device destinations` 拒绝执行。因此真机使用专门的、不会进入生产包的合成基准宿主：
 
 ```bash
 cd mobile/modules/local-health-kernel
-LOCAL_DIET_ENABLE_LIVE_BENCHMARK=1 xcodebuild \
-  -scheme LocalHealthCapabilityProbe \
+gem install xcodeproj # 本机尚未安装时执行一次
+ruby scripts/tests/generate_device_host_test.rb
+ruby scripts/generate_device_host.rb \
+  --output .build/device-host/LocalDietBenchmarkHost.xcodeproj \
+  --team-id <DEVELOPMENT_TEAM>
+xcodebuild \
+  -project .build/device-host/LocalDietBenchmarkHost.xcodeproj \
+  -scheme LocalDietBenchmarkHost \
   -destination 'platform=iOS,id=<DEVICE_ID>' \
-  -derivedDataPath .build/xcode-device-derived \
-  -only-testing:LocalHealthCapabilityProbeTests/LocalDietInferenceBenchmarkTests/testLiveBenchmarkEmitsDeviceReportOnlyWhenExplicitlyEnabled \
-  test
+  -derivedDataPath .build/device-host-derived \
+  build
+xcrun devicectl device install app \
+  --device <CORE_DEVICE_ID> \
+  .build/device-host-derived/Build/Products/Debug-iphoneos/LocalDietBenchmarkHost.app
+xcrun devicectl device process launch \
+  --device <CORE_DEVICE_ID> \
+  --console --terminate-existing \
+  life.executor.health.local-diet-benchmark
 ```
 
-成功时测试日志输出单行 `LOCAL_DIET_INFERENCE_BENCHMARK=<json>`。如果系统模型不可用，JSON 必须包含明确 `unavailableReason`；如果可用，`caseResult` 包含冷/热时延、峰值内存增量及前后温度。这个原始报告只承载评测契约中的设备、模型和性能字段，完成代表性数据集评测后再汇入完整 `on-device-eval-contract.json` run。
+宿主在源代码内显式开启固定合成基准，日志输出单行 `LOCAL_DIET_INFERENCE_BENCHMARK=<json>`。如果系统模型不可用，JSON 必须包含明确 `unavailableReason`；如果可用，`caseResult` 包含冷/热时延、峰值内存增量及前后温度。真机原始证据保存在 `runs/2026-07-18-iphone18-2-ios26-6-system-model.json`，不含设备序列号、UDID 或私人饮食数据。
 
 Apple 参考：
 
 - <https://developer.apple.com/documentation/FoundationModels>
+- <https://developer.apple.com/documentation/foundationmodels/systemlanguagemodel/availability-swift.enum/unavailablereason>
 - <https://developer.apple.com/documentation/Vision>
 - <https://developer.apple.com/documentation/CoreML>
+- <https://support.apple.com/zh-cn/121115>
 
 ## 评测数据契约
 
@@ -72,7 +86,7 @@ Apple 参考：
 - 设备、OS、能力快照与模型配置；
 - 汇总准确性、遗漏率、纠正成本和 Gate 裁决。
 
-初始质量阈值已写进 Schema 的 `x-initial-acceptance-policy`。真机峰值内存上限故意保持 `null`：必须先在代表性低/中/高端设备取得基线，再由 G2 设置，不能拍脑袋伪造预算。
+初始质量阈值已写进 Schema 的 `x-initial-acceptance-policy`。系统模型真机峰值内存上限保持 `null`：当前真机没有进入推理，不能用不可用报告伪造预算。该增强保持关闭；后续系统模型或打包小模型必须在代表性低/中/高端设备取得基线后另行设限。
 
 评测素材只允许使用具有评测授权、公共领域或合成数据；`containsPrivateUserData` 被固定为 `false`。用户私人饮食照片不得提交到仓库。
 
@@ -108,8 +122,9 @@ Apple 依据：
 - <https://fdc.nal.usda.gov/api-guide/>
 - <https://fdc.nal.usda.gov/download-datasets/>
 
-## 解除 G2 的最小证据
+## 智能增强解除 BLOCK 的最小证据
 
-1. 在至少一台可用 iPhone 真机运行能力探针，并记录系统模型状态。
-2. 用最小文字结构化推理 spike 采集冷/热时延、峰值内存和温升；不可用设备验证确定性降级。
-3. 在 `on-device-eval-contract.json` 中补齐真机内存上限，重新裁决 G2。
+1. 选定明确的增强引擎：运行时可用的 Apple 系统模型，或可再分发、可量化的打包小模型。
+2. 用完整的合成/获授权中文餐食集评测结构化草稿质量和纠正成本。
+3. 在代表性低/中/高端真机采集冷/热时延、峰值内存、温升、崩溃率和包体/下载体积。
+4. 在 `on-device-eval-contract.json` 中补齐引擎对应的内存上限后，单独裁决智能增强。
