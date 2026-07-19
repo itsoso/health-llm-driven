@@ -113,6 +113,14 @@ async def proxy_realtime_asr(
     upstream_ready = asyncio.Event()
     final_sent = False
     upstream_error: str | None = None
+    error_sent = False
+
+    async def send_upstream_error(message: str) -> None:
+        nonlocal error_sent
+        if error_sent:
+            return
+        error_sent = True
+        await send_json({"type": "error", "message": message})
 
     async def read_upstream() -> None:
         nonlocal final_sent, upstream_error
@@ -137,7 +145,7 @@ async def proxy_realtime_asr(
                 if normalized["type"] == "error":
                     upstream_error = normalized.get("message") or "阿里云实时语音识别失败"
                     logger.warning("Realtime ASR upstream returned an error")
-                    await send_json({"type": "error", "message": upstream_error})
+                    await send_upstream_error(upstream_error)
                     break
                 await send_json(normalized)
         except Exception as exc:  # noqa: BLE001 - surface the single-provider failure to Mobile
@@ -146,6 +154,7 @@ async def proxy_realtime_asr(
                 "Realtime ASR upstream ended - error_type=%s",
                 type(exc).__name__,
             )
+            await send_upstream_error(upstream_error)
         finally:
             upstream_done.set()
 
@@ -164,10 +173,7 @@ async def proxy_realtime_asr(
                 "Realtime ASR unavailable - error_type=%s",
                 type(exc).__name__,
             )
-            await send_json({
-                "type": "error",
-                "message": "阿里云实时语音服务暂不可用，请稍后重试",
-            })
+            await send_upstream_error("阿里云实时语音服务暂不可用，请稍后重试")
             return
 
         while True:
@@ -189,7 +195,8 @@ async def proxy_realtime_asr(
                     raise ValueError("语音输入时间过长")
                 pcm_buffer.extend(chunk)
                 if upstream_error:
-                    raise RuntimeError(upstream_error)
+                    await send_upstream_error(upstream_error)
+                    return
                 try:
                     await upstream.send(json.dumps(
                         build_audio_append_event(_event_id(), encoded),
@@ -200,14 +207,17 @@ async def proxy_realtime_asr(
                         "Realtime ASR audio send failed - error_type=%s",
                         type(exc).__name__,
                     )
-                    raise RuntimeError("阿里云实时语音连接中断") from exc
+                    upstream_error = "阿里云实时语音连接中断"
+                    await send_upstream_error(upstream_error)
+                    return
                 continue
             if message_type != "finish":
                 raise ValueError("不支持的语音会话事件")
             if not pcm_buffer:
                 raise ValueError("没有收到可识别的语音")
             if upstream_error:
-                raise RuntimeError(upstream_error)
+                await send_upstream_error(upstream_error)
+                return
             await upstream.send(json.dumps({"event_id": _event_id(), "type": "input_audio_buffer.commit"}))
             await upstream.send(json.dumps({"event_id": _event_id(), "type": "session.finish"}))
             try:
@@ -219,7 +229,8 @@ async def proxy_realtime_asr(
                 logger.warning("Realtime ASR final result timed out")
                 raise TimeoutError("等待阿里云实时语音最终结果超时") from exc
             if upstream_error:
-                raise RuntimeError(upstream_error)
+                await send_upstream_error(upstream_error)
+                return
             await send_json({"type": "done"})
             return
     finally:

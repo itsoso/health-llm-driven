@@ -1,4 +1,5 @@
 import base64
+import asyncio
 import json
 
 import pytest
@@ -110,3 +111,51 @@ async def test_does_not_switch_to_a_second_asr_provider_when_realtime_is_unavail
         "type": "error",
         "message": "阿里云实时语音服务暂不可用，请稍后重试",
     }]
+
+
+@pytest.mark.asyncio
+async def test_reports_an_upstream_disconnect_once_after_realtime_session_is_ready(monkeypatch):
+    class BrokenUpstream:
+        def __init__(self):
+            self.sent = []
+            self.ready_event_pending = True
+            self.closed = False
+
+        async def send(self, payload):
+            self.sent.append(json.loads(payload))
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            if self.ready_event_pending:
+                self.ready_event_pending = False
+                return json.dumps({"type": "session.updated"})
+            raise RuntimeError("upstream socket dropped")
+
+        async def close(self):
+            self.closed = True
+
+    upstream = BrokenUpstream()
+    outgoing = []
+
+    async def open_socket():
+        return upstream
+
+    async def receive_json():
+        await asyncio.sleep(0.01)
+        return {"type": "cancel"}
+
+    async def send_json(payload):
+        outgoing.append(payload)
+
+    monkeypatch.setattr(realtime_speech, "_open_dashscope_socket", open_socket)
+
+    await realtime_speech.proxy_realtime_asr(receive_json, send_json)
+
+    assert outgoing[0] == {"type": "ready", "mode": "realtime"}
+    assert outgoing[1:] == [{
+        "type": "error",
+        "message": "阿里云实时语音连接中断",
+    }]
+    assert upstream.closed is True

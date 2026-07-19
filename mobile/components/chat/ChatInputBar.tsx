@@ -719,7 +719,6 @@ export default function ChatInputBar({
       dictationStopRequestedRef.current = true;
       await stopDictationRef.current();
       activeVoiceSourceRef.current = null;
-      dictationStopRequestedRef.current = true;
       dispatchComposer({ type: 'dictation_stop' });
     }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);

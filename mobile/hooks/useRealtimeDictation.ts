@@ -173,7 +173,9 @@ export function useRealtimeDictation({
     try {
       const started = await session.start();
       if (generation !== startGenerationRef.current || !started) {
-        await disposeSession(session);
+        // A release/cancel during startup already disposed the session. Only
+        // clean up here when this generation failed on its own.
+        if (generation === startGenerationRef.current) await disposeSession(session);
         if (sessionRef.current === session) sessionRef.current = null;
         return false;
       }
@@ -181,7 +183,7 @@ export function useRealtimeDictation({
       setIsDictating(true);
       return true;
     } catch (e: any) {
-      await disposeSession(session);
+      if (generation === startGenerationRef.current) await disposeSession(session);
       if (sessionRef.current === session) sessionRef.current = null;
       if (generation !== startGenerationRef.current) return false;
       const message = e?.message || '阿里云实时语音识别失败，请稍后重试';
@@ -198,7 +200,32 @@ export function useRealtimeDictation({
   const stopDictation = useCallback((): Promise<string> => {
     if (stopPromiseRef.current) return stopPromiseRef.current;
     const session = sessionRef.current;
-    if (!session || !activeRef.current) return Promise.resolve(latestTextRef.current);
+    if (!session) return Promise.resolve(latestTextRef.current);
+    if (!activeRef.current) {
+      if (!startingRef.current) return Promise.resolve(latestTextRef.current);
+
+      // The user can release before the cloud handshake returns `ready`.
+      // Treat that as a real cancellation so PCM capture and the socket do
+      // not continue in the background after the gesture has ended.
+      startGenerationRef.current += 1;
+      activeRef.current = false;
+      acceptingFinalResultsRef.current = false;
+      startingRef.current = false;
+      if (sessionRef.current === session) sessionRef.current = null;
+      const promise = (async () => {
+        try {
+          await disposeSession(session);
+          emitTerminal('cancelled', 'released_during_startup');
+          return latestTextRef.current;
+        } finally {
+          setIsDictating(false);
+          setAudioLevel(0);
+          stopPromiseRef.current = null;
+        }
+      })();
+      stopPromiseRef.current = promise;
+      return promise;
+    }
 
     activeRef.current = false;
     acceptingFinalResultsRef.current = true;

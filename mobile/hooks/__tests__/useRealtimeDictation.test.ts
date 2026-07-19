@@ -94,6 +94,31 @@ describe('useRealtimeDictation', () => {
     expect(result.current.isDictating).toBe(false);
   });
 
+  it('cancels a cloud session when released before startup completes', async () => {
+    let resolveStart!: (started: boolean) => void;
+    session.start.mockImplementationOnce(() => new Promise<boolean>((resolve) => {
+      resolveStart = resolve;
+    }));
+    const { result } = renderHook(() => useRealtimeDictation({ onTranscript: jest.fn() }));
+
+    let startPromise: Promise<boolean>;
+    await act(async () => {
+      startPromise = result.current.startDictation();
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      await result.current.stopDictation();
+    });
+    expect(session.cancel).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveStart(false);
+      await startPromise;
+    });
+    expect(result.current.isDictating).toBe(false);
+  });
+
   it('cancels the cloud session without committing buffered speech', async () => {
     const { result } = renderHook(() => useRealtimeDictation({ onTranscript: jest.fn() }));
 

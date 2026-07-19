@@ -785,7 +785,7 @@ describe('ChatInputBar', () => {
 
     fireEvent.press(getByLabelText('切换到语音输入'));
 
-    expect(mockStopDictation).toHaveBeenCalled();
+    expect(mockStopDictation).toHaveBeenCalledTimes(1);
     expect(queryByLabelText('按住说话')).toBeNull();
 
     await act(async () => {
