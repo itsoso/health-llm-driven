@@ -1772,16 +1772,52 @@ def _repair_truncated_json(s: str) -> str:
     return repaired
 
 
+def _trim_extra_trailing_json_closers(s: str) -> str:
+    """Drop unmatched closing braces appended by a weak tool-call decoder."""
+    stack: List[str] = []
+    in_string = False
+    escape = False
+    for index, ch in enumerate(s):
+        if escape:
+            escape = False
+            continue
+        if ch == "\\" and in_string:
+            escape = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch in "{[":
+            stack.append(ch)
+            continue
+        if ch in "}]":
+            expected = "{" if ch == "}" else "["
+            if stack and stack[-1] == expected:
+                stack.pop()
+            else:
+                return s[:index].rstrip()
+    return s
+
+
 def _loads_lenient(raw: str) -> Any:
     """标准 → 引号归一 → 截断修复 → 归一+修复,逐级兜底解析弱模型 JSON。
 
     任何一级成功即返回;全失败抛最后一个 JSONDecodeError(调用方决定如何处理)。
     """
+    normalized_quotes = _normalize_json_quotes(raw)
+    trimmed = _trim_extra_trailing_json_closers(raw)
+    trimmed_normalized = _trim_extra_trailing_json_closers(normalized_quotes)
     candidates = (
         raw,
-        _normalize_json_quotes(raw),
+        normalized_quotes,
+        trimmed,
+        trimmed_normalized,
         _repair_truncated_json(raw),
-        _repair_truncated_json(_normalize_json_quotes(raw)),
+        _repair_truncated_json(normalized_quotes),
+        _repair_truncated_json(trimmed),
+        _repair_truncated_json(trimmed_normalized),
     )
     last_err: Optional[json.JSONDecodeError] = None
     seen: set = set()
@@ -3012,7 +3048,10 @@ def _fast_record_reply_from_tool_results(messages: List[Dict[str, Any]]) -> str:
 
 
 def _auto_confirm_fast_record_args(
-    tool_name: str, func_args: Any, channel: Optional[str] = None
+    tool_name: str,
+    func_args: Any,
+    channel: Optional[str] = None,
+    user_message: Optional[str] = None,
 ) -> Any:
     """Skip the two-turn confirmation gate for pure fast-record requests.
 
@@ -3020,23 +3059,32 @@ def _auto_confirm_fast_record_args(
     对抗评审证伪过 arg-based 守卫:tool schema 无 source 字段,模型是该字段
     唯一可能作者=不可信):
     - AUTO 集(water/diet/...):任何通道直接写。
-    - symptom/rhinitis:仅 channel=="typed"(打字,用户逐字敲的)免确认;
-      语音/未声明通道(旧客户端、Siri 单轮无屏无法撤销)fail-closed 保留确认。
+    - symptom/rhinitis: typed 免确认; voice 下仅对明确的症状陈述免确认;
+      Siri/未声明通道(旧客户端、Siri 单轮无屏无法撤销)fail-closed 保留确认。
     - NEVER 集(medication/dose/financial/...)与 unknown kind:恒确认(fail-closed)。
     """
 
     if tool_name != "health_record":
         return func_args
     try:
-        args = json.loads(func_args) if isinstance(func_args, str) else dict(func_args or {})
+        args = _loads_lenient(func_args) if isinstance(func_args, str) else dict(func_args or {})
     except Exception:
         return func_args
 
     kind = _fast_record_kind(args)
+    clear_voice_symptom = bool(
+        kind == "symptom"
+        and channel == "voice"
+        and _extract_clear_symptom_record(user_message)
+    )
     requires_confirmation = (
         kind not in _FAST_RECORD_AUTO_CONFIRM_KINDS
         or kind in _FAST_RECORD_NEVER_AUTO_CONFIRM_KINDS
-        or (kind in _TYPED_ONLY_AUTO_CONFIRM_KINDS and channel != "typed")
+        or (
+            kind in _TYPED_ONLY_AUTO_CONFIRM_KINDS
+            and channel != "typed"
+            and not clear_voice_symptom
+        )
     )
     if requires_confirmation:
         data = args.get("data")
@@ -3105,8 +3153,9 @@ _FAST_RECORD_AUTO_CONFIRM_KINDS = {
     # fast 模式确认死循环,见 safety review IMPORTANT-3)。
     "remember",
 }
-# 症状类仅打字通道免确认;语音/未声明通道保留确认前置(转写失真 + Siri 单轮
-# 无法撤销)。channel 由客户端传输层声明(AgentRequest.channel),绝不读 LLM
+# 症状类打字通道免确认;语音通道只有在原话是明确症状陈述时免确认,
+# 其它语音/siri/未声明通道仍保留确认前置(转写失真 + Siri 单轮无法撤销)。
+# channel 由客户端传输层声明(AgentRequest.channel),绝不读 LLM
 # 工具参数——对抗评审证伪过 arg-based 守卫(schema 无 source 字段,模型是该
 # 字段唯一可能作者=不可信=生产死代码)。
 _TYPED_ONLY_AUTO_CONFIRM_KINDS = {"symptom", "rhinitis", "goal", "remember"}
@@ -4165,6 +4214,68 @@ def _normalize_symptom_body_part(data: Dict[str, Any]) -> None:
         if any(marker in description for marker in markers):
             data["body_part"] = body_part
             return
+
+
+def _extract_clear_symptom_record(message: Any) -> Optional[Dict[str, str]]:
+    """Extract a high-confidence current symptom from the user's own sentence.
+
+    This is deliberately narrower than medical interpretation: it only maps an
+    explicit symptom statement to the existing ``/symptoms`` schema.  Questions
+    such as ``腰疼怎么办`` stay on the advice path and are never converted into
+    a write.  The original wording is retained as the description for auditability.
+    """
+    raw = str(message or "").strip()
+    if not raw:
+        return None
+    intent = classify_agent_utterance(raw)
+    if not (
+        intent.primary == "write"
+        and intent.operation == "create"
+        and intent.domain == "symptom"
+        and intent.is_write
+    ):
+        return None
+
+    normalized = "".join(raw.split()).lower()
+    for body_part, markers in _SYMPTOM_BODY_PART_MARKERS:
+        if any(marker in normalized for marker in markers):
+            return {
+                "body_part": body_part,
+                "description": raw.strip("。！？!?；;，, ")[:500],
+            }
+
+    # A clear but non-localized statement can still be stored as a general
+    # symptom; the user can refine the body part later from the record card.
+    if "症状" in normalized or any(
+        marker in normalized for marker in ("不适", "难受", "不舒服")
+    ):
+        return {
+            "body_part": "general",
+            "description": raw.strip("。！？!?；;，, ")[:500],
+        }
+    return None
+
+
+def _recover_clear_symptom_args(args: Any, message: Any) -> Any:
+    """Fill only missing symptom fields from an unambiguous user statement."""
+    if not isinstance(args, dict):
+        return args
+    extracted = _extract_clear_symptom_record(message)
+    if not extracted:
+        return args
+
+    rtype = _fast_record_kind(args)
+    if rtype not in ("", "symptom"):
+        return args
+    args["record_type"] = "symptom"
+    data = args.get("data")
+    if not isinstance(data, dict):
+        data = {}
+        args["data"] = data
+    for key, value in extracted.items():
+        if data.get(key) in (None, ""):
+            data[key] = value
+    return args
 
 
 def _prepare_health_record_args_for_validation(
@@ -7068,15 +7179,13 @@ class AgentExecutor:
                                 planned_name,
                                 planned_args,
                                 channel=self._turn_channel,
+                                user_message=self._current_turn_user_message,
                             )
-                        try:
-                            parsed_planned_args = (
-                                json.loads(planned_args)
-                                if isinstance(planned_args, str)
-                                else dict(planned_args or {})
-                            )
-                        except (json.JSONDecodeError, TypeError, ValueError):
-                            parsed_planned_args = {}
+                        parsed_planned_args = _parse_tool_arguments_for_telemetry(planned_args)
+                        parsed_planned_args = _recover_clear_symptom_args(
+                            parsed_planned_args,
+                            self._current_turn_user_message,
+                        )
                         if (
                             planned_name in _WRITE_RECEIPT_TOOL_NAMES
                             and _write_tool_attempted(
@@ -7131,16 +7240,16 @@ class AgentExecutor:
                             _round_tool_names.append(func_name)
                         if self._prefer_fast_record_model:
                             func_args = _auto_confirm_fast_record_args(
-                                func_name, func_args, channel=self._turn_channel
+                                func_name,
+                                func_args,
+                                channel=self._turn_channel,
+                                user_message=self._current_turn_user_message,
                             )
-                        try:
-                            parsed_tool_args = (
-                                json.loads(func_args)
-                                if isinstance(func_args, str)
-                                else dict(func_args or {})
-                            )
-                        except (json.JSONDecodeError, TypeError, ValueError):
-                            parsed_tool_args = {}
+                        parsed_tool_args = _parse_tool_arguments_for_telemetry(func_args)
+                        parsed_tool_args = _recover_clear_symptom_args(
+                            parsed_tool_args,
+                            self._current_turn_user_message,
+                        )
                         write_attempted = (
                             func_name in _WRITE_RECEIPT_TOOL_NAMES
                             and _write_tool_attempted(func_name, parsed_tool_args)
@@ -10565,11 +10674,23 @@ class AgentExecutor:
                 try:
                     args = _loads_lenient(args_raw)
                 except json.JSONDecodeError:
-                    logger.warning(
-                        "[_execute_tool] %s args 解析失败(含引号归一+截断修复后): %s",
-                        tool_name, args_raw[:200],
+                    recovered = _extract_clear_symptom_record(
+                        getattr(self, "_current_turn_user_message", "")
                     )
-                    return f"Error: 参数解析失败: {args_raw}"
+                    if tool_name == "health_record" and recovered:
+                        logger.warning(
+                            "[_execute_tool] recovered malformed symptom args from clear user statement"
+                        )
+                        args = {
+                            "record_type": "symptom",
+                            "data": recovered,
+                        }
+                    else:
+                        logger.warning(
+                            "[_execute_tool] %s args 解析失败(含引号归一+截断修复后): %s",
+                            tool_name, args_raw[:200],
+                        )
+                        return f"Error: 参数解析失败: {args_raw}"
             else:
                 return f"Error: 参数解析失败: {args_raw}"
 
@@ -10577,6 +10698,10 @@ class AgentExecutor:
         # 日期/数值/枚举/引用 ID 存在性/越权 / 必填 — 触发 coerce 只 log,
         # 必填缺失或越权才返回 error 给 LLM (它会重试).
         from app.services.llm.tool_validator import validate_tool_call
+        args = _recover_clear_symptom_args(
+            args,
+            getattr(self, "_current_turn_user_message", ""),
+        )
         args = _prepare_health_record_args_for_validation(
             tool_name,
             args,

@@ -201,6 +201,35 @@ async def test_symptom_with_explicit_location_reaches_api_without_body_part(db):
 
 
 @pytest.mark.asyncio
+async def test_voice_symptom_recovers_truncated_tool_args_and_writes(db):
+    """清晰语音症状陈述不应被模型多出的右大括号和内核歧义门一起吞掉。"""
+    from app.services.agent_executor import AgentExecutor
+
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._turn_channel = "voice"
+    executor._current_turn_user_message = "还是有腰疼的症状。"
+    captured = {}
+
+    async def fake_post(url, headers, payload):
+        captured["url"] = url
+        captured["payload"] = payload
+        return '{"id": 43, "body_part": "musculoskeletal", "description": "还是有腰疼的症状"}'
+
+    with patch.object(executor, "_api_post", new=AsyncMock(side_effect=fake_post)):
+        result = await executor._execute_tool(
+            tool_name="health_record",
+            args_raw='{"record_type": "symptom"}}',
+            user_token=None,
+        )
+
+    assert "Error" not in str(result)
+    assert captured["url"].endswith("/symptoms")
+    assert captured["payload"]["body_part"] == "musculoskeletal"
+    assert captured["payload"]["description"] == "还是有腰疼的症状"
+
+
+@pytest.mark.asyncio
 async def test_mood_record_does_not_throw_on_missing_amount(db):
     """mood 走 record_map 路径, 数据不带 amount, 应正常发 /mood/records."""
     from app.services.agent_executor import AgentExecutor

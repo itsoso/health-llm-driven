@@ -35,6 +35,22 @@ def test_real_record_command_is_write_intent():
     assert intent.is_write is True
 
 
+def test_clear_symptom_statement_is_write_intent():
+    intent = classify_agent_utterance("还是有腰疼的症状。")
+
+    assert intent.primary == "write"
+    assert intent.domain == "symptom"
+    assert intent.operation == "create"
+    assert intent.is_write is True
+
+
+def test_symptom_question_stays_advice():
+    intent = classify_agent_utterance("腰疼怎么办？")
+
+    assert intent.primary == "advice"
+    assert intent.is_write is False
+
+
 def test_compound_record_and_analysis_keeps_write_capability():
     intent = classify_agent_utterance(
         "记录晚餐牛肉面，帮我分析今天的热量和蛋白质"

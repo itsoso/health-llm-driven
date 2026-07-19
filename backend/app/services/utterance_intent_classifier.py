@@ -251,6 +251,29 @@ METRIC_TERMS = (
     "收缩压",
     "舒张压",
 )
+SYMPTOM_TERMS = (
+    "症状",
+    "疼痛",
+    "疼",
+    "痛",
+    "酸",
+    "痒",
+    "麻",
+    "胀",
+    "不适",
+    "难受",
+    "咳嗽",
+    "咳痰",
+    "鼻塞",
+    "流鼻涕",
+    "打喷嚏",
+    "皮疹",
+    "发热",
+    "发烧",
+    "头晕",
+    "恶心",
+    "呕吐",
+)
 MEAL_TYPES = {
     "breakfast": ("早餐", "早饭", "早上"),
     "lunch": ("午餐", "午饭", "中饭", "中午"),
@@ -398,6 +421,7 @@ def classify_agent_utterance(
     if (
         has_write
         or _has_explicit_observation_write(normalized, domain)
+        or _has_explicit_symptom_observation(normalized, domain, has_question)
         or _has_explicit_event_write(normalized)
     ):
         return _intent(
@@ -575,6 +599,8 @@ def _infer_domain(text: str) -> str:
         return "diet"
     if _has_any(text, METRIC_TERMS):
         return "metric"
+    if _has_any(text, SYMPTOM_TERMS):
+        return "symptom"
     if _has_any(text, PLAN_TERMS):
         return "plan"
     return "unknown"
@@ -667,6 +693,17 @@ def _has_explicit_observation_write(text: str, domain: str) -> bool:
         marker in text
         for marker in ("体重", "kg", "公斤", "千克", "斤", "血压", "高压", "低压", "收缩压", "舒张压")
     )
+
+
+def _has_explicit_symptom_observation(
+    text: str,
+    domain: str,
+    has_question: bool,
+) -> bool:
+    """Recognize a declarative symptom without turning a symptom question into a write."""
+    if domain != "symptom" or has_question:
+        return False
+    return _has_any(text, SYMPTOM_TERMS)
 
 
 def _has_explicit_event_write(text: str) -> bool:

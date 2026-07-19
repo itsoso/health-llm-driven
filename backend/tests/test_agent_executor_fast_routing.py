@@ -473,6 +473,20 @@ def test_symptom_via_voice_channels_keeps_confirmation():
         assert "confirmed" not in out
 
 
+def test_clear_voice_symptom_statement_skips_confirmation():
+    args = {"record_type": "symptom", "data": {"description": "还是有腰疼的症状"}}
+    out = ae._auto_confirm_fast_record_args(
+        "health_record",
+        args,
+        channel="voice",
+        user_message="还是有腰疼的症状。",
+    )
+
+    assert out["confirmed"] is True
+    assert out["data"]["confirmed"] is True
+    assert "_fast_record_requires_confirmation" not in out
+
+
 def test_water_auto_confirms_regardless_of_channel():
     # 通道守卫只作用于症状类;低风险数值记录(water)任何通道免确认
     for channel in (None, "voice", "typed"):
