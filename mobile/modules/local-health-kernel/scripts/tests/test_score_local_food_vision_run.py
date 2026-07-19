@@ -30,6 +30,8 @@ class ScoreLocalFoodVisionRunTests(unittest.TestCase):
             lambda value: value["cases"][0].update(licenseStatus="unknown"),
             lambda value: value["cases"][0].update(fixtureId="lunch-photo.jpg"),
             lambda value: value["cases"][0].update(sourcePath="/private/photo.jpg"),
+            lambda value: [case.update(stratum="single_item") for case in value["cases"]],
+            lambda value: [case.update(split="test") for case in value["cases"]],
         ]:
             invalid = json.loads(json.dumps(manifest))
             mutation(invalid)

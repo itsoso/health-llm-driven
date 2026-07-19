@@ -141,6 +141,39 @@ class GenerateFoodVisionDeviceHostTest < Minitest::Test
     end
   end
 
+  def test_generator_rejects_missing_strata_and_independent_splits
+    with_assets do |model, label_bank, fixtures|
+      output = Pathname(Dir.mktmpdir("food-host-structure")).join("Host.xcodeproj")
+      manifest_path = fixtures.join("dataset-manifest.json")
+      manifest = JSON.parse(manifest_path.read)
+      manifest["cases"].each { |item| item["stratum"] = "single_item" }
+      manifest_path.write(JSON.generate(manifest))
+
+      _, stderr, status = run_generator(
+        output: output,
+        model: model,
+        label_bank: label_bank,
+        fixtures: fixtures
+      )
+      refute status.success?
+      assert_includes stderr, "missing strata"
+
+      manifest = dataset_manifest(fixtures)
+      manifest[:cases].each { |item| item[:split] = "test" }
+      manifest_path.write(JSON.generate(manifest))
+      _, stderr, status = run_generator(
+        output: output,
+        model: model,
+        label_bank: label_bank,
+        fixtures: fixtures
+      )
+      refute status.success?
+      assert_includes stderr, "calibration and test splits"
+    ensure
+      FileUtils.remove_entry(output.dirname) if output&.dirname&.exist?
+    end
+  end
+
   def test_evidence_host_rejects_blocked_calibration
     with_assets do |model, label_bank, fixtures|
       output = Pathname(Dir.mktmpdir("food-host-calibration")).join("Host.xcodeproj")
