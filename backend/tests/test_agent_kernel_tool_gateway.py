@@ -5,7 +5,7 @@ import pytest
 
 from app.services.agent_executor import AgentExecutor
 from app.services.agent_kernel.intent_frame import build_intent_frame
-from app.services.agent_kernel.tool_gateway import ToolGateway
+from app.services.agent_kernel.tool_gateway import ToolGateway, blocked_tool_result
 from app.services.agent_kernel.types import AgentEnvelope, ExecutionContext, ToolExecutionRequest, TurnSnapshot
 
 
@@ -33,6 +33,22 @@ def test_tool_gateway_blocks_recovered_health_record_in_read_turn():
     assert decision.action == "block"
     assert decision.reason == "write_tool_without_write_intent"
     assert decision.receipt_required is True
+
+
+def test_blocked_tool_result_includes_a_recovery_instruction_for_the_agent():
+    gateway = ToolGateway(_snapshot("今天我的饮食的记录，帮我列个表格出来。"))
+    decision = gateway.preflight(
+        ToolExecutionRequest(
+            tool_name="health_record",
+            arguments={"record_type": "diet", "data": {"food_items": "米饭"}},
+            source="text_recovery",
+        )
+    )
+
+    result = blocked_tool_result(decision)
+
+    assert "下一步" in result
+    assert "先澄清" in result
 
 
 @pytest.mark.asyncio

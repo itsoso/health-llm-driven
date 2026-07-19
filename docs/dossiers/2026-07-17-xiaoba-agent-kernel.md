@@ -98,6 +98,7 @@
 - 已把 `backend/app/services/telegram_inbound.py` 的 record/query 分流接到共享语义帧；`记录` 关键词不再单独决定写入路由。
 - 已把 Telegram `execute_health_record` 从直接调用 `_exec_health_record` 改为调用 `_execute_tool("health_record", ...)`，并传入原始 source text / telegram channel，让 validator、ToolGateway、read-only guard 和 receipt 逻辑统一覆盖。
 - 2026-07-18 P0/P1 复核：Mobile 已移除从 Agent 回复正文推断健康写入的遗留入口；排队埋点 `chat_turn_queued` 已纳入后端白名单并使用严格、无正文的 surface/channel/queue-depth 合约。剩余重点是 T7 遗留门静态清理与 T8 发布/线上验证，不能以客户端隐藏入口代替统一 ToolGateway 授权。
+- 2026-07-19 Kernel 完整性收口：`manage_plan`、`upload_genetic_txt`、`upload_medical_exam_text` 纳入统一写入回执和完成判定；`supplement_guide` 与 specialist 只读工具纳入预生成白名单；未知工具、未知干预/计划 action 默认 fail-closed；拦截结果增加面向模型的澄清/恢复指引。新增注册工具能力分类与 Executor/专家适配器静态覆盖，防止新工具“注册后不可执行”或“默认放行”。T7 仍保留 legacy gate 清理项，T8 仍需真实线上 shadow/enforce 与跨端验证。
 
 ## G3 · 测试
 
@@ -138,6 +139,23 @@ DATABASE_URL=sqlite:///:memory: TZ=Asia/Shanghai backend/venv/bin/python -m pyte
 ```
 
 - 结果：`75 passed, 6 warnings`。
+
+- 2026-07-19 完整性收口回归：
+
+```bash
+PYTHONPATH=. ../backend/venv/bin/python -m pytest \
+  tests/test_agent_kernel_static_coverage.py \
+  tests/test_agent_kernel_capability_policy.py \
+  tests/test_agent_kernel_tool_gateway.py \
+  tests/test_agent_kernel_turn_snapshot.py \
+  tests/test_utterance_intent_classifier.py \
+  tests/test_write_receipt_identity.py \
+  tests/test_inline_safety_write_coverage.py \
+  -q --no-cov
+```
+
+- 结果：`76 passed, 6 warnings`；`ruff` 相关文件检查通过。
+- Mobile 输入/语音/滚动定向回归：`69 passed`；Mobile 全量回归：`262 suites / 1917 tests passed`。全量 Jest 在结果输出后因测试环境存在异步句柄未自动退出，已结束进程；不是业务测试失败。
 - T4 Telegram 执行绕行回归：
 
 ```bash

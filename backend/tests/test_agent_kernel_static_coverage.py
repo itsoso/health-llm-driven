@@ -62,3 +62,42 @@ def test_voice_shortcuts_cannot_write_database_without_the_tool_gateway():
     source = VOICE_SHORTCUTS.read_text()
     assert "executor._execute_tool(" in source
     assert "build_turn_snapshot(" in source
+
+
+def test_every_registered_agent_tool_has_an_explicit_kernel_capability_class():
+    from app.services.agent_kernel.capability_policy import KNOWN_TOOL_NAMES
+    from app.services.tool_schema_registry import get_health_tools
+
+    registered = {
+        (tool.get("function") or {}).get("name")
+        for tool in get_health_tools()
+        if (tool.get("function") or {}).get("name")
+    }
+
+    assert registered <= KNOWN_TOOL_NAMES
+
+
+def test_every_registered_agent_tool_has_an_executor_dispatch_or_specialist_adapter():
+    from app.services.specialist_tools import SPECIALIST_TOOLS
+    from app.services.tool_schema_registry import get_health_tools
+
+    registered = {
+        (tool.get("function") or {}).get("name")
+        for tool in get_health_tools()
+        if (tool.get("function") or {}).get("name")
+    }
+    tree = ast.parse(EXECUTOR.read_text())
+    dispatch_names = {
+        node.comparators[0].value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Compare)
+        and isinstance(node.left, ast.Name)
+        and node.left.id == "tool_name"
+        and len(node.ops) == 1
+        and isinstance(node.ops[0], ast.Eq)
+        and len(node.comparators) == 1
+        and isinstance(node.comparators[0], ast.Constant)
+        and isinstance(node.comparators[0].value, str)
+    }
+
+    assert registered <= dispatch_names | set(SPECIALIST_TOOLS)

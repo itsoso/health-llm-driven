@@ -229,3 +229,63 @@ def test_media_draft_never_uses_model_controlled_provider_confirmation_flag():
 
     assert decision.action == "allow"
     assert decision.reason == "explicit_aigc_media_draft"
+
+
+@pytest.mark.parametrize(
+    ("tool_name", "args"),
+    [
+        ("manage_plan", {"action": "save_to_card", "data": {"title": "计划"}}),
+        ("upload_genetic_txt", {"txt_content": "rsid\tchromosome\tposition\tgenotype"}),
+        ("upload_medical_exam_text", {"text": "LDL 3.8 mmol/L"}),
+    ],
+)
+def test_mutating_tools_are_blocked_without_explicit_write_intent(tool_name, args):
+    decision = decide_tool_capability(_snapshot("帮我分析一下最近的健康情况"), _request(tool_name, args))
+
+    assert decision.action == "block"
+    assert decision.receipt_required is True
+    assert decision.reason == "write_tool_without_write_intent"
+
+
+@pytest.mark.parametrize(
+    ("text", "tool_name", "args"),
+    [
+        (
+            "保存这份基因原始数据",
+            "upload_genetic_txt",
+            {"txt_content": "rsid\tchromosome\tposition\tgenotype"},
+        ),
+        (
+            "记录这次体检结果 LDL 3.8",
+            "upload_medical_exam_text",
+            {"text": "LDL 3.8 mmol/L"},
+        ),
+        (
+            "保存这个健康计划到首页",
+            "manage_plan",
+            {"action": "save_to_card", "data": {"title": "计划"}},
+        ),
+    ],
+)
+def test_mutating_tools_allow_explicit_write_intent(text, tool_name, args):
+    decision = decide_tool_capability(_snapshot(text), _request(tool_name, args))
+
+    assert decision.action == "allow"
+    assert decision.receipt_required is True
+
+
+def test_intervention_cycle_unknown_action_is_blocked_fail_closed():
+    decision = decide_tool_capability(
+        _snapshot("帮我看看干预周期"),
+        _request("intervention_cycle", {"action": "future_action"}),
+    )
+
+    assert decision.action == "block"
+    assert decision.reason == "unknown_intervention_action"
+
+
+def test_unknown_tool_is_blocked_fail_closed():
+    decision = decide_tool_capability(_snapshot("分析一下我的睡眠"), _request("future_tool", {}))
+
+    assert decision.action == "block"
+    assert decision.reason == "unknown_tool"

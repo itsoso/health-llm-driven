@@ -104,3 +104,35 @@ def test_pending_non_reminder_write_stays_fail_closed():
     shape = json.dumps({"id": 151, "status": "pending"})
 
     assert _write_receipt_from_tool_result("health_record", "diet", shape) is None
+
+
+def test_non_health_record_writes_produce_typed_receipts():
+    cases = [
+        (
+            "upload_genetic_txt",
+            {"txt_content": "rsid\tchromosome\tposition\tgenotype"},
+            {"id": 41, "message": "基因档案已导入"},
+            "genetic_profile",
+        ),
+        (
+            "upload_medical_exam_text",
+            {"text": "LDL 3.8 mmol/L"},
+            {"id": 42, "message": "化验指标已写入系统"},
+            "medical_exam",
+        ),
+        (
+            "manage_plan",
+            {"action": "save_to_card", "data": {"title": "今日计划"}},
+            {"id": 43, "message": "行动卡片已保存"},
+            "action_card",
+        ),
+    ]
+
+    for tool_name, args, payload, resource_type in cases:
+        result = json.dumps(payload, ensure_ascii=False)
+        receipt = _write_receipt_from_tool_result(tool_name, None, result)
+
+        assert receipt is not None
+        assert receipt["resource_type"] == resource_type
+        assert receipt["resource_id"] == str(payload["id"])
+        assert _write_tool_completed(tool_name, args, result) is True

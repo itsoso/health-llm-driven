@@ -40,6 +40,7 @@ READ_ACTIONS = (
     "查询",
     "查看",
     "看一下",
+    "看看",
     "查一下",
     "显示",
     "告诉我",
@@ -110,6 +111,28 @@ MEDIA_CREATE_ACTIONS = (
     "创作一个",
     "渲染",
     "变成",
+)
+PLAN_TERMS = (
+    "计划",
+    "计划项",
+    "周计划",
+    "行动卡",
+    "首页计划",
+    "干预周期",
+)
+PLAN_CREATE_ACTIONS = (
+    "生成",
+    "制定",
+    "安排",
+    "加入",
+    "列入",
+    "保存",
+)
+PLAN_UPDATE_ACTIONS = (
+    "完成",
+    "标记完成",
+    "调整计划",
+    "更新计划",
 )
 WRITE_NEGATIONS = (
     "别记录",
@@ -272,6 +295,36 @@ def classify_agent_utterance(
     mutation = _mutation_operation(normalized)
     has_negated_mutation = _has_negated_mutation(normalized, mutation)
     has_advice = _has_any(normalized, ADVICE_ACTIONS)
+
+    plan_operation = _plan_operation(normalized, domain, has_question)
+
+    if plan_operation == "update":
+        return _intent(
+            raw,
+            normalized,
+            "mutate",
+            domain,
+            "update",
+            0.88,
+            "plan_item_mutation",
+            scope,
+            is_write=True,
+            requires_reliable_tool_model=True,
+        )
+
+    if plan_operation == "create":
+        return _intent(
+            raw,
+            normalized,
+            "write",
+            domain,
+            "create",
+            0.88,
+            "plan_write_frame",
+            scope,
+            is_write=True,
+            requires_reliable_tool_model=True,
+        )
 
     if has_negated_mutation:
         return _intent(raw, normalized, "chat", domain, "none", 0.82, "negated_mutation", scope)
@@ -522,7 +575,20 @@ def _infer_domain(text: str) -> str:
         return "diet"
     if _has_any(text, METRIC_TERMS):
         return "metric"
+    if _has_any(text, PLAN_TERMS):
+        return "plan"
     return "unknown"
+
+
+def _plan_operation(text: str, domain: str, has_question: bool) -> Optional[str]:
+    """Recognize explicit plan actions without turning plan advice into writes."""
+    if domain != "plan" or has_question:
+        return None
+    if _has_any(text, PLAN_UPDATE_ACTIONS):
+        return "update"
+    if _has_any(text, PLAN_CREATE_ACTIONS):
+        return "create"
+    return None
 
 
 def _is_media_generation_request(text: str) -> bool:

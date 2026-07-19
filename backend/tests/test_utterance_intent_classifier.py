@@ -109,6 +109,33 @@ def test_destructive_command_after_analysis_preface_stays_mutation():
     assert intent.requires_reliable_tool_model is True
 
 
+def test_plan_generation_is_a_write_intent():
+    intent = classify_agent_utterance("生成本周健康计划")
+
+    assert intent.primary == "write"
+    assert intent.domain == "plan"
+    assert intent.operation == "create"
+    assert intent.is_write is True
+
+
+def test_plan_item_completion_is_a_mutation_intent():
+    intent = classify_agent_utterance("完成今天的计划项")
+
+    assert intent.primary == "mutate"
+    assert intent.domain == "plan"
+    assert intent.operation == "update"
+    assert intent.is_write is True
+
+
+def test_intervention_status_question_is_read_intent():
+    intent = classify_agent_utterance("帮我看看干预周期")
+
+    assert intent.primary == "read"
+    assert intent.domain == "plan"
+    assert intent.operation == "list"
+    assert intent.is_write is False
+
+
 def test_classifier_surface_does_not_use_regex():
     source = getsource(utterance_intent_classifier)
 

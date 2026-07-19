@@ -2427,6 +2427,9 @@ _WRITE_RECEIPT_TOOL_NAMES = {
     "health_manage",
     "intervention_cycle",
     "draft_aigc_media",
+    "manage_plan",
+    "upload_genetic_txt",
+    "upload_medical_exam_text",
 }
 
 # Read-only-turn allowlist (starter answer pre-generation · rank7). A pregen turn
@@ -2446,6 +2449,16 @@ _READ_ONLY_TURN_ALLOWED_TOOLS = {
     "query_genetic_profile",
     "query_lab_indicators",
     "health_analysis",
+    "supplement_guide",
+    "analyze_recovery",
+    "analyze_fuel",
+    "analyze_movement",
+    "analyze_mental",
+    "analyze_hypertension",
+    "analyze_metabolic",
+    "analyze_rhinitis",
+    "analyze_longitudinal",
+    "analyze_longevity",
 }
 _WRITE_RESULT_FAILURE_MARKERS = (
     "Error:",
@@ -2729,9 +2742,13 @@ def _write_receipt_from_tool_result(
         return None
     resource_type = result_resource_type
     if not resource_type:
-        if tool_name == "intervention_cycle":
-            resource_type = "intervention_cycle"
-        else:
+        resource_type = {
+            "intervention_cycle": "intervention_cycle",
+            "manage_plan": "action_card",
+            "upload_genetic_txt": "genetic_profile",
+            "upload_medical_exam_text": "medical_exam",
+        }.get(tool_name)
+        if not resource_type:
             resource_type = _RESOURCE_TYPE_BY_RECORD_TYPE.get(normalized_record_type)
             if not resource_type and normalized_record_type:
                 resource_type = (
@@ -2771,6 +2788,10 @@ def _write_tool_completed(tool_name: str, args: Any, result: Any) -> bool:
     if tool_name == "health_manage" and parsed_args.get("operation") not in {"update", "delete"}:
         return False
     if tool_name == "intervention_cycle" and parsed_args.get("action") not in {"start", "update", "cancel"}:
+        return False
+    if tool_name == "manage_plan" and parsed_args.get("action") not in {
+        "generate_weekly", "complete_item", "save_to_card"
+    }:
         return False
     if isinstance(result, str):
         text = result.strip()
@@ -2826,6 +2847,12 @@ def _write_tool_attempted(tool_name: str, args: Any) -> bool:
     if tool_name == "intervention_cycle":
         return parsed_args.get("action") in {"start", "update", "cancel"}
     if tool_name == "draft_aigc_media":
+        return True
+    if tool_name in {"manage_plan", "upload_genetic_txt", "upload_medical_exam_text"}:
+        if tool_name == "manage_plan":
+            return parsed_args.get("action") in {
+                "generate_weekly", "complete_item", "save_to_card"
+            }
         return True
     return False
 
@@ -12397,8 +12424,8 @@ class AgentExecutor:
                 exam_date=exam_date,
                 source="agent_text",
             )
-            # A4: upload_medical_exam_text 不在 _WRITE_RECEIPT_TOOL_NAMES → 主循环 write 标记
-            # 不覆盖它; 这里显式置位, 让 done 侧 KB 证据卡重算反映刚写入的化验指标。
+            # 这里显式置位, 让 done 侧 KB 证据卡重算反映刚写入的化验指标;
+            # 同时由统一写入回执集合负责验证本次持久化身份。
             self._turn_twin_write_occurred = True
             try:
                 invalidate_twin(self._current_user_id)

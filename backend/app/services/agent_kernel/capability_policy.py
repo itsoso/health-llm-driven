@@ -12,13 +12,36 @@ READ_ONLY_TOOLS = frozenset({
     "knowledge_search",
     "realtime_search",
     "environment_check",
+    "supplement_guide",
     "query_genetic_profile",
     "query_lab_indicators",
     "health_analysis",
 })
-WRITE_TOOL_NAMES = frozenset({"health_record", "health_manage", "intervention_cycle", "draft_aigc_media"})
+SPECIALIST_READ_ONLY_TOOLS = frozenset({
+    "analyze_recovery",
+    "analyze_fuel",
+    "analyze_movement",
+    "analyze_mental",
+    "analyze_hypertension",
+    "analyze_metabolic",
+    "analyze_rhinitis",
+    "analyze_longitudinal",
+    "analyze_longevity",
+})
+WRITE_TOOL_NAMES = frozenset({
+    "health_record",
+    "health_manage",
+    "intervention_cycle",
+    "draft_aigc_media",
+    "manage_plan",
+    "upload_genetic_txt",
+    "upload_medical_exam_text",
+})
+KNOWN_TOOL_NAMES = READ_ONLY_TOOLS | SPECIALIST_READ_ONLY_TOOLS | WRITE_TOOL_NAMES
 MANAGE_WRITE_OPERATIONS = frozenset({"update", "delete"})
 INTERVENTION_WRITE_ACTIONS = frozenset({"start", "update", "cancel"})
+INTERVENTION_READ_ACTIONS = frozenset({"status", "list", "history"})
+MANAGE_PLAN_ACTIONS = frozenset({"generate_weekly", "complete_item", "save_to_card"})
 
 # Procedure recipes are exact-triggered routines. Their scope is intentionally
 # narrower than normal one-shot health_record calls: no long-lived reminders or
@@ -91,6 +114,9 @@ def decide_tool_capability(
     if tool_name in READ_ONLY_TOOLS:
         return _decision("allow", "read_only_tool", tool_name, args)
 
+    if tool_name in SPECIALIST_READ_ONLY_TOOLS:
+        return _decision("allow", "specialist_read_only_tool", tool_name, args)
+
     if tool_name == "health_manage":
         operation = str(args.get("operation") or "").strip().lower()
         if operation == "list":
@@ -160,7 +186,42 @@ def decide_tool_capability(
                 args,
                 receipt_required=True,
             )
-        return _decision("allow", "intervention_read_or_unknown_action", tool_name, args)
+        if action in INTERVENTION_READ_ACTIONS:
+            return _decision("allow", "intervention_read_only_action", tool_name, args)
+        return _decision(
+            "block",
+            "unknown_intervention_action",
+            tool_name,
+            args,
+            receipt_required=True,
+        )
+
+    if tool_name in {"manage_plan", "upload_genetic_txt", "upload_medical_exam_text"}:
+        if tool_name == "manage_plan":
+            action = str(args.get("action") or "").strip().lower()
+            if action not in MANAGE_PLAN_ACTIONS:
+                return _decision(
+                    "block",
+                    "unknown_manage_plan_action",
+                    tool_name,
+                    args,
+                    receipt_required=True,
+                )
+        if primary in {"write", "mutate"} and snapshot.intent.is_write:
+            return _decision(
+                "allow",
+                "explicit_write_intent",
+                tool_name,
+                args,
+                receipt_required=True,
+            )
+        return _decision(
+            "block",
+            "write_tool_without_write_intent",
+            tool_name,
+            args,
+            receipt_required=True,
+        )
 
     if tool_name == "draft_aigc_media":
         if (
@@ -186,7 +247,7 @@ def decide_tool_capability(
     if tool_name in WRITE_TOOL_NAMES:
         return _decision("block", "unhandled_write_tool", tool_name, args, receipt_required=True)
 
-    return _decision("allow", "non_write_tool_not_policy_gated", tool_name, args)
+    return _decision("block", "unknown_tool", tool_name, args, receipt_required=True)
 
 
 def _decision(
