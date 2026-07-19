@@ -195,6 +195,14 @@ cannot be delivered to `1.3.1` through OTA. The final verification is to
 install the `1.3.2` QR release and play a completed private video in its
 originating Agent conversation without navigating away.
 
+Release evidence: the production-bundle QR artifact was built from
+`8d6e593e0` as `1.3.2 (1)` on 2026-07-19. Its signed IPA, manifest, and
+install page each returned `200` over HTTPS at
+`https://health.executor.life/mobile-install/ios/20260719-094805-8d6e593e0/`.
+The IPA's `CFBundleIdentifier` is `life.executor.health` and its
+`CFBundleShortVersionString` is `1.3.2`. Manual playback on an owner device
+remains the final G6 verification.
+
 ## Configuration Record
 
 Production uses an existing independent Model Studio pay-as-you-go credential
