@@ -3099,7 +3099,7 @@ def _auto_confirm_fast_record_args(
 
     kind = _fast_record_kind(args)
     clear_voice_symptom = bool(
-        kind == "symptom"
+        kind in {"symptom", "rhinitis"}
         and channel == "voice"
         and _extract_clear_symptom_record(user_message)
     )
@@ -4205,7 +4205,9 @@ _SYMPTOM_BODY_PART_ALIASES = {
 }
 _SYMPTOM_BODY_PART_MARKERS = (
     ("eye", ("眼痒", "眼痛", "眼红", "眼睛")),
-    ("respiratory", ("咳嗽", "咳痰", "嗓子", "喉咙", "鼻塞", "流鼻涕", "打喷嚏", "呼吸")),
+    ("respiratory", (
+        "咳嗽", "咳痰", "嗓子", "喉咙", "鼻塞", "流鼻涕", "打喷嚏", "喷嚏", "呼吸",
+    )),
     ("skin", ("皮疹", "起疹", "皮肤", "瘙痒", "湿疹")),
     ("digestive", ("胃痛", "胃疼", "腹痛", "腹胀", "肚子痛", "恶心", "呕吐")),
     ("head", ("头痛", "头疼", "头晕", "眩晕")),
@@ -4227,6 +4229,22 @@ _SYMPTOM_NEGATION_MARKERS = (
     "缓解",
     "消失",
     "排除",
+)
+_SYMPTOM_QUESTION_MARKERS = (
+    "怎么办",
+    "怎么处理",
+    "如何处理",
+    "为什么",
+    "是否",
+    "是不是",
+    "要不要",
+    "能不能",
+    "需要吗",
+    "该不该",
+    "吗",
+    "呢",
+    "？",
+    "?",
 )
 _SYMPTOM_NON_SELF_MARKERS = (
     "朋友",
@@ -4276,7 +4294,7 @@ def _symptom_text_has_non_self_reference(normalized: str) -> bool:
     return bool(
         re.search(
             r"(?:^|[，,。！？!?；;：:、])(?:他|她|他们|她们)"
-            r"(?:有|出现|一直|最近|今天|的|头|腰|背|肩|膝|关|症状|不适|难受|疼|痛)",
+            r"(?:有|出现|一直|最近|今天|的|打|打了|头|腰|背|肩|膝|关|症状|不适|难受|疼|痛)",
             normalized,
         )
     )
@@ -4284,6 +4302,8 @@ def _symptom_text_has_non_self_reference(normalized: str) -> bool:
 
 def _symptom_text_is_current_self_observation(normalized: str) -> bool:
     """Reject negated or third-party/report symptom mentions before auto-write."""
+    if any(marker in normalized for marker in _SYMPTOM_QUESTION_MARKERS):
+        return False
     if _symptom_text_has_non_self_reference(normalized):
         return False
     symptom_markers = tuple(

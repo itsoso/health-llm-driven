@@ -102,6 +102,22 @@ def test_deterministic_symptom_tool_call_accepts_clear_statement_only():
     )
 
 
+def test_deterministic_symptom_tool_call_accepts_natural_sneeze_recording():
+    call = _build_deterministic_symptom_tool_call(
+        "记录下来刚才打了一个喷嚏。",
+        write_receipts=[],
+    )
+
+    assert call is not None
+    assert json.loads(call["function"]["arguments"]) == {
+        "record_type": "symptom",
+        "data": {
+            "body_part": "respiratory",
+            "description": "记录下来刚才打了一个喷嚏",
+        },
+    }
+
+
 def test_deterministic_symptom_tool_call_keeps_questions_on_advice_path():
     assert _build_deterministic_symptom_tool_call(
         "腰疼怎么办？",
@@ -120,6 +136,8 @@ def test_deterministic_symptom_tool_call_keeps_questions_on_advice_path():
         "我老婆腰疼，记录一下。",
         "他头痛。",
         "她腰疼。",
+        "他打了一个喷嚏。",
+        "她打了一个喷嚏。",
         "检查报告提示膝盖疼。",
         "附件里记录了腰疼。",
     ],
@@ -144,6 +162,7 @@ def test_deterministic_symptom_tool_call_rejects_attachments():
     [
         "没有腰疼的症状。",
         "我不头疼。",
+        "记录一下打了一个喷嚏怎么办？",
         "我朋友头痛。",
         "同事头痛，帮我记录一下。",
         "我老婆腰疼，记录一下。",

@@ -44,6 +44,15 @@ def test_clear_symptom_statement_is_write_intent():
     assert intent.is_write is True
 
 
+def test_natural_sneeze_recording_is_symptom_write_intent():
+    intent = classify_agent_utterance("记录下来刚才打了一个喷嚏。")
+
+    assert intent.primary == "write"
+    assert intent.domain == "symptom"
+    assert intent.operation == "create"
+    assert intent.is_write is True
+
+
 def test_symptom_question_stays_advice():
     intent = classify_agent_utterance("腰疼怎么办？")
 
