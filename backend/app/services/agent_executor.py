@@ -11095,7 +11095,10 @@ class AgentExecutor:
                 "[_execute_tool] blocked symptom write on attachment turn user=%s",
                 self._current_user_id,
             )
-            return "Error: 带附件的症状内容暂不自动写入，请先确认要记录的症状文字。"
+            return (
+                "Error: 带附件的症状内容暂不自动写入，请在不带附件的消息中直接复述"
+                "要记录的本人症状。"
+            )
         if (
             tool_name == "health_record"
             and isinstance(args, dict)

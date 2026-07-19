@@ -295,7 +295,10 @@ async def test_structured_symptom_write_is_blocked_on_attachment_turn(db):
         "test-token",
     )
 
-    assert result == "Error: 带附件的症状内容暂不自动写入，请先确认要记录的症状文字。"
+    assert result == (
+        "Error: 带附件的症状内容暂不自动写入，请在不带附件的消息中直接复述"
+        "要记录的本人症状。"
+    )
 
 
 @pytest.mark.asyncio
