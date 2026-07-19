@@ -1,6 +1,5 @@
 import base64
 import json
-from types import SimpleNamespace
 
 import pytest
 
@@ -22,7 +21,15 @@ def test_builds_manual_pcm_session_for_push_to_talk():
         "session": {
             "input_audio_format": "pcm",
             "sample_rate": 16000,
-            "input_audio_transcription": {"language": "zh"},
+            "input_audio_transcription": {
+                "language": "zh",
+                "corpus": {
+                    "text": (
+                        "健康记录 饮食 用药 补剂 喝水 睡眠 运动 体重 腰围 心率 HRV "
+                        "血压 血糖 血氧 Garmin HealthKit 千卡 毫升 毫克"
+                    ),
+                },
+            },
             "turn_detection": None,
         },
     }
@@ -57,6 +64,12 @@ def test_normalizes_final_transcript_for_mobile():
     assert event == {"type": "final", "text": "记录今天喝水 500 毫升"}
 
 
+def test_normalizes_session_ready_for_proxy_handshake():
+    event = normalize_server_event(json.dumps({"type": "session.updated"}))
+
+    assert event == {"type": "session_ready"}
+
+
 def test_registers_authenticated_realtime_transcription_websocket():
     route = next(
         item for item in speech.router.routes
@@ -73,15 +86,13 @@ def test_extracts_only_bearer_tokens_for_realtime_audio():
 
 
 @pytest.mark.asyncio
-async def test_uses_final_cloud_asr_when_realtime_upstream_is_unavailable(monkeypatch):
+async def test_does_not_switch_to_a_second_asr_provider_when_realtime_is_unavailable(monkeypatch):
     pcm = b"\x01\x00" * 160
     incoming = iter([
         {"type": "audio", "audio": base64.b64encode(pcm).decode("ascii")},
         {"type": "finish"},
     ])
     outgoing = []
-    transcribed = []
-
     async def unavailable_socket():
         raise RuntimeError("realtime unavailable")
 
@@ -91,22 +102,11 @@ async def test_uses_final_cloud_asr_when_realtime_upstream_is_unavailable(monkey
     async def send_json(payload):
         outgoing.append(payload)
 
-    def transcribe(wav_bytes, extension):
-        transcribed.append((wav_bytes, extension))
-        return SimpleNamespace(
-            text="记录今天喝水 500 毫升",
-            provider="dashscope_qwen_asr",
-            model="qwen3-asr-flash",
-        )
-
     monkeypatch.setattr(realtime_speech, "_open_dashscope_socket", unavailable_socket)
-    monkeypatch.setattr(realtime_speech, "transcribe_audio_bytes", transcribe)
 
     await realtime_speech.proxy_realtime_asr(receive_json, send_json)
 
-    assert outgoing[0] == {"type": "ready", "mode": "final_fallback"}
-    assert outgoing[-2]["type"] == "final"
-    assert outgoing[-2]["text"] == "记录今天喝水 500 毫升"
-    assert outgoing[-1] == {"type": "done"}
-    assert transcribed[0][0].startswith(b"RIFF")
-    assert transcribed[0][1] == "wav"
+    assert outgoing == [{
+        "type": "error",
+        "message": "阿里云实时语音服务暂不可用，请稍后重试",
+    }]

@@ -9,13 +9,10 @@ import json
 import logging
 import time
 import uuid
-import wave
-from io import BytesIO
 from typing import Any, Awaitable, Callable
 from urllib.parse import urlencode
 
 from app.config import settings
-from app.services.speech_transcription import transcribe_audio_bytes
 
 
 logger = logging.getLogger(__name__)
@@ -23,6 +20,10 @@ logger = logging.getLogger(__name__)
 MAX_AUDIO_BYTES = 4 * 1024 * 1024
 MAX_CHUNK_BYTES = 128 * 1024
 MAX_SESSION_SECONDS = 125
+REALTIME_CONTEXT_TEXT = (
+    "健康记录 饮食 用药 补剂 喝水 睡眠 运动 体重 腰围 心率 HRV "
+    "血压 血糖 血氧 Garmin HealthKit 千卡 毫升 毫克"
+)
 
 
 def _event_id() -> str:
@@ -36,7 +37,10 @@ def build_session_update_event(event_id: str | None = None) -> dict[str, Any]:
         "session": {
             "input_audio_format": "pcm",
             "sample_rate": 16000,
-            "input_audio_transcription": {"language": "zh"},
+            "input_audio_transcription": {
+                "language": "zh",
+                "corpus": {"text": REALTIME_CONTEXT_TEXT},
+            },
             "turn_detection": None,
         },
     }
@@ -62,6 +66,8 @@ def normalize_server_event(raw: str | bytes) -> dict[str, str] | None:
     if event_type == "conversation.item.input_audio_transcription.completed":
         text = str(payload.get("transcript") or "").strip()
         return {"type": "final", "text": text}
+    if event_type == "session.updated":
+        return {"type": "session_ready"}
     if event_type == "session.finished":
         return {"type": "done"}
     if event_type == "error":
@@ -71,16 +77,6 @@ def normalize_server_event(raw: str | bytes) -> dict[str, str] | None:
             "message": str(error.get("message") or "云端语音识别失败"),
         }
     return None
-
-
-def _pcm16_to_wav(audio_bytes: bytes) -> bytes:
-    output = BytesIO()
-    with wave.open(output, "wb") as wav_file:
-        wav_file.setnchannels(1)
-        wav_file.setsampwidth(2)
-        wav_file.setframerate(16000)
-        wav_file.writeframes(audio_bytes)
-    return output.getvalue()
 
 
 def _upstream_url() -> str:
@@ -114,15 +110,20 @@ async def proxy_realtime_asr(
     upstream = None
     upstream_reader: asyncio.Task[None] | None = None
     upstream_done = asyncio.Event()
+    upstream_ready = asyncio.Event()
     final_sent = False
+    upstream_error: str | None = None
 
     async def read_upstream() -> None:
-        nonlocal final_sent
+        nonlocal final_sent, upstream_error
         assert upstream is not None
         try:
             async for raw in upstream:
                 normalized = normalize_server_event(raw)
                 if not normalized:
+                    continue
+                if normalized["type"] == "session_ready":
+                    upstream_ready.set()
                     continue
                 if normalized["type"] == "final":
                     final_sent = bool(normalized.get("text"))
@@ -134,10 +135,13 @@ async def proxy_realtime_asr(
                 if normalized["type"] == "done":
                     break
                 if normalized["type"] == "error":
-                    logger.warning("Realtime ASR upstream returned an error; using final fallback")
+                    upstream_error = normalized.get("message") or "阿里云实时语音识别失败"
+                    logger.warning("Realtime ASR upstream returned an error")
+                    await send_json({"type": "error", "message": upstream_error})
                     break
                 await send_json(normalized)
-        except Exception as exc:  # noqa: BLE001 - final non-realtime ASR is the bounded fallback
+        except Exception as exc:  # noqa: BLE001 - surface the single-provider failure to Mobile
+            upstream_error = "阿里云实时语音连接中断"
             logger.warning(
                 "Realtime ASR upstream ended - error_type=%s",
                 type(exc).__name__,
@@ -150,14 +154,21 @@ async def proxy_realtime_asr(
             upstream = await _open_dashscope_socket()
             await upstream.send(json.dumps(build_session_update_event(), ensure_ascii=False))
             upstream_reader = asyncio.create_task(read_upstream())
+            await asyncio.wait_for(
+                upstream_ready.wait(),
+                timeout=settings.asr_realtime_connect_timeout_seconds,
+            )
             await send_json({"type": "ready", "mode": "realtime"})
-        except Exception as exc:  # noqa: BLE001 - still accept audio for bounded final-ASR fallback
+        except Exception as exc:  # noqa: BLE001 - the composer has one ASR provider
             logger.warning(
-                "Realtime ASR unavailable, using final fallback - error_type=%s",
+                "Realtime ASR unavailable - error_type=%s",
                 type(exc).__name__,
             )
-            upstream = None
-            await send_json({"type": "ready", "mode": "final_fallback"})
+            await send_json({
+                "type": "error",
+                "message": "阿里云实时语音服务暂不可用，请稍后重试",
+            })
+            return
 
         while True:
             if time.monotonic() - started_at > MAX_SESSION_SECONDS:
@@ -177,48 +188,38 @@ async def proxy_realtime_asr(
                 if len(pcm_buffer) + len(chunk) > MAX_AUDIO_BYTES:
                     raise ValueError("语音输入时间过长")
                 pcm_buffer.extend(chunk)
-                if upstream is not None:
-                    try:
-                        await upstream.send(json.dumps(
-                            build_audio_append_event(_event_id(), encoded),
-                            ensure_ascii=False,
-                        ))
-                    except Exception as exc:  # noqa: BLE001 - keep collecting for final fallback
-                        logger.warning(
-                            "Realtime ASR audio send failed - error_type=%s",
-                            type(exc).__name__,
-                        )
-                        await upstream.close()
-                        upstream = None
+                if upstream_error:
+                    raise RuntimeError(upstream_error)
+                try:
+                    await upstream.send(json.dumps(
+                        build_audio_append_event(_event_id(), encoded),
+                        ensure_ascii=False,
+                    ))
+                except Exception as exc:  # noqa: BLE001 - no provider switching in realtime ASR
+                    logger.warning(
+                        "Realtime ASR audio send failed - error_type=%s",
+                        type(exc).__name__,
+                    )
+                    raise RuntimeError("阿里云实时语音连接中断") from exc
                 continue
             if message_type != "finish":
                 raise ValueError("不支持的语音会话事件")
             if not pcm_buffer:
                 raise ValueError("没有收到可识别的语音")
-            if upstream is not None:
-                await upstream.send(json.dumps({"event_id": _event_id(), "type": "input_audio_buffer.commit"}))
-                await upstream.send(json.dumps({"event_id": _event_id(), "type": "session.finish"}))
-                try:
-                    await asyncio.wait_for(
-                        upstream_done.wait(),
-                        timeout=settings.asr_realtime_final_timeout_seconds,
-                    )
-                except asyncio.TimeoutError:
-                    logger.warning("Realtime ASR final result timed out")
-            if not final_sent:
-                result = await asyncio.to_thread(
-                    transcribe_audio_bytes,
-                    _pcm16_to_wav(bytes(pcm_buffer)),
-                    "wav",
+            if upstream_error:
+                raise RuntimeError(upstream_error)
+            await upstream.send(json.dumps({"event_id": _event_id(), "type": "input_audio_buffer.commit"}))
+            await upstream.send(json.dumps({"event_id": _event_id(), "type": "session.finish"}))
+            try:
+                await asyncio.wait_for(
+                    upstream_done.wait(),
+                    timeout=settings.asr_realtime_final_timeout_seconds,
                 )
-                text = result.text.strip()
-                await send_json({
-                    "type": "final",
-                    "text": text,
-                    "provider": result.provider,
-                    "model": result.model,
-                    "duration_ms": max(0, round((time.monotonic() - started_at) * 1000)),
-                })
+            except asyncio.TimeoutError as exc:
+                logger.warning("Realtime ASR final result timed out")
+                raise TimeoutError("等待阿里云实时语音最终结果超时") from exc
+            if upstream_error:
+                raise RuntimeError(upstream_error)
             await send_json({"type": "done"})
             return
     finally:

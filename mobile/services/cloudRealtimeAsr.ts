@@ -48,6 +48,12 @@ interface RealtimeAsrOptions {
   onLevel?: (level: number) => void;
 }
 
+export interface RealtimeAsrSession {
+  start: () => Promise<boolean>;
+  stop: () => Promise<TranscribeAudioResult>;
+  cancel: () => Promise<void>;
+}
+
 function confidence(value: unknown): TranscribeAudioResult['confidence'] {
   return value === 'high' || value === 'medium' || value === 'low' ? value : undefined;
 }
@@ -86,7 +92,7 @@ const defaultDependencies: RealtimeAsrDependencies = {
 export function createCloudRealtimeAsrSession(
   options: RealtimeAsrOptions,
   dependencies: RealtimeAsrDependencies = defaultDependencies,
-) {
+): RealtimeAsrSession {
   let socket: SocketLike | null = null;
   let captureSubscription: EventSubscription | null = null;
   let startedAt = 0;

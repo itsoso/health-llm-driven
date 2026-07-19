@@ -8,7 +8,7 @@
 
 ## 1. Decision
 
-Change the Mobile chat composer to a WeChat-style voice-first input bar. The default iOS path uses Speech.framework through the existing native voice module so short hold-to-talk phrases get local partial and final results without a network round-trip. The authenticated PCM/WebSocket Qwen path remains available as a bounded fallback/experiment and must not silently replace the local path without an ASR quality comparison.
+Change the Mobile chat composer to a WeChat-style voice-first input bar. The composer uses one authenticated Alibaba Cloud Qwen realtime ASR path: Mobile captures mono 16 kHz PCM, the backend proxies it to DashScope, and partial/final results return through the same WebSocket. There is no iPhone Speech.framework recognition branch in the composer path.
 
 ## 2. Problem
 
@@ -45,7 +45,7 @@ RequirementAdmission:
 - Do not send raw audio messages.
 - Do not bypass existing chat or health-record safety behavior.
 - Do not change `voice-chat` continuous assistant conversations.
-- The default composer path may use the existing iPhone Speech.framework integration. Keep provider credentials on the backend for the cloud fallback, and do not make the mobile client depend on a DashScope key.
+- Do not use iPhone Speech.framework recognition for the composer. Keep provider credentials on the backend, and do not make the mobile client depend on a DashScope key.
 - Do not remove the attachment menu.
 
 ## 5. Product Object Mapping
@@ -59,7 +59,7 @@ RequirementAdmission:
 ```text
 open Mobile chat in default voice mode
   -> hold the center voice surface for voice input
-  -> iOS first uses native realtime recognition; the authenticated mono 16 kHz PCM path is a bounded cloud fallback
+  -> Mobile streams mono 16 kHz PCM through the authenticated backend WebSocket to Qwen realtime ASR
   -> partial transcript wraps inside the recording panel while the user speaks
   -> slide left to cancel or slide right to keep transcript as editable text
   -> tap the icon-only keyboard switch to enter text mode
@@ -72,9 +72,9 @@ open Mobile chat in default voice mode
 
 | Surface | Responsibility | Contract |
 |---|---|---|
-| Mobile | Owns visible composer controls, native realtime recognition, gestures and transcript presentation. | Default is hold-to-talk. The left icon switches to text input; right mic toggles native realtime dictation; Enter submits current text. |
-| Backend | Authenticates the cloud fallback, holds provider credentials and proxies bounded audio. | `/chat/transcribe/realtime` accepts transient base64 PCM chunks over WebSocket and emits partial/final text; `/chat/transcribe` remains the file-based fallback. |
-| DashScope | Performs cloud fallback speech recognition. | Qwen realtime ASR consumes mono 16 kHz PCM in manual commit mode when the native path is unavailable or explicitly enabled for comparison. |
+| Mobile | Owns visible composer controls, PCM capture, gestures and transcript presentation. | Default is hold-to-talk. The left icon switches to text input; right mic toggles Qwen realtime dictation; Enter submits current text. |
+| Backend | Authenticates the ASR session, holds provider credentials and proxies bounded audio. | `/chat/transcribe/realtime` accepts transient base64 PCM chunks over WebSocket and emits partial/final text; it does not switch to another provider on upstream failure. |
+| DashScope | Performs the single cloud speech-recognition operation. | Qwen realtime ASR consumes mono 16 kHz PCM in manual commit mode and returns partial/final text. |
 
 ## 8. Data Contract
 
@@ -105,12 +105,12 @@ Then hold-to-talk is the default mode
 And the left control is a compact icon-only keyboard switch
 
 Given the user holds the voice surface
-When native speech recognition returns partial text
+When Qwen realtime ASR returns partial text
 Then the transcript updates while speaking
 And long text wraps without resizing or obscuring the controls
 
 Given the user taps the right microphone
-When speech recognition returns partial text
+When Qwen realtime ASR returns partial text
 Then the composer input updates with that text in realtime
 
 Given the composer has dictated text
@@ -138,7 +138,7 @@ git diff --check
 
 ## 13. Rollout And Rollback
 
-The backend WebSocket proxy must deploy before the cloud fallback is enabled. The native composer path is JavaScript-controlled and can be repaired by OTA; the PCM capture module still requires a new signed iOS build when it changes. Rollback switches the composer back to native-only and leaves no schema rollback requirement.
+The backend WebSocket proxy must deploy before the cloud composer is enabled. The provider contract is intentionally single-path: an upstream failure is surfaced to Mobile and can be retried, never silently routed to iPhone recognition or another ASR provider. The PCM capture module requires a new signed iOS build when it changes; Hook and UI changes can be repaired by OTA.
 
 ## 14. Open Questions
 
@@ -150,6 +150,6 @@ The backend WebSocket proxy must deploy before the cloud fallback is enabled. Th
 | Date | Change | Reason |
 |---|---|---|
 | 2026-07-06 | Initial spec | Admit WeChat-style Mobile voice composer as a narrow Mobile Capture improvement. |
-| 2026-07-14 | Add bounded server-side ASR routing | Keep both voice entry paths available on DashScope while making any cross-provider fallback explicit and time-bounded. |
-| 2026-07-16 | Make voice the default and use Qwen realtime ASR | Historical cloud-primary experiment; later quality review restored native-primary routing for short composer utterances. |
-| 2026-07-18 | Restore native-primary composer ASR | Short utterances regain low-latency local partial/final results; cloud PCM/WebSocket remains a bounded fallback and comparison path. |
+| 2026-07-14 | Add bounded server-side ASR routing | Keep provider credentials on the backend and bound the transient audio session. |
+| 2026-07-16 | Make voice the default and use Qwen realtime ASR | Establish the authenticated cloud realtime path for the composer. |
+| 2026-07-18 | Make Qwen realtime ASR the only composer provider | Remove native recognition and silent provider switching so the chain stays measurable and predictable. |

@@ -198,8 +198,8 @@ export default function ChatInputBar({
   const stopDictationRef = useRef<() => Promise<string>>(async () => '');
   const cancelDictationRef = useRef<() => Promise<void>>(async () => {});
   const cancelVoiceRef = useRef<() => Promise<void>>(async () => {});
-  const dictationNativeActiveRef = useRef(false);
-  const voiceNativeActiveRef = useRef(false);
+  const dictationRealtimeActiveRef = useRef(false);
+  const voiceRealtimeActiveRef = useRef(false);
   const voiceDraftRef = useRef<VoiceDraft | null>(null);
   const pendingPhotoContextRef = useRef<Record<string, string> | null>(null);
   const draftPersistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -323,7 +323,7 @@ export default function ChatInputBar({
     dispatchComposer({ type: 'submit' });
     try {
       let voiceDraftForSend: VoiceDraft | null = null;
-      if (phase === 'live_dictating' || dictationNativeActiveRef.current) {
+      if (phase === 'live_dictating' || dictationRealtimeActiveRef.current) {
         dictationStopRequestedRef.current = true;
         const finalTranscript = String(await stopDictationRef.current() || '').trim();
         activeVoiceSourceRef.current = null;
@@ -348,7 +348,7 @@ export default function ChatInputBar({
         }
         if (!voiceDraftForSend && msg) {
           voiceDraftForSend = buildVoiceDraft({
-            source: phase === 'live_dictating' || dictationNativeActiveRef.current ? 'realtime_mic' : 'hold_to_talk',
+            source: phase === 'live_dictating' || dictationRealtimeActiveRef.current ? 'realtime_mic' : 'hold_to_talk',
             rawTranscript: msg,
           });
           msg = voiceDraftForSend.normalizedText;
@@ -459,7 +459,7 @@ export default function ChatInputBar({
 
   stopDictationRef.current = realtimeDictation.stopDictation;
   cancelDictationRef.current = realtimeDictation.cancelDictation;
-  dictationNativeActiveRef.current = realtimeDictation.isDictating;
+  dictationRealtimeActiveRef.current = realtimeDictation.isDictating;
 
   React.useEffect(() => {
     if (
@@ -583,7 +583,7 @@ export default function ChatInputBar({
   const voiceModeToggleLabel = isVoiceMode ? '切换到键盘输入' : '切换到语音输入';
 
   cancelVoiceRef.current = realtimeDictation.cancelDictation;
-  voiceNativeActiveRef.current = realtimeDictation.isDictating
+  voiceRealtimeActiveRef.current = realtimeDictation.isDictating
     && activeVoiceSourceRef.current === 'hold';
   const holdRecordingActive = (
     composer.phase === 'hold_starting'
@@ -596,7 +596,7 @@ export default function ChatInputBar({
   const startYRef = useRef(0);
 
   const handleHoldStart = useCallback(async (pageX: number, pageY: number) => {
-    if (!canStartHold(composerRef.current) || dictationNativeActiveRef.current) return;
+    if (!canStartHold(composerRef.current) || dictationRealtimeActiveRef.current) return;
     cancelledRef.current = false;
     voiceGestureActiveRef.current = true;
     voiceCommitModeRef.current = 'send';
@@ -712,10 +712,10 @@ export default function ChatInputBar({
       || state.phase === 'hold_transcribing'
       || state.phase === 'submitting'
     ) return;
-    if (state.phase === 'live_dictating' && !dictationNativeActiveRef.current) {
+    if (state.phase === 'live_dictating' && !dictationRealtimeActiveRef.current) {
       return;
     }
-    if (state.phase === 'live_dictating' || dictationNativeActiveRef.current) {
+    if (state.phase === 'live_dictating' || dictationRealtimeActiveRef.current) {
       dictationStopRequestedRef.current = true;
       await stopDictationRef.current();
       activeVoiceSourceRef.current = null;
@@ -758,8 +758,8 @@ export default function ChatInputBar({
           || phase === 'hold_starting'
           || phase === 'hold_recording'
           || phase === 'hold_transcribing'
-          || dictationNativeActiveRef.current
-          || voiceNativeActiveRef.current
+          || dictationRealtimeActiveRef.current
+          || voiceRealtimeActiveRef.current
         ) {
           await cancelDictationRef.current();
         }
@@ -780,7 +780,7 @@ export default function ChatInputBar({
   const handleInputChange = useCallback((text: string) => {
     const realtimeDictationActive =
       composerRef.current.phase === 'live_dictating'
-      || dictationNativeActiveRef.current;
+      || dictationRealtimeActiveRef.current;
     if (realtimeDictationActive) {
       // iOS can deliver a final ASR callback after TextInput.onChangeText.
       // Invalidate first so stopping the native recognizer cannot overwrite
