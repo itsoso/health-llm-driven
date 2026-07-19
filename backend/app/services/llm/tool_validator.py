@@ -699,6 +699,9 @@ def _validate_health_manage(
             "体检报告/化验指标的创建、修改、删除必须走导入与人工核对管线。"
         )
 
+    if rtype == "rhinitis" and operation == "update":
+        return "Error: rhinitis 只支持 list/delete; 撤销时仅删除当前用户指定打卡日最近一次鼻炎事件."
+
     _coerce_int_range("health_manage", args, "limit", 1, 100, 20, warnings)
 
     if operation in {"update", "delete"}:

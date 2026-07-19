@@ -229,7 +229,7 @@ plan 结构:
 - sleep: 手动补录睡眠 (必须有入睡/醒来时间和质量)
 - excretion: 排便/排尿记录
 - exercise: 用户手动录的简单锻炼 (俯卧撑/瑜伽等). 注意: Garmin 跑步手表自动同步, 不要让用户走这个
-- rhinitis: 鼻炎每日打卡 (喷嚏次数/鼻塞/流涕). **单条/日**滚动 —— 同一天多次报自动累加进当天那一条, 不会堆多条。改/删当日打卡走 App 打卡页, 别用 health_manage 删(会误删遗留 illness episode 或空删), 也别只用文字说"已撤销打卡"
+- rhinitis: 鼻炎每日打卡 (喷嚏次数/鼻塞/流涕). **单条/日**滚动 —— 同一天多次报自动累加进当天那一条, 不会堆多条。查询/撤销最近一次鼻炎事件可用 health_manage；后端只允许当前用户撤销指定打卡日的最后一条事件，不支持 update
 - mood: 情绪
 - medication: 服药一次
 - illness: 有**起止周期、会痊愈**的病症 (记状态, 之后能标记"好了")。不只全身性生病 (感冒/流感/发烧), 也包括**局部会愈合的病灶**: 口腔溃疡/舌尖溃疡/嘴唇起泡/湿疹/麦粒肿/甲沟炎/烫伤/水泡/伤口/带状疱疹/痘痘发作 等。判据: 用户会关心它"什么时候好"、之后会说"好了/痊愈/好转"→ 走 illness。用户说"我感冒了/生病了/发烧了/长了个溃疡/起了个疱"都优先记 illness
@@ -331,7 +331,7 @@ symptom 或没记过), 就直接 health_record(record_type='illness') 补一条 
                             "sleep", "mood", "excretion", "exercise", "illness",
                             "symptom", "medication", "medication_log",
                             "supplement", "supplement_definition", "reminder",
-                            "goal", "medical_exam", "event",
+                            "goal", "medical_exam", "event", "rhinitis",
                         ],
                         "description": "要管理的数据类型",
                     },
