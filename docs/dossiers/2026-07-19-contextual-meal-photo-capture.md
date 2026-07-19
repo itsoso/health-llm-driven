@@ -5,7 +5,7 @@
 | slug | `contextual-meal-photo-capture` |
 | 创建日期 | 2026-07-19 |
 | 当前阶段 | G5 部署健康闸 |
-| 状态 | ready_for_deploy |
+| 状态 | merged_waiting_deploy |
 | 负责 | Codex |
 | 反馈环 | 后端 pytest / Mobile Jest + TypeScript / Web build / Mac Core test / backend deploy + Mobile OTA |
 
@@ -91,7 +91,7 @@
 
 ## G5 · 部署健康闸
 
-- 待执行：本次变更已完成本地验证并推送功能分支；尚未部署或发布 OTA/TestFlight，等待产品方选择发布窗口。
+- 本次变更已合并并推送至 `main`；尚未部署或发布 OTA/TestFlight，等待产品方选择发布窗口。
 
 ## G6 · 验证闸(人在环)
 
