@@ -632,6 +632,148 @@ class ConversationTitleUpdate(BaseModel):
         return normalized
 
 
+def _admit_agent_runtime(
+    db: Session,
+    *,
+    run_id: str,
+    attempt_id: str,
+    user_id: int,
+    conversation_id: int | None,
+    client_turn_id: str | None,
+    origin: str,
+):
+    """Return canonical RunContext and whether the durable ledger owns it."""
+    from app.config import settings
+    from app.services.agent_runtime import (
+        AgentRuntimeCoordinator,
+        RunContext,
+    )
+
+    mode = str(getattr(settings, "agent_runtime_mode", "off") or "off").strip().lower()
+    if mode == "off":
+        return RunContext(
+            run_id=run_id,
+            attempt_id=attempt_id,
+            user_id=user_id,
+            conversation_id=conversation_id,
+            client_turn_id=client_turn_id,
+            input_seq=None,
+            origin=origin,
+        ), False
+    if mode != "enforce":
+        raise RuntimeError(f"invalid_agent_runtime_mode:{mode}")
+    admission = AgentRuntimeCoordinator(db).create_or_resume_run(
+        run_id=run_id,
+        attempt_id=attempt_id,
+        user_id=user_id,
+        conversation_id=conversation_id,
+        client_turn_id=client_turn_id,
+        origin=origin,
+    )
+    return admission.context, True
+
+
+def _mark_agent_runtime_running(db: Session, context, *, managed: bool) -> None:
+    if not managed:
+        return
+    from app.services.agent_runtime import ACTIVE_RUN_STATUSES, AgentRuntimeCoordinator
+
+    runtime = AgentRuntimeCoordinator(db)
+    run = runtime.get_run(context.user_id, context.run_id)
+    if run.status == "queued":
+        runtime.mark_running(context)
+    elif run.status not in ACTIVE_RUN_STATUSES:
+        # A duplicate request may be replaying an already finalized logical Run.
+        return
+
+
+def _finalize_agent_runtime(
+    db: Session,
+    context,
+    *,
+    managed: bool,
+    done_data: dict,
+    source_message_id: int | None,
+) -> None:
+    if not managed:
+        return
+    from app.services.agent_runtime import AgentRuntimeCoordinator
+
+    AgentRuntimeCoordinator(db).finalize_executor_done(
+        context,
+        done_data,
+        source_message_id=source_message_id,
+    )
+
+
+def _fail_agent_runtime(db: Session, context, *, managed: bool, error_code: str) -> None:
+    if not managed:
+        return
+    from app.services.agent_runtime import AgentRuntimeCoordinator
+
+    AgentRuntimeCoordinator(db).fail_active(context, error_code=error_code)
+
+
+def _cancel_agent_runtime(db: Session, context, *, managed: bool) -> None:
+    if not managed:
+        return
+    from app.services.agent_runtime import AgentRuntimeCoordinator
+
+    AgentRuntimeCoordinator(db).cancel_active(context)
+
+
+def _finalize_agent_runtime_events(
+    db: Session,
+    context,
+    *,
+    managed: bool,
+    events: list[dict],
+) -> None:
+    """Attach canonical identity and close a deterministic shortcut Run."""
+    source_message_id = None
+    done_data = None
+    for event in events:
+        if event.get("event") not in {"request_persisted", "done"}:
+            continue
+        data = event.setdefault("data", {})
+        if not isinstance(data, dict):
+            continue
+        data.setdefault("run_id", context.run_id)
+        data.setdefault("attempt_id", context.attempt_id)
+        if event.get("event") == "request_persisted" and isinstance(
+            data.get("user_message_id"), int
+        ):
+            source_message_id = data["user_message_id"]
+        elif event.get("event") == "done":
+            done_data = data
+
+    try:
+        _mark_agent_runtime_running(db, context, managed=managed)
+        if done_data is None:
+            raise RuntimeError("shortcut_missing_done")
+        _finalize_agent_runtime(
+            db,
+            context,
+            managed=managed,
+            done_data=done_data,
+            source_message_id=source_message_id,
+        )
+    except Exception:
+        try:
+            _fail_agent_runtime(
+                db,
+                context,
+                managed=managed,
+                error_code="shortcut_finalize_failed",
+            )
+        except Exception:
+            logger.exception(
+                "Agent Runtime shortcut cleanup failed: run_id=%s",
+                context.run_id,
+            )
+        raise
+
+
 @router.post("/stream", summary="统一健康助理流式对话")
 async def agent_stream(
     request: Request,
@@ -685,6 +827,30 @@ async def agent_stream(
     chan = req.channel
     client_turn_id = req.client_turn_id
 
+    stream_run_id = f"run_{uuid.uuid4().hex[:16]}"
+    stream_attempt_id = f"attempt_{uuid.uuid4().hex[:16]}"
+    try:
+        runtime_context, runtime_managed = _admit_agent_runtime(
+            db,
+            run_id=stream_run_id,
+            attempt_id=stream_attempt_id,
+            user_id=user_id,
+            conversation_id=conv_id,
+            client_turn_id=client_turn_id,
+            origin="agent_stream",
+        )
+    except Exception as exc:
+        from app.services.agent_runtime import ConversationAccessError, RunBusyError
+
+        if isinstance(exc, RunBusyError):
+            raise HTTPException(
+                status_code=409,
+                detail="上一条消息仍在处理，请稍后重试",
+            ) from exc
+        if isinstance(exc, ConversationAccessError):
+            raise HTTPException(status_code=404, detail="对话不存在") from exc
+        raise
+
     # GenUI 短路: caps=genui-v1 + 图表意图 + 无图片/附件 → 确定性出 reva-ui block,
     # 跳过 AgentExecutor/LLM (R4: 数值只来自 DB)。命中即持久化消息并直接 SSE 回放。
     # 数据不足 / 任何异常 → genui_events=None, FALL THROUGH 到普通路径 (永不断聊天)。
@@ -718,6 +884,13 @@ async def agent_stream(
             genui_events = None
 
     if genui_events is not None:
+        _finalize_agent_runtime_events(
+            db,
+            runtime_context,
+            managed=runtime_managed,
+            events=genui_events,
+        )
+
         async def genui_generate():
             for event in genui_events:
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
@@ -760,6 +933,12 @@ async def agent_stream(
             logger.info(
                 "[agent.stream] pregen serve hit user=%s conv=%s msg_id=%s", user_id, _pc, _pm,
             )
+            _finalize_agent_runtime_events(
+                db,
+                runtime_context,
+                managed=runtime_managed,
+                events=pregen_events,
+            )
 
             async def pregen_generate():
                 for event in pregen_events:
@@ -796,11 +975,17 @@ async def agent_stream(
                 summarize_usage_capture,
             )
             bg_db = _SessionLocal()
-            run_id = f"run_{uuid.uuid4().hex[:16]}"
             usage_capture_token = begin_usage_capture()
-            run_id_token = set_run_id(run_id)
+            run_id_token = set_run_id(runtime_context.run_id)
             set_caller("agent.stream", user_id=user_id)
+            source_message_id = None
+            runtime_finalized = False
             try:
+                _mark_agent_runtime_running(
+                    bg_db,
+                    runtime_context,
+                    managed=runtime_managed,
+                )
                 executor_bg = AgentExecutor(bg_db)
                 # 累积 LLM 流式输出, done 时扫描 fenced ```menu_share 块 (L1 分享菜单)
                 full_text_buf: list = []
@@ -821,7 +1006,15 @@ async def agent_stream(
                         req.client_time_context.model_dump(exclude_none=True)
                         if req.client_time_context else None
                     ),
+                    run_id=runtime_context.run_id,
+                    attempt_id=runtime_context.attempt_id,
                 ):
+                    if event.get("event") == "request_persisted":
+                        persisted_data = event.get("data")
+                        if isinstance(persisted_data, dict) and isinstance(
+                            persisted_data.get("user_message_id"), int
+                        ):
+                            source_message_id = persisted_data["user_message_id"]
                     if event.get("event") == "token":
                         tc = event.get("data", {}).get("content")
                         if isinstance(tc, str):
@@ -832,7 +1025,8 @@ async def agent_stream(
                     )
                     # 在 done 事件里附加动态卡片, 失败静默
                     if event.get("event") == "done":
-                        event.setdefault("data", {})["run_id"] = run_id
+                        event.setdefault("data", {})["run_id"] = runtime_context.run_id
+                        event.setdefault("data", {})["attempt_id"] = runtime_context.attempt_id
                         if thinking_steps:
                             event.setdefault("data", {})["thinking_steps"] = thinking_steps
                         done_data = event.setdefault("data", {})
@@ -912,8 +1106,36 @@ async def agent_stream(
                             event.get("data", {}).get("conversation_id"),
                             event.get("data", {}).get("message_id"),
                         )
+                        _finalize_agent_runtime(
+                            bg_db,
+                            runtime_context,
+                            managed=runtime_managed,
+                            done_data=event.get("data", {}),
+                            source_message_id=source_message_id,
+                        )
+                        runtime_finalized = True
                     await chunk_queue.put(f"data: {json.dumps(event, ensure_ascii=False)}\n\n")
+                if not runtime_finalized:
+                    _fail_agent_runtime(
+                        bg_db,
+                        runtime_context,
+                        managed=runtime_managed,
+                        error_code="executor_missing_done",
+                    )
+            except asyncio.CancelledError:
+                _cancel_agent_runtime(
+                    bg_db,
+                    runtime_context,
+                    managed=runtime_managed,
+                )
+                raise
             except Exception as e:
+                _fail_agent_runtime(
+                    bg_db,
+                    runtime_context,
+                    managed=runtime_managed,
+                    error_code="executor_exception",
+                )
                 logger.error(f"Agent bg 流式异常: {e}", exc_info=True)
                 err = {"event": "error", "data": {"message": safe_llm_error_message(e)}}
                 try:
@@ -1045,6 +1267,30 @@ async def agent_send(
 
     from app.services.agent_executor import AgentExecutor
 
+    send_run_id = f"send_{uuid.uuid4().hex[:16]}"
+    send_attempt_id = f"attempt_{uuid.uuid4().hex[:16]}"
+    try:
+        runtime_context, runtime_managed = _admit_agent_runtime(
+            db,
+            run_id=send_run_id,
+            attempt_id=send_attempt_id,
+            user_id=current_user.id,
+            conversation_id=req.conversation_id,
+            client_turn_id=req.client_turn_id,
+            origin="agent_send",
+        )
+    except Exception as exc:
+        from app.services.agent_runtime import ConversationAccessError, RunBusyError
+
+        if isinstance(exc, RunBusyError):
+            raise HTTPException(
+                status_code=409,
+                detail="上一条消息仍在处理，请稍后重试",
+            ) from exc
+        if isinstance(exc, ConversationAccessError):
+            raise HTTPException(status_code=404, detail="对话不存在") from exc
+        raise
+
     async def _aggregate() -> dict:
         # 可观测性 (P4): 在 usage capture 上下文内跑 executor,回合结束汇总 token/cost。
         # 与 /stream bg 路径同模式 —— 没这层 summarize_usage_capture() 恒为 None,
@@ -1061,11 +1307,16 @@ async def agent_send(
 
         reply_parts: list[str] = []
         done_data: dict = {}
-        run_id = f"send_{uuid.uuid4().hex[:16]}"
+        source_message_id = None
         usage_capture_token = begin_usage_capture()
-        run_id_token = set_run_id(run_id)
+        run_id_token = set_run_id(runtime_context.run_id)
         set_caller("agent.send", user_id=current_user.id)
         try:
+            _mark_agent_runtime_running(
+                db,
+                runtime_context,
+                managed=runtime_managed,
+            )
             executor = AgentExecutor(db)
             async for event in executor.run_stream(
                 user_id=current_user.id,
@@ -1083,8 +1334,16 @@ async def agent_send(
                     req.client_time_context.model_dump(exclude_none=True)
                     if req.client_time_context else None
                 ),
+                run_id=runtime_context.run_id,
+                attempt_id=runtime_context.attempt_id,
             ):
-                if event.get("event") == "token":
+                if event.get("event") == "request_persisted":
+                    persisted_data = event.get("data")
+                    if isinstance(persisted_data, dict) and isinstance(
+                        persisted_data.get("user_message_id"), int
+                    ):
+                        source_message_id = persisted_data["user_message_id"]
+                elif event.get("event") == "token":
                     content = event.get("data", {}).get("content")
                     if isinstance(content, str):
                         reply_parts.append(content)
@@ -1097,6 +1356,15 @@ async def agent_send(
                     raise _AgentTurnError(safe_llm_error_message(data.get("message")))
             if not done_data:
                 raise _AgentTurnError("Agent 未返回完成状态")
+            done_data.setdefault("run_id", runtime_context.run_id)
+            done_data.setdefault("attempt_id", runtime_context.attempt_id)
+            _finalize_agent_runtime(
+                db,
+                runtime_context,
+                managed=runtime_managed,
+                done_data=done_data,
+                source_message_id=source_message_id,
+            )
             if done_data.get("request_persisted") is False:
                 raise HTTPException(
                     status_code=503,
@@ -1130,9 +1398,26 @@ async def agent_send(
                 "message_id": done_data.get("message_id"),
                 "mode": "agent",
                 "elapsed_ms": done_data.get("elapsed_ms"),
+                "run_id": runtime_context.run_id,
+                "attempt_id": runtime_context.attempt_id,
                 # 纯附加:老客户端不读 meta 不受影响。
                 "meta": meta,
             }
+        except asyncio.CancelledError:
+            _cancel_agent_runtime(
+                db,
+                runtime_context,
+                managed=runtime_managed,
+            )
+            raise
+        except Exception:
+            _fail_agent_runtime(
+                db,
+                runtime_context,
+                managed=runtime_managed,
+                error_code="executor_exception",
+            )
+            raise
         finally:
             try:
                 end_usage_capture(usage_capture_token)
@@ -1169,12 +1454,20 @@ async def agent_send(
                 "[agent.send] pregen serve hit user=%s conv=%s msg_id=%s",
                 current_user.id, _pconv, _pmsg,
             )
+            _finalize_agent_runtime_events(
+                db,
+                runtime_context,
+                managed=runtime_managed,
+                events=_pe,
+            )
             return {
                 "reply": _preply,
                 "conversation_id": _pconv,
                 "message_id": _pmsg,
                 "mode": "agent",
                 "elapsed_ms": 0,
+                "run_id": runtime_context.run_id,
+                "attempt_id": runtime_context.attempt_id,
                 "meta": {"pregen_served": True},
             }
 

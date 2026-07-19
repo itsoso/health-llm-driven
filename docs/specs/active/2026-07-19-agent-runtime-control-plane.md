@@ -71,7 +71,8 @@ Append-only milestone events with per-run sequence. Allowed payload values are b
 - Existing `/agent/stream` and `/agent/send` request/response shapes remain valid.
 - New SSE fields are additive.
 - Existing message metadata, checkpoint recovery and write receipts remain available through the migration period.
-- Runtime failures in shadow mode cannot suppress an otherwise valid Agent answer; failures are observable and block enforcement rollout.
+- `off` mode cannot suppress an otherwise valid Agent answer because it performs no Ledger writes or admission.
+- `enforce` mode fails closed on Runtime invariant violations; rollout requires migration and Runtime regression gates to be green first.
 
 ## 7. P0 Acceptance Tests
 

@@ -92,9 +92,9 @@ Add:
 - typed `RunBusyError`, `InvalidRunTransition`, `UnsafeRunEventPayload`;
 - transition table and terminal/active state sets;
 - `create_or_resume_run`, `mark_running`, `bind_messages`, `complete`, `fail`, and `record_event`;
-- additive feature mode parsing (`off`, `observe`, `enforce`) with default `off` for safe rollout.
+- additive feature mode parsing (`off`, `enforce`) with default `off` for safe rollout.
 
-In `observe`, identity and rows are recorded but a busy conversation is measured without blocking. In `enforce`, a busy different client turn produces `RunBusyError`. Database uniqueness remains the final guard when enforcement is on.
+In `off`, canonical identity still propagates but no new rows or admission behavior are enabled. In `enforce`, a busy different client turn produces `RunBusyError`, and database uniqueness is the final guard. A row-writing observe mode was intentionally removed because it cannot honestly coexist with the active-Run uniqueness invariant.
 
 **Step 3: Run service tests**
 
@@ -113,6 +113,7 @@ Expected: pass.
 Cover:
 - `AgentExecutor.run_stream(..., run_id="run-canonical", attempt_id="attempt-1")` produces Kernel trace with exactly `run-canonical`;
 - final `done` contains additive `run_id` and `attempt_id`;
+- deterministic GenUI and starter-pregen replies receive the same identity and terminal mapping;
 - replayed client turns preserve caller-supplied canonical identity;
 - omitting IDs keeps direct/internal callers backward compatible.
 

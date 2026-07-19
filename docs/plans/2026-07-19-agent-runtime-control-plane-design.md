@@ -102,9 +102,12 @@ This is intentionally simpler than queuing and superseding. Durable queued input
 
 ## 8. Rollout And Rollback
 
-1. `shadow`: create Ledger rows and compare outcomes without enforcing conversation admission.
-2. `enforce_identity`: canonical IDs become authoritative.
-3. `enforce_admission`: one active Run per conversation.
+### 2026-07-19 Implementation Correction
+
+1. `off` (default): canonical IDs are authoritative across API, Executor, Kernel and usage capture; no Runtime rows or new admission behavior.
+2. `enforce`: create Ledger rows and permit at most one active Run per conversation.
+
+There is no row-writing shadow mode. The active-Run unique index is an integrity invariant, so a shadow mode that bypasses it would create misleading observations. Deterministic GenUI and starter-pregen turns receive the same canonical identity and lifecycle as live Executor turns.
 
 All migrations are additive. Kill switches disable new writes/admission while leaving existing rows readable. Rollback never deletes Run history or changes existing conversation messages.
 

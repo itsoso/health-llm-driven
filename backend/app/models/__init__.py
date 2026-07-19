@@ -105,6 +105,12 @@ from app.models.anomaly_alert import AnomalyAlert
 from app.models.health_trend import HealthTrendReport
 # Agent 对话持久化(物理表名沿用早期历史表, 代码层使用 Agent 命名)
 from app.models.agent_conversation import AgentConversation, AgentMessage
+from app.models.agent_runtime import (
+    AgentRun,
+    AgentRunAttempt,
+    AgentRunEvent,
+    AgentToolOperation,
+)
 # 对话记忆
 from app.models.conversation_memory import ConversationMemory
 # 对话分享
@@ -174,6 +180,10 @@ __all__ = [
     "AccountDeletionRequest",
     "AIGCMediaJob",
     "AIGCMediaConfirmation",
+    "AgentRun",
+    "AgentRunAttempt",
+    "AgentRunEvent",
+    "AgentToolOperation",
     "User",
     "PhoneAuthCode",
     "BasicHealthData",

@@ -4,8 +4,8 @@
 |---|---|
 | slug | `agent-runtime-control-plane` |
 | 创建日期 | 2026-07-19 |
-| 当前阶段 | S4 研发任务分解 |
-| 状态 | building |
+| 当前阶段 | S5 实现与验证 |
+| 状态 | verifying |
 | 负责 | Codex |
 | 反馈环 | PostgreSQL/SQLite 集成测试 / Agent SSE 回归 / backend deploy |
 
@@ -81,26 +81,38 @@ RequirementAdmission:
 
 ## S4 · 研发任务分解
 
-- [ ] T1 定义 Runtime 状态机、模型、managed migrations 和仓储服务。
-- [ ] T2 统一 API、Kernel、Usage、消息回执的 canonical `run_id`。
-- [ ] T3 加入同一会话单 active Run 的数据库准入与 duplicate client turn replay。
-- [ ] T4 接入 Executor terminal 状态并保持既有 SSE/消息行为。
-- [ ] T5 完成 SQLite 单测、PostgreSQL 并发/迁移测试、安全评审和文档同步。
+- [x] T1 定义 Runtime 状态机、模型、managed migrations 和协调服务。
+- [x] T2 统一 API、Kernel、Usage、消息回执的 canonical `run_id`。
+- [x] T3 加入同一会话单 active Run 的数据库准入与 duplicate client turn replay。
+- [x] T4 接入 Executor terminal 状态，覆盖 live、GenUI 和 starter pregen 路径并保持既有 SSE/消息行为。
+- [x] T5 完成 SQLite、真实 PostgreSQL 并发测试、迁移测试、隐私约束和文档同步；独立安全评审进行中。
 - 并发策略: 独立 worktree `codex/agent-runtime-control-plane`，不改主工作区未提交文件。
 
 ## S5 · 实现
 
 - 分支: `codex/agent-runtime-control-plane`，基线 `origin/main@1cd38e3e4`。
 - 基线验证: 126 项 Agent event/conversation/replay/completion 测试通过。
+- 新增 content-free `agent_runs`、`agent_run_attempts`、`agent_tool_operations`、`agent_run_events`，带状态 CHECK、client-turn/input-seq/active-run 唯一约束。
+- `AgentRuntimeCoordinator` 负责 canonical identity、会话级准入、状态转换、消息绑定和 allowlist 事件；Runtime 表不存 prompt、回复、健康正文或原始工具参数/结果。
+- `/agent/stream`、`/agent/send`、GenUI shortcut、starter pregen 使用同一 Run/Attempt identity；API、Kernel trace 和 LLM usage 不再各自生成 Run ID。
+- `agent_runtime_mode=off` 默认只贯通身份，不写新表、不改变准入；`enforce` 才启用 Ledger 与会话级单 active Run。strict-local iPhone 路径不调用云 API，因此不创建服务端 Run。
+- 既有 client-turn replay、写前 checkpoint、写后 receipt 与 uncertain fail-closed 保持为业务副作用真源；P0 未复制或替换。
 
 ## G3 · 测试闸
 
-- 待实施完成后填写。
+- **PASS**，证据:
+  - Agent Runtime/API/Executor/会话回归: `149 passed, 6 warnings`，exit 0。
+  - managed migrations 全量: `21 passed, 6 warnings`，exit 0。
+  - 真实 PostgreSQL Runtime 模型/状态机/并发准入: `17 passed, 6 warnings`，exit 0；临时测试库已删除。
+  - `ruff check`（本次改动文件，排除仓库既有 `models/__init__.py` 未导出告警）与 `git diff --check`: PASS。
+  - `scripts/check_doc_drift.py`: PASS；`backend/scripts/check_dossier_consistency.py`: 64 份 dossier PASS。
+- 已验证不变量: owner-scoped client turn 唯一、conversation 单 active Run、连续 input sequence、terminal 后释放准入、非法状态拒绝、健康正文事件拒绝、快捷路径身份覆盖。
 
 ## G4 · 安全闸
 
 - 触发: Agent 写路径、健康数据运行元数据、数据库 schema。
-- 待 producer-reviewer 复审。
+- producer 自审: Runtime payload 仅允许有限标量键；消息只保存外键，健康正文仍在既有 owner-scoped message store；strict-local 无隐式上传。
+- 独立 reviewer: 进行中，结论回填后裁决。
 
 ## S6–S8
 

@@ -5297,6 +5297,8 @@ class AgentExecutor:
         self._agent_kernel_tool_failure_tools: List[str] = []
         self._agent_kernel_pending_confirmation_tools: List[str] = []
         self._agent_kernel_tool_retry_count = 0
+        self._runtime_run_id: Optional[str] = None
+        self._runtime_attempt_id: Optional[str] = None
 
     def _start_agent_kernel_turn(
         self,
@@ -5308,6 +5310,7 @@ class AgentExecutor:
         client_time_context: Optional[Dict[str, Any]] = None,
         media: Optional[Sequence[dict[str, Any]]] = None,
         client_turn_id: Optional[str] = None,
+        run_id: Optional[str] = None,
     ) -> TurnSnapshot:
         """Freeze a complete kernel snapshot before any model or tool work."""
         resolved_channel = str(channel or "chat").strip() or "chat"
@@ -5320,6 +5323,7 @@ class AgentExecutor:
             client_time_context=client_time_context,
             media=media,
             client_turn_id=client_turn_id,
+            run_id=run_id,
             policy_mode=settings.agent_kernel_policy_mode,
         )
         self._agent_kernel_event_bus = AgentEventBus(self._agent_kernel_snapshot)
@@ -5332,6 +5336,19 @@ class AgentExecutor:
         self._agent_kernel_event_bus.turn_started()
         self._agent_kernel_event_bus.intent_decided()
         return self._refine_agent_kernel_continuation(self._agent_kernel_snapshot)
+
+    def _attach_runtime_identity(self, event: Dict[str, Any]) -> Dict[str, Any]:
+        """Add canonical control-plane IDs without changing event semantics."""
+        if event.get("event") not in {"request_persisted", "done"}:
+            return event
+        data = event.setdefault("data", {})
+        if not isinstance(data, dict):
+            return event
+        if self._runtime_run_id:
+            data.setdefault("run_id", self._runtime_run_id)
+        if self._runtime_attempt_id:
+            data.setdefault("attempt_id", self._runtime_attempt_id)
+        return event
 
     def _bind_agent_kernel_source_message(self, source_message_id: Optional[int]) -> None:
         """Bind the durable user-message id before any model/tool work begins."""
@@ -6340,6 +6357,8 @@ class AgentExecutor:
         client_caps: Optional[List[str]] = None,
         client_time_context: Optional[Dict[str, Any]] = None,
         read_only_tools: bool = False,
+        run_id: Optional[str] = None,
+        attempt_id: Optional[str] = None,
     ) -> AsyncGenerator[Dict, None]:
         """Run one durable client turn, taking over an ACKed turn after worker loss.
 
@@ -6347,6 +6366,8 @@ class AgentExecutor:
         tools are refused at the dispatch choke (fail-closed) — the pregen turn
         runs the same synthesis pipeline but can never mutate user data.
         """
+        self._runtime_run_id = run_id
+        self._runtime_attempt_id = attempt_id
         yield self._progress_event("accepted")
         self._current_user_id = user_id
         self._current_turn_user_message = message or ""
@@ -6364,6 +6385,7 @@ class AgentExecutor:
                 file_name=file_name,
             ),
             client_turn_id=client_turn_id,
+            run_id=run_id,
         )
         kernel_completion_status = "interrupted"
         recovered_user_message = None
@@ -6384,7 +6406,7 @@ class AgentExecutor:
                 async for replay_event in self._replay_client_turn(
                     turn_service, user_id, existing_turn, client_turn_id,
                 ):
-                    yield replay_event
+                    yield self._attach_runtime_identity(replay_event)
                 self._finish_agent_kernel_turn(status="replayed")
                 return
 
@@ -6413,18 +6435,18 @@ class AgentExecutor:
                     async for replay_event in self._replay_client_turn(
                         turn_service, user_id, existing_turn, client_turn_id,
                     ):
-                        yield replay_event
+                        yield self._attach_runtime_identity(replay_event)
                     self._finish_agent_kernel_turn(status="replayed")
                     return
                 if not claimed_turn:
-                    yield {"event": "done", "data": {
+                    yield self._attach_runtime_identity({"event": "done", "data": {
                         "conversation_id": conversation_id,
                         "message_id": None,
                         "completion_status": "interrupted",
                         "client_turn_id": client_turn_id,
                         "replayed": True,
                         "request_persisted": False,
-                    }}
+                    }})
                     self._finish_agent_kernel_turn(status="interrupted")
                     return
 
@@ -6446,7 +6468,7 @@ class AgentExecutor:
                     async for replay_event in self._replay_client_turn(
                         turn_service, user_id, existing_turn, client_turn_id,
                     ):
-                        yield replay_event
+                        yield self._attach_runtime_identity(replay_event)
                     turn_service.release_client_turn_execution(user_id, client_turn_id)
                     claimed_turn = False
                     self._finish_agent_kernel_turn(status="replayed")
@@ -6493,7 +6515,7 @@ class AgentExecutor:
                         recovered_user_message,
                         client_turn_id,
                     ):
-                        yield event
+                        yield self._attach_runtime_identity(event)
                     return
             async for event in self._run_stream_impl(
                 user_id=user_id,
@@ -6515,7 +6537,7 @@ class AgentExecutor:
                     kernel_completion_status = str(
                         (event.get("data") or {}).get("completion_status") or "complete"
                     )
-                yield event
+                yield self._attach_runtime_identity(event)
         finally:
             if claimed_turn and turn_service is not None and client_turn_id:
                 turn_service.release_client_turn_execution(user_id, client_turn_id)

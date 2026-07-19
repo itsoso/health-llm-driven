@@ -68,6 +68,8 @@ async def _run(
     user_id=1,
     client_turn_id=None,
     channel=None,
+    run_id=None,
+    attempt_id=None,
 ):
     return [
         event
@@ -79,6 +81,8 @@ async def _run(
             extra_context=extra_context,
             client_turn_id=client_turn_id,
             channel=channel,
+            run_id=run_id,
+            attempt_id=attempt_id,
         )
     ]
 
@@ -299,6 +303,37 @@ async def test_structured_symptom_write_is_blocked_on_attachment_turn(db):
         "Error: 带附件的症状内容暂不自动写入，请在不带附件的消息中直接复述"
         "要记录的本人症状。"
     )
+
+
+@pytest.mark.asyncio
+async def test_executor_uses_canonical_runtime_identity(
+    db, auth_user_and_headers, monkeypatch
+):
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    _wire_min(executor, monkeypatch)
+
+    async def fake_stream(messages, round_tools):
+        yield {"type": "content", "text": "已处理。"}
+        yield {"type": "finish", "finish_reason": "stop"}
+
+    monkeypatch.setattr(executor, "_call_llm_stream", fake_stream)
+    events = await _run(
+        executor,
+        "记录运行身份",
+        user_id=user.id,
+        client_turn_id="turn-runtime-identity",
+        run_id="run-canonical-42",
+        attempt_id="attempt-canonical-1",
+    )
+
+    snapshot = executor._agent_kernel_snapshot
+    assert snapshot is not None
+    assert snapshot.context.run_id == "run-canonical-42"
+    done = next(event for event in events if event.get("event") == "done")
+    assert done["data"]["run_id"] == "run-canonical-42"
+    assert done["data"]["attempt_id"] == "attempt-canonical-1"
+    assert done["data"]["kernel_trace"]["run_id"] == "run-canonical-42"
 
 
 @pytest.mark.asyncio

@@ -61,7 +61,10 @@ Reva 已有稳定的 Agent Loop、能力策略、工具恢复和写入回执，�
 
 ## 7. Rollout
 
-- `shadow`: 写 Run Ledger，但不阻断既有执行；比较消息结果与 Ledger 状态。
-- `enforce_identity`: canonical ID 生效，仍沿用 client-turn 锁。
-- `enforce_admission`: 启用 conversation active-run 准入。
-- 每一步都有 kill switch，可回退到现有执行路径；数据库迁移保持 additive。
+### 2026-07-19 Implementation Correction
+
+- `off`（默认）：canonical Run/Attempt ID 已贯通 API、Executor、Kernel 和用量统计，但不写 Run Ledger、不启用新准入。
+- `enforce`：写 Run Ledger，同时启用 conversation active-run 准入。
+- 不实现“写 Ledger 但不阻断”的 shadow 档。active-run 数据库唯一约束本身就会阻断并发；绕过约束会让观察数据失真。
+- GenUI 与 starter pregen 的确定性快捷回复也属于云端对话回合，必须获得同一套 Run 身份；strict-local iPhone 执行仍不创建服务端 Run。
+- kill switch 可回退到 `off`；数据库迁移保持 additive，既有 Ledger 只读保留。
