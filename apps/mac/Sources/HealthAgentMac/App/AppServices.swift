@@ -66,6 +66,8 @@ struct AppServices {
             service: DesktopBootstrapService(apiClient: apiClient),
             dynamicViewService: TodayDynamicViewClient(apiClient: apiClient)
         )
+        let recordClient = RecordClient(apiClient: apiClient)
+        self.recordClient = recordClient
         self.agentViewModel = AgentChatViewModel(
             streamService: AgentStreamClient(baseURL: baseURL, tokenProvider: tokenProvider),
             contextBundleStore: UserDefaultsAgentContextBundleStore(),
@@ -74,9 +76,9 @@ struct AppServices {
             // store above is now only the offline fallback.
             remoteSource: AgentConversationClient(apiClient: apiClient),
             labUploadService: labUploadClient,
-            aigcMediaClient: AIGCMediaJobClient(apiClient: apiClient)
+            aigcMediaClient: AIGCMediaJobClient(apiClient: apiClient),
+            dietDraftClient: recordClient
         )
-        self.recordClient = RecordClient(apiClient: apiClient)
         self.supplementProductClient = SupplementProductLibraryClient(apiClient: apiClient)
         self.desktopJobClient = DesktopJobClient(apiClient: apiClient)
         self.traceClient = TraceClient(apiClient: apiClient)

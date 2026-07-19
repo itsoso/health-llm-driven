@@ -22,9 +22,16 @@ struct ChatTranscriptWebView: NSViewRepresentable {
     let onRouteOpen: (String) -> Void
     /// AIGC 确认卡只传 opaque confirmation ID, never prompt/source data.
     let onAIGCConfirm: (String) -> Void
+    /// 饮食卡只传服务端已签发的 action ID，完整记录仍绑定在服务端草稿上。
+    let onDietDraftConfirm: (String) -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onCopy: onCopy, onRouteOpen: onRouteOpen, onAIGCConfirm: onAIGCConfirm)
+        Coordinator(
+            onCopy: onCopy,
+            onRouteOpen: onRouteOpen,
+            onAIGCConfirm: onAIGCConfirm,
+            onDietDraftConfirm: onDietDraftConfirm
+        )
     }
 
     func makeNSView(context: Context) -> WKWebView {
@@ -38,6 +45,7 @@ struct ChatTranscriptWebView: NSViewRepresentable {
         controller.add(context.coordinator, name: "copy")
         controller.add(context.coordinator, name: "routeOpen")
         controller.add(context.coordinator, name: "aigcConfirm")
+        controller.add(context.coordinator, name: "dietDraftConfirm")
         controller.add(context.coordinator, name: "ready")
         config.userContentController = controller
 
@@ -55,6 +63,7 @@ struct ChatTranscriptWebView: NSViewRepresentable {
         context.coordinator.onCopy = onCopy
         context.coordinator.onRouteOpen = onRouteOpen
         context.coordinator.onAIGCConfirm = onAIGCConfirm
+        context.coordinator.onDietDraftConfirm = onDietDraftConfirm
         context.coordinator.apply(messages: messages, fontScale: fontScale)
     }
 
@@ -63,6 +72,7 @@ struct ChatTranscriptWebView: NSViewRepresentable {
         var onCopy: (String) -> Void
         var onRouteOpen: (String) -> Void
         var onAIGCConfirm: (String) -> Void
+        var onDietDraftConfirm: (String) -> Void
         weak var webView: WKWebView?
 
         private var isReady = false
@@ -77,11 +87,13 @@ struct ChatTranscriptWebView: NSViewRepresentable {
         init(
             onCopy: @escaping (String) -> Void,
             onRouteOpen: @escaping (String) -> Void,
-            onAIGCConfirm: @escaping (String) -> Void
+            onAIGCConfirm: @escaping (String) -> Void,
+            onDietDraftConfirm: @escaping (String) -> Void
         ) {
             self.onCopy = onCopy
             self.onRouteOpen = onRouteOpen
             self.onAIGCConfirm = onAIGCConfirm
+            self.onDietDraftConfirm = onDietDraftConfirm
         }
 
         func loadShell() {
@@ -157,6 +169,10 @@ struct ChatTranscriptWebView: NSViewRepresentable {
             case "aigcConfirm":
                 if let confirmationID = message.body as? String {
                     onAIGCConfirm(confirmationID)
+                }
+            case "dietDraftConfirm":
+                if let actionID = message.body as? String {
+                    onDietDraftConfirm(actionID)
                 }
             default:
                 break
@@ -269,7 +285,8 @@ private func previewOrchestratorMessage() -> ChatTranscriptHTML.RenderedMessage 
         fontScale: 1.0,
         onCopy: { _ in },
         onRouteOpen: { _ in },
-        onAIGCConfirm: { _ in }
+        onAIGCConfirm: { _ in },
+        onDietDraftConfirm: { _ in }
     )
     .frame(width: 560, height: 520)
 }

@@ -845,6 +845,8 @@ public final class AgentChatViewModel {
     @ObservationIgnored
     private let aigcMediaClient: AIGCMediaJobLoading?
     @ObservationIgnored
+    private let dietDraftClient: DietDraftConfirming?
+    @ObservationIgnored
     private var aigcRefreshTasks: [String: Task<Void, Never>] = [:]
     /// Owner-scoped signed result URLs stay in memory only. Conversation cards
     /// persist media metadata and re-fetch a fresh URL from the job endpoint.
@@ -872,7 +874,8 @@ public final class AgentChatViewModel {
         conversationStore: AgentConversationStoring? = nil,
         remoteSource: AgentConversationRemoteSourcing? = nil,
         labUploadService: LabUploadServicing? = nil,
-        aigcMediaClient: AIGCMediaJobLoading? = nil
+        aigcMediaClient: AIGCMediaJobLoading? = nil,
+        dietDraftClient: DietDraftConfirming? = nil
     ) {
         self.selectedModelID = selectedModelID
         self.streamService = streamService
@@ -881,6 +884,7 @@ public final class AgentChatViewModel {
         self.remoteSource = remoteSource
         self.labUploadService = labUploadService
         self.aigcMediaClient = aigcMediaClient
+        self.dietDraftClient = dietDraftClient
         self.savedContextBundles = contextBundleStore?.loadContextBundles() ?? []
         // Seed from the local cache so the list isn't empty before the first
         // backend fetch returns; `refreshConversationHistory()` replaces it.
@@ -1604,18 +1608,23 @@ public final class AgentChatViewModel {
         proposedActions.filter { $0.messageID == message.id && $0.status != .dismissed }
     }
 
-    /// Removes short-lived AIGC result capabilities before a snapshot crosses
-    /// the UserDefaults/offline-cache boundary. This is deliberately separate
-    /// from transcript rendering, which may attach a fresh in-memory URL.
+    /// Removes short-lived image capabilities before a snapshot crosses the
+    /// UserDefaults/offline-cache boundary. This is deliberately separate from
+    /// transcript rendering, which may attach a fresh in-memory URL.
     static func redactedMessagesForLocalPersistence(_ messages: [AgentChatMessage]) -> [AgentChatMessage] {
         messages.map { message in
-            guard message.cardType == "aigc_media_job",
-                  case .object(var card)? = message.cardData,
-                  case .object(var result)? = card["result"] else {
+            guard case .object(var card)? = message.cardData else {
                 return message
             }
-            result["url"] = .null
-            card["result"] = .object(result)
+            if message.cardType == "aigc_media_job",
+               case .object(var result)? = card["result"] {
+                result["url"] = .null
+                card["result"] = .object(result)
+            } else if message.cardType == "diet_draft" {
+                card["photo_url"] = .null
+            } else {
+                return message
+            }
             var redacted = message
             redacted.cardData = .object(card)
             return redacted
@@ -2092,6 +2101,35 @@ public final class AgentChatViewModel {
         } catch {
             // Keep the confirmation card intact. It can be retried and must not
             // claim dispatch unless the owner-scoped API returns a job.
+        }
+    }
+
+    /// Commit a server-issued photo diet draft after an explicit Mac UI gesture.
+    /// The action is looked up from the rendered card so arbitrary payloads can
+    /// never be forged by the WebView bridge.
+    public func confirmDietDraft(actionID: String) async {
+        guard let dietDraftClient, !actionID.isEmpty,
+              let index = messages.indices.first(where: { index in
+                  messages[index].cardType == "diet_draft" &&
+                  messages[index].cardActions.contains(where: { $0.id == actionID })
+              }),
+              let action = messages[index].cardActions.first(where: { $0.id == actionID }) else {
+            return
+        }
+        do {
+            let receipt = try await dietDraftClient.confirmDietDraft(action: action)
+            guard case .object(var cardData) = messages[index].cardData else { return }
+            cardData["recorded"] = .bool(true)
+            cardData["record_id"] = .int(receipt.id)
+            if let message = receipt.displayMessage?.trimmingCharacters(in: .whitespacesAndNewlines), !message.isEmpty {
+                cardData["receipt_message"] = .string(message)
+            }
+            messages[index].cardData = .object(cardData)
+            messages[index].cardActions = []
+            errorMessage = nil
+            persistCurrentConversation()
+        } catch {
+            errorMessage = error.localizedDescription
         }
     }
 

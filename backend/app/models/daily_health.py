@@ -185,9 +185,19 @@ class DietRecord(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     user = relationship("User", backref="diet_records")
+    photo_assets = relationship(
+        "DietPhotoAsset",
+        back_populates="diet_record",
+        foreign_keys="DietPhotoAsset.diet_record_id",
+        order_by="DietPhotoAsset.ordinal",
+    )
 
     # 复合索引：优化按用户、日期和餐次查询
     __table_args__ = (
+        CheckConstraint(
+            "image_url IS NULL OR image_url NOT LIKE '%?%'",
+            name="ck_diet_records_image_url_canonical",
+        ),
         Index('idx_diet_user_date', 'user_id', 'record_date'),
         Index('idx_diet_user_date_meal', 'user_id', 'record_date', 'meal_type'),
         Index('idx_diet_food_id', 'food_id'),
@@ -225,11 +235,91 @@ class DietPhotoDraft(Base):
 
     __table_args__ = (
         CheckConstraint(
+            "image_url IS NULL OR image_url NOT LIKE '%?%'",
+            name="ck_diet_photo_drafts_image_url_canonical",
+        ),
+        CheckConstraint(
             "status IN ('pending', 'consumed', 'cancelled', 'expired')",
             name="ck_diet_photo_drafts_status",
         ),
         Index("idx_diet_photo_drafts_user_status", "user_id", "status"),
         Index("idx_diet_photo_drafts_expires_at", "expires_at"),
+    )
+
+
+class DietPhotoAsset(Base):
+    """Authoritative private photo ownership for a diet record or pending draft.
+
+    ``storage_key`` is always a canonical owner-scoped upload path.  Capability
+    URLs are generated only while building an API response and must never be
+    persisted here.
+    """
+    __tablename__ = "diet_photo_assets"
+
+    id = Column(String(64), primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    diet_record_id = Column(
+        Integer,
+        ForeignKey("diet_records.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    photo_draft_token = Column(
+        String(64),
+        ForeignKey("diet_photo_drafts.token", ondelete="SET NULL"),
+        nullable=True,
+    )
+    storage_key = Column(String(1024), nullable=False)
+    content_sha256 = Column(String(64), nullable=False)
+    media_type = Column(String(40), nullable=False)
+    origin = Column(String(40), nullable=False)
+    origin_message_id = Column(Integer, nullable=True)
+    ordinal = Column(Integer, nullable=False, default=0)
+    captured_at = Column(DateTime(timezone=True), nullable=True)
+    captured_timezone = Column(String(64), nullable=True)
+    classification = Column(String(24), nullable=False)
+    recognition_confidence = Column(Float, nullable=True)
+    intent_decision = Column(String(24), nullable=False)
+    recognition_snapshot = Column(JSONColumn, nullable=True)
+    lifecycle = Column(String(24), nullable=False, default="pending")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    attached_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+
+    diet_record = relationship(
+        "DietRecord",
+        back_populates="photo_assets",
+        foreign_keys=[diet_record_id],
+    )
+
+    __table_args__ = (
+        CheckConstraint("storage_key NOT LIKE '%?%'", name="ck_diet_photo_assets_storage_key_canonical"),
+        CheckConstraint("ordinal >= 0", name="ck_diet_photo_assets_ordinal"),
+        CheckConstraint(
+            "classification IN ('food', 'non_food', 'unknown')",
+            name="ck_diet_photo_assets_classification",
+        ),
+        CheckConstraint(
+            "intent_decision IN ('auto_record', 'confirm', 'analyze_only')",
+            name="ck_diet_photo_assets_intent_decision",
+        ),
+        CheckConstraint(
+            "lifecycle IN ('pending', 'attached', 'deleted')",
+            name="ck_diet_photo_assets_lifecycle",
+        ),
+        UniqueConstraint(
+            "user_id",
+            "origin_message_id",
+            "ordinal",
+            name="uq_diet_photo_assets_user_origin_ordinal",
+        ),
+        UniqueConstraint(
+            "diet_record_id",
+            "ordinal",
+            name="uq_diet_photo_assets_record_ordinal",
+        ),
+        Index("idx_diet_photo_assets_user_record", "user_id", "diet_record_id", "ordinal"),
+        Index("idx_diet_photo_assets_draft", "photo_draft_token"),
+        Index("idx_diet_photo_assets_user_hash", "user_id", "content_sha256", "created_at"),
     )
 
 

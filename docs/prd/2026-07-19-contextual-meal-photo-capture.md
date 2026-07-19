@@ -2,13 +2,13 @@
 
 ## Goal
 
-让“小巴收到的食物照片”成为可解释、可撤销、可复盘的饮食事实：在用户当地正常餐时，高可信餐食图可自动进入当天饮食；其余情境在当前对话内提供确认卡，而不是要求用户猜出“记录”口令。
+让“小巴收到的食物照片”成为可解释、可复盘的饮食事实：在用户当地正常餐时，高可信餐食图可自动进入当天饮食；其余情境在当前对话内提供确认卡，而不是要求用户猜出“记录”口令。
 
 ## Product Decision
 
 `DietRecord` 仍是唯一确认后的饮食事实，`HealthTwin` 只消费有 receipt 的记录。照片、视觉识别与语义判断先形成候选；自动化不是模型自由决定，而是受限的 `WriteIntent(auto)`：用户主动上传 + 食物候选 + 用户当地餐时 + 高置信 + 去重。其余一律 `WriteIntent(manual_confirm)`。
 
-这项决策对既有“饮食打卡极致体验”的纯手动确认路径作窄范围升级：直接饮食页和低置信路径继续人工确认；仅小巴聊天中的合格餐时图片允许自动记录并提供撤销。
+这项决策对既有“饮食打卡极致体验”的纯手动确认路径作窄范围升级：直接饮食页和低置信路径继续人工确认；仅小巴聊天中的合格餐时图片允许自动记录。自动记录仍复用既有饮食历史的 owner-scoped 删除流程，不新增未经定义的乐观撤销语义。
 
 ## User Flow
 
@@ -16,7 +16,7 @@
 chat image
   -> structured food vision + semantic visual intent + user-local meal context
   -> non-food / analyze-only: explanation, no draft
-  -> qualified auto: private diet asset -> idempotent DietRecord -> receipt + undo card
+  -> qualified auto: private diet asset -> idempotent DietRecord -> verified receipt
   -> otherwise: private diet asset -> DietPhotoDraft -> inline confirm/edit card
   -> diet history: signed image_urls -> thumbnail/gallery -> same record on Mobile/Web/Mac
 ```
@@ -132,5 +132,5 @@ Then it does not display “已记录” and preserves a recoverable pending dra
 
 - Photos stay private and owner-scoped; logs contain ids and reason codes, not food content, raw image or signed URLs.
 - Nutrition remains an estimate unless independently measured; no diagnosis, prescription, dose or causal claim is introduced.
-- Automatic writes are allowlisted to diet records only and have a single-tap undo. There is no automatic notification, sharing or external media transfer.
+- Automatic writes are allowlisted to diet records only. Deletion continues through the existing owner-scoped diet-history flow; there is no new optimistic undo, automatic notification, sharing or external media transfer.
 - Deploy backend and migration first, generate Web/Mobile API types, then ship Mobile OTA. Existing `image_url` readers remain functional during phased client adoption.

@@ -9,6 +9,7 @@ from app.models.daily_health import (
     ExerciseRecord,
     DietRecord,
     DietPhotoDraft,
+    DietPhotoAsset,
     WaterIntake,
     SupplementIntake,
     OutdoorActivity
@@ -207,6 +208,7 @@ __all__ = [
     "GarminData",
     "ExerciseRecord",
     "DietRecord",
+    "DietPhotoAsset",
     "FoodItem",
     "FoodNutrient",
     "WaterIntake",

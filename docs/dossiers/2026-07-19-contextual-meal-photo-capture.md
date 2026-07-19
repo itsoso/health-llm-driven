@@ -4,8 +4,8 @@
 |---|---|
 | slug | `contextual-meal-photo-capture` |
 | 创建日期 | 2026-07-19 |
-| 当前阶段 | S3 规划 / G2 可行性与安全压测 |
-| 状态 | defining |
+| 当前阶段 | G4 安全复审 |
+| 状态 | reviewing |
 | 负责 | Codex |
 | 反馈环 | 后端 pytest / Mobile Jest + TypeScript / Web build / Mac build / backend deploy + Mobile OTA |
 
@@ -49,37 +49,44 @@
 
 ## G2 · 可行性 + 安全压测
 
-- 压测结论：不把任何上传图片或任何高置信模型结果直接当饮食事实。自动写入只在用户主动发起聊天图片、视觉识别为食物、用户本地早餐/午餐/晚餐窗口匹配、置信度达阈值、无重复写入时允许；每次均生成 `record_id` 回执和撤销入口。
+- 压测结论：不把任何上传图片或任何高置信模型结果直接当饮食事实。自动写入只在用户主动发起聊天图片、视觉识别为食物、用户本地早餐/午餐/晚餐窗口匹配、置信度达阈值、无重复写入时允许；每次均生成 `record_id` 的可验证回执。删除仍复用既有 owner-scoped 饮食历史流程，避免新增未定义恢复语义的乐观撤销路径。
 - 硬阻断(已焊进规划)：不持久化签名 URL；不复用聊天图片路径作饮食资产；不使用正则表达式推断图片写入意图；不对截图/非食物/低置信/夜间零食自动写入；写入失败不得显示“已记录”。
-- **裁决**: PASS — 以“受限自动化 + 可撤销回执 + 其他情况当前页确认”的方案进入研发。
+- **裁决**: PASS — 以“受限自动化 + 可验证回执 + 其他情况当前页确认”的方案进入研发。
 
 ## S4 · 研发任务分解
 
-- [ ] T1: 新建多图饮食照片资产模型、成对迁移、owner-scoped 存储与签名读取。
-- [ ] T2: 提取单一饮食写入服务，令 API、照片草稿和 Agent 共用幂等/receipt/资产挂载逻辑。
-- [ ] T3: 实现时区餐时与语义视觉策略，输出 `auto_record`、`confirm` 或 `analyze_only`。
-- [ ] T4: 接入小巴聊天图片，自动保存或生成同页动态确认卡；补撤销与失败回执。
-- [ ] T5: 更新 Mobile 饮食列表、聊天卡片和 API 类型，展示照片缩略图及多图浏览。
-- [ ] T6: 更新 Web/Mac 读取契约与带图展示，保证相同记录事实。
-- [ ] T7: 迁移、并发幂等、时区、隐私、自动化边界和多端渲染测试；安全复审与发布。
+- [x] T1: 新建多图饮食照片资产模型、成对迁移、owner-scoped 存储与签名读取。
+- [x] T2: 增加上下文聊天照片专用服务；API 仍作为草稿确认的唯一写入消费端，保留幂等、receipt 和资产挂载。
+- [x] T3: 实现时区餐时与语义视觉策略，输出 `auto_record`、`confirm` 或 `analyze_only`。
+- [x] T4: 接入小巴聊天图片，自动保存或生成同页动态确认卡；自动保存只在服务端 receipt 后展示，删除复用既有 owner-scoped 历史流程。
+- [x] T5: 更新 Mobile 饮食列表、聊天卡片和 API 类型，展示照片缩略图及多图浏览。
+- [x] T6: 更新 Web/Mac 读取契约与带图展示，保证相同记录事实。
+- [x] T7: 覆盖迁移、并发幂等、时区、隐私、自动化边界和三端渲染；等待独立安全复审结论后关闭 G4。
 
 ## S5 · 实现
 
-- 尚未开始。
+- 已落地 `diet_photo_assets`：canonical `storage_key`、source-message/image-ordinal 幂等键、记录/草稿归属、识别快照与生命周期；PostgreSQL/SQLite 成对迁移。
+- 小巴聊天图片在结构化视觉识别后进入纯类型化的餐时策略：仅聊天来源、高置信、用户本地正常餐时、语义捕获、无重复时自动创建 `DietRecord`；低置信或非餐时生成当前页 `diet_draft`；分析请求/非食物不写入。
+- 所有新饮食图片入口（聊天、直接 `image_base64`、识别草稿）都写入 canonical `DietPhotoAsset`；自动保存产生 `diet_record` verified receipt，并投影与普通饮食记录相同的餐后行动协议（失败只记录告警，不篡改 receipt）。
+- 确认卡的图片 URL 只存在当前 SSE 视图，服务端会话元数据和 Mac 本地缓存都会删除该短期 capability。
+- Mobile、Web 的饮食历史消费 `photo_assets`（兼容 legacy `image_url`）并展示有序缩略图；Mac 在当前确认卡中消费同一 owner-scoped 照片，且确认动作只可使用已渲染卡片内、带 capability policy 的服务端草稿 token。
 
 ## G3 · 测试闸
 
-- 待实现后执行。
+- PASS（本地）：后端 99 项 focused pytest；Mobile TypeScript + 117 项 Jest；Web TypeScript、31 项 Vitest 与 production build；Mac 57 项 Swift 测试均通过。
+- 迁移回归覆盖了 `DietPhotoAsset` 建表、旧 signed URL 规范化、未来 signed URL 拒绝，以及 SQLite trigger block 的受管执行器解析。
+- 备注：Web build 仍有既存 lint warning；未新增 blocking error。Python ruff 不在当前开发虚拟环境中，未将“找不到命令”伪报为通过。
 
 ## G4 · 安全闸
 
 - 触发：图片健康数据、自动写入、owner-scoped 私有媒体和新读取契约。
-- 待独立安全/隐私复审。
+- 独立安全/隐私复审的整改已完成：Web 对话确认 action 现保留并受白名单/显式确认约束；过期草稿立即删除媒体资产；legacy `image_url` 增加 canonical 约束；SQLite 触发器迁移已被受管执行器正确原子执行。
+- 最终提交后的独立复审待执行；重点复核 owner isolation、签名 URL、重复写入、草稿清理和跨端确认动作。
 
 ## G5 · 部署健康闸
 
-- 待部署。
+- 未部署：本次工作仍在功能分支，等待 G4 和最终差异检查。
 
 ## G6 · 验证闸(人在环)
 
-- 待真机验证：午餐时仅发食物照片、低置信图、非餐时食物图、断网重试、带图列表读取与撤销。
+- 待真机验证：午餐时仅发食物照片、低置信图、非餐时食物图、断网重试、带图列表读取与删除。

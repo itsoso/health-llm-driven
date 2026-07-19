@@ -638,6 +638,8 @@ public enum ChatTranscriptHTML {
             html = aigcMediaJobCardHTML(data)
         case "aigc_media_confirmation":
             html = aigcMediaConfirmationCardHTML(data)
+        case "diet_draft":
+            html = dietDraftCardHTML(data)
         case "menu_share":
             html = menuShareCardHTML(data)
         default:
@@ -670,8 +672,61 @@ public enum ChatTranscriptHTML {
         "record_quality",
         "aigc_media_job",
         "aigc_media_confirmation",
+        "diet_draft",
         "menu_share"
     ]
+
+    private static func dietDraftCardHTML(_ data: AgentDynamicCardValue) -> String? {
+        guard case .object = data else { return nil }
+        let mealType = data["meal_type"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "meal"
+        let mealLabel: String
+        switch mealType {
+        case "breakfast": mealLabel = "早餐"
+        case "lunch": mealLabel = "午餐"
+        case "dinner": mealLabel = "晚餐"
+        case "snack": mealLabel = "加餐"
+        default: mealLabel = "餐食"
+        }
+        let recorded = data["recorded"]?.boolValue == true
+        let foodItems = cardText(data["food_items"]) ?? "识别到的餐食"
+        let confidence = cardNumber(data["confidence"]) ?? cardNumber(data["ai_confidence"])
+        let calories = data["calories"]?.stringValue
+        let protein = data["protein"]?.stringValue
+        let photoURL = privateDietPhotoURL(data["photo_url"]?.stringValue)
+        let boundary = cardText(data["boundary"])
+            ?? "营养为图像估算；确认后才写入今日饮食记录。"
+        let receiptMessage = cardText(data["receipt_message"])
+        let statusLabel = recorded ? "已记录" : "待确认"
+        let statusClass = recorded ? "neutral" : "caution"
+
+        var html = """
+        <div class="dynamic-card diet-draft-card">
+          <div class="dynamic-card-top">
+            <div>
+              <div class="dynamic-card-eyebrow">图片饮食识别</div>
+              <div class="dynamic-card-title">\(escape(mealLabel)) · \(escape(statusLabel))</div>
+            </div>
+            <span class="dynamic-card-badge \(statusClass)">\(recorded ? "已写入" : "需确认")</span>
+          </div>
+        """
+        if let photoURL {
+            html += "<img class=\"diet-draft-photo\" src=\"\(escape(photoURL))\" alt=\"\(escape(mealLabel))餐食照片\"/>"
+        }
+        html += "<div class=\"dynamic-card-conclusion\">\(escape(foodItems))</div>"
+        var metrics: [String] = []
+        if let calories, !calories.isEmpty { metrics.append(metricHTML(label: "热量", value: "\(calories) kcal", risk: false)) }
+        if let protein, !protein.isEmpty { metrics.append(metricHTML(label: "蛋白质", value: "\(protein) g", risk: false)) }
+        if let confidence { metrics.append(metricHTML(label: "识别置信度", value: "\(Int((confidence * 100).rounded()))%", risk: false)) }
+        if !metrics.isEmpty {
+            html += "<div class=\"dynamic-card-metrics\">\(metrics.joined())</div>"
+        }
+        if let receiptMessage, !receiptMessage.isEmpty {
+            html += "<div class=\"dynamic-card-detail\">\(escape(receiptMessage))</div>"
+        } else {
+            html += "<div class=\"dynamic-card-detail\">\(escape(boundary))</div>"
+        }
+        return html + "</div>"
+    }
 
     private static func aigcMediaJobCardHTML(_ data: AgentDynamicCardValue) -> String? {
         guard case .object = data else { return nil }
@@ -763,6 +818,17 @@ public enum ChatTranscriptHTML {
             return nil
         }
         return URL(string: raw, relativeTo: APIEndpoint.resolvedBaseURL())?.absoluteURL.absoluteString
+    }
+
+    private static func privateDietPhotoURL(_ raw: String?) -> String? {
+        guard let raw = raw?.trimmingCharacters(in: .whitespacesAndNewlines),
+              raw.hasPrefix("/api/v1/upload/files/diet/"),
+              let url = URL(string: raw, relativeTo: APIEndpoint.resolvedBaseURL())?.absoluteURL,
+              let scheme = url.scheme?.lowercased(),
+              scheme == "https" || scheme == "http" else {
+            return nil
+        }
+        return url.absoluteString
     }
 
     private static func medicalExamImportCardHTML(_ data: AgentDynamicCardValue) -> String? {
@@ -1164,6 +1230,15 @@ public enum ChatTranscriptHTML {
             if action.action == "ui.inline.expand" {
                 return inlineExpandActionHTML(action, label: label)
             }
+            if action.action == "diet_record.create",
+               action.requiresManualConfirm == true,
+               action.requiredReceipt == true,
+               action.capabilityID == "diet_draft.v1",
+               let id = action.id,
+               isSafeCardActionIdentifier(id) {
+                let styleClass = action.style == "primary" ? "primary" : "secondary"
+                return "<a class=\"dynamic-card-action \(styleClass)\" href=\"xiaoba-diet-confirm://\(escape(id))\">\(escape(label))</a>"
+            }
             guard action.action == "route.open",
                   let route = action.payload?["route"]?.stringValue?
                     .trimmingCharacters(in: .whitespacesAndNewlines),
@@ -1182,6 +1257,12 @@ public enum ChatTranscriptHTML {
             return ""
         }
         return "<div class=\"dynamic-card-actions\">\(items.joined())</div>"
+    }
+
+    private static func isSafeCardActionIdentifier(_ value: String) -> Bool {
+        guard !value.isEmpty, value.count <= 200 else { return false }
+        let allowed = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-:")
+        return value.unicodeScalars.allSatisfy { allowed.contains($0) }
     }
 
     private static func inlineExpandActionHTML(

@@ -242,6 +242,108 @@ def test_aigc_confirmation_migrations_create_one_time_owner_ledger(tmp_path: Pat
     } <= columns
 
 
+def test_diet_photo_asset_migrations_create_canonical_owner_scoped_ledger(tmp_path: Path):
+    migrations_dir = Path(__file__).resolve().parents[1] / "migrations" / "managed"
+    sqlite_file = migrations_dir / "20260719_180000_create_diet_photo_assets.sqlite.sql"
+    postgres_file = migrations_dir / "20260719_180000_create_diet_photo_assets.postgresql.sql"
+    assert sqlite_file.exists()
+    assert postgres_file.exists()
+    assert "recognition_snapshot JSONB" in postgres_file.read_text(encoding="utf-8")
+    assert "storage_key NOT LIKE '%?%'" in sqlite_file.read_text(encoding="utf-8")
+
+    isolated = tmp_path / "managed"
+    isolated.mkdir()
+    (isolated / sqlite_file.name).write_text(sqlite_file.read_text(encoding="utf-8"), encoding="utf-8")
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE users (id INTEGER PRIMARY KEY)"))
+        conn.execute(text("CREATE TABLE diet_records (id INTEGER PRIMARY KEY)"))
+        conn.execute(text("CREATE TABLE diet_photo_drafts (token VARCHAR(64) PRIMARY KEY)"))
+        conn.execute(text("INSERT INTO users (id) VALUES (7)"))
+        conn.execute(text("INSERT INTO diet_records (id) VALUES (12)"))
+
+    result = apply_managed_migrations(engine, isolated)
+
+    assert [migration.id for migration in result.applied] == ["20260719_180000_create_diet_photo_assets"]
+    columns = {column["name"] for column in inspect(engine).get_columns("diet_photo_assets")}
+    assert {
+        "user_id", "diet_record_id", "photo_draft_token", "storage_key", "content_sha256",
+        "origin_message_id", "ordinal", "recognition_snapshot", "intent_decision", "lifecycle",
+    } <= columns
+    with engine.begin() as conn:
+        conn.execute(text(
+            "INSERT INTO diet_photo_assets "
+            "(id, user_id, diet_record_id, storage_key, content_sha256, media_type, origin, "
+            "origin_message_id, ordinal, classification, intent_decision, lifecycle) VALUES "
+            "('asset-1', 7, 12, '/api/v1/upload/files/diet/7/asset-1.jpg', 'a', 'image/jpeg', "
+            "'chat', 99, 0, 'food', 'auto_record', 'attached')"
+        ))
+    with pytest.raises(Exception):
+        with engine.begin() as conn:
+            conn.execute(text(
+                "INSERT INTO diet_photo_assets "
+                "(id, user_id, diet_record_id, storage_key, content_sha256, media_type, origin, "
+                "origin_message_id, ordinal, classification, intent_decision, lifecycle) VALUES "
+                "('asset-2', 7, 12, '/api/v1/upload/files/diet/7/asset-2.jpg', 'b', 'image/jpeg', "
+                "'chat', 99, 0, 'food', 'auto_record', 'attached')"
+            ))
+
+
+def test_diet_image_key_hardening_migration_normalizes_legacy_urls_and_rejects_signed_urls(
+    tmp_path: Path,
+):
+    migrations_dir = Path(__file__).resolve().parents[1] / "migrations" / "managed"
+    sqlite_file = migrations_dir / "20260719_181000_enforce_canonical_diet_image_keys.sqlite.sql"
+    postgres_file = migrations_dir / "20260719_181000_enforce_canonical_diet_image_keys.postgresql.sql"
+    assert sqlite_file.exists()
+    assert postgres_file.exists()
+    assert "ck_diet_records_image_url_canonical" in postgres_file.read_text(encoding="utf-8")
+    assert "trg_diet_records_image_url_canonical_insert" in sqlite_file.read_text(encoding="utf-8")
+
+    isolated = tmp_path / "managed"
+    isolated.mkdir()
+    (isolated / sqlite_file.name).write_text(sqlite_file.read_text(encoding="utf-8"), encoding="utf-8")
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE diet_records (id INTEGER PRIMARY KEY, image_url TEXT)"))
+        conn.execute(text("CREATE TABLE diet_photo_drafts (token TEXT PRIMARY KEY, image_url TEXT)"))
+        conn.execute(text(
+            "INSERT INTO diet_records (id, image_url) VALUES "
+            "(1, '/api/v1/upload/files/diet/7/legacy.jpg?expires=1&signature=secret')"
+        ))
+        conn.execute(text(
+            "INSERT INTO diet_photo_drafts (token, image_url) VALUES "
+            "('legacy-draft', '/api/v1/upload/files/diet/7/draft.jpg?expires=1&signature=secret')"
+        ))
+
+    result = apply_managed_migrations(engine, isolated)
+    assert [migration.id for migration in result.applied] == [
+        "20260719_181000_enforce_canonical_diet_image_keys"
+    ]
+
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT image_url FROM diet_records WHERE id = 1")).scalar_one() == (
+            "/api/v1/upload/files/diet/7/legacy.jpg"
+        )
+        assert conn.execute(
+            text("SELECT image_url FROM diet_photo_drafts WHERE token = 'legacy-draft'")
+        ).scalar_one() == "/api/v1/upload/files/diet/7/draft.jpg"
+
+    with pytest.raises(Exception):
+        with engine.begin() as conn:
+            conn.execute(text(
+                "INSERT INTO diet_records (id, image_url) VALUES "
+                "(2, '/api/v1/upload/files/diet/7/new.jpg?expires=1&signature=secret')"
+            ))
+    with pytest.raises(Exception):
+        with engine.begin() as conn:
+            conn.execute(text(
+                "UPDATE diet_photo_drafts SET image_url = "
+                "'/api/v1/upload/files/diet/7/new-draft.jpg?expires=1&signature=secret' "
+                "WHERE token = 'legacy-draft'"
+            ))
+
+
 def test_diet_card_idempotency_migration_adds_user_scoped_unique_key(tmp_path: Path):
     from sqlalchemy.exc import IntegrityError
 
@@ -405,6 +507,27 @@ def test_split_sql_statements_keeps_postgres_dollar_quoted_blocks_intact():
     assert statements[0].startswith("DO $$")
     assert statements[0].endswith("END $$")
     assert statements[1].startswith("CREATE TABLE example_items")
+
+
+def test_split_sql_statements_keeps_sqlite_trigger_blocks_intact():
+    statements = _split_sql_statements(
+        """
+        CREATE TRIGGER IF NOT EXISTS trg_example_canonical_insert
+        BEFORE INSERT ON example_items
+        WHEN NEW.image_url IS NOT NULL AND instr(NEW.image_url, '?') > 0
+        BEGIN
+            SELECT RAISE(ABORT, 'example_items.image_url must be canonical');
+        END;
+
+        UPDATE example_items SET image_url = NULL WHERE image_url = '';
+        """
+    )
+
+    assert len(statements) == 2
+    assert statements[0].startswith("CREATE TRIGGER")
+    assert "RAISE(ABORT" in statements[0]
+    assert statements[0].endswith("END")
+    assert statements[1].startswith("UPDATE example_items")
 
 
 def test_managed_system_knowledge_migration_creates_phase0_tables():

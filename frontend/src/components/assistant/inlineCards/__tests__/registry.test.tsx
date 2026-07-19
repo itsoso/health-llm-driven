@@ -13,6 +13,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { fireEvent, render, screen } from '@testing-library/react';
 import {
   CARD_REGISTRY,
   CARD_MAP,
@@ -159,6 +160,83 @@ describe('renderCard', () => {
       },
     });
     expect(r).not.toBeNull();
+  });
+
+  it('keeps a server-issued diet draft and its manual confirmation action', () => {
+    const cards = renderServerCards([{
+      type: 'diet_draft',
+      data: {
+        meal_type: 'lunch',
+        food_items: '鸡胸肉 120g + 米饭',
+        calories: 420,
+        protein: 37,
+        photo_draft_token: 'contextual-diet-photo-token-123456',
+        boundary: '营养为图像估算；确认后才写入今日饮食记录。',
+      },
+      actions: [{
+        id: 'confirm-contextual-diet:contextual-diet-photo-token-123456',
+        label: '确认记录',
+        action: 'diet_record.create',
+        endpoint: '/diet/records',
+        requires_manual_confirm: true,
+        required_receipt: true,
+        capability_id: 'diet_draft.v1',
+        payload: {
+          record: {
+            record_date: '2026-07-19',
+            meal_type: 'lunch',
+            food_items: '鸡胸肉 120g + 米饭',
+            photo_draft_token: 'contextual-diet-photo-token-123456',
+          },
+        },
+      }],
+    }]);
+
+    expect(cards).toHaveLength(1);
+    expect(cards[0].type).toBe('diet_draft');
+    expect(cards[0].actions?.[0]).toEqual(expect.objectContaining({
+      action: 'diet_record.create',
+      capability_id: 'diet_draft.v1',
+    }));
+    const html = renderToStaticMarkup(renderCard(cards[0])!);
+    expect(html).toContain('确认记录');
+    expect(html).toContain('鸡胸肉 120g');
+  });
+
+  it('forwards a validated diet confirmation action when the user clicks the card', () => {
+    const onAction = vi.fn();
+    const action = {
+      id: 'confirm-contextual-diet:contextual-diet-photo-token-123456',
+      label: '确认记录',
+      action: 'diet_record.create',
+      endpoint: '/diet/records',
+      requires_manual_confirm: true,
+      required_receipt: true,
+      capability_id: 'diet_draft.v1',
+      payload: {
+        record: {
+          record_date: '2026-07-19',
+          meal_type: 'lunch',
+          food_items: '鸡胸肉 120g + 米饭',
+          photo_draft_token: 'contextual-diet-photo-token-123456',
+        },
+      },
+    };
+    const card = renderCard({
+      type: 'diet_draft',
+      data: { food_items: '鸡胸肉 120g + 米饭' },
+      actions: [action],
+    }, { onAction });
+
+    render(card!);
+    fireEvent.click(screen.getByRole('button', { name: '确认记录' }));
+
+    expect(onAction).toHaveBeenCalledTimes(1);
+    expect(onAction).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'diet_record.create',
+      endpoint: '/diet/records',
+      capability_id: 'diet_draft.v1',
+    }));
   });
 
   it('renders a completed private AIGC image job without exposing provider data', () => {

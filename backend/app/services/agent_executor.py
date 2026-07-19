@@ -48,7 +48,9 @@ from app.services.agent_turn_recovery import (
 )
 from app.services.agent_turn_outcome import classify_agent_turn_outcome
 from app.services.agent_write_outcome import classify_write_execution
+from app.services.dynamic_card_persistence import cards_for_persistence
 from app.services.utterance_intent_classifier import classify_agent_utterance
+from app.utils.number_format import format_card_numbers
 from app.services.agent_kernel.context import (
     build_turn_snapshot,
     format_turn_time_context_prompt,
@@ -4991,6 +4993,9 @@ class AgentExecutor:
         self._current_turn_conversation_id: Optional[int] = None
         self._current_turn_image_urls: list[str] = []
         self._turn_aigc_media_cards: list[dict] = []
+        self._turn_contextual_diet_receipts: list[dict] = []
+        self._turn_contextual_diet_cards: list[dict] = []
+        self._turn_contextual_diet_record_id: Optional[int] = None
         self._diet_photo_auto_save = False
         self._prefer_fast_record_model = False
         # 本回合是否被 fast-route 到快模型 (简单记录/查询)。仅用于把答案 max_tokens
@@ -6297,6 +6302,9 @@ class AgentExecutor:
         self._turn_channel = channel if channel in ("typed", "voice", "siri") else None
         self._current_user_id = user_id
         self._current_turn_user_message = message or ""
+        self._turn_contextual_diet_receipts = []
+        self._turn_contextual_diet_cards = []
+        self._turn_contextual_diet_record_id = None
         self._ensure_agent_kernel_turn(channel=channel)
         # GenUI metric_table (rank1): 客户端声明 genui-table-v1 且未被 kill-switch 关闭时,
         # 工具结果确定性打成表格卡片 (合成后追加 fence)。正文仍按问题完整回答，避免
@@ -6888,6 +6896,7 @@ class AgentExecutor:
         # 展示"调用了哪些 Skills"。与 sources_used (引用了哪些数据源) 独立。
         tools_used: List[str] = []
         write_receipts: List[Dict[str, Any]] = []
+        write_receipts.extend(self._turn_contextual_diet_receipts)
         write_results_by_fingerprint: Dict[str, tuple[str, str]] = {}
         # 只读工具回合级去重(同名+同参已跑过 → 复用结果, 不重复真执行)。回合级 local, 自然重置。
         read_results_by_fingerprint: Dict[str, tuple[str, str]] = {}
@@ -8269,7 +8278,11 @@ class AgentExecutor:
             except Exception as e:
                 logger.warning(f"[agent_executor] system knowledge evidence card failed: {e}")
         response_cards = (
-            _merge_agent_card_descriptors(streamed_cards, evidence_cards)
+            _merge_agent_card_descriptors(
+                self._turn_contextual_diet_cards,
+                streamed_cards,
+                evidence_cards,
+            )
             if completion_status == "complete"
             else []
         )
@@ -8360,7 +8373,7 @@ class AgentExecutor:
                 "sources_used": sources_used,
                 "tools_used": tools_used,
                 "write_receipts": write_receipts,
-                "cards": response_cards,
+                "cards": cards_for_persistence(response_cards),
                 "finish_reason": final_finish_reason,
                 "completion_status": completion_status,
                 "record_intent_no_tool": record_intent_no_tool,
@@ -8687,11 +8700,16 @@ class AgentExecutor:
         diet writes require the same deterministic structured path as every
         other provider so provider choice cannot change persistence accuracy.
         """
+        intent = classify_agent_utterance(
+            message,
+            reference_now=self._agent_kernel_reference_now(),
+        )
         return (
             not self._should_send_raw_images_to_primary_model(user_id)
-            or self._looks_like_food_photo_context(message)
+            or not (message or "").strip()
+            or intent.domain == "diet"
             or self._is_default_image_analysis_prompt(message)
-            or self._looks_like_image_record_intent(message)
+            or intent.is_write
         )
 
     def _build_tool_decision_system_prompt(self) -> str:
@@ -10081,7 +10099,7 @@ class AgentExecutor:
 
             summaries: List[str] = []
             errors: List[str] = []
-            for img in images[:3]:
+            for image_index, img in enumerate(images[:3]):
                 result = await food_recognition_service.recognize_food_from_base64(
                     img.get("base64") or "",
                     image_type=img.get("type", "jpeg"),
@@ -10090,7 +10108,16 @@ class AgentExecutor:
                 if result.get("success") and result.get("foods"):
                     calibrate_recognized_foods(self.db, result["foods"])
                     result = sanitize_food_recognition_result(result)
-                    summaries.append(self._format_food_recognition_for_agent(user_message, result))
+                    capture = self._capture_contextual_meal_photo(
+                        user_message,
+                        result,
+                        image_index=image_index,
+                    )
+                    summaries.append(self._format_food_recognition_for_agent(
+                        user_message,
+                        result,
+                        contextual_capture=capture,
+                    ))
                 elif result.get("error"):
                     errors.append(str(result.get("error")))
             if summaries:
@@ -10110,8 +10137,196 @@ class AgentExecutor:
         joined = " ".join(errors)
         return bool(re.search(r"未识别到(?:可记录的)?食物|重新拍摄餐食|不是食物|not food", joined, re.I))
 
-    def _format_food_recognition_for_agent(self, user_message: str, result: Dict[str, Any]) -> str:
-        meal_type = self._infer_meal_type_for_food_image(user_message)
+    def _capture_contextual_meal_photo(
+        self,
+        user_message: str,
+        vision_result: Dict[str, Any],
+        *,
+        image_index: int,
+    ) -> Any | None:
+        """Persist a qualified chat food photo before the answer model runs.
+
+        This boundary only receives typed semantic intent plus sanitized vision
+        output.  It never scans raw text for a recording keyword.
+        """
+        user_id = self._current_user_id
+        source_message_id = self._current_turn_source_message_id
+        if user_id is None or source_message_id is None:
+            return None
+        if image_index < 0 or image_index >= len(self._current_turn_image_urls):
+            return None
+
+        from app.services.contextual_meal_photo_policy import (
+            MealPhotoCandidate,
+            MealPhotoSemanticIntent,
+            decide_contextual_meal_photo,
+        )
+        from app.services.contextual_meal_photo_service import (
+            ContextualMealPhotoCapture,
+            ContextualMealPhotoService,
+            ContextualMealPhotoServiceError,
+        )
+        from app.services.utterance_intent_classifier import classify_agent_utterance
+        from app.utils.timezone import DEFAULT_TIMEZONE_NAME, resolve_timezone_name
+
+        reference_now = self._agent_kernel_reference_now()
+        intent = classify_agent_utterance(user_message, reference_now=reference_now)
+        if intent.primary in {"read", "advice"}:
+            semantic_intent = MealPhotoSemanticIntent.ANALYZE_ONLY
+        elif intent.is_write:
+            semantic_intent = MealPhotoSemanticIntent.EXPLICIT_CAPTURE
+        else:
+            # A user-submitted image with no analysis/question intent is an
+            # implicit capture candidate. The policy still requires meal time,
+            # confidence, food classification and idempotency clearance.
+            semantic_intent = MealPhotoSemanticIntent.IMPLICIT_CAPTURE
+
+        timezone_name = DEFAULT_TIMEZONE_NAME
+        try:
+            from app.models.user_profile import UserProfile
+
+            profile = (
+                self.db.query(UserProfile.manual_timezone, UserProfile.detected_timezone, UserProfile.timezone)
+                .filter(UserProfile.user_id == user_id)
+                .first()
+            )
+            if profile is not None:
+                timezone_name, _ = resolve_timezone_name(profile[0], profile[1], profile[2])
+        except Exception as exc:  # noqa: BLE001 - retain default policy timezone, surface in logs
+            logger.warning(
+                "[contextual_meal_photo] timezone resolution failed user_id=%s error=%s",
+                user_id,
+                exc,
+            )
+
+        foods = vision_result.get("foods") if isinstance(vision_result.get("foods"), list) else []
+        confidences = [
+            float(food.get("confidence"))
+            for food in foods
+            if isinstance(food, dict) and isinstance(food.get("confidence"), (int, float))
+        ]
+        confidence = sum(confidences) / len(confidences) if confidences else None
+        decision = decide_contextual_meal_photo(MealPhotoCandidate(
+            origin="chat",
+            semantic_intent=semantic_intent,
+            classification="food" if vision_result.get("success") and foods else "non_food",
+            recognition_confidence=confidence,
+            reference_now=reference_now,
+            timezone_name=timezone_name,
+            idempotency_clear=True,
+        ))
+        if decision.decision == "analyze_only":
+            return None
+
+        try:
+            result = ContextualMealPhotoService(self.db).capture(ContextualMealPhotoCapture(
+                user_id=user_id,
+                source_message_id=source_message_id,
+                source_image_url=self._current_turn_image_urls[image_index],
+                source_image_index=image_index,
+                decision=decision,
+                vision_result=vision_result,
+            ))
+        except ContextualMealPhotoServiceError as exc:
+            logger.warning(
+                "[contextual_meal_photo] capture rejected user_id=%s source_message_id=%s reason=%s",
+                user_id,
+                source_message_id,
+                exc,
+            )
+            return None
+        except Exception as exc:  # noqa: BLE001 - never claim a record after a failed write
+            logger.error(
+                "[contextual_meal_photo] capture failed user_id=%s source_message_id=%s error=%s",
+                user_id,
+                source_message_id,
+                exc,
+                exc_info=True,
+            )
+            return None
+
+        if result.record is not None:
+            self._turn_contextual_diet_record_id = result.record.id
+            receipt = {
+                "operation_id": f"contextual_meal_photo:{result.record.id}",
+                "status": "verified",
+                "resource_type": "diet_record",
+                "resource_id": str(result.record.id),
+                "verified": True,
+            }
+            if receipt not in self._turn_contextual_diet_receipts:
+                self._turn_contextual_diet_receipts.append(receipt)
+            self._invalidate_twin_after_mutation()
+        elif result.photo_draft is not None:
+            self._turn_contextual_diet_cards.append(
+                self._contextual_diet_confirmation_card(result)
+            )
+        return result
+
+    def _contextual_diet_confirmation_card(self, result: Any) -> Dict[str, Any]:
+        """Build the current-chat confirmation card from an owner-bound draft."""
+        from app.services.atomic_capability_registry import attach_action_policy_metadata
+        from app.utils.diet_image_url import diet_response_image_url
+
+        draft = result.photo_draft
+        asset = result.photo_asset
+        if draft is None or asset is None:
+            raise ValueError("contextual_diet_confirmation_missing_draft")
+        recognition = draft.recognition_result if isinstance(draft.recognition_result, dict) else {}
+        record = {
+            key: recognition[key]
+            for key in (
+                "record_date", "meal_type", "food_items", "calories", "protein",
+                "carbs", "fat", "fiber", "ai_recognized", "ai_confidence",
+                "ai_raw_result", "health_tips", "source",
+            )
+            if recognition.get(key) is not None
+        }
+        record["source"] = "chat_photo"
+        record["photo_draft_token"] = draft.token
+        actions = attach_action_policy_metadata("diet_draft", [{
+            "id": f"confirm-contextual-diet:{draft.token}",
+            "label": "确认记录",
+            "action": "diet_record.create",
+            "endpoint": "/diet/records",
+            "requires_manual_confirm": True,
+            "payload": {"record": record},
+            "style": "primary",
+            "confirmation": {
+                "title": "记录这顿餐食？",
+                "detail": "确认后会带着这张照片写入今日饮食记录。",
+                "confirm_label": "确认记录",
+                "cancel_label": "再看看",
+            },
+        }])
+        return {
+            "type": "diet_draft",
+            # This data is rendered directly by every client. Format only the
+            # display descriptor; the action above retains its raw nutrition
+            # values for the eventual write request.
+            "data": format_card_numbers({
+                **record,
+                "confidence": recognition.get("ai_confidence"),
+                "source": "chat_photo",
+                "photo_asset_id": asset.id,
+                "photo_url": diet_response_image_url(asset.storage_key, asset.user_id),
+                "photo_draft_token": draft.token,
+                "boundary": "营养为图像估算；确认后才写入今日饮食记录。",
+            }),
+            "actions": actions,
+        }
+
+    def _format_food_recognition_for_agent(
+        self,
+        user_message: str,
+        result: Dict[str, Any],
+        *,
+        contextual_capture: Any | None = None,
+    ) -> str:
+        if contextual_capture is not None:
+            meal_type = contextual_capture.decision.meal_type
+        else:
+            meal_type = self._meal_type_for_reference_time()
         foods: List[str] = []
         recognized_foods: List[Dict[str, Any]] = []
         confidences: List[float] = []
@@ -10187,57 +10402,62 @@ class AgentExecutor:
             record_data["food_id"] = recognized_foods[0]["food_id"]
 
         record_json = json.dumps(record_data, ensure_ascii=False)
+        semantic_intent = classify_agent_utterance(
+            user_message,
+            reference_now=self._agent_kernel_reference_now(),
+        )
+        if semantic_intent.primary in {"read", "advice"}:
+            capture_instruction = (
+                "本轮仅用于分析或查询，严禁调用 health_record；"
+                "只解释识别结果、不确定性和可选建议。"
+            )
+        elif contextual_capture is not None and contextual_capture.record is not None:
+            capture_instruction = (
+                "系统已取得可验证的饮食写入回执；不要再次调用 health_record，"
+                "只解释本餐估算、如何修正以及下一步建议。"
+            )
+        elif contextual_capture is not None and contextual_capture.photo_draft is not None:
+            capture_instruction = (
+                "系统已保存这张图片为当前对话的饮食确认草稿；不要再次调用 health_record，"
+                "请让用户在当前卡片核对并确认。"
+            )
+        else:
+            capture_instruction = (
+                "如果用户意图是记录饮食, 请调用 health_record(record_type='diet', "
+                "data=准确写入参数), 仅按用户明确修正的内容改动。"
+            )
         return (
             "结构化餐食识别结果: "
             f"meal_type={meal_type}; foods={' + '.join(foods)}; totals({total_text}). "
             f"准确写入参数: {record_json}。"
-            "如果用户意图是记录饮食, 请调用 health_record(record_type='diet', "
-            "data=准确写入参数), 仅按用户明确修正的内容改动。"
+            f"{capture_instruction}"
             "food_items 只能使用真实食物名称和份量, 绝对不要包含营养卡、保存并确认、今日饮食等界面文案。"
         )
 
-    def _infer_meal_type_for_food_image(self, user_message: str) -> str:
-        text = (user_message or "").lower()
-        if re.search(r"早餐|早饭|早上|breakfast", text):
-            return "breakfast"
-        if re.search(r"午餐|午饭|中饭|中午|lunch", text):
-            return "lunch"
-        if re.search(r"晚餐|晚饭|晚上|dinner", text):
-            return "dinner"
-        if re.search(r"加餐|零食|下午茶|夜宵|snack", text):
-            return "snack"
+    def _meal_type_for_reference_time(self) -> str:
         hour = self._agent_kernel_reference_now().hour
-        if hour < 10:
+        if 5 <= hour < 11:
             return "breakfast"
-        if hour < 14:
+        if 11 <= hour < 15:
             return "lunch"
-        if hour < 20:
+        if 17 <= hour < 22:
             return "dinner"
         return "snack"
 
-    def _looks_like_food_photo_context(self, user_message: str) -> bool:
-        text = user_message or ""
-        if not text.strip():
-            return True
-        return bool(re.search(r"食物|饮食|餐|饭|吃|热量|卡路里|蛋白|碳水|脂肪|kcal|calorie", text, re.I))
-
     @staticmethod
     def _is_default_image_analysis_prompt(user_message: str) -> bool:
-        normalized = re.sub(r"[\s。.!！?？]+", "", user_message or "").lower()
+        ignored = frozenset("。.!！?？")
+        normalized = "".join(
+            character
+            for character in (user_message or "").lower()
+            if not character.isspace() and character not in ignored
+        )
         return normalized in {
             "请分析这些图片",
             "请分析这张图片",
             "分析这些图片",
             "分析这张图片",
         }
-
-    @staticmethod
-    def _looks_like_image_record_intent(user_message: str) -> bool:
-        return bool(re.search(
-            r"记录(?:一下|下)?|帮我记(?:一下|下)?|记下来|打卡|录入|保存(?:一下|下)?|\b(?:log|record|save)\b",
-            user_message or "",
-            re.I,
-        ))
 
     async def _try_import_medical_report_images(self, user_id: int, images: List[dict]) -> Optional[str]:
         """Detect lab-report images in chat, persist recognized indicators, and summarize.
@@ -11338,6 +11558,30 @@ class AgentExecutor:
             except (json.JSONDecodeError, ValueError):
                 data = {}
         today = self._agent_kernel_reference_now().strftime("%Y-%m-%d")
+
+        # A contextual meal photo may already have been persisted before the
+        # model receives its structured vision summary.  A model retry must
+        # receive the same verified record, never create a second meal.
+        if rtype == "diet" and self._turn_contextual_diet_record_id is not None:
+            from app.models.daily_health import DietRecord
+
+            existing = (
+                self.db.query(DietRecord)
+                .filter(
+                    DietRecord.id == self._turn_contextual_diet_record_id,
+                    DietRecord.user_id == self._current_user_id,
+                )
+                .first()
+            )
+            if existing is not None:
+                return json.dumps({
+                    "id": existing.id,
+                    "record_id": existing.id,
+                    "resource_type": "diet_record",
+                    "operation_id": f"contextual_meal_photo:{existing.id}",
+                    "status": "recorded",
+                }, ensure_ascii=False)
+            return "Error: 本轮图片记录未取得可验证回执，未创建新的饮食记录。"
 
         # Mobile 相机入口是用户已经明确点击“拍照记餐”发起的动作，不再创建
         # 二次确认草稿。仍剥掉仅供 Agent 内部使用的确认标记，避免把控制字段

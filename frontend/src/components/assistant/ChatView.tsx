@@ -10,6 +10,7 @@ import { preprocessAssistantContent } from '@/components/assistant/assistantCont
 import { ChatSegment, hasToolCall, parseToolCalls } from '@/components/assistant/toolCallParse';
 import { prettyModelName } from '@/components/assistant/modelName';
 import { renderCard } from '@/components/assistant/inlineCards';
+import type { ChatCardActionDescriptor } from '@/components/assistant/inlineCards';
 import { getShareableMessageIds } from '@/components/assistant/shareSelection';
 import { buildAgentTransparency, formatDurationMs, type AgentTransparencyBand } from '@/components/assistant/chatTransparency';
 
@@ -28,6 +29,7 @@ interface ChatViewProps {
   /** 微信式入口: 右键 / 长按某条消息直接进入多选分享并预选中该条. */
   onEnterSelectionWith?: (msgId: number) => void;
   onShareMessages?: (msgIds: number[]) => void;
+  onCardAction?: (messageId: number, action: ChatCardActionDescriptor) => void | Promise<void>;
 }
 
 /** 长按计时: pointer 持续按住约 500ms 触发, 移动/松开/离开均取消. */
@@ -147,6 +149,7 @@ export default function ChatView({
   onToggleMessageSelection,
   onEnterSelectionWith,
   onShareMessages,
+  onCardAction,
 }: ChatViewProps) {
   // 允许空内容但是有卡片的消息显示
   const visibleMessages = useMemo(
@@ -229,6 +232,7 @@ export default function ChatView({
             onToggleMessageSelection={onToggleMessageSelection}
             onEnterSelectionWith={onEnterSelectionWith}
             onShareMessages={onShareMessages}
+            onCardAction={onCardAction}
             enterFor={enterFor}
             handlePointerDown={handlePointerDown}
             cancelLongPress={cancelLongPress}
@@ -268,6 +272,7 @@ interface MessageRowProps {
   onToggleMessageSelection?: (msgId: number) => void;
   onEnterSelectionWith?: (msgId: number) => void;
   onShareMessages?: (msgIds: number[]) => void;
+  onCardAction?: (messageId: number, action: ChatCardActionDescriptor) => void | Promise<void>;
   enterFor: (msgId: number) => void;
   handlePointerDown: (e: React.PointerEvent, msgId: number) => void;
   cancelLongPress: () => void;
@@ -295,6 +300,7 @@ const MessageRow = memo(function MessageRow({
   onToggleMessageSelection,
   onEnterSelectionWith,
   onShareMessages,
+  onCardAction,
   enterFor,
   handlePointerDown,
   cancelLongPress,
@@ -303,7 +309,10 @@ const MessageRow = memo(function MessageRow({
   const accessibilityPrefix = msg.role === 'user' ? '你发送于' : '小巴回复于';
   // 动态卡片消息 - 独立分支, 气泡外直接贴卡片
   if (msg.card_type && msg.card_data) {
-    const cardEl = renderCard({ type: msg.card_type, data: msg.card_data });
+    const cardEl = renderCard(
+      { type: msg.card_type, data: msg.card_data, actions: msg.card_actions as ChatCardActionDescriptor[] | undefined },
+      { onAction: (action) => onCardAction?.(msg.id, action) },
+    );
     if (cardEl) {
       return (
         <div

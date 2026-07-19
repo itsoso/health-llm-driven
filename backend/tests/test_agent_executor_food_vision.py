@@ -1,8 +1,129 @@
+from datetime import datetime, timezone
+
 import pytest
 
 from app.config import settings
 from app.models.food_nutrition import FoodItem, FoodNutrient
+from app.models.daily_health import DietRecord
+from app.models.user import User
+from app.models.user_profile import UserProfile
 from app.services.agent_executor import AgentExecutor
+from app.services.dynamic_card_persistence import cards_for_persistence
+from app.services import chat_utils
+
+
+VALID_PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Z/QAAAABJRU5ErkJggg=="
+
+
+def _food_result():
+    return {
+        "success": True,
+        "foods": [{
+            "name": "鸡胸肉",
+            "quantity": "约120g",
+            "calories": 198,
+            "protein": 37.0,
+            "carbs": 0.0,
+            "fat": 4.3,
+            "fiber": 0.0,
+            "confidence": 0.93,
+        }],
+        "total_calories": 198,
+        "total_protein": 37.0,
+        "total_carbs": 0.0,
+        "total_fat": 4.3,
+        "total_fiber": 0.0,
+    }
+
+
+def _food_photo_executor(db, tmp_path, monkeypatch):
+    from app.api import upload as upload_api
+
+    user = User(
+        username="agent_food_photo",
+        email="agent-food-photo@example.com",
+        hashed_password="hashed_password",
+        name="Agent 食物照片用户",
+        is_active=True,
+        is_approved=True,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    db.add(UserProfile(user_id=user.id, manual_timezone="America/New_York"))
+    db.commit()
+    monkeypatch.setattr(chat_utils, "_UPLOAD_DIR", str(tmp_path / "chat"))
+    monkeypatch.setattr(upload_api, "UPLOAD_DIR", str(tmp_path / "uploads"))
+    executor = AgentExecutor(db)
+    executor._current_user_id = user.id
+    executor._current_turn_source_message_id = 888
+    executor._current_turn_image_urls = [
+        chat_utils.upload_chat_image(VALID_PNG_BASE64, user.id, "png")
+    ]
+    executor._agent_kernel_reference_now = lambda: datetime(2026, 7, 19, 16, 30, tzinfo=timezone.utc)
+    return executor, user
+
+
+def test_agent_auto_captures_empty_high_confidence_lunch_photo_with_receipt(
+    db, tmp_path, monkeypatch
+):
+    executor, user = _food_photo_executor(db, tmp_path, monkeypatch)
+
+    result = executor._capture_contextual_meal_photo("", _food_result(), image_index=0)
+
+    assert result is not None
+    assert result.record is not None
+    assert result.record.user_id == user.id
+    assert db.query(DietRecord).count() == 1
+    assert executor._turn_contextual_diet_receipts == [{
+        "operation_id": f"contextual_meal_photo:{result.record.id}",
+        "status": "verified",
+        "resource_type": "diet_record",
+        "resource_id": str(result.record.id),
+        "verified": True,
+    }]
+
+
+def test_agent_analysis_intent_never_auto_captures_food_photo(db, tmp_path, monkeypatch):
+    executor, _user = _food_photo_executor(db, tmp_path, monkeypatch)
+
+    result = executor._capture_contextual_meal_photo("请分析这张图片", _food_result(), image_index=0)
+
+    assert result is None
+    assert db.query(DietRecord).count() == 0
+    prompt_context = executor._format_food_recognition_for_agent(
+        "请分析这张图片", _food_result(), contextual_capture=result,
+    )
+    assert "严禁调用 health_record" in prompt_context
+
+
+def test_agent_creates_owner_bound_confirmation_card_outside_meal_window(
+    db, tmp_path, monkeypatch
+):
+    executor, _user = _food_photo_executor(db, tmp_path, monkeypatch)
+    executor._agent_kernel_reference_now = lambda: datetime(2026, 7, 20, 3, 30, tzinfo=timezone.utc)
+
+    result = executor._capture_contextual_meal_photo("", _food_result(), image_index=0)
+
+    assert result is not None
+    assert result.record is None
+    assert result.photo_draft is not None
+    card = executor._turn_contextual_diet_cards[0]
+    assert card["type"] == "diet_draft"
+    assert card["data"]["photo_asset_id"]
+    assert "signature=" in card["data"]["photo_url"]
+    # Dynamic-card data is user-facing. Keep its number representation aligned
+    # with the product display contract, while the action payload keeps raw data.
+    assert isinstance(card["data"]["protein"], int)
+    assert card["data"]["protein"] == 37
+    assert isinstance(card["data"]["fiber"], int)
+    assert card["data"]["fiber"] == 0
+    action = card["actions"][0]
+    assert action["action"] == "diet_record.create"
+    assert action["payload"]["record"]["protein"] == 37.0
+    assert action["payload"]["record"]["source"] == "chat_photo"
+    assert action["payload"]["record"]["photo_draft_token"] == result.photo_draft.token
+    assert "photo_url" not in cards_for_persistence([card])[0]["data"]
 
 
 @pytest.mark.asyncio

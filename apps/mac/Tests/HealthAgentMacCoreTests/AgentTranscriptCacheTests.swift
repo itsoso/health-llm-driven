@@ -143,4 +143,24 @@ final class AgentTranscriptCacheTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(persisted[0].cardData?["result"]?["url"]), .null)
         XCTAssertFalse(String(describing: persisted).contains("signature=secret"))
     }
+
+    func testDietDraftPhotoURLIsRemovedBeforeConversationPersistence() {
+        let signedURL = "/api/v1/upload/files/diet/7/lunch.jpg?expires=1&signature=secret"
+        let message = AgentChatMessage(
+            role: .assistant,
+            content: "请确认这顿午餐",
+            cardType: "diet_draft",
+            cardData: .object([
+                "photo_asset_id": .string("photo-1"),
+                "photo_url": .string(signedURL),
+                "food_items": .string("鸡胸肉和杂粮饭"),
+            ])
+        )
+
+        let persisted = AgentChatViewModel.redactedMessagesForLocalPersistence([message])
+
+        XCTAssertEqual(try XCTUnwrap(persisted[0].cardData?["photo_url"]), .null)
+        XCTAssertEqual(persisted[0].cardData?["photo_asset_id"], .string("photo-1"))
+        XCTAssertFalse(String(describing: persisted).contains("signature=secret"))
+    }
 }

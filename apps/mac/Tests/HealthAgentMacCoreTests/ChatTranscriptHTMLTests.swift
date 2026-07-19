@@ -737,6 +737,44 @@ final class ChatTranscriptHTMLTests: XCTestCase {
 // MARK: - mac 死键防线:不可执行的 route.open 不画按钮(2026-07-05)
 
 extension ChatTranscriptHTMLTests {
+    func testDietDraftCardRendersOwnerScopedPhotoAndManualConfirmationAction() {
+        let action = AgentDynamicCardActionDescriptor(
+            id: "confirm-contextual-diet:photo-draft-1",
+            label: "确认记录",
+            action: "diet_record.create",
+            endpoint: "/diet/records",
+            payload: .object([
+                "record": .object([
+                    "record_date": .string("2026-07-19"),
+                    "meal_type": .string("lunch"),
+                    "food_items": .string("鸡胸肉和杂粮饭"),
+                    "photo_draft_token": .string("photo-draft-1"),
+                ]),
+            ]),
+            style: "primary",
+            requiresManualConfirm: true,
+            capabilityID: "diet_draft.v1",
+            requiredReceipt: true,
+            autonomyTier: "manual_confirm"
+        )
+        let html = ChatTranscriptHTML.dynamicCardHTML(
+            type: "diet_draft",
+            data: .object([
+                "meal_type": .string("lunch"),
+                "food_items": .string("鸡胸肉和杂粮饭"),
+                "calories": .int(560),
+                "protein": .int(42),
+                "photo_url": .string("/api/v1/upload/files/diet/1/lunch.jpg?expires=1&signature=signed"),
+            ]),
+            actions: [action]
+        )
+
+        XCTAssertTrue(html?.contains("午餐 · 待确认") == true)
+        XCTAssertTrue(html?.contains("鸡胸肉和杂粮饭") == true)
+        XCTAssertTrue(html?.contains("diet-draft-photo") == true)
+        XCTAssertTrue(html?.contains("xiaoba-diet-confirm://confirm-contextual-diet:photo-draft-1") == true)
+    }
+
     func testDynamicCardActionDecodesKernelPolicyMetadata() throws {
         let raw = Data("""
         {

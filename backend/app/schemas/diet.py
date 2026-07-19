@@ -72,6 +72,16 @@ class DietPhotoDraftStatusResponse(BaseModel):
     expires_at: datetime
 
 
+class DietPhotoAssetResponse(BaseModel):
+    id: str
+    url: str
+    ordinal: int
+    captured_at: Optional[datetime] = None
+    origin: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 MEAL_TYPE_ZH = {
     "breakfast": "早餐",
     "lunch": "午餐",
@@ -86,6 +96,8 @@ class DietRecordResponse(DietRecordBase):
     id: int
     user_id: int
     image_url: Optional[str] = None
+    image_urls: List[str] = Field(default_factory=list)
+    photo_assets: List[DietPhotoAssetResponse] = Field(default_factory=list)
     ai_confidence: Optional[float] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None

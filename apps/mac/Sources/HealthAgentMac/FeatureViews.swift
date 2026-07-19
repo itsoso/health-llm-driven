@@ -605,6 +605,9 @@ struct AgentChatView: View {
             onRouteOpen: { route in handleWebRouteOpen(route) },
             onAIGCConfirm: { confirmationID in
                 Task { await viewModel.confirmAIGCMediaDraft(id: confirmationID) }
+            },
+            onDietDraftConfirm: { actionID in
+                Task { await viewModel.confirmDietDraft(actionID: actionID) }
             }
         )
     }

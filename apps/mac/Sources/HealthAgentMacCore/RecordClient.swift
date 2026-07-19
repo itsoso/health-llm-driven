@@ -98,6 +98,28 @@ public struct VoiceFoodParseResponse: Decodable, Equatable, Sendable {
     }
 }
 
+/// Receipt returned only after the owner-scoped diet draft has been committed.
+/// The client submits the opaque server-bound draft token, never the image bytes
+/// or a user-editable reconstruction of the record.
+public struct DietDraftConfirmationReceipt: Decodable, Equatable, Sendable {
+    public let id: Int
+    public let displayMessage: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case displayMessage = "display_message"
+    }
+
+    public init(id: Int, displayMessage: String? = nil) {
+        self.id = id
+        self.displayMessage = displayMessage
+    }
+}
+
+public protocol DietDraftConfirming: Sendable {
+    func confirmDietDraft(action: AgentDynamicCardActionDescriptor) async throws -> DietDraftConfirmationReceipt
+}
+
 private struct QuickRecordRequest: Encodable {
     let text: String
 }
@@ -139,6 +161,82 @@ private struct DietRecordRequest: Encodable {
         case foodItems = "food_items"
         case calories
         case protein
+    }
+}
+
+private struct DietDraftConfirmationRequest: Encodable {
+    let recordDate: String
+    let mealType: String
+    let foodItems: String
+    let calories: Double?
+    let protein: Double?
+    let carbs: Double?
+    let fat: Double?
+    let fiber: Double?
+    let source: String?
+    let aiRecognized: Int?
+    let aiConfidence: Double?
+    let aiRawResult: AgentDynamicCardValue?
+    let healthTips: String?
+    let photoDraftToken: String
+
+    enum CodingKeys: String, CodingKey {
+        case recordDate = "record_date"
+        case mealType = "meal_type"
+        case foodItems = "food_items"
+        case calories, protein, carbs, fat, fiber, source
+        case aiRecognized = "ai_recognized"
+        case aiConfidence = "ai_confidence"
+        case aiRawResult = "ai_raw_result"
+        case healthTips = "health_tips"
+        case photoDraftToken = "photo_draft_token"
+    }
+
+    init?(action: AgentDynamicCardActionDescriptor) {
+        guard action.action == "diet_record.create",
+              action.requiresManualConfirm == true,
+              action.requiredReceipt == true,
+              action.capabilityID == "diet_draft.v1",
+              let record = action.payload?["record"],
+              let recordDate = Self.requiredText(record["record_date"]),
+              let mealType = Self.requiredText(record["meal_type"]),
+              let foodItems = Self.requiredText(record["food_items"]),
+              let photoDraftToken = Self.requiredText(record["photo_draft_token"]) else {
+            return nil
+        }
+        self.recordDate = recordDate
+        self.mealType = mealType
+        self.foodItems = foodItems
+        self.calories = Self.number(record["calories"])
+        self.protein = Self.number(record["protein"])
+        self.carbs = Self.number(record["carbs"])
+        self.fat = Self.number(record["fat"])
+        self.fiber = Self.number(record["fiber"])
+        self.source = Self.text(record["source"])
+        self.aiRecognized = record["ai_recognized"]?.boolValue.map { $0 ? 1 : 0 }
+            ?? record["ai_recognized"]?.intValue.map { $0 == 0 ? 0 : 1 }
+        self.aiConfidence = Self.number(record["ai_confidence"])
+        self.aiRawResult = record["ai_raw_result"]
+        self.healthTips = Self.text(record["health_tips"])
+        self.photoDraftToken = photoDraftToken
+    }
+
+    private static func requiredText(_ value: AgentDynamicCardValue?) -> String? {
+        let text = value?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return text.isEmpty ? nil : text
+    }
+
+    private static func text(_ value: AgentDynamicCardValue?) -> String? {
+        requiredText(value)
+    }
+
+    private static func number(_ value: AgentDynamicCardValue?) -> Double? {
+        switch value {
+        case .int(let number): return Double(number)
+        case .double(let number): return number
+        case .string(let number): return Double(number)
+        default: return nil
+        }
     }
 }
 
@@ -411,7 +509,7 @@ public struct FrequentWater: Decodable, Equatable, Sendable, Identifiable {
     }
 }
 
-public final class RecordClient: Sendable {
+public final class RecordClient: DietDraftConfirming, Sendable {
     private let apiClient: APIClient
 
     public init(apiClient: APIClient) {
@@ -447,6 +545,13 @@ public final class RecordClient: Sendable {
             recordID: saved.id,
             undoPath: undoPath(prefix: "diet/records", recordID: saved.id)
         )
+    }
+
+    public func confirmDietDraft(action: AgentDynamicCardActionDescriptor) async throws -> DietDraftConfirmationReceipt {
+        guard let request = DietDraftConfirmationRequest(action: action) else {
+            throw APIError.emptyResponse
+        }
+        return try await apiClient.post("diet/records", body: request)
     }
 
     public func recordWater(amountMl: Int, drinkType: String = "水") async throws -> QuickRecordResult {

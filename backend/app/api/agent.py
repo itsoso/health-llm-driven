@@ -186,12 +186,15 @@ def _persist_done_cards(db: Session, message_id: int | None, cards: list) -> boo
         return False
     try:
         from app.models.agent_conversation import AgentMessage
+        from app.services.dynamic_card_persistence import cards_for_persistence
 
         msg = db.query(AgentMessage).filter(AgentMessage.id == message_id).first()
         if not msg:
             return False
         meta = dict(msg.meta or {})
-        meta["cards"] = _merge_card_descriptors(meta.get("cards"), cards)
+        meta["cards"] = cards_for_persistence(
+            _merge_card_descriptors(meta.get("cards"), cards)
+        )
         msg.meta = meta
         db.commit()
         return True
