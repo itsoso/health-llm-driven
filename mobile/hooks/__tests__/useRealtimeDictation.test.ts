@@ -119,6 +119,72 @@ describe('useRealtimeDictation', () => {
     expect(result.current.isDictating).toBe(false);
   });
 
+  it('does not surface a late startup failure after the user already cancelled', async () => {
+    let rejectStart!: (error: Error) => void;
+    session.start.mockImplementationOnce(() => new Promise<boolean>((_resolve, reject) => {
+      rejectStart = reject;
+    }));
+    const onError = jest.fn();
+    const { result } = renderHook(() => useRealtimeDictation({
+      onTranscript: jest.fn(),
+      onError,
+    }));
+
+    let startPromise: Promise<boolean>;
+    await act(async () => {
+      startPromise = result.current.startDictation();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await result.current.stopDictation();
+    });
+
+    rejectStart(new Error('startup failed after cancellation'));
+    await act(async () => {
+      await expect(startPromise).resolves.toBe(false);
+    });
+
+    expect(onError).not.toHaveBeenCalled();
+    expect(result.current.isDictating).toBe(false);
+  });
+
+  it('keeps cancellation authoritative while cleanup is still pending', async () => {
+    let resolveStart!: (started: boolean) => void;
+    let resolveCancel!: () => void;
+    session.start.mockImplementationOnce(() => new Promise<boolean>((resolve) => {
+      resolveStart = resolve;
+    }));
+    session.cancel.mockImplementationOnce(() => new Promise<void>((resolve) => {
+      resolveCancel = resolve;
+    }));
+    const onError = jest.fn();
+    const { result } = renderHook(() => useRealtimeDictation({
+      onTranscript: jest.fn(),
+      onError,
+    }));
+
+    let startPromise: Promise<boolean>;
+    let stopPromise: Promise<string>;
+    await act(async () => {
+      startPromise = result.current.startDictation();
+      await Promise.resolve();
+      stopPromise = result.current.stopDictation();
+      await Promise.resolve();
+    });
+
+    resolveStart(false);
+    await act(async () => {
+      await expect(startPromise).resolves.toBe(false);
+    });
+    expect(onError).not.toHaveBeenCalled();
+
+    resolveCancel();
+    await act(async () => {
+      await expect(stopPromise).resolves.toBe('');
+    });
+    expect(result.current.isDictating).toBe(false);
+  });
+
   it('cancels the cloud session without committing buffered speech', async () => {
     const { result } = renderHook(() => useRealtimeDictation({ onTranscript: jest.fn() }));
 

@@ -106,6 +106,10 @@ export function createCloudRealtimeAsrSession(
   let rejectFinish: ((error: Error) => void) | null = null;
   let startTimer: ReturnType<typeof setTimeout> | null = null;
   let finishTimer: ReturnType<typeof setTimeout> | null = null;
+  let captureStarting = false;
+  let startPromise: Promise<boolean> | null = null;
+  let stopPromise: Promise<TranscribeAudioResult> | null = null;
+  let cancelPromise: Promise<void> | null = null;
 
   const clearTimers = () => {
     if (startTimer) clearTimeout(startTimer);
@@ -140,6 +144,7 @@ export function createCloudRealtimeAsrSession(
   };
 
   const handleMessage = async (raw: string) => {
+    if (cancelled) return;
     let message: RealtimeAsrMessage;
     try {
       message = JSON.parse(raw) as RealtimeAsrMessage;
@@ -148,7 +153,8 @@ export function createCloudRealtimeAsrSession(
       return;
     }
     if (message.type === 'ready') {
-      if (startSettled) return;
+      if (startSettled || captureStarting) return;
+      captureStarting = true;
       try {
         const subscription = (await dependencies.startPcmCapture(
           (audioBase64) => {
@@ -168,6 +174,8 @@ export function createCloudRealtimeAsrSession(
         resolveStart?.(true);
       } catch (error: any) {
         fail(error?.message || '无法开始麦克风采集');
+      } finally {
+        captureStarting = false;
       }
       return;
     }
@@ -195,59 +203,71 @@ export function createCloudRealtimeAsrSession(
   };
 
   return {
-    async start(): Promise<boolean> {
-      if (socket) return false;
-      const token = await dependencies.getAuthToken();
-      if (!token) throw new Error('登录已过期，请重新登录后使用语音输入');
-      cancelled = false;
-      startedAt = Date.now();
-      finalResult = null;
-      socket = dependencies.openSocket(realtimeAsrWebSocketUrl(), token);
-      socket.onmessage = event => { void handleMessage(event.data); };
-      socket.onerror = () => fail('无法连接云端实时语音服务');
-      socket.onclose = () => {
-        if (!cancelled && (!startSettled || (resolveFinish && !finishSettled))) {
-          fail('云端实时语音连接已断开');
-        }
-      };
-      return new Promise<boolean>((resolve, reject) => {
-        resolveStart = resolve;
-        rejectStart = reject;
-        startTimer = setTimeout(() => fail('连接云端实时语音服务超时'), START_TIMEOUT_MS);
-      });
+    start(): Promise<boolean> {
+      if (startPromise) return startPromise;
+      if (socket) return Promise.resolve(false);
+      startPromise = (async () => {
+        const token = await dependencies.getAuthToken();
+        if (!token) throw new Error('登录已过期，请重新登录后使用语音输入');
+        if (cancelled) return false;
+        startedAt = Date.now();
+        finalResult = null;
+        socket = dependencies.openSocket(realtimeAsrWebSocketUrl(), token);
+        socket.onmessage = event => { void handleMessage(event.data); };
+        socket.onerror = () => fail('无法连接云端实时语音服务');
+        socket.onclose = () => {
+          if (!cancelled && (!startSettled || (resolveFinish && !finishSettled))) {
+            fail('云端实时语音连接已断开');
+          }
+        };
+        return new Promise<boolean>((resolve, reject) => {
+          resolveStart = resolve;
+          rejectStart = reject;
+          startTimer = setTimeout(() => fail('连接云端实时语音服务超时'), START_TIMEOUT_MS);
+        });
+      })();
+      return startPromise;
     },
 
-    async stop(): Promise<TranscribeAudioResult> {
-      if (!socket || !startSettled) return asResult({}, 0);
-      await dependencies.stopPcmCapture(captureSubscription);
-      captureSubscription = null;
-      return new Promise<TranscribeAudioResult>((resolve, reject) => {
-        resolveFinish = resolve;
-        rejectFinish = reject;
-        finishTimer = setTimeout(() => fail('等待最终语音识别结果超时'), FINAL_TIMEOUT_MS);
-        try {
-          socket?.send(JSON.stringify({ type: 'finish' }));
-        } catch {
-          fail('无法提交最终语音识别结果');
-        }
-      });
+    stop(): Promise<TranscribeAudioResult> {
+      if (stopPromise) return stopPromise;
+      stopPromise = (async () => {
+        if (!socket || !startSettled) return asResult({}, 0);
+        await dependencies.stopPcmCapture(captureSubscription);
+        captureSubscription = null;
+        return new Promise<TranscribeAudioResult>((resolve, reject) => {
+          resolveFinish = resolve;
+          rejectFinish = reject;
+          finishTimer = setTimeout(() => fail('等待最终语音识别结果超时'), FINAL_TIMEOUT_MS);
+          try {
+            socket?.send(JSON.stringify({ type: 'finish' }));
+          } catch {
+            fail('无法提交最终语音识别结果');
+          }
+        });
+      })();
+      return stopPromise;
     },
 
-    async cancel(): Promise<void> {
-      cancelled = true;
-      clearTimers();
-      if (!startSettled && resolveStart) {
-        startSettled = true;
-        resolveStart(false);
-      }
-      if (!finishSettled && resolveFinish) {
-        finishSettled = true;
-        resolveFinish(asResult({}, Math.max(0, Date.now() - startedAt)));
-      }
-      await dependencies.cancelPcmCapture(captureSubscription);
-      captureSubscription = null;
-      if (socket?.readyState === 1) socket.send(JSON.stringify({ type: 'cancel' }));
-      closeSocket();
+    cancel(): Promise<void> {
+      if (cancelPromise) return cancelPromise;
+      cancelPromise = (async () => {
+        cancelled = true;
+        clearTimers();
+        if (!startSettled && resolveStart) {
+          startSettled = true;
+          resolveStart(false);
+        }
+        if (!finishSettled && resolveFinish) {
+          finishSettled = true;
+          resolveFinish(asResult({}, Math.max(0, Date.now() - startedAt)));
+        }
+        await dependencies.cancelPcmCapture(captureSubscription);
+        captureSubscription = null;
+        if (socket?.readyState === 1) socket.send(JSON.stringify({ type: 'cancel' }));
+        closeSocket();
+      })();
+      return cancelPromise;
     },
   };
 }

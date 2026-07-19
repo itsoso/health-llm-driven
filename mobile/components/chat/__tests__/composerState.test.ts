@@ -125,4 +125,50 @@ describe('composerState', () => {
     expect(reduceComposerState(cancelled, { type: 'hold_ready' })).toEqual(cancelled);
     expect(reduceComposerState(cancelled, { type: 'hold_transcribed' })).toEqual(cancelled);
   });
+
+  it('keeps a cancelled hold release from entering transcription', () => {
+    const starting = reduceComposerState(createInitialComposerState(), { type: 'hold_start' });
+    const recording = reduceComposerState(starting, { type: 'hold_ready' });
+    const cancelled = reduceComposerState(
+      reduceComposerState(recording, { type: 'hold_move', gesture: 'cancel' }),
+      { type: 'hold_release' },
+    );
+
+    expect(cancelled).toMatchObject({ mode: 'hold', phase: 'idle', gesture: null });
+    expect(reduceComposerState(cancelled, { type: 'hold_transcribed' })).toEqual(cancelled);
+  });
+
+  it('returns to hold mode after a normal voice send release', () => {
+    const starting = reduceComposerState(createInitialComposerState(), { type: 'hold_start' });
+    const recording = reduceComposerState(starting, { type: 'hold_ready' });
+    const transcribing = reduceComposerState(recording, { type: 'hold_release' });
+    const complete = reduceComposerState(transcribing, { type: 'hold_transcribed' });
+
+    expect(complete).toEqual({
+      mode: 'hold',
+      phase: 'idle',
+      dictationEnabled: true,
+      gesture: null,
+    });
+  });
+
+  it('clears an input error when the user toggles modes to retry', () => {
+    const text = reduceComposerState(createInitialComposerState(), { type: 'toggle_mode' });
+    const failed = reduceComposerState(text, { type: 'fail', errorCode: 'cloud_asr_failed' });
+    const hold = reduceComposerState(failed, { type: 'toggle_mode' });
+
+    expect(hold).toEqual({
+      mode: 'hold',
+      phase: 'idle',
+      dictationEnabled: true,
+      gesture: null,
+    });
+  });
+
+  it('ignores completion events when the composer is no longer submitting', () => {
+    const initial = createInitialComposerState();
+
+    expect(reduceComposerState(initial, { type: 'submit_complete' })).toEqual(initial);
+    expect(reduceComposerState(initial, { type: 'dictation_end' })).toEqual(initial);
+  });
 });

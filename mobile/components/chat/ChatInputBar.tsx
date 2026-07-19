@@ -483,11 +483,16 @@ export default function ChatInputBar({
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     dispatchComposer({ type: 'dictation_start' });
     const started = await realtimeDictation.startDictation();
+    const cancelledDuringStartup = dictationStopRequestedRef.current
+      || activeVoiceSourceRef.current !== 'dictation';
     if (started === false) {
-      dispatchComposer({ type: 'fail', errorCode: realtimeDictation.error || 'dictation_start_failed' });
+      if (!cancelledDuringStartup) {
+        dispatchComposer({ type: 'fail', errorCode: realtimeDictation.error || 'dictation_start_failed' });
+      }
       activeVoiceSourceRef.current = null;
       return false;
     }
+    if (cancelledDuringStartup) return false;
     return true;
   }, [input, realtimeDictation]);
 
@@ -609,13 +614,17 @@ export default function ChatInputBar({
     dispatchComposer({ type: 'hold_start' });
     setCancelHint(false);
     const started = await realtimeDictation.startDictation();
+    const cancelledDuringStartup = cancelledRef.current
+      || !voiceGestureActiveRef.current
+      || activeVoiceSourceRef.current !== 'hold';
     if (started === false) {
       voiceGestureActiveRef.current = false;
-      if (composerRef.current.phase === 'hold_starting') {
+      if (!cancelledDuringStartup && composerRef.current.phase === 'hold_starting') {
         dispatchComposer({ type: 'fail', errorCode: 'hold_recording_start_failed' });
       }
       return;
     }
+    if (cancelledDuringStartup) return;
     dispatchComposer({ type: 'hold_ready' });
   }, [realtimeDictation]);
 
