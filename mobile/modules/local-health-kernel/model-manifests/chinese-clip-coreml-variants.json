@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 1,
+  "modelId": "OFA-Sys/chinese-clip-rn50",
+  "modelRevision": "717ba215769231e53b9b7c6b9d329b9cc5944418",
+  "checkpointSha256": "b196ee3ee528b70be1158ab1aafb1d2f1c801ad2d9ffb3bae31b0d305f82fc88",
+  "minimumDeploymentTarget": "iOS16",
+  "shippedComponents": [
+    "image_encoder"
+  ],
+  "input": {
+    "name": "image",
+    "shape": [
+      1,
+      3,
+      224,
+      224
+    ],
+    "mean": [
+      0.48145466,
+      0.4578275,
+      0.40821073
+    ],
+    "std": [
+      0.26862954,
+      0.26130258,
+      0.27577711
+    ]
+  },
+  "output": {
+    "name": "image_features",
+    "dimension": 1024,
+    "l2Normalized": true
+  },
+  "conversion": {
+    "python": "3.12.10",
+    "coremltools": "8.3.0",
+    "torch": "2.2.2",
+    "parityComputeUnits": "CPU_ONLY"
+  },
+  "compressionPolicy": {
+    "algorithm": "linear_weight_quantization",
+    "mode": "linear",
+    "dtype": "int8",
+    "granularity": "per_channel",
+    "weightThreshold": 65536
+  },
+  "packageBudgetBytes": 52428800,
+  "labelBank": {
+    "path": ".build/models/chinese-clip-rn50/chinese-clip-label-bank-v1.bin",
+    "bytes": 329784,
+    "sha256": "dd742771850020c43f58e5efca59246f6d64ceea5143ea2332f1bf2cef6dd2ae"
+  },
+  "variants": {
+    "fp16": {
+      "packagePath": ".build/models/chinese-clip-rn50/coreml/fp16/ChineseClipRN50Image.mlpackage",
+      "packageBytes": 76688662,
+      "packageSha256": "5f4077621a9744b7455371c00f1ed744723b45c716fc15f26b72c4d353f2eaac",
+      "compiledPath": ".build/models/chinese-clip-rn50/coreml/fp16-compiled/ChineseClipRN50Image.mlmodelc",
+      "compiledBytes": 76711113,
+      "compiledSha256": "91ae1564b42ebd79e8b4d7737484f3f66929198db7ed84a87a2ffbf3a44c1484",
+      "totalInstalledBytes": 77040897,
+      "parity": {
+        "caseCount": 3,
+        "minimumCosine": 0.9999935626780782,
+        "tolerance": 0.999
+      },
+      "packageGate": "fail"
+    },
+    "int8": {
+      "packagePath": ".build/models/chinese-clip-rn50/coreml/int8/ChineseClipRN50Image.mlpackage",
+      "packageBytes": 39267921,
+      "packageSha256": "3c609e94d6a9fd5ef94ffe6082cb22e1235c7ed2bdf816faa63d2429517a39b7",
+      "compiledPath": ".build/models/chinese-clip-rn50/coreml/int8-compiled/ChineseClipRN50Image.mlmodelc",
+      "compiledBytes": 39296441,
+      "compiledSha256": "69dec53aff206868748cd288679c553f89ba5e5ba3d203bd8d84d91ee9d5b6e7",
+      "totalInstalledBytes": 39626225,
+      "parity": {
+        "caseCount": 3,
+        "minimumCosine": 0.9950830876471225,
+        "tolerance": 0.99
+      },
+      "packageGate": "pass",
+      "qualityGate": "pending_authorized_food_eval"
+    }
+  },
+  "selectedCandidate": "int8",
+  "releaseStatus": "blocked_pending_quality_and_device_gates"
+}

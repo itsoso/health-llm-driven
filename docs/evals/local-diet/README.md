@@ -19,6 +19,10 @@ Task 1 已固定可重复的上游来源：模型 revision `717ba215769231e53b9b
 
 Task 2 的 `ModelSources/chinese-clip-food-labels-v1.json` 只含 owner-authored canonical ID、中文名、别名与类别，构建器会递归拒绝营养和份量字段。固定 RBT3 文本塔已在构建机生成 `CCLBV1` 单位向量库；二次完整生成得到相同 SHA-256。生成向量继续留在 `.build/models/`，仓库只保存 `model-manifests/chinese-clip-label-bank-v1.json` 的来源、维度、行数和输出摘要。
 
+Task 3 已用固定 Python / PyTorch / Core ML Tools 环境导出纯视觉塔。FP16 对照的 PyTorch/Core ML 最低 embedding cosine 为 `0.9999935626780782`，编译模型加标签库为 77040897 bytes，超过 50 MB 预算。候选 int8 只量化参数量不少于 65536 的权重，采用 per-channel 非对称线性量化；最低 cosine 为 `0.9950830876471225`，编译模型加标签库为 39626225 bytes，转换一致性与包体 Gate 均通过。
+
+全量 `linear_symmetric int8`、低阈值非对称 int8 和 8-bit k-means palettization 均因冻结一致性阈值失败而被放弃，没有为迁就模型下调阈值。Mac 的量化模型校验固定为 CPU-only，以规避已复现的 MPSGraph 编译器中止；产物本身不锁定运行单元，iPhone 真机仍须单独测量。精确路径、摘要、压缩配置和编译后大小见 `model-manifests/chinese-clip-coreml-variants.json`。int8 仍处于 **BLOCK**，尚未通过授权餐食质量和代表性真机 Gate。
+
 ## 可重复的能力证据
 
 探针与基准位于 `mobile/modules/local-health-kernel/`。探针只查询可用性；基准只有在 `LOCAL_DIET_ENABLE_LIVE_BENCHMARK=1` 时才执行推理。它固定使用一条合成中文餐食，只输出食物名、数量、单位和设备性能，不读取健康数据、相册或营养值，也没有网络降级路径。Swift Package 是 G2 测试壳，不是生产功能。
