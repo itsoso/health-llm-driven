@@ -142,11 +142,13 @@ Apple references:
 - System model availability depends on an eligible device and Apple Intelligence being enabled.
 - The June 2026 framework adds newer model and multimodal capabilities, which require separate versioned evaluation: <https://developer.apple.com/documentation/Updates/FoundationModels>
 
-### 5.3 Vision and optional downloaded model
+### 5.3 Vision and Chinese-CLIP downloaded model
 
 Vision supplies on-device OCR, barcode, classification and custom Core ML integration: <https://developer.apple.com/documentation/vision>. Core ML supports private on-device execution and runtime model download: <https://developer.apple.com/documentation/coreml>.
 
-A downloadable food vision model is an experiment behind a benchmark gate, not part of the base promise. It ships only if it improves corrected-draft completion over Vision/history/manual baselines within memory, thermal and download budgets. It never estimates authoritative nutrients.
+The selected experiment is `OFA-Sys/chinese-clip-rn50`. The App carries only its Core ML image tower and build-time Chinese food-label embeddings; the RBT3 text tower is not shipped. It returns at most three identity candidates and never estimates authoritative nutrients or portions. The complete design and independent Gate are defined in `docs/plans/2026-07-18-chinese-clip-local-food-vision-design.md`.
+
+Chinese-CLIP remains behind a benchmark gate and is not part of the base promise. It ships only if its pinned artifact and licenses are verifiable and it improves corrected-draft completion within quality, package, memory and thermal budgets. Failure always falls back to Vision/history/manual paths without cloud inference.
 
 ### 5.4 Explicit cloud enhancement
 
