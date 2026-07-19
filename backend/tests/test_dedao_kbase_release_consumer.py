@@ -1016,6 +1016,72 @@ def test_release_and_agent_package_workspaces_share_one_lock(tmp_path):
     assert writer.is_alive() is False
 
 
+def test_configured_release_root_symlink_uses_one_workspace_for_sync_and_review(
+    tmp_path,
+    db,
+    monkeypatch,
+):
+    from app.config import settings
+    from app.services.kbase_review_workspace import review_workspace_lock
+    from app.services.system_knowledge_service import _configured_system_kb_artifact_dir
+    from app.tasks.system_knowledge_lifecycle import (
+        _dedao_kbase_review_artifact_dir,
+        sync_dedao_kbase_releases_draft_once,
+    )
+
+    physical_workspace = tmp_path / "physical-review-workspace"
+    physical_workspace.mkdir()
+    configured_workspace = tmp_path / "configured-review-workspace"
+    configured_workspace.symlink_to(physical_workspace, target_is_directory=True)
+    monkeypatch.setattr(settings, "dedao_kbase_review_artifact_dir", str(configured_workspace))
+
+    sync_workspace = _dedao_kbase_review_artifact_dir()
+    review_workspace = _configured_system_kb_artifact_dir(workspace="release")
+    assert sync_workspace == physical_workspace.resolve()
+    assert review_workspace == physical_workspace.resolve()
+
+    review_acquired = Event()
+
+    def review_reader() -> None:
+        with review_workspace_lock(review_workspace):
+            review_acquired.set()
+
+    with review_workspace_lock(sync_workspace):
+        reader = Thread(target=review_reader)
+        reader.start()
+        assert review_acquired.wait(timeout=0.1) is False
+
+    assert review_acquired.wait(timeout=2)
+    reader.join(timeout=2)
+    assert reader.is_alive() is False
+
+    release = _release_payload()
+    requests: list[tuple[str, str, dict | None]] = []
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _release_handler(release, requests))
+    server_thread = Thread(target=server.serve_forever, daemon=True)
+    server_thread.start()
+    canonical = tmp_path / "canonical"
+    _write_canonical_artifacts(canonical, marker="base-v1")
+    try:
+        result = sync_dedao_kbase_releases_draft_once(
+            db,
+            base_url=f"http://127.0.0.1:{server.server_port}",
+            auth_token="secret-token",
+            artifact_dir=sync_workspace,
+            base_artifact_dir=canonical,
+            source_root=tmp_path / "source",
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        server_thread.join(timeout=5)
+
+    assert result["status"] == "draft_written"
+    assert Path(result["artifact_dir"]) == physical_workspace.resolve()
+    assert configured_workspace.is_symlink()
+    assert (review_workspace / "draft_manifest.json").is_file()
+
+
 def test_review_bundle_recovers_workspace_backup_before_read(tmp_path, monkeypatch):
     from app.config import settings
     from app.services.kbase_review_workspace import workspace_backup_path

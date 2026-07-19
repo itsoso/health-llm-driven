@@ -70,7 +70,7 @@ def _dedao_kbase_review_artifact_dir() -> Path:
     configured = (settings.dedao_kbase_review_artifact_dir or "").strip()
     if not configured:
         raise ValueError("DEDAO_KBASE_REVIEW_ARTIFACT_DIR is required for Release sync")
-    return Path(configured).expanduser()
+    return Path(configured).expanduser().resolve()
 
 
 def _artifact_fingerprint(artifact_dir: str | Path) -> str:
