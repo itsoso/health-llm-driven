@@ -1,6 +1,7 @@
 import Foundation
 
 public enum LocalFoodEvidence: String, Codable, Equatable, Sendable {
+    case userSelection = "user_selection"
     case wholeImage = "whole_image"
     case salientRegion = "salient_region"
     case opticalCharacterRecognition = "optical_character_recognition"
