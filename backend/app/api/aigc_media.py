@@ -19,6 +19,7 @@ from app.services.aigc_media_job_service import (
     AIGCMediaJobError,
     AIGCMediaJobQuotaExceeded,
     AIGCMediaJobService,
+    is_recoverable_provider_result_missing_job,
 )
 from app.services.aigc_media_service import AIGCMediaConfigurationError
 
@@ -72,9 +73,10 @@ async def get_aigc_media_job(
     # Historical rows remain readable during a credential outage.  Do not turn
     # an existing status into a false failure merely because this request cannot
     # poll the provider at this moment.
-    if settings.dashscope_aigc_api_key and job.provider_task_id and job.status not in {
-        "succeeded", "failed", "cancelled", "submission_unknown",
-    }:
+    if settings.dashscope_aigc_api_key and job.provider_task_id and (
+        job.status not in {"succeeded", "failed", "cancelled", "submission_unknown"}
+        or is_recoverable_provider_result_missing_job(job)
+    ):
         try:
             job = await service.refresh(job)
         except AIGCMediaConfigurationError as exc:

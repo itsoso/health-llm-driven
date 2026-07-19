@@ -291,6 +291,55 @@ async def test_refresh_and_cancel_use_provider_task_state(
 
 
 @pytest.mark.asyncio
+async def test_refresh_recovers_historical_video_result_missing_failure(
+    db, auth_user_and_headers, monkeypatch, tmp_path,
+):
+    from app.models.aigc_media_job import AIGCMediaJob
+    from app.services import aigc_media_job_service
+    from app.services.aigc_media_job_service import AIGCMediaJobService
+
+    user, _ = auth_user_and_headers
+    provider = _FakeProvider()
+    provider.task_payload = {
+        "output": {
+            "task_status": "SUCCEEDED",
+            "video_url": "https://result.aliyuncs.com/recovered.mp4",
+        }
+    }
+    monkeypatch.setattr(aigc_media_job_service, "_AIGC_UPLOAD_ROOT", tmp_path)
+    job = AIGCMediaJob(
+        id="aigc-task-recover",
+        user_id=user.id,
+        kind="image_to_video",
+        status="failed",
+        progress=50,
+        model="wan2.7-i2v-2026-04-25",
+        provider_task_id="task-video-recover",
+        idempotency_key="recover-task",
+        request_fingerprint="e" * 64,
+        provider_error_code="provider_result_missing",
+        error_message="生成结果不可用，请重新生成",
+    )
+    db.add(job)
+    db.commit()
+
+    async def download(url: str, _kind: str):
+        assert url == "https://result.aliyuncs.com/recovered.mp4"
+        return b"recovered-video", "video/mp4", "mp4"
+
+    refreshed = await AIGCMediaJobService(
+        db,
+        provider_factory=lambda: provider,
+        result_downloader=download,
+    ).refresh(job)
+
+    assert refreshed.status == "succeeded"
+    assert refreshed.progress == 100
+    assert refreshed.provider_error_code is None
+    assert refreshed.error_message is None
+
+
+@pytest.mark.asyncio
 async def test_transient_refresh_failure_keeps_accepted_job_active(db, auth_user_and_headers):
     from app.models.aigc_media_job import AIGCMediaJob
     from app.services.aigc_media_job_service import AIGCMediaJobService

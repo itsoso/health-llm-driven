@@ -49,6 +49,7 @@ logger = logging.getLogger(__name__)
 
 MEDIA_KINDS = frozenset({"text_to_image", "image_to_image", "text_to_video", "image_to_video"})
 IMAGE_KINDS = frozenset({"text_to_image", "image_to_image"})
+VIDEO_KINDS = MEDIA_KINDS - IMAGE_KINDS
 SOURCE_IMAGE_KINDS = frozenset({"image_to_image", "image_to_video"})
 # submission_unknown is terminal from a client polling perspective: we cannot
 # prove whether Model Studio accepted a paid request, so retries are unsafe.
@@ -59,6 +60,21 @@ _AIGC_UPLOAD_ROOT = Path(__file__).resolve().parents[2] / "uploads" / "aigc"
 _MAX_IMAGE_RESULT_BYTES = 20 * 1024 * 1024
 _MAX_VIDEO_RESULT_BYTES = 100 * 1024 * 1024
 _CONFIRMATION_TTL = timedelta(minutes=10)
+
+
+def is_recoverable_provider_result_missing_job(job: AIGCMediaJob) -> bool:
+    """Return whether a historical video result can be re-polled safely.
+
+    This only reuses an existing provider task after an older client release
+    misread Wan's successful ``output.video_url`` response. It never creates a
+    second billable request.
+    """
+    return bool(
+        job.status == "failed"
+        and job.kind in VIDEO_KINDS
+        and job.provider_task_id
+        and job.provider_error_code == "provider_result_missing"
+    )
 
 
 class AIGCMediaJobError(RuntimeError):
@@ -484,7 +500,12 @@ class AIGCMediaJobService:
 
     async def refresh(self, job: AIGCMediaJob) -> AIGCMediaJob:
         if job.status in TERMINAL_STATUSES:
-            return job
+            if not is_recoverable_provider_result_missing_job(job):
+                return job
+            if not self._reopen_provider_result_missing_job(job):
+                self.db.refresh(job)
+                return job
+            self.db.refresh(job)
         if not job.provider_task_id:
             if job.status == "dispatching":
                 self._mark_submission_unknown(job, "provider_submission_unknown")
@@ -822,6 +843,32 @@ class AIGCMediaJobService:
                 AIGCMediaJob.status.in_(tuple(_MUTABLE_ACTIVE_STATUSES)),
             )
             .update(values, synchronize_session=False)
+        )
+        self.db.commit()
+        return bool(affected)
+
+    def _reopen_provider_result_missing_job(self, job: AIGCMediaJob) -> bool:
+        """Re-poll a falsely failed historical video task without resubmission."""
+        affected = (
+            self.db.query(AIGCMediaJob)
+            .filter(
+                AIGCMediaJob.id == job.id,
+                AIGCMediaJob.user_id == job.user_id,
+                AIGCMediaJob.status == "failed",
+                AIGCMediaJob.kind.in_(tuple(VIDEO_KINDS)),
+                AIGCMediaJob.provider_task_id.is_not(None),
+                AIGCMediaJob.provider_error_code == "provider_result_missing",
+            )
+            .update(
+                {
+                    "status": "running",
+                    "completed_at": None,
+                    "last_provider_checked_at": None,
+                    "provider_error_code": None,
+                    "error_message": None,
+                },
+                synchronize_session=False,
+            )
         )
         self.db.commit()
         return bool(affected)
