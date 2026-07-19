@@ -184,6 +184,17 @@ after its prior URL expires. This Gate deliberately requires a real user card
 click because a synthetic backend request would bypass the product's explicit
 paid-generation consent boundary.
 
+### Native Inline Playback Follow-up (2026-07-19)
+
+The earlier Mobile runtime `1.3.1` opened completed video results in an
+in-app browser. The result card now embeds Expo's native video view in the
+active Agent transcript, retaining the owner-scoped, short-lived result URL
+and adding native play, seek, mute, and fullscreen controls. This is a native
+module change (`expo-video`), so it requires a new `1.3.2` iOS binary; it
+cannot be delivered to `1.3.1` through OTA. The final verification is to
+install the `1.3.2` QR release and play a completed private video in its
+originating Agent conversation without navigating away.
+
 ## Configuration Record
 
 Production uses an existing independent Model Studio pay-as-you-go credential
