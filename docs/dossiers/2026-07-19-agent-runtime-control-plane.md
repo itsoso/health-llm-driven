@@ -4,8 +4,8 @@
 |---|---|
 | slug | `agent-runtime-control-plane` |
 | 创建日期 | 2026-07-19 |
-| 当前阶段 | S3 规划 |
-| 状态 | defining |
+| 当前阶段 | S4 研发任务分解 |
+| 状态 | building |
 | 负责 | Codex |
 | 反馈环 | PostgreSQL/SQLite 集成测试 / Agent SSE 回归 / backend deploy |
 
@@ -64,7 +64,7 @@ RequirementAdmission:
 ## S3 · 规划
 
 - 设计: `docs/plans/2026-07-19-agent-runtime-control-plane-design.md`
-- 实施计划: 设计基线提交后按 writing-plans 协议生成并回填。
+- 实施计划: `docs/plans/2026-07-19-agent-runtime-control-plane.md`
 - 第一里程碑: canonical RunContext、Run Ledger、会话级准入与兼容适配。
 - 第二里程碑另立 Gate: ToolSpec/operation idempotency/reconcile 后再做进程重启恢复。
 
