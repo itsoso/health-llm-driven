@@ -66,9 +66,9 @@ trap 'rm -f "${UPDATE_LOG}"' EXIT
 run_update_attempt() {
   set +e
   if [[ -n "${OTA_EAS_RUNNER:-}" ]]; then
-    "${OTA_EAS_RUNNER}" update --channel "${CHANNEL}" --message "${MESSAGE}" --platform ios --environment "${ENVIRONMENT}" --non-interactive 2>&1 | tee "${UPDATE_LOG}"
+    CI=1 "${OTA_EAS_RUNNER}" update --channel "${CHANNEL}" --message "${MESSAGE}" --platform ios --environment "${ENVIRONMENT}" 2>&1 | tee "${UPDATE_LOG}"
   else
-    npx eas-cli update --channel "${CHANNEL}" --message "${MESSAGE}" --platform ios --environment "${ENVIRONMENT}" --non-interactive 2>&1 | tee "${UPDATE_LOG}"
+    CI=1 npx eas-cli update --channel "${CHANNEL}" --message "${MESSAGE}" --platform ios --environment "${ENVIRONMENT}" 2>&1 | tee "${UPDATE_LOG}"
   fi
   local exit_code=$?
   set -e
