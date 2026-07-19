@@ -109,6 +109,22 @@ def _replace_workspace(candidate: Path, target: Path) -> None:
         shutil.rmtree(backup)
 
 
+def _preserve_agent_package_workspace(target: Path, candidate: Path) -> None:
+    """Carry the fixed child review workspace across a parent rebuild."""
+    source = target / "agent-packages"
+    if not source.exists() and not source.is_symlink():
+        return
+    if source.is_symlink() or not source.is_dir():
+        raise ValueError("Agent Package review workspace must be a real directory under the release workspace")
+
+    destination = candidate / "agent-packages"
+    if destination.is_symlink() or destination.is_file():
+        destination.unlink()
+    elif destination.exists():
+        shutil.rmtree(destination)
+    shutil.copytree(source, destination)
+
+
 def _normalize_canonical_review_status(artifact_dir: str | Path) -> None:
     """Treat missing status in the trusted repository seed as reviewed.
 
@@ -619,6 +635,7 @@ def _sync_dedao_kbase_releases_draft_locked(
             encoding="utf-8",
         )
         gate = validate_artifact_review_gate(candidate)
+        _preserve_agent_package_workspace(target, candidate)
         _replace_workspace(candidate, target)
     finally:
         if candidate.exists():

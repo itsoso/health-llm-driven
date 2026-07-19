@@ -740,6 +740,7 @@ def test_release_sync_replays_when_persistent_workspace_is_lost(tmp_path, db):
 def test_release_sync_rebuilds_when_canonical_base_changes(tmp_path, db):
     from app.tasks.system_knowledge_lifecycle import sync_dedao_kbase_releases_draft_once
     from app.services.system_knowledge_ingest import review_draft_artifacts
+    from app.services.kbase_review_workspace import workspace_content_fingerprint
 
     release = _release_payload()
     requests: list[tuple[str, str, dict | None]] = []
@@ -758,6 +759,9 @@ def test_release_sync_rebuilds_when_canonical_base_changes(tmp_path, db):
             base_artifact_dir=canonical,
             source_root=tmp_path / "source",
         )
+        agent_workspace = workspace / "agent-packages"
+        _write_canonical_artifacts(agent_workspace, marker="agent-review")
+        agent_fingerprint = workspace_content_fingerprint(agent_workspace)
         _write_canonical_artifacts(canonical, marker="base-v2")
         rebuilt = sync_dedao_kbase_releases_draft_once(
             db,
@@ -776,6 +780,9 @@ def test_release_sync_rebuilds_when_canonical_base_changes(tmp_path, db):
     assert rebuilt["base_fingerprint"] != first["base_fingerprint"]
     pages = [json.loads(line) for line in (workspace / "pages.jsonl").read_text().splitlines()]
     assert any(page.get("title") == "base-v2" for page in pages)
+    assert workspace_content_fingerprint(agent_workspace) == agent_fingerprint
+    agent_pages = [json.loads(line) for line in (agent_workspace / "pages.jsonl").read_text().splitlines()]
+    assert any(page.get("title") == "agent-review" for page in agent_pages)
     assert rebuilt["gate"]["relations"]["missing"] == 0
     review = review_draft_artifacts(workspace, reviewer="test:reviewer")
     assert review["serving_allowed"] is True
@@ -986,6 +993,27 @@ def test_workspace_lock_serializes_concurrent_writers(tmp_path):
     second.join(timeout=2)
 
     assert order == ["first-enter", "first-exit", "second-enter"]
+
+
+def test_release_and_agent_package_workspaces_share_one_lock(tmp_path):
+    from app.services.kbase_review_workspace import review_workspace_lock
+
+    release_workspace = tmp_path / "review-workspace"
+    agent_workspace = release_workspace / "agent-packages"
+    agent_acquired = Event()
+
+    def agent_writer() -> None:
+        with review_workspace_lock(agent_workspace):
+            agent_acquired.set()
+
+    with review_workspace_lock(release_workspace):
+        writer = Thread(target=agent_writer)
+        writer.start()
+        assert agent_acquired.wait(timeout=0.1) is False
+
+    assert agent_acquired.wait(timeout=2)
+    writer.join(timeout=2)
+    assert writer.is_alive() is False
 
 
 def test_review_bundle_recovers_workspace_backup_before_read(tmp_path, monkeypatch):

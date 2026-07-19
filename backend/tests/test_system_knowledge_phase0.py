@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+import inspect
 import json
 
 from sqlalchemy.dialects import postgresql
@@ -1491,6 +1492,50 @@ def test_admin_dedao_kbase_review_workspace_selector_reaches_agent_package_draft
     assert preview.json()["artifact_dir"] == str(agent_workspace)
     assert preview.json()["dry_run"] is True
     assert db.get(KBDocument, "claim:release-abc-claim-1") is None
+
+
+def test_dedao_kbase_review_services_do_not_accept_arbitrary_artifact_paths():
+    from app.services import system_knowledge_service
+
+    service_names = (
+        "get_dedao_kbase_draft_review_bundle",
+        "list_dedao_kbase_review_claims",
+        "adjudicate_dedao_kbase_review_claim",
+        "generate_dedao_kbase_review_verification_packet",
+        "list_dedao_kbase_review_verification_packets",
+        "apply_dedao_kbase_review_verification_packet",
+        "approve_dedao_kbase_draft_review",
+        "publish_dedao_kbase_reviewed_artifacts",
+        "preview_dedao_kbase_reviewed_artifacts_publish",
+    )
+
+    for service_name in service_names:
+        parameters = inspect.signature(getattr(system_knowledge_service, service_name)).parameters
+        assert "artifact_dir" not in parameters
+
+
+def test_agent_package_review_workspace_rejects_symlink_escape(
+    client,
+    auth_user_and_headers,
+    tmp_path,
+    monkeypatch,
+):
+    user, headers = auth_user_and_headers
+    user.is_admin = True
+    release_workspace = tmp_path / "dedao-review"
+    escaped_workspace = tmp_path / "outside-review"
+    release_workspace.mkdir()
+    _write_dedao_review_workspace(escaped_workspace)
+    (release_workspace / "agent-packages").symlink_to(escaped_workspace, target_is_directory=True)
+    monkeypatch.setattr(settings, "dedao_kbase_review_artifact_dir", str(release_workspace))
+
+    response = client.get(
+        "/api/v1/admin/knowledge/dedao_kbase/draft_review?workspace=agent_package",
+        headers=headers,
+    )
+
+    assert response.status_code == 400
+    assert "outside the configured release workspace" in response.json()["detail"]
 
 
 def test_admin_dedao_kbase_claim_adjudication_records_metadata_only_audit(
