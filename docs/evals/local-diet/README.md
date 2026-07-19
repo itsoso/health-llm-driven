@@ -1,21 +1,22 @@
 # 本地饮食端侧能力与评测契约
 
 > Updated: 2026-07-18
-> Scope: G2 capability/privacy spike only; no inference and no production health-data storage
+> Scope: G2 capability/privacy spike and opt-in synthetic inference benchmark; no production health-data storage
 
 ## 结论
 
-当前 SDK 足以支撑“手工/确定性路径 + Vision + 有条件的系统文字模型”，但不足以把 Foundation Models 多模态能力当作当前产品依赖。营养数据授权和本地存储威胁模型已有明确解法；G2 仍为 **BLOCK**，原因收敛为没有可用 iPhone 真机的推理时延、内存和温升证据。
+当前 SDK 足以支撑“手工/确定性路径 + Vision + 有条件的系统文字模型”，但不足以把 Foundation Models 多模态能力当作当前产品依赖。营养数据授权和本地存储威胁模型已有明确解法；结构化文字推理基准也已具备真机执行条件。G2 仍为 **BLOCK**，原因收敛为没有可用 iPhone 真机的推理时延、内存和温升证据。
 
 这不否定完全本地饮食方向。它把首版可保证的能力收敛为：所有设备均可手工/确定性记录；Vision 用于 OCR、条码和通用分类；iOS 26 且运行时可用时，系统语言模型只增强文字草稿。
 
 ## 可重复的能力证据
 
-探针位于 `mobile/modules/local-health-kernel/`，只查询可用性，不执行推理、不读取健康数据、不联网。Swift Package 是 G2 测试壳；后续 Expo 模块复用 `ios/LocalHealthCapabilityProbe.swift`。
+探针与基准位于 `mobile/modules/local-health-kernel/`。探针只查询可用性；基准只有在 `LOCAL_DIET_ENABLE_LIVE_BENCHMARK=1` 时才执行推理。它固定使用一条合成中文餐食，只输出食物名、数量、单位和设备性能，不读取健康数据、相册或营养值，也没有网络降级路径。Swift Package 是 G2 测试壳，不是生产功能。
 
 ```bash
 cd mobile/modules/local-health-kernel
 swift test
+swift test --filter LocalDietInferenceBenchmarkTests
 xcodebuild \
   -scheme LocalHealthCapabilityProbe \
   -destination 'platform=iOS Simulator,id=<DEVICE_ID>' \
@@ -34,6 +35,26 @@ xcodebuild \
 模拟器的“系统模型可用”不能外推到真机。Apple 的运行时状态还会因设备资格、Apple Intelligence 开关和模型下载状态而变化，探针分别返回 `device_not_eligible`、`apple_intelligence_not_enabled` 和 `model_not_ready`，不会抛错或静默切云。
 
 Xcode 26.5 本地 Foundation Models 接口只提供当前已编译的文字模型能力；本探针因此把多模态明确标为 `sdk_not_supported`。照片路径当前只允许走 Vision 或未来通过独立评测的 Core ML 模型。
+
+## 结构化文字推理基准
+
+`ios/LocalDietInferenceBenchmark.swift` 使用 Foundation Models 的 guided generation，把固定文本“午餐吃了150克米饭、120克清蒸鲈鱼和一碗约200克西兰花”解析为类型化食物数组。冷运行创建会话，热运行复用会话；每次运行以 10ms 间隔采样 Mach `phys_footprint`，并记录单调时钟时延和运行前后 thermal state。内存指标读取失败会让基准显式失败，禁止用 0 MB 伪装证据。
+
+确定性测试注入假模型、时钟、峰值内存和温度状态，覆盖：不可用原因、冷/热时延、峰值内存增量、温度、JSON round-trip、模型失败透传、指标失败透传和显式开关。2026-07-18 的证据为：macOS 完整 Swift Package 15 tests / 0 failures / 1 live test skipped；iPhone 17 Pro Simulator iOS 26.4 测试通过；generic iOS 16 deployment build 通过。模拟器仍不构成性能证据。
+
+真机连接、解锁并信任此 Mac 后执行：
+
+```bash
+cd mobile/modules/local-health-kernel
+LOCAL_DIET_ENABLE_LIVE_BENCHMARK=1 xcodebuild \
+  -scheme LocalHealthCapabilityProbe \
+  -destination 'platform=iOS,id=<DEVICE_ID>' \
+  -derivedDataPath .build/xcode-device-derived \
+  -only-testing:LocalHealthCapabilityProbeTests/LocalDietInferenceBenchmarkTests/testLiveBenchmarkEmitsDeviceReportOnlyWhenExplicitlyEnabled \
+  test
+```
+
+成功时测试日志输出单行 `LOCAL_DIET_INFERENCE_BENCHMARK=<json>`。如果系统模型不可用，JSON 必须包含明确 `unavailableReason`；如果可用，`caseResult` 包含冷/热时延、峰值内存增量及前后温度。这个原始报告只承载评测契约中的设备、模型和性能字段，完成代表性数据集评测后再汇入完整 `on-device-eval-contract.json` run。
 
 Apple 参考：
 

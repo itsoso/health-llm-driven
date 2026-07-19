@@ -68,6 +68,9 @@
 - Task 1 证据：
   - 新增可独立运行的 Swift Package 探针测试壳；先确认因探针不存在而 RED，再以最小实现转绿。
   - macOS 与 iOS Simulator 均通过 7 个能力契约测试；探针为系统模型不可用返回明确原因，不抛错、不静默走云。
+  - 新增 opt-in 结构化文字推理基准；先确认因 benchmark 类型不存在而 RED，再实现 fixed synthetic fixture、guided generation、冷/热运行、10ms 峰值内存采样和 thermal state 采集。
+  - 基准确定性测试覆盖不可用、冷/热时延、峰值内存、温度、JSON、模型错误和指标错误；内存采样失败硬失败，不会产生 0 MB 假证据。
+  - macOS 完整 Swift Package 为 15 tests / 0 failures / 1 live test skipped；显式开启的 Mac run 返回 `device_not_eligible` JSON。iPhone 17 Pro Simulator iOS 26.4 测试通过，generic iOS 16 deployment build 通过。
   - Xcode 26.5 / iPhoneOS SDK 26.5 下，Foundation Models 多模态明确为 `sdk_not_supported`；当前照片路线只能是 Vision 或另行评测的 Core ML。
   - Mac 26.4.1：系统模型 `device_not_eligible`，Vision OCR/分类/条码可用。
   - iPhone 17 Pro Simulator / iOS 26.4：系统模型探针报告可用，Vision 可用；模拟器结果不外推到真机。
@@ -78,7 +81,8 @@
   - 系统模型不可用必须降级到确定性/手工，而不是强制云端。
   - 自定义视觉模型必须经过纠正成本、内存、温升和下载体积 Gate。
 - 仍缺证据：
-  - 当前已登记 iPhone 真机均为 `unavailable`，未取得真机可用性、冷/热推理时延、峰值内存和温升。
+  - 2026-07-18 20:12 EDT 复查时，已登记 iPhone 17 Pro Max `01177F59-4E5B-50D4-A900-2AC9A4D5F372` 仍为 `unavailable`，未取得真机可用性、冷/热推理时延、峰值内存和温升。
+  - 真机执行命令和原始 JSON 标识已写入 `docs/evals/local-diet/README.md`；连接、解锁并信任设备后可直接续跑。
 - 已解除的阻断：
   - 数据授权：USDA FoodData Central 官方许可明确为 public domain / CC0 1.0；使用 Foundation Foods/SR Legacy 固定版本子集，App 运行时不取数。
   - 安全设计：设备密码为前置条件；独立派生 record/index key；恢复密钥为随机高熵而非用户弱口令；只恢复到空库；删除 crypto-shred；完整设计见 `docs/plans/2026-07-18-local-first-private-mode-design.md`。
@@ -92,7 +96,7 @@
 
 ## S5 · 实现
 
-- 产品实现未开始；仅完成不读写健康数据、不执行推理的 G2 capability probe。
+- 产品实现未开始；仅完成不读写健康数据的 G2 capability probe 与 opt-in 合成推理 benchmark。两者都是测试壳，不进入 App、不读用户数据、不提供云端 fallback。
 
 ## G3 · 测试闸
 
