@@ -26,8 +26,8 @@ struct LocalFoodVisionBenchmarkHostApp: App {
             let labelBankURL = try bundledLabelBankURL()
             let provenance = LocalFoodVisionProvenance(
                 modelArtifactSHA256: LocalFoodVisionBenchmarkConfig.modelArtifactSHA256,
-                labelBankVersion: "cn-food-labels-v1",
-                calibrationVersion: "cn-clip-calibration-v1",
+                labelBankVersion: "cn-food-labels-v2",
+                calibrationVersion: "cn-clip-calibration-v2",
                 precisionVariant: LocalFoodVisionBenchmarkConfig.precisionVariant
             )
             let engine = LocalChineseClipVisionEngine(
@@ -80,8 +80,8 @@ struct LocalFoodVisionBenchmarkHostApp: App {
                     downloadBytes: LocalFoodVisionBenchmarkConfig.sourceModelBytes
                         + LocalFoodVisionBenchmarkConfig.sourceLabelBankBytes,
                     modelArtifactSha256: LocalFoodVisionBenchmarkConfig.modelArtifactSHA256,
-                    labelBankVersion: "cn-food-labels-v1",
-                    calibrationVersion: "cn-clip-calibration-v1",
+                    labelBankVersion: "cn-food-labels-v2",
+                    calibrationVersion: "cn-clip-calibration-v2",
                     installedModelBytes: installedBytes(at: modelURL),
                     installedLabelBankBytes: installedBytes(at: labelBankURL),
                     precisionVariant: LocalFoodVisionBenchmarkConfig.precisionVariant

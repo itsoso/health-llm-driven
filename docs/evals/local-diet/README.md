@@ -32,7 +32,7 @@ Task 1 已固定可重复的上游来源：模型 revision `717ba215769231e53b9b
 
 `model-manifests/chinese-clip-rn50.json` 把分发边界焊死为 `image_encoder`，文本塔和 tokenizer 仅允许构建时使用。仓库 MIT 文本、模型卡的 Apache-2.0 声明和标准许可证文本均已保存并校验摘要。该证据允许继续技术评测，但不是法律意见；对外分发仍需最终授权审查。
 
-Task 2 的 `ModelSources/chinese-clip-food-labels-v1.json` 只含 owner-authored canonical ID、中文名、别名与类别，构建器会递归拒绝营养和份量字段。固定 RBT3 文本塔已在构建机生成 `CCLBV1` 单位向量库；二次完整生成得到相同 SHA-256。生成向量继续留在 `.build/models/`，仓库只保存 `model-manifests/chinese-clip-label-bank-v1.json` 的来源、维度、行数和输出摘要。
+Task 2 的 v1 食物身份库已在 2026-07-19 优化为 `ModelSources/chinese-clip-food-labels-v2.json`：继续只含 owner-authored canonical ID、中文名、别名与类别，并新增人物、宠物、风景、文档、屏幕、日常物品和空餐具等非食物视觉负标签。食物/非食物使用不同的冻结中文 prompt；构建器会校验 ID/类别前缀并递归拒绝营养和份量字段。固定 RBT3 文本塔已生成 `CCLBV1` 单位向量库；二次完整生成得到相同 SHA-256。生成向量继续留在 `.build/models/`，仓库只保存 `model-manifests/chinese-clip-label-bank-v2.json` 的来源、维度和摘要。负标签让拒识分支可运行，但不替代授权对抗集的质量 Gate。
 
 Task 3 已用固定 Python / PyTorch / Core ML Tools 环境导出纯视觉塔。FP16 对照的 PyTorch/Core ML 最低 embedding cosine 为 `0.9999935626780782`，编译模型加标签库为 77040897 bytes，超过 50 MB 预算。候选 int8 只量化参数量不少于 65536 的权重，采用 per-channel 非对称线性量化；最低 cosine 为 `0.9950830876471225`，编译模型加标签库为 39626225 bytes，转换一致性与包体 Gate 均通过。
 
@@ -132,7 +132,7 @@ ruby scripts/generate_food_vision_device_host.rb \
   --output .build/food-vision-host/LocalFoodVisionBenchmarkHost.xcodeproj \
   --team-id "$DEVELOPMENT_TEAM" \
   --model "$PWD/.build/models/chinese-clip-rn50/coreml/int8/ChineseClipRN50Image.mlpackage" \
-  --label-bank "$PWD/.build/models/chinese-clip-rn50/chinese-clip-label-bank-v1.bin" \
+  --label-bank "$PWD/.build/models/chinese-clip-rn50/chinese-clip-label-bank-v2.bin" \
   --fixtures "$AUTHORIZED_FOOD_EVAL_DIR" \
   --fp16-delta "$MEASURED_FP16_TO_INT8_IDENTITY_PRECISION_DELTA"
 ```
@@ -159,7 +159,7 @@ python3 scripts/score_local_food_vision_run.py score \
   --run "$CUSTOM_CORE_ML_RUN_JSON"
 ```
 
-当前工作区没有授权的 300-case 中文餐食集，环境中也没有 `AUTHORIZED_FOOD_EVAL_DIR`。因此 `model-manifests/chinese-clip-calibration-v1.json` 明确保持 `blocked_pending_authorized_dataset`：`selectedThresholds`、两个 split 摘要、FP16/压缩质量报告和选择结果全部为 `null`。这不是实现失败，而是数据 Gate 的预期拒绝；不能用用户私照、许可不明的网页图片、转换 cosine 或合成元数据伪装质量证据。当前 `0.5/0.03` 只是测试宿主的保守 policy floor，不是已校准的生产阈值。
+当前工作区没有授权的 300-case 中文餐食集，环境中也没有 `AUTHORIZED_FOOD_EVAL_DIR`。因此与 v2 标签集绑定的 `model-manifests/chinese-clip-calibration-v2.json` 明确保持 `blocked_pending_authorized_dataset`：`selectedThresholds`、两个 split 摘要、FP16/压缩质量报告和选择结果全部为 `null`。这不是实现失败，而是数据 Gate 的预期拒绝；不能用用户私照、许可不明的网页图片、转换 cosine 或合成元数据伪装质量证据。当前 `0.5/0.03` 只是测试宿主的保守 policy floor，不是已校准的生产阈值。
 
 ## 安全威胁模型评审
 

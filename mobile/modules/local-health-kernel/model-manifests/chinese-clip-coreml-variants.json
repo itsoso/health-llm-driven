@@ -46,9 +46,9 @@
   },
   "packageBudgetBytes": 52428800,
   "labelBank": {
-    "path": ".build/models/chinese-clip-rn50/chinese-clip-label-bank-v1.bin",
-    "bytes": 329784,
-    "sha256": "dd742771850020c43f58e5efca59246f6d64ceea5143ea2332f1bf2cef6dd2ae"
+    "path": ".build/models/chinese-clip-rn50/chinese-clip-label-bank-v2.bin",
+    "bytes": 363695,
+    "sha256": "dbf211703545159038de1d8b74772cf005186ed16e5ff7f1fceaac1614b135f9"
   },
   "variants": {
     "fp16": {
@@ -58,7 +58,7 @@
       "compiledPath": ".build/models/chinese-clip-rn50/coreml/fp16-compiled/ChineseClipRN50Image.mlmodelc",
       "compiledBytes": 76711113,
       "compiledSha256": "91ae1564b42ebd79e8b4d7737484f3f66929198db7ed84a87a2ffbf3a44c1484",
-      "totalInstalledBytes": 77040897,
+      "totalInstalledBytes": 77074808,
       "parity": {
         "caseCount": 3,
         "minimumCosine": 0.9999935626780782,
@@ -73,7 +73,7 @@
       "compiledPath": ".build/models/chinese-clip-rn50/coreml/int8-compiled/ChineseClipRN50Image.mlmodelc",
       "compiledBytes": 39296441,
       "compiledSha256": "69dec53aff206868748cd288679c553f89ba5e5ba3d203bd8d84d91ee9d5b6e7",
-      "totalInstalledBytes": 39626225,
+      "totalInstalledBytes": 39660136,
       "parity": {
         "caseCount": 3,
         "minimumCosine": 0.9950830876471225,

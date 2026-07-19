@@ -184,7 +184,7 @@ class ScoreLocalFoodVisionRunTests(unittest.TestCase):
     def test_committed_calibration_manifest_is_fail_closed_without_authorized_data(self) -> None:
         module_root = SCRIPT.parents[1]
         repository_root = module_root.parents[2]
-        calibration_path = module_root / "model-manifests/chinese-clip-calibration-v1.json"
+        calibration_path = module_root / "model-manifests/chinese-clip-calibration-v2.json"
         calibration = json.loads(calibration_path.read_text(encoding="utf-8"))
         dataset_contract = repository_root / calibration["datasetContract"]["path"]
 

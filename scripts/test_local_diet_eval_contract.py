@@ -49,8 +49,8 @@ def base_report(engine: str = "custom_core_ml", precision: str = "fp16") -> dict
         model_profile.update(
             {
                 "modelArtifactSha256": "a" * 64,
-                "labelBankVersion": "cn-food-labels-v1",
-                "calibrationVersion": "cn-clip-calibration-v1",
+                "labelBankVersion": "cn-food-labels-v2",
+                "calibrationVersion": "cn-clip-calibration-v2",
                 "installedModelBytes": 39_296_441,
                 "installedLabelBankBytes": 329_784,
                 "precisionVariant": precision,

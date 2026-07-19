@@ -164,8 +164,8 @@ final class LocalChineseClipVisionEngineTests: XCTestCase {
         XCTAssertEqual(result.decision, .unknown)
         XCTAssertTrue(result.candidates.isEmpty)
         XCTAssertEqual(result.provenance.modelArtifactSHA256, String(repeating: "a", count: 64))
-        XCTAssertEqual(result.provenance.labelBankVersion, "cn-food-labels-v1")
-        XCTAssertEqual(result.provenance.calibrationVersion, "cn-clip-calibration-v1")
+        XCTAssertEqual(result.provenance.labelBankVersion, "cn-food-labels-v2")
+        XCTAssertEqual(result.provenance.calibrationVersion, "cn-clip-calibration-v2")
         XCTAssertEqual(result.provenance.precisionVariant, "int8-linear-per-channel-65536")
     }
 
@@ -222,8 +222,9 @@ final class LocalChineseClipVisionEngineTests: XCTestCase {
 
         let bank = try LocalChineseClipLabelBankLoader().loadLabelBank(from: validURL)
 
-        XCTAssertEqual(bank.labelSetVersion, "cn-food-labels-v1")
-        XCTAssertEqual(bank.labels.map(\.canonicalFoodID), ["rice"])
+        XCTAssertEqual(bank.labelSetVersion, "cn-food-labels-v2")
+        XCTAssertEqual(bank.labels.map(\.canonicalFoodID), ["rice", "screen"])
+        XCTAssertEqual(bank.labels.map(\.kind), [.food, .nonFood])
         XCTAssertEqual(bank.labels[0].vector[0], 1, accuracy: 0.000001)
         XCTAssertEqual(bank.labels[0].vector[1], 0, accuracy: 0.000001)
 
@@ -250,11 +251,11 @@ final class LocalChineseClipVisionEngineTests: XCTestCase {
     ) -> LocalChineseClipVisionEngine {
         LocalChineseClipVisionEngine(
             modelURL: URL(fileURLWithPath: "/tmp/ChineseClipRN50Image.mlmodelc"),
-            labelBankURL: URL(fileURLWithPath: "/tmp/chinese-clip-label-bank-v1.bin"),
+            labelBankURL: URL(fileURLWithPath: "/tmp/chinese-clip-label-bank-v2.bin"),
             provenance: .init(
                 modelArtifactSHA256: String(repeating: "a", count: 64),
-                labelBankVersion: "cn-food-labels-v1",
-                calibrationVersion: "cn-clip-calibration-v1",
+                labelBankVersion: "cn-food-labels-v2",
+                calibrationVersion: "cn-clip-calibration-v2",
                 precisionVariant: "int8-linear-per-channel-65536"
             ),
             rankingPolicy: policy,
@@ -311,21 +312,28 @@ final class LocalChineseClipVisionEngineTests: XCTestCase {
             "schemaVersion": 1,
             "embeddingDimension": 2,
             "embeddingEncoding": "float32-little-endian",
-            "labelSetVersion": "cn-food-labels-v1",
+            "labelSetVersion": "cn-food-labels-v2",
             "modelRevision": String(repeating: "b", count: 40),
             "normalized": true,
-            "labels": [[
-                "canonicalFoodId": "rice",
-                "name": "米饭",
-                "category": "food",
-            ]],
+            "labels": [
+                [
+                    "canonicalFoodId": "rice",
+                    "name": "米饭",
+                    "category": "food",
+                ],
+                [
+                    "canonicalFoodId": "screen",
+                    "name": "电子屏幕",
+                    "category": "non_food",
+                ],
+            ],
         ]
         let headerData = try JSONSerialization.data(withJSONObject: header, options: [.sortedKeys])
         var data = Data([0x43, 0x43, 0x4c, 0x42, 0x56, 0x31, 0x00, 0x00])
         var headerLength = UInt32(headerData.count).littleEndian
         withUnsafeBytes(of: &headerLength) { data.append(contentsOf: $0) }
         data.append(headerData)
-        for value: Float in [1, 0] {
+        for value: Float in [1, 0, 0, 1] {
             var bits = value.bitPattern.littleEndian
             withUnsafeBytes(of: &bits) { data.append(contentsOf: $0) }
         }
@@ -364,7 +372,7 @@ private struct FakePredictor: LocalFoodEmbeddingPredicting {
 private struct FakeLabelLoader: LocalFoodLabelBankLoading {
     func loadLabelBank(from fileURL: URL) throws -> LocalFoodLabelBank {
         LocalFoodLabelBank(
-            labelSetVersion: "cn-food-labels-v1",
+            labelSetVersion: "cn-food-labels-v2",
             modelRevision: String(repeating: "b", count: 40),
             labels: [
                 .init(

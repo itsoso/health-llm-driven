@@ -16,7 +16,10 @@ import unicodedata
 
 
 MAGIC = b"CCLBV1\x00\x00"
-EXPECTED_PROMPT_TEMPLATES = ["{name}", "一张{name}的照片", "一份{name}"]
+EXPECTED_PROMPT_TEMPLATES = {
+    "food": ["{name}", "一张{name}的照片", "一份{name}"],
+    "non_food": ["{name}", "一张{name}", "这张照片是{name}，不是食物"],
+}
 FORBIDDEN_KEY_TERMS = (
     "calorie",
     "kcal",
@@ -32,6 +35,7 @@ FORBIDDEN_KEY_TERMS = (
     "份量",
 )
 COMMIT_PATTERN = re.compile(r"[0-9a-f]{40}")
+LABEL_SET_PATTERN = re.compile(r"cn-food-labels-v([1-9][0-9]*)")
 
 
 class LabelBankError(ValueError):
@@ -111,11 +115,13 @@ def validate_label_source(source: dict[str, Any]) -> None:
         },
         "source",
     )
-    if source["schemaVersion"] != 1:
-        raise LabelBankError("schemaVersion must equal 1")
-    _require_nfc_string(source["labelSetVersion"], "labelSetVersion")
-    if source["promptTemplateVersion"] != "cn-food-prompts-v1":
-        raise LabelBankError("promptTemplateVersion must equal cn-food-prompts-v1")
+    if source["schemaVersion"] != 2:
+        raise LabelBankError("schemaVersion must equal 2")
+    label_set_version = _require_nfc_string(source["labelSetVersion"], "labelSetVersion")
+    if label_set_version != "cn-food-labels-v2":
+        raise LabelBankError("labelSetVersion must equal cn-food-labels-v2")
+    if source["promptTemplateVersion"] != "cn-food-prompts-v2":
+        raise LabelBankError("promptTemplateVersion must equal cn-food-prompts-v2")
     if source["promptTemplates"] != EXPECTED_PROMPT_TEMPLATES:
         raise LabelBankError(f"promptTemplates must equal {EXPECTED_PROMPT_TEMPLATES}")
 
@@ -154,8 +160,16 @@ def validate_label_source(source: dict[str, Any]) -> None:
                 raise LabelBankError(f"duplicate name or alias: {term}")
             names_and_aliases.add(normalized_term)
 
-        _require_nfc_string(raw_label["category"], f"labels[{index}].category")
+        category = _require_nfc_string(raw_label["category"], f"labels[{index}].category")
+        if category == "non_food":
+            if not canonical_id.startswith("non_food."):
+                raise LabelBankError("non_food labels must use a non_food. canonicalFoodId")
+        elif not canonical_id.startswith("food."):
+            raise LabelBankError("food labels must use a food. canonicalFoodId")
         _require_nfc_string(raw_label["source"], f"labels[{index}].source")
+
+    if not any(label["category"] == "non_food" for label in labels):
+        raise LabelBankError("v2 label source requires at least one non_food identity")
 
 
 def _unit(vector: list[float]) -> list[float]:
@@ -183,9 +197,10 @@ def _build_labels_and_vectors(
 ) -> tuple[list[dict[str, Any]], list[list[float]]]:
     labels: list[dict[str, Any]] = []
     embeddings: list[list[float]] = []
-    templates = source["promptTemplates"]
     expected_dimension: int | None = None
     for raw_label in source["labels"]:
+        template_kind = "non_food" if raw_label["category"] == "non_food" else "food"
+        templates = source["promptTemplates"][template_kind]
         terms = [raw_label["name"], *raw_label["aliases"]]
         prompts = [template.format(name=term) for term in terms for template in templates]
         encoded = encoder.encode_texts(prompts)
@@ -264,14 +279,18 @@ def build_output_manifest(
     source: dict[str, Any], source_bytes: bytes, output: bytes, model_revision: str
 ) -> dict[str, Any]:
     parsed = parse_label_bank_bytes(output)
+    version_match = LABEL_SET_PATTERN.fullmatch(source["labelSetVersion"])
+    if not version_match:
+        raise LabelBankError("labelSetVersion must contain a numeric version")
+    version = version_match.group(1)
     return {
         "schemaVersion": 1,
         "labelSetVersion": source["labelSetVersion"],
         "promptTemplateVersion": source["promptTemplateVersion"],
         "modelRevision": model_revision,
-        "sourcePath": "ModelSources/chinese-clip-food-labels-v1.json",
+        "sourcePath": f"ModelSources/chinese-clip-food-labels-v{version}.json",
         "sourceSha256": hashlib.sha256(source_bytes).hexdigest(),
-        "outputPath": ".build/models/chinese-clip-rn50/chinese-clip-label-bank-v1.bin",
+        "outputPath": f".build/models/chinese-clip-rn50/chinese-clip-label-bank-v{version}.bin",
         "outputSha256": hashlib.sha256(output).hexdigest(),
         "rowCount": len(parsed["labels"]),
         "embeddingDimension": parsed["embeddingDimension"],
@@ -335,6 +354,9 @@ def main() -> int:
     output = build_label_bank_bytes(source, encoder, model_manifest["modelRevision"])
     manifest = build_output_manifest(source, source_bytes, output, model_manifest["modelRevision"])
 
+    expected_source = Path(__file__).resolve().parents[1] / manifest["sourcePath"]
+    if args.labels.resolve() != expected_source.resolve():
+        raise LabelBankError(f"labels must equal {expected_source}")
     expected_output = Path(__file__).resolve().parents[1] / manifest["outputPath"]
     if args.output.resolve() != expected_output.resolve():
         raise LabelBankError(f"output must equal {expected_output}")

@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "calibrationVersion": "cn-clip-calibration-v1",
+  "calibrationVersion": "cn-clip-calibration-v2",
   "modelId": "OFA-Sys/chinese-clip-rn50",
   "modelRevision": "717ba215769231e53b9b7c6b9d329b9cc5944418",
-  "labelSetVersion": "cn-food-labels-v1",
+  "labelSetVersion": "cn-food-labels-v2",
   "datasetContract": {
     "path": "docs/evals/local-diet/chinese-clip-dataset-contract.json",
     "sha256": "7b25ed191f57add053bce33253d7cac066ab584aa7adaaa3e513eb3daa0aae41",

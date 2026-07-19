@@ -20,10 +20,13 @@ MODEL_REVISION = "7" * 40
 
 def valid_source() -> dict:
     return {
-        "schemaVersion": 1,
-        "labelSetVersion": "cn-food-labels-v1",
-        "promptTemplateVersion": "cn-food-prompts-v1",
-        "promptTemplates": ["{name}", "一张{name}的照片", "一份{name}"],
+        "schemaVersion": 2,
+        "labelSetVersion": "cn-food-labels-v2",
+        "promptTemplateVersion": "cn-food-prompts-v2",
+        "promptTemplates": {
+            "food": ["{name}", "一张{name}的照片", "一份{name}"],
+            "non_food": ["{name}", "一张{name}", "这张照片是{name}，不是食物"],
+        },
         "labels": [
             {
                 "canonicalFoodId": "food.rice.cooked.white",
@@ -33,10 +36,10 @@ def valid_source() -> dict:
                 "source": "owner_authored",
             },
             {
-                "canonicalFoodId": "food.fish.steamed",
-                "name": "清蒸鱼",
-                "aliases": ["蒸鱼"],
-                "category": "dish",
+                "canonicalFoodId": "non_food.screen",
+                "name": "电子屏幕",
+                "aliases": ["手机屏幕"],
+                "category": "non_food",
                 "source": "owner_authored",
             },
         ],
@@ -59,6 +62,15 @@ class FakeEncoder:
         return vectors
 
 
+class RecordingEncoder(FakeEncoder):
+    def __init__(self) -> None:
+        self.texts: list[str] = []
+
+    def encode_texts(self, texts: list[str]) -> list[list[float]]:
+        self.texts.extend(texts)
+        return super().encode_texts(texts)
+
+
 class NonFiniteEncoder:
     def encode_texts(self, texts: list[str]) -> list[list[float]]:
         return [[math.nan, 1.0] for _ in texts]
@@ -71,8 +83,10 @@ class InconsistentEncoder:
 
 class LabelSourceContractTests(unittest.TestCase):
     def test_committed_source_is_valid(self) -> None:
-        source_path = SCRIPT_PATH.parents[1] / "ModelSources/chinese-clip-food-labels-v1.json"
-        MODULE.validate_label_source(MODULE.load_json(source_path))
+        source_path = SCRIPT_PATH.parents[1] / "ModelSources/chinese-clip-food-labels-v2.json"
+        source = MODULE.load_json(source_path)
+        MODULE.validate_label_source(source)
+        self.assertTrue(any(label["category"] == "non_food" for label in source["labels"]))
 
     def test_accepts_identity_only_source(self) -> None:
         MODULE.validate_label_source(valid_source())
@@ -116,10 +130,22 @@ class LabelSourceContractTests(unittest.TestCase):
 
     def test_rejects_prompt_template_drift(self) -> None:
         source = valid_source()
-        source["promptTemplates"] = ["这是什么：{name}"]
+        source["promptTemplates"]["non_food"] = ["这是什么：{name}"]
 
         with self.assertRaisesRegex(MODULE.LabelBankError, "promptTemplates"):
             MODULE.validate_label_source(source)
+
+    def test_rejects_food_and_non_food_id_category_mismatch(self) -> None:
+        for canonical_id, category in [
+            ("non_food.screen", "dish"),
+            ("food.rice.cooked.white", "non_food"),
+        ]:
+            with self.subTest(canonical_id=canonical_id, category=category):
+                source = valid_source()
+                source["labels"][0]["canonicalFoodId"] = canonical_id
+                source["labels"][0]["category"] = category
+                with self.assertRaisesRegex(MODULE.LabelBankError, "non_food|food"):
+                    MODULE.validate_label_source(source)
 
 
 class LabelBankBuildTests(unittest.TestCase):
@@ -149,6 +175,16 @@ class LabelBankBuildTests(unittest.TestCase):
 
         self.assertNotEqual(first["embeddings"][0], second["embeddings"][0])
 
+    def test_non_food_labels_use_the_frozen_negative_prompt_family(self) -> None:
+        source = valid_source()
+        encoder = RecordingEncoder()
+
+        MODULE.build_label_bank_bytes(source, encoder, MODEL_REVISION)
+
+        self.assertIn("一份白米饭", encoder.texts)
+        self.assertIn("这张照片是电子屏幕，不是食物", encoder.texts)
+        self.assertNotIn("一份电子屏幕", encoder.texts)
+
     def test_rejects_non_finite_encoder_output(self) -> None:
         with self.assertRaisesRegex(MODULE.LabelBankError, "finite"):
             MODULE.build_label_bank_bytes(valid_source(), NonFiniteEncoder(), MODEL_REVISION)
@@ -167,6 +203,14 @@ class LabelBankBuildTests(unittest.TestCase):
         self.assertEqual(2, manifest["rowCount"])
         self.assertEqual(4, manifest["embeddingDimension"])
         self.assertEqual(MODEL_REVISION, manifest["modelRevision"])
+        self.assertEqual(
+            "ModelSources/chinese-clip-food-labels-v2.json",
+            manifest["sourcePath"],
+        )
+        self.assertEqual(
+            ".build/models/chinese-clip-rn50/chinese-clip-label-bank-v2.bin",
+            manifest["outputPath"],
+        )
         self.assertRegex(manifest["sourceSha256"], r"^[0-9a-f]{64}$")
         self.assertRegex(manifest["outputSha256"], r"^[0-9a-f]{64}$")
 

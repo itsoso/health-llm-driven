@@ -128,8 +128,8 @@ final class LocalFoodVisionBenchmarkTests: XCTestCase {
                 version: "717ba215769231e53b9b7c6b9d329b9cc5944418",
                 downloadBytes: 39_626_225,
                 modelArtifactSha256: String(repeating: "a", count: 64),
-                labelBankVersion: "cn-food-labels-v1",
-                calibrationVersion: "cn-clip-calibration-v1",
+                labelBankVersion: "cn-food-labels-v2",
+                calibrationVersion: "cn-clip-calibration-v2",
                 installedModelBytes: 39_296_441,
                 installedLabelBankBytes: 329_784,
                 precisionVariant: "int8-linear-per-channel-65536"
@@ -172,8 +172,8 @@ final class LocalFoodVisionBenchmarkTests: XCTestCase {
             margin: 0.1,
             provenance: .init(
                 modelArtifactSHA256: String(repeating: "a", count: 64),
-                labelBankVersion: "cn-food-labels-v1",
-                calibrationVersion: "cn-clip-calibration-v1",
+                labelBankVersion: "cn-food-labels-v2",
+                calibrationVersion: "cn-clip-calibration-v2",
                 precisionVariant: "int8-linear-per-channel-65536"
             )
         )
