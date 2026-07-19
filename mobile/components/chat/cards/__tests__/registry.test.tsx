@@ -4,9 +4,15 @@ jest.mock('../../../../services/api', () => ({
   default: { get: jest.fn(), post: jest.fn() },
 }));
 
+jest.mock('expo-web-browser', () => ({
+  openBrowserAsync: jest.fn(),
+}));
+
 import { CARD_REGISTRY, CARD_MAP, dispatchCard, renderCard, renderServerCards } from '../registry';
 import type { CardContext } from '../types';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import * as WebBrowser from 'expo-web-browser';
+import { Linking } from 'react-native';
 import api from '../../../../services/api';
 
 const DIET_WRITE_POLICY = {
@@ -196,6 +202,48 @@ describe('renderCard 安全降级', () => {
     expect(screen.getByText('生成中')).toBeTruthy();
     expect(screen.getByText('56%')).toBeTruthy();
     screen.unmount();
+  });
+
+  it('opens a private generated short video in the app with its absolute signed URL', async () => {
+    const relativeVideoUrl = '/api/v1/upload/files/aigc/3/today.mp4?expires=1&signature=signed';
+    (api.get as jest.Mock).mockResolvedValueOnce({
+      data: {
+        id: 'aigc_video_1',
+        kind: 'image_to_video',
+        status: 'succeeded',
+        progress: 100,
+        title: '小巴创作',
+        result: { media_type: 'video/mp4', url: relativeVideoUrl },
+      },
+    });
+    const linkingOpenUrl = jest.spyOn(Linking, 'openURL').mockResolvedValue(true);
+
+    try {
+      const element = renderCard({
+        type: 'aigc_media_job',
+        data: {
+          job_id: 'aigc_video_1',
+          kind: 'image_to_video',
+          status: 'succeeded',
+          progress: 100,
+          title: '小巴创作',
+          result: { media_type: 'video/mp4', url: relativeVideoUrl },
+        },
+      });
+      const screen = render(element!);
+
+      fireEvent.press(screen.getByLabelText('打开生成的短视频'));
+
+      await waitFor(() => {
+        expect(WebBrowser.openBrowserAsync).toHaveBeenCalledWith(
+          'https://health.executor.life/api/v1/upload/files/aigc/3/today.mp4?expires=1&signature=signed',
+        );
+      });
+      expect(linkingOpenUrl).not.toHaveBeenCalled();
+      screen.unmount();
+    } finally {
+      linkingOpenUrl.mockRestore();
+    }
   });
 
   it('renders an indeterminate AIGC submission as terminal and does not claim failure', () => {
