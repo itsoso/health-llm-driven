@@ -5289,10 +5289,11 @@ class AgentExecutor:
         assistant_meta = raw_assistant_meta
         if not assistant_meta:
             return True
-        if assistant_meta.get("client_turn_finalized") is False:
-            return False
-        if assistant_meta.get("client_turn_finalized") is not True:
-            return False
+        is_partial = assistant_meta.get("client_turn_finalized") is False
+        if not is_partial and assistant_meta.get("client_turn_finalized") is not True:
+            # Non-empty legacy metadata without a finalization marker is not
+            # evidence of a write-free failure; keep the durable replay path.
+            return True
         raw_source_meta = getattr(source_message, "meta", None)
         if raw_source_meta is not None and not isinstance(raw_source_meta, dict):
             return True
@@ -5317,15 +5318,20 @@ class AgentExecutor:
         # Current finalized assistant rows always carry an explicit list of
         # verified receipts. Missing or malformed data is legacy/ambiguous and
         # must remain fail-closed rather than being re-executed.
-        if not isinstance(assistant_meta.get("write_receipts"), list):
+        if not is_partial and not isinstance(assistant_meta.get("write_receipts"), list):
             return True
         if has_write_checkpoint_or_ambiguity(
             assistant_meta,
-            allow_empty_receipts=True,
+            allow_empty_receipts=not is_partial,
         ):
             return True
         if source_meta is not None and has_write_checkpoint_or_ambiguity(source_meta):
             return True
+
+        # An explicitly partial row is safe to take over only after both sides
+        # have passed the write-metadata barrier above.
+        if is_partial:
+            return False
 
         outcome = assistant_meta.get("turn_outcome") or {}
         if isinstance(outcome, dict) and outcome:
