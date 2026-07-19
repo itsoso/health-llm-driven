@@ -5289,6 +5289,8 @@ class AgentExecutor:
         assistant_meta = raw_assistant_meta
         if not assistant_meta:
             return True
+        if assistant_meta.get("client_turn_finalized") is False:
+            return False
         if assistant_meta.get("client_turn_finalized") is not True:
             return False
         raw_source_meta = getattr(source_message, "meta", None)
