@@ -4,8 +4,8 @@
 |---|---|
 | slug | `local-first-private-mode` |
 | 创建日期 | 2026-07-18 |
-| 当前阶段 | G2 Chinese-CLIP 独立增强裁决完成 |
-| 状态 | 本地基线 PASS；Chinese-CLIP 增强 BLOCK |
+| 当前阶段 | G2 Chinese-CLIP 探索性候选验证完成 |
+| 状态 | 本地基线 PASS；Chinese-CLIP 手工确认候选 PASS；自动识别 BLOCK |
 | 负责 | User / Codex |
 | 反馈环 | iOS real-device spike / EAS-TestFlight / airplane-mode validation |
 
@@ -15,12 +15,15 @@
 - [x] 2026-07-18 用户选定 Chinese-CLIP RN50 作为唯一首轮打包视觉模型；只分发视觉塔，文本塔仅用于构建标签向量。
 - [x] 2026-07-19 Chinese-CLIP 八阶段 spike 已执行到裁决；工程与可重复性闸通过，授权质量集和代表性真机证据缺失，按规则保持 BLOCK，未接生产饮食页。
 - [x] 2026-07-19 已按“识别质量 → 非食物拒识 → 证据链”顺序完成优化。复核固定 Chinese-CLIP revision 后纠正旧假设：官方预处理是 `Resize((224, 224), BICUBIC)`，不是等比中心裁切；实现现已匹配官方方形 bicubic 语义。v2 标签库加入本地非食物负类；FP16/int8 差值改为由两份完整冻结报告确定性派生。优化设计与实施计划见 `docs/plans/2026-07-19-chinese-clip-local-food-vision-optimization-design.md`、`docs/plans/2026-07-19-chinese-clip-local-food-vision-optimization.md`。本 correction 已完成 S3/S5 与预设备 G3，未改变既有 G2 BLOCK。
+- [x] 2026-07-19 用户明确把目标收窄为“本地模型给候选、允许不精确、用户确认后再记录”。隔离宿主增加 `exploratory` 模式，不伪造 300-case 校准：高端 iPhone 用真实 int8 模型试跑 5 张非私人样图，炒饭、粽子、香蕉 Top-1 命中，椅子正确拒识，白米饭误判为非食物。该结果允许把 Chinese-CLIP 作为可选候选来源，不允许自动写入。
 
 ## S0 · 用户需求（逐字）
 
 > 思考这个方向，能否让这个App增加一个本地模式，下载即可用，完全跑在本地，不需要注册，私有信息全部本地，只有调用大模型部分才走服务端？做出一些规划
 
 > 按照第三种进行规划，另外也思考能否完全本地，甚至于连模型推理也走本地，换用一个很小的模型，解决饮食记录问题？
+
+> 不用特别复杂的方式了，直接用Chinese clip就可以了，试试效果，不用那么精确，因为本地模型毕竟受限的。
 
 - 谁用 / 解决什么 / 现在怎么绕过：隐私敏感的健康记录用户希望先在设备上获得完整饮食记录价值，而不是先注册并上传健康数据；当前只能登录后使用服务端真源路径。
 - 锚点用户相关性：饮食是既定 Personal Health OS `Capture -> Confirm -> Review` 的高频入口，并已有人工确认和来源边界。
@@ -101,13 +104,18 @@
   - 2026-07-19 iPhone 17 Pro Max 已重新连接：合成能力宿主完成签名构建、安装和运行；带真实 int8 模型与 v2 标签资产的 compile-only Chinese-CLIP 宿主也完成真机签名构建、安装和启动，但该模式按设计禁止生成质量报告。授权质量集和 pass 校准仍缺失，因此没有 Chinese-CLIP 推理数据；低/中端 iPhone 仍缺失。内存 ceiling 不能从单台高端机或 compile-only 启动猜测，Schema 保持未设值。
   - 2026-07-19 已完成用户确认飞行模式下的宿主启动：合成能力宿主离线输出明确不可用报告；Chinese-CLIP compile-only 宿主离线启动并保持进程存活，观察窗口内没有输出 `LOCAL_FOOD_VISION_BENCHMARK`。但 compile-only 在模型加载和推理前停止，因此不能证明模型离线加载或推理；真机抓包零照片/crop/embedding/candidate 出站、长时间温升和推理中途取消仍未执行。
   - 当前真机此前也没有进入系统模型推理，因而系统模型增强同样没有可诚实记录的冷/热时延、峰值内存和温升。
+- Chinese-CLIP 探索性真机结果（不属于正式质量 Gate）：
+  - 新增 `--exploratory` 隔离宿主模式：只接受非私人、许可状态明确的本地 fixture；无需伪造 pass 校准；固定使用 `minimumScore=-1`、`minimumMargin=0` 展示候选，并在输出中强制标记 `notForQualityGate: true`。
+  - iPhone18,2 / iOS 26.6 Beta 上，真实 int8 模型与 v2 标签库完成 5 张样图推理：炒饭、粽子、香蕉 Top-1 命中，椅子正确为 `non_food`，白米饭误判为 `non_food`；单张端到端时延为 1628.84–3312.21ms，包含 Vision 显著区域与最多四次 image tower 运行。
+  - 原始非私人结果：`docs/evals/local-diet/runs/2026-07-19-iphone18-2-chinese-clip-exploratory.json`。报告不含图片、路径、像素、embedding 或设备唯一标识。
 - 已解除的阻断：
   - 数据授权：USDA FoodData Central 官方许可明确为 public domain / CC0 1.0；使用 Foundation Foods/SR Legacy 固定版本子集，App 运行时不取数。
   - 安全设计：设备密码为前置条件；独立派生 record/index key；恢复密钥为随机高熵而非用户弱口令；只恢复到空库；删除 crypto-shred；完整设计见 `docs/plans/2026-07-18-local-first-private-mode-design.md`。
 - **待拍板分叉**：无；用户已接受旧设备的严格本地照片能力可能较弱。
 - **裁决**：**范围化 PASS / BLOCK**。
   - 本地饮食基线（无注册、加密本地存储、手工/确定性记录、Vision 可选）：**PASS**，允许进入 Task 2 加密内核。
-  - 系统模型或打包小模型智能增强：**BLOCK**，必须独立通过质量、纠正成本、包体和代表性真机性能 Gate 后才能开启。
+  - Chinese-CLIP 作为最多三个候选、始终人工确认、失败可手工输入的本地辅助：**PASS（产品方向）**；不得自动创建饮食记录，不推断份量或营养。
+  - Chinese-CLIP 自动识别或免确认写入：**BLOCK**，仍须通过正式质量、纠正成本、包体和代表性真机性能 Gate。
   - 该拆分不是降低标准：智能增强从首版保证路径移除，运行时不得静默走云；基础路径可在模型完全不可用时成立。
   - 2026-07-19 Chinese-CLIP 最终独立裁决：provenance/license、转换 parity、包体和工程失败模式 **PASS**；授权质量、压缩质量差值、分层真机性能与物理隐私检查 **BLOCK**。总裁决按最弱维度为 **BLOCK**，不是 FAIL，也不允许生产集成。
 
@@ -115,15 +123,16 @@
 
 - 实施任务见 `docs/plans/2026-07-18-local-first-private-mode.md`。
 - Chinese-CLIP 独立 spike 已按 `docs/plans/2026-07-18-chinese-clip-local-food-vision.md` 完成八阶段实现与裁决；结果为 BLOCK，继续不得接入生产饮食页。
+- 用户已授权把 Chinese-CLIP 作为低风险、手工确认候选继续纳入本地饮食实施；该授权不包括自动写入或营养/份量推断。
 - G2 已授权进入 Task 2 加密 Local Health Kernel；智能增强继续留在独立评测支线。
 
 ## S5 · 实现
 
-- 产品实现未开始；已完成不读写健康数据的 G2 capability probe、系统模型合成 benchmark、Chinese-CLIP Core ML 纯本地引擎和隔离真机宿主。它们都是测试壳，不进入生产 App、不读 Local Health 数据、不访问相册、不提供云端 fallback。
+- 产品实现未开始；已完成不读写健康数据的 G2 capability probe、系统模型合成 benchmark、Chinese-CLIP Core ML 纯本地引擎和隔离真机宿主。探索性宿主已经真实加载 int8 模型并推理非私人样图；它仍是测试壳，不进入生产 App、不读 Local Health 数据、不访问相册、不提供云端 fallback。
 
 ## G3 · 测试闸
 
-- Chinese-CLIP 独立 spike 及本轮三项优化的预设备 G3：PASS；完整产品计划 G3 未开始。
+- Chinese-CLIP 独立 spike、本轮优化与探索模式：PASS（Swift 37 tests / 1 skipped；视觉宿主生成器 8 tests / 81 assertions；generic iOS 16 与签名真机构建成功）；完整产品计划 G3 未开始。
 
 ## G4 · 安全闸
 

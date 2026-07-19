@@ -4,7 +4,8 @@ import UIKit
 @main
 struct LocalFoodVisionBenchmarkHostApp: App {
     private static let enableMarker = "LOCAL_FOOD_VISION_BENCHMARK=1"
-    @State private var status = "Preparing authorized local benchmark…"
+    private static let exploratoryMarker = "LOCAL_FOOD_VISION_EXPLORATORY=1"
+    @State private var status = "Preparing local Chinese-CLIP run…"
 
     var body: some Scene {
         WindowGroup {
@@ -20,104 +21,176 @@ struct LocalFoodVisionBenchmarkHostApp: App {
     @MainActor
     private func runBenchmark() async {
         _ = Self.enableMarker
-        guard LocalFoodVisionBenchmarkConfig.evidenceCollectionEnabled else {
+        _ = Self.exploratoryMarker
+        if LocalFoodVisionBenchmarkConfig.runMode == "compile_only" {
             status = "Compile-only host. Evidence collection is disabled."
-            return
-        }
-        guard let calibrationManifestSHA256 =
-            LocalFoodVisionBenchmarkConfig.calibrationManifestSHA256 else {
-            status = "Benchmark configuration is missing calibration provenance."
             return
         }
         do {
             let manifest = try loadManifest()
             let modelURL = try bundledModelURL()
             let labelBankURL = try bundledLabelBankURL()
-            let provenance = LocalFoodVisionProvenance(
+            let engine = makeEngine(modelURL: modelURL, labelBankURL: labelBankURL)
+
+            if LocalFoodVisionBenchmarkConfig.runMode == "exploratory" {
+                try await runExploratory(manifest: manifest, engine: engine)
+                return
+            }
+
+            guard LocalFoodVisionBenchmarkConfig.runMode == "evidence",
+                  LocalFoodVisionBenchmarkConfig.evidenceCollectionEnabled,
+                  let calibrationManifestSHA256 =
+                    LocalFoodVisionBenchmarkConfig.calibrationManifestSHA256 else {
+                throw HostError.invalidRunMode
+            }
+            try await runEvidence(
+                manifest: manifest,
+                modelURL: modelURL,
+                labelBankURL: labelBankURL,
+                calibrationManifestSHA256: calibrationManifestSHA256,
+                engine: engine
+            )
+        } catch {
+            let errorType = String(reflecting: type(of: error))
+            let prefix = LocalFoodVisionBenchmarkConfig.runMode == "exploratory"
+                ? "LOCAL_FOOD_VISION_EXPLORATORY_ERROR"
+                : "LOCAL_FOOD_VISION_BENCHMARK_ERROR"
+            print("\(prefix)=\(errorType)")
+            status = "Local Chinese-CLIP run failed: \(errorType)"
+        }
+    }
+
+    private func makeEngine(
+        modelURL: URL,
+        labelBankURL: URL
+    ) -> LocalChineseClipVisionEngine {
+        LocalChineseClipVisionEngine(
+            modelURL: modelURL,
+            labelBankURL: labelBankURL,
+            provenance: .init(
                 modelArtifactSHA256: LocalFoodVisionBenchmarkConfig.modelArtifactSHA256,
                 labelBankVersion: LocalFoodVisionBenchmarkConfig.labelBankVersion,
                 calibrationVersion: LocalFoodVisionBenchmarkConfig.calibrationVersion,
                 precisionVariant: LocalFoodVisionBenchmarkConfig.precisionVariant
-            )
-            let engine = LocalChineseClipVisionEngine(
-                modelURL: modelURL,
-                labelBankURL: labelBankURL,
-                provenance: provenance,
-                rankingPolicy: .init(
-                    minimumScore: LocalFoodVisionBenchmarkConfig.minimumScore,
-                    minimumMargin: LocalFoodVisionBenchmarkConfig.minimumMargin,
-                    maximumCandidates: LocalFoodVisionBenchmarkConfig.maximumCandidates
-                ),
-                proposer: LocalFoodVisionSaliencyProposer(),
-                preprocessor: LocalFoodVisionPreprocessor(),
-                modelLoader: LocalChineseClipCoreMLModelLoader(),
-                labelLoader: LocalChineseClipLabelBankLoader(),
-                runtimeGuard: LocalFoodProcessRuntimeGuard()
-            )
-            let cases = try manifest.cases.filter { $0.split == "test" }.map { fixture in
-                LocalFoodVisionBenchmarkCase(
-                    caseID: fixture.caseId,
-                    fixtureRef: fixture.fixtureId,
-                    request: .init(image: try loadImage(named: fixture.file)),
+            ),
+            rankingPolicy: .init(
+                minimumScore: LocalFoodVisionBenchmarkConfig.minimumScore,
+                minimumMargin: LocalFoodVisionBenchmarkConfig.minimumMargin,
+                maximumCandidates: LocalFoodVisionBenchmarkConfig.maximumCandidates
+            ),
+            proposer: LocalFoodVisionSaliencyProposer(),
+            preprocessor: LocalFoodVisionPreprocessor(),
+            modelLoader: LocalChineseClipCoreMLModelLoader(),
+            labelLoader: LocalChineseClipLabelBankLoader(),
+            runtimeGuard: LocalFoodProcessRuntimeGuard()
+        )
+    }
+
+    @MainActor
+    private func runExploratory(
+        manifest: FixtureManifest,
+        engine: LocalChineseClipVisionEngine
+    ) async throws {
+        var caseResults: [ExploratoryCaseResult] = []
+        for fixture in manifest.cases where fixture.split == "test" {
+            let request = LocalFoodVisionRequest(image: try loadImage(named: fixture.file))
+            let startedAt = DispatchTime.now().uptimeNanoseconds
+            let result = try await engine.infer(request: request)
+            let elapsedNanoseconds = DispatchTime.now().uptimeNanoseconds - startedAt
+            caseResults.append(
+                ExploratoryCaseResult(
+                    caseId: fixture.caseId,
                     expectedFoodIdentities: fixture.expectedFoodIdentities,
-                    allowedAliases: fixture.allowedAliases,
-                    nonFood: fixture.nonFood
+                    decision: result.decision,
+                    candidates: result.candidates,
+                    latencyMs: Double(elapsedNanoseconds) / 1_000_000
                 )
-            }
-            let capabilities = LocalHealthCapabilityProbe.currentProfile()
-            let benchmark = LocalFoodVisionBenchmark(
-                runID: "local-food-vision-\(UUID().uuidString.lowercased())",
-                recordedAt: ISO8601DateFormatter().string(from: Date()),
-                dataset: .init(
-                    name: LocalFoodVisionBenchmarkConfig.datasetName,
-                    version: manifest.datasetVersion,
-                    licenseStatus: try license(LocalFoodVisionBenchmarkConfig.datasetLicenseStatus),
-                    containsPrivateUserData: manifest.containsPrivateUserData
-                ),
-                device: .init(
-                    hardwareIdentifier: hardwareIdentifier(),
-                    deviceClass: "phone",
-                    osVersion: ProcessInfo.processInfo.operatingSystemVersionString,
-                    isSimulator: capabilities.isSimulator,
-                    appBuild: appBuild()
-                ),
-                capabilities: capabilities,
-                modelProfile: .init(
-                    engine: "custom_core_ml",
-                    identifier: "OFA-Sys/chinese-clip-rn50-image-tower",
-                    version: LocalFoodVisionBenchmarkConfig.modelRevision,
-                    downloadBytes: LocalFoodVisionBenchmarkConfig.sourceModelBytes
-                        + LocalFoodVisionBenchmarkConfig.sourceLabelBankBytes,
-                    modelArtifactSha256: LocalFoodVisionBenchmarkConfig.modelArtifactSHA256,
-                    labelBankVersion: LocalFoodVisionBenchmarkConfig.labelBankVersion,
-                    calibrationVersion: LocalFoodVisionBenchmarkConfig.calibrationVersion,
-                    calibrationManifestSha256: calibrationManifestSHA256,
-                    minimumScore: LocalFoodVisionBenchmarkConfig.minimumScore,
-                    minimumMargin: LocalFoodVisionBenchmarkConfig.minimumMargin,
-                    maximumCandidates: LocalFoodVisionBenchmarkConfig.maximumCandidates,
-                    installedModelBytes: installedBytes(at: modelURL),
-                    installedLabelBankBytes: installedBytes(at: labelBankURL),
-                    precisionVariant: LocalFoodVisionBenchmarkConfig.precisionVariant
-                ),
-                cases: cases,
-                warmRunCount: 9,
-                engine: engine,
-                clock: LocalDietUptimeClock(),
-                systemMetrics: LocalDietProcessSystemMetrics(),
-                memorySampler: LocalDietPollingPeakMemorySampler()
             )
-            let report = try await benchmark.run()
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.sortedKeys]
-            let data = try encoder.encode(report)
-            let json = String(decoding: data, as: UTF8.self)
-            print("LOCAL_FOOD_VISION_BENCHMARK=\(json)")
-            status = "Completed \(report.caseResults.count) authorized cases."
-        } catch {
-            let errorType = String(reflecting: type(of: error))
-            print("LOCAL_FOOD_VISION_BENCHMARK_ERROR=\(errorType)")
-            status = "Benchmark failed: \(errorType)"
         }
+        let report = ExploratoryReport(
+            recordedAt: ISO8601DateFormatter().string(from: Date()),
+            datasetVersion: manifest.datasetVersion,
+            containsPrivateUserData: manifest.containsPrivateUserData,
+            modelRevision: LocalFoodVisionBenchmarkConfig.modelRevision,
+            precisionVariant: LocalFoodVisionBenchmarkConfig.precisionVariant,
+            minimumScore: LocalFoodVisionBenchmarkConfig.minimumScore,
+            minimumMargin: LocalFoodVisionBenchmarkConfig.minimumMargin,
+            caseResults: caseResults
+        )
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let data = try encoder.encode(report)
+        print("LOCAL_FOOD_VISION_EXPLORATORY=\(String(decoding: data, as: UTF8.self))")
+        status = "Completed \(caseResults.count) exploratory Chinese-CLIP cases."
+    }
+
+    @MainActor
+    private func runEvidence(
+        manifest: FixtureManifest,
+        modelURL: URL,
+        labelBankURL: URL,
+        calibrationManifestSHA256: String,
+        engine: LocalChineseClipVisionEngine
+    ) async throws {
+        let cases = try manifest.cases.filter { $0.split == "test" }.map { fixture in
+            LocalFoodVisionBenchmarkCase(
+                caseID: fixture.caseId,
+                fixtureRef: fixture.fixtureId,
+                request: .init(image: try loadImage(named: fixture.file)),
+                expectedFoodIdentities: fixture.expectedFoodIdentities,
+                allowedAliases: fixture.allowedAliases,
+                nonFood: fixture.nonFood
+            )
+        }
+        let capabilities = LocalHealthCapabilityProbe.currentProfile()
+        let benchmark = LocalFoodVisionBenchmark(
+            runID: "local-food-vision-\(UUID().uuidString.lowercased())",
+            recordedAt: ISO8601DateFormatter().string(from: Date()),
+            dataset: .init(
+                name: LocalFoodVisionBenchmarkConfig.datasetName,
+                version: manifest.datasetVersion,
+                licenseStatus: try license(LocalFoodVisionBenchmarkConfig.datasetLicenseStatus),
+                containsPrivateUserData: manifest.containsPrivateUserData
+            ),
+            device: .init(
+                hardwareIdentifier: hardwareIdentifier(),
+                deviceClass: "phone",
+                osVersion: ProcessInfo.processInfo.operatingSystemVersionString,
+                isSimulator: capabilities.isSimulator,
+                appBuild: appBuild()
+            ),
+            capabilities: capabilities,
+            modelProfile: .init(
+                engine: "custom_core_ml",
+                identifier: "OFA-Sys/chinese-clip-rn50-image-tower",
+                version: LocalFoodVisionBenchmarkConfig.modelRevision,
+                downloadBytes: LocalFoodVisionBenchmarkConfig.sourceModelBytes
+                    + LocalFoodVisionBenchmarkConfig.sourceLabelBankBytes,
+                modelArtifactSha256: LocalFoodVisionBenchmarkConfig.modelArtifactSHA256,
+                labelBankVersion: LocalFoodVisionBenchmarkConfig.labelBankVersion,
+                calibrationVersion: LocalFoodVisionBenchmarkConfig.calibrationVersion,
+                calibrationManifestSha256: calibrationManifestSHA256,
+                minimumScore: LocalFoodVisionBenchmarkConfig.minimumScore,
+                minimumMargin: LocalFoodVisionBenchmarkConfig.minimumMargin,
+                maximumCandidates: LocalFoodVisionBenchmarkConfig.maximumCandidates,
+                installedModelBytes: installedBytes(at: modelURL),
+                installedLabelBankBytes: installedBytes(at: labelBankURL),
+                precisionVariant: LocalFoodVisionBenchmarkConfig.precisionVariant
+            ),
+            cases: cases,
+            warmRunCount: 9,
+            engine: engine,
+            clock: LocalDietUptimeClock(),
+            systemMetrics: LocalDietProcessSystemMetrics(),
+            memorySampler: LocalDietPollingPeakMemorySampler()
+        )
+        let report = try await benchmark.run()
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let data = try encoder.encode(report)
+        let json = String(decoding: data, as: UTF8.self)
+        print("LOCAL_FOOD_VISION_BENCHMARK=\(json)")
+        status = "Completed \(report.caseResults.count) authorized cases."
     }
 
     private func loadManifest() throws -> FixtureManifest {
@@ -244,12 +317,34 @@ private struct FixtureCase: Decodable {
     let nonFood: Bool
 }
 
+private struct ExploratoryReport: Encodable {
+    let mode = "exploratory"
+    let notForQualityGate = true
+    let recordedAt: String
+    let datasetVersion: String
+    let containsPrivateUserData: Bool
+    let modelRevision: String
+    let precisionVariant: String
+    let minimumScore: Double
+    let minimumMargin: Double
+    let caseResults: [ExploratoryCaseResult]
+}
+
+private struct ExploratoryCaseResult: Encodable {
+    let caseId: String
+    let expectedFoodIdentities: [String]
+    let decision: LocalFoodRankingDecision
+    let candidates: [LocalFoodCandidate]
+    let latencyMs: Double
+}
+
 private enum HostError: Error {
     case missingManifest
     case missingModel
     case missingLabelBank
     case invalidManifest
     case invalidFixture
+    case invalidRunMode
 }
 
 private extension LocalFoodImageOrientation {

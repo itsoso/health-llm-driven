@@ -17,6 +17,9 @@ VARIANT_SCHEMA_PATH = ROOT / "docs/evals/local-diet/chinese-clip-variant-evidenc
 SYSTEM_MODEL_RUNS = sorted(
     (ROOT / "docs/evals/local-diet/runs").glob("*-system-model.json")
 )
+EXPLORATORY_CHINESE_CLIP_RUNS = sorted(
+    (ROOT / "docs/evals/local-diet/runs").glob("*-chinese-clip-exploratory.json")
+)
 
 
 def load_json(path: Path) -> dict:
@@ -201,6 +204,35 @@ class LocalDietEvalContractTests(unittest.TestCase):
                 identifier = run["report"]["device"]["hardwareIdentifier"]
                 self.assertEqual("iPhone18,2", identifier)
                 self.assertNotRegex(json.dumps(run), r"[0-9A-Fa-f]{8}-[0-9A-Fa-f-]{20,}")
+
+    def test_committed_exploratory_chinese_clip_run_is_redacted_and_not_a_quality_gate(self) -> None:
+        self.assertTrue(EXPLORATORY_CHINESE_CLIP_RUNS)
+        forbidden_keys = {"file", "path", "pixels", "embedding", "deviceIdentifier"}
+        for path in EXPLORATORY_CHINESE_CLIP_RUNS:
+            with self.subTest(path=path.name):
+                run = load_json(path)
+                self.assertFalse(run["containsPrivateUserData"])
+                self.assertEqual("exploratory", run["mode"])
+                self.assertTrue(run["notForQualityGate"])
+                self.assertEqual("iPhone18,2", run["device"]["hardwareIdentifier"])
+                self.assertGreater(len(run["caseResults"]), 0)
+                self.assertTrue(
+                    all(len(case["candidates"]) <= 3 for case in run["caseResults"])
+                )
+                serialized = json.dumps(run)
+                self.assertNotRegex(serialized, r"[0-9A-Fa-f]{8}-[0-9A-Fa-f-]{20,}")
+
+                def keys(value: object) -> set[str]:
+                    if isinstance(value, dict):
+                        nested = set().union(
+                            *(keys(item) for item in value.values())
+                        )
+                        return set(value) | nested
+                    if isinstance(value, list):
+                        return set().union(*(keys(item) for item in value))
+                    return set()
+
+                self.assertFalse(forbidden_keys & keys(run))
 
 
 class ChineseClipVariantEvidenceContractTests(unittest.TestCase):

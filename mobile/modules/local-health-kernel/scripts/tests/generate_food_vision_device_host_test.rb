@@ -222,11 +222,47 @@ class GenerateFoodVisionDeviceHostTest < Minitest::Test
     end
   end
 
+  def test_exploratory_host_accepts_a_small_non_private_dataset_without_calibration
+    with_assets do |model, label_bank, fixtures|
+      output = Pathname(Dir.mktmpdir("food-host-exploratory")).join("Host.xcodeproj")
+      manifest_path = fixtures.join("dataset-manifest.json")
+      manifest = JSON.parse(manifest_path.read)
+      manifest["datasetVersion"] = "exploratory-food-v1"
+      manifest["cases"] = [manifest.fetch("cases").fetch(0).merge("split" => "test")]
+      manifest_path.write(JSON.generate(manifest))
+
+      stdout, stderr, status = run_generator(
+        output: output,
+        model: model,
+        label_bank: label_bank,
+        fixtures: fixtures,
+        compile_only: false,
+        extra_args: ["--exploratory"]
+      )
+
+      assert status.success?, "generator failed:\n#{stdout}\n#{stderr}"
+      config = output.dirname.join("Generated/LocalFoodVisionBenchmarkConfig.swift").read
+      assert_includes config, 'static let runMode = "exploratory"'
+      assert_includes config, "static let minimumScore = -1.0"
+      assert_includes config, "static let minimumMargin = 0.0"
+      assert_includes config, "static let calibrationManifestSHA256: String? = nil"
+      assert_includes config, 'static let datasetName = "exploratory-chinese-food-eval"'
+      project = Xcodeproj::Project.open(output)
+      resources = project.targets.fetch(0).resources_build_phase.files_references.map(&:display_name)
+      assert_includes resources, "fixture-000.png"
+      assert_equal 4, resources.length
+    ensure
+      FileUtils.remove_entry(output.dirname) if output&.dirname&.exist?
+    end
+  end
+
   def test_host_has_explicit_switch_and_no_production_or_network_interfaces
     assert HOST_SOURCE.exist?, "missing host source: #{HOST_SOURCE}"
     source = HOST_SOURCE.read
 
     assert_includes source, "LOCAL_FOOD_VISION_BENCHMARK="
+    assert_includes source, "LOCAL_FOOD_VISION_EXPLORATORY="
+    assert_includes source, "let notForQualityGate = true"
     assert_includes source, "calibrationManifestSha256: calibrationManifestSHA256"
     refute_match(/HealthKit|URLSession|PHPhotoLibrary|DietRepository/, source)
   end

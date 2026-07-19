@@ -24,7 +24,7 @@ module LocalFoodVisionDeviceHost
   module_function
 
   def generate(
-    module_root:, output:, model:, label_bank:, fixtures:, compile_only:,
+    module_root:, output:, model:, label_bank:, fixtures:, compile_only:, exploratory:,
     calibration_manifest: nil, team_id: nil
   )
     module_root = module_root.realpath
@@ -36,11 +36,16 @@ module LocalFoodVisionDeviceHost
     raise "label bank must be a .bin file" unless label_bank.file? && label_bank.extname == ".bin"
 
     manifest_path = fixtures.join("dataset-manifest.json")
-    manifest, fixture_paths = validate_manifest(manifest_path, fixtures)
+    manifest, fixture_paths = validate_manifest(
+      manifest_path,
+      fixtures,
+      exploratory: exploratory
+    )
     calibration = validate_calibration(
       calibration_manifest,
       manifest,
-      compile_only: compile_only
+      compile_only: compile_only,
+      exploratory: exploratory
     )
     precision = model.to_s.include?("fp16") ? "fp16" : "int8-linear-per-channel-65536"
 
@@ -122,7 +127,7 @@ module LocalFoodVisionDeviceHost
     path.realpath
   end
 
-  def validate_manifest(path, fixtures)
+  def validate_manifest(path, fixtures, exploratory: false)
     raise "missing fixture manifest: #{path}" unless path.file?
 
     manifest = JSON.parse(path.read)
@@ -133,8 +138,9 @@ module LocalFoodVisionDeviceHost
       raise "fixture manifest datasetVersion must be non-empty"
     end
     raise "fixture manifest contains private user data" unless manifest["containsPrivateUserData"] == false
-    unless manifest["cases"].is_a?(Array) && manifest["cases"].length >= MINIMUM_CASES
-      raise "fixture manifest requires at least #{MINIMUM_CASES} cases"
+    minimum_cases = exploratory ? 1 : MINIMUM_CASES
+    unless manifest["cases"].is_a?(Array) && manifest["cases"].length >= minimum_cases
+      raise "fixture manifest requires at least #{minimum_cases} cases"
     end
 
     case_ids = []
@@ -188,9 +194,13 @@ module LocalFoodVisionDeviceHost
     rescue KeyError
       raise "fixture case file is required"
     end
-    missing_strata = REQUIRED_STRATA - strata.uniq
-    raise "fixture manifest is missing strata: #{missing_strata.sort}" unless missing_strata.empty?
-    raise "fixture manifest requires calibration and test splits" unless splits.uniq.sort == ALLOWED_SPLITS.sort
+    if exploratory
+      raise "exploratory fixtures must use only the test split" unless splits.uniq == ["test"]
+    else
+      missing_strata = REQUIRED_STRATA - strata.uniq
+      raise "fixture manifest is missing strata: #{missing_strata.sort}" unless missing_strata.empty?
+      raise "fixture manifest requires calibration and test splits" unless splits.uniq.sort == ALLOWED_SPLITS.sort
+    end
     [manifest, fixture_paths.compact]
   rescue JSON::ParserError => error
     raise "invalid fixture manifest: #{error.message}"
@@ -237,7 +247,20 @@ module LocalFoodVisionDeviceHost
     Digest::SHA256.hexdigest(ids.map { |case_id| "#{case_id}\n" }.join)
   end
 
-  def validate_calibration(value, manifest, compile_only:)
+  def validate_calibration(value, manifest, compile_only:, exploratory: false)
+    if exploratory
+      raise "--exploratory cannot be combined with --compile-only" if compile_only
+      raise "--exploratory cannot be combined with --calibration-manifest" if value
+
+      return {
+        "calibrationVersion" => "exploratory-uncalibrated-v1",
+        "selectedThresholds" => {"minimumScore" => -1.0, "minimumMargin" => 0.0},
+        "maximumCandidates" => 3,
+        "evidenceCollectionEnabled" => false,
+        "runMode" => "exploratory",
+        "sha256" => nil,
+      }
+    end
     if compile_only
       raise "--compile-only cannot be combined with --calibration-manifest" if value
 
@@ -246,6 +269,7 @@ module LocalFoodVisionDeviceHost
         "selectedThresholds" => {"minimumScore" => 0.5, "minimumMargin" => 0.03},
         "maximumCandidates" => 3,
         "evidenceCollectionEnabled" => false,
+        "runMode" => "compile_only",
         "sha256" => nil,
       }
     end
@@ -293,6 +317,7 @@ module LocalFoodVisionDeviceHost
       "selectedThresholds" => thresholds,
       "maximumCandidates" => 3,
       "evidenceCollectionEnabled" => true,
+      "runMode" => "evidence",
       "sha256" => Digest::SHA256.file(path).hexdigest,
     }
   rescue JSON::ParserError => error
@@ -321,7 +346,8 @@ module LocalFoodVisionDeviceHost
           static let minimumMargin = #{calibration.fetch("selectedThresholds").fetch("minimumMargin")}
           static let maximumCandidates = #{calibration.fetch("maximumCandidates")}
           static let evidenceCollectionEnabled = #{calibration.fetch("evidenceCollectionEnabled")}
-          static let datasetName = "authorized-chinese-food-eval"
+          static let runMode = #{calibration.fetch("runMode").dump}
+          static let datasetName = #{(calibration.fetch("runMode") == "exploratory" ? "exploratory-chinese-food-eval" : "authorized-chinese-food-eval").dump}
           static let datasetVersion = #{manifest.fetch("datasetVersion").to_s.dump}
           static let datasetLicenseStatus = #{aggregate_license(manifest).dump}
       }
@@ -340,6 +366,7 @@ if $PROGRAM_NAME == __FILE__
     parser.on("--label-bank PATH") { |value| options[:label_bank] = Pathname(value) }
     parser.on("--fixtures PATH") { |value| options[:fixtures] = Pathname(value) }
     parser.on("--compile-only") { options[:compile_only] = true }
+    parser.on("--exploratory") { options[:exploratory] = true }
     parser.on("--calibration-manifest PATH") do |value|
       options[:calibration_manifest] = Pathname(value)
     end
@@ -357,6 +384,7 @@ if $PROGRAM_NAME == __FILE__
       label_bank: options.fetch(:label_bank),
       fixtures: options.fetch(:fixtures),
       compile_only: options.fetch(:compile_only, false),
+      exploratory: options.fetch(:exploratory, false),
       calibration_manifest: options[:calibration_manifest],
       team_id: options[:team_id]
     )
