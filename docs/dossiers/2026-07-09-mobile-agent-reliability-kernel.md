@@ -105,6 +105,7 @@
 - 2026-07-16 中间失败恢复加固：生产 `run_790af0ae63724445` 先收到一次参数不完整的 `health_manage` 失败事件，随后以 `record_id=829` 重试删除成功并取得 verified receipt；服务端持久化正文与终态均为成功，但 Mobile 曾把中间失败事件提前拼进永久正文。客户端现仅用工具事件更新进度/状态，整轮失败继续由后端终态文本或流级 `error` 呈现，避免“先失败、后成功”同时出现在一条回复中。
 - 2026-07-16 北京时间饮食查询加固：生产 `run_2076443f42b949f6` 把“重新列出今天吃的东西”误生成为 `health_manage update`，且后续 `run_47f2d072877a4fc2` 把“今天”错误解析为历史日期 `2026-07-14`。现于两条 Agent 工具执行链的写计划封存前加入只读查询护栏：无明确写命令时，饮食调用确定性降级为 `list`；今天/昨天/前天由服务端按北京时间覆盖模型日期。明确修改或删除仍走原写回执状态机。
 - 2026-07-16 日期显示二次加固：用户截图对应的 `run_47f2d072877a4fc2` 生成于首版护栏部署前；除修正工具参数外，现把当日北京时间日期注入 fast/full 系统提示，并在仅供模型消费的饮食查询结果前附加 `Asia/Shanghai + 查询日期`。最终持久化正文中的“北京时间 X月X日”也按该只读查询目标日期确定性校正，避免旧历史标题污染新回复。
+- 2026-07-18 P0/P1 重新基线：移除 Mobile 长按 Agent 回复后从自然语言正文推断并调用 `/quick-record` 的旧写入入口；健康写入只通过 Agent 工具或带 capability/receipt 的动态卡片。补齐 `chat_turn_queued` 前后端严格契约，仅保留 surface、channel、队列深度，拒绝正文和资源标识，避免可靠性看板静默丢失或收集健康隐私。
 
 ## G3 · 测试闸
 
@@ -115,6 +116,7 @@
 - 2026-07-16 中间工具失败恢复回归：新增失败事件后 verified retry 的 SSE 顺序用例；`chatStream`、`useChatEngine`、`useVoiceConversation` 共 `60 passed`，Mobile TypeScript、受影响文件 ESLint 与 `git diff --check` 通过。
 - 2026-07-16 北京时间饮食查询回归：只读误更新、模型旧日期覆盖、“饮食记录”名词消歧、明确写入不误降级及写回执状态机共 `68 passed`。
 - 2026-07-16 日期显示二次回归：日期标签校正、模型工具上下文、fast/full 日期基准、工具归一化、写回执与 fast 路由共 `137 passed`。
+- 2026-07-18 P0/P1 定向回归：Mobile Chat/埋点 `46 passed`，TypeScript、受影响文件 ESLint、`git diff --check` 通过；后端 `EventIn` 无数据库合约校验通过。完整 `test_client_events.py` 仍需在具备项目 PostgreSQL 角色的环境执行。
 - 真实 PostgreSQL：主业务连接池保持未占用；turn lock 专用池 `pool_size=8 / max_overflow=0`；跨 worker 全局槽上限 `16`，超限 fail-closed。
 - 文档闸：42 份 Dossier 一致性通过；system-map/doc drift 检查通过。
 - **裁决：PASS**。模拟器视觉与真机音频验证归入 T8 / G6，不替代自动化测试结论。

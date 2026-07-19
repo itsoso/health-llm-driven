@@ -84,8 +84,8 @@
 - [x] T2 `capability_policy.py` 和写/读/澄清矩阵。
 - [x] T3 `tool_gateway.py` 包住 AgentExecutor 工具执行。
 - [x] T4 Telegram 移除关键词写路由。
-- [ ] T5 统一时间/时区 `ExecutionContext`。
-- [ ] T6 dynamic UI action capability metadata。
+- [x] T5 统一时间/时区 `ExecutionContext`。
+- [x] T6 dynamic UI action capability metadata。
 - [ ] T7 legacy gates 清理和静态覆盖测试。
 - [ ] T8 shadow/enforce 发布与线上验证。
 
@@ -97,6 +97,7 @@
 - 已新增 `backend/tests/fixtures/agent_intent_corpus.json`，覆盖 "记录" 名词查询、对比纠正、明确记录和明确删除。
 - 已把 `backend/app/services/telegram_inbound.py` 的 record/query 分流接到共享语义帧；`记录` 关键词不再单独决定写入路由。
 - 已把 Telegram `execute_health_record` 从直接调用 `_exec_health_record` 改为调用 `_execute_tool("health_record", ...)`，并传入原始 source text / telegram channel，让 validator、ToolGateway、read-only guard 和 receipt 逻辑统一覆盖。
+- 2026-07-18 P0/P1 复核：Mobile 已移除从 Agent 回复正文推断健康写入的遗留入口；排队埋点 `chat_turn_queued` 已纳入后端白名单并使用严格、无正文的 surface/channel/queue-depth 合约。剩余重点是 T7 遗留门静态清理与 T8 发布/线上验证，不能以客户端隐藏入口代替统一 ToolGateway 授权。
 
 ## G3 · 测试
 

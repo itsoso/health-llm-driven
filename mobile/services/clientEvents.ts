@@ -70,6 +70,8 @@ const APP_UPDATE_PHASES = {
   ]),
 } as const;
 const APP_UPDATE_LAUNCH_SOURCES = new Set(['embedded', 'ota', 'emergency', 'unknown']);
+const CHAT_QUEUE_SURFACES = new Set(['mobile', 'web', 'mac']);
+const CHAT_QUEUE_CHANNELS = new Set(['typed', 'voice', 'siri', 'card']);
 
 type ReliabilityEventName = keyof typeof RELIABILITY_PHASES;
 
@@ -181,6 +183,28 @@ export function sanitizeClientEventMeta(
       sanitized.error_code = meta.error_code;
     }
     return sanitized;
+  }
+  if (name === 'chat_turn_queued') {
+    const surface = meta.surface;
+    const channel = meta.channel;
+    const queueDepth = meta.queue_depth_at_submit;
+    if (
+      typeof surface !== 'string'
+      || !CHAT_QUEUE_SURFACES.has(surface)
+      || typeof channel !== 'string'
+      || !CHAT_QUEUE_CHANNELS.has(channel)
+      || typeof queueDepth !== 'number'
+      || !Number.isInteger(queueDepth)
+      || queueDepth < 1
+      || queueDepth > 50
+    ) {
+      return {};
+    }
+    return {
+      surface,
+      channel,
+      queue_depth_at_submit: queueDepth,
+    };
   }
   if (!isReliabilityEvent(name)) return meta;
 

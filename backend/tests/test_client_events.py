@@ -456,6 +456,73 @@ def test_reliability_terminal_events_accept_privacy_safe_meta(
     assert row.meta == meta
 
 
+def test_chat_turn_queued_event_accepts_safe_queue_metadata(
+    client,
+    db,
+    auth_user_and_headers,
+):
+    _, headers = auth_user_and_headers
+    response = client.post(
+        "/api/v1/client-events",
+        headers=headers,
+        json={
+            "event_name": "chat_turn_queued",
+            "meta": {
+                "surface": "mobile",
+                "channel": "voice",
+                "queue_depth_at_submit": 2,
+            },
+        },
+    )
+
+    assert response.status_code == 202, response.text
+    row = db.query(ClientEvent).order_by(ClientEvent.id.desc()).first()
+    assert row.event_name == "chat_turn_queued"
+    assert row.meta == {
+        "surface": "mobile",
+        "channel": "voice",
+        "queue_depth_at_submit": 2,
+    }
+
+
+@pytest.mark.parametrize("meta", [
+    {
+        "surface": "mobile",
+        "channel": "typed",
+        "queue_depth_at_submit": 0,
+    },
+    {
+        "surface": "mobile",
+        "channel": "typed",
+        "queue_depth_at_submit": 51,
+    },
+    {
+        "surface": "mobile",
+        "channel": "typed",
+        "queue_depth_at_submit": 1,
+        "content": "用户健康隐私",
+    },
+    {
+        "surface": "watch",
+        "channel": "typed",
+        "queue_depth_at_submit": 1,
+    },
+])
+def test_chat_turn_queued_event_rejects_unstable_or_private_metadata(
+    client,
+    auth_user_and_headers,
+    meta,
+):
+    _, headers = auth_user_and_headers
+    response = client.post(
+        "/api/v1/client-events",
+        headers=headers,
+        json={"event_name": "chat_turn_queued", "meta": meta},
+    )
+
+    assert response.status_code == 422, response.text
+
+
 @pytest.mark.parametrize("forbidden_key,forbidden_value", [
     ("content", "用户健康正文"),
     ("audio", "base64-secret"),

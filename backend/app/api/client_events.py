@@ -50,6 +50,7 @@ _ALLOWED_EVENTS = frozenset({
     "watch_smart_reminder_visible",  # meta: { action_id, reminder_id, kind, surface }
     "agenda_action_failed",
     # Mobile Agent 可靠性终态. meta 严格限制为无正文、无资源标识的字段.
+    "chat_turn_queued",
     "agent_turn_terminal",
     "voice_input_terminal",
     "voice_asr_terminal",
@@ -122,6 +123,12 @@ _RELIABILITY_EVENT_SCHEMAS = {
         "phases": frozenset({"verified", "unverified", "failed"}),
     },
 }
+_CHAT_QUEUE_EVENT_SCHEMA = {
+    "allowed": frozenset({"surface", "channel", "queue_depth_at_submit"}),
+    "required": frozenset({"surface", "channel", "queue_depth_at_submit"}),
+    "surfaces": frozenset({"mobile", "web", "mac"}),
+    "channels": frozenset({"typed", "voice", "siri", "card"}),
+}
 
 _DIET_CAPTURE_EVENT_SCHEMAS = {
     "diet_photo_recognition_terminal": {
@@ -170,6 +177,26 @@ class EventIn(BaseModel):
 
     @model_validator(mode="after")
     def _validate_reliability_meta(self):
+        if self.event_name == "chat_turn_queued":
+            if self.meta is None:
+                raise ValueError("chat queue event meta is required")
+
+            keys = set(self.meta)
+            extra = keys - _CHAT_QUEUE_EVENT_SCHEMA["allowed"]
+            missing = _CHAT_QUEUE_EVENT_SCHEMA["required"] - keys
+            if extra:
+                raise ValueError(f"chat queue event meta has forbidden fields: {sorted(extra)}")
+            if missing:
+                raise ValueError(f"chat queue event meta missing fields: {sorted(missing)}")
+            if self.meta.get("surface") not in _CHAT_QUEUE_EVENT_SCHEMA["surfaces"]:
+                raise ValueError("invalid chat queue event surface")
+            if self.meta.get("channel") not in _CHAT_QUEUE_EVENT_SCHEMA["channels"]:
+                raise ValueError("invalid chat queue event channel")
+            queue_depth = self.meta.get("queue_depth_at_submit")
+            if type(queue_depth) is not int or not 1 <= queue_depth <= 50:
+                raise ValueError("invalid chat queue event queue_depth_at_submit")
+            return self
+
         app_update_schema = _APP_UPDATE_EVENT_SCHEMAS.get(self.event_name)
         if app_update_schema is not None:
             if self.meta is None:

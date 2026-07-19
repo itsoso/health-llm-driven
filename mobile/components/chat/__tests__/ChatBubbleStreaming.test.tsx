@@ -235,47 +235,27 @@ describe('ChatBubble streaming degraded render', () => {
     expect(getByLabelText('选择这条消息')).toBeTruthy();
     expect(getByLabelText('分享这条回复')).toBeTruthy();
     expect(getByLabelText('语音播报')).toBeTruthy();
+    expect(queryByLabelText('保存为记录')).toBeNull();
 
     fireEvent.press(getByLabelText('选择这条消息'));
     expect(onEnterSelection).toHaveBeenCalledWith('assistant-action-menu');
   });
 
-  it('preserves severe blood-pressure recheck and symptom triage when saving an assistant reply', async () => {
-    const alertSpy = jest.spyOn(Alert, 'alert');
-    createRecordFromAssistantReply.mockResolvedValueOnce({
-      status: 'created',
-      type: 'bp',
-      message: '已记录血压 185/85 mmHg\n请静坐至少 1 分钟后复测。\n若同时出现胸痛，请立即拨打急救电话。',
-      safetyGuidance: {
-        severity: 'high',
-        title: '血压严重升高，请复测',
-        recheck_instruction: '请静坐至少 1 分钟后复测。',
-        emergency_instruction: '若同时出现胸痛，请立即拨打急救电话。',
-        action_path: '/blood-pressure',
-      },
-    });
-    const { getByLabelText } = renderBubble({
-      id: 'assistant-severe-bp-record',
+  it('does not expose client-side prose-to-record writes for assistant replies', () => {
+    const { getByLabelText, queryByLabelText } = renderBubble({
+      id: 'assistant-prose-write-disabled',
       role: 'assistant',
       content: '已记录血压 185/85 mmHg。',
       streaming: false,
     });
 
     fireEvent(getByLabelText('AI: 已记录血压 185/85 mmHg。'), 'longPress');
-    await act(async () => {
-      fireEvent.press(getByLabelText('保存为记录'));
-      await Promise.resolve();
-    });
 
-    await waitFor(() => {
-      expect(createRecordFromAssistantReply).toHaveBeenCalledWith('已记录血压 185/85 mmHg。');
-      expect(alertSpy).toHaveBeenCalledWith(
-        '血压严重升高，请复测',
-        expect.stringContaining('复测'),
-      );
-    });
-    expect(mockToastShow).not.toHaveBeenCalledWith(expect.stringContaining('已记录血压'), 'success');
-    alertSpy.mockRestore();
+    expect(queryByLabelText('保存为记录')).toBeNull();
+    expect(getByLabelText('复制全文')).toBeTruthy();
+    expect(getByLabelText('分享这条回复')).toBeTruthy();
+    expect(getByLabelText('语音播报')).toBeTruthy();
+    expect(createRecordFromAssistantReply).not.toHaveBeenCalled();
   });
 
   it('never exposes record saving for streaming, interrupted, or failed assistant output', () => {

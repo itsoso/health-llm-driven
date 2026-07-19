@@ -92,6 +92,47 @@ describe('client reliability events', () => {
     });
   });
 
+  it('sanitizes queued-turn telemetry to stable non-content fields', () => {
+    expect(sanitizeClientEventMeta('chat_turn_queued', {
+      surface: 'mobile',
+      channel: 'typed',
+      queue_depth_at_submit: 2,
+      content: '用户健康隐私',
+      turn_id: 'private-turn-id',
+    })).toEqual({
+      surface: 'mobile',
+      channel: 'typed',
+      queue_depth_at_submit: 2,
+    });
+  });
+
+  it('drops an invalid queued-turn telemetry payload instead of sending partial data', () => {
+    expect(sanitizeClientEventMeta('chat_turn_queued', {
+      surface: 'mobile',
+      channel: 'typed',
+      queue_depth_at_submit: 99,
+      transcript: '用户健康隐私',
+    })).toEqual({});
+  });
+
+  it('posts queued-turn telemetry without leaking turn content', async () => {
+    await emitClientEvent('chat_turn_queued', {
+      surface: 'mobile',
+      channel: 'voice',
+      queue_depth_at_submit: 1,
+      transcript: '用户健康隐私',
+    });
+
+    expect(mockPost).toHaveBeenCalledWith('/client-events', {
+      event_name: 'chat_turn_queued',
+      meta: {
+        surface: 'mobile',
+        channel: 'voice',
+        queue_depth_at_submit: 1,
+      },
+    });
+  });
+
   it('keeps ASR quality metadata content-free for voice input tuning', async () => {
     await emitClientEvent('voice_asr_terminal', {
       phase: 'completed',
