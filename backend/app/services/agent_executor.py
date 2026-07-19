@@ -5229,38 +5229,48 @@ class AgentExecutor:
         write checkpoint on either the assistant or source user message keeps
         the fail-closed replay behavior.
         """
-        assistant_meta = getattr(assistant, "meta", None) or {}
-        if (
-            not isinstance(assistant_meta, dict)
-            or assistant_meta.get("client_turn_finalized") is not True
-        ):
+        raw_assistant_meta = getattr(assistant, "meta", None)
+        if not isinstance(raw_assistant_meta, dict):
+            # Missing/malformed metadata cannot prove that an old finalized
+            # turn was write-free. Replay the durable row instead of rerunning.
+            return True
+        assistant_meta = raw_assistant_meta
+        if not assistant_meta:
+            return True
+        if assistant_meta.get("client_turn_finalized") is not True:
             return False
-        source_meta = getattr(source_message, "meta", None) or {}
+        raw_source_meta = getattr(source_message, "meta", None)
+        if raw_source_meta is not None and not isinstance(raw_source_meta, dict):
+            return True
+        source_meta = raw_source_meta if isinstance(raw_source_meta, dict) else None
 
-        def has_write_checkpoint_or_ambiguity(meta: dict[str, Any]) -> bool:
+        def has_write_checkpoint_or_ambiguity(
+            meta: dict[str, Any],
+            *,
+            allow_empty_receipts: bool = False,
+        ) -> bool:
             """Treat all write metadata other than assistant's empty receipts as a barrier."""
-            if any(
-                key in meta for key in ("write_state", "write_operations", "write_plan")
-            ):
+            for key in meta:
+                if not key.startswith("write_"):
+                    continue
+                if allow_empty_receipts and key == "write_receipts":
+                    receipts = meta[key]
+                    if isinstance(receipts, list) and not receipts:
+                        continue
                 return True
-            receipts = meta.get("write_receipts")
-            return receipts is not None and (
-                not isinstance(receipts, list) or bool(receipts)
-            )
+            return False
 
         # Current finalized assistant rows always carry an explicit list of
         # verified receipts. Missing or malformed data is legacy/ambiguous and
         # must remain fail-closed rather than being re-executed.
         if not isinstance(assistant_meta.get("write_receipts"), list):
             return True
-        if has_write_checkpoint_or_ambiguity(assistant_meta):
-            return True
-        if source_meta and not isinstance(source_meta, dict):
-            return True
-        if isinstance(source_meta, dict) and (
-            has_write_checkpoint_or_ambiguity(source_meta)
-            or "write_receipts" in source_meta
+        if has_write_checkpoint_or_ambiguity(
+            assistant_meta,
+            allow_empty_receipts=True,
         ):
+            return True
+        if source_meta is not None and has_write_checkpoint_or_ambiguity(source_meta):
             return True
 
         outcome = assistant_meta.get("turn_outcome") or {}

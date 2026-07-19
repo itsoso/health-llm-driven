@@ -342,6 +342,7 @@ async def test_legacy_finalized_error_without_write_metadata_still_replays(
         {"write_plan": {"sealed": False}},
         {"write_operations": {"fingerprint": {"status": "rejected"}}},
         {"write_operations": []},
+        {"write_shadow": []},
     ],
 )
 def test_finalized_turn_replay_policy_blocks_any_write_metadata_shape(malformed_meta):
@@ -357,6 +358,32 @@ def test_finalized_turn_replay_policy_blocks_any_write_metadata_shape(malformed_
         }
     )
     source = SimpleNamespace(meta={})
+
+    assert AgentExecutor._should_replay_finalized_assistant(assistant, source) is True
+
+
+@pytest.mark.parametrize("assistant_meta", [None, {}, [], "malformed"])
+def test_finalized_turn_replay_policy_blocks_malformed_assistant_meta(assistant_meta):
+    """助手元数据缺失或类型异常时不允许把旧回合重新执行。"""
+    from types import SimpleNamespace
+
+    assistant = SimpleNamespace(meta=assistant_meta)
+    assert AgentExecutor._should_replay_finalized_assistant(assistant) is True
+
+
+@pytest.mark.parametrize("source_meta", [[], "malformed", 0])
+def test_finalized_turn_replay_policy_blocks_malformed_source_meta(source_meta):
+    """用户消息元数据类型异常时不允许重新执行。"""
+    from types import SimpleNamespace
+
+    assistant = SimpleNamespace(
+        meta={
+            "client_turn_finalized": True,
+            "write_receipts": [],
+            "turn_outcome": {"category": "tool_failed", "retryable": True},
+        }
+    )
+    source = SimpleNamespace(meta=source_meta)
 
     assert AgentExecutor._should_replay_finalized_assistant(assistant, source) is True
 
