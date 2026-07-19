@@ -103,7 +103,7 @@
 - 2026-07-19 发布闸门收口：修复 AIGC 无 provider task id 的历史任务误刷新、SQLite naive 时间被误当 UTC、Celery 测试替身污染 `app.tasks.notifications` 父包属性、Watch SmartReminder 用户本地时间误转 UTC。快照阶段同时固化 `client_time_context`、`client_turn_id`、媒体元数据和持久化来源消息 ID；未显式提供 channel 时沿用已有快照，避免恢复/多模型路径重建快照。
 - 2026-07-19 Trace 收口：EventBus 增加无健康正文的 `trace_summary`，将事件计数、工具失败/阻断、已验证回执、run/turn/channel/policy 和回合耗时写入 assistant `meta` 与 `done`；保留详细结构化事件日志，不把客户端媒体 payload 写入 Trace。
 - 2026-07-19 发布前错误收口：工具异常统一通过 `safe_tool_error_message` 脱敏，避免把上游状态码、请求 ID 或内部响应直接写入对话；保留超时、网络、限流和权限的可操作提示。
-- 2026-07-19 当前顺序执行收口：Kernel 快照、统一回合关联、ToolGateway 静态守门、Trace 汇总和错误脱敏均已合入 `9047c79fd`；后端全量与 Mobile 全量回归通过，进入部署后的 G6 真实设备验证准备。
+- 2026-07-19 当前顺序执行收口：Kernel 快照、统一回合关联、ToolGateway 静态守门、Trace 汇总和错误脱敏均已合入；回放兼容修复 `94e5d9c4b` 的定向回归 `43/43` 通过，进入部署后的 G6 真实设备验证准备。
 
 ## G3 · 测试
 
@@ -226,9 +226,9 @@ DATABASE_URL=sqlite:///:memory: TZ=Asia/Shanghai backend/venv/bin/python -m pyte
 
 ## S6/G5 · 部署
 
-- 后端提交：`9047c79fd fix(agent): mark partial assistant turns explicitly`
+- 后端提交：`94e5d9c4b fix(agent): make replay tolerant of malformed metadata`
 - 部署方式：`./deploy.sh -b -y`
-- 结果：远端已切换到 `9047c79fd`，数据库备份完整性校验通过，后端健康度 `60/60 PASS`，skills manifest 本地/线上 `22/22`。
+- 结果：远端已切换到 `94e5d9c4b`，数据库备份完整性校验通过，后端健康度 `60/60 PASS`，skills manifest 本地/线上 `22/22`。
 - 本轮无 Mobile/Mac/Web/Watch 客户端改动，无需 OTA 或 TestFlight。
 - **裁决：PASS**。
 
