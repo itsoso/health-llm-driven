@@ -9,13 +9,14 @@ from app.services.agent_kernel.tool_gateway import ToolGateway, blocked_tool_res
 from app.services.agent_kernel.types import AgentEnvelope, ExecutionContext, ToolExecutionRequest, TurnSnapshot
 
 
-def _snapshot(text: str) -> TurnSnapshot:
+def _snapshot(text: str, *, policy_mode: str = "enforce") -> TurnSnapshot:
     envelope = AgentEnvelope(user_id=1, channel="chat", text=text)
     context = ExecutionContext.for_test(user_id=1, channel="chat")
     return TurnSnapshot(
         envelope=envelope,
         context=context,
         intent=build_intent_frame(envelope, context),
+        policy_mode=policy_mode,
     )
 
 
@@ -49,6 +50,71 @@ def test_blocked_tool_result_includes_a_recovery_instruction_for_the_agent():
 
     assert "下一步" in result
     assert "先澄清" in result
+
+
+@pytest.mark.asyncio
+async def test_gateway_execute_dispatches_allowed_request_exactly_once():
+    gateway = ToolGateway(_snapshot("记录午餐吃了牛肉面"))
+    calls = []
+    request = ToolExecutionRequest(
+        tool_name="health_record",
+        arguments={"record_type": "diet", "data": {"food_items": "牛肉面"}},
+    )
+
+    async def dispatch(normalized_request):
+        calls.append(normalized_request)
+        return '{"id": 1, "resource_type": "diet_record"}'
+
+    result = await gateway.execute(request, dispatch)
+
+    assert len(calls) == 1
+    assert calls[0].arguments == request.arguments
+    assert result.content == '{"id": 1, "resource_type": "diet_record"}'
+    assert result.decision is not None
+    assert result.decision.action == "allow"
+
+
+@pytest.mark.asyncio
+async def test_gateway_execute_blocks_enforced_denial_without_dispatch():
+    gateway = ToolGateway(_snapshot("列出今天的饮食记录"))
+    dispatched = False
+    request = ToolExecutionRequest(
+        tool_name="health_record",
+        arguments={"record_type": "diet", "data": {"food_items": "牛肉面"}},
+    )
+
+    async def dispatch(_request):
+        nonlocal dispatched
+        dispatched = True
+        return "unexpected"
+
+    result = await gateway.execute(request, dispatch)
+
+    assert dispatched is False
+    assert result.decision is not None
+    assert result.decision.action == "block"
+    assert "策略拦截" in result.content
+
+
+@pytest.mark.asyncio
+async def test_gateway_execute_shadow_denial_still_dispatches_once():
+    gateway = ToolGateway(_snapshot("列出今天的饮食记录", policy_mode="shadow"))
+    calls = []
+    request = ToolExecutionRequest(
+        tool_name="health_record",
+        arguments={"record_type": "diet", "data": {"food_items": "牛肉面"}},
+    )
+
+    async def dispatch(normalized_request):
+        calls.append(normalized_request)
+        return '{"id": 2, "resource_type": "diet_record"}'
+
+    result = await gateway.execute(request, dispatch)
+
+    assert len(calls) == 1
+    assert result.decision is not None
+    assert result.decision.action == "block"
+    assert '"id": 2' in result.content
 
 
 @pytest.mark.asyncio

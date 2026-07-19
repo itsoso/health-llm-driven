@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import re
 import threading
+import weakref
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -15,7 +16,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.agent_conversation import AgentConversation, AgentMessage
-from app.models.agent_runtime import AgentRun, AgentRunAttempt, AgentRunEvent
+from app.models.agent_runtime import (
+    AgentRun,
+    AgentRunAttempt,
+    AgentRunEvent,
+    AgentToolOperation,
+)
 
 
 ACTIVE_RUN_STATUSES = frozenset({"queued", "running"})
@@ -45,6 +51,8 @@ _EVENT_NAMES = frozenset(
         "run.cancelled",
         "run.reconciliation_required",
         "tool.requested",
+        "tool.failed",
+        "tool.reconciliation_required",
         "tool.receipt_verified",
     }
 )
@@ -85,6 +93,11 @@ _KNOWN_ERROR_CODES = frozenset(
         "write_checkpoint_partially_verified",
         "write_checkpoint_uncertain",
         "write_without_tool",
+        "duplicate_in_flight",
+        "missing_receipt",
+        "tool_failed",
+        "tool_rejected",
+        "write_uncertain",
     }
 )
 _KNOWN_STATUS_VALUES = frozenset(
@@ -105,7 +118,10 @@ _KNOWN_COMPLETION_VALUES = frozenset({"complete", "error", "interrupted"})
 _KNOWN_EFFECT_CLASSES = frozenset({"none", "read", "read_only", "write"})
 _POSTGRES_ADVISORY_NAMESPACE = 1_724_663_251
 _LOCAL_LOCK_GUARD = threading.Lock()
-_LOCAL_CONVERSATION_LOCKS: dict[int, threading.Lock] = {}
+_LOCAL_RUNTIME_LOCKS: dict[int, threading.RLock] = {}
+_SQLITE_ENGINE_LOCKS: weakref.WeakKeyDictionary[Any, threading.RLock] = (
+    weakref.WeakKeyDictionary()
+)
 
 
 class AgentRuntimeError(RuntimeError):
@@ -159,15 +175,28 @@ class RunAdmission:
         return self.disposition == "execute"
 
 
+@dataclass(frozen=True, slots=True)
+class ToolOperationAdmission:
+    operation_id: str
+    disposition: Literal["execute", "replay", "reconcile"]
+    resource_type: str | None = None
+    resource_id: str | None = None
+    error_code: str | None = None
+
+    @property
+    def owns_execution(self) -> bool:
+        return self.disposition == "execute"
+
+
 def _now() -> datetime:
     return datetime.now(UTC)
 
 
 @lru_cache(maxsize=1)
 def _known_tool_names() -> frozenset[str]:
-    from app.services.tool_schema_registry import get_tool_names
+    from app.services.agent_kernel.tool_registry import list_tool_specs
 
-    return frozenset(get_tool_names())
+    return frozenset(spec.name for spec in list_tool_specs())
 
 
 def _known_error_codes() -> frozenset[str]:
@@ -229,7 +258,22 @@ def _runtime_lock_key(user_id: int, scope: str) -> int:
 @contextmanager
 def _local_runtime_lock(lock_key: int) -> Iterator[None]:
     with _LOCAL_LOCK_GUARD:
-        lock = _LOCAL_CONVERSATION_LOCKS.setdefault(lock_key, threading.Lock())
+        lock = _LOCAL_RUNTIME_LOCKS.setdefault(lock_key, threading.RLock())
+    lock.acquire()
+    try:
+        yield
+    finally:
+        lock.release()
+
+
+@contextmanager
+def _sqlite_runtime_lock(bind: Any) -> Iterator[None]:
+    """Serialize a StaticPool engine without leaking locks across fixtures."""
+    with _LOCAL_LOCK_GUARD:
+        lock = _SQLITE_ENGINE_LOCKS.get(bind)
+        if lock is None:
+            lock = threading.RLock()
+            _SQLITE_ENGINE_LOCKS[bind] = lock
     lock.acquire()
     try:
         yield
@@ -276,9 +320,6 @@ class AgentRuntimeCoordinator:
         local_execution_id = _bounded(local_execution_id, field="local_execution_id", limit=128)
         privacy_mode = _bounded(privacy_mode, field="privacy_mode", limit=32) or "cloud"
 
-        if conversation_id is not None:
-            self._require_owned_conversation(user_id, conversation_id)
-
         values = {
             "run_id": run_id,
             "attempt_id": attempt_id,
@@ -300,25 +341,38 @@ class AgentRuntimeCoordinator:
                     with self._admission_lock(
                         user_id, f"conversation:{int(lock_conversation_id)}"
                     ):
+                        if conversation_id is not None:
+                            self._require_owned_conversation(
+                                user_id, conversation_id
+                            )
                         return self._admit_locked(**values)
                 return self._admit_locked(**values)
         if conversation_id is not None:
             with self._admission_lock(
                 user_id, f"conversation:{int(conversation_id)}"
             ):
+                self._require_owned_conversation(user_id, conversation_id)
                 return self._admit_locked(**values)
         with self._admission_lock(user_id, f"run:{run_id}"):
             return self._admit_locked(**values)
 
     @contextmanager
     def _admission_lock(self, user_id: int, scope: str) -> Iterator[None]:
+        bind = self.db.get_bind()
         lock_key = _runtime_lock_key(user_id, scope)
-        if self.db.get_bind().dialect.name == "postgresql":
+        if bind.dialect.name == "postgresql":
             self.db.execute(
                 text("SELECT pg_advisory_xact_lock(:namespace, :lock_key)"),
                 {"namespace": _POSTGRES_ADVISORY_NAMESPACE, "lock_key": lock_key},
             )
             yield
+            return
+        if bind.dialect.name == "sqlite":
+            # Test/local SQLite uses StaticPool and therefore one DB-API
+            # connection across sessions. Serialize the whole Runtime access;
+            # the RLock keeps nested client-turn -> conversation admission safe.
+            with _sqlite_runtime_lock(bind):
+                yield
             return
         with _local_runtime_lock(lock_key):
             yield
@@ -642,6 +696,219 @@ class AgentRuntimeCoordinator:
             self._append_event(run, context.attempt_id, event_name, dict(payload or {}))
             self.db.commit()
 
+    def claim_tool_operation(
+        self,
+        context: RunContext,
+        *,
+        tool_name: str,
+        effect_class: str,
+        operation_fingerprint: str,
+    ) -> ToolOperationAdmission:
+        """Claim one content-free write operation before business dispatch."""
+        fingerprint = str(operation_fingerprint or "").strip()
+        if not re.fullmatch(r"[0-9a-f]{64}", fingerprint):
+            raise ValueError("invalid_operation_fingerprint")
+        normalized_tool = str(tool_name or "").strip()
+        if normalized_tool not in _known_tool_names():
+            raise AgentRuntimeError("unknown_tool")
+        if effect_class != "write":
+            raise AgentRuntimeError("tool_operation_requires_write_effect")
+
+        with self._lifecycle_lock(context):
+            run, _attempt = self._owned_run_and_attempt(context, lock=True)
+            query = self.db.query(AgentToolOperation).filter(
+                AgentToolOperation.run_id == context.run_id,
+                AgentToolOperation.operation_fingerprint == fingerprint,
+            )
+            if self.db.get_bind().dialect.name == "postgresql":
+                query = query.with_for_update()
+            operation = query.first()
+            if operation is not None:
+                if (
+                    operation.tool_name != normalized_tool
+                    or operation.effect_class != effect_class
+                ):
+                    raise AgentRuntimeError("tool_operation_identity_mismatch")
+                if operation.status == "succeeded":
+                    return ToolOperationAdmission(
+                        operation_id=operation.operation_id,
+                        disposition="replay",
+                        resource_type=operation.resource_type,
+                        resource_id=operation.resource_id,
+                    )
+                if (
+                    operation.status == "failed"
+                    and operation.error_code == "tool_rejected"
+                ):
+                    operation.status = "executing"
+                    operation.attempt_id = context.attempt_id
+                    operation.error_code = None
+                    operation.finished_at = None
+                    self._append_event(
+                        run,
+                        context.attempt_id,
+                        "tool.requested",
+                        {
+                            "tool_name": normalized_tool,
+                            "effect_class": effect_class,
+                            "status": "executing",
+                        },
+                    )
+                    self.db.commit()
+                    return ToolOperationAdmission(
+                        operation_id=operation.operation_id,
+                        disposition="execute",
+                    )
+                # The duplicate caller must not mutate the operation owned by the
+                # original executor. Otherwise the original cannot persist its
+                # verified receipt after a successful business write.
+                self._append_event(
+                    run,
+                    context.attempt_id,
+                    "tool.reconciliation_required",
+                    {
+                        "tool_name": normalized_tool,
+                        "effect_class": effect_class,
+                        "status": "reconciliation_required",
+                        "error_code": "duplicate_in_flight",
+                    },
+                )
+                self.db.commit()
+                return ToolOperationAdmission(
+                    operation_id=operation.operation_id,
+                    disposition="reconcile",
+                    error_code="duplicate_in_flight",
+                )
+
+            operation_id = "op_" + hashlib.sha256(
+                f"{context.run_id}:{fingerprint}".encode()
+            ).hexdigest()[:48]
+            operation = AgentToolOperation(
+                operation_id=operation_id,
+                run_id=context.run_id,
+                attempt_id=context.attempt_id,
+                tool_name=normalized_tool,
+                effect_class=effect_class,
+                operation_fingerprint=fingerprint,
+                status="executing",
+            )
+            self.db.add(operation)
+            self._append_event(
+                run,
+                context.attempt_id,
+                "tool.requested",
+                {
+                    "tool_name": normalized_tool,
+                    "effect_class": effect_class,
+                    "status": "executing",
+                },
+            )
+            self.db.commit()
+            return ToolOperationAdmission(
+                operation_id=operation_id,
+                disposition="execute",
+            )
+
+    def finalize_tool_operation(
+        self,
+        context: RunContext,
+        *,
+        operation_id: str,
+        status: Literal["succeeded", "failed", "reconciliation_required"],
+        resource_type: str | None = None,
+        resource_id: str | None = None,
+        error_code: str | None = None,
+    ) -> None:
+        """Finalize an operation from structured receipt facts only."""
+        if status not in {"succeeded", "failed", "reconciliation_required"}:
+            raise AgentRuntimeError("unsupported_tool_operation_status")
+        normalized_operation_id = _bounded(
+            operation_id, field="operation_id", limit=96
+        )
+        normalized_resource_type = _bounded(
+            resource_type, field="resource_type", limit=80
+        )
+        normalized_resource_id = _bounded(
+            resource_id, field="resource_id", limit=128
+        )
+        if status == "succeeded" and not (
+            normalized_resource_type and normalized_resource_id
+        ):
+            raise AgentRuntimeError("verified_resource_required")
+        safe_error_code = str(error_code or "").strip() or None
+        if status == "failed":
+            safe_error_code = (
+                safe_error_code
+                if safe_error_code in {"tool_failed", "tool_rejected"}
+                else "tool_failed"
+            )
+        elif status == "reconciliation_required":
+            safe_error_code = (
+                safe_error_code
+                if safe_error_code in {
+                    "duplicate_in_flight",
+                    "missing_receipt",
+                    "write_uncertain",
+                }
+                else "write_uncertain"
+            )
+        else:
+            safe_error_code = None
+
+        with self._lifecycle_lock(context):
+            run, _attempt = self._owned_run_and_attempt(context, lock=True)
+            query = self.db.query(AgentToolOperation).filter(
+                AgentToolOperation.operation_id == normalized_operation_id,
+                AgentToolOperation.run_id == context.run_id,
+            )
+            if self.db.get_bind().dialect.name == "postgresql":
+                query = query.with_for_update()
+            operation = query.first()
+            if operation is None:
+                raise AgentRuntimeError("tool_operation_not_found")
+            if operation.attempt_id != context.attempt_id:
+                raise StaleRunAttempt("stale_tool_operation_attempt")
+            if operation.status == "succeeded" and status == "succeeded":
+                return
+            if operation.status not in {"executing", "requested"}:
+                raise AgentRuntimeError(
+                    f"invalid_tool_operation_transition:{operation.status}->{status}"
+                )
+
+            now = _now()
+            operation.status = status
+            operation.error_code = safe_error_code
+            operation.finished_at = now
+            if status == "succeeded":
+                operation.resource_type = normalized_resource_type
+                operation.resource_id = normalized_resource_id
+                operation.verified_at = now
+                event_name = "tool.receipt_verified"
+                payload = {
+                    "tool_name": operation.tool_name,
+                    "effect_class": operation.effect_class,
+                    "status": "succeeded",
+                    "receipt_verified": True,
+                }
+            elif status == "reconciliation_required":
+                event_name = "tool.reconciliation_required"
+                payload = {
+                    "tool_name": operation.tool_name,
+                    "effect_class": operation.effect_class,
+                    "status": status,
+                    "error_code": safe_error_code,
+                }
+            else:
+                event_name = "tool.failed"
+                payload = {
+                    "tool_name": operation.tool_name,
+                    "effect_class": operation.effect_class,
+                    "status": status,
+                    "error_code": safe_error_code,
+                }
+            self._append_event(run, context.attempt_id, event_name, payload)
+            self.db.commit()
+
     def _transition(self, run: AgentRun, target: str) -> None:
         if run.status == target:
             return
@@ -695,8 +962,13 @@ class AgentRuntimeCoordinator:
 
     @contextmanager
     def _lifecycle_lock(self, context: RunContext) -> Iterator[None]:
-        if self.db.get_bind().dialect.name == "postgresql":
+        bind = self.db.get_bind()
+        if bind.dialect.name == "postgresql":
             yield
+            return
+        if bind.dialect.name == "sqlite":
+            with _sqlite_runtime_lock(bind):
+                yield
             return
         lock_key = _runtime_lock_key(context.user_id, f"run:{context.run_id}")
         with _local_runtime_lock(lock_key):

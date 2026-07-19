@@ -4,44 +4,25 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from app.services.agent_kernel.tool_registry import get_tool_spec, list_tool_specs
 from app.services.agent_kernel.types import CapabilityDecision, ToolExecutionRequest, TurnSnapshot
 
-READ_ONLY_TOOLS = frozenset({
-    "health_query",
-    "health_query_batch",
-    "knowledge_search",
-    "realtime_search",
-    "environment_check",
-    "supplement_guide",
-    "query_genetic_profile",
-    "query_lab_indicators",
-    "health_analysis",
-})
-SPECIALIST_READ_ONLY_TOOLS = frozenset({
-    "analyze_recovery",
-    "analyze_fuel",
-    "analyze_movement",
-    "analyze_mental",
-    "analyze_hypertension",
-    "analyze_metabolic",
-    "analyze_rhinitis",
-    "analyze_longitudinal",
-    "analyze_longevity",
-})
-WRITE_TOOL_NAMES = frozenset({
-    "health_record",
-    "health_manage",
-    "intervention_cycle",
-    "draft_aigc_media",
-    "manage_plan",
-    "upload_genetic_txt",
-    "upload_medical_exam_text",
-})
+READ_ONLY_TOOLS = frozenset(
+    spec.name
+    for spec in list_tool_specs()
+    if spec.effect == "read" and spec.adapter_kind == "executor"
+)
+SPECIALIST_READ_ONLY_TOOLS = frozenset(
+    spec.name for spec in list_tool_specs() if spec.adapter_kind == "specialist"
+)
+WRITE_TOOL_NAMES = frozenset(
+    spec.name for spec in list_tool_specs() if spec.effect in {"write", "mixed"}
+)
 KNOWN_TOOL_NAMES = READ_ONLY_TOOLS | SPECIALIST_READ_ONLY_TOOLS | WRITE_TOOL_NAMES
-MANAGE_WRITE_OPERATIONS = frozenset({"update", "delete"})
-INTERVENTION_WRITE_ACTIONS = frozenset({"start", "update", "cancel"})
-INTERVENTION_READ_ACTIONS = frozenset({"status", "list", "history"})
-MANAGE_PLAN_ACTIONS = frozenset({"generate_weekly", "complete_item", "save_to_card"})
+MANAGE_WRITE_OPERATIONS = get_tool_spec("health_manage").write_actions
+INTERVENTION_WRITE_ACTIONS = get_tool_spec("intervention_cycle").write_actions
+INTERVENTION_READ_ACTIONS = get_tool_spec("intervention_cycle").read_actions
+MANAGE_PLAN_ACTIONS = get_tool_spec("manage_plan").write_actions
 
 # Procedure recipes are exact-triggered routines. Their scope is intentionally
 # narrower than normal one-shot health_record calls: no long-lived reminders or
