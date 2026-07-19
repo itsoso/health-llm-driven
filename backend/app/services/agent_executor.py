@@ -4101,6 +4101,72 @@ def _health_record_confirmation_preview(rtype: str, args: dict, data: dict) -> s
     return label
 
 
+_SYMPTOM_BODY_PART_ALIASES = {
+    "眼": "eye",
+    "眼睛": "eye",
+    "眼部": "eye",
+    "呼吸道": "respiratory",
+    "鼻": "respiratory",
+    "鼻部": "respiratory",
+    "喉咙": "respiratory",
+    "嗓子": "respiratory",
+    "皮肤": "skin",
+    "头": "head",
+    "头部": "head",
+    "消化道": "digestive",
+    "胃": "digestive",
+    "腹部": "digestive",
+    "腰": "musculoskeletal",
+    "腰部": "musculoskeletal",
+    "背": "musculoskeletal",
+    "背部": "musculoskeletal",
+    "颈": "musculoskeletal",
+    "颈部": "musculoskeletal",
+    "肩": "musculoskeletal",
+    "肩部": "musculoskeletal",
+    "膝": "musculoskeletal",
+    "膝盖": "musculoskeletal",
+    "关节": "musculoskeletal",
+}
+_SYMPTOM_BODY_PART_MARKERS = (
+    ("eye", ("眼痒", "眼痛", "眼红", "眼睛")),
+    ("respiratory", ("咳嗽", "咳痰", "嗓子", "喉咙", "鼻塞", "流鼻涕", "打喷嚏", "呼吸")),
+    ("skin", ("皮疹", "起疹", "皮肤", "瘙痒", "湿疹")),
+    ("digestive", ("胃痛", "胃疼", "腹痛", "腹胀", "肚子痛", "恶心", "呕吐")),
+    ("head", ("头痛", "头疼", "头晕", "眩晕")),
+    ("musculoskeletal", (
+        "腰痛", "腰疼", "腰酸", "后腰", "下腰", "背痛", "背疼", "颈痛", "颈疼",
+        "肩痛", "肩疼", "膝痛", "膝疼", "膝盖", "关节痛", "肌肉痛",
+    )),
+)
+
+
+def _normalize_symptom_body_part(data: Dict[str, Any]) -> None:
+    """Normalize explicit Chinese symptom locations without inventing unknown ones.
+
+    Weak models occasionally emit ``description`` but omit the enum ``body_part``.
+    Only high-signal aliases are filled; an unrecognized description remains invalid
+    and is handled by the existing API validation instead of being guessed.
+    """
+    raw_part = str(data.get("body_part") or "").strip().lower()
+    if raw_part in {
+        "eye", "respiratory", "skin", "digestive", "musculoskeletal", "head", "general", "other",
+    }:
+        return
+    if raw_part in _SYMPTOM_BODY_PART_ALIASES:
+        data["body_part"] = _SYMPTOM_BODY_PART_ALIASES[raw_part]
+        return
+    if raw_part:
+        return
+    description = str(data.get("description") or "").strip()
+    if not description:
+        return
+    for body_part, markers in _SYMPTOM_BODY_PART_MARKERS:
+        if any(marker in description for marker in markers):
+            data["body_part"] = body_part
+            return
+
+
 def _prepare_health_record_args_for_validation(
     tool_name: str,
     args: Any,
@@ -4128,6 +4194,9 @@ def _prepare_health_record_args_for_validation(
         fallback_type = data.get("type") or data.get("name") or args.get("exercise_type")
         if fallback_type:
             data["exercise_type"] = fallback_type
+
+    if rtype == "symptom":
+        _normalize_symptom_body_part(data)
 
     # 相对日期字面量归一 (record_date/start_date/end_date): 弱模型把 '昨天'/'前天' 当字面
     # 塞进 data。health_query/health_manage 早在工具边界过 _normalize_relative_date, 但 record

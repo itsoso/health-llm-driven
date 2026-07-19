@@ -158,6 +158,48 @@ async def test_symptom_record_does_not_throw_on_missing_amount(db):
     assert captured["payload"]["description"] == "眼睛痒"
 
 
+def test_symptom_body_part_is_inferred_from_explicit_chinese_location():
+    """腰疼等明确部位不能因弱模型漏传 body_part 而被误报成未写入。"""
+    from app.services.agent_executor import _prepare_health_record_args_for_validation
+
+    args = {
+        "record_type": "symptom",
+        "data": {"description": "还是有腰疼的症状"},
+    }
+
+    normalized = _prepare_health_record_args_for_validation("health_record", args)
+
+    assert normalized["data"]["body_part"] == "musculoskeletal"
+
+
+@pytest.mark.asyncio
+async def test_symptom_with_explicit_location_reaches_api_without_body_part(db):
+    """模型漏传 body_part 时，明确的中文部位仍应真正写入并拿到 API 回执。"""
+    from app.services.agent_executor import AgentExecutor
+
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    captured = {}
+
+    async def fake_post(url, headers, payload):
+        captured["url"] = url
+        captured["payload"] = payload
+        return '{"id": 42, "body_part": "musculoskeletal", "description": "还是有腰疼的症状"}'
+
+    with patch.object(executor, "_api_post", new=AsyncMock(side_effect=fake_post)):
+        result = await executor._execute_tool(
+            tool_name="health_record",
+            args_raw=json.dumps({
+                "record_type": "symptom",
+                "data": {"description": "还是有腰疼的症状"},
+            }),
+            user_token=None,
+        )
+
+    assert "Error" not in str(result)
+    assert captured["payload"]["body_part"] == "musculoskeletal"
+
+
 @pytest.mark.asyncio
 async def test_mood_record_does_not_throw_on_missing_amount(db):
     """mood 走 record_map 路径, 数据不带 amount, 应正常发 /mood/records."""
