@@ -172,9 +172,9 @@ def compile_agent_package_artifacts(
 ) -> IngestResult:
     """Compile one eligible package into draft-only review artifacts.
 
-    A published KBase package implies that its persisted evaluation report
-    passed the producer's publication gate. Health still retains domain review,
-    serving-index ownership, and all user-facing safety decisions.
+    The producer's persisted evaluation report is required and verified here.
+    Health still retains domain review, serving-index ownership, and all
+    user-facing safety decisions.
     """
     assessment = assess_agent_package_for_health(package, releases)
     if not assessment["eligible"]:
@@ -192,8 +192,10 @@ def compile_agent_package_artifacts(
     ]
     result = combine_release_results(release_results)
     evaluation_policy = package["evaluation_policy"]
+    evaluation = package["evaluation"]
     safety_policy = package["safety_policy"]
     release_ids = [str(ref["release_id"]) for ref in package["releases"]]
+    lineage = _agent_package_lineage(package)
     package_metadata = {
         "origin": "dedao-kbase-agent-package",
         "package_id": package["package_id"],
@@ -202,6 +204,10 @@ def compile_agent_package_artifacts(
         "package_release_ids": release_ids,
         "evaluation_status": "passed",
         "evaluation_suite_version": evaluation_policy["suite_version"],
+        "evaluation_input_hash": evaluation["input_hash"],
+        "evaluation_evaluator_version": evaluation["evaluator_version"],
+        "evaluated_at": evaluation["evaluated_at"],
+        "agent_package_lineage": [lineage],
         "safety_flags": {
             "usage_policy": safety_policy["usage_policy"],
             "abstention_reasons": list(safety_policy["abstention_reasons"]),
@@ -226,8 +232,12 @@ def compile_agent_package_artifacts(
         "content_hash": package["content_hash"],
         "evaluation_status": "passed",
         "evaluation_suite_version": evaluation_policy["suite_version"],
+        "evaluation_input_hash": evaluation["input_hash"],
+        "evaluation_evaluator_version": evaluation["evaluator_version"],
+        "evaluated_at": evaluation["evaluated_at"],
         "release_ids": release_ids,
     }
+    result.manifest["agent_packages"] = [lineage]
     for source_stat in result.source_stats:
         source_stat.update(
             {
@@ -270,6 +280,14 @@ def combine_release_results(results: list[IngestResult]) -> IngestResult:
         "relations_added": len(combined.relations),
     }
     combined.source_stats = [item for result in results for item in result.source_stats]
+    package_lineages = _unique_package_lineages(
+        item
+        for result in results
+        for item in result.manifest.get("agent_packages") or []
+        if isinstance(item, dict)
+    )
+    if package_lineages:
+        combined.manifest["agent_packages"] = package_lineages
     return combined
 
 
@@ -301,6 +319,8 @@ def _validate_agent_package(payload: Any) -> None:
         raise ValueError("dedao-kbase agent package safety_policy must be a JSON object")
     if not isinstance(payload.get("evaluation_policy"), dict):
         raise ValueError("dedao-kbase agent package evaluation_policy must be a JSON object")
+    if "evaluation" in payload and not isinstance(payload.get("evaluation"), dict):
+        raise ValueError("dedao-kbase agent package evaluation must be a JSON object")
 
 
 def _agent_package_hold_reasons(
@@ -318,12 +338,34 @@ def _agent_package_hold_reasons(
         reasons.append("non_evidence_only")
 
     evaluation_policy = package.get("evaluation_policy") or {}
-    explicit_evaluation_status = str(package.get("evaluation_status") or "passed").strip().lower()
+    evaluation = package.get("evaluation") or {}
+    minimum_scores = evaluation_policy.get("minimum_scores")
+    metrics = evaluation.get("metrics")
+    thresholds_pass = (
+        isinstance(minimum_scores, dict)
+        and bool(minimum_scores)
+        and isinstance(metrics, dict)
+        and all(
+            isinstance(metrics.get(metric), (int, float))
+            and float(metrics[metric]) >= float(threshold)
+            for metric, threshold in minimum_scores.items()
+            if isinstance(threshold, (int, float))
+        )
+        and all(isinstance(threshold, (int, float)) for threshold in minimum_scores.values())
+    )
     if (
-        explicit_evaluation_status != "passed"
+        evaluation.get("schema_version") != "agent-evaluation-report.v1"
+        or evaluation.get("passed") is not True
+        or str(evaluation.get("package_id") or "") != str(package.get("package_id") or "")
+        or str(evaluation.get("package_content_hash") or "")
+        != str(package.get("content_hash") or "")
+        or str(evaluation.get("suite_version") or "")
+        != str(evaluation_policy.get("suite_version") or "")
+        or not str(evaluation.get("input_hash") or "").strip()
+        or not str(evaluation.get("evaluator_version") or "").strip()
+        or not str(evaluation.get("evaluated_at") or "").strip()
+        or not thresholds_pass
         or not str(evaluation_policy.get("suite_version") or "").strip()
-        or not isinstance(evaluation_policy.get("minimum_scores"), dict)
-        or not evaluation_policy.get("minimum_scores")
     ):
         reasons.append("unevaluated")
 
@@ -477,7 +519,8 @@ def _unique_rows(results: list[IngestResult], field: str, key: str) -> list[dict
     rows: dict[str, dict[str, Any]] = {}
     for result in results:
         for row in getattr(result, field):
-            rows[str(row[key])] = row
+            row_key = str(row[key])
+            rows[row_key] = _merge_package_lineage(rows.get(row_key), row)
     return sorted(rows.values(), key=lambda row: str(row[key]))
 
 
@@ -486,5 +529,58 @@ def _unique_relations(results: list[IngestResult]) -> list[dict[str, Any]]:
     for result in results:
         for row in result.relations:
             key = (str(row["src_doc_id"]), str(row["relation"]), str(row["dst_doc_id"]))
-            rows[key] = row
+            rows[key] = _merge_package_lineage(rows.get(key), row)
     return [rows[key] for key in sorted(rows)]
+
+
+def _agent_package_lineage(package: dict[str, Any]) -> dict[str, Any]:
+    evaluation = package["evaluation"]
+    return {
+        "package_id": package["package_id"],
+        "version": package["version"],
+        "content_hash": package["content_hash"],
+        "release_ids": [str(reference["release_id"]) for reference in package["releases"]],
+        "evaluation": {
+            "status": "passed",
+            "suite_version": evaluation["suite_version"],
+            "input_hash": evaluation["input_hash"],
+            "evaluator_version": evaluation["evaluator_version"],
+            "evaluated_at": evaluation["evaluated_at"],
+        },
+    }
+
+
+def _merge_package_lineage(
+    previous: dict[str, Any] | None,
+    current: dict[str, Any],
+) -> dict[str, Any]:
+    if previous is None:
+        return current
+    merged = dict(current)
+    previous_metadata = dict(previous.get("metadata") or {})
+    current_metadata = dict(current.get("metadata") or {})
+    lineages = _unique_package_lineages(
+        [
+            *(previous_metadata.get("agent_package_lineage") or []),
+            *(current_metadata.get("agent_package_lineage") or []),
+        ]
+    )
+    if lineages:
+        current_metadata["agent_package_lineage"] = lineages
+    merged["metadata"] = current_metadata
+    return merged
+
+
+def _unique_package_lineages(items: Any) -> list[dict[str, Any]]:
+    unique: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        key = (
+            str(item.get("package_id") or ""),
+            str(item.get("version") or ""),
+            str(item.get("content_hash") or ""),
+        )
+        if all(key):
+            unique[key] = item
+    return [unique[key] for key in sorted(unique)]

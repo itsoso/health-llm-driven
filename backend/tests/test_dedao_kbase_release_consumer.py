@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import UTC, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
@@ -43,13 +44,19 @@ def _release_payload(release_id: str = "release-abc", *, usage_policy: str = "ev
     }
 
 
-def _agent_package_payload(*, release: dict | None = None) -> dict:
+def _agent_package_payload(
+    *,
+    release: dict | None = None,
+    package_id: str = "health-book",
+    version: str = "1.0.0",
+) -> dict:
     release = release or _release_payload()
+    content_hash = f"sha256:agent-package-{package_id}"
     return {
         "schema_version": "agent-package.v1",
-        "package_id": "health-book",
-        "version": "1.0.0",
-        "content_hash": "sha256:agent-package-health-book",
+        "package_id": package_id,
+        "version": version,
+        "content_hash": content_hash,
         "lifecycle_state": "published",
         "published_at": "2026-07-19T12:00:00Z",
         "releases": [
@@ -80,6 +87,17 @@ def _agent_package_payload(*, release: dict | None = None) -> dict:
         "evaluation_policy": {
             "suite_version": "health-agent-eval.v1",
             "minimum_scores": {"citations": 1.0, "abstention": 1.0},
+        },
+        "evaluation": {
+            "schema_version": "agent-evaluation-report.v1",
+            "package_id": package_id,
+            "package_content_hash": content_hash,
+            "suite_version": "health-agent-eval.v1",
+            "input_hash": f"sha256:evaluation-input-{package_id}",
+            "evaluator_version": "deterministic-agent-evaluator.v1",
+            "metrics": {"citations": 1.0, "abstention": 1.0},
+            "passed": True,
+            "evaluated_at": "2026-07-19T11:59:00Z",
         },
         "ui_manifest": {"capabilities": ["evidence"]},
     }
@@ -357,6 +375,9 @@ def test_compile_agent_package_preserves_review_and_safety_provenance(tmp_path):
         "content_hash": "sha256:agent-package-health-book",
         "evaluation_status": "passed",
         "evaluation_suite_version": "health-agent-eval.v1",
+        "evaluation_input_hash": "sha256:evaluation-input-health-book",
+        "evaluation_evaluator_version": "deterministic-agent-evaluator.v1",
+        "evaluated_at": "2026-07-19T11:59:00Z",
         "release_ids": ["release-abc"],
     }
     claim = result.claims[0]
@@ -364,6 +385,7 @@ def test_compile_agent_package_preserves_review_and_safety_provenance(tmp_path):
     assert claim["metadata"]["package_version"] == "1.0.0"
     assert claim["metadata"]["release_id"] == "release-abc"
     assert claim["metadata"]["evaluation_status"] == "passed"
+    assert claim["metadata"]["evaluation_input_hash"] == "sha256:evaluation-input-health-book"
     assert claim["metadata"]["safety_flags"] == {
         "usage_policy": "evidence_only",
         "abstention_reasons": ["insufficient_evidence", "conflicting_evidence"],
@@ -382,6 +404,7 @@ def test_compile_agent_package_preserves_review_and_safety_provenance(tmp_path):
             "conflict",
         ),
         (lambda package, release: package.update(evaluation_policy={}), "unevaluated"),
+        (lambda package, release: package.pop("evaluation"), "unevaluated"),
         (
             lambda package, release: package["safety_policy"].update(usage_policy="standard"),
             "non_evidence_only",
@@ -445,6 +468,101 @@ def test_agent_package_sync_writes_draft_without_serving_or_personal_data_mutati
     assert db.query(KBDocument).count() == 0
     audit = db.query(KBAudit).filter(KBAudit.op == "dedao_kbase_agent_package_sync_draft").one()
     assert audit.diff["gate"]["serving_allowed"] is False
+
+
+def test_agent_package_sync_preserves_previous_unreviewed_batch(tmp_path, db):
+    from app.tasks.system_knowledge_lifecycle import sync_dedao_kbase_agent_packages_draft_once
+
+    release_one = _release_payload("release-one")
+    release_two = _release_payload("release-two")
+    packages = [
+        _agent_package_payload(release=release_one, package_id="health-book-one"),
+    ]
+    releases = {release_one["release_id"]: release_one, release_two["release_id"]: release_two}
+    requests: list[tuple[str, str, dict | None]] = []
+    server = ThreadingHTTPServer(
+        ("127.0.0.1", 0),
+        _agent_package_sequence_handler(packages, releases, requests),
+    )
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    canonical = tmp_path / "canonical"
+    workspace = tmp_path / "agent-package-review"
+    _write_canonical_artifacts(canonical, marker="trusted-base")
+    try:
+        first = sync_dedao_kbase_agent_packages_draft_once(
+            db,
+            base_url=f"http://127.0.0.1:{server.server_port}",
+            auth_token="secret-token",
+            artifact_dir=workspace,
+            base_artifact_dir=canonical,
+            source_root=tmp_path / "source",
+            actor="test:agent-package-sync",
+            limit=1,
+        )
+        packages.append(
+            _agent_package_payload(release=release_two, package_id="health-book-two")
+        )
+        second = sync_dedao_kbase_agent_packages_draft_once(
+            db,
+            base_url=f"http://127.0.0.1:{server.server_port}",
+            auth_token="secret-token",
+            artifact_dir=workspace,
+            base_artifact_dir=canonical,
+            source_root=tmp_path / "source",
+            actor="test:agent-package-sync",
+            limit=1,
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+    assert first["mode"] == "rebuild"
+    assert second["mode"] == "incremental"
+    assert second["cursor"] == "health-book-two@1.0.0"
+    claims = [json.loads(line) for line in (workspace / "claims.jsonl").read_text().splitlines()]
+    assert {claim["metadata"]["package_id"] for claim in claims} == {
+        "health-book-one",
+        "health-book-two",
+    }
+    manifest = json.loads((workspace / "draft_manifest.json").read_text())
+    assert [item["package_id"] for item in manifest["agent_packages"]] == [
+        "health-book-one",
+        "health-book-two",
+    ]
+
+
+def test_overlapping_agent_packages_preserve_all_package_lineage(tmp_path):
+    from app.integrations.dedao_kbase_release_consumer import (
+        combine_release_results,
+        compile_agent_package_artifacts,
+    )
+
+    release = _release_payload()
+    first_package = _agent_package_payload(release=release, package_id="health-book-one")
+    second_package = _agent_package_payload(release=release, package_id="health-book-two")
+    first = compile_agent_package_artifacts(
+        package=first_package,
+        releases=[release],
+        base_artifact_dir=tmp_path / "artifacts",
+        source_root=tmp_path / "source",
+    )
+    second = compile_agent_package_artifacts(
+        package=second_package,
+        releases=[deepcopy(release)],
+        base_artifact_dir=tmp_path / "artifacts",
+        source_root=tmp_path / "source",
+    )
+
+    combined = combine_release_results([first, second])
+
+    lineage = combined.claims[0]["metadata"]["agent_package_lineage"]
+    assert [item["package_id"] for item in lineage] == ["health-book-one", "health-book-two"]
+    assert [item["package_id"] for item in combined.manifest["agent_packages"]] == [
+        "health-book-one",
+        "health-book-two",
+    ]
 
 
 def test_agent_package_draft_sync_is_explicitly_registered_not_auto_published():
@@ -1374,3 +1492,68 @@ def _agent_package_handler(
             return
 
     return AgentPackageHandler
+
+
+def _agent_package_sequence_handler(
+    packages: list[dict],
+    releases: dict[str, dict],
+    requests: list[tuple[str, str, dict | None]],
+):
+    class AgentPackageSequenceHandler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            from urllib.parse import parse_qs, urlparse
+
+            requests.append(("GET", self.path, None))
+            if self.headers.get("Authorization") != "Bearer secret-token":
+                self._write(401, {"error": "unauthorized"})
+                return
+            parsed = urlparse(self.path)
+            if parsed.path == "/api/agent-packages":
+                query = parse_qs(parsed.query)
+                after = query.get("after", [""])[0]
+                limit = int(query.get("limit", ["50"])[0])
+                refs = [f"{package['package_id']}@{package['version']}" for package in packages]
+                start = refs.index(after) + 1 if after in refs else 0
+                page = packages[start : start + limit]
+                self._write(
+                    200,
+                    {
+                        "packages": [
+                            {
+                                "package_id": package["package_id"],
+                                "version": package["version"],
+                                "content_hash": package["content_hash"],
+                                "lifecycle_state": package["lifecycle_state"],
+                            }
+                            for package in page
+                        ],
+                        "next_cursor": (
+                            f"{page[-1]['package_id']}@{page[-1]['version']}" if page else ""
+                        ),
+                    },
+                )
+                return
+            for package in packages:
+                if self.path == (
+                    f"/api/agent-packages/{package['package_id']}?version={package['version']}"
+                ):
+                    self._write(200, package)
+                    return
+            for release in releases.values():
+                if self.path == f"/api/knowledge/releases/{release['release_id']}":
+                    self._write(200, release)
+                    return
+            self._write(404, {"error": "not found"})
+
+        def _write(self, status: int, payload: object):
+            body = json.dumps(payload).encode()
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, format, *args):
+            return
+
+    return AgentPackageSequenceHandler

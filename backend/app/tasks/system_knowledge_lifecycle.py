@@ -154,6 +154,29 @@ def _list_release_records(
         cursor = next_cursor
 
 
+def _list_agent_package_records(
+    client: DedaoKBaseReleaseClient,
+    *,
+    after: str,
+    limit: int,
+    replay_all: bool,
+) -> list[dict[str, Any]]:
+    if not replay_all:
+        return client.list_agent_packages(after=after, limit=limit)
+    records: list[dict[str, Any]] = []
+    cursor = ""
+    while True:
+        page = client.list_agent_packages(after=cursor, limit=limit)
+        records.extend(page)
+        if len(page) < limit:
+            return records
+        last = page[-1]
+        next_cursor = f"{last.get('package_id', '')}@{last.get('version', '')}"
+        if next_cursor == "@" or next_cursor == cursor:
+            raise ValueError("dedao-kbase Agent Package replay cursor did not advance")
+        cursor = next_cursor
+
+
 def _feedback_event_id(audit_id: int, release_id: str) -> str:
     release_digest = hashlib.sha256(release_id.encode("utf-8")).hexdigest()[:12]
     return f"health-kb-audit-{audit_id}-{release_digest}"
@@ -559,14 +582,30 @@ def sync_dedao_kbase_agent_packages_draft_once(
             .first()
         )
         previous_cursor = str((latest.diff or {}).get("cursor") or "") if latest else ""
+        base_fingerprint = _artifact_fingerprint(canonical)
+        workspace_metadata = read_workspace_metadata(target)
+        workspace_valid = (
+            workspace_artifacts_valid(target)
+            and str(workspace_metadata.get("base_fingerprint") or "") == base_fingerprint
+            and str(workspace_metadata.get("cursor") or "") == previous_cursor
+            and str(workspace_metadata.get("producer_base_url") or "") == base_url
+        )
+        mode = "incremental" if workspace_valid else "rebuild"
         client = DedaoKBaseReleaseClient(base_url, auth_token=auth_token)
-        records = client.list_agent_packages(after=previous_cursor, limit=limit)
+        records = _list_agent_package_records(
+            client,
+            after=previous_cursor if mode == "incremental" else "",
+            limit=limit,
+            replay_all=mode == "rebuild",
+        )
         if not records:
             return {
-                "status": "up_to_date",
+                "status": "up_to_date" if mode == "incremental" else "no_agent_packages",
+                "mode": mode,
                 "cursor": previous_cursor,
                 "package_count": 0,
                 "held_packages": [],
+                "base_fingerprint": base_fingerprint,
             }
 
         eligible: list[tuple[dict[str, Any], list[dict[str, Any]]]] = []
@@ -599,11 +638,13 @@ def sync_dedao_kbase_agent_packages_draft_once(
         if not eligible:
             report = {
                 "status": "held",
+                "mode": mode,
                 "base_url": base_url,
                 "artifact_dir": str(target),
                 "base_artifact_dir": str(canonical),
                 "previous_cursor": previous_cursor,
                 "cursor": cursor,
+                "base_fingerprint": base_fingerprint,
                 "package_count": 0,
                 "package_ids": [],
                 "held_packages": held_packages,
@@ -623,10 +664,12 @@ def sync_dedao_kbase_agent_packages_draft_once(
         current_time = now or datetime.now(UTC)
         target.parent.mkdir(parents=True, exist_ok=True)
         candidate = Path(tempfile.mkdtemp(prefix=f".{target.name}.candidate-", dir=target.parent))
+        source = target if mode == "incremental" else canonical
         try:
-            if canonical.exists():
-                shutil.copytree(canonical, candidate, dirs_exist_ok=True)
-            _normalize_canonical_review_status(candidate)
+            if source.exists():
+                shutil.copytree(source, candidate, dirs_exist_ok=True)
+            if mode == "rebuild":
+                _normalize_canonical_review_status(candidate)
             package_results = [
                 compile_agent_package_artifacts(
                     package=package,
@@ -638,6 +681,37 @@ def sync_dedao_kbase_agent_packages_draft_once(
                 for package, releases in eligible
             ]
             combined = combine_release_results(package_results)
+            previous_packages = (
+                workspace_metadata.get("agent_packages") or [] if mode == "incremental" else []
+            )
+            package_receipts = {
+                (
+                    str(item.get("package_id") or ""),
+                    str(item.get("version") or ""),
+                    str(item.get("content_hash") or ""),
+                ): item
+                for item in previous_packages
+                if isinstance(item, dict)
+            }
+            for package, _ in eligible:
+                evaluation = package["evaluation"]
+                receipt = {
+                    "package_id": package["package_id"],
+                    "version": package["version"],
+                    "content_hash": package["content_hash"],
+                    "release_ids": [
+                        str(reference["release_id"]) for reference in package["releases"]
+                    ],
+                    "evaluation_status": "passed",
+                    "evaluation_suite_version": evaluation["suite_version"],
+                    "evaluation_input_hash": evaluation["input_hash"],
+                    "evaluation_evaluator_version": evaluation["evaluator_version"],
+                    "evaluated_at": evaluation["evaluated_at"],
+                }
+                key = (receipt["package_id"], receipt["version"], receipt["content_hash"])
+                package_receipts[key] = receipt
+            all_package_receipts = [package_receipts[key] for key in sorted(package_receipts)]
+            combined.manifest["agent_packages"] = all_package_receipts
             draft_manifest = write_draft_artifacts(
                 combined,
                 candidate,
@@ -647,17 +721,11 @@ def sync_dedao_kbase_agent_packages_draft_once(
             )
             draft_manifest.update(
                 {
+                    "base_fingerprint": base_fingerprint,
                     "cursor": cursor,
                     "producer_base_url": base_url,
-                    "agent_packages": [
-                        {
-                            "package_id": package["package_id"],
-                            "version": package["version"],
-                            "content_hash": package["content_hash"],
-                            "evaluation_status": "passed",
-                        }
-                        for package, _ in eligible
-                    ],
+                    "sync_mode": mode,
+                    "agent_packages": all_package_receipts,
                 }
             )
             (candidate / "draft_manifest.json").write_text(
@@ -672,9 +740,11 @@ def sync_dedao_kbase_agent_packages_draft_once(
 
         report = {
             "status": "draft_written",
+            "mode": mode,
             "base_url": base_url,
             "artifact_dir": str(target),
             "base_artifact_dir": str(canonical),
+            "base_fingerprint": base_fingerprint,
             "previous_cursor": previous_cursor,
             "cursor": cursor,
             "package_count": len(eligible),
@@ -821,7 +891,7 @@ def sync_dedao_kbase_agent_packages_draft() -> dict[str, Any]:
             db,
             base_url=settings.dedao_kbase_release_base_url,
             auth_token=settings.dedao_kbase_auth_token,
-            artifact_dir=_dedao_kbase_review_artifact_dir(),
+            artifact_dir=_dedao_kbase_review_artifact_dir() / "agent-packages",
             base_artifact_dir=_default_system_kb_artifact_dir(),
             source_root=settings.dedao_kbase_source_root,
             actor="celery:dedao_kbase_agent_package_sync",
