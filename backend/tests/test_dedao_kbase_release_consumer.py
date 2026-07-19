@@ -171,6 +171,17 @@ def test_feedback_flusher_groups_actual_use_and_rejection_and_advances_past_no_s
                     "release_claim_id": "claim-b",
                 },
             ),
+            KBDocument(
+                doc_id="claim:health-package",
+                doc_type="claim",
+                metadata_json={
+                    "origin": "dedao-kbase-agent-package",
+                    "release_id": "release-a",
+                    "release_claim_id": "claim-package",
+                    "package_id": "health-book",
+                    "package_version": "1.0.0",
+                },
+            ),
         ]
     )
     db.flush()
@@ -179,7 +190,7 @@ def test_feedback_flusher_groups_actual_use_and_rejection_and_advances_past_no_s
             KBAudit(
                 op="kb_citation_usage",
                 actor="system",
-                diff={"used_ids": ["claim:health-a", "claim:health-b"]},
+                diff={"used_ids": ["claim:health-a", "claim:health-b", "claim:health-package"]},
             ),
             KBAudit(
                 doc_id="claim:health-rejected",
@@ -224,7 +235,7 @@ def test_feedback_flusher_groups_actual_use_and_rejection_and_advances_past_no_s
     }
     assert [(release_id, payload["outcome"], payload.get("claim_ids"), payload.get("reason_code"))
             for release_id, payload in client.calls] == [
-        ("release-a", "used", ["claim-a", "claim-b"], "used_for_answer"),
+        ("release-a", "used", ["claim-a", "claim-b", "claim-package"], "used_for_answer"),
         ("release-b", "rejected", ["claim-rejected"], "out_of_scope"),
     ]
     assert all("note" not in payload and "actor" not in payload for _, payload in client.calls)

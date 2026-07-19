@@ -1616,10 +1616,11 @@ def get_knowledge_operations_dashboard(db: Session) -> dict[str, Any]:
 def get_dedao_kbase_draft_review_bundle(
     *,
     artifact_dir: str | Path | None = None,
+    workspace: str = "release",
     preview_limit: int = 20,
 ) -> dict[str, Any]:
     """Return a bounded review preview for configured dedao-kbase draft artifacts."""
-    root = _configured_system_kb_artifact_dir(artifact_dir)
+    root = _configured_system_kb_artifact_dir(artifact_dir, workspace=workspace)
     with review_workspace_lock(root):
         _require_system_kb_artifact_dir(root)
         _require_valid_review_workspace(root)
@@ -1644,11 +1645,12 @@ def get_dedao_kbase_draft_review_bundle(
 def list_dedao_kbase_review_claims(
     *,
     artifact_dir: str | Path | None = None,
+    workspace: str = "release",
     offset: int = 0,
     limit: int = 50,
     decision: str | None = None,
 ) -> dict[str, Any]:
-    root = _configured_system_kb_artifact_dir(artifact_dir)
+    root = _configured_system_kb_artifact_dir(artifact_dir, workspace=workspace)
     _require_system_kb_artifact_dir(root)
     return list_review_claims(root, offset=offset, limit=limit, decision=decision)
 
@@ -1664,8 +1666,9 @@ def adjudicate_dedao_kbase_review_claim(
     evidence_level: str | None = None,
     confidence: float | None = None,
     artifact_dir: str | Path | None = None,
+    workspace: str = "release",
 ) -> dict[str, Any]:
-    root = _configured_system_kb_artifact_dir(artifact_dir)
+    root = _configured_system_kb_artifact_dir(artifact_dir, workspace=workspace)
     _require_system_kb_artifact_dir(root)
     return adjudicate_review_claim(
         root,
@@ -1685,8 +1688,9 @@ def generate_dedao_kbase_review_verification_packet(
     doc_id: str,
     expected_workspace_fingerprint: str,
     artifact_dir: str | Path | None = None,
+    workspace: str = "release",
 ) -> dict[str, Any]:
-    root = _configured_system_kb_artifact_dir(artifact_dir)
+    root = _configured_system_kb_artifact_dir(artifact_dir, workspace=workspace)
     _require_system_kb_artifact_dir(root)
     return generate_review_verification_packet(
         root,
@@ -1699,8 +1703,9 @@ def list_dedao_kbase_review_verification_packets(
     *,
     doc_id: str,
     artifact_dir: str | Path | None = None,
+    workspace: str = "release",
 ) -> dict[str, Any]:
-    root = _configured_system_kb_artifact_dir(artifact_dir)
+    root = _configured_system_kb_artifact_dir(artifact_dir, workspace=workspace)
     _require_system_kb_artifact_dir(root)
     return list_review_verification_packets(root, doc_id=doc_id)
 
@@ -1713,8 +1718,9 @@ def apply_dedao_kbase_review_verification_packet(
     expected_workspace_fingerprint: str,
     note: str | None = None,
     artifact_dir: str | Path | None = None,
+    workspace: str = "release",
 ) -> dict[str, Any]:
-    root = _configured_system_kb_artifact_dir(artifact_dir)
+    root = _configured_system_kb_artifact_dir(artifact_dir, workspace=workspace)
     _require_system_kb_artifact_dir(root)
     packet_list = list_review_verification_packets(root, doc_id=doc_id)
     if packet_list["workspace_fingerprint"] != expected_workspace_fingerprint:
@@ -1747,11 +1753,12 @@ def apply_dedao_kbase_review_verification_packet(
 def approve_dedao_kbase_draft_review(
     *,
     artifact_dir: str | Path | None = None,
+    workspace: str = "release",
     reviewer: str,
     expected_workspace_fingerprint: str,
 ) -> dict[str, Any]:
     """Finalize configured artifacts after every draft claim is adjudicated."""
-    root = _configured_system_kb_artifact_dir(artifact_dir)
+    root = _configured_system_kb_artifact_dir(artifact_dir, workspace=workspace)
     _require_system_kb_artifact_dir(root)
     result = finalize_review_workspace(
         root,
@@ -1766,11 +1773,12 @@ def publish_dedao_kbase_reviewed_artifacts(
     db: Session,
     *,
     artifact_dir: str | Path | None = None,
+    workspace: str = "release",
     actor: str = "system",
 ) -> dict[str, Any]:
     """Import reviewed dedao-kbase artifacts into serving KB and refresh indexes."""
 
-    root = _configured_system_kb_artifact_dir(artifact_dir)
+    root = _configured_system_kb_artifact_dir(artifact_dir, workspace=workspace)
     with review_workspace_lock(root):
         _require_system_kb_artifact_dir(root)
         _require_valid_review_workspace(root)
@@ -1794,10 +1802,11 @@ def preview_dedao_kbase_reviewed_artifacts_publish(
     db: Session,
     *,
     artifact_dir: str | Path | None = None,
+    workspace: str = "release",
 ) -> dict[str, Any]:
     """Preview reviewed dedao-kbase artifact import/reindex impact without serving mutation."""
 
-    root = _configured_system_kb_artifact_dir(artifact_dir)
+    root = _configured_system_kb_artifact_dir(artifact_dir, workspace=workspace)
     with review_workspace_lock(root):
         _require_system_kb_artifact_dir(root)
         _require_valid_review_workspace(root)
@@ -4142,9 +4151,21 @@ def _latest_lifecycle_report(db: Session) -> dict[str, Any] | None:
     }
 
 
-def _configured_system_kb_artifact_dir(artifact_dir: str | Path | None = None) -> Path:
+def _configured_system_kb_artifact_dir(
+    artifact_dir: str | Path | None = None,
+    *,
+    workspace: str = "release",
+) -> Path:
+    if workspace not in {"release", "agent_package"}:
+        raise ValueError(f"invalid dedao-kbase review workspace: {workspace}")
     if artifact_dir is not None:
         root = Path(artifact_dir)
+    elif workspace == "agent_package":
+        if not settings.dedao_kbase_review_artifact_dir:
+            raise ValueError(
+                "DEDAO_KBASE_REVIEW_ARTIFACT_DIR is required for the Agent Package review workspace"
+            )
+        root = Path(settings.dedao_kbase_review_artifact_dir) / "agent-packages"
     elif settings.dedao_kbase_review_artifact_dir:
         root = Path(settings.dedao_kbase_review_artifact_dir)
     elif settings.system_kb_artifact_dir:

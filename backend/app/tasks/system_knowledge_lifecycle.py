@@ -301,7 +301,10 @@ def _feedback_events_for_audit(db: Session, audit: KBAudit) -> list[dict[str, An
         claims_by_release: dict[str, list[str]] = {}
         for doc_id in used_ids:
             metadata = metadata_by_doc_id.get(doc_id) or {}
-            if metadata.get("origin") != "dedao-kbase-release":
+            if metadata.get("origin") not in {
+                "dedao-kbase-release",
+                "dedao-kbase-agent-package",
+            }:
                 continue
             release_id = str(metadata.get("release_id") or "").strip()
             release_claim_id = str(metadata.get("release_claim_id") or "").strip()
