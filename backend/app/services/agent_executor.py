@@ -4302,26 +4302,40 @@ def _symptom_text_has_non_self_reference(normalized: str) -> bool:
         for _, markers in _SYMPTOM_BODY_PART_MARKERS
         for marker in markers
     )
-    # 只看症状词前的短上下文，覆盖“他/小王/我爸打喷嚏”，
-    # 同时不把“我说我打喷嚏”误判为第三方。
-    subject_re = re.compile(
+    # 在同一分句内检查完整主体上下文。固定长度窗口会漏掉“他今天早上在
+    # 办公室连续打了一个喷嚏”这类自然表达；分句边界又能避免把“我说我
+    # 打喷嚏”中的“说”误判成第三方主体。
+    clauses = re.split(r"[，,。！？!?；;：:、\n]", normalized)
+    non_self_subject_re = re.compile(
         r"(?:他|她|他们|她们|我爸|我妈|我父亲|我母亲|爸爸|妈妈|朋友|同事|家人|患者|病人)"
-        r"[^，,。！？!?；;：:、]{0,12}$"
-        # 小王等姓名需要后续确实出现动作词,避免把“小腿疼”识别成第三方。
-        r"|小[\u4e00-\u9fff]{1,3}"
-        r"(?=[^，,。！？!?；;：:、]{0,8}(?:有|出现|打|说|疼|痛|痒|胀|咳|流))"
-        r"[^，,。！？!?；;：:、]{0,12}$"
     )
-    for marker in symptom_markers:
-        start = 0
-        while True:
-            index = normalized.find(marker, start)
-            if index < 0:
-                break
-            prefix = normalized[max(0, index - 12):index]
-            if subject_re.search(prefix):
+    # 只取“小王/小李”这类常见称呼的两字主体；限制贪婪长度，避免把
+    # “小王打喷嚏”整体吞掉后错过后面的动作词。
+    name_re = re.compile(r"小[\u4e00-\u9fff]{1,2}")
+    for clause in clauses:
+        if not clause:
+            continue
+        symptom_indexes = [
+            index
+            for marker in symptom_markers
+            for index in [clause.find(marker)]
+            if index >= 0
+        ]
+        if not symptom_indexes:
+            continue
+        first_symptom_index = min(symptom_indexes)
+        if any(
+            match.start() < first_symptom_index
+            for match in non_self_subject_re.finditer(clause)
+        ):
+            return True
+        # 小王等姓名需要后续确实出现动作词,避免把“小腿疼”识别成第三方。
+        for match in name_re.finditer(clause[:first_symptom_index]):
+            # 症状标记本身可能包含动作词(例如“打喷嚏”),所以窗口要包含
+            # 标记开头,否则“小王打喷嚏”会因动作词恰好位于边界而漏检。
+            suffix = clause[match.end():first_symptom_index + 4]
+            if re.search(r"(?:有|出现|打|说|疼|痛|痒|胀|咳|流)", suffix):
                 return True
-            start = index + len(marker)
     return False
 
 
