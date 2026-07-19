@@ -258,6 +258,7 @@ T4 Telegram 执行入口部署：
   - Watch reminder wording 与 delivery receipt 一致。
   - 真机切换前后台后继续输入、拍照多图、麦克风权限与按住说话链路。
 - **裁决：PENDING（设备与跨端业务样本尚未执行；不代表通过，不能以本地测试或健康接口替代）**。
+- 已完成本地模拟器补充烟测：iPhone 17 Pro / iOS 26.4 原生构建成功（0 error，5 个既有 Xcode warning），启动与杀进程重启后均回到最后一段 Agent 输出；语音模式与键盘模式可双向切换。模拟器不计入真实麦克风、相机、通知和 Watch 验收。
 
 ## S8 · 沉淀
 
