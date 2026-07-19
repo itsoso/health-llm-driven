@@ -25,7 +25,7 @@
 | FP16 ↔ int8 身份质量差 | BLOCK | 未在同一冻结 held-out test split 运行，不能拿 embedding cosine 代替 identity precision |
 | 分层身份质量与纠正成本 | BLOCK | 无 single/composite/mixed/package/confusable/non-food/degraded 的真实 held-out 报告 |
 | 低/中/高端 iPhone 性能 | BLOCK | 高端 iPhone 已于 2026-07-19 重新连接并完成宿主复测；授权数据缺失使 Chinese-CLIP 未进入推理，且仍无低/中端样本，内存 ceiling 保持未设 |
-| 飞行模式与物理隐私 | BLOCK | 宿主源码无网络/相册/健康仓库接口且单测通过，但真机飞行模式、抓包与长时温升未执行 |
+| 飞行模式与物理隐私 | BLOCK | 用户确认飞行模式下，合成能力宿主和 Chinese-CLIP compile-only 宿主均可离线启动；后者按设计未加载或推理，且仍缺推理期间抓包与长时温升 |
 | **总裁决** | **BLOCK** | 任一 required evidence 缺失即 BLOCK，不按总体平均放行 |
 
 ## Chinese-CLIP 来源锁定
@@ -101,7 +101,7 @@ xcrun devicectl device process launch \
   life.executor.health.local-diet-benchmark
 ```
 
-宿主在源代码内显式开启固定合成基准，日志输出单行 `LOCAL_DIET_INFERENCE_BENCHMARK=<json>`。如果系统模型不可用，JSON 必须包含明确 `unavailableReason`；如果可用，`caseResult` 包含冷/热时延、峰值内存增量及前后温度。真机原始证据保存在 `runs/2026-07-18-iphone18-2-ios26-6-system-model.json` 与 `runs/2026-07-19-iphone18-2-ios26-6-system-model.json`，不含设备序列号、UDID 或私人饮食数据。
+宿主在源代码内显式开启固定合成基准，日志输出单行 `LOCAL_DIET_INFERENCE_BENCHMARK=<json>`。如果系统模型不可用，JSON 必须包含明确 `unavailableReason`；如果可用，`caseResult` 包含冷/热时延、峰值内存增量及前后温度。普通连接与用户确认飞行模式的真机原始证据保存在 `runs/2026-07-18-iphone18-2-ios26-6-system-model.json`、`runs/2026-07-19-iphone18-2-ios26-6-system-model.json` 和 `runs/2026-07-19-iphone18-2-ios26-6-airplane-mode-system-model.json`，不含设备序列号、UDID 或私人饮食数据。
 
 Apple 参考：
 
@@ -144,6 +144,8 @@ ruby scripts/generate_food_vision_device_host.rb \
 证据宿主必须读取 `status: pass`、split 摘要与当前数据清单完全一致的 v2 校准 manifest，并把其中阈值焊进生成配置。仅验证工程可编译时可以显式传 `--compile-only`；该模式会在 App 启动时停在“evidence collection is disabled”，不会输出 benchmark report。
 
 2026-07-19 已在重新连接的高端 iPhone 上用真实 int8 模型与 v2 标签资产完成 compile-only 宿主的签名构建、安装和启动。这只证明资产可被当前签名宿主打包并启动；compile-only 在加载和推理前停止，不能作为模型加载、时延、内存、温升、质量或隐私出站的运行证据。
+
+用户确认开启飞行模式后，USB 控制仍在线：合成能力宿主离线启动并输出明确的系统模型不可用报告；Chinese-CLIP compile-only 宿主离线启动、进程保持存活，且观察窗口内没有产生质量报告。由于该模式在模型加载前停止，这仍不是“模型离线推理”或“零网络出站”的完整证明；后者必须在授权数据和 pass 校准就绪后，对真实推理做抓包验证。
 
 宿主只输出一行 `LOCAL_FOOD_VISION_BENCHMARK=<json>`；报告使用不透明 case/fixture ID，不输出照片名、路径、像素或 embedding。其 JSON 可用以下命令直接验证：
 
