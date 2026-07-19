@@ -14,7 +14,7 @@
 - [x] Correction Block：真机证明系统模型不可通用依赖；G2 拆为本地基线与智能增强两个范围。
 - [x] 2026-07-18 用户选定 Chinese-CLIP RN50 作为唯一首轮打包视觉模型；只分发视觉塔，文本塔仅用于构建标签向量。
 - [x] 2026-07-19 Chinese-CLIP 八阶段 spike 已执行到裁决；工程与可重复性闸通过，授权质量集和代表性真机证据缺失，按规则保持 BLOCK，未接生产饮食页。
-- [ ] 2026-07-19 用户要求继续按“识别质量 → 非食物拒识 → 证据链”优化。复核固定 Chinese-CLIP revision 后纠正旧假设：官方预处理是 `Resize((224, 224), BICUBIC)`，不是等比中心裁切；实现必须匹配官方方形 bicubic 语义。优化设计与实施计划见 `docs/plans/2026-07-19-chinese-clip-local-food-vision-optimization-design.md`、`docs/plans/2026-07-19-chinese-clip-local-food-vision-optimization.md`。本 correction 回到 S3/S5，不改变既有 G2 BLOCK。
+- [x] 2026-07-19 已按“识别质量 → 非食物拒识 → 证据链”顺序完成优化。复核固定 Chinese-CLIP revision 后纠正旧假设：官方预处理是 `Resize((224, 224), BICUBIC)`，不是等比中心裁切；实现现已匹配官方方形 bicubic 语义。v2 标签库加入本地非食物负类；FP16/int8 差值改为由两份完整冻结报告确定性派生。优化设计与实施计划见 `docs/plans/2026-07-19-chinese-clip-local-food-vision-optimization-design.md`、`docs/plans/2026-07-19-chinese-clip-local-food-vision-optimization.md`。本 correction 已完成 S3/S5 与预设备 G3，未改变既有 G2 BLOCK。
 
 ## S0 · 用户需求（逐字）
 
@@ -64,6 +64,7 @@
 - 实施计划：`docs/plans/2026-07-18-local-first-private-mode.md`
 - Chinese-CLIP 设计：`docs/plans/2026-07-18-chinese-clip-local-food-vision-design.md`
 - Chinese-CLIP 独立实施计划：`docs/plans/2026-07-18-chinese-clip-local-food-vision.md`
+- Chinese-CLIP 优化设计与实施计划：`docs/plans/2026-07-19-chinese-clip-local-food-vision-optimization-design.md`、`docs/plans/2026-07-19-chinese-clip-local-food-vision-optimization.md`
 - 顺序：G2 spike -> 加密内核 -> 本地身份 -> 饮食仓储 -> 食物库 -> 离线记录 -> 端侧模型/Vision -> 出站断路器 -> 导出恢复 -> 新 iOS 包。
 - 智能增强选择：`OFA-Sys/chinese-clip-rn50`，Core ML 只运行视觉塔；不再做 TinyCLIP 首轮对照实现。
 - 长杆：Chinese-CLIP 权重许可锁定、Core ML 压缩质量、真实设备内存/延迟和中文餐食覆盖评测。
@@ -90,12 +91,13 @@
   - 自定义视觉模型必须经过纠正成本、内存、温升和下载体积 Gate。
 - Chinese-CLIP 已取得的独立 spike 证据（2026-07-19）：
   - 固定模型 revision `717ba215769231e53b9b7c6b9d329b9cc5944418`、代码 revision `31863c707501bf1605d36842f43deb78793dbc5d`、checkpoint SHA-256 与代码/模型许可证；分发边界只含 image encoder。
-  - 78 个 owner-authored 中文身份标签已生成 1024 维单位向量库；构建器拒绝营养/份量字段，二次生成摘要一致。
-  - FP16 Core ML/PyTorch 最低 cosine `0.9999935626780782`；选定 int8 最低 cosine `0.9950830876471225`。FP16 编译模型加标签为 77040897 bytes，超预算；int8 为 39626225 bytes，通过 50 MiB 包体 Gate。
-  - 纯 Swift 排序、EXIF/224×224 预处理、Vision 显著区域、Core ML 本地加载、条码/OCR/人工选择优先级、未知/非食物、取消/内存/温控停止和无敏感输出均有确定性测试。iOS 16 通用 package 与隔离宿主均已用真实 int8 artifact 构建成功。
-  - 自定义模型证据 Schema、300-case 数据准入 Schema、逐分层计分、冻结 split 校准、FP16/压缩选择和真机宿主均已实现。预设备闸为：模型来源 10 tests、标签 13 tests、导出 10 tests、计分 9 tests、Swift 35 tests（1 个显式真机测试 skipped）、两个 Ruby 宿主生成器与 doc-drift 全部通过。
+  - v2 owner-authored 中文身份标签已生成 1024 维单位向量库，并新增人物、宠物、风景、文档、屏幕、物品与空餐具等本地非食物负类；构建器拒绝营养/份量字段，二次生成摘要一致。
+  - FP16 Core ML/PyTorch 最低 cosine `0.9999935626780782`；选定 int8 最低 cosine `0.9950830876471225`。v2 标签加入后，FP16 编译模型加标签为 77074808 bytes，仍超预算；int8 为 39660136 bytes，仍通过 50 MiB 包体 Gate。
+  - 纯 Swift 排序、EXIF/官方方形 bicubic 224×224 预处理、Vision 显著区域、Core ML 本地加载与连续 Float32 张量写入、条码/OCR/人工选择优先级、未知/非食物、取消/内存/温控停止和无敏感输出均有确定性测试。iOS 16 通用 package 与只编译隔离宿主均已用真实 int8 artifact 构建成功；只编译宿主明确禁止产生质量报告。
+  - 自定义模型原始报告会绑定模型、v2 标签、校准 manifest 摘要、实际排名阈值和安装字节；FP16/int8 原始报告都不接受自由差值。只有完整冻结 test split 的双报告才能生成符合独立 Schema 的派生变体证据。
+  - 2026-07-19 优化后预设备闸为：模型来源 10 tests、标签 15 tests、导出 10 tests、计分 10 tests、证据 Schema 9 tests、Swift 37 tests（1 个显式真机测试 skipped）、Ruby 合成宿主 2 tests / 20 assertions、Ruby 视觉宿主 7 tests / 63 assertions、generic iOS 16 build、真实 int8 artifact 的 compile-only 宿主 build、doc-drift 与 dossier consistency 全部通过。
 - Chinese-CLIP 仍缺的不可替代证据：
-  - 工作区和环境变量中没有至少 300 个已授权、非私人中文餐食 case；因此校准/测试 split 摘要、held-out 质量和 FP16-to-int8 identity precision delta 均不存在。`chinese-clip-calibration-v1.json` 为 fail-closed BLOCK，未选择阈值或变体。
+  - 工作区和环境变量中没有至少 300 个已授权、非私人中文餐食 case；因此校准/测试 split 摘要、held-out 质量和 FP16-to-int8 identity precision delta 均不存在。`chinese-clip-calibration-v2.json` 为 fail-closed BLOCK，未选择阈值或变体。
   - 2026-07-19 `devicectl` 登记的 iPhone 17 Pro Max、两台 iPad 和 Apple Watch 全部 `unavailable`；没有新的高端真机 run，更没有低/中/高三档 iPhone 矩阵。内存 ceiling 不能从高端机或模拟器猜测，Schema 保持未设值。
   - 飞行模式首次运行、真机抓包零照片/crop/embedding/candidate 出站、长时间温升和真机中途取消仍未执行；源代码边界与单测通过不能冒充这些物理证据。
   - 当前真机此前也没有进入系统模型推理，因而系统模型增强同样没有可诚实记录的冷/热时延、峰值内存和温升。
@@ -121,7 +123,7 @@
 
 ## G3 · 测试闸
 
-- Chinese-CLIP 独立 spike 的预设备 G3：PASS；完整产品计划 G3 未开始。
+- Chinese-CLIP 独立 spike 及本轮三项优化的预设备 G3：PASS；完整产品计划 G3 未开始。
 
 ## G4 · 安全闸
 

@@ -1,6 +1,6 @@
 # 本地饮食端侧能力与评测契约
 
-> Updated: 2026-07-18
+> Updated: 2026-07-19
 > Scope: G2 capability/privacy spike and opt-in synthetic inference benchmark; no production health-data storage
 
 ## 结论
@@ -13,12 +13,14 @@
 
 2026-07-19 八阶段独立 spike 已完成到最终裁决。工程可重复性、Core ML 转换和包体风险已经解除，但授权质量集与代表性真机不是代码可以替代的输入，最终 verdict 仍为 **BLOCK**，没有接入生产饮食页，也没有生成新的真机 run 文件。
 
+同日的后续优化已按顺序完成：图像输入改为与固定上游一致的方形 bicubic（含缩小时 antialias）并批量写入 Core ML 张量；标签库升级为带非食物负类的 v2；原始设备报告删除自由填写的压缩差值，改由同一冻结 test split 的 FP16/int8 双报告确定性派生。上述变化提升了工程可信度，但没有生成缺失的授权质量和代表性真机证据，因此不改变 BLOCK。
+
 | Gate 维度 | 结果 | 证据/缺口 |
 |---|---|---|
 | 来源、许可证、不可变摘要 | PASS（技术与声明核验） | 模型/代码 revision、checkpoint SHA-256、MIT/Apache-2.0 文本已固定；对外分发仍需最终授权审查 |
 | PyTorch ↔ Core ML parity | PASS | FP16 最低 cosine `0.9999935626780782`；int8 `0.9950830876471225`，均过冻结阈值 |
-| 安装资产 | PASS | int8 编译模型 + 标签 39626225 bytes，小于 50 MiB；FP16 77040897 bytes 被拒绝 |
-| 本地编排与失败模式 | PASS（确定性） | 35 个 Swift 测试中 34 通过、1 个显式真机测试按预期 skipped；iOS 16 package 与真实 int8 隔离宿主通用构建成功 |
+| 安装资产 | PASS | v2 标签加入后，int8 编译模型 + 标签 39660136 bytes，小于 50 MiB；FP16 77074808 bytes 被拒绝 |
+| 本地编排与失败模式 | PASS（确定性） | 37 个 Swift 测试中 36 通过、1 个显式真机测试按预期 skipped；iOS 16 package 与真实 int8 compile-only 隔离宿主通用构建成功 |
 | 授权 300-case 质量集 | BLOCK | 工作区/环境无授权数据；禁止用私照、许可不明网页图或元数据占位 |
 | FP16 ↔ int8 身份质量差 | BLOCK | 未在同一冻结 held-out test split 运行，不能拿 embedding cosine 代替 identity precision |
 | 分层身份质量与纠正成本 | BLOCK | 无 single/composite/mixed/package/confusable/non-food/degraded 的真实 held-out 报告 |
@@ -32,15 +34,15 @@ Task 1 已固定可重复的上游来源：模型 revision `717ba215769231e53b9b
 
 `model-manifests/chinese-clip-rn50.json` 把分发边界焊死为 `image_encoder`，文本塔和 tokenizer 仅允许构建时使用。仓库 MIT 文本、模型卡的 Apache-2.0 声明和标准许可证文本均已保存并校验摘要。该证据允许继续技术评测，但不是法律意见；对外分发仍需最终授权审查。
 
-Task 2 的 v1 食物身份库已在 2026-07-19 优化为 `ModelSources/chinese-clip-food-labels-v2.json`：继续只含 owner-authored canonical ID、中文名、别名与类别，并新增人物、宠物、风景、文档、屏幕、日常物品和空餐具等非食物视觉负标签。食物/非食物使用不同的冻结中文 prompt；构建器会校验 ID/类别前缀并递归拒绝营养和份量字段。固定 RBT3 文本塔已生成 `CCLBV1` 单位向量库；二次完整生成得到相同 SHA-256。生成向量继续留在 `.build/models/`，仓库只保存 `model-manifests/chinese-clip-label-bank-v2.json` 的来源、维度和摘要。负标签让拒识分支可运行，但不替代授权对抗集的质量 Gate。
+Task 2 的食物身份库已在 2026-07-19 升级为 `ModelSources/chinese-clip-food-labels-v2.json`：继续只含 owner-authored canonical ID、中文名、别名与类别，并新增人物、宠物、风景、文档、屏幕、日常物品和空餐具等非食物视觉负标签。食物/非食物使用不同的冻结中文 prompt；构建器会校验 ID/类别前缀并递归拒绝营养和份量字段。固定 RBT3 文本塔已生成 `CCLBV1` 单位向量库；二次完整生成得到相同 SHA-256。生成向量继续留在 `.build/models/`，仓库只保存 `model-manifests/chinese-clip-label-bank-v2.json` 的来源、维度和摘要。负标签让拒识分支可运行，但不替代授权对抗集的质量 Gate。
 
-Task 3 已用固定 Python / PyTorch / Core ML Tools 环境导出纯视觉塔。FP16 对照的 PyTorch/Core ML 最低 embedding cosine 为 `0.9999935626780782`，编译模型加标签库为 77040897 bytes，超过 50 MB 预算。候选 int8 只量化参数量不少于 65536 的权重，采用 per-channel 非对称线性量化；最低 cosine 为 `0.9950830876471225`，编译模型加标签库为 39626225 bytes，转换一致性与包体 Gate 均通过。
+Task 3 已用固定 Python / PyTorch / Core ML Tools 环境导出纯视觉塔。FP16 对照的 PyTorch/Core ML 最低 embedding cosine 为 `0.9999935626780782`，编译模型加 v2 标签库为 77074808 bytes，超过 50 MB 预算。候选 int8 只量化参数量不少于 65536 的权重，采用 per-channel 非对称线性量化；最低 cosine 为 `0.9950830876471225`，编译模型加 v2 标签库为 39660136 bytes，转换一致性与包体 Gate 均通过。
 
 全量 `linear_symmetric int8`、低阈值非对称 int8 和 8-bit k-means palettization 均因冻结一致性阈值失败而被放弃，没有为迁就模型下调阈值。Mac 的量化模型校验固定为 CPU-only，以规避已复现的 MPSGraph 编译器中止；产物本身不锁定运行单元，iPhone 真机仍须单独测量。精确路径、摘要、压缩配置和编译后大小见 `model-manifests/chinese-clip-coreml-variants.json`。int8 仍处于 **BLOCK**，尚未通过授权餐食质量和代表性真机 Gate。
 
-Task 4/5 已实现纯 Swift cosine 候选排序与协议化的 Vision + Core ML 编排。每张图固定包含一次整图推理，最多再取三处通过面积和重叠检查的显著区域；向量统一归一化并跨区域去重。候选低于分数地板、Top-1/Top-2 间隔不足或非食物标签胜出时返回 `unknown`/`non_food`，禁止强猜。用户明确选择、本地条码映射、人工复核 OCR 依次优先于视觉候选。模型与标签库只从调用方给出的本地 file URL 加载；输出只含身份候选、证据类型和模型/标签/校准版本，不含像素、embedding、份量或营养字段。
+Task 4/5 已实现纯 Swift cosine 候选排序与协议化的 Vision + Core ML 编排。每张图固定包含一次整图推理，最多再取三处通过面积和重叠检查的显著区域；图像使用固定上游的方形 bicubic 预处理，缩小时执行 antialias，归一化后的连续 Float32 张量一次写入 Core ML。向量统一归一化并跨区域去重。候选低于分数地板、Top-1/Top-2 间隔不足或非食物标签胜出时返回 `unknown`/`non_food`，禁止强猜。用户明确选择、本地条码映射、人工复核 OCR 依次优先于视觉候选。模型与标签库只从调用方给出的本地 file URL 加载；输出只含身份候选、证据类型和模型/标签/校准版本，不含像素、embedding、份量或营养字段。
 
-Task 6 已把 `custom_core_ml` 真机证据接入统一 Schema。该引擎会额外强制模型 artifact SHA-256、标签库/校准版本、安装后模型与标签字节数、精度变体和 1 秒完成率；压缩变体还必须记录相对 FP16 的身份精度变化。FP16 报告不得伪造压缩差值。Schema 同时拒绝私人数据集、UDID 和序列号形式的硬件标识，旧的系统模型报告无需新增这些字段，保持兼容。
+Task 6 已把 `custom_core_ml` 真机证据接入统一 Schema。该引擎会额外强制模型 artifact SHA-256、标签库/校准版本、校准 manifest SHA-256、实际分数/间隔/候选阈值、安装后模型与标签字节数、精度变体和 1 秒完成率。FP16 与 int8 原始报告都明确拒绝压缩差值字段；差值只能由完整双报告的 `compare` 命令派生。Schema 同时拒绝私人数据集、UDID 和序列号形式的硬件标识，旧的系统模型报告无需新增这些字段，保持兼容。
 
 ## 可重复的能力证据
 
