@@ -1,6 +1,8 @@
 from app.services.agent_turn_recovery import (
+    is_data_insufficiency_response,
     is_model_scope_refusal,
     should_buffer_refusal_response,
+    should_buffer_recovery_response,
     should_retry_tool_failure,
 )
 
@@ -37,3 +39,13 @@ def test_model_scope_refusal_is_recoverable_but_safety_refusal_is_not():
 def test_apology_prefixed_answer_is_buffered_before_final_classification():
     assert should_buffer_refusal_response("抱歉，") is True
     assert should_buffer_refusal_response("我建议你先查询最近 7 天的睡眠数据。") is False
+
+
+def test_data_gap_is_recoverable_but_actionable_data_gap_is_not():
+    assert is_data_insufficiency_response("目前没有足够数据，无法分析你的睡眠情况。") is True
+    assert is_data_insufficiency_response("数据不足，但可以先记录今晚的睡眠时间。") is False
+    assert is_data_insufficiency_response("抱歉，我无法提供诊断或处方建议。") is False
+
+
+def test_data_gap_response_is_buffered_before_recovery():
+    assert should_buffer_recovery_response("目前暂无相关记录。") is True

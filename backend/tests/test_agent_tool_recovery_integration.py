@@ -133,3 +133,70 @@ async def test_model_scope_refusal_is_buffered_until_recovery_answer(db, auth_us
     assert fallback_calls == 1
     assert "抱歉" not in rendered
     assert rendered == "可以基于已有记录分析，并给出下一步建议。"
+
+
+@pytest.mark.asyncio
+async def test_data_insufficiency_recovery_returns_one_honest_next_step(db):
+    executor = AgentExecutor(db)
+    captured_messages = []
+
+    async def fake_fallback(messages):
+        captured_messages.extend(messages)
+        return {
+            "content": "我还缺少最近 7 天的睡眠记录。请提供最近一晚的入睡和起床时间。",
+            "finish_reason": "stop",
+        }
+
+    executor._call_llm_fallback_provider = fake_fallback
+
+    recovered = await executor._recover_data_insufficiency(
+        [{"role": "user", "content": "分析我的睡眠趋势"}]
+    )
+
+    assert recovered == "我还缺少最近 7 天的睡眠记录。请提供最近一晚的入睡和起床时间。"
+    recovery_prompt = captured_messages[-1]["content"]
+    assert "不要编造任何读数、记录或结论" in recovery_prompt
+
+
+@pytest.mark.asyncio
+async def test_data_insufficiency_is_buffered_until_recovery_answer(db, auth_user_and_headers, monkeypatch):
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    fallback_calls = 0
+
+    async def data_gap_stream(_messages, _tools):
+        yield {"type": "content", "text": "目前没有"}
+        yield {"type": "content", "text": "足够数据，无法分析你的睡眠。"}
+        yield {"type": "finish", "finish_reason": "stop"}
+
+    async def recovered_fallback(_messages):
+        nonlocal fallback_calls
+        fallback_calls += 1
+        return {
+            "content": "我还缺少最近 7 天的睡眠记录，请提供最近一晚的入睡和起床时间。",
+            "finish_reason": "stop",
+        }
+
+    monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
+    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [])
+    monkeypatch.setattr(executor, "_call_llm_stream", data_gap_stream)
+    monkeypatch.setattr(executor, "_call_llm_fallback_provider", recovered_fallback)
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="分析我的睡眠趋势",
+            user_auth_token="test-token",
+            client_turn_id="turn-data-gap-recovery",
+        )
+    ]
+
+    rendered = "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+    assert fallback_calls == 1
+    assert "目前没有足够数据" not in rendered
+    assert rendered == "我还缺少最近 7 天的睡眠记录，请提供最近一晚的入睡和起床时间。"

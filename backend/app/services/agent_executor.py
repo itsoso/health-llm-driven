@@ -40,9 +40,10 @@ from app.services.post_record_quality import (
     combine_post_record_quality_responses,
 )
 from app.services.agent_turn_recovery import (
+    is_data_insufficiency_response,
     is_model_scope_refusal,
     is_safety_boundary_refusal,
-    should_buffer_refusal_response,
+    should_buffer_recovery_response,
     should_retry_tool_failure,
 )
 from app.services.agent_turn_outcome import classify_agent_turn_outcome
@@ -6526,8 +6527,8 @@ class AgentExecutor:
         # (下面 botched 文本式工具调用被识别), 置位 → 本回合后续轮重新带上工具。
         # 正确性 > 省 token: 多轮链式工具回合 (orchestrator 后还想 knowledge_search 等) 不被裁掉。
         keep_tools_after_synthesis_miss = False
-        # 能力范围误判只允许一次恢复，避免拒答重问形成循环或放宽安全边界。
-        model_scope_recovery_attempted = False
+        # 可恢复的模型拒答/数据缺口只允许一次恢复，避免重问循环或放宽安全边界。
+        model_recovery_attempted = False
         self._http_client = httpx.AsyncClient(timeout=90.0)
         try:
             for round_idx in range(MAX_TOOL_ROUNDS):
@@ -6637,7 +6638,7 @@ class AgentExecutor:
                 # 并撤回已发标记 —— 这段 JSON 后面会被恢复成真正的 tool_call (content 置空),
                 # 绝不能泄漏给用户。结构化 tool_calls 的正常模型不受影响。
                 inline_suppressed = False
-                model_refusal_buffered = False
+                recoverable_response_buffered = False
                 async for evt in self._call_llm_stream(messages, round_tools):
                     etype = evt.get("type")
                     if etype == "content":
@@ -6645,9 +6646,12 @@ class AgentExecutor:
                         if not delta:
                             continue
                         streamed_text += delta
-                        if not model_refusal_buffered and should_buffer_refusal_response(streamed_text):
+                        if (
+                            not recoverable_response_buffered
+                            and should_buffer_recovery_response(streamed_text)
+                        ):
                             # 先不把可能需要恢复的道歉式拒答发到客户端。
-                            model_refusal_buffered = True
+                            recoverable_response_buffered = True
                         if (
                             not inline_suppressed
                             and not streamed_tool_calls
@@ -6708,7 +6712,7 @@ class AgentExecutor:
                             not inline_suppressed
                             and not self._tool_round_fast_routed
                             and not _record_claim_unverified
-                            and not model_refusal_buffered
+                            and not recoverable_response_buffered
                         ):
                             streamed_to_client = True
                             # 2026-07-01: TTFT — 第一个真正下发给客户端的 token 时刻 (纯埋点)。
@@ -7498,15 +7502,25 @@ class AgentExecutor:
                             "已查到相关数据,但这轮没能整理成回答;请再问一次或换个问法。"
                         )
                     if (
-                        not model_scope_recovery_attempted
+                        not model_recovery_attempted
                         and is_model_scope_refusal(final_text)
                     ):
-                        model_scope_recovery_attempted = True
+                        model_recovery_attempted = True
                         recovered_text = await self._recover_model_scope_refusal(messages)
                         if recovered_text:
                             final_text = recovered_text
                             streamed_to_client = False
                             self._record_model_fallback_reason("model_scope_refusal_recovered")
+                    if (
+                        not model_recovery_attempted
+                        and is_data_insufficiency_response(final_text)
+                    ):
+                        model_recovery_attempted = True
+                        recovered_text = await self._recover_data_insufficiency(messages)
+                        if recovered_text:
+                            final_text = recovered_text
+                            streamed_to_client = False
+                            self._record_model_fallback_reason("data_insufficiency_recovered")
                     if not final_text.strip():
                         # 空回复 → 走非流式重试链 (这些是新生成文本,需要 emit)。
                         streamed_to_client = False
@@ -9473,6 +9487,37 @@ class AgentExecutor:
             return ""
         text = _response_text(response).strip()
         return "" if is_model_scope_refusal(text) or is_safety_boundary_refusal(text) else text
+
+    async def _recover_data_insufficiency(self, messages: List[Dict]) -> str:
+        """Turn a bare data-gap answer into a useful, honest next step once."""
+        recovery_messages = list(messages)
+        recovery_messages.append(
+            {
+                "role": "user",
+                "content": (
+                    "上一轮把数据不足直接当成了拒答。请重新回答用户原问题：只使用上文已有数据，"
+                    "不要编造任何读数、记录或结论；如果确实缺数据，明确指出缺少的最小数据，"
+                    "并只提出一个最小澄清问题。若可以给出不依赖缺失数据的通用下一步，请直接给出。"
+                    "不要给出诊断、处方或停药指令，也不要以‘无法帮助’或‘只能记录’结束。"
+                ),
+            }
+        )
+        try:
+            response = await self._call_llm_fallback_provider(recovery_messages)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "[agent recovery] data insufficiency fallback failed: %s",
+                type(exc).__name__,
+            )
+            return ""
+        text = _response_text(response).strip()
+        if (
+            is_data_insufficiency_response(text)
+            or is_model_scope_refusal(text)
+            or is_safety_boundary_refusal(text)
+        ):
+            return ""
+        return text
 
     async def _call_llm_fallback_provider(self, messages: List[Dict]) -> Any:
         """Use the stable global provider when a selected gateway keeps empty-answering."""

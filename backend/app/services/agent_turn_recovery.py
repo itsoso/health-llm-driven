@@ -64,6 +64,26 @@ _SAFETY_REFUSAL_MARKERS = (
     "医疗判断",
 )
 
+_DATA_INSUFFICIENCY_MARKERS = (
+    "没有足够数据",
+    "数据不足",
+    "缺少数据",
+    "暂无数据",
+    "暂无相关记录",
+    "没有相关记录",
+    "无法判断",
+    "无法分析",
+)
+
+_DATA_GAP_ACTION_MARKERS = (
+    "请补充",
+    "建议记录",
+    "可以先",
+    "我可以",
+    "下一步",
+    "请提供",
+)
+
 
 def should_retry_tool_failure(
     tool_name: str,
@@ -115,3 +135,43 @@ def should_buffer_refusal_response(text: str) -> bool:
     """Return whether an apology-prefixed answer should wait for classification."""
     normalized = " ".join(str(text or "").split())
     return bool(normalized.startswith(("抱歉", "很抱歉")) and len(normalized) <= 240)
+
+
+def is_data_insufficiency_response(text: str) -> bool:
+    """Return whether a short answer stops at a recoverable data gap."""
+    normalized = " ".join(str(text or "").split())
+    if not normalized or len(normalized) > 600:
+        return False
+    if is_safety_boundary_refusal(normalized):
+        return False
+    if not any(marker in normalized[:180] for marker in _DATA_INSUFFICIENCY_MARKERS):
+        return False
+    if any(marker in normalized for marker in _DATA_GAP_ACTION_MARKERS):
+        return False
+    return normalized.startswith(
+        (
+            "抱歉",
+            "很抱歉",
+            "目前",
+            "暂时",
+            "无法",
+            "数据不足",
+            "暂无",
+            "缺少",
+            "没有",
+        )
+    )
+
+
+def should_buffer_recovery_response(text: str) -> bool:
+    """Return whether a short refusal/data-gap answer should wait for recovery."""
+    normalized = " ".join(str(text or "").split())
+    if should_buffer_refusal_response(normalized) or is_data_insufficiency_response(normalized):
+        return True
+    # Data-gap wording often arrives over several deltas (e.g. "目前没有" +
+    # "足够数据"). Buffer only the short leading prefix so the first fragment
+    # cannot leak before the final classifier sees the complete sentence.
+    return bool(
+        len(normalized) <= 80
+        and normalized.startswith(("目前", "暂时", "无法", "数据不足", "暂无", "缺少", "没有"))
+    )
