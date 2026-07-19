@@ -81,7 +81,7 @@
   - Xcode 26.5 / iPhoneOS SDK 26.5 下，Foundation Models 多模态明确为 `sdk_not_supported`；当前照片路线只能是 Vision 或另行评测的 Core ML。
   - Mac 26.4.1：系统模型 `device_not_eligible`，Vision OCR/分类/条码可用。
   - iPhone 17 Pro Simulator / iOS 26.4：系统模型探针报告可用，Vision 可用；模拟器结果不外推到真机。
-  - iPhone 17 Pro Max（iPhone18,2）/ iOS 26.6 Beta：已用独立签名宿主在真机运行；系统模型返回 `device_not_eligible`，Vision OCR/分类/条码可用。原始报告：`docs/evals/local-diet/runs/2026-07-18-iphone18-2-ios26-6-system-model.json`。
+  - iPhone 17 Pro Max（iPhone18,2）/ iOS 26.6 Beta：已用独立签名宿主在真机运行；2026-07-19 重新连接后复测仍返回系统模型 `device_not_eligible`，Vision OCR/分类/条码可用。非私人原始报告：`docs/evals/local-diet/runs/2026-07-18-iphone18-2-ios26-6-system-model.json`、`docs/evals/local-diet/runs/2026-07-19-iphone18-2-ios26-6-system-model.json`。
   - Swift Package 独立 test target 无 iOS host，真机 XCTest 会被 Xcode 拒绝；已补充经过测试的临时 iOS App project 生成器和只读合成基准宿主，避免把测试壳接入产品 App。
   - 详情与评测 Schema：`docs/evals/local-diet/README.md`、`docs/evals/local-diet/on-device-eval-contract.json`。
 - 已焊进规划的硬阻断：
@@ -98,7 +98,7 @@
   - 2026-07-19 优化后预设备闸为：模型来源 10 tests、标签 15 tests、导出 10 tests、计分 10 tests、证据 Schema 9 tests、Swift 37 tests（1 个显式真机测试 skipped）、Ruby 合成宿主 2 tests / 20 assertions、Ruby 视觉宿主 7 tests / 63 assertions、generic iOS 16 build、真实 int8 artifact 的 compile-only 宿主 build、doc-drift 与 dossier consistency 全部通过。
 - Chinese-CLIP 仍缺的不可替代证据：
   - 工作区和环境变量中没有至少 300 个已授权、非私人中文餐食 case；因此校准/测试 split 摘要、held-out 质量和 FP16-to-int8 identity precision delta 均不存在。`chinese-clip-calibration-v2.json` 为 fail-closed BLOCK，未选择阈值或变体。
-  - 2026-07-19 `devicectl` 登记的 iPhone 17 Pro Max、两台 iPad 和 Apple Watch 全部 `unavailable`；没有新的高端真机 run，更没有低/中/高三档 iPhone 矩阵。内存 ceiling 不能从高端机或模拟器猜测，Schema 保持未设值。
+  - 2026-07-19 iPhone 17 Pro Max 已重新连接：合成能力宿主完成签名构建、安装和运行；带真实 int8 模型与 v2 标签资产的 compile-only Chinese-CLIP 宿主也完成真机签名构建、安装和启动，但该模式按设计禁止生成质量报告。授权质量集和 pass 校准仍缺失，因此没有 Chinese-CLIP 推理数据；低/中端 iPhone 仍缺失。内存 ceiling 不能从单台高端机或 compile-only 启动猜测，Schema 保持未设值。
   - 飞行模式首次运行、真机抓包零照片/crop/embedding/candidate 出站、长时间温升和真机中途取消仍未执行；源代码边界与单测通过不能冒充这些物理证据。
   - 当前真机此前也没有进入系统模型推理，因而系统模型增强同样没有可诚实记录的冷/热时延、峰值内存和温升。
 - 已解除的阻断：

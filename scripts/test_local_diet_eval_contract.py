@@ -14,9 +14,8 @@ from jsonschema import Draft202012Validator
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_PATH = ROOT / "docs/evals/local-diet/on-device-eval-contract.json"
 VARIANT_SCHEMA_PATH = ROOT / "docs/evals/local-diet/chinese-clip-variant-evidence-contract.json"
-LEGACY_DEVICE_RUN = (
-    ROOT
-    / "docs/evals/local-diet/runs/2026-07-18-iphone18-2-ios26-6-system-model.json"
+SYSTEM_MODEL_RUNS = sorted(
+    (ROOT / "docs/evals/local-diet/runs").glob("*-system-model.json")
 )
 
 
@@ -193,12 +192,15 @@ class LocalDietEvalContractTests(unittest.TestCase):
                 report["device"]["hardwareIdentifier"] = identifier
                 self.assert_invalid(report)
 
-    def test_committed_legacy_device_evidence_has_no_private_data_or_raw_identifier(self) -> None:
-        run = load_json(LEGACY_DEVICE_RUN)
-        self.assertFalse(run["containsPrivateUserData"])
-        identifier = run["report"]["device"]["hardwareIdentifier"]
-        self.assertEqual("iPhone18,2", identifier)
-        self.assertNotRegex(json.dumps(run), r"[0-9A-Fa-f]{8}-[0-9A-Fa-f-]{20,}")
+    def test_committed_system_model_evidence_has_no_private_data_or_raw_identifier(self) -> None:
+        self.assertTrue(SYSTEM_MODEL_RUNS)
+        for path in SYSTEM_MODEL_RUNS:
+            with self.subTest(path=path.name):
+                run = load_json(path)
+                self.assertFalse(run["containsPrivateUserData"])
+                identifier = run["report"]["device"]["hardwareIdentifier"]
+                self.assertEqual("iPhone18,2", identifier)
+                self.assertNotRegex(json.dumps(run), r"[0-9A-Fa-f]{8}-[0-9A-Fa-f-]{20,}")
 
 
 class ChineseClipVariantEvidenceContractTests(unittest.TestCase):
