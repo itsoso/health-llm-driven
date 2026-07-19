@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List, Optional
-from datetime import date
+from datetime import date, datetime
 from app.database import get_db
 from app.schemas.health_checkin import HealthCheckinCreate, HealthCheckinResponse
 from app.models.health_checkin import HealthCheckin
@@ -106,7 +106,23 @@ def undo_latest_rhinitis_checkin(
     if not entries:
         raise HTTPException(status_code=404, detail="没有可撤销的鼻炎事件")
 
-    removed = entries.pop()
+    # 历史客户端未必按时间排序;优先按有效 HH:MM 选择真正最近的一项,
+    # 没有可解析时间的旧条目才回退到数组末尾,避免撤销错事件。
+    timed_entries = []
+    for index, item in enumerate(entries):
+        if not isinstance(item, dict):
+            continue
+        try:
+            parsed_time = datetime.strptime(str(item.get("time") or ""), "%H:%M")
+        except (TypeError, ValueError):
+            continue
+        timed_entries.append((index, parsed_time.hour * 60 + parsed_time.minute))
+    latest_index = (
+        max(timed_entries, key=lambda value: (value[1], value[0]))[0]
+        if timed_entries
+        else len(entries) - 1
+    )
+    removed = entries.pop(latest_index)
     checkin.sneeze_times = entries or None
     remaining_total = sum(
         int(item.get("count") or 0) for item in entries if isinstance(item, dict)

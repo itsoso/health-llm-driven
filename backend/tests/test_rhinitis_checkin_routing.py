@@ -117,8 +117,8 @@ def test_undo_latest_rhinitis_event_is_scoped_and_keeps_the_day(client, db, auth
     created = client.post("/api/v1/checkin/", headers=headers, json={
         "checkin_date": day,
         "sneeze_times": [
-            {"time": "09:00", "count": 1},
             {"time": "14:00", "count": 2},
+            {"time": "09:00", "count": 1},
         ],
     })
     assert created.status_code == 200, created.text
