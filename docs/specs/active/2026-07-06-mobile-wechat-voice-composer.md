@@ -18,7 +18,7 @@ The current Mobile chat composer hides voice input behind long-pressing the empt
 
 ```yaml
 RequirementAdmission:
-  request: "Mobile input box mirrors WeChat voice/text composer with left speaker, right mic, slide voice gesture, and realtime speech-to-text."
+  request: "Mobile input box mirrors WeChat voice/text composer with click-to-expand text input, left speaker, right mic, slide voice gesture, and realtime speech-to-text."
   classification: product_change
   first_user_fit: high-intensity mobile user needing low-friction daily capture and chat input
   core_loop_step: Mobile Capture -> user text/voice intent -> existing chat routing and safety gates
@@ -63,6 +63,7 @@ open Mobile chat in default voice mode
   -> partial transcript wraps inside the recording panel while the user speaks
   -> slide left to cancel or slide right to keep transcript as editable text
   -> tap the icon-only keyboard switch to enter text mode
+  -> tap the text field to expand the smart composer and show the keyboard
   -> optionally tap the microphone inside the text field for realtime dictation
   -> transcribed text appears in the composer
   -> press Enter to submit through the existing chat pipeline
@@ -72,7 +73,7 @@ open Mobile chat in default voice mode
 
 | Surface | Responsibility | Contract |
 |---|---|---|
-| Mobile | Owns visible composer controls, PCM capture, gestures and transcript presentation. | Default is hold-to-talk. The left icon switches to text input; right mic toggles Qwen realtime dictation; Enter submits current text. |
+| Mobile | Owns visible composer controls, PCM capture, gestures and transcript presentation. | Default is hold-to-talk. The left icon switches to text input; tapping the text field expands the editable composer without starting recording; right mic toggles Qwen realtime dictation; Enter submits current text. |
 | Backend | Authenticates the ASR session, holds provider credentials and proxies bounded audio. | `/chat/transcribe/realtime` accepts transient base64 PCM chunks over WebSocket and emits partial/final text; it does not switch to another provider on upstream failure. |
 | DashScope | Performs the single cloud speech-recognition operation. | Qwen realtime ASR consumes mono 16 kHz PCM in manual commit mode and returns partial/final text. |
 
@@ -112,6 +113,16 @@ And long text wraps without resizing or obscuring the controls
 Given the user taps the right microphone
 When Qwen realtime ASR returns partial text
 Then the composer input updates with that text in realtime
+
+Given the user is in text mode
+When they tap the text field
+Then the composer expands and focuses the keyboard
+And realtime ASR does not start until the microphone is explicitly tapped
+
+Given the text field already contains text
+When the user starts realtime dictation
+Then the transcript is appended to the existing draft
+And the complete draft remains editable before sending
 
 Given the composer has dictated text
 When Enter is pressed
@@ -153,3 +164,4 @@ The backend WebSocket proxy must deploy before the cloud composer is enabled. Th
 | 2026-07-14 | Add bounded server-side ASR routing | Keep provider credentials on the backend and bound the transient audio session. |
 | 2026-07-16 | Make voice the default and use Qwen realtime ASR | Establish the authenticated cloud realtime path for the composer. |
 | 2026-07-18 | Make Qwen realtime ASR the only composer provider | Remove native recognition and silent provider switching so the chain stays measurable and predictable. |
+| 2026-07-19 | Add click-to-expand smart text composer | Match the familiar iPhone AI chat interaction while keeping microphone activation explicit. |

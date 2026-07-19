@@ -165,6 +165,7 @@ export default function ChatInputBar({
   const [agentMode, setAgentMode] = useState<ChatAgentMode>('daily');
   const [cancelHint, setCancelHint] = useState(false);
   const [holdTranscript, setHoldTranscript] = useState('');
+  const [textInputFocused, setTextInputFocused] = useState(false);
   const [composer, dispatchComposer] = React.useReducer(
     reduceComposerState,
     undefined,
@@ -306,6 +307,7 @@ export default function ChatInputBar({
   // Explicit focus requests enter text mode first; ordinary chat entry stays voice-first.
   React.useEffect(() => {
     if (!autoFocusToken) return;
+    setTextInputFocused(true);
     if (composerRef.current.mode === 'hold') {
       dispatchComposer({ type: 'toggle_mode' });
     }
@@ -584,6 +586,12 @@ export default function ChatInputBar({
       : '点击开启语音监听并实时转文字';
   const realtimeMicIcon = realtimeDictationDisabled ? 'mic-off' : 'mic';
   const isVoiceMode = composer.mode === 'hold';
+  const textComposerExpanded = !isVoiceMode && (
+    textInputFocused
+    || input.trim().length > 0
+    || pendingImages.length > 0
+    || realtimeActive
+  );
   const voiceGesture = composer.gesture;
   const voiceModeToggleLabel = isVoiceMode ? '切换到键盘输入' : '切换到语音输入';
 
@@ -733,6 +741,7 @@ export default function ChatInputBar({
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     dispatchComposer({ type: 'toggle_mode' });
     if (state.mode === 'text') {
+      setTextInputFocused(false);
       textInputRef.current?.blur();
       Keyboard.dismiss();
     } else {
@@ -782,7 +791,16 @@ export default function ChatInputBar({
   }, []);
 
   const focusTextInput = useCallback(() => {
+    setTextInputFocused(true);
     textInputRef.current?.focus();
+  }, []);
+
+  const handleTextInputFocus = useCallback(() => {
+    setTextInputFocused(true);
+  }, []);
+
+  const handleTextInputBlur = useCallback(() => {
+    setTextInputFocused(false);
   }, []);
 
   const handleInputChange = useCallback((text: string) => {
@@ -1083,6 +1101,7 @@ export default function ChatInputBar({
               testID="wechat-composer-input"
               style={({ pressed }) => [
                 styles.inputWrap,
+                textComposerExpanded && styles.inputWrapExpanded,
                 realtimeActive && styles.inputWrapDictating,
                 pressed && styles.inputWrapPressed,
               ]}
@@ -1101,6 +1120,8 @@ export default function ChatInputBar({
                 placeholderTextColor={C.ink3}
                 value={input}
                 onChangeText={handleInputChange}
+                onFocus={handleTextInputFocus}
+                onBlur={handleTextInputBlur}
                 onPressIn={handleInputPressInDictation}
                 onPressOut={handleInputPressOutDictation}
                 onKeyPress={handleTextInputKeyPress}
@@ -1325,6 +1346,13 @@ const styles = StyleSheet.create({
   inputWrapPressed: {
     backgroundColor: COMPOSER_INPUT_BG_PRESSED,
     borderColor: C.lineStrong,
+  },
+  inputWrapExpanded: {
+    minHeight: 72,
+    borderRadius: 16,
+    alignItems: 'flex-end',
+    paddingTop: 8,
+    paddingBottom: 8,
   },
   inputWrapDictating: {
     backgroundColor: COMPOSER_INPUT_BG_ACTIVE,

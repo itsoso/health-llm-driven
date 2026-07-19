@@ -425,6 +425,25 @@ describe('ChatInputBar', () => {
     expect(inputSurface.borderRadius).toBeLessThanOrEqual(10);
   });
 
+  it('expands the smart text composer on focus without starting cloud ASR', () => {
+    const view = render(
+      <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
+    );
+    enterKeyboardMode(view);
+    const { getByLabelText, getByTestId } = view;
+
+    const compactSurface = StyleSheet.flatten(getByTestId('wechat-composer-input').props.style);
+    expect(compactSurface.minHeight).toBe(48);
+
+    fireEvent.press(getByTestId('wechat-composer-input'));
+
+    const expandedSurface = StyleSheet.flatten(getByTestId('wechat-composer-input').props.style);
+    expect(expandedSurface.minHeight).toBeGreaterThan(compactSurface.minHeight);
+    expect(expandedSurface.borderRadius).toBeGreaterThan(compactSurface.borderRadius);
+    expect(getByLabelText('实时语音转文字')).toBeTruthy();
+    expect(mockStartDictation).not.toHaveBeenCalled();
+  });
+
   it('toggles from keyboard input back into WeChat hold-to-talk mode', () => {
     const { getByLabelText, getByTestId, queryByLabelText } = render(
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
