@@ -14,6 +14,7 @@
 - [x] Correction Block：真机证明系统模型不可通用依赖；G2 拆为本地基线与智能增强两个范围。
 - [x] 2026-07-18 用户选定 Chinese-CLIP RN50 作为唯一首轮打包视觉模型；只分发视觉塔，文本塔仅用于构建标签向量。
 - [x] 2026-07-19 Chinese-CLIP 八阶段 spike 已执行到裁决；工程与可重复性闸通过，授权质量集和代表性真机证据缺失，按规则保持 BLOCK，未接生产饮食页。
+- [ ] 2026-07-19 用户要求继续按“识别质量 → 非食物拒识 → 证据链”优化。复核固定 Chinese-CLIP revision 后纠正旧假设：官方预处理是 `Resize((224, 224), BICUBIC)`，不是等比中心裁切；实现必须匹配官方方形 bicubic 语义。优化设计与实施计划见 `docs/plans/2026-07-19-chinese-clip-local-food-vision-optimization-design.md`、`docs/plans/2026-07-19-chinese-clip-local-food-vision-optimization.md`。本 correction 回到 S3/S5，不改变既有 G2 BLOCK。
 
 ## S0 · 用户需求（逐字）
 
