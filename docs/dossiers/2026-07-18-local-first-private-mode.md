@@ -4,8 +4,8 @@
 |---|---|
 | slug | `local-first-private-mode` |
 | 创建日期 | 2026-07-18 |
-| 当前阶段 | S4 研发任务分解 |
-| 状态 | planned |
+| 当前阶段 | G2 Chinese-CLIP 独立增强裁决完成 |
+| 状态 | 本地基线 PASS；Chinese-CLIP 增强 BLOCK |
 | 负责 | User / Codex |
 | 反馈环 | iOS real-device spike / EAS-TestFlight / airplane-mode validation |
 
@@ -13,6 +13,7 @@
 
 - [x] Correction Block：真机证明系统模型不可通用依赖；G2 拆为本地基线与智能增强两个范围。
 - [x] 2026-07-18 用户选定 Chinese-CLIP RN50 作为唯一首轮打包视觉模型；只分发视觉塔，文本塔仅用于构建标签向量。
+- [x] 2026-07-19 Chinese-CLIP 八阶段 spike 已执行到裁决；工程与可重复性闸通过，授权质量集和代表性真机证据缺失，按规则保持 BLOCK，未接生产饮食页。
 
 ## S0 · 用户需求（逐字）
 
@@ -86,9 +87,17 @@
   - 本地保险库必须要求设备密码；使用 App 生成的 256-bit 恢复密钥、Keychain `WhenPasscodeSetThisDeviceOnly`、完整文件保护、HMAC blind index 和空库原子恢复。用户于 2026-07-18 已确认这两个产品取舍。
   - 系统模型不可用必须降级到确定性/手工，而不是强制云端。
   - 自定义视觉模型必须经过纠正成本、内存、温升和下载体积 Gate。
-- 仍缺证据：
-  - 当前真机没有进入系统模型推理，因而没有可诚实记录的冷/热时延、峰值内存和温升；系统模型增强保持关闭。
-  - 打包视觉模型已选定 Chinese-CLIP RN50，但尚未锁定不可变 checkpoint 摘要、完成最终授权审查、验证 Core ML 转换/压缩质量，或取得中文餐食质量、包体与代表性真机性能证据；作为独立增强 Gate 继续 BLOCK，不阻断手工/确定性本地记录基线。
+- Chinese-CLIP 已取得的独立 spike 证据（2026-07-19）：
+  - 固定模型 revision `717ba215769231e53b9b7c6b9d329b9cc5944418`、代码 revision `31863c707501bf1605d36842f43deb78793dbc5d`、checkpoint SHA-256 与代码/模型许可证；分发边界只含 image encoder。
+  - 78 个 owner-authored 中文身份标签已生成 1024 维单位向量库；构建器拒绝营养/份量字段，二次生成摘要一致。
+  - FP16 Core ML/PyTorch 最低 cosine `0.9999935626780782`；选定 int8 最低 cosine `0.9950830876471225`。FP16 编译模型加标签为 77040897 bytes，超预算；int8 为 39626225 bytes，通过 50 MiB 包体 Gate。
+  - 纯 Swift 排序、EXIF/224×224 预处理、Vision 显著区域、Core ML 本地加载、条码/OCR/人工选择优先级、未知/非食物、取消/内存/温控停止和无敏感输出均有确定性测试。iOS 16 通用 package 与隔离宿主均已用真实 int8 artifact 构建成功。
+  - 自定义模型证据 Schema、300-case 数据准入 Schema、逐分层计分、冻结 split 校准、FP16/压缩选择和真机宿主均已实现。预设备闸为：模型来源 10 tests、标签 13 tests、导出 10 tests、计分 9 tests、Swift 35 tests（1 个显式真机测试 skipped）、两个 Ruby 宿主生成器与 doc-drift 全部通过。
+- Chinese-CLIP 仍缺的不可替代证据：
+  - 工作区和环境变量中没有至少 300 个已授权、非私人中文餐食 case；因此校准/测试 split 摘要、held-out 质量和 FP16-to-int8 identity precision delta 均不存在。`chinese-clip-calibration-v1.json` 为 fail-closed BLOCK，未选择阈值或变体。
+  - 2026-07-19 `devicectl` 登记的 iPhone 17 Pro Max、两台 iPad 和 Apple Watch 全部 `unavailable`；没有新的高端真机 run，更没有低/中/高三档 iPhone 矩阵。内存 ceiling 不能从高端机或模拟器猜测，Schema 保持未设值。
+  - 飞行模式首次运行、真机抓包零照片/crop/embedding/candidate 出站、长时间温升和真机中途取消仍未执行；源代码边界与单测通过不能冒充这些物理证据。
+  - 当前真机此前也没有进入系统模型推理，因而系统模型增强同样没有可诚实记录的冷/热时延、峰值内存和温升。
 - 已解除的阻断：
   - 数据授权：USDA FoodData Central 官方许可明确为 public domain / CC0 1.0；使用 Foundation Foods/SR Legacy 固定版本子集，App 运行时不取数。
   - 安全设计：设备密码为前置条件；独立派生 record/index key；恢复密钥为随机高熵而非用户弱口令；只恢复到空库；删除 crypto-shred；完整设计见 `docs/plans/2026-07-18-local-first-private-mode-design.md`。
@@ -97,25 +106,26 @@
   - 本地饮食基线（无注册、加密本地存储、手工/确定性记录、Vision 可选）：**PASS**，允许进入 Task 2 加密内核。
   - 系统模型或打包小模型智能增强：**BLOCK**，必须独立通过质量、纠正成本、包体和代表性真机性能 Gate 后才能开启。
   - 该拆分不是降低标准：智能增强从首版保证路径移除，运行时不得静默走云；基础路径可在模型完全不可用时成立。
+  - 2026-07-19 Chinese-CLIP 最终独立裁决：provenance/license、转换 parity、包体和工程失败模式 **PASS**；授权质量、压缩质量差值、分层真机性能与物理隐私检查 **BLOCK**。总裁决按最弱维度为 **BLOCK**，不是 FAIL，也不允许生产集成。
 
 ## S4 · 研发任务分解
 
 - 实施任务见 `docs/plans/2026-07-18-local-first-private-mode.md`。
-- Chinese-CLIP 独立 spike 已由 `docs/plans/2026-07-18-chinese-clip-local-food-vision.md` 分解；该计划完成并取得 G2 PASS 前不得接入生产饮食页。
+- Chinese-CLIP 独立 spike 已按 `docs/plans/2026-07-18-chinese-clip-local-food-vision.md` 完成八阶段实现与裁决；结果为 BLOCK，继续不得接入生产饮食页。
 - G2 已授权进入 Task 2 加密 Local Health Kernel；智能增强继续留在独立评测支线。
 
 ## S5 · 实现
 
-- 产品实现未开始；仅完成不读写健康数据的 G2 capability probe 与 opt-in 合成推理 benchmark。两者都是测试壳，不进入 App、不读用户数据、不提供云端 fallback。
+- 产品实现未开始；已完成不读写健康数据的 G2 capability probe、系统模型合成 benchmark、Chinese-CLIP Core ML 纯本地引擎和隔离真机宿主。它们都是测试壳，不进入生产 App、不读 Local Health 数据、不访问相册、不提供云端 fallback。
 
 ## G3 · 测试闸
 
-- 未开始。
+- Chinese-CLIP 独立 spike 的预设备 G3：PASS；完整产品计划 G3 未开始。
 
 ## G4 · 安全闸
 
 - 必须触发：认证边界、健康数据本地写入、照片、模型出站、加密恢复。
-- 未开始。
+- Chinese-CLIP 宿主静态边界与错误/取消测试：PASS；飞行模式与真机网络检查：BLOCK。完整产品 G4 未开始。
 
 ## S6 · 部署
 

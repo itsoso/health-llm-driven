@@ -4,6 +4,8 @@
 
 **Goal:** Produce a reproducible, license-pinned Chinese-CLIP RN50 image-only Core ML candidate and make an evidence-based PASS/BLOCK decision for fully local iOS food-photo recognition without integrating it into the production App.
 
+**Execution outcome (2026-07-19):** All eight stages were executed. Provenance, deterministic label generation, FP16/int8 conversion parity, the 39,626,225-byte selected asset, Swift local inference/ranking, the evidence contract, the isolated host and fail-closed scoring/calibration machinery pass. Final G2 verdict is **BLOCK**, not PASS: no authorized 300-case dataset is available, held-out FP16/int8 identity precision is unmeasured, all registered physical devices were unavailable, and the low/mid/high plus airplane-mode/privacy matrix is absent. No production diet-screen integration was performed.
+
 **Architecture:** Run the Chinese-CLIP text tower only on the build machine to create a versioned Chinese food-label embedding bank. Run only the RN50 image tower on iOS, combine whole-image and bounded Vision saliency crops, rank normalized embeddings against the local label bank, and return at most three identity candidates behind calibrated unknown/non-food gates. Nutrition and portions remain outside the model and all writes remain manual-confirm.
 
 **Tech Stack:** Python 3.12 isolated build environment, PyTorch, official `cn_clip`, Core ML Tools, JSON Schema, Swift 6, Core ML, Vision, Accelerate, XCTest/Swift Testing, Ruby `xcodeproj`, Xcode physical-device tooling.

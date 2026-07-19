@@ -11,6 +11,21 @@
 
 2026-07-18 已为照片智能增强选定 `OFA-Sys/chinese-clip-rn50`，不再做 TinyCLIP 首轮对照实现。设备端只计划运行 Core ML 视觉塔，中文文本塔仅在构建阶段生成版本化标签向量。选择已确定，但放行状态不变：checkpoint/许可证、转换一致性、压缩质量、中文餐食质量和代表性真机性能全部取得证据前仍为 **BLOCK**。设计见 `docs/plans/2026-07-18-chinese-clip-local-food-vision-design.md`。
 
+2026-07-19 八阶段独立 spike 已完成到最终裁决。工程可重复性、Core ML 转换和包体风险已经解除，但授权质量集与代表性真机不是代码可以替代的输入，最终 verdict 仍为 **BLOCK**，没有接入生产饮食页，也没有生成新的真机 run 文件。
+
+| Gate 维度 | 结果 | 证据/缺口 |
+|---|---|---|
+| 来源、许可证、不可变摘要 | PASS（技术与声明核验） | 模型/代码 revision、checkpoint SHA-256、MIT/Apache-2.0 文本已固定；对外分发仍需最终授权审查 |
+| PyTorch ↔ Core ML parity | PASS | FP16 最低 cosine `0.9999935626780782`；int8 `0.9950830876471225`，均过冻结阈值 |
+| 安装资产 | PASS | int8 编译模型 + 标签 39626225 bytes，小于 50 MiB；FP16 77040897 bytes 被拒绝 |
+| 本地编排与失败模式 | PASS（确定性） | 35 个 Swift 测试中 34 通过、1 个显式真机测试按预期 skipped；iOS 16 package 与真实 int8 隔离宿主通用构建成功 |
+| 授权 300-case 质量集 | BLOCK | 工作区/环境无授权数据；禁止用私照、许可不明网页图或元数据占位 |
+| FP16 ↔ int8 身份质量差 | BLOCK | 未在同一冻结 held-out test split 运行，不能拿 embedding cosine 代替 identity precision |
+| 分层身份质量与纠正成本 | BLOCK | 无 single/composite/mixed/package/confusable/non-food/degraded 的真实 held-out 报告 |
+| 低/中/高端 iPhone 性能 | BLOCK | 2026-07-19 登记设备全部不可用；没有新高端 run，也没有低/中端样本，内存 ceiling 保持未设 |
+| 飞行模式与物理隐私 | BLOCK | 宿主源码无网络/相册/健康仓库接口且单测通过，但真机飞行模式、抓包与长时温升未执行 |
+| **总裁决** | **BLOCK** | 任一 required evidence 缺失即 BLOCK，不按总体平均放行 |
+
 ## Chinese-CLIP 来源锁定
 
 Task 1 已固定可重复的上游来源：模型 revision `717ba215769231e53b9b7c6b9d329b9cc5944418`，代码 revision `31863c707501bf1605d36842f43deb78793dbc5d`。原始 `clip_cn_rn50.pt` 为 308316425 bytes，SHA-256 为 `b196ee3ee528b70be1158ab1aafb1d2f1c801ad2d9ffb3bae31b0d305f82fc88`；文件只保存在被 Git 忽略的 `.build/models/`。

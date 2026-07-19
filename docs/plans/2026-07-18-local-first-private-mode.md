@@ -400,6 +400,8 @@ Return candidates and confidence, never authoritative nutrients. Keep images in 
 
 The selected candidate is `OFA-Sys/chinese-clip-rn50`, with only its Core ML image tower shipped and its text tower restricted to build-time label embedding. Execute `docs/plans/2026-07-18-chinese-clip-local-food-vision.md` as an isolated spike before wiring Chinese-CLIP into the production diet page. Compare it against Vision/history/manual on identity precision, mixed-plate omissions, non-food rejection, correction burden, latency, peak memory, thermal behavior and installed assets. Do not ship or silently cloud-fallback a model that fails the recorded Gate.
 
+**Chinese-CLIP isolated-spike outcome (2026-07-19):** The eight-stage implementation and pre-device verification are complete. Immutable provenance, Core ML parity, 39,626,225-byte int8 installed asset budget, local-only orchestration, failure handling, evidence schemas, scoring, calibration search and the isolated iOS host all pass their deterministic gates. The enhancement verdict remains **BLOCK** because no authorized 300-case Chinese-food set is available, FP16-to-int8 identity precision has not been measured on a frozen held-out split, every registered physical device was unavailable, and the required low/mid/high iPhone plus airplane-mode/privacy evidence is absent. Keep Chinese-CLIP out of `mobile/app/diet.tsx`; Task 8 continues to guarantee Vision/OCR/barcode/manual behavior only. Resume the spike from the frozen dataset and device gates rather than redoing model conversion.
+
 **Step 4: Verify and commit**
 
 ```bash
