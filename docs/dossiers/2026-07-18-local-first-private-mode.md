@@ -61,6 +61,7 @@
 - 设计：`docs/plans/2026-07-18-local-first-private-mode-design.md`
 - 实施计划：`docs/plans/2026-07-18-local-first-private-mode.md`
 - Chinese-CLIP 设计：`docs/plans/2026-07-18-chinese-clip-local-food-vision-design.md`
+- Chinese-CLIP 独立实施计划：`docs/plans/2026-07-18-chinese-clip-local-food-vision.md`
 - 顺序：G2 spike -> 加密内核 -> 本地身份 -> 饮食仓储 -> 食物库 -> 离线记录 -> 端侧模型/Vision -> 出站断路器 -> 导出恢复 -> 新 iOS 包。
 - 智能增强选择：`OFA-Sys/chinese-clip-rn50`，Core ML 只运行视觉塔；不再做 TinyCLIP 首轮对照实现。
 - 长杆：Chinese-CLIP 权重许可锁定、Core ML 压缩质量、真实设备内存/延迟和中文餐食覆盖评测。
@@ -100,7 +101,7 @@
 ## S4 · 研发任务分解
 
 - 实施任务见 `docs/plans/2026-07-18-local-first-private-mode.md`。
-- Chinese-CLIP 独立 spike 需另行分解实施计划；该计划完成前不得接入生产饮食页。
+- Chinese-CLIP 独立 spike 已由 `docs/plans/2026-07-18-chinese-clip-local-food-vision.md` 分解；该计划完成并取得 G2 PASS 前不得接入生产饮食页。
 - G2 已授权进入 Task 2 加密 Local Health Kernel；智能增强继续留在独立评测支线。
 
 ## S5 · 实现

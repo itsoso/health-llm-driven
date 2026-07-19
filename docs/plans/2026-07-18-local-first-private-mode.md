@@ -4,7 +4,7 @@
 
 **Goal:** Deliver an iOS-first, no-registration, airplane-mode diet capture loop backed by encrypted local storage, with optional on-device intelligence and no implicit cloud egress.
 
-**Architecture:** Add an `AppSession` mode above the existing auth state, introduce repository interfaces so local and remote diet paths do not branch inside UI, and implement a Swift-backed Local Health Kernel for encryption, protected storage and on-device capability probes. The guaranteed path is deterministic/manual; Apple system models, Vision and optional downloaded models enrich drafts but never become the nutrition source of truth.
+**Architecture:** Add an `AppSession` mode above the existing auth state, introduce repository interfaces so local and remote diet paths do not branch inside UI, and implement a Swift-backed Local Health Kernel for encryption, protected storage and on-device capability probes. The guaranteed path is deterministic/manual; Apple system models, Vision and an independently gated Chinese-CLIP RN50 image tower may enrich drafts but never become the nutrition source of truth.
 
 **Tech Stack:** Expo 55, React Native 0.83, TypeScript, Swift Expo module, CryptoKit, SQLite, Keychain/SecureStore, Apple Foundation Models, Vision/Core ML, Jest, Swift Testing/XCTest, EAS/TestFlight.
 
@@ -398,7 +398,7 @@ Return candidates and confidence, never authoritative nutrients. Keep images in 
 
 **Step 3: Benchmark before adding a downloaded model**
 
-Compare Vision/history/manual against the candidate model on identity precision, correction burden, latency, peak memory, thermal behavior and app size. Do not ship a model that fails the recorded gate.
+The selected candidate is `OFA-Sys/chinese-clip-rn50`, with only its Core ML image tower shipped and its text tower restricted to build-time label embedding. Execute `docs/plans/2026-07-18-chinese-clip-local-food-vision.md` as an isolated spike before wiring Chinese-CLIP into the production diet page. Compare it against Vision/history/manual on identity precision, mixed-plate omissions, non-food rejection, correction burden, latency, peak memory, thermal behavior and installed assets. Do not ship or silently cloud-fallback a model that fails the recorded Gate.
 
 **Step 4: Verify and commit**
 
