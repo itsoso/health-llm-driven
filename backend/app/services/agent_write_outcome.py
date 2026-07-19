@@ -38,6 +38,15 @@ _LOCAL_VALIDATION_MARKERS = (
     "参数解析失败",
     "只读预生成回合不执行写入/变更操作",
     "工具调用策略检查失败",
+    "工具调用被策略拦截",
+    "已阻止自动写入",
+    "已阻止执行",
+    "不是明确的本人症状记录请求",
+    "不是明确的本人鼻炎症状记录请求",
+    "带附件的症状内容暂不自动写入",
+    "带附件的鼻炎症状暂不自动写入",
+    "症状记录参数无效，已阻止",
+    "鼻炎打卡参数无效，已阻止",
     "必须提供",
     "需要提供",
     "缺少",
@@ -123,6 +132,13 @@ def classify_write_execution(
     text = str(result or "").strip()
     if text.startswith("[NEEDS_CONFIRMATION]"):
         return WriteExecutionOutcome(status="failed", dispatch_started=False)
+    # _api_post/_patch/_put/_delete prefix every HTTP failure with this marker
+    # and include the upstream body verbatim. That body may coincidentally
+    # contain a local-policy phrase such as “已阻止执行”; once an HTTP request
+    # has crossed the boundary, keep the state uncertain rather than claiming
+    # it was never dispatched.
+    if text.startswith("Error: API 返回 "):
+        return WriteExecutionOutcome(status="uncertain")
     if text.startswith("Error:") and any(
         marker in text for marker in _LOCAL_VALIDATION_MARKERS
     ):
