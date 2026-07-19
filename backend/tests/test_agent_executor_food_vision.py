@@ -263,3 +263,14 @@ def test_commercial_multimodal_food_photos_still_use_structured_preprocessing(
     assert executor._should_preprocess_attached_images(1, "请分析这些图片") is True
     assert executor._should_preprocess_attached_images(1, "帮我记一下") is True
     assert executor._should_preprocess_attached_images(1, "看看这张风景照片") is False
+
+
+def test_explicit_aigc_photo_request_never_enters_food_preprocessing(db, monkeypatch):
+    """A creative request must not turn an attached image into a diet candidate."""
+    executor = AgentExecutor(db)
+    monkeypatch.setattr(executor, "_should_send_raw_images_to_primary_model", lambda _user_id: False)
+
+    assert executor._should_preprocess_attached_images(
+        1,
+        "基于这张照片生成今天活动的短视频，以此照片为开头。",
+    ) is False

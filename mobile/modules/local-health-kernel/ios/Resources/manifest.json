@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "modelId": "OFA-Sys/chinese-clip-rn50",
+  "modelRevision": "717ba215769231e53b9b7c6b9d329b9cc5944418",
+  "precisionVariant": "int8",
+  "shippedComponents": [
+    "image_encoder"
+  ],
+  "compiledArtifact": {
+    "path": "ChineseClipRN50Image.mlmodelc",
+    "sha256": "a29b4f25bd993575db9a03bca0613a9074eb7ebb8312bd60748be43793e174a4"
+  },
+  "labelBank": {
+    "path": "chinese-clip-label-bank-v2.bin",
+    "labelSetVersion": "cn-food-labels-v2",
+    "sha256": "dbf211703545159038de1d8b74772cf005186ed16e5ff7f1fceaac1614b135f9"
+  },
+  "licenseNotices": [
+    "../../ThirdPartyNotices/Chinese-CLIP-code-MIT.txt",
+    "../../ThirdPartyNotices/Chinese-CLIP-model-Apache-2.0.txt"
+  ],
+  "productBoundary": {
+    "manualConfirmationRequired": true,
+    "canAutoSave": false,
+    "estimatesPortion": false
+  }
+}

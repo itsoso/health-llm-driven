@@ -76,6 +76,17 @@ def test_write_turn_allows_health_record_with_receipt():
     assert decision.receipt_required is True
 
 
+def test_explicit_aigc_photo_turn_blocks_health_record_even_if_model_requests_it():
+    decision = decide_tool_capability(
+        _snapshot("基于这张照片生成今天活动的短视频，以此照片为开头。"),
+        _request("health_record", {"record_type": "diet", "data": {"food_items": "米饭"}}),
+    )
+
+    assert decision.action == "block"
+    assert decision.reason == "aigc_media_turn_disallows_health_write"
+    assert decision.receipt_required is True
+
+
 def test_compound_write_and_analysis_turn_allows_health_record():
     decision = decide_tool_capability(
         _snapshot("记录晚餐牛肉面，帮我分析今天的热量和蛋白质"),

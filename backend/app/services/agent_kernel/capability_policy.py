@@ -117,6 +117,22 @@ def decide_tool_capability(
     if tool_name in SPECIALIST_READ_ONLY_TOOLS:
         return _decision("allow", "specialist_read_only_tool", tool_name, args)
 
+    if (
+        snapshot.intent.domain == "aigc_media"
+        and tool_name in WRITE_TOOL_NAMES
+        and tool_name != "draft_aigc_media"
+    ):
+        # An explicit AIGC request can create only a confirmation draft. It
+        # must never be reinterpreted as consent to write health data merely
+        # because the attached image looks like food.
+        return _decision(
+            "block",
+            "aigc_media_turn_disallows_health_write",
+            tool_name,
+            args,
+            receipt_required=True,
+        )
+
     if tool_name == "health_manage":
         operation = str(args.get("operation") or "").strip().lower()
         if operation == "list":

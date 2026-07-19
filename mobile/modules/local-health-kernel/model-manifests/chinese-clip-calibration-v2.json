@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "calibrationVersion": "cn-clip-calibration-v2",
+  "modelId": "OFA-Sys/chinese-clip-rn50",
+  "modelRevision": "717ba215769231e53b9b7c6b9d329b9cc5944418",
+  "labelSetVersion": "cn-food-labels-v2",
+  "datasetContract": {
+    "path": "docs/evals/local-diet/chinese-clip-dataset-contract.json",
+    "sha256": "7b25ed191f57add053bce33253d7cac066ab584aa7adaaa3e513eb3daa0aae41",
+    "minimumAuthorizedCaseCount": 300,
+    "containsPrivateUserData": false
+  },
+  "rankingPolicyFloor": {
+    "minimumScore": 0.5,
+    "minimumMargin": 0.03,
+    "maximumCandidates": 3
+  },
+  "selectedThresholds": null,
+  "calibrationSplit": {
+    "caseCount": 0,
+    "caseIdsSha256": null
+  },
+  "testSplit": {
+    "caseCount": 0,
+    "caseIdsSha256": null
+  },
+  "frozenQualityThresholds": {
+    "crashFreeCompletionRateMinimum": 1.0,
+    "validTypedDraftRateMinimum": 0.95,
+    "foodIdentityPrecisionMinimum": 0.85,
+    "missingItemRateMaximum": 0.1,
+    "nonFoodRejectionRateMinimum": 0.98,
+    "medianCorrectionCountMaximum": 1.0,
+    "p90CorrectionCountMaximum": 2.0,
+    "fp16ToCompressedIdentityPrecisionDeltaMaximum": 0.02,
+    "installedAssetBytesMaximum": 52428800
+  },
+  "variantEvidence": {
+    "fp16Run": null,
+    "compressedRun": null,
+    "absoluteIdentityPrecisionDelta": null,
+    "selectedVariant": null
+  },
+  "status": "blocked_pending_authorized_dataset",
+  "blockers": [
+    "No authorized non-private dataset manifest with at least 300 cases is available in the workspace.",
+    "Calibration and held-out test split hashes cannot be frozen before authorized cases exist.",
+    "FP16-to-compressed identity precision delta has not been measured on the frozen test split."
+  ]
+}

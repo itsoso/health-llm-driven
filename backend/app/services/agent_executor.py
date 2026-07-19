@@ -4786,6 +4786,38 @@ def _fast_turn_tool_names_for_message(message: Optional[str]) -> tuple:
     return FAST_TURN_TOOL_NAMES
 
 
+_AIGC_MEDIA_DRAFT_TOOL_NAMES: tuple[str, ...] = ("draft_aigc_media",)
+
+
+def _is_explicit_aigc_media_draft_turn(message: Optional[str]) -> bool:
+    """Return whether this turn must create a user-confirmed AIGC draft."""
+    intent = classify_agent_utterance(message)
+    return (
+        intent.primary == "write"
+        and intent.is_write
+        and intent.domain == "aigc_media"
+        and intent.operation == "create"
+    )
+
+
+def _tool_names_for_turn(
+    message: Optional[str],
+    *,
+    fast_route: bool,
+    analysis_subset: bool,
+) -> tuple[str, ...] | None:
+    """Select the least-privilege tool set for a semantically typed turn."""
+    if _is_explicit_aigc_media_draft_turn(message):
+        # A photo used as a video first frame is not a diet record candidate.
+        # Keep the tool decision closed to the confirmation-only draft boundary.
+        return _AIGC_MEDIA_DRAFT_TOOL_NAMES
+    if fast_route:
+        return _fast_turn_tool_names_for_message(message)
+    if analysis_subset:
+        return ANALYSIS_TURN_TOOL_NAMES
+    return None
+
+
 def _is_analysis_only_turn(message: str, *, has_images: bool, has_file: bool) -> bool:
     """R5:本回合是否纯分析/知识轮(可裁到只读工具子集)。
 
@@ -4833,6 +4865,24 @@ def _tool_subset_withheld_upgrade(
     if not withheld:
         return [], "none"
     return withheld, ("fallthrough" if live_text_already_sent else "rerun")
+
+
+def _should_force_explicit_aigc_media_tool_choice(
+    message: Optional[str],
+    original_messages: List[Dict[str, Any]],
+    pass_tools: Optional[List[Dict[str, Any]]],
+    supports_forced_tool_choice: bool,
+) -> bool:
+    """Force the confirmation-only AIGC draft on a verified first tool round."""
+    if not _is_explicit_aigc_media_draft_turn(message):
+        return False
+    if any(item.get("role") == "tool" for item in original_messages or []):
+        return False
+    names = {
+        (tool.get("function") or {}).get("name")
+        for tool in (pass_tools or [])
+    }
+    return names == {"draft_aigc_media"} and bool(supports_forced_tool_choice)
 
 
 def _allow_twin_evidence_fallback(message: str) -> bool:
@@ -5247,6 +5297,8 @@ class AgentExecutor:
         self._agent_kernel_tool_failure_tools: List[str] = []
         self._agent_kernel_pending_confirmation_tools: List[str] = []
         self._agent_kernel_tool_retry_count = 0
+        self._runtime_run_id: Optional[str] = None
+        self._runtime_attempt_id: Optional[str] = None
 
     def _start_agent_kernel_turn(
         self,
@@ -5258,6 +5310,7 @@ class AgentExecutor:
         client_time_context: Optional[Dict[str, Any]] = None,
         media: Optional[Sequence[dict[str, Any]]] = None,
         client_turn_id: Optional[str] = None,
+        run_id: Optional[str] = None,
     ) -> TurnSnapshot:
         """Freeze a complete kernel snapshot before any model or tool work."""
         resolved_channel = str(channel or "chat").strip() or "chat"
@@ -5270,6 +5323,7 @@ class AgentExecutor:
             client_time_context=client_time_context,
             media=media,
             client_turn_id=client_turn_id,
+            run_id=run_id,
             policy_mode=settings.agent_kernel_policy_mode,
         )
         self._agent_kernel_event_bus = AgentEventBus(self._agent_kernel_snapshot)
@@ -5282,6 +5336,19 @@ class AgentExecutor:
         self._agent_kernel_event_bus.turn_started()
         self._agent_kernel_event_bus.intent_decided()
         return self._refine_agent_kernel_continuation(self._agent_kernel_snapshot)
+
+    def _attach_runtime_identity(self, event: Dict[str, Any]) -> Dict[str, Any]:
+        """Add canonical control-plane IDs without changing event semantics."""
+        if event.get("event") not in {"request_persisted", "done"}:
+            return event
+        data = event.setdefault("data", {})
+        if not isinstance(data, dict):
+            return event
+        if self._runtime_run_id:
+            data.setdefault("run_id", self._runtime_run_id)
+        if self._runtime_attempt_id:
+            data.setdefault("attempt_id", self._runtime_attempt_id)
+        return event
 
     def _bind_agent_kernel_source_message(self, source_message_id: Optional[int]) -> None:
         """Bind the durable user-message id before any model/tool work begins."""
@@ -6290,6 +6357,8 @@ class AgentExecutor:
         client_caps: Optional[List[str]] = None,
         client_time_context: Optional[Dict[str, Any]] = None,
         read_only_tools: bool = False,
+        run_id: Optional[str] = None,
+        attempt_id: Optional[str] = None,
     ) -> AsyncGenerator[Dict, None]:
         """Run one durable client turn, taking over an ACKed turn after worker loss.
 
@@ -6297,6 +6366,8 @@ class AgentExecutor:
         tools are refused at the dispatch choke (fail-closed) — the pregen turn
         runs the same synthesis pipeline but can never mutate user data.
         """
+        self._runtime_run_id = run_id
+        self._runtime_attempt_id = attempt_id
         yield self._progress_event("accepted")
         self._current_user_id = user_id
         self._current_turn_user_message = message or ""
@@ -6314,6 +6385,7 @@ class AgentExecutor:
                 file_name=file_name,
             ),
             client_turn_id=client_turn_id,
+            run_id=run_id,
         )
         kernel_completion_status = "interrupted"
         recovered_user_message = None
@@ -6334,7 +6406,7 @@ class AgentExecutor:
                 async for replay_event in self._replay_client_turn(
                     turn_service, user_id, existing_turn, client_turn_id,
                 ):
-                    yield replay_event
+                    yield self._attach_runtime_identity(replay_event)
                 self._finish_agent_kernel_turn(status="replayed")
                 return
 
@@ -6363,18 +6435,18 @@ class AgentExecutor:
                     async for replay_event in self._replay_client_turn(
                         turn_service, user_id, existing_turn, client_turn_id,
                     ):
-                        yield replay_event
+                        yield self._attach_runtime_identity(replay_event)
                     self._finish_agent_kernel_turn(status="replayed")
                     return
                 if not claimed_turn:
-                    yield {"event": "done", "data": {
+                    yield self._attach_runtime_identity({"event": "done", "data": {
                         "conversation_id": conversation_id,
                         "message_id": None,
                         "completion_status": "interrupted",
                         "client_turn_id": client_turn_id,
                         "replayed": True,
                         "request_persisted": False,
-                    }}
+                    }})
                     self._finish_agent_kernel_turn(status="interrupted")
                     return
 
@@ -6396,7 +6468,7 @@ class AgentExecutor:
                     async for replay_event in self._replay_client_turn(
                         turn_service, user_id, existing_turn, client_turn_id,
                     ):
-                        yield replay_event
+                        yield self._attach_runtime_identity(replay_event)
                     turn_service.release_client_turn_execution(user_id, client_turn_id)
                     claimed_turn = False
                     self._finish_agent_kernel_turn(status="replayed")
@@ -6443,7 +6515,7 @@ class AgentExecutor:
                         recovered_user_message,
                         client_turn_id,
                     ):
-                        yield event
+                        yield self._attach_runtime_identity(event)
                     return
             async for event in self._run_stream_impl(
                 user_id=user_id,
@@ -6465,7 +6537,7 @@ class AgentExecutor:
                     kernel_completion_status = str(
                         (event.get("data") or {}).get("completion_status") or "complete"
                     )
-                yield event
+                yield self._attach_runtime_identity(event)
         finally:
             if claimed_turn and turn_service is not None and client_turn_id:
                 turn_service.release_client_turn_execution(user_id, client_turn_id)
@@ -7041,15 +7113,17 @@ class AgentExecutor:
         # 18,064→~6,700 chars(-62%),且缩短 flash 模型 prefill 时延。固定子集
         # 保前缀字节稳定(不拆 provider 前缀缓存)。模型若吐出子集外工具名 →
         # 下面 round loop 里升级回全集重跑该轮(fail-open,绝不静默丢调用)。
-        if self._fast_route_simple_turn:
-            tools = get_health_tools(subset=list(_fast_turn_tool_names_for_message(message)))
-        elif self._analysis_turn_subset:
-            # R5:纯分析轮只发只读工具子集(省写/上传/管理 schema)。模型要写→下方升级回全集。
-            tools = get_health_tools(subset=list(ANALYSIS_TURN_TOOL_NAMES))
+        turn_tool_names = _tool_names_for_turn(
+            message,
+            fast_route=self._fast_route_simple_turn,
+            analysis_subset=self._analysis_turn_subset,
+        )
+        if turn_tool_names is not None:
+            tools = get_health_tools(subset=list(turn_tool_names))
         else:
             tools = get_health_tools()
         # 任一子集(fast big-3 或 analysis 只读)激活 → 走同一 withheld-upgrade 护栏。
-        tool_subset_active = self._fast_route_simple_turn or self._analysis_turn_subset
+        tool_subset_active = turn_tool_names is not None
 
         # 5. Agent 循环
         full_reply = ""
@@ -8937,6 +9011,11 @@ class AgentExecutor:
             message,
             reference_now=self._agent_kernel_reference_now(),
         )
+        if _is_explicit_aigc_media_draft_turn(message):
+            # The AIGC service binds the uploaded image to its confirmation
+            # record. Running food recognition here could turn an unrelated
+            # photo into a diet candidate before that isolated flow begins.
+            return False
         return (
             not self._should_send_raw_images_to_primary_model(user_id)
             or not (message or "").strip()
@@ -9413,7 +9492,7 @@ class AgentExecutor:
         if pass_tools and not self._prefer_fast_record_model:
             gated = self._gate_tool_provider(effective_model_id)
             if gated is not None:
-                provider = gated
+                provider, effective_model_id = gated
 
         self._last_effective_model_id = effective_model_id
         return provider, pass_tools
@@ -9541,7 +9620,7 @@ class AgentExecutor:
             return False
 
     def _gate_tool_provider(self, effective_model_id: Optional[str]):
-        """若 effective_model 做工具调用不可靠, 返回一个可靠模型的 provider; 否则 None。
+        """Return a reliable tool provider and its model ID, or ``None``.
 
         无可回退的可靠+可用模型 (配置缺失) → 返回 None, 维持现状 (依赖兜底解析)。
         """
@@ -9579,7 +9658,7 @@ class AgentExecutor:
             self._record_model_fallback_reason("selected_model_tool_unreliable")
         else:
             self._record_model_fallback_reason("preferred_model_tool_unreliable")
-        return provider
+        return provider, fallback_id
 
     def _remember_dead_provider(self, tool_specific: bool) -> None:
         """F3a: 把本轮刚失败的 selected provider 的 model_id 记入回合内死亡备忘。
@@ -9806,6 +9885,7 @@ class AgentExecutor:
             # tool 结果), 模型门控走 ModelEntry.supports_forced_tool_choice registry flag。
             # flag 关 / 模型未验证 / 非首轮 = 不设 kwarg, payload 逐字节不变。
             self._maybe_force_record_tool_choice(stream_kwargs, messages)
+            self._maybe_force_explicit_aigc_media_tool_choice(stream_kwargs, messages)
         else:
             # 合成/答案轮(无 tools): 可选给 qwen 思考阶段封顶(flag 门控, fail-closed)。
             # 只在这里调=天然只碰无工具的合成轮, 绝不碰工具决策轮。
@@ -9903,6 +9983,37 @@ class AgentExecutor:
                 )
         except Exception:  # noqa: BLE001
             return
+
+    def _maybe_force_explicit_aigc_media_tool_choice(
+        self, stream_kwargs: Dict[str, Any], original_messages: List[Dict[str, Any]]
+    ) -> None:
+        """Force an explicit, confirmation-only AIGC draft on supported models."""
+        try:
+            model_id = self._last_effective_model_id
+            if not model_id:
+                return
+            from app.services.llm.model_registry import get_model
+
+            entry = get_model(model_id)
+            supports = bool(entry and getattr(entry, "supports_forced_tool_choice", False))
+            if _should_force_explicit_aigc_media_tool_choice(
+                self._current_turn_user_message,
+                original_messages,
+                stream_kwargs.get("tools"),
+                supports,
+            ):
+                stream_kwargs["tool_choice"] = {
+                    "type": "function", "function": {"name": "draft_aigc_media"},
+                }
+                stream_kwargs["enable_thinking"] = False
+                logger.info(
+                    "[agent_executor] force AIGC draft tool_choice applied model=%s", model_id
+                )
+        except Exception:  # noqa: BLE001
+            logger.warning(
+                "[agent_executor] unable to apply explicit AIGC draft tool choice",
+                exc_info=True,
+            )
 
     def _maybe_apply_synthesis_thinking_budget(self, stream_kwargs: Dict[str, Any]) -> None:
         """合成/答案轮 → 给 qwen 思考阶段封顶(flag 门控, fail-closed)。

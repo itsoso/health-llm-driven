@@ -1,5 +1,6 @@
 import axios from 'axios';
 import * as SecureStore from 'expo-secure-store';
+import { enforceAppEgressAllowed } from './egressPolicy';
 
 const TOKEN_KEY = 'auth_token';
 
@@ -14,8 +15,13 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
+export const EXPLICIT_CLOUD_AI_HEADER = 'X-Reva-Explicit-Cloud-AI';
+
 api.interceptors.request.use(
   async (config) => {
+    const explicitCloudAI = config.headers.get(EXPLICIT_CLOUD_AI_HEADER) === '1';
+    config.headers.delete(EXPLICIT_CLOUD_AI_HEADER);
+    await enforceAppEgressAllowed({ explicitCloudAI });
     try {
       const token = await SecureStore.getItemAsync(TOKEN_KEY);
       if (token) {

@@ -60,7 +60,13 @@ function isUnauthorizedError(error: unknown): boolean {
   return (error as { response?: { status?: number } } | null)?.response?.status === 401;
 }
 
-export function AuthProvider({ children }: { children: ReactNode }) {
+export function AuthProvider({
+  children,
+  restoreCloudSession = true,
+}: {
+  children: ReactNode;
+  restoreCloudSession?: boolean;
+}) {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -84,6 +90,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let mounted = true;
+    if (!restoreCloudSession) {
+      setToken(null);
+      setUser(null);
+      setIsLoading(false);
+      return () => {
+        mounted = false;
+      };
+    }
+    setIsLoading(true);
     (async () => {
       try {
         const saved = await restoreSavedToken();
@@ -115,14 +130,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       mounted = false;
     };
-  }, [clearSession]);
+  }, [clearSession, restoreCloudSession]);
 
   // 回前台自愈:冷启动窗口 keychain 瞬时读失败会把人留在登录页,
   // transient 401/断网会让 user 悬空 —— 两者都不该需要手动重登。
   // 只做恢复,绝不在这里清 token(删除 token 的唯一路径仍是显式 logout)。
   useEffect(() => {
     const sub = AppState.addEventListener('change', (state) => {
-      if (state !== 'active' || isLoading) return;
+      if (state !== 'active' || isLoading || !restoreCloudSession) return;
       void (async () => {
         try {
           if (!token) {
@@ -143,7 +158,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       })();
     });
     return () => sub.remove();
-  }, [token, user, isLoading, clearSession]);
+  }, [token, user, isLoading, clearSession, restoreCloudSession]);
 
   const login = useCallback(async (username: string, password: string) => {
     const result = await loginApi(username, password);

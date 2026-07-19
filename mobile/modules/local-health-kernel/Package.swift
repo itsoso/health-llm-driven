@@ -17,7 +17,8 @@ let package = Package(
     targets: [
         .target(
             name: "LocalHealthCapabilityProbe",
-            path: "ios"
+            path: "ios",
+            exclude: ["LocalHealthKernel.podspec", "Resources"]
         ),
         .testTarget(
             name: "LocalHealthCapabilityProbeTests",

@@ -98,6 +98,52 @@ def test_aigc_media_job_rejects_cancel_after_completion(client, db, auth_user_an
     assert "完成" in response.text
 
 
+def test_aigc_media_job_recovers_historical_video_result_missing_failure(
+    client, db, auth_user_and_headers, monkeypatch,
+):
+    from app.api import aigc_media
+    from app.config import settings
+    from app.models.aigc_media_job import AIGCMediaJob
+
+    owner, headers = auth_user_and_headers
+    job = AIGCMediaJob(
+        id="job-recover-video-result",
+        user_id=owner.id,
+        kind="image_to_video",
+        status="failed",
+        progress=50,
+        model="wan2.7-i2v-2026-04-25",
+        provider_task_id="task-recover-video-result",
+        idempotency_key="recover-video-result",
+        request_fingerprint="c" * 64,
+        provider_error_code="provider_result_missing",
+        error_message="生成结果不可用，请重新生成",
+    )
+    db.add(job)
+    db.commit()
+    monkeypatch.setattr(settings, "dashscope_aigc_api_key", "test-payg-key")
+
+    class RecoveryService:
+        def __init__(self, _db):
+            pass
+
+        async def refresh(self, target):
+            assert target.id == "job-recover-video-result"
+            target.status = "succeeded"
+            target.progress = 100
+            return target
+
+        def project(self, target):
+            return {"id": target.id, "status": target.status, "progress": target.progress}
+
+    monkeypatch.setattr(aigc_media, "AIGCMediaJobService", RecoveryService)
+
+    response = client.get("/api/v1/aigc/media/jobs/job-recover-video-result", headers=headers)
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "succeeded"
+
+
 def test_aigc_confirmation_returns_429_when_dispatch_budget_is_exhausted(
     client, auth_user_and_headers, monkeypatch,
 ):

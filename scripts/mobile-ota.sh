@@ -53,6 +53,14 @@ fi
 
 cd "${REPO_ROOT}/mobile"
 
+# Some worktrees reuse a dependency directory where Expo keeps @expo/cli nested
+# under expo/. EAS otherwise mistakes this for the legacy CLI and passes flags
+# that current Expo exports no longer accept.
+NESTED_EXPO_CLI_NODE_PATH="${REPO_ROOT}/mobile/node_modules/expo/node_modules"
+if [[ -d "${NESTED_EXPO_CLI_NODE_PATH}/@expo/cli" ]]; then
+  export NODE_PATH="${NESTED_EXPO_CLI_NODE_PATH}${NODE_PATH:+:${NODE_PATH}}"
+fi
+
 echo "==> EAS Update → channel=${CHANNEL}"
 echo "    environment: ${ENVIRONMENT}"
 echo "    message: ${MESSAGE}"
@@ -66,9 +74,9 @@ trap 'rm -f "${UPDATE_LOG}"' EXIT
 run_update_attempt() {
   set +e
   if [[ -n "${OTA_EAS_RUNNER:-}" ]]; then
-    "${OTA_EAS_RUNNER}" update --channel "${CHANNEL}" --message "${MESSAGE}" --platform ios --environment "${ENVIRONMENT}" --non-interactive 2>&1 | tee "${UPDATE_LOG}"
+    CI=1 "${OTA_EAS_RUNNER}" update --channel "${CHANNEL}" --message "${MESSAGE}" --platform ios --environment "${ENVIRONMENT}" 2>&1 | tee "${UPDATE_LOG}"
   else
-    npx eas-cli update --channel "${CHANNEL}" --message "${MESSAGE}" --platform ios --environment "${ENVIRONMENT}" --non-interactive 2>&1 | tee "${UPDATE_LOG}"
+    CI=1 npx eas-cli update --channel "${CHANNEL}" --message "${MESSAGE}" --platform ios --environment "${ENVIRONMENT}" 2>&1 | tee "${UPDATE_LOG}"
   fi
   local exit_code=$?
   set -e

@@ -784,3 +784,59 @@ def test_agent_client_turn_sqlite_migration_enforces_scoped_user_uniqueness(tmp_
                 "INSERT INTO agent_messages (id, role, content, client_turn_id) "
                 "VALUES (3, 'user', 'duplicate', '1:turn-same')"
             ))
+
+
+def test_agent_runtime_migrations_create_content_free_control_plane(tmp_path: Path):
+    migrations_dir = Path(__file__).resolve().parents[1] / "migrations" / "managed"
+    sqlite_file = migrations_dir / "20260719_120000_create_agent_runtime.sqlite.sql"
+    postgres_file = migrations_dir / "20260719_120000_create_agent_runtime.postgresql.sql"
+    assert sqlite_file.exists()
+    assert postgres_file.exists()
+
+    postgres_sql = postgres_file.read_text(encoding="utf-8")
+    assert "payload JSONB" in postgres_sql
+    assert "uq_agent_runs_active_conversation" in postgres_sql
+    assert "current_attempt_id VARCHAR(64) NOT NULL" in postgres_sql
+    assert "retryable BOOLEAN NOT NULL DEFAULT FALSE" in postgres_sql
+    assert "prompt" not in postgres_sql.lower()
+    assert "message_content" not in postgres_sql.lower()
+
+    isolated = tmp_path / "managed"
+    isolated.mkdir()
+    (isolated / sqlite_file.name).write_text(
+        sqlite_file.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE users (id INTEGER PRIMARY KEY)"))
+        conn.execute(text(
+            "CREATE TABLE agent_conversations ("
+            "id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id))"
+        ))
+        conn.execute(text(
+            "CREATE TABLE agent_messages ("
+            "id INTEGER PRIMARY KEY, conversation_id INTEGER NOT NULL "
+            "REFERENCES agent_conversations(id))"
+        ))
+
+    result = apply_managed_migrations(engine, isolated)
+
+    assert [migration.id for migration in result.applied] == [
+        "20260719_120000_create_agent_runtime"
+    ]
+    assert {
+        "agent_runs",
+        "agent_run_attempts",
+        "agent_tool_operations",
+        "agent_run_events",
+    } <= set(inspect(engine).get_table_names())
+    run_indexes = {index["name"] for index in inspect(engine).get_indexes("agent_runs")}
+    run_columns = {column["name"] for column in inspect(engine).get_columns("agent_runs")}
+    assert {"current_attempt_id", "retryable"} <= run_columns
+    assert {
+        "uq_agent_runs_user_client_turn",
+        "uq_agent_runs_active_conversation",
+        "uq_agent_runs_conversation_input_seq",
+        "ix_agent_runs_current_attempt_id",
+    } <= run_indexes

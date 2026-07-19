@@ -73,7 +73,7 @@ def test_gate_redirects_unreliable_request_model_when_tools(monkeypatch):
 
     import app.services.llm.factory as factory
     monkeypatch.setattr(factory, "create_provider_for_model_id", fake_create)
-    monkeypatch.setattr(reg, "pick_reliable_tool_model_id", lambda **k: "claude-opus-4.7")
+    monkeypatch.setattr(reg, "pick_reliable_tool_model_id", lambda **k: "qwen3.7-max")
 
     ex = _executor()
     ex._request_model_id = "glm-5.1"
@@ -81,6 +81,9 @@ def test_gate_redirects_unreliable_request_model_when_tools(monkeypatch):
     provider, pass_tools = ex._resolve_chat_provider([{"type": "function"}])
     assert provider is sentinel_reliable
     assert pass_tools  # tools 仍然下发
+    # Subsequent forced-tool policy must describe the provider that will
+    # actually receive the request, not the unreliable model it replaced.
+    assert ex._last_effective_model_id == "qwen3.7-max"
 
 
 def test_gate_keeps_reliable_request_model(monkeypatch):
@@ -94,6 +97,42 @@ def test_gate_keeps_reliable_request_model(monkeypatch):
 
     provider, pass_tools = ex._resolve_chat_provider([{"type": "function"}])
     assert provider is sentinel
+
+
+@pytest.mark.asyncio
+async def test_explicit_aigc_turn_forces_draft_on_the_reliable_fallback_model(monkeypatch):
+    """AIGC creation must survive an unreliable user-selected chat model."""
+    captured = {}
+
+    class ReliableProvider:
+        model = "qwen3.7-max"
+
+        async def chat_stream(self, **kwargs):
+            captured.update(kwargs)
+            yield {"type": "finish", "finish_reason": "stop"}
+
+    import app.services.llm.factory as factory
+
+    monkeypatch.setattr(
+        factory,
+        "create_provider_for_model_id",
+        lambda model_id: ReliableProvider() if model_id == "qwen3.7-max" else MagicMock(),
+    )
+    monkeypatch.setattr(reg, "pick_reliable_tool_model_id", lambda **_kwargs: "qwen3.7-max")
+    monkeypatch.setattr("app.services.agent_executor.settings.task_tiered_routing", False)
+
+    ex = _executor()
+    ex._request_model_id = "glm-5.1"
+    ex._current_turn_user_message = "基于这张照片生成今天活动的短视频，以此照片为开头。"
+    tools = [{"type": "function", "function": {"name": "draft_aigc_media"}}]
+
+    _events = [event async for event in ex._call_llm_stream([{"role": "user", "content": "创作"}], tools)]
+
+    assert captured["tool_choice"] == {
+        "type": "function",
+        "function": {"name": "draft_aigc_media"},
+    }
+    assert captured["enable_thinking"] is False
 
 
 def test_gate_skips_when_no_tools(monkeypatch):
