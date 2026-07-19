@@ -3,6 +3,78 @@ import XCTest
 @testable import LocalHealthCapabilityProbe
 
 final class LocalChineseClipVisionEngineTests: XCTestCase {
+    func testPreprocessorMatchesPinnedChineseClipBicubicGolden() throws {
+        let image = LocalFoodRGBAImage(
+            width: 3,
+            height: 2,
+            orientation: .up,
+            rgba8: Data([
+                255, 0, 0, 255,
+                0, 255, 0, 255,
+                0, 0, 255, 255,
+                255, 255, 255, 255,
+                0, 0, 0, 255,
+                128, 128, 128, 255,
+            ])
+        )
+
+        let region = try XCTUnwrap(
+            LocalFoodVisionPreprocessor().prepare(image: image, proposals: []).first
+        )
+        let golden: [(x: Int, y: Int, red: UInt8, green: UInt8, blue: UInt8)] = [
+            (0, 0, 255, 0, 0),
+            (112, 0, 0, 255, 1),
+            (223, 0, 0, 0, 255),
+            (0, 112, 255, 129, 129),
+            (112, 112, 0, 126, 0),
+            (223, 112, 73, 73, 199),
+            (0, 223, 255, 255, 255),
+            (112, 223, 0, 0, 0),
+            (223, 223, 162, 162, 130),
+        ]
+        let planeSize = 224 * 224
+
+        for sample in golden {
+            let expected = normalized(
+                red: sample.red,
+                green: sample.green,
+                blue: sample.blue
+            )
+            let offset = sample.y * 224 + sample.x
+            XCTAssertEqual(region.tensor[offset], expected.0, accuracy: 0.0001)
+            XCTAssertEqual(region.tensor[planeSize + offset], expected.1, accuracy: 0.0001)
+            XCTAssertEqual(region.tensor[2 * planeSize + offset], expected.2, accuracy: 0.0001)
+        }
+    }
+
+    func testPreprocessorMatchesPinnedBicubicDownsamplingAntialias() throws {
+        var pixels = Data()
+        pixels.reserveCapacity(448 * 4)
+        for x in 0..<448 {
+            pixels.append(contentsOf: [x.isMultiple(of: 2) ? 0 : 255, 0, 0, 255])
+        }
+        let image = LocalFoodRGBAImage(
+            width: 448,
+            height: 1,
+            orientation: .up,
+            rgba8: pixels
+        )
+
+        let region = try XCTUnwrap(
+            LocalFoodVisionPreprocessor().prepare(image: image, proposals: []).first
+        )
+        for (x, expectedRed): (Int, UInt8) in [
+            (0, 109), (1, 129), (2, 128), (50, 128),
+            (112, 128), (221, 128), (222, 126), (223, 146),
+        ] {
+            XCTAssertEqual(
+                region.tensor[x],
+                normalized(red: expectedRed, green: 0, blue: 0).0,
+                accuracy: 0.0001
+            )
+        }
+    }
+
     func testPreprocessorCorrectsOrientationAndRejectsTinyOrOverlappingRegions() throws {
         let image = LocalFoodRGBAImage(
             width: 2,

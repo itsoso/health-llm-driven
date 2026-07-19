@@ -129,30 +129,56 @@ public struct LocalFoodVisionPreprocessor: LocalFoodVisionPreprocessing, Sendabl
         let planeSize = size * size
         var tensor = [Float](repeating: 0, count: 3 * planeSize)
         let oriented = orientedSize(image)
+        let xSamples = axisSamples(
+            outputSize: size,
+            sourceLength: oriented.width,
+            origin: box.x,
+            span: box.width
+        )
+        let ySamples = axisSamples(
+            outputSize: size,
+            sourceLength: oriented.height,
+            origin: box.y,
+            span: box.height
+        )
 
         image.rgba8.withUnsafeBytes { rawBytes in
             let pixels = rawBytes.bindMemory(to: UInt8.self)
-            for outputY in 0..<size {
-                let unitY = (Double(outputY) + 0.5) / Double(size)
-                let orientedY = min(
-                    oriented.height - 1,
-                    Int((box.y + unitY * box.height) * Double(oriented.height))
-                )
+            let neededRows = Set(ySamples.flatMap(\.indices))
+            var horizontalRows: [Int: [UInt8]] = [:]
+            horizontalRows.reserveCapacity(neededRows.count)
+            for orientedY in neededRows {
+                var row = [UInt8](repeating: 0, count: size * 3)
                 for outputX in 0..<size {
-                    let unitX = (Double(outputX) + 0.5) / Double(size)
-                    let orientedX = min(
-                        oriented.width - 1,
-                        Int((box.x + unitX * box.width) * Double(oriented.width))
-                    )
-                    let source = sourceCoordinate(
-                        orientedX: orientedX,
-                        orientedY: orientedY,
-                        image: image
-                    )
-                    let sourceOffset = (source.y * image.width + source.x) * 4
+                    let sample = xSamples[outputX]
+                    for channel in 0..<3 {
+                        var value = 0.0
+                        for tap in sample.indices.indices {
+                            let source = sourceCoordinate(
+                                orientedX: sample.indices[tap],
+                                orientedY: orientedY,
+                                image: image
+                            )
+                            let sourceOffset = (source.y * image.width + source.x) * 4
+                            value += Double(pixels[sourceOffset + channel]) * sample.weights[tap]
+                        }
+                        row[outputX * 3 + channel] = quantizedByte(value)
+                    }
+                }
+                horizontalRows[orientedY] = row
+            }
+
+            for outputY in 0..<size {
+                for outputX in 0..<size {
                     let outputOffset = outputY * size + outputX
                     for channel in 0..<3 {
-                        let unitValue = Float(pixels[sourceOffset + channel]) / 255
+                        var value = 0.0
+                        let sample = ySamples[outputY]
+                        for tap in sample.indices.indices {
+                            guard let row = horizontalRows[sample.indices[tap]] else { continue }
+                            value += Double(row[outputX * 3 + channel]) * sample.weights[tap]
+                        }
+                        let unitValue = Float(quantizedByte(value)) / 255
                         tensor[channel * planeSize + outputOffset] =
                             (unitValue - Self.mean[channel]) / Self.standardDeviation[channel]
                     }
@@ -160,6 +186,53 @@ public struct LocalFoodVisionPreprocessor: LocalFoodVisionPreprocessing, Sendabl
             }
         }
         return tensor
+    }
+
+    private func axisSamples(
+        outputSize: Int,
+        sourceLength: Int,
+        origin: Double,
+        span: Double
+    ) -> [BicubicAxisSample] {
+        (0..<outputSize).map { outputIndex in
+            let inputStart = origin * Double(sourceLength)
+            let scale = span * Double(sourceLength) / Double(outputSize)
+            let filterScale = max(1, scale)
+            let support = 2 * filterScale
+            let center = inputStart + (Double(outputIndex) + 0.5) * scale
+            let first = max(0, Int(floor(center - support + 0.5)))
+            let end = min(sourceLength, Int(floor(center + support + 0.5)))
+            let indices = Array(first..<max(first + 1, end))
+            var weights = indices.map {
+                cubicWeight(distance: (Double($0) - center + 0.5) / filterScale)
+            }
+            let total = weights.reduce(0, +)
+            if total != 0 {
+                weights = weights.map { $0 / total }
+            }
+            return BicubicAxisSample(
+                indices: indices,
+                weights: weights
+            )
+        }
+    }
+
+    private func cubicWeight(distance: Double) -> Double {
+        let value = abs(distance)
+        if value < 1 {
+            return 1.5 * value * value * value - 2.5 * value * value + 1
+        }
+        if value < 2 {
+            return -0.5 * value * value * value
+                + 2.5 * value * value
+                - 4 * value
+                + 2
+        }
+        return 0
+    }
+
+    private func quantizedByte(_ value: Double) -> UInt8 {
+        UInt8(min(255, max(0, value)).rounded())
     }
 
     private func orientedSize(_ image: LocalFoodRGBAImage) -> (width: Int, height: Int) {
@@ -195,6 +268,11 @@ public struct LocalFoodVisionPreprocessor: LocalFoodVisionPreprocessing, Sendabl
             return (image.width - 1 - y, x)
         }
     }
+}
+
+private struct BicubicAxisSample {
+    let indices: [Int]
+    let weights: [Double]
 }
 
 private struct Box: Equatable {

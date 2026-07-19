@@ -437,8 +437,13 @@ private final class LocalChineseClipCoreMLPredictor: LocalFoodEmbeddingPredictin
             throw LocalFoodVisionError.invalidPreprocessorOutput
         }
         let input = try MLMultiArray(shape: [1, 3, 224, 224], dataType: .float32)
-        for (index, value) in region.tensor.enumerated() {
-            input[index] = NSNumber(value: value)
+        guard input.count == region.tensor.count,
+              input.strides.map(\.intValue) == [3 * 224 * 224, 224 * 224, 224, 1] else {
+            throw LocalFoodVisionError.invalidPreprocessorOutput
+        }
+        region.tensor.withUnsafeBytes { bytes in
+            guard let baseAddress = bytes.baseAddress else { return }
+            input.dataPointer.copyMemory(from: baseAddress, byteCount: bytes.count)
         }
         let provider = try MLDictionaryFeatureProvider(dictionary: ["image": input])
         let output = try model.prediction(from: provider)
