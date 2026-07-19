@@ -2454,6 +2454,18 @@ _WRITE_RESULT_FAILURE_MARKERS = (
     "记录失败",
     "未找到",
 )
+# These errors are produced by the local argument/policy gates before an
+# external write endpoint is invoked. They must not be presented as a write
+# that may already have happened.
+_PRE_DISPATCH_VALIDATION_MARKERS = (
+    "参数解析失败",
+    "只读预生成回合不执行写入/变更操作",
+    "工具调用策略检查失败",
+    "必须提供",
+    "需要提供",
+    "缺少",
+    "不支持",
+)
 _UNVERIFIED_WRITE_USER_MESSAGE = (
     "本次操作没有取得可验证的写入回执，我不能确认已经完成。"
     "为避免重复写入，请先查询现有记录；确认缺失后再重试。"
@@ -2502,6 +2514,16 @@ def _unverified_write_message(verified_receipts: Optional[List[Dict[str, Any]]] 
 
 class _UnverifiedWriteResult(RuntimeError):
     pass
+
+
+def _write_result_is_pre_dispatch_validation_error(result: Any) -> bool:
+    """Return whether a write was rejected locally before external dispatch."""
+    text = str(result or "").strip()
+    return text.startswith("Error:") and any(
+        marker in text for marker in _PRE_DISPATCH_VALIDATION_MARKERS
+    )
+
+
 _RESOURCE_TYPE_BY_RECORD_TYPE = {
     "bp": "blood_pressure_record",
     "blood_pressure": "blood_pressure_record",
@@ -2609,6 +2631,8 @@ def _write_checkpoint_status_after_dispatch(
     """Classify a write only after execution crossed the dispatch boundary."""
     if receipt:
         return "verified"
+    if _write_result_is_pre_dispatch_validation_error(result):
+        return "rejected"
     if str(result).startswith("[NEEDS_CONFIRMATION]"):
         return "failed"
     return "uncertain"
@@ -5567,6 +5591,7 @@ class AgentExecutor:
                             write_attempted
                             and receipt is None
                             and not str(result).startswith("[NEEDS_CONFIRMATION]")
+                            and not _write_result_is_pre_dispatch_validation_error(result)
                         ):
                             raise _UnverifiedWriteResult()
                     continue
@@ -7273,6 +7298,9 @@ class AgentExecutor:
                                     receipt is None
                                     and not str(result_for_record_card).startswith(
                                         "[NEEDS_CONFIRMATION]"
+                                    )
+                                    and not _write_result_is_pre_dispatch_validation_error(
+                                        result_for_record_card
                                     )
                                     and func_name not in unverified_write_tools
                                 ):

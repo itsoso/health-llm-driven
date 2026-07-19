@@ -12,6 +12,8 @@ from app.services.agent_executor import (
     INTERRUPTED_COMPLETION_NOTICE,
     AgentExecutor,
     _completion_status_from_finish_reason,
+    _write_checkpoint_status_after_dispatch,
+    _write_result_is_pre_dispatch_validation_error,
     _write_tool_completed,
 )
 
@@ -63,6 +65,23 @@ def test_completion_status_marks_stop_finish_reason_as_complete():
 
 def test_completion_status_marks_error_finish_reason_as_error():
     assert _completion_status_from_finish_reason("error") == "error"
+
+
+def test_local_write_validation_error_is_not_an_uncertain_dispatch():
+    result = (
+        "Error: sleep 记录必须提供 bedtime、wake_time、sleep_quality(1-5). "
+        "缺少: bedtime, wake_time."
+    )
+
+    assert _write_result_is_pre_dispatch_validation_error(result) is True
+    assert _write_checkpoint_status_after_dispatch(result, None) == "rejected"
+
+
+def test_remote_write_error_remains_uncertain_after_dispatch():
+    result = "Error: upstream returned 500 after request dispatch"
+
+    assert _write_result_is_pre_dispatch_validation_error(result) is False
+    assert _write_checkpoint_status_after_dispatch(result, None) == "uncertain"
 
 
 @pytest.mark.parametrize("result", [
@@ -242,6 +261,80 @@ async def test_http_500_after_dispatched_write_is_uncertain_and_orphan_retry_doe
         if event.get("event") == "token"
     )
     assert "没有自动重试" in recovered
+
+
+@pytest.mark.asyncio
+async def test_pre_dispatch_sleep_validation_returns_to_model_without_unverified_write_claim(
+    db, auth_user_and_headers, monkeypatch
+):
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    calls = 0
+    validation_error = (
+        "Error: sleep 记录必须提供 bedtime、wake_time、sleep_quality(1-5). "
+        "缺少: bedtime, wake_time."
+    )
+
+    async def fake_call_llm(messages, tools):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return {
+                "content": "",
+                "finish_reason": "tool_calls",
+                "tool_calls": [{
+                    "id": "sleep-missing-times",
+                    "function": {
+                        "name": "health_record",
+                        "arguments": json.dumps({
+                            "record_type": "sleep",
+                            "data": {"sleep_quality": 5},
+                        }),
+                    },
+                }],
+            }
+        return {
+            "content": "还缺少入睡时间和起床时间，请补充这两个时间。",
+            "finish_reason": "stop",
+        }
+
+    async def fake_execute_tool(name, args, token):
+        assert name == "health_record"
+        return validation_error
+
+    monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
+    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [])
+    monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
+    monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
+    monkeypatch.setattr(executor, "_execute_tool", fake_execute_tool)
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="已经睡了十个小时，睡眠非常好，估计有九十五分",
+            user_auth_token="test-token",
+            client_turn_id="turn-sleep-validation-rejected",
+        )
+    ]
+
+    rendered = "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+    assert calls == 2
+    assert "还缺少入睡时间和起床时间" in rendered
+    assert "本次操作没有取得可验证" not in rendered
+    done = next(event for event in events if event.get("event") == "done")
+    assert done["data"]["completion_status"] == "complete"
+    assert done["data"]["write_receipts"] == []
+
+    user_message = db.query(AgentMessage).filter(
+        AgentMessage.role == "user",
+        AgentMessage.content == "已经睡了十个小时，睡眠非常好，估计有九十五分",
+    ).one()
+    assert user_message.meta["write_state"]["status"] == "rejected"
 
 
 @pytest.mark.asyncio
