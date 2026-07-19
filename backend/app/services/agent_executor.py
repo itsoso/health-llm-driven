@@ -4305,7 +4305,10 @@ def _symptom_text_has_non_self_reference(normalized: str) -> bool:
     # 在同一分句内检查完整主体上下文。固定长度窗口会漏掉“他今天早上在
     # 办公室连续打了一个喷嚏”这类自然表达；分句边界又能避免把“我说我
     # 打喷嚏”中的“说”误判成第三方主体。
-    clauses = re.split(r"[，,。！？!?；;：:、\n]", normalized)
+    clauses = re.split(
+        r"[，,。！？!?；;：:、\n]|然后|而且|但是|不过|并且|以及|同时|后来|之后|再加上|另外",
+        normalized,
+    )
     non_self_subject_re = re.compile(
         r"(?:他|她|他们|她们|我爸|我妈|我父亲|我母亲|爸爸|妈妈|朋友|同事|家人|患者|病人)"
     )
