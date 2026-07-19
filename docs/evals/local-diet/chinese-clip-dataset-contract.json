@@ -1,0 +1,204 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://executor.life/schemas/chinese-clip-food-dataset-v1.json",
+  "title": "Authorized Chinese-CLIP food identity evaluation dataset",
+  "description": "Redacted metadata contract. Image bytes and source paths are never committed; every fixture ID is opaque and separately authorized for evaluation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "datasetVersion",
+    "containsPrivateUserData",
+    "cases"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "datasetVersion": { "type": "string", "minLength": 1 },
+    "containsPrivateUserData": { "const": false },
+    "cases": {
+      "type": "array",
+      "minItems": 300,
+      "items": { "$ref": "#/$defs/case" }
+    }
+  },
+  "allOf": [
+    {
+      "properties": {
+        "cases": {
+          "contains": {
+            "properties": { "stratum": { "const": "single_item" } },
+            "required": ["stratum"]
+          },
+          "minContains": 1
+        }
+      }
+    },
+    {
+      "properties": {
+        "cases": {
+          "contains": {
+            "properties": { "stratum": { "const": "composite_dish" } },
+            "required": ["stratum"]
+          },
+          "minContains": 1
+        }
+      }
+    },
+    {
+      "properties": {
+        "cases": {
+          "contains": {
+            "properties": { "stratum": { "const": "mixed_plate" } },
+            "required": ["stratum"]
+          },
+          "minContains": 1
+        }
+      }
+    },
+    {
+      "properties": {
+        "cases": {
+          "contains": {
+            "properties": { "stratum": { "const": "packaged_food_drink" } },
+            "required": ["stratum"]
+          },
+          "minContains": 1
+        }
+      }
+    },
+    {
+      "properties": {
+        "cases": {
+          "contains": {
+            "properties": { "stratum": { "const": "confusable_pair" } },
+            "required": ["stratum"]
+          },
+          "minContains": 1
+        }
+      }
+    },
+    {
+      "properties": {
+        "cases": {
+          "contains": {
+            "properties": { "stratum": { "const": "non_food_adversarial" } },
+            "required": ["stratum"]
+          },
+          "minContains": 1
+        }
+      }
+    },
+    {
+      "properties": {
+        "cases": {
+          "contains": {
+            "properties": { "stratum": { "const": "degraded_adversarial" } },
+            "required": ["stratum"]
+          },
+          "minContains": 1
+        }
+      }
+    },
+    {
+      "properties": {
+        "cases": {
+          "contains": {
+            "properties": { "split": { "const": "calibration" } },
+            "required": ["split"]
+          },
+          "minContains": 1
+        }
+      }
+    },
+    {
+      "properties": {
+        "cases": {
+          "contains": {
+            "properties": { "split": { "const": "test" } },
+            "required": ["split"]
+          },
+          "minContains": 1
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "opaqueCaseId": {
+      "type": "string",
+      "pattern": "^case-[a-z0-9][a-z0-9_-]*$"
+    },
+    "opaqueFixtureId": {
+      "type": "string",
+      "pattern": "^fixture-[a-z0-9][a-z0-9_-]*$"
+    },
+    "identityList": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "caseId",
+        "fixtureId",
+        "split",
+        "stratum",
+        "licenseStatus",
+        "expectedFoodIdentities",
+        "nonFood"
+      ],
+      "properties": {
+        "caseId": { "$ref": "#/$defs/opaqueCaseId" },
+        "fixtureId": { "$ref": "#/$defs/opaqueFixtureId" },
+        "split": { "enum": ["calibration", "test"] },
+        "stratum": {
+          "enum": [
+            "single_item",
+            "composite_dish",
+            "mixed_plate",
+            "packaged_food_drink",
+            "confusable_pair",
+            "non_food_adversarial",
+            "degraded_adversarial"
+          ]
+        },
+        "licenseStatus": {
+          "enum": ["licensed_for_evaluation", "public_domain", "synthetic"]
+        },
+        "expectedFoodIdentities": { "$ref": "#/$defs/identityList" },
+        "nonFood": { "type": "boolean" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "nonFood": { "const": true } },
+            "required": ["nonFood"]
+          },
+          "then": {
+            "properties": {
+              "expectedFoodIdentities": { "maxItems": 0 }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "stratum": { "const": "mixed_plate" } },
+            "required": ["stratum"]
+          },
+          "then": {
+            "properties": {
+              "expectedFoodIdentities": { "minItems": 2 }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "x-cross-record-invariants": [
+    "caseId values are unique",
+    "fixtureId values are unique",
+    "calibration and test case IDs are disjoint",
+    "image bytes, source URLs and filesystem paths are excluded from the committed manifest"
+  ]
+}

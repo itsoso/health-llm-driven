@@ -52,7 +52,22 @@
         "appBuild"
       ],
       "properties": {
-        "hardwareIdentifier": { "type": "string", "minLength": 1 },
+        "hardwareIdentifier": {
+          "type": "string",
+          "minLength": 1,
+          "allOf": [
+            {
+              "not": {
+                "pattern": "^[0-9A-Fa-f]{8}-[0-9A-Fa-f-]{16,}$"
+              }
+            },
+            {
+              "not": {
+                "pattern": "^[A-Z0-9]{10,14}$"
+              }
+            }
+          ]
+        },
         "deviceClass": { "enum": ["phone", "tablet", "mac", "other"] },
         "osVersion": { "type": "string", "minLength": 1 },
         "isSimulator": { "type": "boolean" },
@@ -78,7 +93,25 @@
         },
         "identifier": { "type": "string", "minLength": 1 },
         "version": { "type": "string", "minLength": 1 },
-        "downloadBytes": { "type": "integer", "minimum": 0 }
+        "downloadBytes": { "type": "integer", "minimum": 0 },
+        "modelArtifactSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "labelBankVersion": { "type": "string", "minLength": 1 },
+        "calibrationVersion": { "type": "string", "minLength": 1 },
+        "calibrationManifestSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "minimumScore": { "type": "number", "minimum": -1, "maximum": 1 },
+        "minimumMargin": { "type": "number", "minimum": 0, "maximum": 2 },
+        "maximumCandidates": { "type": "integer", "minimum": 1, "maximum": 3 },
+        "installedModelBytes": { "type": "integer", "minimum": 1 },
+        "installedLabelBankBytes": { "type": "integer", "minimum": 1 },
+        "precisionVariant": {
+          "enum": ["fp16", "int8-linear-per-channel-65536"]
+        }
       }
     },
     "caseResults": {
@@ -120,10 +153,45 @@
           "enum": ["nominal", "fair", "serious", "critical", "unknown"]
         },
         "gateVerdict": { "enum": ["pass", "fail", "blocked"] },
+        "oneSecondCompletionRate": { "$ref": "#/$defs/rate" },
         "notes": { "type": "string" }
       }
     }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "modelProfile": {
+            "properties": { "engine": { "const": "custom_core_ml" } },
+            "required": ["engine"]
+          }
+        },
+        "required": ["modelProfile"]
+      },
+      "then": {
+        "properties": {
+          "modelProfile": {
+            "required": [
+              "modelArtifactSha256",
+              "labelBankVersion",
+              "calibrationVersion",
+              "calibrationManifestSha256",
+              "minimumScore",
+              "minimumMargin",
+              "maximumCandidates",
+              "installedModelBytes",
+              "installedLabelBankBytes",
+              "precisionVariant"
+            ]
+          },
+          "summary": {
+            "required": ["oneSecondCompletionRate"]
+          }
+        }
+      }
+    }
+  ],
   "$defs": {
     "rate": {
       "type": "number",

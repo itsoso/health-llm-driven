@@ -34,8 +34,8 @@ RequirementAdmission:
   claim_hedging: photo identity and portion remain estimates until confirmed
   verification_window: immediate write receipt plus airplane-mode and reinstall/restore checks
   success_metric: first confirmed meal without registration or network, with zero prohibited egress
-  added_user_burden: one confirmation; optional recovery-key setup
-  burden_justification: protects correctness and prevents unrecoverable loss
+  added_user_burden: one confirmation; device passcode required; one-time no-backup warning; optional encrypted export
+  burden_justification: protects correctness, locked-device confidentiality and recoverability
   non_goals: [photo-scale precision, diagnosis, prescribing, full Health OS migration, silent cloud account]
   smallest_end_to_end_slice: launch without account -> record one text meal -> local deterministic nutrition -> confirm -> reopen offline -> see same record
   stale_surface_to_remove_or_archive: mandatory login as the only app entry for new local users
@@ -67,6 +67,7 @@ G1 verdict: **PASS**. The user approved the local-first option and the fully loc
 ```text
 first launch
   -> choose "立即开始" or "登录并同步"
+  -> verify device passcode protection
   -> create device-local identity
   -> capture text/manual/barcode/photo candidate
   -> local parser and food table produce an attributed draft
@@ -83,7 +84,7 @@ Strict-local mode must remain usable with networking disabled before launch.
 | Surface | Responsibility | Contract |
 |---|---|---|
 | Mobile | Mode choice, capture, correction, confirmation, privacy controls, export/restore | Never require an account for the local slice; never show saved without a local receipt. |
-| iOS native module | Key management, protected local storage, capability probes, system model/Vision bridges | No plaintext health payload in logs; availability failures degrade explicitly. |
+| iOS native module | Key management, protected local storage, capability probes, system model/Vision bridges | Require device passcode; no plaintext health payload or query metadata in logs/storage; availability failures degrade explicitly. |
 | Backend | Preserve existing cloud users; later accept opaque encrypted sync blobs and explicit inference requests | Must not receive local health data unless the user enables a named capability. |
 | Watch/Mac/Web | Deferred | Must not imply local data is synchronized before sync ships. |
 
@@ -109,16 +110,9 @@ models:
   LocalSyncOutbox
   LocalFoodItem
   LocalFoodNutrient
-fields:
-  local_id
-  record_date
-  meal_type
-  encrypted_payload
-  payload_version
-  provenance
-  model_profile
-  created_at
-  updated_at
+plaintext_envelope_fields: [local_id, payload_version, object_version, nonce, ciphertext, authentication_tag]
+blind_index_fields: [day_blind_index, meal_type_blind_index, lifecycle_blind_index]
+encrypted_domain_fields: [record_date, meal_type, provenance, model_profile, created_at, updated_at]
 enums:
   app_mode: strict_local | local_first | cloud_account
   inference_path: deterministic | apple_system | downloaded_model | explicit_cloud
@@ -129,7 +123,7 @@ migration:
   additive native store; no production PostgreSQL migration in the first slice
 ```
 
-Local record IDs are client-generated and stable. Health content is application-layer encrypted; only minimal indexes needed for local lookup may remain outside the encrypted payload. The encryption key is device-held and recoverable only through the explicit export/sync recovery design.
+Local record IDs are client-generated and stable. Health content is application-layer encrypted; equality lookups use HMAC blind indexes derived independently from the record-encryption key. The device root key is stored with `kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly`; each export re-encrypts into an envelope protected by a new, separately saved App-generated 256-bit recovery key.
 
 ## 9. Safety, Privacy, And Medical Boundary
 
@@ -139,6 +133,8 @@ Local record IDs are client-generated and stable. Health content is application-
 - Nutrition values require a local, versioned, licensed source; model-recalled nutrient values remain unknown.
 - Photos remain in the private app container and default to deletion after recognition unless the user elects to retain them.
 - Export must be encrypted and warn that loss of the recovery secret makes recovery impossible.
+- Vault creation must fail closed when the device lacks a system passcode; it must not fall back to a weaker Keychain accessibility class.
+- Version 1 restore only targets an empty vault and commits after the entire envelope authenticates and validates.
 - Local safety logic may warn about invalid values or missing confirmation, but the first slice makes no diagnosis, prescription or causal claim.
 
 ## 10. AI Behavior
@@ -168,6 +164,10 @@ Given a fresh install with no network
 When the user selects immediate local use and records a text meal
 Then a confirmed local receipt persists across app restart without registration
 
+Given a fresh install without a device passcode
+When the user selects immediate local use
+Then vault creation is refused with setup guidance and no local key, identity or health database is created
+
 Given strict-local mode
 When any API, telemetry, push-registration or remote-config path attempts health-data egress
 Then the request is blocked and a privacy_egress_blocked event is stored locally
@@ -192,7 +192,7 @@ Given an existing authenticated user upgrades
 When the app launches
 Then the existing cloud-account flow remains intact and no implicit migration occurs
 
-Given a local export and its recovery secret
+Given a local export and its App-generated recovery key
 When the user restores on a clean install
 Then records and audit events are restored with stable IDs and no duplicate confirmations
 ```
@@ -206,7 +206,7 @@ npm test -- --runInBand app/__tests__/localMode.test.tsx services/__tests__/loca
 npx tsc --noEmit
 
 # iOS native module
-cd mobile/modules/local-health-kernel/ios
+cd mobile/modules/local-health-kernel
 swift test
 
 # Native build and real-device checks
@@ -235,8 +235,6 @@ Manual gates include airplane-mode first launch, process restart, device lock/un
 
 Blocking before implementation:
 
-- Select and license the production local nutrition dataset.
-- Validate the native encryption design and recovery threat model.
 - Establish the minimum supported hardware for system and downloadable model paths.
 
 Non-blocking for the first slice:
@@ -250,3 +248,4 @@ Non-blocking for the first slice:
 | Date | Change | Reason |
 |---|---|---|
 | 2026-07-18 | Initial draft | User approved local-first mode and a fully local diet wedge. |
+| 2026-07-18 | Require device passcode; use per-export App-generated recovery keys; select USDA FoodData Central CC0 | User approved the security trade-offs and official source licensing resolved redistribution. |

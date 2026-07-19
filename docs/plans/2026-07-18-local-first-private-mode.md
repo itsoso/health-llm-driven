@@ -4,7 +4,7 @@
 
 **Goal:** Deliver an iOS-first, no-registration, airplane-mode diet capture loop backed by encrypted local storage, with optional on-device intelligence and no implicit cloud egress.
 
-**Architecture:** Add an `AppSession` mode above the existing auth state, introduce repository interfaces so local and remote diet paths do not branch inside UI, and implement a Swift-backed Local Health Kernel for encryption, protected storage and on-device capability probes. The guaranteed path is deterministic/manual; Apple system models, Vision and optional downloaded models enrich drafts but never become the nutrition source of truth.
+**Architecture:** Add an `AppSession` mode above the existing auth state, introduce repository interfaces so local and remote diet paths do not branch inside UI, and implement a Swift-backed Local Health Kernel for encryption, protected storage and on-device capability probes. The guaranteed path is deterministic/manual; Apple system models, Vision and an independently gated Chinese-CLIP RN50 image tower may enrich drafts but never become the nutrition source of truth.
 
 **Tech Stack:** Expo 55, React Native 0.83, TypeScript, Swift Expo module, CryptoKit, SQLite, Keychain/SecureStore, Apple Foundation Models, Vision/Core ML, Jest, Swift Testing/XCTest, EAS/TestFlight.
 
@@ -25,6 +25,8 @@
 - Create: `mobile/modules/local-health-kernel/Package.swift`
 - Create: `mobile/modules/local-health-kernel/ios/LocalHealthCapabilityProbe.swift`
 - Create: `mobile/modules/local-health-kernel/Tests/LocalHealthCapabilityProbeTests.swift`
+- Create: `mobile/modules/local-health-kernel/ios/LocalDietInferenceBenchmark.swift`
+- Create: `mobile/modules/local-health-kernel/Tests/LocalDietInferenceBenchmarkTests.swift`
 - Create: `docs/evals/local-diet/on-device-eval-contract.json`
 - Create: `docs/evals/local-diet/README.md`
 - Modify: `docs/dossiers/2026-07-18-local-first-private-mode.md`
@@ -45,22 +47,143 @@ Use `#available` guards so the app continues to compile for the current iOS 16 d
 
 The JSON contract must capture input modality, expected food identities, allowed aliases, quantity ambiguity, non-food status, correction count, latency, peak memory, thermal state, model profile and OS version. Do not commit private user photos; use licensed or synthetic fixtures.
 
-**Step 5: Run the probe on representative real devices**
+**Step 5: Write failing structured-inference benchmark tests**
+
+Cover unavailable model, cold and warm runs, process-footprint sampling, thermal-state capture and JSON encoding through injected clock/runner/metrics dependencies.
+
+**Step 6: Run the benchmark tests and confirm RED**
+
+```bash
+cd mobile/modules/local-health-kernel
+swift test --filter LocalDietInferenceBenchmarkTests
+```
+
+Expected: FAIL because `LocalDietInferenceBenchmark` does not exist.
+
+**Step 7: Implement the non-production benchmark harness**
+
+The live path must be guarded by iOS 26 availability and an explicit test environment flag. It parses a fixed synthetic Chinese meal into food names/quantities only, does not access health data or nutrition values, and emits the eval-contract device/model/latency/memory/thermal fields. Deterministic fake-run tests must pass on macOS and Simulator; live inference remains skipped unless explicitly enabled on a representative device.
+
+**Step 8: Run the probe and benchmark on representative real devices**
 
 Record availability, cold/warm latency and peak memory in the dossier. Expected: an explicit supported-device matrix, not a universal-support claim.
 
-**Step 6: Adjudicate G2**
+**Step 9: Adjudicate G2**
 
 Security-review the storage/recovery threat model and record the nutrition-data licensing status. If either remains blocked, stop before production implementation.
 
-**Step 7: Commit**
+**Task 1 outcome (2026-07-18):** The signed host ran on an iPhone 17 Pro Max with iOS 26.6 Beta. Vision was available, while the Apple system language model returned `device_not_eligible`; no latency or memory values were fabricated. G2 therefore passes only for the model-independent local baseline and authorizes Task 2. Every generative enhancement remains disabled behind its own BLOCK until a system or bundled model passes the quality, correction-cost, package-size and representative-device performance contract.
+
+**Step 10: Commit**
 
 ```bash
 git add mobile/modules/local-health-kernel docs/evals/local-diet docs/dossiers/2026-07-18-local-first-private-mode.md
 git commit -m "test(local-mode): establish on-device feasibility gates"
 ```
 
-### Task 2: Introduce app session modes without changing cloud users
+### Task 2: Build the encrypted Local Health Kernel before exposing local mode
+
+**Files:**
+- Modify: `mobile/modules/local-health-kernel/Package.swift`
+- Create: `mobile/modules/local-health-kernel/expo-module.config.json`
+- Create: `mobile/modules/local-health-kernel/index.ts`
+- Create: `mobile/modules/local-health-kernel/ios/LocalHealthKernelModule.swift`
+- Create: `mobile/modules/local-health-kernel/ios/LocalHealthKernel.podspec`
+- Create: `mobile/modules/local-health-kernel/ios/LocalHealthKeyStore.swift`
+- Create: `mobile/modules/local-health-kernel/ios/LocalHealthCrypto.swift`
+- Create: `mobile/modules/local-health-kernel/ios/LocalHealthStore.swift`
+- Create: `mobile/modules/local-health-kernel/Tests/LocalHealthKeyStoreTests.swift`
+- Create: `mobile/modules/local-health-kernel/Tests/LocalHealthCryptoTests.swift`
+- Create: `mobile/modules/local-health-kernel/Tests/LocalHealthStoreTests.swift`
+- Test: `mobile/modules/local-health-kernel/__tests__/index.test.ts`
+
+**Step 1: Write failing key-lifecycle tests**
+
+Cover vault creation with and without a device passcode, `kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly`, non-synchronizable data-protection Keychain storage, missing-key recovery-only behavior, install-sentinel orphan cleanup and crypto-shred deletion. Assert that a failed passcode prerequisite creates no database or local identity artifacts.
+
+**Step 2: Run the focused lifecycle tests and confirm RED**
+
+```bash
+cd mobile/modules/local-health-kernel
+swift test --filter LocalHealthKeyStoreTests
+```
+
+Expected: FAIL because `LocalHealthKeyStore` and the injected Keychain/file abstractions do not exist.
+
+**Step 3: Implement the minimal key hierarchy**
+
+Generate one random 256-bit root key. Store it with `kSecUseDataProtectionKeychain=true`, `kSecAttrSynchronizable=false` and `kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly`. Derive 256-bit `record.v1` and `blind-index.v1` subkeys with HKDF-SHA256 and distinct versioned `info` labels. Never log raw keys, recovery keys, blind-index inputs or Security-framework query payloads.
+
+**Step 4: Write failing crypto and blind-index tests**
+
+Cover AES-GCM round-trip, random nonce uniqueness, ciphertext/AAD tampering, wrong object version, domain-separated derived keys and stable HMAC-SHA256 equality indexes that do not contain the raw date, meal type or lifecycle value.
+
+**Step 5: Run crypto tests and confirm RED**
+
+```bash
+swift test --filter LocalHealthCryptoTests
+```
+
+Expected: FAIL because authenticated envelope and blind-index functions do not exist.
+
+**Step 6: Implement authenticated records and blind indexes**
+
+Let CryptoKit generate each AES-GCM nonce. Authenticate canonical `schemaVersion|collection|objectId|objectVersion` bytes as AAD. Persist only random IDs, envelope/schema version, nonce, ciphertext, tag and HMAC blind indexes. Treat authentication failure as an explicit unreadable-record error; never return partial/plaintext fallback data.
+
+**Step 7: Write failing store, export and restore tests**
+
+Cover `NSFileProtectionComplete`, schema-open failure, transaction rollback, no meal text or raw index values in database bytes, a new 256-bit recovery key per export, no recovery key inside the export, wrong-key/tampered export failure, empty-vault-only restore, full validation before commit, stable IDs and re-encryption under a new device key.
+
+**Step 8: Run store tests and confirm RED**
+
+```bash
+swift test --filter LocalHealthStoreTests
+```
+
+Expected: FAIL because the protected SQLite store and export envelope do not exist.
+
+**Step 9: Implement the native kernel API**
+
+```ts
+export type LocalHealthCollection = 'diet_records' | 'execution_events';
+
+export interface LocalHealthKernelApi {
+  createVault(identityId: string): Promise<void>;
+  openVault(identityId: string): Promise<void>;
+  putEncrypted(
+    collection: LocalHealthCollection,
+    id: string,
+    version: number,
+    equalityIndexes: Record<string, string>,
+    payload: string,
+  ): Promise<void>;
+  getDecrypted(collection: LocalHealthCollection, id: string): Promise<string | null>;
+  listDecrypted(
+    collection: LocalHealthCollection,
+    index: string,
+    value: string,
+  ): Promise<string[]>;
+  delete(collection: LocalHealthCollection, id: string): Promise<void>;
+  exportEnvelope(): Promise<{ uri: string; recoveryKey: string }>;
+  restoreEnvelope(uri: string, recoveryKey: string): Promise<void>;
+  deleteVault(): Promise<void>;
+}
+```
+
+The bridge returns typed, non-sensitive error codes such as `device_passcode_required`, `protected_data_unavailable`, `vault_key_missing`, `vault_not_empty` and `authentication_failed`. It never embeds health content in error descriptions.
+
+**Step 10: Verify GREEN and inspect artifacts**
+
+Run the full Swift package tests, JS bridge tests, an iOS Simulator test, a generic iOS build and a debug artifact inspection proving plaintext meal text/raw date/raw meal type are absent from database and export bytes.
+
+**Step 11: Commit**
+
+```bash
+git add mobile/modules/local-health-kernel
+git commit -m "feat(local-mode): add encrypted local health kernel"
+```
+
+### Task 3: Introduce app session modes without changing cloud users
 
 **Files:**
 - Create: `mobile/hooks/useAppSession.tsx`
@@ -73,7 +196,7 @@ git commit -m "test(local-mode): establish on-device feasibility gates"
 
 **Step 1: Write failing tests**
 
-Cover fresh install, “立即开始”, existing token, explicit logout, and local-mode relaunch. Assert that an existing authenticated user still enters `cloud_account` and that a fresh local identity enters the app without calling login APIs.
+Cover fresh install, “立即开始”, missing device passcode, successful vault creation, existing token, explicit logout and local-mode relaunch. Assert that a passcode failure leaves no local identity, an existing authenticated user still enters `cloud_account`, and a successful fresh local identity enters without calling login APIs.
 
 **Step 2: Verify RED**
 
@@ -82,7 +205,7 @@ cd mobile
 npm test -- --runInBand hooks/__tests__/useAppSession.test.tsx services/__tests__/localIdentity.test.ts app/__tests__/localMode.test.tsx
 ```
 
-Expected: FAIL because `AppSessionProvider` and local identity storage do not exist.
+Expected: FAIL because `AppSessionProvider` and local identity orchestration do not exist.
 
 **Step 3: Implement the typed session contract**
 
@@ -98,7 +221,7 @@ export interface AppSession {
 }
 ```
 
-Persist only a random local identifier and mode choice in protected storage. Do not create a server user.
+Generate the random local identity first in memory, call `createVault`, and persist the identity/mode only after the vault succeeds. Map `device_passcode_required` to setup guidance; do not create a server user or weaker local vault. Show a one-time warning that recovery requires a separately saved export file and recovery key, while allowing the user to back up later.
 
 **Step 4: Update the root gate and onboarding**
 
@@ -113,54 +236,6 @@ Run the focused tests, then `npx tsc --noEmit`.
 ```bash
 git add mobile/hooks/useAppSession.tsx mobile/hooks/__tests__/useAppSession.test.tsx mobile/services/localIdentity.ts mobile/services/__tests__/localIdentity.test.ts mobile/app/_layout.tsx mobile/app/login.tsx mobile/app/__tests__/localMode.test.tsx
 git commit -m "feat(mobile): add local-first app sessions"
-```
-
-### Task 3: Build the encrypted Local Health Kernel
-
-**Files:**
-- Create: `mobile/modules/local-health-kernel/expo-module.config.json`
-- Create: `mobile/modules/local-health-kernel/index.ts`
-- Create: `mobile/modules/local-health-kernel/ios/LocalHealthKernelModule.swift`
-- Create: `mobile/modules/local-health-kernel/ios/LocalHealthKernel.podspec`
-- Create: `mobile/modules/local-health-kernel/ios/LocalHealthCrypto.swift`
-- Create: `mobile/modules/local-health-kernel/ios/LocalHealthStore.swift`
-- Create: `mobile/modules/local-health-kernel/ios/LocalHealthCryptoTests.swift`
-- Create: `mobile/modules/local-health-kernel/ios/LocalHealthStoreTests.swift`
-- Test: `mobile/modules/local-health-kernel/__tests__/index.test.ts`
-
-**Step 1: Write crypto and lifecycle tests**
-
-Cover AES-GCM round-trip, tamper detection, key absence, device-lock file protection, schema-open failure, transaction rollback and no plaintext content in the database file.
-
-**Step 2: Verify RED**
-
-Run native tests. Expected: FAIL because the module is absent.
-
-**Step 3: Implement the minimal native API**
-
-```ts
-export interface LocalHealthKernelApi {
-  open(identityId: string): Promise<void>;
-  putEncrypted(table: string, id: string, indexes: Record<string, string>, payload: string): Promise<void>;
-  getDecrypted(table: string, id: string): Promise<string | null>;
-  listDecrypted(table: string, index: string, value: string): Promise<string[]>;
-  delete(table: string, id: string): Promise<void>;
-  exportEnvelope(recoverySecret: string): Promise<string>;
-  restoreEnvelope(uri: string, recoverySecret: string): Promise<void>;
-}
-```
-
-Use a Keychain-held device key and CryptoKit envelope encryption. Keep health content out of native logs and error descriptions.
-
-**Step 4: Verify GREEN and inspect artifacts**
-
-Run native tests, JS bridge tests and a debug-device inspection proving plaintext meal text is absent from the database file.
-
-**Step 5: Commit**
-
-```bash
-git add mobile/modules/local-health-kernel
-git commit -m "feat(local-mode): add encrypted local health kernel"
 ```
 
 ### Task 4: Add local diet schema and repository seam
@@ -216,9 +291,9 @@ git commit -m "feat(diet): support local and remote repositories"
 - Create: `backend/tests/test_build_local_food_database.py`
 - Modify: `docs/release/app-store/privacy-nutrition-label.draft.json` if required by the final data source
 
-**Step 1: Resolve licensing before adding production rows**
+**Step 1: Freeze the licensed source contract before adding production rows**
 
-Record source, redistribution terms, version and attribution in the manifest. If licensing is unresolved, use only the existing reviewed seed for tests and keep G2 blocked.
+Use a version-pinned USDA FoodData Central Foundation Foods/SR Legacy subset. Record CC0/public-domain terms, download release, attribution, every FDC ID and transformation version in the manifest. Keep Chinese aliases/recipes owner-authored and reject the existing `china_food_composition_manual_v1` test seed from production builds unless each row is rebuilt with FDC provenance.
 
 **Step 2: Write failing deterministic lookup tests**
 
@@ -279,7 +354,7 @@ git commit -m "feat(diet): record meals fully offline"
 
 **Files:**
 - Create: `mobile/modules/local-health-kernel/ios/LocalDietLanguageModel.swift`
-- Create: `mobile/modules/local-health-kernel/ios/LocalDietLanguageModelTests.swift`
+- Create: `mobile/modules/local-health-kernel/Tests/LocalDietLanguageModelTests.swift`
 - Create: `mobile/services/localModelRouter.ts`
 - Create: `mobile/services/__tests__/localModelRouter.test.ts`
 - Modify: `mobile/services/localDietDraft.ts`
@@ -299,7 +374,7 @@ Run deterministic unit tests and the licensed/synthetic eval corpus on real devi
 **Step 4: Commit**
 
 ```bash
-git add mobile/modules/local-health-kernel/ios/LocalDietLanguageModel.swift mobile/modules/local-health-kernel/ios/LocalDietLanguageModelTests.swift mobile/services/localModelRouter.ts mobile/services/__tests__/localModelRouter.test.ts mobile/services/localDietDraft.ts
+git add mobile/modules/local-health-kernel/ios/LocalDietLanguageModel.swift mobile/modules/local-health-kernel/Tests/LocalDietLanguageModelTests.swift mobile/services/localModelRouter.ts mobile/services/__tests__/localModelRouter.test.ts mobile/services/localDietDraft.ts
 git commit -m "feat(diet): parse meal text with on-device models"
 ```
 
@@ -307,7 +382,7 @@ git commit -m "feat(diet): parse meal text with on-device models"
 
 **Files:**
 - Create: `mobile/modules/local-health-kernel/ios/LocalDietVision.swift`
-- Create: `mobile/modules/local-health-kernel/ios/LocalDietVisionTests.swift`
+- Create: `mobile/modules/local-health-kernel/Tests/LocalDietVisionTests.swift`
 - Create: `mobile/services/localDietVision.ts`
 - Create: `mobile/services/__tests__/localDietVision.test.ts`
 - Modify: `mobile/app/diet.tsx`
@@ -323,12 +398,14 @@ Return candidates and confidence, never authoritative nutrients. Keep images in 
 
 **Step 3: Benchmark before adding a downloaded model**
 
-Compare Vision/history/manual against the candidate model on identity precision, correction burden, latency, peak memory, thermal behavior and app size. Do not ship a model that fails the recorded gate.
+The selected candidate is `OFA-Sys/chinese-clip-rn50`, with only its Core ML image tower shipped and its text tower restricted to build-time label embedding. Execute `docs/plans/2026-07-18-chinese-clip-local-food-vision.md` as an isolated spike before wiring Chinese-CLIP into the production diet page. Compare it against Vision/history/manual on identity precision, mixed-plate omissions, non-food rejection, correction burden, latency, peak memory, thermal behavior and installed assets. Do not ship or silently cloud-fallback a model that fails the recorded Gate.
+
+**Chinese-CLIP isolated-spike outcome (2026-07-19):** The eight-stage implementation and pre-device verification are complete. Immutable provenance, Core ML parity, 39,626,225-byte int8 installed asset budget, local-only orchestration, failure handling, evidence schemas, scoring, calibration search and the isolated iOS host all pass their deterministic gates. The enhancement verdict remains **BLOCK** because no authorized 300-case Chinese-food set is available, FP16-to-int8 identity precision has not been measured on a frozen held-out split, every registered physical device was unavailable, and the required low/mid/high iPhone plus airplane-mode/privacy evidence is absent. Keep Chinese-CLIP out of `mobile/app/diet.tsx`; Task 8 continues to guarantee Vision/OCR/barcode/manual behavior only. Resume the spike from the frozen dataset and device gates rather than redoing model conversion.
 
 **Step 4: Verify and commit**
 
 ```bash
-git add mobile/modules/local-health-kernel/ios/LocalDietVision.swift mobile/modules/local-health-kernel/ios/LocalDietVisionTests.swift mobile/services/localDietVision.ts mobile/services/__tests__/localDietVision.test.ts mobile/app/diet.tsx mobile/app/__tests__/dietCapture.test.tsx
+git add mobile/modules/local-health-kernel/ios/LocalDietVision.swift mobile/modules/local-health-kernel/Tests/LocalDietVisionTests.swift mobile/services/localDietVision.ts mobile/services/__tests__/localDietVision.test.ts mobile/app/diet.tsx mobile/app/__tests__/dietCapture.test.tsx
 git commit -m "feat(diet): add private on-device vision capture"
 ```
 
@@ -374,15 +451,15 @@ git commit -m "security(mobile): enforce strict-local data egress"
 
 **Step 1: Write failing lifecycle tests**
 
-Cover export, wrong recovery secret, tampered archive, stable-ID restore, duplicate restore, delete-all and read-only recovery from an unsupported schema.
+Cover a newly generated recovery key for every export, separate key/file presentation, wrong recovery key, tampered archive, stable-ID empty-vault restore, populated-vault refusal, duplicate restore, delete-all and read-only export from an unsupported schema.
 
 **Step 2: Implement lifecycle UI and service**
 
-Explain that uninstall without export/sync can permanently lose data. Never copy the device key directly into an export.
+Explain that uninstall without export/sync can permanently lose data. Present the export file and App-generated key as two separately saved artifacts; do not store the recovery key in the file, logs, analytics or clipboard without an explicit user action. Never copy the device root key directly into an export.
 
 **Step 3: Verify on a clean install**
 
-Export, delete app, reinstall, restore and compare record/event IDs and totals.
+Export, separately save the key, delete app, reinstall on a passcode-protected device, restore into an empty vault and compare record/event IDs and totals. Verify that the same import is refused after the vault contains data.
 
 **Step 4: Commit**
 

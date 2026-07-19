@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "observedAt": "2026-07-18T22:06:38-04:00",
+  "fixture": "synthetic_chinese_meal_v1",
+  "containsPrivateUserData": false,
+  "execution": {
+    "host": "LocalDietBenchmarkHost",
+    "transport": "wired_physical_device",
+    "networkFallbackAllowed": false
+  },
+  "report": {
+    "capabilities": {
+      "deviceClass": "phone",
+      "isSimulator": false,
+      "multimodalLanguageModel": {
+        "available": false,
+        "reason": "sdk_not_supported"
+      },
+      "osVersion": "Version 26.6 (Build 23G5057c)",
+      "schemaVersion": 1,
+      "systemLanguageModel": {
+        "available": false,
+        "reason": "device_not_eligible"
+      },
+      "vision": {
+        "barcodeDetection": true,
+        "imageClassification": true,
+        "textRecognition": true
+      }
+    },
+    "device": {
+      "appBuild": "swift-spike",
+      "deviceClass": "phone",
+      "hardwareIdentifier": "iPhone18,2",
+      "isSimulator": false,
+      "osVersion": "Version 26.6 (Build 23G5057c)"
+    },
+    "modelProfile": {
+      "downloadBytes": 0,
+      "engine": "apple_foundation_models",
+      "identifier": "system_language_model_default",
+      "version": "Version 26.6 (Build 23G5057c)"
+    },
+    "schemaVersion": 1,
+    "status": "unavailable",
+    "unavailableReason": "device_not_eligible"
+  }
+}

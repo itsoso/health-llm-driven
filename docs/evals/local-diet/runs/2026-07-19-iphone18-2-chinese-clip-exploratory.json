@@ -1,0 +1,129 @@
+{
+  "mode": "exploratory",
+  "notForQualityGate": true,
+  "recordedAt": "2026-07-19T09:51:23Z",
+  "datasetVersion": "openverse-exploratory-food-v1",
+  "containsPrivateUserData": false,
+  "device": {
+    "hardwareIdentifier": "iPhone18,2",
+    "deviceClass": "phone",
+    "osVersion": "Version 26.6 (Build 23G5057c)",
+    "isSimulator": false
+  },
+  "modelRevision": "717ba215769231e53b9b7c6b9d329b9cc5944418",
+  "precisionVariant": "int8-linear-per-channel-65536",
+  "minimumScore": -1,
+  "minimumMargin": 0,
+  "caseResults": [
+    {
+      "caseId": "case-explore-rice",
+      "expectedFoodIdentities": ["food.staple.rice.white"],
+      "decision": "non_food",
+      "candidates": [],
+      "latencyMs": 3312.212875
+    },
+    {
+      "caseId": "case-explore-fried-rice",
+      "expectedFoodIdentities": ["food.staple.rice.fried"],
+      "decision": "candidate",
+      "candidates": [
+        {
+          "canonicalFoodID": "food.staple.rice.fried",
+          "displayName": "炒饭",
+          "category": "staple",
+          "score": 0.5438483113030611,
+          "evidence": "salient_region",
+          "regionIndex": 0
+        },
+        {
+          "canonicalFoodID": "food.dish.rice.claypot",
+          "displayName": "煲仔饭",
+          "category": "mixed_dish",
+          "score": 0.5438032620682467,
+          "evidence": "salient_region",
+          "regionIndex": 0
+        },
+        {
+          "canonicalFoodID": "food.staple.rice.brown",
+          "displayName": "糙米饭",
+          "category": "staple",
+          "score": 0.5331079694043037,
+          "evidence": "salient_region",
+          "regionIndex": 0
+        }
+      ],
+      "latencyMs": 1628.836708
+    },
+    {
+      "caseId": "case-explore-zongzi",
+      "expectedFoodIdentities": ["food.dish.zongzi"],
+      "decision": "candidate",
+      "candidates": [
+        {
+          "canonicalFoodID": "food.dish.zongzi",
+          "displayName": "粽子",
+          "category": "dim_sum",
+          "score": 0.5742525333098912,
+          "evidence": "salient_region",
+          "regionIndex": 0
+        },
+        {
+          "canonicalFoodID": "food.staple.noodle.rice",
+          "displayName": "米粉",
+          "category": "staple",
+          "score": 0.5428362093556783,
+          "evidence": "salient_region",
+          "regionIndex": 0
+        },
+        {
+          "canonicalFoodID": "food.staple.bun.stuffed",
+          "displayName": "包子",
+          "category": "staple",
+          "score": 0.5267536743161892,
+          "evidence": "salient_region",
+          "regionIndex": 0
+        }
+      ],
+      "latencyMs": 1910.786875
+    },
+    {
+      "caseId": "case-explore-banana",
+      "expectedFoodIdentities": ["food.fruit.banana"],
+      "decision": "candidate",
+      "candidates": [
+        {
+          "canonicalFoodID": "food.fruit.banana",
+          "displayName": "香蕉",
+          "category": "fruit",
+          "score": 0.5637757069479368,
+          "evidence": "whole_image",
+          "regionIndex": null
+        },
+        {
+          "canonicalFoodID": "food.fruit.pear",
+          "displayName": "梨",
+          "category": "fruit",
+          "score": 0.506843718806057,
+          "evidence": "whole_image",
+          "regionIndex": null
+        },
+        {
+          "canonicalFoodID": "food.dish.vegetable.cucumber",
+          "displayName": "凉拌黄瓜",
+          "category": "vegetable",
+          "score": 0.49739895650110927,
+          "evidence": "whole_image",
+          "regionIndex": null
+        }
+      ],
+      "latencyMs": 2271.130958
+    },
+    {
+      "caseId": "case-explore-chair",
+      "expectedFoodIdentities": [],
+      "decision": "non_food",
+      "candidates": [],
+      "latencyMs": 1916.764208
+    }
+  ]
+}
