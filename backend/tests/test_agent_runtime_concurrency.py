@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from threading import Barrier
 
 from sqlalchemy.orm import sessionmaker
@@ -140,3 +141,55 @@ def test_same_client_turn_lifecycle_is_serialized(db, auth_user_and_headers):
     ]
     assert run.status == "succeeded"
     assert event_names == ["run.created", "run.started", "run.succeeded"]
+
+
+def test_retry_with_conversation_locks_client_turn_before_conversation(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+):
+    user, _headers = auth_user_and_headers
+    conversation = AgentConversation(
+        user_id=user.id,
+        title="runtime-retry-lock-order",
+        session_key="runtime-retry-lock-order",
+    )
+    db.add(conversation)
+    db.commit()
+    runtime = AgentRuntimeCoordinator(db)
+    first = runtime.create_or_resume_run(
+        run_id="run-retry-lock-order",
+        attempt_id="attempt-retry-lock-order-1",
+        user_id=user.id,
+        conversation_id=None,
+        client_turn_id="turn-retry-lock-order",
+        origin="test",
+    )
+    runtime.complete(
+        first.context,
+        status="failed",
+        error_code="request_not_persisted",
+        retryable=True,
+    )
+
+    acquired_scopes: list[str] = []
+
+    @contextmanager
+    def record_lock(_user_id: int, scope: str):
+        acquired_scopes.append(scope)
+        yield
+
+    monkeypatch.setattr(runtime, "_admission_lock", record_lock)
+    runtime.create_or_resume_run(
+        run_id="ignored-retry-lock-order",
+        attempt_id="attempt-retry-lock-order-2",
+        user_id=user.id,
+        conversation_id=conversation.id,
+        client_turn_id="turn-retry-lock-order",
+        origin="test",
+    )
+
+    assert acquired_scopes == [
+        "client_turn:turn-retry-lock-order",
+        f"conversation:{conversation.id}",
+    ]

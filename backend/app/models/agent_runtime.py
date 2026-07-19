@@ -1,7 +1,7 @@
 """Content-free control-plane ledger for first-party Agent runs."""
 from __future__ import annotations
 
-from sqlalchemy import CheckConstraint, Column, DateTime, ForeignKey, Index, Integer, String, text
+from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, ForeignKey, Index, Integer, String, text
 from sqlalchemy.sql import func
 
 from app.database import Base
@@ -32,6 +32,8 @@ class AgentRun(Base):
     client_turn_id = Column(String(112), nullable=True)
     input_seq = Column(Integer, nullable=True)
     status = Column(String(32), nullable=False, default="queued", index=True)
+    current_attempt_id = Column(String(64), nullable=False, index=True)
+    retryable = Column(Boolean, nullable=False, default=False)
     origin = Column(String(32), nullable=False, default="unknown")
     origin_device_id = Column(String(128), nullable=True)
     local_execution_id = Column(String(128), nullable=True)

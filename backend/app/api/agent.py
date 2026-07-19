@@ -642,7 +642,7 @@ def _admit_agent_runtime(
     client_turn_id: str | None,
     origin: str,
 ):
-    """Return canonical RunContext and whether the durable ledger owns it."""
+    """Return canonical identity, lifecycle ownership and admission disposition."""
     from app.config import settings
     from app.services.agent_runtime import (
         AgentRuntimeCoordinator,
@@ -659,7 +659,7 @@ def _admit_agent_runtime(
             client_turn_id=client_turn_id,
             input_seq=None,
             origin=origin,
-        ), False
+        ), False, "execute"
     if mode != "enforce":
         raise RuntimeError(f"invalid_agent_runtime_mode:{mode}")
     admission = AgentRuntimeCoordinator(db).create_or_resume_run(
@@ -670,7 +670,112 @@ def _admit_agent_runtime(
         client_turn_id=client_turn_id,
         origin=origin,
     )
-    return admission.context, True
+    return admission.context, admission.owns_execution, admission.disposition
+
+
+def _agent_runtime_replay_events(db: Session, context) -> list[dict] | None:
+    """Build a deterministic replay without starting another Executor."""
+    from app.models.agent_conversation import AgentConversation, AgentMessage
+    from app.services.agent_runtime import AgentRuntimeCoordinator
+
+    run = AgentRuntimeCoordinator(db).get_run(context.user_id, context.run_id)
+    if run.assistant_message_id is None:
+        return None
+    assistant = (
+        db.query(AgentMessage)
+        .join(
+            AgentConversation,
+            AgentConversation.id == AgentMessage.conversation_id,
+        )
+        .filter(
+            AgentMessage.id == run.assistant_message_id,
+            AgentConversation.user_id == context.user_id,
+        )
+        .first()
+    )
+    if assistant is None:
+        return None
+    source = None
+    if run.source_message_id is not None:
+        source = (
+            db.query(AgentMessage)
+            .join(
+                AgentConversation,
+                AgentConversation.id == AgentMessage.conversation_id,
+            )
+            .filter(
+                AgentMessage.id == run.source_message_id,
+                AgentConversation.user_id == context.user_id,
+            )
+            .first()
+        )
+
+    events: list[dict] = []
+    if source is not None:
+        events.append(
+            {
+                "event": "request_persisted",
+                "data": {
+                    "conversation_id": source.conversation_id,
+                    "user_message_id": source.id,
+                    "client_turn_id": context.client_turn_id,
+                    "replayed": True,
+                    "run_id": context.run_id,
+                    "attempt_id": context.attempt_id,
+                },
+            }
+        )
+    if assistant.content:
+        events.append(
+            {"event": "token", "data": {"content": assistant.content}}
+        )
+    done_data = dict(assistant.meta) if isinstance(assistant.meta, dict) else {}
+    done_data.update(
+        {
+            "conversation_id": assistant.conversation_id,
+            "message_id": assistant.id,
+            "completion_status": done_data.get("completion_status") or "complete",
+            "client_turn_id": context.client_turn_id,
+            "replayed": True,
+            "run_id": context.run_id,
+            "attempt_id": context.attempt_id,
+        }
+    )
+    events.append({"event": "done", "data": done_data})
+    return events
+
+
+def _agent_runtime_replay_send_response(db: Session, context) -> dict | None:
+    events = _agent_runtime_replay_events(db, context)
+    if events is None:
+        return None
+    reply = "".join(
+        str((event.get("data") or {}).get("content") or "")
+        for event in events
+        if event.get("event") == "token"
+    )
+    done_data = next(
+        (
+            event.get("data")
+            for event in events
+            if event.get("event") == "done" and isinstance(event.get("data"), dict)
+        ),
+        {},
+    )
+    from app.services.agent_send_meta import build_send_meta
+
+    meta = build_send_meta(done_data, None)
+    meta["replayed"] = True
+    return {
+        "reply": reply,
+        "conversation_id": done_data.get("conversation_id"),
+        "message_id": done_data.get("message_id"),
+        "mode": "agent",
+        "elapsed_ms": done_data.get("elapsed_ms"),
+        "run_id": context.run_id,
+        "attempt_id": context.attempt_id,
+        "meta": meta,
+    }
 
 
 def _mark_agent_runtime_running(db: Session, context, *, managed: bool) -> None:
@@ -706,12 +811,90 @@ def _finalize_agent_runtime(
     )
 
 
+def _bind_agent_runtime_request(
+    db: Session,
+    context,
+    *,
+    managed: bool,
+    event_data: dict,
+) -> int | None:
+    """Bind a newly created conversation before answer generation continues."""
+    source_message_id = event_data.get("user_message_id")
+    conversation_id = event_data.get("conversation_id")
+    if not isinstance(source_message_id, int):
+        return None
+    if managed and isinstance(conversation_id, int):
+        from app.services.agent_runtime import AgentRuntimeCoordinator
+
+        AgentRuntimeCoordinator(db).bind_messages(
+            context,
+            conversation_id=conversation_id,
+            source_message_id=source_message_id,
+            assistant_message_id=None,
+        )
+    return source_message_id
+
+
 def _fail_agent_runtime(db: Session, context, *, managed: bool, error_code: str) -> None:
     if not managed:
         return
     from app.services.agent_runtime import AgentRuntimeCoordinator
 
     AgentRuntimeCoordinator(db).fail_active(context, error_code=error_code)
+
+
+def _fail_agent_runtime_safely(
+    db: Session,
+    context,
+    *,
+    managed: bool,
+    error_code: str,
+) -> None:
+    """Close an active Run even when the request session needs recovery."""
+    if not managed:
+        return
+    try:
+        _fail_agent_runtime(
+            db,
+            context,
+            managed=True,
+            error_code=error_code,
+        )
+        return
+    except Exception:
+        logger.exception(
+            "Agent Runtime failure settlement needs fresh session: run_id=%s",
+            context.run_id,
+        )
+    try:
+        db.rollback()
+    except Exception:
+        logger.exception(
+            "Agent Runtime failure settlement rollback failed: run_id=%s",
+            context.run_id,
+        )
+    try:
+        from sqlalchemy.orm import sessionmaker
+
+        cleanup_session = sessionmaker(
+            bind=db.get_bind(),
+            autocommit=False,
+            autoflush=False,
+        )()
+        try:
+            _fail_agent_runtime(
+                cleanup_session,
+                context,
+                managed=True,
+                error_code=error_code,
+            )
+        finally:
+            cleanup_session.close()
+    except Exception:
+        logger.exception(
+            "Agent Runtime failure settlement failed: run_id=%s",
+            context.run_id,
+        )
 
 
 def _cancel_agent_runtime(db: Session, context, *, managed: bool) -> None:
@@ -759,18 +942,12 @@ def _finalize_agent_runtime_events(
             source_message_id=source_message_id,
         )
     except Exception:
-        try:
-            _fail_agent_runtime(
-                db,
-                context,
-                managed=managed,
-                error_code="shortcut_finalize_failed",
-            )
-        except Exception:
-            logger.exception(
-                "Agent Runtime shortcut cleanup failed: run_id=%s",
-                context.run_id,
-            )
+        _fail_agent_runtime_safely(
+            db,
+            context,
+            managed=managed,
+            error_code="shortcut_finalize_failed",
+        )
         raise
 
 
@@ -830,7 +1007,7 @@ async def agent_stream(
     stream_run_id = f"run_{uuid.uuid4().hex[:16]}"
     stream_attempt_id = f"attempt_{uuid.uuid4().hex[:16]}"
     try:
-        runtime_context, runtime_managed = _admit_agent_runtime(
+        runtime_context, runtime_managed, runtime_disposition = _admit_agent_runtime(
             db,
             run_id=stream_run_id,
             attempt_id=stream_attempt_id,
@@ -850,6 +1027,32 @@ async def agent_stream(
         if isinstance(exc, ConversationAccessError):
             raise HTTPException(status_code=404, detail="对话不存在") from exc
         raise
+    if runtime_disposition == "observe":
+        raise HTTPException(
+            status_code=409,
+            detail="该消息仍在处理中，请稍后重试",
+        )
+    if runtime_disposition == "replay":
+        replay_events = _agent_runtime_replay_events(db, runtime_context)
+        if replay_events is None:
+            raise HTTPException(
+                status_code=409,
+                detail="该消息已有处理状态，请刷新对话",
+            )
+
+        async def runtime_replay_generate():
+            for event in replay_events:
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+
+        return StreamingResponse(
+            runtime_replay_generate(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
 
     # GenUI 短路: caps=genui-v1 + 图表意图 + 无图片/附件 → 确定性出 reva-ui block,
     # 跳过 AgentExecutor/LLM (R4: 数值只来自 DB)。命中即持久化消息并直接 SSE 回放。
@@ -1011,10 +1214,13 @@ async def agent_stream(
                 ):
                     if event.get("event") == "request_persisted":
                         persisted_data = event.get("data")
-                        if isinstance(persisted_data, dict) and isinstance(
-                            persisted_data.get("user_message_id"), int
-                        ):
-                            source_message_id = persisted_data["user_message_id"]
+                        if isinstance(persisted_data, dict):
+                            source_message_id = _bind_agent_runtime_request(
+                                bg_db,
+                                runtime_context,
+                                managed=runtime_managed,
+                                event_data=persisted_data,
+                            )
                     if event.get("event") == "token":
                         tc = event.get("data", {}).get("content")
                         if isinstance(tc, str):
@@ -1116,7 +1322,7 @@ async def agent_stream(
                         runtime_finalized = True
                     await chunk_queue.put(f"data: {json.dumps(event, ensure_ascii=False)}\n\n")
                 if not runtime_finalized:
-                    _fail_agent_runtime(
+                    _fail_agent_runtime_safely(
                         bg_db,
                         runtime_context,
                         managed=runtime_managed,
@@ -1130,7 +1336,7 @@ async def agent_stream(
                 )
                 raise
             except Exception as e:
-                _fail_agent_runtime(
+                _fail_agent_runtime_safely(
                     bg_db,
                     runtime_context,
                     managed=runtime_managed,
@@ -1270,7 +1476,7 @@ async def agent_send(
     send_run_id = f"send_{uuid.uuid4().hex[:16]}"
     send_attempt_id = f"attempt_{uuid.uuid4().hex[:16]}"
     try:
-        runtime_context, runtime_managed = _admit_agent_runtime(
+        runtime_context, runtime_managed, runtime_disposition = _admit_agent_runtime(
             db,
             run_id=send_run_id,
             attempt_id=send_attempt_id,
@@ -1290,6 +1496,19 @@ async def agent_send(
         if isinstance(exc, ConversationAccessError):
             raise HTTPException(status_code=404, detail="对话不存在") from exc
         raise
+    if runtime_disposition == "observe":
+        raise HTTPException(
+            status_code=409,
+            detail="该消息仍在处理中，请稍后重试",
+        )
+    if runtime_disposition == "replay":
+        replay_response = _agent_runtime_replay_send_response(db, runtime_context)
+        if replay_response is None:
+            raise HTTPException(
+                status_code=409,
+                detail="该消息已有处理状态，请刷新对话",
+            )
+        return replay_response
 
     async def _aggregate() -> dict:
         # 可观测性 (P4): 在 usage capture 上下文内跑 executor,回合结束汇总 token/cost。
@@ -1339,10 +1558,13 @@ async def agent_send(
             ):
                 if event.get("event") == "request_persisted":
                     persisted_data = event.get("data")
-                    if isinstance(persisted_data, dict) and isinstance(
-                        persisted_data.get("user_message_id"), int
-                    ):
-                        source_message_id = persisted_data["user_message_id"]
+                    if isinstance(persisted_data, dict):
+                        source_message_id = _bind_agent_runtime_request(
+                            db,
+                            runtime_context,
+                            managed=runtime_managed,
+                            event_data=persisted_data,
+                        )
                 elif event.get("event") == "token":
                     content = event.get("data", {}).get("content")
                     if isinstance(content, str):
@@ -1411,7 +1633,7 @@ async def agent_send(
             )
             raise
         except Exception:
-            _fail_agent_runtime(
+            _fail_agent_runtime_safely(
                 db,
                 runtime_context,
                 managed=runtime_managed,

@@ -796,6 +796,8 @@ def test_agent_runtime_migrations_create_content_free_control_plane(tmp_path: Pa
     postgres_sql = postgres_file.read_text(encoding="utf-8")
     assert "payload JSONB" in postgres_sql
     assert "uq_agent_runs_active_conversation" in postgres_sql
+    assert "current_attempt_id VARCHAR(64) NOT NULL" in postgres_sql
+    assert "retryable BOOLEAN NOT NULL DEFAULT FALSE" in postgres_sql
     assert "prompt" not in postgres_sql.lower()
     assert "message_content" not in postgres_sql.lower()
 
@@ -830,8 +832,11 @@ def test_agent_runtime_migrations_create_content_free_control_plane(tmp_path: Pa
         "agent_run_events",
     } <= set(inspect(engine).get_table_names())
     run_indexes = {index["name"] for index in inspect(engine).get_indexes("agent_runs")}
+    run_columns = {column["name"] for column in inspect(engine).get_columns("agent_runs")}
+    assert {"current_attempt_id", "retryable"} <= run_columns
     assert {
         "uq_agent_runs_user_client_turn",
         "uq_agent_runs_active_conversation",
         "uq_agent_runs_conversation_input_seq",
+        "ix_agent_runs_current_attempt_id",
     } <= run_indexes

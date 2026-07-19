@@ -33,10 +33,22 @@ def test_agent_run_client_turn_is_owner_scoped_unique(db, auth_user_and_headers)
     from app.models.agent_runtime import AgentRun
 
     user, _headers = auth_user_and_headers
-    db.add(AgentRun(run_id="run-1", user_id=user.id, client_turn_id="turn-1", status="failed"))
+    db.add(AgentRun(
+        run_id="run-1",
+        user_id=user.id,
+        client_turn_id="turn-1",
+        status="failed",
+        current_attempt_id="attempt-run-1",
+    ))
     db.commit()
 
-    db.add(AgentRun(run_id="run-2", user_id=user.id, client_turn_id="turn-1", status="failed"))
+    db.add(AgentRun(
+        run_id="run-2",
+        user_id=user.id,
+        client_turn_id="turn-1",
+        status="failed",
+        current_attempt_id="attempt-run-2",
+    ))
     with pytest.raises(IntegrityError):
         db.commit()
     db.rollback()
@@ -54,6 +66,7 @@ def test_agent_run_allows_only_one_active_run_per_conversation(db, auth_user_and
         client_turn_id="turn-active-1",
         input_seq=1,
         status="running",
+        current_attempt_id="attempt-active-1",
     ))
     db.commit()
 
@@ -64,6 +77,7 @@ def test_agent_run_allows_only_one_active_run_per_conversation(db, auth_user_and
         client_turn_id="turn-active-2",
         input_seq=2,
         status="queued",
+        current_attempt_id="attempt-active-2",
     ))
     with pytest.raises(IntegrityError):
         db.commit()
@@ -82,6 +96,7 @@ def test_terminal_run_releases_conversation_admission(db, auth_user_and_headers)
         client_turn_id="turn-terminal-1",
         input_seq=1,
         status="running",
+        current_attempt_id="attempt-terminal-1",
     )
     db.add(first)
     db.commit()
@@ -95,6 +110,7 @@ def test_terminal_run_releases_conversation_admission(db, auth_user_and_headers)
         client_turn_id="turn-terminal-2",
         input_seq=2,
         status="queued",
+        current_attempt_id="attempt-terminal-2",
     ))
     db.commit()
 
@@ -103,7 +119,12 @@ def test_agent_run_rejects_unknown_status(db, auth_user_and_headers):
     from app.models.agent_runtime import AgentRun
 
     user, _headers = auth_user_and_headers
-    db.add(AgentRun(run_id="run-invalid", user_id=user.id, status="made_up"))
+    db.add(AgentRun(
+        run_id="run-invalid",
+        user_id=user.id,
+        status="made_up",
+        current_attempt_id="attempt-invalid",
+    ))
     with pytest.raises(IntegrityError):
         db.commit()
     db.rollback()

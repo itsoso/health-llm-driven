@@ -7,6 +7,8 @@ CREATE TABLE IF NOT EXISTS agent_runs (
     client_turn_id VARCHAR(112),
     input_seq INTEGER,
     status VARCHAR(32) NOT NULL DEFAULT 'queued',
+    current_attempt_id VARCHAR(64) NOT NULL,
+    retryable BOOLEAN NOT NULL DEFAULT FALSE,
     origin VARCHAR(32) NOT NULL DEFAULT 'unknown',
     origin_device_id VARCHAR(128),
     local_execution_id VARCHAR(128),
@@ -34,6 +36,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_agent_runs_conversation_input_seq
 CREATE INDEX IF NOT EXISTS ix_agent_runs_user_id ON agent_runs(user_id);
 CREATE INDEX IF NOT EXISTS ix_agent_runs_conversation_id ON agent_runs(conversation_id);
 CREATE INDEX IF NOT EXISTS ix_agent_runs_status ON agent_runs(status);
+CREATE INDEX IF NOT EXISTS ix_agent_runs_current_attempt_id ON agent_runs(current_attempt_id);
 CREATE INDEX IF NOT EXISTS ix_agent_runs_user_created ON agent_runs(user_id, created_at);
 
 CREATE TABLE IF NOT EXISTS agent_run_attempts (

@@ -73,6 +73,12 @@ def test_agent_send_enforce_mode_persists_and_finishes_run(
                 "user_message_id": source.id,
             },
         }
+        active_run = self.db.query(AgentRun).filter(
+            AgentRun.user_id == kwargs["user_id"],
+            AgentRun.client_turn_id == "runtime-ledger-turn",
+        ).one()
+        assert active_run.conversation_id == conversation.id
+        assert active_run.source_message_id == source.id
         assistant = AgentMessage(
             conversation_id=conversation.id,
             role="assistant",
@@ -165,6 +171,126 @@ def test_agent_send_enforce_mode_rejects_busy_conversation_before_executor(
     assert called is False
 
 
+def test_agent_send_enforce_mode_does_not_execute_duplicate_active_turn(
+    client, db, auth_user_and_headers, monkeypatch
+):
+    from app.services.agent_runtime import AgentRuntimeCoordinator
+
+    user, headers = auth_user_and_headers
+    AgentRuntimeCoordinator(db).create_or_resume_run(
+        run_id="run-active-duplicate",
+        attempt_id="attempt-active-duplicate",
+        user_id=user.id,
+        conversation_id=None,
+        client_turn_id="turn-active-duplicate",
+        origin="agent_send",
+    )
+    called = False
+
+    async def must_not_run(self, **kwargs):
+        nonlocal called
+        called = True
+        yield {"event": "done", "data": {}}
+
+    monkeypatch.setattr(settings, "agent_runtime_mode", "enforce")
+    monkeypatch.setattr(
+        "app.services.agent_executor.AgentExecutor.run_stream",
+        must_not_run,
+    )
+
+    response = client.post(
+        "/api/v1/agent/send",
+        headers=headers,
+        json={
+            "message": "same turn",
+            "client_turn_id": "turn-active-duplicate",
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "该消息仍在处理中，请稍后重试"
+    assert called is False
+
+
+def test_agent_send_replays_terminal_run_without_executor(
+    client, db, auth_user_and_headers, monkeypatch
+):
+    from app.services.agent_runtime import AgentRuntimeCoordinator
+
+    user, headers = auth_user_and_headers
+    conversation = AgentConversation(
+        user_id=user.id,
+        title="replay",
+        session_key="runtime-terminal-replay",
+    )
+    db.add(conversation)
+    db.commit()
+    source = AgentMessage(
+        conversation_id=conversation.id,
+        role="user",
+        content="private replay source",
+        meta={"client_turn_id": "turn-terminal-replay"},
+    )
+    assistant = AgentMessage(
+        conversation_id=conversation.id,
+        role="assistant",
+        content="durable replay answer",
+        meta={
+            "client_turn_id": "turn-terminal-replay",
+            "completion_status": "complete",
+            "turn_outcome": {"category": "success"},
+        },
+    )
+    db.add_all([source, assistant])
+    db.commit()
+    runtime = AgentRuntimeCoordinator(db)
+    admission = runtime.create_or_resume_run(
+        run_id="run-terminal-replay",
+        attempt_id="attempt-terminal-replay",
+        user_id=user.id,
+        conversation_id=conversation.id,
+        client_turn_id="turn-terminal-replay",
+        origin="agent_send",
+    )
+    runtime.mark_running(admission.context)
+    runtime.bind_messages(
+        admission.context,
+        conversation_id=conversation.id,
+        source_message_id=source.id,
+        assistant_message_id=assistant.id,
+    )
+    runtime.complete(admission.context, status="succeeded")
+    called = False
+
+    async def must_not_run(self, **kwargs):
+        nonlocal called
+        called = True
+        yield {"event": "done", "data": {}}
+
+    monkeypatch.setattr(settings, "agent_runtime_mode", "enforce")
+    monkeypatch.setattr(
+        "app.services.agent_executor.AgentExecutor.run_stream",
+        must_not_run,
+    )
+
+    response = client.post(
+        "/api/v1/agent/send",
+        headers=headers,
+        json={
+            "message": "private replay source",
+            "conversation_id": conversation.id,
+            "client_turn_id": "turn-terminal-replay",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["reply"] == "durable replay answer"
+    assert response.json()["run_id"] == admission.context.run_id
+    assert response.json()["attempt_id"] == admission.context.attempt_id
+    assert response.json()["meta"]["replayed"] is True
+    assert called is False
+
+
 def test_agent_send_enforce_mode_hides_foreign_conversation(
     client, db, auth_user_and_headers, monkeypatch
 ):
@@ -239,6 +365,64 @@ def test_shortcut_finalization_failure_closes_active_run(
             events=events,
         )
 
+    run = runtime.get_run(user.id, admission.context.run_id)
+    assert run.status == "failed"
+    assert run.error_code == "shortcut_finalize_failed"
+
+
+def test_shortcut_cleanup_recovers_after_finalize_session_failure(
+    db, auth_user_and_headers, monkeypatch
+):
+    from app.api.agent import _finalize_agent_runtime_events
+    from app.models.agent_runtime import AgentRun
+    from app.services.agent_runtime import AgentRuntimeCoordinator
+
+    user, _headers = auth_user_and_headers
+    runtime = AgentRuntimeCoordinator(db)
+    admission = runtime.create_or_resume_run(
+        run_id="run-shortcut-rollback",
+        attempt_id="attempt-shortcut-rollback",
+        user_id=user.id,
+        conversation_id=None,
+        client_turn_id="turn-shortcut-rollback",
+        origin="agent_stream",
+    )
+
+    def fail_with_pending_rollback(session, context, **_kwargs):
+        session.add(
+            AgentRun(
+                run_id=context.run_id,
+                user_id=context.user_id,
+                status="queued",
+                origin="test",
+                privacy_mode="cloud",
+            )
+        )
+        session.flush()
+
+    monkeypatch.setattr(
+        "app.api.agent._finalize_agent_runtime",
+        fail_with_pending_rollback,
+    )
+
+    with pytest.raises(Exception):
+        _finalize_agent_runtime_events(
+            db,
+            admission.context,
+            managed=True,
+            events=[
+                {
+                    "event": "done",
+                    "data": {
+                        "conversation_id": None,
+                        "message_id": None,
+                        "completion_status": "complete",
+                    },
+                }
+            ],
+        )
+
+    db.expire_all()
     run = runtime.get_run(user.id, admission.context.run_id)
     assert run.status == "failed"
     assert run.error_code == "shortcut_finalize_failed"

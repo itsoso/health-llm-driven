@@ -29,15 +29,15 @@ queued -> running -> waiting_for_user
                   -> reconciliation_required
 ```
 
-- Terminal states: `succeeded`, `failed`, `cancelled`.
-- `waiting_for_user` and `reconciliation_required` are durable non-running states and hold no worker lease.
+- Terminal states: `succeeded`, `failed`, `cancelled`, `reconciliation_required`.
+- `waiting_for_user` is a durable non-running state; neither it nor terminal states hold a worker lease.
 - Invalid transitions fail loudly and leave an audit event without health content.
 
 ## 3. Persistence Contract
 
 ### agent_runs
 
-Stores identity, ownership, conversation/input linkage, status, origin, timestamps, deadline, error code and version hashes. It must not store prompt or answer content.
+Stores identity, ownership, conversation/input linkage, current Attempt fencing, retryability, status, origin, timestamps, deadline and coarse error code. It must not store prompt or answer content.
 
 ### agent_run_attempts
 
@@ -49,14 +49,15 @@ Stores opaque `operation_id`, tool name, read/write classification, argument fin
 
 ### agent_run_events
 
-Append-only milestone events with per-run sequence. Allowed payload values are bounded identifiers, counters, durations, status codes and policy decisions; health content is forbidden.
+Append-only milestone events with per-run sequence. P0 payload keys are restricted to allowlisted status/completion/error/tool/effect tokens, receipt/replay booleans and positive input sequence; health content is forbidden.
 
 ## 4. Admission Contract
 
 - Unique `(user_id, client_turn_id)` when `client_turn_id` is present.
 - Unique `(conversation_id, input_seq)`.
 - PostgreSQL permits at most one Run in `queued` or `running` per conversation.
-- Duplicate request returns the existing Run; a different request against a busy conversation receives a retryable busy result in P0, not a second executor.
+- Duplicate active request observes the existing Run without starting a second Executor. Only an explicitly retryable failed Run may create a new Attempt; completed/waiting/reconciliation/cancelled Runs replay their durable result.
+- A new conversation is bound on `request_persisted`, before answer generation continues.
 - SQLite tests enforce equivalent behavior in service code because partial concurrency semantics differ from PostgreSQL.
 
 ## 5. Local-First Contract

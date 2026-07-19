@@ -54,7 +54,7 @@ Mobile / Web / Mac / Watch / Voice
 
 ### AgentRun
 
-Required fields: `id`, `run_id`, `user_id`, `conversation_id`, `source_message_id`, `assistant_message_id`, `client_turn_id`, `input_seq`, `status`, `origin`, optional local correlation IDs, deadline, coarse error code, created/started/finished timestamps and metadata restricted to bounded non-content values.
+Required fields: `run_id`, `user_id`, `conversation_id`, `source_message_id`, `assistant_message_id`, `client_turn_id`, `input_seq`, `status`, `current_attempt_id`, `retryable`, `origin`, optional local correlation IDs, deadline, coarse error code and created/started/finished timestamps.
 
 ### AgentRunAttempt
 
@@ -70,7 +70,9 @@ Persist only milestones such as `run.created`, `run.started`, `run.waiting`, `ru
 
 ## 5. Admission And Ordering
 
-The coordinator acquires a PostgreSQL transaction advisory lock keyed by conversation ID, then checks active Runs and allocates `input_seq`. A partial unique index is the final database guard for active states. The lock is held only during admission, not for the LLM duration.
+The coordinator uses a fixed lock order: client turn, then conversation, then short Run lifecycle locking. It checks active Runs and allocates `input_seq` while holding a PostgreSQL transaction advisory lock keyed by conversation ID. A partial unique index is the final database guard for active states. The lock is held only during admission or first-message conversation binding, not for the LLM duration.
+
+When the Executor creates a new conversation, the Runtime binds it on `request_persisted`, before answer generation continues. This prevents a second turn from entering that conversation while the first answer is still running. A retried Run points to one `current_attempt_id`; lifecycle writes from older Attempts fail fencing checks.
 
 P0 behavior for a busy conversation:
 
@@ -107,7 +109,7 @@ This is intentionally simpler than queuing and superseding. Durable queued input
 1. `off` (default): canonical IDs are authoritative across API, Executor, Kernel and usage capture; no Runtime rows or new admission behavior.
 2. `enforce`: create Ledger rows and permit at most one active Run per conversation.
 
-There is no row-writing shadow mode. The active-Run unique index is an integrity invariant, so a shadow mode that bypasses it would create misleading observations. Deterministic GenUI and starter-pregen turns receive the same canonical identity and lifecycle as live Executor turns.
+There is no row-writing shadow mode. The active-Run unique index is an integrity invariant, so a shadow mode that bypasses it would create misleading observations. Deterministic GenUI and served starter-pregen shortcut turns receive the same canonical identity and lifecycle as live Executor turns. Siri, WeChat and the offline starter-pregen producer move behind one cloud Runtime adapter in P1.
 
 All migrations are additive. Kill switches disable new writes/admission while leaving existing rows readable. Rollback never deletes Run history or changes existing conversation messages.
 

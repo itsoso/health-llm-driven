@@ -8,7 +8,7 @@
 
 ## Invariants
 
-1. One `(user_id, client_turn_id)` maps to one logical `run_id`.
+1. One `(user_id, client_turn_id)` maps to one logical `run_id`; a safe retry creates a new Attempt under that Run.
 2. API usage capture, Executor completion, Kernel trace and Run Ledger use the same `run_id`.
 3. At most one active Run (`queued` or `running`) exists per conversation.
 4. Runtime tables never persist prompts, replies, health values, image URLs or raw tool arguments/results.
@@ -68,7 +68,7 @@ Expected: pass.
 
 Cover:
 - `create_or_resume_run()` creates `queued` Run and first attempt;
-- duplicate client turn returns the existing logical Run without another attempt unless explicitly resumed;
+- duplicate active client turn returns the current Attempt; retrying a terminal turn reopens the same logical Run with a new Attempt;
 - valid transitions: `queued -> running -> succeeded|failed|waiting_for_user|reconciliation_required|cancelled`;
 - invalid terminal-to-running transition raises a typed error;
 - Run completion binds durable conversation/source/assistant message IDs;
@@ -195,6 +195,8 @@ Cover:
 - duplicate client turn resolves to one Run;
 - two different conversations can proceed;
 - terminal Run releases the conversation for the next input sequence;
+- terminal retry cannot bypass a newer active Run in the same conversation;
+- same-client-turn lifecycle updates serialize event sequence allocation;
 - PostgreSQL test uses two independent sessions when `TEST_POSTGRES_DATABASE_URL` is available; SQLite covers deterministic service semantics in normal CI.
 
 **Step 2: Implement short-lived admission lock**
@@ -258,6 +260,7 @@ Record exact test evidence, safety findings, rollout mode and remaining deferred
 ## Deferred Follow-up
 
 - P1 ToolSpec Registry and `ToolGateway.execute()` as the only tool execution choke point.
+- P1 unified cloud adapter for Siri, WeChat and starter-pregen production jobs; P0 covers `/agent/stream`, `/agent/send`, GenUI and served starter-pregen shortcuts.
 - Business-layer operation idempotency and reconcile implementations.
 - Process-death recovery scanner, lease renewal and durable event cursor.
 - Cancellation/supersede, `waiting_for_user` resume and parent/child Runs.

@@ -16,7 +16,7 @@ Reva 已有稳定的 Agent Loop、能力策略、工具恢复和写入回执，�
 
 ## 3. Users And Surfaces
 
-- Mobile、Mac、Web、Watch、语音等云端 Agent 入口。
+- Mobile、Mac、Web 等第一方 `/agent` 云端对话入口。
 - 后端运维和质量系统，用于关联延迟、模型用量、工具调用和最终回执。
 - iPhone strict-local 模式不属于云端 Runtime；只有用户显式授权云增强时才建立服务端 Run。
 
@@ -66,5 +66,5 @@ Reva 已有稳定的 Agent Loop、能力策略、工具恢复和写入回执，�
 - `off`（默认）：canonical Run/Attempt ID 已贯通 API、Executor、Kernel 和用量统计，但不写 Run Ledger、不启用新准入。
 - `enforce`：写 Run Ledger，同时启用 conversation active-run 准入。
 - 不实现“写 Ledger 但不阻断”的 shadow 档。active-run 数据库唯一约束本身就会阻断并发；绕过约束会让观察数据失真。
-- GenUI 与 starter pregen 的确定性快捷回复也属于云端对话回合，必须获得同一套 Run 身份；strict-local iPhone 执行仍不创建服务端 Run。
+- GenUI 与已命中的 starter pregen 快捷回复也属于第一方 `/agent` 对话回合，必须获得同一套 Run 身份；strict-local iPhone 执行仍不创建服务端 Run。Siri、微信和离线 pregen 生产任务的统一 Runtime adapter 属于 P1。
 - kill switch 可回退到 `off`；数据库迁移保持 additive，既有 Ledger 只读保留。
