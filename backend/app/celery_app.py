@@ -173,6 +173,13 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=3, minute=0),  # 凌晨3点
     },
 
+    # 每分钟回收失去 worker lease 的云端 Agent Run。任务在 Runtime 非 enforce
+    # 模式下为空操作；不盲目重跑写操作，存在未决写入时进入人工核对状态。
+    "recover-expired-agent-runs": {
+        "task": "app.tasks.maintenance.recover_expired_agent_runs",
+        "schedule": crontab(minute="*"),
+    },
+
     # 每日 03:05 清除过期餐食监控原始帧图像 (L3 隐私, +7d TTL)
     # 紧随 03:00 数据清理, 让 finished-but-unconfirmed / abandoned session 的
     # 原始 base64 / image_uri 到期后真正归零 (唯一兜底路径)。

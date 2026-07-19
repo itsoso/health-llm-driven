@@ -272,7 +272,7 @@ async def test_agent_media_tool_uses_current_image_and_emits_manual_confirmation
         async def issue_confirmation(self, *, user_id, request):
             FakeMediaService.requested = (user_id, request)
             return SimpleNamespace(
-                id="aigc_confirm_1",
+                id="aigc_confirm_0123456789abcdef0123456789abcdef",
                 kind=request.kind,
                 source_message_id=request.source_message_id,
             )
@@ -300,7 +300,7 @@ async def test_agent_media_tool_uses_current_image_and_emits_manual_confirmation
     assert executor._turn_aigc_media_cards == [{
         "type": "aigc_media_confirmation",
         "data": {
-            "confirmation_id": "aigc_confirm_1",
+            "confirmation_id": "aigc_confirm_0123456789abcdef0123456789abcdef",
             "kind": "image_to_video",
             "title": "小巴创作草稿",
             "provider": "百炼 Wan",
@@ -308,10 +308,10 @@ async def test_agent_media_tool_uses_current_image_and_emits_manual_confirmation
             "status": "pending",
         },
         "actions": [{
-            "id": "aigc_media.confirm:aigc_confirm_1",
+            "id": "aigc_media.confirm:aigc_confirm_0123456789abcdef0123456789abcdef",
             "label": "发送给百炼并生成",
             "action": "aigc_media.confirm",
-            "endpoint": "/aigc/media/confirmations/aigc_confirm_1/confirm",
+            "endpoint": "/aigc/media/confirmations/aigc_confirm_0123456789abcdef0123456789abcdef/confirm",
             "requires_manual_confirm": True,
             "capability_id": "aigc_media_confirmation.v1",
             "required_receipt": True,
@@ -324,4 +324,6 @@ async def test_agent_media_tool_uses_current_image_and_emits_manual_confirmation
         event for event in executor._agent_kernel_event_bus.events
         if event.name == "agent.write_receipt_verified"
     )
-    assert receipt.data["resource_id"] == "aigc_confirm_1"
+    assert receipt.data["resource_id"] == (
+        "aigc_confirm_0123456789abcdef0123456789abcdef"
+    )

@@ -240,6 +240,7 @@ def test_stale_attempt_cannot_claim_or_finalize_tool_operation(
         client_turn_id="turn-tool-stale",
         origin="test",
     )
+    runtime.mark_running(retry.context)
 
     with pytest.raises(StaleRunAttempt):
         runtime.claim_tool_operation(
@@ -273,6 +274,7 @@ def test_success_requires_a_verified_resource_identity(db, auth_user_and_headers
     user, _headers = auth_user_and_headers
     runtime = AgentRuntimeCoordinator(db)
     admission = _run(db, user.id, suffix="receipt")
+    runtime.mark_running(admission.context)
     claim = runtime.claim_tool_operation(
         admission.context,
         tool_name="health_record",
@@ -285,6 +287,51 @@ def test_success_requires_a_verified_resource_identity(db, auth_user_and_headers
             admission.context,
             operation_id=claim.operation_id,
             status="succeeded",
+        )
+
+
+@pytest.mark.parametrize(
+    ("resource_type", "resource_id", "expected_error"),
+    [
+        ("胃溃疡诊断", "829", "invalid_resource_type"),
+        ("future_private_record", "829", "invalid_resource_type"),
+        ("diet_record", "早餐吃了牛肉面", "invalid_resource_id"),
+        ("diet_record", "829/用户健康正文", "invalid_resource_id"),
+        ("diet_record", "gastritis", "invalid_resource_id"),
+        ("diet_record", "hiv_stage3", "invalid_resource_id"),
+        ("diet_record", "gastritis_stage2", "invalid_resource_id"),
+    ],
+)
+def test_verified_resource_identity_rejects_unregistered_or_private_text(
+    db,
+    auth_user_and_headers,
+    resource_type,
+    resource_id,
+    expected_error,
+):
+    from app.services.agent_runtime import (
+        AgentRuntimeCoordinator,
+        AgentRuntimeError,
+    )
+
+    user, _headers = auth_user_and_headers
+    runtime = AgentRuntimeCoordinator(db)
+    admission = _run(db, user.id, suffix=f"private-receipt-{expected_error}")
+    runtime.mark_running(admission.context)
+    claim = runtime.claim_tool_operation(
+        admission.context,
+        tool_name="health_record",
+        effect_class="write",
+        operation_fingerprint=_fingerprint(f"{resource_type}:{resource_id}"),
+    )
+
+    with pytest.raises(AgentRuntimeError, match=expected_error):
+        runtime.finalize_tool_operation(
+            admission.context,
+            operation_id=claim.operation_id,
+            status="succeeded",
+            resource_type=resource_type,
+            resource_id=resource_id,
         )
 
 
@@ -356,6 +403,72 @@ async def test_executor_enforce_mode_ledgers_and_replays_verified_write(
     assert operation.status == "succeeded"
     assert operation.resource_type == "diet_record"
     assert operation.resource_id == "829"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("record_type", "operation_name", "expected_resource_type"),
+    [
+        ("supplement_definition", "update", "supplement_definition"),
+        ("supplement_definition", "delete", "supplement_definition"),
+        ("medication_log", "update", "medication_log"),
+        ("medication_log", "delete", "medication_log"),
+    ],
+)
+async def test_executor_ledgers_health_manage_mutations_with_typed_receipt(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+    record_type,
+    operation_name,
+    expected_resource_type,
+):
+    from app.models.agent_runtime import AgentToolOperation
+    from app.services.agent_executor import AgentExecutor
+    from app.services.agent_runtime import AgentRuntimeCoordinator
+
+    user, _headers = auth_user_and_headers
+    runtime = AgentRuntimeCoordinator(db)
+    admission = _run(
+        db,
+        user.id,
+        suffix=f"{record_type}-{operation_name}",
+    )
+    runtime.mark_running(admission.context)
+    executor = AgentExecutor(db)
+    executor._current_user_id = user.id
+    executor._current_turn_user_message = "调整补剂定义"
+    executor._runtime_run_id = admission.context.run_id
+    executor._runtime_attempt_id = admission.context.attempt_id
+
+    monkeypatch.setattr(
+        "app.services.agent_executor.settings.agent_runtime_mode", "enforce"
+    )
+    monkeypatch.setattr(
+        "app.services.llm.tool_validator.validate_tool_call",
+        lambda tool_name, args, db, user_id, reference_now=None: {
+            "error": None,
+            "data": args,
+        },
+    )
+
+    async def fake_manage(base_url, headers, args):
+        return '{"id":55,"message":"操作成功"}'
+
+    monkeypatch.setattr(executor, "_exec_health_manage", fake_manage)
+    args = {
+        "record_type": record_type,
+        "operation": operation_name,
+        "record_id": 55,
+        "data": {"dosage": "1000IU"},
+    }
+
+    await executor._execute_tool("health_manage", args, None)
+
+    stored = db.query(AgentToolOperation).one()
+    assert stored.status == "succeeded"
+    assert stored.resource_type == expected_resource_type
+    assert stored.resource_id == "55"
 
 
 @pytest.mark.asyncio

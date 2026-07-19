@@ -8,6 +8,7 @@ import json
 import logging
 import time
 import uuid
+from datetime import UTC, datetime, timedelta
 from typing import Optional, List
 
 
@@ -26,7 +27,37 @@ logger = logging.getLogger(__name__)
 # 2026-05-14 FIX-5 (G-W9 同模式): 客户端断开后 bg task 继续跑完 LLM/tool/写库.
 # set 持 task 引用防 GC; done_callback 自动清理.
 _BACKGROUND_AGENT_TASKS: set = set()
+_BACKGROUND_AGENT_TASKS_BY_RUN: dict[str, set[asyncio.Task]] = {}
 router = APIRouter()
+
+
+class _BoundedSSEBridge:
+    """Bound live transport memory without cancelling the durable Agent turn."""
+
+    def __init__(self, *, max_chunks: int):
+        if type(max_chunks) is not int or not 1 <= max_chunks <= 2048:
+            raise ValueError("invalid_stream_queue_max_chunks")
+        self._queue: asyncio.Queue = asyncio.Queue(maxsize=max_chunks)
+        self._attached = True
+
+    @property
+    def buffered_chunks(self) -> int:
+        return self._queue.qsize()
+
+    async def publish(self, item: str | None) -> bool:
+        while self._attached:
+            try:
+                await asyncio.wait_for(self._queue.put(item), timeout=0.05)
+                return True
+            except TimeoutError:
+                continue
+        return False
+
+    async def get(self) -> str | None:
+        return await self._queue.get()
+
+    def detach(self) -> None:
+        self._attached = False
 
 
 # 防双发短期缓存: (user_id, msg_hash) → expiry_ts
@@ -662,6 +693,11 @@ def _admit_agent_runtime(
         ), False, "execute"
     if mode != "enforce":
         raise RuntimeError(f"invalid_agent_runtime_mode:{mode}")
+    deadline_seconds = int(
+        getattr(settings, "agent_runtime_deadline_seconds", 300) or 300
+    )
+    if not 30 <= deadline_seconds <= 3600:
+        raise RuntimeError("invalid_agent_runtime_deadline_seconds")
     admission = AgentRuntimeCoordinator(db).create_or_resume_run(
         run_id=run_id,
         attempt_id=attempt_id,
@@ -669,8 +705,216 @@ def _admit_agent_runtime(
         conversation_id=conversation_id,
         client_turn_id=client_turn_id,
         origin=origin,
+        deadline_at=datetime.now(UTC) + timedelta(seconds=deadline_seconds),
     )
     return admission.context, admission.owns_execution, admission.disposition
+
+
+def _register_agent_runtime_task(run_id: str, task: asyncio.Task) -> None:
+    tasks = _BACKGROUND_AGENT_TASKS_BY_RUN.setdefault(run_id, set())
+    tasks.add(task)
+
+    def _discard(done_task: asyncio.Task) -> None:
+        registered = _BACKGROUND_AGENT_TASKS_BY_RUN.get(run_id)
+        if registered is None:
+            return
+        registered.discard(done_task)
+        if not registered:
+            _BACKGROUND_AGENT_TASKS_BY_RUN.pop(run_id, None)
+
+    task.add_done_callback(_discard)
+
+
+def _cancel_agent_runtime_task(run_id: str) -> bool:
+    cancelled = False
+    for task in tuple(_BACKGROUND_AGENT_TASKS_BY_RUN.get(run_id, ())):
+        if task.done():
+            continue
+        task.get_loop().call_soon_threadsafe(task.cancel)
+        cancelled = True
+    return cancelled
+
+
+async def _agent_runtime_heartbeat(
+    context,
+    *,
+    managed: bool,
+    worker_id: str,
+    owner_task: asyncio.Task,
+    initial_lease_deadline: float,
+) -> None:
+    if not managed:
+        return
+    from app.config import settings
+    from app.database import SessionLocal
+    from app.services.agent_runtime import (
+        ACTIVE_RUN_STATUSES,
+        AgentRuntimeCoordinator,
+        StaleRunAttempt,
+        StaleRunWorker,
+    )
+
+    heartbeat_seconds = int(
+        getattr(settings, "agent_runtime_heartbeat_seconds", 20) or 20
+    )
+    lease_seconds = int(
+        getattr(settings, "agent_runtime_lease_seconds", 90) or 90
+    )
+    if heartbeat_seconds < 1 or heartbeat_seconds >= lease_seconds:
+        raise RuntimeError("invalid_agent_runtime_heartbeat_seconds")
+    lease_deadline = initial_lease_deadline
+    retry_delay = float(heartbeat_seconds)
+    while not owner_task.done():
+        await asyncio.sleep(retry_delay)
+        heartbeat_db = None
+        try:
+            heartbeat_db = SessionLocal()
+            runtime = AgentRuntimeCoordinator(heartbeat_db)
+            try:
+                renew_started = time.monotonic()
+                signal = runtime.renew_lease(
+                    context,
+                    worker_id=worker_id,
+                    lease_seconds=lease_seconds,
+                )
+            except (StaleRunAttempt, StaleRunWorker):
+                run = runtime.get_run(context.user_id, context.run_id)
+                if run.current_attempt_id != context.attempt_id:
+                    owner_task.cancel()
+                    return
+                if run.status not in ACTIVE_RUN_STATUSES:
+                    if (
+                        run.status in {"cancelled", "reconciliation_required"}
+                        or run.error_code
+                        in {"deadline_exceeded", "worker_lease_expired"}
+                    ):
+                        owner_task.cancel()
+                    return
+                owner_task.cancel()
+                return
+            if signal.action != "continue":
+                runtime.settle_control_stop(context, action=signal.action)
+                owner_task.cancel()
+                return
+            lease_deadline = renew_started + lease_seconds
+            retry_delay = float(heartbeat_seconds)
+        except Exception as exc:  # noqa: BLE001
+            remaining = lease_deadline - time.monotonic()
+            logger.warning(
+                "Agent Runtime heartbeat retry: run_id=%s attempt_id=%s "
+                "remaining_lease=%.2fs error=%s",
+                context.run_id,
+                context.attempt_id,
+                max(0.0, remaining),
+                type(exc).__name__,
+            )
+            if remaining <= 1.0:
+                owner_task.cancel()
+                return
+            retry_delay = min(
+                max(1.0, heartbeat_seconds / 2),
+                max(0.1, remaining - 1.0),
+            )
+        finally:
+            if heartbeat_db is not None:
+                try:
+                    heartbeat_db.close()
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "Agent Runtime heartbeat session close failed: "
+                        "run_id=%s attempt_id=%s error=%s",
+                        context.run_id,
+                        context.attempt_id,
+                        type(exc).__name__,
+                    )
+                    owner_task.cancel()
+                    return
+
+
+async def _stop_agent_runtime_heartbeat(
+    heartbeat_task: asyncio.Task,
+    *,
+    run_id: str,
+) -> None:
+    """Stop the helper without allowing its failure to replace the Run result."""
+    heartbeat_task.cancel()
+    try:
+        await heartbeat_task
+    except asyncio.CancelledError:
+        pass
+    except Exception:
+        logger.error(
+            "Agent Runtime heartbeat failed during cleanup: run_id=%s",
+            run_id,
+            exc_info=True,
+        )
+
+
+@router.post("/runs/{run_id}/cancel")
+async def cancel_agent_runtime_run(
+    run_id: str,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    from app.config import settings
+    from app.services.agent_runtime import AgentRuntimeCoordinator, AgentRuntimeError
+
+    if str(getattr(settings, "agent_runtime_mode", "off")).lower() != "enforce":
+        raise HTTPException(status_code=404, detail="Run 不存在")
+    try:
+        result = AgentRuntimeCoordinator(db).request_cancel(
+            current_user.id,
+            run_id,
+        )
+    except AgentRuntimeError as exc:
+        raise HTTPException(status_code=404, detail="Run 不存在") from exc
+    if result.status == "cancellation_requested":
+        _cancel_agent_runtime_task(run_id)
+    return {"run_id": result.run_id, "status": result.status}
+
+
+@router.get("/runs/{run_id}")
+async def get_agent_runtime_run(
+    run_id: str,
+    after: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=100),
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    from app.config import settings
+    from app.services.agent_runtime import AgentRuntimeCoordinator, AgentRuntimeError
+
+    if str(getattr(settings, "agent_runtime_mode", "off")).lower() != "enforce":
+        raise HTTPException(status_code=404, detail="Run 不存在")
+    runtime = AgentRuntimeCoordinator(db)
+    try:
+        run = runtime.get_run(current_user.id, run_id)
+        events = runtime.list_events_after(
+            current_user.id,
+            run_id,
+            after_sequence=after,
+            limit=limit,
+        )
+    except AgentRuntimeError as exc:
+        raise HTTPException(status_code=404, detail="Run 不存在") from exc
+    next_after = events[-1].sequence_no if events else after
+    return {
+        "run_id": run.run_id,
+        "attempt_id": run.current_attempt_id,
+        "status": run.status,
+        "retryable": bool(run.retryable),
+        "error_code": run.error_code,
+        "next_after": next_after,
+        "events": [
+            {
+                "sequence_no": event.sequence_no,
+                "event_name": event.event_name,
+                "payload": dict(event.payload),
+                "created_at": event.created_at,
+            }
+            for event in events
+        ],
+    }
 
 
 def _agent_runtime_replay_events(db: Session, context) -> list[dict] | None:
@@ -778,18 +1022,34 @@ def _agent_runtime_replay_send_response(db: Session, context) -> dict | None:
     }
 
 
-def _mark_agent_runtime_running(db: Session, context, *, managed: bool) -> None:
+def _mark_agent_runtime_running(
+    db: Session,
+    context,
+    *,
+    managed: bool,
+    worker_id: str | None = None,
+) -> float | None:
     if not managed:
-        return
+        return None
+    from app.config import settings
     from app.services.agent_runtime import ACTIVE_RUN_STATUSES, AgentRuntimeCoordinator
 
     runtime = AgentRuntimeCoordinator(db)
     run = runtime.get_run(context.user_id, context.run_id)
+    lease_seconds = int(
+        getattr(settings, "agent_runtime_lease_seconds", 90) or 90
+    )
+    lease_started = time.monotonic()
     if run.status == "queued":
-        runtime.mark_running(context)
+        runtime.mark_running(
+            context,
+            worker_id=worker_id,
+            lease_seconds=lease_seconds,
+        )
     elif run.status not in ACTIVE_RUN_STATUSES:
         # A duplicate request may be replaying an already finalized logical Run.
-        return
+        return None
+    return lease_started + lease_seconds
 
 
 def _finalize_agent_runtime(
@@ -897,12 +1157,12 @@ def _fail_agent_runtime_safely(
         )
 
 
-def _cancel_agent_runtime(db: Session, context, *, managed: bool) -> None:
+def _interrupt_agent_runtime(db: Session, context, *, managed: bool) -> None:
     if not managed:
         return
     from app.services.agent_runtime import AgentRuntimeCoordinator
 
-    AgentRuntimeCoordinator(db).cancel_active(context)
+    AgentRuntimeCoordinator(db).interrupt_active(context)
 
 
 def _finalize_agent_runtime_events(
@@ -1164,7 +1424,18 @@ async def agent_stream(
         GeneratorExit 退出, 但 bg_task 继续跑到 LLM 完成 + 把 message 写库 + audit.
         用户回到 App 后, useFocusEffect/AppState 重新拉 conversation, 看到完整回复.
         """
-        chunk_queue: asyncio.Queue = asyncio.Queue()
+        from app.config import settings as runtime_settings
+
+        stream_bridge = _BoundedSSEBridge(
+            max_chunks=int(
+                getattr(
+                    runtime_settings,
+                    "agent_runtime_stream_queue_max_chunks",
+                    128,
+                )
+                or 128
+            )
+        )
 
         async def _bg():
             # 独立 db session — 主 request 的 db 在客户端断开时会被 close
@@ -1183,12 +1454,28 @@ async def agent_stream(
             set_caller("agent.stream", user_id=user_id)
             source_message_id = None
             runtime_finalized = False
+            worker_id = f"worker_{uuid.uuid4().hex[:24]}"
+            heartbeat_task = None
             try:
-                _mark_agent_runtime_running(
+                initial_lease_deadline = _mark_agent_runtime_running(
                     bg_db,
                     runtime_context,
                     managed=runtime_managed,
+                    worker_id=worker_id,
                 )
+                owner_task = asyncio.current_task()
+                if owner_task is not None and runtime_managed:
+                    if initial_lease_deadline is None:
+                        raise RuntimeError("agent_runtime_missing_lease_deadline")
+                    heartbeat_task = asyncio.create_task(
+                        _agent_runtime_heartbeat(
+                            runtime_context,
+                            managed=True,
+                            worker_id=worker_id,
+                            owner_task=owner_task,
+                            initial_lease_deadline=initial_lease_deadline,
+                        )
+                    )
                 executor_bg = AgentExecutor(bg_db)
                 # 累积 LLM 流式输出, done 时扫描 fenced ```menu_share 块 (L1 分享菜单)
                 full_text_buf: list = []
@@ -1320,7 +1607,9 @@ async def agent_stream(
                             source_message_id=source_message_id,
                         )
                         runtime_finalized = True
-                    await chunk_queue.put(f"data: {json.dumps(event, ensure_ascii=False)}\n\n")
+                    await stream_bridge.publish(
+                        f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+                    )
                 if not runtime_finalized:
                     _fail_agent_runtime_safely(
                         bg_db,
@@ -1329,7 +1618,7 @@ async def agent_stream(
                         error_code="executor_missing_done",
                     )
             except asyncio.CancelledError:
-                _cancel_agent_runtime(
+                _interrupt_agent_runtime(
                     bg_db,
                     runtime_context,
                     managed=runtime_managed,
@@ -1345,13 +1634,20 @@ async def agent_stream(
                 logger.error(f"Agent bg 流式异常: {e}", exc_info=True)
                 err = {"event": "error", "data": {"message": safe_llm_error_message(e)}}
                 try:
-                    await chunk_queue.put(f"data: {json.dumps(err, ensure_ascii=False)}\n\n")
+                    await stream_bridge.publish(
+                        f"data: {json.dumps(err, ensure_ascii=False)}\n\n"
+                    )
                 except Exception:
                     pass
             finally:
+                if heartbeat_task is not None:
+                    await _stop_agent_runtime_heartbeat(
+                        heartbeat_task,
+                        run_id=runtime_context.run_id,
+                    )
                 # sentinel: 通知 generator 结束
                 try:
-                    await chunk_queue.put(None)
+                    await stream_bridge.publish(None)
                 except Exception:
                     pass
                 try:
@@ -1369,11 +1665,12 @@ async def agent_stream(
 
         bg_task = asyncio.create_task(_bg())
         _BACKGROUND_AGENT_TASKS.add(bg_task)
+        _register_agent_runtime_task(runtime_context.run_id, bg_task)
         bg_task.add_done_callback(_BACKGROUND_AGENT_TASKS.discard)
 
         try:
             while True:
-                item = await chunk_queue.get()
+                item = await stream_bridge.get()
                 if item is None:
                     break
                 yield item
@@ -1383,6 +1680,7 @@ async def agent_stream(
                 f"[agent.stream] client disconnected user={user_id}, "
                 f"bg task continues to finish LLM + write message"
             )
+            stream_bridge.detach()
             raise
 
     return StreamingResponse(
@@ -1530,12 +1828,28 @@ async def agent_send(
         usage_capture_token = begin_usage_capture()
         run_id_token = set_run_id(runtime_context.run_id)
         set_caller("agent.send", user_id=current_user.id)
+        worker_id = f"worker_{uuid.uuid4().hex[:24]}"
+        heartbeat_task = None
         try:
-            _mark_agent_runtime_running(
+            initial_lease_deadline = _mark_agent_runtime_running(
                 db,
                 runtime_context,
                 managed=runtime_managed,
+                worker_id=worker_id,
             )
+            owner_task = asyncio.current_task()
+            if owner_task is not None and runtime_managed:
+                if initial_lease_deadline is None:
+                    raise RuntimeError("agent_runtime_missing_lease_deadline")
+                heartbeat_task = asyncio.create_task(
+                    _agent_runtime_heartbeat(
+                        runtime_context,
+                        managed=True,
+                        worker_id=worker_id,
+                        owner_task=owner_task,
+                        initial_lease_deadline=initial_lease_deadline,
+                    )
+                )
             executor = AgentExecutor(db)
             async for event in executor.run_stream(
                 user_id=current_user.id,
@@ -1626,7 +1940,7 @@ async def agent_send(
                 "meta": meta,
             }
         except asyncio.CancelledError:
-            _cancel_agent_runtime(
+            _interrupt_agent_runtime(
                 db,
                 runtime_context,
                 managed=runtime_managed,
@@ -1641,6 +1955,11 @@ async def agent_send(
             )
             raise
         finally:
+            if heartbeat_task is not None:
+                await _stop_agent_runtime_heartbeat(
+                    heartbeat_task,
+                    run_id=runtime_context.run_id,
+                )
             try:
                 end_usage_capture(usage_capture_token)
             except Exception:  # noqa: BLE001
@@ -1694,6 +2013,7 @@ async def agent_send(
             }
 
     agg_task = asyncio.create_task(_aggregate())
+    _register_agent_runtime_task(runtime_context.run_id, agg_task)
 
     # 快窗:绝大多数回合在这里完成,走历史非流式路径 + 原状态码语义。
     finished, _ = await asyncio.wait({agg_task}, timeout=AGENT_SEND_KEEPALIVE_SECONDS)

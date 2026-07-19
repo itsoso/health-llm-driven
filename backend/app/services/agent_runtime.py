@@ -7,11 +7,11 @@ import threading
 import weakref
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from functools import lru_cache
 from typing import Any, Iterator, Literal, Mapping
 
-from sqlalchemy import func, text
+from sqlalchemy import and_, func, or_, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -45,6 +45,7 @@ _EVENT_NAMES = frozenset(
         "run.created",
         "run.retried",
         "run.started",
+        "run.cancel_requested",
         "run.waiting",
         "run.succeeded",
         "run.failed",
@@ -76,6 +77,7 @@ _TOKEN_EVENT_KEYS = frozenset(
 _KNOWN_ERROR_CODES = frozenset(
     {
         "cancelled",
+        "cancelled_with_unresolved_write",
         "completed",
         "completion_error",
         "confirmation_required",
@@ -93,7 +95,12 @@ _KNOWN_ERROR_CODES = frozenset(
         "write_checkpoint_partially_verified",
         "write_checkpoint_uncertain",
         "write_without_tool",
+        "worker_lease_expired",
+        "worker_lease_expired_write",
+        "worker_interrupted",
+        "worker_interrupted_write",
         "duplicate_in_flight",
+        "deadline_exceeded",
         "missing_receipt",
         "tool_failed",
         "tool_rejected",
@@ -150,6 +157,10 @@ class StaleRunAttempt(AgentRuntimeError):
     pass
 
 
+class StaleRunWorker(AgentRuntimeError):
+    pass
+
+
 @dataclass(frozen=True, slots=True)
 class RunContext:
     run_id: str
@@ -186,6 +197,32 @@ class ToolOperationAdmission:
     @property
     def owns_execution(self) -> bool:
         return self.disposition == "execute"
+
+
+@dataclass(frozen=True, slots=True)
+class RunControlSignal:
+    action: Literal["continue", "cancel_requested", "deadline_exceeded"]
+
+
+@dataclass(frozen=True, slots=True)
+class CancelRequestResult:
+    run_id: str
+    status: str
+
+
+@dataclass(frozen=True, slots=True)
+class RecoveryResult:
+    run_id: str
+    status: str
+    error_code: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class RunEventView:
+    sequence_no: int
+    event_name: str
+    payload: Mapping[str, Any]
+    created_at: datetime
 
 
 def _now() -> datetime:
@@ -311,6 +348,7 @@ class AgentRuntimeCoordinator:
         origin_device_id: str | None = None,
         local_execution_id: str | None = None,
         privacy_mode: str = "cloud",
+        deadline_at: datetime | None = None,
     ) -> RunAdmission:
         run_id = _bounded(run_id, field="run_id", limit=64) or ""
         attempt_id = _bounded(attempt_id, field="attempt_id", limit=64) or ""
@@ -330,6 +368,7 @@ class AgentRuntimeCoordinator:
             "origin_device_id": origin_device_id,
             "local_execution_id": local_execution_id,
             "privacy_mode": privacy_mode,
+            "deadline_at": deadline_at,
         }
         if client_turn_id:
             with self._admission_lock(user_id, f"client_turn:{client_turn_id}"):
@@ -398,6 +437,7 @@ class AgentRuntimeCoordinator:
                     existing,
                     values["attempt_id"],
                     conversation_id=requested_conversation_id,
+                    deadline_at=values.get("deadline_at"),
                 )
 
         if values.get("conversation_id") is None:
@@ -418,6 +458,7 @@ class AgentRuntimeCoordinator:
         attempt_id: str,
         *,
         conversation_id: int | None,
+        deadline_at: datetime | None = None,
     ) -> RunAdmission:
         if run.status in ACTIVE_RUN_STATUSES:
             return RunAdmission(
@@ -430,6 +471,7 @@ class AgentRuntimeCoordinator:
                 run,
                 attempt_id,
                 conversation_id=conversation_id,
+                deadline_at=deadline_at,
             )
         return RunAdmission(
             self._context(run),
@@ -443,6 +485,7 @@ class AgentRuntimeCoordinator:
         attempt_id: str,
         *,
         conversation_id: int | None,
+        deadline_at: datetime | None = None,
     ) -> RunAdmission:
         target_conversation_id = run.conversation_id or conversation_id
         if target_conversation_id is not None:
@@ -475,6 +518,8 @@ class AgentRuntimeCoordinator:
         run.retryable = False
         run.error_code = None
         run.finished_at = None
+        run.cancel_requested_at = None
+        run.deadline_at = deadline_at
         self.db.add(attempt)
         self.db.flush()
         self._append_event(run, attempt_id, "run.retried", {"status": "queued"})
@@ -499,6 +544,7 @@ class AgentRuntimeCoordinator:
             origin_device_id=values.get("origin_device_id"),
             local_execution_id=values.get("local_execution_id"),
             privacy_mode=values["privacy_mode"],
+            deadline_at=values.get("deadline_at"),
         )
         attempt = AgentRunAttempt(
             attempt_id=values["attempt_id"],
@@ -526,6 +572,7 @@ class AgentRuntimeCoordinator:
                         existing,
                         values["attempt_id"],
                         conversation_id=values.get("conversation_id"),
+                        deadline_at=values.get("deadline_at"),
                     )
             if values["conversation_id"] is not None:
                 active = self.db.query(AgentRun).filter(
@@ -542,20 +589,268 @@ class AgentRuntimeCoordinator:
             disposition="execute",
         )
 
-    def mark_running(self, context: RunContext) -> None:
+    def mark_running(
+        self,
+        context: RunContext,
+        *,
+        worker_id: str | None = None,
+        lease_seconds: int = 90,
+        now: datetime | None = None,
+    ) -> None:
+        safe_worker_id = _bounded(
+            worker_id or context.attempt_id,
+            field="worker_id",
+            limit=128,
+        )
+        lease_seconds = self._validate_lease_seconds(lease_seconds)
         with self._lifecycle_lock(context):
             run, attempt = self._owned_run_and_attempt(context, lock=True)
             if run.status == "running":
+                if attempt.status != "running":
+                    raise StaleRunAttempt("attempt_not_running")
+                if attempt.worker_id is None:
+                    current_time = now or _now()
+                    attempt.worker_id = safe_worker_id
+                    attempt.heartbeat_at = current_time
+                    attempt.lease_expires_at = current_time + timedelta(
+                        seconds=lease_seconds
+                    )
+                    self.db.commit()
+                    return
+                if attempt.worker_id != safe_worker_id:
+                    raise StaleRunWorker("worker_mismatch")
                 return
             self._transition(run, "running")
-            now = _now()
-            run.started_at = run.started_at or now
+            current_time = now or _now()
+            run.started_at = run.started_at or current_time
             attempt.status = "running"
-            attempt.started_at = attempt.started_at or now
+            attempt.started_at = attempt.started_at or current_time
+            attempt.worker_id = safe_worker_id
+            attempt.heartbeat_at = current_time
+            attempt.lease_expires_at = current_time + timedelta(seconds=lease_seconds)
             self._append_event(
                 run, attempt.attempt_id, "run.started", {"status": "running"}
             )
             self.db.commit()
+
+    def renew_lease(
+        self,
+        context: RunContext,
+        *,
+        worker_id: str,
+        lease_seconds: int = 90,
+        now: datetime | None = None,
+    ) -> RunControlSignal:
+        safe_worker_id = _bounded(worker_id, field="worker_id", limit=128) or ""
+        lease_seconds = self._validate_lease_seconds(lease_seconds)
+        current_time = now or _now()
+        with self._lifecycle_lock(context):
+            run, attempt = self._owned_run_and_attempt(context, lock=True)
+            if run.status not in ACTIVE_RUN_STATUSES or attempt.status != "running":
+                raise StaleRunAttempt("attempt_not_running")
+            if attempt.worker_id != safe_worker_id:
+                raise StaleRunWorker("worker_mismatch")
+            if run.cancel_requested_at is not None:
+                return RunControlSignal("cancel_requested")
+            if run.deadline_at is not None and self._at_or_after(
+                current_time, run.deadline_at
+            ):
+                return RunControlSignal("deadline_exceeded")
+            attempt.heartbeat_at = current_time
+            attempt.lease_expires_at = current_time + timedelta(seconds=lease_seconds)
+            self.db.commit()
+            return RunControlSignal("continue")
+
+    def request_cancel(
+        self,
+        user_id: int,
+        run_id: str,
+        *,
+        now: datetime | None = None,
+    ) -> CancelRequestResult:
+        run = self.get_run(user_id, run_id)
+        context = self._context(run)
+        with self._lifecycle_lock(context):
+            run, attempt = self._owned_run_and_attempt(context, lock=True)
+            if run.status in TERMINAL_RUN_STATUSES:
+                return CancelRequestResult(run.run_id, run.status)
+            if run.status in {"queued", "waiting_for_user"}:
+                self._transition(run, "cancelled")
+                current_time = now or _now()
+                run.error_code = "cancelled"
+                run.retryable = False
+                run.finished_at = current_time
+                attempt.status = "cancelled"
+                attempt.error_code = "cancelled"
+                attempt.finished_at = current_time
+                attempt.lease_expires_at = None
+                self._append_event(
+                    run,
+                    attempt.attempt_id,
+                    "run.cancelled",
+                    {"status": "cancelled", "error_code": "cancelled"},
+                )
+                self.db.commit()
+                return CancelRequestResult(run.run_id, "cancelled")
+            if run.cancel_requested_at is None:
+                run.cancel_requested_at = now or _now()
+                self._append_event(
+                    run,
+                    attempt.attempt_id,
+                    "run.cancel_requested",
+                    {"status": "running"},
+                )
+                self.db.commit()
+            return CancelRequestResult(run.run_id, "cancellation_requested")
+
+    def settle_control_stop(
+        self,
+        context: RunContext,
+        *,
+        action: Literal["cancel_requested", "deadline_exceeded"],
+        now: datetime | None = None,
+    ) -> None:
+        if action not in {"cancel_requested", "deadline_exceeded"}:
+            raise ValueError("invalid_control_stop_action")
+        with self._lifecycle_lock(context):
+            run, attempt = self._owned_run_and_attempt(context, lock=True)
+            if run.status not in ACTIVE_RUN_STATUSES:
+                return
+            current_time = now or _now()
+            self._apply_control_stop_locked(
+                run,
+                attempt,
+                action=action,
+                now=current_time,
+            )
+            self.db.commit()
+
+    def recover_expired_runs(
+        self,
+        *,
+        now: datetime | None = None,
+        limit: int = 100,
+        unleased_grace_seconds: int = 420,
+    ) -> list[RecoveryResult]:
+        if type(limit) is not int or not 1 <= limit <= 500:
+            raise ValueError("invalid_recovery_limit")
+        unleased_grace_seconds = self._validate_unleased_grace_seconds(
+            unleased_grace_seconds
+        )
+        current_time = now or _now()
+        unleased_before = current_time - timedelta(
+            seconds=unleased_grace_seconds
+        )
+        with self._recovery_scan_lock():
+            recovered: list[RecoveryResult] = []
+            for _index in range(limit):
+                # Process exactly one locked row per transaction. Settlement
+                # commits by design; selecting a whole batch would release the
+                # remaining PostgreSQL row locks after the first commit.
+                query = self.db.query(AgentRun, AgentRunAttempt).join(
+                    AgentRunAttempt,
+                    AgentRunAttempt.attempt_id == AgentRun.current_attempt_id,
+                ).filter(
+                    or_(
+                        and_(
+                            AgentRun.status == "running",
+                            AgentRunAttempt.status == "running",
+                            or_(
+                                and_(
+                                    AgentRunAttempt.lease_expires_at.is_not(None),
+                                    AgentRunAttempt.lease_expires_at <= current_time,
+                                ),
+                                and_(
+                                    AgentRunAttempt.lease_expires_at.is_(None),
+                                    AgentRunAttempt.started_at.is_not(None),
+                                    AgentRunAttempt.started_at <= unleased_before,
+                                ),
+                            ),
+                        ),
+                        and_(
+                            AgentRun.status == "queued",
+                            AgentRunAttempt.status == "queued",
+                            AgentRun.deadline_at.is_not(None),
+                            AgentRun.deadline_at <= current_time,
+                        ),
+                    )
+                ).order_by(
+                    func.coalesce(
+                        AgentRunAttempt.lease_expires_at,
+                        AgentRun.deadline_at,
+                    ).asc()
+                )
+                if self.db.get_bind().dialect.name == "postgresql":
+                    query = query.with_for_update(skip_locked=True)
+                stale = query.first()
+                if stale is None:
+                    break
+                run, _attempt = stale
+                context = self._context(run)
+                if run.status == "queued":
+                    self.settle_control_stop(
+                        context,
+                        action="deadline_exceeded",
+                        now=current_time,
+                    )
+                elif run.cancel_requested_at is not None:
+                    self.settle_control_stop(
+                        context,
+                        action="cancel_requested",
+                        now=current_time,
+                    )
+                elif run.deadline_at is not None and self._at_or_after(
+                    current_time, run.deadline_at
+                ):
+                    self.settle_control_stop(
+                        context,
+                        action="deadline_exceeded",
+                        now=current_time,
+                    )
+                elif self._has_unresolved_write(run.run_id):
+                    self._settle_expired_write(
+                        context,
+                        now=current_time,
+                    )
+                else:
+                    self.complete(
+                        context,
+                        status="failed",
+                        error_code="worker_lease_expired",
+                        retryable=True,
+                    )
+                self.db.refresh(run)
+                recovered.append(
+                    RecoveryResult(run.run_id, run.status, run.error_code)
+                )
+            return recovered
+
+    def list_events_after(
+        self,
+        user_id: int,
+        run_id: str,
+        *,
+        after_sequence: int = 0,
+        limit: int = 50,
+    ) -> list[RunEventView]:
+        if type(after_sequence) is not int or after_sequence < 0:
+            raise ValueError("invalid_event_cursor")
+        if type(limit) is not int or not 1 <= limit <= 500:
+            raise ValueError("invalid_event_limit")
+        run = self.get_run(user_id, run_id)
+        events = self.db.query(AgentRunEvent).filter(
+            AgentRunEvent.run_id == run.run_id,
+            AgentRunEvent.sequence_no > after_sequence,
+        ).order_by(AgentRunEvent.sequence_no.asc()).limit(limit).all()
+        return [
+            RunEventView(
+                sequence_no=event.sequence_no,
+                event_name=event.event_name,
+                payload=dict(event.payload or {}),
+                created_at=event.created_at,
+            )
+            for event in events
+        ]
 
     def bind_messages(
         self,
@@ -621,27 +916,29 @@ class AgentRuntimeCoordinator:
             run, attempt = self._owned_run_and_attempt(context, lock=True)
             if run.status == status:
                 return
-            self._transition(run, status)
             now = _now()
-            run.error_code = safe_error_code
-            run.retryable = bool(retryable) if status == "failed" else False
-            run.finished_at = None if status == "waiting_for_user" else now
-            if status in {"succeeded", "waiting_for_user"}:
-                attempt.status = "succeeded"
-            elif status == "cancelled":
-                attempt.status = "cancelled"
-            else:
-                attempt.status = "failed"
-            attempt.error_code = run.error_code
-            attempt.finished_at = now
-            event_name = {
-                "waiting_for_user": "run.waiting",
-                "reconciliation_required": "run.reconciliation_required",
-            }.get(status, f"run.{status}")
-            payload = {"status": status}
-            if run.error_code:
-                payload["error_code"] = run.error_code
-            self._append_event(run, attempt.attempt_id, event_name, payload)
+            action = self._control_action(run, now=now)
+            verified_success = (
+                status == "succeeded" and self._has_verified_write(run.run_id)
+            )
+            if action is not None and not verified_success:
+                self._apply_control_stop_locked(
+                    run,
+                    attempt,
+                    action=action,
+                    now=now,
+                    preserve_verified_write=False,
+                )
+                self.db.commit()
+                return
+            self._apply_completion_locked(
+                run,
+                attempt,
+                status=status,
+                error_code=safe_error_code,
+                retryable=retryable,
+                now=now,
+            )
             self.db.commit()
 
     def finalize_executor_done(
@@ -678,11 +975,30 @@ class AgentRuntimeCoordinator:
             return
         self.complete(context, status="failed", error_code=error_code)
 
+    def interrupt_active(self, context: RunContext) -> None:
+        """Settle a task cancellation without pretending the user cancelled."""
+        with self._lifecycle_lock(context):
+            run, attempt = self._owned_run_and_attempt(context, lock=True)
+            if run.status not in ACTIVE_RUN_STATUSES:
+                return
+            now = _now()
+            action = self._control_action(run, now=now)
+            if action is not None:
+                self._apply_control_stop_locked(
+                    run,
+                    attempt,
+                    action=action,
+                    now=now,
+                )
+            else:
+                self._apply_worker_interruption_locked(run, attempt, now=now)
+            self.db.commit()
+
     def cancel_active(self, context: RunContext, *, error_code: str = "cancelled") -> None:
         run = self.get_run(context.user_id, context.run_id)
         if run.status not in ACTIVE_RUN_STATUSES:
             return
-        self.complete(context, status="cancelled", error_code=error_code)
+        self.settle_control_stop(context, action="cancel_requested")
 
     def record_event(
         self,
@@ -715,7 +1031,9 @@ class AgentRuntimeCoordinator:
             raise AgentRuntimeError("tool_operation_requires_write_effect")
 
         with self._lifecycle_lock(context):
-            run, _attempt = self._owned_run_and_attempt(context, lock=True)
+            run, attempt = self._owned_run_and_attempt(context, lock=True)
+            if run.status != "running" or attempt.status != "running":
+                raise StaleRunAttempt("attempt_not_running")
             query = self.db.query(AgentToolOperation).filter(
                 AgentToolOperation.run_id == context.run_id,
                 AgentToolOperation.operation_fingerprint == fingerprint,
@@ -868,6 +1186,22 @@ class AgentRuntimeCoordinator:
                 raise AgentRuntimeError("tool_operation_not_found")
             if operation.attempt_id != context.attempt_id:
                 raise StaleRunAttempt("stale_tool_operation_attempt")
+            if status == "succeeded":
+                from app.services.agent_kernel.tool_registry import (
+                    is_registered_receipt_resource_type,
+                    is_valid_receipt_resource_id,
+                )
+
+                if not is_registered_receipt_resource_type(
+                    operation.tool_name,
+                    normalized_resource_type or "",
+                ):
+                    raise AgentRuntimeError("invalid_resource_type")
+                if not is_valid_receipt_resource_id(
+                    operation.tool_name,
+                    normalized_resource_id or "",
+                ):
+                    raise AgentRuntimeError("invalid_resource_id")
             if operation.status == "succeeded" and status == "succeeded":
                 return
             if operation.status not in {"executing", "requested"}:
@@ -952,6 +1286,218 @@ class AgentRuntimeCoordinator:
             query = query.filter(AgentRun.run_id != exclude_run_id)
         return query.first()
 
+    def _has_unresolved_write(self, run_id: str) -> bool:
+        return self.db.query(AgentToolOperation.operation_id).filter(
+            AgentToolOperation.run_id == run_id,
+            AgentToolOperation.status.in_(
+                {"requested", "executing", "reconciliation_required"}
+            ),
+        ).first() is not None
+
+    def _has_verified_write(self, run_id: str) -> bool:
+        return self.db.query(AgentToolOperation.operation_id).filter(
+            AgentToolOperation.run_id == run_id,
+            AgentToolOperation.status == "succeeded",
+        ).first() is not None
+
+    def _control_action(
+        self,
+        run: AgentRun,
+        *,
+        now: datetime,
+    ) -> Literal["cancel_requested", "deadline_exceeded"] | None:
+        if run.cancel_requested_at is not None:
+            return "cancel_requested"
+        if run.deadline_at is not None and self._at_or_after(now, run.deadline_at):
+            return "deadline_exceeded"
+        return None
+
+    def _apply_control_stop_locked(
+        self,
+        run: AgentRun,
+        attempt: AgentRunAttempt,
+        *,
+        action: Literal["cancel_requested", "deadline_exceeded"],
+        now: datetime,
+        preserve_verified_write: bool = True,
+    ) -> None:
+        unresolved = self.db.query(AgentToolOperation).filter(
+            AgentToolOperation.run_id == run.run_id,
+            AgentToolOperation.status.in_(
+                {"requested", "executing", "reconciliation_required"}
+            ),
+        ).all()
+        if unresolved:
+            for operation in unresolved:
+                if operation.status != "reconciliation_required":
+                    operation.status = "reconciliation_required"
+                    operation.error_code = (
+                        "cancelled"
+                        if action == "cancel_requested"
+                        else "deadline_exceeded"
+                    )
+                    operation.finished_at = now
+            self._apply_completion_locked(
+                run,
+                attempt,
+                status="reconciliation_required",
+                error_code=(
+                    "cancelled_with_unresolved_write"
+                    if action == "cancel_requested"
+                    else "write_uncertain"
+                ),
+                retryable=False,
+                now=now,
+            )
+            return
+        if preserve_verified_write and self._has_verified_write(run.run_id):
+            self._apply_completion_locked(
+                run,
+                attempt,
+                status="succeeded",
+                error_code=None,
+                retryable=False,
+                now=now,
+            )
+            return
+        if action == "cancel_requested":
+            self._apply_completion_locked(
+                run,
+                attempt,
+                status="cancelled",
+                error_code="cancelled",
+                retryable=False,
+                now=now,
+            )
+            return
+        self._apply_completion_locked(
+            run,
+            attempt,
+            status="failed",
+            error_code="deadline_exceeded",
+            retryable=True,
+            now=now,
+        )
+
+    def _apply_completion_locked(
+        self,
+        run: AgentRun,
+        attempt: AgentRunAttempt,
+        *,
+        status: str,
+        error_code: str | None,
+        retryable: bool,
+        now: datetime,
+    ) -> None:
+        self._transition(run, status)
+        run.error_code = error_code
+        run.retryable = bool(retryable) if status == "failed" else False
+        run.finished_at = None if status == "waiting_for_user" else now
+        if status in {"succeeded", "waiting_for_user"}:
+            attempt.status = "succeeded"
+        elif status == "cancelled":
+            attempt.status = "cancelled"
+        else:
+            attempt.status = "failed"
+        attempt.error_code = run.error_code
+        attempt.finished_at = now
+        attempt.lease_expires_at = None
+        event_name = {
+            "waiting_for_user": "run.waiting",
+            "reconciliation_required": "run.reconciliation_required",
+        }.get(status, f"run.{status}")
+        payload = {"status": status}
+        if run.error_code:
+            payload["error_code"] = run.error_code
+        self._append_event(run, attempt.attempt_id, event_name, payload)
+
+    def _apply_worker_interruption_locked(
+        self,
+        run: AgentRun,
+        attempt: AgentRunAttempt,
+        *,
+        now: datetime,
+    ) -> None:
+        unresolved = self.db.query(AgentToolOperation).filter(
+            AgentToolOperation.run_id == run.run_id,
+            AgentToolOperation.status.in_(
+                {"requested", "executing", "reconciliation_required"}
+            ),
+        ).all()
+        if unresolved:
+            for operation in unresolved:
+                if operation.status != "reconciliation_required":
+                    operation.status = "reconciliation_required"
+                    operation.error_code = "worker_interrupted"
+                    operation.finished_at = now
+            self._apply_completion_locked(
+                run,
+                attempt,
+                status="reconciliation_required",
+                error_code="worker_interrupted_write",
+                retryable=False,
+                now=now,
+            )
+            return
+        if self._has_verified_write(run.run_id):
+            self._apply_completion_locked(
+                run,
+                attempt,
+                status="succeeded",
+                error_code=None,
+                retryable=False,
+                now=now,
+            )
+            return
+        self._apply_completion_locked(
+            run,
+            attempt,
+            status="failed",
+            error_code="worker_interrupted",
+            retryable=True,
+            now=now,
+        )
+
+    def _settle_expired_write(
+        self,
+        context: RunContext,
+        *,
+        now: datetime,
+    ) -> None:
+        with self._lifecycle_lock(context):
+            run, attempt = self._owned_run_and_attempt(context, lock=True)
+            if run.status not in ACTIVE_RUN_STATUSES:
+                return
+            operations = self.db.query(AgentToolOperation).filter(
+                AgentToolOperation.run_id == run.run_id,
+                AgentToolOperation.status.in_(
+                    {"requested", "executing", "reconciliation_required"}
+                ),
+            ).all()
+            for operation in operations:
+                if operation.status != "reconciliation_required":
+                    operation.status = "reconciliation_required"
+                    operation.error_code = "worker_lease_expired"
+                    operation.finished_at = now
+            self._transition(run, "reconciliation_required")
+            run.error_code = "worker_lease_expired_write"
+            run.retryable = False
+            run.finished_at = now
+            attempt.status = "failed"
+            attempt.error_code = run.error_code
+            attempt.finished_at = now
+            attempt.lease_expires_at = None
+            self._append_event(
+                run,
+                attempt.attempt_id,
+                "run.reconciliation_required",
+                {
+                    "status": "reconciliation_required",
+                    "error_code": run.error_code,
+                },
+            )
+            self.db.commit()
+
     def _require_owned_conversation(self, user_id: int, conversation_id: int) -> None:
         exists = self.db.query(AgentConversation.id).filter(
             AgentConversation.id == conversation_id,
@@ -974,12 +1520,45 @@ class AgentRuntimeCoordinator:
         with _local_runtime_lock(lock_key):
             yield
 
+    @contextmanager
+    def _recovery_scan_lock(self) -> Iterator[None]:
+        bind = self.db.get_bind()
+        if bind.dialect.name == "sqlite":
+            with _sqlite_runtime_lock(bind):
+                yield
+            return
+        if bind.dialect.name == "postgresql":
+            yield
+            return
+        with _local_runtime_lock(_runtime_lock_key(0, "recovery_scan")):
+            yield
+
     @staticmethod
     def _safe_error_code(value: str | None) -> str | None:
         normalized = _bounded(value, field="error_code", limit=80)
         if normalized is not None and normalized not in _known_error_codes():
             return "unclassified_error"
         return normalized
+
+    @staticmethod
+    def _validate_lease_seconds(value: int) -> int:
+        if type(value) is not int or not 5 <= value <= 900:
+            raise ValueError("invalid_lease_seconds")
+        return value
+
+    @staticmethod
+    def _validate_unleased_grace_seconds(value: int) -> int:
+        if type(value) is not int or not 5 <= value <= 7200:
+            raise ValueError("invalid_unleased_grace_seconds")
+        return value
+
+    @staticmethod
+    def _at_or_after(left: datetime, right: datetime) -> bool:
+        if left.tzinfo is None:
+            left = left.replace(tzinfo=UTC)
+        if right.tzinfo is None:
+            right = right.replace(tzinfo=UTC)
+        return left >= right
 
     def _context(self, run: AgentRun) -> RunContext:
         attempt = self.db.query(AgentRunAttempt).filter(

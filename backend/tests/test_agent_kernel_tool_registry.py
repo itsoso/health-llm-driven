@@ -66,6 +66,32 @@ def test_receipt_requirement_is_derived_from_spec_and_arguments():
     assert requires_verified_receipt("health_query", {"dimension": "diet"}) is False
 
 
+def test_every_receipt_tool_registers_allowed_resource_types():
+    from app.services.agent_kernel.tool_registry import list_tool_specs
+
+    receipt_specs = [spec for spec in list_tool_specs() if spec.receipt_required]
+
+    assert receipt_specs
+    assert all(spec.receipt_resource_types for spec in receipt_specs)
+    assert all(spec.receipt_resource_id_pattern for spec in receipt_specs)
+
+
+def test_receipt_id_patterns_are_tool_specific_and_content_free():
+    from app.services.agent_kernel.tool_registry import (
+        is_valid_receipt_resource_id,
+    )
+
+    assert is_valid_receipt_resource_id("health_record", "829") is True
+    assert is_valid_receipt_resource_id("health_record", "hiv_stage3") is False
+    assert (
+        is_valid_receipt_resource_id(
+            "draft_aigc_media",
+            "aigc_confirm_0123456789abcdef0123456789abcdef",
+        )
+        is True
+    )
+
+
 def test_specs_preserve_existing_adapter_and_timeout_contracts():
     from app.services.agent_kernel.tool_registry import get_tool_spec
 

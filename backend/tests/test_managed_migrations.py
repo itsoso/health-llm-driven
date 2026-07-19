@@ -137,6 +137,58 @@ def test_apply_managed_migrations_runs_matching_dialect_once(tmp_path: Path):
     assert count == 1
 
 
+def test_agent_runtime_resilience_migration_extends_existing_ledger_once(
+    tmp_path: Path,
+):
+    migrations_dir = Path(__file__).resolve().parents[1] / "migrations" / "managed"
+    runtime_base = migrations_dir / "20260719_120000_create_agent_runtime.sqlite.sql"
+    resilience = migrations_dir / "20260719_180000_agent_runtime_resilience.sqlite.sql"
+    resilience_postgres = (
+        migrations_dir
+        / "20260719_180000_agent_runtime_resilience.postgresql.sql"
+    )
+    assert runtime_base.exists()
+    assert resilience.exists()
+    assert "ADD COLUMN IF NOT EXISTS cancel_requested_at" in (
+        resilience_postgres.read_text(encoding="utf-8")
+    )
+    assert "ix_agent_run_attempts_running_lease" in (
+        resilience_postgres.read_text(encoding="utf-8")
+    )
+
+    isolated = tmp_path / "managed"
+    isolated.mkdir()
+    for migration in (runtime_base, resilience):
+        (isolated / migration.name).write_text(
+            migration.read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE users (id INTEGER PRIMARY KEY)"))
+        conn.execute(text("CREATE TABLE agent_conversations (id INTEGER PRIMARY KEY)"))
+        conn.execute(text("CREATE TABLE agent_messages (id INTEGER PRIMARY KEY)"))
+
+    first = apply_managed_migrations(engine, isolated)
+    second = apply_managed_migrations(engine, isolated)
+
+    assert [migration.id for migration in first.applied] == [
+        "20260719_120000_create_agent_runtime",
+        "20260719_180000_agent_runtime_resilience",
+    ]
+    assert second.applied == []
+    columns = {
+        column["name"] for column in inspect(engine).get_columns("agent_runs")
+    }
+    assert "cancel_requested_at" in columns
+    indexes = {
+        index["name"]
+        for index in inspect(engine).get_indexes("agent_run_attempts")
+    }
+    assert "ix_agent_run_attempts_running_lease" in indexes
+
+
 def test_tokenplan_cost_migration_adds_rmb_columns(tmp_path: Path):
     migrations_dir = Path(__file__).resolve().parents[1] / "migrations" / "managed"
     migration = migrations_dir / "20260716_120000_add_llm_usage_tokenplan_cost.sqlite.sql"

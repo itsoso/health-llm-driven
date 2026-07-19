@@ -1,10 +1,10 @@
-# Dossier: Agent Runtime Control Plane P0
+# Dossier: Agent Runtime Control Plane
 
 | 字段 | 值 |
 |---|---|
 | slug | `agent-runtime-control-plane` |
 | 创建日期 | 2026-07-19 |
-| 当前阶段 | P1 Tool Control 已完成，待后续合并/灰度 Gate |
+| 当前阶段 | P2 Runtime Resilience 已完成，待合并/灰度 Gate |
 | 状态 | in_progress |
 | 负责 | Codex |
 | 反馈环 | PostgreSQL/SQLite 集成测试 / Agent SSE 回归 / backend deploy |
@@ -69,6 +69,8 @@ RequirementAdmission:
 - 第二里程碑另立 Gate: ToolSpec/operation idempotency/reconcile 后再做进程重启恢复。
 - P1 设计: `docs/plans/2026-07-19-agent-runtime-tool-control-design.md`
 - P1 实施计划: `docs/plans/2026-07-19-agent-runtime-tool-control.md`
+- P2 设计: `docs/plans/2026-07-19-agent-runtime-resilience-design.md`
+- P2 实施计划: `docs/plans/2026-07-19-agent-runtime-resilience.md`
 
 ## G2 · 可行性 + 安全压测
 
@@ -156,3 +158,34 @@ RequirementAdmission:
   - `scripts/check_doc_drift.py` 在重新生成 `docs/_generated/system-map.json` 后 PASS；Dossier consistency：64 份 PASS。
 - 明确推迟: 业务端点跨 Run 幂等键、资源级自动 reconcile、进程死亡恢复扫描、durable stream cursor、取消/supersede 和 parent/child Run。
 - Rollout: Runtime 继续默认 `off`；P1 不部署、不灰度启用。
+
+## P2 · Runtime Resilience
+
+- [x] Run/Attempt worker lease、heartbeat 与 worker fencing。
+- [x] 持久化 cancel request、deadline 与终态前二次裁决。
+- [x] 进程中断与用户取消分离；未由用户取消的 worker interruption 为可重试失败。
+- [x] 过期 Run 扫描与安全结算；只读 Run 可重试，未决写入进入 reconciliation，不自动重放。
+- [x] 兼容 P1 无租约 active Run；给予宽限期后由扫描器结算，避免永久占用会话。
+- [x] 仅包运行状态的持久事件游标，不保存 prompt、回复、token delta 或健康正文。
+- [x] 有界 SSE buffer 与断开感知，客户端断开后不再无界累积内存。
+- [x] owner-scoped Run 状态/事件接口和取消接口。
+- [x] Celery 每分钟恢复入口，仅 `agent_runtime_mode=enforce` 时生效。
+- [x] running Attempt lease partial index，避免历史 Attempt 增长后每分钟全表扫描。
+- [x] 写回执资源类型和 ID 格式由 ToolSpec 注册；健康写入只接受正整数 ID，AIGC 草稿只接受既有 `aigc_confirm_<32 hex>` 格式。
+- 终态不变量:
+  - cancel/deadline 对 succeeded、failed、waiting completion 都执行二次裁决。
+  - 已验证写入不会因任务中断或晚到 cancel 向用户伪报失败。
+  - 未决写入遇到用户取消或系统中断都进入 reconciliation，不自动重试。
+  - 心跳清理异常只记录，不覆盖主执行结果，也不跳过 SSE sentinel/会话关闭。
+  - 本地租约截止点在数据库 `mark_running` / `renew_lease` 调用前记录；心跳延迟启动、慢续租或 control settlement 失败都不能把 worker 生命周期延长到数据库租约之后。
+  - 心跳数据库暂时不可用时在剩余租约内重试；会话关闭失败或无法在租约到期前恢复时立即取消 owner task。
+  - 旧无租约 Run 的恢复宽限不少于 deadline + 120 秒部署排空窗口，默认 420 秒。
+- P2 验证证据:
+  - SQLite Runtime/API/Executor/ToolSpec 定向与跨链路回归: `817 passed`。
+  - managed migration 全集: `25 passed`。
+  - 真实 PostgreSQL Runtime 状态机、并发、API、工具账本与恢复: `142 passed`。
+  - PostgreSQL P0 + P2 migration 在最小旧 schema 上执行，P2 migration 重复执行 PASS；字段和 running partial index 实查存在。
+  - Agent 对话、Executor、ToolGateway/Registry、SSE、拍照饮食、症状/鼻炎与干预周期交叉回归包含在上述 `817 passed` 中。
+  - Mobile strict-local egress、身份、本地模型与饮食闭环: 7 suites / `24 passed`。
+- 独立复审发现的终态竞态、心跳启动/续租边界、心跳清理覆盖、中断语义、无租约旧 Run、索引、回执隐私和多态资源类型缺口均已增加回归并修复。
+- Rollout: `agent_runtime_mode` 继续默认 `off`；本分支不部署、不发 OTA/TestFlight、不改 iPhone strict-local 协议。

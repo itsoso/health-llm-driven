@@ -7,6 +7,7 @@ dispatch adapter, timeout and receipt requirements.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from typing import Any, Literal, Mapping
 
@@ -44,6 +45,8 @@ class ToolSpec:
     read_actions: frozenset[str] = frozenset()
     write_actions: frozenset[str] = frozenset()
     receipt_exempt_record_types: frozenset[str] = frozenset()
+    receipt_resource_types: frozenset[str] = frozenset()
+    receipt_resource_id_pattern: str | None = None
     annotate_implausible: bool = False
     marks_deep_analysis: bool = False
 
@@ -88,6 +91,39 @@ def _spec(
     )
 
 
+_POSITIVE_INTEGER_RECEIPT_ID = r"^[1-9][0-9]*$"
+_AIGC_CONFIRMATION_RECEIPT_ID = r"^aigc_confirm_[0-9a-f]{32}$"
+
+_HEALTH_RECORD_RECEIPT_RESOURCE_TYPES = frozenset(
+    {
+        "blood_pressure_record",
+        "diet_record",
+        "exercise_record",
+        "excretion_record",
+        "goal",
+        "health_checkin",
+        "health_episode",
+        "illness_episode",
+        "medication_log",
+        "memory_fact",
+        "mood_record",
+        "sleep_record",
+        "smart_reminder",
+        "supplement_definition",
+        "supplement_log",
+        "symptom_record",
+        "waist_record",
+        "water_record",
+        "weight_record",
+    }
+)
+
+_HEALTH_MANAGE_RECEIPT_RESOURCE_TYPES = (
+    _HEALTH_RECORD_RECEIPT_RESOURCE_TYPES
+    | frozenset({"medication", "supplement_definition"})
+)
+
+
 _CORE_TOOL_SPECS = (
     _spec(
         "health_query",
@@ -102,12 +138,16 @@ _CORE_TOOL_SPECS = (
         "_exec_health_record",
         receipt_required=True,
         receipt_exempt_record_types=frozenset({"garmin_sync"}),
+        receipt_resource_types=_HEALTH_RECORD_RECEIPT_RESOURCE_TYPES,
+        receipt_resource_id_pattern=_POSITIVE_INTEGER_RECEIPT_ID,
     ),
     _spec(
         "health_manage",
         "mixed",
         "_exec_health_manage",
         receipt_required=True,
+        receipt_resource_types=_HEALTH_MANAGE_RECEIPT_RESOURCE_TYPES,
+        receipt_resource_id_pattern=_POSITIVE_INTEGER_RECEIPT_ID,
         action_field="operation",
         read_actions=frozenset({"list"}),
         write_actions=frozenset({"update", "delete"}),
@@ -127,6 +167,8 @@ _CORE_TOOL_SPECS = (
         "write",
         "_exec_upload_genetic_txt",
         receipt_required=True,
+        receipt_resource_types=frozenset({"genetic_profile"}),
+        receipt_resource_id_pattern=_POSITIVE_INTEGER_RECEIPT_ID,
     ),
     _spec("query_genetic_profile", "read", "_exec_query_genetic_profile"),
     _spec(
@@ -134,6 +176,8 @@ _CORE_TOOL_SPECS = (
         "write",
         "_exec_upload_medical_exam_text",
         receipt_required=True,
+        receipt_resource_types=frozenset({"medical_exam"}),
+        receipt_resource_id_pattern=_POSITIVE_INTEGER_RECEIPT_ID,
     ),
     _spec(
         "query_lab_indicators",
@@ -146,6 +190,8 @@ _CORE_TOOL_SPECS = (
         "mixed",
         "_exec_intervention_cycle",
         receipt_required=True,
+        receipt_resource_types=frozenset({"intervention_cycle"}),
+        receipt_resource_id_pattern=_POSITIVE_INTEGER_RECEIPT_ID,
         call_style="args",
         action_field="action",
         read_actions=frozenset({"status", "list", "history"}),
@@ -168,6 +214,10 @@ _CORE_TOOL_SPECS = (
         "write",
         "_exec_manage_plan",
         receipt_required=True,
+        receipt_resource_types=frozenset(
+            {"action_card", "smart_plan", "smart_plan_item"}
+        ),
+        receipt_resource_id_pattern=_POSITIVE_INTEGER_RECEIPT_ID,
         action_field="action",
         write_actions=frozenset(
             {"generate_weekly", "complete_item", "save_to_card"}
@@ -179,6 +229,8 @@ _CORE_TOOL_SPECS = (
         "_exec_draft_aigc_media",
         receipt_required=True,
         call_style="args",
+        receipt_resource_types=frozenset({"aigc_media_confirmation"}),
+        receipt_resource_id_pattern=_AIGC_CONFIRMATION_RECEIPT_ID,
     ),
 )
 
@@ -215,6 +267,20 @@ def classify_tool_effect(tool_name: str, arguments: Any) -> ResolvedToolEffect:
 
 def requires_verified_receipt(tool_name: str, arguments: Any) -> bool:
     return get_tool_spec(tool_name).requires_verified_receipt(arguments)
+
+
+def is_registered_receipt_resource_type(
+    tool_name: str,
+    resource_type: str,
+) -> bool:
+    spec = get_tool_spec(tool_name)
+    return resource_type in spec.receipt_resource_types
+
+
+def is_valid_receipt_resource_id(tool_name: str, resource_id: str) -> bool:
+    spec = get_tool_spec(tool_name)
+    pattern = spec.receipt_resource_id_pattern
+    return bool(pattern and re.fullmatch(pattern, resource_id))
 
 
 def _parse_arguments(raw: Any) -> dict[str, Any]:

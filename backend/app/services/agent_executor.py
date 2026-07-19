@@ -19,7 +19,7 @@ import math
 import re
 import time
 from datetime import UTC, date, datetime, timezone, timedelta
-from typing import AsyncGenerator, Dict, Any, List, Optional, Sequence, Tuple
+from typing import AsyncGenerator, Dict, Any, List, Mapping, Optional, Sequence, Tuple
 from urllib.parse import urlencode
 
 import httpx
@@ -60,6 +60,8 @@ from app.services.agent_kernel.tool_registry import (
     UnknownToolAction,
     classify_tool_effect,
     get_tool_spec,
+    is_registered_receipt_resource_type,
+    is_valid_receipt_resource_id,
     list_tool_specs,
     requires_verified_receipt,
 )
@@ -2598,6 +2600,26 @@ _RESOURCE_TYPE_BY_RECORD_TYPE = {
     "weight": "weight_record",
 }
 
+_HEALTH_MANAGE_RESOURCE_TYPE_BY_RECORD_TYPE = {
+    **_RESOURCE_TYPE_BY_RECORD_TYPE,
+    "medication": "medication",
+    "medication_log": "medication_log",
+    "supplement_definition": "supplement_definition",
+}
+
+_MANAGE_PLAN_RESOURCE_TYPE_BY_ACTION = {
+    "generate_weekly": "smart_plan",
+    "complete_item": "smart_plan_item",
+    "save_to_card": "action_card",
+}
+
+_FIXED_RECEIPT_RESOURCE_TYPE_BY_TOOL = {
+    "draft_aigc_media": "aigc_media_confirmation",
+    "intervention_cycle": "intervention_cycle",
+    "upload_genetic_txt": "genetic_profile",
+    "upload_medical_exam_text": "medical_exam",
+}
+
 
 def _write_result_payload(
     result: Any,
@@ -2799,13 +2821,38 @@ def _receipt_resource_identity(payload: Dict[str, Any]) -> tuple[Optional[str], 
 
 def _write_receipt_from_tool_result(
     tool_name: str,
-    record_type: Any,
+    receipt_context: Any,
     result: Any,
 ) -> Optional[Dict[str, Any]]:
     """Build a persistence receipt from structured tool output only."""
     if tool_name not in _WRITE_RECEIPT_TOOL_NAMES:
         return None
-    normalized_record_type = str(record_type or "").strip().lower()
+    if isinstance(receipt_context, Mapping):
+        args = dict(receipt_context)
+    else:
+        args = {"record_type": receipt_context}
+    normalized_record_type = str(
+        args.get("record_type") or args.get("type") or ""
+    ).strip().lower()
+    normalized_action = str(args.get("action") or "").strip().lower()
+    if tool_name == "health_record":
+        expected_resource_type = _RESOURCE_TYPE_BY_RECORD_TYPE.get(
+            normalized_record_type
+        )
+    elif tool_name == "health_manage":
+        expected_resource_type = _HEALTH_MANAGE_RESOURCE_TYPE_BY_RECORD_TYPE.get(
+            normalized_record_type
+        )
+    elif tool_name == "manage_plan":
+        expected_resource_type = _MANAGE_PLAN_RESOURCE_TYPE_BY_ACTION.get(
+            normalized_action
+        )
+    else:
+        expected_resource_type = _FIXED_RECEIPT_RESOURCE_TYPE_BY_TOOL.get(
+            tool_name
+        )
+    if not expected_resource_type:
+        return None
     payload = _write_result_payload(
         result,
         allow_pending=(
@@ -2818,23 +2865,12 @@ def _write_receipt_from_tool_result(
     result_resource_type, resource_id = _receipt_resource_identity(payload)
     if not resource_id:
         return None
-    resource_type = result_resource_type
-    if not resource_type:
-        resource_type = {
-            "intervention_cycle": "intervention_cycle",
-            "manage_plan": "action_card",
-            "upload_genetic_txt": "genetic_profile",
-            "upload_medical_exam_text": "medical_exam",
-        }.get(tool_name)
-        if not resource_type:
-            resource_type = _RESOURCE_TYPE_BY_RECORD_TYPE.get(normalized_record_type)
-            if not resource_type and normalized_record_type:
-                resource_type = (
-                    normalized_record_type
-                    if normalized_record_type.endswith(("_record", "_log"))
-                    else f"{normalized_record_type}_record"
-                )
-    if not resource_type:
+    if result_resource_type and result_resource_type != expected_resource_type:
+        return None
+    resource_type = expected_resource_type
+    if not is_registered_receipt_resource_type(tool_name, resource_type):
+        return None
+    if not is_valid_receipt_resource_id(tool_name, resource_id):
         return None
     completed_at = (
         payload.get("completed_at")
@@ -2873,8 +2909,7 @@ def _write_tool_completed(tool_name: str, args: Any, result: Any) -> bool:
             # A write without structured identity cannot be verified. Treat legacy
             # prose as incomplete so old clients and telemetry also fail closed.
             return False
-    record_type = parsed_args.get("record_type") or parsed_args.get("type")
-    return _write_receipt_from_tool_result(tool_name, record_type, result) is not None
+    return _write_receipt_from_tool_result(tool_name, parsed_args, result) is not None
 
 
 # health_record 的 record_type 里，个别是**触发动作**而非写记录 —— 它们没有
@@ -5600,7 +5635,7 @@ class AgentExecutor:
         if decision is not None and decision.receipt_required:
             receipt = _write_receipt_from_tool_result(
                 tool_name,
-                parsed_args.get("record_type") or parsed_args.get("type"),
+                parsed_args,
                 result,
             )
         bus.tool_result(
@@ -6293,7 +6328,7 @@ class AgentExecutor:
                             if write_completed:
                                 receipt = _write_receipt_from_tool_result(
                                     fn,
-                                    parsed_args.get("record_type") or parsed_args.get("type"),
+                                    parsed_args,
                                     result,
                                 )
                                 if receipt:
@@ -8062,7 +8097,7 @@ class AgentExecutor:
                             if write_completed:
                                 receipt = _write_receipt_from_tool_result(
                                     func_name,
-                                    parsed_tool_args.get("record_type") or parsed_tool_args.get("type"),
+                                    parsed_tool_args,
                                     result_for_record_card,
                                 )
                                 if receipt:
@@ -8940,7 +8975,7 @@ class AgentExecutor:
                     any_write_completed = True
                     receipt = _write_receipt_from_tool_result(
                         tool,
-                        args.get("record_type") or args.get("type"),
+                        args,
                         result,
                     )
                     if receipt and not any(
@@ -11857,10 +11892,9 @@ class AgentExecutor:
                 and runtime_coordinator is not None
                 and runtime_context is not None
             ):
-                record_type = args.get("record_type") or args.get("type")
                 receipt = _write_receipt_from_tool_result(
                     request.tool_name,
-                    record_type,
+                    args,
                     result,
                 )
                 outcome = classify_write_execution(result, receipt=receipt)
@@ -13091,7 +13125,9 @@ class AgentExecutor:
             payload.setdefault("record_id", resolved_record_id)
             payload.setdefault("id", resolved_record_id)
             normalized_record_type = str(record_type or "").strip().lower()
-            resource_type = _RESOURCE_TYPE_BY_RECORD_TYPE.get(normalized_record_type)
+            resource_type = _HEALTH_MANAGE_RESOURCE_TYPE_BY_RECORD_TYPE.get(
+                normalized_record_type
+            )
             if resource_type:
                 payload.setdefault("resource_type", resource_type)
             self._invalidate_twin_after_mutation()

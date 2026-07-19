@@ -251,6 +251,12 @@ class Settings(BaseSettings):
     # enforce=写 Run Ledger 并阻止同一会话的不同 active turn 并发执行。
     # 严格本地 iPhone 执行不调用云端 Agent API,因此不会创建服务端 Run。
     agent_runtime_mode: str = "off"
+    # Runtime P2 worker control. These values are used only in enforce mode.
+    agent_runtime_lease_seconds: int = 90
+    agent_runtime_heartbeat_seconds: int = 20
+    agent_runtime_deadline_seconds: int = 300
+    agent_runtime_unleased_grace_seconds: int = 420
+    agent_runtime_stream_queue_max_chunks: int = 128
     # GenUI metric_table 卡片(延迟, Phase-2 rank1)服务端 kill-switch:关=后端绝不发
     # metric_table 卡片、也不注入 GenUI 正文格式契约(逐字节现状)。**主门是 caps 协商**
     # (客户端声明 genui-table-v1);本 flag 只是无需客户端发版即可服务端全局停用的开关。
