@@ -159,11 +159,12 @@
 - 构建 `20260719-080400-61605d8ef`：bundle id `life.executor.health`，版本 `1.3.1 (1)`，IPA 132775200 bytes，SHA-256 `65dfea329e15ba4dc4561618d3189b9f2f2a2e62bcc63178d0d611ad9c613713`。
 - development profile `iOS Team Provisioning Profile: life.executor.health` 有效期至 2027-05-31，已包含目标真机 `00008150-00112D220E32401C`；该签名只允许已登记设备安装。
 - 包体核验：`codesign --verify --deep --strict` 通过；IPA 含 Chinese-CLIP RN50 int8 image tower、标签库与资源 manifest。包内 weight SHA-256 为 `faa172bb17dd83ce1c2da0e0854bfdb7a4a2e014c355c7313b4661fee9b40a70`，标签库 SHA-256 为 `dbf211703545159038de1d8b74772cf005186ed16e5ff7f1fceaac1614b135f9`，与冻结清单一致。
+- 已复用同一 IPA 发布到 `https://health.executor.life/mobile-install/ios/20260719-080400-61605d8ef/install.html`，未重新构建。安装页、manifest 和 IPA 的公网 HEAD 均为 HTTP 200，并带 `X-Reva-Artifact: ios-local-install`；公网 IPA `Content-Length` 为 132775200。服务器端 SHA-256 与本地值完全一致。
 
 ## G5 · 部署健康闸
 
 - **PASS**：同一提交的 Release archive、development 签名 IPA、正式 bundle id、模型/标签/manifest、安装页与 `itms-services` manifest 均已检查通过。
-- 公开上传尚未执行；必须先发布该提交和 LFS 模型对象，再复用已验证 IPA 发布，不能重打不同二进制冒充同构建。
+- 源码提交与 4 个 Git LFS 模型对象已发布；版本化安装页、manifest、IPA 和 `latest` 别名已上传。服务器摘要核验通过，没有重打不同二进制冒充同构建。
 
 ## S7 · 上线验证
 
