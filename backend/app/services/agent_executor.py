@@ -5289,6 +5289,8 @@ class AgentExecutor:
         assistant_meta = raw_assistant_meta
         if not assistant_meta:
             return True
+        if source_message is None:
+            return True
         is_partial = assistant_meta.get("client_turn_finalized") is False
         if not is_partial and assistant_meta.get("client_turn_finalized") is not True:
             # Non-empty legacy metadata without a finalization marker is not
@@ -5364,7 +5366,10 @@ class AgentExecutor:
             "replayed": True,
         }}
         assistant = svc.find_assistant_message_by_client_turn(user_id, client_turn_id)
-        if assistant is not None and not (assistant.meta or {}).get("client_turn_finalized"):
+        if assistant is not None and not self._should_replay_finalized_assistant(
+            assistant,
+            user_message,
+        ):
             assistant = None
         deadline = time.monotonic() + CLIENT_TURN_REPLAY_WAIT_SECONDS
         while assistant is None and time.monotonic() < deadline:
@@ -5372,7 +5377,10 @@ class AgentExecutor:
             await asyncio.sleep(0.25)
             self.db.expire_all()
             assistant = svc.find_assistant_message_by_client_turn(user_id, client_turn_id)
-            if assistant is not None and not (assistant.meta or {}).get("client_turn_finalized"):
+            if assistant is not None and not self._should_replay_finalized_assistant(
+                assistant,
+                user_message,
+            ):
                 assistant = None
         if assistant is None:
             yield {"event": "done", "data": {
@@ -5385,7 +5393,7 @@ class AgentExecutor:
             return
         if assistant.content:
             yield {"event": "token", "data": {"content": assistant.content}}
-        done_data = dict(assistant.meta or {})
+        done_data = dict(assistant.meta) if isinstance(assistant.meta, dict) else {}
         done_data.update({
             "conversation_id": assistant.conversation_id,
             "message_id": assistant.id,

@@ -395,6 +395,66 @@ def test_finalized_turn_replay_policy_blocks_malformed_source_meta(source_meta):
     assert AgentExecutor._should_replay_finalized_assistant(assistant, source) is True
 
 
+def test_partial_turn_replay_policy_blocks_missing_source_message():
+    """没有 durable user message 时，partial 回合不能被接管。"""
+    from types import SimpleNamespace
+
+    assistant = SimpleNamespace(meta={"client_turn_finalized": False})
+
+    assert AgentExecutor._should_replay_finalized_assistant(assistant) is True
+
+
+@pytest.mark.asyncio
+async def test_malformed_finalized_assistant_meta_replays_without_crashing(
+    db, auth_user_and_headers, monkeypatch
+):
+    """malformed metadata 也必须能安全重放，不得触发二次 LLM。"""
+    from app.services.agent_conversation_service import AgentConversationService
+
+    user, _ = auth_user_and_headers
+    service = AgentConversationService(db)
+    conv = service.get_or_create_conversation(user.id, None, title="畸形回放")
+    service.save_user_message_once(
+        conv.id,
+        user.id,
+        "查询我的记录",
+        client_turn_id="turn-malformed-replay",
+        meta={"client_turn_id": "turn-malformed-replay"},
+    )
+    assistant = service.save_message(
+        conv.id,
+        "assistant",
+        "旧的可见回复",
+        client_turn_id="turn-malformed-replay",
+        client_turn_user_id=user.id,
+    )
+    assistant.meta = ["malformed"]
+    db.commit()
+
+    executor = AgentExecutor(db)
+    _wire_min(executor, monkeypatch)
+
+    async def must_not_call_llm(*args, **kwargs):
+        raise AssertionError("malformed finalized rows must replay")
+        yield  # pragma: no cover
+
+    monkeypatch.setattr(executor, "_call_llm_stream", must_not_call_llm)
+    events = await _run(
+        executor,
+        "查询我的记录",
+        user_id=user.id,
+        client_turn_id="turn-malformed-replay",
+    )
+
+    done = next(event for event in events if event.get("event") == "done")
+    assert done["data"].get("replayed") is True
+    assert "旧的可见回复" in "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+
+
 @pytest.mark.asyncio
 async def test_same_client_turn_id_is_isolated_between_accounts(
     db, auth_user_and_headers, monkeypatch
