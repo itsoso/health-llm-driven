@@ -23,6 +23,10 @@ Task 3 已用固定 Python / PyTorch / Core ML Tools 环境导出纯视觉塔。
 
 全量 `linear_symmetric int8`、低阈值非对称 int8 和 8-bit k-means palettization 均因冻结一致性阈值失败而被放弃，没有为迁就模型下调阈值。Mac 的量化模型校验固定为 CPU-only，以规避已复现的 MPSGraph 编译器中止；产物本身不锁定运行单元，iPhone 真机仍须单独测量。精确路径、摘要、压缩配置和编译后大小见 `model-manifests/chinese-clip-coreml-variants.json`。int8 仍处于 **BLOCK**，尚未通过授权餐食质量和代表性真机 Gate。
 
+Task 4/5 已实现纯 Swift cosine 候选排序与协议化的 Vision + Core ML 编排。每张图固定包含一次整图推理，最多再取三处通过面积和重叠检查的显著区域；向量统一归一化并跨区域去重。候选低于分数地板、Top-1/Top-2 间隔不足或非食物标签胜出时返回 `unknown`/`non_food`，禁止强猜。用户明确选择、本地条码映射、人工复核 OCR 依次优先于视觉候选。模型与标签库只从调用方给出的本地 file URL 加载；输出只含身份候选、证据类型和模型/标签/校准版本，不含像素、embedding、份量或营养字段。
+
+Task 6 已把 `custom_core_ml` 真机证据接入统一 Schema。该引擎会额外强制模型 artifact SHA-256、标签库/校准版本、安装后模型与标签字节数、精度变体和 1 秒完成率；压缩变体还必须记录相对 FP16 的身份精度变化。FP16 报告不得伪造压缩差值。Schema 同时拒绝私人数据集、UDID 和序列号形式的硬件标识，旧的系统模型报告无需新增这些字段，保持兼容。
+
 ## 可重复的能力证据
 
 探针与基准位于 `mobile/modules/local-health-kernel/`。探针只查询可用性；基准只有在 `LOCAL_DIET_ENABLE_LIVE_BENCHMARK=1` 时才执行推理。它固定使用一条合成中文餐食，只输出食物名、数量、单位和设备性能，不读取健康数据、相册或营养值，也没有网络降级路径。Swift Package 是 G2 测试壳，不是生产功能。
@@ -103,6 +107,26 @@ Apple 参考：
 初始质量阈值已写进 Schema 的 `x-initial-acceptance-policy`。系统模型真机峰值内存上限保持 `null`：当前真机没有进入推理，不能用不可用报告伪造预算。该增强保持关闭；后续系统模型或打包小模型必须在代表性低/中/高端设备取得基线后另行设限。
 
 评测素材只允许使用具有评测授权、公共领域或合成数据；`containsPrivateUserData` 被固定为 `false`。用户私人饮食照片不得提交到仓库。
+
+自定义视觉模型使用另一个完全隔离的 iOS 16 宿主。生成器只接受绝对路径；模型和标签必须位于本模块被 Git 忽略的 `.build/`，素材目录必须包含授权明确且 `containsPrivateUserData: false` 的 `dataset-manifest.json`。清单里的每个文件必须留在素材根目录内，宿主只打包清单明确列出的文件，不访问相册、健康数据、生产饮食仓库或网络。压缩模型的 `--fp16-delta` 必须来自同一冻结质量集的 FP16/压缩对照，不能用转换 cosine 代替。
+
+```bash
+cd mobile/modules/local-health-kernel
+ruby scripts/tests/generate_food_vision_device_host_test.rb
+ruby scripts/generate_food_vision_device_host.rb \
+  --output .build/food-vision-host/LocalFoodVisionBenchmarkHost.xcodeproj \
+  --team-id "$DEVELOPMENT_TEAM" \
+  --model "$PWD/.build/models/chinese-clip-rn50/coreml/int8/ChineseClipRN50Image.mlpackage" \
+  --label-bank "$PWD/.build/models/chinese-clip-rn50/chinese-clip-label-bank-v1.bin" \
+  --fixtures "$AUTHORIZED_FOOD_EVAL_DIR" \
+  --fp16-delta "$MEASURED_FP16_TO_INT8_IDENTITY_PRECISION_DELTA"
+```
+
+宿主只输出一行 `LOCAL_FOOD_VISION_BENCHMARK=<json>`；报告使用不透明 case/fixture ID，不输出照片名、路径、像素或 embedding。其 JSON 可用以下命令直接验证：
+
+```bash
+backend/venv/bin/python scripts/test_local_diet_eval_contract.py
+```
 
 ## 安全威胁模型评审
 
