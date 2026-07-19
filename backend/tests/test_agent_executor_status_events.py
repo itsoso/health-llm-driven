@@ -13,12 +13,15 @@ Two additive latency/UX features on the 小巴 hot path (AgentExecutor.run_strea
    generation at FAST_ROUTE_ANSWER_MAX_TOKENS (2000); everything else keeps
    ANSWER_MAX_TOKENS (8000). The tail decode of a simple answer is part of the latency.
 """
+import json
+
 import pytest
 
 from app.services.agent_executor import (
     ANSWER_MAX_TOKENS,
     FAST_ROUTE_ANSWER_MAX_TOKENS,
     AgentExecutor,
+    _build_deterministic_symptom_tool_call,
     _tool_status_label,
 )
 from app.services.llm import model_registry as reg
@@ -55,7 +58,15 @@ def _statuses(events):
     return out
 
 
-async def _run(executor, message, images=None, extra_context=None, user_id=1, client_turn_id=None):
+async def _run(
+    executor,
+    message,
+    images=None,
+    extra_context=None,
+    user_id=1,
+    client_turn_id=None,
+    channel=None,
+):
     return [
         event
         async for event in executor.run_stream(
@@ -65,8 +76,121 @@ async def _run(executor, message, images=None, extra_context=None, user_id=1, cl
             images=images,
             extra_context=extra_context,
             client_turn_id=client_turn_id,
+            channel=channel,
         )
     ]
+
+
+def test_deterministic_symptom_tool_call_accepts_clear_statement_only():
+    call = _build_deterministic_symptom_tool_call(
+        "还是有腰疼的症状。",
+        write_receipts=[],
+    )
+
+    assert call is not None
+    assert call["function"]["name"] == "health_record"
+    assert call["function"]["arguments"] == (
+        '{"record_type": "symptom", "data": {'
+        '"body_part": "musculoskeletal", '
+        '"description": "还是有腰疼的症状"}}'
+    )
+
+
+def test_deterministic_symptom_tool_call_keeps_questions_on_advice_path():
+    assert _build_deterministic_symptom_tool_call(
+        "腰疼怎么办？",
+        write_receipts=[],
+    ) is None
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "没有腰疼的症状。",
+        "我不头疼。",
+        "不头痛。",
+        "我朋友头痛。",
+        "检查报告提示膝盖疼。",
+        "附件里记录了腰疼。",
+    ],
+)
+def test_deterministic_symptom_tool_call_rejects_non_self_or_negated_text(message):
+    assert _build_deterministic_symptom_tool_call(
+        message,
+        write_receipts=[],
+    ) is None
+
+
+def test_deterministic_symptom_tool_call_rejects_attachments():
+    assert _build_deterministic_symptom_tool_call(
+        "还是有腰疼的症状。",
+        write_receipts=[],
+        has_attachment=True,
+    ) is None
+
+
+@pytest.mark.asyncio
+async def test_clear_symptom_is_written_when_model_only_returns_text(
+    db, auth_user_and_headers, monkeypatch
+):
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    _wire_min(executor, monkeypatch)
+    monkeypatch.setattr(
+        "app.services.agent_executor.get_health_tools",
+        lambda subset=None: [
+            {
+                "type": "function",
+                "function": {
+                    "name": "health_record",
+                    "description": "x",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            },
+        ],
+    )
+    executed = []
+
+    async def fake_execute_tool(name, args, token):
+        executed.append((name, args))
+        return (
+            '{"id": 42, "resource_type": "symptom", '
+            '"description": "还是有腰疼的症状", '
+            '"created_at": "2026-07-19T17:00:00+08:00"}'
+        )
+
+    async def fake_stream(messages, round_tools):
+        yield {"type": "content", "text": "我先帮你看看。"}
+        yield {"type": "finish", "finish_reason": "stop"}
+
+    monkeypatch.setattr(executor, "_execute_tool", fake_execute_tool)
+    monkeypatch.setattr(executor, "_call_llm_stream", fake_stream)
+    monkeypatch.setattr(
+        "app.services.agent_executor._post_record_quality_response",
+        lambda *args, **kwargs: None,
+    )
+
+    events = await _run(
+        executor,
+        "还是有腰疼的症状。",
+        user_id=user.id,
+        client_turn_id="turn-symptom-deterministic-fallback",
+        channel="typed",
+    )
+
+    assert len(executed) == 1
+    assert executed[0][0] == "health_record"
+    args = json.loads(executed[0][1])
+    assert args["record_type"] == "symptom"
+    assert args["data"]["body_part"] == "musculoskeletal"
+    assert args["data"]["description"] == "还是有腰疼的症状"
+    assert "已记录" in "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+    done = next(event for event in events if event.get("event") == "done")
+    assert done["data"]["write_receipts"][0]["resource_id"] == "42"
 
 
 @pytest.mark.asyncio

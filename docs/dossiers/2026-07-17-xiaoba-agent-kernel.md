@@ -105,6 +105,7 @@
 - 2026-07-19 发布前错误收口：工具异常统一通过 `safe_tool_error_message` 脱敏，避免把上游状态码、请求 ID 或内部响应直接写入对话；保留超时、网络、限流和权限的可操作提示。
 - 2026-07-19 当前顺序执行收口：Kernel 快照、统一回合关联、ToolGateway 静态守门、Trace 汇总和错误脱敏均已合入；回放兼容修复 `94e5d9c4b` 的定向回归 `43/43` 通过，进入部署后的 G6 真实设备验证准备。
 - 2026-07-19 App Store 原生预检收口：修复 `scripts/preflight-eas.sh` 仍硬编码旧 `ios/HealthPilot` 工程名的问题；当前 Expo 原生工程 `ios/app` 的 Info.plist、HealthKit entitlements 和 Podfile.lock 检查均已通过，并新增脚本回归测试防止工程重命名后再次误报。
+- 2026-07-19 明确症状写入收口：当用户明确自述当前症状而模型只返回文本时，Executor 生成一次最小 `health_record` 调用并继续走原有 validator、ToolGateway、写入检查和 receipt；否定句、第三方/报告内容、提问和带附件输入均不会触发兜底，相关回归 `96/96` 通过。
 
 ## G3 · 测试
 

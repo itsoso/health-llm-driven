@@ -4213,6 +4213,62 @@ _SYMPTOM_BODY_PART_MARKERS = (
     )),
 )
 
+_SYMPTOM_NEGATION_MARKERS = (
+    "没有",
+    "没",
+    "不",
+    "无",
+    "未",
+    "否认",
+    "不再",
+    "好了",
+    "缓解",
+    "消失",
+    "排除",
+)
+_SYMPTOM_NON_SELF_MARKERS = (
+    "朋友",
+    "家人",
+    "爸爸",
+    "妈妈",
+    "父亲",
+    "母亲",
+    "孩子",
+    "他人",
+    "别人",
+    "患者",
+    "病人",
+    "医生说",
+    "报告",
+    "检查提示",
+    "病历",
+    "附件",
+    "图片",
+    "照片",
+)
+
+
+def _symptom_text_is_current_self_observation(normalized: str) -> bool:
+    """Reject negated or third-party/report symptom mentions before auto-write."""
+    if any(marker in normalized for marker in _SYMPTOM_NON_SELF_MARKERS):
+        return False
+    symptom_markers = tuple(
+        marker
+        for _, markers in _SYMPTOM_BODY_PART_MARKERS
+        for marker in markers
+    ) + ("症状", "不适", "难受", "不舒服")
+    for symptom_marker in symptom_markers:
+        start = 0
+        while True:
+            index = normalized.find(symptom_marker, start)
+            if index < 0:
+                break
+            window = normalized[max(0, index - 8): index + len(symptom_marker) + 8]
+            if any(negation in window for negation in _SYMPTOM_NEGATION_MARKERS):
+                return False
+            start = index + len(symptom_marker)
+    return True
+
 
 def _normalize_symptom_body_part(data: Dict[str, Any]) -> None:
     """Normalize explicit Chinese symptom locations without inventing unknown ones.
@@ -4261,6 +4317,8 @@ def _extract_clear_symptom_record(message: Any) -> Optional[Dict[str, str]]:
         return None
 
     normalized = "".join(raw.split()).lower()
+    if not _symptom_text_is_current_self_observation(normalized):
+        return None
     for body_part, markers in _SYMPTOM_BODY_PART_MARKERS:
         if any(marker in normalized for marker in markers):
             return {
@@ -4300,6 +4358,44 @@ def _recover_clear_symptom_args(args: Any, message: Any) -> Any:
         if data.get(key) in (None, ""):
             data[key] = value
     return args
+
+
+def _build_deterministic_symptom_tool_call(
+    message: Any,
+    *,
+    write_receipts: Sequence[dict[str, Any]],
+    has_attachment: bool = False,
+) -> Optional[Dict[str, Any]]:
+    """Build one write call when a clear symptom was answered without a tool.
+
+    The fast-record path already classifies a declarative symptom as a write, but
+    a weak model can still return prose or only run a read tool. In that case the
+    user's own sentence is the only trusted payload we need: it is normalized by
+    the same narrow extractor used by malformed-call recovery, then sent through
+    the normal health_record validator, gateway, write checkpoint, and receipt
+    path. Questions remain on the advice path, and an existing receipt prevents a
+    second write.
+    """
+    if write_receipts or has_attachment:
+        return None
+    extracted = _extract_clear_symptom_record(message)
+    if not extracted:
+        return None
+    description = extracted["description"]
+    return {
+        "id": f"deterministic-symptom-{_sha12(description)}",
+        "type": "function",
+        "function": {
+            "name": "health_record",
+            "arguments": json.dumps(
+                {
+                    "record_type": "symptom",
+                    "data": extracted,
+                },
+                ensure_ascii=False,
+            ),
+        },
+    }
 
 
 def _prepare_health_record_args_for_validation(
@@ -6900,6 +6996,7 @@ class AgentExecutor:
         # 后置校验: record 意图的 turn 必须真的执行了写工具。0 次 = 模型可能只是
         # 嘴上说"已记录"却没调工具(弱模型把 tool-call 当正文吐出 → 静默丢数据)。
         tool_executed_count = 0
+        deterministic_symptom_fallback_attempted = False
         # 本轮 agent 实际调用过的工具/Skill 名, 去重、按首次调用顺序。供 mac/mobile
         # 展示"调用了哪些 Skills"。与 sources_used (引用了哪些数据源) 独立。
         tools_used: List[str] = []
@@ -7249,6 +7346,36 @@ class AgentExecutor:
                         continue  # 进入下一轮,模型用结构化 tool_calls 重试
                     # 轮次用尽仍是文本式 → 剥掉标记避免泄漏(用户至少不看到裸 "Tool calls:")。
                     response = {**response, "content": _strip_text_tool_call(botched)}
+
+                # 确定性症状写入兜底:当前用户句子已经被分类为明确症状陈述,
+                # 但模型只返回文字/只读查询时,不能把这条症状降级成“还没记下来”。
+                # 合成一个最小 health_record 调用,仍沿用下方完整的 validator、
+                # ToolGateway、write_state、receipt 和安全检查;只尝试一次,避免
+                # 上游返回异常时产生重复写入。问题句(如“腰疼怎么办”)不会命中
+                # _extract_clear_symptom_record,仍保持建议路径。
+                if (
+                    isinstance(response, dict)
+                    and not response.get("tool_calls")
+                    and not deterministic_symptom_fallback_attempted
+                ):
+                    deterministic_symptom_call = _build_deterministic_symptom_tool_call(
+                        message,
+                        write_receipts=write_receipts,
+                        has_attachment=bool(images or file_base64),
+                    )
+                    if deterministic_symptom_call:
+                        deterministic_symptom_fallback_attempted = True
+                        response = {
+                            **response,
+                            "content": "",
+                            "finish_reason": "tool_calls",
+                            "tool_calls": [deterministic_symptom_call],
+                        }
+                        logger.info(
+                            "[agent_executor] deterministic symptom write fallback user=%s msg=%r",
+                            user_id,
+                            (message or "")[:80],
+                        )
 
                 # ──── 工具决策轮快路由安全兜底: fast 模型直接答文本时丢弃, 强模型重合成 ────
                 # 到这里所有 tool-call 恢复 (结构化 / inline JSON / 文本式重试) 都已尝试完。
