@@ -5,6 +5,7 @@
 """
 import asyncio
 import datetime
+import json
 import uuid
 
 
@@ -30,10 +31,13 @@ def _mk_exam(db, user_id, items, exam_date):
     from app.models.medical_exam import MedicalExam, MedicalExamItem
     exam = MedicalExam(user_id=user_id, exam_date=exam_date, exam_type="comprehensive",
                        patient_gender="男", patient_age=41)
-    db.add(exam); db.commit(); db.refresh(exam)
+    db.add(exam)
+    db.commit()
+    db.refresh(exam)
     for name, val, unit in items:
         db.add(MedicalExamItem(exam_id=exam.id, item_name=name, value=val, unit=unit, source="manual"))
-    db.commit(); db.refresh(exam)
+    db.commit()
+    db.refresh(exam)
     return exam
 
 
@@ -120,13 +124,23 @@ def test_start_requires_confirmation_first(db):
 
 
 def test_start_confirmed_creates_cycle_via_service(db):
+    from app.services.agent_executor import _write_receipt_from_tool_result
     from app.services.intervention_cycle_service import get_active_cycle
     u = _mk_user(db)
     _seed_abnormal_labs(db, u.id)
     out = _exec(db, u.id, {"action": "start", "confirmed": True, "days": 90})
+    receipt = json.loads(out)
     assert "已开启" in out
     cycle = get_active_cycle(db, u.id)
     assert cycle is not None
+    assert receipt["id"] == cycle.id
+    assert receipt["resource_type"] == "intervention_cycle"
+    assert receipt["status"] == "verified"
+    runtime_receipt = _write_receipt_from_tool_result(
+        "intervention_cycle", None, out
+    )
+    assert runtime_receipt is not None
+    assert runtime_receipt["resource_id"] == str(cycle.id)
     assert cycle.status == "active"
     assert cycle.baseline_snapshot_id is not None
     # 目标非空 (异常 LDL/UA 锁进结局)
@@ -140,12 +154,15 @@ def test_start_no_double_open(db):
     _seed_abnormal_labs(db, u.id)
     _exec(db, u.id, {"action": "start", "confirmed": True})
     out2 = _exec(db, u.id, {"action": "start", "confirmed": True})
+    receipt = json.loads(out2)
     assert "已经有一个进行中的干预周期" in out2
     from app.models.intervention_cycle import InterventionCycle
     n = db.query(InterventionCycle).filter(
         InterventionCycle.user_id == u.id, InterventionCycle.status == "active"
     ).count()
     assert n == 1
+    assert receipt["id"]
+    assert receipt["resource_type"] == "intervention_cycle"
 
 
 def test_list_cycles_returns_history(db):
@@ -180,8 +197,11 @@ def test_update_cycle_requires_confirmation_then_adjusts_days(db):
         "days": 120,
         "confirmed": True,
     })
+    receipt = json.loads(second)
     db.refresh(cycle)
     assert "已调整" in second
+    assert receipt["id"] == cycle.id
+    assert receipt["resource_type"] == "intervention_cycle"
     assert cycle.planned_end_date == cycle.start_date + datetime.timedelta(days=120)
 
 
@@ -204,8 +224,11 @@ def test_cancel_cycle_requires_confirmation_then_abandons(db):
         "confirmed": True,
         "reason": "用户决定重新规划",
     })
+    receipt = json.loads(second)
     db.refresh(cycle)
     assert "已取消" in second
+    assert receipt["id"] == cycle.id
+    assert receipt["resource_type"] == "intervention_cycle"
     assert cycle.status == "abandoned"
     assert get_active_cycle(db, u.id) is None
 

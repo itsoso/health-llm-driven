@@ -4,8 +4,8 @@
 |---|---|
 | slug | `agent-runtime-control-plane` |
 | 创建日期 | 2026-07-19 |
-| 当前阶段 | S5 实现与验证完成 |
-| 状态 | ready_for_integration |
+| 当前阶段 | P1 Tool Control 已完成，待后续合并/灰度 Gate |
+| 状态 | in_progress |
 | 负责 | Codex |
 | 反馈环 | PostgreSQL/SQLite 集成测试 / Agent SSE 回归 / backend deploy |
 
@@ -67,6 +67,8 @@ RequirementAdmission:
 - 实施计划: `docs/plans/2026-07-19-agent-runtime-control-plane.md`
 - 第一里程碑: canonical RunContext、Run Ledger、会话级准入与兼容适配。
 - 第二里程碑另立 Gate: ToolSpec/operation idempotency/reconcile 后再做进程重启恢复。
+- P1 设计: `docs/plans/2026-07-19-agent-runtime-tool-control-design.md`
+- P1 实施计划: `docs/plans/2026-07-19-agent-runtime-tool-control.md`
 
 ## G2 · 可行性 + 安全压测
 
@@ -90,7 +92,7 @@ RequirementAdmission:
 
 ## S5 · 实现
 
-- 分支: `codex/agent-runtime-control-plane`，已 rebase 到 `origin/main@f9d298031`，包含最新 iPhone local-first 饮食自闭环与附件图片 AIGC 分流。
+- 分支: `codex/agent-runtime-control-plane`，已 rebase 到 `origin/main@3c73756ae`，包含最新 iPhone local-first 饮食自闭环、附件图片 AIGC 分流和症状/鼻炎写入安全修复。
 - 基线验证: 126 项 Agent event/conversation/replay/completion 测试通过。
 - 新增 content-free `agent_runs`、`agent_run_attempts`、`agent_tool_operations`、`agent_run_events`，带状态 CHECK、client-turn/input-seq/active-run 唯一约束。
 - `AgentRuntimeCoordinator` 负责 canonical identity、会话级准入、状态转换、消息绑定和 allowlist 事件；Runtime 表不存 prompt、回复、健康正文或原始工具参数/结果。
@@ -126,3 +128,31 @@ RequirementAdmission:
 ## S6–S8
 
 - 尚未进入部署阶段。
+
+## P1 · Tool Control
+
+- [x] ToolSpec Registry 覆盖全部 provider schema 和 specialist tool。
+- [x] `ToolGateway.execute()` 成为验证后请求的唯一策略与执行入口。
+- [x] Executor 改为 Registry adapter 分发，移除手写工具名分支。
+- [x] enforce 模式接入 content-free `AgentToolOperation` 状态机。
+- [x] verified fingerprint 不重复执行，uncertain operation 不自动重试。
+- [x] SQLite/PostgreSQL、健康写入、图片饮食与 strict-local 交叉回归通过。
+- 实现摘要:
+  - `ToolSpec` 统一工具 effect、adapter、timeout、write receipt 与 mixed-action 分类；旧策略常量从 Registry 派生，避免新增工具漏接安全和观测。
+  - `ToolGateway.execute()` 在策略裁决后最多分发一次；Executor 保留既有参数恢复、症状授权、参数校验、业务 adapter 和安全标注，不改变客户端或 iPhone strict-local 协议。
+  - Runtime enforce 模式在业务写前 claim content-free operation；verified 结果可直接 replay，executing/uncertain 不自动重试。重复 claim 不改写原 owner 状态，避免原写入成功后无法登记回执而产生“先失败、后成功”。
+  - Runtime 写指纹归一 `health_record` 类型别名和 `intervention_cycle` 确认字段；确认前后仍是同一业务操作身份，但不改变既有 turn-local 确认 checkpoint。
+  - Executor 被取消或超时时，已 claim 的写操作先落 `reconciliation_required` 再传播取消；干预周期 start/update/cancel 返回保留人话消息的结构化回执，避免真实成功被误判为缺少回执。
+  - 会话归属校验与 active Run 判断现在位于同一 conversation admission lock 内；SQLite StaticPool 以 Engine 弱引用绑定的数据库级可重入锁串行 Runtime 访问，Engine 销毁后锁自动回收，PostgreSQL 继续使用细粒度 advisory transaction lock。
+  - operation identity 绑定 `tool_name + effect_class + fingerprint`；Runtime 表和事件只保存摘要标识、状态和资源引用，不保存健康正文、参数或结果。
+- P1 验证证据:
+  - SQLite Tool Registry/Gateway/Runtime/Executor/receipt/health manage 回归：`330 passed`。
+  - SQLite 对话 API、图片生命周期、拍照饮食草稿和饮食卡片交叉回归：`173 passed`。
+  - 变基到最新主干后 Tool Registry/Gateway/Runtime/干预周期 + 症状/鼻炎安全组合回归：`335 passed`；包含 SQLite Engine 锁弱引用回收回归。
+  - 图片、对话、饮食交叉回归复跑：`114 passed`。
+  - Mobile strict-local egress、身份、执行事件和本地饮食闭环：7 suites / `26 passed`。
+  - 真实 PostgreSQL Runtime 状态机、并发、API 与 operation ledger 全集：`58 passed`；变基后并发 + operation ledger 定向复跑：`22 passed`，命令与临时库清理均 exit 0。
+  - `ruff check` 本次 Python 文件：PASS；`git diff --check`：PASS。
+  - `scripts/check_doc_drift.py` 在重新生成 `docs/_generated/system-map.json` 后 PASS；Dossier consistency：64 份 PASS。
+- 明确推迟: 业务端点跨 Run 幂等键、资源级自动 reconcile、进程死亡恢复扫描、durable stream cursor、取消/supersede 和 parent/child Run。
+- Rollout: Runtime 继续默认 `off`；P1 不部署、不灰度启用。

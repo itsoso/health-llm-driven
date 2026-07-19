@@ -56,6 +56,13 @@ from app.services.agent_kernel.context import (
     format_turn_time_context_prompt,
 )
 from app.services.agent_kernel.events import AgentEventBus
+from app.services.agent_kernel.tool_registry import (
+    UnknownToolAction,
+    classify_tool_effect,
+    get_tool_spec,
+    list_tool_specs,
+    requires_verified_receipt,
+)
 from app.services.agent_kernel.types import (
     CapabilityDecision,
     ToolExecutionRequest,
@@ -160,7 +167,9 @@ FAST_ROUTE_ESCALATE_AFTER_ROUNDS = 2
 _TOOL_HEARTBEAT_INTERVAL_S = 5.0
 _TOOL_TIMEOUT_DEFAULT_S = 90.0
 _TOOL_TIMEOUT_OVERRIDES: Dict[str, float] = {
-    "health_analysis": 135.0,
+    spec.name: spec.timeout_seconds
+    for spec in list_tool_specs()
+    if spec.timeout_seconds != _TOOL_TIMEOUT_DEFAULT_S
 }
 
 # 最终用户回复的 token 上限。健康养护/操作清单类回复常 >4000 token,
@@ -2485,13 +2494,7 @@ def _friendly_record_confirmation(record: Dict[str, Any]) -> str:
 _TURN_CARD_UNSET = object()
 
 _WRITE_RECEIPT_TOOL_NAMES = {
-    "health_record",
-    "health_manage",
-    "intervention_cycle",
-    "draft_aigc_media",
-    "manage_plan",
-    "upload_genetic_txt",
-    "upload_medical_exam_text",
+    spec.name for spec in list_tool_specs() if spec.receipt_required
 }
 
 # Read-only-turn allowlist (starter answer pre-generation · rank7). A pregen turn
@@ -2503,24 +2506,7 @@ _WRITE_RECEIPT_TOOL_NAMES = {
 # blocked at the single _execute_tool dispatch choke, so a new write tool is
 # denied by default rather than needing to be added to a denylist.
 _READ_ONLY_TURN_ALLOWED_TOOLS = {
-    "health_query",
-    "health_query_batch",
-    "knowledge_search",
-    "realtime_search",
-    "environment_check",
-    "query_genetic_profile",
-    "query_lab_indicators",
-    "health_analysis",
-    "supplement_guide",
-    "analyze_recovery",
-    "analyze_fuel",
-    "analyze_movement",
-    "analyze_mental",
-    "analyze_hypertension",
-    "analyze_metabolic",
-    "analyze_rhinitis",
-    "analyze_longitudinal",
-    "analyze_longevity",
+    spec.name for spec in list_tool_specs() if spec.effect == "read"
 }
 _WRITE_RESULT_FAILURE_MARKERS = (
     "Error:",
@@ -2711,6 +2697,37 @@ def _write_operation_fingerprint(
     return hashlib.sha256(fingerprint_payload.encode()).hexdigest()
 
 
+def _runtime_write_operation_fingerprint(
+    tool_name: str,
+    parsed_args: Dict[str, Any],
+) -> str:
+    """Canonical business identity for Runtime write deduplication.
+
+    This is deliberately separate from the turn-local checkpoint fingerprint:
+    confirmation fields still matter to the conversation flow, but they must
+    not create a second durable write identity for the same business action.
+    """
+    canonical_args = dict(parsed_args)
+    if tool_name == "health_record":
+        record_type = (
+            canonical_args.get("record_type")
+            or canonical_args.get("type")
+            or canonical_args.get("kind")
+        )
+        if record_type not in (None, ""):
+            canonical_args["record_type"] = _normalize_fast_record_kind(
+                record_type
+            )
+        canonical_args.pop("type", None)
+        canonical_args.pop("kind", None)
+    elif tool_name == "intervention_cycle":
+        action = str(canonical_args.get("action") or "").strip().lower()
+        canonical_args["action"] = "cancel" if action == "delete" else action
+        canonical_args.pop("confirm", None)
+        canonical_args.pop("confirmed", None)
+    return _write_operation_fingerprint(tool_name, canonical_args)
+
+
 # 只读工具回合级去重(founder 2026-07-14「列出喝水记录」→ health_query 空转 7 次 70s 根因)。
 # 镜像写工具的 fingerprint replay,但只对**只读**工具(写工具重复要走确认链,绝不盲去重)。
 _READ_DEDUP_ENABLED = True
@@ -2729,12 +2746,10 @@ def _read_operation_fingerprint(tool_name: str, parsed_args: Dict[str, Any]) -> 
 
 def _tool_call_is_read_only(tool_name: str, parsed_args: Dict[str, Any]) -> bool:
     """Classify mixed read/write tools by operation instead of only by name."""
-    if tool_name == "health_manage":
-        return str(parsed_args.get("operation") or "").strip().lower() == "list"
-    return (
-        tool_name in _READ_ONLY_TURN_ALLOWED_TOOLS
-        and tool_name not in _WRITE_RECEIPT_TOOL_NAMES
-    )
+    try:
+        return classify_tool_effect(tool_name, parsed_args) == "read"
+    except (UnknownToolAction, RuntimeError):
+        return False
 
 
 def _is_seen_readonly_call(tc: Dict[str, Any], seen_read_fps: Dict[str, Any]) -> bool:
@@ -2842,19 +2857,11 @@ def _write_receipt_from_tool_result(
 
 
 def _write_tool_completed(tool_name: str, args: Any, result: Any) -> bool:
-    if tool_name not in _WRITE_RECEIPT_TOOL_NAMES:
-        return False
     try:
         parsed_args = json.loads(args) if isinstance(args, str) else dict(args or {})
     except (json.JSONDecodeError, TypeError, ValueError):
         parsed_args = {}
-    if tool_name == "health_manage" and parsed_args.get("operation") not in {"update", "delete"}:
-        return False
-    if tool_name == "intervention_cycle" and parsed_args.get("action") not in {"start", "update", "cancel"}:
-        return False
-    if tool_name == "manage_plan" and parsed_args.get("action") not in {
-        "generate_weekly", "complete_item", "save_to_card"
-    }:
+    if not _write_tool_attempted(tool_name, parsed_args):
         return False
     if isinstance(result, str):
         text = result.strip()
@@ -2874,7 +2881,9 @@ def _write_tool_completed(tool_name: str, args: Any, result: Any) -> bool:
 # resource id，不产写回执，绝不能进写诚实闸(否则真成功 / MFA 失败 / 未绑定都会被
 # 误判成"未取得可验证写入回执"，把真因盖掉、还驱动无谓重试)。garmin_sync = 异步
 # 同步 job，是这类的第一个成员。匹配 record_type 与 type 双键(模型两种都吐过)。
-_NON_WRITE_RECORD_TYPES: frozenset[str] = frozenset({"garmin_sync"})
+_NON_WRITE_RECORD_TYPES: frozenset[str] = get_tool_spec(
+    "health_record"
+).receipt_exempt_record_types
 
 
 # Apple 健康(HealthKit)数据只能由 iPhone 上的 App 在前台读取后**上传**到后端 ——
@@ -2894,30 +2903,14 @@ def _is_healthkit_sync_intent(text: Optional[str]) -> bool:
 
 def _write_tool_attempted(tool_name: str, args: Any) -> bool:
     """Return whether this invocation crossed a write boundary, even if it failed."""
-    if tool_name not in _WRITE_RECEIPT_TOOL_NAMES:
-        return False
     try:
         parsed_args = json.loads(args) if isinstance(args, str) else dict(args or {})
     except (json.JSONDecodeError, TypeError, ValueError):
         parsed_args = {}
-    if tool_name == "health_record":
-        rtype = parsed_args.get("record_type") or parsed_args.get("type")
-        if rtype in _NON_WRITE_RECORD_TYPES:
-            return False
-        return True
-    if tool_name == "health_manage":
-        return parsed_args.get("operation") in {"update", "delete"}
-    if tool_name == "intervention_cycle":
-        return parsed_args.get("action") in {"start", "update", "cancel"}
-    if tool_name == "draft_aigc_media":
-        return True
-    if tool_name in {"manage_plan", "upload_genetic_txt", "upload_medical_exam_text"}:
-        if tool_name == "manage_plan":
-            return parsed_args.get("action") in {
-                "generate_weekly", "complete_item", "save_to_card"
-            }
-        return True
-    return False
+    try:
+        return requires_verified_receipt(tool_name, parsed_args)
+    except (UnknownToolAction, RuntimeError):
+        return False
 
 
 def _safety_warning_suffix_from_tool_results(messages: List[Dict[str, Any]]) -> str:
@@ -11700,8 +11693,7 @@ class AgentExecutor:
         # stores nothing (starter chips are analysis prompts — a write attempt means
         # the answer must not be pre-served; the tap falls through to a live turn).
         if getattr(self, "_read_only_turn", False):
-            from app.services.specialist_tools import is_specialist_tool
-            if tool_name not in _READ_ONLY_TURN_ALLOWED_TOOLS and not is_specialist_tool(tool_name):
+            if not _tool_call_is_read_only(tool_name, args):
                 self._read_only_turn_write_attempted = True
                 logger.warning(
                     "[agent_executor] read-only pregen turn blocked non-read tool=%s user=%s",
@@ -11709,116 +11701,235 @@ class AgentExecutor:
                 )
                 return f"Error: 只读预生成回合不执行写入/变更操作（{tool_name}）"
 
-        gateway_block = self._agent_kernel_preflight_tool(tool_name, args, source=source)
-        if gateway_block:
-            return gateway_block
-
-        base_url = settings.health_api_base_url or "http://localhost:8000/api/v1"
-        headers = {"Authorization": f"Bearer {user_token}"} if user_token else {}
-
         try:
-            if tool_name == "health_query":
-                result = await self._exec_health_query(base_url, headers, args)
-                return annotate_if_implausible(result)
-            elif tool_name == "health_query_batch":
-                return await self._exec_health_query_batch(base_url, headers, args)
-            elif tool_name == "health_record":
-                return await self._exec_health_record(base_url, headers, args)
-            elif tool_name == "health_manage":
-                return await self._exec_health_manage(base_url, headers, args)
-            elif tool_name == "health_analysis":
-                # 深度分析/安全裁决路径: 标记本回合, 让后续合成轮不给思考封顶
-                # (SYNTHESIS_THINKING_BUDGET fail-closed 跳过, 保留完整思考)。
-                self._turn_invoked_deep_analysis = True
-                result = await self._exec_health_analysis(base_url, headers, args)
-                return annotate_if_implausible(result)
-            elif tool_name == "knowledge_search":
-                return await self._exec_knowledge_search(args)
-            elif tool_name == "realtime_search":
-                return await self._exec_realtime_search(args)
-            elif tool_name == "environment_check":
-                return await self._exec_environment(base_url, headers, args)
-            elif tool_name == "supplement_guide":
-                return await self._exec_supplement_guide(base_url, headers, args)
-            elif tool_name == "manage_plan":
-                return await self._exec_manage_plan(base_url, headers, args)
-            elif tool_name == "intervention_cycle":
-                return await self._exec_intervention_cycle(args)
-            elif tool_name == "draft_aigc_media":
-                return await self._exec_draft_aigc_media(args)
-            elif tool_name == "upload_genetic_txt":
-                return await self._exec_upload_genetic_txt(base_url, headers, args)
-            elif tool_name == "query_genetic_profile":
-                return await self._exec_query_genetic_profile(base_url, headers, args)
-            elif tool_name == "upload_medical_exam_text":
-                return await self._exec_upload_medical_exam_text(base_url, headers, args)
-            elif tool_name == "query_lab_indicators":
-                result = await self._exec_query_lab_indicators(base_url, headers, args)
-                return annotate_if_implausible(result)
-            else:
-                # RFC 方向一 Phase A: specialist 分析工具(analyze_recovery 等)
-                from app.services.specialist_tools import is_specialist_tool, run_specialist_tool
-                if is_specialist_tool(tool_name):
-                    # specialist.run 是同步 CPU 计算, 丢线程池避免阻塞事件循环
-                    import asyncio as _aio
-                    return await _aio.to_thread(
-                        run_specialist_tool, self.db, self._current_user_id, tool_name
-                    )
-                return f"Error: 未知工具 {tool_name}"
-        except Exception as e:
-            logger.error(f"工具执行失败 {tool_name}: {e}")
-            return f"Error: {safe_tool_error_message(tool_name, e)}"
-
-    def _agent_kernel_preflight_tool(
-        self,
-        tool_name: str,
-        args: Any,
-        *,
-        source: str = "structured_or_recovered",
-    ) -> Optional[str]:
-        """Run XiaoBa Agent Kernel policy before dispatching an executable tool."""
-        try:
-            from app.services.agent_kernel.tool_gateway import ToolGateway, blocked_tool_result
+            from app.services.agent_kernel.tool_gateway import ToolGateway
 
             snapshot = self._ensure_agent_kernel_turn()
-            request = ToolExecutionRequest(
-                tool_name=tool_name,
-                arguments=args,
-                source=source,
+            gateway_result = await ToolGateway(snapshot).execute(
+                ToolExecutionRequest(
+                    tool_name=tool_name,
+                    arguments=args,
+                    source=source,
+                ),
+                lambda request: self._dispatch_tool_request(request, user_token),
             )
-            decision = ToolGateway(snapshot).preflight(request)
-            self._agent_kernel_last_decision = decision
-            if self._agent_kernel_event_bus is not None:
-                self._agent_kernel_event_bus.capability_decided(
-                    tool_name=decision.normalized_tool_name or tool_name,
-                    action=decision.action,
-                    reason=decision.reason,
-                )
-            if decision.action == "block" and snapshot.policy_mode == "enforce":
-                if decision.reason not in self._agent_kernel_capability_block_reasons:
-                    self._agent_kernel_capability_block_reasons.append(decision.reason)
-                logger.warning(
-                    "[agent_kernel] blocked tool=%s user=%s reason=%s intent=%s/%s/%s",
-                    tool_name,
-                    self._current_user_id,
-                    decision.reason,
-                    snapshot.intent.primary,
-                    snapshot.intent.domain,
-                    snapshot.intent.operation,
-                )
-                return blocked_tool_result(decision)
+            decision = gateway_result.decision
+            if decision is not None:
+                self._agent_kernel_record_capability_decision(tool_name, decision)
+            return str(gateway_result.content)
         except Exception as exc:  # noqa: BLE001
             if "policy_check_failed" not in self._agent_kernel_capability_block_reasons:
                 self._agent_kernel_capability_block_reasons.append("policy_check_failed")
             logger.error(
-                "[agent_kernel] preflight failed tool=%s user=%s error=%s",
+                "[agent_kernel] gateway failed tool=%s user=%s error=%s",
                 tool_name,
                 self._current_user_id,
                 exc,
                 exc_info=True,
             )
             return "Error: 工具调用策略检查失败,已阻止执行。"
-        return None
+
+    async def _dispatch_tool_request(
+        self,
+        request: ToolExecutionRequest,
+        user_token: Optional[str],
+    ) -> str:
+        """Dispatch one policy-approved request through its registered adapter."""
+        runtime_operation = None
+        runtime_coordinator = None
+        runtime_context = None
+
+        def finalize_uncertain_operation() -> None:
+            if (
+                runtime_operation is None
+                or runtime_coordinator is None
+                or runtime_context is None
+            ):
+                return
+            try:
+                runtime_coordinator.finalize_tool_operation(
+                    runtime_context,
+                    operation_id=runtime_operation.operation_id,
+                    status="reconciliation_required",
+                    error_code="write_uncertain",
+                )
+            except Exception as finalize_exc:  # noqa: BLE001
+                logger.error(
+                    "Runtime tool operation finalize failed operation=%s error=%s",
+                    runtime_operation.operation_id,
+                    finalize_exc,
+                )
+
+        try:
+            from app.services.agent_kernel.tool_registry import get_tool_spec
+
+            spec = get_tool_spec(request.tool_name)
+            args = request.arguments if isinstance(request.arguments, dict) else {}
+            if (
+                str(getattr(settings, "agent_runtime_mode", "off")).strip().lower()
+                == "enforce"
+                and self._runtime_run_id
+                and self._runtime_attempt_id
+                and self._current_user_id is not None
+                and spec.requires_verified_receipt(args)
+            ):
+                from app.services.agent_runtime import (
+                    AgentRuntimeCoordinator,
+                    RunContext,
+                )
+
+                runtime_coordinator = AgentRuntimeCoordinator(self.db)
+                runtime_context = RunContext(
+                    run_id=self._runtime_run_id,
+                    attempt_id=self._runtime_attempt_id,
+                    user_id=self._current_user_id,
+                    conversation_id=None,
+                    client_turn_id=None,
+                    input_seq=None,
+                    origin="executor",
+                )
+                runtime_operation = runtime_coordinator.claim_tool_operation(
+                    runtime_context,
+                    tool_name=request.tool_name,
+                    effect_class="write",
+                    operation_fingerprint=_runtime_write_operation_fingerprint(
+                        request.tool_name,
+                        args,
+                    ),
+                )
+                if runtime_operation.disposition == "replay":
+                    return json.dumps(
+                        {
+                            "status": "verified",
+                            "success": True,
+                            "operation_id": runtime_operation.operation_id,
+                            "resource_type": runtime_operation.resource_type,
+                            "resource_id": runtime_operation.resource_id,
+                            "replayed": True,
+                        },
+                        ensure_ascii=False,
+                    )
+                if runtime_operation.disposition == "reconcile":
+                    return json.dumps(
+                        {
+                            "status": "uncertain",
+                            "dispatch_started": True,
+                            "error_code": runtime_operation.error_code
+                            or "write_uncertain",
+                        },
+                        ensure_ascii=False,
+                    )
+
+            if spec.adapter_kind == "specialist":
+                from app.services.specialist_tools import run_specialist_tool
+
+                return await asyncio.to_thread(
+                    run_specialist_tool,
+                    self.db,
+                    self._current_user_id,
+                    request.tool_name,
+                )
+            if spec.executor_method is None:
+                raise RuntimeError("tool_adapter_missing")
+            if spec.marks_deep_analysis:
+                self._turn_invoked_deep_analysis = True
+            handler = getattr(self, spec.executor_method)
+            if spec.call_style == "http":
+                base_url = (
+                    settings.health_api_base_url
+                    or "http://localhost:8000/api/v1"
+                )
+                headers = (
+                    {"Authorization": f"Bearer {user_token}"}
+                    if user_token
+                    else {}
+                )
+                result = await handler(base_url, headers, args)
+            else:
+                result = await handler(args)
+            result = (
+                annotate_if_implausible(result)
+                if spec.annotate_implausible
+                else result
+            )
+            if (
+                runtime_operation is not None
+                and runtime_coordinator is not None
+                and runtime_context is not None
+            ):
+                record_type = args.get("record_type") or args.get("type")
+                receipt = _write_receipt_from_tool_result(
+                    request.tool_name,
+                    record_type,
+                    result,
+                )
+                outcome = classify_write_execution(result, receipt=receipt)
+                if outcome.status == "verified" and receipt is not None:
+                    runtime_coordinator.finalize_tool_operation(
+                        runtime_context,
+                        operation_id=runtime_operation.operation_id,
+                        status="succeeded",
+                        resource_type=str(receipt.get("resource_type") or ""),
+                        resource_id=str(receipt.get("resource_id") or ""),
+                    )
+                elif outcome.status in {"rejected", "failed"} and (
+                    outcome.dispatch_started is False
+                ):
+                    runtime_coordinator.finalize_tool_operation(
+                        runtime_context,
+                        operation_id=runtime_operation.operation_id,
+                        status="failed",
+                        error_code="tool_rejected",
+                    )
+                else:
+                    runtime_coordinator.finalize_tool_operation(
+                        runtime_context,
+                        operation_id=runtime_operation.operation_id,
+                        status="reconciliation_required",
+                        error_code=(
+                            "missing_receipt"
+                            if outcome.error_code == "missing_receipt"
+                            else "write_uncertain"
+                        ),
+                    )
+            return result
+        except asyncio.CancelledError:
+            # Cancellation may arrive after an external write crossed its
+            # dispatch boundary. Persist uncertainty before propagating the
+            # cancellation so a replacement worker cannot repeat the write.
+            finalize_uncertain_operation()
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.error("工具执行失败 %s: %s", request.tool_name, exc)
+            finalize_uncertain_operation()
+            return f"Error: {safe_tool_error_message(request.tool_name, exc)}"
+
+    def _agent_kernel_record_capability_decision(
+        self,
+        requested_tool_name: str,
+        decision: CapabilityDecision,
+    ) -> None:
+        self._agent_kernel_last_decision = decision
+        if self._agent_kernel_event_bus is not None:
+            self._agent_kernel_event_bus.capability_decided(
+                tool_name=decision.normalized_tool_name or requested_tool_name,
+                action=decision.action,
+                reason=decision.reason,
+            )
+        snapshot = self._ensure_agent_kernel_turn()
+        if decision.action != "block" or snapshot.policy_mode != "enforce":
+            return
+        if decision.reason not in self._agent_kernel_capability_block_reasons:
+            self._agent_kernel_capability_block_reasons.append(decision.reason)
+        logger.warning(
+            "[agent_kernel] blocked tool=%s user=%s reason=%s intent=%s/%s/%s",
+            requested_tool_name,
+            self._current_user_id,
+            decision.reason,
+            snapshot.intent.primary,
+            snapshot.intent.domain,
+            snapshot.intent.operation,
+        )
 
     async def _exec_knowledge_search(self, args: dict) -> str:
         """检索两路知识库, fail-honest, 不静默返回空:
@@ -13404,6 +13515,21 @@ class AgentExecutor:
             .first()
         )
 
+    @staticmethod
+    def _intervention_write_receipt(cycle, action: str, message: str) -> str:
+        """Return a verifiable receipt while retaining the user-facing copy."""
+        return json.dumps(
+            {
+                "id": cycle.id,
+                "resource_type": "intervention_cycle",
+                "operation_id": f"intervention_cycle:{cycle.id}:{action}",
+                "status": "verified",
+                "success": True,
+                "message": message,
+            },
+            ensure_ascii=False,
+        )
+
     def _intervention_update(self, user_id: int, args: dict) -> str:
         """调整 active cycle 参数; 不修改历史基线。"""
         from app.services import intervention_cycle_service as ics
@@ -13440,10 +13566,11 @@ class AgentExecutor:
             raise
 
         end = cycle.planned_end_date.isoformat() if cycle.planned_end_date else "未设置"
-        return (
+        message = (
             f"已调整干预周期 #{cycle.id}: 计划结束日 {end}, "
             f"目标 {len(cycle.target_metrics or [])} 项, 停止条件 {len(cycle.stop_conditions or [])} 条。"
         )
+        return self._intervention_write_receipt(cycle, "update", message)
 
     def _intervention_cancel(self, user_id: int, args: dict) -> str:
         """取消 active cycle; 保留历史记录。"""
@@ -13462,7 +13589,8 @@ class AgentExecutor:
             raise
         reason = str(args.get("reason") or "").strip()
         reason_text = f" 原因: {reason}" if reason else ""
-        return f"已取消干预周期 #{cycle.id}, 历史记录已保留。{reason_text}"
+        message = f"已取消干预周期 #{cycle.id}, 历史记录已保留。{reason_text}"
+        return self._intervention_write_receipt(cycle, "cancel", message)
 
     def _intervention_status(self, user_id: int) -> str:
         """组织当前 active 周期的人话进展摘要 (无周期则友好提示)。"""
@@ -13526,10 +13654,11 @@ class AgentExecutor:
 
         existing = ics.get_active_cycle(self.db, user_id)
         if existing is not None:
-            return (
+            message = (
                 "你已经有一个进行中的干预周期了 (同一时间只跟踪一个), 没有重复开。"
                 "想看进展用 status; 想换目标可以等当前周期结束。"
             )
+            return self._intervention_write_receipt(existing, "start", message)
 
         try:
             twin = build_twin(self.db, user_id, use_cache=False)
@@ -13543,21 +13672,23 @@ class AgentExecutor:
 
         n = len(cycle.outcomes)
         if n == 0:
-            return (
+            message = (
                 f"已开启干预周期 (周期 {days} 天), 但暂时没有可锁定的异常代谢指标作为目标。"
                 "建议先补一次化验 (血脂/血糖/肝功/尿酸), 之后复查时就能验证效果了。"
             )
+            return self._intervention_write_receipt(cycle, "start", message)
         from app.biomarkers import get_definition
         names = [
             (get_definition(om.metric_code).display if get_definition(om.metric_code) else om.metric_code)
             for om in cycle.outcomes
         ]
-        return (
+        message = (
             f"已开启 N-of-1 干预周期 (周期 {days} 天), 锁定基线快照。"
             f"将跟踪 {n} 项结局指标: {', '.join(names)}。"
             "过段时间复查化验后, 我会用你自己的数据告诉你有没有改善。"
             "(非医疗诊断, 重大健康调整请结合医生意见。)"
         )
+        return self._intervention_write_receipt(cycle, "start", message)
 
     async def _exec_upload_genetic_txt(
         self, base: str, headers: dict, args: dict
