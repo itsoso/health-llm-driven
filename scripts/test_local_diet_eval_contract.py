@@ -13,6 +13,7 @@ from jsonschema import Draft202012Validator
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_PATH = ROOT / "docs/evals/local-diet/on-device-eval-contract.json"
+VARIANT_SCHEMA_PATH = ROOT / "docs/evals/local-diet/chinese-clip-variant-evidence-contract.json"
 LEGACY_DEVICE_RUN = (
     ROOT
     / "docs/evals/local-diet/runs/2026-07-18-iphone18-2-ios26-6-system-model.json"
@@ -51,14 +52,16 @@ def base_report(engine: str = "custom_core_ml", precision: str = "fp16") -> dict
                 "modelArtifactSha256": "a" * 64,
                 "labelBankVersion": "cn-food-labels-v2",
                 "calibrationVersion": "cn-clip-calibration-v2",
+                "calibrationManifestSha256": "c" * 64,
+                "minimumScore": 0.5,
+                "minimumMargin": 0.03,
+                "maximumCandidates": 3,
                 "installedModelBytes": 39_296_441,
                 "installedLabelBankBytes": 329_784,
                 "precisionVariant": precision,
             }
         )
         summary["oneSecondCompletionRate"] = 1
-        if precision != "fp16":
-            summary["fp16ToCompressedIdentityPrecisionDelta"] = 0.01
 
     return {
         "contractVersion": "1.0.0",
@@ -143,6 +146,10 @@ class LocalDietEvalContractTests(unittest.TestCase):
             "modelArtifactSha256",
             "labelBankVersion",
             "calibrationVersion",
+            "calibrationManifestSha256",
+            "minimumScore",
+            "minimumMargin",
+            "maximumCandidates",
             "installedModelBytes",
             "installedLabelBankBytes",
             "precisionVariant",
@@ -158,12 +165,13 @@ class LocalDietEvalContractTests(unittest.TestCase):
         del report["summary"]["oneSecondCompletionRate"]
         self.assert_invalid(report)
 
-    def test_compressed_run_requires_fp16_identity_precision_delta(self) -> None:
+    def test_raw_compressed_run_does_not_claim_a_comparison_delta(self) -> None:
         report = base_report(precision="int8-linear-per-channel-65536")
-        del report["summary"]["fp16ToCompressedIdentityPrecisionDelta"]
+        self.assert_valid(report)
+        report["summary"]["fp16ToCompressedIdentityPrecisionDelta"] = 0.01
         self.assert_invalid(report)
 
-    def test_fp16_run_does_not_claim_a_compression_delta(self) -> None:
+    def test_raw_fp16_run_does_not_claim_a_comparison_delta(self) -> None:
         report = base_report()
         report["summary"]["fp16ToCompressedIdentityPrecisionDelta"] = 0
         self.assert_invalid(report)
@@ -191,6 +199,56 @@ class LocalDietEvalContractTests(unittest.TestCase):
         identifier = run["report"]["device"]["hardwareIdentifier"]
         self.assertEqual("iPhone18,2", identifier)
         self.assertNotRegex(json.dumps(run), r"[0-9A-Fa-f]{8}-[0-9A-Fa-f-]{20,}")
+
+
+class ChineseClipVariantEvidenceContractTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.schema = load_json(VARIANT_SCHEMA_PATH)
+        Draft202012Validator.check_schema(cls.schema)
+        cls.validator = Draft202012Validator(cls.schema)
+
+    def test_derived_variant_evidence_requires_input_hashes_and_measured_delta(self) -> None:
+        evidence = {
+            "schemaVersion": 1,
+            "datasetVersion": "authorized-v1",
+            "datasetManifestSha256": "a" * 64,
+            "testCaseIdsSha256": "b" * 64,
+            "modelRevision": "7" * 40,
+            "labelSetVersion": "cn-food-labels-v2",
+            "calibrationVersion": "cn-clip-calibration-v2",
+            "calibrationManifestSha256": "f" * 64,
+            "variantsManifestSha256": "c" * 64,
+            "fp16": {
+                "runSha256": "d" * 64,
+                "precisionVariant": "fp16",
+                "installedAssetBytes": 77_074_808,
+                "foodIdentityPrecision": 0.9,
+                "qualityGate": {"passed": True, "failures": []},
+            },
+            "compressed": {
+                "runSha256": "e" * 64,
+                "precisionVariant": "int8-linear-per-channel-65536",
+                "installedAssetBytes": 39_660_136,
+                "foodIdentityPrecision": 0.89,
+                "qualityGate": {"passed": True, "failures": []},
+            },
+            "absoluteIdentityPrecisionDelta": 0.01,
+            "assetBudgetBytes": 52_428_800,
+            "selectedVariant": "int8-linear-per-channel-65536",
+            "verdict": "pass",
+        }
+        self.assertEqual([], list(self.validator.iter_errors(evidence)))
+
+        for field in [
+            "datasetManifestSha256",
+            "calibrationManifestSha256",
+            "fp16",
+            "compressed",
+        ]:
+            invalid = deepcopy(evidence)
+            del invalid[field]
+            self.assertTrue(list(self.validator.iter_errors(invalid)))
 
 
 if __name__ == "__main__":

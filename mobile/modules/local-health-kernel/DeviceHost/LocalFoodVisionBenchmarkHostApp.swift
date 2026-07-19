@@ -20,14 +20,23 @@ struct LocalFoodVisionBenchmarkHostApp: App {
     @MainActor
     private func runBenchmark() async {
         _ = Self.enableMarker
+        guard LocalFoodVisionBenchmarkConfig.evidenceCollectionEnabled else {
+            status = "Compile-only host. Evidence collection is disabled."
+            return
+        }
+        guard let calibrationManifestSHA256 =
+            LocalFoodVisionBenchmarkConfig.calibrationManifestSHA256 else {
+            status = "Benchmark configuration is missing calibration provenance."
+            return
+        }
         do {
             let manifest = try loadManifest()
             let modelURL = try bundledModelURL()
             let labelBankURL = try bundledLabelBankURL()
             let provenance = LocalFoodVisionProvenance(
                 modelArtifactSHA256: LocalFoodVisionBenchmarkConfig.modelArtifactSHA256,
-                labelBankVersion: "cn-food-labels-v2",
-                calibrationVersion: "cn-clip-calibration-v2",
+                labelBankVersion: LocalFoodVisionBenchmarkConfig.labelBankVersion,
+                calibrationVersion: LocalFoodVisionBenchmarkConfig.calibrationVersion,
                 precisionVariant: LocalFoodVisionBenchmarkConfig.precisionVariant
             )
             let engine = LocalChineseClipVisionEngine(
@@ -35,9 +44,9 @@ struct LocalFoodVisionBenchmarkHostApp: App {
                 labelBankURL: labelBankURL,
                 provenance: provenance,
                 rankingPolicy: .init(
-                    minimumScore: 0.5,
-                    minimumMargin: 0.03,
-                    maximumCandidates: 3
+                    minimumScore: LocalFoodVisionBenchmarkConfig.minimumScore,
+                    minimumMargin: LocalFoodVisionBenchmarkConfig.minimumMargin,
+                    maximumCandidates: LocalFoodVisionBenchmarkConfig.maximumCandidates
                 ),
                 proposer: LocalFoodVisionSaliencyProposer(),
                 preprocessor: LocalFoodVisionPreprocessor(),
@@ -45,13 +54,13 @@ struct LocalFoodVisionBenchmarkHostApp: App {
                 labelLoader: LocalChineseClipLabelBankLoader(),
                 runtimeGuard: LocalFoodProcessRuntimeGuard()
             )
-            let cases = try manifest.cases.map { fixture in
+            let cases = try manifest.cases.filter { $0.split == "test" }.map { fixture in
                 LocalFoodVisionBenchmarkCase(
                     caseID: fixture.caseId,
-                    fixtureRef: fixture.fixtureRef,
+                    fixtureRef: fixture.fixtureId,
                     request: .init(image: try loadImage(named: fixture.file)),
                     expectedFoodIdentities: fixture.expectedFoodIdentities,
-                    allowedAliases: fixture.allowedAliases ?? [:],
+                    allowedAliases: fixture.allowedAliases,
                     nonFood: fixture.nonFood
                 )
             }
@@ -60,9 +69,9 @@ struct LocalFoodVisionBenchmarkHostApp: App {
                 runID: "local-food-vision-\(UUID().uuidString.lowercased())",
                 recordedAt: ISO8601DateFormatter().string(from: Date()),
                 dataset: .init(
-                    name: manifest.name,
-                    version: manifest.version,
-                    licenseStatus: try license(manifest.licenseStatus),
+                    name: LocalFoodVisionBenchmarkConfig.datasetName,
+                    version: manifest.datasetVersion,
+                    licenseStatus: try license(LocalFoodVisionBenchmarkConfig.datasetLicenseStatus),
                     containsPrivateUserData: manifest.containsPrivateUserData
                 ),
                 device: .init(
@@ -80,16 +89,18 @@ struct LocalFoodVisionBenchmarkHostApp: App {
                     downloadBytes: LocalFoodVisionBenchmarkConfig.sourceModelBytes
                         + LocalFoodVisionBenchmarkConfig.sourceLabelBankBytes,
                     modelArtifactSha256: LocalFoodVisionBenchmarkConfig.modelArtifactSHA256,
-                    labelBankVersion: "cn-food-labels-v2",
-                    calibrationVersion: "cn-clip-calibration-v2",
+                    labelBankVersion: LocalFoodVisionBenchmarkConfig.labelBankVersion,
+                    calibrationVersion: LocalFoodVisionBenchmarkConfig.calibrationVersion,
+                    calibrationManifestSha256: calibrationManifestSHA256,
+                    minimumScore: LocalFoodVisionBenchmarkConfig.minimumScore,
+                    minimumMargin: LocalFoodVisionBenchmarkConfig.minimumMargin,
+                    maximumCandidates: LocalFoodVisionBenchmarkConfig.maximumCandidates,
                     installedModelBytes: installedBytes(at: modelURL),
                     installedLabelBankBytes: installedBytes(at: labelBankURL),
                     precisionVariant: LocalFoodVisionBenchmarkConfig.precisionVariant
                 ),
                 cases: cases,
                 warmRunCount: 9,
-                fp16ToCompressedIdentityPrecisionDelta:
-                    LocalFoodVisionBenchmarkConfig.fp16ToCompressedIdentityPrecisionDelta,
                 engine: engine,
                 clock: LocalDietUptimeClock(),
                 systemMetrics: LocalDietProcessSystemMetrics(),
@@ -216,19 +227,20 @@ struct LocalFoodVisionBenchmarkHostApp: App {
 
 private struct FixtureManifest: Decodable {
     let schemaVersion: Int
-    let name: String
-    let version: String
-    let licenseStatus: String
+    let datasetVersion: String
     let containsPrivateUserData: Bool
     let cases: [FixtureCase]
 }
 
 private struct FixtureCase: Decodable {
     let caseId: String
-    let fixtureRef: String
+    let fixtureId: String
     let file: String
+    let split: String
+    let stratum: String
+    let licenseStatus: String
     let expectedFoodIdentities: [String]
-    let allowedAliases: [String: [String]]?
+    let allowedAliases: [String: [String]]
     let nonFood: Bool
 }
 

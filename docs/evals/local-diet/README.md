@@ -123,7 +123,9 @@ Apple 参考：
 
 评测素材只允许使用具有评测授权、公共领域或合成数据；`containsPrivateUserData` 被固定为 `false`。用户私人饮食照片不得提交到仓库。
 
-自定义视觉模型使用另一个完全隔离的 iOS 16 宿主。生成器只接受绝对路径；模型和标签必须位于本模块被 Git 忽略的 `.build/`，素材目录必须包含授权明确且 `containsPrivateUserData: false` 的 `dataset-manifest.json`。清单里的每个文件必须留在素材根目录内，宿主只打包清单明确列出的文件，不访问相册、健康数据、生产饮食仓库或网络。压缩模型的 `--fp16-delta` 必须来自同一冻结质量集的 FP16/压缩对照，不能用转换 cosine 代替。
+自定义视觉模型使用另一个完全隔离的 iOS 16 宿主。生成器只接受绝对路径；模型和标签必须位于本模块被 Git 忽略的 `.build/`，素材目录必须包含授权明确且 `containsPrivateUserData: false` 的 `dataset-manifest.json`。本地素材清单是 redacted 数据契约的 v2 扩展：至少 300 case，保留同一冻结 split/stratum/license/identity 元数据，额外加入 `file` 和 `allowedAliases`；每个文件必须留在素材根目录内。生成器校验全部 case，但宿主只打包并执行 test split，不访问相册、健康数据、生产饮食仓库或网络。
+
+宿主是**原始证据采集器**，CLI 不再接受 `--fp16-delta`，FP16/int8 单次报告也不携带比较值。二者的身份 precision 差只能在两份完整 test report 产生后由确定性计分器派生。
 
 ```bash
 cd mobile/modules/local-health-kernel
@@ -134,8 +136,10 @@ ruby scripts/generate_food_vision_device_host.rb \
   --model "$PWD/.build/models/chinese-clip-rn50/coreml/int8/ChineseClipRN50Image.mlpackage" \
   --label-bank "$PWD/.build/models/chinese-clip-rn50/chinese-clip-label-bank-v2.bin" \
   --fixtures "$AUTHORIZED_FOOD_EVAL_DIR" \
-  --fp16-delta "$MEASURED_FP16_TO_INT8_IDENTITY_PRECISION_DELTA"
+  --calibration-manifest "$FROZEN_CALIBRATION_MANIFEST"
 ```
+
+证据宿主必须读取 `status: pass`、split 摘要与当前数据清单完全一致的 v2 校准 manifest，并把其中阈值焊进生成配置。仅验证工程可编译时可以显式传 `--compile-only`；该模式会在 App 启动时停在“evidence collection is disabled”，不会输出 benchmark report。
 
 宿主只输出一行 `LOCAL_FOOD_VISION_BENCHMARK=<json>`；报告使用不透明 case/fixture ID，不输出照片名、路径、像素或 embedding。其 JSON 可用以下命令直接验证：
 
@@ -157,7 +161,17 @@ python3 scripts/tests/test_score_local_food_vision_run.py
 python3 scripts/score_local_food_vision_run.py score \
   --dataset "$AUTHORIZED_REDACTED_DATASET_MANIFEST" \
   --run "$CUSTOM_CORE_ML_RUN_JSON"
+
+python3 scripts/score_local_food_vision_run.py compare \
+  --dataset "$AUTHORIZED_REDACTED_DATASET_MANIFEST" \
+  --fp16-run "$FP16_TEST_RUN_JSON" \
+  --compressed-run "$INT8_TEST_RUN_JSON" \
+  --variants-manifest model-manifests/chinese-clip-coreml-variants.json \
+  --calibration-manifest "$FROZEN_CALIBRATION_MANIFEST" \
+  --output .build/evidence/chinese-clip-variant-evidence.json
 ```
+
+`compare` 会重新验证两份报告是否覆盖同一完整 test split，并核对模型 revision、v2 标签版本、artifact 摘要、实际安装字节数、校准 manifest 摘要和实际排名阈值；输出必须符合 `docs/evals/local-diet/chinese-clip-variant-evidence-contract.json`，包含所有输入文件摘要。缺任一报告、case 或 provenance 都会硬失败，不存在命令行手填差值的入口。
 
 当前工作区没有授权的 300-case 中文餐食集，环境中也没有 `AUTHORIZED_FOOD_EVAL_DIR`。因此与 v2 标签集绑定的 `model-manifests/chinese-clip-calibration-v2.json` 明确保持 `blocked_pending_authorized_dataset`：`selectedThresholds`、两个 split 摘要、FP16/压缩质量报告和选择结果全部为 `null`。这不是实现失败，而是数据 Gate 的预期拒绝；不能用用户私照、许可不明的网页图片、转换 cosine 或合成元数据伪装质量证据。当前 `0.5/0.03` 只是测试宿主的保守 policy floor，不是已校准的生产阈值。
 

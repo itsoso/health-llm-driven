@@ -199,6 +199,82 @@ class ScoreLocalFoodVisionRunTests(unittest.TestCase):
             calibration["datasetContract"]["sha256"],
         )
 
+    def test_compare_derives_variant_delta_from_complete_matching_raw_runs(self) -> None:
+        manifest = dataset_manifest(300)
+        variants = variants_manifest()
+        calibration = calibration_manifest(manifest)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dataset_path = root / "dataset.json"
+            fp16_path = root / "fp16.json"
+            compressed_path = root / "compressed.json"
+            variants_path = root / "variants.json"
+            calibration_path = root / "calibration.json"
+            dataset_path.write_text(json.dumps(manifest), encoding="utf-8")
+            variants_path.write_text(json.dumps(variants), encoding="utf-8")
+            calibration_path.write_text(json.dumps(calibration), encoding="utf-8")
+            calibration_sha256 = MODULE._sha256(calibration_path)
+            fp16_run = raw_run(
+                manifest, "fp16", "a" * 64, calibration_sha256
+            )
+            compressed_run = raw_run(
+                manifest,
+                "int8-linear-per-channel-65536",
+                "b" * 64,
+                calibration_sha256,
+            )
+            fp16_path.write_text(json.dumps(fp16_run), encoding="utf-8")
+            compressed_path.write_text(json.dumps(compressed_run), encoding="utf-8")
+
+            evidence = MODULE._compare_command(
+                dataset_path,
+                fp16_path,
+                compressed_path,
+                variants_path,
+                calibration_path,
+            )
+
+            self.assertEqual(evidence["absoluteIdentityPrecisionDelta"], 0)
+            self.assertEqual(
+                evidence["selectedVariant"],
+                "int8-linear-per-channel-65536",
+            )
+            self.assertEqual(evidence["verdict"], "pass")
+            self.assertEqual(evidence["labelSetVersion"], "cn-food-labels-v2")
+            for field in [
+                "datasetManifestSha256",
+                "testCaseIdsSha256",
+                "variantsManifestSha256",
+            ]:
+                self.assertRegex(evidence[field], r"^[0-9a-f]{64}$")
+            self.assertRegex(evidence["calibrationManifestSha256"], r"^[0-9a-f]{64}$")
+            self.assertRegex(evidence["fp16"]["runSha256"], r"^[0-9a-f]{64}$")
+            self.assertRegex(evidence["compressed"]["runSha256"], r"^[0-9a-f]{64}$")
+
+            compressed_run["modelProfile"]["labelBankVersion"] = "cn-food-labels-v1"
+            compressed_path.write_text(json.dumps(compressed_run), encoding="utf-8")
+            with self.assertRaisesRegex(MODULE.ScoringError, "label"):
+                MODULE._compare_command(
+                    dataset_path,
+                    fp16_path,
+                    compressed_path,
+                    variants_path,
+                    calibration_path,
+                )
+
+            compressed_run["modelProfile"]["labelBankVersion"] = "cn-food-labels-v2"
+            compressed_run["modelProfile"]["calibrationManifestSha256"] = "0" * 64
+            compressed_path.write_text(json.dumps(compressed_run), encoding="utf-8")
+            with self.assertRaisesRegex(MODULE.ScoringError, "calibration manifest hash"):
+                MODULE._compare_command(
+                    dataset_path,
+                    fp16_path,
+                    compressed_path,
+                    variants_path,
+                    calibration_path,
+                )
+
 
 def result_case(
     *, expected: list[str], predicted: list[str], stratum: str,
@@ -320,6 +396,100 @@ def candidate_rows(manifest: dict, test_top_score: float) -> list[dict]:
         rows.append({"caseId": case["caseId"], "candidates": candidates})
     rows[-1]["candidates"][0]["score"] = test_top_score
     return rows
+
+
+def raw_run(
+    manifest: dict,
+    precision: str,
+    artifact_sha256: str,
+    calibration_sha256: str,
+) -> dict:
+    case_results = []
+    for case in manifest["cases"]:
+        if case["split"] != "test":
+            continue
+        case_results.append(
+            {
+                "caseId": case["caseId"],
+                "expectedFoodIdentities": case["expectedFoodIdentities"],
+                "predictedFoodIdentities": case["expectedFoodIdentities"],
+                "nonFood": case["nonFood"],
+                "crashed": False,
+                "validTypedDraft": True,
+                "warmLatencyMs": 100,
+            }
+        )
+    installed_model_bytes = 76_711_113 if precision == "fp16" else 39_296_441
+    return {
+        "dataset": {"version": manifest["datasetVersion"]},
+        "modelProfile": {
+            "engine": "custom_core_ml",
+            "version": "717ba215769231e53b9b7c6b9d329b9cc5944418",
+            "modelArtifactSha256": artifact_sha256,
+            "labelBankVersion": "cn-food-labels-v2",
+            "calibrationVersion": "cn-clip-calibration-v2",
+            "calibrationManifestSha256": calibration_sha256,
+            "minimumScore": 0.5,
+            "minimumMargin": 0.03,
+            "maximumCandidates": 3,
+            "installedModelBytes": installed_model_bytes,
+            "installedLabelBankBytes": 363_695,
+            "precisionVariant": precision,
+        },
+        "caseResults": case_results,
+    }
+
+
+def variants_manifest() -> dict:
+    return {
+        "modelRevision": "717ba215769231e53b9b7c6b9d329b9cc5944418",
+        "labelBank": {
+            "labelSetVersion": "cn-food-labels-v2",
+            "bytes": 363_695,
+        },
+        "packageBudgetBytes": 52_428_800,
+        "variants": {
+            "fp16": {
+                "packageSha256": "a" * 64,
+                "compiledBytes": 76_711_113,
+                "totalInstalledBytes": 77_074_808,
+            },
+            "int8": {
+                "packageSha256": "b" * 64,
+                "compiledBytes": 39_296_441,
+                "totalInstalledBytes": 39_660_136,
+            },
+        },
+    }
+
+
+def calibration_manifest(manifest: dict) -> dict:
+    calibration_ids = [
+        case["caseId"] for case in manifest["cases"] if case["split"] == "calibration"
+    ]
+    test_ids = [
+        case["caseId"] for case in manifest["cases"] if case["split"] == "test"
+    ]
+    return {
+        "status": "pass",
+        "calibrationVersion": "cn-clip-calibration-v2",
+        "modelRevision": "717ba215769231e53b9b7c6b9d329b9cc5944418",
+        "labelSetVersion": "cn-food-labels-v2",
+        "selectedThresholds": {"minimumScore": 0.5, "minimumMargin": 0.03},
+        "rankingPolicyFloor": {
+            "minimumScore": 0.5,
+            "minimumMargin": 0.03,
+            "maximumCandidates": 3,
+        },
+        "calibrationSplit": {
+            "caseCount": len(calibration_ids),
+            "caseIdsSha256": MODULE._split_hash(calibration_ids),
+        },
+        "testSplit": {
+            "caseCount": len(test_ids),
+            "caseIdsSha256": MODULE._split_hash(test_ids),
+        },
+    }
 
 
 if __name__ == "__main__":

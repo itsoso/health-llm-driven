@@ -44,6 +44,10 @@ public struct LocalFoodVisionBenchmarkModelProfile: Codable, Equatable, Sendable
     public let modelArtifactSha256: String
     public let labelBankVersion: String
     public let calibrationVersion: String
+    public let calibrationManifestSha256: String
+    public let minimumScore: Double
+    public let minimumMargin: Double
+    public let maximumCandidates: Int
     public let installedModelBytes: Int
     public let installedLabelBankBytes: Int
     public let precisionVariant: String
@@ -56,6 +60,10 @@ public struct LocalFoodVisionBenchmarkModelProfile: Codable, Equatable, Sendable
         modelArtifactSha256: String,
         labelBankVersion: String,
         calibrationVersion: String,
+        calibrationManifestSha256: String,
+        minimumScore: Double,
+        minimumMargin: Double,
+        maximumCandidates: Int,
         installedModelBytes: Int,
         installedLabelBankBytes: Int,
         precisionVariant: String
@@ -67,6 +75,10 @@ public struct LocalFoodVisionBenchmarkModelProfile: Codable, Equatable, Sendable
         self.modelArtifactSha256 = modelArtifactSha256
         self.labelBankVersion = labelBankVersion
         self.calibrationVersion = calibrationVersion
+        self.calibrationManifestSha256 = calibrationManifestSha256
+        self.minimumScore = minimumScore
+        self.minimumMargin = minimumMargin
+        self.maximumCandidates = maximumCandidates
         self.installedModelBytes = installedModelBytes
         self.installedLabelBankBytes = installedLabelBankBytes
         self.precisionVariant = precisionVariant
@@ -147,7 +159,6 @@ public struct LocalFoodVisionBenchmarkSummary: Codable, Equatable, Sendable {
     public let worstThermalState: LocalDietThermalState
     public let gateVerdict: LocalFoodVisionGateVerdict
     public let oneSecondCompletionRate: Double
-    public let fp16ToCompressedIdentityPrecisionDelta: Double?
 }
 
 public struct LocalFoodVisionBenchmarkReport: Codable, Equatable, Sendable {
@@ -177,7 +188,6 @@ public struct LocalFoodVisionBenchmark: Sendable {
     private let modelProfile: LocalFoodVisionBenchmarkModelProfile
     private let cases: [LocalFoodVisionBenchmarkCase]
     private let warmRunCount: Int
-    private let fp16Delta: Double?
     private let engine: any LocalFoodVisionBenchmarkInferring
     private let clock: any LocalDietBenchmarkClock
     private let systemMetrics: any LocalDietBenchmarkSystemMetrics
@@ -192,7 +202,6 @@ public struct LocalFoodVisionBenchmark: Sendable {
         modelProfile: LocalFoodVisionBenchmarkModelProfile,
         cases: [LocalFoodVisionBenchmarkCase],
         warmRunCount: Int,
-        fp16ToCompressedIdentityPrecisionDelta: Double?,
         engine: any LocalFoodVisionBenchmarkInferring,
         clock: any LocalDietBenchmarkClock,
         systemMetrics: any LocalDietBenchmarkSystemMetrics,
@@ -206,7 +215,6 @@ public struct LocalFoodVisionBenchmark: Sendable {
         self.modelProfile = modelProfile
         self.cases = cases
         self.warmRunCount = warmRunCount
-        self.fp16Delta = fp16ToCompressedIdentityPrecisionDelta
         self.engine = engine
         self.clock = clock
         self.systemMetrics = systemMetrics
@@ -216,7 +224,13 @@ public struct LocalFoodVisionBenchmark: Sendable {
     public func run() async throws -> LocalFoodVisionBenchmarkReport {
         guard !runID.isEmpty, !cases.isEmpty, warmRunCount > 0,
               !dataset.containsPrivateUserData,
-              modelProfile.engine == "custom_core_ml" else {
+              modelProfile.engine == "custom_core_ml",
+              modelProfile.calibrationManifestSha256.count == 64,
+              modelProfile.minimumScore.isFinite,
+              modelProfile.minimumMargin.isFinite,
+              (-1...1).contains(modelProfile.minimumScore),
+              (0...2).contains(modelProfile.minimumMargin),
+              (1...3).contains(modelProfile.maximumCandidates) else {
             throw LocalFoodVisionBenchmarkError.invalidConfiguration
         }
         var results: [LocalFoodVisionBenchmarkCaseResult] = []
@@ -347,8 +361,7 @@ public struct LocalFoodVisionBenchmark: Sendable {
                 .flatMap { [$0.thermalStateBefore, $0.thermalStateAfter] }
                 .max(by: { thermalRank($0) < thermalRank($1) }) ?? .unknown,
             gateVerdict: .blocked,
-            oneSecondCompletionRate: Double(oneSecond.count) / count,
-            fp16ToCompressedIdentityPrecisionDelta: fp16Delta
+            oneSecondCompletionRate: Double(oneSecond.count) / count
         )
     }
 

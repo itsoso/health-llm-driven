@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://executor.life/schemas/chinese-clip-variant-evidence-v1.json",
+  "title": "Derived Chinese-CLIP FP16/compressed identity evidence",
+  "description": "Comparison evidence derived from two complete raw held-out reports. No field in this document is accepted as a device-host CLI scalar.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "datasetVersion",
+    "datasetManifestSha256",
+    "testCaseIdsSha256",
+    "modelRevision",
+    "labelSetVersion",
+    "calibrationVersion",
+    "calibrationManifestSha256",
+    "variantsManifestSha256",
+    "fp16",
+    "compressed",
+    "absoluteIdentityPrecisionDelta",
+    "assetBudgetBytes",
+    "selectedVariant",
+    "verdict"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "datasetVersion": { "type": "string", "minLength": 1 },
+    "datasetManifestSha256": { "$ref": "#/$defs/sha256" },
+    "testCaseIdsSha256": { "$ref": "#/$defs/sha256" },
+    "modelRevision": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "labelSetVersion": { "const": "cn-food-labels-v2" },
+    "calibrationVersion": { "const": "cn-clip-calibration-v2" },
+    "calibrationManifestSha256": { "$ref": "#/$defs/sha256" },
+    "variantsManifestSha256": { "$ref": "#/$defs/sha256" },
+    "fp16": { "$ref": "#/$defs/fp16Evidence" },
+    "compressed": { "$ref": "#/$defs/compressedEvidence" },
+    "absoluteIdentityPrecisionDelta": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "assetBudgetBytes": { "type": "integer", "minimum": 1 },
+    "selectedVariant": {
+      "type": ["string", "null"],
+      "enum": ["fp16", "int8-linear-per-channel-65536", null]
+    },
+    "verdict": { "enum": ["pass", "blocked"] }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "qualityGate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["passed", "failures"],
+      "properties": {
+        "passed": { "type": "boolean" },
+        "failures": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        }
+      }
+    },
+    "baseVariantEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runSha256",
+        "precisionVariant",
+        "installedAssetBytes",
+        "foodIdentityPrecision",
+        "qualityGate"
+      ],
+      "properties": {
+        "runSha256": { "$ref": "#/$defs/sha256" },
+        "precisionVariant": {
+          "enum": ["fp16", "int8-linear-per-channel-65536"]
+        },
+        "installedAssetBytes": { "type": "integer", "minimum": 1 },
+        "foodIdentityPrecision": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "qualityGate": { "$ref": "#/$defs/qualityGate" }
+      }
+    },
+    "fp16Evidence": {
+      "allOf": [
+        { "$ref": "#/$defs/baseVariantEvidence" },
+        {
+          "properties": {
+            "precisionVariant": { "const": "fp16" }
+          }
+        }
+      ]
+    },
+    "compressedEvidence": {
+      "allOf": [
+        { "$ref": "#/$defs/baseVariantEvidence" },
+        {
+          "properties": {
+            "precisionVariant": { "const": "int8-linear-per-channel-65536" }
+          }
+        }
+      ]
+    }
+  }
+}

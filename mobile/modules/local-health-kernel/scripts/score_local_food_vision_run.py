@@ -392,6 +392,13 @@ def _load(path: Path) -> dict[str, Any]:
     return value
 
 
+def _sha256(path: Path) -> str:
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError as error:
+        raise ScoringError(f"cannot hash {path}: {error}") from error
+
+
 def _write_or_print(value: dict[str, Any], output: Path | None) -> None:
     encoded = json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
     if output:
@@ -400,10 +407,7 @@ def _write_or_print(value: dict[str, Any], output: Path | None) -> None:
         print(encoded, end="")
 
 
-def _score_command(dataset_path: Path, run_path: Path) -> dict[str, Any]:
-    manifest = _load(dataset_path)
-    validate_dataset_manifest(manifest)
-    run = _load(run_path)
+def _score_run(manifest: dict[str, Any], run: dict[str, Any]) -> dict[str, Any]:
     metadata = {case["caseId"]: case for case in manifest["cases"]}
     case_results = run.get("caseResults")
     if not isinstance(case_results, list):
@@ -435,6 +439,223 @@ def _score_command(dataset_path: Path, run_path: Path) -> dict[str, Any]:
     return {"metrics": metrics, "qualityGate": quality_gate(metrics)}
 
 
+def _score_command(dataset_path: Path, run_path: Path) -> dict[str, Any]:
+    manifest = _load(dataset_path)
+    validate_dataset_manifest(manifest)
+    return _score_run(manifest, _load(run_path))
+
+
+def _variant_profile(
+    run: dict[str, Any],
+    *,
+    precision: str,
+    variant: dict[str, Any],
+    manifest: dict[str, Any],
+    label_bank: dict[str, Any],
+    calibration_sha256: str,
+    thresholds: dict[str, Any],
+) -> int:
+    dataset = run.get("dataset")
+    profile = run.get("modelProfile")
+    if not isinstance(dataset, dict) or dataset.get("version") != manifest["datasetVersion"]:
+        raise ScoringError("raw run dataset version does not match the frozen manifest")
+    if not isinstance(profile, dict) or profile.get("engine") != "custom_core_ml":
+        raise ScoringError("raw run must use custom_core_ml")
+    if profile.get("precisionVariant") != precision:
+        raise ScoringError(f"raw run precision must equal {precision}")
+    if profile.get("version") != variant["modelRevision"]:
+        raise ScoringError("raw run model revision does not match variant evidence")
+    if profile.get("labelBankVersion") != label_bank["labelSetVersion"]:
+        raise ScoringError("raw run label version does not match variant evidence")
+    if profile.get("calibrationVersion") != "cn-clip-calibration-v2":
+        raise ScoringError("raw run calibration version does not match variant evidence")
+    if profile.get("calibrationManifestSha256") != calibration_sha256:
+        raise ScoringError("raw run calibration manifest hash does not match variant evidence")
+    expected_policy = {
+        "minimumScore": thresholds["minimumScore"],
+        "minimumMargin": thresholds["minimumMargin"],
+        "maximumCandidates": MAXIMUM_CANDIDATES,
+    }
+    actual_policy = {key: profile.get(key) for key in expected_policy}
+    if actual_policy != expected_policy:
+        raise ScoringError("raw run ranking policy does not match release calibration")
+
+    artifact_hashes = {
+        value for key in ("packageSha256", "compiledSha256")
+        if isinstance((value := variant["artifact"].get(key)), str)
+    }
+    if profile.get("modelArtifactSha256") not in artifact_hashes:
+        raise ScoringError("raw run model artifact hash does not match variant evidence")
+    if profile.get("installedModelBytes") != variant["artifact"].get("compiledBytes"):
+        raise ScoringError("raw run installed model bytes do not match variant evidence")
+    if profile.get("installedLabelBankBytes") != label_bank["bytes"]:
+        raise ScoringError("raw run installed label bytes do not match variant evidence")
+    installed = profile["installedModelBytes"] + profile["installedLabelBankBytes"]
+    if installed != variant["artifact"].get("totalInstalledBytes"):
+        raise ScoringError("raw run installed assets do not match variant evidence")
+    return installed
+
+
+def _validate_release_calibration(
+    calibration: dict[str, Any],
+    manifest: dict[str, Any],
+    *,
+    model_revision: str,
+    label_set_version: str,
+) -> str:
+    if calibration.get("status") != "pass":
+        raise ScoringError("calibration manifest must have pass status")
+    version = calibration.get("calibrationVersion")
+    if version != "cn-clip-calibration-v2":
+        raise ScoringError("calibration version must equal cn-clip-calibration-v2")
+    if calibration.get("modelRevision") != model_revision:
+        raise ScoringError("calibration model revision does not match variants")
+    if calibration.get("labelSetVersion") != label_set_version:
+        raise ScoringError("calibration label version does not match variants")
+
+    thresholds = calibration.get("selectedThresholds")
+    floor = calibration.get("rankingPolicyFloor")
+    if not isinstance(thresholds, dict) or not isinstance(floor, dict):
+        raise ScoringError("calibration thresholds are missing")
+    score = thresholds.get("minimumScore")
+    margin = thresholds.get("minimumMargin")
+    if not isinstance(score, (int, float)) or not math.isfinite(float(score)) or score < MINIMUM_SCORE_FLOOR:
+        raise ScoringError("calibration minimum score is below the frozen floor")
+    if not isinstance(margin, (int, float)) or not math.isfinite(float(margin)) or margin < MINIMUM_MARGIN_FLOOR:
+        raise ScoringError("calibration minimum margin is below the frozen floor")
+    if floor != {
+        "minimumScore": MINIMUM_SCORE_FLOOR,
+        "minimumMargin": MINIMUM_MARGIN_FLOOR,
+        "maximumCandidates": MAXIMUM_CANDIDATES,
+    }:
+        raise ScoringError("calibration ranking floor has drifted")
+
+    calibration_ids = [
+        case["caseId"] for case in manifest["cases"] if case["split"] == "calibration"
+    ]
+    test_ids = [case["caseId"] for case in manifest["cases"] if case["split"] == "test"]
+    expected_splits = {
+        "calibrationSplit": {
+            "caseCount": len(calibration_ids),
+            "caseIdsSha256": _split_hash(calibration_ids),
+        },
+        "testSplit": {
+            "caseCount": len(test_ids),
+            "caseIdsSha256": _split_hash(test_ids),
+        },
+    }
+    for field, expected in expected_splits.items():
+        if calibration.get(field) != expected:
+            raise ScoringError(f"calibration {field} does not match the frozen dataset")
+    return version
+
+
+def _compare_command(
+    dataset_path: Path,
+    fp16_run_path: Path,
+    compressed_run_path: Path,
+    variants_path: Path,
+    calibration_path: Path,
+) -> dict[str, Any]:
+    manifest = _load(dataset_path)
+    validate_dataset_manifest(manifest)
+    fp16_run = _load(fp16_run_path)
+    compressed_run = _load(compressed_run_path)
+    variants = _load(variants_path)
+    calibration = _load(calibration_path)
+
+    try:
+        model_revision = variants["modelRevision"]
+        label_bank = variants["labelBank"]
+        budget = variants["packageBudgetBytes"]
+        fp16_artifact = variants["variants"]["fp16"]
+        compressed_artifact = variants["variants"]["int8"]
+    except (KeyError, TypeError) as error:
+        raise ScoringError("variants manifest is incomplete") from error
+    if not isinstance(model_revision, str) or not re.fullmatch(r"[0-9a-f]{40}", model_revision):
+        raise ScoringError("variants manifest model revision is invalid")
+    if not isinstance(label_bank, dict) or label_bank.get("labelSetVersion") != "cn-food-labels-v2":
+        raise ScoringError("variants manifest label version is invalid")
+    if not isinstance(label_bank.get("bytes"), int) or label_bank["bytes"] <= 0:
+        raise ScoringError("variants manifest label bytes are invalid")
+    if not isinstance(budget, int) or budget <= 0:
+        raise ScoringError("variants manifest asset budget is invalid")
+    calibration_version = _validate_release_calibration(
+        calibration,
+        manifest,
+        model_revision=model_revision,
+        label_set_version=label_bank["labelSetVersion"],
+    )
+    calibration_sha256 = _sha256(calibration_path)
+    thresholds = calibration["selectedThresholds"]
+
+    fp16_variant = {"modelRevision": model_revision, "artifact": fp16_artifact}
+    compressed_variant = {"modelRevision": model_revision, "artifact": compressed_artifact}
+    fp16_bytes = _variant_profile(
+        fp16_run,
+        precision="fp16",
+        variant=fp16_variant,
+        manifest=manifest,
+        label_bank=label_bank,
+        calibration_sha256=calibration_sha256,
+        thresholds=thresholds,
+    )
+    compressed_bytes = _variant_profile(
+        compressed_run,
+        precision="int8-linear-per-channel-65536",
+        variant=compressed_variant,
+        manifest=manifest,
+        label_bank=label_bank,
+        calibration_sha256=calibration_sha256,
+        thresholds=thresholds,
+    )
+    fp16_score = _score_run(manifest, fp16_run)
+    compressed_score = _score_run(manifest, compressed_run)
+    comparison = compare_variants(
+        fp16_score["metrics"],
+        compressed_score["metrics"],
+        fp16_asset_bytes=fp16_bytes,
+        compressed_asset_bytes=compressed_bytes,
+    )
+    selected = {
+        "fp16": "fp16",
+        "compressed": "int8-linear-per-channel-65536",
+        None: None,
+    }[comparison["selectedVariant"]]
+    test_ids = [
+        case["caseId"] for case in manifest["cases"] if case["split"] == "test"
+    ]
+    return {
+        "schemaVersion": 1,
+        "datasetVersion": manifest["datasetVersion"],
+        "datasetManifestSha256": _sha256(dataset_path),
+        "testCaseIdsSha256": _split_hash(test_ids),
+        "modelRevision": model_revision,
+        "labelSetVersion": label_bank["labelSetVersion"],
+        "calibrationVersion": calibration_version,
+        "calibrationManifestSha256": calibration_sha256,
+        "variantsManifestSha256": _sha256(variants_path),
+        "fp16": {
+            "runSha256": _sha256(fp16_run_path),
+            "precisionVariant": "fp16",
+            "installedAssetBytes": fp16_bytes,
+            "foodIdentityPrecision": fp16_score["metrics"]["foodIdentityPrecision"],
+            "qualityGate": fp16_score["qualityGate"],
+        },
+        "compressed": {
+            "runSha256": _sha256(compressed_run_path),
+            "precisionVariant": "int8-linear-per-channel-65536",
+            "installedAssetBytes": compressed_bytes,
+            "foodIdentityPrecision": compressed_score["metrics"]["foodIdentityPrecision"],
+            "qualityGate": compressed_score["qualityGate"],
+        },
+        "absoluteIdentityPrecisionDelta": comparison["absoluteIdentityPrecisionDelta"],
+        "assetBudgetBytes": budget,
+        "selectedVariant": selected,
+        "verdict": comparison["verdict"],
+    }
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -446,6 +667,13 @@ def build_parser() -> argparse.ArgumentParser:
     calibrate.add_argument("--dataset", type=Path, required=True)
     calibrate.add_argument("--candidates", type=Path, required=True)
     calibrate.add_argument("--output", type=Path)
+    compare = subparsers.add_parser("compare")
+    compare.add_argument("--dataset", type=Path, required=True)
+    compare.add_argument("--fp16-run", type=Path, required=True)
+    compare.add_argument("--compressed-run", type=Path, required=True)
+    compare.add_argument("--variants-manifest", type=Path, required=True)
+    compare.add_argument("--calibration-manifest", type=Path, required=True)
+    compare.add_argument("--output", type=Path)
     return parser
 
 
@@ -453,13 +681,21 @@ def main(argv: list[str] | None = None) -> int:
     arguments = build_parser().parse_args(argv)
     if arguments.command == "score":
         value = _score_command(arguments.dataset, arguments.run)
-    else:
+    elif arguments.command == "calibrate":
         manifest = _load(arguments.dataset)
         candidate_document = _load(arguments.candidates)
         rows = candidate_document.get("caseResults")
         if not isinstance(rows, list):
             raise ScoringError("candidates.caseResults must be an array")
         value = calibrate_thresholds(manifest, rows)
+    else:
+        value = _compare_command(
+            arguments.dataset,
+            arguments.fp16_run,
+            arguments.compressed_run,
+            arguments.variants_manifest,
+            arguments.calibration_manifest,
+        )
     _write_or_print(value, arguments.output)
     return 0
 

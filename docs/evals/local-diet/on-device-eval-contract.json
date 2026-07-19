@@ -100,6 +100,13 @@
         },
         "labelBankVersion": { "type": "string", "minLength": 1 },
         "calibrationVersion": { "type": "string", "minLength": 1 },
+        "calibrationManifestSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "minimumScore": { "type": "number", "minimum": -1, "maximum": 1 },
+        "minimumMargin": { "type": "number", "minimum": 0, "maximum": 2 },
+        "maximumCandidates": { "type": "integer", "minimum": 1, "maximum": 3 },
         "installedModelBytes": { "type": "integer", "minimum": 1 },
         "installedLabelBankBytes": { "type": "integer", "minimum": 1 },
         "precisionVariant": {
@@ -147,11 +154,6 @@
         },
         "gateVerdict": { "enum": ["pass", "fail", "blocked"] },
         "oneSecondCompletionRate": { "$ref": "#/$defs/rate" },
-        "fp16ToCompressedIdentityPrecisionDelta": {
-          "type": "number",
-          "minimum": -1,
-          "maximum": 1
-        },
         "notes": { "type": "string" }
       }
     }
@@ -174,6 +176,10 @@
               "modelArtifactSha256",
               "labelBankVersion",
               "calibrationVersion",
+              "calibrationManifestSha256",
+              "minimumScore",
+              "minimumMargin",
+              "maximumCandidates",
               "installedModelBytes",
               "installedLabelBankBytes",
               "precisionVariant"
@@ -181,50 +187,6 @@
           },
           "summary": {
             "required": ["oneSecondCompletionRate"]
-          }
-        }
-      }
-    },
-    {
-      "if": {
-        "properties": {
-          "modelProfile": {
-            "properties": {
-              "engine": { "const": "custom_core_ml" },
-              "precisionVariant": { "const": "int8-linear-per-channel-65536" }
-            },
-            "required": ["engine", "precisionVariant"]
-          }
-        },
-        "required": ["modelProfile"]
-      },
-      "then": {
-        "properties": {
-          "summary": {
-            "required": ["fp16ToCompressedIdentityPrecisionDelta"]
-          }
-        }
-      }
-    },
-    {
-      "if": {
-        "properties": {
-          "modelProfile": {
-            "properties": {
-              "engine": { "const": "custom_core_ml" },
-              "precisionVariant": { "const": "fp16" }
-            },
-            "required": ["engine", "precisionVariant"]
-          }
-        },
-        "required": ["modelProfile"]
-      },
-      "then": {
-        "properties": {
-          "summary": {
-            "not": {
-              "required": ["fp16ToCompressedIdentityPrecisionDelta"]
-            }
           }
         }
       }

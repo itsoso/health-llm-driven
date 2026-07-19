@@ -31,7 +31,6 @@ final class LocalFoodVisionBenchmarkTests: XCTestCase {
         XCTAssertEqual(report.summary.visionP95WarmLatencyMs, 300)
         XCTAssertEqual(report.summary.oneSecondCompletionRate, 1)
         XCTAssertEqual(report.summary.crashFreeCompletionRate, 1)
-        XCTAssertEqual(report.summary.fp16ToCompressedIdentityPrecisionDelta, 0.01)
     }
 
     func testInferenceFailureIsCapturedWithoutACloudFallback() async throws {
@@ -85,6 +84,8 @@ final class LocalFoodVisionBenchmarkTests: XCTestCase {
         XCTAssertTrue(json.contains("\"caseId\":"))
         XCTAssertTrue(json.contains("\"oneSecondCompletionRate\":"))
         XCTAssertTrue(json.contains("\"modelArtifactSha256\":"))
+        XCTAssertTrue(json.contains("\"calibrationManifestSha256\":"))
+        XCTAssertFalse(json.contains("fp16ToCompressedIdentityPrecisionDelta"))
         for forbidden in ["rgba8", "tensor", "embedding", "photoPath", "userId", "HealthKit"] {
             XCTAssertFalse(json.contains(forbidden))
         }
@@ -130,6 +131,10 @@ final class LocalFoodVisionBenchmarkTests: XCTestCase {
                 modelArtifactSha256: String(repeating: "a", count: 64),
                 labelBankVersion: "cn-food-labels-v2",
                 calibrationVersion: "cn-clip-calibration-v2",
+                calibrationManifestSha256: String(repeating: "c", count: 64),
+                minimumScore: 0.5,
+                minimumMargin: 0.03,
+                maximumCandidates: 3,
                 installedModelBytes: 39_296_441,
                 installedLabelBankBytes: 329_784,
                 precisionVariant: "int8-linear-per-channel-65536"
@@ -145,7 +150,6 @@ final class LocalFoodVisionBenchmarkTests: XCTestCase {
                 )
             ],
             warmRunCount: 2,
-            fp16ToCompressedIdentityPrecisionDelta: 0.01,
             engine: engine ?? VisionEngineStub(
                 results: [candidateResult, candidateResult, candidateResult]
             ),

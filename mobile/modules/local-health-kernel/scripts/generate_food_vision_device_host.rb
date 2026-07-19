@@ -11,11 +11,22 @@ module LocalFoodVisionDeviceHost
   TARGET_NAME = "LocalFoodVisionBenchmarkHost"
   BUNDLE_IDENTIFIER = "life.executor.health.local-food-vision-benchmark"
   ALLOWED_LICENSES = %w[licensed_for_evaluation public_domain synthetic].freeze
+  ALLOWED_SPLITS = %w[calibration test].freeze
+  REQUIRED_STRATA = %w[
+    single_item composite_dish mixed_plate packaged_food_drink confusable_pair
+    non_food_adversarial degraded_adversarial
+  ].freeze
+  MINIMUM_CASES = 300
+  OPAQUE_CASE_ID = /\Acase-[a-z0-9][a-z0-9_-]*\z/
+  OPAQUE_FIXTURE_ID = /\Afixture-[a-z0-9][a-z0-9_-]*\z/
   PINNED_MODEL_REVISION = "717ba215769231e53b9b7c6b9d329b9cc5944418"
 
   module_function
 
-  def generate(module_root:, output:, model:, label_bank:, fixtures:, fp16_delta:, team_id: nil)
+  def generate(
+    module_root:, output:, model:, label_bank:, fixtures:, compile_only:,
+    calibration_manifest: nil, team_id: nil
+  )
     module_root = module_root.realpath
     output = absolute_path(output, "output")
     model = verified_build_asset(model, module_root, "model")
@@ -26,18 +37,20 @@ module LocalFoodVisionDeviceHost
 
     manifest_path = fixtures.join("dataset-manifest.json")
     manifest, fixture_paths = validate_manifest(manifest_path, fixtures)
+    calibration = validate_calibration(
+      calibration_manifest,
+      manifest,
+      compile_only: compile_only
+    )
     precision = model.to_s.include?("fp16") ? "fp16" : "int8-linear-per-channel-65536"
-    if precision != "fp16" && (!fp16_delta&.finite? || fp16_delta < -1 || fp16_delta > 1)
-      raise "--fp16-delta between -1 and 1 is required for a compressed model"
-    end
 
     generated_source = write_config_source(
       output: output,
       model: model,
       label_bank: label_bank,
       precision: precision,
-      fp16_delta: fp16_delta,
-      manifest: manifest
+      manifest: manifest,
+      calibration: calibration
     )
     project = Xcodeproj::Project.new(output)
     target = project.new_target(:application, TARGET_NAME, :ios, "16.0")
@@ -113,17 +126,56 @@ module LocalFoodVisionDeviceHost
     raise "missing fixture manifest: #{path}" unless path.file?
 
     manifest = JSON.parse(path.read)
-    raise "fixture manifest schemaVersion must equal 1" unless manifest["schemaVersion"] == 1
+    expected_top_keys = %w[schemaVersion datasetVersion containsPrivateUserData cases]
+    raise "fixture manifest keys are invalid" unless manifest.keys.sort == expected_top_keys.sort
+    raise "fixture manifest schemaVersion must equal 2" unless manifest["schemaVersion"] == 2
+    unless manifest["datasetVersion"].is_a?(String) && !manifest["datasetVersion"].empty?
+      raise "fixture manifest datasetVersion must be non-empty"
+    end
     raise "fixture manifest contains private user data" unless manifest["containsPrivateUserData"] == false
-    raise "fixture manifest license is not authorized" unless ALLOWED_LICENSES.include?(manifest["licenseStatus"])
-    raise "fixture manifest cases must be non-empty" unless manifest["cases"].is_a?(Array) && !manifest["cases"].empty?
+    unless manifest["cases"].is_a?(Array) && manifest["cases"].length >= MINIMUM_CASES
+      raise "fixture manifest requires at least #{MINIMUM_CASES} cases"
+    end
 
     case_ids = []
+    fixture_ids = []
+    strata = []
+    splits = []
     fixture_paths = manifest["cases"].map do |item|
       raise "fixture case must be an object" unless item.is_a?(Hash)
+      expected_case_keys = %w[
+        caseId fixtureId file split stratum licenseStatus expectedFoodIdentities
+        allowedAliases nonFood
+      ]
+      raise "fixture case keys are invalid" unless item.keys.sort == expected_case_keys.sort
       case_id = item["caseId"]
-      raise "fixture caseId must be unique and non-empty" unless case_id.is_a?(String) && !case_id.empty? && !case_ids.include?(case_id)
+      fixture_id = item["fixtureId"]
+      unless case_id.is_a?(String) && OPAQUE_CASE_ID.match?(case_id) && !case_ids.include?(case_id)
+        raise "fixture caseId must be unique and opaque"
+      end
+      unless fixture_id.is_a?(String) && OPAQUE_FIXTURE_ID.match?(fixture_id) && !fixture_ids.include?(fixture_id)
+        raise "fixture fixtureId must be unique and opaque"
+      end
       case_ids << case_id
+      fixture_ids << fixture_id
+      split = item["split"]
+      stratum = item["stratum"]
+      raise "fixture split is invalid" unless ALLOWED_SPLITS.include?(split)
+      raise "fixture stratum is invalid" unless REQUIRED_STRATA.include?(stratum)
+      raise "fixture case license is not authorized" unless ALLOWED_LICENSES.include?(item["licenseStatus"])
+      splits << split
+      strata << stratum
+      expected = item["expectedFoodIdentities"]
+      unless expected.is_a?(Array) && expected.uniq.length == expected.length &&
+             expected.all? { |value| value.is_a?(String) && !value.empty? }
+        raise "fixture expectedFoodIdentities is invalid"
+      end
+      raise "fixture allowedAliases must be an object" unless item["allowedAliases"].is_a?(Hash)
+      raise "fixture nonFood must be boolean" unless [true, false].include?(item["nonFood"])
+      raise "non-food fixture cannot expect food identities" if item["nonFood"] && !expected.empty?
+      if stratum == "mixed_plate" && expected.length < 2
+        raise "mixed_plate fixture requires at least two identities"
+      end
       relative = Pathname(item.fetch("file"))
       raise "fixture file must be a relative path inside fixtures" if relative.absolute?
       path = fixtures.join(relative).cleanpath
@@ -132,11 +184,14 @@ module LocalFoodVisionDeviceHost
       real = path.realpath
       raise "fixture file must remain inside fixtures" unless inside?(real, fixtures)
 
-      real
+      split == "test" ? real : nil
     rescue KeyError
       raise "fixture case file is required"
     end
-    [manifest, fixture_paths]
+    missing_strata = REQUIRED_STRATA - strata.uniq
+    raise "fixture manifest is missing strata: #{missing_strata.sort}" unless missing_strata.empty?
+    raise "fixture manifest requires calibration and test splits" unless splits.uniq.sort == ALLOWED_SPLITS.sort
+    [manifest, fixture_paths.compact]
   rescue JSON::ParserError => error
     raise "invalid fixture manifest: #{error.message}"
   end
@@ -165,7 +220,86 @@ module LocalFoodVisionDeviceHost
     path.glob("**/*").select(&:file?).sum(&:size)
   end
 
-  def write_config_source(output:, model:, label_bank:, precision:, fp16_delta:, manifest:)
+  def aggregate_license(manifest)
+    licenses = manifest.fetch("cases").map { |item| item.fetch("licenseStatus") }.uniq
+    return licenses.first if licenses.length == 1
+    return "licensed_for_evaluation" if licenses.include?("licensed_for_evaluation")
+    return "public_domain" if licenses.include?("public_domain")
+
+    "synthetic"
+  end
+
+  def split_hash(manifest, split)
+    ids = manifest.fetch("cases")
+      .select { |item| item.fetch("split") == split }
+      .map { |item| item.fetch("caseId") }
+      .sort
+    Digest::SHA256.hexdigest(ids.map { |case_id| "#{case_id}\n" }.join)
+  end
+
+  def validate_calibration(value, manifest, compile_only:)
+    if compile_only
+      raise "--compile-only cannot be combined with --calibration-manifest" if value
+
+      return {
+        "calibrationVersion" => "cn-clip-calibration-v2",
+        "selectedThresholds" => {"minimumScore" => 0.5, "minimumMargin" => 0.03},
+        "maximumCandidates" => 3,
+        "evidenceCollectionEnabled" => false,
+        "sha256" => nil,
+      }
+    end
+    raise "--calibration-manifest is required unless --compile-only is set" unless value
+
+    path = absolute_path(value, "calibration manifest")
+    raise "missing calibration manifest: #{path}" unless path.file?
+    calibration = JSON.parse(path.read)
+    raise "calibration manifest must have pass status" unless calibration["status"] == "pass"
+    unless calibration["calibrationVersion"] == "cn-clip-calibration-v2" &&
+           calibration["modelRevision"] == PINNED_MODEL_REVISION &&
+           calibration["labelSetVersion"] == "cn-food-labels-v2"
+      raise "calibration provenance does not match the host"
+    end
+    thresholds = calibration["selectedThresholds"]
+    floor = calibration["rankingPolicyFloor"]
+    unless thresholds.is_a?(Hash) && floor == {
+      "minimumScore" => 0.5,
+      "minimumMargin" => 0.03,
+      "maximumCandidates" => 3,
+    }
+      raise "calibration thresholds are invalid"
+    end
+    score = thresholds["minimumScore"]
+    margin = thresholds["minimumMargin"]
+    unless score.is_a?(Numeric) && score.finite? && score >= 0.5 &&
+           margin.is_a?(Numeric) && margin.finite? && margin >= 0.03
+      raise "calibration thresholds are below the frozen floor"
+    end
+    expected_splits = {
+      "calibrationSplit" => {
+        "caseCount" => manifest["cases"].count { |item| item["split"] == "calibration" },
+        "caseIdsSha256" => split_hash(manifest, "calibration"),
+      },
+      "testSplit" => {
+        "caseCount" => manifest["cases"].count { |item| item["split"] == "test" },
+        "caseIdsSha256" => split_hash(manifest, "test"),
+      },
+    }
+    expected_splits.each do |field, expected|
+      raise "calibration #{field} does not match fixtures" unless calibration[field] == expected
+    end
+    {
+      "calibrationVersion" => calibration["calibrationVersion"],
+      "selectedThresholds" => thresholds,
+      "maximumCandidates" => 3,
+      "evidenceCollectionEnabled" => true,
+      "sha256" => Digest::SHA256.file(path).hexdigest,
+    }
+  rescue JSON::ParserError => error
+    raise "invalid calibration manifest: #{error.message}"
+  end
+
+  def write_config_source(output:, model:, label_bank:, precision:, manifest:, calibration:)
     directory = output.dirname.join("Generated")
     directory.mkpath
     path = directory.join("LocalFoodVisionBenchmarkConfig.swift")
@@ -180,9 +314,16 @@ module LocalFoodVisionDeviceHost
           static let labelBankBaseName = #{label_bank.basename(label_bank.extname).to_s.dump}
           static let sourceLabelBankBytes = #{byte_count(label_bank)}
           static let precisionVariant = #{precision.dump}
-          static let fp16ToCompressedIdentityPrecisionDelta: Double? = #{fp16_delta.nil? ? "nil" : fp16_delta}
-          static let datasetName = #{manifest.fetch("name").to_s.dump}
-          static let datasetVersion = #{manifest.fetch("version").to_s.dump}
+          static let labelBankVersion = "cn-food-labels-v2"
+          static let calibrationVersion = #{calibration.fetch("calibrationVersion").dump}
+          static let calibrationManifestSHA256: String? = #{calibration["sha256"]&.dump || "nil"}
+          static let minimumScore = #{calibration.fetch("selectedThresholds").fetch("minimumScore")}
+          static let minimumMargin = #{calibration.fetch("selectedThresholds").fetch("minimumMargin")}
+          static let maximumCandidates = #{calibration.fetch("maximumCandidates")}
+          static let evidenceCollectionEnabled = #{calibration.fetch("evidenceCollectionEnabled")}
+          static let datasetName = "authorized-chinese-food-eval"
+          static let datasetVersion = #{manifest.fetch("datasetVersion").to_s.dump}
+          static let datasetLicenseStatus = #{aggregate_license(manifest).dump}
       }
     SWIFT
     path.write(source)
@@ -198,7 +339,10 @@ if $PROGRAM_NAME == __FILE__
     parser.on("--model PATH") { |value| options[:model] = Pathname(value) }
     parser.on("--label-bank PATH") { |value| options[:label_bank] = Pathname(value) }
     parser.on("--fixtures PATH") { |value| options[:fixtures] = Pathname(value) }
-    parser.on("--fp16-delta VALUE", Float) { |value| options[:fp16_delta] = value }
+    parser.on("--compile-only") { options[:compile_only] = true }
+    parser.on("--calibration-manifest PATH") do |value|
+      options[:calibration_manifest] = Pathname(value)
+    end
   end.parse!
 
   %i[output model label_bank fixtures].each do |name|
@@ -212,7 +356,8 @@ if $PROGRAM_NAME == __FILE__
       model: options.fetch(:model),
       label_bank: options.fetch(:label_bank),
       fixtures: options.fetch(:fixtures),
-      fp16_delta: options[:fp16_delta],
+      compile_only: options.fetch(:compile_only, false),
+      calibration_manifest: options[:calibration_manifest],
       team_id: options[:team_id]
     )
     puts output
