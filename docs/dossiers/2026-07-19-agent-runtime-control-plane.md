@@ -4,8 +4,8 @@
 |---|---|
 | slug | `agent-runtime-control-plane` |
 | 创建日期 | 2026-07-19 |
-| 当前阶段 | P2 Runtime Resilience 已完成，待合并/灰度 Gate |
-| 状态 | in_progress |
+| 当前阶段 | P2 Runtime Resilience 已合并并以默认关闭模式部署；灰度启用另立 Gate |
+| 状态 | complete |
 | 负责 | Codex |
 | 反馈环 | PostgreSQL/SQLite 集成测试 / Agent SSE 回归 / backend deploy |
 
@@ -127,10 +127,25 @@ RequirementAdmission:
 - 最终 producer 复审补出并修复“带/不带 conversation 的同 turn 重试锁分裂”和“新会话最终回答前未绑定”两个竞争窗口；隐私、owner scope、失败会话恢复和 strict-local 边界复核通过。
 - 裁决: **PASS**。`agent_runtime_mode` 继续默认 `off`，本分支不直接部署；合并与灰度启用另走部署 Gate。
 
-## S6–S8
+## S6–S8 · 合并、部署与验证
 
-- Draft PR: [#250](https://github.com/itsoso/health-llm-driven/pull/250)。
-- 尚未进入部署阶段；Runtime 保持默认 `off`，远端 CI 全绿并合并前不部署、不灰度。
+- PR [#250](https://github.com/itsoso/health-llm-driven/pull/250) 已于 2026-07-20 合并，merge commit 为 `367a43d45f8e76a2b2edb7eb7dcc7cb5b34f9698`。
+- 远端 CI [run 29713446119](https://github.com/itsoso/health-llm-driven/actions/runs/29713446119) 全绿；后端全部矩阵、质量门禁、Web、Mobile、macOS 和 OpenAPI 类型漂移检查均通过。
+- 通过根目录 `deploy.sh -b -y` 从精确匹配 `origin/main` 的干净 worktree 部署后端；部署前数据库备份与 force-RLS 完整性校验通过，线上 `.env` 已备份。
+
+## G5 · 部署健康闸
+
+- managed migration `20260719_180000_agent_runtime_resilience` 在生产 PostgreSQL 成功应用。
+- 后端、Celery worker 和 Celery beat 重启成功；部署健康评分 `60/60`，Skills manifest 本地/线上均为 `22`。
+- 服务器 HEAD 与 merge commit 精确一致：`367a43d45f8e76a2b2edb7eb7dcc7cb5b34f9698`。
+- **裁决: PASS**。
+
+## G6 · 上线验证
+
+- 公网 `/api/v1/health` 返回 healthy，API、PostgreSQL、Redis 和 Celery 均 connected。
+- 生产有效配置实查 `agent_runtime_mode=off`；本次上线只铺设 schema、代码与恢复入口，不改变既有 Agent 准入、写入或 strict-local iPhone 链路。
+- Runtime enforce 灰度、自动恢复演练和 canary 指标另立 rollout Gate，不以本次默认关闭部署代替。
+- **裁决: PASS（default-off 安全部署面）**。
 
 ## P1 · Tool Control
 
@@ -198,4 +213,4 @@ RequirementAdmission:
   - OpenAPI 使用 CI 同版生成器重建后，与 Mobile/Web 已提交类型逐字节一致；阻塞型 Ruff、系统地图漂移、Dossier 一致性和 `git diff --check` PASS。
   - Web `npm ci` 仍报告 `19` 个历史依赖漏洞（含 `2 critical`）；未在 Runtime PR 中强制升级依赖，另列安全治理，不作为 Runtime 代码回归隐藏。
 - 独立复审发现的终态竞态、心跳启动/续租边界、心跳清理覆盖、中断语义、无租约旧 Run、索引、回执隐私和多态资源类型缺口均已增加回归并修复。
-- Rollout: `agent_runtime_mode` 继续默认 `off`；本分支不部署、不发 OTA/TestFlight、不改 iPhone strict-local 协议。
+- Rollout: P2 代码与 schema 已部署，`agent_runtime_mode` 继续默认 `off`；未发 OTA/TestFlight，未改 iPhone strict-local 协议。Runtime enforce 灰度另立 Gate。
