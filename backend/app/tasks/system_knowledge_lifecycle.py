@@ -816,12 +816,20 @@ def sync_dedao_kbase_agent_packages_draft_once(
             hold_reasons = list(assessment["hold_reasons"])
             detail_package_id = str(package.get("package_id") or "").strip()
             detail_version = str(package.get("version") or "").strip()
+            record_content_hash = str(record.get("content_hash") or "").strip()
+            detail_content_hash = str(package.get("content_hash") or "").strip()
+            record_lifecycle = str(record.get("lifecycle_state") or "").strip().lower()
+            detail_lifecycle = str(package.get("lifecycle_state") or "").strip().lower()
             record_supersedes = str(record.get("supersedes") or "").strip()
             detail_supersedes = str(package.get("supersedes") or "").strip()
             superseded_ref: tuple[str, str] | None = None
             if detail_package_id != package_id or detail_version != version:
                 hold_reasons.append("conflict")
-            if record_supersedes and record_supersedes != detail_supersedes:
+            if record_content_hash != detail_content_hash:
+                hold_reasons.append("conflict")
+            if record_lifecycle != detail_lifecycle:
+                hold_reasons.append("conflict")
+            if record_supersedes != detail_supersedes:
                 hold_reasons.append("conflict")
             if detail_supersedes:
                 if "@" not in detail_supersedes:

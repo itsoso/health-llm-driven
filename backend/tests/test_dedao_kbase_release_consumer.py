@@ -676,6 +676,98 @@ def test_agent_package_sync_does_not_retire_for_held_replacement_on_mixed_page(t
     }
 
 
+@pytest.mark.parametrize(
+    ("field", "record_value"),
+    [
+        ("package_id", "health-book-record-mismatch"),
+        ("version", "2.0.1"),
+        ("content_hash", "sha256:record-mismatch"),
+        ("lifecycle_state", "superseded"),
+        ("supersedes", "health-book@0.9.0"),
+        ("supersedes", ""),
+    ],
+    ids=(
+        "package-id",
+        "version",
+        "content-hash",
+        "lifecycle",
+        "supersedes-mismatch",
+        "supersedes-missing",
+    ),
+)
+def test_agent_package_sync_holds_record_detail_mismatch_without_retiring_old_projection(
+    tmp_path,
+    db,
+    field,
+    record_value,
+):
+    from app.tasks.system_knowledge_lifecycle import sync_dedao_kbase_agent_packages_draft_once
+
+    release_one = _release_payload("release-one")
+    release_two = _release_payload("release-two")
+    release_other = _release_payload("release-other")
+    first_package = _agent_package_payload(release=release_one, version="1.0.0")
+    mismatched_replacement = _agent_package_payload(release=release_two, version="2.0.0")
+    mismatched_replacement["supersedes"] = "health-book@1.0.0"
+    mismatched_replacement["_list_record_overrides"] = {field: record_value}
+    other_package = _agent_package_payload(
+        release=release_other,
+        package_id="health-book-other",
+    )
+    packages = [first_package]
+    releases = {
+        release["release_id"]: release
+        for release in (release_one, release_two, release_other)
+    }
+    requests: list[tuple[str, str, dict | None]] = []
+    server = ThreadingHTTPServer(
+        ("127.0.0.1", 0),
+        _agent_package_sequence_handler(packages, releases, requests),
+    )
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    canonical = tmp_path / "canonical"
+    workspace = tmp_path / "agent-package-review"
+    _write_canonical_artifacts(canonical, marker="trusted-base")
+    try:
+        sync_dedao_kbase_agent_packages_draft_once(
+            db,
+            base_url=f"http://127.0.0.1:{server.server_port}",
+            auth_token="secret-token",
+            artifact_dir=workspace,
+            base_artifact_dir=canonical,
+            source_root=tmp_path / "source",
+            limit=1,
+        )
+        packages.extend([mismatched_replacement, other_package])
+        result = sync_dedao_kbase_agent_packages_draft_once(
+            db,
+            base_url=f"http://127.0.0.1:{server.server_port}",
+            auth_token="secret-token",
+            artifact_dir=workspace,
+            base_artifact_dir=canonical,
+            source_root=tmp_path / "source",
+            limit=2,
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+    assert len(result["held_packages"]) == 1
+    assert "conflict" in result["held_packages"][0]["reasons"]
+    claims = [json.loads(line) for line in (workspace / "claims.jsonl").read_text().splitlines()]
+    assert {claim["metadata"].get("release_id") for claim in claims} >= {
+        "release-one",
+        "release-other",
+    }
+    manifest = json.loads((workspace / "draft_manifest.json").read_text())
+    assert {(item["package_id"], item["version"]) for item in manifest["agent_packages"]} == {
+        ("health-book", "1.0.0"),
+        ("health-book-other", "1.0.0"),
+    }
+
+
 def test_agent_package_sync_restores_canonical_row_after_final_lineage_is_retired(tmp_path, db):
     from app.tasks.system_knowledge_lifecycle import sync_dedao_kbase_agent_packages_draft_once
 
@@ -1881,6 +1973,20 @@ def _agent_package_sequence_handler(
     releases: dict[str, dict],
     requests: list[tuple[str, str, dict | None]],
 ):
+    def list_record(package: dict) -> dict:
+        record = {
+            "package_id": package["package_id"],
+            "version": package["version"],
+            "content_hash": package["content_hash"],
+            "lifecycle_state": package["lifecycle_state"],
+            "supersedes": package.get("supersedes", ""),
+        }
+        record.update(package.get("_list_record_overrides") or {})
+        return record
+
+    def detail_payload(package: dict) -> dict:
+        return {key: value for key, value in package.items() if not key.startswith("_list_")}
+
     class AgentPackageSequenceHandler(BaseHTTPRequestHandler):
         def do_GET(self):
             from urllib.parse import parse_qs, urlparse
@@ -1894,21 +2000,22 @@ def _agent_package_sequence_handler(
                 query = parse_qs(parsed.query)
                 after = query.get("after", [""])[0]
                 limit = int(query.get("limit", ["50"])[0])
-                refs = [f"{package['package_id']}@{package['version']}" for package in packages]
+                record_views = [list_record(package) for package in packages]
+                refs = [f"{record['package_id']}@{record['version']}" for record in record_views]
                 start = refs.index(after) + 1 if after in refs else 0
-                page = packages[start : start + limit]
+                page = record_views[start : start + limit]
                 self._write(
                     200,
                     {
                         "packages": [
                             {
-                                "package_id": package["package_id"],
-                                "version": package["version"],
-                                "content_hash": package["content_hash"],
-                                "lifecycle_state": package["lifecycle_state"],
-                                "supersedes": package.get("supersedes", ""),
+                                "package_id": record["package_id"],
+                                "version": record["version"],
+                                "content_hash": record["content_hash"],
+                                "lifecycle_state": record["lifecycle_state"],
+                                "supersedes": record.get("supersedes", ""),
                             }
-                            for package in page
+                            for record in page
                         ],
                         "next_cursor": (
                             f"{page[-1]['package_id']}@{page[-1]['version']}" if page else ""
@@ -1917,10 +2024,11 @@ def _agent_package_sequence_handler(
                 )
                 return
             for package in packages:
+                record = list_record(package)
                 if self.path == (
-                    f"/api/agent-packages/{package['package_id']}?version={package['version']}"
+                    f"/api/agent-packages/{record['package_id']}?version={record['version']}"
                 ):
-                    self._write(200, package)
+                    self._write(200, detail_payload(package))
                     return
             for release in releases.values():
                 if self.path == f"/api/knowledge/releases/{release['release_id']}":
