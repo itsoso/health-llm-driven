@@ -304,6 +304,7 @@ export default function AgendaScreen() {
         style={({ pressed }) => [styles.reviewToggle, pressed && styles.pressed]}
         accessibilityRole="button"
         accessibilityLabel={reviewExpanded ? '收起需要确认事项' : `查看其余 ${hiddenCount} 项需要确认事项`}
+        accessibilityState={{ expanded: reviewExpanded }}
       >
         <Text style={styles.reviewToggleText}>
           {reviewExpanded ? '收起' : `查看其余 ${hiddenCount} 项`}

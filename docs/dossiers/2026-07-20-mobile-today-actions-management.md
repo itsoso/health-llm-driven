@@ -170,8 +170,9 @@
 - [x] 可执行判定收紧到后端支持的 `health_protocol / medication / supplement`。
 - [x] 菜单改为能力驱动，复核事项不再暴露无效“跳过”写入。
 - [x] 7 条复核事项首屏只展示 3 条，并显示“查看其余 4 项”；支持展开和收起。
-- [x] 专项 Jest `18 passed`，TypeScript 与变更文件 ESLint 通过。
+- [x] 专项 Jest `19 passed`，TypeScript 与变更文件 ESLint 通过。
 - [x] iPhone 17 Pro 模拟器使用开发 bundle 和真实账号数据验证：`现在做 3 / 需要确认 7`，复核区默认三条，布局无重叠。
+- [x] 独立代码审查无高/中风险；补齐 VoiceOver 展开状态、Android 安全菜单、收起操作和 supplement 来源回归测试。
 - [x] design token、doc drift、diff check 通过；最新主干 CI 待提交后确认。
 - [ ] production OTA 发布并回读 EAS 标识。
 - [ ] 用户真机应用更新后完成最终触控验收。

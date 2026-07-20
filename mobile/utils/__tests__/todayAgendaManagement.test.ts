@@ -74,6 +74,10 @@ describe('todayAgendaManagement', () => {
       source: { object_type: 'medication', object_id: 9 },
     }))).toBe(true);
     expect(canActOnAgendaItem(item({
+      type: 'supplement',
+      source: { object_type: 'supplement', object_id: 10 },
+    }))).toBe(true);
+    expect(canActOnAgendaItem(item({
       status: 'active',
       source: { object_type: 'health_problem', object_id: 8 },
     }))).toBe(false);

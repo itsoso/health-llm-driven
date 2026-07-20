@@ -1,6 +1,6 @@
 /* eslint-disable import/first */
 import React from 'react';
-import { ActionSheetIOS, Alert } from 'react-native';
+import { ActionSheetIOS, Alert, Platform } from 'react-native';
 import { fireEvent, render } from '@testing-library/react-native';
 
 import type { AgendaToday } from '../../services/agenda';
@@ -201,14 +201,18 @@ describe('AgendaScreen', () => {
       count: 6,
       items: [agendaData.items[0], ...reviewItems],
     };
-    const { getByText, queryByText } = render(<AgendaScreen />);
+    const { getByLabelText, getByText, queryByText } = render(<AgendaScreen />);
 
     expect(getByText('待确认建议 3')).toBeTruthy();
     expect(queryByText('待确认建议 4')).toBeNull();
+    expect(getByLabelText('查看其余 2 项需要确认事项').props.accessibilityState).toEqual({ expanded: false });
     fireEvent.press(getByText('查看其余 2 项'));
     expect(getByText('待确认建议 4')).toBeTruthy();
     expect(getByText('待确认建议 5')).toBeTruthy();
     expect(getByText('收起')).toBeTruthy();
+    expect(getByLabelText('收起需要确认事项').props.accessibilityState).toEqual({ expanded: true });
+    fireEvent.press(getByText('收起'));
+    expect(queryByText('待确认建议 4')).toBeNull();
   });
 
   it('does not offer unsupported skip writes for advisory items', () => {
@@ -229,6 +233,30 @@ describe('AgendaScreen', () => {
         context: expect.objectContaining({ intent: 'adjust' }),
       }),
     );
+  });
+
+  it('keeps the review-only menu safe on Android', () => {
+    const originalOS = Platform.OS;
+    let buttons: Parameters<typeof Alert.alert>[2];
+    Object.defineProperty(Platform, 'OS', { value: 'android' });
+    jest.spyOn(Alert, 'alert').mockImplementation((_title, _message, nextButtons) => {
+      buttons = nextButtons;
+    });
+
+    try {
+      const { getByLabelText } = render(<AgendaScreen />);
+      fireEvent.press(getByLabelText('管理 优质蛋白有助修复'));
+
+      expect(buttons?.map(button => button.text)).toEqual(['稍后再看', '调整计划', '问小巴', '取消']);
+      buttons?.[1]?.onPress?.();
+      expect(mockMutate).not.toHaveBeenCalled();
+      expect(mockPushChatWithContext).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ context: expect.objectContaining({ intent: 'adjust' }) }),
+      );
+    } finally {
+      Object.defineProperty(Platform, 'OS', { value: originalOS });
+    }
   });
 
   it('records an explicit skip reason instead of silently deleting the item', () => {
