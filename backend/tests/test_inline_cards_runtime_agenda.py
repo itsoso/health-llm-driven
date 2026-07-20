@@ -144,7 +144,7 @@ def test_inline_cards_runtime_agenda_emits_manual_confirm_complete_action(monkey
         "id": "open-runtime-agenda",
         "label": "管理今日行动",
         "action": "route.open",
-        "payload": {"route": "/alerts"},
+        "payload": {"route": "/agenda"},
         "style": "secondary",
     }
 

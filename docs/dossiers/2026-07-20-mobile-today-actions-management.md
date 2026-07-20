@@ -4,7 +4,7 @@
 |---|---|
 | slug | `mobile-today-actions-management` |
 | 创建日期 | 2026-07-20 |
-| 当前阶段 | S4 分解 |
+| 当前阶段 | S5 验证 |
 | 状态 | building |
 | 负责 | Codex |
 | 反馈环 | Mobile Jest / iOS Simulator / production OTA |
@@ -51,19 +51,32 @@
 
 ## S4 · 研发任务
 
-- [ ] T1 动态卡片路由改为 `/agenda`
-- [ ] T2 今日事项分组与文案纯函数
-- [ ] T3 完成/跳过写回与缓存刷新
-- [ ] T4 今日行动管理页面与返回闭环
+- [x] T1 动态卡片路由改为 `/agenda`
+- [x] T2 今日事项分组与文案纯函数
+- [x] T3 完成/跳过写回与缓存刷新
+- [x] T4 今日行动管理页面与返回闭环
 - [ ] T5 模拟器验证、文档、提交、OTA
 
 ## G3 · 测试闸
 
-- 待执行。
+- PASS: 后端动态卡片与今日视图回归 `44 passed`。
+- PASS: Mobile 今日行动、写回 Hook、Agenda service 和动态卡片注册回归 `81 passed`。
+- PASS: `/agenda` 页面补充双行提交锁定验证，页面专项 `6 passed`。
+- PASS: `npx tsc --noEmit`。
+- PASS: 本批文件 ESLint 无错误。
+- PASS: `npm run design:check`，设计 token 未新增漂移。
+- PASS: `python3 scripts/check_doc_drift.py`，代码派生系统地图一致。
+- 模拟器旧壳缺少主干新增的 `ExpoVideo` 原生模块，热加载无法作为本批视觉证据；T5 将从当前提交重建模拟器壳后复验。
+- **裁决：PASS（自动化），模拟器视觉仍在执行。**
 
 ## G4 · 安全闸
 
-- 触及既有健康写路径，但不改变服务端权限或自治等级；待实现后复核。
+- 今日列表只消费当前用户鉴权后的 `/agenda/today`，不新增跨用户查询。
+- 完成和跳过继续复用 `/agenda/complete` 的显式人工确认；跳过必须选择原因。
+- “稍后”只改变当前会话排序，并明确提示未写成完成，不伪造服务端回执。
+- 写入失败保持原状态并显示错误，不做乐观成功声明。
+- 未修改药物剂量、诊断逻辑、安全阈值或推送隐私出口。
+- **裁决：GO。**
 
 ## S6-S8
 

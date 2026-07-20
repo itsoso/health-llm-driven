@@ -325,7 +325,7 @@ def _runtime_agenda_actions(data: Dict[str, Any]) -> List[Dict[str, Any]]:
         "id": "open-runtime-agenda",
         "label": "管理今日行动" if presentation_mode == "today" else "查看完整计划",
         "action": "route.open",
-        "payload": {"route": "/alerts" if presentation_mode == "today" else "/agenda"},
+        "payload": {"route": "/agenda"},
         "style": "secondary" if (source or daily_plan_action_id) else "primary",
     })
     return actions
