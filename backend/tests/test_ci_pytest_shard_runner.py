@@ -24,7 +24,22 @@ def test_app_store_demo_account_runs_in_an_isolated_ci_process():
     assert by_label["app-store-demo-account"]["paths"] == (
         "tests/test_app_store_demo_account.py"
     )
-    assert "--ignore=tests/test_app_store_demo_account.py" in by_label["a-b-rest"][
+    assert "a-b-rest" not in by_label
+    assert "a-rest" not in by_label
+    assert by_label["a-early"]["paths"] == "tests"
+    assert by_label["a-late"]["paths"] == "tests"
+    assert by_label["b"]["paths"] == "tests/test_b*.py"
+    for label in ("a-early", "a-late"):
+        assert "--ignore=tests/test_app_store_demo_account.py" in by_label[label][
+            "extra_args"
+        ]
+        assert "--ignore-glob='tests/test_agent_*.py'" in by_label[label][
+            "extra_args"
+        ]
+    assert "--ignore-glob='tests/test_a[i-z]*.py'" in by_label["a-early"][
+        "extra_args"
+    ]
+    assert "--ignore-glob='tests/test_a[_a-h]*.py'" in by_label["a-late"][
         "extra_args"
     ]
 

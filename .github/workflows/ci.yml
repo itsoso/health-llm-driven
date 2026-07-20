@@ -16,13 +16,18 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # The agent test family can leave Linux process state behind when it
-          # follows the other a/b modules in the same pytest process. Discover
-          # the non-agent a/b files from tests/ so future files stay covered,
-          # then isolate agent tests in two deterministic processes.
-          - label: a-b-rest
+          # Keep broad a/b discovery bounded and isolate agent + App Store
+          # families. Root discovery lets pytest's ignore rules exclude agent
+          # paths before collection; direct shell globs would pass them as
+          # explicit paths and defeat --ignore-glob.
+          - label: a-early
             paths: "tests"
-            extra_args: "--ignore=tests/services --ignore=tests/test_app_store_demo_account.py --ignore-glob='tests/test_[c-z]*.py' --ignore-glob='tests/test_agent_*.py'"
+            extra_args: "--ignore=tests/services --ignore=tests/test_app_store_demo_account.py --ignore-glob='tests/test_[b-z]*.py' --ignore-glob='tests/test_agent_*.py' --ignore-glob='tests/test_a[i-z]*.py'"
+          - label: a-late
+            paths: "tests"
+            extra_args: "--ignore=tests/services --ignore=tests/test_app_store_demo_account.py --ignore-glob='tests/test_[b-z]*.py' --ignore-glob='tests/test_agent_*.py' --ignore-glob='tests/test_a[_a-h]*.py'"
+          - label: b
+            paths: "tests/test_b*.py"
           - label: app-store-demo-account
             paths: "tests/test_app_store_demo_account.py"
           # Executor coverage has grown too large for a single reliable process.
