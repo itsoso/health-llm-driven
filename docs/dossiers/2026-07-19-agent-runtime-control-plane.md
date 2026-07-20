@@ -259,8 +259,10 @@ RequirementAdmission:
 - 增加 Run finished/status 与 ToolOperation created/status 索引；真实 PostgreSQL `EXPLAIN` 使用 `ix_agent_runs_finished_status`。
 - SQLite Runtime/Tool/migration 组合回归: `192 passed, 3 skipped`；跨对话、Executor、SSE、饮食拍照、图片生命周期、症状/鼻炎/干预链路: `425 passed`。
 - 真实 PostgreSQL pause/admission 并发、generation 恢复顺序与 same-turn 连续性定向回归通过；其中“旧 `finished_at`、晚提交”双事务回归和两项 pause 锁竞争共 `3 passed`。P0/P2/P3 migration 重复执行通过，临时数据库均已删除。
+- 真实 PostgreSQL Runtime/rollout/API/concurrency/model/resilience/tool 全集 `170 passed`、无跳过；P0→P2→P3 迁移在最小旧 schema 上执行且 P3 重复执行通过，generation 初值 `0/0` 与两个窗口索引实查存在，临时数据库已删除。
+- 最终变基到 `origin/main@d41871980`；上游 TokenPlan 白名单、任务路由与 CI 分片变更交叉回归 `196 passed, 3 skipped`（跳过项仅为 PostgreSQL-only 用例），Mobile/Web TypeScript 检查通过。
 - 生产准入在 circuit 读取失败时降级 legacy 且数据库会话可继续使用的定向回归: `29 passed`。
 - 独立复审提出的 canary 写账本、same-turn 逃逸、pause/admission 竞争、deadline 误计失败、恢复水位和窗口索引共 6 项问题均已修复并增加回归；复审补充的 `off` deadline 阻断和旧时间戳晚提交两个 P1 也已以失败测试复现并修复。
 - 终态复审补出的“operation 待核对但 Run 仍成功”P1 已由定向 RED 测试复现并修复，未决写入现在无法逃逸自动止损。
 - 最终独立复审结论: 无剩余 P0/P1；定向收口测试通过。
-- 裁决: **PASS（待最终主干变基）**。
+- 裁决: **PASS**。
