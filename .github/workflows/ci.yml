@@ -82,8 +82,28 @@ jobs:
             extra_args: "-vv"
           - label: u
             paths: "tests/test_u*.py"
-          - label: v-z
-            paths: "tests/test_[v-z]*.py tests/services/"
+          # Keep the broad v-z family and service tests in bounded processes.
+          # The former combined shard grew to 360 tests and deterministically
+          # exhausted both 600-second attempts before reporting assertions.
+          - label: voice-watch
+            paths: "tests/test_v*.py tests/test_wa*.py"
+          # Keep agenda/twin-heavy workday tests out of the same SQLite process
+          # as wearable/report tests. Retained worker state can make the shared
+          # process crash before pytest can report an assertion.
+          - label: wearable-reports
+            paths: >-
+              tests/test_wearable*.py
+              tests/test_weather*.py
+              tests/test_wechat*.py
+              tests/test_weekly*.py
+              tests/test_weight.py
+              tests/test_womens_health.py
+          - label: workday-workout
+            paths: "tests/test_workday*.py tests/test_workout*.py"
+          - label: write-z
+            paths: "tests/test_write*.py tests/test_z*.py"
+          - label: services
+            paths: "tests/services/"
     steps:
       - uses: actions/checkout@v4
 

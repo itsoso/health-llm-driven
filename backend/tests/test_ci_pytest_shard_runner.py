@@ -29,6 +29,26 @@ def test_app_store_demo_account_runs_in_an_isolated_ci_process():
     ]
 
 
+def test_v_z_and_service_tests_run_in_bounded_ci_processes():
+    workflow = yaml.safe_load(
+        (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    )
+    shards = workflow["jobs"]["backend-test-shards"]["strategy"]["matrix"]["include"]
+    by_label = {shard["label"]: shard for shard in shards}
+
+    assert "v-z" not in by_label
+    assert by_label["voice-watch"]["paths"] == "tests/test_v*.py tests/test_wa*.py"
+    assert by_label["wearable-reports"]["paths"] == (
+        "tests/test_wearable*.py tests/test_weather*.py tests/test_wechat*.py "
+        "tests/test_weekly*.py tests/test_weight.py tests/test_womens_health.py"
+    )
+    assert by_label["workday-workout"]["paths"] == (
+        "tests/test_workday*.py tests/test_workout*.py"
+    )
+    assert by_label["write-z"]["paths"] == "tests/test_write*.py tests/test_z*.py"
+    assert by_label["services"]["paths"] == "tests/services/"
+
+
 def test_build_pytest_command_keeps_the_shard_in_one_process():
     from scripts.run_ci_pytest_shard import build_pytest_command
 
