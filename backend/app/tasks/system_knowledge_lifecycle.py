@@ -252,6 +252,48 @@ def _write_agent_package_lineage_to_artifacts(
         path.write_text(("\n".join(rows) + "\n") if rows else "", encoding="utf-8")
 
 
+def _retire_superseded_agent_package_projections(
+    artifact_dir: str | Path,
+    superseded_refs: set[tuple[str, str]],
+) -> None:
+    """Remove superseded draft provenance while preserving shared-package rows."""
+    if not superseded_refs:
+        return
+    root = Path(artifact_dir)
+    for name in ARTIFACT_FILES:
+        path = root / name
+        if not path.exists():
+            continue
+        rows: list[str] = []
+        for raw_line in path.read_text(encoding="utf-8").splitlines():
+            if not raw_line.strip():
+                continue
+            row = json.loads(raw_line)
+            metadata = dict(row.get("metadata") or {})
+            lineage = metadata.get("agent_package_lineage")
+            if not isinstance(lineage, list):
+                rows.append(json.dumps(row, ensure_ascii=False, sort_keys=True))
+                continue
+            retained = [
+                item
+                for item in lineage
+                if not (
+                    isinstance(item, dict)
+                    and (
+                        str(item.get("package_id") or ""),
+                        str(item.get("version") or ""),
+                    )
+                    in superseded_refs
+                )
+            ]
+            if not retained:
+                continue
+            metadata["agent_package_lineage"] = retained
+            row["metadata"] = metadata
+            rows.append(json.dumps(row, ensure_ascii=False, sort_keys=True))
+        path.write_text(("\n".join(rows) + "\n") if rows else "", encoding="utf-8")
+
+
 def _list_release_records(
     client: DedaoKBaseReleaseClient,
     *,
@@ -734,9 +776,15 @@ def sync_dedao_kbase_agent_packages_draft_once(
 
         eligible: list[tuple[dict[str, Any], list[dict[str, Any]]]] = []
         held_packages: list[dict[str, Any]] = []
+        superseded_refs: set[tuple[str, str]] = set()
         for record in records:
             package_id = str(record.get("package_id") or "").strip()
             version = str(record.get("version") or "").strip()
+            supersedes = str(record.get("supersedes") or "").strip()
+            if str(record.get("lifecycle_state") or "").strip().lower() == "published" and "@" in supersedes:
+                superseded_id, superseded_version = supersedes.rsplit("@", 1)
+                if superseded_id and superseded_version:
+                    superseded_refs.add((superseded_id, superseded_version))
             package = client.get_agent_package(package_id, version=version)
             releases = [
                 client.get_release(str(reference.get("release_id") or ""))
@@ -794,6 +842,7 @@ def sync_dedao_kbase_agent_packages_draft_once(
                 shutil.copytree(source, candidate, dirs_exist_ok=True)
             if mode == "rebuild":
                 _normalize_canonical_review_status(candidate)
+            _retire_superseded_agent_package_projections(candidate, superseded_refs)
             existing_lineages = _agent_package_lineages_by_release(candidate)
             package_results = [
                 compile_agent_package_artifacts(
@@ -819,6 +868,11 @@ def sync_dedao_kbase_agent_packages_draft_once(
                 ): item
                 for item in previous_packages
                 if isinstance(item, dict)
+                and (
+                    str(item.get("package_id") or ""),
+                    str(item.get("version") or ""),
+                )
+                not in superseded_refs
             }
             for package, _ in eligible:
                 evaluation = package["evaluation"]

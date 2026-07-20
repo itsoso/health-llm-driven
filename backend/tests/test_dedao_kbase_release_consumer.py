@@ -544,6 +544,69 @@ def test_agent_package_sync_preserves_previous_unreviewed_batch(tmp_path, db):
     ]
 
 
+def test_agent_package_sync_retires_superseded_version_from_incremental_workspace(tmp_path, db):
+    from app.tasks.system_knowledge_lifecycle import sync_dedao_kbase_agent_packages_draft_once
+
+    release_one = _release_payload("release-one")
+    release_two = _release_payload("release-two")
+    first_package = _agent_package_payload(release=release_one, version="1.0.0")
+    second_package = _agent_package_payload(release=release_two, version="2.0.0")
+    second_package["supersedes"] = "health-book@1.0.0"
+    packages = [first_package]
+    releases = {release_one["release_id"]: release_one, release_two["release_id"]: release_two}
+    requests: list[tuple[str, str, dict | None]] = []
+    server = ThreadingHTTPServer(
+        ("127.0.0.1", 0),
+        _agent_package_sequence_handler(packages, releases, requests),
+    )
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    canonical = tmp_path / "canonical"
+    workspace = tmp_path / "agent-package-review"
+    _write_canonical_artifacts(canonical, marker="trusted-base")
+    try:
+        first = sync_dedao_kbase_agent_packages_draft_once(
+            db,
+            base_url=f"http://127.0.0.1:{server.server_port}",
+            auth_token="secret-token",
+            artifact_dir=workspace,
+            base_artifact_dir=canonical,
+            source_root=tmp_path / "source",
+            actor="test:agent-package-sync",
+            limit=1,
+        )
+        packages.append(second_package)
+        second = sync_dedao_kbase_agent_packages_draft_once(
+            db,
+            base_url=f"http://127.0.0.1:{server.server_port}",
+            auth_token="secret-token",
+            artifact_dir=workspace,
+            base_artifact_dir=canonical,
+            source_root=tmp_path / "source",
+            actor="test:agent-package-sync",
+            limit=1,
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+    assert first["cursor"] == "health-book@1.0.0"
+    assert second["mode"] == "incremental"
+    assert second["cursor"] == "health-book@2.0.0"
+    claims = [json.loads(line) for line in (workspace / "claims.jsonl").read_text().splitlines()]
+    assert {claim["metadata"]["release_id"] for claim in claims} == {"release-two"}
+    assert {
+        (lineage["package_id"], lineage["version"])
+        for claim in claims
+        for lineage in claim["metadata"]["agent_package_lineage"]
+    } == {("health-book", "2.0.0")}
+    manifest = json.loads((workspace / "draft_manifest.json").read_text())
+    assert [(item["package_id"], item["version"]) for item in manifest["agent_packages"]] == [
+        ("health-book", "2.0.0")
+    ]
+
+
 def test_agent_package_sync_preserves_lineage_for_sequential_overlapping_packages(tmp_path, db):
     from app.tasks.system_knowledge_lifecycle import sync_dedao_kbase_agent_packages_draft_once
 
@@ -1683,6 +1746,7 @@ def _agent_package_sequence_handler(
                                 "version": package["version"],
                                 "content_hash": package["content_hash"],
                                 "lifecycle_state": package["lifecycle_state"],
+                                "supersedes": package.get("supersedes", ""),
                             }
                             for package in page
                         ],
