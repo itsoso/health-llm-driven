@@ -2863,6 +2863,17 @@ def _write_receipt_from_tool_result(
     )
     if payload is None:
         return None
+    # "准备开始睡觉" uses health_record(sleep) as the conversational
+    # capability but persists a life-event anchor, not a completed sleep row.
+    # The endpoint response shape is deterministic even when legacy responses
+    # omit resource_type, so infer the narrower registered receipt type here.
+    if (
+        tool_name == "health_record"
+        and normalized_record_type == "sleep"
+        and payload.get("occurred_at")
+        and payload.get("title")
+    ):
+        expected_resource_type = "health_episode"
     result_resource_type, resource_id = _receipt_resource_identity(payload)
     if not resource_id:
         return None
@@ -4625,7 +4636,12 @@ def _apply_authorized_symptom_payload(
         "body_part": authorization["body_part"],
         "description": authorization["description"],
     }
-    return {"record_type": "symptom", "data": data}
+    authorized_args: Dict[str, Any] = {"record_type": "symptom", "data": data}
+    # This flag is injected by the server-side channel gate. Preserve only the
+    # fail-closed True value while replacing all model-authored health fields.
+    if args.get("_fast_record_requires_confirmation") is True:
+        authorized_args["_fast_record_requires_confirmation"] = True
+    return authorized_args
 
 
 def _apply_authorized_rhinitis_payload(
@@ -4635,7 +4651,13 @@ def _apply_authorized_rhinitis_payload(
     """Replace all model-authored rhinitis values with current-turn values."""
     if not isinstance(args, dict) or not authorization:
         return None
-    return {"record_type": "rhinitis", "data": dict(authorization)}
+    authorized_args: Dict[str, Any] = {
+        "record_type": "rhinitis",
+        "data": dict(authorization),
+    }
+    if args.get("_fast_record_requires_confirmation") is True:
+        authorized_args["_fast_record_requires_confirmation"] = True
+    return authorized_args
 
 
 def _prepare_health_record_args_for_validation(

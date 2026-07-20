@@ -6,6 +6,7 @@ module.exports = {
   ],
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/$1',
+    '^expo-video$': '<rootDir>/test/mocks/expoVideo.tsx',
   },
   testPathIgnorePatterns: [
     '/node_modules/',

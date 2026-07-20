@@ -378,7 +378,6 @@ class MovementCoachSpecialist:
                 ))
             elif status == "overload" and acwr:
                 # ACWR > 1.5 — 强制 deload
-                target_acwr = 1.0
                 proposed_cards.append(ProposedCard(
                     title=f"7 天 deload：ACWR {acwr:.1f} → ≤ 1.0",
                     content=(

@@ -129,7 +129,8 @@ RequirementAdmission:
 
 ## S6–S8
 
-- 尚未进入部署阶段。
+- Draft PR: [#250](https://github.com/itsoso/health-llm-driven/pull/250)。
+- 尚未进入部署阶段；Runtime 保持默认 `off`，远端 CI 全绿并合并前不部署、不灰度。
 
 ## P1 · Tool Control
 
@@ -187,5 +188,14 @@ RequirementAdmission:
   - PostgreSQL P0 + P2 migration 在最小旧 schema 上执行，P2 migration 重复执行 PASS；字段和 running partial index 实查存在。
   - Agent 对话、Executor、ToolGateway/Registry、SSE、拍照饮食、症状/鼻炎与干预周期交叉回归包含在上述 `817 passed` 中。
   - Mobile strict-local egress、身份、本地模型与饮食闭环: 7 suites / `24 passed`。
+- 合并最新主干后的集成复核（2026-07-19）:
+  - 真实 PostgreSQL Runtime 模型、服务、并发、API、工具账本与恢复: `116 passed`；ToolGateway/Registry、Executor 状态事件与写回执: `155 passed`。两次均使用一次性 `test` 数据库并在退出后删除。
+  - SQLite managed migration: `25 passed`；Runtime/Executor/对话/工具/饮食/症状/鼻炎/移动预检组合回归: `292 passed`。
+  - 高风险 LLM 真实回归: invariants `12/12`、health_agent_core `50/50`、orchestrator `5/5`，orchestrator 平均分 `0.94`；评估 SQLite 未建 usage 日志表只触发既有旁路告警，suite exit 0。
+  - Web: `47` 个 test files / `263 passed`，Next 生产构建与 lint exit 0；仅输出仓库既有 warning。
+  - Mobile: TypeScript 与设计 token ratchet PASS；`279` 个 suites / `1982 passed`、`1 skipped`。新增静态 `expo-video` Jest 映射，修复最新主干 AIGC 视频卡片导致的并行测试原生模块加载失败。
+  - macOS: `swift build` PASS；HealthAgentMacCoreTests `416` executed、`0 failures`、`1 skipped`。
+  - OpenAPI 使用 CI 同版生成器重建后，与 Mobile/Web 已提交类型逐字节一致；阻塞型 Ruff、系统地图漂移、Dossier 一致性和 `git diff --check` PASS。
+  - Web `npm ci` 仍报告 `19` 个历史依赖漏洞（含 `2 critical`）；未在 Runtime PR 中强制升级依赖，另列安全治理，不作为 Runtime 代码回归隐藏。
 - 独立复审发现的终态竞态、心跳启动/续租边界、心跳清理覆盖、中断语义、无租约旧 Run、索引、回执隐私和多态资源类型缺口均已增加回归并修复。
 - Rollout: `agent_runtime_mode` 继续默认 `off`；本分支不部署、不发 OTA/TestFlight、不改 iPhone strict-local 协议。
