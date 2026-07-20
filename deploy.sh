@@ -332,6 +332,8 @@ restart_services() {
     ssh $SERVER "
         echo '重启后端服务...' && \
         systemctl restart health-backend && \
+        echo '重启 Celery worker & beat...' && \
+        systemctl restart celery-worker celery-beat && \
         echo '重启前端服务 (PM2)...' && \
         pm2 restart health-frontend
     "

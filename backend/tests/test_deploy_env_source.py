@@ -51,6 +51,16 @@ def test_backend_deploy_seeds_curated_food_nutrition_before_restart():
     assert migrations < food_seed < restart
 
 
+def test_env_only_restart_refreshes_backend_and_celery_processes():
+    deploy_script = (REPO_ROOT / "deploy.sh").read_text()
+    restart_start = deploy_script.index("restart_services() {")
+    restart_end = deploy_script.index("# 推送代码到 GitHub", restart_start)
+    restart_services = deploy_script[restart_start:restart_end]
+
+    assert "systemctl restart health-backend" in restart_services
+    assert "systemctl restart celery-worker celery-beat" in restart_services
+
+
 def test_secret_management_docs_cover_remote_env_backup_and_long_term_plan():
     docs = (REPO_ROOT / "docs/ops/secrets-management.md").read_text()
 
