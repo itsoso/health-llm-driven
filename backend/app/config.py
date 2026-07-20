@@ -73,7 +73,8 @@ class Settings(BaseSettings):
     asr_total_timeout_seconds: float = 25.0
 
     # 阿里云 TokenPlan (兼容 OpenAI 协议) — 国内直连低延迟, 套餐固定成本
-    # 模型选项: qwen3.6-plus / deepseek-v3.2 / glm-5 / MiniMax-M2.5
+    # 模型选项见 app/services/llm/model_registry.py，例如:
+    # qwen3.8-max-preview / qwen3.7-plus / deepseek-v4-pro / glm-5.2 / MiniMax-M2.5
     tokenplan_api_key: Optional[str] = None
     tokenplan_base_url: str = "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
     tokenplan_model: str = "MiniMax-M2.5"

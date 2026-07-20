@@ -4,6 +4,7 @@ from app.services.llm import model_registry as reg
 
 
 EXPECTED_MODELS = {
+    "qwen3.8-max-preview": ("text_generation", "reasoning", "vision_understanding"),
     "qwen3.7-plus": ("text_generation", "reasoning", "vision_understanding"),
     "qwen3.7-max": ("text_generation", "reasoning"),
     "qwen3.6-plus": ("text_generation", "reasoning", "vision_understanding"),
@@ -12,26 +13,33 @@ EXPECTED_MODELS = {
     "qwen-image-2.0-pro": ("image_generation",),
     "wan2.7-image": ("image_generation",),
     "wan2.7-image-pro": ("image_generation",),
+    "happyhorse-1.1-i2v": ("video_generation",),
+    "happyhorse-1.1-t2v": ("video_generation",),
+    "happyhorse-1.1-r2v": ("video_generation",),
     "deepseek-v4-pro": ("text_generation", "reasoning"),
     "deepseek-v4-flash": ("text_generation", "reasoning"),
     "deepseek-v3.2": ("text_generation", "reasoning"),
     "kimi-k2.7-code": ("text_generation", "reasoning", "vision_understanding"),
     "kimi-k2.6": ("text_generation", "reasoning", "vision_understanding"),
     "kimi-k2.5": ("text_generation", "reasoning", "vision_understanding"),
-    "glm-5.2": ("text_generation",),
-    "glm-5.1": ("text_generation",),
-    "glm-5": ("text_generation",),
+    "glm-5.2": ("text_generation", "reasoning"),
+    "glm-5.1": ("text_generation", "reasoning"),
+    "glm-5": ("text_generation", "reasoning"),
     "minimax-m2.5": ("text_generation", "reasoning"),
 }
 
-IMAGE_ONLY = {
+NON_TEXT_MODELS = {
     "qwen-image-2.0",
     "qwen-image-2.0-pro",
     "wan2.7-image",
     "wan2.7-image-pro",
+    "happyhorse-1.1-i2v",
+    "happyhorse-1.1-t2v",
+    "happyhorse-1.1-r2v",
 }
 
 TOP_CHAT_MODELS = {
+    "qwen3.8-max-preview",
     "qwen3.7-plus",
     "qwen3.7-max",
     "deepseek-v4-pro",
@@ -76,13 +84,13 @@ def test_owner_latest_models_are_registered_with_capabilities():
             assert capability in entry.capabilities
 
 
-def test_image_generation_models_are_not_chat_selectable():
+def test_non_text_generation_models_are_not_chat_selectable():
     by_id = {m.id: m for m in reg.MODELS}
     chat_ids = {m.id for m in reg.list_models(only_available=False)}
 
-    for model_id in IMAGE_ONLY:
+    for model_id in NON_TEXT_MODELS:
         assert by_id[model_id].chat_selectable is False
-        assert "image_generation" in by_id[model_id].capabilities
+        assert "text_generation" not in by_id[model_id].capabilities
         assert model_id not in chat_ids
 
 
