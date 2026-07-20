@@ -49,16 +49,20 @@ jobs:
             paths: "tests/test_agent_[f-h]*.py"
           - label: agent-i-z
             paths: "tests/test_agent_[i-z]*.py"
-          - label: c-d
-            paths: "tests/test_[c-d]*.py"
+          - label: c
+            paths: "tests/test_c*.py"
+          - label: d
+            paths: "tests/test_d*.py"
           - label: e-g
             paths: "tests/test_[e-g]*.py"
           - label: h-j
             paths: "tests/test_[h-j]*.py"
           - label: k-m
             paths: "tests/test_[k-m]*.py"
-          - label: n-o
-            paths: "tests/test_[n-o]*.py"
+          - label: n
+            paths: "tests/test_n*.py"
+          - label: o
+            paths: "tests/test_o*.py"
           - label: p
             paths: "tests/test_p*.py"
           - label: q-r

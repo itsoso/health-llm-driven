@@ -86,6 +86,21 @@ def test_agent_a_h_tests_run_in_bounded_ci_processes():
     assert by_label["agent-f-h"]["paths"] == "tests/test_agent_[f-h]*.py"
 
 
+def test_observed_slow_alphabetic_families_run_in_single_letter_shards():
+    workflow = yaml.safe_load(
+        (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    )
+    shards = workflow["jobs"]["backend-test-shards"]["strategy"]["matrix"]["include"]
+    by_label = {shard["label"]: shard for shard in shards}
+
+    assert "c-d" not in by_label
+    assert "n-o" not in by_label
+    assert by_label["c"]["paths"] == "tests/test_c*.py"
+    assert by_label["d"]["paths"] == "tests/test_d*.py"
+    assert by_label["n"]["paths"] == "tests/test_n*.py"
+    assert by_label["o"]["paths"] == "tests/test_o*.py"
+
+
 def test_build_pytest_command_keeps_the_shard_in_one_process():
     from scripts.run_ci_pytest_shard import build_pytest_command
 
