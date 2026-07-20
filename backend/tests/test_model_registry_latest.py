@@ -28,6 +28,8 @@ EXPECTED_MODELS = {
     "minimax-m2.5": ("text_generation", "reasoning"),
 }
 
+EXPECTED_TOKENPLAN_IDS = set(EXPECTED_MODELS)
+
 NON_TEXT_MODELS = {
     "qwen-image-2.0",
     "qwen-image-2.0-pro",
@@ -84,14 +86,31 @@ def test_owner_latest_models_are_registered_with_capabilities():
             assert capability in entry.capabilities
 
 
+def test_tokenplan_registry_exactly_matches_owner_whitelist():
+    actual = {m.id for m in reg.MODELS if m.provider == "tokenplan"}
+
+    assert actual == EXPECTED_TOKENPLAN_IDS
+
+
 def test_non_text_generation_models_are_not_chat_selectable():
     by_id = {m.id: m for m in reg.MODELS}
     chat_ids = {m.id for m in reg.list_models(only_available=False)}
 
     for model_id in NON_TEXT_MODELS:
         assert by_id[model_id].chat_selectable is False
+        assert by_id[model_id].reliable_tool_calling is False
         assert "text_generation" not in by_id[model_id].capabilities
         assert model_id not in chat_ids
+
+
+def test_qwen38_preview_uses_probe_verified_conservative_flags():
+    entry = reg.get_model("qwen3.8-max-preview")
+
+    assert entry is not None
+    assert entry.reliable_tool_calling is True
+    assert entry.supports_thinking_budget is False
+    assert entry.supports_forced_tool_choice is False
+    assert entry.supports_explicit_cache is False
 
 
 def test_only_top_tokenplan_chat_models_are_chat_selectable():
