@@ -129,6 +129,7 @@ async def test_symptom_record_does_not_throw_on_missing_amount(db):
 
     executor = AgentExecutor(db)
     executor._current_user_id = 1
+    executor._current_turn_user_message = "眼睛痒"
 
     captured = {}
 
@@ -179,6 +180,7 @@ async def test_symptom_with_explicit_location_reaches_api_without_body_part(db):
 
     executor = AgentExecutor(db)
     executor._current_user_id = 1
+    executor._current_turn_user_message = "记录还是有腰疼的症状"
     captured = {}
 
     async def fake_post(url, headers, payload):

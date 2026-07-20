@@ -128,6 +128,10 @@ function AppContent() {
             gestureEnabled: true,
           }}
         />
+        <Stack.Screen
+          name="agenda"
+          options={{ headerShown: false, gestureEnabled: true }}
+        />
         <Stack.Screen name="settings" options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="app-mode" options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="account-security" options={{ headerShown: false, presentation: 'modal' }} />

@@ -489,7 +489,7 @@ _MANAGE_RECORD_TYPES = {
     "diet", "water", "weight", "waist", "blood_pressure",
     "sleep", "mood", "excretion", "exercise", "illness", "symptom",
     "medication", "medication_log", "supplement", "supplement_definition", "reminder",
-    "goal", "medical_exam", "event",
+    "goal", "medical_exam", "event", "rhinitis",
 }
 _MANAGE_OPERATIONS = {"list", "update", "delete"}
 _CARD_TYPES = {"plan", "insight", "recommendation"}
@@ -698,6 +698,9 @@ def _validate_health_manage(
             "Error: medical_exam 只支持 list 查询报告级清单; "
             "体检报告/化验指标的创建、修改、删除必须走导入与人工核对管线。"
         )
+
+    if rtype == "rhinitis" and operation == "update":
+        return "Error: rhinitis 只支持 list/delete; 撤销时仅删除当前用户指定打卡日最近一次鼻炎事件."
 
     _coerce_int_range("health_manage", args, "limit", 1, 100, 20, warnings)
 

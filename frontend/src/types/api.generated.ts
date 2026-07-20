@@ -2115,6 +2115,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/monitoring/agent-runtime/rollout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Agent Runtime Rollout
+         * @description Return aggregate-only Runtime rollout health for administrators.
+         */
+        get: operations["get_agent_runtime_rollout_api_v1_monitoring_agent_runtime_rollout_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/monitoring/agent-runtime/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pause Agent Runtime Rollout
+         * @description Idempotently stop future managed admission; existing Runs remain operable.
+         */
+        post: operations["pause_agent_runtime_rollout_api_v1_monitoring_agent_runtime_pause_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/monitoring/agent-runtime/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resume Agent Runtime Rollout
+         * @description Idempotently resume future managed admission after operator review.
+         */
+        post: operations["resume_agent_runtime_rollout_api_v1_monitoring_agent_runtime_resume_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/performance/metrics": {
         parameters: {
             query?: never;
@@ -4109,6 +4169,26 @@ export interface paths {
          */
         post: operations["create_health_checkin_api_v1_checkin__post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/checkin/{checkin_id}/rhinitis/latest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Undo Latest Rhinitis Checkin
+         * @description 撤销当前用户指定打卡日最近一次鼻炎事件,不删除整日打卡。
+         */
+        delete: operations["undo_latest_rhinitis_checkin_api_v1_checkin__checkin_id__rhinitis_latest_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -10958,6 +11038,40 @@ export interface paths {
          * @description SSE 流式综合分析。
          */
         post: operations["chat_stream_api_v1_orchestrator_chat_stream_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/runs/{run_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Agent Runtime Run */
+        post: operations["cancel_agent_runtime_run_api_v1_agent_runs__run_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/runs/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Agent Runtime Run */
+        get: operations["get_agent_runtime_run_api_v1_agent_runs__run_id__get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -19476,6 +19590,97 @@ export interface components {
             /** Client Turn Id */
             client_turn_id?: string | null;
             client_time_context?: components["schemas"]["ClientTimeContext"] | null;
+        };
+        /** AgentRuntimeRolloutCircuitResponse */
+        AgentRuntimeRolloutCircuitResponse: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "active" | "paused";
+            /** Reason Code */
+            reason_code?: string | null;
+            /** Version */
+            version: number;
+            /** Last Evaluated At */
+            last_evaluated_at?: string | null;
+        };
+        /** AgentRuntimeRolloutDurationResponse */
+        AgentRuntimeRolloutDurationResponse: {
+            /** P50 */
+            p50?: number | null;
+            /** P95 */
+            p95?: number | null;
+        };
+        /** AgentRuntimeRolloutSnapshotResponse */
+        AgentRuntimeRolloutSnapshotResponse: {
+            /**
+             * Window Started At
+             * Format: date-time
+             */
+            window_started_at: string;
+            /**
+             * Evaluated At
+             * Format: date-time
+             */
+            evaluated_at: string;
+            /** Terminal Runs */
+            terminal_runs: number;
+            /** Failed Runs */
+            failed_runs: number;
+            /** Reconciliation Runs */
+            reconciliation_runs: number;
+            /** Stale Active Runs */
+            stale_active_runs: number;
+            /** Status Counts */
+            status_counts: {
+                [key: string]: number;
+            };
+            /** Tool Status Counts */
+            tool_status_counts: {
+                [key: string]: number;
+            };
+            duration_ms: components["schemas"]["AgentRuntimeRolloutDurationResponse"];
+        };
+        /** AgentRuntimeRolloutStatusResponse */
+        AgentRuntimeRolloutStatusResponse: {
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "off" | "canary" | "enforce";
+            /** Canary Percent */
+            canary_percent: number;
+            /** Allowlist Count */
+            allowlist_count: number;
+            circuit: components["schemas"]["AgentRuntimeRolloutCircuitResponse"];
+            thresholds: components["schemas"]["AgentRuntimeRolloutThresholdsResponse"];
+            snapshot: components["schemas"]["AgentRuntimeRolloutSnapshotResponse"];
+        };
+        /** AgentRuntimeRolloutThresholdsResponse */
+        AgentRuntimeRolloutThresholdsResponse: {
+            /** Window Minutes */
+            window_minutes: number;
+            /** Min Terminal Runs */
+            min_terminal_runs: number;
+            /** Failure Rate Percent */
+            failure_rate_percent: number;
+            /** Reconciliation Runs */
+            reconciliation_runs: number;
+            /** Stale Active Runs */
+            stale_active_runs: number;
+        };
+        /** AgentRuntimeRolloutTransitionResponse */
+        AgentRuntimeRolloutTransitionResponse: {
+            /** Changed */
+            changed: boolean;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "active" | "paused";
+            /** Reason Code */
+            reason_code?: string | null;
         };
         /** AmbientAudioInputResponse */
         AmbientAudioInputResponse: {
@@ -35833,6 +36038,66 @@ export interface operations {
             };
         };
     };
+    get_agent_runtime_rollout_api_v1_monitoring_agent_runtime_rollout_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRuntimeRolloutStatusResponse"];
+                };
+            };
+        };
+    };
+    pause_agent_runtime_rollout_api_v1_monitoring_agent_runtime_pause_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRuntimeRolloutTransitionResponse"];
+                };
+            };
+        };
+    };
+    resume_agent_runtime_rollout_api_v1_monitoring_agent_runtime_resume_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRuntimeRolloutTransitionResponse"];
+                };
+            };
+        };
+    };
     report_metric_api_v1_performance_metrics_post: {
         parameters: {
             query?: never;
@@ -39016,6 +39281,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthCheckinResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    undo_latest_rhinitis_checkin_api_v1_checkin__checkin_id__rhinitis_latest_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                checkin_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -50337,6 +50633,71 @@ export interface operations {
                 "application/json": components["schemas"]["OrchestratorRequest"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_agent_runtime_run_api_v1_agent_runs__run_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_agent_runtime_run_api_v1_agent_runs__run_id__get: {
+        parameters: {
+            query?: {
+                after?: number;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

@@ -1,0 +1,182 @@
+[
+  {
+    "brand": "Qwen",
+    "model": "qwen3.8-max-preview",
+    "capabilities": ["文本生成", "推理模型", "视觉理解"],
+    "label": "Qwen3.8 Max Preview · 千问",
+    "speed_tier": "reasoning",
+    "reliable_tool_calling": true,
+    "plan_status": "当前白名单",
+    "availability_note": "预览版；限时加量 10 倍；已通过 TokenPlan /models 与真实文本、自动工具调用探针验证",
+    "source_url": "https://bailian.console.aliyun.com/cn-beijing?tab=plan#/efm/subscription/token-plan",
+    "observed_at": "2026-07-20"
+  },
+  {
+    "brand": "Qwen",
+    "model": "qwen3.7-plus",
+    "capabilities": ["文本生成", "推理模型", "视觉理解"],
+    "plan_status": "当前白名单",
+    "source_url": "https://bailian.console.aliyun.com/cn-beijing?tab=plan#/efm/subscription/token-plan",
+    "observed_at": "2026-07-20"
+  },
+  {
+    "brand": "Qwen",
+    "model": "qwen3.7-max",
+    "capabilities": ["文本生成", "推理模型"],
+    "plan_status": "当前白名单",
+    "source_url": "https://bailian.console.aliyun.com/cn-beijing?tab=plan#/efm/subscription/token-plan",
+    "observed_at": "2026-07-20"
+  },
+  {
+    "brand": "Qwen",
+    "model": "qwen3.6-plus",
+    "capabilities": ["文本生成", "推理模型", "视觉理解"],
+    "plan_status": "当前白名单",
+    "source_url": "https://bailian.console.aliyun.com/cn-beijing?tab=plan#/efm/subscription/token-plan",
+    "observed_at": "2026-07-20"
+  },
+  {
+    "brand": "Qwen",
+    "model": "qwen3.6-flash",
+    "capabilities": ["文本生成", "推理模型", "视觉理解"],
+    "plan_status": "当前白名单",
+    "source_url": "https://bailian.console.aliyun.com/cn-beijing?tab=plan#/efm/subscription/token-plan",
+    "observed_at": "2026-07-20"
+  },
+  {
+    "brand": "Qwen",
+    "model": "qwen-image-2.0",
+    "capabilities": ["图片生成"],
+    "plan_status": "当前白名单",
+    "source_url": "https://bailian.console.aliyun.com/cn-beijing?tab=plan#/efm/subscription/token-plan",
+    "observed_at": "2026-07-20"
+  },
+  {
+    "brand": "Qwen",
+    "model": "qwen-image-2.0-pro",
+    "capabilities": ["图片生成"],
+    "plan_status": "当前白名单",
+    "source_url": "https://bailian.console.aliyun.com/cn-beijing?tab=plan#/efm/subscription/token-plan",
+    "observed_at": "2026-07-20"
+  },
+  {
+    "brand": "Wanxiang",
+    "model": "wan2.7-image",
+    "capabilities": ["图片生成"],
+    "plan_status": "当前白名单",
+    "source_url": "https://bailian.console.aliyun.com/cn-beijing?tab=plan#/efm/subscription/token-plan",
+    "observed_at": "2026-07-20"
+  },
+  {
+    "brand": "Wanxiang",
+    "model": "wan2.7-image-pro",
+    "capabilities": ["图片生成"],
+    "plan_status": "当前白名单",
+    "source_url": "https://bailian.console.aliyun.com/cn-beijing?tab=plan#/efm/subscription/token-plan",
+    "observed_at": "2026-07-20"
+  },
+  {
+    "brand": "HappyHorse",
+    "model": "happyhorse-1.1-i2v",
+    "capabilities": ["视频生成"],
+    "plan_status": "当前白名单",
+    "source_url": "https://bailian.console.aliyun.com/cn-beijing?tab=plan#/efm/subscription/token-plan",
+    "observed_at": "2026-07-20"
+  },
+  {
+    "brand": "HappyHorse",
+    "model": "happyhorse-1.1-t2v",
+    "capabilities": ["视频生成"],
+    "plan_status": "当前白名单",
+    "source_url": "https://bailian.console.aliyun.com/cn-beijing?tab=plan#/efm/subscription/token-plan",
+    "observed_at": "2026-07-20"
+  },
+  {
+    "brand": "HappyHorse",
+    "model": "happyhorse-1.1-r2v",
+    "capabilities": ["视频生成"],
+    "plan_status": "当前白名单",
+    "source_url": "https://bailian.console.aliyun.com/cn-beijing?tab=plan#/efm/subscription/token-plan",
+    "observed_at": "2026-07-20"
+  },
+  {
+    "brand": "DeepSeek",
+    "model": "deepseek-v4-pro",
+    "capabilities": ["文本生成", "推理模型"],
+    "plan_status": "当前白名单",
+    "source_url": "https://bailian.console.aliyun.com/cn-beijing?tab=plan#/efm/subscription/token-plan",
+    "observed_at": "2026-07-20"
+  },
+  {
+    "brand": "DeepSeek",
+    "model": "deepseek-v4-flash",
+    "capabilities": ["文本生成", "推理模型"],
+    "plan_status": "当前白名单",
+    "source_url": "https://bailian.console.aliyun.com/cn-beijing?tab=plan#/efm/subscription/token-plan",
+    "observed_at": "2026-07-20"
+  },
+  {
+    "brand": "DeepSeek",
+    "model": "deepseek-v3.2",
+    "capabilities": ["文本生成", "推理模型"],
+    "plan_status": "当前白名单",
+    "source_url": "https://bailian.console.aliyun.com/cn-beijing?tab=plan#/efm/subscription/token-plan",
+    "observed_at": "2026-07-20"
+  },
+  {
+    "brand": "GLM",
+    "model": "glm-5.2",
+    "capabilities": ["文本生成", "推理模型"],
+    "plan_status": "当前白名单",
+    "source_url": "https://bailian.console.aliyun.com/cn-beijing?tab=plan#/efm/subscription/token-plan",
+    "observed_at": "2026-07-20"
+  },
+  {
+    "brand": "GLM",
+    "model": "glm-5.1",
+    "capabilities": ["文本生成", "推理模型"],
+    "plan_status": "当前白名单",
+    "source_url": "https://bailian.console.aliyun.com/cn-beijing?tab=plan#/efm/subscription/token-plan",
+    "observed_at": "2026-07-20"
+  },
+  {
+    "brand": "GLM",
+    "model": "glm-5",
+    "capabilities": ["文本生成", "推理模型"],
+    "plan_status": "当前白名单",
+    "source_url": "https://bailian.console.aliyun.com/cn-beijing?tab=plan#/efm/subscription/token-plan",
+    "observed_at": "2026-07-20"
+  },
+  {
+    "brand": "Kimi",
+    "model": "kimi-k2.7-code",
+    "capabilities": ["文本生成", "推理模型", "视觉理解"],
+    "plan_status": "当前白名单",
+    "source_url": "https://bailian.console.aliyun.com/cn-beijing?tab=plan#/efm/subscription/token-plan",
+    "observed_at": "2026-07-20"
+  },
+  {
+    "brand": "Kimi",
+    "model": "kimi-k2.6",
+    "capabilities": ["文本生成", "推理模型", "视觉理解"],
+    "plan_status": "当前白名单",
+    "source_url": "https://bailian.console.aliyun.com/cn-beijing?tab=plan#/efm/subscription/token-plan",
+    "observed_at": "2026-07-20"
+  },
+  {
+    "brand": "Kimi",
+    "model": "kimi-k2.5",
+    "capabilities": ["文本生成", "推理模型", "视觉理解"],
+    "plan_status": "当前白名单",
+    "source_url": "https://bailian.console.aliyun.com/cn-beijing?tab=plan#/efm/subscription/token-plan",
+    "observed_at": "2026-07-20"
+  },
+  {
+    "brand": "MiniMax",
+    "model": "MiniMax-M2.5",
+    "capabilities": ["文本生成", "推理模型"],
+    "plan_status": "当前白名单",
+    "source_url": "https://bailian.console.aliyun.com/cn-beijing?tab=plan#/efm/subscription/token-plan",
+    "observed_at": "2026-07-20"
+  }
+]

@@ -16,29 +16,53 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # The agent test family can leave Linux process state behind when it
-          # follows the other a/b modules in the same pytest process. Discover
-          # the non-agent a/b files from tests/ so future files stay covered,
-          # then isolate agent tests in two deterministic processes.
-          - label: a-b-rest
+          # Keep broad a/b discovery bounded and isolate agent + App Store
+          # families. Root discovery lets pytest's ignore rules exclude agent
+          # paths before collection; direct shell globs would pass them as
+          # explicit paths and defeat --ignore-glob.
+          - label: a-early
             paths: "tests"
-            extra_args: "--ignore=tests/services --ignore=tests/test_app_store_demo_account.py --ignore-glob='tests/test_[c-z]*.py' --ignore-glob='tests/test_agent_*.py'"
+            extra_args: "--ignore=tests/services --ignore=tests/test_app_store_demo_account.py --ignore-glob='tests/test_[b-z]*.py' --ignore-glob='tests/test_agent_*.py' --ignore-glob='tests/test_a[i-z]*.py'"
+          - label: a-late
+            paths: "tests"
+            extra_args: "--ignore=tests/services --ignore=tests/test_app_store_demo_account.py --ignore-glob='tests/test_[b-z]*.py' --ignore-glob='tests/test_agent_*.py' --ignore-glob='tests/test_a[_a-h]*.py'"
+          - label: b
+            paths: "tests/test_b*.py"
           - label: app-store-demo-account
             paths: "tests/test_app_store_demo_account.py"
-          - label: agent-a-h
-            paths: "tests/test_agent_[a-h]*.py"
+          # Executor coverage has grown too large for a single reliable process.
+          # Split the broad a-h family so a slow provider/tool simulation cannot
+          # consume both 600-second attempts for hundreds of unrelated tests.
+          - label: agent-a-d
+            paths: "tests/test_agent_[a-d]*.py"
+          - label: agent-e-core
+            paths: >-
+              tests/test_agent_eval.py
+              tests/test_agent_event_stream.py
+              tests/test_agent_evidence_card_memo.py
+              tests/test_agent_explicit_cache_flag.py
+          - label: agent-executor-a-h
+            paths: "tests/test_agent_executor_[a-h]*.py"
+          - label: agent-executor-i-z
+            paths: "tests/test_agent_executor_[i-z]*.py"
+          - label: agent-f-h
+            paths: "tests/test_agent_[f-h]*.py"
           - label: agent-i-z
             paths: "tests/test_agent_[i-z]*.py"
-          - label: c-d
-            paths: "tests/test_[c-d]*.py"
+          - label: c
+            paths: "tests/test_c*.py"
+          - label: d
+            paths: "tests/test_d*.py"
           - label: e-g
             paths: "tests/test_[e-g]*.py"
           - label: h-j
             paths: "tests/test_[h-j]*.py"
           - label: k-m
             paths: "tests/test_[k-m]*.py"
-          - label: n-o
-            paths: "tests/test_[n-o]*.py"
+          - label: n
+            paths: "tests/test_n*.py"
+          - label: o
+            paths: "tests/test_o*.py"
           - label: p
             paths: "tests/test_p*.py"
           - label: q-r
@@ -82,8 +106,28 @@ jobs:
             extra_args: "-vv"
           - label: u
             paths: "tests/test_u*.py"
-          - label: v-z
-            paths: "tests/test_[v-z]*.py tests/services/"
+          # Keep the broad v-z family and service tests in bounded processes.
+          # The former combined shard grew to 360 tests and deterministically
+          # exhausted both 600-second attempts before reporting assertions.
+          - label: voice-watch
+            paths: "tests/test_v*.py tests/test_wa*.py"
+          # Keep agenda/twin-heavy workday tests out of the same SQLite process
+          # as wearable/report tests. Retained worker state can make the shared
+          # process crash before pytest can report an assertion.
+          - label: wearable-reports
+            paths: >-
+              tests/test_wearable*.py
+              tests/test_weather*.py
+              tests/test_wechat*.py
+              tests/test_weekly*.py
+              tests/test_weight.py
+              tests/test_womens_health.py
+          - label: workday-workout
+            paths: "tests/test_workday*.py tests/test_workout*.py"
+          - label: write-z
+            paths: "tests/test_write*.py tests/test_z*.py"
+          - label: services
+            paths: "tests/services/"
     steps:
       - uses: actions/checkout@v4
 

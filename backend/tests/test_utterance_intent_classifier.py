@@ -44,6 +44,15 @@ def test_clear_symptom_statement_is_write_intent():
     assert intent.is_write is True
 
 
+def test_natural_sneeze_recording_is_symptom_write_intent():
+    intent = classify_agent_utterance("记录下来刚才打了一个喷嚏。")
+
+    assert intent.primary == "write"
+    assert intent.domain == "symptom"
+    assert intent.operation == "create"
+    assert intent.is_write is True
+
+
 def test_symptom_question_stays_advice():
     intent = classify_agent_utterance("腰疼怎么办？")
 
@@ -91,6 +100,27 @@ def test_negated_record_command_is_not_write_intent():
 
     assert intent.is_write is False
     assert intent.primary != "write"
+
+
+def test_repeated_negation_uses_the_one_nearest_to_mutation():
+    intent = classify_agent_utterance(
+        "这是内部只读运行验证。请只回复一句简短确认，"
+        "不要调用工具，也不要记录或修改任何数据。"
+    )
+
+    assert intent.primary == "chat"
+    assert intent.operation == "none"
+    assert intent.is_write is False
+
+
+def test_shared_negation_covers_parallel_record_and_delete_actions():
+    intent = classify_agent_utterance(
+        "不要调用工具，也不要记录、删除或修改任何数据。"
+    )
+
+    assert intent.primary == "chat"
+    assert intent.operation == "none"
+    assert intent.is_write is False
 
 
 def test_mutation_question_is_read_not_a_mutation_command():

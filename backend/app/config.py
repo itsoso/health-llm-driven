@@ -73,7 +73,8 @@ class Settings(BaseSettings):
     asr_total_timeout_seconds: float = 25.0
 
     # 阿里云 TokenPlan (兼容 OpenAI 协议) — 国内直连低延迟, 套餐固定成本
-    # 模型选项: qwen3.6-plus / deepseek-v3.2 / glm-5 / MiniMax-M2.5
+    # 模型选项见 app/services/llm/model_registry.py，例如:
+    # qwen3.8-max-preview / qwen3.7-plus / deepseek-v4-pro / glm-5.2 / MiniMax-M2.5
     tokenplan_api_key: Optional[str] = None
     tokenplan_base_url: str = "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
     tokenplan_model: str = "MiniMax-M2.5"
@@ -247,10 +248,21 @@ class Settings(BaseSettings):
     # XiaoBa Agent Kernel: shadow keeps decisions observable but does not block;
     # enforce blocks policy-denied write tools at the single execution choke point.
     agent_kernel_policy_mode: str = "enforce"
-    # Agent Runtime P0 control plane. off=仅贯通 canonical Run identity,不写新表;
-    # enforce=写 Run Ledger 并阻止同一会话的不同 active turn 并发执行。
+    # Agent Runtime control plane. off=仅贯通 canonical Run identity,不写新表;
+    # canary=稳定分桶命中的用户写 Run Ledger; enforce=全部云端请求写 Ledger。
     # 严格本地 iPhone 执行不调用云端 Agent API,因此不会创建服务端 Run。
     agent_runtime_mode: str = "off"
+    agent_runtime_canary_percent: int = 0
+    agent_runtime_canary_user_ids: str = ""
+    agent_runtime_rollout_window_minutes: int = 15
+    agent_runtime_rollout_min_terminal_runs: int = 20
+    agent_runtime_rollout_failure_rate_percent: int = 10
+    # Runtime P2 worker control. These values are used in canary/enforce mode.
+    agent_runtime_lease_seconds: int = 90
+    agent_runtime_heartbeat_seconds: int = 20
+    agent_runtime_deadline_seconds: int = 300
+    agent_runtime_unleased_grace_seconds: int = 420
+    agent_runtime_stream_queue_max_chunks: int = 128
     # GenUI metric_table 卡片(延迟, Phase-2 rank1)服务端 kill-switch:关=后端绝不发
     # metric_table 卡片、也不注入 GenUI 正文格式契约(逐字节现状)。**主门是 caps 协商**
     # (客户端声明 genui-table-v1);本 flag 只是无需客户端发版即可服务端全局停用的开关。

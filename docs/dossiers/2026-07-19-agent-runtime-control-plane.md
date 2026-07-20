@@ -1,11 +1,11 @@
-# Dossier: Agent Runtime Control Plane P0
+# Dossier: Agent Runtime Control Plane
 
 | 字段 | 值 |
 |---|---|
 | slug | `agent-runtime-control-plane` |
 | 创建日期 | 2026-07-19 |
-| 当前阶段 | S5 实现与验证完成 |
-| 状态 | ready_for_integration |
+| 当前阶段 | P3 Canary Control Plane 已上线；生产 Runtime 保持默认关闭 |
+| 状态 | complete |
 | 负责 | Codex |
 | 反馈环 | PostgreSQL/SQLite 集成测试 / Agent SSE 回归 / backend deploy |
 
@@ -67,6 +67,12 @@ RequirementAdmission:
 - 实施计划: `docs/plans/2026-07-19-agent-runtime-control-plane.md`
 - 第一里程碑: canonical RunContext、Run Ledger、会话级准入与兼容适配。
 - 第二里程碑另立 Gate: ToolSpec/operation idempotency/reconcile 后再做进程重启恢复。
+- P1 设计: `docs/plans/2026-07-19-agent-runtime-tool-control-design.md`
+- P1 实施计划: `docs/plans/2026-07-19-agent-runtime-tool-control.md`
+- P2 设计: `docs/plans/2026-07-19-agent-runtime-resilience-design.md`
+- P2 实施计划: `docs/plans/2026-07-19-agent-runtime-resilience.md`
+- P3 灰度设计: `docs/plans/2026-07-20-agent-runtime-canary-design.md`
+- P3 实施计划: `docs/plans/2026-07-20-agent-runtime-canary.md`
 
 ## G2 · 可行性 + 安全压测
 
@@ -90,7 +96,7 @@ RequirementAdmission:
 
 ## S5 · 实现
 
-- 分支: `codex/agent-runtime-control-plane`，已 rebase 到 `origin/main@f9d298031`，包含最新 iPhone local-first 饮食自闭环与附件图片 AIGC 分流。
+- 分支: `codex/agent-runtime-control-plane`，已 rebase 到 `origin/main@3c73756ae`，包含最新 iPhone local-first 饮食自闭环、附件图片 AIGC 分流和症状/鼻炎写入安全修复。
 - 基线验证: 126 项 Agent event/conversation/replay/completion 测试通过。
 - 新增 content-free `agent_runs`、`agent_run_attempts`、`agent_tool_operations`、`agent_run_events`，带状态 CHECK、client-turn/input-seq/active-run 唯一约束。
 - `AgentRuntimeCoordinator` 负责 canonical identity、会话级准入、状态转换、消息绑定和 allowlist 事件；Runtime 表不存 prompt、回复、健康正文或原始工具参数/结果。
@@ -123,6 +129,179 @@ RequirementAdmission:
 - 最终 producer 复审补出并修复“带/不带 conversation 的同 turn 重试锁分裂”和“新会话最终回答前未绑定”两个竞争窗口；隐私、owner scope、失败会话恢复和 strict-local 边界复核通过。
 - 裁决: **PASS**。`agent_runtime_mode` 继续默认 `off`，本分支不直接部署；合并与灰度启用另走部署 Gate。
 
-## S6–S8
+## S6–S8 · 合并、部署与验证
 
-- 尚未进入部署阶段。
+- PR [#250](https://github.com/itsoso/health-llm-driven/pull/250) 已于 2026-07-20 合并，merge commit 为 `367a43d45f8e76a2b2edb7eb7dcc7cb5b34f9698`。
+- 远端 CI [run 29713446119](https://github.com/itsoso/health-llm-driven/actions/runs/29713446119) 全绿；后端全部矩阵、质量门禁、Web、Mobile、macOS 和 OpenAPI 类型漂移检查均通过。
+- 通过根目录 `deploy.sh -b -y` 从精确匹配 `origin/main` 的干净 worktree 部署后端；部署前数据库备份与 force-RLS 完整性校验通过，线上 `.env` 已备份。
+
+## G5 · 部署健康闸
+
+- managed migration `20260719_180000_agent_runtime_resilience` 在生产 PostgreSQL 成功应用。
+- 后端、Celery worker 和 Celery beat 重启成功；部署健康评分 `60/60`，Skills manifest 本地/线上均为 `22`。
+- 服务器 HEAD 与 merge commit 精确一致：`367a43d45f8e76a2b2edb7eb7dcc7cb5b34f9698`。
+- **裁决: PASS**。
+
+## G6 · 上线验证
+
+- 公网 `/api/v1/health` 返回 healthy，API、PostgreSQL、Redis 和 Celery 均 connected。
+- 生产有效配置实查 `agent_runtime_mode=off`；本次上线只铺设 schema、代码与恢复入口，不改变既有 Agent 准入、写入或 strict-local iPhone 链路。
+- Runtime enforce 灰度、自动恢复演练和 canary 指标另立 rollout Gate，不以本次默认关闭部署代替。
+- **裁决: PASS（default-off 安全部署面）**。
+
+## P1 · Tool Control
+
+- [x] ToolSpec Registry 覆盖全部 provider schema 和 specialist tool。
+- [x] `ToolGateway.execute()` 成为验证后请求的唯一策略与执行入口。
+- [x] Executor 改为 Registry adapter 分发，移除手写工具名分支。
+- [x] enforce 模式接入 content-free `AgentToolOperation` 状态机。
+- [x] verified fingerprint 不重复执行，uncertain operation 不自动重试。
+- [x] SQLite/PostgreSQL、健康写入、图片饮食与 strict-local 交叉回归通过。
+- 实现摘要:
+  - `ToolSpec` 统一工具 effect、adapter、timeout、write receipt 与 mixed-action 分类；旧策略常量从 Registry 派生，避免新增工具漏接安全和观测。
+  - `ToolGateway.execute()` 在策略裁决后最多分发一次；Executor 保留既有参数恢复、症状授权、参数校验、业务 adapter 和安全标注，不改变客户端或 iPhone strict-local 协议。
+  - Runtime enforce 模式在业务写前 claim content-free operation；verified 结果可直接 replay，executing/uncertain 不自动重试。重复 claim 不改写原 owner 状态，避免原写入成功后无法登记回执而产生“先失败、后成功”。
+  - Runtime 写指纹归一 `health_record` 类型别名和 `intervention_cycle` 确认字段；确认前后仍是同一业务操作身份，但不改变既有 turn-local 确认 checkpoint。
+  - Executor 被取消或超时时，已 claim 的写操作先落 `reconciliation_required` 再传播取消；干预周期 start/update/cancel 返回保留人话消息的结构化回执，避免真实成功被误判为缺少回执。
+  - 会话归属校验与 active Run 判断现在位于同一 conversation admission lock 内；SQLite StaticPool 以 Engine 弱引用绑定的数据库级可重入锁串行 Runtime 访问，Engine 销毁后锁自动回收，PostgreSQL 继续使用细粒度 advisory transaction lock。
+  - operation identity 绑定 `tool_name + effect_class + fingerprint`；Runtime 表和事件只保存摘要标识、状态和资源引用，不保存健康正文、参数或结果。
+- P1 验证证据:
+  - SQLite Tool Registry/Gateway/Runtime/Executor/receipt/health manage 回归：`330 passed`。
+  - SQLite 对话 API、图片生命周期、拍照饮食草稿和饮食卡片交叉回归：`173 passed`。
+  - 变基到最新主干后 Tool Registry/Gateway/Runtime/干预周期 + 症状/鼻炎安全组合回归：`335 passed`；包含 SQLite Engine 锁弱引用回收回归。
+  - 图片、对话、饮食交叉回归复跑：`114 passed`。
+  - Mobile strict-local egress、身份、执行事件和本地饮食闭环：7 suites / `26 passed`。
+  - 真实 PostgreSQL Runtime 状态机、并发、API 与 operation ledger 全集：`58 passed`；变基后并发 + operation ledger 定向复跑：`22 passed`，命令与临时库清理均 exit 0。
+  - `ruff check` 本次 Python 文件：PASS；`git diff --check`：PASS。
+  - `scripts/check_doc_drift.py` 在重新生成 `docs/_generated/system-map.json` 后 PASS；Dossier consistency：64 份 PASS。
+- 明确推迟: 业务端点跨 Run 幂等键、资源级自动 reconcile、进程死亡恢复扫描、durable stream cursor、取消/supersede 和 parent/child Run。
+- Rollout: Runtime 继续默认 `off`；P1 不部署、不灰度启用。
+
+## P2 · Runtime Resilience
+
+- [x] Run/Attempt worker lease、heartbeat 与 worker fencing。
+- [x] 持久化 cancel request、deadline 与终态前二次裁决。
+- [x] 进程中断与用户取消分离；未由用户取消的 worker interruption 为可重试失败。
+- [x] 过期 Run 扫描与安全结算；只读 Run 可重试，未决写入进入 reconciliation，不自动重放。
+- [x] 兼容 P1 无租约 active Run；给予宽限期后由扫描器结算，避免永久占用会话。
+- [x] 仅包运行状态的持久事件游标，不保存 prompt、回复、token delta 或健康正文。
+- [x] 有界 SSE buffer 与断开感知，客户端断开后不再无界累积内存。
+- [x] owner-scoped Run 状态/事件接口和取消接口。
+- [x] Celery 每分钟恢复入口，仅 `agent_runtime_mode=enforce` 时生效。
+- [x] running Attempt lease partial index，避免历史 Attempt 增长后每分钟全表扫描。
+- [x] 写回执资源类型和 ID 格式由 ToolSpec 注册；健康写入只接受正整数 ID，AIGC 草稿只接受既有 `aigc_confirm_<32 hex>` 格式。
+- 终态不变量:
+  - cancel/deadline 对 succeeded、failed、waiting completion 都执行二次裁决。
+  - 已验证写入不会因任务中断或晚到 cancel 向用户伪报失败。
+  - 未决写入遇到用户取消或系统中断都进入 reconciliation，不自动重试。
+  - 心跳清理异常只记录，不覆盖主执行结果，也不跳过 SSE sentinel/会话关闭。
+  - 本地租约截止点在数据库 `mark_running` / `renew_lease` 调用前记录；心跳延迟启动、慢续租或 control settlement 失败都不能把 worker 生命周期延长到数据库租约之后。
+  - 心跳数据库暂时不可用时在剩余租约内重试；会话关闭失败或无法在租约到期前恢复时立即取消 owner task。
+  - 旧无租约 Run 的恢复宽限不少于 deadline + 120 秒部署排空窗口，默认 420 秒。
+- P2 验证证据:
+  - SQLite Runtime/API/Executor/ToolSpec 定向与跨链路回归: `817 passed`。
+  - managed migration 全集: `25 passed`。
+  - 真实 PostgreSQL Runtime 状态机、并发、API、工具账本与恢复: `142 passed`。
+  - PostgreSQL P0 + P2 migration 在最小旧 schema 上执行，P2 migration 重复执行 PASS；字段和 running partial index 实查存在。
+  - Agent 对话、Executor、ToolGateway/Registry、SSE、拍照饮食、症状/鼻炎与干预周期交叉回归包含在上述 `817 passed` 中。
+  - Mobile strict-local egress、身份、本地模型与饮食闭环: 7 suites / `24 passed`。
+- 合并最新主干后的集成复核（2026-07-19）:
+  - 真实 PostgreSQL Runtime 模型、服务、并发、API、工具账本与恢复: `116 passed`；ToolGateway/Registry、Executor 状态事件与写回执: `155 passed`。两次均使用一次性 `test` 数据库并在退出后删除。
+  - SQLite managed migration: `25 passed`；Runtime/Executor/对话/工具/饮食/症状/鼻炎/移动预检组合回归: `292 passed`。
+  - 高风险 LLM 真实回归: invariants `12/12`、health_agent_core `50/50`、orchestrator `5/5`，orchestrator 平均分 `0.94`；评估 SQLite 未建 usage 日志表只触发既有旁路告警，suite exit 0。
+  - Web: `47` 个 test files / `263 passed`，Next 生产构建与 lint exit 0；仅输出仓库既有 warning。
+  - Mobile: TypeScript 与设计 token ratchet PASS；`279` 个 suites / `1982 passed`、`1 skipped`。新增静态 `expo-video` Jest 映射，修复最新主干 AIGC 视频卡片导致的并行测试原生模块加载失败。
+  - macOS: `swift build` PASS；HealthAgentMacCoreTests `416` executed、`0 failures`、`1 skipped`。
+  - OpenAPI 使用 CI 同版生成器重建后，与 Mobile/Web 已提交类型逐字节一致；阻塞型 Ruff、系统地图漂移、Dossier 一致性和 `git diff --check` PASS。
+  - Web `npm ci` 仍报告 `19` 个历史依赖漏洞（含 `2 critical`）；未在 Runtime PR 中强制升级依赖，另列安全治理，不作为 Runtime 代码回归隐藏。
+- 独立复审发现的终态竞态、心跳启动/续租边界、心跳清理覆盖、中断语义、无租约旧 Run、索引、回执隐私和多态资源类型缺口均已增加回归并修复。
+- Rollout: P2 代码与 schema 已部署，`agent_runtime_mode` 继续默认 `off`；未发 OTA/TestFlight，未改 iPhone strict-local 协议。Runtime enforce 灰度另立 Gate。
+
+## P3 · Canary Control Plane
+
+- [x] 稳定用户分桶与内部 allowlist，只作用于云端 Agent 请求。
+- [x] 数据库持久化全局熔断状态和 content-free 控制审计。
+- [x] 聚合成功率、系统失败、reconciliation 和 stale lease 指标。
+- [x] recovery 后自动评估并在硬信号或阈值越界时暂停新 Runtime 准入。
+- [x] 管理员聚合看板和显式 pause/resume；系统不自动恢复。
+- [x] canary/enforce 既有 Run 在暂停后仍可查询、取消和恢复。
+- [x] PostgreSQL/SQLite、并发、隐私和旧客户端交叉回归。
+
+### P3 G1 · 准入裁决
+
+- 需求: 在不重写 Executor、不影响 iPhone strict-local 分支的前提下，为已部署但默认关闭的 Runtime 增加可控灰度和自动止损。
+- first-class objects: 复用 `ExecutionEvent` / `WriteIntent`，新增 operational-only rollout state；不新增用户健康对象。
+- target surface: Backend Agent API、Runtime maintenance、管理员监控；Mobile/Web/Mac/Watch 协议不变。
+- safety: 只保存聚合计数和有限 reason code，不保存 prompt、回复、工具参数或健康正文。
+- smallest slice: `off` 部署 -> 0% canary/allowlist -> 自动 pause -> 人工核查后 resume。
+- 非目标: 本批不启用生产 canary，不自动 resume，不改变本地执行或客户端 UI。
+- 裁决: **PASS**。
+
+### P3 G2 · 可行性 + 安全压测
+
+- 稳定分桶由版本化 hash 完成，不依赖进程内状态或客户端版本。
+- 熔断状态和审计使用 PostgreSQL 单例行与追加事件；并发变更使用行锁和幂等状态转换。
+- 暂停只让新请求回退既有 unmanaged 路径；recovery 与 owner-scoped Run API 继续服务已管理 Run，避免止损动作制造孤儿 Run。
+- 自动暂停只依赖 aggregate system signals；rate signal 设最小样本，reconciliation/stale lease 为无需样本的硬信号。
+- 系统绝不自动恢复；管理员变更需鉴权并留下 content-free 审计。
+- 生产代码和迁移仍以 `agent_runtime_mode=off` 部署，实际百分比变更另走上线 Gate。
+- 裁决: **PASS**。
+
+### P3 G3 · 实现与测试
+
+- 新增 `off/canary/enforce` 三态准入、版本化稳定分桶、内部 allowlist、数据库单例熔断和 append-only 控制审计。
+- recovery 后在同一维护周期计算聚合快照；新 reconciliation、恢复后残留 stale lease 或达到最小样本后的系统失败率会自动暂停，系统不会自动恢复。
+- 管理员 API 只返回聚合计数和有限 reason code；pause/resume 幂等且需要现有管理员权限。
+- 托管身份固定在 Turn 上，Executor 不再按当前全局模式决定是否记录工具账本；同一 client turn 在暂停或缩小 canary 后仍恢复原 Run。
+- 显式 `off` 保持硬回滚语义，既有 client turn 也不恢复托管；非法模式会先失败，不能被历史 Run 身份掩盖。
+- selected admission 与 pause 使用同一数据库行锁排序；reconciliation 与人工恢复使用同一控制行上的单调 generation，按数据库提交顺序核销，旧 `finished_at` 的晚提交也不会被漏掉。
+- Run 终态裁决以 unresolved write 为最高优先级；模型即使返回成功，Run 与未决 operation 仍在同一事务进入 reconciliation 并递增 generation。
+- 增加 Run finished/status 与 ToolOperation created/status 索引；真实 PostgreSQL `EXPLAIN` 使用 `ix_agent_runs_finished_status`。
+- SQLite Runtime/Tool/migration 组合回归: `192 passed, 3 skipped`；跨对话、Executor、SSE、饮食拍照、图片生命周期、症状/鼻炎/干预链路: `425 passed`。
+- 真实 PostgreSQL pause/admission 并发、generation 恢复顺序与 same-turn 连续性定向回归通过；其中“旧 `finished_at`、晚提交”双事务回归和两项 pause 锁竞争共 `3 passed`。P0/P2/P3 migration 重复执行通过，临时数据库均已删除。
+- 真实 PostgreSQL Runtime/rollout/API/concurrency/model/resilience/tool 全集 `170 passed`、无跳过；P0→P2→P3 迁移在最小旧 schema 上执行且 P3 重复执行通过，generation 初值 `0/0` 与两个窗口索引实查存在，临时数据库已删除。
+- 最终变基到 `origin/main@d41871980`；上游 TokenPlan 白名单、任务路由与 CI 分片变更交叉回归 `196 passed, 3 skipped`（跳过项仅为 PostgreSQL-only 用例），Mobile/Web TypeScript 检查通过。
+- 2026-07-20 真实 LLM 变更闸使用内存 SQLite 执行：`invariants 12/12`、`health_agent_core 50/50`、`orchestrator 5/5`，编排平均评分 `0.92`、无回归；用量日志表未创建仅触发既有旁路警告，不影响模型调用与评分。
+- 生产准入在 circuit 读取失败时降级 legacy 且数据库会话可继续使用的定向回归: `29 passed`。
+- 独立复审提出的 canary 写账本、same-turn 逃逸、pause/admission 竞争、deadline 误计失败、恢复水位和窗口索引共 6 项问题均已修复并增加回归；复审补充的 `off` deadline 阻断和旧时间戳晚提交两个 P1 也已以失败测试复现并修复。
+- 终态复审补出的“operation 待核对但 Run 仍成功”P1 已由定向 RED 测试复现并修复，未决写入现在无法逃逸自动止损。
+- 最终独立复审结论: 无剩余 P0/P1；定向收口测试通过。
+- 裁决: **PASS**。
+
+## G4 · 安全闸
+
+- Runtime 表、rollout 单例状态和审计事件只保存运行标识、有限状态与聚合计数，不保存 prompt、回复、工具参数、工具结果或健康正文。
+- 管理员状态查询与 pause/resume 复用现有管理员鉴权；自动止损只能 pause，系统不自动 resume。
+- 真实 LLM 变更闸完成后，临时 CI 确认变量只用于 run `29721743557` attempt 2；作业启动后立即删除，未永久放宽后续提交。
+- 主干 CI run `29721743557` attempt 2 的 backend quality、全分片、类型漂移、Mobile、Web 与 Mac 闸全部通过。
+- 裁决: **PASS**。
+
+## S6 · 部署
+
+- 主干提交: `1d6ac9ad84094cd98d972ca999254f1e72ef6f2a`。
+- 2026-07-20 通过根目录 `deploy.sh -b -y` 部署；部署前备份与 force-RLS 数据段完整性校验通过。
+- 受控迁移 `20260720_120000_agent_runtime_rollout` 已在生产 PostgreSQL 应用，服务器代码与主干提交一致。
+
+## G5 · 部署健康闸
+
+- 部署健康评分: `60/60 PASS`。
+- `health-backend`、`celery-worker`、`celery-beat` 均为 `active`；公网健康接口确认 API、PostgreSQL、Redis 和 Celery 均已连接。
+- Agent skills manifest 校验: 本地 `22` = 线上 `22`。
+- 裁决: **PASS**。
+
+## S7 · 上线验证
+
+- 生产 `agent_runtime_mode=off`，本次只上线控制面与迁移，未开启 canary 或 allowlist 流量。
+- rollout 单例状态为 `active`、version `1`、reconciliation generation `0/0`，没有遗留待核对世代。
+- Runtime 未管路径仍使用原 Agent Executor 行为，客户端协议与 iPhone strict-local 路径无变更。
+
+## G6 · 验证闸
+
+- 控制面、持久化迁移、服务健康和默认关闭回滚语义已在生产验证。
+- 真正开启 0% allowlist 或 canary 属于独立上线变更，必须重新经过监控基线、人工 pause/resume 演练和放量 Gate。
+- 裁决: **PASS**。
+
+## S8 · 沉淀
+
+- 设计、实施、真实 PostgreSQL、真实 LLM、CI、部署、回滚边界和生产验证证据已记录。
+- 本 dossier 完成的是 Runtime 控制面交付，不代表生产 canary 已放量。

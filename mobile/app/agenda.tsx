@@ -1,549 +1,643 @@
 /**
- * 今日议程页 —— 消费后端 /agenda/today(R1)。
+ * 今日行动管理页。
  *
- * 一处可见「今天该做什么」:三域协议待办(饮水/用药/饮食)+ 到期复查;
- * 协议项可一键「完成」(双轨协议轨 → 经 /agenda/complete 写真实业务记录)。
- *
- * 入口:Today / 设置 跳转。后端能力首次在手机可见可用。
+ * 只消费 /agenda/today，并通过 /agenda/complete 记录完成或跳过。
+ * 历史行动卡、Safety 告警、推理回放不在此页混排。
  */
-import React from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
-  View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, RefreshControl,
-  Alert, Platform,
+  ActionSheetIOS,
+  ActivityIndicator,
+  Alert,
+  Platform,
+  Pressable,
+  RefreshControl,
+  SectionList,
+  StyleSheet,
+  Text,
+  View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import { useRouter } from 'expo-router';
+
+import { useAgendaToday, useCompleteAgendaItem } from '../hooks/useAgenda';
+import { useToast } from '../hooks/useToast';
+import {
+  type AgendaItem,
+  type AgendaSkipReason,
+} from '../services/agenda';
+import { agendaItemPresentation } from '../utils/agendaPresentation';
+import {
+  agendaItemKey,
+  canActOnAgendaItem,
+  cleanAgendaTitle,
+  groupTodayAgendaItems,
+  resolveAgendaBackAction,
+} from '../utils/todayAgendaManagement';
+import { pushChatWithContext } from '../utils/agentContext';
+import { SKIP_REASONS } from '../constants/skipReasons';
 import {
   revaColors as C,
+  revaFonts,
   revaRadii,
   revaSpacing,
-  revaShadows,
   revaSemantic,
-  revaFonts,
 } from '../constants/revaTheme';
-import {
-  useAgendaToday,
-  useCompleteAgendaItem,
-  useRuntimeAgendaRange,
-  useSeedDemo,
-  useSmartAgendaToday,
-} from '../hooks/useAgenda';
-import {
-  isProtocolActionable,
-  MANUAL_CAPTURE,
-  type AgendaItem,
-  type RuntimeAgendaItem,
-  type RuntimeAgendaRange,
-  type SmartAgendaItem,
-} from '../services/agenda';
-import { buildBoundarySummary, buildTrajectorySummary, buildVerifySummary } from '../services/trajectoryDisplay';
-import { agendaItemPresentation, agendaSummary } from '../utils/agendaPresentation';
 
-// 议程项 tone → 三步临床语义(好不好/信息):正常绿 / 注意琥珀 / 风险红 / 信息蓝 / 中性灰。
-const TONE_COLOR: Record<string, string> = {
-  green: revaSemantic.normal.fg,
-  yellow: revaSemantic.caution.fg,
-  red: revaSemantic.risk.fg,
-  blue: revaSemantic.info.fg,
-  gray: C.ink3,
-};
+type SectionKey = 'now' | 'review' | 'later' | 'handled';
 
-// 智能优先面板的绿色装饰 accent。
-const SMART_ACCENT = C.green600;
+interface AgendaSection {
+  key: SectionKey;
+  title: string;
+  hint: string;
+  count: number;
+  data: AgendaItem[];
+}
 
-const summaryStyles = StyleSheet.create({
-  pill: {
-    flex: 1,
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingVertical: 10,
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.65)',
-  },
-  value: { fontFamily: revaFonts.mono, fontSize: 18, fontWeight: '800' },
-  label: { fontFamily: revaFonts.sans, fontSize: 11, color: C.ink3, marginTop: 2, fontWeight: '700' },
-});
+type AgendaMenuAction = 'snooze' | 'skip' | 'adjust' | 'ask' | 'cancel';
 
-// Reva 设计语言:暖 paper 底 / 暖白 surface 卡 / 活力绿 / r-lg 18 / 计数读数走等宽 mono。
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: C.paper },
-  header: { paddingHorizontal: revaSpacing.s4, paddingVertical: revaSpacing.s3 },
-  title: { fontFamily: revaFonts.sans, fontSize: 24, fontWeight: '700', color: C.ink1 },
-  subtitle: { fontFamily: revaFonts.mono, fontSize: 13, color: C.ink2, marginTop: revaSpacing.s1 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: revaSpacing.s7 },
-  muted: { fontFamily: revaFonts.sans, color: C.ink2, fontSize: 14 },
-  retry: { fontFamily: revaFonts.sans, color: C.green500, fontSize: 14, marginTop: revaSpacing.s2 },
-  list: { padding: revaSpacing.s4, gap: revaSpacing.s3 },
-  summaryRow: { flexDirection: 'row', gap: revaSpacing.s2 },
-  smartPanel: {
-    backgroundColor: C.surface,
-    borderRadius: revaRadii.lg,
-    padding: revaSpacing.s4,
-    gap: revaSpacing.s3,
-    ...revaShadows.sm,
-  },
-  smartHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  smartTitleRow: { flexDirection: 'row', alignItems: 'center', gap: revaSpacing.s1 },
-  smartTitle: { fontFamily: revaFonts.sans, fontSize: 17, fontWeight: '800', color: C.ink1 },
-  smartMeta: { fontFamily: revaFonts.mono, fontSize: 12, fontWeight: '700', color: C.ink3 },
-  smartLoading: { flexDirection: 'row', alignItems: 'center', gap: revaSpacing.s2 },
-  smartMuted: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink2, flex: 1 },
-  smartItem: {
-    flexDirection: 'row',
-    gap: revaSpacing.s3,
-    paddingTop: revaSpacing.s3,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: C.line,
-  },
-  smartIndex: {
-    width: 28,
-    height: 28,
-    borderRadius: revaRadii.pill,
-    backgroundColor: C.green50,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  smartIndexText: { fontFamily: revaFonts.mono, fontSize: 13, fontWeight: '800', color: SMART_ACCENT },
-  smartBody: { flex: 1, gap: 4 },
-  smartItemHeader: { flexDirection: 'row', alignItems: 'center', gap: revaSpacing.s2 },
-  smartItemTitle: { fontFamily: revaFonts.sans, flex: 1, fontSize: 15, fontWeight: '800', color: C.ink1 },
-  surfaceBadge: {
-    paddingHorizontal: revaSpacing.s2,
-    paddingVertical: 4,
-    borderRadius: revaRadii.pill,
-    backgroundColor: C.green50,
-  },
-  surfaceBadgeText: { fontFamily: revaFonts.sans, fontSize: 11, fontWeight: '800', color: SMART_ACCENT },
-  smartLine: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink2, lineHeight: 18 },
-  smartAction: { fontFamily: revaFonts.sans, fontSize: 13, fontWeight: '700', color: C.ink1, lineHeight: 18 },
-  smartTrajectory: { fontFamily: revaFonts.sans, fontSize: 12, fontWeight: '700', color: SMART_ACCENT, lineHeight: 16 },
-  smartVerify: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink3, lineHeight: 16 },
-  smartBoundary: { fontFamily: revaFonts.sans, fontSize: 11, color: C.ink3, lineHeight: 15 },
-  runtimePanel: {
-    backgroundColor: C.surface,
-    borderRadius: revaRadii.lg,
-    padding: revaSpacing.s4,
-    gap: revaSpacing.s3,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.line,
-  },
-  runtimeTitleRow: { flexDirection: 'row', alignItems: 'center', gap: revaSpacing.s1 },
-  runtimeTitle: { fontFamily: revaFonts.sans, fontSize: 17, fontWeight: '800', color: C.ink1 },
-  runtimeMeta: { fontFamily: revaFonts.mono, fontSize: 12, fontWeight: '700', color: C.ink3 },
-  runtimeNext: {
-    paddingVertical: revaSpacing.s2,
-    paddingHorizontal: revaSpacing.s3,
-    borderRadius: revaRadii.md,
-    backgroundColor: C.green50,
-    gap: 3,
-  },
-  runtimeNextLabel: { fontFamily: revaFonts.sans, fontSize: 11, fontWeight: '800', color: SMART_ACCENT },
-  runtimeNextTitle: { fontFamily: revaFonts.sans, fontSize: 14, fontWeight: '800', color: C.ink1, lineHeight: 18 },
-  runtimeNextMeta: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink2, lineHeight: 16 },
-  runtimeDayRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: revaSpacing.s3,
-    paddingTop: revaSpacing.s2,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: C.line,
-  },
-  runtimeDayBadge: {
-    width: 44,
-    minHeight: 34,
-    borderRadius: revaRadii.md,
-    backgroundColor: C.paper,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 4,
-  },
-  runtimeDayLabel: { fontFamily: revaFonts.mono, fontSize: 11, fontWeight: '800', color: C.ink2 },
-  runtimeDayBody: { flex: 1, gap: 2 },
-  runtimeDayTitle: { fontFamily: revaFonts.sans, fontSize: 13, fontWeight: '800', color: C.ink1, lineHeight: 17 },
-  runtimeDayMeta: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink3, lineHeight: 16 },
-  runtimeToggle: {
-    minHeight: 42,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: revaSpacing.s3,
-    borderRadius: revaRadii.md,
-    backgroundColor: C.paper,
-  },
-  runtimeToggleBody: { flex: 1, gap: 2 },
-  runtimeToggleTitle: { fontFamily: revaFonts.sans, fontSize: 13, fontWeight: '800', color: C.ink1 },
-  runtimeToggleHint: { fontFamily: revaFonts.sans, fontSize: 11, color: C.ink3 },
-  runtimeEmpty: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink2, lineHeight: 18 },
-  card: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: C.surface,
-    borderRadius: revaRadii.lg, padding: revaSpacing.s4, gap: revaSpacing.s3, ...revaShadows.sm,
-  },
-  icon: { width: 24, textAlign: 'center' },
-  cardBody: { flex: 1 },
-  cardTitle: { fontFamily: revaFonts.sans, fontSize: 16, fontWeight: '600', color: C.ink1 },
-  cardStatus: { fontFamily: revaFonts.sans, fontSize: 13, marginTop: 2 },
-  cardDetail: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink3, marginTop: 2 },
-  actions: { flexDirection: 'row', alignItems: 'center', gap: revaSpacing.s2 },
-  doneBtn: {
-    width: 36, height: 36, borderRadius: revaRadii.pill, backgroundColor: C.green500,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  manualBtn: {
-    paddingHorizontal: revaSpacing.s3, height: 36, borderRadius: revaRadii.pill,
-    borderWidth: 1, borderColor: C.green500, alignItems: 'center', justifyContent: 'center',
-  },
-  manualBtnText: { fontFamily: revaFonts.sans, color: C.green500, fontSize: 13, fontWeight: '600' },
-  lightWrap: { alignItems: 'center', width: 36, gap: 2 },
-  lightDot: { width: 16, height: 16, borderRadius: revaRadii.pill },
-  lightScore: { fontFamily: revaFonts.mono, fontSize: 11, fontWeight: '600', color: C.ink2 },
-  seedBtn: {
-    marginTop: revaSpacing.s4, backgroundColor: C.green500,
-    paddingHorizontal: revaSpacing.s5, paddingVertical: revaSpacing.s3, borderRadius: revaRadii.pill,
-  },
-  seedBtnText: { fontFamily: revaFonts.sans, color: '#fff', fontSize: 14, fontWeight: '600' },
-});
+interface AgendaMenuItem {
+  label: string;
+  action: AgendaMenuAction;
+}
 
-type AgendaStyles = typeof styles;
+const REVIEW_VISIBLE_COUNT = 3;
+const ACTIONABLE_MENU: AgendaMenuItem[] = [
+  { label: '移到稍后', action: 'snooze' },
+  { label: '跳过', action: 'skip' },
+  { label: '调整计划', action: 'adjust' },
+  { label: '问小巴', action: 'ask' },
+  { label: '取消', action: 'cancel' },
+];
+const REVIEW_MENU: AgendaMenuItem[] = [
+  { label: '稍后再看', action: 'snooze' },
+  { label: '调整计划', action: 'adjust' },
+  { label: '问小巴', action: 'ask' },
+  { label: '取消', action: 'cancel' },
+];
 
 export default function AgendaScreen() {
-  const { data, isLoading, isError, refetch, isRefetching } = useAgendaToday();
-  const { data: smartData, isLoading: smartLoading } = useSmartAgendaToday(3);
-  const { data: runtimeData, isLoading: runtimeLoading } = useRuntimeAgendaRange(7);
+  const router = useRouter();
+  const toast = useToast();
+  const { data, isLoading, isError, isRefetching, refetch } = useAgendaToday();
   const complete = useCompleteAgendaItem();
-  const seed = useSeedDemo();
-  const summary = agendaSummary(data?.items ?? []);
-  const smartItems = smartData?.smart?.top_items ?? [];
+  const [snoozedKeys, setSnoozedKeys] = useState<Set<string>>(() => new Set());
+  const [handledExpanded, setHandledExpanded] = useState(false);
+  const [reviewExpanded, setReviewExpanded] = useState(false);
 
-  const onComplete = (item: AgendaItem) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-    complete.mutate({ source: item.source });
-  };
+  const groups = useMemo(
+    () => groupTodayAgendaItems(data?.items ?? [], { snoozedKeys }),
+    [data?.items, snoozedKeys],
+  );
 
-  // 手工轨:弹量/剂量输入 → 带 value 完成(写同一份记录、同一议程事件)。
-  const onManual = (item: AgendaItem) => {
-    const cfg = MANUAL_CAPTURE[item.type];
-    if (!cfg) { onComplete(item); return; }
-    const submit = (text?: string) => {
-      const raw = (text ?? '').trim();
-      let value: Record<string, unknown> | undefined;
-      if (raw) {
-        value = { [cfg.valueKey]: cfg.numeric ? Number(raw) : raw };
-        if (cfg.numeric && Number.isNaN(value[cfg.valueKey] as number)) {
-          Alert.alert('请输入数字'); return;
-        }
-      }
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-      complete.mutate({ source: item.source, track: 'manual', value });
-    };
-    if (Platform.OS === 'ios') {
-      Alert.prompt(item.title, cfg.prompt, submit, 'plain-text', '',
-        cfg.numeric ? 'numeric' : 'default');
-    } else {
-      // Android 无 Alert.prompt:退回手工轨默认完成(量留空)。
-      submit();
+  const sections = useMemo<AgendaSection[]>(() => {
+    const candidates: AgendaSection[] = [
+      {
+        key: 'now',
+        title: '现在做',
+        hint: groups.now.length > 0 ? '按优先级排列' : '当前没有紧急事项',
+        count: groups.now.length,
+        data: groups.now,
+      },
+      {
+        key: 'review',
+        title: '需要确认',
+        hint: '先问清，再决定怎么处理',
+        count: groups.review.length,
+        data: reviewExpanded ? groups.review : groups.review.slice(0, REVIEW_VISIBLE_COUNT),
+      },
+      {
+        key: 'later',
+        title: '稍后',
+        hint: groups.later.length > 0 ? '到时间再处理' : '暂无后续事项',
+        count: groups.later.length,
+        data: groups.later,
+      },
+      {
+        key: 'handled',
+        title: '已处理',
+        hint: groups.handled.length > 0 ? (handledExpanded ? '点击收起' : '点击查看') : '今天还没有完成记录',
+        count: groups.handled.length,
+        data: handledExpanded ? groups.handled : [],
+      },
+    ];
+    return candidates.filter(section => section.count > 0);
+  }, [groups, handledExpanded, reviewExpanded]);
+
+  const pendingCount = groups.now.length + groups.review.length + groups.later.length;
+
+  const handleBack = useCallback(() => {
+    const action = resolveAgendaBackAction(router.canGoBack());
+    if (action.type === 'back') {
+      router.back();
+      return;
     }
-  };
+    router.navigate(action.route);
+  }, [router]);
 
-  const statusColor = (status: string): string => {
-    if (status === 'completed') return C.green500;
-    if (status === 'overdue') return revaSemantic.risk.fg;
-    return C.ink3;
-  };
+  const markComplete = useCallback((item: AgendaItem, skipReason?: AgendaSkipReason) => {
+    const title = cleanAgendaTitle(item.title);
+    const skipped = Boolean(skipReason);
+    complete.mutate(
+      {
+        source: item.source,
+        ...(skipped ? { status: 'skipped' as const, skipReason } : {}),
+      },
+      {
+        onSuccess: () => {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+          toast.show(skipped ? '已记录为跳过' : '已完成', 'success');
+        },
+        onError: () => {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+          toast.show(`未能更新“${title}”，请重试`, 'error');
+        },
+      },
+    );
+  }, [complete, toast]);
+
+  const snooze = useCallback((item: AgendaItem) => {
+    const key = agendaItemKey(item);
+    setSnoozedKeys(current => {
+      const next = new Set(current);
+      next.add(key);
+      return next;
+    });
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    toast.showUndoable('已放到稍后', () => {
+      setSnoozedKeys(current => {
+        const next = new Set(current);
+        next.delete(key);
+        return next;
+      });
+    });
+  }, [toast]);
+
+  const askXiaoba = useCallback((item: AgendaItem, intent: 'adjust' | 'ask') => {
+    const title = cleanAgendaTitle(item.title);
+    pushChatWithContext(router, {
+      prompt: intent === 'adjust'
+        ? `请帮我调整今天这条行动：“${title}”。先问清我当前不方便执行的原因，再给一个更容易完成的替代安排。`
+        : `请解释今天这条行动：“${title}”。告诉我为什么现在做、怎么做，以及什么情况下不适合做。`,
+      badge: intent === 'adjust' ? `调整 · ${title}` : `今日行动 · ${title}`,
+      context: {
+        from: 'agenda/today',
+        intent,
+        agenda_item: {
+          type: item.type,
+          title,
+          status: item.status,
+          time_window: item.time_window ?? null,
+          priority: item.priority,
+          detail: item.detail ?? null,
+          source: {
+            object_type: item.source.object_type,
+            object_id: String(item.source.object_id),
+            slot: item.source.slot ?? null,
+          },
+        },
+      },
+    });
+  }, [router]);
+
+  const chooseSkipReason = useCallback((item: AgendaItem) => {
+    if (Platform.OS === 'ios') {
+      const cancelButtonIndex = SKIP_REASONS.length;
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          title: '为什么跳过？',
+          message: '这会帮助小巴减少不合适的安排。',
+          options: [...SKIP_REASONS.map(reason => reason.label), '取消'],
+          cancelButtonIndex,
+        },
+        index => {
+          const reason = SKIP_REASONS[index];
+          if (reason) markComplete(item, reason.value);
+        },
+      );
+      return;
+    }
+    Alert.alert(
+      '为什么跳过？',
+      '这会帮助小巴减少不合适的安排。',
+      [
+        ...SKIP_REASONS.map(reason => ({
+          text: reason.label,
+          onPress: () => markComplete(item, reason.value),
+        })),
+        { text: '取消', style: 'cancel' as const },
+      ],
+    );
+  }, [markComplete]);
+
+  const handleMenuAction = useCallback((item: AgendaItem, action: AgendaMenuAction) => {
+    if (action === 'snooze') snooze(item);
+    if (action === 'skip') chooseSkipReason(item);
+    if (action === 'adjust') askXiaoba(item, 'adjust');
+    if (action === 'ask') askXiaoba(item, 'ask');
+  }, [askXiaoba, chooseSkipReason, snooze]);
+
+  const openItemMenu = useCallback((item: AgendaItem) => {
+    const menu = canActOnAgendaItem(item) ? ACTIONABLE_MENU : REVIEW_MENU;
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          title: cleanAgendaTitle(item.title),
+          options: menu.map(option => option.label),
+          cancelButtonIndex: menu.length - 1,
+        },
+        index => handleMenuAction(item, menu[index]?.action ?? 'cancel'),
+      );
+      return;
+    }
+    Alert.alert(
+      cleanAgendaTitle(item.title),
+      undefined,
+      menu.map(option => ({
+        text: option.label,
+        style: option.action === 'cancel' ? 'cancel' as const : 'default' as const,
+        onPress: () => handleMenuAction(item, option.action),
+      })),
+    );
+  }, [handleMenuAction]);
+
+  const renderSectionHeader = useCallback(({ section }: { section: AgendaSection }) => {
+    const content = (
+      <>
+        <View style={styles.sectionTitleRow}>
+          <Text style={styles.sectionTitle}>{section.title}</Text>
+          <View style={[styles.sectionCount, section.key === 'now' && styles.sectionCountActive]}>
+            <Text style={[styles.sectionCountText, section.key === 'now' && styles.sectionCountTextActive]}>
+              {section.count}
+            </Text>
+          </View>
+        </View>
+        <Text style={styles.sectionHint}>{section.hint}</Text>
+        {section.key === 'handled' && section.count > 0 ? (
+          <Ionicons name={handledExpanded ? 'chevron-up' : 'chevron-down'} size={17} color={C.ink3} />
+        ) : null}
+      </>
+    );
+    if (section.key !== 'handled' || section.count === 0) {
+      return <View style={styles.sectionHeader}>{content}</View>;
+    }
+    return (
+      <Pressable
+        onPress={() => setHandledExpanded(value => !value)}
+        style={({ pressed }) => [styles.sectionHeader, pressed && styles.pressed]}
+        accessibilityRole="button"
+        accessibilityLabel={`${handledExpanded ? '收起' : '展开'}已处理行动`}
+      >
+        {content}
+      </Pressable>
+    );
+  }, [handledExpanded]);
+
+  const renderSectionFooter = useCallback(({ section }: { section: AgendaSection }) => {
+    if (section.key !== 'review' || section.count <= REVIEW_VISIBLE_COUNT) return null;
+    const hiddenCount = section.count - REVIEW_VISIBLE_COUNT;
+    return (
+      <Pressable
+        onPress={() => setReviewExpanded(value => !value)}
+        style={({ pressed }) => [styles.reviewToggle, pressed && styles.pressed]}
+        accessibilityRole="button"
+        accessibilityLabel={reviewExpanded ? '收起需要确认事项' : `查看其余 ${hiddenCount} 项需要确认事项`}
+        accessibilityState={{ expanded: reviewExpanded }}
+      >
+        <Text style={styles.reviewToggleText}>
+          {reviewExpanded ? '收起' : `查看其余 ${hiddenCount} 项`}
+        </Text>
+        <Ionicons name={reviewExpanded ? 'chevron-up' : 'chevron-down'} size={16} color={C.green600} />
+      </Pressable>
+    );
+  }, [reviewExpanded]);
+
+  const renderItem = useCallback(({ item, section }: { item: AgendaItem; section: AgendaSection }) => (
+    <AgendaRow
+      item={item}
+      handled={section.key === 'handled'}
+      pending={complete.isPending && complete.variables?.source
+        ? agendaItemKey({ ...item, source: complete.variables.source }) === agendaItemKey(item)
+        : false}
+      onComplete={() => markComplete(item)}
+      onMenu={() => openItemMenu(item)}
+      onAsk={() => askXiaoba(item, 'ask')}
+    />
+  ), [askXiaoba, complete.isPending, complete.variables, markComplete, openItemMenu]);
 
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
       <View style={styles.header}>
-        <Text style={styles.title}>今日议程</Text>
-        {data ? <Text style={styles.subtitle}>{data.agenda_date} · {data.count} 项</Text> : null}
+        <Pressable
+          onPress={handleBack}
+          hitSlop={10}
+          style={({ pressed }) => [styles.headerButton, pressed && styles.pressed]}
+          accessibilityRole="button"
+          accessibilityLabel="返回小巴"
+          accessibilityHint="回到与小巴的对话"
+        >
+          <Ionicons name="chevron-back" size={23} color={C.ink1} />
+        </Pressable>
+        <View style={styles.headerCopy}>
+          <Text style={styles.headerTitle}>今日行动</Text>
+          <Text style={styles.headerMeta}>
+            待处理 {pendingCount} · 已处理 {groups.handled.length}
+          </Text>
+        </View>
+        <Pressable
+          onPress={() => refetch()}
+          hitSlop={10}
+          style={({ pressed }) => [styles.headerButton, pressed && styles.pressed]}
+          accessibilityRole="button"
+          accessibilityLabel="刷新今日行动"
+        >
+          <Ionicons name="refresh-outline" size={20} color={C.ink2} />
+        </Pressable>
       </View>
 
       {isLoading ? (
-        <View style={styles.center}><ActivityIndicator color={C.green500} /></View>
+        <StateView icon="hourglass-outline" title="正在整理今天的行动" loading />
       ) : isError ? (
-        <View style={styles.center}>
-          <Text style={styles.muted}>加载失败</Text>
-          <TouchableOpacity onPress={() => refetch()}><Text style={styles.retry}>重试</Text></TouchableOpacity>
-        </View>
+        <StateView icon="cloud-offline-outline" title="暂时无法加载" actionLabel="重试" onAction={() => refetch()} />
+      ) : (data?.items.length ?? 0) === 0 ? (
+        <StateView icon="checkmark-circle-outline" title="今天没有待处理行动" actionLabel="返回小巴" onAction={handleBack} />
       ) : (
-        <ScrollView
-          contentContainerStyle={styles.list}
-          refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={C.green500} />}
-        >
-          {smartLoading || smartItems.length > 0 ? (
-            <SmartAgendaPanel items={smartItems} loading={smartLoading} styles={styles} />
-          ) : null}
-          {runtimeLoading || runtimeData ? (
-            <RuntimeRangePanel projection={runtimeData} loading={runtimeLoading} styles={styles} />
-          ) : null}
-          {data && data.items.length > 0 ? (
-            <View style={styles.summaryRow}>
-              <SummaryPill label="待执行" value={summary.actionable} color={C.green500} />
-              <SummaryPill label="逾期" value={summary.overdue} color={revaSemantic.risk.fg} />
-              <SummaryPill label="建议" value={summary.info} color={revaSemantic.caution.fg} />
-            </View>
-          ) : null}
-          {(data?.items ?? []).length === 0 ? (
-            <View style={styles.center}>
-              <Text style={styles.muted}>今天没有待办</Text>
-              <TouchableOpacity
-                style={styles.seedBtn}
-                disabled={seed.isPending}
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-                  seed.mutate();
-                }}
-              >
-                <Text style={styles.seedBtnText}>
-                  {seed.isPending ? '生成中…' : '一键试用(水杯协议 + 登记胃溃疡)'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            (data?.items ?? []).map((item, idx) => (
-              <AgendaCard
-                key={`${item.source.object_type}-${item.source.object_id}-${idx}`}
-                item={item}
-                styles={styles}
-                completePending={complete.isPending}
-                statusColor={statusColor}
-                onComplete={onComplete}
-                onManual={onManual}
-                completedColor={C.green500}
-                fallbackColor={C.ink3}
-              />
-            ))
+        <SectionList
+          sections={sections}
+          keyExtractor={agendaItemKey}
+          renderSectionHeader={renderSectionHeader}
+          renderSectionFooter={renderSectionFooter}
+          renderItem={renderItem}
+          stickySectionHeadersEnabled={false}
+          contentInsetAdjustmentBehavior="automatic"
+          contentContainerStyle={styles.listContent}
+          ItemSeparatorComponent={() => <View style={styles.rowSeparator} />}
+          SectionSeparatorComponent={() => <View style={styles.sectionSeparator} />}
+          refreshControl={(
+            <RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={C.green500} />
           )}
-        </ScrollView>
+        />
       )}
     </SafeAreaView>
   );
 }
 
-function surfaceLabel(surface: string): string {
-  if (surface === 'watch') return 'Watch';
-  if (surface === 'rokid') return 'Rokid';
-  if (surface === 'mac') return 'Mac';
-  return '手机';
-}
-
-function SmartAgendaPanel({
-  items,
-  loading,
-  styles,
-}: {
-  items: SmartAgendaItem[];
-  loading: boolean;
-  styles: AgendaStyles;
-}) {
-  return (
-    <View style={styles.smartPanel}>
-      <View style={styles.smartHeader}>
-        <View style={styles.smartTitleRow}>
-          <Ionicons name="sparkles-outline" size={18} color={SMART_ACCENT} />
-          <Text style={styles.smartTitle}>智能优先处理</Text>
-        </View>
-        <Text style={styles.smartMeta}>{items.length > 0 ? `${items.length} 项` : '生成中'}</Text>
-      </View>
-      {loading && items.length === 0 ? (
-        <View style={styles.smartLoading}>
-          <ActivityIndicator size="small" color={SMART_ACCENT} />
-          <Text style={styles.smartMuted}>正在按风险、时间窗和执行端排序…</Text>
-        </View>
-      ) : (
-        items.map((item, index) => (
-          <View key={item.id} style={styles.smartItem}>
-            <View style={styles.smartIndex}>
-              <Text style={styles.smartIndexText}>{index + 1}</Text>
-            </View>
-            <View style={styles.smartBody}>
-              <View style={styles.smartItemHeader}>
-                <Text style={styles.smartItemTitle}>{item.title}</Text>
-                <View style={styles.surfaceBadge}>
-                  <Text style={styles.surfaceBadgeText}>{surfaceLabel(item.surface.primary)}</Text>
-                </View>
-              </View>
-              <Text style={styles.smartLine}>{item.why_now}</Text>
-              <Text style={styles.smartAction}>{item.do_now}</Text>
-              {buildTrajectorySummary(item) ? (
-                <Text style={styles.smartTrajectory}>{buildTrajectorySummary(item)}</Text>
-              ) : null}
-              {buildVerifySummary(item) ? <Text style={styles.smartVerify}>验证: {buildVerifySummary(item)}</Text> : null}
-              {buildBoundarySummary(item) ? <Text style={styles.smartBoundary}>{buildBoundarySummary(item)}</Text> : null}
-            </View>
-          </View>
-        ))
-      )}
-    </View>
-  );
-}
-
-function formatRuntimeDay(dateText: string, isToday: boolean): string {
-  if (isToday) return '今天';
-  const parts = dateText.split('-');
-  if (parts.length !== 3) return dateText;
-  return `${Number(parts[1])}/${Number(parts[2])}`;
-}
-
-function firstRuntimeItem(day: RuntimeAgendaRange['days'][number]): RuntimeAgendaItem | null {
-  if (day.next_action) return day.next_action;
-  for (const window of day.time_windows) {
-    if (window.items.length > 0) return window.items[0];
-  }
-  return null;
-}
-
-function runtimeMeta(item: RuntimeAgendaItem): string {
-  const verify = item.runtime_context.verification_window;
-  const metrics = verify.metrics.slice(0, 2).join('、');
-  const surface = surfaceLabel(item.surface.primary);
-  return `${surface} · ${verify.window_days}天后复盘${metrics ? ` · ${metrics}` : ''}`;
-}
-
-function RuntimeRangePanel({
-  projection,
-  loading,
-  styles,
-}: {
-  projection?: RuntimeAgendaRange;
-  loading: boolean;
-  styles: AgendaStyles;
-}) {
-  const [futureExpanded, setFutureExpanded] = React.useState(false);
-  const futureDays = projection?.days.filter(day => !day.is_today).slice(0, 3) ?? [];
-  return (
-    <View style={styles.runtimePanel}>
-      <View style={styles.smartHeader}>
-        <View style={styles.runtimeTitleRow}>
-          <Ionicons name="calendar-outline" size={18} color={SMART_ACCENT} />
-          <Text style={styles.runtimeTitle}>动态节奏</Text>
-        </View>
-        <Text style={styles.runtimeMeta}>
-          {projection ? '每天按状态更新' : '生成中'}
-        </Text>
-      </View>
-      {loading && !projection ? (
-        <View style={styles.smartLoading}>
-          <ActivityIndicator size="small" color={SMART_ACCENT} />
-          <Text style={styles.smartMuted}>正在更新今天的行动优先级…</Text>
-        </View>
-      ) : projection?.next_action ? (
-        <View style={styles.runtimeNext}>
-          <Text style={styles.runtimeNextLabel}>下一步</Text>
-          <Text style={styles.runtimeNextTitle}>{projection.next_action.title}</Text>
-          <Text style={styles.runtimeNextMeta}>{runtimeMeta(projection.next_action)}</Text>
-        </View>
-      ) : (
-        <Text style={styles.runtimeEmpty}>今天暂无明确行动，记录新状态后会重新判断。</Text>
-      )}
-      {futureDays.length > 0 ? (
-        <TouchableOpacity
-          style={styles.runtimeToggle}
-          onPress={() => setFutureExpanded(value => !value)}
-          accessibilityRole="button"
-          accessibilityLabel={futureExpanded ? '收起未来节奏' : '展开未来节奏'}
-        >
-          <View style={styles.runtimeToggleBody}>
-            <Text style={styles.runtimeToggleTitle}>未来几天按状态动态调整</Text>
-            <Text style={styles.runtimeToggleHint}>不是固定任务，需要时再查看预测</Text>
-          </View>
-          <Ionicons name={futureExpanded ? 'chevron-up' : 'chevron-down'} size={16} color={C.ink3} />
-        </TouchableOpacity>
-      ) : null}
-      {futureExpanded ? futureDays.map((day) => {
-          const item = firstRuntimeItem(day);
-          return (
-            <View key={day.date} style={styles.runtimeDayRow}>
-              <View style={styles.runtimeDayBadge}>
-                <Text style={styles.runtimeDayLabel}>{formatRuntimeDay(day.date, false)}</Text>
-              </View>
-              <View style={styles.runtimeDayBody}>
-                <Text style={styles.runtimeDayTitle}>{item?.title ?? '当天确认'}</Text>
-                <Text style={styles.runtimeDayMeta}>预测 · 当天根据睡眠和记录确认</Text>
-              </View>
-            </View>
-          );
-        }) : null}
-    </View>
-  );
-}
-
-function AgendaCard({
+function AgendaRow({
   item,
-  styles,
-  completePending,
-  statusColor,
+  handled,
+  pending,
   onComplete,
-  onManual,
-  completedColor,
-  fallbackColor,
+  onMenu,
+  onAsk,
 }: {
   item: AgendaItem;
-  styles: AgendaStyles;
-  completePending: boolean;
-  statusColor: (status: string) => string;
-  onComplete: (item: AgendaItem) => void;
-  onManual: (item: AgendaItem) => void;
-  completedColor: string;
-  fallbackColor: string;
+  handled: boolean;
+  pending: boolean;
+  onComplete: () => void;
+  onMenu: () => void;
+  onAsk: () => void;
 }) {
+  const title = cleanAgendaTitle(item.title);
   const presentation = agendaItemPresentation(item);
-  const toneColor = TONE_COLOR[presentation.tone] ?? fallbackColor;
+  const canComplete = !handled && canActOnAgendaItem(item);
+  const tint = item.status === 'overdue'
+    ? revaSemantic.risk.fg
+    : handled
+      ? C.green500
+      : C.green600;
 
   return (
-    <View style={styles.card}>
-      <Ionicons
-        name={presentation.icon as keyof typeof Ionicons.glyphMap}
-        size={22}
-        color={toneColor}
-        style={styles.icon}
-      />
-      <View style={styles.cardBody}>
-        <Text style={styles.cardTitle}>{item.title}</Text>
-        <Text style={[styles.cardStatus, { color: statusColor(item.status) }]}>
-          {presentation.statusLabel}
-          {presentation.meta ? ` · ${presentation.meta}` : ''}
-        </Text>
-        {item.detail ? <Text style={styles.cardDetail}>{item.detail}</Text> : null}
+    <View style={[styles.row, handled && styles.rowHandled]}>
+      <View style={[styles.rowIcon, { backgroundColor: `${tint}12` }]}>
+        <Ionicons
+          name={(handled ? 'checkmark' : presentation.icon) as keyof typeof Ionicons.glyphMap}
+          size={19}
+          color={tint}
+        />
       </View>
-      {item.type === 'training' && item.light ? (
-        <View style={styles.lightWrap}>
-          <View style={[styles.lightDot, { backgroundColor: toneColor }]} />
-          {typeof item.readiness_score === 'number' && item.readiness_score > 0 ? (
-            <Text style={styles.lightScore}>{item.readiness_score}</Text>
-          ) : null}
-        </View>
-      ) : presentation.canComplete && isProtocolActionable(item) ? (
-        <View style={styles.actions}>
-          {MANUAL_CAPTURE[item.type] ? (
-            <TouchableOpacity
-              style={styles.manualBtn}
-              disabled={completePending}
-              onPress={() => onManual(item)}
-            >
-              <Text style={styles.manualBtnText}>手工</Text>
-            </TouchableOpacity>
-          ) : null}
-          <TouchableOpacity
-            style={styles.doneBtn}
-            disabled={completePending}
-            onPress={() => onComplete(item)}
+      <View style={styles.rowBody}>
+        <Text style={styles.rowTitle} numberOfLines={2}>{title}</Text>
+        <Text style={styles.rowMeta} numberOfLines={1}>
+          {formatTimeWindow(item.time_window)} · {presentation.statusLabel}
+        </Text>
+        {item.detail ? <Text style={styles.rowDetail} numberOfLines={2}>{item.detail}</Text> : null}
+      </View>
+      <View style={styles.rowActions}>
+        {canComplete ? (
+          <Pressable
+            onPress={onComplete}
+            disabled={pending}
+            style={({ pressed }) => [styles.completeButton, pressed && styles.pressed, pending && styles.disabled]}
+            accessibilityRole="button"
+            accessibilityLabel={`完成 ${title}`}
           >
-            <Ionicons name="checkmark" size={18} color="#fff" />
-          </TouchableOpacity>
-        </View>
-      ) : item.status === 'completed' ? (
-        <Ionicons name="checkmark-circle" size={24} color={completedColor} />
+            {pending ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <>
+                <Ionicons name="checkmark" size={15} color="#fff" />
+                <Text style={styles.completeButtonText}>完成</Text>
+              </>
+            )}
+          </Pressable>
+        ) : !handled ? (
+          <Pressable
+            onPress={onAsk}
+            style={({ pressed }) => [styles.askButton, pressed && styles.pressed]}
+            accessibilityRole="button"
+            accessibilityLabel={`询问小巴 ${title}`}
+          >
+            <Text style={styles.askButtonText}>问小巴</Text>
+          </Pressable>
+        ) : null}
+        {!handled ? (
+          <Pressable
+            onPress={onMenu}
+            hitSlop={8}
+            style={({ pressed }) => [styles.moreButton, pressed && styles.pressed]}
+            accessibilityRole="button"
+            accessibilityLabel={`管理 ${title}`}
+          >
+            <Ionicons name="ellipsis-horizontal" size={19} color={C.ink2} />
+          </Pressable>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
+function StateView({
+  icon,
+  title,
+  loading = false,
+  actionLabel,
+  onAction,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  title: string;
+  loading?: boolean;
+  actionLabel?: string;
+  onAction?: () => void;
+}) {
+  return (
+    <View style={styles.state}>
+      <View style={styles.stateIcon}>
+        {loading ? <ActivityIndicator color={C.green500} /> : <Ionicons name={icon} size={24} color={C.green500} />}
+      </View>
+      <Text style={styles.stateTitle}>{title}</Text>
+      {actionLabel && onAction ? (
+        <Pressable onPress={onAction} style={({ pressed }) => [styles.stateButton, pressed && styles.pressed]}>
+          <Text style={styles.stateButtonText}>{actionLabel}</Text>
+        </Pressable>
       ) : null}
     </View>
   );
 }
 
-function SummaryPill({ label, value, color }: { label: string; value: number; color: string }) {
-  return (
-    <View style={[summaryStyles.pill, { borderColor: color }]}>
-      <Text style={[summaryStyles.value, { color }]}>{value}</Text>
-      <Text style={summaryStyles.label}>{label}</Text>
-    </View>
-  );
+function formatTimeWindow(value: string | undefined): string {
+  const labels: Record<string, string> = {
+    morning: '早晨',
+    noon: '午间',
+    afternoon: '下午',
+    evening: '晚间',
+    bedtime: '睡前',
+    anytime: '今天',
+    today: '今天',
+  };
+  return labels[value ?? 'anytime'] ?? '今天';
 }
+
+const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: C.paper },
+  header: {
+    minHeight: 58,
+    paddingHorizontal: revaSpacing.s3,
+    paddingVertical: revaSpacing.s2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: C.line,
+    backgroundColor: C.paper,
+  },
+  headerButton: {
+    width: 40,
+    height: 40,
+    borderRadius: revaRadii.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerCopy: { flex: 1, alignItems: 'center', paddingHorizontal: revaSpacing.s2 },
+  headerTitle: { fontFamily: revaFonts.sans, color: C.ink1, fontSize: 18, fontWeight: '800' },
+  headerMeta: { fontFamily: revaFonts.mono, color: C.ink3, fontSize: 11, marginTop: 2 },
+  listContent: { paddingBottom: 32 },
+  sectionHeader: {
+    minHeight: 58,
+    paddingHorizontal: revaSpacing.s4,
+    paddingTop: revaSpacing.s4,
+    paddingBottom: revaSpacing.s2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: C.paper,
+  },
+  sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  sectionTitle: { fontFamily: revaFonts.sans, color: C.ink1, fontSize: 16, fontWeight: '800' },
+  sectionCount: {
+    minWidth: 22,
+    height: 22,
+    paddingHorizontal: 6,
+    borderRadius: revaRadii.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: C.surface,
+  },
+  sectionCountActive: { backgroundColor: C.green50 },
+  sectionCountText: { fontFamily: revaFonts.mono, color: C.ink3, fontSize: 11, fontWeight: '800' },
+  sectionCountTextActive: { color: C.green600 },
+  sectionHint: {
+    flex: 1,
+    marginLeft: revaSpacing.s2,
+    fontFamily: revaFonts.sans,
+    color: C.ink3,
+    fontSize: 12,
+    textAlign: 'right',
+  },
+  row: {
+    minHeight: 86,
+    marginHorizontal: revaSpacing.s4,
+    paddingVertical: revaSpacing.s3,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: revaSpacing.s3,
+    backgroundColor: C.paper,
+  },
+  rowHandled: { opacity: 0.62 },
+  rowIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: revaRadii.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rowBody: { flex: 1, minWidth: 0 },
+  rowTitle: { fontFamily: revaFonts.sans, color: C.ink1, fontSize: 15, lineHeight: 20, fontWeight: '700' },
+  rowMeta: { fontFamily: revaFonts.sans, color: C.ink3, fontSize: 12, marginTop: 3 },
+  rowDetail: { fontFamily: revaFonts.sans, color: C.ink2, fontSize: 12, lineHeight: 17, marginTop: 5 },
+  rowActions: { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 0 },
+  completeButton: {
+    height: 34,
+    minWidth: 66,
+    paddingHorizontal: 11,
+    borderRadius: revaRadii.pill,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    backgroundColor: C.green600,
+  },
+  completeButtonText: { fontFamily: revaFonts.sans, color: '#fff', fontSize: 13, fontWeight: '800' },
+  askButton: {
+    height: 34,
+    paddingHorizontal: 10,
+    borderRadius: revaRadii.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: C.green50,
+  },
+  askButtonText: { fontFamily: revaFonts.sans, color: C.green600, fontSize: 12, fontWeight: '800' },
+  moreButton: {
+    width: 34,
+    height: 34,
+    borderRadius: revaRadii.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: C.surface,
+  },
+  rowSeparator: { height: StyleSheet.hairlineWidth, marginLeft: 76, marginRight: revaSpacing.s4, backgroundColor: C.line },
+  sectionSeparator: { height: 4 },
+  reviewToggle: {
+    minHeight: 42,
+    marginHorizontal: revaSpacing.s4,
+    marginTop: revaSpacing.s1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+  },
+  reviewToggleText: { fontFamily: revaFonts.sans, color: C.green600, fontSize: 13, fontWeight: '700' },
+  state: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32, gap: 12 },
+  stateIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: revaRadii.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: C.green50,
+  },
+  stateTitle: { fontFamily: revaFonts.sans, color: C.ink2, fontSize: 15, fontWeight: '700' },
+  stateButton: { paddingHorizontal: 18, paddingVertical: 9, borderRadius: revaRadii.pill, backgroundColor: C.green50 },
+  stateButtonText: { fontFamily: revaFonts.sans, color: C.green600, fontSize: 14, fontWeight: '800' },
+  pressed: { opacity: 0.58 },
+  disabled: { opacity: 0.55 },
+});

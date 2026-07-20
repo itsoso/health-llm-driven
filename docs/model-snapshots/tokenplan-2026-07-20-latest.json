@@ -1,0 +1,190 @@
+[
+  {
+    "source_date": "2026-07-20",
+    "source_url": "https://bailian.console.aliyun.com/cn-beijing?tab=plan#/efm/subscription/token-plan",
+    "brand": "千问",
+    "model": "qwen3.8-max-preview",
+    "capabilities": ["文本生成", "推理模型", "视觉理解"],
+    "availability_note": "预览版; 限时加量10倍",
+    "include": true
+  },
+  {
+    "source_date": "2026-07-20",
+    "source_url": "https://bailian.console.aliyun.com/cn-beijing?tab=plan#/efm/subscription/token-plan",
+    "brand": "千问",
+    "model": "qwen3.7-plus",
+    "capabilities": ["文本生成", "推理模型", "视觉理解"],
+    "availability_note": "current TokenPlan supported model",
+    "include": true
+  },
+  {
+    "source_date": "2026-07-20",
+    "source_url": "https://bailian.console.aliyun.com/cn-beijing?tab=plan#/efm/subscription/token-plan",
+    "brand": "千问",
+    "model": "qwen3.7-max",
+    "capabilities": ["文本生成", "推理模型"],
+    "availability_note": "current TokenPlan supported model",
+    "include": true
+  },
+  {
+    "source_date": "2026-07-20",
+    "source_url": "https://bailian.console.aliyun.com/cn-beijing?tab=plan#/efm/subscription/token-plan",
+    "brand": "千问",
+    "model": "qwen3.6-plus",
+    "capabilities": ["文本生成", "推理模型", "视觉理解"],
+    "availability_note": "current TokenPlan supported model",
+    "include": true
+  },
+  {
+    "source_date": "2026-07-20",
+    "source_url": "https://bailian.console.aliyun.com/cn-beijing?tab=plan#/efm/subscription/token-plan",
+    "brand": "千问",
+    "model": "qwen3.6-flash",
+    "capabilities": ["文本生成", "推理模型", "视觉理解"],
+    "availability_note": "current TokenPlan supported model",
+    "include": true
+  },
+  {
+    "source_date": "2026-07-20",
+    "source_url": "https://bailian.console.aliyun.com/cn-beijing?tab=plan#/efm/subscription/token-plan",
+    "brand": "千问",
+    "model": "qwen-image-2.0",
+    "capabilities": ["图片生成"],
+    "availability_note": "current TokenPlan supported model",
+    "include": true
+  },
+  {
+    "source_date": "2026-07-20",
+    "source_url": "https://bailian.console.aliyun.com/cn-beijing?tab=plan#/efm/subscription/token-plan",
+    "brand": "千问",
+    "model": "qwen-image-2.0-pro",
+    "capabilities": ["图片生成"],
+    "include": true
+  },
+  {
+    "source_date": "2026-07-20",
+    "source_url": "https://bailian.console.aliyun.com/cn-beijing?tab=plan#/efm/subscription/token-plan",
+    "brand": "万相",
+    "model": "wan2.7-image",
+    "capabilities": ["图片生成"],
+    "availability_note": "current TokenPlan supported model",
+    "include": true
+  },
+  {
+    "source_date": "2026-07-20",
+    "source_url": "https://bailian.console.aliyun.com/cn-beijing?tab=plan#/efm/subscription/token-plan",
+    "brand": "万相",
+    "model": "wan2.7-image-pro",
+    "capabilities": ["图片生成"],
+    "include": true
+  },
+  {
+    "source_date": "2026-07-20",
+    "source_url": "https://bailian.console.aliyun.com/cn-beijing?tab=plan#/efm/subscription/token-plan",
+    "brand": "HappyHorse",
+    "model": "happyhorse-1.1-i2v",
+    "capabilities": ["视频生成"],
+    "include": true
+  },
+  {
+    "source_date": "2026-07-20",
+    "source_url": "https://bailian.console.aliyun.com/cn-beijing?tab=plan#/efm/subscription/token-plan",
+    "brand": "HappyHorse",
+    "model": "happyhorse-1.1-t2v",
+    "capabilities": ["视频生成"],
+    "include": true
+  },
+  {
+    "source_date": "2026-07-20",
+    "source_url": "https://bailian.console.aliyun.com/cn-beijing?tab=plan#/efm/subscription/token-plan",
+    "brand": "HappyHorse",
+    "model": "happyhorse-1.1-r2v",
+    "capabilities": ["视频生成"],
+    "include": true
+  },
+  {
+    "source_date": "2026-07-20",
+    "source_url": "https://bailian.console.aliyun.com/cn-beijing?tab=plan#/efm/subscription/token-plan",
+    "brand": "DeepSeek",
+    "model": "deepseek-v4-pro",
+    "capabilities": ["文本生成", "推理模型"],
+    "include": true
+  },
+  {
+    "source_date": "2026-07-20",
+    "source_url": "https://bailian.console.aliyun.com/cn-beijing?tab=plan#/efm/subscription/token-plan",
+    "brand": "DeepSeek",
+    "model": "deepseek-v4-flash",
+    "capabilities": ["文本生成", "推理模型"],
+    "include": true
+  },
+  {
+    "source_date": "2026-07-20",
+    "source_url": "https://bailian.console.aliyun.com/cn-beijing?tab=plan#/efm/subscription/token-plan",
+    "brand": "DeepSeek",
+    "model": "deepseek-v3.2",
+    "capabilities": ["文本生成", "推理模型"],
+    "availability_note": "current TokenPlan supported model",
+    "include": true
+  },
+  {
+    "source_date": "2026-07-20",
+    "source_url": "https://bailian.console.aliyun.com/cn-beijing?tab=plan#/efm/subscription/token-plan",
+    "brand": "智谱AI",
+    "model": "glm-5.2",
+    "capabilities": ["文本生成", "推理模型"],
+    "include": true
+  },
+  {
+    "source_date": "2026-07-20",
+    "source_url": "https://bailian.console.aliyun.com/cn-beijing?tab=plan#/efm/subscription/token-plan",
+    "brand": "智谱AI",
+    "model": "glm-5.1",
+    "capabilities": ["文本生成", "推理模型"],
+    "availability_note": "current TokenPlan supported model",
+    "include": true
+  },
+  {
+    "source_date": "2026-07-20",
+    "source_url": "https://bailian.console.aliyun.com/cn-beijing?tab=plan#/efm/subscription/token-plan",
+    "brand": "智谱AI",
+    "model": "glm-5",
+    "capabilities": ["文本生成", "推理模型"],
+    "availability_note": "current TokenPlan supported model",
+    "include": true
+  },
+  {
+    "source_date": "2026-07-20",
+    "source_url": "https://bailian.console.aliyun.com/cn-beijing?tab=plan#/efm/subscription/token-plan",
+    "brand": "月之暗面",
+    "model": "kimi-k2.7-code",
+    "capabilities": ["文本生成", "推理模型", "视觉理解"],
+    "include": true
+  },
+  {
+    "source_date": "2026-07-20",
+    "source_url": "https://bailian.console.aliyun.com/cn-beijing?tab=plan#/efm/subscription/token-plan",
+    "brand": "月之暗面",
+    "model": "kimi-k2.6",
+    "capabilities": ["文本生成", "推理模型", "视觉理解"],
+    "availability_note": "current TokenPlan supported model",
+    "include": true
+  },
+  {
+    "source_date": "2026-07-20",
+    "source_url": "https://bailian.console.aliyun.com/cn-beijing?tab=plan#/efm/subscription/token-plan",
+    "brand": "月之暗面",
+    "model": "kimi-k2.5",
+    "capabilities": ["文本生成", "推理模型", "视觉理解"],
+    "availability_note": "current TokenPlan supported model",
+    "include": true
+  },
+  {
+    "source_date": "2026-07-20",
+    "source_url": "https://bailian.console.aliyun.com/cn-beijing?tab=plan#/efm/subscription/token-plan",
+    "brand": "MiniMax",
+    "model": "MiniMax-M2.5",
+    "capabilities": ["文本生成", "推理模型"],
+    "include": true
+  }
+]

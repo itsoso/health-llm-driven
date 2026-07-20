@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List, Optional
-from datetime import date
+from datetime import date, datetime
 from app.database import get_db
 from app.schemas.health_checkin import HealthCheckinCreate, HealthCheckinResponse
 from app.models.health_checkin import HealthCheckin
@@ -88,6 +88,58 @@ def create_health_checkin(
     return db_checkin
 
 
+@router.delete("/{checkin_id}/rhinitis/latest")
+def undo_latest_rhinitis_checkin(
+    checkin_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """撤销当前用户指定打卡日最近一次鼻炎事件,不删除整日打卡。"""
+    checkin = db.query(HealthCheckin).filter(
+        HealthCheckin.id == checkin_id,
+        HealthCheckin.user_id == current_user.id,
+    ).first()
+    if not checkin:
+        raise HTTPException(status_code=404, detail="打卡记录不存在")
+
+    entries = list(checkin.sneeze_times or [])
+    if not entries:
+        raise HTTPException(status_code=404, detail="没有可撤销的鼻炎事件")
+
+    # 历史客户端未必按时间排序;优先按有效 HH:MM 选择真正最近的一项,
+    # 没有可解析时间的旧条目才回退到数组末尾,避免撤销错事件。
+    timed_entries = []
+    for index, item in enumerate(entries):
+        if not isinstance(item, dict):
+            continue
+        try:
+            parsed_time = datetime.strptime(str(item.get("time") or ""), "%H:%M")
+        except (TypeError, ValueError):
+            continue
+        timed_entries.append((index, parsed_time.hour * 60 + parsed_time.minute))
+    latest_index = (
+        max(timed_entries, key=lambda value: (value[1], value[0]))[0]
+        if timed_entries
+        else len(entries) - 1
+    )
+    removed = entries.pop(latest_index)
+    checkin.sneeze_times = entries or None
+    remaining_total = sum(
+        int(item.get("count") or 0) for item in entries if isinstance(item, dict)
+    )
+    checkin.sneeze_count = remaining_total or None
+    db.commit()
+    db.refresh(checkin)
+    return {
+        "id": checkin.id,
+        "record_id": checkin.id,
+        "resource_type": "health_checkin",
+        "status": "recorded",
+        "message": "已撤销最近一次鼻炎打卡",
+        "undone": removed,
+    }
+
+
 # ========== /me 端点必须在 /user/{user_id} 之前定义 ==========
 
 @router.get("/me/today", response_model=Optional[HealthCheckinResponse])
@@ -140,7 +192,6 @@ def get_my_checkin_stats(
 ):
     """获取当前用户的健康打卡统计（需要登录）"""
     from datetime import timedelta
-    from sqlalchemy import func
 
     today = date.today()
     start_date = today - timedelta(days=days)

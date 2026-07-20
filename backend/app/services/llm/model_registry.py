@@ -6,7 +6,7 @@ LLM 模型注册表 — 单一真相源, 给 admin UI 列出可选, 给 factory 
 speed_tier:
   - fast       : 1-3s, 用于工具调用 / 简短回答
   - balanced   : 3-8s, 通用对话
-  - reasoning  : 10s+, 深度分析 (qwen3.6-plus / o1 系)
+  - reasoning  : 10s+, 深度分析 (qwen3.8-max-preview / o1 系)
 
 provider:
   - openai-proxy : 走 OPENAI_BASE_URL (代理), 用 OPENAI_API_KEY
@@ -66,8 +66,18 @@ MODELS: List[ModelEntry] = [
     # ──── 阿里百炼 TokenPlan (国内直连, 套餐固定计费) ────
     # 全部走同一 base_url (token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1,
     # OpenAI 协议兼容) + 同一 TOKENPLAN_API_KEY, 只换 model 字段。
-    # 2026-06-22: Owner 指定新版白名单。仅每个品牌最高级对话模型进入 chat picker;
-    # lower chat variants 和 image-only 模型只进目录,不进 picker。
+    # 2026-07-20: Owner 提供 TokenPlan 当前支持清单。保留当前代文字/图片/视频模型;
+    # image/video-only 模型只进目录,不进 chat picker。
+    ModelEntry(
+        id="qwen3.8-max-preview",
+        label="Qwen3.8 Max Preview · 千问",
+        provider="tokenplan",
+        model="qwen3.8-max-preview",
+        speed_tier="reasoning",
+        note="预览版 / 限时加量10倍 / 文本生成 / 推理 / 视觉理解",
+        requires_env=("TOKENPLAN_API_KEY",),
+        capabilities=("text_generation", "reasoning", "vision_understanding"),
+    ),
     ModelEntry(
         id="qwen3.7-plus",
         label="Qwen3.7 Plus · 千问",
@@ -177,6 +187,42 @@ MODELS: List[ModelEntry] = [
         reliable_tool_calling=False,
     ),
     ModelEntry(
+        id="happyhorse-1.1-i2v",
+        label="HappyHorse 1.1 I2V",
+        provider="tokenplan",
+        model="happyhorse-1.1-i2v",
+        speed_tier="balanced",
+        note="视频生成",
+        requires_env=("TOKENPLAN_API_KEY",),
+        capabilities=("video_generation",),
+        chat_selectable=False,
+        reliable_tool_calling=False,
+    ),
+    ModelEntry(
+        id="happyhorse-1.1-t2v",
+        label="HappyHorse 1.1 T2V",
+        provider="tokenplan",
+        model="happyhorse-1.1-t2v",
+        speed_tier="balanced",
+        note="视频生成",
+        requires_env=("TOKENPLAN_API_KEY",),
+        capabilities=("video_generation",),
+        chat_selectable=False,
+        reliable_tool_calling=False,
+    ),
+    ModelEntry(
+        id="happyhorse-1.1-r2v",
+        label="HappyHorse 1.1 R2V",
+        provider="tokenplan",
+        model="happyhorse-1.1-r2v",
+        speed_tier="balanced",
+        note="视频生成",
+        requires_env=("TOKENPLAN_API_KEY",),
+        capabilities=("video_generation",),
+        chat_selectable=False,
+        reliable_tool_calling=False,
+    ),
+    ModelEntry(
         id="deepseek-v4-pro",
         label="DeepSeek V4 Pro",
         provider="tokenplan",
@@ -245,9 +291,9 @@ MODELS: List[ModelEntry] = [
         provider="tokenplan",
         model="glm-5.2",
         speed_tier="balanced",
-        note="文本生成",
+        note="文本生成 / 推理; 工具调用不稳",
         requires_env=("TOKENPLAN_API_KEY",),
-        capabilities=("text_generation",),
+        capabilities=("text_generation", "reasoning"),
         reliable_tool_calling=False,
     ),
     ModelEntry(
@@ -256,9 +302,9 @@ MODELS: List[ModelEntry] = [
         provider="tokenplan",
         model="glm-5.1",
         speed_tier="balanced",
-        note="文本生成; 工具调用不稳 (历史 bug #147/#161)",
+        note="文本生成 / 推理; 工具调用不稳 (历史 bug #147/#161)",
         requires_env=("TOKENPLAN_API_KEY",),
-        capabilities=("text_generation",),
+        capabilities=("text_generation", "reasoning"),
         chat_selectable=False,
         reliable_tool_calling=False,
     ),
@@ -268,9 +314,9 @@ MODELS: List[ModelEntry] = [
         provider="tokenplan",
         model="glm-5",
         speed_tier="fast",
-        note="文本生成; 工具调用不稳",
+        note="文本生成 / 推理; 工具调用不稳",
         requires_env=("TOKENPLAN_API_KEY",),
-        capabilities=("text_generation",),
+        capabilities=("text_generation", "reasoning"),
         chat_selectable=False,
         reliable_tool_calling=False,
     ),

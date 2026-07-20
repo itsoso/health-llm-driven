@@ -7,6 +7,8 @@ import {
   completeAgendaItem,
   skipProtocol,
   seedDemo,
+  type AgendaCompleteStatus,
+  type AgendaSkipReason,
   type AgendaSource,
 } from '../services/agenda';
 
@@ -41,12 +43,24 @@ export function useRuntimeAgendaRange(days = 7) {
 export function useCompleteAgendaItem() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ source, track = 'protocol', value }: {
+    mutationFn: ({ source, track = 'protocol', value, status, skipReason }: {
       source: AgendaSource;
       track?: 'protocol' | 'manual';
       value?: Record<string, unknown>;
-    }) => completeAgendaItem(source, track, value),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['agenda'] }),
+      status?: AgendaCompleteStatus;
+      skipReason?: AgendaSkipReason;
+    }) => completeAgendaItem(
+      source,
+      track,
+      value,
+      status || skipReason ? { status: status ?? 'done', skipReason } : undefined,
+    ),
+    onSuccess: () => Promise.all([
+      qc.invalidateQueries({ queryKey: ['agenda'] }),
+      qc.invalidateQueries({ queryKey: ['timeline', 'today'] }),
+      qc.invalidateQueries({ queryKey: ['daily-artifact'] }),
+      qc.invalidateQueries({ queryKey: ['today-dynamic-view'] }),
+    ]),
   });
 }
 

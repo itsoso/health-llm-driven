@@ -11,7 +11,7 @@ CGM 相关的 Safety Guardian 规则。
 """
 
 from datetime import datetime, timedelta, timezone
-from typing import List, Optional
+from typing import Optional
 
 from app.agents.safety_guardian.engine import register
 from app.agents.safety_guardian.schema import Alert, Severity

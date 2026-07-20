@@ -184,6 +184,38 @@ after its prior URL expires. This Gate deliberately requires a real user card
 click because a synthetic backend request would bypass the product's explicit
 paid-generation consent boundary.
 
+### Native Inline Playback Follow-up (2026-07-19)
+
+The earlier Mobile runtime `1.3.1` opened completed video results in an
+in-app browser. The result card now embeds Expo's native video view in the
+active Agent transcript, retaining the owner-scoped, short-lived result URL
+and adding native play, seek, mute, and fullscreen controls. This is a native
+module change (`expo-video`), so it requires a new `1.3.2` iOS binary; it
+cannot be delivered to `1.3.1` through OTA. The final verification is to
+install the `1.3.2` QR release and play a completed private video in its
+originating Agent conversation without navigating away.
+
+Release evidence: the production-bundle QR artifact was built from
+`8d6e593e0` as `1.3.2 (1)` on 2026-07-19. Its signed IPA, manifest, and
+install page each returned `200` over HTTPS at
+`https://health.executor.life/mobile-install/ios/20260719-094805-8d6e593e0/`.
+The IPA's `CFBundleIdentifier` is `life.executor.health` and its
+`CFBundleShortVersionString` is `1.3.2`. Manual playback on an owner device
+remains the final G6 verification.
+
+Production OTA release evidence: EAS update group
+`d9652ea4-c15f-4f42-b0f6-b26723b0a428` (iOS update
+`019f7ac5-8a8c-7c0a-82f1-1cc349e96787`) was published to the `production`
+channel for runtime `1.3.2` from `7203a3da2` on 2026-07-19. The prior `1.3.1`
+runtime remains isolated and cannot receive this native-player bundle.
+
+TestFlight release evidence: EAS iOS build
+`bcf8066b-1b0c-47c9-9a48-40623eebb766` completed as `1.3.2 (233)` for
+runtime `1.3.2`. App Store Connect accepted Apple build
+`fc46279b-3c88-4abb-9305-63c98f56b672` with processing state `VALID` and
+internal TestFlight state `IN_BETA_TESTING`. No external beta-review
+submission was created.
+
 ## Configuration Record
 
 Production uses an existing independent Model Studio pay-as-you-go credential

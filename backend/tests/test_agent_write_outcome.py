@@ -1,3 +1,5 @@
+import pytest
+
 from app.services.agent_write_outcome import classify_write_execution
 
 
@@ -45,3 +47,28 @@ def test_verified_receipt_has_priority_over_result_text():
 
     assert outcome.status == "verified"
     assert outcome.receipt is not None
+
+
+@pytest.mark.parametrize(
+    "result",
+    [
+        "Error: 工具调用被策略拦截。tool=health_record; reason=write_tool_without_write_intent",
+        "Error: 这段话不是明确的本人症状记录请求，已阻止自动写入。",
+        "Error: 带附件的症状内容暂不自动写入，请在不带附件的消息中直接复述。",
+        "Error: 症状记录参数无效，已阻止自动写入。",
+    ],
+)
+def test_local_policy_and_symptom_guards_are_rejected_not_uncertain(result):
+    outcome = classify_write_execution(result)
+
+    assert outcome.status == "rejected"
+    assert outcome.dispatch_started is False
+
+
+def test_remote_api_error_with_local_marker_stays_uncertain():
+    outcome = classify_write_execution(
+        "Error: API 返回 500: 已阻止执行，请稍后重试。"
+    )
+
+    assert outcome.status == "uncertain"
+    assert outcome.dispatch_started is None

@@ -39,6 +39,7 @@ class AgentRun(Base):
     local_execution_id = Column(String(128), nullable=True)
     privacy_mode = Column(String(32), nullable=False, default="cloud")
     deadline_at = Column(DateTime(timezone=True), nullable=True)
+    cancel_requested_at = Column(DateTime(timezone=True), nullable=True)
     error_code = Column(String(80), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     started_at = Column(DateTime(timezone=True), nullable=True)
@@ -79,6 +80,7 @@ class AgentRun(Base):
             sqlite_where=text("conversation_id IS NOT NULL AND input_seq IS NOT NULL"),
         ),
         Index("ix_agent_runs_user_created", "user_id", "created_at"),
+        Index("ix_agent_runs_finished_status", "finished_at", "status"),
     )
 
 
@@ -108,6 +110,12 @@ class AgentRunAttempt(Base):
             name="ck_agent_run_attempts_status",
         ),
         Index("uq_agent_run_attempt_number", "run_id", "attempt_no", unique=True),
+        Index(
+            "ix_agent_run_attempts_running_lease",
+            "lease_expires_at",
+            postgresql_where=text("status = 'running'"),
+            sqlite_where=text("status = 'running'"),
+        ),
     )
 
 
@@ -149,6 +157,11 @@ class AgentToolOperation(Base):
             "operation_fingerprint",
             unique=True,
         ),
+        Index(
+            "ix_agent_tool_operations_created_status",
+            "created_at",
+            "status",
+        ),
     )
 
 
@@ -175,4 +188,116 @@ class AgentRunEvent(Base):
     __table_args__ = (
         Index("uq_agent_run_events_sequence", "run_id", "sequence_no", unique=True),
         Index("ix_agent_run_events_run_created", "run_id", "created_at"),
+    )
+
+
+class AgentRuntimeRolloutState(Base):
+    """Singleton, content-free admission circuit for Agent Runtime rollout."""
+
+    __tablename__ = "agent_runtime_rollout_state"
+
+    id = Column(Integer, primary_key=True, default=1)
+    status = Column(String(16), nullable=False, default="active")
+    reason_code = Column(String(64), nullable=True)
+    version = Column(Integer, nullable=False, default=1)
+    window_started_at = Column(DateTime(timezone=True), nullable=True)
+    last_evaluated_at = Column(DateTime(timezone=True), nullable=True)
+    reconciliation_generation = Column(Integer, nullable=False, default=0)
+    reconciliation_acknowledged_generation = Column(
+        Integer,
+        nullable=False,
+        default=0,
+    )
+    terminal_runs = Column(Integer, nullable=False, default=0)
+    failed_runs = Column(Integer, nullable=False, default=0)
+    reconciliation_runs = Column(Integer, nullable=False, default=0)
+    stale_active_runs = Column(Integer, nullable=False, default=0)
+    updated_by_user_id = Column(
+        Integer,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        CheckConstraint("id = 1", name="ck_agent_runtime_rollout_state_singleton"),
+        CheckConstraint(
+            "status IN ('active', 'paused')",
+            name="ck_agent_runtime_rollout_state_status",
+        ),
+        CheckConstraint(
+            "(status = 'active' AND reason_code IS NULL) OR "
+            "(status = 'paused' AND reason_code IS NOT NULL AND reason_code IN ("
+            "'manual_pause', 'system_failure_rate', "
+            "'reconciliation_detected', 'stale_lease_detected'))",
+            name="ck_agent_runtime_rollout_state_reason",
+        ),
+        CheckConstraint(
+            "version >= 1 AND terminal_runs >= 0 AND failed_runs >= 0 AND "
+            "reconciliation_runs >= 0 AND stale_active_runs >= 0 AND "
+            "reconciliation_generation >= 0 AND "
+            "reconciliation_acknowledged_generation >= 0 AND "
+            "reconciliation_acknowledged_generation <= reconciliation_generation",
+            name="ck_agent_runtime_rollout_state_counts",
+        ),
+    )
+
+
+class AgentRuntimeRolloutEvent(Base):
+    """Append-only audit for manual and automatic rollout circuit changes."""
+
+    __tablename__ = "agent_runtime_rollout_events"
+
+    id = Column(Integer, primary_key=True)
+    action = Column(String(16), nullable=False)
+    actor_kind = Column(String(16), nullable=False)
+    reason_code = Column(String(64), nullable=False)
+    actor_user_id = Column(
+        Integer,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    terminal_runs = Column(Integer, nullable=False, default=0)
+    failed_runs = Column(Integer, nullable=False, default=0)
+    reconciliation_runs = Column(Integer, nullable=False, default=0)
+    stale_active_runs = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint(
+            "action IN ('pause', 'resume')",
+            name="ck_agent_runtime_rollout_events_action",
+        ),
+        CheckConstraint(
+            "actor_kind IN ('system', 'admin')",
+            name="ck_agent_runtime_rollout_events_actor",
+        ),
+        CheckConstraint(
+            "reason_code IN ('manual_pause', 'manual_resume', "
+            "'system_failure_rate', 'reconciliation_detected', "
+            "'stale_lease_detected')",
+            name="ck_agent_runtime_rollout_events_reason",
+        ),
+        CheckConstraint(
+            "(action = 'resume' AND actor_kind = 'admin' "
+            "AND reason_code = 'manual_resume') OR "
+            "(action = 'pause' AND ((actor_kind = 'admin' "
+            "AND reason_code = 'manual_pause') OR "
+            "(actor_kind = 'system' AND reason_code IN ("
+            "'system_failure_rate', 'reconciliation_detected', "
+            "'stale_lease_detected'))))",
+            name="ck_agent_runtime_rollout_events_transition",
+        ),
+        CheckConstraint(
+            "terminal_runs >= 0 AND failed_runs >= 0 AND "
+            "reconciliation_runs >= 0 AND stale_active_runs >= 0",
+            name="ck_agent_runtime_rollout_events_counts",
+        ),
+        Index("ix_agent_runtime_rollout_events_created", "created_at"),
     )

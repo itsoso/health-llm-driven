@@ -7,9 +7,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 EXECUTOR = ROOT / "app/services/agent_executor.py"
 VOICE_SHORTCUTS = ROOT / "app/services/voice_command_service.py"
+CAPABILITY_POLICY = ROOT / "app/services/agent_kernel/capability_policy.py"
 
 
-def test_health_record_and_manage_dispatch_only_from_executor_gateway_choke_point():
+def test_health_record_and_manage_are_not_dispatched_by_direct_method_calls():
     tree = ast.parse(EXECUTOR.read_text())
     direct_calls: list[tuple[str, int]] = []
 
@@ -20,8 +21,7 @@ def test_health_record_and_manage_dispatch_only_from_executor_gateway_choke_poin
             if node.func.attr in {"_exec_health_record", "_exec_health_manage"}:
                 direct_calls.append((function.name, node.lineno))
 
-    assert direct_calls
-    assert {name for name, _line in direct_calls} == {"_execute_tool_impl"}
+    assert direct_calls == []
 
 
 def test_no_surface_calls_health_write_implementation_directly():
@@ -96,27 +96,27 @@ def test_every_registered_agent_tool_has_an_explicit_kernel_capability_class():
     assert registered <= KNOWN_TOOL_NAMES
 
 
-def test_every_registered_agent_tool_has_an_executor_dispatch_or_specialist_adapter():
-    from app.services.specialist_tools import SPECIALIST_TOOLS
-    from app.services.tool_schema_registry import get_health_tools
+def test_capability_sets_are_derived_from_tool_specs_not_a_second_manual_registry():
+    source = CAPABILITY_POLICY.read_text()
 
-    registered = {
-        (tool.get("function") or {}).get("name")
-        for tool in get_health_tools()
-        if (tool.get("function") or {}).get("name")
-    }
+    assert "from app.services.agent_kernel.tool_registry import" in source
+    assert "list_tool_specs" in source
+    assert "READ_ONLY_TOOLS = frozenset({" not in source
+    assert "SPECIALIST_READ_ONLY_TOOLS = frozenset({" not in source
+    assert "WRITE_TOOL_NAMES = frozenset({" not in source
+
+
+def test_executor_dispatch_uses_gateway_and_registry_adapter_lookup():
     tree = ast.parse(EXECUTOR.read_text())
-    dispatch_names = {
-        node.comparators[0].value
+    functions = {
+        node.name: node
         for node in ast.walk(tree)
-        if isinstance(node, ast.Compare)
-        and isinstance(node.left, ast.Name)
-        and node.left.id == "tool_name"
-        and len(node.ops) == 1
-        and isinstance(node.ops[0], ast.Eq)
-        and len(node.comparators) == 1
-        and isinstance(node.comparators[0], ast.Constant)
-        and isinstance(node.comparators[0].value, str)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
     }
+    execute_impl = ast.unparse(functions["_execute_tool_impl"])
+    dispatch = ast.unparse(functions["_dispatch_tool_request"])
 
-    assert registered <= dispatch_names | set(SPECIALIST_TOOLS)
+    assert "ToolGateway(snapshot).execute" in execute_impl
+    assert "get_tool_spec(request.tool_name)" in dispatch
+    assert "getattr(self, spec.executor_method)" in dispatch
+    assert "if tool_name ==" not in dispatch

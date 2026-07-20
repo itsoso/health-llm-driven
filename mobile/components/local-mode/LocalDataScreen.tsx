@@ -17,6 +17,7 @@ import * as Sharing from 'expo-sharing';
 import { useAppSession } from '../../hooks/useAppSession';
 import { LocalDataLifecycle, type LocalDataExport } from '../../services/localDataLifecycle';
 import { useTheme, type ColorPalette } from '../../hooks/useTheme';
+import { revaColors, revaFonts } from '../../constants/revaTheme';
 
 export default function LocalDataScreen({ onBack }: { onBack: () => void }) {
   const { c } = useTheme();
@@ -204,7 +205,7 @@ function ActionButton({ label, onPress, styles, busy = false, disabled = false, 
       disabled={disabled || busy}
       style={[styles.action, secondary ? styles.actionSecondary : null, compact ? styles.actionCompact : null, disabled ? styles.disabled : null]}
     >
-      {busy ? <ActivityIndicator color={secondary ? '#198754' : '#fff'} /> : <Text style={secondary ? styles.actionSecondaryText : styles.actionText}>{label}</Text>}
+      {busy ? <ActivityIndicator color={secondary ? styles.actionSecondaryText.color : styles.actionText.color} /> : <Text style={secondary ? styles.actionSecondaryText : styles.actionText}>{label}</Text>}
     </Pressable>
   );
 }
@@ -223,15 +224,15 @@ const createStyles = (c: ColorPalette) => StyleSheet.create({
   action: { minHeight: 46, borderRadius: 12, backgroundColor: c.brand, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12 },
   actionSecondary: { backgroundColor: c.brandLight },
   actionCompact: { flex: 1, minHeight: 44 },
-  actionText: { color: '#fff', fontSize: 14, fontWeight: '700', textAlign: 'center' },
+  actionText: { color: revaColors.surface, fontSize: 14, fontWeight: '700', textAlign: 'center' },
   actionSecondaryText: { color: c.brand, fontSize: 14, fontWeight: '700', textAlign: 'center' },
   disabled: { opacity: 0.45 },
   resultBox: { gap: 10, padding: 12, borderRadius: 12, backgroundColor: c.bgPrimary },
   resultLabel: { color: c.labelSecondary, fontSize: 12, fontWeight: '700' },
-  key: { color: c.labelPrimary, fontSize: 12, lineHeight: 18, fontFamily: 'monospace' },
+  key: { color: c.labelPrimary, fontSize: 12, lineHeight: 18, fontFamily: revaFonts.mono },
   row: { flexDirection: 'row', gap: 8 },
   fileName: { color: c.brand, fontSize: 13, fontWeight: '700' },
-  input: { minHeight: 46, borderRadius: 12, backgroundColor: c.bgPrimary, color: c.labelPrimary, paddingHorizontal: 12, fontFamily: 'monospace' },
+  input: { minHeight: 46, borderRadius: 12, backgroundColor: c.bgPrimary, color: c.labelPrimary, paddingHorizontal: 12, fontFamily: revaFonts.mono },
   deleteButton: { minHeight: 46, borderRadius: 12, borderWidth: 1, borderColor: c.red, alignItems: 'center', justifyContent: 'center' },
   deleteText: { color: c.red, fontSize: 14, fontWeight: '800' },
   message: { color: c.labelSecondary, fontSize: 13, lineHeight: 19, textAlign: 'center' },

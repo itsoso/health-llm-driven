@@ -15,10 +15,8 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import date
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
-from sqlalchemy.orm import Session
 
 from app.orchestrator.schema import Intent, SpecialistFinding
 from app.twin.schema import HealthTwin

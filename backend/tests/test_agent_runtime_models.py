@@ -26,7 +26,89 @@ def test_agent_runtime_models_register_content_free_ledger_tables(db):
         "agent_run_attempts",
         "agent_tool_operations",
         "agent_run_events",
+        "agent_runtime_rollout_state",
+        "agent_runtime_rollout_events",
     } <= table_names
+
+
+def test_rollout_window_queries_have_bounded_time_indexes(db):
+    inspector = inspect(db.get_bind())
+    run_indexes = {index["name"] for index in inspector.get_indexes("agent_runs")}
+    tool_indexes = {
+        index["name"] for index in inspector.get_indexes("agent_tool_operations")
+    }
+
+    assert "ix_agent_runs_finished_status" in run_indexes
+    assert "ix_agent_tool_operations_created_status" in tool_indexes
+
+
+@pytest.mark.parametrize(
+    "invalid_event",
+    [
+        {
+            "action": "pause",
+            "actor_kind": "system",
+            "reason_code": "health text must not be accepted",
+        },
+        {
+            "action": "resume",
+            "actor_kind": "system",
+            "reason_code": "manual_resume",
+        },
+        {
+            "action": "pause",
+            "actor_kind": "admin",
+            "reason_code": "system_failure_rate",
+        },
+        {
+            "action": "pause",
+            "actor_kind": "system",
+            "reason_code": "stale_lease_detected",
+            "failed_runs": -1,
+        },
+    ],
+)
+def test_rollout_event_database_constraints_reject_invalid_control_data(
+    db,
+    invalid_event,
+):
+    from app.models.agent_runtime import AgentRuntimeRolloutEvent
+
+    db.add(AgentRuntimeRolloutEvent(**invalid_event))
+    with pytest.raises(IntegrityError):
+        db.commit()
+    db.rollback()
+
+
+def test_paused_rollout_state_requires_a_reason(db):
+    from app.models.agent_runtime import AgentRuntimeRolloutState
+
+    db.add(
+        AgentRuntimeRolloutState(
+            id=1,
+            status="paused",
+            reason_code=None,
+        )
+    )
+    with pytest.raises(IntegrityError):
+        db.commit()
+    db.rollback()
+
+
+def test_rollout_reconciliation_ack_cannot_exceed_generation(db):
+    from app.models.agent_runtime import AgentRuntimeRolloutState
+
+    db.add(
+        AgentRuntimeRolloutState(
+            id=1,
+            status="active",
+            reconciliation_generation=1,
+            reconciliation_acknowledged_generation=2,
+        )
+    )
+    with pytest.raises(IntegrityError):
+        db.commit()
+    db.rollback()
 
 
 def test_agent_run_client_turn_is_owner_scoped_unique(db, auth_user_and_headers):

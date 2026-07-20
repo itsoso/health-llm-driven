@@ -487,6 +487,20 @@ def test_clear_voice_symptom_statement_skips_confirmation():
     assert "_fast_record_requires_confirmation" not in out
 
 
+def test_clear_voice_sneeze_statement_skips_confirmation():
+    args = {"record_type": "rhinitis", "data": {"sneezing": 1}}
+    out = ae._auto_confirm_fast_record_args(
+        "health_record",
+        args,
+        channel="voice",
+        user_message="记录下来刚才打了一个喷嚏。",
+    )
+
+    assert out["confirmed"] is True
+    assert out["data"]["confirmed"] is True
+    assert "_fast_record_requires_confirmation" not in out
+
+
 def test_water_auto_confirms_regardless_of_channel():
     # 通道守卫只作用于症状类;低风险数值记录(water)任何通道免确认
     for channel in (None, "voice", "typed"):

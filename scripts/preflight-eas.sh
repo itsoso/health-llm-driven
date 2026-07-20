@@ -18,7 +18,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-MOBILE_DIR="${REPO_ROOT}/mobile"
+MOBILE_DIR="${MOBILE_DIR_OVERRIDE:-${REPO_ROOT}/mobile}"
 cd "${MOBILE_DIR}"
 
 REBUILD=0

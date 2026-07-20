@@ -132,7 +132,7 @@ def test_today_dynamic_view_keeps_distinct_runtime_atom(client, auth_user_and_he
             "id": "open-runtime-agenda",
             "label": "管理今日行动",
             "action": "route.open",
-            "payload": {"route": "/alerts"},
+            "payload": {"route": "/agenda"},
             "style": "secondary",
         }
     ]

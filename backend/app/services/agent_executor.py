@@ -19,7 +19,7 @@ import math
 import re
 import time
 from datetime import UTC, date, datetime, timezone, timedelta
-from typing import AsyncGenerator, Dict, Any, List, Optional, Sequence, Tuple
+from typing import AsyncGenerator, Dict, Any, List, Mapping, Optional, Sequence, Tuple
 from urllib.parse import urlencode
 
 import httpx
@@ -56,6 +56,15 @@ from app.services.agent_kernel.context import (
     format_turn_time_context_prompt,
 )
 from app.services.agent_kernel.events import AgentEventBus
+from app.services.agent_kernel.tool_registry import (
+    UnknownToolAction,
+    classify_tool_effect,
+    get_tool_spec,
+    is_registered_receipt_resource_type,
+    is_valid_receipt_resource_id,
+    list_tool_specs,
+    requires_verified_receipt,
+)
 from app.services.agent_kernel.types import (
     CapabilityDecision,
     ToolExecutionRequest,
@@ -160,7 +169,9 @@ FAST_ROUTE_ESCALATE_AFTER_ROUNDS = 2
 _TOOL_HEARTBEAT_INTERVAL_S = 5.0
 _TOOL_TIMEOUT_DEFAULT_S = 90.0
 _TOOL_TIMEOUT_OVERRIDES: Dict[str, float] = {
-    "health_analysis": 135.0,
+    spec.name: spec.timeout_seconds
+    for spec in list_tool_specs()
+    if spec.timeout_seconds != _TOOL_TIMEOUT_DEFAULT_S
 }
 
 # 最终用户回复的 token 上限。健康养护/操作清单类回复常 >4000 token,
@@ -2485,13 +2496,7 @@ def _friendly_record_confirmation(record: Dict[str, Any]) -> str:
 _TURN_CARD_UNSET = object()
 
 _WRITE_RECEIPT_TOOL_NAMES = {
-    "health_record",
-    "health_manage",
-    "intervention_cycle",
-    "draft_aigc_media",
-    "manage_plan",
-    "upload_genetic_txt",
-    "upload_medical_exam_text",
+    spec.name for spec in list_tool_specs() if spec.receipt_required
 }
 
 # Read-only-turn allowlist (starter answer pre-generation · rank7). A pregen turn
@@ -2503,24 +2508,7 @@ _WRITE_RECEIPT_TOOL_NAMES = {
 # blocked at the single _execute_tool dispatch choke, so a new write tool is
 # denied by default rather than needing to be added to a denylist.
 _READ_ONLY_TURN_ALLOWED_TOOLS = {
-    "health_query",
-    "health_query_batch",
-    "knowledge_search",
-    "realtime_search",
-    "environment_check",
-    "query_genetic_profile",
-    "query_lab_indicators",
-    "health_analysis",
-    "supplement_guide",
-    "analyze_recovery",
-    "analyze_fuel",
-    "analyze_movement",
-    "analyze_mental",
-    "analyze_hypertension",
-    "analyze_metabolic",
-    "analyze_rhinitis",
-    "analyze_longitudinal",
-    "analyze_longevity",
+    spec.name for spec in list_tool_specs() if spec.effect == "read"
 }
 _WRITE_RESULT_FAILURE_MARKERS = (
     "Error:",
@@ -2534,8 +2522,8 @@ _WRITE_RESULT_FAILURE_MARKERS = (
 # external write endpoint is invoked. They must not be presented as a write
 # that may already have happened.
 _UNVERIFIED_WRITE_USER_MESSAGE = (
-    "本次操作没有取得可验证的写入回执，我不能确认已经完成。"
-    "为避免重复写入，请先查询现有记录；确认缺失后再重试。"
+    "本次记录请求的状态暂时无法确认，我不能确认是否已经完成；可能已提交但尚未拿到回执。"
+    "为避免重复写入，我没有自动重试；请先查询现有记录，确认缺失后再补录。"
 )
 
 _RECEIPT_TYPE_LABELS = {
@@ -2550,6 +2538,7 @@ _RECEIPT_TYPE_LABELS = {
     "aigc_media_confirmation": "小巴创作草稿",
     "aigc_media_job": "小巴创作",
     "mood_record": "心情",
+    "health_checkin": "鼻炎打卡",
     "smart_reminder": "提醒",
 }
 
@@ -2574,8 +2563,9 @@ def _unverified_write_message(verified_receipts: Optional[List[Dict[str, Any]]] 
         return _UNVERIFIED_WRITE_USER_MESSAGE
     return (
         f"已确认写入:{'、'.join(labels)}。"
-        "但另有一项写入没有取得可验证的回执,我不能确认它已完成;"
-        "为避免重复写入,请先查询该项现有记录,确认缺失后再重试。"
+        "但另有一项记录请求的状态暂时无法确认,我不能确认它是否已经完成,"
+        "可能已提交但尚未拿到回执;"
+        "为避免重复写入,我没有自动重试,请先查询该项现有记录,确认缺失后再补录。"
     )
 
 
@@ -2601,7 +2591,7 @@ _RESOURCE_TYPE_BY_RECORD_TYPE = {
     "mood": "mood_record",
     "reminder": "smart_reminder",
     "remember": "memory_fact",
-    "rhinitis": "illness_episode",
+    "rhinitis": "health_checkin",
     "sleep": "sleep_record",
     "supplement": "supplement_log",
     "supplement_group": "supplement_log",
@@ -2609,6 +2599,26 @@ _RESOURCE_TYPE_BY_RECORD_TYPE = {
     "waist": "waist_record",
     "water": "water_record",
     "weight": "weight_record",
+}
+
+_HEALTH_MANAGE_RESOURCE_TYPE_BY_RECORD_TYPE = {
+    **_RESOURCE_TYPE_BY_RECORD_TYPE,
+    "medication": "medication",
+    "medication_log": "medication_log",
+    "supplement_definition": "supplement_definition",
+}
+
+_MANAGE_PLAN_RESOURCE_TYPE_BY_ACTION = {
+    "generate_weekly": "smart_plan",
+    "complete_item": "smart_plan_item",
+    "save_to_card": "action_card",
+}
+
+_FIXED_RECEIPT_RESOURCE_TYPE_BY_TOOL = {
+    "draft_aigc_media": "aigc_media_confirmation",
+    "intervention_cycle": "intervention_cycle",
+    "upload_genetic_txt": "genetic_profile",
+    "upload_medical_exam_text": "medical_exam",
 }
 
 
@@ -2710,6 +2720,37 @@ def _write_operation_fingerprint(
     return hashlib.sha256(fingerprint_payload.encode()).hexdigest()
 
 
+def _runtime_write_operation_fingerprint(
+    tool_name: str,
+    parsed_args: Dict[str, Any],
+) -> str:
+    """Canonical business identity for Runtime write deduplication.
+
+    This is deliberately separate from the turn-local checkpoint fingerprint:
+    confirmation fields still matter to the conversation flow, but they must
+    not create a second durable write identity for the same business action.
+    """
+    canonical_args = dict(parsed_args)
+    if tool_name == "health_record":
+        record_type = (
+            canonical_args.get("record_type")
+            or canonical_args.get("type")
+            or canonical_args.get("kind")
+        )
+        if record_type not in (None, ""):
+            canonical_args["record_type"] = _normalize_fast_record_kind(
+                record_type
+            )
+        canonical_args.pop("type", None)
+        canonical_args.pop("kind", None)
+    elif tool_name == "intervention_cycle":
+        action = str(canonical_args.get("action") or "").strip().lower()
+        canonical_args["action"] = "cancel" if action == "delete" else action
+        canonical_args.pop("confirm", None)
+        canonical_args.pop("confirmed", None)
+    return _write_operation_fingerprint(tool_name, canonical_args)
+
+
 # 只读工具回合级去重(founder 2026-07-14「列出喝水记录」→ health_query 空转 7 次 70s 根因)。
 # 镜像写工具的 fingerprint replay,但只对**只读**工具(写工具重复要走确认链,绝不盲去重)。
 _READ_DEDUP_ENABLED = True
@@ -2728,12 +2769,10 @@ def _read_operation_fingerprint(tool_name: str, parsed_args: Dict[str, Any]) -> 
 
 def _tool_call_is_read_only(tool_name: str, parsed_args: Dict[str, Any]) -> bool:
     """Classify mixed read/write tools by operation instead of only by name."""
-    if tool_name == "health_manage":
-        return str(parsed_args.get("operation") or "").strip().lower() == "list"
-    return (
-        tool_name in _READ_ONLY_TURN_ALLOWED_TOOLS
-        and tool_name not in _WRITE_RECEIPT_TOOL_NAMES
-    )
+    try:
+        return classify_tool_effect(tool_name, parsed_args) == "read"
+    except (UnknownToolAction, RuntimeError):
+        return False
 
 
 def _is_seen_readonly_call(tc: Dict[str, Any], seen_read_fps: Dict[str, Any]) -> bool:
@@ -2783,13 +2822,38 @@ def _receipt_resource_identity(payload: Dict[str, Any]) -> tuple[Optional[str], 
 
 def _write_receipt_from_tool_result(
     tool_name: str,
-    record_type: Any,
+    receipt_context: Any,
     result: Any,
 ) -> Optional[Dict[str, Any]]:
     """Build a persistence receipt from structured tool output only."""
     if tool_name not in _WRITE_RECEIPT_TOOL_NAMES:
         return None
-    normalized_record_type = str(record_type or "").strip().lower()
+    if isinstance(receipt_context, Mapping):
+        args = dict(receipt_context)
+    else:
+        args = {"record_type": receipt_context}
+    normalized_record_type = str(
+        args.get("record_type") or args.get("type") or ""
+    ).strip().lower()
+    normalized_action = str(args.get("action") or "").strip().lower()
+    if tool_name == "health_record":
+        expected_resource_type = _RESOURCE_TYPE_BY_RECORD_TYPE.get(
+            normalized_record_type
+        )
+    elif tool_name == "health_manage":
+        expected_resource_type = _HEALTH_MANAGE_RESOURCE_TYPE_BY_RECORD_TYPE.get(
+            normalized_record_type
+        )
+    elif tool_name == "manage_plan":
+        expected_resource_type = _MANAGE_PLAN_RESOURCE_TYPE_BY_ACTION.get(
+            normalized_action
+        )
+    else:
+        expected_resource_type = _FIXED_RECEIPT_RESOURCE_TYPE_BY_TOOL.get(
+            tool_name
+        )
+    if not expected_resource_type:
+        return None
     payload = _write_result_payload(
         result,
         allow_pending=(
@@ -2799,26 +2863,26 @@ def _write_receipt_from_tool_result(
     )
     if payload is None:
         return None
+    # "准备开始睡觉" uses health_record(sleep) as the conversational
+    # capability but persists a life-event anchor, not a completed sleep row.
+    # The endpoint response shape is deterministic even when legacy responses
+    # omit resource_type, so infer the narrower registered receipt type here.
+    if (
+        tool_name == "health_record"
+        and normalized_record_type == "sleep"
+        and payload.get("occurred_at")
+        and payload.get("title")
+    ):
+        expected_resource_type = "health_episode"
     result_resource_type, resource_id = _receipt_resource_identity(payload)
     if not resource_id:
         return None
-    resource_type = result_resource_type
-    if not resource_type:
-        resource_type = {
-            "intervention_cycle": "intervention_cycle",
-            "manage_plan": "action_card",
-            "upload_genetic_txt": "genetic_profile",
-            "upload_medical_exam_text": "medical_exam",
-        }.get(tool_name)
-        if not resource_type:
-            resource_type = _RESOURCE_TYPE_BY_RECORD_TYPE.get(normalized_record_type)
-            if not resource_type and normalized_record_type:
-                resource_type = (
-                    normalized_record_type
-                    if normalized_record_type.endswith(("_record", "_log"))
-                    else f"{normalized_record_type}_record"
-                )
-    if not resource_type:
+    if result_resource_type and result_resource_type != expected_resource_type:
+        return None
+    resource_type = expected_resource_type
+    if not is_registered_receipt_resource_type(tool_name, resource_type):
+        return None
+    if not is_valid_receipt_resource_id(tool_name, resource_id):
         return None
     completed_at = (
         payload.get("completed_at")
@@ -2841,19 +2905,11 @@ def _write_receipt_from_tool_result(
 
 
 def _write_tool_completed(tool_name: str, args: Any, result: Any) -> bool:
-    if tool_name not in _WRITE_RECEIPT_TOOL_NAMES:
-        return False
     try:
         parsed_args = json.loads(args) if isinstance(args, str) else dict(args or {})
     except (json.JSONDecodeError, TypeError, ValueError):
         parsed_args = {}
-    if tool_name == "health_manage" and parsed_args.get("operation") not in {"update", "delete"}:
-        return False
-    if tool_name == "intervention_cycle" and parsed_args.get("action") not in {"start", "update", "cancel"}:
-        return False
-    if tool_name == "manage_plan" and parsed_args.get("action") not in {
-        "generate_weekly", "complete_item", "save_to_card"
-    }:
+    if not _write_tool_attempted(tool_name, parsed_args):
         return False
     if isinstance(result, str):
         text = result.strip()
@@ -2865,15 +2921,16 @@ def _write_tool_completed(tool_name: str, args: Any, result: Any) -> bool:
             # A write without structured identity cannot be verified. Treat legacy
             # prose as incomplete so old clients and telemetry also fail closed.
             return False
-    record_type = parsed_args.get("record_type") or parsed_args.get("type")
-    return _write_receipt_from_tool_result(tool_name, record_type, result) is not None
+    return _write_receipt_from_tool_result(tool_name, parsed_args, result) is not None
 
 
 # health_record 的 record_type 里，个别是**触发动作**而非写记录 —— 它们没有
 # resource id，不产写回执，绝不能进写诚实闸(否则真成功 / MFA 失败 / 未绑定都会被
 # 误判成"未取得可验证写入回执"，把真因盖掉、还驱动无谓重试)。garmin_sync = 异步
 # 同步 job，是这类的第一个成员。匹配 record_type 与 type 双键(模型两种都吐过)。
-_NON_WRITE_RECORD_TYPES: frozenset[str] = frozenset({"garmin_sync"})
+_NON_WRITE_RECORD_TYPES: frozenset[str] = get_tool_spec(
+    "health_record"
+).receipt_exempt_record_types
 
 
 # Apple 健康(HealthKit)数据只能由 iPhone 上的 App 在前台读取后**上传**到后端 ——
@@ -2893,30 +2950,14 @@ def _is_healthkit_sync_intent(text: Optional[str]) -> bool:
 
 def _write_tool_attempted(tool_name: str, args: Any) -> bool:
     """Return whether this invocation crossed a write boundary, even if it failed."""
-    if tool_name not in _WRITE_RECEIPT_TOOL_NAMES:
-        return False
     try:
         parsed_args = json.loads(args) if isinstance(args, str) else dict(args or {})
     except (json.JSONDecodeError, TypeError, ValueError):
         parsed_args = {}
-    if tool_name == "health_record":
-        rtype = parsed_args.get("record_type") or parsed_args.get("type")
-        if rtype in _NON_WRITE_RECORD_TYPES:
-            return False
-        return True
-    if tool_name == "health_manage":
-        return parsed_args.get("operation") in {"update", "delete"}
-    if tool_name == "intervention_cycle":
-        return parsed_args.get("action") in {"start", "update", "cancel"}
-    if tool_name == "draft_aigc_media":
-        return True
-    if tool_name in {"manage_plan", "upload_genetic_txt", "upload_medical_exam_text"}:
-        if tool_name == "manage_plan":
-            return parsed_args.get("action") in {
-                "generate_weekly", "complete_item", "save_to_card"
-            }
-        return True
-    return False
+    try:
+        return requires_verified_receipt(tool_name, parsed_args)
+    except (UnknownToolAction, RuntimeError):
+        return False
 
 
 def _safety_warning_suffix_from_tool_results(messages: List[Dict[str, Any]]) -> str:
@@ -3099,7 +3140,7 @@ def _auto_confirm_fast_record_args(
 
     kind = _fast_record_kind(args)
     clear_voice_symptom = bool(
-        kind == "symptom"
+        kind in {"symptom", "rhinitis"}
         and channel == "voice"
         and _extract_clear_symptom_record(user_message)
     )
@@ -4205,7 +4246,9 @@ _SYMPTOM_BODY_PART_ALIASES = {
 }
 _SYMPTOM_BODY_PART_MARKERS = (
     ("eye", ("眼痒", "眼痛", "眼红", "眼睛")),
-    ("respiratory", ("咳嗽", "咳痰", "嗓子", "喉咙", "鼻塞", "流鼻涕", "打喷嚏", "呼吸")),
+    ("respiratory", (
+        "咳嗽", "咳痰", "嗓子", "喉咙", "鼻塞", "流鼻涕", "打喷嚏", "喷嚏", "呼吸",
+    )),
     ("skin", ("皮疹", "起疹", "皮肤", "瘙痒", "湿疹")),
     ("digestive", ("胃痛", "胃疼", "腹痛", "腹胀", "肚子痛", "恶心", "呕吐")),
     ("head", ("头痛", "头疼", "头晕", "眩晕")),
@@ -4228,9 +4271,30 @@ _SYMPTOM_NEGATION_MARKERS = (
     "消失",
     "排除",
 )
+_SYMPTOM_QUESTION_MARKERS = (
+    "怎么办",
+    "怎么处理",
+    "如何处理",
+    "为什么",
+    "是否",
+    "是不是",
+    "要不要",
+    "能不能",
+    "需要吗",
+    "该不该",
+    "能否",
+    "可否",
+    "可不可以",
+    "吗",
+    "呢",
+    "？",
+    "?",
+)
 _SYMPTOM_NON_SELF_MARKERS = (
     "朋友",
     "家人",
+    "我爸",
+    "我妈",
     "爸爸",
     "妈妈",
     "父亲",
@@ -4273,17 +4337,55 @@ _SYMPTOM_NON_SELF_MARKERS = (
 def _symptom_text_has_non_self_reference(normalized: str) -> bool:
     if any(marker in normalized for marker in _SYMPTOM_NON_SELF_MARKERS):
         return True
-    return bool(
-        re.search(
-            r"(?:^|[，,。！？!?；;：:、])(?:他|她|他们|她们)"
-            r"(?:有|出现|一直|最近|今天|的|头|腰|背|肩|膝|关|症状|不适|难受|疼|痛)",
-            normalized,
-        )
+    symptom_markers = tuple(
+        marker
+        for _, markers in _SYMPTOM_BODY_PART_MARKERS
+        for marker in markers
     )
+    # 在同一分句内检查完整主体上下文。固定长度窗口会漏掉“他今天早上在
+    # 办公室连续打了一个喷嚏”这类自然表达；分句边界又能避免把“我说我
+    # 打喷嚏”中的“说”误判成第三方主体。
+    clauses = re.split(
+        r"[，,。！？!?；;：:、\n]|然后|而且|但是|不过|并且|以及|同时|后来|之后|再加上|另外",
+        normalized,
+    )
+    non_self_subject_re = re.compile(
+        r"(?:他|她|他们|她们|我爸|我妈|我父亲|我母亲|爸爸|妈妈|朋友|同事|家人|患者|病人)"
+    )
+    # 只取“小王/小李”这类常见称呼的两字主体；限制贪婪长度，避免把
+    # “小王打喷嚏”整体吞掉后错过后面的动作词。
+    name_re = re.compile(r"小[\u4e00-\u9fff]{1,2}")
+    for clause in clauses:
+        if not clause:
+            continue
+        symptom_indexes = [
+            index
+            for marker in symptom_markers
+            for index in [clause.find(marker)]
+            if index >= 0
+        ]
+        if not symptom_indexes:
+            continue
+        first_symptom_index = min(symptom_indexes)
+        if any(
+            match.start() < first_symptom_index
+            for match in non_self_subject_re.finditer(clause)
+        ):
+            return True
+        # 小王等姓名需要后续确实出现动作词,避免把“小腿疼”识别成第三方。
+        for match in name_re.finditer(clause[:first_symptom_index]):
+            # 症状标记本身可能包含动作词(例如“打喷嚏”),所以窗口要包含
+            # 标记开头,否则“小王打喷嚏”会因动作词恰好位于边界而漏检。
+            suffix = clause[match.end():first_symptom_index + 4]
+            if re.search(r"(?:有|出现|打|说|疼|痛|痒|胀|咳|流)", suffix):
+                return True
+    return False
 
 
 def _symptom_text_is_current_self_observation(normalized: str) -> bool:
     """Reject negated or third-party/report symptom mentions before auto-write."""
+    if any(marker in normalized for marker in _SYMPTOM_QUESTION_MARKERS):
+        return False
     if _symptom_text_has_non_self_reference(normalized):
         return False
     symptom_markers = tuple(
@@ -4375,6 +4477,64 @@ def _extract_clear_symptom_record(message: Any) -> Optional[Dict[str, str]]:
             "description": raw.strip("。！？!?；;，, ")[:500],
         }
     return None
+
+
+_RHINITIS_COUNT_RE = re.compile(
+    r"(?:打|连打|连续打)(?:了)?(?P<count>\d+|零|一|两|二|三|四|五|六|七|八|九|十)(?:个|次)?喷嚏"
+)
+_RHINITIS_SEVERITY_RE = re.compile(
+    r"[^，,。！？!?；;：:、]{0,3}(?:程度|等级|级别)?(?:是|为)?"
+    r"(?P<severity>[0-3])(?:级|分)"
+)
+_RHINITIS_CN_NUMBERS = {
+    "零": 0,
+    "一": 1,
+    "两": 2,
+    "二": 2,
+    "三": 3,
+    "四": 4,
+    "五": 5,
+    "六": 6,
+    "七": 7,
+    "八": 8,
+    "九": 9,
+    "十": 10,
+}
+
+
+def _extract_clear_rhinitis_record(message: Any) -> Optional[Dict[str, int]]:
+    """Extract explicit rhinitis fields from the current user turn only.
+
+    The model may choose ``record_type=rhinitis`` but it is never trusted to
+    decide the count or severity. This helper is deliberately narrow: a
+    current self-observation must contain ``喷嚏``/``鼻塞``/``流鼻涕`` and pass
+    the same question, negation, attachment, and third-party checks as symptoms.
+    """
+    symptom = _extract_clear_symptom_record(message)
+    if not symptom or symptom.get("body_part") != "respiratory":
+        return None
+    normalized = "".join(str(message or "").split()).lower()
+    data: Dict[str, int] = {}
+    if "喷嚏" in normalized:
+        match = _RHINITIS_COUNT_RE.search(normalized)
+        raw_count = match.group("count") if match else "一"
+        count = _RHINITIS_CN_NUMBERS.get(raw_count)
+        if count is None:
+            count = int(raw_count)
+        if count > 0:
+            data["sneezing"] = count
+    if "鼻塞" in normalized:
+        marker_end = normalized.find("鼻塞") + len("鼻塞")
+        suffix = normalized[marker_end:marker_end + 12].lstrip("，,。！？!?；;：:、")
+        match = _RHINITIS_SEVERITY_RE.search(suffix)
+        data["congestion"] = int(match.group("severity")) if match else 1
+    if "流鼻涕" in normalized or "流涕" in normalized:
+        marker = "流鼻涕" if "流鼻涕" in normalized else "流涕"
+        marker_end = normalized.find(marker) + len(marker)
+        suffix = normalized[marker_end:marker_end + 12].lstrip("，,。！？!?；;：:、")
+        match = _RHINITIS_SEVERITY_RE.search(suffix)
+        data["runny_nose"] = int(match.group("severity")) if match else 1
+    return data or None
 
 
 def _recover_clear_symptom_args(args: Any, message: Any) -> Any:
@@ -4476,7 +4636,28 @@ def _apply_authorized_symptom_payload(
         "body_part": authorization["body_part"],
         "description": authorization["description"],
     }
-    return {"record_type": "symptom", "data": data}
+    authorized_args: Dict[str, Any] = {"record_type": "symptom", "data": data}
+    # This flag is injected by the server-side channel gate. Preserve only the
+    # fail-closed True value while replacing all model-authored health fields.
+    if args.get("_fast_record_requires_confirmation") is True:
+        authorized_args["_fast_record_requires_confirmation"] = True
+    return authorized_args
+
+
+def _apply_authorized_rhinitis_payload(
+    args: Any,
+    authorization: Dict[str, int],
+) -> Optional[Dict[str, Any]]:
+    """Replace all model-authored rhinitis values with current-turn values."""
+    if not isinstance(args, dict) or not authorization:
+        return None
+    authorized_args: Dict[str, Any] = {
+        "record_type": "rhinitis",
+        "data": dict(authorization),
+    }
+    if args.get("_fast_record_requires_confirmation") is True:
+        authorized_args["_fast_record_requires_confirmation"] = True
+    return authorized_args
 
 
 def _prepare_health_record_args_for_validation(
@@ -5299,6 +5480,7 @@ class AgentExecutor:
         self._agent_kernel_tool_retry_count = 0
         self._runtime_run_id: Optional[str] = None
         self._runtime_attempt_id: Optional[str] = None
+        self._runtime_managed = False
 
     def _start_agent_kernel_turn(
         self,
@@ -5477,7 +5659,7 @@ class AgentExecutor:
         if decision is not None and decision.receipt_required:
             receipt = _write_receipt_from_tool_result(
                 tool_name,
-                parsed_args.get("record_type") or parsed_args.get("type"),
+                parsed_args,
                 result,
             )
         bus.tool_result(
@@ -6170,7 +6352,7 @@ class AgentExecutor:
                             if write_completed:
                                 receipt = _write_receipt_from_tool_result(
                                     fn,
-                                    parsed_args.get("record_type") or parsed_args.get("type"),
+                                    parsed_args,
                                     result,
                                 )
                                 if receipt:
@@ -6359,6 +6541,7 @@ class AgentExecutor:
         read_only_tools: bool = False,
         run_id: Optional[str] = None,
         attempt_id: Optional[str] = None,
+        runtime_managed: bool = False,
     ) -> AsyncGenerator[Dict, None]:
         """Run one durable client turn, taking over an ACKed turn after worker loss.
 
@@ -6368,6 +6551,7 @@ class AgentExecutor:
         """
         self._runtime_run_id = run_id
         self._runtime_attempt_id = attempt_id
+        self._runtime_managed = bool(runtime_managed)
         yield self._progress_event("accepted")
         self._current_user_id = user_id
         self._current_turn_user_message = message or ""
@@ -7939,7 +8123,7 @@ class AgentExecutor:
                             if write_completed:
                                 receipt = _write_receipt_from_tool_result(
                                     func_name,
-                                    parsed_tool_args.get("record_type") or parsed_tool_args.get("type"),
+                                    parsed_tool_args,
                                     result_for_record_card,
                                 )
                                 if receipt:
@@ -8817,7 +9001,7 @@ class AgentExecutor:
                     any_write_completed = True
                     receipt = _write_receipt_from_tool_result(
                         tool,
-                        args.get("record_type") or args.get("type"),
+                        args,
                         result,
                     )
                     if receipt and not any(
@@ -11459,6 +11643,51 @@ class AgentExecutor:
             getattr(self, "_current_turn_user_message", ""),
             getattr(self, "_current_turn_recent_messages", []),
         )
+        rhinitis_authorization = _extract_clear_rhinitis_record(
+            getattr(self, "_current_turn_user_message", "")
+        )
+        if (
+            tool_name == "health_record"
+            and isinstance(args, dict)
+            and _fast_record_kind(args) == "rhinitis"
+            and getattr(self, "_current_turn_has_attachment", False)
+        ):
+            logger.warning(
+                "[_execute_tool] blocked rhinitis write on attachment turn user=%s",
+                self._current_user_id,
+            )
+            return (
+                "Error: 带附件的鼻炎症状暂不自动写入，请在不带附件的消息中直接复述"
+                "要记录的本人喷嚏、鼻塞或流鼻涕情况。"
+            )
+        if (
+            tool_name == "health_record"
+            and isinstance(args, dict)
+            and _fast_record_kind(args) == "rhinitis"
+            and rhinitis_authorization is None
+        ):
+            logger.warning(
+                "[_execute_tool] blocked rhinitis write without current-turn authorization "
+                "user=%s msg=%r",
+                self._current_user_id,
+                (getattr(self, "_current_turn_user_message", "") or "")[:80],
+            )
+            return (
+                "Error: 这段话不是明确的本人鼻炎症状记录请求，已阻止自动写入。"
+                "请直接说出当前的喷嚏、鼻塞或流鼻涕情况。"
+            )
+        if (
+            tool_name == "health_record"
+            and isinstance(args, dict)
+            and _fast_record_kind(args) == "rhinitis"
+        ):
+            authorized_args = _apply_authorized_rhinitis_payload(
+                args,
+                rhinitis_authorization,
+            )
+            if authorized_args is None:
+                return "Error: 鼻炎打卡参数无效，已阻止自动写入。"
+            args = authorized_args
         if (
             tool_name == "health_record"
             and isinstance(args, dict)
@@ -11525,8 +11754,7 @@ class AgentExecutor:
         # stores nothing (starter chips are analysis prompts — a write attempt means
         # the answer must not be pre-served; the tap falls through to a live turn).
         if getattr(self, "_read_only_turn", False):
-            from app.services.specialist_tools import is_specialist_tool
-            if tool_name not in _READ_ONLY_TURN_ALLOWED_TOOLS and not is_specialist_tool(tool_name):
+            if not _tool_call_is_read_only(tool_name, args):
                 self._read_only_turn_write_attempted = True
                 logger.warning(
                     "[agent_executor] read-only pregen turn blocked non-read tool=%s user=%s",
@@ -11534,116 +11762,233 @@ class AgentExecutor:
                 )
                 return f"Error: 只读预生成回合不执行写入/变更操作（{tool_name}）"
 
-        gateway_block = self._agent_kernel_preflight_tool(tool_name, args, source=source)
-        if gateway_block:
-            return gateway_block
-
-        base_url = settings.health_api_base_url or "http://localhost:8000/api/v1"
-        headers = {"Authorization": f"Bearer {user_token}"} if user_token else {}
-
         try:
-            if tool_name == "health_query":
-                result = await self._exec_health_query(base_url, headers, args)
-                return annotate_if_implausible(result)
-            elif tool_name == "health_query_batch":
-                return await self._exec_health_query_batch(base_url, headers, args)
-            elif tool_name == "health_record":
-                return await self._exec_health_record(base_url, headers, args)
-            elif tool_name == "health_manage":
-                return await self._exec_health_manage(base_url, headers, args)
-            elif tool_name == "health_analysis":
-                # 深度分析/安全裁决路径: 标记本回合, 让后续合成轮不给思考封顶
-                # (SYNTHESIS_THINKING_BUDGET fail-closed 跳过, 保留完整思考)。
-                self._turn_invoked_deep_analysis = True
-                result = await self._exec_health_analysis(base_url, headers, args)
-                return annotate_if_implausible(result)
-            elif tool_name == "knowledge_search":
-                return await self._exec_knowledge_search(args)
-            elif tool_name == "realtime_search":
-                return await self._exec_realtime_search(args)
-            elif tool_name == "environment_check":
-                return await self._exec_environment(base_url, headers, args)
-            elif tool_name == "supplement_guide":
-                return await self._exec_supplement_guide(base_url, headers, args)
-            elif tool_name == "manage_plan":
-                return await self._exec_manage_plan(base_url, headers, args)
-            elif tool_name == "intervention_cycle":
-                return await self._exec_intervention_cycle(args)
-            elif tool_name == "draft_aigc_media":
-                return await self._exec_draft_aigc_media(args)
-            elif tool_name == "upload_genetic_txt":
-                return await self._exec_upload_genetic_txt(base_url, headers, args)
-            elif tool_name == "query_genetic_profile":
-                return await self._exec_query_genetic_profile(base_url, headers, args)
-            elif tool_name == "upload_medical_exam_text":
-                return await self._exec_upload_medical_exam_text(base_url, headers, args)
-            elif tool_name == "query_lab_indicators":
-                result = await self._exec_query_lab_indicators(base_url, headers, args)
-                return annotate_if_implausible(result)
-            else:
-                # RFC 方向一 Phase A: specialist 分析工具(analyze_recovery 等)
-                from app.services.specialist_tools import is_specialist_tool, run_specialist_tool
-                if is_specialist_tool(tool_name):
-                    # specialist.run 是同步 CPU 计算, 丢线程池避免阻塞事件循环
-                    import asyncio as _aio
-                    return await _aio.to_thread(
-                        run_specialist_tool, self.db, self._current_user_id, tool_name
-                    )
-                return f"Error: 未知工具 {tool_name}"
-        except Exception as e:
-            logger.error(f"工具执行失败 {tool_name}: {e}")
-            return f"Error: {safe_tool_error_message(tool_name, e)}"
-
-    def _agent_kernel_preflight_tool(
-        self,
-        tool_name: str,
-        args: Any,
-        *,
-        source: str = "structured_or_recovered",
-    ) -> Optional[str]:
-        """Run XiaoBa Agent Kernel policy before dispatching an executable tool."""
-        try:
-            from app.services.agent_kernel.tool_gateway import ToolGateway, blocked_tool_result
+            from app.services.agent_kernel.tool_gateway import ToolGateway
 
             snapshot = self._ensure_agent_kernel_turn()
-            request = ToolExecutionRequest(
-                tool_name=tool_name,
-                arguments=args,
-                source=source,
+            gateway_result = await ToolGateway(snapshot).execute(
+                ToolExecutionRequest(
+                    tool_name=tool_name,
+                    arguments=args,
+                    source=source,
+                ),
+                lambda request: self._dispatch_tool_request(request, user_token),
             )
-            decision = ToolGateway(snapshot).preflight(request)
-            self._agent_kernel_last_decision = decision
-            if self._agent_kernel_event_bus is not None:
-                self._agent_kernel_event_bus.capability_decided(
-                    tool_name=decision.normalized_tool_name or tool_name,
-                    action=decision.action,
-                    reason=decision.reason,
-                )
-            if decision.action == "block" and snapshot.policy_mode == "enforce":
-                if decision.reason not in self._agent_kernel_capability_block_reasons:
-                    self._agent_kernel_capability_block_reasons.append(decision.reason)
-                logger.warning(
-                    "[agent_kernel] blocked tool=%s user=%s reason=%s intent=%s/%s/%s",
-                    tool_name,
-                    self._current_user_id,
-                    decision.reason,
-                    snapshot.intent.primary,
-                    snapshot.intent.domain,
-                    snapshot.intent.operation,
-                )
-                return blocked_tool_result(decision)
+            decision = gateway_result.decision
+            if decision is not None:
+                self._agent_kernel_record_capability_decision(tool_name, decision)
+            return str(gateway_result.content)
         except Exception as exc:  # noqa: BLE001
             if "policy_check_failed" not in self._agent_kernel_capability_block_reasons:
                 self._agent_kernel_capability_block_reasons.append("policy_check_failed")
             logger.error(
-                "[agent_kernel] preflight failed tool=%s user=%s error=%s",
+                "[agent_kernel] gateway failed tool=%s user=%s error=%s",
                 tool_name,
                 self._current_user_id,
                 exc,
                 exc_info=True,
             )
             return "Error: 工具调用策略检查失败,已阻止执行。"
-        return None
+
+    async def _dispatch_tool_request(
+        self,
+        request: ToolExecutionRequest,
+        user_token: Optional[str],
+    ) -> str:
+        """Dispatch one policy-approved request through its registered adapter."""
+        runtime_operation = None
+        runtime_coordinator = None
+        runtime_context = None
+
+        def finalize_uncertain_operation() -> None:
+            if (
+                runtime_operation is None
+                or runtime_coordinator is None
+                or runtime_context is None
+            ):
+                return
+            try:
+                runtime_coordinator.finalize_tool_operation(
+                    runtime_context,
+                    operation_id=runtime_operation.operation_id,
+                    status="reconciliation_required",
+                    error_code="write_uncertain",
+                )
+            except Exception as finalize_exc:  # noqa: BLE001
+                logger.error(
+                    "Runtime tool operation finalize failed operation=%s error=%s",
+                    runtime_operation.operation_id,
+                    finalize_exc,
+                )
+
+        try:
+            from app.services.agent_kernel.tool_registry import get_tool_spec
+
+            spec = get_tool_spec(request.tool_name)
+            args = request.arguments if isinstance(request.arguments, dict) else {}
+            if (
+                self._runtime_managed
+                and self._runtime_run_id
+                and self._runtime_attempt_id
+                and self._current_user_id is not None
+                and spec.requires_verified_receipt(args)
+            ):
+                from app.services.agent_runtime import (
+                    AgentRuntimeCoordinator,
+                    RunContext,
+                )
+
+                runtime_coordinator = AgentRuntimeCoordinator(self.db)
+                runtime_context = RunContext(
+                    run_id=self._runtime_run_id,
+                    attempt_id=self._runtime_attempt_id,
+                    user_id=self._current_user_id,
+                    conversation_id=None,
+                    client_turn_id=None,
+                    input_seq=None,
+                    origin="executor",
+                )
+                runtime_operation = runtime_coordinator.claim_tool_operation(
+                    runtime_context,
+                    tool_name=request.tool_name,
+                    effect_class="write",
+                    operation_fingerprint=_runtime_write_operation_fingerprint(
+                        request.tool_name,
+                        args,
+                    ),
+                )
+                if runtime_operation.disposition == "replay":
+                    return json.dumps(
+                        {
+                            "status": "verified",
+                            "success": True,
+                            "operation_id": runtime_operation.operation_id,
+                            "resource_type": runtime_operation.resource_type,
+                            "resource_id": runtime_operation.resource_id,
+                            "replayed": True,
+                        },
+                        ensure_ascii=False,
+                    )
+                if runtime_operation.disposition == "reconcile":
+                    return json.dumps(
+                        {
+                            "status": "uncertain",
+                            "dispatch_started": True,
+                            "error_code": runtime_operation.error_code
+                            or "write_uncertain",
+                        },
+                        ensure_ascii=False,
+                    )
+
+            if spec.adapter_kind == "specialist":
+                from app.services.specialist_tools import run_specialist_tool
+
+                return await asyncio.to_thread(
+                    run_specialist_tool,
+                    self.db,
+                    self._current_user_id,
+                    request.tool_name,
+                )
+            if spec.executor_method is None:
+                raise RuntimeError("tool_adapter_missing")
+            if spec.marks_deep_analysis:
+                self._turn_invoked_deep_analysis = True
+            handler = getattr(self, spec.executor_method)
+            if spec.call_style == "http":
+                base_url = (
+                    settings.health_api_base_url
+                    or "http://localhost:8000/api/v1"
+                )
+                headers = (
+                    {"Authorization": f"Bearer {user_token}"}
+                    if user_token
+                    else {}
+                )
+                result = await handler(base_url, headers, args)
+            else:
+                result = await handler(args)
+            result = (
+                annotate_if_implausible(result)
+                if spec.annotate_implausible
+                else result
+            )
+            if (
+                runtime_operation is not None
+                and runtime_coordinator is not None
+                and runtime_context is not None
+            ):
+                receipt = _write_receipt_from_tool_result(
+                    request.tool_name,
+                    args,
+                    result,
+                )
+                outcome = classify_write_execution(result, receipt=receipt)
+                if outcome.status == "verified" and receipt is not None:
+                    runtime_coordinator.finalize_tool_operation(
+                        runtime_context,
+                        operation_id=runtime_operation.operation_id,
+                        status="succeeded",
+                        resource_type=str(receipt.get("resource_type") or ""),
+                        resource_id=str(receipt.get("resource_id") or ""),
+                    )
+                elif outcome.status in {"rejected", "failed"} and (
+                    outcome.dispatch_started is False
+                ):
+                    runtime_coordinator.finalize_tool_operation(
+                        runtime_context,
+                        operation_id=runtime_operation.operation_id,
+                        status="failed",
+                        error_code="tool_rejected",
+                    )
+                else:
+                    runtime_coordinator.finalize_tool_operation(
+                        runtime_context,
+                        operation_id=runtime_operation.operation_id,
+                        status="reconciliation_required",
+                        error_code=(
+                            "missing_receipt"
+                            if outcome.error_code == "missing_receipt"
+                            else "write_uncertain"
+                        ),
+                    )
+            return result
+        except asyncio.CancelledError:
+            # Cancellation may arrive after an external write crossed its
+            # dispatch boundary. Persist uncertainty before propagating the
+            # cancellation so a replacement worker cannot repeat the write.
+            finalize_uncertain_operation()
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.error("工具执行失败 %s: %s", request.tool_name, exc)
+            finalize_uncertain_operation()
+            return f"Error: {safe_tool_error_message(request.tool_name, exc)}"
+
+    def _agent_kernel_record_capability_decision(
+        self,
+        requested_tool_name: str,
+        decision: CapabilityDecision,
+    ) -> None:
+        self._agent_kernel_last_decision = decision
+        if self._agent_kernel_event_bus is not None:
+            self._agent_kernel_event_bus.capability_decided(
+                tool_name=decision.normalized_tool_name or requested_tool_name,
+                action=decision.action,
+                reason=decision.reason,
+            )
+        snapshot = self._ensure_agent_kernel_turn()
+        if decision.action != "block" or snapshot.policy_mode != "enforce":
+            return
+        if decision.reason not in self._agent_kernel_capability_block_reasons:
+            self._agent_kernel_capability_block_reasons.append(decision.reason)
+        logger.warning(
+            "[agent_kernel] blocked tool=%s user=%s reason=%s intent=%s/%s/%s",
+            requested_tool_name,
+            self._current_user_id,
+            decision.reason,
+            snapshot.intent.primary,
+            snapshot.intent.domain,
+            snapshot.intent.operation,
+        )
 
     async def _exec_knowledge_search(self, args: dict) -> str:
         """检索两路知识库, fail-honest, 不静默返回空:
@@ -12753,6 +13098,7 @@ class AgentExecutor:
             "goal": "/goals/me",
             "medical_exam": f"/medical-exams/me/reports?limit={limit}",
             "event": "/episodes/me/life-events?days=30",
+            "rhinitis": "/checkin/me/history?days=30",
         }
         record_paths = {
             "diet": "/diet/records/{id}",
@@ -12775,6 +13121,7 @@ class AgentExecutor:
             # event 只开 list/delete(undo 通路);update 不开——occurred_at 由
             # 确定性代码折算,改动走删除后重记(registry update 格 gap 挂账)。
             "event": "/episodes/life-event/{id}",
+            "rhinitis": "/checkin/{id}/rhinitis/latest",
         }
         update_supported = {
             "diet", "water", "weight", "waist", "blood_pressure",
@@ -12803,7 +13150,9 @@ class AgentExecutor:
             payload.setdefault("record_id", resolved_record_id)
             payload.setdefault("id", resolved_record_id)
             normalized_record_type = str(record_type or "").strip().lower()
-            resource_type = _RESOURCE_TYPE_BY_RECORD_TYPE.get(normalized_record_type)
+            resource_type = _HEALTH_MANAGE_RESOURCE_TYPE_BY_RECORD_TYPE.get(
+                normalized_record_type
+            )
             if resource_type:
                 payload.setdefault("resource_type", resource_type)
             self._invalidate_twin_after_mutation()
@@ -13227,6 +13576,21 @@ class AgentExecutor:
             .first()
         )
 
+    @staticmethod
+    def _intervention_write_receipt(cycle, action: str, message: str) -> str:
+        """Return a verifiable receipt while retaining the user-facing copy."""
+        return json.dumps(
+            {
+                "id": cycle.id,
+                "resource_type": "intervention_cycle",
+                "operation_id": f"intervention_cycle:{cycle.id}:{action}",
+                "status": "verified",
+                "success": True,
+                "message": message,
+            },
+            ensure_ascii=False,
+        )
+
     def _intervention_update(self, user_id: int, args: dict) -> str:
         """调整 active cycle 参数; 不修改历史基线。"""
         from app.services import intervention_cycle_service as ics
@@ -13263,10 +13627,11 @@ class AgentExecutor:
             raise
 
         end = cycle.planned_end_date.isoformat() if cycle.planned_end_date else "未设置"
-        return (
+        message = (
             f"已调整干预周期 #{cycle.id}: 计划结束日 {end}, "
             f"目标 {len(cycle.target_metrics or [])} 项, 停止条件 {len(cycle.stop_conditions or [])} 条。"
         )
+        return self._intervention_write_receipt(cycle, "update", message)
 
     def _intervention_cancel(self, user_id: int, args: dict) -> str:
         """取消 active cycle; 保留历史记录。"""
@@ -13285,7 +13650,8 @@ class AgentExecutor:
             raise
         reason = str(args.get("reason") or "").strip()
         reason_text = f" 原因: {reason}" if reason else ""
-        return f"已取消干预周期 #{cycle.id}, 历史记录已保留。{reason_text}"
+        message = f"已取消干预周期 #{cycle.id}, 历史记录已保留。{reason_text}"
+        return self._intervention_write_receipt(cycle, "cancel", message)
 
     def _intervention_status(self, user_id: int) -> str:
         """组织当前 active 周期的人话进展摘要 (无周期则友好提示)。"""
@@ -13349,10 +13715,11 @@ class AgentExecutor:
 
         existing = ics.get_active_cycle(self.db, user_id)
         if existing is not None:
-            return (
+            message = (
                 "你已经有一个进行中的干预周期了 (同一时间只跟踪一个), 没有重复开。"
                 "想看进展用 status; 想换目标可以等当前周期结束。"
             )
+            return self._intervention_write_receipt(existing, "start", message)
 
         try:
             twin = build_twin(self.db, user_id, use_cache=False)
@@ -13366,21 +13733,23 @@ class AgentExecutor:
 
         n = len(cycle.outcomes)
         if n == 0:
-            return (
+            message = (
                 f"已开启干预周期 (周期 {days} 天), 但暂时没有可锁定的异常代谢指标作为目标。"
                 "建议先补一次化验 (血脂/血糖/肝功/尿酸), 之后复查时就能验证效果了。"
             )
+            return self._intervention_write_receipt(cycle, "start", message)
         from app.biomarkers import get_definition
         names = [
             (get_definition(om.metric_code).display if get_definition(om.metric_code) else om.metric_code)
             for om in cycle.outcomes
         ]
-        return (
+        message = (
             f"已开启 N-of-1 干预周期 (周期 {days} 天), 锁定基线快照。"
             f"将跟踪 {n} 项结局指标: {', '.join(names)}。"
             "过段时间复查化验后, 我会用你自己的数据告诉你有没有改善。"
             "(非医疗诊断, 重大健康调整请结合医生意见。)"
         )
+        return self._intervention_write_receipt(cycle, "start", message)
 
     async def _exec_upload_genetic_txt(
         self, base: str, headers: dict, args: dict

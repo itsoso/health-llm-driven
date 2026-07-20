@@ -8,7 +8,7 @@ import {
   View,
 } from 'react-native';
 import { Image } from 'expo-image';
-import * as WebBrowser from 'expo-web-browser';
+import { VideoView, useVideoPlayer } from 'expo-video';
 import { Ionicons } from '@expo/vector-icons';
 
 import api, { BASE_URL } from '../../../services/api';
@@ -97,8 +97,6 @@ export function AIGCMediaJobCardView(initialData: AIGCMediaJobCardData) {
   const [data, setData] = useState<AIGCMediaJobCardData>(initialData);
   const [refreshing, setRefreshing] = useState(false);
   const [cancelling, setCancelling] = useState(false);
-  const [openingResult, setOpeningResult] = useState(false);
-  const [openError, setOpenError] = useState<string | null>(null);
   const mounted = useRef(true);
 
   useEffect(() => {
@@ -141,6 +139,11 @@ export function AIGCMediaJobCardView(initialData: AIGCMediaJobCardData) {
   const mediaType = String(data.result?.media_type || '').toLowerCase();
   const isImage = mediaType.startsWith('image/');
   const isVideo = mediaType.startsWith('video/');
+  const videoPlayer = useVideoPlayer(isVideo ? resultUrl : null, (player) => {
+    player.loop = false;
+    player.staysActiveInBackground = false;
+    player.showNowPlayingNotification = false;
+  });
   const canCancel = ACTIVE_STATUSES.has(status) && !cancelling;
   const detail = useMemo(() => {
     if (status === 'queued') return '小巴已提交任务，正在等待百炼处理。';
@@ -165,20 +168,6 @@ export function AIGCMediaJobCardView(initialData: AIGCMediaJobCardData) {
       if (mounted.current) setCancelling(false);
     }
   };
-
-  const openVideo = useCallback(async () => {
-    if (!resultUrl || openingResult) return;
-    setOpeningResult(true);
-    setOpenError(null);
-    try {
-      await WebBrowser.openBrowserAsync(resultUrl);
-    } catch {
-      console.warn('[aigc] Unable to open generated video');
-      if (mounted.current) setOpenError('短视频暂时无法打开，请重试。');
-    } finally {
-      if (mounted.current) setOpeningResult(false);
-    }
-  }, [openingResult, resultUrl]);
 
   return (
     <CardShell
@@ -234,20 +223,17 @@ export function AIGCMediaJobCardView(initialData: AIGCMediaJobCardData) {
       ) : null}
 
       {resultUrl && isVideo ? (
-        <>
-          <Pressable
-            style={({ pressed }) => [styles.videoOpen, pressed && !openingResult && { opacity: 0.82 }]}
-            onPress={() => { void openVideo(); }}
-            disabled={openingResult}
-            accessibilityRole="button"
-            accessibilityLabel="打开生成的短视频"
-          >
-            {openingResult ? <ActivityIndicator size="small" color={C.green600} /> : <Ionicons name="play-circle" size={22} color={C.green600} />}
-            <Text maxFontSizeMultiplier={1.2} style={styles.videoOpenText}>{openingResult ? '正在打开短视频' : '打开短视频'}</Text>
-            <Ionicons name="open-outline" size={15} color={C.ink3} />
-          </Pressable>
-          {openError ? <Text maxFontSizeMultiplier={1.2} style={styles.openError}>{openError}</Text> : null}
-        </>
+        <View style={styles.videoFrame}>
+          <VideoView
+            testID="aigc-video-player"
+            player={videoPlayer}
+            style={styles.video}
+            nativeControls
+            contentFit="contain"
+            fullscreenOptions={{ enable: true }}
+            accessibilityLabel="小巴生成的短视频"
+          />
+        </View>
       ) : null}
     </CardShell>
   );
@@ -279,7 +265,6 @@ const styles = StyleSheet.create({
   progressFill: { height: '100%', borderRadius: 3, backgroundColor: C.green500 },
   progressText: { width: 32, textAlign: 'right', fontFamily: revaFonts.sans, fontSize: 11, fontWeight: '700', color: C.ink3 } as TextStyle,
   image: { width: '100%', aspectRatio: 1, borderRadius: revaRadii.md, marginTop: 12, backgroundColor: C.paper2 },
-  videoOpen: { marginTop: 12, minHeight: 48, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: revaRadii.md, backgroundColor: C.green50 },
-  videoOpenText: { flex: 1, fontFamily: revaFonts.sans, fontSize: 13, fontWeight: '800', color: C.green600 } as TextStyle,
-  openError: { marginTop: 8, fontFamily: revaFonts.sans, fontSize: 12, lineHeight: 18, color: '#C84B3C' } as TextStyle,
+  videoFrame: { width: '100%', aspectRatio: 16 / 9, marginTop: 12, borderRadius: revaRadii.md, overflow: 'hidden', backgroundColor: C.ink1 },
+  video: { flex: 1 },
 });

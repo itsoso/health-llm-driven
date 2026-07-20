@@ -68,6 +68,9 @@ QUESTION_SIGNALS = (
     "高不高",
     "正常吗",
     "有问题吗",
+    "能否",
+    "可否",
+    "可不可以",
     "怎么样",
 )
 WRITE_ACTIONS = (
@@ -269,6 +272,7 @@ SYMPTOM_TERMS = (
     "鼻塞",
     "流鼻涕",
     "打喷嚏",
+    "喷嚏",
     "皮疹",
     "发热",
     "发烧",
@@ -410,6 +414,11 @@ def classify_agent_utterance(
     if has_read or (
         _is_data_question(normalized, domain, has_question)
         and not _looks_like_observation_statement(normalized, domain, has_question)
+        and not (
+            domain == "symptom"
+            and not has_question
+            and _has_explicit_symptom_observation(normalized, domain, has_question)
+        )
         and (not has_write or has_question)
     ):
         operation = "list" if has_read and not has_question else "ask"
@@ -570,21 +579,34 @@ def _mutation_operation(text: str) -> Optional[str]:
     return None
 
 
+def _all_phrase_positions(text: str, phrase: str) -> list[int]:
+    positions: list[int] = []
+    start = text.find(phrase)
+    while start >= 0:
+        positions.append(start)
+        start = text.find(phrase, start + len(phrase))
+    return positions
+
+
 def _has_negated_mutation(text: str, operation: Optional[str]) -> bool:
     if not operation or _has_any(text, MUTATION_NEGATION_EXCEPTIONS):
         return False
     action_positions = [
-        text.find(phrase.lower())
+        position
         for phrase in MUTATE_ACTIONS[operation]
-        if text.find(phrase.lower()) >= 0
+        for position in _all_phrase_positions(text, phrase.lower())
     ]
     if not action_positions:
         return False
-    first_action = min(action_positions)
-    return any(
-        0 <= first_action - text.find(negation) <= 12
+    negation_positions = [
+        position
         for negation in MUTATION_NEGATIONS
-        if text.find(negation) >= 0
+        for position in _all_phrase_positions(text, negation)
+    ]
+    return any(
+        0 <= action_position - negation_position <= 12
+        for action_position in action_positions
+        for negation_position in negation_positions
     )
 
 

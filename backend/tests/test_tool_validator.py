@@ -554,7 +554,7 @@ def test_sleep_time_only_bedtime_normalized_to_record_date():
 def test_sleep_overnight_time_only_puts_bedtime_previous_day():
     from app.services.llm.tool_validator import validate_health_record
     data = {"record_date": "2026-07-13", "bedtime": "23:00", "wake_time": "07:00"}
-    validate_health_record("sleep", data)
+    validate_health_record("sleep", data, reference_now=datetime(2026, 7, 13, 12))
     assert data["bedtime"] == "2026-07-12T23:00:00+08:00"  # 跨夜回退一天
     assert data["wake_time"] == "2026-07-13T07:00:00+08:00"
 
@@ -579,6 +579,8 @@ def test_unverified_write_message_names_partial_success():
     )
     assert _unverified_write_message(None) == _UNVERIFIED_WRITE_USER_MESSAGE
     assert _unverified_write_message([]) == _UNVERIFIED_WRITE_USER_MESSAGE
+    assert "可能已提交但尚未拿到回执" in _UNVERIFIED_WRITE_USER_MESSAGE
+    assert "没有自动重试" in _UNVERIFIED_WRITE_USER_MESSAGE
     msg = _unverified_write_message([
         {"resource_type": "exercise_record", "resource_id": 262},
     ])

@@ -24,9 +24,81 @@ def test_app_store_demo_account_runs_in_an_isolated_ci_process():
     assert by_label["app-store-demo-account"]["paths"] == (
         "tests/test_app_store_demo_account.py"
     )
-    assert "--ignore=tests/test_app_store_demo_account.py" in by_label["a-b-rest"][
+    assert "a-b-rest" not in by_label
+    assert "a-rest" not in by_label
+    assert by_label["a-early"]["paths"] == "tests"
+    assert by_label["a-late"]["paths"] == "tests"
+    assert by_label["b"]["paths"] == "tests/test_b*.py"
+    for label in ("a-early", "a-late"):
+        assert "--ignore=tests/test_app_store_demo_account.py" in by_label[label][
+            "extra_args"
+        ]
+        assert "--ignore-glob='tests/test_agent_*.py'" in by_label[label][
+            "extra_args"
+        ]
+    assert "--ignore-glob='tests/test_a[i-z]*.py'" in by_label["a-early"][
         "extra_args"
     ]
+    assert "--ignore-glob='tests/test_a[_a-h]*.py'" in by_label["a-late"][
+        "extra_args"
+    ]
+
+
+def test_v_z_and_service_tests_run_in_bounded_ci_processes():
+    workflow = yaml.safe_load(
+        (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    )
+    shards = workflow["jobs"]["backend-test-shards"]["strategy"]["matrix"]["include"]
+    by_label = {shard["label"]: shard for shard in shards}
+
+    assert "v-z" not in by_label
+    assert by_label["voice-watch"]["paths"] == "tests/test_v*.py tests/test_wa*.py"
+    assert by_label["wearable-reports"]["paths"] == (
+        "tests/test_wearable*.py tests/test_weather*.py tests/test_wechat*.py "
+        "tests/test_weekly*.py tests/test_weight.py tests/test_womens_health.py"
+    )
+    assert by_label["workday-workout"]["paths"] == (
+        "tests/test_workday*.py tests/test_workout*.py"
+    )
+    assert by_label["write-z"]["paths"] == "tests/test_write*.py tests/test_z*.py"
+    assert by_label["services"]["paths"] == "tests/services/"
+
+
+def test_agent_a_h_tests_run_in_bounded_ci_processes():
+    workflow = yaml.safe_load(
+        (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    )
+    shards = workflow["jobs"]["backend-test-shards"]["strategy"]["matrix"]["include"]
+    by_label = {shard["label"]: shard for shard in shards}
+
+    assert "agent-a-h" not in by_label
+    assert by_label["agent-a-d"]["paths"] == "tests/test_agent_[a-d]*.py"
+    assert by_label["agent-e-core"]["paths"] == (
+        "tests/test_agent_eval.py tests/test_agent_event_stream.py "
+        "tests/test_agent_evidence_card_memo.py tests/test_agent_explicit_cache_flag.py"
+    )
+    assert by_label["agent-executor-a-h"]["paths"] == (
+        "tests/test_agent_executor_[a-h]*.py"
+    )
+    assert by_label["agent-executor-i-z"]["paths"] == (
+        "tests/test_agent_executor_[i-z]*.py"
+    )
+    assert by_label["agent-f-h"]["paths"] == "tests/test_agent_[f-h]*.py"
+
+
+def test_observed_slow_alphabetic_families_run_in_single_letter_shards():
+    workflow = yaml.safe_load(
+        (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    )
+    shards = workflow["jobs"]["backend-test-shards"]["strategy"]["matrix"]["include"]
+    by_label = {shard["label"]: shard for shard in shards}
+
+    assert "c-d" not in by_label
+    assert "n-o" not in by_label
+    assert by_label["c"]["paths"] == "tests/test_c*.py"
+    assert by_label["d"]["paths"] == "tests/test_d*.py"
+    assert by_label["n"]["paths"] == "tests/test_n*.py"
+    assert by_label["o"]["paths"] == "tests/test_o*.py"
 
 
 def test_build_pytest_command_keeps_the_shard_in_one_process():

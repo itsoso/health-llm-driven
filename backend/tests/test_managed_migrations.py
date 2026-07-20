@@ -137,6 +137,91 @@ def test_apply_managed_migrations_runs_matching_dialect_once(tmp_path: Path):
     assert count == 1
 
 
+def test_agent_runtime_resilience_migration_extends_existing_ledger_once(
+    tmp_path: Path,
+):
+    migrations_dir = Path(__file__).resolve().parents[1] / "migrations" / "managed"
+    runtime_base = migrations_dir / "20260719_120000_create_agent_runtime.sqlite.sql"
+    resilience = migrations_dir / "20260719_180000_agent_runtime_resilience.sqlite.sql"
+    rollout = migrations_dir / "20260720_120000_agent_runtime_rollout.sqlite.sql"
+    rollout_postgres = (
+        migrations_dir / "20260720_120000_agent_runtime_rollout.postgresql.sql"
+    )
+    resilience_postgres = (
+        migrations_dir
+        / "20260719_180000_agent_runtime_resilience.postgresql.sql"
+    )
+    assert runtime_base.exists()
+    assert resilience.exists()
+    assert rollout.exists()
+    assert rollout_postgres.exists()
+    assert "ADD COLUMN IF NOT EXISTS cancel_requested_at" in (
+        resilience_postgres.read_text(encoding="utf-8")
+    )
+    assert "ix_agent_run_attempts_running_lease" in (
+        resilience_postgres.read_text(encoding="utf-8")
+    )
+    assert "ON CONFLICT (id) DO NOTHING" in rollout_postgres.read_text(
+        encoding="utf-8"
+    )
+
+    isolated = tmp_path / "managed"
+    isolated.mkdir()
+    for migration in (runtime_base, resilience, rollout):
+        (isolated / migration.name).write_text(
+            migration.read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE users (id INTEGER PRIMARY KEY)"))
+        conn.execute(text("CREATE TABLE agent_conversations (id INTEGER PRIMARY KEY)"))
+        conn.execute(text("CREATE TABLE agent_messages (id INTEGER PRIMARY KEY)"))
+
+    first = apply_managed_migrations(engine, isolated)
+    second = apply_managed_migrations(engine, isolated)
+
+    assert [migration.id for migration in first.applied] == [
+        "20260719_120000_create_agent_runtime",
+        "20260719_180000_agent_runtime_resilience",
+        "20260720_120000_agent_runtime_rollout",
+    ]
+    assert second.applied == []
+    columns = {
+        column["name"] for column in inspect(engine).get_columns("agent_runs")
+    }
+    assert "cancel_requested_at" in columns
+    indexes = {
+        index["name"]
+        for index in inspect(engine).get_indexes("agent_run_attempts")
+    }
+    assert "ix_agent_run_attempts_running_lease" in indexes
+    run_indexes = {
+        index["name"] for index in inspect(engine).get_indexes("agent_runs")
+    }
+    tool_indexes = {
+        index["name"]
+        for index in inspect(engine).get_indexes("agent_tool_operations")
+    }
+    assert "ix_agent_runs_finished_status" in run_indexes
+    assert "ix_agent_tool_operations_created_status" in tool_indexes
+    tables = set(inspect(engine).get_table_names())
+    assert "agent_runtime_rollout_state" in tables
+    assert "agent_runtime_rollout_events" in tables
+    with engine.connect() as conn:
+        state = conn.execute(
+            text("SELECT id, status, version FROM agent_runtime_rollout_state")
+        ).one()
+    assert state == (1, "active", 1)
+    state_columns = {
+        column["name"]
+        for column in inspect(engine).get_columns("agent_runtime_rollout_state")
+    }
+    assert "reconciliation_generation" in state_columns
+    assert "reconciliation_acknowledged_generation" in state_columns
+
+
 def test_tokenplan_cost_migration_adds_rmb_columns(tmp_path: Path):
     migrations_dir = Path(__file__).resolve().parents[1] / "migrations" / "managed"
     migration = migrations_dir / "20260716_120000_add_llm_usage_tokenplan_cost.sqlite.sql"
