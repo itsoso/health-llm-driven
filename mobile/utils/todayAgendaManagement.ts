@@ -2,6 +2,7 @@ import type { AgendaItem } from '../services/agenda';
 
 export interface TodayAgendaGroups {
   now: AgendaItem[];
+  review: AgendaItem[];
   later: AgendaItem[];
   handled: AgendaItem[];
 }
@@ -55,9 +56,9 @@ export function groupTodayAgendaItems(
 ): TodayAgendaGroups {
   const now = options.now ?? new Date();
   const snoozedKeys = options.snoozedKeys ?? new Set<string>();
-  const groups: TodayAgendaGroups = { now: [], later: [], handled: [] };
+  const groups: TodayAgendaGroups = { now: [], review: [], later: [], handled: [] };
 
-  for (const item of items) {
+  for (const item of deduplicateAgendaItems(items)) {
     if (HANDLED_STATUSES.has(item.status)) {
       groups.handled.push(item);
       continue;
@@ -66,13 +67,45 @@ export function groupTodayAgendaItems(
       groups.later.push(item);
       continue;
     }
-    groups.now.push(item);
+    if (canActOnAgendaItem(item)) {
+      groups.now.push(item);
+      continue;
+    }
+    groups.review.push(item);
   }
 
   groups.now.sort(compareAgendaItems);
+  groups.review.sort(compareAgendaItems);
   groups.later.sort(compareAgendaItems);
   groups.handled.sort(compareAgendaItems);
   return groups;
+}
+
+export function canActOnAgendaItem(item: AgendaItem): boolean {
+  if (HANDLED_STATUSES.has(item.status)) return false;
+  return item.can_default_complete === true
+    || (item.source.object_type === 'health_protocol' && item.status === 'pending')
+    || (item.source.object_type === 'daily_plan_action' && item.status === 'pending');
+}
+
+function deduplicateAgendaItems(items: AgendaItem[]): AgendaItem[] {
+  const unique = new Map<string, AgendaItem>();
+  for (const item of items) {
+    const key = agendaItemKey(item);
+    const current = unique.get(key);
+    if (!current || compareDuplicateCandidates(item, current) > 0) {
+      unique.set(key, item);
+    }
+  }
+  return [...unique.values()];
+}
+
+function compareDuplicateCandidates(a: AgendaItem, b: AgendaItem): number {
+  const handledDelta = Number(HANDLED_STATUSES.has(a.status)) - Number(HANDLED_STATUSES.has(b.status));
+  if (handledDelta !== 0) return handledDelta;
+  const actionableDelta = Number(canActOnAgendaItem(a)) - Number(canActOnAgendaItem(b));
+  if (actionableDelta !== 0) return actionableDelta;
+  return (a.priority ?? 0) - (b.priority ?? 0);
 }
 
 export function resolveAgendaBackAction(canGoBack: boolean): AgendaBackAction {

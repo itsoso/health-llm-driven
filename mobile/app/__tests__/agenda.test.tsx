@@ -10,7 +10,9 @@ const mockNavigate = jest.fn();
 const mockMutate = jest.fn();
 const mockPushChatWithContext = jest.fn();
 const mockToast = jest.fn();
+const mockShowUndoable = jest.fn();
 let mockCanGoBack = true;
+let mockAgendaData: AgendaToday;
 let mockCompleteState: {
   isPending: boolean;
   variables?: { source: { object_type: string; object_id: number | string; slot?: string } };
@@ -18,7 +20,7 @@ let mockCompleteState: {
 
 const agendaData: AgendaToday = {
   agenda_date: '2026-07-20',
-  count: 3,
+  count: 4,
   items: [
     {
       type: 'medication',
@@ -27,6 +29,14 @@ const agendaData: AgendaToday = {
       priority: 90,
       time_window: 'morning',
       source: { object_type: 'health_protocol', object_id: 2 },
+    },
+    {
+      type: 'advisory',
+      title: '优质蛋白有助修复',
+      status: 'active',
+      priority: 80,
+      time_window: 'anytime',
+      source: { object_type: 'health_problem', object_id: 8 },
     },
     {
       type: 'training',
@@ -57,7 +67,7 @@ jest.mock('expo-router', () => ({
 
 jest.mock('../../hooks/useAgenda', () => ({
   useAgendaToday: () => ({
-    data: agendaData,
+    data: mockAgendaData,
     isLoading: false,
     isError: false,
     isRefetching: false,
@@ -73,7 +83,7 @@ jest.mock('../../hooks/useAgenda', () => ({
 }));
 
 jest.mock('../../hooks/useToast', () => ({
-  useToast: () => ({ show: mockToast, showUndoable: jest.fn() }),
+  useToast: () => ({ show: mockToast, showUndoable: mockShowUndoable }),
 }));
 
 jest.mock('../../utils/agentContext', () => ({
@@ -93,6 +103,7 @@ describe('AgendaScreen', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockCanGoBack = true;
+    mockAgendaData = agendaData;
     mockCompleteState = { isPending: false };
     jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions').mockImplementation(() => {});
   });
@@ -104,10 +115,12 @@ describe('AgendaScreen', () => {
 
     expect(getByText('今日行动')).toBeTruthy();
     expect(getByText('现在做')).toBeTruthy();
+    expect(getByText('需要确认')).toBeTruthy();
     expect(getByText('稍后')).toBeTruthy();
     expect(getByText('已处理')).toBeTruthy();
     expect(getByText('晨间用药')).toBeTruthy();
     expect(getByText('晚饭后步行 10 分钟')).toBeTruthy();
+    expect(getByText('优质蛋白有助修复')).toBeTruthy();
     expect(queryByText('[movement] 晚饭后步行 10 分钟')).toBeNull();
     expect(queryByText('智能优先处理')).toBeNull();
     expect(queryByText('7 天健康运行时')).toBeNull();
@@ -153,7 +166,25 @@ describe('AgendaScreen', () => {
     fireEvent.press(getByLabelText('管理 晨间用药'));
 
     expect(mockMutate).not.toHaveBeenCalled();
+    expect(mockShowUndoable).toHaveBeenCalledWith(
+      '已放到稍后',
+      expect.any(Function),
+    );
     expect(getAllByText('稍后').length).toBeGreaterThan(0);
+  });
+
+  it('hides empty groups instead of filling the screen with empty headings', () => {
+    mockAgendaData = {
+      agenda_date: '2026-07-20',
+      count: 1,
+      items: [agendaData.items[0]],
+    };
+    const { getByText, queryByText } = render(<AgendaScreen />);
+
+    expect(getByText('现在做')).toBeTruthy();
+    expect(queryByText('需要确认')).toBeNull();
+    expect(queryByText('稍后')).toBeNull();
+    expect(queryByText('已处理')).toBeNull();
   });
 
   it('records an explicit skip reason instead of silently deleting the item', () => {

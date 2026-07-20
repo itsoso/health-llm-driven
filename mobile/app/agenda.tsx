@@ -25,13 +25,13 @@ import { useRouter } from 'expo-router';
 import { useAgendaToday, useCompleteAgendaItem } from '../hooks/useAgenda';
 import { useToast } from '../hooks/useToast';
 import {
-  isProtocolActionable,
   type AgendaItem,
   type AgendaSkipReason,
 } from '../services/agenda';
 import { agendaItemPresentation } from '../utils/agendaPresentation';
 import {
   agendaItemKey,
+  canActOnAgendaItem,
   cleanAgendaTitle,
   groupTodayAgendaItems,
   resolveAgendaBackAction,
@@ -46,7 +46,7 @@ import {
   revaSemantic,
 } from '../constants/revaTheme';
 
-type SectionKey = 'now' | 'later' | 'handled';
+type SectionKey = 'now' | 'review' | 'later' | 'handled';
 
 interface AgendaSection {
   key: SectionKey;
@@ -56,7 +56,7 @@ interface AgendaSection {
   data: AgendaItem[];
 }
 
-const ACTION_MENU_OPTIONS = ['稍后处理', '跳过', '调整计划', '问小巴', '取消'];
+const ACTION_MENU_OPTIONS = ['移到稍后', '跳过', '调整计划', '问小巴', '取消'];
 
 export default function AgendaScreen() {
   const router = useRouter();
@@ -71,31 +71,41 @@ export default function AgendaScreen() {
     [data?.items, snoozedKeys],
   );
 
-  const sections = useMemo<AgendaSection[]>(() => [
-    {
-      key: 'now',
-      title: '现在做',
-      hint: groups.now.length > 0 ? '按优先级排列' : '当前没有紧急事项',
-      count: groups.now.length,
-      data: groups.now,
-    },
-    {
-      key: 'later',
-      title: '稍后',
-      hint: groups.later.length > 0 ? '到时间再处理' : '暂无后续事项',
-      count: groups.later.length,
-      data: groups.later,
-    },
-    {
-      key: 'handled',
-      title: '已处理',
-      hint: groups.handled.length > 0 ? (handledExpanded ? '点击收起' : '点击查看') : '今天还没有完成记录',
-      count: groups.handled.length,
-      data: handledExpanded ? groups.handled : [],
-    },
-  ], [groups, handledExpanded]);
+  const sections = useMemo<AgendaSection[]>(() => {
+    const candidates: AgendaSection[] = [
+      {
+        key: 'now',
+        title: '现在做',
+        hint: groups.now.length > 0 ? '按优先级排列' : '当前没有紧急事项',
+        count: groups.now.length,
+        data: groups.now,
+      },
+      {
+        key: 'review',
+        title: '需要确认',
+        hint: '先问清，再决定怎么处理',
+        count: groups.review.length,
+        data: groups.review,
+      },
+      {
+        key: 'later',
+        title: '稍后',
+        hint: groups.later.length > 0 ? '到时间再处理' : '暂无后续事项',
+        count: groups.later.length,
+        data: groups.later,
+      },
+      {
+        key: 'handled',
+        title: '已处理',
+        hint: groups.handled.length > 0 ? (handledExpanded ? '点击收起' : '点击查看') : '今天还没有完成记录',
+        count: groups.handled.length,
+        data: handledExpanded ? groups.handled : [],
+      },
+    ];
+    return candidates.filter(section => section.count > 0);
+  }, [groups, handledExpanded]);
 
-  const pendingCount = groups.now.length + groups.later.length;
+  const pendingCount = groups.now.length + groups.review.length + groups.later.length;
 
   const handleBack = useCallback(() => {
     const action = resolveAgendaBackAction(router.canGoBack());
@@ -135,7 +145,13 @@ export default function AgendaScreen() {
       return next;
     });
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-    toast.show('已移到稍后，未记录为完成', 'info');
+    toast.showUndoable('已放到稍后', () => {
+      setSnoozedKeys(current => {
+        const next = new Set(current);
+        next.delete(key);
+        return next;
+      });
+    });
   }, [toast]);
 
   const askXiaoba = useCallback((item: AgendaItem, intent: 'adjust' | 'ask') => {
@@ -218,7 +234,7 @@ export default function AgendaScreen() {
       cleanAgendaTitle(item.title),
       undefined,
       [
-        { text: '稍后处理', onPress: () => snooze(item) },
+        { text: '移到稍后', onPress: () => snooze(item) },
         { text: '跳过', onPress: () => chooseSkipReason(item) },
         { text: '调整计划', onPress: () => askXiaoba(item, 'adjust') },
         { text: '问小巴', onPress: () => askXiaoba(item, 'ask') },
@@ -345,11 +361,7 @@ function AgendaRow({
 }) {
   const title = cleanAgendaTitle(item.title);
   const presentation = agendaItemPresentation(item);
-  const canComplete = !handled && (
-    item.can_default_complete === true
-    || isProtocolActionable(item)
-    || (item.source.object_type === 'daily_plan_action' && item.status === 'pending')
-  );
+  const canComplete = !handled && canActOnAgendaItem(item);
   const tint = item.status === 'overdue'
     ? revaSemantic.risk.fg
     : handled
