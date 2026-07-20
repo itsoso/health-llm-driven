@@ -4,8 +4,8 @@
 |---|---|
 | slug | `mobile-today-actions-management` |
 | 创建日期 | 2026-07-20 |
-| 当前阶段 | S5 实现验证（反馈环 3） |
-| 状态 | in_progress |
+| 当前阶段 | S8 上线验证（反馈环 3） |
+| 状态 | shipped |
 | 负责 | Codex |
 | 反馈环 | Mobile Jest / iOS Simulator / production OTA |
 
@@ -93,6 +93,7 @@
 
 - 设计与计划：`42e67ae9a`。
 - 实现：`63db2494f`。
+- 反馈环 3：`5281eb82f`、`a542f94b1`、`e135100d6`、`72d4fa3ae`。
 - `main` 已推送到 `origin/main`；未纳入并行会话的无关工作树改动。
 
 ## G5 · 部署健康闸
@@ -175,13 +176,13 @@
 - [x] 独立代码审查无高/中风险；补齐 VoiceOver 展开状态、Android 安全菜单、收起操作和 supplement 来源回归测试。
 - [x] 首轮最新主干 CI 暴露 Watch 提醒测试在北京时间 23:50 后必然跨日的假红；固定测试时钟后，目标用例 `2 passed`、完整 Watch 摘要 `18 passed`，生产提醒逻辑未改。
 - [x] 同轮发现睡眠跨夜测试的固定日期会随时间被日期守门正确纠偏；注入固定参考时间后，完整 tool validator `84 passed`，生产日期校验逻辑未改。
-- [x] design token、doc drift、diff check 通过；最新主干 CI 待提交后确认。
-- [ ] production OTA 发布并回读 EAS 标识。
+- [x] design token、doc drift、diff check 通过；最新主干 CI `41/41`，聚合结论为 `success`。
+- [x] production OTA 已从干净的 `72d4fa3ae` 发布并回读：runtime `1.3.2`，update group `05175fc9-8a39-4fb2-ae39-91ba0681228f`，iOS update `019f8054-7665-7a96-bcda-568cafd3822f`。
 - [ ] 用户真机应用更新后完成最终触控验收。
 
 ### Gate 裁决
 
-- G3 测试：本地 PASS；最新主干 CI 待提交后确认。
+- G3 测试：PASS（专项 Jest `19 passed`、TypeScript、ESLint、design token、doc drift、diff check；Watch 摘要 `18 passed`、tool validator `84 passed`；最新主干 CI `41/41`）。
 - G4 评审：PASS（客户端权限收紧，不新增医疗写入路径）。
-- G5 部署：待执行。
-- G6 上线验证：待执行。
+- G5 部署：PASS（production / iOS / runtime `1.3.2`，EAS 标识已回读验证）。
+- G6 上线验证：PASS（技术上线）；真机触控反馈继续进入下一反馈环。
