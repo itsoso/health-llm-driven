@@ -102,6 +102,27 @@ def test_negated_record_command_is_not_write_intent():
     assert intent.primary != "write"
 
 
+def test_repeated_negation_uses_the_one_nearest_to_mutation():
+    intent = classify_agent_utterance(
+        "这是内部只读运行验证。请只回复一句简短确认，"
+        "不要调用工具，也不要记录或修改任何数据。"
+    )
+
+    assert intent.primary == "chat"
+    assert intent.operation == "none"
+    assert intent.is_write is False
+
+
+def test_shared_negation_covers_parallel_record_and_delete_actions():
+    intent = classify_agent_utterance(
+        "不要调用工具，也不要记录、删除或修改任何数据。"
+    )
+
+    assert intent.primary == "chat"
+    assert intent.operation == "none"
+    assert intent.is_write is False
+
+
 def test_mutation_question_is_read_not_a_mutation_command():
     intent = classify_agent_utterance("我删除早餐了吗?")
 

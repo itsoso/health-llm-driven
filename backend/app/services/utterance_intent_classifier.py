@@ -579,21 +579,34 @@ def _mutation_operation(text: str) -> Optional[str]:
     return None
 
 
+def _all_phrase_positions(text: str, phrase: str) -> list[int]:
+    positions: list[int] = []
+    start = text.find(phrase)
+    while start >= 0:
+        positions.append(start)
+        start = text.find(phrase, start + len(phrase))
+    return positions
+
+
 def _has_negated_mutation(text: str, operation: Optional[str]) -> bool:
     if not operation or _has_any(text, MUTATION_NEGATION_EXCEPTIONS):
         return False
     action_positions = [
-        text.find(phrase.lower())
+        position
         for phrase in MUTATE_ACTIONS[operation]
-        if text.find(phrase.lower()) >= 0
+        for position in _all_phrase_positions(text, phrase.lower())
     ]
     if not action_positions:
         return False
-    first_action = min(action_positions)
-    return any(
-        0 <= first_action - text.find(negation) <= 12
+    negation_positions = [
+        position
         for negation in MUTATION_NEGATIONS
-        if text.find(negation) >= 0
+        for position in _all_phrase_positions(text, negation)
+    ]
+    return any(
+        0 <= action_position - negation_position <= 12
+        for action_position in action_positions
+        for negation_position in negation_positions
     )
 
 

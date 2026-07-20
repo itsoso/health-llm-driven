@@ -1963,6 +1963,45 @@ async def test_record_intent_with_no_tool_executed_is_flagged(db, auth_user_and_
 
 
 @pytest.mark.asyncio
+async def test_negated_mutation_read_only_turn_completes_without_tool_failure(
+    db, auth_user_and_headers
+):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    executed = []
+
+    async def fake_call_llm(messages, tools):
+        return {"content": "只读验证完成。", "finish_reason": "stop"}
+
+    async def fake_execute_tool(tool_name, args_raw, user_token):
+        executed.append(tool_name)
+        return "{}"
+
+    executor._call_llm = fake_call_llm
+    executor._call_llm_stream = _stream_from(fake_call_llm)
+    executor._execute_tool = fake_execute_tool
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message=(
+                "这是内部只读运行验证。请只回复一句简短确认，"
+                "不要调用工具，也不要记录或修改任何数据。"
+            ),
+            user_auth_token="test-token",
+            client_turn_id="turn-negated-mutation-read-only",
+        )
+    ]
+
+    done = [event for event in events if event.get("event") == "done"]
+    assert done
+    assert done[0]["data"]["record_intent_no_tool"] is False
+    assert done[0]["data"]["turn_outcome"]["category"] == "success"
+    assert executed == []
+
+
+@pytest.mark.asyncio
 async def test_record_intent_with_tool_executed_is_not_flagged(db, auth_user_and_headers):
     """Counterpart: when a record turn actually executes a write tool, the guard stays
     off (record_intent_no_tool=False)."""
