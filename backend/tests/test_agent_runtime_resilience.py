@@ -732,6 +732,7 @@ def test_recovery_task_settles_an_expired_run(
         now=now - timedelta(minutes=2),
     )
     monkeypatch.setattr(settings, "agent_runtime_mode", "enforce")
+    monkeypatch.setattr("app.services.agent_runtime._now", lambda: now)
     monkeypatch.setattr(
         "app.tasks.maintenance.SessionLocal",
         sessionmaker(bind=db.get_bind(), autocommit=False, autoflush=False),
@@ -745,5 +746,109 @@ def test_recovery_task_settles_an_expired_run(
         "recovered": 1,
         "failed": 1,
         "reconciliation_required": 0,
+        "rollout": {
+            "changed": False,
+            "reason_code": None,
+            "status": "active",
+            "snapshot": {
+                "window_started_at": "2026-07-19T11:45:00+00:00",
+                "evaluated_at": "2026-07-19T12:00:00+00:00",
+                "terminal_runs": 1,
+                "failed_runs": 1,
+                "reconciliation_runs": 0,
+                "stale_active_runs": 0,
+                "status_counts": {"failed": 1},
+                "tool_status_counts": {},
+                "duration_ms": {"p50": 120000, "p95": 120000},
+            },
+        },
     }
+    assert runtime.get_run(user.id, context.run_id).status == "failed"
+
+
+def test_recovery_task_pauses_rollout_after_uncertain_write(
+    db, auth_user_and_headers, monkeypatch
+):
+    from app.config import settings
+    from app.models.agent_runtime import AgentRuntimeRolloutEvent
+    from app.services.agent_runtime import AgentRuntimeCoordinator
+    from app.tasks.maintenance import recover_expired_agent_runs
+
+    user, _headers = auth_user_and_headers
+    runtime = AgentRuntimeCoordinator(db)
+    now = datetime(2026, 7, 19, 12, 30, tzinfo=UTC)
+    context = _admission(db, user.id, suffix="scheduled-reconciliation").context
+    runtime.mark_running(
+        context,
+        worker_id="worker-scheduled-reconciliation",
+        lease_seconds=30,
+        now=now - timedelta(minutes=2),
+    )
+    runtime.claim_tool_operation(
+        context,
+        tool_name="health_record",
+        effect_class="write",
+        operation_fingerprint="c" * 64,
+    )
+    monkeypatch.setattr(settings, "agent_runtime_mode", "canary")
+    monkeypatch.setattr(settings, "agent_runtime_canary_percent", 100)
+    monkeypatch.setattr("app.services.agent_runtime._now", lambda: now)
+    monkeypatch.setattr(
+        "app.tasks.maintenance.SessionLocal",
+        sessionmaker(bind=db.get_bind(), autocommit=False, autoflush=False),
+    )
+
+    result = recover_expired_agent_runs(now_iso=now.isoformat())
+
+    db.expire_all()
+    assert result["recovered"] == 1
+    assert result["reconciliation_required"] == 1
+    assert result["rollout"]["changed"] is True
+    assert result["rollout"]["status"] == "paused"
+    assert result["rollout"]["reason_code"] == "reconciliation_detected"
+    assert result["rollout"]["snapshot"]["reconciliation_runs"] == 1
+    event = db.query(AgentRuntimeRolloutEvent).one()
+    assert event.action == "pause"
+    assert event.actor_kind == "system"
+    assert event.reason_code == "reconciliation_detected"
+
+
+def test_recovery_task_runs_for_paused_canary_existing_runs(
+    db, auth_user_and_headers, monkeypatch
+):
+    from app.config import settings
+    from app.services.agent_runtime import AgentRuntimeCoordinator
+    from app.services.agent_runtime_rollout import AgentRuntimeRolloutService
+    from app.tasks.maintenance import recover_expired_agent_runs
+
+    user, _headers = auth_user_and_headers
+    runtime = AgentRuntimeCoordinator(db)
+    now = datetime(2026, 7, 19, 13, 0, tzinfo=UTC)
+    context = _admission(db, user.id, suffix="paused-canary-recovery").context
+    runtime.mark_running(
+        context,
+        worker_id="worker-paused-canary-recovery",
+        lease_seconds=30,
+        now=now - timedelta(minutes=2),
+    )
+    monkeypatch.setattr(settings, "agent_runtime_mode", "canary")
+    monkeypatch.setattr(settings, "agent_runtime_canary_percent", 0)
+    monkeypatch.setattr(settings, "agent_runtime_canary_user_ids", "")
+    AgentRuntimeRolloutService(db).pause(
+        actor_kind="admin",
+        reason_code="manual_pause",
+        actor_user_id=user.id,
+    )
+    monkeypatch.setattr(
+        "app.tasks.maintenance.SessionLocal",
+        sessionmaker(bind=db.get_bind(), autocommit=False, autoflush=False),
+    )
+
+    result = recover_expired_agent_runs(now_iso=now.isoformat())
+
+    db.expire_all()
+    assert result["status"] == "ok"
+    assert result["recovered"] == 1
+    assert result["rollout"]["status"] == "paused"
+    assert result["rollout"]["changed"] is False
     assert runtime.get_run(user.id, context.run_id).status == "failed"

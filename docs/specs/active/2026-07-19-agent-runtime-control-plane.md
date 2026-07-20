@@ -1,9 +1,10 @@
-# Feature Spec: Agent Runtime Control Plane P0
+# Feature Spec: Agent Runtime Control Plane P0-P3
 
 > Status: approved
-> Updated: 2026-07-19
+> Updated: 2026-07-20
 > PRD: `docs/prd/2026-07-19-agent-runtime-control-plane.md`
 > Design: `docs/plans/2026-07-19-agent-runtime-control-plane-design.md`
+> Canary Design: `docs/plans/2026-07-20-agent-runtime-canary-design.md`
 
 ## 1. Identity Contract
 
@@ -84,3 +85,85 @@ Append-only milestone events with per-run sequence. P0 payload keys are restrict
 5. Write checkpoint and uncertain recovery tests retain their current behavior.
 6. Event payload validation rejects health text and unbounded objects.
 7. Existing clients pass without origin fields.
+
+## 8. Rollout Admission Contract
+
+- Supported modes are exactly `off`, `canary` and `enforce`; any other value fails
+  explicitly instead of guessing a mode.
+- `off` preserves the unmanaged legacy path and performs no rollout-state write.
+- `canary` selects an internal allowlist first, then a deterministic percentage bucket
+  derived from the user ID. Selection does not depend on process memory or client build.
+- `enforce` selects every cloud Agent request while the circuit is active.
+- A paused or temporarily unreadable circuit routes new requests to the existing
+  unmanaged path. It never treats an unknown circuit state as active.
+- Once a `(user_id, client_turn_id)` is managed, its ownership is immutable. Retries
+  resume that Run even after a pause or canary-percentage reduction, and write tools
+  continue using the Runtime operation ledger for the life of that turn. Explicit
+  `off` is the hard rollback exception and disables managed resume as well.
+- New managed admission and circuit pause are linearized on the singleton circuit row;
+  a pause cannot report success while an uncommitted selected Run slips through.
+- Existing managed Runs remain owner-queryable, cancellable and recoverable in
+  `canary` and `enforce`, including while new admission is paused.
+- Strict-local iPhone execution never calls this admission path and remains unchanged.
+
+## 9. Rollout State Contract
+
+`agent_runtime_rollout_state` is a singleton operational row. It stores only:
+
+- `active` or `paused` status;
+- a finite pause reason code;
+- a monotonic version;
+- evaluation timestamps and aggregate counts;
+- an optional administrator actor ID.
+
+`agent_runtime_rollout_events` is append-only control audit for `pause` and `resume`.
+Database checks and service validation both enforce valid actor/action/reason
+combinations and non-negative counts. Neither table may store an end-user ID, Run ID,
+prompt, answer, health text, tool arguments or tool results.
+
+## 10. Automatic Pause Contract
+
+The periodic maintenance task runs recovery before evaluation. It pauses future
+managed admission when any of these conditions is true within the configured window:
+
+1. at least one Run requires reconciliation;
+2. at least one active Run still has an expired worker lease after recovery;
+3. the system-failure rate reaches the configured threshold after the minimum terminal
+   sample is reached.
+
+Evaluation persists aggregate counters only. Repeated evaluations while paused do not
+append duplicate pause events. The system never automatically resumes; an administrator
+must inspect the aggregate snapshot and resume explicitly.
+Manual resume acknowledges the current monotonic reconciliation generation. Run
+settlement increments that generation while holding the same control-row lock;
+automatic evaluation never acknowledges it. Commit ordering therefore prevents a late
+transaction with an older `finished_at` from being hidden by resume or evaluation.
+
+## 11. Administrator API Contract
+
+- `GET /api/v1/monitoring/agent-runtime/rollout` returns typed mode, circuit,
+  thresholds and aggregate snapshot fields only.
+- `POST /api/v1/monitoring/agent-runtime/pause` is an idempotent manual pause.
+- `POST /api/v1/monitoring/agent-runtime/resume` is an idempotent manual resume.
+- All three endpoints require the existing administrator authorization contract.
+- Manual transitions are audited without user-level health or conversation content.
+
+## 12. P3 Acceptance Tests
+
+1. Stable canary selection is deterministic, bounded and allowlist-first.
+2. Invalid modes, percentages, allowlists, windows and thresholds fail explicitly.
+3. Concurrent first pause creates one state transition and one audit event.
+4. Recovery of an uncertain write produces reconciliation and automatically pauses.
+5. A circuit read failure leaves the database session usable and bypasses managed
+   admission for that request.
+6. PostgreSQL and SQLite enforce finite control values and non-negative counts.
+7. Monitoring responses are typed and contain no user-level IDs or health content.
+8. Production deployment keeps `agent_runtime_mode=off`; enabling canary is a separate
+   operational Gate.
+9. A managed canary write records an operation receipt even though global mode is not
+   `enforce`, and same-turn retries cannot escape to the unmanaged path after pause or
+   percentage reduction.
+10. Pause and selected Run admission are ordered under real PostgreSQL concurrency;
+    rollout-window queries use their intended indexes.
+11. An unresolved write operation overrides model completion: the Run cannot become
+    succeeded or an ordinary failure and must advance the reconciliation generation.

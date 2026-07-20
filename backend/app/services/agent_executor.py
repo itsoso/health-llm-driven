@@ -5480,6 +5480,7 @@ class AgentExecutor:
         self._agent_kernel_tool_retry_count = 0
         self._runtime_run_id: Optional[str] = None
         self._runtime_attempt_id: Optional[str] = None
+        self._runtime_managed = False
 
     def _start_agent_kernel_turn(
         self,
@@ -6540,6 +6541,7 @@ class AgentExecutor:
         read_only_tools: bool = False,
         run_id: Optional[str] = None,
         attempt_id: Optional[str] = None,
+        runtime_managed: bool = False,
     ) -> AsyncGenerator[Dict, None]:
         """Run one durable client turn, taking over an ACKed turn after worker loss.
 
@@ -6549,6 +6551,7 @@ class AgentExecutor:
         """
         self._runtime_run_id = run_id
         self._runtime_attempt_id = attempt_id
+        self._runtime_managed = bool(runtime_managed)
         yield self._progress_event("accepted")
         self._current_user_id = user_id
         self._current_turn_user_message = message or ""
@@ -11824,8 +11827,7 @@ class AgentExecutor:
             spec = get_tool_spec(request.tool_name)
             args = request.arguments if isinstance(request.arguments, dict) else {}
             if (
-                str(getattr(settings, "agent_runtime_mode", "off")).strip().lower()
-                == "enforce"
+                self._runtime_managed
                 and self._runtime_run_id
                 and self._runtime_attempt_id
                 and self._current_user_id is not None

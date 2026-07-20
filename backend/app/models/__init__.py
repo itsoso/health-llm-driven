@@ -109,6 +109,8 @@ from app.models.agent_runtime import (
     AgentRun,
     AgentRunAttempt,
     AgentRunEvent,
+    AgentRuntimeRolloutEvent as AgentRuntimeRolloutEvent,
+    AgentRuntimeRolloutState as AgentRuntimeRolloutState,
     AgentToolOperation,
 )
 # 对话记忆

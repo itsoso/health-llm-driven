@@ -173,8 +173,8 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=3, minute=0),  # 凌晨3点
     },
 
-    # 每分钟回收失去 worker lease 的云端 Agent Run。任务在 Runtime 非 enforce
-    # 模式下为空操作；不盲目重跑写操作，存在未决写入时进入人工核对状态。
+    # 每分钟先回收失去 worker lease 的云端 Agent Run，再评估灰度熔断信号。
+    # 任务仅在 Runtime off 时为空操作；不盲目重跑未决写操作。
     "recover-expired-agent-runs": {
         "task": "app.tasks.maintenance.recover_expired_agent_runs",
         "schedule": crontab(minute="*"),

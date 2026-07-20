@@ -219,13 +219,13 @@ RequirementAdmission:
 
 ## P3 · Canary Control Plane
 
-- [ ] 稳定用户分桶与内部 allowlist，只作用于云端 Agent 请求。
-- [ ] 数据库持久化全局熔断状态和 content-free 控制审计。
-- [ ] 聚合成功率、系统失败、reconciliation 和 stale lease 指标。
-- [ ] recovery 后自动评估并在硬信号或阈值越界时暂停新 Runtime 准入。
-- [ ] 管理员聚合看板和显式 pause/resume；系统不自动恢复。
-- [ ] canary/enforce 既有 Run 在暂停后仍可查询、取消和恢复。
-- [ ] PostgreSQL/SQLite、并发、隐私和旧客户端交叉回归。
+- [x] 稳定用户分桶与内部 allowlist，只作用于云端 Agent 请求。
+- [x] 数据库持久化全局熔断状态和 content-free 控制审计。
+- [x] 聚合成功率、系统失败、reconciliation 和 stale lease 指标。
+- [x] recovery 后自动评估并在硬信号或阈值越界时暂停新 Runtime 准入。
+- [x] 管理员聚合看板和显式 pause/resume；系统不自动恢复。
+- [x] canary/enforce 既有 Run 在暂停后仍可查询、取消和恢复。
+- [x] PostgreSQL/SQLite、并发、隐私和旧客户端交叉回归。
 
 ### P3 G1 · 准入裁决
 
@@ -246,3 +246,21 @@ RequirementAdmission:
 - 系统绝不自动恢复；管理员变更需鉴权并留下 content-free 审计。
 - 生产代码和迁移仍以 `agent_runtime_mode=off` 部署，实际百分比变更另走上线 Gate。
 - 裁决: **PASS**。
+
+### P3 G3 · 实现与测试
+
+- 新增 `off/canary/enforce` 三态准入、版本化稳定分桶、内部 allowlist、数据库单例熔断和 append-only 控制审计。
+- recovery 后在同一维护周期计算聚合快照；新 reconciliation、恢复后残留 stale lease 或达到最小样本后的系统失败率会自动暂停，系统不会自动恢复。
+- 管理员 API 只返回聚合计数和有限 reason code；pause/resume 幂等且需要现有管理员权限。
+- 托管身份固定在 Turn 上，Executor 不再按当前全局模式决定是否记录工具账本；同一 client turn 在暂停或缩小 canary 后仍恢复原 Run。
+- 显式 `off` 保持硬回滚语义，既有 client turn 也不恢复托管；非法模式会先失败，不能被历史 Run 身份掩盖。
+- selected admission 与 pause 使用同一数据库行锁排序；reconciliation 与人工恢复使用同一控制行上的单调 generation，按数据库提交顺序核销，旧 `finished_at` 的晚提交也不会被漏掉。
+- Run 终态裁决以 unresolved write 为最高优先级；模型即使返回成功，Run 与未决 operation 仍在同一事务进入 reconciliation 并递增 generation。
+- 增加 Run finished/status 与 ToolOperation created/status 索引；真实 PostgreSQL `EXPLAIN` 使用 `ix_agent_runs_finished_status`。
+- SQLite Runtime/Tool/migration 组合回归: `192 passed, 3 skipped`；跨对话、Executor、SSE、饮食拍照、图片生命周期、症状/鼻炎/干预链路: `425 passed`。
+- 真实 PostgreSQL pause/admission 并发、generation 恢复顺序与 same-turn 连续性定向回归通过；其中“旧 `finished_at`、晚提交”双事务回归和两项 pause 锁竞争共 `3 passed`。P0/P2/P3 migration 重复执行通过，临时数据库均已删除。
+- 生产准入在 circuit 读取失败时降级 legacy 且数据库会话可继续使用的定向回归: `29 passed`。
+- 独立复审提出的 canary 写账本、same-turn 逃逸、pause/admission 竞争、deadline 误计失败、恢复水位和窗口索引共 6 项问题均已修复并增加回归；复审补充的 `off` deadline 阻断和旧时间戳晚提交两个 P1 也已以失败测试复现并修复。
+- 终态复审补出的“operation 待核对但 Run 仍成功”P1 已由定向 RED 测试复现并修复，未决写入现在无法逃逸自动止损。
+- 最终独立复审结论: 无剩余 P0/P1；定向收口测试通过。
+- 裁决: **PASS（待最终主干变基）**。

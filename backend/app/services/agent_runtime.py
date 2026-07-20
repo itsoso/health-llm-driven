@@ -917,6 +917,14 @@ class AgentRuntimeCoordinator:
             if run.status == status:
                 return
             now = _now()
+            if self._has_unresolved_write(run.run_id):
+                self._apply_unresolved_write_completion_locked(
+                    run,
+                    attempt,
+                    now=now,
+                )
+                self.db.commit()
+                return
             action = self._control_action(run, now=now)
             verified_success = (
                 status == "succeeded" and self._has_verified_write(run.run_id)
@@ -940,6 +948,33 @@ class AgentRuntimeCoordinator:
                 now=now,
             )
             self.db.commit()
+
+    def _apply_unresolved_write_completion_locked(
+        self,
+        run: AgentRun,
+        attempt: AgentRunAttempt,
+        *,
+        now: datetime,
+    ) -> None:
+        operations = self.db.query(AgentToolOperation).filter(
+            AgentToolOperation.run_id == run.run_id,
+            AgentToolOperation.status.in_(
+                {"requested", "executing", "reconciliation_required"}
+            ),
+        ).all()
+        for operation in operations:
+            if operation.status != "reconciliation_required":
+                operation.status = "reconciliation_required"
+                operation.error_code = "write_uncertain"
+                operation.finished_at = now
+        self._apply_completion_locked(
+            run,
+            attempt,
+            status="reconciliation_required",
+            error_code="write_uncertain",
+            retryable=False,
+            now=now,
+        )
 
     def finalize_executor_done(
         self,
@@ -1389,6 +1424,8 @@ class AgentRuntimeCoordinator:
         retryable: bool,
         now: datetime,
     ) -> None:
+        if status == "reconciliation_required":
+            self._record_reconciliation_generation()
         self._transition(run, status)
         run.error_code = error_code
         run.retryable = bool(retryable) if status == "failed" else False
@@ -1479,24 +1516,20 @@ class AgentRuntimeCoordinator:
                     operation.status = "reconciliation_required"
                     operation.error_code = "worker_lease_expired"
                     operation.finished_at = now
-            self._transition(run, "reconciliation_required")
-            run.error_code = "worker_lease_expired_write"
-            run.retryable = False
-            run.finished_at = now
-            attempt.status = "failed"
-            attempt.error_code = run.error_code
-            attempt.finished_at = now
-            attempt.lease_expires_at = None
-            self._append_event(
+            self._apply_completion_locked(
                 run,
-                attempt.attempt_id,
-                "run.reconciliation_required",
-                {
-                    "status": "reconciliation_required",
-                    "error_code": run.error_code,
-                },
+                attempt,
+                status="reconciliation_required",
+                error_code="worker_lease_expired_write",
+                retryable=False,
+                now=now,
             )
             self.db.commit()
+
+    def _record_reconciliation_generation(self) -> None:
+        from app.services.agent_runtime_rollout import AgentRuntimeRolloutService
+
+        AgentRuntimeRolloutService(self.db).record_reconciliation()
 
     def _require_owned_conversation(self, user_id: int, conversation_id: int) -> None:
         exists = self.db.query(AgentConversation.id).filter(

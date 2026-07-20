@@ -40,6 +40,13 @@ When the circuit is paused, new requests use the existing unmanaged path. This i
 intentional compatibility rollback, not a failed request. Existing managed Runs remain
 in the ledger and continue to support status, cancellation and recovery.
 
+Managed ownership is immutable for an admitted client turn. A retry with the same
+`(user_id, client_turn_id)` resumes the existing Run even if the circuit was paused or
+the canary percentage was reduced after the first admission. The Executor receives this
+ownership as turn context; it does not re-read the current rollout mode before recording
+tool-operation receipts. Explicit `off` remains the hard rollback exception and routes
+all requests through the unmanaged path.
+
 Invalid modes and invalid rollout configuration fail during admission with an explicit
 configuration error. A database error while reading the circuit is not silently treated
 as active; the request falls back to the legacy path and emits a structured warning.
@@ -104,6 +111,11 @@ Hard signals (reconciliation or stale active lease) do not require the minimum s
 Rate-based failure decisions do. All thresholds are configuration values with strict
 range validation.
 
+An unresolved write is terminal-state dominant: Executor completion cannot mark its Run
+successful or ordinarily failed while any operation remains requested, executing or
+reconciliation-required. The Run and operations settle to reconciliation in one
+transaction before the generation advances.
+
 ## Circuit Behavior
 
 The periodic task executes in this order:
@@ -117,6 +129,10 @@ The periodic task executes in this order:
 
 The system never auto-resumes. An administrator must inspect metrics and invoke resume.
 Resume changes only future admission; it does not replay any Run or tool operation.
+The control row stores monotonic reconciliation and acknowledged generations. Run
+settlement and manual resume lock that same row, so acknowledgment follows database
+commit ordering rather than an application timestamp. A reconciliation committed after
+resume still pauses the circuit even when its `finished_at` value is older than resume.
 
 ## API
 
@@ -134,11 +150,15 @@ Owner-scoped `/agent/runs/{run_id}` and cancellation remain available in `canary
 
 - Missing singleton row is created transactionally with `active` status.
 - Concurrent system/admin transitions use a row lock and idempotent status checks.
+- Selected new admission locks the same singleton row until the Run is durable, so a
+  completed pause cannot race with a newly admitted managed Run.
 - Metrics/evaluator failure is logged and surfaced by task failure; it never resumes or
   mutates a paused circuit.
 - Circuit read failure bypasses Runtime admission for that request and emits a warning.
 - The recovery scanner remains active in `canary` and `enforce`, independent of circuit
   state, so pausing cannot strand already managed Runs.
+- Window queries use finished/status and created/status indexes; the bounded duration
+  sample cannot force an unbounded historical scan as the ledger grows.
 
 ## Privacy and Security
 
@@ -163,4 +183,3 @@ Owner-scoped `/agent/runs/{run_id}` and cancellation remain available in `canary
 
 Every percentage change is an operational rollout decision, not part of this code
 deployment.
-

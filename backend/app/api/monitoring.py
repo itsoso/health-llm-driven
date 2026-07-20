@@ -10,8 +10,9 @@ try:
 except ImportError:
     PSUTIL_AVAILABLE = False
     psutil = None
-from typing import Optional
+from typing import Literal, Optional
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.database import get_db
@@ -21,6 +22,58 @@ from app.utils.logging_config import log_manager
 from app.utils.timezone import CHINA_TIMEZONE
 
 router = APIRouter()
+
+
+class AgentRuntimeRolloutCircuitResponse(BaseModel):
+    status: Literal["active", "paused"]
+    reason_code: str | None = None
+    version: int
+    last_evaluated_at: datetime | None = None
+
+
+class AgentRuntimeRolloutThresholdsResponse(BaseModel):
+    window_minutes: int
+    min_terminal_runs: int
+    failure_rate_percent: int
+    reconciliation_runs: int
+    stale_active_runs: int
+
+
+class AgentRuntimeRolloutDurationResponse(BaseModel):
+    p50: int | None = None
+    p95: int | None = None
+
+
+class AgentRuntimeRolloutSnapshotResponse(BaseModel):
+    window_started_at: datetime
+    evaluated_at: datetime
+    terminal_runs: int
+    failed_runs: int
+    reconciliation_runs: int
+    stale_active_runs: int
+    status_counts: dict[str, int]
+    tool_status_counts: dict[str, int]
+    duration_ms: AgentRuntimeRolloutDurationResponse
+
+
+class AgentRuntimeRolloutStatusResponse(BaseModel):
+    mode: Literal["off", "canary", "enforce"]
+    canary_percent: int
+    allowlist_count: int
+    circuit: AgentRuntimeRolloutCircuitResponse
+    thresholds: AgentRuntimeRolloutThresholdsResponse
+    snapshot: AgentRuntimeRolloutSnapshotResponse
+
+
+class AgentRuntimeRolloutTransitionResponse(BaseModel):
+    changed: bool
+    status: Literal["active", "paused"]
+    reason_code: str | None = None
+
+
+def _require_admin(current_user: User) -> None:
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="需要管理员权限")
 
 
 @router.get("/health")
@@ -153,7 +206,7 @@ async def database_status(
     """数据库状态检查"""
     try:
         start = time.time()
-        result = db.execute(text("SELECT 1"))
+        db.execute(text("SELECT 1"))
         query_time = (time.time() - start) * 1000
 
         return {
@@ -200,4 +253,90 @@ async def get_metrics(
         },
         "cpu_count": psutil.cpu_count(),
         "load_avg": os.getloadavg() if hasattr(os, 'getloadavg') else None
+    }
+
+
+@router.get(
+    "/agent-runtime/rollout",
+    response_model=AgentRuntimeRolloutStatusResponse,
+)
+async def get_agent_runtime_rollout(
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """Return aggregate-only Runtime rollout health for administrators."""
+    from app.services.agent_runtime_rollout import (
+        AgentRuntimeRolloutService,
+        rollout_public_configuration,
+    )
+
+    _require_admin(current_user)
+    rollout = AgentRuntimeRolloutService(db)
+    config = rollout_public_configuration()
+    state = rollout.get_state()
+    snapshot = rollout.snapshot(window_minutes=int(config["window_minutes"]))
+    return {
+        "mode": config["mode"],
+        "canary_percent": config["canary_percent"],
+        "allowlist_count": config["allowlist_count"],
+        "circuit": {
+            "status": state.status,
+            "reason_code": state.reason_code,
+            "version": state.version,
+            "last_evaluated_at": state.last_evaluated_at,
+        },
+        "thresholds": {
+            "window_minutes": config["window_minutes"],
+            "min_terminal_runs": config["min_terminal_runs"],
+            "failure_rate_percent": config["failure_rate_percent"],
+            "reconciliation_runs": 1,
+            "stale_active_runs": 1,
+        },
+        "snapshot": snapshot.to_dict(),
+    }
+
+
+@router.post(
+    "/agent-runtime/pause",
+    response_model=AgentRuntimeRolloutTransitionResponse,
+)
+async def pause_agent_runtime_rollout(
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """Idempotently stop future managed admission; existing Runs remain operable."""
+    from app.services.agent_runtime_rollout import AgentRuntimeRolloutService
+
+    _require_admin(current_user)
+    result = AgentRuntimeRolloutService(db).pause(
+        actor_kind="admin",
+        reason_code="manual_pause",
+        actor_user_id=current_user.id,
+    )
+    return {
+        "changed": result.changed,
+        "status": result.status,
+        "reason_code": result.reason_code,
+    }
+
+
+@router.post(
+    "/agent-runtime/resume",
+    response_model=AgentRuntimeRolloutTransitionResponse,
+)
+async def resume_agent_runtime_rollout(
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """Idempotently resume future managed admission after operator review."""
+    from app.services.agent_runtime_rollout import AgentRuntimeRolloutService
+
+    _require_admin(current_user)
+    result = AgentRuntimeRolloutService(db).resume(
+        actor_user_id=current_user.id,
+    )
+    return {
+        "changed": result.changed,
+        "status": result.status,
+        "reason_code": result.reason_code,
     }

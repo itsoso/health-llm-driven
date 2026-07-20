@@ -48,6 +48,31 @@ def test_agent_send_passes_one_canonical_identity_to_executor(
     assert body["attempt_id"] == captured["attempt_id"]
 
 
+def test_off_mode_ignores_invalid_runtime_deadline_configuration(
+    db, auth_user_and_headers, monkeypatch
+):
+    from app.api.agent import _admit_agent_runtime
+
+    user, _headers = auth_user_and_headers
+    monkeypatch.setattr(settings, "agent_runtime_mode", "off")
+    monkeypatch.setattr(settings, "agent_runtime_deadline_seconds", 10)
+
+    context, owned, disposition = _admit_agent_runtime(
+        db,
+        run_id="run-off-invalid-deadline",
+        attempt_id="attempt-off-invalid-deadline",
+        user_id=user.id,
+        conversation_id=None,
+        client_turn_id="turn-off-invalid-deadline",
+        origin="test",
+    )
+
+    assert context.run_id == "run-off-invalid-deadline"
+    assert owned is False
+    assert disposition == "execute"
+    assert db.query(AgentRun).count() == 0
+
+
 def test_agent_send_enforce_mode_persists_and_finishes_run(
     client, db, auth_user_and_headers, monkeypatch
 ):
@@ -122,6 +147,177 @@ def test_agent_send_enforce_mode_persists_and_finishes_run(
     assert run.source_message_id is not None
     assert run.assistant_message_id == response.json()["message_id"]
     assert "private source" not in repr(run.__dict__)
+
+
+@pytest.mark.parametrize(
+    ("percent", "allowlisted", "expected_managed"),
+    [
+        (0, False, False),
+        (0, True, True),
+        (100, False, True),
+    ],
+)
+def test_agent_send_canary_admission_is_stable_and_backward_compatible(
+    client,
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+    percent,
+    allowlisted,
+    expected_managed,
+):
+    user, headers = auth_user_and_headers
+    managed_flags = []
+
+    async def fake_run_stream(self, **kwargs):
+        managed_flags.append(kwargs.get("runtime_managed"))
+        yield {
+            "event": "done",
+            "data": {
+                "conversation_id": None,
+                "message_id": None,
+                "completion_status": "complete",
+                "turn_outcome": {"category": "success"},
+            },
+        }
+
+    monkeypatch.setattr(settings, "agent_runtime_mode", "canary")
+    monkeypatch.setattr(settings, "agent_runtime_canary_percent", percent)
+    monkeypatch.setattr(
+        settings,
+        "agent_runtime_canary_user_ids",
+        str(user.id) if allowlisted else "",
+    )
+    monkeypatch.setattr(
+        "app.services.agent_executor.AgentExecutor.run_stream",
+        fake_run_stream,
+    )
+
+    response = client.post(
+        "/api/v1/agent/send",
+        headers=headers,
+        json={
+            "message": "canary admission",
+            "client_turn_id": f"runtime-canary-{percent}-{allowlisted}",
+        },
+    )
+
+    assert response.status_code == 200
+    assert managed_flags == [expected_managed]
+    rows = db.query(AgentRun).filter(AgentRun.user_id == user.id).all()
+    assert (len(rows) == 1) is expected_managed
+    if rows:
+        assert rows[0].status == "succeeded"
+
+
+def test_existing_managed_turn_stays_managed_after_circuit_pause(
+    db, auth_user_and_headers, monkeypatch
+):
+    from app.api.agent import _admit_agent_runtime
+    from app.services.agent_runtime_rollout import AgentRuntimeRolloutService
+
+    user, _headers = auth_user_and_headers
+    monkeypatch.setattr(settings, "agent_runtime_mode", "canary")
+    monkeypatch.setattr(settings, "agent_runtime_canary_percent", 100)
+    monkeypatch.setattr(settings, "agent_runtime_canary_user_ids", "")
+    first, first_owned, first_disposition = _admit_agent_runtime(
+        db,
+        run_id="run-before-pause",
+        attempt_id="attempt-before-pause",
+        user_id=user.id,
+        conversation_id=None,
+        client_turn_id="turn-before-pause",
+        origin="test",
+    )
+    AgentRuntimeRolloutService(db).pause(
+        actor_kind="system",
+        reason_code="stale_lease_detected",
+    )
+
+    repeated, repeated_owned, repeated_disposition = _admit_agent_runtime(
+        db,
+        run_id="run-after-pause",
+        attempt_id="attempt-after-pause",
+        user_id=user.id,
+        conversation_id=None,
+        client_turn_id="turn-before-pause",
+        origin="test",
+    )
+
+    assert first_owned is True
+    assert first_disposition == "execute"
+    assert repeated.run_id == first.run_id
+    assert repeated_owned is False
+    assert repeated_disposition == "observe"
+
+
+def test_existing_managed_turn_stays_managed_after_canary_percentage_shrinks(
+    db, auth_user_and_headers, monkeypatch
+):
+    from app.api.agent import _admit_agent_runtime
+
+    user, _headers = auth_user_and_headers
+    monkeypatch.setattr(settings, "agent_runtime_mode", "canary")
+    monkeypatch.setattr(settings, "agent_runtime_canary_percent", 100)
+    monkeypatch.setattr(settings, "agent_runtime_canary_user_ids", "")
+    first, _owned, _disposition = _admit_agent_runtime(
+        db,
+        run_id="run-before-shrink",
+        attempt_id="attempt-before-shrink",
+        user_id=user.id,
+        conversation_id=None,
+        client_turn_id="turn-before-shrink",
+        origin="test",
+    )
+    monkeypatch.setattr(settings, "agent_runtime_canary_percent", 0)
+
+    repeated, repeated_owned, repeated_disposition = _admit_agent_runtime(
+        db,
+        run_id="run-after-shrink",
+        attempt_id="attempt-after-shrink",
+        user_id=user.id,
+        conversation_id=None,
+        client_turn_id="turn-before-shrink",
+        origin="test",
+    )
+
+    assert repeated.run_id == first.run_id
+    assert repeated_owned is False
+    assert repeated_disposition == "observe"
+
+
+def test_off_mode_does_not_resume_an_existing_managed_turn(
+    db, auth_user_and_headers, monkeypatch
+):
+    from app.api.agent import _admit_agent_runtime
+
+    user, _headers = auth_user_and_headers
+    monkeypatch.setattr(settings, "agent_runtime_mode", "enforce")
+    first, _owned, _disposition = _admit_agent_runtime(
+        db,
+        run_id="run-before-off",
+        attempt_id="attempt-before-off",
+        user_id=user.id,
+        conversation_id=None,
+        client_turn_id="turn-before-off",
+        origin="test",
+    )
+    monkeypatch.setattr(settings, "agent_runtime_mode", "off")
+
+    repeated, repeated_owned, repeated_disposition = _admit_agent_runtime(
+        db,
+        run_id="run-after-off",
+        attempt_id="attempt-after-off",
+        user_id=user.id,
+        conversation_id=None,
+        client_turn_id="turn-before-off",
+        origin="test",
+    )
+
+    assert repeated.run_id != first.run_id
+    assert repeated.run_id == "run-after-off"
+    assert repeated_owned is False
+    assert repeated_disposition == "execute"
 
 
 def test_agent_send_enforce_mode_rejects_busy_conversation_before_executor(
@@ -577,6 +773,44 @@ def test_agent_runtime_cancel_endpoint_cancels_queued_run(
     assert AgentRuntimeCoordinator(db).get_run(
         user.id, admission.context.run_id
     ).status == "cancelled"
+
+
+def test_agent_runtime_existing_run_remains_operable_after_canary_pause(
+    client, db, auth_user_and_headers, monkeypatch
+):
+    from app.services.agent_runtime import AgentRuntimeCoordinator
+    from app.services.agent_runtime_rollout import AgentRuntimeRolloutService
+
+    user, headers = auth_user_and_headers
+    monkeypatch.setattr(settings, "agent_runtime_mode", "canary")
+    monkeypatch.setattr(settings, "agent_runtime_canary_percent", 100)
+    monkeypatch.setattr(settings, "agent_runtime_canary_user_ids", "")
+    admission = AgentRuntimeCoordinator(db).create_or_resume_run(
+        run_id="run-api-canary-paused",
+        attempt_id="attempt-api-canary-paused",
+        user_id=user.id,
+        conversation_id=None,
+        client_turn_id="turn-api-canary-paused",
+        origin="test",
+    )
+    AgentRuntimeRolloutService(db).pause(
+        actor_kind="system",
+        reason_code="stale_lease_detected",
+    )
+
+    status_response = client.get(
+        f"/api/v1/agent/runs/{admission.context.run_id}",
+        headers=headers,
+    )
+    cancel_response = client.post(
+        f"/api/v1/agent/runs/{admission.context.run_id}/cancel",
+        headers=headers,
+    )
+
+    assert status_response.status_code == 200
+    assert status_response.json()["status"] == "queued"
+    assert cancel_response.status_code == 200
+    assert cancel_response.json()["status"] == "cancelled"
 
 
 def test_agent_runtime_cancel_endpoint_requests_running_worker_stop(

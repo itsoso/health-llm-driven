@@ -674,14 +674,14 @@ def _admit_agent_runtime(
     origin: str,
 ):
     """Return canonical identity, lifecycle ownership and admission disposition."""
-    from app.config import settings
-    from app.services.agent_runtime import (
-        AgentRuntimeCoordinator,
-        RunContext,
+    from app.services.agent_runtime import RunContext
+    from app.services.agent_runtime_rollout import (
+        AgentRuntimeRolloutService,
+        runtime_mode,
     )
+    from app.config import settings
 
-    mode = str(getattr(settings, "agent_runtime_mode", "off") or "off").strip().lower()
-    if mode == "off":
+    if runtime_mode() == "off":
         return RunContext(
             run_id=run_id,
             attempt_id=attempt_id,
@@ -691,14 +691,12 @@ def _admit_agent_runtime(
             input_seq=None,
             origin=origin,
         ), False, "execute"
-    if mode != "enforce":
-        raise RuntimeError(f"invalid_agent_runtime_mode:{mode}")
     deadline_seconds = int(
         getattr(settings, "agent_runtime_deadline_seconds", 300) or 300
     )
     if not 30 <= deadline_seconds <= 3600:
         raise RuntimeError("invalid_agent_runtime_deadline_seconds")
-    admission = AgentRuntimeCoordinator(db).create_or_resume_run(
+    managed_admission = AgentRuntimeRolloutService(db).admit_run(
         run_id=run_id,
         attempt_id=attempt_id,
         user_id=user_id,
@@ -707,6 +705,17 @@ def _admit_agent_runtime(
         origin=origin,
         deadline_at=datetime.now(UTC) + timedelta(seconds=deadline_seconds),
     )
+    admission = managed_admission.admission
+    if admission is None:
+        return RunContext(
+            run_id=run_id,
+            attempt_id=attempt_id,
+            user_id=user_id,
+            conversation_id=conversation_id,
+            client_turn_id=client_turn_id,
+            input_seq=None,
+            origin=origin,
+        ), False, "execute"
     return admission.context, admission.owns_execution, admission.disposition
 
 
@@ -856,10 +865,10 @@ async def cancel_agent_runtime_run(
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ):
-    from app.config import settings
     from app.services.agent_runtime import AgentRuntimeCoordinator, AgentRuntimeError
+    from app.services.agent_runtime_rollout import runtime_control_enabled
 
-    if str(getattr(settings, "agent_runtime_mode", "off")).lower() != "enforce":
+    if not runtime_control_enabled():
         raise HTTPException(status_code=404, detail="Run 不存在")
     try:
         result = AgentRuntimeCoordinator(db).request_cancel(
@@ -881,10 +890,10 @@ async def get_agent_runtime_run(
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ):
-    from app.config import settings
     from app.services.agent_runtime import AgentRuntimeCoordinator, AgentRuntimeError
+    from app.services.agent_runtime_rollout import runtime_control_enabled
 
-    if str(getattr(settings, "agent_runtime_mode", "off")).lower() != "enforce":
+    if not runtime_control_enabled():
         raise HTTPException(status_code=404, detail="Run 不存在")
     runtime = AgentRuntimeCoordinator(db)
     try:
@@ -1498,6 +1507,7 @@ async def agent_stream(
                     ),
                     run_id=runtime_context.run_id,
                     attempt_id=runtime_context.attempt_id,
+                    runtime_managed=runtime_managed,
                 ):
                     if event.get("event") == "request_persisted":
                         persisted_data = event.get("data")
@@ -1869,6 +1879,7 @@ async def agent_send(
                 ),
                 run_id=runtime_context.run_id,
                 attempt_id=runtime_context.attempt_id,
+                runtime_managed=runtime_managed,
             ):
                 if event.get("event") == "request_persisted":
                     persisted_data = event.get("data")

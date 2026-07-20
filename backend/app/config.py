@@ -248,11 +248,16 @@ class Settings(BaseSettings):
     # XiaoBa Agent Kernel: shadow keeps decisions observable but does not block;
     # enforce blocks policy-denied write tools at the single execution choke point.
     agent_kernel_policy_mode: str = "enforce"
-    # Agent Runtime P0 control plane. off=仅贯通 canonical Run identity,不写新表;
-    # enforce=写 Run Ledger 并阻止同一会话的不同 active turn 并发执行。
+    # Agent Runtime control plane. off=仅贯通 canonical Run identity,不写新表;
+    # canary=稳定分桶命中的用户写 Run Ledger; enforce=全部云端请求写 Ledger。
     # 严格本地 iPhone 执行不调用云端 Agent API,因此不会创建服务端 Run。
     agent_runtime_mode: str = "off"
-    # Runtime P2 worker control. These values are used only in enforce mode.
+    agent_runtime_canary_percent: int = 0
+    agent_runtime_canary_user_ids: str = ""
+    agent_runtime_rollout_window_minutes: int = 15
+    agent_runtime_rollout_min_terminal_runs: int = 20
+    agent_runtime_rollout_failure_rate_percent: int = 10
+    # Runtime P2 worker control. These values are used in canary/enforce mode.
     agent_runtime_lease_seconds: int = 90
     agent_runtime_heartbeat_seconds: int = 20
     agent_runtime_deadline_seconds: int = 300

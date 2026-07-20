@@ -146,6 +146,39 @@ def test_duplicate_in_flight_operation_requires_reconciliation(
     assert operation.resource_id == "829"
 
 
+def test_unresolved_tool_operation_forces_run_reconciliation_before_success(
+    db, auth_user_and_headers
+):
+    from app.models.agent_runtime import AgentRun, AgentRuntimeRolloutState
+    from app.services.agent_runtime import AgentRuntimeCoordinator
+
+    user, _headers = auth_user_and_headers
+    runtime = AgentRuntimeCoordinator(db)
+    admission = _run(db, user.id, suffix="unresolved-run")
+    runtime.mark_running(admission.context)
+    claim = runtime.claim_tool_operation(
+        admission.context,
+        tool_name="health_record",
+        effect_class="write",
+        operation_fingerprint=_fingerprint("unresolved-run"),
+    )
+    runtime.finalize_tool_operation(
+        admission.context,
+        operation_id=claim.operation_id,
+        status="reconciliation_required",
+        error_code="missing_receipt",
+    )
+
+    runtime.complete(admission.context, status="succeeded")
+
+    run = db.query(AgentRun).filter_by(run_id=admission.context.run_id).one()
+    rollout = db.query(AgentRuntimeRolloutState).filter_by(id=1).one()
+    assert run.status == "reconciliation_required"
+    assert run.error_code == "write_uncertain"
+    assert rollout.reconciliation_generation == 1
+    assert rollout.reconciliation_acknowledged_generation == 0
+
+
 def test_same_fingerprint_cannot_be_reused_for_a_different_tool(
     db, auth_user_and_headers
 ):
@@ -372,6 +405,7 @@ async def test_executor_enforce_mode_ledgers_and_replays_verified_write(
     executor._current_turn_user_message = "记录午餐吃了牛肉面"
     executor._runtime_run_id = admission.context.run_id
     executor._runtime_attempt_id = admission.context.attempt_id
+    executor._runtime_managed = True
     calls = []
 
     monkeypatch.setattr(
@@ -403,6 +437,52 @@ async def test_executor_enforce_mode_ledgers_and_replays_verified_write(
     assert operation.status == "succeeded"
     assert operation.resource_type == "diet_record"
     assert operation.resource_id == "829"
+
+
+@pytest.mark.asyncio
+async def test_executor_canary_managed_run_ledgers_verified_write(
+    db, auth_user_and_headers, monkeypatch
+):
+    from app.models.agent_runtime import AgentToolOperation
+    from app.services.agent_executor import AgentExecutor
+    from app.services.agent_runtime import AgentRuntimeCoordinator
+
+    user, _headers = auth_user_and_headers
+    admission = _run(db, user.id, suffix="executor-canary-ledger")
+    AgentRuntimeCoordinator(db).mark_running(admission.context)
+    executor = AgentExecutor(db)
+    executor._current_user_id = user.id
+    executor._current_turn_user_message = "记录午餐吃了牛肉面"
+    executor._runtime_run_id = admission.context.run_id
+    executor._runtime_attempt_id = admission.context.attempt_id
+    executor._runtime_managed = True
+
+    monkeypatch.setattr(
+        "app.services.agent_executor.settings.agent_runtime_mode", "canary"
+    )
+    monkeypatch.setattr(
+        "app.services.llm.tool_validator.validate_tool_call",
+        lambda tool_name, args, db, user_id, reference_now=None: {
+            "error": None,
+            "data": args,
+        },
+    )
+
+    async def fake_write(base_url, headers, args):
+        return '{"id": 831, "resource_type": "diet_record"}'
+
+    monkeypatch.setattr(executor, "_exec_health_record", fake_write)
+
+    await executor._execute_tool(
+        "health_record",
+        {"record_type": "diet", "data": {"food_items": "牛肉面"}},
+        None,
+    )
+
+    operation = db.query(AgentToolOperation).one()
+    assert operation.status == "succeeded"
+    assert operation.resource_type == "diet_record"
+    assert operation.resource_id == "831"
 
 
 @pytest.mark.asyncio
@@ -440,6 +520,7 @@ async def test_executor_ledgers_health_manage_mutations_with_typed_receipt(
     executor._current_turn_user_message = "调整补剂定义"
     executor._runtime_run_id = admission.context.run_id
     executor._runtime_attempt_id = admission.context.attempt_id
+    executor._runtime_managed = True
 
     monkeypatch.setattr(
         "app.services.agent_executor.settings.agent_runtime_mode", "enforce"
@@ -488,6 +569,7 @@ async def test_executor_enforce_mode_marks_missing_receipt_for_reconciliation(
     executor._current_turn_user_message = "记录午餐吃了牛肉面"
     executor._runtime_run_id = admission.context.run_id
     executor._runtime_attempt_id = admission.context.attempt_id
+    executor._runtime_managed = True
 
     monkeypatch.setattr(
         "app.services.agent_executor.settings.agent_runtime_mode", "enforce"
@@ -532,6 +614,7 @@ async def test_executor_cancellation_marks_claimed_write_for_reconciliation(
     executor._current_turn_user_message = "记录午餐吃了牛肉面"
     executor._runtime_run_id = admission.context.run_id
     executor._runtime_attempt_id = admission.context.attempt_id
+    executor._runtime_managed = True
     dispatch_started = asyncio.Event()
 
     monkeypatch.setattr(
@@ -625,6 +708,7 @@ async def test_executor_exception_after_claim_is_marked_for_reconciliation(
     executor._current_turn_user_message = "记录午餐吃了牛肉面"
     executor._runtime_run_id = admission.context.run_id
     executor._runtime_attempt_id = admission.context.attempt_id
+    executor._runtime_managed = True
 
     monkeypatch.setattr(
         "app.services.agent_executor.settings.agent_runtime_mode", "enforce"

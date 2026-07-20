@@ -27,14 +27,19 @@ def _agent_runtime_unleased_grace_seconds() -> int:
 def recover_expired_agent_runs(*, now_iso: str | None = None):
     """Settle Agent Runs whose worker lease expired.
 
-    The task is intentionally inert while the Runtime control plane is not in
-    enforce mode. Recovery never restarts an Executor blindly: read-only runs
+    The task is intentionally inert while the Runtime control plane is off.
+    Recovery never restarts an Executor blindly: read-only runs
     become retryable failures, while uncertain writes require reconciliation.
+    Recovery runs before canary circuit evaluation so recoverable leases do not
+    create false-positive rollout pauses.
     """
-    from app.config import settings
     from app.services.agent_runtime import AgentRuntimeCoordinator
+    from app.services.agent_runtime_rollout import (
+        AgentRuntimeRolloutService,
+        runtime_control_enabled,
+    )
 
-    if str(getattr(settings, "agent_runtime_mode", "off")).lower() != "enforce":
+    if not runtime_control_enabled():
         return {"status": "disabled", "recovered": 0}
 
     now = datetime.fromisoformat(now_iso) if now_iso else None
@@ -44,22 +49,34 @@ def recover_expired_agent_runs(*, now_iso: str | None = None):
             limit=100,
             unleased_grace_seconds=_agent_runtime_unleased_grace_seconds(),
         )
+        rollout_evaluation = AgentRuntimeRolloutService(
+            db
+        ).evaluate_and_maybe_pause(now=now)
 
     failed = sum(item.status == "failed" for item in recovered)
     reconciliation_required = sum(
         item.status == "reconciliation_required" for item in recovered
     )
     logger.info(
-        "[agent-runtime] recovered=%s failed=%s reconciliation_required=%s",
+        "[agent-runtime] recovered=%s failed=%s reconciliation_required=%s "
+        "rollout_status=%s rollout_reason=%s",
         len(recovered),
         failed,
         reconciliation_required,
+        rollout_evaluation.transition.status,
+        rollout_evaluation.reason_code,
     )
     return {
         "status": "ok",
         "recovered": len(recovered),
         "failed": failed,
         "reconciliation_required": reconciliation_required,
+        "rollout": {
+            "changed": rollout_evaluation.transition.changed,
+            "reason_code": rollout_evaluation.reason_code,
+            "status": rollout_evaluation.transition.status,
+            "snapshot": rollout_evaluation.snapshot.to_dict(),
+        },
     }
 
 
