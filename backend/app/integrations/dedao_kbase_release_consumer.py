@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import UTC, datetime
 import json
 from pathlib import Path
@@ -181,9 +182,15 @@ def compile_agent_package_artifacts(
         raise ValueError(f"agent package held: {', '.join(assessment['hold_reasons'])}")
 
     current_time = now or datetime.now(UTC)
+    references_by_release_id = {
+        str(reference["release_id"]): reference for reference in package["releases"]
+    }
     release_results = [
         compile_knowledge_release_artifacts(
-            release=release,
+            release=_scope_release_to_package_reference(
+                release,
+                references_by_release_id[str(release["release_id"])],
+            ),
             base_artifact_dir=base_artifact_dir,
             source_root=source_root,
             now=current_time,
@@ -247,6 +254,55 @@ def compile_agent_package_artifacts(
             }
         )
     return result
+
+
+def _scope_release_to_package_reference(
+    release: dict[str, Any], reference: dict[str, Any]
+) -> dict[str, Any]:
+    """Return only the release evidence authorized by one hashed package reference."""
+    scoped = deepcopy(release)
+    allowed_citation_ids = {
+        str(value).strip() for value in reference.get("citation_ids") or [] if str(value).strip()
+    }
+    scoped["citations"] = [
+        citation
+        for citation in scoped.get("citations") or []
+        if isinstance(citation, dict)
+        and str(citation.get("citation_id") or "").strip() in allowed_citation_ids
+    ]
+    allowed_chunk_ids = {
+        str(citation.get("chunk_id") or "").strip()
+        for citation in scoped["citations"]
+        if str(citation.get("chunk_id") or "").strip()
+    }
+    scoped["sources"] = [
+        source
+        for source in scoped.get("sources") or []
+        if isinstance(source, dict)
+        and (
+            str(source.get("id") or "").strip() in allowed_citation_ids
+            or str(source.get("id") or "").strip() in allowed_chunk_ids
+            or str(source.get("chunk_id") or "").strip() in allowed_chunk_ids
+        )
+    ]
+    scoped_claims: list[dict[str, Any]] = []
+    for claim in scoped["analysis"].get("claims") or []:
+        citation_ids = [
+            str(value).strip()
+            for value in claim.get("citation_ids") or []
+            if str(value).strip() in allowed_citation_ids
+        ]
+        if not citation_ids:
+            continue
+        claim["citation_ids"] = citation_ids
+        scoped_claims.append(claim)
+    scoped["analysis"]["claims"] = scoped_claims
+    scoped["analysis"]["summary"] = " ".join(
+        str(claim.get("statement") or "").strip()
+        for claim in scoped_claims
+        if str(claim.get("statement") or "").strip()
+    )
+    return scoped
 
 
 def assess_agent_package_for_health(

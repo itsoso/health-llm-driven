@@ -406,6 +406,51 @@ def test_compile_agent_package_preserves_review_and_safety_provenance(tmp_path):
     assert result.contraindications == []
 
 
+def test_compile_agent_package_projects_only_pinned_citation_scope(tmp_path):
+    from app.integrations.dedao_kbase_release_consumer import compile_agent_package_artifacts
+
+    release = _release_payload()
+    release["analysis"]["claims"].append(
+        {
+            "id": "claim-unlisted",
+            "statement": "This claim is outside the Agent Package citation scope.",
+            "citation_ids": ["citation-unlisted"],
+            "confidence": 0.8,
+            "scope": ["adults"],
+            "risk_level": "low",
+        }
+    )
+    release["sources"].append(
+        {"id": "citation-unlisted", "title": "Unlisted source", "content": "Not pinned"}
+    )
+    release["citations"].append(
+        {"citation_id": "citation-unlisted", "label": "Unlisted source"}
+    )
+    package = _agent_package_payload(release=release)
+
+    result = compile_agent_package_artifacts(
+        package=package,
+        releases=[release],
+        base_artifact_dir=tmp_path / "artifacts",
+        source_root=tmp_path / "source",
+        now=datetime(2026, 7, 19, 13, tzinfo=UTC),
+    )
+
+    assert [claim["metadata"]["release_claim_id"] for claim in result.claims] == ["claim-1"]
+    assert result.claims[0]["metadata"]["citation_ids"] == ["citation-1"]
+    projection = json.dumps(
+        {
+            "pages": result.pages,
+            "entities": result.entities,
+            "claims": result.claims,
+            "relations": result.relations,
+        },
+        ensure_ascii=False,
+    )
+    assert "citation-unlisted" not in projection
+    assert "outside the Agent Package" not in projection
+
+
 @pytest.mark.parametrize(
     "mutate, reason",
     [
