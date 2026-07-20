@@ -2522,8 +2522,8 @@ _WRITE_RESULT_FAILURE_MARKERS = (
 # external write endpoint is invoked. They must not be presented as a write
 # that may already have happened.
 _UNVERIFIED_WRITE_USER_MESSAGE = (
-    "本次操作没有取得可验证的写入回执，我不能确认已经完成。"
-    "为避免重复写入，请先查询现有记录；确认缺失后再重试。"
+    "本次记录请求的状态暂时无法确认，我不能确认是否已经完成；可能已提交但尚未拿到回执。"
+    "为避免重复写入，我没有自动重试；请先查询现有记录，确认缺失后再补录。"
 )
 
 _RECEIPT_TYPE_LABELS = {
@@ -2563,8 +2563,9 @@ def _unverified_write_message(verified_receipts: Optional[List[Dict[str, Any]]] 
         return _UNVERIFIED_WRITE_USER_MESSAGE
     return (
         f"已确认写入:{'、'.join(labels)}。"
-        "但另有一项写入没有取得可验证的回执,我不能确认它已完成;"
-        "为避免重复写入,请先查询该项现有记录,确认缺失后再重试。"
+        "但另有一项记录请求的状态暂时无法确认,我不能确认它是否已经完成,"
+        "可能已提交但尚未拿到回执;"
+        "为避免重复写入,我没有自动重试,请先查询该项现有记录,确认缺失后再补录。"
     )
 
 
