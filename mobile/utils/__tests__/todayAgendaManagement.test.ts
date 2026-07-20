@@ -68,6 +68,10 @@ describe('todayAgendaManagement', () => {
     expect(canActOnAgendaItem(item({
       type: 'training',
       source: { object_type: 'daily_plan_action', object_id: 'walk' },
+    }))).toBe(false);
+    expect(canActOnAgendaItem(item({
+      type: 'medication',
+      source: { object_type: 'medication', object_id: 9 },
     }))).toBe(true);
     expect(canActOnAgendaItem(item({
       status: 'active',

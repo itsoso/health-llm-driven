@@ -148,7 +148,7 @@ describe('AgendaScreen', () => {
     );
   });
 
-  it('locks only the row currently being written', () => {
+  it('locks the current writable row and hides unsupported completion controls', () => {
     mockCompleteState = {
       isPending: true,
       variables: { source: { object_type: 'health_protocol', object_id: 2 } },
@@ -156,7 +156,7 @@ describe('AgendaScreen', () => {
     const { getByLabelText, queryByLabelText } = render(<AgendaScreen />);
 
     expect(getByLabelText('完成 晨间用药')).toBeDisabled();
-    expect(queryByLabelText('完成 晚饭后步行 10 分钟')).not.toBeDisabled();
+    expect(queryByLabelText('完成 晚饭后步行 10 分钟')).toBeNull();
   });
 
   it('can defer an item without falsely recording it as completed', () => {
@@ -185,6 +185,50 @@ describe('AgendaScreen', () => {
     expect(queryByText('需要确认')).toBeNull();
     expect(queryByText('稍后')).toBeNull();
     expect(queryByText('已处理')).toBeNull();
+  });
+
+  it('progressively reveals long review queues instead of expanding every item', () => {
+    const reviewItems = Array.from({ length: 5 }, (_, index) => ({
+      type: 'advisory',
+      title: `待确认建议 ${index + 1}`,
+      status: 'active',
+      priority: 80 - index,
+      time_window: 'anytime',
+      source: { object_type: 'health_problem', object_id: 20 + index },
+    }));
+    mockAgendaData = {
+      agenda_date: '2026-07-20',
+      count: 6,
+      items: [agendaData.items[0], ...reviewItems],
+    };
+    const { getByText, queryByText } = render(<AgendaScreen />);
+
+    expect(getByText('待确认建议 3')).toBeTruthy();
+    expect(queryByText('待确认建议 4')).toBeNull();
+    fireEvent.press(getByText('查看其余 2 项'));
+    expect(getByText('待确认建议 4')).toBeTruthy();
+    expect(getByText('待确认建议 5')).toBeTruthy();
+    expect(getByText('收起')).toBeTruthy();
+  });
+
+  it('does not offer unsupported skip writes for advisory items', () => {
+    let menuOptions: readonly string[] = [];
+    jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions').mockImplementation((options, callback) => {
+      menuOptions = options.options;
+      callback(1);
+    });
+    const { getByLabelText } = render(<AgendaScreen />);
+
+    fireEvent.press(getByLabelText('管理 优质蛋白有助修复'));
+
+    expect(menuOptions).toEqual(['稍后再看', '调整计划', '问小巴', '取消']);
+    expect(mockMutate).not.toHaveBeenCalled();
+    expect(mockPushChatWithContext).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        context: expect.objectContaining({ intent: 'adjust' }),
+      }),
+    );
   });
 
   it('records an explicit skip reason instead of silently deleting the item', () => {

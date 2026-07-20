@@ -32,6 +32,7 @@ const WINDOW_ORDER: Record<string, number> = {
 };
 
 const HANDLED_STATUSES = new Set(['completed', 'done', 'skipped']);
+const WRITABLE_SOURCE_TYPES = new Set(['health_protocol', 'medication', 'supplement']);
 const INTERNAL_PREFIX = /^\s*(?:\[[a-z0-9_.-]+\]\s*)+/i;
 const INTERNAL_PRODUCER = /\b(?:safety_guardian|anomaly_detector|weekly_advisor)\b/gi;
 
@@ -83,9 +84,7 @@ export function groupTodayAgendaItems(
 
 export function canActOnAgendaItem(item: AgendaItem): boolean {
   if (HANDLED_STATUSES.has(item.status)) return false;
-  return item.can_default_complete === true
-    || (item.source.object_type === 'health_protocol' && item.status === 'pending')
-    || (item.source.object_type === 'daily_plan_action' && item.status === 'pending');
+  return item.status === 'pending' && WRITABLE_SOURCE_TYPES.has(item.source.object_type);
 }
 
 function deduplicateAgendaItems(items: AgendaItem[]): AgendaItem[] {

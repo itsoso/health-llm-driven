@@ -56,7 +56,27 @@ interface AgendaSection {
   data: AgendaItem[];
 }
 
-const ACTION_MENU_OPTIONS = ['移到稍后', '跳过', '调整计划', '问小巴', '取消'];
+type AgendaMenuAction = 'snooze' | 'skip' | 'adjust' | 'ask' | 'cancel';
+
+interface AgendaMenuItem {
+  label: string;
+  action: AgendaMenuAction;
+}
+
+const REVIEW_VISIBLE_COUNT = 3;
+const ACTIONABLE_MENU: AgendaMenuItem[] = [
+  { label: '移到稍后', action: 'snooze' },
+  { label: '跳过', action: 'skip' },
+  { label: '调整计划', action: 'adjust' },
+  { label: '问小巴', action: 'ask' },
+  { label: '取消', action: 'cancel' },
+];
+const REVIEW_MENU: AgendaMenuItem[] = [
+  { label: '稍后再看', action: 'snooze' },
+  { label: '调整计划', action: 'adjust' },
+  { label: '问小巴', action: 'ask' },
+  { label: '取消', action: 'cancel' },
+];
 
 export default function AgendaScreen() {
   const router = useRouter();
@@ -65,6 +85,7 @@ export default function AgendaScreen() {
   const complete = useCompleteAgendaItem();
   const [snoozedKeys, setSnoozedKeys] = useState<Set<string>>(() => new Set());
   const [handledExpanded, setHandledExpanded] = useState(false);
+  const [reviewExpanded, setReviewExpanded] = useState(false);
 
   const groups = useMemo(
     () => groupTodayAgendaItems(data?.items ?? [], { snoozedKeys }),
@@ -85,7 +106,7 @@ export default function AgendaScreen() {
         title: '需要确认',
         hint: '先问清，再决定怎么处理',
         count: groups.review.length,
-        data: groups.review,
+        data: reviewExpanded ? groups.review : groups.review.slice(0, REVIEW_VISIBLE_COUNT),
       },
       {
         key: 'later',
@@ -103,7 +124,7 @@ export default function AgendaScreen() {
       },
     ];
     return candidates.filter(section => section.count > 0);
-  }, [groups, handledExpanded]);
+  }, [groups, handledExpanded, reviewExpanded]);
 
   const pendingCount = groups.now.length + groups.review.length + groups.later.length;
 
@@ -211,37 +232,36 @@ export default function AgendaScreen() {
     );
   }, [markComplete]);
 
-  const handleMenuSelection = useCallback((item: AgendaItem, index: number) => {
-    if (index === 0) snooze(item);
-    if (index === 1) chooseSkipReason(item);
-    if (index === 2) askXiaoba(item, 'adjust');
-    if (index === 3) askXiaoba(item, 'ask');
+  const handleMenuAction = useCallback((item: AgendaItem, action: AgendaMenuAction) => {
+    if (action === 'snooze') snooze(item);
+    if (action === 'skip') chooseSkipReason(item);
+    if (action === 'adjust') askXiaoba(item, 'adjust');
+    if (action === 'ask') askXiaoba(item, 'ask');
   }, [askXiaoba, chooseSkipReason, snooze]);
 
   const openItemMenu = useCallback((item: AgendaItem) => {
+    const menu = canActOnAgendaItem(item) ? ACTIONABLE_MENU : REVIEW_MENU;
     if (Platform.OS === 'ios') {
       ActionSheetIOS.showActionSheetWithOptions(
         {
           title: cleanAgendaTitle(item.title),
-          options: ACTION_MENU_OPTIONS,
-          cancelButtonIndex: 4,
+          options: menu.map(option => option.label),
+          cancelButtonIndex: menu.length - 1,
         },
-        index => handleMenuSelection(item, index),
+        index => handleMenuAction(item, menu[index]?.action ?? 'cancel'),
       );
       return;
     }
     Alert.alert(
       cleanAgendaTitle(item.title),
       undefined,
-      [
-        { text: '移到稍后', onPress: () => snooze(item) },
-        { text: '跳过', onPress: () => chooseSkipReason(item) },
-        { text: '调整计划', onPress: () => askXiaoba(item, 'adjust') },
-        { text: '问小巴', onPress: () => askXiaoba(item, 'ask') },
-        { text: '取消', style: 'cancel' },
-      ],
+      menu.map(option => ({
+        text: option.label,
+        style: option.action === 'cancel' ? 'cancel' as const : 'default' as const,
+        onPress: () => handleMenuAction(item, option.action),
+      })),
     );
-  }, [askXiaoba, chooseSkipReason, handleMenuSelection, snooze]);
+  }, [handleMenuAction]);
 
   const renderSectionHeader = useCallback(({ section }: { section: AgendaSection }) => {
     const content = (
@@ -274,6 +294,24 @@ export default function AgendaScreen() {
       </Pressable>
     );
   }, [handledExpanded]);
+
+  const renderSectionFooter = useCallback(({ section }: { section: AgendaSection }) => {
+    if (section.key !== 'review' || section.count <= REVIEW_VISIBLE_COUNT) return null;
+    const hiddenCount = section.count - REVIEW_VISIBLE_COUNT;
+    return (
+      <Pressable
+        onPress={() => setReviewExpanded(value => !value)}
+        style={({ pressed }) => [styles.reviewToggle, pressed && styles.pressed]}
+        accessibilityRole="button"
+        accessibilityLabel={reviewExpanded ? '收起需要确认事项' : `查看其余 ${hiddenCount} 项需要确认事项`}
+      >
+        <Text style={styles.reviewToggleText}>
+          {reviewExpanded ? '收起' : `查看其余 ${hiddenCount} 项`}
+        </Text>
+        <Ionicons name={reviewExpanded ? 'chevron-up' : 'chevron-down'} size={16} color={C.green600} />
+      </Pressable>
+    );
+  }, [reviewExpanded]);
 
   const renderItem = useCallback(({ item, section }: { item: AgendaItem; section: AgendaSection }) => (
     <AgendaRow
@@ -329,6 +367,7 @@ export default function AgendaScreen() {
           sections={sections}
           keyExtractor={agendaItemKey}
           renderSectionHeader={renderSectionHeader}
+          renderSectionFooter={renderSectionFooter}
           renderItem={renderItem}
           stickySectionHeadersEnabled={false}
           contentInsetAdjustmentBehavior="automatic"
@@ -576,6 +615,16 @@ const styles = StyleSheet.create({
   },
   rowSeparator: { height: StyleSheet.hairlineWidth, marginLeft: 76, marginRight: revaSpacing.s4, backgroundColor: C.line },
   sectionSeparator: { height: 4 },
+  reviewToggle: {
+    minHeight: 42,
+    marginHorizontal: revaSpacing.s4,
+    marginTop: revaSpacing.s1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+  },
+  reviewToggleText: { fontFamily: revaFonts.sans, color: C.green600, fontSize: 13, fontWeight: '700' },
   state: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32, gap: 12 },
   stateIcon: {
     width: 52,
