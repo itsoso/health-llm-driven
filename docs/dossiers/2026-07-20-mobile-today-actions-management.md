@@ -4,8 +4,8 @@
 |---|---|
 | slug | `mobile-today-actions-management` |
 | 创建日期 | 2026-07-20 |
-| 当前阶段 | S5 验证 |
-| 状态 | building |
+| 当前阶段 | S8 上线验证 |
+| 状态 | shipped |
 | 负责 | Codex |
 | 反馈环 | Mobile Jest / iOS Simulator / production OTA |
 
@@ -55,7 +55,7 @@
 - [x] T2 今日事项分组与文案纯函数
 - [x] T3 完成/跳过写回与缓存刷新
 - [x] T4 今日行动管理页面与返回闭环
-- [ ] T5 模拟器验证、文档、提交、OTA
+- [x] T5 模拟器验证、文档、提交、OTA
 
 ## G3 · 测试闸
 
@@ -66,8 +66,11 @@
 - PASS: 本批文件 ESLint 无错误。
 - PASS: `npm run design:check`，设计 token 未新增漂移。
 - PASS: `python3 scripts/check_doc_drift.py`，代码派生系统地图一致。
-- 模拟器旧壳缺少主干新增的 `ExpoVideo` 原生模块，热加载无法作为本批视觉证据；T5 将从当前提交重建模拟器壳后复验。
-- **裁决：PASS（自动化），模拟器视觉仍在执行。**
+- PASS: 从提交 `63db2494f` 重建 iPhone 17 Pro 模拟器原生壳，Xcode build 成功（0 errors）。
+- PASS: 模拟器真实深链打开 `/agenda`；空态、紧凑标题栏和无底部 Tab 的页面结构正确。
+- PASS: 空态“返回小巴”和顶部返回键均实际点击验证，可回到原小巴对话；冷启动深链也有确定回退路径。
+- 真实账号当日无行动，因此有数据的分组、行级锁定和操作菜单由页面组件测试覆盖，不为视觉验收伪造健康行动。
+- **裁决：PASS。**
 
 ## G4 · 安全闸
 
@@ -78,6 +81,30 @@
 - 未修改药物剂量、诊断逻辑、安全阈值或推送隐私出口。
 - **裁决：GO。**
 
-## S6-S8
+## S6 · 提交与集成
 
-- 待实现后回写。
+- 设计与计划：`42e67ae9a`。
+- 实现：`63db2494f`。
+- `main` 已推送到 `origin/main`；未纳入并行会话的无关工作树改动。
+
+## G5 · 部署健康闸
+
+- 后端从干净的 `origin/main` worktree 部署，生产提交为 `63db2494`。
+- 部署健康度 `60/60 PASS`，skills manifest `22 = 22`。
+- 生产 `/api/v1/agenda/today` 未鉴权返回 `401`，证明路由已加载；`/health` 返回 `200`。
+- 后端近期日志未发现新的 error / critical / traceback / RLS superuser 告警。
+- **裁决：PASS。**
+
+## S7 · Mobile 发布
+
+- production OTA runtime：`1.3.2`。
+- EAS update group：`e04c34df-c835-496d-9ce3-76849f421217`。
+- iOS update：`019f7dcf-af87-7780-ad69-c891ce6a7398`。
+- 发布提交：`63db2494f1e8436e42517dc608756769da266b12`。
+- 原生兼容性：`1.3.2` 生产壳已包含 `expo-video`；本切片没有新增原生模块，OTA runtime 匹配。
+
+## G6 · 上线验证
+
+- 生产后端、鉴权路由和 OTA 发布标识均已验证。
+- 用户端需杀掉 App 后重新打开并应用更新，再从小巴行动卡点击“管理今日行动”完成最终真机验收。
+- **裁决：PASS（技术上线）；真机用户体验纳入下一反馈环。**
