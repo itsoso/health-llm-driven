@@ -274,7 +274,9 @@ async def test_query_turn_list_result_double_empty_retry_no_claim_no_leak(db, au
 # ── 正向控制: 真写入回合的双空重试,兜底仍确认"已完成记录" ──────────────────────
 
 
-async def test_verified_write_double_empty_retry_still_confirms(db, auth_user_and_headers):
+async def test_verified_write_double_empty_retry_still_confirms(
+    db, auth_user_and_headers, monkeypatch
+):
     """反向证伪(不 over-suppress): 非 fast-record 路由 + health_record 真写入
     (结构化回执 → write_receipts 非空) + 双空重试 → 兜底照常"已完成记录：…"。"""
     user, _headers = auth_user_and_headers
@@ -282,9 +284,13 @@ async def test_verified_write_double_empty_retry_still_confirms(db, auth_user_an
     rounds = []
 
     record_message = "晚饭吃的牛排和沙拉,帮我登记一下。"
-    # 前置断言: 这条自然语言写入并非 fast-record 的受限子集，
-    # 因而会走普通路径并覆盖空回复重试链。
-    assert not _has_fast_record_write_intent(record_message)
+    # 饮食分类器现在会把这条自然语言送入 fast-record。这个测试只验证普通
+    # Agent Loop 的空回复兜底，因此显式关闭快路由，避免路由演进让测试失焦。
+    assert _has_fast_record_write_intent(record_message)
+    monkeypatch.setattr(
+        "app.services.agent_executor._has_fast_record_write_intent",
+        lambda _message: False,
+    )
 
     async def fake_call_llm_stream(messages, tools):
         rounds.append(len(rounds))

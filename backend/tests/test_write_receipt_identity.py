@@ -130,9 +130,43 @@ def test_non_health_record_writes_produce_typed_receipts():
 
     for tool_name, args, payload, resource_type in cases:
         result = json.dumps(payload, ensure_ascii=False)
-        receipt = _write_receipt_from_tool_result(tool_name, None, result)
+        receipt = _write_receipt_from_tool_result(tool_name, args, result)
 
         assert receipt is not None
         assert receipt["resource_type"] == resource_type
         assert receipt["resource_id"] == str(payload["id"])
         assert _write_tool_completed(tool_name, args, result) is True
+
+
+def test_polymorphic_write_tools_derive_resource_type_from_arguments():
+    cases = [
+        (
+            "health_manage",
+            {"record_type": "supplement_definition", "operation": "update"},
+            "supplement_definition",
+        ),
+        (
+            "health_manage",
+            {"record_type": "medication", "operation": "update"},
+            "medication",
+        ),
+        (
+            "health_manage",
+            {"record_type": "medication_log", "operation": "update"},
+            "medication_log",
+        ),
+        ("manage_plan", {"action": "generate_weekly"}, "smart_plan"),
+        ("manage_plan", {"action": "complete_item"}, "smart_plan_item"),
+        ("manage_plan", {"action": "save_to_card"}, "action_card"),
+    ]
+
+    for tool_name, args, expected_resource_type in cases:
+        receipt = _write_receipt_from_tool_result(
+            tool_name,
+            args,
+            json.dumps({"id": 55, "message": "操作成功"}),
+        )
+
+        assert receipt is not None
+        assert receipt["resource_type"] == expected_resource_type
+        assert receipt["resource_id"] == "55"

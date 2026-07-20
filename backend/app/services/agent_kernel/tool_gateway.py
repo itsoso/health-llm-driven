@@ -2,9 +2,15 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Awaitable, Callable
 
 from app.services.agent_kernel.capability_policy import decide_tool_capability
-from app.services.agent_kernel.types import CapabilityDecision, ToolExecutionRequest, TurnSnapshot
+from app.services.agent_kernel.types import (
+    CapabilityDecision,
+    ToolExecutionRequest,
+    ToolExecutionResult,
+    TurnSnapshot,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +36,32 @@ class ToolGateway:
             request.source,
         )
         return decision
+
+    async def execute(
+        self,
+        request: ToolExecutionRequest,
+        dispatch: Callable[[ToolExecutionRequest], Awaitable[object]],
+    ) -> ToolExecutionResult:
+        """Apply policy and invoke the supplied adapter at most once."""
+        decision = self.preflight(request)
+        if decision.action == "block" and self.snapshot.policy_mode == "enforce":
+            return ToolExecutionResult(
+                tool_name=decision.normalized_tool_name or request.tool_name,
+                content=blocked_tool_result(decision),
+                decision=decision,
+            )
+        normalized_request = ToolExecutionRequest(
+            tool_name=decision.normalized_tool_name or request.tool_name,
+            arguments=decision.normalized_args,
+            source=request.source,
+            tool_call_id=request.tool_call_id,
+        )
+        content = await dispatch(normalized_request)
+        return ToolExecutionResult(
+            tool_name=normalized_request.tool_name,
+            content=content,
+            decision=decision,
+        )
 
 
 def blocked_tool_result(decision: CapabilityDecision) -> str:

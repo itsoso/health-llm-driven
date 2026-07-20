@@ -39,6 +39,7 @@ class AgentRun(Base):
     local_execution_id = Column(String(128), nullable=True)
     privacy_mode = Column(String(32), nullable=False, default="cloud")
     deadline_at = Column(DateTime(timezone=True), nullable=True)
+    cancel_requested_at = Column(DateTime(timezone=True), nullable=True)
     error_code = Column(String(80), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     started_at = Column(DateTime(timezone=True), nullable=True)
@@ -108,6 +109,12 @@ class AgentRunAttempt(Base):
             name="ck_agent_run_attempts_status",
         ),
         Index("uq_agent_run_attempt_number", "run_id", "attempt_no", unique=True),
+        Index(
+            "ix_agent_run_attempts_running_lease",
+            "lease_expires_at",
+            postgresql_where=text("status = 'running'"),
+            sqlite_where=text("status = 'running'"),
+        ),
     )
 
 

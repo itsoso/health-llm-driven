@@ -74,7 +74,7 @@ class LongevitySpecialist:
                     findings.append(cardio)
                     fa = cardio.get("fitness_age")
                     summary = (
-                        f"暂无 PhenoAge(缺血检),但有 VO2max 体能信号"
+                        "暂无 PhenoAge(缺血检),但有 VO2max 体能信号"
                         + (f":体能年龄 {fa} 岁" if fa is not None else "")
                         + ";补全血检后可加上表型年龄。"
                     )

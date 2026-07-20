@@ -28,8 +28,6 @@ update/delete 算写)后出现。无回执 → fall through 合成轮,让模型�
 """
 import json
 
-import pytest
-
 from app.services.agent_executor import AgentExecutor
 from app.services.utterance_intent_classifier import classify_agent_utterance
 from app.models.agent_conversation import AgentMessage
@@ -227,10 +225,12 @@ async def test_verified_write_still_confirms_record(db, auth_user_and_headers):
     assert len(rounds) == 1, rounds
 
 
-# ── Test 4: 生产实锤 — 记录意图 + **零工具** → 「✅ 症状已记录」绝不 live 下发 ──
+# ── Test 4: 生产实锤 — 模型零工具 + 确定性写入失败 → 绝不谎称已记录 ──
 
 
-async def test_record_turn_with_zero_tools_never_streams_the_claim(db, auth_user_and_headers):
+async def test_failed_deterministic_symptom_write_never_streams_the_claim(
+    db, auth_user_and_headers
+):
     """founder 2026-07-17 09:21 生产现场逐字复现(user=3, 24h 内 2 次)。
 
     弱模型对「麦当劳店记录打了一个喷嚏。」**一个工具都没调**, 直接吐出
@@ -242,8 +242,8 @@ async def test_record_turn_with_zero_tools_never_streams_the_claim(db, auth_user
     消息, 救不回已下发的字。修法 = 在 :6374 的下发门里加 not (_prefer_fast_record_model
     and tool_executed_count == 0), 让既有的覆盖真正生效。
 
-    这条测试打的是**下发出去的 token**(非落库消息), 所以它能捕获那个 bug;
-    把 :6374 的门去掉 → 本测试必红。
+    现在明确症状陈述会补一次确定性 health_record 写入。这条测试
+    故意让该写入失败，验证未经回执的「已记录」仍然不会流到屏幕。
     """
     user, _headers = auth_user_and_headers
     executor = AgentExecutor(db)
@@ -263,7 +263,7 @@ async def test_record_turn_with_zero_tools_never_streams_the_claim(db, auth_user
 
     async def fake_execute_tool(tool_name, args_raw, user_token):
         tools_called.append(tool_name)
-        raise AssertionError("本回合不应有任何工具执行")
+        raise RuntimeError("模拟症状写入失败")
 
     executor._call_llm_stream = fake_call_llm_stream
     executor._execute_tool = fake_execute_tool
@@ -275,7 +275,7 @@ async def test_record_turn_with_zero_tools_never_streams_the_claim(db, auth_user
     ]
     reply = _tokens(events)
 
-    assert tools_called == [], "前提:本回合零工具执行"
+    assert tools_called == ["health_record"], "明确症状应尝试确定性写入"
     # 承重墙: 未经验证的写入声明**绝不**出现在下发给用户的 token 流里。
     assert "已记录" not in reply, f"未验证的『已记录』流到了用户屏幕上: {reply!r}"
     assert "✅" not in reply, reply

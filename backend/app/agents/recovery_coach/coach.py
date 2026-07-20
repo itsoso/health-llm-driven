@@ -22,7 +22,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from app.orchestrator.schema import Intent, ProposedCard, SpecialistFinding
 from app.twin.schema import HealthTwin

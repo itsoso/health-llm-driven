@@ -373,7 +373,7 @@ def red_cell_elevation(twin: HealthTwin) -> Optional[Alert]:
 @register
 def labs_data_stale(twin: HealthTwin) -> Optional[Alert]:
     """化验数据超过 6 个月未更新 —— 提醒复查。"""
-    from datetime import date, timedelta
+    from datetime import date
 
     last_date = twin.labs.last_exam_date
     if last_date is None:

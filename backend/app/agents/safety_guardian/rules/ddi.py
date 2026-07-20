@@ -15,7 +15,6 @@
 规则格式参考：FDA 药品说明书 / Lexicomp / Micromedex 共识警示
 """
 
-import re
 from typing import List, Optional
 
 from app.agents.safety_guardian.engine import register

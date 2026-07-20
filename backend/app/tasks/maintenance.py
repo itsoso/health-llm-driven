@@ -10,6 +10,59 @@ from app.utils.timezone import get_china_now
 logger = logging.getLogger(__name__)
 
 
+def _agent_runtime_unleased_grace_seconds() -> int:
+    from app.config import settings
+
+    configured = int(
+        getattr(settings, "agent_runtime_unleased_grace_seconds", 420) or 420
+    )
+    deadline = int(getattr(settings, "agent_runtime_deadline_seconds", 300) or 300)
+    return max(configured, deadline + 120)
+
+
+@celery_app.task(
+    time_limit=55,
+    name="app.tasks.maintenance.recover_expired_agent_runs",
+)
+def recover_expired_agent_runs(*, now_iso: str | None = None):
+    """Settle Agent Runs whose worker lease expired.
+
+    The task is intentionally inert while the Runtime control plane is not in
+    enforce mode. Recovery never restarts an Executor blindly: read-only runs
+    become retryable failures, while uncertain writes require reconciliation.
+    """
+    from app.config import settings
+    from app.services.agent_runtime import AgentRuntimeCoordinator
+
+    if str(getattr(settings, "agent_runtime_mode", "off")).lower() != "enforce":
+        return {"status": "disabled", "recovered": 0}
+
+    now = datetime.fromisoformat(now_iso) if now_iso else None
+    with SessionLocal() as db:
+        recovered = AgentRuntimeCoordinator(db).recover_expired_runs(
+            now=now,
+            limit=100,
+            unleased_grace_seconds=_agent_runtime_unleased_grace_seconds(),
+        )
+
+    failed = sum(item.status == "failed" for item in recovered)
+    reconciliation_required = sum(
+        item.status == "reconciliation_required" for item in recovered
+    )
+    logger.info(
+        "[agent-runtime] recovered=%s failed=%s reconciliation_required=%s",
+        len(recovered),
+        failed,
+        reconciliation_required,
+    )
+    return {
+        "status": "ok",
+        "recovered": len(recovered),
+        "failed": failed,
+        "reconciliation_required": reconciliation_required,
+    }
+
+
 @celery_app.task
 def cleanup_expired_data():
     """

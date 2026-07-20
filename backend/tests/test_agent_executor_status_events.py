@@ -471,7 +471,7 @@ async def test_clear_symptom_is_written_when_model_only_returns_text(
     async def fake_execute_tool(name, args, token):
         executed.append((name, args))
         return (
-            '{"id": 42, "resource_type": "symptom", '
+            '{"id": 42, "resource_type": "symptom_record", '
             '"description": "还是有腰疼的症状", '
             '"created_at": "2026-07-19T17:00:00+08:00"}'
         )
