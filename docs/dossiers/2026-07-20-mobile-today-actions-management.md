@@ -4,8 +4,8 @@
 |---|---|
 | slug | `mobile-today-actions-management` |
 | 创建日期 | 2026-07-20 |
-| 当前阶段 | S6 验证（反馈环 2） |
-| 状态 | validating |
+| 当前阶段 | S8 上线验证（反馈环 2） |
+| 状态 | shipped |
 | 负责 | Codex |
 | 反馈环 | Mobile Jest / iOS Simulator / production OTA |
 
@@ -139,4 +139,13 @@
 - [x] 专项 Jest `16 passed`，TypeScript、ESLint 和设计 token 闸通过。
 - [x] 模拟器完成新开发包安装并通过 `exp+health-pilot://agenda` 直达复核；真实账号数据呈现为 `现在做 2 / 需要确认 7`。
 - [x] 修复模拟器复核发现的重复 source key：按完成写回身份去重，待处理总数由错误的 11 条恢复为 9 条，页面无重复键警告。
-- [ ] production OTA 发布与真机验证。
+- [x] 最新 `origin/main`（`85606de94`）CI `41/41` 通过；production OTA 发布到 runtime `1.3.2`。
+- [x] EAS update group `718748de-169b-4ab6-9c47-54dff39f75b0`，iOS update `019f7eb8-bf7a-7b12-aa57-f276246859db`。
+- [ ] 用户真机杀掉 App 后重开并应用更新，完成最终触控验收。
+
+### Gate 裁决
+
+- G3 测试：PASS（专项 Jest `16 passed`、TypeScript、ESLint、design token、doc drift、`git diff --check`；最新主干 CI `41/41`）。
+- G4 评审：PASS（不新增医疗写回路径；不可直接执行的建议仅允许“问小巴”）。
+- G5 部署：PASS（production / iOS / runtime `1.3.2`，EAS 标识已回读验证）。
+- G6 上线验证：PASS（技术上线）；真机触控反馈继续进入下一反馈环。
