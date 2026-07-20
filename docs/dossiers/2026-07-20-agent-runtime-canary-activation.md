@@ -4,8 +4,8 @@
 |---|---|
 | slug | `agent-runtime-canary-activation` |
 | 创建日期 | 2026-07-20 |
-| 当前阶段 | S5 实现 / 首轮灰度纠偏 |
-| 状态 | shipping |
+| 当前阶段 | S8 单账号生产灰度已验证 |
+| 状态 | complete |
 | 负责 | Codex + 用户 |
 | 反馈环 | backend config deploy + production Agent API + aggregate monitoring |
 
@@ -65,11 +65,11 @@
 - [x] T1 记录 `off` 生产聚合基线和服务健康。
 - [x] T2 核验一个既有内部账号，不输出 PII。
 - [x] T3 在 `off` 下完成管理员 pause/resume 幂等演练。
-- [ ] T4 通过 `deploy.sh -e` 启用 `canary + 0% + 1 allowlist`。
-- [ ] T5 完成真实只读 Run / same-turn replay 验证。
-- [ ] T6 完成可回滚非临床写入 / receipt replay / cleanup 验证。
-- [ ] T7 完成 pause fallback、取消或中断恢复验证。
-- [ ] T8 观察完整窗口并裁决保留 canary 或回滚 `off`。
+- [x] T4 通过 `deploy.sh -e` 启用 `canary + 0% + 1 allowlist`。
+- [x] T5 完成真实只读 Run / same-turn replay 验证。
+- [x] T6 完成可回滚非临床写入 / receipt replay / cleanup 验证。
+- [x] T7 完成 pause fallback、取消或中断恢复验证。
+- [x] T8 观察完整窗口并裁决保留 canary 或回滚 `off`。
 
 ## 首轮灰度纠偏记录
 
@@ -79,35 +79,64 @@
 - 修复基线: 否定判断必须遍历同一语句内全部否定词和目标操作位置；生产原句须在分类器层判为非写入，并在 Executor 层结算为成功且零工具调用。
 - 返回阶段: 回到 S5 修复和 G3 回归；修复提交、CI、代码部署以及干净聚合窗口全部通过前，不重新启用 canary。
 
+## 第二轮灰度执行证据
+
+- 主干与部署: 修复提交 `85606de94816ecb13f8212035c1b5c2f8e8ff101` 已进入 `main`；CI run `29728258183` 成功完成全部任务；后端以 Runtime `off` 部署，健康度 `60/60`，随后才启用 `canary + 0% + 1 allowlist`。
+- 准入与恢复: allowlist 账号命中 `canary_allowlist`，非名单账号命中 `canary_not_selected`；恢复扫描返回 `recovered=0`，熔断器保持 `active`。
+- 只读重放: 新 Turn 产生一个 `succeeded` Run、一个 `succeeded` Attempt、零工具操作和三个连续事件；重放返回同一 Run、Attempt 和助手消息，Runtime 事件仅包含允许的 `input_seq/status` 键。
+- 验收脚本纠偏: 首次数据库核对错误地按原始 `client_turn_id` 查消息，忽略消息表使用 `user_id:client_turn_id` 的用户域存储键，因此把已绑定消息误报为缺失。系统按硬规则先回 `off`；根因确认后使用 `AgentConversationService` 的正式查询契约重验通过，再恢复单账号 canary。该次不是 Runtime 或业务请求失败。
+- 可逆写入: 通过正常 Agent API 创建唯一一次性测试提醒，得到一个 `smart_reminder` 已验证回执；同 Turn 重放没有第二次副作用；随后通过第一方删除接口取消，最终仅一条已取消测试对象。
+- 暂停与恢复: 管理接口暂停后，历史 managed Run 仍可查询；新 Turn 完整回退 unmanaged 路径、消息正常持久化且 Runtime 表无对应 Run；聚合指标干净后手工恢复为 `active`。
+- 取消: 一条只读 managed Run 在执行中收到取消请求，最终 Run/Attempt 均唯一结算为 `cancelled`；请求停止、助手消息为零、写副作用为零、无 reconciliation 或 stale active Run。
+
+## 观察窗口前的环境同步纠偏
+
+- 发现: API 已进入 canary 时，Celery 定时恢复任务仍返回 `status=disabled`。根因不是 Runtime 状态机，而是 `deploy.sh -e` 只重启了后端和前端，没有重启 `celery-worker` / `celery-beat`，导致同一生产版本内运行配置不一致。
+- 即时处置: 停止观察窗口并将 `AGENT_RUNTIME_MODE` 回滚到 `off`；确认 API 和 Celery 都处于关闭语义后才开始修复，没有带着监控盲区继续灰度。
+- 修复: 提交 `1472398b2dd751534dea0f41988bed51ff1412f5` 让环境同步统一重启后端、Celery worker、Celery beat 和前端；新增部署契约测试，验证环境同步不会遗漏 Runtime 后台进程。
+- 重新启用: 主干 CI run `29730971672` 的首次 `backend-test-c` 因既有超大分片在 `conversation_starters` 后两次耗尽 600 秒保护而失败；失败分片重跑后 572 项全部通过，最终 41 个任务全部成功。随后先以 `off` 部署代码，再通过修复后的 `deploy.sh -e` 启用 `canary + 0% + 1 allowlist`。
+- 生效验证: API、Celery worker 和 beat 均读取到 canary；恢复任务从关闭态的 `disabled` 变为连续 `ok`，且保持 `recovered=0 / failed=0 / reconciliation_required=0`。
+
 ## G3 · 测试闸
 
 - 继承控制面交付证据: SQLite `196 passed, 3 skipped`；真实 PostgreSQL `170 passed`；真实 LLM `12/12 + 50/50 + 5/5`。
 - 新增回归: 生产原句的分类器测试与 Executor 零工具成功结算测试。
 - 新鲜证据: 意图识别、写入防误报、流式回复、Turn 结算和 Runtime API/服务共 `158 passed`。
-- 本次仍需新增的新鲜证据: 管理接口、生产只读/写入回执、重放、暂停与恢复、完整窗口聚合指标。
-- **当前裁决: PASS。** 修复通过本地测试闸，生产 Gate 仍须从 `off` 重新开始。
+- 精确 CI 分片复验: Agent Executor `153 passed`；主干 CI run `29728258183` 成功完成全部任务。
+- 部署契约回归: 环境同步必须重启后端和两个 Celery 服务的聚焦测试 `7 passed`，`bash -n deploy.sh` 与 `git diff --check` 通过。
+- 最终主干闸: 修复提交 `1472398b2dd751534dea0f41988bed51ff1412f5` 的 CI run `29730971672` 在失败分片重跑后 41/41 成功。
+- 生产证据: 管理接口、只读/写入回执、同 Turn 重放、暂停/恢复、取消和完整窗口聚合指标均已通过。
+- **当前裁决: PASS。** 自动化、生产功能路径和完整观察窗口均已通过。
 
 ## G4 · 安全闸
 
 - 触发: 认证、生产写路径、健康数据隐私。
 - 要求: 管理员鉴权、无 PII/PHI Runtime ledger、可回滚非临床测试写入、无人工 DB 修改。
-- **当前裁决: 待生产演练后复核。**
+- 结果: Runtime ledger 未保存 prompt、回复、工具参数或工具结果；可逆写入只使用非临床测试提醒并已取消；全过程未直接修改生产业务行。
+- **当前裁决: PASS。**
 
 ## S6 / G5 · 部署与健康
 
 - 路由: `backend-deploy`，仅允许 `deploy.sh -e` 同步本地受控 `.env`。
 - 回滚: 将 `AGENT_RUNTIME_MODE=off` 后再次 `deploy.sh -e`。
 - 健康门: 服务 active、公网 health healthy、聚合监控可用、Celery recovery/evaluator 正常。
-- 当前生产状态: `off`，服务与公网健康正常；首轮 canary 已安全回滚。
-- 当前状态: 待修复提交、CI 和代码部署后重跑。
+- 当前生产状态: `canary + 0% + 1 allowlist`，熔断器 `active`；后端、Celery worker/beat 和主公网入口健康。
+- 部署证据: 生产提交与 `main` 一致，部署健康度 `60/60`，Skills manifest `22/22`；环境同步明确重启后端、Celery worker/beat 和前端，恢复扫描无待处理 Run。
+- **当前裁决: PASS。**
 
 ## S7 / G6 · 上线验证
 
 - 真实路径: 一个内部账号的 normal Agent API；客户端版本和 strict-local 路径不变。
 - 成功条件: 单一 Run identity、无重复输出、无重复副作用、无 reconciliation、无 stale lease、暂停/恢复符合设计。
 - 首轮结果: Runtime 正确记录失败并未产生工具副作用，但请求意图误判导致用户路径失败。
-- 当前状态: 首轮证据保留，等待修复部署后以新 `client_turn_id` 重新验证。
+- 第二轮结果: 只读重放、可逆写入回执和清理、pause fallback、恢复、取消结算均通过；普通用户流量仍为 0%。
+- 最终观察: 2026-07-20 17:59:30 至 18:15:21（Asia/Shanghai）共 16 个逐分钟样本全部通过；三类服务、本地/公网健康、灰度配置、熔断器、失败、reconciliation、stale 和恢复任务新鲜度始终满足不变量。
+- 窗口审计: 18 次恢复结果全部为 `ok`，`disabled=0`、非 `ok=0`、worker Runtime error=0、backend Runtime error=0；最终 15 分钟聚合为 `succeeded=1 / failed=0 / reconciliation=0 / stale=0`。
+- **当前裁决: PASS。** 保留 `canary + 0% + 1 internal allowlist`，不进入普通用户百分比放量。
 
 ## S8 · 沉淀
 
-- 完成后记录生产模式、观察窗口、聚合计数、回滚结果、主干提交和 CI；不记录用户 ID 或健康内容。
+- 最终生产模式: `canary + 0% + 1 internal allowlist`；普通用户仍走 unmanaged 路径，iPhone strict-local 路径不变。
+- 主干: Runtime 否定意图修复 `85606de94816ecb13f8212035c1b5c2f8e8ff101`；环境同步修复 `1472398b2dd751534dea0f41988bed51ff1412f5`。
+- 回滚路径已真实演练: 将模式切为 `off` 后通过 `deploy.sh -e` 同步并统一重启后端和 Celery；不依赖直接数据库或服务器配置修改。
+- 观察和验证只保存聚合运行证据，不记录用户 ID、prompt、回复、健康正文、工具参数或工具结果。
