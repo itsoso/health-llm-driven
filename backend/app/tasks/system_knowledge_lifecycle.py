@@ -254,16 +254,28 @@ def _write_agent_package_lineage_to_artifacts(
 
 def _retire_superseded_agent_package_projections(
     artifact_dir: str | Path,
+    canonical_artifact_dir: str | Path,
     superseded_refs: set[tuple[str, str]],
 ) -> None:
     """Remove superseded draft provenance while preserving shared-package rows."""
     if not superseded_refs:
         return
     root = Path(artifact_dir)
+    canonical_root = Path(canonical_artifact_dir)
     for name in ARTIFACT_FILES:
         path = root / name
         if not path.exists():
             continue
+        canonical_rows: dict[tuple[str, ...], dict[str, Any]] = {}
+        canonical_path = canonical_root / name
+        if canonical_path.exists():
+            for raw_line in canonical_path.read_text(encoding="utf-8").splitlines():
+                if not raw_line.strip():
+                    continue
+                canonical_row = json.loads(raw_line)
+                key = _artifact_row_identity(name, canonical_row)
+                if key:
+                    canonical_rows[key] = canonical_row
         rows: list[str] = []
         for raw_line in path.read_text(encoding="utf-8").splitlines():
             if not raw_line.strip():
@@ -287,11 +299,26 @@ def _retire_superseded_agent_package_projections(
                 )
             ]
             if not retained:
+                canonical_row = canonical_rows.get(_artifact_row_identity(name, row))
+                if canonical_row is not None:
+                    rows.append(json.dumps(canonical_row, ensure_ascii=False, sort_keys=True))
                 continue
             metadata["agent_package_lineage"] = retained
             row["metadata"] = metadata
             rows.append(json.dumps(row, ensure_ascii=False, sort_keys=True))
         path.write_text(("\n".join(rows) + "\n") if rows else "", encoding="utf-8")
+
+
+def _artifact_row_identity(name: str, row: dict[str, Any]) -> tuple[str, ...]:
+    if name == "relations.jsonl":
+        key = (
+            str(row.get("src_doc_id") or ""),
+            str(row.get("relation") or ""),
+            str(row.get("dst_doc_id") or ""),
+        )
+        return key if all(key) else ()
+    doc_id = str(row.get("doc_id") or "")
+    return (doc_id,) if doc_id else ()
 
 
 def _list_release_records(
@@ -780,25 +807,47 @@ def sync_dedao_kbase_agent_packages_draft_once(
         for record in records:
             package_id = str(record.get("package_id") or "").strip()
             version = str(record.get("version") or "").strip()
-            supersedes = str(record.get("supersedes") or "").strip()
-            if str(record.get("lifecycle_state") or "").strip().lower() == "published" and "@" in supersedes:
-                superseded_id, superseded_version = supersedes.rsplit("@", 1)
-                if superseded_id and superseded_version:
-                    superseded_refs.add((superseded_id, superseded_version))
             package = client.get_agent_package(package_id, version=version)
             releases = [
                 client.get_release(str(reference.get("release_id") or ""))
                 for reference in package.get("releases") or []
             ]
             assessment = assess_agent_package_for_health(package, releases)
-            if assessment["eligible"]:
+            hold_reasons = list(assessment["hold_reasons"])
+            detail_package_id = str(package.get("package_id") or "").strip()
+            detail_version = str(package.get("version") or "").strip()
+            record_supersedes = str(record.get("supersedes") or "").strip()
+            detail_supersedes = str(package.get("supersedes") or "").strip()
+            superseded_ref: tuple[str, str] | None = None
+            if detail_package_id != package_id or detail_version != version:
+                hold_reasons.append("conflict")
+            if record_supersedes and record_supersedes != detail_supersedes:
+                hold_reasons.append("conflict")
+            if detail_supersedes:
+                if "@" not in detail_supersedes:
+                    hold_reasons.append("conflict")
+                else:
+                    superseded_id, superseded_version = detail_supersedes.rsplit("@", 1)
+                    if (
+                        not superseded_id
+                        or not superseded_version
+                        or superseded_id != detail_package_id
+                        or superseded_version == detail_version
+                    ):
+                        hold_reasons.append("conflict")
+                    else:
+                        superseded_ref = (superseded_id, superseded_version)
+            hold_reasons = list(dict.fromkeys(hold_reasons))
+            if not hold_reasons:
                 eligible.append((package, releases))
+                if superseded_ref is not None:
+                    superseded_refs.add(superseded_ref)
             else:
                 held_packages.append(
                     {
                         "package_id": package_id,
                         "version": version,
-                        "reasons": assessment["hold_reasons"],
+                        "reasons": hold_reasons,
                     }
                 )
 
@@ -842,7 +891,11 @@ def sync_dedao_kbase_agent_packages_draft_once(
                 shutil.copytree(source, candidate, dirs_exist_ok=True)
             if mode == "rebuild":
                 _normalize_canonical_review_status(candidate)
-            _retire_superseded_agent_package_projections(candidate, superseded_refs)
+            _retire_superseded_agent_package_projections(
+                candidate,
+                canonical,
+                superseded_refs,
+            )
             existing_lineages = _agent_package_lineages_by_release(candidate)
             package_results = [
                 compile_agent_package_artifacts(

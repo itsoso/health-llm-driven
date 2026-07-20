@@ -607,6 +607,166 @@ def test_agent_package_sync_retires_superseded_version_from_incremental_workspac
     ]
 
 
+def test_agent_package_sync_does_not_retire_for_held_replacement_on_mixed_page(tmp_path, db):
+    from app.tasks.system_knowledge_lifecycle import sync_dedao_kbase_agent_packages_draft_once
+
+    release_one = _release_payload("release-one")
+    release_two = _release_payload("release-two")
+    release_other = _release_payload("release-other")
+    first_package = _agent_package_payload(release=release_one, version="1.0.0")
+    held_replacement = _agent_package_payload(release=release_two, version="2.0.0")
+    held_replacement["supersedes"] = "health-book@1.0.0"
+    held_replacement["safety_policy"]["usage_policy"] = "standard"
+    other_package = _agent_package_payload(
+        release=release_other,
+        package_id="health-book-other",
+    )
+    packages = [first_package]
+    releases = {
+        release["release_id"]: release
+        for release in (release_one, release_two, release_other)
+    }
+    requests: list[tuple[str, str, dict | None]] = []
+    server = ThreadingHTTPServer(
+        ("127.0.0.1", 0),
+        _agent_package_sequence_handler(packages, releases, requests),
+    )
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    canonical = tmp_path / "canonical"
+    workspace = tmp_path / "agent-package-review"
+    _write_canonical_artifacts(canonical, marker="trusted-base")
+    try:
+        sync_dedao_kbase_agent_packages_draft_once(
+            db,
+            base_url=f"http://127.0.0.1:{server.server_port}",
+            auth_token="secret-token",
+            artifact_dir=workspace,
+            base_artifact_dir=canonical,
+            source_root=tmp_path / "source",
+            limit=1,
+        )
+        packages.extend([held_replacement, other_package])
+        result = sync_dedao_kbase_agent_packages_draft_once(
+            db,
+            base_url=f"http://127.0.0.1:{server.server_port}",
+            auth_token="secret-token",
+            artifact_dir=workspace,
+            base_artifact_dir=canonical,
+            source_root=tmp_path / "source",
+            limit=2,
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+    assert result["held_packages"] == [
+        {"package_id": "health-book", "version": "2.0.0", "reasons": ["non_evidence_only"]}
+    ]
+    claims = [json.loads(line) for line in (workspace / "claims.jsonl").read_text().splitlines()]
+    assert {claim["metadata"].get("release_id") for claim in claims} >= {
+        "release-one",
+        "release-other",
+    }
+    manifest = json.loads((workspace / "draft_manifest.json").read_text())
+    assert {(item["package_id"], item["version"]) for item in manifest["agent_packages"]} == {
+        ("health-book", "1.0.0"),
+        ("health-book-other", "1.0.0"),
+    }
+
+
+def test_agent_package_sync_restores_canonical_row_after_final_lineage_is_retired(tmp_path, db):
+    from app.tasks.system_knowledge_lifecycle import sync_dedao_kbase_agent_packages_draft_once
+
+    release_one = _release_payload("release-one")
+    release_two = _release_payload("release-two")
+    first_package = _agent_package_payload(release=release_one, version="1.0.0")
+    second_package = _agent_package_payload(release=release_two, version="2.0.0")
+    second_package["supersedes"] = "health-book@1.0.0"
+    packages = [first_package]
+    releases = {release_one["release_id"]: release_one, release_two["release_id"]: release_two}
+    requests: list[tuple[str, str, dict | None]] = []
+    server = ThreadingHTTPServer(
+        ("127.0.0.1", 0),
+        _agent_package_sequence_handler(packages, releases, requests),
+    )
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    canonical = tmp_path / "canonical"
+    workspace = tmp_path / "agent-package-review"
+    _write_canonical_artifacts(canonical, marker="trusted-base")
+    canonical_page = {
+        "doc_id": "page:ak-kbase:release-release-one",
+        "doc_type": "article",
+        "title": "Canonical baseline page",
+        "summary": "Reviewed canonical evidence.",
+        "metadata": {"review_status": "reviewed", "origin": "canonical"},
+    }
+    with (canonical / "pages.jsonl").open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(canonical_page) + "\n")
+    try:
+        sync_dedao_kbase_agent_packages_draft_once(
+            db,
+            base_url=f"http://127.0.0.1:{server.server_port}",
+            auth_token="secret-token",
+            artifact_dir=workspace,
+            base_artifact_dir=canonical,
+            source_root=tmp_path / "source",
+            limit=1,
+        )
+        projected_collision = {
+            **canonical_page,
+            "title": "Package-projected collision",
+            "metadata": {
+                "review_status": "draft",
+                "origin": "dedao-kbase-agent-package",
+                "release_id": "release-one",
+                "package_id": "health-book",
+                "package_version": "1.0.0",
+                "agent_package_lineage": [
+                    {
+                        "package_id": "health-book",
+                        "version": "1.0.0",
+                        "content_hash": first_package["content_hash"],
+                        "release_ids": ["release-one"],
+                    }
+                ],
+            },
+        }
+        page_rows = [
+            row
+            for row in map(json.loads, (workspace / "pages.jsonl").read_text().splitlines())
+            if row["doc_id"] != canonical_page["doc_id"]
+        ]
+        page_rows.append(projected_collision)
+        (workspace / "pages.jsonl").write_text(
+            "".join(json.dumps(row) + "\n" for row in page_rows),
+            encoding="utf-8",
+        )
+
+        packages.append(second_package)
+        sync_dedao_kbase_agent_packages_draft_once(
+            db,
+            base_url=f"http://127.0.0.1:{server.server_port}",
+            auth_token="secret-token",
+            artifact_dir=workspace,
+            base_artifact_dir=canonical,
+            source_root=tmp_path / "source",
+            limit=1,
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+    pages = {
+        row["doc_id"]: row
+        for row in map(json.loads, (workspace / "pages.jsonl").read_text().splitlines())
+    }
+    assert pages[canonical_page["doc_id"]] == canonical_page
+
+
 def test_agent_package_sync_preserves_lineage_for_sequential_overlapping_packages(tmp_path, db):
     from app.tasks.system_knowledge_lifecycle import sync_dedao_kbase_agent_packages_draft_once
 
