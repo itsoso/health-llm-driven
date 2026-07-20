@@ -4,8 +4,8 @@
 |---|---|
 | slug | `agent-runtime-control-plane` |
 | 创建日期 | 2026-07-19 |
-| 当前阶段 | P2 Runtime Resilience 已合并并以默认关闭模式部署；灰度启用另立 Gate |
-| 状态 | complete |
+| 当前阶段 | P3 Canary Control Plane 研发中；生产 Runtime 仍默认关闭 |
+| 状态 | in_progress |
 | 负责 | Codex |
 | 反馈环 | PostgreSQL/SQLite 集成测试 / Agent SSE 回归 / backend deploy |
 
@@ -71,6 +71,8 @@ RequirementAdmission:
 - P1 实施计划: `docs/plans/2026-07-19-agent-runtime-tool-control.md`
 - P2 设计: `docs/plans/2026-07-19-agent-runtime-resilience-design.md`
 - P2 实施计划: `docs/plans/2026-07-19-agent-runtime-resilience.md`
+- P3 灰度设计: `docs/plans/2026-07-20-agent-runtime-canary-design.md`
+- P3 实施计划: `docs/plans/2026-07-20-agent-runtime-canary.md`
 
 ## G2 · 可行性 + 安全压测
 
@@ -214,3 +216,33 @@ RequirementAdmission:
   - Web `npm ci` 仍报告 `19` 个历史依赖漏洞（含 `2 critical`）；未在 Runtime PR 中强制升级依赖，另列安全治理，不作为 Runtime 代码回归隐藏。
 - 独立复审发现的终态竞态、心跳启动/续租边界、心跳清理覆盖、中断语义、无租约旧 Run、索引、回执隐私和多态资源类型缺口均已增加回归并修复。
 - Rollout: P2 代码与 schema 已部署，`agent_runtime_mode` 继续默认 `off`；未发 OTA/TestFlight，未改 iPhone strict-local 协议。Runtime enforce 灰度另立 Gate。
+
+## P3 · Canary Control Plane
+
+- [ ] 稳定用户分桶与内部 allowlist，只作用于云端 Agent 请求。
+- [ ] 数据库持久化全局熔断状态和 content-free 控制审计。
+- [ ] 聚合成功率、系统失败、reconciliation 和 stale lease 指标。
+- [ ] recovery 后自动评估并在硬信号或阈值越界时暂停新 Runtime 准入。
+- [ ] 管理员聚合看板和显式 pause/resume；系统不自动恢复。
+- [ ] canary/enforce 既有 Run 在暂停后仍可查询、取消和恢复。
+- [ ] PostgreSQL/SQLite、并发、隐私和旧客户端交叉回归。
+
+### P3 G1 · 准入裁决
+
+- 需求: 在不重写 Executor、不影响 iPhone strict-local 分支的前提下，为已部署但默认关闭的 Runtime 增加可控灰度和自动止损。
+- first-class objects: 复用 `ExecutionEvent` / `WriteIntent`，新增 operational-only rollout state；不新增用户健康对象。
+- target surface: Backend Agent API、Runtime maintenance、管理员监控；Mobile/Web/Mac/Watch 协议不变。
+- safety: 只保存聚合计数和有限 reason code，不保存 prompt、回复、工具参数或健康正文。
+- smallest slice: `off` 部署 -> 0% canary/allowlist -> 自动 pause -> 人工核查后 resume。
+- 非目标: 本批不启用生产 canary，不自动 resume，不改变本地执行或客户端 UI。
+- 裁决: **PASS**。
+
+### P3 G2 · 可行性 + 安全压测
+
+- 稳定分桶由版本化 hash 完成，不依赖进程内状态或客户端版本。
+- 熔断状态和审计使用 PostgreSQL 单例行与追加事件；并发变更使用行锁和幂等状态转换。
+- 暂停只让新请求回退既有 unmanaged 路径；recovery 与 owner-scoped Run API 继续服务已管理 Run，避免止损动作制造孤儿 Run。
+- 自动暂停只依赖 aggregate system signals；rate signal 设最小样本，reconciliation/stale lease 为无需样本的硬信号。
+- 系统绝不自动恢复；管理员变更需鉴权并留下 content-free 审计。
+- 生产代码和迁移仍以 `agent_runtime_mode=off` 部署，实际百分比变更另走上线 Gate。
+- 裁决: **PASS**。
