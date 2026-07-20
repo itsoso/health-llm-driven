@@ -255,18 +255,104 @@ jobs:
           path: /tmp/system_kb_eval_metrics.json
           if-no-files-found: ignore
 
+  agent-runtime-postgres:
+    name: agent-runtime-postgres
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: health_runtime_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d health_runtime_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        working-directory: backend
+        run: pip install -r requirements.txt
+
+      - name: Verify Runtime migration upgrade and idempotency
+        working-directory: backend
+        env:
+          PGPASSWORD: postgres
+          PG_URL: postgresql://postgres:postgres@localhost:5432/health_runtime_test
+        run: |
+          set -euo pipefail
+          psql "$PG_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          DROP SCHEMA public CASCADE;
+          CREATE SCHEMA public;
+          CREATE TABLE users (id INTEGER PRIMARY KEY);
+          CREATE TABLE agent_conversations (id INTEGER PRIMARY KEY);
+          CREATE TABLE agent_messages (id INTEGER PRIMARY KEY);
+          INSERT INTO users (id) VALUES (1);
+          SQL
+          psql "$PG_URL" -v ON_ERROR_STOP=1 -f migrations/managed/20260719_120000_create_agent_runtime.postgresql.sql
+          psql "$PG_URL" -v ON_ERROR_STOP=1 -f migrations/managed/20260719_180000_agent_runtime_resilience.postgresql.sql
+          psql "$PG_URL" -v ON_ERROR_STOP=1 -f migrations/managed/20260720_120000_agent_runtime_rollout.postgresql.sql
+          psql "$PG_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          INSERT INTO agent_runs
+              (run_id, user_id, status, current_attempt_id, origin)
+          VALUES ('legacy-run', 1, 'running', 'legacy-attempt', 'ci');
+          INSERT INTO agent_run_attempts
+              (attempt_id, run_id, attempt_no, status)
+          VALUES ('legacy-attempt', 'legacy-run', 2, 'running');
+          INSERT INTO agent_tool_operations
+              (operation_id, run_id, attempt_id, tool_name, effect_class,
+               operation_fingerprint, status)
+          VALUES ('legacy-operation', 'legacy-run', 'legacy-attempt',
+                  'health_record', 'write', repeat('a', 64), 'succeeded');
+          SQL
+          psql "$PG_URL" -v ON_ERROR_STOP=1 -f migrations/managed/20260720_180000_agent_runtime_operation_lineage.postgresql.sql
+          psql "$PG_URL" -v ON_ERROR_STOP=1 -f migrations/managed/20260720_180000_agent_runtime_operation_lineage.postgresql.sql
+          test "$(psql "$PG_URL" -Atc "SELECT logical_operation_key_hash FROM agent_tool_operations WHERE operation_id='legacy-operation'")" = "$(printf 'a%.0s' {1..64})"
+          test "$(psql "$PG_URL" -Atc "SELECT (created_attempt_no IS NULL)::int FROM agent_tool_operations WHERE operation_id='legacy-operation'")" = "1"
+          test "$(psql "$PG_URL" -Atc "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='agent_tool_operations' AND column_name IN ('logical_operation_scope_hash', 'logical_operation_discriminator_kind', 'logical_operation_discriminator_hash')")" = "3"
+          test "$(psql "$PG_URL" -Atc "SELECT COUNT(*) FROM pg_indexes WHERE indexname='uq_agent_tool_operations_run_logical_key'")" = "1"
+          test "$(psql "$PG_URL" -Atc "SELECT COUNT(*) FROM pg_indexes WHERE indexname='ix_agent_tool_operations_run_scope'")" = "1"
+          psql "$PG_URL" -v ON_ERROR_STOP=1 -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'
+
+      - name: Run Runtime PostgreSQL semantics
+        working-directory: backend
+        env:
+          SECRET_KEY: test-secret-key-32-chars-minimum!!
+          GARMIN_ENCRYPTION_KEY: mI4nYXirjGlbHD7sFogYlqPQJzirU04mUsS5LyDS0SU=
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/health_runtime_test
+          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/health_runtime_test
+          TZ: Asia/Shanghai
+        run: >-
+          python -m pytest -q --no-cov --tb=short --maxfail=5
+          --timeout=120 --timeout-method=signal
+          tests/test_agent_runtime_concurrency.py
+          tests/test_agent_runtime_tool_operations.py
+          tests/test_agent_runtime_reconciliation.py
+
   backend-tests:
     runs-on: ubuntu-latest
-    needs: [backend-test-shards, backend-quality]
+    needs: [backend-test-shards, backend-quality, agent-runtime-postgres]
     if: ${{ always() }}
     steps:
       - name: Enforce backend test and quality gates
         env:
           TEST_SHARDS: ${{ needs.backend-test-shards.result }}
           QUALITY_GATES: ${{ needs.backend-quality.result }}
+          RUNTIME_POSTGRES: ${{ needs.agent-runtime-postgres.result }}
         run: |
-          printf 'backend gates: test-shards=%s quality=%s\n' "$TEST_SHARDS" "$QUALITY_GATES"
-          if [[ "$TEST_SHARDS" != success || "$QUALITY_GATES" != success ]]; then
+          printf 'backend gates: test-shards=%s quality=%s runtime-postgres=%s\n' \
+            "$TEST_SHARDS" "$QUALITY_GATES" "$RUNTIME_POSTGRES"
+          if [[ "$TEST_SHARDS" != success || "$QUALITY_GATES" != success || "$RUNTIME_POSTGRES" != success ]]; then
             exit 1
           fi
 

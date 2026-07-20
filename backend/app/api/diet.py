@@ -57,6 +57,59 @@ _ACTIVE_DIET_IMAGE_DELETION_GUARD = threading.Lock()
 _ACTIVE_DIET_IMAGE_DELETIONS: set[str] = set()
 
 
+def _diet_photo_idempotency_key(photo_draft_token: str | None) -> str | None:
+    return f"diet-photo:{photo_draft_token}" if photo_draft_token else None
+
+
+def _combined_diet_idempotency_key(
+    idempotency_key: str | None,
+    photo_draft_token: str | None,
+) -> str | None:
+    """Preserve both Runtime and photo-draft retry identities in one opaque field."""
+    photo_key = _diet_photo_idempotency_key(photo_draft_token)
+    if not idempotency_key:
+        return photo_key
+    if not photo_key or photo_key == idempotency_key:
+        return idempotency_key
+    combined = f"{idempotency_key}|{photo_key}"
+    if len(combined) > 160:
+        raise HTTPException(status_code=400, detail="组合幂等标识过长")
+    return combined
+
+
+def _find_idempotent_diet_record(
+    db: Session,
+    *,
+    user_id: int,
+    idempotency_key: str | None,
+    photo_draft_token: str | None,
+) -> DietRecordModel | None:
+    conditions = []
+    photo_key = _diet_photo_idempotency_key(photo_draft_token)
+    if idempotency_key:
+        conditions.extend([
+            DietRecordModel.client_action_id == idempotency_key,
+            DietRecordModel.client_action_id.startswith(
+                f"{idempotency_key}|",
+                autoescape=True,
+            ),
+        ])
+    if photo_key:
+        conditions.extend([
+            DietRecordModel.client_action_id == photo_key,
+            DietRecordModel.client_action_id.endswith(
+                f"|{photo_key}",
+                autoescape=True,
+            ),
+        ])
+    if not conditions:
+        return None
+    return db.query(DietRecordModel).filter(
+        DietRecordModel.user_id == user_id,
+        or_(*conditions),
+    ).first()
+
+
 def _assert_diet_food_items_allowed(food_items: str) -> None:
     if looks_like_food_ui_text(food_items):
         raise HTTPException(
@@ -482,16 +535,17 @@ def create_diet_record(
 ):
     """创建饮食记录（需要登录）"""
     _assert_diet_food_items_allowed(record.food_items)
-    effective_idempotency_key = (
-        f"diet-photo:{record.photo_draft_token}"
-        if record.photo_draft_token
-        else idempotency_key
+    effective_idempotency_key = _combined_diet_idempotency_key(
+        idempotency_key,
+        record.photo_draft_token,
     )
     if effective_idempotency_key:
-        existing = db.query(DietRecordModel).filter(
-            DietRecordModel.user_id == current_user.id,
-            DietRecordModel.client_action_id == effective_idempotency_key,
-        ).first()
+        existing = _find_idempotent_diet_record(
+            db,
+            user_id=current_user.id,
+            idempotency_key=idempotency_key,
+            photo_draft_token=record.photo_draft_token,
+        )
         if existing:
             return _convert_to_response(existing)
     created_image_path: str | None = None
@@ -503,19 +557,6 @@ def create_diet_record(
         if record_dict.get('meal_time'):
             record_dict['meal_time'] = record_dict['meal_time'].strftime('%H:%M')
 
-        # 防御纵深: 客户端曾把"刚吃的午餐"的 record_date 写成 2 天前(客户端 bug)。
-        # 以服务端 Asia/Shanghai 的"今天"为准, 偏离 > 2 天(过去或未来)判定为不合理,
-        # 钳制回今天并告警 —— 钳制比硬 422 对 UX 更安全, 同日/±1-2 天正常补录仍放行。
-        _SHANGHAI = timezone(timedelta(hours=8))
-        server_today = datetime.now(_SHANGHAI).date()
-        submitted_date = record_dict.get('record_date')
-        if submitted_date is not None and abs((submitted_date - server_today).days) > 2:
-            logger.warning(
-                "[diet] implausible record_date=%s (server today=%s) user=%s → clamped",
-                submitted_date, server_today, current_user.id,
-            )
-            record_dict['record_date'] = server_today
-
         photo_draft: DietPhotoDraft | None = None
         if record.photo_draft_token:
             photo_draft = db.query(DietPhotoDraft).filter(
@@ -523,10 +564,12 @@ def create_diet_record(
                 DietPhotoDraft.user_id == current_user.id,
             ).with_for_update().first()
             if photo_draft is None:
-                existing = db.query(DietRecordModel).filter(
-                    DietRecordModel.user_id == current_user.id,
-                    DietRecordModel.client_action_id == effective_idempotency_key,
-                ).first()
+                existing = _find_idempotent_diet_record(
+                    db,
+                    user_id=current_user.id,
+                    idempotency_key=idempotency_key,
+                    photo_draft_token=record.photo_draft_token,
+                )
                 if existing:
                     return _convert_to_response(existing)
                 raise HTTPException(status_code=404, detail="饮食照片草稿不存在或无权访问")
@@ -636,10 +679,12 @@ def create_diet_record(
         except IntegrityError:
             db.rollback()
             if effective_idempotency_key:
-                existing = db.query(DietRecordModel).filter(
-                    DietRecordModel.user_id == current_user.id,
-                    DietRecordModel.client_action_id == effective_idempotency_key,
-                ).first()
+                existing = _find_idempotent_diet_record(
+                    db,
+                    user_id=current_user.id,
+                    idempotency_key=idempotency_key,
+                    photo_draft_token=record.photo_draft_token,
+                )
                 if existing:
                     _remove_diet_image_file(created_image_path)
                     created_image_path = None

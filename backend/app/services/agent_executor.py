@@ -18,7 +18,7 @@ import logging
 import math
 import re
 import time
-from datetime import UTC, date, datetime, timezone, timedelta
+from datetime import UTC, date, datetime, time as datetime_time, timezone, timedelta
 from typing import AsyncGenerator, Dict, Any, List, Mapping, Optional, Sequence, Tuple
 from urllib.parse import urlencode
 
@@ -2723,6 +2723,8 @@ def _write_operation_fingerprint(
 def _runtime_write_operation_fingerprint(
     tool_name: str,
     parsed_args: Dict[str, Any],
+    *,
+    default_record_date: str | None = None,
 ) -> str:
     """Canonical business identity for Runtime write deduplication.
 
@@ -2737,18 +2739,279 @@ def _runtime_write_operation_fingerprint(
             or canonical_args.get("type")
             or canonical_args.get("kind")
         )
+        normalized_record_type = ""
         if record_type not in (None, ""):
-            canonical_args["record_type"] = _normalize_fast_record_kind(
+            normalized_record_type = _normalize_fast_record_kind(
                 record_type
             )
+            canonical_args["record_type"] = normalized_record_type
         canonical_args.pop("type", None)
         canonical_args.pop("kind", None)
+        if normalized_record_type == "diet":
+            canonical_args = {
+                "record_type": "diet",
+                "data": _normalize_diet_create_data(
+                    canonical_args,
+                    default_record_date=default_record_date,
+                ),
+            }
     elif tool_name == "intervention_cycle":
         action = str(canonical_args.get("action") or "").strip().lower()
         canonical_args["action"] = "cancel" if action == "delete" else action
         canonical_args.pop("confirm", None)
         canonical_args.pop("confirmed", None)
     return _write_operation_fingerprint(tool_name, canonical_args)
+
+
+_DIET_CREATE_TOP_LEVEL_FIELDS = (
+    "meal_type",
+    "meal_time",
+    "food_items",
+    "food_id",
+    "source",
+    "calories",
+    "protein",
+    "carbs",
+    "fat",
+    "fiber",
+    "alcohol_units",
+    "notes",
+    "ai_recognized",
+    "ai_confidence",
+    "ai_raw_result",
+    "health_tips",
+    "image_base64",
+    "image_type",
+    "photo_draft_token",
+)
+
+
+def _normalize_diet_create_data(
+    parsed_args: Dict[str, Any],
+    *,
+    default_record_date: str | None = None,
+) -> Dict[str, Any]:
+    """Build the canonical diet payload shared by Runtime identity and dispatch."""
+    args = dict(parsed_args or {})
+    raw_data = args.get("data")
+    if isinstance(raw_data, dict):
+        data = dict(raw_data)
+    elif isinstance(raw_data, str):
+        try:
+            decoded = json.loads(raw_data)
+        except (json.JSONDecodeError, ValueError, TypeError):
+            decoded = None
+        data = dict(decoded) if isinstance(decoded, dict) else {}
+    else:
+        data = {}
+
+    for field in _DIET_CREATE_TOP_LEVEL_FIELDS:
+        if data.get(field) in (None, "", []) and args.get(field) not in (
+            None,
+            "",
+            [],
+        ):
+            data[field] = args[field]
+
+    raw_record_date = (
+        data.get("record_date")
+        or args.get("record_date")
+        or args.get("date")
+        or default_record_date
+    )
+    if raw_record_date not in (None, "", []):
+        try:
+            if isinstance(raw_record_date, datetime):
+                canonical_date = raw_record_date.date()
+            elif isinstance(raw_record_date, date):
+                canonical_date = raw_record_date
+            else:
+                canonical_date = date.fromisoformat(
+                    str(raw_record_date).strip()[:10]
+                )
+            data["record_date"] = canonical_date.isoformat()
+        except (TypeError, ValueError):
+            data["record_date"] = str(raw_record_date).strip()
+
+    raw_meal_type = data.get("meal_type")
+    if raw_meal_type in (None, "", []):
+        data["meal_type"] = "snack"
+    else:
+        data["meal_type"] = (
+            _normalize_diet_meal_type(raw_meal_type)
+            or str(raw_meal_type).strip().lower()
+        )
+
+    raw_meal_time = data.get("meal_time")
+    if raw_meal_time not in (None, "", []):
+        try:
+            meal_time_text = str(raw_meal_time).strip()
+            single_digit_hour = re.fullmatch(r"(\d):(.*)", meal_time_text)
+            if single_digit_hour:
+                meal_time_text = (
+                    f"0{single_digit_hour.group(1)}:{single_digit_hour.group(2)}"
+                )
+            parsed_time = (
+                raw_meal_time
+                if isinstance(raw_meal_time, datetime_time)
+                else datetime_time.fromisoformat(meal_time_text)
+            )
+            # Diet API persists only wall-clock hour and minute.
+            data["meal_time"] = parsed_time.strftime("%H:%M")
+        except (TypeError, ValueError):
+            data["meal_time"] = str(raw_meal_time).strip()
+
+    if isinstance(data.get("food_items"), list):
+        data["food_items"] = ", ".join(
+            item.get("name", str(item)) if isinstance(item, dict) else str(item)
+            for item in data["food_items"]
+        )
+    elif not data.get("food_items"):
+        data["food_items"] = data.get("description", data.get("notes", ""))
+    # Conversation authorization fields are never part of DietRecord.  Strip
+    # them before fingerprinting and dispatch so a model retry cannot turn an
+    # equivalent business write into a new Runtime identity.
+    for control_field in (
+        "confirm",
+        "confirmed",
+        "_fast_record_requires_confirmation",
+    ):
+        data.pop(control_field, None)
+    return data
+
+
+def _runtime_write_operation_identity(
+    tool_name: str,
+    parsed_args: Dict[str, Any],
+    *,
+    default_record_date: str | None = None,
+) -> tuple[
+    Optional[str],
+    Optional[str],
+    Optional[str],
+    Optional[str],
+]:
+    """Return an opaque, order-independent business target for safe retries.
+
+    A Runtime retry may cause the model to reorder calls or recompute mutable
+    values. We only bridge those argument changes when the target is explicit:
+    a record id for mutations, or a photo token / normalized meal-item target
+    for a diet create. Other writes fall back to exact-fingerprint matching and
+    are rejected if a retry introduces a new, unprovable side effect.
+    """
+    args = dict(parsed_args or {})
+    record_type = _normalize_fast_record_kind(
+        args.get("record_type") or args.get("type") or args.get("kind") or ""
+    )
+    action = str(args.get("operation") or args.get("action") or "").strip().lower()
+    if tool_name == "intervention_cycle" and action == "delete":
+        action = "cancel"
+
+    target_id = next(
+        (
+            str(args[key]).strip()
+            for key in (
+                "record_id",
+                "event_id",
+                "log_id",
+                "cycle_id",
+                "item_id",
+                "plan_id",
+                "card_id",
+                "exam_id",
+                "id",
+            )
+            if args.get(key) not in (None, "", False)
+        ),
+        None,
+    )
+    identity: Optional[Dict[str, str]] = None
+    scope_identity: Optional[Dict[str, str]] = None
+    discriminator_kind: Optional[str] = None
+    discriminator_identity: Optional[Mapping[str, str] | str] = None
+    if target_id:
+        identity = {
+            "tool": tool_name,
+            "action": action,
+            "record_type": record_type,
+            "target_id": target_id,
+        }
+    elif tool_name == "health_record" and record_type == "diet":
+        data = _normalize_diet_create_data(
+            args,
+            default_record_date=default_record_date,
+        )
+        photo_token = str(data.get("photo_draft_token") or "").strip()
+        record_date = str(data.get("record_date") or "").strip()
+        meal_type = str(data.get("meal_type") or "").strip()
+        food_items = str(data.get("food_items") or "")
+        normalized_food_items = re.sub(r"\s+", "", food_items).casefold()
+        meal_time = str(data.get("meal_time") or "").strip()
+        # Scope is the normalized business slot, not model-generated food
+        # wording. A missing date is filled from this Turn's reference time at
+        # the call site, matching the eventual write adapter.
+        scope_identity = {
+            "tool": tool_name,
+            "record_type": record_type,
+            **(
+                {"record_date": record_date, "meal_type": meal_type}
+                if record_date and meal_type
+                else {}
+            ),
+        }
+        if photo_token:
+            identity = {
+                "tool": tool_name,
+                "record_type": record_type,
+                "photo_token": photo_token,
+            }
+            discriminator_kind = "photo_token"
+            discriminator_identity = photo_token
+        elif record_date and meal_type and normalized_food_items:
+            identity = {
+                "tool": tool_name,
+                "record_type": record_type,
+                "record_date": record_date,
+                "meal_type": meal_type,
+                "item_identity": hashlib.sha256(
+                    f"food_text:{normalized_food_items}".encode()
+                ).hexdigest(),
+            }
+            if meal_time:
+                identity["meal_time"] = meal_time
+        if not photo_token and record_date and meal_type:
+            if meal_time:
+                discriminator_kind = "meal_time"
+                discriminator_identity = meal_time
+    if identity is None and scope_identity is None:
+        return None, None, None, None
+
+    def opaque(prefix: str, value: Mapping[str, str] | str) -> str:
+        encoded = json.dumps(
+            value,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        return f"{prefix}:" + hashlib.sha256(encoded.encode()).hexdigest()
+
+    return (
+        opaque("target", identity) if identity is not None else None,
+        opaque("scope", scope_identity) if scope_identity is not None else None,
+        discriminator_kind,
+        (
+            opaque("discriminator", discriminator_identity)
+            if discriminator_identity is not None
+            else None
+        ),
+    )
+
+
+def _runtime_write_logical_operation_key(
+    tool_name: str,
+    parsed_args: Dict[str, Any],
+) -> Optional[str]:
+    return _runtime_write_operation_identity(tool_name, parsed_args)[0]
 
 
 # 只读工具回合级去重(founder 2026-07-14「列出喝水记录」→ health_query 空转 7 次 70s 根因)。
@@ -3711,7 +3974,7 @@ _WRITE_HOW_TO_RE = re.compile(
     r"(?:删除|删掉|移除|去掉|撤销|清掉|修改|更新|调整)",
     re.I,
 )
-_UPDATE_WORD_RE = re.compile(r"(修改|改成|改为|更新|调整|更正|edit|update)", re.I)
+_UPDATE_WORD_RE = re.compile(r"(修改|改成|改为|更新|调整|更正|修正|edit|update)", re.I)
 
 
 def _write_request_is_negated_or_instructional(message: str) -> bool:
@@ -3766,6 +4029,39 @@ _DIET_NON_FOOD_FIELD_RE = re.compile(
     r"^(?:的)?(?:热量|卡路里|蛋白质?|碳水|脂肪|膳食纤维|纤维|时间|餐时|份量|重量)",
     re.I,
 )
+_DIET_PARTIAL_CORRECTION_SIGNAL_RE = re.compile(
+    r"(?:没吃那么多|没有吃那么多|没全吃|没有全吃|没吃完|没有吃完|"
+    r"实际.{0,8}只吃|只吃了?|只有吃了?)",
+    re.I,
+)
+_DIET_PARTIAL_CORRECTION_QUESTION_RE = re.compile(
+    r"[?？]|会不会|要不要|是否|行不行|可以吗|怎么办|怎么吃|吃多少",
+    re.I,
+)
+_DIET_PARTIAL_CORRECTION_NEGATION_RE = re.compile(
+    r"(?:不要|别|不该|不能|不可|避免).{0,10}(?:只吃|吃.{0,4}(?:一半|半份|分之))",
+    re.I,
+)
+_DIET_PARTIAL_FRACTIONS = {
+    "一半": 0.5,
+    "半份": 0.5,
+    "三分之一": 1 / 3,
+    "三分之二": 2 / 3,
+    "四分之一": 0.25,
+    "四分之三": 0.75,
+    "五分之一": 0.2,
+    "五分之二": 0.4,
+    "五分之三": 0.6,
+    "五分之四": 0.8,
+}
+_DIET_SCALABLE_NUTRIENT_FIELDS = (
+    "calories",
+    "protein",
+    "carbs",
+    "fat",
+    "fiber",
+    "alcohol_units",
+)
 _MESSAGE_DATE_RE = re.compile(
     r"(\d{4}-\d{2}-\d{2}|day before yesterday|yesterday|today|"
     r"前天|昨天|昨日|今天|今日|本日|当天|当日)",
@@ -3773,25 +4069,57 @@ _MESSAGE_DATE_RE = re.compile(
 )
 
 
+def _partial_meal_consumed_fraction(text: str) -> Optional[float]:
+    signal_match = _DIET_PARTIAL_CORRECTION_SIGNAL_RE.search(text)
+    if (
+        signal_match is None
+        or _DIET_PARTIAL_CORRECTION_QUESTION_RE.search(text)
+        or _DIET_PARTIAL_CORRECTION_NEGATION_RE.search(text)
+    ):
+        return None
+    for phrase, fraction in _DIET_PARTIAL_FRACTIONS.items():
+        if text.find(phrase, signal_match.start()) >= 0:
+            return fraction
+    return None
+
+
 def _parse_explicit_diet_correction(
     message: str,
     *,
     reference_now: Optional[datetime] = None,
-) -> Optional[Dict[str, str]]:
+) -> Optional[Dict[str, Any]]:
     """Extract a concrete meal correction from the user's own words.
 
-    This intentionally accepts only an explicit update verb, a named meal and
-    non-empty replacement food text. Ambiguous requests stay on the read-only
-    lookup path rather than risking a duplicate or editing the wrong record.
+    Accepted forms are deliberately narrow: either an explicit replacement, or
+    a factual partial-meal correction with a named meal and concrete consumed
+    fraction. Ambiguous requests stay on the read-only lookup path rather than
+    risking a duplicate or editing the wrong record.
     """
     text = " ".join((message or "").strip().split())
-    if not _has_explicit_update_intent(text):
-        return None
     meal_match = _DIET_CORRECTION_MEAL_RE.search(text)
     if not meal_match:
         return None
     meal_type = _normalize_diet_meal_type(meal_match.group(0))
     if not meal_type:
+        return None
+
+    date_match = _MESSAGE_DATE_RE.search(text)
+    target_date = _normalize_relative_date(
+        date_match.group(0) if date_match else "today",
+        reference_now=reference_now,
+    )
+    if not target_date:
+        return None
+
+    consumed_fraction = _partial_meal_consumed_fraction(text)
+    if consumed_fraction is not None:
+        return {
+            "date": target_date,
+            "meal_type": meal_type,
+            "consumed_fraction": consumed_fraction,
+        }
+
+    if not _has_explicit_update_intent(text):
         return None
 
     raw_replacement = text[meal_match.end():].strip()
@@ -3808,17 +4136,74 @@ def _parse_explicit_diet_correction(
     if not replacement or replacement in {"一下", "记录", "内容"}:
         return None
 
-    date_match = _MESSAGE_DATE_RE.search(text)
-    target_date = _normalize_relative_date(
-        date_match.group(0) if date_match else "today",
-        reference_now=reference_now,
-    )
-    if not target_date:
-        return None
     return {
         "date": target_date,
         "meal_type": meal_type,
         "food_items": replacement,
+    }
+
+
+def _diet_correction_update_data(
+    correction: Mapping[str, Any],
+    existing_record: Mapping[str, Any],
+) -> Optional[Dict[str, Any]]:
+    meal_type = correction.get("meal_type")
+    replacement = correction.get("food_items")
+    if replacement:
+        return {
+            "meal_type": meal_type,
+            "food_items": replacement,
+        }
+
+    fraction = correction.get("consumed_fraction")
+    if not isinstance(fraction, (int, float)) or isinstance(fraction, bool):
+        return None
+    fraction = float(fraction)
+    if not math.isfinite(fraction) or not 0 < fraction < 1:
+        return None
+
+    update_data: Dict[str, Any] = {"meal_type": meal_type}
+    for field in _DIET_SCALABLE_NUTRIENT_FIELDS:
+        value = existing_record.get(field)
+        if (
+            isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and math.isfinite(float(value))
+        ):
+            update_data[field] = float(value) * fraction
+    return update_data if len(update_data) > 1 else None
+
+
+def _build_deterministic_diet_correction_tool_call(
+    message: Any,
+    *,
+    write_receipts: Sequence[dict[str, Any]],
+    has_attachment: bool = False,
+    reference_now: Optional[datetime] = None,
+) -> Optional[Dict[str, Any]]:
+    """Build one safe lookup when a partial-meal correction got no tool call."""
+    if write_receipts or has_attachment:
+        return None
+    correction = _parse_explicit_diet_correction(
+        str(message or ""),
+        reference_now=reference_now,
+    )
+    if not correction or correction.get("consumed_fraction") is None:
+        return None
+    arguments = {
+        "record_type": "diet",
+        "operation": "list",
+        "date": correction["date"],
+        "meal_type": correction["meal_type"],
+        "limit": 20,
+    }
+    return {
+        "id": f"diet-correction-{_sha12(str(message or ''))}",
+        "type": "function",
+        "function": {
+            "name": "health_manage",
+            "arguments": json.dumps(arguments, ensure_ascii=False),
+        },
     }
 
 
@@ -5433,6 +5818,7 @@ class AgentExecutor:
         self._turn_evidence_card: Any = _TURN_CARD_UNSET
         self._turn_evidence_card_key: Optional[tuple] = None
         self._turn_twin_write_occurred = False
+        self._turn_diet_correction_unresolved_reason = None
         self._last_provider_model_name: Optional[str] = None
         self._request_model_tool_fallback_used = False
         self._model_fallback_reasons: List[str] = []
@@ -6225,6 +6611,7 @@ class AgentExecutor:
                 {"role": "user", "content": message_with_time_context},
             ]
             lead_text = ""
+            deterministic_diet_correction_fallback_attempted = False
             for _round in range(MULTI_MODEL_MAX_LEAD_ROUNDS):
                 resp = await self._call_llm(lead_messages, tools)
                 tool_calls = resp.get("tool_calls") if isinstance(resp, dict) else None
@@ -6250,6 +6637,27 @@ class AgentExecutor:
                         )})
                         continue
                     content = _strip_text_tool_call(content)
+                if (
+                    not tool_calls
+                    and not deterministic_diet_correction_fallback_attempted
+                ):
+                    deterministic_diet_call = (
+                        _build_deterministic_diet_correction_tool_call(
+                            message,
+                            write_receipts=write_receipts,
+                            reference_now=self._agent_kernel_reference_now(),
+                        )
+                    )
+                    if deterministic_diet_call:
+                        deterministic_diet_correction_fallback_attempted = True
+                        tool_calls = [deterministic_diet_call]
+                        content = ""
+                        logger.info(
+                            "[agent_executor] deterministic diet correction fallback "
+                            "user=%s message_chars=%s",
+                            user_id,
+                            len(message or ""),
+                        )
                 if tool_calls:
                     tool_calls = self._normalize_query_only_health_manage_tool_calls(
                         tool_calls,
@@ -6838,6 +7246,20 @@ class AgentExecutor:
             and not file_base64
             and _has_fast_record_write_intent(message or "")
         )
+        partial_diet_correction_requested = bool(
+            (
+                _parse_explicit_diet_correction(
+                    message or "",
+                    reference_now=self._agent_kernel_reference_now(),
+                )
+                or {}
+            ).get("consumed_fraction")
+        )
+        write_action_requested = bool(
+            self._prefer_fast_record_model
+            or partial_diet_correction_requested
+            or _needs_reliable_tool_model(message or "")
+        )
         # 合成轮关思考门(2026-07-17, founder「列出胃药」实测合成轮 qwen3.7-max 思考 23–47s):
         # reasoning 模型(qwen3.7-max)的思考阶段对**简单查询/列表**是纯浪费。判据复用
         # _is_fast_eligible_turn(记录或简单查询意图, 且**非**建议/分析)—— 与快路由同一分类,
@@ -6865,8 +7287,9 @@ class AgentExecutor:
                     self._fast_route_simple_turn = True
                     self._record_model_fallback_reason("fast_route_simple_turn")
                     logger.info(
-                        "[agent_executor] fast-route simple turn user=%s model=%s msg=%r",
-                        user_id, fast_id, (message or "")[:60],
+                        "[agent_executor] fast-route simple turn user=%s model=%s "
+                        "message_chars=%s",
+                        user_id, fast_id, len(message or ""),
                     )
             except Exception as e:  # noqa: BLE001 — 快路由失败绝不断主链路, 退回默认模型
                 logger.warning("[agent_executor] fast-route failed, keep default: %s", e)
@@ -7353,6 +7776,7 @@ class AgentExecutor:
         # 嘴上说"已记录"却没调工具(弱模型把 tool-call 当正文吐出 → 静默丢数据)。
         tool_executed_count = 0
         deterministic_symptom_fallback_attempted = False
+        deterministic_diet_correction_fallback_attempted = False
         # 本轮 agent 实际调用过的工具/Skill 名, 去重、按首次调用顺序。供 mac/mobile
         # 展示"调用了哪些 Skills"。与 sources_used (引用了哪些数据源) 独立。
         tools_used: List[str] = []
@@ -7397,10 +7821,11 @@ class AgentExecutor:
                     self._request_model_id = None
                     self._record_model_fallback_reason("fast_route_simple_turn_escalated")
                     logger.warning(
-                        "[agent_executor] 快路由 %d 轮未收敛 → 升级强模型 user=%s msg=%r",
+                        "[agent_executor] 快路由 %d 轮未收敛 → 升级强模型 "
+                        "user=%s message_chars=%s",
                         round_idx,
                         user_id,
-                        (message or "")[:60],
+                        len(message or ""),
                     )
                 # 真流式调用 LLM：content delta 实时 yield 给客户端,同时累积 tool_calls。
                 # _call_llm_stream 内部已做 provider 路由 + failover (镜像 _call_llm)。
@@ -7552,9 +7977,17 @@ class AgentExecutor:
                         # 只改了落库消息, **救不回已经流到屏幕上的字**。故必须在下发前就抑制:
                         # 工具真跑过(tool_executed_count>0)之后的轮照常 live 流(那时"已记录"才是真的)。
                         # 与上面 _tool_round_fast_routed 同一范式(先抑制、后按真实结果补发)。
-                        _record_claim_unverified = (
-                            self._prefer_fast_record_model and tool_executed_count == 0
+                        _record_claim_unverified = bool(
+                            self._prefer_fast_record_model and not write_receipts
                         )
+                        _diet_correction_claim_unverified = (
+                            partial_diet_correction_requested
+                            and not write_receipts
+                        )
+                        # Mutation turns remain buffered for the whole model round.
+                        # A later tool call in the same turn may still fail even
+                        # after an earlier write produced a verified receipt.
+                        _mutation_claim_unverified = write_action_requested
                         # 工具决策轮快路由 (fast 模型): 本轮输出只当工具决策, content 绝不
                         # live 下发 —— 若最终是直接答文本 (无 tool_calls), 会被丢弃并在强模型
                         # 重合成 (安全不变量: 面向用户的医疗正文绝不来自 fast 模型)。
@@ -7562,6 +7995,8 @@ class AgentExecutor:
                             not inline_suppressed
                             and not self._tool_round_fast_routed
                             and not _record_claim_unverified
+                            and not _diet_correction_claim_unverified
+                            and not _mutation_claim_unverified
                             and not recoverable_response_buffered
                         ):
                             streamed_to_client = True
@@ -7713,6 +8148,34 @@ class AgentExecutor:
                 if (
                     isinstance(response, dict)
                     and not response.get("tool_calls")
+                    and not deterministic_diet_correction_fallback_attempted
+                ):
+                    deterministic_diet_call = (
+                        _build_deterministic_diet_correction_tool_call(
+                            message,
+                            write_receipts=write_receipts,
+                            has_attachment=bool(images or file_base64),
+                            reference_now=self._agent_kernel_reference_now(),
+                        )
+                    )
+                    if deterministic_diet_call:
+                        deterministic_diet_correction_fallback_attempted = True
+                        response = {
+                            **response,
+                            "content": "",
+                            "finish_reason": "tool_calls",
+                            "tool_calls": [deterministic_diet_call],
+                        }
+                        logger.info(
+                            "[agent_executor] deterministic diet correction fallback "
+                            "user=%s message_chars=%s",
+                            user_id,
+                            len(message or ""),
+                        )
+
+                if (
+                    isinstance(response, dict)
+                    and not response.get("tool_calls")
                     and not deterministic_symptom_fallback_attempted
                 ):
                     deterministic_symptom_call = _build_deterministic_symptom_tool_call(
@@ -7729,9 +8192,10 @@ class AgentExecutor:
                             "tool_calls": [deterministic_symptom_call],
                         }
                         logger.info(
-                            "[agent_executor] deterministic symptom write fallback user=%s msg=%r",
+                            "[agent_executor] deterministic symptom write fallback "
+                            "user=%s message_chars=%s",
                             user_id,
-                            (message or "")[:80],
+                            len(message or ""),
                         )
 
                 # ──── 工具决策轮快路由安全兜底: fast 模型直接答文本时丢弃, 强模型重合成 ────
@@ -7856,7 +8320,11 @@ class AgentExecutor:
                     # 会把 content 置空 → text_content 为空也不发。
                     # fast 工具决策轮: 该轮 content (工具调用前的 preamble) 也来自 fast 模型,
                     # 不下发、不计入 full_reply —— 最终医疗正文由后续合成轮的强模型产出。
-                    if text_content and not self._tool_round_fast_routed:
+                    if (
+                        text_content
+                        and not self._tool_round_fast_routed
+                        and not write_action_requested
+                    ):
                         if not streamed_to_client:
                             yield {"event": "token", "data": {"content": text_content}}
                         full_reply += text_content
@@ -8461,8 +8929,24 @@ class AgentExecutor:
                                 )
                         if not final_text.strip():
                             final_text = "我这次没有收到模型的有效回复，请稍后重试或切换模型。"
-                    if self._prefer_fast_record_model and tool_executed_count == 0:
+                    if self._prefer_fast_record_model and not write_receipts:
                         final_text = _record_intent_needs_detail_message(message)
+                        streamed_to_client = False
+                    elif (
+                        partial_diet_correction_requested
+                        and not write_receipts
+                        and self._turn_diet_correction_unresolved_reason
+                    ):
+                        if self._turn_diet_correction_unresolved_reason == "ambiguous_target":
+                            final_text = (
+                                "我找到多条符合日期和餐次的饮食记录，暂时没有修改。"
+                                "请选择具体哪一条后再提交修正。"
+                            )
+                        else:
+                            final_text = (
+                                "我找到了对应餐次，但现有记录缺少可缩放的营养数据，"
+                                "暂时没有修改。请补充实际吃了什么或具体热量。"
+                            )
                         streamed_to_client = False
                     elif _needs_reliable_tool_model(message or "") and tool_executed_count == 0:
                         # 破坏性/同步意图但 0 工具执行 = 动作未执行 → 诚实覆盖(加层不减层)。
@@ -8567,7 +9051,7 @@ class AgentExecutor:
             reference_now=self._agent_kernel_reference_now(),
         )
         record_intent_no_tool = bool(
-            self._prefer_fast_record_model and tool_executed_count == 0
+            self._prefer_fast_record_model and not write_receipts
         )
         # 破坏性/同步意图从 fast-record 集排除后(留强模型),其 0-工具 缺口在此补上,
         # 与 record_intent_no_tool 加层不减层(不与之重叠:record 集已被上面判掉)。
@@ -8582,9 +9066,10 @@ class AgentExecutor:
                 full_reply = fail_closed_reply
             logger.warning(
                 "[agent_executor] RECORD INTENT but 0 tools executed — possible silent "
-                "data loss (model may have claimed success without writing). user=%s msg=%r",
+                "data loss (model may have claimed success without writing). "
+                "user=%s message_chars=%s",
                 user_id,
-                (message or "")[:80],
+                len(message or ""),
             )
         elif destructive_or_sync_no_tool:
             fail_closed_reply = _destructive_or_sync_not_performed_message(message)
@@ -8593,9 +9078,9 @@ class AgentExecutor:
             logger.warning(
                 "[agent_executor] DESTRUCTIVE/SYNC INTENT but 0 tools executed — action "
                 "not performed (model may have claimed 已删/已改/已同步 without acting). "
-                "user=%s msg=%r",
+                "user=%s message_chars=%s",
                 user_id,
-                (message or "")[:80],
+                len(message or ""),
             )
         # [guidance-probe · 2026-07-17] 主对话 R4 guidance 红线的**纯影子测量**(只打 log)。
         # 现状(对抗评审揪出): diet_prescription_red_line(CRITICAL) / movement_imperative_red_line
@@ -11411,16 +11896,18 @@ class AgentExecutor:
                 if isinstance(row, dict)
                 and (row.get("id") or row.get("record_id")) not in (None, "", False)
             ]
-            if not error and len(candidate_rows) == 1:
+            update_data = (
+                _diet_correction_update_data(correction, candidate_rows[0])
+                if not error and len(candidate_rows) == 1
+                else None
+            )
+            if update_data is not None:
                 record_id = candidate_rows[0].get("id") or candidate_rows[0].get("record_id")
                 resolved_args = {
                     "record_type": "diet",
                     "operation": "update",
                     "record_id": record_id,
-                    "data": {
-                        "meal_type": correction["meal_type"],
-                        "food_items": correction["food_items"],
-                    },
+                    "data": update_data,
                 }
                 logger.info(
                     "[health_manage] resolved explicit diet correction user=%s record_id=%s meal=%s",
@@ -11441,7 +11928,16 @@ class AgentExecutor:
                     self._current_user_id,
                     correction["meal_type"],
                     len(candidate_rows),
-                    error or "ambiguous_target",
+                    error or (
+                        "record_has_no_scalable_nutrition"
+                        if len(candidate_rows) == 1
+                        else "ambiguous_target"
+                    ),
+                )
+                self._turn_diet_correction_unresolved_reason = (
+                    "record_has_no_scalable_nutrition"
+                    if len(candidate_rows) == 1
+                    else "ambiguous_target"
                 )
 
             normalized.append({
@@ -11624,12 +12120,14 @@ class AgentExecutor:
                         }
                     else:
                         logger.warning(
-                            "[_execute_tool] %s args 解析失败(含引号归一+截断修复后): %s",
-                            tool_name, args_raw[:200],
+                            "[_execute_tool] %s args 解析失败(含引号归一+截断修复后) "
+                            "argument_chars=%s",
+                            tool_name,
+                            len(args_raw),
                         )
-                        return f"Error: 参数解析失败: {args_raw}"
+                        return "Error: 工具参数解析失败，请重新生成结构化参数。"
             else:
-                return f"Error: 参数解析失败: {args_raw}"
+                return "Error: 工具参数解析失败，请重新生成结构化参数。"
 
         # === 统一 tool_call 守门 (所有 6 个工具必过) ===
         # 日期/数值/枚举/引用 ID 存在性/越权 / 必填 — 触发 coerce 只 log,
@@ -11668,9 +12166,9 @@ class AgentExecutor:
         ):
             logger.warning(
                 "[_execute_tool] blocked rhinitis write without current-turn authorization "
-                "user=%s msg=%r",
+                "user=%s message_chars=%s",
                 self._current_user_id,
-                (getattr(self, "_current_turn_user_message", "") or "")[:80],
+                len(getattr(self, "_current_turn_user_message", "") or ""),
             )
             return (
                 "Error: 这段话不是明确的本人鼻炎症状记录请求，已阻止自动写入。"
@@ -11710,9 +12208,9 @@ class AgentExecutor:
         ):
             logger.warning(
                 "[_execute_tool] blocked symptom write without current-turn authorization "
-                "user=%s msg=%r",
+                "user=%s message_chars=%s",
                 self._current_user_id,
-                (getattr(self, "_current_turn_user_message", "") or "")[:80],
+                len(getattr(self, "_current_turn_user_message", "") or ""),
             )
             return (
                 "Error: 这段话不是明确的本人症状记录请求，已阻止自动写入。"
@@ -11826,6 +12324,7 @@ class AgentExecutor:
 
             spec = get_tool_spec(request.tool_name)
             args = request.arguments if isinstance(request.arguments, dict) else {}
+            expected_resource_type = spec.reconciliation_resource_type(args)
             if (
                 self._runtime_managed
                 and self._runtime_run_id
@@ -11848,13 +12347,38 @@ class AgentExecutor:
                     input_seq=None,
                     origin="executor",
                 )
+                operation_fingerprint = _runtime_write_operation_fingerprint(
+                    request.tool_name,
+                    args,
+                    default_record_date=(
+                        self._agent_kernel_reference_now().strftime("%Y-%m-%d")
+                    ),
+                )
+                (
+                    logical_operation_key,
+                    logical_operation_scope_key,
+                    logical_operation_discriminator_kind,
+                    logical_operation_discriminator_key,
+                ) = _runtime_write_operation_identity(
+                    request.tool_name,
+                    args,
+                    default_record_date=(
+                        self._agent_kernel_reference_now().strftime("%Y-%m-%d")
+                    ),
+                )
                 runtime_operation = runtime_coordinator.claim_tool_operation(
                     runtime_context,
                     tool_name=request.tool_name,
                     effect_class="write",
-                    operation_fingerprint=_runtime_write_operation_fingerprint(
-                        request.tool_name,
-                        args,
+                    operation_fingerprint=operation_fingerprint,
+                    expected_resource_type=expected_resource_type,
+                    logical_operation_key=logical_operation_key,
+                    logical_operation_scope_key=logical_operation_scope_key,
+                    logical_operation_discriminator_kind=(
+                        logical_operation_discriminator_kind
+                    ),
+                    logical_operation_discriminator_key=(
+                        logical_operation_discriminator_key
                     ),
                 )
                 if runtime_operation.disposition == "replay":
@@ -11876,6 +12400,17 @@ class AgentExecutor:
                             "dispatch_started": True,
                             "error_code": runtime_operation.error_code
                             or "write_uncertain",
+                        },
+                        ensure_ascii=False,
+                    )
+                if runtime_operation.disposition == "reject":
+                    return json.dumps(
+                        {
+                            "status": "failed",
+                            "success": False,
+                            "dispatch_started": False,
+                            "error_code": runtime_operation.error_code
+                            or "retry_plan_mismatch",
                         },
                         ensure_ascii=False,
                     )
@@ -11904,6 +12439,11 @@ class AgentExecutor:
                     if user_token
                     else {}
                 )
+                if (
+                    runtime_operation is not None
+                    and expected_resource_type is not None
+                ):
+                    headers["Idempotency-Key"] = runtime_operation.operation_id
                 result = await handler(base_url, headers, args)
             else:
                 result = await handler(args)
@@ -12336,6 +12876,11 @@ class AgentExecutor:
             except (json.JSONDecodeError, ValueError):
                 data = {}
         today = self._agent_kernel_reference_now().strftime("%Y-%m-%d")
+        if rtype == "diet":
+            data = _normalize_diet_create_data(
+                args,
+                default_record_date=today,
+            )
 
         # A contextual meal photo may already have been persisted before the
         # model receives its structured vision summary.  A model retry must
@@ -12390,11 +12935,11 @@ class AgentExecutor:
         ):
             logger.warning(
                 "[R4-probe] NEVER_AUTO kind=%s 带 model 自报 confirmed 抵达确认门 "
-                "(Gate A 未剥离; prefer_fast=%s) user=%s msg=%r",
+                "(Gate A 未剥离; prefer_fast=%s) user=%s message_chars=%s",
                 rtype,
                 self._prefer_fast_record_model,
                 self._current_user_id,
-                (getattr(self, "_current_turn_user_message", "") or "")[:60],
+                len(getattr(self, "_current_turn_user_message", "") or ""),
             )
 
         # medication 是医疗级写入:无论快/慢路径恒确认前置。快路径由 gate 置 flag;
@@ -12443,18 +12988,6 @@ class AgentExecutor:
 
         # 补全 diet 必填字段
         if rtype == "diet":
-            data.setdefault("record_date", today)
-            data.setdefault("meal_type", "snack")
-            normalized_meal_type = _normalize_diet_meal_type(data.get("meal_type"))
-            if normalized_meal_type:
-                data["meal_type"] = normalized_meal_type
-            if isinstance(data.get("food_items"), list):
-                data["food_items"] = ", ".join(
-                    (f.get("name", str(f)) if isinstance(f, dict) else str(f))
-                    for f in data["food_items"]
-                )
-            elif not data.get("food_items"):
-                data["food_items"] = data.get("description", data.get("notes", ""))
             if not data.get("food_items"):
                 return "Error: diet 记录必须提供 food_items（食物内容）。请先识别食物内容，然后重新调用 health_record 并在 data.food_items 中填写具体食物。"
 
