@@ -4,8 +4,8 @@
 |---|---|
 | slug | `agent-runtime-control-plane` |
 | 创建日期 | 2026-07-19 |
-| 当前阶段 | P3 Canary Control Plane 研发中；生产 Runtime 仍默认关闭 |
-| 状态 | in_progress |
+| 当前阶段 | P3 Canary Control Plane 已上线；生产 Runtime 保持默认关闭 |
+| 状态 | complete |
 | 负责 | Codex |
 | 反馈环 | PostgreSQL/SQLite 集成测试 / Agent SSE 回归 / backend deploy |
 
@@ -261,8 +261,47 @@ RequirementAdmission:
 - 真实 PostgreSQL pause/admission 并发、generation 恢复顺序与 same-turn 连续性定向回归通过；其中“旧 `finished_at`、晚提交”双事务回归和两项 pause 锁竞争共 `3 passed`。P0/P2/P3 migration 重复执行通过，临时数据库均已删除。
 - 真实 PostgreSQL Runtime/rollout/API/concurrency/model/resilience/tool 全集 `170 passed`、无跳过；P0→P2→P3 迁移在最小旧 schema 上执行且 P3 重复执行通过，generation 初值 `0/0` 与两个窗口索引实查存在，临时数据库已删除。
 - 最终变基到 `origin/main@d41871980`；上游 TokenPlan 白名单、任务路由与 CI 分片变更交叉回归 `196 passed, 3 skipped`（跳过项仅为 PostgreSQL-only 用例），Mobile/Web TypeScript 检查通过。
+- 2026-07-20 真实 LLM 变更闸使用内存 SQLite 执行：`invariants 12/12`、`health_agent_core 50/50`、`orchestrator 5/5`，编排平均评分 `0.92`、无回归；用量日志表未创建仅触发既有旁路警告，不影响模型调用与评分。
 - 生产准入在 circuit 读取失败时降级 legacy 且数据库会话可继续使用的定向回归: `29 passed`。
 - 独立复审提出的 canary 写账本、same-turn 逃逸、pause/admission 竞争、deadline 误计失败、恢复水位和窗口索引共 6 项问题均已修复并增加回归；复审补充的 `off` deadline 阻断和旧时间戳晚提交两个 P1 也已以失败测试复现并修复。
 - 终态复审补出的“operation 待核对但 Run 仍成功”P1 已由定向 RED 测试复现并修复，未决写入现在无法逃逸自动止损。
 - 最终独立复审结论: 无剩余 P0/P1；定向收口测试通过。
 - 裁决: **PASS**。
+
+## G4 · 安全闸
+
+- Runtime 表、rollout 单例状态和审计事件只保存运行标识、有限状态与聚合计数，不保存 prompt、回复、工具参数、工具结果或健康正文。
+- 管理员状态查询与 pause/resume 复用现有管理员鉴权；自动止损只能 pause，系统不自动 resume。
+- 真实 LLM 变更闸完成后，临时 CI 确认变量只用于 run `29721743557` attempt 2；作业启动后立即删除，未永久放宽后续提交。
+- 主干 CI run `29721743557` attempt 2 的 backend quality、全分片、类型漂移、Mobile、Web 与 Mac 闸全部通过。
+- 裁决: **PASS**。
+
+## S6 · 部署
+
+- 主干提交: `1d6ac9ad84094cd98d972ca999254f1e72ef6f2a`。
+- 2026-07-20 通过根目录 `deploy.sh -b -y` 部署；部署前备份与 force-RLS 数据段完整性校验通过。
+- 受控迁移 `20260720_120000_agent_runtime_rollout` 已在生产 PostgreSQL 应用，服务器代码与主干提交一致。
+
+## G5 · 部署健康闸
+
+- 部署健康评分: `60/60 PASS`。
+- `health-backend`、`celery-worker`、`celery-beat` 均为 `active`；公网健康接口确认 API、PostgreSQL、Redis 和 Celery 均已连接。
+- Agent skills manifest 校验: 本地 `22` = 线上 `22`。
+- 裁决: **PASS**。
+
+## S7 · 上线验证
+
+- 生产 `agent_runtime_mode=off`，本次只上线控制面与迁移，未开启 canary 或 allowlist 流量。
+- rollout 单例状态为 `active`、version `1`、reconciliation generation `0/0`，没有遗留待核对世代。
+- Runtime 未管路径仍使用原 Agent Executor 行为，客户端协议与 iPhone strict-local 路径无变更。
+
+## G6 · 验证闸
+
+- 控制面、持久化迁移、服务健康和默认关闭回滚语义已在生产验证。
+- 真正开启 0% allowlist 或 canary 属于独立上线变更，必须重新经过监控基线、人工 pause/resume 演练和放量 Gate。
+- 裁决: **PASS**。
+
+## S8 · 沉淀
+
+- 设计、实施、真实 PostgreSQL、真实 LLM、CI、部署、回滚边界和生产验证证据已记录。
+- 本 dossier 完成的是 Runtime 控制面交付，不代表生产 canary 已放量。
