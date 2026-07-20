@@ -25,8 +25,23 @@ jobs:
             extra_args: "--ignore=tests/services --ignore=tests/test_app_store_demo_account.py --ignore-glob='tests/test_[c-z]*.py' --ignore-glob='tests/test_agent_*.py'"
           - label: app-store-demo-account
             paths: "tests/test_app_store_demo_account.py"
-          - label: agent-a-h
-            paths: "tests/test_agent_[a-h]*.py"
+          # Executor coverage has grown too large for a single reliable process.
+          # Split the broad a-h family so a slow provider/tool simulation cannot
+          # consume both 600-second attempts for hundreds of unrelated tests.
+          - label: agent-a-d
+            paths: "tests/test_agent_[a-d]*.py"
+          - label: agent-e-core
+            paths: >-
+              tests/test_agent_eval.py
+              tests/test_agent_event_stream.py
+              tests/test_agent_evidence_card_memo.py
+              tests/test_agent_explicit_cache_flag.py
+          - label: agent-executor-a-h
+            paths: "tests/test_agent_executor_[a-h]*.py"
+          - label: agent-executor-i-z
+            paths: "tests/test_agent_executor_[i-z]*.py"
+          - label: agent-f-h
+            paths: "tests/test_agent_[f-h]*.py"
           - label: agent-i-z
             paths: "tests/test_agent_[i-z]*.py"
           - label: c-d

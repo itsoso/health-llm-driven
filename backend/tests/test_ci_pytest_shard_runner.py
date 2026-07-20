@@ -49,6 +49,28 @@ def test_v_z_and_service_tests_run_in_bounded_ci_processes():
     assert by_label["services"]["paths"] == "tests/services/"
 
 
+def test_agent_a_h_tests_run_in_bounded_ci_processes():
+    workflow = yaml.safe_load(
+        (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    )
+    shards = workflow["jobs"]["backend-test-shards"]["strategy"]["matrix"]["include"]
+    by_label = {shard["label"]: shard for shard in shards}
+
+    assert "agent-a-h" not in by_label
+    assert by_label["agent-a-d"]["paths"] == "tests/test_agent_[a-d]*.py"
+    assert by_label["agent-e-core"]["paths"] == (
+        "tests/test_agent_eval.py tests/test_agent_event_stream.py "
+        "tests/test_agent_evidence_card_memo.py tests/test_agent_explicit_cache_flag.py"
+    )
+    assert by_label["agent-executor-a-h"]["paths"] == (
+        "tests/test_agent_executor_[a-h]*.py"
+    )
+    assert by_label["agent-executor-i-z"]["paths"] == (
+        "tests/test_agent_executor_[i-z]*.py"
+    )
+    assert by_label["agent-f-h"]["paths"] == "tests/test_agent_[f-h]*.py"
+
+
 def test_build_pytest_command_keeps_the_shard_in_one_process():
     from scripts.run_ci_pytest_shard import build_pytest_command
 
