@@ -173,6 +173,7 @@
 - [x] 专项 Jest `19 passed`，TypeScript 与变更文件 ESLint 通过。
 - [x] iPhone 17 Pro 模拟器使用开发 bundle 和真实账号数据验证：`现在做 3 / 需要确认 7`，复核区默认三条，布局无重叠。
 - [x] 独立代码审查无高/中风险；补齐 VoiceOver 展开状态、Android 安全菜单、收起操作和 supplement 来源回归测试。
+- [x] 首轮最新主干 CI 暴露 Watch 提醒测试在北京时间 23:50 后必然跨日的假红；固定测试时钟后，目标用例 `2 passed`、完整 Watch 摘要 `18 passed`，生产提醒逻辑未改。
 - [x] design token、doc drift、diff check 通过；最新主干 CI 待提交后确认。
 - [ ] production OTA 发布并回读 EAS 标识。
 - [ ] 用户真机应用更新后完成最终触控验收。
