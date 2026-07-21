@@ -4,8 +4,8 @@
 |---|---|
 | slug | `agent-runtime-write-reconciliation` |
 | 创建日期 | 2026-07-20 |
-| 当前阶段 | S5 本地与真实 PostgreSQL 验证完成 |
-| 状态 | implemented_local_gate |
+| 当前阶段 | G5 生产部署健康验证完成，等待受控 G6 |
+| 状态 | deployed_runtime_paused |
 | 负责 | Codex |
 | 反馈环 | Agent Runtime canary / PostgreSQL operation ledger / diet write receipt |
 
@@ -115,10 +115,17 @@ RequirementAdmission:
 
 ## G5 · 部署健康闸
 
-- 状态: 本轮未执行；按变更约束保持生产 circuit paused、canary 0%。
-- 后续要求: 分支评审和主干 CI 全绿后才允许部署代码；部署后仍不得自动恢复流量。
+- 生产部署（2026-07-21）: 最新主干 `0fa40389b3102bdf73fdfd5ae892ec50e526860a` 已部署；Agent Runtime 核心提交 `f6997a2bb` 与远端 bundle 隔离修复 `500ad6cfb` 均在其历史中。
+- 主干 CI: `29797730524`（bundle 修复）与 `29798138723`（最终主干）均为全绿，最终主干 42/42 jobs 成功。
+- 回滚证据: 部署前 PostgreSQL 备份 `/opt/health-app/backups/health_db_2026-07-21_11-31.sql.gz` 成功并通过 force-RLS 数据段完整性检查；远端环境备份为 `backend/.env.backup.20260721_113124`。
+- 数据库: managed migration `20260720_180000_agent_runtime_operation_lineage` 已登记；`agent_tool_operations` 的 5 个 lineage 字段和 2 个目标索引均实查存在。
+- 服务: 生产仓库位于 `main` 且 SHA 与部署目标一致；`health-backend`、`celery-worker`、`celery-beat` 均 active，公网健康接口 HTTP 200。
+- 健康评分: 60/60 PASS；API、PostgreSQL、Redis、Celery 均 healthy，健康接口 12ms，API P95 7ms，最近 200 行错误率 0%。重启后 10 分钟内后端与 worker 均未发现 ERROR、CRITICAL 或 Traceback。
+- 部署可靠性: 唯一远端 deploy bundle 在脚本退出后已清理；服务器旧固定路径遗留文件不再阻断发布。
+- 流量约束: `AGENT_RUNTIME_MODE=off`、canary 0%；circuit 保持 `paused:reconciliation_detected`，本次部署未恢复 Runtime 流量。
+- **裁决: PASS**。
 
 ## G6 · 上线验证
 
-- 状态: 本轮未执行，等待 G5。
+- 状态: **PENDING**。G5 已通过，但 Runtime 仍按安全约束关闭并保持熔断暂停；不得把部署健康等同于受控写入闭环通过。
 - 验收: 当前旧 reconciliation 经应用服务显式结算；单账号只读和受控饮食写入均得到同一 Run/operation/receipt 链路；无重复写入、无 stale lease、无新 reconciliation 后才可人工恢复。
