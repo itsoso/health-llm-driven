@@ -920,6 +920,7 @@ export default function ChatScreen() {
         <FlatList
           ref={flatListRef}
           testID="chat-message-list"
+          style={styles.messageListViewport}
           data={messageListItems}
           keyExtractor={item => item.id}
           renderItem={renderMessage}
@@ -1174,6 +1175,7 @@ function ToolMenuRow({
 // Reva 设计语言: 暖白 paper 屏底 / surface 卡 / green500 主色 / r-lg 18 / 软阴影. 文字走 Manrope.
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.paper },
+  messageListViewport: { flex: 1, minHeight: 0 },
   messageList: { padding: revaSpacing.s4, paddingBottom: 8 },
   timeDivider: {
     alignSelf: 'center',

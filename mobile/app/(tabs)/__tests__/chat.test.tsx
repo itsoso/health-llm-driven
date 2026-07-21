@@ -949,6 +949,21 @@ describe('ChatScreen', () => {
     expect(getByTestId('chat-bottom-spacer')).toHaveStyle({ height: 336 });
   });
 
+  it('keeps the transcript in a shrinkable viewport when the composer grows', async () => {
+    mockMessages = [
+      { id: 'u-1', role: 'user', content: '一段会换行的输入内容' },
+      { id: 'a-1', role: 'assistant', content: '最后一条回复', completionStatus: 'complete' },
+    ];
+
+    const { getByTestId } = render(<ChatScreen />);
+    await waitFor(() => expect(getByTestId('chat-message-list')).toBeTruthy());
+
+    expect(StyleSheet.flatten(getByTestId('chat-message-list').props.style)).toMatchObject({
+      flex: 1,
+      minHeight: 0,
+    });
+  });
+
   it('shows a visible cancel action after long-pressing a message into multi-select', async () => {
     mockMessages = [
       { id: 'u-1', role: 'user', content: '早餐吃了鸡蛋和咖啡' },
