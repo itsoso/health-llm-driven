@@ -4387,6 +4387,21 @@ def _health_record_card_descriptor(record_type: Any, record_data: Any, result: s
     }
 
 
+def _is_contextual_meal_photo_replay_result(result: Any) -> bool:
+    """True when health_record(diet) only replays an already-saved meal photo."""
+    try:
+        payload = json.loads(result) if isinstance(result, str) else result
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return False
+    if not isinstance(payload, dict):
+        return False
+    operation_id = str(payload.get("operation_id") or "")
+    return (
+        operation_id.startswith("contextual_meal_photo:")
+        and str(payload.get("resource_type") or "") == "diet_record"
+    )
+
+
 def _number_or_none(value: Any) -> Optional[float]:
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         return float(value)
@@ -8651,7 +8666,16 @@ class AgentExecutor:
                                         )
                         record_card = None
                         quality_cards: list[dict] = []
-                        if func_name == "health_record" and not replayed_write:
+                        suppress_contextual_diet_replay_card = (
+                            func_name == "health_record"
+                            and bool(self._turn_contextual_diet_cards)
+                            and _is_contextual_meal_photo_replay_result(result_for_record_card)
+                        )
+                        if (
+                            func_name == "health_record"
+                            and not replayed_write
+                            and not suppress_contextual_diet_replay_card
+                        ):
                             try:
                                 tool_event_data["record_type"] = (
                                     parsed_tool_args.get("record_type")
