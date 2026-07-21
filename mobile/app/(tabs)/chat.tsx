@@ -521,7 +521,7 @@ export default function ChatScreen() {
   const handleSend = useCallback((text: string, images?: any, options?: ChatInputSendOptions) => {
     isNearBottom.current = true;
     injectOpeningContinuity(openerRef.current);
-    scheduleScrollToEnd({ animated: true });
+    scheduleScrollToEnd({ force: true, animated: true });
     return new Promise<boolean>((resolve) => {
       let settled = false;
       const resolveOnce = (accepted: boolean) => {

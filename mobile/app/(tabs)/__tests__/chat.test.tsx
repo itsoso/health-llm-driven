@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-require-imports, import/first */
 import React from 'react';
-import { Alert, Keyboard, StyleSheet } from 'react-native';
+import { Alert, FlatList, Keyboard, StyleSheet } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 
 const mockOpenHistory = jest.fn();
@@ -962,6 +962,47 @@ describe('ChatScreen', () => {
       flex: 1,
       minHeight: 0,
     });
+  });
+
+  it('keeps a newly sent turn pinned through the first transcript relayout', async () => {
+    mockMessages = [
+      { id: 'u-1', role: 'user', content: '上一条问题' },
+      { id: 'a-1', role: 'assistant', content: '上一条回复', completionStatus: 'complete' },
+    ];
+    mockSendMessage.mockReturnValue(new Promise(() => {}));
+
+    const view = render(<ChatScreen />);
+    await waitFor(() => expect(mockFetchConversationStarters).toHaveBeenCalled());
+    const list = view.getByTestId('chat-message-list');
+    const bar = view.UNSAFE_getAllByType('ChatInputBar' as any)[0];
+    const scrollToEnd = jest.spyOn(FlatList.prototype, 'scrollToEnd');
+
+    try {
+      act(() => {
+        list.props.onScrollBeginDrag();
+      });
+      act(() => {
+        void bar.props.onSend('新问题');
+      });
+      scrollToEnd.mockClear();
+
+      // The first post-send layout event can still describe the old viewport.
+      // It must not cancel following the new user bubble and streamed answer.
+      fireEvent.scroll(list, {
+        nativeEvent: {
+          layoutMeasurement: { height: 500 },
+          contentOffset: { y: 0 },
+          contentSize: { height: 1500 },
+        },
+      });
+      act(() => {
+        list.props.onContentSizeChange();
+      });
+
+      expect(scrollToEnd).toHaveBeenCalledTimes(1);
+    } finally {
+      scrollToEnd.mockRestore();
+    }
   });
 
   it('shows a visible cancel action after long-pressing a message into multi-select', async () => {
