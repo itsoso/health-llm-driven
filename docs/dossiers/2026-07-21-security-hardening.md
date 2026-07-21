@@ -51,8 +51,8 @@
 ## G3 Verification Evidence
 
 - Backend broad CI shard `e-g`: `1043 passed, 1 skipped`。
-- Backend focused SQLite security suite: `115 passed`。
-- Backend focused PostgreSQL security suite: `71 passed`，覆盖 API Key、报告上传、家庭代管撤权、旧路由租户隔离和 Web Session。
+- Backend focused SQLite security suite: `117 passed`。
+- Backend focused PostgreSQL security suite: `73 passed`，覆盖 API Key、报告上传、家庭代管撤权与畸形 claim、旧路由租户隔离和 Web Session。
 - Backup/deploy/infrastructure script tests: `23 passed`；相关 shell 脚本 `bash -n` 通过。
 - Frontend: `297 passed`；`next build` 成功；ESLint `0 errors`（45 个既有 warning）。
 - Mobile: TypeScript `tsc --noEmit` 成功；Expo lint `0 errors`（103 个既有 warning）；设计 token ratchet 通过。

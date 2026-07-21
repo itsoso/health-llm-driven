@@ -193,7 +193,13 @@ async def get_current_user(
 
             if user_id:
                 # 家庭代管模式：JWT 包含 acting_as 和 original_user
-                if acting_as and original_user:
+                has_proxy_claim = acting_as is not None or original_user is not None
+                if has_proxy_claim:
+                    if acting_as is None or original_user is None:
+                        raise HTTPException(
+                            status_code=status.HTTP_403_FORBIDDEN,
+                            detail="家庭代管授权已失效",
+                        )
                     target_user, origin_id = _resolve_family_proxy_user(
                         db,
                         subject=user_id,

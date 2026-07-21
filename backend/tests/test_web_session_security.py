@@ -3,7 +3,7 @@
 import uuid
 
 from app.config import settings
-from app.models.family import FamilyMember
+from app.models.family import FamilyGroup, FamilyMember
 from app.models.user import User
 from app.services.auth import auth_service
 
@@ -222,3 +222,81 @@ def test_family_proxy_token_is_rejected_after_membership_is_revoked(client, db):
     )
 
     assert response.status_code == 403
+
+
+def test_partial_family_proxy_claims_fail_closed(client, db):
+    _, target_user_id, _ = _native_family_proxy(client, db)
+    malformed_token = auth_service.create_access_token({
+        "sub": str(target_user_id),
+        "acting_as": target_user_id,
+    })
+
+    response = client.get(
+        "/api/v1/auth/me",
+        headers={"Authorization": f"Bearer {malformed_token}"},
+    )
+
+    assert response.status_code == 403
+
+
+def test_family_proxy_token_is_rejected_after_edit_permission_is_revoked(client, db):
+    users = []
+    for role in ("owner", "delegate", "target"):
+        user = User(
+            username=f"proxy_{role}_{uuid.uuid4().hex[:8]}",
+            email=f"proxy_{role}_{uuid.uuid4().hex[:8]}@example.test",
+            hashed_password="not-used-by-this-test",
+            name=role,
+            is_active=True,
+            is_approved=True,
+        )
+        db.add(user)
+        users.append(user)
+    db.flush()
+    owner, delegate, target = users
+    group = FamilyGroup(name="Delegated access", owner_id=owner.id)
+    db.add(group)
+    db.flush()
+    db.add_all([
+        FamilyMember(
+            family_group_id=group.id,
+            user_id=owner.id,
+            relationship_type="self",
+            role="owner",
+            can_view=True,
+            can_edit=True,
+        ),
+        FamilyMember(
+            family_group_id=group.id,
+            user_id=delegate.id,
+            relationship_type="other",
+            role="member",
+            can_view=True,
+            can_edit=False,
+        ),
+        FamilyMember(
+            family_group_id=group.id,
+            user_id=target.id,
+            relationship_type="other",
+            role="member",
+            can_view=True,
+            can_edit=True,
+        ),
+    ])
+    db.commit()
+    proxy_token = auth_service.create_access_token({
+        "sub": str(target.id),
+        "acting_as": target.id,
+        "original_user": delegate.id,
+    })
+    headers = {"Authorization": f"Bearer {proxy_token}"}
+    assert client.get("/api/v1/auth/me", headers=headers).status_code == 200
+
+    target_membership = db.query(FamilyMember).filter(
+        FamilyMember.family_group_id == group.id,
+        FamilyMember.user_id == target.id,
+    ).one()
+    target_membership.can_edit = False
+    db.commit()
+
+    assert client.get("/api/v1/auth/me", headers=headers).status_code == 403
