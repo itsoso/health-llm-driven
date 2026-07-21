@@ -74,7 +74,21 @@ const ACTIONABLE_MENU: AgendaMenuItem[] = [
 const REVIEW_MENU: AgendaMenuItem[] = [
   { label: '稍后再看', action: 'snooze' },
   { label: '调整计划', action: 'adjust' },
+  { label: '取消', action: 'cancel' },
+];
+const LATER_ACTIONABLE_MENU: AgendaMenuItem[] = [
+  { label: '跳过', action: 'skip' },
+  { label: '调整计划', action: 'adjust' },
   { label: '问小巴', action: 'ask' },
+  { label: '取消', action: 'cancel' },
+];
+const DEFERRED_REVIEW_MENU: AgendaMenuItem[] = [
+  { label: '调整计划', action: 'adjust' },
+  { label: '问小巴', action: 'ask' },
+  { label: '取消', action: 'cancel' },
+];
+const FUTURE_REVIEW_MENU: AgendaMenuItem[] = [
+  { label: '调整计划', action: 'adjust' },
   { label: '取消', action: 'cancel' },
 ];
 
@@ -126,8 +140,6 @@ export default function AgendaScreen() {
     return candidates.filter(section => section.count > 0);
   }, [groups, handledExpanded, reviewExpanded]);
 
-  const pendingCount = groups.now.length + groups.review.length + groups.later.length;
-
   const handleBack = useCallback(() => {
     const action = resolveAgendaBackAction(router.canGoBack());
     if (action.type === 'back') {
@@ -173,6 +185,18 @@ export default function AgendaScreen() {
         return next;
       });
     });
+  }, [toast]);
+
+  const restoreFromLater = useCallback((item: AgendaItem) => {
+    const key = agendaItemKey(item);
+    const destination = canActOnAgendaItem(item) ? '现在' : '待确认';
+    setSnoozedKeys(current => {
+      const next = new Set(current);
+      next.delete(key);
+      return next;
+    });
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    toast.show(`已移回${destination}`, 'success');
   }, [toast]);
 
   const askXiaoba = useCallback((item: AgendaItem, intent: 'adjust' | 'ask') => {
@@ -239,8 +263,12 @@ export default function AgendaScreen() {
     if (action === 'ask') askXiaoba(item, 'ask');
   }, [askXiaoba, chooseSkipReason, snooze]);
 
-  const openItemMenu = useCallback((item: AgendaItem) => {
-    const menu = canActOnAgendaItem(item) ? ACTIONABLE_MENU : REVIEW_MENU;
+  const openItemMenu = useCallback((item: AgendaItem, sectionKey: SectionKey) => {
+    const actionable = canActOnAgendaItem(item);
+    const deferred = snoozedKeys.has(agendaItemKey(item));
+    const menu = sectionKey === 'later'
+      ? (actionable ? LATER_ACTIONABLE_MENU : deferred ? DEFERRED_REVIEW_MENU : FUTURE_REVIEW_MENU)
+      : (actionable ? ACTIONABLE_MENU : REVIEW_MENU);
     if (Platform.OS === 'ios') {
       ActionSheetIOS.showActionSheetWithOptions(
         {
@@ -261,7 +289,7 @@ export default function AgendaScreen() {
         onPress: () => handleMenuAction(item, option.action),
       })),
     );
-  }, [handleMenuAction]);
+  }, [handleMenuAction, snoozedKeys]);
 
   const renderSectionHeader = useCallback(({ section }: { section: AgendaSection }) => {
     const content = (
@@ -314,18 +342,23 @@ export default function AgendaScreen() {
     );
   }, [reviewExpanded]);
 
-  const renderItem = useCallback(({ item, section }: { item: AgendaItem; section: AgendaSection }) => (
-    <AgendaRow
-      item={item}
-      handled={section.key === 'handled'}
-      pending={complete.isPending && complete.variables?.source
-        ? agendaItemKey({ ...item, source: complete.variables.source }) === agendaItemKey(item)
-        : false}
-      onComplete={() => markComplete(item)}
-      onMenu={() => openItemMenu(item)}
-      onAsk={() => askXiaoba(item, 'ask')}
-    />
-  ), [askXiaoba, complete.isPending, complete.variables, markComplete, openItemMenu]);
+  const renderItem = useCallback(({ item, section }: { item: AgendaItem; section: AgendaSection }) => {
+    const deferred = section.key === 'later' && snoozedKeys.has(agendaItemKey(item));
+    return (
+      <AgendaRow
+        item={item}
+        handled={section.key === 'handled'}
+        deferred={deferred}
+        pending={complete.isPending && complete.variables?.source
+          ? agendaItemKey({ ...item, source: complete.variables.source }) === agendaItemKey(item)
+          : false}
+        onComplete={() => markComplete(item)}
+        onRestore={() => restoreFromLater(item)}
+        onMenu={() => openItemMenu(item, section.key)}
+        onAsk={() => askXiaoba(item, 'ask')}
+      />
+    );
+  }, [askXiaoba, complete.isPending, complete.variables, markComplete, openItemMenu, restoreFromLater, snoozedKeys]);
 
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
@@ -343,7 +376,7 @@ export default function AgendaScreen() {
         <View style={styles.headerCopy}>
           <Text style={styles.headerTitle}>今日行动</Text>
           <Text style={styles.headerMeta}>
-            待处理 {pendingCount} · 已处理 {groups.handled.length}
+            现在 {groups.now.length} · 待确认 {groups.review.length}
           </Text>
         </View>
         <Pressable
@@ -387,21 +420,26 @@ export default function AgendaScreen() {
 function AgendaRow({
   item,
   handled,
+  deferred,
   pending,
   onComplete,
+  onRestore,
   onMenu,
   onAsk,
 }: {
   item: AgendaItem;
   handled: boolean;
+  deferred: boolean;
   pending: boolean;
   onComplete: () => void;
+  onRestore: () => void;
   onMenu: () => void;
   onAsk: () => void;
 }) {
   const title = cleanAgendaTitle(item.title);
   const presentation = agendaItemPresentation(item);
   const canComplete = !handled && canActOnAgendaItem(item);
+  const restoreDestination = canComplete ? '现在' : '待确认';
   const tint = item.status === 'overdue'
     ? revaSemantic.risk.fg
     : handled
@@ -425,7 +463,17 @@ function AgendaRow({
         {item.detail ? <Text style={styles.rowDetail} numberOfLines={2}>{item.detail}</Text> : null}
       </View>
       <View style={styles.rowActions}>
-        {canComplete ? (
+        {deferred ? (
+          <Pressable
+            onPress={onRestore}
+            style={({ pressed }) => [styles.restoreButton, pressed && styles.pressed]}
+            accessibilityRole="button"
+            accessibilityLabel={`移回${restoreDestination} ${title}`}
+          >
+            <Ionicons name="arrow-up" size={14} color={C.green600} />
+            <Text style={styles.restoreButtonText}>{restoreDestination}</Text>
+          </Pressable>
+        ) : canComplete ? (
           <Pressable
             onPress={onComplete}
             disabled={pending}
@@ -597,6 +645,17 @@ const styles = StyleSheet.create({
     backgroundColor: C.green600,
   },
   completeButtonText: { fontFamily: revaFonts.sans, color: '#fff', fontSize: 13, fontWeight: '800' },
+  restoreButton: {
+    height: 34,
+    paddingHorizontal: 10,
+    borderRadius: revaRadii.pill,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    backgroundColor: C.green50,
+  },
+  restoreButtonText: { fontFamily: revaFonts.sans, color: C.green600, fontSize: 12, fontWeight: '800' },
   askButton: {
     height: 34,
     paddingHorizontal: 10,

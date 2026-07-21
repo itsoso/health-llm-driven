@@ -101,6 +101,8 @@ import AgendaScreen from '../agenda';
 
 describe('AgendaScreen', () => {
   beforeEach(() => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-07-20T09:00:00-04:00'));
     jest.clearAllMocks();
     mockCanGoBack = true;
     mockAgendaData = agendaData;
@@ -108,12 +110,17 @@ describe('AgendaScreen', () => {
     jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions').mockImplementation(() => {});
   });
 
-  afterEach(() => jest.restoreAllMocks());
+  afterEach(() => {
+    jest.useRealTimers();
+    jest.restoreAllMocks();
+  });
 
   it('shows a compact today-only management hierarchy', () => {
     const { getByText, queryByText } = render(<AgendaScreen />);
 
     expect(getByText('今日行动')).toBeTruthy();
+    expect(getByText('现在 1 · 待确认 1')).toBeTruthy();
+    expect(queryByText('待处理 3 · 已处理 1')).toBeNull();
     expect(getByText('现在做')).toBeTruthy();
     expect(getByText('需要确认')).toBeTruthy();
     expect(getByText('稍后')).toBeTruthy();
@@ -173,6 +180,56 @@ describe('AgendaScreen', () => {
     expect(getAllByText('稍后').length).toBeGreaterThan(0);
   });
 
+  it('lets the user move a session-deferred item back to now', () => {
+    jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions').mockImplementation((_options, callback) => callback(0));
+    const { getByLabelText } = render(<AgendaScreen />);
+
+    fireEvent.press(getByLabelText('管理 晨间用药'));
+    fireEvent.press(getByLabelText('移回现在 晨间用药'));
+
+    expect(mockToast).toHaveBeenCalledWith('已移回现在', 'success');
+    expect(getByLabelText('完成 晨间用药')).toBeTruthy();
+  });
+
+  it('returns a deferred review item to confirmation without calling it now', () => {
+    jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions').mockImplementation((_options, callback) => callback(0));
+    const { getByLabelText } = render(<AgendaScreen />);
+
+    fireEvent.press(getByLabelText('管理 优质蛋白有助修复'));
+    fireEvent.press(getByLabelText('移回待确认 优质蛋白有助修复'));
+
+    expect(mockToast).toHaveBeenCalledWith('已移回待确认', 'success');
+    expect(getByLabelText('询问小巴 优质蛋白有助修复')).toBeTruthy();
+  });
+
+  it('does not offer a duplicate defer action while the item is already later', () => {
+    const menus: (readonly string[])[] = [];
+    let sheetCall = 0;
+    jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions').mockImplementation((options, callback) => {
+      sheetCall += 1;
+      menus.push(options.options);
+      if (sheetCall === 1) callback(0);
+    });
+    const { getByLabelText } = render(<AgendaScreen />);
+
+    fireEvent.press(getByLabelText('管理 晨间用药'));
+    fireEvent.press(getByLabelText('管理 晨间用药'));
+
+    expect(menus[1]).toEqual(['跳过', '调整计划', '问小巴', '取消']);
+  });
+
+  it('keeps future review items free of duplicate ask and defer actions', () => {
+    let menuOptions: readonly string[] = [];
+    jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions').mockImplementation((options) => {
+      menuOptions = options.options;
+    });
+    const { getByLabelText } = render(<AgendaScreen />);
+
+    fireEvent.press(getByLabelText('管理 晚饭后步行 10 分钟'));
+
+    expect(menuOptions).toEqual(['调整计划', '取消']);
+  });
+
   it('hides empty groups instead of filling the screen with empty headings', () => {
     mockAgendaData = {
       agenda_date: '2026-07-20',
@@ -225,7 +282,7 @@ describe('AgendaScreen', () => {
 
     fireEvent.press(getByLabelText('管理 优质蛋白有助修复'));
 
-    expect(menuOptions).toEqual(['稍后再看', '调整计划', '问小巴', '取消']);
+    expect(menuOptions).toEqual(['稍后再看', '调整计划', '取消']);
     expect(mockMutate).not.toHaveBeenCalled();
     expect(mockPushChatWithContext).toHaveBeenCalledWith(
       expect.anything(),
@@ -247,7 +304,7 @@ describe('AgendaScreen', () => {
       const { getByLabelText } = render(<AgendaScreen />);
       fireEvent.press(getByLabelText('管理 优质蛋白有助修复'));
 
-      expect(buttons?.map(button => button.text)).toEqual(['稍后再看', '调整计划', '问小巴', '取消']);
+      expect(buttons?.map(button => button.text)).toEqual(['稍后再看', '调整计划', '取消']);
       buttons?.[1]?.onPress?.();
       expect(mockMutate).not.toHaveBeenCalled();
       expect(mockPushChatWithContext).toHaveBeenCalledWith(
