@@ -7,11 +7,9 @@ describe('agentApi.streamMessage', () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
-    localStorage.clear();
   });
 
   it('declares GenUI capabilities so web chat can receive chart cards', async () => {
-    localStorage.setItem('auth_token', 'tok_test');
     const stream = new ReadableStream({
       start(controller) {
         controller.close();
@@ -30,7 +28,6 @@ describe('agentApi.streamMessage', () => {
   });
 
   it('declares the metric_table capability after the eval gate passed', async () => {
-    localStorage.setItem('auth_token', 'tok_test');
     const stream = new ReadableStream({ start(controller) { controller.close(); } });
     const fetchMock = vi.fn().mockResolvedValue(new Response(stream, { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);

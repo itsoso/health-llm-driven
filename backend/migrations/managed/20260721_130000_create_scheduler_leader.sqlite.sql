@@ -1,0 +1,5 @@
+CREATE TABLE IF NOT EXISTS scheduler_leader (
+    id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+    worker_pid VARCHAR(50),
+    acquired_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);

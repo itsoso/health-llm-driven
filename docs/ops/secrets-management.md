@@ -4,8 +4,10 @@
 
 - Root `.env` is the single local source of truth for production configuration and is ignored by git.
 - `deploy.sh` filters deployment-only keys from root `.env` and writes the result to `backend/.env` on the server.
-- Before every `deploy.sh -e`, backend deploy, or full deploy that syncs env, the server-side `backend/.env` is copied in the same directory as `.env.backup.YYYYMMDD_HHMMSS`.
-- Server env backups keep file permissions restrictive and the script keeps the newest 20 backup files to avoid unbounded growth.
+- Before every `deploy.sh -e`, backend deploy, or full deploy that syncs env, the server-side `backend/.env` is copied outside the Git worktree to `/var/backups/health-app/env/.env.YYYYMMDD_HHMMSS` (or `$HEALTH_BACKUP_ROOT/env`).
+- Runtime `.env` and its backups are mode `0600`; backup directories are mode `0700`. The newest 20 env backups are retained.
+- Database backups live under `/var/backups/health-app/database`, never under `/opt/health-app`, so Git synchronization cannot stash or remove them.
+- Production backend deploys require a successful database dump, isolated restore drill, age-encrypted off-host upload, and remote listing verification before code synchronization starts.
 - Do not print, paste, or commit secret values. Logs and tickets should mention key names only.
 
 ## Emergency Edits
@@ -17,6 +19,10 @@ Direct server edits should be limited to emergency recovery. After any emergency
 - Rotate immediately after any suspected leak, accidental commit, or broad copy/paste exposure.
 - Rotate LLM gateway, payment, OAuth, and health-data integration keys at least quarterly.
 - Prefer creating a replacement key first, deploying it, verifying service health, then revoking the old key.
+
+## Encrypted Off-Host Backup
+
+Production must configure `BACKUP_AGE_RECIPIENT` and `BACKUP_OFFSITE_RCLONE_DEST`. The destination must be an off-host object-storage remote configured in `rclone`; the private age identity must not be installed on the production host. `BACKUP_OFFSITE_RETENTION_DAYS` defaults to 35 and local verified backup retention defaults to 7 copies. A missing tool, destination, recipient, restore failure, upload failure, or failed remote-list verification blocks deployment.
 
 ## Long-Term Direction
 

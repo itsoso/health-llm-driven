@@ -300,12 +300,12 @@ async def test_replay_terminal_success_with_receipt_is_not_reported_as_failed(
     _insert_recipe(
         db,
         user.id,
-        phrases=["记录配方饮水"],
+        phrases=["记录配方体重"],
         steps=[{
             "tool": "health_record",
             "args_template": {
-                "record_type": "water",
-                "data": {"amount": 250},
+                "record_type": "weight",
+                "data": {"weight": 71.2},
             },
         }],
     )
@@ -316,12 +316,12 @@ async def test_replay_terminal_success_with_receipt_is_not_reported_as_failed(
         monkeypatch,
         response=json.dumps({
             "status": "recorded",
-            "resource_type": "water_record",
+            "resource_type": "weight_record",
             "record_id": 123,
         }),
     )
 
-    events = await _run(executor, user.id, "记录配方饮水", channel="typed")
+    events = await _run(executor, user.id, "记录配方体重", channel="typed")
 
     tool_result = next(
         event["data"] for event in events if event.get("event") == "tool_result"
@@ -346,12 +346,12 @@ async def test_replay_terminal_success_without_identity_remains_failed(
     _insert_recipe(
         db,
         user.id,
-        phrases=["记录无回执饮水"],
+        phrases=["记录无回执体重"],
         steps=[{
             "tool": "health_record",
             "args_template": {
-                "record_type": "water",
-                "data": {"amount": 250},
+                "record_type": "weight",
+                "data": {"weight": 71.2},
             },
         }],
     )
@@ -363,7 +363,7 @@ async def test_replay_terminal_success_without_identity_remains_failed(
         response=json.dumps({"status": "recorded"}),
     )
 
-    events = await _run(executor, user.id, "记录无回执饮水", channel="typed")
+    events = await _run(executor, user.id, "记录无回执体重", channel="typed")
 
     tool_result = next(
         event["data"] for event in events if event.get("event") == "tool_result"
@@ -412,8 +412,10 @@ async def test_replay_never_auto_medication_still_requires_confirmation(
     assert med_result["result"].startswith("[NEEDS_CONFIRMATION]")
     assert med_result["write_completed"] is False
     assert all("medication" not in c["url"] for c in calls)
-    # water(AUTO 档)正常写入
-    assert any("/water/records/quick" in c["url"] for c in calls)
+    # water(AUTO 档)走事务内领域服务并返回可核验回执
+    water_receipt = json.loads(tool_results[0]["result"])
+    assert water_receipt["resource_type"] == "water_record"
+    assert water_receipt["status"] == "verified"
     assert tool_results[0]["write_completed"] is True
 
     # 回复如实告知未写入,不冒充成功
@@ -454,15 +456,19 @@ async def test_replay_steps_in_order_and_fills_today_placeholder(
     events = await _run(executor, user.id, "晨间套餐", channel="typed")
 
     posts = [c for c in calls if c["method"] == "POST"]
-    assert len(posts) == 2
+    assert len(posts) == 1
     assert "/diet/records" in posts[0]["url"]
-    assert "/water/records/quick" in posts[1]["url"]
     assert posts[0]["data"]["record_date"] == _today()
     assert posts[0]["data"]["food_items"] == "鸡蛋, 燕麦"
 
     done = next(e["data"] for e in events if e.get("event") == "done")
     assert done["tools_used"] == ["health_record"]
     assert len(done["write_receipts"]) == 2
+    assert any(
+        receipt.get("resource_type") == "water_record"
+        and receipt.get("status") == "verified"
+        for receipt in done["write_receipts"]
+    )
 
     # use_count 确定性 +1
     recipe = db.query(ProcedureRecipe).filter(ProcedureRecipe.user_id == user.id).one()

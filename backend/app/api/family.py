@@ -3,7 +3,7 @@ import logging
 from typing import Optional, List
 from datetime import date, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -12,6 +12,10 @@ from app.models.user import User
 from app.models.family import FamilyGroup, FamilyMember
 from app.api.deps import get_current_user_required
 from app.services.auth import auth_service
+from app.services.web_session import (
+    WEB_SESSION_AUTH_SENTINEL,
+    set_web_session_cookie,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -228,6 +232,8 @@ async def remove_family_member(
 @router.post("/switch", summary="切换到家庭成员视角")
 async def switch_to_member(
     req: FamilySwitchRequest,
+    request: Request,
+    response: Response,
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ):
@@ -269,7 +275,7 @@ async def switch_to_member(
 
     # 生成带 acting_as 的 JWT Token（有效期 4 小时）
     from app.services.auth import SECRET_KEY, ALGORITHM
-    from jose import jwt
+    import jwt
     from datetime import UTC, datetime, timedelta
     token_data = {
         "sub": str(target_user_id),
@@ -278,15 +284,59 @@ async def switch_to_member(
         "exp": datetime.now(UTC) + timedelta(hours=4),
     }
     proxy_token = jwt.encode(token_data, SECRET_KEY, algorithm=ALGORITHM)
+    cookie_auth = getattr(request.state, "auth_type", None) == "cookie"
+    if cookie_auth:
+        set_web_session_cookie(response, proxy_token, max_age=4 * 3600)
 
     return {
-        "access_token": proxy_token,
+        "access_token": WEB_SESSION_AUTH_SENTINEL if cookie_auth else proxy_token,
         "token_type": "bearer",
         "acting_as": target_user_id,
         "acting_as_name": target_user.name,
         "original_user_id": current_user.id,
         "expires_in": 4 * 3600,
         "message": f"已切换到 {target_member.nickname or target_user.name} 的视角",
+    }
+
+
+@router.get("/proxy-status", summary="获取家庭代管会话状态")
+async def proxy_status(
+    request: Request,
+    current_user: User = Depends(get_current_user_required),
+):
+    original_user_id = getattr(request.state, "original_user_id", None)
+    return {
+        "is_proxy_mode": bool(getattr(request.state, "is_proxy_mode", False)),
+        "acting_as": current_user.id,
+        "acting_as_name": current_user.name,
+        "original_user_id": original_user_id,
+    }
+
+
+@router.post("/switch-back", summary="切回家庭代管发起人")
+async def switch_back(
+    request: Request,
+    response: Response,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    original_user_id = getattr(request.state, "original_user_id", None)
+    if not getattr(request.state, "is_proxy_mode", False) or not original_user_id:
+        raise HTTPException(status_code=400, detail="当前不在家庭代管模式")
+
+    original_user = db.query(User).filter(User.id == int(original_user_id)).first()
+    if not original_user or not original_user.is_active or not original_user.is_approved:
+        raise HTTPException(status_code=403, detail="原账号当前不可用")
+
+    original_token = auth_service.create_access_token({"sub": str(original_user.id)})
+    cookie_auth = getattr(request.state, "auth_type", None) == "cookie"
+    if cookie_auth:
+        set_web_session_cookie(response, original_token)
+    return {
+        "access_token": WEB_SESSION_AUTH_SENTINEL if cookie_auth else original_token,
+        "token_type": "bearer",
+        "user_id": original_user.id,
+        "message": "已切回自己",
     }
 
 

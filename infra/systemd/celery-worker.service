@@ -1,0 +1,33 @@
+[Unit]
+Description=Health Celery worker
+After=network-online.target postgresql.service redis-server.service
+
+[Service]
+Type=simple
+User=health-app
+Group=health-app
+WorkingDirectory=/opt/health-app/backend
+EnvironmentFile=/opt/health-app/backend/.env
+Environment=PATH=/opt/health-app/backend/venv/bin:/usr/bin
+ExecStart=/opt/health-app/backend/venv/bin/celery -A app.celery_app:celery_app worker --loglevel=info --concurrency=4
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=60s
+
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+SystemCallArchitectures=native
+UMask=0077
+ReadWritePaths=/opt/health-app/backend/logs /opt/health-app/backend/uploads /opt/health-app/backend/data /opt/health-app/backend/private_media /tmp/tts_cache
+
+[Install]
+WantedBy=multi-user.target

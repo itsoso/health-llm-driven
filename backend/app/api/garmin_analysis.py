@@ -5,7 +5,7 @@ from typing import Optional
 from app.database import get_db
 from app.services.garmin_analysis import GarminAnalysisService
 from app.models.user import User
-from app.api.deps import get_current_user_required
+from app.api.deps import get_current_user_required, require_self_or_admin
 
 router = APIRouter()
 
@@ -14,9 +14,11 @@ router = APIRouter()
 def analyze_sleep_quality(
     user_id: int,
     days: int = 7,
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
     """分析睡眠质量"""
+    require_self_or_admin(current_user, user_id, resource="Garmin 数据")
     service = GarminAnalysisService()
     return service.analyze_sleep_quality(db, user_id, days)
 
@@ -25,9 +27,11 @@ def analyze_sleep_quality(
 def analyze_heart_rate(
     user_id: int,
     days: int = 7,
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
     """分析心率数据"""
+    require_self_or_admin(current_user, user_id, resource="Garmin 数据")
     service = GarminAnalysisService()
     return service.analyze_heart_rate(db, user_id, days)
 
@@ -36,9 +40,11 @@ def analyze_heart_rate(
 def analyze_body_battery(
     user_id: int,
     days: int = 7,
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
     """分析身体电量"""
+    require_self_or_admin(current_user, user_id, resource="Garmin 数据")
     service = GarminAnalysisService()
     return service.analyze_body_battery(db, user_id, days)
 
@@ -47,9 +53,11 @@ def analyze_body_battery(
 def analyze_activity(
     user_id: int,
     days: int = 7,
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
     """分析活动数据"""
+    require_self_or_admin(current_user, user_id, resource="Garmin 数据")
     service = GarminAnalysisService()
     return service.analyze_activity(db, user_id, days)
 
@@ -58,9 +66,11 @@ def analyze_activity(
 def get_comprehensive_analysis(
     user_id: int,
     days: int = 7,
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
     """获取Garmin数据综合分析"""
+    require_self_or_admin(current_user, user_id, resource="Garmin 数据")
     service = GarminAnalysisService()
     return service.get_comprehensive_analysis(db, user_id, days)
 

@@ -15,6 +15,7 @@ from app.models.notification import (
 )
 from app.services.advice_guard import AdviceCandidate, guard_and_record_advice
 from app.services.notification.gatekeeper import gate_proactive_notification
+from app.services.notification.push_privacy import lock_screen_privacy_backstop
 from app.utils.timezone import get_china_now
 
 logger = logging.getLogger(__name__)
@@ -502,6 +503,18 @@ class PushService:
                     decision.conflicts_with_source_id,
                 )
                 return {"success": False, "reason": f"advice_guard_{decision.reason}"}
+
+        # Final shared privacy choke point. Producer-level guards remain useful
+        # for better category wording, but every channel receives this backstop.
+        title, content, privacy_redacted = lock_screen_privacy_backstop(
+            notification_type=notification_type,
+            title=title,
+            content=content,
+            data=data,
+        )
+        if privacy_redacted:
+            data = dict(data or {})
+            data["lock_screen_redacted"] = True
 
         # 去重检查必须先于 quiet-hours 延迟队列。
         # 否则夜间同一提醒会被重复写成多条 delayed, 到 09:00 一起 flush 出去。

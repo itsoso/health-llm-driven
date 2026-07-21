@@ -65,15 +65,13 @@ export const streamOrchestrator = async (
   handlers: OrchestratorStreamHandlers,
   signal?: AbortSignal
 ): Promise<void> => {
-  const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
-
   const res = await fetch(`${API_BASE_URL}/orchestrator/chat/stream`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Accept: 'text/event-stream',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
+    credentials: 'include',
     body: JSON.stringify({ ...req, stream: true }),
     signal,
   });

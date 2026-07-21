@@ -206,7 +206,6 @@ export default function SkillsPage() {
       const key = res.data;
       if (key.api_key) {
         setNewlyCreatedKey(key.api_key);
-        localStorage.setItem('skills_active_token', key.api_key);
       }
       setNewKeyName('');
       loadApiKeys();

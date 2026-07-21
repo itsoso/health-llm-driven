@@ -4,6 +4,7 @@
 旧外部网关已下线，所有对话统一走第一方 Agent。
 """
 import asyncio
+import base64
 import json
 import logging
 import time
@@ -21,6 +22,14 @@ from app.database import get_db
 from app.models.user import User
 from app.api.deps import get_current_user_required
 from app.services.llm.error_messages import safe_llm_error_message
+from app.services.secure_upload import (
+    UploadContentInvalid,
+    UploadTooLarge,
+    decode_base64_limited,
+    decode_utf8_text,
+    validate_image_bytes,
+    validate_pdf_bytes,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -655,9 +664,13 @@ class AgentRequest(BaseModel):
         if v and len(v) > 9:
             raise ValueError("最多支持 9 张图片")
         if v:
+            total_encoded_bytes = 0
             for img in v:
                 if len(img.base64) > 10_000_000:
                     raise ValueError("单张图片太大，最大支持约 7.5MB")
+                total_encoded_bytes += len(img.base64)
+            if total_encoded_bytes > 30_000_000:
+                raise ValueError("图片总大小过大，最多支持约 22MB")
         return v
 
     @field_validator("file_base64")
@@ -666,6 +679,66 @@ class AgentRequest(BaseModel):
         if v and len(v) > 15_000_000:  # ~11MB file
             raise ValueError("文件太大，最大支持约 11MB")
         return v
+
+
+_AGENT_IMAGE_MAX_BYTES = 7_500_000
+_AGENT_FILE_MAX_BYTES = 11_000_000
+_AGENT_TEXT_FILE_EXTENSIONS = {
+    ".txt", ".md", ".csv", ".json", ".log", ".yaml", ".yml",
+}
+
+
+def _validate_agent_attachments(
+    req: AgentRequest,
+) -> tuple[list[dict], str | None, str | None]:
+    """Validate and normalize attachments before reserving Agent capacity."""
+    raw_images: list[tuple[str, str]] = []
+    if req.images:
+        raw_images = [(img.base64, img.type) for img in req.images]
+    elif req.image_base64:
+        raw_images = [(req.image_base64, req.image_type or "jpeg")]
+
+    images: list[dict] = []
+    for encoded, declared_type in raw_images:
+        data = decode_base64_limited(encoded, max_bytes=_AGENT_IMAGE_MAX_BYTES)
+        detected_type = validate_image_bytes(
+            data,
+            declared_extension=declared_type,
+        )
+        images.append({
+            "base64": base64.b64encode(data).decode("ascii"),
+            "type": detected_type,
+        })
+
+    file_base64: str | None = None
+    file_name = (req.file_name or "").strip() or None
+    if req.file_base64:
+        if not file_name:
+            raise UploadContentInvalid("附件必须包含文件名")
+        suffix = "." + file_name.rsplit(".", 1)[-1].lower() if "." in file_name else ""
+        data = decode_base64_limited(req.file_base64, max_bytes=_AGENT_FILE_MAX_BYTES)
+        if suffix == ".pdf":
+            validate_pdf_bytes(data)
+        elif suffix in _AGENT_TEXT_FILE_EXTENSIONS:
+            decode_utf8_text(data, label="附件")
+        else:
+            raise UploadContentInvalid("附件仅支持 PDF、TXT、Markdown、CSV、JSON 和日志文本")
+        file_base64 = base64.b64encode(data).decode("ascii")
+    elif file_name:
+        raise UploadContentInvalid("附件内容为空")
+
+    return images, file_base64, file_name
+
+
+def _validated_agent_attachments_or_400(
+    req: AgentRequest,
+) -> tuple[list[dict], str | None, str | None]:
+    try:
+        return _validate_agent_attachments(req)
+    except UploadTooLarge as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
+    except UploadContentInvalid as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 class ConversationTitleUpdate(BaseModel):
@@ -734,6 +807,54 @@ def _admit_agent_runtime(
             origin=origin,
         ), False, "execute"
     return admission.context, admission.owns_execution, admission.disposition
+
+
+def _reserve_agent_capacity(db: Session, *, user_id: int, origin: str) -> str:
+    """Reserve one paid Agent execution slot before starting the provider call."""
+    from app.services.agent_capacity import AgentCapacityController, AgentCapacityExceeded
+
+    try:
+        lease = AgentCapacityController(db).acquire(
+            user_id=user_id,
+            origin=origin,
+        )
+        return lease.lease_id
+    except AgentCapacityExceeded as exc:
+        if exc.scope == "user":
+            detail = "你已有请求正在处理，请等待完成后再试"
+        else:
+            detail = "小巴当前请求较多，请稍后再试"
+        raise HTTPException(status_code=429, detail=detail) from exc
+
+
+def _release_agent_capacity_safely(
+    db: Session,
+    *,
+    lease_id: str,
+    user_id: int,
+) -> None:
+    """Release capacity without hiding a failed cleanup until lease expiry."""
+    from app.services.agent_capacity import AgentCapacityController
+
+    try:
+        # Tool failures can leave the request session in an aborted transaction.
+        # All Agent writes commit their own receipts, so rollback here only clears
+        # unusable transaction state before the content-free lease release.
+        db.rollback()
+        if not AgentCapacityController(db).release(lease_id, user_id=user_id):
+            logger.error(
+                "[agent.capacity] lease release missed user=%s lease=%s",
+                user_id,
+                lease_id,
+            )
+    except Exception as exc:  # lease expiry remains the crash-recovery boundary
+        logger.error(
+            "[agent.capacity] lease release failed user=%s lease=%s error=%s",
+            user_id,
+            lease_id,
+            type(exc).__name__,
+            exc_info=True,
+        )
 
 
 def _register_agent_runtime_task(run_id: str, task: asyncio.Task) -> None:
@@ -1121,12 +1242,28 @@ def _bind_agent_runtime_request(
     return source_message_id
 
 
-def _fail_agent_runtime(db: Session, context, *, managed: bool, error_code: str) -> None:
+def _fail_agent_runtime(
+    db: Session,
+    context,
+    *,
+    managed: bool,
+    error_code: str,
+    retryable: bool = False,
+) -> None:
     if not managed:
         return
     from app.services.agent_runtime import AgentRuntimeCoordinator
 
-    AgentRuntimeCoordinator(db).fail_active(context, error_code=error_code)
+    runtime = AgentRuntimeCoordinator(db)
+    if retryable:
+        runtime.complete(
+            context,
+            status="failed",
+            error_code=error_code,
+            retryable=True,
+        )
+    else:
+        runtime.fail_active(context, error_code=error_code)
 
 
 def _fail_agent_runtime_safely(
@@ -1135,6 +1272,7 @@ def _fail_agent_runtime_safely(
     *,
     managed: bool,
     error_code: str,
+    retryable: bool = False,
 ) -> None:
     """Close an active Run even when the request session needs recovery."""
     if not managed:
@@ -1145,6 +1283,7 @@ def _fail_agent_runtime_safely(
             context,
             managed=True,
             error_code=error_code,
+            retryable=retryable,
         )
         return
     except Exception:
@@ -1173,6 +1312,7 @@ def _fail_agent_runtime_safely(
                 context,
                 managed=True,
                 error_code=error_code,
+                retryable=retryable,
             )
         finally:
             cleanup_session.close()
@@ -1269,12 +1409,7 @@ async def agent_stream(
             detail="请求过于频繁，请稍候。（同一消息 3 秒内已发送）",
         )
 
-    # Normalize: merge single image_base64 and images array into one list
-    all_images: List[dict] = []
-    if req.images:
-        all_images = [{"base64": img.base64, "type": img.type} for img in req.images]
-    elif req.image_base64:
-        all_images = [{"base64": req.image_base64, "type": req.image_type or "jpeg"}]
+    all_images, file_b64, file_nm = _validated_agent_attachments_or_400(req)
 
     from app.services.agent_executor import AgentExecutor
 
@@ -1284,8 +1419,6 @@ async def agent_stream(
     msg_text = req.message.strip()
     conv_id = req.conversation_id
     images_local = all_images or None
-    file_b64 = req.file_base64
-    file_nm = req.file_name
     extra_ctx = req.extra_context
     chan = req.channel
     client_turn_id = req.client_turn_id
@@ -1442,6 +1575,22 @@ async def agent_stream(
                     "X-Accel-Buffering": "no",
                 },
             )
+
+    try:
+        capacity_lease_id = _reserve_agent_capacity(
+            db,
+            user_id=user_id,
+            origin="agent_stream",
+        )
+    except Exception:
+        _fail_agent_runtime_safely(
+            db,
+            runtime_context,
+            managed=runtime_managed,
+            error_code="capacity_unavailable",
+            retryable=True,
+        )
+        raise
 
     async def generate():
         """G-W9 同模式 (FIX-5, 2026-05-14): bg task + asyncio.Queue.
@@ -1698,6 +1847,11 @@ async def agent_stream(
                     clear_run_id(run_id_token)
                 except Exception:
                     pass
+                _release_agent_capacity_safely(
+                    bg_db,
+                    lease_id=capacity_lease_id,
+                    user_id=user_id,
+                )
                 try:
                     bg_db.close()
                 except Exception:
@@ -1794,11 +1948,7 @@ async def agent_send(
             detail="请求过于频繁，请稍候。（同一消息 3 秒内已发送）",
         )
 
-    all_images: List[dict] = []
-    if req.images:
-        all_images = [{"base64": img.base64, "type": img.type} for img in req.images]
-    elif req.image_base64:
-        all_images = [{"base64": req.image_base64, "type": req.image_type or "jpeg"}]
+    all_images, file_b64, file_nm = _validated_agent_attachments_or_400(req)
 
     auth_header = request.headers.get("authorization", "")
     user_token = auth_header.replace("Bearer ", "") if auth_header.startswith("Bearer ") else None
@@ -1897,8 +2047,8 @@ async def agent_send(
                 conversation_id=req.conversation_id,
                 user_auth_token=user_token,
                 images=all_images or None,
-                file_base64=req.file_base64,
-                file_name=req.file_name,
+                file_base64=file_b64,
+                file_name=file_nm,
                 extra_context=req.extra_context,
                 channel=req.channel,
                 client_turn_id=req.client_turn_id,
@@ -2009,6 +2159,11 @@ async def agent_send(
                 clear_run_id(run_id_token)
             except Exception:  # noqa: BLE001
                 pass
+            _release_agent_capacity_safely(
+                db,
+                lease_id=capacity_lease_id,
+                user_id=current_user.id,
+            )
 
     # Starter pregen serve (rank7): non-streaming twin of the /stream hook. An exact
     # match to a still-FRESH pregen'd starter returns its stored answer instantly
@@ -2018,7 +2173,7 @@ async def agent_send(
     if (
         getattr(_pregen_settings, "starter_pregen_enabled", False)
         and not has_images
-        and not req.file_base64
+        and not file_b64
     ):
         try:
             from app.services import starter_pregen
@@ -2053,6 +2208,21 @@ async def agent_send(
                 "meta": {"pregen_served": True},
             }
 
+    try:
+        capacity_lease_id = _reserve_agent_capacity(
+            db,
+            user_id=current_user.id,
+            origin="agent_send",
+        )
+    except Exception:
+        _fail_agent_runtime_safely(
+            db,
+            runtime_context,
+            managed=runtime_managed,
+            error_code="capacity_unavailable",
+            retryable=True,
+        )
+        raise
     agg_task = asyncio.create_task(_aggregate())
     _register_agent_runtime_task(runtime_context.run_id, agg_task)
 

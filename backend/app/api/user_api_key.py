@@ -4,10 +4,10 @@ import secrets
 import logging
 from datetime import datetime, date, timedelta
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Header, Query
+from fastapi import APIRouter, Depends, HTTPException, Header, Query, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from app.database import get_db
 from app.models.user import User
@@ -15,7 +15,11 @@ from app.models.user_api_key import UserApiKey
 from app.models.user_profile import UserProfile
 from app.models.daily_health import GarminData, WorkoutRecord, DietRecord, SupplementIntake
 from app.models.weight import WeightRecord
-from app.api.deps import get_current_user_required
+from app.api.deps import (
+    API_KEY_ALLOWED_SCOPES,
+    get_current_user_required,
+    normalize_api_key_scopes,
+)
 from app.utils.timezone import CHINA_TIMEZONE
 
 logger = logging.getLogger(__name__)
@@ -29,6 +33,15 @@ class ApiKeyCreate(BaseModel):
     """创建 API Key 请求"""
     name: str
     scopes: str = "read,write"
+
+    @field_validator("scopes")
+    @classmethod
+    def validate_scopes(cls, value: str) -> str:
+        requested = {item.strip().lower() for item in (value or "").split(",") if item.strip()}
+        invalid = requested - API_KEY_ALLOWED_SCOPES
+        if not requested or invalid:
+            raise ValueError("scopes 只能包含 read 和 write")
+        return ",".join(scope for scope in ("read", "write") if scope in requested)
 
 
 class ApiKeyResponse(BaseModel):
@@ -82,22 +95,18 @@ def hash_api_key(key: str) -> str:
 
 def check_scope(api_key: UserApiKey, required_scope: str) -> bool:
     """检查 API Key 是否有指定权限"""
-    if not api_key.scopes:
-        return False
-    scopes = api_key.scopes.split(",")
-    return required_scope in scopes
+    return required_scope.strip().lower() in normalize_api_key_scopes(api_key.scopes)
 
 
 # ==================== API Key 验证依赖 ====================
 
 async def verify_user_api_key(
+    request: Request,
     x_api_key: str = Header(..., alias="X-API-Key"),
     db: Session = Depends(get_db)
 ) -> UserApiKey:
     """验证用户 API Key"""
-    # 记录API Key验证尝试
-    key_preview = x_api_key[:8] + "..." if len(x_api_key) > 8 else x_api_key
-    logger.info(f"API Key 验证请求: key={key_preview}")
+    logger.info("API Key 验证请求")
 
     key_hash = hash_api_key(x_api_key)
     api_key = db.query(UserApiKey).filter(
@@ -106,8 +115,12 @@ async def verify_user_api_key(
     ).first()
 
     if not api_key:
-        logger.warning(f"API Key 验证失败: 无效或未激活的 key={key_preview}")
+        logger.warning("API Key 验证失败: 无效或未激活")
         raise HTTPException(status_code=401, detail="Invalid API Key")
+
+    request.state.auth_type = "api_key"
+    request.state.api_key_id = api_key.id
+    request.state.auth_scopes = normalize_api_key_scopes(api_key.scopes)
 
     # 更新最后使用时间
     api_key.last_used_at = datetime.now(CHINA_TIMEZONE)

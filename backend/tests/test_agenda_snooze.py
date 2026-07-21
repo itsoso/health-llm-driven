@@ -212,12 +212,14 @@ def test_agenda_today_uses_one_date_snapshot(db, monkeypatch):
 
 
 def test_snooze_cannot_overwrite_a_concurrent_completion(db, monkeypatch):
+    from app.utils.timezone import get_user_today
+
     user, _ = _user_and_headers(db)
     protocol = proto_svc.create_water_cup_protocol(db, user.id)
     event = HealthProtocolEvent(
         user_id=user.id,
         protocol_id=protocol.id,
-        event_date=date.today(),
+        event_date=get_user_today(db, user.id),
         status="pending",
         track="protocol",
     )

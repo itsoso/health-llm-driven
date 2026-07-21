@@ -98,7 +98,7 @@ function hasFileReference(xcodeProject, fileName) {
 }
 
 function withIntentsExtension(config) {
-  // 1. Entitlements: Siri + App Group + Keychain Sharing (legacy fallback)
+  // 1. Entitlements: Siri + App Group + Keychain Sharing
   config = withEntitlementsPlist(config, (mod) => {
     mod.modResults['com.apple.developer.siri'] = true;
     mod.modResults['com.apple.security.application-groups'] = [APP_GROUP];
@@ -192,7 +192,7 @@ import UIKit
 
 // ============================================================================
 // SharedKeychain — cross-process token sharing with Siri extension.
-// Writes & reads both App Group UserDefaults (primary) + shared Keychain (legacy).
+// The JWT exists only in the shared Keychain; historical UserDefaults copies are purged by the app module.
 // ============================================================================
 
 struct SharedKeychain {
@@ -201,11 +201,6 @@ struct SharedKeychain {
     static let tokenKey = "siri_auth_token"
 
     static func loadToken() -> String? {
-        if let defaults = UserDefaults(suiteName: appGroup),
-           let token = defaults.string(forKey: tokenKey),
-           !token.isEmpty {
-            return token
-        }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,

@@ -50,9 +50,10 @@ function roleLabel(role: string) {
 }
 
 export async function generateMetadata(
-  { params }: { params: { shareToken: string } },
+  { params }: { params: Promise<{ shareToken: string }> },
 ): Promise<Metadata> {
-  const data = await loadSharedConversation(params.shareToken, { countView: false }).catch(() => null);
+  const { shareToken } = await params;
+  const data = await loadSharedConversation(shareToken, { countView: false }).catch(() => null);
   const title = data?.title || '健康分享';
   const sharedMetadata = buildSharedMetadata({
     title,
@@ -82,11 +83,13 @@ export default async function SharedPage({
   params,
   searchParams,
 }: {
-  params: { shareToken: string };
-  searchParams?: { reveal?: string };
+  params: Promise<{ shareToken: string }>;
+  searchParams?: Promise<{ reveal?: string }>;
 }) {
-  const revealSensitiveContent = searchParams?.reveal === '1';
-  const data = await loadSharedConversation(params.shareToken, { countView: !revealSensitiveContent });
+  const { shareToken } = await params;
+  const query: { reveal?: string } = searchParams ? await searchParams : {};
+  const revealSensitiveContent = query.reveal === '1';
+  const data = await loadSharedConversation(shareToken, { countView: !revealSensitiveContent });
   if (!data) notFound();
 
   const isSensitive = isSensitiveSharedConversation(data);
@@ -110,7 +113,7 @@ export default async function SharedPage({
               内容可能涉及基因、检查、疾病、用药或心理健康信息。请确认你信任分享来源，并避免继续转发给无关人员。
             </p>
             <a
-              href={`/shared/${params.shareToken}?reveal=1`}
+              href={`/shared/${shareToken}?reveal=1`}
               className="mt-4 inline-flex rounded-lg bg-amber-900 px-4 py-2 text-sm font-medium text-white hover:bg-amber-800"
             >
               确认查看内容
@@ -138,7 +141,7 @@ export default async function SharedPage({
         )}
 
         <footer className="mt-6 space-y-3">
-          {(!isSensitive || revealSensitiveContent) && <OpenInAppButton shareToken={params.shareToken} />}
+          {(!isSensitive || revealSensitiveContent) && <OpenInAppButton shareToken={shareToken} />}
           <div className="rounded-2xl border border-slate-200 bg-white p-4 text-xs leading-5 text-slate-500">
             本页面是用户主动分享的健康管理内容, 不构成诊断、治疗或用药建议。出现明显异常指标或不适症状时, 请咨询医生。
           </div>

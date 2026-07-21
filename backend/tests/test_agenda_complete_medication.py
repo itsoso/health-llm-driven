@@ -277,16 +277,15 @@ def test_lazy_materialize_pins_scheduled_for_to_midnight(db, auth_user_and_heade
     med = _seed_med(db, user.id)
 
     # wall-clock 钉在 10:59:30(非整点 0 时)→ 若仍按整点 token,scheduled_for.hour 会是 10。
-    # complete_by_ref 现按中国时区(get_china_now/get_china_today)取 today-basis,故桩这两个
-    # (而非 get_user_now)—— 二者钉到同一天,否则 find 会错日落空、本哨兵失效。
-    monkeypatch.setattr(tz, "get_china_now", lambda: datetime(2026, 6, 22, 10, 59, 30))
-    monkeypatch.setattr(tz, "get_china_today", lambda: datetime(2026, 6, 22, 10, 59, 30).date())
+    # complete_by_ref 按用户本地日取 today-basis，测试钉住该用户日，避免依赖 CI 所在时区。
+    pinned_day = datetime(2026, 6, 22, 10, 59, 30).date()
+    monkeypatch.setattr(tz, "get_user_today", lambda _db, _uid: pinned_day)
 
     tas.complete_by_ref(db, user.id, "medication", med.id, status="done")
 
     ev = tas.find_agenda_event(
         db, user.id, {"object_type": "medication", "object_id": med.id},
-        tz.get_china_today(),
+        pinned_day,
     )
     assert ev is not None
     assert ev.scheduled_for.hour == 0, (
@@ -561,7 +560,7 @@ def test_skip_before_reminder_not_recollected(db, auth_user_and_headers):
     from app.services.protocol_templates import seed_behavior_protocols
     from app.services import timeline_agenda_service as tas
     from app.tasks.event_reminders import _collect_timed_items
-    from datetime import date
+    from app.utils.timezone import get_user_today
 
     user, _ = auth_user_and_headers
     seed_behavior_protocols(db, user.id, keys=["nasal_wash_morning"])
@@ -576,6 +575,6 @@ def test_skip_before_reminder_not_recollected(db, auth_user_and_headers):
         db, user.id, "health_protocol", p.id, status="skipped", skip_reason="no_time")
     db.commit()
 
-    items = _collect_timed_items(db, user.id, date.today())
+    items = _collect_timed_items(db, user.id, get_user_today(db, user.id))
     proto = [it for it in items if it["kind"] == "protocol"]
     assert proto == [], "skip 后协议不应再被提醒桥收集(today_status 已 skipped)"

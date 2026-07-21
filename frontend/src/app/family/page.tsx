@@ -95,12 +95,10 @@ function FamilyContent() {
   // ── Init ──────────────────────────────────────────────
   useEffect(() => {
     loadData();
-    // 检查是否在代管模式
-    const original = localStorage.getItem('original_auth_token');
-    if (original) {
-      setProxyMode(true);
-      setProxyName(localStorage.getItem('proxy_name') || '家庭成员');
-    }
+    familyApi.getProxyStatus().then((response) => {
+      setProxyMode(Boolean(response.data.is_proxy_mode));
+      setProxyName(response.data.acting_as_name || '家庭成员');
+    }).catch(() => {});
   }, []);
 
   const loadData = async () => {
@@ -161,14 +159,7 @@ function FamilyContent() {
   const switchToMember = async (userId: number, name: string) => {
     try {
       const res = await familyApi.switchToMember(userId);
-      const { access_token, acting_as_name } = res.data;
-      // 保存原始 token
-      const currentToken = localStorage.getItem('auth_token');
-      if (currentToken) {
-        localStorage.setItem('original_auth_token', currentToken);
-      }
-      localStorage.setItem('auth_token', access_token);
-      localStorage.setItem('proxy_name', acting_as_name || name);
+      const { acting_as_name } = res.data;
       setProxyMode(true);
       setProxyName(acting_as_name || name);
       // 刷新页面以使用新 token
@@ -179,14 +170,13 @@ function FamilyContent() {
   };
 
   // ── 切回自己 ──────────────────────────────────────────
-  const switchBack = () => {
-    const original = localStorage.getItem('original_auth_token');
-    if (original) {
-      localStorage.setItem('auth_token', original);
-      localStorage.removeItem('original_auth_token');
-      localStorage.removeItem('proxy_name');
+  const switchBack = async () => {
+    try {
+      await familyApi.switchBack();
       setProxyMode(false);
       window.location.href = '/family';
+    } catch (e: any) {
+      alert(e.response?.data?.detail || '切回失败');
     }
   };
 

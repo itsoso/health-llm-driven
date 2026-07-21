@@ -22,6 +22,19 @@ const METRIC_TABLE_JSON = JSON.stringify({
 });
 
 describe('MarkdownRenderer', () => {
+  it('never renders raw executable HTML from assistant content', () => {
+    const { container } = render(
+      <MarkdownRenderer
+        variant="light"
+        content={'<img src=x onerror="alert(1)"><script>alert(2)</script>\n[bad](javascript:alert(3))'}
+      />,
+    );
+
+    expect(container.querySelector('img')).toBeNull();
+    expect(container.querySelector('script')).toBeNull();
+    expect(container.querySelector('a')?.getAttribute('href') || '').not.toMatch(/^javascript:/i);
+  });
+
   it('renders GFM tables for shared assistant messages', () => {
     render(
       <MarkdownRenderer

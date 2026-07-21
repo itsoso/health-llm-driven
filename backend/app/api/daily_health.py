@@ -6,7 +6,7 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user_required
+from app.api.deps import get_current_user_required, require_self_or_admin
 from app.database import get_db
 from app.models.daily_health import (
     DietRecord,
@@ -317,9 +317,11 @@ def get_my_exercises(
 @router.post("/diet", response_model=dict)
 def create_diet_record(
     diet: DietRecordCreate,
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
     """创建饮食记录"""
+    require_self_or_admin(current_user, diet.user_id, resource="饮食记录")
     db_diet = DietRecord(**diet.model_dump())
     db.add(db_diet)
     db.commit()
@@ -332,9 +334,11 @@ def create_diet_record(
 @router.post("/water", response_model=dict)
 def create_water_intake(
     water: WaterIntakeCreate,
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
     """创建饮水记录"""
+    require_self_or_admin(current_user, water.user_id, resource="饮水记录")
     db_water = WaterIntake(**water.model_dump())
     db.add(db_water)
     db.commit()
@@ -347,9 +351,11 @@ def create_water_intake(
 @router.post("/supplement", response_model=dict)
 def create_supplement_intake(
     supplement: SupplementIntakeCreate,
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
     """创建补剂记录"""
+    require_self_or_admin(current_user, supplement.user_id, resource="补剂记录")
     db_supplement = SupplementIntake(**supplement.model_dump())
     db.add(db_supplement)
     db.commit()
@@ -362,9 +368,11 @@ def create_supplement_intake(
 @router.post("/outdoor", response_model=dict)
 def create_outdoor_activity(
     activity: OutdoorActivityCreate,
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
     """创建户外活动记录"""
+    require_self_or_admin(current_user, activity.user_id, resource="户外活动记录")
     db_activity = OutdoorActivity(**activity.model_dump())
     db.add(db_activity)
     db.commit()

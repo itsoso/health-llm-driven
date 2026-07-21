@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
+import { WEB_SESSION_TOKEN } from '@/services/api/client';
 
 interface HealthScore {
   total_score: number;
@@ -83,9 +84,8 @@ export default function DigitalTwinPage() {
     setError(null);
 
     try {
-      const token = localStorage.getItem('auth_token');
       const res = await fetch(`${API_BASE}/digital-twin/report`, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${WEB_SESSION_TOKEN}` }
       });
 
       if (!res.ok) {

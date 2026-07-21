@@ -78,7 +78,7 @@ async def test_execute_does_not_report_structured_policy_rejection_as_recorded(
 
     monkeypatch.setattr(AgentExecutor, "_execute_tool", rejected_tool)
 
-    result = await service.execute("体重72.5kg")
+    result = await service.execute("喝了250ml水")
 
     assert result is not None
     assert result["execution_status"] == "blocked_or_failed"
@@ -101,7 +101,7 @@ async def test_execute_does_not_promote_uncertain_result_with_identity(
 
     monkeypatch.setattr(AgentExecutor, "_execute_tool", uncertain_tool)
 
-    result = await service.execute("体重72.5kg")
+    result = await service.execute("喝了250ml水")
 
     assert result is not None
     assert result["execution_status"] == "unverified_result"

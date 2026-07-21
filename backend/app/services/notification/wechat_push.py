@@ -141,11 +141,15 @@ class WeChatPushService:
                     logger.info("微信 access_token 获取成功")
                     return self._access_token
                 else:
-                    logger.error(f"获取微信 access_token 失败: {data}")
+                    logger.error(
+                        "获取微信 access_token 失败: errcode=%s errmsg=%s",
+                        data.get("errcode"),
+                        data.get("errmsg", "未知错误"),
+                    )
                     return None
 
         except Exception as e:
-            logger.error(f"获取微信 access_token 异常: {e}")
+            logger.error("获取微信 access_token 异常 error_type=%s", type(e).__name__)
             return None
 
     async def send_subscription_message(
@@ -233,7 +237,12 @@ class WeChatPushService:
                         return {"success": False, "error": "用户未订阅此类消息"}
                     elif error_code == 47003:
                         # 模板参数不正确
-                        logger.error(f"模板参数错误: {error_msg}, data={template_data}")
+                        logger.error(
+                            "微信模板参数错误: errcode=%s errmsg=%s notification_type=%s",
+                            error_code,
+                            error_msg,
+                            notification_type,
+                        )
                         return {"success": False, "error": "模板参数格式错误"}
                     else:
                         logger.error(f"微信订阅消息发送失败: errcode={error_code}, errmsg={error_msg}")

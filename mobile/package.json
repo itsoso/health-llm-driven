@@ -18,6 +18,7 @@
     "generate-types": "cd ../backend && source venv/bin/activate && SKIP_DB_INIT=1 python3 -c 'import json; from main import app; json.dump(app.openapi(), open(\"/tmp/openapi.json\",\"w\"), ensure_ascii=False)' && cd ../mobile && npx openapi-typescript@7.13.0 /tmp/openapi.json -o types/api.generated.ts"
   },
   "dependencies": {
+    "@rexovolt/markdown-it": "14.2.1",
     "@expo/vector-icons": "15.0.3",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-community/netinfo": "11.5.2",
@@ -96,7 +97,10 @@
     "postcss": "8.5.10",
     "uuid": "11.1.1",
     "xml2js": "0.6.2",
-    "xmldom": "npm:@xmldom/xmldom@0.8.13"
+    "xmldom": "npm:@xmldom/xmldom@0.8.13",
+    "brace-expansion": "1.1.16",
+    "body-parser": "2.3.0",
+    "markdown-it": "npm:@rexovolt/markdown-it@14.2.1"
   },
   "private": true
 }

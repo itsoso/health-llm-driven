@@ -16,6 +16,7 @@ import {
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
+import { WEB_SESSION_TOKEN } from '@/services/api/client';
 
 // 使用相对路径，通过Next.js代理到后端
 const API_BASE = '/api';
@@ -38,7 +39,7 @@ function WeightContent() {
 
   const today = format(new Date(), 'yyyy-MM-dd');
 
-  const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+  const token = WEB_SESSION_TOKEN;
 
   // 获取体重记录
   const { data: records, isLoading } = useQuery({

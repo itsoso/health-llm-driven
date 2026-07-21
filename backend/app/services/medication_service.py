@@ -8,6 +8,7 @@ from sqlalchemy import desc, func
 from sqlalchemy.exc import IntegrityError
 
 from app.models.medication import Medication, MedicationLog, medication_timing_label
+from app.utils.timezone import get_user_today
 
 logger = logging.getLogger(__name__)
 
@@ -208,7 +209,7 @@ class MedicationService:
         log = MedicationLog(
             user_id=user_id,
             medication_id=medication_id,
-            taken_date=taken_date or date.today(),
+            taken_date=taken_date or get_user_today(db, user_id),
             taken_time=taken_time,
             status=status,
             skip_reason=skip_reason,
@@ -286,7 +287,7 @@ class MedicationService:
         ④ 写库失败向上抛(fail-loud,不假装成功)。
         """
         slot = taken_time if taken_time else None
-        target_date = taken_date or date.today()
+        target_date = taken_date or get_user_today(db, user_id)
 
         def _find_same_slot() -> Optional[MedicationLog]:
             q = db.query(MedicationLog).filter(
@@ -369,7 +370,7 @@ class MedicationService:
     ) -> List[Dict[str, Any]]:
         """获取今日服药状态"""
         logger.info(f"[Medication] 获取今日状态: user={user_id}")
-        today = date.today()
+        today = get_user_today(db, user_id)
 
         # 获取活跃药品
         meds = self.list_medications(db, user_id, active_only=True)
@@ -442,7 +443,7 @@ class MedicationService:
     ) -> Dict[str, Any]:
         """获取服药依从性统计"""
         logger.info(f"[Medication] 获取依从性: user={user_id}, days={days}")
-        start_date = date.today() - timedelta(days=days - 1)
+        start_date = get_user_today(db, user_id) - timedelta(days=days - 1)
 
         # 获取时段内的服药记录
         logs = db.query(MedicationLog).filter(

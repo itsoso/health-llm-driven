@@ -103,6 +103,14 @@ jobs:
               tests/test_tts_normalize.py
           - label: t-w-z
             paths: "tests/test_t[w-z]*.py"
+            extra_args: >-
+              -vv
+              --deselect=tests/test_twin_builder.py::TestTwinAPI
+          # TestClient and the preceding direct SQLite builder tests can
+          # deadlock while closing the shared in-memory connection. Keep the
+          # API class in a fresh process; both halves pass independently.
+          - label: twin-api
+            paths: "tests/test_twin_builder.py::TestTwinAPI"
             extra_args: "-vv"
           - label: u
             paths: "tests/test_u*.py"
@@ -137,7 +145,9 @@ jobs:
 
       - name: Install dependencies
         working-directory: backend
-        run: pip install -r requirements.txt
+        run: |
+          pip install --require-hashes -r requirements.lock
+          pip install -r requirements-dev.txt
 
       - name: Run tests (${{ matrix.label }})
         working-directory: backend
@@ -158,13 +168,22 @@ jobs:
         with:
           fetch-depth: 0  # LLM live-change gate needs a reliable base...HEAD diff
 
+      - name: Scan tracked files for high-confidence secrets
+        run: python scripts/check_secret_leaks.py
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
       - name: Install dependencies
         working-directory: backend
-        run: pip install -r requirements.txt
+        run: |
+          pip install --require-hashes -r requirements.lock
+          pip install -r requirements-dev.txt
+
+      - name: Audit production Python dependencies
+        working-directory: backend
+        run: python -m pip_audit -r requirements.lock --require-hashes --progress-spinner=off
 
       - name: Lint (ruff, non-blocking warnings)
         working-directory: backend
@@ -282,7 +301,9 @@ jobs:
 
       - name: Install dependencies
         working-directory: backend
-        run: pip install -r requirements.txt
+        run: |
+          pip install --require-hashes -r requirements.lock
+          pip install -r requirements-dev.txt
 
       - name: Verify Runtime migration upgrade and idempotency
         working-directory: backend
@@ -381,6 +402,10 @@ jobs:
         working-directory: frontend
         run: npm ci
 
+      - name: Audit production dependencies
+        working-directory: frontend
+        run: npm audit --omit=dev --audit-level=high
+
       - name: Test (vitest)
         working-directory: frontend
         run: npm run test
@@ -407,6 +432,10 @@ jobs:
       - name: Install dependencies
         working-directory: mobile
         run: npm ci
+
+      - name: Audit production dependencies
+        working-directory: mobile
+        run: npm audit --omit=dev --audit-level=high
 
       - name: TypeScript check
         working-directory: mobile
@@ -462,7 +491,9 @@ jobs:
 
       - name: Install backend deps
         working-directory: backend
-        run: pip install -r requirements.txt
+        run: |
+          pip install --require-hashes -r requirements.lock
+          pip install -r requirements-dev.txt
 
       - name: Dump OpenAPI (no DB)
         working-directory: backend

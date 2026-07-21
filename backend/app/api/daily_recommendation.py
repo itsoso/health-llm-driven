@@ -9,7 +9,7 @@ from app.services.daily_recommendation import DailyRecommendationService
 from app.services.llm_health_analyzer import llm_analyzer
 from app.models.user import User
 from app.models.daily_recommendation import DailyRecommendation
-from app.api.deps import get_current_user_required
+from app.api.deps import get_current_user_required, require_self_or_admin
 from app.utils.timezone import get_china_today
 from app.utils.redis_cache import get_cached_daily_recommendation, cache_daily_recommendation, invalidate_user_cache
 import logging
@@ -312,7 +312,7 @@ def get_my_sleep_insights(
     db: Session = Depends(get_db),
 ):
     """获取当前用户的详细睡眠分析"""
-    return get_sleep_insights(current_user.id, db)
+    return get_sleep_insights(current_user.id, current_user=current_user, db=db)
 
 
 @router.get("/me/activity-insights", summary="获取我的活动洞察")
@@ -321,7 +321,7 @@ def get_my_activity_insights(
     db: Session = Depends(get_db),
 ):
     """获取当前用户的详细活动分析"""
-    return get_activity_insights(current_user.id, db)
+    return get_activity_insights(current_user.id, current_user=current_user, db=db)
 
 
 @router.get("/me/heart-insights", summary="获取我的心率洞察")
@@ -330,7 +330,7 @@ def get_my_heart_insights(
     db: Session = Depends(get_db),
 ):
     """获取当前用户的详细心率分析"""
-    return get_heart_insights(current_user.id, db)
+    return get_heart_insights(current_user.id, current_user=current_user, db=db)
 
 
 @router.get("/me/recovery-status", summary="获取我的恢复状态")
@@ -339,13 +339,14 @@ def get_my_recovery_status(
     db: Session = Depends(get_db),
 ):
     """获取当前用户的恢复状态分析"""
-    return get_recovery_status(current_user.id, db)
+    return get_recovery_status(current_user.id, current_user=current_user, db=db)
 
 
 @router.get("/user/{user_id}/recommendations")
 async def get_recommendations(
     user_id: int,
     use_llm: bool = Query(default=True, description="是否使用大模型增强分析"),
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
     """
@@ -363,6 +364,7 @@ async def get_recommendations(
         - seven_day: 基于最近7天数据的建议
         - cached: 是否使用了缓存
     """
+    require_self_or_admin(current_user, user_id, resource="健康建议")
     service = DailyRecommendationService()
 
     try:
@@ -387,6 +389,7 @@ async def get_recommendations(
 async def get_today_recommendations(
     user_id: int,
     use_llm: bool = Query(default=True, description="是否使用大模型增强分析"),
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
     """
@@ -407,6 +410,7 @@ async def get_today_recommendations(
         - 今日目标：具体可执行的目标
         - AI洞察：大模型生成的个性化建议（如启用）
     """
+    require_self_or_admin(current_user, user_id, resource="健康建议")
     service = DailyRecommendationService()
 
     if use_llm:
@@ -433,6 +437,7 @@ async def get_today_recommendations(
 @router.get("/user/{user_id}/today-simple")
 def get_today_recommendations_simple(
     user_id: int,
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
     """
@@ -440,6 +445,7 @@ def get_today_recommendations_simple(
 
     不使用大模型，仅返回基于规则的分析结果
     """
+    require_self_or_admin(current_user, user_id, resource="健康建议")
     service = DailyRecommendationService()
     result = service.generate_daily_summary(db, user_id)
 
@@ -472,6 +478,7 @@ def get_llm_status():
 def get_analysis_for_date(
     user_id: int,
     target_date: date,
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
     """
@@ -483,6 +490,7 @@ def get_analysis_for_date(
         user_id: 用户ID
         target_date: 目标日期（会分析这天前一天的数据）
     """
+    require_self_or_admin(current_user, user_id, resource="健康建议")
     service = DailyRecommendationService()
     result = service.generate_daily_summary(db, user_id, reference_date=target_date)
 
@@ -498,6 +506,7 @@ def get_analysis_for_date(
 @router.get("/user/{user_id}/quick-summary")
 def get_quick_summary(
     user_id: int,
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
     """
@@ -505,6 +514,7 @@ def get_quick_summary(
 
     返回最核心的信息，适合快速查看
     """
+    require_self_or_admin(current_user, user_id, resource="健康建议")
     service = DailyRecommendationService()
     result = service.generate_daily_summary(db, user_id)
 
@@ -534,9 +544,11 @@ def get_quick_summary(
 @router.get("/user/{user_id}/sleep-insights")
 def get_sleep_insights(
     user_id: int,
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
     """获取详细的睡眠分析"""
+    require_self_or_admin(current_user, user_id, resource="健康建议")
     service = DailyRecommendationService()
     yesterday = service.get_yesterday_data(db, user_id)
     recent_data = service.get_recent_data(db, user_id, 7)
@@ -563,9 +575,11 @@ def get_sleep_insights(
 @router.get("/user/{user_id}/activity-insights")
 def get_activity_insights(
     user_id: int,
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
     """获取详细的活动分析"""
+    require_self_or_admin(current_user, user_id, resource="健康建议")
     service = DailyRecommendationService()
     yesterday = service.get_yesterday_data(db, user_id)
     recent_data = service.get_recent_data(db, user_id, 7)
@@ -589,9 +603,11 @@ def get_activity_insights(
 @router.get("/user/{user_id}/heart-insights")
 def get_heart_insights(
     user_id: int,
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
     """获取详细的心率分析"""
+    require_self_or_admin(current_user, user_id, resource="健康建议")
     service = DailyRecommendationService()
     yesterday = service.get_yesterday_data(db, user_id)
     recent_data = service.get_recent_data(db, user_id, 7)
@@ -617,9 +633,11 @@ def get_heart_insights(
 @router.get("/user/{user_id}/recovery-status")
 def get_recovery_status(
     user_id: int,
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
     """获取恢复状态分析"""
+    require_self_or_admin(current_user, user_id, resource="健康建议")
     service = DailyRecommendationService()
     yesterday = service.get_yesterday_data(db, user_id)
 

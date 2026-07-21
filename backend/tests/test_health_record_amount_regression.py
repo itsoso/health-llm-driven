@@ -70,33 +70,30 @@ async def test_initial_meal_photo_turn_writes_without_a_second_confirmation(db):
 
 
 @pytest.mark.asyncio
-async def test_water_record_posts_amount_as_query_param(db):
-    """water quick endpoint requires amount in query string, not JSON body."""
+async def test_water_record_persists_exact_amount_with_verified_receipt(db):
+    """The domain write must persist the exact amount and return its durable id."""
     from app.services.agent_executor import AgentExecutor
+    from app.models.daily_health import WaterIntake
 
     executor = AgentExecutor(db)
     executor._current_user_id = 1
 
-    captured = {}
-
-    async def fake_post(url, headers, payload):
-        captured["url"] = url
-        captured["payload"] = payload
-        return '{"id": 1, "amount": 1000, "drink_type": "水"}'
-
-    with patch.object(executor, "_api_post", new=AsyncMock(side_effect=fake_post)):
-        result = await executor._execute_tool(
-            tool_name="health_record",
-            args_raw=json.dumps({
-                "record_type": "water",
-                "data": {"amount": 1000, "confirmed": True},
-            }),
-            user_token=None,
-        )
+    result = await executor._execute_tool(
+        tool_name="health_record",
+        args_raw=json.dumps({
+            "record_type": "water",
+            "data": {"amount": 1000, "confirmed": True},
+        }),
+        user_token=None,
+    )
 
     assert "Error" not in str(result)
-    assert captured["url"].endswith("/water/records/quick?amount=1000")
-    assert captured["payload"] == {}
+    receipt = json.loads(result)
+    record = db.query(WaterIntake).filter(WaterIntake.id == receipt["record_id"]).one()
+    assert receipt["status"] == "verified"
+    assert receipt["resource_type"] == "water_record"
+    assert record.user_id == 1
+    assert record.amount_ml == 1000
 
 
 @pytest.mark.asyncio

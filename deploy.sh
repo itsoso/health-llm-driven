@@ -87,7 +87,7 @@ upload_deploy_bundle() {
 # 同样用 -B 切回 main(而非 detached)。调用前需先 upload_deploy_bundle。
 REMOTE_GIT_SYNC="\
         echo '暂存服务器本地改动...' && \
-        git stash push -u -m auto-deploy-stash >/dev/null 2>&1 || true && \
+        git stash push -m auto-deploy-stash >/dev/null && \
         echo '同步到 origin/main (强制 forward, 自动修复 detached HEAD)...' && \
         ( (git fetch origin && git checkout -B main origin/main) || \
           (echo 'git fetch origin 失败, 使用上传的 deploy bundle...' && \
@@ -135,9 +135,11 @@ backup_database() {
     # 复用服务器上已验证的备份脚本(cron 也用它): 正确解析 DATABASE_URL、set -euo pipefail
     # 诚实判成败、仅保留 1 份、打印 DB 大小 + 磁盘剩余。不再在此内联重复(历史上内联版
     # 取错 env key 导致静默假成功 —— pg_dump|gzip 退出码恒 0)。
-    ssh $SERVER "bash $REMOTE_PATH/backend/scripts/backup_db.sh" \
-        && print_success "数据库备份完成 (仅保留 1 份)" \
-        || print_warning "数据库备份失败（已保留旧备份），详见上方输出"
+    if ! ssh "$SERVER" "BACKUP_OFFSITE_REQUIRED=1 bash '$REMOTE_PATH/backend/scripts/backup_db.sh'"; then
+        print_error "数据库备份、恢复演练或站外归档失败，阻断部署"
+        return 1
+    fi
+    print_success "数据库备份、恢复演练和站外归档完成"
 }
 
 # 记录当前 commit 用于回滚
@@ -159,7 +161,7 @@ rollback_deploy() {
         cd $REMOTE_PATH && \
         git checkout $ROLLBACK_COMMIT -- . && \
         cd backend && source venv/bin/activate && \
-        pip install -r requirements.txt -q && \
+        pip install --require-hashes -r requirements.lock -q && \
         systemctl restart health-backend
     "
     print_success "已回滚到 ${ROLLBACK_COMMIT:0:8}"
@@ -194,8 +196,8 @@ verify_deployment() {
     " 2>/dev/null)
 
     if [[ -z "$SCORE" ]]; then
-        print_warning "健康度检查跳过（脚本不存在或执行失败）"
-        return 0
+        print_error "健康度脚本无有效输出，阻断部署"
+        return 1
     fi
 
     TOTAL=$(echo "$SCORE" | python3 -c "import sys,json; print(json.load(sys.stdin)['total_score'])" 2>/dev/null)
@@ -274,15 +276,24 @@ backup_remote_env() {
     print_step "备份服务器 backend/.env..."
 
     ssh "$SERVER" "REMOTE_BACKEND='$REMOTE_PATH/backend' bash -s" <<'REMOTE_ENV_BACKUP'
-set -e
+set -euo pipefail
 cd "$REMOTE_BACKEND"
 
 if [ -f .env ]; then
+    REMOTE_BACKUP_ROOT="${HEALTH_BACKUP_ROOT:-/var/backups/health-app}"
+    CONFIGURED_BACKUP_ROOT=$(grep -m1 '^HEALTH_BACKUP_ROOT=' .env 2>/dev/null | cut -d= -f2- || true)
+    if [ -n "$CONFIGURED_BACKUP_ROOT" ]; then
+        REMOTE_BACKUP_ROOT="$CONFIGURED_BACKUP_ROOT"
+    fi
+    ENV_BACKUP_DIR="$REMOTE_BACKUP_ROOT/env"
     BACKUP_TS=$(date +%Y%m%d_%H%M%S)
-    cp -p .env ".env.backup.${BACKUP_TS}"
-    chmod 600 ".env.backup.${BACKUP_TS}" 2>/dev/null || true
-    ls -t .env.backup.* 2>/dev/null | tail -n +21 | xargs -r rm || true
-    echo "已备份: backend/.env.backup.${BACKUP_TS}"
+    mkdir -p "$ENV_BACKUP_DIR"
+    chmod 700 "$REMOTE_BACKUP_ROOT" "$ENV_BACKUP_DIR"
+    cp -p .env "$ENV_BACKUP_DIR/.env.${BACKUP_TS}"
+    chmod 600 "$ENV_BACKUP_DIR/.env.${BACKUP_TS}"
+    find "$ENV_BACKUP_DIR" -maxdepth 1 -type f -name '.env.*' -printf '%T@ %p\n' \
+        | sort -nr | awk 'NR > 20 {sub(/^[^ ]+ /, ""); print}' | xargs -r rm --
+    echo "已备份到工作树外: $ENV_BACKUP_DIR/.env.${BACKUP_TS}"
 else
     echo "服务器 backend/.env 不存在，跳过备份"
 fi
@@ -333,8 +344,9 @@ sync_env() {
     # 上传到服务器
     scp "$TEMP_ENV" "$SERVER:$REMOTE_PATH/backend/.env"
     rm "$TEMP_ENV"
+    ssh "$SERVER" "chmod 600 '$REMOTE_PATH/backend/.env'"
 
-    print_success "环境变量已同步到 $SERVER:$REMOTE_PATH/backend/.env"
+    print_success "环境变量已同步到 $SERVER:$REMOTE_PATH/backend/.env (0600)"
 }
 
 # 仅重启服务
@@ -356,6 +368,8 @@ restart_services() {
 # 推送代码到 GitHub
 push_code() {
     print_step "推送代码到 GitHub..."
+
+    python3 "$SCRIPT_DIR/scripts/check_secret_leaks.py"
 
     # 部署只允许已提交的 tracked 内容。未跟踪文件不会进入 git push 或
     # 远端 checkout，因此仅提示并忽略；绝不能在发布脚本里 git add -A，
@@ -432,9 +446,12 @@ deploy_backend() {
         echo '加载环境变量...' && \
         set -a && source .env && set +a && \
         echo '安装依赖...' && \
-        pip install -r requirements.txt -q && \
+        pip install --require-hashes -r requirements.lock -q && \
         echo '执行受控数据库迁移...' && \
+        test -r /etc/health-app/migration.env && \
+        set -a && source /etc/health-app/migration.env && set +a && \
         python scripts/apply_managed_migrations.py && \
+        unset MIGRATION_DATABASE_URL && \
         echo '补齐审核食物营养基准...' && \
         python scripts/seed_food_nutrition.py && \
         echo '写入系统知识库 Phase 0 种子...' && \

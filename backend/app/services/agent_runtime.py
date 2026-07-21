@@ -83,6 +83,7 @@ _KNOWN_ERROR_CODES = frozenset(
     {
         "cancelled",
         "cancelled_with_unresolved_write",
+        "capacity_unavailable",
         "completed",
         "completion_error",
         "confirmation_required",

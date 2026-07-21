@@ -48,7 +48,7 @@ def test_multi_chunk_split_and_merge_union_dedup():
 
     # 造一个 > CHUNK_CHARS 的文本,且每行都短(确保有大量换行供自然切点)
     line = "检查项目行" + "x" * 90 + "\n"  # 约 100 字符/行
-    text = line * 1200  # 约 12 万字符 → 经 MAX_TEXT_CHARS=100000 截断后仍远超 CHUNK_CHARS
+    text = line * 900  # 约 9 万字符,在总上限内且远超 CHUNK_CHARS
 
     chunk_args = []
     # 每块返回带 1 个重复项 + 1 个唯一项,验证去重与并集
@@ -85,9 +85,8 @@ def test_multi_chunk_split_and_merge_union_dedup():
     # 每块 ≤ CHUNK_CHARS
     for c in chunk_args:
         assert len(c) <= parser.CHUNK_CHARS
-    # 无损可重组:各块顺序拼接 == 截断后的原文(不丢字符 = 不丢检查项)
-    capped = text[: parser.MAX_TEXT_CHARS]
-    assert "".join(chunk_args) == capped
+    # 无损可重组:各块顺序拼接 == 原文(不丢字符 = 不丢检查项)
+    assert "".join(chunk_args) == text
     # 自然边界:除最后一块外,块的结束位置紧邻一个换行(切点取 rfind '\n'),
     # 即下一块以换行开头 → 没有检查项被切成两半
     for c in chunk_args[:-1]:
@@ -171,8 +170,8 @@ def test_chunk_failure_recovers_on_retry():
     assert any(i["item_name"] == "项目" for i in result["items"])
 
 
-def test_total_text_cap_applied():
-    """总输入超 MAX_TEXT_CHARS 时被截断(防 runaway):传入 helper 的累计长度 ≤ 上限。"""
+def test_total_text_cap_rejects_without_silent_truncation():
+    """Medical data over the cap fails loudly instead of silently dropping pages."""
     parser = _parser_with_client()
 
     line = "x" * 99 + "\n"
@@ -186,7 +185,7 @@ def test_total_text_cap_applied():
 
     parser._parse_exam_chunk = fake_chunk
 
-    parser.parse_with_llm(text)
+    with pytest.raises(ValueError, match="超过 100000 字限制"):
+        parser.parse_with_llm(text)
 
-    total_chars = sum(len(c) for c in seen)
-    assert total_chars <= parser.MAX_TEXT_CHARS
+    assert seen == []

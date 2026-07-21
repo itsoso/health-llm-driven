@@ -6,10 +6,10 @@
 #   chmod +x /opt/health-app/backend/scripts/backup_db.sh
 #   # 添加到 crontab（每天凌晨 3 点执行）：
 #   crontab -e
-#   0 3 * * * /opt/health-app/backend/scripts/backup_db.sh >> /opt/health-app/backups/backup.log 2>&1
+#   0 3 * * * /opt/health-app/backend/scripts/backup_db.sh >> /var/backups/health-app/logs/backup.log 2>&1
 #
 # 恢复数据库：
-#   gunzip -c /opt/health-app/backups/health_db_2026-03-26_03-00.sql.gz | psql -U health_user health_db
+#   gunzip -c /var/backups/health-app/database/health_db_2026-03-26_03-00.sql.gz | psql -U health_user health_db
 # ============================================
 
 set -euo pipefail
@@ -22,7 +22,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="$SCRIPT_DIR/../.env"
 
 if [ -f "$ENV_FILE" ]; then
-    DATABASE_URL=$(grep "^DATABASE_URL=" "$ENV_FILE" | cut -d= -f2-)
+    DATABASE_URL="${DATABASE_URL:-$(grep -m1 "^DATABASE_URL=" "$ENV_FILE" | cut -d= -f2- || true)}"
+    HEALTH_BACKUP_ROOT="${HEALTH_BACKUP_ROOT:-$(grep -m1 "^HEALTH_BACKUP_ROOT=" "$ENV_FILE" | cut -d= -f2- || true)}"
+    BACKUP_AGE_RECIPIENT="${BACKUP_AGE_RECIPIENT:-$(grep -m1 "^BACKUP_AGE_RECIPIENT=" "$ENV_FILE" | cut -d= -f2- || true)}"
+    BACKUP_OFFSITE_RCLONE_DEST="${BACKUP_OFFSITE_RCLONE_DEST:-$(grep -m1 "^BACKUP_OFFSITE_RCLONE_DEST=" "$ENV_FILE" | cut -d= -f2- || true)}"
+    BACKUP_OFFSITE_RETENTION_DAYS="${BACKUP_OFFSITE_RETENTION_DAYS:-$(grep -m1 "^BACKUP_OFFSITE_RETENTION_DAYS=" "$ENV_FILE" | cut -d= -f2- || true)}"
+    BACKUP_LOCAL_RETENTION_COUNT="${BACKUP_LOCAL_RETENTION_COUNT:-$(grep -m1 "^BACKUP_LOCAL_RETENTION_COUNT=" "$ENV_FILE" | cut -d= -f2- || true)}"
 fi
 DATABASE_URL="${DATABASE_URL:-}"
 if [ -z "$DATABASE_URL" ]; then
@@ -30,7 +35,8 @@ if [ -z "$DATABASE_URL" ]; then
     exit 1
 fi
 
-BACKUP_DIR="/opt/health-app/backups"
+BACKUP_ROOT="${HEALTH_BACKUP_ROOT:-/var/backups/health-app}"
+BACKUP_DIR="$BACKUP_ROOT/database"
 TIMESTAMP=$(date +%Y-%m-%d_%H-%M)
 # council #2:去路径前缀 + 末尾 ?query/#frag(否则带 sslmode 等参数时 DB_NAME 变 'health_db?sslmode=...'
 # → pg_dump 静默失败/连错库)。再断言是合法标识符,解析不出就 fail-loud。
@@ -101,10 +107,23 @@ while IFS= read -r t; do
     fi
 done <<< "$FORCE_RLS_TABLES"
 
-# 只保留最新 1 份（避免备份堆积吃硬盘）—— 删除除最新外的所有旧备份
-DELETED=$(ls -t "${BACKUP_DIR}/${DB_NAME}_"*.sql.gz 2>/dev/null | tail -n +2 | xargs -r rm -fv | wc -l)
+# gzip 可读不等于可恢复。每份新备份必须先恢复到一次性数据库并完成结构校验。
+"$SCRIPT_DIR/verify_backup_restore.sh" "$BACKUP_FILE"
+
+# 站外副本必须先在本机用 age 加密，再上传并回读远端清单确认。
+export BACKUP_AGE_RECIPIENT BACKUP_OFFSITE_RCLONE_DEST BACKUP_OFFSITE_RETENTION_DAYS
+export BACKUP_OFFSITE_REQUIRED="${BACKUP_OFFSITE_REQUIRED:-0}"
+"$SCRIPT_DIR/archive_backup_offsite.sh" "$BACKUP_FILE"
+
+# 本地保留多份供快速恢复；只有恢复演练和站外归档都成功后才执行清理。
+BACKUP_LOCAL_RETENTION_COUNT="${BACKUP_LOCAL_RETENTION_COUNT:-7}"
+if ! [[ "$BACKUP_LOCAL_RETENTION_COUNT" =~ ^[1-9][0-9]*$ ]]; then
+    echo "[$(date)] ❌ BACKUP_LOCAL_RETENTION_COUNT 必须是正整数"
+    exit 1
+fi
+DELETED=$(ls -t "${BACKUP_DIR}/${DB_NAME}_"*.sql.gz 2>/dev/null | tail -n "+$((BACKUP_LOCAL_RETENTION_COUNT + 1))" | xargs -r rm -fv | wc -l)
 if [ "$DELETED" -gt 0 ]; then
-    echo "[$(date)] 🗑️ 删除了 ${DELETED} 份旧备份（仅保留最新 1 份）"
+    echo "[$(date)] 🗑️ 删除了 ${DELETED} 份旧备份（保留最新 ${BACKUP_LOCAL_RETENTION_COUNT} 份）"
 fi
 
 # 打印容量信息（防硬盘不足）

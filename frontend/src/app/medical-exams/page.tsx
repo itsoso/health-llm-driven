@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { useAuth } from '@/contexts/AuthContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
+import { WEB_SESSION_TOKEN } from '@/services/api/client';
 
 import { MedicalExam } from './components/types';
 import { PdfUploadSection } from './components/PdfUploadSection';
@@ -35,7 +36,7 @@ function MedicalExamsContent() {
   const queryClient = useQueryClient();
   const today = format(new Date(), 'yyyy-MM-dd');
 
-  const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+  const token = WEB_SESSION_TOKEN;
 
   // 获取体检记录
   const { data: examsResponse, isLoading } = useQuery({

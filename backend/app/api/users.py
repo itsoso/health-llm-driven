@@ -11,6 +11,12 @@ from app.database import get_db
 from app.schemas.user import UserCreate, UserResponse
 from app.models.user import User
 from app.api.deps import get_current_user_required
+from app.services.secure_upload import (
+    UploadContentInvalid,
+    UploadTooLarge,
+    read_upload_limited,
+    validate_image_bytes,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -102,9 +108,13 @@ async def upload_avatar(
     if ext not in ALLOWED_IMAGE_EXTENSIONS:
         raise HTTPException(status_code=400, detail="不支持的图片格式")
 
-    content = await file.read()
-    if len(content) > 5 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="图片太大，最大5MB")
+    try:
+        content = await read_upload_limited(file, max_bytes=5 * 1024 * 1024)
+        ext = validate_image_bytes(content, declared_extension=ext)
+    except UploadTooLarge as exc:
+        raise HTTPException(status_code=413, detail="图片太大，最大5MB") from exc
+    except UploadContentInvalid as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     # 保存文件
     avatar_dir = os.path.join(UPLOAD_DIR, "avatar")

@@ -637,6 +637,7 @@ async def import_apple_health(
     注意：文件可能很大（几十MB），请耐心等待处理
     """
     from app.services.device_adapters.apple import AppleHealthAdapter
+    from app.services.secure_upload import UploadTooLarge, read_upload_limited
     import json
 
     # 检查文件类型
@@ -648,7 +649,17 @@ async def import_apple_health(
 
     try:
         # 读取文件内容
-        content = await file.read()
+        try:
+            content = await read_upload_limited(
+                file,
+                max_bytes=AppleHealthAdapter.MAX_XML_CHARS,
+                chunk_size=1024 * 1024,
+            )
+        except UploadTooLarge as exc:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="Apple Health XML 文件过大",
+            ) from exc
         xml_content = content.decode('utf-8')
 
         # 解析 XML

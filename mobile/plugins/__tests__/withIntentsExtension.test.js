@@ -57,6 +57,12 @@ const APP_TARGETS = {
 describe('withIntentsExtension buildSiriSwift — Siri SSE parsing fix (P0 假成功)', () => {
   const swift = _buildSiriSwift(APP_GROUP);
 
+  it('loads the auth token from shared Keychain only', () => {
+    expect(swift).toContain('SecItemCopyMatching');
+    expect(swift).not.toContain('UserDefaults(suiteName: appGroup)');
+    expect(swift).not.toContain('Writes & reads both App Group UserDefaults');
+  });
+
   it('parses the SSE wire format via event/data.content, not top-level content', () => {
     // 新解析: 逐行 data: 后 JSON, 按 event 分派, token 累积 data.content
     expect(swift).toContain('let eventType = json["event"] as? String');

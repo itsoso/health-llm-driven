@@ -317,7 +317,12 @@ async def siri_say(
     """
     content_type = request.headers.get("content-type", "")
     raw = await request.body()
-    logger.info(f"Siri请求 user={current_user.id} content-type={content_type} body_len={len(raw)} body_preview={raw[:200]}")
+    logger.info(
+        "Siri请求 user=%s content_type=%s body_len=%s",
+        current_user.id,
+        content_type,
+        len(raw),
+    )
 
     if "application/json" in content_type:
         import json as _json
@@ -350,7 +355,12 @@ async def siri_say(
                     full_reply += event.get("data", {}).get("content", "")
         await asyncio.wait_for(collect_reply(), timeout=SIRI_TIMEOUT)
     except asyncio.TimeoutError:
-        logger.warning(f"Siri 请求超时 ({SIRI_TIMEOUT}s) user={current_user.id} msg={message[:60]}")
+        logger.warning(
+            "Siri 请求超时 timeout_seconds=%s user=%s message_len=%s",
+            SIRI_TIMEOUT,
+            current_user.id,
+            len(message),
+        )
         if full_reply:
             return SiriResponse(text=strip_markdown(full_reply))
         return SiriResponse(text="收到了，正在处理中。请稍后在 App 中查看结果。")

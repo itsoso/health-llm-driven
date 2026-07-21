@@ -101,10 +101,6 @@ def _enforce_monthly_token_quota(
 
         if str(provider or "").strip().lower() != "tokenplan":
             return
-        quota = int(getattr(settings, "tokenplan_monthly_token_quota", 0) or 0)
-        if quota <= 0:
-            return
-
         from datetime import datetime, timezone
         from sqlalchemy import func
         from app.database import SessionLocal
@@ -112,24 +108,120 @@ def _enforce_monthly_token_quota(
 
         now = datetime.now(timezone.utc)
         month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        with SessionLocal() as db:
-            used = int(
-                db.query(func.coalesce(func.sum(LlmUsageLog.total_tokens), 0))
-                .filter(
-                    LlmUsageLog.provider == "tokenplan",
-                    LlmUsageLog.created_at >= month_start,
-                )
-                .scalar()
-                or 0
-            )
+        day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        quota = int(getattr(settings, "tokenplan_monthly_token_quota", 0) or 0)
+        user_quota = int(
+            getattr(settings, "tokenplan_user_monthly_token_quota", 0) or 0
+        )
+        global_daily_calls = int(
+            getattr(settings, "tokenplan_global_daily_call_quota", 0) or 0
+        )
+        user_daily_calls = int(
+            getattr(settings, "tokenplan_user_daily_call_quota", 0) or 0
+        )
+        user_credit_quota = float(
+            getattr(settings, "tokenplan_user_monthly_credit_quota", 0) or 0
+        )
+        global_credit_quota = float(
+            getattr(settings, "tokenplan_monthly_credits", 0) or 0
+        )
+        user_id = _user_id_ctx.get()
+        estimated_request = _estimate_tokens(
+            _messages_to_text(messages),
+            model or "gpt-4o-mini",
+        ) + max(0, int(max_tokens or 0))
+        estimated_credits = estimate_tokenplan_cost(
+            provider="tokenplan",
+            model=model or "",
+            prompt_tokens=max(0, estimated_request - max(0, int(max_tokens or 0))),
+            completion_tokens=max(0, int(max_tokens or 0)),
+        )
 
-        estimated_request = _estimate_tokens(_messages_to_text(messages), model or "gpt-4o-mini")
-        estimated_request += max(0, int(max_tokens or 0))
-        if used + estimated_request > quota:
+        with SessionLocal() as db:
+            monthly_filter = (
+                LlmUsageLog.provider == "tokenplan",
+                LlmUsageLog.created_at >= month_start,
+            )
+            daily_filter = (
+                LlmUsageLog.provider == "tokenplan",
+                LlmUsageLog.created_at >= day_start,
+            )
+            if quota > 0:
+                used = int(
+                    db.query(func.coalesce(func.sum(LlmUsageLog.total_tokens), 0))
+                    .filter(*monthly_filter)
+                    .scalar()
+                    or 0
+                )
+                if used + estimated_request > quota:
+                    raise LLMBudgetExceeded("monthly token quota exceeded")
+
+            if global_daily_calls > 0:
+                calls = int(
+                    db.query(func.count(LlmUsageLog.id))
+                    .filter(*daily_filter)
+                    .scalar()
+                    or 0
+                )
+                if calls >= global_daily_calls:
+                    raise LLMBudgetExceeded("daily global call quota exceeded")
+
+            if estimated_credits is not None and global_credit_quota > 0:
+                used_credits = float(
+                    db.query(
+                        func.coalesce(
+                            func.sum(LlmUsageLog.tokenplan_credits_estimate),
+                            0.0,
+                        )
+                    )
+                    .filter(*monthly_filter)
+                    .scalar()
+                    or 0.0
+                )
+                if used_credits + estimated_credits.credits > global_credit_quota:
+                    raise LLMBudgetExceeded("monthly TokenPlan credit quota exceeded")
+
+            if user_id is not None:
+                user_monthly_filter = (*monthly_filter, LlmUsageLog.user_id == int(user_id))
+                user_daily_filter = (*daily_filter, LlmUsageLog.user_id == int(user_id))
+                if user_quota > 0:
+                    user_used = int(
+                        db.query(func.coalesce(func.sum(LlmUsageLog.total_tokens), 0))
+                        .filter(*user_monthly_filter)
+                        .scalar()
+                        or 0
+                    )
+                    if user_used + estimated_request > user_quota:
+                        raise LLMBudgetExceeded("monthly user token quota exceeded")
+                if user_daily_calls > 0:
+                    calls = int(
+                        db.query(func.count(LlmUsageLog.id))
+                        .filter(*user_daily_filter)
+                        .scalar()
+                        or 0
+                    )
+                    if calls >= user_daily_calls:
+                        raise LLMBudgetExceeded("daily user call quota exceeded")
+                if estimated_credits is not None and user_credit_quota > 0:
+                    used_credits = float(
+                        db.query(
+                            func.coalesce(
+                                func.sum(LlmUsageLog.tokenplan_credits_estimate),
+                                0.0,
+                            )
+                        )
+                        .filter(*user_monthly_filter)
+                        .scalar()
+                        or 0.0
+                    )
+                    if used_credits + estimated_credits.credits > user_credit_quota:
+                        raise LLMBudgetExceeded("monthly user TokenPlan credit quota exceeded")
+
+        # Only log the configured boundary, never prompts or health content.
+        if quota > 0 and estimated_request > quota:
             logger.error(
-                "[LLM Budget] monthly token quota exceeded provider=tokenplan used=%s "
+                "[LLM Budget] request exceeds monthly token quota provider=tokenplan "
                 "estimate=%s quota=%s",
-                used,
                 estimated_request,
                 quota,
             )
@@ -757,6 +849,12 @@ def wrap_provider(provider):
     if original_chat_stream is not None:
         async def chat_stream_with_tracking(messages, model=None, temperature=0.3,
                                             max_tokens=2000, tools=None, **kwargs):
+            _enforce_monthly_token_quota(
+                provider=getattr(provider, "provider_name", ""),
+                model=model or getattr(provider, "model", None),
+                messages=messages,
+                max_tokens=max_tokens,
+            )
             start = time.monotonic()
             success = True
             collected: List[str] = []

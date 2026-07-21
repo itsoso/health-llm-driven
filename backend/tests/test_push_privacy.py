@@ -14,7 +14,60 @@ from app.agents.safety_guardian.schema import Alert, Severity
 from app.services.notification.push_privacy import (
     is_sensitive_alert,
     safety_alert_push_text,
+    lock_screen_privacy_backstop,
 )
+
+
+def test_central_lock_screen_backstop_redacts_medication_payload() -> None:
+    title, content, redacted = lock_screen_privacy_backstop(
+        notification_type="reminder",
+        title="替普瑞酮 50mg",
+        content="晚餐后服用替普瑞酮胶囊",
+        data={"category": "MEDICATION_REMINDER", "medication_name": "替普瑞酮"},
+    )
+
+    assert redacted is True
+    assert title == "用药提醒"
+    assert "替普瑞酮" not in content
+
+
+def test_central_lock_screen_backstop_redacts_lab_and_diagnosis_payloads() -> None:
+    lab_title, lab_content, lab_redacted = lock_screen_privacy_backstop(
+        notification_type="health_alert",
+        title="中性粒细胞偏低",
+        content="请复查血常规",
+        data={"rule_id": "labs.neutrophil_low", "lab_name": "中性粒细胞"},
+    )
+    diagnosis_title, diagnosis_content, diagnosis_redacted = lock_screen_privacy_backstop(
+        notification_type="reminder",
+        title="胃溃疡复诊",
+        content="明天去消化内科",
+        data={"diagnosis": "胃溃疡"},
+    )
+
+    assert (lab_title, lab_content, lab_redacted) == (
+        "化验指标提醒",
+        "有一项化验指标需要你关注，打开 App 查看详情。",
+        True,
+    )
+    assert (diagnosis_title, diagnosis_content, diagnosis_redacted) == (
+        "健康事项提醒",
+        "有一项健康事项需要你关注，打开 App 查看详情。",
+        True,
+    )
+
+
+def test_central_lock_screen_backstop_preserves_acute_vital_alert() -> None:
+    title, content, redacted = lock_screen_privacy_backstop(
+        notification_type="health_alert",
+        title="血氧偏低：91%",
+        content="若持续偏低或伴呼吸困难，请及时就医。",
+        data={"rule_id": "vitals.spo2_low", "metric_key": "spo2_avg"},
+    )
+
+    assert redacted is False
+    assert title == "血氧偏低：91%"
+    assert content == "若持续偏低或伴呼吸困难，请及时就医。"
 
 DRUG = "华法林"
 SUPP = "辅酶Q10"

@@ -1365,7 +1365,12 @@ def discard_photo_draft(
             _remove_diet_image_file(image_path)
     except OSError as exc:
         db.commit()
-        logger.error("饮食照片草稿取消后图片清理失败: token=%s error=%s", token, exc)
+        logger.error(
+            "饮食照片草稿取消后图片清理失败: user=%s asset_count=%s error_type=%s",
+            current_user.id,
+            len(assets),
+            type(exc).__name__,
+        )
         raise HTTPException(status_code=500, detail="草稿已取消，图片清理将在后台重试") from exc
     for asset in assets:
         db.delete(asset)

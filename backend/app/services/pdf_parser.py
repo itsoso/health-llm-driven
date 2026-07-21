@@ -17,6 +17,8 @@ logger = logging.getLogger(__name__)
 class MedicalReportPDFParser:
     """体检报告PDF解析器"""
 
+    MAX_PDF_PAGES = 100
+
     def __init__(self):
         self.client = None
         if settings.openai_api_key:
@@ -33,6 +35,8 @@ class MedicalReportPDFParser:
 
         try:
             with pdfplumber.open(pdf_path) as pdf:
+                if len(pdf.pages) > self.MAX_PDF_PAGES:
+                    raise ValueError("PDF 页数超过 100 页限制")
                 for page_num, page in enumerate(pdf.pages, 1):
                     page_text = page.extract_text()
                     if page_text:
@@ -75,7 +79,9 @@ class MedicalReportPDFParser:
             raise ValueError("LLM服务不可用，请配置OpenAI API Key")
 
         # 总上限防 runaway
-        text = text_content[:self.MAX_TEXT_CHARS]
+        if len(text_content) > self.MAX_TEXT_CHARS:
+            raise ValueError("PDF 可解析文本超过 100000 字限制")
+        text = text_content
 
         if len(text) <= self.CHUNK_CHARS:
             # 单块路径:与历史行为字节级一致(只调一次 _parse_exam_chunk,不合并)
@@ -694,7 +700,7 @@ class MedicalReportPDFParser:
                 raise ValueError("LLM返回内容为空")
 
             result_text = result_text.strip()
-            logger.info(f"LLM原始返回长度: {len(result_text)}, 前500字符: {result_text[:500]}...")
+            logger.info("体检报告 LLM 返回 response_len=%s", len(result_text))
 
             # 尝试提取JSON部分
             json_text = result_text
@@ -751,7 +757,10 @@ class MedicalReportPDFParser:
 
         except json.JSONDecodeError as e:
             logger.error(f"LLM返回的JSON解析失败: {e}")
-            logger.error(f"原始返回内容: {result_text[:1000] if 'result_text' in locals() else 'N/A'}")
+            logger.error(
+                "体检报告结构化失败 response_len=%s",
+                len(result_text) if "result_text" in locals() else 0,
+            )
             logger.error(f"清理后内容: {json_text[:1000] if 'json_text' in locals() else 'N/A'}")
             # 截断特征(Unterminated string / 末尾断在分隔符处)= LLM 输出超 max_tokens 被切,
             # 不是格式错误。给可行指引(分次导入/重试),别误导用户以为报告格式有问题。fail-loud。

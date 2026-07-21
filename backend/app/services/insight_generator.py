@@ -513,7 +513,7 @@ def _gen_llm_pattern_mining(db: Session, user_id: int) -> Optional[InsightCandid
     except json.JSONDecodeError:
         m = re.search(r"\{[\s\S]*\}", result_text)
         if not m:
-            logger.warning(f"[insight.llm] 响应无 JSON: {result_text[:150]}")
+            logger.warning("[insight.llm] 响应无 JSON response_len=%s", len(result_text))
             return None
         try:
             obj = json.loads(m.group(0))

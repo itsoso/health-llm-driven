@@ -5705,12 +5705,33 @@ def _attach_images_to_last_user_message(
             break
 
 
-def _confirm_or_describe(args: dict, data: dict, *, preview: str) -> str | None:
+def _strip_untrusted_write_authorization(args: Any) -> Any:
+    """Remove every model-writable field that could be mistaken for consent."""
+    if not isinstance(args, dict):
+        return args
+    args.pop("confirmed", None)
+    args.pop("confirm", None)
+    args.pop("_trusted_server_write_authorized", None)
+    data = args.get("data")
+    if isinstance(data, dict):
+        data.pop("confirmed", None)
+        data.pop("confirm", None)
+        data.pop("_trusted_server_write_authorized", None)
+    return args
+
+
+def _confirm_or_describe(
+    args: dict,
+    data: dict,
+    *,
+    preview: str,
+    authorized: bool = False,
+) -> str | None:
     """L8 (Karpathy "verification is the bottleneck"):
     高确定性 health_record 写库前强制 LLM 复述给用户确认.
 
-    第一次调用 (无 confirmed flag): 返回 [NEEDS_CONFIRMATION] 提示,
-    不写库. LLM 看到提示会复述给用户, 用户答'是的' → LLM 重新调用 + confirmed=true.
+    模型参数里的 confirmed/confirm 永远不是授权来源。是否允许写入只能由调用方
+    根据当前回合的确定性用户意图或服务端绑定的确认事件传入 ``authorized``。
 
     Args:
         args: tool_call 顶层参数
@@ -5721,19 +5742,16 @@ def _confirm_or_describe(args: dict, data: dict, *, preview: str) -> str | None:
         非 None: 当前不写库, 直接 return 这个字符串
         None  : 已确认, 调用方继续写库流程
     """
-    confirmed = (
-        args.get("confirmed") is True or args.get("confirm") is True
-        or data.get("confirmed") is True or data.get("confirm") is True
-    )
-    # 写库前剥掉 confirmed, 防 DB schema 不识别
+    args.pop("confirmed", None)
+    args.pop("confirm", None)
     data.pop("confirmed", None)
     data.pop("confirm", None)
-    if confirmed:
+    if authorized:
         return None
     return (
         f"[NEEDS_CONFIRMATION] 我准备记录: {preview}. "
-        f"请向用户复述并问一次'是这样吗？', "
-        f"用户确认后**重新调用** health_record 并在 data 里加 confirmed=true."
+        "当前请求没有绑定到可验证的用户写入意图，未执行。"
+        "请让用户在一条新消息中完整复述要记录的内容。"
     )
 
 
@@ -6827,6 +6845,7 @@ class AgentExecutor:
                 if not tool_calls and _is_botched_text_tool_call(content, tools):
                     if _round < MULTI_MODEL_MAX_LEAD_ROUNDS - 1:
                         logger.warning(
+                            "[agent_executor] 文本式工具调用(多模型路), 重提示重试. chars=%s",
                             "[agent_executor] 文本式工具调用(多模型路), 重提示重试. chars=%s",
                             len(content),
                         )
@@ -13381,6 +13400,19 @@ class AgentExecutor:
             else:
                 return "Error: 工具参数解析失败，请重新生成结构化参数。"
 
+        trusted_recipe_authorized = False
+        if tool_name == "health_record" and isinstance(args, dict):
+            if source == "procedure_recipe_replay":
+                # Recipe replay has already passed the server-side confirmation
+                # tier in procedure_recipe_service.  AUTO steps arrive without
+                # this marker; typed-only/never-auto steps carry it and must not
+                # inherit authorization from either model flags or the generic
+                # recipe trigger intent.
+                trusted_recipe_authorized = bool(
+                    args.get("_fast_record_requires_confirmation") is not True
+                )
+            _strip_untrusted_write_authorization(args)
+
         # === 统一 tool_call 守门 (所有 6 个工具必过) ===
         # 日期/数值/枚举/引用 ID 存在性/越权 / 必填 — 触发 coerce 只 log,
         # 必填缺失或越权才返回 error 给 LLM (它会重试).
@@ -13495,6 +13527,8 @@ class AgentExecutor:
         if v["error"]:
             return v["error"]
         args = v["data"]
+        if tool_name == "health_record" and trusted_recipe_authorized:
+            args["_trusted_server_write_authorized"] = True
 
         # === Read-only pregen guard (rank7) — fail-CLOSED single choke ===
         # In a starter-answer pre-generation turn ONLY read-only analysis tools may
@@ -14285,6 +14319,32 @@ class AgentExecutor:
         self, base: str, headers: dict, args: dict
     ) -> str:
         """执行健康数据记录"""
+        model_claimed_confirmation = bool(
+            args.get("confirmed") is True
+            or args.get("confirm") is True
+            or (
+                isinstance(args.get("data"), dict)
+                and (
+                    args["data"].get("confirmed") is True
+                    or args["data"].get("confirm") is True
+                )
+            )
+        )
+        trusted_server_authorized = bool(
+            args.pop("_trusted_server_write_authorized", False)
+        )
+        _strip_untrusted_write_authorization(args)
+        snapshot = self._agent_kernel_snapshot
+        current_turn_authorized = bool(
+            snapshot is not None
+            and snapshot.context.user_id == self._current_user_id
+            and snapshot.intent.primary == "write"
+            and snapshot.intent.operation == "create"
+            and snapshot.intent.is_write
+            and args.get("_fast_record_requires_confirmation") is not True
+        )
+        write_authorized = trusted_server_authorized or current_turn_authorized
+
         # 别名容错:模型常把 record_type 写成 type(实测 health_record(type=diet, data={...}))。
         rtype = _normalize_fast_record_kind(args.get("record_type") or args.get("type") or "")
         data = args.get("data", {})
@@ -14338,14 +14398,6 @@ class AgentExecutor:
         # of user consent.  Medication confirmation is now a source-bound
         # server WriteIntent consumed by the deterministic pre-LLM turn above;
         # this legacy tool path can only propose/describe, never authorize.
-        model_claimed_confirmation = (
-            args.get("confirmed") is True
-            or args.get("confirm") is True
-            or (
-                isinstance(data, dict)
-                and (data.get("confirmed") is True or data.get("confirm") is True)
-            )
-        )
         if rtype == "medication" and model_claimed_confirmation:
             logger.warning(
                 "[R4-block] ignored model-controlled confirmation kind=%s "
@@ -14460,6 +14512,7 @@ class AgentExecutor:
                 args,
                 data,
                 preview=_health_record_confirmation_preview(rtype, args, data),
+                authorized=write_authorized,
             )
             if check:
                 return check
@@ -14486,13 +14539,35 @@ class AgentExecutor:
             check = _confirm_or_describe(
                 args, data,
                 preview=f"喝水 {amount_int}ml" + (f", {data['drink_type']}" if data.get("drink_type") else ""),
+                authorized=write_authorized,
             )
             if check:
                 return check
-            return await self._api_post(
-                f"{base}/water/records/quick?amount={amount_int}",
-                headers,
-                {},
+            from app.services.water_service import create_water_intake
+
+            record = create_water_intake(
+                self.db,
+                user_id=self._current_user_id,
+                amount_ml=amount_int,
+                drink_type=data.get("drink_type") or "水",
+                recorded_at=self._agent_kernel_reference_now(),
+            )
+            return json.dumps(
+                {
+                    "id": record.id,
+                    "record_id": record.id,
+                    "resource_type": "water_record",
+                    "status": "verified",
+                    "success": True,
+                    "message": f"已记录饮水 {amount_int}ml",
+                    "undo_path": f"water/records/{record.id}",
+                    "created_at": (
+                        record.created_at.isoformat()
+                        if record.created_at is not None
+                        else self._agent_kernel_reference_now().isoformat()
+                    ),
+                },
+                ensure_ascii=False,
             )
 
         # 补全 diet 必填字段
@@ -14520,6 +14595,7 @@ class AgentExecutor:
             check = _confirm_or_describe(
                 args, data,
                 preview=f"体重 {data['weight']} kg, 日期 {data.get('record_date', today)}",
+                authorized=write_authorized,
             )
             if check:
                 return check
@@ -14543,6 +14619,7 @@ class AgentExecutor:
             check = _confirm_or_describe(
                 args, data,
                 preview=f"血压 {sys_v}/{dia_v}, 日期 {data.get('record_date', today)}",
+                authorized=write_authorized,
             )
             if check:
                 return check
@@ -14564,7 +14641,12 @@ class AgentExecutor:
             if sev is not None:
                 preview_bits.append(f"严重度 {sev}")
             preview_bits.append(f"开始 {data.get('start_date')}")
-            check = _confirm_or_describe(args, data, preview=", ".join(preview_bits))
+            check = _confirm_or_describe(
+                args,
+                data,
+                preview=", ".join(preview_bits),
+                authorized=write_authorized,
+            )
             if check:
                 return check
 
@@ -14870,6 +14952,7 @@ class AgentExecutor:
                     tap_record_id = (json.loads(tap_result) or {}).get("record_id")
                 except (json.JSONDecodeError, TypeError, ValueError):
                     logger.warning(
+                        "[health_record] supplement tap 响应不可解析 chars=%s",
                         "[health_record] supplement tap 响应不可解析 chars=%s",
                         len(tap_result),
                     )

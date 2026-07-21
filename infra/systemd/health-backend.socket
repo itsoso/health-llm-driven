@@ -1,0 +1,13 @@
+[Unit]
+Description=Health backend loopback socket
+
+[Socket]
+ListenStream=127.0.0.1:8000
+NoDelay=true
+Backlog=256
+SocketUser=health-app
+SocketGroup=health-app
+SocketMode=0660
+
+[Install]
+WantedBy=sockets.target

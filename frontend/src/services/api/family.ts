@@ -13,6 +13,8 @@ export const familyApi = {
 
   // 视角切换
   switchToMember: (userId: number) => api.post('/family/switch', { user_id: userId }),
+  switchBack: () => api.post('/family/switch-back'),
+  getProxyStatus: () => api.get('/family/proxy-status'),
 
   // 仪表盘
   getDashboard: () => api.get('/family/dashboard'),

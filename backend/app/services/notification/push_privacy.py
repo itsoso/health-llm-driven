@@ -15,7 +15,7 @@ iOS 默认在锁屏渲染推送 title/body,且 payload 途经 APNs(第三方)。
 import logging
 import re
 from functools import lru_cache
-from typing import Optional, Tuple
+from typing import Any, Mapping, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +89,39 @@ def safety_alert_push_text(alert) -> Tuple[str, str]:
 GENERIC_LLM_PUSH_TITLE = "健康管家提醒"
 GENERIC_LLM_PUSH_CONTENT = "有一条为你准备的健康建议,点开查看。"
 
+_SENSITIVE_PAYLOAD_KEYS = {
+    "medication_name": "medication",
+    "medicine_name": "medication",
+    "drug_name": "medication",
+    "dosage": "medication",
+    "supplement_name": "supplement",
+    "lab_name": "lab",
+    "lab_item": "lab",
+    "test_name": "lab",
+    "diagnosis": "diagnosis",
+    "diagnosis_name": "diagnosis",
+    "condition_name": "diagnosis",
+}
+
+_SENSITIVE_CATEGORY_MARKERS = {
+    "medication": "medication",
+    "medicine": "medication",
+    "drug": "medication",
+    "supplement": "supplement",
+    "lab": "lab",
+    "medical_exam": "lab",
+    "diagnosis": "diagnosis",
+    "condition": "diagnosis",
+}
+
+_CENTRAL_GENERIC_TEXT = {
+    "medication": ("用药提醒", "有一项用药事项需要你处理，打开 App 查看详情。"),
+    "supplement": ("补剂提醒", "有一项补剂事项需要你处理，打开 App 查看详情。"),
+    "lab": ("化验指标提醒", "有一项化验指标需要你关注，打开 App 查看详情。"),
+    "diagnosis": ("健康事项提醒", "有一项健康事项需要你关注，打开 App 查看详情。"),
+    "generic": (GENERIC_LLM_PUSH_TITLE, GENERIC_LLM_PUSH_CONTENT),
+}
+
 # 不点名具体药也能反推诊断的**治疗类别词**(对抗复审 2026-07-12 补):
 # 「记得吃抗抑郁药」不含药名,但向锁屏泄露 Tier-5 心理健康域;化疗/HIV 同理。
 # 只收诊断指向强的类别;「降压药」不收(vitals 血压数值本就按时效安全信息透传,
@@ -129,6 +162,60 @@ def contains_sensitive_name(text: Optional[str]) -> bool:
     if not text:
         return False
     return bool(_sensitive_name_re().search(str(text)))
+
+
+def _payload_privacy_kind(data: Optional[Mapping[str, Any]]) -> Optional[str]:
+    if not data:
+        return None
+
+    normalized_keys = {str(key).lower() for key in data}
+    for key, kind in _SENSITIVE_PAYLOAD_KEYS.items():
+        if key in normalized_keys:
+            return kind
+
+    category = str(data.get("category") or data.get("type") or "").lower()
+    for marker, kind in _SENSITIVE_CATEGORY_MARKERS.items():
+        if marker in category:
+            return kind
+
+    rule_id = str(data.get("rule_id") or "")
+    if is_sensitive_alert(rule_id=rule_id):
+        return "lab" if rule_id.startswith("labs.") else "medication"
+    return None
+
+
+def lock_screen_privacy_backstop(
+    *,
+    notification_type: str,
+    title: Optional[str],
+    content: Optional[str],
+    data: Optional[Mapping[str, Any]],
+) -> Tuple[str, str, bool]:
+    """Final lock-screen privacy guard used by the shared push choke point.
+
+    This is intentionally independent from producer-specific helpers. A new or
+    legacy producer cannot leak medication, supplement, lab, or diagnosis text
+    merely because it forgot to call its local privacy helper. Acute vital and
+    symptom alerts remain unchanged unless their free text names a sensitive
+    drug/supplement.
+    """
+    visible_title = str(title or "")
+    visible_content = str(content or "")
+    try:
+        kind = _payload_privacy_kind(data)
+        if kind is None and (
+            contains_sensitive_name(visible_title)
+            or contains_sensitive_name(visible_content)
+        ):
+            kind = "generic"
+    except Exception:
+        logger.warning("[push_privacy] central privacy scan failed; using generic text", exc_info=True)
+        kind = "generic"
+
+    if kind is None:
+        return visible_title, visible_content, False
+    safe_title, safe_content = _CENTRAL_GENERIC_TEXT[kind]
+    return safe_title, safe_content, True
 
 
 def llm_push_backstop(

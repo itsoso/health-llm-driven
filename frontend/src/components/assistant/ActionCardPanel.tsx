@@ -8,6 +8,8 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import {
   ActionCard,
   archiveActionCard,
@@ -188,12 +190,7 @@ function CardItem({
             </div>
           )}
 
-          {/* Markdown 内容 */}
-          <div
-            className="text-xs leading-relaxed prose prose-sm max-w-none"
-            style={{ color: '#334155' }}
-            dangerouslySetInnerHTML={{ __html: simpleMarkdown(card.content) }}
-          />
+          <SafeActionCardContent content={card.content} />
 
           {/* 操作按钮 */}
           <div className="flex gap-2">
@@ -225,58 +222,38 @@ function CardItem({
   );
 }
 
-// 极简 markdown → HTML（不引入重依赖）
-function simpleMarkdown(md: string): string {
-  // 先处理表格（在 HTML 转义之前提取）
-  const lines = md.split('\n');
-  const result: string[] = [];
-  let inTable = false;
-  let tableRows: string[] = [];
-
-  const flushTable = () => {
-    if (tableRows.length < 2) {
-      result.push(...tableRows);
-    } else {
-      let html = '<table class="w-full text-[11px] my-2 border-collapse">';
-      tableRows.forEach((row, i) => {
-        // 跳过分隔行 |---|---|
-        if (/^\|[\s\-:]+\|/.test(row)) return;
-        const cells = row.split('|').filter(c => c.trim() !== '');
-        const tag = i === 0 ? 'th' : 'td';
-        const style = i === 0
-          ? 'class="text-left font-semibold py-1 px-2 border-b border-gray-200 bg-gray-50"'
-          : 'class="py-1 px-2 border-b border-gray-100"';
-        html += '<tr>' + cells.map(c => `<${tag} ${style}>${c.trim()}</${tag}>`).join('') + '</tr>';
-      });
-      html += '</table>';
-      result.push(html);
-    }
-    tableRows = [];
-    inTable = false;
-  };
-
-  for (const line of lines) {
-    if (line.trim().startsWith('|') && line.trim().endsWith('|')) {
-      inTable = true;
-      tableRows.push(line);
-    } else {
-      if (inTable) flushTable();
-      result.push(line);
-    }
-  }
-  if (inTable) flushTable();
-
-  return result.join('\n')
-    .replace(/^### (.+)$/gm, '<h4 class="font-semibold mt-2 mb-1">$1</h4>')
-    .replace(/^## (.+)$/gm, '<h3 class="font-semibold text-sm mt-3 mb-1">$1</h3>')
-    .replace(/^# (.+)$/gm, '<h2 class="font-bold text-sm mt-3 mb-1">$1</h2>')
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/`(.+?)`/g, '<code class="bg-gray-100 px-1 rounded text-[11px]">$1</code>')
-    .replace(/^- (.+)$/gm, '<li class="ml-3 list-disc list-inside">$1</li>')
-    .replace(/^\d+\.\s+(.+)$/gm, '<li class="ml-3">$1</li>')
-    .replace(/(?<!\n)\n(?!\n|<)/g, '<br/>')
-    .replace(/\n\n+/g, '<br/><br/>');
+export function SafeActionCardContent({ content }: { content: string }) {
+  return (
+    <div className="text-xs leading-relaxed text-slate-700">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+          ul: ({ children }) => <ul className="mb-2 ml-4 list-disc space-y-1">{children}</ul>,
+          ol: ({ children }) => <ol className="mb-2 ml-4 list-decimal space-y-1">{children}</ol>,
+          li: ({ children }) => <li className="leading-5">{children}</li>,
+          h1: ({ children }) => <h2 className="mb-1 mt-3 text-sm font-bold text-slate-900">{children}</h2>,
+          h2: ({ children }) => <h3 className="mb-1 mt-3 text-sm font-semibold text-slate-900">{children}</h3>,
+          h3: ({ children }) => <h4 className="mb-1 mt-2 font-semibold text-slate-800">{children}</h4>,
+          code: ({ children }) => <code className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[11px]">{children}</code>,
+          table: ({ children }) => (
+            <div className="my-2 overflow-x-auto">
+              <table className="w-full border-collapse text-[11px]">{children}</table>
+            </div>
+          ),
+          th: ({ children }) => <th className="border-b border-slate-200 bg-slate-50 px-2 py-1 text-left font-semibold">{children}</th>,
+          td: ({ children }) => <td className="border-b border-slate-100 px-2 py-1">{children}</td>,
+          a: ({ children, href }) => (
+            <a href={href} target="_blank" rel="noopener noreferrer" className="text-emerald-700 underline">
+              {children}
+            </a>
+          ),
+        }}
+      >
+        {content}
+      </ReactMarkdown>
+    </div>
+  );
 }
 
 export default function ActionCardPanel() {

@@ -160,7 +160,13 @@ def create_share(
         expires_at = shared.expires_at
 
     share_url = _share_url(share_token)
-    logger.info(f"[分享] 用户 {current_user.id} 分享对话 {req.source_type}:{req.conversation_id} -> {share_token}")
+    logger.info(
+        "[分享] user=%s source_type=%s source_id=%s share_id=%s",
+        current_user.id,
+        req.source_type,
+        req.conversation_id,
+        existing.id if existing else shared.id,
+    )
     return ShareResponse(
         share_token=share_token,
         share_url=share_url,
@@ -195,7 +201,7 @@ def create_text_share(
     db.commit()
     db.refresh(shared)
 
-    logger.info(f"[分享] 用户 {current_user.id} 创建文本分享 -> {shared.share_token}")
+    logger.info("[分享] user=%s 创建文本分享 share_id=%s", current_user.id, shared.id)
     return ShareResponse(
         share_token=shared.share_token,
         share_url=_share_url(shared.share_token),

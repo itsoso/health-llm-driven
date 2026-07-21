@@ -33,8 +33,8 @@ def test_deploy_script_backs_up_remote_env_before_syncing():
     deploy_script = (REPO_ROOT / "deploy.sh").read_text()
 
     assert "backup_remote_env()" in deploy_script
-    assert "cp -p .env" in deploy_script
-    assert ".env.backup.${BACKUP_TS}" in deploy_script
+    assert 'ENV_BACKUP_DIR="$REMOTE_BACKUP_ROOT/env"' in deploy_script
+    assert 'cp -p .env "$ENV_BACKUP_DIR/.env.${BACKUP_TS}"' in deploy_script
     assert deploy_script.index("backup_remote_env") < deploy_script.index("scp \"$TEMP_ENV\"")
 
 
@@ -74,8 +74,8 @@ def test_env_only_restart_refreshes_backend_and_celery_processes():
 def test_secret_management_docs_cover_remote_env_backup_and_long_term_plan():
     docs = (REPO_ROOT / "docs/ops/secrets-management.md").read_text()
 
-    assert ".env.backup.YYYYMMDD_HHMMSS" in docs
-    assert "newest 20 backup files" in docs
+    assert "/var/backups/health-app/env" in docs
+    assert "newest 20" in docs
     assert "SOPS" in docs
     assert "1Password" in docs
     assert "production secret manager" in docs

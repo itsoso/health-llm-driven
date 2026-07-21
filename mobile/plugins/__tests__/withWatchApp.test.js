@@ -20,6 +20,16 @@ function watchEnabledConfig() {
 }
 
 describe('withWatchApp privacy manifests', () => {
+  it('keeps the phone-to-watch token bridge on Keychain-only storage', () => {
+    const bridgeSource = fs.readFileSync(
+      path.join(__dirname, '..', '..', 'native', 'watch', 'WatchPhoneBridge.swift'),
+      'utf8',
+    );
+
+    expect(bridgeSource).toContain('SecItemCopyMatching');
+    expect(bridgeSource).not.toContain('UserDefaults(suiteName: appGroup)');
+  });
+
   it('keeps photo library purpose strings in generated watch plist templates', () => {
     const pluginSource = fs.readFileSync(path.join(__dirname, '..', 'withWatchApp.js'), 'utf8');
 

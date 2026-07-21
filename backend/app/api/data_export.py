@@ -19,6 +19,7 @@ from app.models.daily_health import GarminData, DietRecord, WaterIntake
 from app.models.weight import WeightRecord
 from app.models.blood_pressure import BloodPressureRecord
 from app.models.checkin import CheckinRecord
+from app.models.agent_audit_log import AgentAuditLog
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/export", tags=["export"])
@@ -70,6 +71,21 @@ def export_health_data(
 
     if data_type in ("checkin", "all"):
         data_sections["checkin"] = _export_checkin(db, current_user.id, start_date, end_date)
+
+    db.add(AgentAuditLog(
+        user_id=current_user.id,
+        agent_type="security_audit",
+        action="health_data_exported",
+        result_summary="用户导出健康数据",
+        result_detail={
+            "format": format,
+            "data_type": data_type,
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+            "row_counts": {name: len(rows) for name, rows in data_sections.items()},
+        },
+    ))
+    db.commit()
 
     if format == "json":
         return _respond_json(data_sections, data_type)

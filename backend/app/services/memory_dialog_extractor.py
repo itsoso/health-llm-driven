@@ -138,7 +138,11 @@ async def extract_facts_from_dialog(
     try:
         parsed = json.loads(text)
     except json.JSONDecodeError as e:
-        logger.warning(f"[dialog_extractor] JSON 解析失败: {e}; raw={raw[:200]!r}")
+        logger.warning(
+            "[dialog_extractor] JSON 解析失败 error_type=%s response_len=%s",
+            type(e).__name__,
+            len(raw),
+        )
         return []
 
     raw_facts = parsed.get("facts", [])

@@ -25,7 +25,7 @@ Apple Health 适配器
 """
 
 import re
-import xml.etree.ElementTree as ET
+from defusedxml import ElementTree as ET
 import logging
 from datetime import date, datetime, time, timedelta
 from typing import Optional, List, Dict, Any
@@ -55,6 +55,9 @@ def _parse_apple_date(date_str: str) -> datetime:
 
 class AppleHealthAdapter(DeviceAdapter):
     """Apple Health 适配器"""
+
+    MAX_XML_CHARS = 120 * 1024 * 1024
+    MAX_XML_RECORDS = 2_000_000
 
     def __init__(self, imported_data: Optional[Dict[str, Any]] = None, **kwargs):
         """
@@ -239,6 +242,12 @@ class AppleHealthAdapter(DeviceAdapter):
         """
         import io
 
+        if len(xml_content) > AppleHealthAdapter.MAX_XML_CHARS:
+            raise ValueError("Apple Health XML 超过解析大小限制")
+        upper_prefix = xml_content[:8192].upper()
+        if "<!DOCTYPE" in upper_prefix or "<!ENTITY" in upper_prefix:
+            raise ValueError("Apple Health XML 包含不安全的实体声明")
+
         # 支持的 Record 类型
         SUPPORTED_TYPES = {
             "HKQuantityTypeIdentifierStepCount",
@@ -277,8 +286,12 @@ class AppleHealthAdapter(DeviceAdapter):
         record_count = 0
         workout_count = 0
 
+        parsed_elements = 0
         for event, elem in context:
             if elem.tag == "Record":
+                parsed_elements += 1
+                if parsed_elements > AppleHealthAdapter.MAX_XML_RECORDS:
+                    raise ValueError("Apple Health XML 记录数超过限制")
                 record_type = elem.get("type")
                 if record_type not in SUPPORTED_TYPES:
                     elem.clear()

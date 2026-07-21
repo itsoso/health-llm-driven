@@ -1619,7 +1619,7 @@ def complete_item(
 
     taken_time(可选,med/supplement 用):由调用方给确定性服药时点槽(如议程项 scheduled_for
     的 "HH:MM"),让 uq_medlog_med_date_time 在重复完成时真兜底;缺省回退中国时区 now。
-    day 由 Agenda API 传用户本地日；其他既有入口缺省保持历史 date.today() 行为。
+    day 由 Agenda API 传用户本地日；其他入口缺省也按用户本地日写入。
     """
     if status not in ("done", "skipped"):
         raise ValueError(f"未知 status: {status}(应为 done|skipped)")
@@ -1646,19 +1646,20 @@ def complete_item(
         # done/skipped 都经 medication_service 写同一 uq_medlog 槽(commit=False 把领域写并入
         # 调用方单次事务,与 complete_protocol 用药分支同款,不 fork 写路径)。
         from app.services.medication_service import medication_service
-        from app.utils.timezone import get_china_now
+        from app.utils.timezone import get_user_now, get_user_today
         med = medication_service.get_medication(db, object_id, user_id)
         if med is None:
             # 资源不存在 / 非本人 → LookupError(端点转 404,守跨用户隔离)。
             raise LookupError("medication not found")
         # 确定性服药时点槽(议程项 scheduled_for):同项重复完成落同一 uq_medlog 槽 → DB 兜底去重。
-        slot = taken_time or get_china_now().strftime("%H:%M")
+        slot = taken_time or get_user_now(db, user_id).strftime("%H:%M")
+        effective_day = day or get_user_today(db, user_id)
         if status == "skipped":
             # 漏服事实:落 MedicationLog(skipped)。同槽 supersede 让「先服后跳」也能改写。
             log = medication_service.upsert_medication_log(
                 db, user_id, object_id, taken_time=slot,
                 status="skipped", skip_reason=skip_reason, commit=False,
-                taken_date=day,
+                taken_date=effective_day,
             )
             return {"object_type": object_type, "object_id": object_id,
                     "wrote": False, "log_id": log.id}
@@ -1670,7 +1671,7 @@ def complete_item(
         log = medication_service.upsert_medication_log(
             db, user_id, object_id, taken_time=slot,
             status="taken", actual_dosage=actual_dosage, commit=False,
-            taken_date=day,
+            taken_date=effective_day,
         )
         return {"object_type": object_type, "object_id": object_id,
                 "wrote": True, "log_id": log.id}

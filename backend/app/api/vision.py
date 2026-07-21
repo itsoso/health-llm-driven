@@ -171,7 +171,7 @@ Return ONLY this JSON, no other text:
             remaining=new_remaining,
         )
     except json.JSONDecodeError:
-        logger.error(f"颜值分析 JSON 解析失败: {raw[:300]}")
+        logger.error("颜值分析 JSON 解析失败 response_len=%s", len(raw))
         return BeautyResponse(success=False, error="分析结果解析失败，请重试", remaining=remaining)
     except Exception as e:
         logger.error(f"颜值分析失败: {e}")

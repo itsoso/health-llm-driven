@@ -64,7 +64,7 @@ patch_garth_with_cffi()
 
 # 创建数据库表(SKIP_DB_INIT=1 时跳过 —— 供 OpenAPI dump / 纯 import 用,不连 DB,
 # 也让 type-drift CI 能在无 DB 的 runner 上 dump app.openapi())
-if os.getenv("SKIP_DB_INIT") != "1":
+if not _IS_PRODUCTION and os.getenv("SKIP_DB_INIT") != "1":
     Base.metadata.create_all(bind=engine)
 
 # 配置请求频率限制器（使用 Redis 存储，支持多实例部署）
@@ -90,7 +90,7 @@ app = FastAPI(
 - ⚡ **高性能**: Redis 缓存 + 数据库索引优化
 
 ### 认证方式
-- **Bearer Token (JWT)**: 7天有效期
+- **Bearer Token (JWT)**: 2年有效期
 - **微信小程序 OAuth2**: 自动用户合并
 
 ### 限流规则
@@ -142,6 +142,14 @@ async def startup_event():
     import app.models.family  # noqa: F401 — 确保家庭管理表被创建
     import app.models.family_health  # noqa: F401 — 确保体检报告/用药/复查表被创建
     settings.validate_required_security()
+    from app.database import SessionLocal as _SecuritySession
+    from app.services.database_security import assert_runtime_database_role
+
+    security_db = _SecuritySession()
+    try:
+        assert_runtime_database_role(security_db, production=_IS_PRODUCTION)
+    finally:
+        security_db.close()
     try:
         from app.database import SessionLocal as _ChatCleanupSession
         from app.services.agent_conversation_service import AgentConversationService
@@ -177,89 +185,75 @@ async def startup_event():
         _logging.getLogger("main").error(
             f"[startup] 中文分词器(jieba)不可用 —— System KB 中文多词检索将退化到 bigram, "
             f"命中率下降。请安装 jieba==0.42.1。原因: {_e}")
-    # 基因租户隔离前置校验: Postgres superuser 会绕过 RLS(含 FORCE)→ genetic_raw_files
-    # 行级隔离退化为仅应用层 WHERE。基因是最敏感数据, 启动时 fail-loud 告警(不静默)。
-    try:
-        import logging as _logging
-        from app.database import SessionLocal as _SL
-        from sqlalchemy import text as _t
-        _db = _SL()
+    # 历史开发环境兼容迁移。生产 DDL 只能通过 apply_managed_migrations.py 的独立角色执行。
+    if _IS_PRODUCTION:
+        logger.info("生产运行时跳过自动 DDL；结构变更由受控迁移角色执行")
+    else:
         try:
-            if _db.bind is not None and _db.bind.dialect.name == "postgresql":
-                _is_super = _db.execute(_t("SELECT current_setting('is_superuser')")).scalar()
-                if _is_super == "on":
-                    _logging.getLogger("main").error(
-                        "[SECURITY] DB 连接角色为 superuser —— Postgres RLS(含 FORCE)被绕过, "
-                        "genetic_raw_files 等表的 DB 层租户隔离失效(仅剩应用层 WHERE)。"
-                        "生产必须改用非 superuser 角色连接。")
-        finally:
-            _db.close()
-    except Exception as _e:  # noqa: BLE001
-        import logging as _logging
-        _logging.getLogger("main").warning(f"[startup] RLS superuser 校验跳过: {_e}")
-    # 自动迁移：添加新列（PostgreSQL）
-    try:
-        from app.database import SessionLocal, engine
-        from sqlalchemy import text, inspect
-        db = SessionLocal()
-        insp = inspect(engine)
+            from app.database import engine
+            from sqlalchemy import text, inspect
+            db = _SecuritySession()
+            insp = inspect(engine)
 
-        def _add_col(table: str, col: str, col_type: str):
-            if not insp.has_table(table):
-                return
-            existing = [c["name"] for c in insp.get_columns(table)]
-            if col not in existing:
-                db.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {col_type}"))
+            def _add_col(table: str, col: str, col_type: str):
+                if not insp.has_table(table):
+                    return
+                existing = [c["name"] for c in insp.get_columns(table)]
+                if col not in existing:
+                    db.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {col_type}"))
 
-        _add_col("chat_conversations", "mode", "VARCHAR(20) DEFAULT NULL")
-        _add_col("garmin_credentials", "sync_in_progress", "BOOLEAN DEFAULT false")
-        _add_col("garmin_credentials", "sync_started_at", "TIMESTAMP DEFAULT NULL")
-        _add_col("agent_messages", "rating", "INTEGER DEFAULT NULL")
-        _add_col("agent_messages", "image_url", "VARCHAR(500) DEFAULT NULL")
-        _add_col("users", "is_managed", "BOOLEAN DEFAULT false")
-        _add_col("users", "managed_by", "INTEGER DEFAULT NULL")
-        # H1-B: 推送规则分级 + 用户偏好
-        _add_col("user_notification_settings", "alert_severity_threshold",
-                 "VARCHAR(20) DEFAULT 'warning'")
-        _add_col("user_notification_settings", "alert_rule_opt_outs",
-                 "JSONB DEFAULT '[]'::jsonb")
-        _add_col("genetic_variants", "rsid", "VARCHAR(30) DEFAULT NULL")
-        _add_col("genetic_variants", "raw_genotype", "VARCHAR(200) DEFAULT NULL")
-        _add_col("genetic_variants", "mapping_source", "VARCHAR(50) DEFAULT 'known_snp'")
-        _add_col("genetic_variants", "evidence_level", "VARCHAR(50) DEFAULT 'screening'")
-        db.commit()
-        db.close()
-        logger.info("数据库迁移检查完成")
-    except Exception as e:
-        logger.warning(f"数据库迁移检查跳过: {e}")
+            _add_col("chat_conversations", "mode", "VARCHAR(20) DEFAULT NULL")
+            _add_col("garmin_credentials", "sync_in_progress", "BOOLEAN DEFAULT false")
+            _add_col("garmin_credentials", "sync_started_at", "TIMESTAMP DEFAULT NULL")
+            _add_col("agent_messages", "rating", "INTEGER DEFAULT NULL")
+            _add_col("agent_messages", "image_url", "VARCHAR(500) DEFAULT NULL")
+            _add_col("users", "is_managed", "BOOLEAN DEFAULT false")
+            _add_col("users", "managed_by", "INTEGER DEFAULT NULL")
+            _add_col("user_notification_settings", "alert_severity_threshold",
+                     "VARCHAR(20) DEFAULT 'warning'")
+            _add_col("user_notification_settings", "alert_rule_opt_outs",
+                     "JSONB DEFAULT '[]'::jsonb")
+            _add_col("genetic_variants", "rsid", "VARCHAR(30) DEFAULT NULL")
+            _add_col("genetic_variants", "raw_genotype", "VARCHAR(200) DEFAULT NULL")
+            _add_col("genetic_variants", "mapping_source", "VARCHAR(50) DEFAULT 'known_snp'")
+            _add_col("genetic_variants", "evidence_level", "VARCHAR(50) DEFAULT 'screening'")
+            db.commit()
+            db.close()
+            logger.info("数据库迁移检查完成")
+        except Exception as e:
+            logger.warning(f"数据库迁移检查跳过: {e}")
     # Scheduler 只在一个 worker 中运行（DB 原子操作竞争 leader）
     import os
     from sqlalchemy import text as sa_text
     worker_pid = str(os.getpid())
     is_leader = False
+    leader_db = None
     try:
-        leader_db = SessionLocal()
-        # 创建 leader 表（如果不存在）
-        leader_db.execute(sa_text(
-            "CREATE TABLE IF NOT EXISTS scheduler_leader ("
-            "  id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),"
-            "  worker_pid VARCHAR(50),"
-            "  acquired_at TIMESTAMPTZ DEFAULT NOW()"
-            ")"
-        ))
-        # 原子性竞争：只有当无 leader 或 leader 已过期（5分钟）时才能获取
-        leader_db.execute(sa_text(
-            "INSERT INTO scheduler_leader (id, worker_pid, acquired_at) VALUES (1, :pid, NOW()) "
-            "ON CONFLICT (id) DO UPDATE SET worker_pid = :pid, acquired_at = NOW() "
-            "WHERE scheduler_leader.acquired_at < NOW() - INTERVAL '5 minutes'"
-        ), {"pid": worker_pid})
-        leader_db.commit()
-        # 检查是否真的是自己
-        row = leader_db.execute(sa_text("SELECT worker_pid FROM scheduler_leader WHERE id = 1")).fetchone()
-        is_leader = row and row[0] == worker_pid
-        leader_db.close()
+        from app.services.database_security import (
+            scheduler_leader_statements,
+            scheduler_runtime_enabled,
+        )
+
+        leader_db = _SecuritySession()
+        dialect = leader_db.get_bind().dialect.name
+        if scheduler_runtime_enabled(dialect):
+            create_leader_sql, claim_leader_sql = scheduler_leader_statements(dialect)
+            if not _IS_PRODUCTION:
+                leader_db.execute(sa_text(create_leader_sql))
+            # 原子性竞争：只有当无 leader 或 leader 已过期（5分钟）时才能获取
+            leader_db.execute(sa_text(claim_leader_sql), {"pid": worker_pid})
+            leader_db.commit()
+            row = leader_db.execute(sa_text(
+                "SELECT worker_pid FROM scheduler_leader WHERE id = 1"
+            )).fetchone()
+            is_leader = bool(row and row[0] == worker_pid)
+        else:
+            logger.info("Scheduler disabled for database dialect: %s", dialect)
     except Exception as e:
         logger.warning(f"Scheduler leader election failed: {e}")
+    finally:
+        if leader_db is not None:
+            leader_db.close()
 
     if is_leader:
         start_scheduler(app, use_daily_schedule=True)
@@ -285,6 +279,7 @@ app.add_middleware(
         "Accept",
         "Origin",
         "X-Requested-With",
+        "X-Auth-Transport",
         "X-API-Key",  # 外部系统 API Key 认证
     ],
     # 浏览器可以访问的响应头

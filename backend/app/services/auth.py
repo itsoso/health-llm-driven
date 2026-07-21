@@ -1,7 +1,7 @@
 """用户认证服务"""
 from datetime import UTC, datetime, timedelta
 from typing import Optional
-from jose import JWTError, jwt
+import jwt
 import bcrypt
 from cryptography.fernet import Fernet
 from sqlalchemy.orm import Session
@@ -77,7 +77,7 @@ class AuthService:
         except jwt.ExpiredSignatureError:
             logger.warning("[Auth] Token已过期")
             return None
-        except JWTError as e:
+        except jwt.PyJWTError as e:
             logger.warning(f"[Auth] JWT错误: {e}")
             return None
         except Exception as e:

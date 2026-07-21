@@ -23,11 +23,21 @@ from app.services.data_collection.medical_exam_import import MedicalExamImportSe
 from app.services.pdf_parser import pdf_parser
 from app.services.exam_packages import create_indicator_from_item
 from app.services.ai.medical_report_ocr import recognize_medical_report
+from app.services.secure_upload import (
+    UploadContentInvalid,
+    UploadTooLarge,
+    read_upload_limited,
+    validate_csv_bytes,
+    validate_image_bytes,
+    validate_pdf_bytes,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 MAX_IMAGE_BYTES = 10 * 1024 * 1024  # 10 MB,防 OCR 被大图灌穿
+MAX_PDF_BYTES = 20 * 1024 * 1024
+MAX_CSV_BYTES = 5 * 1024 * 1024
 
 
 class MedicalExamTextImportRequest(BaseModel):
@@ -38,7 +48,7 @@ class MedicalExamTextImportRequest(BaseModel):
 
 
 class LabPhotoParseRequest(BaseModel):
-    image_base64: str = Field(..., min_length=1, description="化验单照片 base64")
+    image_base64: str = Field(..., min_length=1, max_length=14_000_000, description="化验单照片 base64")
     image_type: str = Field(default="jpeg", max_length=10)
 
 
@@ -49,6 +59,12 @@ async def parse_lab_photo_endpoint(
 ):
     """vision 解析化验单照片为 {项目,值,单位};**返回供用户确认,不直接入库**(OCR 可能出错)。"""
     from app.services.lab_photo_parse import parse_lab_photo
+    try:
+        encoded = req.image_base64.split(",", 1)[-1]
+        image_bytes = base64.b64decode(encoded, validate=True)
+        validate_image_bytes(image_bytes, declared_extension=req.image_type)
+    except (ValueError, UploadContentInvalid) as exc:
+        raise HTTPException(status_code=400, detail="图片内容无效") from exc
     try:
         items = await parse_lab_photo(req.image_base64, req.image_type)
     except Exception as e:  # noqa: BLE001
@@ -370,8 +386,14 @@ async def import_medical_exam_from_csv(
     db: Session = Depends(get_db)
 ):
     """从CSV格式导入体检数据"""
+    try:
+        content = await read_upload_limited(file, max_bytes=MAX_CSV_BYTES)
+        validate_csv_bytes(content)
+    except UploadTooLarge as exc:
+        raise HTTPException(status_code=413, detail="CSV 文件过大") from exc
+    except UploadContentInvalid as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     with tempfile.NamedTemporaryFile(delete=False, suffix=".csv") as tmp_file:
-        content = await file.read()
         tmp_file.write(content)
         tmp_file_path = tmp_file.name
 
@@ -396,13 +418,15 @@ async def import_medical_exam_from_pdf(
     使用AI分析PDF内容，提取检查项目、数值、参考范围等信息。
     """
     user_id = current_user.id
-    # 验证文件类型
-    if not file.filename.lower().endswith('.pdf'):
-        raise HTTPException(status_code=400, detail="请上传PDF格式文件")
+    try:
+        content = await read_upload_limited(file, max_bytes=MAX_PDF_BYTES)
+        validate_pdf_bytes(content)
+    except UploadTooLarge as exc:
+        raise HTTPException(status_code=413, detail="PDF 文件过大") from exc
+    except UploadContentInvalid as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    # 保存上传的文件
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
-        content = await file.read()
         tmp_file.write(content)
         tmp_file_path = tmp_file.name
 
@@ -522,12 +546,13 @@ async def import_medical_exam_from_image(
 
     image_type = "jpeg" if ext in ("jpg", "jpeg") else ext
 
-    content = await file.read()
-    if len(content) > MAX_IMAGE_BYTES:
-        raise HTTPException(
-            status_code=413,
-            detail=f"图片过大 ({len(content) // 1024 // 1024}MB),请压缩到 {MAX_IMAGE_BYTES // 1024 // 1024}MB 以内"
-        )
+    try:
+        content = await read_upload_limited(file, max_bytes=MAX_IMAGE_BYTES)
+        image_type = validate_image_bytes(content, declared_extension=ext)
+    except UploadTooLarge as exc:
+        raise HTTPException(status_code=413, detail="图片过大,请压缩后重试") from exc
+    except UploadContentInvalid as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     image_base64 = base64.b64encode(content).decode("ascii")
 
     logger.info(f"开始 OCR 识别体检报告图片: {file.filename} ({len(content)} bytes)")
@@ -651,11 +676,14 @@ async def parse_pdf_preview(
     用于在正式导入前预览解析结果，确认内容正确。
     需要登录 — 该路径会消耗 LLM vision 配额,不能裸奔.
     """
-    if not file.filename.lower().endswith('.pdf'):
-        raise HTTPException(status_code=400, detail="请上传PDF格式文件")
-
+    try:
+        content = await read_upload_limited(file, max_bytes=MAX_PDF_BYTES)
+        validate_pdf_bytes(content)
+    except UploadTooLarge as exc:
+        raise HTTPException(status_code=413, detail="PDF 文件过大") from exc
+    except UploadContentInvalid as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
-        content = await file.read()
         tmp_file.write(content)
         tmp_file_path = tmp_file.name
 

@@ -1,7 +1,7 @@
 """管理员API"""
 from typing import List, Literal, Optional
 from datetime import UTC, datetime, timedelta
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc
 from pydantic import BaseModel, ConfigDict
@@ -110,7 +110,9 @@ class AccountDeletionRequestUpdate(BaseModel):
 # ========== 权限检查 ==========
 
 async def get_admin_user(
-    current_user: User = Depends(get_current_user_required)
+    request: Request,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
 ) -> User:
     """获取当前管理员用户"""
     if not getattr(current_user, 'is_admin', False):
@@ -118,6 +120,18 @@ async def get_admin_user(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="需要管理员权限"
         )
+    if request.method.upper() in {"POST", "PUT", "PATCH", "DELETE"}:
+        db.add(AgentAuditLog(
+            user_id=current_user.id,
+            agent_type="security_audit",
+            action="privileged_request_authorized",
+            result_summary="管理员变更请求已通过权限校验",
+            result_detail={
+                "method": request.method.upper(),
+                "path": request.url.path,
+            },
+        ))
+        db.commit()
     return current_user
 
 

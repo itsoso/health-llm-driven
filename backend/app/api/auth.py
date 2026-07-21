@@ -2,7 +2,7 @@
 from datetime import datetime, timedelta, date, timezone
 from typing import Optional, AsyncGenerator
 import json
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request, Response
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
@@ -32,6 +32,11 @@ from app.services.phone_auth import (
     normalize_phone,
 )
 from app.api.deps import get_current_user, get_current_user_required
+from app.services.web_session import (
+    clear_web_session_cookie,
+    set_web_session_cookie,
+    wants_web_session,
+)
 import logging
 import asyncio
 
@@ -77,6 +82,16 @@ def _issue_token_response(user: User, db: Session) -> Token:
     )
 
 
+def _deliver_token(
+    request: Request,
+    response: Response,
+    token: Token,
+) -> Token:
+    if wants_web_session(request):
+        set_web_session_cookie(response, token.access_token)
+    return token
+
+
 def _unique_phone_username(db: Session, phone: str) -> str:
     digits = "".join(ch for ch in phone if ch.isdigit())
     base = f"phone_{digits[-11:] or digits}"
@@ -103,7 +118,12 @@ def _ensure_active_approved(user: User) -> None:
 
 @router.post("/register", summary="用户注册")
 @limiter.limit("3/hour")  # 每小时最多3次注册尝试
-async def register(request: Request, user_data: UserRegister, db: Session = Depends(get_db)):
+async def register(
+    request: Request,
+    response: Response,
+    user_data: UserRegister,
+    db: Session = Depends(get_db),
+):
     """
     用户注册（需要邀请码，注册后需管理员审核）
 
@@ -174,6 +194,8 @@ async def register(request: Request, user_data: UserRegister, db: Session = Depe
 
     # 邀请码有效，自动通过，直接返回token
     access_token = auth_service.create_access_token({"sub": str(user.id)})
+    if wants_web_session(request):
+        set_web_session_cookie(response, access_token)
     return {
         "message": "注册成功！邀请码验证通过，可以直接使用。",
         "user_id": user.id,
@@ -217,6 +239,7 @@ async def send_phone_code(
 @limiter.limit("10/minute")
 async def login_by_phone_code(
     request: Request,
+    response: Response,
     payload: PhoneCodeLogin,
     db: Session = Depends(get_db),
 ):
@@ -264,17 +287,25 @@ async def login_by_phone_code(
 
     _ensure_active_approved(user)
     token = _issue_token_response(user, db)
-    return PhoneLoginToken(
+    result = PhoneLoginToken(
         access_token=token.access_token,
         token_type=token.token_type,
         user=token.user,
         is_new_user=is_new_user,
     )
+    if wants_web_session(request):
+        set_web_session_cookie(response, result.access_token)
+    return result
 
 
 @router.post("/login", response_model=Token, summary="用户登录")
 @limiter.limit("5/minute")  # 每分钟最多5次登录尝试
-async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+async def login(
+    request: Request,
+    response: Response,
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db: Session = Depends(get_db),
+):
     """
     用户登录（OAuth2密码流）
 
@@ -306,12 +337,17 @@ async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends
             detail="账户尚未通过管理员审核，请等待审核通过后再登录"
         )
 
-    return _issue_token_response(user, db)
+    return _deliver_token(request, response, _issue_token_response(user, db))
 
 
 @router.post("/login/json", response_model=Token, summary="用户登录（JSON格式）")
 @limiter.limit("5/minute")  # 每分钟最多5次登录尝试
-async def login_json(request: Request, login_data: UserLogin, db: Session = Depends(get_db)):
+async def login_json(
+    request: Request,
+    response: Response,
+    login_data: UserLogin,
+    db: Session = Depends(get_db),
+):
     """
     用户登录（JSON格式）
 
@@ -338,7 +374,16 @@ async def login_json(request: Request, login_data: UserLogin, db: Session = Depe
             detail="账户尚未通过管理员审核，请等待审核通过后再登录"
         )
 
-    return _issue_token_response(user, db)
+    return _deliver_token(request, response, _issue_token_response(user, db))
+
+
+@router.post("/logout", summary="退出当前 Web 会话")
+async def logout(
+    response: Response,
+    current_user: Optional[User] = Depends(get_current_user),
+):
+    clear_web_session_cookie(response)
+    return {"message": "已退出登录"}
 
 
 @router.get("/me", response_model=UserResponse, summary="获取当前用户信息")

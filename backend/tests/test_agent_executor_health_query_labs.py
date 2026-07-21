@@ -28,7 +28,7 @@ def _make_indicator(user_id, name, value, unit, record_date, **kw):
 
 
 def _run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
+    return asyncio.run(coro)
 
 
 def _exec(db, user_id, **args):

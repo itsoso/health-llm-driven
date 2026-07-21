@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user_required
 from app.database import get_db
 from app.models.user import User
+from app.models.agent_audit_log import AgentAuditLog
 from app.services.doctor_report_service import (
     build_doctor_export, list_doctor_feedback, record_doctor_feedback,
 )
@@ -27,7 +28,16 @@ def export_doctor_report(
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ):
-    return build_doctor_export(db, current_user.id, days=days)
+    report = build_doctor_export(db, current_user.id, days=days)
+    db.add(AgentAuditLog(
+        user_id=current_user.id,
+        agent_type="security_audit",
+        action="doctor_report_exported",
+        result_summary="用户导出医生摘要",
+        result_detail={"days": days},
+    ))
+    db.commit()
+    return report
 
 
 class DoctorFeedbackIn(BaseModel):

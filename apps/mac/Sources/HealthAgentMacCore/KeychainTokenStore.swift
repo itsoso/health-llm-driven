@@ -11,10 +11,12 @@ public final class KeychainTokenStore: AuthTokenStoring, @unchecked Sendable {
 
     public init(
         service: String = "life.executor.health.mac",
-        account: String = "auth-token-v2"
+        account: String = "auth-token-v2",
+        legacyDefaults: UserDefaults? = .standard
     ) {
         self.service = service
         self.account = account
+        legacyDefaults?.removeObject(forKey: UserDefaultsTokenStore.defaultsKey)
     }
 
     public func setToken(_ token: String) async throws {

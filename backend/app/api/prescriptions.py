@@ -16,6 +16,12 @@ from app.models.user import User
 from app.services.ai.prescription_ocr import recognize_prescription
 from app.services.originator_drugs import _normalize, find_originator
 from app.services.originator_recommendations import pending_originator_recs, set_status
+from app.services.secure_upload import (
+    UploadContentInvalid,
+    UploadTooLarge,
+    read_upload_limited,
+    validate_image_bytes,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -52,9 +58,13 @@ async def recognize_prescription_image(
         raise HTTPException(status_code=400, detail="请上传图片文件 (jpg/png/heic/webp)")
     image_type = "jpeg" if ext in ("jpg", "jpeg") else ext
 
-    content = await file.read()
-    if len(content) > MAX_IMAGE_BYTES:
-        raise HTTPException(status_code=413, detail=f"图片过大,请压缩到 {MAX_IMAGE_BYTES // 1024 // 1024}MB 以内")
+    try:
+        content = await read_upload_limited(file, max_bytes=MAX_IMAGE_BYTES)
+        image_type = validate_image_bytes(content, declared_extension=ext)
+    except UploadTooLarge as exc:
+        raise HTTPException(status_code=413, detail="图片过大,请压缩后重试") from exc
+    except UploadContentInvalid as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     image_base64 = base64.b64encode(content).decode("ascii")
 
     logger.info(f"[处方识别] user={current_user.id} 开始 OCR ({len(content)} bytes)")

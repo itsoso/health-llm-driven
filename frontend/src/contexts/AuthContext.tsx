@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react';
-import { API_BASE_URL } from '@/services/api/client';
+import { API_BASE_URL, WEB_SESSION_TOKEN } from '@/services/api/client';
 
 const API_BASE = API_BASE_URL;
 
@@ -49,24 +49,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // 初始化时从localStorage加载token
+  // Web 登录态由同源 HttpOnly Cookie 恢复，JavaScript 不读取持久凭证。
   useEffect(() => {
-    const storedToken = localStorage.getItem('auth_token');
-    if (storedToken) {
-      setToken(storedToken);
-      fetchUser(storedToken);
-    } else {
-      setIsLoading(false);
-    }
+    fetchUser();
   }, []);
 
   // 获取用户信息
-  const fetchUser = async (authToken: string) => {
+  const fetchUser = async () => {
     try {
       const res = await fetch(`${API_BASE}/auth/me`, {
-        headers: {
-          'Authorization': `Bearer ${authToken}`,
-        },
+        credentials: 'include',
       });
 
       if (res.ok) {
@@ -75,10 +67,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (contentType && contentType.includes('application/json')) {
           const userData = await res.json();
           setUser(userData);
+          setToken(WEB_SESSION_TOKEN);
           // 注: iOS 推送注册已随 Capacitor 退役; iPhone/iPad 推送由 mobile/ (Expo RN) 负责
         } else {
           console.error('获取用户信息：服务器返回非JSON响应');
-          localStorage.removeItem('auth_token');
           setToken(null);
           setUser(null);
         }
@@ -89,32 +81,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           if (errorData.detail && errorData.detail.includes('审核')) {
             // 未审核用户，保留token和user，但标记为未审核
             const userData = await fetch(`${API_BASE}/auth/me`, {
-              headers: { 'Authorization': `Bearer ${authToken}` },
+              credentials: 'include',
             }).then(r => r.ok ? r.json() : null);
             if (userData) {
               setUser(userData);
             }
           } else {
             // 其他403错误，清除token
-            localStorage.removeItem('auth_token');
             setToken(null);
             setUser(null);
           }
         } catch {
           // 无法解析错误，清除token
-          localStorage.removeItem('auth_token');
           setToken(null);
           setUser(null);
         }
       } else {
         // Token无效，清除
-        localStorage.removeItem('auth_token');
         setToken(null);
         setUser(null);
       }
     } catch (error) {
       console.error('获取用户信息失败:', error);
-      localStorage.removeItem('auth_token');
       setToken(null);
       setUser(null);
     } finally {
@@ -129,7 +117,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'X-Auth-Transport': 'web-cookie',
         },
+        credentials: 'include',
         body: JSON.stringify({ username, password }),
       });
 
@@ -144,9 +134,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const data = await res.json();
 
       if (res.ok) {
-        setToken(data.access_token);
+        setToken(WEB_SESSION_TOKEN);
         setUser(data.user);
-        localStorage.setItem('auth_token', data.access_token);
         return { success: true };
       } else {
         return { success: false, error: data.detail || '登录失败' };
@@ -164,7 +153,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'X-Auth-Transport': 'web-cookie',
         },
+        credentials: 'include',
         body: JSON.stringify(data),
       });
 
@@ -181,9 +172,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (res.ok || res.status === 201) {
         // 注册成功，但可能未审核，不设置token
         if (result.access_token) {
-          setToken(result.access_token);
+          setToken(WEB_SESSION_TOKEN);
           setUser(result.user);
-          localStorage.setItem('auth_token', result.access_token);
         }
         return { success: true };
       } else {
@@ -199,13 +189,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(() => {
     setToken(null);
     setUser(null);
-    localStorage.removeItem('auth_token');
+    void fetch(`${API_BASE}/auth/logout`, {
+      method: 'POST',
+      credentials: 'include',
+    });
   }, []);
 
   // 刷新用户信息 (使用 useCallback 优化)
   const refreshUser = useCallback(async () => {
     if (token) {
-      await fetchUser(token);
+      await fetchUser();
     }
   }, [token]);
 

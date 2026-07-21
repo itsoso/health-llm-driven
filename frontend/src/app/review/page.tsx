@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { WEB_SESSION_TOKEN } from '@/services/api/client';
 
 // 使用相对路径，依赖 Nginx 反向代理
 const API_BASE = '/api';
@@ -106,12 +107,7 @@ export default function ReviewPage() {
     loadData();
   }, [viewMode, selectedDate]);
 
-  const getToken = () => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('auth_token');
-    }
-    return null;
-  };
+  const getToken = () => WEB_SESSION_TOKEN;
 
   const loadData = async () => {
     setLoading(true);

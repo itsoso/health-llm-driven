@@ -1,9 +1,17 @@
 """体检数据API测试 — 所有端点强制 auth 到 current_user"""
+from io import BytesIO
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from unittest.mock import patch, AsyncMock
 from app.models.user import User
 from app.services.auth import auth_service
+from PIL import Image
+
+
+def _tiny_image_bytes(image_format: str = "JPEG") -> bytes:
+    output = BytesIO()
+    Image.new("RGB", (1, 1), color="white").save(output, format=image_format)
+    return output.getvalue()
 
 
 def _create_user(db):
@@ -238,7 +246,7 @@ def test_import_image_ocr_success(client, db):
     ):
         resp = client.post(
             "/api/v1/medical-exams/import/image",
-            files={"file": ("report.jpg", b"fake-jpeg-bytes", "image/jpeg")},
+            files={"file": ("report.jpg", _tiny_image_bytes(), "image/jpeg")},
             headers=headers,
         )
 
@@ -274,7 +282,7 @@ def test_import_image_pathology_narrative_persists_conclusion(client, db):
     ):
         resp = client.post(
             "/api/v1/medical-exams/import/image",
-            files={"file": ("path.jpg", b"fake-jpeg-bytes", "image/jpeg")},
+            files={"file": ("path.jpg", _tiny_image_bytes(), "image/jpeg")},
             headers=headers,
         )
 
@@ -299,7 +307,7 @@ def test_import_image_ocr_error_passes_through(client, db):
     ):
         resp = client.post(
             "/api/v1/medical-exams/import/image",
-            files={"file": ("blurry.jpg", b"fake", "image/jpeg")},
+            files={"file": ("blurry.jpg", _tiny_image_bytes(), "image/jpeg")},
             headers=headers,
         )
     assert resp.status_code == 422
@@ -314,7 +322,7 @@ def test_import_image_empty_items(client, db):
     ):
         resp = client.post(
             "/api/v1/medical-exams/import/image",
-            files={"file": ("report.png", b"fake", "image/png")},
+            files={"file": ("report.png", _tiny_image_bytes("PNG"), "image/png")},
             headers=headers,
         )
     assert resp.status_code == 422

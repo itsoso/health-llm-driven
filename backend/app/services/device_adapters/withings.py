@@ -161,7 +161,9 @@ class WithingsHealthAdapter(DeviceAdapter):
                 logger.info(f"Withings token exchange response status: {result.get('status')}")
 
                 if result.get("status") != 0:
-                    raise Exception(f"Withings token exchange failed: {result}")
+                    raise Exception(
+                        f"Withings token exchange failed: status={result.get('status')}"
+                    )
 
                 body = result.get("body", {})
                 self.access_token = body.get("access_token")
@@ -189,7 +191,10 @@ class WithingsHealthAdapter(DeviceAdapter):
                 ) as resp:
                     result = await resp.json()
                     if result.get("status") != 0:
-                        logger.error(f"Withings token refresh failed: {result}")
+                        logger.error(
+                            "Withings token refresh failed: status=%s",
+                            result.get("status"),
+                        )
                         return False
 
                     body = result.get("body", {})

@@ -13,17 +13,13 @@ from typing import Any, Optional
 
 from sqlalchemy.orm import Session
 
-from app.models.daily_health import WaterIntake
 from app.services.agent_executor import AgentExecutor
 from app.services.agent_kernel.context import build_turn_snapshot
-from app.services.agent_kernel.tool_gateway import ToolGateway
-from app.services.agent_kernel.types import ToolExecutionRequest, TurnSnapshot
+from app.services.agent_kernel.types import TurnSnapshot
 from app.services.agent_write_outcome import (
     classify_write_execution,
     write_result_declares_non_success,
 )
-from app.twin.cache import invalidate_twin
-from app.utils.timezone import get_china_now
 
 logger = logging.getLogger(__name__)
 
@@ -92,31 +88,39 @@ class VoiceCommandService:
             executor._finish_agent_kernel_turn(status="no_action")
             return None
 
-        tool_arguments = _arguments_for_execution(draft)
-        if _is_local_auto_recordable_water(draft, tool_arguments):
-            result = await self._execute_local_water_record(snapshot, tool_arguments)
-        else:
-            try:
-                result = await executor._execute_tool(
-                    "health_record",
-                    tool_arguments,
-                    user_auth_token,
-                )
-            except Exception as exc:  # noqa: BLE001 - client receives no false completion
-                logger.exception(
-                    "Voice shortcut dispatch failed user=%s command=%s error_type=%s",
-                    self.user_id,
-                    draft["command_type"],
-                    type(exc).__name__,
-                )
-                executor._finish_agent_kernel_turn(status="failed")
-                return {
-                    "command_type": draft["command_type"],
-                    "message": "语音记录暂未完成，请在小巴对话中重试。",
-                    "data": draft["data"],
-                    "requires_confirmation": False,
-                    "execution_status": "failed",
-                }
+        tool_arguments = dict(draft["arguments"])
+        if draft["command_type"] != "water":
+            executor._finish_agent_kernel_turn(status="pending_confirmation")
+            return {
+                "command_type": draft["command_type"],
+                "message": f"已识别{draft['message'].removeprefix('准备记录 ')}，请确认后写入。",
+                "data": draft["data"],
+                "requires_confirmation": True,
+                "execution_status": "pending_confirmation",
+            }
+
+        try:
+            result = await executor._execute_tool(
+                "health_record",
+                tool_arguments,
+                user_auth_token,
+                source="voice_command",
+            )
+        except Exception as exc:  # noqa: BLE001 - client receives no false completion
+            logger.exception(
+                "Voice shortcut dispatch failed user=%s command=%s error_type=%s",
+                self.user_id,
+                draft["command_type"],
+                type(exc).__name__,
+            )
+            executor._finish_agent_kernel_turn(status="failed")
+            return {
+                "command_type": draft["command_type"],
+                "message": "语音记录暂未完成，请在小巴对话中重试。",
+                "data": draft["data"],
+                "requires_confirmation": False,
+                "execution_status": "failed",
+            }
 
         receipt = _verified_record_receipt(result)
         write_outcome = classify_write_execution(result, receipt=receipt)
@@ -165,46 +169,6 @@ class VoiceCommandService:
             "execution_status": "unverified_result",
         }
 
-    async def _execute_local_water_record(
-        self,
-        snapshot: TurnSnapshot,
-        arguments: dict[str, Any],
-    ) -> Any:
-        gateway = ToolGateway(snapshot)
-
-        async def dispatch(request: ToolExecutionRequest) -> dict[str, Any]:
-            data = dict(request.arguments.get("data") or {})
-            amount = int(data["amount"])
-            now = get_china_now()
-            record = WaterIntake(
-                user_id=self.user_id,
-                record_date=now.date(),
-                amount_ml=amount,
-                drink_type=data.get("drink_type") or "水",
-                intake_time=now,
-            )
-            self.db.add(record)
-            self.db.commit()
-            self.db.refresh(record)
-            invalidate_twin(self.user_id)
-            return {
-                "type": "water",
-                "success": True,
-                "message": f"已记录饮水 {amount}ml",
-                "record_id": record.id,
-                "undo_path": f"water/records/{record.id}",
-            }
-
-        result = await gateway.execute(
-            ToolExecutionRequest(
-                tool_name="health_record",
-                arguments=arguments,
-                source="voice_command",
-            ),
-            dispatch,
-        )
-        return result.content
-
     def _build_draft_from_snapshot(
         self,
         text: str,
@@ -237,34 +201,6 @@ def _extract_water(text: str) -> Optional[dict[str, Any]]:
     )
 
 
-def _arguments_for_execution(draft: dict[str, Any]) -> dict[str, Any]:
-    """Apply the voice shortcut's server-side confirmation policy.
-
-    Only bounded, reversible, slot-complete water records are auto-confirmed
-    here.  Higher-risk measurements still use the shared confirmation boundary
-    in ``AgentExecutor``.
-    """
-    args = dict(draft.get("arguments") or {})
-    data = dict(args.get("data") or {})
-    args["data"] = data
-    if draft.get("command_type") == "water" and data.get("amount") is not None:
-        args["confirmed"] = True
-    return args
-
-
-def _is_local_auto_recordable_water(
-    draft: dict[str, Any],
-    arguments: dict[str, Any],
-) -> bool:
-    data = arguments.get("data")
-    return (
-        draft.get("command_type") == "water"
-        and isinstance(data, dict)
-        and data.get("amount") is not None
-        and arguments.get("confirmed") is True
-    )
-
-
 def _verified_record_receipt(result: Any) -> dict[str, Any] | None:
     if isinstance(result, str):
         try:
@@ -292,8 +228,6 @@ def _verified_record_receipt(result: Any) -> dict[str, Any] | None:
         "message": message,
         "undo_path": payload.get("undo_path"),
     }
-
-
 def _extract_weight(text: str) -> Optional[dict[str, Any]]:
     normalized = _normalize(text)
     has_weight_signal = "体重" in normalized or any(unit in normalized for unit in ("kg", "公斤", "千克", "斤"))

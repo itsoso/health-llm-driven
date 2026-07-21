@@ -192,7 +192,7 @@ def complete_by_ref(
     懒物化逐字节同改前**(byte-identical 存量行为零变化);不引入 ``slot:null`` 段。
     """
     from app.services import agenda_service
-    from app.utils.timezone import get_china_today
+    from app.utils.timezone import get_user_today
 
     # F1:物化前先验对 **所有** status 生效(done 与 skip 同标准)。
     # - 不支持的来源 → ValueError(端点转 400);
@@ -208,7 +208,7 @@ def complete_by_ref(
     # Agenda API 显式传用户本地日；其他既有入口保持中国时区默认，兼容原合同。
     # 同一次闭环会继续把该日期传到 HealthProtocolEvent / MedicationLog，避免海外午夜
     # 附近“列表是 A 日、完成写 B 日”的影子待办。
-    today = day or get_china_today()
+    today = day or get_user_today(db, user_id)
     ev = find_agenda_event(db, user_id, ref, today)
     if ev is None:
         # F5a:懒物化的 scheduled_for 钉到「当日稳定 token」(中国时区今日 00:00),不取整点更不取

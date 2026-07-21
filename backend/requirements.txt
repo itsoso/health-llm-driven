@@ -1,10 +1,11 @@
-fastapi==0.115.0
+fastapi==0.139.2
+starlette==1.3.1
 uvicorn[standard]==0.32.0
 websockets==16.0
 sqlalchemy==2.0.23
 pydantic==2.9.2
 pydantic-settings==2.6.1
-python-dotenv==1.0.0
+python-dotenv==1.2.2
 # PostgreSQL支持
 psycopg2-binary==2.9.9
 sqlalchemy-utils==0.41.1
@@ -18,40 +19,33 @@ python-dateutil==2.8.2
 pandas==2.1.3
 numpy==1.26.2
 alembic==1.12.1
-python-multipart==0.0.6
+python-multipart==0.0.32
+defusedxml==0.7.1
 # 图片处理
-Pillow==10.1.0
+Pillow==12.3.0
 # 用户认证
 passlib[bcrypt]==1.7.4
-# 2026-04-30: 升级修复 CVE PYSEC-2024-232/233 (auth bypass)
-python-jose[cryptography]==3.4.0
 bcrypt==4.0.1
-# 2026-04-30: 升级修复多个 CVE (CVE-2023-50782, CVE-2024-0727, GHSA-h4gh-qq45-vh27,
-# CVE-2026-26007, CVE-2026-34073 等). 跨 5 个大版本, 跑全量回归确认 Garmin/JWT 无破坏
-cryptography==46.0.6
+cryptography==49.0.0
 email-validator==2.0.0
-PyJWT==2.8.0
+PyJWT==2.13.0
 # 请求频率限制
 slowapi==0.1.9
 # PDF解析
 PyMuPDF>=1.27.0
 # Garmin Connect集成
-garminconnect==0.2.38
+garminconnect==0.3.6
 # 知识库RAG系统
 chromadb==0.6.3
-# 测试依赖
-pytest==7.4.3
-pytest-asyncio==0.21.1
-pytest-cov==4.1.0
-pytest-timeout==2.4.0
-
 psutil==5.9.0
 # 阿里云智能搜索 (夸克搜索)
 alibabacloud_iqs20241111==1.6.3
 alibabacloud_tea_openapi>=0.3.0
 alibabacloud_tea_util>=0.3.0
-curl_cffi==0.14.0
-pdfplumber==0.11.8
+curl_cffi==0.15.0
+pdfplumber==0.11.10
+# Explicitly pin the patched transitive ASN.1 parser used by cloud SDKs.
+pyasn1==0.6.4
 sentry-sdk[fastapi]==2.20.0
 dashscope>=1.23.0
 

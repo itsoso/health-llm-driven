@@ -87,6 +87,7 @@
 | `backend/app/config.py` | Pydantic Settings, 所有 env 定义 |
 | `backend/app/models/*.py` | SQLAlchemy ORM 模型；数量见生成的 system-map |
 | `backend/app/models/app_release_policy.py` | 按 platform/channel 保存版本化发布策略；只控制更新路由，不控制医疗规则 |
+| `backend/app/models/agent_capacity.py` | 跨 worker Agent 容量租约；只存身份/时效元数据，不存对话内容 |
 | `backend/app/twin/schema.py` | HealthTwin 分区 Pydantic schema |
 | `backend/main.py` 中间件 | 安全头 / CORS / 限流 / request context |
 | `backend/tests/conftest.py` | 测试基础设施 |
@@ -256,6 +257,9 @@ Mobile useChatEngine
     │ POST /api/v1/agent/stream  (SSE)
     ▼
 api/agent.py::agent_stream
+    │ 先校验附件真实格式，再申请 PostgreSQL AgentCapacityLease
+    │ - 全局默认最多 100 个活跃回合、单用户默认 2 个
+    │ - 租约过期自动回收；正常/异常/断流路径 finally 释放
     │
     │ AgentExecutor.run_stream(user_id, message, conv_id)
     ▼
@@ -273,6 +277,7 @@ _build_system_prompt
     │
     ▼
 _call_llm → LLM 返 tool_call: health_record(type=diet, data={food_items:"鸡蛋,苹果"})
+    │ 每一轮调用前统一检查用户/月 token、TokenPlan Credits 与日调用配额
     │
     │ tool_validator 校验: record_date 幻觉 2023? → 修成今天
     │
@@ -641,7 +646,7 @@ APNs payload `data.deep_link` → mobile `useNotifications` 接收 → `router.p
 SECRET_KEY=<32+ chars>
 DEVICE_ENCRYPTION_KEY=<Fernet key>
 GARMIN_ENCRYPTION_KEY=<Fernet key>
-DATABASE_URL=postgresql://health_user:***@localhost:5432/health_db
+DATABASE_URL=postgresql://health_app_runtime:***@localhost:5432/health_db
 REDIS_URL=redis://localhost:6379/0
 
 # LLM
@@ -670,6 +675,12 @@ SENTRY_DSN=...
 # Garmin (admin, 非 user-facing)
 GARMIN_EMAIL=... GARMIN_PASSWORD=...
 ```
+
+生产 API/Worker 的 `DATABASE_URL` 必须使用非 superuser、非 `BYPASSRLS`、非
+`CREATEDB/CREATEROLE` 的运行账号。`MIGRATION_DATABASE_URL` 不进入应用 `.env`，只存于
+服务器 root 可读的 `/etc/health-app/migration.env`，部署迁移阶段临时加载；迁移账号与运行
+账号相同会直接阻断部署。初次拆分账号使用
+`backend/scripts/provision_database_roles.sql`，真实密码通过 psql variables 注入，禁止写入仓库。
 
 ### 14.2 Test env 最小集
 

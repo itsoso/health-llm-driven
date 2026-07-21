@@ -9,7 +9,7 @@ from app.database import get_db
 from app.services.data_collection import DataCollectionService
 from app.models.daily_health import GarminData
 from app.models.user import User, GarminCredential
-from app.api.deps import get_current_user_required
+from app.api.deps import get_current_user_required, require_self_or_admin
 from app.services.auth import garmin_credential_service
 
 logger = logging.getLogger(__name__)
@@ -21,6 +21,7 @@ async def sync_garmin_data(
     user_id: int,
     target_date: date,
     access_token: Optional[str] = None,
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
     """
@@ -29,6 +30,7 @@ async def sync_garmin_data(
     注意：需要Garmin API的access_token
     如果使用Garmin Connect导出，可以使用手动导入接口
     """
+    require_self_or_admin(current_user, user_id, resource="Garmin 数据")
     service = DataCollectionService()
     result = await service.sync_garmin_data(db, user_id, target_date, access_token)
 
@@ -51,9 +53,11 @@ async def sync_garmin_data_range(
     start_date: date,
     end_date: date,
     access_token: Optional[str] = None,
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
     """批量同步指定日期范围的Garmin数据"""
+    require_self_or_admin(current_user, user_id, resource="Garmin 数据")
     service = DataCollectionService()
     results = []
     errors = []
@@ -96,9 +100,11 @@ async def sync_garmin_data_range(
 def get_sync_status(
     user_id: int,
     days: int = 30,
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
     """获取Garmin数据同步状态（检查哪些日期有数据）"""
+    require_self_or_admin(current_user, user_id, resource="Garmin 数据")
     end_date = date.today()
     start_date = end_date - timedelta(days=days)
 

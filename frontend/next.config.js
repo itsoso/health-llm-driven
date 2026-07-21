@@ -20,6 +20,33 @@ const nextConfig = {
     'http://10.*:3000',
   ],
 
+  async headers() {
+    const contentSecurityPolicy = [
+      "default-src 'self'",
+      "base-uri 'self'",
+      "object-src 'none'",
+      "frame-ancestors 'none'",
+      "form-action 'self'",
+      "script-src 'self' 'unsafe-inline'",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data: blob: https:",
+      "font-src 'self' data:",
+      "connect-src 'self' https: wss:",
+      "media-src 'self' blob: https:",
+      "worker-src 'self' blob:",
+      "upgrade-insecure-requests",
+    ].join('; ');
+    return [{
+      source: '/:path*',
+      headers: [
+        { key: 'Content-Security-Policy', value: contentSecurityPolicy },
+        { key: 'X-Content-Type-Options', value: 'nosniff' },
+        { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+        { key: 'Permissions-Policy', value: 'camera=(self), microphone=(self), geolocation=(self)' },
+      ],
+    }];
+  },
+
   // Web 代理到后端
   async rewrites() {
     const backendUrl = process.env.BACKEND_URL || 'http://localhost:8000';

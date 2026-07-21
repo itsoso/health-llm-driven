@@ -1,63 +1,14 @@
 {
   "name": "@health-app/mini-program",
   "version": "1.0.0",
-  "description": "健康管理系统 - 微信小程序",
-  "templateInfo": {
-    "name": "default",
-    "typescript": true,
-    "css": "sass"
-  },
+  "description": "SECURITY QUARANTINE: source retained, build and release disabled",
+  "private": true,
   "scripts": {
-    "deploy": "taro build --type weapp",
-    "build:weapp": "taro build --type weapp",
-    "dev:weapp": "npm run build:weapp -- --watch",
-    "build:swan": "taro build --type swan",
-    "dev:swan": "npm run build:swan -- --watch",
-    "build:alipay": "taro build --type alipay",
-    "dev:alipay": "npm run build:alipay -- --watch",
-    "build:tt": "taro build --type tt",
-    "dev:tt": "npm run build:tt -- --watch",
-    "build:h5": "taro build --type h5",
-    "dev:h5": "npm run build:h5 -- --watch",
-    "build:rn": "taro build --type rn",
-    "dev:rn": "npm run build:rn -- --watch"
+    "deploy": "node ../../scripts/blocked-inactive-surface.mjs mini-program",
+    "build:weapp": "node ../../scripts/blocked-inactive-surface.mjs mini-program",
+    "dev:weapp": "node ../../scripts/blocked-inactive-surface.mjs mini-program",
+    "audit": "npm audit --omit=dev --audit-level=high"
   },
-  "browserslist": [
-    "last 3 versions",
-    "Android >= 4.1",
-    "ios >= 8"
-  ],
-  "author": "",
-  "license": "MIT",
-  "dependencies": {
-    "@babel/preset-typescript": "7.28.5",
-    "@babel/runtime": "7.28.4",
-    "@tarojs/components": "4.1.10",
-    "@tarojs/helper": "4.1.10",
-    "@tarojs/plugin-framework-react": "4.1.10",
-    "@tarojs/plugin-platform-alipay": "4.1.10",
-    "@tarojs/plugin-platform-jd": "4.1.10",
-    "@tarojs/plugin-platform-qq": "4.1.10",
-    "@tarojs/plugin-platform-swan": "4.1.10",
-    "@tarojs/plugin-platform-tt": "4.1.10",
-    "@tarojs/plugin-platform-weapp": "4.1.10",
-    "@tarojs/react": "4.1.10",
-    "@tarojs/runtime": "4.1.10",
-    "@tarojs/shared": "4.1.10",
-    "@tarojs/taro": "4.1.10",
-    "react": "18.3.1",
-    "react-dom": "18.3.1"
-  },
-  "devDependencies": {
-    "@babel/core": "7.28.5",
-    "@tarojs/binding-darwin-arm64": "4.1.10",
-    "@tarojs/cli": "4.1.10",
-    "@tarojs/webpack5-runner": "4.1.10",
-    "@types/react": "18.3.27",
-    "babel-preset-taro": "4.1.10",
-    "eslint": "8.57.1",
-    "eslint-config-taro": "4.1.10",
-    "sass": "1.50.0",
-    "typescript": "5.9.3"
-  }
+  "dependencies": {},
+  "devDependencies": {}
 }

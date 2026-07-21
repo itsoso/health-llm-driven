@@ -1,4 +1,5 @@
 import Foundation
+import Security
 #if canImport(WatchConnectivity)
 import WatchConnectivity
 #endif
@@ -74,7 +75,19 @@ import WatchConnectivity
     }
 
     private func token() -> String? {
-        UserDefaults(suiteName: appGroup)?.string(forKey: tokenKey)
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: "life.executor.health.shared",
+            kSecAttrAccount as String: tokenKey,
+            kSecAttrAccessGroup as String: appGroup,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        guard status == errSecSuccess,
+              let data = result as? Data else { return nil }
+        return String(data: data, encoding: .utf8)
     }
 
     /// One-way credential seed. Watch 持 token 后可直接 GET /watch/summary,不再要求 iPhone App 前台接力。

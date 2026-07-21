@@ -4,9 +4,9 @@
     "api_routers": 163,
     "celery_tasks": 72,
     "mobile_routes": 122,
-    "model_files": 112,
+    "model_files": 113,
     "safety_rules_total": 64,
-    "service_files": 376,
+    "service_files": 381,
     "specialists": 13,
     "twin_partitions": 15,
     "web_pages": 72

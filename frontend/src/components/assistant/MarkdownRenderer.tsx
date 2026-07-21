@@ -1,7 +1,6 @@
 'use client';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import rehypeRaw from 'rehype-raw';
 import MetricTableCard, { coerceMetricTable, type RevaUiMetricTableData } from './MetricTableCard';
 import MetricEmptyStateCard, { type RevaUiMetricEmptyStateData } from './MetricEmptyStateCard';
 
@@ -135,26 +134,6 @@ function headingFont(variant: Variant): { fontFamily: string } | undefined {
   return undefined;
 }
 
-// 工具步骤徽章 — running/done/failed 三态
-function ToolStep({ name, status }: { name?: string; status?: string }) {
-  const s = (status || 'running').toLowerCase();
-  const label = s === 'done' ? '完成' : s === 'failed' ? '失败' : '执行中';
-  const color = s === 'done'
-    ? 'border-emerald-400/30 bg-emerald-400/8 text-emerald-200'
-    : s === 'failed'
-    ? 'border-rose-400/30 bg-rose-400/8 text-rose-200'
-    : 'border-slate-400/30 bg-slate-700/40 text-slate-200';
-  const dot = s === 'done' ? 'bg-emerald-400' : s === 'failed' ? 'bg-rose-400' : 'bg-slate-300 animate-pulse';
-  return (
-    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-medium mr-1.5 mb-1.5 ${color}`}>
-      <span className={`h-1.5 w-1.5 rounded-full ${dot}`} />
-      <span className="font-mono">{name}</span>
-      <span className="opacity-60">·</span>
-      <span className="opacity-80">{label}</span>
-    </span>
-  );
-}
-
 export default function MarkdownRenderer({ content, variant = 'light' }: { content: string; variant?: Variant }) {
   const s = styles[variant];
   const segments = splitRevaUiSegments(content);
@@ -196,7 +175,6 @@ function MarkdownRendererBase({
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
-      rehypePlugins={[rehypeRaw]}
       components={{
         p: ({ children }) => <p className={s.p}>{children}</p>,
         ul: ({ children }) => <ul className={s.ul}>{children}</ul>,
@@ -223,8 +201,6 @@ function MarkdownRendererBase({
         td: ({ children }) => <td className={s.td}>{children}</td>,
         hr: () => <hr className={s.hr} />,
         a: ({ children, href }) => <a href={href} target="_blank" rel="noopener noreferrer" className={s.a}>{children}</a>,
-        // @ts-expect-error 自定义元素
-        'tool-step': ({ name, status }: any) => <ToolStep name={name} status={status} />,
       }}
     >{content}</ReactMarkdown>
   );

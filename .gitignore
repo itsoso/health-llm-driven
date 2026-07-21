@@ -85,5 +85,8 @@ docs/release/app-store/demo-credentials.local.md
 
 # env 备份绝不入库 (含密钥)
 .env.backup*
+backups/
+*.sql.gz
+*.sql.gz.age
 design/screenshots/
 artifacts/

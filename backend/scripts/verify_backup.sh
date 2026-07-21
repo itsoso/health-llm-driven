@@ -3,27 +3,36 @@
 # 数据库备份持久性自检 + 自愈
 #
 # 与 Claude / 任何外部进程无关, 由服务器 cron 每天 09:xx 跑:
-#   7 9 * * * /opt/health-app/backend/scripts/verify_backup.sh >> /opt/health-app/backups/backup_verify.log 2>&1
+#   7 9 * * * /opt/health-app/backend/scripts/verify_backup.sh >> /var/backups/health-app/logs/backup_verify.log 2>&1
 #
 # 背景: 2026-06-16 发现 03:00 的 cron 备份会神秘消失(原因未锁定)。本脚本在备份生成
 # 几小时后复查: 当天备份不存在 → 立即补一份(自愈), 保证任何时刻都有当天的可回滚备份。
 # ============================================
-set -uo pipefail
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BACKUP_DIR="/opt/health-app/backups"
 TODAY=$(date +%Y-%m-%d)
 
 ENV_FILE="$SCRIPT_DIR/../.env"
 if [ -f "$ENV_FILE" ]; then
     DATABASE_URL=$(grep "^DATABASE_URL=" "$ENV_FILE" | cut -d= -f2-)
+    HEALTH_BACKUP_ROOT=$(grep -m1 "^HEALTH_BACKUP_ROOT=" "$ENV_FILE" | cut -d= -f2- || true)
 fi
+BACKUP_ROOT="${HEALTH_BACKUP_ROOT:-/var/backups/health-app}"
+BACKUP_DIR="$BACKUP_ROOT/database"
 DATABASE_URL="${DATABASE_URL:-}"
 if [ -z "$DATABASE_URL" ]; then
     echo "[$(date)] 🚨 DATABASE_URL 未配置，无法验证或补建备份"
     exit 1
 fi
-DB_NAME=$(echo "$DATABASE_URL" | sed 's|.*/||')
+DB_NAME=$(echo "$DATABASE_URL" | sed 's|.*/||; s|[?#].*||')
+if [[ ! "$DB_NAME" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
+    echo "[$(date)] 🚨 无法解析合法数据库名"
+    exit 1
+fi
+
+mkdir -p "$BACKUP_DIR"
+chmod 700 "$BACKUP_ROOT" "$BACKUP_DIR"
 
 DISK=$(df -h "$BACKUP_DIR" 2>/dev/null | awk 'NR==2{print $4" 可用 ("$5" 已用)"}')
 
@@ -38,13 +47,17 @@ for f in "$BACKUP_DIR/${DB_NAME}_${TODAY}_"*.sql.gz; do
 done
 
 if [ -n "$FOUND" ]; then
+    "$SCRIPT_DIR/verify_backup_restore.sh" "$FOUND"
+    BACKUP_OFFSITE_REQUIRED="${BACKUP_OFFSITE_REQUIRED:-1}" \
+        "$SCRIPT_DIR/archive_backup_offsite.sh" "$FOUND"
     SIZE=$(du -h "$FOUND" | cut -f1)
-    echo "[$(date)] ✅ PASS 当天备份存在: $(basename "$FOUND") ($SIZE) | 磁盘: $DISK"
+    echo "[$(date)] ✅ PASS 当天备份可恢复且站外副本已验证: $(basename "$FOUND") ($SIZE) | 磁盘: $DISK"
 else
     echo "[$(date)] ❌ FAIL 当天($TODAY)无有效备份! 触发自愈补份..."
     if bash "$SCRIPT_DIR/backup_db.sh"; then
         echo "[$(date)] 🔧 自愈成功: 已补当天备份(详见 backup.log)"
     else
         echo "[$(date)] 🚨 自愈失败: pg_dump 不可用, 需人工介入 | 磁盘: $DISK"
+        exit 1
     fi
 fi

@@ -20,11 +20,5 @@
       "esbuild": "0.25.0",
       "postcss": "8.4.31"
     }
-  },
-  "dependencies": {
-    "@tarojs/binding-darwin-x64": "4.1.10"
-  },
-  "devDependencies": {
-    "@tarojs/binding-darwin-arm64": "4.1.10"
   }
 }

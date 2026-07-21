@@ -95,28 +95,18 @@ function SettingsContent() {
                 通过 iPhone 快捷指令，一键语音记录饮食、运动、打卡等健康数据。说出刚做过的事即可自动识别并保存。
               </p>
 
-              {/* 第一步：复制 Token */}
+              {/* 第一步：创建可撤销的外部访问凭证 */}
               <div className="bg-green-50 rounded-lg p-4 border border-green-200">
-                <h3 className="font-semibold text-green-900 mb-2">第一步：复制你的专属 Token</h3>
+                <h3 className="font-semibold text-green-900 mb-2">第一步：创建快捷记录 API Key</h3>
                 <p className="text-sm text-green-800 mb-3">
-                  安装快捷指令后需要填入此 Token 作为身份凭证，点击下方一键复制。
+                  Web 登录凭证不会暴露给页面。请创建一个可单独撤销的 API Key，供快捷指令使用。
                 </p>
-                {token ? (
-                  <button
-                    onClick={() => {
-                      navigator.clipboard.writeText(token);
-                      alert('✅ Token 已复制！\n\n安装快捷指令后，编辑第一步的「文本」块，将 YOUR_TOKEN_HERE 替换为此 Token。');
-                    }}
-                    className="w-full flex items-center justify-between gap-2 bg-white border-2 border-green-300 hover:bg-green-100 active:scale-[0.99] transition-all rounded-lg px-4 py-3 text-left cursor-pointer"
-                  >
-                    <span className="text-xs font-mono text-green-900 break-all flex-1">
-                      {token.slice(0, 28)}...{token.slice(-8)}
-                    </span>
-                    <span className="text-green-700 font-semibold text-sm whitespace-nowrap">📋 点击复制</span>
-                  </button>
-                ) : (
-                  <p className="text-sm text-green-800">请先登录后查看专属 Token。</p>
-                )}
+                <button
+                  onClick={() => router.push('/skills')}
+                  className="inline-flex items-center gap-2 rounded-lg bg-green-700 px-4 py-2 text-sm font-medium text-white hover:bg-green-800"
+                >
+                  管理 API Key
+                </button>
               </div>
 
               {/* 第二步：安装快捷指令模板 */}
@@ -135,14 +125,14 @@ function SettingsContent() {
                 </a>
               </div>
 
-              {/* 第三步：填入 Token */}
+              {/* 第三步：填入 API Key */}
               <div className="bg-orange-50 rounded-lg p-4 border border-orange-200">
-                <h3 className="font-semibold text-orange-900 mb-2">第三步：填入你的 Token</h3>
+                <h3 className="font-semibold text-orange-900 mb-2">第三步：填入 API Key</h3>
                 <ol className="text-sm text-orange-800 space-y-1 list-decimal list-inside">
                   <li>打开「快捷指令」App，找到「健康记录」</li>
                   <li>点右上角 <strong>···</strong> 进入编辑</li>
                   <li>找到顶部的<strong>「文本」块</strong>（内容为 <code className="bg-orange-100 px-1 rounded text-xs">YOUR_TOKEN_HERE</code>）</li>
-                  <li>替换为第一步复制的 Token，保存</li>
+                  <li>替换为第一步创建的 API Key，保存</li>
                 </ol>
                 <p className="text-xs text-orange-600 mt-2">只需设置一次，之后每次运行无需重新输入。</p>
               </div>
@@ -184,20 +174,15 @@ function SettingsContent() {
                 <p className="text-sm text-purple-800 mb-3">
                   安卓手机无法使用 iPhone 快捷指令，可用下方「语音快捷记录」页面，添加到桌面后一点即用，体验一致。
                 </p>
-                {token ? (
-                  <button
-                    onClick={() => {
-                      const url = `https://health.executor.life/quick-record?token=${token}`;
-                      navigator.clipboard.writeText(url);
-                      alert('✅ 链接已复制！\n\n① 用手机浏览器打开此链接\n② 浏览器菜单 →「添加到桌面」\n③ 桌面出现图标，一点即可语音记录');
-                    }}
-                    className="inline-flex items-center gap-2 bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-700 transition-colors"
-                  >
-                    📋 复制语音快捷记录链接
-                  </button>
-                ) : (
-                  <p className="text-sm text-purple-800">请先登录后获取专属链接。</p>
-                )}
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText('https://health.executor.life/quick-record');
+                    alert('✅ 链接已复制！\n\n① 先在浏览器登录\n② 打开此链接\n③ 浏览器菜单 →「添加到桌面」');
+                  }}
+                  className="inline-flex items-center gap-2 bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-700 transition-colors"
+                >
+                  📋 复制语音快捷记录链接
+                </button>
               </div>
 
               {/* 支持的语音指令 */}

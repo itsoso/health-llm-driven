@@ -229,7 +229,6 @@ export const agentApi = {
     fileName?: string,
     extraContext?: string,
   ) {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
     const body: Record<string, any> = {
       message,
       conversation_id: conversationId,
@@ -248,9 +247,9 @@ export const agentApi = {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
         'X-Reva-Client-Caps': CLIENT_CAPS,
       },
+      credentials: 'include',
       body: JSON.stringify(body),
     });
 

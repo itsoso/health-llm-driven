@@ -15,6 +15,7 @@ from app.models.health_protocol import (
     HealthProtocol, HealthProtocolEvent,
     PROTOCOL_DOMAINS, PROTOCOL_MECHANISMS, SKIP_REASONS,
 )
+from app.utils.timezone import get_user_today
 
 logger = logging.getLogger(__name__)
 
@@ -175,7 +176,7 @@ def today_status(
     db: Session, user_id: int, day: Optional[date] = None,
 ) -> List[Dict[str, Any]]:
     """今日各活跃协议的待办 + 完成态(双轨任一轨完成都算)。"""
-    today = day or date.today()
+    today = day or get_user_today(db, user_id)
     out: List[Dict[str, Any]] = []
     for p in list_protocols(db, user_id, active_only=True):
         ev = _today_event(db, p.id, user_id, today)
@@ -255,7 +256,7 @@ def complete_protocol(
         raise ValueError(f"未知 track: {track}")
     if track == "manual" and not p.manual_track_allowed:
         raise ValueError("该协议未开放手工轨")
-    day = day or date.today()
+    day = day or get_user_today(db, user_id)
     ev = _claim_today_event(db, protocol_id, user_id, day)
 
     # 原子 claim:仅当从「非完成」翻成「完成」才算本事务抢到状态转移。
@@ -321,7 +322,7 @@ def auto_observe_protocol(
     p = get_protocol(db, protocol_id, user_id)
     if not p or p.status != "active":
         return None
-    day = day or date.today()
+    day = day or get_user_today(db, user_id)
     ev = _claim_today_event(db, protocol_id, user_id, day)
 
     if ev.status in ("completed", "auto_observed"):
@@ -590,7 +591,7 @@ def skip_protocol(
         return None
     if reason is not None and reason not in SKIP_REASONS:
         raise ValueError(f"未知 skip_reason: {reason}(应为 {SKIP_REASONS})")
-    day = day or date.today()
+    day = day or get_user_today(db, user_id)
     ev = _today_event(db, protocol_id, user_id, day)
     if ev is None:
         ev = HealthProtocolEvent(user_id=user_id, protocol_id=protocol_id, event_date=day)
@@ -613,7 +614,7 @@ def snooze_protocol(
         return None
     if minutes < 5 or minutes > 240:
         raise ValueError("snooze 分钟数需在 5-240 之间")
-    day = day or date.today()
+    day = day or get_user_today(db, user_id)
     ev = _claim_today_event(db, protocol_id, user_id, day)
     if ev.status in ("completed", "auto_observed", "skipped"):
         raise ValueError("已处理的协议不能稍后")
@@ -672,7 +673,7 @@ def resume_protocol(
     p = get_protocol(db, protocol_id, user_id)
     if not p:
         return None
-    day = day or date.today()
+    day = day or get_user_today(db, user_id)
     ev = _today_event(db, protocol_id, user_id, day)
     if ev is None:
         return None

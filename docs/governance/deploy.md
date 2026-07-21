@@ -50,6 +50,17 @@ DATABASE_URL=postgresql://user:pass@localhost:5432/health_db
 # ... 其他配置
 ```
 
+生产数据库采用双角色：应用 `.env` 中的 `DATABASE_URL` 只使用
+`health_app_runtime`；DDL 迁移凭证单独写入服务器
+`/etc/health-app/migration.env`（root:root, `0600`）：
+
+```bash
+MIGRATION_DATABASE_URL=postgresql://health_app_migrator:***@localhost:5432/health_db
+```
+
+`deploy.sh` 只在执行 managed migrations 时加载该文件，随后立即清除变量。文件缺失、迁移
+账号带 superuser/BYPASSRLS 等高权限、或迁移与运行账号相同时，生产部署必须失败。
+
 ### 8.3 服务器信息
 
 | 环境 | 服务器 | 部署路径 | 备注 |
@@ -66,9 +77,10 @@ DATABASE_URL=postgresql://user:pass@localhost:5432/health_db
 1. 检查 `.env` 配置
 2. 推送代码到 GitHub
 3. SSH 到服务器拉取代码
-4. 同步根目录 `.env` 到服务器 `backend/.env` 前，先在服务器同目录备份为 `.env.backup.YYYYMMDD_HHMMSS`
-5. 安装依赖
-6. 重启服务
+4. 在 Git 工作树外创建数据库备份，完成临时库恢复演练及 age 加密站外归档；任一步失败即停止
+5. 同步根目录 `.env` 到服务器 `backend/.env` 前，先备份到 `/var/backups/health-app/env/`，并强制文件权限 `0600`
+6. 安装依赖
+7. 重启服务并通过健康评分
 
 ### 8.5 环境变量同步
 
@@ -82,7 +94,7 @@ vim .env
 ./deploy.sh -e
 ```
 
-同步前 `deploy.sh` 会自动备份服务器当前 `backend/.env`，并保留最近 20 份同目录备份。长期密钥管理策略见 `docs/ops/secrets-management.md`。
+同步前 `deploy.sh` 会自动备份服务器当前 `backend/.env` 到 Git 工作树外，并保留最近 20 份。长期密钥管理策略见 `docs/ops/secrets-management.md`。
 
 ### 8.6 注意事项
 

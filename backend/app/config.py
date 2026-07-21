@@ -22,6 +22,13 @@ class Settings(BaseSettings):
     tokenplan_credits_per_cny: float = 100.0  # 官方示例口径:按量价值 ¥1 约对应 100 Credits
     tokenplan_model_pricing_cny_json: Optional[str] = None  # 覆盖公开人民币单价:{"model":[input,output]}
     tokenplan_monthly_token_quota: int = 0  # 0=未知;配置后 Admin 才能做额度阈值预警
+    # Abuse/cost admission. Token and call caps work for models without public
+    # pricing; Credits additionally enforce the fixed 100k-Credit plan where a
+    # verified rate is available.
+    tokenplan_user_monthly_token_quota: int = 5_000_000
+    tokenplan_user_monthly_credit_quota: float = 5_000.0
+    tokenplan_global_daily_call_quota: int = 10_000
+    tokenplan_user_daily_call_quota: int = 200
     # 备用模型可能产生额外费用；必须显式开启且指定模型，默认关闭。
     llm_auto_recovery_enabled: bool = False
     llm_recovery_model_id: Optional[str] = None
@@ -263,6 +270,12 @@ class Settings(BaseSettings):
     agent_runtime_deadline_seconds: int = 300
     agent_runtime_unleased_grace_seconds: int = 420
     agent_runtime_stream_queue_max_chunks: int = 128
+    # Paid Agent execution admission. Global=100 preserves the stated launch
+    # target; per-user=2 prevents one account from consuming all capacity.
+    agent_max_active_runs_global: int = 100
+    agent_max_active_runs_per_user: int = 2
+    # Must outlive AGENT_SEND_HARD_CAP_SECONDS so crashed workers self-heal.
+    agent_capacity_lease_seconds: int = 420
     # GenUI metric_table 卡片(延迟, Phase-2 rank1)服务端 kill-switch:关=后端绝不发
     # metric_table 卡片、也不注入 GenUI 正文格式契约(逐字节现状)。**主门是 caps 协商**
     # (客户端声明 genui-table-v1);本 flag 只是无需客户端发版即可服务端全局停用的开关。
@@ -478,10 +491,23 @@ class Settings(BaseSettings):
     # CORS 配置，逗号分隔的允许来源列表
     cors_allow_origins: str = ""
 
+    # HttpOnly Web 会话的可信写请求来源。必须是完整 Origin，不支持通配符。
+    web_session_allowed_origins: str = (
+        "https://health.executor.life,http://localhost:3000,http://localhost:30001"
+    )
+
     @property
     def cors_allow_origins_list(self) -> List[str]:
         """将 CORS 允许来源解析为列表"""
         return [origin.strip() for origin in self.cors_allow_origins.split(",") if origin.strip()]
+
+    @property
+    def web_session_allowed_origins_list(self) -> List[str]:
+        return [
+            origin.strip()
+            for origin in self.web_session_allowed_origins.split(",")
+            if origin.strip()
+        ]
 
     def validate_required_security(self) -> None:
         """验证生产环境必须的安全配置"""

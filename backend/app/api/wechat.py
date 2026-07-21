@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional, Dict, List
 from datetime import datetime, timedelta
-from jose import jwt
+import jwt
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 

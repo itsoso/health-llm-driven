@@ -8,6 +8,7 @@ import { useToast } from '@/contexts/ToastContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import { voiceDraftToDietForm, type VoiceFoodParseResponse } from '@/components/diet/voiceFoodDraft';
 import { dietRecordPhotoUrls } from '@/components/diet/dietPhotoAssets';
+import { WEB_SESSION_TOKEN } from '@/services/api/client';
 
 // 使用相对路径，通过Next.js代理到后端
 const API_BASE = '/api';
@@ -90,7 +91,7 @@ function DietContent() {
   const [recognitionResult, setRecognitionResult] = useState<RecognitionResult | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+  const token = WEB_SESSION_TOKEN;
 
   // 获取某日饮食记录
   const { data: dailySummary, isLoading } = useQuery({

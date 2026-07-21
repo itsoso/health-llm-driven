@@ -113,6 +113,7 @@ from app.models.agent_runtime import (
     AgentRuntimeRolloutState as AgentRuntimeRolloutState,
     AgentToolOperation,
 )
+from app.models.agent_capacity import AgentCapacityLease
 # 对话记忆
 from app.models.conversation_memory import ConversationMemory
 # 对话分享

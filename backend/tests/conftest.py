@@ -27,6 +27,25 @@ from main import app  # noqa: E402 - env vars and JSONB SQLite compiler must be 
 
 
 @pytest.fixture(autouse=True)
+def _reset_in_memory_rate_limiters():
+    """Prevent one TestClient case from consuming another case's IP quota."""
+    from app.api import auth, data_export, speech, wechat, workout
+
+    limiters = (
+        auth.limiter,
+        data_export.limiter,
+        speech.limiter,
+        wechat.limiter,
+        workout.limiter,
+    )
+    for limiter in limiters:
+        limiter.reset()
+    yield
+    for limiter in limiters:
+        limiter.reset()
+
+
+@pytest.fixture(autouse=True)
 def _isolate_twin_cache():
     """测试隔离:每个测试前后清空 Redis 中的 twin 缓存,消除跨测试污染。
 

@@ -9,11 +9,82 @@ from sqlalchemy.orm import Session
 from app.database import get_db, set_current_tenant, reset_current_tenant
 from app.models.user import User
 from app.services.auth import auth_service
+from app.services.web_session import (
+    WEB_SESSION_AUTH_SENTINEL,
+    WEB_SESSION_COOKIE,
+    enforce_cookie_request_origin,
+)
 
 logger = logging.getLogger(__name__)
 
+API_KEY_ALLOWED_SCOPES = frozenset({"read", "write"})
+_API_KEY_ALWAYS_BLOCKED_PATHS = (
+    "/api/v1/admin",
+    "/api/v1/family",
+    "/api/v1/user-api-keys",
+    "/api/v1/user-merge",
+)
+_API_KEY_MUTATION_BLOCKED_PATHS = (
+    "/api/v1/auth",
+    "/api/v1/family-health/medications",
+    "/api/v1/medication",
+    "/api/v1/prescriptions",
+    "/api/v1/users",
+)
+
 # OAuth2 密码流配置
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
+
+
+def bind_authenticated_tenant(db: Session, user_id: int) -> None:
+    """Bind the authenticated tenant to the current and future transactions."""
+    uid = int(user_id)
+    db.info["app_user_id"] = uid
+    if db.bind is not None and db.bind.dialect.name == "postgresql":
+        db.execute(
+            text("SELECT set_config('app.user_id', :uid, true)"),
+            {"uid": str(uid)},
+        )
+
+
+def normalize_api_key_scopes(raw_scopes: Optional[str]) -> frozenset[str]:
+    """Return the supported, normalized scopes stored on a user API key."""
+    if not raw_scopes:
+        return frozenset()
+    return frozenset(
+        scope
+        for item in raw_scopes.split(",")
+        if (scope := item.strip().lower()) in API_KEY_ALLOWED_SCOPES
+    )
+
+
+def _path_matches(path: str, prefix: str) -> bool:
+    return path == prefix or path.startswith(f"{prefix}/")
+
+
+def _enforce_api_key_request(request: Request, scopes: frozenset[str]) -> None:
+    path = request.url.path.rstrip("/") or "/"
+    is_mutation = request.method.upper() not in {"GET", "HEAD", "OPTIONS"}
+
+    if any(_path_matches(path, prefix) for prefix in _API_KEY_ALWAYS_BLOCKED_PATHS):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="该操作不允许使用 API Key",
+        )
+    if is_mutation and any(
+        _path_matches(path, prefix) for prefix in _API_KEY_MUTATION_BLOCKED_PATHS
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="该操作不允许使用 API Key",
+        )
+
+    required_scope = "write" if is_mutation else "read"
+    if required_scope not in scopes:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"API Key 缺少 {required_scope} 权限",
+        )
 
 
 async def get_current_user(
@@ -27,12 +98,21 @@ async def get_current_user(
     1. JWT Bearer Token (Authorization: Bearer <jwt>)
     2. X-API-Key 头 (用户 API Key，供 Agent Skills / 外部系统使用)
     """
-    # 1. 尝试 JWT 认证
-    if token:
-        token_preview = token[:20] + "..." if len(token) > 20 else token
-        logger.debug(f"[Auth] 收到token: {token_preview}")
+    bearer_token = token
+    if bearer_token == WEB_SESSION_AUTH_SENTINEL:
+        bearer_token = None
 
-        payload = auth_service.decode_token(token)
+    cookie_token = request.cookies.get(WEB_SESSION_COOKIE) if not bearer_token else None
+    jwt_token = bearer_token or cookie_token
+    is_cookie_auth = bool(cookie_token)
+    if is_cookie_auth:
+        enforce_cookie_request_origin(request)
+
+    # 1. 尝试 JWT 认证：原生端 Bearer 优先，Web 使用 HttpOnly Cookie。
+    if jwt_token:
+        logger.debug("[Auth] 收到 JWT 凭证")
+
+        payload = auth_service.decode_token(jwt_token)
         if payload:
             user_id = payload.get("sub")
             acting_as = payload.get("acting_as")
@@ -43,6 +123,10 @@ async def get_current_user(
                 if acting_as and original_user:
                     target_user = auth_service.get_user_by_id(db, int(acting_as))
                     if target_user:
+                        bind_authenticated_tenant(db, target_user.id)
+                        request.state.auth_type = "cookie" if is_cookie_auth else "jwt"
+                        request.state.api_key_id = None
+                        request.state.auth_scopes = frozenset()
                         request.state.original_user_id = int(original_user)
                         request.state.is_proxy_mode = True
                         logger.debug(f"[Auth] 家庭代管模式: 原始用户 {original_user} → 代管 {acting_as} ({target_user.name})")
@@ -51,6 +135,10 @@ async def get_current_user(
                 # 正常模式
                 user = auth_service.get_user_by_id(db, int(user_id))
                 if user:
+                    bind_authenticated_tenant(db, user.id)
+                    request.state.auth_type = "cookie" if is_cookie_auth else "jwt"
+                    request.state.api_key_id = None
+                    request.state.auth_scopes = frozenset()
                     request.state.is_proxy_mode = False
                     logger.debug(f"[Auth] JWT认证成功: 用户 {user.id} ({user.username})")
                     return user
@@ -58,10 +146,10 @@ async def get_current_user(
             else:
                 logger.warning("[Auth] Token中没有用户ID")
         else:
-            logger.warning(f"[Auth] Token解码失败: {token_preview}")
+            logger.warning("[Auth] Bearer 凭证解码失败")
 
     # 2. Fallback: 尝试 API Key 认证 (X-API-Key 头 或 Bearer token 作为 API Key)
-    x_api_key = request.headers.get("x-api-key") or (token if token else None)
+    x_api_key = request.headers.get("x-api-key") or (bearer_token if bearer_token else None)
     if x_api_key:
         from app.models.user_api_key import UserApiKey
         key_hash = hashlib.sha256(x_api_key.encode()).hexdigest()
@@ -72,12 +160,18 @@ async def get_current_user(
         if api_key:
             user = auth_service.get_user_by_id(db, api_key.user_id)
             if user:
+                scopes = normalize_api_key_scopes(api_key.scopes)
+                _enforce_api_key_request(request, scopes)
+                bind_authenticated_tenant(db, user.id)
+                request.state.auth_type = "api_key"
+                request.state.api_key_id = api_key.id
+                request.state.auth_scopes = scopes
+                request.state.is_proxy_mode = False
                 logger.debug(f"[Auth] API Key认证成功: 用户 {user.id} ({user.username})")
                 return user
-        key_preview = x_api_key[:8] + "..." if len(x_api_key) > 8 else x_api_key
-        logger.warning(f"[Auth] API Key认证失败: {key_preview}")
+        logger.warning("[Auth] API Key认证失败")
 
-    if not token and not x_api_key:
+    if not jwt_token and not x_api_key:
         logger.warning("[Auth] 请求没有携带token或API Key")
     return None
 
@@ -110,6 +204,21 @@ def get_current_user_id(current_user: User = Depends(get_current_user_required))
     return current_user.id
 
 
+def require_self_or_admin(current_user: User, user_id: int, *, resource: str = "用户数据") -> int:
+    """Authorize a legacy explicit-user route without trusting its selector.
+
+    New client surfaces should use ``/me`` routes.  Compatibility routes that
+    still accept ``user_id`` must call this guard before touching user data.
+    """
+    target_user_id = int(user_id)
+    if target_user_id != int(current_user.id) and not getattr(current_user, "is_admin", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"无权访问该{resource}",
+        )
+    return target_user_id
+
+
 def tenant_scope(
     user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
@@ -130,11 +239,9 @@ def tenant_scope(
     # 主路径:把租户写到 session.info —— after_begin 直接从 session 拿,跨 commit 持续,
     # 不依赖 contextvar 跨 context 传播(生产实测 contextvar 传不到 post-commit 事务的
     # after_begin → audit/raw 写被 RLS 拦 500)。
-    db.info["app_user_id"] = int(user.id)
+    bind_authenticated_tenant(db, user.id)
     # 当前已开事务(auth 查询所开,after_begin 当时还没租户)显式补设一次;
     # set_config 可参数化、local=true 同事务有效。后续事务由 after_begin + session.info 接力。
-    if db.bind is not None and db.bind.dialect.name == "postgresql":
-        db.execute(text("SELECT set_config('app.user_id', :uid, true)"), {"uid": str(int(user.id))})
     try:
         yield user
     finally:

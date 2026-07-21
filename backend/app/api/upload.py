@@ -8,7 +8,7 @@ from urllib.parse import urlsplit
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
 from fastapi.responses import FileResponse
 from typing import Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.models.user import User
 from app.api.deps import get_current_user, get_current_user_required
@@ -19,6 +19,12 @@ from app.services.private_uploads import (
     verify_signed_private_upload_url,
 )
 from app.utils.image_compression import compress_image, should_compress
+from app.services.secure_upload import (
+    UploadContentInvalid,
+    UploadTooLarge,
+    read_upload_limited,
+    validate_image_bytes,
+)
 from sqlalchemy.orm import Session
 
 router = APIRouter()
@@ -46,7 +52,7 @@ class UploadResponse(BaseModel):
 
 class Base64UploadRequest(BaseModel):
     """Base64上传请求"""
-    image_base64: str
+    image_base64: str = Field(..., min_length=1, max_length=14_000_000)
     image_type: str = "jpeg"
     category: str = "diet"  # 分类: diet, medical, avatar 等
 
@@ -151,18 +157,14 @@ async def upload_image(
             detail=f"不支持的文件类型: {extension}，允许: {', '.join(ALLOWED_EXTENSIONS)}"
         )
 
-    # 读取文件内容
-    content = await file.read()
-
-    # 检查文件大小
-    if len(content) > MAX_FILE_SIZE:
-        raise HTTPException(
-            status_code=400,
-            detail=f"文件太大，最大允许 {MAX_FILE_SIZE // 1024 // 1024}MB"
-        )
-
-    # 验证图片内容
-    validate_image_content(content)
+    try:
+        content = await read_upload_limited(file, max_bytes=MAX_FILE_SIZE)
+        detected_kind = validate_image_bytes(content, declared_extension=extension)
+    except UploadTooLarge as exc:
+        raise HTTPException(status_code=413, detail="图片过大") from exc
+    except UploadContentInvalid as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    extension = detected_kind
 
     # 获取原始图片信息
     original_size = len(content)
@@ -253,7 +255,7 @@ async def upload_image_base64(
         if "," in base64_data:
             base64_data = base64_data.split(",", 1)[1]
 
-        image_data = base64.b64decode(base64_data)
+        image_data = base64.b64decode(base64_data, validate=True)
 
         # 检查大小
         if len(image_data) > MAX_FILE_SIZE:
@@ -262,8 +264,10 @@ async def upload_image_base64(
                 detail=f"图片太大，最大允许 {MAX_FILE_SIZE // 1024 // 1024}MB"
             )
 
-        # 验证图片内容
-        validate_image_content(image_data)
+        image_type = validate_image_bytes(
+            image_data,
+            declared_extension=image_type,
+        )
 
         # 获取原始图片信息
         original_size = len(image_data)

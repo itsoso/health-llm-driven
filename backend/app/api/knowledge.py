@@ -21,9 +21,18 @@ from app.services.knowledge.vectorstore import vector_store
 from app.services.knowledge.rag_pipeline import rag_pipeline
 from app.services.knowledge.document_loader import document_loader
 from app.services.knowledge.document_loader_enhanced import enhanced_loader, zhang_zhanhui_loader
+from app.services.secure_upload import (
+    UploadContentInvalid,
+    UploadTooLarge,
+    decode_utf8_text,
+    read_upload_limited,
+)
 
 router = APIRouter(prefix="/knowledge", tags=["knowledge-base"])
 logger = logging.getLogger(__name__)
+
+MAX_KNOWLEDGE_FILE_BYTES = 5 * 1024 * 1024
+MAX_KNOWLEDGE_BATCH_FILES = 20
 
 
 def _ensure_legacy_knowledge_runtime_enabled() -> None:
@@ -257,6 +266,12 @@ async def upload_course_files(
             detail="知识库服务不可用"
         )
 
+    if len(files) > MAX_KNOWLEDGE_BATCH_FILES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"一次最多上传 {MAX_KNOWLEDGE_BATCH_FILES} 个文件",
+        )
+
     # 解析目标人群
     try:
         target_audience_list = json.loads(target_audiences)
@@ -292,11 +307,14 @@ async def upload_course_files(
 
             try:
                 # 读取文件内容
-                content = await file.read()
+                content = await read_upload_limited(
+                    file,
+                    max_bytes=MAX_KNOWLEDGE_FILE_BYTES,
+                )
                 file_size_kb = len(content) / 1024
                 logger.info(f"[课程上传] 文件大小: {file_size_kb:.1f} KB")
 
-                text = content.decode("utf-8")
+                text = decode_utf8_text(content, label="课程文件")
 
                 # 使用增强版加载器处理
                 documents = enhanced_loader.load_course_markdown(
@@ -318,12 +336,12 @@ async def upload_course_files(
 
                 logger.info(f"[课程上传] 文件 {filename} 处理完成，生成 {len(documents)} 个文档块")
 
-            except UnicodeDecodeError:
+            except (UnicodeDecodeError, UploadContentInvalid, UploadTooLarge) as exc:
                 logger.error(f"[课程上传] 文件 {filename} 编码错误")
                 file_results.append({
                     "filename": filename,
                     "success": False,
-                    "error": "文件编码错误，请使用 UTF-8 编码"
+                    "error": str(exc)
                 })
             except Exception as e:
                 logger.error(f"[课程上传] 处理文件 {filename} 失败: {e}")
@@ -500,10 +518,13 @@ async def upload_document(
     try:
         # 读取文件内容
         logger.info(f"[知识库上传] 用户 {current_user.id} 开始上传文件: {filename}")
-        content = await file.read()
+        content = await read_upload_limited(
+            file,
+            max_bytes=MAX_KNOWLEDGE_FILE_BYTES,
+        )
         file_size_kb = len(content) / 1024
         logger.info(f"[知识库上传] 文件大小: {file_size_kb:.1f} KB")
-        text = content.decode("utf-8")
+        text = decode_utf8_text(content, label="知识库文件")
 
         # 根据文件类型处理
         if ext == "json":
@@ -562,11 +583,16 @@ async def upload_document(
             "file_type": ext
         }
 
-    except UnicodeDecodeError:
+    except (UnicodeDecodeError, UploadContentInvalid) as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="文件编码错误，请使用 UTF-8 编码"
+            detail=str(exc)
         )
+    except UploadTooLarge as exc:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="知识库文件过大，最大 5MB",
+        ) from exc
 
 
 @router.post("/search", summary="搜索知识库")
