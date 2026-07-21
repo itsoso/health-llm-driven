@@ -18,7 +18,10 @@ from app.services.agent_executor import AgentExecutor
 from app.services.agent_kernel.context import build_turn_snapshot
 from app.services.agent_kernel.tool_gateway import ToolGateway
 from app.services.agent_kernel.types import ToolExecutionRequest, TurnSnapshot
-from app.services.agent_write_outcome import classify_write_execution
+from app.services.agent_write_outcome import (
+    classify_write_execution,
+    write_result_declares_non_success,
+)
 from app.twin.cache import invalidate_twin
 from app.utils.timezone import get_china_now
 
@@ -273,6 +276,8 @@ def _verified_record_receipt(result: Any) -> dict[str, Any] | None:
     else:
         return None
     if not isinstance(payload, dict):
+        return None
+    if write_result_declares_non_success(payload):
         return None
     if payload.get("success") is not True:
         return None

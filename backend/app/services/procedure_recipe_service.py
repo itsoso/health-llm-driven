@@ -439,6 +439,15 @@ async def replay(
         )
         result_text = str(result or "")
         explicit_outcome = classify_explicit_write_execution(result_text)
+        # Terminal-success status alone is not a receipt. The Executor validates
+        # resource type/id after replay returns; do not pre-mark that result as a
+        # failure here or a later verified receipt would still render as failed.
+        # Missing/invalid identity is still rejected by write_completed there.
+        explicit_failure = bool(
+            explicit_outcome
+            and explicit_outcome.status != "verified"
+            and explicit_outcome.error_code != "missing_receipt"
+        )
         confirmation_required = bool(
             explicit_outcome
             and explicit_outcome.error_code in {
@@ -458,6 +467,6 @@ async def replay(
             ),
             "error": (
                 result_text.startswith("Error")
-                or bool(explicit_outcome and explicit_outcome.status != "verified")
+                or explicit_failure
             ),
         }

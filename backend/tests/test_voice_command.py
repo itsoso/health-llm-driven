@@ -86,6 +86,29 @@ async def test_execute_does_not_report_structured_policy_rejection_as_recorded(
     assert "未写入" in result["message"]
 
 
+@pytest.mark.asyncio
+async def test_execute_does_not_promote_uncertain_result_with_identity(
+    db,
+    test_user,
+    service,
+    monkeypatch,
+):
+    async def uncertain_tool(*_args, **_kwargs):
+        return (
+            '{"status":"uncertain","dispatch_started":true,"success":true,'
+            '"record_id":72,"message":"已记录体重72.5kg"}'
+        )
+
+    monkeypatch.setattr(AgentExecutor, "_execute_tool", uncertain_tool)
+
+    result = await service.execute("体重72.5kg")
+
+    assert result is not None
+    assert result["execution_status"] == "unverified_result"
+    assert "已记录" not in result["message"]
+    assert result.get("record_id") is None
+
+
 class TestVoiceCommandAPI:
     def test_api_auto_records_explicit_water_voice_command(self, client, db):
         from app.services.auth import auth_service

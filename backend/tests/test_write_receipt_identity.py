@@ -10,6 +10,8 @@
 """
 import json
 
+import pytest
+
 from app.services.agent_executor import (
     _receipt_resource_identity,
     _write_receipt_from_tool_result,
@@ -111,6 +113,81 @@ def test_pending_smart_reminder_is_a_verified_persisted_write():
 def test_pending_non_reminder_write_stays_fail_closed():
     """Do not weaken the write gate for ordinary records."""
     shape = json.dumps({"id": 151, "status": "pending"})
+
+    assert _write_receipt_from_tool_result("health_record", "diet", shape) is None
+
+
+@pytest.mark.parametrize(
+    "status",
+    ["uncertain", "in_flight", "processing", "queued", "reconciliation_required"],
+)
+def test_nonterminal_status_with_resource_identity_never_builds_receipt(status):
+    """An ID does not prove completion while the producer declares a nonterminal state."""
+    shape = json.dumps(
+        {
+            "status": status,
+            "dispatch_started": True,
+            "resource_type": "diet_record",
+            "resource_id": 829,
+            "message": "已记录晚餐",
+        },
+        ensure_ascii=False,
+    )
+
+    assert _write_receipt_from_tool_result("health_record", "diet", shape) is None
+    assert _write_tool_completed("health_record", {"record_type": "diet"}, shape) is False
+
+
+def test_unknown_explicit_status_with_resource_identity_stays_fail_closed():
+    shape = json.dumps(
+        {
+            "status": "awaiting_replication",
+            "resource_type": "diet_record",
+            "resource_id": 830,
+        }
+    )
+
+    assert _write_receipt_from_tool_result("health_record", "diet", shape) is None
+
+
+def test_registered_terminal_status_with_resource_identity_remains_verifiable():
+    shape = json.dumps(
+        {
+            "status": "recorded",
+            "resource_type": "diet_record",
+            "resource_id": 831,
+        }
+    )
+
+    receipt = _write_receipt_from_tool_result("health_record", "diet", shape)
+
+    assert receipt is not None
+    assert receipt["resource_id"] == "831"
+
+
+def test_aigc_draft_pending_confirmation_is_a_verified_persisted_write():
+    shape = json.dumps(
+        {
+            "id": "aigc_confirm_0123456789abcdef0123456789abcdef",
+            "resource_type": "aigc_media_confirmation",
+            "status": "pending_user_confirmation",
+        }
+    )
+
+    receipt = _write_receipt_from_tool_result("draft_aigc_media", {}, shape)
+
+    assert receipt is not None
+    assert receipt["resource_type"] == "aigc_media_confirmation"
+
+
+def test_pending_user_confirmation_is_not_generic_write_success():
+    shape = json.dumps(
+        {
+            "id": 832,
+            "resource_type": "diet_record",
+            "status": "pending_user_confirmation",
+        }
+    )
 
     assert _write_receipt_from_tool_result("health_record", "diet", shape) is None
 

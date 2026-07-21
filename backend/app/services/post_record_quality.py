@@ -608,7 +608,7 @@ def build_post_record_quality_response(
 ) -> Optional[dict[str, Any]]:
     if (
         write_verified is False
-        or _result_is_failed(result)
+        or (write_verified is not True and _result_is_failed(result))
         or not isinstance(record_data, dict)
     ):
         return None

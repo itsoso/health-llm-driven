@@ -9,6 +9,7 @@ only for older tools that have not migrated yet.
 from __future__ import annotations
 
 import json
+from collections.abc import Collection
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -32,8 +33,43 @@ _REJECTED_STATUSES = {
     "canceled",
 }
 _FAILED_STATUSES = {"needs_confirmation", "confirmation_required"}
-_UNCERTAIN_STATUSES = {"uncertain", "in_flight", "pending"}
-_COMPLETED_STATUSES = {"verified", "success", "completed"}
+_UNCERTAIN_STATUSES = {
+    "uncertain",
+    "in_flight",
+    "pending",
+    "processing",
+    "queued",
+    "executing",
+    "running",
+    "retrying",
+    "reconciliation_required",
+    "partial",
+    "timeout",
+    "timed_out",
+}
+_COMPLETED_STATUSES = {
+    "verified",
+    "success",
+    "completed",
+    "recorded",
+    "created",
+    "updated",
+    "deleted",
+    "saved",
+    "done",
+    "taken",
+    "skipped",
+    "dismissed",
+    "resolved",
+    "active",
+    "paused",
+    "scheduled",
+    "accepted",
+    "placed",
+    "sent",
+    "executed",
+    "ok",
+}
 _LOCAL_VALIDATION_MARKERS = (
     "参数解析失败",
     "只读预生成回合不执行写入/变更操作",
@@ -170,3 +206,36 @@ def classify_explicit_write_execution(
     if not status and not has_explicit_failure:
         return None
     return classify_write_execution(payload)
+
+
+def write_result_declares_non_success(
+    result: Any,
+    *,
+    allow_pending: bool = False,
+    allowed_statuses: Collection[str] = (),
+) -> bool:
+    """Return whether a structured result explicitly forbids a success receipt.
+
+    Resource identity proves which object a tool refers to, not that its
+    mutation reached a terminal success state. Receipt builders and direct
+    voice shortcuts share this gate so transitional or failed payloads cannot
+    be promoted merely because they also contain an ID.
+    """
+    payload = _structured_payload(result)
+    if payload is None:
+        return False
+
+    if payload.get("success") is False or payload.get("ok") is False:
+        return True
+    error = payload.get("error")
+    if error not in (None, "", False, {}, []):
+        return True
+
+    status = str(payload.get("status") or "").strip().lower()
+    if status == "pending" and allow_pending:
+        return False
+    if status in allowed_statuses:
+        return False
+    if status and status not in _COMPLETED_STATUSES:
+        return True
+    return False

@@ -251,6 +251,19 @@ def test_exercise_actions_unchanged_by_diet_adjust_work():
     assert all(a["id"] != "adjust-record" for a in actions)
 
 
+def test_verified_receipt_allows_quality_card_for_success_status():
+    response = build_post_record_quality_response(
+        "diet",
+        {"meal_type": "dinner", "food_items": "烤鱼", "calories": 380},
+        result='{"status":"success","id":701}',
+        personal_context="",
+        write_verified=True,
+    )
+
+    assert response is not None
+    assert response["cards"][0]["type"] == "record_quality"
+
+
 def test_multi_record_quality_responses_are_aggregated_not_last_one_wins():
     diet = build_post_record_quality_response(
         "diet",

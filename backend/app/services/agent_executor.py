@@ -19,7 +19,7 @@ import math
 import re
 import time
 from datetime import UTC, date, datetime, time as datetime_time, timezone, timedelta
-from typing import AsyncGenerator, Dict, Any, List, Mapping, Optional, Sequence, Tuple
+from typing import AsyncGenerator, Collection, Dict, Any, List, Mapping, Optional, Sequence, Tuple
 from urllib.parse import urlencode
 
 import httpx
@@ -50,6 +50,7 @@ from app.services.agent_turn_outcome import classify_agent_turn_outcome
 from app.services.agent_write_outcome import (
     classify_explicit_write_execution,
     classify_write_execution,
+    write_result_declares_non_success,
 )
 from app.services.dynamic_card_persistence import cards_for_persistence
 from app.services.utterance_intent_classifier import classify_agent_utterance
@@ -2629,6 +2630,7 @@ def _write_result_payload(
     result: Any,
     *,
     allow_pending: bool = False,
+    allowed_statuses: Collection[str] = (),
 ) -> Optional[Dict[str, Any]]:
     if isinstance(result, dict):
         payload = result
@@ -2642,23 +2644,13 @@ def _write_result_payload(
             return None
     else:
         return None
-    if (
-        not isinstance(payload, dict)
-        or payload.get("success") is False
-        or payload.get("ok") is False
+    if not isinstance(payload, dict):
+        return None
+    if write_result_declares_non_success(
+        payload,
+        allow_pending=allow_pending,
+        allowed_statuses=allowed_statuses,
     ):
-        return None
-    error = payload.get("error")
-    if error not in (None, "", False, {}, []):
-        return None
-    status = str(payload.get("status") or "").strip().lower()
-    rejected_statuses = {
-        "error", "failed", "needs_confirmation", "rejected",
-        "cancelled", "canceled", "not_found", "denied",
-    }
-    if not allow_pending:
-        rejected_statuses.add("pending")
-    if status in rejected_statuses:
         return None
     message = str(payload.get("message") or "")
     if any(marker in message for marker in _WRITE_RESULT_FAILURE_MARKERS):
@@ -3139,6 +3131,11 @@ def _write_receipt_from_tool_result(
         allow_pending=(
             tool_name == "health_record"
             and normalized_record_type == "reminder"
+        ),
+        allowed_statuses=(
+            {"pending_user_confirmation"}
+            if tool_name == "draft_aigc_media"
+            else set()
         ),
     )
     if payload is None:
@@ -4353,7 +4350,11 @@ def _health_record_card_descriptor(
         or not result
         or result.startswith("Error")
         or result.startswith("[NEEDS_CONFIRMATION]")
-        or bool(explicit_outcome and explicit_outcome.status != "verified")
+        or bool(
+            write_verified is not True
+            and explicit_outcome
+            and explicit_outcome.status != "verified"
+        )
     ):
         return None
     kind = _normalize_fast_record_kind(record_type)
@@ -6825,7 +6826,10 @@ class AgentExecutor:
                 # 文本式工具调用(Tool calls:\n- xxx)无参数可解析 → 重提示结构化重试。
                 if not tool_calls and _is_botched_text_tool_call(content, tools):
                     if _round < MULTI_MODEL_MAX_LEAD_ROUNDS - 1:
-                        logger.warning("[agent_executor] 文本式工具调用(多模型路), 重提示重试. preview=%s", content[:120])
+                        logger.warning(
+                            "[agent_executor] 文本式工具调用(多模型路), 重提示重试. chars=%s",
+                            len(content),
+                        )
                         lead_messages.append({"role": "assistant", "content": content})
                         lead_messages.append({"role": "user", "content": (
                             "你刚才把工具调用写成了文本(例如 \"Tool calls:\\n- health_query\"),"
@@ -7914,7 +7918,7 @@ class AgentExecutor:
                     if messages[i].get("role") == "user":
                         messages[i]["content"] = enriched_message
                         break
-                logger.info(f"[Vision] 图片识别完成: {vision_description[:200]}")
+                logger.info("[Vision] 图片识别完成 chars=%s", len(vision_description))
             else:
                 _attach_images_to_last_user_message(messages, message, images)
         pre_stages["vision_ms"] = _pre_stage(_t_stage) if images else 0
@@ -8333,7 +8337,18 @@ class AgentExecutor:
                                 model_name = getattr(p, "model", None) or getattr(p, "default_model", None) or getattr(p, "provider_name", None)
                         except Exception:
                             pass
-                logger.info(f"LLM response type={type(response).__name__}, is_dict={isinstance(response, dict)}, has_tool_calls={isinstance(response, dict) and bool(response.get('tool_calls'))}, preview={str(response)[:200]}")
+                response_is_dict = isinstance(response, dict)
+                response_tool_calls = response.get("tool_calls") if response_is_dict else None
+                response_content = response.get("content") if response_is_dict else None
+                logger.info(
+                    "LLM response type=%s is_dict=%s has_tool_calls=%s "
+                    "tool_call_count=%s content_chars=%s",
+                    type(response).__name__,
+                    response_is_dict,
+                    bool(response_tool_calls),
+                    len(response_tool_calls) if isinstance(response_tool_calls, list) else 0,
+                    len(str(response_content or "")),
+                )
 
                 if isinstance(response, dict) and not response.get("tool_calls"):
                     _resp_content = response.get("content") or ""
@@ -8382,8 +8397,10 @@ class AgentExecutor:
                             # 仍无 tools = 空转)。正确性 > 省 token。
                             keep_tools_after_synthesis_miss = True
                         logger.warning(
-                            "[agent_executor] 文本式工具调用未结构化, 重提示重试 (round %d). preview=%s",
-                            round_idx + 1, botched[:120],
+                            "[agent_executor] 文本式工具调用未结构化, 重提示重试 "
+                            "(round %d). chars=%s",
+                            round_idx + 1,
+                            len(botched),
                         )
                         messages.append({"role": "assistant", "content": botched})
                         messages.append({"role": "user", "content": (
@@ -12324,7 +12341,11 @@ class AgentExecutor:
                     return None
                 return f"普通图片描述（非结构化，不得据此写入饮食记录）: {description}"
             else:
-                logger.warning(f"[Vision] 图片分析失败: HTTP {resp.status_code} {resp.text[:200]}")
+                logger.warning(
+                    "[Vision] 图片分析失败: HTTP %s response_chars=%s",
+                    resp.status_code,
+                    len(resp.text or ""),
+                )
                 return None
         except Exception as e:
             logger.warning(f"[Vision] 图片分析异常: {e}")
@@ -14848,7 +14869,10 @@ class AgentExecutor:
                 try:
                     tap_record_id = (json.loads(tap_result) or {}).get("record_id")
                 except (json.JSONDecodeError, TypeError, ValueError):
-                    logger.warning("[health_record] supplement tap 响应不可解析: %r", tap_result[:120])
+                    logger.warning(
+                        "[health_record] supplement tap 响应不可解析 chars=%s",
+                        len(tap_result),
+                    )
                 return json.dumps(
                     {
                         "message": f"已把「{name}」加入补剂库并完成今日打卡（补剂号 {created['id']}，说「撤销」可移除）",
@@ -14994,7 +15018,11 @@ class AgentExecutor:
             path, method, payload = record_map[rtype]
             if method == "POST":
                 result = await self._api_post(f"{base}{path}", headers, payload)
-                logger.info(f"[health_record] type={rtype} result={result[:200]}")
+                logger.info(
+                    "[health_record] type=%s result_chars=%s",
+                    rtype,
+                    len(str(result or "")),
+                )
                 return result
         return f"Error: 不支持的记录类型 {rtype}"
 

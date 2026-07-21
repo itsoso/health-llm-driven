@@ -134,3 +134,23 @@ def test_non_verified_structured_write_does_not_build_record_card(status):
         result,
         write_verified=False,
     ) is None
+
+
+def test_verified_receipt_allows_card_for_legacy_success_status():
+    result = json.dumps(
+        {
+            "status": "success",
+            "id": 701,
+            "resource_type": "diet_record",
+        }
+    )
+
+    card = _health_record_card_descriptor(
+        "diet",
+        {"meal_type": "dinner", "food_items": "烤鱼", "calories": 380},
+        result,
+        write_verified=True,
+    )
+
+    assert card is not None
+    assert card["data"]["type"] == "diet"

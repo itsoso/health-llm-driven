@@ -290,6 +290,94 @@ async def test_replay_uses_shared_structured_write_outcome_classifier(
     assert outcomes[-1]["error"] is True
     assert outcomes[-1]["needs_confirmation"] is needs_confirmation
 
+
+@pytest.mark.asyncio
+async def test_replay_terminal_success_with_receipt_is_not_reported_as_failed(
+    db, auth_user_and_headers, monkeypatch
+):
+    """终态成功先由 Executor 验证资源身份，不能在 Recipe 层提前判失败。"""
+    user, _ = auth_user_and_headers
+    _insert_recipe(
+        db,
+        user.id,
+        phrases=["记录配方饮水"],
+        steps=[{
+            "tool": "health_record",
+            "args_template": {
+                "record_type": "water",
+                "data": {"amount": 250},
+            },
+        }],
+    )
+    executor = AgentExecutor(db)
+    _mock_llm_never_called(executor, monkeypatch)
+    _capture_api(
+        executor,
+        monkeypatch,
+        response=json.dumps({
+            "status": "recorded",
+            "resource_type": "water_record",
+            "record_id": 123,
+        }),
+    )
+
+    events = await _run(executor, user.id, "记录配方饮水", channel="typed")
+
+    tool_result = next(
+        event["data"] for event in events if event.get("event") == "tool_result"
+    )
+    assert tool_result["write_completed"] is True
+    assert tool_result["receipt"]["verified"] is True
+    final_text = "".join(
+        event["data"]["content"]
+        for event in events
+        if event.get("event") == "token"
+    )
+    assert "已记录" in final_text
+    assert "没有成功写入" not in final_text
+
+
+@pytest.mark.asyncio
+async def test_replay_terminal_success_without_identity_remains_failed(
+    db, auth_user_and_headers, monkeypatch
+):
+    """只有成功状态、没有资源身份时仍须 fail closed，避免伪造写入成功。"""
+    user, _ = auth_user_and_headers
+    _insert_recipe(
+        db,
+        user.id,
+        phrases=["记录无回执饮水"],
+        steps=[{
+            "tool": "health_record",
+            "args_template": {
+                "record_type": "water",
+                "data": {"amount": 250},
+            },
+        }],
+    )
+    executor = AgentExecutor(db)
+    _mock_llm_never_called(executor, monkeypatch)
+    _capture_api(
+        executor,
+        monkeypatch,
+        response=json.dumps({"status": "recorded"}),
+    )
+
+    events = await _run(executor, user.id, "记录无回执饮水", channel="typed")
+
+    tool_result = next(
+        event["data"] for event in events if event.get("event") == "tool_result"
+    )
+    assert tool_result["write_completed"] is False
+    assert "receipt" not in tool_result
+    final_text = "".join(
+        event["data"]["content"]
+        for event in events
+        if event.get("event") == "token"
+    )
+    assert "没有成功写入" in final_text
+
+
 @pytest.mark.asyncio
 async def test_replay_never_auto_medication_still_requires_confirmation(
     db, auth_user_and_headers, monkeypatch
