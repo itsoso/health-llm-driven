@@ -166,7 +166,11 @@ def extract_from_content(
         try:
             raw = json.loads(cleaned)
         except (json.JSONDecodeError, TypeError) as e:
-            logger.info(f"[action_card.extract] LLM 输出不是 JSON, 跳过: {e} raw={cleaned[:200]!r}")
+            logger.info(
+                "[action_card.extract] LLM 输出不是 JSON, 跳过 error_type=%s response_len=%s",
+                type(e).__name__,
+                len(cleaned),
+            )
             return ExtractedFields()
 
         if not isinstance(raw, dict):
@@ -174,5 +178,8 @@ def extract_from_content(
 
         return _validate_and_clean(raw)
     except Exception as e:  # noqa: BLE001 - 旁路, 任何失败都吞
-        logger.info(f"[action_card.extract] LLM 抽取失败 (旁路, 卡片仍创建): {e}")
+        logger.info(
+            "[action_card.extract] LLM 抽取失败 (旁路, 卡片仍创建) error_type=%s",
+            type(e).__name__,
+        )
         return ExtractedFields()

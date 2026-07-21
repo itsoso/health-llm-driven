@@ -1,8 +1,142 @@
 """家庭健康管理 API 测试 — 体检报告 + 指标分析"""
+import base64
+import io
+import json
+
 import pytest
 from datetime import date
+from pydantic import ValidationError
+from PIL import Image
 
 from app.models.family_health import MedicalReport, MedicalIndicator
+from app.models.medication import Medication
+
+
+def _jpeg_base64() -> str:
+    buffer = io.BytesIO()
+    Image.new("RGB", (4, 4), "white").save(buffer, format="JPEG")
+    return base64.b64encode(buffer.getvalue()).decode("ascii")
+
+
+def test_report_upload_schema_limits_page_count():
+    from app.api.family_health import ReportUploadRequest
+
+    with pytest.raises(ValidationError):
+        ReportUploadRequest(
+            report_date=date(2026, 7, 21),
+            image_base64_list=[_jpeg_base64()] * 21,
+        )
+
+
+def test_report_upload_rejects_when_bounded_worker_queue_is_full(
+    client,
+    auth_user_and_headers,
+):
+    from app.api import family_health
+
+    _, headers = auth_user_and_headers
+    acquired = []
+    try:
+        for _ in range(4):
+            assert family_health._REPORT_JOB_SLOTS.acquire(blocking=False)
+            acquired.append(True)
+        response = client.post(
+            "/api/v1/family-health/medical-reports/upload",
+            headers=headers,
+            json={
+                "report_date": "2026-07-21",
+                "image_base64_list": [_jpeg_base64()],
+            },
+        )
+        assert response.status_code == 429
+    finally:
+        for _ in acquired:
+            family_health._REPORT_JOB_SLOTS.release()
+
+
+def test_pdf_render_rejects_more_than_page_limit():
+    import fitz
+
+    from app.api.family_health import _pdf_to_images_base64
+    from app.services.secure_upload import UploadTooLarge
+
+    document = fitz.open()
+    for _ in range(21):
+        document.new_page()
+    payload = base64.b64encode(document.tobytes()).decode("ascii")
+    document.close()
+
+    with pytest.raises(UploadTooLarge):
+        _pdf_to_images_base64(payload)
+
+
+def test_medication_recognition_returns_draft_without_writing(
+    client,
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+):
+    _, headers = auth_user_and_headers
+
+    class VisionProvider:
+        async def chat_with_vision(self, **_kwargs):
+            return json.dumps({
+                "name": "测试药",
+                "category": "通用名",
+                "dosage": "5mg",
+                "frequency": "每日1次",
+                "timing": "morning",
+                "indication": "测试",
+                "notes": "待用户核对",
+            })
+
+    monkeypatch.setattr(
+        "app.services.llm.get_vision_provider",
+        lambda: VisionProvider(),
+    )
+
+    response = client.post(
+        "/api/v1/family-health/medications/recognize",
+        headers=headers,
+        json={"image_base64": _jpeg_base64()},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["requires_confirmation"] is True
+    assert payload["recognized"]["name"] == "测试药"
+    assert db.query(Medication).count() == 0
+
+
+def test_report_upload_marks_report_failed_when_worker_submission_fails(
+    client,
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+):
+    _, headers = auth_user_and_headers
+
+    def fail_submit(*_args, **_kwargs):
+        raise RuntimeError("executor unavailable")
+
+    monkeypatch.setattr(
+        "app.api.family_health._REPORT_JOB_EXECUTOR.submit",
+        fail_submit,
+    )
+
+    response = client.post(
+        "/api/v1/family-health/medical-reports/upload",
+        headers=headers,
+        json={
+            "report_date": "2026-07-21",
+            "image_base64_list": [_jpeg_base64()],
+        },
+    )
+
+    assert response.status_code == 503
+    report = db.query(MedicalReport).one()
+    assert report.status == "failed"
+    assert "任务启动失败" in (report.ai_summary or "")
 
 
 class TestMedicalReportsMe:

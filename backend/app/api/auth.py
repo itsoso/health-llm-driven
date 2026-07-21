@@ -33,6 +33,7 @@ from app.services.phone_auth import (
 )
 from app.api.deps import get_current_user, get_current_user_required
 from app.services.web_session import (
+    WEB_SESSION_AUTH_SENTINEL,
     clear_web_session_cookie,
     set_web_session_cookie,
     wants_web_session,
@@ -82,14 +83,31 @@ def _issue_token_response(user: User, db: Session) -> Token:
     )
 
 
+def _deliver_access_token(
+    request: Request,
+    response: Response,
+    access_token: str,
+) -> str:
+    """Keep browser JWTs HttpOnly while preserving native Bearer responses."""
+    if wants_web_session(request):
+        set_web_session_cookie(response, access_token)
+        return WEB_SESSION_AUTH_SENTINEL
+    return access_token
+
+
 def _deliver_token(
     request: Request,
     response: Response,
     token: Token,
 ) -> Token:
-    if wants_web_session(request):
-        set_web_session_cookie(response, token.access_token)
-    return token
+    delivered_access_token = _deliver_access_token(
+        request,
+        response,
+        token.access_token,
+    )
+    if delivered_access_token == token.access_token:
+        return token
+    return token.model_copy(update={"access_token": delivered_access_token})
 
 
 def _unique_phone_username(db: Session, phone: str) -> str:
@@ -194,13 +212,12 @@ async def register(
 
     # 邀请码有效，自动通过，直接返回token
     access_token = auth_service.create_access_token({"sub": str(user.id)})
-    if wants_web_session(request):
-        set_web_session_cookie(response, access_token)
+    delivered_access_token = _deliver_access_token(request, response, access_token)
     return {
         "message": "注册成功！邀请码验证通过，可以直接使用。",
         "user_id": user.id,
         "is_approved": True,
-        "access_token": access_token,
+        "access_token": delivered_access_token,
         "token_type": "bearer"
     }
 
@@ -293,9 +310,12 @@ async def login_by_phone_code(
         user=token.user,
         is_new_user=is_new_user,
     )
-    if wants_web_session(request):
-        set_web_session_cookie(response, result.access_token)
-    return result
+    delivered_access_token = _deliver_access_token(
+        request,
+        response,
+        result.access_token,
+    )
+    return result.model_copy(update={"access_token": delivered_access_token})
 
 
 @router.post("/login", response_model=Token, summary="用户登录")

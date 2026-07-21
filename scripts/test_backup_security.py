@@ -42,8 +42,30 @@ def test_offsite_archive_is_encrypted_and_verified():
 
     assert 'age --recipient "$BACKUP_AGE_RECIPIENT"' in script
     assert "rclone copyto" in script
-    assert "rclone lsf" in script
+    assert "sha256sum" in script
+    assert "rclone hashsum SHA-256" in script
     assert "BACKUP_OFFSITE_REQUIRED" in script
+
+
+def test_backup_preserves_local_postgres_port_for_dump_and_restore():
+    backup = BACKUP.read_text(encoding="utf-8")
+    restore = RESTORE.read_text(encoding="utf-8")
+
+    assert "urlsplit" in backup
+    assert 'PGPORT=$DB_PORT' in backup
+    assert "BACKUP_ADMIN_PGPORT" in backup
+    assert "BACKUP_ADMIN_PGPORT" in restore
+
+
+def test_backup_names_and_remote_integrity_do_not_trust_minute_collisions():
+    backup = BACKUP.read_text(encoding="utf-8")
+    offsite = OFFSITE.read_text(encoding="utf-8")
+
+    assert "+%Y-%m-%d_%H-%M-%S" in backup
+    assert "SOURCE_SHA" in offsite
+    assert "REMOTE_SHA" in offsite
+    assert "REMOTE_SHA" in offsite and "LOCAL_SHA" in offsite
+    assert "tr '[:upper:]' '[:lower:]'" in offsite
 
 
 def test_backup_self_heal_propagates_failure():

@@ -129,7 +129,7 @@ def parse_and_store(
 
     parsed = _parse_with_llm(text) or _fallback_parse(text)
     if not parsed:
-        logger.info(f"[directive_parser] 未识别出 directive (text={text[:80]!r})")
+        logger.info("[directive_parser] 未识别出 directive text_len=%s", len(text))
         return []
 
     created: List[int] = []

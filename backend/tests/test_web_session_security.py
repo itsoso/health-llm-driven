@@ -39,7 +39,22 @@ def test_web_login_sets_http_only_cookie_and_cookie_authenticates(client, db):
     assert "HttpOnly" in cookie
     assert "SameSite=strict" in cookie
     assert "Max-Age=63072000" in cookie
+    assert login.json()["access_token"] == "__web_cookie_session__"
     assert client.get("/api/v1/auth/me").status_code == 200
+
+
+def test_native_login_still_returns_bearer_token(client, db):
+    user, password = _password_user(db)
+
+    login = client.post(
+        "/api/v1/auth/login/json",
+        json={"username": user.username, "password": password},
+    )
+
+    assert login.status_code == 200
+    token = login.json()["access_token"]
+    assert token != "__web_cookie_session__"
+    assert auth_service.decode_token(token)["sub"] == str(user.id)
 
 
 def test_cookie_mutation_requires_trusted_origin(client, db, monkeypatch):

@@ -244,8 +244,12 @@ async def post_sync_reasoning(
         return result
 
     except json.JSONDecodeError:
-        logger.warning(f"[agent_loop] user={user_id} LLM 返回非 JSON: {text[:100]}")
+        logger.warning(
+            "[agent_loop] user=%s LLM 返回非 JSON response_len=%s",
+            user_id,
+            len(text) if text else 0,
+        )
         return {"action": "error", "reason": "json_parse_failed"}
     except Exception as e:
-        logger.warning(f"[agent_loop] user={user_id} 推理失败: {e}")
-        return {"action": "error", "reason": str(e)}
+        logger.warning("[agent_loop] user=%s 推理失败 error_type=%s", user_id, type(e).__name__)
+        return {"action": "error", "reason": type(e).__name__}

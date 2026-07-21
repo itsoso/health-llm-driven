@@ -96,9 +96,22 @@ def test_sensitive_values_are_not_formatted_into_application_logs() -> None:
             "Withings token refresh failed: {result}",
         ),
         "app/api/vision.py": ("raw[:300]",),
-        "app/services/pdf_parser.py": ("result_text[:500]", "result_text[:1000]"),
+        "app/services/pdf_parser.py": (
+            "result_text[:500]",
+            "result_text[:1000]",
+            "json_text[:300]",
+            "json_text[:1000]",
+        ),
         "app/services/insight_generator.py": ("result_text[:150]",),
         "app/services/memory_dialog_extractor.py": ("raw={raw[:200]!r}",),
+        "app/orchestrator/arbitration.py": (
+            "text[:200]",
+            "response[:120]",
+        ),
+        "app/services/action_card_extractor.py": ("cleaned[:200]",),
+        "app/services/agent_loop.py": ("text[:100]",),
+        "app/services/directive_parser.py": ("text[:80]",),
+        "app/services/garmin_cffi_login.py": ("ticket[:20]",),
     }
 
     for relative_path, needles in prohibited.items():

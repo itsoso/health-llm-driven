@@ -1,5 +1,5 @@
 """运动训练记录 API"""
-from fastapi import APIRouter, Depends, HTTPException, Query, status, Header, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from slowapi import Limiter
@@ -13,7 +13,7 @@ import logging
 from app.database import get_db
 from app.models.user import User
 from app.models.daily_health import WorkoutRecord, WorkoutAnalysisResult
-from app.api.deps import get_current_user, get_current_user_required
+from app.api.deps import get_current_user_required
 from app.services.pre_workout_guidance import PreWorkoutGuidanceService
 from app.services.post_workout_analysis import PostWorkoutAnalysisService
 from app.schemas.workout import (
@@ -1150,20 +1150,16 @@ async def post_run_analyze(
 
 @router.post("/post-run-analyze-siri")
 async def post_run_analyze_siri(
-    request: Request,
     x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
-    current_user: Optional[User] = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
     """Siri 快捷指令专用端点，支持 X-API-Key 认证"""
-    from app.api.health_event import get_user_id_from_any_auth
-
-    user_id = await get_user_id_from_any_auth(request, x_api_key, current_user, db)
-
+    del x_api_key  # Shared auth validates the value; this keeps Siri clients discoverable.
     from app.services.post_run_analyze import PostRunAnalyzeService
     service = PostRunAnalyzeService(db)
     try:
-        result = await service.analyze(user_id=user_id, format="brief")
+        result = await service.analyze(user_id=current_user.id, format="brief")
         return result
     except Exception as e:
         logger.error(f"Siri跑后分析失败: {e}", exc_info=True)

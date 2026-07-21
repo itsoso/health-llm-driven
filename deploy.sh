@@ -34,6 +34,7 @@ fi
 SERVER=$(grep "^DEPLOY_SERVER=" "$ENV_FILE" | cut -d'=' -f2)
 REMOTE_PATH=$(grep "^DEPLOY_PATH=" "$ENV_FILE" | cut -d'=' -f2)
 REMOTE_DEPLOY_BUNDLE="/tmp/health-app-deploy-$$-$(date +%s).bundle"
+DEPLOY_EXPECTED_SHA=""
 
 # 验证必要配置
 if [[ -z "$SERVER" || -z "$REMOTE_PATH" ]]; then
@@ -80,18 +81,32 @@ upload_deploy_bundle() {
     trap cleanup_remote_deploy_bundle EXIT
 }
 
-# 远端 git 同步逻辑(嵌入 ssh 命令串)。
-# 无论服务器之前在 main / 其它分支 / detached HEAD,都强制干净 forward 到 origin/main;
-# `git checkout -B main <ref>` 始终落在 main 分支上,避免 `git checkout FETCH_HEAD` 那种
-# 自我维持的 detached HEAD 坑。GitHub fetch 超时时回退到 upload_deploy_bundle 上传的 bundle,
-# 同样用 -B 切回 main(而非 detached)。调用前需先 upload_deploy_bundle。
-REMOTE_GIT_SYNC="\
-        echo '暂存服务器本地改动...' && \
-        git stash push -m auto-deploy-stash >/dev/null && \
-        echo '同步到 origin/main (强制 forward, 自动修复 detached HEAD)...' && \
-        ( (git fetch origin && git checkout -B main origin/main) || \
-          (echo 'git fetch origin 失败, 使用上传的 deploy bundle...' && \
-           git fetch $REMOTE_DEPLOY_BUNDLE HEAD && git checkout -B main FETCH_HEAD) )"
+remote_git_sync_command() {
+    if ! [[ "$DEPLOY_EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+        print_error "缺少合法的 DEPLOY_EXPECTED_SHA，拒绝生成远端同步命令"
+        return 1
+    fi
+    cat <<EOF
+        echo '暂存服务器本地改动...' &&
+        git stash push -m auto-deploy-stash >/dev/null &&
+        echo '同步到已核验的 main commit $DEPLOY_EXPECTED_SHA...' &&
+        ( (git fetch origin main && git cat-file -e '$DEPLOY_EXPECTED_SHA^{commit}') ||
+          (echo 'git fetch origin 失败或缺少目标 commit, 使用上传的 deploy bundle...' &&
+           git fetch '$REMOTE_DEPLOY_BUNDLE' HEAD && git cat-file -e '$DEPLOY_EXPECTED_SHA^{commit}') ) &&
+        git checkout -B main '$DEPLOY_EXPECTED_SHA' &&
+        test "\$(git rev-parse HEAD)" = '$DEPLOY_EXPECTED_SHA'
+EOF
+}
+
+verify_deployed_revision() {
+    local deployed_sha
+    deployed_sha=$(ssh "$SERVER" "cd '$REMOTE_PATH' && git rev-parse HEAD" 2>/dev/null || true)
+    if [[ "$deployed_sha" != "$DEPLOY_EXPECTED_SHA" ]]; then
+        print_error "远端部署版本不匹配: expected=$DEPLOY_EXPECTED_SHA actual=${deployed_sha:-missing}"
+        return 1
+    fi
+    print_success "远端部署版本已核验: ${DEPLOY_EXPECTED_SHA:0:12}"
+}
 
 # 显示使用帮助
 show_help() {
@@ -389,8 +404,25 @@ push_code() {
         echo "$untracked_files"
     fi
 
-    git push
-    print_success "代码已推送到 GitHub"
+    CURRENT_BRANCH="$(git branch --show-current)"
+    if [[ "$CURRENT_BRANCH" != "main" ]]; then
+        print_error "生产部署只允许从 main 执行，当前分支: ${CURRENT_BRANCH:-detached}"
+        exit 1
+    fi
+    DEPLOY_EXPECTED_SHA="$(git rev-parse HEAD)"
+    if ! [[ "$DEPLOY_EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+        print_error "无法解析待部署 commit"
+        exit 1
+    fi
+
+    git push origin HEAD:main
+    local remote_main_sha
+    remote_main_sha=$(git ls-remote origin refs/heads/main | awk 'NR==1 {print $1}')
+    if [[ "$remote_main_sha" != "$DEPLOY_EXPECTED_SHA" ]]; then
+        print_error "origin/main 与本地 HEAD 不一致，拒绝部署"
+        exit 1
+    fi
+    print_success "代码已推送并核验 origin/main: ${DEPLOY_EXPECTED_SHA:0:12}"
 
     # 同步到 kuaishou GitLab（静默，失败不影响部署）
     if git remote | grep -q kuaishou; then
@@ -404,10 +436,12 @@ deploy_frontend() {
 
     # 预上传 bundle,使前端也具备和后端一致的 GitHub 超时回退路径
     upload_deploy_bundle
+    local remote_git_sync
+    remote_git_sync="$(remote_git_sync_command)"
 
     ssh $SERVER "
         cd $REMOTE_PATH && \
-        $REMOTE_GIT_SYNC && \
+        $remote_git_sync && \
         cd frontend && \
         echo '安装依赖...' && \
         npm install && \
@@ -417,6 +451,7 @@ deploy_frontend() {
         pm2 restart health-frontend
     "
 
+    verify_deployed_revision
     print_success "前端部署完成"
 }
 
@@ -434,12 +469,14 @@ deploy_backend() {
     # GitHub 在服务器侧偶发超时；预先上传当前 HEAD 的 bundle，
     # 远端 git fetch 失败时仍可通过 deploy.sh 完成同一提交的部署。
     upload_deploy_bundle
+    local remote_git_sync
+    remote_git_sync="$(remote_git_sync_command)"
 
     # 3. 部署代码 (skill 同步可能失败 → 我们自己处理回滚, 临时关闭 set -e)
     set +e
     ssh $SERVER "
         cd $REMOTE_PATH && \
-        $REMOTE_GIT_SYNC && \
+        $remote_git_sync && \
         cd backend && \
         echo '激活虚拟环境...' && \
         source venv/bin/activate && \
@@ -482,6 +519,7 @@ deploy_backend() {
 
     # 4.5 后端健康通过后再验证第一方 Agent skills manifest，避免冷启动误报。
     wait_for_agent_skills_manifest
+    verify_deployed_revision
 
     print_success "后端部署完成"
 }

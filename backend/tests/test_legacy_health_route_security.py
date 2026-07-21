@@ -31,6 +31,8 @@ ANONYMOUS_GET_PATHS = [
     "/api/v1/daily-recommendation/user/1/activity-insights",
     "/api/v1/daily-recommendation/user/1/heart-insights",
     "/api/v1/daily-recommendation/user/1/recovery-status",
+    "/api/v1/ai-insights/insights/daily",
+    "/api/v1/supplements/products",
 ]
 
 

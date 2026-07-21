@@ -1,11 +1,16 @@
 """家庭健康管理 Phase 2 API — 体检报告 + 用药管理 + 复查日历"""
+import base64
+import io
 import json
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
-from typing import Optional, List
+from threading import BoundedSemaphore
+from typing import Annotated, Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
+from PIL import Image
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 from sqlalchemy.exc import IntegrityError
@@ -16,10 +21,33 @@ from app.models.user_profile import UserProfile
 from app.models.family_health import MedicalReport, MedicalIndicator, ReviewSchedule
 from app.models.medication import Medication, MedicationLog
 from app.api.deps import get_current_user_required
+from app.services.secure_upload import (
+    UploadContentInvalid,
+    UploadTooLarge,
+    decode_base64_limited,
+    validate_image_bytes,
+    validate_pdf_bytes,
+)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+MAX_REPORT_PAGES = 20
+MAX_REPORT_IMAGE_BYTES = 8 * 1024 * 1024
+MAX_REPORT_PDF_BYTES = 8 * 1024 * 1024
+MAX_REPORT_TOTAL_IMAGE_BYTES = 20 * 1024 * 1024
+MAX_REPORT_RENDERED_BYTES = 30 * 1024 * 1024
+MAX_REPORT_IMAGE_PIXELS = 20_000_000
+MAX_REPORT_PDF_PAGE_PIXELS = 12_000_000
+REPORT_PDF_DPI = 144
+_IMAGE_BASE64_MAX_CHARS = ((MAX_REPORT_IMAGE_BYTES + 2) // 3) * 4 + 128
+_PDF_BASE64_MAX_CHARS = ((MAX_REPORT_PDF_BYTES + 2) // 3) * 4 + 128
+_REPORT_JOB_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="medical-report")
+_REPORT_JOB_SLOTS = BoundedSemaphore(4)
+
+ImageBase64 = Annotated[str, Field(min_length=1, max_length=_IMAGE_BASE64_MAX_CHARS)]
+PdfBase64 = Annotated[str, Field(min_length=1, max_length=_PDF_BASE64_MAX_CHARS)]
 
 
 # ══════════════════════════════════════════════════════════
@@ -31,8 +59,15 @@ class ReportUploadRequest(BaseModel):
     hospital: Optional[str] = None
     report_type: str = "general"
     title: Optional[str] = None
-    image_base64_list: Optional[List[str]] = Field(None, description="Base64 编码的报告图片列表")
-    pdf_base64: Optional[str] = Field(None, description="Base64 编码的 PDF 文件（会自动转为图片再提取）")
+    image_base64_list: Optional[List[ImageBase64]] = Field(
+        None,
+        max_length=MAX_REPORT_PAGES,
+        description="Base64 编码的报告图片列表",
+    )
+    pdf_base64: Optional[PdfBase64] = Field(
+        None,
+        description="Base64 编码的 PDF 文件（会自动转为图片再提取）",
+    )
 
 
 @router.post("/medical-reports/upload", summary="上传体检报告（AI 异步提取）", tags=["medical-reports"])
@@ -45,48 +80,87 @@ async def upload_medical_report(
     上传体检报告照片/PDF。立即返回 report ID，AI 在后台异步提取指标。
     前端通过 GET /medical-reports/{id} 轮询状态。
     """
-    # PDF → 图片转换（同步，速度快）
-    image_list = list(req.image_base64_list or [])
-    if req.pdf_base64:
-        try:
-            pdf_images = _pdf_to_images_base64(req.pdf_base64)
+    if not req.image_base64_list and not req.pdf_base64:
+        raise HTTPException(status_code=400, detail="请上传报告图片或 PDF")
+    if not _REPORT_JOB_SLOTS.acquire(blocking=False):
+        raise HTTPException(status_code=429, detail="体检报告处理繁忙，请稍后重试")
+
+    handed_to_worker = False
+    try:
+        image_list: list[str] = []
+        total_source_bytes = 0
+        for image_base64 in req.image_base64_list or []:
+            prepared, source_bytes = _prepare_report_image(image_base64)
+            total_source_bytes += source_bytes
+            if total_source_bytes > MAX_REPORT_TOTAL_IMAGE_BYTES:
+                raise UploadTooLarge("报告图片总大小超过限制")
+            image_list.append(prepared)
+
+        if req.pdf_base64:
+            remaining_pages = MAX_REPORT_PAGES - len(image_list)
+            if remaining_pages < 1:
+                raise UploadTooLarge("报告总页数超过限制")
+            pdf_images = _pdf_to_images_base64(
+                req.pdf_base64,
+                max_pages=remaining_pages,
+                dpi=REPORT_PDF_DPI,
+            )
             image_list.extend(pdf_images)
-            logger.info(f"PDF 转换为 {len(pdf_images)} 页图片")
-        except Exception as e:
-            logger.error(f"PDF 转图片失败: {e}", exc_info=True)
-            return {"id": 0, "status": "failed", "message": f"PDF 解析失败: {str(e)}"}
+            logger.info("体检 PDF 转换完成 pages=%s", len(pdf_images))
 
-    report = MedicalReport(
-        user_id=current_user.id,
-        report_date=req.report_date,
-        hospital=req.hospital,
-        report_type=req.report_type,
-        title=req.title or f"{req.report_date} 体检报告",
-        status="processing",
-    )
-    db.add(report)
-    db.commit()
-    db.refresh(report)
+        if not image_list:
+            raise UploadContentInvalid("报告中没有可处理的页面")
 
-    report_id = report.id
-    user_id = current_user.id
-    report_date = req.report_date
+        report = MedicalReport(
+            user_id=current_user.id,
+            report_date=req.report_date,
+            hospital=req.hospital,
+            report_type=req.report_type,
+            title=req.title or f"{req.report_date} 体检报告",
+            status="processing",
+        )
+        db.add(report)
+        db.commit()
+        db.refresh(report)
 
-    # 后台线程执行 AI 提取（不阻塞请求）
-    if image_list:
-        import threading
-        threading.Thread(
-            target=_process_report_background,
-            args=(report_id, user_id, report_date, image_list),
-            daemon=True,
-        ).start()
+        report_id = report.id
+        try:
+            _REPORT_JOB_EXECUTOR.submit(
+                _process_report_with_slot,
+                report_id,
+                current_user.id,
+                req.report_date,
+                image_list,
+            )
+        except Exception as exc:
+            report.status = "failed"
+            report.ai_summary = "处理任务启动失败，请重新上传"
+            db.commit()
+            logger.error(
+                "体检报告后台任务提交失败 report_id=%s error_type=%s",
+                report_id,
+                type(exc).__name__,
+                exc_info=True,
+            )
+            raise HTTPException(
+                status_code=503,
+                detail="体检报告处理服务暂时不可用，请稍后重试",
+            ) from exc
+        handed_to_worker = True
 
-    return {
-        "id": report_id,
-        "status": "processing",
-        "pages": len(image_list),
-        "message": f"报告已上传（{len(image_list)} 页），AI 正在后台提取指标...",
-    }
+        return {
+            "id": report_id,
+            "status": "processing",
+            "pages": len(image_list),
+            "message": f"报告已上传（{len(image_list)} 页），AI 正在后台提取指标...",
+        }
+    except UploadTooLarge as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
+    except UploadContentInvalid as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    finally:
+        if not handed_to_worker:
+            _REPORT_JOB_SLOTS.release()
 
 
 @router.get("/medical-reports/me", summary="我的体检报告列表", tags=["medical-reports"])
@@ -417,21 +491,32 @@ class MedicationCreateRequest(BaseModel):
 
 
 class MedicationRecognizeRequest(BaseModel):
-    image_base64: str = Field(..., description="药盒照片 Base64")
+    image_base64: ImageBase64 = Field(..., description="药盒照片 Base64")
+
+
+class MedicationRecognizedDraft(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200)
+    category: Optional[str] = Field(None, max_length=100)
+    dosage: Optional[str] = Field(None, max_length=100)
+    frequency: Optional[str] = Field(None, max_length=100)
+    timing: Optional[str] = Field(None, max_length=50)
+    indication: Optional[str] = Field(None, max_length=500)
+    notes: Optional[str] = Field(None, max_length=1000)
 
 
 @router.post("/medications/recognize", summary="拍药盒识别", tags=["medications"])
 async def recognize_medication(
     req: MedicationRecognizeRequest,
     current_user: User = Depends(get_current_user_required),
-    db: Session = Depends(get_db),
 ):
-    """拍药盒照片，AI 自动识别药名、剂量、用法并添加到用药清单"""
+    """识别药盒并返回草稿；只有后续显式提交才会写入用药清单。"""
     try:
         from app.services.llm import get_vision_provider
         from app.services.llm.usage_tracker import set_caller
         set_caller("family_health.medication_ocr", user_id=current_user.id)
         llm = get_vision_provider()
+
+        prepared_image, _ = _prepare_report_image(req.image_base64)
 
         system_prompt = (
             "你是药品识别专家。请识别照片中的药品，返回 JSON 格式：\n"
@@ -441,7 +526,7 @@ async def recognize_medication(
             '"indication": "适应症", "notes": "注意事项"}\n'
             "只返回 JSON，不要其他文字。"
         )
-        data_url = f"data:image/jpeg;base64,{req.image_base64}"
+        data_url = f"data:image/jpeg;base64,{prepared_image}"
         resp = await llm.chat_with_vision(
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -457,32 +542,23 @@ async def recognize_medication(
             text = text.split("```")[1].strip()
             if text.startswith("json"):
                 text = text[4:].strip()
-        drug_info = json.loads(text)
-
-        # 自动添加到用药清单（匹配 Medication 模型字段）
-        med = Medication(
-            user_id=current_user.id,
-            name=drug_info.get("name", "未识别"),
-            category=drug_info.get("category"),
-            dosage=drug_info.get("dosage"),
-            frequency=drug_info.get("frequency"),
-            purpose=drug_info.get("indication"),
-            notes=drug_info.get("notes"),
-            start_date=date.today(),
-        )
-        db.add(med)
-        db.commit()
+        drug_info = MedicationRecognizedDraft.model_validate(json.loads(text))
 
         return {
-            "id": med.id,
-            "recognized": drug_info,
-            "message": f"已识别并添加: {med.name}",
+            "recognized": drug_info.model_dump(),
+            "requires_confirmation": True,
+            "confirm_endpoint": "/api/v1/family-health/medications",
+            "message": "识别完成，请核对药名、剂量和频次后再保存",
         }
-    except json.JSONDecodeError:
+    except UploadTooLarge as exc:
+        raise HTTPException(status_code=413, detail="药盒图片过大") from exc
+    except UploadContentInvalid as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except (json.JSONDecodeError, ValidationError, TypeError):
         raise HTTPException(status_code=422, detail="AI 识别结果解析失败，请重新拍照")
     except Exception as e:
-        logger.error(f"药品识别失败: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"识别失败: {str(e)}")
+        logger.error("药品识别失败 error_type=%s", type(e).__name__, exc_info=True)
+        raise HTTPException(status_code=500, detail="识别失败，请稍后重试") from e
 
 
 @router.post("/medications", summary="手动添加用药", tags=["medications"])
@@ -800,6 +876,18 @@ async def handle_wechat_message(
 # 辅助函数
 # ══════════════════════════════════════════════════════════
 
+def _process_report_with_slot(
+    report_id: int,
+    user_id: int,
+    report_date,
+    image_list: List[str],
+) -> None:
+    try:
+        _process_report_background(report_id, user_id, report_date, image_list)
+    finally:
+        _REPORT_JOB_SLOTS.release()
+
+
 def _process_report_background(report_id: int, user_id: int, report_date, image_list: List[str]):
     """后台线程：AI 提取体检报告指标"""
     import asyncio
@@ -1013,25 +1101,33 @@ def _process_report_background(report_id: int, user_id: int, report_date, image_
         db.close()
 
 
-def _compress_image_base64(img_b64: str, max_size: int = 1024) -> str:
-    """压缩 base64 图片到合理尺寸，降低 Vision API token 消耗"""
-    import base64
-    import io
+def _prepare_report_image(img_b64: str, *, max_size: int = 1600) -> tuple[str, int]:
+    """Validate and normalize one bounded report image to JPEG."""
+    img_bytes = decode_base64_limited(img_b64, max_bytes=MAX_REPORT_IMAGE_BYTES)
+    kind = validate_image_bytes(
+        img_bytes,
+        max_pixels=MAX_REPORT_IMAGE_PIXELS,
+    )
+    if kind == "heic":
+        raise UploadContentInvalid("体检报告暂不支持 HEIC，请转换为 JPEG 或 PNG")
     try:
-        from PIL import Image
-        img_bytes = base64.b64decode(img_b64)
-        img = Image.open(io.BytesIO(img_bytes))
+        with Image.open(io.BytesIO(img_bytes)) as image:
+            image.load()
+            if max(image.size) > max_size:
+                image.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+            output = io.BytesIO()
+            image.convert("RGB").save(output, format="JPEG", quality=80, optimize=True)
+    except (OSError, ValueError) as exc:
+        raise UploadContentInvalid("报告图片损坏或无法解析") from exc
+    normalized = output.getvalue()
+    if len(normalized) > MAX_REPORT_IMAGE_BYTES:
+        raise UploadTooLarge("压缩后的报告图片仍然过大")
+    return base64.b64encode(normalized).decode("ascii"), len(img_bytes)
 
-        # 缩小到 max_size x max_size 以内
-        if max(img.size) > max_size:
-            img.thumbnail((max_size, max_size), Image.LANCZOS)
 
-        # 转为 JPEG
-        buf = io.BytesIO()
-        img.convert("RGB").save(buf, format="JPEG", quality=75)
-        return base64.b64encode(buf.getvalue()).decode()
-    except Exception:
-        return img_b64  # 压缩失败返回原图
+def _compress_image_base64(img_b64: str, max_size: int = 1024) -> str:
+    """Re-normalize a previously validated image for the Vision request."""
+    return _prepare_report_image(img_b64, max_size=max_size)[0]
 
 
 async def _get_llm():
@@ -1039,44 +1135,54 @@ async def _get_llm():
     return get_llm_provider()
 
 
-def _pdf_to_images_base64(pdf_base64: str, max_pages: int = 30, dpi: int = 200) -> List[str]:
-    """将 Base64 编码的 PDF 转为每页的 Base64 JPEG 图片列表"""
-    import base64
-    import io
+def _pdf_to_images_base64(
+    pdf_base64: str,
+    max_pages: int = MAX_REPORT_PAGES,
+    dpi: int = REPORT_PDF_DPI,
+) -> List[str]:
+    """Render a bounded PDF into bounded JPEG pages using PyMuPDF."""
+    if max_pages < 1 or max_pages > MAX_REPORT_PAGES:
+        raise ValueError("invalid_max_pages")
+    if dpi < 72 or dpi > REPORT_PDF_DPI:
+        raise ValueError("invalid_pdf_dpi")
+    pdf_bytes = decode_base64_limited(pdf_base64, max_bytes=MAX_REPORT_PDF_BYTES)
+    validate_pdf_bytes(pdf_bytes)
 
-    pdf_bytes = base64.b64decode(pdf_base64)
-
-    # 优先用 pymupdf (fitz)，速度快
     try:
         import fitz  # pymupdf
-        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-        images = []
-        for i, page in enumerate(doc):
-            if i >= max_pages:
-                break
-            mat = fitz.Matrix(dpi / 72, dpi / 72)
-            pix = page.get_pixmap(matrix=mat)
-            img_bytes = pix.tobytes("jpeg")
-            images.append(base64.b64encode(img_bytes).decode())
-        doc.close()
-        return images
-    except ImportError:
-        pass
+    except ImportError as exc:
+        raise RuntimeError("服务器缺少 PyMuPDF，无法安全解析 PDF") from exc
 
-    # 备选：pdf2image（需要 poppler）
     try:
-        from pdf2image import convert_from_bytes
-        pil_images = convert_from_bytes(pdf_bytes, dpi=dpi, last_page=max_pages)
-        images = []
-        for img in pil_images:
-            buf = io.BytesIO()
-            img.save(buf, format="JPEG", quality=85)
-            images.append(base64.b64encode(buf.getvalue()).decode())
-        return images
-    except ImportError:
-        pass
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    except Exception as exc:
+        raise UploadContentInvalid("PDF 损坏或无法解析") from exc
 
-    raise ImportError("需要安装 pymupdf 或 pdf2image 来解析 PDF。运行: pip install pymupdf")
+    try:
+        if doc.needs_pass:
+            raise UploadContentInvalid("暂不支持加密 PDF")
+        if doc.page_count < 1:
+            raise UploadContentInvalid("PDF 没有可处理页面")
+        if doc.page_count > max_pages:
+            raise UploadTooLarge(f"PDF 超过 {max_pages} 页限制")
+
+        images = []
+        rendered_bytes = 0
+        for page in doc:
+            width = max(1, int(page.rect.width * dpi / 72))
+            height = max(1, int(page.rect.height * dpi / 72))
+            if width * height > MAX_REPORT_PDF_PAGE_PIXELS:
+                raise UploadTooLarge("PDF 单页尺寸超过限制")
+            mat = fitz.Matrix(dpi / 72, dpi / 72)
+            pix = page.get_pixmap(matrix=mat, colorspace=fitz.csRGB, alpha=False)
+            img_bytes = pix.tobytes("jpeg")
+            rendered_bytes += len(img_bytes)
+            if rendered_bytes > MAX_REPORT_RENDERED_BYTES:
+                raise UploadTooLarge("PDF 渲染结果超过大小限制")
+            images.append(base64.b64encode(img_bytes).decode("ascii"))
+        return images
+    finally:
+        doc.close()
 
 
 def _categorize_indicator(name: str) -> str:

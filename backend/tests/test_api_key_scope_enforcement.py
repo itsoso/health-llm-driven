@@ -3,6 +3,7 @@
 import hashlib
 import uuid
 
+from main import app
 from app.models.user import User
 from app.models.user_api_key import UserApiKey
 
@@ -119,6 +120,38 @@ def test_admin_api_key_cannot_call_admin_endpoints(client, db):
     assert response.json()["detail"] == "该操作不允许使用 API Key"
 
 
+def test_disabled_user_api_key_cannot_ingest_health_events(client, db):
+    user = _create_user(db)
+    headers, _ = _headers_for_key(db, user, "write")
+    user.is_active = False
+    db.commit()
+
+    response = client.post(
+        "/api/v1/health-events/ingest",
+        headers=headers,
+        json={
+            "event_type": "exercise",
+            "source": "api",
+            "raw_data": {"activity": "walking"},
+        },
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "账户已被禁用"
+
+
+def test_disabled_user_api_key_cannot_read_external_health_data(client, db):
+    user = _create_user(db)
+    headers, _ = _headers_for_key(db, user, "read")
+    user.is_active = False
+    db.commit()
+
+    response = client.get("/api/v1/external/health-data", headers=headers)
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "账户已被禁用"
+
+
 def test_invalid_api_key_logs_do_not_include_key_material(client, caplog):
     raw_key = "visible-prefix-must-not-be-logged"
 
@@ -127,3 +160,20 @@ def test_invalid_api_key_logs_do_not_include_key_material(client, caplog):
     assert response.status_code == 401
     assert raw_key not in caplog.text
     assert raw_key[:8] not in caplog.text
+
+
+def test_api_key_entrypoints_keep_x_api_key_in_openapi_contract():
+    document = app.openapi()
+
+    for path, method in (
+        ("/api/v1/health-events/ingest", "post"),
+        ("/api/v1/workout/post-run-analyze-siri", "post"),
+        ("/api/v1/external/health-data", "get"),
+    ):
+        parameters = document["paths"][path][method].get("parameters", [])
+        header_names = {
+            parameter["name"].lower()
+            for parameter in parameters
+            if parameter.get("in") == "header"
+        }
+        assert "x-api-key" in header_names, path

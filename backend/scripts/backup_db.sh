@@ -37,23 +37,55 @@ fi
 
 BACKUP_ROOT="${HEALTH_BACKUP_ROOT:-/var/backups/health-app}"
 BACKUP_DIR="$BACKUP_ROOT/database"
-TIMESTAMP=$(date +%Y-%m-%d_%H-%M)
-# council #2:去路径前缀 + 末尾 ?query/#frag(否则带 sslmode 等参数时 DB_NAME 变 'health_db?sslmode=...'
-# → pg_dump 静默失败/连错库)。再断言是合法标识符,解析不出就 fail-loud。
-DB_NAME=$(echo "$DATABASE_URL" | sed 's|.*/||; s|[?#].*||')
+TIMESTAMP="$(date +%Y-%m-%d_%H-%M-%S)_$$"
+
+# 只提取非秘密连接目标。管理员 dump 仍走本地 peer auth，但必须保留运行时 URL 的端口，
+# 否则同机多实例时可能备份同名的错误数据库。
+command -v python3 >/dev/null || { echo "[$(date)] ❌ 缺少 python3，无法安全解析 DATABASE_URL"; exit 1; }
+mapfile -t DB_TARGET < <(python3 - "$DATABASE_URL" <<'PY'
+import sys
+from urllib.parse import parse_qs, unquote, urlsplit
+
+parsed = urlsplit(sys.argv[1])
+if not parsed.scheme.startswith("postgresql"):
+    raise SystemExit("DATABASE_URL 不是 PostgreSQL URL")
+query = parse_qs(parsed.query)
+host = query.get("host", [parsed.hostname or ""])[0]
+port = query.get("port", [str(parsed.port or 5432)])[0]
+name = unquote(parsed.path.lstrip("/"))
+print(name)
+print(host)
+print(port)
+PY
+)
+if [ "${#DB_TARGET[@]}" -ne 3 ]; then
+    echo "[$(date)] ❌ DATABASE_URL 连接目标解析失败"
+    exit 1
+fi
+DB_NAME="${DB_TARGET[0]}"
+DB_HOST="${DB_TARGET[1]}"
+DB_PORT="${DB_TARGET[2]}"
 if [[ ! "$DB_NAME" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
     echo "[$(date)] ❌ 无法从 DATABASE_URL 解析出合法 DB 名(得到 '$DB_NAME'),中止"
     exit 1
 fi
-# council #3:本脚本靠本地 socket + postgres superuser peer auth;DATABASE_URL 指向远程/托管 DB
-# (RDS/ApsaraDB)时 postgres 系统用户无凭据 → 失败。显式断言本地,远程请用其工具,别静默坏。
-_NETLOC="${DATABASE_URL#*://}"; _NETLOC="${_NETLOC#*@}"; DB_HOST="${_NETLOC%%[:/]*}"
+if ! [[ "$DB_PORT" =~ ^[0-9]+$ ]] || [ "$DB_PORT" -lt 1 ] || [ "$DB_PORT" -gt 65535 ]; then
+    echo "[$(date)] ❌ DATABASE_URL PostgreSQL 端口无效: '$DB_PORT'"
+    exit 1
+fi
+
+ADMIN_PGHOST=""
 case "$DB_HOST" in
     localhost|127.0.0.1|::1|"") ;;
+    /*) ADMIN_PGHOST="$DB_HOST" ;;
     *)
         echo "[$(date)] ❌ backup_db.sh 仅支持本地 PostgreSQL(postgres superuser + socket peer auth),DATABASE_URL host='$DB_HOST' 非本地,中止"
         exit 1 ;;
 esac
+ADMIN_PG_ENV=(env "PGPORT=$DB_PORT")
+if [ -n "$ADMIN_PGHOST" ]; then
+    ADMIN_PG_ENV+=("PGHOST=$ADMIN_PGHOST")
+fi
 BACKUP_FILE="${BACKUP_DIR}/${DB_NAME}_${TIMESTAMP}.sql.gz"
 
 # 确保备份目录存在,且仅 owner 可读(收紧历史遗留的 0755 目录)——里面是 L3 基因数据
@@ -73,7 +105,7 @@ echo "[$(date)] 开始备份 ${DB_NAME}..."
 # cd /tmp 消除 postgres 用户无法 cd 进 /root 的 "could not change directory" 噪声。
 # set -o pipefail 已开:pg_dump 非零退出会让整条管道失败,if 诚实捕获,不被 gzip 的 0 掩盖。
 cd /tmp
-if sudo -u postgres pg_dump "$DB_NAME" | gzip > "$BACKUP_FILE"; then
+if sudo -u postgres "${ADMIN_PG_ENV[@]}" pg_dump "$DB_NAME" | gzip > "$BACKUP_FILE"; then
     chmod 600 "$BACKUP_FILE"   # council #1 双保险:含基因数据的备份必须 0600(即便 umask 被改)
     SIZE=$(du -h "$BACKUP_FILE" | cut -f1)
     echo "[$(date)] ✅ 备份成功: ${BACKUP_FILE} (${SIZE}, 0600)"
@@ -88,7 +120,7 @@ fi
 # - 枚举失败 → 无法验证 → 保留备份文件(可能是好的)但 exit 1，让调用方知道这份未经校验。
 # - 某表 COPY 段缺失 → 备份确定不完整 → 删文件 exit 1。
 # - 枚举为空(pre-migration / 无 RLS 的库)→ 无需校验，正常通过。
-if ! FORCE_RLS_TABLES=$(sudo -u postgres psql "$DB_NAME" -tAc \
+if ! FORCE_RLS_TABLES=$(sudo -u postgres "${ADMIN_PG_ENV[@]}" psql "$DB_NAME" -tAc \
     "SELECT n.nspname || '.' || c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.relforcerowsecurity AND c.relkind = 'r'"); then
     echo "[$(date)] ❌ 完整性校验无法执行(枚举 force-RLS 表失败) —— 备份保留但标记为未校验"
     exit 1
@@ -108,6 +140,9 @@ while IFS= read -r t; do
 done <<< "$FORCE_RLS_TABLES"
 
 # gzip 可读不等于可恢复。每份新备份必须先恢复到一次性数据库并完成结构校验。
+export BACKUP_ADMIN_PGPORT="$DB_PORT"
+export BACKUP_ADMIN_PGHOST="$ADMIN_PGHOST"
+export BACKUP_SOURCE_DB="$DB_NAME"
 "$SCRIPT_DIR/verify_backup_restore.sh" "$BACKUP_FILE"
 
 # 站外副本必须先在本机用 age 加密，再上传并回读远端清单确认。

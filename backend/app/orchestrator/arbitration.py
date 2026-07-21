@@ -148,12 +148,17 @@ def _parse_arbitration_response(text: str, conflicts_count: int) -> Optional[Arb
         # 回退: 正则抓第一个 { ... }
         m = re.search(r"\{[\s\S]*\}", text)
         if not m:
-            logger.warning(f"[arbitration] LLM 响应无 JSON 块: {text[:200]}")
+            logger.warning("[arbitration] LLM 响应无 JSON 块 response_len=%s", len(text))
             return None
         try:
             obj = json.loads(m.group(0))
         except json.JSONDecodeError as e:
-            logger.warning(f"[arbitration] JSON parse 失败: {e}; text[:200]={text[:200]}")
+            logger.warning(
+                "[arbitration] JSON parse 失败 error_type=%s position=%s response_len=%s",
+                type(e).__name__,
+                getattr(e, "pos", None),
+                len(text),
+            )
             return None
 
     try:
@@ -198,14 +203,15 @@ async def arbitrate_conflicts(
     try:
         text = await llm_caller(system, user)
     except Exception as e:  # noqa: BLE001
-        logger.warning(f"[arbitration] LLM 调用异常: {str(e)[:200]}")
+        logger.warning("[arbitration] LLM 调用异常 error_type=%s", type(e).__name__)
         return None
 
     result = _parse_arbitration_response(text, len(conflicts))
     if result is None:
         logger.warning(
-            f"[arbitration] 解析失败, 回退. conflicts={len(conflicts)} "
-            f"response[:120]={text[:120] if text else 'empty'}"
+            "[arbitration] 解析失败, 回退 conflicts=%s response_len=%s",
+            len(conflicts),
+            len(text) if text else 0,
         )
     return result
 

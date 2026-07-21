@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 
 from app.database import get_db
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user_required
 from app.models import User, SupplementProduct
 from app.models.genetic_data import GeneticVariant
 from app.schemas.supplement import (
@@ -30,7 +30,7 @@ def list_products(
     tag: Optional[str] = Query(None, description="健康标签筛选"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ):
     """浏览产品库"""
@@ -56,7 +56,7 @@ def list_products(
 @router.get("/{product_id}", response_model=SupplementProductResponse)
 def get_product(
     product_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ):
     """产品详情"""
@@ -69,7 +69,7 @@ def get_product(
 @router.get("/compare/list")
 def compare_products(
     ids: str = Query(..., description="产品ID列表，逗号分隔，如 1,2,3"),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ):
     """产品对比 — 并排展示成分表"""
@@ -106,7 +106,7 @@ def compare_products(
 
 @router.get("/recommended/for-me")
 def recommended_for_user(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ):
     """基于用户基因数据推荐产品"""
@@ -146,7 +146,7 @@ def recommended_for_user(
 @router.post("", response_model=SupplementProductResponse)
 def create_product(
     data: SupplementProductCreate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ):
     """创建产品（管理员）"""
@@ -165,7 +165,7 @@ def create_product(
 def update_product(
     product_id: int,
     data: SupplementProductUpdate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ):
     """更新产品（管理员）"""
@@ -184,7 +184,7 @@ def update_product(
 @router.delete("/{product_id}")
 def delete_product(
     product_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ):
     """删除产品（管理员，软删除）"""

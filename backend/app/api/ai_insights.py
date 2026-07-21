@@ -5,7 +5,7 @@ from typing import List, Optional
 from datetime import date, timedelta
 
 from app.database import get_db
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user_required
 from app.models import User, AIInsight, RealtimeRecommendation
 from app.schemas.ai_insights import (
     AIInsightResponse, AIInsightListResponse,
@@ -27,7 +27,7 @@ def _resolve_user_city(db: Session, user_id: int) -> Optional[str]:
 @router.get("/insights/daily", response_model=AIInsightListResponse)
 async def get_daily_insights(
     days: int = Query(7, ge=1, le=30, description="获取最近几天的洞察"),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
     """
@@ -51,7 +51,7 @@ async def get_daily_insights(
 @router.get("/insights/daily/{insight_date}", response_model=AIInsightResponse)
 async def get_daily_insight_by_date(
     insight_date: date,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
     """
@@ -72,7 +72,7 @@ async def get_daily_insight_by_date(
 async def generate_daily_insight(
     target_date: Optional[date] = None,
     force_regenerate: bool = Query(False, description="是否强制重新生成（覆盖已有洞察）"),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
     """
@@ -94,7 +94,7 @@ async def generate_daily_insight(
 @router.post("/recommendations/realtime", response_model=RealtimeRecommendationResponse)
 async def generate_realtime_recommendation(
     request: GenerateRecommendationRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
     """
@@ -121,7 +121,7 @@ async def generate_realtime_recommendation(
 
 @router.get("/recommendations/latest", response_model=Optional[RealtimeRecommendationResponse])
 async def get_latest_recommendation(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
     """

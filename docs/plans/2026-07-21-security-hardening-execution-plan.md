@@ -8,6 +8,21 @@
 
 **Tech Stack:** FastAPI, SQLAlchemy, Pytest, Next.js/React, React Native, Swift, PostgreSQL, Nginx, systemd, GitHub Actions.
 
+## Execution Status (2026-07-22)
+
+| Task | Status | Remaining gate |
+|---|---|---|
+| 1. Anonymous/cross-user access | Implemented and locally verified | Branch/main CI |
+| 2. API-key scopes | Implemented and locally verified | Branch/main CI |
+| 3. Agent write authority | Implemented and locally verified | Independent safety re-review |
+| 4. Rendering/client credentials | Code complete and locally verified | Native signed Mobile/Mac release for Keychain changes |
+| 5. Secrets/backups | Code complete and locally verified | Real off-host download/decrypt/restore drill |
+| 6. Dependencies | Audits currently report no known production vulnerabilities | Branch/main audit jobs |
+| 7. Infrastructure/privacy exits | Repository configuration complete | Install and verify Nginx/systemd/UFW on production |
+| 8. Defense in depth/release | Partial | Least-privilege PostgreSQL roles, broad RLS design, green main CI, G5/G6 smoke verification |
+
+The accepted two-year JWT lifetime remains unchanged. No production deployment is allowed while Task 8 blockers remain.
+
 ---
 
 ### Task 1: Block anonymous and cross-user health access

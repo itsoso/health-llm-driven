@@ -57,3 +57,21 @@ def test_env_sync_uses_external_backup_root_and_mode_0600():
     assert 'ENV_BACKUP_DIR="$REMOTE_BACKUP_ROOT/env"' in script
     assert 'cp -p .env "$ENV_BACKUP_DIR/.env.${BACKUP_TS}"' in script
     assert 'chmod 600 \'$REMOTE_PATH/backend/.env\'' in script
+
+
+def test_deploy_requires_main_and_pushes_exact_head_to_origin_main():
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+
+    assert 'CURRENT_BRANCH="$(git branch --show-current)"' in script
+    assert 'CURRENT_BRANCH" != "main"' in script
+    assert "git push origin HEAD:main" in script
+    assert "git ls-remote origin refs/heads/main" in script
+
+
+def test_remote_checkout_and_post_deploy_revision_match_expected_sha():
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+
+    assert "DEPLOY_EXPECTED_SHA" in script
+    assert "verify_deployed_revision" in script
+    assert "git rev-parse HEAD" in script
+    assert "远端部署版本不匹配" in script

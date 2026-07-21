@@ -118,7 +118,7 @@ def cffi_login_and_get_session(email: str, password: str, is_cn: bool = False) -
         )
 
     ticket = ticket_match.group(1)
-    logger.info(f"[cffi_login] 获取到 ticket: {ticket[:20]}...")
+    logger.info("[cffi_login] 已取得一次性 SSO ticket")
 
     # Step 3: Exchange ticket for OAuth tokens via garth
     client = garth.Client()

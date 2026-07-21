@@ -4,7 +4,7 @@ import secrets
 import logging
 from datetime import datetime, date, timedelta
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Header, Query, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 from pydantic import BaseModel, ConfigDict, field_validator
@@ -103,24 +103,23 @@ def check_scope(api_key: UserApiKey, required_scope: str) -> bool:
 async def verify_user_api_key(
     request: Request,
     x_api_key: str = Header(..., alias="X-API-Key"),
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ) -> UserApiKey:
-    """验证用户 API Key"""
-    logger.info("API Key 验证请求")
-
-    key_hash = hash_api_key(x_api_key)
+    """Resolve an API key only after the shared auth and account-state checks."""
+    del x_api_key  # Shared auth validates the value; this keeps the API contract explicit.
+    if getattr(request.state, "auth_type", None) != "api_key":
+        raise HTTPException(status_code=401, detail="API Key required")
+    api_key_id = getattr(request.state, "api_key_id", None)
     api_key = db.query(UserApiKey).filter(
-        UserApiKey.api_key == key_hash,
-        UserApiKey.is_active == True
+        UserApiKey.id == api_key_id,
+        UserApiKey.user_id == current_user.id,
+        UserApiKey.is_active == True,
     ).first()
 
     if not api_key:
-        logger.warning("API Key 验证失败: 无效或未激活")
+        logger.warning("API Key 验证失败: 认证上下文与 Key 不一致")
         raise HTTPException(status_code=401, detail="Invalid API Key")
-
-    request.state.auth_type = "api_key"
-    request.state.api_key_id = api_key.id
-    request.state.auth_scopes = normalize_api_key_scopes(api_key.scopes)
 
     # 更新最后使用时间
     api_key.last_used_at = datetime.now(CHINA_TIMEZONE)

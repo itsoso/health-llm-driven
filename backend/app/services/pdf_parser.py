@@ -746,7 +746,7 @@ class MedicalReportPDFParser:
             else:
                 raise ValueError("无法提取有效的JSON对象")
 
-            logger.info(f"清理后的JSON长度: {len(json_text)}, 前300字符: {json_text[:300]}...")
+            logger.info("体检报告 JSON 清理完成 json_len=%s", len(json_text))
 
             # 解析 JSON —— 严格优先,失败走宽松修复(弯引号/全角分隔符/裸 key/尾逗号/控制字符)。
             # 仍失败则 lenient_loads 抛出"严格解析的原始 JSONDecodeError",交下面 except 做
@@ -756,12 +756,15 @@ class MedicalReportPDFParser:
             return parsed_data
 
         except json.JSONDecodeError as e:
-            logger.error(f"LLM返回的JSON解析失败: {e}")
+            logger.error(
+                "体检报告 JSON 解析失败 error_type=%s position=%s",
+                type(e).__name__,
+                getattr(e, "pos", None),
+            )
             logger.error(
                 "体检报告结构化失败 response_len=%s",
                 len(result_text) if "result_text" in locals() else 0,
             )
-            logger.error(f"清理后内容: {json_text[:1000] if 'json_text' in locals() else 'N/A'}")
             # 截断特征(Unterminated string / 末尾断在分隔符处)= LLM 输出超 max_tokens 被切,
             # 不是格式错误。给可行指引(分次导入/重试),别误导用户以为报告格式有问题。fail-loud。
             err = str(e)
