@@ -17,6 +17,7 @@ from app.scheduler import start_scheduler
 from app.utils.logging_config import setup_beijing_logging
 from app.config import settings
 from app.services.garmin_cffi_patch import patch_garth_with_cffi
+from app.middleware.request_body_limit import RequestBodyLimitMiddleware
 import app.models.smart_reminder  # noqa: F401 - ensure table creation
 import app.models.interaction_feedback  # noqa: F401 - Agent 反馈系统
 import app.models.genetic_data  # noqa: F401 - 基因数据表
@@ -393,6 +394,7 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
             )
 
 app.add_middleware(RequestContextMiddleware)
+app.add_middleware(RequestBodyLimitMiddleware)
 
 # 注册路由
 app.include_router(api_router, prefix="/api/v1")

@@ -16,10 +16,10 @@
 | 2. API-key scopes | Implemented and locally verified | Branch/main CI |
 | 3. Agent write authority | Implemented and locally verified | Independent safety re-review |
 | 4. Rendering/client credentials | Code complete and locally verified | Native signed Mobile/Mac release for Keychain changes |
-| 5. Secrets/backups | Code complete and locally verified | Real off-host download/decrypt/restore drill |
+| 5. Secrets/backups | Code complete and locally verified, including authenticated HMAC manifests | Configure independent integrity key and run a real off-host download/decrypt/restore drill |
 | 6. Dependencies | Audits currently report no known production vulnerabilities | Branch/main audit jobs |
 | 7. Infrastructure/privacy exits | Repository configuration complete | Install and verify Nginx/systemd/UFW on production |
-| 8. Defense in depth/release | Partial | Least-privilege PostgreSQL roles, broad RLS design, green main CI, G5/G6 smoke verification |
+| 8. Defense in depth/release | Partial; proxy revocation, bounded report ingress, and exact-SHA rollback are locally verified | Least-privilege PostgreSQL roles, broad RLS design, independent safety re-review, green main CI, G5/G6 smoke verification |
 
 The accepted two-year JWT lifetime remains unchanged. No production deployment is allowed while Task 8 blockers remain.
 

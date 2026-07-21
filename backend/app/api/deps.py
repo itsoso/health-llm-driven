@@ -87,6 +87,79 @@ def _enforce_api_key_request(request: Request, scopes: frozenset[str]) -> None:
         )
 
 
+def _resolve_family_proxy_user(
+    db: Session,
+    *,
+    subject: object,
+    acting_as: object,
+    original_user_id: object,
+) -> tuple[User, int]:
+    """Revalidate a family proxy grant on every request.
+
+    A proxy JWT is only a short-lived credential, not a durable authorization
+    grant. Account status and family membership can change while it is valid.
+    """
+    from app.models.family import FamilyMember
+
+    try:
+        subject_id = int(subject)
+        target_user_id = int(acting_as)
+        origin_id = int(original_user_id)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="家庭代管授权已失效",
+        ) from exc
+
+    if subject_id != target_user_id or origin_id == target_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="家庭代管授权已失效",
+        )
+
+    original_user = auth_service.get_user_by_id(db, origin_id)
+    target_user = auth_service.get_user_by_id(db, target_user_id)
+    if (
+        not original_user
+        or not original_user.is_active
+        or not original_user.is_approved
+        or not target_user
+        or not target_user.is_active
+        or not target_user.is_approved
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="家庭代管授权已失效",
+        )
+
+    origin_groups = db.query(FamilyMember.family_group_id).filter(
+        FamilyMember.user_id == origin_id,
+    ).scalar_subquery()
+    target_member = db.query(FamilyMember).filter(
+        FamilyMember.user_id == target_user_id,
+        FamilyMember.family_group_id.in_(origin_groups),
+    ).first()
+    if not target_member:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="家庭代管授权已失效",
+        )
+
+    origin_member = db.query(FamilyMember).filter(
+        FamilyMember.family_group_id == target_member.family_group_id,
+        FamilyMember.user_id == origin_id,
+    ).first()
+    if not origin_member or (
+        origin_member.role != "owner" and not target_member.can_edit
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="家庭代管授权已失效",
+        )
+
+    return target_user, origin_id
+
+
 async def get_current_user(
     request: Request,
     token: Optional[str] = Depends(oauth2_scheme),
@@ -121,16 +194,24 @@ async def get_current_user(
             if user_id:
                 # 家庭代管模式：JWT 包含 acting_as 和 original_user
                 if acting_as and original_user:
-                    target_user = auth_service.get_user_by_id(db, int(acting_as))
-                    if target_user:
-                        bind_authenticated_tenant(db, target_user.id)
-                        request.state.auth_type = "cookie" if is_cookie_auth else "jwt"
-                        request.state.api_key_id = None
-                        request.state.auth_scopes = frozenset()
-                        request.state.original_user_id = int(original_user)
-                        request.state.is_proxy_mode = True
-                        logger.debug(f"[Auth] 家庭代管模式: 原始用户 {original_user} → 代管 {acting_as} ({target_user.name})")
-                        return target_user
+                    target_user, origin_id = _resolve_family_proxy_user(
+                        db,
+                        subject=user_id,
+                        acting_as=acting_as,
+                        original_user_id=original_user,
+                    )
+                    bind_authenticated_tenant(db, target_user.id)
+                    request.state.auth_type = "cookie" if is_cookie_auth else "jwt"
+                    request.state.api_key_id = None
+                    request.state.auth_scopes = frozenset()
+                    request.state.original_user_id = origin_id
+                    request.state.is_proxy_mode = True
+                    logger.debug(
+                        "[Auth] 家庭代管认证成功: origin_id=%s target_id=%s",
+                        origin_id,
+                        target_user.id,
+                    )
+                    return target_user
 
                 # 正常模式
                 user = auth_service.get_user_by_id(db, int(user_id))

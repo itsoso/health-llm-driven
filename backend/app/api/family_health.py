@@ -1,5 +1,6 @@
 """家庭健康管理 Phase 2 API — 体检报告 + 用药管理 + 复查日历"""
 import base64
+import asyncio
 import io
 import json
 import logging
@@ -34,15 +35,16 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 MAX_REPORT_PAGES = 20
-MAX_REPORT_IMAGE_BYTES = 8 * 1024 * 1024
-MAX_REPORT_PDF_BYTES = 8 * 1024 * 1024
-MAX_REPORT_TOTAL_IMAGE_BYTES = 20 * 1024 * 1024
+MAX_REPORT_IMAGE_BYTES = 7 * 1024 * 1024
+MAX_REPORT_PDF_BYTES = 7 * 1024 * 1024
+MAX_REPORT_TOTAL_IMAGE_BYTES = 7 * 1024 * 1024
 MAX_REPORT_RENDERED_BYTES = 30 * 1024 * 1024
 MAX_REPORT_IMAGE_PIXELS = 20_000_000
 MAX_REPORT_PDF_PAGE_PIXELS = 12_000_000
 REPORT_PDF_DPI = 144
 _IMAGE_BASE64_MAX_CHARS = ((MAX_REPORT_IMAGE_BYTES + 2) // 3) * 4 + 128
 _PDF_BASE64_MAX_CHARS = ((MAX_REPORT_PDF_BYTES + 2) // 3) * 4 + 128
+_REPORT_PREP_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="medical-report-prepare")
 _REPORT_JOB_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="medical-report")
 _REPORT_JOB_SLOTS = BoundedSemaphore(4)
 
@@ -70,6 +72,34 @@ class ReportUploadRequest(BaseModel):
     )
 
 
+def _prepare_report_payload(req: ReportUploadRequest) -> list[str]:
+    """Validate/decode image or PDF pages outside the event loop."""
+    image_list: list[str] = []
+    total_source_bytes = 0
+    for image_base64 in req.image_base64_list or []:
+        prepared, source_bytes = _prepare_report_image(image_base64)
+        total_source_bytes += source_bytes
+        if total_source_bytes > MAX_REPORT_TOTAL_IMAGE_BYTES:
+            raise UploadTooLarge("报告图片总大小超过限制")
+        image_list.append(prepared)
+
+    if req.pdf_base64:
+        remaining_pages = MAX_REPORT_PAGES - len(image_list)
+        if remaining_pages < 1:
+            raise UploadTooLarge("报告总页数超过限制")
+        pdf_images = _pdf_to_images_base64(
+            req.pdf_base64,
+            max_pages=remaining_pages,
+            dpi=REPORT_PDF_DPI,
+        )
+        image_list.extend(pdf_images)
+        logger.info("体检 PDF 转换完成 pages=%s", len(pdf_images))
+
+    if not image_list:
+        raise UploadContentInvalid("报告中没有可处理的页面")
+    return image_list
+
+
 @router.post("/medical-reports/upload", summary="上传体检报告（AI 异步提取）", tags=["medical-reports"])
 async def upload_medical_report(
     req: ReportUploadRequest,
@@ -87,29 +117,11 @@ async def upload_medical_report(
 
     handed_to_worker = False
     try:
-        image_list: list[str] = []
-        total_source_bytes = 0
-        for image_base64 in req.image_base64_list or []:
-            prepared, source_bytes = _prepare_report_image(image_base64)
-            total_source_bytes += source_bytes
-            if total_source_bytes > MAX_REPORT_TOTAL_IMAGE_BYTES:
-                raise UploadTooLarge("报告图片总大小超过限制")
-            image_list.append(prepared)
-
-        if req.pdf_base64:
-            remaining_pages = MAX_REPORT_PAGES - len(image_list)
-            if remaining_pages < 1:
-                raise UploadTooLarge("报告总页数超过限制")
-            pdf_images = _pdf_to_images_base64(
-                req.pdf_base64,
-                max_pages=remaining_pages,
-                dpi=REPORT_PDF_DPI,
-            )
-            image_list.extend(pdf_images)
-            logger.info("体检 PDF 转换完成 pages=%s", len(pdf_images))
-
-        if not image_list:
-            raise UploadContentInvalid("报告中没有可处理的页面")
+        image_list = await asyncio.get_running_loop().run_in_executor(
+            _REPORT_PREP_EXECUTOR,
+            _prepare_report_payload,
+            req,
+        )
 
         report = MedicalReport(
             user_id=current_user.id,

@@ -172,14 +172,12 @@ rollback_deploy() {
         return 1
     fi
     print_warning "健康度不达标，自动回滚到 ${ROLLBACK_COMMIT:0:8}..."
-    ssh $SERVER "
-        cd $REMOTE_PATH && \
-        git checkout $ROLLBACK_COMMIT -- . && \
-        cd backend && source venv/bin/activate && \
-        pip install --require-hashes -r requirements.lock -q && \
-        systemctl restart health-backend
-    "
-    print_success "已回滚到 ${ROLLBACK_COMMIT:0:8}"
+    if ! ssh "$SERVER" \
+        "bash '$REMOTE_PATH/backend/scripts/rollback_release.sh' '$REMOTE_PATH' '$ROLLBACK_COMMIT'"; then
+        print_error "自动回滚未通过 exact-SHA 或数据库兼容健康验证"
+        return 1
+    fi
+    print_success "代码已回滚到 ${ROLLBACK_COMMIT:0:8}，当前数据库结构兼容性已验证"
 }
 
 # 部署后验证（项目的 val_bpb 检查）
@@ -505,15 +503,21 @@ deploy_backend() {
     SKILL_EXIT=$?
     set -e
     if [ $SKILL_EXIT -ne 0 ]; then
-        rollback_deploy
-        print_error "后端部署 SSH 命令失败 (exit=$SKILL_EXIT)，已自动回滚"
+        if rollback_deploy; then
+            print_error "后端部署 SSH 命令失败 (exit=$SKILL_EXIT)，代码已自动回滚并通过健康检查"
+        else
+            print_error "后端部署 SSH 命令失败 (exit=$SKILL_EXIT)，且自动回滚失败，服务保持阻断状态"
+        fi
         exit 1
     fi
 
     # 4. 部署后验证（快速失败）
     if ! verify_deployment; then
-        rollback_deploy
-        print_error "部署失败，已自动回滚"
+        if rollback_deploy; then
+            print_error "部署健康检查失败，代码已自动回滚并通过健康检查"
+        else
+            print_error "部署健康检查失败，且自动回滚失败，服务保持阻断状态"
+        fi
         exit 1
     fi
 

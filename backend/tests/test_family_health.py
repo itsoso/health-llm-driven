@@ -2,6 +2,7 @@
 import base64
 import io
 import json
+import threading
 
 import pytest
 from datetime import date
@@ -26,6 +27,51 @@ def test_report_upload_schema_limits_page_count():
             report_date=date(2026, 7, 21),
             image_base64_list=[_jpeg_base64()] * 21,
         )
+
+
+def test_report_upload_rejects_oversized_body_before_auth_and_schema(client):
+    from app.middleware.request_body_limit import MAX_MEDICAL_REPORT_REQUEST_BYTES
+
+    response = client.post(
+        "/api/v1/family-health/medical-reports/upload",
+        content=b"x" * (MAX_MEDICAL_REPORT_REQUEST_BYTES + 1),
+        headers={"Content-Type": "application/json"},
+    )
+
+    assert response.status_code == 413
+    assert response.json()["detail"] == "体检报告请求体超过 10 MB 限制"
+
+
+def test_report_upload_preparation_runs_off_event_loop(
+    client,
+    auth_user_and_headers,
+    monkeypatch,
+):
+    from app.api import family_health
+
+    _, headers = auth_user_and_headers
+    seen_threads = []
+    original = family_health._prepare_report_payload
+
+    def record_thread(req):
+        seen_threads.append(threading.current_thread().name)
+        return original(req)
+
+    monkeypatch.setattr(family_health, "_prepare_report_payload", record_thread)
+    monkeypatch.setattr(family_health, "_process_report_background", lambda *_args: None)
+
+    response = client.post(
+        "/api/v1/family-health/medical-reports/upload",
+        headers=headers,
+        json={
+            "report_date": "2026-07-21",
+            "image_base64_list": [_jpeg_base64()],
+        },
+    )
+
+    assert response.status_code == 200
+    assert len(seen_threads) == 1
+    assert seen_threads[0].startswith("medical-report")
 
 
 def test_report_upload_rejects_when_bounded_worker_queue_is_full(

@@ -34,7 +34,7 @@
 | G1 Admission | GO | Security/privacy requirement |
 | G2 Feasibility | GO | Compatibility-preserving staged design |
 | G3 Tests | LOCAL GO / CI PENDING | 本地回归、真 PostgreSQL、安全脚本、跨端构建与静态闸通过；分支 CI 待 push 后取证 |
-| G4 Safety review | RE-REVIEW PENDING | 首轮 NO-GO 的 5 个 P1 已逐项修复，等待独立复审 |
+| G4 Safety review | RE-REVIEW PENDING | 第二轮 NO-GO 的 2 个 P1、2 个 P2 已逐项修复，等待第三轮独立复审 |
 | G5 Deploy health | BLOCKED | 未满足生产角色、真实异地恢复演练、基础设施安装和原生 Keychain 发版前不进入部署 |
 | G6 Production verification | NOT ENTERED | 尚未部署，不作上线成功声明 |
 
@@ -45,13 +45,15 @@
 - 2026-07-22: P0 匿名路由、API key scope、Agent 写入授权、跨端凭据存储、上传与解析配额、备份与基础设施配置已完成本地实现；部署仍受 G3-G5 约束。
 - 2026-07-22: 首轮独立安全复审裁决 NO-GO，指出报告上传资源耗尽、药盒 OCR 自动写入、备份实例歧义、异地备份弱校验、部署 SHA 漂移 5 个 P1。
 - 2026-07-22: 5 个 P1 已修复：报告页数/字节/像素/线程配额 fail-loud；药盒 OCR 改为可编辑草稿并显式确认；备份绑定 PostgreSQL host/port；异地对象逐字节 SHA-256 校验；部署强制 `main` 与精确 SHA。
+- 2026-07-22: 第二轮独立安全复审仍为 NO-GO，指出代管授权撤销未即时生效、自动回滚假成功 2 个 P1，以及上传总请求体、异地对象与 sidecar 可协同替换 2 个 P2。
+- 2026-07-22: 第二轮问题已修复：代管 JWT 每次请求重验账号状态与家庭授权；回滚移动到精确 SHA 并要求旧代码在当前向前数据库结构上通过健康检查；报告请求在 Pydantic 前限制为 10 MB且预处理移出事件循环；异地备份增加源 SHA/密文 SHA/对象名的 HMAC 清单。
 
 ## G3 Verification Evidence
 
 - Backend broad CI shard `e-g`: `1043 passed, 1 skipped`。
-- Backend focused SQLite security suite: `71 passed`。
-- Backend focused PostgreSQL security suite: `67 passed`，覆盖 API Key、报告上传、旧路由租户隔离和 Web Session。
-- Backup/deploy/infrastructure script tests: `19 passed`；相关 shell 脚本 `bash -n` 通过。
+- Backend focused SQLite security suite: `115 passed`。
+- Backend focused PostgreSQL security suite: `71 passed`，覆盖 API Key、报告上传、家庭代管撤权、旧路由租户隔离和 Web Session。
+- Backup/deploy/infrastructure script tests: `23 passed`；相关 shell 脚本 `bash -n` 通过。
 - Frontend: `297 passed`；`next build` 成功；ESLint `0 errors`（45 个既有 warning）。
 - Mobile: TypeScript `tsc --noEmit` 成功；Expo lint `0 errors`（103 个既有 warning）；设计 token ratchet 通过。
 - 此前本批次已完成 Mobile `2052` tests、Mac Core `448` tests、Frontend/Mobile/npm 与 Python dependency audits，未引入依赖漏洞。
@@ -67,10 +69,20 @@
 | 异地备份只信对象名 | 文件名绑定源 SHA；上传与既有对象均执行远端下载哈希比对并校验 sidecar | `test_backup_security.py` |
 | 分支部署可能部署旧 `origin/main` | 只允许本地 `main` push 到 `origin/main`；远端 checkout/verify 精确 40 位 SHA | `test_deploy_script.py` |
 
+## G4 Round 2 Remediation Ledger
+
+| 第二轮问题 | 修复 | 验证 |
+|---|---|---|
+| P1 代管 Token 绕过账号禁用/授权撤销 | 每次请求重新校验发起账号与目标账号状态、同组关系和编辑授权；claim 不一致直接 403 | `test_web_session_security.py`；SQLite + PostgreSQL |
+| P1 自动回滚假成功 | 独立回滚 runner 停止写进程、移动 `main` 到精确旧 SHA、重装旧依赖、重启并验证健康；失败保持阻断且不输出成功 | `test_release_rollback.py` 动态临时 Git 仓库测试 |
+| P2 报告请求在 schema 前可达百 MB | ASGI middleware 在 FastAPI/Pydantic 前把该路由请求限制为 10 MB；原始有效载荷限制 7 MB；图片/PDF预处理进入有界线程池 | `test_family_health.py` |
+| P2 远端对象与 sidecar 可协同替换 | 独立 `BACKUP_INTEGRITY_KEY` 生成 HMAC 清单，绑定源哈希、密文哈希和对象名；模拟协同替换测试必须失败 | `test_backup_security.py` |
+
 ## Production Blockers
 
 - PostgreSQL 仍未完成按在线请求、后台任务、迁移/备份拆分的最小权限角色；广泛 RLS 需要先完成后台任务租户上下文设计，不能在不了解运行时角色的情况下直接开启。
 - 需要在真实异地存储执行下载、解密、临时 PostgreSQL 恢复和查询验证；本地脚本测试不能替代灾备演练。
+- 生产环境需生成并安全配置至少 32 字符的独立 `BACKUP_INTEGRITY_KEY`；不得与 age recipient/private identity 共用。
 - Nginx/systemd/UFW 等生产配置需要实际安装后检查有效配置与端口暴露。
 - Mobile/Mac 的 Keychain 改动需要原生签名发版；OTA 不能改变原生安全边界。
 - 必须从干净 `origin/main` 的精确 SHA 部署，并通过健康检查、鉴权负例和审计日志验证后，G5/G6 才可转 GO。

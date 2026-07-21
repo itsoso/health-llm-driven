@@ -22,7 +22,7 @@ Direct server edits should be limited to emergency recovery. After any emergency
 
 ## Encrypted Off-Host Backup
 
-Production must configure `BACKUP_AGE_RECIPIENT` and `BACKUP_OFFSITE_RCLONE_DEST`. The destination must be an off-host object-storage remote configured in `rclone`; the private age identity must not be installed on the production host. `BACKUP_OFFSITE_RETENTION_DAYS` defaults to 35 and local verified backup retention defaults to 7 copies. A missing tool, destination, recipient, restore failure, upload failure, or failed remote-list verification blocks deployment.
+Production must configure `BACKUP_AGE_RECIPIENT`, `BACKUP_OFFSITE_RCLONE_DEST`, and an independent random `BACKUP_INTEGRITY_KEY` of at least 32 characters. The destination must be an off-host object-storage remote configured in `rclone`; the private age identity must not be installed on the production host. Each archive carries a locally authenticated HMAC manifest binding its source hash, ciphertext hash, and object name, so coordinated replacement of the remote object and checksum is rejected. `BACKUP_OFFSITE_RETENTION_DAYS` defaults to 35 and local verified backup retention defaults to 7 copies. A missing tool, destination, recipient, integrity key, restore failure, upload failure, or failed hash/HMAC verification blocks deployment.
 
 ## Long-Term Direction
 

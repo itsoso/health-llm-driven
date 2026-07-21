@@ -75,3 +75,15 @@ def test_remote_checkout_and_post_deploy_revision_match_expected_sha():
     assert "verify_deployed_revision" in script
     assert "git rev-parse HEAD" in script
     assert "远端部署版本不匹配" in script
+
+
+def test_automatic_rollback_uses_verified_release_runner_and_propagates_failure():
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    rollback_start = script.index("rollback_deploy() {")
+    rollback_end = script.index("# 部署后验证", rollback_start)
+    rollback_body = script[rollback_start:rollback_end]
+
+    assert "rollback_release.sh" in rollback_body
+    assert "if ! ssh" in rollback_body
+    assert "return 1" in rollback_body
+    assert "git checkout $ROLLBACK_COMMIT -- ." not in rollback_body
