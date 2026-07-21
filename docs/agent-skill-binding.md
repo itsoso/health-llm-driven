@@ -44,6 +44,7 @@ Codex 如果全局 openskills 已提供同名 skill,可以用 `npx openskills re
 | Mobile native / EAS / TestFlight 发版 | `.claude/skills/mobile-testflight-release/SKILL.md` | EAS profiles, iOS signing, user confirmation gates |
 | iOS App Store 送审 / 审核被拒 / Review Notes / 截图隐私 / 审核账号可达性 | `.claude/skills/ios-app-review-gate/SKILL.md` | `docs/release/app-store/submission-pack.md`, `docs/release/app-store/adapted-review-checklist.md`, `scripts/check_app_store_release_pack.py` |
 | Mac app 构建/安装/分发 | `.claude/skills/mac-build-deploy/SKILL.md` | `apps/mac/`, packaging scripts |
+| 阿里云百炼 TokenPlan 模型清单更新、每三天巡检、避免低版本模型、同步小巴模型下拉 | Codex 全局 skill `updating-tokenplan-models` (`~/.codex/skills/updating-tokenplan-models/SKILL.md`) | `backend/app/services/llm/model_registry.py`, `backend/tests/test_model_registry_latest.py`, `mobile/services/llmModelCatalog.ts` |
 
 ## Claude 与 Codex 的分工绑定
 
