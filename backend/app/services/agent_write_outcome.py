@@ -130,6 +130,12 @@ def classify_write_execution(
             )
 
     text = str(result or "").strip()
+    if text.startswith("[NEEDS_CLARIFICATION]"):
+        return WriteExecutionOutcome(
+            status="rejected",
+            error_code="policy_blocked",
+            dispatch_started=False,
+        )
     if text.startswith("[NEEDS_CONFIRMATION]"):
         return WriteExecutionOutcome(status="failed", dispatch_started=False)
     # _api_post/_patch/_put/_delete prefix every HTTP failure with this marker

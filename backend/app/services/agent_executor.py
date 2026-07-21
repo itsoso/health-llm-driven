@@ -5890,6 +5890,7 @@ class AgentExecutor:
         self._agent_kernel_turn_finished = False
         self._agent_kernel_last_decision: Optional[CapabilityDecision] = None
         self._agent_kernel_capability_block_reasons: List[str] = []
+        self._agent_kernel_recovered_capability_block_reasons: List[str] = []
         self._agent_kernel_tool_failure_tools: List[str] = []
         self._agent_kernel_pending_confirmation_tools: List[str] = []
         self._agent_kernel_tool_retry_count = 0
@@ -5927,6 +5928,7 @@ class AgentExecutor:
         self._agent_kernel_turn_finished = False
         self._agent_kernel_last_decision = None
         self._agent_kernel_capability_block_reasons = []
+        self._agent_kernel_recovered_capability_block_reasons = []
         self._agent_kernel_tool_failure_tools = []
         self._agent_kernel_pending_confirmation_tools = []
         self._agent_kernel_tool_retry_count = 0
@@ -6061,13 +6063,20 @@ class AgentExecutor:
         parsed_args = args if isinstance(args, dict) else {}
         decision = self._agent_kernel_last_decision
         result_text = str(result or "").lstrip()
+        snapshot = self._agent_kernel_snapshot
+        policy_blocked = bool(
+            decision is not None
+            and decision.action == "block"
+            and snapshot is not None
+            and snapshot.policy_mode == "enforce"
+        )
         if result_text.startswith("[NEEDS_CONFIRMATION]"):
             if tool_name not in self._agent_kernel_pending_confirmation_tools:
                 self._agent_kernel_pending_confirmation_tools.append(tool_name)
-        elif result_text.startswith("Error:"):
+        elif result_text.startswith("Error:") and not policy_blocked:
             if tool_name not in self._agent_kernel_tool_failure_tools:
                 self._agent_kernel_tool_failure_tools.append(tool_name)
-        elif tool_name in self._agent_kernel_tool_failure_tools:
+        elif not policy_blocked and tool_name in self._agent_kernel_tool_failure_tools:
             # 同一工具后续重试成功时，只保留未恢复的失败，避免把成功回合计入拒答率。
             self._agent_kernel_tool_failure_tools.remove(tool_name)
         receipt = None
@@ -6077,9 +6086,35 @@ class AgentExecutor:
                 parsed_args,
                 result,
             )
+        write_outcome = (
+            classify_write_execution(result, receipt=receipt)
+            if decision is not None and decision.receipt_required
+            else None
+        )
+        if (
+            policy_blocked
+            and snapshot is not None
+            and not snapshot.intent.is_write
+            and decision is not None
+        ):
+            self._force_no_tools_synthesis = True
+            if (
+                decision.reason
+                not in self._agent_kernel_recovered_capability_block_reasons
+            ):
+                self._agent_kernel_recovered_capability_block_reasons.append(
+                    decision.reason
+                )
         bus.tool_result(
             tool_name=tool_name,
-            success=not str(result).startswith("Error:"),
+            success=(
+                not policy_blocked
+                and not result_text.startswith("Error:")
+                and (
+                    write_outcome is None
+                    or write_outcome.status == "verified"
+                )
+            ),
             receipt=receipt,
         )
         return result
@@ -9272,10 +9307,19 @@ class AgentExecutor:
             pass
 
         completion_status = _completion_status_from_finish_reason(final_finish_reason)
+        recovered_capability_blocks = (
+            set(self._agent_kernel_recovered_capability_block_reasons)
+            if completion_status == "complete" and full_reply.strip()
+            else set()
+        )
         turn_outcome = classify_agent_turn_outcome(
             completion_status=completion_status,
             final_text=full_reply,
-            capability_block_reasons=self._agent_kernel_capability_block_reasons,
+            capability_block_reasons=[
+                reason
+                for reason in self._agent_kernel_capability_block_reasons
+                if reason not in recovered_capability_blocks
+            ],
             tool_failure_tools=self._agent_kernel_tool_failure_tools,
             pending_confirmation_tools=self._agent_kernel_pending_confirmation_tools,
             write_receipts=write_receipts,
@@ -9808,7 +9852,8 @@ class AgentExecutor:
             "- 如果上一轮已在问提醒时段,用户只回复'9点到20点'或'10:30'这类时间,要继承上一轮的任务标题、内容和间隔,直接创建 reminder; 不要丢失上下文或重复询问。",
             "- 模糊数量：'几杯水' → 追问具体杯数再记录；'130多' → 追问具体数值",
             "- 时间归属：'昨天' → 记到昨天日期；'刚才' → 当前时间；未说明 → 今天",
-            "- 用户说'准备开始睡觉/开始睡眠/上床睡觉/准备入睡'这类当前开始睡眠事件 → 调用 health_record(record_type=event, data={title:'准备开始睡觉', occurred_at:'刚才或用户给出的时间'}); 不要用 record_type=sleep。record_type=sleep 只用于事后完整睡眠补录,必须有 bedtime、wake_time、sleep_quality。",
+            "- 用户只陈述'准备开始睡觉/开始睡眠/上床睡觉/准备入睡'这类当前开始睡眠事件 → 调用 health_record(record_type=event, data={title:'准备开始睡觉', occurred_at:'刚才或用户给出的时间'}); 不要用 record_type=sleep。record_type=sleep 只用于事后完整睡眠补录,必须有 bedtime、wake_time、sleep_quality。",
+            "- 上述状态陈述若同时请求建议、分析或提问时，只回答问题，不自动记录；除非用户另外明确说“记录”“记一下”或“打卡”。例如'我准备睡觉了，给我一些建议'是建议请求，不调用 health_record。",
             "- 图片：用户发食物照片时，先用你的视觉能力识别图片中的食物名称和份量，然后调用 health_record(type=diet, data={meal_type, food_items, calories, protein, carbs, fat, fiber, record_date}) 记录。必须在 data 中填写完整的 food_items 字符串，不能传空 data。",
             "- **饮食记录必须包含热量和营养估算：识别食物后，根据食物种类和常见份量估算总热量(kcal)、蛋白质(g)、碳水(g)、脂肪(g)、膳食纤维(g)，填入 data.calories/protein/carbs/fat/fiber 字段一起保存。不要记完再问用户'要不要算热量'。**",
             "- **重要：调用 health_record 时 data 参数必须包含具体内容，不能为空对象 {}。如果你不确定内容，先问用户再记录。**",

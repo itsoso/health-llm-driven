@@ -437,6 +437,14 @@ async def replay(
             tool, json.dumps(gated_args, ensure_ascii=False), user_auth_token
         )
         result_text = str(result or "")
+        structured_status = ""
+        if result_text.lstrip().startswith("{"):
+            try:
+                payload = json.loads(result_text)
+                if isinstance(payload, dict):
+                    structured_status = str(payload.get("status") or "").lower()
+            except (TypeError, ValueError, json.JSONDecodeError):
+                structured_status = ""
         yield {
             "phase": "result",
             "step_index": index,
@@ -444,5 +452,10 @@ async def replay(
             "args": gated_args,
             "result": result_text,
             "needs_confirmation": result_text.startswith("[NEEDS_CONFIRMATION]"),
-            "error": result_text.startswith("Error"),
+            "error": (
+                result_text.startswith("Error")
+                or structured_status in {
+                    "rejected", "denied", "failed", "uncertain", "in_flight",
+                }
+            ),
         }

@@ -18,6 +18,7 @@ from app.services.agent_executor import AgentExecutor
 from app.services.agent_kernel.context import build_turn_snapshot
 from app.services.agent_kernel.tool_gateway import ToolGateway
 from app.services.agent_kernel.types import ToolExecutionRequest, TurnSnapshot
+from app.services.agent_write_outcome import classify_write_execution
 from app.twin.cache import invalidate_twin
 from app.utils.timezone import get_china_now
 
@@ -114,6 +115,8 @@ class VoiceCommandService:
                     "execution_status": "failed",
                 }
 
+        receipt = _verified_record_receipt(result)
+        write_outcome = classify_write_execution(result, receipt=receipt)
         if str(result).startswith("[NEEDS_CONFIRMATION]"):
             executor._finish_agent_kernel_turn(status="pending_confirmation")
             return {
@@ -123,7 +126,10 @@ class VoiceCommandService:
                 "requires_confirmation": True,
                 "execution_status": "pending_confirmation",
             }
-        if str(result).startswith(("Error:", "[NEEDS_CLARIFICATION]")):
+        if (
+            str(result).startswith(("Error:", "[NEEDS_CLARIFICATION]"))
+            or write_outcome.status in {"rejected", "failed"}
+        ):
             executor._finish_agent_kernel_turn(status="blocked_or_failed")
             return {
                 "command_type": draft["command_type"],
@@ -133,7 +139,6 @@ class VoiceCommandService:
                 "execution_status": "blocked_or_failed",
             }
 
-        receipt = _verified_record_receipt(result)
         if receipt is not None:
             executor._finish_agent_kernel_turn(status="recorded")
             return {

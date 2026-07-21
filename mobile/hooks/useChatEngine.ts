@@ -188,6 +188,9 @@ export function restoreMessagesFromHistory(
       role: m.role,
       content: m.content,
       createdAt: m.created_at,
+      sourceTurnId: typeof m?.meta?.client_turn_id === 'string'
+        ? m.meta.client_turn_id
+        : undefined,
       imageUris: parseHistoryImageUris(m.image_url, imageHost),
       ...applyMeta(m),
     });
@@ -387,6 +390,7 @@ async function hasFreshPendingStream(): Promise<boolean> {
 
 export function useChatEngine(opts: UseChatEngineOptions = {}) {
   const [messages, setMessages] = useState<UIMessage[]>([]);
+  const messagesRef = useRef<UIMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [queuedCount, setQueuedCount] = useState(0);
   const [runningTurnId, setRunningTurnId] = useState<string | undefined>(undefined);
@@ -436,6 +440,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
   const briefingInjected = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
   useEffect(() => { activeTurnRef.current = activeTurn; }, [activeTurn]);
+  useEffect(() => { messagesRef.current = messages; }, [messages]);
   useEffect(() => { isStreamingRef.current = isStreaming; }, [isStreaming]);
   useEffect(() => { runningTurnIdRef.current = runningTurnId; }, [runningTurnId]);
   useEffect(() => { conversationIdRef.current = conversationId; }, [conversationId]);
@@ -786,6 +791,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
         content: finalMsg,
         imageUris: uris,
         fromSiri: sendOpts?.fromSiri,
+        sourceTurnId: turnId,
       };
       const queuedAssistantMsg: UIMessage = {
         id: assistantMessageId,
@@ -844,8 +850,20 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       if (__DEV__) console.warn('[chat] network status probe failed; attempting request');
     }
     if (isConnected === false) {
-      const errMsg: UIMessage = { id: nextId(), role: 'assistant', content: '⚠️ 网络不可用，请检查网络连接后重试' };
-      setMessages(prev => [...prev, { id: nextId(), role: 'user', content: msg || '(图片)', imageUris: hasImages ? pendingImages.map(i => i.uri) : undefined, fromSiri: sendOpts?.fromSiri }, errMsg]);
+      const errMsg: UIMessage = {
+        id: nextId(),
+        role: 'assistant',
+        content: '⚠️ 网络不可用，请检查网络连接后重试',
+        sourceTurnId: turnId,
+      };
+      setMessages(prev => [...prev, {
+        id: nextId(),
+        role: 'user',
+        content: msg || '(图片)',
+        imageUris: hasImages ? pendingImages.map(i => i.uri) : undefined,
+        fromSiri: sendOpts?.fromSiri,
+        sourceTurnId: turnId,
+      }, errMsg]);
       dispatchAgentTurn({
         type: 'fail',
         at: Date.now(),
@@ -881,14 +899,33 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     }
 
     const uris = hasImages ? pendingImages.map(i => i.uri) : undefined;
+    const reusableUserMessage = reusableTurnId
+      ? [...messagesRef.current].reverse().find(message => (
+        message.role === 'user'
+        && (
+          message.sourceTurnId === reusableTurnId
+          || message.content === finalMsg
+        )
+      ))
+      : undefined;
+    const reusableAssistantMessage = reusableTurnId
+      ? [...messagesRef.current].reverse().find(message => (
+        message.role === 'assistant'
+        && !message.cardType
+        && message.sourceTurnId === reusableTurnId
+      ))
+      : undefined;
     const userMsg: UIMessage = {
-      id: sendOpts?.__localUserMessageId ?? nextId(),
+      id: sendOpts?.__localUserMessageId ?? reusableUserMessage?.id ?? nextId(),
       role: 'user',
       content: finalMsg,
       imageUris: uris,
       fromSiri: sendOpts?.fromSiri,
+      sourceTurnId: turnId,
     };
-    const aId = sendOpts?.__localAssistantMessageId ?? nextId();
+    const aId = sendOpts?.__localAssistantMessageId
+      ?? reusableAssistantMessage?.id
+      ?? nextId();
     const aiMsg: UIMessage = {
       id: aId,
       role: 'assistant',
@@ -908,7 +945,29 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
         });
       });
     } else {
-      setMessages(prev => forceNewConversation ? [userMsg, aiMsg] : [...prev, userMsg, aiMsg]);
+      setMessages((prev) => {
+        if (forceNewConversation) return [userMsg, aiMsg];
+        if (!reusableTurnId) return [...prev, userMsg, aiMsg];
+
+        let foundUser = false;
+        let foundAssistant = false;
+        const replaced = prev
+          .filter(message => !message.cardType || message.sourceTurnId !== reusableTurnId)
+          .map((message) => {
+            if (message.id === userMsg.id) {
+              foundUser = true;
+              return userMsg;
+            }
+            if (message.id === aId) {
+              foundAssistant = true;
+              return aiMsg;
+            }
+            return message;
+          });
+        if (!foundUser) replaced.push(userMsg);
+        if (!foundAssistant) replaced.push(aiMsg);
+        return replaced;
+      });
     }
     setIsStreaming(true);
     isStreamingRef.current = true;

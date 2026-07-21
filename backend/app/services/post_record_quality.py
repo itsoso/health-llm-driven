@@ -531,7 +531,16 @@ def _exercise_record_summary(record_data: dict) -> tuple[str, str]:
 
 
 def _result_is_failed(result: str) -> bool:
-    return bool(result and (result.startswith("Error") or result.startswith("[NEEDS_CONFIRMATION]")))
+    if not result:
+        return False
+    from app.services.agent_write_outcome import classify_write_execution
+
+    outcome = classify_write_execution(result)
+    return bool(
+        result.startswith("Error")
+        or result.startswith("[NEEDS_CONFIRMATION]")
+        or outcome.status in {"rejected", "failed"}
+    )
 
 
 def _record_id_from_write(result: str, record_data: dict) -> Optional[int]:

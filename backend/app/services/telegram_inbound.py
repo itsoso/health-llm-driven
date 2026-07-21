@@ -30,6 +30,7 @@ import httpx
 from app.config import settings
 from app.services.agent_kernel.intent_frame import build_intent_frame
 from app.services.agent_kernel.types import AgentEnvelope, ExecutionContext
+from app.services.agent_write_outcome import classify_write_execution
 
 logger = logging.getLogger(__name__)
 
@@ -226,8 +227,14 @@ async def execute_health_record(
             channel="telegram",
         )
         result = await executor._execute_tool("health_record", args, token)
+        outcome = classify_write_execution(result)
         executor._finish_agent_kernel_turn(
-            status="failed" if str(result).startswith("Error:") else "complete"
+            status=(
+                "failed"
+                if str(result).startswith("Error:")
+                or outcome.status in {"rejected", "failed"}
+                else "complete"
+            )
         )
         return result or "✅ 已记录"
     except Exception as e:
@@ -321,6 +328,9 @@ async def handle_inbound_text(
         # 处理 NEEDS_CONFIRMATION (L8 weight 确认) 这种半结构化返回
         if "[NEEDS_CONFIRMATION]" in result:
             return f"🤔 {result.replace('[NEEDS_CONFIRMATION]', '').strip()}\n\n回复 '确认' 完成记录."
+        outcome = classify_write_execution(result)
+        if outcome.status in {"rejected", "failed"}:
+            return "⚠️ 这条记录未写入，请补充更明确的记录内容后重试。"
         if result.startswith("Error"):
             return f"⚠️ {result[:200]}"
         # 简化结果展示 (返回的是 JSON 一坨, 取关键字段)

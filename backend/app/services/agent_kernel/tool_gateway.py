@@ -1,6 +1,7 @@
 """Tool preflight gateway for XiaoBa Agent Kernel."""
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import Awaitable, Callable
 
@@ -75,8 +76,14 @@ def blocked_tool_result(decision: CapabilityDecision) -> str:
         decision.reason,
         "请换用明确且已注册的操作，必要时先向用户澄清目标。",
     )
-    return (
-        "[NEEDS_CLARIFICATION] 工具调用未执行。"
-        f"tool={tool_name}; reason={decision.reason}; action={decision.action}; "
-        f"下一步={recovery_guidance}"
+    return json.dumps(
+        {
+            "status": "rejected",
+            "error_code": decision.reason,
+            "dispatch_started": False,
+            "tool": tool_name,
+            "message": "[NEEDS_CLARIFICATION] 工具调用未执行。",
+            "recovery_guidance": recovery_guidance,
+        },
+        ensure_ascii=False,
     )

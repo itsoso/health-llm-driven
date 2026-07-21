@@ -5,6 +5,7 @@ import pytest
 
 from app.models.daily_health import WaterIntake
 from app.models.user import User
+from app.services.agent_executor import AgentExecutor
 from app.services.voice_command_service import VoiceCommandService
 
 
@@ -60,6 +61,29 @@ async def test_execute_routes_voice_record_through_confirmation_boundary(db, tes
     assert result["requires_confirmation"] is True
     assert "已记录" not in result["message"]
     assert db.query(WaterIntake).filter(WaterIntake.user_id == test_user.id).count() == 0
+
+
+@pytest.mark.asyncio
+async def test_execute_does_not_report_structured_policy_rejection_as_recorded(
+    db,
+    test_user,
+    service,
+    monkeypatch,
+):
+    async def rejected_tool(*_args, **_kwargs):
+        return (
+            '{"status":"rejected","error_code":"write_tool_without_write_intent",'
+            '"dispatch_started":false}'
+        )
+
+    monkeypatch.setattr(AgentExecutor, "_execute_tool", rejected_tool)
+
+    result = await service.execute("体重72.5kg")
+
+    assert result is not None
+    assert result["execution_status"] == "blocked_or_failed"
+    assert result["requires_confirmation"] is False
+    assert "未写入" in result["message"]
 
 
 class TestVoiceCommandAPI:

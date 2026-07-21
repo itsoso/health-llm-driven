@@ -876,6 +876,10 @@ describe('useChatEngine', () => {
 
     expect(failedTurnId).toMatch(/^turn-/);
     expect(mockStreamChat.mock.calls[0][6]).toBe(failedTurnId);
+    expect(result.current.messages.filter(message => (
+      message.role === 'user' && message.content === '午餐吃了鸡胸肉'
+    ))).toHaveLength(1);
+    expect(result.current.messages.filter(message => message.role === 'assistant')).toHaveLength(1);
   });
 
   it('waits for active-turn hydration before reconciling initial history', async () => {

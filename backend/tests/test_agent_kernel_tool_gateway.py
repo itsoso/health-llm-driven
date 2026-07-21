@@ -48,10 +48,14 @@ def test_blocked_tool_result_includes_a_recovery_instruction_for_the_agent():
 
     result = blocked_tool_result(decision)
 
-    assert not result.startswith("Error:")
-    assert result.startswith("[NEEDS_CLARIFICATION]")
-    assert "下一步" in result
-    assert "先澄清" in result
+    payload = json.loads(result)
+
+    assert payload["status"] == "rejected"
+    assert payload["dispatch_started"] is False
+    assert payload["error_code"] == "write_tool_without_write_intent"
+    assert payload["tool"] == "health_record"
+    assert payload["message"].startswith("[NEEDS_CLARIFICATION]")
+    assert "先澄清" in payload["recovery_guidance"]
 
 
 @pytest.mark.asyncio
@@ -95,8 +99,10 @@ async def test_gateway_execute_blocks_enforced_denial_without_dispatch():
     assert dispatched is False
     assert result.decision is not None
     assert result.decision.action == "block"
-    assert result.content.startswith("[NEEDS_CLARIFICATION]")
-    assert "工具调用未执行" in result.content
+    payload = json.loads(result.content)
+    assert payload["status"] == "rejected"
+    assert payload["dispatch_started"] is False
+    assert "工具调用未执行" in payload["message"]
 
 
 @pytest.mark.asyncio
@@ -142,9 +148,18 @@ async def test_execute_tool_blocks_policy_denied_health_record_before_dispatch(d
         None,
     )
 
-    assert result.startswith("[NEEDS_CLARIFICATION]")
-    assert "工具调用未执行" in result
-    assert "write_tool_without_write_intent" in result
+    payload = json.loads(result)
+    assert payload["status"] == "rejected"
+    assert payload["dispatch_started"] is False
+    assert payload["error_code"] == "write_tool_without_write_intent"
+
+    assert executor._agent_kernel_event_bus is not None
+    tool_result = next(
+        event
+        for event in executor._agent_kernel_event_bus.events
+        if event.name == "agent.tool_result"
+    )
+    assert tool_result.data["success"] is False
 
 
 @pytest.mark.asyncio
@@ -169,9 +184,10 @@ async def test_execute_tool_blocks_health_manage_update_in_read_turn(db, monkeyp
         None,
     )
 
-    assert result.startswith("[NEEDS_CLARIFICATION]")
-    assert "工具调用未执行" in result
-    assert "manage_write_without_mutate_intent" in result
+    payload = json.loads(result)
+    assert payload["status"] == "rejected"
+    assert payload["dispatch_started"] is False
+    assert payload["error_code"] == "manage_write_without_mutate_intent"
 
 
 @pytest.mark.asyncio

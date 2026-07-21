@@ -72,3 +72,14 @@ def test_remote_api_error_with_local_marker_stays_uncertain():
 
     assert outcome.status == "uncertain"
     assert outcome.dispatch_started is None
+
+
+def test_legacy_needs_clarification_is_a_pre_dispatch_rejection():
+    outcome = classify_write_execution(
+        "[NEEDS_CLARIFICATION] 工具调用未执行。"
+        "tool=health_record; reason=write_tool_without_write_intent"
+    )
+
+    assert outcome.status == "rejected"
+    assert outcome.error_code == "policy_blocked"
+    assert outcome.dispatch_started is False

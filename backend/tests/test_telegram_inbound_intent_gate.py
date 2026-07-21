@@ -1,3 +1,5 @@
+import json
+
 from app.services.telegram_inbound import classify_intent
 
 
@@ -34,5 +36,41 @@ async def test_telegram_execute_record_uses_agent_tool_gateway(db, monkeypatch):
         source_text="今天我的饮食的记录，帮我列个表格出来。",
     )
 
-    assert "策略拦截" in result
-    assert "write_tool_without_write_intent" in result
+    payload = json.loads(result)
+    assert payload["status"] == "rejected"
+    assert payload["error_code"] == "write_tool_without_write_intent"
+    assert payload["dispatch_started"] is False
+
+
+async def test_telegram_structured_rejection_is_not_rendered_as_success(db, monkeypatch):
+    from app.services import telegram_inbound
+
+    monkeypatch.setattr(
+        telegram_inbound,
+        "llm_extract_record",
+        lambda _text: _async_value({
+            "record_type": "diet",
+            "data": {"food_items": "米饭"},
+        }),
+    )
+    monkeypatch.setattr(
+        telegram_inbound,
+        "execute_health_record",
+        lambda *_args, **_kwargs: _async_value(
+            '{"status":"rejected","error_code":"write_tool_without_write_intent",'
+            '"dispatch_started":false}'
+        ),
+    )
+
+    reply = await telegram_inbound.handle_inbound_text(
+        db,
+        1,
+        "记录午餐吃了米饭",
+    )
+
+    assert "未写入" in reply
+    assert not reply.startswith("✅")
+
+
+async def _async_value(value):
+    return value
