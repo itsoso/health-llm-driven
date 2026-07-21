@@ -65,6 +65,15 @@ def test_exam_id_now_recognized_as_identity():
     assert resource_id == "321"
 
 
+def test_resource_id_now_recognized_as_identity():
+    """Runtime replay/standard receipts use resource_type + resource_id."""
+    resource_type, resource_id = _receipt_resource_identity(
+        {"status": "verified", "resource_type": "diet_record", "resource_id": 829}
+    )
+    assert resource_type == "diet_record"
+    assert resource_id == "829"
+
+
 def test_autocreate_with_unparseable_tap_stays_fail_closed():
     """tap 响应解析不出 record_id → id=None → 回执仍 None(fail-closed:不可验证就不声称)。"""
     shape = json.dumps(

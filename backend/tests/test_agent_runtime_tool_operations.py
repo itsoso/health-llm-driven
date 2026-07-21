@@ -294,6 +294,19 @@ def test_runtime_write_fingerprint_canonicalizes_supported_aliases():
         "intervention_cycle",
         {"action": "start", "confirmed": True, "days": 90},
     )
+    assert _runtime_write_operation_fingerprint(
+        "health_manage",
+        {"record_type": "diet", "operation": "delete", "record_id": 829},
+    ) == _runtime_write_operation_fingerprint(
+        "health_manage",
+        {
+            "record_type": "diet",
+            "operation": "delete",
+            "record_id": 829,
+            "confirmed": True,
+            "confirm": True,
+        },
+    )
 
 
 def test_runtime_write_fingerprint_uses_dispatched_diet_payload():

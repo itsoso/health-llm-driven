@@ -2760,6 +2760,12 @@ def _runtime_write_operation_fingerprint(
         canonical_args["action"] = "cancel" if action == "delete" else action
         canonical_args.pop("confirm", None)
         canonical_args.pop("confirmed", None)
+    elif tool_name == "health_manage":
+        operation = str(canonical_args.get("operation") or "").strip().lower()
+        if operation:
+            canonical_args["operation"] = operation
+        canonical_args.pop("confirm", None)
+        canonical_args.pop("confirmed", None)
     return _write_operation_fingerprint(tool_name, canonical_args)
 
 
@@ -3053,7 +3059,15 @@ def _is_seen_readonly_call(tc: Dict[str, Any], seen_read_fps: Dict[str, Any]) ->
 
 
 def _receipt_resource_identity(payload: Dict[str, Any]) -> tuple[Optional[str], Optional[str]]:
-    id_keys = ("id", "record_id", "event_id", "log_id", "cycle_id", "exam_id")
+    id_keys = (
+        "id",
+        "resource_id",
+        "record_id",
+        "event_id",
+        "log_id",
+        "cycle_id",
+        "exam_id",
+    )
 
     def read_id(source: Dict[str, Any]) -> Optional[str]:
         for key in id_keys:
@@ -7785,7 +7799,7 @@ class AgentExecutor:
         write_results_by_fingerprint: Dict[str, tuple[str, str]] = {}
         # 只读工具回合级去重(同名+同参已跑过 → 复用结果, 不重复真执行)。回合级 local, 自然重置。
         read_results_by_fingerprint: Dict[str, tuple[str, str]] = {}
-        unverified_write_tools: List[str] = []
+        unverified_write_operations: Dict[str, str] = {}
         # Slice 3 配方候选: 本轮**成功完成**的 health_record 写步骤 (sanitize 掉
         # 一次性确认标志 + 日期模板化)。≥2 步时 done 附 save_recipe 描述符
         # (仅描述符, 移动端渲染"存为配方"入口; 存不存由用户点)。
@@ -8367,6 +8381,16 @@ class AgentExecutor:
                             _write_operation_fingerprint(func_name, parsed_tool_args)
                             if write_attempted else None
                         )
+                        runtime_write_fingerprint = (
+                            _runtime_write_operation_fingerprint(
+                                func_name,
+                                parsed_tool_args,
+                                default_record_date=(
+                                    self._agent_kernel_reference_now().strftime("%Y-%m-%d")
+                                ),
+                            )
+                            if write_attempted else None
+                        )
                         replayed_write = bool(
                             write_fingerprint
                             and write_fingerprint in write_results_by_fingerprint
@@ -8615,11 +8639,16 @@ class AgentExecutor:
                                     parsed_args=parsed_tool_args,
                                     receipt=receipt,
                                 )
-                                if (
-                                    checkpoint_status == "uncertain"
-                                    and func_name not in unverified_write_tools
-                                ):
-                                    unverified_write_tools.append(func_name)
+                                if runtime_write_fingerprint:
+                                    if checkpoint_status == "uncertain":
+                                        unverified_write_operations[
+                                            runtime_write_fingerprint
+                                        ] = func_name
+                                    elif checkpoint_status == "verified":
+                                        unverified_write_operations.pop(
+                                            runtime_write_fingerprint,
+                                            None,
+                                        )
                         record_card = None
                         quality_cards: list[dict] = []
                         if func_name == "health_record" and not replayed_write:
@@ -8701,7 +8730,7 @@ class AgentExecutor:
                         "tools": list(_round_tool_names),
                     })
 
-                    if unverified_write_tools:
+                    if unverified_write_operations:
                         final_finish_reason = "error"
                         # 部分成功要点名(write_receipts=本轮已验证写入),不一刀切否定
                         _unverified_msg = _unverified_write_message(write_receipts)
@@ -8722,7 +8751,7 @@ class AgentExecutor:
                     # 分析问句「从 HRV 记录…推断胃溃疡根因」曾被旧关键词路由误判为记录意图，
                     # 本轮只调 health_query×5 + health_manage(list),
                     # 无任何写入(write_receipts=[]),却吐出假"✅ 已记录"+记录味兜底("请再说一次要改哪一条")。
-                    # 上面 unverified_write_tools 已先行拦掉"尝试写但无回执"的情形,故走到这里时
+                    # 上面 unverified_write_operations 已先行拦掉"尝试写但无回执"的情形,故走到这里时
                     # write_receipts 非空 ⟺ 本轮确有可验证写入。无回执 → fall through 到 continue,
                     # 让下一轮 LLM 用工具结果作答(合成/查询直出),绝不谎报写入。
                     _round_executed_write_tool = any(

@@ -174,6 +174,94 @@ async def test_identityless_write_result_cannot_render_or_finish_as_success(
 
 
 @pytest.mark.asyncio
+async def test_later_verified_same_write_clears_uncertain_checkpoint(
+    db, auth_user_and_headers, monkeypatch
+):
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    calls = 0
+    executions = 0
+
+    async def fake_call_llm(messages, tools):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return {
+                "content": "",
+                "finish_reason": "tool_calls",
+                "tool_calls": [
+                    {
+                        "id": "delete-no-receipt",
+                        "function": {
+                            "name": "health_manage",
+                            "arguments": json.dumps({
+                                "record_type": "diet",
+                                "operation": "delete",
+                                "record_id": 829,
+                            }),
+                        },
+                    },
+                    {
+                        "id": "delete-with-receipt",
+                        "function": {
+                            "name": "health_manage",
+                            "arguments": json.dumps({
+                                "record_type": "diet",
+                                "operation": "delete",
+                                "record_id": 829,
+                                "confirmed": True,
+                            }),
+                        },
+                    },
+                ],
+            }
+        return {"content": "已删除这条饮食记录。", "finish_reason": "stop"}
+
+    async def fake_execute_tool(name, args, token):
+        nonlocal executions
+        executions += 1
+        if executions == 1:
+            return '{"message":"Record deleted successfully"}'
+        return json.dumps(
+            {
+                "status": "verified",
+                "success": True,
+                "resource_type": "diet_record",
+                "resource_id": "829",
+            },
+            ensure_ascii=False,
+        )
+
+    monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
+    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [])
+    monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
+    monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
+    monkeypatch.setattr(executor, "_execute_tool", fake_execute_tool)
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="删除这条饮食记录",
+            user_auth_token="test-token",
+            client_turn_id="turn-delete-later-verified",
+        )
+    ]
+    rendered = "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+
+    assert "不能确认" not in rendered
+    assert "已删除这条饮食记录" in rendered
+    done = next(event for event in events if event.get("event") == "done")
+    assert done["data"]["completion_status"] == "complete"
+    assert done["data"]["write_receipts"][0]["resource_type"] == "diet_record"
+    assert done["data"]["write_receipts"][0]["resource_id"] == "829"
+
+
+@pytest.mark.asyncio
 async def test_http_500_after_dispatched_write_is_uncertain_and_orphan_retry_does_not_reexecute(
     db, auth_user_and_headers, monkeypatch
 ):
