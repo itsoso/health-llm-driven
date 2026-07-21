@@ -101,19 +101,19 @@ def classify_write_execution(
         if status in _REJECTED_STATUSES:
             return WriteExecutionOutcome(
                 status="rejected",
-                error_code=error_code,
+                error_code=error_code or status,
                 dispatch_started=dispatch_started,
             )
         if status in _FAILED_STATUSES:
             return WriteExecutionOutcome(
                 status="failed",
-                error_code=error_code,
+                error_code=error_code or status,
                 dispatch_started=dispatch_started,
             )
         if status in _UNCERTAIN_STATUSES:
             return WriteExecutionOutcome(
                 status="uncertain",
-                error_code=error_code,
+                error_code=error_code or status,
                 dispatch_started=dispatch_started,
             )
         if status in _COMPLETED_STATUSES:
@@ -150,3 +150,23 @@ def classify_write_execution(
     ):
         return WriteExecutionOutcome(status="rejected", dispatch_started=False)
     return WriteExecutionOutcome(status="uncertain")
+
+
+def classify_explicit_write_execution(
+    result: Any,
+) -> WriteExecutionOutcome | None:
+    """Classify only payloads that explicitly declare execution state.
+
+    Legacy success payloads such as ``{"id": 42}`` carry a resource identity
+    but no state marker. Callers that can build a receipt should use
+    ``classify_write_execution(..., receipt=...)`` for those. This helper is
+    for shared fail-closed handling without misclassifying legacy success JSON.
+    """
+    payload = _structured_payload(result)
+    if payload is None:
+        return None
+    status = str(payload.get("status") or "").strip().lower()
+    has_explicit_failure = payload.get("success") is False or payload.get("ok") is False
+    if not status and not has_explicit_failure:
+        return None
+    return classify_write_execution(payload)

@@ -302,6 +302,14 @@ async def test_agent_media_tool_uses_current_image_and_emits_manual_confirmation
         "app.services.aigc_media_job_service.AIGCMediaJobService",
         FakeMediaService,
     )
+    # This focused adapter test uses a synthetic source id instead of a durable
+    # AgentMessage. Dispatch checkpoint behavior is covered by executor status
+    # tests with a real source row.
+    monkeypatch.setattr(
+        executor,
+        "_persist_current_turn_write_dispatch_started",
+        lambda **_kwargs: None,
+    )
 
     result = await executor._execute_tool(
         "draft_aigc_media",

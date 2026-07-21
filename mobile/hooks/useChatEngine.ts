@@ -98,6 +98,45 @@ export function buildTurnRequestFingerprint(
   }));
 }
 
+export function findReusableTurnMessage(
+  messages: UIMessage[],
+  role: 'user' | 'assistant',
+  turnId: string,
+): UIMessage | undefined {
+  return [...messages].reverse().find(message => (
+    message.role === role
+    && !message.cardType
+    && message.sourceTurnId === turnId
+  ));
+}
+
+function upsertOptimisticTurnPair(
+  messages: UIMessage[],
+  reusableTurnId: string | undefined,
+  userMessage: UIMessage,
+  assistantMessage: UIMessage,
+): UIMessage[] {
+  if (!reusableTurnId) return [...messages, userMessage, assistantMessage];
+  let foundUser = false;
+  let foundAssistant = false;
+  const replaced = messages
+    .filter(message => !message.cardType || message.sourceTurnId !== reusableTurnId)
+    .map((message) => {
+      if (message.id === userMessage.id) {
+        foundUser = true;
+        return userMessage;
+      }
+      if (message.id === assistantMessage.id) {
+        foundAssistant = true;
+        return assistantMessage;
+      }
+      return message;
+    });
+  if (!foundUser) replaced.push(userMessage);
+  if (!foundAssistant) replaced.push(assistantMessage);
+  return replaced;
+}
+
 /** 2026-05-14 FIX-7: 把 message.meta (后端持久化的性能/可解释性 JSON)
  * 映射到 UIMessage 字段, 让 reload 也能恢复 chat bubble footer. */
 function applyMeta(msg: any): Partial<UIMessage> {
@@ -928,6 +967,13 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       && previousTurn.requestFingerprint === requestFingerprint
     ) ? previousTurn.turnId : undefined;
     const turnId = sendOpts?.__queuedTurnId ?? reusableTurnId ?? nextTurnId();
+    const uris = hasImages ? pendingImages.map(i => i.uri) : undefined;
+    const reusableUserMessage = reusableTurnId
+      ? findReusableTurnMessage(messagesRef.current, 'user', reusableTurnId)
+      : undefined;
+    const reusableAssistantMessage = reusableTurnId
+      ? findReusableTurnMessage(messagesRef.current, 'assistant', reusableTurnId)
+      : undefined;
 
     if (isStreamingRef.current && !sendOpts?.__precreatedLocalMessages) {
       const userMessageId = nextId();
@@ -998,20 +1044,28 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       if (__DEV__) console.warn('[chat] network status probe failed; attempting request');
     }
     if (isConnected === false) {
+      const offlineUserMessage: UIMessage = {
+        id: sendOpts?.__localUserMessageId ?? reusableUserMessage?.id ?? nextId(),
+        role: 'user',
+        content: finalMsg,
+        imageUris: uris,
+        fromSiri: sendOpts?.fromSiri,
+        sourceTurnId: turnId,
+      };
       const errMsg: UIMessage = {
-        id: nextId(),
+        id: sendOpts?.__localAssistantMessageId
+          ?? reusableAssistantMessage?.id
+          ?? nextId(),
         role: 'assistant',
         content: '⚠️ 网络不可用，请检查网络连接后重试',
         sourceTurnId: turnId,
       };
-      setMessages(prev => [...prev, {
-        id: nextId(),
-        role: 'user',
-        content: msg || '(图片)',
-        imageUris: hasImages ? pendingImages.map(i => i.uri) : undefined,
-        fromSiri: sendOpts?.fromSiri,
-        sourceTurnId: turnId,
-      }, errMsg]);
+      setMessages(prev => upsertOptimisticTurnPair(
+        prev,
+        reusableTurnId,
+        offlineUserMessage,
+        errMsg,
+      ));
       dispatchAgentTurn({
         type: 'fail',
         at: Date.now(),
@@ -1046,23 +1100,6 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       briefingInjected.current = false;
     }
 
-    const uris = hasImages ? pendingImages.map(i => i.uri) : undefined;
-    const reusableUserMessage = reusableTurnId
-      ? [...messagesRef.current].reverse().find(message => (
-        message.role === 'user'
-        && (
-          message.sourceTurnId === reusableTurnId
-          || message.content === finalMsg
-        )
-      ))
-      : undefined;
-    const reusableAssistantMessage = reusableTurnId
-      ? [...messagesRef.current].reverse().find(message => (
-        message.role === 'assistant'
-        && !message.cardType
-        && message.sourceTurnId === reusableTurnId
-      ))
-      : undefined;
     const userMsg: UIMessage = {
       id: sendOpts?.__localUserMessageId ?? reusableUserMessage?.id ?? nextId(),
       role: 'user',
@@ -1095,26 +1132,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     } else {
       setMessages((prev) => {
         if (forceNewConversation) return [userMsg, aiMsg];
-        if (!reusableTurnId) return [...prev, userMsg, aiMsg];
-
-        let foundUser = false;
-        let foundAssistant = false;
-        const replaced = prev
-          .filter(message => !message.cardType || message.sourceTurnId !== reusableTurnId)
-          .map((message) => {
-            if (message.id === userMsg.id) {
-              foundUser = true;
-              return userMsg;
-            }
-            if (message.id === aId) {
-              foundAssistant = true;
-              return aiMsg;
-            }
-            return message;
-          });
-        if (!foundUser) replaced.push(userMsg);
-        if (!foundAssistant) replaced.push(aiMsg);
-        return replaced;
+        return upsertOptimisticTurnPair(prev, reusableTurnId, userMsg, aiMsg);
       });
     }
     setIsStreaming(true);

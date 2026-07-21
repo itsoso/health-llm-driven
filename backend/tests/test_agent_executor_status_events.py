@@ -1256,7 +1256,7 @@ async def test_write_state_is_persisted_before_execution_and_verified_with_recei
         yield {"type": "content", "text": "午餐已记录。"}
         yield {"type": "finish", "finish_reason": "stop"}
 
-    async def fake_execute_tool(name, args, token):
+    async def fake_health_record(base_url, headers, args):
         db.expire_all()
         user_message = (
             db.query(AgentMessage)
@@ -1269,7 +1269,7 @@ async def test_write_state_is_persisted_before_execution_and_verified_with_recei
         return '{"id":701,"food_items":"鸡胸肉","created_at":"2026-07-10T12:00:00Z"}'
 
     monkeypatch.setattr(executor, "_call_llm_stream", fake_stream)
-    monkeypatch.setattr(executor, "_execute_tool", fake_execute_tool)
+    monkeypatch.setattr(executor, "_exec_health_record", fake_health_record)
     monkeypatch.setattr(
         "app.services.agent_executor._post_record_quality_response",
         lambda *args, **kwargs: None,
@@ -1277,7 +1277,7 @@ async def test_write_state_is_persisted_before_execution_and_verified_with_recei
 
     events = await _run(
         executor,
-        "写状态测试",
+        "记录午餐鸡胸肉",
         user_id=user.id,
         client_turn_id="turn-write-checkpoint",
     )

@@ -12,6 +12,7 @@
 import asyncio
 import json
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import pytest
 
@@ -251,6 +252,43 @@ def test_validate_steps_rejects_persistent_or_external_record_types(db, record_t
 
 
 # ─────────────────────────── 确定性重放 ───────────────────────────
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status", "needs_confirmation"),
+    [
+        ("cancelled", False),
+        ("not_found", False),
+        ("uncertain", False),
+        ("needs_confirmation", True),
+    ],
+)
+async def test_replay_uses_shared_structured_write_outcome_classifier(
+    status,
+    needs_confirmation,
+):
+    class FakeExecutor:
+        async def _execute_recipe_step(self, *_args, **_kwargs):
+            return json.dumps({"status": status})
+
+    recipe = SimpleNamespace(steps=[{
+        "tool": "health_record",
+        "args_template": {"record_type": "water", "data": {"amount": 250}},
+    }])
+
+    outcomes = [
+        outcome
+        async for outcome in recipe_svc.replay(
+            recipe,
+            FakeExecutor(),
+            user_auth_token=None,
+            channel="typed",
+        )
+    ]
+
+    assert outcomes[-1]["error"] is True
+    assert outcomes[-1]["needs_confirmation"] is needs_confirmation
 
 @pytest.mark.asyncio
 async def test_replay_never_auto_medication_still_requires_confirmation(

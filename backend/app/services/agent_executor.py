@@ -47,7 +47,10 @@ from app.services.agent_turn_recovery import (
     should_retry_tool_failure,
 )
 from app.services.agent_turn_outcome import classify_agent_turn_outcome
-from app.services.agent_write_outcome import classify_write_execution
+from app.services.agent_write_outcome import (
+    classify_explicit_write_execution,
+    classify_write_execution,
+)
 from app.services.dynamic_card_persistence import cards_for_persistence
 from app.services.utterance_intent_classifier import classify_agent_utterance
 from app.utils.number_format import format_card_numbers
@@ -4331,14 +4334,27 @@ def _summarize_record_data(
     return ""
 
 
-def _health_record_card_descriptor(record_type: Any, record_data: Any, result: str) -> Optional[dict]:
+def _health_record_card_descriptor(
+    record_type: Any,
+    record_data: Any,
+    result: str,
+    *,
+    write_verified: Optional[bool] = None,
+) -> Optional[dict]:
     """Build a deterministic chat card from a completed health_record tool.
 
     This is intentionally not model-generated UI. It mirrors the actual tool
     result so streaming cards cannot introduce new medical claims.
     """
 
-    if not result or result.startswith("Error") or result.startswith("[NEEDS_CONFIRMATION]"):
+    explicit_outcome = classify_explicit_write_execution(result)
+    if (
+        write_verified is False
+        or not result
+        or result.startswith("Error")
+        or result.startswith("[NEEDS_CONFIRMATION]")
+        or bool(explicit_outcome and explicit_outcome.status != "verified")
+    ):
         return None
     kind = _normalize_fast_record_kind(record_type)
     if kind not in {
@@ -4550,6 +4566,7 @@ def _post_record_quality_response(
     *,
     db: Optional[Session] = None,
     user_id: Optional[int] = None,
+    write_verified: Optional[bool] = None,
 ) -> Optional[dict]:
     """Compatibility wrapper; implementation lives in post_record_quality.py."""
     return build_post_record_quality_response(
@@ -4559,6 +4576,7 @@ def _post_record_quality_response(
         personal_context=personal_context,
         db=db,
         user_id=user_id,
+        write_verified=write_verified,
     )
 
 
@@ -6449,6 +6467,46 @@ class AgentExecutor:
             self.db.rollback()
             raise RuntimeError("write_plan_persistence_failed") from error
 
+    def _persist_current_turn_write_dispatch_started(
+        self,
+        *,
+        tool_name: str,
+        parsed_args: Dict[str, Any],
+    ) -> None:
+        """Persist in-flight only after policy approval and before dispatch.
+
+        Direct surfaces without a durable Agent message still rely on the
+        runtime operation ledger. Chat turns additionally checkpoint their
+        source message so process recovery cannot repeat a side effect.
+        """
+        source_message_id = self._current_turn_source_message_id
+        if source_message_id is None:
+            return
+        from app.models.agent_conversation import AgentConversation, AgentMessage
+
+        query = (
+            self.db.query(AgentMessage)
+            .join(
+                AgentConversation,
+                AgentConversation.id == AgentMessage.conversation_id,
+            )
+            .filter(
+                AgentMessage.id == int(source_message_id),
+                AgentMessage.role == "user",
+            )
+        )
+        if self._current_user_id is not None:
+            query = query.filter(AgentConversation.user_id == self._current_user_id)
+        user_message = query.one_or_none()
+        if user_message is None:
+            raise RuntimeError("write_source_message_not_found")
+        self._persist_turn_write_state(
+            user_message,
+            status="in_flight",
+            tool_name=tool_name,
+            parsed_args=parsed_args,
+        )
+
     async def _recover_client_turn_write_checkpoint(
         self,
         svc,
@@ -6848,13 +6906,6 @@ class AgentExecutor:
                             write_fingerprint
                             and write_fingerprint in write_results_by_fingerprint
                         )
-                        if write_attempted and not replayed_write:
-                            self._persist_turn_write_state(
-                                user_msg,
-                                status="in_flight",
-                                tool_name=fn,
-                                parsed_args=parsed_args,
-                            )
                         if replayed_write:
                             result = write_results_by_fingerprint[write_fingerprint]
                         else:
@@ -8644,12 +8695,6 @@ class AgentExecutor:
                             # intervention_cycle) → done 侧 KB 证据卡强制重算 (反映写后 Twin,
                             # 不复用 pre-round-1 memo)。保守: 即便写最终软失败也重算 (无害多一次)。
                             self._turn_twin_write_occurred = True
-                            self._persist_turn_write_state(
-                                user_msg,
-                                status="in_flight",
-                                tool_name=func_name,
-                                parsed_args=parsed_tool_args,
-                            )
                         _tool_call_start = time.time()
                         if replayed_write:
                             result, result_for_record_card = (
@@ -8868,6 +8913,9 @@ class AgentExecutor:
                                     personal_context=system_content,
                                     db=self.db,
                                     user_id=user_id,
+                                    write_verified=bool(
+                                        receipt and receipt.get("verified") is True
+                                    ),
                                 )
                                 if quality_response:
                                     post_record_qualities.append(quality_response)
@@ -8880,6 +8928,9 @@ class AgentExecutor:
                                         tool_event_data["record_type"],
                                         tool_event_data["record_data"],
                                         result_for_record_card,
+                                        write_verified=bool(
+                                            receipt and receipt.get("verified") is True
+                                        ),
                                     )
                             except Exception:
                                 pass
@@ -10648,13 +10699,6 @@ class AgentExecutor:
                     yield self._progress_event(
                         "tool", round=1, label=_tool_progress_label(tool)
                     )
-                    if _write_tool_attempted(tool, args):
-                        self._persist_turn_write_state(
-                            user_msg,
-                            status="in_flight",
-                            tool_name=tool,
-                            parsed_args=args,
-                        )
                     continue
 
                 # phase == "result"
@@ -10681,6 +10725,9 @@ class AgentExecutor:
                         args.get("record_type") or args.get("type"),
                         args.get("data") or {},
                         result,
+                        write_verified=bool(
+                            receipt and receipt.get("verified") is True
+                        ),
                     )
                     if card:
                         record_cards.append(card)
@@ -13598,6 +13645,12 @@ class AgentExecutor:
                         },
                         ensure_ascii=False,
                     )
+
+            if spec.requires_verified_receipt(args):
+                self._persist_current_turn_write_dispatch_started(
+                    tool_name=request.tool_name,
+                    parsed_args=args,
+                )
 
             if spec.adapter_kind == "specialist":
                 from app.services.specialist_tools import run_specialist_tool

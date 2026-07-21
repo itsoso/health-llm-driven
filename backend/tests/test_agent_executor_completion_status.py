@@ -896,8 +896,7 @@ async def test_all_planned_writes_are_checkpointed_before_first_dispatch(
             ],
         }
 
-    async def fake_execute_tool(name, args, token):
-        parsed = json.loads(args)
+    async def fake_health_manage(base_url, headers, parsed):
         return json.dumps({
             "id": parsed["record_id"],
             "record_id": parsed["record_id"],
@@ -921,7 +920,7 @@ async def test_all_planned_writes_are_checkpointed_before_first_dispatch(
     monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [])
     monkeypatch.setattr(executor, "_call_llm", fake_llm_call)
     monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_llm_call))
-    monkeypatch.setattr(executor, "_execute_tool", fake_execute_tool)
+    monkeypatch.setattr(executor, "_exec_health_manage", fake_health_manage)
     monkeypatch.setattr(executor, "_persist_turn_write_state", crash_before_second_dispatch)
 
     with pytest.raises(WorkerCrashed):

@@ -162,6 +162,21 @@ def test_diet_quality_response_uses_today_totals_and_actionable_routes(db, auth_
     assert all("问小巴" not in action["label"] for action in card["actions"])
 
 
+def test_uncertain_write_never_builds_success_reply_or_card():
+    response = build_post_record_quality_response(
+        "diet",
+        {
+            "meal_type": "dinner",
+            "food_items": "烤鱼",
+            "calories": 605,
+        },
+        result='{"status":"uncertain","dispatch_started":true}',
+        write_verified=False,
+    )
+
+    assert response is None
+
+
 def test_diet_quality_response_ignores_numeric_contraindication_noise():
     response = build_post_record_quality_response(
         "diet",

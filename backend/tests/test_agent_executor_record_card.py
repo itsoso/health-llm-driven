@@ -9,6 +9,8 @@ suppresses the card rather than ever rendering JSON.
 
 import json
 
+import pytest
+
 from app.services.agent_executor import _health_record_card_descriptor
 
 
@@ -113,3 +115,22 @@ def test_reminder_card_includes_honest_watch_delivery_boundary():
 
 def test_error_result_returns_none():
     assert _health_record_card_descriptor("diet", {}, "Error: boom") is None
+
+
+@pytest.mark.parametrize("status", ["rejected", "uncertain", "failed", "cancelled"])
+def test_non_verified_structured_write_does_not_build_record_card(status):
+    result = json.dumps(
+        {
+            "status": status,
+            "dispatch_started": status == "uncertain",
+            "message": "已记录晚餐：烤鱼",
+        },
+        ensure_ascii=False,
+    )
+
+    assert _health_record_card_descriptor(
+        "diet",
+        {"meal_type": "dinner", "food_items": "烤鱼"},
+        result,
+        write_verified=False,
+    ) is None

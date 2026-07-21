@@ -39,6 +39,14 @@ async def test_advice_turn_recovers_from_model_selected_write_tool_without_user_
     user, _headers = auth_user_and_headers
     executor = AgentExecutor(db)
     calls = []
+    checkpoint_statuses = []
+    original_persist_write_state = executor._persist_turn_write_state
+
+    def track_write_state(user_message, **kwargs):
+        checkpoint_statuses.append(kwargs["status"])
+        return original_persist_write_state(user_message, **kwargs)
+
+    monkeypatch.setattr(executor, "_persist_turn_write_state", track_write_state)
 
     async def fake_call_llm(messages, tools):
         calls.append({"messages": messages, "tools": tools})
@@ -110,3 +118,68 @@ async def test_advice_turn_recovers_from_model_selected_write_tool_without_user_
     saved = db.query(AgentMessage).filter_by(role="assistant").one()
     assert saved.content == visible_text
     assert saved.meta["turn_outcome"]["category"] == "success"
+    saved_user = db.query(AgentMessage).filter_by(role="user").one()
+    assert saved_user.meta["write_state"]["status"] == "rejected"
+    assert "in_flight" not in checkpoint_statuses
+
+
+@pytest.mark.asyncio
+async def test_write_checkpoint_is_durable_before_policy_approved_dispatch(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    calls = []
+
+    async def fake_call_llm(messages, tools):
+        calls.append({"messages": messages, "tools": tools})
+        if len(calls) == 1:
+            return {
+                "content": "",
+                "finish_reason": "tool_calls",
+                "tool_calls": [{
+                    "id": "call_water_write",
+                    "type": "function",
+                    "function": {
+                        "name": "health_record",
+                        "arguments": json.dumps({
+                            "record_type": "water",
+                            "data": {"amount": 500},
+                        }),
+                    },
+                }],
+            }
+        return {"content": "已记录饮水 500ml。", "finish_reason": "stop"}
+
+    monkeypatch.setattr(
+        "app.services.llm.tool_validator.validate_tool_call",
+        lambda tool_name, args, db, user_id, reference_now=None: {
+            "error": None,
+            "data": args,
+        },
+    )
+
+    async def assert_checkpoint_before_dispatch(*_args, **_kwargs):
+        source = db.query(AgentMessage).filter_by(role="user").one()
+        db.refresh(source)
+        assert source.meta["write_state"]["status"] == "in_flight"
+        return json.dumps({"id": 42, "amount": 500})
+
+    monkeypatch.setattr(executor, "_exec_health_record", assert_checkpoint_before_dispatch)
+    executor._call_llm = fake_call_llm
+    executor._call_llm_stream = _stream_from(fake_call_llm)
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="记录饮水500ml",
+            user_auth_token="test-token",
+        )
+    ]
+
+    assert events[-1]["event"] == "done"
+    source = db.query(AgentMessage).filter_by(role="user").one()
+    assert source.meta["write_state"]["status"] == "verified"

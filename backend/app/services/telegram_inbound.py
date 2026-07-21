@@ -19,6 +19,7 @@ Karpathy verification 思想: 写库前预览 + 用户在 Telegram 直接看到�
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -213,7 +214,10 @@ async def execute_health_record(
 
     base_url 取 settings.health_api_base_url, 没配则默认 localhost.
     """
-    from app.services.agent_executor import AgentExecutor
+    from app.services.agent_executor import (
+        AgentExecutor,
+        _write_receipt_from_tool_result,
+    )
     executor = AgentExecutor(db)
     executor._current_user_id = user_id
     try:
@@ -227,16 +231,21 @@ async def execute_health_record(
             channel="telegram",
         )
         result = await executor._execute_tool("health_record", args, token)
-        outcome = classify_write_execution(result)
+        receipt = _write_receipt_from_tool_result("health_record", args, result)
+        outcome = classify_write_execution(result, receipt=receipt)
         executor._finish_agent_kernel_turn(
-            status=(
-                "failed"
-                if str(result).startswith("Error:")
-                or outcome.status in {"rejected", "failed"}
-                else "complete"
-            )
+            status="complete" if outcome.status == "verified" else "failed"
         )
-        return result or "✅ 已记录"
+        if result:
+            return result
+        return json.dumps(
+            {
+                "status": "uncertain",
+                "error_code": "empty_tool_result",
+                "dispatch_started": None,
+            },
+            ensure_ascii=False,
+        )
     except Exception as e:
         executor._finish_agent_kernel_turn(status="failed")
         logger.warning(
@@ -287,7 +296,13 @@ async def handle_inbound_text(
     根据 text 自动分流, 返回给用户的 Telegram 回执.
     """
     intent = classify_intent(text)
-    logger.info(f"[telegram-inbound] user={user_id} intent={intent} text={text[:80]!r}")
+    user_ref = hashlib.sha256(str(user_id).encode("utf-8")).hexdigest()[:10]
+    logger.info(
+        "[telegram-inbound] user_ref=%s intent=%s text_length=%s",
+        user_ref,
+        intent,
+        len(text),
+    )
 
     if intent == "directive":
         # 老路径
@@ -328,7 +343,15 @@ async def handle_inbound_text(
         # 处理 NEEDS_CONFIRMATION (L8 weight 确认) 这种半结构化返回
         if "[NEEDS_CONFIRMATION]" in result:
             return f"🤔 {result.replace('[NEEDS_CONFIRMATION]', '').strip()}\n\n回复 '确认' 完成记录."
-        outcome = classify_write_execution(result)
+        from app.services.agent_executor import _write_receipt_from_tool_result
+
+        receipt = _write_receipt_from_tool_result("health_record", args, result)
+        outcome = classify_write_execution(result, receipt=receipt)
+        if outcome.status == "uncertain":
+            return (
+                "⚠️ 这条记录的写入状态待核对。为避免重复记录，我不会自动重试；"
+                "请先查询现有记录。"
+            )
         if outcome.status in {"rejected", "failed"}:
             return "⚠️ 这条记录未写入，请补充更明确的记录内容后重试。"
         if result.startswith("Error"):

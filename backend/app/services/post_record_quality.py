@@ -533,13 +533,13 @@ def _exercise_record_summary(record_data: dict) -> tuple[str, str]:
 def _result_is_failed(result: str) -> bool:
     if not result:
         return False
-    from app.services.agent_write_outcome import classify_write_execution
+    from app.services.agent_write_outcome import classify_explicit_write_execution
 
-    outcome = classify_write_execution(result)
+    outcome = classify_explicit_write_execution(result)
     return bool(
         result.startswith("Error")
         or result.startswith("[NEEDS_CONFIRMATION]")
-        or outcome.status in {"rejected", "failed"}
+        or bool(outcome and outcome.status in {"rejected", "failed", "uncertain"})
     )
 
 
@@ -604,8 +604,13 @@ def build_post_record_quality_response(
     *,
     db: Optional[Session] = None,
     user_id: Optional[int] = None,
+    write_verified: Optional[bool] = None,
 ) -> Optional[dict[str, Any]]:
-    if _result_is_failed(result) or not isinstance(record_data, dict):
+    if (
+        write_verified is False
+        or _result_is_failed(result)
+        or not isinstance(record_data, dict)
+    ):
         return None
     kind = _normalize_kind(record_type)
     context = extract_personal_context_pack(personal_context, db=db, user_id=user_id)

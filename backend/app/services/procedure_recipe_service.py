@@ -24,6 +24,7 @@ from typing import Any, AsyncGenerator, Dict, List, Optional
 from sqlalchemy.orm import Session
 
 from app.models.procedure_recipe import ProcedureRecipe
+from app.services.agent_write_outcome import classify_explicit_write_execution
 
 logger = logging.getLogger(__name__)
 
@@ -437,25 +438,26 @@ async def replay(
             tool, json.dumps(gated_args, ensure_ascii=False), user_auth_token
         )
         result_text = str(result or "")
-        structured_status = ""
-        if result_text.lstrip().startswith("{"):
-            try:
-                payload = json.loads(result_text)
-                if isinstance(payload, dict):
-                    structured_status = str(payload.get("status") or "").lower()
-            except (TypeError, ValueError, json.JSONDecodeError):
-                structured_status = ""
+        explicit_outcome = classify_explicit_write_execution(result_text)
+        confirmation_required = bool(
+            explicit_outcome
+            and explicit_outcome.error_code in {
+                "needs_confirmation",
+                "confirmation_required",
+            }
+        )
         yield {
             "phase": "result",
             "step_index": index,
             "tool": tool,
             "args": gated_args,
             "result": result_text,
-            "needs_confirmation": result_text.startswith("[NEEDS_CONFIRMATION]"),
+            "needs_confirmation": (
+                result_text.startswith("[NEEDS_CONFIRMATION]")
+                or confirmation_required
+            ),
             "error": (
                 result_text.startswith("Error")
-                or structured_status in {
-                    "rejected", "denied", "failed", "uncertain", "in_flight",
-                }
+                or bool(explicit_outcome and explicit_outcome.status != "verified")
             ),
         }

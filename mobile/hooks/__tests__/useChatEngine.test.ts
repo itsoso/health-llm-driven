@@ -55,7 +55,11 @@ jest.mock('../../services/clientEvents', () => ({
   durationBucket: (...args: any[]) => mockDurationBucket(...args),
 }));
 
-import { restoreMessagesFromHistory, useChatEngine } from '../useChatEngine';
+import {
+  findReusableTurnMessage,
+  restoreMessagesFromHistory,
+  useChatEngine,
+} from '../useChatEngine';
 
 let finishStream: (() => void) | undefined;
 let failStream: (() => void) | undefined;
@@ -390,6 +394,14 @@ async function* streamLegacyHealthManageQueryThenDone() {
 }
 
 describe('useChatEngine', () => {
+
+  it('never reuses an older message solely because the text is identical', () => {
+    const messages = [
+      { id: 'old', role: 'user', content: '相同内容', sourceTurnId: 'turn-old' },
+    ] as any;
+
+    expect(findReusableTurnMessage(messages, 'user', 'turn-new')).toBeUndefined();
+  });
   beforeEach(() => {
     jest.clearAllMocks();
     mockAsyncStorage = {};
