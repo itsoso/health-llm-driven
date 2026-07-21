@@ -64,3 +64,13 @@
 3. Build the Mac app through the repository Mac release path; record any
    distribution constraint rather than claiming an unbuilt binary is available.
 4. Commit only the search files and release record, then push `main`.
+
+## Delivery Evidence
+
+- 2026-07-21: Web page regression and the full frontend suite passed (264 tests);
+  production build completed.
+- 2026-07-21: Mac history regressions passed; `HealthAgentMacCoreTests` passed
+  418 tests with 1 existing skip.
+- 2026-07-21: Web frontend deployed from `main`; production `/ai-assistant`
+  and `/api/v1/health` both returned HTTP 200.
+- 2026-07-21: Rebuilt, ad-hoc signed, and installed `/Applications/小巴.app`.
