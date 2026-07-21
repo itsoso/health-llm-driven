@@ -1,6 +1,5 @@
 import type { AgendaItem } from '../../services/agenda';
 import {
-  agendaItemKey,
   canActOnAgendaItem,
   cleanAgendaTitle,
   groupTodayAgendaItems,
@@ -83,19 +82,20 @@ describe('todayAgendaManagement', () => {
     }))).toBe(false);
   });
 
-  it('moves a session-snoozed action to later without marking it complete', () => {
-    const hydration = item({ source: { object_type: 'health_protocol', object_id: 9 } });
-    const key = agendaItemKey(hydration);
+  it('keeps a server-snoozed action in later after refresh', () => {
+    const hydration = item({
+      status: 'snoozed',
+      snoozed_until: '2026-07-20T13:30:00-04:00',
+      source: { object_type: 'health_protocol', object_id: 10 },
+    });
 
     const groups = groupTodayAgendaItems([hydration], {
       now: new Date('2026-07-20T12:00:00-04:00'),
-      snoozedKeys: new Set([key]),
     });
 
     expect(groups.now).toEqual([]);
     expect(groups.review).toEqual([]);
     expect(groups.later).toEqual([hydration]);
-    expect(groups.handled).toEqual([]);
   });
 
   it('deduplicates repeated backend rows by their completion identity', () => {

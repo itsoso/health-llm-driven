@@ -4,13 +4,15 @@ from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.database import get_db
 from app.models.user import User
 from app.api.deps import get_current_user_required
 from app.services import agenda_service
+from app.services import health_protocol_service as proto_svc
 from app.models.health_protocol import SKIP_REASONS
+from app.utils.timezone import get_user_today
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +65,78 @@ class AgendaComplete(BaseModel):
     slot: Optional[str] = None
 
 
+class AgendaActionRef(BaseModel):
+    object_type: str
+    object_id: int
+
+
+class AgendaSnooze(AgendaActionRef):
+    minutes: int = Field(default=30, ge=5, le=240)
+
+
+def _require_protocol_source(object_type: str) -> None:
+    if object_type != "health_protocol":
+        raise HTTPException(status_code=400, detail="该来源不支持稍后")
+
+
+@router.post("/snooze")
+async def agenda_snooze(
+    data: AgendaSnooze,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """持久化今日协议的稍后状态；不写领域完成记录。"""
+    _require_protocol_source(data.object_type)
+    try:
+        event = proto_svc.snooze_protocol(
+            db,
+            data.object_id,
+            current_user.id,
+            minutes=data.minutes,
+            day=get_user_today(db, current_user.id),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    if event is None:
+        raise HTTPException(status_code=404, detail="协议不存在")
+    value = event.value or {}
+    return {
+        "object_type": data.object_type,
+        "object_id": data.object_id,
+        "status": event.status,
+        "minutes": value.get("minutes", data.minutes),
+        "snoozed_until": value.get("snoozed_until"),
+    }
+
+
+@router.post("/resume")
+async def agenda_resume(
+    data: AgendaActionRef,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """恢复今日被稍后的协议；重复请求返回同一 pending 状态。"""
+    _require_protocol_source(data.object_type)
+    try:
+        result = proto_svc.resume_protocol(
+            db,
+            data.object_id,
+            current_user.id,
+            day=get_user_today(db, current_user.id),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    if result is None:
+        raise HTTPException(status_code=404, detail="稍后记录不存在")
+    event, idempotent = result
+    return {
+        "object_type": data.object_type,
+        "object_id": data.object_id,
+        "status": event.status,
+        "idempotent": idempotent,
+    }
+
+
 @router.post("/complete")
 async def agenda_complete(
     data: AgendaComplete,
@@ -91,6 +165,7 @@ async def agenda_complete(
             db, current_user.id, data.object_type, data.object_id,
             status=data.status, skip_reason=data.skip_reason,
             track=data.track, value=data.value, slot=data.slot,
+            day=get_user_today(db, current_user.id),
         )
     except LookupError:
         # 真实 source 不存在 / 非本人 → 404(不跨用户写、不假装成功)。

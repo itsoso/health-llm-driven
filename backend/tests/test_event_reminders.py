@@ -10,11 +10,8 @@
 用 conftest 内存 sqlite; mock push sender + proactive_coordinator + 时钟。
 """
 from contextlib import contextmanager
-from datetime import datetime
-from types import SimpleNamespace
+from datetime import UTC, date, datetime
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from app.models.calendar_sync import CalendarEvent, CalendarSource
 from app.models.medication import Medication
@@ -42,15 +39,17 @@ def _session_cm(db):
     yield db
 
 
-def _run(db, *, now, schedule_items=None, can_notify=True):
+def _run(db, *, now, schedule_items=None, can_notify=True, push_result=None):
     """跑 scan_event_reminders,统一注入 mock。返回 (result, push_mock)。"""
     push_instance = MagicMock()
+    push_instance.send_notification.return_value = push_result or {"success": True}
 
     def fake_session():
         return _session_cm(db)
 
     with patch("app.tasks.event_reminders.SessionLocal", side_effect=fake_session), \
          patch("app.tasks.event_reminders.get_china_now", return_value=now), \
+         patch("app.tasks.event_reminders.get_user_now", return_value=now), \
          patch("app.tasks.event_reminders.PushService", return_value=push_instance), \
          patch("app.tasks.event_reminders.run_async", side_effect=lambda c: c), \
          patch(
@@ -137,6 +136,26 @@ def test_dedup_no_second_push_same_day(db):
     assert db.query(SentEventReminder).filter_by(user_id=1, item_key="med:1").count() == 1
 
 
+def test_failed_push_releases_claim_and_can_retry_in_same_minute(db):
+    _make_user(db)
+    db.add(Medication(id=1, user_id=1, name="药", category="处方药", is_active=True))
+    db.commit()
+    items = [{"id": "med:1", "title": "药", "domain": "medication", "time": "09:00"}]
+
+    failed, _ = _run(
+        db,
+        now=_patched_now(8, 45),
+        schedule_items=items,
+        push_result={"success": False, "reason": "没有可用的推送渠道"},
+    )
+    assert failed["sent"] == 0
+    assert db.query(SentEventReminder).filter_by(user_id=1, item_key="med:1").count() == 0
+
+    retried, push = _run(db, now=_patched_now(8, 45), schedule_items=items)
+    assert retried["sent"] == 1
+    assert push.send_notification.call_count == 1
+
+
 # ── 稀缺门 ─────────────────────────────────────────────────────────────────
 def test_scarcity_gate_blocks_push(db):
     """can_notify_proactively=False → 不推,也不占坑。"""
@@ -176,6 +195,19 @@ def test_meeting_title_in_user_push(db):
     assert kwargs["data"]["kind"] == "meeting"
 
 
+def test_meeting_uses_users_local_clock_for_aware_timestamp(db):
+    from zoneinfo import ZoneInfo
+
+    from app.tasks.event_reminders import _calendar_start_in_user_timezone
+
+    local = _calendar_start_in_user_timezone(
+        datetime(2026, 7, 20, 13, 0, tzinfo=UTC),
+        ZoneInfo("America/New_York"),
+    )
+    assert local.date() == date(2026, 7, 20)
+    assert (local.hour, local.minute) == (9, 0)
+
+
 # ── fail-soft ──────────────────────────────────────────────────────────────
 def test_fail_soft_one_user_failure_does_not_abort(db):
     """user 1 的排程构建抛错,user 2 仍能推。"""
@@ -197,8 +229,10 @@ def test_fail_soft_one_user_failure_does_not_abort(db):
         return {"scheduled": v, "rejected": [], "deferred": []}
 
     push_instance = MagicMock()
+    push_instance.send_notification.return_value = {"success": True}
     with patch("app.tasks.event_reminders.SessionLocal", side_effect=lambda: _session_cm(db)), \
          patch("app.tasks.event_reminders.get_china_now", return_value=_patched_now(8, 45)), \
+         patch("app.tasks.event_reminders.get_user_now", return_value=_patched_now(8, 45)), \
          patch("app.tasks.event_reminders.PushService", return_value=push_instance), \
          patch("app.tasks.event_reminders.run_async", side_effect=lambda c: c), \
          patch("app.services.proactive_coordinator.can_notify_proactively", return_value=True), \
@@ -220,3 +254,51 @@ def test_lead_minutes_constants():
     assert LEAD_MINUTES["movement"] == 20
     assert LEAD_MINUTES["diet"] == 0
     assert LEAD_MINUTES["sleep"] == 0
+
+
+def test_protocol_collection_uses_the_users_local_day(db):
+    from app.services import health_protocol_service as proto_svc
+    from app.tasks.event_reminders import _collect_timed_items
+
+    user = _make_user(db)
+    protocol = proto_svc.create_water_cup_protocol(db, user.id)
+    protocol.time_window = "morning"
+    db.commit()
+    local_day = date(2026, 7, 20)
+    proto_svc.snooze_protocol(db, protocol.id, user.id, minutes=30, day=local_day)
+
+    items = _collect_timed_items(db, user.id, local_day)
+
+    assert all(item["item_key"] != f"protocol:{protocol.id}" for item in items)
+
+
+def test_scanner_matches_each_users_local_clock(db):
+    from app.tasks import event_reminders as er
+
+    user = _make_user(db)
+    push_instance = MagicMock()
+    push_instance.send_notification.return_value = {"success": True}
+    local_now = datetime(2026, 7, 20, 8, 0)
+    item = {
+        "item_key": "protocol:1",
+        "kind": "protocol",
+        "title": "晨间行动",
+        "start_min": 8 * 60,
+        "lead": 0,
+        "complete_ref": {"object_type": "health_protocol", "object_id": 1},
+    }
+
+    with patch("app.tasks.event_reminders.SessionLocal", side_effect=lambda: _session_cm(db)), \
+         patch("app.tasks.event_reminders.get_china_now", return_value=datetime(2026, 7, 20, 20, 0)), \
+         patch("app.tasks.event_reminders.get_user_now", return_value=local_now), \
+         patch("app.tasks.event_reminders._candidate_user_ids", return_value=[user.id]), \
+         patch("app.tasks.event_reminders._collect_timed_items", return_value=[item]), \
+         patch("app.tasks.event_reminders._protocol_throttled", return_value=False), \
+         patch("app.tasks.event_reminders.PushService", return_value=push_instance), \
+         patch("app.tasks.event_reminders.run_async", side_effect=lambda c: c), \
+         patch("app.services.proactive_coordinator.can_notify_proactively", return_value=True), \
+         patch("app.agents.audit.log_proactive_trigger"):
+        result = er.scan_event_reminders()
+
+    assert result["sent"] == 1
+    assert db.query(SentEventReminder).one().remind_date == local_now.date()

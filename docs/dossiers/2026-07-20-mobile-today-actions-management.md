@@ -4,8 +4,8 @@
 |---|---|
 | slug | `mobile-today-actions-management` |
 | 创建日期 | 2026-07-20 |
-| 当前阶段 | S8 上线验证（反馈环 4） |
-| 状态 | shipped |
+| 当前阶段 | S6 提交与集成（反馈环 5） |
+| 状态 | building |
 | 负责 | Codex |
 | 反馈环 | Mobile Jest / iOS Simulator / production OTA |
 
@@ -152,6 +152,37 @@
 - G4 评审：PASS（不新增医疗写回路径；不可直接执行的建议仅允许“问小巴”）。
 - G5 部署：PASS（production / iOS / runtime `1.3.2`，EAS 标识已回读验证）。
 - G6 上线验证：PASS（技术上线）；真机触控反馈继续进入下一反馈环。
+
+## 反馈环 5 · 可信的稍后与跨会话恢复
+
+### 用户反馈
+
+> 继续优化
+
+### Correction Block
+
+- 触发：反馈环 4 虽然让“移到稍后”可逆，但状态只存在页面内存；刷新、重启或换端后行动会立刻回来，与“稍后”语义不一致。
+- 根因：Mobile 没有消费后端既有的 `HealthProtocolEvent.status=snoozed` 能力，也没有 Agenda surface 的持久化稍后/恢复合同。
+- 新基线：可执行 `health_protocol` 通过 Agenda API 持久化 30 分钟稍后，普通 Agenda 投影返回 `snoozed_until`；用户可显式恢复。非协议来源和只读建议不展示无法兑现的稍后动作。
+- 安全边界：稍后不等于完成或跳过，不写 MedicationLog/SupplementRecord，不修改协议剂量、频次和治疗计划；跨用户或终态事项必须失败。
+- 回退阶段：S3/S5；复用现有 HealthProtocolEvent，不新增表，不扩大自动执行等级。
+
+### 验收
+
+- [x] 后端稍后/恢复合同覆盖成功、重试幂等、用户隔离、来源限制和终态保护；条件更新竞争测试证明不会覆盖 concurrent complete/skip。
+- [x] Agenda 投影透传服务端稍后状态和到期时间，今日投影、完成、药物日志和 runtime/range 使用同一用户日期。
+- [x] Mobile 不再用页面内存伪装持久稍后，写入失败不移动事项；当前来源写入中锁定整行操作。
+- [x] 只有具备真实稍后合同的事项展示该操作，恢复后回到正确分组。
+- [x] 专项测试、类型、设计、文档漂移和独立评审通过；主干 CI 待提交后验证。
+- [ ] production OTA 发布并回读验证。
+- [ ] 用户真机完成跨重启稍后/恢复验收。
+
+### Gate 裁决
+
+- G3 测试：PASS（后端相关回归 `147 passed`；Mobile 专项 `38 passed`；TypeScript、ESLint、design token、ruff/py_compile、doc drift、dossier consistency、diff check 通过）。
+- G4 评审：三轮独立评审累计发现并修复终态并发覆盖、用户日期漂移、重复稍后延长、过期稍后刷新、用户本地提醒时钟、失败推送占位和多行写入锁定；最终复审结论 `GO`。
+- G5 部署：待执行。
+- G6 上线验证：待执行。
 
 ## 反馈环 3 · 写回能力对齐与渐进披露
 

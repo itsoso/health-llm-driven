@@ -22,7 +22,12 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 
-import { useAgendaToday, useCompleteAgendaItem } from '../hooks/useAgenda';
+import {
+  useAgendaToday,
+  useCompleteAgendaItem,
+  useResumeAgendaItem,
+  useSnoozeAgendaItem,
+} from '../hooks/useAgenda';
 import { useToast } from '../hooks/useToast';
 import {
   type AgendaItem,
@@ -32,8 +37,10 @@ import { agendaItemPresentation } from '../utils/agendaPresentation';
 import {
   agendaItemKey,
   canActOnAgendaItem,
+  canSnoozeAgendaItem,
   cleanAgendaTitle,
   groupTodayAgendaItems,
+  isAgendaItemSnoozed,
   resolveAgendaBackAction,
 } from '../utils/todayAgendaManagement';
 import { pushChatWithContext } from '../utils/agentContext';
@@ -64,25 +71,25 @@ interface AgendaMenuItem {
 }
 
 const REVIEW_VISIBLE_COUNT = 3;
+const SNOOZABLE_ACTION_MENU: AgendaMenuItem[] = [
+  { label: '30 分钟后提醒', action: 'snooze' },
+  { label: '跳过', action: 'skip' },
+  { label: '调整计划', action: 'adjust' },
+  { label: '问小巴', action: 'ask' },
+  { label: '取消', action: 'cancel' },
+];
 const ACTIONABLE_MENU: AgendaMenuItem[] = [
-  { label: '移到稍后', action: 'snooze' },
   { label: '跳过', action: 'skip' },
   { label: '调整计划', action: 'adjust' },
   { label: '问小巴', action: 'ask' },
   { label: '取消', action: 'cancel' },
 ];
 const REVIEW_MENU: AgendaMenuItem[] = [
-  { label: '稍后再看', action: 'snooze' },
   { label: '调整计划', action: 'adjust' },
   { label: '取消', action: 'cancel' },
 ];
 const LATER_ACTIONABLE_MENU: AgendaMenuItem[] = [
   { label: '跳过', action: 'skip' },
-  { label: '调整计划', action: 'adjust' },
-  { label: '问小巴', action: 'ask' },
-  { label: '取消', action: 'cancel' },
-];
-const DEFERRED_REVIEW_MENU: AgendaMenuItem[] = [
   { label: '调整计划', action: 'adjust' },
   { label: '问小巴', action: 'ask' },
   { label: '取消', action: 'cancel' },
@@ -97,13 +104,15 @@ export default function AgendaScreen() {
   const toast = useToast();
   const { data, isLoading, isError, isRefetching, refetch } = useAgendaToday();
   const complete = useCompleteAgendaItem();
-  const [snoozedKeys, setSnoozedKeys] = useState<Set<string>>(() => new Set());
+  const snoozeMutation = useSnoozeAgendaItem();
+  const resumeMutation = useResumeAgendaItem();
+  const writePending = complete.isPending || snoozeMutation.isPending || resumeMutation.isPending;
   const [handledExpanded, setHandledExpanded] = useState(false);
   const [reviewExpanded, setReviewExpanded] = useState(false);
 
   const groups = useMemo(
-    () => groupTodayAgendaItems(data?.items ?? [], { snoozedKeys }),
-    [data?.items, snoozedKeys],
+    () => groupTodayAgendaItems(data?.items ?? []),
+    [data?.items],
   );
 
   const sections = useMemo<AgendaSection[]>(() => {
@@ -171,33 +180,38 @@ export default function AgendaScreen() {
   }, [complete, toast]);
 
   const snooze = useCallback((item: AgendaItem) => {
-    const key = agendaItemKey(item);
-    setSnoozedKeys(current => {
-      const next = new Set(current);
-      next.add(key);
-      return next;
-    });
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-    toast.showUndoable('已放到稍后', () => {
-      setSnoozedKeys(current => {
-        const next = new Set(current);
-        next.delete(key);
-        return next;
-      });
-    });
-  }, [toast]);
+    const title = cleanAgendaTitle(item.title);
+    snoozeMutation.mutate(
+      { source: item.source },
+      {
+        onSuccess: () => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+          toast.show('30 分钟后再提醒', 'success');
+        },
+        onError: () => {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+          toast.show(`未能稍后“${title}”，请重试`, 'error');
+        },
+      },
+    );
+  }, [snoozeMutation, toast]);
 
   const restoreFromLater = useCallback((item: AgendaItem) => {
-    const key = agendaItemKey(item);
-    const destination = canActOnAgendaItem(item) ? '现在' : '待确认';
-    setSnoozedKeys(current => {
-      const next = new Set(current);
-      next.delete(key);
-      return next;
-    });
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-    toast.show(`已移回${destination}`, 'success');
-  }, [toast]);
+    const title = cleanAgendaTitle(item.title);
+    resumeMutation.mutate(
+      { source: item.source },
+      {
+        onSuccess: () => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+          toast.show('已恢复到现在', 'success');
+        },
+        onError: () => {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+          toast.show(`未能恢复“${title}”，请重试`, 'error');
+        },
+      },
+    );
+  }, [resumeMutation, toast]);
 
   const askXiaoba = useCallback((item: AgendaItem, intent: 'adjust' | 'ask') => {
     const title = cleanAgendaTitle(item.title);
@@ -265,10 +279,10 @@ export default function AgendaScreen() {
 
   const openItemMenu = useCallback((item: AgendaItem, sectionKey: SectionKey) => {
     const actionable = canActOnAgendaItem(item);
-    const deferred = snoozedKeys.has(agendaItemKey(item));
+    const snoozed = isAgendaItemSnoozed(item);
     const menu = sectionKey === 'later'
-      ? (actionable ? LATER_ACTIONABLE_MENU : deferred ? DEFERRED_REVIEW_MENU : FUTURE_REVIEW_MENU)
-      : (actionable ? ACTIONABLE_MENU : REVIEW_MENU);
+      ? (actionable || snoozed ? LATER_ACTIONABLE_MENU : FUTURE_REVIEW_MENU)
+      : (canSnoozeAgendaItem(item) ? SNOOZABLE_ACTION_MENU : actionable ? ACTIONABLE_MENU : REVIEW_MENU);
     if (Platform.OS === 'ios') {
       ActionSheetIOS.showActionSheetWithOptions(
         {
@@ -289,7 +303,7 @@ export default function AgendaScreen() {
         onPress: () => handleMenuAction(item, option.action),
       })),
     );
-  }, [handleMenuAction, snoozedKeys]);
+  }, [handleMenuAction]);
 
   const renderSectionHeader = useCallback(({ section }: { section: AgendaSection }) => {
     const content = (
@@ -343,22 +357,20 @@ export default function AgendaScreen() {
   }, [reviewExpanded]);
 
   const renderItem = useCallback(({ item, section }: { item: AgendaItem; section: AgendaSection }) => {
-    const deferred = section.key === 'later' && snoozedKeys.has(agendaItemKey(item));
+    const deferred = section.key === 'later' && isAgendaItemSnoozed(item);
     return (
       <AgendaRow
         item={item}
         handled={section.key === 'handled'}
         deferred={deferred}
-        pending={complete.isPending && complete.variables?.source
-          ? agendaItemKey({ ...item, source: complete.variables.source }) === agendaItemKey(item)
-          : false}
+        pending={writePending}
         onComplete={() => markComplete(item)}
         onRestore={() => restoreFromLater(item)}
         onMenu={() => openItemMenu(item, section.key)}
         onAsk={() => askXiaoba(item, 'ask')}
       />
     );
-  }, [askXiaoba, complete.isPending, complete.variables, markComplete, openItemMenu, restoreFromLater, snoozedKeys]);
+  }, [askXiaoba, markComplete, openItemMenu, restoreFromLater, writePending]);
 
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
@@ -439,7 +451,6 @@ function AgendaRow({
   const title = cleanAgendaTitle(item.title);
   const presentation = agendaItemPresentation(item);
   const canComplete = !handled && canActOnAgendaItem(item);
-  const restoreDestination = canComplete ? '现在' : '待确认';
   const tint = item.status === 'overdue'
     ? revaSemantic.risk.fg
     : handled
@@ -458,7 +469,9 @@ function AgendaRow({
       <View style={styles.rowBody}>
         <Text style={styles.rowTitle} numberOfLines={2}>{title}</Text>
         <Text style={styles.rowMeta} numberOfLines={1}>
-          {formatTimeWindow(item.time_window)} · {presentation.statusLabel}
+          {deferred
+            ? formatSnoozedUntil(item.snoozed_until)
+            : `${formatTimeWindow(item.time_window)} · ${presentation.statusLabel}`}
         </Text>
         {item.detail ? <Text style={styles.rowDetail} numberOfLines={2}>{item.detail}</Text> : null}
       </View>
@@ -466,12 +479,18 @@ function AgendaRow({
         {deferred ? (
           <Pressable
             onPress={onRestore}
-            style={({ pressed }) => [styles.restoreButton, pressed && styles.pressed]}
+            disabled={pending}
+            style={({ pressed }) => [styles.restoreButton, pressed && styles.pressed, pending && styles.disabled]}
             accessibilityRole="button"
-            accessibilityLabel={`移回${restoreDestination} ${title}`}
+            accessibilityLabel={`恢复 ${title}`}
+            accessibilityState={{ disabled: pending, busy: pending }}
           >
-            <Ionicons name="arrow-up" size={14} color={C.green600} />
-            <Text style={styles.restoreButtonText}>{restoreDestination}</Text>
+            {pending ? <ActivityIndicator size="small" color={C.green600} /> : (
+              <>
+                <Ionicons name="arrow-undo" size={14} color={C.green600} />
+                <Text style={styles.restoreButtonText}>恢复</Text>
+              </>
+            )}
           </Pressable>
         ) : canComplete ? (
           <Pressable
@@ -480,6 +499,7 @@ function AgendaRow({
             style={({ pressed }) => [styles.completeButton, pressed && styles.pressed, pending && styles.disabled]}
             accessibilityRole="button"
             accessibilityLabel={`完成 ${title}`}
+            accessibilityState={{ disabled: pending, busy: pending }}
           >
             {pending ? (
               <ActivityIndicator size="small" color="#fff" />
@@ -503,10 +523,12 @@ function AgendaRow({
         {!handled ? (
           <Pressable
             onPress={onMenu}
+            disabled={pending}
             hitSlop={8}
-            style={({ pressed }) => [styles.moreButton, pressed && styles.pressed]}
+            style={({ pressed }) => [styles.moreButton, pressed && styles.pressed, pending && styles.disabled]}
             accessibilityRole="button"
             accessibilityLabel={`管理 ${title}`}
+            accessibilityState={{ disabled: pending, busy: pending }}
           >
             <Ionicons name="ellipsis-horizontal" size={19} color={C.ink2} />
           </Pressable>
@@ -555,6 +577,15 @@ function formatTimeWindow(value: string | undefined): string {
     today: '今天',
   };
   return labels[value ?? 'anytime'] ?? '今天';
+}
+
+function formatSnoozedUntil(value: string | null | undefined): string {
+  if (!value) return '稍后再提醒';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '稍后再提醒';
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  return `${hours}:${minutes} 再提醒`;
 }
 
 const styles = StyleSheet.create({

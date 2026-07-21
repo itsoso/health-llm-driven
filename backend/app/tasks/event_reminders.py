@@ -11,7 +11,8 @@
     会议/日历 = 10、服药 = 15、补剂 = 15、锻炼(workout) = 20、餐(diet) = 0、睡眠 = 0。
 0 表示不做事件前提醒(餐/睡眠由既有分时提醒覆盖,这里不重复打扰)。
 
-触发窗口:项开始 T,当 now ∈ [T − lead, T − lead + 1min) 时推(1 分钟扫描节拍)。北京时区。
+触发窗口:项开始 T,当 now ∈ [T − lead, T − lead + 1min) 时推(1 分钟扫描节拍)。
+所有日期和时刻按用户生效时区计算。
 
 幂等:每 (user_id, item_key, remind_date) 至多一次 —— 先写 SentEventReminder
 (UniqueConstraint 兜底),冲突即视为已推,绝不跨扫描二次推。
@@ -40,7 +41,7 @@ from app.services.notification.deeplinks import deeplink_for
 from app.services.notification.push_service import PushService
 from app.services.protocol_learning_loop import NUDGE_DEFAULT_PER_WEEK
 from app.utils.async_helpers import run_async
-from app.utils.timezone import get_china_now
+from app.utils.timezone import get_china_now, get_user_now, get_user_timezone
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +91,13 @@ def _to_minutes(hhmm: str) -> int | None:
         return int(h) * 60 + int(m)
     except (ValueError, AttributeError):
         return None
+
+
+def _calendar_start_in_user_timezone(start: datetime, user_timezone) -> datetime:
+    """把日历时刻投影到用户时区；旧 naive 行按用户本地墙钟兼容。"""
+    if start.tzinfo is None:
+        return start.replace(tzinfo=user_timezone)
+    return start.astimezone(user_timezone)
 
 
 def _schedule_kind(domain: str) -> str:
@@ -244,8 +252,11 @@ def _collect_timed_items(db, user_id: int, today: date) -> list[dict]:
         try:
             from app.models.calendar_sync import CalendarEvent
 
-            day_start = datetime.combine(today, datetime.min.time())
-            day_end = day_start + timedelta(days=1)
+            user_timezone = get_user_timezone(db, user_id)
+            # PostgreSQL timestamptz 返回 aware UTC；SQLite/旧数据可能是 naive 本地墙钟。
+            # 查询先放宽到前后各一日，再在应用层按用户时区精确筛日，兼容两种存量。
+            day_start = datetime.combine(today - timedelta(days=1), datetime.min.time())
+            day_end = datetime.combine(today + timedelta(days=2), datetime.min.time())
             events = (
                 db.query(CalendarEvent)
                 .filter(
@@ -258,7 +269,9 @@ def _collect_timed_items(db, user_id: int, today: date) -> list[dict]:
                 .all()
             )
             for ev in events:
-                st = ev.start_time
+                st = _calendar_start_in_user_timezone(ev.start_time, user_timezone)
+                if st.date() != today:
+                    continue
                 start_min = st.hour * 60 + st.minute
                 # 标题可带给本人通知(非 LLM 路径);失败回退通用词。
                 try:
@@ -282,7 +295,7 @@ def _collect_timed_items(db, user_id: int, today: date) -> list[dict]:
         from app.services.protocol_templates import nasal_red_flag_active
 
         nasal_suppressed: bool | None = None  # 懒求值,仅当确有洗鼻项才查
-        for st in hp_svc.today_status(db, user_id):
+        for st in hp_svc.today_status(db, user_id, day=today):
             if not st.get("is_due_today") or st.get("today_status") != "pending":
                 continue
             tw = st.get("time_window")
@@ -330,8 +343,10 @@ def _candidate_user_ids(db, today: date) -> list[int]:
         if uid is not None:
             ids.add(uid)
 
-    day_start = datetime.combine(today, datetime.min.time())
-    day_end = day_start + timedelta(days=1)
+    # 候选枚举以中国时区为扫描锚，但覆盖前后各一日；进入用户循环后再按用户本地日精确收集。
+    # 这样仅有日历事件的海外用户不会因与中国日期不同而漏进候选集。
+    day_start = datetime.combine(today - timedelta(days=1), datetime.min.time())
+    day_end = datetime.combine(today + timedelta(days=2), datetime.min.time())
     rows = (
         db.query(CalendarEvent.user_id)
         .filter(
@@ -406,20 +421,31 @@ def _try_mark_sent(db, user_id: int, item_key: str, remind_date: date, kind: str
         return False
 
 
+def _release_sent_claim(db, user_id: int, item_key: str, remind_date: date) -> None:
+    """投递未被接受时释放本轮占位，允许同一分钟的任务重试。"""
+    from app.models.sent_event_reminder import SentEventReminder
+
+    db.query(SentEventReminder).filter(
+        SentEventReminder.user_id == user_id,
+        SentEventReminder.item_key == item_key,
+        SentEventReminder.remind_date == remind_date,
+    ).delete(synchronize_session=False)
+    db.commit()
+
+
 @celery_app.task
 def scan_event_reminders():
     """每分钟扫描: 推送"未来 N 分钟将开始的项"的事件前提醒(P1-B)。"""
     from app.agents.audit import log_proactive_trigger
     from app.services.proactive_coordinator import can_notify_proactively
 
-    now_cn = get_china_now()
-    now_min = now_cn.hour * 60 + now_cn.minute
-    today = now_cn.date()
+    scan_now = get_china_now()
+    scan_day = scan_now.date()
 
     sent = 0
     with SessionLocal() as db:
         try:
-            user_ids = _candidate_user_ids(db, today)
+            user_ids = _candidate_user_ids(db, scan_day)
         except Exception as e:  # noqa: BLE001
             logger.error("[event-reminder] 候选用户枚举失败: %s", e)
             return {"sent": 0}
@@ -428,6 +454,9 @@ def scan_event_reminders():
 
         for user_id in user_ids:
             try:
+                user_now = get_user_now(db, user_id)
+                now_min = user_now.hour * 60 + user_now.minute
+                today = user_now.date()
                 items = _collect_timed_items(db, user_id, today)
                 for it in items:
                     # 触发窗口: now ∈ [T − lead, T − lead + 1min)
@@ -482,15 +511,29 @@ def scan_event_reminders():
                     if deep_link:
                         data["deep_link"] = deep_link
                     try:
-                        run_async(push_service.send_notification(
+                        delivery = run_async(push_service.send_notification(
                             user_id=user_id,
                             notification_type="reminder",
                             title=title,
                             content=body,
                             data=data,
                         ))
+                        delivered = isinstance(delivery, dict) and bool(delivery.get("success"))
+                        scheduled = isinstance(delivery, dict) and bool(delivery.get("scheduled_at"))
+                        if not delivered and not scheduled:
+                            _release_sent_claim(db, user_id, it["item_key"], today)
+                            logger.warning(
+                                "[event-reminder] 推送未被接受 user=%s item=%s reason=%s",
+                                user_id,
+                                it["item_key"],
+                                delivery.get("reason") if isinstance(delivery, dict) else "invalid_result",
+                            )
+                            continue
+                        if not delivered:
+                            continue
                         sent += 1
                     except Exception as e:  # noqa: BLE001
+                        _release_sent_claim(db, user_id, it["item_key"], today)
                         logger.warning(
                             "[event-reminder] 推送失败 user=%s item=%s: %s",
                             user_id, it["item_key"], e,
@@ -509,5 +552,5 @@ def scan_event_reminders():
                 logger.error("[event-reminder] 用户 %s 处理失败: %s", user_id, e)
 
     if sent:
-        logger.info("[event-reminder] %s 发送 %s 条", today.isoformat(), sent)
+        logger.info("[event-reminder] 扫描日 %s 发送 %s 条", scan_day.isoformat(), sent)
     return {"sent": sent}

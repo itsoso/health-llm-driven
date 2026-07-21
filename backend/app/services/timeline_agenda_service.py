@@ -168,6 +168,7 @@ def complete_by_ref(
     scheduled_for: Optional[datetime] = None,
     slot: Optional[str] = None,
     skip_writeback: bool = False,
+    day: Optional[date] = None,
 ) -> Dict[str, Any]:
     """按 {object_type, object_id[, slot]} 闭环完成(push + mobile 手里就这俩/仨键)。
 
@@ -191,7 +192,7 @@ def complete_by_ref(
     懒物化逐字节同改前**(byte-identical 存量行为零变化);不引入 ``slot:null`` 段。
     """
     from app.services import agenda_service
-    from app.utils.timezone import get_china_now, get_china_today
+    from app.utils.timezone import get_china_today
 
     # F1:物化前先验对 **所有** status 生效(done 与 skip 同标准)。
     # - 不支持的来源 → ValueError(端点转 400);
@@ -204,10 +205,10 @@ def complete_by_ref(
     ref = {"object_type": object_type, "object_id": object_id}
     if slot:
         ref["slot"] = slot
-    # 议程行的「今日」基准用中国时区(UTC+8,OS-TZ 无关),与完成子系统其余 today-basis 对齐
-    # —— 不用 get_user_today(无 profile 时回退 runner OS 时区),避免非 Asia/Shanghai 主机的
-    # 午夜边界上议程 wrapper 与协议事件基准漂移而生出影子重复行。
-    today = get_china_today()
+    # Agenda API 显式传用户本地日；其他既有入口保持中国时区默认，兼容原合同。
+    # 同一次闭环会继续把该日期传到 HealthProtocolEvent / MedicationLog，避免海外午夜
+    # 附近“列表是 A 日、完成写 B 日”的影子待办。
+    today = day or get_china_today()
     ev = find_agenda_event(db, user_id, ref, today)
     if ev is None:
         # F5a:懒物化的 scheduled_for 钉到「当日稳定 token」(中国时区今日 00:00),不取整点更不取
@@ -218,7 +219,9 @@ def complete_by_ref(
         # 一条(对齐链协议 chain_key 的「稳定 token」先例)。显式 scheduled_for(多剂等)优先。
         # F5b:真多剂(slot 非空)时,scheduled_for 钉到当日 slot 的 HH:MM → _slot_time 落该槽,
         # 同药不同 slot 得不同 taken_time(各成一条 uq_medlog),BID 两剂各记不互撞。
-        slot_dt = scheduled_for or _midnight_or_slot(slot, get_china_now())
+        slot_dt = scheduled_for or _midnight_or_slot(
+            slot, datetime.combine(today, datetime.min.time()),
+        )
         ev = materialize_agenda_event(
             db, user_id,
             action_kind=_action_kind_for(object_type),
@@ -228,7 +231,7 @@ def complete_by_ref(
         )
     return complete_agenda_event(
         db, user_id, ev.id, status=status, skip_reason=skip_reason,
-        track=track, value=value, skip_writeback=skip_writeback,
+        track=track, value=value, skip_writeback=skip_writeback, day=today,
     )
 
 
@@ -265,6 +268,7 @@ def complete_agenda_event(
     track: Optional[str] = None,
     value: Optional[Dict[str, Any]] = None,
     skip_writeback: bool = False,
+    day: Optional[date] = None,
 ) -> Dict[str, Any]:
     """闭环完成 / 跳过一个议程 HealthEvent。
 
@@ -375,7 +379,7 @@ def complete_agenda_event(
                     db, user_id, object_type, int(object_id),
                     track=effective_track, value=value,
                     taken_time=_slot_time(ev),
-                    status=status, skip_reason=skip_reason,
+                    status=status, skip_reason=skip_reason, day=day,
                 )
             except LookupError:
                 # 资源不存在 / 非本人 → 回滚 + 上抛(端点转 404,跨用户隔离),不翻态。

@@ -1,10 +1,16 @@
+import api from '../api';
+import {
+  completeAgendaItem,
+  getRuntimeAgendaRange,
+  getSmartAgendaToday,
+  resumeAgendaItem,
+  snoozeAgendaItem,
+} from '../agenda';
+
 jest.mock('../api', () => ({
   __esModule: true,
   default: { get: jest.fn(), post: jest.fn() },
 }));
-
-import api from '../api';
-import { completeAgendaItem, getRuntimeAgendaRange, getSmartAgendaToday } from '../agenda';
 
 const mockApi = api as unknown as {
   get: jest.Mock;
@@ -166,6 +172,31 @@ describe('agenda service', () => {
         status: 'done',
         track: 'manual',
         value: { volume_ml: 500 },
+      });
+    });
+  });
+
+  describe('persistent agenda snooze', () => {
+    it('writes a bounded snooze through the Agenda surface', async () => {
+      mockApi.post.mockResolvedValueOnce({ data: { status: 'snoozed' } });
+
+      await snoozeAgendaItem({ object_type: 'health_protocol', object_id: 42 }, 30);
+
+      expect(mockApi.post).toHaveBeenCalledWith('/agenda/snooze', {
+        object_type: 'health_protocol',
+        object_id: 42,
+        minutes: 30,
+      });
+    });
+
+    it('restores the same item through a verified server write', async () => {
+      mockApi.post.mockResolvedValueOnce({ data: { status: 'pending' } });
+
+      await resumeAgendaItem({ object_type: 'health_protocol', object_id: 42 });
+
+      expect(mockApi.post).toHaveBeenCalledWith('/agenda/resume', {
+        object_type: 'health_protocol',
+        object_id: 42,
       });
     });
   });

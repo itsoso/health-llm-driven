@@ -7737,6 +7737,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agenda/snooze": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Agenda Snooze
+         * @description 持久化今日协议的稍后状态；不写领域完成记录。
+         */
+        post: operations["agenda_snooze_api_v1_agenda_snooze_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agenda/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Agenda Resume
+         * @description 恢复今日被稍后的协议；重复请求返回同一 pending 状态。
+         */
+        post: operations["agenda_resume_api_v1_agenda_resume_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agenda/complete": {
         parameters: {
             query?: never;
@@ -19544,6 +19584,13 @@ export interface components {
             /** Medical Exams Count */
             medical_exams_count: number;
         };
+        /** AgendaActionRef */
+        AgendaActionRef: {
+            /** Object Type */
+            object_type: string;
+            /** Object Id */
+            object_id: number;
+        };
         /** AgendaComplete */
         AgendaComplete: {
             /** Object Type */
@@ -19566,6 +19613,18 @@ export interface components {
             skip_reason?: string | null;
             /** Slot */
             slot?: string | null;
+        };
+        /** AgendaSnooze */
+        AgendaSnooze: {
+            /** Object Type */
+            object_type: string;
+            /** Object Id */
+            object_id: number;
+            /**
+             * Minutes
+             * @default 30
+             */
+            minutes: number;
         };
         /** AgentRequest */
         AgentRequest: {
@@ -45549,6 +45608,72 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    agenda_snooze_api_v1_agenda_snooze_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgendaSnooze"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    agenda_resume_api_v1_agenda_resume_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgendaActionRef"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

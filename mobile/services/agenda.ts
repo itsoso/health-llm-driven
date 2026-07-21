@@ -25,6 +25,7 @@ export interface AgendaItem {
   detail?: string;
   responsible?: string;
   next_due?: string;
+  snoozed_until?: string | null;
   // 训练决策灯(type === 'training', status === 'info')专属字段
   light?: 'green' | 'yellow' | 'red';
   zone?: string;
@@ -236,6 +237,26 @@ export async function completeAgendaItem(
     payload.skip_reason = options?.skipReason ?? 'no_time';
   }
   const resp = await api.post('/agenda/complete', payload);
+  return resp.data;
+}
+
+export async function snoozeAgendaItem(
+  source: AgendaSource,
+  minutes = 30,
+): Promise<unknown> {
+  const resp = await api.post('/agenda/snooze', {
+    object_type: source.object_type,
+    object_id: normalizeAgendaObjectId(source.object_id),
+    minutes,
+  });
+  return resp.data;
+}
+
+export async function resumeAgendaItem(source: AgendaSource): Promise<unknown> {
+  const resp = await api.post('/agenda/resume', {
+    object_type: source.object_type,
+    object_id: normalizeAgendaObjectId(source.object_id),
+  });
   return resp.data;
 }
 

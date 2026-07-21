@@ -422,6 +422,7 @@ def today(db: Session, user_id: int, followup_within_days: int = 14) -> Dict[str
     from app.services import workout_chain_service as wcs
 
     items: List[Dict[str, Any]] = []
+    user_today = get_user_today(db, user_id)
 
     # 0) P4 锻炼链(opt-in):链 ON → 先幂等物化链协议(commit),再由下方 today_status 投影。
     chain_on = wcs.is_workout_chain_enabled(db, user_id)
@@ -429,7 +430,7 @@ def today(db: Session, user_id: int, followup_within_days: int = 14) -> Dict[str
         wcs.maybe_materialize_workout_chain(db, user_id)
 
     # 1) 协议今日待办(链协议也走这条:它们就是 HealthProtocol,自动流入)
-    for p in proto_svc.today_status(db, user_id):
+    for p in proto_svc.today_status(db, user_id, day=user_today):
         if not p.get("is_due_today"):
             continue
         iq = p.get("implied_quantity") or {}
@@ -451,6 +452,7 @@ def today(db: Session, user_id: int, followup_within_days: int = 14) -> Dict[str
             priority=50,
             cadence=p.get("cadence"),            # 透传给时间线 driver 派生(纯展示,不影响调度)
             can_default_complete=p.get("can_default_complete"),
+            snoozed_until=p.get("snoozed_until"),
             # 完成落库的目标业务表(权威);供 _to_smart_item 派生 voice_actionable —— 比 domain
             # 更可靠地判「含糊语音确认会不会写医疗级依从(MedicationLog/SupplementRecord)」。
             source_model=p.get("source_model"),
@@ -511,7 +513,7 @@ def today(db: Session, user_id: int, followup_within_days: int = 14) -> Dict[str
     items.sort(key=lambda x: (-x["priority"], _TW_ORDER.get(x.get("time_window"), 9)))
     items = [_with_contract_metadata(item) for item in items]
     return {
-        "agenda_date": str(get_user_today(db, user_id)),
+        "agenda_date": str(user_today),
         "count": len(items),
         "items": items,
     }
@@ -1330,11 +1332,12 @@ def _future_protocol_items(
     db: Session,
     user_id: int,
     *,
+    day: date | None = None,
     protocol_feedback: Dict[int, Dict[str, Any]] | None = None,
 ) -> List[Dict[str, Any]]:
     items: List[Dict[str, Any]] = []
     protocol_feedback = protocol_feedback or {}
-    for p in proto_svc.today_status(db, user_id):
+    for p in proto_svc.today_status(db, user_id, day=day):
         if (p.get("cadence") or "daily") != "daily":
             continue
         feedback = protocol_feedback.get(int(p["protocol_id"]))
@@ -1443,6 +1446,7 @@ def runtime_range_view(
     future_protocol_templates = _future_protocol_items(
         db,
         user_id,
+        day=today_d,
         protocol_feedback=protocol_feedback,
     )
     future_checkups = []
@@ -1550,7 +1554,7 @@ def range_view(db: Session, user_id: int, days: int = 7) -> Dict[str, Any]:
     recurring = [
         {"protocol_id": p["protocol_id"], "domain": p["domain"],
          "name": p["name"], "cadence": p["cadence"]}
-        for p in proto_svc.today_status(db, user_id)
+        for p in proto_svc.today_status(db, user_id, day=today_d)
         if (p.get("cadence") or "daily") == "daily"
     ]
     scheduled = [
@@ -1600,6 +1604,7 @@ def complete_item(
     taken_time: str | None = None,
     status: str = "done",
     skip_reason: str | None = None,
+    day: date | None = None,
 ) -> Dict[str, Any]:
     """统一完成/跳过路由:按 agenda item 的 source.object_type 路由到对应 source。
 
@@ -1614,18 +1619,23 @@ def complete_item(
 
     taken_time(可选,med/supplement 用):由调用方给确定性服药时点槽(如议程项 scheduled_for
     的 "HH:MM"),让 uq_medlog_med_date_time 在重复完成时真兜底;缺省回退中国时区 now。
+    day 由 Agenda API 传用户本地日；其他既有入口缺省保持历史 date.today() 行为。
     """
     if status not in ("done", "skipped"):
         raise ValueError(f"未知 status: {status}(应为 done|skipped)")
 
     if object_type == "health_protocol":
         if status == "skipped":
-            ev = proto_svc.skip_protocol(db, object_id, user_id, reason=skip_reason)
+            ev = proto_svc.skip_protocol(
+                db, object_id, user_id, reason=skip_reason, day=day,
+            )
             if ev is None:
                 raise LookupError("协议不存在")
             return {"object_type": object_type, "object_id": object_id,
                     "status": ev.status, "wrote": False}
-        ev = proto_svc.complete_protocol(db, object_id, user_id, track=track, value=value)
+        ev = proto_svc.complete_protocol(
+            db, object_id, user_id, track=track, value=value, day=day,
+        )
         if ev is None:
             # 协议不存在 / 非本人 → LookupError(端点转 404,与 med/supplement 一致)。
             raise LookupError("协议不存在")
@@ -1648,6 +1658,7 @@ def complete_item(
             log = medication_service.upsert_medication_log(
                 db, user_id, object_id, taken_time=slot,
                 status="skipped", skip_reason=skip_reason, commit=False,
+                taken_date=day,
             )
             return {"object_type": object_type, "object_id": object_id,
                     "wrote": False, "log_id": log.id}
@@ -1659,6 +1670,7 @@ def complete_item(
         log = medication_service.upsert_medication_log(
             db, user_id, object_id, taken_time=slot,
             status="taken", actual_dosage=actual_dosage, commit=False,
+            taken_date=day,
         )
         return {"object_type": object_type, "object_id": object_id,
                 "wrote": True, "log_id": log.id}

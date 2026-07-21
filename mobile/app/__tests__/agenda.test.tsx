@@ -8,12 +8,22 @@ import type { AgendaToday } from '../../services/agenda';
 const mockBack = jest.fn();
 const mockNavigate = jest.fn();
 const mockMutate = jest.fn();
+const mockSnoozeMutate = jest.fn();
+const mockResumeMutate = jest.fn();
 const mockPushChatWithContext = jest.fn();
 const mockToast = jest.fn();
 const mockShowUndoable = jest.fn();
 let mockCanGoBack = true;
 let mockAgendaData: AgendaToday;
 let mockCompleteState: {
+  isPending: boolean;
+  variables?: { source: { object_type: string; object_id: number | string; slot?: string } };
+} = { isPending: false };
+let mockSnoozeState: {
+  isPending: boolean;
+  variables?: { source: { object_type: string; object_id: number | string; slot?: string } };
+} = { isPending: false };
+let mockResumeState: {
   isPending: boolean;
   variables?: { source: { object_type: string; object_id: number | string; slot?: string } };
 } = { isPending: false };
@@ -77,6 +87,8 @@ jest.mock('../../hooks/useAgenda', () => ({
     mutate: mockMutate,
     ...mockCompleteState,
   }),
+  useSnoozeAgendaItem: () => ({ mutate: mockSnoozeMutate, ...mockSnoozeState }),
+  useResumeAgendaItem: () => ({ mutate: mockResumeMutate, ...mockResumeState }),
   useSmartAgendaToday: () => ({ data: null, isLoading: false }),
   useRuntimeAgendaRange: () => ({ data: null, isLoading: false }),
   useSeedDemo: () => ({ mutate: jest.fn(), isPending: false }),
@@ -107,6 +119,8 @@ describe('AgendaScreen', () => {
     mockCanGoBack = true;
     mockAgendaData = agendaData;
     mockCompleteState = { isPending: false };
+    mockSnoozeState = { isPending: false };
+    mockResumeState = { isPending: false };
     jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions').mockImplementation(() => {});
   });
 
@@ -166,56 +180,159 @@ describe('AgendaScreen', () => {
     expect(queryByLabelText('完成 晚饭后步行 10 分钟')).toBeNull();
   });
 
-  it('can defer an item without falsely recording it as completed', () => {
+  it('locks every write control for the row while snooze is pending', () => {
+    mockSnoozeState = {
+      isPending: true,
+      variables: { source: { object_type: 'health_protocol', object_id: 2 } },
+    };
+    const { getByLabelText } = render(<AgendaScreen />);
+
+    expect(getByLabelText('完成 晨间用药')).toBeDisabled();
+    expect(getByLabelText('管理 晨间用药')).toBeDisabled();
+    expect(getByLabelText('完成 晨间用药').props.accessibilityState).toEqual({
+      disabled: true,
+      busy: true,
+    });
+  });
+
+  it('locks every writable row while one health write is pending', () => {
+    mockAgendaData = {
+      agenda_date: '2026-07-20',
+      count: 2,
+      items: [
+        agendaData.items[0],
+        {
+          ...agendaData.items[0],
+          title: '午间补水',
+          time_window: 'afternoon',
+          source: { object_type: 'health_protocol', object_id: 9 },
+        },
+      ],
+    };
+    mockSnoozeState = {
+      isPending: true,
+      variables: { source: { object_type: 'health_protocol', object_id: 2 } },
+    };
+
+    const { getByLabelText } = render(<AgendaScreen />);
+
+    expect(getByLabelText('完成 晨间用药')).toBeDisabled();
+    expect(getByLabelText('完成 午间补水')).toBeDisabled();
+    expect(getByLabelText('管理 午间补水')).toBeDisabled();
+  });
+
+  it('locks restore and menu controls with complete busy semantics', () => {
+    mockAgendaData = {
+      agenda_date: '2026-07-20',
+      count: 1,
+      items: [{
+        ...agendaData.items[0],
+        status: 'snoozed',
+        snoozed_until: '2026-07-20T09:30:00-04:00',
+      }],
+    };
+    mockResumeState = {
+      isPending: true,
+      variables: { source: { object_type: 'health_protocol', object_id: 2 } },
+    };
+    const { getByLabelText } = render(<AgendaScreen />);
+
+    expect(getByLabelText('恢复 晨间用药').props.accessibilityState).toEqual({
+      disabled: true,
+      busy: true,
+    });
+    expect(getByLabelText('管理 晨间用药').props.accessibilityState).toEqual({
+      disabled: true,
+      busy: true,
+    });
+  });
+
+  it('persists a 30 minute snooze without falsely recording completion', () => {
     jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions').mockImplementation((_options, callback) => callback(0));
-    const { getByLabelText, getAllByText } = render(<AgendaScreen />);
+    const { getByLabelText } = render(<AgendaScreen />);
 
     fireEvent.press(getByLabelText('管理 晨间用药'));
 
     expect(mockMutate).not.toHaveBeenCalled();
-    expect(mockShowUndoable).toHaveBeenCalledWith(
-      '已放到稍后',
-      expect.any(Function),
+    expect(mockSnoozeMutate).toHaveBeenCalledWith(
+      { source: { object_type: 'health_protocol', object_id: 2 } },
+      expect.objectContaining({ onSuccess: expect.any(Function), onError: expect.any(Function) }),
     );
-    expect(getAllByText('稍后').length).toBeGreaterThan(0);
   });
 
-  it('lets the user move a session-deferred item back to now', () => {
-    jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions').mockImplementation((_options, callback) => callback(0));
-    const { getByLabelText } = render(<AgendaScreen />);
+  it('restores a server-snoozed item through a verified write', () => {
+    mockAgendaData = {
+      agenda_date: '2026-07-20',
+      count: 1,
+      items: [{
+        ...agendaData.items[0],
+        status: 'snoozed',
+        snoozed_until: '2026-07-20T09:30:00-04:00',
+      }],
+    };
+    const { getByLabelText, getByText } = render(<AgendaScreen />);
 
-    fireEvent.press(getByLabelText('管理 晨间用药'));
-    fireEvent.press(getByLabelText('移回现在 晨间用药'));
+    expect(getByText('09:30 再提醒')).toBeTruthy();
+    fireEvent.press(getByLabelText('恢复 晨间用药'));
 
-    expect(mockToast).toHaveBeenCalledWith('已移回现在', 'success');
-    expect(getByLabelText('完成 晨间用药')).toBeTruthy();
+    expect(mockResumeMutate).toHaveBeenCalledWith(
+      { source: { object_type: 'health_protocol', object_id: 2 } },
+      expect.objectContaining({ onSuccess: expect.any(Function), onError: expect.any(Function) }),
+    );
   });
 
-  it('returns a deferred review item to confirmation without calling it now', () => {
-    jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions').mockImplementation((_options, callback) => callback(0));
+  it('does not offer a fake session-only snooze for review items', () => {
+    let menuOptions: readonly string[] = [];
+    jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions').mockImplementation((options) => {
+      menuOptions = options.options;
+    });
     const { getByLabelText } = render(<AgendaScreen />);
 
     fireEvent.press(getByLabelText('管理 优质蛋白有助修复'));
-    fireEvent.press(getByLabelText('移回待确认 优质蛋白有助修复'));
 
-    expect(mockToast).toHaveBeenCalledWith('已移回待确认', 'success');
-    expect(getByLabelText('询问小巴 优质蛋白有助修复')).toBeTruthy();
+    expect(menuOptions).toEqual(['调整计划', '取消']);
+    expect(mockSnoozeMutate).not.toHaveBeenCalled();
   });
 
-  it('does not offer a duplicate defer action while the item is already later', () => {
-    const menus: (readonly string[])[] = [];
-    let sheetCall = 0;
-    jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions').mockImplementation((options, callback) => {
-      sheetCall += 1;
-      menus.push(options.options);
-      if (sheetCall === 1) callback(0);
+  it('does not offer another snooze while a server-snoozed item is later', () => {
+    mockAgendaData = {
+      agenda_date: '2026-07-20',
+      count: 1,
+      items: [{
+        ...agendaData.items[0],
+        status: 'snoozed',
+        snoozed_until: '2026-07-20T09:30:00-04:00',
+      }],
+    };
+    let menuOptions: readonly string[] = [];
+    jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions').mockImplementation((options) => {
+      menuOptions = options.options;
     });
     const { getByLabelText } = render(<AgendaScreen />);
 
     fireEvent.press(getByLabelText('管理 晨间用药'));
+
+    expect(menuOptions).toEqual(['跳过', '调整计划', '问小巴', '取消']);
+  });
+
+  it('does not offer persistence it cannot honor for independent medication rows', () => {
+    mockAgendaData = {
+      agenda_date: '2026-07-20',
+      count: 1,
+      items: [{
+        ...agendaData.items[0],
+        source: { object_type: 'medication', object_id: 22 },
+      }],
+    };
+    let menuOptions: readonly string[] = [];
+    jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions').mockImplementation((options) => {
+      menuOptions = options.options;
+    });
+    const { getByLabelText } = render(<AgendaScreen />);
+
     fireEvent.press(getByLabelText('管理 晨间用药'));
 
-    expect(menus[1]).toEqual(['跳过', '调整计划', '问小巴', '取消']);
+    expect(menuOptions).toEqual(['跳过', '调整计划', '问小巴', '取消']);
   });
 
   it('keeps future review items free of duplicate ask and defer actions', () => {
@@ -276,13 +393,13 @@ describe('AgendaScreen', () => {
     let menuOptions: readonly string[] = [];
     jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions').mockImplementation((options, callback) => {
       menuOptions = options.options;
-      callback(1);
+      callback(0);
     });
     const { getByLabelText } = render(<AgendaScreen />);
 
     fireEvent.press(getByLabelText('管理 优质蛋白有助修复'));
 
-    expect(menuOptions).toEqual(['稍后再看', '调整计划', '取消']);
+    expect(menuOptions).toEqual(['调整计划', '取消']);
     expect(mockMutate).not.toHaveBeenCalled();
     expect(mockPushChatWithContext).toHaveBeenCalledWith(
       expect.anything(),
@@ -304,8 +421,8 @@ describe('AgendaScreen', () => {
       const { getByLabelText } = render(<AgendaScreen />);
       fireEvent.press(getByLabelText('管理 优质蛋白有助修复'));
 
-      expect(buttons?.map(button => button.text)).toEqual(['稍后再看', '调整计划', '取消']);
-      buttons?.[1]?.onPress?.();
+      expect(buttons?.map(button => button.text)).toEqual(['调整计划', '取消']);
+      buttons?.[0]?.onPress?.();
       expect(mockMutate).not.toHaveBeenCalled();
       expect(mockPushChatWithContext).toHaveBeenCalledWith(
         expect.anything(),

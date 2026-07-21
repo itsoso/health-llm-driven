@@ -105,10 +105,12 @@ def test_event_reminder_push_carries_deep_link(db):
     db.commit()
 
     push_instance = MagicMock()
+    push_instance.send_notification.return_value = {"success": True}
     items = [{"id": "med:1", "title": "雷贝拉唑", "domain": "medication", "time": "09:00"}]
 
     with patch("app.tasks.event_reminders.SessionLocal", side_effect=lambda: _session_cm(db)), \
          patch("app.tasks.event_reminders.get_china_now", return_value=datetime(2026, 6, 19, 8, 45)), \
+         patch("app.tasks.event_reminders.get_user_now", return_value=datetime(2026, 6, 19, 8, 45)), \
          patch("app.tasks.event_reminders.PushService", return_value=push_instance), \
          patch("app.tasks.event_reminders.run_async", side_effect=lambda c: c), \
          patch("app.services.proactive_coordinator.can_notify_proactively", return_value=True), \

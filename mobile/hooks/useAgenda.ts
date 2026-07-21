@@ -5,6 +5,8 @@ import {
   getRuntimeAgendaRange,
   getSmartAgendaToday,
   completeAgendaItem,
+  resumeAgendaItem,
+  snoozeAgendaItem,
   skipProtocol,
   seedDemo,
   type AgendaCompleteStatus,
@@ -55,6 +57,32 @@ export function useCompleteAgendaItem() {
       value,
       status || skipReason ? { status: status ?? 'done', skipReason } : undefined,
     ),
+    onSuccess: () => Promise.all([
+      qc.invalidateQueries({ queryKey: ['agenda'] }),
+      qc.invalidateQueries({ queryKey: ['timeline', 'today'] }),
+      qc.invalidateQueries({ queryKey: ['daily-artifact'] }),
+      qc.invalidateQueries({ queryKey: ['today-dynamic-view'] }),
+    ]),
+  });
+}
+
+export function useSnoozeAgendaItem() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ source }: { source: AgendaSource }) => snoozeAgendaItem(source, 30),
+    onSuccess: () => Promise.all([
+      qc.invalidateQueries({ queryKey: ['agenda'] }),
+      qc.invalidateQueries({ queryKey: ['timeline', 'today'] }),
+      qc.invalidateQueries({ queryKey: ['daily-artifact'] }),
+      qc.invalidateQueries({ queryKey: ['today-dynamic-view'] }),
+    ]),
+  });
+}
+
+export function useResumeAgendaItem() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ source }: { source: AgendaSource }) => resumeAgendaItem(source),
     onSuccess: () => Promise.all([
       qc.invalidateQueries({ queryKey: ['agenda'] }),
       qc.invalidateQueries({ queryKey: ['timeline', 'today'] }),

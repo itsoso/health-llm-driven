@@ -71,3 +71,20 @@
 4. 在模拟器验证：小巴进入、操作、返回、列表刷新。
 5. 仅在所有 Gate 通过后提交、推送并执行 production OTA。
 
+### Task 6: 反馈环 5 - 可信的稍后与恢复
+
+**Files:**
+- Modify: `backend/app/api/agenda.py`
+- Modify: `backend/app/services/health_protocol_service.py`
+- Create: `backend/tests/test_agenda_snooze.py`
+- Modify: `backend/app/services/agenda_service.py`
+- Modify: `mobile/services/agenda.ts`
+- Modify: `mobile/hooks/useAgenda.ts`
+- Modify: `mobile/app/agenda.tsx`
+- Modify: relevant Mobile tests and generated API types
+
+1. 先写失败测试，要求 `/agenda/snooze` 持久化 30 分钟稍后，且 `/agenda/resume` 可幂等恢复；跨用户、非协议来源和已完成事项必须失败。
+2. 普通 Agenda 投影透传 `snoozed_until`，Mobile 按服务端 `snoozed` 状态归入“稍后”，不再依赖当前页面内存。
+3. 只有 `health_protocol` 待办显示“30 分钟后提醒”；药物/补剂独立来源和只读建议不展示一个无法持久化的稍后动作。
+4. 写入成功后统一刷新 Agenda、Timeline、Daily Artifact 和 Today Dynamic View；失败保留原行并明确提示。
+5. 运行后端、Mobile、类型、设计、文档漂移和独立评审，通过后从干净主干发布 production OTA。

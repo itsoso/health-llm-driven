@@ -171,9 +171,11 @@ def _effective_today_status(ev: Optional[HealthProtocolEvent]) -> str:
     return ev.status
 
 
-def today_status(db: Session, user_id: int) -> List[Dict[str, Any]]:
+def today_status(
+    db: Session, user_id: int, day: Optional[date] = None,
+) -> List[Dict[str, Any]]:
     """今日各活跃协议的待办 + 完成态(双轨任一轨完成都算)。"""
-    today = date.today()
+    today = day or date.today()
     out: List[Dict[str, Any]] = []
     for p in list_protocols(db, user_id, active_only=True):
         ev = _today_event(db, p.id, user_id, today)
@@ -369,6 +371,7 @@ def _write_domain_record(
             db, user_id=user_id, medication_id=p.source_id,
             taken_time=taken_time, status="taken",
             actual_dosage=actual, notes="via protocol", commit=False,
+            taken_date=day,
         )
         return log.id
     if p.source_model == "diet_records":
@@ -612,20 +615,97 @@ def snooze_protocol(
         raise ValueError("snooze 分钟数需在 5-240 之间")
     day = day or date.today()
     ev = _claim_today_event(db, protocol_id, user_id, day)
-    if ev.status in ("completed", "auto_observed"):
-        raise ValueError("已完成的协议不能稍后")
+    if ev.status in ("completed", "auto_observed", "skipped"):
+        raise ValueError("已处理的协议不能稍后")
+    expected_value = None
+    if ev.status == "snoozed":
+        current_until = _snoozed_until(ev)
+        if current_until is not None and current_until > datetime.now(UTC):
+            return ev
+        expected_value = ev.value
+    elif ev.status != "pending":
+        raise ValueError("当前协议状态不能稍后")
 
     until = datetime.now(UTC) + timedelta(minutes=minutes)
-    ev.status = "snoozed"
-    ev.track = "protocol"
-    ev.skip_reason = None
-    ev.value = {"minutes": minutes, "snoozed_until": until.isoformat()}
+    transition = [
+        HealthProtocolEvent.id == ev.id,
+        HealthProtocolEvent.user_id == user_id,
+        HealthProtocolEvent.status == ev.status,
+    ]
+    if ev.status == "snoozed":
+        transition.append(HealthProtocolEvent.value == expected_value)
+    result = db.execute(
+        update(HealthProtocolEvent)
+        .where(*transition)
+        .values(
+            status="snoozed",
+            track="protocol",
+            skip_reason=None,
+            value={"minutes": minutes, "snoozed_until": until.isoformat()},
+        )
+    )
+    if result.rowcount != 1:
+        db.rollback()
+        current = _today_event(db, protocol_id, user_id, day)
+        if current is None:
+            return None
+        if current.status == "snoozed":
+            current_until = _snoozed_until(current)
+            if current_until is not None and current_until > datetime.now(UTC):
+                return current
+            raise ValueError("稍后状态已变化，请重试")
+        if current.status in ("completed", "auto_observed", "skipped"):
+            raise ValueError("已处理的协议不能稍后")
+        raise ValueError("当前协议状态不能稍后")
     db.commit()
     db.refresh(ev)
     logger.info(
         f"[Protocol] 稍后: user={user_id} protocol={protocol_id} minutes={minutes}"
     )
     return ev
+
+
+def resume_protocol(
+    db: Session, protocol_id: int, user_id: int, day: Optional[date] = None,
+) -> Optional[tuple[HealthProtocolEvent, bool]]:
+    """恢复今日被稍后的协议；重复恢复幂等，终态不得重新打开。"""
+    p = get_protocol(db, protocol_id, user_id)
+    if not p:
+        return None
+    day = day or date.today()
+    ev = _today_event(db, protocol_id, user_id, day)
+    if ev is None:
+        return None
+    if ev.status in ("completed", "auto_observed", "skipped"):
+        raise ValueError("已处理的协议不能恢复为待办")
+    if ev.status == "pending":
+        return ev, True
+    if ev.status != "snoozed":
+        raise ValueError("只有稍后中的协议可以恢复")
+
+    result = db.execute(
+        update(HealthProtocolEvent)
+        .where(
+            HealthProtocolEvent.id == ev.id,
+            HealthProtocolEvent.user_id == user_id,
+            HealthProtocolEvent.status == "snoozed",
+        )
+        .values(status="pending", track="protocol", skip_reason=None, value=None)
+    )
+    if result.rowcount != 1:
+        db.rollback()
+        current = _today_event(db, protocol_id, user_id, day)
+        if current is None:
+            return None
+        if current.status == "pending":
+            return current, True
+        if current.status in ("completed", "auto_observed", "skipped"):
+            raise ValueError("已处理的协议不能恢复为待办")
+        raise ValueError("只有稍后中的协议可以恢复")
+    db.commit()
+    db.refresh(ev)
+    logger.info(f"[Protocol] 恢复稍后: user={user_id} protocol={protocol_id}")
+    return ev, False
 
 
 # ── 参考实现:饮水 2000ml 温水杯协议(其余域照搬)──────────────

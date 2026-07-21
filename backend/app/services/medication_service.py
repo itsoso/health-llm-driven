@@ -263,6 +263,7 @@ class MedicationService:
         actual_dosage: Optional[str] = None,
         notes: Optional[str] = None,
         commit: bool = False,
+        taken_date: Optional[date] = None,
     ) -> MedicationLog:
         """同槽 upsert 服药/漏服记录(supersede 语义)。
 
@@ -285,12 +286,13 @@ class MedicationService:
         ④ 写库失败向上抛(fail-loud,不假装成功)。
         """
         slot = taken_time if taken_time else None
+        target_date = taken_date or date.today()
 
         def _find_same_slot() -> Optional[MedicationLog]:
             q = db.query(MedicationLog).filter(
                 MedicationLog.user_id == user_id,
                 MedicationLog.medication_id == medication_id,
-                MedicationLog.taken_date == date.today(),
+                MedicationLog.taken_date == target_date,
             )
             if slot is None:
                 q = q.filter(MedicationLog.taken_time.is_(None))
@@ -326,7 +328,7 @@ class MedicationService:
         log = MedicationLog(
             user_id=user_id,
             medication_id=medication_id,
-            taken_date=date.today(),
+            taken_date=target_date,
             taken_time=slot,
             status=status,
             skip_reason=skip_reason,

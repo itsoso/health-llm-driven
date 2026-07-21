@@ -59,6 +59,26 @@ def test_complete_medication_done_writes_real_log(client, db, auth_user_and_head
     assert len(logs) == 1
 
 
+def test_complete_medication_uses_the_agenda_user_day(
+    client, db, auth_user_and_headers, monkeypatch,
+):
+    from app.api import agenda as agenda_api
+
+    user, h = auth_user_and_headers
+    med = _seed_med(db, user.id)
+    user_day = date(2026, 7, 21)
+    monkeypatch.setattr(agenda_api, "get_user_today", lambda _db, _uid: user_day)
+
+    response = client.post("/api/v1/agenda/complete", headers=h, json={
+        "object_type": "medication", "object_id": med.id, "status": "done"})
+
+    assert response.status_code == 200, response.text
+    log = db.query(MedicationLog).filter_by(
+        user_id=user.id, medication_id=med.id,
+    ).one()
+    assert log.taken_date == user_day
+
+
 def test_complete_supplement_done_writes_real_log(client, db, auth_user_and_headers):
     """补剂同存 medications 表 → 同经 log_medication;object_type 仅分类不分写路径。"""
     user, h = auth_user_and_headers

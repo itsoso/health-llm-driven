@@ -53,10 +53,9 @@ export function cleanAgendaTitle(value: string | null | undefined): string {
 
 export function groupTodayAgendaItems(
   items: AgendaItem[],
-  options: { now?: Date; snoozedKeys?: ReadonlySet<string> } = {},
+  options: { now?: Date } = {},
 ): TodayAgendaGroups {
   const now = options.now ?? new Date();
-  const snoozedKeys = options.snoozedKeys ?? new Set<string>();
   const groups: TodayAgendaGroups = { now: [], review: [], later: [], handled: [] };
 
   for (const item of deduplicateAgendaItems(items)) {
@@ -64,7 +63,11 @@ export function groupTodayAgendaItems(
       groups.handled.push(item);
       continue;
     }
-    if (snoozedKeys.has(agendaItemKey(item)) || isFutureWindow(item.time_window, now)) {
+    if (isAgendaItemSnoozed(item)) {
+      groups.later.push(item);
+      continue;
+    }
+    if (isFutureWindow(item.time_window, now)) {
       groups.later.push(item);
       continue;
     }
@@ -85,6 +88,14 @@ export function groupTodayAgendaItems(
 export function canActOnAgendaItem(item: AgendaItem): boolean {
   if (HANDLED_STATUSES.has(item.status)) return false;
   return item.status === 'pending' && WRITABLE_SOURCE_TYPES.has(item.source.object_type);
+}
+
+export function canSnoozeAgendaItem(item: AgendaItem): boolean {
+  return canActOnAgendaItem(item) && item.source.object_type === 'health_protocol';
+}
+
+export function isAgendaItemSnoozed(item: AgendaItem): boolean {
+  return item.status === 'snoozed' && item.source.object_type === 'health_protocol';
 }
 
 function deduplicateAgendaItems(items: AgendaItem[]): AgendaItem[] {
