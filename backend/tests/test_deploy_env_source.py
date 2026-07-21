@@ -38,6 +38,16 @@ def test_deploy_script_backs_up_remote_env_before_syncing():
     assert deploy_script.index("backup_remote_env") < deploy_script.index("scp \"$TEMP_ENV\"")
 
 
+def test_deploy_bundle_uses_a_unique_remote_path_and_cleans_it_up():
+    deploy_script = (REPO_ROOT / "deploy.sh").read_text()
+
+    assert 'REMOTE_DEPLOY_BUNDLE="/tmp/health-app-deploy-$$-$(date +%s).bundle"' in deploy_script
+    assert '"$SERVER:$REMOTE_DEPLOY_BUNDLE"' in deploy_script
+    assert "git fetch $REMOTE_DEPLOY_BUNDLE HEAD" in deploy_script
+    assert "trap cleanup_remote_deploy_bundle EXIT" in deploy_script
+    assert '"$SERVER:/tmp/health-app-deploy.bundle"' not in deploy_script
+
+
 def test_backend_deploy_seeds_curated_food_nutrition_before_restart():
     deploy_script = (REPO_ROOT / "deploy.sh").read_text()
     deploy_start = deploy_script.index("deploy_backend() {")
