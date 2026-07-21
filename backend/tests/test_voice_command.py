@@ -63,7 +63,7 @@ async def test_execute_routes_voice_record_through_confirmation_boundary(db, tes
 
 
 class TestVoiceCommandAPI:
-    def test_api_returns_a_confirmation_draft_not_a_completed_write(self, client, db):
+    def test_api_auto_records_explicit_water_voice_command(self, client, db):
         from app.services.auth import auth_service
 
         user = User(name="API测试用户", phone="13800138002", is_active=True, is_approved=True)
@@ -82,8 +82,10 @@ class TestVoiceCommandAPI:
         payload = response.json()
         assert payload["matched"] is True
         assert payload["command_type"] == "water"
-        assert payload["requires_confirmation"] is True
-        assert db.query(WaterIntake).filter(WaterIntake.user_id == user.id).count() == 0
+        assert payload["requires_confirmation"] is False
+        assert payload["execution_status"] == "recorded"
+        record = db.query(WaterIntake).filter(WaterIntake.user_id == user.id).one()
+        assert record.amount_ml == 250
 
     def test_api_not_matched(self, client, db):
         from app.services.auth import auth_service
