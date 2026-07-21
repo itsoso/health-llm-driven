@@ -33,7 +33,7 @@
 |---|---|---|
 | G1 Admission | GO | Security/privacy requirement |
 | G2 Feasibility | GO | Compatibility-preserving staged design |
-| G3 Tests | GO | main CI `29867658752` 在 commit `cee9e70aa` 上 `43/43` jobs 成功；锁定版 OpenAPI 类型、部署契约、FastAPI 0.139 路由漂移闸和 live LLM 回归均通过 |
+| G3 Tests | GO | main CI `29867658752` 在 commit `cee9e70aa` 上 `43/43` jobs 成功；最终文档提交的 CI `29868838292` 重跑后同样 `43/43` 成功；锁定版 OpenAPI 类型、部署契约、FastAPI 0.139 路由漂移闸和 live LLM 回归均通过 |
 | G4 Safety review | GO | 第五轮独立复审确认无 P0/P1 代码 blocker；rollback containment 与统一 ORM bootstrap 均关闭 |
 | G5 Deploy health | BLOCKED | 未满足生产角色、真实异地恢复演练、基础设施安装和原生 Keychain 发版前不进入部署 |
 | G6 Production verification | NOT ENTERED | 尚未部署，不作上线成功声明 |
@@ -56,6 +56,7 @@
 - 2026-07-22: 同一 CI 的 `backend-test-d` 仍要求未引用的远端 bundle 路径，已改为断言安全的单引号形式并禁止未引用形式；`backend-test-h-j` 依赖旧 FastAPI 展平后的 `routes`，已改为校验生产 OpenAPI 最终路由表。部署测试 `8 passed`，完整 h-j 分片 `695 passed`。
 - 2026-07-22: 使用固定假数据和隔离临时 PostgreSQL 账本执行 live LLM 回归；`invariants 12/12`、`health_agent_core 50/50`、`orchestrator 5/5` 通过，Orchestrator 平均分 `0.92`、无 regression，实际模型 `MiniMax-M2.5`。临时数据库已删除，原始 JSON 仅保存在本地 `/tmp/security-live-llm-eval.json`。
 - 2026-07-22: 修复提交 `cee9e70aa` 的 main CI `29867658752` 完成，`43/43` jobs 成功；G3 转 GO。一次性 `HARNESS_LIVE_LLM_EVAL_CONFIRMED` 仓库变量已在质量闸消费后删除，未来高风险改动不会被永久放行。
+- 2026-07-22: 最终文档提交 `d8c993e81` 的 CI `29868838292` 首次运行仅 `voice-watch` 分片在 GitHub runner 上两次达到 600 秒截止时间；相同锁定依赖和测试顺序在本地 `161 passed`，单独 `watch_summary` 为 `18 passed`。只重跑失败 job 后 `voice-watch` 用时 1 分 59 秒成功，整条 CI `43/43` jobs 成功；未放宽分片超时闸。
 
 ## G3 Verification Evidence
 
@@ -69,6 +70,7 @@
 - 此前本批次已完成 Mobile `2052` tests、Mac Core `448` tests、Frontend/Mobile/npm 与 Python dependency audits，未引入依赖漏洞。
 - `ruff` 未定义名/语法闸、`git diff --check`、secret scan、system-map/doc drift 均通过。
 - CI 锁定依赖复现：部署契约 `8 passed`；完整 `h-j` 分片 `695 passed`；Web/Mobile generated API types 确定性重生成且两端一致。
+- Voice/Watch 稳定性复核：完整分片 `161 passed`，`watch_summary` 单文件 `18 passed`；最终 main CI 重跑 `43/43` jobs 成功。
 - Live LLM synthesis gate：`invariants 12/12`、`health_agent_core 50/50`、`orchestrator 5/5`，平均分 `0.92`、无 regression。
 
 ## G4 Remediation Ledger
