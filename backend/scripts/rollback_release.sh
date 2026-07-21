@@ -1,7 +1,7 @@
 #!/bin/bash
 # Restore a known-good application revision and prove it can run against the
 # current forward-only database schema. This script never reports success
-# before both the exact Git revision and the health endpoint are verified.
+# before the exact revision, runtime schema, auth boundary, and services pass.
 set -euo pipefail
 
 if [ "$#" -ne 2 ]; then
@@ -12,7 +12,9 @@ fi
 REPO_PATH="$1"
 ROLLBACK_COMMIT="$2"
 HEALTH_URL="${ROLLBACK_HEALTH_URL:-http://localhost:8000/api/v1/health}"
+AUTH_URL="${ROLLBACK_AUTH_URL:-http://localhost:8000/api/v1/auth/me}"
 HEALTH_ATTEMPTS="${ROLLBACK_HEALTH_ATTEMPTS:-30}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [ ! -d "$REPO_PATH/.git" ] && [ ! -f "$REPO_PATH/.git" ]; then
     echo "回滚目录不是 Git 工作树: $REPO_PATH" >&2
@@ -27,6 +29,21 @@ if ! [[ "$HEALTH_ATTEMPTS" =~ ^[1-9][0-9]*$ ]]; then
     exit 1
 fi
 
+SCHEMA_PROBE=$(mktemp "${TMPDIR:-/tmp}/health-rollback-schema.XXXXXX.py")
+cp "$SCRIPT_DIR/verify_runtime_schema_compatibility.py" "$SCHEMA_PROBE"
+ROLLBACK_VERIFIED=0
+SERVICES_TOUCHED=0
+cleanup_or_block() {
+    local rc=$?
+    trap - EXIT
+    rm -f "$SCHEMA_PROBE"
+    if [ "$SERVICES_TOUCHED" = "1" ] && [ "$ROLLBACK_VERIFIED" != "1" ]; then
+        systemctl stop health-backend celery-worker celery-beat >/dev/null 2>&1 || true
+    fi
+    exit "$rc"
+}
+trap cleanup_or_block EXIT
+
 cd "$REPO_PATH"
 git cat-file -e "${ROLLBACK_COMMIT}^{commit}"
 if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
@@ -36,6 +53,7 @@ fi
 
 # Stop writers before changing code. On any later failure, services stay
 # stopped instead of serving an unverified code/database combination.
+SERVICES_TOUCHED=1
 systemctl stop health-backend celery-worker celery-beat
 git checkout -B main "$ROLLBACK_COMMIT"
 test "$(git rev-parse HEAD)" = "$ROLLBACK_COMMIT"
@@ -52,9 +70,26 @@ for attempt in $(seq 1 "$HEALTH_ATTEMPTS"); do
     sleep 2
 done
 if [ "$healthy" != "1" ]; then
-    echo "回滚后健康检查失败；旧代码与当前数据库结构未证明兼容" >&2
+    echo "回滚后健康检查失败" >&2
     exit 1
 fi
 
+AUTH_STATUS=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 "$AUTH_URL" || true)
+if [ "$AUTH_STATUS" != "401" ]; then
+    echo "回滚后认证探针失败: expected=401 actual=${AUTH_STATUS:-missing}" >&2
+    exit 1
+fi
+
+systemctl is-active --quiet health-backend
+systemctl is-active --quiet celery-worker
+systemctl is-active --quiet celery-beat
+
+(
+    cd backend
+    test -r .env
+    PYTHONPATH=. venv/bin/python "$SCHEMA_PROBE"
+)
+
 test "$(git rev-parse HEAD)" = "$ROLLBACK_COMMIT"
-echo "ROLLBACK_OK commit=$ROLLBACK_COMMIT database_schema=forward-compatible"
+ROLLBACK_VERIFIED=1
+echo "ROLLBACK_OK commit=$ROLLBACK_COMMIT schema_probe=passed auth_probe=passed services=active"
