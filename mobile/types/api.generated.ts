@@ -22409,6 +22409,12 @@ export interface components {
         };
         /** DedaoKbaseClaimAdjudicationRequest */
         DedaoKbaseClaimAdjudicationRequest: {
+            /**
+             * Workspace
+             * @default release
+             * @enum {string}
+             */
+            workspace: "release" | "agent_package";
             /** Workspace Fingerprint */
             workspace_fingerprint: string;
             /**
@@ -22437,6 +22443,12 @@ export interface components {
         };
         /** DedaoKbaseDraftReviewApproveRequest */
         DedaoKbaseDraftReviewApproveRequest: {
+            /**
+             * Workspace
+             * @default release
+             * @enum {string}
+             */
+            workspace: "release" | "agent_package";
             /** Workspace Fingerprint */
             workspace_fingerprint: string;
             /** Note */
@@ -22454,6 +22466,12 @@ export interface components {
         };
         /** DedaoKbaseDraftReviewFinalizeRequest */
         DedaoKbaseDraftReviewFinalizeRequest: {
+            /**
+             * Workspace
+             * @default release
+             * @enum {string}
+             */
+            workspace: "release" | "agent_package";
             /** Workspace Fingerprint */
             workspace_fingerprint: string;
             /** Note */
@@ -22461,16 +22479,34 @@ export interface components {
         };
         /** DedaoKbasePublishPreviewRequest */
         DedaoKbasePublishPreviewRequest: {
+            /**
+             * Workspace
+             * @default release
+             * @enum {string}
+             */
+            workspace: "release" | "agent_package";
             /** Note */
             note?: string | null;
         };
         /** DedaoKbaseReviewedArtifactsPublishRequest */
         DedaoKbaseReviewedArtifactsPublishRequest: {
+            /**
+             * Workspace
+             * @default release
+             * @enum {string}
+             */
+            workspace: "release" | "agent_package";
             /** Note */
             note?: string | null;
         };
         /** DedaoKbaseVerificationPacketApplyRequest */
         DedaoKbaseVerificationPacketApplyRequest: {
+            /**
+             * Workspace
+             * @default release
+             * @enum {string}
+             */
+            workspace: "release" | "agent_package";
             /** Workspace Fingerprint */
             workspace_fingerprint: string;
             /** Packet Id */
@@ -22480,6 +22516,12 @@ export interface components {
         };
         /** DedaoKbaseVerificationPacketRequest */
         DedaoKbaseVerificationPacketRequest: {
+            /**
+             * Workspace
+             * @default release
+             * @enum {string}
+             */
+            workspace: "release" | "agent_package";
             /** Workspace Fingerprint */
             workspace_fingerprint: string;
         };
@@ -55940,7 +55982,9 @@ export interface operations {
     };
     get_dedao_kbase_draft_review_api_v1_admin_knowledge_dedao_kbase_draft_review_get: {
         parameters: {
-            query?: never;
+            query?: {
+                workspace?: "release" | "agent_package";
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -55956,6 +56000,15 @@ export interface operations {
                     "application/json": unknown;
                 };
             };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
         };
     };
     get_dedao_kbase_draft_review_items_api_v1_admin_knowledge_dedao_kbase_draft_review_items_get: {
@@ -55964,6 +56017,7 @@ export interface operations {
                 offset?: number;
                 limit?: number;
                 decision?: ("approve" | "needs_evidence" | "reject" | "background_only") | null;
+                workspace?: "release" | "agent_package";
             };
             header?: never;
             path?: never;
@@ -55993,7 +56047,9 @@ export interface operations {
     };
     get_dedao_kbase_verification_packets_api_v1_admin_knowledge_dedao_kbase_draft_review_items__doc_id__verification_get: {
         parameters: {
-            query?: never;
+            query?: {
+                workspace?: "release" | "agent_package";
+            };
             header?: never;
             path: {
                 doc_id: string;
