@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import UTC, datetime
 import json
 from pathlib import Path
@@ -16,6 +17,7 @@ from app.services.system_knowledge_ingest import IngestResult
 
 
 RELEASE_PIPELINE_NAME = "dedao_kbase_release_v1"
+AGENT_PACKAGE_PIPELINE_NAME = "dedao_kbase_agent_package_v1"
 _OPAQUE_ID = re.compile(r"[^A-Za-z0-9._:-]+")
 
 
@@ -40,6 +42,25 @@ class DedaoKBaseReleaseClient:
     def get_release(self, release_id: str) -> dict[str, Any]:
         payload = self._request("GET", f"/api/knowledge/releases/{quote(release_id, safe='')}")
         _validate_release(payload)
+        return payload
+
+    def list_agent_packages(self, *, after: str = "", limit: int = 50) -> list[dict[str, Any]]:
+        if limit < 1 or limit > 200:
+            raise ValueError("agent package list limit must be between 1 and 200")
+        query = urlencode({"after": after, "limit": limit})
+        payload = self._request("GET", f"/api/agent-packages?{query}")
+        records = payload.get("packages") if isinstance(payload, dict) else None
+        if not isinstance(records, list) or any(not isinstance(item, dict) for item in records):
+            raise ValueError("dedao-kbase agent package list has invalid schema")
+        return records
+
+    def get_agent_package(self, package_id: str, *, version: str) -> dict[str, Any]:
+        query = urlencode({"version": version})
+        payload = self._request(
+            "GET",
+            f"/api/agent-packages/{quote(package_id, safe='')}?{query}",
+        )
+        _validate_agent_package(payload)
         return payload
 
     def post_feedback(
@@ -142,6 +163,164 @@ def compile_knowledge_release_artifacts(
     return result
 
 
+def compile_agent_package_artifacts(
+    *,
+    package: dict[str, Any],
+    releases: list[dict[str, Any]],
+    base_artifact_dir: str | Path,
+    source_root: str | Path,
+    now: datetime | None = None,
+) -> IngestResult:
+    """Compile one eligible package into draft-only review artifacts.
+
+    The producer's persisted evaluation report is required and verified here.
+    Health still retains domain review, serving-index ownership, and all
+    user-facing safety decisions.
+    """
+    assessment = assess_agent_package_for_health(package, releases)
+    if not assessment["eligible"]:
+        raise ValueError(f"agent package held: {', '.join(assessment['hold_reasons'])}")
+
+    current_time = now or datetime.now(UTC)
+    references_by_release_id = {
+        str(reference["release_id"]): reference for reference in package["releases"]
+    }
+    release_results = [
+        compile_knowledge_release_artifacts(
+            release=_scope_release_to_package_reference(
+                release,
+                references_by_release_id[str(release["release_id"])],
+            ),
+            base_artifact_dir=base_artifact_dir,
+            source_root=source_root,
+            now=current_time,
+        )
+        for release in releases
+    ]
+    result = combine_release_results(release_results)
+    evaluation_policy = package["evaluation_policy"]
+    evaluation = package["evaluation"]
+    safety_policy = package["safety_policy"]
+    release_ids = [str(ref["release_id"]) for ref in package["releases"]]
+    lineage = _agent_package_lineage(package)
+    package_metadata = {
+        "origin": "dedao-kbase-agent-package",
+        "package_id": package["package_id"],
+        "package_version": package["version"],
+        "package_content_hash": package["content_hash"],
+        "package_release_ids": release_ids,
+        "evaluation_status": "passed",
+        "evaluation_suite_version": evaluation_policy["suite_version"],
+        "evaluation_input_hash": evaluation["input_hash"],
+        "evaluation_evaluator_version": evaluation["evaluator_version"],
+        "evaluated_at": evaluation["evaluated_at"],
+        "agent_package_lineage": [lineage],
+        "safety_flags": {
+            "usage_policy": safety_policy["usage_policy"],
+            "abstention_reasons": list(safety_policy["abstention_reasons"]),
+            "escalation_target": safety_policy["escalation_target"],
+        },
+        "review_status": "draft",
+    }
+    for row in [*result.pages, *result.entities, *result.claims, *result.relations]:
+        metadata = dict(row.get("metadata") or {})
+        metadata.update(package_metadata)
+        row["metadata"] = metadata
+
+    result.manifest["ingest"] = {
+        "pipeline": AGENT_PACKAGE_PIPELINE_NAME,
+        "review_status": "draft",
+        "requires_review": True,
+        "serving_allowed": False,
+    }
+    result.manifest["agent_package"] = {
+        "package_id": package["package_id"],
+        "version": package["version"],
+        "content_hash": package["content_hash"],
+        "evaluation_status": "passed",
+        "evaluation_suite_version": evaluation_policy["suite_version"],
+        "evaluation_input_hash": evaluation["input_hash"],
+        "evaluation_evaluator_version": evaluation["evaluator_version"],
+        "evaluated_at": evaluation["evaluated_at"],
+        "release_ids": release_ids,
+    }
+    result.manifest["agent_packages"] = [lineage]
+    for source_stat in result.source_stats:
+        source_stat.update(
+            {
+                "agent_package_id": package["package_id"],
+                "agent_package_version": package["version"],
+                "agent_package_content_hash": package["content_hash"],
+            }
+        )
+    return result
+
+
+def _scope_release_to_package_reference(
+    release: dict[str, Any], reference: dict[str, Any]
+) -> dict[str, Any]:
+    """Return only the release evidence authorized by one hashed package reference."""
+    scoped = deepcopy(release)
+    allowed_citation_ids = {
+        str(value).strip() for value in reference.get("citation_ids") or [] if str(value).strip()
+    }
+    scoped["citations"] = [
+        citation
+        for citation in scoped.get("citations") or []
+        if isinstance(citation, dict)
+        and str(citation.get("citation_id") or "").strip() in allowed_citation_ids
+    ]
+    allowed_chunk_ids = {
+        str(citation.get("chunk_id") or "").strip()
+        for citation in scoped["citations"]
+        if str(citation.get("chunk_id") or "").strip()
+    }
+    scoped["sources"] = [
+        source
+        for source in scoped.get("sources") or []
+        if isinstance(source, dict)
+        and (
+            str(source.get("id") or "").strip() in allowed_citation_ids
+            or str(source.get("id") or "").strip() in allowed_chunk_ids
+            or str(source.get("chunk_id") or "").strip() in allowed_chunk_ids
+        )
+    ]
+    scoped_claims: list[dict[str, Any]] = []
+    for claim in scoped["analysis"].get("claims") or []:
+        citation_ids = [
+            str(value).strip()
+            for value in claim.get("citation_ids") or []
+            if str(value).strip() in allowed_citation_ids
+        ]
+        if not citation_ids:
+            continue
+        claim["citation_ids"] = citation_ids
+        scoped_claims.append(claim)
+    scoped["analysis"]["claims"] = scoped_claims
+    scoped["analysis"]["summary"] = " ".join(
+        str(claim.get("statement") or "").strip()
+        for claim in scoped_claims
+        if str(claim.get("statement") or "").strip()
+    )
+    return scoped
+
+
+def assess_agent_package_for_health(
+    package: dict[str, Any],
+    releases: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Return deterministic eligibility without mutating review or serving state."""
+    _validate_agent_package(package)
+    for release in releases:
+        _validate_release(release)
+    reasons = _agent_package_hold_reasons(package, releases)
+    return {
+        "eligible": not reasons,
+        "hold_reasons": reasons,
+        "evaluation_status": "passed" if "unevaluated" not in reasons else "unevaluated",
+    }
+
+
 def combine_release_results(results: list[IngestResult]) -> IngestResult:
     if not results:
         raise ValueError("at least one release result is required")
@@ -157,7 +336,128 @@ def combine_release_results(results: list[IngestResult]) -> IngestResult:
         "relations_added": len(combined.relations),
     }
     combined.source_stats = [item for result in results for item in result.source_stats]
+    package_lineages = _unique_package_lineages(
+        item
+        for result in results
+        for item in result.manifest.get("agent_packages") or []
+        if isinstance(item, dict)
+    )
+    if package_lineages:
+        combined.manifest["agent_packages"] = package_lineages
     return combined
+
+
+def _validate_agent_package(payload: Any) -> None:
+    if not isinstance(payload, dict):
+        raise ValueError("dedao-kbase agent package must be a JSON object")
+    required = (
+        "schema_version",
+        "package_id",
+        "version",
+        "content_hash",
+        "lifecycle_state",
+        "releases",
+        "safety_policy",
+        "evaluation_policy",
+    )
+    missing = [field for field in required if field not in payload]
+    if missing:
+        raise ValueError(f"dedao-kbase agent package missing fields: {', '.join(missing)}")
+    if payload.get("schema_version") != "agent-package.v1":
+        raise ValueError("dedao-kbase agent package has unsupported schema_version")
+    if not all(str(payload.get(field) or "").strip() for field in ("package_id", "version", "content_hash")):
+        raise ValueError("dedao-kbase agent package identity is incomplete")
+    if not isinstance(payload.get("releases"), list) or not payload["releases"]:
+        raise ValueError("dedao-kbase agent package requires pinned releases")
+    if any(not isinstance(item, dict) for item in payload["releases"]):
+        raise ValueError("dedao-kbase agent package release references must be JSON objects")
+    if not isinstance(payload.get("safety_policy"), dict):
+        raise ValueError("dedao-kbase agent package safety_policy must be a JSON object")
+    if not isinstance(payload.get("evaluation_policy"), dict):
+        raise ValueError("dedao-kbase agent package evaluation_policy must be a JSON object")
+    if "evaluation" in payload and not isinstance(payload.get("evaluation"), dict):
+        raise ValueError("dedao-kbase agent package evaluation must be a JSON object")
+
+
+def _agent_package_hold_reasons(
+    package: dict[str, Any],
+    releases: list[dict[str, Any]],
+) -> list[str]:
+    reasons: list[str] = []
+    if package.get("lifecycle_state") != "published":
+        reasons.append("stale")
+
+    safety_policy = package.get("safety_policy") or {}
+    if safety_policy.get("usage_policy") != "evidence_only" or any(
+        release.get("usage_policy") != "evidence_only" for release in releases
+    ):
+        reasons.append("non_evidence_only")
+
+    evaluation_policy = package.get("evaluation_policy") or {}
+    evaluation = package.get("evaluation") or {}
+    minimum_scores = evaluation_policy.get("minimum_scores")
+    metrics = evaluation.get("metrics")
+    thresholds_pass = (
+        isinstance(minimum_scores, dict)
+        and bool(minimum_scores)
+        and isinstance(metrics, dict)
+        and all(
+            isinstance(metrics.get(metric), (int, float))
+            and float(metrics[metric]) >= float(threshold)
+            for metric, threshold in minimum_scores.items()
+            if isinstance(threshold, (int, float))
+        )
+        and all(isinstance(threshold, (int, float)) for threshold in minimum_scores.values())
+    )
+    if (
+        evaluation.get("schema_version") != "agent-evaluation-report.v1"
+        or evaluation.get("passed") is not True
+        or str(evaluation.get("package_id") or "") != str(package.get("package_id") or "")
+        or str(evaluation.get("package_content_hash") or "")
+        != str(package.get("content_hash") or "")
+        or str(evaluation.get("suite_version") or "")
+        != str(evaluation_policy.get("suite_version") or "")
+        or not str(evaluation.get("input_hash") or "").strip()
+        or not str(evaluation.get("evaluator_version") or "").strip()
+        or not str(evaluation.get("evaluated_at") or "").strip()
+        or not thresholds_pass
+        or not str(evaluation_policy.get("suite_version") or "").strip()
+    ):
+        reasons.append("unevaluated")
+
+    releases_by_id = {
+        str(release.get("release_id") or ""): release
+        for release in releases
+        if str(release.get("release_id") or "").strip()
+    }
+    seen_release_ids: set[str] = set()
+    for reference in package.get("releases") or []:
+        release_id = str(reference.get("release_id") or "").strip()
+        if not release_id or release_id in seen_release_ids:
+            reasons.append("conflict")
+            continue
+        seen_release_ids.add(release_id)
+        release = releases_by_id.get(release_id)
+        if release is None or str(reference.get("content_hash") or "") != str(
+            release.get("content_hash") or ""
+        ):
+            reasons.append("conflict")
+            continue
+        available_citations = {
+            str(citation.get("citation_id") or "")
+            for citation in release.get("citations") or []
+            if isinstance(citation, dict)
+        }
+        pinned_citations = {
+            str(citation_id)
+            for citation_id in reference.get("citation_ids") or []
+            if str(citation_id).strip()
+        }
+        if not pinned_citations or not pinned_citations.issubset(available_citations):
+            reasons.append("conflict")
+    if set(releases_by_id) != seen_release_ids:
+        reasons.append("conflict")
+    return list(dict.fromkeys(reasons))
 
 
 def _validate_release(payload: Any) -> None:
@@ -275,7 +575,8 @@ def _unique_rows(results: list[IngestResult], field: str, key: str) -> list[dict
     rows: dict[str, dict[str, Any]] = {}
     for result in results:
         for row in getattr(result, field):
-            rows[str(row[key])] = row
+            row_key = str(row[key])
+            rows[row_key] = _merge_package_lineage(rows.get(row_key), row)
     return sorted(rows.values(), key=lambda row: str(row[key]))
 
 
@@ -284,5 +585,58 @@ def _unique_relations(results: list[IngestResult]) -> list[dict[str, Any]]:
     for result in results:
         for row in result.relations:
             key = (str(row["src_doc_id"]), str(row["relation"]), str(row["dst_doc_id"]))
-            rows[key] = row
+            rows[key] = _merge_package_lineage(rows.get(key), row)
     return [rows[key] for key in sorted(rows)]
+
+
+def _agent_package_lineage(package: dict[str, Any]) -> dict[str, Any]:
+    evaluation = package["evaluation"]
+    return {
+        "package_id": package["package_id"],
+        "version": package["version"],
+        "content_hash": package["content_hash"],
+        "release_ids": [str(reference["release_id"]) for reference in package["releases"]],
+        "evaluation": {
+            "status": "passed",
+            "suite_version": evaluation["suite_version"],
+            "input_hash": evaluation["input_hash"],
+            "evaluator_version": evaluation["evaluator_version"],
+            "evaluated_at": evaluation["evaluated_at"],
+        },
+    }
+
+
+def _merge_package_lineage(
+    previous: dict[str, Any] | None,
+    current: dict[str, Any],
+) -> dict[str, Any]:
+    if previous is None:
+        return current
+    merged = dict(current)
+    previous_metadata = dict(previous.get("metadata") or {})
+    current_metadata = dict(current.get("metadata") or {})
+    lineages = _unique_package_lineages(
+        [
+            *(previous_metadata.get("agent_package_lineage") or []),
+            *(current_metadata.get("agent_package_lineage") or []),
+        ]
+    )
+    if lineages:
+        current_metadata["agent_package_lineage"] = lineages
+    merged["metadata"] = current_metadata
+    return merged
+
+
+def _unique_package_lineages(items: Any) -> list[dict[str, Any]]:
+    unique: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        key = (
+            str(item.get("package_id") or ""),
+            str(item.get("version") or ""),
+            str(item.get("content_hash") or ""),
+        )
+        if all(key):
+            unique[key] = item
+    return [unique[key] for key in sorted(unique)]

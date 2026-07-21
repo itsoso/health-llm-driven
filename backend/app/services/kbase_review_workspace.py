@@ -39,7 +39,8 @@ def workspace_backup_path(artifact_dir: str | Path) -> Path:
 def review_workspace_lock(artifact_dir: str | Path) -> Iterator[None]:
     target = Path(artifact_dir)
     target.parent.mkdir(parents=True, exist_ok=True)
-    lock_path = target.parent / f".{target.name}.lock"
+    coordination_target = target.parent if target.name == "agent-packages" else target
+    lock_path = coordination_target.parent / f".{coordination_target.name}.lock"
     descriptor = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
     with os.fdopen(descriptor, "a+") as lock_file:
         fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
