@@ -261,18 +261,21 @@ describe('AgendaScreen', () => {
   });
 
   it('restores a server-snoozed item through a verified write', () => {
+    const snoozedUntil = '2026-07-20T09:30:00-04:00';
     mockAgendaData = {
       agenda_date: '2026-07-20',
       count: 1,
       items: [{
         ...agendaData.items[0],
         status: 'snoozed',
-        snoozed_until: '2026-07-20T09:30:00-04:00',
+        snoozed_until: snoozedUntil,
       }],
     };
     const { getByLabelText, getByText } = render(<AgendaScreen />);
 
-    expect(getByText('09:30 再提醒')).toBeTruthy();
+    const localDate = new Date(snoozedUntil);
+    const localTime = `${String(localDate.getHours()).padStart(2, '0')}:${String(localDate.getMinutes()).padStart(2, '0')}`;
+    expect(getByText(`${localTime} 再提醒`)).toBeTruthy();
     fireEvent.press(getByLabelText('恢复 晨间用药'));
 
     expect(mockResumeMutate).toHaveBeenCalledWith(
