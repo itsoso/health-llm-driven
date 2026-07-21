@@ -4,8 +4,8 @@
 |---|---|
 | slug | `mobile-today-actions-management` |
 | 创建日期 | 2026-07-20 |
-| 当前阶段 | S5 实现验证（反馈环 4） |
-| 状态 | in_progress |
+| 当前阶段 | S8 上线验证（反馈环 4） |
+| 状态 | shipped |
 | 负责 | Codex |
 | 反馈环 | Mobile Jest / iOS Simulator / production OTA |
 
@@ -94,6 +94,8 @@
 - 设计与计划：`42e67ae9a`。
 - 实现：`63db2494f`。
 - 反馈环 3：`5281eb82f`、`a542f94b1`、`e135100d6`、`72d4fa3ae`。
+- 反馈环 4：`242a1cbf4`；合并最新主干后提交为 `416aaa946`。
+- 同步并行后端 OpenAPI 到 Mobile/Web 生成类型：`1d97bb4c3`。
 - `main` 已推送到 `origin/main`；未纳入并行会话的无关工作树改动。
 
 ## G5 · 部署健康闸
@@ -208,12 +210,13 @@
 - [x] 三组专项 Jest `23 passed`，TypeScript、变更文件 ESLint、design token、doc drift 和 diff check 通过。
 - [x] iPhone 17 Pro 模拟器使用真实账号验证完整可逆动线：`现在 1 → 稍后 1 → 移回现在 → 现在 1`；标题摘要同步变化，布局无重叠。
 - [x] 独立评审发现复核事项实际回到“需要确认”却统一提示“移回现在”的 P2 误导；已按原分组分别显示“移回现在 / 移回待确认”并补回归测试，复审结论 GO，无高/中风险。
-- [ ] 最新主干 CI 通过并发布 production OTA。
+- [x] 最新主干 `1d97bb4c3` CI `41/41` 通过，运行 `29793087152` 聚合结论为 `success`；并行后端 schema 引起的 Mobile/Web 类型漂移已同步，`type-drift` 闸通过。
+- [x] production OTA 已从干净的 `origin/main` 发布并回读：runtime `1.3.2`，update group `7bd526a7-dffa-4172-8d90-990257701371`，iOS update `019f8258-d69d-7a21-a816-5a05e7d4baf9`。
 - [ ] 用户真机应用更新后完成最终触控验收。
 
 ### Gate 裁决
 
-- G3 测试：本地 PASS；最新主干 CI 待执行。
+- G3 测试：PASS（专项 Jest `23 passed`、TypeScript、ESLint、design token、doc drift、diff check；最新主干 CI `41/41`）。
 - G4 评审：PASS（本地后移/恢复不写服务端；完成/跳过权限未扩大；P2 文案误导修复后独立复审 GO）。
-- G5 部署：待执行。
-- G6 上线验证：待执行。
+- G5 部署：PASS（production / iOS / runtime `1.3.2`，EAS 标识已回读验证）。
+- G6 上线验证：PASS（技术上线）；真机触控反馈继续进入下一反馈环。
