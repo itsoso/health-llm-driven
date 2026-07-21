@@ -30,7 +30,9 @@ from app.services.dedao_kbase_export_importer import (
 )
 from app.integrations.dedao_kbase_release_consumer import (
     DedaoKBaseReleaseClient,
+    assess_agent_package_for_health,
     combine_release_results,
+    compile_agent_package_artifacts,
     compile_knowledge_release_artifacts,
 )
 from app.services.system_knowledge_crystallize import draft_crystallized_claim_candidates
@@ -68,7 +70,7 @@ def _dedao_kbase_review_artifact_dir() -> Path:
     configured = (settings.dedao_kbase_review_artifact_dir or "").strip()
     if not configured:
         raise ValueError("DEDAO_KBASE_REVIEW_ARTIFACT_DIR is required for Release sync")
-    return Path(configured).expanduser()
+    return Path(configured).expanduser().resolve()
 
 
 def _artifact_fingerprint(artifact_dir: str | Path) -> str:
@@ -107,6 +109,22 @@ def _replace_workspace(candidate: Path, target: Path) -> None:
         shutil.rmtree(backup)
 
 
+def _preserve_agent_package_workspace(target: Path, candidate: Path) -> None:
+    """Carry the fixed child review workspace across a parent rebuild."""
+    source = target / "agent-packages"
+    if not source.exists() and not source.is_symlink():
+        return
+    if source.is_symlink() or not source.is_dir():
+        raise ValueError("Agent Package review workspace must be a real directory under the release workspace")
+
+    destination = candidate / "agent-packages"
+    if destination.is_symlink() or destination.is_file():
+        destination.unlink()
+    elif destination.exists():
+        shutil.rmtree(destination)
+    shutil.copytree(source, destination)
+
+
 def _normalize_canonical_review_status(artifact_dir: str | Path) -> None:
     """Treat missing status in the trusted repository seed as reviewed.
 
@@ -128,6 +146,179 @@ def _normalize_canonical_review_status(artifact_dir: str | Path) -> None:
             row["metadata"] = metadata
             normalized.append(json.dumps(row, ensure_ascii=False, sort_keys=True))
         path.write_text(("\n".join(normalized) + "\n") if normalized else "", encoding="utf-8")
+
+
+def _agent_package_lineages_by_release(artifact_dir: str | Path) -> dict[str, list[dict[str, Any]]]:
+    lineages: dict[str, dict[tuple[str, str, str], dict[str, Any]]] = {}
+    root = Path(artifact_dir)
+    for name in ARTIFACT_FILES:
+        path = root / name
+        if not path.exists():
+            continue
+        for raw_line in path.read_text(encoding="utf-8").splitlines():
+            if not raw_line.strip():
+                continue
+            row = json.loads(raw_line)
+            metadata = row.get("metadata") if isinstance(row, dict) else None
+            if not isinstance(metadata, dict):
+                continue
+            release_id = str(metadata.get("release_id") or "").strip()
+            if not release_id:
+                continue
+            release_lineages = lineages.setdefault(release_id, {})
+            for item in metadata.get("agent_package_lineage") or []:
+                if not isinstance(item, dict):
+                    continue
+                key = (
+                    str(item.get("package_id") or ""),
+                    str(item.get("version") or ""),
+                    str(item.get("content_hash") or ""),
+                )
+                if all(key):
+                    release_lineages[key] = item
+    return {
+        release_id: [items[key] for key in sorted(items)]
+        for release_id, items in lineages.items()
+    }
+
+
+def _preserve_agent_package_lineage(
+    result: Any,
+    existing_by_release: dict[str, list[dict[str, Any]]],
+) -> dict[str, list[dict[str, Any]]]:
+    by_release = {
+        release_id: {
+            (
+                str(item.get("package_id") or ""),
+                str(item.get("version") or ""),
+                str(item.get("content_hash") or ""),
+            ): item
+            for item in items
+            if isinstance(item, dict)
+        }
+        for release_id, items in existing_by_release.items()
+    }
+    for item in result.manifest.get("agent_packages") or []:
+        if not isinstance(item, dict):
+            continue
+        key = (
+            str(item.get("package_id") or ""),
+            str(item.get("version") or ""),
+            str(item.get("content_hash") or ""),
+        )
+        if not all(key):
+            continue
+        for release_id in item.get("release_ids") or []:
+            by_release.setdefault(str(release_id), {})[key] = item
+    for row in [
+        *result.pages,
+        *result.entities,
+        *result.claims,
+        *result.relations,
+    ]:
+        metadata = dict(row.get("metadata") or {})
+        release_id = str(metadata.get("release_id") or "").strip()
+        if release_id in by_release:
+            metadata["agent_package_lineage"] = [
+                by_release[release_id][key] for key in sorted(by_release[release_id])
+            ]
+            row["metadata"] = metadata
+    return {
+        release_id: [items[key] for key in sorted(items)]
+        for release_id, items in by_release.items()
+    }
+
+
+def _write_agent_package_lineage_to_artifacts(
+    artifact_dir: str | Path,
+    lineages_by_release: dict[str, list[dict[str, Any]]],
+) -> None:
+    root = Path(artifact_dir)
+    for name in ARTIFACT_FILES:
+        path = root / name
+        if not path.exists():
+            continue
+        rows: list[str] = []
+        for raw_line in path.read_text(encoding="utf-8").splitlines():
+            if not raw_line.strip():
+                continue
+            row = json.loads(raw_line)
+            metadata = dict(row.get("metadata") or {})
+            release_id = str(metadata.get("release_id") or "").strip()
+            if release_id in lineages_by_release:
+                metadata["agent_package_lineage"] = lineages_by_release[release_id]
+                row["metadata"] = metadata
+            rows.append(json.dumps(row, ensure_ascii=False, sort_keys=True))
+        path.write_text(("\n".join(rows) + "\n") if rows else "", encoding="utf-8")
+
+
+def _retire_superseded_agent_package_projections(
+    artifact_dir: str | Path,
+    canonical_artifact_dir: str | Path,
+    superseded_refs: set[tuple[str, str]],
+) -> None:
+    """Remove superseded draft provenance while preserving shared-package rows."""
+    if not superseded_refs:
+        return
+    root = Path(artifact_dir)
+    canonical_root = Path(canonical_artifact_dir)
+    for name in ARTIFACT_FILES:
+        path = root / name
+        if not path.exists():
+            continue
+        canonical_rows: dict[tuple[str, ...], dict[str, Any]] = {}
+        canonical_path = canonical_root / name
+        if canonical_path.exists():
+            for raw_line in canonical_path.read_text(encoding="utf-8").splitlines():
+                if not raw_line.strip():
+                    continue
+                canonical_row = json.loads(raw_line)
+                key = _artifact_row_identity(name, canonical_row)
+                if key:
+                    canonical_rows[key] = canonical_row
+        rows: list[str] = []
+        for raw_line in path.read_text(encoding="utf-8").splitlines():
+            if not raw_line.strip():
+                continue
+            row = json.loads(raw_line)
+            metadata = dict(row.get("metadata") or {})
+            lineage = metadata.get("agent_package_lineage")
+            if not isinstance(lineage, list):
+                rows.append(json.dumps(row, ensure_ascii=False, sort_keys=True))
+                continue
+            retained = [
+                item
+                for item in lineage
+                if not (
+                    isinstance(item, dict)
+                    and (
+                        str(item.get("package_id") or ""),
+                        str(item.get("version") or ""),
+                    )
+                    in superseded_refs
+                )
+            ]
+            if not retained:
+                canonical_row = canonical_rows.get(_artifact_row_identity(name, row))
+                if canonical_row is not None:
+                    rows.append(json.dumps(canonical_row, ensure_ascii=False, sort_keys=True))
+                continue
+            metadata["agent_package_lineage"] = retained
+            row["metadata"] = metadata
+            rows.append(json.dumps(row, ensure_ascii=False, sort_keys=True))
+        path.write_text(("\n".join(rows) + "\n") if rows else "", encoding="utf-8")
+
+
+def _artifact_row_identity(name: str, row: dict[str, Any]) -> tuple[str, ...]:
+    if name == "relations.jsonl":
+        key = (
+            str(row.get("src_doc_id") or ""),
+            str(row.get("relation") or ""),
+            str(row.get("dst_doc_id") or ""),
+        )
+        return key if all(key) else ()
+    doc_id = str(row.get("doc_id") or "")
+    return (doc_id,) if doc_id else ()
 
 
 def _list_release_records(
@@ -152,6 +343,29 @@ def _list_release_records(
         cursor = next_cursor
 
 
+def _list_agent_package_records(
+    client: DedaoKBaseReleaseClient,
+    *,
+    after: str,
+    limit: int,
+    replay_all: bool,
+) -> list[dict[str, Any]]:
+    if not replay_all:
+        return client.list_agent_packages(after=after, limit=limit)
+    records: list[dict[str, Any]] = []
+    cursor = ""
+    while True:
+        page = client.list_agent_packages(after=cursor, limit=limit)
+        records.extend(page)
+        if len(page) < limit:
+            return records
+        last = page[-1]
+        next_cursor = f"{last.get('package_id', '')}@{last.get('version', '')}"
+        if next_cursor == "@" or next_cursor == cursor:
+            raise ValueError("dedao-kbase Agent Package replay cursor did not advance")
+        cursor = next_cursor
+
+
 def _feedback_event_id(audit_id: int, release_id: str) -> str:
     release_digest = hashlib.sha256(release_id.encode("utf-8")).hexdigest()[:12]
     return f"health-kb-audit-{audit_id}-{release_digest}"
@@ -172,7 +386,10 @@ def _feedback_events_for_audit(db: Session, audit: KBAudit) -> list[dict[str, An
         claims_by_release: dict[str, list[str]] = {}
         for doc_id in used_ids:
             metadata = metadata_by_doc_id.get(doc_id) or {}
-            if metadata.get("origin") != "dedao-kbase-release":
+            if metadata.get("origin") not in {
+                "dedao-kbase-release",
+                "dedao-kbase-agent-package",
+            }:
                 continue
             release_id = str(metadata.get("release_id") or "").strip()
             release_claim_id = str(metadata.get("release_claim_id") or "").strip()
@@ -487,6 +704,7 @@ def _sync_dedao_kbase_releases_draft_locked(
             encoding="utf-8",
         )
         gate = validate_artifact_review_gate(candidate)
+        _preserve_agent_package_workspace(target, candidate)
         _replace_workspace(candidate, target)
     finally:
         if candidate.exists():
@@ -509,6 +727,285 @@ def _sync_dedao_kbase_releases_draft_locked(
     db.add(KBAudit(doc_id=None, op="dedao_kbase_release_sync_draft", actor=actor, diff=report))
     db.commit()
     return report
+
+
+def sync_dedao_kbase_agent_packages_draft_once(
+    db: Session,
+    *,
+    base_url: str | None,
+    auth_token: str | None,
+    artifact_dir: str | Path,
+    base_artifact_dir: str | Path,
+    source_root: str | Path,
+    actor: str = "system",
+    now: datetime | None = None,
+    limit: int = 50,
+) -> dict[str, Any]:
+    """Import eligible evidence-only Agent Packages into a draft workspace.
+
+    This path writes only review artifacts plus an audit receipt. It never
+    mutates the serving index or any per-user health model.
+    """
+    with review_workspace_lock(artifact_dir):
+        base_url = (base_url or "").strip()
+        if not base_url:
+            return {
+                "status": "skipped",
+                "reason": "missing_release_base_url",
+                "artifact_dir": str(artifact_dir),
+            }
+        if not 1 <= limit <= 200:
+            raise ValueError("agent package sync limit must be between 1 and 200")
+
+        target = Path(artifact_dir)
+        canonical = Path(base_artifact_dir)
+        target_resolved = target.expanduser().resolve()
+        canonical_resolved = canonical.expanduser().resolve()
+        if (
+            target_resolved == canonical_resolved
+            or target_resolved in canonical_resolved.parents
+            or canonical_resolved in target_resolved.parents
+        ):
+            raise ValueError("dedao-kbase Agent Package review workspace must not overlap canonical artifacts")
+
+        latest = (
+            db.query(KBAudit)
+            .filter(KBAudit.op == "dedao_kbase_agent_package_sync_draft")
+            .order_by(KBAudit.ts.desc(), KBAudit.id.desc())
+            .first()
+        )
+        previous_cursor = str((latest.diff or {}).get("cursor") or "") if latest else ""
+        base_fingerprint = _artifact_fingerprint(canonical)
+        workspace_metadata = read_workspace_metadata(target)
+        workspace_valid = (
+            workspace_artifacts_valid(target)
+            and str(workspace_metadata.get("base_fingerprint") or "") == base_fingerprint
+            and str(workspace_metadata.get("cursor") or "") == previous_cursor
+            and str(workspace_metadata.get("producer_base_url") or "") == base_url
+        )
+        mode = "incremental" if workspace_valid else "rebuild"
+        client = DedaoKBaseReleaseClient(base_url, auth_token=auth_token)
+        records = _list_agent_package_records(
+            client,
+            after=previous_cursor if mode == "incremental" else "",
+            limit=limit,
+            replay_all=mode == "rebuild",
+        )
+        if not records:
+            return {
+                "status": "up_to_date" if mode == "incremental" else "no_agent_packages",
+                "mode": mode,
+                "cursor": previous_cursor,
+                "package_count": 0,
+                "held_packages": [],
+                "base_fingerprint": base_fingerprint,
+            }
+
+        eligible: list[tuple[dict[str, Any], list[dict[str, Any]]]] = []
+        held_packages: list[dict[str, Any]] = []
+        superseded_refs: set[tuple[str, str]] = set()
+        for record in records:
+            package_id = str(record.get("package_id") or "").strip()
+            version = str(record.get("version") or "").strip()
+            package = client.get_agent_package(package_id, version=version)
+            releases = [
+                client.get_release(str(reference.get("release_id") or ""))
+                for reference in package.get("releases") or []
+            ]
+            assessment = assess_agent_package_for_health(package, releases)
+            hold_reasons = list(assessment["hold_reasons"])
+            detail_package_id = str(package.get("package_id") or "").strip()
+            detail_version = str(package.get("version") or "").strip()
+            record_content_hash = str(record.get("content_hash") or "").strip()
+            detail_content_hash = str(package.get("content_hash") or "").strip()
+            record_lifecycle = str(record.get("lifecycle_state") or "").strip().lower()
+            detail_lifecycle = str(package.get("lifecycle_state") or "").strip().lower()
+            record_supersedes = str(record.get("supersedes") or "").strip()
+            detail_supersedes = str(package.get("supersedes") or "").strip()
+            superseded_ref: tuple[str, str] | None = None
+            if detail_package_id != package_id or detail_version != version:
+                hold_reasons.append("conflict")
+            if record_content_hash != detail_content_hash:
+                hold_reasons.append("conflict")
+            if record_lifecycle != detail_lifecycle:
+                hold_reasons.append("conflict")
+            if record_supersedes != detail_supersedes:
+                hold_reasons.append("conflict")
+            if detail_supersedes:
+                if "@" not in detail_supersedes:
+                    hold_reasons.append("conflict")
+                else:
+                    superseded_id, superseded_version = detail_supersedes.rsplit("@", 1)
+                    if (
+                        not superseded_id
+                        or not superseded_version
+                        or superseded_id != detail_package_id
+                        or superseded_version == detail_version
+                    ):
+                        hold_reasons.append("conflict")
+                    else:
+                        superseded_ref = (superseded_id, superseded_version)
+            hold_reasons = list(dict.fromkeys(hold_reasons))
+            if not hold_reasons:
+                eligible.append((package, releases))
+                if superseded_ref is not None:
+                    superseded_refs.add(superseded_ref)
+            else:
+                held_packages.append(
+                    {
+                        "package_id": package_id,
+                        "version": version,
+                        "reasons": hold_reasons,
+                    }
+                )
+
+        cursor = f"{records[-1].get('package_id', '')}@{records[-1].get('version', '')}"
+        gate = {
+            "serving_allowed": False,
+            "blocking_reasons": ["human_domain_review_required"],
+        }
+        if not eligible:
+            report = {
+                "status": "held",
+                "mode": mode,
+                "base_url": base_url,
+                "artifact_dir": str(target),
+                "base_artifact_dir": str(canonical),
+                "previous_cursor": previous_cursor,
+                "cursor": cursor,
+                "base_fingerprint": base_fingerprint,
+                "package_count": 0,
+                "package_ids": [],
+                "held_packages": held_packages,
+                "gate": gate,
+            }
+            db.add(
+                KBAudit(
+                    doc_id=None,
+                    op="dedao_kbase_agent_package_sync_draft",
+                    actor=actor,
+                    diff=report,
+                )
+            )
+            db.commit()
+            return report
+
+        current_time = now or datetime.now(UTC)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        candidate = Path(tempfile.mkdtemp(prefix=f".{target.name}.candidate-", dir=target.parent))
+        source = target if mode == "incremental" else canonical
+        try:
+            if source.exists():
+                shutil.copytree(source, candidate, dirs_exist_ok=True)
+            if mode == "rebuild":
+                _normalize_canonical_review_status(candidate)
+            _retire_superseded_agent_package_projections(
+                candidate,
+                canonical,
+                superseded_refs,
+            )
+            existing_lineages = _agent_package_lineages_by_release(candidate)
+            package_results = [
+                compile_agent_package_artifacts(
+                    package=package,
+                    releases=releases,
+                    base_artifact_dir=candidate,
+                    source_root=source_root,
+                    now=current_time,
+                )
+                for package, releases in eligible
+            ]
+            combined = combine_release_results(package_results)
+            merged_lineages = _preserve_agent_package_lineage(combined, existing_lineages)
+            _write_agent_package_lineage_to_artifacts(candidate, merged_lineages)
+            previous_packages = (
+                workspace_metadata.get("agent_packages") or [] if mode == "incremental" else []
+            )
+            package_receipts = {
+                (
+                    str(item.get("package_id") or ""),
+                    str(item.get("version") or ""),
+                    str(item.get("content_hash") or ""),
+                ): item
+                for item in previous_packages
+                if isinstance(item, dict)
+                and (
+                    str(item.get("package_id") or ""),
+                    str(item.get("version") or ""),
+                )
+                not in superseded_refs
+            }
+            for package, _ in eligible:
+                evaluation = package["evaluation"]
+                receipt = {
+                    "package_id": package["package_id"],
+                    "version": package["version"],
+                    "content_hash": package["content_hash"],
+                    "release_ids": [
+                        str(reference["release_id"]) for reference in package["releases"]
+                    ],
+                    "evaluation_status": "passed",
+                    "evaluation_suite_version": evaluation["suite_version"],
+                    "evaluation_input_hash": evaluation["input_hash"],
+                    "evaluation_evaluator_version": evaluation["evaluator_version"],
+                    "evaluated_at": evaluation["evaluated_at"],
+                }
+                key = (receipt["package_id"], receipt["version"], receipt["content_hash"])
+                package_receipts[key] = receipt
+            all_package_receipts = [package_receipts[key] for key in sorted(package_receipts)]
+            combined.manifest["agent_packages"] = all_package_receipts
+            draft_manifest = write_draft_artifacts(
+                combined,
+                candidate,
+                extractor=f"dedao-kbase-agent-package:{base_url}",
+                created_at=current_time,
+                note="evidence-only Agent Packages synced as drafts; domain review remains required.",
+            )
+            draft_manifest.update(
+                {
+                    "base_fingerprint": base_fingerprint,
+                    "cursor": cursor,
+                    "producer_base_url": base_url,
+                    "sync_mode": mode,
+                    "agent_packages": all_package_receipts,
+                }
+            )
+            (candidate / "draft_manifest.json").write_text(
+                json.dumps(draft_manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            gate = validate_artifact_review_gate(candidate)
+            _replace_workspace(candidate, target)
+        finally:
+            if candidate.exists():
+                shutil.rmtree(candidate)
+
+        report = {
+            "status": "draft_written",
+            "mode": mode,
+            "base_url": base_url,
+            "artifact_dir": str(target),
+            "base_artifact_dir": str(canonical),
+            "base_fingerprint": base_fingerprint,
+            "previous_cursor": previous_cursor,
+            "cursor": cursor,
+            "package_count": len(eligible),
+            "package_ids": [package["package_id"] for package, _ in eligible],
+            "held_packages": held_packages,
+            "diff": combined.diff,
+            "draft_manifest": draft_manifest,
+            "gate": gate,
+        }
+        db.add(
+            KBAudit(
+                doc_id=None,
+                op="dedao_kbase_agent_package_sync_draft",
+                actor=actor,
+                diff=report,
+            )
+        )
+        db.commit()
+        return report
 
 
 def run_system_kb_lifecycle_once(
@@ -621,4 +1118,26 @@ def sync_dedao_kbase_export_draft() -> dict[str, Any]:
                 actor="celery:dedao_kbase_export_sync",
             )
     logger.info("[dedao_kbase_export_sync] done: %s", result.get("status"))
+    return result
+
+
+@celery_app.task(
+    time_limit=600,
+    name="app.tasks.system_knowledge_lifecycle.sync_dedao_kbase_agent_packages_draft",
+)
+def sync_dedao_kbase_agent_packages_draft() -> dict[str, Any]:
+    """Explicit pilot task for Agent Packages; never scheduled or auto-published."""
+    logger.info("[dedao_kbase_agent_package_sync] start")
+    with SessionLocal() as db:
+        result = sync_dedao_kbase_agent_packages_draft_once(
+            db,
+            base_url=settings.dedao_kbase_release_base_url,
+            auth_token=settings.dedao_kbase_auth_token,
+            artifact_dir=_dedao_kbase_review_artifact_dir() / "agent-packages",
+            base_artifact_dir=_default_system_kb_artifact_dir(),
+            source_root=settings.dedao_kbase_source_root,
+            actor="celery:dedao_kbase_agent_package_sync",
+            limit=settings.dedao_kbase_release_batch_size,
+        )
+    logger.info("[dedao_kbase_agent_package_sync] done: %s", result.get("status"))
     return result

@@ -49,6 +49,7 @@ admin_router = APIRouter(
 # filesystem write cannot be reported as a 500 solely while recording metadata.
 DEDAO_KBASE_VERIFICATION_GENERATED_OP = "dedao_kbase_verification_generated"
 DEDAO_KBASE_VERIFICATION_APPLIED_OP = "dedao_kbase_verification_applied"
+DedaoKbaseReviewWorkspace = Literal["release", "agent_package"]
 
 
 class TwinLookupRequest(BaseModel):
@@ -84,6 +85,7 @@ class ClaimReviewUpdateRequest(BaseModel):
 
 
 class DedaoKbaseDraftReviewApproveRequest(BaseModel):
+    workspace: DedaoKbaseReviewWorkspace = "release"
     workspace_fingerprint: str = Field(..., min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
     note: str | None = Field(default=None, max_length=1000)
     publish: bool = False
@@ -98,6 +100,7 @@ class DedaoKbaseClaimEvidence(BaseModel):
 
 
 class DedaoKbaseClaimAdjudicationRequest(BaseModel):
+    workspace: DedaoKbaseReviewWorkspace = "release"
     workspace_fingerprint: str = Field(..., min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
     decision: Literal["approve", "needs_evidence", "reject", "background_only"]
     note: str | None = Field(default=None, max_length=1000)
@@ -107,25 +110,30 @@ class DedaoKbaseClaimAdjudicationRequest(BaseModel):
 
 
 class DedaoKbaseVerificationPacketRequest(BaseModel):
+    workspace: DedaoKbaseReviewWorkspace = "release"
     workspace_fingerprint: str = Field(..., min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
 
 
 class DedaoKbaseVerificationPacketApplyRequest(BaseModel):
+    workspace: DedaoKbaseReviewWorkspace = "release"
     workspace_fingerprint: str = Field(..., min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
     packet_id: str = Field(..., min_length=1, max_length=160)
     note: str | None = Field(default=None, max_length=1000)
 
 
 class DedaoKbaseDraftReviewFinalizeRequest(BaseModel):
+    workspace: DedaoKbaseReviewWorkspace = "release"
     workspace_fingerprint: str = Field(..., min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
     note: str | None = Field(default=None, max_length=1000)
 
 
 class DedaoKbasePublishPreviewRequest(BaseModel):
+    workspace: DedaoKbaseReviewWorkspace = "release"
     note: str | None = Field(default=None, max_length=1000)
 
 
 class DedaoKbaseReviewedArtifactsPublishRequest(BaseModel):
+    workspace: DedaoKbaseReviewWorkspace = "release"
     note: str | None = Field(default=None, max_length=1000)
 
 
@@ -670,11 +678,12 @@ def get_system_knowledge_operations_dashboard(
 
 @admin_router.get("/dedao_kbase/draft_review", summary="查看 dedao-kbase draft artifact review 包")
 def get_dedao_kbase_draft_review(
+    workspace: DedaoKbaseReviewWorkspace = Query(default="release"),
     admin_user: User = Depends(get_admin_user),
     db: Session = Depends(get_db),
 ):
     try:
-        result = get_dedao_kbase_draft_review_bundle()
+        result = get_dedao_kbase_draft_review_bundle(workspace=workspace)
     except (OSError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -688,6 +697,7 @@ def get_dedao_kbase_draft_review(
             "serving_allowed": result["gate"]["serving_allowed"],
             "blocking_reasons": result["gate"]["blocking_reasons"],
             "preview_counts": result["preview"]["counts"],
+            "workspace": workspace,
         },
     )
     return result
@@ -698,10 +708,13 @@ def get_dedao_kbase_draft_review_items(
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=200),
     decision: Literal["approve", "needs_evidence", "reject", "background_only"] | None = Query(default=None),
+    workspace: DedaoKbaseReviewWorkspace = Query(default="release"),
     admin_user: User = Depends(get_admin_user),
 ):
     try:
-        return list_dedao_kbase_review_claims(offset=offset, limit=limit, decision=decision)
+        return list_dedao_kbase_review_claims(
+            offset=offset, limit=limit, decision=decision, workspace=workspace
+        )
     except (OSError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -712,10 +725,13 @@ def get_dedao_kbase_draft_review_items(
 )
 def get_dedao_kbase_verification_packets(
     doc_id: str,
+    workspace: DedaoKbaseReviewWorkspace = Query(default="release"),
     admin_user: User = Depends(get_admin_user),
 ):
     try:
-        return list_dedao_kbase_review_verification_packets(doc_id=doc_id)
+        return list_dedao_kbase_review_verification_packets(
+            doc_id=doc_id, workspace=workspace
+        )
     except (OSError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -734,6 +750,7 @@ def generate_dedao_kbase_verification_packet(
         result = generate_dedao_kbase_review_verification_packet(
             doc_id=doc_id,
             expected_workspace_fingerprint=request.workspace_fingerprint,
+            workspace=request.workspace,
         )
     except (OSError, ValueError) as exc:
         status_code = 409 if "changed since preview" in str(exc) else 400
@@ -755,6 +772,7 @@ def generate_dedao_kbase_verification_packet(
             },
             "citation_ids": packet.get("citation_ids") or [],
             "generator": packet.get("generator"),
+            "workspace": request.workspace,
         },
     )
     return result
@@ -777,6 +795,7 @@ def apply_dedao_kbase_verification_packet(
             reviewer=f"admin:{admin_user.id}",
             expected_workspace_fingerprint=request.workspace_fingerprint,
             note=request.note,
+            workspace=request.workspace,
         )
     except (OSError, ValueError) as exc:
         message = str(exc)
@@ -794,6 +813,7 @@ def apply_dedao_kbase_verification_packet(
             "release_claim_id": result.get("release_claim_id"),
             "note": request.note,
             "workspace_fingerprint": result["workspace_fingerprint"],
+            "workspace": request.workspace,
         },
     )
     return result
@@ -817,6 +837,7 @@ def adjudicate_dedao_kbase_draft_review_item(
             evidence=evidence,
             evidence_level=request.evidence_level,
             confidence=request.confidence,
+            workspace=request.workspace,
         )
     except (OSError, ValueError) as exc:
         status_code = 409 if "changed since preview" in str(exc) else 400
@@ -836,6 +857,7 @@ def adjudicate_dedao_kbase_draft_review_item(
             "evidence_level": request.evidence_level,
             "confidence": request.confidence,
             "workspace_fingerprint": result["workspace_fingerprint"],
+            "workspace": request.workspace,
         },
     )
     return result
@@ -851,6 +873,7 @@ def finalize_dedao_kbase_draft_review_endpoint(
         result = approve_dedao_kbase_draft_review(
             reviewer=f"admin:{admin_user.id}",
             expected_workspace_fingerprint=request.workspace_fingerprint,
+            workspace=request.workspace,
         )
     except (OSError, ValueError) as exc:
         status_code = 409 if "changed since preview" in str(exc) else 400
@@ -865,6 +888,7 @@ def finalize_dedao_kbase_draft_review_endpoint(
             "serving_allowed": result["gate"]["serving_allowed"],
             "blocking_reasons": result["gate"]["blocking_reasons"],
             "workspace_fingerprint": result["workspace_fingerprint"],
+            "workspace": request.workspace,
         },
     )
     return result
@@ -884,6 +908,7 @@ def approve_dedao_kbase_draft_review_endpoint(
         result = approve_dedao_kbase_draft_review(
             reviewer=f"admin:{admin_user.id}",
             expected_workspace_fingerprint=request.workspace_fingerprint,
+            workspace=request.workspace,
         )
     except (OSError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -903,6 +928,7 @@ def approve_dedao_kbase_draft_review_endpoint(
             "note": request.note,
             "published": False,
             "publish_dry_run": False,
+            "workspace": request.workspace,
         },
     )
     return result
@@ -918,7 +944,9 @@ def preview_dedao_kbase_reviewed_artifacts_publish_endpoint(
     db: Session = Depends(get_db),
 ):
     try:
-        result = preview_dedao_kbase_reviewed_artifacts_publish(db)
+        result = preview_dedao_kbase_reviewed_artifacts_publish(
+            db, workspace=request.workspace
+        )
     except (OSError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     _record_audit(
@@ -931,6 +959,7 @@ def preview_dedao_kbase_reviewed_artifacts_publish_endpoint(
             "dry_run": True,
             "import": result["import"],
             "reindex": result["reindex"],
+            "workspace": request.workspace,
         },
     )
     return result
@@ -946,6 +975,7 @@ def publish_dedao_kbase_reviewed_artifacts_endpoint(
         result = publish_dedao_kbase_reviewed_artifacts(
             db,
             actor=f"admin:{admin_user.id}",
+            workspace=request.workspace,
         )
     except (OSError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -961,6 +991,7 @@ def publish_dedao_kbase_reviewed_artifacts_endpoint(
             "note": request.note,
             "import": result["import"],
             "reindex": result["reindex"],
+            "workspace": request.workspace,
         },
     )
     return result

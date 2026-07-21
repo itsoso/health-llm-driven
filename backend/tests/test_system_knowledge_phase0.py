@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+import inspect
 import json
 
 from sqlalchemy.dialects import postgresql
@@ -1409,6 +1410,132 @@ def test_admin_dedao_kbase_draft_review_items_are_bounded_and_body_free(
     assert payload["items"][0]["doc_id"] == "claim:release-abc-claim-1"
     assert payload["items"][0]["source_count"] == 1
     assert "body" not in payload["items"][0]
+
+
+def test_admin_dedao_kbase_review_workspace_selector_reaches_agent_package_drafts(
+    client,
+    db,
+    auth_user_and_headers,
+    tmp_path,
+    monkeypatch,
+):
+    user, headers = auth_user_and_headers
+    user.is_admin = True
+    release_workspace = tmp_path / "dedao-review"
+    agent_workspace = release_workspace / "agent-packages"
+    _write_dedao_review_workspace(release_workspace)
+    _write_dedao_review_workspace(agent_workspace)
+    agent_claims = [
+        {
+            **row,
+            "title": "Agent Package 隔离候选",
+            "metadata": {
+                **(row.get("metadata") or {}),
+                "origin": "dedao-kbase-agent-package",
+                "package_id": "health-book",
+                "package_version": "1.0.0",
+            },
+        }
+        for row in (
+            json.loads(line)
+            for line in (agent_workspace / "claims.jsonl").read_text().splitlines()
+            if line.strip()
+        )
+    ]
+    _write_artifact_jsonl(agent_workspace / "claims.jsonl", agent_claims)
+    monkeypatch.setattr(settings, "dedao_kbase_review_artifact_dir", str(release_workspace))
+
+    bundle = client.get(
+        "/api/v1/admin/knowledge/dedao_kbase/draft_review?workspace=agent_package",
+        headers=headers,
+    )
+    assert bundle.status_code == 200
+    assert bundle.json()["artifact_dir"] == str(agent_workspace)
+    assert bundle.json()["preview"]["claims"][0]["title"] == "Agent Package 隔离候选"
+
+    fingerprint = workspace_content_fingerprint(agent_workspace)
+    adjudicated = client.patch(
+        "/api/v1/admin/knowledge/dedao_kbase/draft_review/items/claim%3Arelease-abc-claim-1",
+        headers=headers,
+        json={
+            "workspace": "agent_package",
+            "workspace_fingerprint": fingerprint,
+            "decision": "approve",
+        },
+    )
+    assert adjudicated.status_code == 200
+    release_claim = json.loads((release_workspace / "claims.jsonl").read_text().splitlines()[0])
+    agent_claim = json.loads((agent_workspace / "claims.jsonl").read_text().splitlines()[0])
+    assert release_claim["metadata"]["review_status"] == "draft"
+    assert agent_claim["metadata"]["review_status"] == "reviewed"
+    audit = db.query(KBAudit).filter(KBAudit.op == "dedao_kbase_claim_adjudicated").one()
+    assert audit.diff["workspace"] == "agent_package"
+
+    finalized = client.post(
+        "/api/v1/admin/knowledge/dedao_kbase/draft_review/finalize",
+        headers=headers,
+        json={
+            "workspace": "agent_package",
+            "workspace_fingerprint": adjudicated.json()["workspace_fingerprint"],
+        },
+    )
+    assert finalized.status_code == 200
+    assert finalized.json()["artifact_dir"] == str(agent_workspace)
+    assert finalized.json()["gate"]["serving_allowed"] is True
+
+    preview = client.post(
+        "/api/v1/admin/knowledge/dedao_kbase/reviewed_artifacts/publish/preview",
+        headers=headers,
+        json={"workspace": "agent_package"},
+    )
+    assert preview.status_code == 200
+    assert preview.json()["artifact_dir"] == str(agent_workspace)
+    assert preview.json()["dry_run"] is True
+    assert db.get(KBDocument, "claim:release-abc-claim-1") is None
+
+
+def test_dedao_kbase_review_services_do_not_accept_arbitrary_artifact_paths():
+    from app.services import system_knowledge_service
+
+    service_names = (
+        "get_dedao_kbase_draft_review_bundle",
+        "list_dedao_kbase_review_claims",
+        "adjudicate_dedao_kbase_review_claim",
+        "generate_dedao_kbase_review_verification_packet",
+        "list_dedao_kbase_review_verification_packets",
+        "apply_dedao_kbase_review_verification_packet",
+        "approve_dedao_kbase_draft_review",
+        "publish_dedao_kbase_reviewed_artifacts",
+        "preview_dedao_kbase_reviewed_artifacts_publish",
+    )
+
+    for service_name in service_names:
+        parameters = inspect.signature(getattr(system_knowledge_service, service_name)).parameters
+        assert "artifact_dir" not in parameters
+
+
+def test_agent_package_review_workspace_rejects_symlink_escape(
+    client,
+    auth_user_and_headers,
+    tmp_path,
+    monkeypatch,
+):
+    user, headers = auth_user_and_headers
+    user.is_admin = True
+    release_workspace = tmp_path / "dedao-review"
+    escaped_workspace = tmp_path / "outside-review"
+    release_workspace.mkdir()
+    _write_dedao_review_workspace(escaped_workspace)
+    (release_workspace / "agent-packages").symlink_to(escaped_workspace, target_is_directory=True)
+    monkeypatch.setattr(settings, "dedao_kbase_review_artifact_dir", str(release_workspace))
+
+    response = client.get(
+        "/api/v1/admin/knowledge/dedao_kbase/draft_review?workspace=agent_package",
+        headers=headers,
+    )
+
+    assert response.status_code == 400
+    assert "outside the configured release workspace" in response.json()["detail"]
 
 
 def test_admin_dedao_kbase_claim_adjudication_records_metadata_only_audit(

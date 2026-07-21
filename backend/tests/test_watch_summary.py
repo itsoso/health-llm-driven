@@ -15,7 +15,6 @@ from app.models.daily_health import GarminData
 from app.models.health_protocol import HealthProtocol, HealthProtocolEvent
 from app.models.smart_reminder import SmartReminder
 from app.models.user import User
-from app.utils.timezone import get_user_now
 
 
 @pytest.fixture
@@ -51,6 +50,12 @@ def _runtime_projection(items):
 def _protocol(title, status="pending", priority=50, domain="hydration"):
     return {"type": domain, "title": title, "status": status, "priority": priority,
             "time_window": "anytime", "source": {"object_type": "health_protocol", "object_id": 1}}
+
+
+def _fixed_reminder_now(monkeypatch):
+    now = datetime(2026, 6, 16, 12, tzinfo=UTC)
+    monkeypatch.setattr(ws, "get_user_now", lambda _db, _user_id: now)
+    return now
 
 
 def test_status_light_and_headline_from_training(db, auth, monkeypatch):
@@ -214,7 +219,7 @@ def test_due_items_preserve_source_for_watch_completion(db, auth, monkeypatch):
 def test_agent_water_reminder_enters_watch_due_items(db, auth, monkeypatch):
     """Agent 创建的饮水提醒应进入 Watch 动态任务流,而不是只停在手机推送文案。"""
     user, _ = auth
-    now = get_user_now(db, user.id)
+    now = _fixed_reminder_now(monkeypatch)
     reminder = SmartReminder(
         user_id=user.id,
         title="定时饮水提醒",
@@ -252,7 +257,7 @@ def test_smart_reminder_delivery_confirmed_after_watch_visible_event(db, auth, m
     from app.models.client_event import ClientEvent
 
     user, _ = auth
-    now = get_user_now(db, user.id)
+    now = _fixed_reminder_now(monkeypatch)
     reminder = SmartReminder(
         user_id=user.id,
         title="定时饮水提醒",
