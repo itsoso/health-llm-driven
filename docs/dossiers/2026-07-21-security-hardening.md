@@ -4,8 +4,8 @@
 |---|---|
 | slug | `security-hardening` |
 | 创建日期 | 2026-07-21 |
-| 当前阶段 | S6 独立安全复审 |
-| 状态 | review |
+| 当前阶段 | S7 CI 与生产前置验证 |
+| 状态 | gated |
 | 负责 | Codex |
 | 范围 | 2026-07-21 只读审计确认的安全问题 |
 
@@ -34,7 +34,7 @@
 | G1 Admission | GO | Security/privacy requirement |
 | G2 Feasibility | GO | Compatibility-preserving staged design |
 | G3 Tests | LOCAL GO / CI PENDING | 本地回归、真 PostgreSQL、安全脚本、跨端构建与静态闸通过；分支 CI 待 push 后取证 |
-| G4 Safety review | RE-REVIEW PENDING | 第四轮发现停服结果未被证明、运行时 ORM 注册不完整 2 个 P1；均已按故障注入修复，等待第五轮独立复审 |
+| G4 Safety review | GO | 第五轮独立复审确认无 P0/P1 代码 blocker；rollback containment 与统一 ORM bootstrap 均关闭 |
 | G5 Deploy health | BLOCKED | 未满足生产角色、真实异地恢复演练、基础设施安装和原生 Keychain 发版前不进入部署 |
 | G6 Production verification | NOT ENTERED | 尚未部署，不作上线成功声明 |
 
@@ -51,6 +51,7 @@
 - 2026-07-22: 第三轮 P1 已修复：回滚任一运行时探针失败都会重新停止 Backend、Celery Worker 与 Beat；旧代码对其全部 ORM 表执行列存在性、零行读取和零行写权限/语句兼容探针，同时校验未认证请求为 401、三个服务均 active；删除无法取证的 `database_schema=forward-compatible` 声明。预检失败不会误停仍在运行的生产服务，且 `.env` 仅由应用配置解析，不作为 shell 脚本执行。
 - 2026-07-22: 第四轮独立安全复审确认上述路径大部分关闭，但指出 cleanup 的 `systemctl stop ... || true` 仍可能吞掉停服失败，以及生产启动额外注册的 `BowelTimer` 未进入统一模型 bootstrap，裁决 NO-GO。
 - 2026-07-22: 第四轮 2 个 P1 已修复：常规停服失败后强制终止并逐服务读取 `ActiveState=inactive`，无法证明时以专用 containment failure 退出且部署端要求人工隔离；`BowelTimer` 迁入 `app.models`，生产与回滚探针共享统一 ORM 注册入口。
+- 2026-07-22: 第五轮独立安全复审裁决 G4 GO：无 P0/P1 代码 blocker；故障注入确认 cleanup stop 失败可收口到 inactive，彻底失败时返回 70 并要求人工隔离；模型层与完整 API runtime 均注册同一 196 张表。
 
 ## G3 Verification Evidence
 
