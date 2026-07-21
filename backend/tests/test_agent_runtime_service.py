@@ -605,6 +605,19 @@ def test_unbound_terminal_retry_joins_conversation_admission(
         (
             {
                 "completion_status": "complete",
+                "turn_outcome": {
+                    "category": "tool_blocked",
+                    "reason_code": "ambiguous_intent_requires_clarification",
+                    "retryable": False,
+                },
+            },
+            "waiting_for_user",
+            "ambiguous_intent_requires_clarification",
+            False,
+        ),
+        (
+            {
+                "completion_status": "complete",
                 "request_persisted": False,
                 "turn_outcome": {"category": "success"},
             },

@@ -116,6 +116,10 @@ _KNOWN_ERROR_CODES = frozenset(
         "reconciliation_grace_period",
         "unsupported_reconciliation_resource",
         "operation_timestamp_missing",
+        "aigc_media_turn_disallows_health_write",
+        "ambiguous_intent_requires_clarification",
+        "manage_write_without_mutate_intent",
+        "write_tool_without_write_intent",
     }
 )
 _KNOWN_STATUS_VALUES = frozenset(
@@ -280,6 +284,8 @@ def runtime_outcome_from_done(
     if outcome.get("category") == "confirmation_required" or outcome.get(
         "confirmation_required"
     ) is True:
+        return "waiting_for_user", reason_code or "confirmation_required", False
+    if outcome.get("category") == "tool_blocked":
         return "waiting_for_user", reason_code or "confirmation_required", False
 
     completion_status = str(done_data.get("completion_status") or "complete").strip()

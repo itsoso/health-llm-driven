@@ -29,7 +29,7 @@ def test_capability_block_is_not_reported_as_a_model_refusal():
     assert result["category"] == "tool_blocked"
     assert result["reason_code"] == "write_tool_without_write_intent"
     assert result["refusal_detected"] is False
-    assert result["retryable"] is True
+    assert result["retryable"] is False
 
 
 def test_tool_failure_is_retryable_and_keeps_refusal_metric_false():

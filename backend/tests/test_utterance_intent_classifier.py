@@ -166,6 +166,34 @@ def test_plan_generation_is_a_write_intent():
     assert intent.is_write is True
 
 
+def test_explicit_reminder_creation_is_not_misrouted_to_water_or_medication():
+    intent = classify_agent_utterance(
+        "创建一个一次性测试提醒，2099-01-01 09:00 提醒我喝水，不要现在执行"
+    )
+
+    assert intent.primary == "write"
+    assert intent.domain == "reminder"
+    assert intent.operation == "create"
+    assert intent.is_write is True
+    assert intent.requires_reliable_tool_model is True
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "明天早上8点提醒我喝水",
+        "每天9点提醒我吃药",
+    ],
+)
+def test_reminder_creation_outranks_embedded_health_target(message):
+    intent = classify_agent_utterance(message)
+
+    assert intent.primary == "write"
+    assert intent.domain == "reminder"
+    assert intent.operation == "create"
+    assert intent.is_write is True
+
+
 def test_plan_item_completion_is_a_mutation_intent():
     intent = classify_agent_utterance("完成今天的计划项")
 

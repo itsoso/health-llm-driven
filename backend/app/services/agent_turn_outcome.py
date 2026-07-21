@@ -99,7 +99,7 @@ def classify_agent_turn_outcome(
         return {
             "category": "tool_blocked",
             "reason_code": blocks[0],
-            "retryable": True,
+            "retryable": False,
             "refusal_detected": False,
             "capability_block_count": len(blocks),
             "tool_failure_count": len(failures),

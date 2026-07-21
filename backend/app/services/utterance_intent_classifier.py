@@ -139,6 +139,26 @@ PLAN_UPDATE_ACTIONS = (
     "调整计划",
     "更新计划",
 )
+REMINDER_TERMS = (
+    "提醒",
+    "提醒我",
+    "定时提醒",
+    "闹钟",
+    "一次性提醒",
+    "循环提醒",
+)
+REMINDER_CREATE_ACTIONS = (
+    "提醒",
+    "提醒我",
+    "定时提醒",
+    "创建",
+    "设置",
+    "设一个",
+    "设个",
+    "帮我设",
+    "帮我定",
+    "定个",
+)
 WRITE_NEGATIONS = (
     "别记录",
     "不要记录",
@@ -357,6 +377,20 @@ def classify_agent_utterance(
             "create",
             0.88,
             "plan_write_frame",
+            scope,
+            is_write=True,
+            requires_reliable_tool_model=True,
+        )
+
+    if _reminder_operation(normalized, domain, has_question, has_read) == "create":
+        return _intent(
+            raw,
+            normalized,
+            "write",
+            "reminder",
+            "create",
+            0.88,
+            "reminder_write_frame",
             scope,
             is_write=True,
             requires_reliable_tool_model=True,
@@ -660,6 +694,8 @@ def _has_negated_mutation(text: str, operation: Optional[str]) -> bool:
 def _infer_domain(text: str) -> str:
     if _has_any(text, MEDIA_TERMS):
         return "aigc_media"
+    if _has_any(text, REMINDER_TERMS):
+        return "reminder"
     if _has_any(text, WATER_TERMS):
         return "water"
     if _has_any(text, MEDICATION_TERMS):
@@ -684,6 +720,24 @@ def _plan_operation(text: str, domain: str, has_question: bool) -> Optional[str]
     if _has_any(text, PLAN_UPDATE_ACTIONS):
         return "update"
     if _has_any(text, PLAN_CREATE_ACTIONS):
+        return "create"
+    return None
+
+
+def _reminder_operation(
+    text: str,
+    domain: str,
+    has_question: bool,
+    has_read: bool,
+) -> Optional[str]:
+    """Recognize reminder creation before embedded targets like water or meds.
+
+    In phrases such as "提醒我喝水", the health target is the reminder content,
+    not an immediate water/medication record.
+    """
+    if domain != "reminder" or has_question or has_read:
+        return None
+    if _has_any(text, REMINDER_CREATE_ACTIONS):
         return "create"
     return None
 

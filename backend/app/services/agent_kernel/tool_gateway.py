@@ -76,7 +76,7 @@ def blocked_tool_result(decision: CapabilityDecision) -> str:
         "请换用明确且已注册的操作，必要时先向用户澄清目标。",
     )
     return (
-        "Error: 工具调用被策略拦截。"
+        "[NEEDS_CLARIFICATION] 工具调用未执行。"
         f"tool={tool_name}; reason={decision.reason}; action={decision.action}; "
         f"下一步={recovery_guidance}"
     )
