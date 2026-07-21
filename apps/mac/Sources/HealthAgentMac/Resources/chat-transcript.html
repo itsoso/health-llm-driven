@@ -1139,6 +1139,26 @@
     }
   }
 
+  var scrollSettleDelays = [0, 80, 220, 480, 900];
+  var scrollSettleTimers = [];
+  function clearScheduledBottomScrolls() {
+    for (var i = 0; i < scrollSettleTimers.length; i++) {
+      clearTimeout(scrollSettleTimers[i]);
+    }
+    scrollSettleTimers = [];
+  }
+  function scheduleScrollToBottom(force) {
+    if (!force && !isNearBottom()) return;
+    clearScheduledBottomScrolls();
+    for (var i = 0; i < scrollSettleDelays.length; i++) {
+      (function (delay) {
+        scrollSettleTimers.push(setTimeout(function () {
+          window.scrollTo({ top: document.body.scrollHeight, behavior: "auto" });
+        }, delay));
+      })(scrollSettleDelays[i]);
+    }
+  }
+
   // ===== GenUI: reva-ui line_chart / metric_line_chart / metric_empty_state =====================
   // 设计:占位 div 由 Swift 注入(<div class="reva-ui-chart" data-reva-ui="<base64 JSON>">)。
   // 这里 base64 解码 → JSON.parse(try/catch)→ 构建 SVG 串 → 替换 div 内容。
@@ -1714,7 +1734,7 @@
         appendMessageWithOptionalDivider(messages[i], previous);
         previous = messages[i];
       }
-      scrollToBottomIfNeeded(true);
+      scheduleScrollToBottom(true);
     },
     // 追加新消息或更新最后一条(流式 token 合批喂入)。
     appendOrUpdateLast: function (msg) {
@@ -1723,11 +1743,11 @@
         // 流式更新同一条消息:仅在用户已接近底部时跟随(尊重上滑翻历史)。
         var newRow = makeRow(msg);
         existing.replaceWith(newRow);
-        scrollToBottomIfNeeded(false);
+        scheduleScrollToBottom(false);
       } else {
         // 追加新消息(用户刚发送 / 新回合开始):必须强制滚到底,让新内容可见。
         appendMessageWithOptionalDivider(msg, previousMessageMeta());
-        scrollToBottomIfNeeded(true);
+        scheduleScrollToBottom(true);
       }
     },
     setFontScale: function (scale) {

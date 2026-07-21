@@ -30,6 +30,11 @@ import ConversationHistoryRail from '@/components/assistant/ConversationHistoryR
 import { api } from '@/services/api/client';
 import { buildSelectedChatShareText } from '@/components/assistant/shareSelection';
 import {
+  clearChatScrollTimers,
+  scheduleSettledScrollToBottom,
+  type ChatScrollTimer,
+} from '@/components/assistant/chatScroll';
+import {
   canonicalModelId,
   isAdvancedChatModelId,
   sanitizeLlmPreference,
@@ -171,10 +176,24 @@ function AIAssistantInner() {
   // 状态行去抖: for-await 循环内读闭包会拿到陈旧 statusText, 用 ref 避免重复 setState。
   const statusRef = useRef<string | null>(null);
   const medicalExamInputRef = useRef<HTMLInputElement | null>(null);
+  const scrollTimersRef = useRef<ChatScrollTimer[]>([]);
   const [starterSuggestions, setStarterSuggestions] = useState<string[]>(DEFAULT_SUGGESTIONS);
   const [opener, setOpener] = useState<ConversationOpener | null>(null);
   const [medicalExamImporting, setMedicalExamImporting] = useState(false);
   const [medicalExamImportError, setMedicalExamImportError] = useState<string | null>(null);
+
+  const clearScheduledScrolls = useCallback(() => {
+    clearChatScrollTimers(scrollTimersRef.current);
+    scrollTimersRef.current = [];
+  }, []);
+
+  const scheduleScrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
+    scrollTimersRef.current = scheduleSettledScrollToBottom({
+      getElement: () => scrollRef.current,
+      clearExisting: clearScheduledScrolls,
+      behavior,
+    });
+  }, [clearScheduledScrolls]);
 
   useEffect(() => {
     streamingRef.current = streaming;
@@ -184,10 +203,12 @@ function AIAssistantInner() {
     activeConvIdRef.current = activeConvId;
   }, [activeConvId]);
 
-  // 自动滚到底
+  // 自动滚到底。Markdown、动态卡片、图片会在首轮渲染后继续撑高,需要短时间内重复校准。
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
-  }, [messages, streaming]);
+    scheduleScrollToBottom('smooth');
+  }, [messages, streaming, scheduleScrollToBottom]);
+
+  useEffect(() => clearScheduledScrolls, [clearScheduledScrolls]);
 
   // 拉当前 LLM 偏好显示在顶部
   useEffect(() => {

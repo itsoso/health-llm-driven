@@ -204,6 +204,23 @@ final class ChatTranscriptHTMLTests: XCTestCase {
         XCTAssertTrue(source.contains("makeTimeDivider"))
     }
 
+    func testBundledTranscriptSchedulesSettledBottomScrolls() throws {
+        let packageRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let resourceURL = packageRoot
+            .appendingPathComponent("Sources/HealthAgentMac/Resources/chat-transcript.html")
+        let source = try String(contentsOf: resourceURL, encoding: .utf8)
+
+        XCTAssertTrue(source.contains("var scrollSettleDelays = [0, 80, 220, 480, 900];"))
+        XCTAssertTrue(source.contains("function scheduleScrollToBottom(force)"))
+        XCTAssertTrue(source.contains("scheduleScrollToBottom(true);"))
+        XCTAssertTrue(source.contains("scheduleScrollToBottom(false);"))
+        XCTAssertFalse(source.contains("scrollToBottomIfNeeded(true);"))
+        XCTAssertFalse(source.contains("scrollToBottomIfNeeded(false);"))
+    }
+
     // MARK: - meta footer (模型 · 轮数 · 耗时 / 数据源 / Skill)
 
     func testMetaFooterRendersModelRoundsElapsed() {
