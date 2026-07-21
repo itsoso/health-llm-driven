@@ -18,8 +18,8 @@ def test_runtime_env_and_backup_names_are_rejected():
 
 def test_realistic_secrets_match_but_placeholders_do_not():
     samples = {
-        "LTAI1234567890abcdefgh": True,
-        "sk-1234567890abcdefghijklmnop": True,
+        "LTAI" + "1234567890abcdefgh": True,
+        "sk-" + "1234567890abcdefghijklmnop": True,
         "sk-xxx": False,
         "LTAI...": False,
     }

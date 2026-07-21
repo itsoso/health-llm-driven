@@ -1,5 +1,7 @@
 """Only deterministic user intent may authorize Agent health mutations."""
 
+import json
+
 import pytest
 
 from app.services.agent_executor import AgentExecutor, _confirm_or_describe
@@ -64,7 +66,11 @@ async def test_standalone_confirmation_cannot_authorize_model_write(db, monkeypa
         None,
     )
 
-    assert result.startswith("[NEEDS_CLARIFICATION]")
+    rejection = json.loads(result)
+    assert rejection["status"] == "rejected"
+    assert rejection["error_code"] == "ambiguous_intent_requires_clarification"
+    assert rejection["dispatch_started"] is False
+    assert rejection["message"].startswith("[NEEDS_CLARIFICATION]")
     assert "write_tool_without_write_intent" in result or "ambiguous_intent" in result
 
 

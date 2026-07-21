@@ -130,7 +130,7 @@ def test_fast_record_looks_inside_data_for_record_type_before_confirming():
 
 
 @pytest.mark.asyncio
-async def test_medication_execution_requires_manual_confirmation(db):
+async def test_medication_execution_requires_explicit_actual_dosage(db):
     executor = AgentExecutor(db)
 
     async def _must_not_fetch(*_args, **_kwargs):
@@ -147,8 +147,8 @@ async def test_medication_execution_requires_manual_confirmation(db):
         args,
     )
 
-    assert result.startswith("[NEEDS_CONFIRMATION]")
-    assert "用药" in result
+    assert result.startswith("Error:")
+    assert "actual_dosage" in result
 
 
 @pytest.mark.asyncio

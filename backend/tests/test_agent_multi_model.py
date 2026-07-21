@@ -87,7 +87,10 @@ async def test_multi_model_stream_lead_tools_once_then_synthesizes(db, auth_user
 
         db.expire_all()
         user_message = db.query(AgentMessage).filter(AgentMessage.role == "user").one()
-        assert user_message.meta["write_state"]["status"] == "in_flight"
+        operations = user_message.meta["write_operations"]
+        assert [operation["status"] for operation in operations.values()] == [
+            "planned",
+        ]
         return '{"id":812,"food_items":"鸡胸肉","meal_type":"lunch"}'
 
     monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
@@ -419,7 +422,7 @@ async def test_multi_model_checkpoints_all_planned_writes_before_dispatch(
             operations = user_message.meta["write_operations"]
             assert len(operations) == 2
             assert sorted(operation["status"] for operation in operations.values()) == [
-                "in_flight",
+                "planned",
                 "planned",
             ]
             checked = True

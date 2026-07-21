@@ -6846,7 +6846,6 @@ class AgentExecutor:
                     if _round < MULTI_MODEL_MAX_LEAD_ROUNDS - 1:
                         logger.warning(
                             "[agent_executor] 文本式工具调用(多模型路), 重提示重试. chars=%s",
-                            "[agent_executor] 文本式工具调用(多模型路), 重提示重试. chars=%s",
                             len(content),
                         )
                         lead_messages.append({"role": "assistant", "content": content})
@@ -14952,7 +14951,6 @@ class AgentExecutor:
                     tap_record_id = (json.loads(tap_result) or {}).get("record_id")
                 except (json.JSONDecodeError, TypeError, ValueError):
                     logger.warning(
-                        "[health_record] supplement tap 响应不可解析 chars=%s",
                         "[health_record] supplement tap 响应不可解析 chars=%s",
                         len(tap_result),
                     )
