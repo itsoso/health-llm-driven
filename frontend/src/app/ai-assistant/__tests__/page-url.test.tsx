@@ -72,6 +72,17 @@ describe('ai-assistant URL state', () => {
     expect(getConversation).not.toHaveBeenCalled();
   });
 
+  it('searches history by title or message content from the page rail', async () => {
+    searchParamsGet.mockReturnValue(null);
+    render(<AIAssistantPage />);
+
+    fireEvent.change(await screen.findByLabelText('搜索对话'), { target: { value: '睡眠' } });
+
+    await waitFor(() => {
+      expect(getConversations).toHaveBeenLastCalledWith(20, 0, '睡眠');
+    });
+  });
+
   it('renders structured opener quick replies by label', async () => {
     searchParamsGet.mockReturnValue(null);
     apiGet.mockImplementation((path: string) => {

@@ -20,6 +20,8 @@ struct AgentChatView: View {
     @State private var contextBundleName = ""
     @State private var selectedToolActivity: AgentToolActivity?
     @State private var historyPage = 0
+    @State private var historySearch = ""
+    @State private var historySearchTask: Task<Void, Never>?
     @State private var composerTextHeight: CGFloat = 0
 
     private static let historyPageSize = 6
@@ -110,6 +112,12 @@ struct AgentChatView: View {
             // same history as web/mobile. Failure falls back to the local cache
             // (viewModel sets historyNotice) — never silently empty.
             await viewModel.refreshConversationHistory()
+        }
+        .onChange(of: historySearch) { _, _ in
+            refreshHistoryForSearch()
+        }
+        .onDisappear {
+            historySearchTask?.cancel()
         }
         .onChange(of: viewModel.preparedDraft) { _, _ in
             ingestPreparedDraft()
@@ -482,6 +490,21 @@ struct AgentChatView: View {
         return Array(all[start..<end])
     }
 
+    private var hasHistorySearch: Bool {
+        !historySearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func refreshHistoryForSearch() {
+        historyPage = 0
+        let query = historySearch
+        historySearchTask?.cancel()
+        historySearchTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            guard !Task.isCancelled else { return }
+            await viewModel.searchConversationHistory(query)
+        }
+    }
+
     private var historyPager: some View {
         let pageCount = historyPageCount
         let page = min(max(historyPage, 0), max(pageCount - 1, 0))
@@ -753,7 +776,7 @@ struct AgentChatView: View {
                 systemImage: "point.3.connected.trianglepath.dotted"
             )
 
-            if !viewModel.conversationHistory.isEmpty || viewModel.historyNotice != nil || viewModel.isLoadingHistory {
+            if !viewModel.conversationHistory.isEmpty || hasHistorySearch || viewModel.historyNotice != nil || viewModel.isLoadingHistory {
                 Divider()
 
                 HStack {
@@ -772,7 +795,7 @@ struct AgentChatView: View {
                             .background(Color.secondary.opacity(0.10), in: Capsule())
                     }
                     Button {
-                        Task { await viewModel.refreshConversationHistory() }
+                        Task { await viewModel.searchConversationHistory(historySearch) }
                     } label: {
                         Image(systemName: "arrow.clockwise")
                     }
@@ -781,6 +804,27 @@ struct AgentChatView: View {
                     .disabled(viewModel.isLoadingHistory)
                     .help(appText("Refresh", appLanguageRaw))
                 }
+
+                HStack(spacing: 7) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(.secondary)
+                    TextField(appText("Search title or content", appLanguageRaw), text: $historySearch)
+                        .textFieldStyle(.plain)
+                    if hasHistorySearch {
+                        Button {
+                            historySearch = ""
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
+                        .help(appText("Clear search", appLanguageRaw))
+                    }
+                }
+                .font(.caption)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 7)
+                .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
 
                 // Offline / 401 / server-error: the list below is the local cache,
                 // not the live backend. Say so instead of pretending it's current.
@@ -791,26 +835,34 @@ struct AgentChatView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                VStack(alignment: .leading, spacing: 8) {
-                    ForEach(historyPageItems) { conversation in
-                        AgentConversationHistoryRow(
-                            conversation: conversation,
-                            isSelected: conversation.id == viewModel.currentConversationID,
-                            onLoad: {
-                                // Fetch the full transcript from the backend so a
-                                // conversation started on another device opens here.
-                                Task { await viewModel.openConversation(conversation) }
-                            },
-                            onDelete: {
-                                viewModel.deleteConversation(conversation)
-                            },
-                            onRename: { newTitle in
-                                Task { await viewModel.renameConversation(conversation, to: newTitle) }
-                            },
-                            onShare: {
-                                await viewModel.shareConversation(conversation)
-                            }
-                        )
+                if historyPageItems.isEmpty && hasHistorySearch && !viewModel.isLoadingHistory {
+                    Text(appText("No conversations match your search", appLanguageRaw))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.vertical, 12)
+                } else {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(historyPageItems) { conversation in
+                            AgentConversationHistoryRow(
+                                conversation: conversation,
+                                isSelected: conversation.id == viewModel.currentConversationID,
+                                onLoad: {
+                                    // Fetch the full transcript from the backend so a
+                                    // conversation started on another device opens here.
+                                    Task { await viewModel.openConversation(conversation) }
+                                },
+                                onDelete: {
+                                    viewModel.deleteConversation(conversation)
+                                },
+                                onRename: { newTitle in
+                                    Task { await viewModel.renameConversation(conversation, to: newTitle) }
+                                },
+                                onShare: {
+                                    await viewModel.shareConversation(conversation)
+                                }
+                            )
+                        }
                     }
                 }
                 if historyPageCount > 1 {

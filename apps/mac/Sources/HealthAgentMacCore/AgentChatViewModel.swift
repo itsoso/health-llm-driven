@@ -831,6 +831,11 @@ public final class AgentChatViewModel {
     public var historyNotice: String?
     /// True while a backend history list or detail fetch is in flight.
     public var isLoadingHistory = false
+    /// Monotonic request id prevents a slower earlier search response from
+    /// replacing the result of the user's latest query.
+    @ObservationIgnored private var historyRequestSequence = 0
+    /// A filtered list must never be written back as the complete offline cache.
+    @ObservationIgnored private var activeHistorySearch: String?
 
     @ObservationIgnored
     private let streamService: AgentStreamServicing?
@@ -1339,12 +1344,28 @@ public final class AgentChatViewModel {
     /// 401 / 5xx) the existing cache is kept and `historyNotice` is set so the UI
     /// can tell the user it's showing a possibly-stale local copy — never silently
     /// cleared. No-op when no remote source is wired (e.g. unit tests, previews).
+    /// Normalizes UI input before sending it to the backend search contract.
+    /// Blank input deliberately reloads the complete remote history.
+    public func searchConversationHistory(_ rawSearch: String) async {
+        let normalized = rawSearch.trimmingCharacters(in: .whitespacesAndNewlines)
+        await refreshConversationHistory(search: normalized.isEmpty ? nil : normalized)
+    }
+
     public func refreshConversationHistory(limit: Int = 30, search: String? = nil) async {
         guard let remoteSource else { return }
+        let normalizedSearch = search?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let activeSearch = normalizedSearch?.isEmpty == false ? normalizedSearch : nil
+        historyRequestSequence += 1
+        let requestSequence = historyRequestSequence
         isLoadingHistory = true
-        defer { isLoadingHistory = false }
+        defer {
+            if requestSequence == historyRequestSequence {
+                isLoadingHistory = false
+            }
+        }
         do {
-            let remote = try await remoteSource.fetchConversations(limit: limit, offset: 0, search: search)
+            let remote = try await remoteSource.fetchConversations(limit: limit, offset: 0, search: activeSearch)
+            guard requestSequence == historyRequestSequence else { return }
             // The backend list carries no messages. Don't let it wipe transcripts
             // we already have cached: keep the open chat's live messages, and keep
             // any previously-cached transcript for the rest (so offline-open still
@@ -1363,7 +1384,8 @@ public final class AgentChatViewModel {
                 return snapshot
             }
             conversationHistory = merged
-            if search?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true {
+            activeHistorySearch = activeSearch
+            if activeSearch == nil {
                 conversationStore?.saveConversations(merged)
             }
             historyNotice = nil
@@ -1388,12 +1410,41 @@ public final class AgentChatViewModel {
                 await fetchAndApplyConversationDetail(target, remoteSource: remoteSource)
             }
         } catch APIError.unauthorized {
+            guard requestSequence == historyRequestSequence else { return }
             // 401 already cleared the token + posted authSessionExpired; the app
             // root drops to login. Keep the cache visible meanwhile.
-            historyNotice = "登录已过期，下面是本地缓存的历史。"
+            if let activeSearch {
+                conversationHistory = localConversationHistory(matching: activeSearch)
+                activeHistorySearch = activeSearch
+                historyNotice = "登录已过期，显示本机匹配的历史缓存。"
+            } else {
+                conversationHistory = localConversationHistory()
+                activeHistorySearch = nil
+                historyNotice = "登录已过期，下面是本地缓存的历史。"
+            }
         } catch {
+            guard requestSequence == historyRequestSequence else { return }
             AppLogger.agent.error("conversation history refresh failed: \(error.localizedDescription, privacy: .public)")
-            historyNotice = "离线或服务不可用，显示本地缓存的历史。"
+            if let activeSearch {
+                conversationHistory = localConversationHistory(matching: activeSearch)
+                activeHistorySearch = activeSearch
+                historyNotice = "离线或服务不可用，显示本机匹配的历史缓存。"
+            } else {
+                conversationHistory = localConversationHistory()
+                activeHistorySearch = nil
+                historyNotice = "离线或服务不可用，显示本地缓存的历史。"
+            }
+        }
+    }
+
+    private func localConversationHistory(matching search: String? = nil) -> [AgentConversationSnapshot] {
+        let cached = (conversationStore?.loadConversations() ?? conversationHistory).map {
+            $0.replacingMessages(Self.redactedMessagesForLocalPersistence($0.messages))
+        }
+        guard let search, !search.isEmpty else { return cached }
+        return cached.filter { conversation in
+            conversation.title.localizedCaseInsensitiveContains(search)
+                || conversation.messages.contains { $0.content.localizedCaseInsensitiveContains(search) }
         }
     }
 
@@ -1473,7 +1524,30 @@ public final class AgentChatViewModel {
     private func cacheLoadedMessages(_ messages: [AgentChatMessage], for conversation: AgentConversationSnapshot) {
         guard let index = conversationHistory.firstIndex(where: { $0.id == conversation.id }) else { return }
         conversationHistory[index] = conversationHistory[index].replacingMessages(messages)
-        conversationStore?.saveConversations(conversationHistory)
+        guard let conversationStore else { return }
+        guard activeHistorySearch != nil else {
+            conversationStore.saveConversations(conversationHistory)
+            return
+        }
+
+        // A detail request may happen while the rail is filtered. Merge the fresh
+        // transcript into the durable full cache instead of persisting the search
+        // subset as if it were the user's complete history.
+        var fullCache = conversationStore.loadConversations()
+        let cacheIndex: Int?
+        if let remoteConversationID = conversation.conversationID {
+            cacheIndex = fullCache.firstIndex(where: {
+                $0.id == conversation.id || $0.conversationID == remoteConversationID
+            })
+        } else {
+            cacheIndex = fullCache.firstIndex(where: { $0.id == conversation.id })
+        }
+        if let cacheIndex {
+            fullCache[cacheIndex] = fullCache[cacheIndex].replacingMessages(messages)
+        } else {
+            fullCache.append(conversation.replacingMessages(messages))
+        }
+        conversationStore.saveConversations(fullCache)
     }
 
     private func cachedMessages(for conversation: AgentConversationSnapshot) -> [AgentChatMessage] {

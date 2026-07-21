@@ -10,7 +10,7 @@
  * 用户访问就 404. 此页用小巴 stream + ChatView 渲染.
  */
 
-import { Suspense, useEffect, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   ArrowUp,
@@ -145,6 +145,7 @@ function AIAssistantInner() {
   const [convTotal, setConvTotal] = useState(0); // 全部对话条数(翻页用)
   const [historyOpen, setHistoryOpen] = useState(true);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [historySearch, setHistorySearch] = useState('');
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
   const [queuedPromptCount, setQueuedPromptCount] = useState(0);
@@ -164,6 +165,8 @@ function AIAssistantInner() {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const streamingRef = useRef(false);
   const activeConvIdRef = useRef<number | undefined>(undefined);
+  const historyRequestRef = useRef(0);
+  const hasLoadedHistoryRef = useRef(false);
   const queuedPromptsRef = useRef<QueuedWebPrompt[]>([]);
   // 状态行去抖: for-await 循环内读闭包会拿到陈旧 statusText, 用 ref 避免重复 setState。
   const statusRef = useRef<string | null>(null);
@@ -221,24 +224,36 @@ function AIAssistantInner() {
     }
   };
 
-  const refreshConversations = async (targetPage: number = convPage) => {
+  const refreshConversations = useCallback(async (targetPage: number, search: string) => {
+    const requestID = ++historyRequestRef.current;
     setHistoryLoading(true);
     try {
       const offset = (targetPage - 1) * CONV_PAGE_SIZE;
-      const res = await agentApi.getConversations(CONV_PAGE_SIZE, offset);
+      const res = await agentApi.getConversations(CONV_PAGE_SIZE, offset, search);
+      if (requestID !== historyRequestRef.current) return;
       setConversations(res.data.items || []);
       setConvTotal(res.data.total || 0);
       setConvPage(targetPage);
     } catch {
+      if (requestID !== historyRequestRef.current) return;
       setConversations([]);
+      setConvTotal(0);
     } finally {
-      setHistoryLoading(false);
+      if (requestID === historyRequestRef.current) setHistoryLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    refreshConversations();
-  }, []);
+    if (!hasLoadedHistoryRef.current) {
+      hasLoadedHistoryRef.current = true;
+      void refreshConversations(1, historySearch);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      void refreshConversations(1, historySearch);
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [historySearch, refreshConversations]);
 
   // 把当前 conversation id 写进 URL (?c=<id>), 用 replace 不污染历史栈.
   // id 为空 → 回到无 ?c 的干净 URL (新对话未发消息).
@@ -444,7 +459,7 @@ function AIAssistantInner() {
         setActiveConvId(realConvId);
         syncConvUrl(realConvId); // 首条消息拿到 realConvId 后写 ?c=<id>
       }
-      refreshConversations();
+      void refreshConversations(convPage, historySearch);
       setTimeout(() => pumpQueuedPrompt(), 0);
     }
   };
@@ -515,7 +530,7 @@ function AIAssistantInner() {
     }
     // 删后重拉以保持 total/翻页准确;若当前页删空且非首页,回退一页
     const targetPage = conversations.length <= 1 && convPage > 1 ? convPage - 1 : convPage;
-    refreshConversations(targetPage);
+    void refreshConversations(targetPage, historySearch);
   };
 
   const renameConversation = async (conversationId: number, title: string) => {
@@ -714,11 +729,13 @@ function AIAssistantInner() {
             onDelete={deleteConversation}
             onNew={startNewConversation}
             onRename={renameConversation}
+            searchValue={historySearch}
+            onSearchChange={setHistorySearch}
             page={convPage}
             totalPages={Math.max(1, Math.ceil(convTotal / CONV_PAGE_SIZE))}
-            onPrevPage={() => { if (convPage > 1) refreshConversations(convPage - 1); }}
+            onPrevPage={() => { if (convPage > 1) void refreshConversations(convPage - 1, historySearch); }}
             onNextPage={() => {
-              if (convPage < Math.ceil(convTotal / CONV_PAGE_SIZE)) refreshConversations(convPage + 1);
+              if (convPage < Math.ceil(convTotal / CONV_PAGE_SIZE)) void refreshConversations(convPage + 1, historySearch);
             }}
           />
         )}

@@ -131,12 +131,14 @@ final class AgentConversationHistoryTests: XCTestCase {
         // 全量缓存有 2 条;搜索只返回 1 条子集 —— 不能覆盖离线全量缓存。
         let store = InMemoryConversationStore(seed: [])
         let remote = FakeRemoteSource()
+        let sleepID = AgentConversationClient.deterministicID(forConversationID: 1)
+        let trainingID = AgentConversationClient.deterministicID(forConversationID: 2)
         remote.list = [
-            AgentConversationSnapshot(conversationID: 1, title: "睡眠复盘", messages: []),
-            AgentConversationSnapshot(conversationID: 2, title: "训练计划", messages: []),
+            AgentConversationSnapshot(id: sleepID, conversationID: 1, title: "睡眠复盘", messages: []),
+            AgentConversationSnapshot(id: trainingID, conversationID: 2, title: "训练计划", messages: []),
         ]
         remote.searchResult = [
-            AgentConversationSnapshot(conversationID: 1, title: "睡眠复盘", messages: []),
+            AgentConversationSnapshot(id: sleepID, conversationID: 1, title: "睡眠复盘", messages: []),
         ]
         let model = AgentChatViewModel(conversationStore: store, remoteSource: remote)
 
@@ -150,6 +152,49 @@ final class AgentConversationHistoryTests: XCTestCase {
         XCTAssertEqual(model.conversationHistory.count, 1)
         XCTAssertEqual(model.conversationHistory.first?.conversationID, 1)
         XCTAssertEqual(store.saved.last?.count, 2, "搜索子集不得覆盖离线全量缓存")
+    }
+
+    @MainActor
+    func testSearchEntryPointTrimsTermAndPreservesOfflineCache() async {
+        let store = InMemoryConversationStore(seed: [])
+        let remote = FakeRemoteSource()
+        let sleepID = AgentConversationClient.deterministicID(forConversationID: 1)
+        let trainingID = AgentConversationClient.deterministicID(forConversationID: 2)
+        remote.list = [
+            AgentConversationSnapshot(id: sleepID, conversationID: 1, title: "睡眠复盘", messages: []),
+            AgentConversationSnapshot(id: trainingID, conversationID: 2, title: "训练计划", messages: []),
+        ]
+        remote.searchResult = [
+            AgentConversationSnapshot(id: sleepID, conversationID: 1, title: "睡眠复盘", messages: []),
+        ]
+        let model = AgentChatViewModel(conversationStore: store, remoteSource: remote)
+
+        await model.refreshConversationHistory()
+        await model.searchConversationHistory("  睡眠  ")
+
+        XCTAssertEqual(remote.lastSearch, "睡眠")
+        XCTAssertEqual(model.conversationHistory.map(\.conversationID), [1])
+        XCTAssertEqual(store.saved.last?.count, 2, "搜索结果不能覆盖完整离线缓存")
+    }
+
+    @MainActor
+    func testSearchFailureShowsOnlyMatchingLocalCache() async {
+        let store = InMemoryConversationStore(seed: [
+            AgentConversationSnapshot(conversationID: 1, title: "睡眠复盘", messages: [
+                .init(role: .user, content: "昨晚睡眠不好"),
+            ]),
+            AgentConversationSnapshot(conversationID: 2, title: "训练计划", messages: [
+                .init(role: .user, content: "今天跑步"),
+            ]),
+        ])
+        let remote = FakeRemoteSource()
+        remote.listError = APIError.httpStatus(503, nil)
+        let model = AgentChatViewModel(conversationStore: store, remoteSource: remote)
+
+        await model.searchConversationHistory("睡眠")
+
+        XCTAssertEqual(model.conversationHistory.map(\.conversationID), [1])
+        XCTAssertNotNil(model.historyNotice)
     }
 
     @MainActor
