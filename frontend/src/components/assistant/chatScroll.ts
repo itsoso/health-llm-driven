@@ -1,6 +1,7 @@
 export const CHAT_SCROLL_SETTLE_DELAYS_MS = [0, 80, 220, 480, 900] as const;
 
-export type ChatScrollTimer = ReturnType<typeof window.setTimeout>;
+export type ChatScrollTimer = number;
+type ChatScrollSetTimer = (callback: () => void, delay: number) => ChatScrollTimer;
 
 export function clearChatScrollTimers(timers: ChatScrollTimer[]) {
   timers.forEach(timer => window.clearTimeout(timer));
@@ -11,14 +12,14 @@ export function scheduleSettledScrollToBottom(options: {
   clearExisting?: () => void;
   behavior?: ScrollBehavior;
   delays?: readonly number[];
-  setTimer?: typeof window.setTimeout;
+  setTimer?: ChatScrollSetTimer;
 }): ChatScrollTimer[] {
   const {
     getElement,
     clearExisting,
     behavior = 'smooth',
     delays = CHAT_SCROLL_SETTLE_DELAYS_MS,
-    setTimer = window.setTimeout.bind(window),
+    setTimer = (callback, delay) => window.setTimeout(callback, delay),
   } = options;
 
   clearExisting?.();

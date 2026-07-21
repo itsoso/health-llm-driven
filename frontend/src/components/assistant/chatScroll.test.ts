@@ -18,11 +18,11 @@ describe('chat scroll helpers', () => {
 
     const timers = scheduleSettledScrollToBottom({
       getElement: () => element,
-      setTimer: ((callback: TimerHandler, delay?: number) => {
-        callbacks.push(callback as () => void);
-        delays.push(Number(delay));
-        return callbacks.length as unknown as ReturnType<typeof window.setTimeout>;
-      }) as typeof window.setTimeout,
+      setTimer: (callback: () => void, delay: number) => {
+        callbacks.push(callback);
+        delays.push(delay);
+        return callbacks.length;
+      },
     });
 
     expect(timers).toHaveLength(CHAT_SCROLL_SETTLE_DELAYS_MS.length);
@@ -41,9 +41,7 @@ describe('chat scroll helpers', () => {
     scheduleSettledScrollToBottom({
       getElement: () => null,
       clearExisting,
-      setTimer: ((callback: TimerHandler, delay?: number) => {
-        return Number(delay) as unknown as ReturnType<typeof window.setTimeout>;
-      }) as typeof window.setTimeout,
+      setTimer: (_callback: () => void, delay: number) => delay,
     });
 
     expect(clearExisting).toHaveBeenCalledTimes(1);
@@ -53,8 +51,8 @@ describe('chat scroll helpers', () => {
     const clearSpy = vi.spyOn(window, 'clearTimeout');
 
     clearChatScrollTimers([
-      1 as unknown as ReturnType<typeof window.setTimeout>,
-      2 as unknown as ReturnType<typeof window.setTimeout>,
+      1,
+      2,
     ]);
 
     expect(clearSpy).toHaveBeenCalledTimes(2);
