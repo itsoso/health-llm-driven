@@ -4,8 +4,8 @@
 |---|---|
 | slug | `agent-runtime-write-reconciliation` |
 | 创建日期 | 2026-07-20 |
-| 当前阶段 | G5 生产部署健康验证完成，等待受控 G6 |
-| 状态 | deployed_runtime_paused |
+| 当前阶段 | G5 生产部署健康验证完成，旧未决 operation 已结算，等待受控 G6 |
+| 状态 | deployed_runtime_paused_reconciled |
 | 负责 | Codex |
 | 反馈环 | Agent Runtime canary / PostgreSQL operation ledger / diet write receipt |
 
@@ -127,5 +127,7 @@ RequirementAdmission:
 
 ## G6 · 上线验证
 
-- 状态: **PENDING**。G5 已通过，但 Runtime 仍按安全约束关闭并保持熔断暂停；不得把部署健康等同于受控写入闭环通过。
+- 状态: **PARTIAL / PENDING**。G5 已通过，旧 `worker_lease_expired_write` operation 已通过应用服务显式结算为 `verified_no_effect`；生产不再存在 `reconciliation_required` Run/operation。
+- 当前约束: Runtime 仍按安全约束关闭并保持熔断暂停；不得把部署健康或旧 operation 结算等同于受控写入闭环通过。
+- 生产核验证据（2026-07-21）: `run_df30df9ec1244ae1` 已变为 `failed / reconciled_no_effect / retryable=true`；`op_0bc25120f3450a9576adad466fd62031f58810baabf67e84` 已变为 `failed / reconciled_no_effect`；rollout state 仍为 `paused / reconciliation_detected`，generation `1` 尚未 acknowledge。
 - 验收: 当前旧 reconciliation 经应用服务显式结算；单账号只读和受控饮食写入均得到同一 Run/operation/receipt 链路；无重复写入、无 stale lease、无新 reconciliation 后才可人工恢复。

@@ -44,8 +44,10 @@
 - [x] Agent conversation、照片饮食、intent、ToolGateway 回归。
 - [x] Ruff、diff check、system-map drift、Dossier consistency。
 - [x] 独立安全复审；最终结论无 P0/P1，仅提交本任务文件。
-- [ ] 合并主干和 CI 全绿后通过 `deploy.sh` 部署；保持 paused/0%。
+- [x] 合并主干和 CI 全绿后通过 `deploy.sh` 部署；保持 paused/0%。
 - [ ] 用应用服务结算当前旧 operation，再做单账号 read/write/worker interruption 演练并重新裁决 G5/G6。
+  - [x] 旧 operation 已通过应用服务结算为 `verified_no_effect`；生产不再存在 `reconciliation_required` Run/operation。
+  - [ ] Runtime circuit 仍暂停且 `AGENT_RUNTIME_MODE=off`；单账号受控 read/write/worker interruption 演练待显式开启 canary 后执行。
 
 ## Task 7 · 多写入重试身份与流式诚实性
 
