@@ -132,6 +132,31 @@ def test_agent_creates_owner_bound_confirmation_card_outside_meal_window(
     assert "photo_url" not in cards_for_persistence([card])[0]["data"]
 
 
+def test_agent_explicit_food_photo_write_records_outside_meal_window(
+    db, tmp_path, monkeypatch
+):
+    executor, user = _food_photo_executor(db, tmp_path, monkeypatch)
+    executor._agent_kernel_reference_now = lambda: datetime(2026, 7, 20, 3, 30, tzinfo=timezone.utc)
+
+    result = executor._capture_contextual_meal_photo("记录这餐", _food_result(), image_index=0)
+
+    assert result is not None
+    assert result.record is not None
+    assert result.record.user_id == user.id
+    assert result.record.meal_type == "snack"
+    assert db.query(DietRecord).count() == 1
+    assert executor._turn_contextual_diet_receipts == [{
+        "operation_id": f"contextual_meal_photo:{result.record.id}",
+        "status": "verified",
+        "resource_type": "diet_record",
+        "resource_id": str(result.record.id),
+        "verified": True,
+    }]
+    card = executor._turn_contextual_diet_cards[0]
+    assert card["data"]["recorded"] is True
+    assert card["actions"] == []
+
+
 def test_agent_auto_capture_failure_surfaces_the_recoverable_confirmation_card(
     db, tmp_path, monkeypatch
 ):
@@ -262,6 +287,7 @@ def test_commercial_multimodal_food_photos_still_use_structured_preprocessing(
     assert executor._should_preprocess_attached_images(1, "记录这张午餐照片") is True
     assert executor._should_preprocess_attached_images(1, "请分析这些图片") is True
     assert executor._should_preprocess_attached_images(1, "帮我记一下") is True
+    assert executor._should_preprocess_attached_images(1, "拍照记餐") is True
     assert executor._should_preprocess_attached_images(1, "看看这张风景照片") is False
 
 

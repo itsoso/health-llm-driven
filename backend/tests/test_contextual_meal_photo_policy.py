@@ -45,6 +45,19 @@ def test_food_photo_outside_normal_meal_window_requires_current_page_confirmatio
     assert "outside_auto_meal_window" in decision.reason_codes
 
 
+def test_explicit_food_photo_write_outside_meal_window_still_records():
+    decision = decide_contextual_meal_photo(
+        _candidate(
+            semantic_intent=MealPhotoSemanticIntent.EXPLICIT_CAPTURE,
+            reference_now=datetime(2026, 7, 20, 3, 30, tzinfo=timezone.utc),
+        )
+    )
+
+    assert decision.decision == "auto_record"
+    assert decision.meal_type == "snack"
+    assert "explicit_capture" in decision.reason_codes
+
+
 def test_semantic_analysis_request_never_creates_a_diet_draft_or_record():
     decision = decide_contextual_meal_photo(
         _candidate(semantic_intent=MealPhotoSemanticIntent.ANALYZE_ONLY)

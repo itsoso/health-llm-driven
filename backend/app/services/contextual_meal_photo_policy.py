@@ -72,6 +72,19 @@ def decide_contextual_meal_photo(candidate: MealPhotoCandidate) -> MealPhotoDeci
         return _decision("confirm", meal_type, local_time, timezone_name, "idempotency_not_clear")
     if (candidate.recognition_confidence or 0.0) < AUTO_RECORD_CONFIDENCE:
         return _decision("confirm", meal_type, local_time, timezone_name, "low_confidence")
+    if candidate.semantic_intent == MealPhotoSemanticIntent.EXPLICIT_CAPTURE:
+        return MealPhotoDecision(
+            decision="auto_record",
+            meal_type=meal_type,
+            local_time=local_time,
+            timezone_name=timezone_name,
+            reason_codes=(
+                "chat_food",
+                "high_confidence",
+                "explicit_capture",
+                f"meal_context:{meal_type}",
+            ),
+        )
     if not in_auto_window:
         return _decision("confirm", meal_type, local_time, timezone_name, "outside_auto_meal_window")
 
