@@ -1,5 +1,28 @@
 """原研药精选表查询。钉:通用名/品牌/含规格都能命中;表外返回 None(不猜);端点鉴权。"""
+import operator
+
+import pytest
+
+from app.services import originator_drugs
 from app.services.originator_drugs import find_originator
+
+
+def test_medication_aliases_canonicalize_generic_and_brand_names():
+    aliases = originator_drugs.medication_aliases()
+
+    assert aliases["替普瑞酮"] == "替普瑞酮"
+    assert aliases["施维舒"] == "替普瑞酮"
+    assert aliases["伊托必利"] == "伊托必利"
+    assert aliases["盐酸伊托必利"] == "伊托必利"
+    assert aliases["加斯清"] == "伊托必利"
+    assert aliases["盐酸西替利嗪"] == "西替利嗪"
+
+
+def test_medication_aliases_are_read_only():
+    aliases = originator_drugs.medication_aliases()
+
+    with pytest.raises(TypeError):
+        operator.setitem(aliases, "伪造品牌", "替普瑞酮")
 
 
 def test_lookup_by_generic_name():

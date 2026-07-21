@@ -18,7 +18,7 @@ final class ThinkingProcessTraceTests: XCTestCase {
 
         """
         let events = try AgentStreamParser.parse(payload)
-        guard case .done(_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, let steps) = events.first else {
+        guard case .done(_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, let steps, _) = events.first else {
             return XCTFail("expected done event")
         }
         XCTAssertEqual(steps, ["正在理解你的问题", "读取健康数据", "整理回复中"])
@@ -30,7 +30,7 @@ final class ThinkingProcessTraceTests: XCTestCase {
 
         """
         let events = try AgentStreamParser.parse(payload)
-        guard case .done(_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, let steps) = events.first else {
+        guard case .done(_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, let steps, _) = events.first else {
             return XCTFail("expected done event")
         }
         XCTAssertEqual(steps, [], "老后端缺 thinking_steps → 空数组,不是 crash")

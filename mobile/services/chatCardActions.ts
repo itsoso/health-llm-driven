@@ -4,7 +4,12 @@ import type { ChatCardActionDescriptor } from '../components/chat/cards/types';
 import { isSafeInternalRoute } from '../utils/internalRoutes';
 import { normalizeHealthActionRoute } from '../utils/dailyArtifactNavigation';
 import { assertDietFoodItemsAllowed } from '../utils/dietIntakeGuard';
-import { createVerifiedWriteReceipt, type WriteReceipt } from './writeReceipt';
+import {
+  createVerifiedWriteReceipt,
+  normalizeWriteReceipt,
+  type WriteReceipt,
+} from './writeReceipt';
+import type { MedicationSafetyAlert } from './medications';
 
 type DietNutritionStatus = 'not_needed' | 'estimated' | 'estimate_failed';
 
@@ -18,16 +23,25 @@ const WRITE_CARD_ACTIONS = new Set([
 ]);
 
 export interface ChatCardActionResult {
-  status: 'completed' | 'dismissed' | 'opened';
+  status: 'completed' | 'dismissed' | 'expired' | 'opened';
+  decision_status?: 'executed' | 'dismissed' | 'expired';
   route?: string;
   nutrition_status?: DietNutritionStatus;
   patch?: Record<string, unknown>;
   receipt?: WriteReceipt;
+  write_receipts?: WriteReceipt[];
+  safety_alerts?: MedicationSafetyAlert[];
+}
+
+export interface ChatCardActionContext {
+  cardType?: string;
+  cardData?: Record<string, unknown> | null;
 }
 
 export async function dispatchChatCardAction(
   action: ChatCardActionDescriptor,
   idempotencyKey?: string,
+  context?: ChatCardActionContext,
 ): Promise<ChatCardActionResult> {
   switch (action.action) {
     case 'agenda.complete':
@@ -65,37 +79,99 @@ export async function dispatchChatCardAction(
       assertManualConfirm(action);
       assertRegisteredWritePolicy(action);
       {
+        const medicationBatch = readMedicationBatchContext(action, context);
         const intentId = readWriteIntentId(action);
-        const result = await confirmWriteIntent(intentId);
+        let result;
+        try {
+          result = await confirmWriteIntent(intentId);
+        } catch (error) {
+          if (isExpiredWriteIntentConfirmation(error)) {
+            return { status: 'expired', decision_status: 'expired' };
+          }
+          throw error;
+        }
+        if (result.status === 'dismissed' && medicationBatch) {
+          const decisionStatus = readMedicationDecisionStatus(result.decision_status);
+          if (decisionStatus === 'expired') {
+            return { status: 'expired', decision_status: 'expired' };
+          }
+          if (decisionStatus === 'dismissed') {
+            return { status: 'dismissed', decision_status: 'dismissed' };
+          }
+          throw new Error('medication_batch_decision_status_missing');
+        }
         if (result.status !== 'executed') throw new Error('write_intent_not_executed');
-        return {
-          status: 'completed',
-          receipt: createVerifiedWriteReceipt({
+        const serverReceipts = medicationBatch
+          ? normalizeMedicationBatchReceipts(
+              result.write_receipts,
+              intentId,
+              medicationBatch.itemCount,
+            )
+          : normalizeServerWriteReceipts(result.write_receipts);
+        if (result.write_receipts && serverReceipts.length !== result.write_receipts.length) {
+          throw new Error('write_intent_receipts_unverified');
+        }
+        if (
+          serverReceipts.length === 0
+          && String(result.executed_ref || '').startsWith('medication_logs:')
+        ) {
+          throw new Error('medication_batch_write_receipts_missing');
+        }
+        const receipts = serverReceipts.length > 0
+          ? serverReceipts
+          : [createVerifiedWriteReceipt({
             operationId: action.id || `write_intent.confirm:${intentId}`,
             executedRef: result.executed_ref,
             ...(result.executed_ref === 'acknowledged' ? {
               resourceType: 'write_intent',
               resourceId: intentId,
             } : {}),
-          }),
+          })];
+        const safetyAlerts = Array.isArray(result.safety_alerts) ? result.safety_alerts : [];
+        return {
+          status: 'completed',
+          decision_status: 'executed',
+          receipt: receipts[receipts.length - 1],
+          write_receipts: receipts,
+          ...(safetyAlerts.length > 0 ? { safety_alerts: safetyAlerts } : {}),
         };
       }
     case 'write_intent.dismiss':
       assertManualConfirm(action);
       assertRegisteredWritePolicy(action);
       {
+        const medicationBatch = readMedicationBatchContext(action, context);
         const intentId = readWriteIntentId(action);
         const result = await dismissWriteIntent(intentId);
-        if (result.status !== 'dismissed') throw new Error('write_intent_not_dismissed');
-        return {
-          status: 'dismissed',
-          receipt: createVerifiedWriteReceipt({
-            operationId: action.id || `write_intent.dismiss:${intentId}`,
-            status: 'dismissed',
-            resourceType: 'write_intent',
-            resourceId: intentId,
-          }),
-        };
+        if (result.status === 'dismissed') {
+          const decisionStatus = medicationBatch
+            ? readMedicationDecisionStatus(result.decision_status)
+            : 'dismissed';
+          if (decisionStatus === 'expired') {
+            return { status: 'expired', decision_status: 'expired' };
+          }
+          if (decisionStatus !== 'dismissed') {
+            throw new Error('medication_batch_decision_status_missing');
+          }
+          // A dismissal is a terminal decision, not a verified health write.
+          return { status: 'dismissed', decision_status: 'dismissed' };
+        }
+        if (result.status === 'executed' && medicationBatch) {
+          const receipts = normalizeMedicationBatchReceipts(
+            result.write_receipts,
+            intentId,
+            medicationBatch.itemCount,
+          );
+          const safetyAlerts = Array.isArray(result.safety_alerts) ? result.safety_alerts : [];
+          return {
+            status: 'completed',
+            decision_status: 'executed',
+            receipt: receipts[receipts.length - 1],
+            write_receipts: receipts,
+            ...(safetyAlerts.length > 0 ? { safety_alerts: safetyAlerts } : {}),
+          };
+        }
+        throw new Error('write_intent_not_dismissed');
       }
     case 'aigc_media.confirm':
       assertManualConfirm(action);
@@ -122,6 +198,88 @@ export async function dispatchChatCardAction(
     default:
       throw new Error('unsupported_card_action');
   }
+}
+
+function isExpiredWriteIntentConfirmation(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const response = (error as { response?: unknown }).response;
+  if (!response || typeof response !== 'object') return false;
+  const status = (response as { status?: unknown }).status;
+  const data = (response as { data?: unknown }).data;
+  const detail = data && typeof data === 'object'
+    ? (data as { detail?: unknown }).detail
+    : undefined;
+  return status === 409 && typeof detail === 'string' && detail.includes('已过期');
+}
+
+function normalizeServerWriteReceipts(raw: unknown): WriteReceipt[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map(normalizeWriteReceipt)
+    .filter((receipt): receipt is WriteReceipt => Boolean(receipt));
+}
+
+function normalizeMedicationBatchReceipts(
+  raw: unknown,
+  intentId: number,
+  expectedCount: number,
+): WriteReceipt[] {
+  if (!Array.isArray(raw) || raw.length !== expectedCount) {
+    throw new Error('medication_batch_write_receipts_missing');
+  }
+  const expectedPrefix = `write_intent:medication_intake_batch:${intentId}:`;
+  const receipts = raw.map((value) => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      throw new Error('medication_batch_write_receipts_invalid');
+    }
+    const source = value as Record<string, unknown>;
+    const receipt = normalizeWriteReceipt(source);
+    if (
+      !receipt
+      || source.status !== 'verified'
+      || source.resource_type !== 'medication_log'
+      || receipt.resourceType !== 'medication_log'
+      || !receipt.operationId.startsWith(expectedPrefix)
+    ) {
+      throw new Error('medication_batch_write_receipts_invalid');
+    }
+    return receipt;
+  });
+  if (new Set(receipts.map(receipt => receipt.operationId)).size !== expectedCount) {
+    throw new Error('medication_batch_write_receipts_invalid');
+  }
+  return receipts;
+}
+
+function readMedicationBatchContext(
+  action: ChatCardActionDescriptor,
+  context?: ChatCardActionContext,
+): { itemCount: number } | null {
+  const claimsMedicationBatch = context?.cardType === 'medication_draft'
+    || action.capability_id === 'medication_draft.v1';
+  if (!claimsMedicationBatch) return null;
+  if (context?.cardType !== 'medication_draft') {
+    throw new Error('medication_batch_card_context_required');
+  }
+  const intentId = normalizeNumericId(action.payload?.write_intent_id);
+  const cardIntentId = normalizeNumericId(context.cardData?.write_intent_id);
+  const items = context.cardData?.items;
+  if (
+    action.capability_id !== 'medication_draft.v1'
+    || intentId !== cardIntentId
+    || !Array.isArray(items)
+    || items.length < 1
+    || items.length > 8
+  ) {
+    throw new Error('invalid_medication_batch_action');
+  }
+  return { itemCount: items.length };
+}
+
+function readMedicationDecisionStatus(value: unknown): 'executed' | 'dismissed' | 'expired' | null {
+  return value === 'executed' || value === 'dismissed' || value === 'expired'
+    ? value
+    : null;
 }
 
 function readInlinePatch(action: ChatCardActionDescriptor): Record<string, unknown> {
@@ -300,10 +458,10 @@ function receiptFromAgendaResult(
 }
 
 function readWriteIntentId(action: ChatCardActionDescriptor): number {
-  const raw = action.payload?.write_intent_id ?? action.payload?.id;
+  const raw = action.payload?.write_intent_id;
   const id = normalizeNumericId(raw);
   const expectedSuffix = action.action === 'write_intent.dismiss' ? `/write-intents/${id}/dismiss` : `/write-intents/${id}/confirm`;
-  if (action.endpoint && action.endpoint !== expectedSuffix) {
+  if (action.endpoint !== expectedSuffix) {
     throw new Error('unsupported_card_action_endpoint');
   }
   return id;

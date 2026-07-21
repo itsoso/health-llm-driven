@@ -4,7 +4,7 @@ import { useFocusEffect } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import NetInfo from '@react-native-community/netinfo';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { streamChat, getConversations, getConversationMessages, deleteConversation, type ChatMessage, type LlmUsageProfile, type AgentPerfProfile } from '../services/chat';
+import { streamChat, getConversations, getConversationMessages, deleteConversation, type ChatMessage, type LlmUsageProfile, type AgentPerfProfile, type MedicationBatchStreamDecision } from '../services/chat';
 import { dispatchCard, renderServerCards } from '../components/chat/cards';
 import type { ChatCardActionDescriptor, ServerCardDescriptor } from '../components/chat/cards/types';
 import api, { BASE_URL } from '../services/api';
@@ -25,6 +25,7 @@ import {
 } from '../services/conversationContinuity';
 import { getAuthStorageScope } from '../services/authStorageScope';
 import { normalizeWriteReceipt, type WriteReceipt } from '../services/writeReceipt';
+import type { MedicationSafetyAlert } from '../services/medications';
 
 function normalizeImageHost(baseUrl: string): string {
   return String(baseUrl || '').replace(/\/+$/, '').replace(/\/api(?:\/v\d+)?$/, '');
@@ -67,7 +68,11 @@ export interface UIMessage extends ChatMessage {
   toolsUsed?: string[];
   completionStatus?: 'complete' | 'interrupted' | 'error' | 'unknown';
   writeReceipts?: WriteReceipt[];
+  safetyAlerts?: MedicationSafetyAlert[];
+  decisionStatus?: MedicationDecisionStatus;
 }
+
+export type MedicationDecisionStatus = 'pending' | 'executed' | 'dismissed' | 'expired';
 
 let msgCounter = 0;
 function nextId(): string { return `msg-${++msgCounter}-${Date.now()}`; }
@@ -98,6 +103,14 @@ export function buildTurnRequestFingerprint(
 function applyMeta(msg: any): Partial<UIMessage> {
   const meta = msg?.meta;
   if (!meta || typeof meta !== 'object') return {};
+  const rawDecision = meta.medication_batch_decision;
+  const decision = rawDecision && typeof rawDecision === 'object' && !Array.isArray(rawDecision)
+    ? rawDecision
+    : undefined;
+  const decisionStatus = normalizeMedicationDecisionStatus(decision?.status);
+  const noWriteTerminal = decisionStatus === 'dismissed' || decisionStatus === 'expired';
+  const hasExactReceipts = Array.isArray(decision?.write_receipts);
+  const hasExactAlerts = Array.isArray(decision?.safety_alerts);
   return {
     elapsedMs: typeof meta.elapsed_ms === 'number' ? meta.elapsed_ms : undefined,
     llmMs: typeof meta.llm_ms === 'number' ? meta.llm_ms : undefined,
@@ -110,7 +123,17 @@ function applyMeta(msg: any): Partial<UIMessage> {
     toolsUsed: Array.isArray(meta.tools_used) ? meta.tools_used : undefined,
     completionStatus: typeof meta.completion_status === 'string' ? meta.completion_status : undefined,
     thinkingSteps: normalizeThinkingSteps(meta.thinking_steps ?? meta.thought_steps),
-    writeReceipts: normalizeWriteReceipts(meta.write_receipts),
+    writeReceipts: noWriteTerminal
+      ? []
+      : hasExactReceipts
+        ? normalizeWriteReceipts(decision.write_receipts) ?? []
+        : normalizeWriteReceipts(meta.write_receipts),
+    safetyAlerts: noWriteTerminal
+      ? []
+      : hasExactAlerts
+        ? normalizeMedicationSafetyAlerts(decision.safety_alerts) ?? []
+        : normalizeMedicationSafetyAlerts(meta.safety_alerts),
+    decisionStatus,
   };
 }
 
@@ -120,6 +143,112 @@ function normalizeWriteReceipts(value: unknown): WriteReceipt[] | undefined {
     .map(normalizeWriteReceipt)
     .filter((receipt): receipt is WriteReceipt => !!receipt);
   return receipts.length > 0 ? receipts : undefined;
+}
+
+function normalizeMedicationSafetyAlerts(value: unknown): MedicationSafetyAlert[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const alerts = value.filter((raw): raw is MedicationSafetyAlert => (
+    raw != null
+    && typeof raw === 'object'
+    && !Array.isArray(raw)
+    && typeof (raw as Record<string, unknown>).rule_id === 'string'
+    && typeof (raw as Record<string, unknown>).title === 'string'
+    && typeof (raw as Record<string, unknown>).message === 'string'
+  ));
+  return alerts.length > 0 ? alerts : undefined;
+}
+
+function normalizeMedicationDecisionStatus(value: unknown): MedicationDecisionStatus | undefined {
+  return value === 'pending' || value === 'executed' || value === 'dismissed' || value === 'expired'
+    ? value
+    : undefined;
+}
+
+function medicationIntentId(value: unknown): number | null {
+  const normalized = typeof value === 'number'
+    ? value
+    : typeof value === 'string' && value.trim() ? Number(value) : NaN;
+  return Number.isInteger(normalized) && normalized > 0 ? normalized : null;
+}
+
+function actionTargetsMedicationIntent(
+  action: ChatCardActionDescriptor,
+  intentId: number,
+): boolean {
+  return (action.action === 'write_intent.confirm' || action.action === 'write_intent.dismiss')
+    && medicationIntentId(action.payload?.write_intent_id) === intentId;
+}
+
+function projectMedicationTerminalDescriptor(
+  descriptor: ServerCardDescriptor,
+  decision: MedicationBatchStreamDecision,
+): { descriptor: ServerCardDescriptor; changed: boolean } {
+  if (descriptor.type === 'cards_group' && Array.isArray(descriptor.data?.cards)) {
+    let changed = false;
+    const cards = (descriptor.data.cards as ServerCardDescriptor[]).map((card) => {
+      const projected = projectMedicationTerminalDescriptor(card, decision);
+      changed ||= projected.changed;
+      return projected.descriptor;
+    });
+    return changed ? {
+      descriptor: { ...descriptor, data: { ...descriptor.data, cards } },
+      changed: true,
+    } : { descriptor, changed: false };
+  }
+  if (descriptor.type !== 'medication_draft') return { descriptor, changed: false };
+  const targets = medicationIntentId(descriptor.data?.write_intent_id) === decision.intentId
+    || (descriptor.actions || []).some(action => (
+      actionTargetsMedicationIntent(action, decision.intentId)
+    ));
+  if (!targets) return { descriptor, changed: false };
+  return {
+    descriptor: {
+      type: descriptor.type,
+      data: {
+        ...(descriptor.data || {}),
+        action_pending: false,
+        decision_status: decision.decisionStatus,
+        write_receipts: decision.decisionStatus === 'executed'
+          ? decision.writeReceipts.map(receipt => ({
+            operation_id: receipt.operationId,
+            status: receipt.status,
+            resource_type: receipt.resourceType,
+            resource_id: receipt.resourceId,
+            completed_at: receipt.completedAt,
+            verified: receipt.verified,
+            ...(receipt.executedRef ? { executed_ref: receipt.executedRef } : {}),
+          }))
+          : [],
+        safety_alerts: decision.decisionStatus === 'executed' ? decision.safetyAlerts : [],
+      },
+      actions: [],
+    },
+    changed: true,
+  };
+}
+
+function projectMedicationTerminalMessages(
+  messages: UIMessage[],
+  decision: MedicationBatchStreamDecision,
+): UIMessage[] {
+  return messages.map((message) => {
+    if (!message.cardType) return message;
+    const projected = projectMedicationTerminalDescriptor({
+      type: message.cardType,
+      data: message.cardData,
+      actions: message.cardActions,
+    }, decision);
+    if (!projected.changed) return message;
+    return {
+      ...message,
+      cardType: projected.descriptor.type,
+      cardData: projected.descriptor.data,
+      cardActions: projected.descriptor.actions,
+      decisionStatus: decision.decisionStatus,
+      writeReceipts: decision.decisionStatus === 'executed' ? decision.writeReceipts : [],
+      safetyAlerts: decision.decisionStatus === 'executed' ? decision.safetyAlerts : [],
+    };
+  });
 }
 
 function normalizeThinkingSteps(value: unknown): string[] | undefined {
@@ -183,6 +312,14 @@ export function restoreMessagesFromHistory(
   const restored: UIMessage[] = [];
   (msgs || []).forEach((m: any, i: number) => {
     const baseId = `${idPrefix}-${m.id || i}`;
+    const messageMeta = applyMeta(m);
+    const serverCards = renderServerCards(m?.meta?.cards);
+    const hasTerminalMedicationCard = serverCards.some((card) => {
+      if (card.type !== 'medication_draft') return false;
+      const decisionStatus = normalizeMedicationDecisionStatus(card.data?.decision_status)
+        ?? messageMeta.decisionStatus;
+      return decisionStatus != null && decisionStatus !== 'pending';
+    });
     restored.push({
       id: baseId,
       role: m.role,
@@ -192,11 +329,16 @@ export function restoreMessagesFromHistory(
         ? m.meta.client_turn_id
         : undefined,
       imageUris: parseHistoryImageUris(m.image_url, imageHost),
-      ...applyMeta(m),
+      ...messageMeta,
+      ...(hasTerminalMedicationCard ? {
+        writeReceipts: undefined,
+        safetyAlerts: undefined,
+        decisionStatus: undefined,
+      } : {}),
     });
 
-    const serverCards = renderServerCards(m?.meta?.cards);
     serverCards.forEach((card, cardIndex) => {
+      const isMedicationCard = card.type === 'medication_draft';
       restored.push({
         id: `${baseId}-card-${cardIndex}`,
         role: 'assistant',
@@ -209,6 +351,12 @@ export function restoreMessagesFromHistory(
           ? m.meta.client_turn_id
           : undefined,
         createdAt: m.created_at,
+        ...(isMedicationCard ? {
+          writeReceipts: normalizeWriteReceipts(card.data?.write_receipts) ?? messageMeta.writeReceipts,
+          safetyAlerts: normalizeMedicationSafetyAlerts(card.data?.safety_alerts) ?? messageMeta.safetyAlerts,
+          decisionStatus: normalizeMedicationDecisionStatus(card.data?.decision_status)
+            ?? messageMeta.decisionStatus,
+        } : {}),
       });
     });
   });
@@ -1316,9 +1464,10 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
             void rememberConversationId(evt.conversationId);
           }
           // 把耗时 + 模型名写入当前 assistant 消息 (ChatBubble 渲染 footer)。清空 status 行 (收进思考完成态 pill)。
-          setMessages(prev => prev
-            .filter(m => allowDoneCards || !m.cardType || m.sourceTurnId !== turnId)
-            .map(m => m.id === aId ? {
+          setMessages((prev) => {
+            const settled = prev
+              .filter(m => allowDoneCards || !m.cardType || m.sourceTurnId !== turnId)
+              .map(m => m.id === aId ? {
               ...m,
               content: lastBatch ? mergeAssistantStreamContent(m.content, lastBatch) : m.content,
               streaming: false,
@@ -1335,7 +1484,11 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
               completionStatus: effectiveCompletionStatus,
               thinkingSteps: evt.thinkingSteps?.length ? evt.thinkingSteps : m.thinkingSteps,
               writeReceipts: evt.writeReceipts,
-            } : m));
+              } : m);
+            return evt.medicationBatchDecision
+              ? projectMedicationTerminalMessages(settled, evt.medicationBatchDecision)
+              : settled;
+          });
           const rawDoneCards = (
             allowDoneCards && Array.isArray((evt as any).cards)
           ) ? (evt as any).cards : [];

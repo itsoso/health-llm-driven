@@ -305,8 +305,9 @@ def test_is_auto_eligible_two_gates():
 
 def test_never_set_covers_all_clinical_financial_kinds():
     """NEVER 集合显式覆盖临床/依从/财务/外部动作类 kind(PRD #11 固化,只增不减)。"""
-    for k in ["adherence_nudge", "food_order", "doctor_booking", "alarm_set",
-              "reorder_nudge", "checkup_reminder", "recheck_due", "hearing_health_task"]:
+    for k in ["adherence_nudge", "medication_intake_batch", "food_order",
+              "doctor_booking", "alarm_set", "reorder_nudge", "checkup_reminder",
+              "recheck_due", "hearing_health_task"]:
         assert k in write_autonomy.NEVER_AUTONOMY_KINDS, f"{k} 必须在 NEVER 集合"
     # measurement_prompt 是唯一可自治 kind,不在 NEVER 里
     assert "measurement_prompt" not in write_autonomy.NEVER_AUTONOMY_KINDS

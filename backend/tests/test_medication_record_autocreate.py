@@ -1,101 +1,135 @@
-"""用药记录: 未登记的药(短程抗生素等)应自动登记再记录, 不报"未找到活跃药物"。
-
-复现 bug: "吃了两粒阿奇霉素" → 旧逻辑返回 "未找到名为 '阿奇霉素' 的活跃药物" 并放弃。
-"""
-from unittest.mock import AsyncMock, patch
+"""Medication intake creates only the minimum definition after server confirmation."""
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import pytest
 
+from app.models.agent_conversation import AgentConversation, AgentMessage
+from app.models.medication import Medication, MedicationLog
+from app.services.agent_executor import AgentExecutor
+from app.services.medication_intake_batch import propose_medication_intake_items
+from app.services.write_intent_service import confirm
+
+
+def _source(db, user_id: int, content: str):
+    conversation = AgentConversation(user_id=user_id, title="用药")
+    db.add(conversation)
+    db.flush()
+    message = AgentMessage(
+        conversation_id=conversation.id,
+        role="user",
+        content=content,
+    )
+    db.add(message)
+    db.commit()
+    return conversation, message
+
+
+def _intent(db, user_id: int, name: str, dosage: str):
+    conversation, source = _source(db, user_id, f"记录服用{name}{dosage}")
+    intent = propose_medication_intake_items(
+        db,
+        user_id=user_id,
+        conversation_id=conversation.id,
+        source_message_id=source.id,
+        items=[{"medication_name": name, "actual_dosage": dosage}],
+        reference_now=datetime(2026, 7, 21, 9, 5, tzinfo=ZoneInfo("Asia/Shanghai")),
+    )
+    turn_id = f"medication-autocreate-{source.id}"
+    source.client_turn_id = turn_id
+    db.add(AgentMessage(
+        conversation_id=conversation.id,
+        role="assistant",
+        content="请确认这次用药记录。",
+        client_turn_id=turn_id,
+        meta={
+            "completion_status": "complete",
+            "client_turn_finalized": True,
+            "pending_write_intent_ids": [intent.id],
+            "pending_write_intent_kinds": ["medication_intake_batch"],
+            "cards": [
+                AgentExecutor(db)._medication_batch_confirmation_card(
+                    intent,
+                    intent.payload,
+                )
+            ],
+            "write_receipts": [],
+        },
+    ))
+    db.commit()
+    return intent
+
+
+def test_confirmed_intake_autocreates_minimal_medication_definition(
+    db, auth_user_and_headers
+):
+    user, _ = auth_user_and_headers
+    intent = _intent(db, user.id, "阿奇霉素", "2粒")
+
+    result = confirm(db, user.id, intent.id)
+
+    medication = db.query(Medication).filter(Medication.user_id == user.id).one()
+    assert medication.name == "阿奇霉素"
+    assert medication.dosage is None
+    assert medication.frequency is None
+    assert medication.times_per_day is None
+    log = db.query(MedicationLog).filter(MedicationLog.user_id == user.id).one()
+    assert log.medication_id == medication.id
+    assert log.actual_dosage == "2粒"
+    assert len(result["write_receipts"]) == 1
+
+
+def test_confirmed_intake_reuses_existing_active_definition(
+    db, auth_user_and_headers
+):
+    user, _ = auth_user_and_headers
+    existing = Medication(
+        user_id=user.id,
+        name="二甲双胍",
+        dosage="500mg",
+        frequency="遵医嘱",
+        is_active=True,
+    )
+    db.add(existing)
+    db.commit()
+    intent = _intent(db, user.id, "二甲双胍", "1片")
+
+    confirm(db, user.id, intent.id)
+
+    assert db.query(Medication).filter(Medication.user_id == user.id).count() == 1
+    log = db.query(MedicationLog).filter(MedicationLog.user_id == user.id).one()
+    assert log.medication_id == existing.id
+    assert log.actual_dosage == "1片"
+
 
 @pytest.mark.asyncio
-async def test_medication_autocreates_when_not_registered(db):
-    from app.services.agent_executor import AgentExecutor
-    ex = AgentExecutor(db)
+async def test_model_confirmed_flag_never_reaches_legacy_medication_http_path(
+    db, auth_user_and_headers
+):
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    executor._current_user_id = user.id
 
-    create_payload = {}
-    log_payload = {}
+    async def must_not_call(*args, **kwargs):
+        raise AssertionError("legacy medication HTTP path must not authorize model flags")
 
-    async def fake_get_json(url, headers):
-        return [], None  # 没有任何活跃药物
-
-    async def fake_post_json(url, headers, payload):
-        create_payload.update(payload)
-        create_payload["_url"] = url
-        return {"id": 99, "name": payload.get("name"), "is_active": True}, None
-
-    async def fake_post(url, headers, payload):
-        log_payload.update(payload)
-        log_payload["_url"] = url
-        return '{"id": 1, "status": "taken"}'
-
-    with patch.object(ex, "_api_get_json", new=AsyncMock(side_effect=fake_get_json)), \
-         patch.object(ex, "_api_post_json", new=AsyncMock(side_effect=fake_post_json)), \
-         patch.object(ex, "_api_post", new=AsyncMock(side_effect=fake_post)):
-        # medication 恒确认前置(2026-07-02):带 confirmed 测确认后的 auto-create 路径
-        result = await ex._exec_health_record("http://x", {}, {
+    executor._api_get_json = must_not_call
+    executor._api_post_json = must_not_call
+    executor._api_post = must_not_call
+    result = await executor._exec_health_record(
+        "http://unused",
+        {},
+        {
             "record_type": "medication",
             "confirmed": True,
-            "data": {"medication_name": "阿奇霉素", "dosage": "2粒", "confirmed": True},
-        })
+            "data": {
+                "medication_name": "阿奇霉素",
+                "actual_dosage": "2粒",
+                "confirmed": True,
+            },
+        },
+    )
 
-    assert "未找到" not in result
-    # 自动登记
-    assert create_payload.get("name") == "阿奇霉素"
-    assert create_payload.get("dosage") == "2粒"
-    assert "/medication/medications" in create_payload.get("_url", "")
-    # 再记录服用, 用新建药物的 id
-    assert log_payload.get("medication_id") == 99
-    assert log_payload.get("status") == "taken"
-    assert "/medication/logs" in log_payload.get("_url", "")
-
-
-@pytest.mark.asyncio
-async def test_medication_logs_existing_active_without_creating(db):
-    from app.services.agent_executor import AgentExecutor
-    ex = AgentExecutor(db)
-    log_payload = {}
-
-    async def fake_get_json(url, headers):
-        return [{"id": 7, "name": "二甲双胍", "is_active": True}], None
-
-    async def fake_post_json(url, headers, payload):
-        raise AssertionError("已有活跃药物时不应自动新建")
-
-    async def fake_post(url, headers, payload):
-        log_payload.update(payload)
-        return '{"id": 2}'
-
-    with patch.object(ex, "_api_get_json", new=AsyncMock(side_effect=fake_get_json)), \
-         patch.object(ex, "_api_post_json", new=AsyncMock(side_effect=fake_post_json)), \
-         patch.object(ex, "_api_post", new=AsyncMock(side_effect=fake_post)):
-        result = await ex._exec_health_record("http://x", {}, {
-            "record_type": "medication",
-            "confirmed": True,
-            "data": {"medication_name": "二甲双胍", "confirmed": True},
-        })
-
-    assert "未找到" not in result
-    assert log_payload.get("medication_id") == 7
-
-
-@pytest.mark.asyncio
-async def test_medication_autocreate_failure_is_graceful(db):
-    from app.services.agent_executor import AgentExecutor
-    ex = AgentExecutor(db)
-
-    async def fake_get_json(url, headers):
-        return [], None
-
-    async def fake_post_json(url, headers, payload):
-        return None, "API 返回 500"
-
-    with patch.object(ex, "_api_get_json", new=AsyncMock(side_effect=fake_get_json)), \
-         patch.object(ex, "_api_post_json", new=AsyncMock(side_effect=fake_post_json)), \
-         patch.object(ex, "_api_post", new=AsyncMock()):
-        result = await ex._exec_health_record("http://x", {}, {
-            "record_type": "medication",
-            "confirmed": True,
-            "data": {"medication_name": "阿奇霉素", "confirmed": True},
-        })
-
-    assert "没成功" in result  # 友好兜底, 不抛
+    assert result.startswith("Error:")
+    assert "确认计划未能建立" in result
+    assert db.query(MedicationLog).filter(MedicationLog.user_id == user.id).count() == 0

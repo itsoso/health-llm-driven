@@ -73,6 +73,14 @@ describe('conversationContinuity', () => {
     });
   });
 
+  it('never stores or forwards a dismissed intent as the latest verified write', async () => {
+    const dismissedReceipt = { ...receipt, status: 'dismissed' as const };
+
+    await expect(rememberVerifiedWriteReceipt(dismissedReceipt, 1000)).resolves.toBeUndefined();
+    expect(storage[conversationContinuityStorageKey(mockScope)]).toBeUndefined();
+    expect(mergeConversationContinuity('{"from":"chat"}', dismissedReceipt)).toBe('{"from":"chat"}');
+  });
+
   it('acknowledges only the exact receipt accepted by the server', async () => {
     await rememberVerifiedWriteReceipt(receipt, 1000);
 

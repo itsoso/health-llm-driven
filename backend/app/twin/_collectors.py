@@ -99,8 +99,19 @@ def fetch_health_checkin_today(db: Session, user_id: int) -> Dict[str, Any]:
 # ─────────────────────────── supplement ───────────────────────────────
 
 
-def fetch_supplement_today(db: Session, user_id: int) -> Dict[str, Any]:
-    """今日补剂打卡状态。单次 LEFT JOIN 查询代替两次独立查询。"""
+def fetch_supplement_today(
+    db: Session,
+    user_id: int,
+    *,
+    raise_on_error: bool = False,
+) -> Dict[str, Any]:
+    """今日补剂打卡状态。单次 LEFT JOIN 查询代替两次独立查询。
+
+    ``raise_on_error`` is reserved for safety-critical callers that own the
+    surrounding transaction.  Those callers must be allowed to contain a
+    failed read in a SAVEPOINT; rolling back their whole session here could
+    erase already-flushed health writes.
+    """
     try:
         from app.models.supplement import SupplementDefinition, SupplementRecord
 
@@ -169,6 +180,8 @@ def fetch_supplement_today(db: Session, user_id: int) -> Dict[str, Any]:
         }
     except Exception as e:
         logger.warning(f"[twin.collectors] supplement 失败: {e}")
+        if raise_on_error:
+            raise
         _safe_rollback(db)
         return {"active_supplements": [], "taken_today_count": 0, "total_active_count": 0}
 
@@ -416,7 +429,11 @@ def fetch_latest_labs(db: Session, user_id: int) -> Dict[str, float]:
 
 
 def fetch_medical_exam_abnormal(
-    db: Session, user_id: int, limit: int = 10
+    db: Session,
+    user_id: int,
+    limit: int = 10,
+    *,
+    raise_on_error: bool = False,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """最近体检中的异常指标 — 从统一的 medical_indicators 表读取。"""
     try:
@@ -458,6 +475,8 @@ def fetch_medical_exam_abnormal(
         return result, latest_meta
     except Exception as e:
         logger.warning(f"[twin.collectors] medical_indicators 失败: {e}")
+        if raise_on_error:
+            raise
         try:
             db.rollback()
         except Exception:
@@ -527,8 +546,17 @@ def fetch_latest_exam_meta(db: Session, user_id: int) -> Dict[str, Any]:
 # ─────────────────────────── genetic variants (categorized) ───────────
 
 
-def fetch_genetic_variants_categorized(db: Session, user_id: int) -> Dict[str, List[Dict[str, Any]]]:
-    """按类别分组的基因变异。"""
+def fetch_genetic_variants_categorized(
+    db: Session,
+    user_id: int,
+    *,
+    raise_on_error: bool = False,
+) -> Dict[str, List[Dict[str, Any]]]:
+    """按类别分组的基因变异。
+
+    Safety-critical callers opt into propagation so their SAVEPOINT, rather
+    than this collector, controls rollback scope.
+    """
     try:
         from app.models.genetic_data import GeneticVariant
         from app.services.genetic_report import _resolve_active_profile
@@ -613,5 +641,7 @@ def fetch_genetic_variants_categorized(db: Session, user_id: int) -> Dict[str, L
         }
     except Exception as e:
         logger.warning(f"[twin.collectors] genetic 失败: {e}")
+        if raise_on_error:
+            raise
         _safe_rollback(db)
         return {"total": 0, "drug_sensitivity": [], "risk": [], "protective": []}

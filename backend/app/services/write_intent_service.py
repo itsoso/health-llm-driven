@@ -9,13 +9,19 @@
 - confirm 原子门:仅 (id,user,status=pending) → executed,同事务内执行;执行失败整体
   回滚(状态退回 pending,绝不假装成功)。双击下第二次 update 命中 0 行 → 幂等返回不重执行。
 """
+from copy import deepcopy
 from datetime import datetime, timedelta, timezone
+import logging
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
+from app.models.agent_conversation import AgentConversation, AgentMessage
 from app.models.smart_reminder import SmartReminder
 from app.models.write_intent import WriteIntent
+
+
+logger = logging.getLogger(__name__)
 
 
 def _view(wi: WriteIntent) -> Dict[str, Any]:
@@ -25,6 +31,7 @@ def _view(wi: WriteIntent) -> Dict[str, Any]:
         "title": wi.title,
         "description": wi.description,
         "status": wi.status,
+        "decision_status": wi.decision_status,
         "source": wi.source,
         "trust_tier": wi.trust_tier,
         "target_type": wi.target_type,
@@ -38,11 +45,381 @@ def _view(wi: WriteIntent) -> Dict[str, Any]:
 def list_pending(db: Session, user_id: int) -> List[Dict[str, Any]]:
     rows = (
         db.query(WriteIntent)
-        .filter(WriteIntent.user_id == user_id, WriteIntent.status == "pending")
+        .filter(
+            WriteIntent.user_id == user_id,
+            WriteIntent.status == "pending",
+            # Medication batches require an itemized informed-consent preview
+            # in chat.  The generic Home WriteIntent card only renders title /
+            # description, so exposing this kind there would offer a blind
+            # confirm button without names, strengths, doses, or frozen time.
+            WriteIntent.kind != "medication_intake_batch",
+        )
         .order_by(WriteIntent.created_at.desc())
         .all()
     )
     return [_view(r) for r in rows]
+
+
+def _medication_safety_for_receipts(
+    db: Session,
+    user_id: int,
+    receipts: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Evaluate safety against the exact confirmed log identities.
+
+    The frozen intake time may belong to the previous local day by the time a
+    user confirms.  Passing receipt-backed log ids avoids dropping that
+    exposure at midnight while retaining owner scoping in the safety query.
+    """
+    from app.services.medication_safety import evaluate_medication_safety_alerts
+
+    log_ids: list[int] = []
+    for receipt in receipts:
+        if receipt.get("resource_type") != "medication_log":
+            continue
+        raw_id = receipt.get("resource_id")
+        try:
+            log_id = int(raw_id)
+        except (TypeError, ValueError):
+            continue
+        if log_id > 0:
+            log_ids.append(log_id)
+    return evaluate_medication_safety_alerts(
+        db,
+        user_id,
+        exposure_log_ids=log_ids,
+    )
+
+
+def _invalidate_medication_batch_caches(user_id: int) -> None:
+    """Refresh every read surface after first execution and idempotent replay."""
+    try:
+        from app.twin.cache import invalidate_twin
+
+        invalidate_twin(user_id)
+    except Exception as error:  # noqa: BLE001 — cache freshness cannot undo a committed fact
+        logger.warning(
+            "[medication_batch] cache invalidation failed user=%s error_type=%s",
+            user_id,
+            type(error).__name__,
+        )
+
+
+def _card_targets_write_intent(card: Any, intent_id: int) -> bool:
+    if not isinstance(card, dict) or card.get("type") != "medication_draft":
+        return False
+    data = card.get("data")
+    if isinstance(data, dict):
+        try:
+            if int(data.get("write_intent_id")) == intent_id:
+                return True
+        except (TypeError, ValueError):
+            pass
+    for action in card.get("actions") or []:
+        if not isinstance(action, dict):
+            continue
+        payload = action.get("payload")
+        if not isinstance(payload, dict):
+            continue
+        try:
+            if int(payload.get("write_intent_id")) == intent_id:
+                return True
+        except (TypeError, ValueError):
+            continue
+    return False
+
+
+def _card_presents_exact_medication_plan(card: Any, wi: WriteIntent) -> bool:
+    """Verify the rendered facts and the explicit confirm control, not just an id."""
+    if not isinstance(card, dict) or card.get("type") != "medication_draft":
+        return False
+    payload = wi.payload if isinstance(wi.payload, dict) else {}
+    data = card.get("data") if isinstance(card.get("data"), dict) else {}
+    try:
+        card_intent_id = int(data.get("write_intent_id"))
+    except (TypeError, ValueError):
+        return False
+    if card_intent_id != wi.id:
+        return False
+    if data.get("plan_sha256") != payload.get("plan_sha256"):
+        return False
+    if data.get("items") != payload.get("items"):
+        return False
+    if data.get("taken_at") != f"{payload.get('taken_date')} {payload.get('taken_time')}":
+        return False
+    expected_endpoint = f"/write-intents/{wi.id}/confirm"
+    for action in card.get("actions") or []:
+        if not isinstance(action, dict):
+            continue
+        action_payload = action.get("payload")
+        try:
+            action_intent_id = int(
+                action_payload.get("write_intent_id")
+                if isinstance(action_payload, dict)
+                else None
+            )
+        except (TypeError, ValueError):
+            continue
+        if (
+            action.get("action") == "write_intent.confirm"
+            and action.get("endpoint") == expected_endpoint
+            and action.get("requires_manual_confirm") is True
+            and action_intent_id == wi.id
+        ):
+            return True
+    return False
+
+
+def _medication_batch_source_assistant(
+    db: Session,
+    wi: WriteIntent,
+) -> Optional[AgentMessage]:
+    """Resolve the owner-scoped assistant that visibly presented this plan."""
+    if wi.target_type != "agent_message" or wi.target_id is None:
+        return None
+    source = (
+        db.query(AgentMessage)
+        .join(
+            AgentConversation,
+            AgentConversation.id == AgentMessage.conversation_id,
+        )
+        .filter(
+            AgentMessage.id == wi.target_id,
+            AgentMessage.role == "user",
+            AgentConversation.user_id == wi.user_id,
+        )
+        .first()
+    )
+    if source is None:
+        return None
+    query = db.query(AgentMessage).filter(
+        AgentMessage.conversation_id == source.conversation_id,
+        AgentMessage.role == "assistant",
+        AgentMessage.id > source.id,
+    )
+    if source.client_turn_id:
+        query = query.filter(AgentMessage.client_turn_id == source.client_turn_id)
+    for assistant in query.order_by(AgentMessage.id.asc()).all():
+        meta = assistant.meta if isinstance(assistant.meta, dict) else {}
+        pending_ids = meta.get("pending_write_intent_ids")
+        try:
+            names_intent = isinstance(pending_ids, list) and wi.id in {
+                int(raw_id) for raw_id in pending_ids
+            }
+        except (TypeError, ValueError):
+            names_intent = False
+        cards = meta.get("cards") if isinstance(meta.get("cards"), list) else []
+        if names_intent or any(
+            _card_targets_write_intent(card, wi.id) for card in cards
+        ):
+            return assistant
+    return None
+
+
+def medication_batch_plan_was_presented(db: Session, wi: WriteIntent) -> bool:
+    """True only for a completed assistant turn with the exact itemized card."""
+    assistant = _medication_batch_source_assistant(db, wi)
+    if assistant is None or not isinstance(assistant.meta, dict):
+        return False
+    meta = assistant.meta
+    if (
+        meta.get("client_turn_finalized") is not True
+        or meta.get("completion_status") != "complete"
+    ):
+        return False
+    cards = meta.get("cards") if isinstance(meta.get("cards"), list) else []
+    return any(_card_presents_exact_medication_plan(card, wi) for card in cards)
+
+
+def _merge_receipt_projection(
+    existing: Any,
+    medication_receipts: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Preserve other same-turn writes while making batch replay idempotent."""
+    merged: list[dict[str, Any]] = []
+    operation_ids: set[str] = set()
+    for raw in [*(existing if isinstance(existing, list) else []), *medication_receipts]:
+        if not isinstance(raw, dict):
+            continue
+        item = deepcopy(raw)
+        operation_id = item.get("operation_id")
+        if isinstance(operation_id, str) and operation_id:
+            if operation_id in operation_ids:
+                continue
+            operation_ids.add(operation_id)
+        elif item in merged:
+            continue
+        merged.append(item)
+    return merged
+
+
+def _merge_alert_projection(
+    existing: Any,
+    medication_alerts: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Keep distinct alerts from other writes and deduplicate exact replays."""
+    merged: list[dict[str, Any]] = []
+    for raw in [*(existing if isinstance(existing, list) else []), *medication_alerts]:
+        if not isinstance(raw, dict):
+            continue
+        item = deepcopy(raw)
+        if item not in merged:
+            merged.append(item)
+    return merged
+
+
+def _project_medication_batch_terminal(
+    db: Session,
+    wi: WriteIntent,
+    *,
+    status: str,
+    write_receipts: List[Dict[str, Any]],
+    safety_alerts: List[Dict[str, Any]],
+) -> bool:
+    """Patch the original proposal card in the same authoritative transaction."""
+    assistant = _medication_batch_source_assistant(db, wi)
+    if assistant is None:
+        return False
+    meta = deepcopy(assistant.meta) if isinstance(assistant.meta, dict) else {}
+    pending_ids: list[int] = []
+    pending_kinds: list[str] = []
+    raw_pending_kinds = meta.get("pending_write_intent_kinds")
+    if not isinstance(raw_pending_kinds, list):
+        raw_pending_kinds = []
+    for index, raw_id in enumerate(meta.get("pending_write_intent_ids") or []):
+        try:
+            normalized_id = int(raw_id)
+        except (TypeError, ValueError):
+            continue
+        if normalized_id != wi.id:
+            pending_ids.append(normalized_id)
+            if index < len(raw_pending_kinds):
+                pending_kinds.append(raw_pending_kinds[index])
+    meta["pending_write_intent_ids"] = pending_ids
+    meta["pending_write_intent_kinds"] = pending_kinds
+    meta["medication_batch_decision"] = {
+        "intent_id": wi.id,
+        "status": status,
+        # Batch-scoped truth must remain exact even when the assistant turn
+        # already contains a verified receipt or alert from another write.
+        "write_receipts": deepcopy(write_receipts),
+        "safety_alerts": deepcopy(safety_alerts),
+    }
+    meta["write_receipts"] = _merge_receipt_projection(
+        meta.get("write_receipts"), write_receipts
+    )
+    meta["safety_alerts"] = _merge_alert_projection(
+        meta.get("safety_alerts"), safety_alerts
+    )
+
+    projected_cards: list[dict[str, Any]] = []
+    for raw_card in meta.get("cards") or []:
+        if not isinstance(raw_card, dict):
+            continue
+        card = deepcopy(raw_card)
+        if _card_targets_write_intent(card, wi.id):
+            data = card.get("data") if isinstance(card.get("data"), dict) else {}
+            card["data"] = {
+                **data,
+                "decision_status": status,
+                "write_receipts": deepcopy(write_receipts),
+                "safety_alerts": deepcopy(safety_alerts),
+            }
+            card["actions"] = []
+        projected_cards.append(card)
+    meta["cards"] = projected_cards
+    assistant.meta = meta
+    db.flush()
+    return True
+
+
+def _projected_medication_batch_safety(
+    db: Session,
+    wi: WriteIntent,
+) -> Optional[List[Dict[str, Any]]]:
+    """Read the safety result frozen with the first successful confirmation."""
+    assistant = _medication_batch_source_assistant(db, wi)
+    if assistant is None or not isinstance(assistant.meta, dict):
+        return None
+    decision = assistant.meta.get("medication_batch_decision")
+    if not isinstance(decision, dict):
+        return None
+    try:
+        decision_intent_id = int(decision.get("intent_id"))
+    except (TypeError, ValueError):
+        return None
+    safety_alerts = decision.get("safety_alerts")
+    if not isinstance(safety_alerts, list):
+        # Backward compatibility for terminal projections written before the
+        # batch result was namespaced inside medication_batch_decision.
+        safety_alerts = assistant.meta.get("safety_alerts")
+    if (
+        decision_intent_id != wi.id
+        or decision.get("status") != "executed"
+        or not isinstance(safety_alerts, list)
+    ):
+        return None
+    return deepcopy(safety_alerts)
+
+
+def _projected_medication_batch_status(
+    db: Session,
+    wi: WriteIntent,
+) -> Optional[str]:
+    durable_status = getattr(wi, "decision_status", None)
+    if durable_status in {"executed", "dismissed", "expired"}:
+        return str(durable_status)
+    assistant = _medication_batch_source_assistant(db, wi)
+    if assistant is None or not isinstance(assistant.meta, dict):
+        return None
+    decision = assistant.meta.get("medication_batch_decision")
+    if not isinstance(decision, dict):
+        return None
+    try:
+        decision_intent_id = int(decision.get("intent_id"))
+    except (TypeError, ValueError):
+        return None
+    status = decision.get("status")
+    if decision_intent_id != wi.id or status not in {
+        "executed",
+        "dismissed",
+        "expired",
+    }:
+        return None
+    return str(status)
+
+
+def _logical_medication_batch_status(db: Session, wi: WriteIntent) -> str:
+    """Return one crash-durable logical outcome and reject contradictions."""
+    logical = _projected_medication_batch_status(db, wi) or wi.status
+    valid = (
+        (wi.status == "pending" and logical == "pending")
+        or (wi.status == "executed" and logical == "executed")
+        or (
+            wi.status == "dismissed"
+            and logical in {"dismissed", "expired"}
+        )
+    )
+    if not valid:
+        raise RuntimeError("medication batch terminal status mismatch")
+    return logical
+
+
+def _medication_batch_nonexecuted_result(
+    db: Session,
+    wi: WriteIntent,
+) -> Dict[str, Any]:
+    if wi.status == "executed":
+        raise RuntimeError("executed medication batch requires receipt replay")
+    return {
+        "id": wi.id,
+        "status": wi.status,
+        "decision_status": _logical_medication_batch_status(db, wi),
+        "executed_ref": wi.executed_ref,
+        "idempotent": True,
+        "write_receipts": [],
+        "safety_alerts": [],
+    }
 
 
 def _has_decided_target(
@@ -151,9 +528,52 @@ def confirm(
     if wi is None:
         raise LookupError("write_intent not found")  # 端点 → 404(含 IDOR)
     if wi.status != "pending":
-        return {"id": wi.id, "status": wi.status, "executed_ref": wi.executed_ref, "idempotent": True}
+        result = {
+            "id": wi.id,
+            "status": wi.status,
+            "executed_ref": wi.executed_ref,
+            "idempotent": True,
+        }
+        if wi.kind == "medication_intake_batch":
+            result["decision_status"] = _logical_medication_batch_status(db, wi)
+        if wi.kind == "medication_intake_batch" and wi.status == "executed":
+            from app.services.medication_intake_batch import write_receipts_for_intent
+            result["write_receipts"] = write_receipts_for_intent(db, wi)
+            projected_safety = _projected_medication_batch_safety(db, wi)
+            if projected_safety is None:
+                projected_safety = _medication_safety_for_receipts(
+                    db, user_id, result["write_receipts"]
+                )
+                if _project_medication_batch_terminal(
+                    db,
+                    wi,
+                    status="executed",
+                    write_receipts=result["write_receipts"],
+                    safety_alerts=projected_safety,
+                ):
+                    db.commit()
+            result["safety_alerts"] = projected_safety
+            _invalidate_medication_batch_caches(user_id)
+        return result
+
+    if wi.kind == "medication_intake_batch":
+        from app.services.medication_intake_batch import (
+            MedicationIntakePlanNotPresented,
+            validate_medication_intake_intent,
+        )
+
+        # Validate the server-owned source/hash before comparing the rendered
+        # preview. A tampered payload is an integrity failure, not merely a
+        # missing-card condition, and must never reach the atomic claim.
+        validate_medication_intake_intent(db, wi, require_unexpired=False)
+        if not medication_batch_plan_was_presented(db, wi):
+            raise MedicationIntakePlanNotPresented(
+                "medication intake plan has not been durably presented"
+            )
 
     claim_values: Dict[str, Any] = {"status": "executed", "decided_at": datetime.now(timezone.utc)}
+    if wi.kind == "medication_intake_batch":
+        claim_values["decision_status"] = "executed"
     if trust_tier is not None:
         claim_values["trust_tier"] = trust_tier  # 只随赢得认领的那条原子翻档
     affected = (
@@ -169,7 +589,33 @@ def confirm(
         # 并发双击:别人先 claim 了 → 不重复执行
         db.rollback()
         db.refresh(wi)
-        return {"id": wi.id, "status": wi.status, "executed_ref": wi.executed_ref, "idempotent": True}
+        result = {
+            "id": wi.id,
+            "status": wi.status,
+            "executed_ref": wi.executed_ref,
+            "idempotent": True,
+        }
+        if wi.kind == "medication_intake_batch":
+            result["decision_status"] = _logical_medication_batch_status(db, wi)
+        if wi.kind == "medication_intake_batch" and wi.status == "executed":
+            from app.services.medication_intake_batch import write_receipts_for_intent
+            result["write_receipts"] = write_receipts_for_intent(db, wi)
+            projected_safety = _projected_medication_batch_safety(db, wi)
+            if projected_safety is None:
+                projected_safety = _medication_safety_for_receipts(
+                    db, user_id, result["write_receipts"]
+                )
+                if _project_medication_batch_terminal(
+                    db,
+                    wi,
+                    status="executed",
+                    write_receipts=result["write_receipts"],
+                    safety_alerts=projected_safety,
+                ):
+                    db.commit()
+            result["safety_alerts"] = projected_safety
+            _invalidate_medication_batch_caches(user_id)
+        return result
 
     # 赢得认领后,把内存对象 trust_tier 同步成已写入 DB 的值(claim 用 synchronize_session=False
     # 不会回填内存)——_execute 据 wi.trust_tier 分流(如自治产物用 low 优先级)。只在 affected==1
@@ -177,33 +623,179 @@ def confirm(
     if trust_tier is not None:
         wi.trust_tier = trust_tier
 
+    intent_kind = wi.kind
+    medication_receipts: list[dict[str, Any]] | None = None
+    medication_safety_alerts: list[dict[str, Any]] | None = None
     try:
         ref = _execute(db, wi)
-    except Exception:
-        db.rollback()  # 撤销 status=executed,回到 pending,不假装成功
+        db.query(WriteIntent).filter(WriteIntent.id == intent_id).update(
+            {"executed_ref": ref}, synchronize_session=False
+        )
+        wi.executed_ref = ref
+        db.flush()
+        if intent_kind == "medication_intake_batch":
+            from app.services.medication_intake_batch import write_receipts_for_intent
+            # Materialize every receipt before committing the health facts.
+            # A receipt-integrity failure therefore rolls back the status,
+            # auto-created definitions, and every log together instead of
+            # committing and later telling the user nothing was written.
+            medication_receipts = write_receipts_for_intent(db, wi)
+            medication_safety_alerts = _medication_safety_for_receipts(
+                db, user_id, medication_receipts
+            )
+            if not _project_medication_batch_terminal(
+                db,
+                wi,
+                status="executed",
+                write_receipts=medication_receipts,
+                safety_alerts=medication_safety_alerts,
+            ):
+                raise RuntimeError(
+                    "medication batch source assistant projection missing"
+                )
+        db.commit()
+    except Exception as exc:
+        db.rollback()  # 撤销 claim + 所有领域写,绝不假装成功
+        from app.services.medication_intake_batch import (
+            ExpiredMedicationIntakePlan,
+        )
+
+        if isinstance(exc, ExpiredMedicationIntakePlan):
+            terminal = expire_medication_batch(
+                db,
+                user_id,
+                intent_id,
+                _validated_expired=True,
+            )
+            # A concurrent explicit dismiss/confirm may have won after the
+            # failed claim rolled back. Honor that durable winner instead of
+            # overwriting it with expiry or returning a contradictory 409.
+            if terminal.get("decision_status") != "expired":
+                return terminal
         raise
-    db.query(WriteIntent).filter(WriteIntent.id == intent_id).update(
-        {"executed_ref": ref}, synchronize_session=False
-    )
-    db.commit()
-    db.refresh(wi)
+    if intent_kind != "medication_intake_batch":
+        db.refresh(wi)
     # P5 外部动作(food_order 财务相邻 → audit_required;doctor_booking/alarm_set/
     # environment_actuation 也记)。
     # 旁路审计:失败不抛、不回滚已确认的写意图(取证写不能反噬主流程)。
-    if wi.kind in ("food_order", "doctor_booking", "alarm_set", "environment_actuation"):
+    if intent_kind in ("food_order", "doctor_booking", "alarm_set", "environment_actuation"):
         from app.agents import audit
 
-        if wi.kind == "food_order":
+        if intent_kind == "food_order":
             outcome = "drafted_acknowledged"
-        elif wi.kind == "environment_actuation":
+        elif intent_kind == "environment_actuation":
             outcome = "actuation_acknowledged"
         else:
             outcome = "reminder_created"
         audit.log_external_action_intent(
-            db, wi.user_id, intent_id=wi.id, kind=wi.kind, outcome=outcome,
+            db, user_id, intent_id=intent_id, kind=intent_kind, outcome=outcome,
             target_type=wi.target_type, target_id=wi.target_id,
         )
-    return {"id": wi.id, "status": "executed", "executed_ref": ref, "idempotent": False}
+    result = {
+        "id": intent_id,
+        "status": "executed",
+        "executed_ref": ref,
+        "idempotent": False,
+    }
+    if intent_kind == "medication_intake_batch":
+        result["decision_status"] = "executed"
+        result["write_receipts"] = medication_receipts or []
+        result["safety_alerts"] = medication_safety_alerts or []
+        _invalidate_medication_batch_caches(user_id)
+    return result
+
+
+def expire_medication_batch(
+    db: Session,
+    user_id: int,
+    intent_id: int,
+    *,
+    _validated_expired: bool = False,
+) -> Dict[str, Any]:
+    """Terminalize one genuinely expired authorization without executing it.
+
+    ``WriteIntent.status`` remains in the legacy physical state space, so an
+    expiry is physically dismissed. ``decision_status`` is the durable logical
+    truth used after worker crashes and by every client surface.
+    """
+    from app.services.medication_intake_batch import (
+        ExpiredMedicationIntakePlan,
+        WRITE_INTENT_KIND,
+        validate_medication_intake_intent,
+    )
+
+    wi = (
+        db.query(WriteIntent)
+        .filter(
+            WriteIntent.id == intent_id,
+            WriteIntent.user_id == user_id,
+            WriteIntent.kind == WRITE_INTENT_KIND,
+        )
+        .first()
+    )
+    if wi is None:
+        raise LookupError("write_intent not found")
+    if wi.status == "executed":
+        return confirm(db, user_id, intent_id)
+    if wi.status != "pending":
+        return _medication_batch_nonexecuted_result(db, wi)
+
+    if not _validated_expired:
+        try:
+            validate_medication_intake_intent(db, wi, require_unexpired=True)
+        except ExpiredMedicationIntakePlan:
+            pass
+        else:
+            raise RuntimeError("medication batch is not expired")
+
+    affected = (
+        db.query(WriteIntent)
+        .filter(
+            WriteIntent.id == intent_id,
+            WriteIntent.user_id == user_id,
+            WriteIntent.kind == WRITE_INTENT_KIND,
+            WriteIntent.status == "pending",
+        )
+        .update(
+            {
+                "status": "dismissed",
+                "decision_status": "expired",
+                "decided_at": datetime.now(timezone.utc),
+            },
+            synchronize_session=False,
+        )
+    )
+    if affected == 1:
+        db.expire_all()
+        expired = (
+            db.query(WriteIntent)
+            .filter(
+                WriteIntent.id == intent_id,
+                WriteIntent.user_id == user_id,
+            )
+            .one()
+        )
+        _project_medication_batch_terminal(
+            db,
+            expired,
+            status="expired",
+            write_receipts=[],
+            safety_alerts=[],
+        )
+        db.commit()
+        return _medication_batch_nonexecuted_result(db, expired)
+
+    db.rollback()
+    current = (
+        db.query(WriteIntent)
+        .filter(WriteIntent.id == intent_id, WriteIntent.user_id == user_id)
+        .first()
+    )
+    if current is None:
+        raise LookupError("write_intent not found")
+    if current.status == "executed":
+        return confirm(db, user_id, intent_id)
+    return _medication_batch_nonexecuted_result(db, current)
 
 
 def dismiss(db: Session, user_id: int, intent_id: int) -> Dict[str, Any]:
@@ -214,12 +806,69 @@ def dismiss(db: Session, user_id: int, intent_id: int) -> Dict[str, Any]:
     )
     if wi is None:
         raise LookupError("write_intent not found")
-    if wi.status == "pending":
-        wi.status = "dismissed"
-        wi.decided_at = datetime.now(timezone.utc)
+    if wi.status != "pending":
+        if wi.kind == "medication_intake_batch" and wi.status == "executed":
+            # Confirm won the race. Return the same verifiable terminal result
+            # instead of forcing clients to guess from a bare status.
+            return confirm(db, user_id, intent_id)
+        result = {"id": wi.id, "status": wi.status}
+        if wi.kind == "medication_intake_batch":
+            result = _medication_batch_nonexecuted_result(db, wi)
+        return result
+
+    # Compare-and-set is the server-side concurrency boundary.  A stale ORM
+    # object must never overwrite a confirmation that committed while the
+    # dismiss request was in flight (that would leave logs present but the
+    # authoritative intent marked dismissed).
+    affected = (
+        db.query(WriteIntent)
+        .filter(
+            WriteIntent.id == intent_id,
+            WriteIntent.user_id == user_id,
+            WriteIntent.status == "pending",
+        )
+        .update(
+            {
+                "status": "dismissed",
+                **(
+                    {"decision_status": "dismissed"}
+                    if wi.kind == "medication_intake_batch"
+                    else {}
+                ),
+                "decided_at": datetime.now(timezone.utc),
+            },
+            synchronize_session=False,
+        )
+    )
+    if affected == 1:
+        if wi.kind == "medication_intake_batch":
+            _project_medication_batch_terminal(
+                db,
+                wi,
+                status="dismissed",
+                write_receipts=[],
+                safety_alerts=[],
+            )
         db.commit()
-        db.refresh(wi)
-    return {"id": wi.id, "status": wi.status}
+        result = {"id": intent_id, "status": "dismissed"}
+        if wi.kind == "medication_intake_batch":
+            result["decision_status"] = "dismissed"
+        return result
+
+    db.rollback()
+    current = (
+        db.query(WriteIntent)
+        .filter(WriteIntent.id == intent_id, WriteIntent.user_id == user_id)
+        .first()
+    )
+    if current is None:
+        raise LookupError("write_intent not found")
+    if current.kind == "medication_intake_batch" and current.status == "executed":
+        return confirm(db, user_id, intent_id)
+    result = {"id": current.id, "status": current.status}
+    if current.kind == "medication_intake_batch":
+        result = _medication_batch_nonexecuted_result(db, current)
+    return result
 
 
 # ─────────────────────────── 执行(syscall 分发)───────────────────────────
@@ -248,6 +897,10 @@ def _remind_at_for(next_due: Optional[str], overdue: Optional[bool]) -> datetime
 
 def _execute(db: Session, wi: WriteIntent) -> str:
     """按 kind 分发执行。未知 kind → fail loud(不静默)。返回执行产物引用。"""
+    if wi.kind == "medication_intake_batch":
+        from app.services.medication_intake_batch import execute_medication_intake_batch
+
+        return execute_medication_intake_batch(db, wi)
     if wi.kind == "checkup_reminder":
         p = wi.payload or {}
         rem = SmartReminder(

@@ -3,7 +3,7 @@
 钉:① 中文时点标签渲染 ② API 写入/读出带时点 ③ today_status 带 timing_label
 ④ 提醒文案含「饭前/饭后/空腹」(复杂方案如胃溃疡三联无脑化的关键)。
 """
-import app.api.medication as med_api
+import app.services.medication_safety as medication_safety
 from app.agents.safety_guardian.schema import Alert, Severity
 from app.models.medication import medication_timing_label
 
@@ -101,7 +101,12 @@ def test_create_medication_returns_medication_safety_alerts(client, auth_user_an
             ),
         ], 0)
 
-    monkeypatch.setattr(med_api, "evaluate_rules_with_status", fake_evaluate_rules_with_status, raising=True)
+    monkeypatch.setattr(
+        medication_safety,
+        "evaluate_rules_with_status",
+        fake_evaluate_rules_with_status,
+        raising=True,
+    )
 
     r = client.post("/api/v1/medication/medications", headers=h, json={
         "name": "硫唑嘌呤", "dosage": "50mg",
@@ -128,7 +133,12 @@ def test_list_and_get_medications_include_safety_alerts(client, auth_user_and_he
             ),
         ], 0)
 
-    monkeypatch.setattr(med_api, "evaluate_rules_with_status", fake_evaluate_rules_with_status, raising=True)
+    monkeypatch.setattr(
+        medication_safety,
+        "evaluate_rules_with_status",
+        fake_evaluate_rules_with_status,
+        raising=True,
+    )
 
     created = client.post("/api/v1/medication/medications", headers=h, json={"name": "华法林"})
     assert created.status_code == 200, created.text

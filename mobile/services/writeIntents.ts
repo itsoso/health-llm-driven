@@ -3,6 +3,27 @@
  * 后端见 backend/app/api/write_intents.py。GET 顺带跑「复查到点」生成器。
  */
 import api from './api';
+import type { MedicationSafetyAlert } from './medications';
+
+export interface WriteIntentReceiptPayload {
+  operation_id: string;
+  status: 'verified' | 'dismissed';
+  resource_type: string;
+  resource_id: string | number;
+  executed_ref?: string | null;
+  completed_at: string;
+  verified: true;
+}
+
+export interface ConfirmWriteIntentResult {
+  id?: number;
+  status: string;
+  decision_status?: 'executed' | 'dismissed' | 'expired';
+  executed_ref?: string | null;
+  idempotent?: boolean;
+  write_receipts?: WriteIntentReceiptPayload[];
+  safety_alerts?: MedicationSafetyAlert[];
+}
 
 export interface WriteIntent {
   id: number;
@@ -24,12 +45,12 @@ export async function getWriteIntents(): Promise<WriteIntent[]> {
   return data?.items ?? [];
 }
 
-export async function confirmWriteIntent(id: number): Promise<{ status: string; executed_ref?: string | null }> {
-  const { data } = await api.post(`/write-intents/${id}/confirm`);
+export async function confirmWriteIntent(id: number): Promise<ConfirmWriteIntentResult> {
+  const { data } = await api.post<ConfirmWriteIntentResult>(`/write-intents/${id}/confirm`);
   return data;
 }
 
-export async function dismissWriteIntent(id: number): Promise<{ status: string }> {
-  const { data } = await api.post(`/write-intents/${id}/dismiss`);
+export async function dismissWriteIntent(id: number): Promise<ConfirmWriteIntentResult> {
+  const { data } = await api.post<ConfirmWriteIntentResult>(`/write-intents/${id}/dismiss`);
   return data;
 }

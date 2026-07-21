@@ -40,6 +40,20 @@ const WRITE_INTENT_POLICY = {
   autonomy_tier: 'manual_confirm',
   policy_reason: 'manual_confirm_write',
 };
+const MEDICATION_WRITE_POLICY = {
+  ...WRITE_INTENT_POLICY,
+  capability_id: 'medication_draft.v1',
+};
+const MEDICATION_CARD_CONTEXT = {
+  cardType: 'medication_draft',
+  cardData: {
+    write_intent_id: 42,
+    items: [
+      { medication_name: '伊托必利', actual_dosage: '1粒' },
+      { medication_name: '替普瑞酮', actual_dosage: '1粒' },
+    ],
+  },
+};
 
 describe('dispatchChatCardAction', () => {
   beforeEach(() => {
@@ -206,6 +220,273 @@ describe('dispatchChatCardAction', () => {
         verified: true,
       }),
     }));
+  });
+
+  it('preserves every verified medication receipt and safety alert returned by the server', async () => {
+    mockConfirmWriteIntent.mockResolvedValueOnce({
+      id: 42,
+      status: 'executed',
+      executed_ref: 'medication_logs:101,102',
+      write_receipts: [
+        {
+          operation_id: 'write_intent:medication_intake_batch:42:101',
+          status: 'verified',
+          resource_type: 'medication_log',
+          resource_id: '101',
+          completed_at: '2026-07-21T21:15:01-04:00',
+          verified: true,
+        },
+        {
+          operation_id: 'write_intent:medication_intake_batch:42:102',
+          status: 'verified',
+          resource_type: 'medication_log',
+          resource_id: '102',
+          completed_at: '2026-07-21T21:15:02-04:00',
+          verified: true,
+        },
+      ],
+      safety_alerts: [{
+        rule_id: 'medication.safety_precheck_incomplete',
+        category: 'medication',
+        severity: { value: 3, label: 'high', label_zh: '警告' },
+        title: '自动安全筛查暂未完成',
+        message: '这不代表当前用药组合安全。',
+        action: '如有明显不适，请及时就医。',
+      }],
+    });
+
+    const result = await dispatchChatCardAction({
+      label: '确认记录',
+      action: 'write_intent.confirm',
+      endpoint: '/write-intents/42/confirm',
+      requires_manual_confirm: true,
+      ...MEDICATION_WRITE_POLICY,
+      payload: { write_intent_id: 42 },
+    }, undefined, MEDICATION_CARD_CONTEXT);
+
+    expect(result.write_receipts).toEqual([
+      expect.objectContaining({ resourceType: 'medication_log', resourceId: '101' }),
+      expect.objectContaining({ resourceType: 'medication_log', resourceId: '102' }),
+    ]);
+    expect(result.receipt).toEqual(expect.objectContaining({
+      operationId: 'write_intent:medication_intake_batch:42:102',
+      resourceId: '102',
+    }));
+    expect(result.safety_alerts).toEqual([
+      expect.objectContaining({
+        rule_id: 'medication.safety_precheck_incomplete',
+        message: '这不代表当前用药组合安全。',
+      }),
+    ]);
+  });
+
+  it('fails closed instead of inventing one receipt for a medication batch', async () => {
+    mockConfirmWriteIntent.mockResolvedValueOnce({
+      id: 42,
+      status: 'executed',
+      executed_ref: 'medication_logs:101,102',
+      write_receipts: [],
+      safety_alerts: [],
+    });
+
+    await expect(dispatchChatCardAction({
+      label: '确认记录',
+      action: 'write_intent.confirm',
+      endpoint: '/write-intents/42/confirm',
+      requires_manual_confirm: true,
+      ...MEDICATION_WRITE_POLICY,
+      payload: { write_intent_id: 42 },
+    }, undefined, MEDICATION_CARD_CONTEXT)).rejects.toThrow('medication_batch_write_receipts_missing');
+  });
+
+  it('rejects incomplete or non-medication receipts for the frozen item count', async () => {
+    mockConfirmWriteIntent.mockResolvedValue({
+      id: 42,
+      status: 'executed',
+      executed_ref: 'medication_logs:101,102',
+      write_receipts: [
+        {
+          operation_id: 'write_intent:medication_intake_batch:42:101',
+          status: 'verified',
+          resource_type: 'health_record',
+          resource_id: '101',
+          completed_at: '2026-07-21T21:15:01-04:00',
+          verified: true,
+        },
+        {
+          operation_id: 'write_intent:medication_intake_batch:42:102',
+          status: 'verified',
+          resource_type: 'health_record',
+          resource_id: '102',
+          completed_at: '2026-07-21T21:15:02-04:00',
+          verified: true,
+        },
+      ],
+    });
+
+    await expect(dispatchChatCardAction({
+      label: '确认记录',
+      action: 'write_intent.confirm',
+      endpoint: '/write-intents/42/confirm',
+      requires_manual_confirm: true,
+      ...MEDICATION_WRITE_POLICY,
+      payload: { write_intent_id: 42 },
+    }, undefined, MEDICATION_CARD_CONTEXT)).rejects.toThrow(
+      'medication_batch_write_receipts_invalid',
+    );
+  });
+
+  it('maps the server 409 expiry response to a terminal expired result', async () => {
+    mockConfirmWriteIntent.mockRejectedValueOnce({
+      response: {
+        status: 409,
+        data: { detail: '确认计划已过期，请重新提交记录' },
+      },
+    });
+
+    await expect(dispatchChatCardAction({
+      label: '确认记录',
+      action: 'write_intent.confirm',
+      endpoint: '/write-intents/42/confirm',
+      requires_manual_confirm: true,
+      ...MEDICATION_WRITE_POLICY,
+      payload: { write_intent_id: 42 },
+    }, undefined, MEDICATION_CARD_CONTEXT)).resolves.toEqual({
+      status: 'expired',
+      decision_status: 'expired',
+    });
+  });
+
+  it('keeps an expired plan expired when an idempotent retry returns dismissed storage status', async () => {
+    mockConfirmWriteIntent.mockResolvedValueOnce({
+      id: 42,
+      status: 'dismissed',
+      decision_status: 'expired',
+    });
+
+    await expect(dispatchChatCardAction({
+      label: '确认记录',
+      action: 'write_intent.confirm',
+      endpoint: '/write-intents/42/confirm',
+      requires_manual_confirm: true,
+      ...MEDICATION_WRITE_POLICY,
+      payload: { write_intent_id: 42 },
+    }, undefined, MEDICATION_CARD_CONTEXT)).resolves.toEqual({
+      status: 'expired',
+      decision_status: 'expired',
+    });
+  });
+
+  it('reconciles a confirm request when dismissal already won the terminal race', async () => {
+    mockConfirmWriteIntent.mockResolvedValueOnce({
+      id: 42,
+      status: 'dismissed',
+      decision_status: 'dismissed',
+    });
+
+    await expect(dispatchChatCardAction({
+      label: '确认记录',
+      action: 'write_intent.confirm',
+      endpoint: '/write-intents/42/confirm',
+      requires_manual_confirm: true,
+      ...MEDICATION_WRITE_POLICY,
+      payload: { write_intent_id: 42 },
+    }, undefined, MEDICATION_CARD_CONTEXT)).resolves.toEqual({
+      status: 'dismissed',
+      decision_status: 'dismissed',
+    });
+  });
+
+  it('reconciles a dismiss request when confirmation already wrote the frozen batch', async () => {
+    mockDismissWriteIntent.mockResolvedValueOnce({
+      id: 42,
+      status: 'executed',
+      decision_status: 'executed',
+      executed_ref: 'medication_logs:101,102',
+      write_receipts: [
+        {
+          operation_id: 'write_intent:medication_intake_batch:42:101',
+          status: 'verified',
+          resource_type: 'medication_log',
+          resource_id: '101',
+          completed_at: '2026-07-21T21:15:01-04:00',
+          verified: true,
+        },
+        {
+          operation_id: 'write_intent:medication_intake_batch:42:102',
+          status: 'verified',
+          resource_type: 'medication_log',
+          resource_id: '102',
+          completed_at: '2026-07-21T21:15:02-04:00',
+          verified: true,
+        },
+      ],
+      safety_alerts: [],
+    });
+
+    await expect(dispatchChatCardAction({
+      label: '取消',
+      action: 'write_intent.dismiss',
+      endpoint: '/write-intents/42/dismiss',
+      requires_manual_confirm: true,
+      ...MEDICATION_WRITE_POLICY,
+      payload: { write_intent_id: 42 },
+    }, undefined, MEDICATION_CARD_CONTEXT)).resolves.toEqual(expect.objectContaining({
+      status: 'completed',
+      decision_status: 'executed',
+      write_receipts: [
+        expect.objectContaining({ resourceType: 'medication_log', resourceId: '101' }),
+        expect.objectContaining({ resourceType: 'medication_log', resourceId: '102' }),
+      ],
+    }));
+  });
+
+  it('rejects medication actions whose trusted card contract does not match the action', async () => {
+    const baseAction = {
+      label: '确认记录',
+      action: 'write_intent.confirm' as const,
+      endpoint: '/write-intents/42/confirm',
+      requires_manual_confirm: true,
+      ...MEDICATION_WRITE_POLICY,
+      payload: { write_intent_id: 42 },
+    };
+
+    await expect(dispatchChatCardAction(
+      { ...baseAction, capability_id: 'anything.v99' },
+      undefined,
+      MEDICATION_CARD_CONTEXT,
+    )).rejects.toThrow('invalid_medication_batch_action');
+    await expect(dispatchChatCardAction(
+      { ...baseAction, endpoint: '/write-intents/43/confirm' },
+      undefined,
+      MEDICATION_CARD_CONTEXT,
+    )).rejects.toThrow('unsupported_card_action_endpoint');
+    await expect(dispatchChatCardAction(
+      { ...baseAction, payload: { id: 42 } as any },
+      undefined,
+      MEDICATION_CARD_CONTEXT,
+    )).rejects.toThrow('invalid_card_action_id');
+    expect(mockConfirmWriteIntent).not.toHaveBeenCalled();
+  });
+
+  it('treats medication dismissal as a receiptless decision', async () => {
+    mockDismissWriteIntent.mockResolvedValueOnce({
+      id: 42,
+      status: 'dismissed',
+      decision_status: 'dismissed',
+    });
+
+    await expect(dispatchChatCardAction({
+      label: '取消',
+      action: 'write_intent.dismiss',
+      endpoint: '/write-intents/42/dismiss',
+      requires_manual_confirm: true,
+      ...MEDICATION_WRITE_POLICY,
+      payload: { write_intent_id: 42 },
+    }, undefined, MEDICATION_CARD_CONTEXT)).resolves.toEqual({
+      status: 'dismissed',
+      decision_status: 'dismissed',
+    });
   });
 
   it('opens only app-local route actions', async () => {

@@ -45,6 +45,12 @@ export interface ChatCardActionDescriptor {
   payload?: Record<string, any> | null;
   style?: ChatCardActionStyle;
   requires_manual_confirm?: boolean;
+  confirmation?: {
+    title?: string;
+    detail?: string;
+    confirm_label?: string;
+    cancel_label?: string;
+  };
   disabled_reason?: string | null;
   capability_id?: string;
   required_receipt?: boolean;

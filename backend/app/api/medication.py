@@ -5,17 +5,14 @@ from sqlalchemy.orm import Session
 from typing import Dict, Any, List, Optional
 from pydantic import BaseModel, field_validator
 
-from datetime import UTC, date, datetime
+from datetime import date
 
-from app.agents.safety_guardian.engine import evaluate_rules_with_status
-from app.agents.safety_guardian.schema import Alert, Severity
 from app.database import get_db
 from app.models.medication import Medication, MedicationLog, medication_timing_label
 from app.models.user import User
 from app.api.deps import get_current_user_required
+from app.services.medication_safety import evaluate_medication_safety_alerts
 from app.services.medication_service import medication_service
-from app.twin import builder as twin_builder
-from app.twin.schema import HealthTwin, TwinMeta
 from app.utils.timezone import get_user_today
 
 logger = logging.getLogger(__name__)
@@ -30,9 +27,6 @@ def _invalidate_twin(user_id: int) -> None:
         invalidate_twin(user_id)
     except Exception:  # noqa: BLE001 — a Redis error must never fail the write
         pass
-
-
-_MEDICATION_SAFETY_CATEGORIES = {"pgx", "ddi", "dsi"}
 
 
 class MedicationCreate(BaseModel):
@@ -507,77 +501,9 @@ def _serialize_medication(med, safety_alerts: Optional[List[Dict[str, Any]]] = N
     return body
 
 
-def _med_safety_fail_safe_advisory() -> Alert:
-    """用药安全预检未跑全时注入的 fail-safe 告警(加层不减层,镜像 watch.py)。
-
-    绝不让"预检填充/评估失败"静默退化成"无告警 → 安全":那正是 under-alarm。
-    R4 不诊断:只给就医动作,不下结论。severity=HIGH 稳居就医引导档。
-    """
-    return Alert(
-        rule_id="medication.safety_precheck_incomplete",
-        category="ddi",  # 归入用药安全类,确保被 _MEDICATION_SAFETY_CATEGORIES 过滤保留
-        severity=Severity.HIGH,
-        title="用药安全预检未完成",
-        message="本次用药相互作用/基因/补剂安全筛查未能完整跑完,无法确认是否存在风险。这不代表安全,只代表系统未能完成评估。",
-        action="请勿据此判断为安全;新增或调整用药前请咨询医生或药师,如有不适及时就医。",
-        data_citation={"reason": "precheck_partition_fill_or_eval_failure"},
-        requires_medical_attention=True,
-    )
-
-
 def _medication_safety_alerts(db: Session, user_id: int) -> List[Dict[str, Any]]:
-    """新增/更新药品后的即时用药安全预览:只返回 PGx/DDI/DSI。
-
-    关键(memory project_build_twin_sessionlocal_ignores_db):**不调 build_twin**。
-    它的并行 filler 自开生产引擎 SessionLocal、看不见请求事务里刚录入的药 →
-    DDI/PGx 对着旧/空药单跑 → 漏报正在录入的药 = under-alarm。改用传入 db 只填
-    DDI/PGx/DSI 三类规则实际读的分区(medication/genetic/supplement/labs)。
-
-    不漏报(镜像 watch.py 症状裁决):
-      - 分区填充失败 → raise_on_error 让其抛 → evaluation_failed,绝不静默当无药。
-      - 规则引擎 failed_rule_count>0(单条规则崩被跳过)→ evaluation_failed。
-      - evaluation_failed 时注入 fail-safe advisory(加层不减层),绝不返回看似干净的 []。
-    """
-    twin = HealthTwin(meta=TwinMeta(user_id=user_id, generated_at=datetime.now(UTC)))
-    evaluation_failed = False
-
-    # ① 只填用药安全相关分区,用传入 db。填充失败 → fail loud(标 failed,不静默)。
-    try:
-        twin_builder.fill_medication_safety_partitions(
-            db, user_id, twin, raise_on_error=True
-        )
-    except Exception as e:  # noqa: BLE001
-        logger.error(
-            "[MedAPI] 用药安全预检分区填充失败(under-alarm 风险,标 evaluation_failed): "
-            "user_id=%s error=%s",
-            user_id, e, exc_info=True,
-        )
-        evaluation_failed = True
-
-    # ② 跑确定性规则。failed>0(单条规则崩被跳过)同样视作评估不完整。
-    alerts: List[Alert] = []
-    try:
-        all_alerts, failed = evaluate_rules_with_status(twin)
-        if failed > 0:
-            logger.error(
-                "[MedAPI] %s 条安全规则执行失败被跳过(under-alarm 风险,标 evaluation_failed): "
-                "user_id=%s", failed, user_id,
-            )
-            evaluation_failed = True
-        alerts = [a for a in all_alerts if a.category in _MEDICATION_SAFETY_CATEGORIES]
-    except Exception as e:  # noqa: BLE001
-        logger.error(
-            "[MedAPI] 用药安全预检评估整体失败(fail loud): user_id=%s error=%s",
-            user_id, e, exc_info=True,
-        )
-        evaluation_failed = True
-
-    # ③ 评估不完整 → 注入 fail-safe advisory(加层不减层),绝不返回静默干净的 []。
-    if evaluation_failed:
-        alerts.append(_med_safety_fail_safe_advisory())
-
-    alerts.sort(key=lambda a: (-int(a.severity), a.category, a.rule_id))
-    return [a.model_dump_for_api() for a in alerts]
+    """Compatibility wrapper for the shared deterministic medication precheck."""
+    return evaluate_medication_safety_alerts(db, user_id)
 
 
 def _serialize_medication_log(log: MedicationLog) -> Dict[str, Any]:

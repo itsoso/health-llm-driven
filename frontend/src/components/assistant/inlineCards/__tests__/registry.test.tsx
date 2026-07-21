@@ -257,6 +257,96 @@ describe('renderCard', () => {
     }));
   });
 
+  it('keeps only policy-bound medication batch sibling actions for the same intent', () => {
+    const policy = {
+      requires_manual_confirm: true,
+      required_receipt: true,
+      capability_id: 'medication_draft.v1',
+      autonomy_tier: 'manual_confirm',
+      policy_reason: 'manual_confirm_write',
+    };
+    const cards = renderServerCards([{
+      type: 'medication_draft',
+      data: {
+        items: [
+          { medication_name: '伊托必利', actual_dosage: '1粒' },
+          { medication_name: '替普瑞酮', actual_dosage: '1粒' },
+        ],
+      },
+      actions: [
+        {
+          ...policy,
+          label: '确认记录',
+          action: 'write_intent.confirm',
+          endpoint: '/write-intents/42/confirm',
+          payload: { write_intent_id: 42 },
+          style: 'primary',
+        },
+        {
+          ...policy,
+          label: '取消',
+          action: 'write_intent.dismiss',
+          endpoint: '/write-intents/42/dismiss',
+          payload: { write_intent_id: 42 },
+        },
+        {
+          ...policy,
+          label: '篡改端点',
+          action: 'write_intent.confirm',
+          endpoint: '/write-intents/99/confirm',
+          payload: { write_intent_id: 42 },
+        },
+      ],
+    }]);
+
+    expect(cards).toHaveLength(1);
+    expect(cards[0].actions?.map(action => action.action)).toEqual([
+      'write_intent.confirm',
+      'write_intent.dismiss',
+    ]);
+  });
+
+  it('disables both medication sibling actions while their intent group is submitting', () => {
+    const onAction = vi.fn();
+    const policy = {
+      requires_manual_confirm: true,
+      required_receipt: true,
+      capability_id: 'medication_draft.v1',
+      autonomy_tier: 'manual_confirm',
+      policy_reason: 'manual_confirm_write',
+    };
+    const card = renderCard({
+      type: 'medication_draft',
+      data: {
+        items: [{ medication_name: '伊托必利', actual_dosage: '1粒' }],
+        action_pending: true,
+      },
+      actions: [
+        {
+          ...policy,
+          label: '确认记录',
+          action: 'write_intent.confirm',
+          endpoint: '/write-intents/42/confirm',
+          payload: { write_intent_id: 42 },
+          style: 'primary',
+        },
+        {
+          ...policy,
+          label: '取消',
+          action: 'write_intent.dismiss',
+          endpoint: '/write-intents/42/dismiss',
+          payload: { write_intent_id: 42 },
+        },
+      ],
+    }, { onAction });
+
+    render(card!);
+
+    expect(screen.getByRole('button', { name: '确认记录' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '取消' })).toBeDisabled();
+    expect(screen.getByRole('status')).toHaveTextContent('正在提交');
+  });
+
   it('renders a completed private AIGC image job without exposing provider data', () => {
     const r = renderCard({
       type: 'aigc_media_job',

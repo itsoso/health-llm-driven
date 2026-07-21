@@ -372,6 +372,45 @@ def test_read_only_turn_allows_read_tools(db, monkeypatch):
     assert ex._read_only_turn_write_attempted is False
 
 
+def test_read_only_turn_cannot_precommit_medication_confirmation_plan(db):
+    from app.models.write_intent import WriteIntent
+    from app.services import agent_executor as ae
+    from app.services.agent_conversation_service import AgentConversationService
+
+    user = _make_user(db, "medication_plan")
+    svc = AgentConversationService(db)
+    conv = svc.get_or_create_conversation(user.id, None, title="只读预生成")
+    source, _ = svc.save_user_message_once(
+        conv.id,
+        user.id,
+        "记录服用阿奇霉素两粒",
+        client_turn_id=None,
+    )
+    ex = ae.AgentExecutor(db)
+    ex._current_user_id = user.id
+    ex._current_turn_conversation_id = conv.id
+    ex._current_turn_source_message_id = source.id
+    ex._read_only_turn = True
+    ex._read_only_turn_write_attempted = False
+
+    ex._prepare_medication_tool_plan([{
+        "function": {
+            "name": "health_record",
+            "arguments": {
+                "record_type": "medication",
+                "data": {
+                    "medication_name": "阿奇霉素",
+                    "actual_dosage": "2粒",
+                },
+            },
+        },
+    }])
+
+    assert ex._read_only_turn_write_attempted is True
+    assert "只读" in (ex._turn_medication_tool_preflight_error or "")
+    assert db.query(WriteIntent).filter(WriteIntent.user_id == user.id).count() == 0
+
+
 def test_live_turn_unaffected_by_guard(db, monkeypatch):
     """read_only_turn False (default live turn) → guard never fires."""
     from app.services import agent_executor as ae

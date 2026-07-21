@@ -74,8 +74,8 @@ class TestGuidanceShadowProbe:
 
 class TestMedicationR4Probe:
     @pytest.mark.asyncio
-    async def test_probe_logs_when_never_auto_arrives_with_model_confirmed(self, db, caplog):
-        """逃逸通路: Gate A 未跑(prefer_fast=False) + 模型自报 confirmed 抵达确认门。"""
+    async def test_block_logs_when_medication_arrives_with_model_confirmed(self, db, caplog):
+        """模型自报 confirmed 被服务端授权边界阻断并留下无内容日志。"""
         from app.services.agent_executor import AgentExecutor
 
         ex = AgentExecutor(db)
@@ -94,21 +94,22 @@ class TestMedicationR4Probe:
 
         args = {
             "record_type": "medication",
-            "data": {"medication_name": "奥美拉唑", "confirmed": True},
+            "data": {
+                "medication_name": "奥美拉唑",
+                "actual_dosage": "1粒",
+                "confirmed": True,
+            },
         }
         with caplog.at_level(logging.WARNING):
             await ex._exec_health_record("http://x/api/v1", {}, args)
 
         msgs = [r.getMessage() for r in caplog.records]
-        assert any("[R4-probe]" in m for m in msgs), f"探针未触发: {msgs}"
-        assert any("medication" in m for m in msgs if "[R4-probe]" in m)
+        assert any("[R4-block]" in m for m in msgs), f"阻断日志未触发: {msgs}"
+        assert any("medication" in m for m in msgs if "[R4-block]" in m)
 
     @pytest.mark.asyncio
-    async def test_probe_observe_only_does_not_block(self, db, caplog):
-        """**零行为变更**: 探针只 log, 不得把该回合拦成 NEEDS_CONFIRMATION。
-
-        这条锁死「观测 only」。等拿到探针数据、founder 决定开堵时, 这条会被有意改红。
-        """
+    async def test_model_confirmed_is_blocked_without_server_plan(self, db, caplog):
+        """模型布尔值不是授权；无服务端计划时必须 fail closed。"""
         from app.services.agent_executor import AgentExecutor
 
         ex = AgentExecutor(db)
@@ -127,11 +128,15 @@ class TestMedicationR4Probe:
 
         args = {
             "record_type": "medication",
-            "data": {"medication_name": "奥美拉唑", "confirmed": True},
+            "data": {
+                "medication_name": "奥美拉唑",
+                "actual_dosage": "1粒",
+                "confirmed": True,
+            },
         }
         result = await ex._exec_health_record("http://x/api/v1", {}, args)
-        # confirmed=True 仍被 _confirm_or_describe 无条件放行(今天的洞) → 不是确认提示
-        assert not str(result).startswith("[NEEDS_CONFIRMATION]")
+        assert str(result).startswith("Error: 用药确认计划未能建立")
+        assert "没有写入" in str(result)
 
     @pytest.mark.asyncio
     async def test_probe_silent_for_auto_kinds(self, db, caplog):

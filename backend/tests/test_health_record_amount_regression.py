@@ -679,7 +679,7 @@ async def test_run_stream_with_extra_context_does_not_crash_before_first_event(d
 
 @pytest.mark.asyncio
 async def test_medication_lookup_corrupt_json_no_raw_error_leak(db):
-    """药物列表响应损坏时, 给用户友好兜底, 不泄漏 'Invalid control character'/原始 JSON。"""
+    """模型确认不能触达旧查询路径，因此损坏上游数据也不会泄漏。"""
     from app.services.agent_executor import AgentExecutor
     executor = AgentExecutor(db)
     executor._current_user_id = 1
@@ -696,14 +696,18 @@ async def test_medication_lookup_corrupt_json_no_raw_error_leak(db):
         async def get(self, url, headers=None): return _Resp()
 
     executor._http_client = _Client()
-    # medication 恒确认前置(2026-07-02):带 confirmed=true 越过确认闸,
-    # 本测试专测确认后的 lookup 损坏兜底路径。
+    # confirmed=true 是模型可控字段；现在恒被阻断，真正确认只消费服务端
+    # source-bound WriteIntent，不再依赖这条 HTTP lookup/write 路径。
     result = await executor._execute_tool(
         tool_name="health_record",
         args_raw=json.dumps({
             "record_type": "medication",
             "confirmed": True,
-            "data": {"medication_name": "二甲双胍", "confirmed": True},
+            "data": {
+                "medication_name": "二甲双胍",
+                "actual_dosage": "1片",
+                "confirmed": True,
+            },
         }),
         user_token="t",
     )
@@ -713,8 +717,8 @@ async def test_medication_lookup_corrupt_json_no_raw_error_leak(db):
     assert "Extra data" not in s
     assert "用药记录失败" not in s
     assert '"is_active"' not in s  # 不回吐原始 JSON
-    # 应是友好中文兜底
-    assert "用药记录" in s and ("稍后再试" in s or "没成功" in s)
+    assert s.startswith("Error:")
+    assert "确认计划未能建立" in s
 
 
 @pytest.mark.asyncio

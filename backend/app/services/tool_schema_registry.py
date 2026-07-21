@@ -202,7 +202,7 @@ plan 结构:
 - 药名/药物剂型/mg 剂量(如 替普瑞酮、奥美拉唑20mg、胶囊、肠溶片)不是 diet, 应改用 medication；补剂/保健品改用 supplement
 - "删除这一餐/撤销这顿/我刚才不小心删除了" 是管理已有饮食记录, 不要作为 diet.food_items 写入; 改用 health_manage
 - record_date 如果用户没明说具体日期, 默认填今天 (不要填未来日期)
-- 中文日期/时间要转成 ISO 格式 (例: "昨天早上 8 点" → record_date='YYYY-MM-DD', taken_time='08:00')
+- 中文日期/时间要转成 ISO 格式；但 medication 当前只支持“本次/刚刚服用”的即时事实，用户明确提历史日期或时刻时先澄清，不要伪造或透传 taken_time
 - 创建/调整长期健康目标用 goal；查询/修改/删除已有目标用 health_manage(record_type=goal)
 - 用户明确说"别记录/不用记/记在心里就行"时, **不要**调用本工具, 也不要回"已记录"; 只用一句话自然回应(如"好的, 我记住了, 不写进记录")
 
@@ -267,7 +267,8 @@ exercise:         {"exercise_type": "俯卧撑", "reps": 10, "sets": 1}
                   或 {"exercise_type": "running", "duration": 30, "distance": 5.0}
 rhinitis:         {"sneezing": 5, "congestion": 1, "runny_nose": 0}  // sneezing=这次新打的喷嚏次数(增量, 端点自动累加当天); congestion/runny_nose 0-3 级. 每日一条
 mood:             {"mood_score": 4, "journal": "心情不错"}    // mood_score 1-5 (1=很差 5=很好), journal=可选心情日记
-medication:       {"medication_name": "布洛芬", "taken_time": "08:00"}
+medication:       {"medication_name": "布洛芬", "actual_dosage": "1片", "observed_strength": "200mg"}
+                  // actual_dosage=本次实际服量，必填；observed_strength=包装/单粒规格，可选。规格绝不能替代服量，也不能从处方默认剂量推断
 illness:          {"name": "感冒", "severity": 5, "start_date": "2026-05-05", "status": "active"}
 symptom:          {"body_part": "eye|respiratory|skin|digestive|musculoskeletal|head|general|other",
                    "description": "咳嗽、嗓子疼、鼻塞", "severity": 3,   // severity 1-10, 可选

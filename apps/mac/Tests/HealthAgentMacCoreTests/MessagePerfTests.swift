@@ -193,7 +193,7 @@ final class MessagePerfTests: XCTestCase {
     func testParserDecodesPerfOnDoneEvent() throws {
         let payload = "data: {\"event\":\"done\",\"data\":{\"conversation_id\":7,\"elapsed_ms\":4200,\"llm_rounds\":1,\"perf\":{\"total_ms\":4200,\"pre_llm_ms\":2600,\"llm_ttft_ms\":3300,\"llm_full_ms\":1500,\"rounds\":[{\"llm_gen_ms\":1500,\"tool_exec_ms\":0,\"tools\":[]}]}}}\n\n"
         let events = try AgentStreamParser.parse(payload)
-        guard case .done(_, _, _, _, _, _, _, _, _, _, _, _, _, let perf, _, _) = events.first else {
+        guard case .done(_, _, _, _, _, _, _, _, _, _, _, _, _, let perf, _, _, _) = events.first else {
             return XCTFail("expected done event, got \(String(describing: events.first))")
         }
         XCTAssertEqual(perf?.totalMs, 4200)
@@ -204,7 +204,7 @@ final class MessagePerfTests: XCTestCase {
         // Old backend: done event has no `perf` object.
         let payload = "data: {\"event\":\"done\",\"data\":{\"conversation_id\":7,\"elapsed_ms\":4200}}\n\n"
         let events = try AgentStreamParser.parse(payload)
-        guard case .done(_, _, _, _, _, _, _, _, _, _, _, _, _, let perf, _, _) = events.first else {
+        guard case .done(_, _, _, _, _, _, _, _, _, _, _, _, _, let perf, _, _, _) = events.first else {
             return XCTFail("expected done event")
         }
         XCTAssertNil(perf)

@@ -77,7 +77,8 @@ struct AppServices {
             remoteSource: AgentConversationClient(apiClient: apiClient),
             labUploadService: labUploadClient,
             aigcMediaClient: AIGCMediaJobClient(apiClient: apiClient),
-            dietDraftClient: recordClient
+            dietDraftClient: recordClient,
+            medicationBatchClient: MedicationBatchWriteIntentClient(apiClient: apiClient)
         )
         self.supplementProductClient = SupplementProductLibraryClient(apiClient: apiClient)
         self.desktopJobClient = DesktopJobClient(apiClient: apiClient)

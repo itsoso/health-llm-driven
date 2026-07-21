@@ -44,7 +44,12 @@ function parseSnapshot(raw: string | null): StoredConversationContinuity | undef
   try {
     const parsed = JSON.parse(raw) as Partial<StoredConversationContinuity>;
     const receipt = normalizeWriteReceipt(parsed?.receipt);
-    if (parsed?.version !== CONTINUITY_VERSION || !receipt || typeof parsed.storedAt !== 'number') {
+    if (
+      parsed?.version !== CONTINUITY_VERSION
+      || !receipt
+      || receipt.status !== 'verified'
+      || typeof parsed.storedAt !== 'number'
+    ) {
       return undefined;
     }
     return {
@@ -63,6 +68,7 @@ export async function rememberVerifiedWriteReceipt(
 ): Promise<void> {
   const receipt = normalizeWriteReceipt(rawReceipt);
   if (!receipt) throw new Error('write_receipt_unverified');
+  if (receipt.status !== 'verified') return;
   const storageKey = await currentStorageKey();
   await enqueueMutation(async () => {
     await removeLegacyDeviceScopedReceipt();
@@ -127,7 +133,7 @@ export function mergeConversationContinuity(
     return raw || undefined;
   }
   const normalized = normalizeWriteReceipt(receipt);
-  if (!normalized) {
+  if (!normalized || normalized.status !== 'verified') {
     const raw = String(extraContext || '').trim();
     return raw || undefined;
   }

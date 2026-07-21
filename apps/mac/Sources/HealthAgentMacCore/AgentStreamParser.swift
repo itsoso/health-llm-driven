@@ -36,9 +36,32 @@ public enum AgentStreamEvent: Equatable, Sendable {
         // Safe progress summaries (`done.thinking_steps`). The authoritative,
         // persisted list of "思考过程" steps for this turn. Absent on old backends
         // → empty → the collapsible trace simply isn't rendered.
-        thinkingSteps: [String] = []
+        thinkingSteps: [String] = [],
+        // Exact terminal truth for one medication write-intent. This remains
+        // namespaced because top-level receipts/alerts may also contain
+        // unrelated writes from the same assistant turn.
+        medicationBatchDecision: AgentMedicationBatchDecision? = nil
     )
     case error(String)
+}
+
+public struct AgentMedicationBatchDecision: Equatable, Sendable {
+    public let intentID: Int
+    public let status: MedicationBatchDecisionStatus
+    public let writeReceipts: [AgentDynamicCardValue]
+    public let safetyAlerts: [AgentDynamicCardValue]
+
+    public init(
+        intentID: Int,
+        status: MedicationBatchDecisionStatus,
+        writeReceipts: [AgentDynamicCardValue],
+        safetyAlerts: [AgentDynamicCardValue]
+    ) {
+        self.intentID = intentID
+        self.status = status
+        self.writeReceipts = writeReceipts
+        self.safetyAlerts = safetyAlerts
+    }
 }
 
 public struct AgentToolEvent: Equatable, Sendable {
@@ -168,7 +191,12 @@ public enum AgentStreamParser {
                         perf: decode(MessagePerf.self, from: eventData?["perf"]),
                         llmUsage: decode(LLMUsageProfile.self, from: eventData?["llm_usage"]),
                         // thinking_steps absent on old backends → [] → no trace.
-                        thinkingSteps: stringArray(eventData?["thinking_steps"])
+                        thinkingSteps: stringArray(eventData?["thinking_steps"]),
+                        medicationBatchDecision: medicationBatchDecision(
+                            eventData?["medication_batch_decision"],
+                            legacyWriteReceipts: eventData?["write_receipts"],
+                            legacySafetyAlerts: eventData?["safety_alerts"]
+                        )
                     )
                 case "error":
                     return .error(eventData?["message"] as? String ?? "Unknown stream error")
@@ -258,5 +286,45 @@ public enum AgentStreamParser {
             return nil
         }
         return try? JSONDecoder().decode(AgentDynamicCardValue.self, from: data)
+    }
+
+    private static func medicationBatchDecision(
+        _ value: Any?,
+        legacyWriteReceipts: Any?,
+        legacySafetyAlerts: Any?
+    ) -> AgentMedicationBatchDecision? {
+        guard let decision = value as? [String: Any],
+              let intentID = decision["intent_id"] as? Int,
+              intentID > 0,
+              let rawStatus = decision["status"] as? String,
+              let status = MedicationBatchDecisionStatus(rawValue: rawStatus),
+              status == .executed || status == .dismissed || status == .expired else {
+            return nil
+        }
+        let writeReceiptSource = decision.keys.contains("write_receipts")
+            ? decision["write_receipts"]
+            : legacyWriteReceipts
+        let safetyAlertSource = decision.keys.contains("safety_alerts")
+            ? decision["safety_alerts"]
+            : legacySafetyAlerts
+        return AgentMedicationBatchDecision(
+            intentID: intentID,
+            status: status,
+            writeReceipts: status == .executed
+                ? decodeCardValues(writeReceiptSource)
+                : [],
+            safetyAlerts: status == .executed
+                ? decodeCardValues(safetyAlertSource)
+                : []
+        )
+    }
+
+    private static func decodeCardValues(_ value: Any?) -> [AgentDynamicCardValue] {
+        guard let value,
+              JSONSerialization.isValidJSONObject(value),
+              let data = try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]) else {
+            return []
+        }
+        return (try? JSONDecoder().decode([AgentDynamicCardValue].self, from: data)) ?? []
     }
 }

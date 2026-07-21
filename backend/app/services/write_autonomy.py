@@ -67,12 +67,14 @@ _BEIJING = timezone(timedelta(hours=8))
 # auto 路径仍因 `kind in NEVER_AUTONOMY_KINDS` 被硬拦(见 auto_execute_pending 的 assert)。
 # 扩容自治面是 C 的活(经 N-of-1 外环收敛挣到),不是把 kind 从这里移走 —— 本集合只增不减。
 #   - adherence_nudge:写依从事实污染 twin.medication.adherence → DDI/PGx/SafetyGuardian
+#   - medication_intake_batch:一次确认写入多条服药事实,属于临床/剂量记录
 #   - food_order:财务相邻(下单/支付)
 #   - doctor_booking:外部动作(挂号)
 #   - alarm_set / reorder_nudge / checkup_reminder / recheck_due / hearing_health_task:外部动作 / 物流 / 临床随访
 # 任何未来的医疗/剂量/处方 kind 一旦引入,**必须**同时登记进本集合。
 NEVER_AUTONOMY_KINDS = frozenset({
     "adherence_nudge",
+    "medication_intake_batch",
     "food_order",
     "doctor_booking",
     "alarm_set",

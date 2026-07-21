@@ -82,6 +82,12 @@ jest.mock('../cards', () => {
     getCardActionRuntimeKey: jest.fn((action: any, descriptor?: any) => (
       action.id || `${descriptor?.type ?? 'card'}:${action.action}:${action.label}`
     )),
+    getCardActionRuntimeGroupKey: jest.fn((action: any, descriptor?: any) => (
+      (action.action === 'write_intent.confirm' || action.action === 'write_intent.dismiss')
+        && action.payload?.write_intent_id
+        ? `write_intent:${action.payload.write_intent_id}`
+        : action.id || `${descriptor?.type ?? 'card'}:${action.action}:${action.label}`
+    )),
     __mockCard: <View><Text>今晚晚餐建议</Text></View>,
   };
 });
@@ -944,6 +950,10 @@ ${sectionTitle}
       expect(dispatchChatCardAction).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'agenda.complete' }),
         expect.any(String),
+        expect.objectContaining({
+          cardType: 'vitals',
+          cardData: { sleep: '8h' },
+        }),
       );
     });
   });
@@ -1092,6 +1102,30 @@ ${sectionTitle}
     expect(getByText('已保存到今日饮食 · 记录 #701')).toBeTruthy();
   });
 
+  it('shows every direct receipt from a text-confirmed medication batch', () => {
+    const qc = new QueryClient();
+    const message: UIMessage = {
+      id: 'assistant-direct-medication-batch-receipts',
+      role: 'assistant',
+      content: '已记录本次服药，共2条。',
+      streaming: false,
+      writeReceipts: [
+        verifiedReceipt('medication_log', '801'),
+        verifiedReceipt('medication_log', '802'),
+      ],
+    };
+
+    const { getAllByTestId, getByText } = render(
+      <QueryClientProvider client={qc}>
+        <ChatBubble item={message} />
+      </QueryClientProvider>,
+    );
+
+    expect(getAllByTestId('write-receipt')).toHaveLength(2);
+    expect(getByText('已写入 · 用药记录 #801')).toBeTruthy();
+    expect(getByText('已写入 · 用药记录 #802')).toBeTruthy();
+  });
+
   it('blocks two same-frame presses before React state has time to update', async () => {
     let resolveAction!: (value: any) => void;
     dispatchChatCardAction.mockReturnValueOnce(new Promise(resolve => { resolveAction = resolve; }));
@@ -1220,6 +1254,442 @@ ${sectionTitle}
       verified: false,
       error_code: 'write_receipt_missing_identity',
     });
+  });
+
+  it('shows every medication write receipt and an incomplete safety-screening advisory', async () => {
+    const receipts = [
+      verifiedReceipt('medication_log', '101'),
+      verifiedReceipt('medication_log', '102'),
+    ];
+    dispatchChatCardAction.mockResolvedValueOnce({
+      status: 'completed',
+      write_receipts: receipts,
+      receipt: receipts[1],
+      safety_alerts: [{
+        rule_id: 'medication.safety_precheck_incomplete',
+        category: 'medication',
+        severity: { value: 3, label: 'high', label_zh: '警告' },
+        title: '自动安全筛查暂未完成',
+        message: '这不代表当前用药组合安全。',
+        action: '如有明显不适，请及时就医。',
+      }],
+    });
+    renderCard.mockImplementation((descriptor: any, options: any) => {
+      const { Pressable, Text } = require('react-native');
+      return (
+        <Pressable onPress={() => options.onAction(descriptor.actions[0], descriptor)}>
+          <Text>确认用药记录</Text>
+        </Pressable>
+      );
+    });
+    const qc = new QueryClient();
+    const invalidateSpy = jest.spyOn(qc, 'invalidateQueries');
+    const message: UIMessage = {
+      id: 'assistant-medication-batch',
+      role: 'assistant',
+      content: '',
+      streaming: false,
+      cardType: 'medication_draft',
+      cardData: { items: [{ medication_name: '伊托必利' }, { medication_name: '替普瑞酮' }] },
+      cardActions: [{
+        label: '确认用药记录',
+        action: 'write_intent.confirm',
+        endpoint: '/write-intents/42/confirm',
+        requires_manual_confirm: true,
+        payload: { write_intent_id: 42 },
+      }],
+    };
+
+    const { getByText, getAllByTestId } = render(
+      <QueryClientProvider client={qc}>
+        <ChatBubble item={message} />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.press(getByText('确认用药记录'));
+
+    await waitFor(() => expect(getAllByTestId('write-receipt')).toHaveLength(2));
+    expect(getByText('已写入 · 用药记录 #101')).toBeTruthy();
+    expect(getByText('已写入 · 用药记录 #102')).toBeTruthy();
+    expect(getByText('自动安全筛查暂未完成')).toBeTruthy();
+    expect(getByText('这不代表当前用药组合安全。')).toBeTruthy();
+    expect(mockRememberVerifiedWriteReceipt).toHaveBeenCalledTimes(1);
+    expect(mockRememberVerifiedWriteReceipt).toHaveBeenCalledWith(receipts[1]);
+    expect(mockToastShow).toHaveBeenCalledWith(
+      '已记录；自动安全筛查暂未完成，不代表当前用药组合安全',
+      'info',
+    );
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['medications'] });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['medicationToday'] });
+  });
+
+  it('locks confirm and dismiss together for the same write intent', async () => {
+    let resolveConfirm!: (value: any) => void;
+    dispatchChatCardAction.mockReturnValueOnce(new Promise(resolve => { resolveConfirm = resolve; }));
+    renderCard.mockImplementation((descriptor: any, options: any) => {
+      const { Pressable, Text, View } = require('react-native');
+      return (
+        <View>
+          {descriptor.actions.map((action: any) => (
+            <Pressable key={action.id} onPress={() => options.onAction(action, descriptor)}>
+              <Text>{action.label}</Text>
+            </Pressable>
+          ))}
+        </View>
+      );
+    });
+    const qc = new QueryClient();
+    const message: UIMessage = {
+      id: 'assistant-medication-group-lock',
+      role: 'assistant',
+      content: '',
+      cardType: 'medication_draft',
+      cardData: { items: [{ medication_name: '伊托必利' }] },
+      cardActions: [
+        {
+          id: 'confirm-medication-42',
+          label: '确认记录',
+          action: 'write_intent.confirm',
+          endpoint: '/write-intents/42/confirm',
+          requires_manual_confirm: true,
+          payload: { write_intent_id: 42 },
+        },
+        {
+          id: 'dismiss-medication-42',
+          label: '取消记录',
+          action: 'write_intent.dismiss',
+          endpoint: '/write-intents/42/dismiss',
+          requires_manual_confirm: true,
+          payload: { write_intent_id: 42 },
+        },
+      ],
+    };
+    const { getByText } = render(
+      <QueryClientProvider client={qc}>
+        <ChatBubble item={message} />
+      </QueryClientProvider>,
+    );
+
+    act(() => {
+      fireEvent.press(getByText('确认记录'));
+      fireEvent.press(getByText('取消记录'));
+    });
+
+    expect(dispatchChatCardAction).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      resolveConfirm({
+        status: 'completed',
+        decision_status: 'executed',
+        receipt: verifiedReceipt('medication_log', '101'),
+      });
+    });
+  });
+
+  it('does not invent or persist a verified receipt for dismissal', async () => {
+    dispatchChatCardAction.mockResolvedValueOnce({
+      status: 'dismissed',
+      decision_status: 'dismissed',
+    });
+    renderCard.mockImplementation((descriptor: any, options: any) => {
+      const { Pressable, Text } = require('react-native');
+      if (!descriptor.actions?.[0]) return <Text>已取消</Text>;
+      return (
+        <Pressable onPress={() => options.onAction(descriptor.actions[0], descriptor)}>
+          <Text>{descriptor.actions[0].label}</Text>
+        </Pressable>
+      );
+    });
+    const qc = new QueryClient();
+    const message: UIMessage = {
+      id: 'assistant-dismiss-medication',
+      role: 'assistant',
+      content: '',
+      cardType: 'medication_draft',
+      cardData: { items: [{ medication_name: '伊托必利' }] },
+      cardActions: [{
+        id: 'dismiss-medication-42',
+        label: '取消记录',
+        action: 'write_intent.dismiss',
+        endpoint: '/write-intents/42/dismiss',
+        requires_manual_confirm: true,
+        payload: { write_intent_id: 42 },
+      }],
+    };
+    const { getByText } = render(
+      <QueryClientProvider client={qc}>
+        <ChatBubble item={message} />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.press(getByText('取消记录'));
+
+    await waitFor(() => expect(mockToastShow).toHaveBeenCalledWith('已忽略', 'success'));
+    expect(mockSaveCardActionReceipt).not.toHaveBeenCalled();
+    expect(mockRememberVerifiedWriteReceipt).not.toHaveBeenCalled();
+    expect(mockEmitClientEvent).not.toHaveBeenCalledWith(
+      'write_receipt_terminal',
+      expect.objectContaining({ action_type: 'write_intent.dismiss', verified: true }),
+    );
+  });
+
+  it('shows the authoritative dismissed terminal when a confirm loses the cross-device race', async () => {
+    dispatchChatCardAction.mockResolvedValueOnce({
+      status: 'dismissed',
+      decision_status: 'dismissed',
+    });
+    renderCard.mockImplementation((descriptor: any, options: any) => {
+      const { Pressable, Text } = require('react-native');
+      return (
+        <Pressable onPress={() => options.onAction(descriptor.actions[0], descriptor)}>
+          <Text>确认记录</Text>
+        </Pressable>
+      );
+    });
+    const qc = new QueryClient();
+    const message: UIMessage = {
+      id: 'assistant-confirm-lost-race',
+      role: 'assistant',
+      content: '',
+      cardType: 'medication_draft',
+      cardData: {
+        write_intent_id: 42,
+        items: [{ medication_name: '伊托必利' }],
+      },
+      cardActions: [{
+        id: 'confirm-medication-42',
+        label: '确认记录',
+        action: 'write_intent.confirm',
+        endpoint: '/write-intents/42/confirm',
+        requires_manual_confirm: true,
+        payload: { write_intent_id: 42 },
+      }],
+    };
+    const { getByText } = render(
+      <QueryClientProvider client={qc}>
+        <ChatBubble item={message} />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.press(getByText('确认记录'));
+
+    await waitFor(() => expect(mockToastShow).toHaveBeenCalledWith('已忽略', 'success'));
+    expect(mockToastShow).not.toHaveBeenCalledWith('操作失败，请稍后重试', 'error');
+    expect(mockSaveCardActionReceipt).not.toHaveBeenCalled();
+    expect(mockRememberVerifiedWriteReceipt).not.toHaveBeenCalled();
+    expect(mockEmitClientEvent).not.toHaveBeenCalledWith(
+      'write_receipt_terminal',
+      expect.objectContaining({ verified: true }),
+    );
+  });
+
+  it('shows the authoritative executed terminal when a dismiss loses the cross-device race', async () => {
+    const receipts = [
+      verifiedReceipt('medication_log', '101'),
+      verifiedReceipt('medication_log', '102'),
+    ];
+    dispatchChatCardAction.mockResolvedValueOnce({
+      status: 'completed',
+      decision_status: 'executed',
+      receipt: receipts[1],
+      write_receipts: receipts,
+    });
+    renderCard.mockImplementation((descriptor: any, options: any) => {
+      const { Pressable, Text } = require('react-native');
+      return (
+        <Pressable onPress={() => options.onAction(descriptor.actions[0], descriptor)}>
+          <Text>取消记录</Text>
+        </Pressable>
+      );
+    });
+    const qc = new QueryClient();
+    const message: UIMessage = {
+      id: 'assistant-dismiss-lost-race',
+      role: 'assistant',
+      content: '',
+      cardType: 'medication_draft',
+      cardData: {
+        write_intent_id: 42,
+        items: [
+          { medication_name: '伊托必利' },
+          { medication_name: '替普瑞酮' },
+        ],
+      },
+      cardActions: [{
+        id: 'dismiss-medication-42',
+        label: '取消记录',
+        action: 'write_intent.dismiss',
+        endpoint: '/write-intents/42/dismiss',
+        requires_manual_confirm: true,
+        payload: { write_intent_id: 42 },
+      }],
+    };
+    const { getByText, getAllByTestId } = render(
+      <QueryClientProvider client={qc}>
+        <ChatBubble item={message} />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.press(getByText('取消记录'));
+
+    await waitFor(() => expect(getAllByTestId('write-receipt')).toHaveLength(2));
+    expect(mockToastShow).toHaveBeenCalledWith('已执行', 'success');
+    expect(mockToastShow).not.toHaveBeenCalledWith('已忽略', 'success');
+    expect(mockRememberVerifiedWriteReceipt).toHaveBeenCalledWith(receipts[1]);
+  });
+
+  it('uses truthful confirmation copy for dismissing a medication plan', () => {
+    mockAlert.mockImplementation(jest.fn());
+    renderCard.mockImplementation((descriptor: any, options: any) => {
+      const { Pressable, Text } = require('react-native');
+      return (
+        <Pressable onPress={() => options.onAction(descriptor.actions[0], descriptor)}>
+          <Text>{descriptor.actions[0].label}</Text>
+        </Pressable>
+      );
+    });
+    const qc = new QueryClient();
+    const message: UIMessage = {
+      id: 'assistant-dismiss-copy',
+      role: 'assistant',
+      content: '',
+      cardType: 'medication_draft',
+      cardData: { items: [{ medication_name: '伊托必利' }] },
+      cardActions: [{
+        id: 'dismiss-medication-42',
+        label: '取消',
+        action: 'write_intent.dismiss',
+        endpoint: '/write-intents/42/dismiss',
+        requires_manual_confirm: true,
+        payload: { write_intent_id: 42 },
+      }],
+    };
+    const { getByText } = render(
+      <QueryClientProvider client={qc}>
+        <ChatBubble item={message} />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.press(getByText('取消'));
+
+    expect(mockAlert).toHaveBeenCalledWith(
+      '取消这组用药记录？',
+      '确认取消后，这组待确认记录不会写入。',
+      expect.arrayContaining([
+        expect.objectContaining({ text: '再看看', style: 'cancel' }),
+        expect.objectContaining({ text: '确认取消', style: 'destructive' }),
+      ]),
+    );
+  });
+
+  it('shows an expired terminal state instead of a retry error for a 409 confirmation', async () => {
+    dispatchChatCardAction.mockResolvedValueOnce({
+      status: 'expired',
+      decision_status: 'expired',
+    });
+    renderCard.mockImplementation((descriptor: any, options: any) => {
+      const { Pressable, Text } = require('react-native');
+      return (
+        <Pressable onPress={() => options.onAction(descriptor.actions[0], descriptor)}>
+          <Text>确认记录</Text>
+        </Pressable>
+      );
+    });
+    const qc = new QueryClient();
+    const message: UIMessage = {
+      id: 'assistant-expired-medication',
+      role: 'assistant',
+      content: '',
+      cardType: 'medication_draft',
+      cardData: { items: [{ medication_name: '伊托必利' }] },
+      cardActions: [{
+        id: 'confirm-medication-42',
+        label: '确认记录',
+        action: 'write_intent.confirm',
+        endpoint: '/write-intents/42/confirm',
+        requires_manual_confirm: true,
+        payload: { write_intent_id: 42 },
+      }],
+    };
+    const { getByText } = render(
+      <QueryClientProvider client={qc}>
+        <ChatBubble item={message} />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.press(getByText('确认记录'));
+
+    await waitFor(() => {
+      expect(mockToastShow).toHaveBeenCalledWith(
+        '确认已过期，未写入；请重新发送完整用药记录',
+        'info',
+      );
+    });
+    expect(mockToastShow).not.toHaveBeenCalledWith('操作失败，请稍后重试', 'error');
+    expect(mockRememberVerifiedWriteReceipt).not.toHaveBeenCalled();
+  });
+
+  it('shows every frozen medication safety alert in the confirmation surface', () => {
+    renderCard.mockReturnValue(__mockCard);
+    const safetyAlerts = Array.from({ length: 4 }, (_, index) => ({
+      rule_id: `medication.rule.${index}`,
+      category: 'medication',
+      severity: { value: 3, label: 'high', label_zh: '警告' },
+      title: `安全提示 ${index + 1}`,
+      message: `提示内容 ${index + 1}`,
+    }));
+    const qc = new QueryClient();
+    const message: UIMessage = {
+      id: 'assistant-restored-medication-alerts',
+      role: 'assistant',
+      content: '',
+      cardType: 'medication_draft',
+      cardData: { decision_status: 'executed' },
+      decisionStatus: 'executed',
+      safetyAlerts,
+    };
+    const { getByText } = render(
+      <QueryClientProvider client={qc}>
+        <ChatBubble item={message} />
+      </QueryClientProvider>,
+    );
+
+    safetyAlerts.forEach(alert => {
+      expect(getByText(alert.title)).toBeTruthy();
+      expect(getByText(alert.message)).toBeTruthy();
+    });
+    expect(() => getByText('还有 1 条安全提示')).toThrow();
+    expect(() => getByText('查看全部安全提示')).toThrow();
+  });
+
+  it('does not wrap a card with actions in another pressable interaction surface', () => {
+    renderCard.mockImplementation(() => {
+      const { Pressable, Text } = require('react-native');
+      return <Pressable accessibilityLabel="确认记录"><Text>确认记录</Text></Pressable>;
+    });
+    const qc = new QueryClient();
+    const message: UIMessage = {
+      id: 'assistant-actionable-medication-a11y',
+      role: 'assistant',
+      content: '',
+      cardType: 'medication_draft',
+      cardData: { items: [{ medication_name: '伊托必利' }] },
+      cardActions: [{
+        id: 'confirm-medication-42',
+        label: '确认记录',
+        action: 'write_intent.confirm',
+        endpoint: '/write-intents/42/confirm',
+        requires_manual_confirm: true,
+        payload: { write_intent_id: 42 },
+      }],
+    };
+    const { getByTestId, queryByTestId } = render(
+      <QueryClientProvider client={qc}>
+        <ChatBubble item={message} />
+      </QueryClientProvider>,
+    );
+
+    expect(getByTestId('assistant-actionable-card-interaction-surface')).toBeTruthy();
+    expect(queryByTestId('assistant-card-interaction-surface')).toBeNull();
   });
 
   it('shows diet-specific success feedback after confirming a diet card', async () => {
@@ -1459,6 +1929,10 @@ ${sectionTitle}
       expect(dispatchChatCardAction).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'write_intent.confirm' }),
         expect.any(String),
+        expect.objectContaining({
+          cardType: 'record',
+          cardData: expect.objectContaining({ type: 'exercise' }),
+        }),
       );
     });
 

@@ -792,7 +792,251 @@ export const DietDraftCardSpec: CardSpec<DietDraftData> = {
 };
 
 // ────────────────────────────────────────────────────────────────
-// 11. MedicalExamImportResultCard - runtime skill import result
+// 11. MedicationDraftCard - owner-scoped batch confirmation/receipt
+// ────────────────────────────────────────────────────────────────
+export interface MedicationDraftData {
+  items?: unknown;
+  medication_name?: unknown;
+  dose?: unknown;
+  taken_at?: unknown;
+  taken_time?: unknown;
+  source?: unknown;
+  boundary?: unknown;
+  decision_status?: unknown;
+  action_pending?: unknown;
+  write_receipts?: unknown;
+  safety_alerts?: unknown;
+}
+
+interface MedicationDraftItem {
+  medicationName: string;
+  actualDosage?: string;
+  observedStrength?: string;
+}
+
+interface MedicationReceiptView {
+  resourceId: string;
+  verified: true;
+}
+
+interface MedicationSafetyAlertView {
+  key: string;
+  severity: number;
+  severityLabel: string;
+  title: string;
+  message: string;
+  actions: string[];
+}
+
+function medText(value: unknown): string | undefined {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed || undefined;
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  return undefined;
+}
+
+function medicationDraftItems(value: unknown): MedicationDraftItem[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((raw): MedicationDraftItem[] => {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return [];
+    const item = raw as Record<string, unknown>;
+    const medicationName = medText(item.medication_name);
+    if (!medicationName) return [];
+    return [{
+      medicationName,
+      actualDosage: medText(item.actual_dosage),
+      observedStrength: medText(item.observed_strength),
+    }];
+  });
+}
+
+function medicationReceiptViews(value: unknown): MedicationReceiptView[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((raw): MedicationReceiptView[] => {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return [];
+    const receipt = raw as Record<string, unknown>;
+    const resourceId = medText(receipt.resource_id);
+    if (!resourceId || receipt.verified !== true || receipt.resource_type !== 'medication_log') return [];
+    return [{ resourceId, verified: true }];
+  });
+}
+
+function medicationSeverity(raw: unknown): { value: number; label: string } {
+  let value: unknown = raw;
+  let label = '';
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    const severity = raw as Record<string, unknown>;
+    value = severity.value;
+    label = medText(severity.label_zh) || medText(severity.label) || '';
+  }
+  const number = typeof value === 'number' ? value : Number(value);
+  const normalized = Number.isFinite(number) ? number : 0;
+  if (!label) label = normalized >= 4 ? '严重' : normalized >= 3 ? '高风险' : normalized >= 2 ? '注意' : '提示';
+  return { value: normalized, label };
+}
+
+function medicationSafetyAlertViews(value: unknown): MedicationSafetyAlertView[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((raw, index): MedicationSafetyAlertView[] => {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return [];
+    const alert = raw as Record<string, unknown>;
+    const title = medText(alert.title);
+    const message = medText(alert.message);
+    if (!title || !message) return [];
+    const severity = medicationSeverity(alert.severity);
+    const actionValues = Array.isArray(alert.action) ? alert.action : [alert.action];
+    return [{
+      key: medText(alert.rule_id) || `medication-alert-${index}`,
+      severity: severity.value,
+      severityLabel: severity.label,
+      title,
+      message,
+      actions: actionValues.map(medText).filter((item): item is string => Boolean(item)),
+    }];
+  });
+}
+
+function medicationTakenAt(value: unknown): string | undefined {
+  const text = medText(value);
+  if (!text) return undefined;
+  return text.replace('T', ' ');
+}
+
+export function MedicationDraftCardView(data: MedicationDraftData) {
+  const items = medicationDraftItems(data.items);
+  const receipts = medicationReceiptViews(data.write_receipts);
+  const safetyAlerts = medicationSafetyAlertViews(data.safety_alerts);
+  const rawStatus = medText(data.decision_status);
+  const decisionStatus = rawStatus === 'executed' || rawStatus === 'dismissed' || rawStatus === 'expired'
+    ? rawStatus
+    : 'pending';
+  const completeReceiptSet = receipts.length > 0 && (items.length === 0 || receipts.length === items.length);
+  const displayStatus = decisionStatus === 'executed' && !completeReceiptSet ? 'reconciling' : decisionStatus;
+  const statusMeta = displayStatus === 'executed'
+    ? { title: '用药 · 已记录', badge: '已保存', badgeColor: '#176F49' }
+    : displayStatus === 'dismissed'
+      ? { title: '用药 · 已取消', badge: '未写入', badgeColor: '#6B665A' }
+      : displayStatus === 'expired'
+        ? { title: '用药 · 确认已过期', badge: '未写入', badgeColor: '#B7791F' }
+        : displayStatus === 'reconciling'
+          ? { title: '用药 · 状态待核对', badge: '核对中', badgeColor: '#B7791F' }
+          : { title: '用药 · 待确认', badge: '需核对', badgeColor: '#7C5CBF' };
+  const fallbackMedication = medText(data.medication_name) || '待确认用药';
+  const takenAt = medicationTakenAt(data.taken_at ?? data.taken_time);
+  const boundary = medText(data.boundary)
+    || '确认后只记录这次已服事实；不替代医嘱，不调整剂量或频次。';
+
+  return (
+    <CardShell
+      emoji="💊"
+      title={statusMeta.title}
+      badge={statusMeta.badge}
+      badgeColor={statusMeta.badgeColor}
+      bg="#F7F3FC"
+      border="#DDD3EE"
+    >
+      <div className="space-y-2" aria-label="本次用药项目">
+        {items.length > 0 ? items.map((item, index) => (
+          <div key={`${item.medicationName}-${index}`} className="rounded-xl border border-[#DDD3EE] bg-white px-3 py-2.5">
+            <div className="text-sm font-extrabold text-[#29261F]">{item.medicationName}</div>
+            <div className="mt-1 flex flex-wrap gap-1.5">
+              {item.actualDosage ? (
+                <span className="rounded-full bg-[#EEE7F8] px-2 py-1 text-[11px] font-bold text-[#6848A4]">
+                  本次 {item.actualDosage}
+                </span>
+              ) : null}
+              {item.observedStrength ? (
+                <span className="rounded-full bg-[#F4F1EA] px-2 py-1 text-[11px] font-semibold text-[#6B665A]">
+                  规格 {item.observedStrength}
+                </span>
+              ) : null}
+            </div>
+          </div>
+        )) : (
+          <div className="text-sm font-extrabold text-[#29261F]">{fallbackMedication}</div>
+        )}
+      </div>
+
+      {takenAt ? <div className="mt-2 font-mono text-[11px] text-[#6B665A]">记录时间 {takenAt}</div> : null}
+
+      {data.action_pending === true ? (
+        <div role="status" aria-live="polite" className="mt-3 rounded-xl bg-[#EEE7F8] px-3 py-2 text-xs font-semibold text-[#6848A4]">
+          正在提交并核对服务端结果…
+        </div>
+      ) : null}
+
+      {displayStatus === 'pending' ? (
+        <div className="mt-3 text-[11px] leading-5 text-[#6B665A]">{boundary}</div>
+      ) : displayStatus === 'dismissed' ? (
+        <div role="status" className="mt-3 text-xs font-semibold text-[#6B665A]">这组记录已取消，没有写入。</div>
+      ) : displayStatus === 'expired' ? (
+        <div role="status" className="mt-3 rounded-xl bg-[#FFF8E8] px-3 py-2 text-xs text-[#8A5D14]">
+          这组确认已过期，没有写入；请重新发送完整药名和本次实际服量。
+        </div>
+      ) : displayStatus === 'reconciling' ? (
+        <div role="alert" className="mt-3 rounded-xl border border-[#E7C98B] bg-[#FFF8E8] px-3 py-2 text-xs leading-5 text-[#8A5D14]">
+          服务端显示已执行，但逐项回执尚未完整恢复。请刷新对话后核对，系统不会据此重复写入。
+        </div>
+      ) : null}
+
+      {decisionStatus === 'executed' && receipts.length > 0 ? (
+        <ol aria-label="逐项写入回执" className="mt-3 space-y-2">
+          {receipts.map((receipt, index) => {
+            const item = items[index];
+            const itemLabel = item
+              ? `${item.medicationName}${item.actualDosage ? ` · ${item.actualDosage}` : ''}`
+              : `第 ${index + 1} 项用药`;
+            return (
+              <li key={`${receipt.resourceId}-${index}`} className="rounded-xl border border-[#CDE6D8] bg-[#F0F8F3] px-3 py-2">
+                <div className="text-xs font-bold text-[#115738]">{itemLabel}</div>
+                <div className="mt-0.5 font-mono text-[10px] text-[#5C6660]">回执 #{receipt.resourceId} · 已验证</div>
+              </li>
+            );
+          })}
+        </ol>
+      ) : null}
+
+      {decisionStatus === 'executed' && safetyAlerts.length > 0 ? (
+        <ul aria-label="用药安全提示" className="mt-3 space-y-2">
+          {safetyAlerts.map((alert) => (
+            <li
+              key={alert.key}
+              className={[
+                'rounded-xl border px-3 py-2 text-xs leading-5',
+                alert.severity >= 3
+                  ? 'border-[#E8B4A8] bg-[#FFF1EE] text-[#7A3328]'
+                : 'border-[#E7C98B] bg-[#FFF8E8] text-[#705018]',
+              ].join(' ')}
+            >
+              <div role={alert.severity >= 3 ? 'alert' : undefined}>
+                <div className="flex items-start justify-between gap-2">
+                  <span className="font-extrabold">{alert.title}</span>
+                  <span className="shrink-0 rounded-full bg-white/70 px-2 py-0.5 text-[10px] font-bold">{alert.severityLabel}</span>
+                </div>
+                <div className="mt-1">{alert.message}</div>
+                {alert.actions.map((action, index) => (
+                  <div key={`${alert.key}-action-${index}`} className="mt-1 font-semibold">{action}</div>
+                ))}
+              </div>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </CardShell>
+  );
+}
+
+export const MedicationDraftCardSpec: CardSpec<MedicationDraftData> = {
+  type: 'medication_draft', label: '用药确认',
+  match: () => null,
+  build: () => null,
+  render: (data) => <MedicationDraftCardView {...data} />,
+};
+
+// ────────────────────────────────────────────────────────────────
+// 12. MedicalExamImportResultCard - runtime skill import result
 // ────────────────────────────────────────────────────────────────
 interface MedicalExamImportResultData {
   exam_id: number;

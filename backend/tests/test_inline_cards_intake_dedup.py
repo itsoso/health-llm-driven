@@ -13,6 +13,7 @@ from app.services.inline_cards import (
     build_cards,
     recorded_intake_kinds,
 )
+from app.api.agent import _pending_intake_suppressions
 
 
 def _record_card(kind: str):
@@ -45,6 +46,16 @@ class TestRecordedIntakeKinds:
 
 
 class TestDraftSuppression:
+    def test_server_owned_medication_batch_suppresses_legacy_medication_draft(self):
+        assert _pending_intake_suppressions({
+            "pending_write_intent_kinds": ["medication_intake_batch"],
+        }) == {"medication"}
+
+    def test_unrelated_pending_write_intent_does_not_over_suppress(self):
+        assert _pending_intake_suppressions({
+            "pending_write_intent_kinds": ["checkup_reminder"],
+        }) == set()
+
     def test_diet_draft_suppressed_when_diet_recorded(self, db):
         q = "加餐吃了一个油桃"
         with_draft = build_cards(db, 1, q)

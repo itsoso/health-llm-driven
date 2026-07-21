@@ -1,11 +1,14 @@
 """Agent conversation history API tests."""
 
+import inspect
 import json
+import logging
 from urllib.parse import parse_qs, urlparse
 
 from app.models.agent_conversation import AgentConversation, AgentMessage
 from app.models.user import User
 from app.api.agent import (
+    agent_stream,
     _done_event_may_expose_cards,
     _merge_card_descriptors,
     _persist_done_cards,
@@ -333,30 +336,41 @@ def test_only_complete_persisted_done_events_may_expose_action_cards():
     }) is False
 
 
-def test_done_cards_report_persistence_failure(
-    db, auth_user_and_headers, monkeypatch
+def test_done_cards_report_persistence_failure_without_logging_health_payload(
+    db, auth_user_and_headers, monkeypatch, caplog
 ):
     user, _ = auth_user_and_headers
     conversation = _create_conversation(db, user.id, "卡片持久化失败")
     message = _add_message(db, conversation.id, "assistant", "回答")
+    sensitive = "伊托必利 999粒 SENTINEL"
     monkeypatch.setattr(
         db,
         "commit",
-        lambda: (_ for _ in ()).throw(RuntimeError("commit failed")),
+        lambda: (_ for _ in ()).throw(RuntimeError(sensitive)),
     )
 
-    persisted = _persist_done_cards(
-        db,
-        message.id,
-        [{"type": "diet", "data": {}, "actions": []}],
-    )
+    with caplog.at_level(logging.DEBUG, logger="app.api.agent"):
+        persisted = _persist_done_cards(
+            db,
+            message.id,
+            [{"type": "medication_draft", "data": {"items": [sensitive]}, "actions": []}],
+        )
 
     assert persisted is False
+    assert sensitive not in caplog.text
+    assert "error_type=RuntimeError" in caplog.text
     assert _done_event_may_expose_cards({
         "message_id": None,
         "completion_status": "interrupted",
         "request_persisted": True,
     }) is False
+
+
+def test_agent_stream_failure_logs_do_not_interpolate_raw_exceptions():
+    source = inspect.getsource(agent_stream)
+
+    assert 'logger.debug(f"inline_cards 失败: {e}")' not in source
+    assert 'logger.error(f"Agent bg 流式异常: {e}", exc_info=True)' not in source
 
 
 def test_agent_conversations_pagination_offset_and_total(client, db, auth_user_and_headers):

@@ -407,6 +407,45 @@
   .dynamic-card-action.secondary {
     color: #4B6242;
   }
+  .dynamic-card-action[aria-disabled="true"] {
+    opacity: 0.55;
+    pointer-events: none;
+  }
+  .medication-item-list,
+  .medication-receipt-list,
+  .medication-safety-list {
+    list-style: none;
+    margin: 8px 0 0;
+    padding: 0;
+    display: grid;
+    gap: 7px;
+  }
+  .medication-item,
+  .medication-receipt,
+  .medication-safety-alert {
+    display: grid;
+    gap: 3px;
+    padding: 8px 9px;
+    border-radius: 9px;
+    border: 1px solid var(--hr);
+    background: var(--code-bg);
+  }
+  .medication-item span,
+  .medication-receipt span,
+  .medication-safety-alert span,
+  .medication-safety-alert p {
+    color: var(--secondary);
+    margin: 0;
+  }
+  .medication-safety-alert[role="alert"] {
+    border-color: rgba(192, 69, 59, 0.35);
+    background: rgba(192, 69, 59, 0.08);
+  }
+  .medication-safety-alert > div {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+  }
   .aigc-media-result {
     display: block;
     margin-top: 10px;
@@ -1094,6 +1133,14 @@
     } catch (e) {}
   }
 
+  function postMedicationBatchAction(actionID) {
+    try {
+      if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.medicationBatchAction) {
+        window.webkit.messageHandlers.medicationBatchAction.postMessage(String(actionID));
+      }
+    } catch (e) {}
+  }
+
   function isSafeInternalRoute(route) {
     return typeof route === "string" && route.indexOf("/") === 0 && route.indexOf("//") !== 0 &&
       !/[\u0000-\u001f\u007f]/.test(route);
@@ -1103,8 +1150,20 @@
     if (!scope || !scope.querySelectorAll) return;
     var actions = scope.querySelectorAll(".dynamic-card-action[href]");
     for (var i = 0; i < actions.length; i++) {
+      if (actions[i].classList.contains("medication-batch-action")) {
+        actions[i].addEventListener("keydown", function (ev) {
+          if (ev.key === " " || ev.key === "Spacebar") {
+            ev.preventDefault();
+            ev.currentTarget.click();
+          }
+        });
+      }
       actions[i].addEventListener("click", function (ev) {
         var route = ev.currentTarget.getAttribute("href") || "";
+        if (ev.currentTarget.getAttribute("aria-disabled") === "true") {
+          ev.preventDefault();
+          return;
+        }
         if (route.indexOf("xiaoba-aigc-confirm://") === 0) {
           var confirmationID = route.substring("xiaoba-aigc-confirm://".length);
           if (confirmationID && /^[A-Za-z0-9_-]+$/.test(confirmationID)) {
@@ -1118,6 +1177,20 @@
           if (actionID && /^[A-Za-z0-9_:-]+$/.test(actionID)) {
             ev.preventDefault();
             postDietDraftConfirm(actionID);
+          }
+          return;
+        }
+        if (route.indexOf("xiaoba-medication-action://") === 0) {
+          var medicationActionID = route.substring("xiaoba-medication-action://".length);
+          var intentID = ev.currentTarget.getAttribute("data-write-intent-id") || "";
+          if (medicationActionID && /^[A-Za-z0-9_:-]+$/.test(medicationActionID) && /^[1-9][0-9]*$/.test(intentID)) {
+            ev.preventDefault();
+            var siblings = document.querySelectorAll('.medication-batch-action[data-write-intent-id="' + intentID + '"]');
+            for (var siblingIndex = 0; siblingIndex < siblings.length; siblingIndex++) {
+              siblings[siblingIndex].setAttribute("aria-disabled", "true");
+              siblings[siblingIndex].setAttribute("tabindex", "-1");
+            }
+            postMedicationBatchAction(medicationActionID);
           }
           return;
         }

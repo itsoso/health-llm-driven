@@ -22,8 +22,9 @@ from sqlalchemy.pool import StaticPool
 
 from app.database import Base
 from app.models.user import User
-from app.models.medication import Medication
+from app.models.medication import Medication, MedicationLog
 from app.api.medication import _medication_safety_alerts
+from app.utils.timezone import get_user_today
 
 
 @pytest.fixture
@@ -96,6 +97,30 @@ def test_warfarin_nsaid_precheck_sees_added_drug(safety_db, safety_user):
     )
 
 
+def test_precheck_includes_inactive_medication_taken_today_without_reactivating(
+    safety_db, safety_user,
+):
+    """A taken log is an exposure fact even when its medication definition is inactive."""
+    _add_med(safety_db, safety_user.id, "华法林")
+    ibuprofen = _add_med(safety_db, safety_user.id, "布洛芬")
+    ibuprofen.is_active = False
+    safety_db.add(MedicationLog(
+        user_id=safety_user.id,
+        medication_id=ibuprofen.id,
+        taken_date=get_user_today(safety_db, safety_user.id),
+        taken_time="08:00",
+        status="taken",
+        actual_dosage="一粒",
+    ))
+    safety_db.commit()
+
+    alerts = _medication_safety_alerts(safety_db, safety_user.id)
+
+    assert "ddi.warfarin_bleeding" in {a["rule_id"] for a in alerts}
+    safety_db.refresh(ibuprofen)
+    assert ibuprofen.is_active is False
+
+
 def test_no_interaction_no_false_alert(safety_db, safety_user):
     """单药(维生素D)无相互作用 → DDI 预检不应误报(回归:迁移后不引入假阳)。"""
     _add_med(safety_db, safety_user.id, "维生素D")
@@ -113,19 +138,25 @@ def test_empty_meds_returns_no_alerts(safety_db, safety_user):
     assert all(a.get("category") in {"pgx", "ddi", "dsi"} for a in alerts)
 
 
-def test_partition_fill_failure_is_fail_loud(safety_db, safety_user, monkeypatch):
+def test_partition_fill_failure_is_fail_loud(
+    safety_db, safety_user, monkeypatch, caplog,
+):
     """分区填充抛错 → 绝不静默返回 [](under-alarm),而是注入 fail-safe advisory。
 
     护栏断言:模拟 fill_medication_safety_partitions 抛错(填充失败),预检必须
     返回带 medication.safety_precheck_incomplete 的 HIGH advisory,让客户端感知
     "未裁决",绝不冒充"无告警=安全"。
     """
-    import app.api.medication as med_api
+    import app.services.medication_safety as medication_safety
+
+    sensitive_exception_text = "simulated crash mentioning 华法林"
 
     def _boom(*args, **kwargs):
-        raise RuntimeError("simulated partition fill crash")
+        raise RuntimeError(sensitive_exception_text)
 
-    monkeypatch.setattr(med_api.twin_builder, "fill_medication_safety_partitions", _boom)
+    monkeypatch.setattr(
+        medication_safety.twin_builder, "fill_medication_safety_partitions", _boom
+    )
 
     alerts = _medication_safety_alerts(safety_db, safety_user.id)
 
@@ -135,6 +166,51 @@ def test_partition_fill_failure_is_fail_loud(safety_db, safety_user, monkeypatch
     )
     advisory = next(a for a in alerts if a["rule_id"] == "medication.safety_precheck_incomplete")
     assert advisory["requires_medical_attention"] is True
+    assert sensitive_exception_text not in caplog.text
+    assert "RuntimeError" in caplog.text
+
+
+def test_rule_evaluation_failure_is_fail_loud_without_sensitive_exception_text(
+    safety_db, safety_user, monkeypatch, caplog,
+):
+    """Rule crashes add an advisory but never leak medication-bearing exception text."""
+    import app.services.medication_safety as medication_safety
+
+    sensitive_exception_text = "rule crash while evaluating 华法林"
+
+    def _boom(_twin):
+        raise ValueError(sensitive_exception_text)
+
+    monkeypatch.setattr(medication_safety, "evaluate_rules_with_status", _boom)
+
+    alerts = _medication_safety_alerts(safety_db, safety_user.id)
+
+    assert "medication.safety_precheck_incomplete" in {a["rule_id"] for a in alerts}
+    assert sensitive_exception_text not in caplog.text
+    assert "ValueError" in caplog.text
+
+
+def test_partial_rule_failure_redacts_dependency_exception_text(
+    safety_db, safety_user, caplog,
+):
+    """Per-rule isolation must not leak its medication-bearing exception text."""
+    from app.agents.safety_guardian.engine import registry
+
+    sensitive_exception_text = "partial rule crash mentioning 华法林"
+
+    def _boom(_twin):
+        raise RuntimeError(sensitive_exception_text)
+
+    saved = list(registry._rules)
+    registry.register(_boom)
+    try:
+        alerts = _medication_safety_alerts(safety_db, safety_user.id)
+    finally:
+        registry._rules[:] = saved
+
+    assert "medication.safety_precheck_incomplete" in {a["rule_id"] for a in alerts}
+    assert sensitive_exception_text not in caplog.text
+    assert "failed_rule_count=1" in caplog.text
 
 
 def test_medication_read_failure_is_fail_loud(safety_db, safety_user, monkeypatch):

@@ -12,6 +12,8 @@ alias:常见中文/英文别名 → 标准通用名 key,提高命中率。
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
+from types import MappingProxyType
 from typing import Optional, TypedDict
 
 
@@ -150,6 +152,17 @@ _ALIASES: dict[str, str] = {
     "左洛复": "舍曲林", "zoloft": "舍曲林", "sertraline": "舍曲林",
     "来士普": "艾司西酞普兰", "lexapro": "艾司西酞普兰", "escitalopram": "艾司西酞普兰",
 }
+
+
+def medication_aliases() -> Mapping[str, str]:
+    """返回不可变的药名/品牌别名 → 规范通用名映射。"""
+    aliases = {generic: generic for generic in _TABLE}
+    # The display generic is what imported/user-created medication definitions
+    # often store (e.g. 盐酸伊托必利), while the compact table key is the
+    # canonical identity (伊托必利). Both exact forms must resolve to one drug.
+    aliases.update({entry["generic"].strip().lower(): key for key, entry in _TABLE.items()})
+    aliases.update(_ALIASES)
+    return MappingProxyType(aliases)
 
 # 规格/剂型噪声词,规范化时剥离以提高命中。
 _NOISE = ["片", "胶囊", "肠溶", "缓释", "分散", "钠", "钙", "镁", "盐酸", "富马酸", "苯磺酸",

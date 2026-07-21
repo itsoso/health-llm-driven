@@ -852,6 +852,12 @@ public final class AgentChatViewModel {
     @ObservationIgnored
     private let dietDraftClient: DietDraftConfirming?
     @ObservationIgnored
+    private let medicationBatchClient: MedicationBatchWriteIntentActing?
+    /// One server-bound intent is one decision group. Confirm and dismiss are
+    /// sibling controls and must never be in flight at the same time.
+    @ObservationIgnored
+    private var medicationBatchIntentsInFlight: Set<Int> = []
+    @ObservationIgnored
     private var aigcRefreshTasks: [String: Task<Void, Never>] = [:]
     /// Owner-scoped signed result URLs stay in memory only. Conversation cards
     /// persist media metadata and re-fetch a fresh URL from the job endpoint.
@@ -880,7 +886,8 @@ public final class AgentChatViewModel {
         remoteSource: AgentConversationRemoteSourcing? = nil,
         labUploadService: LabUploadServicing? = nil,
         aigcMediaClient: AIGCMediaJobLoading? = nil,
-        dietDraftClient: DietDraftConfirming? = nil
+        dietDraftClient: DietDraftConfirming? = nil,
+        medicationBatchClient: MedicationBatchWriteIntentActing? = nil
     ) {
         self.selectedModelID = selectedModelID
         self.streamService = streamService
@@ -890,6 +897,7 @@ public final class AgentChatViewModel {
         self.labUploadService = labUploadService
         self.aigcMediaClient = aigcMediaClient
         self.dietDraftClient = dietDraftClient
+        self.medicationBatchClient = medicationBatchClient
         self.savedContextBundles = contextBundleStore?.loadContextBundles() ?? []
         // Seed from the local cache so the list isn't empty before the first
         // backend fetch returns; `refreshConversationHistory()` replaces it.
@@ -1214,7 +1222,7 @@ public final class AgentChatViewModel {
                     // 中途 perf 提示:仅暂存(prompt 组装刚完成,首 token 前)。主瀑布图从
                     // 最终 done.perf 渲染;这里让「组装中…」等实时提示未来有据可依。
                     livePreLLMPerf = MessagePerf(preLLMMs: preLLMMs, preLLMStages: stages)
-                case .done(let id, _, let completionStatus, let model, let selectedModel, let answerModel, let toolModels, let fallbackReasons, let sourcesUsed, let toolsUsed, let elapsedMs, let llmRounds, let cards, let perf, let llmUsage, let finalThinkingSteps):
+                case .done(let id, _, let completionStatus, let model, let selectedModel, let answerModel, let toolModels, let fallbackReasons, let sourcesUsed, let toolsUsed, let elapsedMs, let llmRounds, let cards, let perf, let llmUsage, let finalThinkingSteps, let medicationBatchDecision):
                     conversationID = id ?? conversationID
                     lastCompletionStatus = completionStatus
                     lastModel = answerModel ?? model
@@ -1254,6 +1262,22 @@ public final class AgentChatViewModel {
                             messages[idx].cardActions = card.actions
                             scheduleAIGCMediaRefreshIfNeeded(for: assistantID)
                         }
+                    }
+                    // Text confirmation/dismissal creates a fresh assistant turn,
+                    // while the actionable medication draft lives on the prior
+                    // assistant message. `done.cards` is therefore often empty.
+                    // Project the namespaced terminal decision across the existing
+                    // transcript (including nested cards_group) without disturbing
+                    // sibling cards or borrowing turn-level receipts/alerts.
+                    if let medicationBatchDecision {
+                        projectMedicationBatchTerminal(
+                            intentID: medicationBatchDecision.intentID,
+                            outcome: MedicationBatchActionOutcome(
+                                decisionStatus: medicationBatchDecision.status,
+                                writeReceipts: medicationBatchDecision.writeReceipts,
+                                safetyAlerts: medicationBatchDecision.safetyAlerts
+                            )
+                        )
                     }
                     livePreLLMPerf = nil
                     clearLiveStatus()
@@ -2482,6 +2506,167 @@ public final class AgentChatViewModel {
         guard didUpdate else { return nil }
         group["cards"] = .array(updatedCards)
         return .object(group)
+    }
+
+    /// Consume a server-issued medication batch control. The WebView passes
+    /// only the opaque action id; the model resolves the action from the
+    /// persisted card and validates its kernel policy metadata before touching
+    /// the write-intent API.
+    public func performMedicationBatchAction(actionID: String) async {
+        guard let medicationBatchClient,
+              !actionID.isEmpty,
+              let resolved = medicationBatchAction(actionID: actionID),
+              let intentID = MedicationBatchCardProjection.intentID(for: resolved),
+              medicationBatchIntentsInFlight.insert(intentID).inserted else {
+            return
+        }
+        let expectedItemCount = messages.lazy.compactMap { message -> Int? in
+            guard let descriptor = Self.dynamicCardDescriptor(for: message) else { return nil }
+            return MedicationBatchCardProjection.itemCount(
+                in: descriptor,
+                intentID: intentID
+            )
+        }.first
+
+        projectMedicationBatchPending(intentID: intentID, pending: true)
+        // In-flight is transient UI state. Persisting it would strand an
+        // offline restart with both controls hidden if the app quit before the
+        // server response; the durable terminal projection is persisted below.
+        defer { medicationBatchIntentsInFlight.remove(intentID) }
+
+        do {
+            var outcome: MedicationBatchActionOutcome
+            switch resolved.action {
+            case "write_intent.confirm":
+                outcome = try await medicationBatchClient.confirmMedicationBatch(intentID: intentID)
+            case "write_intent.dismiss":
+                outcome = try await medicationBatchClient.dismissMedicationBatch(intentID: intentID)
+            default:
+                return
+            }
+
+            if outcome.decisionStatus == .executed,
+               let expectedItemCount,
+               expectedItemCount > 0,
+               outcome.writeReceipts.count != expectedItemCount {
+                outcome = MedicationBatchActionOutcome(
+                    decisionStatus: outcome.decisionStatus,
+                    writeReceipts: outcome.writeReceipts,
+                    safetyAlerts: outcome.safetyAlerts,
+                    reconciliationRequired: true
+                )
+            }
+
+            if outcome.reconciliationRequired,
+               let authoritative = await reconcileMedicationBatchTerminal(intentID: intentID) {
+                outcome = authoritative
+            }
+            projectMedicationBatchTerminal(intentID: intentID, outcome: outcome)
+            switch outcome.decisionStatus {
+            case .expired:
+                errorMessage = "这组用药确认已过期，没有写入；请重新发送完整药名和本次实际服量。"
+            case .notWritten:
+                errorMessage = "服务端未接受这次确认，没有写入；请刷新对话后重新核对。"
+            case .executed where outcome.reconciliationRequired:
+                errorMessage = "服务端显示确认已先完成，但逐项回执尚未同步；请刷新对话核对，系统不会重复写入。"
+            case .executed, .dismissed:
+                errorMessage = nil
+            }
+            persistCurrentConversation()
+        } catch {
+            projectMedicationBatchPending(intentID: intentID, pending: false)
+            errorMessage = error.localizedDescription
+            persistCurrentConversation()
+        }
+    }
+
+    private func medicationBatchAction(
+        actionID: String
+    ) -> AgentDynamicCardActionDescriptor? {
+        for message in messages {
+            guard let descriptor = Self.dynamicCardDescriptor(for: message),
+                  let action = MedicationBatchCardProjection.action(
+                    in: descriptor,
+                    actionID: actionID
+                  ) else {
+                continue
+            }
+            return action
+        }
+        return nil
+    }
+
+    private func projectMedicationBatchPending(intentID: Int, pending: Bool) {
+        mapMedicationBatchCards(intentID: intentID) { descriptor in
+            MedicationBatchCardProjection.settingPending(
+                descriptor: descriptor,
+                intentID: intentID,
+                pending: pending
+            )
+        }
+    }
+
+    private func projectMedicationBatchTerminal(
+        intentID: Int,
+        outcome: MedicationBatchActionOutcome
+    ) {
+        mapMedicationBatchCards(intentID: intentID) { descriptor in
+            MedicationBatchCardProjection.projectingTerminal(
+                descriptor: descriptor,
+                intentID: intentID,
+                outcome: outcome
+            )
+        }
+    }
+
+    private func mapMedicationBatchCards(
+        intentID: Int,
+        transform: (AgentDynamicCardDescriptor) -> AgentDynamicCardDescriptor
+    ) {
+        for index in messages.indices {
+            guard let descriptor = Self.dynamicCardDescriptor(for: messages[index]),
+                  MedicationBatchCardProjection.targets(
+                    descriptor: descriptor,
+                    intentID: intentID
+                  ) else {
+                continue
+            }
+            let updated = transform(descriptor)
+            messages[index].cardType = updated.type
+            messages[index].cardRender = updated.render
+            messages[index].cardData = updated.data
+            messages[index].cardActions = updated.actions
+        }
+    }
+
+    private func reconcileMedicationBatchTerminal(
+        intentID: Int
+    ) async -> MedicationBatchActionOutcome? {
+        guard let conversationID, let remoteSource,
+              let remoteMessages = try? await remoteSource.fetchDetail(
+                conversationID: conversationID
+              ) else {
+            return nil
+        }
+        return remoteMessages.lazy.compactMap { message in
+            guard let descriptor = Self.dynamicCardDescriptor(for: message) else { return nil }
+            return MedicationBatchCardProjection.terminalOutcome(
+                in: descriptor,
+                intentID: intentID
+            )
+        }.first
+    }
+
+    private static func dynamicCardDescriptor(
+        for message: AgentChatMessage
+    ) -> AgentDynamicCardDescriptor? {
+        guard let type = message.cardType, let data = message.cardData else { return nil }
+        return AgentDynamicCardDescriptor(
+            type: type,
+            render: message.cardRender,
+            data: data,
+            actions: message.cardActions
+        )
     }
 
     private func medicalExamImportDynamicCard(for item: LabReportImportContext) -> AgentDynamicCardDescriptor {

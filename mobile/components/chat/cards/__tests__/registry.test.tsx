@@ -43,6 +43,11 @@ const WRITE_INTENT_POLICY = {
   policy_reason: 'manual_confirm_write',
 };
 
+const MEDICATION_WRITE_POLICY = {
+  ...WRITE_INTENT_POLICY,
+  capability_id: 'medication_draft.v1',
+};
+
 function makeContext(query: string, overrides?: Partial<CardContext>): CardContext {
   return {
     query,
@@ -792,7 +797,67 @@ describe('renderCard 安全降级', () => {
     );
   });
 
-  it('preserves interaction metadata on safe write actions', () => {
+  it('removes both write-intent actions when either sibling reaches a terminal state', () => {
+    const descriptor = {
+      type: 'medication_draft',
+      data: { items: [{ medication_name: '伊托必利' }] },
+      actions: [
+        {
+          id: 'confirm-medication-42',
+          label: '确认记录',
+          action: 'write_intent.confirm',
+          endpoint: '/write-intents/42/confirm',
+          requires_manual_confirm: true,
+          ...MEDICATION_WRITE_POLICY,
+          payload: { write_intent_id: 42 },
+        },
+        {
+          id: 'dismiss-medication-42',
+          label: '取消记录',
+          action: 'write_intent.dismiss',
+          endpoint: '/write-intents/42/dismiss',
+          requires_manual_confirm: true,
+          ...MEDICATION_WRITE_POLICY,
+          payload: { write_intent_id: 42 },
+        },
+      ],
+    } as any;
+
+    const element = renderCard(descriptor, {
+      onAction: jest.fn(),
+      actionStateByKey: { 'confirm-medication-42': 'done' },
+    });
+    const { queryByText } = render(element!);
+
+    expect(queryByText('确认记录')).toBeNull();
+    expect(queryByText('取消记录')).toBeNull();
+  });
+
+  it('keeps card action touch targets at least 44 points high', () => {
+    const descriptor = {
+      type: 'medication_draft',
+      data: { items: [{ medication_name: '伊托必利' }] },
+      actions: [{
+        id: 'confirm-medication-42',
+        label: '确认记录',
+        action: 'write_intent.confirm',
+        endpoint: '/write-intents/42/confirm',
+        requires_manual_confirm: true,
+        ...MEDICATION_WRITE_POLICY,
+        payload: { write_intent_id: 42 },
+      }],
+    } as any;
+
+    const element = renderCard(descriptor, { onAction: jest.fn() });
+    const { getByLabelText } = render(element!);
+    const button = getByLabelText('确认记录');
+
+    expect(button.props.style).toEqual(expect.arrayContaining([
+      expect.objectContaining({ minHeight: 44 }),
+    ]));
+  });
+
+  it('rejects write-intent actions outside the medication draft contract', () => {
     const r = renderServerCards([
       {
         type: 'vitals',
@@ -817,11 +882,35 @@ describe('renderCard 安全降级', () => {
       } as any,
     ]);
 
-    expect(r[0].actions?.[0]).toEqual(expect.objectContaining({
+    expect(r[0].actions).toEqual([]);
+  });
+
+  it('accepts only exact medication capability, intent id, and endpoint metadata', () => {
+    const safe = {
+      label: '确认记录',
       action: 'write_intent.confirm',
-      confirmation: expect.objectContaining({ title: '记录 30 个俯卧撑？' }),
-      optimistic: true,
-    }));
+      endpoint: '/write-intents/42/confirm',
+      requires_manual_confirm: true,
+      ...WRITE_INTENT_POLICY,
+      capability_id: 'medication_draft.v1',
+      payload: { write_intent_id: 42 },
+    } as any;
+    const cards = renderServerCards([
+      { type: 'medication_draft', data: {}, actions: [safe] } as any,
+      {
+        type: 'medication_draft',
+        data: {},
+        actions: [
+          { ...safe, capability_id: 'anything.v99' },
+          { ...safe, endpoint: undefined },
+          { ...safe, endpoint: '/write-intents/43/confirm' },
+          { ...safe, payload: { id: 42 } },
+        ],
+      } as any,
+    ]);
+
+    expect(cards[0].actions).toHaveLength(1);
+    expect(cards[1].actions).toEqual([]);
   });
 
   it('renders disabled card actions without dispatching them', () => {
@@ -1609,7 +1698,6 @@ describe('renderServerCards 防御', () => {
 
     expect(r[0].actions).toEqual([
       expect.objectContaining({ action: 'route.open' }),
-      expect.objectContaining({ action: 'write_intent.confirm', requires_manual_confirm: true }),
     ]);
   });
 

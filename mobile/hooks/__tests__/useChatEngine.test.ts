@@ -461,6 +461,252 @@ describe('useChatEngine', () => {
     })]);
   });
 
+  it('restores medication terminal state, every receipt, and safety alerts onto the durable card', () => {
+    const writeReceipts = [
+      {
+        operation_id: 'write_intent:medication_intake_batch:42:101',
+        status: 'verified',
+        resource_type: 'medication_log',
+        resource_id: '101',
+        completed_at: '2026-07-21T21:15:01-04:00',
+        verified: true,
+      },
+      {
+        operation_id: 'write_intent:medication_intake_batch:42:102',
+        status: 'verified',
+        resource_type: 'medication_log',
+        resource_id: '102',
+        completed_at: '2026-07-21T21:15:02-04:00',
+        verified: true,
+      },
+    ];
+    const safetyAlerts = [{
+      rule_id: 'medication.safety_precheck_incomplete',
+      category: 'medication',
+      severity: { value: 3, label: 'high', label_zh: '警告' },
+      title: '自动安全筛查暂未完成',
+      message: '这不代表当前用药组合安全。',
+    }];
+
+    const restored = restoreMessagesFromHistory([{
+      id: 61,
+      role: 'assistant',
+      content: '请确认记录本次服药。',
+      meta: {
+        medication_batch_decision: { intent_id: 42, status: 'executed' },
+        write_receipts: writeReceipts,
+        safety_alerts: safetyAlerts,
+        cards: [{
+          type: 'medication_draft',
+          data: {
+            items: [{ medication_name: '伊托必利' }, { medication_name: '替普瑞酮' }],
+            decision_status: 'executed',
+            write_receipts: writeReceipts,
+            safety_alerts: safetyAlerts,
+          },
+          actions: [],
+        }],
+      },
+    }]);
+
+    expect(restored).toHaveLength(2);
+    expect(restored[0].writeReceipts).toBeUndefined();
+    expect(restored[1]).toEqual(expect.objectContaining({
+      cardType: 'medication_draft',
+      decisionStatus: 'executed',
+      writeReceipts: [
+        expect.objectContaining({ resourceType: 'medication_log', resourceId: '101' }),
+        expect.objectContaining({ resourceType: 'medication_log', resourceId: '102' }),
+      ],
+      safetyAlerts,
+    }));
+  });
+
+  it('restores exact namespaced medication evidence without same-turn receipt or alert contamination', () => {
+    const medicationReceipt = {
+      operation_id: 'write_intent:medication_intake_batch:42:101',
+      status: 'verified',
+      resource_type: 'medication_log',
+      resource_id: '101',
+      completed_at: '2026-07-21T21:15:01-04:00',
+      verified: true,
+    };
+    const unrelatedReceipt = {
+      operation_id: 'health_record:diet_record:701',
+      status: 'verified',
+      resource_type: 'diet_record',
+      resource_id: '701',
+      completed_at: '2026-07-21T21:15:00-04:00',
+      verified: true,
+    };
+    const medicationAlert = {
+      rule_id: 'ddi.medication', category: 'ddi',
+      severity: { value: 3, label: 'high', label_zh: '警告' },
+      title: '用药提示', message: '用药消息',
+    };
+    const unrelatedAlert = {
+      rule_id: 'diet.unrelated', category: 'diet',
+      severity: { value: 3, label: 'high', label_zh: '警告' },
+      title: '饮食提示', message: '饮食消息',
+    };
+
+    const restored = restoreMessagesFromHistory([{
+      id: 62,
+      role: 'assistant',
+      content: '已处理。',
+      meta: {
+        medication_batch_decision: {
+          intent_id: 42,
+          status: 'executed',
+          write_receipts: [medicationReceipt],
+          safety_alerts: [medicationAlert],
+        },
+        write_receipts: [unrelatedReceipt, medicationReceipt],
+        safety_alerts: [unrelatedAlert, medicationAlert],
+        cards: [{
+          type: 'medication_draft',
+          data: {
+            write_intent_id: 42,
+            items: [{ medication_name: '伊托必利', actual_dosage: '1粒' }],
+            decision_status: 'executed',
+          },
+          actions: [],
+        }],
+      },
+    }]);
+
+    const card = restored.find(message => message.cardType === 'medication_draft');
+    expect(card?.writeReceipts).toEqual([
+      expect.objectContaining({ resourceType: 'medication_log', resourceId: '101' }),
+    ]);
+    expect(card?.safetyAlerts).toEqual([medicationAlert]);
+  });
+
+  it('projects a text-confirm done decision onto the earlier pending medication card', async () => {
+    mockStreamChat.mockImplementation(async function* () {
+      yield { type: 'start', conversationId: 777 };
+      yield { type: 'token', content: '已记录本次服药。' };
+      yield {
+        type: 'done',
+        conversationId: 777,
+        messageId: 63,
+        completionStatus: 'complete',
+        cards: [],
+        medicationBatchDecision: {
+          intentId: 42,
+          decisionStatus: 'executed',
+          writeReceipts: [
+            {
+              operationId: 'write_intent:medication_intake_batch:42:101',
+              status: 'verified', resourceType: 'medication_log', resourceId: '101',
+              completedAt: '2026-07-21T21:15:01-04:00', verified: true,
+            },
+            {
+              operationId: 'write_intent:medication_intake_batch:42:102',
+              status: 'verified', resourceType: 'medication_log', resourceId: '102',
+              completedAt: '2026-07-21T21:15:02-04:00', verified: true,
+            },
+          ],
+          safetyAlerts: [{
+            rule_id: 'ddi.text-confirm', category: 'ddi',
+            severity: { value: 3, label: 'high', label_zh: '警告' },
+            title: '文本确认安全提示', message: '完整保留批次提示。',
+          }],
+        },
+      };
+    });
+    const { result } = renderHook(() => useChatEngine());
+    act(() => {
+      result.current.setMessages([{
+        id: 'pending-medication-42',
+        role: 'assistant',
+        content: '请确认记录本次服药。',
+        cardType: 'medication_draft',
+        cardData: {
+          write_intent_id: 42,
+          items: [
+            { medication_name: '伊托必利', actual_dosage: '1粒' },
+            { medication_name: '替普瑞酮', actual_dosage: '1粒' },
+          ],
+        },
+        cardActions: [{
+          id: 'medication-batch-confirm:42',
+          label: '确认记录',
+          action: 'write_intent.confirm',
+          endpoint: '/write-intents/42/confirm',
+          payload: { write_intent_id: 42 },
+        }],
+      }, {
+        id: 'unrelated-card',
+        role: 'assistant',
+        content: '',
+        cardType: 'diet_draft',
+        cardData: { food_items: '鸡蛋' },
+      }]);
+    });
+
+    await act(async () => {
+      await result.current.sendMessage('确认');
+    });
+
+    const card = result.current.messages.find(message => message.id === 'pending-medication-42');
+    expect(card).toEqual(expect.objectContaining({
+      decisionStatus: 'executed',
+      cardActions: [],
+      writeReceipts: [
+        expect.objectContaining({ resourceId: '101' }),
+        expect.objectContaining({ resourceId: '102' }),
+      ],
+      safetyAlerts: [expect.objectContaining({ rule_id: 'ddi.text-confirm' })],
+    }));
+    expect(card?.cardData).toEqual(expect.objectContaining({ decision_status: 'executed' }));
+    expect(result.current.messages.find(message => message.id === 'unrelated-card')?.cardData)
+      .toEqual({ food_items: '鸡蛋' });
+  });
+
+  it.each(['dismissed', 'expired'] as const)(
+    'projects a text %s decision with no fabricated receipt',
+    async (decisionStatus) => {
+      mockStreamChat.mockImplementation(async function* () {
+        yield { type: 'start', conversationId: 777 };
+        yield {
+          type: 'done', conversationId: 777, messageId: 64, cards: [],
+          medicationBatchDecision: {
+            intentId: 42,
+            decisionStatus,
+            writeReceipts: [],
+            safetyAlerts: [],
+          },
+        };
+      });
+      const { result } = renderHook(() => useChatEngine());
+      act(() => {
+        result.current.setMessages([{
+          id: 'pending-medication-42',
+          role: 'assistant',
+          content: '请确认。',
+          cardType: 'medication_draft',
+          cardData: { write_intent_id: 42, items: [{ medication_name: '伊托必利' }] },
+          cardActions: [{
+            label: '确认记录', action: 'write_intent.confirm',
+            payload: { write_intent_id: 42 },
+          }],
+        }]);
+      });
+
+      await act(async () => {
+        await result.current.sendMessage('确认');
+      });
+
+      const card = result.current.messages.find(message => message.id === 'pending-medication-42');
+      expect(card).toEqual(expect.objectContaining({
+        decisionStatus,
+        cardActions: [],
+      }));
+      expect(card?.writeReceipts).toEqual([]);
+    },
+  );
+
   it('restores the last active conversation after the chat page is remounted', async () => {
     mockAsyncStorage[scopedStorageKey('chat:last_conversation_id:v1')] = '321';
     mockGetConversationMessages.mockResolvedValueOnce({
@@ -880,6 +1126,26 @@ describe('useChatEngine', () => {
       message.role === 'user' && message.content === '午餐吃了鸡胸肉'
     ))).toHaveLength(1);
     expect(result.current.messages.filter(message => message.role === 'assistant')).toHaveLength(1);
+  });
+
+  it('keeps one optimistic pair across repeated offline retries before recovery', async () => {
+    (NetInfo.fetch as jest.Mock)
+      .mockResolvedValueOnce({ isConnected: false })
+      .mockResolvedValueOnce({ isConnected: false })
+      .mockResolvedValueOnce({ isConnected: true });
+    mockStreamChat.mockImplementation(streamTokenBurstThenDone);
+    const { result } = renderHook(() => useChatEngine());
+
+    await act(async () => { await result.current.sendMessage('准备睡觉了，给我建议'); });
+    const failedTurnId = result.current.activeTurn.turnId;
+    await act(async () => { await result.current.sendMessage('准备睡觉了，给我建议'); });
+    await act(async () => { await result.current.sendMessage('准备睡觉了，给我建议'); });
+
+    expect(mockStreamChat.mock.calls[0][6]).toBe(failedTurnId);
+    expect(result.current.messages.filter(message => message.role === 'user')).toHaveLength(1);
+    expect(result.current.messages.filter(message => (
+      message.role === 'assistant' && !message.cardType
+    ))).toHaveLength(1);
   });
 
   it('waits for active-turn hydration before reconciling initial history', async () => {

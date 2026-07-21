@@ -67,7 +67,7 @@ final class AgentStreamClientTests: XCTestCase {
         """
 
         let events = try AgentStreamParser.parse(payload)
-        guard case .done(_, _, _, _, _, _, _, _, _, _, _, _, _, _, let usage, _) = events.first else {
+        guard case .done(_, _, _, _, _, _, _, _, _, _, _, _, _, _, let usage, _, _) = events.first else {
             return XCTFail("expected done event")
         }
         XCTAssertEqual(usage?.calls, 1)
@@ -120,6 +120,60 @@ final class AgentStreamClientTests: XCTestCase {
                 ]
             )
         ])
+    }
+
+    func testParserPreservesExactNamespacedMedicationBatchDecisionInDone() throws {
+        let payload = """
+        data: {"event":"done","data":{"conversation_id":5,"message_id":3,"completion_status":"complete","cards":[],"write_receipts":[{"operation_id":"water_record:999"}],"safety_alerts":[{"rule_id":"unrelated"}],"medication_batch_decision":{"intent_id":41,"status":"executed","write_receipts":[{"operation_id":"medication_log:101"},{"operation_id":"medication_log:102"}],"safety_alerts":[{"rule_id":"ddi-1"},{"rule_id":"pgx-2"}]}}}
+
+        """
+
+        let events = try AgentStreamParser.parse(payload)
+        guard case .done(
+            _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, let decision
+        ) = events.first else {
+            return XCTFail("expected done event")
+        }
+
+        XCTAssertEqual(decision?.intentID, 41)
+        XCTAssertEqual(decision?.status, .executed)
+        XCTAssertEqual(decision?.writeReceipts.count, 2)
+        XCTAssertEqual(decision?.safetyAlerts.count, 2)
+        XCTAssertEqual(
+            decision?.writeReceipts.first?["operation_id"]?.stringValue,
+            "medication_log:101"
+        )
+        XCTAssertEqual(decision?.safetyAlerts.first?["rule_id"]?.stringValue, "ddi-1")
+    }
+
+    func testParserFallsBackToLegacyTopLevelMedicationEvidenceOnlyWhenScopedKeysAreAbsent() throws {
+        let payload = """
+        data: {"event":"done","data":{"conversation_id":5,"message_id":3,"write_receipts":[{"operation_id":"medication_log:101"}],"safety_alerts":[{"rule_id":"legacy-ddi"}],"medication_batch_decision":{"intent_id":41,"status":"executed"}}}
+
+        data: {"event":"done","data":{"conversation_id":5,"message_id":4,"write_receipts":[{"operation_id":"water_record:999"}],"safety_alerts":[{"rule_id":"unrelated"}],"medication_batch_decision":{"intent_id":42,"status":"dismissed","write_receipts":[],"safety_alerts":[]}}}
+
+        """
+
+        let events = try AgentStreamParser.parse(payload)
+        guard case .done(
+            _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, let legacyDecision
+        ) = events.first,
+        case .done(
+            _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, let exactEmptyDecision
+        ) = events.last else {
+            return XCTFail("expected two done events")
+        }
+
+        XCTAssertEqual(
+            legacyDecision?.writeReceipts.first?["operation_id"]?.stringValue,
+            "medication_log:101"
+        )
+        XCTAssertEqual(
+            legacyDecision?.safetyAlerts.first?["rule_id"]?.stringValue,
+            "legacy-ddi"
+        )
+        XCTAssertTrue(exactEmptyDecision?.writeReceipts.isEmpty == true)
+        XCTAssertTrue(exactEmptyDecision?.safetyAlerts.isEmpty == true)
     }
 
     func testParserDecodesStatusStageEvents() throws {

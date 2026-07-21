@@ -24,13 +24,16 @@ struct ChatTranscriptWebView: NSViewRepresentable {
     let onAIGCConfirm: (String) -> Void
     /// 饮食卡只传服务端已签发的 action ID，完整记录仍绑定在服务端草稿上。
     let onDietDraftConfirm: (String) -> Void
+    /// 用药批量卡同样只传服务端签发的 action ID；intent 与端点从已渲染卡复核。
+    let onMedicationBatchAction: (String) -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(
             onCopy: onCopy,
             onRouteOpen: onRouteOpen,
             onAIGCConfirm: onAIGCConfirm,
-            onDietDraftConfirm: onDietDraftConfirm
+            onDietDraftConfirm: onDietDraftConfirm,
+            onMedicationBatchAction: onMedicationBatchAction
         )
     }
 
@@ -46,6 +49,7 @@ struct ChatTranscriptWebView: NSViewRepresentable {
         controller.add(context.coordinator, name: "routeOpen")
         controller.add(context.coordinator, name: "aigcConfirm")
         controller.add(context.coordinator, name: "dietDraftConfirm")
+        controller.add(context.coordinator, name: "medicationBatchAction")
         controller.add(context.coordinator, name: "ready")
         config.userContentController = controller
 
@@ -64,6 +68,7 @@ struct ChatTranscriptWebView: NSViewRepresentable {
         context.coordinator.onRouteOpen = onRouteOpen
         context.coordinator.onAIGCConfirm = onAIGCConfirm
         context.coordinator.onDietDraftConfirm = onDietDraftConfirm
+        context.coordinator.onMedicationBatchAction = onMedicationBatchAction
         context.coordinator.apply(messages: messages, fontScale: fontScale)
     }
 
@@ -73,13 +78,13 @@ struct ChatTranscriptWebView: NSViewRepresentable {
         var onRouteOpen: (String) -> Void
         var onAIGCConfirm: (String) -> Void
         var onDietDraftConfirm: (String) -> Void
+        var onMedicationBatchAction: (String) -> Void
         weak var webView: WKWebView?
 
         private var isReady = false
         private var hasLoadedShell = false
         private var pendingMessages: [ChatTranscriptHTML.RenderedMessage] = []
         private var pendingFontScale: Double = 1
-        private var lastSyncedIDs: [String] = []
         private var lastSyncedFontScale: Double = -1
         // 已同步进 DOM 的整组消息;用于「内容未变就别重推」的闸(见 apply)。
         private var lastSyncedMessages: [ChatTranscriptHTML.RenderedMessage] = []
@@ -88,12 +93,14 @@ struct ChatTranscriptWebView: NSViewRepresentable {
             onCopy: @escaping (String) -> Void,
             onRouteOpen: @escaping (String) -> Void,
             onAIGCConfirm: @escaping (String) -> Void,
-            onDietDraftConfirm: @escaping (String) -> Void
+            onDietDraftConfirm: @escaping (String) -> Void,
+            onMedicationBatchAction: @escaping (String) -> Void
         ) {
             self.onCopy = onCopy
             self.onRouteOpen = onRouteOpen
             self.onAIGCConfirm = onAIGCConfirm
             self.onDietDraftConfirm = onDietDraftConfirm
+            self.onMedicationBatchAction = onMedicationBatchAction
         }
 
         func loadShell() {
@@ -131,12 +138,11 @@ struct ChatTranscriptWebView: NSViewRepresentable {
                 return
             }
 
-            let ids = messages.map(\.id)
             let isAppendOrUpdateLast =
-                !lastSyncedIDs.isEmpty &&
-                ids.count >= lastSyncedIDs.count &&
-                Array(ids.prefix(lastSyncedIDs.count - 1)) == Array(lastSyncedIDs.prefix(lastSyncedIDs.count - 1)) &&
-                ids.count <= lastSyncedIDs.count + 1
+                ChatTranscriptHTML.canAppendOrUpdateLast(
+                    previous: lastSyncedMessages,
+                    next: messages
+                )
 
             if isAppendOrUpdateLast, let last = messages.last {
                 webView.evaluateJavaScript("window.chat.appendOrUpdateLast(\(last.jsonObject));", completionHandler: nil)
@@ -144,7 +150,6 @@ struct ChatTranscriptWebView: NSViewRepresentable {
                 let json = ChatTranscriptHTML.messagesJSONArray(messages)
                 webView.evaluateJavaScript("window.chat.setMessages(\(json));", completionHandler: nil)
             }
-            lastSyncedIDs = ids
             lastSyncedMessages = messages
         }
 
@@ -154,7 +159,6 @@ struct ChatTranscriptWebView: NSViewRepresentable {
             switch message.name {
             case "ready":
                 isReady = true
-                lastSyncedIDs = []
                 lastSyncedFontScale = -1
                 lastSyncedMessages = []
                 apply(messages: pendingMessages, fontScale: pendingFontScale)
@@ -173,6 +177,10 @@ struct ChatTranscriptWebView: NSViewRepresentable {
             case "dietDraftConfirm":
                 if let actionID = message.body as? String {
                     onDietDraftConfirm(actionID)
+                }
+            case "medicationBatchAction":
+                if let actionID = message.body as? String {
+                    onMedicationBatchAction(actionID)
                 }
             default:
                 break
@@ -286,7 +294,8 @@ private func previewOrchestratorMessage() -> ChatTranscriptHTML.RenderedMessage 
         onCopy: { _ in },
         onRouteOpen: { _ in },
         onAIGCConfirm: { _ in },
-        onDietDraftConfirm: { _ in }
+        onDietDraftConfirm: { _ in },
+        onMedicationBatchAction: { _ in }
     )
     .frame(width: 560, height: 520)
 }

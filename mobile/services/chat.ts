@@ -4,6 +4,7 @@ import { buildClientCapsHeader } from './clientCaps';
 import { sanitizeChatErrorMessage } from '../utils/chatErrorMessage';
 import type { AgentPerfProfileLike } from '../utils/chatTransparency';
 import { normalizeWriteReceipt, type WriteReceipt } from './writeReceipt';
+import type { MedicationSafetyAlert } from './medications';
 import { assertAppEgressAllowed, enforceAppEgressAllowed } from './egressPolicy';
 
 export interface ChatMessage {
@@ -85,6 +86,13 @@ export interface LlmUsageProfile {
 
 export type AgentPerfProfile = AgentPerfProfileLike;
 
+export interface MedicationBatchStreamDecision {
+  intentId: number;
+  decisionStatus: 'executed' | 'dismissed' | 'expired';
+  writeReceipts: WriteReceipt[];
+  safetyAlerts: MedicationSafetyAlert[];
+}
+
 export interface StreamEvent {
   type: 'start' | 'persisted' | 'token' | 'tool' | 'status' | 'card' | 'done' | 'error';
   content?: string;
@@ -128,6 +136,57 @@ export interface StreamEvent {
   // SSE done 事件里的动态卡片，由 useChatEngine 交给 card registry 渲染
   cards?: StreamCardDescriptor[];
   writeReceipts?: WriteReceipt[];
+  medicationBatchDecision?: MedicationBatchStreamDecision;
+}
+
+function medicationSafetyAlerts(value: unknown): MedicationSafetyAlert[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((raw): raw is MedicationSafetyAlert => (
+    raw != null
+    && typeof raw === 'object'
+    && !Array.isArray(raw)
+    && typeof (raw as Record<string, unknown>).rule_id === 'string'
+    && typeof (raw as Record<string, unknown>).category === 'string'
+    && typeof (raw as Record<string, unknown>).title === 'string'
+    && typeof (raw as Record<string, unknown>).message === 'string'
+  ));
+}
+
+function medicationBatchStreamDecision(
+  decisionValue: unknown,
+  legacyWriteReceipts: unknown,
+  legacySafetyAlerts: unknown,
+): MedicationBatchStreamDecision | undefined {
+  if (!decisionValue || typeof decisionValue !== 'object' || Array.isArray(decisionValue)) {
+    return undefined;
+  }
+  const decision = decisionValue as Record<string, unknown>;
+  const intentId = Number(decision.intent_id);
+  const decisionStatus = decision.status;
+  if (
+    !Number.isInteger(intentId)
+    || intentId <= 0
+    || (decisionStatus !== 'executed' && decisionStatus !== 'dismissed' && decisionStatus !== 'expired')
+  ) {
+    return undefined;
+  }
+  const rawReceipts = Array.isArray(decision.write_receipts)
+    ? decision.write_receipts
+    : legacyWriteReceipts;
+  const rawAlerts = Array.isArray(decision.safety_alerts)
+    ? decision.safety_alerts
+    : legacySafetyAlerts;
+  const writeReceipts = decisionStatus === 'executed' && Array.isArray(rawReceipts)
+    ? rawReceipts
+      .map(normalizeWriteReceipt)
+      .filter((receipt): receipt is WriteReceipt => !!receipt)
+    : [];
+  return {
+    intentId,
+    decisionStatus,
+    writeReceipts,
+    safetyAlerts: decisionStatus === 'executed' ? medicationSafetyAlerts(rawAlerts) : [],
+  };
 }
 
 const TOOL_THOUGHT_LABELS: Record<string, string> = {
@@ -431,6 +490,11 @@ export async function* streamChat(
             .map(normalizeWriteReceipt)
             .filter((receipt: WriteReceipt | undefined): receipt is WriteReceipt => !!receipt)
           : undefined;
+        const medicationDecision = medicationBatchStreamDecision(
+          parsed.data?.medication_batch_decision,
+          parsed.data?.write_receipts,
+          parsed.data?.safety_alerts,
+        );
         return {
           type: 'done',
           conversationId: parsed.data?.conversation_id,
@@ -451,6 +515,7 @@ export async function* streamChat(
           thinkingSteps: normalizeThinkingSteps(parsed.data?.thinking_steps),
           cards: Array.isArray(parsed.data?.cards) ? parsed.data.cards : undefined,
           writeReceipts: writeReceipts?.length ? writeReceipts : undefined,
+          ...(medicationDecision ? { medicationBatchDecision: medicationDecision } : {}),
         };
       } else if (parsed.event === 'error') {
         return {

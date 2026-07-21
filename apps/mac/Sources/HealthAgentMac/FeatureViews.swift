@@ -631,6 +631,9 @@ struct AgentChatView: View {
             },
             onDietDraftConfirm: { actionID in
                 Task { await viewModel.confirmDietDraft(actionID: actionID) }
+            },
+            onMedicationBatchAction: { actionID in
+                Task { await viewModel.performMedicationBatchAction(actionID: actionID) }
             }
         )
     }

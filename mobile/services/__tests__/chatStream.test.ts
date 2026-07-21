@@ -404,6 +404,38 @@ describe('streamChat', () => {
     await iter.return?.(undefined as any);
   });
 
+  it('preserves exact namespaced medication terminal evidence from done', async () => {
+    const iter = streamChat('确认');
+    const first = iter.next();
+
+    await Promise.resolve();
+    const xhr = MockXMLHttpRequest.instances[0];
+    xhr.responseText =
+      'data: {"event":"done","data":{"conversation_id":42,"message_id":99,"medication_batch_decision":{"intent_id":42,"status":"executed","write_receipts":[{"operation_id":"write_intent:medication_intake_batch:42:101","status":"verified","resource_type":"medication_log","resource_id":"101","completed_at":"2026-07-21T21:15:01-04:00","verified":true}],"safety_alerts":[{"rule_id":"ddi.medication","category":"ddi","severity":{"value":3,"label":"high","label_zh":"警告"},"title":"用药提示","message":"用药消息"}]},"write_receipts":[{"operation_id":"health_record:diet_record:701","status":"verified","resource_type":"diet_record","resource_id":"701","completed_at":"2026-07-21T21:15:00-04:00","verified":true}]}}\n\n';
+    xhr.onprogress?.();
+
+    await expect(first).resolves.toEqual({
+      value: expect.objectContaining({
+        type: 'done',
+        medicationBatchDecision: {
+          intentId: 42,
+          decisionStatus: 'executed',
+          writeReceipts: [{
+            operationId: 'write_intent:medication_intake_batch:42:101',
+            status: 'verified',
+            resourceType: 'medication_log',
+            resourceId: '101',
+            completedAt: '2026-07-21T21:15:01-04:00',
+            verified: true,
+          }],
+          safetyAlerts: [expect.objectContaining({ rule_id: 'ddi.medication' })],
+        },
+      }),
+      done: false,
+    });
+    await iter.return?.(undefined as any);
+  });
+
   it('preserves llm usage profile from done event', async () => {
     const iter = streamChat('昨天我吃得如何');
     const first = iter.next();

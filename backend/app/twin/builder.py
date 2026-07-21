@@ -707,7 +707,9 @@ def fill_medication_safety_partitions(
 
     # ② genetic 三类(PGx 读取):用与 _fill_collectors 同一套 collector + classify。
     try:
-        gen = _collectors.fetch_genetic_variants_categorized(db, user_id)
+        gen = _collectors.fetch_genetic_variants_categorized(
+            db, user_id, raise_on_error=raise_on_error
+        )
         if gen and gen.get("total", 0) > 0:
             g = twin.genetic
             g.has_profile = True
@@ -724,7 +726,9 @@ def fill_medication_safety_partitions(
 
     # ③ supplement.active_supplements(DSI 读取)。
     try:
-        supp = _collectors.fetch_supplement_today(db, user_id)
+        supp = _collectors.fetch_supplement_today(
+            db, user_id, raise_on_error=raise_on_error
+        )
         twin.supplement = SupplementState(**supp)
         if supp.get("total_active_count", 0) > 0:
             sources.add("supplement")
@@ -735,7 +739,9 @@ def fill_medication_safety_partitions(
 
     # ④ labs.{flagged_abnormal, last_exam_date}(DSI 长期抑酸×化验感知读取)。
     try:
-        abnormal, latest_exam = _collectors.fetch_medical_exam_abnormal(db, user_id)
+        abnormal, latest_exam = _collectors.fetch_medical_exam_abnormal(
+            db, user_id, raise_on_error=raise_on_error
+        )
         if abnormal:
             twin.labs.flagged_abnormal = abnormal
             sources.add("medical_exam")

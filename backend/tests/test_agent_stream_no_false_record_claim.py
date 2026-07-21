@@ -228,6 +228,62 @@ async def test_verified_write_still_confirms_record(db, auth_user_and_headers):
     assert len(rounds) == 1, rounds
 
 
+async def test_record_intent_with_only_read_tool_cannot_claim_recorded(
+    db, auth_user_and_headers
+):
+    """Counter-regression for the pending-confirmation fix.
+
+    A read tool is still not a write attempt. The second model round cannot turn
+    that read result into a fake success claim, and meta must keep the no-write
+    signal observable.
+    """
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    rounds = 0
+
+    async def fake_call_llm_stream(messages, tools):
+        nonlocal rounds
+        rounds += 1
+        if rounds == 1:
+            yield {
+                "type": "tool_calls",
+                "tool_calls": [{
+                    "id": "read-weight",
+                    "type": "function",
+                    "function": {
+                        "name": "health_query",
+                        "arguments": json.dumps({"dimension": "weight", "days": 1}),
+                    },
+                }],
+            }
+            yield {"type": "finish", "finish_reason": "tool_calls"}
+            return
+        for ch in "已记录体重 71.4kg。":
+            yield {"type": "content", "text": ch}
+        yield {"type": "finish", "finish_reason": "stop"}
+
+    async def fake_execute_tool(tool_name, args_raw, user_token):
+        assert tool_name == "health_query"
+        return json.dumps({"weight": 71.4}, ensure_ascii=False)
+
+    executor._call_llm_stream = fake_call_llm_stream
+    executor._execute_tool = fake_execute_tool
+
+    events = [
+        event async for event in executor.run_stream(
+            user_id=user.id,
+            message="记录体重 71.4kg",
+            user_auth_token="test-token",
+        )
+    ]
+    reply = _tokens(events)
+    done = next(event for event in events if event.get("event") == "done")
+
+    assert "已记录体重" not in reply
+    assert done["data"]["write_receipts"] == []
+    assert done["data"]["record_intent_no_tool"] is True
+
+
 async def test_second_write_failure_never_streams_success_preamble(
     db, auth_user_and_headers
 ):

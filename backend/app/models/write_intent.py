@@ -18,6 +18,7 @@ from sqlalchemy import (
     String,
     Text,
     func,
+    text,
 )
 
 from app.database import Base
@@ -35,6 +36,10 @@ class WriteIntent(Base):
 
     # pending → executed / dismissed / failed
     status = Column(String(20), nullable=False, default="pending", index=True)
+    # Logical terminal outcome. Medication expiry is stored physically as
+    # dismissed (so stale authorizations cannot execute) but remains
+    # distinguishable from an explicit user dismissal across crash recovery.
+    decision_status = Column(String(20), nullable=True)
     source = Column(String(50), nullable=True)         # 谁提议: followup_recall / ...
     trust_tier = Column(String(20), nullable=False, default="manual_confirm")  # v0 恒 manual_confirm
 
@@ -43,11 +48,26 @@ class WriteIntent(Base):
     target_id = Column(Integer, nullable=True)
 
     payload = Column(JSON, nullable=True)              # 执行参数(remind_at / what_to_check / next_due)
-    executed_ref = Column(String(80), nullable=True)   # 执行产物引用: "smart_reminder:123"
+    # 批次执行引用可包含最多 8 个 PostgreSQL INTEGER id（最坏 103 字符）。
+    executed_ref = Column(String(255), nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     decided_at = Column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (
         Index("ix_write_intents_user_status", "user_id", "status"),
+        Index(
+            "uq_write_intents_medication_batch_source",
+            "user_id",
+            "kind",
+            "target_type",
+            "target_id",
+            unique=True,
+            postgresql_where=text(
+                "kind = 'medication_intake_batch' AND target_type = 'agent_message'"
+            ),
+            sqlite_where=text(
+                "kind = 'medication_intake_batch' AND target_type = 'agent_message'"
+            ),
+        ),
     )

@@ -1358,6 +1358,115 @@ async def test_agent_stream_auto_confirms_fast_record_tool_calls(db, auth_user_a
 
 
 @pytest.mark.asyncio
+async def test_two_medications_pending_confirmation_is_not_overwritten_by_record_intent_fallback(
+    db, auth_user_and_headers, monkeypatch
+):
+    """Regression for the founder screenshot: a normal manual-confirm pause is
+    not a missing-tool failure merely because it intentionally has no receipt yet.
+
+    Patch the implementation boundary (not ``_execute_tool``) so the Agent Kernel
+    still observes both NEEDS_CONFIRMATION results and classifies the turn.
+    """
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    llm_rounds = 0
+    executed = []
+
+    async def fake_call_llm(messages, tools):
+        nonlocal llm_rounds
+        llm_rounds += 1
+        if llm_rounds == 1:
+            return {
+                "content": "",
+                "finish_reason": "tool_calls",
+                "tool_calls": [
+                    {
+                        "id": "med-itopride",
+                        "type": "function",
+                        "function": {
+                            "name": "health_record",
+                            "arguments": json.dumps({
+                                "record_type": "medication",
+                                "data": {
+                                    "medication_name": "伊托必利",
+                                    "actual_dosage": "1粒",
+                                },
+                            }, ensure_ascii=False),
+                        },
+                    },
+                    {
+                        "id": "med-teprenone",
+                        "type": "function",
+                        "function": {
+                            "name": "health_record",
+                            "arguments": json.dumps({
+                                "record_type": "medication",
+                                "data": {
+                                    "medication_name": "替普瑞酮",
+                                    "actual_dosage": "1粒",
+                                },
+                            }, ensure_ascii=False),
+                        },
+                    },
+                ],
+            }
+        return {
+            "content": "我还需要你补充记录类型和值。",
+            "finish_reason": "stop",
+        }
+
+    async def fake_execute_tool_impl(tool_name, args_raw, user_token, *, source):
+        args = json.loads(args_raw) if isinstance(args_raw, str) else args_raw
+        executed.append((tool_name, args, source))
+        data = args["data"]
+        return (
+            "[NEEDS_CONFIRMATION] 我准备记录: "
+            f"用药 {data['medication_name']}，本次服量 {data['actual_dosage']}. "
+            "请向用户复述并问一次'是这样吗？'"
+        )
+
+    monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
+    monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
+    monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
+    monkeypatch.setattr(executor, "_execute_tool_impl", fake_execute_tool_impl)
+    # This test isolates the legacy tool-pending state machine.  The founder
+    # sentence now normally short-circuits into the server-owned batch plan
+    # before any LLM call; disable only that newer parser for this regression.
+    monkeypatch.setattr(
+        "app.services.medication_intake_batch.parse_medication_intake_batch",
+        lambda *args, **kwargs: None,
+    )
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="记录服用两种胃药：伊托必利 替普瑞酮 各一粒",
+            user_auth_token="test-token",
+            client_turn_id="turn-two-medications-pending",
+        )
+    ]
+
+    rendered = "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+    done = next(event for event in events if event.get("event") == "done")
+
+    assert len(executed) == 2
+    assert llm_rounds == 1, "待确认工具轮应确定性收口，不再调用模型猜确认文案"
+    assert "伊托必利" in rendered and "替普瑞酮" in rendered
+    assert rendered.count("1粒") == 2
+    assert "是这样吗" in rendered
+    assert "你想记的是哪类" not in rendered
+    assert "我得能对上一个记录项" not in rendered
+    assert done["data"]["write_receipts"] == []
+    assert done["data"]["record_intent_no_tool"] is False
+    assert done["data"]["turn_outcome"]["category"] == "confirmation_required"
+
+
+@pytest.mark.asyncio
 async def test_agent_stream_emits_record_card_after_fast_diet_record(db, auth_user_and_headers):
     user, _headers = auth_user_and_headers
     executor = AgentExecutor(db)

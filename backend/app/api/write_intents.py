@@ -14,6 +14,10 @@ from app.api.deps import get_current_user_required
 from app.database import get_db
 from app.models.user import User
 from app.services import write_intent_service as svc
+from app.services.medication_intake_batch import (
+    ExpiredMedicationIntakePlan,
+    MedicationIntakePlanNotPresented,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -127,9 +131,38 @@ async def confirm_write_intent(
         return svc.confirm(db, current_user.id, intent_id)
     except LookupError:
         raise HTTPException(status_code=404, detail="写意图不存在")
-    except Exception as e:  # noqa: BLE001
+    except ExpiredMedicationIntakePlan as exc:
         db.rollback()
-        logger.error(f"[write-intents] confirm 执行失败(fail loud): {e}", exc_info=True)
+        logger.warning(
+            "[write-intents] confirm 已过期 "
+            "user_id=%s intent_id=%s error_type=%s",
+            current_user.id,
+            intent_id,
+            type(exc).__name__,
+        )
+        raise HTTPException(status_code=409, detail="确认计划已过期，请重新提交记录")
+    except MedicationIntakePlanNotPresented as exc:
+        db.rollback()
+        logger.warning(
+            "[write-intents] confirm 计划尚未展示 "
+            "user_id=%s intent_id=%s error_type=%s",
+            current_user.id,
+            intent_id,
+            type(exc).__name__,
+        )
+        raise HTTPException(
+            status_code=409,
+            detail="确认计划尚未完整展示，请等待当前回复完成后重试",
+        )
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        logger.error(
+            "[write-intents] confirm 执行失败(fail loud) "
+            "user_id=%s intent_id=%s error_type=%s",
+            current_user.id,
+            intent_id,
+            type(exc).__name__,
+        )
         raise HTTPException(status_code=500, detail="确认执行失败,请稍后重试")
 
 
@@ -144,3 +177,13 @@ async def dismiss_write_intent(
         return svc.dismiss(db, current_user.id, intent_id)
     except LookupError:
         raise HTTPException(status_code=404, detail="写意图不存在")
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        logger.error(
+            "[write-intents] dismiss 执行失败(fail loud) "
+            "user_id=%s intent_id=%s error_type=%s",
+            current_user.id,
+            intent_id,
+            type(exc).__name__,
+        )
+        raise HTTPException(status_code=500, detail="取消执行失败,请稍后重试")

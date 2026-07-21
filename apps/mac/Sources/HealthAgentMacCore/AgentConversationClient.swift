@@ -52,15 +52,54 @@ struct BackendConversationMessageMeta: Decodable, Sendable {
     let cards: [AgentDynamicCardDescriptor]
     let cardType: String?
     let cardData: AgentDynamicCardValue?
+    let medicationBatchDecision: AgentDynamicCardValue?
+    let writeReceipts: [AgentDynamicCardValue]
+    let safetyAlerts: [AgentDynamicCardValue]
 
     var firstCard: AgentDynamicCardDescriptor? {
-        if let grouped = AgentDynamicCardDescriptor.grouped(cards) {
+        var sourceCards = cards
+        if sourceCards.isEmpty, let cardType, let cardData {
+            sourceCards = [AgentDynamicCardDescriptor(type: cardType, data: cardData)]
+        }
+        if let intentID = medicationBatchDecision?["intent_id"]?.intValue,
+           let rawStatus = medicationBatchDecision?["status"]?.stringValue,
+           let status = MedicationBatchDecisionStatus(rawValue: rawStatus),
+           status == .executed || status == .dismissed || status == .expired {
+            // The top-level arrays aggregate every write performed in the same
+            // assistant turn. Prefer the decision-scoped arrays so an unrelated
+            // water/vitals write cannot appear inside this medication batch.
+            // Older persisted turns predate the namespaced arrays, so fall back
+            // only when the nested key itself is absent (an explicit [] is truth).
+            let exactReceipts = exactMedicationBatchValues(
+                key: "write_receipts",
+                legacyValues: writeReceipts
+            )
+            let exactAlerts = exactMedicationBatchValues(
+                key: "safety_alerts",
+                legacyValues: safetyAlerts
+            )
+            sourceCards = MedicationBatchCardProjection.restoringTerminal(
+                cards: sourceCards,
+                intentID: intentID,
+                status: status,
+                writeReceipts: exactReceipts,
+                safetyAlerts: exactAlerts
+            )
+        }
+        if let grouped = AgentDynamicCardDescriptor.grouped(sourceCards) {
             return grouped
         }
-        if let cardType, let cardData {
-            return AgentDynamicCardDescriptor(type: cardType, data: cardData)
-        }
         return nil
+    }
+
+    private func exactMedicationBatchValues(
+        key: String,
+        legacyValues: [AgentDynamicCardValue]
+    ) -> [AgentDynamicCardValue] {
+        guard let scoped = medicationBatchDecision?[key] else {
+            return legacyValues
+        }
+        return scoped.arrayValue ?? []
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -80,6 +119,9 @@ struct BackendConversationMessageMeta: Decodable, Sendable {
         case cards
         case cardType = "card_type"
         case cardData = "card_data"
+        case medicationBatchDecision = "medication_batch_decision"
+        case writeReceipts = "write_receipts"
+        case safetyAlerts = "safety_alerts"
     }
 
     init(from decoder: Decoder) throws {
@@ -100,6 +142,18 @@ struct BackendConversationMessageMeta: Decodable, Sendable {
         cards = (try? c.decode([AgentDynamicCardDescriptor].self, forKey: .cards)) ?? []
         cardType = try? c.decode(String.self, forKey: .cardType)
         cardData = try? c.decode(AgentDynamicCardValue.self, forKey: .cardData)
+        medicationBatchDecision = try? c.decode(
+            AgentDynamicCardValue.self,
+            forKey: .medicationBatchDecision
+        )
+        writeReceipts = (try? c.decode(
+            [AgentDynamicCardValue].self,
+            forKey: .writeReceipts
+        )) ?? []
+        safetyAlerts = (try? c.decode(
+            [AgentDynamicCardValue].self,
+            forKey: .safetyAlerts
+        )) ?? []
     }
 }
 

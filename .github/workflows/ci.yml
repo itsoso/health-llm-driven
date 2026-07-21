@@ -324,7 +324,7 @@ jobs:
           test "$(psql "$PG_URL" -Atc "SELECT COUNT(*) FROM pg_indexes WHERE indexname='ix_agent_tool_operations_run_scope'")" = "1"
           psql "$PG_URL" -v ON_ERROR_STOP=1 -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'
 
-      - name: Run Runtime PostgreSQL semantics
+      - name: Run Runtime and medication PostgreSQL semantics
         working-directory: backend
         env:
           SECRET_KEY: test-secret-key-32-chars-minimum!!
@@ -338,6 +338,9 @@ jobs:
           tests/test_agent_runtime_concurrency.py
           tests/test_agent_runtime_tool_operations.py
           tests/test_agent_runtime_reconciliation.py
+          tests/test_medication_intake_batch.py
+          tests/test_write_intent_medication_batch_schema.py
+          tests/test_medication_intake_batch_postgres.py
 
   backend-tests:
     runs-on: ubuntu-latest

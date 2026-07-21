@@ -456,7 +456,10 @@ class MedicationService:
 
         # 获取活跃药品的预期总次数
         meds = self.list_medications(db, user_id, active_only=True)
-        expected_total = sum(m.times_per_day for m in meds) * days
+        # Unknown schedule (NULL) is not evidence for an expected daily dose.
+        # It can exist for an observed one-off intake and must neither crash
+        # Twin/adherence reads nor silently become the model default of 1/day.
+        expected_total = sum((m.times_per_day or 0) for m in meds) * days
 
         adherence_rate = round(total_taken / expected_total * 100, 1) if expected_total > 0 else 0
 

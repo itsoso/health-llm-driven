@@ -3391,6 +3391,21 @@ def _fast_record_reply_from_tool_results(messages: List[Dict[str, Any]]) -> str:
     return "\n".join(deduped).strip()
 
 
+def _pending_confirmation_reply_from_tool_results(
+    messages: List[Dict[str, Any]],
+) -> str:
+    """Render only intentional confirmation pauses from a mixed transcript."""
+    pending_messages = [
+        message
+        for message in messages
+        if message.get("role") == "tool"
+        and str(message.get("content") or "").lstrip().startswith(
+            "[NEEDS_CONFIRMATION]"
+        )
+    ]
+    return _fast_record_reply_from_tool_results(pending_messages)
+
+
 def _auto_confirm_fast_record_args(
     tool_name: str,
     func_args: Any,
@@ -4627,6 +4642,15 @@ def _health_record_confirmation_preview(rtype: str, args: dict, data: dict) -> s
         or data.get("illness_name") or data.get("title") or args.get("name")
     )
     if name:
+        if rtype == "medication":
+            actual_dosage = (
+                data.get("actual_dosage")
+                or args.get("actual_dosage")
+                or data.get("dose")
+                or args.get("dose")
+            )
+            if actual_dosage:
+                return f"{label}: {name}，本次服量 {actual_dosage}"
         return f"{label}: {name}"
     return label
 
@@ -5694,6 +5718,48 @@ def _confirm_or_describe(args: dict, data: dict, *, preview: str) -> str | None:
     )
 
 
+_MEDICATION_BATCH_CONFIRM_PHRASES = frozenset({
+    "确认", "确认记录", "是的", "对", "没错",
+})
+_MEDICATION_BATCH_DISMISS_PHRASES = frozenset({
+    "取消", "取消记录", "不记录", "不用了", "别记了",
+})
+
+
+def _normalized_medication_batch_control_phrase(text: str) -> str:
+    normalized = re.sub(r"\s+", "", str(text or "").strip())
+    return normalized.rstrip("。.!！")
+
+
+def _medication_batch_control_action(text: str) -> Optional[str]:
+    normalized = _normalized_medication_batch_control_phrase(text)
+    if normalized in _MEDICATION_BATCH_CONFIRM_PHRASES:
+        return "confirm"
+    if normalized in _MEDICATION_BATCH_DISMISS_PHRASES:
+        return "dismiss"
+    return None
+
+
+def _medication_batch_turn_bypasses_multi_model(text: str) -> bool:
+    """Keep deterministic intake statements outside model panels.
+
+    A bare control word such as ``对`` is only a medication confirmation when
+    there is a valid immediately pending server plan.  Treating it as globally
+    special would silently disable a user-requested model panel for unrelated
+    conversation turns.
+    """
+    try:
+        from app.services.medication_intake_batch import parse_medication_intake_batch
+
+        return parse_medication_intake_batch(text) is not None
+    except Exception as error:  # noqa: BLE001 — routing probe must not break chat
+        logger.warning(
+            "[medication_batch] deterministic routing probe failed error_type=%s",
+            type(error).__name__,
+        )
+        return False
+
+
 def _guidance_shadow_probe(user_id: int, answer_text: str) -> None:
     """[guidance-probe] 主对话答案跑 R4 guidance 红线 —— **纯影子, 只打 log**。
 
@@ -5817,6 +5883,12 @@ class AgentExecutor:
         self._turn_contextual_diet_receipts: list[dict] = []
         self._turn_contextual_diet_cards: list[dict] = []
         self._turn_contextual_diet_record_id: Optional[int] = None
+        self._turn_pending_write_intent_ids: list[int] = []
+        self._turn_pending_write_intent_kinds: list[str] = []
+        self._turn_medication_tool_intent_id: Optional[int] = None
+        self._turn_medication_tool_preflight_error: Optional[str] = None
+        self._turn_medication_tool_confirmation_card: Optional[dict[str, Any]] = None
+        self._multi_model_turn = False
         self._diet_photo_auto_save = False
         self._prefer_fast_record_model = False
         # 本回合是否被 fast-route 到快模型 (简单记录/查询)。仅用于把答案 max_tokens
@@ -6601,6 +6673,9 @@ class AgentExecutor:
         from app.services.llm.factory import create_provider_for_model_id
 
         set_caller("agent_executor.multi_model", user_id=user_id)
+        # A model panel has no confirmation-card terminal contract. Mark this
+        # path so a lead-model medication call cannot commit a hidden plan.
+        self._multi_model_turn = True
         start_time = time.time()
         # 该路径的准入门是 `not images and not file_base64`(见 run_stream 调用点),故本回合
         # 恒无图片;request_persisted 事件已不再引用 saved_image_urls(消费引用已被移除),
@@ -6734,6 +6809,7 @@ class AgentExecutor:
                         tool_calls,
                         user_auth_token,
                     )
+                    self._prepare_medication_tool_plan(tool_calls)
                     planned_writes: List[tuple[str, Dict[str, Any]]] = []
                     for tc in tool_calls:
                         fn = tc["function"]["name"]
@@ -6926,9 +7002,13 @@ class AgentExecutor:
             for i in range(0, len(full_reply), 24):
                 yield {"event": "token", "data": {"content": full_reply[i:i + 24]}}
         except Exception as e:  # noqa: BLE001
-            logger.error("多模型综合执行异常: %s", e, exc_info=True)
+            logger.error(
+                "多模型综合执行异常 user=%s error_type=%s",
+                user_id,
+                type(e).__name__,
+            )
             completion_status = "error"
-            full_reply = f"多模型综合分析遇到问题: {e}"
+            full_reply = "多模型综合分析遇到问题，请稍后重试。"
             yield {"event": "token", "data": {"content": full_reply}}
         finally:
             if self._http_client:
@@ -6974,7 +7054,11 @@ class AgentExecutor:
                 **({"client_turn_id": client_turn_id} if client_turn_id else {}),
             }
         except Exception as e:  # noqa: BLE001
-            logger.warning("[multi_model] write meta 失败: %s", e)
+            logger.warning(
+                "[multi_model] write meta 失败 user=%s error_type=%s",
+                user_id,
+                type(e).__name__,
+            )
         self.db.commit()
 
         yield {"event": "done", "data": {
@@ -7029,6 +7113,12 @@ class AgentExecutor:
         self._current_turn_user_message = message or ""
         self._current_turn_recent_messages = []
         self._current_turn_has_attachment = bool(images or file_base64)
+        self._turn_pending_write_intent_ids = []
+        self._turn_pending_write_intent_kinds = []
+        self._turn_medication_tool_intent_id = None
+        self._turn_medication_tool_preflight_error = None
+        self._turn_medication_tool_confirmation_card = None
+        self._multi_model_turn = False
         self._start_agent_kernel_turn(
             user_id=user_id,
             message=message,
@@ -7158,12 +7248,25 @@ class AgentExecutor:
                     )
                 )
                 recovered_receipts = recovered_meta.get("write_receipts") or []
+                # A medication tool can commit a source-bound pending plan and
+                # then lose its worker before the generic write checkpoint is
+                # finalized.  That state is neither an unknown write nor safe
+                # to rerun through the model.  Let the deterministic batch
+                # resolver below recover and re-render the exact frozen plan.
+                recovered_medication_plan = self._source_bound_medication_intent(
+                    user_id=user_id,
+                    conversation_id=int(recovered_user_message.conversation_id),
+                    source_message_id=int(recovered_user_message.id),
+                )
                 if (
-                    recovered_write_state.get("status") in {
-                        "in_flight", "uncertain", "verified",
-                    }
-                    or recovered_operation_blocks_retry
-                    or bool(recovered_receipts)
+                    recovered_medication_plan is None
+                    and (
+                        recovered_write_state.get("status") in {
+                            "in_flight", "uncertain", "verified",
+                        }
+                        or recovered_operation_blocks_retry
+                        or bool(recovered_receipts)
+                    )
                 ):
                     async for event in self._recover_client_turn_write_checkpoint(
                         turn_service,
@@ -7262,7 +7365,22 @@ class AgentExecutor:
         genui_tool_calls: List[Tuple[str, Optional[dict], str]] = []
         # 多模型综合分析 (商用三强 panel)。仅纯文本分析回合走此路径;
         # 带图片/附件时回退普通单模型路径 (panel 是文本综合, 不处理多模态)。
-        if _extract_multi_model_flag(extra_context) and not images and not file_base64:
+        if (
+            _extract_multi_model_flag(extra_context)
+            and not images
+            and not file_base64
+            and not (
+                _medication_batch_turn_bypasses_multi_model(message)
+                or (
+                    _medication_batch_control_action(message) is not None
+                    and self._has_pending_medication_confirmation_for_route(
+                        user_id=user_id,
+                        conversation_id=conversation_id,
+                    )
+                )
+            )
+            and not _has_fast_record_write_intent(message or "")
+        ):
             async for evt in self._run_multi_model_stream(
                 user_id,
                 message,
@@ -7529,6 +7647,30 @@ class AgentExecutor:
         self._current_turn_conversation_id = int(conv.id)
         self._current_turn_image_urls = list(saved_image_urls)
         self._bind_agent_kernel_source_message(user_msg.id)
+
+        # Multi-medication intake is a server-owned two-turn transaction:
+        # source-bound proposal now, strict immediate confirmation next turn.
+        # It runs after the durable user ACK but before recipes, prompts, or any
+        # model call.  Read-only pregeneration is never allowed to propose or
+        # execute a health write.
+        if not read_only_tools and not images and not file_base64:
+            medication_batch_result = self._resolve_medication_batch_turn(
+                user_id=user_id,
+                conversation_id=conv.id,
+                user_message=user_msg,
+                message=message,
+            )
+            if medication_batch_result is not None:
+                async for evt in self._run_medication_batch_result(
+                    medication_batch_result,
+                    svc=svc,
+                    conv=conv,
+                    user_id=user_id,
+                    client_turn_id=client_turn_id,
+                    start_time=start_time,
+                ):
+                    yield evt
+                return
 
         # ── Slice 3 程序性配方: 触发短语精确匹配 (先于 fast-path/LLM)。
         # strip 后等值才命中 (不做模糊匹配, 控误触发); 命中 → 确定性逐步重放,
@@ -8339,6 +8481,8 @@ class AgentExecutor:
                         user_auth_token,
                     )
 
+                    self._prepare_medication_tool_plan(tool_calls)
+
                     planned_writes: List[tuple[str, Dict[str, Any]]] = []
                     for tc in tool_calls:
                         planned_name = tc["function"]["name"]
@@ -8778,6 +8922,22 @@ class AgentExecutor:
                                     },
                                 }
 
+                    medication_confirmation_card = getattr(
+                        self,
+                        "_turn_medication_tool_confirmation_card",
+                        None,
+                    )
+                    if medication_confirmation_card is not None:
+                        streamed_cards = _merge_agent_card_descriptors(
+                            streamed_cards,
+                            [medication_confirmation_card],
+                        )
+                        # This card authorizes a health write. Deliver it only
+                        # in final ``done.cards``, after the completed assistant
+                        # checkpoint is committed. Streaming it here would let
+                        # a fast client click an authorization the server cannot
+                        # yet prove was fully presented.
+
                     # 2026-07-01: 关闭本轮 tool_exec 壁钟 + 记录 per-round split (纯埋点)。
                     try:
                         _round_tool_exec_ms = int((time.time() - _round_tool_start) * 1000)
@@ -8802,6 +8962,35 @@ class AgentExecutor:
                             }
                         full_reply += _unverified_msg
                         break
+
+                    # ``NEEDS_CONFIRMATION`` is an intentional manual-confirm
+                    # terminal state, not a failed/no-tool write.  Finish from
+                    # the observed tool results now instead of asking another
+                    # model round to reinterpret (or overwrite) that state.
+                    pure_pending_confirmation = bool(
+                        self._agent_kernel_pending_confirmation_tools
+                        and not self._agent_kernel_tool_failure_tools
+                        and not self._agent_kernel_capability_block_reasons
+                    )
+                    if self._prefer_fast_record_model and pure_pending_confirmation:
+                        pending_text = _pending_confirmation_reply_from_tool_results(
+                            messages
+                        )
+                        if pending_text:
+                            if write_receipts:
+                                pending_text = (
+                                    f"另有 {len(write_receipts)} 项记录已完成并取得回执。\n\n"
+                                    f"{pending_text}"
+                                )
+                            for i in range(0, len(pending_text), 20):
+                                chunk = pending_text[i:i + 20]
+                                yield {
+                                    "event": "token",
+                                    "data": {"content": chunk},
+                                }
+                            full_reply += pending_text
+                            final_finish_reason = "stop"
+                            break
 
                     # 硬门(诚实不变量):确定性"已记录…"回复只允许在本轮产生了**可验证的写入回执**
                     # (write_receipts,由 _write_tool_attempted / _write_receipt_from_tool_result 判定)
@@ -9017,7 +9206,24 @@ class AgentExecutor:
                                 )
                         if not final_text.strip():
                             final_text = "我这次没有收到模型的有效回复，请稍后重试或切换模型。"
-                    if self._prefer_fast_record_model and not write_receipts:
+                    pure_pending_confirmation = bool(
+                        self._agent_kernel_pending_confirmation_tools
+                        and not self._agent_kernel_tool_failure_tools
+                        and not self._agent_kernel_capability_block_reasons
+                    )
+                    if pure_pending_confirmation:
+                        pending_text = _pending_confirmation_reply_from_tool_results(
+                            messages
+                        )
+                        if pending_text:
+                            if write_receipts:
+                                pending_text = (
+                                    f"另有 {len(write_receipts)} 项记录已完成并取得回执。\n\n"
+                                    f"{pending_text}"
+                                )
+                            final_text = pending_text
+                            streamed_to_client = False
+                    elif self._prefer_fast_record_model and not write_receipts:
                         final_text = _record_intent_needs_detail_message(message)
                         streamed_to_client = False
                     elif (
@@ -9117,7 +9323,11 @@ class AgentExecutor:
                 full_reply += final_text
 
         except Exception as e:
-            logger.error(f"Agent 执行异常: {e}", exc_info=True)
+            logger.error(
+                "Agent 执行异常 user=%s error_type=%s",
+                user_id,
+                type(e).__name__,
+            )
             error_msg = safe_llm_error_message(e)
             yield {"event": "token", "data": {"content": error_msg}}
             full_reply = error_msg
@@ -9139,7 +9349,9 @@ class AgentExecutor:
             reference_now=self._agent_kernel_reference_now(),
         )
         record_intent_no_tool = bool(
-            self._prefer_fast_record_model and not write_receipts
+            self._prefer_fast_record_model
+            and not write_receipts
+            and not self._agent_kernel_pending_confirmation_tools
         )
         # 破坏性/同步意图从 fast-record 集排除后(留强模型),其 0-工具 缺口在此补上,
         # 与 record_intent_no_tool 加层不减层(不与之重叠:record 集已被上面判掉)。
@@ -9446,6 +9658,8 @@ class AgentExecutor:
                 "sources_used": sources_used,
                 "tools_used": tools_used,
                 "write_receipts": write_receipts,
+                "pending_write_intent_ids": self._turn_pending_write_intent_ids,
+                "pending_write_intent_kinds": self._turn_pending_write_intent_kinds,
                 "cards": cards_for_persistence(response_cards),
                 "finish_reason": final_finish_reason,
                 "completion_status": completion_status,
@@ -9464,7 +9678,11 @@ class AgentExecutor:
                 **({"client_turn_id": client_turn_id} if client_turn_id else {}),
             }
         except Exception as e:
-            logger.warning(f"[agent_executor] write meta 失败: {e}")
+            logger.warning(
+                "[agent_executor] write meta 失败 user=%s error_type=%s",
+                user_id,
+                type(e).__name__,
+            )
         self.db.commit()
 
         yield {
@@ -9484,6 +9702,8 @@ class AgentExecutor:
                 "sources_used": sources_used,
                 "tools_used": tools_used,
                 "write_receipts": write_receipts,
+                "pending_write_intent_ids": self._turn_pending_write_intent_ids,
+                "pending_write_intent_kinds": self._turn_pending_write_intent_kinds,
                 "mode": "agent",
                 "cards": response_cards,
                 "finish_reason": final_finish_reason,
@@ -9499,6 +9719,872 @@ class AgentExecutor:
                 **({"synthesis_passthrough": synthesis_passthrough_meta} if synthesis_passthrough_meta else {}),
                 "client_turn_finalized": True,
                 **({"client_turn_id": client_turn_id} if client_turn_id else {}),
+            },
+        }
+
+    def _source_bound_medication_intent(
+        self,
+        *,
+        user_id: int,
+        conversation_id: int,
+        source_message_id: int,
+    ) -> Any:
+        """Return an integrity-checked batch plan owned by one durable turn."""
+        from app.models.write_intent import WriteIntent
+        from app.services.medication_intake_batch import (
+            WRITE_INTENT_KIND,
+            validate_medication_intake_intent,
+        )
+
+        intent = (
+            self.db.query(WriteIntent)
+            .filter(
+                WriteIntent.user_id == user_id,
+                WriteIntent.kind == WRITE_INTENT_KIND,
+                WriteIntent.target_type == "agent_message",
+                WriteIntent.target_id == source_message_id,
+            )
+            .order_by(WriteIntent.id.desc())
+            .first()
+        )
+        if intent is None:
+            return None
+        try:
+            payload, _ = validate_medication_intake_intent(
+                self.db,
+                intent,
+                require_unexpired=False,
+            )
+        except Exception as error:  # noqa: BLE001 — malformed plan is unusable
+            logger.error(
+                "[medication_batch] source plan validation failed "
+                "intent=%s user=%s error_type=%s",
+                intent.id,
+                user_id,
+                type(error).__name__,
+            )
+            return None
+        if (
+            payload.get("conversation_id") != conversation_id
+            or payload.get("source_message_id") != source_message_id
+        ):
+            return None
+        return intent
+
+    def _has_pending_medication_confirmation_for_route(
+        self,
+        *,
+        user_id: int,
+        conversation_id: Optional[int],
+    ) -> bool:
+        """Read-only routing probe for an immediately pending chat card."""
+        if conversation_id is None:
+            return False
+        from app.models.agent_conversation import AgentMessage
+        from app.models.write_intent import WriteIntent
+        from app.services.medication_intake_batch import WRITE_INTENT_KIND
+
+        latest = (
+            self.db.query(AgentMessage)
+            .filter(AgentMessage.conversation_id == conversation_id)
+            .order_by(AgentMessage.id.desc())
+            .first()
+        )
+        if latest is None or latest.role != "assistant" or not isinstance(latest.meta, dict):
+            return False
+        if (
+            latest.meta.get("client_turn_finalized") is not True
+            or latest.meta.get("completion_status") != "complete"
+        ):
+            return False
+        raw_ids = latest.meta.get("pending_write_intent_ids")
+        raw_kinds = latest.meta.get("pending_write_intent_kinds")
+        if not isinstance(raw_ids, list) or len(raw_ids) != 1:
+            return False
+        if raw_kinds != [WRITE_INTENT_KIND]:
+            return False
+        try:
+            intent_id = int(raw_ids[0])
+        except (TypeError, ValueError):
+            return False
+        intent = (
+            self.db.query(WriteIntent)
+            .filter(
+                WriteIntent.id == intent_id,
+                WriteIntent.user_id == user_id,
+                WriteIntent.kind == WRITE_INTENT_KIND,
+                WriteIntent.status == "pending",
+            )
+            .first()
+        )
+        if intent is None or intent.target_id is None:
+            return False
+        source_bound = self._source_bound_medication_intent(
+            user_id=user_id,
+            conversation_id=int(conversation_id),
+            source_message_id=int(intent.target_id),
+        )
+        if source_bound is None:
+            return False
+        from app.services.write_intent_service import (
+            medication_batch_plan_was_presented,
+        )
+
+        return medication_batch_plan_was_presented(self.db, source_bound)
+
+    def _immediately_pending_medication_intent(
+        self,
+        *,
+        user_id: int,
+        conversation_id: int,
+        current_user_message: Any,
+        action: str,
+    ) -> Any:
+        """Resolve only a pending plan named by the immediately prior assistant.
+
+        Looking up the latest *assistant* is unsafe because it can jump over an
+        intervening user message.  We first inspect the immediately prior row,
+        then verify that its immediately prior row is the plan's source user
+        message.  Assistant metadata is an index only; ownership, status,
+        source binding, and the cryptographic plan hash are revalidated here.
+        """
+        from app.models.agent_conversation import AgentMessage
+        from app.models.write_intent import WriteIntent
+        from app.services.medication_intake_batch import (
+            WRITE_INTENT_KIND,
+            validate_medication_intake_intent,
+        )
+
+        prior = (
+            self.db.query(AgentMessage)
+            .filter(
+                AgentMessage.conversation_id == conversation_id,
+                AgentMessage.id < current_user_message.id,
+            )
+            .order_by(AgentMessage.id.desc())
+            .first()
+        )
+        if prior is None or prior.role != "assistant" or not isinstance(prior.meta, dict):
+            return None
+        meta = prior.meta
+        if (
+            meta.get("client_turn_finalized") is not True
+            or meta.get("completion_status") != "complete"
+        ):
+            return None
+        raw_ids = meta.get("pending_write_intent_ids")
+        raw_kinds = meta.get("pending_write_intent_kinds")
+        terminal_decision = meta.get("medication_batch_decision")
+        terminal_status: Optional[str] = None
+        if (
+            isinstance(raw_ids, list)
+            and len(raw_ids) == 1
+            and raw_kinds == [WRITE_INTENT_KIND]
+        ):
+            try:
+                intent_id = int(raw_ids[0])
+            except (TypeError, ValueError):
+                return None
+        elif isinstance(terminal_decision, dict):
+            terminal_status = str(terminal_decision.get("status") or "")
+            if terminal_status not in {"executed", "dismissed", "expired"}:
+                return None
+            try:
+                intent_id = int(terminal_decision.get("intent_id"))
+            except (TypeError, ValueError):
+                return None
+        else:
+            return None
+        intent = (
+            self.db.query(WriteIntent)
+            .filter(
+                WriteIntent.id == intent_id,
+                WriteIntent.user_id == user_id,
+                WriteIntent.kind == WRITE_INTENT_KIND,
+                WriteIntent.target_type == "agent_message",
+            )
+            .first()
+        )
+        allowed_statuses = {"pending", "executed", "dismissed"}
+        if intent is None or intent.status not in allowed_statuses:
+            return None
+        if terminal_status is not None:
+            durable_terminal = str(
+                getattr(intent, "decision_status", None) or intent.status
+            )
+            if durable_terminal != terminal_status:
+                return None
+        if intent.status == "pending":
+            from app.services.write_intent_service import (
+                medication_batch_plan_was_presented,
+            )
+
+            if not medication_batch_plan_was_presented(self.db, intent):
+                return None
+        source = (
+            self.db.query(AgentMessage)
+            .filter(
+                AgentMessage.conversation_id == conversation_id,
+                AgentMessage.id < prior.id,
+            )
+            .order_by(AgentMessage.id.desc())
+            .first()
+        )
+        if (
+            source is None
+            or source.role != "user"
+            or source.id != intent.target_id
+        ):
+            return None
+        try:
+            # Expiry is enforced by the atomic confirm operation below.  The
+            # lookup must still resolve an expired plan so the deterministic
+            # path can mark it terminal and tell the user what happened,
+            # instead of falling through to an LLM turn.
+            payload, _ = validate_medication_intake_intent(
+                self.db,
+                intent,
+                require_unexpired=False,
+            )
+        except Exception as error:  # noqa: BLE001 — malformed plans never authorize a write
+            logger.error(
+                "[medication_batch] pending intent validation failed "
+                "intent=%s user=%s error_type=%s",
+                intent.id,
+                user_id,
+                type(error).__name__,
+            )
+            return None
+        if (
+            payload.get("conversation_id") != conversation_id
+            or payload.get("source_message_id") != source.id
+        ):
+            return None
+        return intent
+
+    @staticmethod
+    def _medication_batch_items_text(payload: Mapping[str, Any]) -> str:
+        parts: list[str] = []
+        for item in payload.get("items") or []:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("medication_name") or "").strip()
+            dosage = str(item.get("actual_dosage") or "").strip()
+            strength = str(item.get("observed_strength") or "").strip()
+            if name and dosage:
+                parts.append(
+                    f"{name} {strength} × {dosage}"
+                    if strength
+                    else f"{name} {dosage}"
+                )
+        return "、".join(parts)
+
+    @staticmethod
+    def _medication_batch_safety_followup(
+        alerts: Any,
+    ) -> tuple[str, list[dict[str, Any]]]:
+        """Render the safety result produced inside the confirmation transaction.
+
+        The shared service is the only evaluator.  Text confirmation and card
+        clicks therefore surface exactly the same result, without rebuilding a
+        Twin after commit or silently losing an incomplete-precheck advisory.
+        """
+        if not isinstance(alerts, list):
+            alerts = []
+        relevant: list[dict[str, Any]] = []
+        for alert in alerts:
+            if not isinstance(alert, dict):
+                continue
+            raw_severity = alert.get("severity")
+            if isinstance(raw_severity, dict):
+                raw_severity = raw_severity.get("value")
+            try:
+                severity = int(raw_severity)
+            except (TypeError, ValueError):
+                severity = 0
+            if severity >= 3:
+                relevant.append(alert)
+        if not relevant:
+            return "", []
+
+        titles = "; ".join(
+            str(alert.get("title") or "用药安全提醒").strip()
+            for alert in relevant
+        )
+        incomplete = any(
+            alert.get("rule_id") == "medication.safety_precheck_incomplete"
+            for alert in relevant
+        )
+        suffix = f"\n\n⚠️ 安全提示: {titles}"
+        if incomplete:
+            suffix += (
+                "。自动安全筛查未完整完成，这不代表当前用药组合安全；"
+                "新增或调整用药前请咨询医生或药师。"
+            )
+        cards = [
+            card
+            for card in (
+                _safety_alert_card_descriptor(alert) for alert in relevant
+            )
+            if card
+        ]
+        return suffix, cards
+
+    def _medication_batch_terminal_result(
+        self,
+        *,
+        intent: Any,
+        payload: Mapping[str, Any],
+        decision: Mapping[str, Any],
+        recovery: bool = False,
+    ) -> Dict[str, Any]:
+        """Render only the service-owned logical terminal outcome."""
+        from app.services.medication_intake_batch import WRITE_INTENT_KIND
+
+        physical_status = str(decision.get("status") or "")
+        decision_status = str(
+            decision.get("decision_status") or physical_status
+        )
+        receipts = list(decision.get("write_receipts") or [])
+        safety_alerts = list(decision.get("safety_alerts") or [])
+        item_text = self._medication_batch_items_text(payload)
+        expected_count = len(payload.get("items") or [])
+        intent_id = int(intent.id)
+
+        if decision_status == "executed" and physical_status == "executed":
+            if len(receipts) != expected_count:
+                return {
+                    "intent_id": intent_id,
+                    "decision_status": "executed",
+                    "action": "confirm_reconciliation_required",
+                    "reply": (
+                        "这组用药确认已进入已执行状态，但逐项回执暂时无法核验。"
+                        "为避免重复记录，请不要再次提交；请先查看用药记录。"
+                    ),
+                    "write_receipts": [],
+                    "safety_alerts": [],
+                    "pending_ids": [],
+                    "pending_kinds": [],
+                    "cards": [],
+                    "completion_status": "error",
+                    "tool_failures": [WRITE_INTENT_KIND],
+                }
+            safety_suffix, safety_cards = self._medication_batch_safety_followup(
+                safety_alerts
+            )
+            return {
+                "intent_id": intent_id,
+                "decision_status": "executed",
+                "action": "confirmed_recovery" if recovery else "confirmed",
+                "reply": (
+                    f"{'已核验' if recovery else '已记录'}本次服药："
+                    f"{item_text}，共{len(receipts)}条。{safety_suffix}"
+                ),
+                "write_receipts": receipts,
+                "safety_alerts": safety_alerts,
+                "pending_ids": [],
+                "pending_kinds": [],
+                "cards": safety_cards,
+                "completion_status": "complete",
+                "tool_failures": [],
+            }
+
+        if (
+            decision_status == "dismissed"
+            and physical_status == "dismissed"
+            and not receipts
+        ):
+            return {
+                "intent_id": intent_id,
+                "decision_status": "dismissed",
+                "action": "dismissed_recovery" if recovery else "dismissed",
+                "reply": f"已取消这组用药记录，没有写入：{item_text}。",
+                "write_receipts": [],
+                "safety_alerts": [],
+                "pending_ids": [],
+                "pending_kinds": [],
+                "cards": [],
+                "completion_status": "complete",
+                "tool_failures": [],
+            }
+
+        if (
+            decision_status == "expired"
+            and physical_status == "dismissed"
+            and not receipts
+        ):
+            return {
+                "intent_id": intent_id,
+                "decision_status": "expired",
+                "action": "expired_recovery" if recovery else "expired",
+                "reply": (
+                    "这组用药确认已过期，没有写入。"
+                    "请重新发送完整药名和本次实际服量。"
+                ),
+                "write_receipts": [],
+                "safety_alerts": [],
+                "pending_ids": [],
+                "pending_kinds": [],
+                "cards": [],
+                "completion_status": "error",
+                "tool_failures": [WRITE_INTENT_KIND],
+            }
+
+        logger.error(
+            "[medication_batch] contradictory terminal result "
+            "intent=%s physical=%s logical=%s receipts=%s",
+            intent_id,
+            physical_status,
+            decision_status,
+            len(receipts),
+        )
+        return {
+            "intent_id": intent_id,
+            "decision_status": None,
+            "action": "terminal_reconciliation_required",
+            "reply": (
+                "这组用药记录的最终状态暂时无法核验。"
+                "为避免重复写入，请不要再次提交；请先查看用药记录。"
+            ),
+            "write_receipts": [],
+            "safety_alerts": [],
+            "pending_ids": [],
+            "pending_kinds": [],
+            "cards": [],
+            "completion_status": "error",
+            "tool_failures": [WRITE_INTENT_KIND],
+        }
+
+    @staticmethod
+    def _medication_batch_confirmation_card(
+        intent: Any,
+        payload: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        """Build the itemized, owner-scoped manual-confirm card for chat."""
+        from app.services.atomic_capability_registry import (
+            attach_action_policy_metadata,
+        )
+
+        item_text = AgentExecutor._medication_batch_items_text(payload)
+        taken_at = f"{payload.get('taken_date')} {payload.get('taken_time')}"
+        actions = attach_action_policy_metadata("medication_draft", [
+            {
+                "id": f"medication-batch-confirm:{intent.id}",
+                "label": "确认记录",
+                "action": "write_intent.confirm",
+                "endpoint": f"/write-intents/{intent.id}/confirm",
+                "payload": {"write_intent_id": intent.id},
+                "style": "primary",
+                "requires_manual_confirm": True,
+                "confirmation": {
+                    "title": f"确认记录 {item_text}？",
+                    "detail": (
+                        f"将按 {taken_at} 一次写入 "
+                        f"{len(payload.get('items') or [])} 条本次服药事实；"
+                        "不会创建服药频次或提醒。"
+                    ),
+                    "confirm_label": "确认记录",
+                    "cancel_label": "再看看",
+                },
+            },
+            {
+                "id": f"medication-batch-dismiss:{intent.id}",
+                "label": "取消",
+                "action": "write_intent.dismiss",
+                "endpoint": f"/write-intents/{intent.id}/dismiss",
+                "payload": {"write_intent_id": intent.id},
+                "style": "secondary",
+                "requires_manual_confirm": True,
+            },
+        ])
+        return {
+            "type": "medication_draft",
+            "data": {
+                # Kept for v1 clients and capability validation; itemized
+                # clients render ``items`` below.
+                "medication_name": item_text,
+                "write_intent_id": int(intent.id),
+                "plan_sha256": payload.get("plan_sha256"),
+                "items": list(payload.get("items") or []),
+                "taken_at": taken_at,
+                "source": "chat",
+                "boundary": (
+                    "确认后只记录这次已服事实；若药名尚未登记，只建立停用状态的"
+                    "基础条目用于关联本次记录，不推断处方频次，也不创建提醒。"
+                ),
+            },
+            "actions": actions,
+        }
+
+    def _resolve_medication_batch_turn(
+        self,
+        *,
+        user_id: int,
+        conversation_id: int,
+        user_message: Any,
+        message: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Resolve proposal/confirm/dismiss without trusting model-generated flags."""
+        from app.models.medication import Medication
+        from app.services import write_intent_service
+        from app.services.medication_intake_batch import (
+            ExpiredMedicationIntakePlan,
+            WRITE_INTENT_KIND,
+            parse_medication_intake_batch,
+            propose_medication_intake_batch,
+            validate_medication_intake_intent,
+        )
+
+        action = _medication_batch_control_action(message)
+        if action:
+            intent = self._immediately_pending_medication_intent(
+                user_id=user_id,
+                conversation_id=conversation_id,
+                current_user_message=user_message,
+                action=action,
+            )
+            if intent is None:
+                return None
+            payload = intent.payload or {}
+            intent_id = int(intent.id)
+            try:
+                decision = (
+                    write_intent_service.dismiss(self.db, user_id, intent_id)
+                    if action == "dismiss"
+                    else write_intent_service.confirm(self.db, user_id, intent_id)
+                )
+                return self._medication_batch_terminal_result(
+                    intent=intent,
+                    payload=payload,
+                    decision=decision,
+                )
+            except ExpiredMedicationIntakePlan:
+                # The service atomically rolls back all health writes and marks
+                # the logical expiry durable. Replay that exact result instead
+                # of rebuilding it from the physical dismissed state.
+                self.db.rollback()
+                replayed = write_intent_service.confirm(
+                    self.db, user_id, intent_id
+                )
+                return self._medication_batch_terminal_result(
+                    intent=intent,
+                    payload=payload,
+                    decision=replayed,
+                    recovery=True,
+                )
+            except Exception as error:  # noqa: BLE001 — honest failure; plan remains retryable
+                logger.error(
+                    "[medication_batch] terminal action failed "
+                    "intent=%s user=%s error_type=%s",
+                    intent_id,
+                    user_id,
+                    type(error).__name__,
+                )
+                self.db.rollback()
+                # A failure after the service committed must never be reported
+                # as "not written".  Reconcile durable state first.
+                from app.models.write_intent import WriteIntent
+
+                persisted = (
+                    self.db.query(WriteIntent)
+                    .filter(
+                        WriteIntent.id == intent_id,
+                        WriteIntent.user_id == user_id,
+                        WriteIntent.kind == WRITE_INTENT_KIND,
+                    )
+                    .first()
+                )
+                if persisted is not None and persisted.status in {
+                    "executed", "dismissed"
+                }:
+                    try:
+                        replayed = write_intent_service.confirm(
+                            self.db, user_id, persisted.id
+                        )
+                        return self._medication_batch_terminal_result(
+                            intent=persisted,
+                            payload=persisted.payload or payload,
+                            decision=replayed,
+                            recovery=True,
+                        )
+                    except Exception as reconciliation_error:  # noqa: BLE001
+                        logger.error(
+                            "[medication_batch] terminal reconciliation failed "
+                            "intent=%s user=%s error_type=%s",
+                            intent_id,
+                            user_id,
+                            type(reconciliation_error).__name__,
+                        )
+                    return {
+                        "intent_id": intent_id,
+                        "decision_status": None,
+                        "action": "confirm_reconciliation_required",
+                        "reply": (
+                            "这组用药记录已有终态，但当前无法完整核验。"
+                            "为避免重复记录，请不要再次提交；请先查看用药记录。"
+                        ),
+                        "write_receipts": [],
+                        "pending_ids": [],
+                        "pending_kinds": [],
+                        "cards": [],
+                        "completion_status": "error",
+                        "tool_failures": [WRITE_INTENT_KIND],
+                    }
+                if action == "dismiss":
+                    return {
+                        "intent_id": intent_id,
+                        "decision_status": None,
+                        "action": "dismiss_failed",
+                        "reply": (
+                            "这组用药记录的取消未完成：服务端暂时无法确认取消结果。"
+                            "你可以回复“取消”重试；在取消成功前，这组记录仍未写入。"
+                        ),
+                        "write_receipts": [],
+                        "pending_ids": [intent_id],
+                        "pending_kinds": [WRITE_INTENT_KIND],
+                        "cards": [],
+                        "completion_status": "error",
+                        "tool_failures": [WRITE_INTENT_KIND],
+                    }
+                return {
+                    "intent_id": intent_id,
+                    "decision_status": None,
+                    "action": "confirm_failed",
+                    "reply": (
+                        "这组用药记录没有写入：服务端未能完成整批确认。"
+                        "你可以直接回复“确认”重试，或重新发送完整药名和本次服量。"
+                    ),
+                    "write_receipts": [],
+                    "pending_ids": [intent_id],
+                    "pending_kinds": [WRITE_INTENT_KIND],
+                    "cards": [],
+                    "completion_status": "error",
+                    "tool_failures": [WRITE_INTENT_KIND],
+                }
+
+        # A worker can die after the model-owned proposal was committed but
+        # before the assistant preview/checkpoint was finalized.  Recover that
+        # exact source-bound plan before parsing or invoking any model again.
+        intent = self._source_bound_medication_intent(
+            user_id=user_id,
+            conversation_id=conversation_id,
+            source_message_id=int(user_message.id),
+        )
+        if intent is None:
+            known_names = [
+                row[0]
+                for row in self.db.query(Medication.name)
+                .filter(Medication.user_id == user_id)
+                .all()
+                if row[0]
+            ]
+            draft = parse_medication_intake_batch(message, known_names=known_names)
+            if draft is None:
+                return None
+            try:
+                intent = propose_medication_intake_batch(
+                    self.db,
+                    user_id=user_id,
+                    conversation_id=conversation_id,
+                    source_message_id=user_message.id,
+                    text=message,
+                    reference_now=self._agent_kernel_reference_now(),
+                )
+            except Exception as error:  # noqa: BLE001 — recognized write must fail visibly
+                logger.error(
+                    "[medication_batch] proposal failed "
+                    "user=%s source=%s error_type=%s",
+                    user_id,
+                    user_message.id,
+                    type(error).__name__,
+                )
+                self.db.rollback()
+                return {
+                    "action": "proposal_failed",
+                    "reply": (
+                        "这组用药记录尚未建立确认计划，因此没有写入。"
+                        "请稍后重试；如果仍失败，请逐项发送药名和本次服量。"
+                    ),
+                    "write_receipts": [],
+                    "pending_ids": [],
+                    "pending_kinds": [],
+                    "cards": [],
+                    "completion_status": "error",
+                    "tool_failures": [WRITE_INTENT_KIND],
+                }
+        if intent is None:
+            return None
+        payload = intent.payload or {}
+        item_text = self._medication_batch_items_text(payload)
+        if intent.status in {"executed", "dismissed"}:
+            terminal = write_intent_service.confirm(
+                self.db, user_id, intent.id
+            )
+            return self._medication_batch_terminal_result(
+                intent=intent,
+                payload=payload,
+                decision=terminal,
+                recovery=True,
+            )
+        try:
+            validate_medication_intake_intent(
+                self.db,
+                intent,
+                require_unexpired=True,
+            )
+        except ExpiredMedicationIntakePlan:
+            terminal = write_intent_service.expire_medication_batch(
+                self.db, user_id, intent.id
+            )
+            return self._medication_batch_terminal_result(
+                intent=intent,
+                payload=payload,
+                decision=terminal,
+            )
+        taken_at = f"{payload.get('taken_date')} {payload.get('taken_time')}"
+        confirmation_card = self._medication_batch_confirmation_card(intent, payload)
+        return {
+            "action": "proposal",
+            "reply": (
+                f"请确认记录本次服药：{item_text}（{taken_at}）。"
+                "回复“确认”后，我会一次写入全部记录；若药名尚未登记，只建立"
+                "停用状态的基础条目用于关联本次事实，不推断处方频次，也不创建提醒；"
+                "未确认前不会写入。"
+            ),
+            "write_receipts": [],
+            "pending_ids": [intent.id],
+            "pending_kinds": [WRITE_INTENT_KIND],
+            "cards": [confirmation_card],
+            "completion_status": "complete",
+            "tool_failures": [],
+        }
+
+    async def _run_medication_batch_result(
+        self,
+        result: Dict[str, Any],
+        *,
+        svc: Any,
+        conv: Any,
+        user_id: int,
+        client_turn_id: Optional[str],
+        start_time: float,
+    ) -> AsyncGenerator[Dict, None]:
+        """Persist and stream one deterministic medication confirmation result."""
+        from app.services.medication_intake_batch import WRITE_INTENT_KIND
+
+        pending_ids = list(result.get("pending_ids") or [])
+        pending_kinds = list(result.get("pending_kinds") or [])
+        receipts = list(result.get("write_receipts") or [])
+        safety_alerts = list(result.get("safety_alerts") or [])
+        cards = list(result.get("cards") or [])
+        completion_status = str(result.get("completion_status") or "complete")
+        full_reply = str(result.get("reply") or "")
+        self._turn_pending_write_intent_ids = pending_ids
+        self._turn_pending_write_intent_kinds = pending_kinds
+
+        turn_outcome = classify_agent_turn_outcome(
+            completion_status=completion_status,
+            final_text=full_reply,
+            tool_failure_tools=result.get("tool_failures") or [],
+            pending_confirmation_tools=(
+                [WRITE_INTENT_KIND]
+                if result.get("action") == "proposal"
+                else []
+            ),
+            write_receipts=receipts,
+            record_intent_no_tool=False,
+        )
+        elapsed_ms = int((time.time() - start_time) * 1000)
+        kernel_trace = self._agent_kernel_trace_summary(status=completion_status)
+        decision_status = result.get("decision_status")
+        intent_id = result.get("intent_id")
+        medication_batch_decision = None
+        if decision_status in {"executed", "dismissed", "expired"}:
+            try:
+                normalized_intent_id = int(intent_id)
+            except (TypeError, ValueError):
+                normalized_intent_id = 0
+            if normalized_intent_id > 0:
+                medication_batch_decision = {
+                    "intent_id": normalized_intent_id,
+                    "status": decision_status,
+                    "write_receipts": receipts,
+                    "safety_alerts": safety_alerts,
+                }
+        meta_payload: Dict[str, Any] = {
+            "elapsed_ms": elapsed_ms,
+            "llm_ms": 0,
+            "llm_rounds": 0,
+            "llm_rounds_ms": [],
+            "model": None,
+            "selected_model": None,
+            "answer_model": None,
+            "tool_models": [],
+            "fallback_reasons": [],
+            "sources_used": ["服务端用药确认计划"],
+            "tools_used": [],
+            "write_receipts": receipts,
+            "safety_alerts": safety_alerts,
+            "pending_write_intent_ids": pending_ids,
+            "pending_write_intent_kinds": pending_kinds,
+            "cards": cards_for_persistence(cards),
+            "finish_reason": "stop" if completion_status == "complete" else "error",
+            "completion_status": completion_status,
+            "record_intent_no_tool": False,
+            "turn_outcome": turn_outcome,
+            "mode": "medication_intake_batch",
+            "kernel_trace": kernel_trace,
+            "client_turn_finalized": True,
+            **(
+                {"medication_batch_decision": medication_batch_decision}
+                if medication_batch_decision is not None
+                else {}
+            ),
+            **({"client_turn_id": client_turn_id} if client_turn_id else {}),
+        }
+        conv.updated_at = datetime.now(UTC)
+        assistant = svc.save_message(
+            conv.id,
+            "assistant",
+            full_reply,
+            meta=meta_payload,
+            client_turn_id=client_turn_id,
+            client_turn_user_id=user_id,
+        )
+        # Actionable output comes only after the exact itemized plan is durable.
+        # The request_persisted event already ACKed the user's input, so this
+        # short checkpoint does not weaken request durability.
+        yield {
+            "event": "agent_start",
+            "data": {
+                "message": (
+                    "正在确认并记录用药..."
+                    if result.get("action") in {"confirmed", "confirmed_recovery"}
+                    else "正在核对用药记录..."
+                ),
+                "conversation_id": conv.id,
+            },
+        }
+        if full_reply:
+            yield {"event": "token", "data": {"content": full_reply}}
+        for card in cards:
+            yield {
+                "event": "card",
+                "data": {
+                    "anchor": (
+                        "medication_confirmation"
+                        if card.get("type") == "medication_draft"
+                        else "safety_alert"
+                    ),
+                    "descriptor": card,
+                },
+            }
+        yield {
+            "event": "done",
+            "data": {
+                **meta_payload,
+                "conversation_id": conv.id,
+                "message_id": assistant.id,
             },
         }
 
@@ -12959,6 +14045,167 @@ class AgentExecutor:
 
         return await hqb.execute_batch(args, _fetch)
 
+    @staticmethod
+    def _medication_item_from_health_record_args(
+        args: Mapping[str, Any],
+    ) -> tuple[Optional[dict[str, Any]], Optional[str]]:
+        """Extract one observed intake proposal without trusting confirmation flags."""
+        rtype = _normalize_fast_record_kind(
+            args.get("record_type") or args.get("type") or ""
+        )
+        if rtype != "medication":
+            return None, None
+        raw_data = args.get("data", {})
+        if isinstance(raw_data, str):
+            try:
+                raw_data = json.loads(raw_data)
+            except (json.JSONDecodeError, TypeError, ValueError):
+                raw_data = {}
+        data = raw_data if isinstance(raw_data, dict) else {}
+        med_name = str(
+            data.get("medication_name")
+            or data.get("name")
+            or args.get("medication_name")
+            or args.get("name")
+            or ""
+        ).strip()
+        actual_dosage = str(
+            data.get("actual_dosage")
+            or args.get("actual_dosage")
+            or data.get("dose")
+            or args.get("dose")
+            or ""
+        ).strip()
+        legacy_dosage = str(
+            data.get("dosage") or args.get("dosage") or ""
+        ).strip()
+        if not actual_dosage and re.fullmatch(
+            r"(?:\d+(?:\.\d+)?|[一二两三四五六七八九十半])"
+            r"(?:粒|片|袋|支|丸|颗|滴|喷|毫升|ml|单位|iu|u)",
+            legacy_dosage,
+            flags=re.IGNORECASE,
+        ):
+            actual_dosage = legacy_dosage
+        if not med_name:
+            return None, "需要提供药物名称（medication_name）"
+        if not actual_dosage:
+            return None, (
+                "medication 记录必须提供本次实际服量 actual_dosage"
+                "（例如 1粒/2片），不能从药品规格或处方默认值推断。"
+            )
+        observed_strength = str(
+            data.get("observed_strength")
+            or args.get("observed_strength")
+            or data.get("strength")
+            or args.get("strength")
+            or (
+                legacy_dosage
+                if legacy_dosage and legacy_dosage != actual_dosage
+                else ""
+            )
+        ).strip()
+        return {
+            "medication_name": med_name,
+            "actual_dosage": actual_dosage,
+            "observed_strength": observed_strength or None,
+        }, None
+
+    def _prepare_medication_tool_plan(
+        self,
+        tool_calls: Sequence[Mapping[str, Any]],
+    ) -> None:
+        """Seal all medication calls in one model response as one immutable plan.
+
+        This happens before dispatching the first tool call, so neither the
+        model loop nor a concurrent retry can expose a one-item preview and
+        later mutate it into a different multi-item authorization.
+        """
+        items: list[dict[str, Any]] = []
+        has_medication_call = False
+        for tool_call in tool_calls:
+            function = tool_call.get("function")
+            if not isinstance(function, Mapping):
+                continue
+            if function.get("name") != "health_record":
+                continue
+            parsed_args = _parse_tool_arguments_for_telemetry(
+                function.get("arguments")
+            )
+            item, error = self._medication_item_from_health_record_args(parsed_args)
+            if item is None and error is None:
+                continue
+            has_medication_call = True
+            if error is not None:
+                self._turn_medication_tool_preflight_error = error
+                return
+            items.append(item)
+        if not has_medication_call:
+            return
+        self._turn_medication_tool_preflight_error = None
+        if getattr(self, "_read_only_turn", False):
+            self._read_only_turn_write_attempted = True
+            self._turn_medication_tool_preflight_error = (
+                "只读预生成回合不建立用药确认计划"
+            )
+            return
+        if getattr(self, "_multi_model_turn", False):
+            self._turn_medication_tool_preflight_error = (
+                "多模型分析回合不建立用药确认计划；请单独发送用药记录"
+            )
+            return
+        if not items:
+            self._turn_medication_tool_preflight_error = (
+                "用药工具调用没有可确认的逐项服量"
+            )
+            return
+        if not (
+            self._current_user_id is not None
+            and self._current_turn_conversation_id is not None
+            and self._current_turn_source_message_id is not None
+        ):
+            self._turn_medication_tool_preflight_error = (
+                "缺少服务端会话或来源消息，无法建立用药确认计划"
+            )
+            return
+        try:
+            from app.services.medication_intake_batch import (
+                WRITE_INTENT_KIND,
+                propose_medication_intake_items,
+            )
+
+            intent = propose_medication_intake_items(
+                self.db,
+                user_id=self._current_user_id,
+                conversation_id=self._current_turn_conversation_id,
+                source_message_id=self._current_turn_source_message_id,
+                items=items,
+                reference_now=self._agent_kernel_reference_now(),
+                allow_merge_pending=False,
+            )
+            self._turn_medication_tool_intent_id = int(intent.id)
+            self._turn_medication_tool_confirmation_card = (
+                self._medication_batch_confirmation_card(
+                    intent,
+                    intent.payload or {},
+                )
+            )
+            if intent.id not in self._turn_pending_write_intent_ids:
+                self._turn_pending_write_intent_ids.append(intent.id)
+            if WRITE_INTENT_KIND not in self._turn_pending_write_intent_kinds:
+                self._turn_pending_write_intent_kinds.append(WRITE_INTENT_KIND)
+        except Exception as error:  # noqa: BLE001 — no plan means no write
+            logger.error(
+                "[medication_batch] tool preflight failed "
+                "user=%s source=%s error_type=%s",
+                self._current_user_id,
+                self._current_turn_source_message_id,
+                type(error).__name__,
+            )
+            self.db.rollback()
+            self._turn_medication_tool_preflight_error = (
+                "服务端未能封存完整的用药确认计划"
+            )
+
 
     async def _exec_health_record(
         self, base: str, headers: dict, args: dict
@@ -13013,37 +14260,127 @@ class AgentExecutor:
             data.pop("confirmed", None)
             data.pop("confirm", None)
 
-        # [R4-probe · 2026-07-17] **只观测不干预** —— 量化「model 自报 confirmed 绕过确认门」的真实频率。
-        # 通路(对抗评审揪出): confirmed 剥离器 _auto_confirm_fast_record_args 只在
-        # self._prefer_fast_record_model 分支跑(:6497/:6563), 而该 flag 在**有图片/附件**、或消息命中
-        # advice/analysis/疑问守卫时为 False → NEVER_AUTO kind(medication/illness) 带着模型自报的
-        # confirmed 直抵确认门 → _confirm_or_describe(:4470-4478) 无条件放行 → 首轮直写 = R4 逃逸。
-        # 反证: Gate A 若跑过, confirmed 早被 pop → **此处仍带 confirmed 就等于 Gate A 没跑** = 逃逸通路。
-        # 本探针**不改行为**(不剥离、不阻断): 通路可达已确证, 但模型实际伪造频率**无生产证据** ——
-        # 先测真实命中率与句式分布, 再决定完整修法(服务端签发跨轮凭证 + 读用户原话的否定优先判据)。
-        # 判读: msg 像「是的/对」= 真实跨轮确认(良性, 今天靠 flag 巧合放行);
-        #       像首轮记录/带图/带「分析·怎么」= 真逃逸(该堵)。
-        if rtype in _FAST_RECORD_NEVER_AUTO_CONFIRM_KINDS and (
+        # R4 authorization boundary: a model-generated boolean is not evidence
+        # of user consent.  Medication confirmation is now a source-bound
+        # server WriteIntent consumed by the deterministic pre-LLM turn above;
+        # this legacy tool path can only propose/describe, never authorize.
+        model_claimed_confirmation = (
             args.get("confirmed") is True
             or args.get("confirm") is True
             or (
                 isinstance(data, dict)
                 and (data.get("confirmed") is True or data.get("confirm") is True)
             )
-        ):
+        )
+        if rtype == "medication" and model_claimed_confirmation:
             logger.warning(
-                "[R4-probe] NEVER_AUTO kind=%s 带 model 自报 confirmed 抵达确认门 "
-                "(Gate A 未剥离; prefer_fast=%s) user=%s message_chars=%s",
+                "[R4-block] ignored model-controlled confirmation kind=%s "
+                "prefer_fast=%s user=%s message_chars=%s",
                 rtype,
                 self._prefer_fast_record_model,
                 self._current_user_id,
                 len(getattr(self, "_current_turn_user_message", "") or ""),
             )
+        if rtype == "medication":
+            args.pop("confirmed", None)
+            args.pop("confirm", None)
+            data.pop("confirmed", None)
+            data.pop("confirm", None)
+
+            medication_item, medication_error = (
+                self._medication_item_from_health_record_args(args)
+            )
+            if medication_error is not None or medication_item is None:
+                return f"Error: {medication_error or '用药参数无效'}"
+            med_name = medication_item["medication_name"]
+            actual_dosage = medication_item["actual_dosage"]
+            observed_strength = medication_item.get("observed_strength")
+
+            preflight_error = getattr(
+                self,
+                "_turn_medication_tool_preflight_error",
+                None,
+            )
+            if preflight_error:
+                return (
+                    "Error: 用药确认计划未能建立，本次没有写入。"
+                    f"{preflight_error}；请重新发送完整药名和本次实际服量。"
+                )
+
+            intent = None
+            if not (
+                self._current_user_id is not None
+                and self._current_turn_conversation_id is not None
+                and self._current_turn_source_message_id is not None
+            ):
+                return (
+                    "Error: 用药确认计划未能建立，本次没有写入。"
+                    "请在聊天中重新发送药名和本次实际服量。"
+                )
+            try:
+                from app.services.medication_intake_batch import (
+                    WRITE_INTENT_KIND,
+                    propose_medication_intake_items,
+                )
+
+                # When the model returned several medication calls, preflight
+                # already froze all of them in one immutable plan.  Re-entering
+                # with this single item only verifies that it is a subset of
+                # that plan; it cannot mutate the published authorization.
+                intent = propose_medication_intake_items(
+                    self.db,
+                    user_id=self._current_user_id,
+                    conversation_id=self._current_turn_conversation_id,
+                    source_message_id=self._current_turn_source_message_id,
+                    items=[{
+                        "medication_name": med_name,
+                        "actual_dosage": actual_dosage,
+                        "observed_strength": observed_strength,
+                    }],
+                    reference_now=self._agent_kernel_reference_now(),
+                    allow_merge_pending=False,
+                )
+                preflight_intent_id = getattr(
+                    self,
+                    "_turn_medication_tool_intent_id",
+                    None,
+                )
+                if (
+                    preflight_intent_id is not None
+                    and int(intent.id) != int(preflight_intent_id)
+                ):
+                    raise RuntimeError("medication tool preflight intent mismatch")
+                if intent.id not in self._turn_pending_write_intent_ids:
+                    self._turn_pending_write_intent_ids.append(intent.id)
+                if WRITE_INTENT_KIND not in self._turn_pending_write_intent_kinds:
+                    self._turn_pending_write_intent_kinds.append(WRITE_INTENT_KIND)
+            except Exception as error:  # noqa: BLE001 — no plan means no write
+                logger.error(
+                    "[medication_batch] tool proposal failed "
+                    "user=%s source=%s error_type=%s",
+                    self._current_user_id,
+                    self._current_turn_source_message_id,
+                    type(error).__name__,
+                )
+                self.db.rollback()
+                return (
+                    "Error: 用药确认计划未能建立，本次没有写入。"
+                    "请重新发送药名和本次实际服量。"
+                )
+            preview = (
+                f"用药: {med_name} {observed_strength}，本次服量 {actual_dosage}"
+                if observed_strength
+                else f"用药: {med_name}，本次服量 {actual_dosage}"
+            )
+            intent_note = f"（确认计划 {intent.id}）" if intent is not None else ""
+            return (
+                f"[NEEDS_CONFIRMATION] 我准备记录: {preview}{intent_note}. "
+                "请向用户复述；只有服务端待确认计划被用户明确确认后才会写入。"
+            )
 
         # medication 是医疗级写入:无论快/慢路径恒确认前置。快路径由 gate 置 flag;
-        # 慢路径(quality 模型 / telegram 直调)此前 medication 无任何确认 ——
-        # pre-existing 洞,对抗评审揪出。跨轮机制不变:模型复述→用户"是的"→
-        # 重调带 confirmed=true → _confirm_or_describe 放行。
+        # 真正跨轮授权只由上面的 server-owned WriteIntent 路径消费；这里即使模型
+        # 重放 confirmed=true 也已被剥离，因此只能返回 NEEDS_CONFIRMATION。
         if args.pop("_fast_record_requires_confirmation", False) or rtype == "medication":
             check = _confirm_or_describe(
                 args,

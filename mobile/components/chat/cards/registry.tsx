@@ -191,7 +191,7 @@ function StatefulCardRenderer({
   const [data, setData] = React.useState(descriptor.data);
   const [localDoneActionKeys, setLocalDoneActionKeys] = React.useState<Record<string, true>>({});
   try {
-    const actions = normalizeCardActions(descriptor.actions)
+    const actions = normalizeCardActions(descriptor.actions, descriptor.type)
       .map((action) => rewriteActionForCurrentCardData(action, descriptor.type, data));
     const currentDescriptor: ServerCardDescriptor = { ...descriptor, data, actions };
     const rendered = spec.render(data, {
@@ -209,7 +209,22 @@ function StatefulCardRenderer({
       const actionKey = getCardActionRuntimeKey(action, descriptor);
       const actionState = options.actionStateByKey?.[actionKey];
       const localDone = localDoneActionKeys[actionKey] === true;
-      const isDone = actionState === 'done' || localDone;
+      const groupKey = getCardActionRuntimeGroupKey(action, descriptor);
+      const groupDone = actions.some((sibling) => (
+        getCardActionRuntimeGroupKey(sibling, descriptor) === groupKey
+        && (
+          options.actionStateByKey?.[getCardActionRuntimeKey(sibling, descriptor)] === 'done'
+          || localDoneActionKeys[getCardActionRuntimeKey(sibling, descriptor)] === true
+        )
+      ));
+      const isDone = actionState === 'done' || localDone || groupDone;
+      const terminalDecision = readMedicationDecisionStatus(data);
+      if (
+        isWriteIntentAction(action)
+        && (isDone || (terminalDecision != null && terminalDecision !== 'pending'))
+      ) {
+        return false;
+      }
       return !(action.action === 'diet_record.create' && isDone);
     });
     if (!visibleActions.length) return rendered;
@@ -221,8 +236,12 @@ function StatefulCardRenderer({
             const actionKey = getCardActionRuntimeKey(action, descriptor);
             const actionState = options.actionStateByKey?.[actionKey];
             const localDone = localDoneActionKeys[actionKey] === true;
-            const isBusy = actionState === 'running';
-            const isDone = actionState === 'done' || localDone;
+            const groupKey = getCardActionRuntimeGroupKey(action, descriptor);
+            const groupStates = actions
+              .filter((sibling) => getCardActionRuntimeGroupKey(sibling, descriptor) === groupKey)
+              .map((sibling) => options.actionStateByKey?.[getCardActionRuntimeKey(sibling, descriptor)]);
+            const isBusy = actionState === 'running' || groupStates.includes('running');
+            const isDone = actionState === 'done' || localDone || groupStates.includes('done');
             const isDisabled = !!action.disabled_reason || isBusy || isDone;
             const visibleLabel = getActionRuntimeLabel(action, localDone ? 'done' : actionState);
             const supportText = action.disabled_reason || (actionState === 'error' ? '刚刚失败，可重试' : null);
@@ -297,7 +316,7 @@ export function renderServerCards(cards?: ServerCardDescriptor[] | null): Server
   )).map((c) => ({
     type: c.type,
     data: c.data,
-    actions: normalizeCardActions(c.actions),
+    actions: normalizeCardActions(c.actions, c.type),
   }));
 }
 
@@ -345,7 +364,10 @@ function looksLikeUiFoodText(value?: string): boolean {
   ].some((marker) => normalized.includes(marker.toLowerCase()));
 }
 
-function normalizeCardActions(actions: ServerCardDescriptor['actions']): ChatCardActionDescriptor[] {
+function normalizeCardActions(
+  actions: ServerCardDescriptor['actions'],
+  cardType?: string,
+): ChatCardActionDescriptor[] {
   if (!Array.isArray(actions)) return [];
   return actions.filter((action): action is ChatCardActionDescriptor => (
     action != null &&
@@ -353,7 +375,7 @@ function normalizeCardActions(actions: ServerCardDescriptor['actions']): ChatCar
     action.label.trim().length > 0 &&
     typeof action.action === 'string' &&
     ALLOWED_ACTIONS.has(action.action) &&
-    isSafeVisibleAction(action)
+    isSafeVisibleAction(action, cardType)
   )).map((action) => ({
     ...action,
     label: action.label.trim(),
@@ -363,10 +385,37 @@ function normalizeCardActions(actions: ServerCardDescriptor['actions']): ChatCar
   }));
 }
 
-function isSafeVisibleAction(action: ChatCardActionDescriptor): boolean {
+function isSafeVisibleAction(
+  action: ChatCardActionDescriptor,
+  cardType?: string,
+): boolean {
   if (action.action === 'route.open') return isSafeInternalRoute(action.payload?.route);
   if (action.action === 'ui.inline.expand') return readInlineExpandPatch(action) != null;
+  if (action.action === 'write_intent.confirm' || action.action === 'write_intent.dismiss') {
+    return cardType === 'medication_draft' && isSafeMedicationBatchAction(action);
+  }
   return action.requires_manual_confirm === true && hasRegisteredWritePolicy(action);
+}
+
+function isSafeMedicationBatchAction(action: ChatCardActionDescriptor): boolean {
+  if (
+    action.requires_manual_confirm !== true
+    || action.required_receipt !== true
+    || action.capability_id !== 'medication_draft.v1'
+    || action.autonomy_tier !== 'manual_confirm'
+    || action.policy_reason !== 'manual_confirm_write'
+  ) {
+    return false;
+  }
+  const rawIntentId = action.payload?.write_intent_id;
+  const intentId = typeof rawIntentId === 'number'
+    ? rawIntentId
+    : typeof rawIntentId === 'string' && rawIntentId.trim()
+      ? Number(rawIntentId)
+      : NaN;
+  if (!Number.isInteger(intentId) || intentId <= 0) return false;
+  const command = action.action === 'write_intent.confirm' ? 'confirm' : 'dismiss';
+  return action.endpoint === `/write-intents/${intentId}/${command}`;
 }
 
 function hasRegisteredWritePolicy(action: ChatCardActionDescriptor): boolean {
@@ -522,6 +571,32 @@ export function getCardActionRuntimeKey(
   return action.id || `${descriptor?.type ?? 'card'}:${action.action}:${action.label}`;
 }
 
+export function getCardActionRuntimeGroupKey(
+  action: ChatCardActionDescriptor,
+  descriptor?: Pick<ServerCardDescriptor, 'type'>,
+): string {
+  if (isWriteIntentAction(action)) {
+    const rawId = action.payload?.write_intent_id;
+    const intentId = typeof rawId === 'number'
+      ? rawId
+      : typeof rawId === 'string' && rawId.trim()
+        ? Number(rawId)
+        : NaN;
+    if (Number.isInteger(intentId) && intentId > 0) return `write_intent:${intentId}`;
+  }
+  return getCardActionRuntimeKey(action, descriptor);
+}
+
+function isWriteIntentAction(action: ChatCardActionDescriptor): boolean {
+  return action.action === 'write_intent.confirm' || action.action === 'write_intent.dismiss';
+}
+
+function readMedicationDecisionStatus(data: unknown): string | undefined {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return undefined;
+  const value = (data as Record<string, unknown>).decision_status;
+  return typeof value === 'string' ? value : undefined;
+}
+
 function getActionRuntimeLabel(
   action: ChatCardActionDescriptor,
   state?: ChatCardActionRuntimeState,
@@ -551,7 +626,7 @@ const styles = StyleSheet.create({
     gap: 3,
   },
   actionButton: {
-    minHeight: 36,
+    minHeight: 44,
     borderRadius: revaRadii.sm,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.lineStrong,

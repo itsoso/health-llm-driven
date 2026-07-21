@@ -5,6 +5,7 @@ import {
   VitalsCardSpec, SleepCardSpec, WeightCardSpec, SupplementCardSpec,
   WeatherCardSpec, BPCardSpec, ScoreCardSpec, RecordCardSpec, DietCardSpec,
   DietDraftCardSpec,
+  MedicationDraftCardSpec,
   MedicalExamImportResultCardSpec, RecordQualityCardSpec,
   AIGCMediaJobCardSpec,
   AIGCMediaConfirmationCardSpec,
@@ -23,6 +24,7 @@ export const CARD_REGISTRY: CardSpec[] = [
   SupplementCardSpec,
   DietCardSpec,
   DietDraftCardSpec,
+  MedicationDraftCardSpec,
   WeatherCardSpec,
   ScoreCardSpec,
   VitalsCardSpec,
@@ -32,7 +34,13 @@ export const CARD_MAP: Record<string, CardSpec> = Object.fromEntries(
   CARD_REGISTRY.map(c => [c.type, c]),
 );
 
-const ALLOWED_ACTIONS = new Set(['route.open', 'ui.inline.expand', 'diet_record.create']);
+const ALLOWED_ACTIONS = new Set([
+  'route.open',
+  'ui.inline.expand',
+  'diet_record.create',
+  'write_intent.confirm',
+  'write_intent.dismiss',
+]);
 
 export interface CardRenderOptions {
   onAction?: (action: ChatCardActionDescriptor) => void | Promise<void>;
@@ -78,7 +86,7 @@ export function renderCard(
   if (!spec) return null;
   try {
     const rendered = spec.render(desc.data);
-    const actions = normalizeCardActions(desc.actions);
+    const actions = normalizeCardActions(desc.actions, desc.type);
     if (actions.length === 0) return rendered;
     return (
       <div className="space-y-2">
@@ -89,18 +97,26 @@ export function renderCard(
             if (action.action === 'ui.inline.expand') {
               return renderInlineExpandAction(action);
             }
-            if (action.action === 'diet_record.create') {
+            if (
+              action.action === 'diet_record.create'
+              || action.action === 'write_intent.confirm'
+              || action.action === 'write_intent.dismiss'
+            ) {
+              const actionPending = desc.data?.action_pending === true;
               return (
                 <button
                   key={action.id || `${action.action}:${action.label}`}
                   type="button"
-                  disabled={!options.onAction || Boolean(action.disabled_reason)}
+                  disabled={!options.onAction || Boolean(action.disabled_reason) || actionPending}
+                  aria-busy={actionPending || undefined}
                   onClick={() => { void options.onAction?.(action); }}
                   className={[
                     'inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50',
                     action.style === 'primary'
                       ? 'border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700'
-                      : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50',
+                      : action.style === 'danger'
+                        ? 'border-red-200 bg-white text-red-700 hover:bg-red-50'
+                        : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50',
                   ].join(' ')}
                 >
                   {action.label}
@@ -137,14 +153,17 @@ export function renderServerCards(cards?: ServerCardDescriptor[] | null): Server
   if (!Array.isArray(cards)) return [];
   return cards.filter(c => c && typeof c.type === 'string' && CARD_MAP[c.type])
               .map(c => {
-                const actions = normalizeCardActions(c.actions);
+                const actions = normalizeCardActions(c.actions, c.type);
                 return actions.length > 0
                   ? { type: c.type, data: c.data, actions }
                   : { type: c.type, data: c.data };
               });
 }
 
-function normalizeCardActions(actions: ServerCardDescriptor['actions']): ChatCardActionDescriptor[] {
+function normalizeCardActions(
+  actions: ServerCardDescriptor['actions'],
+  cardType?: string,
+): ChatCardActionDescriptor[] {
   if (!Array.isArray(actions)) return [];
   return actions
     .filter((action): action is ChatCardActionDescriptor => (
@@ -153,7 +172,7 @@ function normalizeCardActions(actions: ServerCardDescriptor['actions']): ChatCar
       action.label.trim().length > 0 &&
       typeof action.action === 'string' &&
       ALLOWED_ACTIONS.has(action.action) &&
-      isSafeAction(action)
+      isSafeAction(action, cardType)
     ))
     .map(action => ({
       ...action,
@@ -164,11 +183,35 @@ function normalizeCardActions(actions: ServerCardDescriptor['actions']): ChatCar
     }));
 }
 
-function isSafeAction(action: ChatCardActionDescriptor): boolean {
+function isSafeAction(action: ChatCardActionDescriptor, cardType?: string): boolean {
   if (action.action === 'route.open') return readRouteAction(action) != null;
   if (action.action === 'ui.inline.expand') return readInlineNextMealDetail(action) != null;
   if (action.action === 'diet_record.create') return isSafeDietRecordCreateAction(action);
+  if (action.action === 'write_intent.confirm' || action.action === 'write_intent.dismiss') {
+    return cardType === 'medication_draft' && isSafeMedicationBatchAction(action);
+  }
   return false;
+}
+
+function isSafeMedicationBatchAction(action: ChatCardActionDescriptor): boolean {
+  if (
+    !action.requires_manual_confirm
+    || !action.required_receipt
+    || action.capability_id !== 'medication_draft.v1'
+    || action.autonomy_tier !== 'manual_confirm'
+    || action.policy_reason !== 'manual_confirm_write'
+  ) {
+    return false;
+  }
+  const rawIntentId = action.payload?.write_intent_id;
+  const intentId = typeof rawIntentId === 'number'
+    ? rawIntentId
+    : typeof rawIntentId === 'string' && rawIntentId.trim()
+      ? Number(rawIntentId)
+      : NaN;
+  if (!Number.isInteger(intentId) || intentId <= 0) return false;
+  const suffix = action.action === 'write_intent.confirm' ? 'confirm' : 'dismiss';
+  return action.endpoint === `/write-intents/${intentId}/${suffix}`;
 }
 
 function isSafeDietRecordCreateAction(action: ChatCardActionDescriptor): boolean {

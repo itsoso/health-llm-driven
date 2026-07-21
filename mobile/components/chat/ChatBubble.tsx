@@ -13,10 +13,10 @@ import * as Speech from 'expo-speech';
 import { setAudioModeAsync } from 'expo-audio';
 import { captureRef } from 'react-native-view-shot';
 import Markdown from 'react-native-markdown-display';
-import { getCardActionRuntimeKey, renderCard } from './cards';
+import { getCardActionRuntimeGroupKey, getCardActionRuntimeKey, renderCard } from './cards';
 import { createMdStylesChat } from '../../constants/markdownStyles';
 import type { ColorPalette } from '../../hooks/useTheme';
-import type { UIMessage } from '../../hooks/useChatEngine';
+import type { MedicationDecisionStatus, UIMessage } from '../../hooks/useChatEngine';
 import { speakWithUserVoice, type SpeakHandle } from '../../services/speakWithUserVoice';
 import { dispatchChatCardAction, type ChatCardActionResult } from '../../services/chatCardActions';
 import { rememberVerifiedWriteReceipt } from '../../services/conversationContinuity';
@@ -43,6 +43,7 @@ import { containsMarkdownTable, preprocessMarkdownTables } from '../../utils/mar
 import { prepareSafeMarkdown, safeMarkdownIt } from '../../utils/safeMarkdown';
 import { extractRevaUiBlocks } from '../../utils/revaUiBlocks';
 import { saveChatImageToLibrary } from '../../services/chatImageSave';
+import type { MedicationSafetyAlert } from '../../services/medications';
 import InterventionDraftSheet from '../actions/InterventionDraftSheet';
 import { createInterventionDraft } from '../../services/actionCards';
 import {
@@ -107,7 +108,11 @@ function ChatBubbleInner({
   const [speaking, setSpeaking] = useState(false);
   const [copied, setCopied] = useState(false);
   const [cardActionStateByKey, setCardActionStateByKey] = useState<Record<string, ChatCardActionRuntimeState>>({});
-  const [cardReceiptByKey, setCardReceiptByKey] = useState<Record<string, WriteReceipt>>({});
+  const [cardReceiptByKey, setCardReceiptByKey] = useState<Record<string, WriteReceipt[]>>({});
+  const [cardSafetyAlertsByKey, setCardSafetyAlertsByKey] = useState<Record<string, MedicationSafetyAlert[]>>({});
+  const [cardDecisionStatus, setCardDecisionStatus] = useState<MedicationDecisionStatus | undefined>(
+    () => readMedicationDecisionStatus(item.decisionStatus ?? item.cardData?.decision_status),
+  );
   const [cardReceiptPersistenceWarning, setCardReceiptPersistenceWarning] = useState(false);
   const [todayPlanDraft, setTodayPlanDraft] = useState<InterventionDraft | null>(null);
   const [savingTodayPlan, setSavingTodayPlan] = useState(false);
@@ -303,10 +308,17 @@ function ChatBubbleInner({
   }, [clearSpeechTimeout]);
 
   useEffect(() => {
+    setCardDecisionStatus(
+      readMedicationDecisionStatus(item.decisionStatus ?? item.cardData?.decision_status),
+    );
+  }, [item.cardData?.decision_status, item.decisionStatus]);
+
+  useEffect(() => {
     const cardType = item.cardType;
     if (!cardType || !item.cardActions?.length) return;
+    const actions = item.cardActions;
     let cancelled = false;
-    void Promise.all(item.cardActions.map(async (action) => {
+    void Promise.all(actions.map(async (action) => {
       const actionKey = getCardActionRuntimeKey(action, { type: cardType });
       const identity = buildCardActionReceiptIdentity(
         action,
@@ -314,29 +326,40 @@ function ChatBubbleInner({
         item.sourceTurnId ?? item.sourceMessageId ?? item.id,
       );
       const completion = await loadCardActionCompletion(identity);
-      return completion ? { actionKey, completion } : undefined;
+      return completion ? { action, actionKey, completion } : undefined;
     })).then((restored) => {
       if (cancelled) return;
       const valid = restored.filter((entry): entry is {
+        action: ChatCardActionDescriptor;
         actionKey: string;
         completion: { verified: true; receipt?: WriteReceipt };
       } => !!entry);
       if (valid.length === 0) return;
+      const doneActionKeys = new Set<string>();
+      valid.forEach((entry) => {
+        const groupKey = getCardActionRuntimeGroupKey(entry.action, { type: cardType });
+        actions.forEach((sibling) => {
+          if (getCardActionRuntimeGroupKey(sibling, { type: cardType }) === groupKey) {
+            doneActionKeys.add(getCardActionRuntimeKey(sibling, { type: cardType }));
+          }
+        });
+        cardActionLocksRef.current.add(groupKey);
+      });
       setCardActionStateByKey(prev => ({
         ...prev,
-        ...Object.fromEntries(valid.map(entry => [entry.actionKey, 'done' as const])),
+        ...Object.fromEntries([...doneActionKeys].map(actionKey => [actionKey, 'done' as const])),
       }));
       const restoredReceipts = valid.filter((entry): entry is {
+        action: ChatCardActionDescriptor;
         actionKey: string;
         completion: { verified: true; receipt: WriteReceipt };
       } => !!entry.completion.receipt);
       if (restoredReceipts.length > 0) {
         setCardReceiptByKey(prev => ({
           ...prev,
-          ...Object.fromEntries(restoredReceipts.map(entry => [entry.actionKey, entry.completion.receipt])),
+          ...Object.fromEntries(restoredReceipts.map(entry => [entry.actionKey, [entry.completion.receipt]])),
         }));
       }
-      valid.forEach(entry => cardActionLocksRef.current.add(entry.actionKey));
     }).catch(() => {
       if (__DEV__) console.warn('[chat] card receipt restore failed');
     });
@@ -348,14 +371,27 @@ function ChatBubbleInner({
     descriptor: ServerCardDescriptor,
   ) => {
     const actionKey = getCardActionRuntimeKey(action, descriptor);
+    const actionGroupKey = getCardActionRuntimeGroupKey(action, descriptor);
+    const groupActionKeys = (descriptor.actions?.length ? descriptor.actions : [action])
+      .filter((sibling) => getCardActionRuntimeGroupKey(sibling, descriptor) === actionGroupKey)
+      .map((sibling) => getCardActionRuntimeKey(sibling, descriptor));
+    const groupHasState = (state: ChatCardActionRuntimeState) => (
+      groupActionKeys.some(key => cardActionStateByKey[key] === state)
+    );
+    const setGroupActionState = (state: ChatCardActionRuntimeState) => {
+      setCardActionStateByKey(prev => ({
+        ...prev,
+        ...Object.fromEntries(groupActionKeys.map(key => [key, state])),
+      }));
+    };
     if (
-      cardActionLocksRef.current.has(actionKey)
-      || cardActionStateByKey[actionKey] === 'running'
-      || cardActionStateByKey[actionKey] === 'done'
+      cardActionLocksRef.current.has(actionGroupKey)
+      || groupHasState('running')
+      || groupHasState('done')
     ) {
       return;
     }
-    cardActionLocksRef.current.add(actionKey);
+    cardActionLocksRef.current.add(actionGroupKey);
     const receiptIdentity = buildCardActionReceiptIdentity(
       action,
       descriptor.type,
@@ -380,18 +416,39 @@ function ChatBubbleInner({
           ...(errorCode ? { error_code: errorCode } : {}),
         });
       };
-      setCardActionStateByKey(prev => ({ ...prev, [actionKey]: 'running' }));
+      setGroupActionState('running');
       try {
-        const result = await dispatchChatCardAction(action, receiptIdentity);
-        if (writeAction && result.receipt?.verified !== true) {
+        const result = await dispatchChatCardAction(action, receiptIdentity, {
+          cardType: descriptor.type,
+          cardData: descriptor.data,
+        });
+        const expiredTerminal = result.status === 'expired'
+          && result.decision_status === 'expired';
+        const dismissedTerminal = result.status === 'dismissed'
+          && result.decision_status === 'dismissed';
+        const receiptlessTerminal = expiredTerminal || dismissedTerminal;
+        const resultReceipts = result.write_receipts?.length
+          ? result.write_receipts
+          : result.receipt
+            ? [result.receipt]
+            : [];
+        if (writeAction && !receiptlessTerminal && (
+          resultReceipts.length === 0
+          || resultReceipts.some(receipt => receipt.verified !== true)
+        )) {
           emitWriteTerminal('unverified', false, 'write_receipt_missing_identity');
           throw new Error('write_receipt_missing_identity');
         }
         let receiptPersistenceFailed = false;
-        if (result.receipt) {
+        if (resultReceipts.length > 0) {
+          const duplicateGuardReceipt = resultReceipts[resultReceipts.length - 1];
+          const shouldRememberForContinuity = result.status === 'completed'
+            && duplicateGuardReceipt.status === 'verified';
           const persisted = await Promise.allSettled([
-            rememberVerifiedWriteReceipt(result.receipt),
-            saveCardActionReceipt(receiptIdentity, result.receipt),
+            shouldRememberForContinuity
+              ? rememberVerifiedWriteReceipt(duplicateGuardReceipt)
+              : Promise.resolve(),
+            saveCardActionReceipt(receiptIdentity, duplicateGuardReceipt),
           ]);
           const cardDuplicateGuardSaved = persisted[1]?.status === 'fulfilled';
           if (!cardDuplicateGuardSaved) {
@@ -399,17 +456,32 @@ function ChatBubbleInner({
             setCardReceiptPersistenceWarning(true);
             console.warn('[chat] card write receipt persistence failed');
           } else {
-            setCardReceiptByKey(prev => ({ ...prev, [actionKey]: result.receipt as WriteReceipt }));
+            setCardReceiptByKey(prev => ({ ...prev, [actionKey]: resultReceipts }));
           }
         }
-        if (writeAction) {
-          emitWriteTerminal(
-            receiptPersistenceFailed ? 'unverified' : 'verified',
-            !receiptPersistenceFailed,
-            receiptPersistenceFailed ? 'card_receipt_persistence_failed' : undefined,
-          );
+        const safetyAlerts = result.safety_alerts;
+        if (safetyAlerts?.length) {
+          setCardSafetyAlertsByKey(prev => ({ ...prev, [actionKey]: safetyAlerts }));
         }
-        const refreshResults = await Promise.allSettled([
+        if (result.decision_status) {
+          setCardDecisionStatus(result.decision_status);
+        }
+        if (writeAction) {
+          if (receiptlessTerminal) {
+            emitWriteTerminal(
+              'failed',
+              false,
+              expiredTerminal ? 'write_intent_expired' : 'write_intent_dismissed',
+            );
+          } else {
+            emitWriteTerminal(
+              receiptPersistenceFailed ? 'unverified' : 'verified',
+              !receiptPersistenceFailed,
+              receiptPersistenceFailed ? 'card_receipt_persistence_failed' : undefined,
+            );
+          }
+        }
+        const refreshes = [
           qc.invalidateQueries({ queryKey: queryKeys.actionCards }),
           qc.invalidateQueries({ queryKey: queryKeys.todayCoachRoot }),
           qc.invalidateQueries({ queryKey: queryKeys.agentAgendaRoot }),
@@ -420,25 +492,42 @@ function ChatBubbleInner({
           qc.invalidateQueries({ queryKey: ['diet'] }),
           qc.invalidateQueries({ queryKey: ['dashboard'] }),
           qc.invalidateQueries({ queryKey: ['today-dynamic-view', 'mobile.today'] }),
-        ]);
+        ];
+        if (
+          descriptor.type === 'medication_draft'
+          || resultReceipts.some(receipt => receipt.resourceType === 'medication_log')
+        ) {
+          refreshes.push(
+            qc.invalidateQueries({ queryKey: queryKeys.medicationsRoot }),
+            qc.invalidateQueries({ queryKey: queryKeys.medicationToday }),
+          );
+        }
+        const refreshResults = await Promise.allSettled(refreshes);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-        setCardActionStateByKey(prev => ({ ...prev, [actionKey]: 'done' }));
+        setGroupActionState('done');
         const refreshFailed = refreshResults.some(refresh => refresh.status === 'rejected');
-        if (receiptPersistenceFailed) {
+        if (expiredTerminal) {
+          toast.show('确认已过期，未写入；请重新发送完整用药记录', 'info');
+        } else if (receiptPersistenceFailed) {
           toast.show('已写入，但本机未保存防重复凭证', 'error');
         } else {
+          const hasSafetyAdvisory = Boolean(result.safety_alerts?.length);
           toast.show(
-            refreshFailed ? '已写入，页面数据稍后刷新' : getCardActionSuccessMessage(action, result),
-            refreshFailed ? 'info' : getCardActionSuccessType(action, result),
+            refreshFailed && !hasSafetyAdvisory
+              ? '已写入，页面数据稍后刷新'
+              : getCardActionSuccessMessage(action, result),
+            refreshFailed && !hasSafetyAdvisory
+              ? 'info'
+              : getCardActionSuccessType(action, result),
           );
         }
         if (result.route) {
           router.push(result.route as any);
         }
       } catch {
-        cardActionLocksRef.current.delete(actionKey);
+        cardActionLocksRef.current.delete(actionGroupKey);
         emitWriteTerminal('failed', false, 'card_action_failed');
-        setCardActionStateByKey(prev => ({ ...prev, [actionKey]: 'error' }));
+        setGroupActionState('error');
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
         toast.show('操作失败，请稍后重试', 'error');
         if (__DEV__) console.warn('[cards] action failed', descriptor.type, action.action);
@@ -447,17 +536,28 @@ function ChatBubbleInner({
 
     if (action.action !== 'route.open' && action.requires_manual_confirm) {
       const confirmation = action.confirmation;
+      const isDismiss = action.action === 'write_intent.dismiss';
+      const isMedicationDismiss = isDismiss && descriptor.type === 'medication_draft';
       Alert.alert(
-        confirmation?.title || action.label,
-        confirmation?.detail || '确认后会写入你的健康记录。',
+        isMedicationDismiss
+          ? '取消这组用药记录？'
+          : isDismiss
+            ? '取消这项待确认操作？'
+            : confirmation?.title || action.label,
+        isMedicationDismiss
+          ? '确认取消后，这组待确认记录不会写入。'
+          : isDismiss
+            ? '确认取消后，这项操作不会执行。'
+            : confirmation?.detail || '确认后会写入你的健康记录。',
         [
           {
-            text: confirmation?.cancel_label || '取消',
+            text: isDismiss ? '再看看' : confirmation?.cancel_label || '取消',
             style: 'cancel',
-            onPress: () => { cardActionLocksRef.current.delete(actionKey); },
+            onPress: () => { cardActionLocksRef.current.delete(actionGroupKey); },
           },
           {
-            text: confirmation?.confirm_label || action.label,
+            text: isDismiss ? '确认取消' : confirmation?.confirm_label || action.label,
+            ...(isDismiss ? { style: 'destructive' as const } : {}),
             onPress: execute,
           },
         ],
@@ -468,9 +568,16 @@ function ChatBubbleInner({
     await execute();
   }, [cardActionStateByKey, item.id, item.sourceMessageId, item.sourceTurnId, qc, toast]);
 
-  const cardReceipts = Object.values(cardReceiptByKey);
+  const cardReceipts = Object.values(cardReceiptByKey).flat();
   const latestCardReceipt = cardReceipts.length > 0 ? cardReceipts[cardReceipts.length - 1] : null;
   const directWriteReceipts = item.writeReceipts || [];
+  const visibleWriteReceipts = cardReceipts.length > 0
+    ? cardReceipts
+    : directWriteReceipts;
+  const liveCardSafetyAlerts = Object.values(cardSafetyAlertsByKey).flat();
+  const cardSafetyAlerts = liveCardSafetyAlerts.length > 0
+    ? liveCardSafetyAlerts
+    : item.safetyAlerts || [];
   const latestWriteReceipt = latestCardReceipt
     || (directWriteReceipts.length > 0 ? directWriteReceipts[directWriteReceipts.length - 1] : null);
   const cardSharePayload = useMemo(
@@ -524,6 +631,12 @@ function ChatBubbleInner({
   const cardDataRecord = item.cardData && typeof item.cardData === 'object' && !Array.isArray(item.cardData)
     ? item.cardData as Record<string, unknown>
     : null;
+  const renderedCardData = item.cardType === 'medication_draft' && cardDataRecord
+    ? { ...cardDataRecord, ...(cardDecisionStatus ? { decision_status: cardDecisionStatus } : {}) }
+    : item.cardData;
+  const renderedCardActions = cardDecisionStatus && cardDecisionStatus !== 'pending'
+    ? []
+    : item.cardActions;
   const hasPendingDietDraftEditor = item.cardType === 'diet_draft'
     && latestWriteReceipt?.status !== 'verified';
   const hasRecordAdjustEditor = item.cardType === 'record_quality' && Boolean(
@@ -536,6 +649,9 @@ function ChatBubbleInner({
     )),
   );
   const hasEmbeddedCardEditor = hasPendingDietDraftEditor || hasRecordAdjustEditor;
+  const hasNestedCardInteraction = hasEmbeddedCardEditor
+    || Boolean(renderedCardActions?.length)
+    || cardSafetyAlerts.length > 0;
 
   const handleCopy = useCallback(async () => {
     // 先收起长按菜单，避免异步剪贴板写入期间再次长按时仍处于旧菜单状态。
@@ -557,25 +673,30 @@ function ChatBubbleInner({
 
   if (item.cardType && item.cardData) {
     const rendered = renderCard(
-      { type: item.cardType, data: item.cardData, actions: item.cardActions },
+      { type: item.cardType, data: renderedCardData, actions: renderedCardActions },
       { onAction: handleCardAction, actionStateByKey: cardActionStateByKey },
     );
     if (rendered) {
       const cardContents = (
         <View ref={cardFrameRef} testID="assistant-card-capture-frame" collapsable={false}>
           {rendered}
-          {latestWriteReceipt ? <WriteReceiptLine receipt={latestWriteReceipt} /> : null}
+          {visibleWriteReceipts.map(receipt => (
+            <WriteReceiptLine key={receipt.operationId} receipt={receipt} />
+          ))}
+          {cardSafetyAlerts.length > 0 ? <MedicationSafetyAdvisory alerts={cardSafetyAlerts} /> : null}
           {cardReceiptPersistenceWarning ? <WriteReceiptPersistenceWarning /> : null}
         </View>
       );
       return (
         <View style={[styles.msgRow, styles.msgRowAI]}>
           <View testID="assistant-card-frame" style={styles.cardFrame}>
-            {hasEmbeddedCardEditor ? (
+            {hasNestedCardInteraction ? (
               <View
-                testID="assistant-editable-card-interaction-surface"
+                testID={hasEmbeddedCardEditor
+                  ? 'assistant-editable-card-interaction-surface'
+                  : 'assistant-actionable-card-interaction-surface'}
                 accessibilityRole="summary"
-                accessibilityLabel="可编辑健康卡片"
+                accessibilityLabel={hasEmbeddedCardEditor ? '可编辑健康卡片' : '可操作健康卡片'}
               >
                 {cardContents}
               </View>
@@ -1009,7 +1130,10 @@ function ChatBubbleInner({
                 })}
               </View>
             ) : null}
-            {latestWriteReceipt ? <WriteReceiptLine receipt={latestWriteReceipt} /> : null}
+            {visibleWriteReceipts.map(receipt => (
+              <WriteReceiptLine key={receipt.operationId} receipt={receipt} />
+            ))}
+            {cardSafetyAlerts.length > 0 ? <MedicationSafetyAdvisory alerts={cardSafetyAlerts} /> : null}
             {cardReceiptPersistenceWarning ? <WriteReceiptPersistenceWarning /> : null}
             {!item.streaming
               && item.completionStatus !== 'interrupted'
@@ -1112,6 +1236,36 @@ function WriteReceiptPersistenceWarning() {
   );
 }
 
+function MedicationSafetyAdvisory({ alerts }: { alerts: MedicationSafetyAlert[] }) {
+  const validAlerts = alerts.filter(alert => (
+    typeof alert?.title === 'string'
+    && alert.title.trim().length > 0
+    && typeof alert?.message === 'string'
+    && alert.message.trim().length > 0
+  ));
+  if (validAlerts.length === 0) return null;
+  return (
+    <View
+      testID="medication-safety-advisory"
+      style={styles.medicationSafetyAdvisory}
+      accessibilityLiveRegion="polite"
+    >
+      <Ionicons name="shield-checkmark-outline" size={15} color={revaSemantic.caution.fg} />
+      <View style={styles.medicationSafetyAdvisoryTextGroup}>
+        {validAlerts.map((alert, index) => (
+          <View key={`${alert.rule_id}-${index}`}>
+            <Text style={styles.medicationSafetyAdvisoryTitle}>{alert.title.trim()}</Text>
+            <Text style={styles.medicationSafetyAdvisoryText}>{alert.message.trim()}</Text>
+            {typeof alert.action === 'string' && alert.action.trim() ? (
+              <Text style={styles.medicationSafetyAdvisoryAction}>{alert.action.trim()}</Text>
+            ) : null}
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
 function cardText(value: unknown): string | undefined {
   if (typeof value === 'string') {
     const trimmed = value.trim();
@@ -1123,6 +1277,12 @@ function cardText(value: unknown): string | undefined {
     return joined || undefined;
   }
   return undefined;
+}
+
+function readMedicationDecisionStatus(value: unknown): MedicationDecisionStatus | undefined {
+  return value === 'pending' || value === 'executed' || value === 'dismissed' || value === 'expired'
+    ? value
+    : undefined;
 }
 
 function cardNumber(value: unknown): number | undefined {
@@ -1227,7 +1387,6 @@ function isWriteCardAction(action: ChatCardActionDescriptor): boolean {
     'daily_plan_action.complete',
     'diet_record.create',
     'write_intent.confirm',
-    'write_intent.dismiss',
     'aigc_media.confirm',
   ].includes(action.action);
 }
@@ -1245,6 +1404,7 @@ function formatWriteReceipt(receipt: WriteReceipt): string {
     write_intent: '待确认项',
     smart_reminder: '提醒',
     health_record: '健康记录',
+    medication_log: '用药记录',
   };
   const verb = receipt.status === 'dismissed' ? '已忽略' : '已写入';
   const resourceLabel = resourceLabels[receipt.resourceType] || '健康数据';
@@ -1255,6 +1415,10 @@ function getCardActionSuccessMessage(
   action: ChatCardActionDescriptor,
   result: ChatCardActionResult,
 ): string {
+  if (result.safety_alerts?.some(alert => alert.rule_id === 'medication.safety_precheck_incomplete')) {
+    return '已记录；自动安全筛查暂未完成，不代表当前用药组合安全';
+  }
+  if (result.safety_alerts?.length) return '已记录；请查看用药安全提示';
   if (result.route || action.action === 'route.open') return '已打开';
   if (action.action === 'diet_record.create') {
     if (result.nutrition_status === 'estimated') return '已记录饮食，营养已估算';
@@ -1262,7 +1426,7 @@ function getCardActionSuccessMessage(
     return '已记录饮食';
   }
   if (action.action === 'daily_plan_action.complete') return '已完成今日行动';
-  if (result.status === 'dismissed' || action.action === 'write_intent.dismiss') return '已忽略';
+  if (result.status === 'dismissed') return '已忽略';
   return '已执行';
 }
 
@@ -1270,6 +1434,15 @@ function getCardActionSuccessType(
   action: ChatCardActionDescriptor,
   result: ChatCardActionResult,
 ): 'info' | 'error' | 'success' {
+  if (result.safety_alerts?.some(alert => alert.rule_id === 'medication.safety_precheck_incomplete')) {
+    return 'info';
+  }
+  if (result.safety_alerts?.some(alert => (
+    alert.severity?.label === 'critical' || alert.severity?.label === 'high'
+  ))) {
+    return 'error';
+  }
+  if (result.safety_alerts?.length) return 'info';
   if (action.action === 'diet_record.create' && result.nutrition_status === 'estimate_failed') {
     return 'info';
   }
@@ -1999,6 +2172,66 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     color: revaSemantic.caution.fg,
     fontWeight: '600',
+  } as TextStyle,
+  medicationSafetyAdvisory: {
+    marginTop: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: revaRadii.sm,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: revaSemantic.caution.line,
+    backgroundColor: revaSemantic.caution.bg,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 7,
+    maxWidth: '100%',
+  },
+  medicationSafetyAdvisoryTextGroup: {
+    flex: 1,
+    gap: 7,
+  },
+  medicationSafetyAdvisoryTitle: {
+    fontFamily: revaFonts.sans,
+    fontSize: 12,
+    lineHeight: 17,
+    color: revaSemantic.caution.fg,
+    fontWeight: '800',
+  } as TextStyle,
+  medicationSafetyAdvisoryText: {
+    fontFamily: revaFonts.sans,
+    fontSize: 11,
+    lineHeight: 16,
+    color: C.ink2,
+    fontWeight: '600',
+  } as TextStyle,
+  medicationSafetyAdvisoryAction: {
+    marginTop: 2,
+    fontFamily: revaFonts.sans,
+    fontSize: 11,
+    lineHeight: 16,
+    color: C.ink3,
+  } as TextStyle,
+  medicationSafetyAdvisoryRemaining: {
+    fontFamily: revaFonts.sans,
+    fontSize: 11,
+    lineHeight: 16,
+    color: revaSemantic.caution.fg,
+    fontWeight: '700',
+  } as TextStyle,
+  medicationSafetyDetailsButton: {
+    minHeight: 44,
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 2,
+  },
+  medicationSafetyDetailsText: {
+    fontFamily: revaFonts.sans,
+    fontSize: 12,
+    lineHeight: 17,
+    color: revaSemantic.caution.fg,
+    fontWeight: '700',
   } as TextStyle,
   bubble: { maxWidth: '82%', borderRadius: 14, paddingHorizontal: 13, paddingVertical: 9, position: 'relative' },
   bubbleUser: { backgroundColor: C.green500, borderBottomRightRadius: 5 },

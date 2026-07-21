@@ -642,6 +642,8 @@ public enum ChatTranscriptHTML {
             html = aigcMediaConfirmationCardHTML(data)
         case "diet_draft":
             html = dietDraftCardHTML(data)
+        case "medication_draft":
+            html = medicationDraftCardHTML(data)
         case "menu_share":
             html = menuShareCardHTML(data)
         default:
@@ -650,7 +652,18 @@ public enum ChatTranscriptHTML {
         guard let html else {
             return nil
         }
-        return appendDynamicCardActions(to: html, actions: actions)
+        let visibleActions: [AgentDynamicCardActionDescriptor]
+        if rendererType == "medication_draft",
+           data["action_pending"]?.boolValue == true || cardText(data["decision_status"]) != nil {
+            visibleActions = []
+        } else {
+            visibleActions = actions
+        }
+        return appendDynamicCardActions(
+            to: html,
+            actions: visibleActions,
+            cardType: rendererType
+        )
     }
 
     private static func dynamicCardGroupHTML(_ data: AgentDynamicCardValue) -> String? {
@@ -693,6 +706,7 @@ public enum ChatTranscriptHTML {
         "aigc_media_job",
         "aigc_media_confirmation",
         "diet_draft",
+        "medication_draft",
         "menu_share"
     ]
 
@@ -744,6 +758,133 @@ public enum ChatTranscriptHTML {
             html += "<div class=\"dynamic-card-detail\">\(escape(receiptMessage))</div>"
         } else {
             html += "<div class=\"dynamic-card-detail\">\(escape(boundary))</div>"
+        }
+        return html + "</div>"
+    }
+
+    private static func medicationDraftCardHTML(_ data: AgentDynamicCardValue) -> String? {
+        guard case .object = data else { return nil }
+        let items = (data["items"]?.arrayValue ?? []).compactMap { value -> (String, String?, String?)? in
+            guard case .object(let item) = value,
+                  let name = cardText(item["medication_name"]) else {
+                return nil
+            }
+            return (
+                name,
+                cardText(item["actual_dosage"]),
+                cardText(item["observed_strength"])
+            )
+        }
+        let receipts = (data["write_receipts"]?.arrayValue ?? []).filter { value in
+            guard case .object(let receipt) = value else { return false }
+            return receipt["resource_type"]?.stringValue == "medication_log"
+                && receipt["verified"]?.boolValue == true
+                && cardText(receipt["resource_id"]) != nil
+        }
+        let safetyAlerts = (data["safety_alerts"]?.arrayValue ?? []).compactMap { value -> AgentDynamicCardValue? in
+            guard case .object(let alert) = value,
+                  cardText(alert["title"]) != nil,
+                  cardText(alert["message"]) != nil else {
+                return nil
+            }
+            return value
+        }
+        let rawStatus = cardText(data["decision_status"]) ?? "pending"
+        let status = ["executed", "dismissed", "expired", "not_written"].contains(rawStatus)
+            ? rawStatus
+            : "pending"
+        let reconciliationRequired = data["reconciliation_required"]?.boolValue == true
+            || (status == "executed" && (receipts.isEmpty || (!items.isEmpty && receipts.count != items.count)))
+        let statusMeta: (title: String, badge: String, badgeClass: String)
+        if reconciliationRequired {
+            statusMeta = ("用药 · 状态待核对", "核对中", "caution")
+        } else {
+            switch status {
+            case "executed": statusMeta = ("用药 · 已记录", "已保存", "neutral")
+            case "dismissed": statusMeta = ("用药 · 已取消", "未写入", "neutral")
+            case "expired": statusMeta = ("用药 · 确认已过期", "未写入", "caution")
+            case "not_written": statusMeta = ("用药 · 未写入", "需重新核对", "caution")
+            default: statusMeta = ("用药 · 待确认", "需核对", "caution")
+            }
+        }
+
+        var html = """
+        <div class="dynamic-card medication-draft-card" aria-busy="\(data["action_pending"]?.boolValue == true ? "true" : "false")">
+          <div class="dynamic-card-top">
+            <div>
+              <div class="dynamic-card-eyebrow">本次服药记录</div>
+              <div class="dynamic-card-title">\(escape(statusMeta.title))</div>
+            </div>
+            <span class="dynamic-card-badge \(statusMeta.badgeClass)">\(escape(statusMeta.badge))</span>
+          </div>
+        """
+        if !items.isEmpty {
+            html += "<ol class=\"medication-item-list\" aria-label=\"本次用药项目\">"
+            for item in items {
+                var details: [String] = []
+                if let dosage = item.1 { details.append("本次 \(dosage)") }
+                if let strength = item.2 { details.append("规格 \(strength)") }
+                html += "<li class=\"medication-item\"><strong>\(escape(item.0))</strong>"
+                if !details.isEmpty {
+                    html += "<span>\(escape(details.joined(separator: " · ")))</span>"
+                }
+                html += "</li>"
+            }
+            html += "</ol>"
+        } else {
+            let fallback = cardText(data["medication_name"]) ?? "待确认用药"
+            html += "<div class=\"dynamic-card-conclusion\">\(escape(fallback))</div>"
+        }
+        if let takenAt = cardText(data["taken_at"] ?? data["taken_time"]) {
+            html += "<div class=\"dynamic-card-detail\">记录时间 \(escape(takenAt.replacingOccurrences(of: "T", with: " ")))</div>"
+        }
+        if data["action_pending"]?.boolValue == true {
+            html += "<div class=\"dynamic-card-warning\" role=\"status\" aria-live=\"polite\">正在提交并核对服务端结果…</div>"
+        } else if reconciliationRequired {
+            html += "<div class=\"dynamic-card-warning\" role=\"alert\">服务端显示已执行，但逐项回执尚未完整恢复。请刷新对话后核对，系统不会据此重复写入。</div>"
+        } else {
+            switch status {
+            case "dismissed":
+                html += "<div class=\"dynamic-card-detail\" role=\"status\">这组记录已取消，没有写入。</div>"
+            case "expired":
+                html += "<div class=\"dynamic-card-warning\" role=\"status\">这组确认已过期，没有写入；请重新发送完整药名和本次实际服量。</div>"
+            case "not_written":
+                html += "<div class=\"dynamic-card-warning\" role=\"status\">服务端未接受这次确认，没有写入；请刷新对话后重新核对。</div>"
+            case "pending":
+                let boundary = cardText(data["boundary"])
+                    ?? "确认后只记录这次已服事实；不替代医嘱，不调整剂量或频次。"
+                html += "<div class=\"dynamic-card-detail\">\(escape(boundary))</div>"
+            default:
+                break
+            }
+        }
+        if status == "executed" && !receipts.isEmpty {
+            html += "<ol class=\"medication-receipt-list\" aria-label=\"逐项写入回执\">"
+            for (index, value) in receipts.enumerated() {
+                guard case .object(let receipt) = value else { continue }
+                let itemLabel = items.indices.contains(index)
+                    ? [items[index].0, items[index].1].compactMap { $0 }.joined(separator: " · ")
+                    : "第 \(index + 1) 项用药"
+                html += "<li class=\"medication-receipt\"><strong>\(escape(itemLabel))</strong><span>回执 #\(escape(cardText(receipt["resource_id"]) ?? "-")) · 已验证</span></li>"
+            }
+            html += "</ol>"
+        }
+        if status == "executed" && !safetyAlerts.isEmpty {
+            html += "<ul class=\"medication-safety-list\" aria-label=\"用药安全提示\">"
+            for value in safetyAlerts {
+                guard case .object(let alert) = value else { continue }
+                let severityValue = cardNumber(alert["severity"]?["value"] ?? alert["severity"]) ?? 0
+                let severityLabel = cardText(alert["severity"]?["label_zh"])
+                    ?? cardText(alert["severity"]?["label"])
+                    ?? (severityValue >= 3 ? "高风险" : "提示")
+                let role = severityValue >= 3 ? " role=\"alert\"" : ""
+                html += "<li class=\"medication-safety-alert\"\(role)><div><strong>\(escape(cardText(alert["title"]) ?? "用药安全提示"))</strong><span>\(escape(severityLabel))</span></div><p>\(escape(cardText(alert["message"]) ?? ""))</p>"
+                for action in cardStringArray(alert["action"]) {
+                    html += "<p><strong>\(escape(action))</strong></p>"
+                }
+                html += "</li>"
+            }
+            html += "</ul>"
         }
         return html + "</div>"
     }
@@ -1229,9 +1370,10 @@ public enum ChatTranscriptHTML {
 
     private static func appendDynamicCardActions(
         to html: String,
-        actions: [AgentDynamicCardActionDescriptor]
+        actions: [AgentDynamicCardActionDescriptor],
+        cardType: String
     ) -> String {
-        let actionBar = dynamicCardActionsHTML(actions)
+        let actionBar = dynamicCardActionsHTML(actions, cardType: cardType)
         guard !actionBar.isEmpty,
               let closingRange = html.range(of: "</div>", options: .backwards) else {
             return html
@@ -1241,7 +1383,10 @@ public enum ChatTranscriptHTML {
         return result
     }
 
-    private static func dynamicCardActionsHTML(_ actions: [AgentDynamicCardActionDescriptor]) -> String {
+    private static func dynamicCardActionsHTML(
+        _ actions: [AgentDynamicCardActionDescriptor],
+        cardType: String
+    ) -> String {
         let items = actions.compactMap { action -> String? in
             let label = action.label.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !label.isEmpty else {
@@ -1258,6 +1403,15 @@ public enum ChatTranscriptHTML {
                isSafeCardActionIdentifier(id) {
                 let styleClass = action.style == "primary" ? "primary" : "secondary"
                 return "<a class=\"dynamic-card-action \(styleClass)\" href=\"xiaoba-diet-confirm://\(escape(id))\">\(escape(label))</a>"
+            }
+            if (action.action == "write_intent.confirm" || action.action == "write_intent.dismiss"),
+               cardType == "medication_draft",
+               MedicationBatchCardProjection.isSafeAction(action),
+               let id = action.id,
+               isSafeCardActionIdentifier(id),
+               let intentID = MedicationBatchCardProjection.intentID(for: action) {
+                let styleClass = action.style == "primary" ? "primary" : "secondary"
+                return "<a class=\"dynamic-card-action medication-batch-action \(styleClass)\" href=\"xiaoba-medication-action://\(escape(id))\" role=\"button\" aria-label=\"\(escape(label))\" data-write-intent-id=\"\(intentID)\">\(escape(label))</a>"
             }
             guard action.action == "route.open",
                   let route = action.payload?["route"]?.stringValue?
@@ -1597,6 +1751,30 @@ public enum ChatTranscriptHTML {
     /// 把整组消息序列化为 JS 数组字面量(setMessages 用)。
     public static func messagesJSONArray(_ messages: [RenderedMessage]) -> String {
         "[" + messages.map(\.jsonObject).joined(separator: ",") + "]"
+    }
+
+    /// `appendOrUpdateLast` is safe only when every message before the final
+    /// slot is byte-for-byte unchanged. Interactive cards may update an older
+    /// assistant row, in which case the WebView must receive a full transcript
+    /// replacement instead of silently repainting only the last message.
+    public static func canAppendOrUpdateLast(
+        previous: [RenderedMessage],
+        next: [RenderedMessage]
+    ) -> Bool {
+        guard !previous.isEmpty,
+              next.count >= previous.count,
+              next.count <= previous.count + 1 else {
+            return false
+        }
+        if next.count == previous.count,
+           next.last?.id != previous.last?.id {
+            return false
+        }
+        let unchangedPrefixCount = next.count == previous.count
+            ? max(previous.count - 1, 0)
+            : previous.count
+        return Array(next.prefix(unchangedPrefixCount))
+            == Array(previous.prefix(unchangedPrefixCount))
     }
 
     // MARK: - Thinking-process trace (rendered inside the streaming assistant bubble)

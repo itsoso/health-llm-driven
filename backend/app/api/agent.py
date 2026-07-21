@@ -204,6 +204,19 @@ def _done_event_may_expose_cards(data: dict | None) -> bool:
     )
 
 
+def _pending_intake_suppressions(data: dict | None) -> set[str]:
+    """Map server-owned pending write kinds to conflicting legacy draft cards."""
+    if not isinstance(data, dict):
+        return set()
+    kinds = data.get("pending_write_intent_kinds")
+    if not isinstance(kinds, list):
+        return set()
+    suppress: set[str] = set()
+    if "medication_intake_batch" in kinds:
+        suppress.add("medication")
+    return suppress
+
+
 def _persist_done_cards(db: Session, message_id: int | None, cards: list) -> bool:
     """Persist cards appended by the API wrapper into AgentMessage.meta.
 
@@ -231,7 +244,11 @@ def _persist_done_cards(db: Session, message_id: int | None, cards: list) -> boo
         return True
     except Exception as e:  # noqa: BLE001
         db.rollback()
-        logger.debug("[agent.stream] persist done cards skipped: %s", e)
+        logger.debug(
+            "[agent.stream] persist done cards skipped message_id=%s error_type=%s",
+            message_id,
+            type(e).__name__,
+        )
         return False
 
 
@@ -1551,6 +1568,9 @@ async def agent_stream(
                                 # 即完成"的确认流(实锤:打卡替普瑞酮 → 确认问句与
                                 # medication_draft 双路互搏;mac 上该按钮还曾是静默死键)。
                                 suppress = recorded_intake_kinds(existing, inline)
+                                suppress = set(suppress) | _pending_intake_suppressions(
+                                    done_data
+                                )
                                 if "health_record" in (done_data.get("tools_used") or []):
                                     suppress = set(suppress) | {
                                         "medication", "supplement", "diet",
@@ -1582,7 +1602,12 @@ async def agent_stream(
                                     else:
                                         done_data.pop("cards", None)
                             except Exception as e:
-                                logger.debug(f"inline_cards 失败: {e}")
+                                logger.debug(
+                                    "inline_cards 失败 user_id=%s message_id=%s error_type=%s",
+                                    user_id,
+                                    done_data.get("message_id"),
+                                    type(e).__name__,
+                                )
                         try:
                             usage = summarize_usage_capture()
                             if usage:
@@ -1641,7 +1666,12 @@ async def agent_stream(
                     managed=runtime_managed,
                     error_code="executor_exception",
                 )
-                logger.error(f"Agent bg 流式异常: {e}", exc_info=True)
+                logger.error(
+                    "Agent bg 流式异常 user_id=%s run_id=%s error_type=%s",
+                    user_id,
+                    runtime_context.run_id,
+                    type(e).__name__,
+                )
                 err = {"event": "error", "data": {"message": safe_llm_error_message(e)}}
                 try:
                     await stream_bridge.publish(
