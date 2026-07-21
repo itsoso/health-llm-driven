@@ -33,7 +33,7 @@
 |---|---|---|
 | G1 Admission | GO | Security/privacy requirement |
 | G2 Feasibility | GO | Compatibility-preserving staged design |
-| G3 Tests | FIX READY / CI PENDING | main CI `29865182529` 的三个根因均已本地关闭：锁定版 OpenAPI 类型已重生成，部署安全引用契约已同步，路由漂移闸已兼容 FastAPI 0.139 的 lazy include；真实 LLM 回归通过，等待修复提交后的新 CI |
+| G3 Tests | GO | main CI `29867658752` 在 commit `cee9e70aa` 上 `43/43` jobs 成功；锁定版 OpenAPI 类型、部署契约、FastAPI 0.139 路由漂移闸和 live LLM 回归均通过 |
 | G4 Safety review | GO | 第五轮独立复审确认无 P0/P1 代码 blocker；rollback containment 与统一 ORM bootstrap 均关闭 |
 | G5 Deploy health | BLOCKED | 未满足生产角色、真实异地恢复演练、基础设施安装和原生 Keychain 发版前不进入部署 |
 | G6 Production verification | NOT ENTERED | 尚未部署，不作上线成功声明 |
@@ -55,6 +55,7 @@
 - 2026-07-22: 首次 main CI `29865182529` 的 `type-drift` 失败；根因是本地旧 FastAPI/`python-multipart` 生成类型与仓库锁文件版本不同。使用 CI 锁定的 FastAPI 0.139.2、Starlette 1.3.1、`python-multipart` 0.0.32 重新生成 Web/Mobile API 类型；新 CI 未绿前 G3 保持 RED。
 - 2026-07-22: 同一 CI 的 `backend-test-d` 仍要求未引用的远端 bundle 路径，已改为断言安全的单引号形式并禁止未引用形式；`backend-test-h-j` 依赖旧 FastAPI 展平后的 `routes`，已改为校验生产 OpenAPI 最终路由表。部署测试 `8 passed`，完整 h-j 分片 `695 passed`。
 - 2026-07-22: 使用固定假数据和隔离临时 PostgreSQL 账本执行 live LLM 回归；`invariants 12/12`、`health_agent_core 50/50`、`orchestrator 5/5` 通过，Orchestrator 平均分 `0.92`、无 regression，实际模型 `MiniMax-M2.5`。临时数据库已删除，原始 JSON 仅保存在本地 `/tmp/security-live-llm-eval.json`。
+- 2026-07-22: 修复提交 `cee9e70aa` 的 main CI `29867658752` 完成，`43/43` jobs 成功；G3 转 GO。一次性 `HARNESS_LIVE_LLM_EVAL_CONFIRMED` 仓库变量已在质量闸消费后删除，未来高风险改动不会被永久放行。
 
 ## G3 Verification Evidence
 
