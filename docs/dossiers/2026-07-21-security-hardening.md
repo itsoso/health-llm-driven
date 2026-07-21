@@ -33,7 +33,7 @@
 |---|---|---|
 | G1 Admission | GO | Security/privacy requirement |
 | G2 Feasibility | GO | Compatibility-preserving staged design |
-| G3 Tests | LOCAL GO / CI PENDING | 本地回归、真 PostgreSQL、安全脚本、跨端构建与静态闸通过；分支 CI 待 push 后取证 |
+| G3 Tests | FIX READY / CI PENDING | main CI `29865182529` 的三个根因均已本地关闭：锁定版 OpenAPI 类型已重生成，部署安全引用契约已同步，路由漂移闸已兼容 FastAPI 0.139 的 lazy include；真实 LLM 回归通过，等待修复提交后的新 CI |
 | G4 Safety review | GO | 第五轮独立复审确认无 P0/P1 代码 blocker；rollback containment 与统一 ORM bootstrap 均关闭 |
 | G5 Deploy health | BLOCKED | 未满足生产角色、真实异地恢复演练、基础设施安装和原生 Keychain 发版前不进入部署 |
 | G6 Production verification | NOT ENTERED | 尚未部署，不作上线成功声明 |
@@ -52,6 +52,9 @@
 - 2026-07-22: 第四轮独立安全复审确认上述路径大部分关闭，但指出 cleanup 的 `systemctl stop ... || true` 仍可能吞掉停服失败，以及生产启动额外注册的 `BowelTimer` 未进入统一模型 bootstrap，裁决 NO-GO。
 - 2026-07-22: 第四轮 2 个 P1 已修复：常规停服失败后强制终止并逐服务读取 `ActiveState=inactive`，无法证明时以专用 containment failure 退出且部署端要求人工隔离；`BowelTimer` 迁入 `app.models`，生产与回滚探针共享统一 ORM 注册入口。
 - 2026-07-22: 第五轮独立安全复审裁决 G4 GO：无 P0/P1 代码 blocker；故障注入确认 cleanup stop 失败可收口到 inactive，彻底失败时返回 70 并要求人工隔离；模型层与完整 API runtime 均注册同一 196 张表。
+- 2026-07-22: 首次 main CI `29865182529` 的 `type-drift` 失败；根因是本地旧 FastAPI/`python-multipart` 生成类型与仓库锁文件版本不同。使用 CI 锁定的 FastAPI 0.139.2、Starlette 1.3.1、`python-multipart` 0.0.32 重新生成 Web/Mobile API 类型；新 CI 未绿前 G3 保持 RED。
+- 2026-07-22: 同一 CI 的 `backend-test-d` 仍要求未引用的远端 bundle 路径，已改为断言安全的单引号形式并禁止未引用形式；`backend-test-h-j` 依赖旧 FastAPI 展平后的 `routes`，已改为校验生产 OpenAPI 最终路由表。部署测试 `8 passed`，完整 h-j 分片 `695 passed`。
+- 2026-07-22: 使用固定假数据和隔离临时 PostgreSQL 账本执行 live LLM 回归；`invariants 12/12`、`health_agent_core 50/50`、`orchestrator 5/5` 通过，Orchestrator 平均分 `0.92`、无 regression，实际模型 `MiniMax-M2.5`。临时数据库已删除，原始 JSON 仅保存在本地 `/tmp/security-live-llm-eval.json`。
 
 ## G3 Verification Evidence
 
@@ -64,6 +67,8 @@
 - Mobile: TypeScript `tsc --noEmit` 成功；Expo lint `0 errors`（103 个既有 warning）；设计 token ratchet 通过。
 - 此前本批次已完成 Mobile `2052` tests、Mac Core `448` tests、Frontend/Mobile/npm 与 Python dependency audits，未引入依赖漏洞。
 - `ruff` 未定义名/语法闸、`git diff --check`、secret scan、system-map/doc drift 均通过。
+- CI 锁定依赖复现：部署契约 `8 passed`；完整 `h-j` 分片 `695 passed`；Web/Mobile generated API types 确定性重生成且两端一致。
+- Live LLM synthesis gate：`invariants 12/12`、`health_agent_core 50/50`、`orchestrator 5/5`，平均分 `0.92`、无 regression。
 
 ## G4 Remediation Ledger
 

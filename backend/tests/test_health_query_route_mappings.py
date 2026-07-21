@@ -24,9 +24,16 @@ def _normalize(path: str) -> str:
 
 
 def test_agent_executor_static_api_paths_all_exist():
-    from app.api.main import api_router
+    from main import app
 
-    routes = {_normalize(r.path) for r in api_router.routes if hasattr(r, "path")}
+    # Validate against the fully assembled production schema.  FastAPI 0.139+
+    # keeps included routers as lazy ``_IncludedRouter`` entries without a
+    # ``path`` attribute, so walking ``app.routes`` silently misses them.
+    routes = {
+        _normalize(re.sub(r"^/api/v1", "", path))
+        for path in app.openapi()["paths"]
+        if path.startswith("/api/v1/")
+    }
     prefixes = {p.split("/")[1] for p in routes if p.count("/") >= 1 and p != "/"}
 
     src = _SRC.read_text(encoding="utf-8")
