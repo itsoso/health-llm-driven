@@ -239,7 +239,10 @@ class TestDietAPI:
         response = client.post(
             "/api/v1/diet/records",
             json={**sample_diet_data, "photo_draft_token": token},
-            headers=auth_headers,
+            headers={
+                **auth_headers,
+                "Idempotency-Key": "op_runtime-photo-confirmation-0001",
+            },
         )
 
         assert response.status_code == 200
@@ -249,6 +252,11 @@ class TestDietAPI:
         assert asset.photo_draft_token is None
         assert asset.lifecycle == "attached"
         assert response.json()["image_urls"] == [response.json()["photo_assets"][0]["url"]]
+        stored = db.query(DietRecord).filter_by(id=record_id).one()
+        assert stored.client_action_id == (
+            "op_runtime-photo-confirmation-0001|"
+            f"diet-photo:{token}"
+        )
 
     def test_create_diet_record_reuses_user_scoped_idempotency_key(
         self, client, db, auth_headers, sample_diet_data
@@ -743,41 +751,27 @@ class TestDietAPI:
             db.commit()
         db.rollback()
 
-    def test_implausible_past_record_date_is_clamped_to_server_today(
-        self, client, auth_headers, caplog
+    def test_explicit_past_record_date_is_preserved(
+        self, client, auth_headers
     ):
-        """客户端 bug 把"刚吃的午餐"写成远早的 record_date → 钳制回服务端今天 (Asia/Shanghai)。
-
-        对应真实事故: mobile POST 的"刚才"午餐落到 2 天前 (客户端日期 bug)。防御纵深:
-        偏离 > 2 天判为不合理, 钳制而非 422 (钳制比硬拒更安全的 UX), 并写 WARNING 日志。
-        任务示例: server-today=2026-07-01 时提交 2026-06-29 → 存成 2026-07-01。
-        (此处用相对日期使测试不依赖运行当天; 用 3 天前确保触发 > 2 天阈值。)
-        """
+        """The API must never silently move a meal to a different day."""
         from datetime import datetime, timedelta, timezone
 
         server_today = datetime.now(timezone(timedelta(hours=8))).date()
-        implausible = server_today - timedelta(days=3)  # > 2 天 → 触发钳制
+        historical_date = server_today - timedelta(days=3)
 
-        import logging
-        with caplog.at_level(logging.WARNING):
-            response = client.post(
-                "/api/v1/diet/records",
-                json={
-                    "record_date": str(implausible),
-                    "meal_type": "lunch",
-                    "food_items": "wagas 沙拉",
-                },
-                headers=auth_headers,
-            )
+        response = client.post(
+            "/api/v1/diet/records",
+            json={
+                "record_date": str(historical_date),
+                "meal_type": "lunch",
+                "food_items": "wagas 沙拉",
+            },
+            headers=auth_headers,
+        )
 
         assert response.status_code == 200
-        data = response.json()
-        # 被钳制回服务端今天, 而非客户端传的 3 天前
-        assert data["record_date"] == str(server_today)
-        # 且写了可被监控捕获的告警日志 (不假装成功)
-        assert any(
-            "implausible record_date" in rec.getMessage() for rec in caplog.records
-        )
+        assert response.json()["record_date"] == str(historical_date)
 
     def test_two_day_backfill_is_allowed_not_clamped(self, client, auth_headers):
         """合法补录: ±2 天以内的日期照原样保留, 不被钳制 (真实补录场景)。"""

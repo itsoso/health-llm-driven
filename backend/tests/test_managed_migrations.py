@@ -144,6 +144,10 @@ def test_agent_runtime_resilience_migration_extends_existing_ledger_once(
     runtime_base = migrations_dir / "20260719_120000_create_agent_runtime.sqlite.sql"
     resilience = migrations_dir / "20260719_180000_agent_runtime_resilience.sqlite.sql"
     rollout = migrations_dir / "20260720_120000_agent_runtime_rollout.sqlite.sql"
+    operation_lineage = (
+        migrations_dir
+        / "20260720_180000_agent_runtime_operation_lineage.sqlite.sql"
+    )
     rollout_postgres = (
         migrations_dir / "20260720_120000_agent_runtime_rollout.postgresql.sql"
     )
@@ -151,10 +155,16 @@ def test_agent_runtime_resilience_migration_extends_existing_ledger_once(
         migrations_dir
         / "20260719_180000_agent_runtime_resilience.postgresql.sql"
     )
+    operation_lineage_postgres = (
+        migrations_dir
+        / "20260720_180000_agent_runtime_operation_lineage.postgresql.sql"
+    )
     assert runtime_base.exists()
     assert resilience.exists()
     assert rollout.exists()
     assert rollout_postgres.exists()
+    assert operation_lineage.exists()
+    assert operation_lineage_postgres.exists()
     assert "ADD COLUMN IF NOT EXISTS cancel_requested_at" in (
         resilience_postgres.read_text(encoding="utf-8")
     )
@@ -180,14 +190,43 @@ def test_agent_runtime_resilience_migration_extends_existing_ledger_once(
         conn.execute(text("CREATE TABLE agent_messages (id INTEGER PRIMARY KEY)"))
 
     first = apply_managed_migrations(engine, isolated)
+    with engine.begin() as conn:
+        conn.execute(text("INSERT INTO users (id) VALUES (1)"))
+        conn.execute(text(
+            "INSERT INTO agent_runs "
+            "(run_id, user_id, status, current_attempt_id, origin) "
+            "VALUES ('legacy-run', 1, 'running', 'legacy-attempt', 'test')"
+        ))
+        conn.execute(text(
+            "INSERT INTO agent_run_attempts "
+            "(attempt_id, run_id, attempt_no, status) "
+            "VALUES ('legacy-attempt', 'legacy-run', 2, 'running')"
+        ))
+        conn.execute(text(
+            "INSERT INTO agent_tool_operations "
+            "(operation_id, run_id, attempt_id, tool_name, effect_class, "
+            "operation_fingerprint, status) VALUES "
+            "('legacy-operation', 'legacy-run', 'legacy-attempt', "
+            "'health_record', 'write', '"
+            + ("a" * 64)
+            + "', 'succeeded')"
+        ))
+    (isolated / operation_lineage.name).write_text(
+        operation_lineage.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
     second = apply_managed_migrations(engine, isolated)
+    third = apply_managed_migrations(engine, isolated)
 
     assert [migration.id for migration in first.applied] == [
         "20260719_120000_create_agent_runtime",
         "20260719_180000_agent_runtime_resilience",
         "20260720_120000_agent_runtime_rollout",
     ]
-    assert second.applied == []
+    assert [migration.id for migration in second.applied] == [
+        "20260720_180000_agent_runtime_operation_lineage",
+    ]
+    assert third.applied == []
     columns = {
         column["name"] for column in inspect(engine).get_columns("agent_runs")
     }
@@ -206,6 +245,8 @@ def test_agent_runtime_resilience_migration_extends_existing_ledger_once(
     }
     assert "ix_agent_runs_finished_status" in run_indexes
     assert "ix_agent_tool_operations_created_status" in tool_indexes
+    assert "uq_agent_tool_operations_run_logical_key" in tool_indexes
+    assert "ix_agent_tool_operations_run_scope" in tool_indexes
     tables = set(inspect(engine).get_table_names())
     assert "agent_runtime_rollout_state" in tables
     assert "agent_runtime_rollout_events" in tables
@@ -220,6 +261,22 @@ def test_agent_runtime_resilience_migration_extends_existing_ledger_once(
     }
     assert "reconciliation_generation" in state_columns
     assert "reconciliation_acknowledged_generation" in state_columns
+    tool_columns = {
+        column["name"]
+        for column in inspect(engine).get_columns("agent_tool_operations")
+    }
+    assert "logical_operation_key_hash" in tool_columns
+    assert "created_attempt_no" in tool_columns
+    assert "logical_operation_scope_hash" in tool_columns
+    assert "logical_operation_discriminator_kind" in tool_columns
+    assert "logical_operation_discriminator_hash" in tool_columns
+    with engine.connect() as conn:
+        legacy_lineage = conn.execute(text(
+            "SELECT logical_operation_key_hash, created_attempt_no "
+            "FROM agent_tool_operations "
+            "WHERE operation_id = 'legacy-operation'"
+        )).one()
+    assert legacy_lineage == ("a" * 64, None)
 
 
 def test_tokenplan_cost_migration_adds_rmb_columns(tmp_path: Path):

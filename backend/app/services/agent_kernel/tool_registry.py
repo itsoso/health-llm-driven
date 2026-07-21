@@ -46,6 +46,7 @@ class ToolSpec:
     write_actions: frozenset[str] = frozenset()
     receipt_exempt_record_types: frozenset[str] = frozenset()
     receipt_resource_types: frozenset[str] = frozenset()
+    reconciliation_record_types: tuple[tuple[str, str], ...] = ()
     receipt_resource_id_pattern: str | None = None
     annotate_implausible: bool = False
     marks_deep_analysis: bool = False
@@ -75,6 +76,16 @@ class ToolSpec:
             args.get("record_type") or args.get("type") or ""
         ).strip().lower()
         return record_type not in self.receipt_exempt_record_types
+
+    def reconciliation_resource_type(self, arguments: Any) -> str | None:
+        """Return the content-free resource kind that can be reconciled safely."""
+        if not self.reconciliation_record_types:
+            return None
+        args = _parse_arguments(arguments)
+        record_type = str(
+            args.get("record_type") or args.get("type") or ""
+        ).strip().lower()
+        return dict(self.reconciliation_record_types).get(record_type)
 
 
 def _spec(
@@ -139,6 +150,7 @@ _CORE_TOOL_SPECS = (
         receipt_required=True,
         receipt_exempt_record_types=frozenset({"garmin_sync"}),
         receipt_resource_types=_HEALTH_RECORD_RECEIPT_RESOURCE_TYPES,
+        reconciliation_record_types=(("diet", "diet_record"),),
         receipt_resource_id_pattern=_POSITIVE_INTEGER_RECEIPT_ID,
     ),
     _spec(
@@ -267,6 +279,13 @@ def classify_tool_effect(tool_name: str, arguments: Any) -> ResolvedToolEffect:
 
 def requires_verified_receipt(tool_name: str, arguments: Any) -> bool:
     return get_tool_spec(tool_name).requires_verified_receipt(arguments)
+
+
+def reconciliation_resource_type(
+    tool_name: str,
+    arguments: Any,
+) -> str | None:
+    return get_tool_spec(tool_name).reconciliation_resource_type(arguments)
 
 
 def is_registered_receipt_resource_type(

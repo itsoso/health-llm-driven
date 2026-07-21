@@ -163,7 +163,7 @@ WRITE_NEGATION_EXCEPTIONS = (
 )
 MUTATE_ACTIONS = {
     "delete": ("删除", "删掉", "删了", "移除", "去掉", "撤销", "清掉"),
-    "update": ("修改", "改成", "改为", "改到", "更新", "调整", "更正"),
+    "update": ("修改", "改成", "改为", "改到", "更新", "调整", "更正", "修正"),
     "sync": ("同步", "sync", "拉取最新数据", "刷新一下数据", "刷新数据"),
 }
 MUTATION_NEGATIONS = (
@@ -322,6 +322,13 @@ def classify_agent_utterance(
     has_write_command = _has_explicit_write_command(normalized)
     has_negated_write = _has_negated_write(normalized)
     mutation = _mutation_operation(normalized)
+    implicit_diet_correction = _is_diet_quantity_correction(
+        normalized,
+        domain=domain,
+        has_question=has_question,
+    )
+    if mutation is None and implicit_diet_correction:
+        mutation = "update"
     has_negated_mutation = _has_negated_mutation(normalized, mutation)
     has_advice = _has_any(normalized, ADVICE_ACTIONS)
 
@@ -385,7 +392,11 @@ def classify_agent_utterance(
             domain,
             mutation,
             0.9,
-            "mutation_command",
+            (
+                "diet_quantity_correction"
+                if implicit_diet_correction
+                else "mutation_command"
+            ),
             scope,
             is_write=True,
             requires_reliable_tool_model=True,
@@ -577,6 +588,42 @@ def _mutation_operation(text: str) -> Optional[str]:
         if _has_any(text, phrases):
             return operation
     return None
+
+
+def _is_diet_quantity_correction(
+    text: str,
+    *,
+    domain: str,
+    has_question: bool,
+) -> bool:
+    """Recognize a factual partial-meal correction without treating advice as a write."""
+    if domain != "diet" or has_question or _meal_type(text) is None:
+        return False
+    correction_signals = (
+        "实际",
+        "没吃那么多",
+        "没有吃那么多",
+        "没全吃",
+        "没有全吃",
+        "没吃完",
+        "没有吃完",
+        "只吃",
+        "只有吃",
+    )
+    partial_amount_signals = (
+        "一半",
+        "半份",
+        "四分之一",
+        "三分之一",
+        "三分之二",
+        "五分之一",
+        "五分之二",
+        "五分之三",
+        "五分之四",
+    )
+    return _has_any(text, correction_signals) and _has_any(
+        text, partial_amount_signals
+    )
 
 
 def _all_phrase_positions(text: str, phrase: str) -> list[int]:

@@ -11,6 +11,7 @@ import pytest
 
 from app.services.agent_executor import (
     AgentExecutor,
+    _build_deterministic_diet_correction_tool_call,
     _ground_query_response_date_labels,
     _is_explicit_latest_diet_delete,
     _model_tool_result_content,
@@ -88,6 +89,61 @@ def test_diet_correction_requires_unambiguous_write_intent(message):
     assert _parse_explicit_diet_correction(message) is None
 
 
+@pytest.mark.parametrize(
+    ("message", "meal_type", "consumed_fraction"),
+    [
+        (
+            "今天我没吃那么多，晚餐的两千大卡只有吃了四分之一",
+            "dinner",
+            0.25,
+        ),
+        ("晚饭实际只吃了一半，帮我按实际摄入修正", "dinner", 0.5),
+        ("午餐没有全吃完，只吃了三分之一", "lunch", 1 / 3),
+    ],
+)
+def test_parse_partial_meal_correction(message, meal_type, consumed_fraction):
+    parsed = _parse_explicit_diet_correction(message)
+
+    assert parsed is not None
+    assert parsed["meal_type"] == meal_type
+    assert parsed["consumed_fraction"] == pytest.approx(consumed_fraction)
+    assert "food_items" not in parsed
+
+
+def test_partial_meal_advice_question_is_not_parsed_as_a_correction():
+    assert _parse_explicit_diet_correction("晚餐只吃四分之一会不会饿？") is None
+
+
+def test_fraction_before_the_correction_clause_is_not_used_as_consumed_amount():
+    assert _parse_explicit_diet_correction(
+        "晚餐四分之一是肉，我没吃那么多，只吃了蔬菜"
+    ) is None
+
+
+def test_partial_meal_correction_builds_a_deterministic_lookup_tool_call():
+    call = _build_deterministic_diet_correction_tool_call(
+        "今天我没吃那么多，晚餐的两千大卡只有吃了四分之一",
+        write_receipts=[],
+    )
+
+    assert call is not None
+    assert call["function"]["name"] == "health_manage"
+    assert json.loads(call["function"]["arguments"]) == {
+        "record_type": "diet",
+        "operation": "list",
+        "date": datetime.now(BJ).date().isoformat(),
+        "meal_type": "dinner",
+        "limit": 20,
+    }
+
+
+def test_deterministic_partial_meal_lookup_is_not_repeated_after_a_write_receipt():
+    assert _build_deterministic_diet_correction_tool_call(
+        "晚饭实际只吃了一半，帮我按实际摄入修正",
+        write_receipts=[{"operation_id": "existing"}],
+    ) is None
+
+
 @pytest.mark.asyncio
 async def test_explicit_diet_correction_resolves_list_to_one_verified_update():
     executor = AgentExecutor(MagicMock())
@@ -125,6 +181,89 @@ async def test_explicit_diet_correction_resolves_list_to_one_verified_update():
     request_url = executor._api_get_json.await_args.args[0]
     assert f"start_date={datetime.now(BJ).date().isoformat()}" in request_url
     assert "2026-07-10" not in request_url
+
+
+@pytest.mark.asyncio
+async def test_partial_meal_correction_scales_the_unique_existing_record():
+    executor = AgentExecutor(MagicMock())
+    executor._current_turn_user_message = (
+        "今天我没吃那么多，晚餐的两千大卡只有吃了四分之一"
+    )
+    executor._api_get_json = AsyncMock(return_value=([{
+        "id": 829,
+        "meal_type": "dinner",
+        "food_items": "三文鱼 + 黎麦沙拉 + 羊乳酪",
+        "calories": 2000,
+        "protein": 80,
+        "carbs": 120,
+        "fat": 100,
+        "fiber": 16,
+        "alcohol_units": 2,
+    }], None))
+
+    calls = await executor._normalize_explicit_diet_update_tool_calls([{
+        "id": "call-1",
+        "type": "function",
+        "function": {
+            "name": "health_record",
+            "arguments": json.dumps({
+                "record_type": "diet",
+                "data": {
+                    "meal_type": "dinner",
+                    "food_items": "晚餐只吃了四分之一",
+                },
+            }),
+        },
+    }], "test-token")
+
+    assert calls[0]["function"]["name"] == "health_manage"
+    assert json.loads(calls[0]["function"]["arguments"]) == {
+        "record_type": "diet",
+        "operation": "update",
+        "record_id": 829,
+        "data": {
+            "meal_type": "dinner",
+            "calories": 500.0,
+            "protein": 20.0,
+            "carbs": 30.0,
+            "fat": 25.0,
+            "fiber": 4.0,
+            "alcohol_units": 0.5,
+        },
+    }
+
+
+@pytest.mark.asyncio
+async def test_partial_meal_correction_stays_read_only_without_scalable_nutrition():
+    executor = AgentExecutor(MagicMock())
+    executor._current_turn_user_message = "午餐没有全吃完，只吃了三分之一"
+    executor._api_get_json = AsyncMock(return_value=([{
+        "id": 830,
+        "meal_type": "lunch",
+        "food_items": "牛肉面",
+    }], None))
+
+    calls = await executor._normalize_explicit_diet_update_tool_calls([{
+        "id": "call-1",
+        "type": "function",
+        "function": {
+            "name": "health_manage",
+            "arguments": json.dumps({
+                "record_type": "diet",
+                "operation": "list",
+                "date": "today",
+                "meal_type": "lunch",
+            }),
+        },
+    }], "test-token")
+
+    assert json.loads(calls[0]["function"]["arguments"]) == {
+        "record_type": "diet",
+        "operation": "list",
+        "date": datetime.now(BJ).date().isoformat(),
+        "meal_type": "lunch",
+        "limit": 20,
+    }
 
 
 @pytest.mark.asyncio
