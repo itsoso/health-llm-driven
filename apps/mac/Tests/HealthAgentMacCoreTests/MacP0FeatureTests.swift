@@ -135,6 +135,7 @@ final class MacP0FeatureTests: XCTestCase {
             "claude-opus-4.7",
             "gemini-3.1-pro",
             "gpt-5.5",
+            "qwen3.8-max-preview",
             "qwen3.7-plus",
             "qwen3.7-max",
             "deepseek-v4-pro",
