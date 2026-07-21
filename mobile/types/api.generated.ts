@@ -2175,6 +2175,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/monitoring/agent-runtime/operations/{operation_id}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resolve Agent Runtime Operation
+         * @description Resolve one opaque uncertain write after an administrator verifies it.
+         */
+        post: operations["resolve_agent_runtime_operation_api_v1_monitoring_agent_runtime_operations__operation_id__resolve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/performance/metrics": {
         parameters: {
             query?: never;
@@ -19650,6 +19670,41 @@ export interface components {
             client_turn_id?: string | null;
             client_time_context?: components["schemas"]["ClientTimeContext"] | null;
         };
+        /** AgentRuntimeReconciliationRequest */
+        AgentRuntimeReconciliationRequest: {
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "verified_effect" | "verified_no_effect";
+            /** Resource Type */
+            resource_type?: string | null;
+            /** Resource Id */
+            resource_id?: string | null;
+            /**
+             * Verification Method
+             * @enum {string}
+             */
+            verification_method: "database_lookup" | "business_api" | "operator_review";
+            /** Reason Code */
+            reason_code: string;
+        };
+        /** AgentRuntimeReconciliationResponse */
+        AgentRuntimeReconciliationResponse: {
+            /** Operation Id */
+            operation_id: string;
+            /**
+             * Disposition
+             * @enum {string}
+             */
+            disposition: "verified_effect" | "verified_no_effect" | "unknown";
+            /** Reason Code */
+            reason_code: string;
+            /** Resource Type */
+            resource_type?: string | null;
+            /** Resource Id */
+            resource_id?: string | null;
+        };
         /** AgentRuntimeRolloutCircuitResponse */
         AgentRuntimeRolloutCircuitResponse: {
             /**
@@ -36195,6 +36250,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AgentRuntimeRolloutTransitionResponse"];
+                };
+            };
+        };
+    };
+    resolve_agent_runtime_operation_api_v1_monitoring_agent_runtime_operations__operation_id__resolve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                operation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentRuntimeReconciliationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRuntimeReconciliationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

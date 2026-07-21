@@ -44,25 +44,51 @@ def recover_expired_agent_runs(*, now_iso: str | None = None):
 
     now = datetime.fromisoformat(now_iso) if now_iso else None
     with SessionLocal() as db:
-        recovered = AgentRuntimeCoordinator(db).recover_expired_runs(
+        runtime = AgentRuntimeCoordinator(db)
+        recovered = runtime.recover_expired_runs(
             now=now,
             limit=100,
             unleased_grace_seconds=_agent_runtime_unleased_grace_seconds(),
         )
+        reconciliation_error: Exception | None = None
+        try:
+            reconciliations = runtime.reconcile_pending_tool_operations(
+                now=now,
+                limit=100,
+            )
+        except Exception as exc:
+            # A resolver or database failure must not skip the circuit breaker.
+            # Recovery commits each uncertain write before this scan, so rollback
+            # only clears the failed scan transaction and leaves the durable run
+            # available to the rollout evaluator below.
+            db.rollback()
+            reconciliations = []
+            reconciliation_error = exc
+            logger.error(
+                "[agent-runtime] reconciliation scan failed; evaluating rollout "
+                "before failing the maintenance task",
+                exc_info=True,
+            )
         rollout_evaluation = AgentRuntimeRolloutService(
             db
         ).evaluate_and_maybe_pause(now=now)
+        if reconciliation_error is not None:
+            raise reconciliation_error
 
     failed = sum(item.status == "failed" for item in recovered)
     reconciliation_required = sum(
         item.status == "reconciliation_required" for item in recovered
     )
+    reconciled = sum(
+        item.disposition != "unknown" for item in reconciliations
+    )
     logger.info(
-        "[agent-runtime] recovered=%s failed=%s reconciliation_required=%s "
+        "[agent-runtime] recovered=%s failed=%s reconciliation_required=%s reconciled=%s "
         "rollout_status=%s rollout_reason=%s",
         len(recovered),
         failed,
         reconciliation_required,
+        reconciled,
         rollout_evaluation.transition.status,
         rollout_evaluation.reason_code,
     )
@@ -71,6 +97,7 @@ def recover_expired_agent_runs(*, now_iso: str | None = None):
         "recovered": len(recovered),
         "failed": failed,
         "reconciliation_required": reconciliation_required,
+        "reconciled": reconciled,
         "rollout": {
             "changed": rollout_evaluation.transition.changed,
             "reason_code": rollout_evaluation.reason_code,

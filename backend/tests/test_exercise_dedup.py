@@ -1,4 +1,4 @@
-"""test_exercise_dedup —— 5 秒窗口幂等保护 (2026-05-11 双击 race fix)."""
+"""test_exercise_dedup —— 1 秒窗口幂等保护 (2026-05-11 双击 race fix)."""
 
 from datetime import datetime, timedelta, timezone
 import uuid
@@ -35,16 +35,23 @@ def _payload(reps=20, exercise_type="俯卧撑", sets=1):
 
 
 def test_double_click_same_payload_returns_existing(client, db):
-    """同 user/type/reps/sets, 5 秒内连续两次 POST → 只写一条."""
+    """同 user/type/reps/sets, 1 秒内连续两次 POST → 只写一条."""
     user, headers = _user_headers(db)
 
     r1 = client.post("/api/v1/daily-health/exercise", headers=headers, json=_payload())
     assert r1.status_code == 200
     id1 = r1.json()["id"]
 
+    # Pin the stored timestamp inside the one-second window. Using two full HTTP
+    # round trips made this test depend on runner speed and intermittently cross
+    # the production window before the second request began.
+    rec = db.query(ExerciseRecord).filter(ExerciseRecord.id == id1).one()
+    rec.created_at = datetime.now(timezone.utc) + timedelta(seconds=1)
+    db.commit()
+
     r2 = client.post("/api/v1/daily-health/exercise", headers=headers, json=_payload())
     assert r2.status_code == 200
-    assert r2.json()["id"] == id1, "5 秒窗口内应返回 existing record"
+    assert r2.json()["id"] == id1, "1 秒窗口内应返回 existing record"
 
     rows = db.query(ExerciseRecord).filter(
         ExerciseRecord.user_id == user.id,
@@ -80,16 +87,16 @@ def test_different_users_not_deduped(client, db):
     assert db.query(ExerciseRecord).count() == 2
 
 
-def test_outside_5s_window_writes_again(client, db):
-    """5 秒外的同 payload 视为新记录 (用户真的连做两次)."""
+def test_outside_1s_window_writes_again(client, db):
+    """1 秒外的同 payload 视为新记录 (用户真的连做两次)."""
     user, headers = _user_headers(db, "outside_window")
 
     r1 = client.post("/api/v1/daily-health/exercise", headers=headers, json=_payload())
     id1 = r1.json()["id"]
 
-    # 手动把 created_at 改到 10 秒前
+    # 手动把 created_at 改到窗口外，避免依赖测试机实际执行速度。
     rec = db.query(ExerciseRecord).filter(ExerciseRecord.id == id1).first()
-    rec.created_at = datetime.now(timezone.utc) - timedelta(seconds=10)
+    rec.created_at = datetime.now(timezone.utc) - timedelta(seconds=2)
     db.commit()
 
     r2 = client.post("/api/v1/daily-health/exercise", headers=headers, json=_payload())

@@ -1,6 +1,8 @@
 from datetime import datetime, timedelta, timezone
 from inspect import getsource
 
+import pytest
+
 import app.services.utterance_intent_classifier as utterance_intent_classifier
 from app.services.utterance_intent_classifier import classify_agent_utterance
 
@@ -179,6 +181,33 @@ def test_intervention_status_question_is_read_intent():
     assert intent.primary == "read"
     assert intent.domain == "plan"
     assert intent.operation == "list"
+    assert intent.is_write is False
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "今天我没吃那么多，晚餐的两千大卡只有吃了四分之一",
+        "晚饭实际只吃了一半，帮我按实际摄入修正",
+        "午餐没有全吃完，只吃了三分之一",
+    ],
+)
+def test_partial_meal_statement_is_an_existing_diet_correction(message):
+    intent = classify_agent_utterance(message)
+
+    assert intent.primary == "mutate"
+    assert intent.domain == "diet"
+    assert intent.operation == "update"
+    assert intent.scope["meal_type"] in {"lunch", "dinner"}
+    assert intent.is_write is True
+    assert intent.requires_reliable_tool_model is True
+
+
+def test_partial_meal_advice_question_does_not_mutate_a_record():
+    intent = classify_agent_utterance("晚餐只吃四分之一会不会饿？")
+
+    assert intent.primary in {"read", "advice"}
+    assert intent.domain == "diet"
     assert intent.is_write is False
 
 

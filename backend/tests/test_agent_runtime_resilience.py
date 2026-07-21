@@ -746,6 +746,7 @@ def test_recovery_task_settles_an_expired_run(
         "recovered": 1,
         "failed": 1,
         "reconciliation_required": 0,
+        "reconciled": 0,
         "rollout": {
             "changed": False,
             "reason_code": None,
@@ -807,6 +808,60 @@ def test_recovery_task_pauses_rollout_after_uncertain_write(
     assert result["rollout"]["status"] == "paused"
     assert result["rollout"]["reason_code"] == "reconciliation_detected"
     assert result["rollout"]["snapshot"]["reconciliation_runs"] == 1
+    event = db.query(AgentRuntimeRolloutEvent).one()
+    assert event.action == "pause"
+    assert event.actor_kind == "system"
+    assert event.reason_code == "reconciliation_detected"
+
+
+def test_recovery_task_pauses_rollout_when_reconciliation_scan_fails(
+    db, auth_user_and_headers, monkeypatch
+):
+    from app.config import settings
+    from app.models.agent_runtime import AgentRuntimeRolloutEvent
+    from app.services.agent_runtime import AgentRuntimeCoordinator
+    from app.tasks.maintenance import recover_expired_agent_runs
+
+    user, _headers = auth_user_and_headers
+    runtime = AgentRuntimeCoordinator(db)
+    now = datetime(2026, 7, 19, 12, 45, tzinfo=UTC)
+    context = _admission(db, user.id, suffix="reconciliation-scan-failure").context
+    runtime.mark_running(
+        context,
+        worker_id="worker-reconciliation-scan-failure",
+        lease_seconds=30,
+        now=now - timedelta(minutes=2),
+    )
+    runtime.claim_tool_operation(
+        context,
+        tool_name="health_record",
+        effect_class="write",
+        operation_fingerprint="d" * 64,
+    )
+    monkeypatch.setattr(settings, "agent_runtime_mode", "canary")
+    monkeypatch.setattr(settings, "agent_runtime_canary_percent", 100)
+    monkeypatch.setattr("app.services.agent_runtime._now", lambda: now)
+    monkeypatch.setattr(
+        "app.tasks.maintenance.SessionLocal",
+        sessionmaker(bind=db.get_bind(), autocommit=False, autoflush=False),
+    )
+
+    def _raise_scan_failure(*_args, **_kwargs):
+        raise RuntimeError("reconciliation_backend_unavailable")
+
+    monkeypatch.setattr(
+        AgentRuntimeCoordinator,
+        "reconcile_pending_tool_operations",
+        _raise_scan_failure,
+    )
+
+    with pytest.raises(RuntimeError, match="reconciliation_backend_unavailable"):
+        recover_expired_agent_runs(now_iso=now.isoformat())
+
+    db.expire_all()
+    assert runtime.get_run(user.id, context.run_id).status == (
+        "reconciliation_required"
+    )
     event = db.query(AgentRuntimeRolloutEvent).one()
     assert event.action == "pause"
     assert event.actor_kind == "system"

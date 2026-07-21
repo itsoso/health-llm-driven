@@ -27,6 +27,7 @@ update/delete 算写)后出现。无回执 → fall through 合成轮,让模型�
   - 真写入回合 → 仍正常"已记录…"确认,不被过度抑制(test 3 正向控制)。
 """
 import json
+from unittest.mock import AsyncMock
 
 from app.services.agent_executor import AgentExecutor
 from app.services.utterance_intent_classifier import classify_agent_utterance
@@ -146,6 +147,8 @@ async def test_record_modify_list_lookup_round_never_claims_record(db, auth_user
     async def fake_call_llm_stream(messages, tools):
         rounds.append(len(rounds))
         if len(rounds) == 1:
+            for ch in "已删除今天的下午加餐。":
+                yield {"type": "content", "text": ch}
             yield {"type": "tool_calls", "tool_calls": [
                 {"id": "c1", "type": "function", "function": {
                     "name": "health_manage",
@@ -225,6 +228,67 @@ async def test_verified_write_still_confirms_record(db, auth_user_and_headers):
     assert len(rounds) == 1, rounds
 
 
+async def test_second_write_failure_never_streams_success_preamble(
+    db, auth_user_and_headers
+):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    rounds = 0
+    tool_calls = 0
+    message = "把第一条和第二条饮水记录都改成 500ml。"
+    assert classify_agent_utterance(message).primary == "mutate"
+
+    async def fake_call_llm_stream(messages, tools):
+        nonlocal rounds
+        rounds += 1
+        preamble = "第一条已修改。" if rounds == 1 else "第二条也已修改。"
+        for ch in preamble:
+            yield {"type": "content", "text": ch}
+        record_id = rounds
+        yield {"type": "tool_calls", "tool_calls": [{
+            "id": f"write-{rounds}",
+            "type": "function",
+            "function": {
+                "name": "health_manage",
+                "arguments": json.dumps({
+                    "record_type": "water",
+                    "operation": "update",
+                    "record_id": record_id,
+                    "data": {"amount": 500},
+                }),
+            },
+        }]}
+        yield {"type": "finish", "finish_reason": "tool_calls"}
+
+    async def fake_execute_tool(tool_name, args_raw, user_token):
+        nonlocal tool_calls
+        tool_calls += 1
+        if tool_calls == 1:
+            return json.dumps({
+                "id": 1,
+                "resource_type": "water_record",
+                "message": "第一条饮水记录已修改",
+            }, ensure_ascii=False)
+        return "Error: update failed"
+
+    executor._call_llm_stream = fake_call_llm_stream
+    executor._execute_tool = fake_execute_tool
+
+    events = [
+        event async for event in executor.run_stream(
+            user_id=user.id,
+            message=message,
+            user_auth_token="test-token",
+        )
+    ]
+    reply = _tokens(events)
+
+    assert tool_calls == 2
+    assert "第一条已修改" not in reply
+    assert "第二条也已修改" not in reply
+    assert "无法确认" in reply or "暂时" in reply
+
+
 # ── Test 4: 生产实锤 — 模型零工具 + 确定性写入失败 → 绝不谎称已记录 ──
 
 
@@ -281,3 +345,122 @@ async def test_failed_deterministic_symptom_write_never_streams_the_claim(
     assert "✅" not in reply, reply
     # 而且要给出诚实的替代文案(不是留空)。
     assert reply.strip(), "抑制之后必须补发诚实回复, 不能什么都不发"
+
+
+async def test_partial_diet_correction_uses_deterministic_update_without_false_claim(
+    db, auth_user_and_headers
+):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    message = "今天我没吃那么多，晚餐的两千大卡只有吃了四分之一"
+    rounds = 0
+    executed = []
+
+    async def fake_call_llm_stream(messages, tools):
+        nonlocal rounds
+        rounds += 1
+        text = (
+            "好的，已经帮你保存晚餐。"
+            if rounds == 1
+            else "已按实际吃掉的四分之一更新晚餐。"
+        )
+        for ch in text:
+            yield {"type": "content", "text": ch}
+        yield {"type": "finish", "finish_reason": "stop"}
+
+    async def fake_execute_tool(tool_name, args_raw, user_token):
+        args = json.loads(args_raw) if isinstance(args_raw, str) else args_raw
+        executed.append((tool_name, args))
+        return json.dumps({
+            "id": 829,
+            "resource_type": "diet_record",
+            "message": "已更新晚餐记录",
+        }, ensure_ascii=False)
+
+    executor._call_llm_stream = fake_call_llm_stream
+    executor._api_get_json = AsyncMock(return_value=([{
+        "id": 829,
+        "meal_type": "dinner",
+        "food_items": "三文鱼 + 黎麦沙拉 + 羊乳酪",
+        "calories": 2000,
+        "protein": 80,
+        "carbs": 120,
+        "fat": 100,
+        "fiber": 16,
+    }], None))
+    executor._execute_tool = fake_execute_tool
+
+    events = [
+        event async for event in executor.run_stream(
+            user_id=user.id,
+            message=message,
+            user_auth_token="test-token",
+        )
+    ]
+    reply = _tokens(events)
+
+    assert executed == [(
+        "health_manage",
+        {
+            "record_type": "diet",
+            "operation": "update",
+            "record_id": 829,
+            "data": {
+                "meal_type": "dinner",
+                "calories": 500.0,
+                "protein": 20.0,
+                "carbs": 30.0,
+                "fat": 25.0,
+                "fiber": 4.0,
+            },
+        },
+    )]
+    assert "好的，已经帮你保存晚餐" not in reply
+    assert "已按实际吃掉的四分之一更新晚餐" in reply
+
+
+async def test_ambiguous_partial_diet_correction_never_claims_an_update(
+    db, auth_user_and_headers
+):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    message = "午餐没有全吃完，只吃了三分之一"
+    rounds = 0
+    executed = []
+
+    async def fake_call_llm_stream(messages, tools):
+        nonlocal rounds
+        rounds += 1
+        text = "已按三分之一更新午餐。"
+        for ch in text:
+            yield {"type": "content", "text": ch}
+        yield {"type": "finish", "finish_reason": "stop"}
+
+    async def fake_execute_tool(tool_name, args_raw, user_token):
+        args = json.loads(args_raw) if isinstance(args_raw, str) else args_raw
+        executed.append((tool_name, args))
+        return json.dumps([
+            {"id": 830, "meal_type": "lunch", "calories": 600},
+            {"id": 829, "meal_type": "lunch", "calories": 450},
+        ], ensure_ascii=False)
+
+    executor._call_llm_stream = fake_call_llm_stream
+    executor._api_get_json = AsyncMock(return_value=([
+        {"id": 830, "meal_type": "lunch", "calories": 600},
+        {"id": 829, "meal_type": "lunch", "calories": 450},
+    ], None))
+    executor._execute_tool = fake_execute_tool
+
+    events = [
+        event async for event in executor.run_stream(
+            user_id=user.id,
+            message=message,
+            user_auth_token="test-token",
+        )
+    ]
+    reply = _tokens(events)
+
+    assert executed and executed[0][1]["operation"] == "list"
+    assert all(args["operation"] != "update" for _name, args in executed)
+    assert "已按三分之一更新午餐" not in reply
+    assert "多条" in reply and "选择" in reply

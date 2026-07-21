@@ -137,6 +137,11 @@ class AgentToolOperation(Base):
     tool_name = Column(String(80), nullable=False)
     effect_class = Column(String(32), nullable=False)
     operation_fingerprint = Column(String(64), nullable=False)
+    logical_operation_key_hash = Column(String(64), nullable=True)
+    logical_operation_scope_hash = Column(String(64), nullable=True)
+    logical_operation_discriminator_kind = Column(String(24), nullable=True)
+    logical_operation_discriminator_hash = Column(String(64), nullable=True)
+    created_attempt_no = Column(Integer, nullable=True)
     status = Column(String(32), nullable=False, default="requested", index=True)
     resource_type = Column(String(80), nullable=True)
     resource_id = Column(String(128), nullable=True)
@@ -158,9 +163,22 @@ class AgentToolOperation(Base):
             unique=True,
         ),
         Index(
+            "uq_agent_tool_operations_run_logical_key",
+            "run_id",
+            "logical_operation_key_hash",
+            unique=True,
+            postgresql_where=text("logical_operation_key_hash IS NOT NULL"),
+            sqlite_where=text("logical_operation_key_hash IS NOT NULL"),
+        ),
+        Index(
             "ix_agent_tool_operations_created_status",
             "created_at",
             "status",
+        ),
+        Index(
+            "ix_agent_tool_operations_run_scope",
+            "run_id",
+            "logical_operation_scope_hash",
         ),
     )
 

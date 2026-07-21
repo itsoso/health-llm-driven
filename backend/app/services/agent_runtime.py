@@ -34,7 +34,7 @@ _RUN_TRANSITIONS = {
     "queued": frozenset({"running", "failed", "cancelled"}),
     "running": COMPLETION_RUN_STATUSES,
     "waiting_for_user": frozenset({"succeeded", "failed", "cancelled"}),
-    "reconciliation_required": frozenset(),
+    "reconciliation_required": frozenset({"failed"}),
     "succeeded": frozenset(),
     "failed": frozenset(),
     "cancelled": frozenset(),
@@ -51,6 +51,7 @@ _EVENT_NAMES = frozenset(
         "run.failed",
         "run.cancelled",
         "run.reconciliation_required",
+        "run.reconciled",
         "tool.requested",
         "tool.failed",
         "tool.reconciliation_required",
@@ -70,6 +71,10 @@ _EVENT_PAYLOAD_KEYS = frozenset(
     }
 )
 _MAX_EVENT_STRING_LENGTH = 128
+_OPERATION_DISCRIMINATOR_KINDS = frozenset({
+    "meal_time",
+    "photo_token",
+})
 _SAFE_EVENT_TOKEN = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_.:-]*$")
 _TOKEN_EVENT_KEYS = frozenset(
     {"status", "completion_status", "error_code", "tool_name", "effect_class"}
@@ -105,6 +110,12 @@ _KNOWN_ERROR_CODES = frozenset(
         "tool_failed",
         "tool_rejected",
         "write_uncertain",
+        "write_verified_reply_incomplete",
+        "reconciled_no_effect",
+        "retry_plan_mismatch",
+        "reconciliation_grace_period",
+        "unsupported_reconciliation_resource",
+        "operation_timestamp_missing",
     }
 )
 _KNOWN_STATUS_VALUES = frozenset(
@@ -189,7 +200,7 @@ class RunAdmission:
 @dataclass(frozen=True, slots=True)
 class ToolOperationAdmission:
     operation_id: str
-    disposition: Literal["execute", "replay", "reconcile"]
+    disposition: Literal["execute", "replay", "reconcile", "reject"]
     resource_type: str | None = None
     resource_id: str | None = None
     error_code: str | None = None
@@ -215,6 +226,15 @@ class RecoveryResult:
     run_id: str
     status: str
     error_code: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class ToolOperationReconciliation:
+    operation_id: str
+    disposition: Literal["verified_effect", "verified_no_effect", "unknown"]
+    reason_code: str
+    resource_type: str | None = None
+    resource_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -825,6 +845,44 @@ class AgentRuntimeCoordinator:
                 )
             return recovered
 
+    def reconcile_pending_tool_operations(
+        self,
+        *,
+        now: datetime | None = None,
+        limit: int = 100,
+        grace_seconds: int = 90,
+    ) -> list[ToolOperationReconciliation]:
+        """Reconcile supported terminal writes without retrying legacy operations."""
+        if type(limit) is not int or not 1 <= limit <= 500:
+            raise ValueError("invalid_reconciliation_limit")
+        if type(grace_seconds) is not int or not 0 <= grace_seconds <= 3600:
+            raise ValueError("invalid_reconciliation_grace_seconds")
+        from app.services.agent_operation_reconciliation import (
+            AUTO_RECONCILIATION_RESOURCE_TYPES,
+        )
+
+        operation_ids = [
+            row.operation_id
+            for row in self.db.query(AgentToolOperation.operation_id).join(
+                AgentRun,
+                AgentRun.run_id == AgentToolOperation.run_id,
+            ).filter(
+                AgentRun.status == "reconciliation_required",
+                AgentToolOperation.status == "reconciliation_required",
+                AgentToolOperation.resource_type.in_(
+                    AUTO_RECONCILIATION_RESOURCE_TYPES
+                ),
+            ).order_by(AgentToolOperation.created_at.asc()).limit(limit).all()
+        ]
+        return [
+            self.reconcile_tool_operation(
+                operation_id,
+                now=now,
+                grace_seconds=grace_seconds,
+            )
+            for operation_id in operation_ids
+        ]
+
     def list_events_after(
         self,
         user_id: int,
@@ -1054,32 +1112,139 @@ class AgentRuntimeCoordinator:
         tool_name: str,
         effect_class: str,
         operation_fingerprint: str,
+        expected_resource_type: str | None = None,
+        logical_operation_key: str | None = None,
+        logical_operation_scope_key: str | None = None,
+        logical_operation_discriminator_kind: str | None = None,
+        logical_operation_discriminator_key: str | None = None,
     ) -> ToolOperationAdmission:
         """Claim one content-free write operation before business dispatch."""
         fingerprint = str(operation_fingerprint or "").strip()
         if not re.fullmatch(r"[0-9a-f]{64}", fingerprint):
             raise ValueError("invalid_operation_fingerprint")
+        logical_key = str(logical_operation_key or "").strip() or None
+        if logical_key is not None and not re.fullmatch(
+            r"[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127}", logical_key
+        ):
+            raise ValueError("invalid_logical_operation_key")
+        logical_key_hash = (
+            hashlib.sha256(logical_key.encode()).hexdigest()
+            if logical_key is not None
+            else None
+        )
+        logical_scope_key = (
+            str(logical_operation_scope_key or "").strip() or None
+        )
+        if logical_scope_key is not None and not re.fullmatch(
+            r"[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127}", logical_scope_key
+        ):
+            raise ValueError("invalid_logical_operation_scope_key")
+        logical_scope_hash = (
+            hashlib.sha256(logical_scope_key.encode()).hexdigest()
+            if logical_scope_key is not None
+            else None
+        )
+        discriminator_kind = (
+            str(logical_operation_discriminator_kind or "").strip() or None
+        )
+        discriminator_key = (
+            str(logical_operation_discriminator_key or "").strip() or None
+        )
+        if (discriminator_kind is None) != (discriminator_key is None):
+            raise ValueError("incomplete_logical_operation_discriminator")
+        if (
+            discriminator_kind is not None
+            and discriminator_kind not in _OPERATION_DISCRIMINATOR_KINDS
+        ):
+            raise ValueError("invalid_logical_operation_discriminator_kind")
+        if discriminator_key is not None and not re.fullmatch(
+            r"[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127}", discriminator_key
+        ):
+            raise ValueError("invalid_logical_operation_discriminator_key")
+        discriminator_hash = (
+            hashlib.sha256(discriminator_key.encode()).hexdigest()
+            if discriminator_key is not None
+            else None
+        )
         normalized_tool = str(tool_name or "").strip()
         if normalized_tool not in _known_tool_names():
             raise AgentRuntimeError("unknown_tool")
         if effect_class != "write":
             raise AgentRuntimeError("tool_operation_requires_write_effect")
+        normalized_resource_type = _bounded(
+            expected_resource_type,
+            field="resource_type",
+            limit=80,
+        )
+        if normalized_resource_type is not None:
+            from app.services.agent_kernel.tool_registry import get_tool_spec
+
+            declared_types = {
+                resource_type
+                for _record_type, resource_type in get_tool_spec(
+                    normalized_tool
+                ).reconciliation_record_types
+            }
+            if normalized_resource_type not in declared_types:
+                raise AgentRuntimeError("invalid_resource_type")
 
         with self._lifecycle_lock(context):
             run, attempt = self._owned_run_and_attempt(context, lock=True)
             if run.status != "running" or attempt.status != "running":
                 raise StaleRunAttempt("attempt_not_running")
-            query = self.db.query(AgentToolOperation).filter(
+
+            def reject_retry_plan_mismatch() -> ToolOperationAdmission:
+                blocked_operation_id = "op_blocked_" + hashlib.sha256(
+                    f"{context.run_id}:{logical_key_hash or fingerprint}".encode()
+                ).hexdigest()[:40]
+                self._append_event(
+                    run,
+                    context.attempt_id,
+                    "tool.failed",
+                    {
+                        "tool_name": normalized_tool,
+                        "effect_class": effect_class,
+                        "status": "failed",
+                        "error_code": "retry_plan_mismatch",
+                    },
+                )
+                self.db.commit()
+                return ToolOperationAdmission(
+                    operation_id=blocked_operation_id,
+                    disposition="reject",
+                    error_code="retry_plan_mismatch",
+                )
+
+            exact_query = self.db.query(AgentToolOperation).filter(
                 AgentToolOperation.run_id == context.run_id,
                 AgentToolOperation.operation_fingerprint == fingerprint,
             )
             if self.db.get_bind().dialect.name == "postgresql":
-                query = query.with_for_update()
-            operation = query.first()
+                exact_query = exact_query.with_for_update()
+            operation = exact_query.first()
+            if operation is None and logical_key_hash is not None:
+                logical_query = self.db.query(AgentToolOperation).filter(
+                    AgentToolOperation.run_id == context.run_id,
+                    AgentToolOperation.logical_operation_key_hash
+                    == logical_key_hash,
+                )
+                if self.db.get_bind().dialect.name == "postgresql":
+                    logical_query = logical_query.with_for_update()
+                operation = logical_query.first()
             if operation is not None:
                 if (
                     operation.tool_name != normalized_tool
                     or operation.effect_class != effect_class
+                    or (
+                        normalized_resource_type is not None
+                        and operation.resource_type != normalized_resource_type
+                    )
+                ):
+                    raise AgentRuntimeError("tool_operation_identity_mismatch")
+                if (
+                    logical_key_hash is not None
+                    and operation.attempt_id == context.attempt_id
+                    and operation.operation_fingerprint != fingerprint
                 ):
                     raise AgentRuntimeError("tool_operation_identity_mismatch")
                 if operation.status == "succeeded":
@@ -1091,11 +1256,13 @@ class AgentRuntimeCoordinator:
                     )
                 if (
                     operation.status == "failed"
-                    and operation.error_code == "tool_rejected"
+                    and operation.error_code
+                    in {"tool_rejected", "reconciled_no_effect"}
                 ):
                     operation.status = "executing"
                     operation.attempt_id = context.attempt_id
                     operation.error_code = None
+                    operation.verified_at = None
                     operation.finished_at = None
                     self._append_event(
                         run,
@@ -1133,8 +1300,43 @@ class AgentRuntimeCoordinator:
                     error_code="duplicate_in_flight",
                 )
 
+            if logical_scope_hash is not None:
+                scope_query = self.db.query(AgentToolOperation).filter(
+                    AgentToolOperation.run_id == context.run_id,
+                    AgentToolOperation.logical_operation_scope_hash
+                    == logical_scope_hash,
+                )
+                if self.db.get_bind().dialect.name == "postgresql":
+                    scope_query = scope_query.with_for_update()
+                for scoped_operation in scope_query.all():
+                    proven_distinct = bool(
+                        discriminator_kind
+                        and discriminator_hash
+                        and scoped_operation.logical_operation_discriminator_kind
+                        == discriminator_kind
+                        and scoped_operation.logical_operation_discriminator_hash
+                        and scoped_operation.logical_operation_discriminator_hash
+                        != discriminator_hash
+                    )
+                    if proven_distinct:
+                        continue
+                    if attempt.attempt_no > 1:
+                        return reject_retry_plan_mismatch()
+                    raise AgentRuntimeError("tool_operation_identity_mismatch")
+
+            if attempt.attempt_no > 1:
+                prior_operation = self.db.query(AgentToolOperation.operation_id).filter(
+                    AgentToolOperation.run_id == context.run_id,
+                    or_(
+                        AgentToolOperation.created_attempt_no.is_(None),
+                        AgentToolOperation.created_attempt_no < attempt.attempt_no,
+                    ),
+                ).first()
+                if prior_operation is not None:
+                    return reject_retry_plan_mismatch()
+
             operation_id = "op_" + hashlib.sha256(
-                f"{context.run_id}:{fingerprint}".encode()
+                f"{context.run_id}:{logical_key_hash or fingerprint}".encode()
             ).hexdigest()[:48]
             operation = AgentToolOperation(
                 operation_id=operation_id,
@@ -1143,7 +1345,13 @@ class AgentRuntimeCoordinator:
                 tool_name=normalized_tool,
                 effect_class=effect_class,
                 operation_fingerprint=fingerprint,
+                logical_operation_key_hash=logical_key_hash,
+                logical_operation_scope_hash=logical_scope_hash,
+                logical_operation_discriminator_kind=discriminator_kind,
+                logical_operation_discriminator_hash=discriminator_hash,
+                created_attempt_no=attempt.attempt_no,
                 status="executing",
+                resource_type=normalized_resource_type,
             )
             self.db.add(operation)
             self._append_event(
@@ -1237,6 +1445,11 @@ class AgentRuntimeCoordinator:
                     normalized_resource_id or "",
                 ):
                     raise AgentRuntimeError("invalid_resource_id")
+                if (
+                    operation.resource_type is not None
+                    and operation.resource_type != normalized_resource_type
+                ):
+                    raise AgentRuntimeError("invalid_resource_type")
             if operation.status == "succeeded" and status == "succeeded":
                 return
             if operation.status not in {"executing", "requested"}:
@@ -1277,6 +1490,321 @@ class AgentRuntimeCoordinator:
                 }
             self._append_event(run, context.attempt_id, event_name, payload)
             self.db.commit()
+
+    def reconcile_tool_operation(
+        self,
+        operation_id: str,
+        *,
+        now: datetime | None = None,
+        grace_seconds: int = 90,
+    ) -> ToolOperationReconciliation:
+        """Resolve one uncertain write without persisting health content."""
+        normalized_operation_id = _bounded(
+            operation_id,
+            field="operation_id",
+            limit=96,
+        )
+        if type(grace_seconds) is not int or not 0 <= grace_seconds <= 3600:
+            raise ValueError("invalid_reconciliation_grace_seconds")
+        operation = self.db.query(AgentToolOperation).filter(
+            AgentToolOperation.operation_id == normalized_operation_id,
+        ).first()
+        if operation is None:
+            raise AgentRuntimeError("tool_operation_not_found")
+        run = self.db.query(AgentRun).filter(
+            AgentRun.run_id == operation.run_id,
+        ).first()
+        if run is None:
+            raise AgentRuntimeError("run_not_found")
+        context = self._context(run)
+
+        with self._lifecycle_lock(context):
+            run, attempt = self._owned_run_and_attempt(context, lock=True)
+            query = self.db.query(AgentToolOperation).filter(
+                AgentToolOperation.operation_id == normalized_operation_id,
+                AgentToolOperation.run_id == run.run_id,
+            )
+            if self.db.get_bind().dialect.name == "postgresql":
+                query = query.with_for_update()
+            operation = query.first()
+            if operation is None:
+                raise AgentRuntimeError("tool_operation_not_found")
+
+            if operation.status == "succeeded":
+                return ToolOperationReconciliation(
+                    operation_id=operation.operation_id,
+                    disposition="verified_effect",
+                    reason_code="reconciled_effect_verified",
+                    resource_type=operation.resource_type,
+                    resource_id=operation.resource_id,
+                )
+            if (
+                operation.status == "failed"
+                and operation.error_code == "reconciled_no_effect"
+            ):
+                return ToolOperationReconciliation(
+                    operation_id=operation.operation_id,
+                    disposition="verified_no_effect",
+                    reason_code="reconciled_no_effect",
+                    resource_type=operation.resource_type,
+                )
+            if operation.status != "reconciliation_required":
+                raise AgentRuntimeError("tool_operation_not_reconcilable")
+            if run.status != "reconciliation_required":
+                raise AgentRuntimeError("run_not_reconcilable")
+
+            from app.services.agent_operation_reconciliation import (
+                resolve_tool_operation,
+            )
+
+            decision = resolve_tool_operation(
+                self.db,
+                run=run,
+                operation=operation,
+                now=now or _now(),
+                grace_seconds=grace_seconds,
+            )
+            result = ToolOperationReconciliation(
+                operation_id=operation.operation_id,
+                disposition=decision.disposition,
+                reason_code=decision.reason_code,
+                resource_type=decision.resource_type,
+                resource_id=decision.resource_id,
+            )
+            if decision.disposition == "unknown":
+                return result
+
+            settled_at = now or _now()
+            operation.finished_at = settled_at
+            if decision.disposition == "verified_effect":
+                operation.status = "succeeded"
+                operation.error_code = None
+                operation.resource_type = decision.resource_type
+                operation.resource_id = decision.resource_id
+                operation.verified_at = settled_at
+                self._append_event(
+                    run,
+                    attempt.attempt_id,
+                    "tool.receipt_verified",
+                    {
+                        "tool_name": operation.tool_name,
+                        "effect_class": operation.effect_class,
+                        "status": "succeeded",
+                        "receipt_verified": True,
+                    },
+                )
+                run_error_code = "write_verified_reply_incomplete"
+            else:
+                operation.status = "failed"
+                operation.error_code = "reconciled_no_effect"
+                operation.resource_id = None
+                operation.verified_at = None
+                self._append_event(
+                    run,
+                    attempt.attempt_id,
+                    "tool.failed",
+                    {
+                        "tool_name": operation.tool_name,
+                        "effect_class": operation.effect_class,
+                        "status": "failed",
+                        "error_code": "reconciled_no_effect",
+                    },
+                )
+                run_error_code = "reconciled_no_effect"
+
+            self.db.flush()
+            if not self._has_unresolved_write(run.run_id):
+                self._apply_reconciled_retryable_locked(
+                    run,
+                    attempt,
+                    error_code=run_error_code,
+                    now=settled_at,
+                )
+            self.db.commit()
+            return result
+
+    def resolve_tool_operation_manually(
+        self,
+        operation_id: str,
+        *,
+        outcome: Literal["verified_effect", "verified_no_effect"],
+        resource_type: str | None = None,
+        resource_id: str | None = None,
+        now: datetime | None = None,
+    ) -> ToolOperationReconciliation:
+        """Apply an operator-verified outcome to a legacy uncertain write."""
+        if outcome not in {"verified_effect", "verified_no_effect"}:
+            raise ValueError("invalid_reconciliation_outcome")
+        normalized_operation_id = _bounded(
+            operation_id,
+            field="operation_id",
+            limit=96,
+        )
+        normalized_resource_type = _bounded(
+            resource_type,
+            field="resource_type",
+            limit=80,
+        )
+        normalized_resource_id = _bounded(
+            resource_id,
+            field="resource_id",
+            limit=128,
+        )
+        if outcome == "verified_effect" and not (
+            normalized_resource_type and normalized_resource_id
+        ):
+            raise AgentRuntimeError("verified_resource_required")
+        if outcome == "verified_no_effect" and (
+            normalized_resource_type or normalized_resource_id
+        ):
+            raise AgentRuntimeError("verified_resource_not_allowed")
+
+        operation = self.db.query(AgentToolOperation).filter(
+            AgentToolOperation.operation_id == normalized_operation_id,
+        ).first()
+        if operation is None:
+            raise AgentRuntimeError("tool_operation_not_found")
+        run = self.db.query(AgentRun).filter(
+            AgentRun.run_id == operation.run_id,
+        ).first()
+        if run is None:
+            raise AgentRuntimeError("run_not_found")
+        context = self._context(run)
+
+        with self._lifecycle_lock(context):
+            run, attempt = self._owned_run_and_attempt(context, lock=True)
+            query = self.db.query(AgentToolOperation).filter(
+                AgentToolOperation.operation_id == normalized_operation_id,
+                AgentToolOperation.run_id == run.run_id,
+            )
+            if self.db.get_bind().dialect.name == "postgresql":
+                query = query.with_for_update()
+            operation = query.first()
+            if operation is None:
+                raise AgentRuntimeError("tool_operation_not_found")
+            if outcome == "verified_effect":
+                from app.services.agent_kernel.tool_registry import (
+                    is_registered_receipt_resource_type,
+                    is_valid_receipt_resource_id,
+                )
+                from app.services.agent_operation_reconciliation import (
+                    verify_resource_owner,
+                )
+
+                if not is_registered_receipt_resource_type(
+                    operation.tool_name,
+                    normalized_resource_type or "",
+                ):
+                    raise AgentRuntimeError("invalid_resource_type")
+                if not is_valid_receipt_resource_id(
+                    operation.tool_name,
+                    normalized_resource_id or "",
+                ):
+                    raise AgentRuntimeError("invalid_resource_id")
+                if (
+                    operation.resource_type is not None
+                    and operation.resource_type != normalized_resource_type
+                ):
+                    raise AgentRuntimeError("invalid_resource_type")
+                if (
+                    operation.resource_id is not None
+                    and operation.resource_id != normalized_resource_id
+                ):
+                    raise AgentRuntimeError("invalid_resource_id")
+                if not verify_resource_owner(
+                    self.db,
+                    run=run,
+                    resource_type=normalized_resource_type or "",
+                    resource_id=normalized_resource_id or "",
+                ):
+                    raise AgentRuntimeError("verified_resource_owner_mismatch")
+            if outcome == "verified_effect" and operation.status == "succeeded":
+                return ToolOperationReconciliation(
+                    operation_id=operation.operation_id,
+                    disposition="verified_effect",
+                    reason_code="reconciled_effect_verified",
+                    resource_type=operation.resource_type,
+                    resource_id=operation.resource_id,
+                )
+            if (
+                outcome == "verified_no_effect"
+                and operation.status == "failed"
+                and operation.error_code == "reconciled_no_effect"
+            ):
+                return ToolOperationReconciliation(
+                    operation_id=operation.operation_id,
+                    disposition="verified_no_effect",
+                    reason_code="reconciled_no_effect",
+                )
+            if operation.status != "reconciliation_required":
+                raise AgentRuntimeError("tool_operation_not_reconcilable")
+            if run.status != "reconciliation_required":
+                raise AgentRuntimeError("run_not_reconcilable")
+
+            settled_at = now or _now()
+            operation.finished_at = settled_at
+            if outcome == "verified_effect":
+                operation.status = "succeeded"
+                operation.error_code = None
+                operation.resource_type = normalized_resource_type
+                operation.resource_id = normalized_resource_id
+                operation.verified_at = settled_at
+                self._append_event(
+                    run,
+                    attempt.attempt_id,
+                    "tool.receipt_verified",
+                    {
+                        "tool_name": operation.tool_name,
+                        "effect_class": operation.effect_class,
+                        "status": "succeeded",
+                        "receipt_verified": True,
+                    },
+                )
+                run_error_code = "write_verified_reply_incomplete"
+                reason_code = "reconciled_effect_verified"
+            else:
+                operation.status = "failed"
+                operation.error_code = "reconciled_no_effect"
+                operation.resource_id = None
+                operation.verified_at = None
+                self._append_event(
+                    run,
+                    attempt.attempt_id,
+                    "tool.failed",
+                    {
+                        "tool_name": operation.tool_name,
+                        "effect_class": operation.effect_class,
+                        "status": "failed",
+                        "error_code": "reconciled_no_effect",
+                    },
+                )
+                run_error_code = "reconciled_no_effect"
+                reason_code = "reconciled_no_effect"
+
+            self.db.flush()
+            if not self._has_unresolved_write(run.run_id):
+                self._apply_reconciled_retryable_locked(
+                    run,
+                    attempt,
+                    error_code=run_error_code,
+                    now=settled_at,
+                )
+            self.db.commit()
+            return ToolOperationReconciliation(
+                operation_id=operation.operation_id,
+                disposition=outcome,
+                reason_code=reason_code,
+                resource_type=(
+                    normalized_resource_type
+                    if outcome == "verified_effect"
+                    else None
+                ),
+                resource_id=(
+                    normalized_resource_id
+                    if outcome == "verified_effect"
+                    else None
+                ),
+            )
 
     def _transition(self, run: AgentRun, target: str) -> None:
         if run.status == target:
@@ -1447,6 +1975,30 @@ class AgentRuntimeCoordinator:
         if run.error_code:
             payload["error_code"] = run.error_code
         self._append_event(run, attempt.attempt_id, event_name, payload)
+
+    def _apply_reconciled_retryable_locked(
+        self,
+        run: AgentRun,
+        attempt: AgentRunAttempt,
+        *,
+        error_code: str,
+        now: datetime,
+    ) -> None:
+        """Leave terminal reconciliation in a retryable, audited state."""
+        self._transition(run, "failed")
+        run.error_code = error_code
+        run.retryable = True
+        run.finished_at = now
+        attempt.status = "failed"
+        attempt.error_code = error_code
+        attempt.finished_at = now
+        attempt.lease_expires_at = None
+        self._append_event(
+            run,
+            attempt.attempt_id,
+            "run.reconciled",
+            {"status": "failed", "error_code": error_code},
+        )
 
     def _apply_worker_interruption_locked(
         self,

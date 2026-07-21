@@ -228,7 +228,7 @@ def create_exercise_record(
     if existing is not None:
         logger.info(
             f"[exercise] dedup hit: user={current_user.id} type={payload.get('exercise_type')} "
-            f"reps={payload.get('reps')} 5s 窗口内已存 id={existing.id}, 跳过"
+            f"reps={payload.get('reps')} 1s 窗口内已存 id={existing.id}, 跳过"
         )
         return existing
 

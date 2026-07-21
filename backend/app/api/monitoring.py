@@ -12,7 +12,7 @@ except ImportError:
     psutil = None
 from typing import Literal, Optional
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.database import get_db
@@ -69,6 +69,30 @@ class AgentRuntimeRolloutTransitionResponse(BaseModel):
     changed: bool
     status: Literal["active", "paused"]
     reason_code: str | None = None
+
+
+class AgentRuntimeReconciliationRequest(BaseModel):
+    outcome: Literal["verified_effect", "verified_no_effect"]
+    resource_type: str | None = None
+    resource_id: str | None = None
+    verification_method: Literal[
+        "database_lookup",
+        "business_api",
+        "operator_review",
+    ]
+    reason_code: str = Field(
+        min_length=3,
+        max_length=64,
+        pattern=r"^[a-z0-9][a-z0-9_.:-]+$",
+    )
+
+
+class AgentRuntimeReconciliationResponse(BaseModel):
+    operation_id: str
+    disposition: Literal["verified_effect", "verified_no_effect", "unknown"]
+    reason_code: str
+    resource_type: str | None = None
+    resource_id: str | None = None
 
 
 def _require_admin(current_user: User) -> None:
@@ -339,4 +363,70 @@ async def resume_agent_runtime_rollout(
         "changed": result.changed,
         "status": result.status,
         "reason_code": result.reason_code,
+    }
+
+
+@router.post(
+    "/agent-runtime/operations/{operation_id}/resolve",
+    response_model=AgentRuntimeReconciliationResponse,
+)
+async def resolve_agent_runtime_operation(
+    operation_id: str,
+    payload: AgentRuntimeReconciliationRequest,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """Resolve one opaque uncertain write after an administrator verifies it."""
+    from app.models.agent_audit_log import AgentAuditLog
+    from app.models.agent_runtime import AgentRun, AgentToolOperation
+    from app.services.agent_runtime import AgentRuntimeCoordinator, AgentRuntimeError
+
+    _require_admin(current_user)
+    operation = db.query(AgentToolOperation).filter(
+        AgentToolOperation.operation_id == operation_id,
+    ).first()
+    if operation is None:
+        raise HTTPException(status_code=404, detail="Runtime 操作不存在")
+    run = db.query(AgentRun).filter(AgentRun.run_id == operation.run_id).first()
+    if run is None:
+        raise HTTPException(status_code=404, detail="Runtime Run 不存在")
+
+    db.add(AgentAuditLog(
+        user_id=run.user_id,
+        agent_type="agent_runtime",
+        action="tool_operation_reconciled",
+        result_summary="Agent Runtime 未决写入已人工核对",
+        result_detail={
+            "admin_user_id": current_user.id,
+            "operation_id": operation.operation_id,
+            "outcome": payload.outcome,
+            "run_id": run.run_id,
+            "verification_method": payload.verification_method,
+            "reason_code": payload.reason_code,
+        },
+    ))
+    try:
+        result = AgentRuntimeCoordinator(db).resolve_tool_operation_manually(
+            operation.operation_id,
+            outcome=payload.outcome,
+            resource_type=payload.resource_type,
+            resource_id=payload.resource_id,
+        )
+    except (AgentRuntimeError, ValueError) as exc:
+        db.rollback()
+        error_code = str(exc)
+        status_code = 404 if error_code.endswith("not_found") else 409
+        raise HTTPException(
+            status_code=status_code,
+            detail="该 Runtime 操作当前无法核对",
+        ) from exc
+    # Runtime may return an idempotent result without mutating its own rows.
+    # Commit explicitly so every operator decision retains an audit trail.
+    db.commit()
+    return {
+        "operation_id": result.operation_id,
+        "disposition": result.disposition,
+        "reason_code": result.reason_code,
+        "resource_type": result.resource_type,
+        "resource_id": result.resource_id,
     }
