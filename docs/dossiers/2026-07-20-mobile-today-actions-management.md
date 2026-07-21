@@ -4,8 +4,8 @@
 |---|---|
 | slug | `mobile-today-actions-management` |
 | 创建日期 | 2026-07-20 |
-| 当前阶段 | S6 提交与集成（反馈环 5） |
-| 状态 | building |
+| 当前阶段 | S8 上线验证（反馈环 5） |
+| 状态 | shipped |
 | 负责 | Codex |
 | 反馈环 | Mobile Jest / iOS Simulator / production OTA |
 
@@ -96,6 +96,9 @@
 - 反馈环 3：`5281eb82f`、`a542f94b1`、`e135100d6`、`72d4fa3ae`。
 - 反馈环 4：`242a1cbf4`；合并最新主干后提交为 `416aaa946`。
 - 同步并行后端 OpenAPI 到 Mobile/Web 生成类型：`1d97bb4c3`。
+- 反馈环 5 持久化稍后/恢复：`2e3a3aa0c`；合并最新主干后为 `9362d1713`。
+- CI 暴露并修复 Mobile 测试写死开发机时区的问题：`0fa40389b`。
+- 最新主干 CI：运行 `29798138723`，`42/42` 作业成功。
 - `main` 已推送到 `origin/main`；未纳入并行会话的无关工作树改动。
 
 ## G5 · 部署健康闸
@@ -173,16 +176,17 @@
 - [x] Agenda 投影透传服务端稍后状态和到期时间，今日投影、完成、药物日志和 runtime/range 使用同一用户日期。
 - [x] Mobile 不再用页面内存伪装持久稍后，写入失败不移动事项；当前来源写入中锁定整行操作。
 - [x] 只有具备真实稍后合同的事项展示该操作，恢复后回到正确分组。
-- [x] 专项测试、类型、设计、文档漂移和独立评审通过；主干 CI 待提交后验证。
-- [ ] production OTA 发布并回读验证。
+- [x] 专项测试、类型、设计、文档漂移和独立评审通过；合并后后端相关回归 `77 passed`。
+- [x] Mobile 完整测试在 UTC 环境 `282 suites / 2014 tests passed`；主干 CI `42/42`。
+- [x] production OTA 发布并回读验证。
 - [ ] 用户真机完成跨重启稍后/恢复验收。
 
 ### Gate 裁决
 
-- G3 测试：PASS（后端相关回归 `147 passed`；Mobile 专项 `38 passed`；TypeScript、ESLint、design token、ruff/py_compile、doc drift、dossier consistency、diff check 通过）。
+- G3 测试：PASS（开发阶段后端相关回归 `147 passed`；合并后关键回归 `77 passed`；Mobile 专项 `38 passed`、完整 UTC 环境 `2014 passed`；TypeScript、ESLint、design token、ruff/py_compile、doc drift、dossier consistency、diff check 通过；主干 CI `42/42`）。
 - G4 评审：三轮独立评审累计发现并修复终态并发覆盖、用户日期漂移、重复稍后延长、过期稍后刷新、用户本地提醒时钟、失败推送占位和多行写入锁定；最终复审结论 `GO`。
-- G5 部署：待执行。
-- G6 上线验证：待执行。
+- G5 部署：PASS（从干净 `origin/main` worktree 部署提交 `0fa40389b`；数据库备份和 force-RLS 完整性校验通过；健康度 `60/60`，skills `22 = 22`；生产健康接口 `200`，Agenda 写接口未登录 `401`）。
+- G6 上线验证：PASS（技术上线）。production OTA runtime `1.3.2`，update group `15c81741-e39d-4fb6-ab13-e1023ebbb9a3`，iOS update `019f82c0-ec81-7a5d-a2ef-3958fd6e7412`；真机跨重启触控验收保留为下一反馈。
 
 ## 反馈环 3 · 写回能力对齐与渐进披露
 
