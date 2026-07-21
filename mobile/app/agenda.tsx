@@ -108,6 +108,7 @@ export default function AgendaScreen() {
   const resumeMutation = useResumeAgendaItem();
   const writePending = complete.isPending || snoozeMutation.isPending || resumeMutation.isPending;
   const [handledExpanded, setHandledExpanded] = useState(false);
+  const [laterExpanded, setLaterExpanded] = useState(false);
   const [reviewExpanded, setReviewExpanded] = useState(false);
 
   const groups = useMemo(
@@ -134,9 +135,9 @@ export default function AgendaScreen() {
       {
         key: 'later',
         title: '稍后',
-        hint: groups.later.length > 0 ? '到时间再处理' : '暂无后续事项',
+        hint: groups.later.length > 0 ? (laterExpanded ? '点击收起' : '点击查看后续安排') : '暂无后续事项',
         count: groups.later.length,
-        data: groups.later,
+        data: laterExpanded ? groups.later : [],
       },
       {
         key: 'handled',
@@ -147,7 +148,9 @@ export default function AgendaScreen() {
       },
     ];
     return candidates.filter(section => section.count > 0);
-  }, [groups, handledExpanded, reviewExpanded]);
+  }, [groups, handledExpanded, laterExpanded, reviewExpanded]);
+
+  const hasCurrentDecision = groups.now.length > 0 || groups.review.length > 0;
 
   const handleBack = useCallback(() => {
     const action = resolveAgendaBackAction(router.canGoBack());
@@ -317,25 +320,35 @@ export default function AgendaScreen() {
           </View>
         </View>
         <Text style={styles.sectionHint}>{section.hint}</Text>
-        {section.key === 'handled' && section.count > 0 ? (
-          <Ionicons name={handledExpanded ? 'chevron-up' : 'chevron-down'} size={17} color={C.ink3} />
+        {(section.key === 'handled' || section.key === 'later') && section.count > 0 ? (
+          <Ionicons
+            name={(section.key === 'later'
+              ? (laterExpanded ? 'chevron-up' : 'chevron-down')
+              : (handledExpanded ? 'chevron-up' : 'chevron-down')) as keyof typeof Ionicons.glyphMap}
+            size={17}
+            color={C.ink3}
+          />
         ) : null}
       </>
     );
-    if (section.key !== 'handled' || section.count === 0) {
+    if ((section.key !== 'handled' && section.key !== 'later') || section.count === 0) {
       return <View style={styles.sectionHeader}>{content}</View>;
     }
+    const expanded = section.key === 'later' ? laterExpanded : handledExpanded;
+    const toggle = section.key === 'later' ? setLaterExpanded : setHandledExpanded;
+    const labelPrefix = section.key === 'later' ? '稍后' : '已处理';
     return (
       <Pressable
-        onPress={() => setHandledExpanded(value => !value)}
+        onPress={() => toggle(value => !value)}
         style={({ pressed }) => [styles.sectionHeader, pressed && styles.pressed]}
         accessibilityRole="button"
-        accessibilityLabel={`${handledExpanded ? '收起' : '展开'}已处理行动`}
+        accessibilityLabel={`${expanded ? '收起' : '展开'}${labelPrefix}行动`}
+        accessibilityState={{ expanded }}
       >
         {content}
       </Pressable>
     );
-  }, [handledExpanded]);
+  }, [handledExpanded, laterExpanded]);
 
   const renderSectionFooter = useCallback(({ section }: { section: AgendaSection }) => {
     if (section.key !== 'review' || section.count <= REVIEW_VISIBLE_COUNT) return null;
@@ -415,6 +428,17 @@ export default function AgendaScreen() {
           renderSectionHeader={renderSectionHeader}
           renderSectionFooter={renderSectionFooter}
           renderItem={renderItem}
+          ListHeaderComponent={!hasCurrentDecision ? (
+            <View style={styles.clearStateCard}>
+              <View style={styles.clearStateIcon}>
+                <Ionicons name="checkmark-circle" size={20} color={C.green600} />
+              </View>
+              <View style={styles.clearStateCopy}>
+                <Text style={styles.clearStateTitle}>当前没有需要你立刻决策的行动</Text>
+                <Text style={styles.clearStateText}>稍后的安排默认收起，到时间或展开后再处理。</Text>
+              </View>
+            </View>
+          ) : null}
           stickySectionHeadersEnabled={false}
           contentInsetAdjustmentBehavior="automatic"
           contentContainerStyle={styles.listContent}
@@ -611,6 +635,30 @@ const styles = StyleSheet.create({
   headerTitle: { fontFamily: revaFonts.sans, color: C.ink1, fontSize: 18, fontWeight: '800' },
   headerMeta: { fontFamily: revaFonts.mono, color: C.ink3, fontSize: 11, marginTop: 2 },
   listContent: { paddingBottom: 32 },
+  clearStateCard: {
+    marginHorizontal: revaSpacing.s4,
+    marginTop: revaSpacing.s4,
+    marginBottom: revaSpacing.s2,
+    padding: revaSpacing.s3,
+    borderRadius: revaRadii.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
+    backgroundColor: C.green50,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: revaSpacing.s3,
+  },
+  clearStateIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: revaRadii.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: C.paper,
+  },
+  clearStateCopy: { flex: 1, minWidth: 0 },
+  clearStateTitle: { fontFamily: revaFonts.sans, color: C.ink1, fontSize: 14, lineHeight: 19, fontWeight: '800' },
+  clearStateText: { fontFamily: revaFonts.sans, color: C.ink3, fontSize: 12, lineHeight: 17, marginTop: 2 },
   sectionHeader: {
     minHeight: 58,
     paddingHorizontal: revaSpacing.s4,

@@ -140,11 +140,40 @@ describe('AgendaScreen', () => {
     expect(getByText('稍后')).toBeTruthy();
     expect(getByText('已处理')).toBeTruthy();
     expect(getByText('晨间用药')).toBeTruthy();
-    expect(getByText('晚饭后步行 10 分钟')).toBeTruthy();
+    expect(queryByText('晚饭后步行 10 分钟')).toBeNull();
     expect(getByText('优质蛋白有助修复')).toBeTruthy();
     expect(queryByText('[movement] 晚饭后步行 10 分钟')).toBeNull();
     expect(queryByText('智能优先处理')).toBeNull();
     expect(queryByText('7 天健康运行时')).toBeNull();
+  });
+
+  it('keeps later actions collapsed until the user asks to inspect them', () => {
+    const { getByLabelText, getByText, queryByText } = render(<AgendaScreen />);
+
+    expect(queryByText('晚饭后步行 10 分钟')).toBeNull();
+    expect(getByLabelText('展开稍后行动').props.accessibilityState).toEqual({ expanded: false });
+
+    fireEvent.press(getByLabelText('展开稍后行动'));
+
+    expect(getByText('晚饭后步行 10 分钟')).toBeTruthy();
+    expect(getByLabelText('收起稍后行动').props.accessibilityState).toEqual({ expanded: true });
+  });
+
+  it('shows a clear-current-state note when only later or handled actions remain', () => {
+    mockAgendaData = {
+      agenda_date: '2026-07-20',
+      count: 2,
+      items: [
+        agendaData.items[2],
+        agendaData.items[3],
+      ],
+    };
+
+    const { getByText, queryByText } = render(<AgendaScreen />);
+
+    expect(getByText('现在 0 · 待确认 0')).toBeTruthy();
+    expect(getByText('当前没有需要你立刻决策的行动')).toBeTruthy();
+    expect(queryByText('晚饭后步行 10 分钟')).toBeNull();
   });
 
   it('returns through the stack and falls back to chat for a cold deep link', () => {
@@ -204,7 +233,7 @@ describe('AgendaScreen', () => {
         {
           ...agendaData.items[0],
           title: '午间补水',
-          time_window: 'afternoon',
+          time_window: 'morning',
           source: { object_type: 'health_protocol', object_id: 9 },
         },
       ],
@@ -236,6 +265,7 @@ describe('AgendaScreen', () => {
       variables: { source: { object_type: 'health_protocol', object_id: 2 } },
     };
     const { getByLabelText } = render(<AgendaScreen />);
+    fireEvent.press(getByLabelText('展开稍后行动'));
 
     expect(getByLabelText('恢复 晨间用药').props.accessibilityState).toEqual({
       disabled: true,
@@ -272,6 +302,7 @@ describe('AgendaScreen', () => {
       }],
     };
     const { getByLabelText, getByText } = render(<AgendaScreen />);
+    fireEvent.press(getByLabelText('展开稍后行动'));
 
     const localDate = new Date(snoozedUntil);
     const localTime = `${String(localDate.getHours()).padStart(2, '0')}:${String(localDate.getMinutes()).padStart(2, '0')}`;
@@ -312,6 +343,7 @@ describe('AgendaScreen', () => {
       menuOptions = options.options;
     });
     const { getByLabelText } = render(<AgendaScreen />);
+    fireEvent.press(getByLabelText('展开稍后行动'));
 
     fireEvent.press(getByLabelText('管理 晨间用药'));
 
@@ -344,6 +376,7 @@ describe('AgendaScreen', () => {
       menuOptions = options.options;
     });
     const { getByLabelText } = render(<AgendaScreen />);
+    fireEvent.press(getByLabelText('展开稍后行动'));
 
     fireEvent.press(getByLabelText('管理 晚饭后步行 10 分钟'));
 
