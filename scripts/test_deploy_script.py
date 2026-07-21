@@ -87,3 +87,10 @@ def test_automatic_rollback_uses_verified_release_runner_and_propagates_failure(
     assert "if ! ssh" in rollback_body
     assert "return 1" in rollback_body
     assert "git checkout $ROLLBACK_COMMIT -- ." not in rollback_body
+
+
+def test_deploy_does_not_claim_services_are_blocked_when_rollback_fails():
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+
+    assert "服务保持阻断状态" not in script
+    assert "无法证明服务已停止" in script

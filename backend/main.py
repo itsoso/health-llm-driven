@@ -29,7 +29,6 @@ import app.models.memory_fact  # noqa: F401 - LLM Wiki v2 事实级记忆
 import app.models.health_kg  # noqa: F401 - 知识图谱 entities + relations
 import app.models.system_knowledge  # noqa: F401 - System LLM Wiki v2 KB docs + graph
 import app.models.monthly_report  # noqa: F401 - 月度复盘报告
-import app.api.nfc  # noqa: F401 - ensure BowelTimer table creation
 
 logger = logging.getLogger(__name__)
 _IS_PRODUCTION = (settings.app_env or "").strip().lower() == "production"

@@ -506,7 +506,7 @@ deploy_backend() {
         if rollback_deploy; then
             print_error "后端部署 SSH 命令失败 (exit=$SKILL_EXIT)，代码已自动回滚并通过健康检查"
         else
-            print_error "后端部署 SSH 命令失败 (exit=$SKILL_EXIT)，且自动回滚失败，服务保持阻断状态"
+            print_error "后端部署 SSH 命令失败 (exit=$SKILL_EXIT)，且自动回滚失败，无法证明服务已停止，请立即人工隔离主机"
         fi
         exit 1
     fi
@@ -516,7 +516,7 @@ deploy_backend() {
         if rollback_deploy; then
             print_error "部署健康检查失败，代码已自动回滚并通过健康检查"
         else
-            print_error "部署健康检查失败，且自动回滚失败，服务保持阻断状态"
+            print_error "部署健康检查失败，且自动回滚失败，无法证明服务已停止，请立即人工隔离主机"
         fi
         exit 1
     fi

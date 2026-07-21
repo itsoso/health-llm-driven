@@ -13,11 +13,11 @@ from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import Column, Integer, DateTime, String
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user_required
-from app.database import get_db, Base
+from app.database import get_db
+from app.models.bowel_timer import BowelTimer
 from app.models.user import User
 from app.models.excretion import ExcretionRecord
 
@@ -30,17 +30,6 @@ BEIJING_TZ = timezone(timedelta(hours=8))
 # 防抖：(user_id, action) -> last_tap_utc
 _last_tap: dict[tuple[int, str], datetime] = {}
 _DEDUP_SECONDS = 8  # 同一动作 8 秒内去重
-
-
-# ── 大便计时器持久化模型 ──────────────────────────────────
-
-class BowelTimer(Base):
-    """大便计时器状态（持久化，重启不丢失）"""
-    __tablename__ = "bowel_timers"
-
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, nullable=False, unique=True, index=True)
-    start_time = Column(DateTime(timezone=True), nullable=False)
 
 
 # ── Schemas ───────────────────────────────────────────────

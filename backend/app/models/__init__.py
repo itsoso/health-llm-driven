@@ -93,6 +93,7 @@ from app.models.vision_usage import VisionUsageLog
 from app.models.illness import IllnessEpisode, IllnessUpdate
 # 排泄记录模型
 from app.models.excretion import ExcretionRecord
+from app.models.bowel_timer import BowelTimer
 # 睡眠记录模型
 from app.models.sleep_record import SleepRecord
 # 活动状态模型
@@ -309,6 +310,7 @@ __all__ = [
     "IllnessUpdate",
     # 排泄记录
     "ExcretionRecord",
+    "BowelTimer",
     # 睡眠记录
     "SleepRecord",
     # 活动状态

@@ -34,7 +34,7 @@
 | G1 Admission | GO | Security/privacy requirement |
 | G2 Feasibility | GO | Compatibility-preserving staged design |
 | G3 Tests | LOCAL GO / CI PENDING | 本地回归、真 PostgreSQL、安全脚本、跨端构建与静态闸通过；分支 CI 待 push 后取证 |
-| G4 Safety review | FINAL RE-REVIEW PENDING | 第三轮仅余回滚验证 1 个 P1；已补失败停服闭环、旧代码数据库读写探针、鉴权负例与 Celery 存活探针，等待最终独立复审 |
+| G4 Safety review | RE-REVIEW PENDING | 第四轮发现停服结果未被证明、运行时 ORM 注册不完整 2 个 P1；均已按故障注入修复，等待第五轮独立复审 |
 | G5 Deploy health | BLOCKED | 未满足生产角色、真实异地恢复演练、基础设施安装和原生 Keychain 发版前不进入部署 |
 | G6 Production verification | NOT ENTERED | 尚未部署，不作上线成功声明 |
 
@@ -49,14 +49,16 @@
 - 2026-07-22: 第二轮问题已修复：代管 JWT 每次请求重验账号状态与家庭授权；回滚移动到精确 SHA 并要求旧代码在当前向前数据库结构上通过健康检查；报告请求在 Pydantic 前限制为 10 MB且预处理移出事件循环；异地备份增加源 SHA/密文 SHA/对象名的 HMAC 清单。
 - 2026-07-22: 第三轮独立安全复审关闭代管授权、请求体、HMAC 清单问题，但因回滚失败后服务可能保持运行，且 `/health` 不能证明旧代码与当前数据库结构兼容，裁决仍为 NO-GO。
 - 2026-07-22: 第三轮 P1 已修复：回滚任一运行时探针失败都会重新停止 Backend、Celery Worker 与 Beat；旧代码对其全部 ORM 表执行列存在性、零行读取和零行写权限/语句兼容探针，同时校验未认证请求为 401、三个服务均 active；删除无法取证的 `database_schema=forward-compatible` 声明。预检失败不会误停仍在运行的生产服务，且 `.env` 仅由应用配置解析，不作为 shell 脚本执行。
+- 2026-07-22: 第四轮独立安全复审确认上述路径大部分关闭，但指出 cleanup 的 `systemctl stop ... || true` 仍可能吞掉停服失败，以及生产启动额外注册的 `BowelTimer` 未进入统一模型 bootstrap，裁决 NO-GO。
+- 2026-07-22: 第四轮 2 个 P1 已修复：常规停服失败后强制终止并逐服务读取 `ActiveState=inactive`，无法证明时以专用 containment failure 退出且部署端要求人工隔离；`BowelTimer` 迁入 `app.models`，生产与回滚探针共享统一 ORM 注册入口。
 
 ## G3 Verification Evidence
 
 - Backend broad CI shard `e-g`: `1043 passed, 1 skipped`。
 - Backend focused SQLite security suite: `117 passed`。
 - Backend focused PostgreSQL security suite: `73 passed`，覆盖 API Key、报告上传、家庭代管撤权与畸形 claim、旧路由租户隔离和 Web Session。
-- Backup/deploy/infrastructure/rollback script tests: `24 passed`；相关 shell 脚本 `bash -n` 通过。
-- Runtime schema compatibility probe: SQLite `3 passed`，PostgreSQL `3 passed`；覆盖当前应用完整 ORM metadata、缺表失败与读写语句兼容。
+- Backup/deploy/infrastructure/rollback script tests: `26 passed`；相关 shell 脚本 `bash -n` 通过。
+- Runtime schema compatibility probe: SQLite `5 passed`，PostgreSQL `5 passed`；覆盖统一模型 bootstrap、`bowel_timers` 缺失失败、当前应用完整 ORM metadata、缺表失败与读写语句兼容。
 - Frontend: `297 passed`；`next build` 成功；ESLint `0 errors`（45 个既有 warning）。
 - Mobile: TypeScript `tsc --noEmit` 成功；Expo lint `0 errors`（103 个既有 warning）；设计 token ratchet 通过。
 - 此前本批次已完成 Mobile `2052` tests、Mac Core `448` tests、Frontend/Mobile/npm 与 Python dependency audits，未引入依赖漏洞。
@@ -88,6 +90,13 @@
 | P1 回滚健康失败后旧服务仍可能运行 | EXIT trap 在切换代码后任一失败路径重新停止 Backend、Celery Worker 与 Beat；预检阶段失败不触碰运行中服务 | `test_release_rollback.py` 覆盖成功、健康失败停服、预检失败不停服 |
 | P1 `/health` 无法证明数据库向前兼容 | 使用旧 SHA 的代码和虚拟环境导入全部 ORM model，检查声明表/列，并在回滚事务中对每张表执行零行 `SELECT` 与 `UPDATE`；同时验证 `/auth/me` 返回 401 和三个 systemd 服务 active | `test_runtime_schema_compatibility.py` 在 SQLite 与真实 PostgreSQL 均 `3 passed`；回滚脚本集成测试 |
 | P2 回滚脚本执行 `.env` | 删除 shell `source .env`，由旧代码的 Pydantic 配置只读解析；恶意 shell 行回归测试不得执行 | `test_release_rollback.py` |
+
+## G4 Round 4 Remediation Ledger
+
+| 第四轮问题 | 修复 | 验证 |
+|---|---|---|
+| P1 cleanup 停服失败被吞掉 | 常规 stop 失败后对非 inactive 单元执行 SIGKILL、再次 stop/reset-failed，并逐个读取 systemd `ActiveState`；仍无法证明 inactive 时返回 containment failure，部署端不再声称服务已阻断 | `test_release_rollback.py` 故障注入第二次 stop 失败，最终三个服务 inactive；`test_deploy_script.py` 禁止虚假文案 |
+| P1 schema probe 漏掉 API 模块内 ORM | 将 `BowelTimer` 从 `app.api.nfc` 迁入 `app.models.bowel_timer` 并加入统一模型导出；删除生产入口的 API 副作用注册 | 子进程 bootstrap 必须注册 `bowel_timers`；缺少该表时 probe 必须失败；NFC `14 passed` |
 
 ## Production Blockers
 

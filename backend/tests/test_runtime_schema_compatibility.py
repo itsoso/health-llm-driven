@@ -1,3 +1,8 @@
+import os
+import subprocess
+import sys
+from pathlib import Path
+
 import pytest
 from sqlalchemy import Column, Integer, String, create_engine, text
 from sqlalchemy.orm import declarative_base, sessionmaker
@@ -15,6 +20,31 @@ class ProbeRecord(ProbeBase):
 
     id = Column(Integer, primary_key=True)
     value = Column(String(20), nullable=False)
+
+
+def test_runtime_model_bootstrap_registers_bowel_timer():
+    backend_root = Path(__file__).resolve().parents[1]
+    code = """
+from app.database import Base
+from scripts.verify_runtime_schema_compatibility import _import_all_models
+_import_all_models()
+raise SystemExit(0 if "bowel_timers" in Base.metadata.tables else 1)
+"""
+
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=backend_root,
+        env={
+            **os.environ,
+            "DATABASE_URL": "sqlite:///:memory:",
+            "SKIP_DB_INIT": "1",
+        },
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
 
 
 def test_runtime_schema_probe_checks_declared_reads_and_zero_row_writes():
@@ -42,6 +72,24 @@ def test_runtime_schema_probe_fails_when_old_code_table_is_missing():
         verify_runtime_schema_compatibility(
             engine=engine,
             metadata=ProbeBase.metadata,
+            session_factory=factory,
+        )
+
+
+def test_runtime_schema_probe_fails_when_bowel_timer_table_is_missing():
+    from app.database import Base
+
+    engine = create_engine("sqlite:///:memory:")
+    tables_without_bowel_timer = [
+        table for table in Base.metadata.sorted_tables if table.name != "bowel_timers"
+    ]
+    Base.metadata.create_all(engine, tables=tables_without_bowel_timer)
+    factory = sessionmaker(bind=engine)
+
+    with pytest.raises(RuntimeError, match="bowel_timers"):
+        verify_runtime_schema_compatibility(
+            engine=engine,
+            metadata=Base.metadata,
             session_factory=factory,
         )
 
