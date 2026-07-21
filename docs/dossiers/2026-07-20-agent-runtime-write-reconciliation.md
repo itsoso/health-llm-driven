@@ -95,6 +95,7 @@ RequirementAdmission:
 - Managed migration: 25 passed。
 - 覆盖: 写前退出、写后回执前退出、同 Run 多写入重排后分别恢复、跨 attempt 参数重建、retry 计划外写入拒绝、retry 首次产生多笔写入、餐次别名归一、缺省日期的多餐记录、不同餐次与明确不同时间的多记录、同餐食物文本重述 fail closed、照片 token 丢失且文本重述 fail closed、照片确认控制字段不改变 identity、可选区分器出现/消失拒绝、等价日期/餐次/时间/参数层级在同 attempt replay、Runtime identity 与真实 diet payload 一致、历史补录日期不被 API 静默换日、旧 NULL lineage exact replay、重复同 turn、业务记录已存在、业务记录明确不存在、宽限期、未知资源保持未决、跨用户资源拒绝、人工核对审计、饮食 correction 不新增、图片 token 与 Runtime operation 双幂等、第一笔成功第二笔失败不提前显示成功文案。
 - PostgreSQL migration: P0→P3 Runtime 迁移加 operation-lineage 迁移在最小旧 schema 上执行；旧行回填 exact-compatible lineage，但首次 attempt 编号保持未知，避免从已被 retry 更新的 `attempt_id` 错推；lineage 迁移重复执行无副作用，字段与唯一索引实查存在。CI 已加入相同真实 PostgreSQL 硬门。
+- Live LLM 回归证据（2026-07-21）: `uv run --env-file .env --with-requirements backend/requirements.txt python scripts/harness_llm_regression_gate.py --include-live-llm --json`；`invariants` 12/12、`health_agent_core` 50/50、`orchestrator` 5/5 通过，Orchestrator 平均评分 0.92、无 regression，实际模型为 `MiniMax-M2.5`。原始 JSON 仅保存在本地 `/tmp/agent-runtime-live-eval.json`，不提交模型回答或健康正文。
 - 静态闸: Ruff、Python compile、`git diff --check` 均通过。
 - **裁决: PASS**。
 
