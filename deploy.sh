@@ -33,6 +33,7 @@ fi
 # 从 .env 读取服务器配置
 SERVER=$(grep "^DEPLOY_SERVER=" "$ENV_FILE" | cut -d'=' -f2)
 REMOTE_PATH=$(grep "^DEPLOY_PATH=" "$ENV_FILE" | cut -d'=' -f2)
+REMOTE_DEPLOY_BUNDLE="/tmp/health-app-deploy-$$-$(date +%s).bundle"
 
 # 验证必要配置
 if [[ -z "$SERVER" || -z "$REMOTE_PATH" ]]; then
@@ -58,14 +59,25 @@ print_warning() {
     echo -e "${YELLOW}⚠${NC} $1"
 }
 
+cleanup_remote_deploy_bundle() {
+    ssh "$SERVER" "rm -f '$REMOTE_DEPLOY_BUNDLE'" >/dev/null 2>&1 || true
+}
+
 # 上传当前 HEAD 的 git bundle 到服务器,作为 GitHub 超时时的回退源。
 # 前端/后端部署都调用它,所以两边都能走 bundle 回退。
 upload_deploy_bundle() {
     local bundle
     bundle=$(mktemp)
-    git bundle create "$bundle" HEAD >/dev/null
-    scp "$bundle" "$SERVER:/tmp/health-app-deploy.bundle" >/dev/null
+    if ! git bundle create "$bundle" HEAD >/dev/null; then
+        rm -f "$bundle"
+        return 1
+    fi
+    if ! scp "$bundle" "$SERVER:$REMOTE_DEPLOY_BUNDLE" >/dev/null; then
+        rm -f "$bundle"
+        return 1
+    fi
     rm "$bundle"
+    trap cleanup_remote_deploy_bundle EXIT
 }
 
 # 远端 git 同步逻辑(嵌入 ssh 命令串)。
@@ -79,7 +91,7 @@ REMOTE_GIT_SYNC="\
         echo '同步到 origin/main (强制 forward, 自动修复 detached HEAD)...' && \
         ( (git fetch origin && git checkout -B main origin/main) || \
           (echo 'git fetch origin 失败, 使用上传的 deploy bundle...' && \
-           git fetch /tmp/health-app-deploy.bundle HEAD && git checkout -B main FETCH_HEAD) )"
+           git fetch $REMOTE_DEPLOY_BUNDLE HEAD && git checkout -B main FETCH_HEAD) )"
 
 # 显示使用帮助
 show_help() {
