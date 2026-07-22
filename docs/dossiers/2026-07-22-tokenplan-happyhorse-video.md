@@ -4,8 +4,8 @@
 |---|---|
 | slug | `tokenplan-happyhorse-video` |
 | 创建日期 | 2026-07-22 |
-| 当前阶段 | S6 验证 |
-| 状态 | ready_for_deploy |
+| 当前阶段 | S8 上线验证 |
+| 状态 | complete |
 | 负责 | Codex |
 | 反馈环 | backend deploy；客户端复用既有 AIGC 卡片，无 OTA |
 
@@ -45,7 +45,7 @@
 - [x] T1 官方协议与当前链路核对。
 - [x] T2 provider 双凭证/双域路由与 HappyHorse payload。
 - [x] T3 job model 绑定、历史任务恢复与配置契约。
-- [ ] T4 聚焦测试、部署、线上非计费验证（测试完成，待部署）。
+- [x] T4 聚焦测试、部署、线上非计费验证。
 
 ## S5 · 实现
 - 图片继续使用标准 Model Studio；T2V/I2V 默认使用 TokenPlan `sk-sp-` 凭证和专用 AIGC 域。
@@ -67,4 +67,6 @@
 
 ## S6–S8
 - 本地配置非敏感检查通过：TokenPlan key 已配置且前缀为 `sk-sp-`，provider/model 使用安全默认值。
-- 待提交、部署与线上非计费验证后补全 G5/G6。
+- 实现提交：`31f733d5f203`，已推送 `origin/main`。
+- G5 部署健康：标准 `deploy.sh -a -y` 完成；数据库备份、231 表恢复演练、站外加密归档通过；前端在线；后端健康评分 `60/60 PASS`；线上代码版本与实现提交一致。**裁决：PASS**。
+- G6 上线验证：生产环境解析为 `provider=tokenplan`、专用 `/api/v1` 域、`happyhorse-1.1-t2v/i2v`；视频 key 已配置且 `sk-sp-` 前缀正确；公开健康端点显示 API/DB/Redis/Celery 全部 healthy。验证未创建计费任务，实际生成仍由用户点击确认卡触发。**裁决：PASS**。
