@@ -333,6 +333,44 @@ async function* streamUnrenderableDoneCard() {
   };
 }
 
+async function* streamCardThenUnrenderableDoneCard() {
+  yield { type: 'start', conversationId: 777 };
+  yield {
+    type: 'tool',
+    toolName: 'health_record',
+    toolSuccess: true,
+    writeAttempted: true,
+    writeCompleted: true,
+    receipt: verifiedDietReceipt,
+  };
+  yield {
+    type: 'card',
+    card: {
+      type: 'record_quality',
+      data: { domain: 'diet', summary: '仅是流式 provisional 卡' },
+      actions: [{
+        id: 'confirm-provisional-diet',
+        label: '确认记录',
+        action: 'write_intent.confirm',
+        payload: { write_intent_id: 99 },
+        requires_manual_confirm: true,
+      }],
+    },
+  };
+  yield {
+    type: 'done',
+    conversationId: 777,
+    messageId: 84,
+    completionStatus: 'complete',
+    writeReceipts: [verifiedDietReceipt],
+    cards: [{
+      type: 'future_diet_card',
+      data: { domain: 'diet', summary: '服务端终态，当前客户端尚不支持' },
+      actions: [],
+    }],
+  };
+}
+
 // 快路由: 一批 token 紧挨着到达 (worst case for the ~80ms 攒批 throttle).
 // 攒批后终态必须是逐 token 顺序拼接, 不丢字、不乱序.
 const BURST_TOKENS = ['第一', '段。', '第二', '段。', '第三', '段。', '收尾。'];
@@ -1832,6 +1870,29 @@ describe('useChatEngine', () => {
         streaming: false,
       }),
     ]));
+    expect(result.current.messages.filter(message => (
+      message.sourceTurnId === result.current.activeTurn.turnId && !!message.cardType
+    ))).toHaveLength(0);
+    expect(mockDispatchCard).not.toHaveBeenCalled();
+  });
+
+  it('retires a streamed provisional card when supplied done cards are unrenderable', async () => {
+    mockStreamChat.mockImplementation(streamCardThenUnrenderableDoneCard);
+    mockRenderServerCards.mockImplementation((cards: any[]) => (
+      Array.isArray(cards)
+        ? cards.filter(card => card?.type === 'record_quality')
+        : []
+    ));
+    mockDispatchCard.mockResolvedValue({
+      type: 'record',
+      data: { domain: 'diet', summary: '不应伪造的本地饮食卡' },
+    });
+    const { result } = renderHook(() => useChatEngine());
+
+    await act(async () => {
+      await result.current.sendMessage('记录午餐牛肉面');
+    });
+
     expect(result.current.messages.filter(message => (
       message.sourceTurnId === result.current.activeTurn.turnId && !!message.cardType
     ))).toHaveLength(0);

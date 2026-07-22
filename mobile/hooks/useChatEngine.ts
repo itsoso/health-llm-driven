@@ -1504,7 +1504,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
               .filter(m => (
                 !m.cardType
                 || m.sourceTurnId !== turnId
-                || (allowDoneCards && !terminalCard)
+                || (allowDoneCards && rawDoneCards.length === 0)
               ))
               .map(m => m.id === aId ? {
               ...m,
