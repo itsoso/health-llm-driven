@@ -8,8 +8,10 @@
   - fail-soft:twin/fuel 失败 → 纯餐项 / 默认睡眠卫生,不崩
 """
 from types import SimpleNamespace
-
-import pytest
+import re as _re
+import subprocess
+import sys
+import textwrap
 
 from app.services.schedule_diet_sleep import (
     align_post_workout_meal,
@@ -25,6 +27,44 @@ from app.services.timing_solver import DayContext
 def _t(hhmm):
     h, m = hhmm.split(":")
     return int(h) * 60 + int(m)
+
+
+def test_nutrition_prescription_works_in_fresh_worker_process():
+    """Celery worker cold-start must not hit the fuel/orchestrator import cycle."""
+    script = textwrap.dedent(
+        """
+        from types import SimpleNamespace
+
+        import app.twin.builder as builder
+        from app.services.schedule_diet_sleep import nutrition_prescription
+
+        empty_genetics = SimpleNamespace(
+            drug_sensitivity=[],
+            risk_variants=[],
+            protective_variants=[],
+            nutrition_variants=[],
+            recovery_variants=[],
+        )
+        twin = SimpleNamespace(
+            body_composition=SimpleNamespace(weight_kg=70.0, tdee_kcal=2400),
+            behavioral=SimpleNamespace(training_load_7d=50),
+            gene_config=None,
+            genetic=empty_genetics,
+        )
+        builder.build_twin = lambda *args, **kwargs: twin
+        result = nutrition_prescription(None, 1)
+        assert result is not None, result
+        assert result["protein_g"] == 98, result
+        """
+    )
+    completed = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr or completed.stdout
 
 
 # ── D1 餐项(纯函数)──────────────────────────────────────────────────────
@@ -248,7 +288,6 @@ def test_sleep_prescription_failsoft(db, monkeypatch):
 
 
 # ── safety review 跟进:APOE 不上时间线 + 处方串无药物剂量(R4 守门)──
-import re as _re
 
 
 def test_apoe_excluded_from_timeline_gene_note(monkeypatch):

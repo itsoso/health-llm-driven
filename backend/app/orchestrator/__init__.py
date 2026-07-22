@@ -14,7 +14,6 @@ Orchestrator —— 用户面对的"大脑"。
 - LLM 失败时降级为纯专家结构化输出（不完美但不坏）
 """
 
-from app.orchestrator.orchestrator import run_orchestrator, stream_orchestrator
 from app.orchestrator.schema import (
     Intent,
     OrchestratorRequest,
@@ -30,3 +29,20 @@ __all__ = [
     "run_orchestrator",
     "stream_orchestrator",
 ]
+
+
+def __getattr__(name: str):
+    """Load the orchestration runtime only when a public runner is requested.
+
+    Specialist modules import ``app.orchestrator.schema`` during worker startup.
+    Eagerly importing the runtime here rebuilds the specialist registry while the
+    specialist itself is only partially initialized, producing a circular import.
+    """
+    if name in {"run_orchestrator", "stream_orchestrator"}:
+        from app.orchestrator.orchestrator import run_orchestrator, stream_orchestrator
+
+        return {
+            "run_orchestrator": run_orchestrator,
+            "stream_orchestrator": stream_orchestrator,
+        }[name]
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
