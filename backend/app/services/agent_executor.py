@@ -15637,6 +15637,7 @@ class AgentExecutor:
         try:
             confirmation = await service.issue_confirmation(
                 user_id=user_id,
+                conversation_id=self._current_turn_conversation_id,
                 request=AIGCMediaJobRequest(
                     kind=kind,
                     purpose=str(args.get("purpose") or ""),

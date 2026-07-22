@@ -216,6 +216,47 @@ describe('renderCard 安全降级', () => {
     screen.unmount();
   });
 
+  it('restores a consumed AIGC confirmation as its existing job on mount', async () => {
+    (api.get as jest.Mock).mockResolvedValueOnce({
+      data: {
+        id: 'aigc_confirm_restore',
+        status: 'dispatched',
+        job: {
+          id: 'aigc_restored_1',
+          kind: 'text_to_video',
+          status: 'failed',
+          progress: 0,
+          can_retry: true,
+          error_message: '创作服务授权异常，已通知管理员。',
+          result: { media_type: null, url: null },
+        },
+      },
+    }).mockResolvedValueOnce({
+      data: {
+        id: 'aigc_restored_1',
+        kind: 'text_to_video',
+        status: 'failed',
+        progress: 0,
+        can_retry: true,
+        error_message: '创作服务授权异常，已通知管理员。',
+        result: { media_type: null, url: null },
+      },
+    });
+    const element = renderCard({
+      type: 'aigc_media_confirmation',
+      data: {
+        confirmation_id: 'aigc_confirm_restore',
+        kind: 'text_to_video',
+        status: 'pending',
+      },
+    });
+    const screen = render(element!);
+
+    expect(await screen.findByText('重试生成')).toBeTruthy();
+    expect(api.get).toHaveBeenCalledWith('/aigc/media/confirmations/aigc_confirm_restore');
+    screen.unmount();
+  });
+
   it('renders a private generated short video inline with native controls', async () => {
     const relativeVideoUrl = '/api/v1/upload/files/aigc/3/today.mp4?expires=1&signature=signed';
     (api.get as jest.Mock).mockResolvedValueOnce({

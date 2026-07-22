@@ -6,6 +6,8 @@ Model Studio; clients cannot post a prompt or source asset to this surface.
 """
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -25,6 +27,29 @@ from app.services.aigc_media_service import AIGCMediaConfigurationError
 
 
 router = APIRouter(prefix="/aigc/media", tags=["aigc-media"])
+logger = logging.getLogger(__name__)
+
+
+def _persist_job_card_safely(
+    service: AIGCMediaJobService,
+    *,
+    user_id: int,
+    job: AIGCMediaJob,
+    confirmation_id: str | None = None,
+) -> None:
+    """Keep the job response authoritative if transcript repair is delayed."""
+    try:
+        service.persist_job_card(
+            user_id=user_id,
+            job=job,
+            confirmation_id=confirmation_id,
+        )
+    except Exception as exc:
+        logger.error(
+            "[aigc_media] job card persistence failed job_id=%s error_type=%s",
+            job.id,
+            type(exc).__name__,
+        )
 
 
 def _load_job(db: Session, *, user_id: int, job_id: str) -> AIGCMediaJob:
@@ -36,6 +61,37 @@ def _load_job(db: Session, *, user_id: int, job_id: str) -> AIGCMediaJob:
     if not job:
         raise HTTPException(status_code=404, detail="AIGC 任务不存在")
     return job
+
+
+@router.get("/confirmations/{confirmation_id}")
+async def get_aigc_media_confirmation(
+    confirmation_id: str,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Resolve a persisted draft to its existing job without dispatching it."""
+    service = AIGCMediaJobService(db)
+    try:
+        projection = service.confirmation_projection(
+            user_id=current_user.id,
+            confirmation_id=confirmation_id,
+        )
+    except AIGCMediaJobError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    job_projection = projection.get("job")
+    if isinstance(job_projection, dict):
+        job = _load_job(
+            db,
+            user_id=current_user.id,
+            job_id=str(job_projection.get("id") or ""),
+        )
+        _persist_job_card_safely(
+            service,
+            user_id=current_user.id,
+            job=job,
+            confirmation_id=confirmation_id,
+        )
+    return projection
 
 
 @router.post("/confirmations/{confirmation_id}/confirm")
@@ -59,6 +115,12 @@ async def confirm_aigc_media_draft(
         raise HTTPException(status_code=429, detail=str(exc)) from exc
     except AIGCMediaJobError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    _persist_job_card_safely(
+        service,
+        user_id=current_user.id,
+        job=job,
+        confirmation_id=confirmation_id,
+    )
     return service.project(job)
 
 
@@ -81,6 +143,7 @@ async def get_aigc_media_job(
             job = await service.refresh(job)
         except AIGCMediaConfigurationError as exc:
             raise HTTPException(status_code=503, detail="AIGC 媒体服务暂不可用") from exc
+    _persist_job_card_safely(service, user_id=current_user.id, job=job)
     return service.project(job)
 
 
@@ -100,6 +163,7 @@ async def cancel_aigc_media_job(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except AIGCMediaJobError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+    _persist_job_card_safely(service, user_id=current_user.id, job=job)
     return service.project(job)
 
 
@@ -120,4 +184,5 @@ async def retry_aigc_media_job(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except AIGCMediaJobError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    _persist_job_card_safely(service, user_id=current_user.id, job=job)
     return service.project(job)

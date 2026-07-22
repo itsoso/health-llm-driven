@@ -370,6 +370,45 @@ describe('renderCard', () => {
     expect(html).not.toContain('aliyuncs.com');
   });
 
+  it('restores a consumed AIGC confirmation as its existing job on mount', async () => {
+    const get = vi.spyOn(api, 'get').mockResolvedValueOnce({
+      data: {
+        id: 'aigc_confirm_restore',
+        status: 'dispatched',
+        job: {
+          id: 'aigc_restored_1',
+          kind: 'text_to_video',
+          status: 'failed',
+          progress: 0,
+          can_retry: true,
+          error_message: '创作服务授权异常，已通知管理员。',
+        },
+      },
+    } as never).mockResolvedValueOnce({
+      data: {
+        id: 'aigc_restored_1',
+        kind: 'text_to_video',
+        status: 'failed',
+        progress: 0,
+        can_retry: true,
+        error_message: '创作服务授权异常，已通知管理员。',
+      },
+    } as never);
+    const card = renderCard({
+      type: 'aigc_media_confirmation',
+      data: {
+        confirmation_id: 'aigc_confirm_restore',
+        kind: 'text_to_video',
+        status: 'pending',
+      },
+    });
+    render(card!);
+
+    expect(await screen.findByRole('button', { name: '重试生成' })).toBeInTheDocument();
+    expect(get).toHaveBeenCalledWith('/aigc/media/confirmations/aigc_confirm_restore');
+    get.mockRestore();
+  });
+
   it('renders an indeterminate AIGC submission without claiming a retryable failure', () => {
     const r = renderCard({
       type: 'aigc_media_job',
@@ -427,6 +466,34 @@ describe('renderCard', () => {
     expect(await screen.findByText('排队中')).toBeInTheDocument();
     get.mockRestore();
     post.mockRestore();
+  });
+
+  it('reveals retry after refreshing a persisted failed job with stale card data', async () => {
+    const get = vi.spyOn(api, 'get').mockResolvedValueOnce({
+      data: {
+        id: 'aigc_stale_1',
+        kind: 'text_to_video',
+        status: 'failed',
+        progress: 0,
+        can_retry: true,
+        error_message: '创作服务授权异常，已通知管理员。',
+      },
+    } as never);
+    const card = renderCard({
+      type: 'aigc_media_job',
+      data: {
+        job_id: 'aigc_stale_1',
+        kind: 'text_to_video',
+        status: 'failed',
+        progress: 0,
+        error_message: '创作服务授权异常，已通知管理员。',
+      },
+    });
+    render(card!);
+
+    expect(await screen.findByRole('button', { name: '重试生成' })).toBeInTheDocument();
+    expect(get).toHaveBeenCalledWith('/aigc/media/jobs/aigc_stale_1');
+    get.mockRestore();
   });
 
   it('renders safe route actions below backend cards', () => {

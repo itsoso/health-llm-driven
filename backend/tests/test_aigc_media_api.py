@@ -42,6 +42,86 @@ def test_aigc_media_job_public_create_stays_unavailable_even_without_disclosure(
     assert response.status_code == 404
 
 
+def test_consumed_confirmation_resolves_to_its_existing_job_without_dispatch(
+    client, db, auth_user_and_headers,
+):
+    from app.models.aigc_media_confirmation import AIGCMediaConfirmation
+    from app.models.aigc_media_job import AIGCMediaJob
+
+    owner, headers = auth_user_and_headers
+    job = AIGCMediaJob(
+        id="job-confirmation-status",
+        user_id=owner.id,
+        kind="text_to_video",
+        status="failed",
+        progress=0,
+        model="wan2.7-t2v",
+        idempotency_key="confirmation-status",
+        request_fingerprint="9" * 64,
+        provider_error_code="provider_auth_failed",
+        error_message="创作服务授权异常，已通知管理员。",
+    )
+    confirmation = AIGCMediaConfirmation(
+        id="aigc_confirm_status",
+        user_id=owner.id,
+        kind="text_to_video",
+        purpose="wellness_story",
+        model="wan2.7-t2v",
+        prompt_ciphertext="encrypted",
+        prompt_fingerprint="9" * 64,
+        duration_seconds=5,
+        ratio="9:16",
+        status="dispatched",
+        job_id=job.id,
+        expires_at=datetime.now(UTC),
+    )
+    db.add_all([job, confirmation])
+    db.commit()
+
+    response = client.get(
+        "/api/v1/aigc/media/confirmations/aigc_confirm_status",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "dispatched"
+    assert payload["job"]["id"] == job.id
+    assert payload["job"]["can_retry"] is True
+
+
+def test_aigc_confirmation_is_invisible_to_another_user(
+    client, db, auth_user_and_headers,
+):
+    from app.models.aigc_media_confirmation import AIGCMediaConfirmation
+    from tests.conftest import create_authenticated_user
+
+    owner, _ = auth_user_and_headers
+    confirmation = AIGCMediaConfirmation(
+        id="aigc_confirm_private",
+        user_id=owner.id,
+        kind="text_to_video",
+        purpose="wellness_story",
+        model="wan2.7-t2v",
+        prompt_ciphertext="encrypted",
+        prompt_fingerprint="8" * 64,
+        duration_seconds=5,
+        ratio="9:16",
+        status="pending",
+        expires_at=datetime.now(UTC),
+    )
+    db.add(confirmation)
+    db.commit()
+    _, other_token = create_authenticated_user(db)
+
+    response = client.get(
+        "/api/v1/aigc/media/confirmations/aigc_confirm_private",
+        headers={"Authorization": f"Bearer {other_token}"},
+    )
+
+    assert response.status_code == 404
+
+
 def test_aigc_media_job_is_invisible_to_another_user(client, db, auth_user_and_headers):
     from app.models.aigc_media_job import AIGCMediaJob
     from tests.conftest import create_authenticated_user

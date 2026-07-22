@@ -156,6 +156,7 @@ class AIGCMediaJobService:
         *,
         user_id: int,
         request: AIGCMediaJobRequest,
+        conversation_id: int | None = None,
     ) -> AIGCMediaConfirmation:
         """Create a server-bound AIGC draft without contacting Model Studio."""
         self._validate_request(request)
@@ -170,10 +171,17 @@ class AIGCMediaJobService:
             # image index into the immutable confirmation record.
             self._load_owned_source_url(user_id, bound_request)
         now = datetime.now(UTC)
+        bound_conversation_id = self._owned_conversation_id(
+            user_id,
+            conversation_id,
+        ) if conversation_id is not None else self._conversation_id_for_source(
+            user_id,
+            bound_request.source_message_id,
+        )
         confirmation = AIGCMediaConfirmation(
             id=f"aigc_confirm_{uuid4().hex}",
             user_id=int(user_id),
-            conversation_id=self._conversation_id_for_source(user_id, bound_request.source_message_id),
+            conversation_id=bound_conversation_id,
             source_message_id=bound_request.source_message_id,
             source_image_index=bound_request.source_image_index if bound_request.kind in SOURCE_IMAGE_KINDS else None,
             kind=bound_request.kind,
@@ -287,6 +295,7 @@ class AIGCMediaJobService:
                 user_id=user_id,
                 request=request,
                 confirmation_id=confirmation.id,
+                conversation_id=confirmation.conversation_id,
             )
         except AIGCMediaJobQuotaExceeded:
             # This is a temporary local cost/concurrency gate, not a consumed
@@ -350,6 +359,7 @@ class AIGCMediaJobService:
         user_id: int,
         request: AIGCMediaJobRequest,
         confirmation_id: str,
+        conversation_id: int | None = None,
     ) -> AIGCMediaJob:
         self._validate_request(request)
         fingerprint = self._fingerprint(user_id=user_id, request=request)
@@ -387,7 +397,11 @@ class AIGCMediaJobService:
         job = AIGCMediaJob(
             id=f"aigc_{uuid4().hex}",
             user_id=int(user_id),
-            conversation_id=self._conversation_id_for_source(user_id, request.source_message_id),
+            conversation_id=(
+                int(conversation_id)
+                if conversation_id is not None
+                else self._conversation_id_for_source(user_id, request.source_message_id)
+            ),
             source_message_id=request.source_message_id,
             source_image_index=request.source_image_index if request.kind in SOURCE_IMAGE_KINDS else None,
             kind=request.kind,
@@ -784,6 +798,132 @@ class AIGCMediaJobService:
             "completed_at": job.completed_at.isoformat() if job.completed_at else None,
         }
 
+    def persist_job_card(
+        self,
+        *,
+        user_id: int,
+        job: AIGCMediaJob,
+        confirmation_id: str | None = None,
+    ) -> bool:
+        """Replace a durable confirmation card with its authoritative job.
+
+        The confirmation click used to update only component-local state. A
+        reload therefore resurrected the stale draft and lost retryability.
+        Persist only stable projection fields; signed result URLs are fetched
+        from the owner-scoped job endpoint when the card mounts.
+        """
+        confirmation_ids = {str(confirmation_id).strip()} if confirmation_id else set()
+        confirmations = (
+            self.db.query(AIGCMediaConfirmation)
+            .filter(
+                AIGCMediaConfirmation.user_id == int(user_id),
+                or_(
+                    AIGCMediaConfirmation.job_id == job.id,
+                    AIGCMediaConfirmation.id == str(confirmation_id),
+                ) if confirmation_id else AIGCMediaConfirmation.job_id == job.id,
+            )
+            .all()
+        )
+        confirmation_ids.update(str(item.id) for item in confirmations)
+        conversation_ids = {
+            int(value)
+            for value in [job.conversation_id, *(item.conversation_id for item in confirmations)]
+            if value is not None
+        }
+        query = (
+            self.db.query(AgentMessage)
+            .join(AgentConversation, AgentConversation.id == AgentMessage.conversation_id)
+            .filter(
+                AgentConversation.user_id == int(user_id),
+                AgentMessage.role == "assistant",
+            )
+        )
+        if conversation_ids:
+            query = query.filter(AgentMessage.conversation_id.in_(conversation_ids))
+        messages = query.order_by(AgentMessage.id.desc()).limit(100).all()
+        projection = self.project(job)
+        stable_data = {
+            "job_id": job.id,
+            "kind": job.kind,
+            "status": projection["status"],
+            "progress": projection["progress"],
+            "title": "小巴创作",
+            "error_message": projection["error_message"],
+            "error_code": projection["error_code"],
+            "can_retry": projection["can_retry"],
+        }
+        replacement = {"type": "aigc_media_job", "data": stable_data}
+        changed_any = False
+        for message in messages:
+            meta = dict(message.meta or {})
+            cards = list(meta.get("cards") or [])
+            changed = False
+            next_cards: list = []
+            for card in cards:
+                data = card.get("data") if isinstance(card, dict) else None
+                is_confirmation = bool(
+                    isinstance(data, dict)
+                    and card.get("type") == "aigc_media_confirmation"
+                    and str(data.get("confirmation_id") or "") in confirmation_ids
+                )
+                is_job = bool(
+                    isinstance(data, dict)
+                    and card.get("type") == "aigc_media_job"
+                    and str(data.get("job_id") or data.get("id") or "") == job.id
+                )
+                if is_confirmation or is_job:
+                    if not any(
+                        isinstance(existing, dict)
+                        and existing.get("type") == "aigc_media_job"
+                        and str((existing.get("data") or {}).get("job_id") or "") == job.id
+                        for existing in next_cards
+                    ):
+                        next_cards.append(replacement)
+                    changed = True
+                else:
+                    next_cards.append(card)
+            if not changed:
+                continue
+            meta["cards"] = next_cards
+            message.meta = meta
+            changed_any = True
+        if changed_any:
+            self.db.commit()
+        return changed_any
+
+    def confirmation_projection(self, *, user_id: int, confirmation_id: str) -> dict:
+        """Return a prompt-free confirmation state and its existing job."""
+        confirmation = (
+            self.db.query(AIGCMediaConfirmation)
+            .filter(
+                AIGCMediaConfirmation.id == str(confirmation_id),
+                AIGCMediaConfirmation.user_id == int(user_id),
+            )
+            .first()
+        )
+        if not confirmation:
+            raise AIGCMediaJobRequestError("AIGC 确认不存在或无权使用")
+        job = None
+        if confirmation.job_id:
+            job = (
+                self.db.query(AIGCMediaJob)
+                .filter(
+                    AIGCMediaJob.id == confirmation.job_id,
+                    AIGCMediaJob.user_id == int(user_id),
+                )
+                .first()
+            )
+        elif confirmation.status == "deduplicated":
+            job = self._find_matching_fingerprint_job(
+                user_id=int(user_id),
+                fingerprint=confirmation.prompt_fingerprint,
+            )
+        return {
+            "id": confirmation.id,
+            "status": confirmation.status,
+            "job": self.project(job) if job is not None else None,
+        }
+
     async def _complete_from_provider_url(self, job: AIGCMediaJob, url: str, *, kind: str) -> None:
         data, media_type, extension = await self._result_downloader(url, kind)
         filename = self._write_private_result(job.user_id, data, extension)
@@ -840,6 +980,19 @@ class AIGCMediaJobService:
             .first()
         )
         return int(row[0]) if row else None
+
+    def _owned_conversation_id(self, user_id: int, conversation_id: int) -> int:
+        owned = (
+            self.db.query(AgentConversation.id)
+            .filter(
+                AgentConversation.id == int(conversation_id),
+                AgentConversation.user_id == int(user_id),
+            )
+            .first()
+        )
+        if not owned:
+            raise AIGCMediaJobRequestError("AIGC 对话不存在或无权使用")
+        return int(owned[0])
 
     @staticmethod
     def _validate_request(request: AIGCMediaJobRequest) -> None:

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextStyle, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -36,10 +36,25 @@ export function AIGCMediaConfirmationCardView(data: AIGCMediaConfirmationCardDat
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [job, setJob] = useState<AIGCMediaJobCardData | null>(null);
+  const confirmationID = String(data.confirmation_id || '').trim();
+
+  useEffect(() => {
+    if (!confirmationID) return;
+    let active = true;
+    void api.get(`/aigc/media/confirmations/${encodeURIComponent(confirmationID)}`)
+      .then((response) => {
+        const projection = normalizeJob(response?.data?.job);
+        if (active && projection) setJob(projection);
+      })
+      .catch(() => {
+        // Keep an unconsumed draft actionable. Durable history will resolve it
+        // after the next successful owner-scoped status refresh.
+      });
+    return () => { active = false; };
+  }, [confirmationID]);
 
   if (job) return <AIGCMediaJobCardView {...job} />;
 
-  const confirmationID = String(data.confirmation_id || '').trim();
   const confirm = async () => {
     if (!confirmationID || submitting) return;
     setSubmitting(true);

@@ -382,6 +382,98 @@ async def test_explicit_retry_reuses_a_definitively_rejected_job_without_duplica
 
 
 @pytest.mark.asyncio
+async def test_confirmed_job_replaces_persisted_confirmation_card(
+    db, auth_user_and_headers, monkeypatch, tmp_path,
+):
+    from app.models.agent_conversation import AgentConversation, AgentMessage
+    from app.services import aigc_media_job_service
+    from app.services.aigc_media_job_service import AIGCMediaJobRequest, AIGCMediaJobService
+    from app.services.aigc_media_service import AIGCMediaProviderError
+
+    class RejectedProvider(_Provider):
+        def __init__(self) -> None:
+            super().__init__()
+            self.video_requests: list[dict] = []
+
+        async def create_video_task(self, **kwargs):
+            self.video_requests.append(kwargs)
+            raise AIGCMediaProviderError(
+                "Model Studio media request was rejected",
+                error_code="provider_auth_failed",
+                status_code=401,
+            )
+
+    user, _ = auth_user_and_headers
+    conversation = AgentConversation(user_id=user.id, title="AIGC test")
+    db.add(conversation)
+    db.commit()
+    db.refresh(conversation)
+    monkeypatch.setattr(aigc_media_job_service, "_AIGC_UPLOAD_ROOT", tmp_path)
+    service = AIGCMediaJobService(db, provider_factory=RejectedProvider)
+    confirmation = await service.issue_confirmation(
+        user_id=user.id,
+        conversation_id=conversation.id,
+        request=AIGCMediaJobRequest(
+            kind="text_to_video",
+            purpose="wellness_story",
+            prompt="生成一段今日健康活动短视频",
+        ),
+    )
+    assistant = AgentMessage(
+        conversation_id=conversation.id,
+        role="assistant",
+        content="已创建草稿",
+        meta={
+            "cards": [{
+                "type": "aigc_media_confirmation",
+                "data": {
+                    "confirmation_id": confirmation.id,
+                    "kind": "text_to_video",
+                    "status": "pending",
+                },
+            }],
+        },
+    )
+    duplicate_assistant = AgentMessage(
+        conversation_id=conversation.id,
+        role="assistant",
+        content="旧版本重复草稿",
+        meta={
+            "cards": [{
+                "type": "aigc_media_confirmation",
+                "data": {
+                    "confirmation_id": confirmation.id,
+                    "kind": "text_to_video",
+                    "status": "pending",
+                },
+            }],
+        },
+    )
+    db.add_all([assistant, duplicate_assistant])
+    db.commit()
+
+    job = await service.confirm_and_dispatch(user_id=user.id, confirmation_id=confirmation.id)
+    assert service.persist_job_card(user_id=user.id, job=job, confirmation_id=confirmation.id) is True
+
+    db.refresh(assistant)
+    cards = assistant.meta["cards"]
+    assert len(cards) == 1
+    assert cards[0]["type"] == "aigc_media_job"
+    assert cards[0]["data"] == {
+        "job_id": job.id,
+        "kind": "text_to_video",
+        "status": "failed",
+        "progress": 0,
+        "title": "小巴创作",
+        "error_message": "创作服务授权异常，已通知管理员。",
+        "error_code": "provider_auth_failed",
+        "can_retry": True,
+    }
+    db.refresh(duplicate_assistant)
+    assert duplicate_assistant.meta["cards"] == cards
+
+
+@pytest.mark.asyncio
 async def test_indeterminate_submission_cannot_be_retried(db, auth_user_and_headers):
     from app.services.aigc_media_job_service import (
         AIGCMediaJobConflict,

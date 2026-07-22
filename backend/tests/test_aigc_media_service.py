@@ -154,6 +154,42 @@ async def test_creates_wan27_text_to_video_with_the_versioned_default_model():
 
 
 @pytest.mark.asyncio
+async def test_video_submission_retries_one_explicit_401_rejection_before_failing():
+    from app.services.aigc_media_service import AIGCMediaProvider
+
+    attempts = 0
+
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return httpx.Response(
+                401,
+                json={"code": "InvalidApiKey", "message": "authorization temporarily unavailable"},
+            )
+        return httpx.Response(
+            200,
+            json={"output": {"task_id": "task-after-auth-retry", "task_status": "PENDING"}},
+        )
+
+    provider = AIGCMediaProvider(
+        api_key="test-payg-key",
+        api_base_url="https://dashscope.aliyuncs.com/api/v1",
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+    )
+    try:
+        created = await provider.create_video_task(
+            kind="text_to_video",
+            prompt="生成一段晚间健康回顾短视频",
+        )
+    finally:
+        await provider.aclose()
+
+    assert created.task_id == "task-after-auth-retry"
+    assert attempts == 2
+
+
+@pytest.mark.asyncio
 async def test_malformed_success_response_is_indeterminate_not_retryable_failure():
     from app.services.aigc_media_service import (
         AIGCMediaProvider,

@@ -253,19 +253,30 @@ class AIGCMediaProvider:
         headers = dict(self._headers)
         if async_request:
             headers["X-DashScope-Async"] = "enable"
-        try:
-            response = await self._http_client.post(
-                f"{self._api_base_url}{path}",
-                headers=headers,
-                json=payload,
+        response: httpx.Response | None = None
+        for attempt in range(2):
+            try:
+                response = await self._http_client.post(
+                    f"{self._api_base_url}{path}",
+                    headers=headers,
+                    json=payload,
+                )
+            except httpx.HTTPError as exc:
+                # A transport failure is not proof that the provider rejected
+                # the task. Never replay it automatically because the first
+                # request may already have created a billed provider task.
+                raise AIGCMediaProviderIndeterminateError(
+                    "Model Studio media request outcome is unknown"
+                ) from exc
+            if response.status_code != 401 or attempt > 0:
+                break
+            # A 401 is an explicit provider rejection: no task was accepted and
+            # one immediate replay cannot duplicate billing. This absorbs a
+            # transient credential/cache mismatch between provider gateways.
+            logger.warning(
+                "[aigc_media] provider media_generation auth rejected; retrying once"
             )
-        except httpx.HTTPError as exc:
-            # A transport failure is not proof that the provider rejected the
-            # task. The job layer records an indeterminate submission and
-            # refuses automatic replay to prevent duplicate billing.
-            raise AIGCMediaProviderIndeterminateError(
-                "Model Studio media request outcome is unknown"
-            ) from exc
+        assert response is not None
         return self._response_json(response, operation="media_generation")
 
     @staticmethod

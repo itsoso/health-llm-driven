@@ -1188,34 +1188,43 @@ export function AIGCMediaJobCardView(initialData: AIGCMediaJobData) {
   const [data, setData] = React.useState(initialData);
   const [retrying, setRetrying] = React.useState(false);
   const [retryError, setRetryError] = React.useState<string | null>(null);
+  const initialDataRef = React.useRef(initialData);
+  const mountedRef = React.useRef(true);
+  const jobID = String(initialData.job_id || '').trim();
 
   React.useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+
+  React.useEffect(() => {
+    initialDataRef.current = initialData;
     setData(initialData);
   }, [initialData]);
 
-  React.useEffect(() => {
-    const jobID = String(initialData.job_id || '').trim();
+  const refresh = React.useCallback(async () => {
     if (!jobID) return;
-    let active = true;
-    const refresh = async () => {
-      try {
-        const response = await api.get(`/aigc/media/jobs/${encodeURIComponent(jobID)}`);
-        const next = normalizeAIGCMediaJob(response.data, initialData);
-        if (active && next) setData(next);
-      } catch {
-        // Keep the last valid projection. The result URL is short-lived and the
-        // next successful refresh will replace it before display.
-      }
-    };
+    try {
+      const response = await api.get(`/aigc/media/jobs/${encodeURIComponent(jobID)}`);
+      const next = normalizeAIGCMediaJob(response.data, initialDataRef.current);
+      if (mountedRef.current && next) setData(next);
+    } catch {
+      // Keep the last valid projection. The result URL is short-lived and the
+      // next successful refresh will replace it before display.
+    }
+  }, [jobID]);
+
+  React.useEffect(() => {
     void refresh();
+  }, [refresh]);
+
+  React.useEffect(() => {
+    if (!AIGC_ACTIVE_STATUSES.has(String(data.status || '').toLowerCase())) return;
     const timer = window.setInterval(() => {
-      if (AIGC_ACTIVE_STATUSES.has(String(data.status || '').toLowerCase())) void refresh();
+      void refresh();
     }, AIGC_POLL_INTERVAL_MS);
-    return () => {
-      active = false;
-      window.clearInterval(timer);
-    };
-  }, [data.status, initialData]);
+    return () => { window.clearInterval(timer); };
+  }, [data.status, refresh]);
 
   const status = String(data.status || 'queued').toLowerCase();
   const statusMeta = aigcStatusMeta(status);
@@ -1333,6 +1342,27 @@ export function AIGCMediaConfirmationCardView(data: AIGCMediaConfirmationData) {
   const [error, setError] = React.useState<string | null>(null);
   const [job, setJob] = React.useState<AIGCMediaJobData | null>(null);
   const confirmationID = String(data.confirmation_id || '').trim();
+
+  React.useEffect(() => {
+    if (!confirmationID) return;
+    let active = true;
+    void api.get(`/aigc/media/confirmations/${encodeURIComponent(confirmationID)}`)
+      .then((response) => {
+        const raw = response.data?.job;
+        const restored = normalizeAIGCMediaJob(raw, {
+          job_id: '',
+          kind: data.kind,
+          status: 'queued',
+          progress: 0,
+        });
+        if (active && restored?.job_id) setJob(restored);
+      })
+      .catch(() => {
+        // A pending draft remains actionable. A later history refresh can
+        // resolve a consumed confirmation from the durable server ledger.
+      });
+    return () => { active = false; };
+  }, [confirmationID, data.kind]);
 
   const confirm = async () => {
     if (!confirmationID || submitting) return;

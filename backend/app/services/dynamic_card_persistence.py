@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from typing import Any
 
 
 def cards_for_persistence(cards: list | None) -> list:
@@ -15,9 +14,15 @@ def cards_for_persistence(cards: list | None) -> list:
     """
     durable = deepcopy(cards or [])
     for card in durable:
-        if not isinstance(card, dict) or card.get("type") != "diet_draft":
+        if not isinstance(card, dict):
             continue
         data = card.get("data")
-        if isinstance(data, dict):
+        if not isinstance(data, dict):
+            continue
+        if card.get("type") == "diet_draft":
             data.pop("photo_url", None)
+        elif card.get("type") == "aigc_media_job":
+            result = data.get("result")
+            if isinstance(result, dict):
+                result.pop("url", None)
     return durable

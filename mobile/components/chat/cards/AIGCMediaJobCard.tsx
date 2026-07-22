@@ -127,13 +127,17 @@ export function AIGCMediaJobCardView(initialData: AIGCMediaJobCardData) {
   useEffect(() => {
     mounted.current = true;
     void refresh();
-    const timer = setInterval(() => {
-      if (ACTIVE_STATUSES.has(statusOf(data.status))) void refresh();
-    }, POLL_INTERVAL_MS);
     return () => {
       mounted.current = false;
-      clearInterval(timer);
     };
+  }, [refresh]);
+
+  useEffect(() => {
+    if (!ACTIVE_STATUSES.has(statusOf(data.status))) return;
+    const timer = setInterval(() => {
+      void refresh();
+    }, POLL_INTERVAL_MS);
+    return () => { clearInterval(timer); };
   }, [data.status, refresh]);
 
   const status = statusOf(data.status);

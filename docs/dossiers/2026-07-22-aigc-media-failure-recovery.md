@@ -4,8 +4,8 @@
 |---|---|
 | slug | `aigc-media-failure-recovery` |
 | 创建日期 | 2026-07-22 |
-| 当前阶段 | G6 上线验证完成 |
-| 状态 | complete |
+| 当前阶段 | G5 部署验证中 |
+| 状态 | in_progress |
 | 负责 | Codex |
 | 反馈环 | Backend pytest / Mobile+Web component tests / production trace / deploy / Mobile OTA |
 
@@ -41,6 +41,10 @@
 - [x] Mobile 隐藏 AIGC 草稿的内部写回执。
 - [x] Agent 文案不再引用“上方卡片”等易失位置。
 - [x] 增加失败率和认证故障的运维日志/监控入口。
+- [x] 将确认卡到任务卡的状态转换写回对话，刷新或跨端打开不再丢失任务状态。
+- [x] 为历史已消费确认增加所有者隔离的只读恢复接口，旧卡可恢复为原任务而不重复提交。
+- [x] 对供应商明确 401 拒绝做一次无重复计费风险的即时重放；传输结果不确定仍禁止自动重放。
+- [x] Web/Mobile 仅轮询 active 任务，并在挂载时恢复最新状态，避免重复即时请求。
 
 ## G3 · 测试裁决
 
@@ -49,6 +53,13 @@
 - Web: 33 tests passed；TypeScript 编译通过；ESLint 0 errors。
 - System map/doc drift 与代码一致；Ruff 通过。
 - 裁决: **PASS**。
+
+### 2026-07-22 durable recovery follow-up
+
+- Backend focused suite: 144 passed；API owner/recovery suite: 9 passed；新增重复历史卡批量修复、跨用户 404、401 单次重放测试。
+- Web: 35 passed；TypeScript 编译通过；changed-file ESLint 0 errors。
+- Mobile: 60 passed；TypeScript 编译通过；changed-file ESLint 0 errors。
+- System map/doc drift 与代码一致；Ruff 与 `git diff --check` 通过。
 
 ## G4 · 安全与隐私裁决
 

@@ -283,6 +283,7 @@ async def test_agent_media_tool_uses_current_image_and_emits_manual_confirmation
     executor._current_turn_user_message = "确认把这张早餐图片发送给百炼，生成 5 秒竖屏短视频"
     executor._current_turn_source_message_id = 88
     executor._current_turn_image_urls = ["/api/v1/upload/files/chat/1/example.jpg"]
+    executor._current_turn_conversation_id = 42
 
     class FakeMediaService:
         requested = None
@@ -290,8 +291,8 @@ async def test_agent_media_tool_uses_current_image_and_emits_manual_confirmation
         def __init__(self, _db):
             pass
 
-        async def issue_confirmation(self, *, user_id, request):
-            FakeMediaService.requested = (user_id, request)
+        async def issue_confirmation(self, *, user_id, request, conversation_id=None):
+            FakeMediaService.requested = (user_id, request, conversation_id)
             return SimpleNamespace(
                 id="aigc_confirm_0123456789abcdef0123456789abcdef",
                 kind=request.kind,
@@ -326,6 +327,7 @@ async def test_agent_media_tool_uses_current_image_and_emits_manual_confirmation
     assert json.loads(result)["resource_type"] == "aigc_media_confirmation"
     assert FakeMediaService.requested[0] == 1
     assert FakeMediaService.requested[1].source_message_id == 88
+    assert FakeMediaService.requested[2] == 42
     assert executor._turn_aigc_media_cards == [{
         "type": "aigc_media_confirmation",
         "data": {
