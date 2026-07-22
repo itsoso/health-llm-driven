@@ -12,7 +12,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user_required
-from app.config import settings
 from app.database import get_db
 from app.models.aigc_media_job import AIGCMediaJob
 from app.models.user import User
@@ -22,6 +21,7 @@ from app.services.aigc_media_job_service import (
     AIGCMediaJobQuotaExceeded,
     AIGCMediaJobService,
     is_recoverable_provider_result_missing_job,
+    is_aigc_provider_configured_for_model,
 )
 from app.services.aigc_media_service import AIGCMediaConfigurationError
 
@@ -135,7 +135,7 @@ async def get_aigc_media_job(
     # Historical rows remain readable during a credential outage.  Do not turn
     # an existing status into a false failure merely because this request cannot
     # poll the provider at this moment.
-    if settings.dashscope_aigc_api_key and job.provider_task_id and (
+    if is_aigc_provider_configured_for_model(job.model) and job.provider_task_id and (
         job.status not in {"succeeded", "failed", "cancelled", "submission_unknown"}
         or is_recoverable_provider_result_missing_job(job)
     ):

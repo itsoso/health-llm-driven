@@ -82,6 +82,7 @@ interface MemoryInjectionStats {
 interface AIGCMediaStats {
   total_jobs: number;
   by_status: Record<string, number>;
+  by_model: Record<string, number>;
   by_error_code: Record<string, number>;
   auth_failures: number;
   submission_unknown: number;
@@ -326,10 +327,14 @@ export default function ObservabilityTab() {
                 <StatCard title="提交待核验" value={data.report.aigc_media.submission_unknown} />
                 <StatCard title="可安全重试" value={data.report.aigc_media.safe_retryable} />
               </div>
-              <div className="grid md:grid-cols-2 gap-4">
+              <div className="grid md:grid-cols-3 gap-4">
                 <div>
                   <div className="text-xs text-purple-200/70 mb-2">任务状态</div>
                   <KvList data={data.report.aigc_media.by_status} />
+                </div>
+                <div>
+                  <div className="text-xs text-purple-200/70 mb-2">模型分布</div>
+                  <KvList data={data.report.aigc_media.by_model} />
                 </div>
                 <div>
                   <div className="text-xs text-purple-200/70 mb-2">供应商错误码</div>

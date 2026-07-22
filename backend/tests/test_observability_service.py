@@ -87,6 +87,7 @@ def test_aigc_media_stats_empty_db(db):
     assert r == {
         "total_jobs": 0,
         "by_status": {},
+        "by_model": {},
         "by_error_code": {},
         "auth_failures": 0,
         "submission_unknown": 0,
@@ -161,6 +162,10 @@ def test_aigc_media_stats_aggregate_failures_without_exposing_job_content(db):
     assert all_users["auth_failures"] == 1
     assert all_users["submission_unknown"] == 1
     assert all_users["safe_retryable"] == 1
+    assert all_users["by_model"] == {
+        "wan2.7-image": 1,
+        "wan2.7-t2v": 2,
+    }
     assert all_users["success_rate_pct"] == 50.0
     assert all_users["status"] == "critical"
     assert owner["total_jobs"] == 2

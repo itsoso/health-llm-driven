@@ -86,14 +86,17 @@ class Settings(BaseSettings):
     tokenplan_base_url: str = "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
     tokenplan_model: str = "MiniMax-M2.5"
 
-    # Wan / Model Studio AIGC: must be a pay-as-you-go Model Studio key. It is
-    # deliberately separate from Token Plan because the latter is text-only and
-    # may not be used from a custom application backend.
+    # AIGC images stay on the standard Model Studio credential. Video can use
+    # TokenPlan's dedicated AIGC endpoint and subscription credential.
     dashscope_aigc_api_key: Optional[str] = None
     dashscope_aigc_base_url: str = "https://dashscope.aliyuncs.com/api/v1"
     dashscope_aigc_image_model: str = "wan2.7-image"
     dashscope_aigc_text_to_video_model: str = "wan2.7-t2v-2026-06-12"
     dashscope_aigc_image_to_video_model: str = "wan2.7-i2v-2026-04-25"
+    aigc_video_provider: str = "tokenplan"  # tokenplan | model_studio
+    tokenplan_aigc_base_url: str = "https://token-plan.cn-beijing.maas.aliyuncs.com/api/v1"
+    tokenplan_aigc_text_to_video_model: str = "happyhorse-1.1-t2v"
+    tokenplan_aigc_image_to_video_model: str = "happyhorse-1.1-i2v"
     dashscope_aigc_source_url_ttl_seconds: int = 600
     # AIGC is billable and its task API is account-scoped. These limits are
     # enforced at provider dispatch, not merely surfaced in a client UI.

@@ -756,9 +756,9 @@ def _validate_aigc_media(
     try:
         duration = int(args.get("duration_seconds", 5))
     except (TypeError, ValueError):
-        return "Error: draft_aigc_media.duration_seconds 必须是 2 到 15 的整数。"
-    if kind in {"text_to_video", "image_to_video"} and not 2 <= duration <= 15:
-        return "Error: draft_aigc_media.duration_seconds 必须在 2 到 15 秒之间。"
+        return "Error: draft_aigc_media.duration_seconds 必须是 3 到 15 的整数。"
+    if kind in {"text_to_video", "image_to_video"} and not 3 <= duration <= 15:
+        return "Error: draft_aigc_media.duration_seconds 必须在 3 到 15 秒之间。"
     args["duration_seconds"] = duration
     return None
 

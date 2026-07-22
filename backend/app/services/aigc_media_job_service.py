@@ -124,15 +124,39 @@ ResultHTTPClientFactory = Callable[[], httpx.AsyncClient]
 
 
 def configured_aigc_media_provider() -> AIGCMediaProvider:
-    """Create the independent pay-as-you-go Model Studio provider."""
+    """Create the image provider plus the configured video provider."""
+    video_provider = str(settings.aigc_video_provider or "").strip().lower()
+    if video_provider == "tokenplan":
+        video_api_key = settings.tokenplan_api_key
+        video_api_base_url = settings.tokenplan_aigc_base_url
+        text_to_video_model = settings.tokenplan_aigc_text_to_video_model
+        image_to_video_model = settings.tokenplan_aigc_image_to_video_model
+    elif video_provider == "model_studio":
+        video_api_key = settings.dashscope_aigc_api_key
+        video_api_base_url = settings.dashscope_aigc_base_url
+        text_to_video_model = settings.dashscope_aigc_text_to_video_model
+        image_to_video_model = settings.dashscope_aigc_image_to_video_model
+    else:
+        raise AIGCMediaConfigurationError("Unsupported AIGC video provider")
     return AIGCMediaProvider(
         api_key=settings.dashscope_aigc_api_key,
         api_base_url=settings.dashscope_aigc_base_url,
         image_model=settings.dashscope_aigc_image_model,
-        text_to_video_model=settings.dashscope_aigc_text_to_video_model,
-        image_to_video_model=settings.dashscope_aigc_image_to_video_model,
+        text_to_video_model=text_to_video_model,
+        image_to_video_model=image_to_video_model,
+        video_api_key=video_api_key,
+        video_api_base_url=video_api_base_url,
+        video_provider=video_provider,
         blocked_api_keys=(settings.tokenplan_api_key,),
     )
+
+
+def is_aigc_provider_configured_for_model(model: str) -> bool:
+    selected_model = str(model or "").strip()
+    video_provider = str(settings.aigc_video_provider or "").strip().lower()
+    if selected_model.startswith("happyhorse-") and video_provider == "tokenplan":
+        return bool(str(settings.tokenplan_api_key or "").strip())
+    return bool(str(settings.dashscope_aigc_api_key or "").strip())
 
 
 class AIGCMediaJobService:
@@ -708,7 +732,7 @@ class AIGCMediaJobService:
         provider: AIGCMediaProvider | None = None
         try:
             provider = self._provider_factory()
-            payload = await provider.get_task(job.provider_task_id)
+            payload = await provider.get_task(job.provider_task_id, model=job.model)
             output = payload.get("output") if isinstance(payload, dict) else {}
             provider_status = str((output or {}).get("task_status") or "UNKNOWN").upper()
             if provider_status == "PENDING":
@@ -753,7 +777,7 @@ class AIGCMediaJobService:
             raise AIGCMediaJobConflict("任务尚未提交，不能取消")
         provider = self._provider_factory()
         try:
-            await provider.cancel_task(job.provider_task_id)
+            await provider.cancel_task(job.provider_task_id, model=job.model)
         except (AIGCMediaConfigurationError, AIGCMediaProviderError) as exc:
             logger.warning(
                 "[aigc_media] cancel failed job_id=%s error=%s",
@@ -1006,8 +1030,8 @@ class AIGCMediaJobService:
             raise AIGCMediaJobRequestError(str(exc)) from exc
         if request.kind in SOURCE_IMAGE_KINDS and request.source_message_id is None:
             raise AIGCMediaJobRequestError("图像生成需要选择当前对话中的一张图片")
-        if request.kind in {"text_to_video", "image_to_video"} and not 2 <= int(request.duration_seconds) <= 15:
-            raise AIGCMediaJobRequestError("短视频时长需在 2 到 15 秒之间")
+        if request.kind in {"text_to_video", "image_to_video"} and not 3 <= int(request.duration_seconds) <= 15:
+            raise AIGCMediaJobRequestError("短视频时长需在 3 到 15 秒之间")
         if request.ratio not in {"16:9", "9:16", "1:1", "4:3", "3:4"}:
             raise AIGCMediaJobRequestError("不支持的视频比例")
         if request.model is not None and (not request.model.strip() or len(request.model.strip()) > 80):
@@ -1044,6 +1068,13 @@ class AIGCMediaJobService:
     def _model_for_kind(kind: str) -> str:
         if kind in IMAGE_KINDS:
             return settings.dashscope_aigc_image_model
+        video_provider = str(settings.aigc_video_provider or "").strip().lower()
+        if video_provider == "tokenplan":
+            if kind == "image_to_video":
+                return settings.tokenplan_aigc_image_to_video_model
+            return settings.tokenplan_aigc_text_to_video_model
+        if video_provider != "model_studio":
+            raise AIGCMediaConfigurationError("Unsupported AIGC video provider")
         if kind == "image_to_video":
             return settings.dashscope_aigc_image_to_video_model
         return settings.dashscope_aigc_text_to_video_model

@@ -16,10 +16,10 @@ class _Provider:
     async def create_video_task(self, **_kwargs):  # pragma: no cover - test only creates images
         raise AssertionError("unexpected video generation")
 
-    async def get_task(self, _task_id: str):  # pragma: no cover
+    async def get_task(self, _task_id: str, **_kwargs):  # pragma: no cover
         raise AssertionError("unexpected task polling")
 
-    async def cancel_task(self, _task_id: str):  # pragma: no cover
+    async def cancel_task(self, _task_id: str, **_kwargs):  # pragma: no cover
         raise AssertionError("unexpected task cancellation")
 
     async def aclose(self):

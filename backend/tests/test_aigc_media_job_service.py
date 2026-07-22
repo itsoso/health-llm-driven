@@ -21,10 +21,10 @@ class _FakeProvider:
     async def generate_image(self, **_kwargs):
         return ["https://result.aliyuncs.com/generated.png"]
 
-    async def get_task(self, _task_id: str):
+    async def get_task(self, _task_id: str, **_kwargs):
         return self.task_payload
 
-    async def cancel_task(self, task_id: str):
+    async def cancel_task(self, task_id: str, **_kwargs):
         self.cancelled_task_ids.append(task_id)
 
     async def aclose(self):
@@ -58,6 +58,34 @@ def _create_source_message(db, user_id: int):
 async def _issue_and_confirm(service, *, user_id: int, request):
     confirmation = await service.issue_confirmation(user_id=user_id, request=request)
     return await service.confirm_and_dispatch(user_id=user_id, confirmation_id=confirmation.id)
+
+
+@pytest.mark.asyncio
+async def test_configured_video_provider_uses_tokenplan_happyhorse_without_payg_key(monkeypatch):
+    from app.config import settings
+    from app.services.aigc_media_job_service import (
+        AIGCMediaJobService,
+        configured_aigc_media_provider,
+        is_aigc_provider_configured_for_model,
+    )
+
+    monkeypatch.setattr(settings, "dashscope_aigc_api_key", None)
+    monkeypatch.setattr(settings, "tokenplan_api_key", "sk-sp-test-token-plan-key")
+    monkeypatch.setattr(settings, "aigc_video_provider", "tokenplan")
+    monkeypatch.setattr(settings, "tokenplan_aigc_text_to_video_model", "happyhorse-1.1-t2v")
+    monkeypatch.setattr(settings, "tokenplan_aigc_image_to_video_model", "happyhorse-1.1-i2v")
+
+    provider = configured_aigc_media_provider()
+    try:
+        assert provider.video_provider == "tokenplan"
+        assert provider.text_to_video_model == "happyhorse-1.1-t2v"
+        assert provider.image_to_video_model == "happyhorse-1.1-i2v"
+        assert AIGCMediaJobService._model_for_kind("text_to_video") == "happyhorse-1.1-t2v"
+        assert AIGCMediaJobService._model_for_kind("image_to_video") == "happyhorse-1.1-i2v"
+        assert is_aigc_provider_configured_for_model("happyhorse-1.1-t2v") is True
+        assert is_aigc_provider_configured_for_model("wan2.7-t2v-2026-06-12") is False
+    finally:
+        await provider.aclose()
 
 
 @pytest.mark.asyncio
@@ -105,7 +133,7 @@ async def test_image_to_video_uses_owned_short_lived_source_and_persists_task(
         "prompt": "把这张早餐照片做成 5 秒竖屏短视频",
         "duration_seconds": 5,
         "ratio": "9:16",
-        "model": "wan2.7-i2v-2026-04-25",
+        "model": "happyhorse-1.1-i2v",
     }
     transient_url = provider.video_requests[0]["source_url"]
     assert transient_url.startswith("https://health.example.test/api/v1/upload/files/chat/")
@@ -154,7 +182,7 @@ async def test_confirmed_provider_dispatch_writes_prompt_free_audit_evidence(
     assert audit.result_detail == {
         "job_id": job.id,
         "kind": "image_to_video",
-        "model": "wan2.7-i2v-2026-04-25",
+        "model": "happyhorse-1.1-i2v",
         "source_attached": True,
     }
     assert prompt not in str(audit.result_detail)
@@ -346,7 +374,7 @@ async def test_transient_refresh_failure_keeps_accepted_job_active(db, auth_user
     from app.services.aigc_media_service import AIGCMediaProviderError
 
     class FailingProvider(_FakeProvider):
-        async def get_task(self, _task_id: str):
+        async def get_task(self, _task_id: str, **_kwargs):
             raise AIGCMediaProviderError("temporary")
 
     user, _ = auth_user_and_headers
@@ -549,7 +577,7 @@ async def test_refresh_respects_the_provider_poll_minimum_interval(
     from app.services.aigc_media_job_service import AIGCMediaJobService
 
     class NoPollProvider(_FakeProvider):
-        async def get_task(self, _task_id: str):
+        async def get_task(self, _task_id: str, **_kwargs):
             raise AssertionError("poll interval should have prevented this request")
 
     user, _ = auth_user_and_headers
@@ -602,7 +630,7 @@ async def test_refresh_claims_a_durable_poll_lease_before_provider_request(
     calls = 0
 
     class LeaseProvider(_FakeProvider):
-        async def get_task(self, _task_id: str):
+        async def get_task(self, _task_id: str, **_kwargs):
             nonlocal calls
             calls += 1
             # A second surface polling the same job after the first request has
@@ -611,7 +639,7 @@ async def test_refresh_claims_a_durable_poll_lease_before_provider_request(
             return {"output": {"task_status": "RUNNING"}}
 
     class NoPollProvider(_FakeProvider):
-        async def get_task(self, _task_id: str):
+        async def get_task(self, _task_id: str, **_kwargs):
             raise AssertionError("durable poll lease should prevent a duplicate provider call")
 
     refreshed = await AIGCMediaJobService(db, provider_factory=LeaseProvider).refresh(job)
@@ -657,11 +685,11 @@ async def test_refresh_applies_an_account_global_poll_lease(
     monkeypatch.setattr(settings, "dashscope_aigc_global_poll_min_interval_seconds", 60)
 
     class FirstProvider(_FakeProvider):
-        async def get_task(self, _task_id: str):
+        async def get_task(self, _task_id: str, **_kwargs):
             return {"output": {"task_status": "RUNNING"}}
 
     class NoPollProvider(_FakeProvider):
-        async def get_task(self, _task_id: str):
+        async def get_task(self, _task_id: str, **_kwargs):
             raise AssertionError("account-global poll lease should prevent this provider call")
 
     await AIGCMediaJobService(db, provider_factory=FirstProvider).refresh(first)

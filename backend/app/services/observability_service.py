@@ -378,6 +378,7 @@ def aigc_media_stats(db: Session, since: datetime, user_id: Optional[int]) -> di
         return {
             "total_jobs": 0,
             "by_status": {},
+            "by_model": {},
             "by_error_code": {},
             "auth_failures": 0,
             "submission_unknown": 0,
@@ -394,6 +395,13 @@ def aigc_media_stats(db: Session, since: datetime, user_id: Optional[int]) -> di
             AIGCMediaJob.status,
             func.count(AIGCMediaJob.id),
         ).group_by(AIGCMediaJob.status).all()
+    }
+    by_model = {
+        str(model or "unknown"): int(count)
+        for model, count in q.with_entities(
+            AIGCMediaJob.model,
+            func.count(AIGCMediaJob.id),
+        ).group_by(AIGCMediaJob.model).all()
     }
     by_error_code = {
         str(code): int(count)
@@ -434,6 +442,7 @@ def aigc_media_stats(db: Session, since: datetime, user_id: Optional[int]) -> di
     return {
         "total_jobs": int(total),
         "by_status": by_status,
+        "by_model": by_model,
         "by_error_code": by_error_code,
         "auth_failures": auth_failures,
         "submission_unknown": submission_unknown,

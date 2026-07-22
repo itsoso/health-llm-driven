@@ -1,9 +1,9 @@
-"""Model Studio Wan media provider boundary for Xiaoba.
+"""Alibaba Model Studio media provider boundary for Xiaoba.
 
-Token Plan is an OpenAI-compatible text-only subscription surface. AIGC media
-uses a separate Model Studio pay-as-you-go credential and never exposes it to a
-client. This module intentionally contains no persistence or user ownership
-logic; callers supply already-authorized source data/URLs and own job state.
+Images use the standard Model Studio credential. Videos can use either that
+credential or the TokenPlan AIGC surface. This module intentionally contains no
+persistence or user ownership logic; callers supply already-authorized source
+data/URLs and own job state.
 """
 from __future__ import annotations
 
@@ -20,6 +20,11 @@ logger = logging.getLogger(__name__)
 
 IMAGE_MODELS = frozenset({"wan2.7-image", "wan2.7-image-pro"})
 VIDEO_KINDS = frozenset({"text_to_video", "image_to_video"})
+TOKENPLAN_AIGC_DEFAULT_BASE_URL = "https://token-plan.cn-beijing.maas.aliyuncs.com/api/v1"
+HAPPYHORSE_TEXT_TO_VIDEO_MODELS = frozenset({"happyhorse-1.1-t2v", "happyhorse-1.0-t2v"})
+HAPPYHORSE_IMAGE_TO_VIDEO_MODELS = frozenset({"happyhorse-1.1-i2v", "happyhorse-1.0-i2v"})
+HAPPYHORSE_VIDEO_MODELS = HAPPYHORSE_TEXT_TO_VIDEO_MODELS | HAPPYHORSE_IMAGE_TO_VIDEO_MODELS
+VIDEO_PROVIDERS = frozenset({"model_studio", "tokenplan"})
 
 
 class AIGCMediaConfigurationError(ValueError):
@@ -51,17 +56,24 @@ class AIGCTask:
     status: str
 
 
-def normalize_api_base_url(value: str) -> str:
-    """Return a Model Studio API v1 endpoint, rejecting subscription endpoints."""
+def normalize_api_base_url(value: str, *, allow_token_plan: bool = False) -> str:
+    """Return an AIGC API v1 endpoint and reject OpenAI-compatible paths."""
     base = str(value or "").strip().rstrip("/")
     parsed = urlsplit(base)
     host = (parsed.hostname or "").lower()
     if not base or parsed.scheme != "https" or not host:
         raise AIGCMediaConfigurationError("DASHSCOPE_AIGC_BASE_URL must be an HTTPS Model Studio endpoint")
-    if "token-plan" in host or "coding.dashscope" in host:
-        raise AIGCMediaConfigurationError("Token Plan/Coding Plan credentials cannot be used for AIGC media")
+    is_token_plan = host == "token-plan.cn-beijing.maas.aliyuncs.com"
+    if is_token_plan and not allow_token_plan:
+        raise AIGCMediaConfigurationError("Token Plan endpoint is only valid for the configured video provider")
+    if "coding.dashscope" in host:
+        raise AIGCMediaConfigurationError("Coding Plan credentials cannot be used for AIGC media")
     if not (host.endswith("aliyuncs.com") or host.endswith("aliyun.com")):
         raise AIGCMediaConfigurationError("DASHSCOPE_AIGC_BASE_URL must point to Alibaba Cloud Model Studio")
+    if is_token_plan:
+        if parsed.path.rstrip("/") != "/api/v1":
+            raise AIGCMediaConfigurationError("Token Plan AIGC base URL must end with /api/v1")
+        return base
     if not parsed.path or parsed.path == "/":
         base = f"{base}/api/v1"
     elif not parsed.path.rstrip("/").endswith("/api/v1"):
@@ -80,15 +92,15 @@ class AIGCMediaProvider:
         image_model: str = "wan2.7-image",
         text_to_video_model: str = "wan2.7-t2v-2026-06-12",
         image_to_video_model: str = "wan2.7-i2v-2026-04-25",
+        video_api_key: str | None = None,
+        video_api_base_url: str | None = None,
+        video_provider: str = "model_studio",
         blocked_api_keys: Iterable[str | None] = (),
         http_client: httpx.AsyncClient | None = None,
     ) -> None:
-        if not str(api_key or "").strip():
-            raise AIGCMediaConfigurationError("DASHSCOPE_AIGC_API_KEY is not configured")
-        candidate_key = str(api_key).strip()
-        # A Token Plan credential is a subscription credential for text models,
-        # not an AIGC entitlement.  Endpoint validation alone is insufficient:
-        # the same secret could otherwise be pasted into the AIGC setting.
+        candidate_key = str(api_key or "").strip()
+        # TokenPlan media credentials are valid only on the dedicated video
+        # route. Never let one become the standard image credential.
         if any(
             secret and hmac.compare_digest(candidate_key, str(secret).strip())
             for secret in blocked_api_keys
@@ -98,11 +110,41 @@ class AIGCMediaProvider:
             raise AIGCMediaConfigurationError("Unsupported Wan image model")
         self._api_key = candidate_key
         self._api_base_url = normalize_api_base_url(api_base_url)
+        normalized_video_provider = str(video_provider or "").strip().lower()
+        if normalized_video_provider not in VIDEO_PROVIDERS:
+            raise AIGCMediaConfigurationError("Unsupported AIGC video provider")
+        candidate_video_key = (
+            str(video_api_key or "").strip()
+            if normalized_video_provider == "tokenplan"
+            else str(video_api_key or candidate_key).strip()
+        )
+        if (
+            normalized_video_provider == "tokenplan"
+            and candidate_video_key
+            and not candidate_video_key.startswith("sk-sp-")
+        ):
+            raise AIGCMediaConfigurationError("Token Plan AIGC video credential must use the sk-sp- prefix")
+        self.video_provider = normalized_video_provider
+        self._video_api_key = candidate_video_key
+        default_video_base = (
+            TOKENPLAN_AIGC_DEFAULT_BASE_URL
+            if normalized_video_provider == "tokenplan"
+            else self._api_base_url
+        )
+        self._video_api_base_url = normalize_api_base_url(
+            video_api_base_url or default_video_base,
+            allow_token_plan=normalized_video_provider == "tokenplan",
+        )
         self.image_model = image_model
         self.text_to_video_model = str(text_to_video_model).strip()
         self.image_to_video_model = str(image_to_video_model).strip()
         if not self.text_to_video_model or not self.image_to_video_model:
             raise AIGCMediaConfigurationError("Wan video model IDs are required")
+        if normalized_video_provider == "tokenplan":
+            if self.text_to_video_model not in HAPPYHORSE_TEXT_TO_VIDEO_MODELS:
+                raise AIGCMediaConfigurationError("Token Plan requires a supported HappyHorse text-to-video model")
+            if self.image_to_video_model not in HAPPYHORSE_IMAGE_TO_VIDEO_MODELS:
+                raise AIGCMediaConfigurationError("Token Plan requires a supported HappyHorse image-to-video model")
         self._owns_client = http_client is None
         self._http_client = http_client or httpx.AsyncClient(timeout=httpx.Timeout(90.0, connect=10.0))
 
@@ -112,8 +154,19 @@ class AIGCMediaProvider:
 
     @property
     def _headers(self) -> dict[str, str]:
+        if not self._api_key:
+            raise AIGCMediaConfigurationError("DASHSCOPE_AIGC_API_KEY is not configured for image generation")
         return {
             "Authorization": f"Bearer {self._api_key}",
+            "Content-Type": "application/json",
+        }
+
+    @property
+    def _video_headers(self) -> dict[str, str]:
+        if not self._video_api_key:
+            raise AIGCMediaConfigurationError("AIGC video API key is not configured")
+        return {
+            "Authorization": f"Bearer {self._video_api_key}",
             "Content-Type": "application/json",
         }
 
@@ -180,8 +233,6 @@ class AIGCMediaProvider:
             raise AIGCMediaConfigurationError("Unsupported AIGC video kind")
         if kind == "image_to_video" and not str(source_url or "").strip():
             raise AIGCMediaConfigurationError("Image-to-video requires an authorized source image")
-        if duration_seconds < 2 or duration_seconds > 15:
-            raise AIGCMediaConfigurationError("Video duration must be between 2 and 15 seconds")
         if ratio not in {"16:9", "9:16", "1:1", "4:3", "3:4"}:
             raise AIGCMediaConfigurationError("Unsupported video aspect ratio")
         input_payload: dict[str, Any] = {"prompt": _bounded_text(prompt, maximum=5000, field="prompt")}
@@ -192,20 +243,32 @@ class AIGCMediaProvider:
         ).strip()
         if not model:
             raise AIGCMediaConfigurationError("Wan video model ID is required")
+        if model in HAPPYHORSE_VIDEO_MODELS:
+            if duration_seconds < 3 or duration_seconds > 15:
+                raise AIGCMediaConfigurationError("HappyHorse video duration must be between 3 and 15 seconds")
+        elif duration_seconds < 2 or duration_seconds > 15:
+            raise AIGCMediaConfigurationError("Video duration must be between 2 and 15 seconds")
+        parameters: dict[str, Any] = {
+            "resolution": "720P",
+            "duration": duration_seconds,
+            "watermark": False,
+        }
+        if model in HAPPYHORSE_VIDEO_MODELS:
+            # HappyHorse I2V preserves the first frame's aspect ratio and does
+            # not accept ratio/prompt_extend. T2V accepts ratio directly.
+            if kind == "text_to_video":
+                parameters["ratio"] = ratio
+        else:
+            parameters.update({"ratio": ratio, "prompt_extend": True})
         data = await self._post_json(
             "/services/aigc/video-generation/video-synthesis",
             {
                 "model": model,
                 "input": input_payload,
-                "parameters": {
-                    "resolution": "720P",
-                    "ratio": ratio,
-                    "duration": duration_seconds,
-                    "prompt_extend": True,
-                    "watermark": False,
-                },
+                "parameters": parameters,
             },
             async_request=True,
+            video_model=model,
         )
         output = data.get("output") if isinstance(data, dict) else None
         task_id = str((output or {}).get("task_id") or "").strip()
@@ -217,27 +280,29 @@ class AIGCMediaProvider:
             raise AIGCMediaProviderIndeterminateError("Model Studio video outcome is unknown")
         return AIGCTask(task_id=task_id, status=status)
 
-    async def get_task(self, task_id: str) -> dict[str, Any]:
+    async def get_task(self, task_id: str, *, model: str | None = None) -> dict[str, Any]:
         safe_task_id = str(task_id or "").strip()
         if not safe_task_id:
             raise AIGCMediaConfigurationError("task_id is required")
         try:
+            api_base_url, headers = self._video_route(model, allow_historical_standard=True)
             response = await self._http_client.get(
-                f"{self._api_base_url}/tasks/{safe_task_id}",
-                headers=self._headers,
+                f"{api_base_url}/tasks/{safe_task_id}",
+                headers=headers,
             )
         except httpx.HTTPError as exc:
             raise AIGCMediaProviderError("Model Studio task query failed") from exc
         return self._response_json(response, operation="task_query")
 
-    async def cancel_task(self, task_id: str) -> None:
+    async def cancel_task(self, task_id: str, *, model: str | None = None) -> None:
         safe_task_id = str(task_id or "").strip()
         if not safe_task_id:
             raise AIGCMediaConfigurationError("task_id is required")
         try:
+            api_base_url, headers = self._video_route(model, allow_historical_standard=True)
             response = await self._http_client.delete(
-                f"{self._api_base_url}/tasks/{safe_task_id}",
-                headers=self._headers,
+                f"{api_base_url}/tasks/{safe_task_id}",
+                headers=headers,
             )
         except httpx.HTTPError as exc:
             raise AIGCMediaProviderError("Model Studio task cancellation failed") from exc
@@ -249,15 +314,21 @@ class AIGCMediaProvider:
         payload: dict[str, Any],
         *,
         async_request: bool = False,
+        video_model: str | None = None,
     ) -> dict[str, Any]:
-        headers = dict(self._headers)
+        api_base_url, selected_headers = (
+            self._video_route(video_model)
+            if video_model
+            else (self._api_base_url, self._headers)
+        )
+        headers = dict(selected_headers)
         if async_request:
             headers["X-DashScope-Async"] = "enable"
         response: httpx.Response | None = None
         for attempt in range(2):
             try:
                 response = await self._http_client.post(
-                    f"{self._api_base_url}{path}",
+                    f"{api_base_url}{path}",
                     headers=headers,
                     json=payload,
                 )
@@ -278,6 +349,21 @@ class AIGCMediaProvider:
             )
         assert response is not None
         return self._response_json(response, operation="media_generation")
+
+    def _video_route(
+        self,
+        model: str | None,
+        *,
+        allow_historical_standard: bool = False,
+    ) -> tuple[str, dict[str, str]]:
+        selected_model = str(model or self.text_to_video_model).strip()
+        if self.video_provider == "tokenplan":
+            if selected_model in HAPPYHORSE_VIDEO_MODELS:
+                return self._video_api_base_url, self._video_headers
+            if allow_historical_standard and selected_model.startswith("wan"):
+                return self._api_base_url, self._headers
+            raise AIGCMediaConfigurationError("Unsupported Token Plan video model")
+        return self._api_base_url, self._headers
 
     @staticmethod
     def _response_json(response: httpx.Response, *, operation: str) -> dict[str, Any]:
