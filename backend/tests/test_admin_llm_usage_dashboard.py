@@ -205,6 +205,61 @@ def test_usage_dashboard_reports_tokenplan_quota_guard(client, db, monkeypatch):
     assert any("备用模型" in action for action in guard["suggested_actions"])
 
 
+def test_usage_dashboard_reports_user_quota_policy_and_rejections(client, db, monkeypatch):
+    admin = _make_user(db, admin=True, name="管理员")
+    user = _make_user(db, name="Alice")
+    monkeypatch.setattr("app.api.admin_llm.settings.tokenplan_user_monthly_token_quota", 1_000)
+    monkeypatch.setattr("app.api.admin_llm.settings.tokenplan_user_daily_call_quota", 20)
+    monkeypatch.setattr("app.api.admin_llm.settings.tokenplan_user_monthly_credit_quota", 50.0)
+
+    _log(
+        db,
+        user_id=user.id,
+        provider="tokenplan",
+        model="qwen3.7-plus",
+        caller="agent.stream",
+        prompt_tokens=600,
+        completion_tokens=100,
+        tokenplan_credits_estimate=7.0,
+    )
+    _log(
+        db,
+        user_id=user.id,
+        provider="tokenplan",
+        model="qwen3.7-plus",
+        caller="agent.stream",
+        prompt_tokens=0,
+        completion_tokens=0,
+        success=0,
+        error_type="user_monthly_token_limit",
+        error_code="llm_budget_exceeded",
+        error_message="local quota policy rejected request",
+    )
+    _log(
+        db,
+        user_id=admin.id,
+        provider="tokenplan",
+        model="qwen3.7-plus",
+        caller="agent.stream",
+        prompt_tokens=2_000,
+        completion_tokens=500,
+    )
+
+    response = client.get(
+        "/api/v1/admin/llm/usage-dashboard?days=30",
+        headers=_headers(admin),
+    )
+
+    assert response.status_code == 200
+    by_user = {row["user_id"]: row for row in response.json()["by_user"]}
+    assert by_user[user.id]["quota_policy"]["mode"] == "enforced"
+    assert by_user[user.id]["quota_policy"]["monthly_tokens_used"] == 700
+    assert by_user[user.id]["quota_policy"]["monthly_token_utilization"] == 0.7
+    assert by_user[user.id]["quota_policy"]["rejections_month"] == 1
+    assert by_user[admin.id]["quota_policy"]["mode"] == "admin_exempt"
+    assert by_user[admin.id]["quota_policy"]["monthly_token_utilization"] is None
+
+
 def test_usage_dashboard_estimates_cost_for_legacy_zero_cost_rows(client, db):
     admin = _make_user(db, admin=True, name="管理员")
     user = _make_user(db, name="Alice")

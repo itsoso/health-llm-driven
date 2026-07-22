@@ -13,6 +13,7 @@ import logging
 import time
 import json
 import re
+from datetime import datetime, timedelta
 from dataclasses import dataclass
 from contextvars import ContextVar, Token
 from typing import Any, Dict, List, Optional, Tuple
@@ -67,6 +68,9 @@ class UsageCostEstimate:
 # 调用方上下文 — orchestrator / specialist / endpoint 可以通过 set_caller() 标注自己
 _caller_ctx: ContextVar[Optional[str]] = ContextVar("llm_caller", default=None)
 _user_id_ctx: ContextVar[Optional[int]] = ContextVar("llm_user_id", default=None)
+_user_is_admin_ctx: ContextVar[Optional[bool]] = ContextVar(
+    "llm_user_is_admin", default=None
+)
 _run_id_ctx: ContextVar[Optional[str]] = ContextVar("llm_run_id", default=None)
 _recovery_depth_ctx: ContextVar[int] = ContextVar("llm_recovery_depth", default=0)
 _usage_capture_ctx: ContextVar[Optional[List[Dict[str, Any]]]] = ContextVar(
@@ -77,9 +81,102 @@ _MAX_CAPTURE_ITEMS = 20
 
 
 class LLMBudgetExceeded(RuntimeError):
-    """Raised before a paid LLM call would exceed the configured month quota."""
+    """Raised before a paid LLM call would exceed an explicit local policy."""
 
     error_code = "llm_budget_exceeded"
+
+    def __init__(
+        self,
+        message: Optional[str] = None,
+        *,
+        reason: Optional[str] = None,
+        scope: str = "user",
+        retry_at: Optional[str] = None,
+    ) -> None:
+        self.reason = reason or _legacy_budget_reason(message)
+        self.scope = scope
+        self.retry_at = retry_at
+        super().__init__(message or self.reason)
+
+
+def _legacy_budget_reason(message: Optional[str]) -> str:
+    text = str(message or "").strip().lower()
+    return {
+        "monthly user token quota exceeded": "user_monthly_token_limit",
+        "daily user call quota exceeded": "user_daily_call_limit",
+        "monthly user tokenplan credit quota exceeded": "user_monthly_credit_limit",
+        "monthly token quota exceeded": "global_monthly_token_limit",
+        "daily global call quota exceeded": "global_daily_call_limit",
+        "monthly tokenplan credit quota exceeded": "global_monthly_credit_limit",
+        "llm budget guard unavailable": "budget_guard_unavailable",
+    }.get(text, "budget_limit")
+
+
+def _next_day_start(now: datetime) -> datetime:
+    return (now + timedelta(days=1)).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+
+
+def _next_month_start(now: datetime) -> datetime:
+    if now.month == 12:
+        return now.replace(
+            year=now.year + 1,
+            month=1,
+            day=1,
+            hour=0,
+            minute=0,
+            second=0,
+            microsecond=0,
+        )
+    return now.replace(
+        month=now.month + 1,
+        day=1,
+        hour=0,
+        minute=0,
+        second=0,
+        microsecond=0,
+    )
+
+
+def _resolved_user_is_admin(db, user_id: Optional[int]) -> bool:
+    explicit = _user_is_admin_ctx.get()
+    if explicit is not None:
+        return bool(explicit)
+    if user_id is None:
+        return False
+
+    from app.models.user import User
+
+    return bool(
+        db.query(User.is_admin)
+        .filter(User.id == int(user_id))
+        .scalar()
+    )
+
+
+def _record_budget_rejection(
+    error: LLMBudgetExceeded,
+    *,
+    provider: str,
+    model: Optional[str],
+) -> None:
+    """Persist metadata-only policy telemetry; never persist prompts or health text."""
+    try:
+        record_usage(
+            provider=provider or "tokenplan",
+            model=model or "unknown",
+            prompt_text="",
+            completion_text="",
+            latency_ms=0,
+            success=False,
+            error_class="local_budget_policy",
+            error_type=error.reason,
+            error_code=error.error_code,
+            error_message="local quota policy rejected request",
+        )
+    except Exception:  # noqa: BLE001 - telemetry must not replace the policy error
+        logger.warning("[LLM Budget] failed to persist rejection telemetry", exc_info=True)
 
 
 def _enforce_monthly_token_quota(
@@ -102,7 +199,7 @@ def _enforce_monthly_token_quota(
         if str(provider or "").strip().lower() != "tokenplan":
             return
         from datetime import datetime, timezone
-        from sqlalchemy import func
+        from sqlalchemy import func, or_
         from app.database import SessionLocal
         from app.models.llm_usage import LlmUsageLog
 
@@ -138,13 +235,20 @@ def _enforce_monthly_token_quota(
         )
 
         with SessionLocal() as db:
+            user_is_admin = _resolved_user_is_admin(db, user_id)
+            dispatched_call = or_(
+                LlmUsageLog.error_class.is_(None),
+                LlmUsageLog.error_class != "local_budget_policy",
+            )
             monthly_filter = (
                 LlmUsageLog.provider == "tokenplan",
                 LlmUsageLog.created_at >= month_start,
+                dispatched_call,
             )
             daily_filter = (
                 LlmUsageLog.provider == "tokenplan",
                 LlmUsageLog.created_at >= day_start,
+                dispatched_call,
             )
             if quota > 0:
                 used = int(
@@ -154,7 +258,11 @@ def _enforce_monthly_token_quota(
                     or 0
                 )
                 if used + estimated_request > quota:
-                    raise LLMBudgetExceeded("monthly token quota exceeded")
+                    raise LLMBudgetExceeded(
+                        reason="global_monthly_token_limit",
+                        scope="global",
+                        retry_at=_next_month_start(now).isoformat(),
+                    )
 
             if global_daily_calls > 0:
                 calls = int(
@@ -164,7 +272,11 @@ def _enforce_monthly_token_quota(
                     or 0
                 )
                 if calls >= global_daily_calls:
-                    raise LLMBudgetExceeded("daily global call quota exceeded")
+                    raise LLMBudgetExceeded(
+                        reason="global_daily_call_limit",
+                        scope="global",
+                        retry_at=_next_day_start(now).isoformat(),
+                    )
 
             if estimated_credits is not None and global_credit_quota > 0:
                 used_credits = float(
@@ -179,9 +291,15 @@ def _enforce_monthly_token_quota(
                     or 0.0
                 )
                 if used_credits + estimated_credits.credits > global_credit_quota:
-                    raise LLMBudgetExceeded("monthly TokenPlan credit quota exceeded")
+                    raise LLMBudgetExceeded(
+                        reason="global_monthly_credit_limit",
+                        scope="global",
+                        retry_at=_next_month_start(now).isoformat(),
+                    )
 
-            if user_id is not None:
+            # Admins bypass Reva's per-user admission policy. Global circuit
+            # breakers still protect provider availability and runaway spend.
+            if user_id is not None and not user_is_admin:
                 user_monthly_filter = (*monthly_filter, LlmUsageLog.user_id == int(user_id))
                 user_daily_filter = (*daily_filter, LlmUsageLog.user_id == int(user_id))
                 if user_quota > 0:
@@ -192,7 +310,11 @@ def _enforce_monthly_token_quota(
                         or 0
                     )
                     if user_used + estimated_request > user_quota:
-                        raise LLMBudgetExceeded("monthly user token quota exceeded")
+                        raise LLMBudgetExceeded(
+                            reason="user_monthly_token_limit",
+                            scope="user",
+                            retry_at=_next_month_start(now).isoformat(),
+                        )
                 if user_daily_calls > 0:
                     calls = int(
                         db.query(func.count(LlmUsageLog.id))
@@ -201,7 +323,11 @@ def _enforce_monthly_token_quota(
                         or 0
                     )
                     if calls >= user_daily_calls:
-                        raise LLMBudgetExceeded("daily user call quota exceeded")
+                        raise LLMBudgetExceeded(
+                            reason="user_daily_call_limit",
+                            scope="user",
+                            retry_at=_next_day_start(now).isoformat(),
+                        )
                 if estimated_credits is not None and user_credit_quota > 0:
                     used_credits = float(
                         db.query(
@@ -215,7 +341,11 @@ def _enforce_monthly_token_quota(
                         or 0.0
                     )
                     if used_credits + estimated_credits.credits > user_credit_quota:
-                        raise LLMBudgetExceeded("monthly user TokenPlan credit quota exceeded")
+                        raise LLMBudgetExceeded(
+                            reason="user_monthly_credit_limit",
+                            scope="user",
+                            retry_at=_next_month_start(now).isoformat(),
+                        )
 
         # Only log the configured boundary, never prompts or health content.
         if quota > 0 and estimated_request > quota:
@@ -225,23 +355,53 @@ def _enforce_monthly_token_quota(
                 estimated_request,
                 quota,
             )
-            raise LLMBudgetExceeded("monthly token quota exceeded")
-    except LLMBudgetExceeded:
+            raise LLMBudgetExceeded(
+                reason="global_monthly_token_limit",
+                scope="global",
+                retry_at=_next_month_start(now).isoformat(),
+            )
+    except LLMBudgetExceeded as exc:
+        logger.warning(
+            "[LLM Budget] rejected reason=%s scope=%s user_id=%s caller=%s "
+            "run_id=%s retry_at=%s",
+            exc.reason,
+            exc.scope,
+            _user_id_ctx.get(),
+            _caller_ctx.get() or "unknown",
+            _run_id_ctx.get(),
+            exc.retry_at,
+        )
+        _record_budget_rejection(exc, provider=provider, model=model)
         raise
     except Exception as exc:
         from app.config import settings
 
         if (settings.app_env or "").strip().lower() == "production":
             logger.error("[LLM Budget] quota guard unavailable; blocking production call: %s", exc)
-            raise LLMBudgetExceeded("llm budget guard unavailable") from exc
+            budget_error = LLMBudgetExceeded(
+                reason="budget_guard_unavailable",
+                scope="global",
+            )
+            _record_budget_rejection(budget_error, provider=provider, model=model)
+            raise budget_error from exc
         logger.warning("[LLM Budget] quota guard unavailable in non-production: %s", exc)
 
 
-def set_caller(caller: str, user_id: Optional[int] = None) -> None:
+def set_caller(
+    caller: str,
+    user_id: Optional[int] = None,
+    *,
+    is_admin: Optional[bool] = None,
+) -> None:
     """在调用 LLM 前调用, 标注本次调用归属哪个业务."""
     _caller_ctx.set(caller)
     if user_id is not None:
         _user_id_ctx.set(user_id)
+        # A new user binding must never inherit a prior admin exemption. Callers
+        # without a loaded User leave this unknown so the guard resolves it from DB.
+        _user_is_admin_ctx.set(bool(is_admin) if is_admin is not None else None)
+    elif is_admin is not None:
+        _user_is_admin_ctx.set(bool(is_admin))
 
 
 def set_run_id(run_id: Optional[str]) -> Token[Optional[str]]:

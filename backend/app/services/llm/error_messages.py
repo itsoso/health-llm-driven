@@ -55,7 +55,47 @@ def is_llm_rate_limit_error(error: Any) -> bool:
 def safe_llm_error_message(error: Any) -> str:
     """Return an actionable message safe to show and persist in chat history."""
 
+    budget_reason = getattr(error, "reason", None)
     text = _error_text(error).lower()
+    if budget_reason in {"user_monthly_token_limit", "user_monthly_credit_limit"} or any(
+        marker in text
+        for marker in (
+            "user_monthly_token_limit",
+            "user_monthly_credit_limit",
+            "monthly user token quota exceeded",
+            "monthly user tokenplan credit quota exceeded",
+        )
+    ):
+        return (
+            "本月 AI 使用额度已达上限，将于下月 1 日恢复。"
+            "你已发送的内容已保留；如需立即继续，请联系管理员调整额度。"
+        )
+    if budget_reason == "user_daily_call_limit" or any(
+        marker in text
+        for marker in ("user_daily_call_limit", "daily user call quota exceeded")
+    ):
+        return (
+            "今日 AI 使用额度已达上限，将于明日恢复。"
+            "你已发送的内容已保留；如需立即继续，请联系管理员调整额度。"
+        )
+    if budget_reason in {
+        "global_monthly_token_limit",
+        "global_monthly_credit_limit",
+        "global_daily_call_limit",
+        "budget_guard_unavailable",
+    } or any(
+        marker in text
+        for marker in (
+            "global_monthly_token_limit",
+            "global_monthly_credit_limit",
+            "global_daily_call_limit",
+            "budget_guard_unavailable",
+        )
+    ):
+        return (
+            "AI 服务保护暂时生效，运维已收到记录。"
+            "你已发送的内容已保留，请稍后重试。"
+        )
     if is_llm_quota_error(error):
         return "当前模型额度已用尽。请切换模型或稍后重试；本轮没有生成可靠健康建议。"
     if is_llm_rate_limit_error(error):

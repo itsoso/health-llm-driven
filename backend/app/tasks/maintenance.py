@@ -219,7 +219,7 @@ def rebuild_knowledge_index():
 
 @celery_app.task(time_limit=120, name="app.tasks.maintenance.llm_cost_daily_check")
 def llm_cost_daily_check():
-    """每天 23:55 检查最近 24h LLM 成本, 超阈值 log warning.
+    """每天 23:55 检查 LLM 成本、本地限额拦截和临界用户.
 
     阈值: 默认 $1/天. 可通过 settings.llm_daily_cost_alert_usd 调整.
     超阈值时:
@@ -227,12 +227,18 @@ def llm_cost_daily_check():
       2. 可选: 给 admin 推 APNs (如果 expo_push_token 配置)
     """
     from datetime import datetime, timedelta, timezone
-    from sqlalchemy import func
+    from sqlalchemy import func, or_
     from app.config import settings
     from app.models.llm_usage import LlmUsageLog
+    from app.models.user import User
 
     threshold = getattr(settings, "llm_daily_cost_alert_usd", 1.0)
     since = datetime.now(timezone.utc) - timedelta(hours=24)
+    now = datetime.now(timezone.utc)
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    user_monthly_token_quota = int(
+        getattr(settings, "tokenplan_user_monthly_token_quota", 0) or 0
+    )
 
     with SessionLocal() as db:
         row = db.query(
@@ -255,6 +261,61 @@ def llm_cost_daily_check():
         top_caller = top_caller_row.caller if top_caller_row else "n/a"
         top_cost = float(top_caller_row.c) if top_caller_row else 0.0
 
+        rejection_rows = (
+            db.query(
+                LlmUsageLog.error_type,
+                func.count(LlmUsageLog.id).label("count"),
+            )
+            .filter(
+                LlmUsageLog.created_at >= since,
+                LlmUsageLog.error_code == "llm_budget_exceeded",
+            )
+            .group_by(LlmUsageLog.error_type)
+            .all()
+        )
+        quota_rejection_reasons = {
+            (row.error_type or "unknown"): int(row.count or 0)
+            for row in rejection_rows
+        }
+        quota_rejections_24h = sum(quota_rejection_reasons.values())
+
+        near_limit_users = []
+        if user_monthly_token_quota > 0:
+            usage_rows = (
+                db.query(
+                    LlmUsageLog.user_id,
+                    func.coalesce(func.sum(LlmUsageLog.total_tokens), 0).label("tokens"),
+                )
+                .join(User, User.id == LlmUsageLog.user_id)
+                .filter(
+                    LlmUsageLog.created_at >= month_start,
+                    LlmUsageLog.provider == "tokenplan",
+                    User.is_admin.is_(False),
+                    or_(
+                        LlmUsageLog.error_class.is_(None),
+                        LlmUsageLog.error_class != "local_budget_policy",
+                    ),
+                )
+                .group_by(LlmUsageLog.user_id)
+                .all()
+            )
+            near_limit_users = [
+                {
+                    "user_id": int(row.user_id),
+                    "monthly_tokens": int(row.tokens or 0),
+                    "monthly_token_utilization": round(
+                        int(row.tokens or 0) / user_monthly_token_quota,
+                        4,
+                    ),
+                }
+                for row in usage_rows
+                if int(row.tokens or 0) / user_monthly_token_quota >= 0.8
+            ]
+            near_limit_users.sort(
+                key=lambda item: item["monthly_token_utilization"],
+                reverse=True,
+            )
+
         msg = (
             f"[LLM Cost] 24h: ${cost:.4f} / {calls} calls | "
             f"top: {top_caller} (${top_cost:.4f}) | threshold: ${threshold:.2f}"
@@ -264,5 +325,23 @@ def llm_cost_daily_check():
         else:
             logger.info(msg)
 
-        return {"cost_usd": round(cost, 4), "calls": calls, "threshold_usd": threshold,
-                "exceeded": cost > threshold, "top_caller": top_caller}
+        if quota_rejections_24h or near_limit_users:
+            logger.warning(
+                "[LLM Quota] rejections_24h=%s reasons=%s near_limit_users=%s",
+                quota_rejections_24h,
+                quota_rejection_reasons,
+                near_limit_users[:20],
+            )
+        else:
+            logger.info("[LLM Quota] no rejections or users above 80%%")
+
+        return {
+            "cost_usd": round(cost, 4),
+            "calls": calls,
+            "threshold_usd": threshold,
+            "exceeded": cost > threshold,
+            "top_caller": top_caller,
+            "quota_rejections_24h": quota_rejections_24h,
+            "quota_rejection_reasons": quota_rejection_reasons,
+            "near_limit_users": near_limit_users[:20],
+        }

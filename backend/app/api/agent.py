@@ -1705,7 +1705,11 @@ async def agent_stream(
             bg_db = _SessionLocal()
             usage_capture_token = begin_usage_capture()
             run_id_token = set_run_id(runtime_context.run_id)
-            set_caller("agent.stream", user_id=user_id)
+            set_caller(
+                "agent.stream",
+                user_id=user_id,
+                is_admin=bool(current_user.is_admin),
+            )
             source_message_id = None
             runtime_finalized = False
             worker_id = f"worker_{uuid.uuid4().hex[:24]}"
@@ -2096,7 +2100,11 @@ async def agent_send(
         source_message_id = None
         usage_capture_token = begin_usage_capture()
         run_id_token = set_run_id(runtime_context.run_id)
-        set_caller("agent.send", user_id=current_user.id)
+        set_caller(
+            "agent.send",
+            user_id=current_user.id,
+            is_admin=bool(current_user.is_admin),
+        )
         worker_id = f"worker_{uuid.uuid4().hex[:24]}"
         heartbeat_task = None
         try:

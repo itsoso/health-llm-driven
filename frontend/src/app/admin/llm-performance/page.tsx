@@ -56,6 +56,22 @@ interface UsageByUser extends UsageRollup {
   email: string | null;
   username: string | null;
   share_pct: number;
+  is_admin: boolean;
+  quota_policy: {
+    mode: 'admin_exempt' | 'enforced';
+    admin_bypass: boolean;
+    monthly_token_limit: number;
+    monthly_tokens_used: number;
+    monthly_token_utilization: number | null;
+    daily_call_limit: number;
+    daily_calls_used: number;
+    daily_call_utilization: number | null;
+    monthly_credit_limit: number;
+    monthly_credits_used: number;
+    monthly_credit_utilization: number | null;
+    rejections_month: number;
+    rejection_reasons: Record<string, number>;
+  };
 }
 
 interface UsageByModel extends UsageRollup {
@@ -99,6 +115,14 @@ interface UsageDashboard {
     allocation_basis: string;
     tokenplan_model_names: string[];
     legacy_provider_note: string;
+    provider_usage_source: string;
+    local_user_policy: {
+      admin_bypass: boolean;
+      monthly_token_limit: number;
+      daily_call_limit: number;
+      monthly_credit_limit: number;
+      rejections_month: number;
+    };
     quota_guard: QuotaGuard;
   };
   overall: UsageRollup;
@@ -336,6 +360,14 @@ function LLMPerformanceInner() {
                       ))}
                     </div>
                   </div>
+                  <div className="mt-3 pt-3 border-t border-current/10 text-sm opacity-90">
+                    <span className="font-medium">Reva 用户策略：</span>
+                    普通用户每月 {fmtTokens(usage.plan.local_user_policy.monthly_token_limit)}、
+                    每日 {usage.plan.local_user_policy.daily_call_limit} 次、
+                    每月 {fmtCredits(usage.plan.local_user_policy.monthly_credit_limit)} Credits；
+                    管理员不受个人限额。本月已拦截 {usage.plan.local_user_policy.rejections_month} 次。
+                    <div className="mt-1 text-xs opacity-75">{usage.plan.provider_usage_source}</div>
+                  </div>
                 </div>
 
                 <div className="bg-white rounded-lg border overflow-hidden mb-6">
@@ -357,6 +389,8 @@ function LLMPerformanceInner() {
                           <th className="px-4 py-2">用户</th>
                           <th className="px-4 py-2 text-right">调用</th>
                           <th className="px-4 py-2 text-right">tokens</th>
+                          <th className="px-4 py-2 text-right">个人限额</th>
+                          <th className="px-4 py-2 text-right">本月拦截</th>
                           <th className="px-4 py-2 text-right">Credits</th>
                           <th className="px-4 py-2 text-right">按量价</th>
                           <th className="px-4 py-2 text-right">套餐折算</th>
@@ -366,7 +400,7 @@ function LLMPerformanceInner() {
                       </thead>
                       <tbody>
                         {usage.by_user.length === 0 ? (
-                          <tr><td colSpan={8} className="px-4 py-8 text-center text-slate-400">无用户用量</td></tr>
+                          <tr><td colSpan={10} className="px-4 py-8 text-center text-slate-400">无用户用量</td></tr>
                         ) : usage.by_user.map(row => (
                           <tr key={row.user_id ?? 'unknown'} className="border-t hover:bg-slate-50">
                             <td className="px-4 py-2">
@@ -375,6 +409,21 @@ function LLMPerformanceInner() {
                             </td>
                             <td className="px-4 py-2 text-right font-mono">{row.calls}</td>
                             <td className="px-4 py-2 text-right font-mono">{fmtTokens(row.total_tokens)}</td>
+                            <td className="px-4 py-2 text-right">
+                              {row.quota_policy.admin_bypass ? (
+                                <span className="inline-flex rounded-full bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700">管理员不限量</span>
+                              ) : (
+                                <div>
+                                  <div className="font-mono">{fmtPct(row.quota_policy.monthly_token_utilization)}</div>
+                                  <div className="text-xs text-slate-500">
+                                    {fmtTokens(row.quota_policy.monthly_tokens_used)} / {fmtTokens(row.quota_policy.monthly_token_limit)}
+                                  </div>
+                                </div>
+                              )}
+                            </td>
+                            <td className={`px-4 py-2 text-right font-mono ${row.quota_policy.rejections_month > 0 ? 'text-rose-600 font-semibold' : 'text-slate-500'}`}>
+                              {row.quota_policy.rejections_month}
+                            </td>
                             <td className="px-4 py-2 text-right font-mono">{fmtCredits(row.tokenplan_credits_estimate)}</td>
                             <td className="px-4 py-2 text-right font-mono">{fmtCny(row.tokenplan_payg_value_cny)}</td>
                             <td className="px-4 py-2 text-right font-mono text-emerald-700">{fmtPlanCny(row)}</td>

@@ -258,6 +258,12 @@ def _month_start_utc(now: datetime) -> datetime:
     return datetime(now.year, now.month, 1, tzinfo=timezone.utc)
 
 
+def _quota_ratio(used: float, limit: float) -> Optional[float]:
+    if limit <= 0:
+        return None
+    return round(float(used or 0) / float(limit), 4)
+
+
 def _budget_guard(
     *,
     monthly_token_quota: int,
@@ -545,6 +551,21 @@ def usage_dashboard(
     monthly_budget_cny = float(getattr(settings, "tokenplan_monthly_budget_cny", 698.0) or 0.0)
     monthly_credits = int(getattr(settings, "tokenplan_monthly_credits", 100_000) or 0)
     monthly_token_quota = int(getattr(settings, "tokenplan_monthly_token_quota", 0) or 0)
+    user_monthly_token_quota = int(
+        getattr(settings, "tokenplan_user_monthly_token_quota", 0) or 0
+    )
+    user_daily_call_quota = int(
+        getattr(settings, "tokenplan_user_daily_call_quota", 0) or 0
+    )
+    user_monthly_credit_quota = float(
+        getattr(settings, "tokenplan_user_monthly_credit_quota", 0) or 0
+    )
+    month_start = _month_start_utc(until)
+    day_start = until.replace(hour=0, minute=0, second=0, microsecond=0)
+    dispatched_call = or_(
+        LlmUsageLog.error_class.is_(None),
+        LlmUsageLog.error_class != "local_budget_policy",
+    )
 
     tokenplan_tokens_total = _safe_int(
         db.query(func.coalesce(func.sum(case((is_tokenplan, LlmUsageLog.total_tokens), else_=0)), 0))
@@ -556,6 +577,72 @@ def usage_dashboard(
         .filter(*_usage_filters(_month_start_utc(until), until))
         .scalar()
     )
+
+    user_policy_rows = (
+        db.query(
+            LlmUsageLog.user_id.label("user_id"),
+            func.coalesce(
+                func.sum(
+                    case(
+                        (and_(is_tokenplan, dispatched_call), LlmUsageLog.total_tokens),
+                        else_=0,
+                    )
+                ),
+                0,
+            ).label("monthly_tokens"),
+            func.coalesce(
+                func.sum(
+                    case(
+                        (
+                            and_(is_tokenplan, dispatched_call),
+                            func.coalesce(LlmUsageLog.tokenplan_credits_estimate, 0.0),
+                        ),
+                        else_=0.0,
+                    )
+                ),
+                0.0,
+            ).label("monthly_credits"),
+            func.count(
+                case(
+                    (
+                        and_(is_tokenplan, dispatched_call, LlmUsageLog.created_at >= day_start),
+                        1,
+                    )
+                )
+            ).label("daily_calls"),
+            func.count(
+                case(
+                    (LlmUsageLog.error_code == "llm_budget_exceeded", 1)
+                )
+            ).label("rejections_month"),
+        )
+        .filter(
+            LlmUsageLog.created_at >= month_start,
+            LlmUsageLog.user_id.isnot(None),
+        )
+        .group_by(LlmUsageLog.user_id)
+        .all()
+    )
+    user_policy_usage = {row.user_id: row for row in user_policy_rows}
+    rejection_reason_rows = (
+        db.query(
+            LlmUsageLog.user_id.label("user_id"),
+            LlmUsageLog.error_type.label("reason"),
+            func.count(LlmUsageLog.id).label("count"),
+        )
+        .filter(
+            LlmUsageLog.created_at >= month_start,
+            LlmUsageLog.error_code == "llm_budget_exceeded",
+            LlmUsageLog.user_id.isnot(None),
+        )
+        .group_by(LlmUsageLog.user_id, LlmUsageLog.error_type)
+        .all()
+    )
+    rejection_reasons: dict[int, dict[str, int]] = {}
+    for row in rejection_reason_rows:
+        rejection_reasons.setdefault(int(row.user_id), {})[
+            row.reason or "unknown"
+        ] = int(row.count or 0)
 
     overall_row = db.query(*_usage_aggregates(is_tokenplan)).filter(*filters).one()
     overall = _rollup_row(
@@ -570,17 +657,36 @@ def usage_dashboard(
             User.name.label("name"),
             User.email.label("email"),
             User.username.label("username"),
+            User.is_admin.label("is_admin"),
             *_usage_aggregates(is_tokenplan),
         )
         .outerjoin(User, User.id == LlmUsageLog.user_id)
         .filter(*filters)
-        .group_by(LlmUsageLog.user_id, User.name, User.email, User.username)
+        .group_by(
+            LlmUsageLog.user_id,
+            User.name,
+            User.email,
+            User.username,
+            User.is_admin,
+        )
         .order_by(func.coalesce(func.sum(LlmUsageLog.total_tokens), 0).desc())
         .limit(100)
         .all()
     )
     by_user = []
     for row in by_user_rows:
+        policy_usage = user_policy_usage.get(row.user_id)
+        monthly_tokens_used = _safe_int(
+            getattr(policy_usage, "monthly_tokens", 0)
+        )
+        monthly_credits_used = _safe_float(
+            getattr(policy_usage, "monthly_credits", 0.0), 4
+        )
+        daily_calls_used = _safe_int(getattr(policy_usage, "daily_calls", 0))
+        rejections_month = _safe_int(
+            getattr(policy_usage, "rejections_month", 0)
+        )
+        is_admin_user = bool(row.is_admin)
         item = _rollup_row(
             row,
             tokenplan_tokens_total=tokenplan_tokens_total,
@@ -591,8 +697,30 @@ def usage_dashboard(
             "name": row.name,
             "email": row.email,
             "username": row.username,
+            "is_admin": is_admin_user,
             "share_pct": round(item["tokenplan_tokens"] / tokenplan_tokens_total, 4)
             if tokenplan_tokens_total > 0 else 0.0,
+            "quota_policy": {
+                "mode": "admin_exempt" if is_admin_user else "enforced",
+                "admin_bypass": is_admin_user,
+                "monthly_token_limit": user_monthly_token_quota,
+                "monthly_tokens_used": monthly_tokens_used,
+                "monthly_token_utilization": None
+                if is_admin_user
+                else _quota_ratio(monthly_tokens_used, user_monthly_token_quota),
+                "daily_call_limit": user_daily_call_quota,
+                "daily_calls_used": daily_calls_used,
+                "daily_call_utilization": None
+                if is_admin_user
+                else _quota_ratio(daily_calls_used, user_daily_call_quota),
+                "monthly_credit_limit": user_monthly_credit_quota,
+                "monthly_credits_used": monthly_credits_used,
+                "monthly_credit_utilization": None
+                if is_admin_user
+                else _quota_ratio(monthly_credits_used, user_monthly_credit_quota),
+                "rejections_month": rejections_month,
+                "rejection_reasons": rejection_reasons.get(row.user_id, {}),
+            },
         })
         by_user.append(item)
 
@@ -698,6 +826,16 @@ def usage_dashboard(
             "allocation_basis": "逐次 Credits 估算 × 月费 / 月 Credits；控制台用量明细为最终真值",
             "tokenplan_model_names": tokenplan_models,
             "legacy_provider_note": "历史 openai provider + TokenPlan 模型名的日志会自动归入 TokenPlan",
+            "provider_usage_source": "阿里云控制台为套餐余量最终真值；本地账本仅用于 Reva 用量和策略监控",
+            "local_user_policy": {
+                "admin_bypass": True,
+                "monthly_token_limit": user_monthly_token_quota,
+                "daily_call_limit": user_daily_call_quota,
+                "monthly_credit_limit": user_monthly_credit_quota,
+                "rejections_month": sum(
+                    int(row.rejections_month or 0) for row in user_policy_rows
+                ),
+            },
             "quota_guard": _budget_guard(
                 monthly_token_quota=monthly_token_quota,
                 tokens_used_month=tokenplan_tokens_month,
