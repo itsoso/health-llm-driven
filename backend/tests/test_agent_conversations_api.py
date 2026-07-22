@@ -5,6 +5,9 @@ import json
 import logging
 from urllib.parse import parse_qs, urlparse
 
+import pytest
+from sqlalchemy.orm import sessionmaker
+
 from app.models.agent_conversation import AgentConversation, AgentMessage
 from app.models.user import User
 from app.api.agent import (
@@ -15,6 +18,42 @@ from app.api.agent import (
     _persist_done_cards,
 )
 from app.services.agent_conversation_service import AgentConversationService
+
+
+def _sse_events(response) -> list[dict]:
+    return [
+        json.loads(line.removeprefix("data: "))
+        for line in response.text.splitlines()
+        if line.startswith("data: ")
+    ]
+
+
+def _wire_live_agent_stream_test(monkeypatch, db) -> None:
+    """Keep the real API card-composition wrapper; bypass unrelated runtime seams."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "agent_runtime_mode", "off")
+    monkeypatch.setattr(settings, "starter_pregen_enabled", False)
+    monkeypatch.setattr(
+        "app.api.agent._maybe_genui_chart_events",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        "app.api.agent._dispatch_life_event_extraction",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        "app.api.agent._reserve_agent_capacity",
+        lambda *_args, **_kwargs: "test-capacity-lease",
+    )
+    monkeypatch.setattr(
+        "app.api.agent._release_agent_capacity_safely",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        "app.database.SessionLocal",
+        sessionmaker(bind=db.get_bind(), autocommit=False, autoflush=False),
+    )
 
 
 def _create_user(db, suffix: str) -> User:
@@ -411,6 +450,159 @@ def test_persist_done_cards_canonicalizes_before_dedupe(
         "record_quality",
     ]
     assert "photo_url" not in message.meta["cards"][0]["data"]
+
+
+@pytest.mark.parametrize(
+    ("contextual_state", "turn_suffix"),
+    [
+        ({"recorded": True, "record_id": 830}, "recorded"),
+        ({"photo_draft_token": "photo-draft-token"}, "pending"),
+    ],
+)
+def test_agent_stream_contextual_diet_card_occupies_draft_projection(
+    client,
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+    contextual_state,
+    turn_suffix,
+):
+    from app.services import inline_cards
+
+    user, headers = auth_user_and_headers
+    conversation = _create_conversation(db, user.id, f"上下文饮食卡-{turn_suffix}")
+    assistant = _add_message(db, conversation.id, "assistant", "晚餐已识别。")
+    contextual_card = {
+        "type": "diet_draft",
+        "data": {
+            "meal_type": "dinner",
+            "food_items": "牛肉面",
+            **contextual_state,
+        },
+        "actions": [],
+    }
+    assistant.meta = {"cards": [contextual_card]}
+    db.commit()
+
+    represented_calls = []
+    real_represented_kinds = inline_cards.represented_intake_kinds
+
+    def represented_spy(*card_lists):
+        result = real_represented_kinds(*card_lists)
+        represented_calls.append((card_lists, result))
+        return result
+
+    async def fake_run_stream(self, **kwargs):
+        assert kwargs["message"] == "记录晚餐牛肉面 500 kcal"
+        yield {
+            "event": "done",
+            "data": {
+                "conversation_id": conversation.id,
+                "message_id": assistant.id,
+                "completion_status": "complete",
+                "tools_used": [],
+                "cards": [contextual_card],
+            },
+        }
+
+    _wire_live_agent_stream_test(monkeypatch, db)
+    monkeypatch.setattr(inline_cards, "represented_intake_kinds", represented_spy)
+    monkeypatch.setattr(
+        "app.services.agent_executor.AgentExecutor.run_stream",
+        fake_run_stream,
+    )
+
+    response = client.post(
+        "/api/v1/agent/stream",
+        headers=headers,
+        json={
+            "message": "记录晚餐牛肉面 500 kcal",
+            "conversation_id": conversation.id,
+            "client_turn_id": f"diet-card-wiring-{turn_suffix}",
+        },
+    )
+
+    assert response.status_code == 200
+    done = next(event for event in _sse_events(response) if event["event"] == "done")
+    assert represented_calls and represented_calls[-1][1] == {"diet"}
+    assert done["data"]["cards"] == [contextual_card]
+
+    db.expire_all()
+    persisted = db.query(AgentMessage).filter(AgentMessage.id == assistant.id).one()
+    assert persisted.meta["cards"] == [contextual_card]
+
+
+def test_agent_stream_deterministic_diet_summary_owns_snapshot_projection(
+    client,
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+):
+    from app.services import inline_cards
+
+    user, headers = auth_user_and_headers
+    query = "今天饮食如何"
+    unsuppressed = inline_cards.build_cards(db, user.id, query)
+    assert any(card["type"] == "diet" for card in unsuppressed), (
+        "前提：该查询在 wrapper 未识别 GenUI 时会追加 legacy diet 快照"
+    )
+
+    conversation = _create_conversation(db, user.id, "确定性饮食汇总")
+    summary = (
+        "今日饮食汇总如下。\n"
+        "```reva-ui\n"
+        '{"type":"diet_daily_summary","v":1,"data":{"meals":[],"totals":{}}}\n'
+        "```"
+    )
+    assistant = _add_message(db, conversation.id, "assistant", summary)
+    assistant.meta = {"cards": []}
+    db.commit()
+
+    build_calls = []
+    real_build_cards = inline_cards.build_cards
+
+    def build_cards_spy(*args, **kwargs):
+        build_calls.append(kwargs.copy())
+        return real_build_cards(*args, **kwargs)
+
+    async def fake_run_stream(self, **kwargs):
+        assert kwargs["message"] == query
+        yield {"event": "token", "data": {"content": summary}}
+        yield {
+            "event": "done",
+            "data": {
+                "conversation_id": conversation.id,
+                "message_id": assistant.id,
+                "completion_status": "complete",
+                "tools_used": ["health_query"],
+            },
+        }
+
+    _wire_live_agent_stream_test(monkeypatch, db)
+    monkeypatch.setattr(inline_cards, "build_cards", build_cards_spy)
+    monkeypatch.setattr(
+        "app.services.agent_executor.AgentExecutor.run_stream",
+        fake_run_stream,
+    )
+
+    response = client.post(
+        "/api/v1/agent/stream",
+        headers=headers,
+        json={
+            "message": query,
+            "conversation_id": conversation.id,
+            "client_turn_id": "diet-summary-visualization-wiring",
+        },
+    )
+
+    assert response.status_code == 200
+    done = next(event for event in _sse_events(response) if event["event"] == "done")
+    assert build_calls and build_calls[-1]["suppress_snapshot_cards"] is True
+    assert not any(card["type"] == "diet" for card in done["data"].get("cards", []))
+
+    db.expire_all()
+    persisted = db.query(AgentMessage).filter(AgentMessage.id == assistant.id).one()
+    assert not any(card["type"] == "diet" for card in persisted.meta.get("cards", []))
 
 
 def test_agent_stream_failure_logs_do_not_interpolate_raw_exceptions():
