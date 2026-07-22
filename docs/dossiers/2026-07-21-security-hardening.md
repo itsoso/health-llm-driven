@@ -4,8 +4,8 @@
 |---|---|
 | slug | `security-hardening` |
 | 创建日期 | 2026-07-21 |
-| 当前阶段 | S7 CI 与生产前置验证 |
-| 状态 | gated |
+| 当前阶段 | S8 服务器生产验证完成，原生安全发版待执行 |
+| 状态 | server-live-native-release-pending |
 | 负责 | Codex |
 | 范围 | 2026-07-21 只读审计确认的安全问题 |
 
@@ -21,11 +21,12 @@
 
 ## Current Evidence
 
-- Production returned `200` without authentication for multiple per-user Garmin, recommendation, disease, and diet endpoints.
-- Anonymous write routes accept client-supplied `user_id` for disease and daily-health records.
-- Main CI is red and includes a direct-database-write guard failure for voice shortcuts.
-- Production database backup is currently captured by the deployment Git stash instead of remaining in the backup directory.
-- Full finding inventory and execution order are in `docs/plans/2026-07-21-security-hardening-execution-plan.md`.
+- 服务器生产版本为 `da4984771307f6eb7c6e217f278a324d9ed7c895`，对应 CI `29905540429`，`43/43` jobs 成功。
+- 未认证访问 `/auth/me`、个人饮食记录和 Garmin 设备路由均返回 `401`；用户 3 的内部签名正例返回 `200`。
+- Backend、Celery Worker 与 Beat 均以 `health-app` 非 root 用户运行；应用数据库连接角色为 `health_app_runtime`。
+- API 与前端监听仅位于 `127.0.0.1:8000`、`127.0.0.1:30001`；公网直连两个端口均超时，HTTPS 入口健康。
+- 发布备份完成 force-RLS 数据检查、231 表恢复演练、age 加密站外归档 SHA-256 与 HMAC 真实性验证。
+- Mobile/Mac Keychain 变更仍需原生签名发版，服务器上线不能替代该安全边界。
 
 ## Gate Ledger
 
@@ -35,8 +36,8 @@
 | G2 Feasibility | GO | Compatibility-preserving staged design |
 | G3 Tests | GO | main CI `29867658752` 在 commit `cee9e70aa` 上 `43/43` jobs 成功；最终文档提交的 CI `29868838292` 重跑后同样 `43/43` 成功；锁定版 OpenAPI 类型、部署契约、FastAPI 0.139 路由漂移闸和 live LLM 回归均通过 |
 | G4 Safety review | GO | 第五轮独立复审确认无 P0/P1 代码 blocker；rollback containment 与统一 ORM bootstrap 均关闭 |
-| G5 Deploy health | BLOCKED | 未满足生产角色、真实异地恢复演练、基础设施安装和原生 Keychain 发版前不进入部署 |
-| G6 Production verification | NOT ENTERED | 尚未部署，不作上线成功声明 |
+| G5 Deploy health | GO | 精确 SHA 部署；备份、231 表恢复演练、站外加密归档真实性校验、最小权限角色、非 root systemd 与 `60/60` 健康检查均通过 |
+| G6 Production verification | GO (server) | 公网健康、鉴权正反例、pgvector `895/895`、loopback 监听、依赖完整性和发布后日志均通过；原生 Keychain 发版单列为残余项 |
 
 ## Delivery Log
 
@@ -57,6 +58,11 @@
 - 2026-07-22: 使用固定假数据和隔离临时 PostgreSQL 账本执行 live LLM 回归；`invariants 12/12`、`health_agent_core 50/50`、`orchestrator 5/5` 通过，Orchestrator 平均分 `0.92`、无 regression，实际模型 `MiniMax-M2.5`。临时数据库已删除，原始 JSON 仅保存在本地 `/tmp/security-live-llm-eval.json`。
 - 2026-07-22: 修复提交 `cee9e70aa` 的 main CI `29867658752` 完成，`43/43` jobs 成功；G3 转 GO。一次性 `HARNESS_LIVE_LLM_EVAL_CONFIRMED` 仓库变量已在质量闸消费后删除，未来高风险改动不会被永久放行。
 - 2026-07-22: 最终文档提交 `d8c993e81` 的 CI `29868838292` 首次运行仅 `voice-watch` 分片在 GitHub runner 上两次达到 600 秒截止时间；相同锁定依赖和测试顺序在本地 `161 passed`，单独 `watch_summary` 为 `18 passed`。只重跑失败 job 后 `voice-watch` 用时 1 分 59 秒成功，整条 CI `43/43` jobs 成功；未放宽分片超时闸。
+- 2026-07-22: 生产数据库完成 owner/migrator/runtime 角色拆分；runtime DML 探针通过且 DDL 被拒绝。Backend、Celery Worker、Beat 切换为 `health-app` 非 root 用户，独立 canary 与自动回滚预案验证通过。
+- 2026-07-22: 将 pgvector DDL 迁入受控 migration，运行时仅做存在性检查；生产迁移应用后重建 `895` 条 dense vectors，向量后端为 `pgvector:text-embedding-v4`，无权限降级。
+- 2026-07-22: 发布后发现 Celery 冷启动时 `fuel_strategist` 与 Orchestrator 循环导入；先以新进程回归测试复现，再将 Orchestrator 公共 runner 改为惰性导出。相关 `103` 项测试通过，live LLM 回归 `12/12`、`50/50`、`5/5`，平均分 `0.96`、无 regression；一次性 CI 确认变量已删除。
+- 2026-07-22: 精确 SHA `da4984771` 部署完成；备份 `/var/backups/health-app/database/health_db_2026-07-22_17-14-19_3726896.sql.gz` 为 40 MB，恢复 231 表，站外 age 对象哈希与 HMAC 验真。生产健康分 `60/60`、skills `22/22`。
+- 2026-07-22: G6 复核通过：四个匿名访问负例均为 `401`，用户 3 正例为 `200`；数据库角色 `health_app_runtime`；依赖无冲突；公网 8000/30001 不可直连；发布后饮食定时任务实际运行 4 次，Traceback、循环导入、权限错误、pgvector 降级均为 0。
 
 ## G3 Verification Evidence
 
@@ -107,11 +113,8 @@
 | P1 cleanup 停服失败被吞掉 | 常规 stop 失败后对非 inactive 单元执行 SIGKILL、再次 stop/reset-failed，并逐个读取 systemd `ActiveState`；仍无法证明 inactive 时返回 containment failure，部署端不再声称服务已阻断 | `test_release_rollback.py` 故障注入第二次 stop 失败，最终三个服务 inactive；`test_deploy_script.py` 禁止虚假文案 |
 | P1 schema probe 漏掉 API 模块内 ORM | 将 `BowelTimer` 从 `app.api.nfc` 迁入 `app.models.bowel_timer` 并加入统一模型导出；删除生产入口的 API 副作用注册 | 子进程 bootstrap 必须注册 `bowel_timers`；缺少该表时 probe 必须失败；NFC `14 passed` |
 
-## Production Blockers
+## Residual Follow-ups
 
-- PostgreSQL 仍未完成按在线请求、后台任务、迁移/备份拆分的最小权限角色；广泛 RLS 需要先完成后台任务租户上下文设计，不能在不了解运行时角色的情况下直接开启。
-- 需要在真实异地存储执行下载、解密、临时 PostgreSQL 恢复和查询验证；本地脚本测试不能替代灾备演练。
-- 生产环境需生成并安全配置至少 32 字符的独立 `BACKUP_INTEGRITY_KEY`；不得与 age recipient/private identity 共用。
-- Nginx/systemd/UFW 等生产配置需要实际安装后检查有效配置与端口暴露。
+- JWT 两年有效期是用户明确接受的例外；仍需维持 URL token 禁止、撤销校验和 scope 隔离。
 - Mobile/Mac 的 Keychain 改动需要原生签名发版；OTA 不能改变原生安全边界。
-- 必须从干净 `origin/main` 的精确 SHA 部署，并通过健康检查、鉴权负例和审计日志验证后，G5/G6 才可转 GO。
+- 更广泛的 PostgreSQL RLS 仍需先完成后台任务租户上下文设计；本轮已完成 runtime/migrator/owner 最小权限拆分，不在未知上下文下直接开启全库 RLS。
