@@ -44,7 +44,7 @@
 
 ## G3 · 测试裁决
 
-- Backend: 46 tests passed（供应商错误分类、确认/重试幂等、API owner scope、监控聚合）。
+- Backend: 77 AIGC/observability tests passed（供应商错误分类、确认/重试幂等、API owner scope、任务恢复、策略与监控聚合）。
 - Mobile: 130 tests passed；TypeScript 编译通过；ESLint 0 errors。
 - Web: 33 tests passed；TypeScript 编译通过；ESLint 0 errors。
 - System map/doc drift 与代码一致；Ruff 通过。

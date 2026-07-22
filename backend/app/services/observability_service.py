@@ -364,20 +364,10 @@ def memory_injection_stats(db: Session, since: datetime, user_id: Optional[int])
 # H. AIGC Media provider health
 # ---------------------------------------------------------------
 
-_AIGC_SAFE_RETRY_ERROR_CODES = frozenset({
-    "configuration_invalid",
-    "provider_auth_failed",
-    "provider_rate_limited",
-    "provider_request_rejected",
-    "provider_unavailable",
-    "provider_request_failed",
-    "missing_provider_task",
-})
-
-
 def aigc_media_stats(db: Session, since: datetime, user_id: Optional[int]) -> dict:
     """Return de-identified media-job health for operators."""
     from app.models.aigc_media_job import AIGCMediaJob
+    from app.services.aigc_media_job_service import AIGC_SAFE_RETRY_ERROR_CODES
 
     q = db.query(AIGCMediaJob).filter(AIGCMediaJob.created_at >= since)
     if user_id:
@@ -419,7 +409,7 @@ def aigc_media_stats(db: Session, since: datetime, user_id: Optional[int]) -> di
     safe_retryable = q.filter(
         AIGCMediaJob.status == "failed",
         AIGCMediaJob.provider_task_id.is_(None),
-        AIGCMediaJob.provider_error_code.in_(_AIGC_SAFE_RETRY_ERROR_CODES),
+        AIGCMediaJob.provider_error_code.in_(AIGC_SAFE_RETRY_ERROR_CODES),
     ).count()
     resolved = int(by_status.get("succeeded", 0)) + int(by_status.get("failed", 0))
     success_rate = (

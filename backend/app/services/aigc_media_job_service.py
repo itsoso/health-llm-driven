@@ -56,7 +56,7 @@ SOURCE_IMAGE_KINDS = frozenset({"image_to_image", "image_to_video"})
 TERMINAL_STATUSES = frozenset({"succeeded", "failed", "cancelled", "submission_unknown"})
 _MUTABLE_ACTIVE_STATUSES = frozenset({"dispatching", "queued", "running"})
 _BILLABLE_OPEN_STATUSES = frozenset({"dispatching", "queued", "running", "submission_unknown"})
-_SAFE_RETRY_ERROR_CODES = frozenset(
+AIGC_SAFE_RETRY_ERROR_CODES = frozenset(
     {
         "configuration_invalid",
         "provider_auth_failed",
@@ -485,7 +485,7 @@ class AIGCMediaJobService:
                 AIGCMediaJob.user_id == int(user_id),
                 AIGCMediaJob.status == "failed",
                 AIGCMediaJob.provider_task_id.is_(None),
-                AIGCMediaJob.provider_error_code.in_(_SAFE_RETRY_ERROR_CODES),
+                AIGCMediaJob.provider_error_code.in_(AIGC_SAFE_RETRY_ERROR_CODES),
             )
             .update(
                 {
@@ -590,7 +590,11 @@ class AIGCMediaJobService:
             )
             raise AIGCMediaJobError(message) from exc
         except AIGCMediaProviderError as exc:
-            error_code = exc.error_code if exc.error_code in _SAFE_RETRY_ERROR_CODES else "provider_request_failed"
+            error_code = (
+                exc.error_code
+                if exc.error_code in AIGC_SAFE_RETRY_ERROR_CODES
+                else "provider_request_failed"
+            )
             message = self._provider_failure_message(error_code)
             self._mark_failed(job, error_code, message)
             logger.warning(
@@ -655,7 +659,7 @@ class AIGCMediaJobService:
         return bool(
             job.status == "failed"
             and not job.provider_task_id
-            and job.provider_error_code in _SAFE_RETRY_ERROR_CODES
+            and job.provider_error_code in AIGC_SAFE_RETRY_ERROR_CODES
         )
 
     @staticmethod
