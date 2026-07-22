@@ -57,10 +57,28 @@ jest.mock('../../services/clientEvents', () => ({
 }));
 
 import {
+  buildTurnRequestFingerprint,
   findReusableTurnMessage,
   restoreMessagesFromHistory,
   useChatEngine,
 } from '../useChatEngine';
+
+describe('buildTurnRequestFingerprint', () => {
+  it('treats the same image bytes as the same request across temporary URI changes', () => {
+    const first = buildTurnRequestFingerprint('记录这餐', [{
+      uri: 'file:///tmp/camera-capture-a.jpg',
+      type: 'jpeg',
+      base64: 'same-photo-bytes',
+    }]);
+    const retried = buildTurnRequestFingerprint('记录这餐', [{
+      uri: 'file:///tmp/camera-capture-b.jpg',
+      type: 'image/jpeg',
+      base64: 'same-photo-bytes',
+    }]);
+
+    expect(retried).toBe(first);
+  });
+});
 
 let finishStream: (() => void) | undefined;
 let failStream: (() => void) | undefined;
@@ -1264,6 +1282,37 @@ describe('useChatEngine', () => {
       message.role === 'user' && message.content === '午餐吃了鸡胸肉'
     ))).toHaveLength(1);
     expect(result.current.messages.filter(message => message.role === 'assistant')).toHaveLength(1);
+  });
+
+  it('reuses one optimistic turn when the same image is retried with a new temporary URI', async () => {
+    (NetInfo.fetch as jest.Mock)
+      .mockResolvedValueOnce({ isConnected: false })
+      .mockResolvedValueOnce({ isConnected: true });
+    mockStreamChat.mockImplementation(streamTokenBurstThenDone);
+    const { result } = renderHook(() => useChatEngine());
+
+    await act(async () => {
+      await result.current.sendMessage('记录这餐', [{
+        uri: 'file:///tmp/capture-first.jpg',
+        type: 'jpeg',
+        base64: 'same-meal-photo',
+      }]);
+    });
+    const failedTurnId = result.current.activeTurn.turnId;
+
+    await act(async () => {
+      await result.current.sendMessage('记录这餐', [{
+        uri: 'file:///tmp/capture-retry.jpg',
+        type: 'image/jpeg',
+        base64: 'same-meal-photo',
+      }]);
+    });
+
+    expect(mockStreamChat.mock.calls[0][6]).toBe(failedTurnId);
+    expect(result.current.messages.filter(message => message.role === 'user')).toHaveLength(1);
+    expect(result.current.messages.filter(message => (
+      message.role === 'assistant' && !message.cardType
+    ))).toHaveLength(1);
   });
 
   it('keeps one optimistic pair across repeated offline retries before recovery', async () => {

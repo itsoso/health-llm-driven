@@ -90,11 +90,21 @@ function digestTurnRequest(value: string): string {
 
 export function buildTurnRequestFingerprint(
   text: string,
-  images?: { uri: string; type?: string }[] | null,
+  images?: { uri: string; base64?: string; type?: string }[] | null,
 ): string {
   return digestTurnRequest(JSON.stringify({
     text: text.trim(),
-    images: (images || []).map(image => ({ uri: image.uri, type: image.type || '' })),
+    images: (images || []).map((image) => {
+      const content = image.base64?.trim();
+      const rawType = (image.type || '').trim().toLowerCase();
+      const type = rawType.startsWith('image/') ? rawType.slice(6) : rawType;
+      return {
+        type,
+        ...(content
+          ? { contentDigest: digestTurnRequest(content) }
+          : { uri: image.uri }),
+      };
+    }),
   }));
 }
 
