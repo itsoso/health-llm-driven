@@ -256,7 +256,7 @@ const verifiedDietReceipt = {
   verified: true,
 };
 
-function streamDietCardThenDone(cards: 'missing' | 'empty' | 'summary') {
+function streamDietCardThenDone(cards: 'missing' | 'empty' | 'summary' | 'duplicate_summary') {
   return async function* () {
     yield { type: 'start', conversationId: 777 };
     yield {
@@ -290,7 +290,46 @@ function streamDietCardThenDone(cards: 'missing' | 'empty' | 'summary') {
         actions: [],
       }];
     }
+    if (cards === 'duplicate_summary') {
+      done.cards = [
+        {
+          type: 'diet_daily_summary',
+          data: { date: '2026-07-22', summary: '服务端终态新版饮食摘要' },
+          actions: [],
+        },
+        {
+          type: 'diet_daily_summary',
+          data: { date: '2026-07-22', summary: '服务端终态新版饮食摘要' },
+          actions: [],
+        },
+      ];
+    }
     yield done;
+  };
+}
+
+async function* streamUnrenderableDoneCard() {
+  yield { type: 'start', conversationId: 777 };
+  yield {
+    type: 'tool',
+    toolName: 'health_record',
+    toolSuccess: true,
+    writeAttempted: true,
+    writeCompleted: true,
+    receipt: verifiedDietReceipt,
+  };
+  yield { type: 'token', content: '饮食记录已经保存。' };
+  yield {
+    type: 'done',
+    conversationId: 777,
+    messageId: 83,
+    completionStatus: 'complete',
+    writeReceipts: [verifiedDietReceipt],
+    cards: [{
+      type: 'future_diet_card',
+      data: { domain: 'diet', summary: '当前客户端尚不支持' },
+      actions: [],
+    }],
   };
 }
 
@@ -1751,6 +1790,51 @@ describe('useChatEngine', () => {
       sourceMessageId: 82,
       sourceTurnId: turnId,
     }));
+    expect(mockDispatchCard).not.toHaveBeenCalled();
+  });
+
+  it('deduplicates identical cards inside the authoritative done snapshot', async () => {
+    mockStreamChat.mockImplementation(streamDietCardThenDone('duplicate_summary'));
+    const { result } = renderHook(() => useChatEngine());
+
+    await act(async () => {
+      await result.current.sendMessage('记录午餐牛肉面');
+    });
+
+    const currentTurnCards = result.current.messages.filter(message => (
+      message.sourceTurnId === result.current.activeTurn.turnId && !!message.cardType
+    ));
+    expect(currentTurnCards).toHaveLength(1);
+    expect(currentTurnCards[0]).toEqual(expect.objectContaining({
+      cardType: 'diet_daily_summary',
+      cardData: expect.objectContaining({ summary: '服务端终态新版饮食摘要' }),
+      sourceMessageId: 82,
+    }));
+  });
+
+  it('does not fabricate a local fallback when supplied done cards are unrenderable', async () => {
+    mockStreamChat.mockImplementation(streamUnrenderableDoneCard);
+    mockRenderServerCards.mockReturnValue([]);
+    mockDispatchCard.mockResolvedValue({
+      type: 'record',
+      data: { domain: 'diet', summary: '不应伪造的本地饮食卡' },
+    });
+    const { result } = renderHook(() => useChatEngine());
+
+    await act(async () => {
+      await result.current.sendMessage('记录午餐牛肉面');
+    });
+
+    expect(result.current.messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        role: 'assistant',
+        content: '饮食记录已经保存。',
+        streaming: false,
+      }),
+    ]));
+    expect(result.current.messages.filter(message => (
+      message.sourceTurnId === result.current.activeTurn.turnId && !!message.cardType
+    ))).toHaveLength(0);
     expect(mockDispatchCard).not.toHaveBeenCalled();
   });
 

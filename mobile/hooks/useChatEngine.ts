@@ -1472,7 +1472,13 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
           const rawDoneCards = (
             allowDoneCards && Array.isArray((evt as any).cards)
           ) ? (evt as any).cards : [];
-          const terminalServerCards = renderServerCards(rawDoneCards);
+          const terminalCardKeys = new Set<string>();
+          const terminalServerCards = renderServerCards(rawDoneCards).filter((card) => {
+            const key = serverCardKey(card);
+            if (terminalCardKeys.has(key)) return false;
+            terminalCardKeys.add(key);
+            return true;
+          });
           const terminalCard = terminalServerCards.length === 1
             ? terminalServerCards[0]
             : terminalServerCards.length > 1
@@ -1533,7 +1539,12 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
               sourceTurnId: turnId,
             }];
           });
-          if (allowDoneCards && !terminalCard && !renderedStreamedServerCard) {
+          if (
+            allowDoneCards
+            && rawDoneCards.length === 0
+            && !terminalCard
+            && !renderedStreamedServerCard
+          ) {
             const card = await dispatchCard({
               query: finalMsg,
               query_lower: finalMsg.toLowerCase(),
