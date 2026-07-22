@@ -9,6 +9,16 @@ FAST_TEST = ROOT / "scripts" / "mobile-fast-test.sh"
 FAST_DEVICE = ROOT / "scripts" / "mobile-fast-device.sh"
 
 
+def test_mobile_dependency_overrides_preserve_brace_expansion_major_compatibility() -> None:
+    package_json = json.loads((ROOT / "mobile" / "package.json").read_text())
+    overrides = package_json["overrides"]
+
+    assert "brace-expansion" not in overrides
+    assert overrides["brace-expansion@<2.0.0"] == "1.1.16"
+    assert overrides["brace-expansion@>=2.0.0 <3.0.0"] == "2.1.2"
+    assert overrides["brace-expansion@>=5.0.0"] == "5.0.7"
+
+
 def run_fast_test(*args: str, changed_files: str = "") -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
     env["MOBILE_FAST_TEST_DRY_RUN"] = "1"
