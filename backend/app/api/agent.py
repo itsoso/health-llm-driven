@@ -7,6 +7,7 @@ import asyncio
 import base64
 import json
 import logging
+import math
 import time
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -177,6 +178,18 @@ _DETERMINISTIC_REVA_UI_COMPONENTS = {
 }
 
 
+def _mobile_cell_text(value: object) -> str:
+    """Match the non-empty values accepted by Mobile's metricTable.cellText."""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        try:
+            return str(value) if math.isfinite(value) else ""
+        except OverflowError:
+            return ""
+    return ""
+
+
 def _is_client_renderable_reva_ui(descriptor: dict) -> bool:
     """Conservative subset of the Mobile reva-ui parser contract."""
     if type(descriptor.get("v")) is not int or descriptor["v"] != 1:
@@ -190,17 +203,31 @@ def _is_client_renderable_reva_ui(descriptor: dict) -> bool:
         rows = descriptor.get("rows")
         if not isinstance(columns, list) or not isinstance(rows, list) or not rows:
             return False
-        valid_keys = {
-            column.get("key").strip()
-            for column in columns
-            if isinstance(column, dict)
-            and isinstance(column.get("key"), str)
-            and column.get("key").strip()
-            and isinstance(column.get("label"), str)
-            and column.get("label").strip()
-        }
-        return len(valid_keys) >= 2 and any(isinstance(row, dict) for row in rows)
+        valid_keys: list[str] = []
+        seen_keys: set[str] = set()
+        for column in columns:
+            if not isinstance(column, dict):
+                continue
+            key = _mobile_cell_text(column.get("key"))
+            label = _mobile_cell_text(column.get("label"))
+            if not key or not label or key in seen_keys:
+                continue
+            valid_keys.append(key)
+            seen_keys.add(key)
+            if len(valid_keys) >= 4:
+                break
+        if len(valid_keys) < 2:
+            return False
+        return any(
+            isinstance(row, dict)
+            and any(_mobile_cell_text(row.get(key)) for key in valid_keys)
+            for row in rows
+        )
     return descriptor.get("component") in _DETERMINISTIC_REVA_UI_COMPONENTS
+
+
+def _reject_nonstandard_json_constant(value: str) -> None:
+    raise ValueError(f"non-standard JSON constant: {value}")
 
 
 def _answer_owns_its_visualization(answer_text: str, tools_used: list | None) -> bool:
@@ -220,7 +247,10 @@ def _answer_owns_its_visualization(answer_text: str, tools_used: list | None) ->
         return True
     for match in _REVA_UI_FENCE_RE.finditer(text):
         try:
-            descriptor = json.loads(match.group("payload"))
+            descriptor = json.loads(
+                match.group("payload"),
+                parse_constant=_reject_nonstandard_json_constant,
+            )
         except (TypeError, ValueError):
             continue
         if isinstance(descriptor, dict) and _is_client_renderable_reva_ui(descriptor):

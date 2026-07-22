@@ -605,6 +605,79 @@ def test_agent_stream_deterministic_diet_summary_owns_snapshot_projection(
     assert not any(card["type"] == "diet" for card in persisted.meta.get("cards", []))
 
 
+def test_agent_stream_client_rejected_diet_fence_keeps_snapshot_projection(
+    client,
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+):
+    from app.services import inline_cards
+
+    user, headers = auth_user_and_headers
+    query = "今天饮食如何"
+    unsuppressed = inline_cards.build_cards(db, user.id, query)
+    assert any(card["type"] == "diet" for card in unsuppressed), (
+        "前提：客户端无法渲染 GenUI 时，wrapper 能追加 legacy diet 快照"
+    )
+
+    conversation = _create_conversation(db, user.id, "客户端拒绝的饮食汇总")
+    summary = (
+        "今日饮食汇总如下。\n"
+        "```reva-ui\n"
+        '{"type":"diet_daily_summary","v":1,"data":{"calories":NaN}}\n'
+        "```"
+    )
+    assistant = _add_message(db, conversation.id, "assistant", summary)
+    assistant.meta = {"cards": []}
+    db.commit()
+
+    build_calls = []
+    real_build_cards = inline_cards.build_cards
+
+    def build_cards_spy(*args, **kwargs):
+        build_calls.append(kwargs.copy())
+        return real_build_cards(*args, **kwargs)
+
+    async def fake_run_stream(self, **kwargs):
+        assert kwargs["message"] == query
+        yield {"event": "token", "data": {"content": summary}}
+        yield {
+            "event": "done",
+            "data": {
+                "conversation_id": conversation.id,
+                "message_id": assistant.id,
+                "completion_status": "complete",
+                "tools_used": ["health_query"],
+            },
+        }
+
+    _wire_live_agent_stream_test(monkeypatch, db)
+    monkeypatch.setattr(inline_cards, "build_cards", build_cards_spy)
+    monkeypatch.setattr(
+        "app.services.agent_executor.AgentExecutor.run_stream",
+        fake_run_stream,
+    )
+
+    response = client.post(
+        "/api/v1/agent/stream",
+        headers=headers,
+        json={
+            "message": query,
+            "conversation_id": conversation.id,
+            "client_turn_id": "diet-summary-client-rejected-wiring",
+        },
+    )
+
+    assert response.status_code == 200
+    done = next(event for event in _sse_events(response) if event["event"] == "done")
+    assert build_calls and build_calls[-1]["suppress_snapshot_cards"] is False
+    assert any(card["type"] == "diet" for card in done["data"].get("cards", []))
+
+    db.expire_all()
+    persisted = db.query(AgentMessage).filter(AgentMessage.id == assistant.id).one()
+    assert any(card["type"] == "diet" for card in persisted.meta.get("cards", []))
+
+
 def test_agent_stream_failure_logs_do_not_interpolate_raw_exceptions():
     source = inspect.getsource(agent_stream)
 
@@ -715,7 +788,7 @@ def test_answer_owns_visualization_for_closed_deterministic_reva_ui_fences():
                 {"key": "date", "label": "日期"},
                 {"key": "value", "label": "数值"},
             ],
-            "rows": [{"date": "07-22", "value": "58"}],
+            "rows": [{"date": "07-22", "value": 58}],
         },
         {"type": "sleep_summary", "v": 1, "data": {}},
         {"type": "medication_list", "v": 1, "data": {}},
@@ -760,6 +833,51 @@ def test_answer_does_not_own_client_rejected_reva_ui_fences():
         },
         {
             "type": "metric_table",
+            "v": 1,
+            "columns": [
+                {"key": "value", "label": "数值"},
+                {"key": "value", "label": "重复数值"},
+            ],
+            "rows": [{"value": "58"}],
+        },
+        {
+            "type": "metric_table",
+            "v": 1,
+            "columns": [
+                {"key": "date", "label": "日期"},
+                {"key": "value", "label": "数值"},
+            ],
+            "rows": [{}],
+        },
+        {
+            "type": "metric_table",
+            "v": 1,
+            "columns": [
+                {"key": "date", "label": "日期"},
+                {"key": "value", "label": "数值"},
+            ],
+            "rows": [{"date": "  ", "value": ""}],
+        },
+        {
+            "type": "metric_table",
+            "v": 1,
+            "columns": [
+                {"key": "date", "label": "日期"},
+                {"key": "value", "label": "数值"},
+            ],
+            "rows": [{"date": None, "value": True}],
+        },
+        {
+            "type": "metric_table",
+            "v": 1,
+            "columns": [
+                {"key": "date", "label": "日期"},
+                {"key": "value", "label": "数值"},
+            ],
+            "rows": [{"date": float("nan"), "value": float("nan")}],
+        },
+        {
+            "type": "metric_table",
             "v": 2,
             "columns": [
                 {"key": "date", "label": "日期"},
@@ -769,6 +887,9 @@ def test_answer_does_not_own_client_rejected_reva_ui_fences():
         },
         {"component": "line_chart", "series": []},
         {"component": "metric_line_chart", "v": 2, "series": []},
+        {"type": "diet_daily_summary", "v": 1, "data": {"value": float("nan")}},
+        {"type": "diet_daily_summary", "v": 1, "data": {"value": float("inf")}},
+        {"type": "diet_daily_summary", "v": 1, "data": {"value": float("-inf")}},
     ]
 
     for payload in controls:
