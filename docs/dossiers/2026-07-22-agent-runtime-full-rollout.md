@@ -97,6 +97,15 @@ RequirementAdmission:
 - `git diff --check`：PASS。
 - **裁决: PASS。** 最终提交前会重新执行受修改影响的聚焦集合。
 
+### 主干 CI 纠偏
+
+- 首次发布控制提交触发的主干 CI 继承了三个此前提交已经存在的红灯；按 Gate 规则没有继续部署。
+- Mobile design token 的单个原始色值由本轮改为语义 token，ratchet 恢复通过。
+- Agent fallback 已正式向 `_stable_fallback_provider` 传入失败 provider 以离开故障域，旧测试 mock 仍使用单参数签名；测试契约更新后与真实调用一致。
+- `duration_seconds` 运动去重测试未像 reps 用例一样固定 `created_at`，慢 CI runner 会跨过生产 1 秒窗口；测试现固定首条记录时间，验证业务去重而不是 runner 速度。
+- OpenAPI 类型由旧 FastAPI 环境生成；使用 CI 和 requirements 的同版 FastAPI 重新生成 Mobile/Web 类型，两个文件逐字节一致。
+- 纠偏验证: 两项后端聚焦回归 `13 passed`，Mobile/Web TypeScript 均 PASS，Ruff 和 `git diff --check` PASS。
+
 ## G4 · 安全闸
 
 - Runtime ledger 继续只存 content-free 运行元数据；本 dossier 不记录用户 ID、账号、prompt、回复或健康正文。

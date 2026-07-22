@@ -116,5 +116,14 @@ def test_duration_exercise_dedup(client, db):
         "intensity": "high",
     }
     r1 = client.post("/api/v1/daily-health/exercise", headers=headers, json=payload)
+    id1 = r1.json()["id"]
+
+    # Keep the second request deterministically inside the production window.
+    # A full CI HTTP round trip may otherwise exceed one second and turn this
+    # idempotency test into a runner-speed test.
+    rec = db.query(ExerciseRecord).filter(ExerciseRecord.id == id1).one()
+    rec.created_at = datetime.now(timezone.utc) + timedelta(seconds=1)
+    db.commit()
+
     r2 = client.post("/api/v1/daily-health/exercise", headers=headers, json=payload)
-    assert r1.json()["id"] == r2.json()["id"]
+    assert id1 == r2.json()["id"]

@@ -179,7 +179,11 @@ async def test_fallback_to_nonsupporting_model_no_cache_control(db, monkeypatch)
     monkeypatch.setattr(executor, "_resolve_chat_provider", lambda tools: (primary, None))
     monkeypatch.setattr(executor, "_messages_for_round", lambda msgs: msgs)
     monkeypatch.setattr(executor, "_remember_dead_provider", lambda **kw: None)
-    monkeypatch.setattr(executor, "_stable_fallback_provider", lambda pass_tools: fb)
+    monkeypatch.setattr(
+        executor,
+        "_stable_fallback_provider",
+        lambda pass_tools, failed_provider=None: fb,
+    )
     # effective model = qwen3.7-max → 用**真实注册表** (已 supports_explicit_cache=True) 门控置信号
     executor._last_effective_model_id = "qwen3.7-max"
 
