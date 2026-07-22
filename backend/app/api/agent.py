@@ -165,10 +165,9 @@ _REVA_UI_FENCE_RE = __import__("re").compile(
     r"^[ \t]*```reva-ui[ \t]*\r?\n(?P<payload>.*?)(?:\r?\n)^[ \t]*```[ \t]*$",
     __import__("re").MULTILINE | __import__("re").DOTALL,
 )
-_DETERMINISTIC_REVA_UI_TYPES = {
+_DETERMINISTIC_REVA_UI_DATA_TYPES = {
     "diet_daily_summary",
     "medication_list",
-    "metric_table",
     "sleep_summary",
 }
 _DETERMINISTIC_REVA_UI_COMPONENTS = {
@@ -178,12 +177,38 @@ _DETERMINISTIC_REVA_UI_COMPONENTS = {
 }
 
 
+def _is_client_renderable_reva_ui(descriptor: dict) -> bool:
+    """Conservative subset of the Mobile reva-ui parser contract."""
+    if type(descriptor.get("v")) is not int or descriptor["v"] != 1:
+        return False
+
+    card_type = descriptor.get("type")
+    if card_type in _DETERMINISTIC_REVA_UI_DATA_TYPES:
+        return isinstance(descriptor.get("data"), dict)
+    if card_type == "metric_table":
+        columns = descriptor.get("columns")
+        rows = descriptor.get("rows")
+        if not isinstance(columns, list) or not isinstance(rows, list) or not rows:
+            return False
+        valid_keys = {
+            column.get("key").strip()
+            for column in columns
+            if isinstance(column, dict)
+            and isinstance(column.get("key"), str)
+            and column.get("key").strip()
+            and isinstance(column.get("label"), str)
+            and column.get("label").strip()
+        }
+        return len(valid_keys) >= 2 and any(isinstance(row, dict) for row in rows)
+    return descriptor.get("component") in _DETERMINISTIC_REVA_UI_COMPONENTS
+
+
 def _answer_owns_its_visualization(answer_text: str, tools_used: list | None) -> bool:
     """本轮 LLM 是否已自带可视化 → 该压掉冗余的关键词单日快照卡。
 
     信号(任一命中):① 答案含 markdown 表格(≥2 表行 + 分隔行,如"睡眠与HRV对照"表);
     ② 本轮跑过 health_analysis(深分析,正文即多段分析);③ 答案含闭合且
-    JSON 可解析的确定性 reva-ui 可视化。
+    JSON 可解析、客户端可渲染的确定性 reva-ui 可视化。
     这些情况下快照卡(sleep/weight/bp…)只会与更好的正文重复且常错配窗口
     (founder 截图:问"上周睡眠不好吗", 却贴今晚单晚快照)。
     直接单指标速查(答案是一句话、无表)不命中 → 快照卡照常出(卡即答案)。
@@ -198,11 +223,7 @@ def _answer_owns_its_visualization(answer_text: str, tools_used: list | None) ->
             descriptor = json.loads(match.group("payload"))
         except (TypeError, ValueError):
             continue
-        if not isinstance(descriptor, dict):
-            continue
-        if descriptor.get("type") in _DETERMINISTIC_REVA_UI_TYPES:
-            return True
-        if descriptor.get("component") in _DETERMINISTIC_REVA_UI_COMPONENTS:
+        if isinstance(descriptor, dict) and _is_client_renderable_reva_ui(descriptor):
             return True
     return False
 

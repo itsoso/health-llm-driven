@@ -708,12 +708,20 @@ def test_merge_card_descriptors_preserves_existing_and_deduplicates():
 def test_answer_owns_visualization_for_closed_deterministic_reva_ui_fences():
     payloads = [
         {"type": "diet_daily_summary", "v": 1, "data": {}},
-        {"type": "diet_daily_summary", "data": {}},
-        {"type": "metric_table", "v": 1, "columns": [], "rows": []},
+        {
+            "type": "metric_table",
+            "v": 1,
+            "columns": [
+                {"key": "date", "label": "日期"},
+                {"key": "value", "label": "数值"},
+            ],
+            "rows": [{"date": "07-22", "value": "58"}],
+        },
         {"type": "sleep_summary", "v": 1, "data": {}},
         {"type": "medication_list", "v": 1, "data": {}},
         {"component": "line_chart", "v": 1, "series": []},
         {"component": "metric_line_chart", "v": 1, "series": []},
+        {"component": "metric_empty_state", "v": 1},
     ]
 
     for payload in payloads:
@@ -730,6 +738,41 @@ def test_answer_does_not_own_visualization_for_untrusted_reva_ui_text():
     ]
 
     for answer in controls:
+        assert _answer_owns_its_visualization(answer, ["health_query"]) is False
+
+
+def test_answer_does_not_own_client_rejected_reva_ui_fences():
+    controls = [
+        {"type": "diet_daily_summary", "data": {}},
+        {"type": "diet_daily_summary", "v": 2, "data": {}},
+        {"type": "diet_daily_summary", "v": "1", "data": {}},
+        {"type": "diet_daily_summary", "v": True, "data": {}},
+        {"type": "sleep_summary", "v": 1},
+        {"type": "medication_list", "v": 1, "data": []},
+        {"type": "metric_table", "v": 1, "columns": [], "rows": []},
+        {"type": "metric_table", "v": 1, "columns": {}, "rows": []},
+        {"type": "metric_table", "v": 1, "columns": [], "rows": {}},
+        {
+            "type": "metric_table",
+            "v": 1,
+            "columns": [{"key": "value", "label": "数值"}],
+            "rows": [{"value": "58"}],
+        },
+        {
+            "type": "metric_table",
+            "v": 2,
+            "columns": [
+                {"key": "date", "label": "日期"},
+                {"key": "value", "label": "数值"},
+            ],
+            "rows": [{"date": "07-22", "value": "58"}],
+        },
+        {"component": "line_chart", "series": []},
+        {"component": "metric_line_chart", "v": 2, "series": []},
+    ]
+
+    for payload in controls:
+        answer = f"结论如下。\n```reva-ui\n{json.dumps(payload)}\n```"
         assert _answer_owns_its_visualization(answer, ["health_query"]) is False
 
 
