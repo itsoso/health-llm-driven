@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from pathlib import Path
 from types import SimpleNamespace
 import sys
 
@@ -147,6 +148,34 @@ def test_reindex_prepares_pgvector_table_before_sparse_document_updates(db, monk
     assert result["documents"] == 3
     assert calls[0] == "ensure_pgvector_table"
     assert any(call.startswith("sparse:") for call in calls[1:])
+
+
+def test_pgvector_readiness_check_never_attempts_runtime_ddl(monkeypatch):
+    class RuntimeSession:
+        def get_bind(self):
+            raise AssertionError("runtime readiness checks must not request a DDL connection")
+
+    monkeypatch.setattr(settings, "system_kb_pgvector_enabled", True)
+    monkeypatch.setattr(system_knowledge_service, "_is_postgres_session", lambda _db: True)
+    monkeypatch.setattr(system_knowledge_service, "_pgvector_table_exists", lambda _db: True)
+
+    assert system_knowledge_service._ensure_pgvector_table(RuntimeSession()) is True
+
+
+def test_pgvector_table_is_owned_by_managed_migrations():
+    migration = (
+        Path(__file__).resolve().parents[1]
+        / "migrations"
+        / "managed"
+        / "20260722_120000_create_system_knowledge_embeddings.postgresql.sql"
+    )
+
+    sql = migration.read_text(encoding="utf-8")
+
+    assert "CREATE EXTENSION IF NOT EXISTS vector" in sql
+    assert "CREATE TABLE IF NOT EXISTS kb_document_embeddings" in sql
+    assert "vector(1024)" in sql
+    assert "ix_kb_document_embeddings_embedding_cosine" in sql
 
 
 def test_system_kb_reindex_report_audits_pgvector_health(db, monkeypatch):

@@ -12,6 +12,7 @@ import math
 import operator
 from pathlib import Path
 import re
+import threading
 from typing import Any
 
 from sqlalchemy import bindparam, desc, func, or_, text, update
@@ -3335,52 +3336,15 @@ def _pgvector_table_exists(db: Session) -> bool:
 def _ensure_pgvector_table(db: Session) -> bool:
     if not settings.system_kb_pgvector_enabled or not _is_postgres_session(db):
         return False
-    dimensions = int(settings.system_kb_embedding_dimensions)
-    try:
-        engine = db.get_bind()
-        with engine.begin() as connection:
-            connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-            connection.execute(
-                text(
-                    f"""
-                    CREATE TABLE IF NOT EXISTS {PGVECTOR_TABLE} (
-                        doc_id TEXT PRIMARY KEY REFERENCES kb_documents(doc_id) ON DELETE CASCADE,
-                        embedding_model VARCHAR(120) NOT NULL,
-                        content_hash VARCHAR(64) NOT NULL,
-                        embedding vector({dimensions}) NOT NULL,
-                        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-                        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-                    )
-                    """
-                )
-            )
-            connection.execute(
-                text(
-                    f"""
-                    CREATE INDEX IF NOT EXISTS ix_{PGVECTOR_TABLE}_model_doc
-                    ON {PGVECTOR_TABLE}(embedding_model, doc_id)
-                    """
-                )
-            )
-            connection.execute(
-                text(
-                    f"""
-                    CREATE INDEX IF NOT EXISTS ix_{PGVECTOR_TABLE}_embedding_cosine
-                    ON {PGVECTOR_TABLE}
-                    USING ivfflat (embedding vector_cosine_ops)
-                    WITH (lists = 100)
-                    """
-                )
-            )
+    if _pgvector_table_exists(db):
         return True
-    except SQLAlchemyError as exc:
-        logger.warning("system KB pgvector table unavailable; sparse vector fallback remains active: %s", exc)
-        return False
+    logger.warning(
+        "system KB pgvector table unavailable; apply managed migrations before reindexing"
+    )
+    return False
 
 
-import threading as _emb_threading
-from datetime import date as _emb_date_cls
-_emb_guard_lock = _emb_threading.Lock()
+_emb_guard_lock = threading.Lock()
 _emb_guard_state = {"day": None, "calls": 0}
 
 
@@ -3394,7 +3358,7 @@ def _embedding_count_and_warn() -> None:
         cap = 0
     if cap <= 0:
         return
-    today = _emb_date_cls.today().isoformat()
+    today = date.today().isoformat()
     with _emb_guard_lock:
         if _emb_guard_state.get("day") != today:
             _emb_guard_state.update(day=today, calls=0, warned=False)
