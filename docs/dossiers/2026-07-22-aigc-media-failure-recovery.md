@@ -4,8 +4,8 @@
 |---|---|
 | slug | `aigc-media-failure-recovery` |
 | 创建日期 | 2026-07-22 |
-| 当前阶段 | G5 部署验证中 |
-| 状态 | in_progress |
+| 当前阶段 | G6 上线验证完成 |
+| 状态 | complete |
 | 负责 | Codex |
 | 反馈环 | Backend pytest / Mobile+Web component tests / production trace / deploy / Mobile OTA |
 
@@ -79,10 +79,10 @@
 
 ## G5 · 部署健康裁决
 
-- 生产 release commit: `85316cbaa773bd54dd628b6a185e7cf1fba1ac34`。
+- 生产 Backend/Web release commit: `26d05b74516ea2947623172e775ba67f9861518b`。
 - Next.js production build 成功；前端与后端均核验为该精确 SHA。
 - 数据库 40 MB 备份、231 张表恢复演练、站外 age 加密归档哈希和 HMAC 校验全部通过。
-- 部署后系统健康评分 40/60 PASS；线上 skills manifest 22/22 一致。
+- 部署后系统健康评分 60/60 PASS；线上 skills manifest 22/22 一致。
 - 裁决: **PASS**。
 
 ## G6 · 上线验证裁决
@@ -90,6 +90,8 @@
 - `https://health.executor.life/api/v1/health` 返回 API、PostgreSQL、Redis、Celery 全部 healthy。
 - Admin 页面返回 HTTP 200；生产监控能聚合 AIGC 媒体任务且不暴露任务正文。
 - 历史失败任务投影返回 `can_retry=true`，可在同一任务卡片中显式恢复；当前 7 天窗口识别到 2 个可安全重试任务。
-- iOS production OTA runtime `1.3.2` 发布成功：group `d8097f71-b057-4238-90ca-f42f8322775c`，update `019f8a51-ca67-7d35-a09b-ed4b3352dad8`。
+- iOS production OTA runtime `1.3.2` 发布成功：commit `6cb610a0e6f1265cdc659b9105e895a488e39baf`，group `bb3a3828-15bb-4af8-808d-e75c11cc99d0`，update `019f8a8b-860e-7013-afa3-344540f32837`。
+- OTA 发布工具链按 `brace-expansion` 主版本分别锁定安全兼容版本；Expo iOS fingerprint `a4d7c3209f83a2d3da1d1498bbeb331f665959f9` 生成通过，production dependency audit 为 0 漏洞。
+- Mobile 发布脚本回归 15 passed、TypeScript 编译通过；AIGC Mobile 卡片测试通过。全量 Mobile 基线另有 1 个既存 Siri Swift 生成文件漂移（2068/2069 tests passed），与本次纯 JS OTA 及 AIGC 恢复链路无关，未混入本次修复。
 - 已确认供应商 key 可访问任务查询接口，但当前视频模型提交仍需在百炼北京区域核对按量 API Key、Workspace 与模型权限；代码已将后续 401/403 映射为 `provider_auth_failed` 并进入运维告警。
 - 裁决: **PASS（应用恢复链路上线；供应商模型权限作为外部运维项继续处理）**。
