@@ -4,8 +4,8 @@
 |---|---|
 | slug | `llm-quota-governance` |
 | 创建日期 | 2026-07-22 |
-| 当前阶段 | S6 待部署 |
-| 状态 | deploy-ready |
+| 当前阶段 | S8 上线验证完成 |
+| 状态 | shipped |
 | 负责 | Codex |
 | 反馈环 | Backend pytest / Web+Mobile TypeScript / targeted ESLint / deploy / Mobile OTA |
 
@@ -60,11 +60,18 @@
 
 ## G5 · 部署健康闸
 
-- 状态: PENDING。
+- 状态: **PASS**。
+- 精确提交 `db1a59d281e8e1aa1263bb5dedd07de3d59324df` 通过根目录 `deploy.sh -a -y` 全量部署。
+- 发布前数据库备份 40 MB、231 张表恢复演练、站外加密归档 SHA-256/HMAC 验真通过。
+- 部署健康度 `60/60`，Skills `22/22`，前端和 Backend/Celery 服务在线。
 
 ## G6 · 生产验证
 
-- 状态: PENDING。
+- 状态: **PASS**。
+- 公网 `/api/v1/health` 返回 API、PostgreSQL、Redis、Celery 全部 connected。
+- 生产启用管理员共 9 个，数据库回退身份解析全部为管理员；普通用户策略为每月 5,000,000 Token、每日 200 次、每月 5,000 Credits。
+- 每日 23:55 监控任务已注册；上线时过去 24 小时新策略拦截 0、80% 以上临界用户 0。
+- Mobile production OTA runtime `1.3.2` 已发布：group `45440130-be6d-4234-9dba-52578fb7033b`，iOS update `019f8a18-94b4-7638-b0c8-35106e8d172c`。
 
 ## Acceptance
 
