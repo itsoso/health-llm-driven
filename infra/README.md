@@ -10,7 +10,10 @@ writable directories:
 ```bash
 sudo useradd --system --home /opt/health-app --shell /usr/sbin/nologin health-app
 sudo install -o health-app -g health-app -m 0700 -d \
-  /opt/health-app/backend/{logs,uploads,data,private_media} /tmp/tts_cache
+  /opt/health-app/backend/{logs,uploads,data,private_media} \
+  /opt/health-app/.health-skills-cache
+sudo chown root:health-app /opt/health-app/backend/.env
+sudo chmod 0640 /opt/health-app/backend/.env
 sudo install -m 0644 infra/systemd/* /etc/systemd/system/
 sudo install -m 0644 infra/nginx/health.executor.life.conf \
   /etc/nginx/sites-available/health.executor.life

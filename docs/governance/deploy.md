@@ -78,7 +78,7 @@ MIGRATION_DATABASE_URL=postgresql://health_app_migrator:***@localhost:5432/healt
 2. 推送代码到 GitHub
 3. SSH 到服务器拉取代码
 4. 在 Git 工作树外创建数据库备份，完成临时库恢复演练及 age 加密站外归档；任一步失败即停止
-5. 同步根目录 `.env` 到服务器 `backend/.env` 前，先备份到 `/var/backups/health-app/env/`，并强制文件权限 `0600`
+5. 同步根目录 `.env` 到服务器 `backend/.env` 前，先备份到 `/var/backups/health-app/env/`；运行时文件强制为 `root:health-app`、`0640`（仅 root 与专用服务组可读），外部备份仍为 `0600`
 6. 安装依赖
 7. 重启服务并通过健康评分
 

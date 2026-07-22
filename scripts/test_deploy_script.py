@@ -56,7 +56,8 @@ def test_env_sync_uses_external_backup_root_and_mode_0600():
     assert 'REMOTE_BACKUP_ROOT="${HEALTH_BACKUP_ROOT:-/var/backups/health-app}"' in script
     assert 'ENV_BACKUP_DIR="$REMOTE_BACKUP_ROOT/env"' in script
     assert 'cp -p .env "$ENV_BACKUP_DIR/.env.${BACKUP_TS}"' in script
-    assert 'chmod 600 \'$REMOTE_PATH/backend/.env\'' in script
+    assert 'chown root:health-app \'$REMOTE_PATH/backend/.env\'' in script
+    assert 'chmod 640 \'$REMOTE_PATH/backend/.env\'' in script
 
 
 def test_deploy_requires_main_and_pushes_exact_head_to_origin_main():

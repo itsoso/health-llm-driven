@@ -377,9 +377,9 @@ sync_env() {
     # 上传到服务器
     scp "$TEMP_ENV" "$SERVER:$REMOTE_PATH/backend/.env"
     rm "$TEMP_ENV"
-    ssh "$SERVER" "chmod 600 '$REMOTE_PATH/backend/.env'"
+    ssh "$SERVER" "chown root:health-app '$REMOTE_PATH/backend/.env' && chmod 640 '$REMOTE_PATH/backend/.env'"
 
-    print_success "环境变量已同步到 $SERVER:$REMOTE_PATH/backend/.env (0600)"
+    print_success "环境变量已同步到 $SERVER:$REMOTE_PATH/backend/.env (root:health-app, 0640)"
 }
 
 # 仅重启服务

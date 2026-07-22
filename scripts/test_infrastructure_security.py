@@ -30,6 +30,8 @@ def test_systemd_units_use_dedicated_user_and_sandbox() -> None:
         assert "NoNewPrivileges=true" in body
         assert "PrivateTmp=true" in body
         assert "ProtectSystem=strict" in body
+        assert "/opt/health-app/.health-skills-cache" in body
+        assert "/tmp/tts_cache" not in body
 
     socket = (unit_dir / "health-backend.socket").read_text()
     assert "ListenStream=127.0.0.1:8000" in socket
