@@ -45,7 +45,9 @@ def test_deploy_bundle_uses_a_unique_remote_path_and_cleans_it_up():
     assert '"$SERVER:$REMOTE_DEPLOY_BUNDLE"' in deploy_script
     assert "git fetch '$REMOTE_DEPLOY_BUNDLE' HEAD" in deploy_script
     assert "git fetch $REMOTE_DEPLOY_BUNDLE HEAD" not in deploy_script
-    assert "trap cleanup_remote_deploy_bundle EXIT" in deploy_script
+    assert "trap cleanup_remote_release_artifacts EXIT" in deploy_script
+    assert "rm -f '$REMOTE_DEPLOY_BUNDLE'" in deploy_script
+    assert "rm -rf '$REMOTE_BACKUP_PREFLIGHT_DIR'" in deploy_script
     assert '"$SERVER:/tmp/health-app-deploy.bundle"' not in deploy_script
 
 
