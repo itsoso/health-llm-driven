@@ -161,14 +161,30 @@ def _normalize_thinking_steps(steps: list | None) -> list[str]:
 
 _MD_TABLE_RE = __import__("re").compile(r"^\s*\|.*\|.*\|\s*$", __import__("re").MULTILINE)
 _MD_TABLE_SEP_RE = __import__("re").compile(r"^\s*\|?\s*:?-{2,}", __import__("re").MULTILINE)
+_REVA_UI_FENCE_RE = __import__("re").compile(
+    r"^[ \t]*```reva-ui[ \t]*\r?\n(?P<payload>.*?)(?:\r?\n)^[ \t]*```[ \t]*$",
+    __import__("re").MULTILINE | __import__("re").DOTALL,
+)
+_DETERMINISTIC_REVA_UI_TYPES = {
+    "diet_daily_summary",
+    "medication_list",
+    "metric_table",
+    "sleep_summary",
+}
+_DETERMINISTIC_REVA_UI_COMPONENTS = {
+    "line_chart",
+    "metric_empty_state",
+    "metric_line_chart",
+}
 
 
 def _answer_owns_its_visualization(answer_text: str, tools_used: list | None) -> bool:
     """本轮 LLM 是否已自带可视化 → 该压掉冗余的关键词单日快照卡。
 
     信号(任一命中):① 答案含 markdown 表格(≥2 表行 + 分隔行,如"睡眠与HRV对照"表);
-    ② 本轮跑过 health_analysis(深分析,正文即多段分析)。
-    这两种情况下快照卡(sleep/weight/bp…)只会与更好的正文重复且常错配窗口
+    ② 本轮跑过 health_analysis(深分析,正文即多段分析);③ 答案含闭合且
+    JSON 可解析的确定性 reva-ui 可视化。
+    这些情况下快照卡(sleep/weight/bp…)只会与更好的正文重复且常错配窗口
     (founder 截图:问"上周睡眠不好吗", 却贴今晚单晚快照)。
     直接单指标速查(答案是一句话、无表)不命中 → 快照卡照常出(卡即答案)。
     """
@@ -177,6 +193,17 @@ def _answer_owns_its_visualization(answer_text: str, tools_used: list | None) ->
         return True
     if isinstance(tools_used, list) and "health_analysis" in tools_used:
         return True
+    for match in _REVA_UI_FENCE_RE.finditer(text):
+        try:
+            descriptor = json.loads(match.group("payload"))
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(descriptor, dict):
+            continue
+        if descriptor.get("type") in _DETERMINISTIC_REVA_UI_TYPES:
+            return True
+        if descriptor.get("component") in _DETERMINISTIC_REVA_UI_COMPONENTS:
+            return True
     return False
 
 
@@ -245,8 +272,9 @@ def _persist_done_cards(db: Session, message_id: int | None, cards: list) -> boo
         if not msg:
             return False
         meta = dict(msg.meta or {})
-        meta["cards"] = cards_for_persistence(
-            _merge_card_descriptors(meta.get("cards"), cards)
+        meta["cards"] = _merge_card_descriptors(
+            cards_for_persistence(meta.get("cards") or []),
+            cards_for_persistence(cards),
         )
         msg.meta = meta
         db.commit()
@@ -1706,7 +1734,7 @@ async def agent_stream(
                                 from app.services.inline_cards import (
                                     build_cards,
                                     extract_inline_card_blocks,
-                                    recorded_intake_kinds,
+                                    represented_intake_kinds,
                                 )
                                 existing = done_data.get("cards")
                                 inline = extract_inline_card_blocks("".join(full_text_buf))
@@ -1716,7 +1744,7 @@ async def agent_stream(
                                 # 任务,草稿卡的"去 X 页记录"主按钮会把用户引离"说'是的'
                                 # 即完成"的确认流(实锤:打卡替普瑞酮 → 确认问句与
                                 # medication_draft 双路互搏;mac 上该按钮还曾是静默死键)。
-                                suppress = recorded_intake_kinds(existing, inline)
+                                suppress = represented_intake_kinds(existing, inline)
                                 suppress = set(suppress) | _pending_intake_suppressions(
                                     done_data
                                 )

@@ -6,14 +6,17 @@ founder 截图实锤(2026-07-05): 「加餐已记录 40kcal」下面又冒
 build_cards 压制同 kind *_draft; ② 草稿真发时(无本轮记录)单品+克数
 接 food_nutrition_lookup 预填, 拿不准留空(诚实 ——)。
 """
+import pytest
+
 from app.models.food_nutrition import FoodItem, FoodNutrient
+from app.services import inline_cards
 from app.services.inline_cards import (
     _build_diet_draft,
     _estimate_nutrition_from_table,
     build_cards,
     recorded_intake_kinds,
 )
-from app.api.agent import _pending_intake_suppressions
+from app.api.agent import _merge_card_descriptors, _pending_intake_suppressions
 
 
 def _record_card(kind: str):
@@ -43,6 +46,70 @@ class TestRecordedIntakeKinds:
 
     def test_non_list_and_garbage_safe(self):
         assert recorded_intake_kinds(None, "x", [{"type": "vitals"}], [None]) == set()
+
+
+class TestRepresentedIntakeKinds:
+    @pytest.mark.parametrize(
+        "data",
+        [
+            {"recorded": True, "record_id": 830},
+            {"photo_draft_token": "draft-token"},
+        ],
+    )
+    def test_contextual_diet_card_suppresses_legacy_query_draft(self, db, data):
+        existing = [{"type": "diet_draft", "data": data}]
+
+        suppress = inline_cards.represented_intake_kinds(existing)
+        cards = build_cards(
+            db,
+            1,
+            "记录晚餐牛肉面 500 kcal",
+            suppress_intake_kinds=suppress,
+        )
+
+        assert suppress == {"diet"}
+        assert not any(card["type"] == "diet_draft" for card in cards)
+
+    def test_nested_cards_group_occupies_each_intake_family(self):
+        cards = [{
+            "type": "cards_group",
+            "data": {
+                "cards": [
+                    {"type": "diet_draft", "data": {"photo_draft_token": "diet"}},
+                    {"type": "medication_draft", "data": {"items": []}},
+                    {"type": "supplement_draft", "data": {"items": []}},
+                ],
+            },
+        }]
+
+        assert inline_cards.represented_intake_kinds(cards) == {
+            "diet",
+            "medication",
+            "supplement",
+        }
+
+    def test_detection_does_not_collapse_distinct_diet_records(self, db):
+        existing = [
+            {
+                "type": "record_quality",
+                "data": {"domain": "diet", "record_id": 101, "title": "早餐已记录"},
+            },
+            {
+                "type": "record_quality",
+                "data": {"domain": "diet", "record_id": 202, "title": "午餐已记录"},
+            },
+        ]
+
+        generated = build_cards(
+            db,
+            1,
+            "记录晚餐牛肉面 500 kcal",
+            suppress_intake_kinds=inline_cards.represented_intake_kinds(existing),
+        )
+        merged = _merge_card_descriptors(existing, generated)
+
+        assert [card["data"]["record_id"] for card in merged] == [101, 202]
+        assert not any(card["type"] == "diet_draft" for card in generated)
 
 
 class TestDraftSuppression:

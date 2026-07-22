@@ -1025,37 +1025,63 @@ _SNAPSHOT_CARD_TYPES = {
 }
 
 
-def recorded_intake_kinds(*card_lists: Any) -> set:
-    """本轮已完成写入的摄入类 kind 集合(diet/medication/supplement)。
+def _normalize_intake_kind(raw: Any) -> Optional[str]:
+    value = str(raw or "").strip().lower()
+    if value in {"diet", "meal", "snack", "food"}:
+        return "diet"
+    if value in {"medication", "med"}:
+        return "medication"
+    if value == "supplement":
+        return "supplement"
+    return None
 
-    从 executor 已附的 record / record_quality 卡推断: record 用 data.type,
-    record_quality 用 data.domain。用于压制同轮 query 派生的 *_draft 卡 ——
-    否则「已记录 + 再确认草稿」并存, 用户点确认会把同一笔写两次
-    (founder 截图实锤: 油桃加餐已记录 40kcal, 下面又冒空数据草稿)。
-    """
+
+def _intake_kinds_from_cards(*card_lists: Any, include_drafts: bool) -> set:
     kinds: set = set()
+
+    def visit(card: Any) -> None:
+        if not isinstance(card, dict):
+            return
+        data = card.get("data") if isinstance(card.get("data"), dict) else {}
+        card_type = card.get("type")
+        if card_type == "cards_group":
+            children = data.get("cards")
+            if isinstance(children, list):
+                for child in children:
+                    visit(child)
+            return
+
+        raw = None
+        if card_type == "record":
+            raw = data.get("type")
+        elif card_type == "record_quality":
+            raw = data.get("domain")
+        elif include_drafts:
+            raw = _DRAFT_KIND_BY_CARD.get(card_type)
+        normalized = _normalize_intake_kind(raw)
+        if normalized:
+            kinds.add(normalized)
+
     for cards in card_lists:
         if not isinstance(cards, list):
             continue
-        for c in cards:
-            if not isinstance(c, dict):
-                continue
-            data = c.get("data") if isinstance(c.get("data"), dict) else {}
-            t = c.get("type")
-            raw = ""
-            if t == "record":
-                raw = str(data.get("type") or "")
-            elif t == "record_quality":
-                raw = str(data.get("domain") or "")
-            else:
-                continue
-            if raw in {"diet", "meal", "snack", "food"}:
-                kinds.add("diet")
-            elif raw in {"medication", "med"}:
-                kinds.add("medication")
-            elif raw == "supplement":
-                kinds.add("supplement")
+        for card in cards:
+            visit(card)
     return kinds
+
+
+def represented_intake_kinds(*card_lists: Any) -> set:
+    """返回本轮已被卡片表示的摄入类 kind，含记录结果与确认草稿。
+
+    显式卡片已占据对应摄入投影时，调用方可据此压制同轮 query 派生的
+    低优先级 *_draft；只返回 family 集合，不会合并或删除已有的不同记录卡。
+    """
+    return _intake_kinds_from_cards(*card_lists, include_drafts=True)
+
+
+def recorded_intake_kinds(*card_lists: Any) -> set:
+    """兼容旧调用：仅返回已完成写入的 record / record_quality kind。"""
+    return _intake_kinds_from_cards(*card_lists, include_drafts=False)
 
 
 def build_cards(

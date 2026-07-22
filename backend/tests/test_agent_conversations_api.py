@@ -9,6 +9,7 @@ from app.models.agent_conversation import AgentConversation, AgentMessage
 from app.models.user import User
 from app.api.agent import (
     agent_stream,
+    _answer_owns_its_visualization,
     _done_event_may_expose_cards,
     _merge_card_descriptors,
     _persist_done_cards,
@@ -366,6 +367,52 @@ def test_done_cards_report_persistence_failure_without_logging_health_payload(
     }) is False
 
 
+def test_persist_done_cards_canonicalizes_before_dedupe(
+    db, auth_user_and_headers
+):
+    user, _ = auth_user_and_headers
+    conversation = _create_conversation(db, user.id, "饮食卡归一化")
+    message = _add_message(db, conversation.id, "assistant", "晚餐已记录。")
+    persisted_diet = {
+        "type": "diet_draft",
+        "data": {
+            "recorded": True,
+            "record_id": 830,
+            "meal_type": "dinner",
+            "description": "牛肉面",
+        },
+        "actions": [],
+    }
+    message.meta = {"cards": [persisted_diet]}
+    db.commit()
+
+    live_diet = {
+        **persisted_diet,
+        "data": {
+            **persisted_diet["data"],
+            "photo_url": "/api/v1/upload/files/chat/1/dinner.jpg?signature=live",
+        },
+    }
+    distinct_quality_card = {
+        "type": "record_quality",
+        "data": {"domain": "diet", "record_id": 830, "title": "记录质量"},
+        "actions": [],
+    }
+
+    assert _persist_done_cards(
+        db,
+        message.id,
+        [live_diet, distinct_quality_card],
+    ) is True
+
+    db.refresh(message)
+    assert [card["type"] for card in message.meta["cards"]] == [
+        "diet_draft",
+        "record_quality",
+    ]
+    assert "photo_url" not in message.meta["cards"][0]["data"]
+
+
 def test_agent_stream_failure_logs_do_not_interpolate_raw_exceptions():
     source = inspect.getsource(agent_stream)
 
@@ -464,6 +511,34 @@ def test_merge_card_descriptors_preserves_existing_and_deduplicates():
     merged = _merge_card_descriptors(inline, existing, existing)
 
     assert [card["type"] for card in merged] == ["menu_share", "system_knowledge_evidence"]
+
+
+def test_answer_owns_visualization_for_closed_deterministic_reva_ui_fences():
+    payloads = [
+        {"type": "diet_daily_summary", "v": 1, "data": {}},
+        {"type": "diet_daily_summary", "data": {}},
+        {"type": "metric_table", "v": 1, "columns": [], "rows": []},
+        {"type": "sleep_summary", "v": 1, "data": {}},
+        {"type": "medication_list", "v": 1, "data": {}},
+        {"component": "line_chart", "v": 1, "series": []},
+        {"component": "metric_line_chart", "v": 1, "series": []},
+    ]
+
+    for payload in payloads:
+        answer = f"结论如下。\n```reva-ui\n{json.dumps(payload)}\n```"
+        assert _answer_owns_its_visualization(answer, ["health_query"]) is True
+
+
+def test_answer_does_not_own_visualization_for_untrusted_reva_ui_text():
+    controls = [
+        "正文只提到了 diet_daily_summary。",
+        '```reva-ui\n{"type":"unknown_widget","v":1}\n```',
+        '```reva-ui\n{"type":"diet_daily_summary",}\n```',
+        '```reva-ui\n{"type":"diet_daily_summary","v":1}',
+    ]
+
+    for answer in controls:
+        assert _answer_owns_its_visualization(answer, ["health_query"]) is False
 
 
 def test_agent_conversation_detail_enforces_user_isolation(client, db, auth_user_and_headers):
