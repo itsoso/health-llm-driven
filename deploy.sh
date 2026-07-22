@@ -34,6 +34,8 @@ fi
 SERVER=$(grep "^DEPLOY_SERVER=" "$ENV_FILE" | cut -d'=' -f2)
 REMOTE_PATH=$(grep "^DEPLOY_PATH=" "$ENV_FILE" | cut -d'=' -f2)
 REMOTE_DEPLOY_BUNDLE="/tmp/health-app-deploy-$$-$(date +%s).bundle"
+REMOTE_BACKUP_PREFLIGHT_DIR="/tmp/health-app-backup-preflight-$$-$(date +%s)"
+REMOTE_BACKUP_RUNNER="$REMOTE_BACKUP_PREFLIGHT_DIR/backup_db.sh"
 DEPLOY_EXPECTED_SHA=""
 
 # 验证必要配置
@@ -60,8 +62,8 @@ print_warning() {
     echo -e "${YELLOW}⚠${NC} $1"
 }
 
-cleanup_remote_deploy_bundle() {
-    ssh "$SERVER" "rm -f '$REMOTE_DEPLOY_BUNDLE'" >/dev/null 2>&1 || true
+cleanup_remote_release_artifacts() {
+    ssh "$SERVER" "rm -f '$REMOTE_DEPLOY_BUNDLE'; rm -rf '$REMOTE_BACKUP_PREFLIGHT_DIR'" >/dev/null 2>&1 || true
 }
 
 # 上传当前 HEAD 的 git bundle 到服务器,作为 GitHub 超时时的回退源。
@@ -78,7 +80,22 @@ upload_deploy_bundle() {
         return 1
     fi
     rm "$bundle"
-    trap cleanup_remote_deploy_bundle EXIT
+    trap cleanup_remote_release_artifacts EXIT
+}
+
+# 备份发生在远端 checkout 更新之前。先上传当前已核验 commit 的备份工具，
+# 避免旧 checkout 缺少恢复演练或站外归档闸门。
+stage_backup_preflight_scripts() {
+    local scripts=(
+        "$SCRIPT_DIR/backend/scripts/backup_db.sh"
+        "$SCRIPT_DIR/backend/scripts/verify_backup_restore.sh"
+        "$SCRIPT_DIR/backend/scripts/archive_backup_offsite.sh"
+    )
+
+    ssh "$SERVER" "install -d -m 0700 '$REMOTE_BACKUP_PREFLIGHT_DIR'"
+    scp "${scripts[@]}" "$SERVER:$REMOTE_BACKUP_PREFLIGHT_DIR/"
+    ssh "$SERVER" "chmod 0700 '$REMOTE_BACKUP_PREFLIGHT_DIR/'*.sh"
+    trap cleanup_remote_release_artifacts EXIT
 }
 
 remote_git_sync_command() {
@@ -147,10 +164,13 @@ DEPLOY_SCORE_THRESHOLD=35  # 部署后健康度最低分（满分60，skip-tests
 # 备份数据库
 backup_database() {
     print_step "备份数据库..."
-    # 复用服务器上已验证的备份脚本(cron 也用它): 正确解析 DATABASE_URL、set -euo pipefail
-    # 诚实判成败、仅保留 1 份、打印 DB 大小 + 磁盘剩余。不再在此内联重复(历史上内联版
-    # 取错 env key 导致静默假成功 —— pg_dump|gzip 退出码恒 0)。
-    if ! ssh "$SERVER" "BACKUP_OFFSITE_REQUIRED=1 bash '$REMOTE_PATH/backend/scripts/backup_db.sh'"; then
+    # 备份早于远端 git checkout 更新，因此必须执行本次发布 commit 随附的脚本；
+    # 数据库与站外归档配置仍从线上 backend/.env 加载。
+    if ! stage_backup_preflight_scripts; then
+        print_error "无法上传本次发布的数据库备份工具，阻断部署"
+        return 1
+    fi
+    if ! ssh "$SERVER" "set -a; source '$REMOTE_PATH/backend/.env'; set +a; BACKUP_OFFSITE_REQUIRED=1 bash \"$REMOTE_BACKUP_RUNNER\""; then
         print_error "数据库备份、恢复演练或站外归档失败，阻断部署"
         return 1
     fi

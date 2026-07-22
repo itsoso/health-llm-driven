@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import yaml
@@ -44,6 +45,29 @@ def test_nginx_and_firewall_do_not_publish_internal_services() -> None:
         assert f"allow {public_port}" in firewall
     for internal_port in ("3000/tcp", "5432/tcp", "6379/tcp", "8000/tcp", "8808/tcp", "9090/tcp", "9100/tcp"):
         assert f"deny {internal_port}" in firewall
+
+
+def test_frontend_production_server_binds_to_loopback() -> None:
+    package = json.loads((ROOT / "frontend" / "package.json").read_text())
+    start = package["scripts"]["start"]
+
+    assert "-H 127.0.0.1" in start
+    assert "-p 30001" in start
+
+
+def test_deploy_stages_current_backup_scripts_before_preflight() -> None:
+    body = (ROOT / "deploy.sh").read_text()
+    backup_body = body[body.index("backup_database() {") :]
+    stage_call = backup_body.index("stage_backup_preflight_scripts")
+    backup_call = backup_body.index('BACKUP_OFFSITE_REQUIRED=1 bash \\"$REMOTE_BACKUP_RUNNER\\"')
+
+    assert stage_call < backup_call
+    for script_name in (
+        "backup_db.sh",
+        "verify_backup_restore.sh",
+        "archive_backup_offsite.sh",
+    ):
+        assert script_name in body
 
 
 def test_legacy_production_installer_is_fail_closed() -> None:

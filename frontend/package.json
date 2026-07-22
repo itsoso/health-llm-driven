@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
+    "start": "next start -H 127.0.0.1 -p 30001",
     "lint": "eslint .",
     "test": "vitest run",
     "audit": "npm audit",
