@@ -11615,14 +11615,16 @@ class AgentExecutor:
             if mid:
                 target.add(mid)
 
-    def _stable_fallback_provider(self, pass_tools: bool):
+    def _stable_fallback_provider(self, pass_tools: bool, failed_provider=None):
         """选定 provider 失败/已死时用的稳定回退 provider — failover 单一真源。
 
         F2: 本轮**带工具**时, 回退目标必须经同一可靠工具模型选择逻辑
         (复用 pick_reliable_tool_model_id + create_provider_for_model_id), 不许落到
         MiniMax/glm 家族弱工具模型 (生产事故: 默认 tokenplan = MiniMax-M2.5 吐 XML
         文本工具调用)。无可靠模型可用时才回默认 tokenplan 并 log。
-        非工具轮: 维持既有行为 (默认 tokenplan provider, 合成/纯文本轮不受影响)。
+        已知失败 provider 时, 工具轮和非工具轮都必须离开该故障域；例如 TokenPlan
+        月额度耗尽后, 切换另一个 TokenPlan model id 仍会失败。无法识别失败域时,
+        非工具轮维持既有行为 (默认 tokenplan provider)。
 
         始终 fail-open 到"有一个可用 provider": 可靠模型不可用 → 默认 tokenplan;
         默认 tokenplan 也建不了 → 全局单例 provider。任何一步都不把回合打死。
@@ -11631,9 +11633,19 @@ class AgentExecutor:
         from app.services.llm.pii_scrub import wrap_provider_pii_scrub
         from app.services.llm.usage_tracker import wrap_provider
 
-        if pass_tools:
+        failed_provider_name = str(
+            getattr(failed_provider, "provider_name", "") or ""
+        ).strip()
+        excluded_providers = {failed_provider_name} if failed_provider_name else set()
+
+        # A fallback must leave the failed provider's failure domain. TokenPlan
+        # model IDs share one account quota, so switching qwen IDs is not a
+        # meaningful recovery from a TokenPlan quota failure.
+        if pass_tools or excluded_providers:
             from app.services.llm.model_registry import pick_reliable_tool_model_id
-            fallback_id = pick_reliable_tool_model_id()
+            fallback_id = pick_reliable_tool_model_id(
+                exclude_providers=excluded_providers,
+            )
             if fallback_id:
                 try:
                     from app.services.llm.factory import create_provider_for_model_id
@@ -11642,8 +11654,8 @@ class AgentExecutor:
                         getattr(provider, "model", None) or fallback_id
                     )
                     logger.info(
-                        "[agent_executor] tool-turn failover -> reliable model %s",
-                        fallback_id,
+                        "[agent_executor] failover provider=%s -> model=%s",
+                        failed_provider_name or "unknown", fallback_id,
                     )
                     return provider
                 except Exception as e:  # noqa: BLE001
@@ -11654,8 +11666,9 @@ class AgentExecutor:
                     )
             else:
                 logger.warning(
-                    "[agent_executor] tool-turn failover: no reliable model available, "
-                    "falling back to default tokenplan (defensive parsing still on)"
+                    "[agent_executor] no cross-provider reliable fallback available "
+                    "failed_provider=%s; falling back to default provider",
+                    failed_provider_name or "unknown",
                 )
 
         try:
@@ -11766,7 +11779,10 @@ class AgentExecutor:
             if pass_tools and self._request_model_id:
                 self._request_model_tool_fallback_used = True
                 self._record_model_fallback_reason("selected_model_tool_chat_failed")
-            fb = self._stable_fallback_provider(bool(pass_tools))
+            fb = self._stable_fallback_provider(
+                bool(pass_tools),
+                failed_provider=provider,
+            )
             return await fb.chat(**chat_kwargs)
 
     async def _call_llm_stream(
@@ -11850,7 +11866,11 @@ class AgentExecutor:
                 if pass_tools and self._request_model_id:
                     self._request_model_tool_fallback_used = True
                     self._record_model_fallback_reason("selected_model_tool_bridge_failed")
-                async for evt in self._stream_via_stable_fallback(stream_kwargs, pass_tools):
+                async for evt in self._stream_via_stable_fallback(
+                    stream_kwargs,
+                    pass_tools,
+                    failed_provider=provider,
+                ):
                     yield evt
                 return
             async for evt in self._result_to_stream_events(result):
@@ -11880,7 +11900,11 @@ class AgentExecutor:
             if pass_tools and self._request_model_id:
                 self._request_model_tool_fallback_used = True
                 self._record_model_fallback_reason("selected_model_tool_stream_failed")
-            async for evt in self._stream_via_stable_fallback(stream_kwargs, pass_tools):
+            async for evt in self._stream_via_stable_fallback(
+                stream_kwargs,
+                pass_tools,
+                failed_provider=provider,
+            ):
                 yield evt
 
     def _maybe_force_record_tool_choice(
@@ -12076,7 +12100,7 @@ class AgentExecutor:
         return await provider.chat(**chat_kwargs)
 
     async def _stream_via_stable_fallback(
-        self, stream_kwargs: Dict[str, Any], pass_tools,
+        self, stream_kwargs: Dict[str, Any], pass_tools, failed_provider=None,
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """把稳定回退 provider 的产出适配成流式事件。
 
@@ -12087,7 +12111,10 @@ class AgentExecutor:
         # 且回退目标未必过探针验证 —— 回退前剥除, 绝不让 force 把整轮打死。
         stream_kwargs.pop("tool_choice", None)
         stream_kwargs.pop("enable_thinking", None)
-        fb = self._stable_fallback_provider(bool(pass_tools))
+        fb = self._stable_fallback_provider(
+            bool(pass_tools),
+            failed_provider=failed_provider,
+        )
         fb_non_streaming = self._provider_is_non_streaming(fb)
         try:
             if fb_non_streaming:

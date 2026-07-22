@@ -854,12 +854,16 @@ export default function ChatScreen() {
     ? llmOptions.find(option => option.id === llmModelId)?.label || llmModelId
     : '系统默认';
   const activeTurnVisible = activeTurn.phase !== 'idle' && activeTurn.phase !== 'completed';
-  const lastRetryableUserMessage = [...messages].reverse().find(message => (
+  const currentTurnUserMessage = [...messages].reverse().find(message => (
     message.role === 'user'
-    && !!message.content?.trim()
-    && message.content !== '(图片)'
-    && (!message.imageUris || message.imageUris.length === 0)
+    && (!activeTurn.turnId || message.sourceTurnId === activeTurn.turnId)
   ));
+  const retryableTextMessage = currentTurnUserMessage
+    && !!currentTurnUserMessage.content?.trim()
+    && currentTurnUserMessage.content !== '(图片)'
+    && (!currentTurnUserMessage.imageUris || currentTurnUserMessage.imageUris.length === 0)
+    ? currentTurnUserMessage
+    : undefined;
   const turnStatus = activeTurnVisible
     ? {
         label: activeTurn.label || (
@@ -872,7 +876,7 @@ export default function ChatScreen() {
           : 'active' as const,
         retryable: !!(
           activeTurn.recoverable
-          && lastRetryableUserMessage
+          && retryableTextMessage
           && !isStreaming
           && (activeTurn.phase === 'failed' || activeTurn.phase === 'interrupted')
         ),
@@ -886,8 +890,8 @@ export default function ChatScreen() {
     [messages],
   );
   const retryLastTextTurn = () => {
-    if (!lastRetryableUserMessage || isStreaming) return;
-    void sendMessage(lastRetryableUserMessage.content, null);
+    if (!retryableTextMessage || isStreaming) return;
+    void sendMessage(retryableTextMessage.content, null);
   };
 
   return (

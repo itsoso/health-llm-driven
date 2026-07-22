@@ -93,6 +93,19 @@ def test_pick_reliable_near_fast_returns_qwen_flash_in_real_registry():
     assert mid == "qwen3.6-flash", f"期望 qwen3.6-flash, 实际 {mid}"
 
 
+def test_pick_reliable_can_leave_failed_provider_domain():
+    """供应商额度/故障后必须能排除整个 provider，而不是只换 model id。"""
+    from app.services.llm.model_registry import get_model, pick_reliable_tool_model_id
+
+    mid = pick_reliable_tool_model_id(
+        only_available=False,
+        exclude_providers={"tokenplan"},
+    )
+
+    assert mid is not None
+    assert get_model(mid).provider != "tokenplan"
+
+
 def test_qwen_flash_registered_before_deepseek_flash():
     """注册顺序不变量:qwen3.6-flash 必须排在 deepseek-v4-flash 前,
     否则"最快档第一个"会退回 deepseek-v4-flash。"""

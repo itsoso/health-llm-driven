@@ -403,12 +403,15 @@ describe('ChatScreen', () => {
       past: { completed_count: 0, events: [] },
       counts: { actionable: 1, overdue: 0, info: 0 },
     };
-    mockMessages = [{ id: 'u1', role: 'user', content: '查询今天饮食' }];
+    mockMessages = [{
+      id: 'u1', role: 'user', content: '查询今天饮食', sourceTurnId: 'turn-current',
+    }];
     mockActiveTurn = {
       phase: 'failed',
       recoverable: true,
       label: '网络中断，已保留内容',
       errorCode: 'stream_request_failed',
+      turnId: 'turn-current',
     };
 
     const { getByText, getByLabelText } = render(<ChatScreen />);
@@ -416,6 +419,32 @@ describe('ChatScreen', () => {
     expect(getByText('网络中断，已保留内容')).toBeTruthy();
     fireEvent.press(getByLabelText('重试上一轮'));
     await waitFor(() => expect(mockSendMessage).toHaveBeenCalledWith('查询今天饮食', null));
+  });
+
+  it('does not retry an older text turn when the failed current turn contains an image', () => {
+    mockMessages = [
+      { id: 'u-old', role: 'user', content: '查询今天饮食', sourceTurnId: 'turn-old' },
+      {
+        id: 'u-image',
+        role: 'user',
+        content: '记录这餐',
+        imageUris: ['https://health.example/api/v1/upload/files/chat/3/meal.jpg'],
+        sourceTurnId: 'turn-image',
+      },
+    ];
+    mockActiveTurn = {
+      phase: 'failed',
+      recoverable: true,
+      label: '上一轮未完成，内容已保留',
+      errorCode: 'stream_error_event',
+      turnId: 'turn-image',
+    };
+
+    const view = render(<ChatScreen />);
+
+    expect(view.getByText('上一轮未完成，内容已保留')).toBeTruthy();
+    expect(view.queryByLabelText('重试上一轮')).toBeNull();
+    expect(mockSendMessage).not.toHaveBeenCalled();
   });
 
   it('shows a visible history entry on the private coach page', async () => {

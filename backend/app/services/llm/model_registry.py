@@ -449,7 +449,12 @@ def is_reliable_tool_caller(model_id: Optional[str]) -> bool:
     return entry.reliable_tool_calling
 
 
-def _reliable_tool_models(only_available: bool) -> List[ModelEntry]:
+def _reliable_tool_models(
+    only_available: bool,
+    *,
+    exclude_model_ids: set[str] | None = None,
+    exclude_providers: set[str] | None = None,
+) -> List[ModelEntry]:
     """内部工具/回退路由的候选集: 可靠工具调用 + 能生成文本的模型。
 
     必须 include_non_chat=True: 最快的可靠工具模型 (qwen3.6-flash) 故意
@@ -462,22 +467,37 @@ def _reliable_tool_models(only_available: bool) -> List[ModelEntry]:
     也已标 reliable_tool_calling=False, 但这里显式再钉一道 —— 即使有谁误把某个
     图片模型标成 reliable_tool_calling=True, 也绝不会被工具路由选中。
     """
+    excluded_models = exclude_model_ids or set()
+    excluded_providers = exclude_providers or set()
     return [
         m
         for m in list_models(only_available=only_available, include_non_chat=True)
-        if "text_generation" in m.capabilities and m.reliable_tool_calling
+        if (
+            "text_generation" in m.capabilities
+            and m.reliable_tool_calling
+            and m.id not in excluded_models
+            and m.provider not in excluded_providers
+        )
     ]
 
 
 def pick_reliable_tool_model_id(
     near_speed_tier: Optional[str] = None,
     only_available: bool = True,
+    *,
+    exclude_model_ids: set[str] | None = None,
+    exclude_providers: set[str] | None = None,
 ) -> Optional[str]:
     """选一个 reliable_tool_calling=True 的可用模型 id, 优先贴近 near_speed_tier。
 
-    无任何可靠+可用模型时返回 None (调用方维持现状, 依赖兜底解析)。
+    exclude_model_ids / exclude_providers 用于从额度、网络或供应商级故障域中
+    真正切出。无任何可靠+可用模型时返回 None (调用方维持现状, 依赖兜底解析)。
     """
-    models = _reliable_tool_models(only_available)
+    models = _reliable_tool_models(
+        only_available,
+        exclude_model_ids=exclude_model_ids,
+        exclude_providers=exclude_providers,
+    )
     if not models:
         return None
     if near_speed_tier:

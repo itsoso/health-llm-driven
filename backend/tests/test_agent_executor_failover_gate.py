@@ -62,6 +62,34 @@ def test_stable_fallback_for_tools_uses_reliable_model_not_minimax(monkeypatch):
     assert ex._last_provider_model_name == "qwen3.7-max"
 
 
+def test_stable_fallback_for_tools_excludes_failed_provider(monkeypatch):
+    """TokenPlan 额度/故障后必须跨 provider，不能在同一故障域内换模型假降级。"""
+    cross_provider = MagicMock(name="langbridge_reliable")
+    cross_provider.model = "commercial/GPT-5.5"
+    cross_provider.provider_name = "langbridge-proxy"
+    failed = MagicMock(name="failed_tokenplan")
+    failed.provider_name = "tokenplan"
+    picked = {}
+
+    def fake_pick(**kwargs):
+        picked.update(kwargs)
+        return "gpt-5.5"
+
+    monkeypatch.setattr(reg, "pick_reliable_tool_model_id", fake_pick)
+    import app.services.llm.factory as factory
+    monkeypatch.setattr(factory, "create_provider_for_model_id", lambda mid: cross_provider)
+
+    ex = _executor()
+    provider = ex._stable_fallback_provider(
+        pass_tools=True,
+        failed_provider=failed,
+    )
+
+    assert provider is cross_provider
+    assert picked["exclude_providers"] == {"tokenplan"}
+    assert ex._last_provider_model_name == "commercial/GPT-5.5"
+
+
 def test_stable_fallback_for_tools_no_reliable_falls_back_to_default(monkeypatch):
     """无可靠模型可用 (env 缺) → 回默认 tokenplan 并 log, 依赖兜底解析 (fail-open)。"""
     default = MagicMock(name="tokenplan_default")
