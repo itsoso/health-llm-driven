@@ -1248,6 +1248,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     try {
       const toolsUsed: Set<string> = new Set();
       const streamedCardKeys: Set<string> = new Set();
+      let renderedStreamedServerCard = false;
       const removeStreamedTurnCards = () => {
         setMessages(prev => prev.filter(
           message => !message.cardType || message.sourceTurnId !== turnId,
@@ -1413,6 +1414,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
             return true;
           });
           if (uniqueCards.length > 0) {
+            renderedStreamedServerCard = true;
             setMessages(prev => insertCardMessagesAfterAssistant(prev, aId, uniqueCards, turnId));
           }
         } else if (evt.type === 'done') {
@@ -1467,6 +1469,15 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
             && terminalTurn.phase === 'completed'
             && typeof evt.messageId === 'number'
           );
+          const rawDoneCards = (
+            allowDoneCards && Array.isArray((evt as any).cards)
+          ) ? (evt as any).cards : [];
+          const terminalServerCards = renderServerCards(rawDoneCards);
+          const terminalCard = terminalServerCards.length === 1
+            ? terminalServerCards[0]
+            : terminalServerCards.length > 1
+              ? { type: 'cards_group', data: { cards: terminalServerCards }, actions: [] }
+              : undefined;
           // done 收尾原子性: 把 token 缓冲里最后一批一起折进这次 setMessages, 且同帧
           // 把 streaming 翻 false —— 不再靠 finally 的 streaming:false 分帧收尾。这样
           // done 首帧就是「完整内容 + streaming:false」, ChatBubble 的 renderedMarkdown
@@ -1484,7 +1495,11 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
           // 把耗时 + 模型名写入当前 assistant 消息 (ChatBubble 渲染 footer)。清空 status 行 (收进思考完成态 pill)。
           setMessages((prev) => {
             const settled = prev
-              .filter(m => allowDoneCards || !m.cardType || m.sourceTurnId !== turnId)
+              .filter(m => (
+                !m.cardType
+                || m.sourceTurnId !== turnId
+                || (allowDoneCards && !terminalCard)
+              ))
               .map(m => m.id === aId ? {
               ...m,
               content: lastBatch ? mergeAssistantStreamContent(m.content, lastBatch) : m.content,
@@ -1503,32 +1518,22 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
               thinkingSteps: evt.thinkingSteps?.length ? evt.thinkingSteps : m.thinkingSteps,
               writeReceipts: evt.writeReceipts,
               } : m);
-            return evt.medicationBatchDecision
+            const projected = evt.medicationBatchDecision
               ? projectMedicationTerminalMessages(settled, evt.medicationBatchDecision)
               : settled;
-          });
-          const rawDoneCards = (
-            allowDoneCards && Array.isArray((evt as any).cards)
-          ) ? (evt as any).cards : [];
-          const serverCards = renderServerCards(rawDoneCards).filter((card) => {
-            const key = serverCardKey(card);
-            if (streamedCardKeys.has(key)) return false;
-            streamedCardKeys.add(key);
-            return true;
-          });
-          if (serverCards.length > 0) {
-            const single = serverCards.length === 1 ? serverCards[0] : { type: 'cards_group', data: { cards: serverCards }, actions: [] };
-            setMessages(prev => [...prev, {
+            if (!terminalCard) return projected;
+            return [...projected, {
               id: nextId(),
               role: 'assistant' as const,
               content: '',
-              cardType: single.type,
-              cardData: single.data,
-              cardActions: single.actions,
+              cardType: terminalCard.type,
+              cardData: terminalCard.data,
+              cardActions: terminalCard.actions,
               sourceMessageId: evt.messageId,
               sourceTurnId: turnId,
-            }]);
-          } else if (allowDoneCards && rawDoneCards.length === 0) {
+            }];
+          });
+          if (allowDoneCards && !terminalCard && !renderedStreamedServerCard) {
             const card = await dispatchCard({
               query: finalMsg,
               query_lower: finalMsg.toLowerCase(),

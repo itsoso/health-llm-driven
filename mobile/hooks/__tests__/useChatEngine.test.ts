@@ -9,6 +9,7 @@ const mockGetConversations = jest.fn();
 const mockGetConversationMessages = jest.fn();
 const mockDeleteConversation = jest.fn();
 const mockRenderServerCards = jest.fn();
+const mockDispatchCard = jest.fn().mockResolvedValue(null);
 const mockEmitClientEvent = jest.fn().mockResolvedValue(undefined);
 const mockDurationBucket = jest.fn().mockReturnValue('10_30s');
 let mockAsyncStorage: Record<string, string> = {};
@@ -40,7 +41,7 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
 }));
 
 jest.mock('../../components/chat/cards', () => ({
-  dispatchCard: jest.fn().mockResolvedValue(null),
+  dispatchCard: (...args: any[]) => mockDispatchCard(...args),
   renderServerCards: (...args: any[]) => mockRenderServerCards(...args),
 }));
 
@@ -246,6 +247,53 @@ async function* streamTokenCardThenWait() {
   yield { type: 'done', conversationId: 777, messageId: 2 };
 }
 
+const verifiedDietReceipt = {
+  operationId: 'health_record:diet_record:81',
+  status: 'verified',
+  resourceType: 'diet_record',
+  resourceId: '81',
+  completedAt: '2026-07-22T12:00:00.000Z',
+  verified: true,
+};
+
+function streamDietCardThenDone(cards: 'missing' | 'empty' | 'summary') {
+  return async function* () {
+    yield { type: 'start', conversationId: 777 };
+    yield {
+      type: 'tool',
+      toolName: 'health_record',
+      toolSuccess: true,
+      writeAttempted: true,
+      writeCompleted: true,
+      receipt: verifiedDietReceipt,
+    };
+    yield {
+      type: 'card',
+      card: {
+        type: 'record_quality',
+        data: { domain: 'diet', summary: '已记录旧版饮食摘要' },
+        actions: [],
+      },
+    };
+    const done: Record<string, unknown> = {
+      type: 'done',
+      conversationId: 777,
+      messageId: 82,
+      completionStatus: 'complete',
+      writeReceipts: [verifiedDietReceipt],
+    };
+    if (cards === 'empty') done.cards = [];
+    if (cards === 'summary') {
+      done.cards = [{
+        type: 'diet_daily_summary',
+        data: { date: '2026-07-22', summary: '服务端终态新版饮食摘要' },
+        actions: [],
+      }];
+    }
+    yield done;
+  };
+}
+
 // 快路由: 一批 token 紧挨着到达 (worst case for the ~80ms 攒批 throttle).
 // 攒批后终态必须是逐 token 顺序拼接, 不丢字、不乱序.
 const BURST_TOKENS = ['第一', '段。', '第二', '段。', '第三', '段。', '收尾。'];
@@ -404,6 +452,7 @@ describe('useChatEngine', () => {
   });
   beforeEach(() => {
     jest.clearAllMocks();
+    mockDispatchCard.mockResolvedValue(null);
     mockAsyncStorage = {};
     finishStream = undefined;
     failStream = undefined;
@@ -1646,6 +1695,111 @@ describe('useChatEngine', () => {
       finishStream?.();
       await Promise.resolve();
     });
+  });
+
+  it.each([
+    ['missing', 'omits cards'],
+    ['empty', 'returns an empty cards array'],
+  ] as const)(
+    'keeps one streamed diet card and skips local fallback when done %s (%s)',
+    async (cards, _description) => {
+      mockStreamChat.mockImplementation(streamDietCardThenDone(cards));
+      mockDispatchCard.mockResolvedValue({
+        type: 'record',
+        data: { domain: 'diet', summary: '本地 fallback 饮食卡' },
+      });
+      const { result } = renderHook(() => useChatEngine());
+
+      await act(async () => {
+        await result.current.sendMessage('记录午餐牛肉面');
+      });
+
+      const turnId = result.current.activeTurn.turnId;
+      const dietCards = result.current.messages.filter(message => (
+        message.sourceTurnId === turnId
+        && message.cardData?.domain === 'diet'
+      ));
+      expect(dietCards).toHaveLength(1);
+      expect(dietCards[0]).toEqual(expect.objectContaining({
+        cardType: 'record_quality',
+        cardData: expect.objectContaining({ summary: '已记录旧版饮食摘要' }),
+      }));
+      expect(mockDispatchCard).not.toHaveBeenCalled();
+    },
+  );
+
+  it('replaces the streamed diet card with the authoritative done snapshot', async () => {
+    mockStreamChat.mockImplementation(streamDietCardThenDone('summary'));
+    mockDispatchCard.mockResolvedValue({
+      type: 'record',
+      data: { domain: 'diet', summary: '不应出现的本地 fallback' },
+    });
+    const { result } = renderHook(() => useChatEngine());
+
+    await act(async () => {
+      await result.current.sendMessage('记录午餐牛肉面');
+    });
+
+    const turnId = result.current.activeTurn.turnId;
+    const turnCards = result.current.messages.filter(message => (
+      message.sourceTurnId === turnId && !!message.cardType
+    ));
+    expect(turnCards).toHaveLength(1);
+    expect(turnCards[0]).toEqual(expect.objectContaining({
+      cardType: 'diet_daily_summary',
+      cardData: expect.objectContaining({ summary: '服务端终态新版饮食摘要' }),
+      sourceMessageId: 82,
+      sourceTurnId: turnId,
+    }));
+    expect(mockDispatchCard).not.toHaveBeenCalled();
+  });
+
+  it('replaces only current-turn cards when applying the authoritative done snapshot', async () => {
+    mockStreamChat.mockImplementation(streamDietCardThenDone('summary'));
+    const previousMedicationActions = [{
+      id: 'medication-batch-confirm:42',
+      label: '确认记录',
+      action: 'write_intent.confirm',
+      payload: { write_intent_id: 42 },
+    }];
+    const previousMedicationCard = {
+      id: 'pending-medication-42',
+      role: 'assistant' as const,
+      content: '',
+      cardType: 'medication_draft',
+      cardData: { write_intent_id: 42, items: [{ medication_name: '伊托必利' }] },
+      cardActions: previousMedicationActions,
+      sourceTurnId: 'turn-before-medication',
+    };
+    const previousUnrelatedCard = {
+      id: 'previous-unrelated-card',
+      role: 'assistant' as const,
+      content: '',
+      cardType: 'health_snapshot',
+      cardData: { summary: '上一轮健康快照' },
+      cardActions: [],
+      sourceTurnId: 'turn-before-snapshot',
+    };
+    const { result } = renderHook(() => useChatEngine());
+    act(() => {
+      result.current.setMessages([previousMedicationCard, previousUnrelatedCard]);
+    });
+
+    await act(async () => {
+      await result.current.sendMessage('记录午餐牛肉面');
+    });
+
+    expect(result.current.messages.find(message => message.id === previousMedicationCard.id))
+      .toBe(previousMedicationCard);
+    expect(result.current.messages.find(message => message.id === previousMedicationCard.id)?.cardActions)
+      .toBe(previousMedicationActions);
+    expect(result.current.messages.find(message => message.id === previousUnrelatedCard.id))
+      .toBe(previousUnrelatedCard);
+    const currentTurnCards = result.current.messages.filter(message => (
+      message.sourceTurnId === result.current.activeTurn.turnId && !!message.cardType
+    ));
+    expect(currentTurnCards).toHaveLength(1);
+    expect(currentTurnCards[0].cardType).toBe('diet_daily_summary');
   });
 
   it('keeps the local streaming assistant bubble when conversation id arrives mid-stream', async () => {
