@@ -79,6 +79,19 @@ interface MemoryInjectionStats {
   avg_chars_added: number;
 }
 
+interface AIGCMediaStats {
+  total_jobs: number;
+  by_status: Record<string, number>;
+  by_error_code: Record<string, number>;
+  auth_failures: number;
+  submission_unknown: number;
+  safe_retryable: number;
+  success_rate_pct: number | null;
+  last_job_at: string | null;
+  last_failure_at: string | null;
+  status: 'ok' | 'warning' | 'critical' | 'no_data';
+}
+
 interface DashboardReport {
   open_loop: OpenLoopStats;
   clinical_journal: ClinicalJournalStats;
@@ -87,6 +100,7 @@ interface DashboardReport {
   action_card: ActionCardStats;
   safety_guardian: SafetyStats;
   memory_injection?: MemoryInjectionStats;
+  aigc_media?: AIGCMediaStats;
   tool_validator?: ToolValidatorStats;
 }
 
@@ -284,6 +298,50 @@ export default function ObservabilityTab() {
               ))}
             </div>
           </div>
+
+          {data.report.aigc_media && (
+            <Section
+              title="AIGC 媒体生成"
+              badge={
+                data.report.aigc_media.status === 'critical'
+                  ? '授权故障'
+                  : data.report.aigc_media.status === 'warning'
+                    ? '需关注'
+                    : data.report.aigc_media.status === 'ok'
+                      ? '正常'
+                      : '暂无数据'
+              }
+            >
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
+                <StatCard title="任务总数" value={data.report.aigc_media.total_jobs} />
+                <StatCard
+                  title="成功率"
+                  value={
+                    data.report.aigc_media.success_rate_pct === null
+                      ? '—'
+                      : `${data.report.aigc_media.success_rate_pct}%`
+                  }
+                />
+                <StatCard title="授权失败" value={data.report.aigc_media.auth_failures} />
+                <StatCard title="提交待核验" value={data.report.aigc_media.submission_unknown} />
+                <StatCard title="可安全重试" value={data.report.aigc_media.safe_retryable} />
+              </div>
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <div className="text-xs text-purple-200/70 mb-2">任务状态</div>
+                  <KvList data={data.report.aigc_media.by_status} />
+                </div>
+                <div>
+                  <div className="text-xs text-purple-200/70 mb-2">供应商错误码</div>
+                  <KvList data={data.report.aigc_media.by_error_code} />
+                </div>
+              </div>
+              <div className="mt-4 text-xs text-purple-200/60">
+                最近任务 {fmtTime(data.report.aigc_media.last_job_at)}
+                {' · '}最近失败 {fmtTime(data.report.aigc_media.last_failure_at)}
+              </div>
+            </Section>
+          )}
 
           {/* A. Open-Loop */}
           <Section title="A. Open-Loop Manager 推送" badge="APNs">

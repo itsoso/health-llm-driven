@@ -568,9 +568,12 @@ function ChatBubbleInner({
     await execute();
   }, [cardActionStateByKey, item.id, item.sourceMessageId, item.sourceTurnId, qc, toast]);
 
-  const cardReceipts = Object.values(cardReceiptByKey).flat();
+  const isUserVisibleWriteReceipt = (receipt: WriteReceipt) => (
+    receipt.resourceType !== 'aigc_media_confirmation'
+  );
+  const cardReceipts = Object.values(cardReceiptByKey).flat().filter(isUserVisibleWriteReceipt);
   const latestCardReceipt = cardReceipts.length > 0 ? cardReceipts[cardReceipts.length - 1] : null;
-  const directWriteReceipts = item.writeReceipts || [];
+  const directWriteReceipts = (item.writeReceipts || []).filter(isUserVisibleWriteReceipt);
   const visibleWriteReceipts = cardReceipts.length > 0
     ? cardReceipts
     : directWriteReceipts;

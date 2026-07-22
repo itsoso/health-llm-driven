@@ -268,6 +268,53 @@ describe('renderCard 安全降级', () => {
 
     expect(screen.getByText('提交待核验')).toBeTruthy();
     expect(screen.getByText(/已停止自动重试/)).toBeTruthy();
+    expect(screen.queryByText('重试生成')).toBeNull();
+    screen.unmount();
+  });
+
+  it('retries a definitively rejected AIGC job from the failed card', async () => {
+    (api.get as jest.Mock).mockResolvedValueOnce({
+      data: {
+        id: 'aigc_retry_1',
+        kind: 'text_to_video',
+        status: 'failed',
+        progress: 0,
+        can_retry: true,
+        error_code: 'provider_auth_failed',
+        error_message: '创作服务授权异常，已通知管理员。',
+        result: { media_type: null, url: null },
+      },
+    });
+    (api.post as jest.Mock).mockResolvedValueOnce({
+      data: {
+        id: 'aigc_retry_1',
+        kind: 'text_to_video',
+        status: 'queued',
+        progress: 10,
+        can_retry: false,
+        result: { media_type: null, url: null },
+      },
+    });
+    const element = renderCard({
+      type: 'aigc_media_job',
+      data: {
+        job_id: 'aigc_retry_1',
+        kind: 'text_to_video',
+        status: 'failed',
+        progress: 0,
+        can_retry: true,
+        error_code: 'provider_auth_failed',
+        error_message: '创作服务授权异常，已通知管理员。',
+        result: { media_type: null, url: null },
+      },
+    });
+    const screen = render(element!);
+    const retry = await screen.findByText('重试生成');
+
+    fireEvent.press(retry);
+
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith('/aigc/media/jobs/aigc_retry_1/retry'));
+    expect(await screen.findByText('排队中')).toBeTruthy();
     screen.unmount();
   });
 

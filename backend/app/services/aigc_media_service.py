@@ -29,6 +29,17 @@ class AIGCMediaConfigurationError(ValueError):
 class AIGCMediaProviderError(RuntimeError):
     """Safe provider error that never embeds a prompt, media URL, or API key."""
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        error_code: str = "provider_error",
+        status_code: int | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.error_code = error_code
+        self.status_code = status_code
+
 
 class AIGCMediaProviderIndeterminateError(AIGCMediaProviderError):
     """The provider may have accepted a billed task but its response was lost."""
@@ -260,8 +271,26 @@ class AIGCMediaProvider:
     @staticmethod
     def _response_json(response: httpx.Response, *, operation: str) -> dict[str, Any]:
         if response.status_code >= 400:
-            logger.warning("[aigc_media] provider %s failed status=%s", operation, response.status_code)
-            raise AIGCMediaProviderError("Model Studio media request was rejected")
+            status_code = int(response.status_code)
+            if status_code in {401, 403}:
+                error_code = "provider_auth_failed"
+            elif status_code == 429:
+                error_code = "provider_rate_limited"
+            elif status_code >= 500:
+                error_code = "provider_unavailable"
+            else:
+                error_code = "provider_request_rejected"
+            logger.warning(
+                "[aigc_media] provider %s failed status=%s code=%s",
+                operation,
+                status_code,
+                error_code,
+            )
+            raise AIGCMediaProviderError(
+                "Model Studio media request was rejected",
+                error_code=error_code,
+                status_code=status_code,
+            )
         try:
             payload = response.json()
         except ValueError as exc:

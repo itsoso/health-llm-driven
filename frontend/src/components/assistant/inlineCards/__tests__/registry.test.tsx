@@ -13,7 +13,8 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { api } from '@/services/api/client';
 import {
   CARD_REGISTRY,
   CARD_MAP,
@@ -384,6 +385,48 @@ describe('renderCard', () => {
     const html = renderToStaticMarkup(r!);
     expect(html).toContain('提交待核验');
     expect(html).toContain('已停止自动重试');
+    expect(html).not.toContain('重试生成');
+  });
+
+  it('retries a definitively rejected AIGC job in place', async () => {
+    const get = vi.spyOn(api, 'get').mockResolvedValueOnce({
+      data: {
+        id: 'aigc_retry_1',
+        kind: 'text_to_video',
+        status: 'failed',
+        progress: 0,
+        can_retry: true,
+        error_message: '创作服务授权异常，已通知管理员。',
+      },
+    } as never);
+    const post = vi.spyOn(api, 'post').mockResolvedValueOnce({
+      data: {
+        id: 'aigc_retry_1',
+        kind: 'text_to_video',
+        status: 'queued',
+        progress: 10,
+        can_retry: false,
+      },
+    } as never);
+    const card = renderCard({
+      type: 'aigc_media_job',
+      data: {
+        job_id: 'aigc_retry_1',
+        kind: 'text_to_video',
+        status: 'failed',
+        progress: 0,
+        can_retry: true,
+        error_message: '创作服务授权异常，已通知管理员。',
+      },
+    });
+    render(card!);
+
+    fireEvent.click(screen.getByRole('button', { name: '重试生成' }));
+
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/aigc/media/jobs/aigc_retry_1/retry'));
+    expect(await screen.findByText('排队中')).toBeInTheDocument();
+    get.mockRestore();
+    post.mockRestore();
   });
 
   it('renders safe route actions below backend cards', () => {

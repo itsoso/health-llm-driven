@@ -1102,6 +1102,30 @@ ${sectionTitle}
     expect(getByText('已保存到今日饮食 · 记录 #701')).toBeTruthy();
   });
 
+  it('keeps an AIGC draft receipt internal because the confirmation card owns visible state', () => {
+    const qc = new QueryClient();
+    const message: UIMessage = {
+      id: 'assistant-aigc-draft-receipt',
+      role: 'assistant',
+      content: '创作草稿已准备。',
+      streaming: false,
+      writeReceipts: [verifiedReceipt(
+        'aigc_media_confirmation',
+        'aigc_confirm_0123456789abcdef0123456789abcdef',
+      )],
+    };
+
+    const { getByText, queryByTestId, queryByText } = render(
+      <QueryClientProvider client={qc}>
+        <ChatBubble item={message} />
+      </QueryClientProvider>,
+    );
+
+    expect(getByText('创作草稿已准备。')).toBeTruthy();
+    expect(queryByTestId('write-receipt')).toBeNull();
+    expect(queryByText(/aigc_confirm_/)).toBeNull();
+  });
+
   it('shows every direct receipt from a text-confirmed medication batch', () => {
     const qc = new QueryClient();
     const message: UIMessage = {

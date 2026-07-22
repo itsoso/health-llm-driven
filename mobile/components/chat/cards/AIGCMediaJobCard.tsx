@@ -34,6 +34,8 @@ export interface AIGCMediaJobCardData {
     url?: string | null;
   } | null;
   error_message?: string | null;
+  error_code?: string | null;
+  can_retry?: boolean;
 }
 
 const ACTIVE_STATUSES = new Set<AIGCStatus>(['queued', 'running']);
@@ -97,6 +99,8 @@ export function AIGCMediaJobCardView(initialData: AIGCMediaJobCardData) {
   const [data, setData] = useState<AIGCMediaJobCardData>(initialData);
   const [refreshing, setRefreshing] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [retrying, setRetrying] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   const mounted = useRef(true);
 
   useEffect(() => {
@@ -145,6 +149,7 @@ export function AIGCMediaJobCardView(initialData: AIGCMediaJobCardData) {
     player.showNowPlayingNotification = false;
   });
   const canCancel = ACTIVE_STATUSES.has(status) && !cancelling;
+  const canRetry = status === 'failed' && data.can_retry === true && !retrying;
   const detail = useMemo(() => {
     if (status === 'queued') return '小巴已提交任务，正在等待百炼处理。';
     if (status === 'running') return '生成完成后会自动保存到你的私有空间。';
@@ -166,6 +171,21 @@ export function AIGCMediaJobCardView(initialData: AIGCMediaJobCardData) {
       // Keep the active state visible; the user may retry cancellation.
     } finally {
       if (mounted.current) setCancelling(false);
+    }
+  };
+
+  const retry = async () => {
+    if (!canRetry) return;
+    setRetrying(true);
+    setActionError(null);
+    try {
+      const response = await api.post(`/aigc/media/jobs/${encodeURIComponent(data.job_id)}/retry`);
+      const projection = normalizeJobProjection(response?.data, data.job_id);
+      if (projection) setData(projection);
+    } catch {
+      setActionError('重试未提交，请检查网络后再试。');
+    } finally {
+      if (mounted.current) setRetrying(false);
     }
   };
 
@@ -211,6 +231,27 @@ export function AIGCMediaJobCardView(initialData: AIGCMediaJobCardData) {
           <Text maxFontSizeMultiplier={1.1} style={styles.progressText}>{progress}%</Text>
         </View>
       ) : null}
+
+      {status === 'failed' && data.can_retry === true ? (
+        <Pressable
+          style={({ pressed }) => [styles.retryButton, pressed && styles.retryButtonPressed]}
+          onPress={retry}
+          disabled={retrying}
+          accessibilityRole="button"
+          accessibilityLabel="重试生成"
+        >
+          {retrying ? (
+            <ActivityIndicator size="small" color={C.green700} />
+          ) : (
+            <Ionicons name="refresh" size={16} color={C.green700} />
+          )}
+          <Text maxFontSizeMultiplier={1.2} style={styles.retryButtonText}>
+            {retrying ? '正在重试' : '重试生成'}
+          </Text>
+        </Pressable>
+      ) : null}
+
+      {actionError ? <Text style={styles.actionError}>{actionError}</Text> : null}
 
       {resultUrl && isImage ? (
         <Image
@@ -264,6 +305,10 @@ const styles = StyleSheet.create({
   progressTrack: { flex: 1, height: 6, borderRadius: 3, backgroundColor: C.paper2, overflow: 'hidden' },
   progressFill: { height: '100%', borderRadius: 3, backgroundColor: C.green500 },
   progressText: { width: 32, textAlign: 'right', fontFamily: revaFonts.sans, fontSize: 11, fontWeight: '700', color: C.ink3 } as TextStyle,
+  retryButton: { minHeight: 42, marginTop: 12, borderRadius: revaRadii.md, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, backgroundColor: C.green100 },
+  retryButtonPressed: { opacity: 0.72 },
+  retryButtonText: { fontFamily: revaFonts.sans, fontSize: 14, fontWeight: '800', color: C.green700 } as TextStyle,
+  actionError: { marginTop: 8, fontFamily: revaFonts.sans, fontSize: 12, lineHeight: 18, color: '#C84B3C' } as TextStyle,
   image: { width: '100%', aspectRatio: 1, borderRadius: revaRadii.md, marginTop: 12, backgroundColor: C.paper2 },
   videoFrame: { width: '100%', aspectRatio: 16 / 9, marginTop: 12, borderRadius: revaRadii.md, overflow: 'hidden', backgroundColor: C.ink1 },
   video: { flex: 1 },

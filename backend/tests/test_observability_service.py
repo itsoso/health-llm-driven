@@ -8,6 +8,7 @@ import pytest
 from app.services.observability_service import (
     action_card_stats,
     actionable_suggestions,
+    aigc_media_stats,
     clinical_journal_stats,
     collect_dashboard,
     doctor_report_stats,
@@ -81,14 +82,105 @@ def test_memory_injection_stats_empty_db(db):
     assert r == {"total_invocations": 0, "by_stage": {}, "avg_chars_added": 0}
 
 
+def test_aigc_media_stats_empty_db(db):
+    r = aigc_media_stats(db, _since(), user_id=None)
+    assert r == {
+        "total_jobs": 0,
+        "by_status": {},
+        "by_error_code": {},
+        "auth_failures": 0,
+        "submission_unknown": 0,
+        "safe_retryable": 0,
+        "success_rate_pct": None,
+        "last_job_at": None,
+        "last_failure_at": None,
+        "status": "no_data",
+    }
+
+
 def test_collect_dashboard_schema(db):
     """collect_dashboard 返回的 top-level keys 固化 — admin 前端的 TS 类型靠它."""
     report = collect_dashboard(db, days=7, user_id=None, include_journalctl=False)
     assert set(report.keys()) == {
         "open_loop", "clinical_journal", "memory_kg",
         "doctor_report", "action_card", "safety_guardian",
-        "memory_injection", "client_events",
+        "memory_injection", "client_events", "aigc_media",
     }
+
+
+def test_aigc_media_stats_aggregate_failures_without_exposing_job_content(db):
+    from app.models.aigc_media_job import AIGCMediaJob
+
+    now = _now()
+    db.add_all([
+        AIGCMediaJob(
+            id="aigc-auth-failed",
+            user_id=1,
+            kind="text_to_video",
+            status="failed",
+            progress=0,
+            model="wan2.7-t2v",
+            idempotency_key="auth-failed",
+            request_fingerprint="a" * 64,
+            provider_error_code="provider_auth_failed",
+            error_message="must never be returned by aggregate",
+            created_at=now - timedelta(minutes=10),
+            completed_at=now - timedelta(minutes=9),
+        ),
+        AIGCMediaJob(
+            id="aigc-success",
+            user_id=1,
+            kind="text_to_image",
+            status="succeeded",
+            progress=100,
+            model="wan2.7-image",
+            idempotency_key="success",
+            request_fingerprint="b" * 64,
+            created_at=now - timedelta(minutes=5),
+            completed_at=now - timedelta(minutes=4),
+        ),
+        AIGCMediaJob(
+            id="aigc-other-user",
+            user_id=2,
+            kind="text_to_video",
+            status="submission_unknown",
+            progress=0,
+            model="wan2.7-t2v",
+            idempotency_key="other-user",
+            request_fingerprint="c" * 64,
+            provider_error_code="provider_submission_unknown",
+            created_at=now - timedelta(minutes=3),
+        ),
+    ])
+    db.commit()
+
+    all_users = aigc_media_stats(db, _since(), user_id=None)
+    owner = aigc_media_stats(db, _since(), user_id=1)
+
+    assert all_users["total_jobs"] == 3
+    assert all_users["auth_failures"] == 1
+    assert all_users["submission_unknown"] == 1
+    assert all_users["safe_retryable"] == 1
+    assert all_users["success_rate_pct"] == 50.0
+    assert all_users["status"] == "critical"
+    assert owner["total_jobs"] == 2
+    assert owner["submission_unknown"] == 0
+    assert owner["by_status"] == {"failed": 1, "succeeded": 1}
+    assert "aigc-auth-failed" not in str(all_users)
+    assert "must never be returned" not in str(all_users)
+
+
+def test_actionable_suggestions_puts_aigc_auth_failure_first(db):
+    report = collect_dashboard(db, days=7, user_id=None, include_journalctl=False)
+    report["aigc_media"] = {
+        **report["aigc_media"],
+        "auth_failures": 2,
+        "status": "critical",
+    }
+
+    lines = actionable_suggestions(report)
+
+    assert lines[0] == "🔴 AIGC 媒体授权失败 2 次：检查北京区域按量 API Key、Workspace 和模型权限"
 
 
 # ----------------------------------------------------------------

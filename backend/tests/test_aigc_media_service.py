@@ -4,6 +4,32 @@ import httpx
 import pytest
 
 
+@pytest.mark.asyncio
+async def test_provider_auth_rejection_has_a_stable_safe_error_code():
+    from app.services.aigc_media_service import AIGCMediaProvider, AIGCMediaProviderError
+
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(401, json={"code": "InvalidApiKey", "message": "secret provider detail"})
+
+    provider = AIGCMediaProvider(
+        api_key="test-payg-key",
+        api_base_url="https://dashscope.aliyuncs.com/api/v1",
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+    )
+    try:
+        with pytest.raises(AIGCMediaProviderError) as captured:
+            await provider.create_video_task(
+                kind="text_to_video",
+                prompt="生成一段 5 秒健康饮食氛围短视频",
+            )
+    finally:
+        await provider.aclose()
+
+    assert captured.value.error_code == "provider_auth_failed"
+    assert captured.value.status_code == 401
+    assert "secret provider detail" not in str(captured.value)
+
+
 def test_rejects_token_plan_endpoint_for_aigc_media():
     from app.services.aigc_media_service import (
         AIGCMediaConfigurationError,

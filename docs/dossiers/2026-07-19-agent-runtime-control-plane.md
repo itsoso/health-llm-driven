@@ -305,3 +305,13 @@ RequirementAdmission:
 
 - 设计、实施、真实 PostgreSQL、真实 LLM、CI、部署、回滚边界和生产验证证据已记录。
 - 本 dossier 完成的是 Runtime 控制面交付，不代表生产 canary 已放量。
+
+## 2026-07-22 · 定向 Canary 上线
+
+- 生产代码升级并核验为 `f32ed8f2a43e`，部署健康评分 `60/60 PASS`。
+- Runtime 配置由 `off` 切换为 `canary`；百分比保持 `0`，只允许内部用户 `3`，不向普通用户放量。
+- 线上有效配置核验为 `mode=canary`、`canary_percent=0`、`allowlist_count=1`；Backend、Celery worker 和 Celery beat 均为 `active`，健康接口通过。
+- 准入核验：用户 `3` 返回 `canary_allowlist`，非白名单用户返回 `canary_not_selected`。
+- 人工熔断演练：pause 后白名单准入返回 `circuit_paused`；resume 后恢复 `canary_allowlist`。最终 circuit 状态为 `active`。
+- 演练窗口内没有真实 terminal Run，因此没有扩大百分比流量。下一 Gate 需要白名单用户产生真实 Agent Turn，再依据 terminal/failure/reconciliation/stale lease 指标决定是否继续放量。
+- 裁决：**PASS（仅内部定向 Canary）**。

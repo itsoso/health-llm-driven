@@ -1145,6 +1145,8 @@ interface AIGCMediaJobData {
   title?: string;
   result?: { media_type?: string | null; url?: string | null } | null;
   error_message?: string | null;
+  error_code?: string | null;
+  can_retry?: boolean;
 }
 
 const AIGC_ACTIVE_STATUSES = new Set(['queued', 'running']);
@@ -1184,6 +1186,8 @@ function normalizeAIGCMediaJob(raw: unknown, fallback: AIGCMediaJobData): AIGCMe
 
 export function AIGCMediaJobCardView(initialData: AIGCMediaJobData) {
   const [data, setData] = React.useState(initialData);
+  const [retrying, setRetrying] = React.useState(false);
+  const [retryError, setRetryError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     setData(initialData);
@@ -1229,6 +1233,22 @@ export function AIGCMediaJobCardView(initialData: AIGCMediaJobData) {
         : status === 'submission_unknown'
           ? '提交结果待核验，已停止自动重试以避免重复生成。'
         : (data.error_message || '本次创作未完成，修改描述后可以重新生成。');
+  const canRetry = status === 'failed' && data.can_retry === true;
+
+  const retry = async () => {
+    if (!canRetry || retrying) return;
+    setRetrying(true);
+    setRetryError(null);
+    try {
+      const response = await api.post(`/aigc/media/jobs/${encodeURIComponent(data.job_id)}/retry`);
+      const next = normalizeAIGCMediaJob(response.data, data);
+      if (next) setData(next);
+    } catch {
+      setRetryError('重试未提交，请检查网络后再试。');
+    } finally {
+      setRetrying(false);
+    }
+  };
 
   return (
     <CardShell
@@ -1253,6 +1273,18 @@ export function AIGCMediaJobCardView(initialData: AIGCMediaJobData) {
           <span className="w-8 text-right text-[10px] font-bold tabular-nums text-slate-500">{progress}%</span>
         </div>
       )}
+      {canRetry && (
+        <button
+          type="button"
+          onClick={() => { void retry(); }}
+          disabled={retrying}
+          className="mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-emerald-100 px-3 text-sm font-extrabold text-emerald-800 transition-opacity disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <span aria-hidden="true">↻</span>
+          {retrying ? '正在重试' : '重试生成'}
+        </button>
+      )}
+      {retryError && <div className="mt-2 text-xs text-red-600">{retryError}</div>}
       {resultURL && isImage && (
         <a href={resultURL} target="_blank" rel="noreferrer" className="mt-3 block overflow-hidden rounded-xl ring-1 ring-emerald-100">
           <Image

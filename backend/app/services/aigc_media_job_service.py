@@ -56,6 +56,17 @@ SOURCE_IMAGE_KINDS = frozenset({"image_to_image", "image_to_video"})
 TERMINAL_STATUSES = frozenset({"succeeded", "failed", "cancelled", "submission_unknown"})
 _MUTABLE_ACTIVE_STATUSES = frozenset({"dispatching", "queued", "running"})
 _BILLABLE_OPEN_STATUSES = frozenset({"dispatching", "queued", "running", "submission_unknown"})
+_SAFE_RETRY_ERROR_CODES = frozenset(
+    {
+        "configuration_invalid",
+        "provider_auth_failed",
+        "provider_rate_limited",
+        "provider_request_rejected",
+        "provider_unavailable",
+        "provider_request_failed",
+        "missing_provider_task",
+    }
+)
 _AIGC_UPLOAD_ROOT = Path(__file__).resolve().parents[2] / "uploads" / "aigc"
 _MAX_IMAGE_RESULT_BYTES = 20 * 1024 * 1024
 _MAX_VIDEO_RESULT_BYTES = 100 * 1024 * 1024
@@ -361,22 +372,7 @@ class AIGCMediaJobService:
             # distinction between the two confirmations.
             return matching_job
 
-        source_url: str | None = None
-        source_data_uri: str | None = None
-        if request.kind in SOURCE_IMAGE_KINDS:
-            source_url = self._load_owned_source_url(user_id, request)
-            try:
-                if request.kind == "image_to_image":
-                    source_data_uri = read_owned_chat_image_data_uri(source_url, user_id)
-                else:
-                    source_url = build_short_lived_chat_image_provider_url(
-                        source_url,
-                        user_id,
-                        public_base_url=settings.site_base_url,
-                        ttl_seconds=settings.dashscope_aigc_source_url_ttl_seconds,
-                    )
-            except ValueError as exc:
-                raise AIGCMediaJobRequestError("源图片当前不可用于生成，请重新上传后再试") from exc
+        source_url, source_data_uri = self._prepare_owned_source(user_id=user_id, request=request)
 
         # The advisory lock is intentionally acquired before the second
         # fingerprint lookup. Two confirmations can race through the initial
@@ -432,8 +428,118 @@ class AIGCMediaJobService:
             raise
         self.db.refresh(job)
 
+        return await self._submit_provider_job(
+            job=job,
+            request=request,
+            source_url=source_url,
+            source_data_uri=source_data_uri,
+            started_at=now,
+        )
+
+    async def retry_failed(self, *, user_id: int, job_id: str) -> AIGCMediaJob:
+        """Retry one definitively rejected provider submission in-place.
+
+        The existing ledger row and confirmation remain the idempotency boundary.
+        Unknown submissions and any job with a provider task ID are deliberately
+        excluded because creating another provider task could duplicate spend.
+        """
+        job = (
+            self.db.query(AIGCMediaJob)
+            .filter(AIGCMediaJob.id == str(job_id), AIGCMediaJob.user_id == int(user_id))
+            .first()
+        )
+        if not job:
+            raise AIGCMediaJobRequestError("AIGC 任务不存在或无权使用")
+        if not self._is_safely_retryable(job):
+            raise AIGCMediaJobConflict("该任务不能重新提交，以避免重复生成或重复计费")
+
+        confirmation = (
+            self.db.query(AIGCMediaConfirmation)
+            .filter(
+                AIGCMediaConfirmation.job_id == job.id,
+                AIGCMediaConfirmation.user_id == int(user_id),
+            )
+            .first()
+        )
+        if not confirmation:
+            raise AIGCMediaJobConflict("原创作草稿不可用，请重新描述后发起")
+        request = AIGCMediaJobRequest(
+            kind=confirmation.kind,  # type: ignore[arg-type]
+            purpose=confirmation.purpose,
+            prompt=decrypt_aigc_confirmation_for(int(user_id), confirmation.prompt_ciphertext),
+            source_message_id=confirmation.source_message_id,
+            source_image_index=confirmation.source_image_index or 0,
+            duration_seconds=confirmation.duration_seconds,
+            ratio=confirmation.ratio,
+            model=confirmation.model,
+        )
+        source_url, source_data_uri = self._prepare_owned_source(user_id=user_id, request=request)
+
+        self._acquire_dispatch_lock()
+        self._reserve_dispatch_capacity(user_id=int(user_id), lock_acquired=True)
+        now = datetime.now(UTC)
+        claimed = (
+            self.db.query(AIGCMediaJob)
+            .filter(
+                AIGCMediaJob.id == job.id,
+                AIGCMediaJob.user_id == int(user_id),
+                AIGCMediaJob.status == "failed",
+                AIGCMediaJob.provider_task_id.is_(None),
+                AIGCMediaJob.provider_error_code.in_(_SAFE_RETRY_ERROR_CODES),
+            )
+            .update(
+                {
+                    "status": "dispatching",
+                    "progress": 0,
+                    "provider_error_code": None,
+                    "error_message": None,
+                    "started_at": None,
+                    "completed_at": None,
+                    "last_provider_checked_at": None,
+                },
+                synchronize_session=False,
+            )
+        )
+        self.db.commit()
+        if not claimed:
+            self.db.refresh(job)
+            raise AIGCMediaJobConflict("任务状态已变化，请查看最新结果")
+        self.db.refresh(job)
+        self.db.add(AgentAuditLog(
+            user_id=int(user_id),
+            agent_type="aigc_media",
+            action="provider_dispatch_retried",
+            result_summary=f"explicit AIGC retry job={job.id} kind={job.kind}",
+            result_detail={"job_id": job.id, "kind": job.kind, "model": job.model},
+        ))
+        self.db.commit()
+
+        try:
+            return await self._submit_provider_job(
+                job=job,
+                request=request,
+                source_url=source_url,
+                source_data_uri=source_data_uri,
+                started_at=now,
+            )
+        except AIGCMediaJobError:
+            # A provider rejection is a truthful job projection, not a transport
+            # failure of this API. Return it so every client renders one state.
+            self.db.refresh(job)
+            return job
+
+    async def _submit_provider_job(
+        self,
+        *,
+        job: AIGCMediaJob,
+        request: AIGCMediaJobRequest,
+        source_url: str | None,
+        source_data_uri: str | None,
+        started_at: datetime,
+    ) -> AIGCMediaJob:
         provider: AIGCMediaProvider | None = None
         provider_request_started = False
+        provider_accepted = False
         try:
             provider = self._provider_factory()
             if request.kind in IMAGE_KINDS:
@@ -443,6 +549,7 @@ class AIGCMediaJobService:
                     image_data_uri=source_data_uri,
                     model=job.model,
                 )
+                provider_accepted = True
                 await self._complete_from_provider_url(job, urls[0], kind=request.kind)
             else:
                 provider_request_started = True
@@ -454,11 +561,12 @@ class AIGCMediaJobService:
                     ratio=request.ratio,
                     model=job.model,
                 )
+                provider_accepted = True
                 job.provider_task_id = task.task_id
                 job.status = "queued" if task.status == "PENDING" else "running"
                 job.progress = 10 if job.status == "queued" else 25
-                job.started_at = now
-                job.last_provider_checked_at = now
+                job.started_at = started_at
+                job.last_provider_checked_at = started_at
                 self.db.commit()
                 self.db.refresh(job)
             return job
@@ -472,18 +580,37 @@ class AIGCMediaJobService:
             )
             self.db.refresh(job)
             return job
-        except (AIGCMediaConfigurationError, AIGCMediaProviderError, OSError) as exc:
-            self._mark_failed(job, "provider_request_failed", "百炼媒体生成暂时不可用，请稍后重试")
-            logger.warning(
-                "[aigc_media] dispatch failed job_id=%s kind=%s error=%s",
+        except AIGCMediaConfigurationError as exc:
+            message = "创作服务配置异常，已通知管理员。"
+            self._mark_failed(job, "configuration_invalid", message)
+            logger.error(
+                "[aigc_media] dispatch configuration invalid job_id=%s kind=%s",
                 job.id,
                 job.kind,
-                type(exc).__name__,
             )
-            raise AIGCMediaJobError("百炼媒体生成暂时不可用，请稍后重试") from exc
+            raise AIGCMediaJobError(message) from exc
+        except AIGCMediaProviderError as exc:
+            error_code = exc.error_code if exc.error_code in _SAFE_RETRY_ERROR_CODES else "provider_request_failed"
+            message = self._provider_failure_message(error_code)
+            self._mark_failed(job, error_code, message)
+            logger.warning(
+                "[aigc_media] dispatch rejected job_id=%s kind=%s code=%s status=%s",
+                job.id,
+                job.kind,
+                error_code,
+                exc.status_code,
+            )
+            raise AIGCMediaJobError(message) from exc
+        except OSError as exc:
+            if provider_accepted or provider_request_started:
+                self._mark_submission_unknown(job, "provider_result_persistence_unknown")
+                raise AIGCMediaJobError("创作结果保存状态待核验") from exc
+            message = "创作服务暂时不可用，可以稍后重试。"
+            self._mark_failed(job, "provider_request_failed", message)
+            raise AIGCMediaJobError(message) from exc
         except Exception as exc:
             # A crash after the request starts can lose a provider task ID. Do
-            # not turn that uncertainty into a silent replay opportunity.
+            # not turn that uncertainty into a replay opportunity.
             if provider_request_started:
                 self.db.rollback()
                 persisted = self.db.get(AIGCMediaJob, job.id)
@@ -497,6 +624,51 @@ class AIGCMediaJobService:
                     await provider.aclose()
                 except Exception as exc:  # noqa: BLE001 - never obscure durable job outcome
                     logger.warning("[aigc_media] provider close failed error=%s", type(exc).__name__)
+
+    def _prepare_owned_source(
+        self,
+        *,
+        user_id: int,
+        request: AIGCMediaJobRequest,
+    ) -> tuple[str | None, str | None]:
+        source_url: str | None = None
+        source_data_uri: str | None = None
+        if request.kind not in SOURCE_IMAGE_KINDS:
+            return source_url, source_data_uri
+        source_url = self._load_owned_source_url(user_id, request)
+        try:
+            if request.kind == "image_to_image":
+                source_data_uri = read_owned_chat_image_data_uri(source_url, user_id)
+            else:
+                source_url = build_short_lived_chat_image_provider_url(
+                    source_url,
+                    user_id,
+                    public_base_url=settings.site_base_url,
+                    ttl_seconds=settings.dashscope_aigc_source_url_ttl_seconds,
+                )
+        except ValueError as exc:
+            raise AIGCMediaJobRequestError("源图片当前不可用于生成，请重新上传后再试") from exc
+        return source_url, source_data_uri
+
+    @staticmethod
+    def _is_safely_retryable(job: AIGCMediaJob) -> bool:
+        return bool(
+            job.status == "failed"
+            and not job.provider_task_id
+            and job.provider_error_code in _SAFE_RETRY_ERROR_CODES
+        )
+
+    @staticmethod
+    def _provider_failure_message(error_code: str) -> str:
+        if error_code == "provider_auth_failed":
+            return "创作服务授权异常，已通知管理员。"
+        if error_code == "provider_rate_limited":
+            return "创作服务当前繁忙，可以稍后重试。"
+        if error_code == "provider_unavailable":
+            return "创作服务暂时不可用，可以稍后重试。"
+        if error_code == "provider_request_rejected":
+            return "本次创作请求未被服务接受，可以调整描述后重试。"
+        return "创作任务未能提交，可以稍后重试。"
 
     async def refresh(self, job: AIGCMediaJob) -> AIGCMediaJob:
         if job.status in TERMINAL_STATUSES:
@@ -601,6 +773,8 @@ class AIGCMediaJobService:
                 "url": result_url,
             },
             "error_message": job.error_message if job.status in {"failed", "submission_unknown"} else None,
+            "error_code": job.provider_error_code if job.status in {"failed", "submission_unknown"} else None,
+            "can_retry": self._is_safely_retryable(job),
             "created_at": job.created_at.isoformat() if job.created_at else None,
             "started_at": job.started_at.isoformat() if job.started_at else None,
             "completed_at": job.completed_at.isoformat() if job.completed_at else None,

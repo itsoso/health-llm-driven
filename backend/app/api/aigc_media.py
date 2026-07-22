@@ -101,3 +101,23 @@ async def cancel_aigc_media_job(
     except AIGCMediaJobError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return service.project(job)
+
+
+@router.post("/jobs/{job_id}/retry")
+async def retry_aigc_media_job(
+    job_id: str,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Explicitly retry a definitively rejected, never-accepted provider job."""
+    _load_job(db, user_id=current_user.id, job_id=job_id)
+    service = AIGCMediaJobService(db)
+    try:
+        job = await service.retry_failed(user_id=current_user.id, job_id=job_id)
+    except AIGCMediaJobQuotaExceeded as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
+    except AIGCMediaJobConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except AIGCMediaJobError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return service.project(job)

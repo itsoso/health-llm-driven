@@ -327,3 +327,87 @@ async def test_unexpected_failure_after_provider_request_links_an_unknown_job_to
     assert job.status == "submission_unknown"
     assert persisted_confirmation.job_id == job.id
     assert len(provider.image_requests) == 1
+
+
+@pytest.mark.asyncio
+async def test_explicit_retry_reuses_a_definitively_rejected_job_without_duplicate_ledger(
+    db, auth_user_and_headers, monkeypatch, tmp_path,
+):
+    from app.models.aigc_media_job import AIGCMediaJob
+    from app.services import aigc_media_job_service
+    from app.services.aigc_media_job_service import AIGCMediaJobRequest, AIGCMediaJobService
+    from app.services.aigc_media_service import AIGCMediaProviderError
+
+    class RejectThenSucceedProvider(_Provider):
+        def __init__(self) -> None:
+            super().__init__()
+            self.attempts = 0
+
+        async def generate_image(self, **kwargs):
+            self.image_requests.append(kwargs)
+            self.attempts += 1
+            if self.attempts == 1:
+                raise AIGCMediaProviderError(
+                    "Model Studio media request was rejected",
+                    error_code="provider_auth_failed",
+                    status_code=401,
+                )
+            return ["https://result.aliyuncs.com/generated.png"]
+
+    user, _ = auth_user_and_headers
+    provider = RejectThenSucceedProvider()
+    monkeypatch.setattr(aigc_media_job_service, "_AIGC_UPLOAD_ROOT", tmp_path)
+
+    async def download(_url: str, _kind: str):
+        return b"png", "image/png", "png"
+
+    service = AIGCMediaJobService(db, provider_factory=lambda: provider, result_downloader=download)
+    confirmation = await service.issue_confirmation(
+        user_id=user.id,
+        request=AIGCMediaJobRequest(
+            kind="text_to_image",
+            purpose="meal_visual",
+            prompt="制作一张早餐备餐步骤图",
+        ),
+    )
+
+    failed = await service.confirm_and_dispatch(user_id=user.id, confirmation_id=confirmation.id)
+    retried = await service.retry_failed(user_id=user.id, job_id=failed.id)
+
+    assert failed.id == retried.id
+    assert retried.status == "succeeded"
+    assert provider.attempts == 2
+    assert db.query(AIGCMediaJob).filter_by(user_id=user.id).count() == 1
+    assert service.project(retried)["can_retry"] is False
+
+
+@pytest.mark.asyncio
+async def test_indeterminate_submission_cannot_be_retried(db, auth_user_and_headers):
+    from app.services.aigc_media_job_service import (
+        AIGCMediaJobConflict,
+        AIGCMediaJobRequest,
+        AIGCMediaJobService,
+    )
+    from app.services.aigc_media_service import AIGCMediaProviderIndeterminateError
+
+    class UncertainProvider(_Provider):
+        async def generate_image(self, **kwargs):
+            self.image_requests.append(kwargs)
+            raise AIGCMediaProviderIndeterminateError("response lost after submission")
+
+    user, _ = auth_user_and_headers
+    provider = UncertainProvider()
+    service = AIGCMediaJobService(db, provider_factory=lambda: provider)
+    confirmation = await service.issue_confirmation(
+        user_id=user.id,
+        request=AIGCMediaJobRequest(
+            kind="text_to_image",
+            purpose="meal_visual",
+            prompt="制作一张早餐备餐步骤图",
+        ),
+    )
+    job = await service.confirm_and_dispatch(user_id=user.id, confirmation_id=confirmation.id)
+
+    with pytest.raises(AIGCMediaJobConflict, match="不能重新提交"):
+        await service.retry_failed(user_id=user.id, job_id=job.id)
+    assert len(provider.image_requests) == 1

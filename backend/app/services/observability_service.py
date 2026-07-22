@@ -361,6 +361,101 @@ def memory_injection_stats(db: Session, since: datetime, user_id: Optional[int])
 
 
 # ---------------------------------------------------------------
+# H. AIGC Media provider health
+# ---------------------------------------------------------------
+
+_AIGC_SAFE_RETRY_ERROR_CODES = frozenset({
+    "configuration_invalid",
+    "provider_auth_failed",
+    "provider_rate_limited",
+    "provider_request_rejected",
+    "provider_unavailable",
+    "provider_request_failed",
+    "missing_provider_task",
+})
+
+
+def aigc_media_stats(db: Session, since: datetime, user_id: Optional[int]) -> dict:
+    """Return de-identified media-job health for operators."""
+    from app.models.aigc_media_job import AIGCMediaJob
+
+    q = db.query(AIGCMediaJob).filter(AIGCMediaJob.created_at >= since)
+    if user_id:
+        q = q.filter(AIGCMediaJob.user_id == user_id)
+
+    total = q.count()
+    if total == 0:
+        return {
+            "total_jobs": 0,
+            "by_status": {},
+            "by_error_code": {},
+            "auth_failures": 0,
+            "submission_unknown": 0,
+            "safe_retryable": 0,
+            "success_rate_pct": None,
+            "last_job_at": None,
+            "last_failure_at": None,
+            "status": "no_data",
+        }
+
+    by_status = {
+        str(status or "unknown"): int(count)
+        for status, count in q.with_entities(
+            AIGCMediaJob.status,
+            func.count(AIGCMediaJob.id),
+        ).group_by(AIGCMediaJob.status).all()
+    }
+    by_error_code = {
+        str(code): int(count)
+        for code, count in q.with_entities(
+            AIGCMediaJob.provider_error_code,
+            func.count(AIGCMediaJob.id),
+        ).filter(AIGCMediaJob.provider_error_code.isnot(None)).group_by(
+            AIGCMediaJob.provider_error_code
+        ).all()
+    }
+    auth_failures = int(by_error_code.get("provider_auth_failed", 0))
+    submission_unknown = int(by_status.get("submission_unknown", 0))
+    safe_retryable = q.filter(
+        AIGCMediaJob.status == "failed",
+        AIGCMediaJob.provider_task_id.is_(None),
+        AIGCMediaJob.provider_error_code.in_(_AIGC_SAFE_RETRY_ERROR_CODES),
+    ).count()
+    resolved = int(by_status.get("succeeded", 0)) + int(by_status.get("failed", 0))
+    success_rate = (
+        round(100.0 * int(by_status.get("succeeded", 0)) / resolved, 1)
+        if resolved else None
+    )
+    last_job = q.with_entities(func.max(AIGCMediaJob.created_at)).scalar()
+    last_failure = q.filter(
+        AIGCMediaJob.status.in_(("failed", "submission_unknown"))
+    ).with_entities(func.max(AIGCMediaJob.completed_at)).scalar()
+    if last_failure is None:
+        last_failure = q.filter(
+            AIGCMediaJob.status.in_(("failed", "submission_unknown"))
+        ).with_entities(func.max(AIGCMediaJob.updated_at)).scalar()
+
+    if auth_failures:
+        status = "critical"
+    elif submission_unknown or int(by_status.get("failed", 0)):
+        status = "warning"
+    else:
+        status = "ok"
+    return {
+        "total_jobs": int(total),
+        "by_status": by_status,
+        "by_error_code": by_error_code,
+        "auth_failures": auth_failures,
+        "submission_unknown": submission_unknown,
+        "safe_retryable": int(safe_retryable),
+        "success_rate_pct": success_rate,
+        "last_job_at": last_job.isoformat() if last_job else None,
+        "last_failure_at": last_failure.isoformat() if last_failure else None,
+        "status": status,
+    }
+
+
+# ---------------------------------------------------------------
 # H. Client Events (Task 9) — Mobile 埋点聚合
 #    reasoning_sheet_opened / journal_timeline_entered / specialist_scorecard_entered
 # ---------------------------------------------------------------
@@ -693,6 +788,17 @@ def tool_validator_stats_remote(days: int) -> dict:
 def actionable_suggestions(report: dict) -> list[str]:
     """根据数据自动给出"个人使用"痛点列表 — 同一份逻辑给 CLI 和 API."""
     out: list[str] = []
+    aigc = report.get("aigc_media") or {}
+    if int(aigc.get("auth_failures") or 0) > 0:
+        out.append(
+            f"🔴 AIGC 媒体授权失败 {int(aigc['auth_failures'])} 次："
+            "检查北京区域按量 API Key、Workspace 和模型权限"
+        )
+    elif int(aigc.get("submission_unknown") or 0) > 0:
+        out.append(
+            f"🟡 AIGC 媒体有 {int(aigc['submission_unknown'])} 个提交待核验任务："
+            "先对账供应商任务，不要重复提交"
+        )
     ol = report["open_loop"]
     if ol["total_sent"] == 0:
         out.append("🔴 Open-Loop 过去窗口一条没推 — 需确认 Celery 是否在跑 / 信号阈值是否太高")
@@ -837,6 +943,7 @@ def collect_dashboard(
         "safety_guardian": safety_audit_stats(db, since, user_id),
         "memory_injection": memory_injection_stats(db, since, user_id),
         "client_events": client_events_stats(db, since, user_id),
+        "aigc_media": aigc_media_stats(db, since, user_id),
     }
     if include_journalctl:
         report["tool_validator"] = tool_validator_stats_remote(days)
