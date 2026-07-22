@@ -19,6 +19,7 @@ NC='\033[0m' # No Color
 # 获取脚本所在目录
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="$SCRIPT_DIR/.env"
+source "$SCRIPT_DIR/scripts/release_lock.sh"
 
 # 检查 .env 文件是否存在
 if [[ ! -f "$ENV_FILE" ]]; then
@@ -64,6 +65,7 @@ print_warning() {
 
 cleanup_remote_release_artifacts() {
     ssh "$SERVER" "rm -f '$REMOTE_DEPLOY_BUNDLE'; rm -rf '$REMOTE_BACKUP_PREFLIGHT_DIR'" >/dev/null 2>&1 || true
+    release_release_lock
 }
 
 # 上传当前 HEAD 的 git bundle 到服务器,作为 GitHub 超时时的回退源。
@@ -703,6 +705,12 @@ main() {
                 ;;
         esac
     done
+
+    case $DEPLOY_MODE in
+        "all"|"frontend"|"backend"|"env"|"restart"|"push")
+            acquire_release_lock "deploy:${DEPLOY_MODE}"
+            ;;
+    esac
 
     # 部署前先检查 mobile/ drift — 抓住"忘了 OTA"的常见错
     case $DEPLOY_MODE in

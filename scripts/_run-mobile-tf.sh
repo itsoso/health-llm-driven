@@ -26,6 +26,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MODE="${1:-remote}"
+source "${ROOT}/scripts/release_lock.sh"
+acquire_release_lock "testflight:${MODE}"
 
 # ruby@3.3 —— 本机默认 ruby 4.0.3 会让 pod/fastlane 崩(见 scripts 注释 / 项目记忆)
 export PATH="/opt/homebrew/opt/ruby@3.3/bin:/opt/homebrew/lib/ruby/gems/3.3.0/bin:${PATH}"

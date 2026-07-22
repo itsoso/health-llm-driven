@@ -18,6 +18,7 @@ import {
   revaColors as C,
   revaFonts,
   revaRadii,
+  revaSemantic,
   revaSpacing,
 } from '../../../constants/revaTheme';
 
@@ -312,7 +313,7 @@ const styles = StyleSheet.create({
   retryButton: { minHeight: 42, marginTop: 12, borderRadius: revaRadii.md, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, backgroundColor: C.green100 },
   retryButtonPressed: { opacity: 0.72 },
   retryButtonText: { fontFamily: revaFonts.sans, fontSize: 14, fontWeight: '800', color: C.green700 } as TextStyle,
-  actionError: { marginTop: 8, fontFamily: revaFonts.sans, fontSize: 12, lineHeight: 18, color: '#C84B3C' } as TextStyle,
+  actionError: { marginTop: 8, fontFamily: revaFonts.sans, fontSize: 12, lineHeight: 18, color: revaSemantic.risk.fg } as TextStyle,
   image: { width: '100%', aspectRatio: 1, borderRadius: revaRadii.md, marginTop: 12, backgroundColor: C.paper2 },
   videoFrame: { width: '100%', aspectRatio: 16 / 9, marginTop: 12, borderRadius: revaRadii.md, overflow: 'hidden', backgroundColor: C.ink1 },
   video: { flex: 1 },

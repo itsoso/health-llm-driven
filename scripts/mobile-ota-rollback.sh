@@ -8,6 +8,7 @@ CHANNEL="${1:-production}"
 shift || true
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 MANIFEST_FILE="${OTA_MANIFEST_FILE:-${REPO_ROOT}/.mobile-release-manifest.json}"
+source "${REPO_ROOT}/scripts/release_lock.sh"
 TARGET_GROUP_ID="${OTA_ROLLBACK_GROUP_ID:-}"
 TARGET_UPDATE_ID="${OTA_ROLLBACK_UPDATE_ID:-}"
 CONFIRM=0
@@ -81,6 +82,8 @@ if [[ "${CONFIRM}" != "1" ]]; then
   echo "△ dry-run: 未调用 EAS。确认执行请追加 --confirm。"
   exit 0
 fi
+
+acquire_release_lock "ota-rollback:${CHANNEL}"
 
 if [[ -n "${OTA_EAS_RUNNER:-}" ]]; then
   "${OTA_EAS_RUNNER}" update:republish \

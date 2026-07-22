@@ -29,6 +29,8 @@ esac
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ANCHOR_FILE="${OTA_ANCHOR_FILE:-${REPO_ROOT}/.last-ota-commit}"
 MANIFEST_FILE="${OTA_MANIFEST_FILE:-${REPO_ROOT}/.mobile-release-manifest.json}"
+source "${REPO_ROOT}/scripts/release_lock.sh"
+acquire_release_lock "ota:${CHANNEL}"
 
 # ── 发版前置守卫(2026-07-11 评审加固):OTA 打的是**工作树**,不是 HEAD ──
 # 两类历史事故:① 脏树 WIP 泄进生产 bundle;② 落后 origin/main 的树整包回滚他人已上线工作。
@@ -69,7 +71,11 @@ echo ""
 # 不打 web bundle (react-native-maps 不支持 web)
 # --environment 对普通 channel 与 channel 名字对齐;Rokid 隔离 channel 复用生产/预览环境变量。
 UPDATE_LOG="$(mktemp)"
-trap 'rm -f "${UPDATE_LOG}"' EXIT
+cleanup_mobile_ota() {
+  rm -f "${UPDATE_LOG}"
+  release_release_lock
+}
+trap cleanup_mobile_ota EXIT
 
 run_update_attempt() {
   set +e
