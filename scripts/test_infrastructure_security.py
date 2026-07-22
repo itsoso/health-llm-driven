@@ -70,6 +70,14 @@ def test_deploy_stages_current_backup_scripts_before_preflight() -> None:
         assert script_name in body
 
 
+def test_migration_role_default_privileges_reach_runtime() -> None:
+    body = (ROOT / "backend" / "scripts" / "provision_database_roles.sql").read_text()
+
+    assert "ALTER DEFAULT PRIVILEGES FOR ROLE health_app_migrator" in body
+    assert body.count("GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO health_app_runtime") >= 2
+    assert body.count("GRANT USAGE, SELECT ON SEQUENCES TO health_app_runtime") >= 2
+
+
 def test_legacy_production_installer_is_fail_closed() -> None:
     body = (ROOT / "deploy_production.sh").read_text()
     assert "SECURITY BLOCK" in body

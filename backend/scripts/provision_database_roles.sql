@@ -54,3 +54,10 @@ ALTER DEFAULT PRIVILEGES FOR ROLE health_app_owner IN SCHEMA public
   GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO health_app_runtime;
 ALTER DEFAULT PRIVILEGES FOR ROLE health_app_owner IN SCHEMA public
   GRANT USAGE, SELECT ON SEQUENCES TO health_app_runtime;
+-- Managed migrations connect as health_app_migrator. Objects created without
+-- an explicit SET ROLE are owned by that login role, so its defaults must
+-- grant the same runtime access as owner-created objects.
+ALTER DEFAULT PRIVILEGES FOR ROLE health_app_migrator IN SCHEMA public
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO health_app_runtime;
+ALTER DEFAULT PRIVILEGES FOR ROLE health_app_migrator IN SCHEMA public
+  GRANT USAGE, SELECT ON SEQUENCES TO health_app_runtime;
