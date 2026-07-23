@@ -29,6 +29,7 @@ from app.models.agent_audit_log import AgentAuditLog
 from app.models.agent_conversation import AgentConversation, AgentMessage
 from app.models.aigc_media_job import AIGCMediaJob
 from app.models.aigc_media_confirmation import AIGCMediaConfirmation
+from app.models.user import User
 from app.services.aigc_media_service import (
     AIGCMediaConfigurationError,
     AIGCMediaProvider,
@@ -1047,6 +1048,44 @@ class AIGCMediaJobService:
             # expose the orphaned private output after a cancelled task.
             self._delete_private_result(job.user_id, filename)
         self.db.refresh(job)
+        if completed and kind in VIDEO_KINDS:
+            await self._notify_video_completion(job)
+
+    async def _notify_video_completion(self, job: AIGCMediaJob) -> None:
+        """Send a generic, deduplicated completion push without health content."""
+        from app.models.notification import NotificationChannel
+        from app.services.notification.push_service import PushService
+
+        try:
+            result = await PushService(self.db).send_notification(
+                user_id=int(job.user_id),
+                notification_type="aigc_media_completed",
+                title="小巴创作已完成",
+                content="你的创作结果已准备好，打开小巴即可查看。",
+                data={
+                    "rule_id": f"aigc_media_completed:{job.id}",
+                    "job_id": job.id,
+                    "kind": job.kind,
+                    "deep_link": "/(tabs)/chat",
+                },
+                channels=[NotificationChannel.IOS_APNS.value],
+                respect_quiet_hours=True,
+                severity="info",
+                dedup_window_hours=168,
+            )
+            logger.info(
+                "[aigc_media] completion notification job_id=%s delivered=%s",
+                job.id,
+                bool(result.get("success")),
+            )
+        except Exception as exc:  # noqa: BLE001
+            # The private result is already durable. Push is an optional wake-up
+            # surface and must never roll back or mislabel a successful job.
+            logger.warning(
+                "[aigc_media] completion notification failed job_id=%s error=%s",
+                job.id,
+                type(exc).__name__,
+            )
 
     def _load_owned_source_url(self, user_id: int, request: AIGCMediaJobRequest) -> str:
         if request.source_message_id is None:
@@ -1164,12 +1203,15 @@ class AIGCMediaJobService:
             model=model,
             kind=request.kind,  # type: ignore[arg-type]
         )
-        return {
+        spec = {
             "duration_seconds": int(request.duration_seconds),
-            "ratio": request.ratio,
             "resolution": request.resolution.upper(),
             "generates_audio": capability.generates_audio,
+            "ratio_mode": "fixed" if capability.supports_ratio else "source",
         }
+        if capability.supports_ratio:
+            spec["ratio"] = request.ratio
+        return spec
 
     @staticmethod
     def _confirmation_spec(confirmation: AIGCMediaConfirmation) -> dict | None:
@@ -1179,13 +1221,16 @@ class AIGCMediaJobService:
             model=confirmation.model,
             kind=confirmation.kind,  # type: ignore[arg-type]
         )
-        return {
+        spec = {
             "duration_seconds": int(confirmation.duration_seconds),
             "duration_options": list(capability.selectable_duration_seconds),
-            "ratio": confirmation.ratio,
             "resolution": capability.default_resolution,
             "generates_audio": capability.generates_audio,
+            "ratio_mode": "fixed" if capability.supports_ratio else "source",
         }
+        if capability.supports_ratio:
+            spec["ratio"] = confirmation.ratio
+        return spec
 
     @staticmethod
     def _model_for_kind(kind: str) -> str:
@@ -1254,6 +1299,13 @@ class AIGCMediaJobService:
         )
         if global_active >= max(1, int(settings.dashscope_aigc_max_active_jobs_global)):
             raise AIGCMediaJobQuotaExceeded("百炼创作任务繁忙，请稍后再试")
+        is_admin = bool(
+            self.db.query(User.is_admin)
+            .filter(User.id == int(user_id))
+            .scalar()
+        )
+        if is_admin:
+            return
         if user_active >= max(1, int(settings.dashscope_aigc_max_active_jobs_per_user)):
             raise AIGCMediaJobQuotaExceeded("你已有进行中的创作任务，请等待结果后再试")
         if daily_dispatches >= max(1, int(settings.dashscope_aigc_max_dispatches_per_user_per_day)):

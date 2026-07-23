@@ -1,17 +1,20 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  AppState,
   Pressable,
   StyleSheet,
   Text,
   TextStyle,
   View,
 } from 'react-native';
+import NetInfo from '@react-native-community/netinfo';
 import { Image } from 'expo-image';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { Ionicons } from '@expo/vector-icons';
 
 import api, { BASE_URL } from '../../../services/api';
+import { emitClientEvent } from '../../../services/clientEvents';
 import {
   shareImage,
   shareRemoteVideo,
@@ -39,6 +42,7 @@ export interface AIGCMediaJobCardData {
   spec?: {
     duration_seconds?: number;
     ratio?: string;
+    ratio_mode?: 'fixed' | 'source' | string;
     resolution?: string;
     generates_audio?: boolean;
   } | null;
@@ -123,6 +127,10 @@ export function AIGCMediaJobCardView(initialData: AIGCMediaJobCardData) {
   const [actionError, setActionError] = useState<string | null>(null);
   const mounted = useRef(true);
   const sharingRef = useRef(false);
+  const refreshInFlight = useRef<Promise<void> | null>(null);
+  const appStateRef = useRef(AppState.currentState);
+  const networkConnectedRef = useRef<boolean | null>(null);
+  const playbackEventSent = useRef(false);
 
   useEffect(() => {
     setData(initialData);
@@ -131,17 +139,26 @@ export function AIGCMediaJobCardView(initialData: AIGCMediaJobCardData) {
   const refresh = useCallback(async () => {
     const jobId = String(initialData.job_id || '').trim();
     if (!jobId) return;
-    setRefreshing(true);
-    try {
-      const response = await api.get(`/aigc/media/jobs/${encodeURIComponent(jobId)}`);
-      const projection = normalizeJobProjection(response?.data, jobId);
-      if (mounted.current && projection) {
-        setData(projection);
+    if (refreshInFlight.current) return refreshInFlight.current;
+    const request = (async () => {
+      setRefreshing(true);
+      try {
+        const response = await api.get(`/aigc/media/jobs/${encodeURIComponent(jobId)}`);
+        const projection = normalizeJobProjection(response?.data, jobId);
+        if (mounted.current && projection) {
+          setData(projection);
+        }
+      } catch {
+        // Preserve the last known job projection. The next poll or task update may succeed.
+      } finally {
+        if (mounted.current) setRefreshing(false);
       }
-    } catch {
-      // Preserve the last known job projection. The next poll or task update may succeed.
+    })();
+    refreshInFlight.current = request;
+    try {
+      await request;
     } finally {
-      if (mounted.current) setRefreshing(false);
+      if (refreshInFlight.current === request) refreshInFlight.current = null;
     }
   }, [initialData.job_id]);
 
@@ -174,6 +191,28 @@ export function AIGCMediaJobCardView(initialData: AIGCMediaJobCardData) {
     };
   }, [data.status, refresh]);
 
+  useEffect(() => {
+    if (!ACTIVE_STATUSES.has(statusOf(data.status))) return;
+    const appStateSubscription = AppState.addEventListener('change', (nextState) => {
+      const previousState = appStateRef.current;
+      appStateRef.current = nextState;
+      if (nextState === 'active' && previousState !== 'active') {
+        void refresh();
+      }
+    });
+    const removeNetworkListener = NetInfo.addEventListener((state) => {
+      const wasConnected = networkConnectedRef.current;
+      networkConnectedRef.current = state.isConnected;
+      if (state.isConnected === true && wasConnected === false) {
+        void refresh();
+      }
+    });
+    return () => {
+      appStateSubscription?.remove?.();
+      removeNetworkListener?.();
+    };
+  }, [data.status, refresh]);
+
   const status = statusOf(data.status);
   const meta = statusMeta(status);
   const progress = clampProgress(data.progress);
@@ -191,6 +230,7 @@ export function AIGCMediaJobCardView(initialData: AIGCMediaJobCardData) {
 
   useEffect(() => {
     setPlaybackStarted(false);
+    playbackEventSent.current = false;
   }, [resultUrl]);
 
   const detail = useMemo(() => {
@@ -207,7 +247,7 @@ export function AIGCMediaJobCardView(initialData: AIGCMediaJobCardData) {
     if (!Number.isFinite(duration) || duration <= 0) return null;
     const parts = [
       `${Math.round(duration)}秒`,
-      data.spec?.ratio,
+      data.spec?.ratio_mode === 'source' ? '跟随原图' : data.spec?.ratio,
       data.spec?.resolution,
       data.spec?.generates_audio === true ? '含音频' : null,
     ].filter(Boolean);
@@ -251,6 +291,10 @@ export function AIGCMediaJobCardView(initialData: AIGCMediaJobCardData) {
     try {
       videoPlayer.play();
       setPlaybackStarted(true);
+      if (!playbackEventSent.current) {
+        playbackEventSent.current = true;
+        void emitClientEvent('aigc_media_played', { media_kind: 'video' });
+      }
     } catch {
       setActionError('视频暂时无法播放，请稍后重试。');
     }
@@ -291,7 +335,18 @@ export function AIGCMediaJobCardView(initialData: AIGCMediaJobCardData) {
           mimeType: mediaType,
         });
       }
+      void emitClientEvent('aigc_media_shared', {
+        phase: 'completed',
+        media_kind: isVideo ? 'video' : 'image',
+        share_target: target,
+      });
     } catch {
+      void emitClientEvent('aigc_media_shared', {
+        phase: 'failed',
+        media_kind: isVideo ? 'video' : 'image',
+        share_target: target,
+        error_code: 'share_failed',
+      });
       if (mounted.current) {
         setActionError(`${isVideo ? '视频' : '图片'}分享未打开，请检查网络后再试。`);
       }

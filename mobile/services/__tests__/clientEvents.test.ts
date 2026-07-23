@@ -163,6 +163,27 @@ describe('client reliability events', () => {
     expect(sanitizeClientEventMeta('chat_message_sent', meta)).toBe(meta);
   });
 
+  it('keeps AIGC engagement telemetry content-free and identifier-free', () => {
+    expect(sanitizeClientEventMeta('aigc_media_shared', {
+      phase: 'completed',
+      media_kind: 'video',
+      share_target: 'wechat',
+      job_id: 'private-job-id',
+      prompt: '用户健康隐私',
+      result_url: 'https://private.example/video.mp4',
+    })).toEqual({
+      phase: 'completed',
+      media_kind: 'video',
+      share_target: 'wechat',
+    });
+    expect(sanitizeClientEventMeta('aigc_media_played', {
+      media_kind: 'video',
+      job_id: 'private-job-id',
+    })).toEqual({
+      media_kind: 'video',
+    });
+  });
+
   it('keeps app update telemetry content-free and normalizes invalid values', () => {
     expect(sanitizeClientEventMeta('app_update_terminal', {
       phase: 'ready',

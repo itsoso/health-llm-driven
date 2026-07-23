@@ -35,6 +35,8 @@ export type ClientEventName =
   | 'diet_photo_recognition_terminal'
   | 'diet_photo_confirmation_terminal'
   | 'diet_share_terminal'
+  | 'aigc_media_played'
+  | 'aigc_media_shared'
   // App update control plane — content-free lifecycle telemetry only
   | 'app_update_phase'
   | 'app_update_terminal'
@@ -57,6 +59,8 @@ const DIET_CAPTURE_PHASES = {
   diet_share_terminal: new Set(['completed', 'failed']),
 } as const;
 const DIET_SHARE_TARGETS = new Set(['generic', 'wechat', 'xiaohongshu']);
+const AIGC_MEDIA_KINDS = new Set(['image', 'video']);
+const AIGC_SHARE_TARGETS = new Set(['wechat', 'xiaohongshu']);
 const APP_UPDATE_PHASES = {
   app_update_phase: new Set(['checking', 'downloading', 'applying']),
   app_update_terminal: new Set([
@@ -181,6 +185,24 @@ export function sanitizeClientEventMeta(
     }
     if (typeof meta.error_code === 'string' && SAFE_TOKEN.test(meta.error_code)) {
       sanitized.error_code = meta.error_code;
+    }
+    return sanitized;
+  }
+  if (name === 'aigc_media_played' || name === 'aigc_media_shared') {
+    const sanitized: Record<string, unknown> = {};
+    if (typeof meta.media_kind === 'string' && AIGC_MEDIA_KINDS.has(meta.media_kind)) {
+      sanitized.media_kind = meta.media_kind;
+    }
+    if (name === 'aigc_media_shared') {
+      if (meta.phase === 'completed' || meta.phase === 'failed') {
+        sanitized.phase = meta.phase;
+      }
+      if (typeof meta.share_target === 'string' && AIGC_SHARE_TARGETS.has(meta.share_target)) {
+        sanitized.share_target = meta.share_target;
+      }
+      if (typeof meta.error_code === 'string' && SAFE_TOKEN.test(meta.error_code)) {
+        sanitized.error_code = meta.error_code;
+      }
     }
     return sanitized;
   }

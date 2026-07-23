@@ -11,6 +11,7 @@ jest.mock('expo-web-browser', () => ({
 const mockVideoPlay = jest.fn();
 const mockShareRemoteVideo = jest.fn();
 const mockShareImage = jest.fn();
+const mockEmitClientEvent = jest.fn();
 jest.mock('expo-video', () => {
   const React = require('react');
   return {
@@ -23,10 +24,15 @@ jest.mock('../../../../utils/share', () => ({
   shareImage: (...args: unknown[]) => mockShareImage(...args),
   shareRemoteVideo: (...args: unknown[]) => mockShareRemoteVideo(...args),
 }));
+jest.mock('../../../../services/clientEvents', () => ({
+  emitClientEvent: (...args: unknown[]) => mockEmitClientEvent(...args),
+}));
 
 import { CARD_REGISTRY, CARD_MAP, dispatchCard, renderCard, renderServerCards } from '../registry';
 import type { CardContext } from '../types';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { AppState } from 'react-native';
+import NetInfo from '@react-native-community/netinfo';
 import * as WebBrowser from 'expo-web-browser';
 import api from '../../../../services/api';
 
@@ -224,6 +230,86 @@ describe('renderCard 安全降级', () => {
     screen.unmount();
   });
 
+  it('refreshes an active AIGC job immediately on foreground and network recovery', async () => {
+    (api.get as jest.Mock).mockReset();
+    let appStateListener: ((state: string) => void) | undefined;
+    let networkListener: ((state: { isConnected: boolean | null }) => void) | undefined;
+    const appStateSpy = jest.spyOn(AppState, 'addEventListener').mockImplementation(
+      ((_event: string, listener: (state: string) => void) => {
+        appStateListener = listener;
+        return { remove: jest.fn() };
+      }) as typeof AppState.addEventListener,
+    );
+    (NetInfo.addEventListener as jest.Mock).mockImplementation(
+      (listener: (state: { isConnected: boolean | null }) => void) => {
+        networkListener = listener;
+        return jest.fn();
+      },
+    );
+    (api.get as jest.Mock).mockResolvedValue({
+      data: {
+        id: 'aigc_resume_1',
+        kind: 'text_to_video',
+        status: 'running',
+        progress: 50,
+        result: { media_type: null, url: null },
+      },
+    });
+    const screen = render(renderCard({
+      type: 'aigc_media_job',
+      data: {
+        job_id: 'aigc_resume_1',
+        kind: 'text_to_video',
+        status: 'running',
+        progress: 25,
+        result: { media_type: null, url: null },
+      },
+    })!);
+    await waitFor(() => expect(api.get).toHaveBeenCalledTimes(1));
+    (api.get as jest.Mock).mockClear();
+
+    await act(async () => {
+      appStateListener?.('background');
+      appStateListener?.('active');
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(api.get).toHaveBeenCalledTimes(1));
+    (api.get as jest.Mock).mockClear();
+
+    await act(async () => {
+      networkListener?.({ isConnected: false });
+      networkListener?.({ isConnected: true });
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(api.get).toHaveBeenCalledTimes(1));
+
+    screen.unmount();
+    appStateSpy.mockRestore();
+  });
+
+  it('describes HappyHorse image-to-video ratio as following the source image', () => {
+    const screen = render(renderCard({
+      type: 'aigc_media_job',
+      data: {
+        job_id: 'aigc_source_ratio',
+        kind: 'image_to_video',
+        status: 'running',
+        progress: 50,
+        spec: {
+          duration_seconds: 10,
+          ratio_mode: 'source',
+          resolution: '720P',
+          generates_audio: true,
+        },
+        result: { media_type: null, url: null },
+      },
+    })!);
+
+    expect(screen.getByText('10秒 · 跟随原图 · 720P · 含音频')).toBeTruthy();
+    expect(screen.queryByText(/9:16/)).toBeNull();
+    screen.unmount();
+  });
+
   it('restores a consumed AIGC confirmation as its existing job on mount', async () => {
     (api.get as jest.Mock).mockResolvedValueOnce({
       data: {
@@ -345,12 +431,20 @@ describe('renderCard 安全降级', () => {
     expect(player).toHaveProp('fullscreenOptions', expect.objectContaining({ enable: true }));
     fireEvent.press(screen.getByLabelText('播放短视频'));
     expect(mockVideoPlay).toHaveBeenCalledTimes(1);
+    expect(mockEmitClientEvent).toHaveBeenCalledWith('aigc_media_played', {
+      media_kind: 'video',
+    });
     fireEvent.press(screen.getByLabelText('分享到微信'));
     await waitFor(() => {
       expect(mockShareRemoteVideo).toHaveBeenCalledWith(
         'https://health.executor.life/api/v1/upload/files/aigc/3/today.mp4?expires=1&signature=signed',
         { target: 'wechat', cacheKey: 'aigc_video_1' },
       );
+    });
+    expect(mockEmitClientEvent).toHaveBeenCalledWith('aigc_media_shared', {
+      phase: 'completed',
+      media_kind: 'video',
+      share_target: 'wechat',
     });
     expect(api.post).not.toHaveBeenCalled();
     expect(WebBrowser.openBrowserAsync).not.toHaveBeenCalled();

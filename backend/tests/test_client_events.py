@@ -67,6 +67,59 @@ def test_post_client_event_rejects_oversized_meta(client, auth_user_and_headers)
     assert any("meta too large" in (e.get("msg") or "") for e in detail), detail
 
 
+@pytest.mark.parametrize(
+    ("event_name", "meta"),
+    [
+        ("aigc_media_played", {"media_kind": "video"}),
+        (
+            "aigc_media_shared",
+            {
+                "phase": "completed",
+                "media_kind": "image",
+                "share_target": "xiaohongshu",
+            },
+        ),
+    ],
+)
+def test_post_client_event_accepts_content_free_aigc_engagement(
+    client, db, auth_user_and_headers, event_name, meta,
+):
+    _, headers = auth_user_and_headers
+
+    response = client.post(
+        "/api/v1/client-events",
+        headers=headers,
+        json={"event_name": event_name, "meta": meta},
+    )
+
+    assert response.status_code == 202, response.text
+    row = db.query(ClientEvent).order_by(ClientEvent.id.desc()).first()
+    assert row.event_name == event_name
+    assert row.meta == meta
+
+
+def test_post_client_event_rejects_aigc_resource_identifiers(
+    client, auth_user_and_headers,
+):
+    _, headers = auth_user_and_headers
+
+    response = client.post(
+        "/api/v1/client-events",
+        headers=headers,
+        json={
+            "event_name": "aigc_media_shared",
+            "meta": {
+                "phase": "completed",
+                "media_kind": "video",
+                "share_target": "wechat",
+                "job_id": "private-job-id",
+            },
+        },
+    )
+
+    assert response.status_code == 422, response.text
+
+
 def test_client_events_stats_counts_by_event(db, auth_user_and_headers):
     from app.models.user import User
     from app.services.observability_service import client_events_stats

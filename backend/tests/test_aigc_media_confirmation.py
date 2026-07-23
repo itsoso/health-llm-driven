@@ -177,6 +177,7 @@ async def test_video_confirmation_freezes_a_safe_duration_override_before_dispat
         "ratio": "9:16",
         "resolution": "720P",
         "generates_audio": True,
+        "ratio_mode": "fixed",
     }
     projection = service.project(job)
     assert projection["spec"] == job.result_metadata["request"]
@@ -608,6 +609,7 @@ async def test_confirmed_job_replaces_persisted_confirmation_card(
             "ratio": "9:16",
             "resolution": "720P",
             "generates_audio": True,
+            "ratio_mode": "fixed",
         },
     }
     db.refresh(duplicate_assistant)

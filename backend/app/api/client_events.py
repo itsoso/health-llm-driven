@@ -58,6 +58,9 @@ _ALLOWED_EVENTS = frozenset({
     "diet_photo_recognition_terminal",
     "diet_photo_confirmation_terminal",
     "diet_share_terminal",
+    # AIGC 媒体结果使用漏斗；禁止正文、URL、job_id 等资源标识。
+    "aigc_media_played",
+    "aigc_media_shared",
     # App update control plane — content-free lifecycle telemetry only.
     "app_update_phase",
     "app_update_terminal",
@@ -157,6 +160,19 @@ _DIET_CAPTURE_EVENT_SCHEMAS = {
         "phases": frozenset({"completed", "failed"}),
     },
 }
+_AIGC_ENGAGEMENT_EVENT_SCHEMAS = {
+    "aigc_media_played": {
+        "allowed": frozenset({"media_kind"}),
+        "required": frozenset({"media_kind"}),
+    },
+    "aigc_media_shared": {
+        "allowed": frozenset({"phase", "media_kind", "share_target", "error_code"}),
+        "required": frozenset({"phase", "media_kind", "share_target"}),
+        "phases": frozenset({"completed", "failed"}),
+    },
+}
+_AIGC_MEDIA_KINDS = frozenset({"image", "video"})
+_AIGC_SHARE_TARGETS = frozenset({"wechat", "xiaohongshu"})
 
 
 class EventIn(BaseModel):
@@ -262,6 +278,32 @@ class EventIn(BaseModel):
                 expected_verified = self.meta.get("phase") == "verified"
                 if self.meta.get("verified") is not expected_verified:
                     raise ValueError("write receipt phase contradicts verified")
+            return self
+
+        aigc_schema = _AIGC_ENGAGEMENT_EVENT_SCHEMAS.get(self.event_name)
+        if aigc_schema is not None:
+            if self.meta is None:
+                raise ValueError("AIGC engagement event meta is required")
+            keys = set(self.meta)
+            extra = keys - aigc_schema["allowed"]
+            missing = aigc_schema["required"] - keys
+            if extra:
+                raise ValueError(f"AIGC engagement event meta has forbidden fields: {sorted(extra)}")
+            if missing:
+                raise ValueError(f"AIGC engagement event meta missing fields: {sorted(missing)}")
+            if self.meta.get("media_kind") not in _AIGC_MEDIA_KINDS:
+                raise ValueError("invalid AIGC engagement media_kind")
+            if self.event_name == "aigc_media_shared":
+                if self.meta.get("phase") not in aigc_schema["phases"]:
+                    raise ValueError("invalid AIGC engagement phase")
+                if self.meta.get("share_target") not in _AIGC_SHARE_TARGETS:
+                    raise ValueError("invalid AIGC engagement share_target")
+                error_code = self.meta.get("error_code")
+                if error_code is not None and (
+                    not isinstance(error_code, str)
+                    or _SAFE_TOKEN.fullmatch(error_code) is None
+                ):
+                    raise ValueError("invalid AIGC engagement error_code")
             return self
 
         diet_schema = _DIET_CAPTURE_EVENT_SCHEMAS.get(self.event_name)

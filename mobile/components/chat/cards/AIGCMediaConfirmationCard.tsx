@@ -18,6 +18,7 @@ export interface AIGCMediaConfirmationCardData {
   duration_seconds?: number;
   duration_options?: number[];
   ratio?: string;
+  ratio_mode?: 'fixed' | 'source' | string;
   resolution?: string;
   generates_audio?: boolean;
 }
@@ -108,7 +109,8 @@ export function AIGCMediaConfirmationCardView(data: AIGCMediaConfirmationCardDat
           <View style={styles.specHeader}>
             <Text maxFontSizeMultiplier={1.2} style={styles.specLabel}>视频时长</Text>
             <Text maxFontSizeMultiplier={1.2} style={styles.specSummary}>
-              {data.ratio || '9:16'} · {data.resolution || '720P'}
+              {data.ratio_mode === 'source' ? '跟随原图' : (data.ratio || '9:16')}
+              {' · '}{data.resolution || '720P'}
               {data.generates_audio === true ? ' · 含音频' : ''}
             </Text>
           </View>
