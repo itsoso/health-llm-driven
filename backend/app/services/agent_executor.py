@@ -4084,6 +4084,17 @@ _DIET_PARTIAL_FRACTIONS = {
     "五分之三": 0.6,
     "五分之四": 0.8,
 }
+_CONTEXTUAL_MEAL_PORTION_RE = re.compile(
+    r"(?:吃了|吃掉了|实际吃了|只吃了?)\s*"
+    r"(?P<fraction>三分之一|三分之二|四分之一|四分之三|"
+    r"五分之一|五分之二|五分之三|五分之四|一半|半份|"
+    r"\d+\s*/\s*\d+)",
+    re.I,
+)
+_CONTEXTUAL_MEAL_WHOLE_PORTION_RE = re.compile(
+    r"(?:这|整|本)(?:一)?(?:餐|顿|份|盘)|(?:这|整)些|只吃",
+    re.I,
+)
 _DIET_SCALABLE_NUTRIENT_FIELDS = (
     "calories",
     "protein",
@@ -4111,6 +4122,75 @@ def _partial_meal_consumed_fraction(text: str) -> Optional[float]:
         if text.find(phrase, signal_match.start()) >= 0:
             return fraction
     return None
+
+
+def _contextual_meal_consumed_fraction(
+    text: str,
+) -> Optional[tuple[float, str]]:
+    """Parse a whole-meal portion from the message accompanying a food photo.
+
+    This is intentionally narrower than generic diet correction parsing.  A
+    sentence such as ``吃了三分之一的蛋糕`` describes one food and must not
+    scale every item in the image.  We only accept an explicit whole-meal
+    reference (``这餐``/``这份``) or the unambiguous ``只吃`` form.
+    """
+    normalized = " ".join((text or "").strip().split())
+    if (
+        not normalized
+        or not _CONTEXTUAL_MEAL_WHOLE_PORTION_RE.search(normalized)
+        or _DIET_PARTIAL_CORRECTION_QUESTION_RE.search(normalized)
+        or _DIET_PARTIAL_CORRECTION_NEGATION_RE.search(normalized)
+    ):
+        return None
+    match = _CONTEXTUAL_MEAL_PORTION_RE.search(normalized)
+    if match is None:
+        return None
+    # ``三分之一的蛋糕`` is an item-level portion, not a whole-meal ratio.
+    if normalized[match.end():].lstrip().startswith("的"):
+        return None
+    token = re.sub(r"\s+", "", match.group("fraction"))
+    fraction = _DIET_PARTIAL_FRACTIONS.get(token)
+    if fraction is None and "/" in token:
+        numerator_text, denominator_text = token.split("/", 1)
+        try:
+            numerator = int(numerator_text)
+            denominator = int(denominator_text)
+        except ValueError:
+            return None
+        if numerator <= 0 or denominator <= 0 or numerator >= denominator:
+            return None
+        fraction = numerator / denominator
+    if fraction is None or not math.isfinite(fraction) or not 0 < fraction < 1:
+        return None
+    return float(fraction), token
+
+
+def _scale_food_recognition_for_consumed_fraction(
+    result: Mapping[str, Any],
+    *,
+    fraction: float,
+    label: str,
+) -> Dict[str, Any]:
+    """Scale one sanitized vision estimate to the amount actually consumed."""
+    scaled = dict(result)
+    foods: list[dict[str, Any]] = []
+    for raw_food in result.get("foods") or []:
+        if not isinstance(raw_food, dict):
+            continue
+        food = dict(raw_food)
+        for field in (*_DIET_SCALABLE_NUTRIENT_FIELDS, "quantity_grams"):
+            value = food.get(field)
+            if (
+                isinstance(value, (int, float))
+                and not isinstance(value, bool)
+                and math.isfinite(float(value))
+            ):
+                food[field] = float(value) * fraction
+        foods.append(food)
+    scaled["foods"] = foods
+    scaled["consumed_fraction"] = fraction
+    scaled["consumed_fraction_label"] = label
+    return scaled
 
 
 def _parse_explicit_diet_correction(
@@ -5921,6 +6001,7 @@ class AgentExecutor:
         self._turn_contextual_diet_receipts: list[dict] = []
         self._turn_contextual_diet_cards: list[dict] = []
         self._turn_contextual_diet_record_id: Optional[int] = None
+        self._turn_contextual_diet_consumed_fraction: Optional[float] = None
         self._turn_pending_write_intent_ids: list[int] = []
         self._turn_pending_write_intent_kinds: list[str] = []
         self._turn_medication_tool_intent_id: Optional[int] = None
@@ -7404,6 +7485,7 @@ class AgentExecutor:
         self._turn_contextual_diet_receipts = []
         self._turn_contextual_diet_cards = []
         self._turn_contextual_diet_record_id = None
+        self._turn_contextual_diet_consumed_fraction = None
         self._ensure_agent_kernel_turn(channel=channel)
         # GenUI metric_table (rank1): 客户端声明 genui-table-v1 且未被 kill-switch 关闭时,
         # 工具结果确定性打成表格卡片 (合成后追加 fence)。正文仍按问题完整回答，避免
@@ -12420,6 +12502,19 @@ class AgentExecutor:
                 if result.get("success") and result.get("foods"):
                     calibrate_recognized_foods(self.db, result["foods"])
                     result = sanitize_food_recognition_result(result)
+                    consumed_fraction = _contextual_meal_consumed_fraction(
+                        user_message
+                    )
+                    if consumed_fraction is not None:
+                        fraction, label = consumed_fraction
+                        result = _scale_food_recognition_for_consumed_fraction(
+                            result,
+                            fraction=fraction,
+                            label=label,
+                        )
+                        result = sanitize_food_recognition_result(result)
+                        result["consumed_fraction"] = fraction
+                        result["consumed_fraction_label"] = label
                     capture = self._capture_contextual_meal_photo(
                         user_message,
                         result,
@@ -12559,6 +12654,16 @@ class AgentExecutor:
 
         if result.record is not None:
             self._turn_contextual_diet_record_id = result.record.id
+            consumed_fraction = vision_result.get("consumed_fraction")
+            if (
+                isinstance(consumed_fraction, (int, float))
+                and not isinstance(consumed_fraction, bool)
+                and math.isfinite(float(consumed_fraction))
+                and 0 < float(consumed_fraction) < 1
+            ):
+                self._turn_contextual_diet_consumed_fraction = float(
+                    consumed_fraction
+                )
             receipt = {
                 "operation_id": f"contextual_meal_photo:{result.record.id}",
                 "status": "verified",
@@ -12769,16 +12874,32 @@ class AgentExecutor:
             user_message,
             reference_now=self._agent_kernel_reference_now(),
         )
+        consumed_fraction_label = str(
+            result.get("consumed_fraction_label") or ""
+        ).strip()
+        if consumed_fraction_label:
+            record_data["food_items"] = (
+                f"{record_data['food_items']}"
+                f"（按实际食用{consumed_fraction_label}计）"
+            )
         if semantic_intent.primary in {"read", "advice"}:
             capture_instruction = (
                 "本轮仅用于分析或查询，严禁调用 health_record；"
                 "只解释识别结果、不确定性和可选建议。"
             )
         elif contextual_capture is not None and contextual_capture.record is not None:
-            capture_instruction = (
-                "系统已取得可验证的饮食写入回执；不要再次调用 health_record，"
-                "只解释本餐估算、如何修正以及下一步建议。"
-            )
+            if consumed_fraction_label:
+                capture_instruction = (
+                    "系统已取得可验证的饮食写入回执，"
+                    f"份量已在首次写入中按{consumed_fraction_label}修正；"
+                    "不要再次调用 health_record 或 health_manage 写入，"
+                    "只解释本餐估算和下一步建议。"
+                )
+            else:
+                capture_instruction = (
+                    "系统已取得可验证的饮食写入回执；不要再次调用 health_record，"
+                    "只解释本餐估算、如何修正以及下一步建议。"
+                )
         elif contextual_capture is not None and contextual_capture.photo_draft is not None:
             capture_instruction = (
                 "系统已保存这张图片为当前对话的饮食确认草稿；不要再次调用 health_record，"
@@ -15208,6 +15329,43 @@ class AgentExecutor:
         operation = args.get("operation")
         record_id = args.get("record_id")
         data = args.get("data") or {}
+        if (
+            record_type == "diet"
+            and operation == "update"
+            and self._turn_contextual_diet_record_id is not None
+            and self._turn_contextual_diet_consumed_fraction is not None
+            and (
+                record_id in (None, "", False)
+                or str(record_id) == str(self._turn_contextual_diet_record_id)
+            )
+        ):
+            from app.models.daily_health import DietRecord
+
+            existing = (
+                self.db.query(DietRecord)
+                .filter(
+                    DietRecord.id == self._turn_contextual_diet_record_id,
+                    DietRecord.user_id == self._current_user_id,
+                )
+                .first()
+            )
+            if existing is not None:
+                logger.info(
+                    "[health_manage] replay contextual diet receipt "
+                    "user=%s record_id=%s portion=%s",
+                    self._current_user_id,
+                    existing.id,
+                    self._turn_contextual_diet_consumed_fraction,
+                )
+                return json.dumps({
+                    "id": existing.id,
+                    "record_id": existing.id,
+                    "resource_type": "diet_record",
+                    "operation_id": f"contextual_meal_photo:{existing.id}",
+                    "status": "recorded",
+                    "replayed": True,
+                    "portion_adjustment_applied": True,
+                }, ensure_ascii=False)
         # LLM 常传字面 'today'/'昨天'; 端点要真日期, 传 'today' → 422。归一成 ISO 日期,
         # 解析不出则不带日期过滤(列近期), 绝不把相对词当 start_date 发出去。
         target_date = _normalize_relative_date(

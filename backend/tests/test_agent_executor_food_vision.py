@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timezone
 
 import pytest
@@ -7,7 +8,11 @@ from app.models.food_nutrition import FoodItem, FoodNutrient
 from app.models.daily_health import DietRecord
 from app.models.user import User
 from app.models.user_profile import UserProfile
-from app.services.agent_executor import AgentExecutor
+from app.services.agent_executor import (
+    AgentExecutor,
+    _contextual_meal_consumed_fraction,
+    _write_receipt_from_tool_result,
+)
 from app.services.dynamic_card_persistence import cards_for_persistence
 from app.services import chat_utils
 
@@ -62,6 +67,28 @@ def _food_photo_executor(db, tmp_path, monkeypatch):
     ]
     executor._agent_kernel_reference_now = lambda: datetime(2026, 7, 19, 16, 30, tzinfo=timezone.utc)
     return executor, user
+
+
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        ("记录这餐，吃了三分之一", (1 / 3, "三分之一")),
+        ("这份只吃了1/3", (1 / 3, "1/3")),
+        ("这餐应该只吃三分之一吗？", None),
+        ("记录这餐，吃了三分之一的蛋糕", None),
+        ("吃了三分之一的蛋糕", None),
+    ],
+)
+def test_contextual_meal_fraction_only_scales_an_explicit_whole_meal(
+    message, expected
+):
+    parsed = _contextual_meal_consumed_fraction(message)
+    if expected is None:
+        assert parsed is None
+    else:
+        assert parsed is not None
+        assert parsed[0] == pytest.approx(expected[0])
+        assert parsed[1] == expected[1]
 
 
 def test_agent_auto_captures_empty_high_confidence_lunch_photo_with_receipt(
@@ -167,6 +194,98 @@ def test_agent_explicit_food_photo_write_records_outside_meal_window(
     card = executor._turn_contextual_diet_cards[0]
     assert card["data"]["recorded"] is True
     assert card["actions"][0]["action"] == "ui.inline.expand"
+
+
+@pytest.mark.asyncio
+async def test_agent_applies_consumed_fraction_before_contextual_photo_write(
+    db, tmp_path, monkeypatch
+):
+    from app.services.ai.food_recognition import food_recognition_service
+
+    executor, user = _food_photo_executor(db, tmp_path, monkeypatch)
+
+    async def recognize(*_args, **_kwargs):
+        return _food_result()
+
+    monkeypatch.setattr(
+        food_recognition_service,
+        "recognize_food_from_base64",
+        recognize,
+    )
+
+    context = await executor._analyze_food_images_with_structured_vision(
+        "记录这餐，吃了三分之一",
+        [{"base64": VALID_PNG_BASE64, "type": "png"}],
+    )
+
+    records = db.query(DietRecord).filter(DietRecord.user_id == user.id).all()
+    assert len(records) == 1
+    record = records[0]
+    assert record.calories == pytest.approx(66)
+    assert record.protein == pytest.approx(12.3)
+    assert record.fat == pytest.approx(1.4)
+    assert "按实际食用三分之一计" in record.food_items
+    assert executor._turn_contextual_diet_consumed_fraction == pytest.approx(1 / 3)
+    assert len(executor._turn_contextual_diet_receipts) == 1
+    assert len(executor._turn_contextual_diet_cards) == 1
+    assert context is not None
+    assert "份量已在首次写入中按三分之一修正" in context
+    assert "不要再次调用 health_record 或 health_manage 写入" in context
+
+
+@pytest.mark.asyncio
+async def test_contextual_fraction_update_replays_receipt_without_second_write(
+    db, tmp_path, monkeypatch
+):
+    executor, _user = _food_photo_executor(db, tmp_path, monkeypatch)
+    capture = executor._capture_contextual_meal_photo(
+        "记录这餐",
+        _food_result(),
+        image_index=0,
+    )
+    assert capture is not None
+    assert capture.record is not None
+    executor._turn_contextual_diet_consumed_fraction = 1 / 3
+
+    async def unexpected_put(*_args, **_kwargs):
+        raise AssertionError("same-turn contextual diet update must not reach the API")
+
+    monkeypatch.setattr(executor, "_api_put", unexpected_put)
+
+    update_args = {
+        "record_type": "diet",
+        "operation": "update",
+        "record_id": capture.record.id,
+        "data": {"calories": 22},
+    }
+    result = await executor._exec_health_manage(
+        "https://health.example.test",
+        {"Authorization": "Bearer test"},
+        update_args,
+    )
+
+    payload = json.loads(result)
+    assert payload == {
+        "id": capture.record.id,
+        "record_id": capture.record.id,
+        "resource_type": "diet_record",
+        "operation_id": f"contextual_meal_photo:{capture.record.id}",
+        "status": "recorded",
+        "replayed": True,
+        "portion_adjustment_applied": True,
+    }
+    receipt = _write_receipt_from_tool_result(
+        "health_manage",
+        update_args,
+        result,
+    )
+    assert receipt is not None
+    assert receipt["operation_id"] == (
+        f"contextual_meal_photo:{capture.record.id}"
+    )
+    assert receipt["status"] == "verified"
+    db.refresh(capture.record)
+    assert capture.record.calories == pytest.approx(198)
 
 
 def test_agent_auto_capture_failure_surfaces_the_recoverable_confirmation_card(
