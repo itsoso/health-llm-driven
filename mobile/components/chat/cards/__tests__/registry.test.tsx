@@ -10,6 +10,7 @@ jest.mock('expo-web-browser', () => ({
 
 const mockVideoPlay = jest.fn();
 const mockShareRemoteVideo = jest.fn();
+const mockShareImage = jest.fn();
 jest.mock('expo-video', () => {
   const React = require('react');
   return {
@@ -19,6 +20,7 @@ jest.mock('expo-video', () => {
 }, { virtual: true });
 
 jest.mock('../../../../utils/share', () => ({
+  shareImage: (...args: unknown[]) => mockShareImage(...args),
   shareRemoteVideo: (...args: unknown[]) => mockShareRemoteVideo(...args),
 }));
 
@@ -307,6 +309,44 @@ describe('renderCard 安全降级', () => {
     });
     expect(api.post).not.toHaveBeenCalled();
     expect(WebBrowser.openBrowserAsync).not.toHaveBeenCalled();
+    screen.unmount();
+  });
+
+  it('shares a completed generated image without submitting another generation request', async () => {
+    mockShareImage.mockResolvedValueOnce(undefined);
+    const relativeImageUrl = '/api/v1/upload/files/aigc/3/result.jpg?expires=1&signature=signed';
+    (api.get as jest.Mock).mockResolvedValueOnce({
+      data: {
+        id: 'aigc_image_1',
+        kind: 'text_to_image',
+        status: 'succeeded',
+        progress: 100,
+        result: { media_type: 'image/jpeg', url: relativeImageUrl },
+      },
+    });
+    const screen = render(renderCard({
+      type: 'aigc_media_job',
+      data: {
+        job_id: 'aigc_image_1',
+        kind: 'text_to_image',
+        status: 'succeeded',
+        progress: 100,
+        result: { media_type: 'image/jpeg', url: relativeImageUrl },
+      },
+    })!);
+
+    fireEvent.press(await screen.findByLabelText('图片分享到小红书'));
+    await waitFor(() => {
+      expect(mockShareImage).toHaveBeenCalledWith(
+        'https://health.executor.life/api/v1/upload/files/aigc/3/result.jpg?expires=1&signature=signed',
+        {
+          target: 'xiaohongshu',
+          cacheKey: 'aigc_image_1',
+          mimeType: 'image/jpeg',
+        },
+      );
+    });
+    expect(api.post).not.toHaveBeenCalled();
     screen.unmount();
   });
 

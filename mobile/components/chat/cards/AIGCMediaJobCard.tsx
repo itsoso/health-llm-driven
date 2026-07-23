@@ -12,7 +12,11 @@ import { VideoView, useVideoPlayer } from 'expo-video';
 import { Ionicons } from '@expo/vector-icons';
 
 import api, { BASE_URL } from '../../../services/api';
-import { shareRemoteVideo, type VideoShareTarget } from '../../../utils/share';
+import {
+  shareImage,
+  shareRemoteVideo,
+  type VideoShareTarget,
+} from '../../../utils/share';
 import { SocialBrandIcon } from '../../common/SocialBrandIcon';
 import { CardShell } from './CardShell';
 import type { CardSpec } from './types';
@@ -215,8 +219,8 @@ export function AIGCMediaJobCardView(initialData: AIGCMediaJobCardData) {
     }
   }, [isVideo, resultUrl, videoPlayer]);
 
-  const shareVideo = useCallback(async (target: VideoShareTarget) => {
-    if (!isVideo || !resultUrl || sharingRef.current) return;
+  const shareResult = useCallback(async (target: VideoShareTarget) => {
+    if ((!isVideo && !isImage) || !resultUrl || sharingRef.current) return;
     sharingRef.current = true;
     setActionError(null);
     setSharingTarget(target);
@@ -230,21 +234,35 @@ export function AIGCMediaJobCardView(initialData: AIGCMediaJobCardData) {
       }
       const projection = normalizeJobProjection(response?.data, data.job_id);
       const freshResultUrl = privateMediaUrl(projection?.result?.url);
-      if (freshResultUrl && String(projection?.result?.media_type || '').toLowerCase().startsWith('video/')) {
+      const freshMediaType = String(projection?.result?.media_type || '').toLowerCase();
+      const hasMatchingFreshResult = isVideo
+        ? freshMediaType.startsWith('video/')
+        : freshMediaType.startsWith('image/');
+      if (freshResultUrl && hasMatchingFreshResult) {
         shareUrl = freshResultUrl;
         if (mounted.current && projection) setData(projection);
       }
-      await shareRemoteVideo(shareUrl, {
-        target,
-        cacheKey: data.job_id,
-      });
+      if (isVideo) {
+        await shareRemoteVideo(shareUrl, {
+          target,
+          cacheKey: data.job_id,
+        });
+      } else {
+        await shareImage(shareUrl, {
+          target,
+          cacheKey: data.job_id,
+          mimeType: mediaType,
+        });
+      }
     } catch {
-      if (mounted.current) setActionError('视频分享未打开，请检查网络后再试。');
+      if (mounted.current) {
+        setActionError(`${isVideo ? '视频' : '图片'}分享未打开，请检查网络后再试。`);
+      }
     } finally {
       sharingRef.current = false;
       if (mounted.current) setSharingTarget(null);
     }
-  }, [data.job_id, isVideo, resultUrl]);
+  }, [data.job_id, isImage, isVideo, mediaType, resultUrl]);
 
   return (
     <CardShell
@@ -311,13 +329,15 @@ export function AIGCMediaJobCardView(initialData: AIGCMediaJobCardData) {
       {actionError ? <Text style={styles.actionError}>{actionError}</Text> : null}
 
       {resultUrl && isImage ? (
-        <Image
-          source={{ uri: resultUrl }}
-          style={styles.image}
-          contentFit="cover"
-          transition={160}
-          accessibilityLabel="小巴生成的图片"
-        />
+        <View style={styles.imageWrap}>
+          <Image
+            source={{ uri: resultUrl }}
+            style={styles.image}
+            contentFit="cover"
+            transition={160}
+            accessibilityLabel="小巴生成的图片"
+          />
+        </View>
       ) : null}
 
       {resultUrl && isVideo ? (
@@ -350,43 +370,46 @@ export function AIGCMediaJobCardView(initialData: AIGCMediaJobCardData) {
               </Pressable>
             ) : null}
           </View>
-          <View style={styles.shareRow}>
-            <Pressable
-              testID="aigc-video-share-wechat"
-              style={({ pressed }) => [
-                styles.shareButton,
-                pressed && !sharingTarget && styles.shareButtonPressed,
-              ]}
-              onPress={() => { void shareVideo('wechat'); }}
-              disabled={sharingTarget !== null}
-              accessibilityRole="button"
-              accessibilityLabel="分享到微信"
-              accessibilityState={{ disabled: sharingTarget !== null, busy: sharingTarget === 'wechat' }}
-            >
-              {sharingTarget === 'wechat'
-                ? <ActivityIndicator size="small" color={C.green600} />
-                : <SocialBrandIcon brand="wechat" size={14} />}
-              <Text style={styles.shareText}>微信</Text>
-            </Pressable>
-            <Pressable
-              testID="aigc-video-share-xiaohongshu"
-              style={({ pressed }) => [
-                styles.shareButton,
-                pressed && !sharingTarget && styles.shareButtonPressed,
-              ]}
-              onPress={() => { void shareVideo('xiaohongshu'); }}
-              disabled={sharingTarget !== null}
-              accessibilityRole="button"
-              accessibilityLabel="分享到小红书"
-              accessibilityState={{ disabled: sharingTarget !== null, busy: sharingTarget === 'xiaohongshu' }}
-            >
-              {sharingTarget === 'xiaohongshu'
-                ? <ActivityIndicator size="small" color={C.green600} />
-                : <SocialBrandIcon brand="xiaohongshu" size={14} />}
-              <Text style={styles.shareText}>小红书</Text>
-            </Pressable>
-          </View>
         </>
+      ) : null}
+
+      {resultUrl && (isImage || isVideo) ? (
+        <View style={styles.shareRow}>
+          <Pressable
+            testID={`aigc-${isVideo ? 'video' : 'image'}-share-wechat`}
+            style={({ pressed }) => [
+              styles.shareButton,
+              pressed && !sharingTarget && styles.shareButtonPressed,
+            ]}
+            onPress={() => { void shareResult('wechat'); }}
+            disabled={sharingTarget !== null}
+            accessibilityRole="button"
+            accessibilityLabel={isVideo ? '分享到微信' : '图片分享到微信'}
+            accessibilityState={{ disabled: sharingTarget !== null, busy: sharingTarget === 'wechat' }}
+          >
+            {sharingTarget === 'wechat'
+              ? <ActivityIndicator size="small" color={C.green600} />
+              : <SocialBrandIcon brand="wechat" size={14} />}
+            <Text style={styles.shareText}>微信</Text>
+          </Pressable>
+          <Pressable
+            testID={`aigc-${isVideo ? 'video' : 'image'}-share-xiaohongshu`}
+            style={({ pressed }) => [
+              styles.shareButton,
+              pressed && !sharingTarget && styles.shareButtonPressed,
+            ]}
+            onPress={() => { void shareResult('xiaohongshu'); }}
+            disabled={sharingTarget !== null}
+            accessibilityRole="button"
+            accessibilityLabel={isVideo ? '分享到小红书' : '图片分享到小红书'}
+            accessibilityState={{ disabled: sharingTarget !== null, busy: sharingTarget === 'xiaohongshu' }}
+          >
+            {sharingTarget === 'xiaohongshu'
+              ? <ActivityIndicator size="small" color={C.green600} />
+              : <SocialBrandIcon brand="xiaohongshu" size={14} />}
+            <Text style={styles.shareText}>小红书</Text>
+          </Pressable>
+        </View>
       ) : null}
     </CardShell>
   );
@@ -421,7 +444,8 @@ const styles = StyleSheet.create({
   retryButtonPressed: { opacity: 0.72 },
   retryButtonText: { fontFamily: revaFonts.sans, fontSize: 14, fontWeight: '800', color: C.green700 } as TextStyle,
   actionError: { marginTop: 8, fontFamily: revaFonts.sans, fontSize: 12, lineHeight: 18, color: revaSemantic.risk.fg } as TextStyle,
-  image: { width: '100%', aspectRatio: 1, borderRadius: revaRadii.md, marginTop: 12, backgroundColor: C.paper2 },
+  imageWrap: { width: '100%', aspectRatio: 1, marginTop: 12, borderRadius: revaRadii.md, overflow: 'hidden' },
+  image: { width: '100%', height: '100%', backgroundColor: C.paper2 },
   videoFrame: { width: '100%', aspectRatio: 16 / 9, marginTop: 12, borderRadius: revaRadii.md, overflow: 'hidden', backgroundColor: C.ink1 },
   video: { flex: 1 },
   playOverlay: {
