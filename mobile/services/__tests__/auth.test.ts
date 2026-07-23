@@ -19,6 +19,10 @@ jest.mock('../api', () => ({
   },
   TOKEN_KEY: 'auth_token',
   setOnUnauthorized: jest.fn(),
+  setRuntimeAuthToken: jest.fn(),
+  isUsableNativeAuthToken: (token: string | null | undefined) => (
+    Boolean(token && token !== '__web_cookie_session__')
+  ),
 }));
 
 jest.mock('../../modules/shared-keychain', () => ({
@@ -32,7 +36,7 @@ import {
   requestPhoneCode, loginByPhoneCode, setPassword, changePassword,
   saveCredentials, loadCredentials, clearCredentials,
 } from '../auth';
-import api, { TOKEN_KEY } from '../api';
+import api, { TOKEN_KEY, setRuntimeAuthToken } from '../api';
 import * as SecureStore from 'expo-secure-store';
 import {
   saveTokenToSharedKeychain,
@@ -44,6 +48,7 @@ const mockedApi = api as jest.Mocked<typeof api>;
 const mockedSave = saveTokenToSharedKeychain as jest.MockedFunction<typeof saveTokenToSharedKeychain>;
 const mockedDelete = deleteTokenFromSharedKeychain as jest.MockedFunction<typeof deleteTokenFromSharedKeychain>;
 const mockedReadShared = readTokenFromSharedKeychain as jest.MockedFunction<typeof readTokenFromSharedKeychain>;
+const mockedSetRuntimeToken = setRuntimeAuthToken as jest.MockedFunction<typeof setRuntimeAuthToken>;
 
 describe('services/auth', () => {
   beforeEach(() => {
@@ -71,6 +76,7 @@ describe('services/auth', () => {
       });
       expect(SecureStore.setItemAsync).toHaveBeenCalledWith(TOKEN_KEY, 'tok_abc');
       expect(mockedSave).toHaveBeenCalledWith('tok_abc');
+      expect(mockedSetRuntimeToken).toHaveBeenCalledWith('tok_abc');
       expect(result.user.username).toBe('alice');
     });
 
@@ -93,6 +99,7 @@ describe('services/auth', () => {
       mockedSave.mockRejectedValueOnce(new Error('native module missing'));
 
       await expect(login('alice', 'hunter2')).resolves.toBeDefined();
+      expect(mockedSetRuntimeToken).toHaveBeenCalledWith('tok_abc');
       expect(SecureStore.setItemAsync).toHaveBeenCalled();
     });
 
@@ -109,6 +116,7 @@ describe('services/auth', () => {
       );
 
       await expect(login('alice', 'hunter2')).resolves.toBeDefined();
+      expect(mockedSetRuntimeToken).toHaveBeenCalledWith('tok_fallback');
       expect(mockedSave).toHaveBeenCalledWith('tok_fallback');
     });
 
@@ -124,6 +132,7 @@ describe('services/auth', () => {
       mockedSave.mockRejectedValueOnce(new Error('no module'));
 
       await expect(login('alice', 'hunter2')).resolves.toBeDefined();
+      expect(mockedSetRuntimeToken).toHaveBeenCalledWith('tok_memory_only');
     });
   });
 
@@ -165,6 +174,7 @@ describe('services/auth', () => {
       });
       expect(SecureStore.setItemAsync).toHaveBeenCalledWith(TOKEN_KEY, 'tok_phone');
       expect(mockedSave).toHaveBeenCalledWith('tok_phone');
+      expect(mockedSetRuntimeToken).toHaveBeenCalledWith('tok_phone');
       expect(result.is_new_user).toBe(true);
     });
   });
@@ -191,6 +201,7 @@ describe('services/auth', () => {
   describe('logout', () => {
     it('clears SecureStore and shared keychain', async () => {
       await logout();
+      expect(mockedSetRuntimeToken).toHaveBeenCalledWith(null);
       expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith(TOKEN_KEY);
       expect(mockedDelete).toHaveBeenCalled();
     });
@@ -205,6 +216,7 @@ describe('services/auth', () => {
     it('returns the stored token', async () => {
       (SecureStore.getItemAsync as jest.Mock).mockResolvedValueOnce('tok_xyz');
       await expect(getToken()).resolves.toBe('tok_xyz');
+      expect(mockedSetRuntimeToken).toHaveBeenCalledWith('tok_xyz');
     });
 
     it('returns null when SecureStore throws', async () => {
@@ -214,6 +226,14 @@ describe('services/auth', () => {
       await expect(getToken()).resolves.toBeNull();
     });
 
+    it('does not restore the web cookie session sentinel as a native bearer token', async () => {
+      (SecureStore.getItemAsync as jest.Mock).mockResolvedValueOnce('__web_cookie_session__');
+      mockedReadShared.mockResolvedValueOnce(null);
+
+      await expect(getToken()).resolves.toBeNull();
+      expect(mockedSetRuntimeToken).not.toHaveBeenCalledWith('__web_cookie_session__');
+    });
+
     it('falls back to shared keychain and rehydrates SecureStore when token is missing', async () => {
       (SecureStore.getItemAsync as jest.Mock).mockResolvedValueOnce(null);
       mockedReadShared.mockResolvedValueOnce('tok_shared');
@@ -221,6 +241,7 @@ describe('services/auth', () => {
       await expect(getToken()).resolves.toBe('tok_shared');
 
       expect(mockedReadShared).toHaveBeenCalledTimes(1);
+      expect(mockedSetRuntimeToken).toHaveBeenCalledWith('tok_shared');
       expect(SecureStore.setItemAsync).toHaveBeenCalledWith(TOKEN_KEY, 'tok_shared');
     });
 

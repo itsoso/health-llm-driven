@@ -85,6 +85,8 @@ RequirementAdmission:
 - `scripts/release_lock.sh` 为全部变更型发布入口提供原子互斥、死亡 owner 恢复和受控子任务重入。
 - `AIGCMediaJobCard` 的错误文本颜色改用 `revaSemantic.risk.fg`，恢复设计令牌 ratchet。
 - 管理员模拟器已经使用 Release 构建安装并启动；当前仅受 macOS 锁屏阻挡，未绕过账号认证或注入测试 token。
+- 管理员模拟器正常账号登录接口返回 `200` 后仍跳回手机号登录页。生产日志确认首批受保护请求未携带 Bearer Token，触发全局 `401` 清理会话；根因是登录成功后的 React 会话切换与 SecureStore 逐请求读取之间存在竞态。
+- Mobile 认证层现先同步安装进程内 Token，再异步双写 SecureStore 与共享 keychain；请求层优先使用进程内 Token，冷启动恢复时重新灌入，退出时同步清空，并拒绝把 Web Cookie 会话占位值当作原生 Bearer Token。
 - 主干 CI `29968072427` 在精确提交 `28c9e04bc765bbdd989c5202e36ff60d6186bbea` 上 `43/43` 任务通过。
 - 同一提交已完成前后端生产部署；后端部署健康度 `60/60`，公网 API、数据库、Redis、Celery 均 healthy。
 - Mobile production OTA 已发布并核验，runtime version `1.3.2`，group `ef03a27a-57bb-4d99-a2ae-b632b5cdd506`，iOS update `019f8c5e-56c8-726a-aeab-c77885edd63a`。
@@ -94,6 +96,7 @@ RequirementAdmission:
 - Agent Runtime 模型、API、并发、恢复、rollout 和工具操作：`208 passed, 3 skipped`。
 - Mobile Agent hooks、历史、滚底、今日重点、composer 和卡片 registry：`147 passed`；聊天页面交互另有 `37 passed`。
 - Mobile TypeScript：PASS。
+- Mobile 账号、手机号、AuthProvider、登录页面、Token 存储与请求拦截聚焦回归：`45 passed`；TypeScript 与 lint PASS（lint 仅保留既有 warning）。
 - Mobile design token ratchet：PASS，原始色值回到既有基线。
 - 发布锁、部署入口和 Mobile 快速反馈脚本：`30 passed`，包含从仓库外启动发布脚本的路径回归。
 - 所有修改 shell 入口 `bash -n`：PASS。

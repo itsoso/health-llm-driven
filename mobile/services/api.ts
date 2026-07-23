@@ -3,6 +3,20 @@ import * as SecureStore from 'expo-secure-store';
 import { enforceAppEgressAllowed } from './egressPolicy';
 
 const TOKEN_KEY = 'auth_token';
+export const WEB_SESSION_AUTH_SENTINEL = '__web_cookie_session__';
+
+// SecureStore can be temporarily unavailable while iOS unlocks the keychain.
+// Keep the token returned by a successful login in-process so the first
+// authenticated requests do not race the persistence layer.
+let runtimeAuthToken: string | null = null;
+
+export function isUsableNativeAuthToken(token: string | null | undefined): token is string {
+  return Boolean(token && token !== WEB_SESSION_AUTH_SENTINEL);
+}
+
+export function setRuntimeAuthToken(token: string | null): void {
+  runtimeAuthToken = isUsableNativeAuthToken(token) ? token : null;
+}
 
 const DEFAULT_API = 'https://health.executor.life/api';
 export const BASE_URL =
@@ -22,13 +36,21 @@ api.interceptors.request.use(
     const explicitCloudAI = config.headers.get(EXPLICIT_CLOUD_AI_HEADER) === '1';
     config.headers.delete(EXPLICIT_CLOUD_AI_HEADER);
     await enforceAppEgressAllowed({ explicitCloudAI });
-    try {
-      const token = await SecureStore.getItemAsync(TOKEN_KEY);
-      if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
+    let token = runtimeAuthToken;
+    if (!token) {
+      try {
+        const persistedToken = await SecureStore.getItemAsync(TOKEN_KEY);
+        if (isUsableNativeAuthToken(persistedToken)) {
+          token = persistedToken;
+          runtimeAuthToken = persistedToken;
+        }
+      } catch {
+        // SecureStore not available (e.g. web or a transient iOS keychain
+        // window). A token installed by login remains usable in memory.
       }
-    } catch {
-      // SecureStore not available (e.g. web), ignore
+    }
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
   },

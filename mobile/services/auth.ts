@@ -1,5 +1,9 @@
 import * as SecureStore from 'expo-secure-store';
-import api, { TOKEN_KEY } from './api';
+import api, {
+  TOKEN_KEY,
+  isUsableNativeAuthToken,
+  setRuntimeAuthToken,
+} from './api';
 import {
   saveTokenToSharedKeychain,
   deleteTokenFromSharedKeychain,
@@ -53,6 +57,16 @@ export interface AccountDeletionRequestResponse {
  * 双写 SecureStore + 共享 keychain,全挂也保留内存态并 warn。
  */
 async function persistToken(token: string): Promise<void> {
+  if (!isUsableNativeAuthToken(token)) {
+    setRuntimeAuthToken(null);
+    throw new Error('登录服务返回了无效的原生访问凭证');
+  }
+
+  // Install synchronously before touching either native store. The
+  // authenticated UI can mount immediately after this function resolves, and
+  // all of its first requests must already have a reliable bearer token.
+  setRuntimeAuthToken(token);
+
   let secureStoreOk = false;
   try {
     await SecureStore.setItemAsync(TOKEN_KEY, token);
@@ -123,14 +137,26 @@ export async function changePassword(
 }
 
 export async function logout(): Promise<void> {
-  await SecureStore.deleteItemAsync(TOKEN_KEY);
-  deleteTokenFromSharedKeychain().catch(() => {});
+  setRuntimeAuthToken(null);
+  try {
+    await SecureStore.deleteItemAsync(TOKEN_KEY);
+  } catch (e) {
+    console.warn('[auth] SecureStore token deletion failed:', e);
+  }
+  try {
+    await deleteTokenFromSharedKeychain();
+  } catch (e) {
+    console.warn('[auth] shared keychain token deletion failed:', e);
+  }
 }
 
 export async function getToken(): Promise<string | null> {
   try {
     const token = await SecureStore.getItemAsync(TOKEN_KEY);
-    if (token) return token;
+    if (isUsableNativeAuthToken(token)) {
+      setRuntimeAuthToken(token);
+      return token;
+    }
   } catch {
     // Fall through to the shared native store. iOS updates can transiently
     // fail SecureStore reads while App Group storage still has the token.
@@ -138,8 +164,9 @@ export async function getToken(): Promise<string | null> {
 
   try {
     const sharedToken = await readTokenFromSharedKeychain();
-    if (!sharedToken) return null;
+    if (!isUsableNativeAuthToken(sharedToken)) return null;
 
+    setRuntimeAuthToken(sharedToken);
     try {
       await SecureStore.setItemAsync(TOKEN_KEY, sharedToken);
     } catch {
