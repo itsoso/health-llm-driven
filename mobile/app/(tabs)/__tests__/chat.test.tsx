@@ -16,6 +16,7 @@ const mockSetMessages = jest.fn();
 const mockSetParams = jest.fn();
 const mockLoadLatestConversation = jest.fn();
 const mockSaveChatImageToLibrary = jest.fn();
+const mockShareImage = jest.fn();
 let mockRouteParams: Record<string, string | undefined> = {};
 let mockLlmPreference: any = { model_id: null, options: [] };
 let mockMessages: any[] = [];
@@ -115,6 +116,12 @@ jest.mock('../../../services/chatImageSave', () => ({
   saveChatImageToLibrary: (...args: any[]) => mockSaveChatImageToLibrary(...args),
 }));
 
+jest.mock('../../../utils/share', () => ({
+  shareImage: (...args: any[]) => mockShareImage(...args),
+  shareLocalImage: jest.fn(),
+  sharePlainText: jest.fn(),
+}));
+
 jest.mock('../../../hooks/useTheme', () => ({
   useTheme: () => ({
     c: {
@@ -187,6 +194,7 @@ describe('ChatScreen', () => {
     mockDailyPlanData = undefined;
     mockLoadLatestConversation.mockResolvedValue(undefined);
     mockSaveChatImageToLibrary.mockResolvedValue(undefined);
+    mockShareImage.mockResolvedValue(undefined);
   });
 
   it('lets the reviewer save an image from the full-screen preview', async () => {
@@ -200,7 +208,7 @@ describe('ChatScreen', () => {
     const view = render(<ChatScreen />);
 
     fireEvent.press(view.getByLabelText('open-image-photo-1'));
-    fireEvent(view.getByLabelText('预览图片，长按可保存'), 'longPress');
+    fireEvent(view.getByLabelText('预览图片，长按可保存或分享'), 'longPress');
 
     const actions = alertSpy.mock.calls.at(-1)?.[2] as any[];
     await act(async () => {
@@ -212,6 +220,35 @@ describe('ChatScreen', () => {
       uri: 'https://health.executor.life/api/v1/upload/files/chat/7/meal.jpg',
       headers: { Authorization: 'Bearer review-token' },
     });
+  });
+
+  it('lets the reviewer share a protected image from the full-screen preview', async () => {
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(jest.fn());
+    mockMessages = [{
+      id: 'photo-2',
+      role: 'user',
+      content: '晚餐照片',
+      imageUris: ['https://health.executor.life/api/v1/upload/files/chat/8/dinner.jpg'],
+    }];
+    const view = render(<ChatScreen />);
+
+    fireEvent.press(view.getByLabelText('open-image-photo-2'));
+    fireEvent(view.getByLabelText('预览图片，长按可保存或分享'), 'longPress');
+
+    const actions = alertSpy.mock.calls.at(-1)?.[2] as any[];
+    await act(async () => {
+      actions.find(action => action.text === '分享图片').onPress();
+      await Promise.resolve();
+    });
+
+    expect(mockShareImage).toHaveBeenCalledWith(
+      'https://health.executor.life/api/v1/upload/files/chat/8/dinner.jpg',
+      {
+        target: 'more',
+        cacheKey: 'viewer-image',
+        headers: { Authorization: 'Bearer review-token' },
+      },
+    );
   });
 
   it('keeps one stable bootstrap shell until history, opener, and memory settle', async () => {

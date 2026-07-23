@@ -50,7 +50,7 @@ import {
   revaSemantic,
   revaFonts,
 } from '../../constants/revaTheme';
-import { sharePlainText, shareLocalImage } from '../../utils/share';
+import { shareImage, sharePlainText, shareLocalImage } from '../../utils/share';
 import { buildSelectedChatShareMessage, isShareableChatMessage } from '../../utils/chatShareSelection';
 import { captureRef } from 'react-native-view-shot';
 import ConversationShareImage, { type ShareImageMessage } from '../../components/chat/ConversationShareImage';
@@ -218,13 +218,31 @@ export default function ChatScreen() {
     }
   }, [authToken]);
 
+  const shareViewingImage = useCallback(async (uri: string) => {
+    const source = buildChatImageSource(uri, authToken);
+    if (!source) {
+      Alert.alert('无法分享', '请重新登录后再试。');
+      return;
+    }
+    try {
+      await shareImage(source.uri, {
+        target: 'more',
+        cacheKey: 'viewer-image',
+        headers: source.headers,
+      });
+    } catch {
+      Alert.alert('分享失败', '图片下载或系统分享暂时不可用，请检查网络后重试。');
+    }
+  }, [authToken]);
+
   const handleViewingImageLongPress = useCallback(() => {
     if (!viewingImage) return;
     Alert.alert('图片', undefined, [
       { text: '保存到相册', onPress: () => { void saveViewingImage(viewingImage); } },
+      { text: '分享图片', onPress: () => { void shareViewingImage(viewingImage); } },
       { text: '取消', style: 'cancel' },
     ]);
-  }, [saveViewingImage, viewingImage]);
+  }, [saveViewingImage, shareViewingImage, viewingImage]);
 
   // Context from alert / push / Siri deep-link. Read ONCE on first mount, then cleared.
   // autoSend=1 (from Siri HealthAnalysisOpenIntent) → directly send instead of prefilling.
@@ -1052,7 +1070,7 @@ export default function ChatScreen() {
               onPress={(event) => event.stopPropagation()}
               onLongPress={handleViewingImageLongPress}
               accessibilityRole="imagebutton"
-              accessibilityLabel="预览图片，长按可保存"
+              accessibilityLabel="预览图片，长按可保存或分享"
             >
               <Image
                 source={buildChatImageSource(viewingImage, authToken)}
