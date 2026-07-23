@@ -77,6 +77,7 @@
   - 客户端只能选择服务端白名单时长，不能替换 prompt、model 或 source。
   - 最终规格进入请求指纹；重复确认仍返回同一任务。
   - 运维聚合不记录 prompt、媒体 URL 或健康正文。
+  - Mobile 生产依赖审计：0 vulnerabilities；CI 发现的 PostCSS 高危公告已通过 `8.5.22` 安全补丁关闭。
 - G5 部署健康：PASS
   - Backend 已从干净提交 `dc4dd70bb217` 部署。
   - 部署健康分 `60/60`，Skills manifest `22/22`。
