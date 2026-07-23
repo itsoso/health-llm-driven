@@ -75,7 +75,11 @@ def test_consumed_confirmation_resolves_to_its_existing_job_without_dispatch(
         job_id=job.id,
         expires_at=datetime.now(UTC),
     )
-    db.add_all([job, confirmation])
+    # Persist the ledger row first, matching the production dispatch order and
+    # satisfying the confirmation's explicit job foreign key.
+    db.add(job)
+    db.flush()
+    db.add(confirmation)
     db.commit()
 
     response = client.get(

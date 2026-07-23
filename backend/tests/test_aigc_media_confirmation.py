@@ -82,6 +82,46 @@ async def test_confirmation_is_encrypted_and_single_use_before_provider_dispatch
 
 
 @pytest.mark.asyncio
+async def test_video_confirmation_replay_returns_the_same_job_without_second_provider_dispatch(
+    db, auth_user_and_headers,
+):
+    from app.models.aigc_media_job import AIGCMediaJob
+    from app.services.aigc_media_job_service import AIGCMediaJobRequest, AIGCMediaJobService
+    from app.services.aigc_media_service import AIGCTask
+
+    class VideoProvider(_Provider):
+        def __init__(self) -> None:
+            super().__init__()
+            self.video_requests: list[dict] = []
+
+        async def create_video_task(self, **kwargs):
+            self.video_requests.append(kwargs)
+            return AIGCTask(task_id="happyhorse-video-idempotent", status="PENDING")
+
+    user, _ = auth_user_and_headers
+    provider = VideoProvider()
+    service = AIGCMediaJobService(db, provider_factory=lambda: provider)
+    confirmation = await service.issue_confirmation(
+        user_id=user.id,
+        request=AIGCMediaJobRequest(
+            kind="text_to_video",
+            purpose="wellness_story",
+            prompt="把今天的健康活动整理成一段竖屏短视频",
+            duration_seconds=5,
+            ratio="9:16",
+        ),
+    )
+
+    first = await service.confirm_and_dispatch(user_id=user.id, confirmation_id=confirmation.id)
+    replayed = await service.confirm_and_dispatch(user_id=user.id, confirmation_id=confirmation.id)
+
+    assert replayed.id == first.id
+    assert first.provider_task_id == "happyhorse-video-idempotent"
+    assert len(provider.video_requests) == 1
+    assert db.query(AIGCMediaJob).filter_by(user_id=user.id).count() == 1
+
+
+@pytest.mark.asyncio
 async def test_expired_confirmation_cannot_contact_provider(db, auth_user_and_headers):
     from app.models.aigc_media_confirmation import AIGCMediaConfirmation
     from app.services.aigc_media_job_service import (
