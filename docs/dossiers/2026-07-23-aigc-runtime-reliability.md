@@ -4,8 +4,8 @@
 |---|---|
 | slug | `aigc-runtime-reliability` |
 | 创建日期 | 2026-07-23 |
-| 当前阶段 | S6 发布准备 |
-| 状态 | validating |
+| 当前阶段 | S6 已发布，待 G6 真机烟测 |
+| 状态 | deployed |
 | 负责 | Codex |
 | 反馈环 | backend deploy + mobile OTA + device smoke |
 
@@ -59,7 +59,7 @@
 - [x] T3 实现 Backend 策略、通知和去重。
 - [x] T4 实现 Mobile 恢复、准确规格展示和事件埋点。
 - [x] T5 补运维漏斗聚合与告警信号。
-- [ ] T6 G3/G4 验证、提交、部署和 OTA。
+- [x] T6 G3/G4 验证、提交、部署和 OTA。
 
 ## Gate 状态
 
@@ -72,5 +72,10 @@
   - 完成推送锁屏文案不含 prompt、健康正文或媒体地址。
   - 客户端事件白名单拒绝 job ID、prompt、结果 URL 等资源和内容字段。
   - 管理员仅豁免个人限额，全局并发保护仍生效。
-- G5 部署健康：pending
+- G5 部署健康：PASS
+  - Backend commit：`1726f81613a62cbdcd2265e1242f0738cf732e81`。
+  - 数据库备份、231 表恢复演练和加密站外归档通过。
+  - 生产健康度：60/60；线上 revision 和 Skills manifest 均核验通过。
+  - Mobile production OTA：runtime `1.3.2`，group `28eb6675-b8e1-4c05-b9d2-74f648173b1a`，iOS update `019f8fd5-59e1-7050-8b06-cffdd3368c12`。
 - G6 上线验证：pending
+  - 待真机完成：active 任务切后台恢复、断网恢复、完成推送、播放和微信/小红书分享。
