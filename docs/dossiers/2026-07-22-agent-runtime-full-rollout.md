@@ -105,6 +105,8 @@ RequirementAdmission:
 - `duration_seconds` 运动去重测试未像 reps 用例一样固定 `created_at`，慢 CI runner 会跨过生产 1 秒窗口；测试现固定首条记录时间，验证业务去重而不是 runner 速度。
 - OpenAPI 类型由旧 FastAPI 环境生成；使用 CI 和 requirements 的同版 FastAPI 重新生成 Mobile/Web 类型，两个文件逐字节一致。
 - 纠偏验证: 两项后端聚焦回归 `13 passed`，Mobile/Web TypeScript 均 PASS，Ruff 和 `git diff --check` PASS。
+- Frontend 生产依赖审计识别出 `next@16.2.10` 的 high 漏洞；`next` 与 `eslint-config-next` 已精确升级到补丁版 `16.2.11`。
+- 安全补丁验证: `npm audit --omit=dev --audit-level=high` 为 0 漏洞，Vitest `300 passed`，Next 生产构建和 ESLint 均 PASS（仅保留既有 warning）。
 
 ## G4 · 安全闸
 
