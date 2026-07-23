@@ -4,7 +4,7 @@
 |---|---|
 | slug | `eth-staking-report` |
 | 创建日期 | 2026-07-23 |
-| 当前阶段 | S3 规划 |
+| 当前阶段 | G2 可行性 + 安全压测 |
 | 状态 | defining |
 | 负责 | Codex / user |
 | 反馈环 | ETH2 shadow run → Telegram canary → systemd timer |
@@ -67,7 +67,7 @@
 
 ## S3 · 规划
 
-- 链接：实施计划待创建并在本节回填。
+- 链接：`docs/plans/2026-07-23-eth-staking-report-implementation.md`
 - 分阶段：安全整改 → 纯函数/TDD → 采集与持久化 → Telegram → 外部 skill → shadow → 部署。
 - 长杆：MEV 可归因证据、自然日边界数据完整性、旧 API 凭据轮换。
 
@@ -79,11 +79,13 @@
   - MEV 无证据时必须显示 unknown。
   - 需要 shadow run 和 Telegram canary 后才启用 09:01 timer。
 - 待拍板分叉：无。
-- **裁决：待实施计划与一致性检查后确认。**
+- **裁决：PASS** —— 计划已把凭据轮换、unknown 语义、shadow/canary、只读 scope 和不重启质押链路列为硬 Gate。
 
 ## S4 · 研发任务分解
 
-- 待实施计划完成后填写。
+- 跨端 API 契约：实施计划 Task 6 的四个 GET-only `/v1` 路由。
+- 任务表：实施计划 Task 1–10。
+- 分支策略：按项目偏好直接在 `main`，只提交本任务文件。
 
 ## S5 · 实现
 
