@@ -634,14 +634,17 @@ function ChatBubbleInner({
   const cardDataRecord = item.cardData && typeof item.cardData === 'object' && !Array.isArray(item.cardData)
     ? item.cardData as Record<string, unknown>
     : null;
+  const isRecordedDietCard = item.cardType === 'diet_draft' && (
+    cardDataRecord?.recorded === true
+    || latestWriteReceipt?.status === 'verified'
+  );
   const renderedCardData = item.cardType === 'medication_draft' && cardDataRecord
     ? { ...cardDataRecord, ...(cardDecisionStatus ? { decision_status: cardDecisionStatus } : {}) }
     : item.cardData;
   const renderedCardActions = cardDecisionStatus && cardDecisionStatus !== 'pending'
     ? []
     : item.cardActions;
-  const hasPendingDietDraftEditor = item.cardType === 'diet_draft'
-    && latestWriteReceipt?.status !== 'verified';
+  const hasPendingDietDraftEditor = item.cardType === 'diet_draft' && !isRecordedDietCard;
   const hasRecordAdjustEditor = item.cardType === 'record_quality' && Boolean(
     cardDataRecord?.adjust_record
     || (Array.isArray(cardDataRecord?.expanded_sections)
@@ -716,7 +719,7 @@ function ChatBubbleInner({
               </Pressable>
             )}
             {showMessageTime ? <MessageTime label={sentTimeShort} isUser={false} /> : null}
-            {showCardActions && cardSharePayload && !selectionMode ? (
+            {(showCardActions || isRecordedDietCard) && cardSharePayload && !selectionMode ? (
               <View testID="assistant-card-share-actions" style={styles.cardShareActions}>
                 <Pressable
                   onPress={handleSaveCardScreenshot}
@@ -748,16 +751,18 @@ function ChatBubbleInner({
                   <Ionicons name="document-text-outline" size={13} color={C.green700} />
                   <Text style={txt.cardShareButton}>分享正文</Text>
                 </Pressable>
-                <Pressable
-                  onPress={() => setShowCardActions(false)}
-                  hitSlop={6}
-                  accessibilityRole="button"
-                  accessibilityLabel="收起卡片操作"
-                  style={({ pressed }) => [styles.cardSaveButton, pressed && styles.actionBtnPressed]}
-                >
-                  <Ionicons name="close" size={13} color={C.ink3} />
-                  <Text style={txt.cardSaveButton}>收起</Text>
-                </Pressable>
+                {!isRecordedDietCard ? (
+                  <Pressable
+                    onPress={() => setShowCardActions(false)}
+                    hitSlop={6}
+                    accessibilityRole="button"
+                    accessibilityLabel="收起卡片操作"
+                    style={({ pressed }) => [styles.cardSaveButton, pressed && styles.actionBtnPressed]}
+                  >
+                    <Ionicons name="close" size={13} color={C.ink3} />
+                    <Text style={txt.cardSaveButton}>收起</Text>
+                  </Pressable>
+                ) : null}
               </View>
             ) : null}
           </View>
@@ -1317,7 +1322,10 @@ function buildCardSharePayload(
   const data = cardData as Record<string, unknown>;
   if (cardType === 'record_quality') return buildDietQualitySharePayload(data);
   if (cardType !== 'diet_draft') return null;
-  if (latestWriteReceipt?.resourceType !== 'diet_record' || latestWriteReceipt.status !== 'verified') return null;
+  const hasVerifiedReceipt = latestWriteReceipt?.resourceType === 'diet_record'
+    && latestWriteReceipt.status === 'verified';
+  const isPersistedCard = data.recorded === true && cardNumber(data.record_id) != null;
+  if (!hasVerifiedReceipt && !isPersistedCard) return null;
   return buildDietDraftSharePayload(data);
 }
 

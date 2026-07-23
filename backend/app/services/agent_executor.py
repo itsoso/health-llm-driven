@@ -36,6 +36,7 @@ from app.services.lab_plausibility import annotate_if_implausible
 from app.services.llm.error_messages import safe_llm_error_message, safe_tool_error_message
 from app.services.health_query_dimensions import normalize_health_query_args
 from app.services.post_record_quality import (
+    build_diet_adjust_action,
     build_post_record_quality_response,
     combine_post_record_quality_responses,
 )
@@ -12589,6 +12590,14 @@ class AgentExecutor:
         asset = result.photo_asset
         if record is None or asset is None:
             raise ValueError("contextual_diet_recorded_card_missing_receipt")
+        record_data = {
+            "meal_type": record.meal_type,
+            "food_items": record.food_items,
+            "calories": record.calories,
+            "protein": record.protein,
+            "carbs": record.carbs,
+            "fat": record.fat,
+        }
         return {
             "type": "diet_draft",
             "data": format_card_numbers({
@@ -12609,7 +12618,7 @@ class AgentExecutor:
                 "receipt_message": "已保存到今日饮食，餐食照片已关联到这条记录。",
                 "boundary": "营养为图像估算；可在饮食记录中继续修正。",
             }),
-            "actions": [],
+            "actions": [build_diet_adjust_action(record.id, record_data)],
         }
 
     def _contextual_diet_confirmation_card(self, result: Any) -> Dict[str, Any]:

@@ -722,17 +722,16 @@ ${sectionTitle}
       },
     };
 
-    const { getByLabelText, getByTestId, queryByTestId, queryByText } = render(
+    const { getByLabelText, getByTestId, queryByText } = render(
       <QueryClientProvider client={qc}>
         <ChatBubble item={message} />
       </QueryClientProvider>,
     );
 
     expect(getByTestId('assistant-card-capture-frame')).toBeTruthy();
-    expect(queryByTestId('assistant-card-share-actions')).toBeNull();
+    expect(getByTestId('assistant-card-share-actions')).toBeTruthy();
     expect(queryByText('截图可直接发微信 / 小红书')).toBeNull();
 
-    fireEvent(getByTestId('assistant-card-interaction-surface'), 'longPress');
     expect(getByTestId('assistant-card-share-actions')).toHaveStyle({
       flexDirection: 'row',
       flexWrap: 'wrap',
@@ -1754,6 +1753,40 @@ ${sectionTitle}
     await waitFor(() => {
       expect(mockToastShow).toHaveBeenCalledWith('已记录饮食', 'success');
     });
+  });
+
+  it('keeps recorded diet screenshot actions visible after history reload without a write receipt', () => {
+    renderCard.mockImplementationOnce(() => {
+      const { Text } = require('react-native');
+      return <Text>午餐已记录</Text>;
+    });
+    const qc = new QueryClient();
+    const message: UIMessage = {
+      id: 'assistant-recorded-diet-share',
+      role: 'assistant',
+      content: '',
+      streaming: false,
+      cardType: 'diet_draft',
+      cardData: {
+        recorded: true,
+        record_id: 805,
+        meal_type: 'lunch',
+        food_items: '番茄炒蛋面 1 碗',
+        calories: 420,
+      },
+      cardActions: [],
+      writeReceipts: [],
+    };
+
+    const { getByText, getByLabelText } = render(
+      <QueryClientProvider client={qc}>
+        <ChatBubble item={message} />
+      </QueryClientProvider>,
+    );
+
+    expect(getByText('午餐已记录')).toBeTruthy();
+    expect(getByLabelText('分享卡片图片')).toBeTruthy();
+    expect(getByLabelText('保存卡片图片')).toBeTruthy();
   });
 
   it('shows nutrition estimation feedback after confirming an incomplete diet card', async () => {

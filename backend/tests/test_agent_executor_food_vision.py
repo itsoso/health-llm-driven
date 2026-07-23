@@ -86,7 +86,19 @@ def test_agent_auto_captures_empty_high_confidence_lunch_photo_with_receipt(
     assert card["type"] == "diet_draft"
     assert card["data"]["recorded"] is True
     assert card["data"]["record_id"] == result.record.id
-    assert card["actions"] == []
+    adjust_action = card["actions"][0]
+    assert adjust_action["action"] == "ui.inline.expand"
+    assert adjust_action["label"] == "调整记录"
+    assert adjust_action["payload"]["target"] == "adjust_record"
+    assert adjust_action["payload"]["patch"]["adjust_record"] == {
+        "record_id": result.record.id,
+        "meal_type": "lunch",
+        "food_items": result.record.food_items,
+        "calories": result.record.calories,
+        "protein": result.record.protein,
+        "carbs": result.record.carbs,
+        "fat": result.record.fat,
+    }
     assert "photo_url" not in cards_for_persistence([card])[0]["data"]
 
 
@@ -154,7 +166,7 @@ def test_agent_explicit_food_photo_write_records_outside_meal_window(
     }]
     card = executor._turn_contextual_diet_cards[0]
     assert card["data"]["recorded"] is True
-    assert card["actions"] == []
+    assert card["actions"][0]["action"] == "ui.inline.expand"
 
 
 def test_agent_auto_capture_failure_surfaces_the_recoverable_confirmation_card(

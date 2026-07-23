@@ -27,7 +27,7 @@ interface RecordQualityData {
   boundary?: unknown;
 }
 
-interface MetricItem {
+export interface MetricItem {
   label: string;
   value: string;
 }
@@ -287,7 +287,7 @@ export function RecordQualityCardView(props: RecordQualityViewProps) {
       ) : null}
 
       {showAdjustEditor && adjustRecord && adjustRecordId != null ? (
-        <AdjustRecordEditor
+        <DietRecordAdjustEditor
           recordId={adjustRecordId}
           seed={adjustRecord}
           onSaved={(applied) => {
@@ -369,7 +369,7 @@ export function RecordQualityCardView(props: RecordQualityViewProps) {
   );
 }
 
-interface AdjustApplied {
+export interface DietAdjustApplied {
   /** 更新后卡面的 summary + metrics(就地刷新用) */
   cardFace: { summary: string; metrics: MetricItem[] };
   /** 更新后的 adjust_record seed(下次再展开时以最新值填充) */
@@ -377,14 +377,14 @@ interface AdjustApplied {
 }
 
 /** 聊天内饮食记录调整器 — 就地编辑并直接 updateDietRecord, 不离开聊天 */
-function AdjustRecordEditor({
+export function DietRecordAdjustEditor({
   recordId,
   seed,
   onSaved,
 }: {
   recordId: number;
   seed: Record<string, unknown>;
-  onSaved: (applied: AdjustApplied) => void;
+  onSaved: (applied: DietAdjustApplied) => void;
 }) {
   const [mealType, setMealType] = React.useState<MealType>(() => mealTypeValue(seed.meal_type));
   const [food, setFood] = React.useState(() => text(seed.food_items) || '');

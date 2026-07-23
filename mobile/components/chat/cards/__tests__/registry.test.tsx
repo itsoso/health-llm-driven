@@ -1181,13 +1181,57 @@ describe('renderCard 安全降级', () => {
     expect(getByText('kcal', { exact: false })).toBeTruthy();
     expect(getByText('蛋白质')).toBeTruthy();
     expect(getByText('已进入今日饮食进度')).toBeTruthy();
-    expect(getByText('可截图分享')).toBeTruthy();
-    expect(getByText('#饮食记录 #小巴')).toBeTruthy();
     expect(getByText('今日饮食打卡')).toBeTruthy();
     expect(getByText('小巴生成')).toBeTruthy();
-    expect(getByText('适合微信 / 小红书截图分享')).toBeTruthy();
+    expect(getByText('可直接分享至微信 / 小红书')).toBeTruthy();
     expect(getByText('下一步: 餐后轻走 10 分钟')).toBeTruthy();
     expect(getByText('可在记录页继续修正,小巴会把这餐纳入今日饮食进度。')).toBeTruthy();
+  });
+
+  it('opens an inline editor for an already recorded diet card', () => {
+    const descriptor = {
+      type: 'diet_draft',
+      data: {
+        recorded: true,
+        record_id: 805,
+        food_items: '番茄炒蛋面 1 碗',
+        meal_type: 'lunch',
+        calories: 420,
+        protein: 16,
+        carbs: 65,
+        fat: 10,
+      },
+      actions: [{
+        id: 'adjust-record',
+        label: '调整记录',
+        action: 'ui.inline.expand',
+        payload: {
+          target: 'adjust_record',
+          patch: {
+            expanded_sections: ['adjust_record'],
+            adjust_record: {
+              record_id: 805,
+              meal_type: 'lunch',
+              food_items: '番茄炒蛋面 1 碗',
+              calories: 420,
+              protein: 16,
+              carbs: 65,
+              fat: 10,
+            },
+          },
+        },
+        style: 'secondary',
+      }],
+    } as any;
+
+    const element = renderCard(descriptor, { onAction: jest.fn() });
+    expect(element).not.toBeNull();
+    const { getByText, getByTestId } = render(element!);
+
+    fireEvent.press(getByText('调整记录'));
+
+    expect(getByTestId('diet-adjust-inline-editor')).toBeTruthy();
+    expect(getByText('保存修正')).toBeTruthy();
   });
 
   it('expands next-meal guidance inside a diet draft card without dispatching an action', () => {

@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, TextInput, TextStyle, View } from 'react-n
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { CardShell } from './CardShell';
+import { DietRecordAdjustEditor } from './RecordQualityCard';
 import { MEAL_ICONS, MACRO_HUES, MacroBar, IngredientChips } from './mealCardVisuals';
 import type {
   CardRenderOptions,
@@ -54,6 +55,9 @@ interface DietDraftData {
   recorded?: unknown;
   receipt_message?: unknown;
   auto_save_fallback?: unknown;
+  record_id?: unknown;
+  adjust_record?: unknown;
+  adjust_saved?: unknown;
 }
 
 interface DietDraftCardViewProps extends DietDraftData {
@@ -266,6 +270,12 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
   const editHint = editHintText(data);
   const photoUri = privatePhotoUri(data.photo_url);
   const isRecorded = data.recorded === true || data.confirmActionState === 'done';
+  const adjustRecord = objectValue(data.adjust_record);
+  const adjustRecordId = numberValue(adjustRecord?.record_id) ?? numberValue(data.record_id);
+  const showSavedAdjustEditor = isRecorded
+    && adjustRecordId != null
+    && adjustRecord != null
+    && hasExpandedSection(data.expanded_sections, 'adjust_record');
   const receiptMessage = text(data.receipt_message);
   const canConfirmFromEditor = Boolean(data.confirmAction && data.onConfirmAction && !data.confirmAction.disabled_reason);
   const recordedNextStep = walkText || suggestions[0] || '下一餐按目标补足蛋白和蔬菜';
@@ -453,13 +463,6 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
       ) : null}
 
       {isRecorded ? (
-        <View style={styles.shareReadyRow}>
-          <Text maxFontSizeMultiplier={1.1} style={styles.shareReadyLabel}>可截图分享</Text>
-          <Text maxFontSizeMultiplier={1.1} style={styles.shareReadyTag}>#饮食记录 #小巴</Text>
-        </View>
-      ) : null}
-
-      {isRecorded ? (
         <View style={styles.socialShareFooter}>
           <View style={styles.socialTitleRow}>
             <Text maxFontSizeMultiplier={1.08} style={styles.socialTitle}>
@@ -470,8 +473,42 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
             </Text>
           </View>
           <Text maxFontSizeMultiplier={1.08} style={styles.socialHint}>
-            适合微信 / 小红书截图分享
+            可直接分享至微信 / 小红书
           </Text>
+        </View>
+      ) : null}
+
+      {showSavedAdjustEditor && adjustRecord && adjustRecordId != null ? (
+        <DietRecordAdjustEditor
+          recordId={adjustRecordId}
+          seed={adjustRecord}
+          onSaved={(applied) => {
+            if (!data.onDraftChange) return;
+            const {
+              onDraftChange,
+              confirmAction,
+              confirmActionState,
+              onConfirmAction,
+              ...cardData
+            } = data;
+            const remainingSections = (Array.isArray(data.expanded_sections) ? data.expanded_sections : [])
+              .map((item) => text(item))
+              .filter((item): item is string => Boolean(item) && item !== 'adjust_record');
+            onDraftChange({
+              ...cardData,
+              ...applied.adjustRecord,
+              adjust_record: applied.adjustRecord,
+              expanded_sections: remainingSections,
+              adjust_saved: true,
+            });
+          }}
+        />
+      ) : null}
+
+      {data.adjust_saved === true ? (
+        <View style={styles.adjustSavedRow}>
+          <Ionicons name="checkmark-circle" size={13} color={C.green600} />
+          <Text style={styles.adjustSavedText}>记录已更新</Text>
         </View>
       ) : null}
 
@@ -1041,37 +1078,6 @@ const styles = StyleSheet.create({
     color: C.green700,
     fontWeight: '900',
   } as TextStyle,
-  shareReadyRow: {
-    marginTop: 7,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
-    borderRadius: revaRadii.sm,
-    backgroundColor: 'rgba(255,255,255,0.72)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#E8D6C0',
-    paddingHorizontal: 9,
-    paddingVertical: 7,
-  },
-  shareReadyLabel: {
-    flexShrink: 0,
-    fontFamily: revaFonts.sans,
-    fontSize: 10.5,
-    lineHeight: 14,
-    color: DIET_ACCENT,
-    fontWeight: '900',
-  } as TextStyle,
-  shareReadyTag: {
-    flex: 1,
-    minWidth: 0,
-    textAlign: 'right',
-    fontFamily: revaFonts.sans,
-    fontSize: 10.5,
-    lineHeight: 14,
-    color: C.ink3,
-    fontWeight: '800',
-  } as TextStyle,
   socialShareFooter: {
     marginTop: 8,
     borderRadius: revaRadii.md,
@@ -1119,6 +1125,19 @@ const styles = StyleSheet.create({
     gap: 8,
     marginTop: 10,
   },
+  adjustSavedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 10,
+  },
+  adjustSavedText: {
+    fontFamily: revaFonts.sans,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '700',
+    color: C.green700,
+  } as TextStyle,
   inlineHint: {
     flex: 1,
     fontFamily: revaFonts.sans,

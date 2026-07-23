@@ -585,15 +585,34 @@ def _diet_adjust_record_seed(record_id: int, record_data: dict) -> dict[str, Any
         )
     else:
         food_items = str(food_raw or "").strip()
+    calories = record_data.get("calories")
+    if calories is None:
+        calories = record_data.get("kcal")
+    carbs = record_data.get("carbs")
+    if carbs is None:
+        carbs = record_data.get("carbohydrates")
     return {
         "record_id": record_id,
         "meal_type": _diet_meal_type_value(record_data),
         "food_items": food_items,
-        "calories": _number_or_none(record_data.get("calories") or record_data.get("kcal")),
+        "calories": _number_or_none(calories),
         "protein": _number_or_none(record_data.get("protein")),
-        "carbs": _number_or_none(record_data.get("carbs") or record_data.get("carbohydrates")),
+        "carbs": _number_or_none(carbs),
         "fat": _number_or_none(record_data.get("fat")),
     }
+
+
+def build_diet_adjust_action(record_id: int, record_data: dict) -> dict[str, Any]:
+    """Build the portable inline action for correcting one persisted diet record."""
+    return _inline_expand_action(
+        "adjust-record",
+        "调整记录",
+        "adjust_record",
+        {
+            "expanded_sections": ["adjust_record"],
+            "adjust_record": _diet_adjust_record_seed(record_id, record_data),
+        },
+    )
 
 
 def build_post_record_quality_response(
@@ -659,15 +678,7 @@ def build_post_record_quality_response(
             card_data["progress"] = progress
         record_id = _record_id_from_write(result, record_data)
         if record_id is not None:
-            adjust_action = _inline_expand_action(
-                "adjust-record",
-                "调整记录",
-                "adjust_record",
-                {
-                    "expanded_sections": ["adjust_record"],
-                    "adjust_record": _diet_adjust_record_seed(record_id, record_data),
-                },
-            )
+            adjust_action = build_diet_adjust_action(record_id, record_data)
         else:
             # 拿不到 id 无法就地调整 → 至少跳真正的饮食页(不再去通用记录 tab)。
             adjust_action = _route_action("open-diet", "去饮食页调整", "/diet")
