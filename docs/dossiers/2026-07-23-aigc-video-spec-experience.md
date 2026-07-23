@@ -5,7 +5,7 @@
 | slug | `aigc-video-spec-experience` |
 | 创建日期 | 2026-07-23 |
 | 当前阶段 | S8 上线验证 |
-| 状态 | expiry_recovery_hotfix_ready |
+| 状态 | deployed_device_smoke_pending |
 | 负责 | Codex |
 | 反馈环 | backend deploy + mobile OTA |
 
@@ -73,20 +73,24 @@
   - Mobile / Web TypeScript：`tsc --noEmit` 通过。
   - Mobile design-token gate：通过。
   - System map 与 doc drift：通过。
+  - Main CI：`43/43` jobs 通过，0 failure。
 - G4 安全：PASS
   - 客户端只能选择服务端白名单时长，不能替换 prompt、model 或 source。
   - 最终规格进入请求指纹；重复确认仍返回同一任务。
   - 运维聚合不记录 prompt、媒体 URL 或健康正文。
   - Mobile 生产依赖审计：0 vulnerabilities；CI 发现的 PostCSS 高危公告已通过 `8.5.22` 安全补丁关闭。
 - G5 部署健康：PASS
-  - Backend 已从干净提交 `dc4dd70bb217` 部署。
+  - Backend 已从干净提交 `3da3fb92abf5` 部署。
   - 部署健康分 `60/60`，Skills manifest `22/22`。
-  - 生产代码已包含 5/10/15 秒选择、规格冻结、幂等和任务监控；主干后续提交仅包含文档变更。
+  - 数据库备份、231 张表恢复演练、force-RLS 数据校验与站外加密归档均通过。
+  - 生产 `health-backend.service` 为 `active (running)`，远端版本核验通过。
+  - 生产代码已包含 5/10/15 秒选择、规格冻结、幂等、任务监控和过期确认恢复。
 - G6 上线验证：PARTIAL
   - production OTA 已发布，runtime `1.3.2`。
-  - Update group：`68153270-72d1-48d9-8866-dbbd976c8721`。
-  - iOS update：`019f8f31-cfe0-7129-bedc-7e8ac12b100a`。
-  - 待真机冷启动应用更新后，完成 5/10/15 秒选择、重复确认幂等、生成状态和播放烟测。
+  - Update group：`2208d1eb-facc-4d87-a0f7-0e4bf382f193`。
+  - iOS update：`019f9006-e9a1-7c74-9140-fba1f4b1a3c4`。
+  - OTA commit：`3da3fb92abf5282eb3cd24748b5b7404bb3840c7`。
+  - 待真机回到前台应用更新后，点击原过期卡一次，验证重新确认、单一任务卡、无假失败、生成状态和播放。
 
 ## 2026-07-23 · 过期确认与断流恢复
 
