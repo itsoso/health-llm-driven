@@ -75,7 +75,7 @@ RequirementAdmission:
 - [x] T5 共享发布锁及入口契约测试。
 - [x] T6 修复 Mobile 设计令牌基线回归。
 - [ ] T7 管理员 iOS 模拟器端到端验证与截图。
-- [ ] T8 提交、推送、后端部署、Mobile OTA 与上线复验。
+- [x] T8 提交、推送、后端部署、Mobile OTA 与上线复验。
 
 ## S5 · 实现与当前证据
 
@@ -85,6 +85,9 @@ RequirementAdmission:
 - `scripts/release_lock.sh` 为全部变更型发布入口提供原子互斥、死亡 owner 恢复和受控子任务重入。
 - `AIGCMediaJobCard` 的错误文本颜色改用 `revaSemantic.risk.fg`，恢复设计令牌 ratchet。
 - 管理员模拟器已经使用 Release 构建安装并启动；当前仅受 macOS 锁屏阻挡，未绕过账号认证或注入测试 token。
+- 主干 CI `29968072427` 在精确提交 `28c9e04bc765bbdd989c5202e36ff60d6186bbea` 上 `43/43` 任务通过。
+- 同一提交已完成前后端生产部署；后端部署健康度 `60/60`，公网 API、数据库、Redis、Celery 均 healthy。
+- Mobile production OTA 已发布并核验，runtime version `1.3.2`，group `ef03a27a-57bb-4d99-a2ae-b632b5cdd506`，iOS update `019f8c5e-56c8-726a-aeab-c77885edd63a`。
 
 ## G3 · 测试闸
 
@@ -95,6 +98,7 @@ RequirementAdmission:
 - 发布锁、部署入口和 Mobile 快速反馈脚本：`30 passed`，包含从仓库外启动发布脚本的路径回归。
 - 所有修改 shell 入口 `bash -n`：PASS。
 - `git diff --check`：PASS。
+- 主干 CI `29968072427`：`43/43` jobs PASS。
 - **裁决: PASS。** 最终提交前会重新执行受修改影响的聚焦集合。
 
 ### 主干 CI 纠偏
@@ -118,15 +122,16 @@ RequirementAdmission:
 
 ## S6 / G5 · 部署与健康
 
-- 已通过 `deploy.sh -e` 同步生产 Runtime 配置，并统一重启 API、Celery worker、Celery beat 和前端。
-- 公网健康和进程状态正常；生产聚合显示 circuit active 且无失败、核对或 stale Run。
-- 本轮代码提交后的精确 SHA 部署与 Mobile OTA 尚待 T8。
-- **当前裁决: PASS（配置和运行面）；代码发布待 T8。**
+- 已通过干净 `main` 副本执行完整 `deploy.sh -y`；数据库备份、恢复演练、站外加密归档和强制 RLS 完整性检查均通过。
+- 前后端线上提交为 `28c9e04bc765bbdd989c5202e36ff60d6186bbea`；后端、Celery worker、Celery beat 均 active，公网依赖健康。
+- 生产 Runtime 为 `mode=enforce`、circuit `active`；最近 15 分钟失败、reconciliation 和 stale active Run 均为零。
+- Mobile production OTA manifest 已核对提交、channel、runtime version、group 和 update ID，并保留前一 known-good group 供回滚。
+- **裁决: PASS。**
 
 ## S7 / G6 · 上线验证
 
-- 已完成: 正式生产 API smoke、durable Run/Attempt/message/event 核对、聚合 circuit 核对。
-- 待完成: 管理员模拟器登录后的连续对话、后台切换恢复、自动滚底和截图；提交后的精确 SHA 部署与 OTA manifest 核对。
+- 已完成: 正式生产 API smoke、durable Run/Attempt/message/event 核对、聚合 circuit 核对、精确 SHA 部署和 OTA manifest 核对。
+- 待完成: 管理员模拟器登录后的连续对话、后台切换恢复、自动滚底和截图。
 - **当前裁决: IN PROGRESS。** 不以锁屏状态冒充客户端验证成功。
 
 ## 回滚
@@ -138,4 +143,7 @@ RequirementAdmission:
 
 ## S8 · 沉淀
 
-- 待 G6 全部通过后补充最终 commit、生产 SHA、OTA group/update ID、模拟器截图和最终裁决。
+- 发布提交与生产 SHA: `28c9e04bc765bbdd989c5202e36ff60d6186bbea`。
+- CI: `29968072427`，`43/43` jobs PASS。
+- OTA: group `ef03a27a-57bb-4d99-a2ae-b632b5cdd506`；iOS update `019f8c5e-56c8-726a-aeab-c77885edd63a`。
+- 待 G6 全部通过后补充管理员模拟器截图和最终裁决。
