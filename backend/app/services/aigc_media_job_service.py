@@ -36,6 +36,10 @@ from app.services.aigc_media_service import (
     AIGCMediaProviderIndeterminateError,
     _extract_result_urls,
 )
+from app.services.aigc_media_capabilities import (
+    validate_video_spec,
+    video_capability_for,
+)
 from app.services.chat_utils import (
     build_short_lived_chat_image_provider_url,
     read_owned_chat_image_data_uri,
@@ -113,6 +117,7 @@ class AIGCMediaJobRequest:
     source_image_index: int = 0
     duration_seconds: int = 5
     ratio: str = "9:16"
+    resolution: str = "720P"
     # Only the service sets this internal field when it issues a confirmation.
     # It freezes the billable provider/model choice across the confirmation TTL.
     model: str | None = None
@@ -229,9 +234,45 @@ class AIGCMediaJobService:
         *,
         user_id: int,
         confirmation_id: str,
+        duration_seconds: int | None = None,
     ) -> AIGCMediaJob:
         """Atomically consume a user confirmation and start exactly one job."""
         now = datetime.now(UTC)
+        candidate = (
+            self.db.query(AIGCMediaConfirmation)
+            .filter(
+                AIGCMediaConfirmation.id == str(confirmation_id),
+                AIGCMediaConfirmation.user_id == int(user_id),
+            )
+            .first()
+        )
+        if not candidate:
+            raise AIGCMediaJobRequestError("AIGC 确认不存在或无权使用")
+        requested_duration = (
+            int(duration_seconds)
+            if duration_seconds is not None
+            else int(candidate.duration_seconds)
+        )
+        if candidate.kind in VIDEO_KINDS:
+            try:
+                validate_video_spec(
+                    model=candidate.model,
+                    kind=candidate.kind,  # type: ignore[arg-type]
+                    duration_seconds=requested_duration,
+                    ratio=candidate.ratio,
+                    resolution="720P",
+                )
+            except ValueError as exc:
+                raise AIGCMediaJobRequestError(str(exc)) from exc
+        elif duration_seconds is not None:
+            raise AIGCMediaJobRequestError("图片创作不支持视频时长设置")
+
+        claim_values: dict[str, object] = {
+            "status": "dispatching",
+            "consumed_at": now,
+        }
+        if candidate.kind in VIDEO_KINDS:
+            claim_values["duration_seconds"] = requested_duration
         claimed = (
             self.db.query(AIGCMediaConfirmation)
             .filter(
@@ -240,7 +281,7 @@ class AIGCMediaJobService:
                 AIGCMediaConfirmation.status == "pending",
                 AIGCMediaConfirmation.expires_at >= now,
             )
-            .update({"status": "dispatching", "consumed_at": now}, synchronize_session=False)
+            .update(claim_values, synchronize_session=False)
         )
         self.db.commit()
         confirmation = (
@@ -313,8 +354,14 @@ class AIGCMediaJobService:
                 source_image_index=confirmation.source_image_index or 0,
                 duration_seconds=confirmation.duration_seconds,
                 ratio=confirmation.ratio,
+                resolution="720P",
                 model=confirmation.model,
             )
+            confirmation.prompt_fingerprint = self._fingerprint(
+                user_id=user_id,
+                request=request,
+            )
+            self.db.commit()
             job = await self._dispatch_confirmed(
                 user_id=user_id,
                 request=request,
@@ -436,6 +483,9 @@ class AIGCMediaJobService:
             model=request.model or self._model_for_kind(request.kind),
             idempotency_key=idempotency_key,
             request_fingerprint=fingerprint,
+            result_metadata={
+                "request": self._request_spec_metadata(request),
+            },
             created_at=now,
         )
         # The accepted job and the user's explicit provider disclosure are one
@@ -451,6 +501,16 @@ class AIGCMediaJobService:
                 "kind": job.kind,
                 "model": job.model,
                 "source_attached": request.kind in SOURCE_IMAGE_KINDS,
+                "duration_seconds": (
+                    int(request.duration_seconds)
+                    if request.kind in VIDEO_KINDS
+                    else None
+                ),
+                "resolution": (
+                    request.resolution
+                    if request.kind in VIDEO_KINDS
+                    else None
+                ),
             },
         )
         self.db.add_all([job, audit])
@@ -509,6 +569,7 @@ class AIGCMediaJobService:
             source_image_index=confirmation.source_image_index or 0,
             duration_seconds=confirmation.duration_seconds,
             ratio=confirmation.ratio,
+            resolution="720P",
             model=confirmation.model,
         )
         source_url, source_data_uri = self._prepare_owned_source(user_id=user_id, request=request)
@@ -597,6 +658,7 @@ class AIGCMediaJobService:
                     source_url=source_url,
                     duration_seconds=request.duration_seconds,
                     ratio=request.ratio,
+                    resolution=request.resolution,
                     model=job.model,
                 )
                 provider_accepted = True
@@ -799,6 +861,14 @@ class AIGCMediaJobService:
         return job
 
     def project(self, job: AIGCMediaJob) -> dict:
+        result_metadata = (
+            dict(job.result_metadata)
+            if isinstance(job.result_metadata, dict)
+            else {}
+        )
+        request_spec = result_metadata.get("request")
+        if not isinstance(request_spec, dict):
+            request_spec = None
         result_url = None
         if job.output_filename:
             result_url = build_signed_private_upload_url(
@@ -810,9 +880,11 @@ class AIGCMediaJobService:
             "status": job.status,
             "progress": job.progress,
             "model": job.model,
+            "spec": request_spec,
             "result": {
                 "media_type": job.output_media_type,
                 "url": result_url,
+                "byte_size": result_metadata.get("byte_size"),
             },
             "error_message": job.error_message if job.status in {"failed", "submission_unknown"} else None,
             "error_code": job.provider_error_code if job.status in {"failed", "submission_unknown"} else None,
@@ -872,6 +944,7 @@ class AIGCMediaJobService:
             "status": projection["status"],
             "progress": projection["progress"],
             "title": "小巴创作",
+            "spec": projection["spec"],
             "error_message": projection["error_message"],
             "error_code": projection["error_code"],
             "can_retry": projection["can_retry"],
@@ -945,19 +1018,26 @@ class AIGCMediaJobService:
         return {
             "id": confirmation.id,
             "status": confirmation.status,
+            "spec": self._confirmation_spec(confirmation),
             "job": self.project(job) if job is not None else None,
         }
 
     async def _complete_from_provider_url(self, job: AIGCMediaJob, url: str, *, kind: str) -> None:
         data, media_type, extension = await self._result_downloader(url, kind)
         filename = self._write_private_result(job.user_id, data, extension)
+        result_metadata = (
+            dict(job.result_metadata)
+            if isinstance(job.result_metadata, dict)
+            else {}
+        )
+        result_metadata["byte_size"] = len(data)
         completed = self._update_active_job(
             job,
             status="succeeded",
             progress=100,
             output_filename=filename,
             output_media_type=media_type,
-            result_metadata={"byte_size": len(data)},
+            result_metadata=result_metadata,
             completed_at=datetime.now(UTC),
             provider_error_code=None,
             error_message=None,
@@ -1030,12 +1110,22 @@ class AIGCMediaJobService:
             raise AIGCMediaJobRequestError(str(exc)) from exc
         if request.kind in SOURCE_IMAGE_KINDS and request.source_message_id is None:
             raise AIGCMediaJobRequestError("图像生成需要选择当前对话中的一张图片")
-        if request.kind in {"text_to_video", "image_to_video"} and not 3 <= int(request.duration_seconds) <= 15:
-            raise AIGCMediaJobRequestError("短视频时长需在 3 到 15 秒之间")
-        if request.ratio not in {"16:9", "9:16", "1:1", "4:3", "3:4"}:
-            raise AIGCMediaJobRequestError("不支持的视频比例")
         if request.model is not None and (not request.model.strip() or len(request.model.strip()) > 80):
             raise AIGCMediaJobRequestError("AIGC 模型配置无效")
+        if request.kind in VIDEO_KINDS:
+            model = request.model or AIGCMediaJobService._model_for_kind(request.kind)
+            try:
+                validate_video_spec(
+                    model=model,
+                    kind=request.kind,  # type: ignore[arg-type]
+                    duration_seconds=request.duration_seconds,
+                    ratio=request.ratio,
+                    resolution=request.resolution,
+                )
+            except ValueError as exc:
+                raise AIGCMediaJobRequestError(str(exc)) from exc
+        elif request.ratio not in {"16:9", "9:16", "1:1", "4:3", "3:4"}:
+            raise AIGCMediaJobRequestError("不支持的视频比例")
 
     @staticmethod
     def _fingerprint(*, user_id: int, request: AIGCMediaJobRequest) -> str:
@@ -1049,6 +1139,7 @@ class AIGCMediaJobService:
                 "source_image_index": request.source_image_index,
                 "duration_seconds": request.duration_seconds,
                 "ratio": request.ratio,
+                "resolution": request.resolution,
                 "model": request.model,
             },
             ensure_ascii=False,
@@ -1063,6 +1154,38 @@ class AIGCMediaJobService:
             canonical.encode("utf-8"),
             hashlib.sha256,
         ).hexdigest()
+
+    @staticmethod
+    def _request_spec_metadata(request: AIGCMediaJobRequest) -> dict:
+        if request.kind not in VIDEO_KINDS:
+            return {}
+        model = request.model or AIGCMediaJobService._model_for_kind(request.kind)
+        capability = video_capability_for(
+            model=model,
+            kind=request.kind,  # type: ignore[arg-type]
+        )
+        return {
+            "duration_seconds": int(request.duration_seconds),
+            "ratio": request.ratio,
+            "resolution": request.resolution.upper(),
+            "generates_audio": capability.generates_audio,
+        }
+
+    @staticmethod
+    def _confirmation_spec(confirmation: AIGCMediaConfirmation) -> dict | None:
+        if confirmation.kind not in VIDEO_KINDS:
+            return None
+        capability = video_capability_for(
+            model=confirmation.model,
+            kind=confirmation.kind,  # type: ignore[arg-type]
+        )
+        return {
+            "duration_seconds": int(confirmation.duration_seconds),
+            "duration_options": list(capability.selectable_duration_seconds),
+            "ratio": confirmation.ratio,
+            "resolution": capability.default_resolution,
+            "generates_audio": capability.generates_audio,
+        }
 
     @staticmethod
     def _model_for_kind(kind: str) -> str:

@@ -297,6 +297,9 @@ async def test_agent_media_tool_uses_current_image_and_emits_manual_confirmation
                 id="aigc_confirm_0123456789abcdef0123456789abcdef",
                 kind=request.kind,
                 source_message_id=request.source_message_id,
+                model="happyhorse-1.1-i2v",
+                duration_seconds=request.duration_seconds,
+                ratio=request.ratio,
             )
 
     monkeypatch.setattr(
@@ -334,9 +337,14 @@ async def test_agent_media_tool_uses_current_image_and_emits_manual_confirmation
             "confirmation_id": "aigc_confirm_0123456789abcdef0123456789abcdef",
             "kind": "image_to_video",
             "title": "小巴创作草稿",
-            "provider": "百炼 Wan",
+            "provider": "百炼 HappyHorse",
             "source_attached": True,
             "status": "pending",
+            "duration_seconds": 5,
+            "duration_options": [5, 10, 15],
+            "ratio": "9:16",
+            "resolution": "720P",
+            "generates_audio": True,
         },
         "actions": [{
             "id": "aigc_media.confirm:aigc_confirm_0123456789abcdef0123456789abcdef",

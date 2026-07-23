@@ -379,11 +379,14 @@ def aigc_media_stats(db: Session, since: datetime, user_id: Optional[int]) -> di
             "total_jobs": 0,
             "by_status": {},
             "by_model": {},
+            "by_kind": {},
             "by_error_code": {},
             "auth_failures": 0,
             "submission_unknown": 0,
             "safe_retryable": 0,
             "success_rate_pct": None,
+            "latency_seconds": {"count": 0, "p50": None, "p95": None},
+            "output_bytes": {"count": 0, "total": 0, "average": None},
             "last_job_at": None,
             "last_failure_at": None,
             "status": "no_data",
@@ -402,6 +405,13 @@ def aigc_media_stats(db: Session, since: datetime, user_id: Optional[int]) -> di
             AIGCMediaJob.model,
             func.count(AIGCMediaJob.id),
         ).group_by(AIGCMediaJob.model).all()
+    }
+    by_kind = {
+        str(kind or "unknown"): int(count)
+        for kind, count in q.with_entities(
+            AIGCMediaJob.kind,
+            func.count(AIGCMediaJob.id),
+        ).group_by(AIGCMediaJob.kind).all()
     }
     by_error_code = {
         str(code): int(count)
@@ -424,6 +434,26 @@ def aigc_media_stats(db: Session, since: datetime, user_id: Optional[int]) -> di
         round(100.0 * int(by_status.get("succeeded", 0)) / resolved, 1)
         if resolved else None
     )
+    latency_values: list[float] = []
+    output_byte_values: list[int] = []
+    completed_rows = q.filter(
+        AIGCMediaJob.status == "succeeded",
+        AIGCMediaJob.completed_at.isnot(None),
+    ).with_entities(
+        AIGCMediaJob.created_at,
+        AIGCMediaJob.started_at,
+        AIGCMediaJob.completed_at,
+        AIGCMediaJob.result_metadata,
+    ).all()
+    for created_at, started_at, completed_at, result_metadata in completed_rows:
+        start = started_at or created_at
+        if start is not None and completed_at is not None:
+            latency_values.append(max(0.0, (completed_at - start).total_seconds()))
+        metadata = result_metadata if isinstance(result_metadata, dict) else {}
+        byte_size = metadata.get("byte_size")
+        if isinstance(byte_size, int) and not isinstance(byte_size, bool) and byte_size >= 0:
+            output_byte_values.append(byte_size)
+    total_output_bytes = sum(output_byte_values)
     last_job = q.with_entities(func.max(AIGCMediaJob.created_at)).scalar()
     last_failure = q.filter(
         AIGCMediaJob.status.in_(("failed", "submission_unknown"))
@@ -443,11 +473,26 @@ def aigc_media_stats(db: Session, since: datetime, user_id: Optional[int]) -> di
         "total_jobs": int(total),
         "by_status": by_status,
         "by_model": by_model,
+        "by_kind": by_kind,
         "by_error_code": by_error_code,
         "auth_failures": auth_failures,
         "submission_unknown": submission_unknown,
         "safe_retryable": int(safe_retryable),
         "success_rate_pct": success_rate,
+        "latency_seconds": {
+            "count": len(latency_values),
+            "p50": round(_percentile(latency_values, 50), 2) if latency_values else None,
+            "p95": round(_percentile(latency_values, 95), 2) if latency_values else None,
+        },
+        "output_bytes": {
+            "count": len(output_byte_values),
+            "total": total_output_bytes,
+            "average": (
+                round(total_output_bytes / len(output_byte_values))
+                if output_byte_values
+                else None
+            ),
+        },
         "last_job_at": last_job.isoformat() if last_job else None,
         "last_failure_at": last_failure.isoformat() if last_failure else None,
         "status": status,

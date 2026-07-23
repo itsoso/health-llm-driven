@@ -265,6 +265,51 @@ describe('renderCard 安全降级', () => {
     screen.unmount();
   });
 
+  it('lets the user choose a disclosed video duration before the one-time confirmation', async () => {
+    (api.get as jest.Mock).mockResolvedValueOnce({
+      data: { id: 'aigc_confirm_duration', status: 'pending', job: null },
+    });
+    (api.post as jest.Mock).mockResolvedValueOnce({
+      data: {
+        id: 'aigc_duration_job',
+        kind: 'text_to_video',
+        status: 'queued',
+        progress: 10,
+        spec: {
+          duration_seconds: 15,
+          ratio: '9:16',
+          resolution: '720P',
+          generates_audio: true,
+        },
+        result: { media_type: null, url: null },
+      },
+    });
+    const screen = render(renderCard({
+      type: 'aigc_media_confirmation',
+      data: {
+        confirmation_id: 'aigc_confirm_duration',
+        kind: 'text_to_video',
+        status: 'pending',
+        duration_seconds: 5,
+        duration_options: [5, 10, 15],
+        ratio: '9:16',
+        resolution: '720P',
+        provider: '百炼 HappyHorse',
+      },
+    })!);
+
+    fireEvent.press(screen.getByLabelText('选择15秒'));
+    fireEvent.press(screen.getByLabelText('确认生成15秒短视频'));
+
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith(
+      '/aigc/media/confirmations/aigc_confirm_duration/confirm',
+      { duration_seconds: 15 },
+    ));
+    expect(await screen.findByText('15秒 · 9:16 · 720P · 含音频')).toBeTruthy();
+    screen.unmount();
+    (api.post as jest.Mock).mockClear();
+  });
+
   it('renders a private generated short video inline with native controls', async () => {
     mockVideoPlay.mockClear();
     mockShareRemoteVideo.mockResolvedValueOnce(undefined);

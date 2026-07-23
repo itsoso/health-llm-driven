@@ -36,9 +36,16 @@ export interface AIGCMediaJobCardData {
   status: AIGCStatus | string;
   progress: number;
   title?: string;
+  spec?: {
+    duration_seconds?: number;
+    ratio?: string;
+    resolution?: string;
+    generates_audio?: boolean;
+  } | null;
   result?: {
     media_type?: string | null;
     url?: string | null;
+    byte_size?: number | null;
   } | null;
   error_message?: string | null;
   error_code?: string | null;
@@ -46,7 +53,11 @@ export interface AIGCMediaJobCardData {
 }
 
 const ACTIVE_STATUSES = new Set<AIGCStatus>(['queued', 'running']);
-const POLL_INTERVAL_MS = 6000;
+function pollDelay(attempt: number): number {
+  if (attempt < 2) return 6000;
+  if (attempt < 6) return 15000;
+  return 30000;
+}
 
 function statusOf(value: unknown): AIGCStatus {
   const normalized = String(value || '').trim().toLowerCase();
@@ -144,10 +155,23 @@ export function AIGCMediaJobCardView(initialData: AIGCMediaJobCardData) {
 
   useEffect(() => {
     if (!ACTIVE_STATUSES.has(statusOf(data.status))) return;
-    const timer = setInterval(() => {
-      void refresh();
-    }, POLL_INTERVAL_MS);
-    return () => { clearInterval(timer); };
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let attempt = 0;
+    const schedule = () => {
+      timer = setTimeout(() => {
+        if (cancelled) return;
+        void refresh().finally(() => {
+          attempt += 1;
+          if (!cancelled) schedule();
+        });
+      }, pollDelay(attempt));
+    };
+    schedule();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
   }, [data.status, refresh]);
 
   const status = statusOf(data.status);
@@ -171,11 +195,24 @@ export function AIGCMediaJobCardView(initialData: AIGCMediaJobCardData) {
 
   const detail = useMemo(() => {
     if (status === 'queued') return '小巴已提交任务，正在等待百炼处理。';
-    if (status === 'running') return '生成完成后会自动保存到你的私有空间。';
+    if (status === 'running' && progress < 75) return '正在生成画面和音频，请保持网络可用。';
+    if (status === 'running') return '生成已接近完成，正在保存到你的私有空间。';
     if (status === 'succeeded') return '结果仅对当前账号可见。';
     if (status === 'submission_unknown') return '提交结果待核验，已停止自动重试以避免重复生成。';
     return data.error_message || '本次创作未完成，修改描述后可以重新生成。';
-  }, [data.error_message, status]);
+  }, [data.error_message, progress, status]);
+
+  const specText = useMemo(() => {
+    const duration = Number(data.spec?.duration_seconds);
+    if (!Number.isFinite(duration) || duration <= 0) return null;
+    const parts = [
+      `${Math.round(duration)}秒`,
+      data.spec?.ratio,
+      data.spec?.resolution,
+      data.spec?.generates_audio === true ? '含音频' : null,
+    ].filter(Boolean);
+    return parts.join(' · ');
+  }, [data.spec]);
 
   const cancel = async () => {
     if (!canCancel) return;
@@ -297,6 +334,12 @@ export function AIGCMediaJobCardView(initialData: AIGCMediaJobCardData) {
           </Pressable>
         ) : null}
       </View>
+      {specText ? (
+        <View style={styles.specPill}>
+          <Ionicons name="videocam-outline" size={14} color={C.green700} />
+          <Text maxFontSizeMultiplier={1.15} style={styles.specText}>{specText}</Text>
+        </View>
+      ) : null}
 
       {ACTIVE_STATUSES.has(status) ? (
         <View style={styles.progressWrap} accessibilityLabel={`生成进度 ${progress}%`}>
@@ -434,6 +477,8 @@ const styles = StyleSheet.create({
   statusBody: { flex: 1, gap: 2 },
   statusTitle: { fontFamily: revaFonts.sans, fontSize: 15, fontWeight: '800', color: C.ink1 } as TextStyle,
   detail: { fontFamily: revaFonts.sans, fontSize: 12, lineHeight: 18, color: C.ink3 } as TextStyle,
+  specPill: { alignSelf: 'flex-start', marginTop: 10, minHeight: 30, paddingHorizontal: 10, borderRadius: revaRadii.pill, backgroundColor: C.green50, flexDirection: 'row', alignItems: 'center', gap: 5 },
+  specText: { fontFamily: revaFonts.sans, fontSize: 11, fontWeight: '700', color: C.green700 } as TextStyle,
   iconButton: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: C.paper2 },
   iconButtonPressed: { opacity: 0.72 },
   progressWrap: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12 },

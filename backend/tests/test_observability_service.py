@@ -88,11 +88,14 @@ def test_aigc_media_stats_empty_db(db):
         "total_jobs": 0,
         "by_status": {},
         "by_model": {},
+        "by_kind": {},
         "by_error_code": {},
         "auth_failures": 0,
         "submission_unknown": 0,
         "safe_retryable": 0,
         "success_rate_pct": None,
+        "latency_seconds": {"count": 0, "p50": None, "p95": None},
+        "output_bytes": {"count": 0, "total": 0, "average": None},
         "last_job_at": None,
         "last_failure_at": None,
         "status": "no_data",
@@ -137,7 +140,16 @@ def test_aigc_media_stats_aggregate_failures_without_exposing_job_content(db):
             model="wan2.7-image",
             idempotency_key="success",
             request_fingerprint="b" * 64,
+            result_metadata={
+                "byte_size": 4_000_000,
+                "request": {
+                    "duration_seconds": 10,
+                    "ratio": "9:16",
+                    "resolution": "720P",
+                },
+            },
             created_at=now - timedelta(minutes=5),
+            started_at=now - timedelta(minutes=5),
             completed_at=now - timedelta(minutes=4),
         ),
         AIGCMediaJob(
@@ -165,6 +177,20 @@ def test_aigc_media_stats_aggregate_failures_without_exposing_job_content(db):
     assert all_users["by_model"] == {
         "wan2.7-image": 1,
         "wan2.7-t2v": 2,
+    }
+    assert all_users["by_kind"] == {
+        "text_to_image": 1,
+        "text_to_video": 2,
+    }
+    assert all_users["latency_seconds"] == {
+        "count": 1,
+        "p50": 60.0,
+        "p95": 60.0,
+    }
+    assert all_users["output_bytes"] == {
+        "count": 1,
+        "total": 4_000_000,
+        "average": 4_000_000,
     }
     assert all_users["success_rate_pct"] == 50.0
     assert all_users["status"] == "critical"

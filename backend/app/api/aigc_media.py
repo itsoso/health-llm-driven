@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user_required
@@ -28,6 +29,10 @@ from app.services.aigc_media_service import AIGCMediaConfigurationError
 
 router = APIRouter(prefix="/aigc/media", tags=["aigc-media"])
 logger = logging.getLogger(__name__)
+
+
+class AIGCMediaConfirmRequest(BaseModel):
+    duration_seconds: int | None = Field(default=None, ge=3, le=15)
 
 
 def _persist_job_card_safely(
@@ -97,6 +102,7 @@ async def get_aigc_media_confirmation(
 @router.post("/confirmations/{confirmation_id}/confirm")
 async def confirm_aigc_media_draft(
     confirmation_id: str,
+    request: AIGCMediaConfirmRequest | None = None,
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ) -> dict:
@@ -106,6 +112,7 @@ async def confirm_aigc_media_draft(
         job = await service.confirm_and_dispatch(
             user_id=current_user.id,
             confirmation_id=confirmation_id,
+            duration_seconds=request.duration_seconds if request is not None else None,
         )
     except AIGCMediaConfigurationError as exc:
         raise HTTPException(status_code=503, detail="AIGC 媒体服务暂不可用") from exc

@@ -122,6 +122,101 @@ async def test_video_confirmation_replay_returns_the_same_job_without_second_pro
 
 
 @pytest.mark.asyncio
+async def test_video_confirmation_freezes_a_safe_duration_override_before_dispatch(
+    db, auth_user_and_headers,
+):
+    from app.services.aigc_media_job_service import AIGCMediaJobRequest, AIGCMediaJobService
+    from app.services.aigc_media_service import AIGCTask
+
+    class VideoProvider(_Provider):
+        def __init__(self) -> None:
+            super().__init__()
+            self.video_requests: list[dict] = []
+
+        async def create_video_task(self, **kwargs):
+            self.video_requests.append(kwargs)
+            return AIGCTask(task_id="happyhorse-video-15s", status="PENDING")
+
+    user, _ = auth_user_and_headers
+    provider = VideoProvider()
+    service = AIGCMediaJobService(db, provider_factory=lambda: provider)
+    confirmation = await service.issue_confirmation(
+        user_id=user.id,
+        request=AIGCMediaJobRequest(
+            kind="text_to_video",
+            purpose="wellness_story",
+            prompt="把今天的健康活动整理成一段竖屏短视频",
+            duration_seconds=5,
+            ratio="9:16",
+        ),
+    )
+
+    job = await service.confirm_and_dispatch(
+        user_id=user.id,
+        confirmation_id=confirmation.id,
+        duration_seconds=15,
+    )
+    replayed = await service.confirm_and_dispatch(
+        user_id=user.id,
+        confirmation_id=confirmation.id,
+        duration_seconds=5,
+    )
+
+    assert replayed.id == job.id
+    assert provider.video_requests == [{
+        "kind": "text_to_video",
+        "prompt": "把今天的健康活动整理成一段竖屏短视频",
+        "source_url": None,
+        "duration_seconds": 15,
+        "ratio": "9:16",
+        "resolution": "720P",
+        "model": "happyhorse-1.1-t2v",
+    }]
+    assert job.result_metadata["request"] == {
+        "duration_seconds": 15,
+        "ratio": "9:16",
+        "resolution": "720P",
+        "generates_audio": True,
+    }
+    projection = service.project(job)
+    assert projection["spec"] == job.result_metadata["request"]
+
+
+@pytest.mark.asyncio
+async def test_invalid_video_duration_override_does_not_consume_confirmation(
+    db, auth_user_and_headers,
+):
+    from app.models.aigc_media_confirmation import AIGCMediaConfirmation
+    from app.services.aigc_media_job_service import (
+        AIGCMediaJobRequest,
+        AIGCMediaJobRequestError,
+        AIGCMediaJobService,
+    )
+
+    user, _ = auth_user_and_headers
+    provider = _Provider()
+    service = AIGCMediaJobService(db, provider_factory=lambda: provider)
+    confirmation = await service.issue_confirmation(
+        user_id=user.id,
+        request=AIGCMediaJobRequest(
+            kind="text_to_video",
+            purpose="wellness_story",
+            prompt="制作一段睡前放松短视频",
+        ),
+    )
+
+    with pytest.raises(AIGCMediaJobRequestError, match="3 到 15"):
+        await service.confirm_and_dispatch(
+            user_id=user.id,
+            confirmation_id=confirmation.id,
+            duration_seconds=16,
+        )
+
+    persisted = db.query(AIGCMediaConfirmation).filter_by(id=confirmation.id).one()
+    assert persisted.status == "pending"
+
+
+@pytest.mark.asyncio
 async def test_expired_confirmation_cannot_contact_provider(db, auth_user_and_headers):
     from app.models.aigc_media_confirmation import AIGCMediaConfirmation
     from app.services.aigc_media_job_service import (
@@ -508,6 +603,12 @@ async def test_confirmed_job_replaces_persisted_confirmation_card(
         "error_message": "创作服务授权异常，已通知管理员。",
         "error_code": "provider_auth_failed",
         "can_retry": True,
+        "spec": {
+            "duration_seconds": 5,
+            "ratio": "9:16",
+            "resolution": "720P",
+            "generates_audio": True,
+        },
     }
     db.refresh(duplicate_assistant)
     assert duplicate_assistant.meta["cards"] == cards

@@ -15847,10 +15847,31 @@ class AgentExecutor:
             "confirmation_id": confirmation.id,
             "kind": confirmation.kind,
             "title": "小巴创作草稿",
-            "provider": "百炼 Wan",
+            "provider": (
+                "百炼 HappyHorse"
+                if confirmation.kind in {"text_to_video", "image_to_video"}
+                and str(confirmation.model).startswith("happyhorse-")
+                else "百炼"
+            ),
             "source_attached": confirmation.source_message_id is not None,
             "status": "pending",
         }
+        if confirmation.kind in {"text_to_video", "image_to_video"}:
+            from app.services.aigc_media_capabilities import video_capability_for
+
+            capability = video_capability_for(
+                model=confirmation.model,
+                kind=confirmation.kind,
+            )
+            card_data.update(
+                {
+                    "duration_seconds": confirmation.duration_seconds,
+                    "duration_options": list(capability.selectable_duration_seconds),
+                    "ratio": confirmation.ratio,
+                    "resolution": capability.default_resolution,
+                    "generates_audio": capability.generates_audio,
+                }
+            )
         descriptor = {
             "type": "aigc_media_confirmation",
             "data": card_data,

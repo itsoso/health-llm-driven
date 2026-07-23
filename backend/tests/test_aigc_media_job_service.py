@@ -133,6 +133,7 @@ async def test_image_to_video_uses_owned_short_lived_source_and_persists_task(
         "prompt": "把这张早餐照片做成 5 秒竖屏短视频",
         "duration_seconds": 5,
         "ratio": "9:16",
+        "resolution": "720P",
         "model": "happyhorse-1.1-i2v",
     }
     transient_url = provider.video_requests[0]["source_url"]
@@ -184,6 +185,8 @@ async def test_confirmed_provider_dispatch_writes_prompt_free_audit_evidence(
         "kind": "image_to_video",
         "model": "happyhorse-1.1-i2v",
         "source_attached": True,
+        "duration_seconds": 5,
+        "resolution": "720P",
     }
     assert prompt not in str(audit.result_detail)
     assert source_url not in str(audit.result_detail)
