@@ -655,7 +655,10 @@ function ChatBubbleInner({
     )),
   );
   const hasEmbeddedCardEditor = hasPendingDietDraftEditor || hasRecordAdjustEditor;
+  const hasEmbeddedMediaInteraction = item.cardType === 'aigc_media_job'
+    || item.cardType === 'aigc_media_confirmation';
   const hasNestedCardInteraction = hasEmbeddedCardEditor
+    || hasEmbeddedMediaInteraction
     || Boolean(renderedCardActions?.length)
     || cardSafetyAlerts.length > 0;
 

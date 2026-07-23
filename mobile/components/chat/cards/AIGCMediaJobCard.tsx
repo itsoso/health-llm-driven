@@ -101,6 +101,7 @@ export function AIGCMediaJobCardView(initialData: AIGCMediaJobCardData) {
   const [refreshing, setRefreshing] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  const [playbackStarted, setPlaybackStarted] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const mounted = useRef(true);
 
@@ -155,6 +156,11 @@ export function AIGCMediaJobCardView(initialData: AIGCMediaJobCardData) {
   });
   const canCancel = ACTIVE_STATUSES.has(status) && !cancelling;
   const canRetry = status === 'failed' && data.can_retry === true && !retrying;
+
+  useEffect(() => {
+    setPlaybackStarted(false);
+  }, [resultUrl]);
+
   const detail = useMemo(() => {
     if (status === 'queued') return '小巴已提交任务，正在等待百炼处理。';
     if (status === 'running') return '生成完成后会自动保存到你的私有空间。';
@@ -193,6 +199,17 @@ export function AIGCMediaJobCardView(initialData: AIGCMediaJobCardData) {
       if (mounted.current) setRetrying(false);
     }
   };
+
+  const playVideo = useCallback(() => {
+    if (!isVideo || !resultUrl) return;
+    setActionError(null);
+    try {
+      videoPlayer.play();
+      setPlaybackStarted(true);
+    } catch {
+      setActionError('视频暂时无法播放，请稍后重试。');
+    }
+  }, [isVideo, resultUrl, videoPlayer]);
 
   return (
     <CardShell
@@ -279,6 +296,23 @@ export function AIGCMediaJobCardView(initialData: AIGCMediaJobCardData) {
             fullscreenOptions={{ enable: true }}
             accessibilityLabel="小巴生成的短视频"
           />
+          {!playbackStarted ? (
+            <Pressable
+              testID="aigc-video-play-button"
+              style={({ pressed }) => [
+                styles.playOverlay,
+                pressed && styles.playOverlayPressed,
+              ]}
+              onPress={playVideo}
+              accessibilityRole="button"
+              accessibilityLabel="播放短视频"
+              accessibilityHint="播放已生成的短视频，不会重新生成"
+            >
+              <View style={styles.playButton}>
+                <Ionicons name="play" size={25} color={C.surface} />
+              </View>
+            </Pressable>
+          ) : null}
         </View>
       ) : null}
     </CardShell>
@@ -317,4 +351,22 @@ const styles = StyleSheet.create({
   image: { width: '100%', aspectRatio: 1, borderRadius: revaRadii.md, marginTop: 12, backgroundColor: C.paper2 },
   videoFrame: { width: '100%', aspectRatio: 16 / 9, marginTop: 12, borderRadius: revaRadii.md, overflow: 'hidden', backgroundColor: C.ink1 },
   video: { flex: 1 },
+  playOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(8, 24, 18, 0.12)',
+  },
+  playOverlayPressed: { backgroundColor: 'rgba(8, 24, 18, 0.2)' },
+  playButton: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingLeft: 3,
+    backgroundColor: 'rgba(15, 55, 40, 0.86)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255, 255, 255, 0.5)',
+  },
 });

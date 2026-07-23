@@ -1715,6 +1715,34 @@ ${sectionTitle}
     expect(queryByTestId('assistant-card-interaction-surface')).toBeNull();
   });
 
+  it('does not wrap an AIGC video player in the message pressable', () => {
+    renderCard.mockImplementation(() => {
+      const { Pressable, Text } = require('react-native');
+      return <Pressable accessibilityLabel="播放短视频"><Text>播放短视频</Text></Pressable>;
+    });
+    const qc = new QueryClient();
+    const message: UIMessage = {
+      id: 'assistant-aigc-video-player',
+      role: 'assistant',
+      content: '',
+      cardType: 'aigc_media_job',
+      cardData: {
+        job_id: 'aigc_video_done',
+        kind: 'text_to_video',
+        status: 'succeeded',
+        progress: 100,
+      },
+    };
+    const { getByTestId, queryByTestId } = render(
+      <QueryClientProvider client={qc}>
+        <ChatBubble item={message} />
+      </QueryClientProvider>,
+    );
+
+    expect(getByTestId('assistant-actionable-card-interaction-surface')).toBeTruthy();
+    expect(queryByTestId('assistant-card-interaction-surface')).toBeNull();
+  });
+
   it('shows diet-specific success feedback after confirming a diet card', async () => {
     dispatchChatCardAction.mockResolvedValueOnce({ status: 'completed', receipt: verifiedReceipt() });
     renderCard.mockImplementationOnce((descriptor: any, options: any) => {

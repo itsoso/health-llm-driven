@@ -371,6 +371,7 @@ function normalizeCardActions(
   if (!Array.isArray(actions)) return [];
   return actions.filter((action): action is ChatCardActionDescriptor => (
     action != null &&
+    !(cardType === 'aigc_media_job' && action.action === 'aigc_media.confirm') &&
     typeof action.label === 'string' &&
     action.label.trim().length > 0 &&
     typeof action.action === 'string' &&

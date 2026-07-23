@@ -8,10 +8,11 @@ jest.mock('expo-web-browser', () => ({
   openBrowserAsync: jest.fn(),
 }));
 
+const mockVideoPlay = jest.fn();
 jest.mock('expo-video', () => {
   const React = require('react');
   return {
-    useVideoPlayer: jest.fn((source: string | null) => ({ source })),
+    useVideoPlayer: jest.fn((source: string | null) => ({ source, play: mockVideoPlay })),
     VideoView: (props: Record<string, unknown>) => React.createElement('VideoView', { ...props, testID: 'aigc-video-player' }),
   };
 }, { virtual: true });
@@ -258,6 +259,7 @@ describe('renderCard 安全降级', () => {
   });
 
   it('renders a private generated short video inline with native controls', async () => {
+    mockVideoPlay.mockClear();
     const relativeVideoUrl = '/api/v1/upload/files/aigc/3/today.mp4?expires=1&signature=signed';
     (api.get as jest.Mock).mockResolvedValueOnce({
       data: {
@@ -288,8 +290,36 @@ describe('renderCard 安全降级', () => {
     }));
     expect(player).toHaveProp('nativeControls', true);
     expect(player).toHaveProp('fullscreenOptions', expect.objectContaining({ enable: true }));
+    fireEvent.press(screen.getByLabelText('播放短视频'));
+    expect(mockVideoPlay).toHaveBeenCalledTimes(1);
+    expect(api.post).not.toHaveBeenCalled();
     expect(WebBrowser.openBrowserAsync).not.toHaveBeenCalled();
     screen.unmount();
+  });
+
+  it('drops stale generation actions from a completed AIGC job card', () => {
+    const [card] = renderServerCards([{
+      type: 'aigc_media_job',
+      data: {
+        job_id: 'aigc_video_done',
+        kind: 'text_to_video',
+        status: 'succeeded',
+        progress: 100,
+      },
+      actions: [{
+        id: 'stale-confirm',
+        label: '再次生成',
+        action: 'aigc_media.confirm',
+        endpoint: '/aigc/media/confirmations/stale/confirm',
+        requires_manual_confirm: true,
+        required_receipt: true,
+        capability_id: 'aigc_media_confirmation.v1',
+        autonomy_tier: 'manual_confirm',
+        policy_reason: 'manual_confirm_write',
+      }],
+    }]);
+
+    expect(card.actions).toEqual([]);
   });
 
   it('renders an indeterminate AIGC submission as terminal and does not claim failure', () => {
