@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextStyle, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -6,7 +6,15 @@ import api from '../../../services/api';
 import { CardShell } from './CardShell';
 import { AIGCMediaJobCardView, type AIGCMediaJobCardData } from './AIGCMediaJobCard';
 import type { CardSpec } from './types';
-import { revaColors as C, revaFonts, revaRadii } from '../../../constants/revaTheme';
+import {
+  revaColors as C,
+  revaFonts,
+  revaRadii,
+  revaSemantic,
+} from '../../../constants/revaTheme';
+
+const CONFIRMATION_RECONCILE_INTERVAL_MS = 1500;
+const CONFIRMATION_RECONCILE_ATTEMPTS = 8;
 
 export interface AIGCMediaConfirmationCardData {
   confirmation_id: string;
@@ -38,13 +46,30 @@ function normalizeJob(value: unknown): AIGCMediaJobCardData | null {
   return { ...payload, job_id: payload.id } as AIGCMediaJobCardData;
 }
 
+function confirmationStatus(value: unknown): string {
+  return String(value || 'pending').trim().toLowerCase();
+}
+
+function responseDetail(error: unknown): string | null {
+  if (!error || typeof error !== 'object') return null;
+  const response = (error as { response?: unknown }).response;
+  if (!response || typeof response !== 'object') return null;
+  const data = (response as { data?: unknown }).data;
+  if (!data || typeof data !== 'object') return null;
+  const detail = (data as { detail?: unknown }).detail;
+  return typeof detail === 'string' && detail.trim() ? detail.trim() : null;
+}
+
 export function AIGCMediaConfirmationCardView(data: AIGCMediaConfirmationCardData) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [job, setJob] = useState<AIGCMediaJobCardData | null>(null);
+  const [status, setStatus] = useState(confirmationStatus(data.status));
+  const [canConfirm, setCanConfirm] = useState(true);
   const [selectedDuration, setSelectedDuration] = useState(
     Number(data.duration_seconds) || 5,
   );
+  const submittingRef = useRef(false);
   const confirmationID = String(data.confirmation_id || '').trim();
   const isVideo = data.kind === 'text_to_video' || data.kind === 'image_to_video';
   const durationOptions = (data.duration_options || [5, 10, 15])
@@ -57,6 +82,12 @@ export function AIGCMediaConfirmationCardView(data: AIGCMediaConfirmationCardDat
       .then((response) => {
         const projection = normalizeJob(response?.data?.job);
         if (active && projection) setJob(projection);
+        if (active) {
+          setStatus(confirmationStatus(response?.data?.status));
+          if (typeof response?.data?.can_confirm === 'boolean') {
+            setCanConfirm(response.data.can_confirm);
+          }
+        }
         const duration = Number(response?.data?.spec?.duration_seconds);
         if (active && Number.isInteger(duration) && duration >= 3 && duration <= 15) {
           setSelectedDuration(duration);
@@ -69,10 +100,52 @@ export function AIGCMediaConfirmationCardView(data: AIGCMediaConfirmationCardDat
     return () => { active = false; };
   }, [confirmationID]);
 
+  useEffect(() => {
+    if (!confirmationID || status !== 'dispatching' || job) return;
+    let active = true;
+    let attempts = 0;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const reconcile = async () => {
+      attempts += 1;
+      try {
+        const response = await api.get(
+          `/aigc/media/confirmations/${encodeURIComponent(confirmationID)}`,
+        );
+        if (!active) return;
+        const projection = normalizeJob(response?.data?.job);
+        if (projection) {
+          setJob(projection);
+          return;
+        }
+        const nextStatus = confirmationStatus(response?.data?.status);
+        setStatus(nextStatus);
+        if (typeof response?.data?.can_confirm === 'boolean') {
+          setCanConfirm(response.data.can_confirm);
+        }
+        if (nextStatus !== 'dispatching') return;
+      } catch {
+        if (!active) return;
+      }
+      if (attempts < CONFIRMATION_RECONCILE_ATTEMPTS) {
+        timer = setTimeout(reconcile, CONFIRMATION_RECONCILE_INTERVAL_MS);
+      } else if (active) {
+        setError('任务仍在服务器处理中，稍后重新打开对话即可继续查看。');
+      }
+    };
+
+    void reconcile();
+    return () => {
+      active = false;
+      if (timer) clearTimeout(timer);
+    };
+  }, [confirmationID, job, status]);
+
   if (job) return <AIGCMediaJobCardView {...job} />;
 
   const confirm = async () => {
-    if (!confirmationID || submitting) return;
+    if (!confirmationID || !canConfirm || submittingRef.current) return;
+    submittingRef.current = true;
     setSubmitting(true);
     setError(null);
     try {
@@ -83,12 +156,42 @@ export function AIGCMediaConfirmationCardView(data: AIGCMediaConfirmationCardDat
       const projection = normalizeJob(response?.data);
       if (!projection) throw new Error('aigc_confirmation_missing_job');
       setJob(projection);
-    } catch {
-      setError('提交未完成，请稍后重试。');
+    } catch (caught) {
+      let reconciled = false;
+      try {
+        const response = await api.get(
+          `/aigc/media/confirmations/${encodeURIComponent(confirmationID)}`,
+        );
+        const projection = normalizeJob(response?.data?.job);
+        if (projection) {
+          setJob(projection);
+          reconciled = true;
+        } else {
+          const nextStatus = confirmationStatus(response?.data?.status);
+          setStatus(nextStatus);
+          if (typeof response?.data?.can_confirm === 'boolean') {
+            setCanConfirm(response.data.can_confirm);
+          }
+          reconciled = nextStatus === 'expired' || nextStatus === 'dispatching';
+        }
+      } catch {
+        // The original response remains authoritative when reconciliation is unavailable.
+      }
+      if (!reconciled) {
+        setError(responseDetail(caught) || '提交未完成，请检查网络后重试。');
+      }
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   };
+
+  const isExpired = status === 'expired';
+  const isDispatching = status === 'dispatching';
+  const buttonDisabled = !confirmationID || !canConfirm || submitting || isDispatching;
+  const buttonLabel = isVideo
+    ? `${isExpired ? '重新确认生成' : '确认生成'}${selectedDuration}秒短视频`
+    : isExpired ? '重新确认并生成' : '发送给百炼并生成';
 
   return (
     <CardShell
@@ -139,16 +242,44 @@ export function AIGCMediaConfirmationCardView(data: AIGCMediaConfirmationCardDat
           </View>
         </View>
       ) : null}
+      {isExpired ? (
+        <View style={[styles.stateNotice, !canConfirm && styles.stateNoticeUnavailable]}>
+          <Ionicons
+            name={canConfirm ? 'refresh-circle-outline' : 'time-outline'}
+            size={17}
+            color={canConfirm ? revaSemantic.caution.fg : C.ink3}
+          />
+          <Text maxFontSizeMultiplier={1.2} style={styles.stateNoticeText}>
+            {canConfirm
+              ? '草稿已过期，点击下方可重新确认生成。'
+              : '草稿已超过可恢复时间，请重新向小巴发起创作。'}
+          </Text>
+        </View>
+      ) : null}
+      {isDispatching ? (
+        <View style={styles.stateNotice}>
+          <ActivityIndicator size="small" color={C.green600} />
+          <Text maxFontSizeMultiplier={1.2} style={styles.stateNoticeText}>
+            正在核对生成任务，请稍候。
+          </Text>
+        </View>
+      ) : null}
       {error ? <Text maxFontSizeMultiplier={1.2} style={styles.error}>{error}</Text> : null}
       <Pressable
         onPress={confirm}
-        disabled={!confirmationID || submitting}
+        disabled={buttonDisabled}
         accessibilityRole="button"
-        accessibilityLabel={isVideo ? `确认生成${selectedDuration}秒短视频` : '发送给百炼并生成'}
-        style={({ pressed }) => [styles.confirmButton, (pressed || submitting) && { opacity: 0.82 }]}
+        accessibilityLabel={buttonLabel}
+        style={({ pressed }) => [
+          styles.confirmButton,
+          buttonDisabled && styles.confirmButtonDisabled,
+          (pressed || submitting) && { opacity: 0.82 },
+        ]}
       >
         {submitting ? <ActivityIndicator size="small" color="#fff" /> : <Ionicons name="sparkles" size={16} color="#fff" />}
-        <Text maxFontSizeMultiplier={1.15} style={styles.confirmText}>发送给百炼并生成</Text>
+        <Text maxFontSizeMultiplier={1.15} style={styles.confirmText}>
+          {isDispatching ? '正在核对任务' : isExpired ? '重新确认并生成' : '发送给百炼并生成'}
+        </Text>
       </Pressable>
     </CardShell>
   );
@@ -174,7 +305,11 @@ const styles = StyleSheet.create({
   durationOptionSelected: { borderColor: C.green500, backgroundColor: C.green100 },
   durationText: { fontFamily: revaFonts.sans, fontSize: 13, fontWeight: '700', color: C.ink2 } as TextStyle,
   durationTextSelected: { color: C.green700 },
+  stateNotice: { marginTop: 10, flexDirection: 'row', alignItems: 'center', gap: 7, padding: 9, borderRadius: revaRadii.sm, backgroundColor: revaSemantic.caution.bg, borderWidth: StyleSheet.hairlineWidth, borderColor: revaSemantic.caution.line },
+  stateNoticeUnavailable: { backgroundColor: C.paper2, borderColor: C.line },
+  stateNoticeText: { flex: 1, fontFamily: revaFonts.sans, fontSize: 12, lineHeight: 18, color: C.ink2 } as TextStyle,
   error: { marginTop: 8, fontFamily: revaFonts.sans, fontSize: 12, color: '#C84B3C' } as TextStyle,
   confirmButton: { minHeight: 44, marginTop: 12, borderRadius: revaRadii.md, backgroundColor: C.green600, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 7 },
+  confirmButtonDisabled: { backgroundColor: C.ink4 },
   confirmText: { fontFamily: revaFonts.sans, fontSize: 14, fontWeight: '800', color: '#fff' } as TextStyle,
 });

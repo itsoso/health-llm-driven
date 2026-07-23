@@ -21,6 +21,16 @@ private struct SuccessfulAIGCMediaClient: AIGCMediaJobLoading {
         )
     }
 
+    func getConfirmation(id: String) async throws -> AIGCMediaConfirmationProjection {
+        AIGCMediaConfirmationProjection(
+            id: id,
+            status: "pending",
+            canConfirm: true,
+            requiresReconfirmation: false,
+            job: nil
+        )
+    }
+
     func confirmDraft(id: String) async throws -> AIGCMediaJobProjection {
         AIGCMediaJobProjection(
             id: "job-1",
@@ -30,6 +40,33 @@ private struct SuccessfulAIGCMediaClient: AIGCMediaJobLoading {
             result: nil,
             errorMessage: nil
         )
+    }
+}
+
+private struct RecoveringAIGCMediaClient: AIGCMediaJobLoading {
+    func getJob(id: String) async throws -> AIGCMediaJobProjection {
+        throw APIError.emptyResponse
+    }
+
+    func getConfirmation(id: String) async throws -> AIGCMediaConfirmationProjection {
+        AIGCMediaConfirmationProjection(
+            id: id,
+            status: "dispatched",
+            canConfirm: false,
+            requiresReconfirmation: false,
+            job: AIGCMediaJobProjection(
+                id: "job-reconciled",
+                kind: "text_to_video",
+                status: "queued",
+                progress: 0,
+                result: nil,
+                errorMessage: nil
+            )
+        )
+    }
+
+    func confirmDraft(id: String) async throws -> AIGCMediaJobProjection {
+        throw APIError.httpStatus(409, "确认正在处理")
     }
 }
 
@@ -208,5 +245,27 @@ final class DietDraftConfirmationTests: XCTestCase {
         XCTAssertEqual(media.data["job_id"]?.stringValue, "job-1")
         XCTAssertEqual(preservedDiet.data["recorded"]?.boolValue, true)
         XCTAssertEqual(preservedDiet.data["receipt_message"]?.stringValue, "已记录午餐")
+    }
+
+    @MainActor
+    func testAIGCConfirmationReconcilesExistingJobAfterLostConfirmResponse() async throws {
+        let viewModel = AgentChatViewModel(aigcMediaClient: RecoveringAIGCMediaClient())
+        viewModel.messages = [
+            AgentChatMessage(
+                role: .assistant,
+                content: "",
+                cardType: "aigc_media_confirmation",
+                cardData: .object([
+                    "confirmation_id": .string("confirm-reconcile"),
+                    "kind": .string("text_to_video"),
+                ])
+            ),
+        ]
+
+        await viewModel.confirmAIGCMediaDraft(id: "confirm-reconcile")
+
+        XCTAssertEqual(viewModel.messages[0].cardType, "aigc_media_job")
+        XCTAssertEqual(viewModel.messages[0].cardData?["job_id"]?.stringValue, "job-reconciled")
+        XCTAssertEqual(viewModel.messages[0].cardData?["status"]?.stringValue, "queued")
     }
 }

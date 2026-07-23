@@ -396,6 +396,148 @@ describe('renderCard 安全降级', () => {
     (api.post as jest.Mock).mockClear();
   });
 
+  it('shows an expired AIGC draft as re-confirmable instead of a failed submission', async () => {
+    (api.get as jest.Mock).mockResolvedValueOnce({
+      data: {
+        id: 'aigc_confirm_expired',
+        status: 'expired',
+        job: null,
+        spec: {
+          duration_seconds: 5,
+          ratio: '9:16',
+          resolution: '720P',
+          generates_audio: true,
+        },
+      },
+    });
+    const screen = render(renderCard({
+      type: 'aigc_media_confirmation',
+      data: {
+        confirmation_id: 'aigc_confirm_expired',
+        kind: 'text_to_video',
+        status: 'pending',
+        duration_seconds: 5,
+        duration_options: [5, 10, 15],
+      },
+    })!);
+
+    expect(await screen.findByText('草稿已过期，点击下方可重新确认生成。')).toBeTruthy();
+    expect(screen.getByLabelText('重新确认生成5秒短视频')).toBeTruthy();
+    expect(screen.queryByText('提交未完成，请稍后重试。')).toBeNull();
+    screen.unmount();
+  });
+
+  it('resolves an indeterminate AIGC confirmation before reporting a failure', async () => {
+    (api.get as jest.Mock)
+      .mockResolvedValueOnce({
+        data: { id: 'aigc_confirm_reconcile', status: 'pending', job: null },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          id: 'aigc_confirm_reconcile',
+          status: 'dispatched',
+          job: {
+            id: 'aigc_reconciled_job',
+            kind: 'text_to_video',
+            status: 'queued',
+            progress: 10,
+            result: { media_type: null, url: null },
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          id: 'aigc_reconciled_job',
+          kind: 'text_to_video',
+          status: 'queued',
+          progress: 10,
+          result: { media_type: null, url: null },
+        },
+      });
+    (api.post as jest.Mock).mockRejectedValueOnce({
+      response: {
+        status: 409,
+        data: { detail: 'AIGC 任务正在提交，请稍后查看' },
+      },
+    });
+    const screen = render(renderCard({
+      type: 'aigc_media_confirmation',
+      data: {
+        confirmation_id: 'aigc_confirm_reconcile',
+        kind: 'text_to_video',
+        status: 'pending',
+      },
+    })!);
+
+    fireEvent.press(screen.getByLabelText('确认生成5秒短视频'));
+
+    expect(await screen.findByText('排队中')).toBeTruthy();
+    expect(screen.queryByText('提交未完成，请稍后重试。')).toBeNull();
+    expect(api.get).toHaveBeenCalledWith(
+      '/aigc/media/confirmations/aigc_confirm_reconcile',
+    );
+    screen.unmount();
+    (api.post as jest.Mock).mockClear();
+  });
+
+  it('keeps reconciling a dispatching confirmation until its durable job appears', async () => {
+    (api.get as jest.Mock)
+      .mockResolvedValueOnce({
+        data: { id: 'aigc_confirm_dispatching', status: 'pending', can_confirm: true, job: null },
+      })
+      .mockResolvedValueOnce({
+        data: { id: 'aigc_confirm_dispatching', status: 'dispatching', can_confirm: false, job: null },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          id: 'aigc_confirm_dispatching',
+          status: 'dispatched',
+          can_confirm: false,
+          job: {
+            id: 'aigc_dispatching_job',
+            kind: 'text_to_video',
+            status: 'queued',
+            progress: 10,
+            result: { media_type: null, url: null },
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          id: 'aigc_dispatching_job',
+          kind: 'text_to_video',
+          status: 'queued',
+          progress: 10,
+          result: { media_type: null, url: null },
+        },
+      });
+    (api.post as jest.Mock).mockRejectedValueOnce({
+      response: {
+        status: 409,
+        data: { detail: 'AIGC 任务正在提交，请稍后查看' },
+      },
+    });
+    const screen = render(renderCard({
+      type: 'aigc_media_confirmation',
+      data: {
+        confirmation_id: 'aigc_confirm_dispatching',
+        kind: 'text_to_video',
+        status: 'pending',
+      },
+    })!);
+
+    fireEvent.press(screen.getByLabelText('确认生成5秒短视频'));
+
+    expect(await screen.findByText('排队中')).toBeTruthy();
+    const confirmationGets = (api.get as jest.Mock).mock.calls.filter(
+      ([url]) => url === '/aigc/media/confirmations/aigc_confirm_dispatching',
+    );
+    screen.unmount();
+    (api.get as jest.Mock).mockClear();
+    (api.post as jest.Mock).mockClear();
+    expect(confirmationGets).toHaveLength(3);
+  });
+
   it('renders a private generated short video inline with native controls', async () => {
     mockVideoPlay.mockClear();
     mockShareRemoteVideo.mockResolvedValueOnce(undefined);

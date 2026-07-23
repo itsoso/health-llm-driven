@@ -75,7 +75,18 @@ AIGC_SAFE_RETRY_ERROR_CODES = frozenset(
 _AIGC_UPLOAD_ROOT = Path(__file__).resolve().parents[2] / "uploads" / "aigc"
 _MAX_IMAGE_RESULT_BYTES = 20 * 1024 * 1024
 _MAX_VIDEO_RESULT_BYTES = 100 * 1024 * 1024
-_CONFIRMATION_TTL = timedelta(minutes=10)
+# A creation card is part of durable chat history, so a 10-minute lifetime made
+# a normal "come back later" flow look actionable while the server had already
+# rejected it. New drafts remain directly confirmable for a day. A fresh owner
+# click may also reclaim an expired draft within the same window; that click is
+# the new explicit consent and the atomic status claim still prevents duplicate
+# provider spend.
+_CONFIRMATION_TTL = timedelta(hours=24)
+_CONFIRMATION_RECOVERY_WINDOW = timedelta(hours=24)
+# Confirmation claiming is a short database lease, not a permanent state. The
+# durable job row is committed before any provider call, so a claim with no
+# matching job after this window is safe to release for a fresh owner click.
+_CONFIRMATION_CLAIM_LEASE = timedelta(seconds=30)
 
 
 def is_recoverable_provider_result_missing_job(job: AIGCMediaJob) -> bool:
@@ -181,6 +192,76 @@ class AIGCMediaJobService:
         )
         self._result_downloader = result_downloader or self._download_provider_result
 
+    def _recover_confirmation_job(
+        self,
+        *,
+        user_id: int,
+        confirmation: AIGCMediaConfirmation,
+    ) -> AIGCMediaJob | None:
+        job = None
+        if confirmation.job_id:
+            job = (
+                self.db.query(AIGCMediaJob)
+                .filter(
+                    AIGCMediaJob.id == confirmation.job_id,
+                    AIGCMediaJob.user_id == int(user_id),
+                )
+                .first()
+            )
+        if job is None:
+            job = (
+                self.db.query(AIGCMediaJob)
+                .filter(
+                    AIGCMediaJob.user_id == int(user_id),
+                    AIGCMediaJob.idempotency_key == f"aigc-confirmation:{confirmation.id}",
+                )
+                .first()
+            )
+        if job is not None and (
+            confirmation.status != "dispatched"
+            or confirmation.job_id != job.id
+        ):
+            confirmation.status = "dispatched"
+            confirmation.job_id = job.id
+            self.db.commit()
+        return job
+
+    def _release_stale_confirmation_claim(
+        self,
+        *,
+        user_id: int,
+        confirmation: AIGCMediaConfirmation,
+        now: datetime,
+    ) -> bool:
+        if confirmation.status != "dispatching" or confirmation.job_id:
+            return False
+        consumed_at = confirmation.consumed_at
+        if consumed_at is not None:
+            normalized = consumed_at if consumed_at.tzinfo else consumed_at.replace(tzinfo=UTC)
+            if normalized > now - _CONFIRMATION_CLAIM_LEASE:
+                return False
+        released = (
+            self.db.query(AIGCMediaConfirmation)
+            .filter(
+                AIGCMediaConfirmation.id == confirmation.id,
+                AIGCMediaConfirmation.user_id == int(user_id),
+                AIGCMediaConfirmation.status == "dispatching",
+                AIGCMediaConfirmation.job_id.is_(None),
+                or_(
+                    AIGCMediaConfirmation.consumed_at.is_(None),
+                    AIGCMediaConfirmation.consumed_at <= now - _CONFIRMATION_CLAIM_LEASE,
+                ),
+            )
+            .update(
+                {"status": "pending", "consumed_at": None},
+                synchronize_session=False,
+            )
+        )
+        self.db.commit()
+        if released:
+            self.db.refresh(confirmation)
+        return bool(released)
+
     async def issue_confirmation(
         self,
         *,
@@ -268,19 +349,34 @@ class AIGCMediaJobService:
         elif duration_seconds is not None:
             raise AIGCMediaJobRequestError("图片创作不支持视频时长设置")
 
+        recovered_job = self._recover_confirmation_job(
+            user_id=user_id,
+            confirmation=candidate,
+        )
+        if recovered_job is not None:
+            return recovered_job
+        self._release_stale_confirmation_claim(
+            user_id=user_id,
+            confirmation=candidate,
+            now=now,
+        )
+
         claim_values: dict[str, object] = {
             "status": "dispatching",
             "consumed_at": now,
+            "expires_at": now + _CONFIRMATION_TTL,
         }
         if candidate.kind in VIDEO_KINDS:
             claim_values["duration_seconds"] = requested_duration
+        recovery_cutoff = now - _CONFIRMATION_RECOVERY_WINDOW
         claimed = (
             self.db.query(AIGCMediaConfirmation)
             .filter(
                 AIGCMediaConfirmation.id == str(confirmation_id),
                 AIGCMediaConfirmation.user_id == int(user_id),
-                AIGCMediaConfirmation.status == "pending",
-                AIGCMediaConfirmation.expires_at >= now,
+                AIGCMediaConfirmation.status.in_(("pending", "expired")),
+                AIGCMediaConfirmation.created_at >= recovery_cutoff,
+                AIGCMediaConfirmation.job_id.is_(None),
             )
             .update(claim_values, synchronize_session=False)
         )
@@ -296,31 +392,16 @@ class AIGCMediaJobService:
         if not confirmation:
             raise AIGCMediaJobRequestError("AIGC 确认不存在或无权使用")
         if not claimed:
-            if confirmation.job_id:
-                job = (
-                    self.db.query(AIGCMediaJob)
-                    .filter(AIGCMediaJob.id == confirmation.job_id, AIGCMediaJob.user_id == int(user_id))
-                    .first()
-                )
-                if job:
-                    return job
             # A process can die after persisting the provider job but before it
             # writes confirmation.job_id.  The confirmation ID is also the
             # job's unique idempotency key, so recover that durable job instead
             # of leaving the owner with a permanently spinning draft or
             # attempting a second provider call.
-            recovered_job = (
-                self.db.query(AIGCMediaJob)
-                .filter(
-                    AIGCMediaJob.user_id == int(user_id),
-                    AIGCMediaJob.idempotency_key == f"aigc-confirmation:{confirmation.id}",
-                )
-                .first()
+            recovered_job = self._recover_confirmation_job(
+                user_id=user_id,
+                confirmation=confirmation,
             )
             if recovered_job:
-                confirmation.status = "dispatched"
-                confirmation.job_id = recovered_job.id
-                self.db.commit()
                 return recovered_job
             if confirmation.status == "deduplicated":
                 matching_job = (
@@ -1001,17 +1082,32 @@ class AIGCMediaJobService:
         )
         if not confirmation:
             raise AIGCMediaJobRequestError("AIGC 确认不存在或无权使用")
-        job = None
-        if confirmation.job_id:
-            job = (
-                self.db.query(AIGCMediaJob)
-                .filter(
-                    AIGCMediaJob.id == confirmation.job_id,
-                    AIGCMediaJob.user_id == int(user_id),
-                )
-                .first()
+        now = datetime.now(UTC)
+        job = self._recover_confirmation_job(
+            user_id=user_id,
+            confirmation=confirmation,
+        )
+        if job is None:
+            self._release_stale_confirmation_claim(
+                user_id=user_id,
+                confirmation=confirmation,
+                now=now,
             )
-        elif confirmation.status == "deduplicated":
+        expires_at = confirmation.expires_at
+        if expires_at.tzinfo is None:  # SQLite test/dev compatibility
+            expires_at = expires_at.replace(tzinfo=UTC)
+        if confirmation.status == "pending" and expires_at < now:
+            confirmation.status = "expired"
+            self.db.commit()
+        created_at = confirmation.created_at
+        if created_at.tzinfo is None:  # SQLite test/dev compatibility
+            created_at = created_at.replace(tzinfo=UTC)
+        can_confirm = bool(
+            confirmation.job_id is None
+            and confirmation.status in {"pending", "expired"}
+            and created_at >= now - _CONFIRMATION_RECOVERY_WINDOW
+        )
+        if job is None and confirmation.status == "deduplicated":
             job = self._find_matching_fingerprint_job(
                 user_id=int(user_id),
                 fingerprint=confirmation.prompt_fingerprint,
@@ -1019,6 +1115,9 @@ class AIGCMediaJobService:
         return {
             "id": confirmation.id,
             "status": confirmation.status,
+            "can_confirm": can_confirm,
+            "requires_reconfirmation": confirmation.status == "expired" and can_confirm,
+            "expires_at": expires_at.isoformat(),
             "spec": self._confirmation_spec(confirmation),
             "job": self.project(job) if job is not None else None,
         }

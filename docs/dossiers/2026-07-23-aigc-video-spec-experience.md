@@ -5,7 +5,7 @@
 | slug | `aigc-video-spec-experience` |
 | 创建日期 | 2026-07-23 |
 | 当前阶段 | S8 上线验证 |
-| 状态 | deployed_device_smoke_pending |
+| 状态 | expiry_recovery_hotfix_ready |
 | 负责 | Codex |
 | 反馈环 | backend deploy + mobile OTA |
 
@@ -65,9 +65,13 @@
 ## Gate 状态
 
 - G3 测试：PASS
-  - Backend AIGC 定向回归：93 passed。
-  - Mobile 卡片回归：65 passed。
-  - TypeScript：`tsc --noEmit` 通过。
+  - 原功能 Backend AIGC 定向回归：93 passed。
+  - 过期确认与断流恢复 Backend 定向回归：53 passed。
+  - Mobile 卡片回归：70 passed。
+  - Web 卡片回归：38 passed。
+  - Mac 确认恢复回归：5 passed。
+  - Mobile / Web TypeScript：`tsc --noEmit` 通过。
+  - Mobile design-token gate：通过。
   - System map 与 doc drift：通过。
 - G4 安全：PASS
   - 客户端只能选择服务端白名单时长，不能替换 prompt、model 或 source。
@@ -82,6 +86,30 @@
   - Update group：`68153270-72d1-48d9-8866-dbbd976c8721`。
   - iOS update：`019f8f31-cfe0-7129-bedc-7e8ac12b100a`。
   - 待真机冷启动应用更新后，完成 5/10/15 秒选择、重复确认幂等、生成状态和播放烟测。
+
+## 2026-07-23 · 过期确认与断流恢复
+
+### 事故
+
+- 对话中的创作卡会长期保留，但服务端确认记录只有 10 分钟有效期。
+- 用户约 75 分钟后点击旧卡，Mobile 未读取服务端返回的 `expired` 状态，连续提交 10 次均收到 `409`，界面只显示“提交未完成，请稍后重试”。
+- 生产日志与只读账本确认没有创建任务、没有调用 provider、没有产生付费请求；失败发生在确认状态校验阶段。
+
+### 修复
+
+- 新草稿确认有效期改为 24 小时；24 小时恢复窗口内的旧草稿允许用户以一次新的明确点击重新确认。
+- 重新确认继续使用确认 ID 派生的业务幂等键，并通过数据库原子 claim 保证至多创建一个付费任务。
+- `dispatching` 成为 30 秒数据库租约；若进程在创建任务前退出，租约到期后可恢复。若任务已经持久化，则优先按幂等键恢复并补写确认回执。
+- Mobile / Web 首次展示读取 owner-scoped 确认账本；过期、不可恢复和提交中状态均有明确界面。
+- Mobile / Web 对提交响应丢失执行有界账本核对；任务已创建时直接切换任务卡，不再显示假失败，也不重复提交。
+- Mac 在提交响应失败后同样读取确认账本并恢复已创建任务。
+
+### 不变量
+
+- 同一确认 ID 至多创建一个付费任务。
+- 客户端超时、切后台或响应丢失不会把已创建任务显示为失败。
+- 过期确认不会无限恢复；超过 24 小时必须重新发起创作。
+- 轮询有固定次数上限，不形成无界请求。
 
 ## 后续边界
 

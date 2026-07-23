@@ -218,7 +218,73 @@ async def test_invalid_video_duration_override_does_not_consume_confirmation(
 
 
 @pytest.mark.asyncio
-async def test_expired_confirmation_cannot_contact_provider(db, auth_user_and_headers):
+async def test_recent_expired_confirmation_can_be_reconfirmed_by_a_fresh_owner_click(
+    db, auth_user_and_headers,
+):
+    from app.models.aigc_media_confirmation import AIGCMediaConfirmation
+    from app.services.aigc_media_job_service import AIGCMediaJobRequest, AIGCMediaJobService
+    from app.services.aigc_media_service import AIGCTask
+
+    class VideoProvider(_Provider):
+        def __init__(self) -> None:
+            super().__init__()
+            self.video_requests: list[dict] = []
+
+        async def create_video_task(self, **kwargs):
+            self.video_requests.append(kwargs)
+            return AIGCTask(task_id="happyhorse-video-renewed", status="PENDING")
+
+    user, _ = auth_user_and_headers
+    provider = VideoProvider()
+    service = AIGCMediaJobService(db, provider_factory=lambda: provider)
+    confirmation = await service.issue_confirmation(
+        user_id=user.id,
+        request=AIGCMediaJobRequest(
+            kind="text_to_video",
+            purpose="wellness_story",
+            prompt="把今天的活动饮食和睡眠整理成一段短视频",
+        ),
+    )
+    now = datetime.now(UTC)
+    db.query(AIGCMediaConfirmation).filter_by(id=confirmation.id).update(
+        {
+            "status": "expired",
+            "created_at": now - timedelta(hours=2),
+            "expires_at": now - timedelta(hours=1),
+        }
+    )
+    db.commit()
+
+    projection = service.confirmation_projection(
+        user_id=user.id,
+        confirmation_id=confirmation.id,
+    )
+    job = await service.confirm_and_dispatch(
+        user_id=user.id,
+        confirmation_id=confirmation.id,
+        duration_seconds=10,
+    )
+    replayed = await service.confirm_and_dispatch(
+        user_id=user.id,
+        confirmation_id=confirmation.id,
+        duration_seconds=10,
+    )
+    persisted = db.query(AIGCMediaConfirmation).filter_by(id=confirmation.id).one()
+
+    assert projection["status"] == "expired"
+    assert projection["can_confirm"] is True
+    assert projection["requires_reconfirmation"] is True
+    assert job.id == replayed.id
+    assert persisted.status == "dispatched"
+    assert persisted.job_id == job.id
+    assert len(provider.video_requests) == 1
+    assert provider.video_requests[0]["duration_seconds"] == 10
+
+
+@pytest.mark.asyncio
+async def test_expired_confirmation_outside_recovery_window_cannot_contact_provider(
+    db, auth_user_and_headers,
+):
     from app.models.aigc_media_confirmation import AIGCMediaConfirmation
     from app.services.aigc_media_job_service import (
         AIGCMediaJobConflict,
@@ -237,10 +303,22 @@ async def test_expired_confirmation_cannot_contact_provider(db, auth_user_and_he
             prompt="制作一张早晨散步的温和插画",
         ),
     )
+    now = datetime.now(UTC)
     db.query(AIGCMediaConfirmation).filter_by(id=confirmation.id).update(
-        {"expires_at": datetime.now(UTC) - timedelta(seconds=1)}
+        {
+            "status": "expired",
+            "created_at": now - timedelta(days=2),
+            "expires_at": now - timedelta(days=2, minutes=-10),
+        }
     )
     db.commit()
+
+    projection = service.confirmation_projection(
+        user_id=user.id,
+        confirmation_id=confirmation.id,
+    )
+    assert projection["status"] == "expired"
+    assert projection["can_confirm"] is False
 
     with pytest.raises(AIGCMediaJobConflict, match="已过期"):
         await service.confirm_and_dispatch(user_id=user.id, confirmation_id=confirmation.id)
@@ -296,6 +374,108 @@ async def test_retry_recovers_job_persisted_before_confirmation_link(db, auth_us
     assert recovered.id == job.id
     assert persisted.status == "dispatched"
     assert persisted.job_id == job.id
+    assert len(provider.image_requests) == 1
+
+
+@pytest.mark.asyncio
+async def test_projection_recovers_job_persisted_before_confirmation_link(
+    db, auth_user_and_headers, monkeypatch, tmp_path,
+):
+    from app.models.aigc_media_confirmation import AIGCMediaConfirmation
+    from app.services import aigc_media_job_service
+    from app.services.aigc_media_job_service import AIGCMediaJobRequest, AIGCMediaJobService
+    from app.services.tenant_crypto import decrypt_aigc_confirmation_for
+
+    user, _ = auth_user_and_headers
+    provider = _Provider()
+    monkeypatch.setattr(aigc_media_job_service, "_AIGC_UPLOAD_ROOT", tmp_path)
+
+    async def download(_url: str, _kind: str):
+        return b"png", "image/png", "png"
+
+    service = AIGCMediaJobService(db, provider_factory=lambda: provider, result_downloader=download)
+    confirmation = await service.issue_confirmation(
+        user_id=user.id,
+        request=AIGCMediaJobRequest(
+            kind="text_to_image",
+            purpose="meal_visual",
+            prompt="制作一张早餐备餐步骤图",
+        ),
+    )
+    request = AIGCMediaJobRequest(
+        kind=confirmation.kind,
+        purpose=confirmation.purpose,
+        prompt=decrypt_aigc_confirmation_for(user.id, confirmation.prompt_ciphertext),
+        duration_seconds=confirmation.duration_seconds,
+        ratio=confirmation.ratio,
+    )
+    job = await service._dispatch_confirmed(
+        user_id=user.id,
+        request=request,
+        confirmation_id=confirmation.id,
+    )
+    db.query(AIGCMediaConfirmation).filter_by(id=confirmation.id).update(
+        {"status": "dispatching", "job_id": None, "consumed_at": datetime.now(UTC)}
+    )
+    db.commit()
+
+    projection = service.confirmation_projection(
+        user_id=user.id,
+        confirmation_id=confirmation.id,
+    )
+    persisted = db.query(AIGCMediaConfirmation).filter_by(id=confirmation.id).one()
+
+    assert projection["status"] == "dispatched"
+    assert projection["job"]["id"] == job.id
+    assert persisted.job_id == job.id
+    assert len(provider.image_requests) == 1
+
+
+@pytest.mark.asyncio
+async def test_stale_dispatch_claim_without_job_becomes_confirmable_again(
+    db, auth_user_and_headers, monkeypatch, tmp_path,
+):
+    from app.models.aigc_media_confirmation import AIGCMediaConfirmation
+    from app.services import aigc_media_job_service
+    from app.services.aigc_media_job_service import AIGCMediaJobRequest, AIGCMediaJobService
+
+    user, _ = auth_user_and_headers
+    provider = _Provider()
+    monkeypatch.setattr(aigc_media_job_service, "_AIGC_UPLOAD_ROOT", tmp_path)
+
+    async def download(_url: str, _kind: str):
+        return b"png", "image/png", "png"
+
+    service = AIGCMediaJobService(db, provider_factory=lambda: provider, result_downloader=download)
+    confirmation = await service.issue_confirmation(
+        user_id=user.id,
+        request=AIGCMediaJobRequest(
+            kind="text_to_image",
+            purpose="meal_visual",
+            prompt="制作一张晚餐营养摘要图",
+        ),
+    )
+    db.query(AIGCMediaConfirmation).filter_by(id=confirmation.id).update(
+        {
+            "status": "dispatching",
+            "job_id": None,
+            "consumed_at": datetime.now(UTC) - timedelta(minutes=5),
+        }
+    )
+    db.commit()
+
+    projection = service.confirmation_projection(
+        user_id=user.id,
+        confirmation_id=confirmation.id,
+    )
+    job = await service.confirm_and_dispatch(
+        user_id=user.id,
+        confirmation_id=confirmation.id,
+    )
+
+    assert projection["status"] == "pending"
+    assert projection["can_confirm"] is True
+    assert job.status == "succeeded"
     assert len(provider.image_requests) == 1
 
 
