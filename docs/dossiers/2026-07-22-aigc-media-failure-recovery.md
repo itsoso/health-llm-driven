@@ -45,6 +45,8 @@
 - [x] 为历史已消费确认增加所有者隔离的只读恢复接口，旧卡可恢复为原任务而不重复提交。
 - [x] 对供应商明确 401 拒绝做一次无重复计费风险的即时重放；传输结果不确定仍禁止自动重放。
 - [x] Web/Mobile 仅轮询 active 任务，并在挂载时恢复最新状态，避免重复即时请求。
+- [x] Mobile 已完成视频在 Agent 对话内播放，并可将本地 MP4 分享到微信或小红书。
+- [x] 播放、分享与生成动作隔离；重复分享点击合并，临时文件在成功或失败后清理。
 
 ## G3 · 测试裁决
 
@@ -60,6 +62,13 @@
 - Web: 35 passed；TypeScript 编译通过；changed-file ESLint 0 errors。
 - Mobile: 60 passed；TypeScript 编译通过；changed-file ESLint 0 errors。
 - System map/doc drift 与代码一致；Ruff 与 `git diff --check` 通过。
+
+### 2026-07-23 inline video sharing follow-up
+
+- 完成视频卡新增紧凑的微信/小红书分享入口，小红书使用官方应用图标。
+- 分享前刷新所有者隔离的任务投影，再把私有短视频下载为临时 MP4 交给 iOS 分享面板。
+- 播放和分享不会调用确认、重试或生成接口；连续点击只执行一次分享。
+- Mobile 定向测试覆盖播放不触发生成、分享参数、重复点击合并、下载失败清理。
 
 ## G4 · 安全与隐私裁决
 

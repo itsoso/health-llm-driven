@@ -12,6 +12,8 @@ import { VideoView, useVideoPlayer } from 'expo-video';
 import { Ionicons } from '@expo/vector-icons';
 
 import api, { BASE_URL } from '../../../services/api';
+import { shareRemoteVideo, type VideoShareTarget } from '../../../utils/share';
+import { SocialBrandIcon } from '../../common/SocialBrandIcon';
 import { CardShell } from './CardShell';
 import type { CardSpec } from './types';
 import {
@@ -102,8 +104,10 @@ export function AIGCMediaJobCardView(initialData: AIGCMediaJobCardData) {
   const [cancelling, setCancelling] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const [playbackStarted, setPlaybackStarted] = useState(false);
+  const [sharingTarget, setSharingTarget] = useState<VideoShareTarget | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const mounted = useRef(true);
+  const sharingRef = useRef(false);
 
   useEffect(() => {
     setData(initialData);
@@ -211,6 +215,37 @@ export function AIGCMediaJobCardView(initialData: AIGCMediaJobCardData) {
     }
   }, [isVideo, resultUrl, videoPlayer]);
 
+  const shareVideo = useCallback(async (target: VideoShareTarget) => {
+    if (!isVideo || !resultUrl || sharingRef.current) return;
+    sharingRef.current = true;
+    setActionError(null);
+    setSharingTarget(target);
+    try {
+      let shareUrl = resultUrl;
+      let response: { data?: unknown } | null = null;
+      try {
+        response = await api.get(`/aigc/media/jobs/${encodeURIComponent(data.job_id)}`);
+      } catch {
+        // The card already owns a signed URL; refresh is best effort.
+      }
+      const projection = normalizeJobProjection(response?.data, data.job_id);
+      const freshResultUrl = privateMediaUrl(projection?.result?.url);
+      if (freshResultUrl && String(projection?.result?.media_type || '').toLowerCase().startsWith('video/')) {
+        shareUrl = freshResultUrl;
+        if (mounted.current && projection) setData(projection);
+      }
+      await shareRemoteVideo(shareUrl, {
+        target,
+        cacheKey: data.job_id,
+      });
+    } catch {
+      if (mounted.current) setActionError('视频分享未打开，请检查网络后再试。');
+    } finally {
+      sharingRef.current = false;
+      if (mounted.current) setSharingTarget(null);
+    }
+  }, [data.job_id, isVideo, resultUrl]);
+
   return (
     <CardShell
       icon="sparkles-outline"
@@ -286,34 +321,72 @@ export function AIGCMediaJobCardView(initialData: AIGCMediaJobCardData) {
       ) : null}
 
       {resultUrl && isVideo ? (
-        <View style={styles.videoFrame}>
-          <VideoView
-            testID="aigc-video-player"
-            player={videoPlayer}
-            style={styles.video}
-            nativeControls
-            contentFit="contain"
-            fullscreenOptions={{ enable: true }}
-            accessibilityLabel="小巴生成的短视频"
-          />
-          {!playbackStarted ? (
+        <>
+          <View style={styles.videoFrame}>
+            <VideoView
+              testID="aigc-video-player"
+              player={videoPlayer}
+              style={styles.video}
+              nativeControls
+              contentFit="contain"
+              fullscreenOptions={{ enable: true }}
+              accessibilityLabel="小巴生成的短视频"
+            />
+            {!playbackStarted ? (
+              <Pressable
+                testID="aigc-video-play-button"
+                style={({ pressed }) => [
+                  styles.playOverlay,
+                  pressed && styles.playOverlayPressed,
+                ]}
+                onPress={playVideo}
+                accessibilityRole="button"
+                accessibilityLabel="播放短视频"
+                accessibilityHint="播放已生成的短视频，不会重新生成"
+              >
+                <View style={styles.playButton}>
+                  <Ionicons name="play" size={25} color={C.surface} />
+                </View>
+              </Pressable>
+            ) : null}
+          </View>
+          <View style={styles.shareRow}>
             <Pressable
-              testID="aigc-video-play-button"
+              testID="aigc-video-share-wechat"
               style={({ pressed }) => [
-                styles.playOverlay,
-                pressed && styles.playOverlayPressed,
+                styles.shareButton,
+                pressed && !sharingTarget && styles.shareButtonPressed,
               ]}
-              onPress={playVideo}
+              onPress={() => { void shareVideo('wechat'); }}
+              disabled={sharingTarget !== null}
               accessibilityRole="button"
-              accessibilityLabel="播放短视频"
-              accessibilityHint="播放已生成的短视频，不会重新生成"
+              accessibilityLabel="分享到微信"
+              accessibilityState={{ disabled: sharingTarget !== null, busy: sharingTarget === 'wechat' }}
             >
-              <View style={styles.playButton}>
-                <Ionicons name="play" size={25} color={C.surface} />
-              </View>
+              {sharingTarget === 'wechat'
+                ? <ActivityIndicator size="small" color={C.green600} />
+                : <SocialBrandIcon brand="wechat" size={14} />}
+              <Text style={styles.shareText}>微信</Text>
             </Pressable>
-          ) : null}
-        </View>
+            <Pressable
+              testID="aigc-video-share-xiaohongshu"
+              style={({ pressed }) => [
+                styles.shareButton,
+                pressed && !sharingTarget && styles.shareButtonPressed,
+              ]}
+              onPress={() => { void shareVideo('xiaohongshu'); }}
+              disabled={sharingTarget !== null}
+              accessibilityRole="button"
+              accessibilityLabel="分享到小红书"
+              accessibilityState={{ disabled: sharingTarget !== null, busy: sharingTarget === 'xiaohongshu' }}
+            >
+              {sharingTarget === 'xiaohongshu'
+                ? <ActivityIndicator size="small" color={C.green600} />
+                : <SocialBrandIcon brand="xiaohongshu" size={14} />}
+              <Text style={styles.shareText}>小红书</Text>
+            </Pressable>
+          </View>
+        </>
       ) : null}
     </CardShell>
   );
@@ -369,4 +442,29 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(255, 255, 255, 0.5)',
   },
+  shareRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 6,
+    marginTop: 8,
+  },
+  shareButton: {
+    minHeight: 34,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    borderRadius: revaRadii.pill,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
+    backgroundColor: C.paper,
+    paddingHorizontal: 10,
+  },
+  shareButtonPressed: { backgroundColor: C.green50 },
+  shareText: {
+    fontFamily: revaFonts.sans,
+    fontSize: 12,
+    fontWeight: '700',
+    color: C.ink2,
+  } as TextStyle,
 });

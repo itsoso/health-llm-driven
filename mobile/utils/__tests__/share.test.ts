@@ -1,9 +1,10 @@
 import { Platform, Share } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import api from '../../services/api';
 
-import { shareLocalImage, sharePlainCaption, sharePlainText } from '../share';
+import { shareLocalImage, sharePlainCaption, sharePlainText, shareRemoteVideo } from '../share';
 
 jest.mock('expo-clipboard', () => ({
   setStringAsync: jest.fn().mockResolvedValue(undefined),
@@ -12,6 +13,12 @@ jest.mock('expo-clipboard', () => ({
 jest.mock('expo-sharing', () => ({
   isAvailableAsync: jest.fn().mockResolvedValue(true),
   shareAsync: jest.fn().mockResolvedValue(undefined),
+}));
+
+jest.mock('expo-file-system/legacy', () => ({
+  cacheDirectory: 'file:///cache/',
+  downloadAsync: jest.fn(),
+  deleteAsync: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock('../../services/api', () => ({
@@ -150,6 +157,69 @@ describe('shareLocalImage', () => {
     (Sharing.isAvailableAsync as jest.Mock).mockResolvedValueOnce(false);
 
     await expect(shareLocalImage('file:///tmp/diet-card.png')).rejects.toThrow('image_sharing_unavailable');
+    expect(Sharing.shareAsync).not.toHaveBeenCalled();
+  });
+});
+
+describe('shareRemoteVideo', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    (Sharing.isAvailableAsync as jest.Mock).mockResolvedValue(true);
+    (Sharing.shareAsync as jest.Mock).mockResolvedValue(undefined);
+    (FileSystem.downloadAsync as jest.Mock).mockResolvedValue({
+      uri: 'file:///cache/reva-aigc-video-job-42.mp4',
+      status: 200,
+    });
+  });
+
+  it('downloads a private video to a local MP4 before opening the WeChat share sheet', async () => {
+    await shareRemoteVideo(
+      'https://health.executor.life/api/v1/upload/files/aigc/3/today.mp4?signature=signed',
+      { target: 'wechat', cacheKey: 'job-42' },
+    );
+
+    expect(FileSystem.downloadAsync).toHaveBeenCalledWith(
+      'https://health.executor.life/api/v1/upload/files/aigc/3/today.mp4?signature=signed',
+      'file:///cache/reva-aigc-video-job-42.mp4',
+    );
+    expect(Sharing.shareAsync).toHaveBeenCalledWith(
+      'file:///cache/reva-aigc-video-job-42.mp4',
+      {
+        dialogTitle: '分享到微信',
+        mimeType: 'video/mp4',
+        UTI: 'public.mpeg-4',
+      },
+    );
+    expect(FileSystem.deleteAsync).toHaveBeenCalledWith(
+      'file:///cache/reva-aigc-video-job-42.mp4',
+      { idempotent: true },
+    );
+  });
+
+  it('shares an existing local video without downloading or deleting it', async () => {
+    await shareRemoteVideo('file:///tmp/aigc-result.mp4', { target: 'xiaohongshu' });
+
+    expect(FileSystem.downloadAsync).not.toHaveBeenCalled();
+    expect(Sharing.shareAsync).toHaveBeenCalledWith('file:///tmp/aigc-result.mp4', {
+      dialogTitle: '分享到小红书',
+      mimeType: 'video/mp4',
+      UTI: 'public.mpeg-4',
+    });
+    expect(FileSystem.deleteAsync).not.toHaveBeenCalled();
+  });
+
+  it('removes a partial temporary file when the remote download fails', async () => {
+    (FileSystem.downloadAsync as jest.Mock).mockRejectedValueOnce(new Error('connection reset'));
+
+    await expect(shareRemoteVideo(
+      'https://health.executor.life/api/v1/upload/files/aigc/3/interrupted.mp4',
+      { target: 'xiaohongshu', cacheKey: 'job-interrupted' },
+    )).rejects.toThrow('connection reset');
+
+    expect(FileSystem.deleteAsync).toHaveBeenCalledWith(
+      'file:///cache/reva-aigc-video-job-interrupted.mp4',
+      { idempotent: true },
+    );
     expect(Sharing.shareAsync).not.toHaveBeenCalled();
   });
 });

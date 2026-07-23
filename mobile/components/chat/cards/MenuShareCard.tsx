@@ -16,6 +16,7 @@ import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { CardShell } from './CardShell';
 import { revaColors as C, revaRadii, revaFonts } from '../../../constants/revaTheme';
+import { SocialBrandIcon } from '../../common/SocialBrandIcon';
 import type { CardSpec } from './types';
 import { sharePlainCaption, sharePlainText } from '../../../utils/share';
 
@@ -197,7 +198,7 @@ export function MenuShareCardView(d: MenuShareData) {
           accessibilityLabel="发微信分享菜单"
           style={({ pressed }) => [styles.wechatShareBtn, pressed && { opacity: 0.85 }]}
         >
-          <Ionicons name="logo-wechat" size={14} color="#fff" />
+          <SocialBrandIcon brand="wechat" size={14} />
           <Text maxFontSizeMultiplier={1.2} style={styles.wechatShareText}>发微信</Text>
         </Pressable>
         <Pressable
@@ -206,7 +207,7 @@ export function MenuShareCardView(d: MenuShareData) {
           accessibilityLabel="发小红书分享菜单"
           style={({ pressed }) => [styles.xhsShareBtn, pressed && { opacity: 0.85 }]}
         >
-          <Ionicons name="book-outline" size={14} color={MENU_ACCENT} />
+          <SocialBrandIcon brand="xiaohongshu" size={14} />
           <Text maxFontSizeMultiplier={1.2} style={styles.xhsShareText}>发小红书</Text>
         </Pressable>
         <Pressable

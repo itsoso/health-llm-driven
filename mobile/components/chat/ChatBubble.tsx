@@ -34,8 +34,8 @@ import {
   revaSemantic,
   revaFonts,
 } from '../../constants/revaTheme';
-import { SOCIAL_BRAND } from '../../constants/brand';
 import { useToast } from '../../hooks/useToast';
+import { SocialBrandIcon } from '../common/SocialBrandIcon';
 import { shareLocalImage, sharePlainCaption, sharePlainText } from '../../utils/share';
 import { buildAiShareMessage, buildXiaohongshuShareMessage } from '../../utils/aiShareText';
 import { buildChatImageSource } from '../../utils/chatImageSource';
@@ -2569,8 +2569,8 @@ const styles = StyleSheet.create({
     minHeight: 38,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 8,
+    gap: 4,
+    paddingHorizontal: 7,
   },
   assistantUtilityCopy: {
     width: 30,
@@ -2582,18 +2582,6 @@ const styles = StyleSheet.create({
   },
   assistantUtilityCopyDone: {
     backgroundColor: C.green50,
-  },
-  // 分享入口品牌 badge:白色 glyph 落在平台品牌色圆角块上(微信绿 / 小红书红),
-  // 品牌色由 SOCIAL_BRAND(constants/brand.ts)提供,组件不裸写 hex(过 design 闸)。
-  shareBadgeWeChat: {
-    width: 18, height: 18, borderRadius: 5,
-    backgroundColor: SOCIAL_BRAND.wechat,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  shareBadgeXhs: {
-    width: 18, height: 18, borderRadius: 5,
-    backgroundColor: SOCIAL_BRAND.xiaohongshu,
-    alignItems: 'center', justifyContent: 'center',
   },
   assistantUtilityDetails: {
     marginTop: 7,
@@ -2897,9 +2885,7 @@ function AssistantUtilityPanel({
           accessibilityLabel="微信分享这条回复"
           style={({ pressed }) => [styles.assistantUtilityShare, pressed && styles.actionBtnPressed]}
         >
-          <View style={styles.shareBadgeWeChat}>
-            <Ionicons name="logo-wechat" size={12} color={C.greenOn} />
-          </View>
+          <SocialBrandIcon brand="wechat" size={15} />
           <Text style={txt.assistantUtilityShare}>微信</Text>
         </Pressable>
         <Pressable
@@ -2908,9 +2894,7 @@ function AssistantUtilityPanel({
           accessibilityLabel="小红书分享这条回复"
           style={({ pressed }) => [styles.assistantUtilityShare, pressed && styles.actionBtnPressed]}
         >
-          <View style={styles.shareBadgeXhs}>
-            <Ionicons name="book" size={11} color={C.greenOn} />
-          </View>
+          <SocialBrandIcon brand="xiaohongshu" size={15} />
           <Text style={txt.assistantUtilityShare}>小红书</Text>
         </Pressable>
         <Pressable

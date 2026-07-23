@@ -9,6 +9,7 @@ jest.mock('expo-web-browser', () => ({
 }));
 
 const mockVideoPlay = jest.fn();
+const mockShareRemoteVideo = jest.fn();
 jest.mock('expo-video', () => {
   const React = require('react');
   return {
@@ -16,6 +17,10 @@ jest.mock('expo-video', () => {
     VideoView: (props: Record<string, unknown>) => React.createElement('VideoView', { ...props, testID: 'aigc-video-player' }),
   };
 }, { virtual: true });
+
+jest.mock('../../../../utils/share', () => ({
+  shareRemoteVideo: (...args: unknown[]) => mockShareRemoteVideo(...args),
+}));
 
 import { CARD_REGISTRY, CARD_MAP, dispatchCard, renderCard, renderServerCards } from '../registry';
 import type { CardContext } from '../types';
@@ -260,6 +265,7 @@ describe('renderCard 安全降级', () => {
 
   it('renders a private generated short video inline with native controls', async () => {
     mockVideoPlay.mockClear();
+    mockShareRemoteVideo.mockResolvedValueOnce(undefined);
     const relativeVideoUrl = '/api/v1/upload/files/aigc/3/today.mp4?expires=1&signature=signed';
     (api.get as jest.Mock).mockResolvedValueOnce({
       data: {
@@ -292,8 +298,52 @@ describe('renderCard 安全降级', () => {
     expect(player).toHaveProp('fullscreenOptions', expect.objectContaining({ enable: true }));
     fireEvent.press(screen.getByLabelText('播放短视频'));
     expect(mockVideoPlay).toHaveBeenCalledTimes(1);
+    fireEvent.press(screen.getByLabelText('分享到微信'));
+    await waitFor(() => {
+      expect(mockShareRemoteVideo).toHaveBeenCalledWith(
+        'https://health.executor.life/api/v1/upload/files/aigc/3/today.mp4?expires=1&signature=signed',
+        { target: 'wechat', cacheKey: 'aigc_video_1' },
+      );
+    });
     expect(api.post).not.toHaveBeenCalled();
     expect(WebBrowser.openBrowserAsync).not.toHaveBeenCalled();
+    screen.unmount();
+  });
+
+  it('coalesces repeated video share taps while the first share is active', async () => {
+    let finishShare: (() => void) | undefined;
+    mockShareRemoteVideo.mockImplementationOnce(() => new Promise<void>((resolve) => {
+      finishShare = resolve;
+    }));
+    const resultUrl = '/api/v1/upload/files/aigc/3/share-once.mp4?signature=signed';
+    (api.get as jest.Mock).mockResolvedValue({
+      data: {
+        id: 'aigc_video_share_once',
+        kind: 'text_to_video',
+        status: 'succeeded',
+        progress: 100,
+        result: { media_type: 'video/mp4', url: resultUrl },
+      },
+    });
+    const screen = render(renderCard({
+      type: 'aigc_media_job',
+      data: {
+        job_id: 'aigc_video_share_once',
+        kind: 'text_to_video',
+        status: 'succeeded',
+        progress: 100,
+        result: { media_type: 'video/mp4', url: resultUrl },
+      },
+    })!);
+
+    const shareButton = await screen.findByLabelText('分享到小红书');
+    fireEvent.press(shareButton);
+    fireEvent.press(shareButton);
+    await waitFor(() => expect(mockShareRemoteVideo).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      finishShare?.();
+    });
     screen.unmount();
   });
 

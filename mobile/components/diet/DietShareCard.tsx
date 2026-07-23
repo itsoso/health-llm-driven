@@ -30,6 +30,7 @@ import {
   revaSpacing,
 } from '../../constants/revaTheme';
 import type { DietRecord } from '../../services/diet';
+import { SocialBrandIcon } from '../common/SocialBrandIcon';
 import { MACRO_HUES } from '../chat/cards/mealCardVisuals';
 
 const MEAL_LABEL: Record<string, string> = {
@@ -1152,7 +1153,7 @@ export function DietShareSheet({
               accessibilityRole="button"
               accessibilityLabel={wechatShareA11yLabel}
             >
-              <Ionicons name="chatbubble-ellipses-outline" size={18} color={C.greenOn} />
+              <SocialBrandIcon brand="wechat" size={15} />
               <View>
                 <Text style={styles.platformShareText}>{wechatShareDisplayLabel}</Text>
                 <Text style={styles.platformShareHint}>{wechatShareHint}</Text>
@@ -1166,7 +1167,7 @@ export function DietShareSheet({
               accessibilityRole="button"
               accessibilityLabel={xhsShareLabel}
             >
-              <Ionicons name="sparkles-outline" size={18} color="#fff" />
+              <SocialBrandIcon brand="xiaohongshu" size={15} />
               <View>
                 <Text style={styles.platformShareText}>{xhsShareDisplayLabel}</Text>
                 <Text style={styles.platformShareHint}>{xhsShareHint}</Text>
