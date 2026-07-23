@@ -103,9 +103,11 @@ RequirementAdmission:
 - 上下文餐食单写入回归按 TDD 验证：新增的无份量重复更新和错误历史 ID 更新测试在修复前均准确失败；修复后相关 4 项通过，进程重建重放场景只保留 1 条 `DietRecord` 和 1 份回执/卡片。
 - 受影响的 Agent Executor、回执、上下文餐食与 Runtime 回归：`313 passed, 4 skipped`；API 生命周期用隔离 SQLite 配置验证，未依赖或修改本机生产数据库角色。
 - 零成本 Harness：`invariants 12/12`、`health_agent_core 50/50`，无 regression、无真实模型调用。
+- 用户于 2026-07-23 明确授权真实模型回归；使用固定金标与隔离 SQLite 执行 live Harness：`invariants 12/12`、`health_agent_core 50/50`、真实 `orchestrator 5/5`，Orchestrator 平均分 `0.94`、无 regression，实际模型 `MiniMax-M2.5`。原始 JSON 仅保存在本地 `/tmp/agent-runtime-contextual-meal-live-eval.json`，未提交模型正文或健康数据。
 - 所有修改 shell 入口 `bash -n`：PASS。
 - `git diff --check`：PASS。
 - 主干 CI `29968072427`：`43/43` jobs PASS。
+- 上下文餐食单写入提交 `d5cc11c8c50adf10b6ef49293e2993450007007f` 的主干 CI `30002618781`：PASS。真实模型变更闸仅在该次重跑期间使用一次性仓库变量，运行进入终态后变量已删除并确认不存在。
 - **裁决: PASS。** 最终提交前会重新执行受修改影响的聚焦集合。
 
 ### 主干 CI 纠偏
@@ -133,6 +135,8 @@ RequirementAdmission:
 - 前后端线上提交为 `28c9e04bc765bbdd989c5202e36ff60d6186bbea`；后端、Celery worker、Celery beat 均 active，公网依赖健康。
 - 生产 Runtime 为 `mode=enforce`、circuit `active`；最近 15 分钟失败、reconciliation 和 stale active Run 均为零。
 - Mobile production OTA manifest 已核对提交、channel、runtime version、group 和 update ID，并保留前一 known-good group 供回滚。
+- 2026-07-23 从最新且干净的 `main` 重新执行后端生产部署；部署提交 `8538816de4e6080a9c4eb8d4459f92d2efc2d63b` 包含上下文餐食单写入修复，其主干 CI `30005194767` 已通过。
+- 本次部署再次通过数据库备份、强制 RLS 完整性检查、231 张表临时恢复演练与站外加密归档；受控迁移无待执行项，后端与 Celery 重启成功，健康评分 `60/60`，远端 SHA 与 `main` 一致。公网 `/api/v1/health` 返回 API、PostgreSQL、Redis、Celery 全部 healthy。
 - **裁决: PASS。**
 
 ## S7 / G6 · 上线验证
@@ -152,5 +156,6 @@ RequirementAdmission:
 
 - 发布提交与生产 SHA: `28c9e04bc765bbdd989c5202e36ff60d6186bbea`。
 - CI: `29968072427`，`43/43` jobs PASS。
+- 上下文餐食单写入修复生产 SHA: `8538816de4e6080a9c4eb8d4459f92d2efc2d63b`；CI `30002618781` 与最新主干 CI `30005194767` 均 PASS；后端健康评分 `60/60`。
 - OTA: group `ef03a27a-57bb-4d99-a2ae-b632b5cdd506`；iOS update `019f8c5e-56c8-726a-aeab-c77885edd63a`。
 - 待 G6 全部通过后补充管理员模拟器截图和最终裁决。
