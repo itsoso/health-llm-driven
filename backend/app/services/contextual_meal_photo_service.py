@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import secrets
 import uuid
 from dataclasses import dataclass
@@ -317,6 +318,17 @@ class ContextualMealPhotoService:
         raw_vision_result: dict[str, Any],
         decision: MealPhotoDecision,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
+        consumed_fraction = raw_vision_result.get("consumed_fraction")
+        if (
+            not isinstance(consumed_fraction, (int, float))
+            or isinstance(consumed_fraction, bool)
+            or not math.isfinite(float(consumed_fraction))
+            or not 0 < float(consumed_fraction) < 1
+        ):
+            consumed_fraction = None
+        consumed_fraction_label = str(
+            raw_vision_result.get("consumed_fraction_label") or ""
+        ).strip()[:20]
         vision_result = sanitize_food_recognition_result(raw_vision_result)
         foods = vision_result.get("foods") if isinstance(vision_result.get("foods"), list) else []
         if not vision_result.get("success") or not foods:
@@ -346,6 +358,10 @@ class ContextualMealPhotoService:
             if isinstance(confidence, (int, float)):
                 confidences.append(float(confidence))
         food_items = " + ".join(labels)
+        if consumed_fraction is not None and consumed_fraction_label:
+            food_items = (
+                f"{food_items}（按实际食用{consumed_fraction_label}计）"
+            )
         if not food_items or looks_like_food_ui_text(food_items):
             raise ContextualMealPhotoServiceError("contextual_meal_photo_food_items_invalid")
         if classify_intake_intent(food_items).kind in {"diet_management", "medication", "supplement"}:
@@ -362,6 +378,9 @@ class ContextualMealPhotoService:
                 "local_time": decision.local_time.isoformat(),
             },
         }
+        if consumed_fraction is not None:
+            snapshot["consumed_fraction"] = float(consumed_fraction)
+            snapshot["consumed_fraction_label"] = consumed_fraction_label
         payload = {
             "record_date": decision.local_time.date().isoformat(),
             "meal_type": decision.meal_type,
