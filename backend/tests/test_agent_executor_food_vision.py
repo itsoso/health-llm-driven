@@ -288,6 +288,141 @@ async def test_contextual_fraction_update_replays_receipt_without_second_write(
     assert capture.record.calories == pytest.approx(198)
 
 
+@pytest.mark.asyncio
+async def test_contextual_meal_update_replays_receipt_without_portion_adjustment(
+    db, tmp_path, monkeypatch
+):
+    executor, _user = _food_photo_executor(db, tmp_path, monkeypatch)
+    capture = executor._capture_contextual_meal_photo(
+        "记录这餐",
+        _food_result(),
+        image_index=0,
+    )
+    assert capture is not None
+    assert capture.record is not None
+    assert executor._turn_contextual_diet_consumed_fraction is None
+
+    async def unexpected_put(*_args, **_kwargs):
+        raise AssertionError("same-turn contextual diet update must not reach the API")
+
+    monkeypatch.setattr(executor, "_api_put", unexpected_put)
+
+    result = await executor._exec_health_manage(
+        "https://health.example.test",
+        {"Authorization": "Bearer test"},
+        {
+            "record_type": "diet",
+            "operation": "update",
+            "record_id": capture.record.id,
+            "data": {"food_items": "模型重复整理的同一餐"},
+        },
+    )
+
+    assert json.loads(result) == {
+        "id": capture.record.id,
+        "record_id": capture.record.id,
+        "resource_type": "diet_record",
+        "operation_id": f"contextual_meal_photo:{capture.record.id}",
+        "status": "recorded",
+        "replayed": True,
+    }
+
+
+@pytest.mark.asyncio
+async def test_contextual_meal_update_never_mutates_a_different_historical_record(
+    db, tmp_path, monkeypatch
+):
+    executor, user = _food_photo_executor(db, tmp_path, monkeypatch)
+    capture = executor._capture_contextual_meal_photo(
+        "记录这餐",
+        _food_result(),
+        image_index=0,
+    )
+    assert capture is not None
+    assert capture.record is not None
+
+    historical = DietRecord(
+        user_id=user.id,
+        record_date=capture.record.record_date,
+        meal_type="breakfast",
+        food_items="历史早餐",
+        calories=500,
+    )
+    db.add(historical)
+    db.commit()
+    db.refresh(historical)
+
+    async def unexpected_put(*_args, **_kwargs):
+        raise AssertionError("contextual meal turn must not update an older record")
+
+    monkeypatch.setattr(executor, "_api_put", unexpected_put)
+
+    result = await executor._exec_health_manage(
+        "https://health.example.test",
+        {"Authorization": "Bearer test"},
+        {
+            "record_type": "diet",
+            "operation": "update",
+            "record_id": historical.id,
+            "data": {"calories": 22},
+        },
+    )
+
+    payload = json.loads(result)
+    assert payload["record_id"] == capture.record.id
+    assert payload["operation_id"] == (
+        f"contextual_meal_photo:{capture.record.id}"
+    )
+    assert payload["replayed"] is True
+    db.refresh(historical)
+    assert historical.calories == pytest.approx(500)
+
+
+def test_contextual_meal_capture_replays_after_executor_restart(
+    db, tmp_path, monkeypatch
+):
+    executor, user = _food_photo_executor(db, tmp_path, monkeypatch)
+    first = executor._capture_contextual_meal_photo(
+        "记录这餐",
+        _food_result(),
+        image_index=0,
+    )
+    assert first is not None
+    assert first.record is not None
+
+    restarted = AgentExecutor(db)
+    restarted._current_user_id = user.id
+    restarted._current_turn_source_message_id = (
+        executor._current_turn_source_message_id
+    )
+    restarted._current_turn_image_urls = list(
+        executor._current_turn_image_urls
+    )
+    restarted._agent_kernel_reference_now = (
+        executor._agent_kernel_reference_now
+    )
+
+    replay = restarted._capture_contextual_meal_photo(
+        "记录这餐",
+        _food_result(),
+        image_index=0,
+    )
+
+    assert replay is not None
+    assert replay.replayed is True
+    assert replay.record is not None
+    assert replay.record.id == first.record.id
+    assert db.query(DietRecord).filter(DietRecord.user_id == user.id).count() == 1
+    assert restarted._turn_contextual_diet_receipts == [{
+        "operation_id": f"contextual_meal_photo:{first.record.id}",
+        "status": "verified",
+        "resource_type": "diet_record",
+        "resource_id": str(first.record.id),
+        "verified": True,
+    }]
+    assert len(restarted._turn_contextual_diet_cards) == 1
+
+
 def test_agent_auto_capture_failure_surfaces_the_recoverable_confirmation_card(
     db, tmp_path, monkeypatch
 ):

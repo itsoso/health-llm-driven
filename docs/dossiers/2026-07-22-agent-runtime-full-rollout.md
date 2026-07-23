@@ -87,6 +87,7 @@ RequirementAdmission:
 - 管理员模拟器已经使用 Release 构建安装并启动；当前仅受 macOS 锁屏阻挡，未绕过账号认证或注入测试 token。
 - 管理员模拟器正常账号登录接口返回 `200` 后仍跳回手机号登录页。生产日志确认首批受保护请求未携带 Bearer Token，触发全局 `401` 清理会话；根因是登录成功后的 React 会话切换与 SecureStore 逐请求读取之间存在竞态。
 - Mobile 认证层现先同步安装进程内 Token，再异步双写 SecureStore 与共享 keychain；请求层优先使用进程内 Token，冷启动恢复时重新灌入，退出时同步清空，并拒绝把 Web Cookie 会话占位值当作原生 Bearer Token。
+- 上下文餐食图片写入现遵循单写入者不变量：结构化视觉结果在回答模型运行前完成唯一一次 owner-scoped 写入；模型随后重复调用 `health_record(diet)` 或 `health_manage(diet/update)` 时只重放该记录的已验证回执，不再发起第二次业务写入。模型误选历史餐次 ID 时同样拒绝修改旧记录并回放本轮记录；同一 source message 在 Executor/进程重建后仍由数据库幂等键重放同一个记录和卡片。
 - 主干 CI `29968072427` 在精确提交 `28c9e04bc765bbdd989c5202e36ff60d6186bbea` 上 `43/43` 任务通过。
 - 同一提交已完成前后端生产部署；后端部署健康度 `60/60`，公网 API、数据库、Redis、Celery 均 healthy。
 - Mobile production OTA 已发布并核验，runtime version `1.3.2`，group `ef03a27a-57bb-4d99-a2ae-b632b5cdd506`，iOS update `019f8c5e-56c8-726a-aeab-c77885edd63a`。
@@ -99,6 +100,9 @@ RequirementAdmission:
 - Mobile 账号、手机号、AuthProvider、登录页面、Token 存储与请求拦截聚焦回归：`45 passed`；TypeScript 与 lint PASS（lint 仅保留既有 warning）。
 - Mobile design token ratchet：PASS，原始色值回到既有基线。
 - 发布锁、部署入口和 Mobile 快速反馈脚本：`30 passed`，包含从仓库外启动发布脚本的路径回归。
+- 上下文餐食单写入回归按 TDD 验证：新增的无份量重复更新和错误历史 ID 更新测试在修复前均准确失败；修复后相关 4 项通过，进程重建重放场景只保留 1 条 `DietRecord` 和 1 份回执/卡片。
+- 受影响的 Agent Executor、回执、上下文餐食与 Runtime 回归：`313 passed, 4 skipped`；API 生命周期用隔离 SQLite 配置验证，未依赖或修改本机生产数据库角色。
+- 零成本 Harness：`invariants 12/12`、`health_agent_core 50/50`，无 regression、无真实模型调用。
 - 所有修改 shell 入口 `bash -n`：PASS。
 - `git diff --check`：PASS。
 - 主干 CI `29968072427`：`43/43` jobs PASS。

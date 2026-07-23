@@ -14472,6 +14472,65 @@ class AgentExecutor:
             )
 
 
+    def _contextual_diet_replay_result(
+        self,
+        *,
+        requested_record_id: Any = None,
+    ) -> str | None:
+        """Return the verified receipt for a meal already saved in this turn.
+
+        Contextual photo capture is the sole writer for its turn.  Models may
+        still emit a redundant create/update call after seeing the structured
+        vision summary, or may select an older record after listing history.
+        Replaying the first write's receipt keeps the turn idempotent and
+        prevents a stale record from being mutated.
+        """
+        contextual_record_id = self._turn_contextual_diet_record_id
+        if contextual_record_id is None:
+            return None
+
+        from app.models.daily_health import DietRecord
+
+        existing = (
+            self.db.query(DietRecord)
+            .filter(
+                DietRecord.id == contextual_record_id,
+                DietRecord.user_id == self._current_user_id,
+            )
+            .first()
+        )
+        if existing is None:
+            return None
+
+        requested = str(requested_record_id or "").strip()
+        if requested and requested != str(existing.id):
+            logger.warning(
+                "[contextual_meal_photo] suppressed stale same-turn diet update "
+                "user=%s contextual_record_id=%s requested_record_id=%s",
+                self._current_user_id,
+                existing.id,
+                requested,
+            )
+        else:
+            logger.info(
+                "[contextual_meal_photo] replayed verified same-turn receipt "
+                "user=%s record_id=%s",
+                self._current_user_id,
+                existing.id,
+            )
+
+        payload = {
+            "id": existing.id,
+            "record_id": existing.id,
+            "resource_type": "diet_record",
+            "operation_id": f"contextual_meal_photo:{existing.id}",
+            "status": "recorded",
+            "replayed": True,
+        }
+        if self._turn_contextual_diet_consumed_fraction is not None:
+            payload["portion_adjustment_applied"] = True
+        return json.dumps(payload, ensure_ascii=False)
+
     async def _exec_health_record(
         self, base: str, headers: dict, args: dict
     ) -> str:
@@ -14522,24 +14581,9 @@ class AgentExecutor:
         # model receives its structured vision summary.  A model retry must
         # receive the same verified record, never create a second meal.
         if rtype == "diet" and self._turn_contextual_diet_record_id is not None:
-            from app.models.daily_health import DietRecord
-
-            existing = (
-                self.db.query(DietRecord)
-                .filter(
-                    DietRecord.id == self._turn_contextual_diet_record_id,
-                    DietRecord.user_id == self._current_user_id,
-                )
-                .first()
-            )
-            if existing is not None:
-                return json.dumps({
-                    "id": existing.id,
-                    "record_id": existing.id,
-                    "resource_type": "diet_record",
-                    "operation_id": f"contextual_meal_photo:{existing.id}",
-                    "status": "recorded",
-                }, ensure_ascii=False)
+            replay = self._contextual_diet_replay_result()
+            if replay is not None:
+                return replay
             return "Error: 本轮图片记录未取得可验证回执，未创建新的饮食记录。"
 
         # Mobile 相机入口是用户已经明确点击“拍照记餐”发起的动作，不再创建
@@ -15333,39 +15377,16 @@ class AgentExecutor:
             record_type == "diet"
             and operation == "update"
             and self._turn_contextual_diet_record_id is not None
-            and self._turn_contextual_diet_consumed_fraction is not None
-            and (
-                record_id in (None, "", False)
-                or str(record_id) == str(self._turn_contextual_diet_record_id)
-            )
         ):
-            from app.models.daily_health import DietRecord
-
-            existing = (
-                self.db.query(DietRecord)
-                .filter(
-                    DietRecord.id == self._turn_contextual_diet_record_id,
-                    DietRecord.user_id == self._current_user_id,
-                )
-                .first()
+            replay = self._contextual_diet_replay_result(
+                requested_record_id=record_id,
             )
-            if existing is not None:
-                logger.info(
-                    "[health_manage] replay contextual diet receipt "
-                    "user=%s record_id=%s portion=%s",
-                    self._current_user_id,
-                    existing.id,
-                    self._turn_contextual_diet_consumed_fraction,
-                )
-                return json.dumps({
-                    "id": existing.id,
-                    "record_id": existing.id,
-                    "resource_type": "diet_record",
-                    "operation_id": f"contextual_meal_photo:{existing.id}",
-                    "status": "recorded",
-                    "replayed": True,
-                    "portion_adjustment_applied": True,
-                }, ensure_ascii=False)
+            if replay is not None:
+                return replay
+            return (
+                "Error: 本轮图片记录未取得可验证回执，"
+                "未执行第二次饮食修改。"
+            )
         # LLM 常传字面 'today'/'昨天'; 端点要真日期, 传 'today' → 422。归一成 ISO 日期,
         # 解析不出则不带日期过滤(列近期), 绝不把相对词当 start_date 发出去。
         target_date = _normalize_relative_date(
