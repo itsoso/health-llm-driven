@@ -19235,6 +19235,11 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AIGCMediaConfirmRequest */
+        AIGCMediaConfirmRequest: {
+            /** Duration Seconds */
+            duration_seconds?: number | null;
+        };
         /**
          * AIInsightListResponse
          * @description AI 洞察列表响应
@@ -50583,7 +50588,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["AIGCMediaConfirmRequest"] | null;
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
