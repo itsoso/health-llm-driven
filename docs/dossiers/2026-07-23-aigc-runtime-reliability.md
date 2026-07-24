@@ -4,8 +4,8 @@
 |---|---|
 | slug | `aigc-runtime-reliability` |
 | 创建日期 | 2026-07-23 |
-| 当前阶段 | S6 已发布，待 G6 真机烟测 |
-| 状态 | deployed |
+| 当前阶段 | S6 已发布，G6 模拟器通过、待真机烟测 |
+| 状态 | deployed_device_smoke_pending |
 | 负责 | Codex |
 | 反馈环 | backend deploy + mobile OTA + device smoke |
 
@@ -77,5 +77,11 @@
   - 数据库备份、231 表恢复演练和加密站外归档通过。
   - 生产健康度：60/60；线上 revision 和 Skills manifest 均核验通过。
   - Mobile production OTA：runtime `1.3.2`，group `28eb6675-b8e1-4c05-b9d2-74f648173b1a`，iOS update `019f8fd5-59e1-7050-8b06-cffdd3368c12`。
-- G6 上线验证：pending
-  - 待真机完成：active 任务切后台恢复、断网恢复、完成推送、播放和微信/小红书分享。
+- G6 上线验证：PARTIAL PASS
+  - 2026-07-23 在 `Reva Runtime QA`（iOS 26.5）Development Client 上加载与生产 OTA 相同的 JS revision。
+  - 前后台切换：回到桌面再进入 App，当前会话与卡片状态正常恢复，未出现异常覆盖层。
+  - 播放：已完成视频可在 Agent 对话内直接播放；点击播放后没有新增消息、确认卡或 AIGC 任务。
+  - 分享：微信和小红书入口均成功准备 3.2 MB 视频文件并调起 iOS 系统分享面板。
+  - 说明：Development Client 验证的是同一份 JS 逻辑，不等同于生产 OTA 二进制验收。
+  - 真机仍阻塞：`suntice`（iOS 26.6）在 Xcode 中为 Offline，无法验证生产 OTA 应用、APNs 完成推送、网络断开/恢复，以及微信/小红书原生目标接收。
+  - **裁决：保持未关闭**。物理 iPhone 在线后执行上述四项，全部通过才能将 G6 改为 PASS。
