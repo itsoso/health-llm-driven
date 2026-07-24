@@ -105,3 +105,5 @@
 
 - Mobile 任务卡、分享与隐私事件：111 passed。
 - Backend AIGC API、服务、策略、确认和任务：87 passed（隔离测试数据库）。
+- production OTA 已从提交 `ea6ff9fff4f80b33c6276feff60a0330fb58ce80` 发布到 runtime `1.3.2`：update group `340e55b5-db1e-4936-a3ec-aa308393477d`，iOS update `019f9310-b05c-7c90-a085-04a270f5a823`。
+- G6 仍保持 PARTIAL：需要在生产 OTA 真机上验证后台停留、断网恢复和完成通知，不能用模拟器证据替代。
