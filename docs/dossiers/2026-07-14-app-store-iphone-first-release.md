@@ -5,7 +5,7 @@
 | slug | `app-store-iphone-first-release` |
 | 创建日期 | 2026-07-14 |
 | 当前阶段 | S7 上线验证 |
-| 状态 | build_236_uploaded_apple_processing_pending_physical_g6 |
+| 状态 | build_236_internal_testflight_pending_physical_g6 |
 | 负责 | Codex |
 | 目标版本 | iPhone App Store RC |
 
@@ -169,5 +169,5 @@ RequirementAdmission:
 - 从干净源码提交 `d1a5e8aa83cf7409728fd72fe5efe89b3e9fda1a` 执行 iOS production 构建；App Version `1.3.2`，Build `236`，runtime `1.3.2`，production channel，App Store distribution。
 - 发布前基础 release-pack、App Store Connect 凭证预检、TypeScript、设计约束和 lint 均通过；Mobile 全量回归为 285 suites / 2103 passed / 1 skipped / 1 snapshot passed。Jest 存在既有异步句柄未退出提示，使用 `--forceExit` 取得明确 exit 0，断言无失败。
 - EAS Build ID `d405e79a-ea2e-4b4a-b14d-de5304a893be` 状态为 `FINISHED`；EAS Submission ID `251e1432-694c-411d-a7c9-e3b88af57f5e` 已成功把二进制上传至 App Store Connect。
-- Apple 已接收 Build 236，当前处于 TestFlight processing；只有 App Store Connect 后续显示该 Build 可用于内部测试，才可判定 TestFlight 可安装。
+- App Store Connect API 回读 Build ID `907487ef-c0a1-42ee-9654-ae02a15e6d82`：`processingState=VALID`、`expired=false`、`internalBuildState=IN_BETA_TESTING`，Build 236 已可供内部 TestFlight 安装；外部状态为 `READY_FOR_BETA_SUBMISSION`，未提交外部 Beta Review。
 - G6 继续 `BLOCKED`：真机验收和同 Build 截图目标从 Build 235 切换为 Build 236；App Privacy 发布确认及受监管医疗器械状态 `No` 仍未完成，禁止据此提交 App Review。
