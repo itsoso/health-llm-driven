@@ -73,12 +73,12 @@
   - 客户端事件白名单拒绝 job ID、prompt、结果 URL 等资源和内容字段。
   - 管理员仅豁免个人限额，全局并发保护仍生效。
 - G5 部署健康：PASS
-  - Backend commit：`1726f81613a62cbdcd2265e1242f0738cf732e81`。
+  - Backend 初始 commit：`1726f81613a62cbdcd2265e1242f0738cf732e81`；当前生产已包含后续确认恢复修复 `3da3fb92abf5282eb3cd24748b5b7404bb3840c7`。
   - 数据库备份、231 表恢复演练和加密站外归档通过。
   - 生产健康度：60/60；线上 revision 和 Skills manifest 均核验通过。
-  - Mobile production OTA：runtime `1.3.2`，group `28eb6675-b8e1-4c05-b9d2-74f648173b1a`，iOS update `019f8fd5-59e1-7050-8b06-cffdd3368c12`。
+  - 当前 Mobile production OTA：runtime `1.3.2`，group `2208d1eb-facc-4d87-a0f7-0e4bf382f193`，iOS update `019f9006-e9a1-7c74-9140-fba1f4b1a3c4`。
 - G6 上线验证：PARTIAL PASS
-  - 2026-07-23 在 `Reva Runtime QA`（iOS 26.5）Development Client 上加载与生产 OTA 相同的 JS revision。
+  - 2026-07-23 在 `Reva Runtime QA`（iOS 26.5）Development Client 上加载当前生产 OTA 对应的 Mobile code revision `3da3fb92abf5282eb3cd24748b5b7404bb3840c7`。
   - 前后台切换：回到桌面再进入 App，当前会话与卡片状态正常恢复，未出现异常覆盖层。
   - 播放：已完成视频可在 Agent 对话内直接播放；点击播放后没有新增消息、确认卡或 AIGC 任务。
   - 分享：微信和小红书入口均成功准备 3.2 MB 视频文件并调起 iOS 系统分享面板。
