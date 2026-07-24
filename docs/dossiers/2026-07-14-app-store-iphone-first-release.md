@@ -5,7 +5,7 @@
 | slug | `app-store-iphone-first-release` |
 | 创建日期 | 2026-07-14 |
 | 当前阶段 | S7 上线验证 |
-| 状态 | app_store_connect_ready_pending_physical_g6 |
+| 状态 | build_235_internal_testflight_pending_physical_g6 |
 | 负责 | Codex |
 | 目标版本 | iPhone App Store RC |
 
@@ -77,7 +77,7 @@ RequirementAdmission:
 - [ ] R4 Agent 核心写入、语音、拍照、分享和渲染回归（自动化与模拟器已过；真机待测）。
 - [x] R5 安全、依赖、可访问性和审核材料 Gate。
 - [x] R6 commit/push、前后端部署、新 EAS production build 与 TestFlight 上传。
-- [ ] R7 在 Build 227 上完成真机 G6 并补齐 App Review 材料。
+- [ ] R7 在 Build 235 上完成真机 G6 并补齐 App Review 材料。
 
 ## Gate Ledger
 
@@ -87,8 +87,8 @@ RequirementAdmission:
 | G2 可行性/安全 | PASS | 已冻结范围与医疗/隐私边界 |
 | G3 测试 | PASS | 当前 `main`=`56875570b` 的 GitHub Actions run `29417247062` 28/28 jobs 通过；Mobile 245 suites / 1731 tests、Web 43 files / 243 tests、TypeScript、Lint、生产构建通过；Harness invariants 12/12、core 50/50、live orchestrator 5/5 通过 |
 | G4 安全 | PASS | 生产包无后台录音/持续定位；账号删除、隐私清单、写入回执 fail-closed 已复核 |
-| G5 部署健康 | PASS | 生产运行提交 `c26ddcebb`，前后端部署健康度 60/60；EAS Build 227 从 `838bfa9bb` 构建完成，Submission `16964993-cfdf-442d-8655-cf9104ca0235` 已被 App Store Connect 接收 |
-| G6 真机验证 | BLOCKED | 必须在同一 TestFlight Build 227 完成真实 iPhone 语音/拍照/微信与小红书分享/写入/删除状态证据 |
+| G5 部署健康 | PASS | 后端生产健康度 60/60；App Store Connect 中 version 1.3.2 Build 235 为 `VALID`、未过期且内部 `IN_BETA_TESTING` |
+| G6 真机验证 | BLOCKED | 必须在同一 TestFlight Build 235 完成真实 iPhone 语音、切 App 恢复、草稿、滚动、拍照、图片/视频播放分享、微信/小红书跳转、写入纠正删除及账号删除证据 |
 
 ## Correction Block
 
@@ -145,3 +145,12 @@ RequirementAdmission:
 - 用 Build 227 运行严格 final-submit Gate，确认现有 `226-ready` 截图 manifest 会因 build 不一致被拒绝。Apple 要求截图准确反映当前核心体验；本项目继续采用更严格的同 Build 证据，不通过改 manifest 绕过，待真机可用后从 Build 227 重新确认或采集截图。
 - App Store Connect 浏览器会话当前返回登录失败，未代替发布负责人登录或提交声明。已上传的 Build 227 保持 `VALID`、绑定 1.3.1 且未 Submit for Review。
 - 当前剩余四项：Build 227 真实 iPhone G6、Build 227 截图证据、App Privacy 发布确认、受监管医疗器械状态 `No`。上述四项未完成前，submission pack 和 Review Notes 必须保持 Draft。
+
+## 2026-07-24 Build 235 Reliability Baseline
+
+- EAS 只读核验显示最新标准 production 构建为 version 1.3.2 Build 235，EAS build ID `d6b5f7de-1208-488d-8799-4b6f8a76b011`，源提交 `371dacc60ba3f218edec4b367ea61472798904a2`。
+- App Store Connect API 回读 Build 235：`VALID`、`expired=false`、内部测试状态 `IN_BETA_TESTING`；外部测试状态为 `READY_FOR_BETA_SUBMISSION`，尚未进入外部 Beta Review。
+- 修复联网状态误判：连接存在但 `isInternetReachable=false` 时显示离线；探测中的 `null` 保持最近可信状态，避免前后台切换时在线/离线闪烁。
+- OTA 应用前新增统一保存闸门。聊天输入框会同步落盘当前文字和图片草稿；保存失败时停止重载并提示稍后重试，禁止以更新成功为由丢失用户输入。
+- 真机证据模板从 12 项扩展到 20 项，并强制记录 app version、production profile、EAS build ID 和 source commit。新增流式 Markdown、外部音频打断、图片保存分享、视频播放不二次生成、写入纠正删除幂等、前台恢复、草稿保留和最新消息定位。
+- 当前仍不可提交审核：Build 235 真机 20 项证据、同 Build 截图复核、App Privacy 发布确认和受监管医疗器械状态 `No` 均未完成。发布材料继续保持 Draft。

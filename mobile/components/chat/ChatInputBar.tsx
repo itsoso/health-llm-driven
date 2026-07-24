@@ -30,6 +30,7 @@ import {
   loadChatDraft,
   persistChatDraft,
 } from '../../services/chatDraftStorage';
+import { registerAppReloadPreparation } from '../../services/appReloadPreparation';
 import {
   revaColors as C,
   revaRadii,
@@ -276,6 +277,16 @@ export default function ChatInputBar({
       }
     };
   }, [draftHydrated, input, pendingImages]);
+
+  React.useEffect(() => registerAppReloadPreparation(async () => {
+    if (!draftHydratedRef.current) return;
+    if (draftPersistTimerRef.current) {
+      clearTimeout(draftPersistTimerRef.current);
+      draftPersistTimerRef.current = null;
+    }
+    const snapshot = draftSnapshotRef.current;
+    await persistChatDraft(snapshot.text, snapshot.images);
+  }), []);
 
   const restoreVoiceTranscriptDraft = useCallback((text: string) => {
     const clean = text.trim();

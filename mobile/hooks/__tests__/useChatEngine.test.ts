@@ -1165,6 +1165,28 @@ describe('useChatEngine', () => {
     });
   });
 
+  it('rejects before acceptance when the connected network cannot reach the internet', async () => {
+    (NetInfo.fetch as jest.Mock).mockResolvedValueOnce({
+      isConnected: true,
+      isInternetReachable: false,
+    });
+    const onAccepted = jest.fn();
+    const { result } = renderHook(() => useChatEngine());
+    let accepted: boolean | undefined;
+
+    await act(async () => {
+      accepted = await result.current.sendMessage('无外网消息', null, { onAccepted } as any);
+    });
+
+    expect(accepted).toBe(false);
+    expect(onAccepted).toHaveBeenCalledWith(false);
+    expect(mockStreamChat).not.toHaveBeenCalled();
+    expect(result.current.activeTurn).toMatchObject({
+      phase: 'failed',
+      errorCode: 'network_unavailable',
+    });
+  });
+
   it('does not accept an interrupted done event without durable persistence evidence', async () => {
     mockStreamChat.mockImplementation(streamInterruptedWithoutPersistence);
     const onAccepted = jest.fn();

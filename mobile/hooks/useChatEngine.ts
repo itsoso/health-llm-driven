@@ -26,6 +26,7 @@ import {
 import { getAuthStorageScope } from '../services/authStorageScope';
 import { normalizeWriteReceipt, type WriteReceipt } from '../services/writeReceipt';
 import type { MedicationSafetyAlert } from '../services/medications';
+import { isNetworkStateUnavailable } from '../utils/networkReachability';
 
 function normalizeImageHost(baseUrl: string): string {
   return String(baseUrl || '').replace(/\/+$/, '').replace(/\/api(?:\/v\d+)?$/, '');
@@ -1047,13 +1048,13 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       label: '正在提交…',
     });
 
-    let isConnected: boolean | null = null;
+    let networkUnavailable = false;
     try {
-      isConnected = (await NetInfo.fetch()).isConnected;
+      networkUnavailable = isNetworkStateUnavailable(await NetInfo.fetch());
     } catch {
       if (__DEV__) console.warn('[chat] network status probe failed; attempting request');
     }
-    if (isConnected === false) {
+    if (networkUnavailable) {
       const offlineUserMessage: UIMessage = {
         id: sendOpts?.__localUserMessageId ?? reusableUserMessage?.id ?? nextId(),
         role: 'user',

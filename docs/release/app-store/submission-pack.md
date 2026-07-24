@@ -100,7 +100,7 @@ python3 scripts/check_app_store_release_pack.py \
   --screenshot-dir design/screenshots/app-store/<build-id>-ready
 ```
 
-Create the external evidence file from `docs/release/app-store/real-device-acceptance.template.json`. It must refer to the exact TestFlight build, identify the tester, and mark every physical-iPhone check `true`, including demo login, briefing, text fallback after denied permissions, voice, photo, sharing, confirmed write, privacy and deletion paths. Do not commit tester evidence containing device or account details.
+Create the external evidence file from `docs/release/app-store/real-device-acceptance.template.json`. It must refer to the exact TestFlight build and include the app version, production EAS build ID, source commit, device, iOS version and tester. Mark every physical-iPhone check `true`, including demo login, streaming Markdown, permission-denied text fallback, both voice modes, external-audio interruption, photo persistence, image/video playback and sharing, write/correct/delete idempotency, foreground recovery, draft preservation, latest-message scrolling, privacy and deletion paths. Do not commit tester evidence containing device or account details.
 
 ## Privacy Nutrition Label
 
@@ -118,7 +118,7 @@ Official requirement: https://developer.apple.com/help/app-store-connect/manage-
 
 ## Screenshot Set
 
-Build 226 current App Store Connect set (uploaded and API-verified on 2026-07-15):
+Build 226 historical App Store Connect set (uploaded and API-verified on 2026-07-15):
 
 1. Agent home and today's priority.
 2. Expanded today action and decision basis.
@@ -127,6 +127,14 @@ Build 226 current App Store Connect set (uploaded and API-verified on 2026-07-15
 5. Health archive import.
 
 The uploaded set uses the demo account, contains no private user health data, and targets `APP_IPHONE_67` at 1290 x 2796. The settings screenshot containing the demo login identifier and the privacy-policy screenshot were validated locally but intentionally excluded from marketing assets.
+
+The current internal TestFlight candidate is version 1.3.2 Build 235, EAS build
+`d6b5f7de-1208-488d-8799-4b6f8a76b011`, source commit
+`371dacc60ba3f218edec4b367ea61472798904a2`. App Store Connect reports the
+build as `VALID`, not expired and `IN_BETA_TESTING` for internal testers. The
+Build 226 screenshots are stale evidence and cannot satisfy the final gate for
+Build 235; capture or explicitly re-verify the required screenshot set against
+the exact Build 235 UI before submission.
 
 Use `docs/release/app-store/screenshot-runbook.md`. Required first pass:
 

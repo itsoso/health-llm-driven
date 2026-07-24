@@ -79,6 +79,42 @@ def _write_manifest(
     )
 
 
+def _real_device_evidence(*, build_id: str = "235") -> dict:
+    return {
+        "build_id": build_id,
+        "app_version": "1.3.2",
+        "build_profile": "production",
+        "eas_build_id": "d6b5f7de-1208-488d-8799-4b6f8a76b011",
+        "git_commit_hash": "371dacc60ba3f218edec4b367ea61472798904a2",
+        "device_model": "iPhone 15 Pro",
+        "ios_version": "18.5",
+        "tested_at": "2026-07-23T12:00:00Z",
+        "tester": "release-owner",
+        "checks": {
+            "demo_account_login": True,
+            "today_briefing_expand_collapse": True,
+            "agent_text_conversation": True,
+            "streaming_markdown_rendering": True,
+            "realtime_dictation_toggle": True,
+            "hold_to_talk_send_cancel_text": True,
+            "voice_interrupts_external_audio": True,
+            "camera_photo_persistence": True,
+            "image_save_and_share": True,
+            "wechat_share_handoff": True,
+            "xiaohongshu_share_handoff": True,
+            "generated_video_playback_no_regeneration": True,
+            "confirmed_database_write": True,
+            "write_correction_delete_idempotency": True,
+            "foreground_stream_recovery": True,
+            "draft_preserved_across_background": True,
+            "conversation_opens_at_latest_message": True,
+            "personal_center_privacy_policy": True,
+            "optional_permission_denial_text_chat": True,
+            "account_deletion_status": True,
+        },
+    }
+
+
 def test_app_store_release_pack_checker_passes():
     root = Path(__file__).resolve().parents[2]
 
@@ -176,32 +212,7 @@ def test_app_store_release_pack_final_submit_rejects_screenshots_from_another_bu
     _write_manifest(screenshot_dir, privacy_status="demo", build_id="225")
 
     evidence = tmp_path / "real-device.json"
-    evidence.write_text(
-        json.dumps(
-            {
-                "build_id": "226",
-                "device_model": "iPhone 15 Pro",
-                "ios_version": "18.5",
-                "tested_at": "2026-07-14T12:00:00Z",
-                "tester": "release-owner",
-                "checks": {
-                    "demo_account_login": True,
-                    "today_briefing_expand_collapse": True,
-                    "agent_text_conversation": True,
-                    "realtime_dictation_toggle": True,
-                    "hold_to_talk_send_cancel_text": True,
-                    "camera_photo_persistence": True,
-                    "wechat_share_handoff": True,
-                    "xiaohongshu_share_handoff": True,
-                    "confirmed_database_write": True,
-                    "personal_center_privacy_policy": True,
-                    "optional_permission_denial_text_chat": True,
-                    "account_deletion_status": True,
-                },
-            }
-        ),
-        encoding="utf-8",
-    )
+    evidence.write_text(json.dumps(_real_device_evidence(build_id="226")), encoding="utf-8")
 
     result = subprocess.run(
         [
@@ -238,33 +249,9 @@ def test_app_store_release_pack_final_submit_rejects_screenshots_from_another_bu
 
 def test_real_device_evidence_requires_current_build_and_all_core_flows(tmp_path: Path):
     evidence = tmp_path / "real-device.json"
-    evidence.write_text(
-        json.dumps(
-            {
-                "build_id": "226",
-                "device_model": "iPhone 15 Pro",
-                "ios_version": "18.5",
-                "tested_at": "2026-07-14T12:00:00Z",
-                "tester": "release-owner",
-                "checks": {
-                    "demo_account_login": True,
-                    "today_briefing_expand_collapse": True,
-                    "agent_text_conversation": True,
-                    "realtime_dictation_toggle": True,
-                    "hold_to_talk_send_cancel_text": True,
-                    "camera_photo_persistence": True,
-                    "wechat_share_handoff": True,
-                    "xiaohongshu_share_handoff": False,
-                    "confirmed_database_write": True,
-                    "personal_center_privacy_policy": True,
-                    "optional_permission_denial_text_chat": True,
-                    "account_deletion_status": True,
-                },
-            },
-            ensure_ascii=False,
-        ),
-        encoding="utf-8",
-    )
+    payload = _real_device_evidence(build_id="226")
+    payload["checks"]["xiaohongshu_share_handoff"] = False
+    evidence.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
 
     failures = validate_real_device_evidence(evidence, expected_build_id="226")
 
@@ -274,34 +261,33 @@ def test_real_device_evidence_requires_current_build_and_all_core_flows(tmp_path
 def test_real_device_evidence_accepts_complete_matching_build(tmp_path: Path):
     evidence = tmp_path / "real-device.json"
     evidence.write_text(
-        json.dumps(
-            {
-                "build_id": "226",
-                "device_model": "iPhone 15 Pro",
-                "ios_version": "18.5",
-                "tested_at": "2026-07-14T12:00:00Z",
-                "tester": "release-owner",
-                "checks": {
-                    "demo_account_login": True,
-                    "today_briefing_expand_collapse": True,
-                    "agent_text_conversation": True,
-                    "realtime_dictation_toggle": True,
-                    "hold_to_talk_send_cancel_text": True,
-                    "camera_photo_persistence": True,
-                    "wechat_share_handoff": True,
-                    "xiaohongshu_share_handoff": True,
-                    "confirmed_database_write": True,
-                    "personal_center_privacy_policy": True,
-                    "optional_permission_denial_text_chat": True,
-                    "account_deletion_status": True,
-                },
-            },
-            ensure_ascii=False,
-        ),
+        json.dumps(_real_device_evidence(build_id="226"), ensure_ascii=False),
         encoding="utf-8",
     )
 
     assert validate_real_device_evidence(evidence, expected_build_id="226") == []
+
+
+def test_real_device_evidence_rejects_untraceable_build_metadata(tmp_path: Path):
+    evidence = tmp_path / "real-device.json"
+    payload = _real_device_evidence()
+    payload.update(
+        {
+            "app_version": "",
+            "build_profile": "watch-production",
+            "eas_build_id": "not-an-eas-id",
+            "git_commit_hash": "not-a-commit",
+        }
+    )
+    evidence.write_text(json.dumps(payload), encoding="utf-8")
+
+    failures = validate_real_device_evidence(evidence, expected_build_id="235")
+    joined = "\n".join(failures)
+
+    assert "missing app_version" in joined
+    assert "build_profile must be production" in joined
+    assert "invalid eas_build_id" in joined
+    assert "invalid git_commit_hash" in joined
 
 
 def test_real_device_evidence_requires_named_tester_and_reviewer_paths(tmp_path: Path):

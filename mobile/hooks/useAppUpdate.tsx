@@ -15,6 +15,7 @@ import {
   getAppUpdateTelemetryContext,
   type AppUpdateDownloadResult,
 } from '../services/appUpdate';
+import { prepareForAppReload } from '../services/appReloadPreparation';
 import { durationBucket, emitClientEvent } from '../services/clientEvents';
 import {
   getReleasePolicyRolloutBucket,
@@ -168,6 +169,7 @@ export function AppUpdateProvider({
     const startedAt = now();
     emitUpdateEvent('app_update_phase', { phase: 'applying' });
     try {
+      await prepareForAppReload();
       await applyDownloadedUpdate();
       emitUpdateEvent('app_update_terminal', {
         phase: 'applied',
