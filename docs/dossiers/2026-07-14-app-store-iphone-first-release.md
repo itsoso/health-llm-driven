@@ -155,3 +155,11 @@ RequirementAdmission:
 - 真机证据模板从 12 项扩展到 20 项，并强制记录 app version、production profile、EAS build ID 和 source commit。新增流式 Markdown、外部音频打断、图片保存分享、视频播放不二次生成、写入纠正删除幂等、前台恢复、草稿保留和最新消息定位。
 - production OTA 已从提交 `a9bb9b8752d3313722c8d2deca70220e12b70b6f` 发布到 runtime `1.3.2`：update group `c96503a6-91f3-467c-9051-a9e18bd8b2a6`，iOS update `019f92f8-6957-7a4c-a8fe-71689563d8c6`。
 - 当前仍不可提交审核：Build 235 真机 20 项证据、同 Build 截图复核、App Privacy 发布确认和受监管医疗器械状态 `No` 均未完成。发布材料继续保持 Draft。
+
+## 2026-07-24 Final Gate Recheck
+
+- 当前代码基线为 `main=670984598`，工作区干净；基础 release-pack 与 iOS submission preflight 均通过。
+- 在加载发布机密钥并允许联网后，严格 final-submit gate 不再报告 App Store Connect 凭证、Review 演示账号或联系人缺失，证明这些发布机配置和演示登录链路可用。
+- 历史 `226-ready` 截图集本身通过尺寸、隐私和素材完整性检查，但严格门禁按预期拒绝其用于 Build 235：manifest 中 `build_id=226`，与目标 `235` 不一致。不得通过改写 manifest 绕过同 Build 复核。
+- CoreDevice 仍能识别已配对的 iPhone 17 Pro Max `suntice`，但状态为 `unavailable`；因此无法执行 Build 235 的 20 项物理 iPhone 验收，模拟器不得代替外部音频打断、真实语音、相机/相册、微信/小红书跳转和前后台恢复证据。
+- 严格门禁的真实剩余阻断仍为四项：Build 235 真机验收文件、Build 235 截图证据、App Privacy 已发布确认、受监管医疗器械状态 `No`。submission pack 与 Review Notes 的 Draft 标记是上述阻断的保护结果，不应提前移除。
