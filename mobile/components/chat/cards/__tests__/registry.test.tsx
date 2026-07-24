@@ -375,9 +375,10 @@ describe('renderCard 安全降级', () => {
   });
 
   it('lets the user choose a disclosed video duration before the one-time confirmation', async () => {
-    (api.get as jest.Mock).mockResolvedValueOnce({
-      data: { id: 'aigc_confirm_duration', status: 'pending', job: null },
-    });
+    let resolveConfirmation: ((value: unknown) => void) | undefined;
+    (api.get as jest.Mock).mockImplementationOnce(() => new Promise((resolve) => {
+      resolveConfirmation = resolve;
+    }));
     (api.post as jest.Mock).mockResolvedValueOnce({
       data: {
         id: 'aigc_duration_job',
@@ -385,7 +386,7 @@ describe('renderCard 安全降级', () => {
         status: 'queued',
         progress: 10,
         spec: {
-          duration_seconds: 15,
+          duration_seconds: 8,
           ratio: '9:16',
           resolution: '720P',
           generates_audio: true,
@@ -400,7 +401,7 @@ describe('renderCard 安全降级', () => {
         kind: 'text_to_video',
         status: 'pending',
         duration_seconds: 5,
-        duration_options: [5, 10, 15],
+        duration_options: [5, 8, 15],
         ratio: '9:16',
         resolution: '720P',
         provider: '百炼 HappyHorse',
@@ -412,14 +413,84 @@ describe('renderCard 安全降级', () => {
     expect(screen.getByText('内容预览')).toBeTruthy();
     expect(screen.getByText('围绕活动、饮食和睡眠生成健康行动短视频')).toBeTruthy();
     expect(screen.getByText('确认并生成')).toBeTruthy();
-    fireEvent.press(screen.getByLabelText('选择15秒'));
-    fireEvent.press(screen.getByLabelText('确认生成15秒短视频'));
+    expect(screen.getByText('5 秒')).toBeTruthy();
+    expect(screen.getByText('8 秒')).toBeTruthy();
+    expect(screen.getByText('15 秒')).toBeTruthy();
+    expect(screen.queryByText('10 秒')).toBeNull();
+    fireEvent.press(screen.getByLabelText('选择8秒'));
+    await act(async () => {
+      resolveConfirmation?.({
+        data: {
+          id: 'aigc_confirm_duration',
+          status: 'pending',
+          job: null,
+          spec: {
+            duration_seconds: 5,
+            duration_options: [5, 8, 15],
+          },
+        },
+      });
+      await Promise.resolve();
+    });
+    fireEvent.press(screen.getByLabelText('确认生成8秒短视频'));
 
     await waitFor(() => expect(api.post).toHaveBeenCalledWith(
       '/aigc/media/confirmations/aigc_confirm_duration/confirm',
-      { duration_seconds: 15 },
+      { duration_seconds: 8 },
     ));
-    expect(await screen.findByText('15秒 · 9:16 · 720P · 含音频')).toBeTruthy();
+    expect(await screen.findByText('8秒 · 9:16 · 720P · 含音频')).toBeTruthy();
+    screen.unmount();
+    (api.post as jest.Mock).mockClear();
+  });
+
+  it('migrates a historical AIGC duration card to the current safe choices', async () => {
+    (api.get as jest.Mock).mockResolvedValueOnce({
+      data: {
+        id: 'aigc_confirm_legacy_duration',
+        status: 'pending',
+        job: null,
+        spec: {
+          duration_seconds: 10,
+          duration_options: [5, 10, 15],
+        },
+      },
+    });
+    (api.post as jest.Mock).mockResolvedValueOnce({
+      data: {
+        id: 'aigc_legacy_duration_job',
+        kind: 'text_to_video',
+        status: 'queued',
+        progress: 10,
+        spec: {
+          duration_seconds: 5,
+          ratio: '9:16',
+          resolution: '720P',
+          generates_audio: true,
+        },
+        result: { media_type: null, url: null },
+      },
+    });
+    const screen = render(renderCard({
+      type: 'aigc_media_confirmation',
+      data: {
+        confirmation_id: 'aigc_confirm_legacy_duration',
+        kind: 'text_to_video',
+        status: 'pending',
+        duration_seconds: 10,
+        duration_options: [5, 10, 15],
+      },
+    })!);
+
+    expect(screen.getByText('5 秒')).toBeTruthy();
+    expect(screen.getByText('8 秒')).toBeTruthy();
+    expect(screen.getByText('15 秒')).toBeTruthy();
+    expect(screen.queryByText('10 秒')).toBeNull();
+    fireEvent.press(screen.getByLabelText('确认生成5秒短视频'));
+
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith(
+      '/aigc/media/confirmations/aigc_confirm_legacy_duration/confirm',
+      { duration_seconds: 5 },
+    ));
     screen.unmount();
     (api.post as jest.Mock).mockClear();
   });
@@ -445,7 +516,7 @@ describe('renderCard 安全降级', () => {
         kind: 'text_to_video',
         status: 'pending',
         duration_seconds: 5,
-        duration_options: [5, 10, 15],
+        duration_options: [5, 8, 15],
       },
     })!);
 

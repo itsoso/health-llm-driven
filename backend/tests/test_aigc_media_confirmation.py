@@ -122,8 +122,37 @@ async def test_video_confirmation_replay_returns_the_same_job_without_second_pro
 
 
 @pytest.mark.asyncio
-async def test_video_confirmation_freezes_a_safe_duration_override_before_dispatch(
+async def test_video_confirmation_projection_exposes_current_duration_choices(
     db, auth_user_and_headers,
+):
+    from app.services.aigc_media_job_service import AIGCMediaJobRequest, AIGCMediaJobService
+
+    user, _ = auth_user_and_headers
+    service = AIGCMediaJobService(db, provider_factory=_Provider)
+    confirmation = await service.issue_confirmation(
+        user_id=user.id,
+        request=AIGCMediaJobRequest(
+            kind="text_to_video",
+            purpose="wellness_story",
+            prompt="把今天的健康活动整理成一段竖屏短视频",
+            duration_seconds=5,
+            ratio="9:16",
+        ),
+    )
+
+    projection = service.confirmation_projection(
+        user_id=user.id,
+        confirmation_id=confirmation.id,
+    )
+
+    assert projection["spec"]["duration_seconds"] == 5
+    assert projection["spec"]["duration_options"] == [5, 8, 15]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("duration_seconds", [8, 15])
+async def test_video_confirmation_freezes_a_safe_duration_override_before_dispatch(
+    db, auth_user_and_headers, duration_seconds,
 ):
     from app.services.aigc_media_job_service import AIGCMediaJobRequest, AIGCMediaJobService
     from app.services.aigc_media_service import AIGCTask
@@ -135,7 +164,10 @@ async def test_video_confirmation_freezes_a_safe_duration_override_before_dispat
 
         async def create_video_task(self, **kwargs):
             self.video_requests.append(kwargs)
-            return AIGCTask(task_id="happyhorse-video-15s", status="PENDING")
+            return AIGCTask(
+                task_id=f"happyhorse-video-{duration_seconds}s",
+                status="PENDING",
+            )
 
     user, _ = auth_user_and_headers
     provider = VideoProvider()
@@ -154,7 +186,7 @@ async def test_video_confirmation_freezes_a_safe_duration_override_before_dispat
     job = await service.confirm_and_dispatch(
         user_id=user.id,
         confirmation_id=confirmation.id,
-        duration_seconds=15,
+        duration_seconds=duration_seconds,
     )
     replayed = await service.confirm_and_dispatch(
         user_id=user.id,
@@ -167,13 +199,13 @@ async def test_video_confirmation_freezes_a_safe_duration_override_before_dispat
         "kind": "text_to_video",
         "prompt": "把今天的健康活动整理成一段竖屏短视频",
         "source_url": None,
-        "duration_seconds": 15,
+        "duration_seconds": duration_seconds,
         "ratio": "9:16",
         "resolution": "720P",
         "model": "happyhorse-1.1-t2v",
     }]
     assert job.result_metadata["request"] == {
-        "duration_seconds": 15,
+        "duration_seconds": duration_seconds,
         "ratio": "9:16",
         "resolution": "720P",
         "generates_audio": True,

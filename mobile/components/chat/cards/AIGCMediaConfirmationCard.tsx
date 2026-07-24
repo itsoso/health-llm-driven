@@ -15,6 +15,8 @@ import {
 
 const CONFIRMATION_RECONCILE_INTERVAL_MS = 1500;
 const CONFIRMATION_RECONCILE_ATTEMPTS = 8;
+const DEFAULT_VIDEO_DURATION_OPTIONS = [5, 8, 15];
+const LEGACY_VIDEO_DURATION_OPTIONS = [5, 10, 15];
 
 export interface AIGCMediaConfirmationCardData {
   confirmation_id: string;
@@ -62,20 +64,43 @@ function responseDetail(error: unknown): string | null {
   return typeof detail === 'string' && detail.trim() ? detail.trim() : null;
 }
 
+function normalizedDurationOptions(value: unknown): number[] {
+  const options = Array.isArray(value)
+    ? [...new Set(
+      value
+        .map((item) => Number(item))
+        .filter((item) => Number.isInteger(item) && item >= 3 && item <= 15),
+    )]
+    : [];
+  const isLegacySet = options.length === LEGACY_VIDEO_DURATION_OPTIONS.length
+    && LEGACY_VIDEO_DURATION_OPTIONS.every((item, index) => options[index] === item);
+  return options.length > 0 && !isLegacySet
+    ? options
+    : [...DEFAULT_VIDEO_DURATION_OPTIONS];
+}
+
+function normalizedSelectedDuration(value: unknown, options: number[]): number {
+  const duration = Number(value);
+  return Number.isInteger(duration) && options.includes(duration)
+    ? duration
+    : (options[0] || DEFAULT_VIDEO_DURATION_OPTIONS[0]);
+}
+
 export function AIGCMediaConfirmationCardView(data: AIGCMediaConfirmationCardData) {
+  const initialDurationOptions = normalizedDurationOptions(data.duration_options);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [job, setJob] = useState<AIGCMediaJobCardData | null>(null);
   const [status, setStatus] = useState(confirmationStatus(data.status));
   const [canConfirm, setCanConfirm] = useState(true);
-  const [selectedDuration, setSelectedDuration] = useState(
-    Number(data.duration_seconds) || 5,
-  );
+  const [durationOptions, setDurationOptions] = useState(initialDurationOptions);
+  const [selectedDuration, setSelectedDuration] = useState(() => (
+    normalizedSelectedDuration(data.duration_seconds, initialDurationOptions)
+  ));
   const submittingRef = useRef(false);
+  const durationSelectedByUserRef = useRef(false);
   const confirmationID = String(data.confirmation_id || '').trim();
   const isVideo = data.kind === 'text_to_video' || data.kind === 'image_to_video';
-  const durationOptions = (data.duration_options || [5, 10, 15])
-    .filter((value) => Number.isInteger(value) && value >= 3 && value <= 15);
 
   useEffect(() => {
     if (!confirmationID) return;
@@ -90,9 +115,19 @@ export function AIGCMediaConfirmationCardView(data: AIGCMediaConfirmationCardDat
             setCanConfirm(response.data.can_confirm);
           }
         }
-        const duration = Number(response?.data?.spec?.duration_seconds);
-        if (active && Number.isInteger(duration) && duration >= 3 && duration <= 15) {
-          setSelectedDuration(duration);
+        if (active && isVideo) {
+          const nextOptions = normalizedDurationOptions(
+            response?.data?.spec?.duration_options,
+          );
+          setDurationOptions(nextOptions);
+          setSelectedDuration((current) => (
+            durationSelectedByUserRef.current && nextOptions.includes(current)
+              ? current
+              : normalizedSelectedDuration(
+                response?.data?.spec?.duration_seconds,
+                nextOptions,
+              )
+          ));
         }
       })
       .catch(() => {
@@ -100,7 +135,7 @@ export function AIGCMediaConfirmationCardView(data: AIGCMediaConfirmationCardDat
         // after the next successful owner-scoped status refresh.
       });
     return () => { active = false; };
-  }, [confirmationID]);
+  }, [confirmationID, isVideo]);
 
   useEffect(() => {
     if (!confirmationID || status !== 'dispatching' || job) return;
@@ -230,7 +265,10 @@ export function AIGCMediaConfirmationCardView(data: AIGCMediaConfirmationCardDat
               return (
                 <Pressable
                   key={duration}
-                  onPress={() => setSelectedDuration(duration)}
+                  onPress={() => {
+                    durationSelectedByUserRef.current = true;
+                    setSelectedDuration(duration);
+                  }}
                   accessibilityRole="button"
                   accessibilityLabel={`选择${duration}秒`}
                   accessibilityState={{ selected }}

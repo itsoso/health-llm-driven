@@ -11,7 +11,7 @@ def test_happyhorse_video_capability_exposes_safe_product_choices():
 
     assert capability.minimum_duration_seconds == 3
     assert capability.maximum_duration_seconds == 15
-    assert capability.selectable_duration_seconds == (5, 10, 15)
+    assert capability.selectable_duration_seconds == (5, 8, 15)
     assert capability.default_resolution == "720P"
     assert capability.supported_resolutions == ("720P", "1080P")
     assert capability.supports_ratio is True

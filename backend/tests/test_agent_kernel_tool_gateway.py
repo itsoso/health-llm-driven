@@ -343,7 +343,7 @@ async def test_agent_media_tool_uses_current_image_and_emits_manual_confirmation
             "content_summary": "围绕补水生成健康行动短视频",
             "content_topics": ["补水"],
             "duration_seconds": 5,
-            "duration_options": [5, 10, 15],
+            "duration_options": [5, 8, 15],
             "ratio": "9:16",
             "resolution": "720P",
             "generates_audio": True,

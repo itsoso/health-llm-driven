@@ -30,7 +30,7 @@ def video_capability_for(*, model: str, kind: VideoKind) -> VideoModelCapability
         # its documented 3-15 second native range.
         minimum_duration_seconds=3 if is_happyhorse else 2,
         maximum_duration_seconds=15,
-        selectable_duration_seconds=(5, 10, 15),
+        selectable_duration_seconds=(5, 8, 15),
         default_resolution="720P",
         supported_resolutions=VIDEO_RESOLUTIONS,
         # HappyHorse I2V preserves the first frame's aspect ratio.
