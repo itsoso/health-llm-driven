@@ -48,6 +48,51 @@ def test_agent_send_passes_one_canonical_identity_to_executor(
     assert body["attempt_id"] == captured["attempt_id"]
 
 
+def test_agent_send_propagates_paused_runtime_write_block_to_executor(
+    client, db, auth_user_and_headers, monkeypatch
+):
+    from app.services.agent_runtime_rollout import AgentRuntimeRolloutService
+
+    user, headers = auth_user_and_headers
+    captured = {}
+
+    async def fake_run_stream(self, **kwargs):
+        captured.update(kwargs)
+        yield {"event": "token", "data": {"content": "read-only answer"}}
+        yield {
+            "event": "done",
+            "data": {
+                "conversation_id": None,
+                "message_id": None,
+                "completion_status": "complete",
+            },
+        }
+
+    monkeypatch.setattr(settings, "agent_runtime_mode", "enforce")
+    AgentRuntimeRolloutService(db).pause(
+        actor_kind="admin",
+        reason_code="manual_pause",
+        actor_user_id=user.id,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_executor.AgentExecutor.run_stream",
+        fake_run_stream,
+    )
+
+    response = client.post(
+        "/api/v1/agent/send",
+        headers=headers,
+        json={
+            "message": "查询今天饮水",
+            "client_turn_id": "runtime-send-paused-control",
+        },
+    )
+
+    assert response.status_code == 200
+    assert captured["runtime_managed"] is False
+    assert captured["runtime_write_block_reason"] == "circuit_paused"
+
+
 def test_off_mode_ignores_invalid_runtime_deadline_configuration(
     db, auth_user_and_headers, monkeypatch
 ):
@@ -671,6 +716,55 @@ def test_agent_stream_passes_canonical_identity_to_executor(
     assert captured["attempt_id"].startswith("attempt_")
     assert done["data"]["run_id"] == captured["run_id"]
     assert done["data"]["attempt_id"] == captured["attempt_id"]
+
+
+def test_agent_stream_propagates_paused_runtime_write_block_to_executor(
+    client, db, auth_user_and_headers, monkeypatch
+):
+    from app.services.agent_runtime_rollout import AgentRuntimeRolloutService
+
+    user, headers = auth_user_and_headers
+    captured = {}
+
+    async def fake_run_stream(self, **kwargs):
+        captured.update(kwargs)
+        yield {"event": "token", "data": {"content": "read-only answer"}}
+        yield {
+            "event": "done",
+            "data": {
+                "conversation_id": None,
+                "message_id": None,
+                "completion_status": "complete",
+            },
+        }
+
+    monkeypatch.setattr(settings, "agent_runtime_mode", "enforce")
+    AgentRuntimeRolloutService(db).pause(
+        actor_kind="admin",
+        reason_code="manual_pause",
+        actor_user_id=user.id,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_executor.AgentExecutor.run_stream",
+        fake_run_stream,
+    )
+    monkeypatch.setattr(
+        "app.database.SessionLocal",
+        sessionmaker(bind=db.get_bind(), autocommit=False, autoflush=False),
+    )
+
+    response = client.post(
+        "/api/v1/agent/stream",
+        headers=headers,
+        json={
+            "message": "查询今天饮水",
+            "client_turn_id": "runtime-stream-paused-control",
+        },
+    )
+
+    assert response.status_code == 200
+    assert captured["runtime_managed"] is False
+    assert captured["runtime_write_block_reason"] == "circuit_paused"
 
 
 def test_agent_stream_genui_shortcut_gets_runtime_identity(

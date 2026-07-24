@@ -496,6 +496,98 @@ def test_rollout_snapshot_is_aggregate_only(
     assert "private" not in serialized
 
 
+def test_rollout_snapshot_reports_content_free_runtime_integrity(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+):
+    from app.models.agent_conversation import AgentConversation
+    from app.services.agent_runtime_rollout import AgentRuntimeRolloutService
+
+    user, _headers = auth_user_and_headers
+    now = datetime.now(UTC)
+    _configure(monkeypatch, mode="canary", percent=100)
+    complete = _runtime_row(
+        db,
+        user_id=user.id,
+        suffix="integrity-complete",
+        status="succeeded",
+        now=now,
+    )
+    complete.runtime_contract_version = "agent-runtime-v1"
+    complete.tool_registry_digest = "a" * 64
+    complete.capability_policy_digest = "b" * 64
+
+    conversation = AgentConversation(
+        user_id=user.id,
+        title="content must not leak",
+        session_key="runtime-integrity-gap",
+    )
+    db.add(conversation)
+    db.flush()
+    unlinked = _runtime_row(
+        db,
+        user_id=user.id,
+        suffix="integrity-unlinked",
+        status="succeeded",
+        now=now,
+    )
+    unlinked.conversation_id = conversation.id
+    unlinked.runtime_contract_version = "agent-runtime-v1"
+    unlinked.tool_registry_digest = "c" * 64
+    unlinked.capability_policy_digest = "d" * 64
+
+    missing_attempt = _runtime_row(
+        db,
+        user_id=user.id,
+        suffix="integrity-missing-attempt",
+        status="failed",
+        now=now,
+    )
+    missing_attempt.current_attempt_id = "attempt-does-not-exist"
+
+    overdue = _runtime_row(
+        db,
+        user_id=user.id,
+        suffix="integrity-overdue",
+        status="running",
+        now=now,
+    )
+    overdue.deadline_at = now - timedelta(seconds=1)
+
+    waiting = _runtime_row(
+        db,
+        user_id=user.id,
+        suffix="integrity-waiting",
+        status="failed",
+        now=now,
+    )
+    waiting.status = "waiting_for_user"
+    waiting.finished_at = None
+    waiting.created_at = now - timedelta(hours=25)
+    db.commit()
+
+    payload = AgentRuntimeRolloutService(db).snapshot(now=now).to_dict()
+    integrity = payload["integrity"]
+
+    assert integrity == {
+        "window_runs": 4,
+        "contract_snapshot_runs": 2,
+        "contract_snapshot_coverage_percent": 50,
+        "contract_versions": {"agent-runtime-v1": 2},
+        "settled_message_linkage_gaps": 1,
+        "missing_current_attempt_runs": 1,
+        "active_over_deadline_runs": 1,
+        "waiting_over_24h_runs": 1,
+    }
+    serialized = repr(integrity)
+    assert "user_id" not in serialized
+    assert "run_id" not in serialized
+    assert "content must not leak" not in serialized
+    assert "prompt" not in serialized
+    assert "response" not in serialized
+
+
 def test_deadline_exceeded_is_not_counted_as_system_failure(
     db,
     auth_user_and_headers,

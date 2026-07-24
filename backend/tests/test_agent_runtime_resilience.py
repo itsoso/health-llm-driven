@@ -761,6 +761,16 @@ def test_recovery_task_settles_an_expired_run(
                 "status_counts": {"failed": 1},
                 "tool_status_counts": {},
                 "duration_ms": {"p50": 120000, "p95": 120000},
+                "integrity": {
+                    "window_runs": 0,
+                    "contract_snapshot_runs": 0,
+                    "contract_snapshot_coverage_percent": 100,
+                    "contract_versions": {},
+                    "settled_message_linkage_gaps": 0,
+                    "missing_current_attempt_runs": 0,
+                    "active_over_deadline_runs": 0,
+                    "waiting_over_24h_runs": 0,
+                },
             },
         },
     }

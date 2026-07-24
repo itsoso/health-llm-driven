@@ -137,6 +137,9 @@ async def telegram_webhook(
             "可以发**语音**, 我会自动转写.",
         )
         return {"ok": True, "ignored": "command"}
+    if message_id is None or not str(message_id).strip():
+        logger.warning("[telegram-webhook] missing provider message_id")
+        return {"ok": False, "reason": "missing_message_id"}
 
     # 主路径: 自动意图分流
     from app.services.telegram_inbound import handle_inbound_text
@@ -146,6 +149,7 @@ async def telegram_webhook(
             int(advisor_user_id),
             text,
             source_message_id=str(message_id) if message_id is not None else None,
+            source_conversation_id=chat_id,
         )
     except Exception as e:
         logger.error(f"[telegram-webhook] handle_inbound_text 失败: {e}", exc_info=True)

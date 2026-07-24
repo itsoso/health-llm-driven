@@ -137,6 +137,164 @@ def test_apply_managed_migrations_runs_matching_dialect_once(tmp_path: Path):
     assert count == 1
 
 
+def test_agent_runtime_contract_snapshot_migration_extends_existing_run_ledger(
+    tmp_path: Path,
+):
+    migrations_dir = Path(__file__).resolve().parents[1] / "migrations" / "managed"
+    sqlite_file = (
+        migrations_dir
+        / "20260723_120000_agent_runtime_contract_snapshot.sqlite.sql"
+    )
+    postgres_file = (
+        migrations_dir
+        / "20260723_120000_agent_runtime_contract_snapshot.postgresql.sql"
+    )
+    assert sqlite_file.exists()
+    assert postgres_file.exists()
+
+    isolated = tmp_path / "managed"
+    isolated.mkdir()
+    (isolated / sqlite_file.name).write_text(
+        sqlite_file.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        conn.execute(text(
+            "CREATE TABLE agent_runs (run_id VARCHAR(64) PRIMARY KEY)"
+        ))
+
+    first = apply_managed_migrations(engine, isolated)
+    second = apply_managed_migrations(engine, isolated)
+
+    columns = {column["name"] for column in inspect(engine).get_columns("agent_runs")}
+    assert [item.id for item in first.applied] == [
+        "20260723_120000_agent_runtime_contract_snapshot"
+    ]
+    assert second.applied == []
+    assert {
+        "runtime_contract_version",
+        "tool_registry_digest",
+        "capability_policy_digest",
+    }.issubset(columns)
+
+
+def test_external_agent_channel_session_migration_adds_unique_index_once(
+    tmp_path: Path,
+):
+    migrations_dir = Path(__file__).resolve().parents[1] / "migrations" / "managed"
+    sqlite_file = (
+        migrations_dir
+        / "20260723_130000_external_agent_channel_session_uniqueness.sqlite.sql"
+    )
+    postgres_file = (
+        migrations_dir
+        / "20260723_130000_external_agent_channel_session_uniqueness.postgresql.sql"
+    )
+    assert sqlite_file.exists()
+    assert postgres_file.exists()
+
+    isolated = tmp_path / "managed"
+    isolated.mkdir()
+    (isolated / sqlite_file.name).write_text(
+        sqlite_file.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        conn.execute(text(
+            "CREATE TABLE agent_conversations ("
+            "id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, session_key TEXT)"
+        ))
+        conn.execute(text(
+            "CREATE TABLE agent_messages ("
+            "id INTEGER PRIMARY KEY, conversation_id INTEGER NOT NULL, content TEXT)"
+        ))
+        conn.execute(text(
+            "CREATE TABLE agent_runs ("
+            "run_id TEXT PRIMARY KEY, conversation_id INTEGER, "
+            "input_seq INTEGER, status TEXT NOT NULL, "
+            "current_attempt_id TEXT NOT NULL, retryable BOOLEAN NOT NULL DEFAULT 0, "
+            "error_code TEXT, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, "
+            "finished_at TIMESTAMP)"
+        ))
+        conn.execute(text(
+            "CREATE UNIQUE INDEX uq_agent_runs_active_conversation "
+            "ON agent_runs(conversation_id) "
+            "WHERE conversation_id IS NOT NULL "
+            "AND status IN ('queued', 'running')"
+        ))
+        conn.execute(text(
+            "CREATE UNIQUE INDEX uq_agent_runs_conversation_input_seq "
+            "ON agent_runs(conversation_id, input_seq) "
+            "WHERE conversation_id IS NOT NULL AND input_seq IS NOT NULL"
+        ))
+        conn.execute(text(
+            "CREATE TABLE agent_run_attempts ("
+            "attempt_id TEXT PRIMARY KEY, run_id TEXT NOT NULL, "
+            "status TEXT NOT NULL, error_code TEXT, finished_at TIMESTAMP)"
+        ))
+        conn.execute(text(
+            "INSERT INTO agent_conversations(id, user_id, session_key) VALUES "
+            "(1, 7, 'external-wechat-7'), "
+            "(2, 7, 'external-wechat-7')"
+        ))
+        conn.execute(text(
+            "INSERT INTO agent_messages(id, conversation_id, content) VALUES "
+            "(10, 1, 'first'), (11, 2, 'second')"
+        ))
+        conn.execute(text(
+            "INSERT INTO agent_runs("
+            "run_id, conversation_id, input_seq, status, current_attempt_id"
+            ") VALUES "
+            "('run-first', 1, 1, 'running', 'attempt-first'), "
+            "('run-second', 2, 1, 'running', 'attempt-second'), "
+            "('run-third', 2, 2, 'succeeded', 'attempt-third')"
+        ))
+        conn.execute(text(
+            "INSERT INTO agent_run_attempts("
+            "attempt_id, run_id, status"
+            ") VALUES "
+            "('attempt-first', 'run-first', 'running'), "
+            "('attempt-second', 'run-second', 'running'), "
+            "('attempt-third', 'run-third', 'succeeded')"
+        ))
+
+    first = apply_managed_migrations(engine, isolated)
+    second = apply_managed_migrations(engine, isolated)
+
+    indexes = {
+        item["name"]: item
+        for item in inspect(engine).get_indexes("agent_conversations")
+    }
+    assert [item.id for item in first.applied] == [
+        "20260723_130000_external_agent_channel_session_uniqueness"
+    ]
+    assert second.applied == []
+    assert indexes["uq_agent_conv_user_session_key"]["unique"] == 1
+    with engine.connect() as conn:
+        assert conn.execute(text(
+            "SELECT count(*) FROM agent_messages WHERE conversation_id = 1"
+        )).scalar_one() == 2
+        assert conn.execute(text(
+            "SELECT count(*) FROM agent_runs WHERE conversation_id = 1"
+        )).scalar_one() == 3
+        assert conn.execute(text(
+            "SELECT count(DISTINCT input_seq) FROM agent_runs "
+            "WHERE conversation_id = 1"
+        )).scalar_one() == 3
+        assert conn.execute(text(
+            "SELECT status FROM agent_runs WHERE run_id = 'run-second'"
+        )).scalar_one() == "reconciliation_required"
+        assert conn.execute(text(
+            "SELECT error_code FROM agent_runs WHERE run_id = 'run-second'"
+        )).scalar_one() == "external_session_merge_active_run"
+        assert conn.execute(text(
+            "SELECT status FROM agent_run_attempts "
+            "WHERE attempt_id = 'attempt-second'"
+        )).scalar_one() == "failed"
+
+
 def test_agent_runtime_resilience_migration_extends_existing_ledger_once(
     tmp_path: Path,
 ):

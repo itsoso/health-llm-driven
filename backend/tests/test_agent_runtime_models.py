@@ -31,6 +31,18 @@ def test_agent_runtime_models_register_content_free_ledger_tables(db):
     } <= table_names
 
 
+def test_agent_run_declares_content_free_contract_snapshot_columns(db):
+    columns = {
+        column["name"] for column in inspect(db.get_bind()).get_columns("agent_runs")
+    }
+
+    assert {
+        "runtime_contract_version",
+        "tool_registry_digest",
+        "capability_policy_digest",
+    } <= columns
+
+
 def test_rollout_window_queries_have_bounded_time_indexes(db):
     inspector = inspect(db.get_bind())
     run_indexes = {index["name"] for index in inspector.get_indexes("agent_runs")}

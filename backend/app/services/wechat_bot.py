@@ -13,6 +13,18 @@ from sqlalchemy.orm import Session
 logger = logging.getLogger(__name__)
 
 
+def _wechat_client_turn_id(msg: Dict[str, Any]) -> str:
+    from app.services.agent_runtime_identity import external_client_turn_id
+
+    return external_client_turn_id(
+        "wechat",
+        channel="wechat",
+        user_id=msg.get("user_id") or "",
+        conversation_id=msg.get("wechat_openid") or "",
+        message_id=msg.get("msg_id") or msg.get("message_id"),
+    )
+
+
 class WeChatBotHandler:
     """微信消息处理器 — first-party Agent 模式"""
 
@@ -56,8 +68,28 @@ class WeChatBotHandler:
             # 企业微信通常已将语音转为文字
             message = content.strip()
 
+        from app.services.agent_runtime_facade import (
+            get_or_create_channel_conversation,
+        )
+
+        conversation_id = get_or_create_channel_conversation(
+            self.db,
+            user_id=user_id,
+            channel="wechat",
+            title="微信对话",
+        )
+        client_turn_id = _wechat_client_turn_id(msg)
+
         # 调用 Agent stream，收集完整回复
-        reply = await self._call_agent(user_id, message, image_base64, image_type)
+        reply = await self._call_agent(
+            user_id,
+            message,
+            image_base64,
+            image_type,
+            conversation_id=conversation_id,
+            client_turn_id=client_turn_id,
+            channel="voice" if msg_type == "voice" else "typed",
+        )
 
         return {
             "reply": reply,
@@ -70,12 +102,16 @@ class WeChatBotHandler:
         message: str,
         image_base64: str | None = None,
         image_type: str = "jpeg",
+        *,
+        conversation_id: int | None = None,
+        client_turn_id: str | None = None,
+        channel: str = "typed",
     ) -> str:
         """调用第一方 Agent stream 并收集完整回复"""
         try:
-            from app.services.agent_executor import AgentExecutor
+            from app.services.agent_runtime_facade import CloudAgentRuntimeFacade
 
-            service = AgentExecutor(self.db)
+            service = CloudAgentRuntimeFacade(self.db)
 
             full_reply = ""
             images = [{"base64": image_base64, "type": image_type}] if image_base64 else None
@@ -83,6 +119,10 @@ class WeChatBotHandler:
                 user_id=user_id,
                 message=message,
                 images=images,
+                conversation_id=conversation_id,
+                client_turn_id=client_turn_id,
+                origin="wechat",
+                channel=channel,
             ):
                 if event.get("event") == "token":
                     full_reply += event.get("data", {}).get("content", "")

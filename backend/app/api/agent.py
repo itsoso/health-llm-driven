@@ -10,7 +10,6 @@ import logging
 import math
 import time
 import uuid
-from datetime import UTC, datetime, timedelta
 from typing import Optional, List
 
 
@@ -843,49 +842,17 @@ def _admit_agent_runtime(
     origin: str,
 ):
     """Return canonical identity, lifecycle ownership and admission disposition."""
-    from app.services.agent_runtime import RunContext
-    from app.services.agent_runtime_rollout import (
-        AgentRuntimeRolloutService,
-        runtime_mode,
-    )
-    from app.config import settings
+    from app.services.agent_runtime_facade import admit_agent_runtime
 
-    if runtime_mode() == "off":
-        return RunContext(
-            run_id=run_id,
-            attempt_id=attempt_id,
-            user_id=user_id,
-            conversation_id=conversation_id,
-            client_turn_id=client_turn_id,
-            input_seq=None,
-            origin=origin,
-        ), False, "execute"
-    deadline_seconds = int(
-        getattr(settings, "agent_runtime_deadline_seconds", 300) or 300
-    )
-    if not 30 <= deadline_seconds <= 3600:
-        raise RuntimeError("invalid_agent_runtime_deadline_seconds")
-    managed_admission = AgentRuntimeRolloutService(db).admit_run(
+    return admit_agent_runtime(
+        db,
         run_id=run_id,
         attempt_id=attempt_id,
         user_id=user_id,
         conversation_id=conversation_id,
         client_turn_id=client_turn_id,
         origin=origin,
-        deadline_at=datetime.now(UTC) + timedelta(seconds=deadline_seconds),
     )
-    admission = managed_admission.admission
-    if admission is None:
-        return RunContext(
-            run_id=run_id,
-            attempt_id=attempt_id,
-            user_id=user_id,
-            conversation_id=conversation_id,
-            client_turn_id=client_turn_id,
-            input_seq=None,
-            origin=origin,
-        ), False, "execute"
-    return admission.context, admission.owns_execution, admission.disposition
 
 
 def _reserve_agent_capacity(db: Session, *, user_id: int, origin: str) -> str:
@@ -969,92 +936,15 @@ async def _agent_runtime_heartbeat(
     owner_task: asyncio.Task,
     initial_lease_deadline: float,
 ) -> None:
-    if not managed:
-        return
-    from app.config import settings
-    from app.database import SessionLocal
-    from app.services.agent_runtime import (
-        ACTIVE_RUN_STATUSES,
-        AgentRuntimeCoordinator,
-        StaleRunAttempt,
-        StaleRunWorker,
-    )
+    from app.services.agent_runtime_lease import agent_runtime_heartbeat
 
-    heartbeat_seconds = int(
-        getattr(settings, "agent_runtime_heartbeat_seconds", 20) or 20
+    await agent_runtime_heartbeat(
+        context,
+        managed=managed,
+        worker_id=worker_id,
+        owner_task=owner_task,
+        initial_lease_deadline=initial_lease_deadline,
     )
-    lease_seconds = int(
-        getattr(settings, "agent_runtime_lease_seconds", 90) or 90
-    )
-    if heartbeat_seconds < 1 or heartbeat_seconds >= lease_seconds:
-        raise RuntimeError("invalid_agent_runtime_heartbeat_seconds")
-    lease_deadline = initial_lease_deadline
-    retry_delay = float(heartbeat_seconds)
-    while not owner_task.done():
-        await asyncio.sleep(retry_delay)
-        heartbeat_db = None
-        try:
-            heartbeat_db = SessionLocal()
-            runtime = AgentRuntimeCoordinator(heartbeat_db)
-            try:
-                renew_started = time.monotonic()
-                signal = runtime.renew_lease(
-                    context,
-                    worker_id=worker_id,
-                    lease_seconds=lease_seconds,
-                )
-            except (StaleRunAttempt, StaleRunWorker):
-                run = runtime.get_run(context.user_id, context.run_id)
-                if run.current_attempt_id != context.attempt_id:
-                    owner_task.cancel()
-                    return
-                if run.status not in ACTIVE_RUN_STATUSES:
-                    if (
-                        run.status in {"cancelled", "reconciliation_required"}
-                        or run.error_code
-                        in {"deadline_exceeded", "worker_lease_expired"}
-                    ):
-                        owner_task.cancel()
-                    return
-                owner_task.cancel()
-                return
-            if signal.action != "continue":
-                runtime.settle_control_stop(context, action=signal.action)
-                owner_task.cancel()
-                return
-            lease_deadline = renew_started + lease_seconds
-            retry_delay = float(heartbeat_seconds)
-        except Exception as exc:  # noqa: BLE001
-            remaining = lease_deadline - time.monotonic()
-            logger.warning(
-                "Agent Runtime heartbeat retry: run_id=%s attempt_id=%s "
-                "remaining_lease=%.2fs error=%s",
-                context.run_id,
-                context.attempt_id,
-                max(0.0, remaining),
-                type(exc).__name__,
-            )
-            if remaining <= 1.0:
-                owner_task.cancel()
-                return
-            retry_delay = min(
-                max(1.0, heartbeat_seconds / 2),
-                max(0.1, remaining - 1.0),
-            )
-        finally:
-            if heartbeat_db is not None:
-                try:
-                    heartbeat_db.close()
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning(
-                        "Agent Runtime heartbeat session close failed: "
-                        "run_id=%s attempt_id=%s error=%s",
-                        context.run_id,
-                        context.attempt_id,
-                        type(exc).__name__,
-                    )
-                    owner_task.cancel()
-                    return
 
 
 async def _stop_agent_runtime_heartbeat(
@@ -1062,18 +952,9 @@ async def _stop_agent_runtime_heartbeat(
     *,
     run_id: str,
 ) -> None:
-    """Stop the helper without allowing its failure to replace the Run result."""
-    heartbeat_task.cancel()
-    try:
-        await heartbeat_task
-    except asyncio.CancelledError:
-        pass
-    except Exception:
-        logger.error(
-            "Agent Runtime heartbeat failed during cleanup: run_id=%s",
-            run_id,
-            exc_info=True,
-        )
+    from app.services.agent_runtime_lease import stop_agent_runtime_heartbeat
+
+    await stop_agent_runtime_heartbeat(heartbeat_task, run_id=run_id)
 
 
 @router.post("/runs/{run_id}/cancel")
@@ -1757,6 +1638,12 @@ async def agent_stream(
                     run_id=runtime_context.run_id,
                     attempt_id=runtime_context.attempt_id,
                     runtime_managed=runtime_managed,
+                    runtime_write_block_reason=(
+                        runtime_context.control_reason
+                        if runtime_context.control_reason
+                        in {"circuit_paused", "circuit_unavailable"}
+                        else None
+                    ),
                 ):
                     if event.get("event") == "request_persisted":
                         persisted_data = event.get("data")
@@ -2147,6 +2034,12 @@ async def agent_send(
                 run_id=runtime_context.run_id,
                 attempt_id=runtime_context.attempt_id,
                 runtime_managed=runtime_managed,
+                runtime_write_block_reason=(
+                    runtime_context.control_reason
+                    if runtime_context.control_reason
+                    in {"circuit_paused", "circuit_unavailable"}
+                    else None
+                ),
             ):
                 if event.get("event") == "request_persisted":
                     persisted_data = event.get("data")

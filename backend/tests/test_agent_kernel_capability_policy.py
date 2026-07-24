@@ -1,6 +1,12 @@
+import re
+
 import pytest
 
-from app.services.agent_kernel.capability_policy import decide_tool_capability
+from app.services.agent_kernel.capability_policy import (
+    capability_policy_contract_payload,
+    capability_policy_digest,
+    decide_tool_capability,
+)
 from app.services.agent_kernel.intent_frame import build_intent_frame
 from app.services.agent_kernel.types import (
     AgentEnvelope,
@@ -300,3 +306,19 @@ def test_unknown_tool_is_blocked_fail_closed():
 
     assert decision.action == "block"
     assert decision.reason == "unknown_tool"
+
+
+def test_capability_policy_digest_is_deterministic_content_free_sha256():
+    first = capability_policy_digest()
+    second = capability_policy_digest()
+    payload = capability_policy_contract_payload()
+
+    assert first == second
+    assert re.fullmatch(r"[0-9a-f]{64}", first)
+    assert payload["contract_version"] == "agent-capability-policy-v1"
+    assert payload["known_tools"]
+    assert payload["recipe_record_types"]
+    serialized = repr(payload).lower()
+    assert "prompt" not in serialized
+    assert "user_id" not in serialized
+    assert "health_value" not in serialized

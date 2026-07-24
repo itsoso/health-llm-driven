@@ -1009,6 +1009,72 @@ def test_operation_fingerprint_must_be_an_opaque_sha256(
         )
 
 
+def test_runtime_write_fingerprint_is_keyed_and_not_plain_sha256(monkeypatch):
+    import hashlib
+    import json
+
+    from app.config import settings
+    from app.services.agent_executor import _runtime_write_operation_fingerprint
+
+    monkeypatch.setattr(settings, "secret_key", "a" * 32)
+    args = {"record_type": "water", "data": {"amount": 500}}
+    fingerprint = _runtime_write_operation_fingerprint("health_record", args)
+    plain = hashlib.sha256(
+        json.dumps(
+            {"tool": "health_record", "args": args},
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode()
+    ).hexdigest()
+
+    assert len(fingerprint) == 64
+    assert fingerprint != plain
+    assert _runtime_write_operation_fingerprint("health_record", args) == fingerprint
+
+
+def test_runtime_logical_operation_hashes_are_keyed(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+):
+    from app.config import settings
+    from app.models.agent_runtime import AgentToolOperation
+    from app.services.agent_runtime import AgentRuntimeCoordinator
+
+    user, _headers = auth_user_and_headers
+    monkeypatch.setattr(settings, "secret_key", "a" * 32)
+    runtime = AgentRuntimeCoordinator(db)
+    admission = _run(db, user.id, suffix="keyed-logical-hashes")
+    runtime.mark_running(admission.context)
+    logical_key = "diet:2026-07-24:lunch"
+    logical_scope = "diet:2026-07-24"
+    discriminator = "lunch"
+
+    runtime.claim_tool_operation(
+        admission.context,
+        tool_name="health_record",
+        effect_class="write",
+        operation_fingerprint=_fingerprint("keyed-logical-hashes"),
+        logical_operation_key=logical_key,
+        logical_operation_scope_key=logical_scope,
+        logical_operation_discriminator_kind="meal_time",
+        logical_operation_discriminator_key=discriminator,
+    )
+
+    operation = db.query(AgentToolOperation).one()
+    assert operation.logical_operation_key_hash != hashlib.sha256(
+        logical_key.encode()
+    ).hexdigest()
+    assert operation.logical_operation_scope_hash != hashlib.sha256(
+        logical_scope.encode()
+    ).hexdigest()
+    assert operation.logical_operation_discriminator_hash != hashlib.sha256(
+        discriminator.encode()
+    ).hexdigest()
+
+
 def test_stale_attempt_cannot_claim_or_finalize_tool_operation(
     db, auth_user_and_headers
 ):

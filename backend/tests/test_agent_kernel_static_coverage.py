@@ -79,7 +79,8 @@ def test_voice_shortcuts_cannot_write_database_without_the_tool_gateway():
 
     assert direct_db_mutations == []
     source = VOICE_SHORTCUTS.read_text()
-    assert "executor._execute_tool(" in source
+    assert "CloudAgentRuntimeFacade(self.db).execute_tool(" in source
+    assert "executor._execute_tool(" not in source
     assert "build_turn_snapshot(" in source
 
 

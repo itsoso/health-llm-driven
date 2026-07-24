@@ -46,30 +46,23 @@ PARSE_PROMPT_SYSTEM = """你是健康指令解析助手. 把用户/健康教练/
 - "不要再推 / 别给我建议 X" → kind=skip_recommendation"""
 
 
-def _parse_with_llm(text: str) -> List[dict]:
-    """调 LLM 解析. 失败返回 []."""
+async def _parse_with_llm_async(text: str) -> List[dict]:
+    """异步调 LLM 解析，避免在事件循环内嵌套 ``asyncio.run``。"""
     try:
         from app.config import settings
         from app.services.llm.factory import create_provider_for_extraction
         from app.services.llm.usage_tracker import set_caller
-        import asyncio
 
         set_caller("directive_parser", user_id=None)
-        # Batch-1 token-perf: 纯解析, 降档 flash; 创建失败 fail-soft 回退默认 provider。
         provider = create_provider_for_extraction(settings.directive_parse_model_id)
-
-        async def _go():
-            result = await provider.chat(
-                messages=[
-                    {"role": "system", "content": PARSE_PROMPT_SYSTEM},
-                    {"role": "user", "content": f"原文:\n{text}\n\n请输出 JSON 数组."},
-                ],
-                temperature=0.1,
-                max_tokens=600,
-            )
-            return result
-
-        out = asyncio.run(_go())
+        out = await provider.chat(
+            messages=[
+                {"role": "system", "content": PARSE_PROMPT_SYSTEM},
+                {"role": "user", "content": f"原文:\n{text}\n\n请输出 JSON 数组."},
+            ],
+            temperature=0.1,
+            max_tokens=600,
+        )
         if isinstance(out, dict):
             out = out.get("content") or ""
         out = str(out or "").strip()
@@ -83,6 +76,13 @@ def _parse_with_llm(text: str) -> List[dict]:
     except Exception as e:  # noqa: BLE001
         logger.warning(f"[directive_parser] LLM 解析失败: {e}")
         return []
+
+
+def _parse_with_llm(text: str) -> List[dict]:
+    """同步兼容入口，供脚本和同步 API 使用。"""
+    import asyncio
+
+    return asyncio.run(_parse_with_llm_async(text))
 
 
 # Fallback 关键词解析 (LLM 不可用时)
@@ -121,16 +121,73 @@ def parse_and_store(
     source_message_id: Optional[str] = None,
 ) -> List[int]:
     """主入口. 返回新创建的 directive ID 列表."""
+    if not text or len(text.strip()) < 4:
+        return []
+    parsed = _parse_with_llm(text) or _fallback_parse(text)
+    return _store_parsed_directives(
+        db,
+        user_id,
+        text,
+        parsed,
+        source=source,
+        source_message_id=source_message_id,
+    )
+
+
+async def parse_and_store_async(
+    db: Session,
+    user_id: int,
+    text: str,
+    *,
+    source: str = "external_telegram",
+    source_message_id: Optional[str] = None,
+) -> List[int]:
+    """事件循环安全的指令解析与写入入口。"""
+    if not text or len(text.strip()) < 4:
+        return []
+    parsed = await _parse_with_llm_async(text) or _fallback_parse(text)
+    return _store_parsed_directives(
+        db,
+        user_id,
+        text,
+        parsed,
+        source=source,
+        source_message_id=source_message_id,
+    )
+
+
+def _store_parsed_directives(
+    db: Session,
+    user_id: int,
+    text: str,
+    parsed: List[dict],
+    *,
+    source: str,
+    source_message_id: Optional[str],
+) -> List[int]:
+    """Persist already parsed directives with source-message replay protection."""
     from datetime import datetime, timedelta, timezone
     from app.models.user_directive import UserDirective
 
     if not text or len(text.strip()) < 4:
         return []
 
-    parsed = _parse_with_llm(text) or _fallback_parse(text)
     if not parsed:
         logger.info("[directive_parser] 未识别出 directive text_len=%s", len(text))
         return []
+    if source_message_id:
+        existing = (
+            db.query(UserDirective.id)
+            .filter(
+                UserDirective.user_id == user_id,
+                UserDirective.source == source,
+                UserDirective.source_message_id == source_message_id,
+            )
+            .order_by(UserDirective.id.asc())
+            .all()
+        )
+        if existing:
+            return [int(row[0]) for row in existing]
 
     created: List[int] = []
     now = datetime.now(timezone.utc)

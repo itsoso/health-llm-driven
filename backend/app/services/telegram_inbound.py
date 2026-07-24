@@ -19,7 +19,6 @@ Karpathy verification 思想: 写库前预览 + 用户在 Telegram 直接看到�
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import os
@@ -32,6 +31,7 @@ from app.config import settings
 from app.services.agent_kernel.intent_frame import build_intent_frame
 from app.services.agent_kernel.types import AgentEnvelope, ExecutionContext
 from app.services.agent_write_outcome import classify_write_execution
+from app.services.agent_runtime_identity import runtime_hmac_digest
 
 logger = logging.getLogger(__name__)
 
@@ -208,6 +208,7 @@ async def execute_health_record(
     args: dict,
     *,
     source_text: str = "",
+    client_turn_id: str | None = None,
 ) -> str:
     """
     调 agent_executor 内部的 _exec_health_record (复用 schema/校验/确认逻辑).
@@ -230,7 +231,21 @@ async def execute_health_record(
             message=source_text or "",
             channel="telegram",
         )
-        result = await executor._execute_tool("health_record", args, token)
+        from app.services.agent_runtime_facade import CloudAgentRuntimeFacade
+
+        result = await CloudAgentRuntimeFacade(db).execute_tool(
+            user_id=user_id,
+            message=source_text or "",
+            origin="telegram",
+            channel="telegram",
+            tool_name="health_record",
+            arguments=args,
+            user_auth_token=token,
+            client_turn_id=client_turn_id,
+            run_id=executor._agent_kernel_snapshot.context.run_id,
+            executor=executor,
+            source="telegram",
+        )
         receipt = _write_receipt_from_tool_result("health_record", args, result)
         outcome = classify_write_execution(result, receipt=receipt)
         executor._finish_agent_kernel_turn(
@@ -254,33 +269,103 @@ async def execute_health_record(
         return f"⚠️ 写入失败: {str(e)[:120]}"
 
 
-async def llm_chat_reply(text: str) -> str:
-    """普通对话 / 查询: LLM 简短回复 (Telegram 场景, ≤80 字)."""
-    try:
-        from app.services.llm.factory import get_llm_provider
-        from app.services.llm.usage_tracker import set_caller
-        set_caller("telegram.inbound.chat")
-        provider = get_llm_provider()
-        raw = await provider.chat(
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "你是健康助理. 用户通过 Telegram 简短交流. "
-                        "回复 ≤ 80 字, 直接给结论, 不要客套不要 markdown 标题."
-                    ),
-                },
-                {"role": "user", "content": text},
-            ],
-            max_tokens=200,
-            temperature=0.4,
+async def execute_user_directive(
+    db,
+    user_id: int,
+    text: str,
+    *,
+    source_message_id: Optional[str],
+    source_conversation_id: str,
+    client_turn_id: str | None = None,
+) -> str:
+    """Persist one Telegram directive through Runtime, policy, and receipt."""
+    from app.services.agent_runtime_facade import CloudAgentRuntimeFacade
+
+    if client_turn_id is None:
+        client_turn_id = _telegram_client_turn_id(
+            source_message_id,
+            user_id=user_id,
+            conversation_id=source_conversation_id,
         )
-        if isinstance(raw, dict):
-            raw = raw.get("content", "") or ""
-        return (raw or "").strip() or "✅ 收到"
+    return await CloudAgentRuntimeFacade(db).execute_tool(
+        user_id=user_id,
+        message=text,
+        origin="telegram",
+        channel="telegram",
+        tool_name="user_directive",
+        arguments={
+            "text": text,
+            "source": "external_telegram",
+            "source_message_id": client_turn_id,
+        },
+        client_turn_id=client_turn_id,
+        source="telegram_directive",
+    )
+
+
+def _telegram_client_turn_id(
+    source_message_id: Optional[str],
+    *,
+    user_id: int,
+    conversation_id: str,
+) -> str:
+    from app.services.agent_runtime_identity import external_client_turn_id
+
+    return external_client_turn_id(
+        "telegram",
+        channel="telegram",
+        user_id=user_id,
+        conversation_id=conversation_id,
+        message_id=source_message_id,
+    )
+
+
+async def agent_chat_reply(
+    db,
+    user_id: int,
+    text: str,
+    *,
+    source_message_id: Optional[str] = None,
+    source_conversation_id: str = "",
+) -> str:
+    """Run Telegram query/chat through the same durable first-party Agent."""
+    try:
+        from app.services.agent_runtime_facade import (
+            CloudAgentRuntimeFacade,
+            get_or_create_channel_conversation,
+        )
+
+        conversation_id = get_or_create_channel_conversation(
+            db,
+            user_id=user_id,
+            channel="telegram",
+            title="Telegram 对话",
+        )
+        full_reply = ""
+        async for event in CloudAgentRuntimeFacade(db).run_stream(
+            user_id=user_id,
+            message=text,
+            origin="telegram",
+            channel="typed",
+            conversation_id=conversation_id,
+            client_turn_id=_telegram_client_turn_id(
+                source_message_id,
+                user_id=user_id,
+                conversation_id=source_conversation_id,
+            ),
+        ):
+            if event.get("event") == "token":
+                data = event.get("data")
+                if isinstance(data, dict):
+                    full_reply += str(data.get("content") or "")
+        return full_reply.strip() or "暂时无法生成可靠回复，请稍后再试。"
     except Exception as e:
-        logger.warning(f"[telegram-inbound] chat reply failed: {e}")
-        return "✅ 收到 (LLM 暂时不可用)"
+        logger.warning(
+            "[telegram-inbound] Agent query failed: %s",
+            type(e).__name__,
+            exc_info=True,
+        )
+        return "系统暂时无法完成这次查询，请稍后再试。"
 
 
 # ─── 主入口 ──────────────────────────────────────────────────────────
@@ -291,12 +376,13 @@ async def handle_inbound_text(
     text: str,
     *,
     source_message_id: Optional[str] = None,
+    source_conversation_id: str = "",
 ) -> str:
     """
     根据 text 自动分流, 返回给用户的 Telegram 回执.
     """
     intent = classify_intent(text)
-    user_ref = hashlib.sha256(str(user_id).encode("utf-8")).hexdigest()[:10]
+    user_ref = runtime_hmac_digest("telegram-log-user", str(user_id))[:10]
     logger.info(
         "[telegram-inbound] user_ref=%s intent=%s text_length=%s",
         user_ref,
@@ -305,29 +391,64 @@ async def handle_inbound_text(
     )
 
     if intent == "directive":
-        # 老路径
-        from app.services.directive_parser import parse_and_store
         try:
-            ids = parse_and_store(
-                db,
+            client_turn_id = _telegram_client_turn_id(
+                source_message_id,
                 user_id=user_id,
-                text=text,
-                source="external_telegram",
-                source_message_id=source_message_id,
+                conversation_id=source_conversation_id,
             )
-            if not ids:
+            result = await execute_user_directive(
+                db,
+                user_id,
+                text,
+                source_message_id=source_message_id,
+                source_conversation_id=source_conversation_id,
+                client_turn_id=client_turn_id,
+            )
+            payload = json.loads(result)
+            status = str(payload.get("status") or "").lower()
+            if status == "uncertain":
+                return (
+                    "⚠️ 这条健康约束的写入状态待核对。为避免重复记录，"
+                    "我不会自动重试。"
+                )
+            if status != "verified":
                 return "ℹ️ 没识别出指令. 试试 'LDL 控制在 2.6 以下' 或 '严格戒酒 30 天'"
             from app.models.user_directive import UserDirective
-            rows = db.query(UserDirective).filter(UserDirective.id.in_(ids)).all()
+
+            rows = (
+                db.query(UserDirective)
+                .filter(
+                    UserDirective.user_id == user_id,
+                    UserDirective.source == "external_telegram",
+                    UserDirective.source_message_id == client_turn_id,
+                )
+                .order_by(UserDirective.id.asc())
+                .all()
+            )
+            if not rows:
+                ids = payload.get("resource_ids") or [payload.get("resource_id")]
+                ids = [int(item) for item in ids if str(item or "").isdigit()]
+                rows = (
+                    db.query(UserDirective)
+                    .filter(
+                        UserDirective.user_id == user_id,
+                        UserDirective.id.in_(ids),
+                    )
+                    .order_by(UserDirective.id.asc())
+                    .all()
+                )
             summary = "\n".join(
                 f"  • [{r.kind}] {r.instruction[:60]}"
                 + (f" ({r.metric_key}={r.target_value})" if r.metric_key and r.target_value else "")
                 for r in rows
             )
-            return f"✅ 已录入 {len(ids)} 条指令:\n{summary}"
+            if summary:
+                return f"✅ 已录入 {len(rows)} 条指令:\n{summary}"
+            return "✅ 已录入健康约束。"
         except Exception as e:
             logger.warning(f"[telegram-inbound] directive parse failed: {e}")
-            return f"⚠️ 指令解析失败: {str(e)[:100]}"
+            return "⚠️ 指令解析暂时不可用，请稍后重试。"
 
     if intent == "record":
         # LLM 抽 → 调 health_record
@@ -339,6 +460,11 @@ async def handle_inbound_text(
             user_id,
             args,
             source_text=text,
+            client_turn_id=_telegram_client_turn_id(
+                source_message_id,
+                user_id=user_id,
+                conversation_id=source_conversation_id,
+            ),
         )
         # 处理 NEEDS_CONFIRMATION (L8 weight 确认) 这种半结构化返回
         if "[NEEDS_CONFIRMATION]" in result:
@@ -370,5 +496,11 @@ async def handle_inbound_text(
         except Exception:
             return f"✅ {result[:120]}"
 
-    # query / chat → LLM 简短回复
-    return await llm_chat_reply(text)
+    # query / chat → first-party Agent Runtime，保留上下文和工具能力
+    return await agent_chat_reply(
+        db,
+        user_id,
+        text,
+        source_message_id=source_message_id,
+        source_conversation_id=source_conversation_id,
+    )

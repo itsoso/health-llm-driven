@@ -189,6 +189,16 @@ def test_admin_can_observe_pause_and_resume_without_user_level_data(
         "stale_active_runs": 1,
     }
     assert payload["snapshot"]["terminal_runs"] == 0
+    assert payload["snapshot"]["integrity"] == {
+        "window_runs": 0,
+        "contract_snapshot_runs": 0,
+        "contract_snapshot_coverage_percent": 100,
+        "contract_versions": {},
+        "settled_message_linkage_gaps": 0,
+        "missing_current_attempt_runs": 0,
+        "active_over_deadline_runs": 0,
+        "waiting_over_24h_runs": 0,
+    }
     serialized = repr(payload)
     assert "user_id" not in serialized
     assert "run_id" not in serialized

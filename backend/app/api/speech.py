@@ -38,6 +38,24 @@ def _bearer_token(authorization: str | None) -> str | None:
     return clean or None
 
 
+def _voice_command_client_turn_id(
+    value: object,
+    *,
+    user_id: int,
+) -> str | None:
+    if not str(value or "").strip():
+        return None
+    from app.services.agent_runtime_identity import external_client_turn_id
+
+    return external_client_turn_id(
+        "voice-command",
+        channel="voice-command",
+        user_id=user_id,
+        conversation_id="mobile",
+        message_id=value,
+    )
+
+
 @router.websocket("/transcribe/realtime", name="transcribe_audio_realtime")
 async def transcribe_audio_realtime(
     websocket: WebSocket,
@@ -156,6 +174,10 @@ async def voice_command(
     result = await svc.execute(
         text,
         user_auth_token=_bearer_token(request.headers.get("authorization")),
+        client_turn_id=_voice_command_client_turn_id(
+            req.get("client_turn_id"),
+            user_id=current_user.id,
+        ),
     )
     if result:
         return {"matched": True, **result}

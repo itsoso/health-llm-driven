@@ -1,6 +1,5 @@
 """Telegram webhook → directive 解析端到端."""
 import pytest
-from unittest.mock import patch
 
 from app.models.user_directive import UserDirective
 
@@ -91,17 +90,39 @@ class TestDoctorReply:
         rows = db.query(UserDirective).filter(UserDirective.user_id == 7).all()
         assert len(rows) >= 1
         assert rows[0].source == "external_telegram"
-        assert rows[0].source_message_id == "100"
+        assert rows[0].source_message_id.startswith("telegram-")
+        assert rows[0].source_message_id != "100"
 
     def test_no_recognizable_pattern(self, client, db, _force_fallback_parser):
         r = client.post("/api/v1/telegram/webhook?secret=test-secret",
                        json={"message": {"chat": {"id": 12345},
-                                         "text": "今天天气真好谢谢"}})
+                                         "text": "今天天气真好谢谢",
+                                         "message_id": 101}})
         assert r.status_code == 200
         body = r.json()
         assert body["ok"] is True
         # query/chat intent 不创建 directive
         assert db.query(UserDirective).count() == 0
+
+    def test_missing_provider_message_id_fails_closed(
+        self, client, db, caplog
+    ):
+        with caplog.at_level("WARNING"):
+            r = client.post(
+                "/api/v1/telegram/webhook?secret=test-secret",
+                json={
+                    "message": {
+                        "chat": {"id": 12345},
+                        "text": "记录饮水500ml",
+                    }
+                },
+            )
+
+        assert r.status_code == 200
+        assert r.json() == {"ok": False, "reason": "missing_message_id"}
+        assert db.query(UserDirective).count() == 0
+        assert "12345" not in caplog.text
+        assert "missing provider message_id" in caplog.text
 
 
 class TestDoctorNotConfigured:

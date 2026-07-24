@@ -6,6 +6,7 @@ dispatch adapter, timeout and receipt requirements.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from dataclasses import dataclass
@@ -41,6 +42,7 @@ class ToolSpec:
     receipt_required: bool = False
     adapter_kind: AdapterKind = "executor"
     call_style: ExecutorCallStyle = "http"
+    model_visible: bool = True
     action_field: str | None = None
     read_actions: frozenset[str] = frozenset()
     write_actions: frozenset[str] = frozenset()
@@ -154,6 +156,16 @@ _CORE_TOOL_SPECS = (
         receipt_resource_id_pattern=_POSITIVE_INTEGER_RECEIPT_ID,
     ),
     _spec(
+        "user_directive",
+        "write",
+        "_exec_user_directive",
+        receipt_required=True,
+        call_style="args",
+        model_visible=False,
+        receipt_resource_types=frozenset({"user_directive"}),
+        receipt_resource_id_pattern=_POSITIVE_INTEGER_RECEIPT_ID,
+    ),
+    _spec(
         "health_manage",
         "mixed",
         "_exec_health_manage",
@@ -259,10 +271,62 @@ _SPECIALIST_TOOL_SPECS = tuple(
 _TOOL_SPECS: Mapping[str, ToolSpec] = {
     spec.name: spec for spec in (*_CORE_TOOL_SPECS, *_SPECIALIST_TOOL_SPECS)
 }
+_TOOL_REGISTRY_CONTRACT_VERSION = "agent-tool-registry-v1"
 
 
 def list_tool_specs() -> tuple[ToolSpec, ...]:
     return tuple(_TOOL_SPECS.values())
+
+
+def list_model_visible_tool_specs() -> tuple[ToolSpec, ...]:
+    """Return tools exposed through model schemas, excluding trusted adapters."""
+    return tuple(spec for spec in _TOOL_SPECS.values() if spec.model_visible)
+
+
+def tool_registry_contract_payload() -> dict[str, Any]:
+    """Return static, content-free operational metadata for one registry build."""
+    tools = []
+    for spec in sorted(_TOOL_SPECS.values(), key=lambda item: item.name):
+        tools.append(
+            {
+                "name": spec.name,
+                "effect": spec.effect,
+                "executor_method": spec.executor_method,
+                "timeout_seconds": spec.timeout_seconds,
+                "receipt_required": spec.receipt_required,
+                "adapter_kind": spec.adapter_kind,
+                "call_style": spec.call_style,
+                "model_visible": spec.model_visible,
+                "action_field": spec.action_field,
+                "read_actions": sorted(spec.read_actions),
+                "write_actions": sorted(spec.write_actions),
+                "receipt_exempt_record_types": sorted(
+                    spec.receipt_exempt_record_types
+                ),
+                "receipt_resource_types": sorted(spec.receipt_resource_types),
+                "reconciliation_record_types": sorted(
+                    [list(item) for item in spec.reconciliation_record_types]
+                ),
+                "receipt_resource_id_pattern": spec.receipt_resource_id_pattern,
+                "annotate_implausible": spec.annotate_implausible,
+                "marks_deep_analysis": spec.marks_deep_analysis,
+            }
+        )
+    return {
+        "contract_version": _TOOL_REGISTRY_CONTRACT_VERSION,
+        "tools": tools,
+    }
+
+
+def tool_registry_digest() -> str:
+    """Fingerprint the operational registry without prompts or user content."""
+    encoded = json.dumps(
+        tool_registry_contract_payload(),
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def get_tool_spec(tool_name: str) -> ToolSpec:

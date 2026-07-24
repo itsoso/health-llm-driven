@@ -2545,6 +2545,7 @@ _RECEIPT_TYPE_LABELS = {
     "mood_record": "心情",
     "health_checkin": "鼻炎打卡",
     "smart_reminder": "提醒",
+    "user_directive": "健康约束",
 }
 
 
@@ -2622,6 +2623,7 @@ _MANAGE_PLAN_RESOURCE_TYPE_BY_ACTION = {
 _FIXED_RECEIPT_RESOURCE_TYPE_BY_TOOL = {
     "draft_aigc_media": "aigc_media_confirmation",
     "intervention_cycle": "intervention_cycle",
+    "user_directive": "user_directive",
     "upload_genetic_txt": "genetic_profile",
     "upload_medical_exam_text": "medical_exam",
 }
@@ -2706,14 +2708,13 @@ def _write_operation_fingerprint(
     tool_name: str,
     parsed_args: Dict[str, Any],
 ) -> str:
-    fingerprint_payload = json.dumps(
-        {"tool": tool_name, "args": parsed_args},
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-        default=str,
+    from app.services.agent_runtime_identity import runtime_hmac_digest
+
+    return runtime_hmac_digest(
+        "write-operation-fingerprint-v1",
+        tool_name,
+        parsed_args,
     )
-    return hashlib.sha256(fingerprint_payload.encode()).hexdigest()
 
 
 def _runtime_write_operation_fingerprint(
@@ -2901,6 +2902,8 @@ def _runtime_write_operation_identity(
     for a diet create. Other writes fall back to exact-fingerprint matching and
     are rejected if a retry introduces a new, unprovable side effect.
     """
+    from app.services.agent_runtime_identity import runtime_hmac_digest
+
     args = dict(parsed_args or {})
     record_type = _normalize_fast_record_kind(
         args.get("record_type") or args.get("type") or args.get("kind") or ""
@@ -2975,9 +2978,10 @@ def _runtime_write_operation_identity(
                 "record_type": record_type,
                 "record_date": record_date,
                 "meal_type": meal_type,
-                "item_identity": hashlib.sha256(
-                    f"food_text:{normalized_food_items}".encode()
-                ).hexdigest(),
+                "item_identity": runtime_hmac_digest(
+                    "diet-item-identity-v1",
+                    normalized_food_items,
+                ),
             }
             if meal_time:
                 identity["meal_time"] = meal_time
@@ -2989,13 +2993,10 @@ def _runtime_write_operation_identity(
         return None, None, None, None
 
     def opaque(prefix: str, value: Mapping[str, str] | str) -> str:
-        encoded = json.dumps(
+        return f"{prefix}:" + runtime_hmac_digest(
+            f"write-logical-{prefix}-v1",
             value,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
         )
-        return f"{prefix}:" + hashlib.sha256(encoded.encode()).hexdigest()
 
     return (
         opaque("target", identity) if identity is not None else None,
@@ -6126,6 +6127,7 @@ class AgentExecutor:
         self._runtime_run_id: Optional[str] = None
         self._runtime_attempt_id: Optional[str] = None
         self._runtime_managed = False
+        self._runtime_write_block_reason: Optional[str] = None
 
     def _start_agent_kernel_turn(
         self,
@@ -7291,6 +7293,7 @@ class AgentExecutor:
         run_id: Optional[str] = None,
         attempt_id: Optional[str] = None,
         runtime_managed: bool = False,
+        runtime_write_block_reason: Optional[str] = None,
     ) -> AsyncGenerator[Dict, None]:
         """Run one durable client turn, taking over an ACKed turn after worker loss.
 
@@ -7301,6 +7304,7 @@ class AgentExecutor:
         self._runtime_run_id = run_id
         self._runtime_attempt_id = attempt_id
         self._runtime_managed = bool(runtime_managed)
+        self._runtime_write_block_reason = runtime_write_block_reason
         yield self._progress_event("accepted")
         self._current_user_id = user_id
         self._current_turn_user_message = message or ""
@@ -13608,6 +13612,44 @@ class AgentExecutor:
                 )
             _strip_untrusted_write_authorization(args)
 
+        if self._runtime_write_block_reason:
+            from app.services.agent_kernel.tool_registry import classify_tool_effect
+
+            try:
+                runtime_effect = classify_tool_effect(tool_name, args)
+            except Exception:
+                logger.exception(
+                    "Runtime control unavailable and tool effect classification failed: "
+                    "tool=%s reason=%s",
+                    tool_name,
+                    self._runtime_write_block_reason,
+                )
+                return json.dumps(
+                    {
+                        "status": "failed",
+                        "success": False,
+                        "error_code": "runtime_control_unavailable",
+                        "dispatch_started": False,
+                    },
+                    ensure_ascii=False,
+                )
+            if runtime_effect == "write":
+                logger.warning(
+                    "Runtime control unavailable; blocked dynamic write before dispatch: "
+                    "tool=%s reason=%s",
+                    tool_name,
+                    self._runtime_write_block_reason,
+                )
+                return json.dumps(
+                    {
+                        "status": "failed",
+                        "success": False,
+                        "error_code": "runtime_control_unavailable",
+                        "dispatch_started": False,
+                    },
+                    ensure_ascii=False,
+                )
+
         # === 统一 tool_call 守门 (所有 6 个工具必过) ===
         # 日期/数值/枚举/引用 ID 存在性/越权 / 必填 — 触发 coerce 只 log,
         # 必填缺失或越权才返回 error 给 LLM (它会重试).
@@ -14568,6 +14610,52 @@ class AgentExecutor:
         if self._turn_contextual_diet_consumed_fraction is not None:
             payload["portion_adjustment_applied"] = True
         return json.dumps(payload, ensure_ascii=False)
+
+    async def _exec_user_directive(self, args: dict) -> str:
+        """Persist a prevalidated user constraint with a verifiable receipt."""
+        text = str(args.get("text") or "").strip()
+        source = str(args.get("source") or "user_self").strip()[:40]
+        source_message_id = str(args.get("source_message_id") or "").strip() or None
+        if len(text) < 4:
+            return json.dumps(
+                {
+                    "status": "rejected",
+                    "success": False,
+                    "dispatch_started": False,
+                    "error_code": "directive_text_too_short",
+                },
+                ensure_ascii=False,
+            )
+        from app.services.directive_parser import parse_and_store_async
+
+        ids = await parse_and_store_async(
+            self.db,
+            int(self._current_user_id),
+            text,
+            source=source,
+            source_message_id=source_message_id,
+        )
+        if not ids:
+            return json.dumps(
+                {
+                    "status": "rejected",
+                    "success": False,
+                    "dispatch_started": False,
+                    "error_code": "directive_not_recognized",
+                },
+                ensure_ascii=False,
+            )
+        return json.dumps(
+            {
+                "status": "verified",
+                "success": True,
+                "resource_type": "user_directive",
+                "resource_id": str(ids[0]),
+                "resource_ids": [str(item) for item in ids],
+                "count": len(ids),
+            },
+            ensure_ascii=False,
+        )
 
     async def _exec_health_record(
         self, base: str, headers: dict, args: dict

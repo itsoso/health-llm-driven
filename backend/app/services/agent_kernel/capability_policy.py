@@ -1,6 +1,7 @@
 """Deterministic tool capability policy for XiaoBa Agent Kernel."""
 from __future__ import annotations
 
+import hashlib
 import json
 from typing import Any
 
@@ -45,6 +46,37 @@ _RECIPE_RECORD_TYPE_ALIASES = {
     "blood-pressure": "blood_pressure",
     "bloodpressure": "blood_pressure",
 }
+_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v1"
+
+
+def capability_policy_contract_payload() -> dict[str, Any]:
+    """Return static, content-free metadata that governs tool authorization."""
+    return {
+        "contract_version": _CAPABILITY_POLICY_CONTRACT_VERSION,
+        "read_only_tools": sorted(READ_ONLY_TOOLS),
+        "specialist_read_only_tools": sorted(SPECIALIST_READ_ONLY_TOOLS),
+        "write_tools": sorted(WRITE_TOOL_NAMES),
+        "known_tools": sorted(KNOWN_TOOL_NAMES),
+        "manage_write_operations": sorted(MANAGE_WRITE_OPERATIONS),
+        "intervention_write_actions": sorted(INTERVENTION_WRITE_ACTIONS),
+        "intervention_read_actions": sorted(INTERVENTION_READ_ACTIONS),
+        "manage_plan_actions": sorted(MANAGE_PLAN_ACTIONS),
+        "recipe_record_types": sorted(RECIPE_REPLAY_ALLOWED_RECORD_TYPES),
+        "recipe_record_type_aliases": dict(
+            sorted(_RECIPE_RECORD_TYPE_ALIASES.items())
+        ),
+    }
+
+
+def capability_policy_digest() -> str:
+    """Fingerprint policy metadata without prompts, arguments or user content."""
+    encoded = json.dumps(
+        capability_policy_contract_payload(),
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def decide_tool_capability(
@@ -87,6 +119,23 @@ def decide_tool_capability(
         return _decision(
             "allow",
             "prevalidated_recipe_replay",
+            tool_name,
+            args,
+            receipt_required=True,
+        )
+
+    if request.source == "telegram_directive":
+        if tool_name != "user_directive":
+            return _decision(
+                "block",
+                "telegram_directive_tool_not_allowed",
+                tool_name,
+                args,
+                receipt_required=True,
+            )
+        return _decision(
+            "allow",
+            "prevalidated_telegram_directive",
             tool_name,
             args,
             receipt_required=True,
@@ -156,6 +205,23 @@ def decide_tool_capability(
                 if primary == "unknown"
                 else "write_tool_without_write_intent"
             ),
+            tool_name,
+            args,
+            receipt_required=True,
+        )
+
+    if tool_name == "user_directive":
+        if primary in {"write", "mutate"} and snapshot.intent.is_write:
+            return _decision(
+                "allow",
+                "explicit_user_directive",
+                tool_name,
+                args,
+                receipt_required=True,
+            )
+        return _decision(
+            "block",
+            "user_directive_without_write_intent",
             tool_name,
             args,
             receipt_required=True,

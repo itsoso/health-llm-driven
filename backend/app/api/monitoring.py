@@ -44,6 +44,17 @@ class AgentRuntimeRolloutDurationResponse(BaseModel):
     p95: int | None = None
 
 
+class AgentRuntimeIntegrityResponse(BaseModel):
+    window_runs: int
+    contract_snapshot_runs: int
+    contract_snapshot_coverage_percent: int
+    contract_versions: dict[str, int]
+    settled_message_linkage_gaps: int
+    missing_current_attempt_runs: int
+    active_over_deadline_runs: int
+    waiting_over_24h_runs: int
+
+
 class AgentRuntimeRolloutSnapshotResponse(BaseModel):
     window_started_at: datetime
     evaluated_at: datetime
@@ -54,6 +65,7 @@ class AgentRuntimeRolloutSnapshotResponse(BaseModel):
     status_counts: dict[str, int]
     tool_status_counts: dict[str, int]
     duration_ms: AgentRuntimeRolloutDurationResponse
+    integrity: AgentRuntimeIntegrityResponse
 
 
 class AgentRuntimeRolloutStatusResponse(BaseModel):
