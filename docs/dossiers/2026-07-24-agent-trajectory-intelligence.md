@@ -4,8 +4,8 @@
 |---|---|
 | slug | `agent-trajectory-intelligence` |
 | 创建日期 | 2026-07-24 |
-| 当前阶段 | S6 已验证 / P1 快速增强待部署 |
-| 状态 | ready_for_deploy |
+| 当前阶段 | S7 已部署 / G6 真实轨迹待核对 |
+| 状态 | deployed |
 | 负责 | Codex |
 | 反馈环 | intent corpus / stateful trajectory eval / backend pytest / production trace |
 
@@ -186,5 +186,5 @@ resolve visible card / open task
 | G2 可行性/风险 | PASS | additive、复用现有 Runtime 和 ToolGateway |
 | G3 测试 | PASS | 123 项核心回归 + 662 项扩大回归通过 + 62 项离线不变量 + 7 项轨迹契约 |
 | G4 评审 | PASS | 补齐目标 ID 白名单、多卡最新优先、fail-closed 和隐私遥测 |
-| G5 部署健康 | PENDING | P1 快速增强等待 backend deploy；基础版本 `8f705a3d2` 已获 60/60 健康分 |
+| G5 部署健康 | PASS | 精确提交 `069699d69378` 已部署；备份、231 张表恢复演练、站外归档、60/60 健康分和远端 SHA 核验通过 |
 | G6 上线验证 | PENDING | 等待真实会话 trace 和数据库核对 |
