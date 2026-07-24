@@ -5,7 +5,7 @@
 | slug | `app-store-iphone-first-release` |
 | 创建日期 | 2026-07-14 |
 | 当前阶段 | S7 上线验证 |
-| 状态 | build_235_internal_testflight_pending_physical_g6 |
+| 状态 | build_236_uploaded_apple_processing_pending_physical_g6 |
 | 负责 | Codex |
 | 目标版本 | iPhone App Store RC |
 
@@ -77,7 +77,7 @@ RequirementAdmission:
 - [ ] R4 Agent 核心写入、语音、拍照、分享和渲染回归（自动化与模拟器已过；真机待测）。
 - [x] R5 安全、依赖、可访问性和审核材料 Gate。
 - [x] R6 commit/push、前后端部署、新 EAS production build 与 TestFlight 上传。
-- [ ] R7 在 Build 235 上完成真机 G6 并补齐 App Review 材料。
+- [ ] R7 在 Build 236 上完成真机 G6 并补齐 App Review 材料。
 
 ## Gate Ledger
 
@@ -88,7 +88,7 @@ RequirementAdmission:
 | G3 测试 | PASS | 当前 `main`=`56875570b` 的 GitHub Actions run `29417247062` 28/28 jobs 通过；Mobile 245 suites / 1731 tests、Web 43 files / 243 tests、TypeScript、Lint、生产构建通过；Harness invariants 12/12、core 50/50、live orchestrator 5/5 通过 |
 | G4 安全 | PASS | 生产包无后台录音/持续定位；账号删除、隐私清单、写入回执 fail-closed 已复核 |
 | G5 部署健康 | PASS | 后端生产健康度 60/60；App Store Connect 中 version 1.3.2 Build 235 为 `VALID`、未过期且内部 `IN_BETA_TESTING` |
-| G6 真机验证 | BLOCKED | 必须在同一 TestFlight Build 235 完成真实 iPhone 语音、切 App 恢复、草稿、滚动、拍照、图片/视频播放分享、微信/小红书跳转、写入纠正删除及账号删除证据 |
+| G6 真机验证 | BLOCKED | 必须在同一 TestFlight Build 236 完成真实 iPhone 语音、切 App 恢复、草稿、滚动、拍照、图片/视频播放分享、微信/小红书跳转、写入纠正删除及账号删除证据 |
 
 ## Correction Block
 
@@ -163,3 +163,11 @@ RequirementAdmission:
 - 历史 `226-ready` 截图集本身通过尺寸、隐私和素材完整性检查，但严格门禁按预期拒绝其用于 Build 235：manifest 中 `build_id=226`，与目标 `235` 不一致。不得通过改写 manifest 绕过同 Build 复核。
 - CoreDevice 仍能识别已配对的 iPhone 17 Pro Max `suntice`，但状态为 `unavailable`；因此无法执行 Build 235 的 20 项物理 iPhone 验收，模拟器不得代替外部音频打断、真实语音、相机/相册、微信/小红书跳转和前后台恢复证据。
 - 严格门禁的真实剩余阻断仍为四项：Build 235 真机验收文件、Build 235 截图证据、App Privacy 已发布确认、受监管医疗器械状态 `No`。submission pack 与 Review Notes 的 Draft 标记是上述阻断的保护结果，不应提前移除。
+
+## 2026-07-24 Build 236 TestFlight Release
+
+- 从干净源码提交 `d1a5e8aa83cf7409728fd72fe5efe89b3e9fda1a` 执行 iOS production 构建；App Version `1.3.2`，Build `236`，runtime `1.3.2`，production channel，App Store distribution。
+- 发布前基础 release-pack、App Store Connect 凭证预检、TypeScript、设计约束和 lint 均通过；Mobile 全量回归为 285 suites / 2103 passed / 1 skipped / 1 snapshot passed。Jest 存在既有异步句柄未退出提示，使用 `--forceExit` 取得明确 exit 0，断言无失败。
+- EAS Build ID `d405e79a-ea2e-4b4a-b14d-de5304a893be` 状态为 `FINISHED`；EAS Submission ID `251e1432-694c-411d-a7c9-e3b88af57f5e` 已成功把二进制上传至 App Store Connect。
+- Apple 已接收 Build 236，当前处于 TestFlight processing；只有 App Store Connect 后续显示该 Build 可用于内部测试，才可判定 TestFlight 可安装。
+- G6 继续 `BLOCKED`：真机验收和同 Build 截图目标从 Build 235 切换为 Build 236；App Privacy 发布确认及受监管医疗器械状态 `No` 仍未完成，禁止据此提交 App Review。
