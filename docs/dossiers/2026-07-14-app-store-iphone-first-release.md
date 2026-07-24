@@ -153,4 +153,5 @@ RequirementAdmission:
 - 修复联网状态误判：连接存在但 `isInternetReachable=false` 时显示离线；探测中的 `null` 保持最近可信状态，避免前后台切换时在线/离线闪烁。
 - OTA 应用前新增统一保存闸门。聊天输入框会同步落盘当前文字和图片草稿；保存失败时停止重载并提示稍后重试，禁止以更新成功为由丢失用户输入。
 - 真机证据模板从 12 项扩展到 20 项，并强制记录 app version、production profile、EAS build ID 和 source commit。新增流式 Markdown、外部音频打断、图片保存分享、视频播放不二次生成、写入纠正删除幂等、前台恢复、草稿保留和最新消息定位。
+- production OTA 已从提交 `a9bb9b8752d3313722c8d2deca70220e12b70b6f` 发布到 runtime `1.3.2`：update group `c96503a6-91f3-467c-9051-a9e18bd8b2a6`，iOS update `019f92f8-6957-7a4c-a8fe-71689563d8c6`。
 - 当前仍不可提交审核：Build 235 真机 20 项证据、同 Build 截图复核、App Privacy 发布确认和受监管医疗器械状态 `No` 均未完成。发布材料继续保持 Draft。

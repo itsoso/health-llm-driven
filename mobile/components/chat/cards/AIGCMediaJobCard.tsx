@@ -20,6 +20,7 @@ import {
   shareRemoteVideo,
   type VideoShareTarget,
 } from '../../../utils/share';
+import { resolveNetworkOnlineState } from '../../../utils/networkReachability';
 import { SocialBrandIcon } from '../../common/SocialBrandIcon';
 import { CardShell } from './CardShell';
 import type { CardSpec } from './types';
@@ -125,11 +126,13 @@ export function AIGCMediaJobCardView(initialData: AIGCMediaJobCardData) {
   const [playbackStarted, setPlaybackStarted] = useState(false);
   const [sharingTarget, setSharingTarget] = useState<VideoShareTarget | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [appIsActive, setAppIsActive] = useState(AppState.currentState === 'active');
+  const [networkOnline, setNetworkOnline] = useState(true);
   const mounted = useRef(true);
   const sharingRef = useRef(false);
   const refreshInFlight = useRef<Promise<void> | null>(null);
   const appStateRef = useRef(AppState.currentState);
-  const networkConnectedRef = useRef<boolean | null>(null);
+  const networkOnlineRef = useRef(true);
   const playbackEventSent = useRef(false);
 
   useEffect(() => {
@@ -171,7 +174,11 @@ export function AIGCMediaJobCardView(initialData: AIGCMediaJobCardData) {
   }, [refresh]);
 
   useEffect(() => {
-    if (!ACTIVE_STATUSES.has(statusOf(data.status))) return;
+    if (
+      !ACTIVE_STATUSES.has(statusOf(data.status))
+      || !appIsActive
+      || !networkOnline
+    ) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
     let attempt = 0;
@@ -189,21 +196,28 @@ export function AIGCMediaJobCardView(initialData: AIGCMediaJobCardData) {
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [data.status, refresh]);
+  }, [appIsActive, data.status, networkOnline, refresh]);
 
   useEffect(() => {
     if (!ACTIVE_STATUSES.has(statusOf(data.status))) return;
     const appStateSubscription = AppState.addEventListener('change', (nextState) => {
       const previousState = appStateRef.current;
       appStateRef.current = nextState;
-      if (nextState === 'active' && previousState !== 'active') {
+      setAppIsActive(nextState === 'active');
+      if (
+        nextState === 'active'
+        && previousState !== 'active'
+        && networkOnlineRef.current
+      ) {
         void refresh();
       }
     });
     const removeNetworkListener = NetInfo.addEventListener((state) => {
-      const wasConnected = networkConnectedRef.current;
-      networkConnectedRef.current = state.isConnected;
-      if (state.isConnected === true && wasConnected === false) {
+      const wasOnline = networkOnlineRef.current;
+      const isOnline = resolveNetworkOnlineState(wasOnline, state);
+      networkOnlineRef.current = isOnline;
+      setNetworkOnline(isOnline);
+      if (isOnline && !wasOnline && appStateRef.current === 'active') {
         void refresh();
       }
     });
@@ -235,7 +249,7 @@ export function AIGCMediaJobCardView(initialData: AIGCMediaJobCardData) {
 
   const detail = useMemo(() => {
     if (status === 'queued') return '小巴已提交任务，正在等待百炼处理。';
-    if (status === 'running' && progress < 75) return '正在生成画面和音频，请保持网络可用。';
+    if (status === 'running' && progress < 75) return '可离开此页面，完成后小巴会通知你。';
     if (status === 'running') return '生成已接近完成，正在保存到你的私有空间。';
     if (status === 'succeeded') return '结果仅对当前账号可见。';
     if (status === 'submission_unknown') return '提交结果待核验，已停止自动重试以避免重复生成。';

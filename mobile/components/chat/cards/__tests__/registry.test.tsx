@@ -256,7 +256,10 @@ describe('renderCard 安全降级', () => {
   it('refreshes an active AIGC job immediately on foreground and network recovery', async () => {
     (api.get as jest.Mock).mockReset();
     let appStateListener: ((state: string) => void) | undefined;
-    let networkListener: ((state: { isConnected: boolean | null }) => void) | undefined;
+    let networkListener: ((state: {
+      isConnected: boolean | null;
+      isInternetReachable?: boolean | null;
+    }) => void) | undefined;
     const appStateSpy = jest.spyOn(AppState, 'addEventListener').mockImplementation(
       ((_event: string, listener: (state: string) => void) => {
         appStateListener = listener;
@@ -264,7 +267,10 @@ describe('renderCard 安全降级', () => {
       }) as typeof AppState.addEventListener,
     );
     (NetInfo.addEventListener as jest.Mock).mockImplementation(
-      (listener: (state: { isConnected: boolean | null }) => void) => {
+      (listener: (state: {
+        isConnected: boolean | null;
+        isInternetReachable?: boolean | null;
+      }) => void) => {
         networkListener = listener;
         return jest.fn();
       },
@@ -300,14 +306,149 @@ describe('renderCard 安全降级', () => {
     (api.get as jest.Mock).mockClear();
 
     await act(async () => {
-      networkListener?.({ isConnected: false });
-      networkListener?.({ isConnected: true });
+      networkListener?.({ isConnected: true, isInternetReachable: false });
+      networkListener?.({ isConnected: true, isInternetReachable: true });
       await Promise.resolve();
     });
     await waitFor(() => expect(api.get).toHaveBeenCalledTimes(1));
 
     screen.unmount();
     appStateSpy.mockRestore();
+  });
+
+  it('does not refresh an active AIGC job on foreground while internet is unreachable', async () => {
+    (api.get as jest.Mock).mockReset();
+    let appStateListener: ((state: string) => void) | undefined;
+    let networkListener: ((state: {
+      isConnected: boolean | null;
+      isInternetReachable?: boolean | null;
+    }) => void) | undefined;
+    const appStateSpy = jest.spyOn(AppState, 'addEventListener').mockImplementation(
+      ((_event: string, listener: (state: string) => void) => {
+        appStateListener = listener;
+        return { remove: jest.fn() };
+      }) as typeof AppState.addEventListener,
+    );
+    (NetInfo.addEventListener as jest.Mock).mockImplementation(
+      (listener: (state: {
+        isConnected: boolean | null;
+        isInternetReachable?: boolean | null;
+      }) => void) => {
+        networkListener = listener;
+        return jest.fn();
+      },
+    );
+    (api.get as jest.Mock).mockResolvedValue({
+      data: {
+        id: 'aigc_offline_resume',
+        kind: 'text_to_video',
+        status: 'running',
+        progress: 50,
+        result: { media_type: null, url: null },
+      },
+    });
+    const screen = render(renderCard({
+      type: 'aigc_media_job',
+      data: {
+        job_id: 'aigc_offline_resume',
+        kind: 'text_to_video',
+        status: 'running',
+        progress: 25,
+        result: { media_type: null, url: null },
+      },
+    })!);
+    await waitFor(() => expect(api.get).toHaveBeenCalledTimes(1));
+    (api.get as jest.Mock).mockClear();
+
+    await act(async () => {
+      networkListener?.({ isConnected: true, isInternetReachable: false });
+      appStateListener?.('background');
+      appStateListener?.('active');
+      await Promise.resolve();
+    });
+
+    expect(api.get).not.toHaveBeenCalled();
+    screen.unmount();
+    appStateSpy.mockRestore();
+  });
+
+  it('defers network recovery refresh until an active AIGC card returns to foreground', async () => {
+    (api.get as jest.Mock).mockReset();
+    let appStateListener: ((state: string) => void) | undefined;
+    let networkListener: ((state: {
+      isConnected: boolean | null;
+      isInternetReachable?: boolean | null;
+    }) => void) | undefined;
+    const appStateSpy = jest.spyOn(AppState, 'addEventListener').mockImplementation(
+      ((_event: string, listener: (state: string) => void) => {
+        appStateListener = listener;
+        return { remove: jest.fn() };
+      }) as typeof AppState.addEventListener,
+    );
+    (NetInfo.addEventListener as jest.Mock).mockImplementation(
+      (listener: (state: {
+        isConnected: boolean | null;
+        isInternetReachable?: boolean | null;
+      }) => void) => {
+        networkListener = listener;
+        return jest.fn();
+      },
+    );
+    (api.get as jest.Mock).mockResolvedValue({
+      data: {
+        id: 'aigc_background_recovery',
+        kind: 'text_to_video',
+        status: 'running',
+        progress: 50,
+        result: { media_type: null, url: null },
+      },
+    });
+    const screen = render(renderCard({
+      type: 'aigc_media_job',
+      data: {
+        job_id: 'aigc_background_recovery',
+        kind: 'text_to_video',
+        status: 'running',
+        progress: 25,
+        result: { media_type: null, url: null },
+      },
+    })!);
+    await waitFor(() => expect(api.get).toHaveBeenCalledTimes(1));
+    (api.get as jest.Mock).mockClear();
+
+    await act(async () => {
+      appStateListener?.('background');
+      networkListener?.({ isConnected: true, isInternetReachable: false });
+      networkListener?.({ isConnected: true, isInternetReachable: true });
+      await Promise.resolve();
+    });
+    expect(api.get).not.toHaveBeenCalled();
+
+    await act(async () => {
+      appStateListener?.('active');
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(api.get).toHaveBeenCalledTimes(1));
+
+    screen.unmount();
+    appStateSpy.mockRestore();
+  });
+
+  it('tells the user an active AIGC task continues after leaving the page', () => {
+    const screen = render(renderCard({
+      type: 'aigc_media_job',
+      data: {
+        job_id: 'aigc_background_safe',
+        kind: 'text_to_video',
+        status: 'running',
+        progress: 40,
+        result: { media_type: null, url: null },
+      },
+    })!);
+
+    expect(screen.getByText('可离开此页面，完成后小巴会通知你。')).toBeTruthy();
+    expect(screen.queryByText('正在生成画面和音频，请保持网络可用。')).toBeNull();
+    screen.unmount();
   });
 
   it('describes HappyHorse image-to-video ratio as following the source image', () => {
