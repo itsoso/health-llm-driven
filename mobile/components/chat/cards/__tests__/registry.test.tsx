@@ -130,6 +130,29 @@ describe('dispatchCard', () => {
     expect(result).toBeNull();
   });
 
+  it('does not turn AIGC source topics into unrelated local health cards', async () => {
+    const get = jest.fn().mockResolvedValue({
+      data: {
+        total_calories: 1825,
+        total_protein: 82,
+        total_carbs: 224,
+        total_fat: 62,
+        total_fiber: 17,
+        meals_count: 6,
+        meals: [],
+      },
+    });
+    const ctx = makeContext(
+      '根据我今天的活动、饮食和睡眠，生成一个短视频。',
+      { api: { get, post: jest.fn() } },
+    );
+
+    const result = await dispatchCard(ctx);
+
+    expect(result).toBeNull();
+    expect(get).not.toHaveBeenCalled();
+  });
+
   it('build 抛错时不阻塞, 返回 null', async () => {
     const ctx = makeContext('体重多少', {
       api: { get: jest.fn().mockRejectedValue(new Error('net')), post: jest.fn() },
@@ -381,9 +404,14 @@ describe('renderCard 安全降级', () => {
         ratio: '9:16',
         resolution: '720P',
         provider: '百炼 HappyHorse',
+        content_summary: '围绕活动、饮食和睡眠生成健康行动短视频',
+        content_topics: ['活动', '饮食', '睡眠'],
       },
     })!);
 
+    expect(screen.getByText('内容预览')).toBeTruthy();
+    expect(screen.getByText('围绕活动、饮食和睡眠生成健康行动短视频')).toBeTruthy();
+    expect(screen.getByText('确认并生成')).toBeTruthy();
     fireEvent.press(screen.getByLabelText('选择15秒'));
     fireEvent.press(screen.getByLabelText('确认生成15秒短视频'));
 

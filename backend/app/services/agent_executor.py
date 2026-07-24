@@ -5506,6 +5506,44 @@ def _fast_turn_tool_names_for_message(message: Optional[str]) -> tuple:
 
 
 _AIGC_MEDIA_DRAFT_TOOL_NAMES: tuple[str, ...] = ("draft_aigc_media",)
+_AIGC_MEDIA_TOPIC_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    (
+        "活动",
+        re.compile(r"活动|运动|训练|步数|[0-9０-９]+\s*步|跑步|步行|骑行|游泳|消耗"),
+    ),
+    ("饮食", re.compile(r"饮食|早餐|午餐|晚餐|加餐|餐食|热量|蛋白质|碳水|脂肪|kcal", re.IGNORECASE)),
+    ("睡眠", re.compile(r"睡眠|入睡|深睡|清醒|起床|睡眠分")),
+    ("补水", re.compile(r"补水|饮水|喝水|水分")),
+    ("用药提醒", re.compile(r"用药|服药|吃药|药物提醒")),
+    ("健康计划", re.compile(r"健康计划|行动计划|今日计划|明日计划")),
+)
+
+
+def _aigc_media_content_preview(*, kind: str, prompt: str) -> Dict[str, Any]:
+    """Project an allowlisted category summary without exposing prompt details."""
+    source = str(prompt or "")
+    topics = [
+        label
+        for label, pattern in _AIGC_MEDIA_TOPIC_PATTERNS
+        if pattern.search(source)
+    ][:3]
+    medium = "短视频" if kind in {"text_to_video", "image_to_video"} else "图片"
+    if not topics:
+        return {
+            "content_summary": f"根据本轮创作描述生成健康行动{medium}",
+            "content_topics": [],
+        }
+    topic_text = (
+        topics[0]
+        if len(topics) == 1
+        else f"{topics[0]}和{topics[1]}"
+        if len(topics) == 2
+        else f"{'、'.join(topics[:-1])}和{topics[-1]}"
+    )
+    return {
+        "content_summary": f"围绕{topic_text}生成健康行动{medium}",
+        "content_topics": topics,
+    }
 
 
 def _is_explicit_aigc_media_draft_turn(message: Optional[str]) -> bool:
@@ -15846,7 +15884,11 @@ class AgentExecutor:
         card_data = {
             "confirmation_id": confirmation.id,
             "kind": confirmation.kind,
-            "title": "小巴创作草稿",
+            "title": (
+                "短视频草稿"
+                if confirmation.kind in {"text_to_video", "image_to_video"}
+                else "图片草稿"
+            ),
             "provider": (
                 "百炼 HappyHorse"
                 if confirmation.kind in {"text_to_video", "image_to_video"}
@@ -15855,6 +15897,10 @@ class AgentExecutor:
             ),
             "source_attached": confirmation.source_message_id is not None,
             "status": "pending",
+            **_aigc_media_content_preview(
+                kind=confirmation.kind,
+                prompt=str(args.get("prompt") or ""),
+            ),
         }
         if confirmation.kind in {"text_to_video", "image_to_video"}:
             from app.services.aigc_media_capabilities import video_capability_for
@@ -15878,7 +15924,7 @@ class AgentExecutor:
             "actions": [
                 {
                     "id": f"aigc_media.confirm:{confirmation.id}",
-                    "label": "发送给百炼并生成",
+                    "label": "确认并生成",
                     "action": "aigc_media.confirm",
                     "endpoint": f"/aigc/media/confirmations/{confirmation.id}/confirm",
                     "requires_manual_confirm": True,

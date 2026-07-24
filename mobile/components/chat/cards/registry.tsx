@@ -94,6 +94,16 @@ export const CARD_MAP: Record<string, CardSpec> = Object.fromEntries(
   CARD_REGISTRY.map((c) => [c.type, c]),
 );
 
+function isMediaCreationRequest(query: string): boolean {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) return false;
+  const requestsCreation =
+    /生成|制作|做成|创作|创建|画一张|做一张|剪成|剪辑|generate|create/.test(normalized);
+  const requestsMedia =
+    /短视频|视频|图片|图像|封面|海报|插画|动图|照片|video|image/.test(normalized);
+  return requestsCreation && requestsMedia;
+}
+
 const ALLOWED_ACTIONS = new Set([
   'agenda.complete',
   'daily_plan_action.complete',
@@ -118,6 +128,11 @@ const WRITE_ACTIONS = new Set([
  * @returns {type, data} 或 null
  */
 export async function dispatchCard(ctx: CardContext): Promise<{ type: string; data: any } | null> {
+  // Local keyword cards are a read-query fallback. Media creation can mention
+  // health topics as source material ("用饮食和睡眠生成短视频"); projecting a
+  // diet/sleep card for those nouns competes with the authoritative creation card.
+  if (isMediaCreationRequest(ctx.query_lower)) return null;
+
   const scored = CARD_REGISTRY
     .map((spec) => ({ spec, score: spec.match(ctx) }))
     .filter((x) => typeof x.score === 'number' && (x.score as number) > 0) as { spec: CardSpec; score: number }[];

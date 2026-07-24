@@ -336,10 +336,12 @@ async def test_agent_media_tool_uses_current_image_and_emits_manual_confirmation
         "data": {
             "confirmation_id": "aigc_confirm_0123456789abcdef0123456789abcdef",
             "kind": "image_to_video",
-            "title": "小巴创作草稿",
+            "title": "短视频草稿",
             "provider": "百炼 HappyHorse",
             "source_attached": True,
             "status": "pending",
+            "content_summary": "围绕补水生成健康行动短视频",
+            "content_topics": ["补水"],
             "duration_seconds": 5,
             "duration_options": [5, 10, 15],
             "ratio": "9:16",
@@ -348,7 +350,7 @@ async def test_agent_media_tool_uses_current_image_and_emits_manual_confirmation
         },
         "actions": [{
             "id": "aigc_media.confirm:aigc_confirm_0123456789abcdef0123456789abcdef",
-            "label": "发送给百炼并生成",
+            "label": "确认并生成",
             "action": "aigc_media.confirm",
             "endpoint": "/aigc/media/confirmations/aigc_confirm_0123456789abcdef0123456789abcdef/confirm",
             "requires_manual_confirm": True,
@@ -366,3 +368,20 @@ async def test_agent_media_tool_uses_current_image_and_emits_manual_confirmation
     assert receipt.data["resource_id"] == (
         "aigc_confirm_0123456789abcdef0123456789abcdef"
     )
+
+
+def test_aigc_media_preview_exposes_categories_without_raw_health_details():
+    from app.services.agent_executor import _aigc_media_content_preview
+
+    preview = _aigc_media_content_preview(
+        kind="text_to_video",
+        prompt="用今天 95 分睡眠、8200 步和晚餐 580 kcal 生成回顾视频",
+    )
+
+    assert preview == {
+        "content_summary": "围绕活动、饮食和睡眠生成健康行动短视频",
+        "content_topics": ["活动", "饮食", "睡眠"],
+    }
+    assert "95" not in preview["content_summary"]
+    assert "8200" not in preview["content_summary"]
+    assert "580" not in preview["content_summary"]

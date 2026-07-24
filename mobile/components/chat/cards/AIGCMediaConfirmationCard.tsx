@@ -23,6 +23,8 @@ export interface AIGCMediaConfirmationCardData {
   title?: string;
   provider?: string;
   source_attached?: boolean;
+  content_summary?: string;
+  content_topics?: string[];
   duration_seconds?: number;
   duration_options?: number[];
   ratio?: string;
@@ -191,7 +193,8 @@ export function AIGCMediaConfirmationCardView(data: AIGCMediaConfirmationCardDat
   const buttonDisabled = !confirmationID || !canConfirm || submitting || isDispatching;
   const buttonLabel = isVideo
     ? `${isExpired ? '重新确认生成' : '确认生成'}${selectedDuration}秒短视频`
-    : isExpired ? '重新确认并生成' : '发送给百炼并生成';
+    : isExpired ? '重新确认并生成' : '确认并生成';
+  const contentSummary = String(data.content_summary || '').trim();
 
   return (
     <CardShell
@@ -201,12 +204,16 @@ export function AIGCMediaConfirmationCardView(data: AIGCMediaConfirmationCardDat
       badge={kindLabel(String(data.kind || ''))}
       badgeColor={C.green500}
     >
-      <View style={styles.notice}>
-        <Ionicons name="shield-checkmark-outline" size={17} color={C.green600} />
-        <Text maxFontSizeMultiplier={1.2} style={styles.noticeText}>
-          将发送你的创作描述{data.source_attached ? '和当前图片' : ''}给{data.provider || '百炼'}生成。
-        </Text>
-      </View>
+      {contentSummary ? (
+        <View style={styles.contentSection}>
+          <Text maxFontSizeMultiplier={1.2} style={styles.contentLabel}>
+            内容预览
+          </Text>
+          <Text maxFontSizeMultiplier={1.3} style={styles.contentSummary}>
+            {contentSummary}
+          </Text>
+        </View>
+      ) : null}
       {isVideo ? (
         <View style={styles.specSection}>
           <View style={styles.specHeader}>
@@ -242,6 +249,12 @@ export function AIGCMediaConfirmationCardView(data: AIGCMediaConfirmationCardDat
           </View>
         </View>
       ) : null}
+      <View style={styles.notice}>
+        <Ionicons name="shield-checkmark-outline" size={17} color={C.green600} />
+        <Text maxFontSizeMultiplier={1.2} style={styles.noticeText}>
+          确认后，将把创作描述{data.source_attached ? '和当前图片' : ''}发送至{data.provider || '百炼'}。
+        </Text>
+      </View>
       {isExpired ? (
         <View style={[styles.stateNotice, !canConfirm && styles.stateNoticeUnavailable]}>
           <Ionicons
@@ -278,7 +291,7 @@ export function AIGCMediaConfirmationCardView(data: AIGCMediaConfirmationCardDat
       >
         {submitting ? <ActivityIndicator size="small" color="#fff" /> : <Ionicons name="sparkles" size={16} color="#fff" />}
         <Text maxFontSizeMultiplier={1.15} style={styles.confirmText}>
-          {isDispatching ? '正在核对任务' : isExpired ? '重新确认并生成' : '发送给百炼并生成'}
+          {isDispatching ? '正在核对任务' : isExpired ? '重新确认并生成' : '确认并生成'}
         </Text>
       </Pressable>
     </CardShell>
@@ -294,7 +307,29 @@ export const AIGCMediaConfirmationCardSpec: CardSpec<AIGCMediaConfirmationCardDa
 };
 
 const styles = StyleSheet.create({
-  notice: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, padding: 10, borderRadius: revaRadii.md, backgroundColor: C.green50 },
+  contentSection: { gap: 4, paddingLeft: 10, borderLeftWidth: 2, borderLeftColor: C.green500 },
+  contentLabel: {
+    fontFamily: revaFonts.sans,
+    fontSize: 11,
+    fontWeight: '700',
+    color: C.green700,
+  } as TextStyle,
+  contentSummary: {
+    fontFamily: revaFonts.sans,
+    fontSize: 15,
+    lineHeight: 22,
+    fontWeight: '700',
+    color: C.ink1,
+  } as TextStyle,
+  notice: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    marginTop: 12,
+    padding: 10,
+    borderRadius: revaRadii.md,
+    backgroundColor: C.green50,
+  },
   noticeText: { flex: 1, fontFamily: revaFonts.sans, fontSize: 12, lineHeight: 18, color: C.ink2 } as TextStyle,
   specSection: { marginTop: 12, gap: 8 },
   specHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
