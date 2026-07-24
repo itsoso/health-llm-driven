@@ -1,6 +1,6 @@
 # Mobile Empty Chat Hierarchy
 
-**Status:** Definition approved  
+**Status:** Implementation verified; simulator review pending  
 **Owner surface:** Mobile Agent conversation  
 **Design:** [Mobile Empty Chat Hierarchy Design](../plans/2026-07-24-mobile-empty-chat-hierarchy-design.md)
 
@@ -28,8 +28,8 @@ attachment capabilities.
 |---|---|---|
 | G1 Requirement admission | PASS | Improves Mobile capture and conversation entry |
 | G2 Feasibility and risk | PASS | Client-only presentation contract; no API change |
-| G3 Tests | PENDING | Focused RN tests and typecheck |
-| G4 Review | PENDING | Code and interaction review |
+| G3 Tests | PASS | 110 focused assertions; TypeScript exit 0; lint exit 0 with existing warnings |
+| G4 Review | PENDING | Simulator interaction and visual review |
 | G5 Deployment health | PENDING | Simulator and OTA health |
 | G6 Live verification | PENDING | Production-channel Mobile verification |
 
@@ -39,4 +39,3 @@ attachment capabilities.
 - Do not modify native dependencies.
 - Publish as Mobile production OTA only after simulator screenshots verify the
   empty, keyboard-open, and draft states.
-

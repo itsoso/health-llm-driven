@@ -975,6 +975,7 @@ export default function ChatScreen() {
                 onOpenerQuickReply={handleOpenerQuickReply}
                 onboarding={startersOnboarding}
                 onQuickAction={handleQuickAction}
+                showReplyActions={!keyboardVisible}
               />
             ) : <AgentHomeBootstrapLoading />
           }
@@ -1042,7 +1043,12 @@ export default function ChatScreen() {
             />
           </View>
         )}
-        {bootstrapReady && messages.length === 0 && !selectionMode && (
+        {bootstrapReady
+          && messages.length === 0
+          && !selectionMode
+          && !opener
+          && !keyboardVisible
+          && (
           <ComposerSuggestionsRow
             suggestions={starterSuggestions}
             onCapturePhoto={() => setCaptureMealPhotoToken(token => token + 1)}

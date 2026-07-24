@@ -425,7 +425,7 @@ describe('ChatInputBar', () => {
     expect(inputSurface.borderRadius).toBeLessThanOrEqual(10);
   });
 
-  it('expands the smart text composer on focus without starting cloud ASR', () => {
+  it('keeps an empty text composer compact on focus without starting cloud ASR', () => {
     const view = render(
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
     );
@@ -437,9 +437,9 @@ describe('ChatInputBar', () => {
 
     fireEvent.press(getByTestId('wechat-composer-input'));
 
-    const expandedSurface = StyleSheet.flatten(getByTestId('wechat-composer-input').props.style);
-    expect(expandedSurface.minHeight).toBeGreaterThan(compactSurface.minHeight);
-    expect(expandedSurface.borderRadius).toBeGreaterThan(compactSurface.borderRadius);
+    const focusedSurface = StyleSheet.flatten(getByTestId('wechat-composer-input').props.style);
+    expect(focusedSurface.minHeight).toBe(compactSurface.minHeight);
+    expect(focusedSurface.borderRadius).toBe(compactSurface.borderRadius);
     expect(getByLabelText('实时语音转文字')).toBeTruthy();
     expect(mockStartDictation).not.toHaveBeenCalled();
   });
@@ -458,64 +458,36 @@ describe('ChatInputBar', () => {
     expect(getByLabelText('消息输入框').props.placeholder).toBe('问小巴，或点麦克风说话');
   });
 
-  it('shows minimal quick capture actions only while the empty composer is focused', () => {
+  it('does not add a third quick-action rail when the empty composer is focused', () => {
     const view = render(
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
     );
     enterKeyboardMode(view);
-    const { getByLabelText, getByTestId, queryByTestId } = view;
+    const { getByTestId, queryByTestId } = view;
 
     expect(queryByTestId('smart-composer-quick-actions')).toBeNull();
     fireEvent.press(getByTestId('wechat-composer-input'));
 
-    expect(getByTestId('smart-composer-quick-actions')).toBeTruthy();
-    expect(getByLabelText('拍照记餐')).toBeTruthy();
-    expect(getByLabelText('记录喝水')).toBeTruthy();
-    expect(getByLabelText('记录运动')).toBeTruthy();
-
-    fireEvent.changeText(getByLabelText('消息输入框'), '已有健康问题');
     expect(queryByTestId('smart-composer-quick-actions')).toBeNull();
   });
 
-  it('routes the quick water action through the typed chat pipeline', async () => {
-    const onSend = jest.fn().mockResolvedValue(true);
+  it('grows the composer from text content and caps it at three lines', () => {
     const view = render(
-      <ChatInputBar onSend={onSend} isStreaming={false} />,
+      <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
     );
     enterKeyboardMode(view);
-    fireEvent.press(view.getByTestId('wechat-composer-input'));
+    const field = view.getByLabelText('消息输入框');
+    const surface = () => StyleSheet.flatten(view.getByTestId('wechat-composer-input').props.style);
 
-    await act(async () => {
-      fireEvent.press(view.getByLabelText('记录喝水'));
-      await Promise.resolve();
-      await Promise.resolve();
+    fireEvent(field, 'contentSizeChange', {
+      nativeEvent: { contentSize: { height: 66 } },
     });
+    expect(surface().minHeight).toBeGreaterThan(48);
 
-    expect(onSend).toHaveBeenCalledWith(
-      '记录喝水',
-      null,
-      expect.objectContaining({ channel: 'typed' }),
-    );
-  });
-
-  it('starts meal photo capture from the focused quick action rail', async () => {
-    const photo = { uri: 'file:///quick-meal.jpg', base64: 'quick-meal', type: 'jpeg' };
-    mockTakePhoto.mockResolvedValueOnce([photo]);
-    const onSend = jest.fn();
-    const view = render(
-      <ChatInputBar onSend={onSend} isStreaming={false} />,
-    );
-    enterKeyboardMode(view);
-    fireEvent.press(view.getByTestId('wechat-composer-input'));
-
-    await act(async () => {
-      fireEvent.press(view.getByLabelText('拍照记餐'));
-      await Promise.resolve();
+    fireEvent(field, 'contentSizeChange', {
+      nativeEvent: { contentSize: { height: 200 } },
     });
-
-    expect(mockTakePhoto).toHaveBeenCalledTimes(1);
-    expect(onSend).not.toHaveBeenCalled();
-    expect(view.getByLabelText('消息输入框').props.value).toBe('记录这餐');
+    expect(surface().minHeight).toBeLessThanOrEqual(84);
   });
 
   it('toggles from keyboard input back into WeChat hold-to-talk mode', () => {

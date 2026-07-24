@@ -21,7 +21,7 @@ describe('EmptyStateHome', () => {
     ])).toBe('鼻炎发作时优先生理盐水冲洗。 避免连续使用喷剂。');
   });
 
-  it('renders the opening bubble: fused greeting + opener text + memory footnote inside', () => {
+  it('renders the opening bubble with a quiet memory source affordance', () => {
     const onOpenMemory = jest.fn();
     const onOpenerQuickReply = jest.fn();
     const opener = {
@@ -30,7 +30,7 @@ describe('EmptyStateHome', () => {
       quick_replies: [{ text: '做到了' }],
     } as any;
 
-    const { getByText, getByLabelText } = render(
+    const { getByText, getByLabelText, queryByText } = render(
       <EmptyStateHome
         memoryOpener={[{ id: 1, type: 'allergy', type_label: '过敏', content: '对花粉过敏' }]}
         opener={opener}
@@ -42,9 +42,9 @@ describe('EmptyStateHome', () => {
     // greeting is folded INTO the bubble as the first sentence + opener text follows.
     expect(getByText(/早上好|中午好|下午好|晚上好|夜深了/)).toBeTruthy();
     expect(getByText(/今天就是「提前晚餐」的检验日，做到了吗？/)).toBeTruthy();
-    // memory footnote lives inside the bubble (sanitized text).
-    expect(getByText('对花粉过敏')).toBeTruthy();
-    expect(getByText('记忆 · 过敏')).toBeTruthy();
+    // The opener keeps provenance without embedding another body paragraph.
+    expect(queryByText('对花粉过敏')).toBeNull();
+    expect(getByText('依据 1 条过敏')).toBeTruthy();
 
     // 校准 button reaches the memory calibration handler.
     fireEvent.press(getByLabelText('查看和校准 AI 记忆'));
@@ -96,6 +96,82 @@ describe('EmptyStateHome', () => {
     // appended 换个话题 chip routes through the SAME handler.
     fireEvent.press(getByLabelText('换个话题'));
     expect(onOpenerQuickReply).toHaveBeenCalledWith('换个话题');
+  });
+
+  it('deduplicates semantically equivalent opener replies after label normalization', () => {
+    const opener = {
+      text: '今晚按计划完成了吗？',
+      source: 'action_card_due',
+      quick_replies: [
+        { text: '做到了' },
+        { text: '已经完成' },
+        { text: '调整计划' },
+      ],
+    } as any;
+
+    const { getAllByText, getByLabelText, queryByLabelText } = render(
+      <EmptyStateHome
+        memoryOpener={[]}
+        opener={opener}
+        onOpenMemory={jest.fn()}
+        onOpenerQuickReply={jest.fn()}
+      />,
+    );
+
+    expect(getAllByText('完成了')).toHaveLength(1);
+    expect(getByLabelText('一键回复: 做到了')).toBeTruthy();
+    expect(queryByLabelText('一键回复: 已经完成')).toBeNull();
+    expect(getByLabelText('换个话题')).toBeTruthy();
+  });
+
+  it('caps opener actions at three and does not append 换个话题 when the group is full', () => {
+    const opener = {
+      text: '现在想从哪一步开始？',
+      source: 'action_card_due',
+      quick_replies: [
+        { text: '做到了' },
+        { text: '没做' },
+        { text: '调整计划' },
+        { text: '稍后再说' },
+      ],
+    } as any;
+
+    const { getByLabelText, queryByLabelText } = render(
+      <EmptyStateHome
+        memoryOpener={[]}
+        opener={opener}
+        onOpenMemory={jest.fn()}
+        onOpenerQuickReply={jest.fn()}
+      />,
+    );
+
+    expect(getByLabelText('一键回复: 做到了')).toBeTruthy();
+    expect(getByLabelText('一键回复: 没做')).toBeTruthy();
+    expect(getByLabelText('一键回复: 调整计划')).toBeTruthy();
+    expect(queryByLabelText('一键回复: 稍后再说')).toBeNull();
+    expect(queryByLabelText('换个话题')).toBeNull();
+  });
+
+  it('removes opener reply actions from the tree when the keyboard owns the viewport', () => {
+    const opener = {
+      text: '今晚按计划完成了吗？',
+      source: 'action_card_due',
+      quick_replies: [{ text: '做到了' }, { text: '调整计划' }],
+    } as any;
+
+    const { queryByLabelText } = render(
+      <EmptyStateHome
+        memoryOpener={[]}
+        opener={opener}
+        onOpenMemory={jest.fn()}
+        onOpenerQuickReply={jest.fn()}
+        showReplyActions={false}
+      />,
+    );
+
+    expect(queryByLabelText('一键回复: 做到了')).toBeNull();
+    expect(queryByLabelText('一键回复: 调整计划')).toBeNull();
+    expect(queryByLabelText('换个话题')).toBeNull();
   });
 
   it('omits the memory footnote when there is no memory', () => {

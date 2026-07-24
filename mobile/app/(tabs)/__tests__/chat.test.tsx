@@ -289,7 +289,8 @@ describe('ChatScreen', () => {
     await waitFor(() => {
       expect(view.queryByLabelText('正在准备小巴')).toBeNull();
       expect(view.getByText(/今天先确认午餐记录/)).toBeTruthy();
-      expect(view.getByText('查询全天饮食')).toBeTruthy();
+      expect(view.getByText('依据 1 条饮食')).toBeTruthy();
+      expect(view.queryByText('查询全天饮食')).toBeNull();
     });
   });
 
@@ -767,7 +768,8 @@ describe('ChatScreen', () => {
 
     await waitFor(() => {
       expect(getByText(/今天就是「夜间血氧复盘」的检验日，做到了吗？/)).toBeTruthy();
-      expect(getByText(/旧记忆/)).toBeTruthy();
+      expect(getByText('依据 1 条医疗')).toBeTruthy();
+      expect(queryByText(/旧记忆/)).toBeNull();
     });
 
     await act(async () => {
@@ -828,6 +830,27 @@ describe('ChatScreen', () => {
       null,
       expect.objectContaining({ onAccepted: expect.any(Function) }),
     );
+  });
+
+  it('hides generic composer suggestions when an opener owns the empty conversation', async () => {
+    mockFetchConversationStarters.mockResolvedValue({
+      opener: {
+        text: '今晚按计划完成了吗？',
+        source: 'action_card_due',
+        source_id: 7,
+        quick_replies: [{ text: '做到了' }, { text: '调整计划' }],
+        deep_link: null,
+        priority: 100,
+      },
+      suggestions: [{ text: '分析我的睡眠质量', key: 'sleep', priority: 10 }],
+      onboarding: false,
+    });
+
+    const { getByLabelText, queryByLabelText } = render(<ChatScreen />);
+
+    await waitFor(() => expect(getByLabelText('一键回复: 做到了')).toBeTruthy());
+    expect(queryByLabelText('拍照记一餐')).toBeNull();
+    expect(queryByLabelText('向小巴提问: 分析我的睡眠质量')).toBeNull();
   });
 
   it('hides the composer chips row once the conversation has messages', async () => {
@@ -940,6 +963,40 @@ describe('ChatScreen', () => {
     expect(mockSendMessage.mock.calls[0][0]).toContain('做到了 ✅');
     expect(mockPush).not.toHaveBeenCalledWith('/body-measurements');
     expect(mockPush).not.toHaveBeenCalledWith('/settings');
+  });
+
+  it('hides opener reply actions when the iOS keyboard takes over the viewport', async () => {
+    const keyboardListeners: Record<string, (event: any) => void> = {};
+    const keyboardSpy = jest.spyOn(Keyboard, 'addListener').mockImplementation((eventName: any, callback: any) => {
+      keyboardListeners[String(eventName)] = callback;
+      return { remove: jest.fn() } as any;
+    });
+    mockFetchConversationStarters.mockResolvedValue({
+      opener: {
+        text: '今晚按计划完成了吗？',
+        source: 'action_card_due',
+        source_id: 7,
+        quick_replies: [{ text: '做到了' }, { text: '调整计划' }],
+        deep_link: null,
+        priority: 100,
+      },
+      suggestions: null,
+      onboarding: false,
+    });
+
+    const { getByLabelText, queryByLabelText } = render(<ChatScreen />);
+    await waitFor(() => expect(getByLabelText('一键回复: 做到了')).toBeTruthy());
+
+    act(() => {
+      keyboardListeners.keyboardDidShow({
+        endCoordinates: { height: 336 },
+      });
+    });
+
+    expect(queryByLabelText('一键回复: 做到了')).toBeNull();
+    expect(queryByLabelText('一键回复: 调整计划')).toBeNull();
+    expect(queryByLabelText('换个话题')).toBeNull();
+    keyboardSpy.mockRestore();
   });
 
   it('third state (onboarding, no opener, no memory) shows the Quick Start card', async () => {

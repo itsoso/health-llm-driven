@@ -2,7 +2,7 @@ import React, { useCallback, useRef, useState } from 'react';
 import {
   View, TextInput, TouchableOpacity, StyleSheet, Text,
   Modal, Pressable, ActivityIndicator, TextStyle, ScrollView,
-  Alert, AppState, Keyboard,
+  Alert, AppState, Keyboard, NativeSyntheticEvent, TextInputContentSizeChangeEventData,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -60,6 +60,9 @@ const COMPOSER_BUTTON_BG = C.surface2;
 const COMPOSER_BUTTON_BG_ACTIVE = C.green50;
 const COMPOSER_ICON = C.ink2;
 const COMPOSER_ICON_MUTED = C.ink3;
+const COMPOSER_TEXT_MIN_HEIGHT = 40;
+const COMPOSER_TEXT_MAX_HEIGHT = 72;
+const COMPOSER_TEXT_VERTICAL_CHROME = 8;
 const VOICE_WAVE_BARS = Array.from({ length: 28 }, (_, i) => i);
 
 type ChatAgentMode = 'daily' | 'deep' | 'vision';
@@ -84,16 +87,6 @@ const MODE_PLACEHOLDER: Record<ChatAgentMode, string> = {
   deep: '让小巴深思一个计划',
   vision: '拍照/报告后问小巴',
 };
-
-const SMART_QUICK_ACTIONS: {
-  id: 'meal' | 'water' | 'exercise';
-  label: string;
-  icon: keyof typeof Ionicons.glyphMap;
-}[] = [
-  { id: 'meal', label: '拍照记餐', icon: 'camera-outline' },
-  { id: 'water', label: '记录喝水', icon: 'water-outline' },
-  { id: 'exercise', label: '记录运动', icon: 'walk-outline' },
-];
 
 const MEAL_PHOTO_CONTEXT = {
   source: 'mobile_chat_meal_photo',
@@ -177,6 +170,7 @@ export default function ChatInputBar({
   const [cancelHint, setCancelHint] = useState(false);
   const [holdTranscript, setHoldTranscript] = useState('');
   const [textInputFocused, setTextInputFocused] = useState(false);
+  const [textInputHeight, setTextInputHeight] = useState(COMPOSER_TEXT_MIN_HEIGHT);
   const [composer, dispatchComposer] = React.useReducer(
     reduceComposerState,
     undefined,
@@ -608,16 +602,10 @@ export default function ChatInputBar({
   const realtimeMicIcon = realtimeDictationDisabled ? 'mic-off' : 'mic';
   const isVoiceMode = composer.mode === 'hold';
   const textComposerActive = !isVoiceMode && (textInputFocused || realtimeActive);
-  const textComposerExpanded = !isVoiceMode && (
-    textInputFocused
-    || input.trim().length > 0
-    || pendingImages.length > 0
-    || realtimeActive
+  const textComposerMinHeight = Math.max(
+    48,
+    textInputHeight + COMPOSER_TEXT_VERTICAL_CHROME,
   );
-  const showSmartQuickActions = textComposerExpanded
-    && !input.trim()
-    && pendingImages.length === 0
-    && !realtimeActive;
   const voiceGesture = composer.gesture;
   const voiceModeToggleLabel = isVoiceMode ? '切换到键盘输入' : '切换到语音输入';
 
@@ -850,10 +838,21 @@ export default function ChatInputBar({
     setInput(text);
   }, []);
 
-  const handleQuickTypedAction = useCallback((prompt: string) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    void handleSend(prompt, { channel: 'typed' });
-  }, [handleSend]);
+  const handleTextContentSizeChange = useCallback((
+    event: NativeSyntheticEvent<TextInputContentSizeChangeEventData>,
+  ) => {
+    const measured = Number(event.nativeEvent.contentSize.height);
+    if (!Number.isFinite(measured)) return;
+    const nextHeight = Math.min(
+      COMPOSER_TEXT_MAX_HEIGHT,
+      Math.max(COMPOSER_TEXT_MIN_HEIGHT, measured),
+    );
+    setTextInputHeight(current => current === nextHeight ? current : nextHeight);
+  }, []);
+
+  React.useEffect(() => {
+    if (!input) setTextInputHeight(COMPOSER_TEXT_MIN_HEIGHT);
+  }, [input]);
 
   const handlePickImage = useCallback(async () => { setShowMenu(false); await pickImage(); }, [pickImage]);
   const stageCameraPhoto = useCallback(async (mealPhoto: boolean) => {
@@ -1081,31 +1080,6 @@ export default function ChatInputBar({
       )}
 
       <View testID="chat-composer-surface" style={styles.composerSurface}>
-        {showSmartQuickActions && (
-          <ScrollView
-            testID="smart-composer-quick-actions"
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.quickActionsContent}
-            style={styles.quickActionsBar}
-            keyboardShouldPersistTaps="always"
-          >
-            {SMART_QUICK_ACTIONS.map(action => (
-              <QuickComposerAction
-                key={action.id}
-                icon={action.icon}
-                label={action.label}
-                onPress={() => {
-                  if (action.id === 'meal') {
-                    void stageCameraPhoto(true);
-                  } else {
-                    handleQuickTypedAction(action.id === 'water' ? '记录喝水' : '记录今天的运动');
-                  }
-                }}
-              />
-            ))}
-          </ScrollView>
-        )}
         {/* 输入栏 */}
         <View style={styles.inputBar}>
           <Pressable
@@ -1157,7 +1131,7 @@ export default function ChatInputBar({
               testID="wechat-composer-input"
               style={({ pressed }) => [
                 styles.inputWrap,
-                textComposerExpanded && styles.inputWrapExpanded,
+                { minHeight: textComposerMinHeight },
                 textComposerActive && styles.inputWrapFocused,
                 realtimeActive && styles.inputWrapDictating,
                 pressed && styles.inputWrapPressed,
@@ -1172,7 +1146,7 @@ export default function ChatInputBar({
             >
               <TextInput
                 ref={textInputRef}
-                style={[styles.textInput, { pointerEvents: 'auto' }]}
+                style={[styles.textInput, { height: textInputHeight, pointerEvents: 'auto' }]}
                 placeholder={MODE_PLACEHOLDER[agentMode]}
                 placeholderTextColor={C.ink3}
                 value={input}
@@ -1181,6 +1155,7 @@ export default function ChatInputBar({
                 onBlur={handleTextInputBlur}
                 onPressIn={handleInputPressInDictation}
                 onPressOut={handleInputPressOutDictation}
+                onContentSizeChange={handleTextContentSizeChange}
                 onKeyPress={handleTextInputKeyPress}
                 onSubmitEditing={handleKeyboardSubmit}
                 returnKeyType="send"
@@ -1324,29 +1299,6 @@ function ModeSegmentItem({
   );
 }
 
-function QuickComposerAction({
-  icon,
-  label,
-  onPress,
-}: {
-  icon: keyof typeof Ionicons.glyphMap;
-  label: string;
-  onPress: () => void;
-}) {
-  return (
-    <TouchableOpacity
-      style={styles.quickAction}
-      onPress={onPress}
-      activeOpacity={0.68}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-    >
-      <Ionicons name={icon} size={15} color={C.green500} />
-      <Text style={styles.quickActionLabel}>{label}</Text>
-    </TouchableOpacity>
-  );
-}
-
 function AttachmentGridItem({ icon, label, desc, onPress }: { icon: any; label: string; desc: string; onPress: () => void }) {
   return (
     <TouchableOpacity
@@ -1401,34 +1353,6 @@ const styles = StyleSheet.create({
     paddingBottom: 7,
     backgroundColor: COMPOSER_BAR_BG,
   },
-  quickActionsBar: {
-    maxHeight: 40,
-  },
-  quickActionsContent: {
-    flexDirection: 'row',
-    gap: 8,
-    paddingHorizontal: 10,
-    paddingTop: 6,
-    paddingBottom: 2,
-  },
-  quickAction: {
-    minHeight: 32,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    borderRadius: 16,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.line,
-    backgroundColor: C.surface,
-  },
-  quickActionLabel: {
-    fontFamily: revaFonts.sans,
-    fontSize: 13,
-    lineHeight: 18,
-    color: C.ink2,
-    fontWeight: '600',
-  } as TextStyle,
   voiceModeBtn: {
     width: 40, height: 40, borderRadius: 20,
     borderWidth: StyleSheet.hairlineWidth, borderColor: C.lineStrong,
@@ -1454,13 +1378,6 @@ const styles = StyleSheet.create({
   inputWrapPressed: {
     backgroundColor: COMPOSER_INPUT_BG_PRESSED,
     borderColor: C.lineStrong,
-  },
-  inputWrapExpanded: {
-    minHeight: 72,
-    borderRadius: 16,
-    alignItems: 'flex-end',
-    paddingTop: 8,
-    paddingBottom: 8,
   },
   inputWrapFocused: {
     borderColor: C.green500,
