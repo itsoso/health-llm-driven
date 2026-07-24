@@ -106,4 +106,7 @@
 - Mobile 任务卡、分享与隐私事件：111 passed。
 - Backend AIGC API、服务、策略、确认和任务：87 passed（隔离测试数据库）。
 - production OTA 已从提交 `ea6ff9fff4f80b33c6276feff60a0330fb58ce80` 发布到 runtime `1.3.2`：update group `340e55b5-db1e-4936-a3ec-aa308393477d`，iOS update `019f9310-b05c-7c90-a085-04a270f5a823`。
+- production channel 已通过 EAS 远端查询复核为 Active，当前活动更新与上述 group、iOS update、runtime 和 commit 完全一致。
+- 最新主干提交 `99cf56c5a4d6026a22161c673ebb28d2ba66fc38` 的 CI `30076812152` 全绿；Mobile 类型、类型漂移、Agent Runtime PostgreSQL、前端、Mac 与全部 Backend 分片均通过。
+- Backend 已部署精确提交 `99cf56c5a4d6026a22161c673ebb28d2ba66fc38`：生产备份与 231 表恢复演练通过，站外加密归档 SHA-256/HMAC 通过，健康度 `60/60`，Skills manifest `22/22`。
 - G6 仍保持 PARTIAL：需要在生产 OTA 真机上验证后台停留、断网恢复和完成通知，不能用模拟器证据替代。
