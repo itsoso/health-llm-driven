@@ -19766,6 +19766,27 @@ export interface components {
             client_turn_id?: string | null;
             client_time_context?: components["schemas"]["ClientTimeContext"] | null;
         };
+        /** AgentRuntimeIntegrityResponse */
+        AgentRuntimeIntegrityResponse: {
+            /** Window Runs */
+            window_runs: number;
+            /** Contract Snapshot Runs */
+            contract_snapshot_runs: number;
+            /** Contract Snapshot Coverage Percent */
+            contract_snapshot_coverage_percent: number;
+            /** Contract Versions */
+            contract_versions: {
+                [key: string]: number;
+            };
+            /** Settled Message Linkage Gaps */
+            settled_message_linkage_gaps: number;
+            /** Missing Current Attempt Runs */
+            missing_current_attempt_runs: number;
+            /** Active Over Deadline Runs */
+            active_over_deadline_runs: number;
+            /** Waiting Over 24H Runs */
+            waiting_over_24h_runs: number;
+        };
         /** AgentRuntimeReconciliationRequest */
         AgentRuntimeReconciliationRequest: {
             /**
@@ -19851,6 +19872,7 @@ export interface components {
                 [key: string]: number;
             };
             duration_ms: components["schemas"]["AgentRuntimeRolloutDurationResponse"];
+            integrity: components["schemas"]["AgentRuntimeIntegrityResponse"];
         };
         /** AgentRuntimeRolloutStatusResponse */
         AgentRuntimeRolloutStatusResponse: {
@@ -32345,6 +32367,16 @@ export interface components {
              * @description 发送者微信 OpenID
              */
             wechat_openid?: string | null;
+            /**
+             * Msg Id
+             * @description 微信/企业微信原始消息 ID，用于防重复投递
+             */
+            msg_id?: string | null;
+            /**
+             * Message Id
+             * @description 兼容调用方的原始消息 ID 字段
+             */
+            message_id?: string | null;
         };
         /**
          * WechatLoginRequest
