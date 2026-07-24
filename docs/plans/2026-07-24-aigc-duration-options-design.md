@@ -23,4 +23,3 @@
 - Backend：能力注册表返回 `5/8/15`，8 秒确认可完整下传，16 秒仍被拒绝。
 - Mobile：新卡和缺少选项的历史卡都显示 `5/8/15`；选择 8 秒后提交 `{ duration_seconds: 8 }`。
 - 回归：AIGC 后端定向测试、Mobile 卡片测试、TypeScript、lint、文档漂移检查。
-
