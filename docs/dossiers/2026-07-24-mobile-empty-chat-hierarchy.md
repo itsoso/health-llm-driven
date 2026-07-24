@@ -1,6 +1,6 @@
 # Mobile Empty Chat Hierarchy
 
-**Status:** Simulator verified; production OTA pending
+**Status:** Production OTA published; live device verification pending
 **Owner surface:** Mobile Agent conversation  
 **Design:** [Mobile Empty Chat Hierarchy Design](../plans/2026-07-24-mobile-empty-chat-hierarchy-design.md)
 
@@ -30,7 +30,7 @@ attachment capabilities.
 | G2 Feasibility and risk | PASS | Client-only presentation contract; no API change |
 | G3 Tests | PASS | 110 focused assertions; TypeScript exit 0; lint exit 0 with existing warnings |
 | G4 Review | PASS | iOS simulator empty, keyboard-open, and wrapped-draft states visually verified |
-| G5 Deployment health | PENDING | Simulator and OTA health |
+| G5 Deployment health | PASS | Production OTA group `5bc3a53c-5560-4901-a714-ea61cc71a4c0`; iOS update `019f94e6-352a-7d6b-9043-7a96c73184cb`; runtime `1.3.2`; commit `4d580a763cc116a402981db09a9e22328f6fe8b0` |
 | G6 Live verification | PENDING | Production-channel Mobile verification |
 
 ## Delivery Notes
@@ -44,3 +44,5 @@ attachment capabilities.
 - Empty state shows one opener, one provenance row, and three de-duplicated
   actions. Keyboard-open and wrapped-draft states hide the actions, preserve the
   conversation viewport, and grow the composer only when content wraps.
+- Production OTA was published to the `production` channel with message
+  `Simplify empty Agent conversation hierarchy`.
