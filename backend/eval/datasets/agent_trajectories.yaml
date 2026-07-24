@@ -23,6 +23,7 @@ cases:
       goal_kind: diet_recalculate_update
       domain: diet
       operation: update
+      target_date: "2026-07-24"
       target_meal_types: [breakfast, lunch]
       requires_lookup: true
       requires_verification: true
@@ -44,6 +45,7 @@ cases:
       goal_kind: diet_recalculate_update
       domain: diet
       operation: update
+      target_date: "2026-07-24"
       target_meal_types: [breakfast]
       requires_lookup: true
       requires_verification: true
@@ -65,6 +67,7 @@ cases:
       goal_kind: answer
       domain: diet
       operation: ask
+      target_date: "2026-07-24"
       target_meal_types: [breakfast, lunch]
       requires_lookup: false
       requires_verification: false
@@ -89,6 +92,7 @@ cases:
       goal_kind: chat
       domain: diet
       operation: none
+      target_date: "2026-07-24"
       target_meal_types: [breakfast, lunch]
       requires_lookup: false
       requires_verification: false
@@ -102,8 +106,70 @@ cases:
       goal_kind: clarify
       domain: diet
       operation: none
+      target_date: "2026-07-17"
       target_meal_types: []
       requires_lookup: false
       requires_verification: false
       prohibited_operations: [create, update]
       clarification: true
+
+  - id: diet_recalculate_explicit_yesterday_overrides_visible_today
+    prior_actionable:
+      - kind: diet_daily_summary
+        source_message_id: "assistant-today"
+        data:
+          record_date: "2026-07-17"
+          meals:
+            - meal_type: breakfast
+              food_items: "今天的小米粥"
+              calories: 210
+            - meal_type: lunch
+              food_items: "今天的三文鱼"
+              calories: 430
+      - kind: diet_daily_summary
+        source_message_id: "assistant-yesterday"
+        data:
+          record_date: "2026-07-16"
+          meals:
+            - meal_type: breakfast
+              food_items: "昨天的豆腐脑"
+              calories: null
+            - meal_type: lunch
+              food_items: "昨天的牛肉面"
+              calories: null
+    user: "把昨天早饭和午饭重新算一下，直接更新记录"
+    expected:
+      goal_kind: diet_recalculate_update
+      domain: diet
+      operation: update
+      target_date: "2026-07-16"
+      target_meal_types: [breakfast, lunch]
+      requires_lookup: true
+      requires_verification: true
+      prohibited_operations: [create]
+      clarification: false
+
+  - id: diet_recalculate_colloquial_visible_two_meals
+    prior_actionable:
+      - kind: diet_daily_summary
+        source_message_id: "assistant-colloquial"
+        data:
+          record_date: "2026-07-17"
+          meals:
+            - meal_type: breakfast
+              food_items: "小米粥"
+              calories: null
+            - meal_type: lunch
+              food_items: "鸡胸肉沙拉"
+              calories: null
+    user: "把这两餐重估一下后补回记录"
+    expected:
+      goal_kind: diet_recalculate_update
+      domain: diet
+      operation: update
+      target_date: "2026-07-17"
+      target_meal_types: [breakfast, lunch]
+      requires_lookup: true
+      requires_verification: true
+      prohibited_operations: [create]
+      clarification: false

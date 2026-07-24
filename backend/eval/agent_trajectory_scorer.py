@@ -72,6 +72,10 @@ def _goal_matches(expected: dict[str, Any], actual: dict[str, Any]) -> bool:
         for expected_key, actual_key in key_pairs
     ):
         return False
+    if expected.get("target_date") and str(expected["target_date"]) != str(
+        actual.get("target_date") or ""
+    ):
+        return False
     return set(expected.get("target_meal_types") or []) == set(
         actual.get("target_meal_types") or []
     )
@@ -105,6 +109,20 @@ def score_trajectory(case: dict[str, Any], trace: dict[str, Any]) -> dict[str, A
         if not lookup_before_write:
             hard_failures.append("write_before_lookup")
 
+    authoritative_ids_by_meal: dict[str, set[Any]] = defaultdict(set)
+    if target_meals and lookup_indexes:
+        for row in _result_rows(calls[lookup_indexes[0]]):
+            meal = _meal_type(row)
+            record_id = _record_id(row)
+            if meal in target_meals and record_id is not None:
+                authoritative_ids_by_meal[meal].add(record_id)
+        for meal in sorted(target_meals):
+            count = len(authoritative_ids_by_meal[meal])
+            if count == 0:
+                hard_failures.append(f"missing_lookup_target:{meal}")
+            elif count > 1:
+                hard_failures.append(f"ambiguous_lookup_target:{meal}")
+
     update_calls = [
         call
         for call in calls
@@ -119,6 +137,14 @@ def score_trajectory(case: dict[str, Any], trace: dict[str, Any]) -> dict[str, A
     exact_target_updates = exact_target_updates and all(
         _record_id(updated_by_meal[meal].get("args")) is not None for meal in target_meals
     )
+    if expected.get("requires_lookup") and exact_target_updates:
+        exact_target_updates = all(
+            _record_id(updated_by_meal[meal].get("args"))
+            in authoritative_ids_by_meal[meal]
+            for meal in target_meals
+        )
+        if not exact_target_updates:
+            hard_failures.append("update_target_not_from_lookup")
 
     verified_ids: set[Any] = set()
     verified_meals: set[str] = set()

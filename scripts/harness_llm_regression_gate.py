@@ -67,6 +67,7 @@ def run_agent_trajectory_contract_gate() -> dict[str, Any]:
             "goal_kind": goal.kind,
             "domain": goal.domain,
             "operation": goal.operation,
+            "target_date": goal.target_date,
             "target_meal_types": list(goal.target_meal_types),
             "requires_lookup": goal.requires_lookup,
             "requires_verification": goal.requires_verification,

@@ -4,7 +4,7 @@
 |---|---|
 | slug | `agent-trajectory-intelligence` |
 | 创建日期 | 2026-07-24 |
-| 当前阶段 | S6 已验证 / G5 待部署 |
+| 当前阶段 | S6 已验证 / P1 快速增强待部署 |
 | 状态 | ready_for_deploy |
 | 负责 | Codex |
 | 反馈环 | intent corpus / stateful trajectory eval / backend pytest / production trace |
@@ -111,6 +111,55 @@ resolve visible card / open task
 - 离线轨迹评分以工具顺序、副作用、回执、读回和诚实完成声明为硬指标；
   匿名候选先按正确率排名，延迟和成本只用于同正确率时排序。
 
+### P1 快速增强
+
+- 用户显式说“昨天/前天/具体日期”时，用户日期优先于当前可见卡片日期，避免把历史
+  修正写到今天。
+- 支持“重新算/再估/补回/补上”等真实口语，不再降级成缺少类型和值的通用写入。
+- 每个目标餐次必须在查询结果中恰好对应一个记录 ID；目标缺失或存在重复记录时整批
+  停止写入。
+- 目标无法唯一确定时，工具结果向模型注入确定性停止条件，要求指出具体餐次并请用户
+  选择或补充，不允许反复查询、误写或宣称完成。
+- 轨迹评分新增目标日期、查询结果唯一性和“更新 ID 必须来自权威查询”三个硬约束。
+
+## 历史失败回溯与 Pi-style 架构裁决
+
+### 失败类型
+
+| 失败类型 | 历史表现 | 当前控制 | 剩余缺口 |
+|---|---|---|---|
+| 上下文对象丢失 | 已显示饮食卡，下一轮仍要求用户重述 | `ActionableReference` 投影进入 `TurnSnapshot` | 只覆盖已注册卡片类型 |
+| 意图与目标混淆 | 查询被误写、明确修改被当作普通新增 | `IntentFrame` + `GoalSpec` + `CapabilityPolicy` | `GoalSpec` 目前只对少数复合任务有专用合同 |
+| 工具调用退化 | 模型输出裸 `tool_code`、文本工具名或不调用工具 | textual recovery 只负责解析，执行仍经 `ToolGateway` | 恢复和确定性 fallback 仍散落在大 Executor |
+| 写入假成功/假失败 | 先提示失败后显示成功，或成功后要求再提交 | Run/Operation ledger、幂等键、verified receipt、reconcile | 后置核验尚未完全收口进 `ToolGateway` |
+| 重复执行/重复卡片 | 重试或断流造成重复消息、重复记录和重复卡片 | canonical Run、会话串行化、operation fingerprint、客户端回放 | 仍需持续跑真实断流和跨端回放用例 |
+| 时间与指代错误 | 昨天写成今天、沿用旧卡片日期 | 冻结 `ExecutionContext`，用户显式日期优先 | 自然语言时间范围仍需扩充 |
+| 模型可用但任务失败 | 模型会回答，却不能完成“查找→修改→读回” | stateful trajectory eval + deterministic task contract | 评测域仍偏饮食，症状/用药/提醒需同样合同化 |
+
+### 架构裁决
+
+当前实现是 **Pi-style Kernel + Reva durable Runtime**，不是直接采用 Pi 框架，也还不是
+完全解耦的 Pi Harness：
+
+- 已完成：`AgentEnvelope -> ExecutionContext -> IntentFrame -> TurnSnapshot` 的稳定边界；
+  工具注册、能力策略、统一 `ToolGateway` 派发；Run/Attempt/Operation/Event 持久化；
+  会话串行化、取消、租约恢复、幂等与可验证回执。
+- 部分完成：provider 上下文转换、compaction、tool postflight、任务后置条件和模型 fallback
+  仍有较多逻辑留在 `AgentExecutor`。
+- 未完成：通用 `GoalSpec`/Verifier 注册表、独立的无状态 Run Executor、由生产事故自动晋级
+  Golden Case 的评测闭环。
+
+因此下一阶段不迁移框架，继续按 Pi 的边界原则拆分：
+
+1. 将任务合同扩为按域注册的 `GoalCompiler + PostconditionVerifier`，先覆盖饮食、症状、
+   饮水、提醒和用药修改。
+2. 将 receipt、post-safety 和 postcondition 收口到 `ToolGateway` 的 postflight，禁止
+   Executor 自行判定成功。
+3. 将 provider message transform、tool loop 和 fallback 从超大 Executor 中拆为无状态
+   `RunExecutor` 阶段，并保留现有 durable Runtime 作为控制面。
+4. 把重复提交、错误指代、工具泄漏、时间错误、假成功/假失败和断流恢复全部纳入同一
+   stateful trajectory regression gate。
+
 ## S6 · 验证证据
 
 - 目标模块 RED/GREEN：`GoalSpec`、卡片投影、后置条件、轨迹评分器、ID 白名单、
@@ -120,7 +169,11 @@ resolve visible card / open task
 - 默认离线回归 Gate：
   - synthesis invariants `12/12`
   - health agent core `50/50`
-  - trajectory contracts `5/5`
+  - trajectory contracts `7/7`
+- P1 核心回归：`123 passed`。
+- 扩大 Agent 回归：`662 passed`；15 项因本地沙箱禁止连接 PostgreSQL 而未执行，
+  9 项批量化验失败隔离复测后 `9/9 passed`；另 1 项为旧模型名断言与当前 Qwen
+  路由配置不一致，和本次改动无关。
 - Python 编译检查通过。
 - system-map 重新生成并通过漂移检查。
 - 遥测只记录 goal kind、目标数量、已验证数量和原因码，不记录餐次名称、食物或健康正文。
@@ -131,7 +184,7 @@ resolve visible card / open task
 |---|---|---|
 | G1 准入 | PASS | 直接增强饮食写入闭环和用户体验 |
 | G2 可行性/风险 | PASS | additive、复用现有 Runtime 和 ToolGateway |
-| G3 测试 | PASS | 280 项 Agent 回归 + 8 项多模型 + 62 项离线不变量 + 5 项轨迹契约 |
+| G3 测试 | PASS | 123 项核心回归 + 662 项扩大回归通过 + 62 项离线不变量 + 7 项轨迹契约 |
 | G4 评审 | PASS | 补齐目标 ID 白名单、多卡最新优先、fail-closed 和隐私遥测 |
-| G5 部署健康 | PENDING | 等待 backend deploy |
+| G5 部署健康 | PENDING | P1 快速增强等待 backend deploy；基础版本 `8f705a3d2` 已获 60/60 健康分 |
 | G6 上线验证 | PENDING | 等待真实会话 trace 和数据库核对 |

@@ -15,6 +15,8 @@ from app.services.agent_executor import (
     _build_deterministic_goal_lookup_tool_call,
     _build_goal_verification_tool_call,
     _ground_query_response_date_labels,
+    _goal_target_record_ids,
+    _goal_lookup_resolution_prompt,
     _is_explicit_latest_diet_delete,
     _model_tool_result_content,
     _parse_explicit_diet_correction,
@@ -140,6 +142,76 @@ def test_recalculate_goal_allows_only_a_resolved_target_record_update():
     )
 
     assert normalized == [target_record]
+
+
+def test_recalculate_goal_resolves_ids_only_when_every_target_meal_is_unique():
+    result = json.dumps([
+        {"id": 101, "meal_type": "breakfast"},
+        {"id": 102, "meal_type": "lunch"},
+        {"id": 103, "meal_type": "dinner"},
+    ])
+
+    assert _goal_target_record_ids(_diet_recalculate_goal(), result) == {"101", "102"}
+
+
+def test_recalculate_goal_rejects_the_whole_batch_when_a_target_is_ambiguous():
+    result = json.dumps([
+        {"id": 101, "meal_type": "breakfast"},
+        {"id": 111, "meal_type": "breakfast"},
+        {"id": 102, "meal_type": "lunch"},
+    ])
+
+    assert _goal_target_record_ids(_diet_recalculate_goal(), result) == set()
+
+
+def test_recalculate_goal_rejects_the_whole_batch_when_a_target_is_missing():
+    result = json.dumps([
+        {"id": 101, "meal_type": "breakfast"},
+        {"id": 103, "meal_type": "dinner"},
+    ])
+
+    assert _goal_target_record_ids(_diet_recalculate_goal(), result) == set()
+
+
+def test_recalculate_goal_explains_ambiguous_targets_without_allowing_a_write():
+    result = json.dumps([
+        {"id": 101, "meal_type": "breakfast"},
+        {"id": 111, "meal_type": "breakfast"},
+        {"id": 102, "meal_type": "lunch"},
+    ])
+
+    prompt = _goal_lookup_resolution_prompt(_diet_recalculate_goal(), result)
+
+    assert "存在多条早餐" in prompt
+    assert "禁止继续写入或宣称完成" in prompt
+    assert "午餐" not in prompt
+
+
+def test_recalculate_goal_explains_missing_targets_without_generic_failure():
+    result = json.dumps([
+        {"id": 101, "meal_type": "breakfast"},
+    ])
+
+    prompt = _goal_lookup_resolution_prompt(_diet_recalculate_goal(), result)
+
+    assert "未找到午餐" in prompt
+    assert "请用户选择或补充" in prompt
+
+
+def test_recalculate_goal_adds_no_resolution_prompt_for_unique_targets():
+    result = json.dumps([
+        {"id": 101, "meal_type": "breakfast"},
+        {"id": 102, "meal_type": "lunch"},
+    ])
+
+    assert _goal_lookup_resolution_prompt(_diet_recalculate_goal(), result) == ""
+
+
+def test_recalculate_goal_does_not_mislabel_a_tool_error_as_missing_records():
+    assert _goal_lookup_resolution_prompt(
+        _diet_recalculate_goal(),
+        "Error: database unavailable",
+    ) == ""
 
 
 def test_recalculate_goal_reads_back_after_all_target_updates_have_receipts():

@@ -4465,15 +4465,24 @@ def _goal_target_record_ids(
     goal: Optional[GoalSpec],
     result: Any,
 ) -> set[str]:
-    """Resolve the only record IDs that a typed goal may mutate."""
+    """Resolve target IDs only when every requested meal has one unique row."""
+    record_ids, _, _ = _goal_target_record_resolution(goal, result)
+    return record_ids
+
+
+def _goal_target_record_resolution(
+    goal: Optional[GoalSpec],
+    result: Any,
+) -> tuple[set[str], tuple[str, ...], tuple[str, ...]]:
+    """Return safe IDs plus missing and ambiguous target meals."""
     if goal is None or goal.kind != "diet_recalculate_update":
-        return set()
+        return set(), (), ()
     parsed = result
     if isinstance(result, str):
         try:
             parsed = json.loads(result)
         except (TypeError, ValueError, json.JSONDecodeError):
-            return set()
+            return set(), tuple(goal.target_meal_types), ()
     rows: list[dict[str, Any]] = []
     if isinstance(parsed, list):
         rows = [row for row in parsed if isinstance(row, dict)]
@@ -4484,12 +4493,68 @@ def _goal_target_record_ids(
                 rows = [row for row in nested if isinstance(row, dict)]
                 break
     target_meals = set(goal.target_meal_types)
-    return {
-        str(row.get("id") or row.get("record_id"))
-        for row in rows
-        if str(row.get("meal_type") or "").strip().lower() in target_meals
-        and (row.get("id") or row.get("record_id")) not in (None, "")
+    ids_by_meal: dict[str, set[str]] = {
+        meal_type: set()
+        for meal_type in target_meals
     }
+    for row in rows:
+        meal_type = str(row.get("meal_type") or "").strip().lower()
+        record_id = row.get("id") or row.get("record_id")
+        if meal_type in ids_by_meal and record_id not in (None, ""):
+            ids_by_meal[meal_type].add(str(record_id))
+    missing = tuple(sorted(
+        meal_type
+        for meal_type in target_meals
+        if not ids_by_meal[meal_type]
+    ))
+    ambiguous = tuple(sorted(
+        meal_type
+        for meal_type in target_meals
+        if len(ids_by_meal[meal_type]) > 1
+    ))
+    if missing or ambiguous:
+        return set(), missing, ambiguous
+    return {
+        next(iter(ids_by_meal[meal_type]))
+        for meal_type in target_meals
+    }, (), ()
+
+
+def _goal_lookup_resolution_prompt(
+    goal: Optional[GoalSpec],
+    result: Any,
+) -> str:
+    """Give the model a deterministic stop condition for unsafe target lookup."""
+    if isinstance(result, str):
+        try:
+            json.loads(result)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return ""
+    elif not isinstance(result, (list, dict)):
+        return ""
+    _, missing, ambiguous = _goal_target_record_resolution(goal, result)
+    if not missing and not ambiguous:
+        return ""
+    labels = {
+        "breakfast": "早餐",
+        "lunch": "午餐",
+        "dinner": "晚餐",
+        "snack": "加餐",
+    }
+    details: list[str] = []
+    if missing:
+        details.append(
+            "未找到" + "、".join(labels.get(item, item) for item in missing)
+        )
+    if ambiguous:
+        details.append(
+            "存在多条" + "、".join(labels.get(item, item) for item in ambiguous)
+        )
+    return (
+        "\n\n[系统任务约束] 目标记录无法唯一确定（"
+        + "；".join(details)
+        + "）。禁止继续写入或宣称完成；请用简洁中文说明具体餐次，并请用户选择或补充。"
+    )
 
 
 def _is_explicit_latest_diet_delete(message: str) -> bool:
@@ -7385,16 +7450,29 @@ class AgentExecutor:
                             )
                             if str(tc.get("id") or "").startswith("goal-verify-"):
                                 goal_verification_result = result
+                        tool_content = _model_tool_result_content(
+                            fn,
+                            parsed_args,
+                            result,
+                            reference_now=self._agent_kernel_reference_now(),
+                            timezone_label=self._ensure_agent_kernel_turn().context.timezone,
+                        )
+                        if (
+                            fn == "health_manage"
+                            and parsed_args.get("record_type") == "diet"
+                            and parsed_args.get("operation") == "list"
+                        ):
+                            tool_content += _goal_lookup_resolution_prompt(
+                                (
+                                    self._agent_kernel_snapshot.goal
+                                    if self._agent_kernel_snapshot is not None else None
+                                ),
+                                result,
+                            )
                         lead_messages.append({
                             "role": "tool",
                             "tool_call_id": tc["id"],
-                            "content": _model_tool_result_content(
-                                fn,
-                                parsed_args,
-                                result,
-                                reference_now=self._agent_kernel_reference_now(),
-                                timezone_label=self._ensure_agent_kernel_turn().context.timezone,
-                            ),
+                            "content": tool_content,
                         })
                         lbl = _TOOL_TO_SOURCE_LABEL.get(fn)
                         if lbl and lbl not in sources_used:
@@ -9406,16 +9484,29 @@ class AgentExecutor:
                                 goal_verification_result = result
 
                         # 追加 tool_result 到 messages
+                        tool_content = _model_tool_result_content(
+                            func_name,
+                            parsed_tool_args,
+                            result,
+                            reference_now=self._agent_kernel_reference_now(),
+                            timezone_label=self._ensure_agent_kernel_turn().context.timezone,
+                        )
+                        if (
+                            func_name == "health_manage"
+                            and parsed_tool_args.get("record_type") == "diet"
+                            and parsed_tool_args.get("operation") == "list"
+                        ):
+                            tool_content += _goal_lookup_resolution_prompt(
+                                (
+                                    self._agent_kernel_snapshot.goal
+                                    if self._agent_kernel_snapshot is not None else None
+                                ),
+                                result,
+                            )
                         messages.append({
                             "role": "tool",
                             "tool_call_id": tool_id,
-                            "content": _model_tool_result_content(
-                                func_name,
-                                parsed_tool_args,
-                                result,
-                                reference_now=self._agent_kernel_reference_now(),
-                                timezone_label=self._ensure_agent_kernel_turn().context.timezone,
-                            ),
+                            "content": tool_content,
                         })
 
                         # GenUI metric_table (rank1): 记下只读数据查询工具的

@@ -53,6 +53,7 @@ def test_stateful_agent_trajectory_cases_compile_expected_goal():
         assert goal.kind == expected["goal_kind"], case["id"]
         assert goal.domain == expected["domain"], case["id"]
         assert goal.operation == expected["operation"], case["id"]
+        assert goal.target_date == expected["target_date"], case["id"]
         assert list(goal.target_meal_types) == expected["target_meal_types"], case["id"]
         assert goal.requires_lookup is expected["requires_lookup"], case["id"]
         assert goal.requires_verification is expected["requires_verification"], case["id"]
@@ -118,3 +119,86 @@ def test_recalculate_goal_uses_only_the_latest_card_date_for_visible_foods():
         ("breakfast", "今天的小米粥"),
         ("lunch", "今天的三文鱼"),
     )
+
+
+def test_explicit_relative_date_overrides_the_latest_visible_card_date():
+    context = ExecutionContext.for_test(user_id=1, channel="mobile")
+    envelope = AgentEnvelope(
+        user_id=1,
+        channel="mobile",
+        text="把昨天早饭和午饭重新算一下，直接更新记录",
+    )
+    intent = build_intent_frame(envelope, context)
+    references = (
+        ActionableReference(
+            kind="diet_daily_summary",
+            source_message_id="today",
+            data={
+                "record_date": "2026-07-17",
+                "meals": [
+                    {"meal_type": "breakfast", "food_items": "今天的小米粥"},
+                    {"meal_type": "lunch", "food_items": "今天的三文鱼"},
+                ],
+            },
+        ),
+        ActionableReference(
+            kind="diet_daily_summary",
+            source_message_id="yesterday",
+            data={
+                "record_date": "2026-07-16",
+                "meals": [
+                    {"meal_type": "breakfast", "food_items": "昨天的豆腐脑"},
+                    {"meal_type": "lunch", "food_items": "昨天的牛肉面"},
+                ],
+            },
+        ),
+    )
+
+    goal = compile_goal_spec(
+        envelope=envelope,
+        context=context,
+        intent=intent,
+        actionable_references=references,
+    )
+
+    assert goal.kind == "diet_recalculate_update"
+    assert goal.target_date == "2026-07-16"
+    assert goal.target_meal_types == ("breakfast", "lunch")
+    assert goal.reference_foods == (
+        ("breakfast", "昨天的豆腐脑"),
+        ("lunch", "昨天的牛肉面"),
+    )
+
+
+def test_colloquial_recalculate_and_write_back_resolves_visible_two_meals():
+    context = ExecutionContext.for_test(user_id=1, channel="mobile")
+    envelope = AgentEnvelope(
+        user_id=1,
+        channel="mobile",
+        text="把这两餐重估一下后补回记录",
+    )
+    intent = build_intent_frame(envelope, context)
+    references = (
+        ActionableReference(
+            kind="diet_daily_summary",
+            source_message_id="latest",
+            data={
+                "record_date": "2026-07-17",
+                "meals": [
+                    {"meal_type": "breakfast", "food_items": "小米粥"},
+                    {"meal_type": "lunch", "food_items": "鸡胸肉沙拉"},
+                ],
+            },
+        ),
+    )
+
+    goal = compile_goal_spec(
+        envelope=envelope,
+        context=context,
+        intent=intent,
+        actionable_references=references,
+    )
+
+    assert goal.kind == "diet_recalculate_update"
+    assert goal.operation == "update"
+    assert goal.target_meal_types == ("breakfast", "lunch")

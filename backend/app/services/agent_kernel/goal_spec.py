@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from datetime import date, timedelta
+import re
 
 from app.services.agent_kernel.types import (
     ActionableReference,
@@ -18,8 +20,27 @@ MEAL_SIGNALS = {
     "dinner": ("晚餐", "晚饭"),
     "snack": ("加餐", "零食", "夜宵"),
 }
-RECALCULATE_SIGNALS = ("重新估算", "重新计算", "重新核算", "重算", "重估")
-UPDATE_SIGNALS = ("写入", "写回", "更新", "保存", "改写")
+RECALCULATE_SIGNALS = (
+    "重新估算",
+    "重新计算",
+    "重新核算",
+    "重新算",
+    "重新估",
+    "再算",
+    "再估",
+    "重算",
+    "重估",
+)
+UPDATE_SIGNALS = (
+    "写入",
+    "写回",
+    "写进去",
+    "更新",
+    "保存",
+    "改写",
+    "补回",
+    "补上",
+)
 NEGATION_SIGNALS = ("先不要", "暂不", "不要", "不用", "无需", "先别", "别")
 QUESTION_SIGNALS = ("?", "？", "是否", "是不是", "需要", "吗")
 REFERENTIAL_SIGNALS = ("上面", "上述", "这两餐", "这些餐")
@@ -35,7 +56,7 @@ def compile_goal_spec(
     """Create the executor contract without granting authority to visible data."""
     text = _normalize(envelope.text)
     target_meals = _target_meal_types(text, actionable_references)
-    target_date = _target_date(context, actionable_references)
+    target_date = _target_date(text, context, actionable_references)
     reference_foods = _reference_foods(
         actionable_references,
         target_meals,
@@ -187,14 +208,53 @@ def _reference_foods(
 
 
 def _target_date(
+    text: str,
     context: ExecutionContext,
     references: Sequence[ActionableReference],
 ) -> str:
+    explicit = _explicit_target_date(text, context.current_time.date())
+    if explicit is not None:
+        return explicit
     for reference in references:
         value = str(reference.data.get("record_date") or "").strip()
         if value:
             return value[:10]
     return context.current_time.date().isoformat()
+
+
+def _explicit_target_date(text: str, today: date) -> str | None:
+    """Resolve user-owned date language before consulting visible-card context."""
+    relative = (
+        ("前天", -2),
+        ("昨天", -1),
+        ("昨日", -1),
+        ("今天", 0),
+        ("今日", 0),
+        ("明天", 1),
+        ("明日", 1),
+    )
+    for signal, offset in relative:
+        if signal in text:
+            return (today + timedelta(days=offset)).isoformat()
+
+    iso_match = re.search(r"(?<!\d)(20\d{2})[-/.](\d{1,2})[-/.](\d{1,2})(?!\d)", text)
+    if iso_match:
+        try:
+            return date(*(int(value) for value in iso_match.groups())).isoformat()
+        except ValueError:
+            return None
+
+    chinese_match = re.search(
+        r"(?:(20\d{2})年)?(\d{1,2})月(\d{1,2})[日号]?",
+        text,
+    )
+    if chinese_match:
+        year, month, day = chinese_match.groups()
+        try:
+            return date(int(year or today.year), int(month), int(day)).isoformat()
+        except ValueError:
+            return None
+    return None
 
 
 def _fallback_kind(intent: IntentFrame) -> str:

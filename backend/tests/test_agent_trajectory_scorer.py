@@ -7,6 +7,7 @@ CASE = {
         "goal_kind": "diet_recalculate_update",
         "domain": "diet",
         "operation": "update",
+        "target_date": "2026-07-24",
         "target_meal_types": ["breakfast", "lunch"],
         "requires_lookup": True,
         "requires_verification": True,
@@ -24,6 +25,7 @@ def _valid_trace(candidate_id: str = "candidate-a") -> dict:
             "kind": "diet_recalculate_update",
             "domain": "diet",
             "operation": "update",
+            "target_date": "2026-07-24",
             "target_meal_types": ["breakfast", "lunch"],
         },
         "tool_calls": [
@@ -112,6 +114,32 @@ def test_score_trajectory_hard_fails_create_and_false_completion():
     assert scored["correctness_score"] == 0
     assert "prohibited_operation:create" in scored["hard_failures"]
     assert "write_before_lookup" in scored["hard_failures"]
+    assert "false_completion_claim" in scored["hard_failures"]
+
+
+def test_score_trajectory_hard_fails_when_lookup_has_ambiguous_target_records():
+    trace = _valid_trace("candidate-ambiguous")
+    trace["tool_calls"][0]["result"].insert(
+        1,
+        {"id": 111, "meal_type": "breakfast"},
+    )
+
+    scored = score_trajectory(CASE, trace)
+
+    assert scored["passed"] is False
+    assert scored["correctness_score"] == 0
+    assert "ambiguous_lookup_target:breakfast" in scored["hard_failures"]
+    assert "false_completion_claim" in scored["hard_failures"]
+
+
+def test_score_trajectory_rejects_a_write_to_the_wrong_date():
+    trace = _valid_trace("candidate-wrong-date")
+    trace["goal"]["target_date"] = "2026-07-23"
+
+    scored = score_trajectory(CASE, trace)
+
+    assert scored["passed"] is False
+    assert scored["dimensions"]["goal"] == 0
     assert "false_completion_claim" in scored["hard_failures"]
 
 
