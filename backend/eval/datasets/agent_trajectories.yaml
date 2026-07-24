@@ -1,0 +1,109 @@
+name: agent_trajectories
+version: 1
+description: Deterministic stateful task cases scored by goal, tool trajectory, and DB delta.
+cases:
+  - id: diet_recalculate_visible_breakfast_lunch
+    prior_actionable:
+      - kind: diet_daily_summary
+        source_message_id: "assistant-101"
+        data:
+          record_date: "2026-07-24"
+          meals:
+            - meal_type: breakfast
+              food_items: "豆腐脑约1碗 + 小笼包1个"
+              calories: null
+            - meal_type: lunch
+              food_items: "三文鱼约1块 + 藜麦约半碗"
+              calories: null
+            - meal_type: dinner
+              food_items: "方便面约1碗 + 苹果1个"
+              calories: 615
+    user: "重新估算和写入早午两餐"
+    expected:
+      goal_kind: diet_recalculate_update
+      domain: diet
+      operation: update
+      target_meal_types: [breakfast, lunch]
+      requires_lookup: true
+      requires_verification: true
+      prohibited_operations: [create]
+      clarification: false
+
+  - id: diet_recalculate_visible_breakfast_only
+    prior_actionable:
+      - kind: diet_daily_summary
+        source_message_id: "assistant-102"
+        data:
+          record_date: "2026-07-24"
+          meals:
+            - meal_type: breakfast
+              food_items: "山药小米粥 + 蒸蛋羹"
+              calories: null
+    user: "把上面的早餐重新估算后写回"
+    expected:
+      goal_kind: diet_recalculate_update
+      domain: diet
+      operation: update
+      target_meal_types: [breakfast]
+      requires_lookup: true
+      requires_verification: true
+      prohibited_operations: [create]
+      clarification: false
+
+  - id: diet_recalculate_question_is_read_only
+    prior_actionable:
+      - kind: diet_daily_summary
+        source_message_id: "assistant-103"
+        data:
+          record_date: "2026-07-24"
+          meals:
+            - meal_type: breakfast
+              food_items: "小米粥"
+              calories: 200
+    user: "早午两餐需要重新估算吗？"
+    expected:
+      goal_kind: answer
+      domain: diet
+      operation: ask
+      target_meal_types: [breakfast, lunch]
+      requires_lookup: false
+      requires_verification: false
+      prohibited_operations: [create, update]
+      clarification: false
+
+  - id: diet_recalculate_negated_update
+    prior_actionable:
+      - kind: diet_daily_summary
+        source_message_id: "assistant-104"
+        data:
+          record_date: "2026-07-24"
+          meals:
+            - meal_type: breakfast
+              food_items: "小米粥"
+              calories: 200
+            - meal_type: lunch
+              food_items: "三文鱼"
+              calories: 400
+    user: "先不要重新估算和写入早午两餐"
+    expected:
+      goal_kind: chat
+      domain: diet
+      operation: none
+      target_meal_types: [breakfast, lunch]
+      requires_lookup: false
+      requires_verification: false
+      prohibited_operations: [create, update]
+      clarification: false
+
+  - id: diet_recalculate_referent_without_visible_card
+    prior_actionable: []
+    user: "把上面两餐重新估算后写入"
+    expected:
+      goal_kind: clarify
+      domain: diet
+      operation: none
+      target_meal_types: []
+      requires_lookup: false
+      requires_verification: false
+      prohibited_operations: [create, update]
+      clarification: true

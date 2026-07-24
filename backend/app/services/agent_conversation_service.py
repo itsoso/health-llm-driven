@@ -15,6 +15,10 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.config import settings
 from app.models.agent_conversation import AgentConversation, AgentMessage
+from app.services.agent_kernel.actionable_context import (
+    extract_actionable_references,
+)
+from app.services.agent_kernel.types import ActionableReference
 
 
 logger = logging.getLogger(__name__)
@@ -670,6 +674,27 @@ class AgentConversationService:
             except Exception:  # noqa: BLE001
                 pass
         return out
+
+    def build_actionable_references(
+        self,
+        conversation_id: int,
+        *,
+        limit: int = 8,
+    ) -> tuple[ActionableReference, ...]:
+        """Project recent assistant UI state without feeding raw card payloads to LLM."""
+        recent = (
+            self.db.query(AgentMessage)
+            .filter(
+                AgentMessage.conversation_id == conversation_id,
+                AgentMessage.role == "assistant",
+            )
+            .order_by(AgentMessage.created_at.desc(), AgentMessage.id.desc())
+            .limit(max(1, min(int(limit), 20)))
+            .all()
+        )
+        # The first reference resolves "上面/这餐"; keep the card nearest to the
+        # current turn first instead of restoring chronological display order.
+        return extract_actionable_references(tuple(recent))
 
     @staticmethod
     def compress_image_base64(

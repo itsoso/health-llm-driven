@@ -78,5 +78,21 @@
     "domain": "diet",
     "operation": "none",
     "is_write": false
+  },
+  {
+    "text": "重新估算和写入早午两餐",
+    "channel": "mobile",
+    "primary": "mutate",
+    "domain": "diet",
+    "operation": "update",
+    "is_write": true
+  },
+  {
+    "text": "先不要重新估算和写入早午两餐",
+    "channel": "mobile",
+    "primary": "chat",
+    "domain": "diet",
+    "operation": "none",
+    "is_write": false
   }
 ]

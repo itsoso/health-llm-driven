@@ -51,6 +51,17 @@ def test_llm_regression_gate_defaults_to_offline_synthesis_suites(capsys):
     payload = json.loads(capsys.readouterr().out)
     assert payload["status"] == "passed"
     assert payload["llm_cost"] == "none"
+    assert payload["trajectory_contract"]["status"] == "passed"
+    assert payload["trajectory_contract"]["total_cases"] >= 5
+
+
+def test_agent_trajectory_contract_is_part_of_the_offline_gate():
+    module = _load_gate_module()
+
+    report = module.run_agent_trajectory_contract_gate()
+
+    assert report["status"] == "passed"
+    assert report["failed_cases"] == []
 
 
 def test_llm_regression_gate_fails_on_suite_failure():

@@ -153,6 +153,12 @@ def test_reminder_time_follow_up_refines_only_an_active_reminder_continuation(
         "create",
     )
     assert "continuation:reminder_schedule" in snapshot.intent.evidence
+    assert snapshot.goal is not None
+    assert (snapshot.goal.kind, snapshot.goal.domain, snapshot.goal.operation) == (
+        "write",
+        "reminder",
+        "create",
+    )
     assert executor._agent_kernel_event_bus is not None
     assert "agent.intent_refined" in [event.name for event in executor._agent_kernel_event_bus.events]
 

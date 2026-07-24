@@ -12,15 +12,159 @@ import pytest
 from app.services.agent_executor import (
     AgentExecutor,
     _build_deterministic_diet_correction_tool_call,
+    _build_deterministic_goal_lookup_tool_call,
+    _build_goal_verification_tool_call,
     _ground_query_response_date_labels,
     _is_explicit_latest_diet_delete,
     _model_tool_result_content,
     _parse_explicit_diet_correction,
     _normalize_relative_date,
+    _normalize_goal_guarded_tool_calls,
     _tool_call_is_read_only,
 )
+from app.services.agent_kernel.types import GoalSpec
 
 BJ = timezone(timedelta(hours=8))
+
+
+def _diet_recalculate_goal() -> GoalSpec:
+    return GoalSpec(
+        kind="diet_recalculate_update",
+        domain="diet",
+        operation="update",
+        target_date="2026-07-24",
+        target_meal_types=("breakfast", "lunch"),
+        reference_foods=(
+            ("breakfast", "豆腐脑约1碗 + 小笼包1个"),
+            ("lunch", "三文鱼约1块 + 藜麦约半碗"),
+        ),
+        requires_lookup=True,
+        requires_verification=True,
+        prohibited_operations=("create",),
+        postconditions=("existing_records_only", "read_back_verified"),
+    )
+
+
+def test_recalculate_goal_starts_with_one_deterministic_database_lookup():
+    call = _build_deterministic_goal_lookup_tool_call(
+        _diet_recalculate_goal(),
+        write_receipts=[],
+    )
+
+    assert call is not None
+    assert call["function"]["name"] == "health_manage"
+    assert json.loads(call["function"]["arguments"]) == {
+        "record_type": "diet",
+        "operation": "list",
+        "date": "2026-07-24",
+        "limit": 20,
+    }
+
+
+def test_recalculate_goal_never_allows_model_to_create_duplicate_diet_record():
+    call = {
+        "id": "unsafe-create",
+        "type": "function",
+        "function": {
+            "name": "health_record",
+            "arguments": json.dumps({
+                "record_type": "diet",
+                "data": {
+                    "meal_type": "breakfast",
+                    "food_items": "豆腐脑约1碗 + 小笼包1个",
+                },
+            }),
+        },
+    }
+
+    normalized = _normalize_goal_guarded_tool_calls(
+        [call],
+        _diet_recalculate_goal(),
+    )
+
+    assert normalized[0]["function"]["name"] == "health_manage"
+    assert json.loads(normalized[0]["function"]["arguments"]) == {
+        "record_type": "diet",
+        "operation": "list",
+        "date": "2026-07-24",
+        "limit": 20,
+    }
+
+
+def test_recalculate_goal_only_updates_ids_resolved_from_target_meals():
+    wrong_record = {
+        "id": "wrong-record",
+        "type": "function",
+        "function": {
+            "name": "health_manage",
+            "arguments": json.dumps({
+                "record_type": "diet",
+                "operation": "update",
+                "record_id": 303,
+                "data": {"meal_type": "breakfast", "calories": 410},
+            }),
+        },
+    }
+
+    normalized = _normalize_goal_guarded_tool_calls(
+        [wrong_record],
+        _diet_recalculate_goal(),
+        lookup_completed=True,
+        allowed_record_ids={"101", "102"},
+    )
+
+    assert normalized[0]["function"]["name"] == "health_manage"
+    assert json.loads(normalized[0]["function"]["arguments"])["operation"] == "list"
+
+
+def test_recalculate_goal_allows_only_a_resolved_target_record_update():
+    target_record = {
+        "id": "target-record",
+        "type": "function",
+        "function": {
+            "name": "health_manage",
+            "arguments": json.dumps({
+                "record_type": "diet",
+                "operation": "update",
+                "record_id": 101,
+                "data": {"meal_type": "breakfast", "calories": 410},
+            }),
+        },
+    }
+
+    normalized = _normalize_goal_guarded_tool_calls(
+        [target_record],
+        _diet_recalculate_goal(),
+        lookup_completed=True,
+        allowed_record_ids={"101", "102"},
+    )
+
+    assert normalized == [target_record]
+
+
+def test_recalculate_goal_reads_back_after_all_target_updates_have_receipts():
+    goal = _diet_recalculate_goal()
+    call = _build_goal_verification_tool_call(
+        goal,
+        write_receipts=[
+            {"resource_type": "diet", "resource_id": 101},
+            {"resource_type": "diet", "resource_id": 102},
+        ],
+        already_attempted=False,
+    )
+
+    assert call is not None
+    assert json.loads(call["function"]["arguments"]) == {
+        "record_type": "diet",
+        "operation": "list",
+        "date": "2026-07-24",
+        "limit": 20,
+    }
+    assert _build_goal_verification_tool_call(
+        goal,
+        write_receipts=[{"resource_type": "diet", "resource_id": 101}],
+        already_attempted=False,
+    ) is None
 
 
 def test_today_resolves_to_iso_date():

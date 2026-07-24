@@ -201,6 +201,8 @@ MUTATION_NEGATIONS = (
     "避免",
 )
 MUTATION_NEGATION_EXCEPTIONS = ("别忘了", "不要忘了")
+DIET_RECALCULATE_ACTIONS = ("重新估算", "重新计算", "重新核算", "重算", "重估")
+DIET_RECALCULATE_UPDATE_ACTIONS = ("写入", "写回", "更新", "保存", "改写")
 ADVICE_ACTIONS = (
     "分析",
     "解读",
@@ -351,6 +353,36 @@ def classify_agent_utterance(
         mutation = "update"
     has_negated_mutation = _has_negated_mutation(normalized, mutation)
     has_advice = _has_any(normalized, ADVICE_ACTIONS)
+
+    is_diet_recalculate_update = (
+        domain == "diet"
+        and _has_any(normalized, DIET_RECALCULATE_ACTIONS)
+        and _has_any(normalized, DIET_RECALCULATE_UPDATE_ACTIONS)
+    )
+    if is_diet_recalculate_update:
+        if _has_any(normalized, MUTATION_NEGATIONS):
+            return _intent(
+                raw,
+                normalized,
+                "chat",
+                "diet",
+                "none",
+                0.94,
+                "negated_diet_recalculate_update",
+                scope,
+            )
+        return _intent(
+            raw,
+            normalized,
+            "mutate",
+            "diet",
+            "update",
+            0.96,
+            "diet_recalculate_update",
+            scope,
+            is_write=True,
+            requires_reliable_tool_model=True,
+        )
 
     plan_operation = _plan_operation(normalized, domain, has_question)
 

@@ -60,6 +60,14 @@ from app.services.agent_kernel.context import (
     build_turn_snapshot,
     format_turn_time_context_prompt,
 )
+from app.services.agent_kernel.actionable_context import (
+    format_actionable_context_prompt,
+)
+from app.services.agent_kernel.goal_spec import (
+    compile_goal_spec,
+    format_goal_contract_prompt,
+)
+from app.services.agent_kernel.postconditions import verify_goal_postconditions
 from app.services.agent_kernel.events import AgentEventBus
 from app.services.agent_kernel.tool_registry import (
     UnknownToolAction,
@@ -72,6 +80,7 @@ from app.services.agent_kernel.tool_registry import (
 )
 from app.services.agent_kernel.types import (
     CapabilityDecision,
+    GoalSpec,
     ToolExecutionRequest,
     TurnSnapshot,
 )
@@ -4318,6 +4327,171 @@ def _build_deterministic_diet_correction_tool_call(
     }
 
 
+def _build_deterministic_goal_lookup_tool_call(
+    goal: Optional[GoalSpec],
+    *,
+    write_receipts: Sequence[dict[str, Any]],
+    has_attachment: bool = False,
+) -> Optional[Dict[str, Any]]:
+    """Start a typed recalculation task with the required authoritative lookup."""
+    if (
+        goal is None
+        or goal.kind != "diet_recalculate_update"
+        or not goal.requires_lookup
+        or write_receipts
+        or has_attachment
+        or not goal.target_date
+    ):
+        return None
+    arguments = {
+        "record_type": "diet",
+        "operation": "list",
+        "date": goal.target_date,
+        "limit": 20,
+    }
+    return {
+        "id": f"goal-lookup-{_sha12(repr(goal))}",
+        "type": "function",
+        "function": {
+            "name": "health_manage",
+            "arguments": json.dumps(arguments, ensure_ascii=False),
+        },
+    }
+
+
+def _build_goal_verification_tool_call(
+    goal: Optional[GoalSpec],
+    *,
+    write_receipts: Sequence[dict[str, Any]],
+    already_attempted: bool,
+) -> Optional[Dict[str, Any]]:
+    """Read the target scope back only after every intended update has a receipt."""
+    if (
+        goal is None
+        or goal.kind != "diet_recalculate_update"
+        or not goal.requires_verification
+        or already_attempted
+        or not goal.target_date
+        or len(write_receipts) < len(goal.target_meal_types)
+    ):
+        return None
+    arguments = {
+        "record_type": "diet",
+        "operation": "list",
+        "date": goal.target_date,
+        "limit": 20,
+    }
+    return {
+        "id": f"goal-verify-{_sha12(repr(goal))}",
+        "type": "function",
+        "function": {
+            "name": "health_manage",
+            "arguments": json.dumps(arguments, ensure_ascii=False),
+        },
+    }
+
+
+def _normalize_goal_guarded_tool_calls(
+    tool_calls: List[Dict[str, Any]],
+    goal: Optional[GoalSpec],
+    *,
+    lookup_completed: bool = False,
+    allowed_record_ids: Optional[set[str]] = None,
+) -> List[Dict[str, Any]]:
+    """Fail closed when a model violates the current task's mutation contract."""
+    if goal is None or goal.kind != "diet_recalculate_update":
+        return tool_calls
+    lookup_args = {
+        "record_type": "diet",
+        "operation": "list",
+        "date": goal.target_date,
+        "limit": 20,
+    }
+    normalized: list[dict[str, Any]] = []
+    for tool_call in tool_calls:
+        function = tool_call.get("function") or {}
+        name = function.get("name")
+        try:
+            args = (
+                json.loads(function.get("arguments"))
+                if isinstance(function.get("arguments"), str)
+                else dict(function.get("arguments") or {})
+            )
+        except (json.JSONDecodeError, TypeError, ValueError):
+            normalized.append(tool_call)
+            continue
+        is_diet_create = (
+            args.get("record_type") == "diet"
+            and (
+                name == "health_record"
+                or args.get("operation") == "create"
+            )
+        )
+        record_id = args.get("record_id") or args.get("id")
+        is_unresolved_diet_update = (
+            name == "health_manage"
+            and args.get("record_type") == "diet"
+            and args.get("operation") == "update"
+            and (
+                not lookup_completed
+                or record_id in (None, "")
+                or (
+                    allowed_record_ids is not None
+                    and str(record_id) not in allowed_record_ids
+                )
+            )
+        )
+        if not is_diet_create and not is_unresolved_diet_update:
+            normalized.append(tool_call)
+            continue
+        logger.warning(
+            "[agent_executor] goal contract blocked unsafe diet mutation "
+            "tool=%s operation=%s",
+            name,
+            args.get("operation") or "create",
+        )
+        normalized.append({
+            **tool_call,
+            "function": {
+                **function,
+                "name": "health_manage",
+                "arguments": json.dumps(lookup_args, ensure_ascii=False),
+            },
+        })
+    return normalized
+
+
+def _goal_target_record_ids(
+    goal: Optional[GoalSpec],
+    result: Any,
+) -> set[str]:
+    """Resolve the only record IDs that a typed goal may mutate."""
+    if goal is None or goal.kind != "diet_recalculate_update":
+        return set()
+    parsed = result
+    if isinstance(result, str):
+        try:
+            parsed = json.loads(result)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return set()
+    rows: list[dict[str, Any]] = []
+    if isinstance(parsed, list):
+        rows = [row for row in parsed if isinstance(row, dict)]
+    elif isinstance(parsed, dict):
+        for key in ("items", "records", "data", "results"):
+            nested = parsed.get(key)
+            if isinstance(nested, list):
+                rows = [row for row in nested if isinstance(row, dict)]
+                break
+    target_meals = set(goal.target_meal_types)
+    return {
+        str(row.get("id") or row.get("record_id"))
+        for row in rows
+        if str(row.get("meal_type") or "").strip().lower() in target_meals
+        and (row.get("id") or row.get("record_id")) not in (None, "")
+    }
+
+
 def _is_explicit_latest_diet_delete(message: str) -> bool:
     text = (message or "").strip()
     return bool(
@@ -6194,6 +6368,33 @@ class AgentExecutor:
         if self._agent_kernel_event_bus is not None:
             self._agent_kernel_event_bus.snapshot = bound
 
+    def _bind_agent_kernel_actionable_references(
+        self,
+        references: Sequence[Any],
+    ) -> None:
+        """Rebind visible structured objects after the conversation is resolved."""
+        snapshot = self._agent_kernel_snapshot
+        if snapshot is None:
+            return
+        normalized = tuple(references or ())
+        goal = compile_goal_spec(
+            envelope=snapshot.envelope,
+            context=snapshot.context,
+            intent=snapshot.intent,
+            actionable_references=normalized,
+        )
+        rebound = replace(
+            snapshot,
+            actionable_references=normalized,
+            goal=goal,
+        )
+        self._agent_kernel_snapshot = rebound
+        if self._agent_kernel_event_bus is not None:
+            self._agent_kernel_event_bus.rebind_snapshot(
+                rebound,
+                reason="actionable_context_resolved",
+            )
+
     def _ensure_agent_kernel_turn(self, *, channel: Optional[str] = None) -> TurnSnapshot:
         """Support non-chat adapters while keeping the same single-turn contract."""
         user_id = self._current_user_id
@@ -6246,7 +6447,17 @@ class AgentExecutor:
             ambiguity=tuple(flag for flag in snapshot.intent.ambiguity if flag != "low_confidence"),
             is_write=True,
         )
-        refined = replace(snapshot, intent=refined_intent)
+        refined_goal = compile_goal_spec(
+            envelope=snapshot.envelope,
+            context=snapshot.context,
+            intent=refined_intent,
+            actionable_references=snapshot.actionable_references,
+        )
+        refined = replace(
+            snapshot,
+            intent=refined_intent,
+            goal=refined_goal,
+        )
         self._agent_kernel_snapshot = refined
         if self._agent_kernel_event_bus is not None:
             self._agent_kernel_event_bus.rebind_snapshot(
@@ -6923,13 +7134,39 @@ class AgentExecutor:
         self._current_turn_conversation_id = int(conv.id)
         self._current_turn_image_urls = []
         self._bind_agent_kernel_source_message(user_msg.id)
+        try:
+            self._bind_agent_kernel_actionable_references(
+                svc.build_actionable_references(conv.id)
+            )
+        except Exception as exc:  # noqa: BLE001 - context loss must not abort the turn
+            logger.warning(
+                "[agent_executor] multi-model actionable context projection failed "
+                "conversation=%s error=%s",
+                conv.id,
+                exc,
+            )
 
         yield {"event": "agent_start", "data": {"message": "多模型综合分析中…", "conversation_id": conv.id}}
 
         system_content = self._build_system_prompt(user_id, conv.id, user_auth_token)
         turn_time_context = self._agent_kernel_time_context(client_time_context)
+        multi_model_context = [
+            turn_time_context,
+            format_actionable_context_prompt(
+                self._agent_kernel_snapshot.actionable_references
+                if self._agent_kernel_snapshot is not None else ()
+            ),
+            format_goal_contract_prompt(
+                self._agent_kernel_snapshot.goal
+                if self._agent_kernel_snapshot is not None else None
+            ),
+        ]
+        multi_model_context_text = "\n\n".join(
+            part for part in multi_model_context if part
+        )
         message_with_time_context = (
-            f"[系统附注 — 本回合参考上下文,非用户输入]\n{turn_time_context}\n"
+            "[系统附注 — 本回合参考上下文,非用户输入]\n"
+            f"{multi_model_context_text}\n"
             f"[用户消息]\n{message}"
         )
         tools = get_health_tools()
@@ -6950,6 +7187,11 @@ class AgentExecutor:
             ]
             lead_text = ""
             deterministic_diet_correction_fallback_attempted = False
+            deterministic_goal_lookup_attempted = False
+            goal_verification_attempted = False
+            goal_verification_result: Any = None
+            goal_lookup_completed = False
+            goal_allowed_record_ids: set[str] = set()
             for _round in range(MULTI_MODEL_MAX_LEAD_ROUNDS):
                 resp = await self._call_llm(lead_messages, tools)
                 tool_calls = resp.get("tool_calls") if isinstance(resp, dict) else None
@@ -6980,6 +7222,34 @@ class AgentExecutor:
                     content = _strip_text_tool_call(content)
                 if (
                     not tool_calls
+                    and not deterministic_goal_lookup_attempted
+                ):
+                    deterministic_goal_call = _build_deterministic_goal_lookup_tool_call(
+                        (
+                            self._agent_kernel_snapshot.goal
+                            if self._agent_kernel_snapshot is not None else None
+                        ),
+                        write_receipts=write_receipts,
+                    )
+                    if deterministic_goal_call:
+                        deterministic_goal_lookup_attempted = True
+                        tool_calls = [deterministic_goal_call]
+                        content = ""
+                if not tool_calls:
+                    verification_call = _build_goal_verification_tool_call(
+                        (
+                            self._agent_kernel_snapshot.goal
+                            if self._agent_kernel_snapshot is not None else None
+                        ),
+                        write_receipts=write_receipts,
+                        already_attempted=goal_verification_attempted,
+                    )
+                    if verification_call:
+                        goal_verification_attempted = True
+                        tool_calls = [verification_call]
+                        content = ""
+                if (
+                    not tool_calls
                     and not deterministic_diet_correction_fallback_attempted
                 ):
                     deterministic_diet_call = (
@@ -6999,6 +7269,32 @@ class AgentExecutor:
                             user_id,
                             len(message or ""),
                         )
+                if (
+                    not tool_calls
+                    and goal_verification_attempted
+                    and goal_verification_result is not None
+                ):
+                    postcondition = verify_goal_postconditions(
+                        (
+                            self._agent_kernel_snapshot.goal
+                            if self._agent_kernel_snapshot is not None else None
+                        ),
+                        write_receipts=write_receipts,
+                        verification_result=goal_verification_result,
+                    )
+                    if self._agent_kernel_event_bus is not None:
+                        self._agent_kernel_event_bus.goal_evaluated(
+                            satisfied=postcondition.satisfied,
+                            verified_target_count=len(
+                                postcondition.verified_resource_ids
+                            ),
+                            reason=postcondition.reason,
+                        )
+                    if not postcondition.satisfied:
+                        content = (
+                            "更新操作已执行，但读回核验未覆盖全部目标餐次，"
+                            "因此本轮不能确认已经全部完成。请重试，系统会继续核对现有记录。"
+                        )
                 if tool_calls:
                     tool_calls = self._normalize_query_only_health_manage_tool_calls(
                         tool_calls,
@@ -7010,6 +7306,15 @@ class AgentExecutor:
                     tool_calls = await self._normalize_explicit_diet_update_tool_calls(
                         tool_calls,
                         user_auth_token,
+                    )
+                    tool_calls = _normalize_goal_guarded_tool_calls(
+                        tool_calls,
+                        (
+                            self._agent_kernel_snapshot.goal
+                            if self._agent_kernel_snapshot is not None else None
+                        ),
+                        lookup_completed=goal_lookup_completed,
+                        allowed_record_ids=goal_allowed_record_ids,
                     )
                     self._prepare_medication_tool_plan(tool_calls)
                     planned_writes: List[tuple[str, Dict[str, Any]]] = []
@@ -7064,6 +7369,22 @@ class AgentExecutor:
                                     result = _hb_val
                             if write_fingerprint:
                                 write_results_by_fingerprint[write_fingerprint] = result
+                        if (
+                            fn == "health_manage"
+                            and parsed_args.get("record_type") == "diet"
+                            and parsed_args.get("operation") == "list"
+                            and not str(result or "").startswith("Error")
+                        ):
+                            goal_lookup_completed = True
+                            goal_allowed_record_ids = _goal_target_record_ids(
+                                (
+                                    self._agent_kernel_snapshot.goal
+                                    if self._agent_kernel_snapshot is not None else None
+                                ),
+                                result,
+                            )
+                            if str(tc.get("id") or "").startswith("goal-verify-"):
+                                goal_verification_result = result
                         lead_messages.append({
                             "role": "tool",
                             "tool_call_id": tc["id"],
@@ -7845,6 +8166,17 @@ class AgentExecutor:
         self._current_turn_conversation_id = int(conv.id)
         self._current_turn_image_urls = list(saved_image_urls)
         self._bind_agent_kernel_source_message(user_msg.id)
+        try:
+            self._bind_agent_kernel_actionable_references(
+                svc.build_actionable_references(conv.id)
+            )
+        except Exception as exc:  # noqa: BLE001 - context loss must not abort the turn
+            logger.warning(
+                "[agent_executor] actionable context projection failed "
+                "conversation=%s error=%s",
+                conv.id,
+                exc,
+            )
 
         # Multi-medication intake is a server-owned two-turn transaction:
         # source-bound proposal now, strict immediate confirmation next turn.
@@ -7938,6 +8270,19 @@ class AgentExecutor:
         # 字节稳定,turn 内容落在增长尾部,天然不破坏前缀匹配。块文本逐字保留。
         turn_context_parts: List[str] = []
         turn_context_parts.append(self._agent_kernel_time_context(client_time_context))
+        actionable_context = format_actionable_context_prompt(
+            (self._agent_kernel_snapshot.actionable_references or ())
+            if self._agent_kernel_snapshot is not None
+            else ()
+        )
+        if actionable_context:
+            turn_context_parts.append(actionable_context)
+        goal_contract = format_goal_contract_prompt(
+            self._agent_kernel_snapshot.goal
+            if self._agent_kernel_snapshot is not None else None
+        )
+        if goal_contract:
+            turn_context_parts.append(goal_contract)
         if opener_quick_reply_note:
             turn_context_parts.append(
                 "## 入口动作处理结果\n"
@@ -8181,6 +8526,11 @@ class AgentExecutor:
         tool_executed_count = 0
         deterministic_symptom_fallback_attempted = False
         deterministic_diet_correction_fallback_attempted = False
+        deterministic_goal_lookup_attempted = False
+        goal_verification_attempted = False
+        goal_verification_result: Any = None
+        goal_lookup_completed = False
+        goal_allowed_record_ids: set[str] = set()
         # 本轮 agent 实际调用过的工具/Skill 名, 去重、按首次调用顺序。供 mac/mobile
         # 展示"调用了哪些 Skills"。与 sources_used (引用了哪些数据源) 独立。
         tools_used: List[str] = []
@@ -8565,6 +8915,46 @@ class AgentExecutor:
                 if (
                     isinstance(response, dict)
                     and not response.get("tool_calls")
+                    and not deterministic_goal_lookup_attempted
+                ):
+                    deterministic_goal_call = _build_deterministic_goal_lookup_tool_call(
+                        (
+                            self._agent_kernel_snapshot.goal
+                            if self._agent_kernel_snapshot is not None else None
+                        ),
+                        write_receipts=write_receipts,
+                        has_attachment=bool(images or file_base64),
+                    )
+                    if deterministic_goal_call:
+                        deterministic_goal_lookup_attempted = True
+                        response = {
+                            **response,
+                            "content": "",
+                            "finish_reason": "tool_calls",
+                            "tool_calls": [deterministic_goal_call],
+                        }
+
+                if isinstance(response, dict) and not response.get("tool_calls"):
+                    verification_call = _build_goal_verification_tool_call(
+                        (
+                            self._agent_kernel_snapshot.goal
+                            if self._agent_kernel_snapshot is not None else None
+                        ),
+                        write_receipts=write_receipts,
+                        already_attempted=goal_verification_attempted,
+                    )
+                    if verification_call:
+                        goal_verification_attempted = True
+                        response = {
+                            **response,
+                            "content": "",
+                            "finish_reason": "tool_calls",
+                            "tool_calls": [verification_call],
+                        }
+
+                if (
+                    isinstance(response, dict)
+                    and not response.get("tool_calls")
                     and not deterministic_diet_correction_fallback_attempted
                 ):
                     deterministic_diet_call = (
@@ -8589,6 +8979,37 @@ class AgentExecutor:
                             user_id,
                             len(message or ""),
                         )
+
+                if (
+                    isinstance(response, dict)
+                    and not response.get("tool_calls")
+                    and goal_verification_attempted
+                    and goal_verification_result is not None
+                ):
+                    postcondition = verify_goal_postconditions(
+                        (
+                            self._agent_kernel_snapshot.goal
+                            if self._agent_kernel_snapshot is not None else None
+                        ),
+                        write_receipts=write_receipts,
+                        verification_result=goal_verification_result,
+                    )
+                    if self._agent_kernel_event_bus is not None:
+                        self._agent_kernel_event_bus.goal_evaluated(
+                            satisfied=postcondition.satisfied,
+                            verified_target_count=len(
+                                postcondition.verified_resource_ids
+                            ),
+                            reason=postcondition.reason,
+                        )
+                    if not postcondition.satisfied:
+                        response = {
+                            **response,
+                            "content": (
+                                "更新操作已执行，但读回核验未覆盖全部目标餐次，"
+                                "因此本轮不能确认已经全部完成。请重试，系统会继续核对现有记录。"
+                            ),
+                        }
 
                 if (
                     isinstance(response, dict)
@@ -8690,6 +9111,15 @@ class AgentExecutor:
                     tool_calls = await self._normalize_explicit_diet_update_tool_calls(
                         tool_calls,
                         user_auth_token,
+                    )
+                    tool_calls = _normalize_goal_guarded_tool_calls(
+                        tool_calls,
+                        (
+                            self._agent_kernel_snapshot.goal
+                            if self._agent_kernel_snapshot is not None else None
+                        ),
+                        lookup_completed=goal_lookup_completed,
+                        allowed_record_ids=goal_allowed_record_ids,
                     )
 
                     self._prepare_medication_tool_plan(tool_calls)
@@ -8958,6 +9388,22 @@ class AgentExecutor:
                                 result,
                                 result_for_record_card,
                             )
+                        if (
+                            func_name == "health_manage"
+                            and parsed_tool_args.get("record_type") == "diet"
+                            and parsed_tool_args.get("operation") == "list"
+                            and not str(result or "").startswith("Error")
+                        ):
+                            goal_lookup_completed = True
+                            goal_allowed_record_ids = _goal_target_record_ids(
+                                (
+                                    self._agent_kernel_snapshot.goal
+                                    if self._agent_kernel_snapshot is not None else None
+                                ),
+                                result,
+                            )
+                            if str(tc.get("id") or "").startswith("goal-verify-"):
+                                goal_verification_result = result
 
                         # 追加 tool_result 到 messages
                         messages.append({

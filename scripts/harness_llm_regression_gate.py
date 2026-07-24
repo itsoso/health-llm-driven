@@ -14,6 +14,8 @@ import sys
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
+import yaml
+
 
 ROOT = Path(__file__).resolve().parents[1]
 BACKEND = ROOT / "backend"
@@ -26,6 +28,63 @@ DEFAULT_BASELINES = {
     "health_agent_core": "main",
     "orchestrator": "main",
 }
+
+
+def run_agent_trajectory_contract_gate() -> dict[str, Any]:
+    """Validate stateful task contracts without an LLM or production data."""
+    from app.services.agent_kernel.goal_spec import compile_goal_spec
+    from app.services.agent_kernel.intent_frame import build_intent_frame
+    from app.services.agent_kernel.types import (
+        ActionableReference,
+        AgentEnvelope,
+        ExecutionContext,
+    )
+
+    dataset_path = BACKEND / "eval" / "datasets" / "agent_trajectories.yaml"
+    dataset = yaml.safe_load(dataset_path.read_text(encoding="utf-8")) or {}
+    failed_cases: list[dict[str, Any]] = []
+    cases = dataset.get("cases") or []
+    for case in cases:
+        context = ExecutionContext.for_test(user_id=1, channel="eval")
+        envelope = AgentEnvelope(user_id=1, channel="eval", text=case["user"])
+        intent = build_intent_frame(envelope, context)
+        references = tuple(
+            ActionableReference(
+                kind=item["kind"],
+                source_message_id=item.get("source_message_id"),
+                data=item.get("data") or {},
+            )
+            for item in case.get("prior_actionable") or []
+        )
+        goal = compile_goal_spec(
+            envelope=envelope,
+            context=context,
+            intent=intent,
+            actionable_references=references,
+        )
+        expected = case.get("expected") or {}
+        actual = {
+            "goal_kind": goal.kind,
+            "domain": goal.domain,
+            "operation": goal.operation,
+            "target_meal_types": list(goal.target_meal_types),
+            "requires_lookup": goal.requires_lookup,
+            "requires_verification": goal.requires_verification,
+            "prohibited_operations": list(goal.prohibited_operations),
+            "clarification": goal.requires_clarification,
+        }
+        mismatch = {
+            key: {"expected": value, "actual": actual.get(key)}
+            for key, value in expected.items()
+            if actual.get(key) != value
+        }
+        if mismatch:
+            failed_cases.append({"case_id": case.get("id"), "mismatch": mismatch})
+    return {
+        "status": "failed" if failed_cases else "passed",
+        "total_cases": len(cases),
+        "failed_cases": failed_cases,
+    }
 
 
 def _baseline_for(suite: str, *, override: str | None, no_baseline: bool) -> str | None:
@@ -71,7 +130,19 @@ def run_gate(
         report.suite for report in reports
         if report.failed or report.errored or report.regression
     ]
-    status = "failed" if failed_suites or errors else "passed"
+    try:
+        trajectory_contract = run_agent_trajectory_contract_gate()
+    except Exception as exc:  # noqa: BLE001 - a broken gate must fail loudly in its report
+        trajectory_contract = {
+            "status": "failed",
+            "total_cases": 0,
+            "failed_cases": [{"case_id": "__gate__", "error": f"{type(exc).__name__}: {exc}"}],
+        }
+    status = (
+        "failed"
+        if failed_suites or errors or trajectory_contract["status"] != "passed"
+        else "passed"
+    )
     suite_names = [report.suite for report in reports] + [error["suite"] for error in errors]
     return {
         "status": status,
@@ -79,6 +150,7 @@ def run_gate(
         "suites": [_report_to_dict(report) for report in reports],
         "failed_suites": failed_suites,
         "errors": errors,
+        "trajectory_contract": trajectory_contract,
     }
 
 
@@ -95,6 +167,13 @@ def _print_text(payload: dict[str, Any]) -> None:
         print(line)
     for error in payload["errors"]:
         print(f"  [ERROR] {error['suite']}: {error['error']}")
+    trajectory = payload["trajectory_contract"]
+    mark = "OK" if trajectory["status"] == "passed" else "FAIL"
+    print(
+        f"  [{mark}] agent_trajectory_contract: "
+        f"{trajectory['total_cases'] - len(trajectory['failed_cases'])}/"
+        f"{trajectory['total_cases']} pass"
+    )
 
 
 def main(argv: list[str] | None = None, *, run_suite_fn: Callable[[str, str | None], Any] | None = None) -> int:
