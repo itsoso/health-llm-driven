@@ -4,8 +4,8 @@
 |---|---|
 | slug | `agent-runtime-hardening` |
 | 创建日期 | 2026-07-23 |
-| 当前阶段 | S6 部署 |
-| 状态 | in_progress |
+| 当前阶段 | S8 上线验证完成 |
+| 状态 | shipped |
 | 负责 | Codex + 用户 |
 | 反馈环 | Runtime contract snapshot + integrity monitoring + cloud entrypoint facade |
 
@@ -86,11 +86,12 @@ RequirementAdmission:
 - [x] T6a-4 `/send` 与 `/stream` 接口级测试证明 circuit 暂停信号完整传递到
   Executor；读取继续服务，模型动态选择的写工具在派发前 fail-closed。
 - [x] T6b 完成独立安全复审。
-- [ ] T6c 提交、部署和生产窗口验证。
+- [x] T6c 提交、部署和生产窗口验证。
 
 ## G3 · 测试闸
 
-- SQLite Runtime/Kernel/渠道最终聚焦回归：`370 passed`；额外
+- 变基到最终生产主干后的 Runtime/Kernel/渠道最终回归：`390 passed`；
+  额外
   family-health / security 入口回归：`18 passed`。此前更广组合回归为
   `421 passed, 3 skipped`，跳过项仅为 PostgreSQL 行锁专属用例。
 - 真实 PostgreSQL 15 并发回归：`9 passed`，包含会话串行化、rollout
@@ -141,8 +142,19 @@ RequirementAdmission:
 
 ## G5 · 部署健康
 
-- 待执行。
+- 状态：**PASS**。
+- 精确提交 `6f2244fc818f7e657b17358d465a4e6fc6db4827` 通过根目录
+  `deploy.sh -b -y` 部署。
+- 发布前数据库备份 40 MB；231 张表恢复演练通过；站外加密归档
+  SHA-256/HMAC 验真通过。
+- 托管迁移
+  `20260723_120000_agent_runtime_contract_snapshot` 和
+  `20260723_130000_external_agent_channel_session_uniqueness` 已应用。
+- 部署健康度 `60/60`，Skills `22/22`，远端部署 SHA 精确匹配。
 
 ## G6 · 上线验证
 
-- 待执行。
+- 状态：**PASS**。
+- 公网 `/api/v1/health` 返回 `healthy`，API、PostgreSQL、Redis 和 Celery
+  全部 `connected`。
+- 生产服务已从精确 SHA 启动；本轮不包含 Mobile 原生或 OTA 变更。
