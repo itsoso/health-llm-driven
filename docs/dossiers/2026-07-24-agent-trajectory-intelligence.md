@@ -99,6 +99,7 @@ resolve visible card / open task
 - [x] T3 添加确定性首次查询、目标记录 ID 白名单和禁止重复新增。
 - [x] T4 添加批量更新后的读回验证。
 - [x] T5 加入 Agent 回归 Gate 和不含健康正文的目标进度指标。
+- [x] T6 将 Goal compiler、合同 prompt 和 postcondition verifier 改为静态注册机制。
 
 ## S5 · 实现摘要
 
@@ -121,6 +122,20 @@ resolve visible card / open task
 - 目标无法唯一确定时，工具结果向模型注入确定性停止条件，要求指出具体餐次并请用户
   选择或补充，不允许反复查询、误写或宣称完成。
 - 轨迹评分新增目标日期、查询结果唯一性和“更新 ID 必须来自权威查询”三个硬约束。
+
+### Goal Contract Registry
+
+- 新增不可变 `GoalCompilerRegistry`、`GoalPromptRegistry` 和
+  `GoalVerifierRegistry`，为后续症状、饮水、提醒和用药任务合同提供稳定扩展点。
+- compiler 按声明顺序确定性匹配，prompt/verifier 按精确 goal kind 分派；重复名称或
+  kind 在注册表构造时直接失败。
+- 保留 `compile_goal_spec()`、`format_goal_contract_prompt()` 和
+  `verify_goal_postconditions()` 三个公共 facade，Executor 和客户端协议无需迁移。
+- 当前饮食重估编译、合同 prompt、写入回执及权威读回规则原样迁移到注册表。
+- 任何 `requires_verification=True` 但没有 verifier 的新任务继续 fail-closed，
+  返回 `unsupported_goal_verifier`，不得由 Executor 自行推断成功。
+- 注册表只含任务类型和函数引用，不记录用户健康正文；iPhone 本地闭环和 Runtime
+  持久化协议未改变。
 
 ## 历史失败回溯与 Pi-style 架构裁决
 
@@ -171,11 +186,20 @@ resolve visible card / open task
   - health agent core `50/50`
   - trajectory contracts `7/7`
 - P1 核心回归：`123 passed`。
+- Goal registry RED/GREEN 聚焦回归：`14 passed`。
+- Agent Kernel、ToolGateway 和 stateful trajectory 回归：`110 passed`。
+- Executor 完成状态、工具门禁、写入授权/回执、工具恢复和 Runtime operation
+  集成回归：`152 passed`。
+- Goal registry 改造后的离线 Gate：
+  - synthesis invariants `12/12`
+  - health agent core `50/50`
+  - trajectory contracts `7/7`
 - 扩大 Agent 回归：`662 passed`；15 项因本地沙箱禁止连接 PostgreSQL 而未执行，
   9 项批量化验失败隔离复测后 `9/9 passed`；另 1 项为旧模型名断言与当前 Qwen
   路由配置不一致，和本次改动无关。
 - Python 编译检查通过。
 - system-map 重新生成并通过漂移检查。
+- Goal registry 新增 Kernel service 后，system-map 由官方生成器重建并再次通过漂移检查。
 - 遥测只记录 goal kind、目标数量、已验证数量和原因码，不记录餐次名称、食物或健康正文。
 
 ## Gate 记录

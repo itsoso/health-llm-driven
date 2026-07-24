@@ -5,6 +5,12 @@ from collections.abc import Sequence
 from datetime import date, timedelta
 import re
 
+from app.services.agent_kernel.goal_registry import (
+    GoalCompilerRegistry,
+    GoalCompilerSpec,
+    GoalPromptRegistry,
+    GoalPromptSpec,
+)
 from app.services.agent_kernel.types import (
     ActionableReference,
     AgentEnvelope,
@@ -54,6 +60,39 @@ def compile_goal_spec(
     actionable_references: Sequence[ActionableReference] = (),
 ) -> GoalSpec:
     """Create the executor contract without granting authority to visible data."""
+    specialized = _GOAL_COMPILER_REGISTRY.compile(
+        envelope=envelope,
+        context=context,
+        intent=intent,
+        actionable_references=actionable_references,
+    )
+    if specialized is not None:
+        return specialized
+
+    text = _normalize(envelope.text)
+    target_meals = _target_meal_types(text, actionable_references)
+    target_date = _target_date(text, context, actionable_references)
+    return GoalSpec(
+        kind=_fallback_kind(intent),
+        domain=intent.domain,
+        operation=intent.operation,
+        target_date=target_date,
+        target_meal_types=target_meals,
+        prohibited_operations=(
+            ("create", "update")
+            if intent.primary in {"read", "advice", "chat", "unknown"}
+            else ()
+        ),
+    )
+
+
+def _compile_diet_recalculation_goal(
+    *,
+    envelope: AgentEnvelope,
+    context: ExecutionContext,
+    intent: IntentFrame,
+    actionable_references: Sequence[ActionableReference],
+) -> GoalSpec | None:
     text = _normalize(envelope.text)
     target_meals = _target_meal_types(text, actionable_references)
     target_date = _target_date(text, context, actionable_references)
@@ -113,24 +152,23 @@ def compile_goal_spec(
                 evidence=("visible_card",) if reference_foods else (),
             )
 
-    return GoalSpec(
-        kind=_fallback_kind(intent),
-        domain=intent.domain,
-        operation=intent.operation,
-        target_date=target_date,
-        target_meal_types=target_meals,
-        prohibited_operations=(
-            ("create", "update")
-            if intent.primary in {"read", "advice", "chat", "unknown"}
-            else ()
-        ),
-    )
+    return None
 
 
 def format_goal_contract_prompt(goal: GoalSpec | None) -> str:
     """Render executor obligations without exposing internal runtime metadata."""
-    if goal is None or goal.kind != "diet_recalculate_update":
-        return ""
+    return _GOAL_PROMPT_REGISTRY.render(goal)
+
+
+def registered_goal_compiler_names() -> tuple[str, ...]:
+    return _GOAL_COMPILER_REGISTRY.names
+
+
+def registered_goal_prompt_kinds() -> tuple[str, ...]:
+    return _GOAL_PROMPT_REGISTRY.kinds
+
+
+def _format_diet_recalculation_prompt(goal: GoalSpec) -> str:
     meal_labels = {
         "breakfast": "早餐",
         "lunch": "午餐",
@@ -271,3 +309,22 @@ def _normalize(value: str) -> str:
 
 def _has_any(text: str, signals: tuple[str, ...]) -> bool:
     return any(signal in text for signal in signals)
+
+
+_GOAL_COMPILER_REGISTRY = GoalCompilerRegistry(
+    (
+        GoalCompilerSpec(
+            name="diet_recalculation",
+            compiler=_compile_diet_recalculation_goal,
+        ),
+    )
+)
+
+_GOAL_PROMPT_REGISTRY = GoalPromptRegistry(
+    (
+        GoalPromptSpec(
+            kind="diet_recalculate_update",
+            renderer=_format_diet_recalculation_prompt,
+        ),
+    )
+)

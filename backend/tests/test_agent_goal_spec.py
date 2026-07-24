@@ -2,11 +2,17 @@ from pathlib import Path
 
 import yaml
 
-from app.services.agent_kernel.goal_spec import compile_goal_spec
+from app.services.agent_kernel.goal_spec import (
+    compile_goal_spec,
+    format_goal_contract_prompt,
+    registered_goal_compiler_names,
+    registered_goal_prompt_kinds,
+)
 from app.services.agent_kernel.types import (
     ActionableReference,
     AgentEnvelope,
     ExecutionContext,
+    GoalSpec,
 )
 from app.services.agent_kernel.intent_frame import build_intent_frame
 
@@ -202,3 +208,14 @@ def test_colloquial_recalculate_and_write_back_resolves_visible_two_meals():
     assert goal.kind == "diet_recalculate_update"
     assert goal.operation == "update"
     assert goal.target_meal_types == ("breakfast", "lunch")
+
+
+def test_diet_goal_contract_is_registered_without_changing_public_facade():
+    goal = _compile(CASES[0])
+
+    assert registered_goal_compiler_names() == ("diet_recalculation",)
+    assert registered_goal_prompt_kinds() == ("diet_recalculate_update",)
+    assert "重新估算并更新" in format_goal_contract_prompt(goal)
+    assert format_goal_contract_prompt(
+        GoalSpec(kind="chat", domain="general", operation="none")
+    ) == ""

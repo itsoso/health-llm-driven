@@ -5,6 +5,10 @@ import json
 from dataclasses import dataclass
 from typing import Any, Sequence
 
+from app.services.agent_kernel.goal_registry import (
+    GoalVerifierRegistry,
+    GoalVerifierSpec,
+)
 from app.services.agent_kernel.types import GoalSpec
 
 
@@ -25,9 +29,26 @@ def verify_goal_postconditions(
     """Verify task outcome from receipts and authoritative read-back data."""
     if goal is None or not goal.requires_verification:
         return PostconditionResult(True, "verification_not_required")
-    if goal.kind != "diet_recalculate_update":
+    result = _GOAL_VERIFIER_REGISTRY.verify(
+        goal,
+        write_receipts=write_receipts,
+        verification_result=verification_result,
+    )
+    if result is None:
         return PostconditionResult(False, "unsupported_goal_verifier")
+    return result
 
+
+def registered_goal_verifier_kinds() -> tuple[str, ...]:
+    return _GOAL_VERIFIER_REGISTRY.kinds
+
+
+def _verify_diet_recalculation(
+    goal: GoalSpec,
+    *,
+    write_receipts: Sequence[dict[str, Any]],
+    verification_result: Any,
+) -> PostconditionResult:
     receipt_ids = _diet_receipt_ids(write_receipts)
     if len(receipt_ids) < len(goal.target_meal_types):
         return PostconditionResult(False, "write_receipts_missing")
@@ -103,3 +124,13 @@ def _row_id(row: dict[str, Any]) -> str:
             continue
         return str(value).strip()
     return ""
+
+
+_GOAL_VERIFIER_REGISTRY = GoalVerifierRegistry(
+    (
+        GoalVerifierSpec(
+            kind="diet_recalculate_update",
+            verifier=_verify_diet_recalculation,
+        ),
+    )
+)
