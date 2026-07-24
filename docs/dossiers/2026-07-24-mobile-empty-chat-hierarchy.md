@@ -1,6 +1,6 @@
 # Mobile Empty Chat Hierarchy
 
-**Status:** Implementation verified; simulator review pending  
+**Status:** Simulator verified; production OTA pending
 **Owner surface:** Mobile Agent conversation  
 **Design:** [Mobile Empty Chat Hierarchy Design](../plans/2026-07-24-mobile-empty-chat-hierarchy-design.md)
 
@@ -29,7 +29,7 @@ attachment capabilities.
 | G1 Requirement admission | PASS | Improves Mobile capture and conversation entry |
 | G2 Feasibility and risk | PASS | Client-only presentation contract; no API change |
 | G3 Tests | PASS | 110 focused assertions; TypeScript exit 0; lint exit 0 with existing warnings |
-| G4 Review | PENDING | Simulator interaction and visual review |
+| G4 Review | PASS | iOS simulator empty, keyboard-open, and wrapped-draft states visually verified |
 | G5 Deployment health | PENDING | Simulator and OTA health |
 | G6 Live verification | PENDING | Production-channel Mobile verification |
 
@@ -37,5 +37,10 @@ attachment capabilities.
 
 - Preserve Alibaba Cloud ASR and composer state machine.
 - Do not modify native dependencies.
-- Publish as Mobile production OTA only after simulator screenshots verify the
-  empty, keyboard-open, and draft states.
+- Simulator evidence (private local artifacts, not committed):
+  - `/private/tmp/reva-empty-chat-ui-new-chat.png`
+  - `/private/tmp/reva-empty-chat-ui-keyboard.png`
+  - `/private/tmp/reva-empty-chat-ui-draft.png`
+- Empty state shows one opener, one provenance row, and three de-duplicated
+  actions. Keyboard-open and wrapped-draft states hide the actions, preserve the
+  conversation viewport, and grow the composer only when content wraps.
