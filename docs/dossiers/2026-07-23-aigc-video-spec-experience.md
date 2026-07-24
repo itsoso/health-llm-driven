@@ -151,4 +151,13 @@
 - G4 安全：PASS
   - 原始健康数值和完整创作 prompt 不进入确认卡数据。
   - Provider 披露保留；确认前不创建付费任务。
-- G5/G6：待本次 Backend 部署与 production OTA 后补充。
+- G5 部署健康：PASS
+  - Backend 已从干净提交 `5560884448ac` 部署。
+  - 数据库备份、231 张表恢复演练、force-RLS 完整性检查与站外加密归档均通过。
+  - 部署健康分 `60/60`，Skills manifest `22/22`，远端版本核验通过。
+- G6 上线验证：PARTIAL
+  - production OTA runtime `1.3.2`。
+  - Update group：`44f8f40c-cb3f-4ee8-8bfb-e8192d526cc5`。
+  - iOS update：`019f9282-15dd-76d9-9db5-3f6a402ca85b`。
+  - OTA commit：`5560884448ac477afb73495b003fb10ae8a82bd6`。
+  - 待真机冷启动应用更新后，用“根据我今天的活动、饮食和睡眠生成短视频”验证：只出现一张创作确认卡、内容预览无具体健康数值、确认后只创建一个任务。
