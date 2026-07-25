@@ -2,7 +2,6 @@ import { useState, useRef, useCallback, useEffect, useReducer } from 'react';
 import { AppState } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-import NetInfo from '@react-native-community/netinfo';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { streamChat, getConversations, getConversationMessages, deleteConversation, type ChatMessage, type LlmUsageProfile, type AgentPerfProfile, type MedicationBatchStreamDecision } from '../services/chat';
 import { dispatchCard, renderServerCards } from '../components/chat/cards';
@@ -26,7 +25,6 @@ import {
 import { getAuthStorageScope } from '../services/authStorageScope';
 import { normalizeWriteReceipt, type WriteReceipt } from '../services/writeReceipt';
 import type { MedicationSafetyAlert } from '../services/medications';
-import { isNetworkStateUnavailable } from '../utils/networkReachability';
 
 function normalizeImageHost(baseUrl: string): string {
   return String(baseUrl || '').replace(/\/+$/, '').replace(/\/api(?:\/v\d+)?$/, '');
@@ -1047,47 +1045,6 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       requestFingerprint,
       label: '正在提交…',
     });
-
-    let networkUnavailable = false;
-    try {
-      networkUnavailable = isNetworkStateUnavailable(await NetInfo.fetch());
-    } catch {
-      if (__DEV__) console.warn('[chat] network status probe failed; attempting request');
-    }
-    if (networkUnavailable) {
-      const offlineUserMessage: UIMessage = {
-        id: sendOpts?.__localUserMessageId ?? reusableUserMessage?.id ?? nextId(),
-        role: 'user',
-        content: finalMsg,
-        imageUris: uris,
-        fromSiri: sendOpts?.fromSiri,
-        sourceTurnId: turnId,
-      };
-      const errMsg: UIMessage = {
-        id: sendOpts?.__localAssistantMessageId
-          ?? reusableAssistantMessage?.id
-          ?? nextId(),
-        role: 'assistant',
-        content: '⚠️ 网络不可用，请检查网络连接后重试',
-        sourceTurnId: turnId,
-      };
-      setMessages(prev => upsertOptimisticTurnPair(
-        prev,
-        reusableTurnId,
-        offlineUserMessage,
-        errMsg,
-      ));
-      dispatchAgentTurn({
-        type: 'fail',
-        at: Date.now(),
-        errorCode: 'network_unavailable',
-        label: '网络不可用',
-        recoverable: true,
-      });
-      emitAgentTerminal('failed', 'network_unavailable');
-      settleAcceptance(false);
-      return false;
-    }
 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 

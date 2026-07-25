@@ -1047,8 +1047,7 @@ describe('useChatEngine', () => {
     });
   });
 
-  it('continues the real request when the network status probe itself fails', async () => {
-    (NetInfo.fetch as jest.Mock).mockRejectedValueOnce(new Error('netinfo unavailable'));
+  it('does not gate the real request on an advisory network probe', async () => {
     mockStreamChat.mockImplementation(streamTokenBurstThenDone);
     const { result } = renderHook(() => useChatEngine());
 
@@ -1059,6 +1058,7 @@ describe('useChatEngine', () => {
     });
 
     expect(mockStreamChat).toHaveBeenCalled();
+    expect(NetInfo.fetch).not.toHaveBeenCalled();
     expect(accepted).toBe(true);
     expect(onAccepted).toHaveBeenCalledTimes(1);
     expect(onAccepted).toHaveBeenCalledWith(true);
@@ -1145,45 +1145,30 @@ describe('useChatEngine', () => {
     });
   });
 
-  it('rejects before acceptance when the device is known to be offline', async () => {
-    (NetInfo.fetch as jest.Mock).mockResolvedValueOnce({ isConnected: false });
+  it.each([
+    { isConnected: false },
+    { isConnected: true, isInternetReachable: false },
+  ])('treats a transient NetInfo offline state as advisory: %j', async (networkState) => {
+    (NetInfo.fetch as jest.Mock).mockResolvedValueOnce(networkState);
+    mockStreamChat.mockImplementation(streamTokenBurstThenDone);
     const onAccepted = jest.fn();
     const { result } = renderHook(() => useChatEngine());
     let accepted: boolean | undefined;
 
     await act(async () => {
-      accepted = await result.current.sendMessage('离线消息', null, { onAccepted } as any);
+      accepted = await result.current.sendMessage('记录这餐', [{
+        uri: 'file:///tmp/meal.jpg',
+        type: 'image/jpeg',
+        base64: 'meal-photo',
+      }], { onAccepted } as any);
     });
 
-    expect(accepted).toBe(false);
+    expect(accepted).toBe(true);
     expect(onAccepted).toHaveBeenCalledTimes(1);
-    expect(onAccepted).toHaveBeenCalledWith(false);
-    expect(mockStreamChat).not.toHaveBeenCalled();
+    expect(onAccepted).toHaveBeenCalledWith(true);
+    expect(mockStreamChat).toHaveBeenCalledTimes(1);
     expect(result.current.activeTurn).toMatchObject({
-      phase: 'failed',
-      errorCode: 'network_unavailable',
-    });
-  });
-
-  it('rejects before acceptance when the connected network cannot reach the internet', async () => {
-    (NetInfo.fetch as jest.Mock).mockResolvedValueOnce({
-      isConnected: true,
-      isInternetReachable: false,
-    });
-    const onAccepted = jest.fn();
-    const { result } = renderHook(() => useChatEngine());
-    let accepted: boolean | undefined;
-
-    await act(async () => {
-      accepted = await result.current.sendMessage('无外网消息', null, { onAccepted } as any);
-    });
-
-    expect(accepted).toBe(false);
-    expect(onAccepted).toHaveBeenCalledWith(false);
-    expect(mockStreamChat).not.toHaveBeenCalled();
-    expect(result.current.activeTurn).toMatchObject({
-      phase: 'failed',
-      errorCode: 'network_unavailable',
+      phase: 'completed',
     });
   });
 
@@ -1283,10 +1268,11 @@ describe('useChatEngine', () => {
   });
 
   it('reuses the same client turn when an unchanged offline draft is retried', async () => {
-    (NetInfo.fetch as jest.Mock)
-      .mockResolvedValueOnce({ isConnected: false })
-      .mockResolvedValueOnce({ isConnected: true });
-    mockStreamChat.mockImplementation(streamTokenBurstThenDone);
+    mockStreamChat
+      .mockImplementationOnce(async function* () {
+        throw new Error('network unavailable');
+      })
+      .mockImplementation(streamTokenBurstThenDone);
     const { result } = renderHook(() => useChatEngine());
 
     await act(async () => {
@@ -1307,10 +1293,11 @@ describe('useChatEngine', () => {
   });
 
   it('reuses one optimistic turn when the same image is retried with a new temporary URI', async () => {
-    (NetInfo.fetch as jest.Mock)
-      .mockResolvedValueOnce({ isConnected: false })
-      .mockResolvedValueOnce({ isConnected: true });
-    mockStreamChat.mockImplementation(streamTokenBurstThenDone);
+    mockStreamChat
+      .mockImplementationOnce(async function* () {
+        throw new Error('network unavailable');
+      })
+      .mockImplementation(streamTokenBurstThenDone);
     const { result } = renderHook(() => useChatEngine());
 
     await act(async () => {
@@ -1338,11 +1325,14 @@ describe('useChatEngine', () => {
   });
 
   it('keeps one optimistic pair across repeated offline retries before recovery', async () => {
-    (NetInfo.fetch as jest.Mock)
-      .mockResolvedValueOnce({ isConnected: false })
-      .mockResolvedValueOnce({ isConnected: false })
-      .mockResolvedValueOnce({ isConnected: true });
-    mockStreamChat.mockImplementation(streamTokenBurstThenDone);
+    mockStreamChat
+      .mockImplementationOnce(async function* () {
+        throw new Error('network unavailable');
+      })
+      .mockImplementationOnce(async function* () {
+        throw new Error('network unavailable');
+      })
+      .mockImplementation(streamTokenBurstThenDone);
     const { result } = renderHook(() => useChatEngine());
 
     await act(async () => { await result.current.sendMessage('准备睡觉了，给我建议'); });
