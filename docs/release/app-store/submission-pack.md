@@ -128,13 +128,13 @@ Build 226 historical App Store Connect set (uploaded and API-verified on 2026-07
 
 The uploaded set uses the demo account, contains no private user health data, and targets `APP_IPHONE_67` at 1290 x 2796. The settings screenshot containing the demo login identifier and the privacy-policy screenshot were validated locally but intentionally excluded from marketing assets.
 
-The current internal TestFlight candidate is version 1.3.2 Build 235, EAS build
-`d6b5f7de-1208-488d-8799-4b6f8a76b011`, source commit
-`371dacc60ba3f218edec4b367ea61472798904a2`. App Store Connect reports the
+The current internal TestFlight candidate is version 1.3.2 Build 237, EAS build
+`7a7df837-50b8-46ed-97a8-983fc8ea3a07`, source commit
+`f6e4308c`. App Store Connect reports the
 build as `VALID`, not expired and `IN_BETA_TESTING` for internal testers. The
 Build 226 screenshots are stale evidence and cannot satisfy the final gate for
-Build 235; capture or explicitly re-verify the required screenshot set against
-the exact Build 235 UI before submission.
+Build 237; capture or explicitly re-verify the required screenshot set against
+the exact Build 237 UI before submission.
 
 Use `docs/release/app-store/screenshot-runbook.md`. Required first pass:
 

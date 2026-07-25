@@ -5,7 +5,7 @@
 | slug | `app-store-iphone-first-release` |
 | 创建日期 | 2026-07-14 |
 | 当前阶段 | S7 上线验证 |
-| 状态 | build_236_internal_testflight_pending_physical_g6 |
+| 状态 | build_237_internal_testflight_pending_physical_g6 |
 | 负责 | Codex |
 | 目标版本 | iPhone App Store RC |
 
@@ -77,7 +77,7 @@ RequirementAdmission:
 - [ ] R4 Agent 核心写入、语音、拍照、分享和渲染回归（自动化与模拟器已过；真机待测）。
 - [x] R5 安全、依赖、可访问性和审核材料 Gate。
 - [x] R6 commit/push、前后端部署、新 EAS production build 与 TestFlight 上传。
-- [ ] R7 在 Build 236 上完成真机 G6 并补齐 App Review 材料。
+- [ ] R7 在 Build 237 上完成真机 G6 并补齐 App Review 材料。
 
 ## Gate Ledger
 
@@ -87,8 +87,8 @@ RequirementAdmission:
 | G2 可行性/安全 | PASS | 已冻结范围与医疗/隐私边界 |
 | G3 测试 | PASS | 当前 `main`=`56875570b` 的 GitHub Actions run `29417247062` 28/28 jobs 通过；Mobile 245 suites / 1731 tests、Web 43 files / 243 tests、TypeScript、Lint、生产构建通过；Harness invariants 12/12、core 50/50、live orchestrator 5/5 通过 |
 | G4 安全 | PASS | 生产包无后台录音/持续定位；账号删除、隐私清单、写入回执 fail-closed 已复核 |
-| G5 部署健康 | PASS | 后端生产健康度 60/60；App Store Connect 中 version 1.3.2 Build 235 为 `VALID`、未过期且内部 `IN_BETA_TESTING` |
-| G6 真机验证 | BLOCKED | 必须在同一 TestFlight Build 236 完成真实 iPhone 语音、切 App 恢复、草稿、滚动、拍照、图片/视频播放分享、微信/小红书跳转、写入纠正删除及账号删除证据 |
+| G5 部署健康 | PASS | 后端生产健康度 60/60；App Store Connect 中 version 1.3.2 Build 237 为 `VALID`、未过期且内部 `IN_BETA_TESTING` |
+| G6 真机验证 | BLOCKED | 必须在同一 TestFlight Build 237 完成真实 iPhone 语音、切 App 恢复、草稿、滚动、拍照、图片/视频播放分享、微信/小红书跳转、写入纠正删除及账号删除证据 |
 
 ## Correction Block
 
@@ -171,3 +171,13 @@ RequirementAdmission:
 - EAS Build ID `d405e79a-ea2e-4b4a-b14d-de5304a893be` 状态为 `FINISHED`；EAS Submission ID `251e1432-694c-411d-a7c9-e3b88af57f5e` 已成功把二进制上传至 App Store Connect。
 - App Store Connect API 回读 Build ID `907487ef-c0a1-42ee-9654-ae02a15e6d82`：`processingState=VALID`、`expired=false`、`internalBuildState=IN_BETA_TESTING`，Build 236 已可供内部 TestFlight 安装；外部状态为 `READY_FOR_BETA_SUBMISSION`，未提交外部 Beta Review。
 - G6 继续 `BLOCKED`：真机验收和同 Build 截图目标从 Build 235 切换为 Build 236；App Privacy 发布确认及受监管医疗器械状态 `No` 仍未完成，禁止据此提交 App Review。
+
+## 2026-07-25 Build 237 App Review Hardening
+
+- 当前内部 TestFlight 候选为 version 1.3.2 Build 237。EAS Build ID `7a7df837-50b8-46ed-97a8-983fc8ea3a07`，Submission ID `e8202581-365c-4c6a-83c5-16b6b92928b0`，App Store Connect Build ID `caeb6880-2fae-41a9-8324-58156b8e4ac3`；状态为 `VALID`、内部 `IN_BETA_TESTING`、外部 `READY_FOR_BETA_SUBMISSION`。
+- 修复语音会话退出竞态：关闭页面或重置时先清空待播队列再取消当前播放器，阻止同步完成回调继续播放下一段；同时托管“播完继续听”定时器，组件卸载后不得重新打开麦克风。
+- 修复前台通知横幅竞态：旧通知的退出动画被新通知替换时，只有动画真实完成且标识仍匹配才允许清空当前横幅，防止新通知被旧回调误删。
+- 修复训练详情异步串页：训练切换时立即重置分析状态并取消旧请求的状态写回，避免较慢的上一条训练分析覆盖当前训练。
+- 新增三项回归测试，先证明旧实现会继续播放、清除新通知及写回过期训练分析，再验证修复。定向测试在 `--detectOpenHandles` 下 3 suites / 5 tests 通过；TypeScript 和改动文件 ESLint 通过；Mobile 全量回归 278 suites / 2083 passed / 1 skipped / 1 snapshot passed。
+- 2026-07-24 新发布的 `brace-expansion` 高危 DoS 公告会被 `npm audit --omit=dev` 报告为 37 条传递性路径。当前路径来自 React Native、Expo 配置插件、Voice/Health 原生模块的 Node 构建工具，不进入 iOS JS bundle，也没有把用户输入传给 Node glob/brace 展开。上游仅为 5.x 发布兼容补丁，强制修复会升级 React Native 主版本，因此本轮记录为构建时残余风险，不做破坏性强升；每个候选版本继续重跑 audit，出现运行时可达路径、critical 或兼容补丁后未升级时阻断发布。
+- 严格 final-submit gate 仍按预期失败：Build 237 物理 iPhone 20 项验收、同 Build 截图集、App Privacy 已发布确认、受监管医疗器械声明 `No`、发布机 App Store Connect 凭据与 Review 联系/演示账号注入尚未在本工作区完成。submission pack 与 Review Notes 必须保持 Draft。
