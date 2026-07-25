@@ -4,13 +4,15 @@
 |---|---|
 | slug | `local-first-private-mode` |
 | 创建日期 | 2026-07-18 |
-| 当前阶段 | G3/G4/G5 已通过；G6 待真机确认 |
-| 状态 | 本地产品切片 PASS；Chinese-CLIP 手工候选 PASS；自动识别 BLOCK；同构建真机验收待执行 |
+| 当前阶段 | Retired |
+| 状态 | 2026-07-24 产品决定退役；代码、入口与内置模型已移除 |
 | 负责 | User / Codex |
 | 反馈环 | iOS native build / local QR / airplane-mode validation |
 
 ## Correct Course
 
+- [x] 2026-07-24 用户明确要求去掉单机模式并删除安装包内模型。Mobile 恢复为云端账号唯一入口；未认证或未知会话保持 fail-closed。`LocalHealthKernel`、Chinese-CLIP 模型资源、本地模式页面和本地仓储链路已删除；旧设备遗留保险库不自动读取、不上传，也不在升级时做破坏性擦除。
+- [x] 原 Feature Spec 已移至 `docs/specs/archive/2026-07-18-local-first-private-mode.md`。本 Dossier 和历史 PRD/设计/评测保留为决策与许可证审计记录，不再代表当前产品能力。
 - [x] Correction Block：真机证明系统模型不可通用依赖；G2 拆为本地基线与智能增强两个范围。
 - [x] 2026-07-18 用户选定 Chinese-CLIP RN50 作为唯一首轮打包视觉模型；只分发视觉塔，文本塔仅用于构建标签向量。
 - [x] 2026-07-19 Chinese-CLIP 八阶段 spike 已执行到裁决；工程与可重复性闸通过，授权质量集和代表性分层真机证据缺失，自动识别保持 BLOCK。随后按用户明确接受的低精度边界，仅接入“最多三个候选 + 必须人工确认”的生产路径。
@@ -56,7 +58,7 @@
 ## S2 · PRD
 
 - 链接：`docs/prd/2026-07-18-local-first-private-mode.md`
-- Feature Spec：`docs/specs/active/2026-07-18-local-first-private-mode.md`
+- Feature Spec（已归档）：`docs/specs/archive/2026-07-18-local-first-private-mode.md`
 - 权威定位：`docs/prd/reva-personal-health-os-prd.md` 的数据自持、双轨录入与 Capture/Execution/Review 核心循环。
 - 边界：不承诺照片精确称重，不第一期迁移完整 Health OS，不静默创建云账户，不打包未授权数据。
 - 未决问题：无产品定义级未决问题；G2 技术阻断见下。

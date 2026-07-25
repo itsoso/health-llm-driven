@@ -1,7 +1,13 @@
 # Mobile Empty Chat Hierarchy
 
-**Status:** Production OTA published; live device verification pending
-**Owner surface:** Mobile Agent conversation  
+| 字段 | 值 |
+|---|---|
+| slug | `mobile-empty-chat-hierarchy` |
+| 当前阶段 | G5 已通过；G6 待真机确认 |
+| 状态 | shipping |
+| 负责 | User / Codex |
+
+**Owner surface:** Mobile Agent conversation
 **Design:** [Mobile Empty Chat Hierarchy Design](../plans/2026-07-24-mobile-empty-chat-hierarchy-design.md)
 
 ## Requirement
@@ -21,6 +27,11 @@ attachment capabilities.
 - **Superseded surface:** Generic suggestions are hidden whenever contextual
   opener replies are available; focused composer quick actions are removed from
   the keyboard-open state.
+
+## G1 · Requirement Admission
+
+- **裁决: PASS**
+- 理由：减少 Mobile Agent 首次对话摩擦，不改变健康写入、安全或自治边界。
 
 ## Gates
 

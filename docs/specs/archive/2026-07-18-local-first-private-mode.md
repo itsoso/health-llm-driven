@@ -1,10 +1,12 @@
 # Feature Spec: 本地优先私有模式与完全本地饮食
 
-> Status: implemented; native release validation
+> Status: retired 2026-07-24
 > Owner: Codex
-> Updated: 2026-07-19
+> Updated: 2026-07-24
 > Related PRD/PDD: `docs/prd/2026-07-18-local-first-private-mode.md`, `docs/prd/reva-personal-health-os-prd.md`
-> Related code: `mobile/hooks/useAppSession.tsx`, `mobile/components/local-mode/`, `mobile/services/localDietRepository.ts`, `mobile/services/egressPolicy.ts`, `mobile/modules/local-health-kernel/`
+> Related code: retired and removed; historical design retained for audit
+
+> Retirement decision: Mobile now supports cloud-account sessions only. The account-free local UI, local encrypted diet runtime and bundled Chinese-CLIP model were removed from the application package. Existing orphaned vault data is not opened, uploaded or destructively erased during migration.
 
 ## 1. Decision
 

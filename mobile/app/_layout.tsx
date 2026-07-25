@@ -1,5 +1,3 @@
-// Sentry SDK import stays first, but initialization is mode-gated below so a
-// strict-local cold start cannot create an observability session.
 import { configureSentryForAppMode, Sentry, SENTRY_ENABLED } from '../applib/sentry';
 
 import React, { useEffect, useMemo } from 'react';
@@ -7,7 +5,7 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { focusManager } from '@tanstack/react-query';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
-import { asyncStoragePersister, queryClient, persistOptions } from '../applib/queryClient';
+import { queryClient, persistOptions } from '../applib/queryClient';
 import { useAuth } from '../hooks/useAuth';
 import { AppSessionProvider, useAppSession } from '../hooks/useAppSession';
 import { ToastProvider } from '../hooks/useToast';
@@ -21,12 +19,9 @@ import { useHealthKitForegroundSync } from '../hooks/useHealthKitForegroundSync'
 import { useRevaFonts } from '../components/reva/useRevaFonts';
 import AppLockScreen from '../components/AppLockScreen';
 import NotificationBanner from '../components/notifications/NotificationBanner';
-import NetworkBanner from '../components/NetworkBanner';
 import AppUpdateBanner from '../components/updates/AppUpdateBanner';
 import RootErrorBoundary from '../components/RootErrorBoundary';
 import LoginScreen from './login';
-import LocalModeHome from '../components/local-mode/LocalModeHome';
-import LocalModeBlockedScreen from '../components/local-mode/LocalModeBlockedScreen';
 // Side-effect import: TaskManager.defineTask 必须在 module load 时跑 (React 树挂载前).
 import { registerBackgroundLocationTask } from '../services/backgroundLocationTask';
 import { getReleaseCapabilities } from '../config/releaseCapabilities';
@@ -51,7 +46,7 @@ function AppContent() {
   const { c } = useTheme();
   const styles = useMemo(() => createStyles(c), [c]);
   const { isAuthenticated, user } = useAuth();
-  const { session, isLoading, errorCode } = useAppSession();
+  const { session, isLoading } = useAppSession();
   const cloudActive = session?.mode === 'cloud_account' && isAuthenticated;
   const { isLocked, authenticate } = useBiometricLock(cloudActive);
   const releaseCapabilities = getReleaseCapabilities();
@@ -94,14 +89,7 @@ function AppContent() {
   }
 
   if (!session) {
-    if (errorCode === 'vault_key_missing' || errorCode === 'invalid_local_session_preference') {
-      return <LocalModeBlockedScreen errorCode={errorCode} />;
-    }
     return <LoginScreen />;
-  }
-
-  if (session.mode !== 'cloud_account') {
-    return <LocalModeHome />;
   }
 
   if (isLocked) {
@@ -133,7 +121,6 @@ function AppContent() {
           options={{ headerShown: false, gestureEnabled: true }}
         />
         <Stack.Screen name="settings" options={{ headerShown: false, presentation: 'modal' }} />
-        <Stack.Screen name="app-mode" options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="account-security" options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="memory" options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="medical-exams" options={{ headerShown: false, presentation: 'modal' }} />
@@ -178,7 +165,6 @@ function AppContent() {
       </Stack>
       <NotificationBanner />
       <AppUpdateBanner />
-      <NetworkBanner />
     </>
   );
 }
@@ -216,22 +202,11 @@ function RootLayout() {
 }
 
 function ModeAwareProviders({ children }: { children: React.ReactNode }) {
-  const { session } = useAppSession();
-  const cloudActive = session?.mode === 'cloud_account';
-
   useEffect(() => {
-    if (session) {
-      configureSentryForAppMode(cloudActive ? 'cloud' : 'local');
-      if (!cloudActive) {
-        queryClient.clear();
-        void asyncStoragePersister.removeClient();
-      }
-    }
-  }, [cloudActive, session]);
+    configureSentryForAppMode('cloud');
+  }, []);
 
-  return cloudActive
-    ? <AppUpdateProvider>{children}</AppUpdateProvider>
-    : <>{children}</>;
+  return <AppUpdateProvider>{children}</AppUpdateProvider>;
 }
 
 // Sentry.wrap: 自动捕获未处理异常 + Profiler. 未配置 DSN 时是 noop.

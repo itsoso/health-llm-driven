@@ -3,7 +3,7 @@
 > Updated: 2026-07-18
 > Status: approved product direction; technical G2 pending
 > PRD: `docs/prd/2026-07-18-local-first-private-mode.md`
-> Feature Spec: `docs/specs/active/2026-07-18-local-first-private-mode.md`
+> Feature Spec (retired): `docs/specs/archive/2026-07-18-local-first-private-mode.md`
 
 ## 1. 设计结论
 

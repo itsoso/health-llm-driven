@@ -1,7 +1,6 @@
-import type { AppMode } from './localIdentity';
+type AppEgressMode = 'cloud_account';
 
-let activeMode: AppMode | null = null;
-let auditSink: ((code: string) => Promise<void>) | null = null;
+let activeMode: AppEgressMode | null = null;
 
 export class AppEgressBlockedError extends Error {
   constructor(public readonly code: string) {
@@ -10,46 +9,29 @@ export class AppEgressBlockedError extends Error {
   }
 }
 
-export function setAppEgressMode(mode: AppMode | null): void {
+export function setAppEgressMode(mode: AppEgressMode | null): void {
   activeMode = mode;
 }
 
-export function getAppEgressMode(): AppMode | null {
+export function getAppEgressMode(): AppEgressMode | null {
   return activeMode;
 }
 
-export function setAppEgressAuditSink(
-  sink: ((code: string) => Promise<void>) | null,
-): void {
-  auditSink = sink;
-}
-
-function blockedError(
-  intent: { explicitCloudAI?: boolean },
-): AppEgressBlockedError | null {
+function blockedError(): AppEgressBlockedError | null {
   if (activeMode === 'cloud_account') return null;
-  if (activeMode === 'local_first' && intent.explicitCloudAI) return null;
-  if (activeMode === 'strict_local') {
-    return new AppEgressBlockedError('strict_local_egress_blocked');
-  }
-  if (activeMode === 'local_first') {
-    return new AppEgressBlockedError('local_first_egress_requires_explicit_ai');
-  }
-  return new AppEgressBlockedError('app_mode_unknown_egress_blocked');
+  return new AppEgressBlockedError('cloud_session_required');
 }
 
 export function assertAppEgressAllowed(
-  intent: { explicitCloudAI?: boolean } = {},
+  _intent: { explicitCloudAI?: boolean } = {},
 ): void {
-  const error = blockedError(intent);
+  const error = blockedError();
   if (error) throw error;
 }
 
 export async function enforceAppEgressAllowed(
-  intent: { explicitCloudAI?: boolean } = {},
+  _intent: { explicitCloudAI?: boolean } = {},
 ): Promise<void> {
-  const error = blockedError(intent);
-  if (!error) return;
-  if (auditSink) await auditSink(error.code);
-  throw error;
+  const error = blockedError();
+  if (error) throw error;
 }
