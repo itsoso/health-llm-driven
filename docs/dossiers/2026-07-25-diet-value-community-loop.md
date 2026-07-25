@@ -1,8 +1,8 @@
 | 字段 | 值 |
 |---|---|
 | feature | diet-value-community-loop |
-| status | building |
-| current_stage | S5 |
+| status | shipping |
+| current_stage | S7 / G6 pending |
 | date | 2026-07-25 |
 
 # Dossier: 饮食价值回执与同行支持
@@ -39,9 +39,9 @@
 |---|---|---|
 | G1 准入 | PASS after reframe | 映射 HealthProgram/ExecutionEvent/LeverageAction/InterventionCycle；拒绝排行榜和自动发布 |
 | G2 可行性+安全 | PASS | 复用现有记录卡；服务端隐私投影；用户已明确要求执行 |
-| G3 测试 | PASS | 后端 123 项、Mobile 32 项相关回归；TypeScript、迁移、lint、design token、doc drift 通过 |
+| G3 测试 | PASS | 后端 124 项、Mobile 32 项相关回归；TypeScript、迁移、lint、design token、doc drift 通过 |
 | G4 安全/隐私 | PASS | owner isolation、严格公开 allowlist、低 BMI/增重目标降级、手动发布和失败隔离均有测试 |
-| G5 部署健康 | PENDING | backend deploy + production OTA |
+| G5 部署健康 | PASS | backend `e3fa8483` 精确部署、迁移执行、`60/60` 健康分；production OTA 已发布并回读校验 |
 | G6 上线验证 | PENDING | 真机记餐、目标进度、发布与反应 |
 
 ## G1 准入
@@ -78,9 +78,16 @@
 
 ## G5 部署健康
 
-**裁决**: PENDING
+**裁决**: PASS
 
-等待 backend deploy 和 production OTA。
+验证证据：
+
+- 后端从精确提交 `e3fa84835f6f50817f2753a0c68783bb04d34cad` 部署；
+- PostgreSQL 备份、231 张表恢复演练、站外加密归档及 HMAC 校验通过；
+- 迁移 `20260725_120000_community_peer_support` 已应用；
+- 后端、Celery 和知识库索引重启完成，部署健康分 `60/60`；
+- production OTA runtime `1.3.2`，update group `141e813f-3ded-4bc3-9fcd-8113b0e4c437`，iOS update `019f986b-96d6-78bb-960b-bed857ffbd56`；
+- OTA 脚本已回读校验 update group、iOS update 和提交锚点。
 
 ## G6 上线验证
 
@@ -99,4 +106,4 @@
 
 ## 当前检查点
 
-S5 building：功能、契约、迁移、隐私与回归已通过，等待精确提交、后端部署和 production OTA。
+S7 / G6 pending：功能、契约、迁移、隐私、回归、后端部署和 production OTA 已完成。等待真机验证记餐后的目标反馈、主动发布确认、同行反应、删除与举报；在这些操作完成前不宣告 G6 通过。
