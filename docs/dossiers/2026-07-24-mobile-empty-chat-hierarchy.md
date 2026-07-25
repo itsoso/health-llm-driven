@@ -3,7 +3,7 @@
 | 字段 | 值 |
 |---|---|
 | slug | `mobile-empty-chat-hierarchy` |
-| 当前阶段 | G5 已通过；G6 待真机确认 |
+| 当前阶段 | G4 已通过；新一轮 G5 待发布 |
 | 状态 | shipping |
 | 负责 | User / Codex |
 
@@ -39,9 +39,9 @@ attachment capabilities.
 |---|---|---|
 | G1 Requirement admission | PASS | Improves Mobile capture and conversation entry |
 | G2 Feasibility and risk | PASS | Client-only presentation contract; no API change |
-| G3 Tests | PASS | 110 focused assertions; TypeScript exit 0; lint exit 0 with existing warnings |
-| G4 Review | PASS | iOS simulator empty, keyboard-open, and wrapped-draft states visually verified |
-| G5 Deployment health | PASS | Production OTA group `5bc3a53c-5560-4901-a714-ea61cc71a4c0`; iOS update `019f94e6-352a-7d6b-9043-7a96c73184cb`; runtime `1.3.2`; commit `4d580a763cc116a402981db09a9e22328f6fe8b0` |
+| G3 Tests | PASS | 119 focused assertions; TypeScript exit 0; lint exit 0 with 103 existing warnings and 0 errors |
+| G4 Review | PASS | iOS simulator empty, keyboard-open, and wrapped-draft states visually verified; component/page tests verify the refined neutral context rail and keyboard suppression |
+| G5 Deployment health | PENDING | Previous production OTA group `5bc3a53c-5560-4901-a714-ea61cc71a4c0`; refined context hierarchy awaits a new production OTA |
 | G6 Live verification | PENDING | Production-channel Mobile verification |
 
 ## Delivery Notes
@@ -55,5 +55,10 @@ attachment capabilities.
 - Empty state shows one opener, one provenance row, and three de-duplicated
   actions. Keyboard-open and wrapped-draft states hide the actions, preserve the
   conversation viewport, and grow the composer only when content wraps.
+- Ordinary due/overdue context now uses a quiet neutral rail with semantic color
+  limited to the accent and label. It leaves the viewport while the keyboard is
+  open; active Agent status and high-severity risk context remain visible.
+- Memory provenance is an inline source row instead of another filled button;
+  compact controls retain a 44pt effective hit target through `hitSlop`.
 - Production OTA was published to the `production` channel with message
   `Simplify empty Agent conversation hierarchy`.

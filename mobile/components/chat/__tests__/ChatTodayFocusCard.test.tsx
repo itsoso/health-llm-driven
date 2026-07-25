@@ -7,6 +7,7 @@ jest.mock('@expo/vector-icons', () => ({ Ionicons: 'Ionicons' }));
 
 import ChatTodayFocusCard from '../ChatTodayFocusCard';
 import type { TodayFocusModel } from '../todayFocus';
+import { revaColors as C, revaSemantic } from '../../../constants/revaTheme';
 
 const focusModel = (withStrip = true): TodayFocusModel => ({
   emptyTitle: '今日暂无重点行动',
@@ -60,6 +61,25 @@ describe('ChatTodayFocusCard', () => {
     expect(style.shadowOpacity ?? 0).toBe(0);
   });
 
+  it('renders caution context as a neutral rail with semantic color only on the accent', () => {
+    const model = focusModel();
+    model.contextStrip = {
+      key: 'lab-review',
+      label: '待处理',
+      title: '复查血脂四项',
+      tone: 'caution',
+    };
+    const { getByTestId } = render(
+      <ChatTodayFocusCard model={model} />,
+    );
+
+    const stripStyle = StyleSheet.flatten(getByTestId('chat-today-focus-card').props.style);
+    const accentStyle = StyleSheet.flatten(getByTestId('chat-today-focus-accent').props.style);
+    expect(stripStyle.backgroundColor).toBe(C.surface2);
+    expect(stripStyle.minHeight).toBeLessThanOrEqual(42);
+    expect(accentStyle.backgroundColor).toBe(revaSemantic.caution.fg);
+  });
+
   it('opens Today and lets the parent dismiss an action without a launcher state', () => {
     const onOpenToday = jest.fn();
     const onDismiss = jest.fn();
@@ -73,7 +93,9 @@ describe('ChatTodayFocusCard', () => {
 
     fireEvent.press(getByLabelText('打开今日计划'));
     expect(onOpenToday).toHaveBeenCalledTimes(1);
-    fireEvent.press(getByLabelText('关闭当前提示'));
+    const dismissButton = getByLabelText('关闭当前提示');
+    expect(dismissButton.props.hitSlop).toBe(4);
+    fireEvent.press(dismissButton);
     expect(onDismiss).toHaveBeenCalledTimes(1);
     expect(queryByText('已隐藏，点此展开')).toBeNull();
   });

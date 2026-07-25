@@ -37,6 +37,7 @@ export default function ChatTodayFocusCard({
     ? 'risk'
     : context?.tone ?? 'normal';
   const palette = tonePalette(tone);
+  const isTurnStatus = !!visibleTurnStatus;
   const iconName = visibleTurnStatus
     ? (visibleTurnStatus.tone === 'error' ? 'alert-circle-outline' : 'sparkles-outline')
     : (tone === 'risk' ? 'alert-circle-outline' : 'time-outline');
@@ -45,9 +46,25 @@ export default function ChatTodayFocusCard({
     <View
       testID="chat-today-focus-card"
       accessibilityLabel={visibleTurnStatus?.label ?? `${context?.label}，${context?.title}`}
-      style={[styles.strip, { backgroundColor: palette.background, borderColor: palette.border }]}
+      style={[
+        styles.strip,
+        isTurnStatus ? styles.turnStatusStrip : styles.contextStrip,
+        { backgroundColor: palette.background, borderColor: palette.border },
+      ]}
     >
-      <View style={[styles.iconWrap, { backgroundColor: palette.iconBackground }]}>
+      {!isTurnStatus ? (
+        <View
+          testID="chat-today-focus-accent"
+          style={[styles.contextAccent, { backgroundColor: palette.foreground }]}
+        />
+      ) : null}
+      <View
+        style={[
+          styles.iconWrap,
+          isTurnStatus ? styles.turnStatusIconWrap : styles.contextIconWrap,
+          { backgroundColor: palette.iconBackground },
+        ]}
+      >
         <Ionicons name={iconName} size={16} color={palette.foreground} />
       </View>
 
@@ -99,6 +116,7 @@ export default function ChatTodayFocusCard({
       {!visibleTurnStatus && onDismiss ? (
         <TouchableOpacity
           style={styles.iconButton}
+          hitSlop={4}
           onPress={onDismiss}
           activeOpacity={0.7}
           accessibilityRole="button"
@@ -122,50 +140,68 @@ function tonePalette(tone: TodayFocusContextTone) {
   }
   if (tone === 'caution') {
     return {
-      background: revaSemantic.caution.bg,
-      border: revaSemantic.caution.line,
+      background: C.surface2,
+      border: C.line,
       foreground: revaSemantic.caution.fg,
-      iconBackground: C.surface,
+      iconBackground: 'transparent',
     };
   }
   return {
     background: C.surface2,
     border: C.line,
     foreground: C.green600,
-    iconBackground: C.green50,
+    iconBackground: 'transparent',
   };
 }
 
 const styles = StyleSheet.create({
   strip: {
-    minHeight: 44,
     marginHorizontal: revaSpacing.s4,
     marginTop: 2,
     marginBottom: 6,
-    paddingLeft: revaSpacing.s2,
     paddingRight: 4,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: revaSpacing.s2,
     borderRadius: revaRadii.xs,
     borderWidth: StyleSheet.hairlineWidth,
     shadowOpacity: 0,
     elevation: 0,
   } as ViewStyle,
+  contextStrip: {
+    minHeight: 40,
+    paddingLeft: 4,
+    gap: 6,
+  },
+  turnStatusStrip: {
+    minHeight: 44,
+    paddingLeft: revaSpacing.s2,
+    gap: revaSpacing.s2,
+  },
+  contextAccent: {
+    width: 2,
+    height: 22,
+    borderRadius: 1,
+  },
   iconWrap: {
-    width: 28,
-    height: 28,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: revaRadii.xs,
   },
+  contextIconWrap: {
+    width: 24,
+    height: 24,
+  },
+  turnStatusIconWrap: {
+    width: 28,
+    height: 28,
+  },
   contextButton: {
     flex: 1,
     minWidth: 0,
-    minHeight: 42,
+    minHeight: 38,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 7,
+    gap: 6,
   },
   separator: {
     width: 3,
@@ -174,8 +210,8 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   iconButton: {
-    width: 40,
-    height: 40,
+    width: 36,
+    height: 36,
     alignItems: 'center',
     justifyContent: 'center',
   },

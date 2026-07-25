@@ -1,5 +1,6 @@
 import React from 'react';
 import { fireEvent, render } from '@testing-library/react-native';
+import { StyleSheet } from 'react-native';
 
 import EmptyStateHome, {
   formatMemoryOpenerText,
@@ -46,8 +47,12 @@ describe('EmptyStateHome', () => {
     expect(queryByText('对花粉过敏')).toBeNull();
     expect(getByText('依据 1 条过敏')).toBeTruthy();
 
-    // 校准 button reaches the memory calibration handler.
-    fireEvent.press(getByLabelText('查看和校准 AI 记忆'));
+    // Provenance remains tappable without adding another filled button surface.
+    const source = getByLabelText('查看和校准 AI 记忆');
+    const sourceStyle = StyleSheet.flatten(source.props.style);
+    expect(sourceStyle.backgroundColor).toBeUndefined();
+    expect(source.props.hitSlop).toBe(8);
+    fireEvent.press(source);
     expect(onOpenMemory).toHaveBeenCalled();
   });
 

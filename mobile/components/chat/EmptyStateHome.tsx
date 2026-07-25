@@ -210,6 +210,7 @@ function MemoryFootnote({
     <TouchableOpacity
       style={styles.footnote}
       onPress={onOpenMemory}
+      hitSlop={8}
       activeOpacity={0.62}
       accessibilityRole="button"
       accessibilityLabel="查看和校准 AI 记忆"
@@ -465,11 +466,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     alignSelf: 'flex-start',
     gap: 5,
-    minHeight: 32,
+    minHeight: 28,
     marginTop: revaSpacing.s2,
-    paddingHorizontal: revaSpacing.s2,
-    borderRadius: revaRadii.pill,
-    backgroundColor: C.paper2,
+    paddingHorizontal: 0,
   },
   memorySourceBadge: {
     flexDirection: 'row',

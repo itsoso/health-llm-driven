@@ -999,6 +999,80 @@ describe('ChatScreen', () => {
     keyboardSpy.mockRestore();
   });
 
+  it('hides non-critical Today context while the keyboard owns the viewport', () => {
+    const keyboardListeners: Record<string, (event: any) => void> = {};
+    const keyboardSpy = jest.spyOn(Keyboard, 'addListener').mockImplementation((eventName: any, callback: any) => {
+      keyboardListeners[String(eventName)] = callback;
+      return { remove: jest.fn() } as any;
+    });
+    mockTodayTimelineData = {
+      items: [{
+        id: 'lab-review',
+        kind: 'action',
+        title: '复查血脂四项',
+        status: 'overdue',
+        priority: 9,
+        can_complete: true,
+        deep_link: '/agenda',
+      }],
+      past: { completed_count: 0, events: [] },
+      counts: { actionable: 1, overdue: 1, info: 0 },
+    };
+
+    const view = render(<ChatScreen />);
+    expect(view.getByText('复查血脂四项')).toBeTruthy();
+
+    act(() => {
+      keyboardListeners.keyboardDidShow({
+        endCoordinates: { height: 336 },
+      });
+    });
+
+    expect(view.queryByText('复查血脂四项')).toBeNull();
+    expect(view.queryByTestId('chat-today-focus-card')).toBeNull();
+    keyboardSpy.mockRestore();
+  });
+
+  it('keeps active Agent status visible when the keyboard opens', () => {
+    const keyboardListeners: Record<string, (event: any) => void> = {};
+    const keyboardSpy = jest.spyOn(Keyboard, 'addListener').mockImplementation((eventName: any, callback: any) => {
+      keyboardListeners[String(eventName)] = callback;
+      return { remove: jest.fn() } as any;
+    });
+    mockTodayTimelineData = {
+      items: [{
+        id: 'lab-review',
+        kind: 'action',
+        title: '复查血脂四项',
+        status: 'overdue',
+        priority: 9,
+        can_complete: true,
+        deep_link: '/agenda',
+      }],
+      past: { completed_count: 0, events: [] },
+      counts: { actionable: 1, overdue: 1, info: 0 },
+    };
+    mockActiveTurn = {
+      phase: 'generating',
+      recoverable: false,
+      label: '小巴正在整理…',
+      turnId: 'turn-current',
+    };
+
+    const view = render(<ChatScreen />);
+    expect(view.getByText('小巴正在整理…')).toBeTruthy();
+
+    act(() => {
+      keyboardListeners.keyboardDidShow({
+        endCoordinates: { height: 336 },
+      });
+    });
+
+    expect(view.getByText('小巴正在整理…')).toBeTruthy();
+    expect(view.queryByText('复查血脂四项')).toBeNull();
+    keyboardSpy.mockRestore();
+  });
+
   it('third state (onboarding, no opener, no memory) shows the Quick Start card', async () => {
     // opener 因故未到 + 无记忆, 但 onboarding=true → 出 Quick Start 卡(三动作)。
     mockFetchConversationStarters.mockResolvedValue({

@@ -900,7 +900,14 @@ export default function ChatScreen() {
         ),
       }
     : undefined;
-  const visibleTodayFocusModel = todayFocusModel.contextStrip?.key === dismissedTodayFocusKey
+  const shouldSuppressTodayContext = (
+    todayFocusModel.contextStrip?.key === dismissedTodayFocusKey
+    || (
+      keyboardVisible
+      && todayFocusModel.contextStrip?.tone !== 'risk'
+    )
+  );
+  const visibleTodayFocusModel = shouldSuppressTodayContext
     ? { ...todayFocusModel, contextStrip: null }
     : todayFocusModel;
   const messageListItems = useMemo(
