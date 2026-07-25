@@ -64,6 +64,104 @@ describe('RecordQualityCard inline diet adjuster', () => {
     expect(getByText('#饮食记录 #小巴')).toBeTruthy();
   });
 
+  it('shows seven-day recording consistency without a streak or ranking', () => {
+    const { getByText, queryByText } = render(
+      <RecordQualityCardView
+        {...(baseAdjustCard({
+          expanded_sections: [],
+          progress: {
+            protein_total_g: 37,
+            protein_target_g: 112,
+            recorded_days_7d: 5,
+          },
+        }) as any)}
+      />,
+    );
+
+    expect(getByText('近7天记录 5 天')).toBeTruthy();
+    expect(queryByText(/连续|排名|断签/)).toBeNull();
+  });
+
+  it('renders measurement-backed weight goal distance and seven-day change', () => {
+    const { getByLabelText, getByText } = render(
+      <RecordQualityCardView
+        {...(baseAdjustCard({
+          expanded_sections: [],
+          goal_progress: {
+            goal_type: 'weight_loss',
+            current_kg: 73,
+            target_kg: 70,
+            remaining_kg: 3,
+            baseline_kg: 75,
+            progress_pct: 40,
+            change_7d_kg: -1,
+            measured_on: '2026-07-25',
+            freshness: 'fresh',
+            status: 'active',
+          },
+        }) as any)}
+      />,
+    );
+
+    expect(getByText('距目标 3kg')).toBeTruthy();
+    expect(getByText('73 → 70kg')).toBeTruthy();
+    expect(getByText('近7天 -1kg')).toBeTruthy();
+    expect(getByLabelText('减重目标进度 40%')).toBeTruthy();
+  });
+
+  it('labels stale weight data instead of presenting it as current', () => {
+    const { getByText, queryByText } = render(
+      <RecordQualityCardView
+        {...(baseAdjustCard({
+          expanded_sections: [],
+          goal_progress: {
+            goal_type: 'weight_loss',
+            current_kg: 76,
+            target_kg: 70,
+            remaining_kg: 6,
+            measured_on: '2026-07-17',
+            freshness: 'stale',
+            status: 'active',
+          },
+        }) as any)}
+      />,
+    );
+
+    expect(getByText('体重数据较旧，更新后再看趋势')).toBeTruthy();
+    expect(getByText('测于 7月17日')).toBeTruthy();
+    expect(queryByText(/近7天/)).toBeNull();
+  });
+
+  it('shows a review boundary for an unsafe target without progress encouragement', () => {
+    const { getByText, queryByLabelText } = render(
+      <RecordQualityCardView
+        {...(baseAdjustCard({
+          expanded_sections: [],
+          goal_progress: {
+            goal_type: 'weight_loss',
+            current_kg: 68,
+            target_kg: 55,
+            freshness: 'fresh',
+            status: 'target_requires_review',
+          },
+        }) as any)}
+      />,
+    );
+
+    expect(getByText('目标需要复核')).toBeTruthy();
+    expect(getByText('当前目标可能不适合直接推进，请先核对身高和目标体重。')).toBeTruthy();
+    expect(queryByLabelText(/减重目标进度/)).toBeNull();
+  });
+
+  it('hides the weight goal section when no verified goal progress is present', () => {
+    const { queryByText } = render(
+      <RecordQualityCardView {...(baseAdjustCard({ expanded_sections: [] }) as any)} />,
+    );
+
+    expect(queryByText('目标进度')).toBeNull();
+    expect(queryByText(/距目标/)).toBeNull();
+  });
+
   it('renders the inline editor seeded from adjust_record when expanded', () => {
     const { getByLabelText, getByTestId, getByText } = render(
       <RecordQualityCardView {...(baseAdjustCard() as any)} onCardDataChange={jest.fn()} />,

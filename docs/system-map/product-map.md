@@ -2,7 +2,7 @@
      端 roster / surface 名 / 流程 = 叙事,改了 bump 下方 last-reviewed。 -->
 ---
 doc: system-map/product-map
-last-reviewed: 2026-07-24
+last-reviewed: 2026-07-25
 generated-source: docs/_generated/system-map.json
 authoritative-surface-doc: docs/specs/active/2026-06-26-surface-ownership-inventory.md
 ---
@@ -28,7 +28,7 @@ authoritative-surface-doc: docs/specs/active/2026-06-26-surface-ownership-invent
 
 ## 2. 每端 UI surface(roster;计数见 `_generated`)
 
-- **mobile**(`mobile/app/`):可见 tab 为今日 `index.tsx` · 小巴 `chat.tsx` · 记录 `record.tsx` · 我 `me.tsx`(隐藏:`alerts.tsx`/`journal/`)。日常非 tab:`reva.tsx`/`agenda.tsx`/`timeline.tsx`/`day-schedule.tsx`/`diet.tsx`/`symptom-record.tsx`/`medications.tsx`/`goals.tsx`/`reminders.tsx`/`voice-chat.tsx`。
+- **mobile**(`mobile/app/`):可见 tab 为今日 `index.tsx` · 小巴 `chat.tsx` · 记录 `record.tsx` · 我 `me.tsx`(隐藏:`alerts.tsx`/`journal/`)。日常非 tab:`reva.tsx`/`agenda.tsx`/`timeline.tsx`/`day-schedule.tsx`/`diet.tsx`/`symptom-record.tsx`/`medications.tsx`/`goals.tsx`/`reminders.tsx`/`voice-chat.tsx`;同行支持从已验证饮食卡的服务端 `route.open` 动态进入 `community.tsx`，因此静态导航抽取器不会生成入边。
 - **frontend**(`frontend/src/app/`):dashboard/digital-twin/health-trends/health-report/personal-outcome/admin/review/onboarding/family/… (全量计数 `_generated`)。
 - **mac**(`SidebarDestination.swift`):today/agenda/timeline/calendar/agent/record/data/dataSources/prescriptions/liver/healthExtras/genetics/knowledge/workouts/goals/jobs/trace/settings。
 - **watch**(`apps/watch/WatchApp/`):`TodayStatusView` · `PushListView` · `QuickRecordView` + complication `RevaComplication.swift`。(对话/记录扩展见 watch §13 实施规划)
@@ -46,6 +46,7 @@ authoritative-surface-doc: docs/specs/active/2026-06-26-surface-ownership-invent
 4. **安全告警**:`mobile/app/(tabs)/alerts.tsx` / web `SafetyPanel.tsx` → `backend/app/api/safety.py` `GET /safety/me` → `guardian.py:evaluate_safety(twin)` → `evaluate_rules` 跑 `rules/` 下 `@register`(计数见 `_generated`);确定性、无 LLM、按 severity 排序、带 `failed_rule_count` fail-loud。
 5. **HealthKit 同步(iOS)**:`mobile/services/appleHealth.ts` `fetchDailyRecords` → `toApiRecord`(生成 schema 标注)→ `POST /devices/healthkit/import` → `device_adapters/healthkit.py`。(自动同步规划见 reva mobile/watch/healthkit experience plan)
 6. **私有 AIGC 媒体任务**:Mobile/Web/Mac 在既有对话中上传素材 → Agent Kernel 的 `draft_aigc_media` 创建加密 `AIGCMediaConfirmation` → 用户卡片点击 `POST /aigc/media/confirmations/{id}/confirm`(仅 opaque ID) → `AIGCMediaJob` → owner-scoped `GET/cancel /aigc/media/jobs` → `aigc_media_confirmation.v1`/`aigc_media_job.v1` 动态卡片。仅向确认过的百炼 Wan 请求传出绑定的提示词与当回合图像；输出拷贝到用户私有存储，卡片按需换取短期结果链接。
+7. **饮食价值回执与同行支持**:Agent/饮食 API 的已验证 `DietRecord` 写入 → `post_record_quality.py` 在原有单卡中加入 owner-scoped 目标距离与近 7 日记录反馈 → 用户手动点击 `route.open /community?composeRecordId=…` → `POST /community/posts` 再次校验记录所有权并生成无原图、体重、病史、药物、位置和备注的匿名快照 → 支持/同行/有启发三种反应。社区发布失败不回滚或重试私人饮食写入，反应数不进入 Agent 健康建议排序。
 
 ## 4. 系统流(内部架构)
 

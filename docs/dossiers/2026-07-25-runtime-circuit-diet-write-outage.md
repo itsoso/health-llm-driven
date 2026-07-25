@@ -1,8 +1,11 @@
 # Runtime Circuit Diet Write Outage
 
-- Date: 2026-07-25
-- Status: implementation verified; production recovery pending
-- Owner surface: Agent Runtime / health writes
+| 字段 | 值 |
+|---|---|
+| date | 2026-07-25 |
+| status | building |
+| current_stage | S5 |
+| owner_surface | Agent Runtime / health writes |
 
 ## Incident
 
@@ -58,9 +61,13 @@ rule is relaxed.
 
 ### G1 Product Admission: GO
 
+**裁决**: PASS
+
 Restores an existing core capability. No new user behavior or data category.
 
 ### G2 Feasibility and Risk: GO
+
+**裁决**: PASS
 
 Root cause is reproduced from aggregate production control-plane evidence.
 The repair is limited to telemetry; recovery uses an existing audited Runtime
@@ -68,11 +75,15 @@ transition.
 
 ### G3 Tests: GO
 
+**裁决**: PASS
+
 The related Runtime, ToolGateway, write receipt, management API and PostgreSQL
 concurrency suite passes: 181 passed, 3 skipped. Targeted tests first
 reproduced both receipt-priority failures and the stale-generation resume race.
 
 ### G4 Safety Review: GO
+
+**裁决**: PASS
 
 The first review returned NO-GO because verified receipts could be marked as
 failures and manual resume acknowledged an unreviewed generation. Both findings
@@ -89,9 +100,13 @@ adopt and retry a newer generation.
 
 ### G5 Deployment Health: PENDING
 
+**裁决**: PENDING
+
 Backend deployment must pass `deploy.sh -b` health scoring.
 
 ### G6 Production Verification: PENDING
+
+**裁决**: PENDING
 
 Verify the circuit is active, a fresh diet write receives a verified receipt,
 and no new reconciliation is created.

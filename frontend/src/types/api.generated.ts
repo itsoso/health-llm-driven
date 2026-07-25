@@ -10897,6 +10897,76 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/community/posts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Posts */
+        get: operations["list_posts_api_v1_community_posts_get"];
+        put?: never;
+        /** Create Post */
+        post: operations["create_post_api_v1_community_posts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/community/posts/{post_id}/reaction": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set Reaction */
+        put: operations["set_reaction_api_v1_community_posts__post_id__reaction_put"];
+        post?: never;
+        /** Delete Reaction */
+        delete: operations["delete_reaction_api_v1_community_posts__post_id__reaction_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/community/posts/{post_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Post */
+        delete: operations["delete_post_api_v1_community_posts__post_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/community/posts/{post_id}/report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Report Post */
+        post: operations["report_post_api_v1_community_posts__post_id__report_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/twin/me": {
         parameters: {
             query?: never;
@@ -20587,13 +20657,17 @@ export interface components {
         Body_import_apple_health_api_v1_devices_apple_import_post: {
             /**
              * File
+             * Format: binary
              * @description Apple Health 导出的 XML 文件
              */
             file: string;
         };
         /** Body_import_medical_exam_from_csv_api_v1_medical_exams_import_csv_post */
         Body_import_medical_exam_from_csv_api_v1_medical_exams_import_csv_post: {
-            /** File */
+            /**
+             * File
+             * Format: binary
+             */
             file: string;
             /** Exam Info */
             exam_info?: Record<string, never>;
@@ -20602,6 +20676,7 @@ export interface components {
         Body_import_medical_exam_from_image_api_v1_medical_exams_import_image_post: {
             /**
              * File
+             * Format: binary
              * @description 体检报告图片 (jpg/png/heic/webp)
              */
             file: string;
@@ -20610,6 +20685,7 @@ export interface components {
         Body_import_medical_exam_from_pdf_api_v1_medical_exams_import_pdf_post: {
             /**
              * File
+             * Format: binary
              * @description PDF文件
              */
             file: string;
@@ -20620,10 +20696,7 @@ export interface components {
             grant_type?: string | null;
             /** Username */
             username: string;
-            /**
-             * Password
-             * Format: password
-             */
+            /** Password */
             password: string;
             /**
              * Scope
@@ -20632,16 +20705,14 @@ export interface components {
             scope: string;
             /** Client Id */
             client_id?: string | null;
-            /**
-             * Client Secret
-             * Format: password
-             */
+            /** Client Secret */
             client_secret?: string | null;
         };
         /** Body_parse_pdf_preview_api_v1_medical_exams_parse_pdf_preview_post */
         Body_parse_pdf_preview_api_v1_medical_exams_parse_pdf_preview_post: {
             /**
              * File
+             * Format: binary
              * @description PDF文件
              */
             file: string;
@@ -20650,13 +20721,17 @@ export interface components {
         Body_recognize_prescription_image_api_v1_prescriptions_recognize_post: {
             /**
              * File
+             * Format: binary
              * @description 处方图片 (jpg/png/heic/webp)
              */
             file: string;
         };
         /** Body_upload_avatar_api_v1_users_me_avatar_post */
         Body_upload_avatar_api_v1_users_me_avatar_post: {
-            /** File */
+            /**
+             * File
+             * Format: binary
+             */
             file: string;
         };
         /** Body_upload_course_files_api_v1_knowledge_documents_course_files_post */
@@ -20685,7 +20760,10 @@ export interface components {
         };
         /** Body_upload_document_api_v1_knowledge_documents_upload_post */
         Body_upload_document_api_v1_knowledge_documents_upload_post: {
-            /** File */
+            /**
+             * File
+             * Format: binary
+             */
             file: string;
             /** Source */
             source: string;
@@ -20697,7 +20775,10 @@ export interface components {
         };
         /** Body_upload_image_api_v1_upload_image_post */
         Body_upload_image_api_v1_upload_image_post: {
-            /** File */
+            /**
+             * File
+             * Format: binary
+             */
             file: string;
             /**
              * Category
@@ -21570,6 +21651,74 @@ export interface components {
             source_type: string;
             /** Video Url */
             video_url?: string | null;
+        };
+        /** CommunityFeedResponse */
+        CommunityFeedResponse: {
+            /** Items */
+            items: components["schemas"]["CommunityPostResponse"][];
+        };
+        /** CommunityPostCreate */
+        CommunityPostCreate: {
+            /**
+             * Source Type
+             * @constant
+             * @enum {string}
+             */
+            source_type: "diet_record";
+            /** Source Id */
+            source_id: number;
+            /** Caption */
+            caption?: string | null;
+            /** Idempotency Key */
+            idempotency_key: string;
+        };
+        /** CommunityPostResponse */
+        CommunityPostResponse: {
+            /** Id */
+            id: number;
+            /** Anonymous Name */
+            anonymous_name: string;
+            /** Source Type */
+            source_type: string;
+            /** Snapshot */
+            snapshot: Record<string, never>;
+            /** Caption */
+            caption: string | null;
+            /** Status */
+            status: string;
+            /** Reaction Counts */
+            reaction_counts: {
+                [key: string]: number;
+            };
+            /** My Reaction */
+            my_reaction: ("support" | "same_path" | "learned") | null;
+            /** Is Owner */
+            is_owner: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** CommunityReactionUpdate */
+        CommunityReactionUpdate: {
+            /**
+             * Reaction
+             * @enum {string}
+             */
+            reaction: "support" | "same_path" | "learned";
+        };
+        /** CommunityReportCreate */
+        CommunityReportCreate: {
+            /** Reason */
+            reason: string;
+        };
+        /** CommunityReportResponse */
+        CommunityReportResponse: {
+            /** Report Count */
+            report_count: number;
+            /** Status */
+            status: string;
         };
         /** CompleteAgendaEventRequest */
         CompleteAgendaEventRequest: {
@@ -31856,10 +32005,6 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
-            /** Input */
-            input?: unknown;
-            /** Context */
-            ctx?: Record<string, never>;
         };
         /** VariantBatchCreateRequest */
         VariantBatchCreateRequest: {
@@ -50748,6 +50893,201 @@ export interface operations {
                 };
                 content: {
                     "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_posts_api_v1_community_posts_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                before_id?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommunityFeedResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_post_api_v1_community_posts_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommunityPostCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommunityPostResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_reaction_api_v1_community_posts__post_id__reaction_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                post_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommunityReactionUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommunityPostResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_reaction_api_v1_community_posts__post_id__reaction_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                post_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommunityPostResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_post_api_v1_community_posts__post_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                post_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    report_post_api_v1_community_posts__post_id__report_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                post_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommunityReportCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommunityReportResponse"];
                 };
             };
             /** @description Validation Error */

@@ -135,6 +135,7 @@ function AppContent() {
         <Stack.Screen name="workout-list" options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="workout-detail" options={{ headerShown: false }} />
         <Stack.Screen name="diet" options={{ headerShown: false, presentation: 'modal' }} />
+        <Stack.Screen name="community" options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="body-measurements" options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="goals" options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="directives" options={{ headerShown: false, presentation: 'modal' }} />

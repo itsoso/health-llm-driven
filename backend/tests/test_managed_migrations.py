@@ -137,6 +137,52 @@ def test_apply_managed_migrations_runs_matching_dialect_once(tmp_path: Path):
     assert count == 1
 
 
+def test_community_peer_support_migration_has_pair_and_is_idempotent(
+    tmp_path: Path,
+):
+    migrations_dir = Path(__file__).resolve().parents[1] / "migrations" / "managed"
+    sqlite_file = (
+        migrations_dir
+        / "20260725_120000_community_peer_support.sqlite.sql"
+    )
+    postgres_file = (
+        migrations_dir
+        / "20260725_120000_community_peer_support.postgresql.sql"
+    )
+    assert sqlite_file.exists()
+    assert postgres_file.exists()
+
+    isolated = tmp_path / "managed"
+    isolated.mkdir()
+    (isolated / sqlite_file.name).write_text(
+        sqlite_file.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE users (id INTEGER PRIMARY KEY)"))
+
+    first = apply_managed_migrations(engine, isolated)
+    second = apply_managed_migrations(engine, isolated)
+
+    inspector = inspect(engine)
+    assert [item.id for item in first.applied] == [
+        "20260725_120000_community_peer_support"
+    ]
+    assert second.applied == []
+    assert {
+        "community_posts",
+        "community_reactions",
+        "community_reports",
+    }.issubset(inspector.get_table_names())
+    assert {
+        "ix_community_posts_status_created",
+        "ix_community_posts_user_id",
+    }.issubset(
+        {index["name"] for index in inspector.get_indexes("community_posts")}
+    )
+
+
 def test_agent_runtime_contract_snapshot_migration_extends_existing_run_ledger(
     tmp_path: Path,
 ):
