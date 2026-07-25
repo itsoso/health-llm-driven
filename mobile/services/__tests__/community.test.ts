@@ -16,6 +16,7 @@ jest.mock('../api', () => ({
 }));
 
 import {
+  getCommunityPostForDietRecord,
   listCommunityPosts,
   publishDietRecordToCommunity,
   removeCommunityReaction,
@@ -53,6 +54,20 @@ describe('community service', () => {
     });
     expect(mockPut).toHaveBeenCalledWith('/community/posts/7/reaction', { reaction: 'support' });
     expect(mockDelete).toHaveBeenCalledWith('/community/posts/7/reaction');
+  });
+
+  it('restores an owned community post by diet record source', async () => {
+    mockGet.mockResolvedValueOnce({ data: { id: 7, is_owner: true } });
+
+    await getCommunityPostForDietRecord(91);
+
+    expect(mockGet).toHaveBeenCalledWith('/community/posts/source/diet_record/91');
+  });
+
+  it('treats a missing source post as an unpublished record', async () => {
+    mockGet.mockRejectedValueOnce({ response: { status: 404 } });
+
+    await expect(getCommunityPostForDietRecord(91)).resolves.toBeNull();
   });
 
   it('reports a post without sending health context', async () => {

@@ -10915,6 +10915,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/community/posts/source/diet_record/{source_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Diet Post By Source */
+        get: operations["get_diet_post_by_source_api_v1_community_posts_source_diet_record__source_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/community/posts/{post_id}/reaction": {
         parameters: {
             query?: never;
@@ -50950,6 +50967,37 @@ export interface operations {
                 "application/json": components["schemas"]["CommunityPostCreate"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommunityPostResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_diet_post_by_source_api_v1_community_posts_source_diet_record__source_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

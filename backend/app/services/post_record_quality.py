@@ -859,6 +859,18 @@ def build_post_record_quality_response(
             ),
             adjust_action,
         ]
+        if (
+            goal_progress
+            and goal_progress.get("freshness") == "stale"
+            and goal_progress.get("status") != "target_requires_review"
+        ):
+            actions.append(
+                _route_action(
+                    "update-weight",
+                    "更新体重",
+                    "/body-measurements",
+                )
+            )
         if record_id is not None:
             actions.append(
                 _route_action(

@@ -83,6 +83,105 @@ def test_publish_diet_post_is_owner_scoped_idempotent_and_privacy_minimized(clie
     assert other.id != owner.id
 
 
+def test_publish_same_diet_record_with_a_new_request_key_reuses_active_post(client, db):
+    owner, owner_token = create_authenticated_user(db)
+    record = _diet_record(db, owner.id)
+
+    first = client.post(
+        "/api/v1/community/posts",
+        headers=_headers(owner_token),
+        json={
+            "source_type": "diet_record",
+            "source_id": record.id,
+            "idempotency_key": "same-source-first",
+        },
+    )
+    repeated = client.post(
+        "/api/v1/community/posts",
+        headers=_headers(owner_token),
+        json={
+            "source_type": "diet_record",
+            "source_id": record.id,
+            "idempotency_key": "same-source-second",
+        },
+    )
+
+    assert first.status_code == 201, first.text
+    assert repeated.status_code == 200, repeated.text
+    assert repeated.json()["id"] == first.json()["id"]
+    assert (
+        db.query(CommunityPost)
+        .filter(
+            CommunityPost.user_id == owner.id,
+            CommunityPost.source_type == "diet_record",
+            CommunityPost.source_id == record.id,
+            CommunityPost.status != "deleted",
+        )
+        .count()
+        == 1
+    )
+
+
+def test_owner_can_restore_an_existing_share_by_source_without_cross_user_access(client, db):
+    owner, owner_token = create_authenticated_user(db)
+    _other, other_token = create_authenticated_user(db)
+    record = _diet_record(db, owner.id)
+    created = client.post(
+        "/api/v1/community/posts",
+        headers=_headers(owner_token),
+        json={
+            "source_type": "diet_record",
+            "source_id": record.id,
+            "idempotency_key": "source-lookup",
+        },
+    )
+
+    restored = client.get(
+        f"/api/v1/community/posts/source/diet_record/{record.id}",
+        headers=_headers(owner_token),
+    )
+    denied = client.get(
+        f"/api/v1/community/posts/source/diet_record/{record.id}",
+        headers=_headers(other_token),
+    )
+
+    assert restored.status_code == 200, restored.text
+    assert restored.json()["id"] == created.json()["id"]
+    assert restored.json()["is_owner"] is True
+    assert denied.status_code == 404
+
+
+def test_deleted_share_can_be_published_again(client, db):
+    owner, owner_token = create_authenticated_user(db)
+    record = _diet_record(db, owner.id)
+    first = client.post(
+        "/api/v1/community/posts",
+        headers=_headers(owner_token),
+        json={
+            "source_type": "diet_record",
+            "source_id": record.id,
+            "idempotency_key": "republish-first",
+        },
+    )
+    deleted = client.delete(
+        f"/api/v1/community/posts/{first.json()['id']}",
+        headers=_headers(owner_token),
+    )
+    second = client.post(
+        "/api/v1/community/posts",
+        headers=_headers(owner_token),
+        json={
+            "source_type": "diet_record",
+            "source_id": record.id,
+            "idempotency_key": "republish-second",
+        },
+    )
+
+    assert deleted.status_code == 204
+    assert second.status_code == 201, second.text
+    assert second.json()["id"] != first.json()["id"]
+
+
 def test_reaction_is_one_per_user_and_updates_instead_of_double_counting(client, db):
     owner, owner_token = create_authenticated_user(db)
     peer, peer_token = create_authenticated_user(db)
@@ -179,6 +278,12 @@ def test_report_is_idempotent_and_three_distinct_reports_remove_post_from_feed(c
     assert response.json()["status"] == "under_review"
     feed = client.get("/api/v1/community/posts", headers=_headers(owner_token))
     assert feed.json()["items"] == []
+    restored = client.get(
+        f"/api/v1/community/posts/source/diet_record/{record.id}",
+        headers=_headers(owner_token),
+    )
+    assert restored.status_code == 200
+    assert restored.json()["status"] == "under_review"
 
 
 @pytest.mark.asyncio

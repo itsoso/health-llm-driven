@@ -286,6 +286,13 @@ def test_weight_goal_progress_omits_unverifiable_percentage_and_marks_stale(db, 
     assert "baseline_kg" not in goal
     assert "progress_pct" not in goal
     assert "change_7d_kg" not in goal
+    update_weight = next(
+        action
+        for action in response["cards"][0]["actions"]
+        if action["id"] == "update-weight"
+    )
+    assert update_weight["label"] == "更新体重"
+    assert update_weight["payload"]["route"] == "/body-measurements"
 
 
 def test_weight_goal_progress_reports_achieved_without_negative_remaining(db, auth_user_and_headers):
@@ -367,6 +374,10 @@ def test_weight_goal_progress_does_not_promote_low_bmi_target(db, auth_user_and_
     assert goal["target_kg"] == 55.0
     assert "remaining_kg" not in goal
     assert "progress_pct" not in goal
+    assert all(
+        action["id"] != "update-weight"
+        for action in response["cards"][0]["actions"]
+    )
 
 
 def test_diet_quality_response_hides_goal_progress_when_target_is_missing(db, auth_user_and_headers):

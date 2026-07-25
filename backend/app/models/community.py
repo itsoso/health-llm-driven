@@ -12,6 +12,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text as sql_text,
 )
 from sqlalchemy.sql import func
 
@@ -35,6 +36,15 @@ class CommunityPost(Base):
 
     __table_args__ = (
         UniqueConstraint("user_id", "idempotency_key", name="uq_community_posts_user_idempotency"),
+        Index(
+            "uq_community_posts_active_source",
+            "user_id",
+            "source_type",
+            "source_id",
+            unique=True,
+            postgresql_where=sql_text("status <> 'deleted'"),
+            sqlite_where=sql_text("status <> 'deleted'"),
+        ),
         Index("ix_community_posts_status_created", "status", "created_at"),
     )
 

@@ -123,8 +123,15 @@ diet write verified
 
 - A receipt is rendered only after a verified write.
 - Community failure never changes the diet record.
-- Duplicate publish requests use an idempotency key.
+- One owned diet record has at most one non-deleted peer post, even when clients
+  retry with different request idempotency keys.
+- Re-entering the community restores the existing owned post before offering a
+  composer; a deleted post may be explicitly published again.
 - Duplicate reactions update the existing reaction instead of incrementing twice.
+- Mobile reactions update optimistically and roll back to the previous server
+  state when reconciliation fails.
+- Stale weight progress includes a direct `更新体重` action; fresh or
+  safety-suppressed goal states do not.
 
 ## 5. Surfaces
 
@@ -147,3 +154,5 @@ diet write verified
 ## 7. Changelog
 
 - 2026-07-25: accepted and implementation started.
+- 2026-07-25: hardened source-level publish idempotency, existing-share
+  restoration, optimistic reaction reconciliation, and stale-weight recovery.

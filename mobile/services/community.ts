@@ -42,6 +42,20 @@ export async function listCommunityPosts({
   return data.items;
 }
 
+export async function getCommunityPostForDietRecord(
+  recordId: number,
+): Promise<CommunityPost | null> {
+  try {
+    const { data } = await api.get<CommunityPost>(
+      `/community/posts/source/diet_record/${recordId}`,
+    );
+    return data;
+  } catch (error: any) {
+    if (error?.response?.status === 404) return null;
+    throw error;
+  }
+}
+
 export async function publishDietRecordToCommunity(
   recordId: number,
   caption: string,

@@ -16,6 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
   deleteCommunityPost,
+  getCommunityPostForDietRecord,
   listCommunityPosts,
   publishDietRecordToCommunity,
   removeCommunityReaction,
@@ -53,6 +54,24 @@ const MEAL_LABELS: Record<string, string> = {
 
 function replacePost(items: CommunityPost[], next: CommunityPost): CommunityPost[] {
   return items.map((item) => (item.id === next.id ? next : item));
+}
+
+function optimisticReaction(
+  post: CommunityPost,
+  reaction: CommunityReaction,
+): CommunityPost {
+  const reactionCounts = { ...post.reaction_counts };
+  const previous = post.my_reaction;
+
+  if (previous) {
+    reactionCounts[previous] = Math.max(0, (reactionCounts[previous] || 0) - 1);
+  }
+  if (previous === reaction) {
+    return { ...post, my_reaction: null, reaction_counts: reactionCounts };
+  }
+
+  reactionCounts[reaction] = (reactionCounts[reaction] || 0) + 1;
+  return { ...post, my_reaction: reaction, reaction_counts: reactionCounts };
 }
 
 function displayDate(value: string): string {
@@ -138,17 +157,17 @@ function PeerPost({
               accessibilityRole="button"
               accessibilityState={{ selected, disabled: isBusy }}
               accessibilityLabel={`${label} ${count}`}
-              style={[styles.reaction, selected && styles.reactionSelected]}
+              style={[
+                styles.reaction,
+                selected && styles.reactionSelected,
+                isBusy && styles.reactionPending,
+              ]}
             >
-              {isBusy ? (
-                <ActivityIndicator size="small" color={revaColors.green600} />
-              ) : (
-                <Ionicons
-                  name={selected && key === 'support' ? 'heart' : icon}
-                  size={17}
-                  color={selected ? revaColors.green600 : revaColors.ink2}
-                />
-              )}
+              <Ionicons
+                name={selected && key === 'support' ? 'heart' : icon}
+                size={17}
+                color={selected ? revaColors.green600 : revaColors.ink2}
+              />
               <Text style={[styles.reactionText, selected && styles.reactionTextSelected]}>
                 {label}{count > 0 ? ` ${count}` : ''}
               </Text>
@@ -171,7 +190,8 @@ export default function CommunityScreen() {
 
   const [posts, setPosts] = useState<CommunityPost[]>([]);
   const [caption, setCaption] = useState('');
-  const [showComposer, setShowComposer] = useState(canCompose);
+  const [showComposer, setShowComposer] = useState(false);
+  const [existingShare, setExistingShare] = useState<CommunityPost | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
@@ -184,14 +204,26 @@ export default function CommunityScreen() {
     else setIsLoading(true);
     setLoadError(false);
     try {
-      setPosts(await listCommunityPosts());
+      const [feed, existing] = await Promise.all([
+        listCommunityPosts(),
+        canCompose
+          ? getCommunityPostForDietRecord(recordId)
+          : Promise.resolve(null),
+      ]);
+      setExistingShare(existing);
+      setShowComposer(canCompose && !existing);
+      setPosts(
+        existing?.status === 'active' && !feed.some((item) => item.id === existing.id)
+          ? [existing, ...feed]
+          : feed,
+      );
     } catch {
       setLoadError(true);
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, []);
+  }, [canCompose, recordId]);
 
   useEffect(() => {
     void loadPosts();
@@ -208,6 +240,7 @@ export default function CommunityScreen() {
         idempotencyKey.current,
       );
       setPosts((current) => [created, ...current.filter((item) => item.id !== created.id)]);
+      setExistingShare(created);
       setShowComposer(false);
       setCaption('');
     } catch {
@@ -223,6 +256,8 @@ export default function CommunityScreen() {
   ) => {
     const key = `${post.id}:${reaction}`;
     if (busyReaction) return;
+    const optimistic = optimisticReaction(post, reaction);
+    setPosts((current) => replacePost(current, optimistic));
     setBusyReaction(key);
     try {
       const updated = post.my_reaction === reaction
@@ -230,6 +265,7 @@ export default function CommunityScreen() {
         : await setCommunityReaction(post.id, reaction);
       setPosts((current) => replacePost(current, updated));
     } catch {
+      setPosts((current) => replacePost(current, post));
       Alert.alert('暂时无法反馈', '网络恢复后再试，饮食记录不受影响。');
     } finally {
       setBusyReaction(null);
@@ -246,13 +282,20 @@ export default function CommunityScreen() {
           try {
             await deleteCommunityPost(post.id);
             setPosts((current) => current.filter((item) => item.id !== post.id));
+            if (existingShare?.id === post.id) {
+              setExistingShare(null);
+              setShowComposer(canCompose);
+              idempotencyKey.current = canCompose
+                ? `community-diet-${recordId}-${Date.now()}`
+                : '';
+            }
           } catch {
             Alert.alert('删除失败', '请稍后重试。');
           }
         },
       },
     ]);
-  }, []);
+  }, [canCompose, existingShare, recordId]);
 
   const reportPost = useCallback((post: CommunityPost) => {
     Alert.alert('举报这条内容？', '举报仅用于处理不适当内容，不会影响你的健康数据。', [
@@ -280,6 +323,21 @@ export default function CommunityScreen() {
           看见真实行动，给彼此一点支持。不比较体重，不做排行榜。
         </Text>
       </View>
+
+      {existingShare && !showComposer ? (
+        <View style={styles.publishedNotice}>
+          <Ionicons
+            name={existingShare.status === 'under_review' ? 'time-outline' : 'checkmark-circle'}
+            size={19}
+            color={revaColors.green600}
+          />
+          <Text style={styles.publishedNoticeText}>
+            {existingShare.status === 'under_review'
+              ? '这条匿名分享正在审核，暂时不能重复发布。'
+              : '已经匿名发布，可在下方查看同行反馈。'}
+          </Text>
+        </View>
+      ) : null}
 
       {showComposer ? (
         <View style={styles.composer}>
@@ -351,7 +409,7 @@ export default function CommunityScreen() {
         <Text style={styles.feedNote}>只看行动，不比输赢</Text>
       </View>
     </>
-  ), [caption, isPublishing, publish, publishError, showComposer]);
+  ), [caption, existingShare, isPublishing, publish, publishError, showComposer]);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
@@ -536,6 +594,23 @@ const styles = StyleSheet.create({
     color: revaSemantic.risk.fg,
     marginLeft: revaSpacing.s2,
   },
+  publishedNotice: {
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: revaSpacing.s4,
+    borderWidth: 1,
+    borderColor: revaColors.green100,
+    borderRadius: revaRadii.md,
+    backgroundColor: revaColors.green50,
+  },
+  publishedNoticeText: {
+    ...revaType.body2,
+    flex: 1,
+    marginLeft: revaSpacing.s2,
+    fontFamily: revaFonts.cjk,
+    color: revaColors.green600,
+  },
   composerActions: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
@@ -675,6 +750,9 @@ const styles = StyleSheet.create({
   reactionSelected: {
     backgroundColor: revaColors.green50,
     borderColor: revaColors.green100,
+  },
+  reactionPending: {
+    opacity: 0.72,
   },
   reactionText: {
     ...revaType.caption,

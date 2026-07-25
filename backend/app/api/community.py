@@ -119,6 +119,26 @@ def _active_post_or_404(db: Session, post_id: int) -> CommunityPost:
     return post
 
 
+def _owned_source_post(
+    db: Session,
+    *,
+    user_id: int,
+    source_type: str,
+    source_id: int,
+) -> CommunityPost | None:
+    return (
+        db.query(CommunityPost)
+        .filter(
+            CommunityPost.user_id == user_id,
+            CommunityPost.source_type == source_type,
+            CommunityPost.source_id == source_id,
+            CommunityPost.status != "deleted",
+        )
+        .order_by(CommunityPost.id.desc())
+        .first()
+    )
+
+
 @router.post("/posts", response_model=CommunityPostResponse)
 async def create_post(
     data: CommunityPostCreate,
@@ -135,6 +155,17 @@ async def create_post(
     )
     if existing is not None:
         return _serialize_post(db, existing, current_user.id)
+
+    existing_source = _owned_source_post(
+        db,
+        user_id=current_user.id,
+        source_type=data.source_type,
+        source_id=data.source_id,
+    )
+    if existing_source is not None:
+        if existing_source.status == "under_review":
+            raise HTTPException(status_code=409, detail="这条分享正在审核，暂时不能重复发布")
+        return _serialize_post(db, existing_source, current_user.id)
 
     record = (
         db.query(DietRecord)
@@ -168,7 +199,16 @@ async def create_post(
             .first()
         )
         if post is None:
+            post = _owned_source_post(
+                db,
+                user_id=current_user.id,
+                source_type=data.source_type,
+                source_id=data.source_id,
+            )
+        if post is None:
             raise
+        if post.status == "under_review":
+            raise HTTPException(status_code=409, detail="这条分享正在审核，暂时不能重复发布")
         return _serialize_post(db, post, current_user.id)
     logger.info(
         "[community] post created post_id=%s user_id=%s source_id=%s",
@@ -180,6 +220,26 @@ async def create_post(
         status_code=201,
         content=jsonable_encoder(_serialize_post(db, post, current_user.id)),
     )
+
+
+@router.get(
+    "/posts/source/diet_record/{source_id}",
+    response_model=CommunityPostResponse,
+)
+async def get_diet_post_by_source(
+    source_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    post = _owned_source_post(
+        db,
+        user_id=current_user.id,
+        source_type="diet_record",
+        source_id=source_id,
+    )
+    if post is None:
+        raise HTTPException(status_code=404, detail="分享不存在")
+    return _serialize_post(db, post, current_user.id)
 
 
 @router.get("/posts", response_model=CommunityFeedResponse)

@@ -1186,3 +1186,70 @@ def test_agent_runtime_migrations_create_content_free_control_plane(tmp_path: Pa
         "uq_agent_runs_conversation_input_seq",
         "ix_agent_runs_current_attempt_id",
     } <= run_indexes
+
+
+def test_community_source_idempotency_migration_deduplicates_and_enforces_index(
+    tmp_path: Path,
+):
+    from sqlalchemy.exc import IntegrityError
+
+    migrations_dir = Path(__file__).resolve().parents[1] / "migrations" / "managed"
+    sqlite_file = (
+        migrations_dir
+        / "20260725_180000_community_source_idempotency.sqlite.sql"
+    )
+    postgres_file = (
+        migrations_dir
+        / "20260725_180000_community_source_idempotency.postgresql.sql"
+    )
+    assert sqlite_file.exists()
+    assert postgres_file.exists()
+
+    isolated = tmp_path / "managed"
+    isolated.mkdir()
+    (isolated / sqlite_file.name).write_text(
+        sqlite_file.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        conn.execute(text(
+            "CREATE TABLE community_posts ("
+            "id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, "
+            "source_type TEXT NOT NULL, source_id INTEGER NOT NULL, "
+            "status TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT)"
+        ))
+        conn.execute(text(
+            "INSERT INTO community_posts "
+            "(id, user_id, source_type, source_id, status, created_at) VALUES "
+            "(1, 7, 'diet_record', 91, 'active', '2026-07-25 10:00:00'), "
+            "(2, 7, 'diet_record', 91, 'active', '2026-07-25 11:00:00'), "
+            "(3, 7, 'diet_record', 91, 'deleted', '2026-07-25 09:00:00')"
+        ))
+
+    result = apply_managed_migrations(engine, isolated)
+
+    assert [item.id for item in result.applied] == [
+        "20260725_180000_community_source_idempotency"
+    ]
+    with engine.connect() as conn:
+        statuses = dict(conn.execute(text(
+            "SELECT id, status FROM community_posts ORDER BY id"
+        )).all())
+    assert statuses == {1: "deleted", 2: "active", 3: "deleted"}
+
+    with pytest.raises(IntegrityError):
+        with engine.begin() as conn:
+            conn.execute(text(
+                "INSERT INTO community_posts "
+                "(id, user_id, source_type, source_id, status, created_at) "
+                "VALUES (4, 7, 'diet_record', 91, 'active', "
+                "'2026-07-25 12:00:00')"
+            ))
+    with engine.begin() as conn:
+        conn.execute(text(
+            "INSERT INTO community_posts "
+            "(id, user_id, source_type, source_id, status, created_at) "
+            "VALUES (5, 7, 'diet_record', 91, 'deleted', "
+            "'2026-07-25 12:00:00')"
+        ))
