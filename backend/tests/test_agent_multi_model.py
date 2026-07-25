@@ -161,6 +161,82 @@ async def test_multi_model_stream_lead_tools_once_then_synthesizes(db, auth_user
 
 
 @pytest.mark.asyncio
+async def test_multi_model_simple_record_stops_after_verified_receipt(
+    db, auth_user_and_headers, monkeypatch
+):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    monkeypatch.setattr(executor, "_build_system_prompt", lambda *a, **k: "SYS")
+    monkeypatch.setattr(
+        "app.services.agent_executor.get_health_tools",
+        lambda subset=None: [],
+    )
+    lead_calls = 0
+    executed = []
+
+    async def fake_call_llm(messages, tools):
+        nonlocal lead_calls
+        lead_calls += 1
+        return {
+            "content": "模型声称已经记录。",
+            "finish_reason": "stop",
+        }
+
+    async def fake_execute_tool(name, args, token):
+        parsed = json.loads(args) if isinstance(args, str) else args
+        executed.append((name, parsed))
+        return json.dumps(
+            {
+                "id": 913,
+                "record_id": 913,
+                "resource_type": "water_record",
+                "status": "verified",
+                "success": True,
+                "message": "已记录饮水 500ml",
+            },
+            ensure_ascii=False,
+        )
+
+    monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
+    monkeypatch.setattr(executor, "_execute_tool", fake_execute_tool)
+    monkeypatch.setattr(
+        "app.services.llm.factory.create_provider_for_model_id",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("simple record must not enter panel synthesis")
+        ),
+    )
+
+    events = [
+        event
+        async for event in executor._run_multi_model_stream(
+            user.id,
+            "记录喝水五百毫升",
+            None,
+            None,
+            '{"multi_model": true}',
+            "turn-multi-simple-water",
+        )
+    ]
+
+    assert lead_calls == 2
+    assert executed == [(
+        "health_record",
+        {
+            "record_type": "water",
+            "data": {"amount": 500},
+        },
+    )]
+    rendered = "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+    assert rendered == "已记录饮水 500ml"
+    assert events[-1]["data"]["completion_status"] == "complete"
+    assert len(events[-1]["data"]["write_receipts"]) == 1
+
+
+@pytest.mark.asyncio
 async def test_multi_model_identityless_write_fails_closed_before_panel_synthesis(
     db, auth_user_and_headers, monkeypatch
 ):

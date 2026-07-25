@@ -72,7 +72,89 @@ def test_goal_postconditions_do_not_accept_unreceipted_rows():
 
 
 def test_diet_postcondition_verifier_is_registered():
-    assert registered_goal_verifier_kinds() == ("diet_recalculate_update",)
+    assert registered_goal_verifier_kinds() == (
+        "diet_recalculate_update",
+        "simple_health_record",
+    )
+
+
+def test_simple_record_postcondition_accepts_only_expected_verified_receipt():
+    goal = GoalSpec(
+        kind="simple_health_record",
+        domain="water",
+        operation="create",
+        target_record_type="water",
+        target_values=(("amount_ml", "500"),),
+        requires_verification=True,
+        postconditions=("verified_receipt",),
+    )
+
+    result = verify_goal_postconditions(
+        goal,
+        write_receipts=[{
+            "resource_type": "water_record",
+            "resource_id": "701",
+            "verified": True,
+        }],
+        verification_result=None,
+    )
+
+    assert result.satisfied is True
+    assert result.verified_resource_ids == ("701",)
+
+
+def test_simple_record_postcondition_rejects_wrong_resource_receipt():
+    goal = GoalSpec(
+        kind="simple_health_record",
+        domain="water",
+        operation="create",
+        target_record_type="water",
+        requires_verification=True,
+    )
+
+    result = verify_goal_postconditions(
+        goal,
+        write_receipts=[{
+            "resource_type": "symptom_record",
+            "resource_id": "702",
+            "verified": True,
+        }],
+        verification_result=None,
+    )
+
+    assert result.satisfied is False
+    assert result.reason == "write_receipt_type_mismatch"
+
+
+def test_simple_record_postcondition_rejects_extra_write_receipts():
+    goal = GoalSpec(
+        kind="simple_health_record",
+        domain="water",
+        operation="create",
+        target_record_type="water",
+        target_values=(("amount_ml", "500"),),
+        requires_verification=True,
+    )
+
+    result = verify_goal_postconditions(
+        goal,
+        write_receipts=[
+            {
+                "resource_type": "water_record",
+                "resource_id": "701",
+                "verified": True,
+            },
+            {
+                "resource_type": "symptom_record",
+                "resource_id": "702",
+                "verified": True,
+            },
+        ],
+        verification_result=None,
+    )
+
+    assert result.satisfied is False
+    assert result.reason == "unexpected_write_receipt_count"
 
 
 def test_unregistered_verified_goal_fails_closed():

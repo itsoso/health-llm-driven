@@ -2588,6 +2588,15 @@ class _UnverifiedWriteResult(RuntimeError):
     pass
 
 
+class _SimpleRecordTerminal(RuntimeError):
+    """Stop a model panel once a typed simple-record outcome is known."""
+
+    def __init__(self, message: str, *, satisfied: bool) -> None:
+        super().__init__(message)
+        self.message = message
+        self.satisfied = satisfied
+
+
 def _write_result_is_pre_dispatch_validation_error(result: Any) -> bool:
     """Compatibility wrapper for callers that need the terminal rejection bit."""
     return classify_write_execution(result).status == "rejected"
@@ -4399,7 +4408,60 @@ def _normalize_goal_guarded_tool_calls(
     allowed_record_ids: Optional[set[str]] = None,
 ) -> List[Dict[str, Any]]:
     """Fail closed when a model violates the current task's mutation contract."""
-    if goal is None or goal.kind != "diet_recalculate_update":
+    if goal is None:
+        return tool_calls
+    if goal.kind == "simple_health_record":
+        authoritative_args = _simple_record_goal_arguments(goal)
+        normalized: list[dict[str, Any]] = []
+        for tool_call in tool_calls:
+            function = tool_call.get("function") or {}
+            name = str(function.get("name") or "")
+            try:
+                args = (
+                    json.loads(function.get("arguments"))
+                    if isinstance(function.get("arguments"), str)
+                    else dict(function.get("arguments") or {})
+                )
+            except (json.JSONDecodeError, TypeError, ValueError):
+                args = {}
+            is_write = (
+                name == "health_record"
+                or (
+                    name in _WRITE_RECEIPT_TOOL_NAMES
+                    and _write_tool_attempted(name, args)
+                )
+            )
+            if not is_write:
+                normalized.append(tool_call)
+                continue
+            if authoritative_args is None:
+                logger.error(
+                    "[agent_executor] blocked model write for invalid simple goal "
+                    "tool=%s target_record_type=%s",
+                    name,
+                    goal.target_record_type,
+                )
+                continue
+            if name != "health_record" or args != authoritative_args:
+                logger.warning(
+                    "[agent_executor] simple goal canonicalized model write "
+                    "tool=%s target_record_type=%s",
+                    name,
+                    goal.target_record_type,
+                )
+            normalized.append({
+                **tool_call,
+                "function": {
+                    **function,
+                    "name": "health_record",
+                    "arguments": json.dumps(
+                        authoritative_args,
+                        ensure_ascii=False,
+                    ),
+                },
+            })
+        return normalized
+    if goal.kind != "diet_recalculate_update":
         return tool_calls
     lookup_args = {
         "record_type": "diet",
@@ -5373,6 +5435,89 @@ def _build_deterministic_symptom_tool_call(
             ),
         },
     }
+
+
+def _build_deterministic_simple_record_tool_call(
+    goal: Optional[GoalSpec],
+    *,
+    write_receipts: Sequence[dict[str, Any]],
+    has_attachment: bool = False,
+) -> Optional[Dict[str, Any]]:
+    """Recover one narrow server-owned write from a typed task contract."""
+    if (
+        goal is None
+        or goal.kind != "simple_health_record"
+        or goal.operation != "create"
+        or write_receipts
+        or has_attachment
+    ):
+        return None
+    arguments = _simple_record_goal_arguments(goal)
+    if arguments is None:
+        return None
+    return {
+        "id": f"deterministic-simple-record-{_sha12(repr(arguments))}",
+        "type": "function",
+        "function": {
+            "name": "health_record",
+            "arguments": json.dumps(arguments, ensure_ascii=False),
+        },
+    }
+
+
+def _simple_record_goal_arguments(
+    goal: Optional[GoalSpec],
+) -> Optional[Dict[str, Any]]:
+    """Build the only write payload authorized by a simple-record goal."""
+    if goal is None or goal.kind != "simple_health_record":
+        return None
+    values = dict(goal.target_values)
+    if goal.target_record_type == "water":
+        try:
+            amount_ml = int(values["amount_ml"])
+        except (KeyError, TypeError, ValueError):
+            return None
+        if not 1 <= amount_ml <= 5000:
+            return None
+        return {
+            "record_type": "water",
+            "data": {"amount": amount_ml},
+        }
+    if goal.target_record_type == "symptom":
+        body_part = str(values.get("body_part") or "").strip()
+        description = str(values.get("description") or "").strip()
+        if (
+            body_part not in {
+                "eye",
+                "respiratory",
+                "skin",
+                "digestive",
+                "musculoskeletal",
+                "head",
+                "general",
+                "other",
+            }
+            or not description
+        ):
+            return None
+        return {
+            "record_type": "symptom",
+            "data": {
+                "body_part": body_part,
+                "description": description[:500],
+            },
+        }
+    return None
+
+
+def _simple_record_goal_completion_text(goal: GoalSpec) -> str:
+    """Render a verified simple-record result without another model call."""
+    values = dict(goal.target_values)
+    if goal.target_record_type == "water":
+        return f"已记录饮水 {values.get('amount_ml')}ml"
+    if goal.target_record_type == "symptom":
+        return f"已记录症状：{values.get('description')}"
+    return "记录已完成。"
 
 
 def _symptom_write_authorized_by_current_turn(
@@ -7252,8 +7397,10 @@ class AgentExecutor:
             ]
             lead_text = ""
             deterministic_diet_correction_fallback_attempted = False
+            deterministic_simple_record_fallback_attempted = False
             deterministic_goal_lookup_attempted = False
             goal_verification_attempted = False
+            receipt_goal_evaluated = False
             goal_verification_result: Any = None
             goal_lookup_completed = False
             goal_allowed_record_ids: set[str] = set()
@@ -7285,6 +7432,34 @@ class AgentExecutor:
                         )})
                         continue
                     content = _strip_text_tool_call(content)
+                if (
+                    not tool_calls
+                    and not deterministic_simple_record_fallback_attempted
+                ):
+                    deterministic_simple_record_call = (
+                        _build_deterministic_simple_record_tool_call(
+                            (
+                                self._agent_kernel_snapshot.goal
+                                if self._agent_kernel_snapshot is not None else None
+                            ),
+                            write_receipts=write_receipts,
+                        )
+                    )
+                    if deterministic_simple_record_call:
+                        deterministic_simple_record_fallback_attempted = True
+                        tool_calls = [deterministic_simple_record_call]
+                        content = ""
+                        logger.info(
+                            "[agent_executor] deterministic simple record fallback "
+                            "user=%s record_type=%s",
+                            user_id,
+                            (
+                                self._agent_kernel_snapshot.goal.target_record_type
+                                if self._agent_kernel_snapshot is not None
+                                and self._agent_kernel_snapshot.goal is not None
+                                else "unknown"
+                            ),
+                        )
                 if (
                     not tool_calls
                     and not deterministic_goal_lookup_attempted
@@ -7360,6 +7535,41 @@ class AgentExecutor:
                             "更新操作已执行，但读回核验未覆盖全部目标餐次，"
                             "因此本轮不能确认已经全部完成。请重试，系统会继续核对现有记录。"
                         )
+                goal = (
+                    self._agent_kernel_snapshot.goal
+                    if self._agent_kernel_snapshot is not None else None
+                )
+                if (
+                    not tool_calls
+                    and not receipt_goal_evaluated
+                    and goal is not None
+                    and goal.kind == "simple_health_record"
+                ):
+                    receipt_goal_evaluated = True
+                    postcondition = verify_goal_postconditions(
+                        goal,
+                        write_receipts=write_receipts,
+                        verification_result=None,
+                    )
+                    if self._agent_kernel_event_bus is not None:
+                        self._agent_kernel_event_bus.goal_evaluated(
+                            satisfied=postcondition.satisfied,
+                            verified_target_count=len(
+                                postcondition.verified_resource_ids
+                            ),
+                            reason=postcondition.reason,
+                        )
+                    if postcondition.satisfied:
+                        terminal_text = _simple_record_goal_completion_text(goal)
+                    else:
+                        terminal_text = (
+                            "记录请求已执行，但没有取得与目标类型一致的可验证回执，"
+                            "因此本轮不能确认已经完成。请重试。"
+                        )
+                    raise _SimpleRecordTerminal(
+                        terminal_text,
+                        satisfied=postcondition.satisfied,
+                    )
                 if tool_calls:
                     tool_calls = self._normalize_query_only_health_manage_tool_calls(
                         tool_calls,
@@ -7590,6 +7800,14 @@ class AgentExecutor:
             for i in range(0, len(final_text), 24):
                 yield {"event": "token", "data": {"content": final_text[i:i + 24]}}
             full_reply = final_text
+        except _SimpleRecordTerminal as terminal:
+            completion_status = "complete" if terminal.satisfied else "error"
+            full_reply = terminal.message
+            for i in range(0, len(full_reply), 24):
+                yield {
+                    "event": "token",
+                    "data": {"content": full_reply[i:i + 24]},
+                }
         except _UnverifiedWriteResult:
             completion_status = "error"
             full_reply = _UNVERIFIED_WRITE_USER_MESSAGE
@@ -8604,8 +8822,10 @@ class AgentExecutor:
         tool_executed_count = 0
         deterministic_symptom_fallback_attempted = False
         deterministic_diet_correction_fallback_attempted = False
+        deterministic_simple_record_fallback_attempted = False
         deterministic_goal_lookup_attempted = False
         goal_verification_attempted = False
+        receipt_goal_evaluated = False
         goal_verification_result: Any = None
         goal_lookup_completed = False
         goal_allowed_record_ids: set[str] = set()
@@ -8993,6 +9213,41 @@ class AgentExecutor:
                 if (
                     isinstance(response, dict)
                     and not response.get("tool_calls")
+                    and not deterministic_simple_record_fallback_attempted
+                ):
+                    deterministic_simple_record_call = (
+                        _build_deterministic_simple_record_tool_call(
+                            (
+                                self._agent_kernel_snapshot.goal
+                                if self._agent_kernel_snapshot is not None else None
+                            ),
+                            write_receipts=write_receipts,
+                            has_attachment=bool(images or file_base64),
+                        )
+                    )
+                    if deterministic_simple_record_call:
+                        deterministic_simple_record_fallback_attempted = True
+                        response = {
+                            **response,
+                            "content": "",
+                            "finish_reason": "tool_calls",
+                            "tool_calls": [deterministic_simple_record_call],
+                        }
+                        logger.info(
+                            "[agent_executor] deterministic simple record fallback "
+                            "user=%s record_type=%s",
+                            user_id,
+                            (
+                                self._agent_kernel_snapshot.goal.target_record_type
+                                if self._agent_kernel_snapshot is not None
+                                and self._agent_kernel_snapshot.goal is not None
+                                else "unknown"
+                            ),
+                        )
+
+                if (
+                    isinstance(response, dict)
+                    and not response.get("tool_calls")
                     and not deterministic_goal_lookup_attempted
                 ):
                     deterministic_goal_call = _build_deterministic_goal_lookup_tool_call(
@@ -9086,6 +9341,41 @@ class AgentExecutor:
                             "content": (
                                 "更新操作已执行，但读回核验未覆盖全部目标餐次，"
                                 "因此本轮不能确认已经全部完成。请重试，系统会继续核对现有记录。"
+                            ),
+                        }
+
+                goal = (
+                    self._agent_kernel_snapshot.goal
+                    if self._agent_kernel_snapshot is not None else None
+                )
+                if (
+                    isinstance(response, dict)
+                    and not response.get("tool_calls")
+                    and not receipt_goal_evaluated
+                    and goal is not None
+                    and goal.kind == "simple_health_record"
+                    and write_receipts
+                ):
+                    receipt_goal_evaluated = True
+                    postcondition = verify_goal_postconditions(
+                        goal,
+                        write_receipts=write_receipts,
+                        verification_result=None,
+                    )
+                    if self._agent_kernel_event_bus is not None:
+                        self._agent_kernel_event_bus.goal_evaluated(
+                            satisfied=postcondition.satisfied,
+                            verified_target_count=len(
+                                postcondition.verified_resource_ids
+                            ),
+                            reason=postcondition.reason,
+                        )
+                    if not postcondition.satisfied:
+                        response = {
+                            **response,
+                            "content": (
+                                "记录请求已执行，但没有取得与目标类型一致的可验证回执，"
+                                "因此本轮不能确认已经完成。请重试。"
                             ),
                         }
 

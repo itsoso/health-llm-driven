@@ -50,6 +50,23 @@ UPDATE_SIGNALS = (
 NEGATION_SIGNALS = ("先不要", "暂不", "不要", "不用", "无需", "先别", "别")
 QUESTION_SIGNALS = ("?", "？", "是否", "是不是", "需要", "吗")
 REFERENTIAL_SIGNALS = ("上面", "上述", "这两餐", "这些餐")
+WATER_SIGNALS = ("喝水", "饮水", "补水")
+WATER_AMOUNT_RE = re.compile(
+    r"(?:喝水|饮水|补水)"
+    r"(?:了)?(?:约|大约|差不多)?"
+    r"(?P<amount>\d+(?:\.\d+)?(?:十|百|千|万)?|半|"
+    r"[零〇一二两三四五六七八九十百千万点]+)"
+    r"(?P<unit>毫升|ml|升|l)",
+    re.IGNORECASE,
+)
+SIMPLE_SYMPTOM_BODY_PARTS = (
+    ("respiratory", ("喷嚏", "鼻塞", "流鼻涕", "流涕", "咳嗽", "咳")),
+    ("digestive", ("胃痛", "胃疼", "肚子痛", "腹痛", "恶心", "呕吐", "腹泻")),
+    ("head", ("头痛", "头疼", "头晕", "眩晕")),
+    ("eye", ("眼痛", "眼疼", "眼痒", "眼睛痒")),
+    ("skin", ("皮疹", "皮肤痒", "瘙痒")),
+    ("musculoskeletal", ("腰痛", "腰疼", "关节痛", "关节疼", "肌肉痛")),
+)
 
 
 def compile_goal_spec(
@@ -155,6 +172,56 @@ def _compile_diet_recalculation_goal(
     return None
 
 
+def _compile_simple_health_record_goal(
+    *,
+    envelope: AgentEnvelope,
+    context: ExecutionContext,
+    intent: IntentFrame,
+    actionable_references: Sequence[ActionableReference],
+) -> GoalSpec | None:
+    """Compile narrow create-only records whose payload is user-owned."""
+    del actionable_references
+    text = _normalize(envelope.text)
+    if (
+        envelope.media
+        or intent.primary not in {"write", "mutate"}
+        or intent.operation != "create"
+        or not intent.is_write
+        or _has_any(text, NEGATION_SIGNALS)
+        or _has_any(text, QUESTION_SIGNALS)
+    ):
+        return None
+
+    target_values: tuple[tuple[str, str], ...] = ()
+    if intent.domain == "water" and _has_any(text, WATER_SIGNALS):
+        amount_ml = _water_amount_ml(text)
+        if amount_ml is None:
+            return None
+        record_type = "water"
+        target_values = (("amount_ml", str(amount_ml)),)
+    elif intent.domain == "symptom":
+        symptom_target = _simple_symptom_target(envelope.text)
+        if symptom_target is None:
+            return None
+        record_type = "symptom"
+        target_values = tuple(symptom_target.items())
+    else:
+        return None
+
+    return GoalSpec(
+        kind="simple_health_record",
+        domain=intent.domain,
+        operation="create",
+        target_date=context.current_time.date().isoformat(),
+        target_record_type=record_type,
+        target_values=target_values,
+        requires_verification=True,
+        prohibited_operations=("update", "delete"),
+        postconditions=("verified_receipt",),
+        evidence=("current_user_turn",),
+    )
+
+
 def format_goal_contract_prompt(goal: GoalSpec | None) -> str:
     """Render executor obligations without exposing internal runtime metadata."""
     return _GOAL_PROMPT_REGISTRY.render(goal)
@@ -187,6 +254,134 @@ def _format_diet_recalculation_prompt(goal: GoalSpec) -> str:
         "- 禁止: 使用 health_record 新增饮食记录，或在没有唯一 record_id 时写入。\n"
         "- 完成标准: 每个目标餐次都有可验证更新回执，且读回结果与目标餐次一致。"
     )
+
+
+def _format_simple_health_record_prompt(goal: GoalSpec) -> str:
+    values = dict(goal.target_values)
+    if goal.target_record_type == "water" and values.get("amount_ml"):
+        payload = f"，amount={values['amount_ml']}ml"
+    elif goal.target_record_type == "symptom" and values.get("description"):
+        payload = f"，description={values['description']}"
+    else:
+        payload = ""
+    return (
+        "## 本轮任务契约（必须完整执行）\n"
+        f"- 目标: 只创建 1 条 {goal.target_record_type} 健康记录{payload}。\n"
+        "- 执行: 必须调用 health_record，且只使用当前用户消息中的明确事实。\n"
+        "- 禁止: 改写、删除其他记录，或仅用文字声称已经记录。\n"
+        "- 完成标准: 收到与目标记录类型一致的 verified write receipt 后才能确认成功。"
+    )
+
+
+def _water_amount_ml(text: str) -> int | None:
+    match = WATER_AMOUNT_RE.search(text)
+    if match is None:
+        return None
+    parsed = _parse_number(match.group("amount"))
+    if parsed is None:
+        return None
+    if match.group("unit").lower() in {"升", "l"}:
+        parsed *= 1000
+    amount_ml = int(round(parsed))
+    return amount_ml if 1 <= amount_ml <= 5000 else None
+
+
+def _parse_number(value: str) -> float | None:
+    if value == "半":
+        return 0.5
+    mixed_unit = re.fullmatch(
+        r"(?P<number>\d+(?:\.\d+)?)(?P<unit>十|百|千|万)",
+        value,
+    )
+    if mixed_unit is not None:
+        return float(mixed_unit.group("number")) * {
+            "十": 10,
+            "百": 100,
+            "千": 1000,
+            "万": 10000,
+        }[mixed_unit.group("unit")]
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        pass
+
+    if "点" in value:
+        integer, fraction = value.split("点", 1)
+        integer_value = _parse_chinese_integer(integer)
+        fraction_digits = "".join(
+            str(_CHINESE_DIGITS.get(char, ""))
+            for char in fraction
+        )
+        if integer_value is None or not fraction_digits:
+            return None
+        return float(f"{integer_value}.{fraction_digits}")
+    integer_value = _parse_chinese_integer(value)
+    return float(integer_value) if integer_value is not None else None
+
+
+def _simple_symptom_target(text: str) -> dict[str, str] | None:
+    """Return only a high-confidence symptom payload owned by this user turn."""
+    description = str(text or "").strip("。！？!?；;，, ")
+    if not description:
+        return None
+    normalized = _normalize(description)
+    for body_part, markers in SIMPLE_SYMPTOM_BODY_PARTS:
+        if any(marker in normalized for marker in markers):
+            return {
+                "body_part": body_part,
+                "description": description[:500],
+            }
+    if "症状" in normalized or any(
+        marker in normalized for marker in ("不适", "难受", "不舒服")
+    ):
+        return {
+            "body_part": "general",
+            "description": description[:500],
+        }
+    return None
+
+
+_CHINESE_DIGITS = {
+    "零": 0,
+    "〇": 0,
+    "一": 1,
+    "二": 2,
+    "两": 2,
+    "三": 3,
+    "四": 4,
+    "五": 5,
+    "六": 6,
+    "七": 7,
+    "八": 8,
+    "九": 9,
+}
+_CHINESE_UNITS = {"十": 10, "百": 100, "千": 1000, "万": 10000}
+
+
+def _parse_chinese_integer(value: str) -> int | None:
+    if not value:
+        return 0
+    if all(char in _CHINESE_DIGITS for char in value):
+        return int("".join(str(_CHINESE_DIGITS[char]) for char in value))
+
+    result = 0
+    section = 0
+    digit = 0
+    for char in value:
+        if char in _CHINESE_DIGITS:
+            digit = _CHINESE_DIGITS[char]
+            continue
+        unit = _CHINESE_UNITS.get(char)
+        if unit is None:
+            return None
+        if unit == 10000:
+            section = (section + digit) * unit
+            result += section
+            section = 0
+        else:
+            section += (digit or 1) * unit
+        digit = 0
+    return result + section + digit
 
 
 def _target_meal_types(
@@ -317,6 +512,10 @@ _GOAL_COMPILER_REGISTRY = GoalCompilerRegistry(
             name="diet_recalculation",
             compiler=_compile_diet_recalculation_goal,
         ),
+        GoalCompilerSpec(
+            name="simple_health_record",
+            compiler=_compile_simple_health_record_goal,
+        ),
     )
 )
 
@@ -325,6 +524,10 @@ _GOAL_PROMPT_REGISTRY = GoalPromptRegistry(
         GoalPromptSpec(
             kind="diet_recalculate_update",
             renderer=_format_diet_recalculation_prompt,
+        ),
+        GoalPromptSpec(
+            kind="simple_health_record",
+            renderer=_format_simple_health_record_prompt,
         ),
     )
 )

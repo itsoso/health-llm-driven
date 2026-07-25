@@ -173,3 +173,70 @@ cases:
       requires_verification: true
       prohibited_operations: [create]
       clarification: false
+
+  - id: water_record_explicit_chinese_amount
+    prior_actionable: []
+    user: "记录喝水五百毫升"
+    expected:
+      goal_kind: simple_health_record
+      domain: water
+      operation: create
+      target_date: "2026-07-17"
+      target_meal_types: []
+      target_record_type: water
+      target_values:
+        amount_ml: "500"
+      requires_lookup: false
+      requires_verification: true
+      prohibited_operations: [update, delete]
+      clarification: false
+
+  - id: symptom_record_explicit_observation
+    prior_actionable: []
+    user: "记录刚才打了一个喷嚏"
+    expected:
+      goal_kind: simple_health_record
+      domain: symptom
+      operation: create
+      target_date: "2026-07-17"
+      target_meal_types: []
+      target_record_type: symptom
+      target_values:
+        body_part: respiratory
+        description: "记录刚才打了一个喷嚏"
+      requires_lookup: false
+      requires_verification: true
+      prohibited_operations: [update, delete]
+      clarification: false
+
+  - id: water_question_remains_read_only
+    prior_actionable: []
+    user: "今天一共喝了多少水？"
+    expected:
+      goal_kind: answer
+      domain: water
+      operation: ask
+      target_date: "2026-07-17"
+      target_meal_types: []
+      target_record_type: null
+      target_values: {}
+      requires_lookup: false
+      requires_verification: false
+      prohibited_operations: [create, update]
+      clarification: false
+
+  - id: negated_water_record_never_writes
+    prior_actionable: []
+    user: "先别记录喝水500ml"
+    expected:
+      goal_kind: chat
+      domain: water
+      operation: none
+      target_date: "2026-07-17"
+      target_meal_types: []
+      target_record_type: null
+      target_values: {}
+      requires_lookup: false
+      requires_verification: false
+      prohibited_operations: [create, update]
+      clarification: false

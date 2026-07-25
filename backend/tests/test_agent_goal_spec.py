@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 import yaml
 
 from app.services.agent_kernel.goal_spec import (
@@ -61,6 +62,8 @@ def test_stateful_agent_trajectory_cases_compile_expected_goal():
         assert goal.operation == expected["operation"], case["id"]
         assert goal.target_date == expected["target_date"], case["id"]
         assert list(goal.target_meal_types) == expected["target_meal_types"], case["id"]
+        assert goal.target_record_type == expected.get("target_record_type"), case["id"]
+        assert dict(goal.target_values) == expected.get("target_values", {}), case["id"]
         assert goal.requires_lookup is expected["requires_lookup"], case["id"]
         assert goal.requires_verification is expected["requires_verification"], case["id"]
         assert list(goal.prohibited_operations) == expected["prohibited_operations"], case["id"]
@@ -213,9 +216,101 @@ def test_colloquial_recalculate_and_write_back_resolves_visible_two_meals():
 def test_diet_goal_contract_is_registered_without_changing_public_facade():
     goal = _compile(CASES[0])
 
-    assert registered_goal_compiler_names() == ("diet_recalculation",)
-    assert registered_goal_prompt_kinds() == ("diet_recalculate_update",)
+    assert registered_goal_compiler_names() == (
+        "diet_recalculation",
+        "simple_health_record",
+    )
+    assert registered_goal_prompt_kinds() == (
+        "diet_recalculate_update",
+        "simple_health_record",
+    )
     assert "重新估算并更新" in format_goal_contract_prompt(goal)
     assert format_goal_contract_prompt(
         GoalSpec(kind="chat", domain="general", operation="none")
     ) == ""
+
+
+def test_simple_water_goal_keeps_exact_normalized_amount():
+    water_case = next(
+        case
+        for case in CASES
+        if case["id"] == "water_record_explicit_chinese_amount"
+    )
+
+    goal = _compile(water_case)
+
+    assert goal.kind == "simple_health_record"
+    assert goal.target_record_type == "water"
+    assert dict(goal.target_values) == {"amount_ml": "500"}
+    assert goal.requires_verification is True
+    assert "只创建 1 条 water" in format_goal_contract_prompt(goal)
+
+
+def test_simple_symptom_goal_binds_the_current_user_observation():
+    symptom_case = next(
+        case
+        for case in CASES
+        if case["id"] == "symptom_record_explicit_observation"
+    )
+
+    goal = _compile(symptom_case)
+
+    assert goal.kind == "simple_health_record"
+    assert goal.target_record_type == "symptom"
+    assert dict(goal.target_values) == {
+        "body_part": "respiratory",
+        "description": "记录刚才打了一个喷嚏",
+    }
+    prompt = format_goal_contract_prompt(goal)
+    assert "记录刚才打了一个喷嚏" in prompt
+    assert "只创建 1 条 symptom" in prompt
+
+
+@pytest.mark.parametrize(
+    ("message", "amount_ml"),
+    (
+        ("记录喝水了大约五百毫升", "500"),
+        ("记录饮水半升", "500"),
+        ("记录补水1千毫升", "1000"),
+    ),
+)
+def test_simple_water_goal_normalizes_natural_amount_variants(
+    message, amount_ml
+):
+    context = ExecutionContext.for_test(user_id=1, channel="mobile")
+    envelope = AgentEnvelope(
+        user_id=1,
+        channel="mobile",
+        text=message,
+    )
+    intent = build_intent_frame(envelope, context)
+
+    goal = compile_goal_spec(
+        envelope=envelope,
+        context=context,
+        intent=intent,
+    )
+
+    assert goal.kind == "simple_health_record"
+    assert goal.target_record_type == "water"
+    assert dict(goal.target_values) == {"amount_ml": amount_ml}
+
+
+def test_simple_record_goal_does_not_claim_authority_on_attachment_turn():
+    context = ExecutionContext.for_test(user_id=1, channel="mobile")
+    envelope = AgentEnvelope(
+        user_id=1,
+        channel="mobile",
+        text="记录喝水五百毫升",
+        media=({"kind": "image"},),
+    )
+    intent = build_intent_frame(envelope, context)
+
+    goal = compile_goal_spec(
+        envelope=envelope,
+        context=context,
+        intent=intent,
+    )
+
+    assert goal.kind != "simple_health_record"
+    assert goal.target_record_type is None

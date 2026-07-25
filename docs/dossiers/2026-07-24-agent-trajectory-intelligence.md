@@ -4,8 +4,8 @@
 |---|---|
 | slug | `agent-trajectory-intelligence` |
 | 创建日期 | 2026-07-24 |
-| 当前阶段 | S7 已部署 / G6 真实轨迹待核对 |
-| 状态 | deployed |
+| 当前阶段 | S7 已部署 / 简单记录合同 G4 已通过、待部署 |
+| 状态 | implemented_pending_deploy |
 | 负责 | Codex |
 | 反馈环 | intent corpus / stateful trajectory eval / backend pytest / production trace |
 
@@ -100,6 +100,7 @@ resolve visible card / open task
 - [x] T4 添加批量更新后的读回验证。
 - [x] T5 加入 Agent 回归 Gate 和不含健康正文的目标进度指标。
 - [x] T6 将 Goal compiler、合同 prompt 和 postcondition verifier 改为静态注册机制。
+- [x] T7 将明确饮水/症状写入纳入类型化合同、严格回执和一次性确定性兜底。
 
 ## S5 · 实现摘要
 
@@ -136,6 +137,30 @@ resolve visible card / open task
   返回 `unsupported_goal_verifier`，不得由 Executor 自行推断成功。
 - 注册表只含任务类型和函数引用，不记录用户健康正文；iPhone 本地闭环和 Runtime
   持久化协议未改变。
+
+### 简单健康记录合同
+
+- 明确的饮水创建和症状观察现在编译为 `simple_health_record`，合同保存目标记录类型
+  以及当前消息中的服务端权威参数：饮水保存标准化毫升数，症状保存原始描述和受控
+  body-part 枚举。
+- 中文数字和阿拉伯数字均在服务端解析，当前只接受 `1..5000ml`；问句、否定句、缺少
+  明确数量和带附件的输入不会进入确定性饮水写入；覆盖“五百毫升”“半升”
+  “1千毫升”等常见表达。
+- 模型只输出“已记录”而没有调用工具时，normal 和 multi-model 两条执行路径都会从
+  类型化目标合成一次 `health_record`；执行仍经过既有 ToolGateway、确认策略、
+  Runtime operation fingerprint、写入 checkpoint 和 receipt 提取。
+- 模型提供的写入类型、数值和症状描述不再拥有写入权威；写前统一替换为 Goal 中的
+  canonical payload。模型同轮发出多个等价写入时会得到相同 operation fingerprint，
+  Runtime 只执行一次并复用结果。
+- 无法构造 canonical payload 的损坏 Goal 会 fail-closed：模型写调用被删除，不会回退
+  到模型自填参数。
+- `simple_health_record` 只有在恰好一个回执 `verified=true`、资源 ID 有效且资源类型与
+  目标完全一致时才通过后置条件；错误类型和额外回执都不能被误判为完成。
+- 多模型路径取得简单记录结果后立即终止，不再进入 perspective/synthesis；成功使用
+  服务端确定性确认文案，失败使用确定性未完成文案，综合模型不能覆盖真实回执状态。
+- 症状继续复用已有的当前轮窄授权检查，没有放宽第三方描述、问句、否定句或附件写入
+  权限。
+- Goal 遥测仍只记录 kind、计数和原因码；标准化饮水量与症状正文不会进入 Kernel trace。
 
 ## 历史失败回溯与 Pi-style 架构裁决
 
@@ -194,6 +219,23 @@ resolve visible card / open task
   - synthesis invariants `12/12`
   - health agent core `50/50`
   - trajectory contracts `7/7`
+- 简单健康记录合同 RED/GREEN：
+  - 合同、注册表、回执、Intent 和 TurnSnapshot `37/37`
+  - 无虚假记录完整流式路径 `10/10`
+  - 写入授权、写入结果、CapabilityPolicy、ToolGateway 和 Tool Registry `79/79`
+  - fast routing 与 tool-round routing `83/83`
+  - multi-model 路径 `8/8`
+  - LLM 回归 Gate 自测 `5/5`
+- 权威写入加固复审：
+  - 错误饮水量、错误记录类型、错误症状语义、重复调用、损坏 Goal 和额外回执反例通过
+  - 多模型 verified receipt 终止路径通过，确认未调用 perspective/synthesis
+  - 附件输入不生成简单记录 Goal
+  - 独立代码复审两轮：首轮发现 6 项风险并全部整改；终审 `44 passed`、无剩余 finding
+- 更新后的零成本离线 Gate：
+  - synthesis invariants `12/12`
+  - health agent core `50/50`
+  - trajectory contracts `11/11`
+- Python 编译、`git diff --check` 和文档漂移检查通过。
 - 扩大 Agent 回归：`662 passed`；15 项因本地沙箱禁止连接 PostgreSQL 而未执行，
   9 项批量化验失败隔离复测后 `9/9 passed`；另 1 项为旧模型名断言与当前 Qwen
   路由配置不一致，和本次改动无关。
@@ -208,7 +250,7 @@ resolve visible card / open task
 |---|---|---|
 | G1 准入 | PASS | 直接增强饮食写入闭环和用户体验 |
 | G2 可行性/风险 | PASS | additive、复用现有 Runtime 和 ToolGateway |
-| G3 测试 | PASS | 123 项核心回归 + 662 项扩大回归通过 + 62 项离线不变量 + 7 项轨迹契约 |
-| G4 评审 | PASS | 补齐目标 ID 白名单、多卡最新优先、fail-closed 和隐私遥测 |
+| G3 测试 | PASS | Agent 核心定向回归通过；62 项离线不变量 + 11 项轨迹契约通过；ruff、compileall、文档漂移和 diff 检查通过 |
+| G4 评审 | PASS | 两轮独立复审；补齐 canonical 写入权威、单回执、多模型终止、损坏 Goal fail-closed 和附件反例 |
 | G5 部署健康 | PASS | 精确提交 `069699d69378` 已部署；备份、231 张表恢复演练、站外归档、60/60 健康分和远端 SHA 核验通过 |
 | G6 上线验证 | PENDING | 等待真实会话 trace 和数据库核对 |

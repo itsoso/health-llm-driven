@@ -83,6 +83,53 @@ def _verify_diet_recalculation(
     )
 
 
+def _verify_simple_health_record(
+    goal: GoalSpec,
+    *,
+    write_receipts: Sequence[dict[str, Any]],
+    verification_result: Any,
+) -> PostconditionResult:
+    del verification_result
+    expected_resource_type = {
+        "water": "water_record",
+        "symptom": "symptom_record",
+    }.get(str(goal.target_record_type or "").strip().lower())
+    if expected_resource_type is None:
+        return PostconditionResult(False, "unsupported_record_type")
+
+    receipts = [
+        receipt
+        for receipt in write_receipts
+        if isinstance(receipt, dict)
+    ]
+    if len(receipts) > 1:
+        return PostconditionResult(False, "unexpected_write_receipt_count")
+
+    verified_ids: list[str] = []
+    for receipt in receipts:
+        if (
+            str(receipt.get("resource_type") or "").strip()
+            != expected_resource_type
+            or receipt.get("verified") is not True
+        ):
+            continue
+        resource_id = receipt.get("resource_id")
+        if isinstance(resource_id, bool) or resource_id in (None, ""):
+            continue
+        verified_ids.append(str(resource_id).strip())
+
+    if not verified_ids:
+        return PostconditionResult(
+            False,
+            "write_receipt_type_mismatch" if receipts else "write_receipt_missing",
+        )
+    return PostconditionResult(
+        True,
+        "verified",
+        verified_resource_ids=tuple(verified_ids),
+    )
+
+
 def _diet_receipt_ids(
     write_receipts: Sequence[dict[str, Any]],
 ) -> set[str]:
@@ -131,6 +178,10 @@ _GOAL_VERIFIER_REGISTRY = GoalVerifierRegistry(
         GoalVerifierSpec(
             kind="diet_recalculate_update",
             verifier=_verify_diet_recalculation,
+        ),
+        GoalVerifierSpec(
+            kind="simple_health_record",
+            verifier=_verify_simple_health_record,
         ),
     )
 )

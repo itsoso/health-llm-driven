@@ -228,6 +228,185 @@ async def test_verified_write_still_confirms_record(db, auth_user_and_headers):
     assert len(rounds) == 1, rounds
 
 
+async def test_water_record_without_model_tool_call_uses_one_deterministic_write(
+    db, auth_user_and_headers
+):
+    """A weak model may claim success without calling health_record.
+
+    The server-owned goal must recover the exact amount, execute once through the
+    normal write path, and replace the unverified prose with the verified receipt.
+    """
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    calls = []
+
+    async def fake_call_llm_stream(messages, tools):
+        for ch in "好的，已经记录喝水五百毫升。":
+            yield {"type": "content", "text": ch}
+        yield {"type": "finish", "finish_reason": "stop"}
+
+    async def fake_execute_tool(tool_name, args_raw, user_token):
+        args = json.loads(args_raw) if isinstance(args_raw, str) else args_raw
+        calls.append((tool_name, args))
+        return json.dumps(
+            {
+                "id": 801,
+                "record_id": 801,
+                "resource_type": "water_record",
+                "status": "verified",
+                "success": True,
+                "amount": 500,
+                "message": "已记录饮水 500ml",
+            },
+            ensure_ascii=False,
+        )
+
+    executor._call_llm_stream = fake_call_llm_stream
+    executor._execute_tool = fake_execute_tool
+
+    events = [
+        event async for event in executor.run_stream(
+            user_id=user.id,
+            message="记录喝水五百毫升",
+            user_auth_token="test-token",
+        )
+    ]
+    reply = _tokens(events)
+    done = next(event for event in events if event.get("event") == "done")
+
+    assert calls == [(
+        "health_record",
+        {
+            "record_type": "water",
+            "data": {"amount": 500, "confirmed": True},
+            "confirmed": True,
+        },
+    )]
+    assert reply == "已记录饮水 500ml"
+    assert done["data"]["write_receipts"] == [{
+        "operation_id": "health_record:water_record:801",
+        "status": "verified",
+        "resource_type": "water_record",
+        "resource_id": "801",
+        "completed_at": done["data"]["write_receipts"][0]["completed_at"],
+        "verified": True,
+    }]
+
+
+async def test_water_goal_canonicalizes_wrong_duplicate_model_writes(
+    db, auth_user_and_headers
+):
+    """The model cannot change a typed amount or create two equivalent rows."""
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    calls = []
+
+    async def fake_call_llm_stream(messages, tools):
+        yield {
+            "type": "tool_calls",
+            "tool_calls": [
+                {
+                    "id": "wrong-amount",
+                    "type": "function",
+                    "function": {
+                        "name": "health_record",
+                        "arguments": json.dumps({
+                            "record_type": "water",
+                            "data": {"amount": 300},
+                        }),
+                    },
+                },
+                {
+                    "id": "wrong-type",
+                    "type": "function",
+                    "function": {
+                        "name": "health_record",
+                        "arguments": json.dumps({
+                            "record_type": "symptom",
+                            "data": {
+                                "body_part": "head",
+                                "description": "头痛",
+                            },
+                        }),
+                    },
+                },
+            ],
+        }
+        yield {"type": "finish", "finish_reason": "tool_calls"}
+
+    async def fake_execute_tool(tool_name, args_raw, user_token):
+        args = json.loads(args_raw) if isinstance(args_raw, str) else args_raw
+        calls.append((tool_name, args))
+        return json.dumps(
+            {
+                "id": 811,
+                "record_id": 811,
+                "resource_type": "water_record",
+                "status": "verified",
+                "success": True,
+                "amount": 500,
+                "message": "已记录饮水 500ml",
+            },
+            ensure_ascii=False,
+        )
+
+    executor._call_llm_stream = fake_call_llm_stream
+    executor._execute_tool = fake_execute_tool
+
+    events = [
+        event async for event in executor.run_stream(
+            user_id=user.id,
+            message="记录喝水五百毫升",
+            user_auth_token="test-token",
+            client_turn_id="canonical-water-once",
+        )
+    ]
+    done = next(event for event in events if event.get("event") == "done")
+
+    assert calls == [(
+        "health_record",
+        {
+            "record_type": "water",
+            "data": {"amount": 500, "confirmed": True},
+            "confirmed": True,
+        },
+    )]
+    assert len(done["data"]["write_receipts"]) == 1
+    assert done["data"]["write_receipts"][0]["resource_id"] == "811"
+    assert _tokens(events) == "已记录饮水 500ml"
+
+
+async def test_water_question_never_uses_deterministic_write(
+    db, auth_user_and_headers
+):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    calls = []
+
+    async def fake_call_llm_stream(messages, tools):
+        for ch in "今天已记录饮水 1200ml。":
+            yield {"type": "content", "text": ch}
+        yield {"type": "finish", "finish_reason": "stop"}
+
+    async def fake_execute_tool(tool_name, args_raw, user_token):
+        calls.append(tool_name)
+        return "{}"
+
+    executor._call_llm_stream = fake_call_llm_stream
+    executor._execute_tool = fake_execute_tool
+
+    events = [
+        event async for event in executor.run_stream(
+            user_id=user.id,
+            message="今天一共喝了多少水？",
+            user_auth_token="test-token",
+        )
+    ]
+
+    assert calls == []
+    assert "1200ml" in _tokens(events)
+
+
 async def test_record_intent_with_only_read_tool_cannot_claim_recorded(
     db, auth_user_and_headers
 ):

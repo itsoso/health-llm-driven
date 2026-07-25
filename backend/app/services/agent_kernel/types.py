@@ -129,6 +129,8 @@ class GoalSpec:
     operation: str
     target_date: Optional[str] = None
     target_meal_types: tuple[str, ...] = ()
+    target_record_type: Optional[str] = None
+    target_values: tuple[tuple[str, str], ...] = ()
     reference_foods: tuple[tuple[str, str], ...] = ()
     requires_lookup: bool = False
     requires_verification: bool = False
