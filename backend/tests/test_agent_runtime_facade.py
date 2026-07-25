@@ -399,6 +399,13 @@ async def test_executor_blocks_dynamic_write_when_runtime_circuit_is_unavailable
     assert payload["status"] == "failed"
     assert payload["error_code"] == "runtime_control_unavailable"
     assert dispatch_count == 0
+    assert executor._agent_kernel_event_bus is not None
+    tool_result = next(
+        event
+        for event in executor._agent_kernel_event_bus.events
+        if event.name == "agent.tool_result"
+    )
+    assert tool_result.data["success"] is False
 
 
 async def test_cloud_facade_allows_read_when_runtime_circuit_is_paused(

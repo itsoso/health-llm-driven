@@ -51,6 +51,7 @@ from app.services.agent_turn_outcome import classify_agent_turn_outcome
 from app.services.agent_write_outcome import (
     classify_explicit_write_execution,
     classify_write_execution,
+    result_declares_explicit_failure,
     write_result_declares_non_success,
 )
 from app.services.dynamic_card_persistence import cards_for_persistence
@@ -6722,15 +6723,6 @@ class AgentExecutor:
             and snapshot is not None
             and snapshot.policy_mode == "enforce"
         )
-        if result_text.startswith("[NEEDS_CONFIRMATION]"):
-            if tool_name not in self._agent_kernel_pending_confirmation_tools:
-                self._agent_kernel_pending_confirmation_tools.append(tool_name)
-        elif result_text.startswith("Error:") and not policy_blocked:
-            if tool_name not in self._agent_kernel_tool_failure_tools:
-                self._agent_kernel_tool_failure_tools.append(tool_name)
-        elif not policy_blocked and tool_name in self._agent_kernel_tool_failure_tools:
-            # 同一工具后续重试成功时，只保留未恢复的失败，避免把成功回合计入拒答率。
-            self._agent_kernel_tool_failure_tools.remove(tool_name)
         receipt = None
         if decision is not None and decision.receipt_required:
             receipt = _write_receipt_from_tool_result(
@@ -6738,6 +6730,20 @@ class AgentExecutor:
                 parsed_args,
                 result,
             )
+        explicit_failure = (
+            receipt is None and result_declares_explicit_failure(result)
+        )
+        if result_text.startswith("[NEEDS_CONFIRMATION]"):
+            if tool_name not in self._agent_kernel_pending_confirmation_tools:
+                self._agent_kernel_pending_confirmation_tools.append(tool_name)
+        elif (
+            result_text.startswith("Error:") or explicit_failure
+        ) and not policy_blocked:
+            if tool_name not in self._agent_kernel_tool_failure_tools:
+                self._agent_kernel_tool_failure_tools.append(tool_name)
+        elif not policy_blocked and tool_name in self._agent_kernel_tool_failure_tools:
+            # 同一工具后续重试成功时，只保留未恢复的失败，避免把成功回合计入拒答率。
+            self._agent_kernel_tool_failure_tools.remove(tool_name)
         write_outcome = (
             classify_write_execution(result, receipt=receipt)
             if decision is not None and decision.receipt_required
@@ -6762,6 +6768,7 @@ class AgentExecutor:
             success=(
                 not policy_blocked
                 and not result_text.startswith("Error:")
+                and not explicit_failure
                 and (
                     write_outcome is None
                     or write_outcome.status == "verified"

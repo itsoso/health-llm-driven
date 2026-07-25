@@ -12,7 +12,7 @@ except ImportError:
     psutil = None
 from typing import Literal, Optional
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictInt
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.database import get_db
@@ -29,6 +29,8 @@ class AgentRuntimeRolloutCircuitResponse(BaseModel):
     reason_code: str | None = None
     version: int
     last_evaluated_at: datetime | None = None
+    reconciliation_generation: int
+    reconciliation_acknowledged_generation: int
 
 
 class AgentRuntimeRolloutThresholdsResponse(BaseModel):
@@ -81,6 +83,10 @@ class AgentRuntimeRolloutTransitionResponse(BaseModel):
     changed: bool
     status: Literal["active", "paused"]
     reason_code: str | None = None
+
+
+class AgentRuntimeResumeRequest(BaseModel):
+    expected_reconciliation_generation: StrictInt = Field(ge=0)
 
 
 class AgentRuntimeReconciliationRequest(BaseModel):
@@ -320,6 +326,10 @@ async def get_agent_runtime_rollout(
             "reason_code": state.reason_code,
             "version": state.version,
             "last_evaluated_at": state.last_evaluated_at,
+            "reconciliation_generation": state.reconciliation_generation,
+            "reconciliation_acknowledged_generation": (
+                state.reconciliation_acknowledged_generation
+            ),
         },
         "thresholds": {
             "window_minutes": config["window_minutes"],
@@ -361,16 +371,30 @@ async def pause_agent_runtime_rollout(
     response_model=AgentRuntimeRolloutTransitionResponse,
 )
 async def resume_agent_runtime_rollout(
+    payload: AgentRuntimeResumeRequest,
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ):
     """Idempotently resume future managed admission after operator review."""
-    from app.services.agent_runtime_rollout import AgentRuntimeRolloutService
+    from app.services.agent_runtime_rollout import (
+        AgentRuntimeRolloutService,
+        ReconciliationGenerationMismatch,
+    )
 
     _require_admin(current_user)
-    result = AgentRuntimeRolloutService(db).resume(
-        actor_user_id=current_user.id,
-    )
+    try:
+        result = AgentRuntimeRolloutService(db).resume(
+            actor_user_id=current_user.id,
+            expected_reconciliation_generation=(
+                payload.expected_reconciliation_generation
+            ),
+        )
+    except ReconciliationGenerationMismatch as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="Agent Runtime 状态已变化，请刷新后重新审核。",
+        ) from exc
     return {
         "changed": result.changed,
         "status": result.status,

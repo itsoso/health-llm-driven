@@ -19822,6 +19822,11 @@ export interface components {
             /** Resource Id */
             resource_id?: string | null;
         };
+        /** AgentRuntimeResumeRequest */
+        AgentRuntimeResumeRequest: {
+            /** Expected Reconciliation Generation */
+            expected_reconciliation_generation: number;
+        };
         /** AgentRuntimeRolloutCircuitResponse */
         AgentRuntimeRolloutCircuitResponse: {
             /**
@@ -19835,6 +19840,10 @@ export interface components {
             version: number;
             /** Last Evaluated At */
             last_evaluated_at?: string | null;
+            /** Reconciliation Generation */
+            reconciliation_generation: number;
+            /** Reconciliation Acknowledged Generation */
+            reconciliation_acknowledged_generation: number;
         };
         /** AgentRuntimeRolloutDurationResponse */
         AgentRuntimeRolloutDurationResponse: {
@@ -36382,7 +36391,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentRuntimeResumeRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -36391,6 +36404,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AgentRuntimeRolloutTransitionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

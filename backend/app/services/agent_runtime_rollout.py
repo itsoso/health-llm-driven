@@ -43,6 +43,15 @@ class RolloutConfigurationError(RuntimeError):
     pass
 
 
+class ReconciliationGenerationMismatch(RuntimeError):
+    """The operator reviewed an older reconciliation generation."""
+
+    def __init__(self, *, expected: int, current: int) -> None:
+        super().__init__("reconciliation_generation_mismatch")
+        self.expected = expected
+        self.current = current
+
+
 @dataclass(frozen=True)
 class RuntimeAdmissionDecision:
     managed: bool
@@ -593,9 +602,28 @@ class AgentRuntimeRolloutService:
         self,
         *,
         actor_user_id: int,
+        expected_reconciliation_generation: int,
     ) -> RolloutTransition:
         self._validate_transition("admin", "manual_resume", actor_user_id)
+        if (
+            type(expected_reconciliation_generation) is not int
+            or expected_reconciliation_generation < 0
+        ):
+            raise ValueError("invalid_reconciliation_generation")
         state = self._locked_state()
+        current_generation = int(state.reconciliation_generation)
+        if current_generation != expected_reconciliation_generation:
+            self.db.rollback()
+            logger.warning(
+                "Agent Runtime resume rejected: reconciliation generation changed "
+                "expected=%s current=%s",
+                expected_reconciliation_generation,
+                current_generation,
+            )
+            raise ReconciliationGenerationMismatch(
+                expected=expected_reconciliation_generation,
+                current=current_generation,
+            )
         if state.status == "active":
             self.db.commit()
             return RolloutTransition(False, state.status, state.reason_code)
@@ -604,7 +632,7 @@ class AgentRuntimeRolloutService:
         state.version += 1
         state.updated_by_user_id = actor_user_id
         state.reconciliation_acknowledged_generation = (
-            state.reconciliation_generation
+            expected_reconciliation_generation
         )
         self.db.add(
             AgentRuntimeRolloutEvent(

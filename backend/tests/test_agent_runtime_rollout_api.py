@@ -1,3 +1,5 @@
+import pytest
+
 from app.config import settings
 from app.models.agent_runtime import AgentRuntimeRolloutEvent
 
@@ -53,6 +55,7 @@ def test_rollout_monitoring_requires_admin(
     resume = client.post(
         "/api/v1/monitoring/agent-runtime/resume",
         headers=headers,
+        json={"expected_reconciliation_generation": 0},
     )
     assert status.status_code == 403
     assert pause.status_code == 403
@@ -169,10 +172,12 @@ def test_admin_can_observe_pause_and_resume_without_user_level_data(
     first_resume = client.post(
         "/api/v1/monitoring/agent-runtime/resume",
         headers=headers,
+        json={"expected_reconciliation_generation": 0},
     )
     second_resume = client.post(
         "/api/v1/monitoring/agent-runtime/resume",
         headers=headers,
+        json={"expected_reconciliation_generation": 0},
     )
 
     assert initial.status_code == 200
@@ -181,6 +186,8 @@ def test_admin_can_observe_pause_and_resume_without_user_level_data(
     assert payload["canary_percent"] == 5
     assert payload["allowlist_count"] == 2
     assert payload["circuit"]["status"] == "active"
+    assert payload["circuit"]["reconciliation_generation"] == 0
+    assert payload["circuit"]["reconciliation_acknowledged_generation"] == 0
     assert payload["thresholds"] == {
         "window_minutes": 15,
         "min_terminal_runs": 20,
@@ -222,6 +229,62 @@ def test_admin_can_observe_pause_and_resume_without_user_level_data(
     assert db.query(AgentRuntimeRolloutEvent).count() == 2
 
 
+def test_admin_resume_rejects_stale_reconciliation_generation(
+    client,
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+):
+    from app.services.agent_runtime_rollout import AgentRuntimeRolloutService
+
+    user, headers = auth_user_and_headers
+    user.is_admin = True
+    db.commit()
+    _configure(monkeypatch)
+    rollout = AgentRuntimeRolloutService(db)
+    rollout.pause(
+        actor_kind="system",
+        reason_code="reconciliation_detected",
+    )
+    rollout.record_reconciliation()
+    db.commit()
+
+    stale = client.post(
+        "/api/v1/monitoring/agent-runtime/resume",
+        headers=headers,
+        json={"expected_reconciliation_generation": 0},
+    )
+
+    assert stale.status_code == 409
+    db.expire_all()
+    assert AgentRuntimeRolloutService(db).get_state().status == "paused"
+
+
+@pytest.mark.parametrize(
+    "invalid_generation",
+    [True, 1.0],
+)
+def test_admin_resume_requires_a_strict_integer_generation(
+    client,
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+    invalid_generation,
+):
+    user, headers = auth_user_and_headers
+    user.is_admin = True
+    db.commit()
+    _configure(monkeypatch)
+
+    response = client.post(
+        "/api/v1/monitoring/agent-runtime/resume",
+        headers=headers,
+        json={"expected_reconciliation_generation": invalid_generation},
+    )
+
+    assert response.status_code == 422
+
+
 def test_rollout_admin_api_has_typed_openapi_responses():
     from main import app
 
@@ -235,6 +298,17 @@ def test_rollout_admin_api_has_typed_openapi_responses():
     pause_schema = paths["/api/v1/monitoring/agent-runtime/pause"]["post"][
         "responses"
     ]["200"]["content"]["application/json"]["schema"]
+    resume_operation = paths[
+        "/api/v1/monitoring/agent-runtime/resume"
+    ]["post"]
+    resume_schema = resume_operation["responses"]["200"]["content"][
+        "application/json"
+    ]["schema"]
+    resume_request_schema = resume_operation["requestBody"]["content"][
+        "application/json"
+    ]["schema"]
 
     assert rollout_schema["$ref"].endswith("/AgentRuntimeRolloutStatusResponse")
     assert pause_schema["$ref"].endswith("/AgentRuntimeRolloutTransitionResponse")
+    assert resume_schema["$ref"].endswith("/AgentRuntimeRolloutTransitionResponse")
+    assert resume_request_schema["$ref"].endswith("/AgentRuntimeResumeRequest")

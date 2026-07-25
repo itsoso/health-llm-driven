@@ -163,6 +163,82 @@ async def test_execute_tool_blocks_policy_denied_health_record_before_dispatch(d
 
 
 @pytest.mark.asyncio
+async def test_structured_successful_read_result_remains_successful_in_telemetry(
+    db,
+    monkeypatch,
+):
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._current_turn_user_message = "查询今天的饮水记录"
+
+    monkeypatch.setattr(
+        "app.services.llm.tool_validator.validate_tool_call",
+        lambda tool_name, args, db, user_id, reference_now=None: {
+            "error": None,
+            "data": args,
+        },
+    )
+
+    async def read_success(_base_url, _headers, _args):
+        return '{"status":"success","records":[]}'
+
+    monkeypatch.setattr(executor, "_exec_health_query", read_success)
+
+    result = await executor._execute_tool(
+        "health_query",
+        {"query_type": "water", "date": "today"},
+        None,
+    )
+
+    assert json.loads(result)["status"] == "success"
+    assert executor._agent_kernel_event_bus is not None
+    tool_result = next(
+        event
+        for event in executor._agent_kernel_event_bus.events
+        if event.name == "agent.tool_result"
+    )
+    assert tool_result.data["success"] is True
+
+
+@pytest.mark.asyncio
+async def test_structured_pending_read_result_is_not_a_tool_failure(
+    db,
+    monkeypatch,
+):
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._current_turn_user_message = "查询今天的饮水记录"
+
+    monkeypatch.setattr(
+        "app.services.llm.tool_validator.validate_tool_call",
+        lambda tool_name, args, db, user_id, reference_now=None: {
+            "error": None,
+            "data": args,
+        },
+    )
+
+    async def read_pending(_base_url, _headers, _args):
+        return '{"status":"pending","records":[]}'
+
+    monkeypatch.setattr(executor, "_exec_health_query", read_pending)
+
+    await executor._execute_tool(
+        "health_query",
+        {"query_type": "water", "date": "today"},
+        None,
+    )
+
+    assert executor._agent_kernel_event_bus is not None
+    tool_result = next(
+        event
+        for event in executor._agent_kernel_event_bus.events
+        if event.name == "agent.tool_result"
+    )
+    assert tool_result.data["success"] is True
+    assert "health_query" not in executor._agent_kernel_tool_failure_tools
+
+
+@pytest.mark.asyncio
 async def test_execute_tool_blocks_health_manage_update_in_read_turn(db, monkeypatch):
     executor = AgentExecutor(db)
     executor._current_user_id = 1
@@ -245,6 +321,47 @@ async def test_execute_tool_emits_receipt_for_json_encoded_write_arguments(db, m
     receipt = next(event for event in events if event.name == "agent.write_receipt_verified")
     assert receipt.data["operation_id"] == "health_record:diet_record:9"
     assert receipt.data["resource_id"] == "9"
+
+
+@pytest.mark.asyncio
+async def test_recorded_health_write_with_verified_receipt_is_telemetry_success(
+    db,
+    monkeypatch,
+):
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._current_turn_user_message = "记录午餐吃了牛肉面"
+
+    monkeypatch.setattr(
+        "app.services.llm.tool_validator.validate_tool_call",
+        lambda tool_name, args, db, user_id, reference_now=None: {
+            "error": None,
+            "data": args,
+        },
+    )
+
+    async def fake_exec(_base, _headers, _args):
+        return (
+            '{"status":"recorded","id":42,'
+            '"resource_type":"diet_record","food_items":"牛肉面"}'
+        )
+
+    monkeypatch.setattr(executor, "_exec_health_record", fake_exec)
+
+    await executor._execute_tool(
+        "health_record",
+        {"record_type": "diet", "data": {"food_items": "牛肉面"}},
+        None,
+    )
+
+    assert executor._agent_kernel_event_bus is not None
+    tool_result = next(
+        event
+        for event in executor._agent_kernel_event_bus.events
+        if event.name == "agent.tool_result"
+    )
+    assert tool_result.data["success"] is True
+    assert "health_record" not in executor._agent_kernel_tool_failure_tools
 
 
 @pytest.mark.asyncio
@@ -368,6 +485,13 @@ async def test_agent_media_tool_uses_current_image_and_emits_manual_confirmation
     assert receipt.data["resource_id"] == (
         "aigc_confirm_0123456789abcdef0123456789abcdef"
     )
+    tool_result = next(
+        event
+        for event in executor._agent_kernel_event_bus.events
+        if event.name == "agent.tool_result"
+    )
+    assert tool_result.data["success"] is True
+    assert "draft_aigc_media" not in executor._agent_kernel_tool_failure_tools
 
 
 def test_aigc_media_preview_exposes_categories_without_raw_health_details():

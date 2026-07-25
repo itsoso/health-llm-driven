@@ -208,6 +208,33 @@ def classify_explicit_write_execution(
     return classify_write_execution(payload)
 
 
+def result_declares_explicit_failure(result: Any) -> bool:
+    """Return whether a result declares a hard failure for any tool kind.
+
+    This intentionally excludes nonterminal business states such as
+    ``pending`` and ``processing``. Write-specific callers still use
+    ``classify_write_execution`` to fail closed when a verified receipt is
+    missing; generic telemetry must not turn a valid read or a confirmed
+    persisted draft into a tool failure.
+    """
+    payload = _structured_payload(result)
+    if payload is None:
+        return False
+    if payload.get("success") is False or payload.get("ok") is False:
+        return True
+    error = payload.get("error")
+    if error not in (None, "", False, {}, []):
+        return True
+    status = str(payload.get("status") or "").strip().lower()
+    return status in {
+        *_REJECTED_STATUSES,
+        *_FAILED_STATUSES,
+        "failed",
+        "error",
+        "failure",
+    }
+
+
 def write_result_declares_non_success(
     result: Any,
     *,

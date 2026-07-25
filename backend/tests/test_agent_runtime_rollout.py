@@ -377,8 +377,14 @@ def test_resume_is_manual_idempotent_and_does_not_store_health_text(
         reason_code="reconciliation_detected",
     )
 
-    first = rollout.resume(actor_user_id=user.id)
-    second = rollout.resume(actor_user_id=user.id)
+    first = rollout.resume(
+        actor_user_id=user.id,
+        expected_reconciliation_generation=0,
+    )
+    second = rollout.resume(
+        actor_user_id=user.id,
+        expected_reconciliation_generation=0,
+    )
     decision = rollout.admission_decision(user.id)
 
     assert first.changed is True
@@ -392,6 +398,78 @@ def test_resume_is_manual_idempotent_and_does_not_store_health_text(
     assert "private health" not in serialized
     assert "prompt" not in serialized
     assert "response" not in serialized
+
+
+def test_resume_rejects_a_stale_reconciliation_generation(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+):
+    from app.services.agent_runtime_rollout import (
+        AgentRuntimeRolloutService,
+        ReconciliationGenerationMismatch,
+    )
+
+    user, _headers = auth_user_and_headers
+    _configure(monkeypatch, mode="enforce")
+    rollout = AgentRuntimeRolloutService(db)
+    rollout.pause(
+        actor_kind="system",
+        reason_code="reconciliation_detected",
+    )
+    reviewed_generation = rollout.get_state().reconciliation_generation
+    rollout.record_reconciliation()
+    db.commit()
+
+    with pytest.raises(ReconciliationGenerationMismatch):
+        rollout.resume(
+            actor_user_id=user.id,
+            expected_reconciliation_generation=reviewed_generation,
+        )
+
+    state = rollout.get_state()
+    assert state.status == "paused"
+    assert state.reconciliation_generation == reviewed_generation + 1
+    assert (
+        state.reconciliation_acknowledged_generation
+        < state.reconciliation_generation
+    )
+
+
+def test_active_resume_still_rejects_a_stale_reconciliation_generation(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+):
+    from app.services.agent_runtime_rollout import (
+        AgentRuntimeRolloutService,
+        ReconciliationGenerationMismatch,
+    )
+
+    user, _headers = auth_user_and_headers
+    _configure(monkeypatch, mode="enforce")
+    rollout = AgentRuntimeRolloutService(db)
+    initial_state = rollout.get_state()
+    reviewed_generation = initial_state.reconciliation_generation
+    acknowledged_generation = (
+        initial_state.reconciliation_acknowledged_generation
+    )
+    rollout.record_reconciliation()
+    db.commit()
+
+    with pytest.raises(ReconciliationGenerationMismatch):
+        rollout.resume(
+            actor_user_id=user.id,
+            expected_reconciliation_generation=reviewed_generation,
+        )
+
+    state = rollout.get_state()
+    assert state.status == "active"
+    assert state.reconciliation_generation == reviewed_generation + 1
+    assert (
+        state.reconciliation_acknowledged_generation
+        == acknowledged_generation
+    )
 
 
 def test_manual_pause_preserves_latest_evaluation_counts(
@@ -660,7 +738,11 @@ def test_manual_resume_acknowledges_existing_reconciliation_watermark(
     )
     rollout = AgentRuntimeRolloutService(db)
     first = rollout.evaluate_and_maybe_pause(now=now)
-    rollout.resume(actor_user_id=user.id)
+    reviewed_generation = rollout.get_state().reconciliation_generation
+    rollout.resume(
+        actor_user_id=user.id,
+        expected_reconciliation_generation=reviewed_generation,
+    )
 
     repeated = rollout.evaluate_and_maybe_pause(now=now + timedelta(minutes=1))
 

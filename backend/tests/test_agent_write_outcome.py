@@ -3,6 +3,7 @@ import pytest
 from app.services.agent_write_outcome import (
     classify_explicit_write_execution,
     classify_write_execution,
+    result_declares_explicit_failure,
 )
 
 
@@ -108,3 +109,34 @@ def test_explicit_structured_write_statuses_share_one_classifier(status, expecte
 
 def test_payload_without_explicit_execution_status_is_not_misclassified():
     assert classify_explicit_write_execution({"id": 42}) is None
+
+
+@pytest.mark.parametrize(
+    "result",
+    [
+        {"status": "failed"},
+        {"status": "rejected"},
+        {"success": False},
+        {"ok": False},
+        {"error": "upstream unavailable"},
+    ],
+)
+def test_explicit_failure_detector_accepts_only_hard_failures(result):
+    assert result_declares_explicit_failure(result) is True
+
+
+@pytest.mark.parametrize(
+    "result",
+    [
+        {"status": "success"},
+        {"status": "recorded"},
+        {"status": "pending"},
+        {"status": "processing"},
+        {"status": "pending_user_confirmation"},
+        {"id": 42},
+    ],
+)
+def test_explicit_failure_detector_does_not_reject_nonterminal_or_success_states(
+    result,
+):
+    assert result_declares_explicit_failure(result) is False

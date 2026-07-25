@@ -1306,6 +1306,15 @@ async def test_executor_enforce_mode_ledgers_and_replays_verified_write(
     assert operation.status == "succeeded"
     assert operation.resource_type == "diet_record"
     assert operation.resource_id == "829"
+    assert executor._agent_kernel_event_bus is not None
+    tool_results = [
+        event
+        for event in executor._agent_kernel_event_bus.events
+        if event.name == "agent.tool_result"
+    ]
+    assert len(tool_results) == 2
+    assert tool_results[-1].data["success"] is True
+    assert "health_record" not in executor._agent_kernel_tool_failure_tools
 
 
 @pytest.mark.asyncio
