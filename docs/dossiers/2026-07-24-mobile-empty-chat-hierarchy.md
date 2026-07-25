@@ -3,7 +3,7 @@
 | 字段 | 值 |
 |---|---|
 | slug | `mobile-empty-chat-hierarchy` |
-| 当前阶段 | G4 已通过；新一轮 G5 待发布 |
+| 当前阶段 | G5 已通过；G6 待真机确认 |
 | 状态 | shipping |
 | 负责 | User / Codex |
 
@@ -41,7 +41,7 @@ attachment capabilities.
 | G2 Feasibility and risk | PASS | Client-only presentation contract; no API change |
 | G3 Tests | PASS | 119 focused assertions; TypeScript exit 0; lint exit 0 with 103 existing warnings and 0 errors |
 | G4 Review | PASS | iOS simulator empty, keyboard-open, and wrapped-draft states visually verified; component/page tests verify the refined neutral context rail and keyboard suppression |
-| G5 Deployment health | PENDING | Previous production OTA group `5bc3a53c-5560-4901-a714-ea61cc71a4c0`; refined context hierarchy awaits a new production OTA |
+| G5 Deployment health | PASS | Production OTA group `d8b7739f-cc10-4a8d-be82-faa7f1a5f61e`; iOS update `019f9734-53dd-7dbe-abcd-ecd6190b1fc7`; runtime `1.3.2`; commit `ce418de8a91396988d8751d80830dcbb9fe49548` |
 | G6 Live verification | PENDING | Production-channel Mobile verification |
 
 ## Delivery Notes
@@ -60,5 +60,5 @@ attachment capabilities.
   open; active Agent status and high-severity risk context remain visible.
 - Memory provenance is an inline source row instead of another filled button;
   compact controls retain a 44pt effective hit target through `hitSlop`.
-- Production OTA was published to the `production` channel with message
-  `Simplify empty Agent conversation hierarchy`.
+- The refined hierarchy was published to the `production` channel with message
+  `Quiet Agent context while composing`.
