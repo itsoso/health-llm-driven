@@ -64,8 +64,22 @@ Use a conversation-first, progressively disclosed layout.
 ### 4. Draft or active dictation
 
 - Hide all suggestion surfaces.
+- Hide non-critical Today context while the keyboard owns the viewport.
+- Keep active Agent execution and recoverable failure status visible.
 - Preserve draft and cloud ASR behavior.
 - Show only the send action or active microphone state.
+
+### 5. Today context rail
+
+- Treat due and overdue agenda context as navigation context, not an error
+  banner.
+- Use semantic color on the icon, label, and a narrow leading rail rather than
+  filling the entire row with caution color.
+- Keep the row to one line and no taller than the compact composer.
+- Preserve the stronger tinted treatment for safety-risk context and
+  recoverable Agent failures.
+- Keep both open and dismiss targets at least 44 points without enlarging the
+  visible chrome.
 
 ## Visual Hierarchy
 
@@ -77,8 +91,8 @@ Use a conversation-first, progressively disclosed layout.
 The opener should not look like a nested card. Remove the heavy shadow and use
 paper/surface contrast, a hairline only when needed, and restrained spacing.
 The memory source becomes a single line such as `依据 1 条医嘱`, with a chevron
-to the existing memory screen. Full memory text is not rendered inside the
-opener.
+to the existing memory screen. It uses no filled pill or card background. Full
+memory text is not rendered inside the opener.
 
 ## Accessibility
 
@@ -99,10 +113,13 @@ opener.
 
 - No duplicate `完成了` or duplicate capture action is visible.
 - Opening the keyboard leaves no suggestion rows above the composer.
+- Opening the keyboard removes non-critical Today context but never hides an
+  active or failed Agent turn.
+- Due and overdue context reads as a compact navigation rail rather than an
+  alert banner.
 - Focusing an empty input does not increase composer height.
 - The composer grows only after text wraps and is capped at three lines.
 - The opener remains readable with the keyboard visible.
 - Opener quick replies still send or navigate through their existing handlers.
 - Empty state, onboarding, memory-only, text input, dictation, and attachment
   flows have focused tests.
-

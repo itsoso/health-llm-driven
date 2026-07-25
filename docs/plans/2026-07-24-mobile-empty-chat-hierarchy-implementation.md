@@ -259,6 +259,38 @@ git push origin main
 
 Expected: push succeeds.
 
+### Task 7: Quiet contextual chrome during composition
+
+**Files:**
+- Modify: `mobile/components/chat/ChatTodayFocusCard.tsx`
+- Modify: `mobile/components/chat/EmptyStateHome.tsx`
+- Modify: `mobile/app/(tabs)/chat.tsx`
+- Test: `mobile/components/chat/__tests__/ChatTodayFocusCard.test.tsx`
+- Test: `mobile/components/chat/__tests__/EmptyStateHome.test.tsx`
+- Test: `mobile/app/(tabs)/__tests__/chat.test.tsx`
+
+**Step 1: Write failing tests**
+
+Assert that:
+
+- keyboard visibility removes non-critical Today context;
+- active and failed Agent turn status remains visible while composing;
+- normal and caution context use a compact neutral rail;
+- memory provenance renders without a filled pill.
+
+**Step 2: Implement the state and visual contract**
+
+- Suppress `contextStrip` at the page boundary while the keyboard is visible.
+- Keep `turnStatus` independent from context visibility.
+- Separate navigation-context styling from execution/error styling.
+- Remove the filled background from the memory source affordance while
+  preserving its 44-point effective touch target with `hitSlop`.
+
+**Step 3: Verify**
+
+Run the focused component and page tests, TypeScript, lint, and the same three
+iOS simulator states used by Task 5.
+
 **Step 4: Publish production OTA**
 
 ```bash
@@ -270,4 +302,3 @@ Expected: production update completes successfully and returns an update ID.
 **Step 5: Complete deployment gates**
 
 Record the OTA update ID and production verification outcome in the dossier.
-
