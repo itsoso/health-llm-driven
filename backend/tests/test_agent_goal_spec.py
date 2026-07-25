@@ -314,3 +314,31 @@ def test_simple_record_goal_does_not_claim_authority_on_attachment_turn():
 
     assert goal.kind != "simple_health_record"
     assert goal.target_record_type is None
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "记录早餐鸡蛋和喝水300ml",
+        "记录喝水300ml和喝水200ml",
+        "记录刚才打了一个喷嚏并喝水300ml",
+        "记录刚才打了一个喷嚏和咳嗽一次",
+    ),
+)
+def test_simple_record_goal_does_not_collapse_compound_writes(message):
+    context = ExecutionContext.for_test(user_id=1, channel="mobile")
+    envelope = AgentEnvelope(
+        user_id=1,
+        channel="mobile",
+        text=message,
+    )
+    intent = build_intent_frame(envelope, context)
+
+    goal = compile_goal_spec(
+        envelope=envelope,
+        context=context,
+        intent=intent,
+    )
+
+    assert goal.kind != "simple_health_record"
+    assert goal.target_record_type is None

@@ -67,6 +67,15 @@ SIMPLE_SYMPTOM_BODY_PARTS = (
     ("skin", ("皮疹", "皮肤痒", "瘙痒")),
     ("musculoskeletal", ("腰痛", "腰疼", "关节痛", "关节疼", "肌肉痛")),
 )
+OTHER_RECORD_SIGNALS = {
+    "diet": tuple(signal for signals in MEAL_SIGNALS.values() for signal in signals),
+    "weight": ("体重", "称重"),
+    "blood_pressure": ("血压", "收缩压", "舒张压"),
+    "medication": ("服药", "吃药", "用药"),
+    "supplement": ("补剂", "维生素", "益生菌"),
+    "exercise": ("运动", "跑步", "训练"),
+    "sleep": ("睡觉", "入睡", "起床"),
+}
 
 
 def compile_goal_spec(
@@ -189,6 +198,7 @@ def _compile_simple_health_record_goal(
         or not intent.is_write
         or _has_any(text, NEGATION_SIGNALS)
         or _has_any(text, QUESTION_SIGNALS)
+        or _is_compound_record_request(text, intent.domain)
     ):
         return None
 
@@ -220,6 +230,47 @@ def _compile_simple_health_record_goal(
         postconditions=("verified_receipt",),
         evidence=("current_user_turn",),
     )
+
+
+def _is_compound_record_request(text: str, target_domain: str) -> bool:
+    """Keep one-target canonicalization away from multi-write turns.
+
+    The simple goal guard is intentionally authoritative: every model write is
+    rewritten to its one normalized payload. Applying it to a compound request
+    would collapse distinct writes into one record and let idempotency discard
+    the rest. Compound turns therefore stay on the normal multi-tool path.
+    """
+    water_matches = tuple(WATER_AMOUNT_RE.finditer(text))
+    if target_domain == "water" and len(water_matches) > 1:
+        return True
+
+    symptom_aliases = sorted(
+        {
+            alias
+            for _, aliases in SIMPLE_SYMPTOM_BODY_PARTS
+            for alias in aliases
+            if alias in text
+        },
+        key=len,
+        reverse=True,
+    )
+    distinct_symptoms = [
+        alias
+        for index, alias in enumerate(symptom_aliases)
+        if not any(alias in longer for longer in symptom_aliases[:index])
+    ]
+    if target_domain == "symptom" and len(distinct_symptoms) > 1:
+        return True
+
+    detected_domains: set[str] = set()
+    if water_matches:
+        detected_domains.add("water")
+    if distinct_symptoms:
+        detected_domains.add("symptom")
+    for domain, signals in OTHER_RECORD_SIGNALS.items():
+        if _has_any(text, signals):
+            detected_domains.add(domain)
+    return any(domain != target_domain for domain in detected_domains)
 
 
 def format_goal_contract_prompt(goal: GoalSpec | None) -> str:
