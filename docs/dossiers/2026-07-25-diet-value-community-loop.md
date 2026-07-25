@@ -123,7 +123,16 @@ S7 / G6 pending：功能、契约、迁移、隐私、回归、后端部署和 p
 | Gate | 状态 | 依据 |
 |---|---|---|
 | G2 可行性+安全 | PASS | 数据库唯一约束为真源；owner-scoped 查询；删除后允许重新发布；目标安全状态不增加体重入口 |
-| G3 测试 | PASS | 社区/饮食回执后端完整回归 27 项；迁移语义 1 项；Mobile 页面和服务 9 项；TypeScript、lint、design token 通过 |
+| G3 测试 | PASS | 社区/饮食回执后端完整回归 27 项；迁移语义 1 项；Mobile 页面和服务 12 项；TypeScript、lint、design token 通过 |
 | G4 安全/隐私 | PASS | 查询仅返回当前用户来源分享；公开投影未扩大；社区失败不影响私人饮食记录 |
-| G5 部署健康 | PENDING | 等待本轮精确提交、生产迁移、后端健康检查和 production OTA |
+| G5 部署健康 | PASS | 后端 `c127aed7` 精确部署；迁移已应用；生产健康分 `60/60`；production OTA 已发布并回读校验 |
 | G6 上线验证 | PENDING | 等待真机验证状态恢复、反应回滚和旧体重入口 |
+
+### Phase 2 G5 部署证据
+
+- 后端从精确提交 `c127aed7999da76948369244f6a866df7e97f28e` 部署；
+- PostgreSQL 备份、234 张表恢复演练、站外加密归档及 HMAC 校验通过；
+- 迁移 `20260725_180000_community_source_idempotency` 已应用；
+- 后端、Celery 和知识库索引重启完成，部署健康分 `60/60`，Skills `22/22`；
+- production OTA runtime `1.3.2`，update group `4a82d916-f996-4725-ba08-0a83fbca202b`，iOS update `019f98cf-bb74-750c-abc7-bb373046d1bc`；
+- OTA 脚本已回读校验 update group、iOS update 和提交锚点 `c127aed7`。
