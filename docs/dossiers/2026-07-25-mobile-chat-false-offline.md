@@ -51,6 +51,16 @@
 - 提交锚点 `5185ff7103d4844ea51438b92c12b1a87143fe1a`；
 - OTA 脚本已回读校验 update group、iOS update 和提交锚点。
 
+## TestFlight Build 237
+
+- 从干净 `main` 提交 `f6e4308c` 执行 EAS production 构建和自动提交；
+- App Version `1.3.2`，Build `237`，EAS Build ID `7a7df837-50b8-46ed-97a8-983fc8ea3a07`；
+- EAS Submission ID `e8202581-365c-4c6a-83c5-16b6b92928b0`；
+- EAS 已完成 App Store distribution 构建，Apple 已确认二进制上传成功；
+- App Store Connect Build ID `caeb6880-2fae-41a9-8324-58156b8e4ac3`；
+- App Store Connect API 回读 `processingState=VALID`、`expired=false`、`internalBuildState=IN_BETA_TESTING`，Build 237 已可供内部 TestFlight 安装；
+- 外部状态为 `READY_FOR_BETA_SUBMISSION`，本轮未提交外部 Beta Review。
+
 ## 当前检查点
 
 S7 / G6 pending：根因、修复、本地回归与 production OTA 已完成，等待真机从相机/相册返回后立即发送图片验证。
