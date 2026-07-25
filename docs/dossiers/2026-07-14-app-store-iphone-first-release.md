@@ -179,5 +179,6 @@ RequirementAdmission:
 - 修复前台通知横幅竞态：旧通知的退出动画被新通知替换时，只有动画真实完成且标识仍匹配才允许清空当前横幅，防止新通知被旧回调误删。
 - 修复训练详情异步串页：训练切换时立即重置分析状态并取消旧请求的状态写回，避免较慢的上一条训练分析覆盖当前训练。
 - 新增三项回归测试，先证明旧实现会继续播放、清除新通知及写回过期训练分析，再验证修复。定向测试在 `--detectOpenHandles` 下 3 suites / 5 tests 通过；TypeScript 和改动文件 ESLint 通过；Mobile 全量回归 278 suites / 2083 passed / 1 skipped / 1 snapshot passed。
+- 提交 `3c680aa54b75437105643002403234aa7db855bc` 已推送 `main` 并发布至 iOS production OTA/runtime 1.3.2：update group `ba275b4d-2a7c-4fd6-bc22-0cc01dfabb97`，iOS update `019f99d6-c363-7f21-a9cb-ed6508729a74`。该 OTA 只包含当前原生接口可承载的 JS/TS 修复，不替代 Build 237 的同 Build 真机 G6。
 - 2026-07-24 新发布的 `brace-expansion` 高危 DoS 公告会被 `npm audit --omit=dev` 报告为 37 条传递性路径。当前路径来自 React Native、Expo 配置插件、Voice/Health 原生模块的 Node 构建工具，不进入 iOS JS bundle，也没有把用户输入传给 Node glob/brace 展开。上游仅为 5.x 发布兼容补丁，强制修复会升级 React Native 主版本，因此本轮记录为构建时残余风险，不做破坏性强升；每个候选版本继续重跑 audit，出现运行时可达路径、critical 或兼容补丁后未升级时阻断发布。
 - 严格 final-submit gate 仍按预期失败：Build 237 物理 iPhone 20 项验收、同 Build 截图集、App Privacy 已发布确认、受监管医疗器械声明 `No`、发布机 App Store Connect 凭据与 Review 联系/演示账号注入尚未在本工作区完成。submission pack 与 Review Notes 必须保持 Draft。
