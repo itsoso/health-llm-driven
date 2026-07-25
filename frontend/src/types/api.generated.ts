@@ -20674,17 +20674,13 @@ export interface components {
         Body_import_apple_health_api_v1_devices_apple_import_post: {
             /**
              * File
-             * Format: binary
              * @description Apple Health 导出的 XML 文件
              */
             file: string;
         };
         /** Body_import_medical_exam_from_csv_api_v1_medical_exams_import_csv_post */
         Body_import_medical_exam_from_csv_api_v1_medical_exams_import_csv_post: {
-            /**
-             * File
-             * Format: binary
-             */
+            /** File */
             file: string;
             /** Exam Info */
             exam_info?: Record<string, never>;
@@ -20693,7 +20689,6 @@ export interface components {
         Body_import_medical_exam_from_image_api_v1_medical_exams_import_image_post: {
             /**
              * File
-             * Format: binary
              * @description 体检报告图片 (jpg/png/heic/webp)
              */
             file: string;
@@ -20702,7 +20697,6 @@ export interface components {
         Body_import_medical_exam_from_pdf_api_v1_medical_exams_import_pdf_post: {
             /**
              * File
-             * Format: binary
              * @description PDF文件
              */
             file: string;
@@ -20713,7 +20707,10 @@ export interface components {
             grant_type?: string | null;
             /** Username */
             username: string;
-            /** Password */
+            /**
+             * Password
+             * Format: password
+             */
             password: string;
             /**
              * Scope
@@ -20722,14 +20719,16 @@ export interface components {
             scope: string;
             /** Client Id */
             client_id?: string | null;
-            /** Client Secret */
+            /**
+             * Client Secret
+             * Format: password
+             */
             client_secret?: string | null;
         };
         /** Body_parse_pdf_preview_api_v1_medical_exams_parse_pdf_preview_post */
         Body_parse_pdf_preview_api_v1_medical_exams_parse_pdf_preview_post: {
             /**
              * File
-             * Format: binary
              * @description PDF文件
              */
             file: string;
@@ -20738,17 +20737,13 @@ export interface components {
         Body_recognize_prescription_image_api_v1_prescriptions_recognize_post: {
             /**
              * File
-             * Format: binary
              * @description 处方图片 (jpg/png/heic/webp)
              */
             file: string;
         };
         /** Body_upload_avatar_api_v1_users_me_avatar_post */
         Body_upload_avatar_api_v1_users_me_avatar_post: {
-            /**
-             * File
-             * Format: binary
-             */
+            /** File */
             file: string;
         };
         /** Body_upload_course_files_api_v1_knowledge_documents_course_files_post */
@@ -20777,10 +20772,7 @@ export interface components {
         };
         /** Body_upload_document_api_v1_knowledge_documents_upload_post */
         Body_upload_document_api_v1_knowledge_documents_upload_post: {
-            /**
-             * File
-             * Format: binary
-             */
+            /** File */
             file: string;
             /** Source */
             source: string;
@@ -20792,10 +20784,7 @@ export interface components {
         };
         /** Body_upload_image_api_v1_upload_image_post */
         Body_upload_image_api_v1_upload_image_post: {
-            /**
-             * File
-             * Format: binary
-             */
+            /** File */
             file: string;
             /**
              * Category
@@ -32022,6 +32011,10 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+            /** Input */
+            input?: unknown;
+            /** Context */
+            ctx?: Record<string, never>;
         };
         /** VariantBatchCreateRequest */
         VariantBatchCreateRequest: {
