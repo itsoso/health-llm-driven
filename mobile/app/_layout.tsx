@@ -1,6 +1,6 @@
 import { configureSentryForAppMode, Sentry, SENTRY_ENABLED } from '../applib/sentry';
 
-import React, { useEffect, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { focusManager } from '@tanstack/react-query';
@@ -33,6 +33,8 @@ import {
   StyleSheet,
   AppState,
   Platform,
+  Pressable,
+  Text,
 } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
@@ -45,8 +47,9 @@ export const unstable_settings = {
 function AppContent() {
   const { c } = useTheme();
   const styles = useMemo(() => createStyles(c), [c]);
-  const { isAuthenticated, user } = useAuth();
-  const { session, isLoading } = useAppSession();
+  const { isAuthenticated, user, retrySession } = useAuth();
+  const { session, isLoading, errorCode } = useAppSession();
+  const [sessionRecoveryError, setSessionRecoveryError] = useState(false);
   const cloudActive = session?.mode === 'cloud_account' && isAuthenticated;
   const { isLocked, authenticate } = useBiometricLock(cloudActive);
   const releaseCapabilities = getReleaseCapabilities();
@@ -80,10 +83,47 @@ function AppContent() {
     }
   }, [authenticate, isLocked, cloudActive]);
 
+  const recoverSession = useCallback(async () => {
+    setSessionRecoveryError(false);
+    try {
+      await retrySession();
+    } catch {
+      setSessionRecoveryError(true);
+    }
+  }, [retrySession]);
+
+  useEffect(() => {
+    if (errorCode === 'session_recovery_required') {
+      void recoverSession();
+    }
+  }, [errorCode, recoverSession]);
+
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={c.brand} />
+      </View>
+    );
+  }
+
+  if (errorCode === 'session_recovery_required') {
+    return (
+      <View style={styles.sessionRecoveryContainer}>
+        <ActivityIndicator size="small" color={c.brand} />
+        <Text style={styles.sessionRecoveryTitle}>正在恢复登录状态</Text>
+        <Text style={styles.sessionRecoveryBody}>
+          {sessionRecoveryError ? '网络暂时不可用，登录信息仍已安全保留。' : '正在连接服务，请稍候。'}
+        </Text>
+        {sessionRecoveryError ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="重新连接"
+            onPress={() => void recoverSession()}
+            style={styles.sessionRecoveryButton}
+          >
+            <Text style={styles.sessionRecoveryButtonText}>重新连接</Text>
+          </Pressable>
+        ) : null}
       </View>
     );
   }
@@ -219,5 +259,39 @@ const createStyles = (c: ColorPalette) => StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: c.bgPrimary,
+  },
+  sessionRecoveryContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 32,
+    backgroundColor: c.bgPrimary,
+  },
+  sessionRecoveryTitle: {
+    marginTop: 6,
+    color: c.labelPrimary,
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  sessionRecoveryBody: {
+    color: c.labelSecondary,
+    fontSize: 14,
+    lineHeight: 21,
+    textAlign: 'center',
+  },
+  sessionRecoveryButton: {
+    minHeight: 44,
+    marginTop: 8,
+    paddingHorizontal: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+    backgroundColor: c.brand,
+  },
+  sessionRecoveryButtonText: {
+    color: c.bgCard,
+    fontSize: 15,
+    fontWeight: '600',
   },
 });

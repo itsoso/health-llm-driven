@@ -195,3 +195,11 @@ RequirementAdmission:
 - TDD 新增认证旧结果、旧 401、存储删除/写入竞态和本地日期回归。重放并发图片保存修复后的 Mobile 全量回归为 278 suites / 2090 passed / 1 skipped / 1 snapshot passed；TypeScript、设计 token、App Store submission preflight、release pack 和 `git diff --check` 通过；lint 为 0 errors / 93 个既有 warnings。生产依赖 audit 通过，仅保留 `brace-expansion` 至 2026-08-15 的构建时窄例外。
 - 本轮全部为 JS/TS 变更，不新增原生权限、隐私数据类别或原生模块，可发布 production OTA；OTA 不能代替 Build 237 的物理 iPhone G6 和同 Build 截图复核。
 - G6 继续 `BLOCKED`：Build 237 物理 iPhone 20 项验收、同 Build 截图、App Privacy 发布确认、受监管医疗器械状态 `No` 及最终 Review 联系/演示账号资料仍须人工完成。上述证据齐全前不得移除 Draft 或点击 Submit for Review。
+
+## 2026-07-26 Login Persistence Recovery
+
+- 真实 iPhone 验收发现：用户成功登录后终止并重新启动 Build 237，客户端仍可能回到登录页。根因有两条：登录接口只要后端成功就允许 token 仅留在内存，即使 SecureStore 与共享 Keychain 都没有可靠落盘；冷启动已读到 token 但 `/auth/me` 因临时网络错误失败时，路由层把“用户资料待恢复”误判成未登录。
+- 登录成功条件改为 durable write：SecureStore 或共享 Keychain 至少一处必须写入并读回完全相同的 token，否则清理运行时 token 并提示“登录状态无法安全保存”，禁止制造下次冷启动必丢的假成功。共享 Keychain 原生模块返回非零 OSStatus 时也会显式失败，不再把 resolved Promise 当成写入成功。
+- 会话恢复成为独立 UI 状态：已持有 token 但用户资料暂未恢复时显示“正在恢复登录状态”，自动重试并允许手动重新连接；只有明确的 401 才清理 token 并回到登录页，断网、切换 App 或服务短暂不可用不会要求二次登录。
+- TDD 覆盖双存储失败、写后不可读、登出与新登录并发、token 存在但用户资料待恢复。Mobile 全量回归 278 suites / 2092 passed / 1 skipped / 1 snapshot passed，TypeScript 通过，改动文件 ESLint 0 errors（保留既有 import/require warnings）。
+- 本轮为 JS/TS 修复，可通过 runtime 1.3.2 production OTA 下发。G6 在 OTA 后仍需用 Build 237 做“登录一次 -> 终止进程 -> 重启 -> 进入 Agent 页面”的 USB 真机验证；验证通过前不得把登录持久化标记为最终完成。

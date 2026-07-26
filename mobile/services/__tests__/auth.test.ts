@@ -51,8 +51,24 @@ const mockedReadShared = readTokenFromSharedKeychain as jest.MockedFunction<type
 const mockedSetRuntimeToken = setRuntimeAuthToken as jest.MockedFunction<typeof setRuntimeAuthToken>;
 
 describe('services/auth', () => {
+  let secureItems: Record<string, string>;
+
   beforeEach(() => {
     jest.clearAllMocks();
+    secureItems = {};
+    (SecureStore.setItemAsync as jest.Mock).mockImplementation(
+      async (key: string, value: string) => {
+        secureItems[key] = value;
+      },
+    );
+    (SecureStore.getItemAsync as jest.Mock).mockImplementation(
+      async (key: string) => secureItems[key] ?? null,
+    );
+    (SecureStore.deleteItemAsync as jest.Mock).mockImplementation(
+      async (key: string) => {
+        delete secureItems[key];
+      },
+    );
     mockedSave.mockResolvedValue(0);
     mockedDelete.mockResolvedValue(undefined);
     mockedReadShared.mockResolvedValue(null);
@@ -114,13 +130,14 @@ describe('services/auth', () => {
       (SecureStore.setItemAsync as jest.Mock).mockRejectedValueOnce(
         new Error('keychain transiently locked'),
       );
+      mockedReadShared.mockResolvedValue('tok_fallback');
 
       await expect(login('alice', 'hunter2')).resolves.toBeDefined();
       expect(mockedSetRuntimeToken).toHaveBeenCalledWith('tok_fallback');
       expect(mockedSave).toHaveBeenCalledWith('tok_fallback');
     });
 
-    it('双存储全挂也不抛 — 内存态兜底,只 warn', async () => {
+    it('rejects false login success when neither secure store can read the token back', async () => {
       mockedApi.post.mockResolvedValueOnce({
         data: {
           access_token: 'tok_memory_only',
@@ -131,8 +148,24 @@ describe('services/auth', () => {
       (SecureStore.setItemAsync as jest.Mock).mockRejectedValueOnce(new Error('locked'));
       mockedSave.mockRejectedValueOnce(new Error('no module'));
 
-      await expect(login('alice', 'hunter2')).resolves.toBeDefined();
+      await expect(login('alice', 'hunter2')).rejects.toThrow('登录状态无法安全保存');
       expect(mockedSetRuntimeToken).toHaveBeenCalledWith('tok_memory_only');
+      expect(mockedSetRuntimeToken).toHaveBeenLastCalledWith(null);
+    });
+
+    it('does not accept a resolved shared-keychain write until the same token is readable', async () => {
+      mockedApi.post.mockResolvedValueOnce({
+        data: {
+          access_token: 'tok_unreadable',
+          token_type: 'bearer',
+          user: { id: 7, username: 'alice' },
+        },
+      } as never);
+      (SecureStore.setItemAsync as jest.Mock).mockRejectedValue(new Error('locked'));
+      mockedSave.mockResolvedValue(0);
+      mockedReadShared.mockResolvedValue(null);
+
+      await expect(login('alice', 'hunter2')).rejects.toThrow('登录状态无法安全保存');
     });
   });
 
@@ -226,6 +259,9 @@ describe('services/auth', () => {
         async (_key: string, value: string) => {
           storedToken = value;
         },
+      );
+      (SecureStore.getItemAsync as jest.Mock).mockImplementation(
+        async () => storedToken,
       );
       mockedApi.post.mockResolvedValueOnce({
         data: {

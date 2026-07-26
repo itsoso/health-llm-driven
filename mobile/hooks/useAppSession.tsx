@@ -21,7 +21,7 @@ export type AppSession = {
 type AppSessionContextValue = {
   session: AppSession | null;
   isLoading: boolean;
-  errorCode: null;
+  errorCode: 'session_recovery_required' | null;
 };
 
 const AppSessionContext = createContext<AppSessionContextValue>({
@@ -47,8 +47,10 @@ function CloudSessionProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AppSessionContextValue>(() => ({
     session,
     isLoading: auth.isLoading,
-    errorCode: null,
-  }), [auth.isLoading, session]);
+    errorCode: !auth.isLoading && auth.isAuthenticated && !auth.user
+      ? 'session_recovery_required'
+      : null,
+  }), [auth.isAuthenticated, auth.isLoading, auth.user, session]);
 
   return <AppSessionContext.Provider value={value}>{children}</AppSessionContext.Provider>;
 }

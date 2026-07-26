@@ -38,6 +38,7 @@ function Probe() {
     <>
       <Text testID="loading">{String(app.isLoading)}</Text>
       <Text testID="mode">{app.session?.mode ?? 'none'}</Text>
+      <Text testID="error">{app.errorCode ?? 'none'}</Text>
     </>
   );
 }
@@ -75,6 +76,22 @@ describe('AppSessionProvider cloud-only runtime', () => {
 
     expect(screen.getByTestId('mode')).toHaveTextContent('none');
     expect(screen.getByTestId('loading')).toHaveTextContent('false');
+    expect(screen.getByTestId('error')).toHaveTextContent('none');
     expect(mockRestoreCloudSession).toBe(true);
+  });
+
+  it('keeps a persisted token in session recovery instead of routing back to login', () => {
+    mockAuth = {
+      user: null,
+      token: 'persisted-token',
+      isLoading: false,
+      isAuthenticated: true,
+    };
+
+    const screen = render(<AppSessionProvider><Probe /></AppSessionProvider>);
+
+    expect(screen.getByTestId('mode')).toHaveTextContent('none');
+    expect(screen.getByTestId('loading')).toHaveTextContent('false');
+    expect(screen.getByTestId('error')).toHaveTextContent('session_recovery_required');
   });
 });

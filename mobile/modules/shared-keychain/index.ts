@@ -18,7 +18,11 @@ if (Platform.OS === 'ios') {
 }
 
 export async function saveTokenToSharedKeychain(token: string): Promise<number> {
-  return SharedKeychain.saveToken(token);
+  const status = await SharedKeychain.saveToken(token);
+  if (typeof status === 'number' && status !== 0) {
+    throw new Error(`Shared keychain rejected token write (OSStatus ${status})`);
+  }
+  return status;
 }
 
 export async function deleteTokenFromSharedKeychain(): Promise<void> {

@@ -60,9 +60,9 @@ function serializeTokenStorageMutation(operation: () => Promise<void>): Promise<
 }
 
 /**
- * 持久化登录 token。永不 throw:后端登录已成功时,存储层瞬时故障
- * (iOS 更新窗口 SecureStore 可能短暂不可用)不应让登录"失败"——
- * 双写 SecureStore + 共享 keychain,全挂也保留内存态并 warn。
+ * Persist a login token only after at least one native store can read the
+ * exact value back. A memory-only login looks successful but disappears on
+ * the next process launch, which is worse than an actionable login error.
  */
 async function persistToken(token: string): Promise<void> {
   if (!isUsableNativeAuthToken(token)) {
@@ -70,26 +70,36 @@ async function persistToken(token: string): Promise<void> {
     throw new Error('登录服务返回了无效的原生访问凭证');
   }
 
-  // Install synchronously before touching either native store. The
-  // authenticated UI can mount immediately after this function resolves, and
-  // all of its first requests must already have a reliable bearer token.
-  setRuntimeAuthToken(token);
-
   await serializeTokenStorageMutation(async () => {
-    let secureStoreOk = false;
+    setRuntimeAuthToken(token);
+    let durable = false;
+
     try {
       await SecureStore.setItemAsync(TOKEN_KEY, token);
-      secureStoreOk = true;
+      durable = (await SecureStore.getItemAsync(TOKEN_KEY)) === token;
+      if (!durable) {
+        console.warn('[auth] SecureStore token verification failed');
+      }
     } catch (e) {
       console.warn('[auth] SecureStore write failed, relying on shared keychain:', e);
     }
+
     try {
       await saveTokenToSharedKeychain(token);
+      const sharedToken = await readTokenFromSharedKeychain();
+      durable = durable || sharedToken === token;
     } catch (e) {
-      if (!secureStoreOk) {
-        console.warn('[auth] shared keychain write also failed — 登录态仅存内存,冷启动需重登:', e);
+      if (!durable) {
+        console.warn('[auth] shared keychain token persistence failed:', e);
       }
     }
+
+    if (!durable) {
+      setRuntimeAuthToken(null);
+      throw new Error('登录状态无法安全保存，请解锁设备后重试');
+    }
+
+    setRuntimeAuthToken(token);
   });
 }
 

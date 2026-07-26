@@ -30,6 +30,7 @@ interface AuthState {
   login: (username: string, password: string) => Promise<void>;
   loginByPhoneCode: (phone: string, code: string) => Promise<void>;
   logout: () => Promise<void>;
+  retrySession: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthState>({
@@ -40,6 +41,7 @@ const AuthContext = createContext<AuthState>({
   login: async () => {},
   loginByPhoneCode: async () => {},
   logout: async () => {},
+  retrySession: async () => {},
 });
 
 function sleep(ms: number): Promise<void> {
@@ -79,6 +81,24 @@ export function AuthProvider({
     setUser(null);
     await logoutApi();
   }, []);
+
+  const retrySession = useCallback(async () => {
+    const recoveryEpoch = sessionEpochRef.current;
+    const saved = token || await restoreSavedToken();
+    if (!saved || sessionEpochRef.current !== recoveryEpoch) return;
+
+    setToken(saved);
+    saveTokenToSharedKeychain(saved).catch(() => {});
+    try {
+      const me = await fetchCurrentUser();
+      if (sessionEpochRef.current === recoveryEpoch) setUser(me);
+    } catch (error) {
+      if (sessionEpochRef.current === recoveryEpoch && isUnauthorizedError(error)) {
+        await clearSession();
+      }
+      throw error;
+    }
+  }, [clearSession, token]);
 
   // A 401 from an authenticated endpoint means the persisted credential is no
   // longer usable. Keeping it would route the user into an authenticated shell
@@ -149,18 +169,7 @@ export function AuthProvider({
       void (async () => {
         const recoveryEpoch = sessionEpochRef.current;
         try {
-          if (!token) {
-            const saved = await restoreSavedToken();
-            if (saved && sessionEpochRef.current === recoveryEpoch) {
-              setToken(saved);
-              saveTokenToSharedKeychain(saved).catch(() => {});
-              const me = await fetchCurrentUser();
-              if (sessionEpochRef.current === recoveryEpoch) setUser(me);
-            }
-          } else if (!user) {
-            const me = await fetchCurrentUser();
-            if (sessionEpochRef.current === recoveryEpoch) setUser(me);
-          }
+          if (!token || !user) await retrySession();
         } catch (error) {
           if (sessionEpochRef.current === recoveryEpoch && isUnauthorizedError(error)) {
             await clearSession();
@@ -169,7 +178,7 @@ export function AuthProvider({
       })();
     });
     return () => sub.remove();
-  }, [token, user, isLoading, clearSession, restoreCloudSession]);
+  }, [token, user, isLoading, clearSession, restoreCloudSession, retrySession]);
 
   const login = useCallback(async (username: string, password: string) => {
     const result = await loginApi(username, password);
@@ -196,7 +205,16 @@ export function AuthProvider({
 
   return (
     <AuthContext.Provider
-      value={{ user, token, isLoading, isAuthenticated, login, loginByPhoneCode, logout }}
+      value={{
+        user,
+        token,
+        isLoading,
+        isAuthenticated,
+        login,
+        loginByPhoneCode,
+        logout,
+        retrySession,
+      }}
     >
       {children}
     </AuthContext.Provider>
