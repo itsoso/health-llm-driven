@@ -1,7 +1,6 @@
 """Medication intake creates only the minimum definition after server confirmation."""
 import json
 from datetime import datetime
-import json
 from zoneinfo import ZoneInfo
 
 import pytest
