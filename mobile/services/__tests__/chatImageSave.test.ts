@@ -60,6 +60,17 @@ describe('saveChatImageToLibrary', () => {
     expect(mockSaveToLibraryAsync).toHaveBeenCalledWith('file:///tmp/meal.png');
   });
 
+  it('normalizes an iOS view-shot absolute path before saving it', async () => {
+    await saveChatImageToLibrary({
+      uri: '/private/var/mobile/Containers/Data/Application/app/tmp/diet-card.png',
+    });
+
+    expect(mockDownloadAsync).not.toHaveBeenCalled();
+    expect(mockSaveToLibraryAsync).toHaveBeenCalledWith(
+      'file:///private/var/mobile/Containers/Data/Application/app/tmp/diet-card.png',
+    );
+  });
+
   it('fails clearly when Photos permission is denied', async () => {
     mockRequestPermissionsAsync.mockResolvedValueOnce({ granted: false });
 
