@@ -709,13 +709,18 @@ async def test_medication_lookup_corrupt_json_no_raw_error_leak(db):
         user_token="t",
     )
     s = str(result)
-    # 不得泄漏 python json 异常 / 原始 JSON / "Error:" 机器文案
+    # 不得泄漏 Python JSON 异常、原始 JSON 或旧式 Error 机器文案。
     assert "Invalid control character" not in s
     assert "Extra data" not in s
     assert "用药记录失败" not in s
     assert '"is_active"' not in s  # 不回吐原始 JSON
-    assert s.startswith("Error:")
-    assert "确认计划未能建立" in s
+    assert not s.startswith("Error:")
+    payload = json.loads(s)
+    assert payload["status"] == "rejected"
+    assert payload["success"] is False
+    assert payload["dispatch_started"] is False
+    assert payload["error_code"] == "medication_plan_context_missing"
+    assert "确认计划未能建立" in payload["message"]
 
 
 @pytest.mark.asyncio
