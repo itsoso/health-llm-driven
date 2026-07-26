@@ -3,8 +3,8 @@
 | 字段 | 值 |
 |---|---|
 | date | 2026-07-25 |
-| status | building |
-| current_stage | S5 |
+| status | complete |
+| current_stage | S8 complete |
 | owner_surface | Agent Runtime / health writes |
 
 ## Incident
@@ -98,15 +98,24 @@ classification, content-free telemetry, and unchanged fail-closed write
 boundaries. Production resume must stop on `409`; it must not automatically
 adopt and retry a newer generation.
 
-### G5 Deployment Health: PENDING
+### G5 Deployment Health: GO
 
-**裁决**: PENDING
+**裁决**: PASS
 
-Backend deployment must pass `deploy.sh -b` health scoring.
+Backend commit `9d49567c0` was deployed through `deploy.sh -b`. The database
+backup, 231-table restore rehearsal, encrypted offsite archive verification,
+managed migration check, service restart, `60/60` health score, `22/22` skills
+manifest check, and exact remote SHA verification all passed.
 
-### G6 Production Verification: PENDING
+### G6 Production Verification: GO
 
-**裁决**: PENDING
+**裁决**: PASS
 
-Verify the circuit is active, a fresh diet write receives a verified receipt,
-and no new reconciliation is created.
+After explicit authorization, the audited resume transition acknowledged exact
+generation `2`. Runtime is active with acknowledged generation `2`. A
+production Agent turn using the App Store review account created a test diet
+record, persisted exactly one verified `diet_record` receipt, exposed the
+record through the authenticated diet API, and then deleted it. Cleanup was
+verified by a second list query. The verification created no reconciliation;
+the only unresolved operation remains the pre-existing non-health
+`draft_aigc_media` confirmation.
