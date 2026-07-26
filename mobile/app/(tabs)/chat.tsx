@@ -1121,8 +1121,13 @@ export default function ChatScreen() {
         </Pressable>
       </Modal>
       <Modal visible={toolMenuVisible} transparent animationType="fade" onRequestClose={() => setToolMenuVisible(false)}>
-        <Pressable style={styles.menuOverlay} onPress={() => setToolMenuVisible(false)}>
-          <Pressable style={styles.toolSheet}>
+        <Pressable
+          testID="chat-tool-menu-overlay"
+          accessible={false}
+          style={styles.menuOverlay}
+          onPress={() => setToolMenuVisible(false)}
+        >
+          <Pressable testID="chat-tool-menu-sheet" accessible={false} style={styles.toolSheet}>
             <View style={styles.toolSheetHeader}>
               <View>
                 <Text style={txt.toolSheetTitle}>更多操作</Text>

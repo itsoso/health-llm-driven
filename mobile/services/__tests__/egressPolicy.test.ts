@@ -16,6 +16,27 @@ describe('cloud-only app egress policy', () => {
     });
   });
 
+  it('allows only an explicit cloud-session bootstrap before login', async () => {
+    setAppEgressMode(null);
+    expect(() => assertAppEgressAllowed({ cloudSessionBootstrap: true })).not.toThrow();
+    await expect(
+      enforceAppEgressAllowed({ cloudSessionBootstrap: true }),
+    ).resolves.toBeUndefined();
+    await expect(
+      enforceAppEgressAllowed({ explicitCloudAI: true }),
+    ).rejects.toMatchObject({
+      code: 'cloud_session_required',
+    });
+  });
+
+  it('allows a persisted cloud credential to recover its session', async () => {
+    setAppEgressMode(null);
+    expect(() => assertAppEgressAllowed({ cloudCredentialPresent: true })).not.toThrow();
+    await expect(
+      enforceAppEgressAllowed({ cloudCredentialPresent: true }),
+    ).resolves.toBeUndefined();
+  });
+
   it('allows traffic after a cloud account session is active', async () => {
     setAppEgressMode('cloud_account');
     expect(() => assertAppEgressAllowed()).not.toThrow();

@@ -31,11 +31,22 @@ const api = axios.create({
 
 export const EXPLICIT_CLOUD_AI_HEADER = 'X-Reva-Explicit-Cloud-AI';
 
+const CLOUD_SESSION_BOOTSTRAP_REQUESTS = new Set([
+  'POST /auth/login/json',
+  'POST /auth/phone/code',
+  'POST /auth/phone/login',
+]);
+
+function isCloudSessionBootstrapRequest(method: string | undefined, url: string | undefined): boolean {
+  const normalizedMethod = String(method || 'get').toUpperCase();
+  const normalizedPath = String(url || '').split('?', 1)[0];
+  return CLOUD_SESSION_BOOTSTRAP_REQUESTS.has(`${normalizedMethod} ${normalizedPath}`);
+}
+
 api.interceptors.request.use(
   async (config) => {
     const explicitCloudAI = config.headers.get(EXPLICIT_CLOUD_AI_HEADER) === '1';
     config.headers.delete(EXPLICIT_CLOUD_AI_HEADER);
-    await enforceAppEgressAllowed({ explicitCloudAI });
     let token = runtimeAuthToken;
     if (!token) {
       try {
@@ -49,6 +60,11 @@ api.interceptors.request.use(
         // window). A token installed by login remains usable in memory.
       }
     }
+    await enforceAppEgressAllowed({
+      explicitCloudAI,
+      cloudSessionBootstrap: isCloudSessionBootstrapRequest(config.method, config.url),
+      cloudCredentialPresent: isUsableNativeAuthToken(token),
+    });
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }

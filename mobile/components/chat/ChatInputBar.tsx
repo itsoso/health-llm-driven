@@ -1216,6 +1216,7 @@ export default function ChatInputBar({
           ) : (
             <Pressable
               testID="wechat-composer-input"
+              accessible={false}
               style={({ pressed }) => [
                 styles.inputWrap,
                 { minHeight: textComposerMinHeight },
@@ -1227,9 +1228,6 @@ export default function ChatInputBar({
               onLongPress={handleInputLongPressDictation}
               onPressOut={handleInputPressOutDictation}
               delayLongPress={INPUT_HOLD_DICTATION_DELAY_MS}
-              accessibilityRole="button"
-              accessibilityLabel="消息输入框容器"
-              accessibilityHint="点击输入文字，长按实时语音输入，点右侧麦克风持续转文字"
             >
               <TextInput
                 ref={textInputRef}

@@ -1291,7 +1291,7 @@ describe('ChatScreen', () => {
         suggestions: [{ text: '今天饮水 300/2000ml，帮我安排剩余补水', key: 'water', priority: 50 }],
       });
 
-    const { getByLabelText, getByText, queryByText } = render(<ChatScreen />);
+    const { getByLabelText, getByTestId, getByText, queryByText } = render(<ChatScreen />);
 
     await waitFor(() => {
       expect(getByText('今天饮水 300/2000ml，帮我安排剩余补水')).toBeTruthy();
@@ -1304,6 +1304,8 @@ describe('ChatScreen', () => {
     expect(queryByText('新建对话')).toBeNull();
     expect(queryByText('对话历史')).toBeNull();
     expect(getByText('更多操作')).toBeTruthy();
+    expect(getByTestId('chat-tool-menu-overlay').props.accessible).toBe(false);
+    expect(getByTestId('chat-tool-menu-sheet').props.accessible).toBe(false);
   });
 
   it('starts a new conversation when opened from an Agent context entry', async () => {

@@ -2,12 +2,14 @@ describe('services/api auth failure handling', () => {
   let requestFulfilled: ((config: any) => Promise<any>) | undefined;
   let responseRejected: ((error: any) => Promise<never>) | undefined;
   let unauthorized: jest.Mock;
+  let enforceAppEgressAllowed: jest.Mock;
 
   beforeEach(() => {
     jest.resetModules();
     requestFulfilled = undefined;
     responseRejected = undefined;
     unauthorized = jest.fn();
+    enforceAppEgressAllowed = jest.fn().mockResolvedValue(undefined);
 
     jest.doMock('axios', () => ({
       __esModule: true,
@@ -29,8 +31,67 @@ describe('services/api auth failure handling', () => {
       },
     }));
     jest.doMock('../egressPolicy', () => ({
-      enforceAppEgressAllowed: jest.fn().mockResolvedValue(undefined),
+      enforceAppEgressAllowed,
     }));
+  });
+
+  it.each([
+    '/auth/login/json',
+    '/auth/phone/code',
+    '/auth/phone/login?source=app',
+  ])('allows the exact login bootstrap endpoint before a cloud session: %s', async (url) => {
+    require('../api');
+    const headers = {
+      get: jest.fn(() => undefined),
+      delete: jest.fn(),
+    } as any;
+
+    await requestFulfilled?.({ headers, method: 'post', url });
+
+    expect(enforceAppEgressAllowed).toHaveBeenCalledWith({
+      explicitCloudAI: false,
+      cloudSessionBootstrap: true,
+      cloudCredentialPresent: false,
+    });
+  });
+
+  it.each([
+    { method: 'get', url: '/auth/login/json' },
+    { method: 'post', url: '/auth/me' },
+    { method: 'post', url: '/agent/chat' },
+  ])('keeps non-bootstrap traffic behind the cloud session: $method $url', async (request) => {
+    require('../api');
+    const headers = {
+      get: jest.fn(() => undefined),
+      delete: jest.fn(),
+    } as any;
+
+    await requestFulfilled?.({ headers, ...request });
+
+    expect(enforceAppEgressAllowed).toHaveBeenCalledWith({
+      explicitCloudAI: false,
+      cloudSessionBootstrap: false,
+      cloudCredentialPresent: false,
+    });
+  });
+
+  it('uses a persisted token to bootstrap authenticated session recovery', async () => {
+    const SecureStore = require('expo-secure-store');
+    SecureStore.getItemAsync.mockResolvedValueOnce('tok_saved');
+    require('../api');
+    const headers = {
+      get: jest.fn(() => undefined),
+      delete: jest.fn(),
+    } as any;
+
+    await requestFulfilled?.({ headers, method: 'get', url: '/auth/me' });
+
+    expect(enforceAppEgressAllowed).toHaveBeenCalledWith({
+      explicitCloudAI: false,
+      cloudSessionBootstrap: false,
+      cloudCredentialPresent: true,
+    });
+    expect(headers.Authorization).toBe('Bearer tok_saved');
   });
 
   it('uses the runtime token when SecureStore is temporarily unavailable after login', async () => {
