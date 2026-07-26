@@ -9,6 +9,7 @@ import pytest
 from sqlalchemy.orm import sessionmaker
 
 from app.models.agent_conversation import AgentConversation, AgentMessage
+from app.models.daily_health import DietPhotoAsset
 from app.models.user import User
 from app.api.agent import (
     agent_stream,
@@ -746,6 +747,127 @@ def test_agent_conversation_detail_refreshes_private_chat_image_signature(
     assert parsed.path == f"/api/v1/upload/files/chat/{user.id}/meal.jpg"
     assert int(query["expires"][0]) > 1
     assert query["signature"][0] != "expired"
+
+
+def test_agent_conversation_detail_restores_each_persisted_diet_card_photo(
+    client, db, auth_user_and_headers
+):
+    user, headers = auth_user_and_headers
+    conv = _create_conversation(db, user.id, "连续拍照记餐")
+    first = _add_message(db, conv.id, "assistant", "早餐已记录。")
+    second = _add_message(db, conv.id, "assistant", "午餐已记录。")
+    assets = [
+        DietPhotoAsset(
+            id=f"diet-history-photo-{ordinal}",
+            user_id=user.id,
+            storage_key=(
+                f"/api/v1/upload/files/diet/{user.id}/meal-{ordinal}.jpg"
+            ),
+            content_sha256=str(ordinal + 1) * 64,
+            media_type="image/jpeg",
+            origin="chat",
+            ordinal=ordinal,
+            classification="food",
+            recognition_confidence=0.93,
+            intent_decision="auto_record",
+            recognition_snapshot={"food_count": 1},
+            lifecycle="attached",
+        )
+        for ordinal in range(2)
+    ]
+    db.add_all(assets)
+    first.meta = {
+        "cards": [{
+            "type": "diet_draft",
+            "data": {
+                "recorded": True,
+                "photo_asset_id": assets[0].id,
+                "food_items": "早餐",
+            },
+            "actions": [],
+        }],
+    }
+    second.meta = {
+        "cards": [{
+            "type": "diet_draft",
+            "data": {
+                "recorded": True,
+                "photo_asset_id": assets[1].id,
+                "food_items": "午餐",
+            },
+            "actions": [],
+        }],
+    }
+    db.commit()
+
+    response = client.get(f"/api/v1/agent/conversations/{conv.id}", headers=headers)
+
+    assert response.status_code == 200
+    cards = [
+        message["meta"]["cards"][0]
+        for message in response.json()["messages"]
+    ]
+    for ordinal, card in enumerate(cards):
+        photo_url = card["data"]["photo_url"]
+        parsed = urlparse(photo_url)
+        query = parse_qs(parsed.query)
+        assert parsed.path == (
+            f"/api/v1/upload/files/diet/{user.id}/meal-{ordinal}.jpg"
+        )
+        assert "expires" in query
+        assert "signature" in query
+
+    db.refresh(first)
+    db.refresh(second)
+    assert "photo_url" not in first.meta["cards"][0]["data"]
+    assert "photo_url" not in second.meta["cards"][0]["data"]
+
+
+def test_agent_conversation_detail_never_restores_another_users_diet_photo(
+    client, db, auth_user_and_headers
+):
+    user, headers = auth_user_and_headers
+    other = _create_user(db, "diet_photo_owner")
+    foreign_asset = DietPhotoAsset(
+        id="foreign-diet-history-photo",
+        user_id=other.id,
+        storage_key=(
+            f"/api/v1/upload/files/diet/{other.id}/private-meal.jpg"
+        ),
+        content_sha256="f" * 64,
+        media_type="image/jpeg",
+        origin="chat",
+        ordinal=0,
+        classification="food",
+        recognition_confidence=0.91,
+        intent_decision="auto_record",
+        recognition_snapshot={"food_count": 1},
+        lifecycle="attached",
+    )
+    db.add(foreign_asset)
+    conv = _create_conversation(db, user.id, "隔离照片")
+    message = _add_message(db, conv.id, "assistant", "餐食已记录。")
+    message.meta = {
+        "cards": [{
+            "type": "diet_draft",
+            "data": {
+                "recorded": True,
+                "photo_asset_id": foreign_asset.id,
+                "photo_url": (
+                    f"/api/v1/upload/files/diet/{other.id}/private-meal.jpg"
+                    "?expires=9999999999&signature=untrusted"
+                ),
+            },
+            "actions": [],
+        }],
+    }
+    db.commit()
+
+    response = client.get(f"/api/v1/agent/conversations/{conv.id}", headers=headers)
+
+    assert response.status_code == 200
+    card_data = response.json()["messages"][0]["meta"]["cards"][0]["data"]
+    assert "photo_url" not in card_data
 
 
 def test_agent_conversation_detail_returns_persisted_card_meta(client, db, auth_user_and_headers):

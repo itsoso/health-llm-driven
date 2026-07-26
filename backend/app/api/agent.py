@@ -2365,6 +2365,13 @@ async def get_conversation(
         msgs = [m for m in msgs if m.created_at and _msg_dt(m.created_at) >= cutoff]
 
     from app.services.chat_utils import refresh_chat_image_url_value
+    from app.services.dynamic_card_persistence import message_metas_for_delivery
+
+    delivered_metas = message_metas_for_delivery(
+        db,
+        [getattr(message, "meta", None) for message in msgs],
+        current_user.id,
+    )
 
     return {
         "id": conv.id,
@@ -2379,9 +2386,9 @@ async def get_conversation(
                 "image_url": refresh_chat_image_url_value(m.image_url, current_user.id),
                 "rating": m.rating,
                 "created_at": str(m.created_at),
-                "meta": getattr(m, "meta", None),
+                "meta": delivered_metas[index],
             }
-            for m in msgs
+            for index, m in enumerate(msgs)
         ],
     }
 
