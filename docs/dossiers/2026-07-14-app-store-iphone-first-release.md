@@ -210,3 +210,5 @@ RequirementAdmission:
 - 修复提交 `2518aea9a6651d9ea103e8f07e766aea7447566b` 已推送 `main`，并发布 runtime 1.3.2 production OTA：update group `752c2637-2e94-455a-9501-97551c7b1e46`，iOS update `019f9cf4-1d6f-7a19-a43f-cf04a7515d82`。
 - Build 237 在真实 iPhone 17 Pro Max 上应用该 OTA 后，连续两次执行“终止进程 -> 冷启动”，均在约 4 秒内直接进入 Agent 页面，未出现登录页或二次登录。结果包：`/tmp/RevaAuthPersistencePostFixCold1.xcresult`、`/tmp/RevaAuthPersistencePostFixCold2.xcresult`。
 - 登录持久化真机子项判定为 `PASS`。完整 G6 仍保持 `BLOCKED`，其余语音、拍照、分享、写入纠正删除、账号删除及同 Build 截图等验收项目不得由本子项代替。
+- 临时 XCUITest 已固化为仓库脚本 `scripts/run_ios_real_device_acceptance.sh`。脚本对已安装 production App 执行非破坏性启动、登录态 Agent surface、今日简报、草稿前后台恢复、隐私政策与账号删除入口检查，保留 `.xcresult` 和截图；不会提交健康记录、授权权限或删除账号。
+- 验收工程在 Xcode 26.5 的 iOS Simulator SDK 上 `build-for-testing` 成功。发布机 App Store Connect API 凭证预检通过；当前物理 iPhone 在 CoreDevice 中为 offline，浏览器控制会话未继承 App Store Connect 登录，因此剩余真机项目、App Privacy 发布和受监管医疗器械声明仍不得标记完成。

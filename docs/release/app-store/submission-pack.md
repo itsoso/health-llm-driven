@@ -102,6 +102,16 @@ python3 scripts/check_app_store_release_pack.py \
 
 Create the external evidence file from `docs/release/app-store/real-device-acceptance.template.json`. It must refer to the exact TestFlight build and include the app version, production EAS build ID, source commit, device, iOS version and tester. Mark every physical-iPhone check `true`, including demo login, streaming Markdown, permission-denied text fallback, both voice modes, external-audio interruption, photo persistence, image/video playback and sharing, write/correct/delete idempotency, foreground recovery, draft preservation, latest-message scrolling, privacy and deletion paths. Do not commit tester evidence containing device or account details.
 
+Run the non-destructive automated subset against the installed production app first:
+
+```bash
+scripts/run_ios_real_device_acceptance.sh \
+  <physical-device-udid> \
+  /secure/path/XiaobaAcceptance-<build-id>.xcresult
+```
+
+This harness covers launch, authenticated Agent access, briefing interaction, foreground draft recovery, and the privacy/account-deletion entries. It does not replace the dedicated physical checks for voice, camera, sharing, health writes, correction/deletion idempotency, or completed account deletion.
+
 ## Privacy Nutrition Label
 
 Use `docs/release/app-store/privacy-nutrition-label.draft.json` as the working source. App Store Connect remains the final source of truth after manual entry.
