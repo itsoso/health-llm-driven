@@ -20,6 +20,7 @@ const IS_PREVIEW = VARIANT === 'preview';
 const INCLUDE_ROKID = process.env.ROKID_IOS_SDK_ENABLED === '1';
 const INCLUDE_WATCH = process.env.INCLUDE_WATCH_APP === '1';
 const INCLUDE_SIRI = process.env.INCLUDE_SIRI_INTENTS === '1';
+const IOS_BUILD_NUMBER = process.env.REVA_IOS_BUILD_NUMBER?.trim();
 
 const BUNDLE_ID_BASE = 'life.executor.health';
 const APP_LINK_DOMAIN = 'health.executor.life';
@@ -153,6 +154,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
   plugins,
   ios: {
     ...(config.ios ?? {}),
+    ...(IOS_BUILD_NUMBER ? { buildNumber: IOS_BUILD_NUMBER } : {}),
     supportsTablet: false,
     bundleIdentifier: bundleId,
     associatedDomains: Array.from(new Set([

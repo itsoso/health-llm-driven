@@ -29,7 +29,7 @@ If the app is already installed on a booted simulator:
 If the app is not installed, build the simulator app first:
 
 ```bash
-./scripts/sim-build.sh --device "iPhone 17 Pro"
+./scripts/sim-build.sh --device "iPhone 17 Pro" --configuration "Release" --build-number "237"
 ```
 
 Then rerun:
