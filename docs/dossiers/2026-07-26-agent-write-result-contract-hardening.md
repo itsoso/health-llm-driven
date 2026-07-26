@@ -4,7 +4,7 @@
 |---|---|
 | slug | `agent-write-result-contract-hardening` |
 | 创建日期 | 2026-07-26 |
-| 当前阶段 | G4 safety re-review |
+| 当前阶段 | G4 final safety re-review |
 | 状态 | building |
 | 负责 | Codex |
 | 反馈环 | backend deploy |
@@ -47,15 +47,21 @@ migration is therefore restricted to deterministic pre-dispatch exits.
 
 **裁决**: PASS
 
-- Full targeted Runtime, Kernel, write, intervention, medication,
-  symptom/rhinitis, AIGC, genetics, medical-exam and diet suite:
-  1,111 passed, 9 environment-dependent tests skipped.
+- Full backend regression suite: 8,524 passed, 9 environment-dependent tests
+  skipped, 0 failed.
+- Focused write-outcome, ToolGateway, privacy logging, behavior battery,
+  memory-attribute, starter-pregen, Watch voice and Kernel static suite:
+  153 passed.
 - Added commit-boundary regressions proving that intervention and medical-exam
   failures after a database commit remain uncertain and are not declared safe
   to retry.
-- Added HTTP-timeout and content-free logging regressions.
+- Added regressions proving that `rejected`/`failed` results are terminal only
+  with an explicit `dispatch_started=false`; otherwise they remain uncertain.
+- Added HTTP-timeout, pre-dispatch decision-observer and content-free logging
+  regressions.
 - Changed Python files compile successfully.
-- Blocking Ruff checks and `git diff --check` passed.
+- Blocking Ruff checks, `git diff --check`, doc-drift, Dossier consistency and
+  Operating Harness validation passed.
 
 ## G4 · Safety Review
 
@@ -75,7 +81,25 @@ medical-import and generic dispatcher logs.
   stable identifiers and exception types, never raw health content or upstream
   exception text.
 
-**Current verdict**: PENDING independent re-review.
+**Second review**: BLOCK / NO-GO
+
+The independent reviewer found that a `rejected` or `failed` payload could
+still be treated as terminal after dispatch, that capability telemetry still
+ran after the adapter dispatch, and that three Runtime-adjacent logging paths
+could retain raw exception text.
+
+**Second remediation**:
+
+- `rejected` and `failed` are terminal only when
+  `dispatch_started is False`; true or unknown dispatch state is uncertain.
+- Capability-decision telemetry now runs before adapter dispatch. A telemetry
+  failure returns a structured pre-dispatch rejection and proves the adapter
+  was never called.
+- Generic tool execution, Telegram write handling and directive parsing log
+  only stable identifiers and exception classes; client responses do not echo
+  upstream exception text.
+
+**Current verdict**: PENDING final independent re-review.
 
 ## G5 · Deployment Health
 

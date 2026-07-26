@@ -74,7 +74,10 @@ async def _parse_with_llm_async(text: str) -> List[dict]:
         items = json.loads(m.group())
         return items if isinstance(items, list) else []
     except Exception as e:  # noqa: BLE001
-        logger.warning(f"[directive_parser] LLM 解析失败: {e}")
+        logger.warning(
+            "[directive_parser] LLM parse failed error_type=%s",
+            type(e).__name__,
+        )
         return []
 
 
@@ -219,16 +222,32 @@ def _store_parsed_directives(
             db.add(row)
             db.flush()
             created.append(row.id)
-            logger.info(f"[directive_parser] 创建 directive #{row.id} kind={kind} "
-                       f"metric={row.metric_key} for user={user_id}")
+            logger.info(
+                "[directive_parser] created directive=%s kind=%s user=%s",
+                row.id,
+                kind,
+                user_id,
+            )
             # Memory: directive → high-confidence semantic fact (旁路)
             try:
                 from app.services.memory_extractor import extract_from_directive
                 extract_from_directive(db, row)
             except Exception as e:  # noqa: BLE001
-                logger.debug(f"[directive_parser] memory extract 失败 (旁路): {e}")
+                logger.debug(
+                    "[directive_parser] memory extract failed directive=%s "
+                    "user=%s error_type=%s",
+                    row.id,
+                    user_id,
+                    type(e).__name__,
+                )
         except Exception as e:  # noqa: BLE001
-            logger.warning(f"[directive_parser] 单条 directive 写入失败: {e}")
+            logger.warning(
+                "[directive_parser] directive write failed user=%s kind=%s "
+                "error_type=%s",
+                user_id,
+                d.get("kind"),
+                type(e).__name__,
+            )
     db.commit()
     return created
 

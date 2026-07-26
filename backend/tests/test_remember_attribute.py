@@ -58,7 +58,11 @@ async def test_remember_missing_value_fails_loud(db):
             "http://t", {"Authorization": "Bearer x"},
             {"record_type": "remember", "data": {"predicate": "鞋码"}},  # 无 object_value
         )
-    assert result.startswith("Error:")
+    rejection = json.loads(result)
+    assert rejection["status"] == "rejected"
+    assert rejection["success"] is False
+    assert rejection["dispatch_started"] is False
+    assert rejection["error_code"] == "memory_attribute_missing"
 
 
 def test_remember_is_typed_only_auto_confirm():
@@ -108,7 +112,15 @@ async def test_remember_backstop_blocks_structured_medical(db, data):
             "http://t", {"Authorization": "Bearer x"},
             {"record_type": "remember", "data": data},
         )
-    assert result.startswith("Error:"), (data, result)
+    rejection = json.loads(result)
+    assert rejection["status"] == "rejected", (data, result)
+    assert rejection["success"] is False
+    assert rejection["dispatch_started"] is False
+    assert rejection["error_code"] in {
+        "remember_clinical_data_redirect",
+        "remember_genetic_redirect",
+        "remember_medication_redirect",
+    }
 
 
 @pytest.mark.asyncio

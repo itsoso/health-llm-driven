@@ -5,7 +5,11 @@ import pytest
 
 from app.services.agent_executor import AgentExecutor
 from app.services.agent_kernel.intent_frame import build_intent_frame
-from app.services.agent_kernel.tool_gateway import ToolGateway, blocked_tool_result
+from app.services.agent_kernel.tool_gateway import (
+    ToolGateway,
+    ToolPreflightError,
+    blocked_tool_result,
+)
 from app.services.agent_kernel.types import AgentEnvelope, ExecutionContext, ToolExecutionRequest, TurnSnapshot
 
 
@@ -62,22 +66,56 @@ def test_blocked_tool_result_includes_a_recovery_instruction_for_the_agent():
 async def test_gateway_execute_dispatches_allowed_request_exactly_once():
     gateway = ToolGateway(_snapshot("记录午餐吃了牛肉面"))
     calls = []
+    events = []
     request = ToolExecutionRequest(
         tool_name="health_record",
         arguments={"record_type": "diet", "data": {"food_items": "牛肉面"}},
     )
 
     async def dispatch(normalized_request):
+        events.append("dispatch")
         calls.append(normalized_request)
         return '{"id": 1, "resource_type": "diet_record"}'
 
-    result = await gateway.execute(request, dispatch)
+    result = await gateway.execute(
+        request,
+        dispatch,
+        on_decision=lambda _decision: events.append("decision"),
+    )
 
     assert len(calls) == 1
+    assert events == ["decision", "dispatch"]
     assert calls[0].arguments == request.arguments
     assert result.content == '{"id": 1, "resource_type": "diet_record"}'
     assert result.decision is not None
     assert result.decision.action == "allow"
+
+
+@pytest.mark.asyncio
+async def test_gateway_decision_observer_failure_prevents_dispatch():
+    gateway = ToolGateway(_snapshot("记录午餐吃了牛肉面"))
+    dispatched = False
+    request = ToolExecutionRequest(
+        tool_name="health_record",
+        arguments={"record_type": "diet", "data": {"food_items": "牛肉面"}},
+    )
+
+    async def dispatch(_request):
+        nonlocal dispatched
+        dispatched = True
+        return "unexpected"
+
+    def fail_before_dispatch(_decision):
+        raise RuntimeError("private-health-payload")
+
+    with pytest.raises(ToolPreflightError, match="tool_preflight_failed"):
+        await gateway.execute(
+            request,
+            dispatch,
+            on_decision=fail_before_dispatch,
+        )
+
+    assert dispatched is False
 
 
 @pytest.mark.asyncio
@@ -160,6 +198,52 @@ async def test_execute_tool_blocks_policy_denied_health_record_before_dispatch(d
         if event.name == "agent.tool_result"
     )
     assert tool_result.data["success"] is False
+
+
+@pytest.mark.asyncio
+async def test_execute_tool_decision_failure_is_structured_pre_dispatch_rejection(
+    db,
+    monkeypatch,
+):
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._current_turn_user_message = "记录午餐吃了牛肉面"
+    dispatched = False
+
+    monkeypatch.setattr(
+        "app.services.llm.tool_validator.validate_tool_call",
+        lambda tool_name, args, db, user_id, reference_now=None: {
+            "error": None,
+            "data": args,
+        },
+    )
+
+    def fail_decision_recording(_tool_name, _decision):
+        raise RuntimeError("private-health-payload")
+
+    async def dispatch_should_not_run(_request, _token):
+        nonlocal dispatched
+        dispatched = True
+        return '{"id": 1, "resource_type": "diet_record"}'
+
+    monkeypatch.setattr(
+        executor,
+        "_agent_kernel_record_capability_decision",
+        fail_decision_recording,
+    )
+    monkeypatch.setattr(executor, "_dispatch_tool_request", dispatch_should_not_run)
+
+    result = await executor._execute_tool(
+        "health_record",
+        {"record_type": "diet", "data": {"food_items": "牛肉面"}},
+        None,
+    )
+
+    payload = json.loads(result)
+    assert dispatched is False
+    assert payload["status"] == "rejected"
+    assert payload["dispatch_started"] is False
+    assert payload["error_code"] == "policy_check_failed"
 
 
 @pytest.mark.asyncio

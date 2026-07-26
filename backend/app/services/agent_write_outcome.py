@@ -33,7 +33,7 @@ _REJECTED_STATUSES = {
     "cancelled",
     "canceled",
 }
-_FAILED_STATUSES = {"needs_confirmation", "confirmation_required"}
+_FAILED_STATUSES = {"failed", "needs_confirmation", "confirmation_required"}
 _UNCERTAIN_STATUSES = {
     "uncertain",
     "in_flight",
@@ -183,13 +183,13 @@ def classify_write_execution(
         dispatch_started = _dispatch_started(payload)
         if status in _REJECTED_STATUSES:
             return WriteExecutionOutcome(
-                status="rejected",
+                status="rejected" if dispatch_started is False else "uncertain",
                 error_code=error_code or status,
                 dispatch_started=dispatch_started,
             )
         if status in _FAILED_STATUSES:
             return WriteExecutionOutcome(
-                status="failed",
+                status="failed" if dispatch_started is False else "uncertain",
                 error_code=error_code or status,
                 dispatch_started=dispatch_started,
             )

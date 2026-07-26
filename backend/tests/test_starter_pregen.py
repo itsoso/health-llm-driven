@@ -10,6 +10,7 @@ Safety review points (roadmap):
 """
 import asyncio
 import fnmatch
+import json
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -344,7 +345,11 @@ def test_read_only_turn_blocks_write_tools(db, monkeypatch):
                  "upload_medical_exam_text", "manage_plan"):
         ex._read_only_turn_write_attempted = False
         out = _run(ex._execute_tool(tool, {"record_type": "water", "data": {"amount_ml": 500}}, None))
-        assert out.startswith("Error:"), f"{tool} not blocked: {out}"
+        rejection = json.loads(out)
+        assert rejection["status"] == "rejected", f"{tool} not blocked: {out}"
+        assert rejection["success"] is False
+        assert rejection["dispatch_started"] is False
+        assert rejection["error_code"] == "read_only_write_blocked"
         assert ex._read_only_turn_write_attempted is True, f"{tool} did not flag write attempt"
     # The write _exec_* was never reached — no side effect.
     assert executed["health_record"] is False

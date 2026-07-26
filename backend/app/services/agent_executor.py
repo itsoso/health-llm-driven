@@ -14571,7 +14571,9 @@ class AgentExecutor:
                         raise
                     except Exception as e:  # noqa: BLE001
                         logger.warning(
-                            f"[tool exec] {func_name} 抛异常: {type(e).__name__}: {str(e)[:120]}"
+                            "[tool exec] failed tool=%s error_type=%s",
+                            func_name,
+                            type(e).__name__,
                         )
                         result = f"Error: {progress_label}执行失败,请稍后重试。"
             finally:
@@ -14900,7 +14902,10 @@ class AgentExecutor:
                 )
 
         try:
-            from app.services.agent_kernel.tool_gateway import ToolGateway
+            from app.services.agent_kernel.tool_gateway import (
+                ToolGateway,
+                ToolPreflightError,
+            )
 
             snapshot = self._ensure_agent_kernel_turn()
             gateway_result = await ToolGateway(snapshot).execute(
@@ -14910,12 +14915,15 @@ class AgentExecutor:
                     source=source,
                 ),
                 lambda request: self._dispatch_tool_request(request, user_token),
+                on_decision=lambda decision: (
+                    self._agent_kernel_record_capability_decision(
+                        tool_name,
+                        decision,
+                    )
+                ),
             )
-            decision = gateway_result.decision
-            if decision is not None:
-                self._agent_kernel_record_capability_decision(tool_name, decision)
             return str(gateway_result.content)
-        except Exception as exc:  # noqa: BLE001
+        except ToolPreflightError as exc:
             if "policy_check_failed" not in self._agent_kernel_capability_block_reasons:
                 self._agent_kernel_capability_block_reasons.append("policy_check_failed")
             logger.error(
@@ -14924,7 +14932,11 @@ class AgentExecutor:
                 self._current_user_id,
                 type(exc).__name__,
             )
-            return "Error: 工具调用策略检查失败,已阻止执行。"
+            return local_write_rejection(
+                "policy_check_failed",
+                message="工具调用策略检查失败，已阻止执行。",
+                recovery_guidance="请稍后重试；本次没有派发写入。",
+            )
 
     async def _dispatch_tool_request(
         self,

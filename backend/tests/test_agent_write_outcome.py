@@ -61,6 +61,26 @@ def test_structured_remote_uncertainty_does_not_become_rejected():
     assert outcome.dispatch_started is True
 
 
+@pytest.mark.parametrize("status", ["rejected", "failed"])
+@pytest.mark.parametrize("dispatch_started", [True, None])
+def test_terminal_status_without_a_pre_dispatch_fact_remains_uncertain(
+    status,
+    dispatch_started,
+):
+    payload = {
+        "status": status,
+        "error_code": "upstream_rejected",
+    }
+    if dispatch_started is not None:
+        payload["dispatch_started"] = dispatch_started
+
+    outcome = classify_write_execution(payload)
+
+    assert outcome.status == "uncertain"
+    assert outcome.error_code == "upstream_rejected"
+    assert outcome.dispatch_started is dispatch_started
+
+
 def test_structured_confirmation_gate_is_a_failed_write_not_uncertain():
     outcome = classify_write_execution(
         '{"status":"needs_confirmation","error_code":"confirmation_required",'
@@ -152,7 +172,11 @@ def test_legacy_needs_clarification_is_a_pre_dispatch_rejection():
     ],
 )
 def test_explicit_structured_write_statuses_share_one_classifier(status, expected):
-    outcome = classify_explicit_write_execution({"status": status})
+    payload = {"status": status}
+    if expected in {"rejected", "failed"}:
+        payload["dispatch_started"] = False
+
+    outcome = classify_explicit_write_execution(payload)
 
     assert outcome is not None
     assert outcome.status == expected

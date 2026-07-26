@@ -93,7 +93,10 @@ async def download_telegram_file(file_id: str) -> Optional[bytes]:
             )
             j = r.json()
             if not j.get("ok"):
-                logger.warning(f"[telegram-inbound] getFile failed: {j}")
+                logger.warning(
+                    "[telegram-inbound] getFile failed error_code=%s",
+                    j.get("error_code"),
+                )
                 return None
             file_path = j["result"]["file_path"]
 
@@ -104,7 +107,10 @@ async def download_telegram_file(file_id: str) -> Optional[bytes]:
                 return None
             return r2.content
     except Exception as e:
-        logger.warning(f"[telegram-inbound] file download error: {e}")
+        logger.warning(
+            "[telegram-inbound] file download failed error_type=%s",
+            type(e).__name__,
+        )
         return None
 
 
@@ -137,7 +143,10 @@ async def transcribe_voice_bytes(
             except Exception:
                 pass
     except Exception as e:
-        logger.warning(f"[telegram-inbound] whisper failed: {e}")
+        logger.warning(
+            "[telegram-inbound] whisper failed error_type=%s",
+            type(e).__name__,
+        )
         return None
 
 
@@ -198,7 +207,10 @@ async def llm_extract_record(text: str) -> Optional[dict]:
             return None
         return args
     except Exception as e:
-        logger.warning(f"[telegram-inbound] llm_extract_record failed: {e}")
+        logger.warning(
+            "[telegram-inbound] llm_extract_record failed error_type=%s",
+            type(e).__name__,
+        )
         return None
 
 
@@ -264,9 +276,11 @@ async def execute_health_record(
     except Exception as e:
         executor._finish_agent_kernel_turn(status="failed")
         logger.warning(
-            f"[telegram-inbound] _exec_health_record failed: {e}", exc_info=True
+            "[telegram-inbound] health_record failed user=%s error_type=%s",
+            user_id,
+            type(e).__name__,
         )
-        return f"⚠️ 写入失败: {str(e)[:120]}"
+        return "⚠️ 写入暂未完成，请稍后重试。"
 
 
 async def execute_user_directive(
@@ -363,7 +377,6 @@ async def agent_chat_reply(
         logger.warning(
             "[telegram-inbound] Agent query failed: %s",
             type(e).__name__,
-            exc_info=True,
         )
         return "系统暂时无法完成这次查询，请稍后再试。"
 
@@ -447,7 +460,11 @@ async def handle_inbound_text(
                 return f"✅ 已录入 {len(rows)} 条指令:\n{summary}"
             return "✅ 已录入健康约束。"
         except Exception as e:
-            logger.warning(f"[telegram-inbound] directive parse failed: {e}")
+            logger.warning(
+                "[telegram-inbound] directive parse failed user=%s error_type=%s",
+                user_id,
+                type(e).__name__,
+            )
             return "⚠️ 指令解析暂时不可用，请稍后重试。"
 
     if intent == "record":
