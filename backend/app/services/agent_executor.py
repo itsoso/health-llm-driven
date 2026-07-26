@@ -7651,6 +7651,7 @@ class AgentExecutor:
                 if (
                     not tool_calls
                     and not receipt_goal_evaluated
+                    and deterministic_simple_record_fallback_attempted
                     and goal is not None
                     and goal.kind == "simple_health_record"
                 ):

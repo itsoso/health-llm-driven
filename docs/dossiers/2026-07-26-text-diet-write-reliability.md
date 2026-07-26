@@ -4,8 +4,8 @@
 |---|---|
 | slug | `text-diet-write-reliability` |
 | 创建日期 | 2026-07-26 |
-| 当前阶段 | G5 部署健康 |
-| 状态 | shipping |
+| 当前阶段 | G3 替代 CI |
+| 状态 | verifying |
 | 负责 | Codex |
 | 反馈环 | Backend pytest / backend deploy |
 
@@ -75,6 +75,7 @@
 - [x] T6 修复主干已有 OpenAPI 客户端类型漂移。
 - [x] T7 修复独立审查发现的日期静默改写与食物偏好误判。
 - [x] T8 修复非法显式日期回退今天及取消语句绕过工具策略。
+- [x] T9 修复确定性短确认误截断复合分析的多模型回归。
 
 ## Gate 状态
 
@@ -84,8 +85,16 @@
     308 passed。
   - Python bytecode compilation、Ruff、Mobile TypeScript 与
     `git diff --check` 通过。
+  - CI `agent-i-z` 首轮发现多模型工具调用完成后被错误短路为
+    `已记录午餐。`；短确认现只适用于服务端确定性补偿写入。
+  - 修复后按 CI 原命令运行完整 `agent-i-z` 分片：
+    532 passed、3 skipped；Ruff、`py_compile` 与 `git diff --check` 通过。
   - 覆盖生产原句、常见文本变体、缺食物、多餐、模型漏调工具、模型改写、
     等价营养估算、确定性 fallback、verified receipt、食物偏好和日期拒绝。
+  - 真实模型隔离回归通过：invariants 12/12、health_agent_core 50/50、
+    orchestrator 5/5、trajectory contract 11/11，实际模型
+    `MiniMax-M2.5`。
+  - 替代提交的 GitHub CI 尚未完成，G5 前仍按 fail-closed 处理。
 - G4 安全：**PASS**
   - 首轮独立审查发现并阻断两项风险：无效/远日期被静默改成今天，
     以及「不要辣／别放香菜／需要少盐」被误判为取消记录。
