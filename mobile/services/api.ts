@@ -52,6 +52,10 @@ api.interceptors.request.use(
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+    // Scope a later 401 to the exact session that sent this request. Without
+    // this marker, a delayed response from an old token can log out a newly
+    // authenticated user after an app foreground or account switch.
+    (config as typeof config & { __revaAuthToken?: string | null }).__revaAuthToken = token;
     return config;
   },
   (error) => Promise.reject(error),
@@ -59,13 +63,18 @@ api.interceptors.request.use(
 
 // Global 401 callback — set by AuthProvider to force logout
 let onUnauthorized: (() => void) | null = null;
-export function setOnUnauthorized(cb: () => void) { onUnauthorized = cb; }
+export function setOnUnauthorized(cb: (() => void) | null) { onUnauthorized = cb; }
 
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
     if (error.response?.status === 401) {
-      onUnauthorized?.();
+      const requestToken = (
+        error.config as { __revaAuthToken?: string | null } | undefined
+      )?.__revaAuthToken;
+      if (requestToken !== undefined && requestToken === runtimeAuthToken) {
+        onUnauthorized?.();
+      }
     }
     return Promise.reject(error);
   },

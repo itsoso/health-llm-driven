@@ -64,21 +64,51 @@ describe('services/api auth failure handling', () => {
     expect(headers.Authorization).toBeUndefined();
   });
 
-  it('does not erase the persisted token for an incidental 401 response', async () => {
+  it('notifies auth when the current native session receives a 401 response', async () => {
     const SecureStore = require('expo-secure-store');
     const shared = require('../../modules/shared-keychain');
-    const { setOnUnauthorized } = require('../api');
+    const { setOnUnauthorized, setRuntimeAuthToken } = require('../api');
     setOnUnauthorized(unauthorized);
+    setRuntimeAuthToken('tok_current');
 
     await expect(
       responseRejected?.({
         response: { status: 401 },
-        config: { url: '/action-cards' },
+        config: { url: '/action-cards', __revaAuthToken: 'tok_current' },
       }),
     ).rejects.toMatchObject({ response: { status: 401 } });
 
     expect(SecureStore.deleteItemAsync).not.toHaveBeenCalled();
     expect(shared.deleteTokenFromSharedKeychain).not.toHaveBeenCalled();
     expect(unauthorized).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores a delayed 401 from a request that used an older token', async () => {
+    const { setOnUnauthorized, setRuntimeAuthToken } = require('../api');
+    setOnUnauthorized(unauthorized);
+    setRuntimeAuthToken('tok_new');
+
+    await expect(
+      responseRejected?.({
+        response: { status: 401 },
+        config: { url: '/auth/me', __revaAuthToken: 'tok_old' },
+      }),
+    ).rejects.toMatchObject({ response: { status: 401 } });
+
+    expect(unauthorized).not.toHaveBeenCalled();
+  });
+
+  it('records the token used by a request so its eventual 401 can be scoped', async () => {
+    const { setRuntimeAuthToken } = require('../api');
+    const headers = {
+      get: jest.fn(() => undefined),
+      delete: jest.fn(),
+    } as any;
+    const config = { headers } as any;
+
+    setRuntimeAuthToken('tok_request');
+    await requestFulfilled?.(config);
+
+    expect(config.__revaAuthToken).toBe('tok_request');
   });
 });

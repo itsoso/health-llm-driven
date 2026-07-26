@@ -210,6 +210,42 @@ describe('services/auth', () => {
       mockedDelete.mockRejectedValueOnce(new Error('no module'));
       await expect(logout()).resolves.toBeUndefined();
     });
+
+    it('serializes token storage so an old logout cannot erase a newer login', async () => {
+      const deleteGate: { release?: () => void } = {};
+      let storedToken: string | null = 'tok_old';
+      (SecureStore.deleteItemAsync as jest.Mock).mockImplementationOnce(
+        () => new Promise<void>((resolve) => {
+          deleteGate.release = () => {
+            storedToken = null;
+            resolve();
+          };
+        }),
+      );
+      (SecureStore.setItemAsync as jest.Mock).mockImplementation(
+        async (_key: string, value: string) => {
+          storedToken = value;
+        },
+      );
+      mockedApi.post.mockResolvedValueOnce({
+        data: {
+          access_token: 'tok_new',
+          token_type: 'bearer',
+          user: { id: 8, username: 'new-user' },
+        },
+      } as never);
+
+      const logoutPromise = logout();
+      await Promise.resolve();
+      expect(deleteGate.release).toBeDefined();
+
+      const loginPromise = login('new-user', 'hunter2');
+      await Promise.resolve();
+      deleteGate.release?.();
+      await Promise.all([logoutPromise, loginPromise]);
+
+      expect(storedToken).toBe('tok_new');
+    });
   });
 
   describe('getToken / isLoggedIn', () => {

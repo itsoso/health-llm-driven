@@ -51,6 +51,14 @@ export interface AccountDeletionRequestResponse {
   message?: string;
 }
 
+let tokenStorageMutation: Promise<void> = Promise.resolve();
+
+function serializeTokenStorageMutation(operation: () => Promise<void>): Promise<void> {
+  const next = tokenStorageMutation.then(operation, operation);
+  tokenStorageMutation = next.catch(() => {});
+  return next;
+}
+
 /**
  * 持久化登录 token。永不 throw:后端登录已成功时,存储层瞬时故障
  * (iOS 更新窗口 SecureStore 可能短暂不可用)不应让登录"失败"——
@@ -67,20 +75,22 @@ async function persistToken(token: string): Promise<void> {
   // all of its first requests must already have a reliable bearer token.
   setRuntimeAuthToken(token);
 
-  let secureStoreOk = false;
-  try {
-    await SecureStore.setItemAsync(TOKEN_KEY, token);
-    secureStoreOk = true;
-  } catch (e) {
-    console.warn('[auth] SecureStore write failed, relying on shared keychain:', e);
-  }
-  try {
-    await saveTokenToSharedKeychain(token);
-  } catch (e) {
-    if (!secureStoreOk) {
-      console.warn('[auth] shared keychain write also failed — 登录态仅存内存,冷启动需重登:', e);
+  await serializeTokenStorageMutation(async () => {
+    let secureStoreOk = false;
+    try {
+      await SecureStore.setItemAsync(TOKEN_KEY, token);
+      secureStoreOk = true;
+    } catch (e) {
+      console.warn('[auth] SecureStore write failed, relying on shared keychain:', e);
     }
-  }
+    try {
+      await saveTokenToSharedKeychain(token);
+    } catch (e) {
+      if (!secureStoreOk) {
+        console.warn('[auth] shared keychain write also failed — 登录态仅存内存,冷启动需重登:', e);
+      }
+    }
+  });
 }
 
 export async function login(
@@ -138,16 +148,18 @@ export async function changePassword(
 
 export async function logout(): Promise<void> {
   setRuntimeAuthToken(null);
-  try {
-    await SecureStore.deleteItemAsync(TOKEN_KEY);
-  } catch (e) {
-    console.warn('[auth] SecureStore token deletion failed:', e);
-  }
-  try {
-    await deleteTokenFromSharedKeychain();
-  } catch (e) {
-    console.warn('[auth] shared keychain token deletion failed:', e);
-  }
+  await serializeTokenStorageMutation(async () => {
+    try {
+      await SecureStore.deleteItemAsync(TOKEN_KEY);
+    } catch (e) {
+      console.warn('[auth] SecureStore token deletion failed:', e);
+    }
+    try {
+      await deleteTokenFromSharedKeychain();
+    } catch (e) {
+      console.warn('[auth] shared keychain token deletion failed:', e);
+    }
+  });
 }
 
 export async function getToken(): Promise<string | null> {

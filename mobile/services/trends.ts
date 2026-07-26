@@ -1,4 +1,5 @@
 import api from './api';
+import { formatLocalDate } from '../utils/dietDate';
 
 export type TimeRange = '1W' | '1M' | '3M' | '6M' | '1Y';
 
@@ -28,8 +29,8 @@ export function timeRangeToDates(range: TimeRange): { start: string; end: string
     case '1Y': start.setFullYear(end.getFullYear() - 1); break;
   }
   return {
-    start: start.toISOString().slice(0, 10),
-    end: end.toISOString().slice(0, 10),
+    start: formatLocalDate(start),
+    end: formatLocalDate(end),
   };
 }
 

@@ -28,6 +28,7 @@ import {
 import { emitClientEvent } from '../services/clientEvents';
 import AgentFeedbackLink from '../components/agent/AgentFeedbackLink';
 import { createSymptomAgentContext } from '../utils/agentContext';
+import { todayStr } from '../utils/dietDate';
 
 const SEVERITY_LEVELS = [
   { value: 1, label: '轻微' },
@@ -44,7 +45,7 @@ export default function SymptomRecordScreen() {
   const [saving, setSaving] = useState(false);
 
   const canSave = bodyPart !== null && description.trim().length > 0;
-  const today = new Date().toISOString().split('T')[0];
+  const today = todayStr();
 
   const onSave = async () => {
     if (!canSave || saving) return;

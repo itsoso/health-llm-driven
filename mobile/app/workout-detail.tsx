@@ -234,6 +234,7 @@ export default function WorkoutDetailScreen() {
   // '听一下'按钮 — 私享女声读 150-200 字教练短稿
   const [speaking, setSpeaking] = useState(false);
   const playerRef = React.useRef<ReturnType<typeof createAudioPlayer> | null>(null);
+  const finishPlaybackRef = React.useRef<(() => void) | null>(null);
   const handleSpeakCoach = useCallback(async () => {
     if (!workoutId || speaking) return;
     setSpeaking(true);
@@ -258,13 +259,18 @@ export default function WorkoutDetailScreen() {
       playerRef.current = player;
       await new Promise<void>((resolve) => {
         let finished = false;
+        let timeout: ReturnType<typeof setTimeout> | null = null;
         const finish = () => {
           if (finished) return;
           finished = true;
+          if (timeout) clearTimeout(timeout);
+          timeout = null;
           try { player.remove(); } catch {}
           playerRef.current = null;
+          finishPlaybackRef.current = null;
           resolve();
         };
+        finishPlaybackRef.current = finish;
         const sub = player.addListener('playbackStatusUpdate', (status: any) => {
           if (status?.didJustFinish || status?.finished) {
             sub?.remove?.();
@@ -272,7 +278,7 @@ export default function WorkoutDetailScreen() {
           }
         });
         // 兜底 30s 硬超时
-        setTimeout(() => { if (!finished) { try { sub?.remove?.(); } catch {}; finish(); } }, 30000);
+        timeout = setTimeout(() => { if (!finished) { try { sub?.remove?.(); } catch {}; finish(); } }, 30000);
         player.play();
       });
     } catch (e: any) {
@@ -286,6 +292,7 @@ export default function WorkoutDetailScreen() {
   // 退出页面确保停止播放, 避免后台继续念
   useEffect(() => {
     return () => {
+      finishPlaybackRef.current?.();
       try { playerRef.current?.pause(); playerRef.current?.remove(); } catch {}
       playerRef.current = null;
     };

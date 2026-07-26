@@ -18,6 +18,7 @@ import {
   type DoctorExport, type DoctorFeedback,
 } from '../services/doctorReport';
 import { sharePlainText } from '../utils/share';
+import { todayStr } from '../utils/dietDate';
 
 const EXPORT_QK = (days: number) => ['doctorExport', days];
 const FEEDBACK_QK = ['doctorFeedback'];
@@ -51,7 +52,7 @@ export default function DoctorLoopScreen() {
       summary: summary.trim() || undefined,
       assessment: assessment.trim() || undefined,
       plan: plan.trim() || undefined,
-      visit_date: new Date().toISOString().slice(0, 10),
+      visit_date: todayStr(),
     }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: FEEDBACK_QK });

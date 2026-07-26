@@ -306,7 +306,7 @@ function EditItemSheet({
       setValueStr(item.value != null ? String(item.value) : '');
       setAbnormal((item.is_abnormal as string) || 'normal');
     }
-  }, [item?.id]);
+  }, [item]);
 
   if (!item) return null;
 

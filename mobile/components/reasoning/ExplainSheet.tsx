@@ -28,6 +28,7 @@ type Props =
 export function ExplainSheet(props: Props) {
   const { c } = useTheme();
   const styles = useMemo(() => createStyles(c), [c]);
+  const reference = props.source === 'safety' ? props.ruleId : props.specialist;
   const q = useReasoningExplain(
     props.source === 'safety'
       ? {
@@ -50,14 +51,14 @@ export function ExplainSheet(props: Props) {
       emitClientEvent('reasoning_sheet_opened', {
         source: props.source,
         audit_id: props.auditId,
-        ref: props.source === 'safety' ? props.ruleId : props.specialist,
+        ref: reference,
       });
     }
   }, [
     props.visible,
     props.source,
     props.auditId,
-    props.source === 'safety' ? props.ruleId : props.specialist,
+    reference,
   ]);
 
   return (

@@ -35,7 +35,9 @@ function Probe() {
           ? auth.user
             ? 'auth+user'
             : 'auth'
-          : 'guest'}
+          : auth.user
+            ? 'guest+stale-user'
+            : 'guest'}
     </Text>
   );
 }
@@ -143,5 +145,55 @@ describe('useAuth update resilience', () => {
 
     await waitFor(() => expect(screen.getByTestId('state')).toHaveTextContent('auth+user'));
     expect(fetchCurrentUser).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not restore a stale user after the session is cleared during foreground hydration', async () => {
+    let resolveForegroundUser: ((user: { id: number; username: string }) => void) | null = null;
+    (getToken as jest.Mock).mockResolvedValueOnce('tok_saved');
+    (fetchCurrentUser as jest.Mock)
+      .mockRejectedValueOnce(new Error('temporary network failure'))
+      .mockImplementationOnce(() => new Promise((resolve) => {
+        resolveForegroundUser = resolve;
+      }));
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    );
+
+    await waitFor(() => expect(screen.getByTestId('state')).toHaveTextContent('auth'));
+
+    act(() => {
+      appStateHandler?.('active');
+    });
+    await waitFor(() => expect(fetchCurrentUser).toHaveBeenCalledTimes(2));
+
+    act(() => {
+      unauthorizedHandler?.();
+    });
+    await waitFor(() => expect(screen.getByTestId('state')).toHaveTextContent('guest'));
+
+    await act(async () => {
+      resolveForegroundUser?.({ id: 3, username: 'old-user' });
+    });
+
+    expect(screen.getByTestId('state')).toHaveTextContent('guest');
+    expect(screen.getByTestId('state')).not.toHaveTextContent('stale-user');
+  });
+
+  it('unregisters the global unauthorized callback when the provider unmounts', async () => {
+    (getToken as jest.Mock).mockResolvedValue(null);
+
+    const view = render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    );
+    await waitFor(() => expect(screen.getByTestId('state')).toHaveTextContent('guest'));
+
+    view.unmount();
+
+    expect(unauthorizedHandler).toBeNull();
   });
 });

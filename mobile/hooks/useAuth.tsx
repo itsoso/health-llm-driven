@@ -4,6 +4,7 @@ import React, {
   useState,
   useEffect,
   useCallback,
+  useRef,
   type ReactNode,
 } from 'react';
 import { AppState } from 'react-native';
@@ -70,8 +71,10 @@ export function AuthProvider({
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const sessionEpochRef = useRef(0);
 
   const clearSession = useCallback(async () => {
+    sessionEpochRef.current += 1;
     setToken(null);
     setUser(null);
     await logoutApi();
@@ -82,11 +85,10 @@ export function AuthProvider({
   // where every request fails and there is no reliable path back to login.
   useEffect(() => {
     setOnUnauthorized(() => {
-      setToken(null);
-      setUser(null);
-      void logoutApi();
+      void clearSession();
     });
-  }, []);
+    return () => setOnUnauthorized(null);
+  }, [clearSession]);
 
   useEffect(() => {
     let mounted = true;
@@ -99,18 +101,22 @@ export function AuthProvider({
       };
     }
     setIsLoading(true);
+    const hydrationEpoch = sessionEpochRef.current;
     (async () => {
       try {
         const saved = await restoreSavedToken();
-        if (saved && mounted) {
+        if (saved && mounted && sessionEpochRef.current === hydrationEpoch) {
           setToken(saved);
           // 冷启动回灌 token 到 App Group UserDefaults + 共享 keychain,
           // 让 Siri extension 能读到。失败静默 —— 主 App 体验不受影响。
           saveTokenToSharedKeychain(saved).catch(() => {});
           try {
             const me = await fetchCurrentUser();
-            if (mounted) setUser(me);
+            if (mounted && sessionEpochRef.current === hydrationEpoch) setUser(me);
           } catch (error) {
+            if (sessionEpochRef.current !== hydrationEpoch) {
+              return;
+            }
             if (isUnauthorizedError(error)) {
               await clearSession();
             } else if (mounted) {
@@ -121,8 +127,10 @@ export function AuthProvider({
           }
         }
       } catch {
-        setToken(null);
-        setUser(null);
+        if (sessionEpochRef.current === hydrationEpoch) {
+          setToken(null);
+          setUser(null);
+        }
       } finally {
         if (mounted) setIsLoading(false);
       }
@@ -139,19 +147,22 @@ export function AuthProvider({
     const sub = AppState.addEventListener('change', (state) => {
       if (state !== 'active' || isLoading || !restoreCloudSession) return;
       void (async () => {
+        const recoveryEpoch = sessionEpochRef.current;
         try {
           if (!token) {
             const saved = await restoreSavedToken();
-            if (saved) {
+            if (saved && sessionEpochRef.current === recoveryEpoch) {
               setToken(saved);
               saveTokenToSharedKeychain(saved).catch(() => {});
-              setUser(await fetchCurrentUser());
+              const me = await fetchCurrentUser();
+              if (sessionEpochRef.current === recoveryEpoch) setUser(me);
             }
           } else if (!user) {
-            setUser(await fetchCurrentUser());
+            const me = await fetchCurrentUser();
+            if (sessionEpochRef.current === recoveryEpoch) setUser(me);
           }
         } catch (error) {
-          if (isUnauthorizedError(error)) {
+          if (sessionEpochRef.current === recoveryEpoch && isUnauthorizedError(error)) {
             await clearSession();
           }
         }
@@ -162,20 +173,23 @@ export function AuthProvider({
 
   const login = useCallback(async (username: string, password: string) => {
     const result = await loginApi(username, password);
+    sessionEpochRef.current += 1;
     setToken(result.access_token);
     setUser(result.user);
   }, []);
 
   const loginByPhoneCode = useCallback(async (phone: string, code: string) => {
     const result = await loginByPhoneCodeApi(phone, code);
+    sessionEpochRef.current += 1;
     setToken(result.access_token);
     setUser(result.user);
   }, []);
 
   const logout = useCallback(async () => {
-    await logoutApi();
+    sessionEpochRef.current += 1;
     setToken(null);
     setUser(null);
+    await logoutApi();
   }, []);
 
   const isAuthenticated = token !== null;

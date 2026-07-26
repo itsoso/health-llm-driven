@@ -12,7 +12,9 @@ const mockGet = api.get as jest.Mock;
 describe('timeRangeToDates', () => {
   beforeAll(() => {
     jest.useFakeTimers();
-    jest.setSystemTime(new Date('2026-04-20'));
+    // Calendar ranges are user-local. A bare YYYY-MM-DD string is parsed as
+    // UTC and becomes the previous local day in negative UTC timezones.
+    jest.setSystemTime(new Date(2026, 3, 20, 12, 0, 0));
   });
   afterAll(() => jest.useRealTimers());
 

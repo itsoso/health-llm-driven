@@ -4,7 +4,7 @@
  * 跟 web 版同语义, 走 GET /me/weekly-briefing, POST /trigger 手动生成.
  */
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator, Alert, RefreshControl, ScrollView, StyleSheet,
   Text, TouchableOpacity, View,
@@ -67,6 +67,7 @@ export default function WeeklyBriefingScreen() {
   const [loading, setLoading] = useState(true);
   const [triggering, setTriggering] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -81,6 +82,9 @@ export default function WeeklyBriefingScreen() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => () => {
+    if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+  }, []);
 
   const onRefresh = () => { setRefreshing(true); load(); };
 
@@ -90,7 +94,11 @@ export default function WeeklyBriefingScreen() {
       const r = await api.post<{ queued: boolean; reason?: string }>('/me/weekly-briefing/trigger');
       if (r.data.queued) {
         Alert.alert('AI 正在生成', '约 30 秒后回来下拉刷新');
-        setTimeout(load, 35000);
+        if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+        refreshTimerRef.current = setTimeout(() => {
+          refreshTimerRef.current = null;
+          void load();
+        }, 35000);
       } else {
         Alert.alert('已有建议', r.data.reason || '本周已有 AI 建议');
         load();

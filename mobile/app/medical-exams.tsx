@@ -44,6 +44,7 @@ export default function MedicalExamsScreen() {
 
   const exams = examsQuery.data ?? [];
   const latestExam = exams[0] ?? null;
+  const refetchExams = examsQuery.refetch;
   const openMedicalImport = useCallback(() => {
     router.push({
       pathname: '/import',
@@ -53,8 +54,8 @@ export default function MedicalExamsScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      void examsQuery.refetch();
-    }, [examsQuery.refetch]),
+      void refetchExams();
+    }, [refetchExams]),
   );
 
   return (

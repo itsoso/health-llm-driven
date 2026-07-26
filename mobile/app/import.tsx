@@ -34,6 +34,7 @@ import { uploadGeneticTxt, uploadGeneticPdf, pollGeneticProfileStatus } from '..
 import AgentFeedbackLink from '../components/agent/AgentFeedbackLink';
 import { createImportResultAgentContext } from '../utils/agentContext';
 import { geneticImportStatusView, isTerminalGeneticImportStatus } from '../utils/geneticImportStatus';
+import { todayStr } from '../utils/dietDate';
 
 type FileKind = 'genetic_txt' | 'genetic_pdf' | 'medical_pdf' | 'medical_image';
 
@@ -255,7 +256,7 @@ export default function ImportScreen() {
     setBusyHint('AI 正在从文字中抽取健康指标...');
     try {
       const data = await uploadMedicalExamText(text, {
-        exam_date: new Date().toISOString().slice(0, 10),
+        exam_date: todayStr(),
         hospital_name: '手工贴文字',
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);

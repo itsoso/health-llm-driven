@@ -184,3 +184,14 @@ RequirementAdmission:
 - 依赖闸门已改为机器可验证的窄例外：`scripts/npm-audit-gate.mjs` 递归解析所有 high/critical 路径，只允许 `mobile/npm-audit-policy.json` 中 GHSA-mh99-v99m-4gvg，且例外于 2026-08-15 自动到期。未知、过期、无法解析或新增 advisory 均 fail-closed；Node gate 自测 4/4 通过，真实 mobile audit 37 条传递路径全部只归因到该单一 advisory。
 - 修复复合健康记录被单目标保护错误压平的问题：`记录早餐鸡蛋和喝水300ml` 曾被编译成单一 water goal，两个工具调用都被规范化为同一喝水写入，第二条又被幂等去重，导致早餐丢失且不生成配方卡。现在复合餐饮+饮水、多次饮水、症状+饮水及多症状请求均退出 single-target canonicalization，保留正常多工具链。目标编译/守卫/配方相关回归共 58/58 通过，原 CI 失败用例恢复。
 - 严格 final-submit gate 仍按预期失败：Build 237 物理 iPhone 20 项验收、同 Build 截图集、App Privacy 已发布确认、受监管医疗器械声明 `No`、发布机 App Store Connect 凭据与 Review 联系/演示账号注入尚未在本工作区完成。submission pack 与 Review Notes 必须保持 Draft。
+
+## 2026-07-25 Mobile Session And Calendar Hardening
+
+- 修复前后台会话竞态：冷启动或前台 `/auth/me` 的旧结果不得在退出登录、401 清理或新登录后回填旧用户；AuthProvider 卸载时注销全局 401 callback，避免旧 Provider 继续修改新树状态。
+- 每个 API 请求记录发送时使用的认证 token（仅保存在 Axios config，不进入请求头或日志）。延迟返回的旧 token 401 不再清除当前新会话；当前 token 的 401 与 Web 无 Bearer 会话仍保持原登出语义。
+- SecureStore 与共享 Keychain 的 token 写入/删除改为同一串行队列。旧登出尚未完成时的新登录会在删除完成后持久化，避免切账号或快速重登后 token 被过期删除任务擦除。
+- 清理用户日历日的 UTC 漂移：体重、血压、饮水/补剂、症状、用药、目标、趋势、训练卡、化验和基因导入统一使用本地日历日，避免美国等负 UTC 时区晚间记录落到第二天或上一天。
+- 修复页面生命周期竞态：新的撤销提示不会被上一条 5 秒定时器清除；周报延迟刷新、训练语音播放和兜底超时均在卸载时停止；位置、化验编辑、化验列表与解释面板按最新数据刷新。
+- TDD 新增认证旧结果、旧 401、存储删除/写入竞态和本地日期回归。重放并发图片保存修复后的 Mobile 全量回归为 278 suites / 2090 passed / 1 skipped / 1 snapshot passed；TypeScript、设计 token、App Store submission preflight、release pack 和 `git diff --check` 通过；lint 为 0 errors / 93 个既有 warnings。生产依赖 audit 通过，仅保留 `brace-expansion` 至 2026-08-15 的构建时窄例外。
+- 本轮全部为 JS/TS 变更，不新增原生权限、隐私数据类别或原生模块，可发布 production OTA；OTA 不能代替 Build 237 的物理 iPhone G6 和同 Build 截图复核。
+- G6 继续 `BLOCKED`：Build 237 物理 iPhone 20 项验收、同 Build 截图、App Privacy 发布确认、受监管医疗器械状态 `No` 及最终 Review 联系/演示账号资料仍须人工完成。上述证据齐全前不得移除 Draft 或点击 Submit for Review。

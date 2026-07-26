@@ -17,13 +17,14 @@ import {
   revaSemantic,
   revaFonts,
 } from '../../constants/revaTheme';
+import { todayStr } from '../../utils/dietDate';
 
 const PART_EMOJI: Record<string, string> = Object.fromEntries(
   BODY_PARTS.map(p => [p.value, p.emoji]),
 );
 
 export default function SymptomCard() {
-  const todayYmd = new Date().toISOString().slice(0, 10);
+  const todayYmd = todayStr();
   const { data: entries = [] } = useQuery<SymptomEntry[]>({
     queryKey: ['symptoms', 'today'],
     queryFn: () => listMySymptoms({ start_date: todayYmd, limit: 20 }),

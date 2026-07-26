@@ -33,6 +33,7 @@ import {
 import { useToast } from '../hooks/useToast';
 import AgentFeedbackLink from '../components/agent/AgentFeedbackLink';
 import { createMedicationAgentContext } from '../utils/agentContext';
+import { todayStr } from '../utils/dietDate';
 
 type TabKey = 'active' | 'archived';
 
@@ -104,7 +105,7 @@ export default function MedicationsScreen() {
   const isLoading = tab === 'active' ? activeQuery.isLoading : allQuery.isLoading;
   const isFetching = tab === 'active' ? activeQuery.isFetching : allQuery.isFetching;
   const refetch = tab === 'active' ? activeQuery.refetch : allQuery.refetch;
-  const today = new Date().toISOString().split('T')[0];
+  const today = todayStr();
   const activeMedications = activeQuery.data || [];
   const medicationDraft = useMemo(() => parseMedicationDraftParams(routeParams), [routeParams]);
 

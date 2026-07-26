@@ -6,6 +6,7 @@
  */
 import * as FileSystem from 'expo-file-system/legacy';
 import api from './api';
+import { todayStr } from '../utils/dietDate';
 
 export interface GeneticTxtUploadResult {
   id: number;
@@ -29,7 +30,7 @@ export async function uploadGeneticTxt(
   const txt_content = await FileSystem.readAsStringAsync(fileUri, {
     encoding: FileSystem.EncodingType.UTF8,
   });
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayStr();
   const res = await api.post<GeneticTxtUploadResult>('/genetic/profiles/upload-txt', {
     test_provider: opts.test_provider || '自助上传',
     test_date: opts.test_date || today,
@@ -46,7 +47,7 @@ export async function uploadGeneticPdf(
   const pdf_base64 = await FileSystem.readAsStringAsync(fileUri, {
     encoding: FileSystem.EncodingType.Base64,
   });
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayStr();
   const res = await api.post<GeneticPdfUploadResult>('/genetic/profiles/upload-pdf', {
     test_provider: opts.test_provider || '自助上传',
     test_date: opts.test_date || today,
