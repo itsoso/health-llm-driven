@@ -4,8 +4,8 @@
 |---|---|
 | slug | `agent-write-result-contract-hardening` |
 | 创建日期 | 2026-07-26 |
-| 当前阶段 | G5 deployment |
-| 状态 | ready-to-deploy |
+| 当前阶段 | G6 production verification |
+| 状态 | complete |
 | 负责 | Codex |
 | 反馈环 | backend deploy |
 
@@ -111,8 +111,43 @@ genetics, laboratory and diet writes.
 
 ## G5 · Deployment Health
 
-PENDING.
+**裁决**: PASS
+
+- `main` commit `cc072e1ebd29330698772c77993c0fb3d5b5baee` passed
+  GitHub Actions run
+  [30206252426](https://github.com/itsoso/health-llm-driven/actions/runs/30206252426).
+  The one-time live-eval repository variable was deleted immediately after the
+  rerun and its absence was verified.
+- The production deploy gate completed a fresh PostgreSQL backup, restored and
+  verified 234 tables in a temporary database, and verified the encrypted
+  off-site archive hash and HMAC before changing code.
+- `deploy.sh -b -y` deployed the exact reviewed commit. Managed migrations had
+  no pending entry; backend and Celery services restarted successfully.
+- Deployment health score was `60/60`, the first-party Skills manifest matched
+  `22/22`, and the remote Git revision matched `cc072e1ebd29`.
 
 ## G6 · Production Verification
 
-PENDING.
+**裁决**: PASS
+
+- Public `/api/v1/health` reported API, PostgreSQL, Redis and Celery healthy.
+  The administrator-only Runtime rollout endpoint returned `401` without
+  authentication.
+- The production Runtime configuration is `enforce`; the circuit is `active`
+  with no reason code. In the one-hour aggregate probe, all three terminal Runs
+  succeeded, with zero failed, reconciliation-required or stale-active Runs.
+- Runtime contract snapshots covered all five Runs in the observation window.
+  There were no settled-message linkage gaps, missing attempts or active Runs
+  beyond their deadline.
+- A content-free smoke against the deployed code proved the write-result
+  boundary: explicit `dispatch_started=false` rejection remains terminal,
+  while missing or true dispatch state remains uncertain and requires
+  reconciliation.
+- The three observed `health_record/tool_rejected` operations occurred before
+  deployment at 22:40–22:41 CST; no post-deploy tool failure was present in the
+  verification window.
+- One `agent_stream` Run from 2026-07-23 remains in `waiting_for_user` for more
+  than 24 hours. It predates this release, has no active lease or write
+  reconciliation, and is retained as a separate lifecycle-cleanup follow-up.
+- This release changed backend Runtime behavior only. No Mobile OTA or
+  TestFlight build was required.
