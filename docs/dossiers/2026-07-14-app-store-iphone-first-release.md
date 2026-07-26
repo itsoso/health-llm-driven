@@ -207,3 +207,6 @@ RequirementAdmission:
 - 会话失效判定改为两阶段：业务接口 401 只触发一次 single-flight `/auth/me` 复核；鉴权接口不进入全局 401 回调；`/auth/me` 连续两次返回 401 才清理 token。一次部署、代理或端点策略抖动不得永久登出，真正失效的凭证仍能回到登录页。
 - 新增非敏感 AsyncStorage 恢复标记，仅记录“曾成功持久化会话”，不保存 token、账号或健康数据。已知会话冷启动时扩大 Keychain 读取窗口；成功恢复和登录会刷新标记，显式登出或确认失效会清除标记。
 - 新增业务 401 复核、鉴权接口隔离、瞬时 `/auth/me` 401、确认失效及已知会话 Keychain 延迟可读回归。定向认证回归 45/45、TypeScript、`git diff --check` 通过；全量 Mobile 断言 278 suites / 2096 passed / 1 skipped / 1 snapshot passed。G6 仍需在修复 OTA 上重新登录一次后连续终止/启动两轮均进入 Agent 页面。
+- 修复提交 `2518aea9a6651d9ea103e8f07e766aea7447566b` 已推送 `main`，并发布 runtime 1.3.2 production OTA：update group `752c2637-2e94-455a-9501-97551c7b1e46`，iOS update `019f9cf4-1d6f-7a19-a43f-cf04a7515d82`。
+- Build 237 在真实 iPhone 17 Pro Max 上应用该 OTA 后，连续两次执行“终止进程 -> 冷启动”，均在约 4 秒内直接进入 Agent 页面，未出现登录页或二次登录。结果包：`/tmp/RevaAuthPersistencePostFixCold1.xcresult`、`/tmp/RevaAuthPersistencePostFixCold2.xcresult`。
+- 登录持久化真机子项判定为 `PASS`。完整 G6 仍保持 `BLOCKED`，其余语音、拍照、分享、写入纠正删除、账号删除及同 Build 截图等验收项目不得由本子项代替。
