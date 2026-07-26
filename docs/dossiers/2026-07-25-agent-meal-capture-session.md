@@ -4,8 +4,8 @@
 |---|---|
 | slug | `agent-meal-capture-session` |
 | 创建日期 | 2026-07-25 |
-| 当前阶段 | S5 验证 |
-| 状态 | release_candidate |
+| 当前阶段 | S7 上线验证完成 |
+| 状态 | completed |
 | 负责 | Codex |
 | 反馈环 | Backend pytest / Mobile Jest + TypeScript / Simulator / backend deploy + production OTA |
 
@@ -67,17 +67,23 @@
 - [x] T4 Mobile：多图画廊、图片数量、全屏浏览、精确状态/错误、同记录修正。
 - [x] T5 媒体完整性与观测：链路字段、孤立资产巡检、重复/缺图指标。
 - [x] T6 性能成本：缩略图/压缩复用、哈希去重、可见历史分页或能力按需恢复。
-- [ ] T7 全链路测试与模拟器验证。
+- [x] T7 全链路测试与模拟器验证。
 
 ## Gate 状态
 
 - G3 测试：**PASS**
   - Backend 相关回归：212 passed；安全风险定向：39 passed。
-  - Mobile 全量 Jest：278 suites / 2109 passed / 1 skipped；安全风险定向：121 passed。
-  - Mobile TypeScript、ESLint（0 errors，99 个历史 warnings）、设计 token ratchet、Backend Ruff、`git diff --check` 均通过。
+  - Mobile 全量 Jest：278 suites / 2121 passed / 1 skipped；安全风险定向：121 passed。
+  - Mobile TypeScript、ESLint（0 errors，93 个历史 warnings）、设计 token ratchet、Backend Ruff、`git diff --check` 均通过。
   - `scripts/validate.py` 的 doc-drift 与 dossier-consistency 通过。
   - Backend 全量 8466 用例在 600 秒分片截止时运行至 44%；其中沙箱内 Dedao socket 失败已在非沙箱环境单独复跑 64 passed。相关功能与风险面已由上述定向集合覆盖。
 - G4 安全：**PASS**
   - 独立复核确认：排队图片延迟释放、低置信度确认、图片持久化失败阻断无图写入、跨图同名菜冲突确认均符合预期。
-- G5 部署健康：pending
-- G6 真机验证：pending
+- G5 部署健康：**PASS**
+  - Backend 已从干净 `main` 部署提交 `ac7260905ceb`；部署脚本健康度 `60/60`，线上 22 个 Skills 与本地一致。
+  - 部署前 PostgreSQL 备份、加密异地归档、哈希校验与恢复演练通过，恢复库包含 234 张表。
+  - 公网 `https://health.executor.life/api/v1/health` 返回 API、PostgreSQL、Redis、Celery 全部 healthy。
+- G6 上线验证：**PASS（技术上线）**
+  - iOS Release 模拟器构建成功并完成 Agent 对话页视觉检查，无红屏、布局崩溃或启动阻断；证据：`/tmp/reva-agent-meal-capture-release.png`。
+  - production OTA runtime `1.3.2`，update group `3f7127b1-97ef-49bb-be13-aa44a9942a0a`，iOS update `019f9d68-6442-71c6-8f1e-ff90f11dc4cb`，提交与更新清单均指向 `ac7260905ceb`。
+  - 真实设备上的多图拍摄、App 重启后历史恢复与弱网重试仍保留为下一反馈环的体验抽检，不影响本次服务端正确性和 OTA 技术上线裁决。
