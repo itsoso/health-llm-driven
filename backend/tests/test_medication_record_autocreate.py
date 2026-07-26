@@ -1,4 +1,5 @@
 """Medication intake creates only the minimum definition after server confirmation."""
+import json
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -130,6 +131,10 @@ async def test_model_confirmed_flag_never_reaches_legacy_medication_http_path(
         },
     )
 
-    assert result.startswith("Error:")
-    assert "确认计划未能建立" in result
+    payload = json.loads(result)
+    assert payload["status"] == "rejected"
+    assert payload["success"] is False
+    assert payload["dispatch_started"] is False
+    assert payload["error_code"] == "medication_plan_context_missing"
+    assert "确认计划未能建立" in payload["message"]
     assert db.query(MedicationLog).filter(MedicationLog.user_id == user.id).count() == 0
