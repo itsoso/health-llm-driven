@@ -3,8 +3,8 @@
 | 字段 | 值 |
 |---|---|
 | date | 2026-07-26 |
-| status | executing |
-| current_stage | S6 deploy pending |
+| status | complete |
+| current_stage | S8 complete |
 | owner_surface | Agent Runtime / health writes |
 
 ## Incident
@@ -53,7 +53,8 @@ continue to require reconciliation.
 1. Deploy the classifier and structured-result repair.
 2. Resolve only the three evidence-backed operations as
    `verified_no_effect` through the audited Runtime service.
-3. Confirm that no unresolved reconciliation remains.
+3. Confirm that no newly unacknowledged reconciliation remains. The known
+   2026-07-23 non-health `draft_aigc_media` operation stays unchanged.
 4. Resume using the exact current reconciliation generation.
 5. Verify Runtime is active, generations are acknowledged, production health
    is green and the deployed SHA matches main.
@@ -97,15 +98,26 @@ No business write path, authorization rule, idempotency policy or global
 fail-closed behavior is relaxed. Legacy compatibility is limited to an exact
 local no-write marker.
 
-### G5 Deployment Health: PENDING
+### G5 Deployment Health: GO
 
-**裁决**: PENDING
+**裁决**: PASS
 
-Awaiting commit, push, backend deployment and exact-SHA health verification.
+Backend commit `f29be0c96` was deployed through `deploy.sh -b -y`. The
+database backup, 234-table restore rehearsal, encrypted offsite archive
+verification, managed migration check, service restart, `60/60` health score,
+`22/22` skills manifest check and exact remote SHA verification all passed.
 
-### G6 Production Verification: PENDING
+### G6 Production Verification: GO
 
-**裁决**: PENDING
+**裁决**: PASS
 
-Awaiting audited reconciliation, exact-generation resume and a subsequent
-user-initiated health-write verification.
+All three incident operations were resolved through the administrator audit API
+as `verified_no_effect`. The exact-generation resume changed Runtime to
+`enforce + active`, with reconciliation generation `3` acknowledged at `3`.
+
+The already-persisted user diet turn was then resumed using its original
+`client_turn_id`, rather than creating a duplicate input. Its Run completed as
+`succeeded`, executed exactly one `health_record` operation and obtained one
+verified `diet_record` receipt. Runtime remained active and no new
+reconciliation generation was created. The pre-existing acknowledged
+non-health `draft_aigc_media` reconciliation remains unchanged.
