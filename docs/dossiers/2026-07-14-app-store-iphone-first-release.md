@@ -222,3 +222,11 @@ RequirementAdmission:
 - 当前截图只完成候选素材审查，尚未标记 `app_store_ready`：Agent 对话页展示“无法自动同步 Garmin”的低价值样例，设置页展示演示邮箱；两者不适合作为公开营销素材。健康记录、导入健康档案和隐私政策页可保留，剩余素材需在演示账号中重新策展后再导出 1290 x 2796。
 - CoreDevice 仍识别 iPhone `suntice`，但 `available=false`，提示设备需解锁并通过线缆可发现；因此 20 项物理 iPhone 证据仍未执行。App Privacy 发布确认和受监管医疗器械声明 `No` 也未在 App Store Connect 登录态页面核验。
 - G6 保持 `BLOCKED`。不得因为 Release 模拟器构建、登录恢复或部分截图通过而移除 Draft 或点击 Submit for Review。
+
+## 2026-07-26 Deterministic Review Conversation
+
+- 截图复核确认演示账号只稳定提供健康观测、今日行动、时间线和每日工件，没有稳定的 Agent 对话种子。Mobile 会先恢复本地记住的 conversation；没有本地记录时再优先打开最近的「每日健康简报」。因此截图会被该账号历史测试对话污染，出现“无法自动同步 Garmin”等低价值内容。
+- 演示 fixture 新增一段不含诊断、药名、化验或私人数据的合成对话，展示最近一周睡眠、步数和两项可执行建议。seeder 使用专用 `session_key=app-store-review-demo` 重建当天简报，只删除同标识的旧演示对话，审核员自己创建的其他对话保持不变。
+- seeder 现在返回并验证 `demo_conversation_id` 与消息数。专项测试覆盖内容合规、消息角色、重复执行不增生、其他对话不被删除；演示账号、Agent 对话 API 和每日简报联合回归 50/50 通过，Python 编译与 `git diff --check` 通过。
+- 本改动尚未把截图标记为 `app_store_ready`。部署并重建生产演示账号后，必须在清除模拟器旧会话状态的干净安装上重新采集、逐张视觉审核，再决定最终营销集合。
+- G6 继续 `BLOCKED`：物理 iPhone 验收、App Privacy 已发布确认、受监管医疗器械状态 `No` 均未由本轮覆盖。

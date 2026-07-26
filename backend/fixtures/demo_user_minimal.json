@@ -65,5 +65,11 @@
         "calories": 260
       }
     ]
+  },
+  "agent_conversation": {
+    "_comment": "Deterministic synthetic Agent conversation for App Store review screenshots. It is regenerated under a dedicated session_key and contains no diagnosis, medication, lab, or private-user data.",
+    "title_prefix": "每日健康简报",
+    "user_message": "结合最近一周的数据，我今天最值得做什么？",
+    "assistant_message": "## 今天优先完成两件事\n\n1. **午餐后快走 15 分钟**：延续每天约 8,000 步的活动节奏，餐后走动更容易执行。\n2. **把饮水分散到白天**：上午和下午各补水 2 次，避免临睡前集中饮水。\n\n### 最近一周\n\n- 平均睡眠约 **7 小时 48 分钟**，睡眠评分约 **82 分**\n- 日均步数约 **8,000 步**，恢复节奏整体稳定\n\n今天不用增加复杂任务，先把这两件事做完。完成后告诉我，我会根据执行结果调整明天的安排。"
   }
 }
