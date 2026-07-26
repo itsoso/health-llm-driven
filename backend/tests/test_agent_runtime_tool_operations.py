@@ -1788,8 +1788,10 @@ async def test_executor_off_mode_keeps_runtime_operation_ledger_empty(
 
 @pytest.mark.asyncio
 async def test_executor_exception_after_claim_is_marked_for_reconciliation(
-    db, auth_user_and_headers, monkeypatch
+    db, auth_user_and_headers, monkeypatch, caplog
 ):
+    import logging
+
     from app.models.agent_runtime import AgentToolOperation
     from app.services.agent_executor import AgentExecutor
     from app.services.agent_runtime import AgentRuntimeCoordinator
@@ -1817,9 +1819,12 @@ async def test_executor_exception_after_claim_is_marked_for_reconciliation(
     )
 
     async def exploding_write(base_url, headers, args):
-        raise RuntimeError("transport dropped after dispatch")
+        user.name = "committed-before-error"
+        db.commit()
+        raise RuntimeError("private-health-content")
 
     monkeypatch.setattr(executor, "_exec_health_record", exploding_write)
+    caplog.set_level(logging.ERROR, logger="app.services.agent_executor")
     result = await executor._execute_tool(
         "health_record",
         {"record_type": "diet", "data": {"food_items": "牛肉面"}},
@@ -1828,5 +1833,60 @@ async def test_executor_exception_after_claim_is_marked_for_reconciliation(
 
     operation = db.query(AgentToolOperation).one()
     assert result.startswith("Error:")
+    assert operation.status == "reconciliation_required"
+    assert operation.error_code == "write_uncertain"
+    assert "private-health-content" not in caplog.text
+    db.expire_all()
+    assert user.name == "committed-before-error"
+
+
+@pytest.mark.asyncio
+async def test_executor_http_timeout_after_claim_is_marked_for_reconciliation(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+):
+    import httpx
+
+    from app.models.agent_runtime import AgentToolOperation
+    from app.services.agent_executor import AgentExecutor
+    from app.services.agent_runtime import AgentRuntimeCoordinator
+
+    user, _headers = auth_user_and_headers
+    runtime = AgentRuntimeCoordinator(db)
+    admission = _run(db, user.id, suffix="executor-http-timeout")
+    runtime.mark_running(admission.context)
+    executor = AgentExecutor(db)
+    executor._current_user_id = user.id
+    executor._current_turn_user_message = "记录午餐吃了牛肉面"
+    executor._runtime_run_id = admission.context.run_id
+    executor._runtime_attempt_id = admission.context.attempt_id
+    executor._runtime_managed = True
+
+    monkeypatch.setattr(
+        "app.services.agent_executor.settings.agent_runtime_mode",
+        "enforce",
+    )
+    monkeypatch.setattr(
+        "app.services.llm.tool_validator.validate_tool_call",
+        lambda tool_name, args, db, user_id, reference_now=None: {
+            "error": None,
+            "data": args,
+        },
+    )
+
+    async def timed_out_write(base_url, headers, args):
+        raise httpx.ReadTimeout("private-upstream-detail")
+
+    monkeypatch.setattr(executor, "_exec_health_record", timed_out_write)
+
+    result = await executor._execute_tool(
+        "health_record",
+        {"record_type": "diet", "data": {"food_items": "牛肉面"}},
+        None,
+    )
+
+    operation = db.query(AgentToolOperation).one()
+    assert "处理超时" in result
     assert operation.status == "reconciliation_required"
     assert operation.error_code == "write_uncertain"

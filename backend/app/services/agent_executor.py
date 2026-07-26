@@ -14919,11 +14919,10 @@ class AgentExecutor:
             if "policy_check_failed" not in self._agent_kernel_capability_block_reasons:
                 self._agent_kernel_capability_block_reasons.append("policy_check_failed")
             logger.error(
-                "[agent_kernel] gateway failed tool=%s user=%s error=%s",
+                "[agent_kernel] gateway failed tool=%s user=%s error_type=%s",
                 tool_name,
                 self._current_user_id,
-                exc,
-                exc_info=True,
+                type(exc).__name__,
             )
             return "Error: 工具调用策略检查失败,已阻止执行。"
 
@@ -14953,9 +14952,9 @@ class AgentExecutor:
                 )
             except Exception as finalize_exc:  # noqa: BLE001
                 logger.error(
-                    "Runtime tool operation finalize failed operation=%s error=%s",
+                    "Runtime tool operation finalize failed operation=%s error_type=%s",
                     runtime_operation.operation_id,
-                    finalize_exc,
+                    type(finalize_exc).__name__,
                 )
 
         try:
@@ -15149,7 +15148,17 @@ class AgentExecutor:
             finalize_uncertain_operation()
             raise
         except Exception as exc:  # noqa: BLE001
-            logger.error("工具执行失败 %s: %s", request.tool_name, exc)
+            logger.error(
+                "tool execution failed tool=%s error_type=%s operation=%s run=%s",
+                request.tool_name,
+                type(exc).__name__,
+                (
+                    runtime_operation.operation_id
+                    if runtime_operation is not None
+                    else None
+                ),
+                self._runtime_run_id,
+            )
             finalize_uncertain_operation()
             return f"Error: {safe_tool_error_message(request.tool_name, exc)}"
 
@@ -17358,6 +17367,11 @@ class AgentExecutor:
                 message="没有找到可调整的干预周期。",
                 recovery_guidance="请先查询并确认要调整的周期。",
             )
+        if cycle.status != "active":
+            return local_write_rejection(
+                "intervention_cycle_not_active",
+                message="只能调整进行中的干预周期。",
+            )
 
         days = args.get("days")
         if days is not None:
@@ -17386,11 +17400,6 @@ class AgentExecutor:
                 days=days,
                 target_specs=target_specs,
                 stop_conditions=stop_conditions,
-            )
-        except ValueError as exc:
-            return local_write_rejection(
-                "intervention_update_invalid",
-                message=str(exc),
             )
         except Exception:
             self.db.rollback()
@@ -17578,23 +17587,48 @@ class AgentExecutor:
                 message="当前会话缺少用户身份，无法写入化验指标。",
             )
 
+        from datetime import date as _date
+
+        from app.services.medical_text_parser import parse_lab_indicators_from_text
+
+        raw_date = args.get("exam_date")
         try:
-            from datetime import date as _date
-
-            from app.services.data_collection.medical_exam_import import MedicalExamImportService
-            from app.twin.cache import invalidate_twin
-
-            raw_date = args.get("exam_date")
             exam_date = (
                 datetime.strptime(raw_date, "%Y-%m-%d").date()
                 if raw_date
                 else _date.today()
             )
-            exam = MedicalExamImportService.import_from_text(
+        except (TypeError, ValueError):
+            return local_write_rejection(
+                "medical_exam_date_invalid",
+                message="化验日期格式无效。",
+                recovery_guidance="请使用 YYYY-MM-DD 格式。",
+            )
+
+        try:
+            items = parse_lab_indicators_from_text(text)
+        except (TypeError, ValueError):
+            items = []
+        if not items:
+            return local_write_rejection(
+                "medical_exam_text_invalid",
+                message="未能从文本中识别出可入库的化验指标。",
+                recovery_guidance="请补充可识别的化验项目、数值和单位后重试。",
+            )
+
+        try:
+            from app.services.data_collection.medical_exam_import import (
+                MedicalExamImportService,
+            )
+            from app.twin.cache import invalidate_twin
+
+            exam = MedicalExamImportService.import_from_items(
                 self.db,
                 user_id=self._current_user_id,
-                text=text,
+                items_data=items,
                 exam_date=exam_date,
+                exam_type="biochemistry",
+                notes=f"从聊天文本导入: {text[:500]}",
                 source="agent_text",
             )
             # 这里显式置位, 让 done 侧 KB 证据卡重算反映刚写入的化验指标;
@@ -17615,20 +17649,16 @@ class AgentExecutor:
                 },
                 ensure_ascii=False,
             )
-        except ValueError as e:
-            self.db.rollback()
-            return local_write_rejection(
-                "medical_exam_text_invalid",
-                message=str(e),
-                recovery_guidance="请补充可识别的化验项目、数值和单位后重试。",
+        except Exception as exc:  # noqa: BLE001
+            logger.error(
+                "medical exam import failed error_type=%s",
+                type(exc).__name__,
             )
-        except Exception as e:
-            logger.error(f"[upload_medical_exam_text] 入库失败: {e}", exc_info=True)
             try:
                 self.db.rollback()
             except Exception:
                 pass
-            return f"Error: 化验指标入库失败: {e}"
+            return "Error: 化验指标入库失败"
 
     _MAX_LAB_BATCH_NAMES = 20  # 单次批量最多查这么多指标(防滥用/超时)
 

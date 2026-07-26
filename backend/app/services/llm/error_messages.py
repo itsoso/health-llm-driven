@@ -110,7 +110,13 @@ def safe_tool_error_message(tool_name: str, error: Any) -> str:
 
     label = _TOOL_LABELS.get(str(tool_name), "这项操作")
     text = _error_text(error).lower()
-    if "timeout" in text or "timed out" in text or "超时" in text:
+    error_type = type(error).__name__.lower()
+    if (
+        "timeout" in error_type
+        or "timeout" in text
+        or "timed out" in text
+        or "超时" in text
+    ):
         return f"{label}处理超时，请稍后重试。"
     if any(marker in text for marker in ("connection", "network", "连接", "网络", "dns")):
         return f"{label}暂时无法连接服务，请检查网络后重试。"

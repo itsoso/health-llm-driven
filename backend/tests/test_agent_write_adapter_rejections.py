@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 
 import pytest
 
@@ -119,3 +120,78 @@ async def test_medical_exam_empty_text_is_structured_local_rejection(db):
     )
 
     _assert_local_rejection(result, error_code="medical_exam_text_missing")
+
+
+@pytest.mark.asyncio
+async def test_medical_exam_unparseable_text_is_rejected_before_import(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+):
+    from app.services.agent_executor import AgentExecutor
+    from app.services.data_collection.medical_exam_import import (
+        MedicalExamImportService,
+    )
+
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    executor._current_user_id = user.id
+
+    def import_must_not_run(*args, **kwargs):
+        raise AssertionError("import service crossed the dispatch boundary")
+
+    monkeypatch.setattr(
+        MedicalExamImportService,
+        "import_from_items",
+        import_must_not_run,
+    )
+
+    result = await executor._exec_upload_medical_exam_text(
+        "http://example.test",
+        {},
+        {"text": "今天化验结果都挺好的"},
+    )
+
+    _assert_local_rejection(result, error_code="medical_exam_text_invalid")
+
+
+@pytest.mark.asyncio
+async def test_medical_exam_error_after_import_dispatch_is_uncertain_and_log_safe(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+    caplog,
+):
+    from app.services.agent_executor import AgentExecutor
+    from app.services.agent_write_outcome import classify_write_execution
+    from app.services.data_collection.medical_exam_import import (
+        MedicalExamImportService,
+    )
+
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    executor._current_user_id = user.id
+
+    def commit_then_fail(db_session, **kwargs):
+        user.name = "committed-before-error"
+        db_session.commit()
+        raise ValueError("private-lab-content")
+
+    monkeypatch.setattr(
+        MedicalExamImportService,
+        "import_from_items",
+        commit_then_fail,
+    )
+    caplog.set_level(logging.ERROR, logger="app.services.agent_executor")
+
+    result = await executor._exec_upload_medical_exam_text(
+        "http://example.test",
+        {},
+        {"text": "ALT 31 U/L，AST 24 U/L"},
+    )
+
+    assert classify_write_execution(result).status == "uncertain"
+    assert result == "Error: 化验指标入库失败"
+    assert "private-lab-content" not in caplog.text
+    db.expire_all()
+    assert user.name == "committed-before-error"

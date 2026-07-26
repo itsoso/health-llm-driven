@@ -4,7 +4,7 @@
 |---|---|
 | slug | `agent-write-result-contract-hardening` |
 | 创建日期 | 2026-07-26 |
-| 当前阶段 | G4 safety review |
+| 当前阶段 | G4 safety re-review |
 | 状态 | building |
 | 负责 | Codex |
 | 反馈环 | backend deploy |
@@ -47,18 +47,35 @@ migration is therefore restricted to deterministic pre-dispatch exits.
 
 **裁决**: PASS
 
-- Core write-result, ToolGateway, Runtime tool-operation, health management,
-  intervention, medication, symptom/rhinitis authorization and static-contract
-  suite: 428 passed.
-- Runtime recovery/concurrency/rollout, AIGC, genetics, medical exam and diet
-  suite: 418 passed, 4 environment-dependent tests skipped.
+- Full targeted Runtime, Kernel, write, intervention, medication,
+  symptom/rhinitis, AIGC, genetics, medical-exam and diet suite:
+  1,111 passed, 9 environment-dependent tests skipped.
+- Added commit-boundary regressions proving that intervention and medical-exam
+  failures after a database commit remain uncertain and are not declared safe
+  to retry.
+- Added HTTP-timeout and content-free logging regressions.
 - Changed Python files compile successfully.
-- Repository document drift check passed.
+- Blocking Ruff checks and `git diff --check` passed.
 
 ## G4 · Safety Review
 
-PENDING. The change touches medication, genetics and medical-exam adapter
-boundaries and therefore requires an independent safety/privacy review.
+**First review**: BLOCK / NO-GO
+
+The independent reviewer found two adapters that could label a
+post-commit `ValueError` as `dispatch_started=false`, plus raw exception text in
+medical-import and generic dispatcher logs.
+
+**Remediation**:
+
+- Intervention-cycle status validation now runs before the service call; every
+  exception after entering the commit-capable service remains uncertain.
+- Medical text parsing and date validation now run before persistence;
+  exceptions from `import_from_items()` remain uncertain.
+- Runtime, ToolGateway, finalize and medical-import error logs retain only
+  stable identifiers and exception types, never raw health content or upstream
+  exception text.
+
+**Current verdict**: PENDING independent re-review.
 
 ## G5 · Deployment Health
 

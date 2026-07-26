@@ -114,8 +114,11 @@ async def test_water_record_missing_amount_does_not_default_to_250(db):
             user_token=None,
         )
 
-    assert "Error" in str(result)
-    assert "amount" in str(result)
+    rejection = json.loads(result)
+    assert rejection["status"] == "rejected"
+    assert rejection["dispatch_started"] is False
+    assert rejection["error_code"] == "tool_validation_failed"
+    assert "amount" in rejection["message"]
     post.assert_not_called()
 
 
@@ -472,8 +475,11 @@ async def test_agent_health_record_sleep_missing_times_fails_loud(db):
             user_token=None,
         )
 
-    assert "Error" in str(result)
-    assert "bedtime" in str(result)
+    rejection = json.loads(result)
+    assert rejection["status"] == "rejected"
+    assert rejection["dispatch_started"] is False
+    assert rejection["error_code"] == "sleep_fields_missing"
+    assert "bedtime" in rejection["message"]
     post.assert_not_called()
 
 
