@@ -18,9 +18,15 @@ import {
 } from '../services/auth';
 import { setOnUnauthorized } from '../services/api';
 import { saveTokenToSharedKeychain } from '../modules/shared-keychain';
+import {
+  hasPersistedSessionMarker,
+  markPersistedSession,
+} from '../services/authSessionMarker';
 
 const TOKEN_RESTORE_ATTEMPTS = 3;
+const KNOWN_SESSION_RESTORE_ATTEMPTS = 10;
 const TOKEN_RESTORE_RETRY_MS = 150;
+const UNAUTHORIZED_CONFIRM_RETRY_MS = 350;
 
 interface AuthState {
   user: User | null;
@@ -48,11 +54,14 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function restoreSavedToken(): Promise<string | null> {
-  for (let attempt = 0; attempt < TOKEN_RESTORE_ATTEMPTS; attempt += 1) {
+async function restoreSavedToken(knownSession = false): Promise<string | null> {
+  const attempts = knownSession
+    ? KNOWN_SESSION_RESTORE_ATTEMPTS
+    : TOKEN_RESTORE_ATTEMPTS;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
     const saved = await getToken();
     if (saved) return saved;
-    if (attempt < TOKEN_RESTORE_ATTEMPTS - 1) {
+    if (attempt < attempts - 1) {
       await sleep(TOKEN_RESTORE_RETRY_MS);
     }
   }
@@ -61,6 +70,16 @@ async function restoreSavedToken(): Promise<string | null> {
 
 function isUnauthorizedError(error: unknown): boolean {
   return (error as { response?: { status?: number } } | null)?.response?.status === 401;
+}
+
+async function fetchCurrentUserWithConfirmedAuth(): Promise<User> {
+  try {
+    return await fetchCurrentUser();
+  } catch (error) {
+    if (!isUnauthorizedError(error)) throw error;
+    await sleep(UNAUTHORIZED_CONFIRM_RETRY_MS);
+    return fetchCurrentUser();
+  }
 }
 
 export function AuthProvider({
@@ -74,6 +93,7 @@ export function AuthProvider({
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const sessionEpochRef = useRef(0);
+  const sessionValidationRef = useRef<Promise<void> | null>(null);
 
   const clearSession = useCallback(async () => {
     sessionEpochRef.current += 1;
@@ -83,32 +103,46 @@ export function AuthProvider({
   }, []);
 
   const retrySession = useCallback(async () => {
-    const recoveryEpoch = sessionEpochRef.current;
-    const saved = token || await restoreSavedToken();
-    if (!saved || sessionEpochRef.current !== recoveryEpoch) return;
+    if (sessionValidationRef.current) return sessionValidationRef.current;
 
-    setToken(saved);
-    saveTokenToSharedKeychain(saved).catch(() => {});
-    try {
-      const me = await fetchCurrentUser();
-      if (sessionEpochRef.current === recoveryEpoch) setUser(me);
-    } catch (error) {
-      if (sessionEpochRef.current === recoveryEpoch && isUnauthorizedError(error)) {
-        await clearSession();
+    const validation = (async () => {
+      const recoveryEpoch = sessionEpochRef.current;
+      const knownSession = token !== null || await hasPersistedSessionMarker();
+      const saved = token || await restoreSavedToken(knownSession);
+      if (!saved || sessionEpochRef.current !== recoveryEpoch) return;
+
+      setToken(saved);
+      await markPersistedSession();
+      saveTokenToSharedKeychain(saved).catch(() => {});
+      try {
+        const me = await fetchCurrentUserWithConfirmedAuth();
+        if (sessionEpochRef.current === recoveryEpoch) setUser(me);
+      } catch (error) {
+        if (sessionEpochRef.current === recoveryEpoch && isUnauthorizedError(error)) {
+          await clearSession();
+        }
+        throw error;
       }
-      throw error;
+    })();
+    sessionValidationRef.current = validation;
+    try {
+      await validation;
+    } finally {
+      if (sessionValidationRef.current === validation) {
+        sessionValidationRef.current = null;
+      }
     }
   }, [clearSession, token]);
 
-  // A 401 from an authenticated endpoint means the persisted credential is no
-  // longer usable. Keeping it would route the user into an authenticated shell
-  // where every request fails and there is no reliable path back to login.
+  // A business endpoint can return 401 because of deploy/proxy timing or an
+  // endpoint-specific policy. Revalidate against /auth/me before deciding that
+  // the durable credential is invalid; never erase it from one incidental 401.
   useEffect(() => {
     setOnUnauthorized(() => {
-      void clearSession();
+      void retrySession().catch(() => {});
     });
     return () => setOnUnauthorized(null);
-  }, [clearSession]);
+  }, [retrySession]);
 
   useEffect(() => {
     let mounted = true;
@@ -124,14 +158,16 @@ export function AuthProvider({
     const hydrationEpoch = sessionEpochRef.current;
     (async () => {
       try {
-        const saved = await restoreSavedToken();
+        const knownSession = await hasPersistedSessionMarker();
+        const saved = await restoreSavedToken(knownSession);
         if (saved && mounted && sessionEpochRef.current === hydrationEpoch) {
           setToken(saved);
+          await markPersistedSession();
           // 冷启动回灌 token 到 App Group UserDefaults + 共享 keychain,
           // 让 Siri extension 能读到。失败静默 —— 主 App 体验不受影响。
           saveTokenToSharedKeychain(saved).catch(() => {});
           try {
-            const me = await fetchCurrentUser();
+            const me = await fetchCurrentUserWithConfirmedAuth();
             if (mounted && sessionEpochRef.current === hydrationEpoch) setUser(me);
           } catch (error) {
             if (sessionEpochRef.current !== hydrationEpoch) {
@@ -167,18 +203,16 @@ export function AuthProvider({
     const sub = AppState.addEventListener('change', (state) => {
       if (state !== 'active' || isLoading || !restoreCloudSession) return;
       void (async () => {
-        const recoveryEpoch = sessionEpochRef.current;
         try {
           if (!token || !user) await retrySession();
-        } catch (error) {
-          if (sessionEpochRef.current === recoveryEpoch && isUnauthorizedError(error)) {
-            await clearSession();
-          }
+        } catch {
+          // retrySession owns confirmed credential invalidation. Transient
+          // failures remain recoverable on the next foreground transition.
         }
       })();
     });
     return () => sub.remove();
-  }, [token, user, isLoading, clearSession, restoreCloudSession, retrySession]);
+  }, [token, user, isLoading, restoreCloudSession, retrySession]);
 
   const login = useCallback(async (username: string, password: string) => {
     const result = await loginApi(username, password);

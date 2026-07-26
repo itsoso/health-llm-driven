@@ -72,7 +72,13 @@ api.interceptors.response.use(
       const requestToken = (
         error.config as { __revaAuthToken?: string | null } | undefined
       )?.__revaAuthToken;
-      if (requestToken !== undefined && requestToken === runtimeAuthToken) {
+      const requestUrl = String(error.config?.url || '').split('?', 1)[0];
+      const isAuthRequest = requestUrl.startsWith('/auth/');
+      if (
+        !isAuthRequest
+        && requestToken !== undefined
+        && requestToken === runtimeAuthToken
+      ) {
         onUnauthorized?.();
       }
     }

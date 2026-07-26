@@ -64,7 +64,7 @@ describe('services/api auth failure handling', () => {
     expect(headers.Authorization).toBeUndefined();
   });
 
-  it('notifies auth when the current native session receives a 401 response', async () => {
+  it('asks auth to revalidate when a business request receives a current-session 401', async () => {
     const SecureStore = require('expo-secure-store');
     const shared = require('../../modules/shared-keychain');
     const { setOnUnauthorized, setRuntimeAuthToken } = require('../api');
@@ -81,6 +81,36 @@ describe('services/api auth failure handling', () => {
     expect(SecureStore.deleteItemAsync).not.toHaveBeenCalled();
     expect(shared.deleteTokenFromSharedKeychain).not.toHaveBeenCalled();
     expect(unauthorized).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves /auth/me 401 handling to the session validator to avoid recursive logout', async () => {
+    const { setOnUnauthorized, setRuntimeAuthToken } = require('../api');
+    setOnUnauthorized(unauthorized);
+    setRuntimeAuthToken('tok_current');
+
+    await expect(
+      responseRejected?.({
+        response: { status: 401 },
+        config: { url: '/auth/me', __revaAuthToken: 'tok_current' },
+      }),
+    ).rejects.toMatchObject({ response: { status: 401 } });
+
+    expect(unauthorized).not.toHaveBeenCalled();
+  });
+
+  it('does not invalidate an existing session when a new login attempt is rejected', async () => {
+    const { setOnUnauthorized, setRuntimeAuthToken } = require('../api');
+    setOnUnauthorized(unauthorized);
+    setRuntimeAuthToken('tok_current');
+
+    await expect(
+      responseRejected?.({
+        response: { status: 401 },
+        config: { url: '/auth/login/json', __revaAuthToken: 'tok_current' },
+      }),
+    ).rejects.toMatchObject({ response: { status: 401 } });
+
+    expect(unauthorized).not.toHaveBeenCalled();
   });
 
   it('ignores a delayed 401 from a request that used an older token', async () => {

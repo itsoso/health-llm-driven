@@ -9,6 +9,10 @@ import {
   deleteTokenFromSharedKeychain,
   readTokenFromSharedKeychain,
 } from '../modules/shared-keychain';
+import {
+  clearPersistedSessionMarker,
+  markPersistedSession,
+} from './authSessionMarker';
 
 export interface User {
   id: number;
@@ -100,6 +104,7 @@ async function persistToken(token: string): Promise<void> {
     }
 
     setRuntimeAuthToken(token);
+    await markPersistedSession();
   });
 }
 
@@ -169,6 +174,7 @@ export async function logout(): Promise<void> {
     } catch (e) {
       console.warn('[auth] shared keychain token deletion failed:', e);
     }
+    await clearPersistedSessionMarker();
   });
 }
 
@@ -177,6 +183,7 @@ export async function getToken(): Promise<string | null> {
     const token = await SecureStore.getItemAsync(TOKEN_KEY);
     if (isUsableNativeAuthToken(token)) {
       setRuntimeAuthToken(token);
+      await markPersistedSession();
       return token;
     }
   } catch {
@@ -189,6 +196,7 @@ export async function getToken(): Promise<string | null> {
     if (!isUsableNativeAuthToken(sharedToken)) return null;
 
     setRuntimeAuthToken(sharedToken);
+    await markPersistedSession();
     try {
       await SecureStore.setItemAsync(TOKEN_KEY, sharedToken);
     } catch {

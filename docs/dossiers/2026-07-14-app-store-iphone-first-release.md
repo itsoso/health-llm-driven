@@ -203,3 +203,7 @@ RequirementAdmission:
 - 会话恢复成为独立 UI 状态：已持有 token 但用户资料暂未恢复时显示“正在恢复登录状态”，自动重试并允许手动重新连接；只有明确的 401 才清理 token 并回到登录页，断网、切换 App 或服务短暂不可用不会要求二次登录。
 - TDD 覆盖双存储失败、写后不可读、登出与新登录并发、token 存在但用户资料待恢复。Mobile 全量回归 278 suites / 2092 passed / 1 skipped / 1 snapshot passed，TypeScript 通过，改动文件 ESLint 0 errors（保留既有 import/require warnings）。
 - 本轮为 JS/TS 修复，可通过 runtime 1.3.2 production OTA 下发。G6 在 OTA 后仍需用 Build 237 做“登录一次 -> 终止进程 -> 重启 -> 进入 Agent 页面”的 USB 真机验证；验证通过前不得把登录持久化标记为最终完成。
+- 第一轮 OTA 的连续冷启动验收暴露了更深层原因：任意业务接口的单次 401 都会触发全局回调并删除 SecureStore token；`/auth/me` 自身的 401 还会再次进入同一回调。首次启动仍可显示缓存页面，但下一次进程启动已经没有持久凭证，因此回到登录页。
+- 会话失效判定改为两阶段：业务接口 401 只触发一次 single-flight `/auth/me` 复核；鉴权接口不进入全局 401 回调；`/auth/me` 连续两次返回 401 才清理 token。一次部署、代理或端点策略抖动不得永久登出，真正失效的凭证仍能回到登录页。
+- 新增非敏感 AsyncStorage 恢复标记，仅记录“曾成功持久化会话”，不保存 token、账号或健康数据。已知会话冷启动时扩大 Keychain 读取窗口；成功恢复和登录会刷新标记，显式登出或确认失效会清除标记。
+- 新增业务 401 复核、鉴权接口隔离、瞬时 `/auth/me` 401、确认失效及已知会话 Keychain 延迟可读回归。定向认证回归 45/45、TypeScript、`git diff --check` 通过；全量 Mobile 断言 278 suites / 2096 passed / 1 skipped / 1 snapshot passed。G6 仍需在修复 OTA 上重新登录一次后连续终止/启动两轮均进入 Agent 页面。
