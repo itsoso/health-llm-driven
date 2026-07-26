@@ -4,8 +4,8 @@
 |---|---|
 | slug | `text-diet-write-reliability` |
 | 创建日期 | 2026-07-26 |
-| 当前阶段 | G3 替代 CI |
-| 状态 | verifying |
+| 当前阶段 | G6 上线验证 |
+| 状态 | deployed-awaiting-functional-verification |
 | 负责 | Codex |
 | 反馈环 | Backend pytest / backend deploy |
 
@@ -94,7 +94,10 @@
   - 真实模型隔离回归通过：invariants 12/12、health_agent_core 50/50、
     orchestrator 5/5、trajectory contract 11/11，实际模型
     `MiniMax-M2.5`。
-  - 替代提交的 GitHub CI 尚未完成，G5 前仍按 fail-closed 处理。
+  - GitHub CI
+    [30196655971](https://github.com/itsoso/health-llm-driven/actions/runs/30196655971)
+    attempt 2 全部通过；`backend-test-p` 首次受 runner 超时影响，按同一命令本地
+    350 passed，并在失败任务重跑后通过。
 - G4 安全：**PASS**
   - 首轮独立审查发现并阻断两项风险：无效/远日期被静默改成今天，
     以及「不要辣／别放香菜／需要少盐」被误判为取消记录。
@@ -105,6 +108,13 @@
     已分别改为 clarification Goal + policy block，以及 intent + policy 双重阻断。
   - 最终独立复审结论：**GO**。生产原句、偏好词、明确取消、非法日期、
     exactly-once 和 verified receipt 五类边界均成立，无新增 P0/P1。
-- G5 部署健康：**PENDING**
-- G6 上线验证：**PENDING**
-  - 未经明确授权不会在生产创建真实用户饮食测试记录。
+- G5 部署健康：**PASS**
+  - 从干净 `main` 部署提交
+    `ad617eab0ab7282cfdf1e2978a7e2ea685e9a1dd`。
+  - 生产数据库备份与恢复演练通过，受控迁移无待执行项。
+  - 部署脚本健康度 58/60、Skills 22/22、远端版本核验通过。
+- G6 上线验证：**IN PROGRESS**
+  - 公网 `/api/v1/health` 返回 `healthy`，API、PostgreSQL、Redis、
+    Celery 均为 `connected/running`。
+  - 未经明确授权不在生产创建真实用户饮食测试记录；等待用户用原句完成最终
+    功能验证。
