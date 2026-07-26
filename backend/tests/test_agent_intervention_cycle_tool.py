@@ -277,4 +277,10 @@ def test_proposal_blob_empty_when_no_abnormal_levers(db):
 def test_unknown_action(db):
     u = _mk_user(db)
     out = _exec(db, u.id, {"action": "bogus"})
-    assert out.startswith("Error:")
+    assert json.loads(out) == {
+        "status": "rejected",
+        "success": False,
+        "dispatch_started": False,
+        "error_code": "intervention_action_unsupported",
+        "message": "当前干预周期操作不受支持。",
+    }

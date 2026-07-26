@@ -3,6 +3,8 @@ import pytest
 from app.services.agent_write_outcome import (
     classify_explicit_write_execution,
     classify_write_execution,
+    is_legacy_local_write_rejection,
+    local_write_rejection,
     result_declares_explicit_failure,
 )
 
@@ -18,6 +20,33 @@ def test_structured_rejection_is_terminal_without_a_write_receipt():
     assert outcome.status == "rejected"
     assert outcome.error_code == "missing_required_field"
     assert outcome.dispatch_started is False
+
+
+def test_local_write_rejection_builds_one_stable_machine_contract():
+    result = local_write_rejection(
+        "missing_required_field",
+        message="需要补充字段",
+        recovery_guidance="补充后重试",
+    )
+
+    assert result == (
+        '{"status":"rejected","success":false,"dispatch_started":false,'
+        '"error_code":"missing_required_field","message":"需要补充字段",'
+        '"recovery_guidance":"补充后重试"}'
+    )
+    outcome = classify_write_execution(result)
+    assert outcome.status == "rejected"
+    assert outcome.error_code == "missing_required_field"
+    assert outcome.dispatch_started is False
+
+
+@pytest.mark.parametrize(
+    "error_code",
+    ["", "UPPER_CASE", "has spaces", "contains/slash"],
+)
+def test_local_write_rejection_rejects_unstable_error_codes(error_code):
+    with pytest.raises(ValueError, match="invalid_local_write_error_code"):
+        local_write_rejection(error_code)
 
 
 def test_structured_remote_uncertainty_does_not_become_rejected():
@@ -76,6 +105,18 @@ def test_remote_api_error_with_local_marker_stays_uncertain():
 
     assert outcome.status == "uncertain"
     assert outcome.dispatch_started is None
+
+
+def test_legacy_local_write_rejection_detection_excludes_structured_and_remote():
+    assert is_legacy_local_write_rejection(
+        "Error: diet 记录必须提供 food_items"
+    ) is True
+    assert is_legacy_local_write_rejection(
+        local_write_rejection("diet_food_items_missing")
+    ) is False
+    assert is_legacy_local_write_rejection(
+        "Error: API 返回 500: 必须提供 food_items"
+    ) is False
 
 
 def test_medication_plan_local_rejection_is_not_uncertain():

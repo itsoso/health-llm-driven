@@ -121,3 +121,44 @@ def test_executor_dispatch_uses_gateway_and_registry_adapter_lookup():
     assert "get_tool_spec(request.tool_name)" in dispatch
     assert "getattr(self, spec.executor_method)" in dispatch
     assert "if tool_name ==" not in dispatch
+
+
+def test_registered_write_adapters_do_not_encode_local_rejections_as_prose():
+    """Only genuinely ambiguous post-dispatch errors may keep legacy prose."""
+    from app.services.agent_kernel.tool_registry import list_tool_specs
+
+    tree = ast.parse(EXECUTOR.read_text())
+    functions = {
+        node.name: node
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    function_names = {
+        spec.executor_method
+        for spec in list_tool_specs()
+        if spec.receipt_required and spec.executor_method
+    } | {"_execute_tool_impl", "_intervention_update"}
+    allowed_uncertain_markers = {
+        "_execute_tool_impl": ("工具调用策略检查失败",),
+        "_exec_health_record": ("未取得可验证回执",),
+        "_exec_health_manage": ("未取得可验证回执",),
+        "_exec_draft_aigc_media": ("Error: {exc}",),
+        "_exec_upload_medical_exam_text": ("化验指标入库失败",),
+    }
+    violations: list[tuple[str, int, str]] = []
+
+    for function_name in sorted(function_names):
+        function = functions[function_name]
+        allowed = allowed_uncertain_markers.get(function_name, ())
+        for node in ast.walk(function):
+            if not isinstance(node, ast.Return) or node.value is None:
+                continue
+            source = ast.unparse(node.value)
+            if source.startswith("local_write_rejection("):
+                continue
+            if "Error:" not in source:
+                continue
+            if not any(marker in source for marker in allowed):
+                violations.append((function_name, node.lineno, source))
+
+    assert violations == []

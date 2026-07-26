@@ -51,6 +51,8 @@ from app.services.agent_turn_outcome import classify_agent_turn_outcome
 from app.services.agent_write_outcome import (
     classify_explicit_write_execution,
     classify_write_execution,
+    is_legacy_local_write_rejection,
+    local_write_rejection,
     result_declares_explicit_failure,
     write_result_declares_non_success,
 )
@@ -3995,19 +3997,34 @@ def _remember_structured_medical_redirect(
     if (drug_lexicon.contains_drug_name(blob)
             or _REMEMBER_DOSE_RE.search(blob)
             or any(k in blob for k in _REMEMBER_MED_KW)):
-        return ('Error: 这像用药/剂量 —— 请走结构化用药记录 '
-                'health_record(record_type="medication"),不用 remember(否则绕过用药安全规则)。')
+        return local_write_rejection(
+            "remember_medication_redirect",
+            message="这像用药或剂量，不能保存为普通记忆。",
+            recovery_guidance=(
+                '请改用 health_record(record_type="medication")，'
+                "以保留用药安全校验。"
+            ),
+        )
     # 基因:词表 OR rs 位点(rs\d{3,} 无歧义)。C282Y/星等位 只在基因上下文才算(避免误伤
     # 流水号 A2024B / 评分 *5)—— 基因上下文由 _REMEMBER_GENE_KW 覆盖,故无需独立形状正则。
     if any(k in low for k in _REMEMBER_GENE_KW) or _REMEMBER_RS_RE.search(blob):
-        return ('Error: 基因/基因型数据请走基因档案上传路径,不用 remember'
-                '(基因数据需独立授权 + 加密隔离)。')
+        return local_write_rejection(
+            "remember_genetic_redirect",
+            message="基因或基因型数据不能保存为普通记忆。",
+            recovery_guidance="请改用基因档案上传路径完成独立授权和加密隔离。",
+        )
     # 血压/化验:BP 形状(扫全 blob, 含 unit)OR CJK 化验词 OR 英文化验缩写(词边界)
     if (_REMEMBER_BP_RE.search(blob)
             or any(k in blob for k in _REMEMBER_LAB_CJK)
             or _REMEMBER_LAB_EN_RE.search(blob)):
-        return ('Error: 这像血压/化验指标 —— 请走结构化记录(blood_pressure 或化验上传),'
-                '不用 remember(否则绕过高血压/化验安全规则)。')
+        return local_write_rejection(
+            "remember_clinical_data_redirect",
+            message="血压或化验指标不能保存为普通记忆。",
+            recovery_guidance=(
+                "请改用 blood_pressure 结构化记录或化验上传路径，"
+                "以保留健康安全校验。"
+            ),
+        )
     return None
 
 
@@ -14664,9 +14681,17 @@ class AgentExecutor:
                             tool_name,
                             len(args_raw),
                         )
-                        return "Error: 工具参数解析失败，请重新生成结构化参数。"
+                        return local_write_rejection(
+                            "tool_arguments_invalid",
+                            message="工具参数无法解析。",
+                            recovery_guidance="请重新生成完整的结构化参数。",
+                        )
             else:
-                return "Error: 工具参数解析失败，请重新生成结构化参数。"
+                return local_write_rejection(
+                    "tool_arguments_invalid",
+                    message="工具参数无法解析。",
+                    recovery_guidance="请重新生成完整的结构化参数。",
+                )
 
         trusted_recipe_authorized = False
         if tool_name == "health_record" and isinstance(args, dict):
@@ -14744,9 +14769,13 @@ class AgentExecutor:
                 "[_execute_tool] blocked rhinitis write on attachment turn user=%s",
                 self._current_user_id,
             )
-            return (
-                "Error: 带附件的鼻炎症状暂不自动写入，请在不带附件的消息中直接复述"
-                "要记录的本人喷嚏、鼻塞或流鼻涕情况。"
+            return local_write_rejection(
+                "rhinitis_attachment_not_supported",
+                message="带附件的消息不能自动写入鼻炎症状记录。",
+                recovery_guidance=(
+                    "请在不带附件的新消息中直接复述要记录的本人喷嚏、"
+                    "鼻塞或流鼻涕情况。"
+                ),
             )
         if (
             tool_name == "health_record"
@@ -14760,9 +14789,10 @@ class AgentExecutor:
                 self._current_user_id,
                 len(getattr(self, "_current_turn_user_message", "") or ""),
             )
-            return (
-                "Error: 这段话不是明确的本人鼻炎症状记录请求，已阻止自动写入。"
-                "请直接说出当前的喷嚏、鼻塞或流鼻涕情况。"
+            return local_write_rejection(
+                "rhinitis_write_not_authorized",
+                message="当前消息不是明确的本人鼻炎症状记录请求。",
+                recovery_guidance="请直接说出当前的喷嚏、鼻塞或流鼻涕情况。",
             )
         if (
             tool_name == "health_record"
@@ -14774,7 +14804,11 @@ class AgentExecutor:
                 rhinitis_authorization,
             )
             if authorized_args is None:
-                return "Error: 鼻炎打卡参数无效，已阻止自动写入。"
+                return local_write_rejection(
+                    "rhinitis_payload_invalid",
+                    message="鼻炎症状记录参数无效。",
+                    recovery_guidance="请直接复述当前要记录的本人症状。",
+                )
             args = authorized_args
         if (
             tool_name == "health_record"
@@ -14786,9 +14820,10 @@ class AgentExecutor:
                 "[_execute_tool] blocked symptom write on attachment turn user=%s",
                 self._current_user_id,
             )
-            return (
-                "Error: 带附件的症状内容暂不自动写入，请在不带附件的消息中直接复述"
-                "要记录的本人症状。"
+            return local_write_rejection(
+                "symptom_attachment_not_supported",
+                message="带附件的消息不能自动写入症状记录。",
+                recovery_guidance="请在不带附件的新消息中直接复述要记录的本人症状。",
             )
         if (
             tool_name == "health_record"
@@ -14802,9 +14837,10 @@ class AgentExecutor:
                 self._current_user_id,
                 len(getattr(self, "_current_turn_user_message", "") or ""),
             )
-            return (
-                "Error: 这段话不是明确的本人症状记录请求，已阻止自动写入。"
-                "如果你希望记录，请直接说出当前要记录的本人症状。"
+            return local_write_rejection(
+                "symptom_write_not_authorized",
+                message="当前消息不是明确的本人症状记录请求。",
+                recovery_guidance="请直接说出当前要记录的本人症状。",
             )
         if (
             tool_name == "health_record"
@@ -14816,7 +14852,11 @@ class AgentExecutor:
                 symptom_authorization,
             )
             if authorized_args is None:
-                return "Error: 症状记录参数无效，已阻止自动写入。"
+                return local_write_rejection(
+                    "symptom_payload_invalid",
+                    message="症状记录参数无效。",
+                    recovery_guidance="请直接复述当前要记录的本人症状。",
+                )
             args = authorized_args
         args = _prepare_health_record_args_for_validation(
             tool_name,
@@ -14831,7 +14871,11 @@ class AgentExecutor:
             reference_now=self._agent_kernel_reference_now(),
         )
         if v["error"]:
-            return v["error"]
+            return local_write_rejection(
+                "tool_validation_failed",
+                message=str(v["error"]).removeprefix("Error:").strip(),
+                recovery_guidance="请修正参数后重新提交。",
+            )
         args = v["data"]
         if tool_name == "health_record" and trusted_recipe_authorized:
             args["_trusted_server_write_authorized"] = True
@@ -14850,7 +14894,10 @@ class AgentExecutor:
                     "[agent_executor] read-only pregen turn blocked non-read tool=%s user=%s",
                     tool_name, self._current_user_id,
                 )
-                return f"Error: 只读预生成回合不执行写入/变更操作（{tool_name}）"
+                return local_write_rejection(
+                    "read_only_write_blocked",
+                    message="只读预生成回合不执行写入或变更操作。",
+                )
 
         try:
             from app.services.agent_kernel.tool_gateway import ToolGateway
@@ -15061,6 +15108,11 @@ class AgentExecutor:
                     result,
                 )
                 outcome = classify_write_execution(result, receipt=receipt)
+                if is_legacy_local_write_rejection(result):
+                    logger.warning(
+                        "legacy local write rejection contract tool=%s",
+                        request.tool_name,
+                    )
                 if outcome.status == "verified" and receipt is not None:
                     runtime_coordinator.finalize_tool_operation(
                         runtime_context,
@@ -15957,17 +16009,25 @@ class AgentExecutor:
         if rtype == "water":
             amount = data.get("amount") or args.get("amount")
             if amount is None:
-                return (
-                    "Error: water 记录必须提供 amount (毫升, 整数). 例如 "
-                    '{"record_type":"water","data":{"amount":250}}. '
-                    "若用户没提具体毫升数, 请先问'喝了多少 ml?'再调用本工具."
+                return local_write_rejection(
+                    "water_amount_missing",
+                    message="饮水记录缺少毫升数。",
+                    recovery_guidance="请先确认喝了多少 ml，再重新记录。",
                 )
             try:
                 amount_int = int(amount)
             except (ValueError, TypeError):
-                return f"Error: water amount 必须是整数毫升 (got {amount!r})"
+                return local_write_rejection(
+                    "water_amount_invalid",
+                    message="饮水量必须是整数毫升。",
+                    recovery_guidance="请提供 1 到 5000 之间的整数毫升数。",
+                )
             if amount_int <= 0 or amount_int > 5000:
-                return f"Error: water amount={amount_int} 不合理 (1-5000ml)"
+                return local_write_rejection(
+                    "water_amount_out_of_range",
+                    message="饮水量超出可记录范围。",
+                    recovery_guidance="请提供 1 到 5000 之间的整数毫升数。",
+                )
             data["amount"] = amount_int
             check = _confirm_or_describe(
                 args, data,
@@ -16006,7 +16066,11 @@ class AgentExecutor:
         # 补全 diet 必填字段
         if rtype == "diet":
             if not data.get("food_items"):
-                return "Error: diet 记录必须提供 food_items（食物内容）。请先识别食物内容，然后重新调用 health_record 并在 data.food_items 中填写具体食物。"
+                return local_write_rejection(
+                    "diet_food_items_missing",
+                    message="饮食记录缺少食物内容。",
+                    recovery_guidance="请补充本餐吃了什么后重新记录。",
+                )
 
         # 补全 weight 必填字段
         if rtype == "weight":
@@ -16022,7 +16086,11 @@ class AgentExecutor:
             if "weight" not in data and "weight_kg" in data:
                 data["weight"] = data.pop("weight_kg")
             if "weight" not in data:
-                return "Error: weight 记录必须提供 weight（体重数值，单位 kg）。请在 data.weight 中填入数字，例如 {\"record_type\":\"weight\",\"data\":{\"weight\":71.2}}"
+                return local_write_rejection(
+                    "weight_value_missing",
+                    message="体重记录缺少 kg 数值。",
+                    recovery_guidance="请补充体重数值后重新记录。",
+                )
 
             # L8 (Karpathy "verification is the bottleneck"): 高确定性数值, 写错没法静默修正
             check = _confirm_or_describe(
@@ -16044,9 +16112,10 @@ class AgentExecutor:
             if dia_v is None and args.get("diastolic") is not None:
                 data["diastolic"] = dia_v = args["diastolic"]
             if sys_v is None or dia_v is None:
-                return (
-                    "Error: blood_pressure 记录必须提供 systolic + diastolic. 例如 "
-                    '{"record_type":"blood_pressure","data":{"systolic":120,"diastolic":80}}'
+                return local_write_rejection(
+                    "blood_pressure_values_missing",
+                    message="血压记录需要同时提供收缩压和舒张压。",
+                    recovery_guidance="请补充完整的血压读数后重新记录。",
                 )
             # L8: 血压数值高/低风险大, 必须先确认
             check = _confirm_or_describe(
@@ -16062,9 +16131,10 @@ class AgentExecutor:
             data.setdefault("start_date", today)
             name = data.get("name") or data.get("illness_name") or args.get("name") or args.get("illness_name")
             if not name:
-                return (
-                    "Error: illness 记录必须提供 name. 例如 "
-                    '{"record_type":"illness","data":{"name":"感冒","severity":5}}'
+                return local_write_rejection(
+                    "illness_name_missing",
+                    message="疾病记录缺少名称。",
+                    recovery_guidance="请说明要记录的疾病或不适名称。",
                 )
             data["name"] = name
             sev = data.get("severity") or args.get("severity")
@@ -16109,9 +16179,10 @@ class AgentExecutor:
                     data["waist_cm"] = data.pop(src)
                     break
             if "waist_cm" not in data:
-                return (
-                    "Error: waist 记录必须提供 waist_cm（腰围厘米数）。例如 "
-                    '{"record_type":"waist","data":{"waist_cm":88.5}}'
+                return local_write_rejection(
+                    "waist_value_missing",
+                    message="腰围记录缺少厘米数。",
+                    recovery_guidance="请补充腰围厘米数后重新记录。",
                 )
 
         # sleep: 手动睡眠补录。不要代猜入睡/醒来时间;缺字段 fail-loud 让模型追问。
@@ -16149,12 +16220,12 @@ class AgentExecutor:
                         f"{base}/episodes/life-event", headers, payload
                     )
                     return _result_with_resource_type(result, "health_episode")
-                return (
-                    "Error: sleep 记录必须提供 bedtime、wake_time、sleep_quality(1-5). "
-                    f"缺少: {', '.join(missing)}. 例如 "
-                    '{"record_type":"sleep","data":{"record_date":"YYYY-MM-DD",'
-                    '"bedtime":"YYYY-MM-DDT23:00:00+08:00",'
-                    '"wake_time":"YYYY-MM-DDT07:00:00+08:00","sleep_quality":4}}'
+                return local_write_rejection(
+                    "sleep_fields_missing",
+                    message=f"睡眠记录缺少字段：{', '.join(missing)}。",
+                    recovery_guidance=(
+                        "请补充入睡时间、醒来时间和 1 到 5 分的睡眠质量。"
+                    ),
                 )
 
         # excretion: 排便/排尿记录。type 是下游统计的关键,缺失时明确追问。
@@ -16168,9 +16239,10 @@ class AgentExecutor:
             if raw_type in type_map:
                 raw_type = type_map[raw_type]
             if raw_type not in ("bowel", "urine"):
-                return (
-                    "Error: excretion 记录必须提供 type=bowel 或 urine. "
-                    "如果用户没说清楚,请先问是排便还是排尿。"
+                return local_write_rejection(
+                    "excretion_type_missing",
+                    message="排泄记录未说明是排便还是排尿。",
+                    recovery_guidance="请先确认记录类型后重试。",
                 )
             data["type"] = raw_type
 
@@ -16193,9 +16265,10 @@ class AgentExecutor:
                 data.get(key) not in (None, "")
                 for key in ("start_time", "end_time", "interval_minutes")
             ):
-                return (
-                    "Error: 时间窗提醒必须同时提供 start_time、end_time、"
-                    "interval_minutes。请继承上一轮已确认的时段与间隔后重试。"
+                return local_write_rejection(
+                    "reminder_window_incomplete",
+                    message="时间窗提醒缺少开始、结束或间隔设置。",
+                    recovery_guidance="请补充完整时段与提醒间隔后重试。",
                 )
             args["data"] = data
 
@@ -16203,10 +16276,10 @@ class AgentExecutor:
             data.setdefault("start_date", today)
             title = data.get("title") or data.get("name") or args.get("title")
             if not title:
-                return (
-                    "Error: goal 记录必须提供 title. 例如 "
-                    '{"record_type":"goal","data":{"title":"每日快走30分钟",'
-                    '"goal_type":"exercise","goal_period":"daily","start_date":"YYYY-MM-DD"}}'
+                return local_write_rejection(
+                    "goal_title_missing",
+                    message="目标记录缺少标题。",
+                    recovery_guidance="请说明要建立的目标后重新记录。",
                 )
             data["title"] = str(title).strip()
 
@@ -16310,9 +16383,10 @@ class AgentExecutor:
             if object_value is None:
                 object_value = data.get("value")
             if not predicate or object_value in (None, ""):
-                return (
-                    "Error: 记档案属性需要属性名和值 —— 例如 "
-                    'health_record(record_type="remember", data={"predicate":"鞋码","object_value":"42.5"})'
+                return local_write_rejection(
+                    "memory_attribute_missing",
+                    message="个人档案记录需要属性名和值。",
+                    recovery_guidance="请补充要记住的属性及其具体值。",
                 )
             # 硬闸:结构化医疗/化验/基因/用药数据绝不走 memory_fact(会绕过 Safety Guardian +
             # 加密/RLS)。命中 → fail-loud redirect 到对应结构化记录(服务端硬闸,非软指引)。
@@ -16399,13 +16473,21 @@ class AgentExecutor:
                     },
                     ensure_ascii=False,
                 )
-            return "Error: 需要提供补剂名称（supplement_name）"
+            return local_write_rejection(
+                "supplement_name_missing",
+                message="补剂记录缺少补剂名称。",
+                recovery_guidance="请补充补剂名称后重新记录。",
+            )
 
         # medication: 用药记录
         if rtype == "medication":
             med_name = data.get("medication_name", data.get("name", ""))
             if not med_name:
-                return "Error: 需要提供药物名称（medication_name）"
+                return local_write_rejection(
+                    "medication_name_missing",
+                    message="用药记录缺少药物名称。",
+                    recovery_guidance="请补充药物名称和本次实际服量。",
+                )
             # 查找 medication_id (走 _api_get_json: 拿干净可解析数据, 不被字符截断)
             meds, err = await self._api_get_json(f"{base}/medication/medications/me", headers)
             if err:
@@ -16448,7 +16530,11 @@ class AgentExecutor:
             # life_event 是别名(_FAST_RECORD_KIND_ALIASES),canonical 名只有 event。
             title = str(data.get("title") or data.get("name") or data.get("event") or "").strip()
             if not title:
-                return "Error: event 必须提供 title (如 '落地北京' / '药品送达酒店')"
+                return local_write_rejection(
+                    "event_title_missing",
+                    message="事件记录缺少标题。",
+                    recovery_guidance="请说明发生了什么事件后重新记录。",
+                )
             payload = {"title": title[:80]}
             if data.get("occurred_at"):
                 payload["occurred_at"] = str(data["occurred_at"])[:64]
@@ -16464,7 +16550,11 @@ class AgentExecutor:
             payload.setdefault("start_date", self._agent_kernel_reference_now().date().isoformat())
             payload.setdefault("status", "active")
             if not payload.get("name"):
-                return "Error: illness 必须提供 name (如 '感冒' / '发烧')"
+                return local_write_rejection(
+                    "illness_name_missing",
+                    message="疾病记录缺少名称。",
+                    recovery_guidance="请说明要记录的疾病或不适名称。",
+                )
             return await self._api_post(f"{base}/illness/episodes", headers, payload)
 
         # garmin_sync 不是写记录,是一个长跑的 ingest **job**。绝不走内联阻塞路径
@@ -16516,9 +16606,17 @@ class AgentExecutor:
             body_part = data.get("body_part")
             description = data.get("description")
             if not body_part:
-                return "Error: symptom 必须提供 body_part (eye/respiratory/skin/digestive/musculoskeletal/head/general/other)"
+                return local_write_rejection(
+                    "symptom_body_part_missing",
+                    message="症状记录缺少身体部位。",
+                    recovery_guidance="请说明症状发生在哪个部位。",
+                )
             if not description:
-                return "Error: symptom 必须提供 description (如 '眼睛痒' / '右膝盖钝痛')"
+                return local_write_rejection(
+                    "symptom_description_missing",
+                    message="症状记录缺少具体描述。",
+                    recovery_guidance="请描述具体的不适后重新记录。",
+                )
             # provenance 按真实通道打标(SymptomCreate 只收 manual|voice|siri):
             # typed 聊天=manual;siri=siri;其余(语音/未声明)=voice。此前硬编码
             # voice 把打字记录也标成语音,污染任何依赖 source 的下游区分。
@@ -16539,7 +16637,11 @@ class AgentExecutor:
                     len(str(result or "")),
                 )
                 return result
-        return f"Error: 不支持的记录类型 {rtype}"
+        return local_write_rejection(
+            "record_type_unsupported",
+            message="当前记录类型不受支持。",
+            recovery_guidance="请改用受支持的健康记录类型。",
+        )
 
     async def _trigger_garmin_sync(self) -> str:
         """触发 Garmin 数据同步 —— 异步 job 模型(不阻塞对话回合)。
@@ -16711,7 +16813,10 @@ class AgentExecutor:
 
         async def _delete_record_by_id(resolved_record_id: Any) -> str:
             if not path_tmpl:
-                return f"Error: 不支持管理 {record_type}"
+                return local_write_rejection(
+                    "record_type_not_manageable",
+                    message="当前记录类型不支持修改或删除。",
+                )
             delete_path = path_tmpl.format(id=resolved_record_id)
             result = await self._api_delete(f"{base}{delete_path}", headers)
             if str(result).startswith("Error:"):
@@ -16739,13 +16844,23 @@ class AgentExecutor:
         if operation == "list":
             path = list_paths.get(record_type)
             if not path:
-                return f"Error: 不支持查询 {record_type}"
+                return local_write_rejection(
+                    "record_type_query_unsupported",
+                    message="当前记录类型不支持查询。",
+                )
             return await self._api_get(f"{base}{path}", headers)
 
         if not path_tmpl:
-            return f"Error: 不支持管理 {record_type}"
+            return local_write_rejection(
+                "record_type_not_manageable",
+                message="当前记录类型不支持修改或删除。",
+            )
         if not record_id:
-            return "Error: 修改或删除必须提供 record_id. 请先查询候选记录并确认 ID."
+            return local_write_rejection(
+                "record_id_missing",
+                message="修改或删除缺少记录 ID。",
+                recovery_guidance="请先查询候选记录并确认要操作的记录。",
+            )
         path = path_tmpl.format(id=record_id)
 
         if operation == "delete":
@@ -16753,7 +16868,11 @@ class AgentExecutor:
 
         if operation == "update":
             if record_type not in update_supported:
-                return f"Error: {record_type} 暂不支持 update, 可先删除后重记."
+                return local_write_rejection(
+                    "record_type_update_unsupported",
+                    message="当前记录类型暂不支持修改。",
+                    recovery_guidance="可以确认后删除原记录并重新记录。",
+                )
             result = await self._api_put(f"{base}{path}", headers, data)
             self._invalidate_twin_after_mutation()
             if record_type == "diet" and not str(result).startswith("Error:"):
@@ -16771,7 +16890,10 @@ class AgentExecutor:
                     result = json.dumps(payload, ensure_ascii=False)
             return result
 
-        return f"Error: 不支持的操作 {operation}"
+        return local_write_rejection(
+            "health_manage_operation_unsupported",
+            message="当前健康记录管理操作不受支持。",
+        )
 
     def _invalidate_twin_after_mutation(self) -> None:
         if self._current_user_id is None:
@@ -16961,10 +17083,17 @@ class AgentExecutor:
                     f"{base}/smart-plan/{plan_id}/items/{item_id}",
                     headers, {"is_completed": True}
                 )
-            return "Error: 需要 plan_id 和 item_id"
+            return local_write_rejection(
+                "plan_item_identity_missing",
+                message="完成计划项缺少计划 ID 或项目 ID。",
+                recovery_guidance="请先查询并确认要完成的计划项目。",
+            )
         elif action == "save_to_card":
             return await self._api_post(f"{base}/action-cards/from-message", headers, data)
-        return f"Error: 不支持的计划操作 {action}"
+        return local_write_rejection(
+            "plan_action_unsupported",
+            message="当前计划操作不受支持。",
+        )
 
     async def _exec_intervention_cycle(self, args: dict) -> str:
         """N-of-1 干预结局闭环工具 — status/list/start/update/cancel.
@@ -16977,7 +17106,10 @@ class AgentExecutor:
         action = args.get("action", "")
         user_id = self._current_user_id
         if user_id is None:
-            return "Error: 缺少用户身份, 无法操作干预周期"
+            return local_write_rejection(
+                "intervention_user_missing",
+                message="当前会话缺少用户身份，无法操作干预周期。",
+            )
 
         if action == "status":
             return await _aio.to_thread(self._intervention_status, user_id)
@@ -17033,7 +17165,10 @@ class AgentExecutor:
                 )
             return await _aio.to_thread(self._intervention_cancel, user_id, args)
 
-        return f"Error: 不支持的干预周期操作 {action}"
+        return local_write_rejection(
+            "intervention_action_unsupported",
+            message="当前干预周期操作不受支持。",
+        )
 
     async def _exec_draft_aigc_media(self, args: dict) -> str:
         """Create a server-bound AIGC draft; a user click dispatches it later."""
@@ -17047,12 +17182,19 @@ class AgentExecutor:
 
         user_id = self._current_user_id
         if user_id is None:
-            return "Error: 缺少用户身份，无法创建 AIGC 创作草稿。"
+            return local_write_rejection(
+                "aigc_user_missing",
+                message="当前会话缺少用户身份，无法创建创作草稿。",
+            )
         kind = str(args.get("kind") or "").strip()
         requires_source = kind in {"image_to_image", "image_to_video"}
         source_message_id = self._current_turn_source_message_id if requires_source else None
         if requires_source and (source_message_id is None or not self._current_turn_image_urls):
-            return "Error: 图生图片或图生视频需要在当前消息附上一张图片，请上传后重新创建草稿。"
+            return local_write_rejection(
+                "aigc_source_image_missing",
+                message="当前创作类型需要一张来源图片。",
+                recovery_guidance="请在当前消息上传图片后重新创建草稿。",
+            )
         service = AIGCMediaJobService(self.db)
         try:
             confirmation = await service.issue_confirmation(
@@ -17069,9 +17211,15 @@ class AgentExecutor:
                 ),
             )
         except AIGCMediaConfigurationError:
-            return "Error: AIGC 媒体服务尚未配置百炼按量 API Key。"
+            return local_write_rejection(
+                "aigc_service_unconfigured",
+                message="AIGC 媒体服务当前未配置。",
+            )
         except AIGCMediaJobRequestError as exc:
-            return f"Error: {exc}"
+            return local_write_rejection(
+                "aigc_request_invalid",
+                message=str(exc),
+            )
         except AIGCMediaJobError as exc:
             return f"Error: {exc}"
 
@@ -17205,20 +17353,31 @@ class AgentExecutor:
 
         cycle = self._owned_intervention_cycle(user_id, args.get("cycle_id"))
         if cycle is None:
-            return "Error: 没有找到可调整的干预周期。请先 list/status 确认周期。"
+            return local_write_rejection(
+                "intervention_cycle_not_found",
+                message="没有找到可调整的干预周期。",
+                recovery_guidance="请先查询并确认要调整的周期。",
+            )
 
         days = args.get("days")
         if days is not None:
             try:
                 days = int(days)
             except (TypeError, ValueError):
-                return "Error: days 必须是整数。"
+                return local_write_rejection(
+                    "intervention_days_invalid",
+                    message="干预周期天数必须是整数。",
+                )
         target_specs = args.get("target_specs") if isinstance(args.get("target_specs"), list) else None
         stop_conditions = (
             args.get("stop_conditions") if isinstance(args.get("stop_conditions"), list) else None
         )
         if days is None and target_specs is None and stop_conditions is None:
-            return "Error: update 需要提供 days、target_specs 或 stop_conditions。"
+            return local_write_rejection(
+                "intervention_update_empty",
+                message="干预周期调整缺少可更新的字段。",
+                recovery_guidance="请提供天数、目标或停止条件。",
+            )
 
         try:
             cycle = ics.update_cycle_params(
@@ -17229,7 +17388,10 @@ class AgentExecutor:
                 stop_conditions=stop_conditions,
             )
         except ValueError as exc:
-            return f"Error: {exc}"
+            return local_write_rejection(
+                "intervention_update_invalid",
+                message=str(exc),
+            )
         except Exception:
             self.db.rollback()
             raise
@@ -17247,9 +17409,16 @@ class AgentExecutor:
 
         cycle = self._owned_intervention_cycle(user_id, args.get("cycle_id"))
         if cycle is None:
-            return "Error: 没有找到可取消的干预周期。请先 list/status 确认周期。"
+            return local_write_rejection(
+                "intervention_cycle_not_found",
+                message="没有找到可取消的干预周期。",
+                recovery_guidance="请先查询并确认要取消的周期。",
+            )
         if cycle.status != "active":
-            return "Error: 只能取消进行中的干预周期。"
+            return local_write_rejection(
+                "intervention_cycle_not_active",
+                message="只能取消进行中的干预周期。",
+            )
 
         try:
             cycle = ics.complete_cycle(self.db, cycle, status="abandoned")
@@ -17365,7 +17534,11 @@ class AgentExecutor:
         """上传 23andMe / WeGene TXT 原始数据."""
         txt = args.get("txt_content") or ""
         if len(txt) < 50:
-            return "Error: txt_content 太短, 不像是 23andMe/WeGene 原始数据 (应是含 rsid 的 tab 分隔行)"
+            return local_write_rejection(
+                "genetic_text_invalid",
+                message="基因原始数据内容过短或格式不正确。",
+                recovery_guidance="请上传包含 rsid 的完整原始 TXT 内容。",
+            )
         today = self._agent_kernel_reference_now().strftime("%Y-%m-%d")
         payload = {
             "test_provider": args.get("test_provider") or "unknown",
@@ -17395,9 +17568,15 @@ class AgentExecutor:
         """口述化验文本 → medical_text_parser → 入 MedicalExam + Indicator."""
         text = (args.get("text") or "").strip()
         if not text:
-            return "Error: text 不能为空"
+            return local_write_rejection(
+                "medical_exam_text_missing",
+                message="化验记录文本不能为空。",
+            )
         if self._current_user_id is None:
-            return "Error: 当前会话无 user_id, 无法写入化验指标"
+            return local_write_rejection(
+                "medical_exam_user_missing",
+                message="当前会话缺少用户身份，无法写入化验指标。",
+            )
 
         try:
             from datetime import date as _date
@@ -17437,7 +17616,12 @@ class AgentExecutor:
                 ensure_ascii=False,
             )
         except ValueError as e:
-            return f"Error: {e}"
+            self.db.rollback()
+            return local_write_rejection(
+                "medical_exam_text_invalid",
+                message=str(e),
+                recovery_guidance="请补充可识别的化验项目、数值和单位后重试。",
+            )
         except Exception as e:
             logger.error(f"[upload_medical_exam_text] 入库失败: {e}", exc_info=True)
             try:

@@ -1610,6 +1610,89 @@ async def test_executor_marks_local_medication_plan_rejection_failed_not_uncerta
 
 
 @pytest.mark.asyncio
+async def test_executor_marks_registered_adapter_local_rejection_failed_not_uncertain(
+    db, auth_user_and_headers, monkeypatch
+):
+    from app.models.agent_runtime import AgentToolOperation
+    from app.services.agent_executor import AgentExecutor
+    from app.services.agent_kernel.types import ToolExecutionRequest
+    from app.services.agent_runtime import AgentRuntimeCoordinator
+
+    user, _headers = auth_user_and_headers
+    runtime = AgentRuntimeCoordinator(db)
+    admission = _run(db, user.id, suffix="executor-genetic-local-rejection")
+    runtime.mark_running(admission.context)
+    executor = AgentExecutor(db)
+    executor._current_user_id = user.id
+    executor._runtime_run_id = admission.context.run_id
+    executor._runtime_attempt_id = admission.context.attempt_id
+    executor._runtime_managed = True
+
+    monkeypatch.setattr(
+        "app.services.agent_executor.settings.agent_runtime_mode", "enforce"
+    )
+
+    result = await executor._dispatch_tool_request(
+        ToolExecutionRequest(
+            tool_name="upload_genetic_txt",
+            arguments={"txt_content": "too short"},
+            source="test",
+        ),
+        None,
+    )
+
+    payload = __import__("json").loads(result)
+    assert payload["dispatch_started"] is False
+    operation = db.query(AgentToolOperation).one()
+    assert operation.status == "failed"
+    assert operation.error_code == "tool_rejected"
+
+
+@pytest.mark.asyncio
+async def test_executor_logs_content_free_warning_for_legacy_local_rejection(
+    db, auth_user_and_headers, monkeypatch, caplog
+):
+    import logging
+
+    from app.services.agent_executor import AgentExecutor
+    from app.services.agent_kernel.types import ToolExecutionRequest
+    from app.services.agent_runtime import AgentRuntimeCoordinator
+
+    user, _headers = auth_user_and_headers
+    runtime = AgentRuntimeCoordinator(db)
+    admission = _run(db, user.id, suffix="executor-legacy-local-rejection")
+    runtime.mark_running(admission.context)
+    executor = AgentExecutor(db)
+    executor._current_user_id = user.id
+    executor._runtime_run_id = admission.context.run_id
+    executor._runtime_attempt_id = admission.context.attempt_id
+    executor._runtime_managed = True
+
+    async def legacy_rejection(base_url, headers, args):
+        return "Error: 需要提供 private-health-content"
+
+    monkeypatch.setattr(executor, "_exec_upload_genetic_txt", legacy_rejection)
+    caplog.set_level(logging.WARNING, logger="app.services.agent_executor")
+
+    await executor._dispatch_tool_request(
+        ToolExecutionRequest(
+            tool_name="upload_genetic_txt",
+            arguments={"txt_content": "x" * 80},
+            source="test",
+        ),
+        None,
+    )
+
+    warning = next(
+        record
+        for record in caplog.records
+        if "legacy local write rejection contract" in record.getMessage()
+    )
+    assert "upload_genetic_txt" in warning.getMessage()
+    assert "private-health-content" not in warning.getMessage()
+
+
+@pytest.mark.asyncio
 async def test_executor_cancellation_marks_claimed_write_for_reconciliation(
     db, auth_user_and_headers, monkeypatch
 ):

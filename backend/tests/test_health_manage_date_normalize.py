@@ -772,7 +772,15 @@ async def test_delete_without_record_id_stays_fail_closed_when_latest_is_not_exp
         {"record_type": "diet", "operation": "delete"},
     )
 
-    assert result.startswith("Error:")
+    rejection = json.loads(result)
+    assert rejection == {
+        "status": "rejected",
+        "success": False,
+        "dispatch_started": False,
+        "error_code": "record_id_missing",
+        "message": "修改或删除缺少记录 ID。",
+        "recovery_guidance": "请先查询候选记录并确认要操作的记录。",
+    }
     executor._api_get.assert_not_awaited()
     executor._api_delete.assert_not_awaited()
 

@@ -9,6 +9,7 @@ only for older tools that have not migrated yet.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Collection
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -89,6 +90,51 @@ _LOCAL_VALIDATION_MARKERS = (
     "缺少",
     "不支持",
 )
+_LOCAL_WRITE_ERROR_CODE_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
+
+
+def local_write_rejection(
+    error_code: str,
+    *,
+    message: str | None = None,
+    recovery_guidance: str | None = None,
+) -> str:
+    """Build a deterministic pre-dispatch write rejection.
+
+    Registered write adapters use this instead of natural-language ``Error:``
+    strings. Runtime can then distinguish a safe local rejection from an
+    external write whose outcome is unknown.
+    """
+    normalized_code = str(error_code or "").strip()
+    if not _LOCAL_WRITE_ERROR_CODE_PATTERN.fullmatch(normalized_code):
+        raise ValueError("invalid_local_write_error_code")
+    payload: dict[str, Any] = {
+        "status": "rejected",
+        "success": False,
+        "dispatch_started": False,
+        "error_code": normalized_code,
+    }
+    if message:
+        payload["message"] = str(message)
+    if recovery_guidance:
+        payload["recovery_guidance"] = str(recovery_guidance)
+    return json.dumps(
+        payload,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+
+
+def is_legacy_local_write_rejection(result: Any) -> bool:
+    """Return whether a write still depends on the deprecated prose fallback."""
+    if _structured_payload(result) is not None:
+        return False
+    text = str(result or "").strip()
+    if text.startswith("Error: API 返回 "):
+        return False
+    return text.startswith("Error:") and any(
+        marker in text for marker in _LOCAL_VALIDATION_MARKERS
+    )
 
 
 def _structured_payload(result: Any) -> dict[str, Any] | None:
@@ -182,9 +228,7 @@ def classify_write_execution(
     # it was never dispatched.
     if text.startswith("Error: API 返回 "):
         return WriteExecutionOutcome(status="uncertain")
-    if text.startswith("Error:") and any(
-        marker in text for marker in _LOCAL_VALIDATION_MARKERS
-    ):
+    if is_legacy_local_write_rejection(result):
         return WriteExecutionOutcome(status="rejected", dispatch_started=False)
     return WriteExecutionOutcome(status="uncertain")
 
