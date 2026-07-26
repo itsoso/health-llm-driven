@@ -212,3 +212,13 @@ RequirementAdmission:
 - 登录持久化真机子项判定为 `PASS`。完整 G6 仍保持 `BLOCKED`，其余语音、拍照、分享、写入纠正删除、账号删除及同 Build 截图等验收项目不得由本子项代替。
 - 临时 XCUITest 已固化为仓库脚本 `scripts/run_ios_real_device_acceptance.sh`。脚本对已安装 production App 执行非破坏性启动、登录态 Agent surface、今日简报、草稿前后台恢复、隐私政策与账号删除入口检查，保留 `.xcresult` 和截图；不会提交健康记录、授权权限或删除账号。
 - 验收工程在 Xcode 26.5 的 iOS Simulator SDK 上 `build-for-testing` 成功。发布机 App Store Connect API 凭证预检通过；当前物理 iPhone 在 CoreDevice 中为 offline，浏览器控制会话未继承 App Store Connect 登录，因此剩余真机项目、App Privacy 发布和受监管医疗器械声明仍不得标记完成。
+
+## 2026-07-26 Build 237 Release Simulator Evidence
+
+- 从 `main=e67a1a2e6f0fef04590e59b7067d34bf1c06f51d` 重新完成 iPhone 17 Pro Max Release 模拟器构建、安装和启动。已安装二进制的 `Info.plist` 回读为 App Version `1.3.2`、Build `237`；应用直接进入已登录 Agent 页面，输入草稿为空，证明本轮安装后仍能恢复演示会话。
+- 设置页的版本来源已改为优先读取已安装原生二进制信息；服务层回归 16 项、TypeScript、ESLint 和 Release 模拟器构建通过。版本行的最终可视滚动复核仍需解锁发布机后完成，不能只凭源码测试替代 UI 证据。
+- App Store 截图脚本原先把 `01-today` 深链写成 `/`。该路径现在按 Agent Native 路由约定重定向到 Chat，导致 `00-launch`、`01-today`、`02-chat` 连续出现同一段对话；`/chat`、`/record` 也不是当前 Tab 的规范路径。
+- 截图脚本现改为 `/(tabs)/today`、`/(tabs)/chat`、`/(tabs)/record`，并新增静态回归测试锁定捕获和 manifest 的同一规范路由。修复后重新截图确认 `01-today` 进入今日行动页，`02-chat` 进入 Agent 对话页，`03-record` 进入健康记录页。
+- 当前截图只完成候选素材审查，尚未标记 `app_store_ready`：Agent 对话页展示“无法自动同步 Garmin”的低价值样例，设置页展示演示邮箱；两者不适合作为公开营销素材。健康记录、导入健康档案和隐私政策页可保留，剩余素材需在演示账号中重新策展后再导出 1290 x 2796。
+- CoreDevice 仍识别 iPhone `suntice`，但 `available=false`，提示设备需解锁并通过线缆可发现；因此 20 项物理 iPhone 证据仍未执行。App Privacy 发布确认和受监管医疗器械声明 `No` 也未在 App Store Connect 登录态页面核验。
+- G6 保持 `BLOCKED`。不得因为 Release 模拟器构建、登录恢复或部分截图通过而移除 Draft 或点击 Submit for Review。

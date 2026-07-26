@@ -178,9 +178,9 @@ xcrun simctl launch "${DEVICE_ID}" "${BUNDLE_ID}" >/dev/null || true
 sleep 3
 xcrun simctl io "${DEVICE_ID}" screenshot "${OUTPUT_DIR}/00-launch.png" >/dev/null
 
-capture "01-today" "/"
-capture "02-chat" "/chat"
-capture "03-record" "/record"
+capture "01-today" "/(tabs)/today"
+capture "02-chat" "/(tabs)/chat"
+capture "03-record" "/(tabs)/record"
 capture "04-me" "/me"
 capture "05-import" "/import"
 capture "06-privacy" "/privacy-policy"
@@ -207,9 +207,9 @@ from datetime import datetime, timezone
 manifest_path, simulator, bundle_id, url_scheme, privacy_status, ready, build_id = sys.argv[1:]
 routes = [
     ("00-launch", "launch"),
-    ("01-today", "/"),
-    ("02-chat", "/chat"),
-    ("03-record", "/record"),
+    ("01-today", "/(tabs)/today"),
+    ("02-chat", "/(tabs)/chat"),
+    ("03-record", "/(tabs)/record"),
     ("04-me", "/me"),
     ("05-import", "/import"),
     ("06-privacy", "/privacy-policy"),
