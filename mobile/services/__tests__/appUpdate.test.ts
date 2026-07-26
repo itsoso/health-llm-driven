@@ -67,4 +67,13 @@ describe('appUpdate', () => {
     expect(getNativeVersionLabel({ nativeAppVersion: '1.4.0', nativeBuildVersion: null })).toBe('1.4.0');
     expect(getNativeVersionLabel({ nativeAppVersion: null, nativeBuildVersion: null })).toBe('未知版本');
   });
+
+  it('falls back to embedded Expo config when native constants are unavailable', () => {
+    expect(getNativeVersionLabel({
+      nativeAppVersion: null,
+      nativeBuildVersion: null,
+      expoAppVersion: '1.3.2',
+      expoBuildVersion: '237',
+    })).toBe('1.3.2 (237)');
+  });
 });
