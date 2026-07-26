@@ -1560,6 +1560,56 @@ async def test_executor_enforce_mode_marks_missing_receipt_for_reconciliation(
 
 
 @pytest.mark.asyncio
+async def test_executor_marks_local_medication_plan_rejection_failed_not_uncertain(
+    db, auth_user_and_headers, monkeypatch
+):
+    from app.models.agent_runtime import AgentToolOperation
+    from app.services.agent_executor import AgentExecutor
+    from app.services.agent_runtime import AgentRuntimeCoordinator
+
+    user, _headers = auth_user_and_headers
+    runtime = AgentRuntimeCoordinator(db)
+    admission = _run(db, user.id, suffix="executor-medication-local-rejection")
+    runtime.mark_running(admission.context)
+    executor = AgentExecutor(db)
+    executor._current_user_id = user.id
+    executor._current_turn_user_message = "记录本次服药"
+    executor._runtime_run_id = admission.context.run_id
+    executor._runtime_attempt_id = admission.context.attempt_id
+    executor._runtime_managed = True
+    executor._turn_medication_tool_preflight_error = (
+        "服务端未能封存完整的用药确认计划"
+    )
+
+    monkeypatch.setattr(
+        "app.services.agent_executor.settings.agent_runtime_mode", "enforce"
+    )
+    monkeypatch.setattr(
+        "app.services.llm.tool_validator.validate_tool_call",
+        lambda tool_name, args, db, user_id, reference_now=None: {
+            "error": None,
+            "data": args,
+        },
+    )
+
+    await executor._execute_tool(
+        "health_record",
+        {
+            "record_type": "medication",
+            "data": {
+                "medication_name": "测试药物",
+                "actual_dosage": "1片",
+            },
+        },
+        None,
+    )
+
+    operation = db.query(AgentToolOperation).one()
+    assert operation.status == "failed"
+    assert operation.error_code == "tool_rejected"
+
+
+@pytest.mark.asyncio
 async def test_executor_cancellation_marks_claimed_write_for_reconciliation(
     db, auth_user_and_headers, monkeypatch
 ):

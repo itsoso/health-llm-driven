@@ -78,6 +78,17 @@ def test_remote_api_error_with_local_marker_stays_uncertain():
     assert outcome.dispatch_started is None
 
 
+def test_medication_plan_local_rejection_is_not_uncertain():
+    outcome = classify_write_execution(
+        "Error: 用药确认计划未能建立，本次没有写入。"
+        "服务端未能封存完整的用药确认计划；"
+        "请重新发送完整药名和本次实际服量。"
+    )
+
+    assert outcome.status == "rejected"
+    assert outcome.dispatch_started is False
+
+
 def test_legacy_needs_clarification_is_a_pre_dispatch_rejection():
     outcome = classify_write_execution(
         "[NEEDS_CLARIFICATION] 工具调用未执行。"

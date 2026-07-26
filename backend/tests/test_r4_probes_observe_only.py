@@ -7,6 +7,7 @@ founder 选了「先探针再堵」/「纯 logger 影子测量」——因为:
   会污染 /safety/audit(审计面 under-alarm)。
 本测试锁死「探针零行为变更」这个不变量 —— 探针一旦开始拦截/写库, 这里必须红。
 """
+import json
 import logging
 
 import pytest
@@ -135,8 +136,12 @@ class TestMedicationR4Probe:
             },
         }
         result = await ex._exec_health_record("http://x/api/v1", {}, args)
-        assert str(result).startswith("Error: 用药确认计划未能建立")
-        assert "没有写入" in str(result)
+        payload = json.loads(result)
+        assert payload["status"] == "rejected"
+        assert payload["success"] is False
+        assert payload["dispatch_started"] is False
+        assert payload["error_code"] == "medication_plan_context_missing"
+        assert "没有写入" in payload["message"]
 
     @pytest.mark.asyncio
     async def test_probe_silent_for_auto_kinds(self, db, caplog):

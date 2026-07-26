@@ -15813,7 +15813,16 @@ class AgentExecutor:
                 self._medication_item_from_health_record_args(args)
             )
             if medication_error is not None or medication_item is None:
-                return f"Error: {medication_error or '用药参数无效'}"
+                return json.dumps(
+                    {
+                        "status": "rejected",
+                        "success": False,
+                        "dispatch_started": False,
+                        "error_code": "medication_arguments_invalid",
+                        "message": medication_error or "用药参数无效",
+                    },
+                    ensure_ascii=False,
+                )
             med_name = medication_item["medication_name"]
             actual_dosage = medication_item["actual_dosage"]
             observed_strength = medication_item.get("observed_strength")
@@ -15824,9 +15833,19 @@ class AgentExecutor:
                 None,
             )
             if preflight_error:
-                return (
-                    "Error: 用药确认计划未能建立，本次没有写入。"
-                    f"{preflight_error}；请重新发送完整药名和本次实际服量。"
+                return json.dumps(
+                    {
+                        "status": "rejected",
+                        "success": False,
+                        "dispatch_started": False,
+                        "error_code": "medication_plan_preflight_failed",
+                        "message": (
+                            "用药确认计划未能建立，本次没有写入。"
+                            f"{preflight_error}；"
+                            "请重新发送完整药名和本次实际服量。"
+                        ),
+                    },
+                    ensure_ascii=False,
                 )
 
             intent = None
@@ -15835,9 +15854,18 @@ class AgentExecutor:
                 and self._current_turn_conversation_id is not None
                 and self._current_turn_source_message_id is not None
             ):
-                return (
-                    "Error: 用药确认计划未能建立，本次没有写入。"
-                    "请在聊天中重新发送药名和本次实际服量。"
+                return json.dumps(
+                    {
+                        "status": "rejected",
+                        "success": False,
+                        "dispatch_started": False,
+                        "error_code": "medication_plan_context_missing",
+                        "message": (
+                            "用药确认计划未能建立，本次没有写入。"
+                            "请在聊天中重新发送药名和本次实际服量。"
+                        ),
+                    },
+                    ensure_ascii=False,
                 )
             try:
                 from app.services.medication_intake_batch import (
@@ -15885,9 +15913,18 @@ class AgentExecutor:
                     type(error).__name__,
                 )
                 self.db.rollback()
-                return (
-                    "Error: 用药确认计划未能建立，本次没有写入。"
-                    "请重新发送药名和本次实际服量。"
+                return json.dumps(
+                    {
+                        "status": "rejected",
+                        "success": False,
+                        "dispatch_started": False,
+                        "error_code": "medication_plan_proposal_failed",
+                        "message": (
+                            "用药确认计划未能建立，本次没有写入。"
+                            "请重新发送药名和本次实际服量。"
+                        ),
+                    },
+                    ensure_ascii=False,
                 )
             preview = (
                 f"用药: {med_name} {observed_strength}，本次服量 {actual_dosage}"

@@ -720,8 +720,11 @@ async def test_model_confirmed_flag_without_server_plan_cannot_write(
         },
     )
 
-    assert result.startswith("Error:")
-    assert "确认计划" in result
+    payload = json.loads(result)
+    assert payload["status"] == "rejected"
+    assert payload["dispatch_started"] is False
+    assert payload["error_code"] == "medication_plan_context_missing"
+    assert "确认计划" in payload["message"]
     assert db.query(MedicationLog).filter(MedicationLog.user_id == user.id).count() == 0
 
 
