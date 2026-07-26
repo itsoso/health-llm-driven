@@ -1,11 +1,14 @@
+import base64
 import json
+from io import BytesIO
 from datetime import datetime, timezone
 
 import pytest
+from PIL import Image
 
 from app.config import settings
 from app.models.food_nutrition import FoodItem, FoodNutrient
-from app.models.daily_health import DietRecord
+from app.models.daily_health import DietPhotoAsset, DietPhotoDraft, DietRecord
 from app.models.user import User
 from app.models.user_profile import UserProfile
 from app.services.agent_executor import (
@@ -18,6 +21,12 @@ from app.services import chat_utils
 
 
 VALID_PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Z/QAAAABJRU5ErkJggg=="
+
+
+def _png_base64(color: tuple[int, int, int]) -> str:
+    buffer = BytesIO()
+    Image.new("RGB", (2, 2), color=color).save(buffer, format="PNG")
+    return base64.b64encode(buffer.getvalue()).decode()
 
 
 def _food_result():
@@ -196,6 +205,66 @@ def test_agent_explicit_food_photo_write_records_outside_meal_window(
     assert card["actions"][0]["action"] == "ui.inline.expand"
 
 
+def test_agent_missing_any_food_confidence_requires_confirmation(
+    db, tmp_path, monkeypatch
+):
+    executor, _user = _food_photo_executor(db, tmp_path, monkeypatch)
+    recognition = _food_result()
+    recognition["foods"].append({
+        "name": "青菜",
+        "quantity": "约100g",
+        "calories": 20,
+        "protein": 2,
+        "carbs": 3,
+        "fat": 0,
+        "fiber": 2,
+        "confidence": None,
+    })
+
+    result = executor._capture_contextual_meal_photo(
+        "记录这餐",
+        recognition,
+        image_index=0,
+    )
+
+    assert result is not None
+    assert result.record is None
+    assert result.photo_draft is not None
+    assert db.query(DietRecord).count() == 0
+
+
+def test_agent_photo_persistence_failure_never_falls_back_to_unverified_write(
+    db, tmp_path, monkeypatch
+):
+    from app.services.contextual_meal_photo_service import (
+        ContextualMealPhotoService,
+    )
+
+    executor, _user = _food_photo_executor(db, tmp_path, monkeypatch)
+
+    def fail_capture(*_args, **_kwargs):
+        raise OSError("simulated private image storage failure")
+
+    monkeypatch.setattr(ContextualMealPhotoService, "capture_session", fail_capture)
+    recognition = _food_result()
+
+    capture = executor._capture_contextual_meal_photo(
+        "记录这餐",
+        recognition,
+        image_index=0,
+    )
+    context = executor._format_food_recognition_for_agent(
+        "记录这餐",
+        recognition,
+        contextual_capture=capture,
+    )
+
+    assert capture is None
+    assert db.query(DietRecord).count() == 0
+    assert "严禁调用 health_record" in context
+    assert "请调用 health_record" not in context
+
+
 @pytest.mark.asyncio
 async def test_agent_applies_consumed_fraction_before_contextual_photo_write(
     db, tmp_path, monkeypatch
@@ -231,6 +300,162 @@ async def test_agent_applies_consumed_fraction_before_contextual_photo_write(
     assert context is not None
     assert "份量已在首次写入中按三分之一修正" in context
     assert "不要再次调用 health_record 或 health_manage 写入" in context
+
+
+@pytest.mark.asyncio
+async def test_multi_image_turn_persists_once_and_emits_one_multi_photo_card(
+    db, tmp_path, monkeypatch
+):
+    from app.services.ai.food_recognition import food_recognition_service
+
+    executor, user = _food_photo_executor(db, tmp_path, monkeypatch)
+    second_image = _png_base64((20, 160, 80))
+    executor._current_turn_image_urls.append(
+        chat_utils.upload_chat_image(second_image, user.id, "png"),
+    )
+    results = [
+        _food_result(),
+        {
+            "success": True,
+            "foods": [{
+                "name": "西兰花",
+                "quantity": "约150g",
+                "calories": 50,
+                "protein": 4,
+                "carbs": 8,
+                "fat": 0.5,
+                "fiber": 4,
+                "confidence": 0.9,
+            }],
+        },
+    ]
+
+    async def recognize(*_args, **_kwargs):
+        return results.pop(0)
+
+    monkeypatch.setattr(
+        food_recognition_service,
+        "recognize_food_from_base64",
+        recognize,
+    )
+
+    context = await executor._analyze_food_images_with_structured_vision(
+        "记录这餐",
+        [
+            {"base64": VALID_PNG_BASE64, "type": "png"},
+            {"base64": second_image, "type": "png"},
+        ],
+    )
+
+    records = db.query(DietRecord).filter(DietRecord.user_id == user.id).all()
+    assets = (
+        db.query(DietPhotoAsset)
+        .filter(DietPhotoAsset.user_id == user.id)
+        .order_by(DietPhotoAsset.ordinal.asc())
+        .all()
+    )
+    assert len(records) == 1
+    assert records[0].calories == 248
+    assert len(assets) == 2
+    assert {asset.diet_record_id for asset in assets} == {records[0].id}
+    assert len(executor._turn_contextual_diet_receipts) == 1
+    assert len(executor._turn_contextual_diet_cards) == 1
+    card = executor._turn_contextual_diet_cards[0]
+    expected_capture_session_id = f"meal-photo:{assets[0].origin_message_id}"
+    assert card["data"]["card_id"] == (
+        f"diet-capture:{expected_capture_session_id}"
+    )
+    assert card["data"]["capture_session_id"] == expected_capture_session_id
+    assert card["data"]["photo_asset_ids"] == [asset.id for asset in assets]
+    assert len(card["data"]["photo_urls"]) == 2
+    assert context is not None
+    assert "不要再次调用 health_record" in context
+
+
+@pytest.mark.asyncio
+async def test_multi_image_partial_recognition_forces_one_confirmation_batch(
+    db, tmp_path, monkeypatch
+):
+    from app.services.ai.food_recognition import food_recognition_service
+
+    executor, user = _food_photo_executor(db, tmp_path, monkeypatch)
+    second_image = _png_base64((180, 80, 40))
+    executor._current_turn_image_urls.append(
+        chat_utils.upload_chat_image(second_image, user.id, "png"),
+    )
+    results = [
+        _food_result(),
+        {"success": False, "error": "vision provider timeout"},
+    ]
+
+    async def recognize(*_args, **_kwargs):
+        return results.pop(0)
+
+    monkeypatch.setattr(
+        food_recognition_service,
+        "recognize_food_from_base64",
+        recognize,
+    )
+
+    context = await executor._analyze_food_images_with_structured_vision(
+        "记录这餐",
+        [
+            {"base64": VALID_PNG_BASE64, "type": "png"},
+            {"base64": second_image, "type": "png"},
+        ],
+    )
+
+    assets = (
+        db.query(DietPhotoAsset)
+        .filter(DietPhotoAsset.user_id == user.id)
+        .order_by(DietPhotoAsset.ordinal.asc())
+        .all()
+    )
+    assert db.query(DietRecord).filter(DietRecord.user_id == user.id).count() == 0
+    assert db.query(DietPhotoDraft).filter(DietPhotoDraft.user_id == user.id).count() == 1
+    assert [asset.classification for asset in assets] == ["food", "unknown"]
+    assert {asset.photo_draft_token for asset in assets} == {
+        db.query(DietPhotoDraft).filter(DietPhotoDraft.user_id == user.id).one().token
+    }
+    assert len(executor._turn_contextual_diet_receipts) == 0
+    assert len(executor._turn_contextual_diet_cards) == 1
+    card = executor._turn_contextual_diet_cards[0]
+    assert card["data"]["media_stage"] == "pending_confirmation"
+    assert card["data"]["capture_session_id"] == (
+        f"meal-photo:{assets[0].origin_message_id}"
+    )
+    assert context is not None
+    assert "确认" in context
+
+
+@pytest.mark.asyncio
+async def test_more_than_three_images_never_partially_records(
+    db, tmp_path, monkeypatch
+):
+    from app.services.ai.food_recognition import food_recognition_service
+
+    executor, _user = _food_photo_executor(db, tmp_path, monkeypatch)
+
+    async def unexpected_recognition(*_args, **_kwargs):
+        raise AssertionError("over-limit input must not call vision")
+
+    monkeypatch.setattr(
+        food_recognition_service,
+        "recognize_food_from_base64",
+        unexpected_recognition,
+    )
+    response = await executor._analyze_food_images_with_structured_vision(
+        "记录这餐",
+        [
+            {"base64": f"image-{index}", "type": "png"}
+            for index in range(4)
+        ],
+    )
+
+    assert response is not None
+    assert "超过 3 张" in response
+    assert "没有写入" in response
+    assert db.query(DietRecord).count() == 0
 
 
 @pytest.mark.asyncio

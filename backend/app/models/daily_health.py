@@ -218,6 +218,9 @@ class DietPhotoDraft(Base):
 
     token = Column(String(64), primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    # Contextual Agent captures use the originating user message as the
+    # session boundary.  Nullable keeps direct REST photo drafts compatible.
+    source_message_id = Column(Integer, nullable=True)
     image_url = Column(String, nullable=True)
     image_type = Column(String(20), nullable=False)
     recognition_result = Column(JSONColumn, nullable=False)
@@ -244,6 +247,14 @@ class DietPhotoDraft(Base):
         ),
         Index("idx_diet_photo_drafts_user_status", "user_id", "status"),
         Index("idx_diet_photo_drafts_expires_at", "expires_at"),
+        Index(
+            "uq_diet_photo_drafts_user_source_message",
+            "user_id",
+            "source_message_id",
+            unique=True,
+            postgresql_where=text("source_message_id IS NOT NULL"),
+            sqlite_where=text("source_message_id IS NOT NULL"),
+        ),
     )
 
 

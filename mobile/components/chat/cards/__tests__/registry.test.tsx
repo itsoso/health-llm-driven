@@ -196,6 +196,106 @@ describe('renderCard 安全降级', () => {
     );
   });
 
+  it('opens an ordered gallery for all available meal photos', () => {
+    const element = renderCard({
+      type: 'diet_draft',
+      data: {
+        meal_type: 'dinner',
+        food_items: '鱼 + 蔬菜',
+        calories: 620,
+        recorded: true,
+        source: 'chat_photo',
+        photo_urls: [
+          '/api/v1/upload/files/diet/1/first.jpg?signature=one',
+          '/api/v1/upload/files/diet/1/second.jpg?signature=two',
+        ],
+      },
+    });
+
+    const screen = render(element!);
+    expect(screen.getByTestId('diet-photo-count')).toHaveTextContent('2');
+
+    fireEvent.press(screen.getByTestId('diet-photo-cover'));
+
+    expect(screen.getByTestId('diet-photo-gallery')).toBeTruthy();
+    expect(screen.getByText('2 张餐食照片')).toBeTruthy();
+    expect(screen.getByText('1 / 2')).toBeTruthy();
+    expect(screen.getByText('2 / 2')).toBeTruthy();
+  });
+
+  it('refreshes a mounted card when the server projection adds another photo', () => {
+    const first = {
+      type: 'diet_draft',
+      data: {
+        card_id: 'diet-record-88',
+        meal_type: 'dinner',
+        food_items: '鱼 + 蔬菜',
+        calories: 620,
+        recorded: true,
+        source: 'chat_photo',
+        photo_urls: ['/api/v1/upload/files/diet/1/first.jpg?signature=one'],
+      },
+    } as const;
+    const screen = render(renderCard(first)!);
+    expect(screen.queryByTestId('diet-photo-count')).toBeNull();
+
+    screen.rerender(renderCard({
+      ...first,
+      data: {
+        ...first.data,
+        photo_urls: [
+          '/api/v1/upload/files/diet/1/first.jpg?signature=one',
+          '/api/v1/upload/files/diet/1/second.jpg?signature=two',
+        ],
+      },
+    })!);
+
+    expect(screen.getByTestId('diet-photo-count')).toHaveTextContent('2');
+  });
+
+  it('lets the user retry a meal photo that failed to render locally', () => {
+    const screen = render(renderCard({
+      type: 'diet_draft',
+      data: {
+        card_id: 'diet-record-89',
+        meal_type: 'lunch',
+        food_items: '鸡胸肉',
+        calories: 320,
+        recorded: true,
+        source: 'chat_photo',
+        photo_urls: ['/api/v1/upload/files/diet/1/retry.jpg?signature=one'],
+      },
+    })!);
+
+    fireEvent(screen.getByTestId('diet-draft-photo'), 'error', { nativeEvent: {} });
+    const retry = screen.getByRole('button', { name: '重试加载餐食照片' });
+    fireEvent.press(retry);
+
+    expect(screen.getByTestId('diet-draft-photo')).toBeTruthy();
+  });
+
+  it('keeps the meal card usable when only part of its photos can be restored', () => {
+    const element = renderCard({
+      type: 'diet_draft',
+      data: {
+        meal_type: 'breakfast',
+        food_items: '煎饼',
+        calories: 360,
+        recorded: true,
+        record_id: 88,
+        source: 'chat_photo',
+        media_stage: 'partially_available',
+        photo_urls: ['/api/v1/upload/files/diet/1/first.jpg?signature=one'],
+        photo_unavailable_count: 1,
+      },
+    });
+
+    const screen = render(element!);
+    expect(screen.getByTestId('diet-photo-count')).toHaveTextContent('1/2');
+    expect(screen.getByText('1/2 张照片可用，饮食记录和营养数据仍已保留')).toBeTruthy();
+    expect(screen.getByText('早餐已记录')).toBeTruthy();
+  });
+
   it('renders an automatic contextual meal save as a visible receipt without an action', () => {
     const element = renderCard({
       type: 'diet_draft',

@@ -7,7 +7,11 @@ jest.mock('../api', () => ({
   BASE_URL: 'https://example.test/api/v1',
 }));
 
-import { getConversationsPage, getConversations } from '../chat';
+import {
+  getConversationMessages,
+  getConversations,
+  getConversationsPage,
+} from '../chat';
 
 describe('getConversationsPage', () => {
   const originalFetch = global.fetch;
@@ -153,5 +157,48 @@ describe('getConversations (compat wrapper)', () => {
     global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 502, json: async () => ({}) }) as any;
     const out = await getConversations('每日健康简报');
     expect(out).toEqual([]);
+  });
+});
+
+describe('getConversationMessages', () => {
+  const originalFetch = global.fetch;
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+    jest.clearAllMocks();
+  });
+
+  it('passes cursor pagination and returns the server page metadata', async () => {
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        messages: [{ id: 18, role: 'assistant', content: 'ok' }],
+        total_messages: 91,
+        has_more: true,
+        oldest_message_id: 18,
+      }),
+    });
+    global.fetch = fetchMock as any;
+
+    const page = await getConversationMessages(7, {
+      limit: 80,
+      beforeMessageId: 99,
+    });
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      'https://example.test/api/v1/agent/conversations/7?limit=80&before_message_id=99',
+    );
+    expect(page.has_more).toBe(true);
+    expect(page.oldest_message_id).toBe(18);
+  });
+
+  it('throws on a non-ok response so loaded history is not replaced by empty data', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 503,
+      json: async () => ({}),
+    }) as any;
+
+    await expect(getConversationMessages(7, { limit: 80 })).rejects.toThrow(/503/);
   });
 });

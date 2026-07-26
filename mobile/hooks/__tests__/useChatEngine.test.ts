@@ -572,6 +572,55 @@ describe('useChatEngine', () => {
     jest.restoreAllMocks();
   });
 
+  it('discards an older conversation response that resolves after a newer selection', async () => {
+    let resolveFirst!: (value: unknown) => void;
+    let resolveSecond!: (value: unknown) => void;
+    mockGetConversationMessages.mockImplementation((id: number) => new Promise(resolve => {
+      if (id === 101) resolveFirst = resolve;
+      if (id === 202) resolveSecond = resolve;
+    }));
+    const { result } = renderHook(() => useChatEngine());
+    let firstLoad!: Promise<void>;
+    let secondLoad!: Promise<void>;
+
+    act(() => {
+      firstLoad = result.current.loadConversation(101);
+      secondLoad = result.current.loadConversation(202);
+    });
+    await act(async () => {
+      resolveSecond({
+        total_messages: 1,
+        has_more: false,
+        oldest_message_id: 2021,
+        messages: [{
+          id: 2021,
+          role: 'assistant',
+          content: '较新的会话',
+          created_at: '2026-07-25T12:01:00Z',
+        }],
+      });
+      await secondLoad;
+    });
+    await act(async () => {
+      resolveFirst({
+        total_messages: 1,
+        has_more: false,
+        oldest_message_id: 1011,
+        messages: [{
+          id: 1011,
+          role: 'assistant',
+          content: '已经过时的会话',
+          created_at: '2026-07-25T12:00:00Z',
+        }],
+      });
+      await firstLoad;
+    });
+
+    expect(result.current.conversationId).toBe(202);
+    expect(result.current.messages.map(message => message.content)).toContain('较新的会话');
+    expect(result.current.messages.map(message => message.content)).not.toContain('已经过时的会话');
+  });
+
   it('restores persisted safe thinking steps from assistant history meta', () => {
     const restored = restoreMessagesFromHistory([
       {
@@ -887,7 +936,7 @@ describe('useChatEngine', () => {
         ]),
       );
     });
-    expect(mockGetConversationMessages).toHaveBeenCalledWith(321, { days: 7 });
+    expect(mockGetConversationMessages).toHaveBeenCalledWith(321, { limit: 80 });
     expect(mockGetConversations).not.toHaveBeenCalledWith('每日健康简报');
   });
 
@@ -1000,6 +1049,46 @@ describe('useChatEngine', () => {
 
     await waitFor(() => {
       expect(mockStreamChat).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it('does not acknowledge a queued photo turn until the backend accepts it', async () => {
+    mockStreamChat.mockImplementation(streamStartThenWait);
+    const onAccepted = jest.fn();
+    const { result } = renderHook(() => useChatEngine());
+
+    act(() => {
+      void result.current.sendMessage('第一条先慢慢分析');
+    });
+    await waitFor(() => {
+      expect(result.current.isStreaming).toBe(true);
+      expect(mockStreamChat).toHaveBeenCalledTimes(1);
+    });
+
+    let queuedResult: Promise<boolean> | undefined;
+    act(() => {
+      queuedResult = result.current.sendMessage('记录这餐', [{
+        uri: 'file:///documents/chat-drafts/queued-meal.jpeg',
+        base64: 'queued-photo',
+        type: 'jpeg',
+      }], { onAccepted } as any);
+    });
+
+    expect(result.current.queuedCount).toBe(1);
+    expect(onAccepted).not.toHaveBeenCalled();
+
+    await act(async () => {
+      finishStream?.();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(mockStreamChat).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(onAccepted).toHaveBeenCalledWith(true));
+    await expect(queuedResult).resolves.toBe(true);
+
+    await act(async () => {
+      finishStream?.();
+      await Promise.resolve();
     });
   });
 
@@ -2047,7 +2136,7 @@ describe('useChatEngine', () => {
       expect.arrayContaining([
         expect.objectContaining({
           role: 'user',
-          imageUris: ['file:///lab-report.jpg'],
+          imageUris: ['data:image/jpeg;base64,abc123'],
         }),
       ]),
     );
@@ -2111,7 +2200,7 @@ describe('useChatEngine', () => {
         expect.objectContaining({ content: expect.stringContaining('请求超时') }),
       ]),
     );
-    expect(mockGetConversationMessages).toHaveBeenCalledWith(777, { days: 7 });
+    expect(mockGetConversationMessages).toHaveBeenCalledWith(777, { limit: 80 });
   });
 
   it('recovers an accepted background-aborted stream from server history on foreground', async () => {

@@ -16,6 +16,7 @@ from typing import Optional, List
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, field_validator
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -258,24 +259,31 @@ def _answer_owns_its_visualization(answer_text: str, tools_used: list | None) ->
 
 
 def _merge_card_descriptors(*groups: list | None) -> list:
-    """Merge SSE card descriptors without duplicating identical payloads."""
+    """Merge SSE cards, updating a stable card instead of duplicating it."""
 
     out: list = []
-    seen: set[str] = set()
+    positions: dict[str, int] = {}
     for group in groups:
         if not isinstance(group, list):
             continue
         for card in group:
             if not isinstance(card, dict) or not isinstance(card.get("type"), str):
                 continue
-            try:
-                key = json.dumps(card, sort_keys=True, ensure_ascii=False, default=str)
-            except Exception:
-                key = f"{card.get('type')}:{len(out)}"
-            if key in seen:
-                continue
-            seen.add(key)
-            out.append(card)
+            data = card.get("data")
+            card_id = data.get("card_id") if isinstance(data, dict) else None
+            if isinstance(card_id, str) and card_id.strip():
+                key = f"{card['type']}:{card_id.strip()}"
+            else:
+                try:
+                    key = json.dumps(card, sort_keys=True, ensure_ascii=False, default=str)
+                except Exception:
+                    key = f"{card.get('type')}:{len(out)}"
+            position = positions.get(key)
+            if position is None:
+                positions[key] = len(out)
+                out.append(card)
+            else:
+                out[position] = card
     return out
 
 
@@ -2346,23 +2354,53 @@ async def list_conversations(
 async def get_conversation(
     conversation_id: int,
     days: Optional[int] = Query(None, ge=1, le=365, description="只返回最近 N 天的消息"),
+    limit: Optional[int] = Query(None, ge=1, le=200, description="按消息 ID 取最近一页"),
+    before_message_id: Optional[int] = Query(None, ge=1, description="只返回此消息 ID 之前的数据"),
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ):
-    from app.services.agent_conversation_service import AgentConversationService
+    from app.models.agent_conversation import AgentConversation, AgentMessage
 
-    service = AgentConversationService(db)
-    conv = service.get_conversation_detail(current_user.id, conversation_id)
+    conv = (
+        db.query(AgentConversation)
+        .filter(
+            AgentConversation.id == conversation_id,
+            AgentConversation.user_id == current_user.id,
+        )
+        .first()
+    )
     if not conv:
         raise HTTPException(status_code=404, detail="对话不存在")
 
-    msgs = conv.messages
-    total_messages = len(msgs)
+    total_messages = (
+        db.query(func.count(AgentMessage.id))
+        .filter(AgentMessage.conversation_id == conversation_id)
+        .scalar()
+        or 0
+    )
+    message_query = db.query(AgentMessage).filter(
+        AgentMessage.conversation_id == conversation_id,
+    )
     if days is not None:
         from datetime import datetime, timedelta, timezone
 
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-        msgs = [m for m in msgs if m.created_at and _msg_dt(m.created_at) >= cutoff]
+        message_query = message_query.filter(AgentMessage.created_at >= cutoff)
+    if before_message_id is not None:
+        message_query = message_query.filter(AgentMessage.id < before_message_id)
+
+    has_more = False
+    if limit is not None:
+        descending = (
+            message_query
+            .order_by(AgentMessage.id.desc())
+            .limit(limit + 1)
+            .all()
+        )
+        has_more = len(descending) > limit
+        msgs = list(reversed(descending[:limit]))
+    else:
+        msgs = message_query.order_by(AgentMessage.id.asc()).all()
 
     from app.services.chat_utils import refresh_chat_image_url_value
     from app.services.dynamic_card_persistence import message_metas_for_delivery
@@ -2377,6 +2415,8 @@ async def get_conversation(
         "id": conv.id,
         "title": conv.title,
         "total_messages": total_messages,
+        "has_more": has_more,
+        "oldest_message_id": msgs[0].id if msgs else None,
         "mode": "agent",
         "messages": [
             {
@@ -2391,16 +2431,6 @@ async def get_conversation(
             for index, m in enumerate(msgs)
         ],
     }
-
-
-def _msg_dt(value):
-    """Normalize SQLite naive / PostgreSQL aware timestamps to aware UTC."""
-    from datetime import datetime, timezone
-
-    if isinstance(value, datetime):
-        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
-    return datetime.fromisoformat(str(value)).replace(tzinfo=timezone.utc) if value else datetime.now(timezone.utc)
-
 
 @router.delete("/conversations/{conversation_id}", summary="删除统一健康助理对话")
 async def delete_conversation(

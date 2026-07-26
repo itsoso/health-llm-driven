@@ -218,6 +218,123 @@ def sanitize_food_recognition_result(result: Dict[str, Any]) -> Dict[str, Any]:
     return sanitized
 
 
+def merge_food_recognition_results(
+    results: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Merge independent views of one meal without double-counting dishes.
+
+    The existing privacy boundary remains unchanged: each photo is recognized
+    through the current single-image provider call, then only sanitized JSON is
+    merged locally. Same dish + same portion is an alternate view. Conflicting
+    portions are retained once and force manual confirmation upstream.
+    """
+    merged_foods: List[Dict[str, Any]] = []
+    food_positions: Dict[str, int] = {}
+    conflict = False
+    ambiguous_duplicate = False
+    health_tips: Optional[str] = None
+    safe_errors: List[str] = []
+    consumed_fractions: List[float] = []
+    consumed_fraction_labels: List[str] = []
+
+    for raw_result in results:
+        result = sanitize_food_recognition_result(raw_result)
+        if not result.get("success"):
+            error = str(result.get("error") or "").strip()
+            if error:
+                safe_errors.append(error)
+            continue
+        if health_tips is None and result.get("health_tips"):
+            health_tips = str(result["health_tips"])
+        raw_fraction = raw_result.get("consumed_fraction")
+        fraction = (
+            float(raw_fraction)
+            if isinstance(raw_fraction, (int, float))
+            and not isinstance(raw_fraction, bool)
+            and math.isfinite(float(raw_fraction))
+            else None
+        )
+        label = str(raw_result.get("consumed_fraction_label") or "").strip()
+        if fraction is not None and 0 < fraction < 1:
+            consumed_fractions.append(fraction)
+            if label:
+                consumed_fraction_labels.append(label)
+        for food in result.get("foods") or []:
+            if not isinstance(food, dict):
+                continue
+            name_key = re.sub(r"\s+", "", str(food.get("name") or "")).lower()
+            if not name_key:
+                continue
+            existing_position = food_positions.get(name_key)
+            if existing_position is None:
+                food_positions[name_key] = len(merged_foods)
+                merged_foods.append(dict(food))
+                continue
+
+            existing = merged_foods[existing_position]
+            # Independent photos do not prove whether this is another view of
+            # one serving or a second identical serving. Keep one conservative
+            # estimate but force confirmation instead of silently undercounting.
+            ambiguous_duplicate = True
+            conflict = True
+            existing_quantity = re.sub(
+                r"\s+",
+                "",
+                str(existing.get("quantity") or ""),
+            ).lower()
+            incoming_quantity = re.sub(
+                r"\s+",
+                "",
+                str(food.get("quantity") or ""),
+            ).lower()
+            if (
+                existing_quantity
+                and incoming_quantity
+                and existing_quantity != incoming_quantity
+            ):
+                conflict = True
+                continue
+            if not existing_quantity and incoming_quantity:
+                merged_foods[existing_position] = dict(food)
+                continue
+            existing_confidence = _as_probability(existing.get("confidence")) or 0
+            incoming_confidence = _as_probability(food.get("confidence")) or 0
+            if incoming_confidence > existing_confidence:
+                merged_foods[existing_position] = dict(food)
+
+    if not merged_foods:
+        return {
+            "success": False,
+            "error": safe_errors[0] if safe_errors else "图片中未识别到可记录的食物，请重新拍摄餐食本身。",
+            "foods": [],
+            "multi_photo_conflict": False,
+        }
+
+    merged = sanitize_food_recognition_result({
+        "success": True,
+        "foods": merged_foods,
+        "health_tips": health_tips,
+    })
+    merged["multi_photo_conflict"] = conflict
+    merged["multi_photo_ambiguous_duplicate"] = ambiguous_duplicate
+    merged["source_image_count"] = len(results)
+    if consumed_fractions:
+        first_fraction = consumed_fractions[0]
+        if all(abs(value - first_fraction) < 1e-6 for value in consumed_fractions):
+            merged["consumed_fraction"] = first_fraction
+            if consumed_fraction_labels:
+                merged["consumed_fraction_label"] = consumed_fraction_labels[0]
+        else:
+            merged["multi_photo_conflict"] = True
+    confidences = [
+        confidence
+        for food in merged.get("foods") or []
+        if (confidence := _as_probability(food.get("confidence"))) is not None
+    ]
+    merged["multi_photo_min_confidence"] = min(confidences) if confidences else None
+    return merged
+
+
 def extract_json_from_text(text: str) -> str:
     """
     从文本中提取JSON内容，处理各种可能的格式
@@ -312,7 +429,7 @@ class FoodRecognitionService:
         try:
             # 构建图片URL
             data_url = f"data:image/{image_type};base64,{image_base64}"
-            logger.info(f"调用 LLM Vision API 识别食物")
+            logger.info("调用 LLM Vision API 识别食物")
 
             provider = self._get_provider()
             from app.services.llm.usage_tracker import set_caller

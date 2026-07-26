@@ -635,6 +635,71 @@ def test_diet_photo_asset_migrations_create_canonical_owner_scoped_ledger(tmp_pa
             ))
 
 
+def test_diet_photo_capture_session_migration_adds_owner_scoped_source_identity(
+    tmp_path: Path,
+):
+    migrations_dir = Path(__file__).resolve().parents[1] / "migrations" / "managed"
+    sqlite_file = (
+        migrations_dir
+        / "20260725_120000_add_diet_photo_draft_session.sqlite.sql"
+    )
+    postgres_file = (
+        migrations_dir
+        / "20260725_120000_add_diet_photo_draft_session.postgresql.sql"
+    )
+    assert sqlite_file.exists()
+    assert postgres_file.exists()
+    assert "source_message_id INTEGER" in postgres_file.read_text(encoding="utf-8")
+    assert "uq_diet_photo_drafts_user_source_message" in postgres_file.read_text(
+        encoding="utf-8",
+    )
+
+    isolated = tmp_path / "managed"
+    isolated.mkdir()
+    (isolated / sqlite_file.name).write_text(
+        sqlite_file.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        conn.execute(text(
+            "CREATE TABLE diet_photo_drafts ("
+            "token TEXT PRIMARY KEY, user_id INTEGER NOT NULL"
+            ")"
+        ))
+        conn.execute(text(
+            "INSERT INTO diet_photo_drafts (token, user_id) "
+            "VALUES ('legacy-one', 7)"
+        ))
+
+    result = apply_managed_migrations(engine, isolated)
+
+    assert [migration.id for migration in result.applied] == [
+        "20260725_120000_add_diet_photo_draft_session"
+    ]
+    columns = {
+        column["name"]
+        for column in inspect(engine).get_columns("diet_photo_drafts")
+    }
+    assert "source_message_id" in columns
+    with engine.begin() as conn:
+        conn.execute(text(
+            "UPDATE diet_photo_drafts SET source_message_id=99 "
+            "WHERE token='legacy-one'"
+        ))
+        conn.execute(text(
+            "INSERT INTO diet_photo_drafts "
+            "(token, user_id, source_message_id) VALUES ('other-owner', 8, 99)"
+        ))
+    with pytest.raises(Exception):
+        with engine.begin() as conn:
+            conn.execute(text(
+                "INSERT INTO diet_photo_drafts "
+                "(token, user_id, source_message_id) "
+                "VALUES ('duplicate-session', 7, 99)"
+            ))
+
+
 def test_diet_image_key_hardening_migration_normalizes_legacy_urls_and_rejects_signed_urls(
     tmp_path: Path,
 ):

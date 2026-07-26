@@ -1,4 +1,7 @@
-import { restoreMessagesFromHistory } from '../useChatEngine';
+import {
+  dedupeStableCardMessages,
+  restoreMessagesFromHistory,
+} from '../useChatEngine';
 
 jest.mock('../../services/chat', () => ({
   streamChat: jest.fn(),
@@ -106,6 +109,113 @@ describe('restoreMessagesFromHistory', () => {
     });
   });
 
+  it('folds repeated projections of one meal card and keeps the latest media set', () => {
+    const restored = restoreMessagesFromHistory([
+      {
+        id: 13,
+        role: 'assistant',
+        content: '晚餐已记录。',
+        created_at: '2026-07-25 18:30:00',
+        meta: {
+          client_turn_id: 'turn-meal-1',
+          cards: [
+            {
+              type: 'diet_draft',
+              data: {
+                card_id: 'diet-record:88',
+                record_id: 88,
+                photo_asset_ids: [901],
+                photo_urls: ['/api/v1/upload/files/diet/1/a.jpeg'],
+              },
+            },
+            {
+              type: 'diet_draft',
+              data: {
+                card_id: 'diet-record:88',
+                record_id: 88,
+                photo_asset_ids: [901, 902],
+                photo_urls: [
+                  '/api/v1/upload/files/diet/1/a.jpeg',
+                  '/api/v1/upload/files/diet/1/b.jpeg',
+                ],
+              },
+            },
+          ],
+        },
+      },
+    ], 'https://example.test', 'h');
+
+    expect(restored).toHaveLength(2);
+    expect(restored[1]).toMatchObject({
+      cardType: 'diet_draft',
+      sourceTurnId: 'turn-meal-1',
+      cardData: {
+        card_id: 'diet-record:88',
+        record_id: 88,
+        photo_asset_ids: [901, 902],
+        photo_urls: [
+          '/api/v1/upload/files/diet/1/a.jpeg',
+          '/api/v1/upload/files/diet/1/b.jpeg',
+        ],
+      },
+    });
+  });
+
+  it('keeps one latest projection when the same stable card appears in different turns', () => {
+    const restored = restoreMessagesFromHistory([
+      {
+        id: 21,
+        role: 'assistant',
+        content: '第一张已记录。',
+        created_at: '2026-07-25 18:30:00',
+        meta: {
+          client_turn_id: 'turn-meal-1',
+          cards: [{
+            type: 'diet_draft',
+            data: {
+              card_id: 'diet-record:99',
+              record_id: 99,
+              photo_urls: ['/api/v1/upload/files/diet/1/a.jpeg'],
+            },
+          }],
+        },
+      },
+      {
+        id: 22,
+        role: 'assistant',
+        content: '第二张已补充。',
+        created_at: '2026-07-25 18:31:00',
+        meta: {
+          client_turn_id: 'turn-meal-2',
+          cards: [{
+            type: 'diet_draft',
+            data: {
+              card_id: 'diet-record:99',
+              record_id: 99,
+              photo_urls: [
+                '/api/v1/upload/files/diet/1/a.jpeg',
+                '/api/v1/upload/files/diet/1/b.jpeg',
+              ],
+            },
+          }],
+        },
+      },
+    ], 'https://example.test', 'h');
+
+    const mealCards = restored.filter(message => message.cardType === 'diet_draft');
+    expect(mealCards).toHaveLength(1);
+    expect(mealCards[0]).toMatchObject({
+      sourceTurnId: 'turn-meal-2',
+      cardData: {
+        card_id: 'diet-record:99',
+        photo_urls: [
+          '/api/v1/upload/files/diet/1/a.jpeg',
+          '/api/v1/upload/files/diet/1/b.jpeg',
+        ],
+      },
+    });
+  });
+
   it('restores llm usage from assistant message meta', () => {
     const restored = restoreMessagesFromHistory([
       {
@@ -151,5 +261,38 @@ describe('restoreMessagesFromHistory', () => {
         llm_ttft_ms: 23600,
       },
     });
+  });
+});
+
+describe('dedupeStableCardMessages', () => {
+  it('keeps the newest stable projection when an older history page is prepended', () => {
+    const merged = dedupeStableCardMessages([
+      {
+        id: 'old-card',
+        role: 'assistant',
+        content: '',
+        cardType: 'diet_draft',
+        cardData: {
+          card_id: 'diet-record:99',
+          photo_urls: ['/api/v1/upload/files/diet/1/a.jpeg'],
+        },
+      },
+      {
+        id: 'new-card',
+        role: 'assistant',
+        content: '',
+        cardType: 'diet_draft',
+        cardData: {
+          card_id: 'diet-record:99',
+          photo_urls: [
+            '/api/v1/upload/files/diet/1/a.jpeg',
+            '/api/v1/upload/files/diet/1/b.jpeg',
+          ],
+        },
+      },
+    ]);
+
+    expect(merged.map(message => message.id)).toEqual(['new-card']);
+    expect(merged[0].cardData.photo_urls).toHaveLength(2);
   });
 });

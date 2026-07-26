@@ -29,6 +29,7 @@ import {
   hydrateDraftImagesForSend,
   loadChatDraft,
   persistChatDraft,
+  type ChatDraftMetadata,
 } from '../../services/chatDraftStorage';
 import { registerAppReloadPreparation } from '../../services/appReloadPreparation';
 import {
@@ -93,6 +94,20 @@ const MEAL_PHOTO_CONTEXT = {
   intent: 'diet_photo_record',
   instruction: '用户刚通过拍照记餐明确发起记录。把本轮全部餐食照片作为同一餐的上下文,综合识别食物和份量,识别完成后直接保存为今日饮食记录,不要等待二次确认。保存成功后返回已保存的结构化饮食卡,并注明营养值为估算值,允许用户稍后调整。',
 };
+
+function createMealCaptureSessionId(): string {
+  return `meal-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function draftMetadataForPhotoContext(
+  context: Record<string, string> | null,
+): ChatDraftMetadata {
+  if (context?.intent !== 'diet_photo_record') return {};
+  return {
+    intent: 'diet_photo_record',
+    captureSessionId: context.capture_session_id,
+  };
+}
 
 function mergePhotoContext(base: string | undefined, photoContext: Record<string, string>): string {
   if (!base) return JSON.stringify(photoContext);
@@ -208,13 +223,22 @@ export default function ChatInputBar({
   const voiceRealtimeActiveRef = useRef(false);
   const voiceDraftRef = useRef<VoiceDraft | null>(null);
   const pendingPhotoContextRef = useRef<Record<string, string> | null>(null);
+  const draftInteractionVersionRef = useRef(0);
   const draftPersistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const draftHydratedRef = useRef(false);
-  const draftSnapshotRef = useRef({ text: input, images: pendingImages });
+  const draftSnapshotRef = useRef({
+    text: input,
+    images: pendingImages,
+    photoContext: pendingPhotoContextRef.current,
+  });
   const justSentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   composerRef.current = composer;
   draftHydratedRef.current = draftHydrated;
-  draftSnapshotRef.current = { text: input, images: pendingImages };
+  draftSnapshotRef.current = {
+    text: input,
+    images: pendingImages,
+    photoContext: pendingPhotoContextRef.current,
+  };
   const canSend = (!!input.trim() || pendingImages.length > 0)
     && composer.phase !== 'submitting';
 
@@ -229,10 +253,17 @@ export default function ChatInputBar({
 
   React.useEffect(() => {
     let mounted = true;
+    const hydrationVersion = draftInteractionVersionRef.current;
     void (async () => {
       try {
         const draft = await loadChatDraft();
         if (!mounted) return;
+        if (draftInteractionVersionRef.current !== hydrationVersion) {
+          void cleanupAbandonedChatDraftFiles(
+            draftSnapshotRef.current.images.map(image => image.uri),
+          );
+          return;
+        }
         if (initialText == null) {
           inputChannelRef.current = 'typed';
           setInput(prev => prev || draft.text);
@@ -240,7 +271,13 @@ export default function ChatInputBar({
             dispatchComposer({ type: 'toggle_mode' });
           }
         }
-        setPendingImages(draft.images);
+        if (draft.intent === 'diet_photo_record' && draft.captureSessionId && draft.images.length > 0) {
+          pendingPhotoContextRef.current = {
+            ...MEAL_PHOTO_CONTEXT,
+            capture_session_id: draft.captureSessionId,
+          };
+        }
+        setPendingImages(draft.images, draft.intent === 'diet_photo_record' ? 3 : 9);
         void cleanupAbandonedChatDraftFiles(draft.images.map(image => image.uri));
       } catch (e) {
         if (__DEV__) console.warn('[ChatInputBar] draft restore failed:', e);
@@ -260,7 +297,12 @@ export default function ChatInputBar({
     if (draftPersistTimerRef.current) clearTimeout(draftPersistTimerRef.current);
     draftPersistTimerRef.current = setTimeout(() => {
       draftPersistTimerRef.current = null;
-      void persistChatDraft(input, pendingImages).catch((e) => {
+      void persistChatDraft(
+        input,
+        pendingImages,
+        Date.now(),
+        draftMetadataForPhotoContext(pendingPhotoContextRef.current),
+      ).catch((e) => {
         if (__DEV__) console.warn('[ChatInputBar] draft persistence failed:', e);
       });
     }, 250);
@@ -279,7 +321,12 @@ export default function ChatInputBar({
       draftPersistTimerRef.current = null;
     }
     const snapshot = draftSnapshotRef.current;
-    await persistChatDraft(snapshot.text, snapshot.images);
+    await persistChatDraft(
+      snapshot.text,
+      snapshot.images,
+      Date.now(),
+      draftMetadataForPhotoContext(snapshot.photoContext),
+    );
   }), []);
 
   const restoreVoiceTranscriptDraft = useCallback((text: string) => {
@@ -427,7 +474,17 @@ export default function ChatInputBar({
     voiceDraftRef.current = null;
     realtimeAsrResultRef.current = undefined;
     pendingPhotoContextRef.current = null;
-    releaseImagesAfterSend();
+    draftInteractionVersionRef.current += 1;
+    draftSnapshotRef.current = {
+      text: '',
+      images: [],
+      photoContext: null,
+    };
+    try {
+      await releaseImagesAfterSend();
+    } catch (e) {
+      if (__DEV__) console.warn('[ChatInputBar] sent image cleanup failed:', e);
+    }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setJustSent(true);
     if (justSentTimerRef.current) clearTimeout(justSentTimerRef.current);
@@ -772,7 +829,12 @@ export default function ChatInputBar({
           draftPersistTimerRef.current = null;
         }
         const snapshot = draftSnapshotRef.current;
-        void persistChatDraft(snapshot.text, snapshot.images).catch((e) => {
+        void persistChatDraft(
+          snapshot.text,
+          snapshot.images,
+          Date.now(),
+          draftMetadataForPhotoContext(snapshot.photoContext),
+        ).catch((e) => {
           if (__DEV__) console.warn('[ChatInputBar] background draft persistence failed:', e);
         });
       }
@@ -818,6 +880,7 @@ export default function ChatInputBar({
   }, []);
 
   const handleInputChange = useCallback((text: string) => {
+    draftInteractionVersionRef.current += 1;
     const realtimeDictationActive =
       composerRef.current.phase === 'live_dictating'
       || dictationRealtimeActiveRef.current;
@@ -854,19 +917,41 @@ export default function ChatInputBar({
     if (!input) setTextInputHeight(COMPOSER_TEXT_MIN_HEIGHT);
   }, [input]);
 
-  const handlePickImage = useCallback(async () => { setShowMenu(false); await pickImage(); }, [pickImage]);
+  const handlePickImage = useCallback(async () => {
+    setShowMenu(false);
+    draftInteractionVersionRef.current += 1;
+    await pickImage(pendingPhotoContextRef.current?.intent === 'diet_photo_record' ? 3 : 9);
+  }, [pickImage]);
   const stageCameraPhoto = useCallback(async (mealPhoto: boolean) => {
     setShowMenu(false);
+    if (
+      mealPhoto
+      && pendingImages.length > 0
+      && pendingPhotoContextRef.current?.intent !== 'diet_photo_record'
+    ) {
+      Alert.alert(
+        '先处理已选图片',
+        '为避免误记，小巴不会把普通附件自动当成餐食照片。请先发送或移除已选图片，再开始拍照记餐。',
+      );
+      return [];
+    }
+    draftInteractionVersionRef.current += 1;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    const photos = await takePhoto();
+    const mealSessionActive = mealPhoto
+      || pendingPhotoContextRef.current?.intent === 'diet_photo_record';
+    const photos = await takePhoto(mealSessionActive ? 3 : 9);
     if (!photos || photos.length === 0) return [];
     if (mealPhoto) {
-      pendingPhotoContextRef.current = MEAL_PHOTO_CONTEXT;
+      pendingPhotoContextRef.current = {
+        ...MEAL_PHOTO_CONTEXT,
+        capture_session_id: pendingPhotoContextRef.current?.capture_session_id
+          || createMealCaptureSessionId(),
+      };
       inputChannelRef.current = 'typed';
       setInput(current => current.trim() ? current : '记录这餐');
     }
     return photos;
-  }, [takePhoto]);
+  }, [pendingImages.length, takePhoto]);
   const handleCaptureMealPhoto = useCallback(() => {
     void stageCameraPhoto(true);
   }, [stageCameraPhoto]);
@@ -982,6 +1067,7 @@ export default function ChatInputBar({
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setShowMenu(!showMenu);
   };
+  const pendingImageLimit = pendingPhotoContextRef.current?.intent === 'diet_photo_record' ? 3 : 9;
 
   return (
     <>
@@ -994,6 +1080,7 @@ export default function ChatInputBar({
               <TouchableOpacity
                 style={styles.previewRemove}
                 onPress={() => {
+                  draftInteractionVersionRef.current += 1;
                   if (pendingImages.length === 1) pendingPhotoContextRef.current = null;
                   void removeImage(i);
                 }}
@@ -1003,7 +1090,7 @@ export default function ChatInputBar({
               </TouchableOpacity>
             </View>
           ))}
-          {pendingImages.length < 9 && (
+          {pendingImages.length < pendingImageLimit && (
             <View style={styles.previewActionGroup}>
               <TouchableOpacity
                 style={styles.previewAddBtn}
@@ -1015,7 +1102,7 @@ export default function ChatInputBar({
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.previewAddBtn}
-                onPress={pickImage}
+                onPress={handlePickImage}
                 accessibilityRole="button"
                 accessibilityLabel="继续从相册选择"
               >
@@ -1023,7 +1110,7 @@ export default function ChatInputBar({
               </TouchableOpacity>
             </View>
           )}
-          <Text style={styles.previewCount}>{pendingImages.length}/9</Text>
+          <Text style={styles.previewCount}>{pendingImages.length}/{pendingImageLimit}</Text>
         </ScrollView>
       )}
 

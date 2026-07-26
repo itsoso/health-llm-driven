@@ -5,6 +5,7 @@ import pytest
 
 from app.services.ai.food_recognition import (
     FoodRecognitionService,
+    merge_food_recognition_results,
     sanitize_food_recognition_result,
 )
 from app.config import Settings
@@ -265,3 +266,84 @@ async def test_food_recognition_does_not_expose_provider_error_content(caplog):
     assert result["success"] is False
     assert private_error not in result["error"]
     assert private_error not in caplog.text
+
+
+def test_multi_photo_same_dish_is_ambiguous_and_requires_confirmation():
+    merged = merge_food_recognition_results([
+        {
+            "success": True,
+            "foods": [{
+                "name": "煎饼",
+                "quantity": "约4块",
+                "calories": 360,
+                "protein": 12,
+                "confidence": 0.91,
+            }],
+        },
+        {
+            "success": True,
+            "foods": [{
+                "name": "煎饼",
+                "quantity": "约4块",
+                "calories": 360,
+                "protein": 12,
+                "confidence": 0.88,
+            }],
+        },
+    ])
+
+    assert merged["success"] is True
+    assert len(merged["foods"]) == 1
+    assert merged["total_calories"] == 360
+    assert merged["total_protein"] == 12
+    assert merged["multi_photo_conflict"] is True
+    assert merged["multi_photo_ambiguous_duplicate"] is True
+
+
+def test_multi_photo_results_flag_conflicting_portions_for_confirmation():
+    merged = merge_food_recognition_results([
+        {
+            "success": True,
+            "foods": [{
+                "name": "煎饼",
+                "quantity": "约2块",
+                "calories": 180,
+                "confidence": 0.91,
+            }],
+        },
+        {
+            "success": True,
+            "foods": [{
+                "name": "煎饼",
+                "quantity": "约4块",
+                "calories": 360,
+                "confidence": 0.89,
+            }],
+        },
+    ])
+
+    assert merged["success"] is True
+    assert merged["multi_photo_conflict"] is True
+
+
+def test_multi_photo_results_preserve_consumed_fraction_context():
+    source = {
+        "success": True,
+        "foods": [{
+            "name": "鸡胸肉",
+            "quantity": "约40g",
+            "calories": 66,
+            "protein": 12.3,
+            "carbs": 0,
+            "fat": 1.4,
+            "fiber": 0,
+        }],
+        "consumed_fraction": 1 / 3,
+        "consumed_fraction_label": "三分之一",
+    }
+
+    merged = merge_food_recognition_results([source])
+
+    assert merged["consumed_fraction"] == pytest.approx(1 / 3)
+    assert merged["consumed_fraction_label"] == "三分之一"
+    assert merged["foods"][0]["quantity"] == "约40g"

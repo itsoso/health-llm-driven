@@ -15,6 +15,7 @@ const mockNewChat = jest.fn();
 const mockSetMessages = jest.fn();
 const mockSetParams = jest.fn();
 const mockLoadLatestConversation = jest.fn();
+const mockLoadMoreHistory = jest.fn();
 const mockSaveChatImageToLibrary = jest.fn();
 const mockShareImage = jest.fn();
 let mockRouteParams: Record<string, string | undefined> = {};
@@ -22,6 +23,8 @@ let mockLlmPreference: any = { model_id: null, options: [] };
 let mockMessages: any[] = [];
 let mockIsStreaming = false;
 let mockActiveTurn: any = { phase: 'idle', recoverable: false, label: undefined };
+let mockHasMoreHistory = false;
+let mockIsLoadingMoreHistory = false;
 let mockTodayTimelineData: any = undefined;
 let mockTodayDynamicViewData: any = undefined;
 let mockDailyPlanData: any = undefined;
@@ -64,6 +67,9 @@ jest.mock('../../../hooks/useChatEngine', () => ({
     newChat: mockNewChat,
     loadLatestConversation: mockLoadLatestConversation,
     loadConversation: jest.fn(),
+    loadMoreHistory: mockLoadMoreHistory,
+    hasMoreHistory: mockHasMoreHistory,
+    isLoadingMoreHistory: mockIsLoadingMoreHistory,
     setMessages: mockSetMessages,
   }),
 }));
@@ -189,6 +195,8 @@ describe('ChatScreen', () => {
     mockMessages = [];
     mockIsStreaming = false;
     mockActiveTurn = { phase: 'idle', recoverable: false, label: undefined };
+    mockHasMoreHistory = false;
+    mockIsLoadingMoreHistory = false;
     mockTodayTimelineData = undefined;
     mockTodayDynamicViewData = undefined;
     mockDailyPlanData = undefined;
@@ -1159,6 +1167,33 @@ describe('ChatScreen', () => {
       flex: 1,
       minHeight: 0,
     });
+  });
+
+  it('offers a compact control to load earlier messages at the top of the transcript', async () => {
+    mockHasMoreHistory = true;
+    mockMessages = [
+      { id: 'u-1', role: 'user', content: '较新的问题' },
+      { id: 'a-1', role: 'assistant', content: '较新的回复', completionStatus: 'complete' },
+    ];
+
+    const view = render(<ChatScreen />);
+    await waitFor(() => expect(view.getByLabelText('加载更早消息')).toBeTruthy());
+
+    fireEvent.press(view.getByLabelText('加载更早消息'));
+
+    expect(mockLoadMoreHistory).toHaveBeenCalledTimes(1);
+  });
+
+  it('disables the earlier-message control while history is loading', async () => {
+    mockHasMoreHistory = true;
+    mockIsLoadingMoreHistory = true;
+
+    const view = render(<ChatScreen />);
+    await waitFor(() => expect(view.getByLabelText('正在加载更早消息')).toBeTruthy());
+
+    fireEvent.press(view.getByLabelText('正在加载更早消息'));
+
+    expect(mockLoadMoreHistory).not.toHaveBeenCalled();
   });
 
   it('keeps a newly sent turn pinned through the first transcript relayout', async () => {

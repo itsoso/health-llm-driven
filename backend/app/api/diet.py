@@ -533,6 +533,43 @@ def create_diet_record(
         pattern=r"^[A-Za-z0-9._:-]+$",
     ),
 ):
+    """Create a diet record, serializing confirmation with photo auto-capture."""
+    if record.photo_draft_token:
+        photo_draft = db.query(DietPhotoDraft).filter(
+            DietPhotoDraft.token == record.photo_draft_token,
+            DietPhotoDraft.user_id == current_user.id,
+        ).first()
+        if photo_draft is not None and photo_draft.source_message_id is not None:
+            from app.services.contextual_meal_photo_service import (
+                ContextualMealPhotoService,
+            )
+
+            service = ContextualMealPhotoService(db)
+            with service._capture_session_lock(  # noqa: SLF001 - shared write boundary
+                current_user.id,
+                photo_draft.source_message_id,
+            ):
+                return _create_diet_record_locked(
+                    record,
+                    current_user=current_user,
+                    db=db,
+                    idempotency_key=idempotency_key,
+                )
+    return _create_diet_record_locked(
+        record,
+        current_user=current_user,
+        db=db,
+        idempotency_key=idempotency_key,
+    )
+
+
+def _create_diet_record_locked(
+    record: DietRecordCreate,
+    *,
+    current_user: User,
+    db: Session,
+    idempotency_key: Optional[str],
+) -> DietRecordResponse:
     """创建饮食记录（需要登录）"""
     _assert_diet_food_items_allowed(record.food_items)
     effective_idempotency_key = _combined_diet_idempotency_key(
@@ -550,7 +587,11 @@ def create_diet_record(
             return _convert_to_response(existing)
     created_image_path: str | None = None
     try:
-        logger.info(f"用户 {current_user.id} 创建饮食记录: {record.meal_type}, {record.food_items[:50] if record.food_items else ''}")
+        logger.info(
+            "用户 %s 创建饮食记录: meal_type=%s",
+            current_user.id,
+            record.meal_type,
+        )
 
         # 转换meal_time为字符串
         record_dict = record.model_dump()
@@ -598,7 +639,7 @@ def create_diet_record(
             )
             image_url = stored_direct_image.storage_key
             created_image_path = stored_direct_image.file_path
-            logger.info("保存饮食图片: %s", image_url)
+            logger.info("饮食图片已保存: user_id=%s", current_user.id)
 
         # 确保 meal_type 是字符串
         meal_type_value = record_dict['meal_type']
@@ -1445,7 +1486,7 @@ async def recognize_and_save_diet(
             )
             image_url = stored_image.storage_key
             created_image_path = stored_image.file_path
-            logger.info("保存饮食图片: %s", image_url)
+            logger.info("饮食图片已保存: user_id=%s", current_user.id)
 
         # 创建饮食记录
         db_record = DietRecordModel(
@@ -1481,7 +1522,12 @@ async def recognize_and_save_diet(
         created_image_path = None
         db.refresh(db_record)
 
-        logger.info(f"用户 {current_user.id} 通过AI识别创建饮食记录: {food_items}")
+        logger.info(
+            "用户 %s 通过 AI 识别创建饮食记录: record_id=%s food_count=%s",
+            current_user.id,
+            db_record.id,
+            len(foods),
+        )
 
         return _convert_to_response(db_record)
 

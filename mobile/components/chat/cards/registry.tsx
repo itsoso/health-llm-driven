@@ -19,6 +19,7 @@ import type {
   ChatCardActionRuntimeState,
   ServerCardDescriptor,
 } from './types';
+import { serverCardIdentity, stableServerCardId } from './cardIdentity';
 import { revaColors as C, revaRadii, revaSemantic } from '../../../constants/revaTheme';
 import { isSafeInternalRoute } from '../../../utils/internalRoutes';
 
@@ -164,7 +165,7 @@ export function renderCard(
   // cards_group: iPad(>= 768) 双列, iPhone 单列
   if (descriptor.type === 'cards_group' && Array.isArray(descriptor.data?.cards)) {
     const items = (descriptor.data.cards as ServerCardDescriptor[])
-      .map((c, i) => ({ key: i, el: renderCard(c, options) }))
+      .map((card) => ({ key: serverCardIdentity(card), el: renderCard(card, options) }))
       .filter((x) => x.el != null);
     if (items.length === 0) return null;
     if (items.length === 1) return items[0].el;
@@ -205,6 +206,13 @@ function StatefulCardRenderer({
 }) {
   const [data, setData] = React.useState(descriptor.data);
   const [localDoneActionKeys, setLocalDoneActionKeys] = React.useState<Record<string, true>>({});
+  const runtimeIdentity = stableServerCardId(descriptor) ?? descriptor.type;
+  React.useEffect(() => {
+    setData(descriptor.data);
+  }, [descriptor.data]);
+  React.useEffect(() => {
+    setLocalDoneActionKeys({});
+  }, [runtimeIdentity]);
   try {
     const actions = normalizeCardActions(descriptor.actions, descriptor.type)
       .map((action) => rewriteActionForCurrentCardData(action, descriptor.type, data));

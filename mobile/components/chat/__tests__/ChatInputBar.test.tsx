@@ -261,6 +261,31 @@ describe('ChatInputBar', () => {
     expect(mockReleaseImagesAfterSend).not.toHaveBeenCalled();
   });
 
+  it('does not mix an existing generic attachment into a new meal capture session', async () => {
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(jest.fn());
+    mockPendingImages = [{
+      uri: 'file:///documents/chat-drafts/report.jpeg',
+      base64: 'report',
+      type: 'jpeg',
+    }];
+    const view = render(
+      <ChatInputBar onSend={jest.fn()} isStreaming={false} captureMealPhotoToken={0} />,
+    );
+
+    await act(async () => {
+      view.rerender(
+        <ChatInputBar onSend={jest.fn()} isStreaming={false} captureMealPhotoToken={1} />,
+      );
+      await Promise.resolve();
+    });
+
+    expect(mockTakePhoto).not.toHaveBeenCalled();
+    expect(alertSpy).toHaveBeenCalledWith(
+      '先处理已选图片',
+      expect.stringContaining('不会把普通附件自动当成餐食照片'),
+    );
+  });
+
   it('offers separate camera and library actions after the first photo is staged', async () => {
     mockPendingImages = [
       { uri: 'file:///meal-1.jpg', base64: 'meal-1', type: 'jpeg' },
@@ -1206,8 +1231,40 @@ describe('ChatInputBar', () => {
 
     await waitFor(() => {
       expect(getByLabelText('消息输入框').props.value).toBe('继续确认午餐');
-      expect(mockSetPendingImages).toHaveBeenCalledWith(restoredImages);
+      expect(mockSetPendingImages).toHaveBeenCalledWith(restoredImages, 9);
     });
+  });
+
+  it('does not let a late draft hydration overwrite a photo captured after mount', async () => {
+    let resolveDraft!: (value: unknown) => void;
+    mockLoadChatDraft.mockImplementationOnce(() => new Promise(resolve => {
+      resolveDraft = resolve;
+    }));
+    mockTakePhoto.mockResolvedValueOnce([{
+      uri: 'file:///documents/chat-drafts/new-meal.jpeg',
+      base64: 'new-meal',
+      type: 'jpeg',
+    }]);
+    const oldImages = [{
+      uri: 'file:///documents/chat-drafts/old-meal.jpeg',
+      base64: '',
+      type: 'jpeg',
+    }];
+    const view = render(
+      <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
+    );
+
+    fireEvent.press(view.getByLabelText('附件菜单'));
+    await act(async () => {
+      fireEvent.press(view.getByLabelText('拍照记餐'));
+      await Promise.resolve();
+    });
+    await act(async () => {
+      resolveDraft({ text: '过时草稿', images: oldImages });
+      await Promise.resolve();
+    });
+
+    expect(mockSetPendingImages).not.toHaveBeenCalledWith(oldImages);
   });
 
   it('flushes the latest draft immediately when iOS moves to the background', async () => {
@@ -1216,7 +1273,7 @@ describe('ChatInputBar', () => {
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
     );
 
-    await waitFor(() => expect(mockSetPendingImages).toHaveBeenCalledWith([]));
+    await waitFor(() => expect(mockSetPendingImages).toHaveBeenCalledWith([], 9));
     fireEvent.press(getByLabelText('切换到键盘输入'));
     fireEvent.changeText(getByLabelText('消息输入框'), '切后台前必须保存');
 
@@ -1225,7 +1282,12 @@ describe('ChatInputBar', () => {
     });
 
     await waitFor(() => {
-      expect(mockPersistChatDraft).toHaveBeenCalledWith('切后台前必须保存', []);
+      expect(mockPersistChatDraft).toHaveBeenCalledWith(
+        '切后台前必须保存',
+        [],
+        expect.any(Number),
+        {},
+      );
     });
   });
 
@@ -1256,6 +1318,77 @@ describe('ChatInputBar', () => {
       expect(mockClearImages).not.toHaveBeenCalled();
       expect(mockClearPersistedChatDraft).toHaveBeenCalled();
     });
+  });
+
+  it('keeps durable photo files while a queued send is awaiting server acceptance', async () => {
+    const storedImage = {
+      uri: 'file:///documents/chat-drafts/queued-lunch.jpeg',
+      base64: '',
+      type: 'jpeg',
+      draftCreatedAt: 100,
+    };
+    const hydratedImage = { ...storedImage, base64: 'private-base64' };
+    let acceptSend: ((accepted: boolean) => void) | undefined;
+    mockPendingImages = [storedImage];
+    mockHydrateDraftImages.mockResolvedValueOnce([hydratedImage]);
+    const onSend = jest.fn(() => new Promise<boolean>((resolve) => {
+      acceptSend = resolve;
+    }));
+    const { getByLabelText } = render(
+      <ChatInputBar onSend={onSend} isStreaming={true} />,
+    );
+
+    act(() => {
+      fireEvent.press(getByLabelText('发送消息'));
+    });
+    await waitFor(() => {
+      expect(onSend).toHaveBeenCalledWith('请分析这些图片', [hydratedImage], undefined);
+    });
+    expect(mockReleaseImagesAfterSend).not.toHaveBeenCalled();
+    expect(mockClearPersistedChatDraft).not.toHaveBeenCalled();
+
+    await act(async () => {
+      acceptSend?.(true);
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(mockReleaseImagesAfterSend).toHaveBeenCalledTimes(1);
+      expect(mockClearPersistedChatDraft).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('publishes an empty in-memory snapshot before accepted-send cleanup can trigger background persistence', async () => {
+    mockLoadChatDraft.mockResolvedValueOnce({ text: '', images: [] });
+    let snapshotPersistedDuringRelease: unknown[] | undefined;
+    let releasing = false;
+    mockPersistChatDraft.mockImplementation(async (...args: unknown[]) => {
+      if (releasing) snapshotPersistedDuringRelease = args;
+    });
+    mockReleaseImagesAfterSend.mockImplementation(() => {
+      releasing = true;
+      appStateHandler?.('background');
+      releasing = false;
+      return Promise.resolve();
+    });
+    const view = render(
+      <ChatInputBar onSend={jest.fn().mockResolvedValue(true)} isStreaming={false} />,
+    );
+    await waitFor(() => expect(mockSetPendingImages).toHaveBeenCalledWith([], 9));
+    enterKeyboardMode(view);
+    fireEvent.changeText(view.getByLabelText('消息输入框'), '已发送后不能复活');
+
+    await act(async () => {
+      fireEvent.press(view.getByLabelText('发送消息'));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(snapshotPersistedDuringRelease).toEqual([
+      '',
+      [],
+      expect.any(Number),
+      {},
+    ]);
   });
 
   it('retains the draft when send rejects immediately', async () => {

@@ -67,6 +67,42 @@ describe('useMediaPicker', () => {
     mockDeleteDraftImage.mockResolvedValue(undefined);
   });
 
+  describe('contextual image limits', () => {
+    const image = (index: number) => ({
+      uri: `file:///generic-${index}.jpg`,
+      base64: `base64-${index}`,
+      type: 'jpeg',
+    });
+
+    it('keeps up to nine ordinary attachments', async () => {
+      const { result } = renderHook(() => useMediaPicker());
+
+      await act(async () => {
+        await result.current.addImages(Array.from({ length: 4 }, (_, index) => image(index)));
+      });
+
+      expect(result.current.pendingImages).toHaveLength(4);
+      expect(Alert.alert).not.toHaveBeenCalledWith('已达上限', expect.any(String));
+    });
+
+    it('applies the three-photo limit only when the caller requests meal capture', async () => {
+      const { result } = renderHook(() => useMediaPicker());
+
+      await act(async () => {
+        await result.current.addImages(
+          Array.from({ length: 4 }, (_, index) => image(index)),
+          3,
+        );
+      });
+
+      expect(result.current.pendingImages).toHaveLength(3);
+      expect(Alert.alert).toHaveBeenCalledWith(
+        '本餐最多 3 张照片',
+        expect.stringContaining('已保留前 3 张'),
+      );
+    });
+  });
+
   // ── pickImage ──
 
   describe('pickImage', () => {
@@ -384,7 +420,7 @@ describe('useMediaPicker', () => {
       );
     });
 
-    it('releases accepted images from composer state without deleting their display files', async () => {
+    it('releases accepted private images from composer state and deletes their draft files', async () => {
       mockRequestCameraPermissions.mockResolvedValue({ granted: true });
       mockLaunchCamera.mockResolvedValue({
         canceled: false,
@@ -394,10 +430,12 @@ describe('useMediaPicker', () => {
       const { result } = renderHook(() => useMediaPicker());
       await act(async () => { await result.current.takePhoto(); });
 
-      act(() => { result.current.releaseImagesAfterSend(); });
+      await act(async () => { await result.current.releaseImagesAfterSend(); });
 
       expect(result.current.pendingImage).toBeNull();
-      expect(mockDeleteDraftImage).not.toHaveBeenCalled();
+      expect(mockDeleteDraftImage).toHaveBeenCalledWith(
+        expect.objectContaining({ uri: 'file:///manip-out.jpg' }),
+      );
     });
   });
 });

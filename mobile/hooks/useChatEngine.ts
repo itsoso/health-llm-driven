@@ -6,6 +6,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { streamChat, getConversations, getConversationMessages, deleteConversation, type ChatMessage, type LlmUsageProfile, type AgentPerfProfile, type MedicationBatchStreamDecision } from '../services/chat';
 import { dispatchCard, renderServerCards } from '../components/chat/cards';
 import type { ChatCardActionDescriptor, ServerCardDescriptor } from '../components/chat/cards/types';
+import {
+  dedupeServerCards,
+  serverCardIdentity,
+  stableServerCardId,
+} from '../components/chat/cards/cardIdentity';
 import api, { BASE_URL } from '../services/api';
 import { durationBucket, emitClientEvent } from '../services/clientEvents';
 import { sanitizeChatErrorMessage, sanitizeChatStreamToken } from '../utils/chatErrorMessage';
@@ -105,6 +110,14 @@ export function buildTurnRequestFingerprint(
       };
     }),
   }));
+}
+
+function optimisticImageUri(image: { uri: string; base64?: string; type?: string }): string {
+  const content = image.base64?.trim();
+  if (!content) return image.uri;
+  const rawType = String(image.type || 'jpeg').trim().toLowerCase();
+  const type = rawType.startsWith('image/') ? rawType.slice(6) : rawType;
+  return `data:image/${type || 'jpeg'};base64,${content}`;
 }
 
 export function findReusableTurnMessage(
@@ -361,7 +374,7 @@ export function restoreMessagesFromHistory(
   (msgs || []).forEach((m: any, i: number) => {
     const baseId = `${idPrefix}-${m.id || i}`;
     const messageMeta = applyMeta(m);
-    const serverCards = renderServerCards(m?.meta?.cards);
+    const serverCards = dedupeServerCards(renderServerCards(m?.meta?.cards));
     const hasTerminalMedicationCard = serverCards.some((card) => {
       if (card.type !== 'medication_draft') return false;
       const decisionStatus = normalizeMedicationDecisionStatus(card.data?.decision_status)
@@ -387,8 +400,9 @@ export function restoreMessagesFromHistory(
 
     serverCards.forEach((card, cardIndex) => {
       const isMedicationCard = card.type === 'medication_draft';
-      restored.push({
-        id: `${baseId}-card-${cardIndex}`,
+      const stableId = stableServerCardId(card);
+      const restoredCard: UIMessage = {
+        id: stableId ? `${baseId}-card-${stableId}` : `${baseId}-card-${cardIndex}`,
         role: 'assistant',
         content: '',
         cardType: card.type,
@@ -405,10 +419,44 @@ export function restoreMessagesFromHistory(
           decisionStatus: normalizeMedicationDecisionStatus(card.data?.decision_status)
             ?? messageMeta.decisionStatus,
         } : {}),
-      });
+      };
+      if (stableId) {
+        const existingIndex = restored.findIndex((message) => (
+          !!message.cardType
+          && stableServerCardId({
+            type: message.cardType,
+            data: message.cardData,
+            actions: message.cardActions,
+          }) === stableId
+        ));
+        if (existingIndex >= 0) restored.splice(existingIndex, 1);
+      }
+      restored.push(restoredCard);
     });
   });
   return restored;
+}
+
+/** Keep the newest projection of each durable server card across history pages. */
+export function dedupeStableCardMessages(messages: UIMessage[]): UIMessage[] {
+  const seenStableIds = new Set<string>();
+  const dedupedReversed: UIMessage[] = [];
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    const stableId = message.cardType
+      ? stableServerCardId({
+        type: message.cardType,
+        data: message.cardData,
+        actions: message.cardActions,
+      })
+      : undefined;
+    if (stableId) {
+      if (seenStableIds.has(stableId)) continue;
+      seenStableIds.add(stableId);
+    }
+    dedupedReversed.push(message);
+  }
+  return dedupedReversed.reverse();
 }
 
 interface UseChatEngineOptions {
@@ -437,7 +485,7 @@ interface QueuedChatTurn {
 }
 
 const BRIEFING_CONVERSATION_TITLE = '每日健康简报';
-const DEFAULT_WINDOW_DAYS = 7;
+const HISTORY_PAGE_SIZE = 80;
 const LAST_CONVERSATION_ID_KEY = 'chat:last_conversation_id:v1';
 const PENDING_STREAM_STARTED_AT_KEY = 'chat:pending_stream_started_at:v1';
 const ACTIVE_TURN_KEY = 'chat:active_turn:v1';
@@ -500,27 +548,42 @@ function appendThinkingStep(current: string[] | undefined, next: string | undefi
   return [...existing, normalized].slice(-MAX_THINKING_STEPS);
 }
 
-function serverCardKey(card: Pick<ServerCardDescriptor, 'type' | 'data' | 'actions'>): string {
-  try {
-    return JSON.stringify([card.type, card.data ?? {}, card.actions ?? []]);
-  } catch {
-    return `${card.type}:${Date.now()}`;
-  }
+export function serverCardKey(card: Pick<ServerCardDescriptor, 'type' | 'data' | 'actions'>): string {
+  return serverCardIdentity(card);
 }
 
-function insertCardMessagesAfterAssistant(
+export { dedupeServerCards };
+
+function upsertCardMessagesAfterAssistant(
   messages: UIMessage[],
   assistantId: string,
   cards: ServerCardDescriptor[],
   sourceTurnId?: string,
 ): UIMessage[] {
   if (cards.length === 0) return messages;
-  const insertAtBase = messages.findIndex(m => m.id === assistantId);
-  let insertAt = insertAtBase >= 0 ? insertAtBase + 1 : messages.length;
-  while (insertAt < messages.length && messages[insertAt]?.role === 'assistant' && !!messages[insertAt]?.cardType) {
+  let nextMessages = messages;
+  const newCards: ServerCardDescriptor[] = [];
+  cards.forEach((card) => {
+    const stableId = stableServerCardId(card);
+    if (stableId) {
+      nextMessages = nextMessages.filter((message) => !(
+        message.role === 'assistant'
+        && !!message.cardType
+        && stableServerCardId({
+          type: message.cardType,
+          data: message.cardData,
+          actions: message.cardActions,
+        }) === stableId
+      ));
+    }
+    newCards.push(card);
+  });
+  const insertAtBase = nextMessages.findIndex(m => m.id === assistantId);
+  let insertAt = insertAtBase >= 0 ? insertAtBase + 1 : nextMessages.length;
+  while (insertAt < nextMessages.length && nextMessages[insertAt]?.role === 'assistant' && !!nextMessages[insertAt]?.cardType) {
     insertAt += 1;
   }
-  const cardMessages = cards.map((card) => ({
+  const cardMessages = newCards.map((card) => ({
     id: nextId(),
     role: 'assistant' as const,
     content: '',
@@ -529,7 +592,7 @@ function insertCardMessagesAfterAssistant(
     cardActions: card.actions,
     sourceTurnId,
   }));
-  return [...messages.slice(0, insertAt), ...cardMessages, ...messages.slice(insertAt)];
+  return [...nextMessages.slice(0, insertAt), ...cardMessages, ...nextMessages.slice(insertAt)];
 }
 
 async function readStoredConversationId(): Promise<number | null> {
@@ -631,8 +694,11 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
   const [activeTurnHydrated, setActiveTurnHydrated] = useState(false);
   const [conversationId, setConversationId] = useState<number | undefined>(undefined);
   const conversationIdRef = useRef<number | undefined>(undefined);
-  const [windowDays, setWindowDays] = useState<number | undefined>(DEFAULT_WINDOW_DAYS);
   const [hasMoreHistory, setHasMoreHistory] = useState(false);
+  const [isLoadingMoreHistory, setIsLoadingMoreHistory] = useState(false);
+  const historyBeforeMessageIdRef = useRef<number | undefined>(undefined);
+  const conversationRequestGenerationRef = useRef(0);
+  const historyLoadRequestRef = useRef(0);
   const briefingInjected = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
   useEffect(() => { activeTurnRef.current = activeTurn; }, [activeTurn]);
@@ -758,13 +824,27 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     // P0-5: 本地流式态活跃且 <30s → 让位, 不用服务端半截 partial 覆盖本地流。
     // 只有流 done/error 或超过 30s (慢流/卡死) 后才放行服务端恢复。
     if (localStreamOwnsState()) return;
+    const requestGeneration = ++conversationRequestGenerationRef.current;
+    historyLoadRequestRef.current += 1;
+    setIsLoadingMoreHistory(false);
     try {
-      const { messages: msgs, total_messages } = await getConversationMessages(
-        conversationId, { days: windowDays || DEFAULT_WINDOW_DAYS }
+      const {
+        messages: msgs,
+        total_messages,
+        has_more,
+        oldest_message_id,
+      } = await getConversationMessages(
+        conversationId,
+        { limit: HISTORY_PAGE_SIZE },
       );
+      if (
+        requestGeneration !== conversationRequestGenerationRef.current
+        || conversationIdRef.current !== conversationId
+      ) return;
       // 网络往返期间流可能又启动了 (用户快速再发一条) → 二次核查, 仍活跃则丢弃这次结果。
       if (localStreamOwnsState()) return;
-      setHasMoreHistory(total_messages > msgs.length);
+      historyBeforeMessageIdRef.current = oldest_message_id;
+      setHasMoreHistory(has_more ?? total_messages > msgs.length);
       if (msgs.length === 0) return;
       const restored = restoreMessagesFromHistory(msgs, IMAGE_HOST, 'hist');
       setMessages(restored);
@@ -773,38 +853,21 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     } catch {
       // 网络失败不影响现有 UI
     }
-  }, [conversationId, windowDays, reconcileActiveTurnFromServer]);
-
-  const restoreCards = useCallback(async (restored: UIMessage[]) => {
-    const userMsgs = restored.filter(m => m.role === 'user' && m.content);
-    for (const um of userMsgs) {
-      try {
-        const card = await dispatchCard({
-          query: um.content,
-          query_lower: um.content.toLowerCase(),
-          toolsUsed: new Set(),
-          data: {},
-          api,
-        });
-        if (card) {
-          setMessages(prev => {
-            const idx = prev.findIndex(m => m.id === um.id);
-            if (idx < 0 || prev.find((m, j) => j > idx && m.cardType)) return prev;
-            const cardMsg: UIMessage = { id: `card-${um.id}`, role: 'assistant', content: '', cardType: card.type, cardData: card.data };
-            const insertAt = Math.min(idx + 2, prev.length);
-            return [...prev.slice(0, insertAt), cardMsg, ...prev.slice(insertAt)];
-          });
-        }
-      } catch { console.warn('Card dispatch failed for restored message'); }
-    }
-  }, []);
+  }, [conversationId, reconcileActiveTurnFromServer]);
 
   const recoverConversationFromServer = useCallback(async (id: number, expectedTurnId?: string) => {
+    const requestGeneration = conversationRequestGenerationRef.current;
     try {
-      const { messages: msgs, total_messages } = await getConversationMessages(
+      const {
+        messages: msgs,
+        total_messages,
+        has_more,
+        oldest_message_id,
+      } = await getConversationMessages(
         id,
-        { days: windowDays || DEFAULT_WINDOW_DAYS },
+        { limit: HISTORY_PAGE_SIZE },
       );
+      if (requestGeneration !== conversationRequestGenerationRef.current) return false;
       const turnId = expectedTurnId || activeTurnRef.current.turnId;
       if (!turnId) return false;
       const assistantAnswer = assistantMessageForTurn(msgs, turnId);
@@ -813,10 +876,10 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       conversationIdRef.current = id;
       setConversationId(id);
       void rememberConversationId(id);
-      setHasMoreHistory(total_messages > msgs.length);
+      historyBeforeMessageIdRef.current = oldest_message_id;
+      setHasMoreHistory(has_more ?? total_messages > msgs.length);
       const restored = restoreMessagesFromHistory(msgs, IMAGE_HOST, 'hist');
       setMessages(restored);
-      restoreCards(restored);
       reconcileActiveTurnFromServer(id, msgs);
       const completionStatus = (assistantAnswer as any)?.meta?.completion_status;
       const recoveredReceipts = normalizeWriteReceipts((assistantAnswer as any)?.meta?.write_receipts) || [];
@@ -835,12 +898,22 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     } catch {
       return false;
     }
-  }, [reconcileActiveTurnFromServer, restoreCards, windowDays]);
+  }, [reconcileActiveTurnFromServer]);
 
-  const loadConversationFromServer = useCallback(async (id: number, idPrefix: string = 'hist') => {
-    const { messages: msgs, total_messages } = await getConversationMessages(id, { days: DEFAULT_WINDOW_DAYS });
-    setWindowDays(DEFAULT_WINDOW_DAYS);
-    setHasMoreHistory(total_messages > msgs.length);
+  const loadConversationFromServer = useCallback(async (
+    id: number,
+    idPrefix: string = 'hist',
+    requestGeneration = conversationRequestGenerationRef.current,
+  ) => {
+    const {
+      messages: msgs,
+      total_messages,
+      has_more,
+      oldest_message_id,
+    } = await getConversationMessages(id, { limit: HISTORY_PAGE_SIZE });
+    if (requestGeneration !== conversationRequestGenerationRef.current) return false;
+    historyBeforeMessageIdRef.current = oldest_message_id;
+    setHasMoreHistory(has_more ?? total_messages > msgs.length);
     if (msgs.length === 0 && total_messages === 0) return false;
 
     conversationIdRef.current = id;
@@ -848,20 +921,29 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     void rememberConversationId(id);
     const restored = restoreMessagesFromHistory(msgs, IMAGE_HOST, idPrefix);
     setMessages(restored);
-    restoreCards(restored);
     reconcileActiveTurnFromServer(id, msgs);
     return true;
-  }, [reconcileActiveTurnFromServer, restoreCards]);
+  }, [reconcileActiveTurnFromServer]);
 
   const loadLatestConversation = useCallback(async (options?: { preferBriefing?: boolean }) => {
+    const requestGeneration = ++conversationRequestGenerationRef.current;
+    historyLoadRequestRef.current += 1;
+    setIsLoadingMoreHistory(false);
     await hydrationGateRef.current?.promise;
+    if (requestGeneration !== conversationRequestGenerationRef.current) return;
     // P0-5: 本地流式态活跃且 <30s → 不拉服务端最近对话覆盖当前流。
     if (localStreamOwnsState()) return;
     try {
       const preferBriefing = options?.preferBriefing ?? true;
       const storedConversationId = await readStoredConversationId();
+      if (requestGeneration !== conversationRequestGenerationRef.current) return;
       if (storedConversationId) {
-        const restoredStoredConversation = await loadConversationFromServer(storedConversationId, 'hist');
+        const restoredStoredConversation = await loadConversationFromServer(
+          storedConversationId,
+          'hist',
+          requestGeneration,
+        );
+        if (requestGeneration !== conversationRequestGenerationRef.current) return;
         if (restoredStoredConversation || localStreamOwnsState()) return;
         await forgetConversationId();
       }
@@ -870,7 +952,9 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       // 默认进入 chat tab 时优先打开"每日健康简报"；但从后台/其它 tab 恢复未完成新会话时,
       // 必须按真实最近对话找，否则会被旧简报抢走，导致用户看不到刚才那次 Agent 回复。
       let convs = preferBriefing && !shouldPreferRecent ? await getConversations(BRIEFING_CONVERSATION_TITLE) : [];
+      if (requestGeneration !== conversationRequestGenerationRef.current) return;
       if (convs.length === 0) convs = await getConversations();
+      if (requestGeneration !== conversationRequestGenerationRef.current) return;
       convs = [...convs].sort((a: any, b: any) =>
         ((b as any).updated_at || b.created_at || '').localeCompare(
           ((a as any).updated_at || a.created_at || '') as string
@@ -880,7 +964,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       if (localStreamOwnsState()) return;
 
       const latestId = convs[0].id;
-      await loadConversationFromServer(latestId, 'hist');
+      await loadConversationFromServer(latestId, 'hist', requestGeneration);
     } catch { console.warn('Failed to load latest conversation'); }
   }, [loadConversationFromServer, localStreamOwnsState]);
 
@@ -926,24 +1010,58 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
   );
 
   const loadConversation = useCallback(async (id: number) => {
+    const requestGeneration = ++conversationRequestGenerationRef.current;
+    historyLoadRequestRef.current += 1;
+    setIsLoadingMoreHistory(false);
     try {
-      const loaded = await loadConversationFromServer(id, 'h');
+      const loaded = await loadConversationFromServer(id, 'h', requestGeneration);
+      if (requestGeneration !== conversationRequestGenerationRef.current) return;
       if (!loaded) throw new Error('加载对话失败');
     } catch { throw new Error('加载对话失败'); }
   }, [loadConversationFromServer]);
 
   const loadMoreHistory = useCallback(async () => {
-    if (!conversationId || !hasMoreHistory) return;
-    const nextDays = (windowDays || DEFAULT_WINDOW_DAYS) + 14;
+    if (!conversationId || !hasMoreHistory || isLoadingMoreHistory) return;
+    const requestGeneration = conversationRequestGenerationRef.current;
+    const historyRequest = ++historyLoadRequestRef.current;
+    const targetConversationId = conversationId;
+    const beforeMessageId = historyBeforeMessageIdRef.current;
+    if (!beforeMessageId) {
+      setHasMoreHistory(false);
+      return;
+    }
+    setIsLoadingMoreHistory(true);
     try {
-      const { messages: msgs, total_messages } = await getConversationMessages(conversationId, { days: nextDays });
-      setWindowDays(nextDays);
-      setHasMoreHistory(total_messages > msgs.length);
+      const {
+        messages: msgs,
+        total_messages,
+        has_more,
+        oldest_message_id,
+      } = await getConversationMessages(targetConversationId, {
+        limit: HISTORY_PAGE_SIZE,
+        beforeMessageId,
+      });
+      if (
+        requestGeneration !== conversationRequestGenerationRef.current
+        || conversationIdRef.current !== targetConversationId
+      ) return;
+      historyBeforeMessageIdRef.current = oldest_message_id;
+      setHasMoreHistory(has_more ?? total_messages > msgs.length);
       const restored = restoreMessagesFromHistory(msgs, IMAGE_HOST, 'h');
-      setMessages(restored);
-      restoreCards(restored);
+      setMessages((current) => {
+        const currentIds = new Set(current.map(message => message.id));
+        return dedupeStableCardMessages([
+          ...restored.filter(message => !currentIds.has(message.id)),
+          ...current,
+        ]);
+      });
     } catch { console.warn('loadMoreHistory failed'); }
-  }, [conversationId, hasMoreHistory, restoreCards, windowDays]);
+    finally {
+      if (historyRequest === historyLoadRequestRef.current) {
+        setIsLoadingMoreHistory(false);
+      }
+    }
+  }, [conversationId, hasMoreHistory, isLoadingMoreHistory]);
 
   const sendMessage = useCallback(async (
     text: string,
@@ -976,7 +1094,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       && previousTurn.requestFingerprint === requestFingerprint
     ) ? previousTurn.turnId : undefined;
     const turnId = sendOpts?.__queuedTurnId ?? reusableTurnId ?? nextTurnId();
-    const uris = hasImages ? pendingImages.map(i => i.uri) : undefined;
+    const uris = hasImages ? pendingImages.map(optimisticImageUri) : undefined;
     const reusableUserMessage = reusableTurnId
       ? findReusableTurnMessage(messagesRef.current, 'user', reusableTurnId)
       : undefined;
@@ -987,7 +1105,13 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     if (isStreamingRef.current && !sendOpts?.__precreatedLocalMessages) {
       const userMessageId = nextId();
       const assistantMessageId = nextId();
-      const uris = hasImages ? pendingImages.map(i => i.uri) : undefined;
+      const uris = hasImages ? pendingImages.map(optimisticImageUri) : undefined;
+      let resolveQueuedAcceptance: ((accepted: boolean) => void) | undefined;
+      const queuedAcceptance = hasImages
+        ? new Promise<boolean>((resolve) => {
+          resolveQueuedAcceptance = resolve;
+        })
+        : undefined;
       const queuedUserMsg: UIMessage = {
         id: userMessageId,
         role: 'user',
@@ -1011,7 +1135,15 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
         assistantMessageId,
         options: {
           ...sendOpts,
-          onAccepted: undefined,
+          // Text-only turns may be acknowledged when placed in the in-memory
+          // queue. Photo turns must retain their durable draft files until the
+          // backend confirms that it persisted the queued request.
+          onAccepted: hasImages
+            ? (accepted: boolean) => {
+              settleAcceptance(accepted);
+              resolveQueuedAcceptance?.(accepted);
+            }
+            : undefined,
           __queuedTurnId: turnId,
           __localUserMessageId: userMessageId,
           __localAssistantMessageId: assistantMessageId,
@@ -1027,6 +1159,9 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
           queue_depth_at_submit: queuedTurnsRef.current.length,
         });
       } catch { /* noop */ }
+      if (queuedAcceptance) {
+        return await queuedAcceptance;
+      }
       settleAcceptance(true);
       return true;
     }
@@ -1061,8 +1196,13 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
 
     const targetConversationId = forceNewConversation ? undefined : conversationIdRef.current;
     if (forceNewConversation) {
+      conversationRequestGenerationRef.current += 1;
+      historyLoadRequestRef.current += 1;
+      setIsLoadingMoreHistory(false);
       conversationIdRef.current = undefined;
       setConversationId(undefined);
+      historyBeforeMessageIdRef.current = undefined;
+      setHasMoreHistory(false);
       void forgetConversationId();
       void clearPendingStream();
       briefingInjected.current = false;
@@ -1374,8 +1514,9 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
           if (evt.toolName) toolsUsed.add(evt.toolName);
         } else if (evt.type === 'card') {
           flushTokenBuffer();
-          const serverCards = renderServerCards(evt.card ? [evt.card] : []);
+          const serverCards = dedupeServerCards(renderServerCards(evt.card ? [evt.card] : []));
           const uniqueCards = serverCards.filter((card) => {
+            if (stableServerCardId(card)) return true;
             const key = serverCardKey(card);
             if (streamedCardKeys.has(key)) return false;
             streamedCardKeys.add(key);
@@ -1383,7 +1524,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
           });
           if (uniqueCards.length > 0) {
             renderedStreamedServerCard = true;
-            setMessages(prev => insertCardMessagesAfterAssistant(prev, aId, uniqueCards, turnId));
+            setMessages(prev => upsertCardMessagesAfterAssistant(prev, aId, uniqueCards, turnId));
           }
         } else if (evt.type === 'done') {
           sawDone = true;
@@ -1440,13 +1581,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
           const rawDoneCards = (
             allowDoneCards && Array.isArray((evt as any).cards)
           ) ? (evt as any).cards : [];
-          const terminalCardKeys = new Set<string>();
-          const terminalServerCards = renderServerCards(rawDoneCards).filter((card) => {
-            const key = serverCardKey(card);
-            if (terminalCardKeys.has(key)) return false;
-            terminalCardKeys.add(key);
-            return true;
-          });
+          const terminalServerCards = dedupeServerCards(renderServerCards(rawDoneCards));
           const terminalCard = terminalServerCards.length === 1
             ? terminalServerCards[0]
             : terminalServerCards.length > 1
@@ -1684,6 +1819,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     const queued = queuedTurnsRef.current.find(turn => turn.turnId === turnId);
     if (!queued) return;
     queuedTurnsRef.current = queuedTurnsRef.current.filter(turn => turn.turnId !== turnId);
+    queued.options?.onAccepted?.(false);
     setQueuedCount(queuedTurnsRef.current.length);
     setMessages(prev => prev.filter(message => (
       message.id !== queued.userMessageId
@@ -1693,6 +1829,10 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
 
 
   const newChat = useCallback(() => {
+    conversationRequestGenerationRef.current += 1;
+    historyLoadRequestRef.current += 1;
+    setIsLoadingMoreHistory(false);
+    queuedTurnsRef.current.forEach(turn => turn.options?.onAccepted?.(false));
     queuedTurnsRef.current = [];
     setQueuedCount(0);
     runningTurnIdRef.current = undefined;
@@ -1700,6 +1840,8 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     setMessages([]);
     conversationIdRef.current = undefined;
     setConversationId(undefined);
+    historyBeforeMessageIdRef.current = undefined;
+    setHasMoreHistory(false);
     dispatchAgentTurn({ type: 'reset' });
     void forgetConversationId();
     void clearPendingStream();
@@ -1731,6 +1873,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     loadConversation,
     loadMoreHistory,
     hasMoreHistory,
+    isLoadingMoreHistory,
     deleteCurrentConversation,
     setMessages,
   };

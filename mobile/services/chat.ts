@@ -632,19 +632,35 @@ export async function getConversations(titleLike?: string): Promise<Conversation
 
 export async function getConversationMessages(
   conversationId: number,
-  opts?: { days?: number },
-): Promise<{ messages: ChatMessage[]; total_messages: number }> {
+  opts?: { days?: number; limit?: number; beforeMessageId?: number },
+): Promise<{
+  messages: ChatMessage[];
+  total_messages: number;
+  has_more?: boolean;
+  oldest_message_id?: number;
+}> {
   await enforceAppEgressAllowed();
   const token = await getToken();
-  const qs = opts?.days ? `?days=${opts.days}` : '';
+  const params = new URLSearchParams();
+  if (opts?.days) params.set('days', String(opts.days));
+  if (opts?.limit) params.set('limit', String(opts.limit));
+  if (opts?.beforeMessageId) params.set('before_message_id', String(opts.beforeMessageId));
+  const query = params.toString();
+  const qs = query ? `?${query}` : '';
   const res = await fetch(`${BASE_URL}/agent/conversations/${conversationId}${qs}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
-  if (!res.ok) return { messages: [], total_messages: 0 };
+  if (!res.ok) {
+    throw new Error(`getConversationMessages failed: ${res.status}`);
+  }
   const data = await res.json();
   return {
     messages: data.messages || [],
     total_messages: data.total_messages ?? (data.messages?.length ?? 0),
+    has_more: typeof data.has_more === 'boolean' ? data.has_more : undefined,
+    oldest_message_id: typeof data.oldest_message_id === 'number'
+      ? data.oldest_message_id
+      : undefined,
   };
 }
 

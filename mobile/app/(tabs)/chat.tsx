@@ -156,6 +156,9 @@ export default function ChatScreen() {
     newChat,
     loadLatestConversation,
     loadConversation,
+    loadMoreHistory,
+    hasMoreHistory,
+    isLoadingMoreHistory,
     setMessages,
   } = chat;
   const flatListRef = useRef<FlatList>(null);
@@ -956,6 +959,26 @@ export default function ChatScreen() {
           contentContainerStyle={styles.messageList}
           keyboardDismissMode="on-drag"
           keyboardShouldPersistTaps="always"
+          maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+          ListHeaderComponent={hasMoreHistory || isLoadingMoreHistory ? (
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel={isLoadingMoreHistory ? '正在加载更早消息' : '加载更早消息'}
+              activeOpacity={0.72}
+              disabled={isLoadingMoreHistory}
+              onPress={() => { void loadMoreHistory(); }}
+              style={styles.loadEarlierButton}
+            >
+              {isLoadingMoreHistory ? (
+                <ActivityIndicator size="small" color={C.green500} />
+              ) : (
+                <Ionicons name="time-outline" size={14} color={C.green500} />
+              )}
+              <Text style={txt.loadEarlier}>
+                {isLoadingMoreHistory ? '正在加载…' : '加载更早消息'}
+              </Text>
+            </TouchableOpacity>
+          ) : null}
           onContentSizeChange={() => {
             if (shouldScrollChatToEnd({
               forcePending: forceScrollPending.current,
@@ -1212,6 +1235,20 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.paper },
   messageListViewport: { flex: 1, minHeight: 0 },
   messageList: { padding: revaSpacing.s4, paddingBottom: 8 },
+  loadEarlierButton: {
+    minHeight: 36,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: revaSpacing.s3,
+    paddingHorizontal: revaSpacing.s3,
+    paddingVertical: 7,
+    borderRadius: revaRadii.pill,
+    backgroundColor: C.green50,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.green100,
+  },
   timeDivider: {
     alignSelf: 'center',
     marginTop: 2,
@@ -1315,6 +1352,7 @@ const styles = StyleSheet.create({
 
 const txt = {
   bootstrapLoading: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink2, fontWeight: '700' } as TextStyle,
+  loadEarlier: { fontFamily: revaFonts.sans, fontSize: 12, color: C.green500, fontWeight: '700' } as TextStyle,
   timeDivider: { fontFamily: revaFonts.mono, fontSize: 10.5, lineHeight: 14, color: C.ink3, fontWeight: '700' } as TextStyle,
   contextBanner: { fontFamily: revaFonts.sans, fontSize: 12, color: C.green500, flex: 1, fontWeight: '500' } as TextStyle,
   shareBarTitle: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink1, fontWeight: '700' } as TextStyle,

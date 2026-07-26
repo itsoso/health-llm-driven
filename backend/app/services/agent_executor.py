@@ -3824,21 +3824,30 @@ def _normalize_reminder_record_data(
 
 def _merge_agent_card_descriptors(*groups: list | None) -> list[dict]:
     out: list[dict] = []
-    seen: set[str] = set()
+    positions: dict[str, int] = {}
     for group in groups:
         if not isinstance(group, list):
             continue
         for card in group:
             if not isinstance(card, dict) or not isinstance(card.get("type"), str):
                 continue
-            try:
-                key = json.dumps(card, sort_keys=True, ensure_ascii=False, default=str)
-            except Exception:
-                key = f"{card.get('type')}:{len(out)}"
-            if key in seen:
-                continue
-            seen.add(key)
-            out.append(card)
+            data = card.get("data")
+            card_id = data.get("card_id") if isinstance(data, dict) else None
+            if isinstance(card_id, str) and card_id.strip():
+                key = f"{card['type']}:{card_id.strip()}"
+            else:
+                try:
+                    key = json.dumps(card, sort_keys=True, ensure_ascii=False, default=str)
+                except Exception:
+                    key = f"{card.get('type')}:{len(out)}"
+            position = positions.get(key)
+            if position is None:
+                positions[key] = len(out)
+                out.append(card)
+            else:
+                # A later descriptor is a fresher projection of the same
+                # durable card (for example after a second meal photo attaches).
+                out[position] = card
     return out
 
 
@@ -13360,22 +13369,38 @@ class AgentExecutor:
         """Prefer strict food-recognition JSON over free-form vision prose for diet photos."""
         if not images:
             return None
+        if len(images) > 3:
+            return (
+                "本轮包含超过 3 张图片。为避免静默漏记，本次没有写入饮食；"
+                "请拆成两次发送，每次最多 3 张同一餐照片。"
+            )
         try:
             from app.services.ai.food_recognition import (
                 food_recognition_service,
+                merge_food_recognition_results,
                 sanitize_food_recognition_result,
             )
             from app.services.food_nutrition_lookup import calibrate_recognized_foods
 
-            summaries: List[str] = []
+            recognized_results: List[Dict[str, Any]] = []
             errors: List[str] = []
+            unique_image_indexes: List[int] = []
+            image_classifications: Dict[int, str] = {}
+            seen_image_hashes: set[str] = set()
             for image_index, img in enumerate(images[:3]):
+                encoded = str(img.get("base64") or "")
+                digest = hashlib.sha256(encoded.encode("ascii", errors="ignore")).hexdigest()
+                if digest in seen_image_hashes:
+                    continue
+                seen_image_hashes.add(digest)
+                unique_image_indexes.append(image_index)
                 result = await food_recognition_service.recognize_food_from_base64(
-                    img.get("base64") or "",
+                    encoded,
                     image_type=img.get("type", "jpeg"),
                 )
                 result = sanitize_food_recognition_result(result)
                 if result.get("success") and result.get("foods"):
+                    image_classifications[image_index] = "food"
                     calibrate_recognized_foods(self.db, result["foods"])
                     result = sanitize_food_recognition_result(result)
                     consumed_fraction = _contextual_meal_consumed_fraction(
@@ -13391,20 +13416,43 @@ class AgentExecutor:
                         result = sanitize_food_recognition_result(result)
                         result["consumed_fraction"] = fraction
                         result["consumed_fraction_label"] = label
-                    capture = self._capture_contextual_meal_photo(
-                        user_message,
-                        result,
-                        image_index=image_index,
+                    recognized_results.append(result)
+                else:
+                    error = str(result.get("error") or "图片识别未完成")
+                    errors.append(error)
+                    image_classifications[image_index] = (
+                        "non_food"
+                        if self._food_recognition_found_no_food([error])
+                        else "unknown"
                     )
-                    summaries.append(self._format_food_recognition_for_agent(
-                        user_message,
-                        result,
-                        contextual_capture=capture,
-                    ))
-                elif result.get("error"):
-                    errors.append(str(result.get("error")))
-            if summaries:
-                return "\n".join(summaries)
+            if recognized_results:
+                merged_result = merge_food_recognition_results(recognized_results)
+                merged_result["source_image_count"] = len(unique_image_indexes)
+                failed_image_indexes = [
+                    image_index
+                    for image_index in unique_image_indexes
+                    if image_classifications.get(image_index) != "food"
+                ]
+                if failed_image_indexes:
+                    merged_result["multi_photo_incomplete"] = True
+                    merged_result["failed_image_indexes"] = failed_image_indexes
+                capture = self._capture_contextual_meal_photos(
+                    user_message,
+                    merged_result,
+                    image_indexes=unique_image_indexes,
+                    image_classifications=image_classifications,
+                )
+                return self._format_food_recognition_for_agent(
+                    user_message,
+                    merged_result,
+                    contextual_capture=capture,
+                )
+            if errors and self._looks_like_food_photo_context(user_message):
+                if not self._food_recognition_found_no_food(errors):
+                    return (
+                        "本轮餐食图片识别未完整完成，因此没有写入饮食记录。"
+                        "请稍后重试，或补充食物名称和份量后再确认。"
+                    )
             if self._looks_like_food_photo_context(user_message) and self._food_recognition_found_no_food(errors):
                 return (
                     "结构化餐食识别结果: 图片中未识别到可记录的食物。"
@@ -13427,6 +13475,20 @@ class AgentExecutor:
         *,
         image_index: int,
     ) -> Any | None:
+        return self._capture_contextual_meal_photos(
+            user_message,
+            vision_result,
+            image_indexes=[image_index],
+        )
+
+    def _capture_contextual_meal_photos(
+        self,
+        user_message: str,
+        vision_result: Dict[str, Any],
+        *,
+        image_indexes: List[int],
+        image_classifications: Dict[int, str] | None = None,
+    ) -> Any | None:
         """Persist a qualified chat food photo before the answer model runs.
 
         This boundary only receives typed semantic intent plus sanitized vision
@@ -13435,8 +13497,14 @@ class AgentExecutor:
         user_id = self._current_user_id
         source_message_id = self._current_turn_source_message_id
         if user_id is None or source_message_id is None:
+            vision_result["contextual_capture_failed"] = True
             return None
-        if image_index < 0 or image_index >= len(self._current_turn_image_urls):
+        normalized_indexes = sorted(set(image_indexes))
+        if not normalized_indexes or any(
+            image_index < 0 or image_index >= len(self._current_turn_image_urls)
+            for image_index in normalized_indexes
+        ):
+            vision_result["contextual_capture_failed"] = True
             return None
 
         from app.services.contextual_meal_photo_policy import (
@@ -13483,12 +13551,28 @@ class AgentExecutor:
             )
 
         foods = vision_result.get("foods") if isinstance(vision_result.get("foods"), list) else []
-        confidences = [
-            float(food.get("confidence"))
-            for food in foods
-            if isinstance(food, dict) and isinstance(food.get("confidence"), (int, float))
-        ]
-        confidence = sum(confidences) / len(confidences) if confidences else None
+        confidences: list[float] = []
+        confidence_complete = bool(foods)
+        for food in foods:
+            value = food.get("confidence") if isinstance(food, dict) else None
+            if (
+                not isinstance(value, (int, float))
+                or isinstance(value, bool)
+                or not math.isfinite(float(value))
+            ):
+                confidence_complete = False
+                continue
+            confidences.append(float(value))
+        confidence = (
+            min(confidences)
+            if confidence_complete and len(confidences) == len(foods)
+            else None
+        )
+        if (
+            vision_result.get("multi_photo_conflict")
+            or vision_result.get("multi_photo_incomplete")
+        ):
+            confidence = 0.0
         decision = decide_contextual_meal_photo(MealPhotoCandidate(
             origin="chat",
             semantic_intent=semantic_intent,
@@ -13502,15 +13586,22 @@ class AgentExecutor:
             return None
 
         try:
-            result = ContextualMealPhotoService(self.db).capture(ContextualMealPhotoCapture(
-                user_id=user_id,
-                source_message_id=source_message_id,
-                source_image_url=self._current_turn_image_urls[image_index],
-                source_image_index=image_index,
-                decision=decision,
-                vision_result=vision_result,
-            ))
+            result = ContextualMealPhotoService(self.db).capture_session([
+                ContextualMealPhotoCapture(
+                    user_id=user_id,
+                    source_message_id=source_message_id,
+                    source_image_url=self._current_turn_image_urls[image_index],
+                    source_image_index=image_index,
+                    decision=decision,
+                    vision_result=vision_result,
+                    classification=(
+                        (image_classifications or {}).get(image_index, "food")
+                    ),
+                )
+                for image_index in normalized_indexes
+            ])
         except ContextualMealPhotoServiceError as exc:
+            vision_result["contextual_capture_failed"] = True
             logger.warning(
                 "[contextual_meal_photo] capture rejected user_id=%s source_message_id=%s reason=%s",
                 user_id,
@@ -13519,6 +13610,7 @@ class AgentExecutor:
             )
             return None
         except Exception as exc:  # noqa: BLE001 - never claim a record after a failed write
+            vision_result["contextual_capture_failed"] = True
             logger.error(
                 "[contextual_meal_photo] capture failed user_id=%s source_message_id=%s error=%s",
                 user_id,
@@ -13553,24 +13645,37 @@ class AgentExecutor:
             # contract. Emit the same portable meal-photo card used for manual
             # confirmation so Web, Mobile and Mac all show a deterministic
             # receipt immediately and after conversation reload.
-            self._turn_contextual_diet_cards.append(
-                self._contextual_diet_recorded_card(result)
+            self._upsert_turn_contextual_diet_card(
+                self._contextual_diet_recorded_card(result),
             )
             self._invalidate_twin_after_mutation()
         elif result.photo_draft is not None:
-            self._turn_contextual_diet_cards.append(
-                self._contextual_diet_confirmation_card(result)
+            self._upsert_turn_contextual_diet_card(
+                self._contextual_diet_confirmation_card(result),
             )
         return result
+
+    def _upsert_turn_contextual_diet_card(self, card: Dict[str, Any]) -> None:
+        self._turn_contextual_diet_cards = _merge_agent_card_descriptors(
+            self._turn_contextual_diet_cards,
+            [card],
+        )
 
     def _contextual_diet_recorded_card(self, result: Any) -> Dict[str, Any]:
         """Build an owner-scoped, durable visual receipt for an auto-save."""
         from app.utils.diet_image_url import diet_response_image_url
 
         record = result.record
-        asset = result.photo_asset
-        if record is None or asset is None:
+        assets = tuple(result.photo_assets or ())
+        if not assets and result.photo_asset is not None:
+            assets = (result.photo_asset,)
+        if record is None or not assets:
             raise ValueError("contextual_diet_recorded_card_missing_receipt")
+        photo_asset_ids = [asset.id for asset in assets]
+        photo_urls = [
+            diet_response_image_url(asset.storage_key, asset.user_id)
+            for asset in assets
+        ]
         record_data = {
             "meal_type": record.meal_type,
             "food_items": record.food_items,
@@ -13579,9 +13684,12 @@ class AgentExecutor:
             "carbs": record.carbs,
             "fat": record.fat,
         }
+        capture_session_id = self._contextual_diet_capture_session_id(assets)
         return {
             "type": "diet_draft",
             "data": format_card_numbers({
+                "card_id": f"diet-capture:{capture_session_id}",
+                "capture_session_id": capture_session_id,
                 "recorded": True,
                 "record_id": record.id,
                 "record_date": record.record_date.isoformat(),
@@ -13594,8 +13702,11 @@ class AgentExecutor:
                 "fiber": record.fiber,
                 "confidence": record.ai_confidence,
                 "source": "chat_photo",
-                "photo_asset_id": asset.id,
-                "photo_url": diet_response_image_url(asset.storage_key, asset.user_id),
+                "photo_asset_id": photo_asset_ids[0],
+                "photo_asset_ids": photo_asset_ids,
+                "photo_url": photo_urls[0],
+                "photo_urls": photo_urls,
+                "media_stage": "attached",
                 "receipt_message": "已保存到今日饮食，餐食照片已关联到这条记录。",
                 "boundary": "营养为图像估算；可在饮食记录中继续修正。",
             }),
@@ -13608,10 +13719,18 @@ class AgentExecutor:
         from app.utils.diet_image_url import diet_response_image_url
 
         draft = result.photo_draft
-        asset = result.photo_asset
-        if draft is None or asset is None:
+        assets = tuple(result.photo_assets or ())
+        if not assets and result.photo_asset is not None:
+            assets = (result.photo_asset,)
+        if draft is None or not assets:
             raise ValueError("contextual_diet_confirmation_missing_draft")
+        photo_asset_ids = [asset.id for asset in assets]
+        photo_urls = [
+            diet_response_image_url(asset.storage_key, asset.user_id)
+            for asset in assets
+        ]
         recognition = draft.recognition_result if isinstance(draft.recognition_result, dict) else {}
+        capture_session_id = self._contextual_diet_capture_session_id(assets)
         record = {
             key: recognition[key]
             for key in (
@@ -13645,10 +13764,15 @@ class AgentExecutor:
             # values for the eventual write request.
             "data": format_card_numbers({
                 **record,
+                "card_id": f"diet-capture:{capture_session_id}",
+                "capture_session_id": capture_session_id,
                 "confidence": recognition.get("ai_confidence"),
                 "source": "chat_photo",
-                "photo_asset_id": asset.id,
-                "photo_url": diet_response_image_url(asset.storage_key, asset.user_id),
+                "photo_asset_id": photo_asset_ids[0],
+                "photo_asset_ids": photo_asset_ids,
+                "photo_url": photo_urls[0],
+                "photo_urls": photo_urls,
+                "media_stage": "pending_confirmation",
                 "photo_draft_token": draft.token,
                 "auto_save_fallback": bool(result.fallback_from_auto),
                 "boundary": (
@@ -13659,6 +13783,17 @@ class AgentExecutor:
             }),
             "actions": actions,
         }
+
+    @staticmethod
+    def _contextual_diet_capture_session_id(assets: tuple[Any, ...]) -> str:
+        source_message_ids = {
+            int(asset.origin_message_id)
+            for asset in assets
+            if asset.origin_message_id is not None
+        }
+        if len(source_message_ids) != 1:
+            raise ValueError("contextual_diet_capture_session_identity_invalid")
+        return f"meal-photo:{next(iter(source_message_ids))}"
 
     def _format_food_recognition_for_agent(
         self,
@@ -13762,6 +13897,12 @@ class AgentExecutor:
             capture_instruction = (
                 "本轮仅用于分析或查询，严禁调用 health_record；"
                 "只解释识别结果、不确定性和可选建议。"
+            )
+        elif result.get("contextual_capture_failed"):
+            capture_instruction = (
+                "图片资产与饮食记录的原子保存没有完成；严禁调用 health_record "
+                "或 health_manage 补写无图记录，也不得声称已经保存。"
+                "请明确告知用户图片草稿仍需重试。"
             )
         elif contextual_capture is not None and contextual_capture.record is not None:
             if consumed_fraction_label:

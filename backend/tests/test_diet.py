@@ -205,13 +205,21 @@ class TestDietAPI:
         db.rollback()
 
     def test_confirming_photo_draft_attaches_pending_asset_to_created_record(
-        self, client, db, auth_headers, test_user, sample_diet_data
+        self, client, db, auth_headers, test_user, sample_diet_data, monkeypatch
     ):
+        from contextlib import contextmanager
+
+        from app.services.contextual_meal_photo_service import (
+            ContextualMealPhotoService,
+        )
+
         token = "contextual-photo-draft-token-0001"
+        source_message_id = 99101
         canonical_path = f"/api/v1/upload/files/diet/{test_user.id}/pending-lunch.jpg"
         draft = DietPhotoDraft(
             token=token,
             user_id=test_user.id,
+            source_message_id=source_message_id,
             image_url=canonical_path,
             image_type="jpeg",
             recognition_result={"food_items": "鸡胸肉 120g"},
@@ -226,6 +234,7 @@ class TestDietAPI:
             content_sha256="d" * 64,
             media_type="image/jpeg",
             origin="chat",
+            origin_message_id=source_message_id,
             ordinal=0,
             classification="food",
             recognition_confidence=0.91,
@@ -235,6 +244,18 @@ class TestDietAPI:
         )
         db.add_all([draft, asset])
         db.commit()
+        capture_locks = []
+
+        @contextmanager
+        def capture_session_lock(_service, user_id, message_id):
+            capture_locks.append((user_id, message_id))
+            yield
+
+        monkeypatch.setattr(
+            ContextualMealPhotoService,
+            "_capture_session_lock",
+            capture_session_lock,
+        )
 
         response = client.post(
             "/api/v1/diet/records",
@@ -246,6 +267,7 @@ class TestDietAPI:
         )
 
         assert response.status_code == 200
+        assert capture_locks == [(test_user.id, source_message_id)]
         record_id = response.json()["id"]
         db.refresh(asset)
         assert asset.diet_record_id == record_id
