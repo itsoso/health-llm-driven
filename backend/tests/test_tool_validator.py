@@ -10,24 +10,22 @@ from app.services.llm.tool_validator import validate_health_record, validate_too
 
 
 class TestDateGuard:
-    def test_far_past_date_coerced_to_today(self):
+    def test_far_past_date_is_rejected_without_rewriting_it(self):
         v = validate_health_record("diet", {
             "meal_type": "dinner", "food_items": "牛肉面",
             "record_date": "2023-10-09",
         })
-        assert v["error"] is None
-        assert v["data"]["record_date"] != "2023-10-09"
-        # 应该是今天附近 (允许时区 ±1 天)
-        recorded = v["data"]["record_date"]
-        assert "2026" in recorded or "2027" in recorded or "2028" in recorded
+        assert v["error"] is not None
+        assert v["data"]["record_date"] == "2023-10-09"
         assert any("偏离" in w for w in v["warnings"])
 
-    def test_far_future_date_coerced(self):
+    def test_far_future_date_is_rejected_without_rewriting_it(self):
         v = validate_health_record("diet", {
             "food_items": "x",
             "record_date": "2099-01-01",
         })
-        assert v["data"]["record_date"] != "2099-01-01"
+        assert v["error"] is not None
+        assert v["data"]["record_date"] == "2099-01-01"
 
     def test_recent_date_kept(self):
         yesterday = (date.today() - timedelta(days=1)).isoformat()
@@ -37,12 +35,13 @@ class TestDateGuard:
         })
         assert v["data"]["record_date"] == yesterday
 
-    def test_invalid_date_format(self):
+    def test_invalid_date_format_is_rejected_without_rewriting_it(self):
         v = validate_health_record("diet", {
             "food_items": "x",
             "record_date": "Tuesday",
         })
-        assert "Tuesday" not in v["data"]["record_date"]
+        assert v["error"] is not None
+        assert v["data"]["record_date"] == "Tuesday"
         assert any("非合法" in w for w in v["warnings"])
 
 
@@ -264,11 +263,8 @@ def test_yesterday_repro_bug_now_caught():
         "record_date": "2023-10-09",
     }
     v = validate_health_record("diet", args)
-    assert v["error"] is None
-    # 日期被覆盖了
-    assert v["data"]["record_date"] != "2023-10-09"
-    today_year = str(datetime.now().year)
-    assert today_year in v["data"]["record_date"]
+    assert "超出可直接记录的日期范围" in str(v["error"])
+    assert v["data"]["record_date"] == "2023-10-09"
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -293,8 +289,8 @@ class TestDispatcher:
             "record_type": "weight",
             "data": {"weight": 72.0, "record_date": "2023-10-09"},
         })
-        assert v["error"] is None
-        assert v["data"]["data"]["record_date"] != "2023-10-09"
+        assert "超出可直接记录的日期范围" in str(v["error"])
+        assert v["data"]["data"]["record_date"] == "2023-10-09"
 
     def test_health_record_with_non_dict_data(self):
         """LLM 乱塞 data=str, 应当 coerce 成 dict 而不是崩."""

@@ -2230,7 +2230,7 @@ async def test_record_intent_with_no_tool_executed_is_flagged(db, auth_user_and_
     events = [
         event
         async for event in executor.run_stream(
-            user_id=user.id, message="记录晚餐 牛肉饭", user_auth_token="test-token",
+            user_id=user.id, message="记录晚餐", user_auth_token="test-token",
         )
     ]
 
@@ -2391,6 +2391,82 @@ async def test_agent_stream_falls_back_to_tool_result_when_model_synthesis_is_em
     assert "两个豆腐包子" not in rendered  # 食材不再进文本
     assert "没有收到模型的有效回复" not in rendered
     assert events[-1]["event"] == "done"
+
+
+@pytest.mark.asyncio
+async def test_agent_stream_saves_explicit_text_diet_when_model_omits_tool_call(
+    db, auth_user_and_headers
+):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    executed = []
+    llm_calls = 0
+
+    async def fake_call_llm(messages, tools):
+        nonlocal llm_calls
+        llm_calls += 1
+        if llm_calls == 1:
+            return {
+                "content": "我需要你补充记录类型和值。",
+                "finish_reason": "stop",
+            }
+        return {
+            "content": "我仍需要你补充记录类型和值。",
+            "finish_reason": "stop",
+        }
+
+    async def fake_execute_tool(tool_name, args_raw, user_token):
+        parsed = json.loads(args_raw)
+        executed.append((tool_name, parsed, user_token))
+        return json.dumps(
+            {
+                "id": 109,
+                "meal_type": parsed["data"]["meal_type"],
+                "food_items": parsed["data"]["food_items"],
+            },
+            ensure_ascii=False,
+        )
+
+    executor._call_llm = fake_call_llm
+    executor._call_llm_stream = _stream_from(fake_call_llm)
+    executor._execute_tool = fake_execute_tool
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="记录午餐5个虾100克大黄鱼200克哈密瓜",
+            user_auth_token="test-token",
+        )
+    ]
+    rendered = "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+    done = next(event for event in events if event.get("event") == "done")
+
+    assert executed == [(
+        "health_record",
+        {
+            "record_type": "diet",
+            "data": {
+                "record_date": date.today().isoformat(),
+                "meal_type": "lunch",
+                "food_items": "5个虾100克大黄鱼200克哈密瓜",
+                "source": "agent_text",
+                "confirmed": True,
+            },
+            "confirmed": True,
+        },
+        "test-token",
+    )]
+    assert "已记录午餐" in rendered
+    assert "补充记录类型和值" not in rendered
+    assert done["data"]["record_intent_no_tool"] is False
+    assert done["data"]["write_receipts"][0]["resource_type"] == "diet_record"
+    assert done["data"]["write_receipts"][0]["resource_id"] == "109"
+    assert done["data"]["write_receipts"][0]["verified"] is True
 
 
 @pytest.mark.asyncio

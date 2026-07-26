@@ -18,6 +18,7 @@ from app.services.agent_kernel.types import (
     GoalSpec,
     IntentFrame,
 )
+from app.services.agent_kernel.write_safety import is_explicit_write_cancellation
 
 
 MEAL_SIGNALS = {
@@ -67,6 +68,12 @@ SIMPLE_SYMPTOM_BODY_PARTS = (
     ("skin", ("皮疹", "皮肤痒", "瘙痒")),
     ("musculoskeletal", ("腰痛", "腰疼", "关节痛", "关节疼", "肌肉痛")),
 )
+DIET_TRAILING_WRITE_RE = re.compile(
+    r"(?:[\s，,。.!！；;：:]*)"
+    r"(?:请)?(?:帮我|给我)?"
+    r"(?:记录|记下|记一下|保存|录入|加到饮食)(?:一下|下)?"
+    r"(?:[\s，,。.!！；;：:]*)$"
+)
 OTHER_RECORD_SIGNALS = {
     "diet": tuple(signal for signals in MEAL_SIGNALS.values() for signal in signals),
     "weight": ("体重", "称重"),
@@ -86,6 +93,24 @@ def compile_goal_spec(
     actionable_references: Sequence[ActionableReference] = (),
 ) -> GoalSpec:
     """Create the executor contract without granting authority to visible data."""
+    text = _normalize(envelope.text)
+    if (
+        intent.is_write
+        and _explicit_target_date_is_invalid(
+            text,
+            context.current_time.date(),
+        )
+    ):
+        return GoalSpec(
+            kind="clarify",
+            domain=intent.domain,
+            operation="none",
+            target_date=None,
+            requires_clarification=True,
+            prohibited_operations=("create", "update", "delete"),
+            evidence=("invalid_explicit_date",),
+        )
+
     specialized = _GOAL_COMPILER_REGISTRY.compile(
         envelope=envelope,
         context=context,
@@ -95,7 +120,6 @@ def compile_goal_spec(
     if specialized is not None:
         return specialized
 
-    text = _normalize(envelope.text)
     target_meals = _target_meal_types(text, actionable_references)
     target_date = _target_date(text, context, actionable_references)
     return GoalSpec(
@@ -196,8 +220,8 @@ def _compile_simple_health_record_goal(
         or intent.primary not in {"write", "mutate"}
         or intent.operation != "create"
         or not intent.is_write
-        or _has_any(text, NEGATION_SIGNALS)
-        or _has_any(text, QUESTION_SIGNALS)
+        or _simple_record_write_is_negated(text)
+        or _simple_record_is_question(text)
         or _is_compound_record_request(text, intent.domain)
     ):
         return None
@@ -215,14 +239,30 @@ def _compile_simple_health_record_goal(
             return None
         record_type = "symptom"
         target_values = tuple(symptom_target.items())
+    elif intent.domain == "diet":
+        diet_target = _simple_diet_target(envelope.text)
+        if diet_target is None:
+            return None
+        record_type = "diet"
+        target_values = tuple(diet_target.items())
     else:
         return None
 
+    target_meal_types = (
+        (dict(target_values)["meal_type"],)
+        if record_type == "diet"
+        else ()
+    )
     return GoalSpec(
         kind="simple_health_record",
         domain=intent.domain,
         operation="create",
-        target_date=context.current_time.date().isoformat(),
+        target_date=(
+            _target_date(text, context, ())
+            if record_type == "diet"
+            else context.current_time.date().isoformat()
+        ),
+        target_meal_types=target_meal_types,
         target_record_type=record_type,
         target_values=target_values,
         requires_verification=True,
@@ -313,6 +353,11 @@ def _format_simple_health_record_prompt(goal: GoalSpec) -> str:
         payload = f"，amount={values['amount_ml']}ml"
     elif goal.target_record_type == "symptom" and values.get("description"):
         payload = f"，description={values['description']}"
+    elif goal.target_record_type == "diet" and values.get("food_items"):
+        payload = (
+            f"，meal_type={values.get('meal_type')}，"
+            f"food_items={values['food_items']}"
+        )
     else:
         payload = ""
     return (
@@ -390,6 +435,67 @@ def _simple_symptom_target(text: str) -> dict[str, str] | None:
             "description": description[:500],
         }
     return None
+
+
+def _simple_diet_target(text: str) -> dict[str, str] | None:
+    """Extract one explicit meal and its user-owned food description."""
+    raw = str(text or "").strip()
+    if not raw:
+        return None
+
+    meal_matches: list[tuple[int, int, str]] = []
+    for meal_type, signals in MEAL_SIGNALS.items():
+        for signal in signals:
+            start = raw.find(signal)
+            if start >= 0:
+                meal_matches.append((start, start + len(signal), meal_type))
+    if not meal_matches:
+        return None
+
+    meal_types = {match[2] for match in meal_matches}
+    if len(meal_types) != 1:
+        return None
+
+    _, meal_end, meal_type = min(meal_matches, key=lambda item: item[0])
+    foods = raw[meal_end:]
+    foods = re.sub(
+        r"^[\s，,。.!！；;：:]*(?:我)?"
+        r"(?:(?:刚才|刚刚|已经)?(?:吃了|吃的是|吃|有)|是)?"
+        r"[\s，,。.!！；;：:]*",
+        "",
+        foods,
+        count=1,
+    )
+    foods = DIET_TRAILING_WRITE_RE.sub("", foods).strip(
+        " \t\r\n，,。.!！；;：:"
+    )
+    if (
+        not foods
+        or foods in {"饮食", "一餐", "这餐", "饭", "食物"}
+        or not re.search(r"[0-9A-Za-z\u4e00-\u9fff]", foods)
+    ):
+        return None
+    return {
+        "meal_type": meal_type,
+        "food_items": foods[:1000],
+    }
+
+
+def _simple_record_write_is_negated(text: str) -> bool:
+    """Detect cancellation of the write action, not food preferences."""
+    return is_explicit_write_cancellation(text)
+
+
+def _simple_record_is_question(text: str) -> bool:
+    """Keep imperative food modifiers such as “需要少盐” on the write path."""
+    normalized = str(text or "").strip()
+    return bool(
+        "?" in normalized
+        or "？" in normalized
+        or "是否" in normalized
+        or "是不是" in normalized
+        or re.search(r"(?:吗|么|嘛)[。.!！]*$", normalized)
+    )
 
 
 _CHINESE_DIGITS = {
@@ -508,6 +614,20 @@ def _target_date(
 
 def _explicit_target_date(text: str, today: date) -> str | None:
     """Resolve user-owned date language before consulting visible-card context."""
+    _found, resolved = _explicit_target_date_status(text, today)
+    return resolved
+
+
+def _explicit_target_date_is_invalid(text: str, today: date) -> bool:
+    found, resolved = _explicit_target_date_status(text, today)
+    return found and resolved is None
+
+
+def _explicit_target_date_status(
+    text: str,
+    today: date,
+) -> tuple[bool, str | None]:
+    """Return whether the user supplied a date and its validated value."""
     relative = (
         ("前天", -2),
         ("昨天", -1),
@@ -519,14 +639,16 @@ def _explicit_target_date(text: str, today: date) -> str | None:
     )
     for signal, offset in relative:
         if signal in text:
-            return (today + timedelta(days=offset)).isoformat()
+            return True, (today + timedelta(days=offset)).isoformat()
 
     iso_match = re.search(r"(?<!\d)(20\d{2})[-/.](\d{1,2})[-/.](\d{1,2})(?!\d)", text)
     if iso_match:
         try:
-            return date(*(int(value) for value in iso_match.groups())).isoformat()
+            return True, date(
+                *(int(value) for value in iso_match.groups())
+            ).isoformat()
         except ValueError:
-            return None
+            return True, None
 
     chinese_match = re.search(
         r"(?:(20\d{2})年)?(\d{1,2})月(\d{1,2})[日号]?",
@@ -535,10 +657,14 @@ def _explicit_target_date(text: str, today: date) -> str | None:
     if chinese_match:
         year, month, day = chinese_match.groups()
         try:
-            return date(int(year or today.year), int(month), int(day)).isoformat()
+            return True, date(
+                int(year or today.year),
+                int(month),
+                int(day),
+            ).isoformat()
         except ValueError:
-            return None
-    return None
+            return True, None
+    return False, None
 
 
 def _fallback_kind(intent: IntentFrame) -> str:

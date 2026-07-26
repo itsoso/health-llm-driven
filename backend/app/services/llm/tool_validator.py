@@ -183,36 +183,44 @@ def _validate_date(
     field: str = "record_date",
     past_tolerance_days: int = 7,
     future_tolerance_days: int = 1,
-) -> None:
-    """日期合理性: 离今天太远 → 覆盖为今天."""
+) -> Optional[str]:
+    """Reject an untrusted date instead of silently writing it as today."""
     if field not in data:
-        return
+        return None
     raw = data[field]
     try:
         # 兼容 'YYYY-MM-DD' / ISO datetime / date 对象
-        if isinstance(raw, date):
-            d = raw
-        elif isinstance(raw, datetime):
+        if isinstance(raw, datetime):
             d = raw.date()
+        elif isinstance(raw, date):
+            d = raw
         else:
             s = str(raw).strip()
             # 允许 'YYYY-MM-DDTHH:MM:SS+...' 截首段
             d = datetime.strptime(s[:10], "%Y-%m-%d").date()
     except (ValueError, TypeError) as e:
-        msg = f"[tool_validator] {rtype}.{field}={raw!r} 非合法日期, 改为今天 ({e})"
+        msg = f"[tool_validator] {rtype}.{field}={raw!r} 非合法日期, 拒绝写入 ({e})"
         warnings.append(msg)
         logger.warning(msg)
-        data[field] = today.strftime("%Y-%m-%d")
-        return
+        _metric(rtype, field, "invalid_date", action="rejected")
+        return (
+            f"Error: {rtype}.{field}={raw!r} 不是合法日期。"
+            "请使用 YYYY-MM-DD，并确认后重新记录。"
+        )
 
     delta = (today - d).days
     if delta > past_tolerance_days or delta < -future_tolerance_days:
         msg = (f"[tool_validator] {rtype}.{field}={d} 偏离今天 {delta} 天 "
                f"(容忍 -{future_tolerance_days}/+{past_tolerance_days}), "
-               f"覆盖为今天 — LLM 日期幻觉")
+               f"拒绝写入 — 防止 LLM 日期幻觉")
         warnings.append(msg)
         logger.warning(msg)
-        data[field] = today.strftime("%Y-%m-%d")
+        _metric(rtype, field, "date_out_of_range", action="rejected")
+        return (
+            f"Error: {rtype}.{field}={d.isoformat()} 超出可直接记录的日期范围。"
+            "请向用户确认具体日期后再记录；不得改写为今天。"
+        )
+    return None
 
 
 def _validate_reference_id(
@@ -370,7 +378,13 @@ def validate_health_record(
         data["name"] = data["illness_name"]
 
     # 1. 日期守门 (record_date 通用)
-    _validate_date(rtype, data, warnings, today)
+    date_error = _validate_date(rtype, data, warnings, today)
+    if date_error is not None:
+        return {
+            "data": data,
+            "warnings": warnings,
+            "error": date_error,
+        }
 
     # 1.5 sleep 时刻字段归一: 弱模型常把 bedtime/wake_time 发成**纯时间**
     # ("12:50:00+08:00"), /sleep/records 的 Pydantic datetime 解析直接 422

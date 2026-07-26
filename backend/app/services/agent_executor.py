@@ -4452,7 +4452,14 @@ def _normalize_goal_guarded_tool_calls(
                     goal.target_record_type,
                 )
                 continue
-            if name != "health_record" or args != authoritative_args:
+            guarded_args = authoritative_args
+            if name == "health_record" and goal.target_record_type == "diet":
+                guarded_args = _merge_equivalent_diet_model_estimates(
+                    goal,
+                    model_args=args,
+                    authoritative_args=authoritative_args,
+                )
+            if name != "health_record" or args != guarded_args:
                 logger.warning(
                     "[agent_executor] simple goal canonicalized model write "
                     "tool=%s target_record_type=%s",
@@ -4465,7 +4472,7 @@ def _normalize_goal_guarded_tool_calls(
                     **function,
                     "name": "health_record",
                     "arguments": json.dumps(
-                        authoritative_args,
+                        guarded_args,
                         ensure_ascii=False,
                     ),
                 },
@@ -5517,7 +5524,85 @@ def _simple_record_goal_arguments(
                 "description": description[:500],
             },
         }
+    if goal.target_record_type == "diet":
+        meal_type = str(values.get("meal_type") or "").strip().lower()
+        food_items = str(values.get("food_items") or "").strip()
+        record_date = str(goal.target_date or "").strip()
+        if (
+            meal_type not in {"breakfast", "lunch", "dinner", "snack"}
+            or not food_items
+        ):
+            return None
+        try:
+            canonical_date = date.fromisoformat(record_date).isoformat()
+        except (TypeError, ValueError):
+            return None
+        return {
+            "record_type": "diet",
+            "data": {
+                "record_date": canonical_date,
+                "meal_type": meal_type,
+                "food_items": food_items[:1000],
+                "source": "agent_text",
+            },
+        }
     return None
+
+
+def _merge_equivalent_diet_model_estimates(
+    goal: GoalSpec,
+    *,
+    model_args: Dict[str, Any],
+    authoritative_args: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Keep estimates only when the model preserved the user-owned meal."""
+    authoritative_data = dict(authoritative_args.get("data") or {})
+    model_record_type = _normalize_fast_record_kind(
+        model_args.get("record_type")
+        or model_args.get("type")
+        or model_args.get("kind")
+        or ""
+    )
+    if model_record_type != "diet":
+        return authoritative_args
+
+    model_data = _normalize_diet_create_data(
+        model_args,
+        default_record_date=goal.target_date,
+    )
+
+    def food_identity(value: Any) -> str:
+        return re.sub(
+            r"[\s,，、。.!！;；:：]+",
+            "",
+            str(value or ""),
+        ).casefold()
+
+    if (
+        str(model_data.get("meal_type") or "").strip().lower()
+        != str(authoritative_data.get("meal_type") or "").strip().lower()
+        or food_identity(model_data.get("food_items"))
+        != food_identity(authoritative_data.get("food_items"))
+    ):
+        return authoritative_args
+
+    merged_data = dict(authoritative_data)
+    merged_data["food_items"] = str(model_data["food_items"]).strip()[:1000]
+    for field in (
+        "calories",
+        "protein",
+        "carbs",
+        "fat",
+        "fiber",
+        "alcohol_units",
+        "health_tips",
+    ):
+        if model_data.get(field) not in (None, "", []):
+            merged_data[field] = model_data[field]
+    return {
+        "record_type": "diet",
+        "data": merged_data,
+    }
 
 
 def _simple_record_goal_completion_text(goal: GoalSpec) -> str:
@@ -5527,6 +5612,14 @@ def _simple_record_goal_completion_text(goal: GoalSpec) -> str:
         return f"已记录饮水 {values.get('amount_ml')}ml"
     if goal.target_record_type == "symptom":
         return f"已记录症状：{values.get('description')}"
+    if goal.target_record_type == "diet":
+        meal_label = {
+            "breakfast": "早餐",
+            "lunch": "午餐",
+            "dinner": "晚餐",
+            "snack": "加餐",
+        }.get(str(values.get("meal_type") or ""), "饮食")
+        return f"已记录{meal_label}。"
     return "记录已完成。"
 
 

@@ -103,6 +103,34 @@ def test_simple_record_postcondition_accepts_only_expected_verified_receipt():
     assert result.verified_resource_ids == ("701",)
 
 
+def test_simple_diet_postcondition_accepts_verified_diet_receipt():
+    goal = GoalSpec(
+        kind="simple_health_record",
+        domain="diet",
+        operation="create",
+        target_record_type="diet",
+        target_values=(
+            ("meal_type", "lunch"),
+            ("food_items", "5个虾100克大黄鱼200克哈密瓜"),
+        ),
+        requires_verification=True,
+        postconditions=("verified_receipt",),
+    )
+
+    result = verify_goal_postconditions(
+        goal,
+        write_receipts=[{
+            "resource_type": "diet_record",
+            "resource_id": "703",
+            "verified": True,
+        }],
+        verification_result=None,
+    )
+
+    assert result.satisfied is True
+    assert result.verified_resource_ids == ("703",)
+
+
 def test_simple_record_postcondition_rejects_wrong_resource_receipt():
     goal = GoalSpec(
         kind="simple_health_record",

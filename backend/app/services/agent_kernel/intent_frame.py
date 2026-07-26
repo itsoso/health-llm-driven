@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from app.services.agent_kernel.types import AgentEnvelope, ExecutionContext, IntentFrame
+from app.services.agent_kernel.write_safety import is_explicit_write_cancellation
 from app.services.utterance_intent_classifier import classify_agent_utterance
 
 
@@ -17,6 +18,7 @@ def build_intent_frame(
     """
     text = envelope.text
     intent = classify_agent_utterance(text, reference_now=context.current_time)
+    write_cancelled = is_explicit_write_cancellation(text)
     ambiguity: list[str] = []
     if intent.primary == "unknown" or intent.confidence < 0.6:
         ambiguity.append("low_confidence")
@@ -30,19 +32,23 @@ def build_intent_frame(
         f"channel:{envelope.channel}",
         f"timezone:{context.timezone}",
     ]
+    if write_cancelled:
+        evidence.append("safety:explicit_write_cancellation")
     if intent.scope:
         evidence.extend(f"scope:{key}={value}" for key, value in sorted(intent.scope.items()))
 
     return IntentFrame(
         raw=intent.raw,
         normalized=intent.normalized,
-        primary=intent.primary,
+        primary="chat" if write_cancelled else intent.primary,
         domain=intent.domain,
-        operation=intent.operation,
+        operation="none" if write_cancelled else intent.operation,
         confidence=intent.confidence,
         evidence=tuple(evidence),
         ambiguity=tuple(ambiguity),
         scope=dict(intent.scope),
-        is_write=intent.is_write,
-        requires_reliable_tool_model=intent.requires_reliable_tool_model,
+        is_write=False if write_cancelled else intent.is_write,
+        requires_reliable_tool_model=(
+            False if write_cancelled else intent.requires_reliable_tool_model
+        ),
     )

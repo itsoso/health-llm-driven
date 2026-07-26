@@ -5,8 +5,13 @@ import hashlib
 import json
 from typing import Any
 
-from app.services.agent_kernel.tool_registry import get_tool_spec, list_tool_specs
+from app.services.agent_kernel.tool_registry import (
+    ToolRegistryError,
+    get_tool_spec,
+    list_tool_specs,
+)
 from app.services.agent_kernel.types import CapabilityDecision, ToolExecutionRequest, TurnSnapshot
+from app.services.agent_kernel.write_safety import is_explicit_write_cancellation
 
 READ_ONLY_TOOLS = frozenset(
     spec.name
@@ -94,6 +99,31 @@ def decide_tool_capability(
 
     if not tool_name:
         return _decision("block", "missing_tool_name", tool_name, args)
+
+    mutating_request = _is_mutating_request(tool_name, args)
+    if (
+        mutating_request
+        and is_explicit_write_cancellation(snapshot.envelope.text)
+    ):
+        return _decision(
+            "block",
+            "explicit_write_cancellation",
+            tool_name,
+            args,
+            receipt_required=True,
+        )
+    if (
+        mutating_request
+        and snapshot.goal is not None
+        and snapshot.goal.requires_clarification
+    ):
+        return _decision(
+            "block",
+            "goal_requires_clarification",
+            tool_name,
+            args,
+            receipt_required=True,
+        )
 
     # Procedure recipes are user-owned, exact-triggered, server-stored tool
     # sequences. Their AUTO/typed-only confirmation semantics are still applied
@@ -311,6 +341,13 @@ def decide_tool_capability(
         return _decision("block", "unhandled_write_tool", tool_name, args, receipt_required=True)
 
     return _decision("block", "unknown_tool", tool_name, args, receipt_required=True)
+
+
+def _is_mutating_request(tool_name: str, args: dict[str, Any]) -> bool:
+    try:
+        return get_tool_spec(tool_name).classify_effect(args) == "write"
+    except ToolRegistryError:
+        return tool_name in WRITE_TOOL_NAMES
 
 
 def _decision(

@@ -93,6 +93,7 @@ def _verify_simple_health_record(
     expected_resource_type = {
         "water": "water_record",
         "symptom": "symptom_record",
+        "diet": "diet_record",
     }.get(str(goal.target_record_type or "").strip().lower())
     if expected_resource_type is None:
         return PostconditionResult(False, "unsupported_record_type")

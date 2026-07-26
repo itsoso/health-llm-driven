@@ -1,3 +1,4 @@
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -264,6 +265,191 @@ def test_simple_symptom_goal_binds_the_current_user_observation():
     prompt = format_goal_contract_prompt(goal)
     assert "记录刚才打了一个喷嚏" in prompt
     assert "只创建 1 条 symptom" in prompt
+
+
+def test_simple_diet_goal_binds_explicit_meal_and_foods_from_current_turn():
+    context = ExecutionContext.for_test(user_id=1, channel="mobile")
+    envelope = AgentEnvelope(
+        user_id=1,
+        channel="mobile",
+        text="记录午餐5个虾100克大黄鱼200克哈密瓜",
+    )
+    intent = build_intent_frame(envelope, context)
+
+    goal = compile_goal_spec(
+        envelope=envelope,
+        context=context,
+        intent=intent,
+    )
+
+    assert goal.kind == "simple_health_record"
+    assert goal.domain == "diet"
+    assert goal.target_record_type == "diet"
+    assert goal.target_date == context.current_time.date().isoformat()
+    assert goal.target_meal_types == ("lunch",)
+    assert dict(goal.target_values) == {
+        "meal_type": "lunch",
+        "food_items": "5个虾100克大黄鱼200克哈密瓜",
+    }
+    prompt = format_goal_contract_prompt(goal)
+    assert "5个虾100克大黄鱼200克哈密瓜" in prompt
+    assert "只创建 1 条 diet" in prompt
+
+
+def test_simple_diet_goal_uses_user_owned_relative_date():
+    context = ExecutionContext.for_test(user_id=1, channel="mobile")
+    envelope = AgentEnvelope(
+        user_id=1,
+        channel="mobile",
+        text="记录昨天午餐牛肉面",
+    )
+    intent = build_intent_frame(envelope, context)
+
+    goal = compile_goal_spec(
+        envelope=envelope,
+        context=context,
+        intent=intent,
+    )
+
+    assert goal.kind == "simple_health_record"
+    assert goal.target_date == (
+        context.current_time.date() - timedelta(days=1)
+    ).isoformat()
+
+
+def test_simple_diet_goal_requires_food_details():
+    context = ExecutionContext.for_test(user_id=1, channel="mobile")
+    envelope = AgentEnvelope(
+        user_id=1,
+        channel="mobile",
+        text="记录午餐",
+    )
+    intent = build_intent_frame(envelope, context)
+
+    goal = compile_goal_spec(
+        envelope=envelope,
+        context=context,
+        intent=intent,
+    )
+
+    assert goal.kind != "simple_health_record"
+    assert goal.target_record_type is None
+
+
+@pytest.mark.parametrize(
+    ("message", "meal_type", "food_items"),
+    (
+        ("记录早餐两个豆腐包子", "breakfast", "两个豆腐包子"),
+        ("帮我记录晚餐：牛肉饭", "dinner", "牛肉饭"),
+        ("午餐吃了牛肉面，帮我记录一下", "lunch", "牛肉面"),
+        ("记录加餐 苹果一个", "snack", "苹果一个"),
+    ),
+)
+def test_simple_diet_goal_accepts_common_text_record_variants(
+    message, meal_type, food_items
+):
+    context = ExecutionContext.for_test(user_id=1, channel="mobile")
+    envelope = AgentEnvelope(user_id=1, channel="mobile", text=message)
+    intent = build_intent_frame(envelope, context)
+
+    goal = compile_goal_spec(
+        envelope=envelope,
+        context=context,
+        intent=intent,
+    )
+
+    assert goal.kind == "simple_health_record"
+    assert goal.target_meal_types == (meal_type,)
+    assert dict(goal.target_values) == {
+        "meal_type": meal_type,
+        "food_items": food_items,
+    }
+
+
+def test_simple_diet_goal_does_not_collapse_multiple_meals():
+    context = ExecutionContext.for_test(user_id=1, channel="mobile")
+    envelope = AgentEnvelope(
+        user_id=1,
+        channel="mobile",
+        text="记录早餐鸡蛋和午餐牛肉面",
+    )
+    intent = build_intent_frame(envelope, context)
+
+    goal = compile_goal_spec(
+        envelope=envelope,
+        context=context,
+        intent=intent,
+    )
+
+    assert goal.kind != "simple_health_record"
+    assert goal.target_record_type is None
+
+
+@pytest.mark.parametrize(
+    ("message", "food_items"),
+    (
+        ("记录午餐牛肉面不要辣", "牛肉面不要辣"),
+        ("记录午餐牛肉面别放香菜", "牛肉面别放香菜"),
+        ("记录午餐牛肉面需要少盐", "牛肉面需要少盐"),
+    ),
+)
+def test_simple_diet_goal_keeps_food_preference_language(message, food_items):
+    context = ExecutionContext.for_test(user_id=1, channel="mobile")
+    envelope = AgentEnvelope(user_id=1, channel="mobile", text=message)
+    intent = build_intent_frame(envelope, context)
+
+    goal = compile_goal_spec(
+        envelope=envelope,
+        context=context,
+        intent=intent,
+    )
+
+    assert goal.kind == "simple_health_record"
+    assert goal.target_record_type == "diet"
+    assert dict(goal.target_values)["food_items"] == food_items
+
+
+def test_simple_diet_goal_respects_explicit_write_cancellation():
+    context = ExecutionContext.for_test(user_id=1, channel="mobile")
+    envelope = AgentEnvelope(
+        user_id=1,
+        channel="mobile",
+        text="不要记录午餐牛肉面",
+    )
+    intent = build_intent_frame(envelope, context)
+
+    goal = compile_goal_spec(
+        envelope=envelope,
+        context=context,
+        intent=intent,
+    )
+
+    assert goal.kind != "simple_health_record"
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "记录2026-02-30午餐牛肉面",
+        "记录2月30日午餐牛肉面",
+    ),
+)
+def test_invalid_explicit_diet_date_requires_clarification(message):
+    context = ExecutionContext.for_test(user_id=1, channel="mobile")
+    envelope = AgentEnvelope(user_id=1, channel="mobile", text=message)
+    intent = build_intent_frame(envelope, context)
+
+    goal = compile_goal_spec(
+        envelope=envelope,
+        context=context,
+        intent=intent,
+    )
+
+    assert goal.kind == "clarify"
+    assert goal.target_date is None
+    assert goal.requires_clarification is True
+    assert "create" in goal.prohibited_operations
+    assert "invalid_explicit_date" in goal.evidence
 
 
 @pytest.mark.parametrize(

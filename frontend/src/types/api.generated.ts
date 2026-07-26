@@ -5850,7 +5850,7 @@ export interface paths {
         put?: never;
         /**
          * Create Diet Record
-         * @description 创建饮食记录（需要登录）
+         * @description Create a diet record, serializing confirmation with photo auto-capture.
          */
         post: operations["create_diet_record_api_v1_diet_records_post"];
         delete?: never;
@@ -51698,6 +51698,10 @@ export interface operations {
             query?: {
                 /** @description 只返回最近 N 天的消息 */
                 days?: number | null;
+                /** @description 按消息 ID 取最近一页 */
+                limit?: number | null;
+                /** @description 只返回此消息 ID 之前的数据 */
+                before_message_id?: number | null;
             };
             header?: never;
             path: {
