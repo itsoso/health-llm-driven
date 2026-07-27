@@ -109,3 +109,14 @@ def test_latest_message_acceptance_checks_seeded_markdown_at_the_bottom() -> Non
     assert "testConversationOpensAtLatestSeededMessage" in source
     assert '"assistant-message-surface"' in source
     assert 'assistantSurface.label.contains("## 今天优先完成两件事")' in source
+
+
+def test_today_context_acceptance_matches_the_current_agent_native_surface() -> None:
+    source = UI_TEST_SOURCE.read_text(encoding="utf-8")
+
+    assert "testTodayContextCanOpenAndDismiss" in source
+    assert 'app.buttons["打开今日计划"]' in source
+    assert 'app.buttons["返回小巴"]' in source
+    assert 'app.buttons["关闭当前提示"]' in source
+    assert "testBriefingCanExpandAndCollapse" not in source
+    assert '"今日简报："' not in source

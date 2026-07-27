@@ -107,7 +107,7 @@ APP_STORE_SCREENSHOT_DIR=design/screenshots/app-store/<build-id>-ready \
 
 - [ ] No diagnosis, treatment, prescription, or dosage-change promise appears in screenshots.
 - [ ] No private user PII, raw lab values, genotype, medication details, or family data is visible unless using a dedicated demo account.
-- [ ] First screenshot shows the agent-native shell: 打开即进入小巴, with 今日简报 visible.
+- [ ] First screenshot shows the agent-native shell: 打开即进入小巴. If a qualified context strip is visible, it is compact and relevant; do not require or stage a fixed briefing card.
 - [ ] Record and personal center screenshots are reached from 小巴 conversation entry points, not from a persistent bottom tab bar.
 - [ ] Chat screenshot shows a bounded dynamic card, not raw JSON.
 - [ ] Record screenshot shows quick food/water/workout entry.

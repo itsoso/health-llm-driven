@@ -15,7 +15,7 @@ If the reviewer cannot sign in, please contact support@executor.life.
 ## What To Test
 
 1. Choose `账号密码登录` and sign in with the demo account. The app opens directly into 小巴.
-2. The 今日简报 at the top shows the current health focus. It can be collapsed and reopened.
+2. When the demo account has a qualified pending action, risk or processing state, a compact context strip appears at the top. Tap it to open 今日计划, use 返回小巴 to return, or close the strip. It is intentionally not repeated after every response.
 3. Ask 小巴: `今天应该先做什么健康行动？`
 4. Tap the `+` button beside the input bar to photograph or select a meal image. The recognized result remains editable until it is saved.
 5. Open the top-right more menu, then enter 个人中心 to manage data sources, health records, notifications and privacy.
@@ -46,6 +46,6 @@ The request receives a unique deletion request number and a queryable status. Th
 
 ## Notes For Review
 
-- The demo account contains sample health records, so 今日简报 and 小巴 show non-empty content without HealthKit authorization on the review device.
+- The demo account contains sample health records, so 小巴 and 今日计划 show non-empty content without HealthKit authorization on the review device. The compact context strip appears only when the current data produces a qualified action, risk or processing state.
 - Optional permissions are not required for the reviewer to use text conversation.
 - The submitted binary is iPhone-only, portrait-only and supports iOS 16 or later.

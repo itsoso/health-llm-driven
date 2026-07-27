@@ -10,7 +10,7 @@
   "tester": "REPLACE_WITH_TESTER",
   "checks": {
     "demo_account_login": false,
-    "today_briefing_expand_collapse": false,
+    "today_context_open_dismiss": false,
     "agent_text_conversation": false,
     "streaming_markdown_rendering": false,
     "realtime_dictation_toggle": false,

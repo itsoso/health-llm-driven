@@ -92,7 +92,7 @@ def _real_device_evidence(*, build_id: str = "235") -> dict:
         "tester": "release-owner",
         "checks": {
             "demo_account_login": True,
-            "today_briefing_expand_collapse": True,
+            "today_context_open_dismiss": True,
             "agent_text_conversation": True,
             "streaming_markdown_rendering": True,
             "realtime_dictation_toggle": True,
@@ -310,7 +310,7 @@ def test_real_device_evidence_requires_named_tester_and_reviewer_paths(tmp_path:
 
     assert "missing tester" in joined
     assert "demo_account_login" in joined
-    assert "today_briefing_expand_collapse" in joined
+    assert "today_context_open_dismiss" in joined
     assert "agent_text_conversation" in joined
     assert "personal_center_privacy_policy" in joined
     assert "optional_permission_denial_text_chat" in joined

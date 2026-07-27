@@ -89,7 +89,7 @@ DEMO_API_BASE_ENV = "APP_STORE_REVIEW_API_BASE"
 DEFAULT_DEMO_API_BASE = "https://health.executor.life/api/v1"
 REAL_DEVICE_CHECKS = (
     "demo_account_login",
-    "today_briefing_expand_collapse",
+    "today_context_open_dismiss",
     "agent_text_conversation",
     "streaming_markdown_rendering",
     "realtime_dictation_toggle",
@@ -111,7 +111,7 @@ REAL_DEVICE_CHECKS = (
 )
 CURRENT_AGENT_NATIVE_ENTRY_TERMS = [
     "打开即进入小巴",
-    "今日简报",
+    "今日计划",
     "记录",
     "个人中心",
 ]

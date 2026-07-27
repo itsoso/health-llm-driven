@@ -297,25 +297,40 @@ final class XiaobaAcceptanceUITests: XCTestCase {
         attachScreenshot("conversation-opened-at-latest-seeded-markdown")
     }
 
-    func testBriefingCanExpandAndCollapse() throws {
+    func testTodayContextCanOpenAndDismiss() throws {
         app.launch()
         try requireAuthenticatedChat()
 
-        let briefing = app.buttons.matching(
-            NSPredicate(format: "label BEGINSWITH %@", "今日简报：")
-        ).firstMatch
-        guard briefing.waitForExistence(timeout: 15) else {
-            throw XCTSkip("Today's briefing is not visible for this account")
+        let openToday = app.buttons["打开今日计划"]
+        guard openToday.waitForExistence(timeout: 15) else {
+            throw XCTSkip("No qualified today context is visible for this account")
         }
 
-        briefing.tap()
-        attachScreenshot("today-briefing-expanded")
+        openToday.tap()
+        let backToChat = app.buttons["返回小巴"]
         XCTAssertTrue(
-            briefing.waitForExistence(timeout: 5),
-            "Briefing control disappeared after expansion"
+            backToChat.waitForExistence(timeout: 20),
+            "Today context did not open the Today plan"
         )
-        briefing.tap()
-        attachScreenshot("today-briefing-collapsed")
+        attachScreenshot("today-context-opened")
+
+        backToChat.tap()
+        XCTAssertTrue(
+            chatSurfaceExists(timeout: 20),
+            "Returning from Today did not restore the Agent chat"
+        )
+
+        let dismiss = app.buttons["关闭当前提示"]
+        XCTAssertTrue(
+            dismiss.waitForExistence(timeout: 10),
+            "Today context dismiss action was not exposed after returning to chat"
+        )
+        dismiss.tap()
+        XCTAssertFalse(
+            dismiss.waitForExistence(timeout: 3),
+            "Today context remained visible after dismissal"
+        )
+        attachScreenshot("today-context-dismissed")
     }
 
     func testDraftSurvivesBackgroundWithoutSending() throws {
