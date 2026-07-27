@@ -874,9 +874,10 @@ class ContextualMealPhotoService:
             normalized_foods.append({
                 key: food[key]
                 for key in (
-                    "name", "quantity", "quantity_grams", "calories", "protein",
-                    "carbs", "fat", "fiber", "confidence", "food_id", "source",
-                    "nutrition_basis", "portion_basis", "portion_confidence",
+                    "name", "quantity", "quantity_grams", "label_basis_grams",
+                    "calories", "protein", "carbs", "fat", "fiber",
+                    "confidence", "food_id", "source", "nutrition_basis",
+                    "portion_basis", "portion_confidence",
                 )
                 if food.get(key) is not None
             })

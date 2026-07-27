@@ -50,6 +50,44 @@ def _food_result():
     }
 
 
+def _nutrition_label_food_result():
+    return {
+        "success": True,
+        "foods": [{
+            "name": "洽洽小黄袋每日坚果",
+            "quantity": "每100g",
+            "quantity_grams": 100,
+            "label_basis_grams": 100,
+            "calories": 655,
+            "protein": 14.5,
+            "carbs": 16,
+            "fat": 59,
+            "fiber": 7.5,
+            "confidence": 0.95,
+            "source": "nutrition_label",
+            "nutrition_basis": "nutrition_label_per_100g",
+        }],
+        "total_calories": 655,
+        "total_protein": 14.5,
+        "total_carbs": 16,
+        "total_fat": 59,
+        "total_fiber": 7.5,
+    }
+
+
+def _stream_from(fake_call_llm):
+    async def fake_call_llm_stream(messages, tools):
+        result = await fake_call_llm(messages, tools)
+        content = result.get("content") or ""
+        if content:
+            yield {"type": "content", "text": content}
+        if result.get("tool_calls"):
+            yield {"type": "tool_calls", "tool_calls": result["tool_calls"]}
+        yield {"type": "finish", "finish_reason": result.get("finish_reason")}
+
+    return fake_call_llm_stream
+
+
 def _food_photo_executor(db, tmp_path, monkeypatch):
     from app.api import upload as upload_api
 
@@ -76,6 +114,177 @@ def _food_photo_executor(db, tmp_path, monkeypatch):
     ]
     executor._agent_kernel_reference_now = lambda: datetime(2026, 7, 19, 16, 30, tzinfo=timezone.utc)
     return executor, user
+
+
+@pytest.mark.asyncio
+async def test_image_nutrition_label_auto_save_ignores_redundant_incomplete_write(
+    db, tmp_path, monkeypatch
+):
+    from app.services.ai.food_recognition import food_recognition_service
+
+    executor, user = _food_photo_executor(db, tmp_path, monkeypatch)
+    llm_calls = 0
+
+    async def recognize_food(*_args, **_kwargs):
+        return _nutrition_label_food_result()
+
+    async def fake_call_llm(messages, tools):
+        nonlocal llm_calls
+        llm_calls += 1
+        if llm_calls == 1:
+            return {
+                "content": "",
+                "finish_reason": "tool_calls",
+                "tool_calls": [{
+                    "id": "redundant-incomplete-diet-write",
+                    "function": {
+                        "name": "health_record",
+                        "arguments": json.dumps({
+                            "record_type": "diet",
+                            "data": {
+                                "meal_type": "snack",
+                                "food_items": "坚果 20g",
+                            },
+                        }, ensure_ascii=False),
+                    },
+                }],
+            }
+        return {
+            "content": "已按营养成分表记录这餐。",
+            "finish_reason": "stop",
+        }
+
+    monkeypatch.setattr(
+        food_recognition_service,
+        "recognize_food_from_base64",
+        recognize_food,
+    )
+    monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
+    monkeypatch.setattr(
+        "app.services.agent_executor.get_health_tools",
+        lambda subset=None: [],
+    )
+    monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
+    monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="记录这餐 20 克坚果，并按营养成分表计算。",
+            user_auth_token="test-token",
+            images=[{"base64": VALID_PNG_BASE64, "type": "png"}],
+            client_turn_id="turn-nutrition-label-auto-save",
+        )
+    ]
+
+    rendered = "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+    done = next(event for event in events if event.get("event") == "done")
+    record = db.query(DietRecord).filter(DietRecord.user_id == user.id).one()
+    photo = db.query(DietPhotoAsset).filter(
+        DietPhotoAsset.user_id == user.id,
+        DietPhotoAsset.diet_record_id == record.id,
+    ).one()
+    diet_cards = [
+        card
+        for card in done["data"].get("cards", [])
+        if card.get("type") == "diet_draft"
+    ]
+
+    assert record.food_items == "洽洽小黄袋每日坚果 20g"
+    assert record.calories == pytest.approx(131)
+    assert record.protein == pytest.approx(2.9)
+    assert photo.diet_record_id == record.id
+    assert "这次没有写入" not in rendered
+    assert "另有 1 项记录已完成并取得回执" not in rendered
+    assert done["data"]["completion_status"] == "complete"
+    assert len(done["data"]["write_receipts"]) == 1
+    assert done["data"]["write_receipts"][0]["resource_id"] == str(record.id)
+    assert len(diet_cards) == 1
+    assert diet_cards[0]["data"]["record_id"] == record.id
+    assert diet_cards[0]["data"]["photo_asset_id"] == photo.id
+
+
+@pytest.mark.asyncio
+async def test_structured_food_vision_does_not_save_label_basis_as_consumed_amount(
+    db, tmp_path, monkeypatch
+):
+    from app.services.ai.food_recognition import food_recognition_service
+
+    executor, user = _food_photo_executor(db, tmp_path, monkeypatch)
+
+    async def recognize_food(*_args, **_kwargs):
+        return _nutrition_label_food_result()
+
+    monkeypatch.setattr(
+        food_recognition_service,
+        "recognize_food_from_base64",
+        recognize_food,
+    )
+
+    context = await executor._analyze_food_images_with_structured_vision(
+        "记录这餐坚果",
+        [{"base64": VALID_PNG_BASE64, "type": "png"}],
+    )
+
+    assert db.query(DietRecord).filter(DietRecord.user_id == user.id).count() == 0
+    assert context is not None
+    assert "还缺少实际食用重量" in context
+    assert "请补充你实际吃了多少克" in context
+
+
+@pytest.mark.asyncio
+async def test_structured_food_vision_scales_label_locally_from_user_amount(
+    db, tmp_path, monkeypatch
+):
+    from app.services.ai.food_recognition import food_recognition_service
+
+    executor, user = _food_photo_executor(db, tmp_path, monkeypatch)
+    captured_kwargs = {}
+
+    async def recognize_food(*_args, **kwargs):
+        captured_kwargs.update(kwargs)
+        return {
+            "success": True,
+            "foods": [{
+                "name": "洽洽小黄袋每日坚果",
+                "quantity": "每100g",
+                "quantity_grams": 100,
+                "label_basis_grams": 100,
+                "calories": 655,
+                "protein": 15,
+                "carbs": 15,
+                "fat": 60,
+                "fiber": 7.5,
+                "confidence": 0.95,
+                "source": "nutrition_label",
+                "nutrition_basis": "nutrition_label_per_100g",
+            }],
+        }
+
+    monkeypatch.setattr(
+        food_recognition_service,
+        "recognize_food_from_base64",
+        recognize_food,
+    )
+
+    context = await executor._analyze_food_images_with_structured_vision(
+        "记录这餐，吃了 20 克坚果",
+        [{"base64": VALID_PNG_BASE64, "type": "png"}],
+    )
+
+    record = db.query(DietRecord).filter(DietRecord.user_id == user.id).one()
+    assert context is not None
+    assert "user_context" not in captured_kwargs
+    assert record.food_items == "洽洽小黄袋每日坚果 20g"
+    assert record.calories == pytest.approx(131)
+    assert record.protein == pytest.approx(3)
+    assert record.carbs == pytest.approx(3)
+    assert record.fat == pytest.approx(12)
 
 
 @pytest.mark.parametrize(

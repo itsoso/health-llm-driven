@@ -21,6 +21,12 @@ _NUTRIENT_FIELDS = (
     ("fat", "fat_g_per_100g"),
     ("fiber", "fiber_g_per_100g"),
 )
+_NUTRITION_LABEL_BASES = {
+    "nutrition_label",
+    "nutrition_label_scaled",
+    "nutrition_label_per_100g",
+    "nutrition_label_per_serving",
+}
 
 @dataclass(frozen=True)
 class FoodNutritionMatch:
@@ -63,6 +69,10 @@ def calibrate_recognized_foods(
     """
     matches = find_food_matches(db, [food.get("name") for food in foods])
     for food in foods:
+        if _has_nutrition_label_values(food):
+            food.setdefault("source", "nutrition_label")
+            continue
+
         match = matches.get(normalize_food_key(food.get("name")))
         if match is None:
             food.setdefault("source", "ai_estimate")
@@ -97,6 +107,23 @@ def calibrate_recognized_foods(
                 food[output_key] = table_value
 
     return foods
+
+
+def _has_nutrition_label_values(food: dict[str, Any]) -> bool:
+    basis = str(food.get("nutrition_basis") or "").strip().lower()
+    if basis not in _NUTRITION_LABEL_BASES:
+        return False
+    calories = _to_float(food.get("calories"))
+    macros = (
+        _to_float(food.get("protein")),
+        _to_float(food.get("carbs")),
+        _to_float(food.get("fat")),
+    )
+    return bool(
+        calories is not None
+        and calories > 0
+        and any(value is not None and value > 0 for value in macros)
+    )
 
 
 def _enrich_food_with_match(

@@ -14272,6 +14272,7 @@ class AgentExecutor:
             )
         try:
             from app.services.ai.food_recognition import (
+                apply_user_stated_amount_to_nutrition_label,
                 food_recognition_service,
                 merge_food_recognition_results,
                 sanitize_food_recognition_result,
@@ -14296,6 +14297,17 @@ class AgentExecutor:
                 )
                 result = sanitize_food_recognition_result(result)
                 if result.get("success") and result.get("foods"):
+                    result = apply_user_stated_amount_to_nutrition_label(
+                        result,
+                        user_message,
+                    )
+                    if result.get("nutrition_label_requires_amount"):
+                        errors.append(
+                            "已识别营养成分表，但还需要明确实际食用重量。"
+                        )
+                        image_classifications[image_index] = "food"
+                        continue
+                    result = sanitize_food_recognition_result(result)
                     image_classifications[image_index] = "food"
                     calibrate_recognized_foods(self.db, result["foods"])
                     result = sanitize_food_recognition_result(result)
@@ -14345,6 +14357,11 @@ class AgentExecutor:
                 )
             if errors and self._looks_like_food_photo_context(user_message):
                 if not self._food_recognition_found_no_food(errors):
+                    if any("实际食用重量" in error for error in errors):
+                        return (
+                            "已读取图片中的营养成分表，但还缺少实际食用重量。"
+                            "本次没有写入饮食记录；请补充你实际吃了多少克。"
+                        )
                     return (
                         "本轮餐食图片识别未完整完成，因此没有写入饮食记录。"
                         "请稍后重试，或补充食物名称和份量后再确认。"
@@ -14722,9 +14739,9 @@ class AgentExecutor:
             recognized_foods.append({
                 key: food[key]
                 for key in (
-                    "name", "quantity", "quantity_grams", "calories", "protein",
-                    "carbs", "fat", "fiber", "confidence", "food_id", "source",
-                    "nutrition_basis",
+                    "name", "quantity", "quantity_grams", "label_basis_grams",
+                    "calories", "protein", "carbs", "fat", "fiber",
+                    "confidence", "food_id", "source", "nutrition_basis",
                 )
                 if food.get(key) is not None
             })
@@ -14840,6 +14857,18 @@ class AgentExecutor:
         if 17 <= hour < 22:
             return "dinner"
         return "snack"
+
+    @staticmethod
+    def _looks_like_food_photo_context(user_message: str) -> bool:
+        text = user_message or ""
+        if not text.strip():
+            return True
+        return bool(re.search(
+            r"食物|饮食|餐|饭|吃|营养成分|热量|卡路里|"
+            r"蛋白|碳水|脂肪|kcal|calorie",
+            text,
+            re.I,
+        ))
 
     @staticmethod
     def _is_default_image_analysis_prompt(user_message: str) -> bool:
