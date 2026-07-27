@@ -127,6 +127,7 @@
 - T5.5 Linux 权威闸门：GitHub Actions run `29174866840` 最终 SUCCESS；Mobile TypeScript/Jest、Frontend、macOS、type drift、backend quality、18 个后端分片与 Backend tests enforcement 全部通过。首轮仅既有 `test_exercise_dedup` 在高负载 runner 上跨过生产代码的 1 秒去重窗口而失败（测试文案仍写 5 秒），失败分片干净重跑通过；本轮没有后端代码改动。
 - T5.6 RED/GREEN：先用 RED 证明 `capture=library&return_to=chat`、`capture=text&return_to=chat` 和 `capture=voice&return_to=chat` 均不会触发对应入口；再补最小 switch 分发。最终 `mobile/app/__tests__/dietCapture.test.tsx` 完整回归 `30 passed`，覆盖四种入口确认后均通过 `pushChatWithContext` 带 `diet/quick_capture` 上下文回到小巴。聊天入口 focused regression `4 passed`；`npx tsc --noEmit` 通过；Mobile lint `0 errors / 97 existing warnings`；Mobile 全量 Jest `234 suites / 1639 tests` 通过，仍保留仓库既有 open handle warning，不表述为已修复。
 - T5.7 RED/GREEN：先复现营养标签按 100g 返回后未结合“20 克”实际食用量、通用食物表覆盖标签值、错误分支调用缺失方法三类问题；最终食品识别/营养校准/Agent 图片写入 focused regression `59 passed`，饮食写入、图片事务、回执和恢复相关扩展回归 `264 passed`。完整流式用例验证 20g 坚果由 655 kcal/100g 换算为 131 kcal，生成且关联唯一记录和图片，缺少食用量时零写入并要求补充。
+- T5.7 真实模型回归（2026-07-27）：首次隔离 SQLite 因缺少 `llm_usage_logs` 被成本护栏 fail closed，未发生有效模型放行；初始化独立临时成本账本后重跑，`invariants 12/12`、`health_agent_core 50/50`、真实 `orchestrator 5/5` 通过，Orchestrator 平均分 `0.98`、无 regression，11 项轨迹契约全部通过。实际模型为 `MiniMax-M2.5`，原始 JSON 仅保存在本机 `/tmp/diet-photo-live-llm-eval-20260727.json`。
 - T5.2 首次 CI run `29164922239` 中 type drift 在补齐 Frontend 生成类型后通过，但 Linux `a-b` 分片连续两次远超历史绿灯的 4 分 23 秒，并在 `test_agent_health_manage.py` 与 `test_agent_intervention_cycle_tool.py` 边界失去输出；该边界组合本机 `30/30` 通过，`c-d` 重跑也在 3 分 36 秒通过。判定为既有进程级顺序污染而非饮食断言回归，将 86 个 `a-b` 测试文件拆为非 Agent、`agent_[a-h]`、`agent_[i-z]` 三个互斥进程；文件覆盖校验为 `86 -> 86`、差集 0。
 - T5.2 CI run `29166225719` 验证上述三个新分片分别在 3 分 2 秒、2 分 15 秒和 1 分 24 秒通过；同轮旧 `t[f-z]+u` 分片在 69% 处进入 `test_twin_builder.py` 后冻结，并被 20 分钟上限终止，其他 16 个作业均通过。本机同命令 `392/392` 在 31.23 秒通过；据逐用例日志将其拆为 `t[f-v]`、`t[w-z]`、`u` 三个干净进程，原 24 个文件覆盖校验仍为 `24 -> 24`、差集 0。
 - T5.2 CI run `29166933157` 中 `t[f-v]`、`t[w-z]`、`u` 已分别在 1 分 44 秒、1 分 25 秒和 1 分 28 秒通过；唯一剩余的旧 `s` 大分片进入 `test_schedule_into_agenda.py` 后失去输出，其他 18 个作业均通过。本机同一 643 项命令也在该模块首个用例后停住，但该模块单跑 `8/8`、与前一模块配对 `26/26`、`s[c-k]` 分组 `55/55` 均通过，确认是更长前序造成的进程状态污染；将 58 个 `s` 文件拆为 `s[a-b]`、`s[c-k]`、`s[l-z]`，覆盖校验为 `58 -> 58`、差集 0。
@@ -156,6 +157,7 @@
 - T5.4 部署前 PostgreSQL 备份：`/opt/health-app/backups/health_db_2026-07-12_07-59.sql.gz`，38 MB、权限 `0600`，两张 force-RLS 表的数据段完整性检查通过。
 - T5.5 production OTA：runtime `1.3.1`，update group `8831e015-4afd-4871-839f-741147b67776`，iOS update `019f53f4-ba80-7e83-9050-ccd6faeaa2ac`；EAS `update:view` 复核 branch=`production`、commit=`d8cdc1d1e3d69eaf962615ddead3e57ebaecfae0`、runtime 与 `isRollBackToEmbedded=false` 一致。
 - T5.6 production OTA：runtime `1.3.1`，update group `fd730fd7-22dd-4cd6-962a-260267e51f31`，iOS update `019f54d5-4bb7-7476-b49b-b9d5b95d837e`；EAS `update:view` 复核 branch=`production`、commit=`da579f055def97902f25c3a7edc3b0992d17df1d`、runtime 与 `isRollBackToEmbedded=false` 一致。
+- T5.7 Backend 已从干净且与 `origin/main` 一致的部署副本通过 `./deploy.sh -b -y` 发布；生产 Git HEAD 为 `32ac803bc9f36f7c4e015f7045de6a6b551e6ed4`，本轮无新 migration。部署前备份为 `/var/backups/health-app/database/health_db_2026-07-27_21-16-48_221912.sql.gz`，41 MB、权限 `0600`，force-RLS 数据段、恢复演练和异地加密归档校验通过。
 
 ## G5 · 部署健康闸
 
@@ -166,6 +168,7 @@
 - T5.1 增量部署后 `health-backend` 为 active；公网 `/api/v1/health` 再次返回 healthy，production OTA 已绑定同一代码 commit。
 - T5.2 增量部署后 `health-backend`、`celery-worker`、`celery-beat` 均为 active，服务器 Git HEAD 为 `c6d3d3f49`，部署健康分 `60/60 PASS`；公网健康仍为 healthy，服务器本机 OpenAPI 的 `FoodItem` 已包含 `portion_basis` 与 `portion_confidence`。
 - T5.4 增量部署后 `health-backend` 为 active，部署健康分 `60/60 PASS`，skills manifest 本地/线上均为 22；公网 `/api/v1/health` 返回 API、PostgreSQL、Redis、Celery 全部 healthy/connected。
+- T5.7 增量部署后 `health-backend`、`celery-worker`、`celery-beat` 均正常，部署健康分 `60/60 PASS`；公网 `/api/v1/health` 返回 API running、PostgreSQL/Redis/Celery connected。公网 skills manifest 的 HTTP/2 请求出现可恢复传输告警，HTTP/1.1 已验证可读取有效 manifest，不影响 Backend 健康闸。
 - **裁决：PASS**。
 
 ## S7 · 上线验证

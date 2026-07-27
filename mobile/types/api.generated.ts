@@ -24335,6 +24335,8 @@ export interface components {
             source?: string | null;
             /** Quantity Grams */
             quantity_grams?: number | null;
+            /** Label Basis Grams */
+            label_basis_grams?: number | null;
             /** Nutrition Basis */
             nutrition_basis?: string | null;
             /** Portion Basis */
