@@ -3031,6 +3031,129 @@ async def test_agent_stream_repaired_missing_argument_clears_scope_rejection(
 
 
 @pytest.mark.asyncio
+async def test_agent_stream_repaired_diet_name_clears_older_scope_rejection(
+    db, auth_user_and_headers, monkeypatch
+):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    llm_calls = 0
+    dispatched = []
+
+    async def fake_call_llm(messages, tools):
+        nonlocal llm_calls
+        llm_calls += 1
+        if llm_calls == 1:
+            data = {
+                "meal_type": "snack",
+                "food_items": "坚果 20g",
+            }
+        elif llm_calls == 2:
+            data = {
+                "meal_type": "snack",
+                "food_items": "洽洽小黄袋每日坚果 20g",
+                "calories": 131,
+                "protein": 2.9,
+                "carbs": 3.2,
+                "fat": 11.8,
+                "fiber": 1.5,
+            }
+        else:
+            return {
+                "content": "已记录加餐。",
+                "finish_reason": "stop",
+            }
+        return {
+            "content": "",
+            "finish_reason": "tool_calls",
+            "tool_calls": [{
+                "id": f"nuts-{llm_calls}",
+                "function": {
+                    "name": "health_record",
+                    "arguments": json.dumps({
+                        "record_type": "diet",
+                        "data": data,
+                    }, ensure_ascii=False),
+                },
+            }],
+        }
+
+    async def fake_dispatch(request, user_token):
+        dispatched.append(request.arguments)
+        return json.dumps(
+            {
+                "id": 903,
+                "meal_type": request.arguments["data"]["meal_type"],
+                "food_items": request.arguments["data"]["food_items"],
+                "calories": request.arguments["data"]["calories"],
+                "protein": request.arguments["data"]["protein"],
+                "carbs": request.arguments["data"]["carbs"],
+                "fat": request.arguments["data"]["fat"],
+                "fiber": request.arguments["data"]["fiber"],
+            },
+            ensure_ascii=False,
+        )
+
+    monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
+    monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
+    monkeypatch.setattr(executor, "_dispatch_tool_request", fake_dispatch)
+    monkeypatch.setattr(
+        "app.services.agent_executor._post_record_quality_response",
+        lambda *args, **kwargs: None,
+    )
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="记录这餐 20 克坚果，并按营养成分表计算。",
+            user_auth_token="test-token",
+        )
+    ]
+    rendered = "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+    done = next(event for event in events if event.get("event") == "done")
+
+    assert len(dispatched) == 1
+    assert dispatched[0]["data"]["food_items"] == "洽洽小黄袋每日坚果 20g"
+    assert "这次没有写入" not in rendered
+    assert "另有 1 项记录已完成并取得回执" not in rendered
+    assert done["data"]["completion_status"] != "error"
+    assert len(done["data"]["write_receipts"]) == 1
+    assert any(
+        card.get("type") == "record"
+        and (card.get("data") or {}).get("type") == "diet"
+        for card in done["data"].get("cards", [])
+    )
+
+
+def test_multi_meal_goal_cannot_clear_another_diet_rejection():
+    from app.services.agent_executor import _goal_binds_recoverable_write
+    from app.services.agent_kernel.types import GoalSpec
+
+    goal = GoalSpec(
+        kind="write",
+        domain="diet",
+        operation="create",
+        target_meal_types=("breakfast", "lunch"),
+    )
+
+    assert _goal_binds_recoverable_write(
+        goal,
+        "health_record",
+        {
+            "record_type": "diet",
+            "data": {
+                "meal_type": "lunch",
+                "food_items": "鸡胸肉 100g",
+            },
+        },
+    ) is False
+
+
+@pytest.mark.asyncio
 async def test_agent_stream_same_round_success_does_not_clear_scope_rejection(
     db, auth_user_and_headers, monkeypatch
 ):

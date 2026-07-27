@@ -3287,15 +3287,21 @@ def _recoverable_write_scope_key(
     )
 
 
-def _simple_goal_binds_recoverable_write(
+def _goal_binds_recoverable_write(
     goal: Optional[GoalSpec],
     tool_name: str,
     parsed_args: Dict[str, Any],
 ) -> bool:
-    """Allow coarse repair matching only for one explicit server-owned target."""
+    """Allow coarse repair matching only for one explicit write target.
+
+    Attachment-backed diet turns cannot become ``simple_health_record`` goals:
+    the server must let the model read the label before it can build the
+    nutrition payload. They still compile to one bounded ``diet/create`` goal,
+    so a later verified estimate is allowed to repair an older validation
+    rejection for that meal. Multi-meal and cross-domain turns stay isolated.
+    """
     if (
         goal is None
-        or goal.kind != "simple_health_record"
         or goal.operation != "create"
         or tool_name != "health_record"
     ):
@@ -3306,10 +3312,54 @@ def _simple_goal_binds_recoverable_write(
         or parsed_args.get("kind")
         or ""
     )
-    return bool(
-        record_type
+    if (
+        goal.kind == "simple_health_record"
+        and record_type
         and record_type == str(goal.target_record_type or "").strip().lower()
+    ):
+        return True
+    return bool(
+        goal.kind == "write"
+        and goal.domain == "diet"
+        and record_type == "diet"
+        and len(goal.target_meal_types) <= 1
     )
+
+
+def _clear_repaired_write_rejections(
+    pending: dict[str, tuple[str, str]],
+    rounds: dict[str, int],
+    scopes: dict[str, str],
+    *,
+    operation_key: str,
+    scope_key: str,
+    current_round: int,
+    allow_scope_repair: bool,
+) -> None:
+    """Clear an older validation rejection repaired by a verified write.
+
+    A model may refine the target text while filling missing fields, for
+    example ``坚果 20g`` -> ``品牌每日坚果 20g``.  Those calls have different
+    target hashes but still belong to one bounded create goal. Scope repair is
+    therefore limited to older rounds of that explicit single-target goal;
+    same-round and multi-target writes remain independent.
+    """
+    pending.pop(operation_key, None)
+    rounds.pop(operation_key, None)
+    scopes.pop(operation_key, None)
+    if not allow_scope_repair:
+        return
+
+    repaired_keys = [
+        key
+        for key, rejection_scope in scopes.items()
+        if rejection_scope == scope_key
+        and rounds.get(key, current_round) < current_round
+    ]
+    for key in repaired_keys:
+        pending.pop(key, None)
+        rounds.pop(key, None)
+        scopes.pop(key, None)
 
 
 def _summarize_recoverable_write_rejections(
@@ -8009,6 +8059,7 @@ class AgentExecutor:
                 str, tuple[str, str]
             ] = {}
             pending_recoverable_write_rejection_rounds: dict[str, int] = {}
+            pending_recoverable_write_rejection_scopes: dict[str, str] = {}
             last_recoverable_write_rejection: Optional[str] = None
             last_recoverable_write_rejection_code: Optional[str] = None
             deterministic_diet_correction_fallback_attempted = False
@@ -8394,44 +8445,37 @@ class AgentExecutor:
                             pending_recoverable_write_rejection_rounds[
                                 recoverable_write_key
                             ] = _round
+                            pending_recoverable_write_rejection_scopes[
+                                recoverable_write_key
+                            ] = _recoverable_write_scope_key(
+                                fn,
+                                parsed_args,
+                            )
                         elif write_attempted and write_completed:
                             assert recoverable_write_key is not None
-                            pending_recoverable_write_rejections.pop(
-                                recoverable_write_key,
-                                None,
-                            )
-                            pending_recoverable_write_rejection_rounds.pop(
-                                recoverable_write_key,
-                                None,
-                            )
                             recoverable_scope_key = (
                                 _recoverable_write_scope_key(fn, parsed_args)
                             )
-                            if (
-                                pending_recoverable_write_rejection_rounds.get(
-                                    recoverable_scope_key,
-                                    _round,
-                                )
-                                < _round
-                                and _simple_goal_binds_recoverable_write(
-                                    (
-                                        self._agent_kernel_snapshot.goal
-                                        if self._agent_kernel_snapshot
-                                        is not None
-                                        else None
-                                    ),
-                                    fn,
-                                    parsed_args,
-                                )
-                            ):
-                                pending_recoverable_write_rejections.pop(
-                                    recoverable_scope_key,
-                                    None,
-                                )
-                                pending_recoverable_write_rejection_rounds.pop(
-                                    recoverable_scope_key,
-                                    None,
-                                )
+                            _clear_repaired_write_rejections(
+                                pending_recoverable_write_rejections,
+                                pending_recoverable_write_rejection_rounds,
+                                pending_recoverable_write_rejection_scopes,
+                                operation_key=recoverable_write_key,
+                                scope_key=recoverable_scope_key,
+                                current_round=_round,
+                                allow_scope_repair=(
+                                    _goal_binds_recoverable_write(
+                                        (
+                                            self._agent_kernel_snapshot.goal
+                                            if self._agent_kernel_snapshot
+                                            is not None
+                                            else None
+                                        ),
+                                        fn,
+                                        parsed_args,
+                                    )
+                                ),
+                            )
                         (
                             last_recoverable_write_rejection,
                             last_recoverable_write_rejection_code,
@@ -9576,6 +9620,7 @@ class AgentExecutor:
             str, tuple[str, str]
         ] = {}
         pending_recoverable_write_rejection_rounds: dict[str, int] = {}
+        pending_recoverable_write_rejection_scopes: dict[str, str] = {}
         last_recoverable_write_rejection: Optional[str] = None
         last_recoverable_write_rejection_code: Optional[str] = None
         # Slice 3 配方候选: 本轮**成功完成**的 health_record 写步骤 (sanitize 掉
@@ -10654,47 +10699,40 @@ class AgentExecutor:
                             pending_recoverable_write_rejection_rounds[
                                 recoverable_write_key
                             ] = round_idx
+                            pending_recoverable_write_rejection_scopes[
+                                recoverable_write_key
+                            ] = _recoverable_write_scope_key(
+                                func_name,
+                                parsed_tool_args,
+                            )
                         elif write_attempted and write_completed:
                             assert recoverable_write_key is not None
-                            pending_recoverable_write_rejections.pop(
-                                recoverable_write_key,
-                                None,
-                            )
-                            pending_recoverable_write_rejection_rounds.pop(
-                                recoverable_write_key,
-                                None,
-                            )
                             recoverable_scope_key = (
                                 _recoverable_write_scope_key(
                                     func_name,
                                     parsed_tool_args,
                                 )
                             )
-                            if (
-                                pending_recoverable_write_rejection_rounds.get(
-                                    recoverable_scope_key,
-                                    round_idx,
-                                )
-                                < round_idx
-                                and _simple_goal_binds_recoverable_write(
-                                    (
-                                        self._agent_kernel_snapshot.goal
-                                        if self._agent_kernel_snapshot
-                                        is not None
-                                        else None
-                                    ),
-                                    func_name,
-                                    parsed_tool_args,
-                                )
-                            ):
-                                pending_recoverable_write_rejections.pop(
-                                    recoverable_scope_key,
-                                    None,
-                                )
-                                pending_recoverable_write_rejection_rounds.pop(
-                                    recoverable_scope_key,
-                                    None,
-                                )
+                            _clear_repaired_write_rejections(
+                                pending_recoverable_write_rejections,
+                                pending_recoverable_write_rejection_rounds,
+                                pending_recoverable_write_rejection_scopes,
+                                operation_key=recoverable_write_key,
+                                scope_key=recoverable_scope_key,
+                                current_round=round_idx,
+                                allow_scope_repair=(
+                                    _goal_binds_recoverable_write(
+                                        (
+                                            self._agent_kernel_snapshot.goal
+                                            if self._agent_kernel_snapshot
+                                            is not None
+                                            else None
+                                        ),
+                                        func_name,
+                                        parsed_tool_args,
+                                    )
+                                ),
+                            )
                         (
                             last_recoverable_write_rejection,
                             last_recoverable_write_rejection_code,
