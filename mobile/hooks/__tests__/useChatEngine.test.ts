@@ -7,6 +7,7 @@ import * as SecureStore from 'expo-secure-store';
 const mockStreamChat = jest.fn();
 const mockGetConversations = jest.fn();
 const mockGetConversationMessages = jest.fn();
+const mockGetAgentTurnStatus = jest.fn();
 const mockDeleteConversation = jest.fn();
 const mockRenderServerCards = jest.fn();
 const mockDispatchCard = jest.fn().mockResolvedValue(null);
@@ -31,6 +32,7 @@ jest.mock('../../services/chat', () => ({
   streamChat: (...args: any[]) => mockStreamChat(...args),
   getConversations: (...args: any[]) => mockGetConversations(...args),
   getConversationMessages: (...args: any[]) => mockGetConversationMessages(...args),
+  getAgentTurnStatus: (...args: any[]) => mockGetAgentTurnStatus(...args),
   deleteConversation: (...args: any[]) => mockDeleteConversation(...args),
 }));
 
@@ -158,6 +160,10 @@ async function* streamAcceptedThenEndsWithoutDone() {
   // absent from the client-visible stream.
   yield { type: 'start', conversationId: 777 };
   yield { type: 'token', content: '已经收到，我正在查询。' };
+}
+
+async function* streamEndsBeforeFirstPersistenceEvent() {
+  return;
 }
 
 async function* streamDoneExplicitlyNotPersisted() {
@@ -554,6 +560,7 @@ describe('useChatEngine', () => {
     persistStream = undefined;
     mockGetConversations.mockResolvedValue([]);
     mockGetConversationMessages.mockResolvedValue({ total_messages: 0, messages: [] });
+    mockGetAgentTurnStatus.mockResolvedValue(null);
     mockDeleteConversation.mockResolvedValue(true);
     mockRenderServerCards.mockImplementation((cards: any[]) => Array.isArray(cards) ? cards : []);
     (NetInfo.fetch as jest.Mock).mockResolvedValue({ isConnected: true });
@@ -1462,7 +1469,11 @@ describe('useChatEngine', () => {
           id: 2,
           role: 'assistant',
           content: '已完成',
-          meta: { client_turn_id: 'turn-hydration-race', completion_status: 'complete' },
+          meta: {
+            client_turn_id: 'turn-hydration-race',
+            completion_status: 'complete',
+            client_turn_finalized: true,
+          },
         },
       ],
     });
@@ -1542,7 +1553,11 @@ describe('useChatEngine', () => {
           role: 'assistant',
           content: '服务端已经完成。',
           created_at: '2026-07-09T10:00:05Z',
-          meta: { completion_status: 'complete', client_turn_id: 'turn-restored' },
+          meta: {
+            completion_status: 'complete',
+            client_turn_id: 'turn-restored',
+            client_turn_finalized: true,
+          },
         },
       ],
     });
@@ -1597,7 +1612,11 @@ describe('useChatEngine', () => {
           id: 2,
           role: 'assistant',
           content: '旧问题的答案',
-          meta: { completion_status: 'complete', client_turn_id: 'turn-old' },
+          meta: {
+            completion_status: 'complete',
+            client_turn_id: 'turn-old',
+            client_turn_finalized: true,
+          },
         },
         { id: 3, role: 'user', content: '本轮尚未完成', meta: { client_turn_id: 'turn-new' } },
       ],
@@ -1640,7 +1659,11 @@ describe('useChatEngine', () => {
           id: 2,
           role: 'assistant',
           content: '已处理。',
-          meta: { completion_status: 'complete', client_turn_id: 'turn-write-no-receipt' },
+          meta: {
+            completion_status: 'complete',
+            client_turn_id: 'turn-write-no-receipt',
+            client_turn_finalized: true,
+          },
         },
       ],
     });
@@ -1680,7 +1703,11 @@ describe('useChatEngine', () => {
           id: 2,
           role: 'assistant',
           content: '本轮中断。',
-          meta: { completion_status: 'interrupted', client_turn_id: 'turn-server-interrupted' },
+          meta: {
+            completion_status: 'interrupted',
+            client_turn_id: 'turn-server-interrupted',
+            client_turn_finalized: true,
+          },
         },
       ],
     });
@@ -2166,7 +2193,11 @@ describe('useChatEngine', () => {
             role: 'assistant',
             content: '已从服务端恢复的完整回答',
             created_at: '2026-05-22T23:31:00Z',
-            meta: { client_turn_id: clientTurnId, completion_status: 'complete' },
+            meta: {
+              client_turn_id: clientTurnId,
+              completion_status: 'complete',
+              client_turn_finalized: true,
+            },
           },
         ],
       };
@@ -2242,7 +2273,11 @@ describe('useChatEngine', () => {
             role: 'assistant',
             content: '服务端后台完成的完整回答',
             created_at: '2026-07-16T15:40:20Z',
-            meta: { client_turn_id: clientTurnId, completion_status: 'complete' },
+            meta: {
+              client_turn_id: clientTurnId,
+              completion_status: 'complete',
+              client_turn_finalized: true,
+            },
           },
         ],
       };
@@ -2320,7 +2355,11 @@ describe('useChatEngine', () => {
             role: 'assistant',
             content: '切回 App 后恢复的完整回答',
             created_at: '2026-07-17T17:00:20Z',
-            meta: { client_turn_id: clientTurnId, completion_status: 'complete' },
+            meta: {
+              client_turn_id: clientTurnId,
+              completion_status: 'complete',
+              client_turn_finalized: true,
+            },
           }] : []),
         ],
       };
@@ -2365,6 +2404,146 @@ describe('useChatEngine', () => {
         recoverable: false,
       });
     });
+  });
+
+  it('reconciles a photo turn that disconnects before the first persistence event', async () => {
+    mockStreamChat.mockImplementation(async function* () {
+      throw new Error('网络请求失败 (status: 200)');
+    });
+    mockGetAgentTurnStatus.mockResolvedValue({
+      clientTurnId: 'turn-placeholder',
+      status: 'running',
+      requestPersisted: true,
+      responsePersisted: false,
+      conversationId: 777,
+      retryable: false,
+    });
+    mockGetConversationMessages.mockImplementation(async () => {
+      const generatedTurnId = mockStreamChat.mock.calls[0][6];
+      return {
+        total_messages: 1,
+        messages: [{
+          id: 41,
+          role: 'user',
+          content: '记录这餐',
+          image_url: '["/api/v1/chat/uploads/meal.jpg"]',
+          meta: { client_turn_id: generatedTurnId },
+        }],
+      };
+    });
+    const onAccepted = jest.fn();
+    const { result } = renderHook(() => useChatEngine());
+    let accepted: boolean | undefined;
+
+    await act(async () => {
+      accepted = await result.current.sendMessage('记录这餐', [{
+        uri: 'file:///documents/chat-drafts/meal.jpeg',
+        base64: 'meal-photo',
+        type: 'jpeg',
+      }], { onAccepted } as any);
+    });
+
+    const turnId = mockStreamChat.mock.calls[0][6];
+    expect(mockGetAgentTurnStatus).toHaveBeenCalledWith(turnId);
+    expect(accepted).toBe(true);
+    expect(onAccepted).toHaveBeenCalledTimes(1);
+    expect(onAccepted).toHaveBeenCalledWith(true);
+    expect(result.current.messages.map(message => message.content).join('\n'))
+      .not.toContain('请重新提问');
+    expect(result.current.messages.find(message => message.role === 'user')?.imageUris)
+      .toEqual(['https://example.test/api/v1/chat/uploads/meal.jpg']);
+    expect(result.current.activeTurn).toMatchObject({
+      turnId,
+      phase: 'running',
+      conversationId: 777,
+      recoverable: true,
+    });
+  });
+
+  it('reconciles a clean SSE close before the first persistence event', async () => {
+    mockStreamChat.mockImplementation(streamEndsBeforeFirstPersistenceEvent);
+    mockGetAgentTurnStatus.mockResolvedValue({
+      clientTurnId: 'turn-placeholder',
+      status: 'running',
+      requestPersisted: true,
+      responsePersisted: false,
+      conversationId: 778,
+      retryable: false,
+    });
+    mockGetConversationMessages.mockImplementation(async () => {
+      const generatedTurnId = mockStreamChat.mock.calls[0][6];
+      return {
+        total_messages: 2,
+        messages: [{
+          id: 52,
+          role: 'assistant',
+          content: '尚未完成的半截回复',
+          meta: {
+            client_turn_id: generatedTurnId,
+            client_turn_finalized: false,
+          },
+        }],
+      };
+    });
+    const onAccepted = jest.fn();
+    const { result } = renderHook(() => useChatEngine());
+    let accepted: boolean | undefined;
+
+    await act(async () => {
+      accepted = await result.current.sendMessage('记录这餐', [{
+        uri: 'file:///documents/chat-drafts/meal-2.jpeg',
+        base64: 'meal-photo-2',
+        type: 'jpeg',
+      }], { onAccepted } as any);
+    });
+
+    expect(accepted).toBe(true);
+    expect(onAccepted).toHaveBeenCalledWith(true);
+    expect(mockGetAgentTurnStatus).toHaveBeenCalledTimes(1);
+    expect(result.current.activeTurn).toMatchObject({
+      phase: 'running',
+      conversationId: 778,
+      recoverable: true,
+    });
+  });
+
+  it('preserves an accepted request but surfaces a terminal non-retryable Run', async () => {
+    mockStreamChat.mockImplementation(streamEndsBeforeFirstPersistenceEvent);
+    mockGetAgentTurnStatus.mockResolvedValue({
+      clientTurnId: 'turn-placeholder',
+      status: 'reconciliation_required',
+      requestPersisted: true,
+      responsePersisted: false,
+      conversationId: 779,
+      retryable: false,
+      errorCode: 'write_uncertain',
+    });
+    mockGetConversationMessages.mockResolvedValue({
+      total_messages: 1,
+      messages: [],
+    });
+    const onAccepted = jest.fn();
+    const { result } = renderHook(() => useChatEngine());
+    let accepted: boolean | undefined;
+
+    await act(async () => {
+      accepted = await result.current.sendMessage('记录这餐', [{
+        uri: 'file:///documents/chat-drafts/meal-3.jpeg',
+        base64: 'meal-photo-3',
+        type: 'jpeg',
+      }], { onAccepted } as any);
+    });
+
+    expect(accepted).toBe(true);
+    expect(onAccepted).toHaveBeenCalledWith(true);
+    expect(result.current.activeTurn).toMatchObject({
+      phase: 'failed',
+      conversationId: 779,
+      errorCode: 'write_uncertain',
+      recoverable: false,
+    });
+    expect(result.current.messages.find(message => message.role === 'assistant')?.content)
+      .toBe('记录状态需要核对，请先查看现有记录。');
   });
 
   // ── P0-5 竞态守卫: 流式活跃时 focus-reload 不用服务端半截 partial 覆盖本地流 ──

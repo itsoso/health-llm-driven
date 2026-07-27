@@ -424,6 +424,24 @@ class AgentRuntimeCoordinator:
             raise AgentRuntimeError("run_not_found")
         return run
 
+    def get_run_by_client_turn(
+        self,
+        user_id: int,
+        client_turn_id: str,
+    ) -> AgentRun | None:
+        """Return an owner-scoped Run without exposing message content."""
+        normalized = _bounded(
+            client_turn_id,
+            field="client_turn_id",
+            limit=112,
+        )
+        if not normalized:
+            return None
+        return self.db.query(AgentRun).filter(
+            AgentRun.user_id == user_id,
+            AgentRun.client_turn_id == normalized,
+        ).first()
+
     def create_or_resume_run(
         self,
         *,
@@ -1908,10 +1926,7 @@ class AgentRuntimeCoordinator:
         return run, attempt
 
     def _find_client_turn(self, user_id: int, client_turn_id: str) -> AgentRun | None:
-        return self.db.query(AgentRun).filter(
-            AgentRun.user_id == user_id,
-            AgentRun.client_turn_id == client_turn_id,
-        ).first()
+        return self.get_run_by_client_turn(user_id, client_turn_id)
 
     def _active_conversation_run(
         self,

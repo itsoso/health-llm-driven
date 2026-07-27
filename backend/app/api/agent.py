@@ -13,7 +13,7 @@ import uuid
 from typing import Optional, List
 
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Path, Query, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func
@@ -39,6 +39,17 @@ logger = logging.getLogger(__name__)
 _BACKGROUND_AGENT_TASKS: set = set()
 _BACKGROUND_AGENT_TASKS_BY_RUN: dict[str, set[asyncio.Task]] = {}
 router = APIRouter()
+
+
+class AgentTurnStatusResponse(BaseModel):
+    client_turn_id: str
+    run_id: str | None = None
+    status: str
+    request_persisted: bool
+    response_persisted: bool
+    conversation_id: int | None = None
+    retryable: bool
+    error_code: str | None = None
 
 
 class _BoundedSSEBridge:
@@ -986,6 +997,73 @@ async def cancel_agent_runtime_run(
     if result.status == "cancellation_requested":
         _cancel_agent_runtime_task(run_id)
     return {"run_id": result.run_id, "status": result.status}
+
+
+@router.get(
+    "/turns/{client_turn_id}/status",
+    response_model=AgentTurnStatusResponse,
+)
+async def get_agent_turn_status(
+    response: Response,
+    client_turn_id: str = Path(min_length=1, max_length=112),
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """Reconcile an interrupted transport using content-free control metadata."""
+    from app.services.agent_conversation_service import AgentConversationService
+    from app.services.agent_runtime import AgentRuntimeCoordinator
+
+    response.headers["Cache-Control"] = "no-store"
+
+    runtime = AgentRuntimeCoordinator(db)
+    conversations = AgentConversationService(db)
+    run = runtime.get_run_by_client_turn(current_user.id, client_turn_id)
+    source = conversations.find_user_message_by_client_turn(
+        current_user.id,
+        client_turn_id,
+    )
+    assistant = conversations.find_assistant_message_by_client_turn(
+        current_user.id,
+        client_turn_id,
+    )
+    if run is None and source is None:
+        raise HTTPException(
+            status_code=404,
+            detail="回合不存在",
+            headers={"Cache-Control": "no-store"},
+        )
+
+    conversation_id = (
+        source.conversation_id
+        if source is not None
+        else run.conversation_id if run is not None else None
+    )
+    # A client-turn user row is claimed before private images finish uploading.
+    # Only Runtime binding happens after the executor emits request_persisted,
+    # so row existence alone must never acknowledge a photo turn.
+    request_persisted = bool(
+        run is not None and run.source_message_id is not None
+    )
+    response_persisted = bool(
+        assistant is not None
+        and (assistant.meta or {}).get("client_turn_finalized") is True
+    ) or bool(
+        run is not None and run.assistant_message_id is not None
+    )
+    return {
+        "client_turn_id": client_turn_id,
+        "run_id": run.run_id if run is not None else None,
+        "status": (
+            run.status
+            if run is not None
+            else "succeeded" if response_persisted else "running"
+        ),
+        "request_persisted": request_persisted,
+        "response_persisted": response_persisted,
+        "conversation_id": conversation_id,
+        "retryable": bool(run.retryable) if run is not None else False,
+        "error_code": run.error_code if run is not None else None,
+    }
 
 
 @router.get("/runs/{run_id}")

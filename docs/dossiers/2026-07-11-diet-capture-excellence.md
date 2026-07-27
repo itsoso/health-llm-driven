@@ -84,6 +84,7 @@
 - [x] T5.5 单图相册降级、照片清洗信任边界与空闲态 Capture FAB（OTA）
 - [x] T5.6 Agent Native Mobile capture deeplink：相机、相册、文字、语音确认后回小巴上下文（OTA）
 - [x] T5.7 营养成分表图片与用户实际食用重量本地融合，保证图片、营养、记录和回执单次闭环（backend deploy）
+- [x] T5.8 图片消息首个 SSE 确认前断流时，以 `client_turn_id` 核对 Runtime 持久化状态并恢复同一回合（backend deploy + OTA）
 - [ ] T6 模拟器视觉、真机微信/小红书、生产数据闭环验收
 - Agent Native 验收约束：每个新增 Mobile 饮食入口都必须证明三件事：Agent 可引用 pending draft 或 confirmed DietRecord；确认成功必须有 `diet_record_id` 回执；用户能在小巴对话里继续追问、修正或查看全天影响。
 - 并发检查：2026-07-11 `origin/main` 与当前干净集成 worktree 一致；原始用户工作区不纳入暂存。
@@ -103,6 +104,7 @@
 - T5.5：饮食 FAB 新增单图相册入口，相机与相册只在取图阶段分叉，后续共用 1568px/JPEG q0.7 预处理、识别、服务端草稿、SecureStore 恢复与人工确认。照片候选已通过 Backend 结构化食物清洗，Mobile 不再用把“片”视作药片的通用文字启发式二次拒绝“橙子片”等食物；文字、语音和外部草稿仍保留本地防护。Capture FAB 只在 `idle` 显示，选图、识别、待确认、修正和保存时隐藏，避免遮挡确认卡和并发取图。
 - T5.6：`/diet?capture=photo|library|text|voice&return_to=chat` 全部进入同一 quick draft 状态机；确认成功后统一把 `diet/quick_capture`、`diet_record_id` 和本餐结构化摘要推回小巴对话上下文。这样 Agent 对话可以继续回答“全天热量如何、下一餐怎么调、刚才那餐要不要修正”，Mobile 不再只有拍照入口能完成 Agent Native 闭环。已有草稿恢复或当前页面已有 quick draft 时不会再启动第二个 capture，避免从后台/重载回来重复弹相机、相册或输入框。
 - T5.7：包装营养成分表只允许视觉模型提取标签基准值（每 100g 或每份），用户输入的实际食用重量只在受信任的后端本地解析和换算，不把整段健康对话追加发送给视觉供应商。标签营养不再被通用食物表覆盖；缺少或存在多个重量时 fail closed 并明确要求补充，不得把标签基准量误写成实际摄入。恢复结构化识别错误分支依赖的餐食语境判断，并用完整 `run_stream` 回归锁定：同一回合只写一次，图片关联、饮食卡和写入回执使用同一 `DietRecord`，模型冗余的不完整写调用不能覆盖成功结果。
+- T5.8：iOS 在 App 切换、弱网或上传大图时可能先收到 XHR `onerror(status=200)` 或 SSE 正常关闭，首个 `request_persisted` 事件却尚未抵达设备；旧客户端把传输断开等同于业务拒绝，错误保留草稿并显示“发送失败”，用户重试后存在重复记录风险。Backend 新增 owner-scoped、无健康正文的回合状态查询，只返回 Run、持久化、会话和重试控制元数据；图片上传前创建的消息占位行不构成成功回执，只有 Runtime 绑定了 source message 才返回 `request_persisted=true`，部分 assistant checkpoint 也必须有 `client_turn_finalized=true` 才算最终回复。Mobile 在首个确认前断流时以原 `client_turn_id` 做最多约 1 秒的短暂核对；权威确认后清理草稿并从持久化历史恢复服务端图片和最终回复，失败、取消或待核对 Run 则映射为对应终态而不是继续显示“处理中”。无法取得权威状态时仍保持 fail closed，不会凭 HTTP 200 猜测成功。
 
 ## G3 · 测试闸
 
@@ -128,6 +130,7 @@
 - T5.6 RED/GREEN：先用 RED 证明 `capture=library&return_to=chat`、`capture=text&return_to=chat` 和 `capture=voice&return_to=chat` 均不会触发对应入口；再补最小 switch 分发。最终 `mobile/app/__tests__/dietCapture.test.tsx` 完整回归 `30 passed`，覆盖四种入口确认后均通过 `pushChatWithContext` 带 `diet/quick_capture` 上下文回到小巴。聊天入口 focused regression `4 passed`；`npx tsc --noEmit` 通过；Mobile lint `0 errors / 97 existing warnings`；Mobile 全量 Jest `234 suites / 1639 tests` 通过，仍保留仓库既有 open handle warning，不表述为已修复。
 - T5.7 RED/GREEN：先复现营养标签按 100g 返回后未结合“20 克”实际食用量、通用食物表覆盖标签值、错误分支调用缺失方法三类问题；最终食品识别/营养校准/Agent 图片写入 focused regression `59 passed`，饮食写入、图片事务、回执和恢复相关扩展回归 `264 passed`。完整流式用例验证 20g 坚果由 655 kcal/100g 换算为 131 kcal，生成且关联唯一记录和图片，缺少食用量时零写入并要求补充。
 - T5.7 真实模型回归（2026-07-27）：首次隔离 SQLite 因缺少 `llm_usage_logs` 被成本护栏 fail closed，未发生有效模型放行；初始化独立临时成本账本后重跑，`invariants 12/12`、`health_agent_core 50/50`、真实 `orchestrator 5/5` 通过，Orchestrator 平均分 `0.98`、无 regression，11 项轨迹契约全部通过。实际模型为 `MiniMax-M2.5`，原始 JSON 仅保存在本机 `/tmp/diet-photo-live-llm-eval-20260727.json`。
+- T5.8 RED/GREEN：先以 `网络请求失败 (status: 200)` 且首个 SSE 持久化事件未到达复现客户端误判，RED 证明状态核对从未调用；新增 Runtime 状态接口后，Backend owner isolation、无正文响应及“图片占位消息/部分回复不得提前确认” `3/3` 通过，Runtime API/Service 扩展回归 `65/65` 通过。Mobile 覆盖异常断流、clean close、服务端图片 URI 恢复、部分回复保持运行和不可重试终态映射，相关输入、图片草稿、聊天流和恢复回归 `164/164` 通过；TypeScript、OpenAPI 双端生成类型、目标 ESLint（0 error）与 Python Ruff 均通过。
 - T5.2 首次 CI run `29164922239` 中 type drift 在补齐 Frontend 生成类型后通过，但 Linux `a-b` 分片连续两次远超历史绿灯的 4 分 23 秒，并在 `test_agent_health_manage.py` 与 `test_agent_intervention_cycle_tool.py` 边界失去输出；该边界组合本机 `30/30` 通过，`c-d` 重跑也在 3 分 36 秒通过。判定为既有进程级顺序污染而非饮食断言回归，将 86 个 `a-b` 测试文件拆为非 Agent、`agent_[a-h]`、`agent_[i-z]` 三个互斥进程；文件覆盖校验为 `86 -> 86`、差集 0。
 - T5.2 CI run `29166225719` 验证上述三个新分片分别在 3 分 2 秒、2 分 15 秒和 1 分 24 秒通过；同轮旧 `t[f-z]+u` 分片在 69% 处进入 `test_twin_builder.py` 后冻结，并被 20 分钟上限终止，其他 16 个作业均通过。本机同命令 `392/392` 在 31.23 秒通过；据逐用例日志将其拆为 `t[f-v]`、`t[w-z]`、`u` 三个干净进程，原 24 个文件覆盖校验仍为 `24 -> 24`、差集 0。
 - T5.2 CI run `29166933157` 中 `t[f-v]`、`t[w-z]`、`u` 已分别在 1 分 44 秒、1 分 25 秒和 1 分 28 秒通过；唯一剩余的旧 `s` 大分片进入 `test_schedule_into_agenda.py` 后失去输出，其他 18 个作业均通过。本机同一 643 项命令也在该模块首个用例后停住，但该模块单跑 `8/8`、与前一模块配对 `26/26`、`s[c-k]` 分组 `55/55` 均通过，确认是更长前序造成的进程状态污染；将 58 个 `s` 文件拆为 `s[a-b]`、`s[c-k]`、`s[l-z]`，覆盖校验为 `58 -> 58`、差集 0。

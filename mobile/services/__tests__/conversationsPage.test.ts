@@ -8,6 +8,7 @@ jest.mock('../api', () => ({
 }));
 
 import {
+  getAgentTurnStatus,
   getConversationMessages,
   getConversations,
   getConversationsPage,
@@ -200,5 +201,58 @@ describe('getConversationMessages', () => {
     }) as any;
 
     await expect(getConversationMessages(7, { limit: 80 })).rejects.toThrow(/503/);
+  });
+});
+
+describe('getAgentTurnStatus', () => {
+  const originalFetch = global.fetch;
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+    jest.clearAllMocks();
+  });
+
+  it('maps content-free server control metadata for transport reconciliation', async () => {
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        client_turn_id: 'turn photo 1',
+        run_id: 'run-1',
+        status: 'running',
+        request_persisted: true,
+        response_persisted: false,
+        conversation_id: 77,
+        retryable: false,
+        error_code: null,
+      }),
+    });
+    global.fetch = fetchMock as any;
+
+    const status = await getAgentTurnStatus('turn photo 1');
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      'https://example.test/api/v1/agent/turns/turn%20photo%201/status',
+    );
+    expect(fetchMock.mock.calls[0][1]?.cache).toBe('no-store');
+    expect(status).toEqual({
+      clientTurnId: 'turn photo 1',
+      runId: 'run-1',
+      status: 'running',
+      requestPersisted: true,
+      responsePersisted: false,
+      conversationId: 77,
+      retryable: false,
+    });
+  });
+
+  it('returns null when the server has no owner-scoped turn', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 404,
+      json: async () => ({}),
+    }) as any;
+
+    await expect(getAgentTurnStatus('missing-turn')).resolves.toBeNull();
   });
 });

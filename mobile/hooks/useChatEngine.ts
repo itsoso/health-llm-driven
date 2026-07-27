@@ -3,7 +3,7 @@ import { AppState } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { streamChat, getConversations, getConversationMessages, deleteConversation, type ChatMessage, type LlmUsageProfile, type AgentPerfProfile, type MedicationBatchStreamDecision } from '../services/chat';
+import { streamChat, getConversations, getConversationMessages, getAgentTurnStatus, deleteConversation, type ChatMessage, type LlmUsageProfile, type AgentPerfProfile, type MedicationBatchStreamDecision } from '../services/chat';
 import { dispatchCard, renderServerCards } from '../components/chat/cards';
 import type { ChatCardActionDescriptor, ServerCardDescriptor } from '../components/chat/cards/types';
 import {
@@ -353,6 +353,7 @@ function assistantMessageForTurn(msgs: any[], turnId: string): any | undefined {
   return [...(msgs || [])].reverse().find((message: any) => (
     message?.role === 'assistant'
     && message?.meta?.client_turn_id === turnId
+    && message?.meta?.client_turn_finalized === true
     && typeof message.content === 'string'
     && message.content.trim().length > 0
   ));
@@ -494,6 +495,10 @@ const THINKING_PLACEHOLDER = '⏳ AI 正在思考中...';
 const QUEUED_TURN_PLACEHOLDER = '小巴处理中，已加入队列。';
 const STREAM_RECOVERY_NOTICE = '小巴还在处理，正在同步完整回答。';
 const STREAM_RECOVERY_SUFFIX = '\n\n[连接短暂中断，正在同步完整回答]';
+const STREAM_RECEIVED_CONTENT_SUFFIX = '\n\n[回复中断，已保留已接收内容]';
+// A persisted SSE request should be visible almost immediately. Keep this
+// window short so a real offline failure still returns control to the draft UI.
+const TURN_STATUS_RECONCILIATION_DELAYS_MS = [0, 250, 750] as const;
 const MAX_THINKING_STEPS = 8;
 // P0-5 竞态守卫: 本地 stream 活跃且未超过此窗口时, focus-reload / app-active-reload
 // 不得用服务端半截 partial 覆盖本地流式态。超过窗口 (慢流 / 卡死) 才放行服务端恢复,
@@ -701,6 +706,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
   const historyLoadRequestRef = useRef(0);
   const briefingInjected = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
+  const serverRecoveryTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
   useEffect(() => { activeTurnRef.current = activeTurn; }, [activeTurn]);
   useEffect(() => { messagesRef.current = messages; }, [messages]);
   useEffect(() => { isStreamingRef.current = isStreaming; }, [isStreaming]);
@@ -765,6 +771,10 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
   // 改为: 让 fetch promise 自然完成, 依靠 navigation focus 回来时 reloadCurrentFromServer
   // 把后端写入的最终消息拉回前端显示.
   useEffect(() => () => { /* no-op: 不在 unmount 时 abort */ }, []);
+  useEffect(() => () => {
+    serverRecoveryTimersRef.current.forEach(timer => clearTimeout(timer));
+    serverRecoveryTimersRef.current.clear();
+  }, []);
 
   const reconcileActiveTurnFromServer = useCallback((id: number, msgs: any[]) => {
     const current = activeTurnRef.current;
@@ -870,6 +880,21 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       if (requestGeneration !== conversationRequestGenerationRef.current) return false;
       const turnId = expectedTurnId || activeTurnRef.current.turnId;
       if (!turnId) return false;
+      const restored = restoreMessagesFromHistory(msgs, IMAGE_HOST, 'hist');
+      const persistedUser = restored.find(message => (
+        message.role === 'user' && message.sourceTurnId === turnId
+      ));
+      if (persistedUser?.imageUris?.length) {
+        setMessages(current => current.map(message => (
+          message.role === 'user' && message.sourceTurnId === turnId
+            ? {
+                ...message,
+                imageUris: persistedUser.imageUris,
+                createdAt: persistedUser.createdAt ?? message.createdAt,
+              }
+            : message
+        )));
+      }
       const assistantAnswer = assistantMessageForTurn(msgs, turnId);
       if (!assistantAnswer) return false;
 
@@ -878,7 +903,6 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       void rememberConversationId(id);
       historyBeforeMessageIdRef.current = oldest_message_id;
       setHasMoreHistory(has_more ?? total_messages > msgs.length);
-      const restored = restoreMessagesFromHistory(msgs, IMAGE_HOST, 'hist');
       setMessages(restored);
       reconcileActiveTurnFromServer(id, msgs);
       const completionStatus = (assistantAnswer as any)?.meta?.completion_status;
@@ -1297,14 +1321,162 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     const scheduleServerRecovery = (conversationToRecover: number) => {
       [1500, 4000, 9000].forEach((delayMs) => {
         const timer = setTimeout(() => {
+          serverRecoveryTimersRef.current.delete(timer);
           const current = activeTurnRef.current;
           if (current.turnId !== turnId || current.phase === 'completed') return;
           void recoverConversationFromServer(conversationToRecover, turnId).then((recovered) => {
             if (recovered) emitRecoveredTerminal(recovered.terminalPhase);
           });
         }, delayMs);
+        serverRecoveryTimersRef.current.add(timer);
         (timer as any)?.unref?.();
       });
+    };
+    const reconcileAcceptedTurnAfterTransportLoss = async (
+      receivedContentSuffix = STREAM_RECOVERY_SUFFIX,
+    ): Promise<boolean> => {
+      const acceptedBeforeReconciliation = (
+        acceptedByServer && typeof streamConversationId === 'number'
+      );
+      let conversationToRecover = acceptedBeforeReconciliation
+        ? streamConversationId
+        : undefined;
+      let reconciledStatus: Awaited<ReturnType<typeof getAgentTurnStatus>> = null;
+
+      if (conversationToRecover == null) {
+        for (const delayMs of TURN_STATUS_RECONCILIATION_DELAYS_MS) {
+          if (delayMs > 0) {
+            await new Promise<void>(resolve => setTimeout(resolve, delayMs));
+          }
+          try {
+            const status = await getAgentTurnStatus(turnId);
+            if (
+              status?.requestPersisted === true
+              && typeof status.conversationId === 'number'
+            ) {
+              conversationToRecover = status.conversationId;
+              reconciledStatus = status;
+              break;
+            }
+          } catch {
+            // The reconciliation request can share the same transient outage.
+            // Keep probing briefly; only authoritative persistence is accepted.
+          }
+        }
+      }
+      if (conversationToRecover == null) return false;
+
+      streamConversationId = conversationToRecover;
+      settleAcceptance(true);
+      await acknowledgeContinuityOnce();
+      dispatchAgentTurn({
+        type: 'accepted',
+        at: Date.now(),
+        conversationId: conversationToRecover,
+        label: '请求已保存，正在恢复连接…',
+      });
+      conversationIdRef.current = conversationToRecover;
+      setConversationId(conversationToRecover);
+      void rememberConversationId(conversationToRecover);
+
+      const recovered = await recoverConversationFromServer(
+        conversationToRecover,
+        turnId,
+      );
+      if (recovered) {
+        emitRecoveredTerminal(recovered.terminalPhase);
+        return true;
+      }
+
+      if (
+        reconciledStatus?.status === 'failed'
+        || reconciledStatus?.status === 'reconciliation_required'
+      ) {
+        const needsReconciliation = reconciledStatus.status === 'reconciliation_required';
+        const label = needsReconciliation
+          ? '记录状态需要核对，请先查看现有记录。'
+          : reconciledStatus.retryable
+            ? '本轮处理未完成，可以重试。'
+            : '本轮处理未完成，请先核对现有记录。';
+        dispatchAgentTurn({
+          type: 'fail',
+          at: Date.now(),
+          errorCode: reconciledStatus.errorCode || reconciledStatus.status,
+          label,
+          recoverable: reconciledStatus.retryable && !needsReconciliation,
+        });
+        emitAgentTerminal(
+          'failed',
+          reconciledStatus.errorCode || reconciledStatus.status,
+        );
+        setMessages(prev => prev.map(m => m.id === aId ? {
+          ...m,
+          streaming: false,
+          currentStatus: undefined,
+          completionStatus: 'error',
+          content: stripThinkingPlaceholder(m.content).trim() || label,
+        } : m));
+        return true;
+      }
+      if (reconciledStatus?.status === 'cancelled') {
+        const label = '本轮已取消，消息和图片已保存。';
+        dispatchAgentTurn({
+          type: 'interrupt',
+          at: Date.now(),
+          errorCode: reconciledStatus.errorCode || 'run_cancelled',
+          label,
+        });
+        emitAgentTerminal(
+          'interrupted',
+          reconciledStatus.errorCode || 'run_cancelled',
+        );
+        setMessages(prev => prev.map(m => m.id === aId ? {
+          ...m,
+          streaming: false,
+          currentStatus: undefined,
+          completionStatus: 'interrupted',
+          content: stripThinkingPlaceholder(m.content).trim() || label,
+        } : m));
+        return true;
+      }
+
+      keepPendingStreamForRecovery = true;
+      scheduleServerRecovery(conversationToRecover);
+      if (acceptedBeforeReconciliation) {
+        dispatchAgentTurn({
+          type: 'interrupt',
+          at: Date.now(),
+          errorCode: 'stream_transport_interrupted',
+          label: STREAM_RECOVERY_NOTICE,
+        });
+        emitAgentTerminal('interrupted', 'stream_transport_interrupted');
+      } else {
+        // Losing the transport before the first SSE acknowledgement does not
+        // mean the durable Run stopped. Keep it running after authoritative
+        // client-turn reconciliation instead of showing "上一轮未完成".
+        dispatchAgentTurn({
+          type: 'recover',
+          at: Date.now(),
+          serverStatus: 'running',
+          conversationId: conversationToRecover,
+          label: STREAM_RECOVERY_NOTICE,
+        });
+      }
+      setMessages(prev => prev.map(m => {
+        if (m.id !== aId) return m;
+        const currentContent = stripThinkingPlaceholder(m.content).trim();
+        return {
+          ...m,
+          currentStatus: undefined,
+          completionStatus: acceptedBeforeReconciliation
+            ? 'interrupted'
+            : undefined,
+          content: currentContent
+            ? `${currentContent}${receivedContentSuffix}`
+            : STREAM_RECOVERY_NOTICE,
+        };
+      }));
+      return true;
     };
 
     // Token 攒批: 快路由 (deepseek-v4-flash) 后每个 SSE chunk 到达快得多, 逐 chunk
@@ -1690,11 +1862,18 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
           } : m));
         }
       }
-      settleAcceptance(false);
       flushTokenBuffer();
       flushThinkingBuffer();
       if (!sawDone && !sawError) {
         removeStreamedTurnCards();
+        if (
+          await reconcileAcceptedTurnAfterTransportLoss(
+            STREAM_RECEIVED_CONTENT_SUFFIX,
+          )
+        ) {
+          return true;
+        }
+        settleAcceptance(false);
         dispatchAgentTurn({ type: 'interrupt', at: Date.now(), errorCode: 'stream_ended_without_done' });
         emitAgentTerminal('interrupted', 'stream_ended_without_done');
         setMessages(prev => prev.map(m => m.id === aId ? {
@@ -1706,6 +1885,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
             : '[回复中断，请重新提问]',
         } : m));
       }
+      if (sawError) settleAcceptance(false);
     } catch (err: any) {
       flushTokenBuffer();
       flushThinkingBuffer();
@@ -1721,31 +1901,9 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
           return true;
         }
       }
-      // iOS can report XHR onerror with status 200 when an accepted SSE stream is
-      // suspended in the background. The request is already durable at this point,
-      // so treat every post-accept transport interruption as recoverable instead of
-      // surfacing a false send failure or inviting a duplicate submission.
-      const isAcceptedTransportInterruption = acceptedByServer && !!streamConversationId;
-      if (isAcceptedTransportInterruption && streamConversationId) {
-        keepPendingStreamForRecovery = true;
-        scheduleServerRecovery(streamConversationId);
-        settleAcceptance(true);
-        dispatchAgentTurn({
-          type: 'interrupt',
-          at: Date.now(),
-          errorCode: isAbort ? 'app_backgrounded' : 'stream_transport_interrupted',
-          label: STREAM_RECOVERY_NOTICE,
-        });
-        setMessages(prev => prev.map(m => {
-          if (m.id !== aId) return m;
-          const currentContent = stripThinkingPlaceholder(m.content).trim();
-          return {
-            ...m,
-            currentStatus: undefined,
-            completionStatus: 'interrupted',
-            content: currentContent ? `${currentContent}${STREAM_RECOVERY_SUFFIX}` : STREAM_RECOVERY_NOTICE,
-          };
-        }));
+      if (
+        await reconcileAcceptedTurnAfterTransportLoss()
+      ) {
         return true;
       }
       settleAcceptance(false);
