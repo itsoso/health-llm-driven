@@ -4,8 +4,8 @@
 |---|---|
 | slug | `agent-text-diet-nutrition-integrity` |
 | 创建日期 | 2026-07-27 |
-| 当前阶段 | G5 部署健康 |
-| 状态 | verifying |
+| 当前阶段 | G6 上线验证 |
+| 状态 | complete |
 | 负责 | Codex |
 | 反馈环 | Backend pytest / backend deploy |
 
@@ -95,7 +95,7 @@ Agent 返回了 verified 饮食回执，但记录和饮食卡均为 0 kcal、0 g
 
 ## G3 · 测试
 
-**本地裁决：PASS；主干 CI 待最终提交后确认。**
+**裁决：PASS。**
 
 - 生产原句端到端回归已覆盖。模型首次漏工具时，确定性空营养写入被拒绝；
   第二轮补齐估算后只 dispatch 一次，客户端没有失败 `tool_result`。
@@ -121,6 +121,9 @@ Agent 返回了 verified 饮食回执，但记录和饮食卡均为 0 kcal、0 g
   `MiniMax-M2.5` 完成：不变量 12/12、核心健康用例 50/50、编排用例
   5/5、轨迹契约 11/11，平均编排得分 0.9，未发现回归。该回归未访问或
   改写生产健康数据。
+- 主干 CI `#3106` 对提交 `7290f59cba86` 完成 30/30 jobs，后端测试分片、
+  Runtime PostgreSQL、真实模型评测、Mobile typecheck、Frontend/Mac build、
+  type drift 均通过。
 
 ## G4 · 安全与隐私
 
@@ -137,8 +140,27 @@ Agent 返回了 verified 饮食回执，但记录和饮食卡均为 0 kcal、0 g
 
 ## G5 · 部署健康
 
-**当前：PENDING。**
+**裁决：PASS。**
+
+- 通过根目录 `./deploy.sh -b -y` 从干净 `main` 部署。
+- 部署前 PostgreSQL 备份成功，force-RLS 数据完整性检查通过，234 张表恢复
+  演练通过；站外加密归档的哈希和 HMAC 真实性验证通过。
+- 生产代码与远端均核验为 `7290f59cba864a1f2c67c0f9f6b4d8dcefd92957`。
+- 受控迁移无新增待执行项，服务重启后健康度为 60/60。
+- 公开健康接口返回 `healthy`，API、PostgreSQL、Redis、Celery 均为
+  `running/connected`。
+- 部署机访问 skills manifest 时出现 HTTP/2 stream transient，脚本按设计降级
+  为 warning；随后从生产服务器以 HTTP/1.1 完整解析 manifest v1.0，共 22 个
+  skills，确认不是服务内容缺失。
 
 ## G6 · 上线验证
 
-**当前：PENDING。**
+**裁决：PASS。**
+
+- 在生产代码上执行无数据库写入的合成验证：生产原句被解析为
+  `breakfast + 一个包子、一个茶叶蛋、一碗粥`，尾部计算指令未进入
+  `food_items`。
+- `agent_text` 的 0 kcal / 全零宏量营养 payload 被生产 validator 拒绝；
+  带完整 calories/protein/carbs/fat/fiber 的 payload 通过。
+- 验证未创建、修改或删除任何用户健康记录；历史错误记录 `#902` 保持原状，
+  等待用户明确授权后再决定是否修正。
