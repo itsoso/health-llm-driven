@@ -65,10 +65,13 @@ final class XiaobaAcceptanceUITests: XCTestCase {
         let passwordField = app.secureTextFields["密码输入框"]
         XCTAssertTrue(accountField.waitForExistence(timeout: 5), "Account field was not exposed")
         XCTAssertTrue(passwordField.waitForExistence(timeout: 5), "Password field was not exposed")
-        accountField.tap()
-        accountField.typeText(credentials.account)
-        passwordField.tap()
-        passwordField.typeText(credentials.password)
+        replaceFieldText(accountField, with: credentials.account)
+        XCTAssertEqual(
+            accountField.value as? String,
+            credentials.account,
+            "Review account field retained stale text"
+        )
+        replaceFieldText(passwordField, with: credentials.password)
 
         let loginButton = app.buttons["登录"]
         XCTAssertTrue(loginButton.waitForExistence(timeout: 3), "Login button was not exposed")
@@ -146,6 +149,16 @@ final class XiaobaAcceptanceUITests: XCTestCase {
         )
     }
 
+    private func replaceFieldText(_ field: XCUIElement, with replacement: String) {
+        let current = (field.value as? String) ?? ""
+        if !current.isEmpty {
+            selectAllText(field)
+        } else {
+            field.tap()
+        }
+        field.typeText(replacement)
+    }
+
     private func scrollToElement(
         _ element: XCUIElement,
         maxSwipes: Int = 8
@@ -157,6 +170,40 @@ final class XiaobaAcceptanceUITests: XCTestCase {
             app.swipeUp()
         }
         return element.exists && element.isHittable
+    }
+
+    private func logoutCurrentSessionIfNeeded() throws {
+        if loginSurfaceExists(timeout: 2) {
+            return
+        }
+        try requireAuthenticatedChat()
+
+        let more = app.buttons["更多会诊操作"]
+        XCTAssertTrue(more.waitForExistence(timeout: 10), "More actions button was not exposed")
+        more.tap()
+
+        let personalCenter = app.buttons["我 · 个人中心与设置"]
+        XCTAssertTrue(
+            personalCenter.waitForExistence(timeout: 5),
+            "Personal center entry was not exposed"
+        )
+        personalCenter.tap()
+
+        let logout = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label == %@", "退出登录"))
+            .firstMatch
+        XCTAssertTrue(scrollToElement(logout), "Logout entry was not exposed")
+        logout.tap()
+
+        let alert = app.alerts["退出登录"]
+        XCTAssertTrue(alert.waitForExistence(timeout: 5), "Logout confirmation was not exposed")
+        let confirm = alert.buttons["退出"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 3), "Logout confirmation action was not exposed")
+        confirm.tap()
+        XCTAssertTrue(
+            loginSurfaceExists(timeout: 20),
+            "Login surface did not appear after logout"
+        )
     }
 
     func testInstalledBuildLaunchesExpectedEntrySurface() throws {
@@ -195,6 +242,59 @@ final class XiaobaAcceptanceUITests: XCTestCase {
             )
             attachScreenshot("authenticated-cold-launch-\(coldLaunch)")
         }
+    }
+
+    func test01ReviewAccountCanLoginFromSignedOutState() throws {
+        guard reviewCredentials() != nil else {
+            throw XCTSkip(
+                "Set APP_STORE_REVIEW_DEMO_ACCOUNT and APP_STORE_REVIEW_DEMO_PASSWORD " +
+                    "to exercise signed-out login"
+            )
+        }
+
+        app.launch()
+        try logoutCurrentSessionIfNeeded()
+        try loginWithReviewAccountIfNeeded()
+        attachScreenshot("review-account-login-from-signed-out-state")
+
+        for coldLaunch in 1...2 {
+            app.terminate()
+            app.launch()
+            XCTAssertTrue(
+                app.wait(for: .runningForeground, timeout: 15),
+                "App did not foreground after signed-out login on cold launch \(coldLaunch)"
+            )
+            XCTAssertFalse(
+                loginSurfaceExists(timeout: 3),
+                "Login surface returned after signed-out login on cold launch \(coldLaunch)"
+            )
+            XCTAssertTrue(
+                chatSurfaceExists(timeout: 30),
+                "Review account Agent was unavailable after signed-out login on cold launch \(coldLaunch)"
+            )
+        }
+    }
+
+    func testConversationOpensAtLatestSeededMessage() throws {
+        app.launch()
+        try requireAuthenticatedChat()
+
+        let assistantSurface = app.descendants(matching: .any)
+            .matching(identifier: "assistant-message-surface")
+            .firstMatch
+        XCTAssertTrue(
+            assistantSurface.waitForExistence(timeout: 20),
+            "The seeded assistant message was not rendered"
+        )
+        XCTAssertTrue(
+            assistantSurface.isHittable,
+            "The conversation did not open at the latest assistant message"
+        )
+        XCTAssertTrue(
+            assistantSurface.label.contains("## 今天优先完成两件事"),
+            "The visible latest assistant message was not the deterministic review fixture"
+        )
+        attachScreenshot("conversation-opened-at-latest-seeded-markdown")
     }
 
     func testBriefingCanExpandAndCollapse() throws {

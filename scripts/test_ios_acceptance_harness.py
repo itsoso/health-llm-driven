@@ -89,3 +89,23 @@ def test_settings_acceptance_uses_accessible_buttons_and_scrolls_them_visible() 
     assert 'app.buttons["隐私政策"]' in source
     assert 'app.buttons["删除账号与数据"]' in source
     assert "scrollToElement(" in source
+
+
+def test_review_login_acceptance_exercises_a_real_signed_out_session() -> None:
+    source = UI_TEST_SOURCE.read_text(encoding="utf-8")
+
+    assert "logoutCurrentSessionIfNeeded(" in source
+    assert "replaceFieldText(accountField, with: credentials.account)" in source
+    assert "replaceFieldText(passwordField, with: credentials.password)" in source
+    assert 'label == %@", "退出登录"' in source
+    assert 'app.alerts["退出登录"]' in source
+    assert 'buttons["退出"]' in source
+    assert "test01ReviewAccountCanLoginFromSignedOutState" in source
+
+
+def test_latest_message_acceptance_checks_seeded_markdown_at_the_bottom() -> None:
+    source = UI_TEST_SOURCE.read_text(encoding="utf-8")
+
+    assert "testConversationOpensAtLatestSeededMessage" in source
+    assert '"assistant-message-surface"' in source
+    assert 'assistantSurface.label.contains("## 今天优先完成两件事")' in source
