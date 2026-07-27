@@ -173,6 +173,140 @@ def test_diet_goal_keeps_model_nutrition_when_food_text_is_equivalent():
     }
 
 
+def test_diet_goal_keeps_complete_estimate_after_analysis_suffix_is_removed():
+    goal = GoalSpec(
+        kind="simple_health_record",
+        domain="diet",
+        operation="create",
+        target_date="2026-07-26",
+        target_meal_types=("breakfast",),
+        target_record_type="diet",
+        target_values=(
+            ("meal_type", "breakfast"),
+            ("food_items", "一个包子、一个茶叶蛋、一碗粥"),
+        ),
+        requires_verification=True,
+    )
+    calls = [
+        _tool_call(
+            "estimated-breakfast",
+            {
+                "record_type": "diet",
+                "data": {
+                    "meal_type": "breakfast",
+                    "food_items": "一个包子，一个茶叶蛋，一碗粥",
+                    "calories": 520,
+                    "protein": 20,
+                    "carbs": 72,
+                    "fat": 17,
+                    "fiber": 4,
+                },
+            },
+        ),
+    ]
+
+    normalized = _normalize_goal_guarded_tool_calls(calls, goal)
+
+    assert json.loads(normalized[0]["function"]["arguments"]) == {
+        "record_type": "diet",
+        "data": {
+            "record_date": "2026-07-26",
+            "meal_type": "breakfast",
+            "food_items": "一个包子，一个茶叶蛋，一碗粥",
+            "calories": 520,
+            "protein": 20,
+            "carbs": 72,
+            "fat": 17,
+            "fiber": 4,
+            "source": "agent_text",
+        },
+    }
+
+
+def test_diet_goal_keeps_estimate_when_quantity_moves_after_food_name():
+    goal = GoalSpec(
+        kind="simple_health_record",
+        domain="diet",
+        operation="create",
+        target_date="2026-07-26",
+        target_meal_types=("breakfast",),
+        target_record_type="diet",
+        target_values=(
+            ("meal_type", "breakfast"),
+            ("food_items", "一个包子、一个茶叶蛋、一碗粥"),
+        ),
+        requires_verification=True,
+    )
+    calls = [
+        _tool_call(
+            "estimated-breakfast",
+            {
+                "record_type": "diet",
+                "data": {
+                    "meal_type": "breakfast",
+                    "food_items": "包子1个，茶叶蛋1个，粥1碗",
+                    "calories": 520,
+                    "protein": 20,
+                    "carbs": 72,
+                    "fat": 17,
+                    "fiber": 4,
+                },
+            },
+        ),
+    ]
+
+    normalized = _normalize_goal_guarded_tool_calls(calls, goal)
+    normalized_data = json.loads(
+        normalized[0]["function"]["arguments"]
+    )["data"]
+
+    assert normalized_data["calories"] == 520
+    assert normalized_data["protein"] == 20
+    assert normalized_data["food_items"] == "包子1个，茶叶蛋1个，粥1碗"
+
+
+def test_diet_goal_does_not_treat_lexicalized_dish_as_quantity_expression():
+    goal = GoalSpec(
+        kind="simple_health_record",
+        domain="diet",
+        operation="create",
+        target_date="2026-07-26",
+        target_meal_types=("dinner",),
+        target_record_type="diet",
+        target_values=(
+            ("meal_type", "dinner"),
+            ("food_items", "三杯鸡"),
+        ),
+        requires_verification=True,
+    )
+    calls = [
+        _tool_call(
+            "wrong-dish-estimate",
+            {
+                "record_type": "diet",
+                "data": {
+                    "meal_type": "dinner",
+                    "food_items": "鸡3杯",
+                    "calories": 900,
+                    "protein": 80,
+                    "carbs": 20,
+                    "fat": 50,
+                    "fiber": 1,
+                },
+            },
+        ),
+    ]
+
+    normalized = _normalize_goal_guarded_tool_calls(calls, goal)
+    normalized_data = json.loads(
+        normalized[0]["function"]["arguments"]
+    )["data"]
+
+    assert normalized_data["food_items"] == "三杯鸡"
+    assert "calories" not in normalized_data
+    assert "protein" not in normalized_data
+
+
 def test_diet_goal_builds_deterministic_write_when_model_omits_tool_call():
     goal = GoalSpec(
         kind="simple_health_record",

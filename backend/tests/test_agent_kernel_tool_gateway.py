@@ -374,7 +374,10 @@ async def test_execute_tool_allows_explicit_health_record_write(db, monkeypatch)
         None,
     )
 
-    assert calls == [{"record_type": "diet", "data": {"food_items": "牛肉面"}}]
+    assert calls == [{
+        "record_type": "diet",
+        "data": {"food_items": "牛肉面", "source": "agent_text"},
+    }]
     assert '"id": 1' in result
 
 
@@ -472,7 +475,10 @@ async def test_shadow_policy_observes_denied_write_without_blocking_dispatch(db,
         None,
     )
 
-    assert calls == [{"record_type": "diet", "data": {"food_items": "牛肉面"}}]
+    assert calls == [{
+        "record_type": "diet",
+        "data": {"food_items": "牛肉面", "source": "agent_text"},
+    }]
     assert executor._agent_kernel_event_bus is not None
     assert "agent.tool_blocked" in [event.name for event in executor._agent_kernel_event_bus.events]
 

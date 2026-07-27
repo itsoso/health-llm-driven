@@ -3,6 +3,7 @@ from datetime import date, datetime, timedelta
 
 import pytest
 
+import app.services.llm.tool_validator as tool_validator
 from app.services.llm.tool_validator import validate_health_record, validate_tool_call
 
 
@@ -103,6 +104,174 @@ class TestRequiredFields:
     def test_diet_with_food_items_ok(self):
         v = validate_health_record("diet", {"food_items": "牛肉面"})
         assert v["error"] is None
+
+    @pytest.mark.parametrize(
+        "nutrition",
+        (
+            {},
+            {"calories": 0, "protein": 0, "carbs": 0, "fat": 0},
+            {"calories": 520, "protein": 20, "carbs": 72},
+            {"calories": 520, "protein": 20, "carbs": 72, "fat": 17},
+        ),
+    )
+    def test_agent_text_diet_requires_complete_nutrition_estimate(self, nutrition):
+        v = validate_health_record(
+            "diet",
+            {
+                "food_items": "一个包子、一个茶叶蛋、一碗粥",
+                "source": "agent_text",
+                **nutrition,
+            },
+        )
+
+        assert v["error"] is not None
+        assert "营养" in v["error"]
+
+    def test_agent_text_diet_with_complete_nutrition_estimate_is_valid(self):
+        v = validate_health_record(
+            "diet",
+            {
+                "food_items": "一个包子、一个茶叶蛋、一碗粥",
+                "source": "agent_text",
+                "calories": 520,
+                "protein": 20,
+                "carbs": 72,
+                "fat": 17,
+                "fiber": 4,
+            },
+        )
+
+        assert v["error"] is None
+
+    def test_agent_text_diet_rejects_nonzero_calories_with_all_zero_macros(self):
+        v = validate_health_record(
+            "diet",
+            {
+                "food_items": "一个包子、一个茶叶蛋、一碗粥",
+                "source": "agent_text",
+                "calories": 520,
+                "protein": 0,
+                "carbs": 0,
+                "fat": 0,
+                "fiber": 0,
+            },
+        )
+
+        assert v["error"] is not None
+        assert v["error_code"] == "diet_nutrition_incomplete"
+
+    def test_agent_text_alcohol_diet_allows_zero_macros_with_alcohol_units(self):
+        v = validate_health_record(
+            "diet",
+            {
+                "food_items": "一杯威士忌",
+                "source": "agent_text",
+                "calories": 105,
+                "protein": 0,
+                "carbs": 0,
+                "fat": 0,
+                "fiber": 0,
+                "alcohol_units": 1.5,
+            },
+        )
+
+        assert v["error"] is None
+
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        (
+            ("calories", True),
+            ("protein", float("nan")),
+            ("carbs", float("inf")),
+            ("fat", float("-inf")),
+            ("fiber", False),
+        ),
+    )
+    def test_agent_text_diet_rejects_non_finite_or_boolean_nutrition(
+        self, field, value
+    ):
+        nutrition = {
+            "calories": 520,
+            "protein": 20,
+            "carbs": 72,
+            "fat": 17,
+            "fiber": 4,
+        }
+        nutrition[field] = value
+
+        v = validate_health_record(
+            "diet",
+            {
+                "food_items": "一个包子、一个茶叶蛋、一碗粥",
+                "source": "agent_text",
+                **nutrition,
+            },
+        )
+
+        assert v["error"] is not None
+        assert "营养" in v["error"]
+
+    def test_agent_attachment_diet_requires_complete_nutrition_estimate(self):
+        v = validate_tool_call(
+            "health_record",
+            {
+                "record_type": "diet",
+                "data": {
+                    "meal_type": "lunch",
+                    "food_items": "米饭和鸡肉",
+                    "source": "agent_attachment",
+                },
+            },
+        )
+
+        assert v["error"] is not None
+        assert v["error_code"] == "diet_nutrition_incomplete"
+
+    def test_health_record_validator_exception_fails_closed(self, monkeypatch):
+        def explode(*args, **kwargs):
+            raise RuntimeError("validator unavailable")
+
+        monkeypatch.setattr(tool_validator, "validate_health_record", explode)
+
+        v = validate_tool_call(
+            "health_record",
+            {
+                "record_type": "diet",
+                "data": {
+                    "food_items": "一个包子",
+                    "source": "agent_text",
+                },
+            },
+        )
+
+        assert v["error"] is not None
+        assert v["error_code"] == "tool_validation_unavailable"
+
+    def test_agent_diet_rejection_log_does_not_include_nutrition_value(
+        self, caplog
+    ):
+        with caplog.at_level("WARNING"):
+            v = validate_health_record(
+                "diet",
+                {
+                    "food_items": "一个包子",
+                    "source": "agent_text",
+                    "calories": 9876,
+                    "protein": 0,
+                    "carbs": 0,
+                    "fat": 0,
+                    "fiber": 0,
+                },
+            )
+
+        assert v["error"] is not None
+        nutrition_logs = [
+            record.getMessage()
+            for record in caplog.records
+            if "Agent diet 缺少完整营养估算" in record.getMessage()
+        ]
+        assert nutrition_logs
+        assert all("9876" not in message for message in nutrition_logs)
 
     def test_water_missing_amount_is_required(self):
         v = validate_health_record("water", {})
@@ -517,9 +686,9 @@ class TestManagePlanGuard:
         assert len(v["data"]["data"]["title"]) == 200
 
 
-class TestBypassSafe:
-    def test_validator_exception_does_not_propagate(self, monkeypatch):
-        """validator 自身崩 → 放行, 不让工具调用挂."""
+class TestValidatorFailurePolicy:
+    def test_validator_exception_is_returned_without_propagating(self, monkeypatch):
+        """validator 自身崩 → 不抛异常，也不执行未经校验的工具调用."""
         from app.services.llm import tool_validator as tv
 
         def boom(*a, **k):
@@ -527,7 +696,8 @@ class TestBypassSafe:
 
         monkeypatch.setitem(tv._TOOL_VALIDATORS, "health_query", boom)
         v = tv.validate_tool_call("health_query", {"dimension": "sleep"})
-        assert v["error"] is None
+        assert v["error"] is not None
+        assert v["error_code"] == "tool_validation_unavailable"
         assert v["warnings"] == []
 
 

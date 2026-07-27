@@ -74,6 +74,19 @@ DIET_TRAILING_WRITE_RE = re.compile(
     r"(?:记录|记下|记一下|保存|录入|加到饮食)(?:一下|下)?"
     r"(?:[\s，,。.!！；;：:]*)$"
 )
+DIET_TRAILING_ANALYSIS_RE = re.compile(
+    r"(?:[\s，,。.!！；;：:]*)"
+    r"(?:(?:不需要|不用|无需再?|不要|并|同时|请|帮我|给我|需要|帮忙)\s*)*"
+    r"(?:计算|估算|核算|分析|算算|算)(?:一下|下)?"
+    r"(?:(?:这|本)(?:餐|顿)(?:的)?|这些食物(?:的)?)?"
+    r"(?:总)?"
+    r"(?:热量|卡路里|营养成分|营养素|宏量营养素?|蛋白质|"
+    r"碳水(?:化合物)?|脂肪|膳食纤维)"
+    r"(?:(?:和|及|与|、|，|,|/)"
+    r"(?:热量|卡路里|营养成分|营养素|宏量营养素?|蛋白质|"
+    r"碳水(?:化合物)?|脂肪|膳食纤维))*"
+    r"(?:[\s，,。.!！；;：:]*)$"
+)
 OTHER_RECORD_SIGNALS = {
     "diet": tuple(signal for signals in MEAL_SIGNALS.values() for signal in signals),
     "weight": ("体重", "称重"),
@@ -349,6 +362,7 @@ def _format_diet_recalculation_prompt(goal: GoalSpec) -> str:
 
 def _format_simple_health_record_prompt(goal: GoalSpec) -> str:
     values = dict(goal.target_values)
+    diet_estimation = ""
     if goal.target_record_type == "water" and values.get("amount_ml"):
         payload = f"，amount={values['amount_ml']}ml"
     elif goal.target_record_type == "symptom" and values.get("description"):
@@ -358,12 +372,17 @@ def _format_simple_health_record_prompt(goal: GoalSpec) -> str:
             f"，meal_type={values.get('meal_type')}，"
             f"food_items={values['food_items']}"
         )
+        diet_estimation = (
+            "- 饮食估算: 根据上述食物和份量给出合理估算，写入时必须同时包含 "
+            "calories/protein/carbs/fat/fiber；不得以 0 或缺失营养值冒充完成。\n"
+        )
     else:
         payload = ""
     return (
         "## 本轮任务契约（必须完整执行）\n"
         f"- 目标: 只创建 1 条 {goal.target_record_type} 健康记录{payload}。\n"
         "- 执行: 必须调用 health_record，且只使用当前用户消息中的明确事实。\n"
+        f"{diet_estimation}"
         "- 禁止: 改写、删除其他记录，或仅用文字声称已经记录。\n"
         "- 完成标准: 收到与目标记录类型一致的 verified write receipt 后才能确认成功。"
     )
@@ -466,7 +485,8 @@ def _simple_diet_target(text: str) -> dict[str, str] | None:
         foods,
         count=1,
     )
-    foods = DIET_TRAILING_WRITE_RE.sub("", foods).strip(
+    foods = DIET_TRAILING_WRITE_RE.sub("", foods)
+    foods = DIET_TRAILING_ANALYSIS_RE.sub("", foods).strip(
         " \t\r\n，,。.!！；;：:"
     )
     if (

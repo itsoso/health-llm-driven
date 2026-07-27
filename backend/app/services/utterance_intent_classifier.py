@@ -252,7 +252,36 @@ DIET_TERMS = (
     "菜",
     "饭",
 )
-WATER_TERMS = ("水", "喝水", "饮水", "温水", "白水", "矿泉水")
+WATER_TERMS = ("喝水", "饮水", "补水")
+WATER_QUERY_TERMS = ("多少水", "水喝够", "喝够水", "喝水够")
+WATER_INTAKE_OBJECT_TERMS = ("杯水", "瓶水", "点水", "些水", "喝了水", "已喝水")
+WATER_NAMED_OBJECT_TERMS = ("温水", "白水", "矿泉水")
+WATER_OBJECT_BOUNDARY_CHARS = frozenset(
+    "了啦吧呢吗呀啊哦并和共用，。,.、；;！!？?"
+)
+WATER_OBJECT_FOLLOWUP_TERMS = (
+    "然后",
+    "准备",
+    "接着",
+    "之后",
+    "同时",
+    "并且",
+    "马上",
+    "现在",
+    "再",
+    "后",
+    "就",
+    "喝",
+)
+WATER_STATUS_TERMS = (
+    "水喝少",
+    "水喝得少",
+    "水喝多",
+    "水喝得多",
+    "水摄入少",
+    "水摄入多",
+)
+WATER_AMOUNT_UNITS = ("ml", "毫升", "升")
 MEDICATION_TERMS = ("药", "服药", "用药", "胃药", "药物", "胶囊", "片")
 SUPPLEMENT_TERMS = ("补剂", "维生素", "鱼油", "益生菌", "镁", "magnesium", "nac", "d3")
 METRIC_TERMS = (
@@ -565,6 +594,60 @@ def _has_any(text: str, phrases: tuple[str, ...]) -> bool:
     return any(phrase.lower() in text for phrase in phrases)
 
 
+def _has_bounded_water_marker(
+    text: str,
+    markers: tuple[str, ...],
+) -> bool:
+    """Match a complete water object, not an open-ended ``水*`` compound."""
+    for marker in markers:
+        start = text.find(marker)
+        while start >= 0:
+            after = text[start + len(marker):]
+            if (
+                not after
+                or after[0] in WATER_OBJECT_BOUNDARY_CHARS
+                or after[0].isdigit()
+                or after.startswith(WATER_OBJECT_FOLLOWUP_TERMS)
+            ):
+                return True
+            start = text.find(marker, start + len(marker))
+    return False
+
+
+def _has_water_signal(text: str) -> bool:
+    """Match water intake without treating 碳水/水饺 as hydration."""
+    if (
+        _has_any(text, WATER_TERMS)
+        or _has_any(text, WATER_QUERY_TERMS)
+        or _has_any(text, WATER_STATUS_TERMS)
+    ):
+        return True
+    if (
+        _has_any(text, ("喝", "饮"))
+        and (
+            _has_bounded_water_marker(text, WATER_INTAKE_OBJECT_TERMS)
+            or _has_bounded_water_marker(text, WATER_NAMED_OBJECT_TERMS)
+        )
+    ):
+        return True
+    if _has_explicit_write_command(text):
+        if (
+            _has_bounded_water_marker(text, WATER_INTAKE_OBJECT_TERMS)
+            or _has_bounded_water_marker(text, WATER_NAMED_OBJECT_TERMS)
+        ):
+            return True
+        if _has_bounded_water_marker(
+            text,
+            tuple(f"{unit}水" for unit in WATER_AMOUNT_UNITS),
+        ):
+            return True
+    return (
+        "水" in text
+        and _has_any(text, ("喝了", "已喝"))
+        and _has_any(text, WATER_AMOUNT_UNITS)
+    )
+
+
 def _has_question_signal(text: str) -> bool:
     return _has_any(text, QUESTION_SIGNALS)
 
@@ -728,7 +811,7 @@ def _infer_domain(text: str) -> str:
         return "aigc_media"
     if _has_any(text, REMINDER_TERMS):
         return "reminder"
-    if _has_any(text, WATER_TERMS):
+    if _has_water_signal(text):
         return "water"
     if _has_any(text, MEDICATION_TERMS):
         return "medication"

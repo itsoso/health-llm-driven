@@ -294,6 +294,7 @@ def test_simple_diet_goal_binds_explicit_meal_and_foods_from_current_turn():
     prompt = format_goal_contract_prompt(goal)
     assert "5个虾100克大黄鱼200克哈密瓜" in prompt
     assert "只创建 1 条 diet" in prompt
+    assert "calories/protein/carbs/fat/fiber" in prompt
 
 
 def test_simple_diet_goal_uses_user_owned_relative_date():
@@ -342,6 +343,33 @@ def test_simple_diet_goal_requires_food_details():
         ("记录早餐两个豆腐包子", "breakfast", "两个豆腐包子"),
         ("帮我记录晚餐：牛肉饭", "dinner", "牛肉饭"),
         ("午餐吃了牛肉面，帮我记录一下", "lunch", "牛肉面"),
+        (
+            "记录早餐，吃了一个包子、一个茶叶蛋、一碗粥，计算热量和营养成分。",
+            "breakfast",
+            "一个包子、一个茶叶蛋、一碗粥",
+        ),
+        (
+            "记录早餐吃了一个包子一个茶叶蛋一碗粥计算热量和营养成分",
+            "breakfast",
+            "一个包子一个茶叶蛋一碗粥",
+        ),
+        (
+            "记录午餐牛肉面，并帮我估算一下热量和蛋白质",
+            "lunch",
+            "牛肉面",
+        ),
+        (
+            "记录晚餐吃了沙拉，同时计算这餐的卡路里、蛋白质、碳水、脂肪和膳食纤维",
+            "dinner",
+            "沙拉",
+        ),
+        ("记录早餐包子需要计算热量", "breakfast", "包子"),
+        ("记录早餐包子帮忙估算热量", "breakfast", "包子"),
+        ("记录早餐包子算算热量", "breakfast", "包子"),
+        ("记录早餐包子不需要计算热量", "breakfast", "包子"),
+        ("记录早餐包子不用帮忙估算营养成分", "breakfast", "包子"),
+        ("记录早餐包子无需再分析宏量营养素", "breakfast", "包子"),
+        ("记录午餐低热量沙拉", "lunch", "低热量沙拉"),
         ("记录加餐 苹果一个", "snack", "苹果一个"),
     ),
 )

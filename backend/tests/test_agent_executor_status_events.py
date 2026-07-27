@@ -1293,7 +1293,18 @@ async def test_write_state_is_persisted_before_execution_and_verified_with_recei
                     "id": "write-1",
                     "function": {
                         "name": "health_record",
-                        "arguments": '{"record_type":"diet","data":{"food_items":"鸡胸肉"}}',
+                        "arguments": json.dumps({
+                            "record_type": "diet",
+                            "data": {
+                                "meal_type": "lunch",
+                                "food_items": "鸡胸肉",
+                                "calories": 165,
+                                "protein": 31,
+                                "carbs": 0,
+                                "fat": 3.6,
+                                "fiber": 0,
+                            },
+                        }, ensure_ascii=False),
                     },
                 }],
             }

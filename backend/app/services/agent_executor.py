@@ -2601,8 +2601,152 @@ class _SimpleRecordTerminal(RuntimeError):
 
 
 def _write_result_is_pre_dispatch_validation_error(result: Any) -> bool:
-    """Compatibility wrapper for callers that need the terminal rejection bit."""
-    return classify_write_execution(result).status == "rejected"
+    """Hide only argument/validation rejections the same model turn can repair."""
+    outcome = classify_write_execution(result)
+    if (
+        outcome.status == "rejected"
+        and outcome.dispatch_started is False
+        and outcome.error_code
+        in {
+            "diet_nutrition_incomplete",
+            "tool_arguments_invalid",
+            "tool_validation_failed",
+        }
+    ):
+        return True
+
+    # Compatibility for older adapters that still return prose instead of the
+    # structured local_write_rejection contract. Policy/capability denials are
+    # terminal and must remain visible; only argument gaps are recoverable in
+    # the same model turn.
+    if not isinstance(result, str):
+        return False
+    text = result.strip()
+    return (
+        text.startswith("Error:")
+        and not text.startswith("Error: API 返回 ")
+        and any(
+            marker in text
+            for marker in (
+                "参数解析失败",
+                "参数无效",
+                "必须提供",
+                "需要提供",
+                "缺少",
+            )
+        )
+    )
+
+
+def _pre_dispatch_validation_user_message(result: Any) -> str:
+    """Turn a recoverable local rejection into a safe terminal explanation."""
+    payload: Dict[str, Any] = {}
+    if isinstance(result, dict):
+        payload = result
+    elif isinstance(result, str) and result.strip().startswith("{"):
+        try:
+            parsed = json.loads(result)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            parsed = None
+        if isinstance(parsed, dict):
+            payload = parsed
+
+    message = str(payload.get("message") or "").strip()
+    guidance = str(payload.get("recovery_guidance") or "").strip()
+    error_code = str(payload.get("error_code") or "").strip()
+    if not message and error_code == "diet_nutrition_incomplete":
+        message = (
+            "饮食记录缺少完整营养估算，需要提供 calories (>0)、"
+            "protein、carbs、fat、fiber。"
+        )
+    if not message and isinstance(result, str):
+        message = result.strip().removeprefix("Error:").strip()
+    if not message:
+        message = "记录参数不完整。"
+
+    reply = f"这次没有写入：{message}"
+    if guidance and guidance not in message:
+        reply = f"{reply} {guidance}"
+    return reply
+
+
+_UNVERIFIED_WRITE_SUCCESS_CLAIMS = (
+    "已记录",
+    "已经记录",
+    "记录好了",
+    "记录成功",
+    "已保存",
+    "已经保存",
+    "保存好了",
+    "保存成功",
+    "已写入",
+    "写入成功",
+    "已更新",
+    "已经更新",
+    "更新好了",
+    "更新成功",
+    "已修改",
+    "修改成功",
+    "已删除",
+    "删除成功",
+    "已同步",
+    "同步成功",
+    "已创建",
+    "创建成功",
+    "操作已完成",
+)
+_UNVERIFIED_WRITE_CLAUSE_SPLIT_RE = re.compile(
+    r"(?:[，,。！？!?；;\n]|但是|但|不过|然而|并且|且|同时|另外|此外|然后)"
+)
+_UNVERIFIED_WRITE_NEGATION_TERMS = (
+    "尚未",
+    "还没有",
+    "还没",
+    "没有",
+    "未能",
+    "没能",
+    "无法",
+    "不能",
+    "不确定",
+    "未确认",
+)
+_UNVERIFIED_WRITE_POST_NEGATION_TERMS = (
+    "并不准确",
+    "并非事实",
+    "不准确",
+    "不代表",
+    "不等于",
+    "无法确认",
+    "不能确认",
+    "尚未确认",
+    "仍待确认",
+    "存疑",
+)
+
+
+def _claims_unverified_write_success(text: Any) -> bool:
+    """Detect a model success claim that cannot replace a verified receipt."""
+    normalized = "".join(str(text or "").split()).lower()
+    if not normalized:
+        return False
+    for clause in _UNVERIFIED_WRITE_CLAUSE_SPLIT_RE.split(normalized):
+        for claim in _UNVERIFIED_WRITE_SUCCESS_CLAIMS:
+            start = clause.find(claim)
+            while start >= 0:
+                prefix = clause[:start]
+                suffix = clause[start + len(claim):]
+                negated_before = any(
+                    term in prefix
+                    for term in _UNVERIFIED_WRITE_NEGATION_TERMS
+                )
+                negated_after = any(
+                    term in suffix[:16]
+                    for term in _UNVERIFIED_WRITE_POST_NEGATION_TERMS
+                )
+                if not negated_before and not negated_after:
+                    return True
+                start = clause.find(claim, start + len(claim))
+    return False
 
 
 _RESOURCE_TYPE_BY_RECORD_TYPE = {
@@ -2971,7 +3115,11 @@ def _runtime_write_operation_identity(
         record_date = str(data.get("record_date") or "").strip()
         meal_type = str(data.get("meal_type") or "").strip()
         food_items = str(data.get("food_items") or "")
-        normalized_food_items = re.sub(r"\s+", "", food_items).casefold()
+        normalized_food_items = re.sub(
+            r"[\s,，、;；/|]+",
+            "",
+            food_items,
+        ).casefold()
         meal_time = str(data.get("meal_time") or "").strip()
         # Scope is the normalized business slot, not model-generated food
         # wording. A missing date is filled from this Turn's reference time at
@@ -3036,6 +3184,172 @@ def _runtime_write_logical_operation_key(
     parsed_args: Dict[str, Any],
 ) -> Optional[str]:
     return _runtime_write_operation_identity(tool_name, parsed_args)[0]
+
+
+def _recoverable_write_operation_key(
+    tool_name: str,
+    parsed_args: Dict[str, Any],
+    *,
+    default_record_date: str | None = None,
+) -> str:
+    """Stable key for one logical write while the model repairs its arguments.
+
+    Exact argument fingerprints cannot correlate a rejected draft with a
+    corrected retry because the corrected fields necessarily change. Prefer a
+    durable target identity, then the narrow business scope, and finally a
+    record-type/action scope. This prevents an unrelated successful write from
+    clearing another operation's unresolved rejection.
+    """
+    from app.services.agent_runtime_identity import runtime_hmac_digest
+
+    target_key, scope_key, _kind, _discriminator = (
+        _runtime_write_operation_identity(
+            tool_name,
+            parsed_args,
+            default_record_date=default_record_date,
+        )
+    )
+    if target_key:
+        return target_key
+    if scope_key:
+        return scope_key
+
+    record_type = _normalize_fast_record_kind(
+        parsed_args.get("record_type")
+        or parsed_args.get("type")
+        or parsed_args.get("kind")
+        or ""
+    )
+    action = str(
+        parsed_args.get("operation")
+        or parsed_args.get("action")
+        or "create"
+    ).strip().lower()
+    raw_data = parsed_args.get("data")
+    data = dict(raw_data) if isinstance(raw_data, dict) else dict(parsed_args)
+    discriminator_fields = {
+        "blood_pressure": ("systolic", "diastolic"),
+        "bp": ("systolic", "diastolic"),
+        "exercise": ("exercise_type", "activity_type", "duration", "distance"),
+        "mood": ("mood", "score"),
+        "sleep": ("record_date", "date", "sleep_quality"),
+        "symptom": ("description", "symptom", "name", "title"),
+        "waist": ("waist", "value"),
+        "water": ("amount", "amount_ml", "ml"),
+        "weight": ("weight", "value"),
+    }.get(record_type, ())
+    discriminator = {
+        field: str(data[field]).strip().casefold()
+        for field in discriminator_fields
+        if data.get(field) not in (None, "", [])
+    }
+    if discriminator:
+        return "rejection-target:" + runtime_hmac_digest(
+            "recoverable-write-rejection-target-v1",
+            {
+                "tool": tool_name,
+                "record_type": record_type,
+                "action": action,
+                "discriminator": discriminator,
+            },
+        )
+    return _recoverable_write_scope_key(
+        tool_name,
+        parsed_args,
+    )
+
+
+def _recoverable_write_scope_key(
+    tool_name: str,
+    parsed_args: Dict[str, Any],
+) -> str:
+    """Return the stable coarse slot shared by a rejected draft and its repair."""
+    from app.services.agent_runtime_identity import runtime_hmac_digest
+
+    record_type = _normalize_fast_record_kind(
+        parsed_args.get("record_type")
+        or parsed_args.get("type")
+        or parsed_args.get("kind")
+        or ""
+    )
+    action = str(
+        parsed_args.get("operation")
+        or parsed_args.get("action")
+        or "create"
+    ).strip().lower()
+    return "rejection-scope:" + runtime_hmac_digest(
+        "recoverable-write-rejection-scope-v1",
+        {
+            "tool": tool_name,
+            "record_type": record_type,
+            "action": action,
+        },
+    )
+
+
+def _simple_goal_binds_recoverable_write(
+    goal: Optional[GoalSpec],
+    tool_name: str,
+    parsed_args: Dict[str, Any],
+) -> bool:
+    """Allow coarse repair matching only for one explicit server-owned target."""
+    if (
+        goal is None
+        or goal.kind != "simple_health_record"
+        or goal.operation != "create"
+        or tool_name != "health_record"
+    ):
+        return False
+    record_type = _normalize_fast_record_kind(
+        parsed_args.get("record_type")
+        or parsed_args.get("type")
+        or parsed_args.get("kind")
+        or ""
+    )
+    return bool(
+        record_type
+        and record_type == str(goal.target_record_type or "").strip().lower()
+    )
+
+
+def _summarize_recoverable_write_rejections(
+    pending: Mapping[str, tuple[str, str]],
+) -> tuple[Optional[str], Optional[str]]:
+    if not pending:
+        return None, None
+    unique_items = list(pending.values())
+    if len(unique_items) == 1:
+        return unique_items[0]
+
+    details = []
+    for index, (message, _code) in enumerate(unique_items, start=1):
+        detail = message.removeprefix("这次没有写入：").strip()
+        details.append(f"{index}. {detail}")
+    summary = (
+        f"这次有 {len(unique_items)} 项没有写入：\n"
+        + "\n".join(details)
+    )
+    summary_code = (
+        "diet_nutrition_incomplete"
+        if any(
+            code == "diet_nutrition_incomplete"
+            for _message, code in unique_items
+        )
+        else unique_items[-1][1]
+    )
+    return summary, summary_code
+
+
+def _write_rejection_with_receipt_context(
+    rejection: str,
+    write_receipts: Sequence[Mapping[str, Any]],
+) -> str:
+    if not write_receipts:
+        return rejection
+    return (
+        f"另有 {len(write_receipts)} 项记录已完成并取得回执。\n\n"
+        f"{rejection}"
+    )
 
 
 # 只读工具回合级去重(founder 2026-07-14「列出喝水记录」→ health_query 空转 7 次 70s 根因)。
@@ -5588,18 +5902,142 @@ def _merge_equivalent_diet_model_estimates(
         default_record_date=goal.target_date,
     )
 
-    def food_identity(value: Any) -> str:
+    quantity_number = r"(?:\d+(?:\.\d+)?|[一二两三四五六七八九十百半]+)"
+    quantity_unit = r"(?:毫升|ml|克|g|碗|杯|份|个|只|枚|颗|片|块|根|条)"
+    leading_quantity_re = re.compile(
+        rf"^(?P<number>{quantity_number})(?P<unit>{quantity_unit})"
+        r"(?P<food>.+)$",
+        re.IGNORECASE,
+    )
+    trailing_quantity_re = re.compile(
+        rf"^(?P<food>.+?)(?P<number>{quantity_number})"
+        rf"(?P<unit>{quantity_unit})$",
+        re.IGNORECASE,
+    )
+
+    def flat_food_identity(value: Any) -> str:
         return re.sub(
             r"[\s,，、。.!！;；:：]+",
             "",
             str(value or ""),
         ).casefold()
 
+    def normalized_quantity(value: str) -> str:
+        raw = value.casefold()
+        try:
+            return str(float(raw)).removesuffix(".0")
+        except ValueError:
+            pass
+        if raw == "半":
+            return "0.5"
+        digits = {
+            "一": 1,
+            "二": 2,
+            "两": 2,
+            "三": 3,
+            "四": 4,
+            "五": 5,
+            "六": 6,
+            "七": 7,
+            "八": 8,
+            "九": 9,
+        }
+        if raw == "十":
+            return "10"
+        if "十" in raw:
+            tens, ones = raw.split("十", 1)
+            value_int = digits.get(tens, 1) * 10 + digits.get(ones, 0)
+            return str(value_int)
+        if raw in digits:
+            return str(digits[raw])
+        return raw
+
+    def food_parts(value: Any) -> list[str]:
+        if isinstance(value, (list, tuple)):
+            return [
+                str(item).strip()
+                for item in value
+                if str(item).strip()
+            ]
+        raw = str(value or "").strip()
+        if not raw:
+            return []
+        parts = [
+            part.strip()
+            for part in re.split(r"[,，、;；/|]+", raw)
+            if part.strip()
+        ]
+        if len(parts) != 1:
+            return parts
+
+        # ASR and weak models often omit separators:
+        # "一个包子一个茶叶蛋一碗粥". Split only at explicit quantity-unit
+        # boundaries, so food names themselves remain authoritative.
+        marker_re = re.compile(
+            rf"(?={quantity_number}{quantity_unit})",
+            re.IGNORECASE,
+        )
+        starts = [match.start() for match in marker_re.finditer(raw)]
+        if len(starts) > 1 and starts[0] == 0:
+            return [
+                raw[start:end].strip()
+                for start, end in zip(starts, starts[1:] + [len(raw)])
+                if raw[start:end].strip()
+            ]
+        return parts
+
+    def canonical_food_identity(value: Any) -> tuple[str, ...]:
+        canonical: list[str] = []
+        unit_aliases = {"只": "个", "枚": "个", "颗": "个"}
+        lexicalized_quantity_dishes = {"三杯鸡", "一碗香"}
+        beverage_terms = (
+            "水",
+            "牛奶",
+            "奶",
+            "豆浆",
+            "咖啡",
+            "茶",
+            "果汁",
+            "酸奶",
+            "酒",
+            "饮料",
+        )
+        for raw_part in food_parts(value):
+            part = re.sub(r"[\s。.!！:：]+", "", raw_part).casefold()
+            if part in lexicalized_quantity_dishes:
+                canonical.append(part)
+                continue
+            match = leading_quantity_re.fullmatch(part)
+            if match is None:
+                match = trailing_quantity_re.fullmatch(part)
+            if match is None:
+                canonical.append(part)
+                continue
+            food = re.sub(
+                r"[\s。.!！:：]+",
+                "",
+                match.group("food"),
+            ).casefold()
+            unit = match.group("unit").casefold()
+            if unit == "杯" and not any(term in food for term in beverage_terms):
+                canonical.append(part)
+                continue
+            canonical.append(
+                f"{food}#{normalized_quantity(match.group('number'))}"
+                f"{unit_aliases.get(unit, unit)}"
+            )
+        return tuple(sorted(canonical))
+
+    food_matches = (
+        flat_food_identity(model_data.get("food_items"))
+        == flat_food_identity(authoritative_data.get("food_items"))
+        or canonical_food_identity(model_data.get("food_items"))
+        == canonical_food_identity(authoritative_data.get("food_items"))
+    )
     if (
         str(model_data.get("meal_type") or "").strip().lower()
         != str(authoritative_data.get("meal_type") or "").strip().lower()
-        or food_identity(model_data.get("food_items"))
-        != food_identity(authoritative_data.get("food_items"))
+        or not food_matches
     ):
         return authoritative_args
 
@@ -5745,6 +6183,51 @@ def _prepare_health_record_args_for_validation(
             if _iso:
                 data[_dk] = _iso
 
+    return args
+
+
+def _apply_server_health_record_provenance(
+    tool_name: str,
+    args: Any,
+    *,
+    execution_source: str,
+    has_attachment: bool,
+    diet_photo_auto_save: bool,
+    contextual_diet_recorded: bool,
+    user_message: str,
+) -> Any:
+    """Replace model-authored diet provenance with server-known turn provenance."""
+    if (
+        tool_name != "health_record"
+        or not isinstance(args, dict)
+        or _fast_record_kind(args) != "diet"
+    ):
+        return args
+
+    data = args.get("data")
+    if not isinstance(data, dict):
+        return args
+
+    if execution_source == "procedure_recipe_replay":
+        if data.get("source") == "agent_text":
+            data["source"] = "procedure_recipe"
+        return args
+
+    if execution_source != "structured_or_recovered":
+        return args
+
+    if contextual_diet_recorded:
+        # Contextual capture already persisted the authoritative meal. This
+        # redundant model call must reach _exec_health_record so it can replay
+        # that verified receipt instead of failing nutrition validation.
+        data["source"] = "contextual_diet_replay"
+    elif has_attachment or diet_photo_auto_save:
+        # Auto-save intent proves an attachment turn even on legacy clients
+        # that omitted the explicit has_attachment flag. If capture failed,
+        # the fallback still has to provide complete estimated nutrition.
+        data["source"] = "agent_attachment"
+    elif str(user_message or "").strip():
+        data["source"] = "agent_text"
     return args
 
 
@@ -7522,6 +8005,12 @@ class AgentExecutor:
                 {"role": "user", "content": message_with_time_context},
             ]
             lead_text = ""
+            pending_recoverable_write_rejections: dict[
+                str, tuple[str, str]
+            ] = {}
+            pending_recoverable_write_rejection_rounds: dict[str, int] = {}
+            last_recoverable_write_rejection: Optional[str] = None
+            last_recoverable_write_rejection_code: Optional[str] = None
             deterministic_diet_correction_fallback_attempted = False
             deterministic_simple_record_fallback_attempted = False
             deterministic_goal_lookup_attempted = False
@@ -7686,8 +8175,27 @@ class AgentExecutor:
                             ),
                             reason=postcondition.reason,
                         )
+                    terminal_completed = postcondition.satisfied
                     if postcondition.satisfied:
                         terminal_text = _simple_record_goal_completion_text(goal)
+                    elif last_recoverable_write_rejection:
+                        rejection_is_terminal = bool(
+                            last_recoverable_write_rejection_code
+                            == "diet_nutrition_incomplete"
+                            or _claims_unverified_write_success(content)
+                            or not content.strip()
+                        )
+                        if rejection_is_terminal:
+                            terminal_text = _write_rejection_with_receipt_context(
+                                last_recoverable_write_rejection,
+                                write_receipts,
+                            )
+                        else:
+                            terminal_text = _write_rejection_with_receipt_context(
+                                content,
+                                write_receipts,
+                            )
+                            terminal_completed = True
                     else:
                         terminal_text = (
                             "记录请求已执行，但没有取得与目标类型一致的可验证回执，"
@@ -7695,7 +8203,7 @@ class AgentExecutor:
                         )
                     raise _SimpleRecordTerminal(
                         terminal_text,
-                        satisfied=postcondition.satisfied,
+                        satisfied=terminal_completed,
                     )
                 if tool_calls:
                     tool_calls = self._normalize_query_only_health_manage_tool_calls(
@@ -7751,6 +8259,18 @@ class AgentExecutor:
                         )
                         write_fingerprint = (
                             _write_operation_fingerprint(fn, parsed_args)
+                            if write_attempted else None
+                        )
+                        recoverable_write_key = (
+                            _recoverable_write_operation_key(
+                                fn,
+                                parsed_args,
+                                default_record_date=(
+                                    self._agent_kernel_reference_now()
+                                    .date()
+                                    .isoformat()
+                                ),
+                            )
                             if write_attempted else None
                         )
                         replayed_write = bool(
@@ -7855,7 +8375,71 @@ class AgentExecutor:
                                     parsed_args=parsed_args,
                                     receipt=receipt,
                                 )
-                        yield {"event": "tool_result", "data": tool_event_data}
+                        transient_local_rejection = bool(
+                            write_attempted
+                            and _write_result_is_pre_dispatch_validation_error(result)
+                        )
+                        if transient_local_rejection:
+                            assert recoverable_write_key is not None
+                            pending_recoverable_write_rejections.pop(
+                                recoverable_write_key,
+                                None,
+                            )
+                            pending_recoverable_write_rejections[
+                                recoverable_write_key
+                            ] = (
+                                _pre_dispatch_validation_user_message(result),
+                                classify_write_execution(result).error_code,
+                            )
+                            pending_recoverable_write_rejection_rounds[
+                                recoverable_write_key
+                            ] = _round
+                        elif write_attempted and write_completed:
+                            assert recoverable_write_key is not None
+                            pending_recoverable_write_rejections.pop(
+                                recoverable_write_key,
+                                None,
+                            )
+                            pending_recoverable_write_rejection_rounds.pop(
+                                recoverable_write_key,
+                                None,
+                            )
+                            recoverable_scope_key = (
+                                _recoverable_write_scope_key(fn, parsed_args)
+                            )
+                            if (
+                                pending_recoverable_write_rejection_rounds.get(
+                                    recoverable_scope_key,
+                                    _round,
+                                )
+                                < _round
+                                and _simple_goal_binds_recoverable_write(
+                                    (
+                                        self._agent_kernel_snapshot.goal
+                                        if self._agent_kernel_snapshot
+                                        is not None
+                                        else None
+                                    ),
+                                    fn,
+                                    parsed_args,
+                                )
+                            ):
+                                pending_recoverable_write_rejections.pop(
+                                    recoverable_scope_key,
+                                    None,
+                                )
+                                pending_recoverable_write_rejection_rounds.pop(
+                                    recoverable_scope_key,
+                                    None,
+                                )
+                        (
+                            last_recoverable_write_rejection,
+                            last_recoverable_write_rejection_code,
+                        ) = _summarize_recoverable_write_rejections(
+                            pending_recoverable_write_rejections
+                        )
+                        if not transient_local_rejection:
+                            yield {"event": "tool_result", "data": tool_event_data}
                         if (
                             write_attempted
                             and checkpoint_status == "uncertain"
@@ -7868,6 +8452,29 @@ class AgentExecutor:
                 content = _strip_xml_tool_markers(content)
                 lead_text = content
                 break
+
+            if last_recoverable_write_rejection:
+                rejection_is_terminal = bool(
+                    last_recoverable_write_rejection_code
+                    == "diet_nutrition_incomplete"
+                    or _claims_unverified_write_success(lead_text)
+                    or not lead_text.strip()
+                )
+                terminal_text = (
+                    _write_rejection_with_receipt_context(
+                        last_recoverable_write_rejection,
+                        write_receipts,
+                    )
+                    if rejection_is_terminal
+                    else _write_rejection_with_receipt_context(
+                        lead_text,
+                        write_receipts,
+                    )
+                )
+                raise _SimpleRecordTerminal(
+                    terminal_text,
+                    satisfied=not rejection_is_terminal,
+                )
 
             data_ctx = _gathered_data_context(lead_messages)
 
@@ -8965,6 +9572,12 @@ class AgentExecutor:
         # 只读工具回合级去重(同名+同参已跑过 → 复用结果, 不重复真执行)。回合级 local, 自然重置。
         read_results_by_fingerprint: Dict[str, tuple[str, str]] = {}
         unverified_write_operations: Dict[str, str] = {}
+        pending_recoverable_write_rejections: dict[
+            str, tuple[str, str]
+        ] = {}
+        pending_recoverable_write_rejection_rounds: dict[str, int] = {}
+        last_recoverable_write_rejection: Optional[str] = None
+        last_recoverable_write_rejection_code: Optional[str] = None
         # Slice 3 配方候选: 本轮**成功完成**的 health_record 写步骤 (sanitize 掉
         # 一次性确认标志 + 日期模板化)。≥2 步时 done 附 save_recipe 描述符
         # (仅描述符, 移动端渲染"存为配方"入口; 存不存由用户点)。
@@ -9721,6 +10334,18 @@ class AgentExecutor:
                             )
                             if write_attempted else None
                         )
+                        recoverable_write_key = (
+                            _recoverable_write_operation_key(
+                                func_name,
+                                parsed_tool_args,
+                                default_record_date=(
+                                    self._agent_kernel_reference_now()
+                                    .date()
+                                    .isoformat()
+                                ),
+                            )
+                            if write_attempted else None
+                        )
                         replayed_write = bool(
                             write_fingerprint
                             and write_fingerprint in write_results_by_fingerprint
@@ -10004,6 +10629,78 @@ class AgentExecutor:
                                         )
                         record_card = None
                         quality_cards: list[dict] = []
+                        transient_local_rejection = bool(
+                            write_attempted
+                            and _write_result_is_pre_dispatch_validation_error(
+                                result_for_record_card
+                            )
+                        )
+                        if transient_local_rejection:
+                            assert recoverable_write_key is not None
+                            pending_recoverable_write_rejections.pop(
+                                recoverable_write_key,
+                                None,
+                            )
+                            pending_recoverable_write_rejections[
+                                recoverable_write_key
+                            ] = (
+                                _pre_dispatch_validation_user_message(
+                                    result_for_record_card
+                                ),
+                                classify_write_execution(
+                                    result_for_record_card
+                                ).error_code,
+                            )
+                            pending_recoverable_write_rejection_rounds[
+                                recoverable_write_key
+                            ] = round_idx
+                        elif write_attempted and write_completed:
+                            assert recoverable_write_key is not None
+                            pending_recoverable_write_rejections.pop(
+                                recoverable_write_key,
+                                None,
+                            )
+                            pending_recoverable_write_rejection_rounds.pop(
+                                recoverable_write_key,
+                                None,
+                            )
+                            recoverable_scope_key = (
+                                _recoverable_write_scope_key(
+                                    func_name,
+                                    parsed_tool_args,
+                                )
+                            )
+                            if (
+                                pending_recoverable_write_rejection_rounds.get(
+                                    recoverable_scope_key,
+                                    round_idx,
+                                )
+                                < round_idx
+                                and _simple_goal_binds_recoverable_write(
+                                    (
+                                        self._agent_kernel_snapshot.goal
+                                        if self._agent_kernel_snapshot
+                                        is not None
+                                        else None
+                                    ),
+                                    func_name,
+                                    parsed_tool_args,
+                                )
+                            ):
+                                pending_recoverable_write_rejections.pop(
+                                    recoverable_scope_key,
+                                    None,
+                                )
+                                pending_recoverable_write_rejection_rounds.pop(
+                                    recoverable_scope_key,
+                                    None,
+                                )
+                        (
+                            last_recoverable_write_rejection,
+                            last_recoverable_write_rejection_code,
+                        ) = _summarize_recoverable_write_rejections(
+                            pending_recoverable_write_rejections
+                        )
                         suppress_contextual_diet_replay_card = (
                             func_name == "health_record"
                             and bool(self._turn_contextual_diet_cards)
@@ -10012,6 +10709,7 @@ class AgentExecutor:
                         if (
                             func_name == "health_record"
                             and not replayed_write
+                            and not transient_local_rejection
                             and not suppress_contextual_diet_replay_card
                         ):
                             try:
@@ -10049,10 +10747,11 @@ class AgentExecutor:
                             except Exception:
                                 pass
 
-                        yield {
-                            "event": "tool_result",
-                            "data": tool_event_data,
-                        }
+                        if not transient_local_rejection:
+                            yield {
+                                "event": "tool_result",
+                                "data": tool_event_data,
+                            }
                         for quality_card in quality_cards:
                             before = len(streamed_cards)
                             streamed_cards = _merge_agent_card_descriptors(streamed_cards, [quality_card])
@@ -10171,7 +10870,11 @@ class AgentExecutor:
                         t in ("health_record", "health_manage") for t in _round_tool_names
                     )
                     _turn_had_verified_write = bool(write_receipts)
-                    if self._prefer_fast_record_model and _turn_had_verified_write:
+                    if (
+                        self._prefer_fast_record_model
+                        and _turn_had_verified_write
+                        and not last_recoverable_write_rejection
+                    ):
                         combined_post_record_quality = combine_post_record_quality_responses(post_record_qualities)
                         final_text = (
                             str(combined_post_record_quality.get("reply") or "").strip()
@@ -10222,6 +10925,29 @@ class AgentExecutor:
                     # 停住 loop(_force_no_tools_synthesis 在轮首最先判, 压过 keep_tools_after_synthesis_miss)。
                     if planned_reads_all_seen:
                         self._force_no_tools_synthesis = True
+
+                    if (
+                        round_idx == MAX_TOOL_ROUNDS - 1
+                        and last_recoverable_write_rejection
+                    ):
+                        final_finish_reason = "error"
+                        terminal_rejection = _write_rejection_with_receipt_context(
+                            last_recoverable_write_rejection,
+                            write_receipts,
+                        )
+                        for i in range(
+                            0,
+                            len(terminal_rejection),
+                            20,
+                        ):
+                            yield {
+                                "event": "token",
+                                "data": {
+                                    "content": terminal_rejection[i:i + 20]
+                                },
+                            }
+                        full_reply += terminal_rejection
+                        break
 
                     # 继续循环让模型处理 tool_result
                     continue
@@ -10376,7 +11102,27 @@ class AgentExecutor:
                         and not self._agent_kernel_tool_failure_tools
                         and not self._agent_kernel_capability_block_reasons
                     )
-                    if pure_pending_confirmation:
+                    if (
+                        last_recoverable_write_rejection
+                        and (
+                            last_recoverable_write_rejection_code
+                            == "diet_nutrition_incomplete"
+                            or _claims_unverified_write_success(final_text)
+                        )
+                    ):
+                        final_text = _write_rejection_with_receipt_context(
+                            last_recoverable_write_rejection,
+                            write_receipts,
+                        )
+                        final_finish_reason = "error"
+                        streamed_to_client = False
+                    elif last_recoverable_write_rejection and write_receipts:
+                        final_text = _write_rejection_with_receipt_context(
+                            final_text,
+                            write_receipts,
+                        )
+                        streamed_to_client = False
+                    elif pure_pending_confirmation:
                         pending_text = _pending_confirmation_reply_from_tool_results(
                             messages
                         )
@@ -10517,6 +11263,7 @@ class AgentExecutor:
             self._prefer_fast_record_model
             and not write_receipts
             and not self._agent_kernel_pending_confirmation_tools
+            and not last_recoverable_write_rejection
         )
         # 破坏性/同步意图从 fast-record 集排除后(留强模型),其 0-工具 缺口在此补上,
         # 与 record_intent_no_tool 加层不减层(不与之重叠:record 集已被上面判掉)。
@@ -14865,6 +15612,24 @@ class AgentExecutor:
             args,
             reference_now=self._agent_kernel_reference_now(),
         )
+        args = _apply_server_health_record_provenance(
+            tool_name,
+            args,
+            execution_source=source,
+            has_attachment=bool(
+                getattr(self, "_current_turn_has_attachment", False)
+            ),
+            diet_photo_auto_save=bool(
+                getattr(self, "_diet_photo_auto_save", False)
+            ),
+            contextual_diet_recorded=bool(
+                getattr(self, "_turn_contextual_diet_record_id", None)
+                is not None
+            ),
+            user_message=str(
+                getattr(self, "_current_turn_user_message", "") or ""
+            ),
+        )
         v = validate_tool_call(
             tool_name,
             args,
@@ -14874,7 +15639,7 @@ class AgentExecutor:
         )
         if v["error"]:
             return local_write_rejection(
-                "tool_validation_failed",
+                str(v.get("error_code") or "tool_validation_failed"),
                 message=str(v["error"]).removeprefix("Error:").strip(),
                 recovery_guidance="请修正参数后重新提交。",
             )

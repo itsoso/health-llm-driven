@@ -77,7 +77,13 @@ async def test_keeps_recent_date(db):
             args_raw=json.dumps({
                 "record_type": "diet",
                 "data": {
-                    "meal_type": "lunch", "food_items": "三明治",
+                    "meal_type": "lunch",
+                    "food_items": "三明治",
+                    "calories": 320,
+                    "protein": 15,
+                    "carbs": 38,
+                    "fat": 12,
+                    "fiber": 4,
                     "record_date": yesterday,
                 },
             }),

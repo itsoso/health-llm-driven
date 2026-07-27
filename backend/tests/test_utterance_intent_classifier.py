@@ -72,6 +72,61 @@ def test_compound_record_and_analysis_keeps_write_capability():
     assert intent.is_write is True
 
 
+def test_diet_nutrition_request_with_carbs_is_not_misrouted_to_water():
+    intent = classify_agent_utterance(
+        "记录晚餐吃了沙拉，同时计算这餐的热量、蛋白质、碳水、脂肪和膳食纤维"
+    )
+
+    assert intent.primary == "write"
+    assert intent.domain == "diet"
+    assert intent.operation == "create"
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "喝水300ml",
+        "喝了250ml水",
+        "记录饮水半升",
+        "喝了一杯水",
+        "记录一杯水",
+        "记录500ml水",
+        "记下两瓶水",
+        "今天水喝少了",
+        "喝了一杯水准备睡觉",
+        "记录一杯水然后吃饭",
+    ),
+)
+def test_explicit_water_intake_stays_in_water_domain(message):
+    intent = classify_agent_utterance(message)
+
+    assert intent.domain == "water"
+
+
+def test_water_character_inside_food_name_is_not_a_water_intent():
+    intent = classify_agent_utterance("记录午餐吃了十个水饺")
+
+    assert intent.domain == "diet"
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "记录早餐一杯水果茶",
+        "记录加餐一瓶水果汁",
+        "记录午餐一些水果沙拉",
+        "记录早餐吃了一些水晶虾饺",
+        "记录早餐吃了一些水煎包",
+        "记录早餐白水煮鸡蛋和小米粥",
+        "记录早餐温水煮蛋和一个包子",
+    ),
+)
+def test_water_container_substrings_inside_fruit_foods_are_not_hydration(message):
+    intent = classify_agent_utterance(message)
+
+    assert intent.domain == "diet"
+
+
 def test_analysis_using_record_as_evidence_does_not_become_a_write():
     intent = classify_agent_utterance(
         "从我的基因、生活习惯、睡眠、心率、HRV 记录出发，推断一下我胃溃疡的根因。"

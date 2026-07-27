@@ -11,7 +11,9 @@ from app.models.agent_conversation import AgentMessage
 from app.services.agent_executor import (
     INTERRUPTED_COMPLETION_NOTICE,
     AgentExecutor,
+    _claims_unverified_write_success,
     _completion_status_from_finish_reason,
+    _recoverable_write_operation_key,
     _write_checkpoint_status_after_dispatch,
     _write_result_is_pre_dispatch_validation_error,
     _write_tool_completed,
@@ -67,6 +69,94 @@ def test_completion_status_marks_error_finish_reason_as_error():
     assert _completion_status_from_finish_reason("error") == "error"
 
 
+@pytest.mark.parametrize(
+    "message",
+    (
+        "还没有保存成功，请补充时间。",
+        "无法确认已更新，请先核对现有记录。",
+        "不能确认是否已经记录。",
+        "无法确认这条记录是否已经保存。",
+        "“已保存”并不准确，请先核对。",
+    ),
+)
+def test_negated_write_status_is_not_treated_as_unverified_success(message):
+    assert _claims_unverified_write_success(message) is False
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "早餐已记录。",
+        "这条记录已经保存好了。",
+        "饮食数据更新成功。",
+    ),
+)
+def test_positive_write_status_is_treated_as_unverified_success(message):
+    assert _claims_unverified_write_success(message) is True
+
+
+def test_unrelated_earlier_negation_does_not_hide_unverified_success():
+    assert (
+        _claims_unverified_write_success("没有其他问题且早餐已记录。")
+        is True
+    )
+
+
+def test_diet_repair_key_ignores_equivalent_food_item_container_format():
+    from_string = _recoverable_write_operation_key(
+        "health_record",
+        {
+            "record_type": "diet",
+            "data": {
+                "meal_type": "breakfast",
+                "food_items": "一个包子、一个茶叶蛋、一碗粥",
+            },
+        },
+        default_record_date="2026-07-27",
+    )
+    from_list = _recoverable_write_operation_key(
+        "health_record",
+        {
+            "record_type": "diet",
+            "data": {
+                "meal_type": "breakfast",
+                "food_items": [
+                    {"name": "一个包子"},
+                    {"name": "一个茶叶蛋"},
+                    {"name": "一碗粥"},
+                ],
+                "calories": 520,
+                "protein": 20,
+                "carbs": 72,
+                "fat": 17,
+                "fiber": 4,
+            },
+        },
+        default_record_date="2026-07-27",
+    )
+
+    assert from_string == from_list
+
+
+def test_recoverable_key_distinguishes_same_type_symptom_targets():
+    headache = _recoverable_write_operation_key(
+        "health_record",
+        {
+            "record_type": "symptom",
+            "data": {"description": "头痛"},
+        },
+    )
+    cough = _recoverable_write_operation_key(
+        "health_record",
+        {
+            "record_type": "symptom",
+            "data": {"description": "咳嗽"},
+        },
+    )
+
+    assert headache != cough
+
+
 def test_local_write_validation_error_is_not_an_uncertain_dispatch():
     result = (
         "Error: sleep 记录必须提供 bedtime、wake_time、sleep_quality(1-5). "
@@ -82,6 +172,18 @@ def test_remote_write_error_remains_uncertain_after_dispatch():
 
     assert _write_result_is_pre_dispatch_validation_error(result) is False
     assert _write_checkpoint_status_after_dispatch(result, None) == "uncertain"
+
+
+@pytest.mark.parametrize(
+    "result",
+    (
+        "Error: 只读预生成回合不执行写入/变更操作",
+        "Error: 工具调用被策略拦截",
+        "Error: 已阻止自动写入",
+    ),
+)
+def test_terminal_legacy_policy_rejection_is_not_hidden_from_user(result):
+    assert _write_result_is_pre_dispatch_validation_error(result) is False
 
 
 @pytest.mark.parametrize("result", [
@@ -499,12 +601,87 @@ async def test_pre_dispatch_sleep_validation_returns_to_model_without_unverified
     done = next(event for event in events if event.get("event") == "done")
     assert done["data"]["completion_status"] == "complete"
     assert done["data"]["write_receipts"] == []
+    assert not any(
+        event.get("event") == "tool_result"
+        and event.get("data", {}).get("success") is False
+        for event in events
+    )
 
     user_message = db.query(AgentMessage).filter(
         AgentMessage.role == "user",
         AgentMessage.content == "已经睡了十个小时，睡眠非常好，估计有九十五分",
     ).one()
     assert user_message.meta["write_state"]["status"] == "rejected"
+
+
+@pytest.mark.asyncio
+async def test_pre_dispatch_validation_rejects_model_success_claim_without_receipt(
+    db, auth_user_and_headers, monkeypatch
+):
+    from app.services.agent_write_outcome import local_write_rejection
+
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    calls = 0
+
+    async def fake_call_llm(messages, tools):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return {
+                "content": "",
+                "finish_reason": "tool_calls",
+                "tool_calls": [{
+                    "id": "sleep-missing-times-success-claim",
+                    "function": {
+                        "name": "health_record",
+                        "arguments": json.dumps({
+                            "record_type": "sleep",
+                            "data": {"sleep_quality": 5},
+                        }),
+                    },
+                }],
+            }
+        return {
+            "content": "睡眠记录已经保存好了。",
+            "finish_reason": "stop",
+        }
+
+    async def fake_execute_tool(name, args, token):
+        assert name == "health_record"
+        return local_write_rejection(
+            "tool_validation_failed",
+            message="睡眠记录缺少 bedtime、wake_time。",
+        )
+
+    monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
+    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [])
+    monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
+    monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
+    monkeypatch.setattr(executor, "_execute_tool", fake_execute_tool)
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="记录昨晚睡眠质量很好",
+            user_auth_token="test-token",
+            client_turn_id="turn-sleep-validation-false-success",
+        )
+    ]
+
+    rendered = "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+    done = next(event for event in events if event.get("event") == "done")
+
+    assert "这次没有写入" in rendered
+    assert "缺少 bedtime、wake_time" in rendered
+    assert "已经保存好了" not in rendered
+    assert done["data"]["completion_status"] == "error"
+    assert done["data"]["write_receipts"] == []
 
 
 @pytest.mark.asyncio
@@ -2395,11 +2572,11 @@ async def test_agent_stream_falls_back_to_tool_result_when_model_synthesis_is_em
 
 @pytest.mark.asyncio
 async def test_agent_stream_saves_explicit_text_diet_when_model_omits_tool_call(
-    db, auth_user_and_headers
+    db, auth_user_and_headers, monkeypatch
 ):
     user, _headers = auth_user_and_headers
     executor = AgentExecutor(db)
-    executed = []
+    dispatched = []
     llm_calls = 0
 
     async def fake_call_llm(messages, tools):
@@ -2410,32 +2587,121 @@ async def test_agent_stream_saves_explicit_text_diet_when_model_omits_tool_call(
                 "content": "我需要你补充记录类型和值。",
                 "finish_reason": "stop",
             }
+        if llm_calls == 2:
+            return {
+                "content": "",
+                "finish_reason": "tool_calls",
+                "tool_calls": [{
+                    "id": "estimated-breakfast",
+                    "function": {
+                        "name": "health_record",
+                        "arguments": json.dumps({
+                            "record_type": "diet",
+                            "data": {
+                                "meal_type": "breakfast",
+                                "food_items": "一个包子、一个茶叶蛋、一碗粥",
+                                "calories": 520,
+                                "protein": 20,
+                                "carbs": 72,
+                                "fat": 17,
+                                "fiber": 4,
+                            },
+                        }, ensure_ascii=False),
+                    },
+                }],
+            }
         return {
-            "content": "我仍需要你补充记录类型和值。",
+            "content": "早餐已记录，并完成热量和营养估算。",
             "finish_reason": "stop",
         }
 
-    async def fake_execute_tool(tool_name, args_raw, user_token):
-        parsed = json.loads(args_raw)
-        executed.append((tool_name, parsed, user_token))
+    async def fake_dispatch(request, user_token):
+        dispatched.append((request.tool_name, request.arguments, user_token))
         return json.dumps(
             {
                 "id": 109,
-                "meal_type": parsed["data"]["meal_type"],
-                "food_items": parsed["data"]["food_items"],
+                "meal_type": request.arguments["data"]["meal_type"],
+                "food_items": request.arguments["data"]["food_items"],
             },
             ensure_ascii=False,
         )
 
-    executor._call_llm = fake_call_llm
-    executor._call_llm_stream = _stream_from(fake_call_llm)
-    executor._execute_tool = fake_execute_tool
+    monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
+    monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
+    monkeypatch.setattr(executor, "_dispatch_tool_request", fake_dispatch)
 
     events = [
         event
         async for event in executor.run_stream(
             user_id=user.id,
-            message="记录午餐5个虾100克大黄鱼200克哈密瓜",
+            message="记录早餐，吃了一个包子、一个茶叶蛋、一碗粥，计算热量和营养成分。",
+            user_auth_token="test-token",
+        )
+    ]
+    rendered = "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+    done = next(event for event in events if event.get("event") == "done")
+    expected_record_date = (
+        executor._agent_kernel_reference_now().date().isoformat()
+    )
+
+    assert dispatched == [(
+        "health_record",
+        {
+            "record_type": "diet",
+            "data": {
+                "record_date": expected_record_date,
+                "meal_type": "breakfast",
+                "food_items": "一个包子、一个茶叶蛋、一碗粥",
+                "source": "agent_text",
+                "calories": 520,
+                "protein": 20,
+                "carbs": 72,
+                "fat": 17,
+                "fiber": 4,
+            },
+        },
+        "test-token",
+    )]
+    assert "已记录早餐" in rendered
+    assert "补充记录类型和值" not in rendered
+    assert not any(
+        event.get("event") == "tool_result"
+        and event.get("data", {}).get("success") is False
+        for event in events
+    )
+    assert done["data"]["record_intent_no_tool"] is False
+    assert done["data"]["write_receipts"][0]["resource_type"] == "diet_record"
+
+
+@pytest.mark.asyncio
+async def test_agent_stream_reports_nutrition_rejection_instead_of_model_success_text(
+    db, auth_user_and_headers, monkeypatch
+):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+
+    async def fake_call_llm(messages, tools):
+        return {
+            "content": "早餐已经记录好了。",
+            "finish_reason": "stop",
+        }
+
+    async def fail_if_dispatched(request, user_token):
+        raise AssertionError("incomplete nutrition must be rejected before dispatch")
+
+    monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
+    monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
+    monkeypatch.setattr(executor, "_dispatch_tool_request", fail_if_dispatched)
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="记录早餐，一个包子、一个茶叶蛋、一碗粥，计算热量和营养成分。",
             user_auth_token="test-token",
         )
     ]
@@ -2446,27 +2712,617 @@ async def test_agent_stream_saves_explicit_text_diet_when_model_omits_tool_call(
     )
     done = next(event for event in events if event.get("event") == "done")
 
-    assert executed == [(
-        "health_record",
-        {
-            "record_type": "diet",
-            "data": {
-                "record_date": date.today().isoformat(),
-                "meal_type": "lunch",
-                "food_items": "5个虾100克大黄鱼200克哈密瓜",
-                "source": "agent_text",
-                "confirmed": True,
-            },
-            "confirmed": True,
-        },
-        "test-token",
-    )]
-    assert "已记录午餐" in rendered
+    assert "完整营养" in rendered
+    assert "calories" in rendered
+    assert "早餐已经记录好了" not in rendered
     assert "补充记录类型和值" not in rendered
-    assert done["data"]["record_intent_no_tool"] is False
-    assert done["data"]["write_receipts"][0]["resource_type"] == "diet_record"
-    assert done["data"]["write_receipts"][0]["resource_id"] == "109"
-    assert done["data"]["write_receipts"][0]["verified"] is True
+    assert done["data"]["completion_status"] == "error"
+    assert done["data"]["write_receipts"] == []
+
+
+@pytest.mark.asyncio
+async def test_agent_stream_reports_last_nutrition_error_when_all_rounds_reject(
+    db, auth_user_and_headers, monkeypatch
+):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    llm_calls = 0
+
+    async def fake_call_llm(messages, tools):
+        nonlocal llm_calls
+        llm_calls += 1
+        return {
+            "content": "",
+            "finish_reason": "tool_calls",
+            "tool_calls": [{
+                "id": f"incomplete-breakfast-{llm_calls}",
+                "function": {
+                    "name": "health_record",
+                    "arguments": json.dumps({
+                        "record_type": "diet",
+                        "data": {
+                            "meal_type": "breakfast",
+                            "food_items": "一个包子、一个茶叶蛋、一碗粥",
+                        },
+                    }, ensure_ascii=False),
+                },
+            }],
+        }
+
+    monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
+    monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="记录早餐，一个包子、一个茶叶蛋、一碗粥，计算热量和营养成分。",
+            user_auth_token="test-token",
+        )
+    ]
+    rendered = "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+    done = next(event for event in events if event.get("event") == "done")
+
+    assert "完整营养" in rendered
+    assert "calories" in rendered
+    assert "模型仍尝试继续调用工具" not in rendered
+    assert not any(
+        event.get("event") == "tool_result"
+        and event.get("data", {}).get("success") is False
+        for event in events
+    )
+    assert done["data"]["completion_status"] == "error"
+    assert done["data"]["write_receipts"] == []
+
+
+@pytest.mark.parametrize("rejected_first", (False, True))
+@pytest.mark.asyncio
+async def test_agent_stream_keeps_independent_rejection_when_another_write_succeeds(
+    db, auth_user_and_headers, monkeypatch, rejected_first
+):
+    from app.services.agent_write_outcome import local_write_rejection
+
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    llm_calls = 0
+    dispatched = []
+
+    water_call = {
+        "id": "water-write",
+        "function": {
+            "name": "health_record",
+            "arguments": json.dumps({
+                "record_type": "water",
+                "data": {"amount": 500},
+            }),
+        },
+    }
+    rejected_sleep_call = {
+        "id": "sleep-write",
+        "function": {
+            "name": "health_record",
+            "arguments": json.dumps({
+                "record_type": "sleep",
+                "data": {"sleep_quality": 5},
+            }),
+        },
+    }
+
+    async def fake_call_llm(messages, tools):
+        nonlocal llm_calls
+        llm_calls += 1
+        if llm_calls == 1:
+            calls = [rejected_sleep_call, water_call] if rejected_first else [
+                water_call,
+                rejected_sleep_call,
+            ]
+            return {
+                "content": "",
+                "finish_reason": "tool_calls",
+                "tool_calls": calls,
+            }
+        return {
+            "content": "两项记录都已经保存好了。",
+            "finish_reason": "stop",
+        }
+
+    async def fake_dispatch(request, user_token):
+        dispatched.append((request.tool_name, request.arguments, user_token))
+        if request.arguments["record_type"] == "sleep":
+            return local_write_rejection(
+                "tool_validation_failed",
+                message="睡眠记录缺少 bedtime、wake_time。",
+            )
+        return json.dumps({"id": 920, "amount": 500}, ensure_ascii=False)
+
+    monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
+    monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
+    monkeypatch.setattr(executor, "_dispatch_tool_request", fake_dispatch)
+    monkeypatch.setattr(
+        "app.services.agent_executor._normalize_goal_guarded_tool_calls",
+        lambda tool_calls, *args, **kwargs: tool_calls,
+    )
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="请完成两项健康记录。",
+            user_auth_token="test-token",
+        )
+    ]
+    rendered = "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+    done = next(event for event in events if event.get("event") == "done")
+
+    assert len(dispatched) == 2
+    assert "另有 1 项记录已完成并取得回执" in rendered
+    assert "缺少 bedtime、wake_time" in rendered
+    assert "两项记录都已经保存好了" not in rendered
+    assert done["data"]["completion_status"] == "error"
+    assert len(done["data"]["write_receipts"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_agent_stream_same_type_success_does_not_clear_other_rejection(
+    db, auth_user_and_headers, monkeypatch
+):
+    from app.services.agent_write_outcome import local_write_rejection
+
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    llm_calls = 0
+    dispatched_amounts = []
+
+    async def fake_call_llm(messages, tools):
+        nonlocal llm_calls
+        llm_calls += 1
+        if llm_calls == 1:
+            return {
+                "content": "",
+                "finish_reason": "tool_calls",
+                "tool_calls": [
+                    {
+                        "id": "water-300-rejected",
+                        "function": {
+                            "name": "health_record",
+                            "arguments": json.dumps({
+                                "record_type": "water",
+                                "data": {"amount": 300},
+                            }, ensure_ascii=False),
+                        },
+                    },
+                    {
+                        "id": "water-500-saved",
+                        "function": {
+                            "name": "health_record",
+                            "arguments": json.dumps({
+                                "record_type": "water",
+                                "data": {"amount": 500},
+                            }, ensure_ascii=False),
+                        },
+                    },
+                ],
+            }
+        return {
+            "content": "两笔饮水都已经记录。",
+            "finish_reason": "stop",
+        }
+
+    async def fake_dispatch(request, user_token):
+        amount = request.arguments["data"]["amount"]
+        dispatched_amounts.append(amount)
+        if amount == 300:
+            return local_write_rejection(
+                "tool_validation_failed",
+                message="300ml 饮水记录暂时无法保存。",
+            )
+        return json.dumps({"id": 922, "amount": amount}, ensure_ascii=False)
+
+    monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
+    monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
+    monkeypatch.setattr(executor, "_dispatch_tool_request", fake_dispatch)
+    monkeypatch.setattr(
+        "app.services.agent_executor._normalize_goal_guarded_tool_calls",
+        lambda tool_calls, *args, **kwargs: tool_calls,
+    )
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="请完成两项饮水记录。",
+            user_auth_token="test-token",
+        )
+    ]
+    rendered = "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+    done = next(event for event in events if event.get("event") == "done")
+
+    assert dispatched_amounts == [300, 500]
+    assert "300ml 饮水记录暂时无法保存" in rendered
+    assert "两笔饮水都已经记录" not in rendered
+    assert done["data"]["completion_status"] == "error"
+    assert len(done["data"]["write_receipts"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_agent_stream_repaired_missing_argument_clears_scope_rejection(
+    db, auth_user_and_headers, monkeypatch
+):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    llm_calls = 0
+    dispatched = []
+
+    async def fake_call_llm(messages, tools):
+        nonlocal llm_calls
+        llm_calls += 1
+        if llm_calls == 1:
+            amount = None
+        elif llm_calls == 2:
+            amount = 500
+        else:
+            return {
+                "content": "已记录饮水 500ml。",
+                "finish_reason": "stop",
+            }
+        return {
+            "content": "",
+            "finish_reason": "tool_calls",
+            "tool_calls": [{
+                "id": f"water-{llm_calls}",
+                "function": {
+                    "name": "health_record",
+                    "arguments": json.dumps({
+                        "record_type": "water",
+                        "data": (
+                            {} if amount is None else {"amount": amount}
+                        ),
+                    }),
+                },
+            }],
+        }
+
+    async def fake_dispatch(request, user_token):
+        dispatched.append(request.arguments)
+        return json.dumps({"id": 923, "amount": 500}, ensure_ascii=False)
+
+    monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
+    monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
+    monkeypatch.setattr(executor, "_dispatch_tool_request", fake_dispatch)
+    monkeypatch.setattr(
+        "app.services.agent_executor._normalize_goal_guarded_tool_calls",
+        lambda tool_calls, *args, **kwargs: tool_calls,
+    )
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="记录饮水 500ml。",
+            user_auth_token="test-token",
+        )
+    ]
+    rendered = "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+    done = next(event for event in events if event.get("event") == "done")
+
+    assert dispatched == [{
+        "record_type": "water",
+        "data": {"amount": 500},
+    }]
+    assert "这次没有写入" not in rendered
+    assert done["data"]["completion_status"] != "error"
+    assert len(done["data"]["write_receipts"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_agent_stream_same_round_success_does_not_clear_scope_rejection(
+    db, auth_user_and_headers, monkeypatch
+):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    llm_calls = 0
+
+    async def fake_call_llm(messages, tools):
+        nonlocal llm_calls
+        llm_calls += 1
+        if llm_calls == 1:
+            return {
+                "content": "",
+                "finish_reason": "tool_calls",
+                "tool_calls": [
+                    {
+                        "id": "water-missing",
+                        "function": {
+                            "name": "health_record",
+                            "arguments": json.dumps({
+                                "record_type": "water",
+                                "data": {},
+                            }),
+                        },
+                    },
+                    {
+                        "id": "water-saved",
+                        "function": {
+                            "name": "health_record",
+                            "arguments": json.dumps({
+                                "record_type": "water",
+                                "data": {"amount": 500},
+                            }),
+                        },
+                    },
+                ],
+            }
+        return {
+            "content": "两项记录都已保存。",
+            "finish_reason": "stop",
+        }
+
+    async def fake_dispatch(request, user_token):
+        return json.dumps({"id": 924, "amount": 500}, ensure_ascii=False)
+
+    monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
+    monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
+    monkeypatch.setattr(executor, "_dispatch_tool_request", fake_dispatch)
+    monkeypatch.setattr(
+        "app.services.agent_executor._normalize_goal_guarded_tool_calls",
+        lambda tool_calls, *args, **kwargs: tool_calls,
+    )
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="请完成两项饮水记录。",
+            user_auth_token="test-token",
+        )
+    ]
+    rendered = "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+    done = next(event for event in events if event.get("event") == "done")
+
+    assert "water 记录必须包含 ['amount']" in rendered
+    assert "两项记录都已保存" not in rendered
+    assert done["data"]["completion_status"] == "error"
+    assert len(done["data"]["write_receipts"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_agent_stream_later_unrelated_success_does_not_clear_scope_rejection(
+    db, auth_user_and_headers, monkeypatch
+):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    llm_calls = 0
+
+    async def fake_call_llm(messages, tools):
+        nonlocal llm_calls
+        llm_calls += 1
+        if llm_calls == 1:
+            data = {}
+        elif llm_calls == 2:
+            data = {"amount": 500}
+        else:
+            return {
+                "content": "所有健康记录都已保存。",
+                "finish_reason": "stop",
+            }
+        return {
+            "content": "",
+            "finish_reason": "tool_calls",
+            "tool_calls": [{
+                "id": f"water-{llm_calls}",
+                "function": {
+                    "name": "health_record",
+                    "arguments": json.dumps({
+                        "record_type": "water",
+                        "data": data,
+                    }),
+                },
+            }],
+        }
+
+    async def fake_dispatch(request, user_token):
+        return json.dumps({"id": 925, "amount": 500}, ensure_ascii=False)
+
+    monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
+    monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
+    monkeypatch.setattr(executor, "_dispatch_tool_request", fake_dispatch)
+    monkeypatch.setattr(
+        "app.services.agent_executor._normalize_goal_guarded_tool_calls",
+        lambda tool_calls, *args, **kwargs: tool_calls,
+    )
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="请记录两项不同的健康数据。",
+            user_auth_token="test-token",
+        )
+    ]
+    rendered = "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+    done = next(event for event in events if event.get("event") == "done")
+
+    assert "water 记录必须包含 ['amount']" in rendered
+    assert "所有健康记录都已保存" not in rendered
+    assert done["data"]["completion_status"] == "error"
+    assert len(done["data"]["write_receipts"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_agent_stream_reports_every_independent_rejection(
+    db, auth_user_and_headers, monkeypatch
+):
+    from app.services.agent_write_outcome import local_write_rejection
+
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    llm_calls = 0
+
+    async def fake_call_llm(messages, tools):
+        nonlocal llm_calls
+        llm_calls += 1
+        if llm_calls == 1:
+            return {
+                "content": "",
+                "finish_reason": "tool_calls",
+                "tool_calls": [
+                    {
+                        "id": "sleep-rejected",
+                        "function": {
+                            "name": "health_record",
+                            "arguments": json.dumps({
+                                "record_type": "sleep",
+                                "data": {"sleep_quality": 5},
+                            }),
+                        },
+                    },
+                    {
+                        "id": "water-rejected",
+                        "function": {
+                            "name": "health_record",
+                            "arguments": json.dumps({
+                                "record_type": "water",
+                                "data": {"amount": 300},
+                            }, ensure_ascii=False),
+                        },
+                    },
+                ],
+            }
+        return {
+            "content": "两项记录都已保存。",
+            "finish_reason": "stop",
+        }
+
+    async def reject_both(request, user_token):
+        if request.arguments["record_type"] == "sleep":
+            return local_write_rejection(
+                "tool_validation_failed",
+                message="睡眠记录缺少 bedtime、wake_time。",
+            )
+        return local_write_rejection(
+            "tool_validation_failed",
+            message="饮水记录暂时无法保存。",
+        )
+
+    monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
+    monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
+    monkeypatch.setattr(executor, "_dispatch_tool_request", reject_both)
+    monkeypatch.setattr(
+        "app.services.agent_executor._normalize_goal_guarded_tool_calls",
+        lambda tool_calls, *args, **kwargs: tool_calls,
+    )
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="请完成两项健康记录。",
+            user_auth_token="test-token",
+        )
+    ]
+    rendered = "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+    done = next(event for event in events if event.get("event") == "done")
+
+    assert "睡眠记录缺少 bedtime、wake_time" in rendered
+    assert "饮水记录暂时无法保存" in rendered
+    assert done["data"]["completion_status"] == "error"
+    assert done["data"]["write_receipts"] == []
+
+
+@pytest.mark.asyncio
+async def test_agent_stream_keeps_same_message_for_independent_rejections(
+    db, auth_user_and_headers, monkeypatch
+):
+    from app.services.agent_write_outcome import local_write_rejection
+
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    llm_calls = 0
+
+    async def fake_call_llm(messages, tools):
+        nonlocal llm_calls
+        llm_calls += 1
+        if llm_calls == 1:
+            return {
+                "content": "",
+                "finish_reason": "tool_calls",
+                "tool_calls": [
+                    {
+                        "id": f"water-{amount}",
+                        "function": {
+                            "name": "health_record",
+                            "arguments": json.dumps({
+                                "record_type": "water",
+                                "data": {"amount": amount},
+                            }),
+                        },
+                    }
+                    for amount in (300, 500)
+                ],
+            }
+        return {
+            "content": "两项记录都已保存。",
+            "finish_reason": "stop",
+        }
+
+    async def reject_both(request, user_token):
+        return local_write_rejection(
+            "tool_validation_failed",
+            message="饮水记录暂时无法保存。",
+        )
+
+    monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
+    monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
+    monkeypatch.setattr(executor, "_dispatch_tool_request", reject_both)
+    monkeypatch.setattr(
+        "app.services.agent_executor._normalize_goal_guarded_tool_calls",
+        lambda tool_calls, *args, **kwargs: tool_calls,
+    )
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="请完成两项饮水记录。",
+            user_auth_token="test-token",
+        )
+    ]
+    rendered = "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+
+    assert "这次有 2 项没有写入" in rendered
+    assert rendered.count("饮水记录暂时无法保存") == 2
 
 
 @pytest.mark.asyncio

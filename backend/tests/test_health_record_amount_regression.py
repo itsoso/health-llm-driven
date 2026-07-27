@@ -60,6 +60,10 @@ async def test_initial_meal_photo_turn_writes_without_a_second_confirmation(db):
                     "meal_type": "lunch",
                     "food_items": "米饭 1 碗",
                     "calories": 250,
+                    "protein": 6,
+                    "carbs": 55,
+                    "fat": 1,
+                    "fiber": 1,
                 },
             }),
             user_token=None,
@@ -67,6 +71,84 @@ async def test_initial_meal_photo_turn_writes_without_a_second_confirmation(db):
 
     assert "NEEDS_CONFIRMATION" not in str(result)
     post.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_meal_photo_auto_save_failure_cannot_write_incomplete_fallback(db):
+    """图片预写失败后，模型 fallback 仍必须提供完整营养，不能降级成空壳。"""
+    from app.services.agent_executor import AgentExecutor
+
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._current_turn_user_message = "记录这餐"
+    executor._current_turn_has_attachment = True
+    executor._diet_photo_auto_save = True
+    executor._turn_contextual_diet_record_id = None
+
+    with patch.object(executor, "_api_post", new=AsyncMock()) as post:
+        result = await executor._execute_tool(
+            tool_name="health_record",
+            args_raw=json.dumps({
+                "record_type": "diet",
+                "data": {
+                    "meal_type": "lunch",
+                    "food_items": "米饭和鸡肉",
+                    "source": "manual",
+                },
+            }),
+            user_token=None,
+        )
+
+    payload = json.loads(result)
+    assert payload["status"] == "rejected"
+    assert payload["error_code"] == "diet_nutrition_incomplete"
+    post.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_meal_photo_auto_save_success_replays_before_nutrition_validation(db):
+    """图片已经写入时，模型的冗余不完整调用应复用回执，不能误报校验失败。"""
+    from app.services.agent_executor import AgentExecutor
+
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._current_turn_user_message = "记录这餐"
+    executor._current_turn_has_attachment = True
+    executor._diet_photo_auto_save = True
+    executor._turn_contextual_diet_record_id = 123
+    replay = json.dumps({
+        "id": 123,
+        "record_id": 123,
+        "resource_type": "diet_record",
+        "operation_id": "contextual_meal_photo:123",
+        "status": "recorded",
+        "replayed": True,
+    })
+
+    with (
+        patch.object(
+            executor,
+            "_contextual_diet_replay_result",
+            return_value=replay,
+        ) as replay_result,
+        patch.object(executor, "_api_post", new=AsyncMock()) as post,
+    ):
+        result = await executor._execute_tool(
+            tool_name="health_record",
+            args_raw=json.dumps({
+                "record_type": "diet",
+                "data": {
+                    "meal_type": "lunch",
+                    "food_items": "米饭和鸡肉",
+                    "source": "agent_text",
+                },
+            }),
+            user_token=None,
+        )
+
+    assert json.loads(result)["record_id"] == 123
+    replay_result.assert_called_once_with()
+    post.assert_not_awaited()
 
 
 @pytest.mark.asyncio

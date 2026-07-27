@@ -25,6 +25,7 @@ LLM Tool Call 守门 — 所有 health_record / record_type=X 的参数过这一
 from __future__ import annotations
 
 import logging
+import math
 import re
 from datetime import datetime, date, timedelta, timezone
 from typing import Any, Dict, Optional
@@ -94,6 +95,7 @@ NUMERIC_RANGES: Dict[str, Dict[str, tuple]] = {
         "protein": (0, 500, None),
         "carbs": (0, 2000, None),
         "fat": (0, 500, None),
+        "fiber": (0, 500, None),
         "alcohol_units": (0, 50, None),
     },
     "exercise": {
@@ -127,6 +129,13 @@ def _validate_numeric(rtype: str, data: Dict[str, Any], warnings: list) -> None:
             if default is not None:
                 data[field] = default
             continue
+        if isinstance(v, bool):
+            msg = f"[tool_validator] {rtype}.{field}={v!r} 非数值, 移除"
+            warnings.append(msg)
+            logger.warning(msg)
+            _metric(rtype, field, "non_numeric", action="rejected")
+            data.pop(field, None)
+            continue
         try:
             num = float(v)
         except (TypeError, ValueError):
@@ -134,6 +143,13 @@ def _validate_numeric(rtype: str, data: Dict[str, Any], warnings: list) -> None:
             warnings.append(msg)
             logger.warning(msg)
             _metric(rtype, field, "non_numeric", action="rejected")
+            data.pop(field, None)
+            continue
+        if not math.isfinite(num):
+            msg = f"[tool_validator] {rtype}.{field}={v!r} 非有限数值, 移除"
+            warnings.append(msg)
+            logger.warning(msg)
+            _metric(rtype, field, "non_finite", action="rejected")
             data.pop(field, None)
             continue
         if num < low or num > high:
@@ -294,6 +310,76 @@ def _validate_required(
         return (f"Error: {rtype} 记录必须包含 {missing}. "
                 f"请补充后重新调用 health_record.")
     return None
+
+
+_AGENT_DIET_NUTRITION_SOURCES = {"agent_text", "agent_attachment"}
+_AGENT_DIET_NUTRITION_ERROR_CODE = "diet_nutrition_incomplete"
+
+
+def _validate_agent_text_diet_nutrition(
+    rtype: str,
+    data: Dict[str, Any],
+    warnings: list,
+) -> Optional[str]:
+    """Reject an Agent text meal that would be persisted as a zero-value shell."""
+    if (
+        rtype != "diet"
+        or data.get("source") not in _AGENT_DIET_NUTRITION_SOURCES
+    ):
+        return None
+
+    required = ("calories", "protein", "carbs", "fat", "fiber")
+    missing = [
+        field
+        for field in required
+        if field not in data or data.get(field) in (None, "")
+    ]
+    try:
+        calories = float(data.get("calories"))
+    except (TypeError, ValueError):
+        calories = 0.0
+
+    def _positive_number(field: str) -> bool:
+        try:
+            value = float(data.get(field))
+        except (TypeError, ValueError):
+            return False
+        return math.isfinite(value) and value > 0
+
+    has_macronutrients = any(
+        _positive_number(field)
+        for field in ("protein", "carbs", "fat")
+    )
+    has_alcohol_energy = _positive_number("alcohol_units")
+
+    if (
+        not missing
+        and calories > 0
+        and (has_macronutrients or has_alcohol_energy)
+    ):
+        return None
+
+    if missing:
+        reason = "missing_nutrition"
+    elif calories <= 0:
+        reason = "zero_calories"
+    else:
+        reason = "zero_macronutrients"
+    msg = (
+        "[tool_validator] Agent diet 缺少完整营养估算，"
+        f"missing={missing} calories_present={'calories' in data} "
+        f"has_macronutrients={has_macronutrients} "
+        f"has_alcohol_energy={has_alcohol_energy}"
+    )
+    warnings.append(msg)
+    logger.warning(msg)
+    _metric(rtype, "nutrition", reason, action="rejected")
+    return (
+        "Error: 饮食记录必须先根据食物和份量估算完整营养，"
+        "并提供 calories (>0)、protein、carbs、fat、fiber。"
+        "除明确酒精摄入外，protein、carbs、fat 至少一项必须大于 0。"
+        "请补齐估算后重新调用 health_record；不要写入 0 kcal 或空营养记录。"
+    )
 
 
 _TIME_ONLY_RE = re.compile(
@@ -469,6 +555,16 @@ def validate_health_record(
 
     # 7. 必填检查 (返回 error)
     error = _validate_required(rtype, data, warnings)
+    error_code = None
+    if error is None:
+        nutrition_error = _validate_agent_text_diet_nutrition(
+            rtype,
+            data,
+            warnings,
+        )
+        if nutrition_error is not None:
+            error = nutrition_error
+            error_code = _AGENT_DIET_NUTRITION_ERROR_CODE
 
     if warnings:
         logger.info(f"[tool_validator] {rtype} 守门触发 {len(warnings)} 条")
@@ -476,6 +572,7 @@ def validate_health_record(
         "data": data,
         "warnings": warnings,
         "error": error,
+        "error_code": error_code,
     }
 
 
@@ -799,8 +896,8 @@ def validate_tool_call(
     """
     所有 LLM tool_call 的统一守门入口.
 
-    bypass-safe: 任何内部异常都 fall through 为"无 warning 无 error 放行",
-    保证 validator 自身崩了也不会让工具调用挂掉 (仿 agents/audit.py 样板).
+    fail-closed: 已注册工具的 validator 内部异常会显式拒绝本次调用，
+    避免未经校验的健康写入或查询继续执行。
 
     返回: {
         'data': 修正后的 args (同一对象, in-place),
@@ -827,7 +924,12 @@ def validate_tool_call(
                 user_id=user_id,
                 reference_now=reference_now,
             )
-            return {"data": args, "warnings": v["warnings"], "error": v["error"]}
+            return {
+                "data": args,
+                "warnings": v["warnings"],
+                "error": v["error"],
+                "error_code": v.get("error_code"),
+            }
 
         validator = _TOOL_VALIDATORS.get(tool_name)
         if validator is None:
@@ -837,9 +939,25 @@ def validate_tool_call(
         error = validator(args, warnings, db, user_id)
         if warnings:
             logger.info(f"[tool_validator] {tool_name} 守门触发 {len(warnings)} 条")
-        return {"data": args, "warnings": warnings, "error": error}
+        return {
+            "data": args,
+            "warnings": warnings,
+            "error": error,
+            "error_code": None,
+        }
 
     except Exception as e:
-        # bypass-safe: validator 自身崩 → 放行, 绝不阻塞工具调用
-        logger.exception(f"[tool_validator] {tool_name} validator 自身异常 (跳过): {e}")
-        return {"data": args, "warnings": [], "error": None}
+        logger.exception(
+            "[tool_validator] %s validator 自身异常，本次调用已阻止: %s",
+            tool_name,
+            type(e).__name__,
+        )
+        return {
+            "data": args,
+            "warnings": [],
+            "error": (
+                "Error: 工具参数校验暂时不可用，本次操作未执行。"
+                "请稍后重试。"
+            ),
+            "error_code": "tool_validation_unavailable",
+        }
