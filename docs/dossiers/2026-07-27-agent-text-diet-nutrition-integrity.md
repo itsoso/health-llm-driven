@@ -158,13 +158,15 @@ Agent 返回了 verified 饮食回执，但记录和饮食卡均为 0 kcal、0 g
 - 通过根目录 `./deploy.sh -b -y` 从干净 `main` 部署。
 - 部署前 PostgreSQL 备份成功，force-RLS 数据完整性检查通过，234 张表恢复
   演练通过；站外加密归档的哈希和 HMAC 真实性验证通过。
-- 生产代码与远端均核验为 `7290f59cba864a1f2c67c0f9f6b4d8dcefd92957`。
+- 本次 Runtime 修复提交与生产代码均核验为
+  `c47adb7822457427a64c2bbe3aacd544422f848d`。
 - 受控迁移无新增待执行项，服务重启后健康度为 60/60。
 - 公开健康接口返回 `healthy`，API、PostgreSQL、Redis、Celery 均为
   `running/connected`。
 - 部署机访问 skills manifest 时出现 HTTP/2 stream transient，脚本按设计降级
-  为 warning；随后从生产服务器以 HTTP/1.1 完整解析 manifest v1.0，共 22 个
-  skills，确认不是服务内容缺失。
+  为 warning；公网 HTTP/1.1 复核已返回 manifest v1.0 正文，但大响应传输仍被
+  上游提前关闭。该独立可用性问题不影响本次 Agent Runtime 写入状态修复，
+  需要在 skills manifest 专项中继续处理响应体/代理传输。
 
 ## G6 · 上线验证
 
