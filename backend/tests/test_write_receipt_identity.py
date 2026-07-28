@@ -106,6 +106,30 @@ def test_nested_explicit_unverified_result_never_builds_verified_receipt():
     assert _write_tool_completed("health_record", {"record_type": "diet"}, shape) is False
 
 
+@pytest.mark.parametrize(
+    "failure_payload",
+    [
+        {"status": "failed"},
+        {"ok": False},
+        {"error": "persist failed"},
+    ],
+)
+def test_nested_failure_state_never_builds_verified_receipt(failure_payload):
+    shape = json.dumps(
+        {
+            "status": "recorded",
+            "resource_type": "diet_record",
+            "result": {
+                "record_id": 831,
+                **failure_payload,
+            },
+        }
+    )
+
+    assert _write_receipt_from_tool_result("health_record", "diet", shape) is None
+    assert _write_tool_completed("health_record", {"record_type": "diet"}, shape) is False
+
+
 def test_conflicting_resource_id_aliases_never_build_receipt():
     shape = json.dumps(
         {
@@ -243,6 +267,27 @@ def test_dated_write_receipt_preserves_the_persisted_record_date():
 
     assert receipt is not None
     assert receipt["date"] == "2026-07-17"
+
+
+def test_nested_persisted_date_conflict_never_builds_receipt():
+    shape = json.dumps(
+        {
+            "status": "recorded",
+            "resource_type": "water_record",
+            "result": {
+                "resource_id": 833,
+                "record_date": "2099-01-01",
+            },
+        }
+    )
+
+    receipt = _write_receipt_from_tool_result(
+        "health_record",
+        {"record_type": "water", "data": {"date": "2026-07-17"}},
+        shape,
+    )
+
+    assert receipt is None
 
 
 def test_aigc_draft_pending_confirmation_is_a_verified_persisted_write():

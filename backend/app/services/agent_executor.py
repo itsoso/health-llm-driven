@@ -2776,6 +2776,17 @@ _FIXED_RECEIPT_RESOURCE_TYPE_BY_TOOL = {
 }
 
 
+def _result_payload_sources(payload: Dict[str, Any]) -> list[Dict[str, Any]]:
+    """Return every supported producer envelope used to verify a write result."""
+    sources = [payload]
+    sources.extend(
+        nested
+        for container_name in ("resource", "record", "data", "result")
+        if isinstance((nested := payload.get(container_name)), dict)
+    )
+    return sources
+
+
 def _write_result_payload(
     result: Any,
     *,
@@ -2796,25 +2807,26 @@ def _write_result_payload(
         return None
     if not isinstance(payload, dict):
         return None
-    verification_sources = [payload]
-    verification_sources.extend(
-        nested
-        for container_name in ("resource", "record", "data", "result")
-        if isinstance((nested := payload.get(container_name)), dict)
-    )
+    verification_sources = _result_payload_sources(payload)
     if any(
         "verified" in source and source.get("verified") is not True
         for source in verification_sources
     ):
         return None
-    if write_result_declares_non_success(
-        payload,
-        allow_pending=allow_pending,
-        allowed_statuses=allowed_statuses,
+    if any(
+        write_result_declares_non_success(
+            source,
+            allow_pending=allow_pending,
+            allowed_statuses=allowed_statuses,
+        )
+        for source in verification_sources
     ):
         return None
-    message = str(payload.get("message") or "")
-    if any(marker in message for marker in _WRITE_RESULT_FAILURE_MARKERS):
+    if any(
+        marker in str(source.get("message") or "")
+        for source in verification_sources
+        for marker in _WRITE_RESULT_FAILURE_MARKERS
+    ):
         return None
     return payload
 
@@ -3490,8 +3502,7 @@ def _receipt_target_date(
     """Return one agreed ISO-like target date; reject contradictory aliases."""
     values: list[str] = []
     for source in (payload, args):
-        nested = source.get("data") if isinstance(source.get("data"), dict) else {}
-        for container in (source, nested):
+        for container in _result_payload_sources(source):
             for key in ("date", "record_date"):
                 value = container.get(key)
                 if value in (None, ""):

@@ -96,7 +96,8 @@ RequirementAdmission:
   `1246 passed, 3 skipped`，退出码均为 0。第九轮嵌套验证字段整改后，
   受影响域 `234 passed`、Executor `a-h` 分片按 7 个文件受控复跑合计
   `204 passed`、Executor `i-z` 分片 `329 passed`，退出码均为 0。初次聚合执行
-  的测试运行器异常挂起，已停止且未作为通过证据。
+  的测试运行器异常挂起，已停止且未作为通过证据。第十轮嵌套失败态和日期整改后，
+  受影响域扩大为 `238 passed`，Executor 两分片仍为 `204 + 329 passed`。
 - Agent trajectory scorer 与历史轨迹门禁已覆盖 9 个 mandatory scenarios。
 - TypeScript `npx tsc --noEmit`：PASS。
 - Mobile 完整 Gate：`279` 个 suites、`2156 passed`、`1 skipped`，退出码 0；
@@ -208,8 +209,18 @@ RequirementAdmission:
   `329 passed`；零成本 Harness 再次通过
   invariants `12/12`、health core `50/50`、trajectory contract `12/12` 和
   goldens `9/9`。
+- 第十轮独立 reviewer 仍给出 **NO-GO**：虽然嵌套 `verified=false` 已被阻断，
+  但嵌套 `status=failed`、`ok=false`、非空 `error` 仍可能被外层成功状态覆盖；
+  同时持久化日期只扫描顶层和 `data`，`result.record_date` 与请求日期冲突时仍可
+  生成错误日期的 verified receipt。
+- 第十轮整改已完成：新增统一的 producer envelope 来源函数，顶层和
+  `resource`、`record`、`data`、`result` 现在共用完全相同的 verified、success/ok、
+  error、status、失败 message 与 date/record_date 校验。任一层显式失败或任意日期
+  不一致均整体 fail closed。四类 reviewer 反例先得到 `4 failed, 24 passed`，
+  修复后回执身份测试 `28 passed`；扩大受影响域 `238 passed`，Executor 两分片
+  `204 + 329 passed`，零成本 Harness 四项继续全绿。
 - 在新的独立 reviewer 对全部整改提交给出 GO 前不进入部署。
-- **裁决: PENDING。** 九轮评审失败均已回到实现与测试阶段；等待全量复审。
+- **裁决: PENDING。** 十轮评审失败均已回到实现与测试阶段；等待全量复审。
 
 ## S6 / G5 · 部署与健康
 
