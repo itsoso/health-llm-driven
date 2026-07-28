@@ -4,8 +4,8 @@
 |---|---|
 | slug | `acwr-false-overload` |
 | 创建日期 | 2026-07-27 |
-| 当前阶段 | G4 安全 |
-| 状态 | safety-review |
+| 当前阶段 | S6 部署 |
+| 状态 | deployment-ready |
 | 负责 | Codex |
 | 反馈环 | backend deploy |
 
@@ -74,8 +74,8 @@
 - 第二轮整改:训练覆盖与日健康数据解耦；所有 Workout 写入口联动失效；统一推导 TRIMP；异常输入全链 fail-closed；缺失覆盖不再产生“本周零运动”；Episode 使用用户本地日期；Safety 最终消费点再次验证有限数。
 - 第三轮独立评审:`NO-GO`。发现 `WorkoutSyncService` 的中央写入出口未失效缓存，导致认证同步、定时任务和跑后分析等调用方可能继续读取最长 300 秒的旧 Safety 结果。
 - 第三轮整改:缓存失效下沉到中央 Garmin writer；只有成功持久化新增或补全活动时才清理 Twin、Safety 和预生成建议，无数据变化时不清理；调用方自动继承该不变量。
-- 复审:待新的独立 safety reviewer。
-- **裁决**:待定，复审 GO 前禁止部署。
+- 第四轮独立复审:`GO`。验证新增、更新/补全、无变化及提交后异常路径；确认中央失效链覆盖 Twin、全部 Safety 参数缓存及启用状态下的 pregen。
+- **裁决**:GO。
 
 ## S6 · 部署
 - 路由:backend-deploy。
