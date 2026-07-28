@@ -164,6 +164,23 @@ describe('client reliability events', () => {
     })).toEqual({});
   });
 
+  it('drops identifier-shaped attachment error codes outside the fixed enum', () => {
+    expect(sanitizeClientEventMeta('chat_attachment_terminal', {
+      phase: 'failed',
+      stage: 'server_accept',
+      image_count: 1,
+      duration_bucket: '1_3s',
+      payload_bucket: 'lt_256kb',
+      error_code: 'turn_private_identifier',
+    })).toEqual({
+      phase: 'failed',
+      stage: 'server_accept',
+      image_count: 1,
+      duration_bucket: '1_3s',
+      payload_bucket: 'lt_256kb',
+    });
+  });
+
   it('keeps ASR quality metadata content-free for voice input tuning', async () => {
     await emitClientEvent('voice_asr_terminal', {
       phase: 'completed',

@@ -142,7 +142,7 @@ def compile_goal_spec(
         target_date=target_date,
         target_meal_types=target_meals,
         prohibited_operations=(
-            ("create", "update")
+            ("create", "update", "delete")
             if intent.primary in {"read", "advice", "chat", "unknown"}
             else ()
         ),
@@ -177,7 +177,7 @@ def _compile_diet_recalculation_goal(
             operation="none",
             target_date=target_date,
             target_meal_types=target_meals,
-            prohibited_operations=("create", "update"),
+            prohibited_operations=("create", "update", "delete"),
         )
 
     if is_question and is_recalculation:
@@ -187,7 +187,7 @@ def _compile_diet_recalculation_goal(
             operation="ask",
             target_date=target_date,
             target_meal_types=target_meals,
-            prohibited_operations=("create", "update"),
+            prohibited_operations=("create", "update", "delete"),
         )
 
     if is_recalculation and wants_update:
@@ -198,7 +198,7 @@ def _compile_diet_recalculation_goal(
                 operation="none",
                 target_date=target_date,
                 requires_clarification=True,
-                prohibited_operations=("create", "update"),
+                prohibited_operations=("create", "update", "delete"),
             )
         if target_meals:
             return GoalSpec(

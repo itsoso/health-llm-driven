@@ -130,6 +130,7 @@ def score_trajectory(case: dict[str, Any], trace: dict[str, Any]) -> dict[str, A
     expected_record_type = str(
         expected.get("target_record_type") or expected.get("domain") or ""
     ).strip().lower()
+    expected_operation = str(expected.get("operation") or "").strip().lower()
 
     operations = [_operation(call) for call in calls]
     for operation in operations:
@@ -139,6 +140,20 @@ def score_trajectory(case: dict[str, Any], trace: dict[str, Any]) -> dict[str, A
     write_indexes = [
         index for index, operation in enumerate(operations) if operation in _WRITE_OPERATIONS
     ]
+    write_calls = [calls[index] for index in write_indexes]
+    if expected_operation not in _WRITE_OPERATIONS:
+        for operation in sorted({_operation(call) for call in write_calls}):
+            hard_failures.append(f"unexpected_write_operation:{operation}")
+    else:
+        for call in write_calls:
+            operation = _operation(call)
+            record_type = _record_type(call)
+            if operation != expected_operation:
+                hard_failures.append(f"unexpected_write_operation:{operation}")
+            if expected_record_type and record_type != expected_record_type:
+                hard_failures.append(
+                    f"unexpected_write_target:{record_type or 'missing'}"
+                )
     lookup_indexes = [
         index
         for index, call in enumerate(calls)
@@ -174,7 +189,11 @@ def score_trajectory(case: dict[str, Any], trace: dict[str, Any]) -> dict[str, A
         meal = _meal_type(call.get("args"))
         if meal:
             updated_by_meal[meal] = call
-    exact_target_updates = bool(target_meals) and target_meals.issubset(updated_by_meal)
+    exact_target_updates = (
+        bool(target_meals)
+        and target_meals.issubset(updated_by_meal)
+        and len(update_calls) == len(target_meals)
+    )
     exact_target_updates = exact_target_updates and all(
         _record_id(updated_by_meal[meal].get("args")) is not None for meal in target_meals
     )
@@ -191,9 +210,9 @@ def score_trajectory(case: dict[str, Any], trace: dict[str, Any]) -> dict[str, A
         call
         for call in calls
         if _operation(call) in _WRITE_OPERATIONS
+        and _operation(call) == expected_operation
         and (not expected_record_type or _record_type(call) == expected_record_type)
     ]
-    expected_operation = str(expected.get("operation") or "").strip().lower()
     expected_values = expected.get("target_values") or {}
     if target_meals:
         target_effects = exact_target_updates
@@ -225,19 +244,35 @@ def score_trajectory(case: dict[str, Any], trace: dict[str, Any]) -> dict[str, A
             verified_ids.add(record_id)
         if meal:
             verified_meals.add(meal)
+    missing_identity_receipts = [
+        call
+        for call in relevant_write_calls
+        if _receipt_status(call) in _VERIFIED_RECEIPT_STATUSES
+        and _record_id(call.get("receipt")) is None
+    ]
+    if missing_identity_receipts:
+        hard_failures.append("write_receipt_missing_identity")
+    every_write_has_identity_receipt = bool(relevant_write_calls) and all(
+        _receipt_status(call) in _VERIFIED_RECEIPT_STATUSES
+        and _record_id(call.get("receipt")) is not None
+        for call in relevant_write_calls
+    )
     if target_meals:
-        verified_receipts = target_meals.issubset(verified_meals)
+        verified_receipts = (
+            every_write_has_identity_receipt
+            and verified_meals == target_meals
+            and len(relevant_write_calls) == len(target_meals)
+        )
     elif expected_operation in _WRITE_OPERATIONS:
-        verified_receipts = bool(verified_ids)
+        verified_receipts = every_write_has_identity_receipt
     else:
         verified_receipts = True
 
-    successful_effect_ids = {
-        _record_id(call.get("receipt"))
+    successful_write_calls = [
+        call
         for call in relevant_write_calls
         if _receipt_status(call) in _VERIFIED_RECEIPT_STATUSES
-        and _record_id(call.get("receipt")) is not None
-    }
+    ]
     attempt_turn_ids = {
         str(attempt.get("client_turn_id"))
         for attempt in (trace.get("attempts") or [])
@@ -245,13 +280,15 @@ def score_trajectory(case: dict[str, Any], trace: dict[str, Any]) -> dict[str, A
     }
     if len(attempt_turn_ids) > 1:
         hard_failures.append("client_turn_id_changed_across_attempts")
-    same_client_turn = bool(trace.get("client_turn_id")) or len(attempt_turn_ids) == 1
     allowed_effects = len(target_meals) if target_meals else (
         1 if expected_operation in _WRITE_OPERATIONS else 0
     )
-    if same_client_turn and allowed_effects and len(successful_effect_ids) > allowed_effects:
+    if (
+        allowed_effects
+        and len(successful_write_calls) > allowed_effects
+    ):
         hard_failures.append(
-            f"duplicate_side_effects:{len(successful_effect_ids)}>{allowed_effects}"
+            f"duplicate_side_effects:{len(successful_write_calls)}>{allowed_effects}"
         )
 
     last_write = max(write_indexes) if write_indexes else -1

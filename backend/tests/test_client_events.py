@@ -605,6 +605,22 @@ def test_chat_attachment_terminal_accepts_content_free_pipeline_metadata(
             "duration_bucket": "1_3s",
             "payload_bucket": "unknown",
         },
+        {
+            "phase": "failed",
+            "stage": "server_accept",
+            "image_count": 1,
+            "duration_bucket": "1_3s",
+            "payload_bucket": "lt_256kb",
+            "error_code": "turn_private_identifier",
+        },
+        {
+            "phase": "failed",
+            "stage": "server_accept",
+            "image_count": 1,
+            "duration_bucket": "1_3s",
+            "payload_bucket": "lt_256kb",
+            "error_code": ["send_rejected"],
+        },
     ],
 )
 def test_chat_attachment_terminal_rejects_private_or_invalid_metadata(

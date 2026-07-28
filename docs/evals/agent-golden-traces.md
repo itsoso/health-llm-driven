@@ -24,7 +24,7 @@ Add one fixture row to
 - the expected pass/fail result and the required hard-failure codes.
 
 Good traces must remain accepted. Historical bad traces must remain rejected for
-the expected reason. The six P0 scenarios declared by the gate are mandatory;
+the expected reason. The nine P0 scenarios declared by the gate are mandatory;
 deleting or renaming one also fails the gate. The gate fails if either direction
 changes.
 
@@ -35,8 +35,21 @@ omit a separate readback when its contract permits that optimization, but it
 must still carry an identity-bearing verified receipt before the trace can
 claim completion.
 
-Do not store message bodies, image URLs, user IDs, tokens, model responses, or
-production record IDs in fixtures. Use synthetic dates and IDs.
+Every fixture file must declare `fixture_origin: synthetic`. The gate recursively
+rejects message/model bodies, image/file/network URLs, user identifiers, tokens,
+and related sensitive keys. Use synthetic dates and record IDs; production
+record IDs are not permitted even though the deterministic scorer needs an
+identity-bearing synthetic receipt.
+
+The mandatory incidents cover:
+
+- valid water and fruit writes;
+- meal-context re-estimation;
+- uncertain receipts that falsely claim success;
+- duplicate side effects across retries and duplicate writes to the same record;
+- idempotent replay;
+- read-only requests that attempt a delete;
+- verified multi-write receipts missing an identity.
 
 ## Blocking command
 

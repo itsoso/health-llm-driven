@@ -86,6 +86,11 @@ const CHAT_ATTACHMENT_PAYLOAD_BUCKETS = new Set([
   '1_4mb',
   'gte_4mb',
 ]);
+const CHAT_ATTACHMENT_ERROR_CODES = new Set([
+  'draft_hydration_failed',
+  'server_not_accepted',
+  'send_rejected',
+]);
 
 type ReliabilityEventName = keyof typeof RELIABILITY_PHASES;
 
@@ -267,7 +272,10 @@ export function sanitizeClientEventMeta(
       duration_bucket: bucket,
       payload_bucket: payloadBucket,
     };
-    if (typeof meta.error_code === 'string' && SAFE_TOKEN.test(meta.error_code)) {
+    if (
+      typeof meta.error_code === 'string'
+      && CHAT_ATTACHMENT_ERROR_CODES.has(meta.error_code)
+    ) {
       sanitized.error_code = meta.error_code;
     }
     return sanitized;

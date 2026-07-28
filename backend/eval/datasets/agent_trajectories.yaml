@@ -71,7 +71,7 @@ cases:
       target_meal_types: [breakfast, lunch]
       requires_lookup: false
       requires_verification: false
-      prohibited_operations: [create, update]
+      prohibited_operations: [create, update, delete]
       clarification: false
 
   - id: diet_recalculate_negated_update
@@ -96,7 +96,7 @@ cases:
       target_meal_types: [breakfast, lunch]
       requires_lookup: false
       requires_verification: false
-      prohibited_operations: [create, update]
+      prohibited_operations: [create, update, delete]
       clarification: false
 
   - id: diet_recalculate_referent_without_visible_card
@@ -110,7 +110,7 @@ cases:
       target_meal_types: []
       requires_lookup: false
       requires_verification: false
-      prohibited_operations: [create, update]
+      prohibited_operations: [create, update, delete]
       clarification: true
 
   - id: diet_recalculate_explicit_yesterday_overrides_visible_today
@@ -238,7 +238,7 @@ cases:
       target_values: {}
       requires_lookup: false
       requires_verification: false
-      prohibited_operations: [create, update]
+      prohibited_operations: [create, update, delete]
       clarification: false
 
   - id: negated_water_record_never_writes
@@ -254,5 +254,5 @@ cases:
       target_values: {}
       requires_lookup: false
       requires_verification: false
-      prohibited_operations: [create, update]
+      prohibited_operations: [create, update, delete]
       clarification: false

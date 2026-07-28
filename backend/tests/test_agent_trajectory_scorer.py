@@ -329,6 +329,106 @@ def test_score_trajectory_rejects_duplicate_side_effect_for_same_client_turn_id(
     assert "duplicate_side_effects:2>1" in scored["hard_failures"]
 
 
+def test_score_trajectory_rejects_duplicate_write_to_same_record_id():
+    trace = _valid_trace("candidate-duplicate-same-record")
+    duplicate_breakfast = {
+        **trace["tool_calls"][1],
+        "args": {
+            **trace["tool_calls"][1]["args"],
+            "data": {"meal_type": "breakfast", "calories": 420},
+        },
+    }
+    trace["tool_calls"].insert(2, duplicate_breakfast)
+
+    scored = score_trajectory(CASE, trace)
+
+    assert scored["passed"] is False
+    assert "duplicate_side_effects:3>2" in scored["hard_failures"]
+    assert "false_completion_claim" in scored["hard_failures"]
+
+
+def test_score_trajectory_requires_identity_on_every_verified_write_receipt():
+    trace = _valid_trace("candidate-missing-receipt-id")
+    trace["tool_calls"][2]["receipt"].pop("record_id")
+
+    scored = score_trajectory(CASE, trace)
+
+    assert scored["passed"] is False
+    assert scored["dimensions"]["verified_receipts"] == 0
+    assert "write_receipt_missing_identity" in scored["hard_failures"]
+    assert "false_completion_claim" in scored["hard_failures"]
+
+
+def test_score_trajectory_rejects_unexpected_write_target():
+    trace = _valid_trace("candidate-wrong-write-target")
+    trace["tool_calls"].insert(
+        3,
+        {
+            "name": "health_record",
+            "args": {
+                "record_type": "symptom",
+                "operation": "update",
+                "record_id": 901,
+                "data": {"description": "synthetic"},
+            },
+            "receipt": {"status": "verified", "record_id": 901},
+        },
+    )
+
+    scored = score_trajectory(CASE, trace)
+
+    assert scored["passed"] is False
+    assert "unexpected_write_target:symptom" in scored["hard_failures"]
+    assert "false_completion_claim" in scored["hard_failures"]
+
+
+def test_score_trajectory_rejects_any_write_for_read_only_goal():
+    case = {
+        "id": "water_question_remains_read_only",
+        "expected": {
+            "goal_kind": "answer",
+            "domain": "water",
+            "operation": "ask",
+            "target_date": "2026-07-17",
+            "target_meal_types": [],
+            "target_record_type": None,
+            "target_values": {},
+            "requires_lookup": False,
+            "requires_verification": False,
+            "prohibited_operations": ["create", "update"],
+        },
+    }
+    trace = {
+        "candidate_id": "candidate-read-only-delete",
+        "client_turn_id": "turn-read-only-delete",
+        "goal": {
+            "kind": "answer",
+            "domain": "water",
+            "operation": "ask",
+            "target_date": "2026-07-17",
+            "target_meal_types": [],
+        },
+        "tool_calls": [
+            {
+                "name": "health_manage",
+                "args": {
+                    "record_type": "water",
+                    "operation": "delete",
+                    "record_id": 902,
+                },
+                "receipt": {"status": "verified", "record_id": 902},
+            }
+        ],
+        "final": {"claims_complete": True},
+    }
+
+    scored = score_trajectory(case, trace)
+
+    assert scored["passed"] is False
+    assert "unexpected_write_operation:delete" in scored["hard_failures"]
+    assert "false_completion_claim" in scored["hard_failures"]
+
+
 def test_score_trajectory_accepts_idempotent_replay_without_second_side_effect():
     trace = _simple_water_trace()
     write, readback = trace.pop("tool_calls")

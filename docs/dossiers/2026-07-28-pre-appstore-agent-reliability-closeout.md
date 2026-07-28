@@ -52,10 +52,14 @@ RequirementAdmission:
 
 ## G2 · 可行性与风险压测
 
-- 附件事件只包含阶段、图片数量、时长桶、载荷大小桶和安全错误码。
-- 明确拒绝 URI、base64、文件名、消息正文、用户/Turn/记录标识。
+- 附件事件 `meta` 只包含阶段、图片数量、时长桶、载荷大小桶和固定枚举错误码；
+  任意 token 形态的错误字符串不能进入存储。
+- 明确拒绝 URI、base64、文件名、消息正文、Turn/记录标识。事件行仍保留
+  `current_user.id` 作为租户隔离和 owner-scoped 运维关联，不能把该遥测描述为匿名；
+  用户 ID 不进入事件 `meta`，运维聚合也不返回用户级明细。
 - Telemetry 失败不改变发送、草稿、重试或清理语义。
-- Golden trace 使用合成 ID、日期和去标识工具轨迹，不调用付费模型或生产数据。
+- Golden trace 强制声明 `fixture_origin: synthetic`，并由 Gate 递归拒绝用户标识、
+  正文、token 和 URI；只使用合成 ID、日期和工具轨迹，不调用付费模型或生产数据。
 - **裁决: PASS。** 新增路径均为旁路观测或确定性离线验证，可独立回滚。
 
 ## S2 / S3 · 设计与计划
@@ -69,30 +73,35 @@ RequirementAdmission:
 - [x] 聚合附件接收率、失败阶段、图片数、时长桶和载荷桶，并在有效样本达到
   5 次后对低于 90% 的接收率给出分阶段运维建议。
 - [x] 增加历史 Agent 事故 golden trajectories，覆盖饮水、食物、餐食上下文修正、
-  不确定回执、重复 Turn 副作用和幂等重放。
+  不确定回执、重复 Turn 副作用、同记录重复写、只读误写、缺失身份回执和幂等重放。
 - [x] 核验现有 active Turn 与 WriteReceipt UI 为统一状态来源。
 - [ ] 完成独立安全评审、提交、部署和 OTA。
 - [ ] 完成 TestFlight 239 真机 G6。
 
 ## G3 · 测试闸
 
-- Mobile 附件事件和输入框：`87 passed`。
-- Mobile active Turn、聊天页面、结构化回执和顶部状态：`184 passed`；
+- Mobile 附件事件和输入框：`88 passed`。
+- Mobile active Turn、聊天页面、结构化回执和顶部状态：`194 passed`；
   Chat 页面端到端组件回归：`44 passed`。
 - Backend client event、聚合、Agent trajectory 与 Harness wiring：
-  `124 passed`。
-- Agent trajectory scorer 与历史轨迹门禁聚焦回归：`19 passed`。
+  连同 Goal compiler 共 `173 passed`。
+- Agent trajectory scorer 与历史轨迹门禁已覆盖 9 个 mandatory scenarios。
 - TypeScript `npx tsc --noEmit`：PASS。
 - 零成本 Harness：invariants `12/12`、health core `50/50`、trajectory
-  contract `12/12`、goldens `6/6`，未调用付费模型。
+  contract `12/12`、goldens `9/9`，未调用付费模型。
 - 页面测试保留既有 React `act(...)` 警告但无失败；不作为真机 G6 的替代证据。
 - **裁决: PASS。**
 
 ## G4 · 安全闸
 
-- 待独立 reviewer 对提交 SHA 复核附件遥测隐私、Agent 写入诚实性和回归测试范围。
-- 在 reviewer 给出 GO 前不进入部署。
-- **裁决: PENDING。** 当前代码级隐私检查已通过；独立发布评审仍是后续 G5 前置条件。
+- 独立 reviewer 对 `4356354e` 给出 **NO-GO**，发现只读请求仍可能执行 delete、
+  同一记录重复写和多写缺失 identity receipt 可绕过、附件错误码范围过宽、fixture
+  隐私仅靠约定。
+- 已逐项整改：任何只读写入和错误 record type/operation 均硬失败；副作用按实际
+  verified write 次数计数；每个写回执必须带记录 identity；附件错误码收敛为固定
+  枚举；fixture 加入 synthetic origin 和递归隐私 Gate。
+- 在新的独立 reviewer 对整改提交给出 GO 前不进入部署。
+- **裁决: PENDING。** 首轮评审失败已回到实现与测试阶段；等待复审。
 
 ## S6 / G5 · 部署与健康
 

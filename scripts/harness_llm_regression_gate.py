@@ -39,7 +39,31 @@ REQUIRED_AGENT_GOLDEN_SCENARIOS = {
     "uncertain_receipt_false_success",
     "duplicate_client_turn_side_effect",
     "idempotent_client_turn_replay",
+    "read_only_delete_side_effect",
+    "duplicate_same_record_side_effect",
+    "missing_identity_receipt",
 }
+_FORBIDDEN_FIXTURE_KEYS = {
+    "access_token",
+    "base64",
+    "content",
+    "email",
+    "file_name",
+    "filename",
+    "image_url",
+    "message",
+    "model_response",
+    "phone",
+    "prompt",
+    "response",
+    "source_message_id",
+    "text",
+    "token",
+    "uri",
+    "url",
+    "user_id",
+}
+_FORBIDDEN_URI_PREFIXES = ("data:", "file://", "http://", "https://")
 
 
 def run_agent_trajectory_contract_gate() -> dict[str, Any]:
@@ -107,6 +131,25 @@ def _score_golden_trace(case: dict[str, Any], trace: dict[str, Any]) -> dict[str
     return score_trajectory(case, trace)
 
 
+def _fixture_privacy_errors(value: Any, *, path: str = "$") -> list[str]:
+    errors: list[str] = []
+    if isinstance(value, dict):
+        for raw_key, child in value.items():
+            key = str(raw_key).strip().lower()
+            child_path = f"{path}.{raw_key}"
+            if key in _FORBIDDEN_FIXTURE_KEYS:
+                errors.append(f"forbidden fixture key: {key} at {child_path}")
+            errors.extend(_fixture_privacy_errors(child, path=child_path))
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            errors.extend(_fixture_privacy_errors(child, path=f"{path}[{index}]"))
+    elif isinstance(value, str) and value.strip().lower().startswith(
+        _FORBIDDEN_URI_PREFIXES
+    ):
+        errors.append(f"forbidden URI value at {path}")
+    return errors
+
+
 def run_agent_golden_trace_gate() -> dict[str, Any]:
     """Replay versioned good and bad traces through deterministic postconditions."""
 
@@ -124,6 +167,22 @@ def run_agent_golden_trace_gate() -> dict[str, Any]:
     fixture_rows = fixtures.get("cases") or []
     failed_cases: list[dict[str, Any]] = []
     covered_scenarios: list[str] = []
+    if fixtures.get("fixture_origin") != "synthetic":
+        failed_cases.append(
+            {
+                "scenario": "__fixture__",
+                "case_id": "",
+                "mismatch": {"fixture": "fixture_origin must be synthetic"},
+            }
+        )
+    for error in sorted(set(_fixture_privacy_errors(fixture_rows))):
+        failed_cases.append(
+            {
+                "scenario": "__fixture__",
+                "case_id": "",
+                "mismatch": {"fixture": error},
+            }
+        )
 
     for fixture in fixture_rows:
         scenario = str(fixture.get("scenario") or "").strip()

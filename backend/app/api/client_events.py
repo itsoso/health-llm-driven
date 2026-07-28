@@ -146,6 +146,9 @@ _CHAT_ATTACHMENT_EVENT_SCHEMA = {
     "payload_buckets": frozenset({
         "unknown", "lt_256kb", "256kb_1mb", "1_4mb", "gte_4mb",
     }),
+    "error_codes": frozenset({
+        "draft_hydration_failed", "server_not_accepted", "send_rejected",
+    }),
 }
 
 _DIET_CAPTURE_EVENT_SCHEMAS = {
@@ -257,9 +260,13 @@ class EventIn(BaseModel):
             if type(image_count) is not int or not 1 <= image_count <= 9:
                 raise ValueError("invalid chat attachment event image_count")
             error_code = self.meta.get("error_code")
-            if error_code is not None and (
-                not isinstance(error_code, str)
-                or _SAFE_TOKEN.fullmatch(error_code) is None
+            if (
+                error_code is not None
+                and (
+                    not isinstance(error_code, str)
+                    or error_code
+                    not in _CHAT_ATTACHMENT_EVENT_SCHEMA["error_codes"]
+                )
             ):
                 raise ValueError("invalid chat attachment event error_code")
             return self
