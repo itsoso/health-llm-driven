@@ -1,4 +1,7 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
 import api from './api';
+import { getAuthStorageScope } from './authStorageScope';
 
 export type ClientEventName =
   // 上一季 ship 的 3 个事件 (2026-05-01)
@@ -102,6 +105,24 @@ const DURATION_BUCKETS = new Set<DurationBucket>([
   'gte_30s',
 ]);
 const SAFE_TOKEN = /^[a-z0-9][a-z0-9_.:-]{0,63}$/;
+const CLIENT_EVENT_OUTBOX_PREFIX = 'client-events:outbox:v1';
+
+type AttachmentTerminalOutboxItem = {
+  eventKey: string;
+  name: 'chat_attachment_terminal';
+  meta: Record<string, unknown>;
+};
+
+let clientEventOutboxMutation: Promise<void> = Promise.resolve();
+
+function serializeClientEventOutbox<T>(operation: () => Promise<T>): Promise<T> {
+  const result = clientEventOutboxMutation.then(operation, operation);
+  clientEventOutboxMutation = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  return result;
+}
 
 export function durationBucket(startedAt: number, endedAt = Date.now()): DurationBucket {
   const elapsedMs = Math.max(0, endedAt - startedAt);
@@ -329,6 +350,115 @@ export function sanitizeClientEventMeta(
   return sanitized;
 }
 
+function isAttachmentTerminalMeta(
+  meta: Record<string, unknown> | undefined,
+): meta is Record<string, unknown> {
+  return Boolean(
+    meta
+    && typeof meta.phase === 'string'
+    && CHAT_ATTACHMENT_PHASES.has(meta.phase)
+    && typeof meta.stage === 'string'
+    && CHAT_ATTACHMENT_STAGES.has(meta.stage)
+    && typeof meta.image_count === 'number'
+    && Number.isInteger(meta.image_count)
+    && meta.image_count >= 1
+    && meta.image_count <= 9
+    && typeof meta.duration_bucket === 'string'
+    && DURATION_BUCKETS.has(meta.duration_bucket as DurationBucket)
+    && typeof meta.payload_bucket === 'string'
+    && CHAT_ATTACHMENT_PAYLOAD_BUCKETS.has(meta.payload_bucket),
+  );
+}
+
+async function clientEventOutboxStorageKey(): Promise<string> {
+  return `${CLIENT_EVENT_OUTBOX_PREFIX}:${await getAuthStorageScope()}`;
+}
+
+async function readClientEventOutbox(
+  storageKey: string,
+): Promise<AttachmentTerminalOutboxItem[]> {
+  const stored = await AsyncStorage.getItem(storageKey);
+  if (!stored) return [];
+
+  const parsed: unknown = JSON.parse(stored);
+  if (!Array.isArray(parsed)) {
+    throw new Error('client_event_outbox_invalid');
+  }
+  return parsed.flatMap((item): AttachmentTerminalOutboxItem[] => {
+    if (
+      !item
+      || typeof item !== 'object'
+      || (item as AttachmentTerminalOutboxItem).name !== 'chat_attachment_terminal'
+      || typeof (item as AttachmentTerminalOutboxItem).eventKey !== 'string'
+      || !SAFE_TOKEN.test((item as AttachmentTerminalOutboxItem).eventKey)
+    ) {
+      return [];
+    }
+    const sanitized = sanitizeClientEventMeta(
+      'chat_attachment_terminal',
+      (item as AttachmentTerminalOutboxItem).meta,
+    );
+    if (!isAttachmentTerminalMeta(sanitized)) return [];
+    return [{
+      eventKey: (item as AttachmentTerminalOutboxItem).eventKey,
+      name: 'chat_attachment_terminal',
+      meta: sanitized,
+    }];
+  });
+}
+
+async function writeClientEventOutbox(
+  storageKey: string,
+  items: AttachmentTerminalOutboxItem[],
+): Promise<void> {
+  if (items.length === 0) {
+    await AsyncStorage.removeItem(storageKey);
+    return;
+  }
+  await AsyncStorage.setItem(storageKey, JSON.stringify(items));
+}
+
+async function enqueueAttachmentTerminalEvent(
+  eventKey: string,
+  meta: Record<string, unknown>,
+): Promise<void> {
+  await serializeClientEventOutbox(async () => {
+    const storageKey = await clientEventOutboxStorageKey();
+    const items = await readClientEventOutbox(storageKey);
+    if (items.some((item) => item.eventKey === eventKey)) return;
+    await writeClientEventOutbox(storageKey, [
+      ...items,
+      { eventKey, name: 'chat_attachment_terminal', meta },
+    ]);
+  });
+}
+
+/**
+ * Replays content-free attachment terminal events after network/app interruptions.
+ * The server deduplicates by event_key; each acknowledged item is removed durably.
+ */
+export async function flushClientEventOutbox(): Promise<void> {
+  await serializeClientEventOutbox(async () => {
+    const storageKey = await clientEventOutboxStorageKey();
+    const items = await readClientEventOutbox(storageKey);
+    let remaining = items;
+    while (remaining.length > 0) {
+      const item = remaining[0];
+      try {
+        await api.post('/client-events', {
+          event_name: item.name,
+          event_key: item.eventKey,
+          meta: item.meta,
+        });
+      } catch {
+        return;
+      }
+      remaining = remaining.slice(1);
+      await writeClientEventOutbox(storageKey, remaining);
+    }
+  });
+}
+
 /**
  * 发一条 UI 埋点事件. 失败静默 — 埋点不该影响用户流程.
  * 后端 /client-events 把事件写入 client_events 表, 观察期看板用来算行为率.
@@ -350,14 +480,30 @@ export async function emitClientEvent(
   meta?: Record<string, unknown>,
   options?: { eventKey?: string },
 ): Promise<void> {
+  const eventKey = options?.eventKey;
+  const sanitizedMeta = sanitizeClientEventMeta(name, meta);
+  if (
+    name === 'chat_attachment_terminal'
+    && typeof eventKey === 'string'
+    && SAFE_TOKEN.test(eventKey)
+    && isAttachmentTerminalMeta(sanitizedMeta)
+  ) {
+    try {
+      await enqueueAttachmentTerminalEvent(eventKey, sanitizedMeta);
+      await flushClientEventOutbox();
+    } catch {
+      // Durable telemetry must not block the user-facing send path.
+    }
+    return;
+  }
+
   try {
-    const eventKey = options?.eventKey;
     await api.post('/client-events', {
       event_name: name,
       ...(typeof eventKey === 'string' && SAFE_TOKEN.test(eventKey)
         ? { event_key: eventKey }
         : {}),
-      meta: sanitizeClientEventMeta(name, meta),
+      meta: sanitizedMeta,
     });
   } catch {
     // swallow — 埋点不该影响 UI

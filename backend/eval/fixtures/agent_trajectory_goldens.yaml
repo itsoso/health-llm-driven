@@ -24,10 +24,14 @@ cases:
             record_type: water
             operation: create
             data:
+              date: "2026-07-17"
               amount_ml: "500"
           receipt:
             status: verified
+            verified: true
             record_id: 501
+            resource_type: water
+            date: "2026-07-17"
         - name: health_manage
           args:
             record_type: water
@@ -35,6 +39,7 @@ cases:
             date: "2026-07-17"
           result:
             - id: 501
+              date: "2026-07-17"
               amount_ml: 500
       final:
         claims_complete: true
@@ -66,11 +71,15 @@ cases:
             record_type: diet
             operation: create
             data:
+              date: "2026-07-17"
               meal_type: snack
               food_items: 一个水蜜桃
           receipt:
             status: verified
+            verified: true
             record_id: 601
+            resource_type: diet
+            date: "2026-07-17"
         - name: health_manage
           args:
             record_type: diet
@@ -78,6 +87,7 @@ cases:
             date: "2026-07-17"
           result:
             - id: 601
+              date: "2026-07-17"
               meal_type: snack
               food_items: 一个水蜜桃
       final:
@@ -115,11 +125,15 @@ cases:
             operation: update
             record_id: 101
             data:
+              date: "2026-07-24"
               meal_type: breakfast
               calories: 410
           receipt:
             status: verified
+            verified: true
             record_id: 101
+            resource_type: diet
+            date: "2026-07-24"
             meal_type: breakfast
         - name: health_manage
           args:
@@ -127,11 +141,15 @@ cases:
             operation: update
             record_id: 102
             data:
+              date: "2026-07-24"
               meal_type: lunch
               calories: 530
           receipt:
             status: verified
+            verified: true
             record_id: 102
+            resource_type: diet
+            date: "2026-07-24"
             meal_type: lunch
         - name: health_manage
           args:
@@ -140,9 +158,11 @@ cases:
             date: "2026-07-24"
           result:
             - id: 101
+              date: "2026-07-24"
               meal_type: breakfast
               calories: 410
             - id: 102
+              date: "2026-07-24"
               meal_type: lunch
               calories: 530
       final:
@@ -171,6 +191,7 @@ cases:
             record_type: water
             operation: create
             data:
+              date: "2026-07-17"
               amount_ml: "500"
           receipt:
             status: uncertain
@@ -202,10 +223,14 @@ cases:
                 record_type: water
                 operation: create
                 data:
+                  date: "2026-07-17"
                   amount_ml: "500"
               receipt:
                 status: verified
+                verified: true
                 record_id: 701
+                resource_type: water
+                date: "2026-07-17"
         - client_turn_id: turn-water-duplicate
           tool_calls:
             - name: health_record
@@ -213,10 +238,14 @@ cases:
                 record_type: water
                 operation: create
                 data:
+                  date: "2026-07-17"
                   amount_ml: "500"
               receipt:
                 status: verified
+                verified: true
                 record_id: 702
+                resource_type: water
+                date: "2026-07-17"
             - name: health_manage
               args:
                 record_type: water
@@ -224,8 +253,10 @@ cases:
                 date: "2026-07-17"
               result:
                 - id: 701
+                  date: "2026-07-17"
                   amount_ml: 500
                 - id: 702
+                  date: "2026-07-17"
                   amount_ml: 500
       final:
         claims_complete: true
@@ -253,10 +284,14 @@ cases:
                 record_type: water
                 operation: create
                 data:
+                  date: "2026-07-17"
                   amount_ml: "500"
               receipt:
                 status: verified
+                verified: true
                 record_id: 801
+                resource_type: water
+                date: "2026-07-17"
         - client_turn_id: turn-water-idempotent
           replayed: true
           tool_calls:
@@ -267,6 +302,7 @@ cases:
                 date: "2026-07-17"
               result:
                 - id: 801
+                  date: "2026-07-17"
                   amount_ml: 500
       final:
         claims_complete: true
@@ -335,11 +371,15 @@ cases:
             operation: update
             record_id: 101
             data:
+              date: "2026-07-24"
               meal_type: breakfast
               calories: 410
           receipt:
             status: verified
+            verified: true
             record_id: 101
+            resource_type: diet
+            date: "2026-07-24"
             meal_type: breakfast
         - name: health_manage
           args:
@@ -347,11 +387,15 @@ cases:
             operation: update
             record_id: 101
             data:
+              date: "2026-07-24"
               meal_type: breakfast
               calories: 420
           receipt:
             status: verified
+            verified: true
             record_id: 101
+            resource_type: diet
+            date: "2026-07-24"
             meal_type: breakfast
         - name: health_manage
           args:
@@ -359,11 +403,15 @@ cases:
             operation: update
             record_id: 102
             data:
+              date: "2026-07-24"
               meal_type: lunch
               calories: 530
           receipt:
             status: verified
+            verified: true
             record_id: 102
+            resource_type: diet
+            date: "2026-07-24"
             meal_type: lunch
         - name: health_manage
           args:
@@ -372,9 +420,11 @@ cases:
             date: "2026-07-24"
           result:
             - id: 101
+              date: "2026-07-24"
               meal_type: breakfast
               calories: 420
             - id: 102
+              date: "2026-07-24"
               meal_type: lunch
               calories: 530
       final:
@@ -414,11 +464,15 @@ cases:
             operation: update
             record_id: 101
             data:
+              date: "2026-07-24"
               meal_type: breakfast
               calories: 410
           receipt:
             status: verified
+            verified: true
             record_id: 101
+            resource_type: diet
+            date: "2026-07-24"
             meal_type: breakfast
         - name: health_manage
           args:
@@ -426,10 +480,14 @@ cases:
             operation: update
             record_id: 102
             data:
+              date: "2026-07-24"
               meal_type: lunch
               calories: 530
           receipt:
             status: verified
+            verified: true
+            resource_type: diet
+            date: "2026-07-24"
             meal_type: lunch
         - name: health_manage
           args:
@@ -438,9 +496,11 @@ cases:
             date: "2026-07-24"
           result:
             - id: 101
+              date: "2026-07-24"
               meal_type: breakfast
               calories: 410
             - id: 102
+              date: "2026-07-24"
               meal_type: lunch
               calories: 530
       final:

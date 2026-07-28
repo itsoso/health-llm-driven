@@ -48,11 +48,18 @@ def _valid_trace(candidate_id: str = "candidate-a") -> dict:
                     "record_type": "diet",
                     "operation": "update",
                     "record_id": 101,
-                    "data": {"meal_type": "breakfast", "calories": 410},
+                    "data": {
+                        "date": "2026-07-24",
+                        "meal_type": "breakfast",
+                        "calories": 410,
+                    },
                 },
                 "receipt": {
                     "status": "verified",
+                    "verified": True,
                     "record_id": 101,
+                    "resource_type": "diet",
+                    "date": "2026-07-24",
                     "meal_type": "breakfast",
                 },
             },
@@ -62,11 +69,18 @@ def _valid_trace(candidate_id: str = "candidate-a") -> dict:
                     "record_type": "diet",
                     "operation": "update",
                     "record_id": 102,
-                    "data": {"meal_type": "lunch", "calories": 530},
+                    "data": {
+                        "date": "2026-07-24",
+                        "meal_type": "lunch",
+                        "calories": 530,
+                    },
                 },
                 "receipt": {
                     "status": "verified",
+                    "verified": True,
                     "record_id": 102,
+                    "resource_type": "diet",
+                    "date": "2026-07-24",
                     "meal_type": "lunch",
                 },
             },
@@ -78,8 +92,18 @@ def _valid_trace(candidate_id: str = "candidate-a") -> dict:
                     "date": "2026-07-24",
                 },
                 "result": [
-                    {"id": 101, "meal_type": "breakfast", "calories": 410},
-                    {"id": 102, "meal_type": "lunch", "calories": 530},
+                    {
+                        "id": 101,
+                        "date": "2026-07-24",
+                        "meal_type": "breakfast",
+                        "calories": 410,
+                    },
+                    {
+                        "id": 102,
+                        "date": "2026-07-24",
+                        "meal_type": "lunch",
+                        "calories": 530,
+                    },
                 ],
             },
         ],
@@ -246,17 +270,20 @@ def _simple_water_trace(*, receipt_status: str = "verified", claims_complete: bo
                 "args": {
                     "record_type": "water",
                     "operation": "create",
-                    "data": {"amount_ml": "500"},
+                    "data": {"amount_ml": "500", "date": "2026-07-17"},
                 },
                 "receipt": {
                     "status": receipt_status,
+                    "verified": receipt_status == "verified",
                     "record_id": 501 if receipt_status == "verified" else None,
+                    "resource_type": "water",
+                    "date": "2026-07-17",
                 },
             },
             {
                 "name": "health_manage",
                 "args": {"record_type": "water", "operation": "list", "date": "2026-07-17"},
-                "result": [{"id": 501, "amount_ml": 500}],
+                "result": [{"id": 501, "amount_ml": 500, "date": "2026-07-17"}],
             },
         ],
         "final": {"claims_complete": claims_complete},
@@ -271,6 +298,51 @@ def test_score_trajectory_passes_simple_health_record_with_verified_readback():
     assert scored["dimensions"]["target_updates"] == 1
     assert scored["dimensions"]["verified_receipts"] == 1
     assert scored["dimensions"]["readback"] == 1
+
+
+def test_score_trajectory_requires_explicit_verified_true_on_receipt():
+    trace = _simple_water_trace()
+    trace["tool_calls"][0]["receipt"].pop("verified")
+
+    scored = score_trajectory(SIMPLE_WATER_CASE, trace)
+
+    assert scored["passed"] is False
+    assert "write_receipt_not_explicitly_verified" in scored["hard_failures"]
+
+
+def test_score_trajectory_requires_write_date_for_dated_goal():
+    trace = _simple_water_trace()
+    trace["tool_calls"][0]["args"]["data"].pop("date")
+
+    scored = score_trajectory(SIMPLE_WATER_CASE, trace)
+
+    assert scored["passed"] is False
+    assert "write_target_date_missing" in scored["hard_failures"]
+
+
+def test_score_trajectory_binds_receipt_resource_type_and_date():
+    wrong_resource = _simple_water_trace()
+    wrong_resource["tool_calls"][0]["receipt"]["resource_type"] = "medication_log"
+    wrong_date = _simple_water_trace()
+    wrong_date["tool_calls"][0]["receipt"]["date"] = "2099-01-01"
+
+    resource_score = score_trajectory(SIMPLE_WATER_CASE, wrong_resource)
+    date_score = score_trajectory(SIMPLE_WATER_CASE, wrong_date)
+
+    assert resource_score["passed"] is False
+    assert "write_receipt_resource_type_mismatch" in resource_score["hard_failures"]
+    assert date_score["passed"] is False
+    assert "write_receipt_date_mismatch" in date_score["hard_failures"]
+
+
+def test_score_trajectory_binds_readback_rows_to_expected_date():
+    trace = _simple_water_trace()
+    trace["tool_calls"][-1]["result"][0]["date"] = "2099-01-01"
+
+    scored = score_trajectory(SIMPLE_WATER_CASE, trace)
+
+    assert scored["passed"] is False
+    assert "readback_result_date_mismatch" in scored["hard_failures"]
 
 
 def test_score_trajectory_rejects_uncertain_receipt_that_claims_success():
@@ -344,7 +416,10 @@ def test_score_trajectory_rejects_duplicate_side_effect_for_same_client_turn_id(
     first_write = trace["tool_calls"][0]
     duplicate_write = {
         **first_write,
-        "receipt": {"status": "verified", "record_id": 502},
+        "receipt": {
+            **first_write["receipt"],
+            "record_id": 502,
+        },
     }
     trace["tool_calls"] = []
     trace["attempts"] = [
@@ -364,8 +439,16 @@ def test_score_trajectory_rejects_duplicate_side_effect_for_same_client_turn_id(
                         "date": "2026-07-17",
                     },
                     "result": [
-                        {"id": 501, "amount_ml": 500},
-                        {"id": 502, "amount_ml": 500},
+                        {
+                            "id": 501,
+                            "amount_ml": 500,
+                            "date": "2026-07-17",
+                        },
+                        {
+                            "id": 502,
+                            "amount_ml": 500,
+                            "date": "2026-07-17",
+                        },
                     ],
                 },
             ],

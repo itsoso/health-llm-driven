@@ -89,10 +89,12 @@ RequirementAdmission:
 - Mobile 附件事件、输入框、active Turn、聊天页面、结构化回执和顶部状态均纳入
   全量 Gate。
 - Backend Agent、Runtime、client event、managed migration、历史写回与 Harness
-  wiring：`1467 passed, 3 skipped`，退出码 0。
+  wiring 的累计广覆盖 Gate：`1467 passed, 3 skipped`，退出码 0；第六轮整改后
+  对 client event、observability、trajectory scorer 和 synthesis gate 的增量复验：
+  `160 passed`，退出码 0。
 - Agent trajectory scorer 与历史轨迹门禁已覆盖 9 个 mandatory scenarios。
 - TypeScript `npx tsc --noEmit`：PASS。
-- Mobile 完整 Gate：`279` 个 suites、`2148 passed`、`1 skipped`，退出码 0；
+- Mobile 完整 Gate：`279` 个 suites、`2151 passed`、`1 skipped`，退出码 0；
   React Query 测试 GC timer 已不再阻塞 Jest 退出。Expo lint `0 errors`，保留
   `93` 条既有 warning。
 - Python 变更文件 Ruff、文档漂移、Dossier 一致性和 `git diff --check`：PASS。
@@ -147,8 +149,21 @@ RequirementAdmission:
   扫描同步覆盖 refresh token、credential 和内嵌 token 变体。
 - Mobile 测试环境移除了全局 TanStack Query timeout manager 覆写，改为测试局部
   `gcTime=0`；完整 Jest Gate 已自然退出，不再掩盖业务定时器泄漏。
+- 第六轮独立 reviewer 仍给出 **NO-GO**，发现 `status=verified` 但缺少
+  `verified=true` 仍能通过；写入、回执和读回结果没有全部严格绑定目标资源与日期；
+  Mobile 附件终态事件仍是内存级 fire-and-forget，进程或网络中断后不能保证重放；
+  同时指出 Dossier 不能在上述不变量尚未成立时提前宣称 exactly-once。
+- 第六轮整改已完成：scorer 只接受显式 `verified=true`，并对写入参数、回执
+  `resource_type/date` 和读回结果日期执行统一 fail-closed 绑定；Mobile 新增
+  owner-scoped 持久化附件终态 outbox，发送前先落盘，服务端确认后才移除，并在
+  cloud auth 激活和 App 回前台时顺序重放。客户端提供 durable at-least-once，
+  服务端按 `event_key` 唯一约束去重，组合后实现 effectively-once processing；
+  不再把传输本身描述为理论上的 exactly-once。
+- 第六轮整改的四个 scorer 反例和三条 outbox 断网/重放/去重测试先红后绿；
+  trajectory contract `12/12`、goldens `9/9`、相关后端 `160/160`、Mobile
+  全量 `2151 passed`，且 Jest 自然退出。
 - 在新的独立 reviewer 对全部整改提交给出 GO 前不进入部署。
-- **裁决: PENDING。** 五轮评审失败均已回到实现与测试阶段；等待全量复审。
+- **裁决: PENDING。** 六轮评审失败均已回到实现与测试阶段；等待全量复审。
 
 ## S6 / G5 · 部署与健康
 

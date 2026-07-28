@@ -27,6 +27,7 @@ import { registerBackgroundLocationTask } from '../services/backgroundLocationTa
 import { getReleaseCapabilities } from '../config/releaseCapabilities';
 import { useTheme, type ColorPalette } from '../hooks/useTheme';
 import { loadDietPhotoDraft } from '../services/dietPhotoDraftStorage';
+import { flushClientEventOutbox } from '../services/clientEvents';
 import {
   View,
   ActivityIndicator,
@@ -76,6 +77,13 @@ function AppContent() {
       console.warn('[DietPhotoDraft] startup expiry check failed', error);
     });
   }, [cloudActive, user?.id]);
+
+  useEffect(() => {
+    if (!cloudActive) return;
+    void flushClientEventOutbox().catch((error) => {
+      console.warn('[ClientEventOutbox] startup flush failed', error);
+    });
+  }, [cloudActive]);
 
   useEffect(() => {
     if (cloudActive && isLocked) {
@@ -218,6 +226,11 @@ function RootLayout() {
     const sub = AppState.addEventListener('change', (status) => {
       if (Platform.OS !== 'web') {
         focusManager.setFocused(status === 'active');
+      }
+      if (status === 'active') {
+        void flushClientEventOutbox().catch((error) => {
+          console.warn('[ClientEventOutbox] foreground flush failed', error);
+        });
       }
     });
     return () => sub.remove();

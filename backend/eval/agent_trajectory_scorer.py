@@ -163,8 +163,34 @@ def _receipt_is_verified(call: dict[str, Any]) -> bool:
     return (
         isinstance(receipt, dict)
         and _receipt_status(call) in _VERIFIED_RECEIPT_STATUSES
-        and receipt.get("verified") is not False
+        and receipt.get("verified") is True
     )
+
+
+def _receipt_resource_type(call: dict[str, Any]) -> str:
+    receipt = call.get("receipt")
+    if not isinstance(receipt, dict):
+        return ""
+    return str(
+        receipt.get("resource_type") or receipt.get("record_type") or ""
+    ).strip().lower()
+
+
+def _receipt_matches_target(
+    call: dict[str, Any],
+    *,
+    expected_record_type: str,
+    expected_date: str,
+) -> bool:
+    receipt = call.get("receipt")
+    if not _receipt_is_verified(call) or not isinstance(receipt, dict):
+        return False
+    if (
+        expected_record_type
+        and _receipt_resource_type(call) != expected_record_type
+    ):
+        return False
+    return not expected_date or _record_date(receipt) == expected_date
 
 
 def _result_rows(call: dict[str, Any]) -> list[dict[str, Any]]:
@@ -236,8 +262,11 @@ def score_trajectory(case: dict[str, Any], trace: dict[str, Any]) -> dict[str, A
                 hard_failures.append(
                     f"unexpected_write_target:{record_type or 'missing'}"
                 )
-            if expected_date and write_date and write_date != expected_date:
-                hard_failures.append("write_target_date_mismatch")
+            if expected_date:
+                if not write_date:
+                    hard_failures.append("write_target_date_missing")
+                elif write_date != expected_date:
+                    hard_failures.append("write_target_date_mismatch")
     domain_lookup_indexes = [
         index
         for index, call in enumerate(calls)
@@ -332,12 +361,24 @@ def score_trajectory(case: dict[str, Any], trace: dict[str, Any]) -> dict[str, A
         receipt = call.get("receipt")
         if not isinstance(receipt, dict):
             continue
-        if (
-            _receipt_status(call) in _VERIFIED_RECEIPT_STATUSES
-            and receipt.get("verified") is False
+        if _receipt_status(call) in _VERIFIED_RECEIPT_STATUSES:
+            if receipt.get("verified") is False:
+                hard_failures.append("write_receipt_explicitly_unverified")
+            elif receipt.get("verified") is not True:
+                hard_failures.append("write_receipt_not_explicitly_verified")
+        if _receipt_is_verified(call):
+            if (
+                expected_record_type
+                and _receipt_resource_type(call) != expected_record_type
+            ):
+                hard_failures.append("write_receipt_resource_type_mismatch")
+            if expected_date and _record_date(receipt) != expected_date:
+                hard_failures.append("write_receipt_date_mismatch")
+        if not _receipt_matches_target(
+            call,
+            expected_record_type=expected_record_type,
+            expected_date=expected_date,
         ):
-            hard_failures.append("write_receipt_explicitly_unverified")
-        if not _receipt_is_verified(call):
             continue
         record_id = _record_id(receipt)
         write_record_id = _record_id(call.get("args"))
@@ -356,13 +397,21 @@ def score_trajectory(case: dict[str, Any], trace: dict[str, Any]) -> dict[str, A
     missing_identity_receipts = [
         call
         for call in relevant_write_calls
-        if _receipt_is_verified(call)
+        if _receipt_matches_target(
+            call,
+            expected_record_type=expected_record_type,
+            expected_date=expected_date,
+        )
         and _record_id(call.get("receipt")) is None
     ]
     if missing_identity_receipts:
         hard_failures.append("write_receipt_missing_identity")
     every_write_has_identity_receipt = bool(relevant_write_calls) and all(
-        _receipt_is_verified(call)
+        _receipt_matches_target(
+            call,
+            expected_record_type=expected_record_type,
+            expected_date=expected_date,
+        )
         and _record_id(call.get("receipt")) is not None
         for call in relevant_write_calls
     )
@@ -380,7 +429,11 @@ def score_trajectory(case: dict[str, Any], trace: dict[str, Any]) -> dict[str, A
     successful_write_calls = [
         call
         for call in relevant_write_calls
-        if _receipt_is_verified(call)
+        if _receipt_matches_target(
+            call,
+            expected_record_type=expected_record_type,
+            expected_date=expected_date,
+        )
     ]
     root_turn_id = str(trace.get("client_turn_id") or "").strip()
     if not root_turn_id:
@@ -409,18 +462,25 @@ def score_trajectory(case: dict[str, Any], trace: dict[str, Any]) -> dict[str, A
     last_write = max(write_indexes) if write_indexes else -1
     readback_rows: list[dict[str, Any]] = []
     mismatched_readback_date = False
+    mismatched_readback_result_date = False
     for index, call in enumerate(calls):
         if index > last_write and _operation(call) == "list":
             if expected_date and _record_date(call.get("args")) != expected_date:
                 mismatched_readback_date = True
                 continue
-            readback_rows.extend(_result_rows(call))
+            for row in _result_rows(call):
+                if expected_date and _record_date(row) != expected_date:
+                    mismatched_readback_result_date = True
+                    continue
+                readback_rows.append(row)
     if (
         expected.get("requires_verification")
         and mismatched_readback_date
         and not readback_rows
     ):
         hard_failures.append("readback_target_date_mismatch")
+    if expected.get("requires_verification") and mismatched_readback_result_date:
+        hard_failures.append("readback_result_date_mismatch")
     readback_ids = {_record_id(row) for row in readback_rows}
     readback_meals = {_meal_type(row) for row in readback_rows}
     if not expected.get("requires_verification"):

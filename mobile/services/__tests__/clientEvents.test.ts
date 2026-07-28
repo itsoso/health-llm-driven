@@ -1,7 +1,9 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import api from '../api';
 import {
   durationBucket,
   emitClientEvent,
+  flushClientEventOutbox,
   sanitizeClientEventMeta,
 } from '../clientEvents';
 
@@ -9,12 +11,16 @@ jest.mock('../api', () => ({
   __esModule: true,
   default: { post: jest.fn().mockResolvedValue({ data: { ok: true } }) },
 }));
+jest.mock('../authStorageScope', () => ({
+  getAuthStorageScope: jest.fn().mockResolvedValue('user-7'),
+}));
 
 const mockPost = api.post as jest.Mock;
 
 describe('client reliability events', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    return AsyncStorage.clear();
   });
 
   it.each([
@@ -151,6 +157,88 @@ describe('client reliability events', () => {
       duration_bucket: '3_10s',
       payload_bucket: '1_4mb',
     });
+  });
+
+  it('persists an attachment terminal event when delivery fails', async () => {
+    mockPost.mockRejectedValueOnce(new Error('offline'));
+
+    await emitClientEvent('chat_attachment_terminal', {
+      phase: 'accepted',
+      stage: 'server_accept',
+      image_count: 2,
+      duration_bucket: '3_10s',
+      payload_bucket: '1_4mb',
+      content: 'private meal description',
+    }, { eventKey: 'attachment-terminal-1' });
+
+    const stored = await AsyncStorage.getItem('client-events:outbox:v1:user-7');
+    expect(JSON.parse(stored || '[]')).toEqual([{
+      eventKey: 'attachment-terminal-1',
+      name: 'chat_attachment_terminal',
+      meta: {
+        phase: 'accepted',
+        stage: 'server_accept',
+        image_count: 2,
+        duration_bucket: '3_10s',
+        payload_bucket: '1_4mb',
+      },
+    }]);
+  });
+
+  it('retries a persisted attachment terminal event and removes it after acknowledgement', async () => {
+    await AsyncStorage.setItem('client-events:outbox:v1:user-7', JSON.stringify([{
+      eventKey: 'attachment-terminal-2',
+      name: 'chat_attachment_terminal',
+      meta: {
+        phase: 'failed',
+        stage: 'server_accept',
+        image_count: 1,
+        duration_bucket: '1_3s',
+        payload_bucket: 'lt_256kb',
+        error_code: 'server_not_accepted',
+      },
+    }]));
+
+    await flushClientEventOutbox();
+
+    expect(mockPost).toHaveBeenCalledWith('/client-events', {
+      event_name: 'chat_attachment_terminal',
+      event_key: 'attachment-terminal-2',
+      meta: {
+        phase: 'failed',
+        stage: 'server_accept',
+        image_count: 1,
+        duration_bucket: '1_3s',
+        payload_bucket: 'lt_256kb',
+        error_code: 'server_not_accepted',
+      },
+    });
+    expect(await AsyncStorage.getItem('client-events:outbox:v1:user-7')).toBeNull();
+  });
+
+  it('deduplicates an attachment terminal event in the local outbox', async () => {
+    mockPost.mockRejectedValue(new Error('offline'));
+    const payload = {
+      phase: 'accepted',
+      stage: 'server_accept',
+      image_count: 1,
+      duration_bucket: '1_3s',
+      payload_bucket: 'lt_256kb',
+    };
+
+    await emitClientEvent(
+      'chat_attachment_terminal',
+      payload,
+      { eventKey: 'attachment-terminal-3' },
+    );
+    await emitClientEvent(
+      'chat_attachment_terminal',
+      payload,
+      { eventKey: 'attachment-terminal-3' },
+    );
+
+    const stored = await AsyncStorage.getItem('client-events:outbox:v1:user-7');
+    expect(JSON.parse(stored || '[]')).toHaveLength(1);
   });
 
   it('drops invalid chat attachment telemetry instead of forwarding partial data', () => {
