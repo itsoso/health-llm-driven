@@ -18,6 +18,7 @@ function readPng(configPath: string) {
     buffer,
     width: buffer.readUInt32BE(16),
     height: buffer.readUInt32BE(20),
+    colorType: buffer.readUInt8(25),
   };
 }
 
@@ -44,5 +45,15 @@ describe('app icon assets', () => {
     const splash = readPng(appJson.expo.splash.image);
 
     expect([splash.width, splash.height]).toEqual([512, 512]);
+  });
+
+  it('keeps every App Store icon asset fully opaque', () => {
+    const icon = readPng(appJson.expo.icon);
+    const adaptive = readPng(appJson.expo.android.adaptiveIcon.foregroundImage);
+    const splash = readPng(appJson.expo.splash.image);
+
+    expect(icon.colorType).toBe(2);
+    expect(adaptive.colorType).toBe(2);
+    expect(splash.colorType).toBe(2);
   });
 });
