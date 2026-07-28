@@ -1,29 +1,5 @@
 import '@testing-library/jest-native/extend-expect';
 
-// React Query keeps inactive query caches alive with long GC timers. Those
-// timers are correct in the app, but in Jest they keep Node alive after every
-// assertion has completed. Preserve timer behavior while allowing the test
-// process to exit once no real work remains.
-const { timeoutManager } = require('@tanstack/query-core');
-timeoutManager.setTimeoutProvider({
-  setTimeout: (callback: (value?: void) => void, delay: number) => {
-    const timer = setTimeout(callback, delay);
-    timer.unref?.();
-    return timer;
-  },
-  clearTimeout: (timer: ReturnType<typeof setTimeout> | undefined) => {
-    if (timer !== undefined) clearTimeout(timer);
-  },
-  setInterval: (callback: (value?: void) => void, delay: number) => {
-    const timer = setInterval(callback, delay);
-    timer.unref?.();
-    return timer;
-  },
-  clearInterval: (timer: ReturnType<typeof setInterval> | undefined) => {
-    if (timer !== undefined) clearInterval(timer);
-  },
-});
-
 // Legacy service tests exercise the existing cloud-account paths directly.
 // Individual local-mode tests override this explicitly and verify fail-closed behavior.
 require('./services/egressPolicy').setAppEgressMode('cloud_account');

@@ -17,6 +17,7 @@ from app.api.deps import get_current_user_required
 from app.database import get_db
 from app.models.client_event import ClientEvent
 from app.models.user import User
+from app.services.agent_runtime_identity import runtime_hmac_digest
 
 router = APIRouter(prefix="/client-events", tags=["client-events"])
 logger = logging.getLogger(__name__)
@@ -285,6 +286,26 @@ class EventIn(BaseModel):
                 )
             ):
                 raise ValueError("invalid chat attachment event error_code")
+            phase = self.meta.get("phase")
+            stage = self.meta.get("stage")
+            if phase == "accepted" and (
+                stage != "server_accept" or error_code is not None
+            ):
+                raise ValueError("invalid accepted chat attachment terminal state")
+            if phase == "failed" and error_code is None:
+                raise ValueError("failed chat attachment terminal requires error_code")
+            if (
+                phase == "failed"
+                and stage == "local_prepare"
+                and error_code != "draft_hydration_failed"
+            ):
+                raise ValueError("invalid local preparation attachment failure")
+            if (
+                phase == "failed"
+                and stage == "server_accept"
+                and error_code not in {"server_not_accepted", "send_rejected"}
+            ):
+                raise ValueError("invalid server attachment failure")
             return self
 
         app_update_schema = _APP_UPDATE_EVENT_SCHEMAS.get(self.event_name)
@@ -442,12 +463,20 @@ def post_client_event(
             },
         )
 
-    existing = None
+    stored_event_key = None
     if body.event_key is not None:
+        stored_event_key = runtime_hmac_digest(
+            "client-event-idempotency-v1",
+            current_user.id,
+            body.event_name,
+            body.event_key,
+        )
+    existing = None
+    if stored_event_key is not None:
         existing = db.query(ClientEvent).filter(
             ClientEvent.user_id == current_user.id,
             ClientEvent.event_name == body.event_name,
-            ClientEvent.event_key == body.event_key,
+            ClientEvent.event_key == stored_event_key,
         ).first()
     if existing is not None:
         return {"ok": True, "id": existing.id, "duplicate": True}
@@ -456,7 +485,7 @@ def post_client_event(
         ev = ClientEvent(
             user_id=current_user.id,
             event_name=body.event_name,
-            event_key=body.event_key,
+            event_key=stored_event_key,
             meta=body.meta,
         )
         db.add(ev)
@@ -464,11 +493,11 @@ def post_client_event(
         return {"ok": True, "id": ev.id, "duplicate": False}
     except IntegrityError:
         db.rollback()
-        if body.event_key is not None:
+        if stored_event_key is not None:
             existing = db.query(ClientEvent).filter(
                 ClientEvent.user_id == current_user.id,
                 ClientEvent.event_name == body.event_name,
-                ClientEvent.event_key == body.event_key,
+                ClientEvent.event_key == stored_event_key,
             ).first()
             if existing is not None:
                 return {"ok": True, "id": existing.id, "duplicate": True}

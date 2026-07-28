@@ -1057,6 +1057,11 @@ describe('useChatEngine', () => {
     await waitFor(() => {
       expect(mockStreamChat).toHaveBeenCalledTimes(2);
     });
+
+    await act(async () => {
+      finishStream?.();
+      await Promise.resolve();
+    });
   });
 
   it('does not acknowledge a queued photo turn until the backend accepts it', async () => {

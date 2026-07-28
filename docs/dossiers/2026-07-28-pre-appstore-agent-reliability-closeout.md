@@ -88,8 +88,8 @@ RequirementAdmission:
 
 - Mobile 附件事件、输入框、active Turn、聊天页面、结构化回执和顶部状态均纳入
   全量 Gate。
-- Backend Agent、Runtime、client event、managed migration 与 Harness wiring：
-  `1445 passed, 3 skipped`，退出码 0。
+- Backend Agent、Runtime、client event、managed migration、历史写回与 Harness
+  wiring：`1467 passed, 3 skipped`，退出码 0。
 - Agent trajectory scorer 与历史轨迹门禁已覆盖 9 个 mandatory scenarios。
 - TypeScript `npx tsc --noEmit`：PASS。
 - Mobile 完整 Gate：`279` 个 suites、`2148 passed`、`1 skipped`，退出码 0；
@@ -136,8 +136,19 @@ RequirementAdmission:
 - 扩展测试进一步发现 Goal Guard 全量拒绝写工具后会误入下一轮工具调用并降级为
   通用失败。现已在单模型与多模型路径保存 `rejected` 状态，随后强制无工具恢复回答，
   不执行副作用、不宣称写入，也不向用户暴露内部策略。
+- 第五轮独立 reviewer 仍给出 **NO-GO**，发现轨迹日期和回执身份未绑定、畸形
+  attempts/缺失 ID 可 fail open、`verified=false` 仍可能通过、mandatory scenario
+  可被无关失败抵扣、附件事件原始幂等键会持久化，以及互相矛盾的附件终态组合仍可
+  被接受。
+- 第五轮整改已完成：root/attempt `client_turn_id`、查询日期、写入日期和 receipt
+  identity 全部严格一致；畸形 attempts、缺失 operation/ID 和显式未验证回执统一
+  fail closed；mandatory scenarios 改为逐项精确判定且不能被配置放宽；附件事件键
+  使用运行时 HMAC 摘要后持久化，并只接受语义一致的 terminal tuple。fixture 隐私
+  扫描同步覆盖 refresh token、credential 和内嵌 token 变体。
+- Mobile 测试环境移除了全局 TanStack Query timeout manager 覆写，改为测试局部
+  `gcTime=0`；完整 Jest Gate 已自然退出，不再掩盖业务定时器泄漏。
 - 在新的独立 reviewer 对全部整改提交给出 GO 前不进入部署。
-- **裁决: PENDING。** 四轮评审失败均已回到实现与测试阶段；等待全量复审。
+- **裁决: PENDING。** 五轮评审失败均已回到实现与测试阶段；等待全量复审。
 
 ## S6 / G5 · 部署与健康
 

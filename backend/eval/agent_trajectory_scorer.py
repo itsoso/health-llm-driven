@@ -68,26 +68,54 @@ def _record_id(value: dict[str, Any] | None) -> Any:
     return value.get("record_id") or value.get("id") or nested.get("record_id")
 
 
+def _record_date(value: dict[str, Any] | None) -> str:
+    value = value or {}
+    nested = value.get("data") if isinstance(value.get("data"), dict) else {}
+    return str(
+        value.get("date")
+        or value.get("record_date")
+        or nested.get("date")
+        or nested.get("record_date")
+        or ""
+    ).strip()
+
+
 def _trace_tool_calls(
     trace: dict[str, Any],
 ) -> tuple[list[dict[str, Any]], list[str]]:
-    root_calls = [
-        call
-        for call in (trace.get("tool_calls") or [])
-        if isinstance(call, dict)
-    ]
+    failures: list[str] = []
+    raw_root_calls = trace.get("tool_calls") or []
+    if not isinstance(raw_root_calls, list):
+        failures.append("invalid_top_level_tool_calls")
+        raw_root_calls = []
+    root_calls = []
+    for call in raw_root_calls:
+        if not isinstance(call, dict):
+            failures.append("malformed_top_level_tool_call")
+            continue
+        root_calls.append(call)
+
     attempt_calls: list[dict[str, Any]] = []
     attempts = trace.get("attempts")
+    if "attempts" in trace and not isinstance(attempts, list):
+        failures.append("invalid_attempts_projection")
+        return root_calls, failures
     if isinstance(attempts, list):
-        attempt_calls = [
-            call
-            for attempt in attempts
-            if isinstance(attempt, dict)
-            for call in (attempt.get("tool_calls") or [])
-            if isinstance(call, dict)
-        ]
-    if isinstance(attempts, list):
-        failures = []
+        if not attempts:
+            failures.append("empty_attempts_projection")
+        for attempt in attempts:
+            if not isinstance(attempt, dict):
+                failures.append("malformed_attempt")
+                continue
+            raw_calls = attempt.get("tool_calls")
+            if not isinstance(raw_calls, list):
+                failures.append("invalid_attempt_tool_calls")
+                continue
+            for call in raw_calls:
+                if not isinstance(call, dict):
+                    failures.append("malformed_attempt_tool_call")
+                    continue
+                attempt_calls.append(call)
         if "tool_calls" in trace and root_calls != attempt_calls:
             failures.append("inconsistent_top_level_tool_calls")
             # The ordering cannot be trusted, but every represented side effect
@@ -128,6 +156,15 @@ def _receipt_status(call: dict[str, Any]) -> str:
     if not isinstance(receipt, dict):
         return ""
     return str(receipt.get("status") or "").strip().lower()
+
+
+def _receipt_is_verified(call: dict[str, Any]) -> bool:
+    receipt = call.get("receipt")
+    return (
+        isinstance(receipt, dict)
+        and _receipt_status(call) in _VERIFIED_RECEIPT_STATUSES
+        and receipt.get("verified") is not False
+    )
 
 
 def _result_rows(call: dict[str, Any]) -> list[dict[str, Any]]:
@@ -175,6 +212,7 @@ def score_trajectory(case: dict[str, Any], trace: dict[str, Any]) -> dict[str, A
         expected.get("target_record_type") or expected.get("domain") or ""
     ).strip().lower()
     expected_operation = str(expected.get("operation") or "").strip().lower()
+    expected_date = str(expected.get("target_date") or "").strip()
 
     operations = [_operation(call) for call in calls]
     for operation in operations:
@@ -191,17 +229,32 @@ def score_trajectory(case: dict[str, Any], trace: dict[str, Any]) -> dict[str, A
         for call in write_calls:
             operation = _operation(call)
             record_type = _record_type(call)
+            write_date = _record_date(call.get("args"))
             if operation != expected_operation:
                 hard_failures.append(f"unexpected_write_operation:{operation}")
             if expected_record_type and record_type != expected_record_type:
                 hard_failures.append(
                     f"unexpected_write_target:{record_type or 'missing'}"
                 )
-    lookup_indexes = [
+            if expected_date and write_date and write_date != expected_date:
+                hard_failures.append("write_target_date_mismatch")
+    domain_lookup_indexes = [
         index
         for index, call in enumerate(calls)
         if _operation(call) == "list" and _record_type(call) == expected.get("domain")
     ]
+    lookup_indexes = [
+        index
+        for index in domain_lookup_indexes
+        if not expected_date or _record_date(calls[index].get("args")) == expected_date
+    ]
+    if (
+        expected.get("requires_lookup")
+        and expected_date
+        and domain_lookup_indexes
+        and not lookup_indexes
+    ):
+        hard_failures.append("lookup_target_date_mismatch")
     lookup_before_write = bool(lookup_indexes) if expected.get("requires_lookup") else True
     if write_indexes and expected.get("requires_lookup"):
         lookup_before_write = bool(lookup_indexes) and min(lookup_indexes) < min(write_indexes)
@@ -279,9 +332,22 @@ def score_trajectory(case: dict[str, Any], trace: dict[str, Any]) -> dict[str, A
         receipt = call.get("receipt")
         if not isinstance(receipt, dict):
             continue
-        if _receipt_status(call) not in _VERIFIED_RECEIPT_STATUSES:
+        if (
+            _receipt_status(call) in _VERIFIED_RECEIPT_STATUSES
+            and receipt.get("verified") is False
+        ):
+            hard_failures.append("write_receipt_explicitly_unverified")
+        if not _receipt_is_verified(call):
             continue
         record_id = _record_id(receipt)
+        write_record_id = _record_id(call.get("args"))
+        if (
+            _operation(call) in {"update", "delete"}
+            and write_record_id is not None
+            and record_id is not None
+            and record_id != write_record_id
+        ):
+            hard_failures.append("write_receipt_identity_mismatch")
         meal = _meal_type(receipt) or _meal_type(call.get("args"))
         if record_id is not None:
             verified_ids.add(record_id)
@@ -290,13 +356,13 @@ def score_trajectory(case: dict[str, Any], trace: dict[str, Any]) -> dict[str, A
     missing_identity_receipts = [
         call
         for call in relevant_write_calls
-        if _receipt_status(call) in _VERIFIED_RECEIPT_STATUSES
+        if _receipt_is_verified(call)
         and _record_id(call.get("receipt")) is None
     ]
     if missing_identity_receipts:
         hard_failures.append("write_receipt_missing_identity")
     every_write_has_identity_receipt = bool(relevant_write_calls) and all(
-        _receipt_status(call) in _VERIFIED_RECEIPT_STATUSES
+        _receipt_is_verified(call)
         and _record_id(call.get("receipt")) is not None
         for call in relevant_write_calls
     )
@@ -314,17 +380,21 @@ def score_trajectory(case: dict[str, Any], trace: dict[str, Any]) -> dict[str, A
     successful_write_calls = [
         call
         for call in relevant_write_calls
-        if _receipt_status(call) in _VERIFIED_RECEIPT_STATUSES
+        if _receipt_is_verified(call)
     ]
-    attempt_turn_ids = {
-        str(attempt.get("client_turn_id"))
-        for attempt in (trace.get("attempts") or [])
-        if isinstance(attempt, dict) and attempt.get("client_turn_id")
-    }
-    if trace.get("client_turn_id"):
-        attempt_turn_ids.add(str(trace["client_turn_id"]))
-    if len(attempt_turn_ids) > 1:
-        hard_failures.append("client_turn_id_changed_across_attempts")
+    root_turn_id = str(trace.get("client_turn_id") or "").strip()
+    if not root_turn_id:
+        hard_failures.append("client_turn_id_missing")
+    attempts = trace.get("attempts")
+    if isinstance(attempts, list):
+        for attempt in attempts:
+            if not isinstance(attempt, dict):
+                continue
+            attempt_turn_id = str(attempt.get("client_turn_id") or "").strip()
+            if not attempt_turn_id:
+                hard_failures.append("attempt_client_turn_id_missing")
+            elif root_turn_id and attempt_turn_id != root_turn_id:
+                hard_failures.append("client_turn_id_changed_across_attempts")
     allowed_effects = len(target_meals) if target_meals else (
         1 if expected_operation in _WRITE_OPERATIONS else 0
     )
@@ -338,9 +408,19 @@ def score_trajectory(case: dict[str, Any], trace: dict[str, Any]) -> dict[str, A
 
     last_write = max(write_indexes) if write_indexes else -1
     readback_rows: list[dict[str, Any]] = []
+    mismatched_readback_date = False
     for index, call in enumerate(calls):
         if index > last_write and _operation(call) == "list":
+            if expected_date and _record_date(call.get("args")) != expected_date:
+                mismatched_readback_date = True
+                continue
             readback_rows.extend(_result_rows(call))
+    if (
+        expected.get("requires_verification")
+        and mismatched_readback_date
+        and not readback_rows
+    ):
+        hard_failures.append("readback_target_date_mismatch")
     readback_ids = {_record_id(row) for row in readback_rows}
     readback_meals = {_meal_type(row) for row in readback_rows}
     if not expected.get("requires_verification"):

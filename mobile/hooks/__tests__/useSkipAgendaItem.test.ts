@@ -24,7 +24,10 @@ const mockCompleteAgendaItem = completeAgendaItem as jest.Mock;
 
 function makeWrapper() {
   const qc = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    defaultOptions: {
+      queries: { retry: false, gcTime: 0 },
+      mutations: { retry: false, gcTime: 0 },
+    },
   });
   const invalidateSpy = jest.spyOn(qc, 'invalidateQueries');
   const wrapper = ({ children }: { children: React.ReactNode }) =>

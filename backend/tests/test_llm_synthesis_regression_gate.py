@@ -288,6 +288,61 @@ cases: []
     assert any("forbidden fixture key: message_body" in error for error in fixture_errors)
 
 
+def test_fixture_privacy_gate_rejects_refresh_credentials_and_inline_tokens():
+    module = _load_gate_module()
+
+    errors = module._fixture_privacy_errors({
+        "refresh_token": "synthetic-but-forbidden",
+        "credential": "synthetic-but-forbidden",
+        "note": "token=sk-live-secretvalue",
+    })
+
+    assert any("forbidden fixture key: refresh_token" in error for error in errors)
+    assert any("forbidden fixture key: credential" in error for error in errors)
+    assert any("forbidden inline credential" in error for error in errors)
+
+
+def test_expected_contract_can_only_tighten_dataset_contract():
+    module = _load_gate_module()
+
+    merged, errors = module._tighten_expected_contract(
+        {
+            "requires_verification": True,
+            "prohibited_operations": ["delete"],
+        },
+        {
+            "requires_verification": False,
+            "prohibited_operations": [],
+        },
+    )
+
+    assert merged["requires_verification"] is True
+    assert merged["prohibited_operations"] == ["delete"]
+    assert "requires_verification cannot be relaxed" in errors
+    assert "prohibited_operations cannot remove existing values" in errors
+
+
+def test_expected_failure_must_match_exact_historical_failure_class():
+    module = _load_gate_module()
+
+    errors = module._expected_outcome_errors(
+        {
+            "passed": False,
+            "hard_failures": ["uncertain_receipt_claimed_complete"],
+        },
+        {
+            "passed": False,
+            "hard_failures": ["write_before_lookup"],
+        },
+    )
+
+    assert "hard_failures" in errors
+    assert errors["hard_failures"]["missing"] == [
+        "uncertain_receipt_claimed_complete"
+    ]
+    assert errors["hard_failures"]["unexpected"] == ["write_before_lookup"]
+
+
 def test_historical_golden_trace_gate_scans_dataset_privacy(
     monkeypatch,
     tmp_path,

@@ -50,6 +50,8 @@ _FORBIDDEN_FIXTURE_KEYS = {
     "authorization",
     "base64",
     "content",
+    "credential",
+    "credentials",
     "email",
     "file_name",
     "filename",
@@ -78,12 +80,21 @@ _FORBIDDEN_FIXTURE_KEY_SUFFIXES = (
     "accesstoken",
     "apikey",
     "authorization",
+    "credential",
+    "credentials",
     "password",
+    "refreshtoken",
     "secret",
+    "token",
 )
 _FORBIDDEN_URI_PREFIXES = ("data:", "file://", "http://", "https://")
 _SYNTHETIC_SOURCE_MESSAGE_ID = re.compile(r"^assistant-[a-z0-9-]+$")
 _BEARER_SECRET = re.compile(r"\bbearer\s+[a-z0-9._~+/=-]{8,}", re.IGNORECASE)
+_INLINE_CREDENTIAL = re.compile(
+    r"\b(?:access[_-]?token|refresh[_-]?token|api[_-]?key|token|password|"
+    r"secret|credentials?)\s*[:=]\s*[\"']?[a-z0-9._~+/=-]{8,}",
+    re.IGNORECASE,
+)
 
 
 def run_agent_trajectory_contract_gate() -> dict[str, Any]:
@@ -195,6 +206,93 @@ def _fixture_privacy_errors(
             errors.append(f"forbidden URI value at {path}")
         if _BEARER_SECRET.search(value):
             errors.append(f"forbidden bearer secret at {path}")
+        if _INLINE_CREDENTIAL.search(value):
+            errors.append(f"forbidden inline credential at {path}")
+    return errors
+
+
+def _tighten_expected_contract(
+    base: dict[str, Any],
+    override: dict[str, Any],
+) -> tuple[dict[str, Any], list[str]]:
+    merged = dict(base)
+    errors: list[str] = []
+    for key, value in override.items():
+        current = merged.get(key)
+        if key in {"requires_lookup", "requires_verification"}:
+            if current is True and value is not True:
+                errors.append(f"{key} cannot be relaxed")
+                continue
+            if not isinstance(value, bool):
+                errors.append(f"{key} must be boolean")
+                continue
+            merged[key] = bool(current) or value
+            continue
+        if key == "prohibited_operations":
+            current_values = list(current or [])
+            override_values = list(value or []) if isinstance(value, list) else []
+            if not isinstance(value, list):
+                errors.append("prohibited_operations must be an array")
+                continue
+            if not set(current_values).issubset(override_values):
+                errors.append("prohibited_operations cannot remove existing values")
+                continue
+            merged[key] = override_values
+            continue
+        if key == "target_values":
+            if not isinstance(value, dict):
+                errors.append("target_values must be an object")
+                continue
+            current_values = dict(current or {}) if isinstance(current, dict) else {}
+            conflicts = [
+                item_key
+                for item_key, item_value in value.items()
+                if item_key in current_values and current_values[item_key] != item_value
+            ]
+            if conflicts:
+                errors.append(
+                    "target_values cannot change existing values: "
+                    + ", ".join(sorted(conflicts))
+                )
+                continue
+            merged[key] = {**current_values, **value}
+            continue
+        if current in (None, "", [], {}):
+            merged[key] = value
+        elif current != value:
+            errors.append(f"{key} cannot change the dataset contract")
+    return merged, errors
+
+
+def _expected_outcome_errors(
+    expected: Any,
+    actual: dict[str, Any],
+) -> dict[str, Any]:
+    if not isinstance(expected, dict) or not isinstance(expected.get("passed"), bool):
+        return {"fixture": "expected.passed must be an explicit boolean"}
+    expected_passed = expected["passed"]
+    required_failures = expected.get("hard_failures")
+    if not isinstance(required_failures, list):
+        return {"fixture": "expected.hard_failures must be an explicit array"}
+    if not expected_passed and not required_failures:
+        return {"fixture": "failed fixture must name its hard_failures"}
+
+    errors: dict[str, Any] = {}
+    actual_passed = bool(actual.get("passed"))
+    if actual_passed is not expected_passed:
+        errors["passed"] = {
+            "expected": expected_passed,
+            "actual": actual_passed,
+        }
+    expected_failures = {str(value) for value in required_failures}
+    actual_failures = {
+        str(value) for value in (actual.get("hard_failures") or [])
+    }
+    if expected_failures != actual_failures:
+        errors["hard_failures"] = {
+            "missing": sorted(expected_failures - actual_failures),
+            "unexpected": sorted(actual_failures - expected_failures),
+        }
     return errors
 
 
@@ -214,6 +312,7 @@ def run_agent_golden_trace_gate() -> dict[str, Any]:
     }
     fixture_rows = fixtures.get("cases") or []
     failed_cases: list[dict[str, Any]] = []
+    declared_scenarios: list[str] = []
     covered_scenarios: list[str] = []
     if dataset.get("fixture_origin") != "synthetic":
         failed_cases.append(
@@ -255,7 +354,7 @@ def run_agent_golden_trace_gate() -> dict[str, Any]:
     for fixture in fixture_rows:
         scenario = str(fixture.get("scenario") or "").strip()
         case_id = str(fixture.get("case_id") or "").strip()
-        covered_scenarios.append(scenario)
+        declared_scenarios.append(scenario)
         if not scenario or not fixture.get("history_ref"):
             failed_cases.append(
                 {
@@ -288,27 +387,25 @@ def run_agent_golden_trace_gate() -> dict[str, Any]:
                 )
                 continue
             case = dict(case)
-            case["expected"] = {
-                **(case.get("expected") or {}),
-                **expected_contract,
-            }
+            merged_expected, contract_errors = _tighten_expected_contract(
+                case.get("expected") or {},
+                expected_contract,
+            )
+            if contract_errors:
+                failed_cases.append(
+                    {
+                        "scenario": scenario,
+                        "case_id": case_id,
+                        "mismatch": {"expected_contract": contract_errors},
+                    }
+                )
+                continue
+            case["expected"] = merged_expected
 
         trace = dict(fixture.get("trace") or {})
         trace["case_id"] = case_id
         actual = _score_golden_trace(case, trace)
-        expected = fixture.get("expected") or {}
-        expected_passed = bool(expected.get("passed"))
-        required_failures = set(expected.get("hard_failures") or [])
-        actual_failures = set(actual.get("hard_failures") or [])
-        mismatch: dict[str, Any] = {}
-        if bool(actual.get("passed")) is not expected_passed:
-            mismatch["passed"] = {
-                "expected": expected_passed,
-                "actual": bool(actual.get("passed")),
-            }
-        missing_failures = sorted(required_failures - actual_failures)
-        if missing_failures:
-            mismatch["missing_hard_failures"] = missing_failures
+        mismatch = _expected_outcome_errors(fixture.get("expected"), actual)
         if mismatch:
             failed_cases.append(
                 {
@@ -318,8 +415,10 @@ def run_agent_golden_trace_gate() -> dict[str, Any]:
                     "actual": actual,
                 }
             )
+            continue
+        covered_scenarios.append(scenario)
 
-    if len(set(covered_scenarios)) != len(covered_scenarios):
+    if len(set(declared_scenarios)) != len(declared_scenarios):
         failed_cases.append(
             {
                 "scenario": "__fixture__",

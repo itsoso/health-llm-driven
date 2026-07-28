@@ -277,6 +277,7 @@ cases:
     expected:
       passed: false
       hard_failures:
+        - prohibited_operation:delete
         - unexpected_write_operation:delete
         - false_completion_claim
     trace:

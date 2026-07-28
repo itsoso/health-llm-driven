@@ -21,6 +21,7 @@ def _valid_trace(candidate_id: str = "candidate-a") -> dict:
     return {
         "case_id": CASE["id"],
         "candidate_id": candidate_id,
+        "client_turn_id": f"turn-{candidate_id}",
         "goal": {
             "kind": "diet_recalculate_update",
             "domain": "diet",
@@ -31,7 +32,11 @@ def _valid_trace(candidate_id: str = "candidate-a") -> dict:
         "tool_calls": [
             {
                 "name": "health_manage",
-                "args": {"record_type": "diet", "operation": "list", "date": "today"},
+                "args": {
+                    "record_type": "diet",
+                    "operation": "list",
+                    "date": "2026-07-24",
+                },
                 "result": [
                     {"id": 101, "meal_type": "breakfast"},
                     {"id": 102, "meal_type": "lunch"},
@@ -67,7 +72,11 @@ def _valid_trace(candidate_id: str = "candidate-a") -> dict:
             },
             {
                 "name": "health_manage",
-                "args": {"record_type": "diet", "operation": "list", "date": "today"},
+                "args": {
+                    "record_type": "diet",
+                    "operation": "list",
+                    "date": "2026-07-24",
+                },
                 "result": [
                     {"id": 101, "meal_type": "breakfast", "calories": 410},
                     {"id": 102, "meal_type": "lunch", "calories": 530},
@@ -140,6 +149,46 @@ def test_score_trajectory_rejects_a_write_to_the_wrong_date():
 
     assert scored["passed"] is False
     assert scored["dimensions"]["goal"] == 0
+    assert "false_completion_claim" in scored["hard_failures"]
+
+
+def test_score_trajectory_rejects_lookup_and_readback_for_wrong_date():
+    trace = _valid_trace("candidate-wrong-tool-date")
+    trace["tool_calls"][0]["args"]["date"] = "2026-07-23"
+    trace["tool_calls"][-1]["args"]["date"] = "2026-07-23"
+
+    scored = score_trajectory(CASE, trace)
+
+    assert scored["passed"] is False
+    assert "lookup_target_date_mismatch" in scored["hard_failures"]
+    assert "readback_target_date_mismatch" in scored["hard_failures"]
+    assert "false_completion_claim" in scored["hard_failures"]
+
+
+def test_score_trajectory_rejects_explicit_write_date_that_differs_from_goal():
+    trace = _simple_water_trace()
+    trace["tool_calls"][0]["args"]["data"]["date"] = "2026-07-16"
+
+    scored = score_trajectory(SIMPLE_WATER_CASE, trace)
+
+    assert scored["passed"] is False
+    assert "write_target_date_mismatch" in scored["hard_failures"]
+    assert "false_completion_claim" in scored["hard_failures"]
+
+
+def test_score_trajectory_rejects_receipt_identity_that_differs_from_write():
+    trace = _valid_trace("candidate-wrong-receipt-id")
+    trace["tool_calls"][1]["receipt"]["record_id"] = 999
+    trace["tool_calls"][-1]["result"].append({
+        "id": 999,
+        "meal_type": "breakfast",
+        "calories": 410,
+    })
+
+    scored = score_trajectory(CASE, trace)
+
+    assert scored["passed"] is False
+    assert "write_receipt_identity_mismatch" in scored["hard_failures"]
     assert "false_completion_claim" in scored["hard_failures"]
 
 
@@ -448,6 +497,51 @@ def test_score_trajectory_accepts_idempotent_replay_without_second_side_effect()
 
     assert scored["passed"] is True
     assert not any(item.startswith("duplicate_side_effects:") for item in scored["hard_failures"])
+
+
+def test_score_trajectory_rejects_non_list_attempt_projection():
+    trace = _simple_water_trace()
+    trace["attempts"] = {
+        "client_turn_id": "different-turn",
+        "tool_calls": trace.pop("tool_calls"),
+    }
+
+    scored = score_trajectory(SIMPLE_WATER_CASE, trace)
+
+    assert scored["passed"] is False
+    assert "invalid_attempts_projection" in scored["hard_failures"]
+    assert "false_completion_claim" in scored["hard_failures"]
+
+
+def test_score_trajectory_requires_turn_id_on_root_and_every_attempt():
+    trace = _simple_water_trace()
+    write, readback = trace.pop("tool_calls")
+    trace["attempts"] = [
+        {"tool_calls": [write]},
+        {
+            "client_turn_id": "turn-water-500",
+            "replayed": True,
+            "tool_calls": [readback],
+        },
+    ]
+
+    scored = score_trajectory(SIMPLE_WATER_CASE, trace)
+
+    assert scored["passed"] is False
+    assert "attempt_client_turn_id_missing" in scored["hard_failures"]
+    assert "false_completion_claim" in scored["hard_failures"]
+
+
+def test_score_trajectory_rejects_explicitly_unverified_success_receipt():
+    trace = _simple_water_trace(receipt_status="success")
+    trace["tool_calls"][0]["receipt"]["verified"] = False
+
+    scored = score_trajectory(SIMPLE_WATER_CASE, trace)
+
+    assert scored["passed"] is False
+    assert "write_receipt_explicitly_unverified" in scored["hard_failures"]
+    assert scored["dimensions"]["verified_receipts"] == 0
+    assert "false_completion_claim" in scored["hard_failures"]
 
 
 def test_score_trajectory_cannot_hide_top_level_write_behind_empty_attempts():
