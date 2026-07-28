@@ -49,7 +49,7 @@ def test_safety_me_response_includes_audit_id(client, auth_user_and_headers, db)
         for sev in (0, 2):
             for lim in (8, 50):
                 for dedup in (0, 1):
-                    RedisCache.delete(f"safety:v2:{user.id}:s{sev}:l{lim}:d{dedup}")
+                    RedisCache.delete(f"safety:v3:{user.id}:s{sev}:l{lim}:d{dedup}")
     except Exception:
         pass
 
@@ -90,7 +90,7 @@ def test_safety_me_endpoint_persists_alerts_snapshot(client, auth_user_and_heade
         for sev in (0, 2):
             for lim in (8, 50):
                 for dedup in (0, 1):
-                    RedisCache.delete(f"safety:v2:{user.id}:s{sev}:l{lim}:d{dedup}")
+                    RedisCache.delete(f"safety:v3:{user.id}:s{sev}:l{lim}:d{dedup}")
     except Exception:
         pass
 

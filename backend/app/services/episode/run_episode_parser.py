@@ -5,7 +5,7 @@
 2. 建 context_snapshot (天气/aqi/睡眠/HRV/ACWR)
 3. 建 baseline_snapshot (7d avg HR, pace, 30d sleep median)
 
-ACWR 计算采用简化 7d acute / 28d chronic 负荷比 (training_load 字段优先, fallback 距离).
+ACWR 复用 HealthTwin 的训练负荷服务和可靠性边界，避免 Episode 与安全规则口径漂移。
 """
 from __future__ import annotations
 
@@ -18,7 +18,8 @@ from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
 from app.models.daily_health import WorkoutRecord, GarminData
-from app.services.training_load_metrics import assess_acwr
+from app.services.exercise_recovery_service import ExerciseRecoveryService
+from app.utils.timezone import get_user_timezone
 
 logger = logging.getLogger(__name__)
 
@@ -93,40 +94,17 @@ def parse_run_episode(
 
 
 def _compute_acwr(db: Session, user_id: int, now: datetime) -> Optional[float]:
-    """7 天 acute / 28 天 chronic training load ratio.
+    """Return the same reliable ACWR value used by HealthTwin and Safety."""
 
-    load 优先用 training_load 字段, 否则 fallback 用 distance_meters/1000.
-    """
-    chronic_start = now - timedelta(days=28)
-    rows = (
-        db.query(WorkoutRecord)
-        .filter(
-            and_(
-                WorkoutRecord.user_id == user_id,
-                WorkoutRecord.end_time >= chronic_start,
-                WorkoutRecord.end_time <= now,
-            )
-        )
-        .all()
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    local_date = now.astimezone(get_user_timezone(db, user_id)).date()
+    result = ExerciseRecoveryService().get_training_load(
+        db,
+        user_id,
+        as_of_date=local_date,
     )
-
-    daily_loads: Dict[Any, float] = {}
-    for row in rows:
-        load = 0.0
-        if row.training_load:
-            load = float(row.training_load)
-        elif row.distance_meters:
-            load = float(row.distance_meters) / 1000.0
-        if load <= 0 or row.end_time is None:
-            continue
-        workout_day = row.end_time.date()
-        daily_loads[workout_day] = daily_loads.get(workout_day, 0.0) + load
-
-    newest_first = [
-        daily_loads.get(now.date() - timedelta(days=i), 0.0)
-        for i in range(28)
-    ]
-    return assess_acwr(newest_first).acwr
+    return result.get("acwr")
 
 
 def _compute_baseline(db: Session, user_id: int, now: datetime) -> Dict[str, Any]:

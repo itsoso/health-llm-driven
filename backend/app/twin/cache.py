@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 TWIN_CACHE_TTL_SECONDS = 60  # 1 min（用户同步 Garmin 后希望立即看到最新数据）
-_KEY_PREFIX = "twin:v1:"
+_KEY_PREFIX = "twin:v2:"
 
 
 def _key(user_id: int) -> str:
@@ -72,7 +72,7 @@ def set_cached_twin(user_id: int, twin_json: Dict[str, Any], ttl: int = TWIN_CAC
 
 
 def invalidate_twin(user_id: int) -> None:
-    """用户数据发生变化时调用，强制下次构建重新计算。"""
+    """用户数据变化后清除 Twin 及所有由 Twin 派生的安全报告。"""
     try:
         from app.utils.redis_cache import get_redis_client
 
@@ -81,6 +81,13 @@ def invalidate_twin(user_id: int) -> None:
             client.delete(_key(user_id))
     except Exception as e:
         logger.warning(f"[twin.cache] invalidate 失败: {e}")
+
+    try:
+        from app.agents.safety_guardian.cache import invalidate_safety_report_cache
+
+        invalidate_safety_report_cache(user_id)
+    except Exception as e:
+        logger.warning(f"[twin.cache] safety invalidate 失败: {e}")
 
     # rank7: this is the write choke every mutation route must call to keep the twin
     # fresh — active writes (exams / labs / genetics / CGM / meds / symptoms / agent

@@ -13,6 +13,13 @@ from app.agents.safety_guardian.engine import register
 from app.agents.safety_guardian.schema import Alert, Severity
 from app.twin.schema import HealthTwin
 
+ACWR_RULE_IDS = frozenset(
+    {
+        "training.acwr_overload",
+        "training.acwr_undertraining",
+    }
+)
+
 
 @register
 def training_acwr_overload(twin: HealthTwin) -> Optional[Alert]:
@@ -20,7 +27,7 @@ def training_acwr_overload(twin: HealthTwin) -> Optional[Alert]:
     acwr = twin.behavioral.acute_chronic_ratio
     if acwr is None:
         return None
-    if twin.behavioral.acwr_reliable is False:
+    if twin.behavioral.acwr_reliable is not True:
         return None
     # Defensive consistency guard: a ratio cannot indicate acute overload when
     # the same Twin explicitly says the recent load is zero. This also prevents
@@ -61,7 +68,7 @@ def training_acwr_undertraining(twin: HealthTwin) -> Optional[Alert]:
     acwr = twin.behavioral.acute_chronic_ratio
     if acwr is None:
         return None
-    if twin.behavioral.acwr_reliable is False:
+    if twin.behavioral.acwr_reliable is not True:
         return None
     if acwr >= 0.8:
         return None

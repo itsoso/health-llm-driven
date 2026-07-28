@@ -5,7 +5,7 @@
 | slug | `acwr-false-overload` |
 | 创建日期 | 2026-07-27 |
 | 当前阶段 | G4 安全 |
-| 状态 | shipping |
+| 状态 | safety-review |
 | 负责 | Codex |
 | 反馈环 | backend deploy |
 
@@ -31,34 +31,39 @@
 
 ## S3 · 规划
 1. 先用回归测试复现单条近期负荷得到 4.00。
-2. 建立共享 ACWR assessment，要求最近 7 天有负荷且此前三个周窗口均有慢性基线。
+2. 建立共享 ACWR assessment，区分“已观测的休息日”和“设备未同步”，并要求近期及慢性窗口达到可信覆盖。
 3. Twin 和 Run Episode 共用该 assessment。
 4. Twin 显式携带 ACWR 可靠性，Safety Rule 拒绝不可靠或与零急性负荷冲突的比率。
 
 ## G2 · 可行性 + 安全压测
 - 漏报风险:不能简单禁用 ACWR；有连续三周基线的真实突增正例必须保留。
-- 假阳性风险:近期无训练、单条新同步、基线集中在单周均不得发布比率。
+- 假阳性风险:近期无训练、单条新同步、同步覆盖不足、异常数值和极小慢性基线均不得发布比率。
 - **裁决**:PASS。
 
 ## S5 · 实现
 - 新增 `backend/app/services/training_load_metrics.py` 作为 ACWR 单一计算入口。
-- `ExerciseRecoveryService` 对低可信比率返回 `acwr=None`, `acwr_zone=unknown` 和明确不可用原因。
-- Run Episode 改用同一计算入口。
+- `ExerciseRecoveryService` 使用用户本地日期，并以 Garmin 日记录 + Workout 日期构建观测覆盖；低可信比率返回 `acwr=None`, `acwr_zone=unknown` 和明确不可用原因。
+- Run Episode 直接复用 `ExerciseRecoveryService`，不再维护第二套日期和负荷提取逻辑。
 - Twin 传递 `acwr_reliable` 与不可用原因，Safety Guardian 的高负荷和低负荷规则均拒绝不可靠比率。
 - Safety Guardian 另有零急性负荷一致性保护，避免陈旧缓存比率继续触发。
+- Twin / Safety 缓存分别升到 `v2` / `v3`，Twin 写失效会同步清除派生 Safety 报告。
+- Safety 行动卡仅对 ACWR 规则做定向 reconciliation：规则消失时归档，真实风险复发时重新激活；不影响其他安全卡。
 
 ## G3 · 测试闸
 - TDD 红灯:单条近期负荷旧实现得到 `4.00`；首场跑步 Episode 同样得到 `4.00`；不可靠字段未贯穿 Twin 时安全规则仍触发。
-- 定向回归:训练负荷、Twin、Safety、Episode、运动计划、对话建议等 `414 passed`。
-- 全量回归基线:运行到 31% 时 `2729 passed, 3 skipped`，按 `maxfail=5` 停止；4 项因沙箱禁止本地 HTTP 监听失败，1 项为与本改动无关的既有补剂同日 upsert 失败。
+- 首轮定向回归:训练负荷、Twin、Safety、Episode、运动计划、对话建议等 `414 passed`。
+- 安全整改后核心回归:`151 passed`；扩大到全部 Twin、Safety、行动卡、运动与恢复模块的回归:`432 passed`。
+- 全量回归基线:首轮运行到 31% 时 `2729 passed, 3 skipped`，按 `maxfail=5` 停止；4 项因沙箱禁止本地 HTTP 监听失败，1 项为与本改动无关的既有补剂同日 upsert 失败。复跑时该补剂协议幂等失败可单文件稳定复现（`8 passed, 1 failed`），与 ACWR 改动文件和调用链无交集。
 - 静态检查:`py_compile` 与 `git diff --check` 通过。
 - doc drift:`scripts/check_doc_drift.py` 通过，生成事实已同步。
 - **裁决**:绿。
 
 ## G4 · 安全闸
 - 触发:Safety Guardian 训练负荷规则和对外健康建议。
-- 评审:待独立 safety reviewer。
-- **裁决**:待定。
+- 首轮独立评审:`NO-GO`。阻断项为旧缓存缺少 reliability 时仍可能触发、Safety 派生缓存未随 Twin 失效、旧 ACWR 行动卡不会归档；同时指出时区、NaN/Inf、休息周与缺失数据混淆、Episode 口径漂移。
+- 整改:Safety 只接受 `acwr_reliable is True`；版本化并联动失效缓存；加入 ACWR 卡片生命周期 reconciliation；观测覆盖允许一个真实休息周但拒绝缺失同步；拒绝异常数值与极小慢性基线；统一用户时区和 Episode 计算入口。
+- 复审:待新的独立 safety reviewer。
+- **裁决**:待定，复审 GO 前禁止部署。
 
 ## S6 · 部署
 - 路由:backend-deploy。

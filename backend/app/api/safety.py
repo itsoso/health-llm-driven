@@ -18,6 +18,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.agents.safety_guardian import evaluate_safety
+from app.agents.safety_guardian.cache import safety_report_cache_key
 from app.agents.safety_guardian.engine import registry
 from app.api.deps import get_current_user_required
 from app.database import get_db
@@ -70,7 +71,12 @@ def get_my_safety_report(
     """
     # Safety report 缓存（5min，Twin 更新时会 invalidate）
     # 缓存 key 含参数, 避免不同过滤条件错缓存
-    _safety_cache_key = f"safety:v2:{current_user.id}:s{severity_min}:l{limit}:d{int(dedup_by_rule)}"
+    _safety_cache_key = safety_report_cache_key(
+        current_user.id,
+        severity_min=severity_min,
+        limit=limit,
+        dedup_by_rule=dedup_by_rule,
+    )
     try:
         from app.utils.redis_cache import RedisCache
         _cached_safety = RedisCache.get(_safety_cache_key)
@@ -139,10 +145,20 @@ def get_my_safety_report(
     # 幂等 upsert 策略见 action_card_surface.py.
     try:
         from app.services.action_card_surface import surface_safety_alerts
+        from app.agents.safety_guardian.rules.training_load import ACWR_RULE_IDS
 
-        surface_safety_alerts(db, current_user.id, report.alerts)
-    except Exception:
-        pass
+        surface_safety_alerts(
+            db,
+            current_user.id,
+            report.alerts,
+            reconcile_rule_ids=ACWR_RULE_IDS,
+        )
+    except Exception as e:
+        logger.warning(
+            "[safety] action-card surface/reconcile failed for user=%s: %s",
+            current_user.id,
+            e,
+        )
 
     # Severity 门槛
     if severity_min > 0:

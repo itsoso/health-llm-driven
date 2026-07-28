@@ -28,8 +28,8 @@ _ADVISORY_ID = "safety.evaluation_incomplete"
 
 @pytest.fixture(autouse=True)
 def _flush_safety_cache():
-    """清掉 `safety:v2:*`(本地 Redis 存活时跨测试/跨运行污染:conftest 的
-    _isolate_twin_cache 只清 `twin:v1:*`)。否则 /safety/me 会读到上次运行缓存的
+    """清掉 `safety:v3:*`(本地 Redis 存活时跨测试/跨运行污染:conftest 的
+    _isolate_twin_cache 只清 `twin:v2:*`)。否则 /safety/me 会读到上次运行缓存的
     旧结果(无 failed_rule_count / 无 advisory),且本测试注入 advisory 的结果会被写进
     缓存污染兄弟测试。CI 无 Redis 时 client 为 None,静默 no-op,与 CI 行为一致。"""
     def _flush():
@@ -39,7 +39,7 @@ def _flush_safety_cache():
             c = get_redis_client()
             if c is None:
                 return
-            keys = list(c.scan_iter(match="safety:v2:*"))
+            keys = list(c.scan_iter(match="safety:v3:*"))
             if keys:
                 c.delete(*keys)
         except Exception:
