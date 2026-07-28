@@ -1,48 +1,45 @@
-# Reva Health OS Assistant App Icon Design
+# Reva Shared Mac and Mobile App Icon Design
 
 ## Goal
 
-Replace the current waveform-led icon with a distinctive mark that communicates
-three product ideas at launcher size:
+Use the established Mac application icon as the single visual direction for the
+Mobile launcher and launch screen. The shared mark communicates:
 
 - personal health;
 - a trusted personal assistant;
-- an operating system that closes the loop from signal to action.
+- a calm, modern Health OS.
 
-The icon should feel modern and premium without looking like a hospital,
-generic chatbot, fitness tracker, or crypto product.
+This decision replaces the experimental “Life Core” direction. Mobile must not
+develop a separate symbol while Mac continues to use the warm pulse-and-sparkle
+mark.
 
-## Approved Direction: Life Core
+## Approved Direction: Mac Brand Mark
 
-Use one compact symbol built from three integrated layers:
+The visual source of truth is the artwork embedded in:
 
-1. A continuous outer life ring represents the Health OS, longitudinal
-   monitoring, and closed-loop execution.
-2. Negative space inside the ring forms a minimal head-and-shoulders assistant
-   silhouette. It must remain abstract and professional, without cartoon facial
-   features.
-3. A short pulse notch is integrated into the lower part of the ring. It is a
-   secondary health cue, not a separate waveform illustration.
+`apps/mac/Sources/HealthAgentMac/Resources/HealthAgentIcon.icns`
 
-The mark must read as one object. Avoid floating sparkles, grids, scattered data
-points, text, medical crosses, shields, robot faces, and detailed anatomy.
+Its deterministic construction is documented in:
+
+`apps/mac/scripts/generate-icons.swift`
+
+The mark combines a white pulse, three warm-cream sparkles, and a translucent
+inner tile on a warm clay background. No screenshot chrome, macOS selection
+outline, app label, text, or platform corner mask belongs in the Mobile source.
 
 ## Visual System
 
-- Background: soft mint, approximately `#DDEFE8`.
-- Primary mark: deep emerald, approximately `#126B55`.
-- Accent: restrained aqua highlight, approximately `#34CDB0`.
-- Form: flat, geometric, optically centered, and fully opaque.
-- Corners: the source artwork remains square; iOS applies the platform mask.
-- Contrast: strong enough for light and dark home-screen surroundings.
-- Safe area: keep the complete mark inside roughly 74% of the canvas.
-
-No text, transparency, drop shadow, glossy bevel, photographic texture, or
-fine-line ornament is allowed.
+- Background: warm clay, rendered from the Mac source as `#D57953`.
+- Primary mark: white ECG pulse.
+- Accent: warm-cream sparkles with restrained translucent glow.
+- Form: flat, compact, optically centered, and fully opaque on Mobile.
+- Corners: Mobile artwork remains square; iOS applies the platform mask.
+- Launch screen: use the same warm-clay background so the contained image has
+  no visible square seam.
 
 ## Small-Size Requirements
 
-The assistant silhouette and life ring must remain recognizable at:
+The pulse and primary sparkle must remain recognizable at:
 
 - 1024 px App Store source;
 - 180 px iOS home-screen asset;
@@ -51,26 +48,22 @@ The assistant silhouette and life ring must remain recognizable at:
 
 At 29 px, the expected reading order is:
 
-1. emerald life ring;
-2. human assistant core;
-3. pulse notch as optional secondary detail.
-
-If the pulse notch or highlight creates noise at 29 px, simplify it rather than
-making the overall symbol larger.
+1. warm clay tile;
+2. white pulse;
+3. sparkle as an assistant cue.
 
 ## Asset Scope
 
 - `mobile/assets/images/icon.png`: 1024 x 1024 primary icon.
 - `mobile/assets/images/adaptive-icon.png`: matching Android artwork.
 - `mobile/assets/images/splash-icon.png`: 512 x 512 launch artwork.
-- `mobile/app.json`: retain a matching soft-mint splash background.
+- `mobile/app.json`: use the matching warm-clay splash background.
 
 ## Validation
 
 - Confirm exact dimensions, PNG format, full opacity, and no alpha channel.
 - Compare 1024 px, 180 px, 60 px, and 29 px previews side by side.
-- Confirm the mark does not resemble a medical cross, location pin, chat bubble,
-  or generic activity-ring clone.
+- Compare the Mobile master with the current Mac source.
 - Verify Expo resolves all icon assets.
 - Run focused mobile asset/configuration tests and iOS submission preflight.
 

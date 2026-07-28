@@ -1,12 +1,12 @@
-# Reva Health OS Assistant App Icon Implementation Plan
+# Reva Shared Mac and Mobile App Icon Implementation Plan
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Ship an App Store-ready “Life Core” icon that combines personal health, a trusted assistant, and the Reva Health OS.
+**Goal:** Ship the existing Mac pulse-and-sparkle icon as the App Store-ready Mobile icon.
 
-**Architecture:** Generate one flat, opaque 1024 px master artwork from the approved design, validate it visually at launcher sizes, then derive the Android and splash assets from that single source. Keep Expo configuration unchanged except where tests prove an asset mismatch.
+**Architecture:** Extract the 1024 px artwork from the checked-in Mac `.icns`, flatten only its transparent platform corners onto the icon's warm-clay background for iOS compliance, then derive Android and splash assets from that shared source.
 
-**Tech Stack:** Built-in image generation, macOS `sips`, Xcode `pngcrush`, Expo app configuration, Jest.
+**Tech Stack:** macOS `sips`, `ffmpeg`, Expo app configuration, Jest.
 
 ---
 
@@ -40,24 +40,24 @@ git add mobile/__tests__/app-icon-assets.test.ts
 git commit -m "test(mobile): enforce opaque app icon assets"
 ```
 
-### Task 2: Generate and Review the Life Core Master
+### Task 2: Extract and Review the Mac Master
 
 **Files:**
-- Create: `/tmp/reva-icon-review/life-core-master.png`
-- Create: `/tmp/reva-icon-review/life-core-180.png`
-- Create: `/tmp/reva-icon-review/life-core-60.png`
-- Create: `/tmp/reva-icon-review/life-core-29.png`
+- Create: `/tmp/reva-mac-icon/mac-icon.png`
+- Create: `/tmp/reva-mac-icon/mobile-icon.png`
+- Create: `/tmp/reva-mac-icon/preview-180.png`
+- Create: `/tmp/reva-mac-icon/preview-60.png`
+- Create: `/tmp/reva-mac-icon/preview-29.png`
 
-**Step 1: Generate the approved artwork**
+**Step 1: Extract the approved artwork**
 
-Use the built-in image generation path with the design in
-`docs/plans/2026-07-27-health-os-assistant-app-icon-design.md`. Require a flat,
-centered, text-free, square icon with no platform corner mask.
+Extract the highest-resolution representation from
+`apps/mac/Sources/HealthAgentMac/Resources/HealthAgentIcon.icns`.
 
 **Step 2: Normalize the source**
 
-Resize to exactly 1024 x 1024 with `sips`, then use Xcode `pngcrush` to remove
-alpha while preserving the visual output.
+Keep the source at exactly 1024 x 1024. Composite its transparent Mac platform
+corners onto the rendered warm-clay background and encode it as opaque RGB.
 
 **Step 3: Build review sizes**
 
@@ -65,9 +65,8 @@ Generate 180 px, 60 px, and 29 px versions with `sips`.
 
 **Step 4: Visually inspect**
 
-Check the four sizes together. Reject the candidate if the assistant silhouette
-disappears, the pulse notch becomes noise, or the mark resembles a medical
-cross, location pin, chat bubble, or generic activity ring.
+Check the four sizes together. Reject the candidate if the pulse disappears,
+the sparkles become noise, or the result differs materially from the Mac icon.
 
 ### Task 3: Replace Production Icon Assets
 
@@ -82,7 +81,8 @@ Use the same normalized bytes for `icon.png` and `adaptive-icon.png`.
 
 **Step 2: Derive splash artwork**
 
-Resize the approved master to 512 x 512 and normalize it as opaque RGB PNG.
+Resize the shared master to 512 x 512 and normalize it as opaque RGB PNG. Match
+the Expo splash background to the warm-clay canvas.
 
 **Step 3: Verify file metadata**
 
@@ -130,11 +130,11 @@ git add mobile/__tests__/app-icon-assets.test.ts \
   mobile/assets/images/icon.png \
   mobile/assets/images/adaptive-icon.png \
   mobile/assets/images/splash-icon.png
-git commit -m "style(mobile): redesign Reva Health OS app icon"
+git commit -m "style(mobile): share Mac app icon"
 git push origin main
 ```
 
 **Step 4: Release classification**
 
 Record this as a native binary change. Do not publish it as OTA; create the next
-TestFlight build only after the user approves the final small-size preview.
+TestFlight build only when requested.
