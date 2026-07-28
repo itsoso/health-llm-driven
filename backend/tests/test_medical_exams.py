@@ -193,6 +193,49 @@ def test_import_medical_exam_from_text_persists_indicators(client, db):
     assert next(row for row in rows if row.item_code == "FBG").value == 5.6
     assert next(row for row in rows if row.item_code == "CREA").record_date.isoformat() == "2026-05-11"
 
+    from app.models.medical_exam import MedicalExam
+
+    exam = db.query(MedicalExam).filter(MedicalExam.id == data["exam_id"]).one()
+    assert payload["text"] not in (exam.notes or "")
+    assert exam.notes == "从手工粘贴文本导入，原文未复制到备注。"
+
+
+def test_import_medical_exam_from_text_error_does_not_leak_report(
+    client,
+    db,
+    monkeypatch,
+    caplog,
+):
+    """DB/provider exceptions must not echo health text into logs or API errors."""
+    from app.services.data_collection.medical_exam_import import (
+        MedicalExamImportService,
+    )
+
+    _, headers = _create_user(db)
+    private_report = "private-MRI-report-content"
+
+    def fail_import(*args, **kwargs):
+        raise RuntimeError(private_report)
+
+    monkeypatch.setattr(
+        MedicalExamImportService,
+        "import_from_text",
+        fail_import,
+    )
+
+    with caplog.at_level("ERROR", logger="app.api.medical_exams"):
+        resp = client.post(
+            "/api/v1/medical-exams/import/text",
+            json={"text": private_report},
+            headers=headers,
+        )
+
+    assert resp.status_code == 500
+    assert resp.json()["detail"] == "入库服务暂不可用，请稍后重试"
+    assert private_report not in caplog.text
+    assert private_report not in resp.text
+    assert "RuntimeError" in caplog.text
+
 
 def test_import_image_requires_auth(client):
     resp = client.post("/api/v1/medical-exams/import/image")

@@ -34,6 +34,7 @@ class MedicalExamImportService:
         source: str = "agent_text",
         overall_assessment: Optional[str] = None,
         conclusions: Optional[list] = None,
+        source_fingerprint: Optional[str] = None,
     ) -> MedicalExam:
         """Persist already-structured lab items into the canonical exam tables.
 
@@ -56,6 +57,7 @@ class MedicalExamImportService:
             notes=notes,
             overall_assessment=overall_assessment,
             conclusions=conclusions,
+            source_fingerprint=source_fingerprint,
         )
         db.add(db_exam)
         db.flush()
@@ -124,13 +126,18 @@ class MedicalExamImportService:
         items = parse_lab_indicators_from_text(text)
         if not items:
             raise ValueError("未能从文本中识别出可入库的化验指标")
+        import_note = (
+            "从手工粘贴文本导入，原文未复制到备注。"
+            if source == "mobile_text"
+            else "从文本导入，原文未复制到备注。"
+        )
         return MedicalExamImportService.import_from_items(
             db,
             user_id=user_id,
             items_data=items,
             exam_date=exam_date,
             exam_type="biochemistry",
-            notes=f"从聊天文本导入: {text[:500]}",
+            notes=import_note,
             source=source,
         )
 

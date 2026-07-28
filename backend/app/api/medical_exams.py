@@ -358,8 +358,12 @@ def import_medical_exam_from_text(
         try:
             from app.twin.cache import invalidate_twin
             invalidate_twin(current_user.id)
-        except Exception as e:  # noqa: BLE001
-            logger.warning(f"[体检文字] Twin invalidation 失败 (旁路): {e}")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "[体检文字] Twin invalidation 失败 (旁路) user_id=%s error_type=%s",
+                current_user.id,
+                type(exc).__name__,
+            )
 
         return {
             "message": "文字解析并导入成功",
@@ -372,10 +376,17 @@ def import_medical_exam_from_text(
     except ValueError as e:
         db.rollback()
         raise HTTPException(status_code=422, detail=str(e))
-    except Exception as e:
+    except Exception as exc:
         db.rollback()
-        logger.error(f"文字导入入库失败: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"入库失败: {str(e)}")
+        logger.error(
+            "[体检文字] 入库失败 user_id=%s error_type=%s",
+            current_user.id,
+            type(exc).__name__,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="入库服务暂不可用，请稍后重试",
+        ) from exc
 
 
 @router.post("/import/csv")

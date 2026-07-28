@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from unittest.mock import AsyncMock, patch
 
 from app.models.family_health import MedicalIndicator
@@ -92,11 +92,12 @@ async def test_agent_chat_image_medical_report_auto_persists_indicators(db, auth
         note = await executor._try_import_medical_report_images(
             user.id,
             [{"base64": "fake", "type": "jpeg"}],
+            persist=True,
         )
 
     rows = db.query(MedicalIndicator).filter(MedicalIndicator.user_id == user.id).all()
     codes = {row.item_code for row in rows}
-    assert "已将图片中的 3 项化验指标写入系统" in note
+    assert "已从图片中识别 3 项化验指标并写入系统" in note
     assert {"ALT", "GGT", "CREA"} <= codes
     assert next(row for row in rows if row.item_code == "GGT").source == "agent_image_ocr"
 
@@ -138,6 +139,7 @@ async def test_agent_chat_pathology_report_persists_full_conclusion(db, auth_use
         note = await executor._try_import_medical_report_images(
             user.id,
             [{"base64": "fake", "type": "jpeg"}],
+            persist=True,
         )
 
     # 1) exam 入库, overall_assessment 与 OCR conclusion 字符串相等 (相等非包含)
@@ -187,12 +189,207 @@ async def test_agent_chat_conclusion_only_report_still_persists(db, auth_user_an
         note = await executor._try_import_medical_report_images(
             user.id,
             [{"base64": "fake", "type": "jpeg"}],
+            persist=True,
         )
 
     exam = db.query(MedicalExam).filter(MedicalExam.user_id == user.id).one()
     assert exam.overall_assessment == concl
     assert note is not None
     assert concl in note
+
+
+async def test_agent_chat_mri_report_uses_user_relative_date_and_produces_receipt(
+    db,
+    auth_user_and_headers,
+):
+    """Attachment preprocessing is a real write and must join the turn receipt ledger."""
+    from app.models.medical_exam import MedicalExam
+
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    executor._current_turn_user_message = "记录下来 昨天的MRI"
+    executor._start_agent_kernel_turn(
+        user_id=user.id,
+        message=executor._current_turn_user_message,
+        channel="typed",
+    )
+    conclusion = "右膝内侧半月板后角损伤，关节腔少量积液。"
+    mock_ocr = {
+        "report_category": "narrative_report",
+        "report_type": "imaging",
+        "report_date": executor._agent_kernel_reference_now().date().isoformat(),
+        "items": [],
+        "conclusion": conclusion,
+    }
+
+    with patch(
+        "app.services.ai.medical_report_ocr.recognize_medical_report",
+        new=AsyncMock(return_value=mock_ocr),
+    ):
+        note = await executor._try_import_medical_report_images(
+            user.id,
+            [{"base64": "fake", "type": "jpeg"}],
+            persist=True,
+        )
+
+    exam = db.query(MedicalExam).filter(MedicalExam.user_id == user.id).one()
+    assert exam.exam_date == executor._agent_kernel_reference_now().date() - timedelta(days=1)
+    assert conclusion in note
+    assert executor._turn_attachment_write_receipts == [
+        {
+            "operation_id": (
+                "medical-report-image:"
+                "0536d3e9b18e52fa27c2951938d4d922"
+            ),
+            "status": "verified",
+            "resource_type": "medical_exam",
+            "resource_id": str(exam.id),
+            "verified": True,
+            "verification_scope": "persistence_only",
+            "content_verified": False,
+        }
+    ]
+    assert exam.source_fingerprint
+    assert conclusion not in (exam.notes or "")
+
+
+async def test_agent_chat_reuses_same_medical_report_image(db, auth_user_and_headers):
+    """Re-analyzing the same attachment must reuse its canonical exam."""
+    from app.models.medical_exam import MedicalExam
+
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    executor._current_turn_user_message = "记录并分析这份 MRI"
+    conclusion = "右膝内侧半月板后角损伤，关节腔少量积液。"
+    mock_ocr = {
+        "report_category": "narrative_report",
+        "report_type": "imaging",
+        "items": [],
+        "conclusion": conclusion,
+    }
+    image = [{"base64": "same-mri-image", "type": "jpeg"}]
+
+    with patch(
+        "app.services.ai.medical_report_ocr.recognize_medical_report",
+        new=AsyncMock(return_value=mock_ocr),
+    ):
+        first_note = await executor._try_import_medical_report_images(
+            user.id,
+            image,
+            persist=True,
+        )
+        first_receipt = dict(executor._turn_attachment_write_receipts[0])
+        executor._turn_attachment_write_receipts = []
+        second_note = await executor._try_import_medical_report_images(
+            user.id,
+            image,
+            persist=True,
+        )
+
+    exams = db.query(MedicalExam).filter(MedicalExam.user_id == user.id).all()
+    assert len(exams) == 1
+    assert first_note == second_note
+    assert executor._turn_attachment_write_receipts == [first_receipt]
+
+
+async def test_agent_chat_reuses_same_image_across_base64_wrappers(
+    db,
+    auth_user_and_headers,
+):
+    """A data-URI wrapper must not create a second record for identical bytes."""
+    import base64
+
+    from app.models.medical_exam import MedicalExam
+
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    executor._current_turn_user_message = "记录并分析这份 MRI"
+    encoded = base64.b64encode(b"same-mri-image-bytes").decode("ascii")
+    mock_ocr = {
+        "report_category": "narrative_report",
+        "report_type": "imaging",
+        "items": [],
+        "conclusion": "右膝内侧半月板后角损伤。",
+    }
+
+    with patch(
+        "app.services.ai.medical_report_ocr.recognize_medical_report",
+        new=AsyncMock(return_value=mock_ocr),
+    ):
+        await executor._try_import_medical_report_images(
+            user.id,
+            [{"base64": encoded, "type": "jpeg"}],
+            persist=True,
+        )
+        executor._turn_attachment_write_receipts = []
+        await executor._try_import_medical_report_images(
+            user.id,
+            [{"base64": f"data:image/jpeg;base64,{encoded}", "type": "jpeg"}],
+            persist=True,
+        )
+
+    assert (
+        db.query(MedicalExam)
+        .filter(MedicalExam.user_id == user.id)
+        .count()
+        == 1
+    )
+
+
+async def test_agent_chat_analysis_only_medical_image_does_not_persist(
+    db,
+    auth_user_and_headers,
+):
+    """分析附件不是写入授权；OCR 可用于回答，但不得旁路 CapabilityPolicy 入库。"""
+    from app.models.medical_exam import MedicalExam
+
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    executor._current_turn_user_message = "帮我看看这份 MRI，有问题吗？不要保存"
+    conclusion = "右膝内侧半月板后角损伤，关节腔少量积液。"
+    mock_ocr = {
+        "report_category": "narrative_report",
+        "report_type": "imaging",
+        "items": [],
+        "conclusion": conclusion,
+    }
+
+    with patch(
+        "app.services.ai.medical_report_ocr.recognize_medical_report",
+        new=AsyncMock(return_value=mock_ocr),
+    ):
+        note = await executor._try_import_medical_report_images(
+            user.id,
+            [{"base64": "analysis-only", "type": "jpeg"}],
+            persist=False,
+        )
+
+    assert conclusion in note
+    assert "尚未保存" in note
+    assert executor._turn_attachment_write_receipts == []
+    assert db.query(MedicalExam).filter(MedicalExam.user_id == user.id).count() == 0
+
+
+def test_medical_report_intent_separates_record_only_from_analysis(db):
+    from app.services.agent_executor import (
+        _medical_report_analysis_requested,
+    )
+
+    executor = AgentExecutor(db)
+    snapshot = executor._start_agent_kernel_turn(
+        user_id=1,
+        message="分析我的 MRI 报告，不要保存",
+        channel="typed",
+    )
+    assert snapshot.intent.is_write is False
+    assert _medical_report_analysis_requested(
+        "帮我看看 MRI 严重吗？",
+        persisted=True,
+    )
+    assert not _medical_report_analysis_requested(
+        "记录下来昨天的 MRI",
+        persisted=True,
+    )
 
 
 async def test_agent_chat_no_items_no_conclusion_skips(db, auth_user_and_headers):
@@ -210,6 +407,7 @@ async def test_agent_chat_no_items_no_conclusion_skips(db, auth_user_and_headers
         note = await executor._try_import_medical_report_images(
             user.id,
             [{"base64": "fake", "type": "jpeg"}],
+            persist=True,
         )
 
     assert note is None
@@ -230,6 +428,7 @@ async def test_agent_chat_ocr_error_skips(db, auth_user_and_headers):
         note = await executor._try_import_medical_report_images(
             user.id,
             [{"base64": "fake", "type": "jpeg"}],
+            persist=True,
         )
 
     assert note is None

@@ -1318,3 +1318,56 @@ def test_community_source_idempotency_migration_deduplicates_and_enforces_index(
             "VALUES (5, 7, 'diet_record', 91, 'deleted', "
             "'2026-07-25 12:00:00')"
         ))
+
+
+def test_medical_exam_source_fingerprint_migration_enforces_user_scoped_uniqueness(
+    tmp_path: Path,
+):
+    from sqlalchemy.exc import IntegrityError
+
+    migrations_dir = Path(__file__).resolve().parents[1] / "migrations" / "managed"
+    sqlite_file = (
+        migrations_dir
+        / "20260728_120000_medical_exam_source_fingerprint.sqlite.sql"
+    )
+    postgres_file = (
+        migrations_dir
+        / "20260728_120000_medical_exam_source_fingerprint.postgresql.sql"
+    )
+    assert sqlite_file.exists()
+    assert postgres_file.exists()
+
+    isolated = tmp_path / "managed"
+    isolated.mkdir()
+    (isolated / sqlite_file.name).write_text(
+        sqlite_file.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        conn.execute(text(
+            "CREATE TABLE medical_exams ("
+            "id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL)"
+        ))
+
+    result = apply_managed_migrations(engine, isolated)
+    assert [item.id for item in result.applied] == [
+        "20260728_120000_medical_exam_source_fingerprint"
+    ]
+
+    with engine.begin() as conn:
+        conn.execute(text(
+            "INSERT INTO medical_exams "
+            "(id, user_id, source_fingerprint) VALUES (1, 7, 'same-image')"
+        ))
+    with pytest.raises(IntegrityError):
+        with engine.begin() as conn:
+            conn.execute(text(
+                "INSERT INTO medical_exams "
+                "(id, user_id, source_fingerprint) VALUES (2, 7, 'same-image')"
+            ))
+    with engine.begin() as conn:
+        conn.execute(text(
+            "INSERT INTO medical_exams "
+            "(id, user_id, source_fingerprint) VALUES (3, 8, 'same-image')"
+        ))

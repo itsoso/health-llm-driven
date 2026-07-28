@@ -352,6 +352,81 @@ async def test_medical_exam_unparseable_text_is_rejected_before_import(
 
 
 @pytest.mark.asyncio
+async def test_medical_exam_narrative_mri_text_persists_without_numeric_items(
+    db,
+    auth_user_and_headers,
+):
+    from app.models.medical_exam import MedicalExam
+    from app.services.agent_executor import AgentExecutor
+
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    executor._current_user_id = user.id
+    result = await executor._exec_upload_medical_exam_text(
+        "http://example.test",
+        {},
+        {
+            "text": "MRI 检查所见：右膝内侧半月板后角损伤，关节腔少量积液。",
+            "report_type": "imaging",
+            "exam_date": "昨天",
+        },
+    )
+
+    payload = json.loads(result)
+    exam = db.query(MedicalExam).filter(MedicalExam.user_id == user.id).one()
+    assert payload["resource_type"] == "medical_exam"
+    assert payload["exam_id"] == exam.id
+    assert exam.exam_type == "imaging"
+    assert exam.overall_assessment == (
+        "MRI 检查所见：右膝内侧半月板后角损伤，关节腔少量积液。"
+    )
+    assert "右膝内侧半月板" not in (exam.notes or "")
+    assert len(exam.items) == 0
+
+
+@pytest.mark.asyncio
+async def test_attachment_medical_report_receipt_does_not_swallow_other_writes(
+    monkeypatch,
+    db,
+):
+    from app.services.agent_executor import AgentExecutor
+
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._turn_attachment_write_receipts = [
+        {
+            "operation_id": "medical-report-image:48",
+            "status": "verified",
+            "resource_type": "medical_exam",
+            "resource_id": "48",
+            "verified": True,
+        }
+    ]
+    implementation = AsyncMock(
+        return_value=json.dumps(
+            {
+                "status": "verified",
+                "resource_type": "water_record",
+                "resource_id": "91",
+                "verified": True,
+            }
+        )
+    )
+    monkeypatch.setattr(executor, "_execute_tool_impl", implementation)
+
+    result = await executor._execute_tool(
+        "health_record",
+        {"record_type": "water", "data": {"amount": 500}},
+        None,
+    )
+
+    payload = json.loads(result)
+    assert payload["status"] == "verified"
+    assert payload["resource_id"] == "91"
+    implementation.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_medical_exam_error_after_import_dispatch_is_uncertain_and_log_safe(
     db,
     auth_user_and_headers,

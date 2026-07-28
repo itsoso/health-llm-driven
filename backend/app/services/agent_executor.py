@@ -11,6 +11,7 @@
 """
 import ast
 import asyncio
+import base64
 from dataclasses import replace
 import hashlib
 import json
@@ -4284,6 +4285,20 @@ def _looks_like_medical_report_image_context(text: str) -> bool:
     return any(keyword in normalized for keyword in _MEDICAL_REPORT_IMAGE_KEYWORDS)
 
 
+def _medical_report_analysis_requested(text: str, *, persisted: bool) -> bool:
+    """Separate a record-only command from a request that also needs interpretation."""
+    normalized = (text or "").strip().lower()
+    if not persisted:
+        return True
+    return bool(
+        re.search(
+            r"(分析|解读|看看|看一下|严重|有问题|正常|异常|建议|怎么办|"
+            r"意味着|说明|是什么|如何|为什么|吗|？|\?)",
+            normalized,
+        )
+    )
+
+
 def _record_intent_needs_detail_message(record_text: str) -> str:
     """fast-record 被路由但 0 工具执行 = **没有发生任何写入尝试**(模型没吐出有效记录调用,
     通常因为内容太笼统,如"记录饮食"没说吃了什么)。
@@ -7076,6 +7091,7 @@ class AgentExecutor:
         self._turn_aigc_media_cards: list[dict] = []
         self._turn_contextual_diet_receipts: list[dict] = []
         self._turn_contextual_diet_cards: list[dict] = []
+        self._turn_attachment_write_receipts: list[dict] = []
         self._turn_contextual_diet_record_id: Optional[int] = None
         self._turn_contextual_diet_consumed_fraction: Optional[float] = None
         self._turn_pending_write_intent_ids: list[int] = []
@@ -8921,6 +8937,7 @@ class AgentExecutor:
         self._current_turn_user_message = message or ""
         self._turn_contextual_diet_receipts = []
         self._turn_contextual_diet_cards = []
+        self._turn_attachment_write_receipts = []
         self._turn_contextual_diet_record_id = None
         self._turn_contextual_diet_consumed_fraction = None
         self._ensure_agent_kernel_turn(channel=channel)
@@ -9462,15 +9479,24 @@ class AgentExecutor:
         # Mobile 的默认纯图片提示必须先走结构化识别，避免 provider 选择
         # 绕过饮食清洗、校准与写入边界。
         _t_stage = time.time()
+        vision_description = None
         if images:
             should_preprocess_images = self._should_preprocess_attached_images(user_id, message)
-            vision_description = None
             if should_preprocess_images:
                 # 真实思考过程: 图片/视觉预处理 (4–20s 的 vision_ms 块) 即将开始。
                 # 仅在会真的跑独立 vision 预处理时发 (原图直传多模态模型时无此阶段)。
                 yield self._status_event("vision", detail=None)
                 if _looks_like_medical_report_image_context(message):
-                    vision_description = await self._try_import_medical_report_images(user_id, images)
+                    snapshot = self._ensure_agent_kernel_turn()
+                    persist_medical_report = bool(
+                        snapshot.intent.primary in {"write", "mutate"}
+                        and snapshot.intent.is_write
+                    )
+                    vision_description = await self._try_import_medical_report_images(
+                        user_id,
+                        images,
+                        persist=persist_medical_report,
+                    )
                 if not vision_description:
                     vision_description = await self._analyze_image_with_vision(message, images)
 
@@ -9484,6 +9510,13 @@ class AgentExecutor:
             else:
                 _attach_images_to_last_user_message(messages, message, images)
         pre_stages["vision_ms"] = _pre_stage(_t_stage) if images else 0
+        if self._turn_attachment_write_receipts:
+            turn_context_parts.append(
+                "## 附件写入结果\n"
+                "本回合的医疗报告图片已保存并取得持久化回执；OCR 文字仍待用户核对。"
+                "不要再次调用 upload_medical_exam_text 写入同一份报告；"
+                "用户要求分析时，请基于图片识别结果直接回答。"
+            )
 
         # ── fast-routed 工具决策轮的 lite 消息栈 (2026-07-12 token 优化: 首个工具决策轮
         # 已 fast-route 到 qwen3.6-flash, 但仍背 ~14k-token 全量栈 → flash 白付 6-8s prefill)。
@@ -9552,6 +9585,14 @@ class AgentExecutor:
             tools = get_health_tools(subset=list(turn_tool_names))
         else:
             tools = get_health_tools()
+        if self._turn_attachment_write_receipts:
+            blocked_attachment_write_tools = {"upload_medical_exam_text"}
+            tools = [
+                tool
+                for tool in tools
+                if (tool.get("function") or {}).get("name")
+                not in blocked_attachment_write_tools
+            ]
         # 任一子集(fast big-3 或 analysis 只读)激活 → 走同一 withheld-upgrade 护栏。
         tool_subset_active = turn_tool_names is not None
 
@@ -9612,6 +9653,9 @@ class AgentExecutor:
         tools_used: List[str] = []
         write_receipts: List[Dict[str, Any]] = []
         write_receipts.extend(self._turn_contextual_diet_receipts)
+        write_receipts.extend(self._turn_attachment_write_receipts)
+        if self._turn_attachment_write_receipts:
+            tools_used.append("medical_report_ocr")
         write_results_by_fingerprint: Dict[str, tuple[str, str]] = {}
         # 只读工具回合级去重(同名+同参已跑过 → 复用结果, 不重复真执行)。回合级 local, 自然重置。
         read_results_by_fingerprint: Dict[str, tuple[str, str]] = {}
@@ -10250,6 +10294,13 @@ class AgentExecutor:
                                 _withheld,
                             )
                             tools = get_health_tools()
+                            if self._turn_attachment_write_receipts:
+                                tools = [
+                                    tool
+                                    for tool in tools
+                                    if (tool.get("function") or {}).get("name")
+                                    != "upload_medical_exam_text"
+                                ]
                             tool_subset_active = False
                             self._record_model_fallback_reason("tool_subset_upgraded_full_tools")
                             continue
@@ -11277,10 +11328,30 @@ class AgentExecutor:
                 user_id,
                 type(e).__name__,
             )
-            error_msg = safe_llm_error_message(e)
+            if self._turn_attachment_write_receipts and vision_description:
+                asks_for_analysis = _medical_report_analysis_requested(
+                    message,
+                    persisted=True,
+                )
+                if asks_for_analysis:
+                    error_msg = (
+                        "报告已保存，OCR 识别文字也已保留但尚待核对；"
+                        "本次个性化解读服务暂时不可用。"
+                        "请稍后重试分析，系统不会重复保存这份报告。\n\n"
+                        f"{vision_description}"
+                    )
+                else:
+                    error_msg = (
+                        "报告已保存并取得持久化回执；OCR 内容尚待核对。\n\n"
+                        f"{vision_description}"
+                    )
+                    final_finish_reason = "stop"
+            else:
+                error_msg = safe_llm_error_message(e)
             yield {"event": "token", "data": {"content": error_msg}}
             full_reply = error_msg
-            final_finish_reason = "error"
+            if final_finish_reason != "stop":
+                final_finish_reason = "error"
         finally:
             if self._http_client:
                 await self._http_client.aclose()
@@ -14885,126 +14956,229 @@ class AgentExecutor:
             "分析这张图片",
         }
 
-    async def _try_import_medical_report_images(self, user_id: int, images: List[dict]) -> Optional[str]:
-        """Detect lab-report images in chat, persist recognized indicators, and summarize.
+    async def _try_import_medical_report_images(
+        self,
+        user_id: int,
+        images: List[dict],
+        *,
+        persist: bool = False,
+    ) -> Optional[str]:
+        """Recognize report images and persist only under explicit write intent.
 
-        The normal chat image path used to describe photos for diet logging only.
-        Lab screenshots therefore informed one answer but never reached the
-        canonical MedicalIndicator timeline. This hook keeps report ingestion
-        protocol-first: OCR returns structured items, then the same importer used
-        by upload endpoints writes MedicalExam + MedicalIndicator.
+        A verified receipt confirms database persistence, not OCR correctness.
+        OCR-derived content remains clearly marked as unverified until the user
+        reviews it. Analysis-only turns never cross the write boundary.
         """
         if not images:
             return None
         try:
+            from sqlalchemy.exc import IntegrityError
+
+            from app.models.medical_exam import MedicalExam
             from app.services.ai.medical_report_ocr import recognize_medical_report
-            from app.services.data_collection.medical_exam_import import MedicalExamImportService
+            from app.services.data_collection.medical_exam_import import (
+                MedicalExamImportService,
+            )
             from app.twin.cache import invalidate_twin
 
-            imported = []
+            recognized: list[tuple[Optional[MedicalExam], dict, list[dict], str]] = []
+            created_any = False
+            message_date = _normalize_relative_date(
+                classify_agent_utterance(
+                    self._current_turn_user_message,
+                    reference_now=self._agent_kernel_reference_now(),
+                ).scope.get("date"),
+                reference_now=self._agent_kernel_reference_now(),
+            )
             for img in images:
                 result = await recognize_medical_report(
                     img["base64"],
                     image_type=img.get("type", "jpeg"),
                 )
-                items = result.get("items") if isinstance(result, dict) else None
-                items = items or []
-                conclusion = (result.get("conclusion") or "").strip() if isinstance(result, dict) else ""
-                # 准入门 (只加不减方向): 数值项 ≥2 OR 有诊断结论全文 → 入库。
-                # 两者都无才 skip (挡非报告照片噪声)。病理/影像报告常 0 数值项、
-                # 只有诊断全文, 旧的 len(items)<2 会把它们连同 conclusion 一起丢弃
-                # (exam_id=42 病理诊断全文丢失的根因)。
+                if not isinstance(result, dict) or result.get("error"):
+                    continue
+                items = result.get("items") or []
+                conclusion = str(result.get("conclusion") or "").strip()
                 if len(items) < 2 and not conclusion:
                     continue
-                exam_date = None
-                if result.get("report_date"):
-                    try:
-                        exam_date = parse_date_value = datetime.strptime(str(result["report_date"])[:10], "%Y-%m-%d").date()
-                    except Exception:
-                        parse_date_value = None
-                    exam_date = parse_date_value
-                exam = MedicalExamImportService.import_from_items(
-                    self.db,
-                    user_id=user_id,
-                    items_data=items,
-                    exam_date=exam_date or self._agent_kernel_reference_now().date(),
-                    exam_type=result.get("report_type") or "medical_report",
-                    hospital_name=result.get("institution"),
-                    notes="从聊天图片 OCR 自动导入",
-                    source="agent_image_ocr",
-                    overall_assessment=conclusion or None,
-                    conclusions=result.get("conclusions"),
-                )
-                imported.append((exam, result, items))
 
-            if not imported:
+                encoded_image = str(img.get("base64") or "").split(",", 1)[-1]
+                try:
+                    fingerprint_bytes = base64.b64decode(
+                        encoded_image,
+                        validate=True,
+                    )
+                except (ValueError, base64.binascii.Error):
+                    fingerprint_bytes = encoded_image.encode(
+                        "ascii",
+                        errors="ignore",
+                    )
+                image_fingerprint = hashlib.sha256(fingerprint_bytes).hexdigest()
+                exam: Optional[MedicalExam] = None
+                if persist:
+                    exam = (
+                        self.db.query(MedicalExam)
+                        .filter(
+                            MedicalExam.user_id == user_id,
+                            MedicalExam.source_fingerprint == image_fingerprint,
+                        )
+                        .order_by(MedicalExam.id.desc())
+                        .first()
+                    )
+                    if exam is None:
+                        # Backward-compatible lookup for records created before
+                        # source_fingerprint became a dedicated unique column.
+                        fingerprint_marker = f"[image_sha256:{image_fingerprint}]"
+                        exam = (
+                            self.db.query(MedicalExam)
+                            .filter(
+                                MedicalExam.user_id == user_id,
+                                MedicalExam.notes.contains(fingerprint_marker),
+                            )
+                            .order_by(MedicalExam.id.desc())
+                            .first()
+                        )
+                    if exam is None:
+                        normalized_report_date = _normalize_relative_date(
+                            result.get("report_date"),
+                            reference_now=self._agent_kernel_reference_now(),
+                        )
+                        # An explicit user date is authoritative for this write.
+                        resolved_exam_date = (
+                            message_date
+                            or normalized_report_date
+                            or self._agent_kernel_reference_now().date().isoformat()
+                        )
+                        try:
+                            exam = MedicalExamImportService.import_from_items(
+                                self.db,
+                                user_id=user_id,
+                                items_data=items,
+                                exam_date=datetime.strptime(
+                                    resolved_exam_date,
+                                    "%Y-%m-%d",
+                                ).date(),
+                                exam_type=result.get("report_type") or "medical_report",
+                                hospital_name=result.get("institution"),
+                                notes="从聊天图片 OCR 导入，内容待用户核对",
+                                source="agent_image_ocr",
+                                overall_assessment=conclusion or None,
+                                # Structured conclusions are model-generated and
+                                # must not be promoted to a verified health field.
+                                conclusions=None,
+                                source_fingerprint=image_fingerprint,
+                            )
+                            created_any = True
+                        except IntegrityError:
+                            # The unique (user, fingerprint) index makes
+                            # concurrent retries converge on one canonical row.
+                            self.db.rollback()
+                            exam = (
+                                self.db.query(MedicalExam)
+                                .filter(
+                                    MedicalExam.user_id == user_id,
+                                    MedicalExam.source_fingerprint
+                                    == image_fingerprint,
+                                )
+                                .one()
+                            )
+
+                    receipt = {
+                        "operation_id": (
+                            f"medical-report-image:{image_fingerprint[:32]}"
+                        ),
+                        "status": "verified",
+                        "resource_type": "medical_exam",
+                        "resource_id": str(exam.id),
+                        "verified": True,
+                        "verification_scope": "persistence_only",
+                        "content_verified": False,
+                    }
+                    if receipt not in self._turn_attachment_write_receipts:
+                        self._turn_attachment_write_receipts.append(receipt)
+                recognized.append((exam, result, items, image_fingerprint))
+
+            if not recognized:
                 return None
 
-            # A4: 聊天图片 OCR 导入了化验指标 → Twin 已变。此导入发生在 pre-round-1 KB
-            # 证据卡之后, 置位 → done 侧证据卡强制重算 (use_cache=False → 反映刚导入的指标)。
-            self._turn_twin_write_occurred = True
-            try:
-                invalidate_twin(user_id)
-            except Exception:
-                pass
+            if created_any:
+                self._turn_twin_write_occurred = True
+                try:
+                    invalidate_twin(user_id)
+                except Exception:
+                    pass
 
             def _is_numeric(item: dict) -> bool:
-                """value 是有效数值才算数值项 (排除 value=null 的病理/影像自由文本项)。"""
-                v = item.get("value")
-                if v is None:
+                value = item.get("value")
+                if value is None:
                     return False
                 try:
-                    float(v)
+                    float(value)
                     return True
                 except (ValueError, TypeError):
                     return False
 
             total_numeric = sum(
                 1
-                for _exam, _result, items in imported
-                for item in items
+                for _exam, _result, report_items, _fingerprint in recognized
+                for item in report_items
                 if _is_numeric(item)
             )
-            # 红线#2: value=null 的病理项绝不进"数值异常门" —— 异常统计只数
-            # 有真实数值且标异常的项, 空值项不计入。
             abnormal_items = [
                 item
-                for _exam, _result, items in imported
-                for item in items
+                for _exam, _result, report_items, _fingerprint in recognized
+                for item in report_items
                 if item.get("is_abnormal") and _is_numeric(item)
             ]
-            abnormal_text = "；".join(
-                f"{item.get('name') or item.get('item_name') or item.get('name_en')} {item.get('value')} {item.get('unit') or ''}".strip()
-                for item in abnormal_items[:8]
-            )
-            # 红线#1: 病理/影像/自由文本诊断只逐字回显, 严禁总结/改写/推断。
-            # 逐字截取诊断原文 (只做长度截断, 不改字), 优先于"N 项化验指标"叙述。
-            narrative_texts = []
-            for _exam, _result, _items in imported:
-                concl = (_result.get("conclusion") or "").strip() if isinstance(_result, dict) else ""
-                if concl:
-                    narrative_texts.append(concl)
-            exam_ids = ", ".join(str(exam.id) for exam, _result, _items in imported)
+            narrative_texts = [
+                str(result.get("conclusion") or "").strip()
+                for _exam, result, _items, _fingerprint in recognized
+                if str(result.get("conclusion") or "").strip()
+            ]
 
-            parts = []
+            parts: list[str] = []
             if total_numeric:
-                parts.append(f"已将图片中的 {total_numeric} 项化验指标写入系统。")
+                parts.append(
+                    (
+                        f"已从图片中识别 {total_numeric} 项化验指标并写入系统。"
+                        if persist
+                        else f"已从图片中识别 {total_numeric} 项化验指标。"
+                    )
+                )
             if narrative_texts:
-                # 逐字照抄诊断原文 (仅长度截断, 不总结/改写)
-                _MAX_ECHO = 800
                 joined = "\n".join(narrative_texts)
-                echoed = joined if len(joined) <= _MAX_ECHO else (joined[:_MAX_ECHO] + "……(原文过长已截断)")
-                parts.append(f"报告诊断原文(逐字):\n{echoed}")
+                echoed = (
+                    joined
+                    if len(joined) <= 800
+                    else f"{joined[:800]}……(OCR 文字过长已截断)"
+                )
+                parts.append(f"OCR 识别文字（待核对）：\n{echoed}")
             if not parts:
-                # 既无数值项也无诊断原文, 只落了空壳记录 —— 保守只报 ID, 不编造内容。
-                parts.append("已将图片中的报告写入系统。")
-            note = " ".join(parts) if len(parts) == 1 else "\n".join(parts)
-            note += f"\n体检记录 ID: {exam_ids}。"
-            if abnormal_text:
-                note += f" 识别到异常/标记数值项：{abnormal_text}。"
-            return note
-        except Exception as e:
-            logger.warning(f"[Vision] 医疗报告图片自动入库失败: {e}", exc_info=True)
+                parts.append("已识别图片中的医疗报告。")
+            if persist:
+                exam_ids = ", ".join(
+                    str(exam.id)
+                    for exam, _result, _items, _fingerprint in recognized
+                    if exam is not None
+                )
+                parts.append(f"报告已保存，记录 ID: {exam_ids}；OCR 内容尚未核对。")
+            else:
+                parts.append("本次仅用于分析，尚未保存。")
+            if abnormal_items:
+                abnormal_text = "；".join(
+                    (
+                        f"{item.get('name') or item.get('item_name') or item.get('name_en')} "
+                        f"{item.get('value')} {item.get('unit') or ''}"
+                    ).strip()
+                    for item in abnormal_items[:8]
+                )
+                parts.append(f"OCR 标记的数值异常（待核对）：{abnormal_text}。")
+            return "\n".join(parts)
+        except Exception:
+            logger.warning(
+                "[Vision] medical report processing failed user=%s",
+                user_id,
+            )
             try:
                 self.db.rollback()
             except Exception:
@@ -18431,33 +18605,47 @@ class AgentExecutor:
                 message="当前会话缺少用户身份，无法写入化验指标。",
             )
 
-        from datetime import date as _date
-
         from app.services.medical_text_parser import parse_lab_indicators_from_text
 
         raw_date = args.get("exam_date")
-        try:
-            exam_date = (
-                datetime.strptime(raw_date, "%Y-%m-%d").date()
-                if raw_date
-                else _date.today()
-            )
-        except (TypeError, ValueError):
+        normalized_date = _normalize_relative_date(
+            raw_date,
+            reference_now=self._agent_kernel_reference_now(),
+        )
+        if raw_date and not normalized_date:
             return local_write_rejection(
                 "medical_exam_date_invalid",
                 message="化验日期格式无效。",
-                recovery_guidance="请使用 YYYY-MM-DD 格式。",
+                recovery_guidance="请使用 YYYY-MM-DD 或今天、昨天等明确日期。",
             )
+        exam_date = datetime.strptime(
+            normalized_date or self._agent_kernel_reference_now().date().isoformat(),
+            "%Y-%m-%d",
+        ).date()
 
         try:
             items = parse_lab_indicators_from_text(text)
         except (TypeError, ValueError):
             items = []
-        if not items:
+        report_type = str(args.get("report_type") or "").strip().lower()
+        narrative_report_types = {
+            "imaging",
+            "mri",
+            "ct",
+            "pathology",
+            "ultrasound",
+            "endoscopy",
+            "medical_report",
+        }
+        is_narrative_report = report_type in narrative_report_types
+        if not items and not is_narrative_report:
             return local_write_rejection(
                 "medical_exam_text_invalid",
                 message="未能从文本中识别出可入库的化验指标。",
-                recovery_guidance="请补充可识别的化验项目、数值和单位后重试。",
+                recovery_guidance=(
+                    "化验结果请补充项目、数值和单位；MRI、CT、病理等报告"
+                    "请同时标明报告类型。"
+                ),
             )
 
         try:
@@ -18466,14 +18654,24 @@ class AgentExecutor:
             )
             from app.twin.cache import invalidate_twin
 
+            exam_type = (
+                "imaging"
+                if report_type in {"mri", "ct", "ultrasound", "endoscopy"}
+                else (report_type or "biochemistry")
+            )
             exam = MedicalExamImportService.import_from_items(
                 self.db,
                 user_id=self._current_user_id,
                 items_data=items,
                 exam_date=exam_date,
-                exam_type="biochemistry",
-                notes=f"从聊天文本导入: {text[:500]}",
+                exam_type=exam_type,
+                notes=(
+                    "从聊天文本导入，叙述内容待用户核对"
+                    if is_narrative_report
+                    else "从聊天文本导入"
+                ),
                 source="agent_text",
+                overall_assessment=text if is_narrative_report else None,
             )
             # 这里显式置位, 让 done 侧 KB 证据卡重算反映刚写入的化验指标;
             # 同时由统一写入回执集合负责验证本次持久化身份。

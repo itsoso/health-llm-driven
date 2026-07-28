@@ -112,6 +112,6 @@ async def recognize_medical_report(
     except json.JSONDecodeError:
         logger.warning("[体检OCR] JSON解析失败")
         return {"error": "OCR结果解析失败"}
-    except Exception as e:
-        logger.error(f"[体检OCR] 识别失败: {e}")
-        return {"error": str(e)}
+    except Exception as exc:
+        logger.error("[体检OCR] 识别失败 error_type=%s", type(exc).__name__)
+        return {"error": "医疗报告识别服务暂时不可用"}

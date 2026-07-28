@@ -1,5 +1,18 @@
 """体检数据模型"""
-from sqlalchemy import Column, Integer, Float, String, DateTime, Date, ForeignKey, Text, Enum, JSON, Index
+from sqlalchemy import (
+    Column,
+    Integer,
+    Float,
+    String,
+    DateTime,
+    Date,
+    ForeignKey,
+    Text,
+    Enum,
+    JSON,
+    Index,
+    UniqueConstraint,
+)
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -38,6 +51,11 @@ class MedicalExam(Base):
     __tablename__ = "medical_exams"
     __table_args__ = (
         Index("idx_medical_exams_user_date", "user_id", "exam_date"),
+        UniqueConstraint(
+            "user_id",
+            "source_fingerprint",
+            name="uq_medical_exams_user_source_fingerprint",
+        ),
     )
 
     id = Column(Integer, primary_key=True, index=True)
@@ -60,6 +78,9 @@ class MedicalExam(Base):
     conclusions = Column(JSON)  # 详细结论列表 [{category, title, description, recommendations}]
 
     notes = Column(Text)  # 备注
+    # Stable content identity for OCR/import idempotency. It contains only a
+    # one-way hash, never report text or another health-data excerpt.
+    source_fingerprint = Column(String(64), nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
