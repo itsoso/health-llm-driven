@@ -2,7 +2,7 @@
 from datetime import UTC, datetime, timedelta
 
 from app.agents.safety_guardian import evaluate_safety
-from app.models.daily_health import GarminData, WorkoutRecord
+from app.models.daily_health import WorkoutRecord
 from app.models.action_card import ActionCard
 from app.services.action_card_surface import surface_safety_alerts
 from app.twin.schema import WorkoutSummary, HealthTwin, TwinMeta, BehavioralState
@@ -104,23 +104,13 @@ class TestTwinBuilderFillsWorkouts:
     def test_real_baseline_surfaces_and_reconciles_acwr_alert(self, db):
         u = _mk_user(db)
         today = get_user_today(db, u.id)
-        for days_ago in range(28):
-            db.add(
-                GarminData(
-                    user_id=u.id,
-                    record_date=today - timedelta(days=days_ago),
-                    data_source="garmin",
-                    steps=0,
-                )
-            )
-        for days_ago, load in ((0, 200), (8, 70), (14, 70), (21, 70)):
+        for days_ago, duration_minutes in ((0, 120), (8, 30), (14, 30), (21, 30)):
             db.add(
                 WorkoutRecord(
                     user_id=u.id,
                     workout_date=today - timedelta(days=days_ago),
                     workout_type="running",
-                    duration_seconds=1800,
-                    training_load=load,
+                    duration_seconds=duration_minutes * 60,
                     external_id=f"e2e-acwr-{days_ago}",
                 )
             )

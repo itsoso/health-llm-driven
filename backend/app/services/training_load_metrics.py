@@ -9,10 +9,7 @@ from typing import Optional, Sequence
 
 ACWR_WINDOW_DAYS = 28
 ACWR_REQUIRED_BASELINE_WEEKS = 3
-ACWR_MIN_ACUTE_OBSERVED_DAYS = 5
-ACWR_MIN_BASELINE_OBSERVED_DAYS = 18
-ACWR_MIN_BASELINE_ACTIVE_DAYS = 2
-ACWR_MIN_BASELINE_ACTIVE_WEEKS = 2
+ACWR_MIN_BASELINE_ACTIVE_DAYS = 3
 ACWR_MIN_BASELINE_LOAD_21D = 30.0
 
 
@@ -38,6 +35,7 @@ def assess_acwr(
     daily_loads_newest_first: Sequence[float],
     *,
     observed_days_newest_first: Optional[Sequence[bool]] = None,
+    invalid_input: bool = False,
 ) -> AcwrAssessment:
     """Assess ACWR while withholding ratios without a chronic baseline.
 
@@ -47,7 +45,7 @@ def assess_acwr(
     """
 
     loads: list[float] = []
-    invalid_load_data = False
+    invalid_load_data = invalid_input
     for raw in list(daily_loads_newest_first)[:ACWR_WINDOW_DAYS]:
         try:
             value = float(raw or 0)
@@ -98,24 +96,18 @@ def assess_acwr(
     if invalid_load_data:
         unavailable_reason = "invalid_training_load_data"
     elif acute_sum <= 0:
-        unavailable_reason = "no_recent_training"
-    elif observed_supplied and (
-        acute_observed_days < ACWR_MIN_ACUTE_OBSERVED_DAYS
-        or baseline_observed_days < ACWR_MIN_BASELINE_OBSERVED_DAYS
-    ):
-        unavailable_reason = "insufficient_data_coverage"
-    elif observed_supplied and (
-        baseline_active_days < ACWR_MIN_BASELINE_ACTIVE_DAYS
-        or baseline_weeks_with_load < ACWR_MIN_BASELINE_ACTIVE_WEEKS
-        or baseline_load_21d < ACWR_MIN_BASELINE_LOAD_21D
-    ):
-        unavailable_reason = "insufficient_chronic_baseline"
-    elif (
-        not observed_supplied
-        and (
-            baseline_weeks_with_load < ACWR_REQUIRED_BASELINE_WEEKS
-            or baseline_load_21d < ACWR_MIN_BASELINE_LOAD_21D
+        # Zero workouts and missing workout sync are indistinguishable unless a
+        # dedicated workout-coverage signal was supplied. Generic daily vitals
+        # must never be used as that signal.
+        unavailable_reason = (
+            "no_recent_training"
+            if observed_supplied and all(observed[:7])
+            else "insufficient_data_coverage"
         )
+    elif (
+        baseline_active_days < ACWR_MIN_BASELINE_ACTIVE_DAYS
+        or baseline_weeks_with_load < ACWR_REQUIRED_BASELINE_WEEKS
+        or baseline_load_21d < ACWR_MIN_BASELINE_LOAD_21D
     ):
         unavailable_reason = "insufficient_chronic_baseline"
 

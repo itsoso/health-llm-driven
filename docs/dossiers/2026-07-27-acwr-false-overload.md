@@ -42,11 +42,15 @@
 
 ## S5 · 实现
 - 新增 `backend/app/services/training_load_metrics.py` 作为 ACWR 单一计算入口。
-- `ExerciseRecoveryService` 使用用户本地日期，并以 Garmin 日记录 + Workout 日期构建观测覆盖；低可信比率返回 `acwr=None`, `acwr_zone=unknown` 和明确不可用原因。
+- `ExerciseRecoveryService` 使用用户本地日期，只读取 `WorkoutRecord`，并将所有来源统一换算成时长/心率推导的 TRIMP；不再混用 Garmin 私有负荷与推导值。
+- 普通 Garmin 日健康记录不再被当成“训练已同步”的覆盖证据；无法区分“无训练”和“未同步”时一律返回 `insufficient_data_coverage`，不生成安全告警。
+- 可靠基线必须覆盖之前三个独立周、至少三个活跃日且 21 日推导负荷不低于 30；负数、NaN、Inf 或畸形输入 fail-closed。
 - Run Episode 直接复用 `ExerciseRecoveryService`，不再维护第二套日期和负荷提取逻辑。
+- Episode 的无时区时间先附着用户时区再转 UTC，并以落库后的本地 `workout_date` 计算 ACWR。
 - Twin 传递 `acwr_reliable` 与不可用原因，Safety Guardian 的高负荷和低负荷规则均拒绝不可靠比率。
-- Safety Guardian 另有零急性负荷一致性保护，避免陈旧缓存比率继续触发。
+- Safety Guardian 另有非有限数、零急性负荷一致性保护；“完全无训练”仅在专用训练覆盖信号明确证明 7 日均已观测时才可提示。
 - Twin / Safety 缓存分别升到 `v2` / `v3`，Twin 写失效会同步清除派生 Safety 报告。
+- 手工运动增删改、Garmin 同步以及心率/GPS/分圈补全均会使 Twin 与派生 Safety 缓存失效。
 - Safety 行动卡仅对 ACWR 规则做定向 reconciliation：规则消失时归档，真实风险复发时重新激活；不影响其他安全卡。
 
 ## G3 · 测试闸
@@ -54,7 +58,10 @@
 - 首轮定向回归:训练负荷、Twin、Safety、Episode、运动计划、对话建议等 `414 passed`。
 - 安全整改后核心回归:`151 passed`；扩大到全部 Twin、Safety、行动卡、运动与恢复模块的回归:`432 passed`。
 - 全量回归基线:首轮运行到 31% 时 `2729 passed, 3 skipped`，按 `maxfail=5` 停止；4 项因沙箱禁止本地 HTTP 监听失败，1 项为与本改动无关的既有补剂同日 upsert 失败。复跑时该补剂协议幂等失败可单文件稳定复现（`8 passed, 1 failed`），与 ACWR 改动文件和调用链无交集。
+- 第二次独立评审整改后的 TDD 定向回归:`37 passed`，覆盖 Garmin 同步缓存失效、统一 TRIMP、缺失覆盖、异常输入、用户本地日期和 ActionCard 生命周期。
+- 扩大回归:Safety、Twin、Workout、Episode、ActionCard 共 `301 passed`。
 - 静态检查:`py_compile` 与 `git diff --check` 通过。
+- 阻断级 Ruff (`F821,F822,E9`) 通过。
 - doc drift:`scripts/check_doc_drift.py` 通过，生成事实已同步。
 - **裁决**:绿。
 
@@ -62,6 +69,8 @@
 - 触发:Safety Guardian 训练负荷规则和对外健康建议。
 - 首轮独立评审:`NO-GO`。阻断项为旧缓存缺少 reliability 时仍可能触发、Safety 派生缓存未随 Twin 失效、旧 ACWR 行动卡不会归档；同时指出时区、NaN/Inf、休息周与缺失数据混淆、Episode 口径漂移。
 - 整改:Safety 只接受 `acwr_reliable is True`；版本化并联动失效缓存；加入 ACWR 卡片生命周期 reconciliation；观测覆盖允许一个真实休息周但拒绝缺失同步；拒绝异常数值与极小慢性基线；统一用户时区和 Episode 计算入口。
+- 第二轮独立评审:`NO-GO`。阻断项为普通 Garmin 日数据伪造训练覆盖、运动写入/同步未完整失效缓存、负数负荷回落到时长、供应商负荷与推导 TRIMP 混量纲、缺失覆盖被误判为零训练、Episode 无时区时间按 UTC 解释、Safety 缺最终有限数检查。
+- 第二轮整改:训练覆盖与日健康数据解耦；所有 Workout 写入口联动失效；统一推导 TRIMP；异常输入全链 fail-closed；缺失覆盖不再产生“本周零运动”；Episode 使用用户本地日期；Safety 最终消费点再次验证有限数。
 - 复审:待新的独立 safety reviewer。
 - **裁决**:待定，复审 GO 前禁止部署。
 

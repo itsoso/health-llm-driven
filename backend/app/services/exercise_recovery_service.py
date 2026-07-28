@@ -3,6 +3,7 @@
 计算训练负荷（TRIMP）、急性:慢性负荷比（ACWR）、综合恢复就绪度。
 """
 import logging
+import math
 from datetime import date, timedelta
 from typing import Optional
 from sqlalchemy import desc
@@ -111,10 +112,15 @@ class ExerciseRecoveryService:
             )
             .order_by(desc(WorkoutRecord.workout_date)).all()
         )
-        # 按日期汇总
+        # 按日期汇总。ACWR 必须全窗口使用同一负荷量纲，因此统一由时长和
+        # 心率推算 TRIMP；不能把 Garmin 原始 trainingLoad 与推算值混用。
         dt, dty = {}, {}  # daily_trimp, daily_type
+        invalid_load_data = False
         for w in workouts:
-            trimp = self._workout_trimp(w, hr_max)
+            trimp, valid = self._workout_trimp(w, hr_max)
+            if not valid:
+                invalid_load_data = True
+                continue
             d = w.workout_date
             dt[d] = dt.get(d, 0) + trimp
             if d not in dty:
@@ -124,26 +130,9 @@ class ExerciseRecoveryService:
         daily_loads = [{"date": str(today - timedelta(days=i)), "trimp": loads[i],
                         "workout_type": dty.get(today - timedelta(days=i))} for i in range(14)]
 
-        observed_rows = (
-            db.query(GarminData.record_date)
-            .filter(
-                GarminData.user_id == user_id,
-                GarminData.record_date >= window_start,
-                GarminData.record_date <= today,
-            )
-            .distinct()
-            .all()
-        )
-        observed_dates = {row[0] for row in observed_rows}
-        observed_dates.update(dt.keys())
-        observed_days = [
-            today - timedelta(days=i) in observed_dates
-            for i in range(28)
-        ]
-
         assessment = assess_acwr(
             loads,
-            observed_days_newest_first=observed_days,
+            invalid_input=invalid_load_data,
         )
         acute_sum = assessment.acute_load_7d
         chronic_sum = assessment.chronic_load_28d
@@ -168,6 +157,7 @@ class ExerciseRecoveryService:
             "acute_observed_days": assessment.acute_observed_days,
             "baseline_observed_days": assessment.baseline_observed_days,
             "oldest_load_age_days": assessment.oldest_load_age_days,
+            "load_method": "derived_trimp",
             "acwr_trend": trend, "daily_loads": daily_loads, "data_days": assessment.data_days,
             "as_of_date": str(today),
         }
@@ -244,14 +234,36 @@ class ExerciseRecoveryService:
         if r3 < avg * 0.85: return "declining"
         return "stable"
 
-    def _workout_trimp(self, w: WorkoutRecord, hr_max: int) -> float:
-        if w.training_load and w.training_load > 0:
-            return float(w.training_load)
-        dur = (w.duration_seconds or 0) / 60
+    def _workout_trimp(self, w: WorkoutRecord, hr_max: int) -> tuple[float, bool]:
+        """Return one homogeneous derived-TRIMP scale for every provider."""
+        if w.training_load is not None:
+            try:
+                provider_load = float(w.training_load)
+            except (TypeError, ValueError):
+                return 0.0, False
+            if not math.isfinite(provider_load) or provider_load < 0:
+                return 0.0, False
+
+        try:
+            duration_seconds = float(w.duration_seconds or 0)
+        except (TypeError, ValueError):
+            return 0.0, False
+        if not math.isfinite(duration_seconds) or duration_seconds < 0:
+            return 0.0, False
+
+        dur = duration_seconds / 60
         if dur <= 0:
-            return 0
-        coeff = _trimp_coeff(w.avg_heart_rate / hr_max) if w.avg_heart_rate and hr_max > 0 else 1.5
-        return dur * coeff
+            return 0.0, True
+
+        try:
+            avg_hr = float(w.avg_heart_rate) if w.avg_heart_rate is not None else None
+        except (TypeError, ValueError):
+            return 0.0, False
+        if avg_hr is not None and (not math.isfinite(avg_hr) or avg_hr <= 0):
+            return 0.0, False
+
+        coeff = _trimp_coeff(avg_hr / hr_max) if avg_hr and hr_max > 0 else 1.5
+        return dur * coeff, True
 
     def _decide(self, score: Optional[float], zone: str) -> str:
         if score is None:

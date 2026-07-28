@@ -142,7 +142,7 @@ class WorkoutRecordBase(BaseModel):
     training_effect_aerobic: Optional[float] = None
     training_effect_anaerobic: Optional[float] = None
     vo2max: Optional[float] = None
-    training_load: Optional[int] = None
+    training_load: Optional[int] = Field(None, ge=0)
 
     # 感受
     perceived_exertion: Optional[int] = Field(None, ge=1, le=10)

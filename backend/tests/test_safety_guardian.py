@@ -1338,10 +1338,37 @@ class TestTrainingLoad:
         assert "training.acwr_overload" not in rule_ids
         assert "training.acwr_undertraining" not in rule_ids
 
+    def test_non_finite_acwr_never_alerts_even_if_marked_reliable(self):
+        for acwr in (float("nan"), float("inf"), float("-inf")):
+            twin = _empty_twin()
+            twin.behavioral = BehavioralState(
+                acute_chronic_ratio=acwr,
+                acwr_reliable=True,
+                training_load_7d=120.0,
+                workouts_this_week=3,
+            )
+            rule_ids = _rule_ids(evaluate_safety(twin).alerts)
+            assert "training.acwr_overload" not in rule_ids
+            assert "training.acwr_undertraining" not in rule_ids
+
+    def test_complete_inactivity_requires_explicit_complete_coverage(self):
+        twin = _empty_twin()
+        twin.behavioral = BehavioralState(
+            workouts_this_week=0,
+            training_load_7d=0.0,
+            acwr_unavailable_reason="insufficient_data_coverage",
+        )
+
+        alerts = evaluate_safety(twin).alerts
+
+        assert "training.complete_inactivity" not in _rule_ids(alerts)
+
     def test_complete_inactivity(self):
         twin = _empty_twin()
         twin.behavioral = BehavioralState(
-            workouts_this_week=0, training_load_7d=0.0
+            workouts_this_week=0,
+            training_load_7d=0.0,
+            acwr_unavailable_reason="no_recent_training",
         )
         alerts = evaluate_safety(twin).alerts
         assert "training.complete_inactivity" in _rule_ids(alerts)

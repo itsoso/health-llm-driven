@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
 from sqlalchemy import and_
@@ -41,7 +41,9 @@ def parse_run_episode(
     """构建跑步 Episode 的触发输入 — context + baseline snapshot."""
     occurred_at = workout.end_time or workout.start_time or datetime.now(timezone.utc)
     if occurred_at.tzinfo is None:
-        occurred_at = occurred_at.replace(tzinfo=timezone.utc)
+        occurred_at = occurred_at.replace(
+            tzinfo=get_user_timezone(db, user_id),
+        ).astimezone(timezone.utc)
 
     distance_km = (workout.distance_meters or 0) / 1000.0
     duration_min = (workout.duration_seconds or 0) / 60.0
@@ -64,7 +66,7 @@ def parse_run_episode(
         context["weather"] = weather
 
     # 睡眠前一晚 — 查最近的 GarminData
-    prior_date = occurred_at.date() - timedelta(days=0)  # 当日 (夜间睡眠已 roll up 到当日)
+    prior_date = workout.workout_date or occurred_at.date()
     gd = (
         db.query(GarminData)
         .filter(GarminData.user_id == user_id, GarminData.record_date <= prior_date)
@@ -78,7 +80,7 @@ def parse_run_episode(
         context["body_battery_current"] = getattr(gd, "body_battery_current", None)
 
     # ACWR 7/28d training load ratio
-    acwr = _compute_acwr(db, user_id, occurred_at)
+    acwr = _compute_acwr(db, user_id, workout.workout_date)
     if acwr is not None:
         context["acwr"] = acwr
 
@@ -93,16 +95,13 @@ def parse_run_episode(
     )
 
 
-def _compute_acwr(db: Session, user_id: int, now: datetime) -> Optional[float]:
+def _compute_acwr(db: Session, user_id: int, as_of_date: date) -> Optional[float]:
     """Return the same reliable ACWR value used by HealthTwin and Safety."""
 
-    if now.tzinfo is None:
-        now = now.replace(tzinfo=timezone.utc)
-    local_date = now.astimezone(get_user_timezone(db, user_id)).date()
     result = ExerciseRecoveryService().get_training_load(
         db,
         user_id,
-        as_of_date=local_date,
+        as_of_date=as_of_date,
     )
     return result.get("acwr")
 
