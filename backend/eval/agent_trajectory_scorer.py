@@ -15,6 +15,7 @@ from typing import Any, Iterable
 from app.services.agent_kernel.tool_registry import (
     ToolRegistryError,
     classify_tool_effect,
+    expected_receipt_resource_type,
 )
 
 
@@ -37,47 +38,79 @@ _UNCERTAIN_RECEIPT_STATUSES = {
 }
 
 
+def _normalize_alias(value: Any, *, lower: bool = False) -> str | None:
+    if value in (None, ""):
+        return None
+    if isinstance(value, bool):
+        normalized = "true" if value else "false"
+    elif isinstance(value, (dict, list)):
+        normalized = json.dumps(value, ensure_ascii=False, sort_keys=True)
+    else:
+        normalized = str(value).strip()
+    return normalized.lower() if lower else normalized
+
+
+def _resolve_alias(
+    value: dict[str, Any] | None,
+    keys: tuple[str, ...],
+    *,
+    include_nested: bool = True,
+    lower: bool = False,
+) -> tuple[str | None, bool]:
+    value = value or {}
+    sources = [value]
+    nested = value.get("data")
+    if include_nested and isinstance(nested, dict):
+        sources.append(nested)
+    candidates = [
+        normalized
+        for source in sources
+        for key in keys
+        if (normalized := _normalize_alias(source.get(key), lower=lower)) is not None
+    ]
+    unique = list(dict.fromkeys(candidates))
+    if len(unique) > 1:
+        return None, True
+    return (unique[0] if unique else None), False
+
+
 def _operation(call: dict[str, Any]) -> str:
     name = str(call.get("name") or "").strip()
     if name == "health_record":
         return "create"
     args = call.get("args") or {}
-    operation = str(
-        args.get("operation") or args.get("action") or ""
-    ).strip().lower()
-    return operation
+    operation, _ = _resolve_alias(
+        args,
+        ("operation", "action"),
+        include_nested=False,
+        lower=True,
+    )
+    return operation or ""
 
 
 def _record_type(call: dict[str, Any]) -> str:
-    return str((call.get("args") or {}).get("record_type") or "").strip().lower()
+    record_type, _ = _resolve_alias(
+        call.get("args") or {},
+        ("record_type", "type"),
+        include_nested=False,
+        lower=True,
+    )
+    return record_type or ""
 
 
 def _meal_type(value: dict[str, Any] | None) -> str:
-    value = value or {}
-    nested = value.get("data") if isinstance(value.get("data"), dict) else {}
-    return str(
-        value.get("meal_type")
-        or nested.get("meal_type")
-        or ""
-    ).strip().lower()
+    meal_type, _ = _resolve_alias(value, ("meal_type",), lower=True)
+    return meal_type or ""
 
 
-def _record_id(value: dict[str, Any] | None) -> Any:
-    value = value or {}
-    nested = value.get("data") if isinstance(value.get("data"), dict) else {}
-    return value.get("record_id") or value.get("id") or nested.get("record_id")
+def _record_id(value: dict[str, Any] | None) -> str | None:
+    record_id, _ = _resolve_alias(value, ("resource_id", "record_id", "id"))
+    return record_id
 
 
 def _record_date(value: dict[str, Any] | None) -> str:
-    value = value or {}
-    nested = value.get("data") if isinstance(value.get("data"), dict) else {}
-    return str(
-        value.get("date")
-        or value.get("record_date")
-        or nested.get("date")
-        or nested.get("record_date")
-        or ""
-    ).strip()
+    record_date, _ = _resolve_alias(value, ("date", "record_date"))
+    return record_date or ""
 
 
 def _trace_tool_calls(
@@ -147,8 +180,8 @@ def _write_indexes_and_contract_failures(
 
 def _arg_value(call: dict[str, Any], key: str) -> Any:
     args = call.get("args") or {}
-    data = args.get("data") if isinstance(args.get("data"), dict) else {}
-    return args.get(key) if args.get(key) is not None else data.get(key)
+    value, _ = _resolve_alias(args, (key,))
+    return value
 
 
 def _receipt_status(call: dict[str, Any]) -> str:
@@ -171,23 +204,26 @@ def _receipt_resource_type(call: dict[str, Any]) -> str:
     receipt = call.get("receipt")
     if not isinstance(receipt, dict):
         return ""
-    return str(
-        receipt.get("resource_type") or receipt.get("record_type") or ""
-    ).strip().lower()
+    resource_type, _ = _resolve_alias(
+        receipt,
+        ("resource_type", "record_type"),
+        lower=True,
+    )
+    return resource_type or ""
 
 
 def _receipt_matches_target(
     call: dict[str, Any],
     *,
-    expected_record_type: str,
+    expected_resource_type: str,
     expected_date: str,
 ) -> bool:
     receipt = call.get("receipt")
     if not _receipt_is_verified(call) or not isinstance(receipt, dict):
         return False
     if (
-        expected_record_type
-        and _receipt_resource_type(call) != expected_record_type
+        expected_resource_type
+        and _receipt_resource_type(call) != expected_resource_type
     ):
         return False
     return not expected_date or _record_date(receipt) == expected_date
@@ -239,6 +275,10 @@ def score_trajectory(case: dict[str, Any], trace: dict[str, Any]) -> dict[str, A
     ).strip().lower()
     expected_operation = str(expected.get("operation") or "").strip().lower()
     expected_date = str(expected.get("target_date") or "").strip()
+    expected_resource_type = expected_receipt_resource_type(
+        "health_record" if expected_operation == "create" else "health_manage",
+        {"record_type": expected_record_type},
+    ) or expected_record_type
 
     operations = [_operation(call) for call in calls]
     for operation in operations:
@@ -256,6 +296,41 @@ def score_trajectory(case: dict[str, Any], trace: dict[str, Any]) -> dict[str, A
             operation = _operation(call)
             record_type = _record_type(call)
             write_date = _record_date(call.get("args"))
+            args = call.get("args") if isinstance(call.get("args"), dict) else {}
+            _, operation_conflict = _resolve_alias(
+                args,
+                ("operation", "action"),
+                include_nested=False,
+                lower=True,
+            )
+            _, record_type_conflict = _resolve_alias(
+                args,
+                ("record_type", "type"),
+                include_nested=False,
+                lower=True,
+            )
+            _, date_conflict = _resolve_alias(args, ("date", "record_date"))
+            _, identity_conflict = _resolve_alias(
+                args,
+                ("resource_id", "record_id", "id"),
+            )
+            _, meal_conflict = _resolve_alias(args, ("meal_type",), lower=True)
+            if operation_conflict:
+                hard_failures.append("conflicting_write_operation")
+            if record_type_conflict:
+                hard_failures.append("conflicting_write_record_type")
+            if date_conflict:
+                hard_failures.append("conflicting_write_target_date")
+            if identity_conflict:
+                hard_failures.append("conflicting_write_record_identity")
+            if meal_conflict:
+                hard_failures.append("conflicting_write_meal_type")
+            for key in (expected.get("target_values") or {}):
+                _, value_conflict = _resolve_alias(args, (str(key),))
+                if value_conflict:
+                    hard_failures.append(
+                        f"conflicting_write_target_value:{key}"
+                    )
             if operation != expected_operation:
                 hard_failures.append(f"unexpected_write_operation:{operation}")
             if expected_record_type and record_type != expected_record_type:
@@ -267,11 +342,19 @@ def score_trajectory(case: dict[str, Any], trace: dict[str, Any]) -> dict[str, A
                     hard_failures.append("write_target_date_missing")
                 elif write_date != expected_date:
                     hard_failures.append("write_target_date_mismatch")
-    domain_lookup_indexes = [
-        index
-        for index, call in enumerate(calls)
-        if _operation(call) == "list" and _record_type(call) == expected.get("domain")
-    ]
+    domain_lookup_indexes: list[int] = []
+    for index, call in enumerate(calls):
+        if _operation(call) != "list" or _record_type(call) != expected.get("domain"):
+            continue
+        lookup_args = call.get("args") if isinstance(call.get("args"), dict) else {}
+        _, lookup_date_conflict = _resolve_alias(
+            lookup_args,
+            ("date", "record_date"),
+        )
+        if lookup_date_conflict:
+            hard_failures.append("conflicting_lookup_target_date")
+            continue
+        domain_lookup_indexes.append(index)
     lookup_indexes = [
         index
         for index in domain_lookup_indexes
@@ -293,6 +376,27 @@ def score_trajectory(case: dict[str, Any], trace: dict[str, Any]) -> dict[str, A
     authoritative_ids_by_meal: dict[str, set[Any]] = defaultdict(set)
     if target_meals and lookup_indexes:
         for row in _result_rows(calls[lookup_indexes[0]]):
+            _, row_date_conflict = _resolve_alias(
+                row,
+                ("date", "record_date"),
+            )
+            _, row_id_conflict = _resolve_alias(
+                row,
+                ("resource_id", "record_id", "id"),
+            )
+            _, row_meal_conflict = _resolve_alias(
+                row,
+                ("meal_type",),
+                lower=True,
+            )
+            if row_date_conflict:
+                hard_failures.append("conflicting_lookup_result_date")
+            if row_id_conflict:
+                hard_failures.append("conflicting_lookup_result_identity")
+            if row_meal_conflict:
+                hard_failures.append("conflicting_lookup_result_meal_type")
+            if row_date_conflict or row_id_conflict or row_meal_conflict:
+                continue
             meal = _meal_type(row)
             record_id = _record_id(row)
             if meal in target_meals and record_id is not None:
@@ -361,6 +465,32 @@ def score_trajectory(case: dict[str, Any], trace: dict[str, Any]) -> dict[str, A
         receipt = call.get("receipt")
         if not isinstance(receipt, dict):
             continue
+        _, receipt_type_conflict = _resolve_alias(
+            receipt,
+            ("resource_type", "record_type"),
+            lower=True,
+        )
+        _, receipt_id_conflict = _resolve_alias(
+            receipt,
+            ("resource_id", "record_id", "id"),
+        )
+        _, receipt_date_conflict = _resolve_alias(
+            receipt,
+            ("date", "record_date"),
+        )
+        _, receipt_meal_conflict = _resolve_alias(
+            receipt,
+            ("meal_type",),
+            lower=True,
+        )
+        if receipt_type_conflict:
+            hard_failures.append("conflicting_write_receipt_resource_type")
+        if receipt_id_conflict:
+            hard_failures.append("conflicting_write_receipt_identity")
+        if receipt_date_conflict:
+            hard_failures.append("conflicting_write_receipt_target_date")
+        if receipt_meal_conflict:
+            hard_failures.append("conflicting_write_receipt_meal_type")
         if _receipt_status(call) in _VERIFIED_RECEIPT_STATUSES:
             if receipt.get("verified") is False:
                 hard_failures.append("write_receipt_explicitly_unverified")
@@ -368,15 +498,15 @@ def score_trajectory(case: dict[str, Any], trace: dict[str, Any]) -> dict[str, A
                 hard_failures.append("write_receipt_not_explicitly_verified")
         if _receipt_is_verified(call):
             if (
-                expected_record_type
-                and _receipt_resource_type(call) != expected_record_type
+                expected_resource_type
+                and _receipt_resource_type(call) != expected_resource_type
             ):
                 hard_failures.append("write_receipt_resource_type_mismatch")
             if expected_date and _record_date(receipt) != expected_date:
                 hard_failures.append("write_receipt_date_mismatch")
         if not _receipt_matches_target(
             call,
-            expected_record_type=expected_record_type,
+            expected_resource_type=expected_resource_type,
             expected_date=expected_date,
         ):
             continue
@@ -399,7 +529,7 @@ def score_trajectory(case: dict[str, Any], trace: dict[str, Any]) -> dict[str, A
         for call in relevant_write_calls
         if _receipt_matches_target(
             call,
-            expected_record_type=expected_record_type,
+            expected_resource_type=expected_resource_type,
             expected_date=expected_date,
         )
         and _record_id(call.get("receipt")) is None
@@ -409,7 +539,7 @@ def score_trajectory(case: dict[str, Any], trace: dict[str, Any]) -> dict[str, A
     every_write_has_identity_receipt = bool(relevant_write_calls) and all(
         _receipt_matches_target(
             call,
-            expected_record_type=expected_record_type,
+            expected_resource_type=expected_resource_type,
             expected_date=expected_date,
         )
         and _record_id(call.get("receipt")) is not None
@@ -431,7 +561,7 @@ def score_trajectory(case: dict[str, Any], trace: dict[str, Any]) -> dict[str, A
         for call in relevant_write_calls
         if _receipt_matches_target(
             call,
-            expected_record_type=expected_record_type,
+            expected_resource_type=expected_resource_type,
             expected_date=expected_date,
         )
     ]
@@ -465,10 +595,40 @@ def score_trajectory(case: dict[str, Any], trace: dict[str, Any]) -> dict[str, A
     mismatched_readback_result_date = False
     for index, call in enumerate(calls):
         if index > last_write and _operation(call) == "list":
+            read_args = call.get("args") if isinstance(call.get("args"), dict) else {}
+            _, read_date_conflict = _resolve_alias(
+                read_args,
+                ("date", "record_date"),
+            )
+            if read_date_conflict:
+                hard_failures.append("conflicting_readback_target_date")
+                continue
             if expected_date and _record_date(call.get("args")) != expected_date:
                 mismatched_readback_date = True
                 continue
             for row in _result_rows(call):
+                _, row_date_conflict = _resolve_alias(
+                    row,
+                    ("date", "record_date"),
+                )
+                _, row_id_conflict = _resolve_alias(
+                    row,
+                    ("resource_id", "record_id", "id"),
+                )
+                _, row_meal_conflict = _resolve_alias(
+                    row,
+                    ("meal_type",),
+                    lower=True,
+                )
+                if row_date_conflict:
+                    hard_failures.append("conflicting_readback_result_date")
+                    continue
+                if row_id_conflict:
+                    hard_failures.append("conflicting_readback_result_identity")
+                    continue
+                if row_meal_conflict:
+                    hard_failures.append("conflicting_readback_result_meal_type")
+                    continue
                 if expected_date and _record_date(row) != expected_date:
                     mismatched_readback_result_date = True
                     continue

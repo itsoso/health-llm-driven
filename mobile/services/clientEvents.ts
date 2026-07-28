@@ -445,11 +445,14 @@ export async function flushClientEventOutbox(): Promise<void> {
     while (remaining.length > 0) {
       const item = remaining[0];
       try {
-        await api.post('/client-events', {
+        const response = await api.post('/client-events', {
           event_name: item.name,
           event_key: item.eventKey,
           meta: item.meta,
         });
+        if (response?.data?.ok !== true) {
+          return;
+        }
       } catch {
         return;
       }
@@ -490,9 +493,13 @@ export async function emitClientEvent(
   ) {
     try {
       await enqueueAttachmentTerminalEvent(eventKey, sanitizedMeta);
-      await flushClientEventOutbox();
+      void flushClientEventOutbox().catch(() => {
+        // The durable outbox owns retry; network delivery must not block cleanup.
+      });
     } catch {
-      // Durable telemetry must not block the user-facing send path.
+      // Callers await this function before cleanup, so a local persistence failure
+      // leaves the draft intact even though telemetry itself stays UI-silent.
+      throw new Error('client_event_outbox_persistence_failed');
     }
     return;
   }

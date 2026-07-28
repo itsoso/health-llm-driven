@@ -479,14 +479,18 @@ export default function ChatInputBar({
       const accepted = await Promise.resolve(sendResult);
       if (accepted === false) {
         if (attachmentImageCount > 0) {
-          void emitClientEvent('chat_attachment_terminal', {
-            phase: 'failed',
-            stage: 'server_accept',
-            image_count: attachmentImageCount,
-            duration_bucket: durationBucket(attachmentStartedAt),
-            payload_bucket: attachmentPayload,
-            error_code: 'server_not_accepted',
-          }, { eventKey: attachmentEventKey });
+          try {
+            await emitClientEvent('chat_attachment_terminal', {
+              phase: 'failed',
+              stage: 'server_accept',
+              image_count: attachmentImageCount,
+              duration_bucket: durationBucket(attachmentStartedAt),
+              payload_bucket: attachmentPayload,
+              error_code: 'server_not_accepted',
+            }, { eventKey: attachmentEventKey });
+          } catch {
+            // The rejected send already preserves the draft for a later retry.
+          }
         }
         if (effectiveChannelForSend === 'voice' && msg) {
           restoreVoiceTranscriptDraft(msg);
@@ -498,26 +502,36 @@ export default function ChatInputBar({
         return;
       }
       if (attachmentImageCount > 0) {
-        void emitClientEvent('chat_attachment_terminal', {
-          phase: 'accepted',
-          stage: 'server_accept',
-          image_count: attachmentImageCount,
-          duration_bucket: durationBucket(attachmentStartedAt),
-          payload_bucket: attachmentPayload,
-        }, { eventKey: attachmentEventKey });
+        try {
+          await emitClientEvent('chat_attachment_terminal', {
+            phase: 'accepted',
+            stage: 'server_accept',
+            image_count: attachmentImageCount,
+            duration_bucket: durationBucket(attachmentStartedAt),
+            payload_bucket: attachmentPayload,
+          }, { eventKey: attachmentEventKey });
+        } catch (e) {
+          // The server already accepted the Turn. Telemetry persistence must
+          // not turn that success into a user-visible retry and duplicate send.
+          if (__DEV__) console.warn('[ChatInputBar] accepted-send telemetry persistence failed:', e);
+        }
       }
     } catch (e) {
       if (attachmentImageCount > 0) {
-        void emitClientEvent('chat_attachment_terminal', {
-          phase: 'failed',
-          stage: attachmentStage,
-          image_count: attachmentImageCount,
-          duration_bucket: durationBucket(attachmentStartedAt),
-          payload_bucket: attachmentPayload,
-          error_code: attachmentStage === 'local_prepare'
-            ? 'draft_hydration_failed'
-            : 'send_rejected',
-        }, { eventKey: attachmentEventKey });
+        try {
+          await emitClientEvent('chat_attachment_terminal', {
+            phase: 'failed',
+            stage: attachmentStage,
+            image_count: attachmentImageCount,
+            duration_bucket: durationBucket(attachmentStartedAt),
+            payload_bucket: attachmentPayload,
+            error_code: attachmentStage === 'local_prepare'
+              ? 'draft_hydration_failed'
+              : 'send_rejected',
+          }, { eventKey: attachmentEventKey });
+        } catch {
+          // The failure path retains the source draft regardless of telemetry.
+        }
       }
       if (effectiveChannelForSend === 'voice' && msg) {
         restoreVoiceTranscriptDraft(msg);

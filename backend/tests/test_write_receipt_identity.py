@@ -165,6 +165,26 @@ def test_registered_terminal_status_with_resource_identity_remains_verifiable():
     assert receipt["resource_id"] == "831"
 
 
+def test_dated_write_receipt_preserves_the_persisted_record_date():
+    shape = json.dumps(
+        {
+            "status": "recorded",
+            "resource_type": "water_record",
+            "resource_id": 832,
+            "record_date": "2026-07-17",
+        }
+    )
+
+    receipt = _write_receipt_from_tool_result(
+        "health_record",
+        {"record_type": "water", "data": {"date": "2026-07-17"}},
+        shape,
+    )
+
+    assert receipt is not None
+    assert receipt["date"] == "2026-07-17"
+
+
 def test_aigc_draft_pending_confirmation_is_a_verified_persisted_write():
     shape = json.dumps(
         {

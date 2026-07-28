@@ -20,6 +20,8 @@ const mockPost = api.post as jest.Mock;
 describe('client reliability events', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockPost.mockReset();
+    mockPost.mockResolvedValue({ data: { ok: true } });
     return AsyncStorage.clear();
   });
 
@@ -214,6 +216,50 @@ describe('client reliability events', () => {
       },
     });
     expect(await AsyncStorage.getItem('client-events:outbox:v1:user-7')).toBeNull();
+  });
+
+  it('retains a persisted terminal event when the server resolves with ok false', async () => {
+    await AsyncStorage.setItem('client-events:outbox:v1:user-7', JSON.stringify([{
+      eventKey: 'attachment-terminal-not-persisted',
+      name: 'chat_attachment_terminal',
+      meta: {
+        phase: 'accepted',
+        stage: 'server_accept',
+        image_count: 1,
+        duration_bucket: '1_3s',
+        payload_bucket: 'lt_256kb',
+      },
+    }]));
+    mockPost.mockResolvedValueOnce({ data: { ok: false } });
+
+    await flushClientEventOutbox();
+
+    const stored = await AsyncStorage.getItem('client-events:outbox:v1:user-7');
+    expect(JSON.parse(stored || '[]')).toHaveLength(1);
+  });
+
+  it('resolves a terminal emit after local persistence without waiting for network acknowledgement', async () => {
+    let resolvePost: ((value: { data: { ok: boolean } }) => void) | undefined;
+    mockPost.mockImplementationOnce(() => new Promise((resolve) => {
+      resolvePost = resolve;
+    }));
+
+    await emitClientEvent('chat_attachment_terminal', {
+      phase: 'accepted',
+      stage: 'server_accept',
+      image_count: 1,
+      duration_bucket: '1_3s',
+      payload_bucket: 'lt_256kb',
+    }, { eventKey: 'attachment-terminal-local-first' });
+    const storedBeforeNetworkAck = await AsyncStorage.getItem('client-events:outbox:v1:user-7');
+    for (let index = 0; index < 10 && !resolvePost; index += 1) {
+      await Promise.resolve();
+    }
+
+    expect(JSON.parse(storedBeforeNetworkAck || '[]')).toHaveLength(1);
+    expect(resolvePost).toBeDefined();
+    resolvePost?.({ data: { ok: true } });
+    await flushClientEventOutbox();
   });
 
   it('deduplicates an attachment terminal event in the local outbox', async () => {

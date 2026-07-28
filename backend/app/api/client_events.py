@@ -502,12 +502,25 @@ def post_client_event(
             if existing is not None:
                 return {"ok": True, "id": existing.id, "duplicate": True}
         logger.warning("[client-events] 幂等键冲突后未找到原事件")
-        return {"ok": False}
-    except Exception as e:  # noqa: BLE001
-        logger.warning(f"[client-events] 写入失败 (bypass): {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "message": "事件暂未持久化，请稍后重试",
+                "error_code": "client_event_persistence_failed",
+            },
+        )
+    except HTTPException:
+        raise
+    except Exception:  # noqa: BLE001
+        logger.warning("[client-events] 写入失败", exc_info=True)
         try:
             db.rollback()
         except Exception:
             pass
-        # 不抛 500 — 埋点失败不影响用户主流程
-        return {"ok": False}
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "message": "事件暂未持久化，请稍后重试",
+                "error_code": "client_event_persistence_failed",
+            },
+        )

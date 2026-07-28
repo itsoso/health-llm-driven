@@ -58,7 +58,7 @@ def _valid_trace(candidate_id: str = "candidate-a") -> dict:
                     "status": "verified",
                     "verified": True,
                     "record_id": 101,
-                    "resource_type": "diet",
+                    "resource_type": "diet_record",
                     "date": "2026-07-24",
                     "meal_type": "breakfast",
                 },
@@ -79,7 +79,7 @@ def _valid_trace(candidate_id: str = "candidate-a") -> dict:
                     "status": "verified",
                     "verified": True,
                     "record_id": 102,
-                    "resource_type": "diet",
+                    "resource_type": "diet_record",
                     "date": "2026-07-24",
                     "meal_type": "lunch",
                 },
@@ -276,7 +276,7 @@ def _simple_water_trace(*, receipt_status: str = "verified", claims_complete: bo
                     "status": receipt_status,
                     "verified": receipt_status == "verified",
                     "record_id": 501 if receipt_status == "verified" else None,
-                    "resource_type": "water",
+                    "resource_type": "water_record",
                     "date": "2026-07-17",
                 },
             },
@@ -298,6 +298,105 @@ def test_score_trajectory_passes_simple_health_record_with_verified_readback():
     assert scored["dimensions"]["target_updates"] == 1
     assert scored["dimensions"]["verified_receipts"] == 1
     assert scored["dimensions"]["readback"] == 1
+
+
+def test_score_trajectory_accepts_a_production_shaped_write_receipt():
+    from app.services.agent_executor import _write_receipt_from_tool_result
+
+    trace = _simple_water_trace()
+    receipt = _write_receipt_from_tool_result(
+        "health_record",
+        trace["tool_calls"][0]["args"],
+        {
+            "status": "recorded",
+            "resource_type": "water_record",
+            "resource_id": 501,
+            "record_date": "2026-07-17",
+        },
+    )
+    assert receipt is not None
+    trace["tool_calls"][0]["receipt"] = receipt
+
+    scored = score_trajectory(SIMPLE_WATER_CASE, trace)
+
+    assert scored["passed"] is True
+    assert scored["hard_failures"] == []
+
+
+def test_score_trajectory_rejects_conflicting_top_level_and_nested_date_aliases():
+    trace = _simple_water_trace()
+    trace["tool_calls"][0]["args"]["date"] = "2026-07-17"
+    trace["tool_calls"][0]["args"]["data"]["date"] = "2099-01-01"
+
+    scored = score_trajectory(SIMPLE_WATER_CASE, trace)
+
+    assert "conflicting_write_target_date" in scored["hard_failures"]
+
+
+def test_score_trajectory_rejects_conflicting_top_level_and_nested_value_aliases():
+    trace = _simple_water_trace()
+    trace["tool_calls"][0]["args"]["amount_ml"] = "500"
+    trace["tool_calls"][0]["args"]["data"]["amount_ml"] = "300"
+
+    scored = score_trajectory(SIMPLE_WATER_CASE, trace)
+
+    assert "conflicting_write_target_value:amount_ml" in scored["hard_failures"]
+
+
+def test_score_trajectory_rejects_conflicting_write_identity_aliases():
+    trace = _valid_trace("candidate-conflicting-id")
+    trace["tool_calls"][1]["args"]["data"]["record_id"] = 999
+
+    scored = score_trajectory(CASE, trace)
+
+    assert "conflicting_write_record_identity" in scored["hard_failures"]
+
+
+def test_score_trajectory_rejects_conflicting_write_meal_aliases():
+    trace = _valid_trace("candidate-conflicting-meal")
+    trace["tool_calls"][1]["args"]["meal_type"] = "lunch"
+
+    scored = score_trajectory(CASE, trace)
+
+    assert "conflicting_write_meal_type" in scored["hard_failures"]
+
+
+def test_score_trajectory_rejects_conflicting_receipt_resource_aliases():
+    trace = _simple_water_trace()
+    trace["tool_calls"][0]["receipt"]["record_type"] = "diet_record"
+
+    scored = score_trajectory(SIMPLE_WATER_CASE, trace)
+
+    assert "conflicting_write_receipt_resource_type" in scored["hard_failures"]
+
+
+def test_score_trajectory_rejects_conflicting_readback_aliases():
+    trace = _simple_water_trace()
+    trace["tool_calls"][-1]["result"][0]["record_date"] = "2099-01-01"
+
+    scored = score_trajectory(SIMPLE_WATER_CASE, trace)
+
+    assert "conflicting_readback_result_date" in scored["hard_failures"]
+
+
+def test_score_trajectory_rejects_conflicting_initial_lookup_date_aliases():
+    trace = _valid_trace("candidate-conflicting-lookup-date")
+    trace["tool_calls"][0]["args"]["record_date"] = "2099-01-01"
+
+    scored = score_trajectory(CASE, trace)
+
+    assert "conflicting_lookup_target_date" in scored["hard_failures"]
+
+
+def test_score_trajectory_rejects_conflicting_initial_lookup_row_aliases():
+    trace = _valid_trace("candidate-conflicting-lookup-row")
+    trace["tool_calls"][0]["result"][0]["record_id"] = 999
+    trace["tool_calls"][0]["result"][1]["data"] = {"meal_type": "dinner"}
+
+    scored = score_trajectory(CASE, trace)
+
+    assert "conflicting_lookup_result_identity" in scored["hard_failures"]
+    assert "conflicting_lookup_result_meal_type" in scored["hard_failures"]
 
 
 def test_score_trajectory_requires_explicit_verified_true_on_receipt():

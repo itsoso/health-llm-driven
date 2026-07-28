@@ -107,33 +107,41 @@ def _spec(
 _POSITIVE_INTEGER_RECEIPT_ID = r"^[1-9][0-9]*$"
 _AIGC_CONFIRMATION_RECEIPT_ID = r"^aigc_confirm_[0-9a-f]{32}$"
 
+HEALTH_RECORD_RECEIPT_RESOURCE_TYPE_BY_RECORD_TYPE: Mapping[str, str] = {
+    "bp": "blood_pressure_record",
+    "blood_pressure": "blood_pressure_record",
+    "diet": "diet_record",
+    "event": "health_episode",
+    "exercise": "exercise_record",
+    "excretion": "excretion_record",
+    "goal": "goal",
+    "illness": "illness_episode",
+    "medication": "medication_log",
+    "mood": "mood_record",
+    "reminder": "smart_reminder",
+    "remember": "memory_fact",
+    "rhinitis": "health_checkin",
+    "sleep": "sleep_record",
+    "supplement": "supplement_log",
+    "supplement_group": "supplement_log",
+    "symptom": "symptom_record",
+    "waist": "waist_record",
+    "water": "water_record",
+    "weight": "weight_record",
+}
+HEALTH_MANAGE_RECEIPT_RESOURCE_TYPE_BY_RECORD_TYPE: Mapping[str, str] = {
+    **HEALTH_RECORD_RECEIPT_RESOURCE_TYPE_BY_RECORD_TYPE,
+    "medication": "medication",
+    "medication_log": "medication_log",
+    "supplement_definition": "supplement_definition",
+}
+
 _HEALTH_RECORD_RECEIPT_RESOURCE_TYPES = frozenset(
-    {
-        "blood_pressure_record",
-        "diet_record",
-        "exercise_record",
-        "excretion_record",
-        "goal",
-        "health_checkin",
-        "health_episode",
-        "illness_episode",
-        "medication_log",
-        "memory_fact",
-        "mood_record",
-        "sleep_record",
-        "smart_reminder",
-        "supplement_definition",
-        "supplement_log",
-        "symptom_record",
-        "waist_record",
-        "water_record",
-        "weight_record",
-    }
+    HEALTH_RECORD_RECEIPT_RESOURCE_TYPE_BY_RECORD_TYPE.values()
 )
 
 _HEALTH_MANAGE_RECEIPT_RESOURCE_TYPES = (
-    _HEALTH_RECORD_RECEIPT_RESOURCE_TYPES
-    | frozenset({"medication", "supplement_definition"})
+    frozenset(HEALTH_MANAGE_RECEIPT_RESOURCE_TYPE_BY_RECORD_TYPE.values())
 )
 
 
@@ -358,6 +366,22 @@ def is_registered_receipt_resource_type(
 ) -> bool:
     spec = get_tool_spec(tool_name)
     return resource_type in spec.receipt_resource_types
+
+
+def expected_receipt_resource_type(
+    tool_name: str,
+    arguments: Any,
+) -> str | None:
+    """Resolve the canonical receipt type from the same registry contract."""
+    args = _parse_arguments(arguments)
+    record_type = str(
+        args.get("record_type") or args.get("type") or ""
+    ).strip().lower()
+    if tool_name == "health_record":
+        return HEALTH_RECORD_RECEIPT_RESOURCE_TYPE_BY_RECORD_TYPE.get(record_type)
+    if tool_name == "health_manage":
+        return HEALTH_MANAGE_RECEIPT_RESOURCE_TYPE_BY_RECORD_TYPE.get(record_type)
+    return None
 
 
 def is_valid_receipt_resource_id(tool_name: str, resource_id: str) -> bool:

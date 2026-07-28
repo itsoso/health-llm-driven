@@ -81,7 +81,7 @@ RequirementAdmission:
   “模型服务不可用”，单模型和多模型链路语义一致。
 - [x] Jest 环境释放 React Query inactive cache 的 GC timer 引用，全量 Mobile
   回归可以自然退出，不再依赖 `--forceExit`。
-- [ ] 完成独立安全评审、提交、部署和 OTA。
+- [ ] 完成在线合成评测、独立安全评审、提交、部署和 OTA。
 - [ ] 完成 TestFlight 239 真机 G6。
 
 ## G3 · 测试闸
@@ -89,19 +89,24 @@ RequirementAdmission:
 - Mobile 附件事件、输入框、active Turn、聊天页面、结构化回执和顶部状态均纳入
   全量 Gate。
 - Backend Agent、Runtime、client event、managed migration、历史写回与 Harness
-  wiring 的累计广覆盖 Gate：`1467 passed, 3 skipped`，退出码 0；第六轮整改后
-  对 client event、observability、trajectory scorer 和 synthesis gate 的增量复验：
-  `160 passed`，退出码 0。
+  wiring 的累计广覆盖 Gate：`1467 passed, 3 skipped`，退出码 0；第七轮整改后
+  受影响域复验 `230 passed`，CI 原始六个 Agent 分片复验
+  `1342 passed, 3 skipped`，退出码均为 0。
 - Agent trajectory scorer 与历史轨迹门禁已覆盖 9 个 mandatory scenarios。
 - TypeScript `npx tsc --noEmit`：PASS。
-- Mobile 完整 Gate：`279` 个 suites、`2151 passed`、`1 skipped`，退出码 0；
+- Mobile 完整 Gate：`279` 个 suites、`2155 passed`、`1 skipped`，退出码 0；
   React Query 测试 GC timer 已不再阻塞 Jest 退出。Expo lint `0 errors`，保留
   `93` 条既有 warning。
 - Python 变更文件 Ruff、文档漂移、Dossier 一致性和 `git diff --check`：PASS。
 - 零成本 Harness：invariants `12/12`、health core `50/50`、trajectory
   contract `12/12`、goldens `9/9`，未调用付费模型。
+- `harness_llm_change_gate.py --base-ref origin/main` 正确阻断本次发布：Executor
+  和 trajectory evaluator 均属高风险 LLM 变更，必须先执行 5 个纯合成
+  orchestrator 用例的在线模型评测。本 Gate 涉及向阿里云百炼发送约 10 次请求、
+  约 12K token；不含用户、图片、账户或数据库数据，但仍需用户明确授权后执行。
 - 页面测试保留既有 React `act(...)` 警告但无失败；不作为真机 G6 的替代证据。
-- **裁决: PASS。**
+- **裁决: PENDING。** 本地、离线和静态 Gate 全绿；在线合成评测尚未获数据出境授权，
+  不得提前标记 PASS。
 
 ## G4 · 安全闸
 
@@ -162,8 +167,21 @@ RequirementAdmission:
 - 第六轮整改的四个 scorer 反例和三条 outbox 断网/重放/去重测试先红后绿；
   trajectory contract `12/12`、goldens `9/9`、相关后端 `160/160`、Mobile
   全量 `2151 passed`，且 Jest 自然退出。
+- 第七轮独立 reviewer 仍给出 **NO-GO**，发现 Mobile 在服务端返回
+  `202 {ok:false}` 时会误删 outbox；服务端已接受图片 Turn 后，本地终态遥测落盘失败
+  会被错误呈现为“发送失败”并诱导重复提交；生产饮水/饮食回执 schema 与 scorer
+  期望不一致；冲突 alias 可能绕过日期、资源和餐次绑定。
+- 第七轮整改已完成：Mobile 只在 `response.data.ok === true` 时移除 outbox；
+  accepted Turn 后的终态遥测失败降级为隐私安全诊断，不回滚已接受发送且继续清理草稿；
+  Tool Registry 建立 canonical receipt resource map，Executor 与 scorer 共用生产资源
+  名；餐食上下文读回补齐实际日期，初始权威 lookup 的目标日期、结果日期、资源 identity
+  与餐次 alias 冲突全部 fail closed。相关测试均先红后绿。
+- 第七轮整改后完整证据：受影响后端 `230 passed`，CI Agent 六分片
+  `1342 passed, 3 skipped`；Mobile `279` suites、`2155 passed, 1 skipped`；
+  TypeScript、lint、Ruff、密钥扫描、文档漂移、Dossier 一致性、App Store 静态
+  preflight 和零成本 Harness 全部通过。
 - 在新的独立 reviewer 对全部整改提交给出 GO 前不进入部署。
-- **裁决: PENDING。** 六轮评审失败均已回到实现与测试阶段；等待全量复审。
+- **裁决: PENDING。** 七轮评审失败均已回到实现与测试阶段；等待全量复审。
 
 ## S6 / G5 · 部署与健康
 

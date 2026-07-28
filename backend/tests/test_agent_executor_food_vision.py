@@ -325,6 +325,7 @@ def test_agent_auto_captures_empty_high_confidence_lunch_photo_with_receipt(
         "status": "verified",
         "resource_type": "diet_record",
         "resource_id": str(result.record.id),
+        "date": result.record.record_date.isoformat(),
         "verified": True,
     }]
     card = executor._turn_contextual_diet_cards[0]
@@ -407,6 +408,7 @@ def test_agent_explicit_food_photo_write_records_outside_meal_window(
         "status": "verified",
         "resource_type": "diet_record",
         "resource_id": str(result.record.id),
+        "date": result.record.record_date.isoformat(),
         "verified": True,
     }]
     card = executor._turn_contextual_diet_cards[0]
@@ -703,6 +705,7 @@ async def test_contextual_fraction_update_replays_receipt_without_second_write(
         "id": capture.record.id,
         "record_id": capture.record.id,
         "resource_type": "diet_record",
+        "record_date": capture.record.record_date.isoformat(),
         "operation_id": f"contextual_meal_photo:{capture.record.id}",
         "status": "recorded",
         "replayed": True,
@@ -718,6 +721,7 @@ async def test_contextual_fraction_update_replays_receipt_without_second_write(
         f"contextual_meal_photo:{capture.record.id}"
     )
     assert receipt["status"] == "verified"
+    assert receipt["date"] == capture.record.record_date.isoformat()
     db.refresh(capture.record)
     assert capture.record.calories == pytest.approx(198)
 
@@ -756,6 +760,7 @@ async def test_contextual_meal_update_replays_receipt_without_portion_adjustment
         "id": capture.record.id,
         "record_id": capture.record.id,
         "resource_type": "diet_record",
+        "record_date": capture.record.record_date.isoformat(),
         "operation_id": f"contextual_meal_photo:{capture.record.id}",
         "status": "recorded",
         "replayed": True,
@@ -852,6 +857,7 @@ def test_contextual_meal_capture_replays_after_executor_restart(
         "status": "verified",
         "resource_type": "diet_record",
         "resource_id": str(first.record.id),
+        "date": first.record.record_date.isoformat(),
         "verified": True,
     }]
     assert len(restarted._turn_contextual_diet_cards) == 1

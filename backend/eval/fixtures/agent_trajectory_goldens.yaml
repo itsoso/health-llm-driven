@@ -30,7 +30,7 @@ cases:
             status: verified
             verified: true
             record_id: 501
-            resource_type: water
+            resource_type: water_record
             date: "2026-07-17"
         - name: health_manage
           args:
@@ -78,7 +78,7 @@ cases:
             status: verified
             verified: true
             record_id: 601
-            resource_type: diet
+            resource_type: diet_record
             date: "2026-07-17"
         - name: health_manage
           args:
@@ -132,7 +132,7 @@ cases:
             status: verified
             verified: true
             record_id: 101
-            resource_type: diet
+            resource_type: diet_record
             date: "2026-07-24"
             meal_type: breakfast
         - name: health_manage
@@ -148,7 +148,7 @@ cases:
             status: verified
             verified: true
             record_id: 102
-            resource_type: diet
+            resource_type: diet_record
             date: "2026-07-24"
             meal_type: lunch
         - name: health_manage
@@ -229,7 +229,7 @@ cases:
                 status: verified
                 verified: true
                 record_id: 701
-                resource_type: water
+                resource_type: water_record
                 date: "2026-07-17"
         - client_turn_id: turn-water-duplicate
           tool_calls:
@@ -244,7 +244,7 @@ cases:
                 status: verified
                 verified: true
                 record_id: 702
-                resource_type: water
+                resource_type: water_record
                 date: "2026-07-17"
             - name: health_manage
               args:
@@ -290,7 +290,7 @@ cases:
                 status: verified
                 verified: true
                 record_id: 801
-                resource_type: water
+                resource_type: water_record
                 date: "2026-07-17"
         - client_turn_id: turn-water-idempotent
           replayed: true
@@ -378,7 +378,7 @@ cases:
             status: verified
             verified: true
             record_id: 101
-            resource_type: diet
+            resource_type: diet_record
             date: "2026-07-24"
             meal_type: breakfast
         - name: health_manage
@@ -394,7 +394,7 @@ cases:
             status: verified
             verified: true
             record_id: 101
-            resource_type: diet
+            resource_type: diet_record
             date: "2026-07-24"
             meal_type: breakfast
         - name: health_manage
@@ -410,7 +410,7 @@ cases:
             status: verified
             verified: true
             record_id: 102
-            resource_type: diet
+            resource_type: diet_record
             date: "2026-07-24"
             meal_type: lunch
         - name: health_manage
@@ -471,7 +471,7 @@ cases:
             status: verified
             verified: true
             record_id: 101
-            resource_type: diet
+            resource_type: diet_record
             date: "2026-07-24"
             meal_type: breakfast
         - name: health_manage
@@ -486,7 +486,7 @@ cases:
           receipt:
             status: verified
             verified: true
-            resource_type: diet
+            resource_type: diet_record
             date: "2026-07-24"
             meal_type: lunch
         - name: health_manage

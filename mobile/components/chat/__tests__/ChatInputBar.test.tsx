@@ -128,6 +128,7 @@ describe('ChatInputBar', () => {
     mockHydrateDraftImages.mockImplementation(async (images: any[]) => images);
     mockClearPersistedChatDraft.mockResolvedValue(undefined);
     mockCleanupDraftFiles.mockResolvedValue(undefined);
+    mockEmitClientEvent.mockResolvedValue(undefined);
     appStateHandler = undefined;
     jest.spyOn(AppState, 'addEventListener').mockImplementation(((_event: string, handler: (state: string) => void) => {
       appStateHandler = handler;
@@ -1411,6 +1412,83 @@ describe('ChatInputBar', () => {
       expect(mockReleaseImagesAfterSend).toHaveBeenCalledTimes(1);
       expect(mockClearPersistedChatDraft).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it('keeps accepted image drafts until the terminal event is durably queued', async () => {
+    const storedImage = {
+      uri: 'file:///documents/chat-drafts/terminal-persist.jpeg',
+      base64: '',
+      type: 'jpeg',
+      draftCreatedAt: 100,
+    };
+    const hydratedImage = { ...storedImage, base64: 'private-base64' };
+    let persistTerminal: (() => void) | undefined;
+    mockPendingImages = [storedImage];
+    mockHydrateDraftImages.mockResolvedValueOnce([hydratedImage]);
+    mockEmitClientEvent.mockImplementationOnce(() => new Promise<void>((resolve) => {
+      persistTerminal = resolve;
+    }));
+    const view = render(
+      <ChatInputBar onSend={jest.fn().mockResolvedValue(true)} isStreaming={false} />,
+    );
+
+    act(() => {
+      fireEvent.press(view.getByLabelText('发送消息'));
+    });
+    await waitFor(() => {
+      expect(mockEmitClientEvent).toHaveBeenCalledWith(
+        'chat_attachment_terminal',
+        expect.objectContaining({ phase: 'accepted' }),
+        expect.objectContaining({ eventKey: expect.any(String) }),
+      );
+    });
+
+    expect(mockReleaseImagesAfterSend).not.toHaveBeenCalled();
+    expect(mockClearPersistedChatDraft).not.toHaveBeenCalled();
+
+    await act(async () => {
+      persistTerminal?.();
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(mockReleaseImagesAfterSend).toHaveBeenCalledTimes(1);
+      expect(mockClearPersistedChatDraft).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('does not report an accepted image send as failed when terminal telemetry persistence fails', async () => {
+    const storedImage = {
+      uri: 'file:///documents/chat-drafts/accepted-telemetry-failure.jpeg',
+      base64: '',
+      type: 'jpeg',
+      draftCreatedAt: 100,
+    };
+    const hydratedImage = { ...storedImage, base64: 'private-base64' };
+    const alertSpy = jest.spyOn(Alert, 'alert');
+    mockPendingImages = [storedImage];
+    mockHydrateDraftImages.mockResolvedValueOnce([hydratedImage]);
+    mockEmitClientEvent.mockRejectedValueOnce(
+      new Error('client_event_outbox_persistence_failed'),
+    );
+    const view = render(
+      <ChatInputBar onSend={jest.fn().mockResolvedValue(true)} isStreaming={false} />,
+    );
+
+    await act(async () => {
+      fireEvent.press(view.getByLabelText('发送消息'));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(mockReleaseImagesAfterSend).toHaveBeenCalledTimes(1);
+      expect(mockClearPersistedChatDraft).toHaveBeenCalledTimes(1);
+    });
+    expect(alertSpy).not.toHaveBeenCalledWith(
+      '发送失败',
+      expect.any(String),
+    );
+    expect(mockEmitClientEvent).toHaveBeenCalledTimes(1);
   });
 
   it('publishes an empty in-memory snapshot before accepted-send cleanup can trigger background persistence', async () => {

@@ -74,8 +74,11 @@ from app.services.agent_kernel.goal_spec import (
 from app.services.agent_kernel.postconditions import verify_goal_postconditions
 from app.services.agent_kernel.events import AgentEventBus
 from app.services.agent_kernel.tool_registry import (
+    HEALTH_MANAGE_RECEIPT_RESOURCE_TYPE_BY_RECORD_TYPE,
+    HEALTH_RECORD_RECEIPT_RESOURCE_TYPE_BY_RECORD_TYPE,
     UnknownToolAction,
     classify_tool_effect,
+    expected_receipt_resource_type,
     get_tool_spec,
     is_registered_receipt_resource_type,
     is_valid_receipt_resource_id,
@@ -2750,35 +2753,13 @@ def _claims_unverified_write_success(text: Any) -> bool:
     return False
 
 
-_RESOURCE_TYPE_BY_RECORD_TYPE = {
-    "bp": "blood_pressure_record",
-    "blood_pressure": "blood_pressure_record",
-    "diet": "diet_record",
-    "event": "health_episode",
-    "exercise": "exercise_record",
-    "excretion": "excretion_record",
-    "goal": "goal",
-    "illness": "illness_episode",
-    "medication": "medication_log",
-    "mood": "mood_record",
-    "reminder": "smart_reminder",
-    "remember": "memory_fact",
-    "rhinitis": "health_checkin",
-    "sleep": "sleep_record",
-    "supplement": "supplement_log",
-    "supplement_group": "supplement_log",
-    "symptom": "symptom_record",
-    "waist": "waist_record",
-    "water": "water_record",
-    "weight": "weight_record",
-}
+_RESOURCE_TYPE_BY_RECORD_TYPE = dict(
+    HEALTH_RECORD_RECEIPT_RESOURCE_TYPE_BY_RECORD_TYPE
+)
 
-_HEALTH_MANAGE_RESOURCE_TYPE_BY_RECORD_TYPE = {
-    **_RESOURCE_TYPE_BY_RECORD_TYPE,
-    "medication": "medication",
-    "medication_log": "medication_log",
-    "supplement_definition": "supplement_definition",
-}
+_HEALTH_MANAGE_RESOURCE_TYPE_BY_RECORD_TYPE = dict(
+    HEALTH_MANAGE_RECEIPT_RESOURCE_TYPE_BY_RECORD_TYPE
+)
 
 _MANAGE_PLAN_RESOURCE_TYPE_BY_ACTION = {
     "generate_weekly": "smart_plan",
@@ -3480,6 +3461,28 @@ def _receipt_resource_identity(payload: Dict[str, Any]) -> tuple[Optional[str], 
     return resource_type, None
 
 
+def _receipt_target_date(
+    payload: Dict[str, Any],
+    args: Dict[str, Any],
+) -> tuple[Optional[str], bool]:
+    """Return one agreed ISO-like target date; reject contradictory aliases."""
+    values: list[str] = []
+    for source in (payload, args):
+        nested = source.get("data") if isinstance(source.get("data"), dict) else {}
+        for container in (source, nested):
+            for key in ("date", "record_date"):
+                value = container.get(key)
+                if value in (None, ""):
+                    continue
+                normalized = str(value).strip()
+                if normalized:
+                    values.append(normalized)
+    unique = list(dict.fromkeys(values))
+    if len(unique) > 1:
+        return None, True
+    return (unique[0] if unique else None), False
+
+
 def _write_receipt_from_tool_result(
     tool_name: str,
     receipt_context: Any,
@@ -3496,14 +3499,8 @@ def _write_receipt_from_tool_result(
         args.get("record_type") or args.get("type") or ""
     ).strip().lower()
     normalized_action = str(args.get("action") or "").strip().lower()
-    if tool_name == "health_record":
-        expected_resource_type = _RESOURCE_TYPE_BY_RECORD_TYPE.get(
-            normalized_record_type
-        )
-    elif tool_name == "health_manage":
-        expected_resource_type = _HEALTH_MANAGE_RESOURCE_TYPE_BY_RECORD_TYPE.get(
-            normalized_record_type
-        )
+    if tool_name in {"health_record", "health_manage"}:
+        expected_resource_type = expected_receipt_resource_type(tool_name, args)
     elif tool_name == "manage_plan":
         expected_resource_type = _MANAGE_PLAN_RESOURCE_TYPE_BY_ACTION.get(
             normalized_action
@@ -3549,6 +3546,9 @@ def _write_receipt_from_tool_result(
         return None
     if not is_valid_receipt_resource_id(tool_name, resource_id):
         return None
+    target_date, target_date_conflict = _receipt_target_date(payload, args)
+    if target_date_conflict:
+        return None
     completed_at = (
         payload.get("completed_at")
         or payload.get("updated_at")
@@ -3559,7 +3559,7 @@ def _write_receipt_from_tool_result(
         payload.get("operation_id")
         or f"{tool_name}:{resource_type}:{resource_id}"
     )
-    return {
+    receipt = {
         "operation_id": operation_id,
         "status": "verified",
         "resource_type": resource_type,
@@ -3567,6 +3567,9 @@ def _write_receipt_from_tool_result(
         "completed_at": str(completed_at),
         "verified": True,
     }
+    if target_date:
+        receipt["date"] = target_date
+    return receipt
 
 
 def _write_tool_completed(tool_name: str, args: Any, result: Any) -> bool:
@@ -14809,6 +14812,7 @@ class AgentExecutor:
                 "status": "verified",
                 "resource_type": "diet_record",
                 "resource_id": str(result.record.id),
+                "date": result.record.record_date.isoformat(),
                 "verified": True,
             }
             if receipt not in self._turn_contextual_diet_receipts:
@@ -16939,6 +16943,7 @@ class AgentExecutor:
             "id": existing.id,
             "record_id": existing.id,
             "resource_type": "diet_record",
+            "record_date": existing.record_date.isoformat(),
             "operation_id": f"contextual_meal_photo:{existing.id}",
             "status": "recorded",
             "replayed": True,
@@ -17253,18 +17258,20 @@ class AgentExecutor:
                 return check
             from app.services.water_service import create_water_intake
 
+            recorded_at = self._agent_kernel_reference_now()
             record = create_water_intake(
                 self.db,
                 user_id=self._current_user_id,
                 amount_ml=amount_int,
                 drink_type=data.get("drink_type") or "水",
-                recorded_at=self._agent_kernel_reference_now(),
+                recorded_at=recorded_at,
             )
             return json.dumps(
                 {
                     "id": record.id,
                     "record_id": record.id,
                     "resource_type": "water_record",
+                    "record_date": record.record_date.isoformat(),
                     "status": "verified",
                     "success": True,
                     "message": f"已记录饮水 {amount_int}ml",

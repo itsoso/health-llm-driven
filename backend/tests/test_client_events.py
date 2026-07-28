@@ -610,6 +610,39 @@ def test_chat_attachment_terminal_is_idempotent_by_owner_and_event_key(
     assert rows[0].event_key != "attachment-attempt-dedup"
 
 
+def test_chat_attachment_terminal_returns_retryable_error_when_persistence_fails(
+    client,
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+):
+    _, headers = auth_user_and_headers
+
+    def fail_commit():
+        raise RuntimeError("simulated persistence failure")
+
+    monkeypatch.setattr(db, "commit", fail_commit)
+
+    response = client.post(
+        "/api/v1/client-events",
+        headers=headers,
+        json={
+            "event_name": "chat_attachment_terminal",
+            "event_key": "attachment-attempt-persist-failure",
+            "meta": {
+                "phase": "accepted",
+                "stage": "server_accept",
+                "image_count": 1,
+                "duration_bucket": "1_3s",
+                "payload_bucket": "lt_256kb",
+            },
+        },
+    )
+
+    assert response.status_code == 503, response.text
+    assert response.json()["detail"]["error_code"] == "client_event_persistence_failed"
+
+
 def test_chat_attachment_terminal_requires_safe_event_key(
     client,
     auth_user_and_headers,
