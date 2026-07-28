@@ -142,3 +142,94 @@ async def test_successful_garmin_sync_invalidates_twin(db, monkeypatch):
     assert result["synced_count"] == 2
     assert invalidated == [user.id]
     assert released == [user.id]
+
+
+@pytest.mark.asyncio
+async def test_central_workout_sync_invalidates_twin_after_persisting_activity(
+    db,
+    monkeypatch,
+):
+    """Every caller of the central Garmin writer must inherit cache invalidation."""
+    from app.services import workout_sync
+
+    user = _user(db)
+    invalidated: list[int] = []
+
+    class FakeClient:
+        @staticmethod
+        def get_activities_by_date(_start_date, _end_date):
+            return [{"activityId": "central-sync-activity"}]
+
+    service = object.__new__(workout_sync.WorkoutSyncService)
+    service.client = FakeClient()
+    service.user_id = user.id
+    monkeypatch.setattr(service, "_ensure_authenticated", lambda: None)
+    monkeypatch.setattr(
+        service,
+        "_parse_activity",
+        lambda _activity, user_id: {
+            "user_id": user_id,
+            "workout_date": date(2026, 7, 27),
+            "workout_type": "walking",
+            "workout_name": "Central sync test",
+            "duration_seconds": 600,
+            "source": "garmin",
+            "external_id": "central-sync-activity",
+        },
+    )
+
+    async def no_details(_activity_id):
+        return {}
+
+    monkeypatch.setattr(service, "get_activity_details", no_details)
+    monkeypatch.setattr(
+        workout_sync,
+        "_invalidate_twin",
+        invalidated.append,
+        raising=False,
+    )
+
+    result = await service.sync_activities(db, user.id, days=7)
+
+    assert result == {"synced_count": 1}
+    assert invalidated == [user.id]
+    assert (
+        db.query(WorkoutRecord)
+        .filter(
+            WorkoutRecord.user_id == user.id,
+            WorkoutRecord.external_id == "central-sync-activity",
+        )
+        .one()
+    )
+
+
+@pytest.mark.asyncio
+async def test_central_workout_sync_does_not_invalidate_without_changes(
+    db,
+    monkeypatch,
+):
+    from app.services import workout_sync
+
+    user = _user(db)
+    invalidated: list[int] = []
+
+    class FakeClient:
+        @staticmethod
+        def get_activities_by_date(_start_date, _end_date):
+            return []
+
+    service = object.__new__(workout_sync.WorkoutSyncService)
+    service.client = FakeClient()
+    service.user_id = user.id
+    monkeypatch.setattr(service, "_ensure_authenticated", lambda: None)
+    monkeypatch.setattr(
+        workout_sync,
+        "_invalidate_twin",
+        invalidated.append,
+        raising=False,
+    )
+
+    result = await service.sync_activities(db, user.id, days=7)
+
+    assert result == {"synced_count": 0}
+    assert invalidated == []

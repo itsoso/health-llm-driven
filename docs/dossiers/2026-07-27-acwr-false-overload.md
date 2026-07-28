@@ -60,6 +60,7 @@
 - 全量回归基线:首轮运行到 31% 时 `2729 passed, 3 skipped`，按 `maxfail=5` 停止；4 项因沙箱禁止本地 HTTP 监听失败，1 项为与本改动无关的既有补剂同日 upsert 失败。复跑时该补剂协议幂等失败可单文件稳定复现（`8 passed, 1 failed`），与 ACWR 改动文件和调用链无交集。
 - 第二次独立评审整改后的 TDD 定向回归:`37 passed`，覆盖 Garmin 同步缓存失效、统一 TRIMP、缺失覆盖、异常输入、用户本地日期和 ActionCard 生命周期。
 - 扩大回归:Safety、Twin、Workout、Episode、ActionCard 共 `301 passed`。
+- 第三轮评审整改 TDD:中央 Garmin writer 缓存失效用例先稳定失败，整改后定向 `5 passed`；Safety、Twin、Workout、Episode、ActionCard 扩大回归 `161 passed`。
 - 静态检查:`py_compile` 与 `git diff --check` 通过。
 - 阻断级 Ruff (`F821,F822,E9`) 通过。
 - doc drift:`scripts/check_doc_drift.py` 通过，生成事实已同步。
@@ -71,6 +72,8 @@
 - 整改:Safety 只接受 `acwr_reliable is True`；版本化并联动失效缓存；加入 ACWR 卡片生命周期 reconciliation；观测覆盖允许一个真实休息周但拒绝缺失同步；拒绝异常数值与极小慢性基线；统一用户时区和 Episode 计算入口。
 - 第二轮独立评审:`NO-GO`。阻断项为普通 Garmin 日数据伪造训练覆盖、运动写入/同步未完整失效缓存、负数负荷回落到时长、供应商负荷与推导 TRIMP 混量纲、缺失覆盖被误判为零训练、Episode 无时区时间按 UTC 解释、Safety 缺最终有限数检查。
 - 第二轮整改:训练覆盖与日健康数据解耦；所有 Workout 写入口联动失效；统一推导 TRIMP；异常输入全链 fail-closed；缺失覆盖不再产生“本周零运动”；Episode 使用用户本地日期；Safety 最终消费点再次验证有限数。
+- 第三轮独立评审:`NO-GO`。发现 `WorkoutSyncService` 的中央写入出口未失效缓存，导致认证同步、定时任务和跑后分析等调用方可能继续读取最长 300 秒的旧 Safety 结果。
+- 第三轮整改:缓存失效下沉到中央 Garmin writer；只有成功持久化新增或补全活动时才清理 Twin、Safety 和预生成建议，无数据变化时不清理；调用方自动继承该不变量。
 - 复审:待新的独立 safety reviewer。
 - **裁决**:待定，复审 GO 前禁止部署。
 
