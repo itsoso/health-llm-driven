@@ -53,6 +53,8 @@ def test_llm_regression_gate_defaults_to_offline_synthesis_suites(capsys):
     assert payload["llm_cost"] == "none"
     assert payload["trajectory_contract"]["status"] == "passed"
     assert payload["trajectory_contract"]["total_cases"] >= 5
+    assert payload["trajectory_goldens"]["status"] == "passed"
+    assert payload["trajectory_goldens"]["total_cases"] >= 6
 
 
 def test_agent_trajectory_contract_is_part_of_the_offline_gate():
@@ -62,6 +64,129 @@ def test_agent_trajectory_contract_is_part_of_the_offline_gate():
 
     assert report["status"] == "passed"
     assert report["failed_cases"] == []
+
+
+def test_historical_golden_traces_are_part_of_the_offline_gate():
+    module = _load_gate_module()
+
+    report = module.run_agent_golden_trace_gate()
+
+    assert report["status"] == "passed"
+    assert report["failed_cases"] == []
+    assert {
+        "simple_water_write",
+        "simple_fruit_write",
+        "meal_context_reestimate",
+        "uncertain_receipt_false_success",
+        "duplicate_client_turn_side_effect",
+        "idempotent_client_turn_replay",
+    }.issubset(report["covered_scenarios"])
+
+
+def test_historical_golden_trace_can_refine_execution_postconditions(monkeypatch):
+    module = _load_gate_module()
+    original_score = module._score_golden_trace
+    captured_expected: list[dict] = []
+
+    def capture_score(case, trace):
+        if trace.get("client_turn_id") == "turn-fruit-peach":
+            captured_expected.append(dict(case.get("expected") or {}))
+        return original_score(case, trace)
+
+    monkeypatch.setattr(module, "_score_golden_trace", capture_score)
+
+    report = module.run_agent_golden_trace_gate()
+
+    assert report["status"] == "passed"
+    assert captured_expected == [
+        {
+            "goal_kind": "write",
+            "domain": "diet",
+            "operation": "create",
+            "target_date": "2026-07-17",
+            "target_meal_types": [],
+            "target_record_type": "diet",
+            "target_values": {
+                "meal_type": "snack",
+                "food_items": "一个水蜜桃",
+            },
+            "requires_lookup": False,
+            "requires_verification": True,
+            "prohibited_operations": [],
+            "clarification": False,
+        }
+    ]
+
+
+def test_historical_golden_trace_gate_blocks_an_unexpected_acceptance(monkeypatch):
+    module = _load_gate_module()
+
+    monkeypatch.setattr(
+        module,
+        "_score_golden_trace",
+        lambda case, trace: {
+            "passed": True,
+            "hard_failures": [],
+            "dimensions": {},
+        },
+    )
+
+    report = module.run_agent_golden_trace_gate()
+
+    assert report["status"] == "failed"
+    failed_by_scenario = {
+        row["scenario"]: row for row in report["failed_cases"]
+    }
+    assert "uncertain_receipt_false_success" in failed_by_scenario
+    assert "duplicate_client_turn_side_effect" in failed_by_scenario
+
+
+def test_historical_golden_trace_gate_blocks_missing_required_scenario(
+    monkeypatch,
+    tmp_path,
+):
+    module = _load_gate_module()
+    incomplete_fixture = tmp_path / "agent_trajectory_goldens.yaml"
+    incomplete_fixture.write_text(
+        """
+name: agent_trajectory_goldens
+version: 1
+cases:
+  - scenario: simple_water_write
+    history_ref: water_write_clarification_loop
+    case_id: water_record_explicit_chinese_amount
+    expected:
+      passed: true
+      hard_failures: []
+    trace:
+      client_turn_id: turn-water-500
+      goal:
+        kind: simple_health_record
+        domain: water
+        operation: create
+        target_date: "2026-07-17"
+        target_meal_types: []
+      tool_calls:
+        - args:
+            record_type: water
+            operation: create
+            data: {amount_ml: "500"}
+          receipt: {status: verified, record_id: 501}
+        - args: {record_type: water, operation: list}
+          result: [{id: 501, amount_ml: 500}]
+      final: {claims_complete: true}
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(module, "AGENT_TRAJECTORY_GOLDENS", incomplete_fixture)
+
+    report = module.run_agent_golden_trace_gate()
+
+    assert report["status"] == "failed"
+    assert any(
+        "missing required scenarios" in row.get("mismatch", {}).get("fixture", "")
+        for row in report["failed_cases"]
+    )
 
 
 def test_llm_regression_gate_fails_on_suite_failure():

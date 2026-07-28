@@ -719,6 +719,13 @@ def client_events_stats(db: Session, since: datetime, user_id: Optional[int]) ->
     app_update_outcome_terminals = 0
     app_update_ready = 0
     app_update_failures = 0
+    chat_attachment_attempts = 0
+    chat_attachment_accepted = 0
+    chat_attachment_failures = 0
+    chat_attachment_image_count_total = 0
+    chat_attachment_failures_by_stage: Dict[str, int] = {}
+    chat_attachment_duration_buckets: Dict[str, int] = {}
+    chat_attachment_payload_buckets: Dict[str, int] = {}
 
     for name, meta in rows:
         by_event[name] = by_event.get(name, 0) + 1
@@ -794,6 +801,31 @@ def client_events_stats(db: Session, since: datetime, user_id: Optional[int]) ->
                 app_update_by_launch_source[launch_source] = (
                     app_update_by_launch_source.get(launch_source, 0) + 1
                 )
+        elif name == "chat_attachment_terminal":
+            chat_attachment_attempts += 1
+            phase = meta.get("phase")
+            stage = meta.get("stage")
+            image_count = meta.get("image_count")
+            duration_bucket = meta.get("duration_bucket")
+            payload_bucket = meta.get("payload_bucket")
+            if phase == "accepted":
+                chat_attachment_accepted += 1
+            elif phase == "failed":
+                chat_attachment_failures += 1
+                if isinstance(stage, str):
+                    chat_attachment_failures_by_stage[stage] = (
+                        chat_attachment_failures_by_stage.get(stage, 0) + 1
+                    )
+            if isinstance(image_count, int) and not isinstance(image_count, bool):
+                chat_attachment_image_count_total += image_count
+            if isinstance(duration_bucket, str):
+                chat_attachment_duration_buckets[duration_bucket] = (
+                    chat_attachment_duration_buckets.get(duration_bucket, 0) + 1
+                )
+            if isinstance(payload_bucket, str):
+                chat_attachment_payload_buckets[payload_bucket] = (
+                    chat_attachment_payload_buckets.get(payload_bucket, 0) + 1
+                )
 
     starter_ctr: Dict[str, dict] = {}
     for key in sorted(set(impressions) | set(clicks)):
@@ -866,6 +898,19 @@ def client_events_stats(db: Session, since: datetime, user_id: Optional[int]) ->
             "p50": round(p50) if p50 is not None else None,
             "p95": round(p95) if p95 is not None else None,
             "incomplete": cold_start_incomplete,
+        },
+        "chat_attachment_pipeline": {
+            "attempts": chat_attachment_attempts,
+            "accepted": chat_attachment_accepted,
+            "failures": chat_attachment_failures,
+            "acceptance_rate_pct": (
+                round(100.0 * chat_attachment_accepted / chat_attachment_attempts, 1)
+                if chat_attachment_attempts else None
+            ),
+            "image_count_total": chat_attachment_image_count_total,
+            "failures_by_stage": chat_attachment_failures_by_stage,
+            "duration_buckets": chat_attachment_duration_buckets,
+            "payload_buckets": chat_attachment_payload_buckets,
         },
         "diet_capture_ms": diet_capture_ms,
     }
@@ -999,6 +1044,25 @@ def actionable_suggestions(report: dict) -> list[str]:
     if release_health.get("status") == "pause_rollout":
         reasons = "；".join(release_health.get("reasons") or ["发布健康门命中暂停阈值"])
         out.insert(0, f"🔴 发布健康门建议暂停放量：{reasons}")
+    attachment_pipeline = (ce or {}).get("chat_attachment_pipeline", {})
+    attachment_attempts = int(attachment_pipeline.get("attempts") or 0)
+    attachment_accepted = int(attachment_pipeline.get("accepted") or 0)
+    attachment_failures_by_stage = (
+        attachment_pipeline.get("failures_by_stage")
+        if isinstance(attachment_pipeline.get("failures_by_stage"), dict)
+        else {}
+    )
+    if attachment_attempts >= 5:
+        attachment_rate = round(100.0 * attachment_accepted / attachment_attempts, 1)
+        if attachment_rate < 90.0:
+            local_failures = int(attachment_failures_by_stage.get("local_prepare") or 0)
+            server_failures = int(attachment_failures_by_stage.get("server_accept") or 0)
+            out.append(
+                f"🔴 Agent 图片受理率 {attachment_rate}% "
+                f"({attachment_accepted}/{attachment_attempts})："
+                f"本地草稿读取失败 {local_failures} 次，检查私有文件持久化与磁盘权限；"
+                f"服务端未受理 {server_failures} 次，检查弱网恢复与请求大小"
+            )
 
     # reasoning 抽屉: 点击次数 / Safety 告警累计 (每条告警都显示"为什么?" 按钮)
     sg_total = report.get("safety_guardian", {}).get("total_alerts_raised", 0)

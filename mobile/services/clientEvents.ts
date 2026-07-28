@@ -28,6 +28,7 @@ export type ClientEventName =
   | 'agenda_action_failed'
   // Mobile Agent 可靠性闭环 (2026-07-09) — 只允许无正文、无资源标识的终态元数据
   | 'chat_turn_queued'
+  | 'chat_attachment_terminal'
   | 'agent_turn_terminal'
   | 'voice_input_terminal'
   | 'voice_asr_terminal'
@@ -76,6 +77,15 @@ const APP_UPDATE_PHASES = {
 const APP_UPDATE_LAUNCH_SOURCES = new Set(['embedded', 'ota', 'emergency', 'unknown']);
 const CHAT_QUEUE_SURFACES = new Set(['mobile', 'web', 'mac']);
 const CHAT_QUEUE_CHANNELS = new Set(['typed', 'voice', 'siri', 'card']);
+const CHAT_ATTACHMENT_PHASES = new Set(['accepted', 'failed']);
+const CHAT_ATTACHMENT_STAGES = new Set(['local_prepare', 'server_accept']);
+const CHAT_ATTACHMENT_PAYLOAD_BUCKETS = new Set([
+  'unknown',
+  'lt_256kb',
+  '256kb_1mb',
+  '1_4mb',
+  'gte_4mb',
+]);
 
 type ReliabilityEventName = keyof typeof RELIABILITY_PHASES;
 
@@ -227,6 +237,40 @@ export function sanitizeClientEventMeta(
       channel,
       queue_depth_at_submit: queueDepth,
     };
+  }
+  if (name === 'chat_attachment_terminal') {
+    const phase = meta.phase;
+    const stage = meta.stage;
+    const imageCount = meta.image_count;
+    const bucket = meta.duration_bucket;
+    const payloadBucket = meta.payload_bucket;
+    if (
+      typeof phase !== 'string'
+      || !CHAT_ATTACHMENT_PHASES.has(phase)
+      || typeof stage !== 'string'
+      || !CHAT_ATTACHMENT_STAGES.has(stage)
+      || typeof imageCount !== 'number'
+      || !Number.isInteger(imageCount)
+      || imageCount < 1
+      || imageCount > 9
+      || typeof bucket !== 'string'
+      || !DURATION_BUCKETS.has(bucket as DurationBucket)
+      || typeof payloadBucket !== 'string'
+      || !CHAT_ATTACHMENT_PAYLOAD_BUCKETS.has(payloadBucket)
+    ) {
+      return {};
+    }
+    const sanitized: Record<string, unknown> = {
+      phase,
+      stage,
+      image_count: imageCount,
+      duration_bucket: bucket,
+      payload_bucket: payloadBucket,
+    };
+    if (typeof meta.error_code === 'string' && SAFE_TOKEN.test(meta.error_code)) {
+      sanitized.error_code = meta.error_code;
+    }
+    return sanitized;
   }
   if (!isReliabilityEvent(name)) return meta;
 

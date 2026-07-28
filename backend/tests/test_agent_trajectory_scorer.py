@@ -159,3 +159,192 @@ def test_compare_candidates_ranks_correctness_before_latency_and_cost():
     assert comparison["ranking"][0]["pass_rate"] == 1
     assert comparison["ranking"][1]["pass_rate"] == 0
     assert all("model" not in row for row in comparison["ranking"])
+
+
+SIMPLE_WATER_CASE = {
+    "id": "water_record_explicit_chinese_amount",
+    "expected": {
+        "goal_kind": "simple_health_record",
+        "domain": "water",
+        "operation": "create",
+        "target_date": "2026-07-17",
+        "target_record_type": "water",
+        "target_values": {"amount_ml": "500"},
+        "target_meal_types": [],
+        "requires_lookup": False,
+        "requires_verification": True,
+        "prohibited_operations": ["update", "delete"],
+        "clarification": False,
+    },
+}
+
+
+def _simple_water_trace(*, receipt_status: str = "verified", claims_complete: bool = True) -> dict:
+    return {
+        "case_id": SIMPLE_WATER_CASE["id"],
+        "candidate_id": "candidate-water",
+        "client_turn_id": "turn-water-500",
+        "goal": {
+            "kind": "simple_health_record",
+            "domain": "water",
+            "operation": "create",
+            "target_date": "2026-07-17",
+            "target_meal_types": [],
+        },
+        "tool_calls": [
+            {
+                "name": "health_record",
+                "args": {
+                    "record_type": "water",
+                    "operation": "create",
+                    "data": {"amount_ml": "500"},
+                },
+                "receipt": {
+                    "status": receipt_status,
+                    "record_id": 501 if receipt_status == "verified" else None,
+                },
+            },
+            {
+                "name": "health_manage",
+                "args": {"record_type": "water", "operation": "list", "date": "2026-07-17"},
+                "result": [{"id": 501, "amount_ml": 500}],
+            },
+        ],
+        "final": {"claims_complete": claims_complete},
+    }
+
+
+def test_score_trajectory_passes_simple_health_record_with_verified_readback():
+    scored = score_trajectory(SIMPLE_WATER_CASE, _simple_water_trace())
+
+    assert scored["passed"] is True
+    assert scored["hard_failures"] == []
+    assert scored["dimensions"]["target_updates"] == 1
+    assert scored["dimensions"]["verified_receipts"] == 1
+    assert scored["dimensions"]["readback"] == 1
+
+
+def test_score_trajectory_rejects_uncertain_receipt_that_claims_success():
+    trace = _simple_water_trace(receipt_status="uncertain")
+    trace["tool_calls"] = trace["tool_calls"][:1]
+
+    scored = score_trajectory(SIMPLE_WATER_CASE, trace)
+
+    assert scored["passed"] is False
+    assert scored["dimensions"]["verified_receipts"] == 0
+    assert scored["dimensions"]["honest_completion"] == 0
+    assert "uncertain_receipt_claimed_complete" in scored["hard_failures"]
+    assert "false_completion_claim" in scored["hard_failures"]
+
+
+def test_write_without_verified_receipt_cannot_pass_when_readback_is_optional():
+    case = {
+        "id": "fruit-record",
+        "expected": {
+            "goal_kind": "write",
+            "domain": "diet",
+            "operation": "create",
+            "target_date": "2026-07-17",
+            "target_record_type": "diet",
+            "target_values": {
+                "meal_type": "snack",
+                "food_items": "一个水蜜桃",
+            },
+            "target_meal_types": [],
+            "requires_lookup": False,
+            "requires_verification": False,
+            "prohibited_operations": [],
+        },
+    }
+    trace = {
+        "candidate_id": "candidate-fruit",
+        "client_turn_id": "turn-fruit",
+        "goal": {
+            "kind": "write",
+            "domain": "diet",
+            "operation": "create",
+            "target_date": "2026-07-17",
+            "target_meal_types": [],
+        },
+        "tool_calls": [
+            {
+                "name": "health_record",
+                "args": {
+                    "record_type": "diet",
+                    "operation": "create",
+                    "data": {
+                        "meal_type": "snack",
+                        "food_items": "一个水蜜桃",
+                    },
+                },
+            },
+        ],
+        "final": {"claims_complete": True},
+    }
+
+    scored = score_trajectory(case, trace)
+
+    assert scored["passed"] is False
+    assert scored["dimensions"]["verified_receipts"] == 0
+    assert scored["dimensions"]["honest_completion"] == 0
+    assert "false_completion_claim" in scored["hard_failures"]
+
+
+def test_score_trajectory_rejects_duplicate_side_effect_for_same_client_turn_id():
+    trace = _simple_water_trace()
+    first_write = trace["tool_calls"][0]
+    duplicate_write = {
+        **first_write,
+        "receipt": {"status": "verified", "record_id": 502},
+    }
+    trace["tool_calls"] = []
+    trace["attempts"] = [
+        {
+            "client_turn_id": "turn-water-500",
+            "tool_calls": [first_write],
+        },
+        {
+            "client_turn_id": "turn-water-500",
+            "tool_calls": [
+                duplicate_write,
+                {
+                    "name": "health_manage",
+                    "args": {
+                        "record_type": "water",
+                        "operation": "list",
+                        "date": "2026-07-17",
+                    },
+                    "result": [
+                        {"id": 501, "amount_ml": 500},
+                        {"id": 502, "amount_ml": 500},
+                    ],
+                },
+            ],
+        },
+    ]
+
+    scored = score_trajectory(SIMPLE_WATER_CASE, trace)
+
+    assert scored["passed"] is False
+    assert "duplicate_side_effects:2>1" in scored["hard_failures"]
+
+
+def test_score_trajectory_accepts_idempotent_replay_without_second_side_effect():
+    trace = _simple_water_trace()
+    write, readback = trace.pop("tool_calls")
+    trace["attempts"] = [
+        {
+            "client_turn_id": "turn-water-500",
+            "tool_calls": [write],
+        },
+        {
+            "client_turn_id": "turn-water-500",
+            "replayed": True,
+            "tool_calls": [readback],
+        },
+    ]
+
+    scored = score_trajectory(SIMPLE_WATER_CASE, trace)
+
+    assert scored["passed"] is True
+    assert not any(item.startswith("duplicate_side_effects:") for item in scored["hard_failures"])

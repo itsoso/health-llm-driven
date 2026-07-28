@@ -191,6 +191,22 @@ cases:
       prohibited_operations: [update, delete]
       clarification: false
 
+  - id: fruit_record_explicit_observation
+    prior_actionable: []
+    user: "记录刚才吃了一个水蜜桃"
+    expected:
+      goal_kind: write
+      domain: diet
+      operation: create
+      target_date: "2026-07-17"
+      target_meal_types: []
+      target_record_type:
+      target_values: {}
+      requires_lookup: false
+      requires_verification: false
+      prohibited_operations: []
+      clarification: false
+
   - id: symptom_record_explicit_observation
     prior_actionable: []
     user: "记录刚才打了一个喷嚏"

@@ -133,6 +133,37 @@ describe('client reliability events', () => {
     });
   });
 
+  it('keeps chat attachment telemetry content-free and identifier-free', () => {
+    expect(sanitizeClientEventMeta('chat_attachment_terminal', {
+      phase: 'accepted',
+      stage: 'server_accept',
+      image_count: 3,
+      duration_bucket: '3_10s',
+      payload_bucket: '1_4mb',
+      content: '晚餐照片',
+      uri: 'file:///private/chat-drafts/meal.jpeg',
+      base64: 'private-image-bytes',
+      turn_id: 'private-turn-id',
+    })).toEqual({
+      phase: 'accepted',
+      stage: 'server_accept',
+      image_count: 3,
+      duration_bucket: '3_10s',
+      payload_bucket: '1_4mb',
+    });
+  });
+
+  it('drops invalid chat attachment telemetry instead of forwarding partial data', () => {
+    expect(sanitizeClientEventMeta('chat_attachment_terminal', {
+      phase: 'completed',
+      stage: 'upload',
+      image_count: 10,
+      duration_bucket: 'forever',
+      payload_bucket: 'huge',
+      error_code: 'private error text',
+    })).toEqual({});
+  });
+
   it('keeps ASR quality metadata content-free for voice input tuning', async () => {
     await emitClientEvent('voice_asr_terminal', {
       phase: 'completed',

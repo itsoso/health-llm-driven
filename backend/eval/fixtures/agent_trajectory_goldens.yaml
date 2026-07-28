@@ -1,0 +1,271 @@
+name: agent_trajectory_goldens
+version: 1
+description: Historical Agent write failures expressed as deterministic execution traces.
+cases:
+  - scenario: simple_water_write
+    history_ref: water_write_clarification_loop
+    case_id: water_record_explicit_chinese_amount
+    expected:
+      passed: true
+      hard_failures: []
+    trace:
+      candidate_id: golden
+      client_turn_id: turn-water-500
+      goal:
+        kind: simple_health_record
+        domain: water
+        operation: create
+        target_date: "2026-07-17"
+        target_meal_types: []
+      tool_calls:
+        - name: health_record
+          args:
+            record_type: water
+            operation: create
+            data:
+              amount_ml: "500"
+          receipt:
+            status: verified
+            record_id: 501
+        - name: health_manage
+          args:
+            record_type: water
+            operation: list
+            date: "2026-07-17"
+          result:
+            - id: 501
+              amount_ml: 500
+      final:
+        claims_complete: true
+
+  - scenario: simple_fruit_write
+    history_ref: fruit_write_wrong_clarification
+    case_id: fruit_record_explicit_observation
+    expected_contract:
+      target_record_type: diet
+      target_values:
+        meal_type: snack
+        food_items: 一个水蜜桃
+      requires_verification: true
+    expected:
+      passed: true
+      hard_failures: []
+    trace:
+      candidate_id: golden
+      client_turn_id: turn-fruit-peach
+      goal:
+        kind: write
+        domain: diet
+        operation: create
+        target_date: "2026-07-17"
+        target_meal_types: []
+      tool_calls:
+        - name: health_record
+          args:
+            record_type: diet
+            operation: create
+            data:
+              meal_type: snack
+              food_items: 一个水蜜桃
+          receipt:
+            status: verified
+            record_id: 601
+        - name: health_manage
+          args:
+            record_type: diet
+            operation: list
+            date: "2026-07-17"
+          result:
+            - id: 601
+              meal_type: snack
+              food_items: 一个水蜜桃
+      final:
+        claims_complete: true
+
+  - scenario: meal_context_reestimate
+    history_ref: recalculate_breakfast_lunch_lost_context
+    case_id: diet_recalculate_visible_breakfast_lunch
+    expected:
+      passed: true
+      hard_failures: []
+    trace:
+      candidate_id: golden
+      client_turn_id: turn-meal-reestimate
+      goal:
+        kind: diet_recalculate_update
+        domain: diet
+        operation: update
+        target_date: "2026-07-24"
+        target_meal_types: [breakfast, lunch]
+      tool_calls:
+        - name: health_manage
+          args:
+            record_type: diet
+            operation: list
+            date: "2026-07-24"
+          result:
+            - id: 101
+              meal_type: breakfast
+            - id: 102
+              meal_type: lunch
+        - name: health_manage
+          args:
+            record_type: diet
+            operation: update
+            record_id: 101
+            data:
+              meal_type: breakfast
+              calories: 410
+          receipt:
+            status: verified
+            record_id: 101
+            meal_type: breakfast
+        - name: health_manage
+          args:
+            record_type: diet
+            operation: update
+            record_id: 102
+            data:
+              meal_type: lunch
+              calories: 530
+          receipt:
+            status: verified
+            record_id: 102
+            meal_type: lunch
+        - name: health_manage
+          args:
+            record_type: diet
+            operation: list
+            date: "2026-07-24"
+          result:
+            - id: 101
+              meal_type: breakfast
+              calories: 410
+            - id: 102
+              meal_type: lunch
+              calories: 530
+      final:
+        claims_complete: true
+
+  - scenario: uncertain_receipt_false_success
+    history_ref: write_uncertain_reported_as_success
+    case_id: water_record_explicit_chinese_amount
+    expected:
+      passed: false
+      hard_failures:
+        - uncertain_receipt_claimed_complete
+        - false_completion_claim
+    trace:
+      candidate_id: historical_failure
+      client_turn_id: turn-water-uncertain
+      goal:
+        kind: simple_health_record
+        domain: water
+        operation: create
+        target_date: "2026-07-17"
+        target_meal_types: []
+      tool_calls:
+        - name: health_record
+          args:
+            record_type: water
+            operation: create
+            data:
+              amount_ml: "500"
+          receipt:
+            status: uncertain
+      final:
+        claims_complete: true
+
+  - scenario: duplicate_client_turn_side_effect
+    history_ref: duplicate_retry_created_two_records
+    case_id: water_record_explicit_chinese_amount
+    expected:
+      passed: false
+      hard_failures:
+        - duplicate_side_effects:2>1
+        - false_completion_claim
+    trace:
+      candidate_id: historical_failure
+      client_turn_id: turn-water-duplicate
+      goal:
+        kind: simple_health_record
+        domain: water
+        operation: create
+        target_date: "2026-07-17"
+        target_meal_types: []
+      attempts:
+        - client_turn_id: turn-water-duplicate
+          tool_calls:
+            - name: health_record
+              args:
+                record_type: water
+                operation: create
+                data:
+                  amount_ml: "500"
+              receipt:
+                status: verified
+                record_id: 701
+        - client_turn_id: turn-water-duplicate
+          tool_calls:
+            - name: health_record
+              args:
+                record_type: water
+                operation: create
+                data:
+                  amount_ml: "500"
+              receipt:
+                status: verified
+                record_id: 702
+            - name: health_manage
+              args:
+                record_type: water
+                operation: list
+                date: "2026-07-17"
+              result:
+                - id: 701
+                  amount_ml: 500
+                - id: 702
+                  amount_ml: 500
+      final:
+        claims_complete: true
+
+  - scenario: idempotent_client_turn_replay
+    history_ref: retry_same_turn_must_reuse_effect
+    case_id: water_record_explicit_chinese_amount
+    expected:
+      passed: true
+      hard_failures: []
+    trace:
+      candidate_id: golden
+      client_turn_id: turn-water-idempotent
+      goal:
+        kind: simple_health_record
+        domain: water
+        operation: create
+        target_date: "2026-07-17"
+        target_meal_types: []
+      attempts:
+        - client_turn_id: turn-water-idempotent
+          tool_calls:
+            - name: health_record
+              args:
+                record_type: water
+                operation: create
+                data:
+                  amount_ml: "500"
+              receipt:
+                status: verified
+                record_id: 801
+        - client_turn_id: turn-water-idempotent
+          replayed: true
+          tool_calls:
+            - name: health_manage
+              args:
+                record_type: water
+                operation: list
+                date: "2026-07-17"
+              result:
+                - id: 801
+                  amount_ml: 500
+      final:
+        claims_complete: true

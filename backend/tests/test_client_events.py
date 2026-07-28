@@ -178,6 +178,16 @@ def test_client_events_stats_empty(db):
         },
         "starter_ctr": {},
         "home_cold_start_ms": {"n": 0, "p50": None, "p95": None, "incomplete": 0},
+        "chat_attachment_pipeline": {
+            "attempts": 0,
+            "accepted": 0,
+            "failures": 0,
+            "acceptance_rate_pct": None,
+            "image_count_total": 0,
+            "failures_by_stage": {},
+            "duration_buckets": {},
+            "payload_buckets": {},
+        },
         "diet_capture_ms": {
             "recognition": {
                 "n": 0, "attempts": 0, "p50": None, "p95": None,
@@ -536,6 +546,80 @@ def test_chat_turn_queued_event_accepts_safe_queue_metadata(
         "channel": "voice",
         "queue_depth_at_submit": 2,
     }
+
+
+def test_chat_attachment_terminal_accepts_content_free_pipeline_metadata(
+    client,
+    db,
+    auth_user_and_headers,
+):
+    _, headers = auth_user_and_headers
+    meta = {
+        "phase": "accepted",
+        "stage": "server_accept",
+        "image_count": 3,
+        "duration_bucket": "3_10s",
+        "payload_bucket": "1_4mb",
+    }
+    response = client.post(
+        "/api/v1/client-events",
+        headers=headers,
+        json={"event_name": "chat_attachment_terminal", "meta": meta},
+    )
+
+    assert response.status_code == 202, response.text
+    row = db.query(ClientEvent).order_by(ClientEvent.id.desc()).first()
+    assert row.event_name == "chat_attachment_terminal"
+    assert row.meta == meta
+
+
+@pytest.mark.parametrize(
+    "meta",
+    [
+        {
+            "phase": "accepted",
+            "stage": "server_accept",
+            "image_count": 1,
+            "duration_bucket": "1_3s",
+            "payload_bucket": "lt_256kb",
+            "uri": "file:///private/meal.jpeg",
+        },
+        {
+            "phase": "completed",
+            "stage": "server_accept",
+            "image_count": 1,
+            "duration_bucket": "1_3s",
+            "payload_bucket": "lt_256kb",
+        },
+        {
+            "phase": "failed",
+            "stage": "upload",
+            "image_count": 1,
+            "duration_bucket": "1_3s",
+            "payload_bucket": "lt_256kb",
+        },
+        {
+            "phase": "failed",
+            "stage": "local_prepare",
+            "image_count": 10,
+            "duration_bucket": "1_3s",
+            "payload_bucket": "unknown",
+        },
+    ],
+)
+def test_chat_attachment_terminal_rejects_private_or_invalid_metadata(
+    client,
+    auth_user_and_headers,
+    meta,
+):
+    _, headers = auth_user_and_headers
+    response = client.post(
+        "/api/v1/client-events",
+        headers=headers,
+        json={"event_name": "chat_attachment_terminal", "meta": meta},
+    )
+
+    assert response.status_code == 422, response.text
 
 
 @pytest.mark.parametrize("meta", [

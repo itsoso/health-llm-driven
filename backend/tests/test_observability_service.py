@@ -411,6 +411,31 @@ def test_actionable_suggestions_flags_release_health_pause(db):
     assert lines[0] == "🔴 发布健康门建议暂停放量：紧急启动率 5.0% 达到暂停阈值 5.0%"
 
 
+def test_actionable_suggestions_flags_chat_attachment_pipeline_failures(db):
+    report = collect_dashboard(db, days=7, user_id=None, include_journalctl=False)
+    report["client_events"]["chat_attachment_pipeline"] = {
+        "attempts": 10,
+        "accepted": 7,
+        "failures": 3,
+        "acceptance_rate_pct": 70.0,
+        "image_count_total": 14,
+        "failures_by_stage": {
+            "local_prepare": 2,
+            "server_accept": 1,
+        },
+        "duration_buckets": {"lt_1s": 2, "3_10s": 8},
+        "payload_buckets": {"unknown": 2, "1_4mb": 8},
+    }
+
+    lines = actionable_suggestions(report)
+
+    assert (
+        "🔴 Agent 图片受理率 70.0% (7/10)："
+        "本地草稿读取失败 2 次，检查私有文件持久化与磁盘权限；"
+        "服务端未受理 1 次，检查弱网恢复与请求大小"
+    ) in lines
+
+
 # ----------------------------------------------------------------
 # 有数据: 聚合 SQL 必须和朴素 Python 逻辑等价
 # ----------------------------------------------------------------

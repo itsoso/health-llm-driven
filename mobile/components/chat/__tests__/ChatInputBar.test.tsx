@@ -38,6 +38,7 @@ const mockPersistChatDraft = jest.fn().mockResolvedValue(undefined);
 const mockHydrateDraftImages = jest.fn();
 const mockClearPersistedChatDraft = jest.fn().mockResolvedValue(undefined);
 const mockCleanupDraftFiles = jest.fn().mockResolvedValue(undefined);
+const mockEmitClientEvent = jest.fn().mockResolvedValue(undefined);
 
 jest.mock('../../../hooks/useMediaPicker', () => ({
   useMediaPicker: () => ({
@@ -57,6 +58,11 @@ jest.mock('../../../services/chatDraftStorage', () => ({
   hydrateDraftImagesForSend: (...args: any[]) => mockHydrateDraftImages(...args),
   clearPersistedChatDraft: (...args: any[]) => mockClearPersistedChatDraft(...args),
   cleanupAbandonedChatDraftFiles: (...args: any[]) => mockCleanupDraftFiles(...args),
+}));
+
+jest.mock('../../../services/clientEvents', () => ({
+  emitClientEvent: (...args: any[]) => mockEmitClientEvent(...args),
+  durationBucket: () => 'lt_1s',
 }));
 
 jest.mock('../../../hooks/useRealtimeDictation', () => ({
@@ -1328,6 +1334,13 @@ describe('ChatInputBar', () => {
       expect(mockClearImages).not.toHaveBeenCalled();
       expect(mockClearPersistedChatDraft).toHaveBeenCalled();
     });
+    expect(mockEmitClientEvent).toHaveBeenCalledWith('chat_attachment_terminal', {
+      phase: 'accepted',
+      stage: 'server_accept',
+      image_count: 1,
+      duration_bucket: 'lt_1s',
+      payload_bucket: 'lt_256kb',
+    });
   });
 
   it('keeps durable photo files while a queued send is awaiting server acceptance', async () => {
@@ -1453,6 +1466,50 @@ describe('ChatInputBar', () => {
     expect(getByLabelText('消息输入框').props.value).toBe('离线时也不能丢');
     expect(mockClearImages).not.toHaveBeenCalled();
     expect(mockClearPersistedChatDraft).not.toHaveBeenCalled();
+    expect(mockEmitClientEvent).toHaveBeenCalledWith('chat_attachment_terminal', {
+      phase: 'failed',
+      stage: 'server_accept',
+      image_count: 1,
+      duration_bucket: 'lt_1s',
+      payload_bucket: 'lt_256kb',
+      error_code: 'server_not_accepted',
+    });
+  });
+
+  it('reports local image hydration failures without leaking draft identifiers', async () => {
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(jest.fn());
+    jest.spyOn(console, 'warn').mockImplementation(jest.fn());
+    mockPendingImages = [{
+      uri: 'file:///documents/chat-drafts/private-meal.jpeg',
+      base64: '',
+      type: 'jpeg',
+    }];
+    mockHydrateDraftImages.mockRejectedValueOnce(new Error('private file path'));
+    const onSend = jest.fn();
+    const view = render(
+      <ChatInputBar onSend={onSend} isStreaming={false} />,
+    );
+
+    await act(async () => {
+      fireEvent.press(view.getByLabelText('发送消息'));
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(alertSpy).toHaveBeenCalledWith(
+        '发送失败',
+        expect.stringContaining('草稿已保留'),
+      );
+    });
+    expect(onSend).not.toHaveBeenCalled();
+    expect(mockEmitClientEvent).toHaveBeenCalledWith('chat_attachment_terminal', {
+      phase: 'failed',
+      stage: 'local_prepare',
+      image_count: 1,
+      duration_bucket: 'lt_1s',
+      payload_bucket: 'unknown',
+      error_code: 'draft_hydration_failed',
+    });
   });
 
   it('updates the composer when the same follow-up prompt is injected again', async () => {

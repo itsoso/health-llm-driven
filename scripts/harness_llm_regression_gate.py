@@ -28,6 +28,18 @@ DEFAULT_BASELINES = {
     "health_agent_core": "main",
     "orchestrator": "main",
 }
+AGENT_TRAJECTORY_DATASET = BACKEND / "eval" / "datasets" / "agent_trajectories.yaml"
+AGENT_TRAJECTORY_GOLDENS = (
+    BACKEND / "eval" / "fixtures" / "agent_trajectory_goldens.yaml"
+)
+REQUIRED_AGENT_GOLDEN_SCENARIOS = {
+    "simple_water_write",
+    "simple_fruit_write",
+    "meal_context_reestimate",
+    "uncertain_receipt_false_success",
+    "duplicate_client_turn_side_effect",
+    "idempotent_client_turn_replay",
+}
 
 
 def run_agent_trajectory_contract_gate() -> dict[str, Any]:
@@ -40,8 +52,7 @@ def run_agent_trajectory_contract_gate() -> dict[str, Any]:
         ExecutionContext,
     )
 
-    dataset_path = BACKEND / "eval" / "datasets" / "agent_trajectories.yaml"
-    dataset = yaml.safe_load(dataset_path.read_text(encoding="utf-8")) or {}
+    dataset = yaml.safe_load(AGENT_TRAJECTORY_DATASET.read_text(encoding="utf-8")) or {}
     failed_cases: list[dict[str, Any]] = []
     cases = dataset.get("cases") or []
     for case in cases:
@@ -86,6 +97,130 @@ def run_agent_trajectory_contract_gate() -> dict[str, Any]:
     return {
         "status": "failed" if failed_cases else "passed",
         "total_cases": len(cases),
+        "failed_cases": failed_cases,
+    }
+
+
+def _score_golden_trace(case: dict[str, Any], trace: dict[str, Any]) -> dict[str, Any]:
+    from eval.agent_trajectory_scorer import score_trajectory
+
+    return score_trajectory(case, trace)
+
+
+def run_agent_golden_trace_gate() -> dict[str, Any]:
+    """Replay versioned good and bad traces through deterministic postconditions."""
+
+    dataset = yaml.safe_load(
+        AGENT_TRAJECTORY_DATASET.read_text(encoding="utf-8")
+    ) or {}
+    fixtures = yaml.safe_load(
+        AGENT_TRAJECTORY_GOLDENS.read_text(encoding="utf-8")
+    ) or {}
+    cases_by_id = {
+        str(case.get("id")): case
+        for case in (dataset.get("cases") or [])
+        if isinstance(case, dict) and case.get("id")
+    }
+    fixture_rows = fixtures.get("cases") or []
+    failed_cases: list[dict[str, Any]] = []
+    covered_scenarios: list[str] = []
+
+    for fixture in fixture_rows:
+        scenario = str(fixture.get("scenario") or "").strip()
+        case_id = str(fixture.get("case_id") or "").strip()
+        covered_scenarios.append(scenario)
+        if not scenario or not fixture.get("history_ref"):
+            failed_cases.append(
+                {
+                    "scenario": scenario or "__missing_scenario__",
+                    "case_id": case_id,
+                    "mismatch": {"fixture": "scenario and history_ref are required"},
+                }
+            )
+            continue
+        case = cases_by_id.get(case_id)
+        if case is None:
+            failed_cases.append(
+                {
+                    "scenario": scenario,
+                    "case_id": case_id,
+                    "mismatch": {"case_id": "unknown trajectory case"},
+                }
+            )
+            continue
+
+        expected_contract = fixture.get("expected_contract")
+        if expected_contract is not None:
+            if not isinstance(expected_contract, dict):
+                failed_cases.append(
+                    {
+                        "scenario": scenario,
+                        "case_id": case_id,
+                        "mismatch": {"expected_contract": "must be an object"},
+                    }
+                )
+                continue
+            case = dict(case)
+            case["expected"] = {
+                **(case.get("expected") or {}),
+                **expected_contract,
+            }
+
+        trace = dict(fixture.get("trace") or {})
+        trace["case_id"] = case_id
+        actual = _score_golden_trace(case, trace)
+        expected = fixture.get("expected") or {}
+        expected_passed = bool(expected.get("passed"))
+        required_failures = set(expected.get("hard_failures") or [])
+        actual_failures = set(actual.get("hard_failures") or [])
+        mismatch: dict[str, Any] = {}
+        if bool(actual.get("passed")) is not expected_passed:
+            mismatch["passed"] = {
+                "expected": expected_passed,
+                "actual": bool(actual.get("passed")),
+            }
+        missing_failures = sorted(required_failures - actual_failures)
+        if missing_failures:
+            mismatch["missing_hard_failures"] = missing_failures
+        if mismatch:
+            failed_cases.append(
+                {
+                    "scenario": scenario,
+                    "case_id": case_id,
+                    "mismatch": mismatch,
+                    "actual": actual,
+                }
+            )
+
+    if len(set(covered_scenarios)) != len(covered_scenarios):
+        failed_cases.append(
+            {
+                "scenario": "__fixture__",
+                "case_id": "",
+                "mismatch": {"scenario": "duplicate scenario id"},
+            }
+        )
+    missing_scenarios = sorted(
+        REQUIRED_AGENT_GOLDEN_SCENARIOS - set(covered_scenarios)
+    )
+    if missing_scenarios:
+        failed_cases.append(
+            {
+                "scenario": "__fixture__",
+                "case_id": "",
+                "mismatch": {
+                    "fixture": (
+                        "missing required scenarios: " + ", ".join(missing_scenarios)
+                    )
+                },
+            }
+        )
+
+    return {
+        "status": "failed" if failed_cases else "passed",
+        "fixture_version": fixtures.get("version"),
+        "total_cases": len(fixture_rows),
+        "covered_scenarios": sorted(set(covered_scenarios)),
         "failed_cases": failed_cases,
     }
 
@@ -141,9 +276,30 @@ def run_gate(
             "total_cases": 0,
             "failed_cases": [{"case_id": "__gate__", "error": f"{type(exc).__name__}: {exc}"}],
         }
+    try:
+        trajectory_goldens = run_agent_golden_trace_gate()
+    except Exception as exc:  # noqa: BLE001 - a broken golden gate must block the release
+        trajectory_goldens = {
+            "status": "failed",
+            "fixture_version": None,
+            "total_cases": 0,
+            "covered_scenarios": [],
+            "failed_cases": [
+                {
+                    "scenario": "__gate__",
+                    "case_id": "",
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
+            ],
+        }
     status = (
         "failed"
-        if failed_suites or errors or trajectory_contract["status"] != "passed"
+        if (
+            failed_suites
+            or errors
+            or trajectory_contract["status"] != "passed"
+            or trajectory_goldens["status"] != "passed"
+        )
         else "passed"
     )
     suite_names = [report.suite for report in reports] + [error["suite"] for error in errors]
@@ -154,6 +310,7 @@ def run_gate(
         "failed_suites": failed_suites,
         "errors": errors,
         "trajectory_contract": trajectory_contract,
+        "trajectory_goldens": trajectory_goldens,
     }
 
 
@@ -176,6 +333,13 @@ def _print_text(payload: dict[str, Any]) -> None:
         f"  [{mark}] agent_trajectory_contract: "
         f"{trajectory['total_cases'] - len(trajectory['failed_cases'])}/"
         f"{trajectory['total_cases']} pass"
+    )
+    goldens = payload["trajectory_goldens"]
+    mark = "OK" if goldens["status"] == "passed" else "FAIL"
+    print(
+        f"  [{mark}] agent_trajectory_goldens: "
+        f"{goldens['total_cases'] - len(goldens['failed_cases'])}/"
+        f"{goldens['total_cases']} match"
     )
 
 

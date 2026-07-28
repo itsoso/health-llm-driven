@@ -48,6 +48,7 @@ import {
   type VoiceInputSource,
 } from '../../services/voiceDraft';
 import type { TranscribeAudioResult } from '../../services/transcribe';
+import { durationBucket, emitClientEvent } from '../../services/clientEvents';
 
 const CANCEL_THRESHOLD = 80;
 const VOICE_SLIDE_THRESHOLD = 88;
@@ -67,6 +68,24 @@ const COMPOSER_TEXT_VERTICAL_CHROME = 8;
 const VOICE_WAVE_BARS = Array.from({ length: 28 }, (_, i) => i);
 
 type ChatAgentMode = 'daily' | 'deep' | 'vision';
+type AttachmentPayloadBucket =
+  | 'unknown'
+  | 'lt_256kb'
+  | '256kb_1mb'
+  | '1_4mb'
+  | 'gte_4mb';
+
+function attachmentPayloadBucket(images: PendingImage[]): AttachmentPayloadBucket {
+  const encodedLength = images.reduce((total, image) => (
+    total + (typeof image.base64 === 'string' ? image.base64.length : 0)
+  ), 0);
+  if (encodedLength === 0) return 'unknown';
+  const approximateBytes = Math.floor(encodedLength * 0.75);
+  if (approximateBytes < 256 * 1024) return 'lt_256kb';
+  if (approximateBytes < 1024 * 1024) return '256kb_1mb';
+  if (approximateBytes < 4 * 1024 * 1024) return '1_4mb';
+  return 'gte_4mb';
+}
 
 export interface ChatInputSendOptions {
   extraContext?: string;
@@ -384,6 +403,12 @@ export default function ChatInputBar({
     if (!msg && pendingImages.length === 0) return;
     const phase = composerRef.current.phase;
     let effectiveChannelForSend: 'typed' | 'voice' | 'siri' = sendOptions?.channel ?? inputChannelRef.current;
+    const attachmentStartedAt = Date.now();
+    const attachmentImageCount = pendingImages.length;
+    let attachmentStage: 'local_prepare' | 'server_accept' = 'local_prepare';
+    let attachmentPayload: AttachmentPayloadBucket = (
+      attachmentImageCount > 0 ? attachmentPayloadBucket(pendingImages) : 'unknown'
+    );
     dispatchComposer({ type: 'submit' });
     try {
       let voiceDraftForSend: VoiceDraft | null = null;
@@ -403,6 +428,10 @@ export default function ChatInputBar({
       const sendImages = pendingImages.length > 0
         ? await hydrateDraftImagesForSend(pendingImages)
         : pendingImages;
+      if (attachmentImageCount > 0) {
+        attachmentPayload = attachmentPayloadBucket(sendImages);
+        attachmentStage = 'server_accept';
+      }
       const modeOptions = buildAgentModeOptions(agentMode);
       const effectiveChannel = sendOptions?.channel ?? inputChannelRef.current;
       effectiveChannelForSend = effectiveChannel;
@@ -443,6 +472,16 @@ export default function ChatInputBar({
       );
       const accepted = await Promise.resolve(sendResult);
       if (accepted === false) {
+        if (attachmentImageCount > 0) {
+          void emitClientEvent('chat_attachment_terminal', {
+            phase: 'failed',
+            stage: 'server_accept',
+            image_count: attachmentImageCount,
+            duration_bucket: durationBucket(attachmentStartedAt),
+            payload_bucket: attachmentPayload,
+            error_code: 'server_not_accepted',
+          });
+        }
         if (effectiveChannelForSend === 'voice' && msg) {
           restoreVoiceTranscriptDraft(msg);
           Alert.alert('发送失败', '语音已转成文字并保留在输入框里，请修改后重试。');
@@ -452,7 +491,28 @@ export default function ChatInputBar({
         Alert.alert('发送失败', '消息和图片草稿已保留，请检查网络后重试。');
         return;
       }
+      if (attachmentImageCount > 0) {
+        void emitClientEvent('chat_attachment_terminal', {
+          phase: 'accepted',
+          stage: 'server_accept',
+          image_count: attachmentImageCount,
+          duration_bucket: durationBucket(attachmentStartedAt),
+          payload_bucket: attachmentPayload,
+        });
+      }
     } catch (e) {
+      if (attachmentImageCount > 0) {
+        void emitClientEvent('chat_attachment_terminal', {
+          phase: 'failed',
+          stage: attachmentStage,
+          image_count: attachmentImageCount,
+          duration_bucket: durationBucket(attachmentStartedAt),
+          payload_bucket: attachmentPayload,
+          error_code: attachmentStage === 'local_prepare'
+            ? 'draft_hydration_failed'
+            : 'send_rejected',
+        });
+      }
       if (effectiveChannelForSend === 'voice' && msg) {
         restoreVoiceTranscriptDraft(msg);
         Alert.alert('发送失败', '语音已转成文字并保留在输入框里，请修改后重试。');

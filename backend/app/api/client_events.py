@@ -51,6 +51,7 @@ _ALLOWED_EVENTS = frozenset({
     "agenda_action_failed",
     # Mobile Agent 可靠性终态. meta 严格限制为无正文、无资源标识的字段.
     "chat_turn_queued",
+    "chat_attachment_terminal",
     "agent_turn_terminal",
     "voice_input_terminal",
     "voice_asr_terminal",
@@ -132,6 +133,20 @@ _CHAT_QUEUE_EVENT_SCHEMA = {
     "surfaces": frozenset({"mobile", "web", "mac"}),
     "channels": frozenset({"typed", "voice", "siri", "card"}),
 }
+_CHAT_ATTACHMENT_EVENT_SCHEMA = {
+    "allowed": frozenset({
+        "phase", "stage", "image_count", "duration_bucket",
+        "payload_bucket", "error_code",
+    }),
+    "required": frozenset({
+        "phase", "stage", "image_count", "duration_bucket", "payload_bucket",
+    }),
+    "phases": frozenset({"accepted", "failed"}),
+    "stages": frozenset({"local_prepare", "server_accept"}),
+    "payload_buckets": frozenset({
+        "unknown", "lt_256kb", "256kb_1mb", "1_4mb", "gte_4mb",
+    }),
+}
 
 _DIET_CAPTURE_EVENT_SCHEMAS = {
     "diet_photo_recognition_terminal": {
@@ -211,6 +226,42 @@ class EventIn(BaseModel):
             queue_depth = self.meta.get("queue_depth_at_submit")
             if type(queue_depth) is not int or not 1 <= queue_depth <= 50:
                 raise ValueError("invalid chat queue event queue_depth_at_submit")
+            return self
+
+        if self.event_name == "chat_attachment_terminal":
+            if self.meta is None:
+                raise ValueError("chat attachment event meta is required")
+            keys = set(self.meta)
+            extra = keys - _CHAT_ATTACHMENT_EVENT_SCHEMA["allowed"]
+            missing = _CHAT_ATTACHMENT_EVENT_SCHEMA["required"] - keys
+            if extra:
+                raise ValueError(
+                    f"chat attachment event meta has forbidden fields: {sorted(extra)}"
+                )
+            if missing:
+                raise ValueError(
+                    f"chat attachment event meta missing fields: {sorted(missing)}"
+                )
+            if self.meta.get("phase") not in _CHAT_ATTACHMENT_EVENT_SCHEMA["phases"]:
+                raise ValueError("invalid chat attachment event phase")
+            if self.meta.get("stage") not in _CHAT_ATTACHMENT_EVENT_SCHEMA["stages"]:
+                raise ValueError("invalid chat attachment event stage")
+            if self.meta.get("duration_bucket") not in _DURATION_BUCKETS:
+                raise ValueError("invalid chat attachment event duration_bucket")
+            if (
+                self.meta.get("payload_bucket")
+                not in _CHAT_ATTACHMENT_EVENT_SCHEMA["payload_buckets"]
+            ):
+                raise ValueError("invalid chat attachment event payload_bucket")
+            image_count = self.meta.get("image_count")
+            if type(image_count) is not int or not 1 <= image_count <= 9:
+                raise ValueError("invalid chat attachment event image_count")
+            error_code = self.meta.get("error_code")
+            if error_code is not None and (
+                not isinstance(error_code, str)
+                or _SAFE_TOKEN.fullmatch(error_code) is None
+            ):
+                raise ValueError("invalid chat attachment event error_code")
             return self
 
         app_update_schema = _APP_UPDATE_EVENT_SCHEMAS.get(self.event_name)
