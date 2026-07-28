@@ -20,6 +20,16 @@ def training_acwr_overload(twin: HealthTwin) -> Optional[Alert]:
     acwr = twin.behavioral.acute_chronic_ratio
     if acwr is None:
         return None
+    if twin.behavioral.acwr_reliable is False:
+        return None
+    # Defensive consistency guard: a ratio cannot indicate acute overload when
+    # the same Twin explicitly says the recent load is zero. This also prevents
+    # a stale cached ratio from surviving a later activity resync.
+    if (
+        twin.behavioral.training_load_7d is not None
+        and twin.behavioral.training_load_7d <= 0
+    ):
+        return None
     if acwr <= 1.5:
         return None
 
@@ -50,6 +60,8 @@ def training_acwr_undertraining(twin: HealthTwin) -> Optional[Alert]:
     """ACWR < 0.8 + 本周运动次数少 —— undertraining，体能流失。"""
     acwr = twin.behavioral.acute_chronic_ratio
     if acwr is None:
+        return None
+    if twin.behavioral.acwr_reliable is False:
         return None
     if acwr >= 0.8:
         return None

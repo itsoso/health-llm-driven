@@ -18,6 +18,7 @@ from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
 from app.models.daily_health import WorkoutRecord, GarminData
+from app.services.training_load_metrics import assess_acwr
 
 logger = logging.getLogger(__name__)
 
@@ -96,37 +97,36 @@ def _compute_acwr(db: Session, user_id: int, now: datetime) -> Optional[float]:
 
     load 优先用 training_load 字段, 否则 fallback 用 distance_meters/1000.
     """
-    acute_start = now - timedelta(days=7)
     chronic_start = now - timedelta(days=28)
-
-    def _sum_load(start: datetime, end: datetime) -> float:
-        rows = (
-            db.query(WorkoutRecord)
-            .filter(
-                and_(
-                    WorkoutRecord.user_id == user_id,
-                    WorkoutRecord.end_time >= start,
-                    WorkoutRecord.end_time <= end,
-                )
+    rows = (
+        db.query(WorkoutRecord)
+        .filter(
+            and_(
+                WorkoutRecord.user_id == user_id,
+                WorkoutRecord.end_time >= chronic_start,
+                WorkoutRecord.end_time <= now,
             )
-            .all()
         )
-        total = 0.0
-        for r in rows:
-            if r.training_load:
-                total += float(r.training_load)
-            elif r.distance_meters:
-                total += float(r.distance_meters) / 1000.0
-        return total
+        .all()
+    )
 
-    acute = _sum_load(acute_start, now)
-    chronic = _sum_load(chronic_start, now)
-    if chronic <= 0:
-        return None
-    chronic_weekly_avg = chronic / 4.0
-    if chronic_weekly_avg <= 0:
-        return None
-    return round(acute / chronic_weekly_avg, 2)
+    daily_loads: Dict[Any, float] = {}
+    for row in rows:
+        load = 0.0
+        if row.training_load:
+            load = float(row.training_load)
+        elif row.distance_meters:
+            load = float(row.distance_meters) / 1000.0
+        if load <= 0 or row.end_time is None:
+            continue
+        workout_day = row.end_time.date()
+        daily_loads[workout_day] = daily_loads.get(workout_day, 0.0) + load
+
+    newest_first = [
+        daily_loads.get(now.date() - timedelta(days=i), 0.0)
+        for i in range(28)
+    ]
+    return assess_acwr(newest_first).acwr
 
 
 def _compute_baseline(db: Session, user_id: int, now: datetime) -> Dict[str, Any]:

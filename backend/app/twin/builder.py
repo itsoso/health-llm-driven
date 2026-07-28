@@ -799,6 +799,8 @@ def _fill_training_load(db: Session, user_id: int, twin: HealthTwin, sources: Se
 
         twin.behavioral.acute_chronic_ratio = _as_float(load.get("acwr"))
         twin.behavioral.acwr_zone = load.get("acwr_zone")
+        twin.behavioral.acwr_reliable = load.get("acwr_reliable")
+        twin.behavioral.acwr_unavailable_reason = load.get("acwr_unavailable_reason")
         twin.behavioral.training_load_7d = _as_float(load.get("acute_load_7d"))
 
         daily = load.get("daily_loads") or []

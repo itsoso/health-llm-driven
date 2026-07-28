@@ -9,6 +9,7 @@ from sqlalchemy import desc
 from sqlalchemy.orm import Session
 from app.models.daily_health import GarminData, WorkoutRecord
 from app.models.user import User
+from app.services.training_load_metrics import assess_acwr
 
 logger = logging.getLogger(__name__)
 
@@ -111,14 +112,12 @@ class ExerciseRecoveryService:
         daily_loads = [{"date": str(today - timedelta(days=i)), "trimp": loads[i],
                         "workout_type": dty.get(today - timedelta(days=i))} for i in range(14)]
 
-        acute_sum, chronic_sum = sum(loads[:7]), sum(loads)
-        acute_avg, chronic_avg = acute_sum / 7, chronic_sum / 28
-        acwr = round(acute_avg / chronic_avg, 2) if chronic_avg > 0 else 0
-
-        if acwr < 0.8: zone = "undertraining"
-        elif acwr <= 1.3: zone = "optimal"
-        elif acwr <= 1.5: zone = "danger"
-        else: zone = "overtraining"
+        assessment = assess_acwr(loads)
+        acute_sum = assessment.acute_load_7d
+        chronic_sum = assessment.chronic_load_28d
+        acute_avg = acute_sum / 7
+        acwr = assessment.acwr
+        zone = assessment.zone
 
         prev_avg = sum(loads[7:14]) / 7 if any(loads[7:14]) else 0
         if prev_avg > 0:
@@ -129,14 +128,21 @@ class ExerciseRecoveryService:
         return {
             "today_trimp": round(dt.get(today, 0), 1), "acute_load_7d": round(acute_sum, 1),
             "chronic_load_28d": round(chronic_sum, 1), "acwr": acwr, "acwr_zone": zone,
-            "acwr_trend": trend, "daily_loads": daily_loads, "data_days": sum(1 for v in loads if v > 0),
+            "acwr_reliable": assessment.reliable,
+            "acwr_unavailable_reason": assessment.unavailable_reason,
+            "baseline_active_days": assessment.baseline_active_days,
+            "baseline_weeks_with_load": assessment.baseline_weeks_with_load,
+            "oldest_load_age_days": assessment.oldest_load_age_days,
+            "acwr_trend": trend, "daily_loads": daily_loads, "data_days": assessment.data_days,
         }
 
     def get_recommendation(self, db: Session, user_id: int) -> dict:
         """训练建议: readiness x ACWR 决策矩阵"""
         r = self.get_recovery_readiness(db, user_id)
         l = self.get_training_load(db, user_id)
-        score, acwr, zone = r.get("readiness_score"), l.get("acwr", 0), l.get("acwr_zone", "unknown")
+        score = r.get("readiness_score")
+        acwr = l.get("acwr")
+        zone = l.get("acwr_zone") or "unknown"
 
         advice = self._decide(score, zone)
         warnings = []
@@ -148,14 +154,20 @@ class ExerciseRecoveryService:
             warnings.append("睡眠质量不佳，已降低建议训练强度")
             idx = ADVICE_ORDER.index(advice) if advice in ADVICE_ORDER else 2
             advice = ADVICE_ORDER[max(0, idx - 1)]
-        if l.get("data_days", 0) < 14:
-            warnings.append("运动数据不足 14 天，ACWR 仅供参考")
+        if l.get("acwr_unavailable_reason") == "insufficient_chronic_baseline":
+            warnings.append("慢性训练基线不足，暂不计算 ACWR")
+        elif l.get("acwr_unavailable_reason") == "no_recent_training":
+            warnings.append("过去 7 天没有可用于计算 ACWR 的训练负荷")
+        elif l.get("data_days", 0) < 14:
+            warnings.append("运动负荷样本偏少，ACWR 仅供参考")
 
         p = ADVICE_PARAMS.get(advice, ADVICE_PARAMS["moderate"])
         parts = []
         if score is not None:
             parts.append(f"恢复就绪度 {score} 分")
-        parts += [f"ACWR {acwr}", f"处于{ZONE_NAMES.get(zone, zone)}", ADVICE_NAMES.get(advice, "")]
+        if acwr is not None:
+            parts.extend([f"ACWR {acwr}", f"处于{ZONE_NAMES.get(zone, zone)}"])
+        parts.append(ADVICE_NAMES.get(advice, ""))
 
         return {
             "training_advice": advice, "suggested_intensity": p[0], "suggested_types": p[1],

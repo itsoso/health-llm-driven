@@ -76,6 +76,25 @@ class TestTwinBuilderFillsWorkouts:
         assert w.training_effect_aerobic == 3.2
         assert "workout" in sources
 
+    def test_sparse_training_does_not_publish_reliable_acwr(self, db):
+        """只有近期一次训练、没有三周慢性基线时，Twin 必须标记 ACWR 不可靠。"""
+        u = _mk_user(db)
+        db.add(WorkoutRecord(
+            user_id=u.id,
+            workout_date=date.today() - timedelta(days=1),
+            workout_type="walking",
+            duration_seconds=30 * 60,
+            avg_heart_rate=110,
+            training_load=20,
+        ))
+        db.commit()
+
+        twin, _ = self._fill(db, u.id)
+
+        assert twin.behavioral.training_load_7d > 0
+        assert twin.behavioral.acute_chronic_ratio is None
+        assert twin.behavioral.acwr_reliable is False
+
     def test_old_workout_excluded(self, db):
         """10 天前的不进 (cutoff = 7 天)."""
         u = _mk_user(db)

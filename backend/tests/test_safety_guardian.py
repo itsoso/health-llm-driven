@@ -1292,6 +1292,31 @@ class TestTrainingLoad:
         assert "training.acwr_overload" not in _rule_ids(alerts)
         assert "training.acwr_undertraining" not in _rule_ids(alerts)
 
+    def test_acwr_overload_ignored_when_acute_load_is_zero(self):
+        """陈旧/不一致 ACWR 不得在近期无训练时触发高风险告警。"""
+        twin = _empty_twin()
+        twin.behavioral = BehavioralState(
+            acute_chronic_ratio=4.0,
+            training_load_7d=0.0,
+            workouts_this_week=0,
+        )
+        alerts = evaluate_safety(twin).alerts
+        assert "training.acwr_overload" not in _rule_ids(alerts)
+
+    def test_acwr_alerts_require_reliable_chronic_baseline(self):
+        """缺慢性基线时，高低 ACWR 数值都不得进入安全告警。"""
+        for acwr in (0.5, 4.0):
+            twin = _empty_twin()
+            twin.behavioral = BehavioralState(
+                acute_chronic_ratio=acwr,
+                acwr_reliable=False,
+                training_load_7d=25.0,
+                workouts_this_week=1,
+            )
+            rule_ids = _rule_ids(evaluate_safety(twin).alerts)
+            assert "training.acwr_overload" not in rule_ids
+            assert "training.acwr_undertraining" not in rule_ids
+
     def test_complete_inactivity(self):
         twin = _empty_twin()
         twin.behavioral = BehavioralState(
