@@ -2796,7 +2796,16 @@ def _write_result_payload(
         return None
     if not isinstance(payload, dict):
         return None
-    if "verified" in payload and payload.get("verified") is not True:
+    verification_sources = [payload]
+    verification_sources.extend(
+        nested
+        for container_name in ("resource", "record", "data", "result")
+        if isinstance((nested := payload.get(container_name)), dict)
+    )
+    if any(
+        "verified" in source and source.get("verified") is not True
+        for source in verification_sources
+    ):
         return None
     if write_result_declares_non_success(
         payload,

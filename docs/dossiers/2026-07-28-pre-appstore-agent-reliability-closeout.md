@@ -93,7 +93,10 @@ RequirementAdmission:
   受影响域复验 `230 passed`，CI 原始六个 Agent 分片复验
   `1342 passed, 3 skipped`，第八轮生产 fail-closed 整改后受影响域
   `233 passed`、相关 Executor/Kernel/Runtime/write 分片
-  `1246 passed, 3 skipped`，退出码均为 0。
+  `1246 passed, 3 skipped`，退出码均为 0。第九轮嵌套验证字段整改后，
+  受影响域 `234 passed`、Executor `a-h` 分片按 7 个文件受控复跑合计
+  `204 passed`、Executor `i-z` 分片 `329 passed`，退出码均为 0。初次聚合执行
+  的测试运行器异常挂起，已停止且未作为通过证据。
 - Agent trajectory scorer 与历史轨迹门禁已覆盖 9 个 mandatory scenarios。
 - TypeScript `npx tsc --noEmit`：PASS。
 - Mobile 完整 Gate：`279` 个 suites、`2156 passed`、`1 skipped`，退出码 0；
@@ -195,8 +198,18 @@ RequirementAdmission:
   `233 passed`，相关 Executor/Kernel/Runtime/write 分片
   `1246 passed, 3 skipped`，TypeScript、lint、Ruff、diff check 和零成本 Harness
   全部通过。
+- 第九轮独立 reviewer 仍给出 **NO-GO**：生产回执 builder 只检查顶层
+  `verified`，因此嵌套 `result.verified=false` 仍可能被归一为可验证成功回执。
+- 第九轮整改已完成：回执 builder 在顶层和受支持的 `resource`、`record`、`data`、
+  `result` 容器统一扫描显式验证字段；任一层声明的 `verified` 不是布尔 `true` 时
+  整体 fail closed，不生成回执，也不把工具调用标记为完成。新增反例先稳定复现失败，
+  修复后 `test_write_receipt_identity.py` 为 `24 passed`，扩大受影响域为
+  `234 passed`，Executor `a-h` 按文件受控复跑合计 `204 passed`、`i-z` 为
+  `329 passed`；零成本 Harness 再次通过
+  invariants `12/12`、health core `50/50`、trajectory contract `12/12` 和
+  goldens `9/9`。
 - 在新的独立 reviewer 对全部整改提交给出 GO 前不进入部署。
-- **裁决: PENDING。** 八轮评审失败均已回到实现与测试阶段；等待全量复审。
+- **裁决: PENDING。** 九轮评审失败均已回到实现与测试阶段；等待全量复审。
 
 ## S6 / G5 · 部署与健康
 

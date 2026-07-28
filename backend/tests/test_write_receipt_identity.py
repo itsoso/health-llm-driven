@@ -90,6 +90,22 @@ def test_explicit_unverified_result_never_builds_verified_receipt():
     assert _write_tool_completed("health_record", {"record_type": "diet"}, shape) is False
 
 
+def test_nested_explicit_unverified_result_never_builds_verified_receipt():
+    shape = json.dumps(
+        {
+            "status": "recorded",
+            "resource_type": "diet_record",
+            "result": {
+                "verified": False,
+                "record_id": 830,
+            },
+        }
+    )
+
+    assert _write_receipt_from_tool_result("health_record", "diet", shape) is None
+    assert _write_tool_completed("health_record", {"record_type": "diet"}, shape) is False
+
+
 def test_conflicting_resource_id_aliases_never_build_receipt():
     shape = json.dumps(
         {
