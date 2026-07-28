@@ -228,6 +228,35 @@ cases:
     assert any("forbidden URI value" in error for error in fixture_errors)
 
 
+def test_historical_golden_trace_gate_scans_fixture_root_and_embedded_uri(
+    monkeypatch,
+    tmp_path,
+):
+    module = _load_gate_module()
+    private_fixture = tmp_path / "agent_trajectory_goldens.yaml"
+    private_fixture.write_text(
+        """
+name: agent_trajectory_goldens
+version: 1
+fixture_origin: synthetic
+user_id: 123
+note: "synthetic trace copied from https://example.invalid/private.jpg"
+cases: []
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(module, "AGENT_TRAJECTORY_GOLDENS", private_fixture)
+
+    report = module.run_agent_golden_trace_gate()
+    fixture_errors = [
+        row.get("mismatch", {}).get("fixture", "")
+        for row in report["failed_cases"]
+    ]
+
+    assert any("forbidden fixture key: user_id at $.user_id" in error for error in fixture_errors)
+    assert any("forbidden URI value at $.note" in error for error in fixture_errors)
+
+
 def test_historical_golden_trace_gate_requires_synthetic_origin(
     monkeypatch,
     tmp_path,

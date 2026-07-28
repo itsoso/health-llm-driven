@@ -143,10 +143,10 @@ def _fixture_privacy_errors(value: Any, *, path: str = "$") -> list[str]:
     elif isinstance(value, list):
         for index, child in enumerate(value):
             errors.extend(_fixture_privacy_errors(child, path=f"{path}[{index}]"))
-    elif isinstance(value, str) and value.strip().lower().startswith(
-        _FORBIDDEN_URI_PREFIXES
-    ):
-        errors.append(f"forbidden URI value at {path}")
+    elif isinstance(value, str):
+        normalized = value.lower()
+        if any(prefix in normalized for prefix in _FORBIDDEN_URI_PREFIXES):
+            errors.append(f"forbidden URI value at {path}")
     return errors
 
 
@@ -175,7 +175,7 @@ def run_agent_golden_trace_gate() -> dict[str, Any]:
                 "mismatch": {"fixture": "fixture_origin must be synthetic"},
             }
         )
-    for error in sorted(set(_fixture_privacy_errors(fixture_rows))):
+    for error in sorted(set(_fixture_privacy_errors(fixtures))):
         failed_cases.append(
             {
                 "scenario": "__fixture__",

@@ -210,7 +210,7 @@ def _compile_diet_recalculation_goal(
                 reference_foods=reference_foods,
                 requires_lookup=True,
                 requires_verification=True,
-                prohibited_operations=("create",),
+                prohibited_operations=("create", "delete"),
                 postconditions=("existing_records_only", "read_back_verified"),
                 evidence=("visible_card",) if reference_foods else (),
             )

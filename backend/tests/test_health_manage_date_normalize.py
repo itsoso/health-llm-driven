@@ -42,7 +42,7 @@ def _diet_recalculate_goal() -> GoalSpec:
         ),
         requires_lookup=True,
         requires_verification=True,
-        prohibited_operations=("create",),
+        prohibited_operations=("create", "delete"),
         postconditions=("existing_records_only", "read_back_verified"),
     )
 
@@ -91,6 +91,30 @@ def test_recalculate_goal_never_allows_model_to_create_duplicate_diet_record():
         "date": "2026-07-24",
         "limit": 20,
     }
+
+
+def test_recalculate_goal_never_allows_model_to_delete_existing_diet_record():
+    call = {
+        "id": "unsafe-delete",
+        "type": "function",
+        "function": {
+            "name": "health_manage",
+            "arguments": json.dumps({
+                "record_type": "diet",
+                "operation": "delete",
+                "record_id": 101,
+            }),
+        },
+    }
+
+    normalized = _normalize_goal_guarded_tool_calls(
+        [call],
+        _diet_recalculate_goal(),
+        lookup_completed=True,
+        allowed_record_ids={"101", "102"},
+    )
+
+    assert normalized == []
 
 
 def test_recalculate_goal_only_updates_ids_resolved_from_target_meals():

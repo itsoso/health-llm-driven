@@ -576,6 +576,10 @@ async def test_pre_dispatch_sleep_validation_returns_to_model_without_unverified
 
     monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
     monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [])
+    monkeypatch.setattr(
+        "app.services.agent_executor._has_fast_record_write_intent",
+        lambda _message: False,
+    )
     monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
     monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
     monkeypatch.setattr(executor, "_execute_tool", fake_execute_tool)
@@ -584,7 +588,7 @@ async def test_pre_dispatch_sleep_validation_returns_to_model_without_unverified
         event
         async for event in executor.run_stream(
             user_id=user.id,
-            message="已经睡了十个小时，睡眠非常好，估计有九十五分",
+            message="记录已经睡了十个小时，睡眠非常好，估计有九十五分",
             user_auth_token="test-token",
             client_turn_id="turn-sleep-validation-rejected",
         )
@@ -609,7 +613,7 @@ async def test_pre_dispatch_sleep_validation_returns_to_model_without_unverified
 
     user_message = db.query(AgentMessage).filter(
         AgentMessage.role == "user",
-        AgentMessage.content == "已经睡了十个小时，睡眠非常好，估计有九十五分",
+        AgentMessage.content == "记录已经睡了十个小时，睡眠非常好，估计有九十五分",
     ).one()
     assert user_message.meta["write_state"]["status"] == "rejected"
 
@@ -2361,7 +2365,7 @@ async def test_agent_stream_strips_leading_inline_tool_json_then_prose(db, auth_
         event
         async for event in executor.run_stream(
             user_id=user.id,
-            message="右嘴角有口腔溃疡然后上颚外嘴唇连接处有口腔溃疡",
+            message="记录右嘴角和上颚外嘴唇连接处的口腔溃疡",
             user_auth_token="test-token",
         )
     ]

@@ -27,7 +27,7 @@ cases:
       target_meal_types: [breakfast, lunch]
       requires_lookup: true
       requires_verification: true
-      prohibited_operations: [create]
+      prohibited_operations: [create, delete]
       clarification: false
 
   - id: diet_recalculate_visible_breakfast_only
@@ -49,7 +49,7 @@ cases:
       target_meal_types: [breakfast]
       requires_lookup: true
       requires_verification: true
-      prohibited_operations: [create]
+      prohibited_operations: [create, delete]
       clarification: false
 
   - id: diet_recalculate_question_is_read_only
@@ -146,7 +146,7 @@ cases:
       target_meal_types: [breakfast, lunch]
       requires_lookup: true
       requires_verification: true
-      prohibited_operations: [create]
+      prohibited_operations: [create, delete]
       clarification: false
 
   - id: diet_recalculate_colloquial_visible_two_meals
@@ -171,7 +171,7 @@ cases:
       target_meal_types: [breakfast, lunch]
       requires_lookup: true
       requires_verification: true
-      prohibited_operations: [create]
+      prohibited_operations: [create, delete]
       clarification: false
 
   - id: water_record_explicit_chinese_amount

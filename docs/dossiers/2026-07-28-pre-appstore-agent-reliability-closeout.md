@@ -83,8 +83,8 @@ RequirementAdmission:
 - Mobile 附件事件和输入框：`88 passed`。
 - Mobile active Turn、聊天页面、结构化回执和顶部状态：`194 passed`；
   Chat 页面端到端组件回归：`44 passed`。
-- Backend client event、聚合、Agent trajectory 与 Harness wiring：
-  连同 Goal compiler 共 `173 passed`。
+- Backend client event、聚合、Agent trajectory、执行器状态机与 Harness wiring：
+  扩大回归共 `320 passed`。
 - Agent trajectory scorer 与历史轨迹门禁已覆盖 9 个 mandatory scenarios。
 - TypeScript `npx tsc --noEmit`：PASS。
 - 零成本 Harness：invariants `12/12`、health core `50/50`、trajectory
@@ -100,8 +100,15 @@ RequirementAdmission:
 - 已逐项整改：任何只读写入和错误 record type/operation 均硬失败；副作用按实际
   verified write 次数计数；每个写回执必须带记录 identity；附件错误码收敛为固定
   枚举；fixture 加入 synthetic origin 和递归隐私 Gate。
+- 第二轮独立 reviewer 仍给出 **NO-GO**，进一步发现空 `attempts` 可隐藏顶层工具
+  调用、通用只读 Goal 的执行前守卫未收口、饮食重估仍可能 delete，以及 fixture
+  根节点和正文内嵌 URI 未被扫描。
+- 第二轮整改已完成：评分器合并检查顶层与所有 attempt 工具调用；所有显式只读
+  Goal 在统一执行前边界阻断副作用；饮食重估只允许目标 update，并将不安全 create
+  降级为权威 lookup、直接丢弃 delete；fixture 隐私 Gate 扫描完整 YAML 树并拒绝
+  字符串任意位置的 URI。新增五个回归用例均先复现失败后转绿。
 - 在新的独立 reviewer 对整改提交给出 GO 前不进入部署。
-- **裁决: PENDING。** 首轮评审失败已回到实现与测试阶段；等待复审。
+- **裁决: PENDING。** 两轮评审失败均已回到实现与测试阶段；等待第三轮复审。
 
 ## S6 / G5 · 部署与健康
 

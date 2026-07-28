@@ -4816,6 +4816,56 @@ def _normalize_goal_guarded_tool_calls(
     """Fail closed when a model violates the current task's mutation contract."""
     if goal is None:
         return tool_calls
+    prohibited = {
+        str(operation).strip().lower()
+        for operation in goal.prohibited_operations
+        if str(operation).strip()
+    }
+    if prohibited:
+        contract_safe_calls: list[dict[str, Any]] = []
+        fully_read_only = {"create", "update", "delete"}.issubset(prohibited)
+        for tool_call in tool_calls:
+            function = tool_call.get("function") or {}
+            name = str(function.get("name") or "")
+            try:
+                args = (
+                    json.loads(function.get("arguments"))
+                    if isinstance(function.get("arguments"), str)
+                    else dict(function.get("arguments") or {})
+                )
+            except (json.JSONDecodeError, TypeError, ValueError):
+                args = {}
+            attempted_write = _write_tool_attempted(name, args)
+            operation = str(
+                args.get("operation") or args.get("action") or ""
+            ).strip().lower()
+            if name == "health_record" and attempted_write:
+                operation = "create"
+            violates_contract = (
+                attempted_write
+                and (
+                    fully_read_only
+                    or not operation
+                    or operation in prohibited
+                )
+            )
+            # The recalculation path deliberately converts an unsafe create
+            # request into its required read-only lookup below. Preserve that
+            # recovery while still dropping delete and every other prohibited
+            # mutation at this common contract boundary.
+            if goal.kind == "diet_recalculate_update" and operation == "create":
+                violates_contract = False
+            if violates_contract:
+                logger.warning(
+                    "[agent_executor] goal contract blocked prohibited mutation "
+                    "kind=%s tool=%s operation=%s",
+                    goal.kind,
+                    name,
+                    operation or "unknown",
+                )
+                continue
+            contract_safe_calls.append(tool_call)
+        tool_calls = contract_safe_calls
     if goal.kind == "simple_health_record":
         authoritative_args = _simple_record_goal_arguments(goal)
         normalized: list[dict[str, Any]] = []

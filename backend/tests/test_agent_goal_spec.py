@@ -82,6 +82,7 @@ def test_recalculate_update_goal_keeps_visible_foods_as_context_not_write_author
     )
     assert "visible_card" in goal.evidence
     assert "existing_records_only" in goal.postconditions
+    assert set(goal.prohibited_operations) == {"create", "delete"}
 
 
 def test_recalculate_goal_uses_only_the_latest_card_date_for_visible_foods():

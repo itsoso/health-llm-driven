@@ -57,20 +57,23 @@ def _record_id(value: dict[str, Any] | None) -> Any:
 
 
 def _trace_tool_calls(trace: dict[str, Any]) -> list[dict[str, Any]]:
+    calls = [
+        call
+        for call in (trace.get("tool_calls") or [])
+        if isinstance(call, dict)
+    ]
     attempts = trace.get("attempts")
     if isinstance(attempts, list):
-        return [
+        calls.extend(
+            [
             call
             for attempt in attempts
             if isinstance(attempt, dict)
             for call in (attempt.get("tool_calls") or [])
             if isinstance(call, dict)
-        ]
-    return [
-        call
-        for call in (trace.get("tool_calls") or [])
-        if isinstance(call, dict)
-    ]
+            ]
+        )
+    return calls
 
 
 def _arg_value(call: dict[str, Any], key: str) -> Any:

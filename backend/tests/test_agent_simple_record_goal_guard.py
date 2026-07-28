@@ -397,3 +397,49 @@ def test_invalid_simple_goal_blocks_model_write_instead_of_failing_open():
     )
 
     assert normalized == []
+
+
+def test_read_only_goal_blocks_cross_domain_delete_tool_call():
+    goal = GoalSpec(
+        kind="answer",
+        domain="symptom",
+        operation="ask",
+        prohibited_operations=("create", "update", "delete"),
+    )
+    call = {
+        "id": "unsafe-delete",
+        "type": "function",
+        "function": {
+            "name": "health_manage",
+            "arguments": json.dumps({
+                "record_type": "symptom",
+                "operation": "delete",
+                "record_id": 75,
+            }),
+        },
+    }
+
+    assert _normalize_goal_guarded_tool_calls([call], goal) == []
+
+
+def test_read_only_goal_keeps_read_tool_call():
+    goal = GoalSpec(
+        kind="answer",
+        domain="water",
+        operation="ask",
+        prohibited_operations=("create", "update", "delete"),
+    )
+    call = {
+        "id": "safe-list",
+        "type": "function",
+        "function": {
+            "name": "health_manage",
+            "arguments": json.dumps({
+                "record_type": "water",
+                "operation": "list",
+                "date": "2026-07-28",
+            }),
+        },
+    }
+
+    assert _normalize_goal_guarded_tool_calls([call], goal) == [call]
