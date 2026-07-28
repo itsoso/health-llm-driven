@@ -84,9 +84,12 @@ RequirementAdmission:
 - Mobile active Turn、聊天页面、结构化回执和顶部状态：`194 passed`；
   Chat 页面端到端组件回归：`44 passed`。
 - Backend client event、聚合、Agent trajectory、执行器状态机与 Harness wiring：
-  扩大回归共 `320 passed`。
+  扩大回归共 `723 passed`。
 - Agent trajectory scorer 与历史轨迹门禁已覆盖 9 个 mandatory scenarios。
 - TypeScript `npx tsc --noEmit`：PASS。
+- Mobile 完整 Gate：`279` 个 suites、`2147 passed`、`1 skipped`；Expo lint
+  `0 errors`，保留 `93` 条既有 warning。
+- Python 变更文件 Ruff、文档漂移、Dossier 一致性和 `git diff --check`：PASS。
 - 零成本 Harness：invariants `12/12`、health core `50/50`、trajectory
   contract `12/12`、goldens `9/9`，未调用付费模型。
 - 页面测试保留既有 React `act(...)` 警告但无失败；不作为真机 G6 的替代证据。
@@ -107,8 +110,17 @@ RequirementAdmission:
   Goal 在统一执行前边界阻断副作用；饮食重估只允许目标 update，并将不安全 create
   降级为权威 lookup、直接丢弃 delete；fixture 隐私 Gate 扫描完整 YAML 树并拒绝
   字符串任意位置的 URI。新增五个回归用例均先复现失败后转绿。
-- 在新的独立 reviewer 对整改提交给出 GO 前不进入部署。
-- **裁决: PENDING。** 两轮评审失败均已回到实现与测试阶段；等待第三轮复审。
+- 第三轮独立 reviewer 仍给出 **NO-GO**，发现 receipt-exempt
+  `health_record(garmin_sync)` 可绕过只读守卫、饮食重估可夹带跨域 symptom create，
+  且 scorer 把缺少 operation 的 `health_record` 误判为非写入。
+- 第三轮整改已完成：完整只读 Goal 只接受严格 read-only 工具；所有
+  `health_record` 默认推断为 create 并按副作用处理；饮食重估恢复仅允许
+  `record_type=diet` 的目标 create；评分器采用相同的 operation 推断。三条回归测试
+  先红后绿，扩大执行器回归 `723 passed`。
+- 同时修正模型路由测试的环境隔离，并把只读 advice 场景的伪工具改为
+  `environment_check`，避免测试本身依赖隐蔽写入。
+- 在新的独立 reviewer 对全部整改提交给出 GO 前不进入部署。
+- **裁决: PENDING。** 三轮评审失败均已回到实现与测试阶段；等待全量复审。
 
 ## S6 / G5 · 部署与健康
 

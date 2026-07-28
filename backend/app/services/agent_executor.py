@@ -4836,24 +4836,36 @@ def _normalize_goal_guarded_tool_calls(
             except (json.JSONDecodeError, TypeError, ValueError):
                 args = {}
             attempted_write = _write_tool_attempted(name, args)
+            is_read_only_call = _tool_call_is_read_only(name, args)
             operation = str(
                 args.get("operation") or args.get("action") or ""
             ).strip().lower()
-            if name == "health_record" and attempted_write:
+            # health_record always crosses a side-effect boundary. Some action
+            # record types (for example garmin_sync) intentionally do not
+            # require a persistence receipt, but that does not make them safe
+            # in a read-only turn.
+            attempted_mutation = attempted_write or name == "health_record"
+            if name == "health_record":
                 operation = "create"
             violates_contract = (
-                attempted_write
-                and (
-                    fully_read_only
-                    or not operation
-                    or operation in prohibited
+                (fully_read_only and not is_read_only_call)
+                or (
+                    attempted_mutation
+                    and (
+                        not operation
+                        or operation in prohibited
+                    )
                 )
             )
             # The recalculation path deliberately converts an unsafe create
-            # request into its required read-only lookup below. Preserve that
-            # recovery while still dropping delete and every other prohibited
-            # mutation at this common contract boundary.
-            if goal.kind == "diet_recalculate_update" and operation == "create":
+            # request for the diet domain into its required read-only lookup
+            # below. Cross-domain writes must never inherit that exception.
+            is_diet_create_recovery = (
+                goal.kind == "diet_recalculate_update"
+                and str(args.get("record_type") or "").strip().lower() == "diet"
+                and operation == "create"
+            )
+            if is_diet_create_recovery:
                 violates_contract = False
             if violates_contract:
                 logger.warning(

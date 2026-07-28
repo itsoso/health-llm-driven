@@ -443,3 +443,40 @@ def test_read_only_goal_keeps_read_tool_call():
     }
 
     assert _normalize_goal_guarded_tool_calls([call], goal) == [call]
+
+
+def test_read_only_goal_blocks_receipt_exempt_background_sync():
+    goal = GoalSpec(
+        kind="answer",
+        domain="device",
+        operation="ask",
+        prohibited_operations=("create", "update", "delete"),
+    )
+    call = _tool_call(
+        "unsafe-sync",
+        {"record_type": "garmin_sync", "data": {}},
+    )
+
+    assert _normalize_goal_guarded_tool_calls([call], goal) == []
+
+
+def test_diet_recalculation_blocks_cross_domain_health_record_create():
+    goal = GoalSpec(
+        kind="diet_recalculate_update",
+        domain="diet",
+        operation="update",
+        target_date="2026-07-28",
+        target_meal_types=("breakfast", "lunch"),
+        prohibited_operations=("create", "delete"),
+        requires_lookup=True,
+        requires_verification=True,
+    )
+    call = _tool_call(
+        "unsafe-symptom",
+        {
+            "record_type": "symptom",
+            "data": {"description": "synthetic"},
+        },
+    )
+
+    assert _normalize_goal_guarded_tool_calls([call], goal) == []

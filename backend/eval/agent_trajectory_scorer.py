@@ -33,7 +33,17 @@ _UNCERTAIN_RECEIPT_STATUSES = {
 
 
 def _operation(call: dict[str, Any]) -> str:
-    return str((call.get("args") or {}).get("operation") or "").strip().lower()
+    operation = str(
+        (call.get("args") or {}).get("operation") or ""
+    ).strip().lower()
+    if operation:
+        return operation
+    # Runtime health_record calls normally omit an operation field; the tool
+    # itself is the create boundary. The scorer must model that real contract
+    # or a write can disappear from prohibited-write and receipt checks.
+    if str(call.get("name") or "").strip() == "health_record":
+        return "create"
+    return ""
 
 
 def _record_type(call: dict[str, Any]) -> str:

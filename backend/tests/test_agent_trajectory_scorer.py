@@ -497,3 +497,50 @@ def test_score_trajectory_cannot_hide_top_level_write_behind_empty_attempts():
     assert "prohibited_operation:delete" in scored["hard_failures"]
     assert "unexpected_write_operation:delete" in scored["hard_failures"]
     assert "false_completion_claim" in scored["hard_failures"]
+
+
+def test_score_trajectory_detects_health_record_without_operation_as_write():
+    case = {
+        "id": "water_question_remains_read_only",
+        "expected": {
+            "goal_kind": "answer",
+            "domain": "water",
+            "operation": "ask",
+            "target_date": "2026-07-17",
+            "target_meal_types": [],
+            "target_record_type": None,
+            "target_values": {},
+            "requires_lookup": False,
+            "requires_verification": False,
+            "prohibited_operations": ["create", "update", "delete"],
+        },
+    }
+    trace = {
+        "candidate_id": "candidate-hidden-health-record",
+        "client_turn_id": "turn-hidden-health-record",
+        "goal": {
+            "kind": "answer",
+            "domain": "water",
+            "operation": "ask",
+            "target_date": "2026-07-17",
+            "target_meal_types": [],
+        },
+        "tool_calls": [
+            {
+                "name": "health_record",
+                "args": {
+                    "record_type": "water",
+                    "data": {"amount_ml": 500},
+                },
+                "receipt": {"status": "verified", "record_id": 903},
+            }
+        ],
+        "final": {"claims_complete": True},
+    }
+
+    scored = score_trajectory(case, trace)
+
+    assert scored["passed"] is False
+    assert "prohibited_operation:create" in scored["hard_failures"]
+    assert "unexpected_write_operation:create" in scored["hard_failures"]
+    assert "false_completion_claim" in scored["hard_failures"]
