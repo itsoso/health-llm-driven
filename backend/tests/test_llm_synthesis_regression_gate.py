@@ -257,6 +257,70 @@ cases: []
     assert any("forbidden URI value at $.note" in error for error in fixture_errors)
 
 
+def test_historical_golden_trace_gate_rejects_sensitive_key_variants(
+    monkeypatch,
+    tmp_path,
+):
+    module = _load_gate_module()
+    private_fixture = tmp_path / "agent_trajectory_goldens.yaml"
+    private_fixture.write_text(
+        """
+name: agent_trajectory_goldens
+version: 1
+fixture_origin: synthetic
+patient_id: real-patient
+authorization: Bearer private-secret
+message_body: private health text
+cases: []
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(module, "AGENT_TRAJECTORY_GOLDENS", private_fixture)
+
+    report = module.run_agent_golden_trace_gate()
+    fixture_errors = [
+        row.get("mismatch", {}).get("fixture", "")
+        for row in report["failed_cases"]
+    ]
+
+    assert any("forbidden fixture key: patient_id" in error for error in fixture_errors)
+    assert any("forbidden fixture key: authorization" in error for error in fixture_errors)
+    assert any("forbidden fixture key: message_body" in error for error in fixture_errors)
+
+
+def test_historical_golden_trace_gate_scans_dataset_privacy(
+    monkeypatch,
+    tmp_path,
+):
+    module = _load_gate_module()
+    private_dataset = tmp_path / "agent_trajectories.yaml"
+    private_dataset.write_text(
+        """
+name: agent_trajectories
+version: 1
+fixture_origin: synthetic
+cases:
+  - id: private-case
+    patient_id: real-patient
+    user: "synthetic prompt"
+    expected: {}
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(module, "AGENT_TRAJECTORY_DATASET", private_dataset)
+
+    report = module.run_agent_golden_trace_gate()
+    fixture_errors = [
+        row.get("mismatch", {}).get("fixture", "")
+        for row in report["failed_cases"]
+    ]
+
+    assert any(
+        "forbidden fixture key: patient_id at $dataset.cases[0].patient_id" in error
+        for error in fixture_errors
+    )
+
+
 def test_historical_golden_trace_gate_requires_synthetic_origin(
     monkeypatch,
     tmp_path,

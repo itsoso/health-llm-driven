@@ -4847,6 +4847,7 @@ def _normalize_goal_guarded_tool_calls(
             attempted_mutation = attempted_write or name == "health_record"
             if name == "health_record":
                 operation = "create"
+            record_type = str(args.get("record_type") or "").strip().lower()
             violates_contract = (
                 (fully_read_only and not is_read_only_call)
                 or (
@@ -4857,12 +4858,18 @@ def _normalize_goal_guarded_tool_calls(
                     )
                 )
             )
+            if (
+                goal.kind == "diet_recalculate_update"
+                and attempted_mutation
+                and record_type != "diet"
+            ):
+                violates_contract = True
             # The recalculation path deliberately converts an unsafe create
             # request for the diet domain into its required read-only lookup
             # below. Cross-domain writes must never inherit that exception.
             is_diet_create_recovery = (
                 goal.kind == "diet_recalculate_update"
-                and str(args.get("record_type") or "").strip().lower() == "diet"
+                and record_type == "diet"
                 and operation == "create"
             )
             if is_diet_create_recovery:
@@ -4996,6 +5003,53 @@ def _normalize_goal_guarded_tool_calls(
             },
         })
     return normalized
+
+
+def _goal_guard_rejected_writes(
+    proposed_calls: Sequence[Dict[str, Any]],
+    guarded_calls: Sequence[Dict[str, Any]],
+) -> List[tuple[str, Dict[str, Any]]]:
+    """Return write calls removed by the goal guard without retaining health data."""
+    retained_call_ids = {
+        str(call.get("id"))
+        for call in guarded_calls
+        if call.get("id") not in (None, "")
+    }
+    retained_objects = {id(call) for call in guarded_calls}
+    rejected: list[tuple[str, Dict[str, Any]]] = []
+    for call in proposed_calls:
+        call_id = call.get("id")
+        if (
+            id(call) in retained_objects
+            or (
+                call_id not in (None, "")
+                and str(call_id) in retained_call_ids
+            )
+        ):
+            continue
+        function = call.get("function") or {}
+        tool_name = str(function.get("name") or "")
+        try:
+            parsed_args = (
+                json.loads(function.get("arguments"))
+                if isinstance(function.get("arguments"), str)
+                else dict(function.get("arguments") or {})
+            )
+        except (json.JSONDecodeError, TypeError, ValueError):
+            parsed_args = {}
+        if tool_name == "health_record" or _write_tool_attempted(
+            tool_name,
+            parsed_args,
+        ):
+            rejected.append((tool_name, parsed_args))
+    return rejected
+
+
+_GOAL_GUARD_RECOVERY_PROMPT = (
+    "刚才选择的写入操作不符合本回合目标，系统已经拒绝执行。"
+    "请不要调用任何工具，直接回答用户原本的问题；"
+    "不得声称已经记录、修改或删除任何数据，也不要向用户暴露内部工具或策略。"
+)
 
 
 def _goal_target_record_ids(
@@ -8148,8 +8202,12 @@ class AgentExecutor:
             goal_verification_result: Any = None
             goal_lookup_completed = False
             goal_allowed_record_ids: set[str] = set()
+            lead_force_no_tools_synthesis = False
             for _round in range(MULTI_MODEL_MAX_LEAD_ROUNDS):
-                resp = await self._call_llm(lead_messages, tools)
+                resp = await self._call_llm(
+                    lead_messages,
+                    [] if lead_force_no_tools_synthesis else tools,
+                )
                 tool_calls = resp.get("tool_calls") if isinstance(resp, dict) else None
                 content = ((resp.get("content") if isinstance(resp, dict) else str(resp)) or "")
                 if not tool_calls:
@@ -8335,6 +8393,7 @@ class AgentExecutor:
                         satisfied=terminal_completed,
                     )
                 if tool_calls:
+                    proposed_tool_calls = list(tool_calls)
                     tool_calls = self._normalize_query_only_health_manage_tool_calls(
                         tool_calls,
                     )
@@ -8355,6 +8414,36 @@ class AgentExecutor:
                         lookup_completed=goal_lookup_completed,
                         allowed_record_ids=goal_allowed_record_ids,
                     )
+                    rejected_goal_writes = _goal_guard_rejected_writes(
+                        proposed_tool_calls,
+                        tool_calls,
+                    )
+                    for rejected_tool_name, rejected_args in rejected_goal_writes:
+                        self._persist_turn_write_state(
+                            user_msg,
+                            status="rejected",
+                            tool_name=rejected_tool_name,
+                            parsed_args=rejected_args,
+                        )
+                    if proposed_tool_calls and not tool_calls:
+                        logger.warning(
+                            "[agent_executor] all multi-model lead tool calls were "
+                            "blocked by the goal contract; recovering with a "
+                            "text-only lead answer user=%s rejected_writes=%s",
+                            user_id,
+                            len(rejected_goal_writes),
+                        )
+                        if content.strip():
+                            lead_messages.append({
+                                "role": "assistant",
+                                "content": content,
+                            })
+                        lead_messages.append({
+                            "role": "user",
+                            "content": _GOAL_GUARD_RECOVERY_PROMPT,
+                        })
+                        lead_force_no_tools_synthesis = True
+                        continue
                     self._prepare_medication_tool_plan(tool_calls)
                     planned_writes: List[tuple[str, Dict[str, Any]]] = []
                     for tc in tool_calls:
@@ -10329,6 +10418,7 @@ class AgentExecutor:
                 if isinstance(response, dict) and response.get("tool_calls"):
                     self._record_tool_model_name(self._last_provider_model_name or model_name)
                     tool_calls = response["tool_calls"]
+                    proposed_tool_calls = list(tool_calls)
                     text_content = response.get("content") or ""
 
                     # 工具子集守卫(token 优化 #2 fast + R5 analysis):模型想调的工具不在
@@ -10387,6 +10477,42 @@ class AgentExecutor:
                         lookup_completed=goal_lookup_completed,
                         allowed_record_ids=goal_allowed_record_ids,
                     )
+                    rejected_goal_writes = _goal_guard_rejected_writes(
+                        proposed_tool_calls,
+                        tool_calls,
+                    )
+                    for rejected_tool_name, rejected_args in rejected_goal_writes:
+                        self._persist_turn_write_state(
+                            user_msg,
+                            status="rejected",
+                            tool_name=rejected_tool_name,
+                            parsed_args=rejected_args,
+                        )
+                    if proposed_tool_calls and not tool_calls:
+                        logger.warning(
+                            "[agent_executor] all model tool calls were blocked by "
+                            "the goal contract; recovering with a text-only answer "
+                            "user=%s rejected_writes=%s",
+                            user_id,
+                            len(rejected_goal_writes),
+                        )
+                        if text_content.strip():
+                            messages.append({
+                                "role": "assistant",
+                                "content": text_content,
+                            })
+                        messages.append({
+                            "role": "user",
+                            "content": _GOAL_GUARD_RECOVERY_PROMPT,
+                        })
+                        rounds.append({
+                            "llm_gen_ms": _round_llm_gen_ms,
+                            "tool_exec_ms": 0,
+                            "tools": [],
+                        })
+                        self._force_no_tools_synthesis = True
+                        keep_tools_after_synthesis_miss = False
+                        continue
 
                     self._prepare_medication_tool_plan(tool_calls)
 

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any, Callable, Iterable
@@ -45,6 +46,8 @@ REQUIRED_AGENT_GOLDEN_SCENARIOS = {
 }
 _FORBIDDEN_FIXTURE_KEYS = {
     "access_token",
+    "api_key",
+    "authorization",
     "base64",
     "content",
     "email",
@@ -52,10 +55,14 @@ _FORBIDDEN_FIXTURE_KEYS = {
     "filename",
     "image_url",
     "message",
+    "message_body",
     "model_response",
+    "password",
+    "patient_id",
     "phone",
     "prompt",
     "response",
+    "secret",
     "source_message_id",
     "text",
     "token",
@@ -63,7 +70,20 @@ _FORBIDDEN_FIXTURE_KEYS = {
     "url",
     "user_id",
 }
+_FORBIDDEN_FIXTURE_KEY_TOKENS = {
+    re.sub(r"[^a-z0-9]", "", key)
+    for key in _FORBIDDEN_FIXTURE_KEYS
+}
+_FORBIDDEN_FIXTURE_KEY_SUFFIXES = (
+    "accesstoken",
+    "apikey",
+    "authorization",
+    "password",
+    "secret",
+)
 _FORBIDDEN_URI_PREFIXES = ("data:", "file://", "http://", "https://")
+_SYNTHETIC_SOURCE_MESSAGE_ID = re.compile(r"^assistant-[a-z0-9-]+$")
+_BEARER_SECRET = re.compile(r"\bbearer\s+[a-z0-9._~+/=-]{8,}", re.IGNORECASE)
 
 
 def run_agent_trajectory_contract_gate() -> dict[str, Any]:
@@ -131,22 +151,50 @@ def _score_golden_trace(case: dict[str, Any], trace: dict[str, Any]) -> dict[str
     return score_trajectory(case, trace)
 
 
-def _fixture_privacy_errors(value: Any, *, path: str = "$") -> list[str]:
+def _fixture_privacy_errors(
+    value: Any,
+    *,
+    path: str = "$",
+    allow_synthetic_source_ids: bool = False,
+) -> list[str]:
     errors: list[str] = []
     if isinstance(value, dict):
         for raw_key, child in value.items():
             key = str(raw_key).strip().lower()
+            key_token = re.sub(r"[^a-z0-9]", "", key)
             child_path = f"{path}.{raw_key}"
-            if key in _FORBIDDEN_FIXTURE_KEYS:
+            is_synthetic_source_id = (
+                allow_synthetic_source_ids
+                and key_token == "sourcemessageid"
+                and isinstance(child, str)
+                and _SYNTHETIC_SOURCE_MESSAGE_ID.fullmatch(child) is not None
+            )
+            if (
+                not is_synthetic_source_id
+                and (
+                    key_token in _FORBIDDEN_FIXTURE_KEY_TOKENS
+                    or key_token.endswith(_FORBIDDEN_FIXTURE_KEY_SUFFIXES)
+                )
+            ):
                 errors.append(f"forbidden fixture key: {key} at {child_path}")
-            errors.extend(_fixture_privacy_errors(child, path=child_path))
+            errors.extend(_fixture_privacy_errors(
+                child,
+                path=child_path,
+                allow_synthetic_source_ids=allow_synthetic_source_ids,
+            ))
     elif isinstance(value, list):
         for index, child in enumerate(value):
-            errors.extend(_fixture_privacy_errors(child, path=f"{path}[{index}]"))
+            errors.extend(_fixture_privacy_errors(
+                child,
+                path=f"{path}[{index}]",
+                allow_synthetic_source_ids=allow_synthetic_source_ids,
+            ))
     elif isinstance(value, str):
         normalized = value.lower()
         if any(prefix in normalized for prefix in _FORBIDDEN_URI_PREFIXES):
             errors.append(f"forbidden URI value at {path}")
+        if _BEARER_SECRET.search(value):
+            errors.append(f"forbidden bearer secret at {path}")
     return errors
 
 
@@ -167,6 +215,26 @@ def run_agent_golden_trace_gate() -> dict[str, Any]:
     fixture_rows = fixtures.get("cases") or []
     failed_cases: list[dict[str, Any]] = []
     covered_scenarios: list[str] = []
+    if dataset.get("fixture_origin") != "synthetic":
+        failed_cases.append(
+            {
+                "scenario": "__dataset__",
+                "case_id": "",
+                "mismatch": {"fixture": "dataset fixture_origin must be synthetic"},
+            }
+        )
+    for error in sorted(set(_fixture_privacy_errors(
+        dataset,
+        path="$dataset",
+        allow_synthetic_source_ids=True,
+    ))):
+        failed_cases.append(
+            {
+                "scenario": "__dataset__",
+                "case_id": "",
+                "mismatch": {"fixture": error},
+            }
+        )
     if fixtures.get("fixture_origin") != "synthetic":
         failed_cases.append(
             {

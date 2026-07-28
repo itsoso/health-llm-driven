@@ -161,6 +161,92 @@ async def test_multi_model_stream_lead_tools_once_then_synthesizes(db, auth_user
 
 
 @pytest.mark.asyncio
+async def test_multi_model_advice_recovers_when_lead_selects_write_tool(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    lead_tools = [{
+        "type": "function",
+        "function": {"name": "health_record"},
+    }]
+    monkeypatch.setattr(executor, "_build_system_prompt", lambda *a, **k: "SYS")
+    monkeypatch.setattr(
+        "app.services.agent_executor.get_health_tools",
+        lambda subset=None: lead_tools,
+    )
+
+    lead_calls = []
+
+    async def fake_call_llm(messages, tools):
+        lead_calls.append(tools)
+        if len(lead_calls) == 1:
+            return {
+                "content": "",
+                "finish_reason": "tool_calls",
+                "tool_calls": [{
+                    "id": "mistaken-write",
+                    "type": "function",
+                    "function": {
+                        "name": "health_record",
+                        "arguments": json.dumps({
+                            "record_type": "event",
+                            "data": {"description": "准备睡觉"},
+                        }),
+                    },
+                }],
+            }
+        assert tools == []
+        return {"content": "LEAD SAFE ADVICE", "finish_reason": "stop"}
+
+    async def should_not_execute(*_args, **_kwargs):
+        raise AssertionError("goal-blocked write must not execute")
+
+    monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
+    monkeypatch.setattr(executor, "_execute_tool", should_not_execute)
+
+    class FakeProvider:
+        def __init__(self, model_id):
+            self.model = model_id
+
+        async def chat(self, **kwargs):
+            system = kwargs["messages"][0]["content"]
+            if "综合专家" in system:
+                return {"content": "SAFE SYNTHESIS", "finish_reason": "stop"}
+            return {"content": f"SAFE {self.model}", "finish_reason": "stop"}
+
+    monkeypatch.setattr(
+        "app.services.llm.factory.create_provider_for_model_id",
+        lambda model_id: FakeProvider(model_id),
+    )
+
+    events = [
+        event
+        async for event in executor._run_multi_model_stream(
+            user.id,
+            "我准备睡觉了，给我一些建议。",
+            None,
+            None,
+            '{"multi_model": true}',
+            "turn-multi-advice",
+        )
+    ]
+
+    assert len(lead_calls) == 2
+    assert lead_calls[0] == lead_tools
+    assert lead_calls[1] == []
+    assert events[-1]["event"] == "done"
+    assert events[-1]["data"]["completion_status"] == "complete"
+
+    from app.models.agent_conversation import AgentMessage
+
+    saved_user = db.query(AgentMessage).filter_by(role="user").one()
+    assert saved_user.meta["write_state"]["status"] == "rejected"
+
+
+@pytest.mark.asyncio
 async def test_multi_model_simple_record_stops_after_verified_receipt(
     db, auth_user_and_headers, monkeypatch
 ):

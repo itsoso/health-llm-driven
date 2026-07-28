@@ -118,6 +118,10 @@ function createMealCaptureSessionId(): string {
   return `meal-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+function createAttachmentEventKey(): string {
+  return `attachment-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
 function draftMetadataForPhotoContext(
   context: Record<string, string> | null,
 ): ChatDraftMetadata {
@@ -251,6 +255,7 @@ export default function ChatInputBar({
     photoContext: pendingPhotoContextRef.current,
   });
   const justSentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sendInFlightRef = useRef(false);
   composerRef.current = composer;
   draftHydratedRef.current = draftHydrated;
   draftSnapshotRef.current = {
@@ -398,13 +403,14 @@ export default function ChatInputBar({
     return () => clearTimeout(t);
   }, [autoFocusToken]);
 
-  const handleSend = useCallback(async (text?: string, sendOptions?: ChatInputSendOptions) => {
+  const performSend = useCallback(async (text?: string, sendOptions?: ChatInputSendOptions) => {
     let msg = (text || input).trim();
     if (!msg && pendingImages.length === 0) return;
     const phase = composerRef.current.phase;
     let effectiveChannelForSend: 'typed' | 'voice' | 'siri' = sendOptions?.channel ?? inputChannelRef.current;
     const attachmentStartedAt = Date.now();
     const attachmentImageCount = pendingImages.length;
+    const attachmentEventKey = createAttachmentEventKey();
     let attachmentStage: 'local_prepare' | 'server_accept' = 'local_prepare';
     let attachmentPayload: AttachmentPayloadBucket = (
       attachmentImageCount > 0 ? attachmentPayloadBucket(pendingImages) : 'unknown'
@@ -480,7 +486,7 @@ export default function ChatInputBar({
             duration_bucket: durationBucket(attachmentStartedAt),
             payload_bucket: attachmentPayload,
             error_code: 'server_not_accepted',
-          });
+          }, { eventKey: attachmentEventKey });
         }
         if (effectiveChannelForSend === 'voice' && msg) {
           restoreVoiceTranscriptDraft(msg);
@@ -498,7 +504,7 @@ export default function ChatInputBar({
           image_count: attachmentImageCount,
           duration_bucket: durationBucket(attachmentStartedAt),
           payload_bucket: attachmentPayload,
-        });
+        }, { eventKey: attachmentEventKey });
       }
     } catch (e) {
       if (attachmentImageCount > 0) {
@@ -511,7 +517,7 @@ export default function ChatInputBar({
           error_code: attachmentStage === 'local_prepare'
             ? 'draft_hydration_failed'
             : 'send_rejected',
-        });
+        }, { eventKey: attachmentEventKey });
       }
       if (effectiveChannelForSend === 'voice' && msg) {
         restoreVoiceTranscriptDraft(msg);
@@ -567,6 +573,19 @@ export default function ChatInputBar({
     releaseImagesAfterSend,
     restoreVoiceTranscriptDraft,
   ]);
+
+  const handleSend = useCallback(async (
+    text?: string,
+    sendOptions?: ChatInputSendOptions,
+  ) => {
+    if (sendInFlightRef.current) return;
+    sendInFlightRef.current = true;
+    try {
+      await performSend(text, sendOptions);
+    } finally {
+      sendInFlightRef.current = false;
+    }
+  }, [performSend]);
 
   const handleRealtimeTranscript = useCallback((text: string, asr?: TranscribeAudioResult) => {
     const clean = text.trim();

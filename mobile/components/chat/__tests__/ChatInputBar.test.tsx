@@ -1340,6 +1340,39 @@ describe('ChatInputBar', () => {
       image_count: 1,
       duration_bucket: 'lt_1s',
       payload_bucket: 'lt_256kb',
+    }, expect.objectContaining({ eventKey: expect.any(String) }));
+  });
+
+  it('allows only one attachment send and one terminal event for rapid repeated presses', async () => {
+    const storedImage = {
+      uri: 'file:///documents/chat-drafts/rapid-lunch.jpeg',
+      base64: '',
+      type: 'jpeg',
+      draftCreatedAt: 100,
+    };
+    const hydratedImage = { ...storedImage, base64: 'private-base64' };
+    let acceptSend: ((accepted: boolean) => void) | undefined;
+    mockPendingImages = [storedImage];
+    mockHydrateDraftImages.mockResolvedValueOnce([hydratedImage]);
+    const onSend = jest.fn(() => new Promise<boolean>((resolve) => {
+      acceptSend = resolve;
+    }));
+    const view = render(
+      <ChatInputBar onSend={onSend} isStreaming={false} />,
+    );
+
+    act(() => {
+      fireEvent.press(view.getByLabelText('发送消息'));
+      fireEvent.press(view.getByLabelText('发送消息'));
+    });
+    await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      acceptSend?.(true);
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(mockEmitClientEvent).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -1473,7 +1506,7 @@ describe('ChatInputBar', () => {
       duration_bucket: 'lt_1s',
       payload_bucket: 'lt_256kb',
       error_code: 'server_not_accepted',
-    });
+    }, expect.objectContaining({ eventKey: expect.any(String) }));
   });
 
   it('reports local image hydration failures without leaking draft identifiers', async () => {
@@ -1509,7 +1542,7 @@ describe('ChatInputBar', () => {
       duration_bucket: 'lt_1s',
       payload_bucket: 'unknown',
       error_code: 'draft_hydration_failed',
-    });
+    }, expect.objectContaining({ eventKey: expect.any(String) }));
   });
 
   it('updates the composer when the same follow-up prompt is injected again', async () => {

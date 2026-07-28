@@ -8,12 +8,17 @@ from app.services.agent_executor import (
 from app.services.agent_kernel.types import GoalSpec
 
 
-def _tool_call(call_id: str, arguments: dict) -> dict:
+def _tool_call(
+    call_id: str,
+    arguments: dict,
+    *,
+    name: str = "health_record",
+) -> dict:
     return {
         "id": call_id,
         "type": "function",
         "function": {
-            "name": "health_record",
+            "name": name,
             "arguments": json.dumps(arguments, ensure_ascii=False),
         },
     }
@@ -477,6 +482,31 @@ def test_diet_recalculation_blocks_cross_domain_health_record_create():
             "record_type": "symptom",
             "data": {"description": "synthetic"},
         },
+    )
+
+    assert _normalize_goal_guarded_tool_calls([call], goal) == []
+
+
+def test_diet_recalculation_blocks_cross_domain_health_manage_update():
+    goal = GoalSpec(
+        kind="diet_recalculate_update",
+        domain="diet",
+        operation="update",
+        target_date="2026-07-28",
+        target_meal_types=("breakfast", "lunch"),
+        prohibited_operations=("create", "delete"),
+        requires_lookup=True,
+        requires_verification=True,
+    )
+    call = _tool_call(
+        "unsafe-symptom-update",
+        {
+            "record_type": "symptom",
+            "operation": "update",
+            "record_id": 88,
+            "data": {"description": "synthetic"},
+        },
+        name="health_manage",
     )
 
     assert _normalize_goal_guarded_tool_calls([call], goal) == []

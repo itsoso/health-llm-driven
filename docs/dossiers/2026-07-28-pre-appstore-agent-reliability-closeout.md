@@ -75,20 +75,26 @@ RequirementAdmission:
 - [x] 增加历史 Agent 事故 golden trajectories，覆盖饮水、食物、餐食上下文修正、
   不确定回执、重复 Turn 副作用、同记录重复写、只读误写、缺失身份回执和幂等重放。
 - [x] 核验现有 active Turn 与 WriteReceipt UI 为统一状态来源。
+- [x] 附件终态增加 owner-scoped 幂等键，快速连点与终态竞态只落一条遥测；
+  Backend 以唯一索引和冲突后核对兜住并发写入。
+- [x] Goal Guard 拒绝模型越权写入后改走无工具文本恢复，不再把安全拦截错误呈现为
+  “模型服务不可用”，单模型和多模型链路语义一致。
+- [x] Jest 环境释放 React Query inactive cache 的 GC timer 引用，全量 Mobile
+  回归可以自然退出，不再依赖 `--forceExit`。
 - [ ] 完成独立安全评审、提交、部署和 OTA。
 - [ ] 完成 TestFlight 239 真机 G6。
 
 ## G3 · 测试闸
 
-- Mobile 附件事件和输入框：`88 passed`。
-- Mobile active Turn、聊天页面、结构化回执和顶部状态：`194 passed`；
-  Chat 页面端到端组件回归：`44 passed`。
-- Backend client event、聚合、Agent trajectory、执行器状态机与 Harness wiring：
-  扩大回归共 `723 passed`。
+- Mobile 附件事件、输入框、active Turn、聊天页面、结构化回执和顶部状态均纳入
+  全量 Gate。
+- Backend Agent、Runtime、client event、managed migration 与 Harness wiring：
+  `1445 passed, 3 skipped`，退出码 0。
 - Agent trajectory scorer 与历史轨迹门禁已覆盖 9 个 mandatory scenarios。
 - TypeScript `npx tsc --noEmit`：PASS。
-- Mobile 完整 Gate：`279` 个 suites、`2147 passed`、`1 skipped`；Expo lint
-  `0 errors`，保留 `93` 条既有 warning。
+- Mobile 完整 Gate：`279` 个 suites、`2148 passed`、`1 skipped`，退出码 0；
+  React Query 测试 GC timer 已不再阻塞 Jest 退出。Expo lint `0 errors`，保留
+  `93` 条既有 warning。
 - Python 变更文件 Ruff、文档漂移、Dossier 一致性和 `git diff --check`：PASS。
 - 零成本 Harness：invariants `12/12`、health core `50/50`、trajectory
   contract `12/12`、goldens `9/9`，未调用付费模型。
@@ -119,8 +125,19 @@ RequirementAdmission:
   先红后绿，扩大执行器回归 `723 passed`。
 - 同时修正模型路由测试的环境隔离，并把只读 advice 场景的伪工具改为
   `environment_check`，避免测试本身依赖隐蔽写入。
+- 第四轮独立 reviewer 仍给出 **NO-GO**，发现饮食重估可以夹带跨域写入、
+  trajectory scorer 可被不一致的顶层/attempt 工具投影绕过、root Turn ID 未参与
+  重试一致性检查、附件终态缺少服务端 exactly-once 约束，以及合成 fixture 的隐私
+  扫描仍可能漏掉 credential/token 变体。
+- 第四轮整改已完成：饮食重估硬限制 `record_type=diet`；scorer 复用 Tool
+  Registry 判断副作用并对不一致投影 fail closed；root/attempt Turn ID 统一核验；
+  附件终态增加 `(user_id,event_name,event_key)` 唯一约束和并发冲突核对；fixture
+  必须声明 synthetic origin，并递归拒绝用户标识、正文、URI、Bearer 与密钥变体。
+- 扩展测试进一步发现 Goal Guard 全量拒绝写工具后会误入下一轮工具调用并降级为
+  通用失败。现已在单模型与多模型路径保存 `rejected` 状态，随后强制无工具恢复回答，
+  不执行副作用、不宣称写入，也不向用户暴露内部策略。
 - 在新的独立 reviewer 对全部整改提交给出 GO 前不进入部署。
-- **裁决: PENDING。** 三轮评审失败均已回到实现与测试阶段；等待全量复审。
+- **裁决: PENDING。** 四轮评审失败均已回到实现与测试阶段；等待全量复审。
 
 ## S6 / G5 · 部署与健康
 

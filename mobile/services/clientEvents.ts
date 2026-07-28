@@ -348,10 +348,15 @@ export function sanitizeClientEventMeta(
 export async function emitClientEvent(
   name: ClientEventName,
   meta?: Record<string, unknown>,
+  options?: { eventKey?: string },
 ): Promise<void> {
   try {
+    const eventKey = options?.eventKey;
     await api.post('/client-events', {
       event_name: name,
+      ...(typeof eventKey === 'string' && SAFE_TOKEN.test(eventKey)
+        ? { event_key: eventKey }
+        : {}),
       meta: sanitizeClientEventMeta(name, meta),
     });
   } catch {

@@ -564,13 +564,72 @@ def test_chat_attachment_terminal_accepts_content_free_pipeline_metadata(
     response = client.post(
         "/api/v1/client-events",
         headers=headers,
-        json={"event_name": "chat_attachment_terminal", "meta": meta},
+        json={
+            "event_name": "chat_attachment_terminal",
+            "event_key": "attachment-attempt-001",
+            "meta": meta,
+        },
     )
 
     assert response.status_code == 202, response.text
     row = db.query(ClientEvent).order_by(ClientEvent.id.desc()).first()
     assert row.event_name == "chat_attachment_terminal"
+    assert row.event_key == "attachment-attempt-001"
     assert row.meta == meta
+
+
+def test_chat_attachment_terminal_is_idempotent_by_owner_and_event_key(
+    client,
+    db,
+    auth_user_and_headers,
+):
+    _, headers = auth_user_and_headers
+    body = {
+        "event_name": "chat_attachment_terminal",
+        "event_key": "attachment-attempt-dedup",
+        "meta": {
+            "phase": "accepted",
+            "stage": "server_accept",
+            "image_count": 1,
+            "duration_bucket": "1_3s",
+            "payload_bucket": "lt_256kb",
+        },
+    }
+
+    first = client.post("/api/v1/client-events", headers=headers, json=body)
+    second = client.post("/api/v1/client-events", headers=headers, json=body)
+
+    assert first.status_code == 202, first.text
+    assert second.status_code == 202, second.text
+    assert second.json()["duplicate"] is True
+    rows = db.query(ClientEvent).filter(
+        ClientEvent.event_name == "chat_attachment_terminal",
+        ClientEvent.event_key == "attachment-attempt-dedup",
+    ).all()
+    assert len(rows) == 1
+
+
+def test_chat_attachment_terminal_requires_safe_event_key(
+    client,
+    auth_user_and_headers,
+):
+    _, headers = auth_user_and_headers
+    response = client.post(
+        "/api/v1/client-events",
+        headers=headers,
+        json={
+            "event_name": "chat_attachment_terminal",
+            "meta": {
+                "phase": "accepted",
+                "stage": "server_accept",
+                "image_count": 1,
+                "duration_bucket": "1_3s",
+                "payload_bucket": "lt_256kb",
+            },
+        },
+    )
+
+    assert response.status_code == 422, response.text
 
 
 @pytest.mark.parametrize(

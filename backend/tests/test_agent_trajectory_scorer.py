@@ -544,3 +544,166 @@ def test_score_trajectory_detects_health_record_without_operation_as_write():
     assert "prohibited_operation:create" in scored["hard_failures"]
     assert "unexpected_write_operation:create" in scored["hard_failures"]
     assert "false_completion_claim" in scored["hard_failures"]
+
+
+def test_score_trajectory_treats_health_record_as_create_despite_explicit_operation():
+    case = {
+        "id": "diet-update",
+        "expected": {
+            "goal_kind": "diet_recalculate_update",
+            "domain": "diet",
+            "operation": "update",
+            "target_date": "2026-07-28",
+            "target_meal_types": [],
+            "target_record_type": "diet",
+            "target_values": {},
+            "requires_lookup": False,
+            "requires_verification": False,
+            "prohibited_operations": ["create", "delete"],
+        },
+    }
+    trace = {
+        "candidate_id": "candidate-health-record-update",
+        "client_turn_id": "turn-health-record-update",
+        "goal": {
+            "kind": "diet_recalculate_update",
+            "domain": "diet",
+            "operation": "update",
+            "target_date": "2026-07-28",
+            "target_meal_types": [],
+        },
+        "tool_calls": [{
+            "name": "health_record",
+            "args": {
+                "record_type": "diet",
+                "operation": "update",
+                "data": {"meal_type": "breakfast"},
+            },
+            "receipt": {"status": "verified", "record_id": 904},
+        }],
+        "final": {"claims_complete": True},
+    }
+
+    scored = score_trajectory(case, trace)
+
+    assert scored["passed"] is False
+    assert "prohibited_operation:create" in scored["hard_failures"]
+    assert "unexpected_write_operation:create" in scored["hard_failures"]
+
+
+def test_score_trajectory_detects_action_based_write_in_read_only_turn():
+    case = {
+        "id": "water-question",
+        "expected": {
+            "goal_kind": "answer",
+            "domain": "water",
+            "operation": "ask",
+            "target_date": "2026-07-28",
+            "target_meal_types": [],
+            "target_values": {},
+            "requires_lookup": False,
+            "requires_verification": False,
+            "prohibited_operations": ["create", "update", "delete"],
+        },
+    }
+    trace = {
+        "candidate_id": "candidate-hidden-plan-write",
+        "client_turn_id": "turn-hidden-plan-write",
+        "goal": {
+            "kind": "answer",
+            "domain": "water",
+            "operation": "ask",
+            "target_date": "2026-07-28",
+            "target_meal_types": [],
+        },
+        "tool_calls": [{
+            "name": "manage_plan",
+            "args": {"action": "generate_weekly", "data": {}},
+            "receipt": {"status": "verified", "record_id": 905},
+        }],
+        "final": {"claims_complete": True},
+    }
+
+    scored = score_trajectory(case, trace)
+
+    assert scored["passed"] is False
+    assert "unexpected_write_operation:generate_weekly" in scored["hard_failures"]
+
+
+def test_score_trajectory_rejects_root_and_attempt_turn_id_mismatch():
+    case = {
+        "id": "water-question",
+        "expected": {
+            "goal_kind": "answer",
+            "domain": "water",
+            "operation": "ask",
+            "target_date": "2026-07-28",
+            "target_meal_types": [],
+            "target_values": {},
+            "requires_lookup": False,
+            "requires_verification": False,
+            "prohibited_operations": ["create", "update", "delete"],
+        },
+    }
+    trace = {
+        "candidate_id": "candidate-turn-mismatch",
+        "client_turn_id": "turn-root",
+        "goal": {
+            "kind": "answer",
+            "domain": "water",
+            "operation": "ask",
+            "target_date": "2026-07-28",
+            "target_meal_types": [],
+        },
+        "attempts": [{"client_turn_id": "turn-other", "tool_calls": []}],
+        "final": {"claims_complete": False},
+    }
+
+    scored = score_trajectory(case, trace)
+
+    assert scored["passed"] is False
+    assert "client_turn_id_changed_across_attempts" in scored["hard_failures"]
+
+
+def test_score_trajectory_rejects_inconsistent_root_and_attempt_tool_calls():
+    case = {
+        "id": "water-question",
+        "expected": {
+            "goal_kind": "answer",
+            "domain": "water",
+            "operation": "ask",
+            "target_date": "2026-07-28",
+            "target_meal_types": [],
+            "target_values": {},
+            "requires_lookup": False,
+            "requires_verification": False,
+            "prohibited_operations": ["create", "update", "delete"],
+        },
+    }
+    root_call = {
+        "name": "health_record",
+        "args": {"record_type": "water", "data": {"amount_ml": 500}},
+        "receipt": {"status": "verified", "record_id": 906},
+    }
+    trace = {
+        "candidate_id": "candidate-projection-mismatch",
+        "client_turn_id": "turn-projection-mismatch",
+        "goal": {
+            "kind": "answer",
+            "domain": "water",
+            "operation": "ask",
+            "target_date": "2026-07-28",
+            "target_meal_types": [],
+        },
+        "tool_calls": [root_call],
+        "attempts": [{
+            "client_turn_id": "turn-projection-mismatch",
+            "tool_calls": [],
+        }],
+        "final": {"claims_complete": True},
+    }
+
+    scored = score_trajectory(case, trace)
+
+    assert scored["passed"] is False
+    assert "inconsistent_top_level_tool_calls" in scored["hard_failures"]

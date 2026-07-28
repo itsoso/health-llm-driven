@@ -12,6 +12,11 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any, Iterable
 
+from app.services.agent_kernel.tool_registry import (
+    ToolRegistryError,
+    classify_tool_effect,
+)
+
 
 _DIMENSIONS = (
     "goal",
@@ -33,17 +38,14 @@ _UNCERTAIN_RECEIPT_STATUSES = {
 
 
 def _operation(call: dict[str, Any]) -> str:
-    operation = str(
-        (call.get("args") or {}).get("operation") or ""
-    ).strip().lower()
-    if operation:
-        return operation
-    # Runtime health_record calls normally omit an operation field; the tool
-    # itself is the create boundary. The scorer must model that real contract
-    # or a write can disappear from prohibited-write and receipt checks.
-    if str(call.get("name") or "").strip() == "health_record":
+    name = str(call.get("name") or "").strip()
+    if name == "health_record":
         return "create"
-    return ""
+    args = call.get("args") or {}
+    operation = str(
+        args.get("operation") or args.get("action") or ""
+    ).strip().lower()
+    return operation
 
 
 def _record_type(call: dict[str, Any]) -> str:
@@ -66,24 +68,53 @@ def _record_id(value: dict[str, Any] | None) -> Any:
     return value.get("record_id") or value.get("id") or nested.get("record_id")
 
 
-def _trace_tool_calls(trace: dict[str, Any]) -> list[dict[str, Any]]:
-    calls = [
+def _trace_tool_calls(
+    trace: dict[str, Any],
+) -> tuple[list[dict[str, Any]], list[str]]:
+    root_calls = [
         call
         for call in (trace.get("tool_calls") or [])
         if isinstance(call, dict)
     ]
+    attempt_calls: list[dict[str, Any]] = []
     attempts = trace.get("attempts")
     if isinstance(attempts, list):
-        calls.extend(
-            [
+        attempt_calls = [
             call
             for attempt in attempts
             if isinstance(attempt, dict)
             for call in (attempt.get("tool_calls") or [])
             if isinstance(call, dict)
-            ]
-        )
-    return calls
+        ]
+    if isinstance(attempts, list):
+        failures = []
+        if "tool_calls" in trace and root_calls != attempt_calls:
+            failures.append("inconsistent_top_level_tool_calls")
+            # The ordering cannot be trusted, but every represented side effect
+            # must still be inspected so an invalid projection cannot hide a
+            # prohibited write.
+            return root_calls + attempt_calls, failures
+        return attempt_calls, failures
+    return root_calls, []
+
+
+def _write_indexes_and_contract_failures(
+    calls: list[dict[str, Any]],
+) -> tuple[list[int], list[str]]:
+    indexes: list[int] = []
+    failures: list[str] = []
+    for index, call in enumerate(calls):
+        name = str(call.get("name") or "").strip()
+        try:
+            effect = classify_tool_effect(name, call.get("args") or {})
+        except ToolRegistryError as exc:
+            failures.append(str(exc))
+            if _operation(call) in _WRITE_OPERATIONS:
+                indexes.append(index)
+            continue
+        if effect == "write":
+            indexes.append(index)
+    return indexes, failures
 
 
 def _arg_value(call: dict[str, Any], key: str) -> Any:
@@ -136,10 +167,10 @@ def score_trajectory(case: dict[str, Any], trace: dict[str, Any]) -> dict[str, A
     """Score one anonymous candidate trace against deterministic postconditions."""
 
     expected = case.get("expected") or {}
-    calls = _trace_tool_calls(trace)
+    calls, trace_contract_failures = _trace_tool_calls(trace)
     target_meals = set(expected.get("target_meal_types") or [])
     prohibited = set(expected.get("prohibited_operations") or [])
-    hard_failures: list[str] = []
+    hard_failures: list[str] = list(trace_contract_failures)
     expected_record_type = str(
         expected.get("target_record_type") or expected.get("domain") or ""
     ).strip().lower()
@@ -150,9 +181,8 @@ def score_trajectory(case: dict[str, Any], trace: dict[str, Any]) -> dict[str, A
         if operation and operation in prohibited:
             hard_failures.append(f"prohibited_operation:{operation}")
 
-    write_indexes = [
-        index for index, operation in enumerate(operations) if operation in _WRITE_OPERATIONS
-    ]
+    write_indexes, tool_contract_failures = _write_indexes_and_contract_failures(calls)
+    hard_failures.extend(tool_contract_failures)
     write_calls = [calls[index] for index in write_indexes]
     if expected_operation not in _WRITE_OPERATIONS:
         for operation in sorted({_operation(call) for call in write_calls}):
@@ -291,6 +321,8 @@ def score_trajectory(case: dict[str, Any], trace: dict[str, Any]) -> dict[str, A
         for attempt in (trace.get("attempts") or [])
         if isinstance(attempt, dict) and attempt.get("client_turn_id")
     }
+    if trace.get("client_turn_id"):
+        attempt_turn_ids.add(str(trace["client_turn_id"]))
     if len(attempt_turn_ids) > 1:
         hard_failures.append("client_turn_id_changed_across_attempts")
     allowed_effects = len(target_meals) if target_meals else (

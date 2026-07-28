@@ -1,5 +1,6 @@
 name: agent_trajectories
 version: 1
+fixture_origin: synthetic
 description: Deterministic stateful task cases scored by goal, tool trajectory, and DB delta.
 cases:
   - id: diet_recalculate_visible_breakfast_lunch

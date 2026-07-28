@@ -158,7 +158,10 @@ async def test_synthesis_round_self_corrects_on_botched_text_tool_call(
     assert calls[0] is True, calls
     assert calls[1] is False, calls
     assert calls[2] is True, calls  # keep_tools_after_synthesis_miss 生效
-    # 模型第二轮想调的 health_record 最终被结构化执行 (链式回合未被裁)。
-    assert "health_record" in executed, executed
+    # 分析请求是只读目标。模型即使在自纠轮结构化提出 health_record，也必须被
+    # 目标守卫拒绝，随后进入无工具合成轮，而不是执行隐藏写入。
+    assert calls[3] is False, calls
+    assert executed == ["health_query"], executed
+    assert "已完成记录与分析" in rendered
     # 裸 "Tool calls:" 文本清单绝不外泄给用户。
     assert "Tool calls:" not in rendered

@@ -10,6 +10,7 @@ from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field, field_validator, model_validator
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user_required
@@ -195,7 +196,15 @@ _AIGC_SHARE_TARGETS = frozenset({"wechat", "xiaohongshu"})
 
 class EventIn(BaseModel):
     event_name: str = Field(..., max_length=64)
+    event_key: Optional[str] = Field(default=None, max_length=64)
     meta: Optional[Dict[str, Any]] = None
+
+    @field_validator("event_key")
+    @classmethod
+    def _safe_event_key(cls, value: Optional[str]):
+        if value is not None and _SAFE_TOKEN.fullmatch(value) is None:
+            raise ValueError("invalid event_key")
+        return value
 
     @field_validator("meta")
     @classmethod
@@ -211,6 +220,11 @@ class EventIn(BaseModel):
 
     @model_validator(mode="after")
     def _validate_reliability_meta(self):
+        if (
+            self.event_key is not None
+            and self.event_name != "chat_attachment_terminal"
+        ):
+            raise ValueError("event_key is not supported for this event")
         if self.event_name == "chat_turn_queued":
             if self.meta is None:
                 raise ValueError("chat queue event meta is required")
@@ -232,6 +246,8 @@ class EventIn(BaseModel):
             return self
 
         if self.event_name == "chat_attachment_terminal":
+            if self.event_key is None:
+                raise ValueError("chat attachment event_key is required")
             if self.meta is None:
                 raise ValueError("chat attachment event meta is required")
             keys = set(self.meta)
@@ -426,15 +442,38 @@ def post_client_event(
             },
         )
 
+    existing = None
+    if body.event_key is not None:
+        existing = db.query(ClientEvent).filter(
+            ClientEvent.user_id == current_user.id,
+            ClientEvent.event_name == body.event_name,
+            ClientEvent.event_key == body.event_key,
+        ).first()
+    if existing is not None:
+        return {"ok": True, "id": existing.id, "duplicate": True}
+
     try:
         ev = ClientEvent(
             user_id=current_user.id,
             event_name=body.event_name,
+            event_key=body.event_key,
             meta=body.meta,
         )
         db.add(ev)
         db.commit()
-        return {"ok": True, "id": ev.id}
+        return {"ok": True, "id": ev.id, "duplicate": False}
+    except IntegrityError:
+        db.rollback()
+        if body.event_key is not None:
+            existing = db.query(ClientEvent).filter(
+                ClientEvent.user_id == current_user.id,
+                ClientEvent.event_name == body.event_name,
+                ClientEvent.event_key == body.event_key,
+            ).first()
+            if existing is not None:
+                return {"ok": True, "id": existing.id, "duplicate": True}
+        logger.warning("[client-events] 幂等键冲突后未找到原事件")
+        return {"ok": False}
     except Exception as e:  # noqa: BLE001
         logger.warning(f"[client-events] 写入失败 (bypass): {e}")
         try:
