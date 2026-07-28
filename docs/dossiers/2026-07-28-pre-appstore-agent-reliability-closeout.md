@@ -219,8 +219,11 @@ RequirementAdmission:
   不一致均整体 fail closed。四类 reviewer 反例先得到 `4 failed, 24 passed`，
   修复后回执身份测试 `28 passed`；扩大受影响域 `238 passed`，Executor 两分片
   `204 + 329 passed`，零成本 Harness 四项继续全绿。
-- 在新的独立 reviewer 对全部整改提交给出 GO 前不进入部署。
-- **裁决: PENDING。** 十轮评审失败均已回到实现与测试阶段；等待全量复审。
+- 独立 reviewer 对提交 `79550dd1` 完成第十一轮全量复审：嵌套失败态、验证状态、
+  日期绑定、生产/scorer parity、Mobile 草稿清理和持久化终态 outbox 均通过对抗
+  检查，未发现剩余 P0/P1 发布阻断项，明确给出 **GO**。
+- **裁决: PASS。** 十轮 NO-GO 均已回到实现与测试阶段整改，第十一轮评审通过；
+  仍须服从独立的 G3 在线合成评测、G5 部署健康和 G6 真机验证闸。
 
 ## S6 / G5 · 部署与健康
 
