@@ -380,9 +380,16 @@ async function readClientEventOutbox(
   const stored = await AsyncStorage.getItem(storageKey);
   if (!stored) return [];
 
-  const parsed: unknown = JSON.parse(stored);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(stored);
+  } catch {
+    await AsyncStorage.removeItem(storageKey);
+    return [];
+  }
   if (!Array.isArray(parsed)) {
-    throw new Error('client_event_outbox_invalid');
+    await AsyncStorage.removeItem(storageKey);
+    return [];
   }
   return parsed.flatMap((item): AttachmentTerminalOutboxItem[] => {
     if (

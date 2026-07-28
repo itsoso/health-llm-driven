@@ -187,6 +187,32 @@ describe('client reliability events', () => {
     }]);
   });
 
+  it('recovers a corrupted outbox before persisting a new terminal event', async () => {
+    await AsyncStorage.setItem('client-events:outbox:v1:user-7', '{not-json');
+    mockPost.mockRejectedValueOnce(new Error('offline'));
+
+    await emitClientEvent('chat_attachment_terminal', {
+      phase: 'accepted',
+      stage: 'server_accept',
+      image_count: 1,
+      duration_bucket: '1_3s',
+      payload_bucket: 'lt_256kb',
+    }, { eventKey: 'attachment-terminal-after-corruption' });
+
+    const stored = await AsyncStorage.getItem('client-events:outbox:v1:user-7');
+    expect(JSON.parse(stored || '[]')).toEqual([{
+      eventKey: 'attachment-terminal-after-corruption',
+      name: 'chat_attachment_terminal',
+      meta: {
+        phase: 'accepted',
+        stage: 'server_accept',
+        image_count: 1,
+        duration_bucket: '1_3s',
+        payload_bucket: 'lt_256kb',
+      },
+    }]);
+  });
+
   it('retries a persisted attachment terminal event and removes it after acknowledgement', async () => {
     await AsyncStorage.setItem('client-events:outbox:v1:user-7', JSON.stringify([{
       eventKey: 'attachment-terminal-2',

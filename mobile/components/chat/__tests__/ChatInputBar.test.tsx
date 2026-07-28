@@ -902,7 +902,7 @@ describe('ChatInputBar', () => {
   });
 
   it('stops realtime dictation after submit and keeps the microphone available', async () => {
-    const onSend = jest.fn();
+    const onSend = jest.fn().mockResolvedValue(true);
     const view = render(
       <ChatInputBar onSend={onSend} isStreaming={false} />,
     );
@@ -1308,7 +1308,7 @@ describe('ChatInputBar', () => {
     });
   });
 
-  it('hydrates private image bytes before send and clears only after acceptance', async () => {
+  it('keeps private image bytes when the caller does not explicitly accept the send', async () => {
     const storedImage = {
       uri: 'file:///documents/chat-drafts/lunch.jpeg',
       base64: '',
@@ -1331,16 +1331,17 @@ describe('ChatInputBar', () => {
 
     await waitFor(() => {
       expect(onSend).toHaveBeenCalledWith('请分析这些图片', [hydratedImage], undefined);
-      expect(mockReleaseImagesAfterSend).toHaveBeenCalled();
+      expect(mockReleaseImagesAfterSend).not.toHaveBeenCalled();
       expect(mockClearImages).not.toHaveBeenCalled();
-      expect(mockClearPersistedChatDraft).toHaveBeenCalled();
+      expect(mockClearPersistedChatDraft).not.toHaveBeenCalled();
     });
     expect(mockEmitClientEvent).toHaveBeenCalledWith('chat_attachment_terminal', {
-      phase: 'accepted',
+      phase: 'failed',
       stage: 'server_accept',
       image_count: 1,
       duration_bucket: 'lt_1s',
       payload_bucket: 'lt_256kb',
+      error_code: 'server_not_accepted',
     }, expect.objectContaining({ eventKey: expect.any(String) }));
   });
 
@@ -1624,7 +1625,7 @@ describe('ChatInputBar', () => {
   });
 
   it('updates the composer when the same follow-up prompt is injected again', async () => {
-    const onSend = jest.fn();
+    const onSend = jest.fn().mockResolvedValue(true);
     const prompt = '请基于上一条建议继续追问';
     const { getByLabelText, rerender } = render(
       <ChatInputBar

@@ -176,7 +176,7 @@ interface Props {
     text: string,
     images?: PendingImage[] | null,
     options?: ChatInputSendOptions,
-  ) => boolean | void | Promise<boolean | void>;
+  ) => boolean | Promise<boolean>;
   isStreaming: boolean;
   /** Prefills the composer when callers deep-link into chat with a prompt. */
   initialText?: string;
@@ -477,7 +477,7 @@ export default function ChatInputBar({
         Object.keys(outboundOptions).length > 0 ? outboundOptions : undefined,
       );
       const accepted = await Promise.resolve(sendResult);
-      if (accepted === false) {
+      if (accepted !== true) {
         if (attachmentImageCount > 0) {
           try {
             await emitClientEvent('chat_attachment_terminal', {

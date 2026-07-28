@@ -374,9 +374,15 @@ def expected_receipt_resource_type(
 ) -> str | None:
     """Resolve the canonical receipt type from the same registry contract."""
     args = _parse_arguments(arguments)
-    record_type = str(
-        args.get("record_type") or args.get("type") or ""
-    ).strip().lower()
+    record_type_aliases = [
+        normalized
+        for value in (args.get("record_type"), args.get("type"))
+        if (normalized := str(value or "").strip().lower())
+    ]
+    unique_record_types = list(dict.fromkeys(record_type_aliases))
+    if len(unique_record_types) != 1:
+        return None
+    record_type = unique_record_types[0]
     if tool_name == "health_record":
         return HEALTH_RECORD_RECEIPT_RESOURCE_TYPE_BY_RECORD_TYPE.get(record_type)
     if tool_name == "health_manage":

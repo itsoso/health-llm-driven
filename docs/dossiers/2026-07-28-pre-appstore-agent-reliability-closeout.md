@@ -91,10 +91,12 @@ RequirementAdmission:
 - Backend Agent、Runtime、client event、managed migration、历史写回与 Harness
   wiring 的累计广覆盖 Gate：`1467 passed, 3 skipped`，退出码 0；第七轮整改后
   受影响域复验 `230 passed`，CI 原始六个 Agent 分片复验
-  `1342 passed, 3 skipped`，退出码均为 0。
+  `1342 passed, 3 skipped`，第八轮生产 fail-closed 整改后受影响域
+  `233 passed`、相关 Executor/Kernel/Runtime/write 分片
+  `1246 passed, 3 skipped`，退出码均为 0。
 - Agent trajectory scorer 与历史轨迹门禁已覆盖 9 个 mandatory scenarios。
 - TypeScript `npx tsc --noEmit`：PASS。
-- Mobile 完整 Gate：`279` 个 suites、`2155 passed`、`1 skipped`，退出码 0；
+- Mobile 完整 Gate：`279` 个 suites、`2156 passed`、`1 skipped`，退出码 0；
   React Query 测试 GC timer 已不再阻塞 Jest 退出。Expo lint `0 errors`，保留
   `93` 条既有 warning。
 - Python 变更文件 Ruff、文档漂移、Dossier 一致性和 `git diff --check`：PASS。
@@ -180,8 +182,21 @@ RequirementAdmission:
   `1342 passed, 3 skipped`；Mobile `279` suites、`2155 passed, 1 skipped`；
   TypeScript、lint、Ruff、密钥扫描、文档漂移、Dossier 一致性、App Store 静态
   preflight 和零成本 Harness 全部通过。
+- 第八轮独立 reviewer 仍给出 **NO-GO**，发现生产回执 builder 会把显式
+  `verified=false` 归一成成功；冲突的资源 ID 和 `record_type/type` alias 在生产
+  路径 fail open；Mobile `onSend` 返回 `undefined` 时仍清除私有图片草稿；损坏的
+  outbox JSON 会永久阻塞终态事件重放。
+- 第八轮整改已完成：写结果显式声明 `verified` 时只接受布尔 `true`；回执身份扫描
+  顶层和嵌套所有候选 ID/资源类型并要求唯一一致；Tool Registry 对冲突或缺失的记录
+  类型 alias 返回不可验证；ChatInputBar 契约收紧为显式布尔接受，只有
+  `accepted === true` 才清理草稿；无法解析或非数组 outbox 会清除损坏容器并从空队列
+  恢复，且不记录原始健康相关内容。
+- 第八轮回归均先红后绿；Mobile 全量 `2156 passed, 1 skipped`，受影响后端
+  `233 passed`，相关 Executor/Kernel/Runtime/write 分片
+  `1246 passed, 3 skipped`，TypeScript、lint、Ruff、diff check 和零成本 Harness
+  全部通过。
 - 在新的独立 reviewer 对全部整改提交给出 GO 前不进入部署。
-- **裁决: PENDING。** 七轮评审失败均已回到实现与测试阶段；等待全量复审。
+- **裁决: PENDING。** 八轮评审失败均已回到实现与测试阶段；等待全量复审。
 
 ## S6 / G5 · 部署与健康
 

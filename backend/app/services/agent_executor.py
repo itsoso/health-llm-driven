@@ -2796,6 +2796,8 @@ def _write_result_payload(
         return None
     if not isinstance(payload, dict):
         return None
+    if "verified" in payload and payload.get("verified") is not True:
+        return None
     if write_result_declares_non_success(
         payload,
         allow_pending=allow_pending,
@@ -3433,32 +3435,43 @@ def _receipt_resource_identity(payload: Dict[str, Any]) -> tuple[Optional[str], 
         "exam_id",
     )
 
-    def read_id(source: Dict[str, Any]) -> Optional[str]:
+    def read_ids(source: Dict[str, Any]) -> list[str]:
+        values: list[str] = []
         for key in id_keys:
             value = source.get(key)
             if isinstance(value, bool) or value in (None, ""):
                 continue
             normalized = str(value).strip()
             if normalized:
-                return normalized
-        return None
+                values.append(normalized)
+        return values
 
-    resource_id = read_id(payload)
-    resource_type = str(payload.get("resource_type") or "").strip() or None
-    if resource_id:
-        return resource_type, resource_id
+    resource_ids = read_ids(payload)
+    resource_types = [
+        normalized
+        for value in (payload.get("resource_type"),)
+        if (normalized := str(value or "").strip())
+    ]
     for container_name in ("resource", "record", "data", "result"):
         nested = payload.get(container_name)
         if not isinstance(nested, dict):
             continue
-        resource_id = read_id(nested)
-        if not resource_id:
-            continue
+        resource_ids.extend(read_ids(nested))
         nested_type = nested.get("resource_type")
         if container_name == "resource" and not nested_type:
             nested_type = nested.get("type")
-        return str(nested_type or "").strip() or resource_type, resource_id
-    return resource_type, None
+        normalized_type = str(nested_type or "").strip()
+        if normalized_type:
+            resource_types.append(normalized_type)
+
+    unique_ids = list(dict.fromkeys(resource_ids))
+    unique_types = list(dict.fromkeys(resource_types))
+    if len(unique_ids) > 1 or len(unique_types) > 1:
+        return None, None
+    return (
+        unique_types[0] if unique_types else None,
+        unique_ids[0] if unique_ids else None,
+    )
 
 
 def _receipt_target_date(
