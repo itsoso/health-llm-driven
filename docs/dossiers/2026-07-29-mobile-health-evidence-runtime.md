@@ -4,7 +4,7 @@
 |---|---|
 | slug | `mobile-health-evidence-runtime` |
 | 创建日期 | 2026-07-29 |
-| 当前阶段 | 干净 main 本地集成已通过 → main CI |
+| 当前阶段 | 首轮 main CI 已拒绝 → 修复与真实 LLM 回归已通过 → replacement CI |
 | 状态 | integrated-main-candidate / not-deployed |
 | 负责 | product owner + Codex |
 | 反馈环 | backend deploy → Web deploy → Mobile OTA → Mobile/Mac 真实路径对照 |
@@ -119,6 +119,33 @@
   - 回退阶段: S3/S5
   - 需重跑 Gate: G3、G4、G5、G6
   - 当前状态: 已解决。`832d73256`；冻结发布事务 69/69，两个独立 G4 复审均 GO。
+- [x] Correction Block — integrated-main CI truth
+  - 触发: 首轮 main CI run `30499545219` 出现四个已完成红灯；G3 立即拒绝，未进入
+    部署。失败项为 `type-drift`、`backend-quality`、`backend-test-d` 和
+    `backend-test-agent-executor-i-z`。
+  - 旧基线:
+    - client types 由本地陈旧 FastAPI/OpenAPI 依赖生成，与 CI 的锁定依赖输出不同；
+    - 两组测试仍要求旧行为：原样释放未验证的历史健康回答，以及 env 直传/live
+      restart/guard 前 seed；
+    - 修改 `agent_executor.py` 后没有在提交记录里附上显式 live LLM 证据。
+  - 新基线:
+    - Mobile/Web types 均恢复为锁定依赖生成的同一 blob
+      `031b9b775c269bfba6ba41cd7d250310d5c7c4c6`；
+    - stale tests 改为锁定当前更严格契约：未验证历史健康回答必须撤销；env 先备份并
+      只上传 root-only candidate；guard restart/contract/rollback floor 通过后才能
+      seed；env-only 去激活必须逐 cgroup PID 证明 `flag=false`；
+    - 显式 live gate 首次因本机生产 PostgreSQL role 不存在而在出网前失败，且
+      OpenAI fallback 429；该次不算证据。按评测脚本声明的无 DB 边界改用
+      `APP_ENV=development`，保持同一 TokenPlan 模型、prompt、数据集和 scorer，
+      第二次真实调用通过：invariants 12/12、health-agent core 50/50、
+      orchestrator 5/5（平均 0.94）、trajectory contract 12/12、goldens 9/9，
+      无 regression。
+  - 修复 commit: `f89ed2d5`；本地复验 agent-executor shard 329/329、d shard
+    388 passed + 1 skipped、release transaction 69/69、双端 TypeScript 0 error、
+    Ruff/diff check PASS。
+  - 回退阶段: G3
+  - 需重跑 Gate: G3 replacement CI；全绿后才可进入 G5/G6
+  - 当前状态: 本地已解决，等待 replacement CI。
 
 ## S0 · 用户需求(逐字)
 
@@ -241,7 +268,8 @@
   `origin/main@b3e15300c`;release-hardening code head
   `832d7325615fdc810bc50112377cf774448a078f`，
   integrated main merge `0d674fa28b503d006d133de9b7107dca2e06936f`，
-  regenerated client types `ab300686f5c14f05bd3f32a951ebe5eb6cfa223e`；
+  regenerated client types `ab300686f5c14f05bd3f32a951ebe5eb6cfa223e`，
+  integrated-CI remediation `f89ed2d5`；
   不代表已部署
 - 实现边界:
   - 这是低背痛 golden safety slice + 可复用 runtime，不是全医学域完成；
@@ -294,7 +322,13 @@
   - feature 20 文件 backend 矩阵 692 passed / 3 skipped，main 新增
     `test_medical_exams.py` 20/20，release transaction 69/69；
   - doc drift、Dossier consistency、Shell 语法、diff check 均 PASS。
-- main CI 真实色: 待 push `main` 后触发并读取远端结果。
+- integrated-CI remediation:
+  - 首轮 run `30499545219` 已有四个 completed failure，故 G3 拒绝且部署暂停；
+  - 修复后 agent-executor CI shard 329/329，d shard 388 passed + 1 skipped，
+    release transaction 69/69，Mobile/Web TypeScript 均 0 error；
+  - health-harness run `8cf7ad14fa3e` 已记录一次不采信的环境失败和随后采信的 live
+    TokenPlan PASS；只保留合成统计，不记录 prompt、回答、密钥或用户数据。
+- main CI 真实色: replacement run 待触发并读取远端结果；禁止以首轮部分绿代替。
 - **裁决**: integrated local candidate ☒ 绿；最终 G3 ☐ 绿 ☒ PENDING main CI
 
 ## G4 · 安全闸
@@ -326,7 +360,7 @@
   production semantic smoke → OTA
 - TestFlight 判断: 当前仅 Python/JSON/TS/TSX/API 变更，无 native/plugin/SDK/runtime
   变更；按发布契约走 OTA，不浪费 TestFlight build。若最终 diff 出现原生变更再改路由。
-- 部署 SHA / 回滚点: 未执行；等待 main CI
+- 部署 SHA / 回滚点: 未执行；等待 replacement main CI
 
 ## G5 · 部署健康闸
 
