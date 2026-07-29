@@ -434,15 +434,69 @@ _STABLE_PREEXISTING_URINARY_DIFFICULTY_PATTERNS = (
         r"(?:difficulty|trouble)(?:with)?"
         r"(?:peeing|urinating|starting(?:to)?urination)"
         r"(?:(?:has|have)?been)?"
-        r"(?:stable(?:foryears)?|unchanged|longstanding|presentforyears)"
+        r"(?:stable(?:foryears)?|unchanged|longterm|longstanding|"
+        r"presentforyears)"
     ),
     re.compile(
-        r"(?:stable|unchanged|longstanding|presentforyears)"
+        r"(?:stable|unchanged|longterm|longstanding|presentforyears)"
         r"(?:historyof|prior|preexisting)?"
         r"(?:difficulty|trouble)(?:with)?"
         r"(?:peeing|urinating|starting(?:to)?urination)"
     ),
 )
+_INCONTINENCE_FINDING_TERMS = frozenset(
+    {
+        "尿失禁",
+        "漏尿",
+        "urinaryincontinence",
+        "leakingurine",
+    }
+)
+_INCONTINENCE_HISTORY_PREFIX_MARKERS = (
+    "以前",
+    "曾经",
+    "去年",
+    "既往",
+    "过去",
+    "从前",
+    "早先",
+    "之前",
+    "usedtobe",
+    "prior",
+    "previous",
+    "previously",
+    "formerly",
+    "historyof",
+)
+_INCONTINENCE_POST_MENTION_HISTORY_PATTERNS = (
+    re.compile(r"(?:去年|多年前|数年前|以前|之前)"),
+    re.compile(r"(?:lastyear|yearsago|previously)"),
+)
+_INCONTINENCE_RESOLUTION_PATTERNS = (
+    re.compile(r"(?:已经|已)(?:好了|恢复了?|消失了?)"),
+    re.compile(
+        r"(?:现在|目前|当前)(?:已经)?"
+        r"(?:没有了?|没了|不存在|消失了?)"
+    ),
+    re.compile(r"(?:resolved|nolonger|nonenow|(?:is|has)?gone)"),
+)
+_INCONTINENCE_RECURRENCE_OR_PERSISTENCE_PATTERNS = (
+    re.compile(r"(?:再次|重新)(?:出现|发生)"),
+    re.compile(r"(?:今天|现在|目前|当前)?又(?:开始)?(?:漏尿|尿失禁)"),
+    re.compile(r"(?:复发|再发)"),
+    re.compile(
+        r"(?:现在|目前|当前)(?:仍然|仍|还)(?:有|存在|持续)?"
+    ),
+    re.compile(r"(?:一直到现在|一直持续到现在|持续至今)"),
+    re.compile(r"(?:还没|尚未|未)(?:好|恢复)"),
+    re.compile(
+        r"(?:again|returned|recurred|cameback|"
+        r"still(?:have|has|do|does|present|ongoing)|"
+        r"still(?:leaking|leaks?)(?:urine)?(?:now)?|"
+        r"(?:hasnot|hasnt|not)(?:yet)?resolved|ongoing)"
+    ),
+)
+_INCONTINENCE_MENTION_LOOKAHEAD = 96
 _STABLE_URINARY_OVERRIDE_TERMS = tuple(
     term
     for term in _LOW_BACK_EMERGENCY_TERMS
@@ -726,10 +780,75 @@ def _has_affirmed_term(text: str, term: str) -> bool:
     while (index := text.find(term, start)) >= 0:
         prefix = text[max(0, index - 64):index]
         scoped_prefix = _NEGATION_SCOPE_BOUNDARY_RE.split(prefix)[-1]
-        if not _negates_following_term(scoped_prefix):
+        affirmed = not _negates_following_term(scoped_prefix)
+        if (
+            affirmed
+            and term in _INCONTINENCE_FINDING_TERMS
+            and not _incontinence_mention_is_current(
+                text,
+                start=index,
+                end=index + len(term),
+                scoped_prefix=scoped_prefix,
+            )
+        ):
+            affirmed = False
+        if affirmed:
             return True
         start = index + len(term)
     return False
+
+
+def _incontinence_mention_is_current(
+    text: str,
+    *,
+    start: int,
+    end: int,
+    scoped_prefix: str,
+) -> bool:
+    """Classify one incontinence mention without suppressing later recurrence."""
+
+    hard_boundary = _HARD_SENTENCE_BOUNDARY_RE.search(text, end)
+    scope_end = min(
+        len(text),
+        end + _INCONTINENCE_MENTION_LOOKAHEAD,
+        hard_boundary.start() if hard_boundary else len(text),
+    )
+    if _has_affirmed_pattern_in_window(
+        text,
+        _INCONTINENCE_RECURRENCE_OR_PERSISTENCE_PATTERNS,
+        start=end,
+        end=scope_end,
+    ):
+        return True
+
+    explicit_history = any(
+        marker in scoped_prefix
+        for marker in _INCONTINENCE_HISTORY_PREFIX_MARKERS
+    ) or any(
+        pattern.search(text, end, scope_end)
+        for pattern in _INCONTINENCE_POST_MENTION_HISTORY_PATTERNS
+    )
+    explicitly_resolved = _has_affirmed_pattern_in_window(
+        text,
+        _INCONTINENCE_RESOLUTION_PATTERNS,
+        start=end,
+        end=scope_end,
+    )
+    return not (explicit_history or explicitly_resolved)
+
+
+def _has_affirmed_pattern_in_window(
+    text: str,
+    patterns: tuple[re.Pattern[str], ...],
+    *,
+    start: int,
+    end: int,
+) -> bool:
+    return any(
+        _is_affirmed_pattern_match(text, match)
+        for pattern in patterns
+        for match in pattern.finditer(text, start, end)
+    )
 
 
 def _has_affirmed_pattern(text: str, pattern: re.Pattern[str]) -> bool:

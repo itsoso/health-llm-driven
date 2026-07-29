@@ -191,6 +191,83 @@ def test_negated_or_unrelated_change_does_not_trigger_guardian(symptoms):
 @pytest.mark.parametrize(
     "symptoms",
     [
+        [
+            "腰痛",
+            "我长期有排尿困难，去年有过尿失禁，现在已经好了",
+        ],
+        ["腰痛", "我以前漏尿，但目前没有了"],
+        ["腰痛", "我曾经尿失禁，现在没有"],
+        [
+            "lower back pain",
+            "had urinary incontinence last year but it resolved",
+        ],
+        ["lower back pain", "used to be leaking urine, no longer"],
+        ["lower back pain", "prior urinary incontinence, none now"],
+    ],
+)
+def test_resolved_historical_incontinence_does_not_trigger_guardian(symptoms):
+    assert "symptoms.cauda_equina_warning" not in _ids(_run(symptoms))
+
+
+@pytest.mark.parametrize(
+    "symptoms",
+    [
+        [
+            "lower back pain",
+            "long-term difficulty peeing that is stable",
+        ],
+        ["long-term difficulty peeing", "lower back pain"],
+    ],
+)
+def test_long_term_urinary_difficulty_does_not_trigger_guardian(symptoms):
+    assert "symptoms.cauda_equina_warning" not in _ids(_run(symptoms))
+
+
+def test_current_retention_overrides_long_term_history_for_guardian():
+    symptoms = [
+        "lower back pain",
+        "long-term difficulty peeing, but today cannot urinate",
+    ]
+
+    assert "symptoms.cauda_equina_warning" in _ids(_run(symptoms))
+
+
+@pytest.mark.parametrize(
+    "symptoms",
+    [
+        ["腰痛", "今天有过尿失禁"],
+        ["腰痛", "去年开始漏尿，到现在还没好"],
+        ["腰痛", "以前尿失禁，一直持续到现在"],
+        ["腰痛", "以前漏尿已好了，但今天又漏尿"],
+        ["腰痛", "曾经尿失禁，现在再次出现"],
+        ["lower back pain", "had urinary incontinence today"],
+        [
+            "lower back pain",
+            "previous urinary incontinence that has not resolved",
+        ],
+        [
+            "lower back pain",
+            (
+                "had urinary incontinence last year "
+                "and still leaking now"
+            ),
+        ],
+        [
+            "lower back pain",
+            (
+                "urinary incontinence resolved last year "
+                "but leaking urine again now"
+            ),
+        ],
+    ],
+)
+def test_current_or_recurrent_incontinence_triggers_guardian(symptoms):
+    assert "symptoms.cauda_equina_warning" in _ids(_run(symptoms))
+
+
+@pytest.mark.parametrize(
+    "symptoms",
+    [
         ["腰痛", "排尿困难已稳定多年，但今天突然完全排不出尿"],
         ["腰痛", "我长期有排尿困难，但今天明显加重了"],
         ["腰痛", "我长期有排尿困难，这两天更严重了"],

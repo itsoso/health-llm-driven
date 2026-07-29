@@ -18,6 +18,9 @@ from app.services.health_evidence import (
     compile_health_evidence_turn,
 )
 from app.services.health_evidence.delivery import sanitize_health_delivery
+from app.services.health_evidence.intent import (
+    affirmed_low_back_discriminator_ids,
+)
 from app.twin.schema import AcuteHealthState, HealthTwin, TwinMeta
 
 
@@ -160,6 +163,91 @@ def test_negated_or_unrelated_change_does_not_override_stable_urinary_history(
     intent = classify_health_intent(query)
 
     assert intent.risk_level == RiskLevel.MEDIUM
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "腰痛，我长期有排尿困难，去年有过尿失禁，现在已经好了",
+        "腰痛，我以前漏尿，但目前没有了",
+        "腰痛，我曾经尿失禁，现在没有",
+        (
+            "lower back pain, had urinary incontinence last year "
+            "but it resolved"
+        ),
+        "lower back pain, used to be leaking urine, no longer",
+        "lower back pain, prior urinary incontinence, none now",
+    ],
+)
+def test_resolved_historical_incontinence_is_not_an_affirmed_current_finding(
+    query,
+):
+    intent = classify_health_intent(query)
+    affirmed = affirmed_low_back_discriminator_ids(query)
+
+    assert intent.risk_level == RiskLevel.MEDIUM
+    assert "low_back.cauda_equina" not in affirmed
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "lower back pain with long-term difficulty peeing that is stable",
+        "long-term difficulty peeing with lower back pain",
+    ],
+)
+def test_long_term_urinary_difficulty_is_not_a_current_cauda_finding(query):
+    intent = classify_health_intent(query)
+    affirmed = affirmed_low_back_discriminator_ids(query)
+
+    assert intent.risk_level == RiskLevel.MEDIUM
+    assert "low_back.cauda_equina" not in affirmed
+
+
+def test_current_retention_overrides_long_term_urinary_difficulty():
+    urinary_change = (
+        "long-term difficulty peeing, but today cannot urinate"
+    )
+    intent = classify_health_intent(
+        f"lower back pain, {urinary_change}"
+    )
+    affirmed = affirmed_low_back_discriminator_ids(urinary_change)
+
+    assert intent.risk_level == RiskLevel.EMERGENCY
+    assert "low_back.cauda_equina" in affirmed
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "腰痛，今天有过尿失禁",
+        "腰痛，去年开始漏尿，到现在还没好",
+        "腰痛，以前尿失禁，一直持续到现在",
+        "腰痛，以前漏尿已好了，但今天又漏尿",
+        "腰痛，曾经尿失禁，现在再次出现",
+        "lower back pain, had urinary incontinence today",
+        (
+            "lower back pain, previous urinary incontinence "
+            "that has not resolved"
+        ),
+        (
+            "lower back pain, had urinary incontinence last year "
+            "and still leaking now"
+        ),
+        (
+            "lower back pain, urinary incontinence resolved last year "
+            "but leaking urine again now"
+        ),
+    ],
+)
+def test_current_or_recurrent_incontinence_is_an_affirmed_emergency_finding(
+    query,
+):
+    intent = classify_health_intent(query)
+    affirmed = affirmed_low_back_discriminator_ids(query)
+
+    assert intent.risk_level == RiskLevel.EMERGENCY
+    assert "low_back.cauda_equina" in affirmed
 
 
 @pytest.mark.parametrize(
