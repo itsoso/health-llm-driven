@@ -397,6 +397,27 @@ _NEGATED_FINDING_IN_MATCH_RE = re.compile(
     r"(?:发麻|麻木|刺痛|无力|乏力|没力|疼痛|疼|痛|困难|费力|"
     r"不畅|感觉减退|感觉迟钝|体重下降|消瘦|暴瘦|癌症|肿瘤|感染)"
 )
+_STABLE_PREEXISTING_URINARY_DIFFICULTY_PATTERNS = (
+    re.compile(
+        r"(?:排尿|小便|尿).{0,6}(?:困难|费力|不畅).{0,12}"
+        r"(?:已|已经)?(?:稳定|多年|数年|很久|一直如此|长期存在|"
+        r"没有(?:新)?变化|没(?:有)?变化|无变化|未变化)"
+    ),
+    re.compile(
+        r"(?:多年|数年|长期|一直|既往).{0,12}"
+        r"(?:存在|有)?(?:排尿|小便|尿).{0,6}(?:困难|费力|不畅)"
+    ),
+    re.compile(
+        r"(?:difficulty|trouble)(?:with)?"
+        r"(?:peeing|urinating|starting(?:to)?urination).{0,16}"
+        r"(?:stable|unchanged|longstanding|presentforyears)"
+    ),
+    re.compile(
+        r"(?:stable|unchanged|longstanding|presentforyears).{0,16}"
+        r"(?:difficulty|trouble)(?:with)?"
+        r"(?:peeing|urinating|starting(?:to)?urination)"
+    ),
+)
 
 
 def classify_health_intent(
@@ -448,15 +469,36 @@ def affirmed_low_back_discriminator_ids(query: str) -> frozenset[str]:
     for discriminator_id, terms in (
         _AFFIRMED_LOW_BACK_DISCRIMINATOR_TERMS.items()
     ):
+        candidate_text = normalized
+        if discriminator_id == "low_back.cauda_equina":
+            candidate_text = _without_stable_preexisting_urinary_difficulty(
+                normalized
+            )
         patterns = _AFFIRMED_LOW_BACK_DISCRIMINATOR_PATTERNS[
             discriminator_id
         ]
-        if any(_has_affirmed_term(normalized, term) for term in terms) or any(
-            _has_affirmed_pattern(normalized, pattern)
+        if any(
+            _has_affirmed_term(candidate_text, term) for term in terms
+        ) or any(
+            _has_affirmed_pattern(candidate_text, pattern)
             for pattern in patterns
         ):
             affirmed.add(discriminator_id)
     return frozenset(affirmed)
+
+
+def _without_stable_preexisting_urinary_difficulty(text: str) -> str:
+    """Remove only explicitly stable historical urinary-difficulty findings.
+
+    Stable prior urinary symptoms are not evidence of a *new* cauda-equina
+    change. Any separate current retention, incontinence, saddle sensory change,
+    or bilateral neurologic finding remains in the text and still escalates.
+    """
+
+    remaining = text
+    for pattern in _STABLE_PREEXISTING_URINARY_DIFFICULTY_PATTERNS:
+        remaining = pattern.sub("", remaining)
+    return remaining
 
 
 def infer_low_back_population(query: str) -> str | None:
@@ -519,13 +561,16 @@ def _low_back_risk(normalized_query: str) -> RiskLevel:
         {"low_back.major_trauma", "low_back.systemic_red_flag"}
     ):
         return RiskLevel.HIGH
+    acute_query = _without_stable_preexisting_urinary_difficulty(
+        normalized_query
+    )
     if (
         any(
-            _has_affirmed_term(normalized_query, term)
+            _has_affirmed_term(acute_query, term)
             for term in _LOW_BACK_EMERGENCY_TERMS
         )
         or any(
-            _has_affirmed_pattern(normalized_query, pattern)
+            _has_affirmed_pattern(acute_query, pattern)
             for pattern in _LOW_BACK_EMERGENCY_PATTERNS
         )
     ):

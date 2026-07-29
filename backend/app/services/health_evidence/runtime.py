@@ -398,12 +398,16 @@ def _authority_sources_for_refs(
 ) -> list[dict[str, str]]:
     selected = set(evidence_refs)
     sources: list[dict[str, str]] = []
-    seen: set[tuple[str, str]] = set()
+    seen: set[tuple[str, str, str]] = set()
     for evidence in bundle.accepted:
         if evidence.doc_id not in selected:
             continue
         for source in evidence.sources:
-            key = (source.source, evidence.authority_tier)
+            key = (
+                source.source,
+                source.locator,
+                evidence.authority_tier,
+            )
             if key in seen:
                 continue
             seen.add(key)

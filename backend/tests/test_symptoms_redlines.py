@@ -109,6 +109,31 @@ def test_benign_back_pain_does_not_trigger_cauda_equina_warning():
     assert "symptoms.cauda_equina_warning" not in _ids(
         _run(["腰痛，不是排尿困难，只是尿频"])
     )
+    assert "symptoms.cauda_equina_warning" not in _ids(
+        _run(["腰痛", "只有右侧坐骨神经痛但症状稳定，没有无力"])
+    )
+    assert "symptoms.cauda_equina_warning" not in _ids(
+        _run(["腰痛", "排尿困难已稳定多年，今天没有新变化"])
+    )
+    assert "symptoms.cauda_equina_warning" not in _ids(
+        _run(
+            [
+                "lower back pain",
+                (
+                    "difficulty peeing has been stable for years "
+                    "and is unchanged"
+                ),
+            ]
+        )
+    )
+    assert "symptoms.cauda_equina_warning" not in _ids(
+        _run(
+            [
+                "腰痛很严重，但不是突然出现，也没有快速加重",
+                "没有双腿、会阴或大小便变化",
+            ]
+        )
+    )
     for phrase in (
         "排尿不困难",
         "双腿不麻木，也不无力",
@@ -132,6 +157,23 @@ def test_natural_cauda_equina_phrasing_still_triggers_warning():
 
     for symptoms in scenarios:
         assert "symptoms.cauda_equina_warning" in _ids(_run(symptoms))
+
+
+@pytest.mark.parametrize(
+    "symptoms",
+    [
+        ["腰痛", "排尿困难已稳定多年，但今天突然完全排不出尿"],
+        [
+            "lower back pain",
+            (
+                "difficulty peeing has been stable for years, "
+                "but today I cannot empty my bladder"
+            ),
+        ],
+    ],
+)
+def test_stable_urinary_history_never_masks_a_new_guardian_warning(symptoms):
+    assert "symptoms.cauda_equina_warning" in _ids(_run(symptoms))
 
 
 def test_negated_persistent_red_flags_do_not_trigger_warning():

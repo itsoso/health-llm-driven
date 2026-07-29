@@ -20,6 +20,7 @@ CLINICAL_RELEASE_HOLD_DOCUMENT_IDS = frozenset(
         "claim:c_chronic_low_back_holistic_care_boundary",
         "entity:condition:low-back-pain",
         "eval:low_back_neurologic_red_flags",
+        "eval:low_back_serious_cause_screening",
         "eval:low_back_self_management",
         "eval:low_back_imaging_boundary",
         "eval:chronic_low_back_holistic_care",

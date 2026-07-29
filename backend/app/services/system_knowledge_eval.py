@@ -44,6 +44,7 @@ RANK_PROBE_LIMIT = 30
 _RUNTIME_ONLY_LOW_BACK_EVAL_IDS = frozenset(
     {
         "eval:low_back_neurologic_red_flags",
+        "eval:low_back_serious_cause_screening",
         "eval:low_back_self_management",
         "eval:low_back_imaging_boundary",
         "eval:chronic_low_back_holistic_care",

@@ -108,6 +108,46 @@ def test_affirmation_after_a_negated_clause_still_promotes_emergency(query):
 @pytest.mark.parametrize(
     "query",
     [
+        (
+            "腰痛，只有右侧坐骨神经痛但症状稳定，没有无力，"
+            "也没有大小便或会阴变化"
+        ),
+        "腰痛，我的排尿困难已稳定多年，今天没有新变化",
+        (
+            "lower back pain, difficulty peeing has been stable for years "
+            "and is unchanged"
+        ),
+        (
+            "腰痛很严重，但不是突然出现，也没有快速加重，"
+            "没有双腿、会阴或大小便变化"
+        ),
+    ],
+)
+def test_isolated_or_stable_findings_do_not_trigger_emergency_triage(query):
+    intent = classify_health_intent(query)
+
+    assert intent.risk_level == RiskLevel.MEDIUM
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "腰痛，排尿困难已稳定多年，但今天突然完全排不出尿",
+        (
+            "lower back pain, difficulty peeing has been stable for years, "
+            "but today I cannot empty my bladder"
+        ),
+    ],
+)
+def test_stable_urinary_history_never_masks_a_new_emergency_change(query):
+    intent = classify_health_intent(query)
+
+    assert intent.risk_level == RiskLevel.EMERGENCY
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
         "腰部疼痛且排不出尿、会阴麻木",
         "腰背疼而且大小便失禁",
         "我的背痛伴随尿潴留",

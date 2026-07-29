@@ -11,6 +11,7 @@ import app.services.clinical_claim_release as release_policy
 import app.services.system_knowledge_service as knowledge_module
 from app.models.system_knowledge import KBDocument
 from app.services.health_evidence.authority import (
+    OFFICIAL_SOURCE_REGISTRY,
     route_authority_results as _route_authority_results,
 )
 from app.services.system_knowledge_eval import run_system_kb_eval_cases
@@ -27,6 +28,7 @@ CLAIM_IDS = {
 }
 EVAL_IDS = {
     "eval:low_back_neurologic_red_flags",
+    "eval:low_back_serious_cause_screening",
     "eval:low_back_self_management",
     "eval:low_back_imaging_boundary",
     "eval:chronic_low_back_holistic_care",
@@ -35,7 +37,7 @@ NOW = datetime(2026, 7, 29, tzinfo=UTC)
 OFFICIAL_T1_HOSTS = {
     "www.nice.org.uk",
     "www.nhs.uk",
-    "gravitas.acr.org",
+    "acsearch.acr.org",
     "www.who.int",
 }
 
@@ -76,6 +78,12 @@ def test_low_back_pack_manifest_binds_exact_runtime_only_release_contract():
     )
 
     assert set(pack["claim_ids"]) == CLAIM_IDS
+    assert set(pack["eval_case_ids"]) == EVAL_IDS
+    assert pack["entity_ids"] == ["entity:condition:low-back-pain"]
+    assert manifest["documents_reviewed"] == (
+        len(CLAIM_IDS) + len(EVAL_IDS) + len(pack["entity_ids"])
+    )
+    assert manifest["eval_cases_reviewed"] == len(EVAL_IDS)
     assert (
         pack["decision"]
         == "approved_for_health_evidence_runtime_by_product_owner"
@@ -102,6 +110,12 @@ def test_low_back_pack_manifest_binds_exact_runtime_only_release_contract():
         )
         == set(pack["claim_ids"])
         == CLAIM_IDS
+    )
+    assert EVAL_IDS <= set(
+        release_policy.CLINICAL_RELEASE_HOLD_DOCUMENT_IDS
+    )
+    assert set(pack["entity_ids"]) <= set(
+        release_policy.CLINICAL_RELEASE_HOLD_DOCUMENT_IDS
     )
 
 
@@ -158,12 +172,105 @@ def test_low_back_claims_are_reviewed_t1_and_never_depend_on_raw_dedao():
             and source.get("organization")
             and source.get("title")
             and source.get("version")
+            and source.get("locator")
             for source in metadata["external_sources"]
         ), doc_id
         serialized = json.dumps(claim, ensure_ascii=False).lower()
         assert "dedao:" not in serialized, doc_id
         assert "paid_course_raw" not in serialized, doc_id
         assert "paid-course" not in serialized, doc_id
+
+
+def test_low_back_claims_bind_exact_official_locators_and_triage_boundaries():
+    claims = {
+        row["doc_id"]: row
+        for row in _jsonl_rows("claims.jsonl")
+        if row.get("doc_id") in CLAIM_IDS
+    }
+    emergency = claims["claim:c_low_back_emergency_neurologic_red_flags"]
+    emergency_text = f"{emergency['summary']} {emergency['body']}"
+    assert "任一项" in emergency_text
+    assert "不要求同时出现" in emergency_text
+    assert "若同时出现" not in emergency_text
+    emergency_sources = {
+        item["organization"]: item
+        for item in emergency["metadata"]["external_sources"]
+    }
+    assert (
+        emergency_sources["NICE"]["locator"]
+        == "NG127 recommendation 1.7.3"
+    )
+    assert (
+        emergency_sources["NHS"]["locator"]
+        == "Immediate action required: Call 999 or go to A&E if; "
+        "any one listed symptom"
+    )
+
+    serious = claims["claim:c_low_back_serious_cause_screening_boundary"]
+    assert serious["sources"] == [
+        "nice:ng59",
+        "nhs:back-pain-2026",
+        "acr:low-back-pain-2026",
+    ]
+    serious_sources = {
+        item["organization"]: item
+        for item in serious["metadata"]["external_sources"]
+    }
+    assert (
+        serious_sources["NICE"]["locator"]
+        == "NG59 recommendation 1.1.1"
+    )
+    assert serious_sources["NHS"]["locator"] == (
+        "Urgent advice and Immediate action required sections"
+    )
+    assert serious_sources[
+        "American College of Radiology"
+    ]["locator"] == "Variants 4, 6 and 7"
+
+    imaging = claims["claim:c_low_back_imaging_not_routine_boundary"]
+    imaging_sources = {
+        item["organization"]: item
+        for item in imaging["metadata"]["external_sources"]
+    }
+    imaging_acr = imaging_sources["American College of Radiology"]
+    assert (
+        imaging_acr["source"]
+        == "https://acsearch.acr.org/docs/69483/Narrative/"
+    )
+    assert imaging_acr["locator"] == "Variants 1, 2, 4, 6 and 7"
+    assert (
+        imaging_sources["NICE"]["locator"]
+        == "NG59 recommendations 1.1.4 to 1.1.6"
+    )
+
+    chronic = claims["claim:c_chronic_low_back_holistic_care_boundary"]
+    who = chronic["metadata"]["external_sources"][0]
+    assert who["source"] == (
+        "https://www.who.int/publications/i/item/9789240081789"
+    )
+    assert who["title"] == (
+        "WHO guideline for non-surgical management of chronic primary "
+        "low back pain in adults in primary and community care settings"
+    )
+    assert who["locator"] == (
+        "Chapter 3, Summary Guiding Principle 1 and "
+        "Guiding Principle 4 (PDF p.24)"
+    )
+
+    acr_policy = OFFICIAL_SOURCE_REGISTRY["acr:low-back-pain-2026"]
+    assert acr_policy.hostname == "acsearch.acr.org"
+    assert acr_policy.path_prefix == "/docs/69483/Narrative"
+    assert (
+        acr_policy.canonical_url
+        == "https://acsearch.acr.org/docs/69483/Narrative/"
+    )
+    assert acr_policy.required_query == ()
+
+    who_policy = OFFICIAL_SOURCE_REGISTRY["who:9789240081789"]
+    assert who_policy.path_prefix == "/publications/i/item/9789240081789"
+    assert who_policy.canonical_url == (
+        "https://www.who.int/publications/i/item/9789240081789"
+    )
 
 
 def test_low_back_pack_authority_gate_enforces_exact_applicability_context(db):
@@ -221,6 +328,11 @@ def test_low_back_pack_authority_gate_enforces_exact_applicability_context(db):
         )
         assert {item.doc_id for item in bundle.accepted} == expected_ids
         assert all(source.authority_tier == "T1" for source in bundle.accepted)
+        assert all(
+            source.locator
+            for evidence in bundle.accepted
+            for source in evidence.sources
+        )
 
 
 def test_low_back_pack_rejects_unconfirmed_population_and_use_case(db):

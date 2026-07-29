@@ -55,7 +55,7 @@ OFFICIAL_SOURCE_REGISTRY: Mapping[str, TrustedSourcePolicy] = MappingProxyType({
         path_prefix="/guidance/ng59",
         canonical_url="https://www.nice.org.uk/guidance/ng59",
         title="Low back pain and sciatica in over 16s: assessment and management",
-        version="NG59 updated 2020-12-11",
+        version="NG59; updated 2020-12-11",
     ),
     "nice:ng127": TrustedSourcePolicy(
         authority_tier="T1",
@@ -65,7 +65,7 @@ OFFICIAL_SOURCE_REGISTRY: Mapping[str, TrustedSourcePolicy] = MappingProxyType({
         path_prefix="/guidance/ng127",
         canonical_url="https://www.nice.org.uk/guidance/ng127",
         title="Suspected neurological conditions: recognition and referral",
-        version="NG127 recommendation 1.7.3, accessed 2026-07-29",
+        version="NG127; accessed 2026-07-29",
     ),
     "nhs:back-pain-2026": TrustedSourcePolicy(
         authority_tier="T1",
@@ -75,35 +75,32 @@ OFFICIAL_SOURCE_REGISTRY: Mapping[str, TrustedSourcePolicy] = MappingProxyType({
         path_prefix="/conditions/back-pain",
         canonical_url="https://www.nhs.uk/conditions/back-pain/",
         title="Back pain",
-        version="Reviewed 2026-03-05",
+        version="Page reviewed 2026-03-05",
     ),
     "acr:low-back-pain-2026": TrustedSourcePolicy(
         authority_tier="T1",
         organization="American College of Radiology",
         kind="appropriateness_criteria",
-        hostname="gravitas.acr.org",
-        path_prefix="/ACPortal/TopicNarrativePdf",
-        canonical_url=(
-            "https://gravitas.acr.org/ACPortal/TopicNarrativePdf?topicId=141"
-        ),
-        title="ACR Appropriateness Criteria: Low Back Pain",
+        hostname="acsearch.acr.org",
+        path_prefix="/docs/69483/Narrative",
+        canonical_url="https://acsearch.acr.org/docs/69483/Narrative/",
+        title="ACR Appropriateness Criteria® Low Back Pain",
         version="Revised 2021; accessed 2026-07-29",
-        required_query=(("topicId", "141"),),
     ),
     "who:9789240081789": TrustedSourcePolicy(
         authority_tier="T1",
         organization="World Health Organization",
         kind="guideline",
         hostname="www.who.int",
-        path_prefix="/publications-detail-redirect/9789240081789",
+        path_prefix="/publications/i/item/9789240081789",
         canonical_url=(
-            "https://www.who.int/publications-detail-redirect/9789240081789"
+            "https://www.who.int/publications/i/item/9789240081789"
         ),
         title=(
             "WHO guideline for non-surgical management of chronic primary "
-            "low back pain in adults"
+            "low back pain in adults in primary and community care settings"
         ),
-        version="2023",
+        version="Published 2023-12-07; ISBN 978-92-4-008178-9",
     ),
 })
 
@@ -131,17 +128,21 @@ LOW_BACK_CLAIM_POLICY: Mapping[str, CandidateClaimPolicy] = MappingProxyType({
         populations=frozenset({"adults_16_plus"}),
         use_cases=frozenset({"symptom_triage"}),
         artifact_sha256=(
-            "5db7d6bf292dc6563e7958f05031d2e2ad904cf23c83cbcb952ca24ffd09457f"
+            "66a5a344c3735f596e78367516ea159855862a3bcc875027ed3eb85c8e26a285"
         ),
     ),
     "claim:c_low_back_serious_cause_screening_boundary": CandidateClaimPolicy(
         domain="low_back_pain",
-        source_ids=("nice:ng59",),
+        source_ids=(
+            "nice:ng59",
+            "nhs:back-pain-2026",
+            "acr:low-back-pain-2026",
+        ),
         risk_levels=frozenset({"high", "medium"}),
         populations=frozenset({"adults_16_plus"}),
         use_cases=frozenset({"initial_assessment"}),
         artifact_sha256=(
-            "8e943e3a0caf2b2a903e0d3601c9b163536d88d73e5d7c64d1a63382fb9a1730"
+            "c7fff0ee91b46518296a13a9cad514683a1bb79fdb618f97f1533e24e996718b"
         ),
     ),
     "claim:c_low_back_self_management_activity_boundary": CandidateClaimPolicy(
@@ -151,7 +152,7 @@ LOW_BACK_CLAIM_POLICY: Mapping[str, CandidateClaimPolicy] = MappingProxyType({
         populations=frozenset({"adults_16_plus"}),
         use_cases=frozenset({"self_management_after_red_flag_screen"}),
         artifact_sha256=(
-            "fc9eee179dfa3af79704c867719fe9b060af9f6055ee1e21dc249c912b4f3354"
+            "eca12a58910ce8fb5c6e0a4041fcddb1387d9ef6f16ac1dbab913d97342d249d"
         ),
     ),
     "claim:c_low_back_imaging_not_routine_boundary": CandidateClaimPolicy(
@@ -161,7 +162,7 @@ LOW_BACK_CLAIM_POLICY: Mapping[str, CandidateClaimPolicy] = MappingProxyType({
         populations=frozenset({"adults_16_plus"}),
         use_cases=frozenset({"imaging_decision", "specialist_assessment"}),
         artifact_sha256=(
-            "f57b323f5985e614cf23667db9f59f638502a166a169c3efff147c3c8f50dfe3"
+            "245a4d31984392051f729e0995d2d591b872f2ad2cf82af4727bb24136908848"
         ),
     ),
     "claim:c_chronic_low_back_holistic_care_boundary": CandidateClaimPolicy(
@@ -171,7 +172,7 @@ LOW_BACK_CLAIM_POLICY: Mapping[str, CandidateClaimPolicy] = MappingProxyType({
         populations=frozenset({"adults_16_plus"}),
         use_cases=frozenset({"chronic_primary_care"}),
         artifact_sha256=(
-            "5663d3f22f89c9b2cc753a0d296c4a9c30a3a0d0a98b14b9600b4c60087b45ce"
+            "585d5144323c0d725f2872183f6178ff58180dc141269d487104cb9a42f829f5"
         ),
     ),
 })
@@ -184,6 +185,7 @@ class AuthoritySource:
     organization: str
     title: str
     version: str
+    locator: str = ""
 
     def public_dict(self, *, authority_tier: str) -> dict[str, str]:
         return {
@@ -192,6 +194,7 @@ class AuthoritySource:
             "organization": self.organization,
             "title": self.title,
             "version": self.version,
+            "locator": self.locator,
             "authority_tier": authority_tier,
         }
 
@@ -221,10 +224,14 @@ class AuthorityBundle:
 
     def public_manifest(self) -> dict[str, Any]:
         sources: list[dict[str, str]] = []
-        seen: set[tuple[str, str]] = set()
+        seen: set[tuple[str, str, str]] = set()
         for evidence in self.accepted:
             for source in evidence.sources:
-                key = (source.source, evidence.authority_tier)
+                key = (
+                    source.source,
+                    source.locator,
+                    evidence.authority_tier,
+                )
                 if key in seen:
                     continue
                 seen.add(key)
@@ -464,6 +471,7 @@ def _registered_sources(
                 organization=policy.organization,
                 title=policy.title,
                 version=policy.version,
+                locator=reviewed_sources[index].locator,
             )
         )
     if unused_indexes:
@@ -632,6 +640,7 @@ def _reviewed_sources(raw: Any) -> list[AuthoritySource]:
         }
         if not all(required.values()):
             continue
+        required["locator"] = _text(source.get("locator"))
         sources.append(AuthoritySource(**required))
     return sources
 

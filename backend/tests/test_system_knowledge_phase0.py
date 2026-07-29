@@ -392,6 +392,7 @@ def test_generic_search_excludes_runtime_only_low_back_pack(db):
         "claim:c_chronic_low_back_holistic_care_boundary": "claim",
         "entity:condition:low-back-pain": "entity",
         "eval:low_back_neurologic_red_flags": "eval_case",
+        "eval:low_back_serious_cause_screening": "eval_case",
         "eval:low_back_self_management": "eval_case",
         "eval:low_back_imaging_boundary": "eval_case",
         "eval:chronic_low_back_holistic_care": "eval_case",
