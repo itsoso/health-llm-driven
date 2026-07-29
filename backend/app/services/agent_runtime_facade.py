@@ -617,25 +617,12 @@ class CloudAgentRuntimeFacade:
                 .first()
             )
         from app.services.health_evidence.delivery import (
-            sanitize_health_delivery,
+            project_persisted_health_messages,
         )
 
-        delivery = sanitize_health_delivery(
-            source_query=(
-                str(getattr(source, "content", "") or "")
-                if source is not None
-                else ""
-            ),
-            assistant_content=str(assistant.content or ""),
-            assistant_meta=getattr(assistant, "meta", None),
-            enabled=bool(
-                getattr(
-                    settings,
-                    "health_evidence_runtime_enabled",
-                    False,
-                )
-            ),
-        )
+        delivery = project_persisted_health_messages(
+            (source, assistant) if source is not None else (assistant,)
+        )[-1]
         events: list[dict[str, Any]] = []
         if source is not None:
             events.append({

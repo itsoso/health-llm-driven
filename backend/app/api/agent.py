@@ -590,28 +590,18 @@ def _maybe_genui_chart_events(
         }}]
         if existing_assistant and (existing_assistant.meta or {}).get("client_turn_finalized"):
             from app.services.health_evidence.delivery import (
-                sanitize_health_delivery,
+                project_persisted_health_messages,
             )
-            from app.config import settings as _delivery_settings
 
-            delivery = sanitize_health_delivery(
-                source_query=str(existing_user.content or ""),
-                assistant_content=str(existing_assistant.content or ""),
-                assistant_meta=existing_assistant.meta,
-                enabled=bool(
-                    getattr(
-                        _delivery_settings,
-                        "health_evidence_runtime_enabled",
-                        False,
-                    )
-                ),
-            )
-            if delivery.content:
+            projected = project_persisted_health_messages(
+                (existing_user, existing_assistant)
+            )[-1]
+            if projected.content:
                 replay_events.append({
                     "event": "token",
-                    "data": {"content": delivery.content},
+                    "data": {"content": projected.content},
                 })
-            done_data = delivery.meta
+            done_data = projected.meta
             done_data.update({
                 "conversation_id": existing_assistant.conversation_id,
                 "message_id": existing_assistant.id,
@@ -1133,11 +1123,10 @@ async def get_agent_runtime_run(
 
 def _agent_runtime_replay_events(db: Session, context) -> list[dict] | None:
     """Build a deterministic replay without starting another Executor."""
-    from app.config import settings
     from app.models.agent_conversation import AgentConversation, AgentMessage
     from app.services.agent_runtime import AgentRuntimeCoordinator
     from app.services.health_evidence.delivery import (
-        sanitize_health_delivery,
+        project_persisted_health_messages,
     )
 
     run = AgentRuntimeCoordinator(db).get_run(context.user_id, context.run_id)
@@ -1172,18 +1161,9 @@ def _agent_runtime_replay_events(db: Session, context) -> list[dict] | None:
             .first()
         )
 
-    replay_delivery = sanitize_health_delivery(
-        source_query=(
-            str(getattr(source, "content", "") or "")
-            if source is not None
-            else ""
-        ),
-        assistant_content=str(assistant.content or ""),
-        assistant_meta=getattr(assistant, "meta", None),
-        enabled=bool(
-            getattr(settings, "health_evidence_runtime_enabled", False)
-        ),
-    )
+    replay_delivery = project_persisted_health_messages(
+        (source, assistant) if source is not None else (assistant,)
+    )[-1]
 
     events: list[dict] = []
     if source is not None:
@@ -2570,16 +2550,12 @@ async def get_conversation(
         current_user.id,
     )
 
-    from app.config import settings
     from app.services.health_evidence.delivery import (
-        sanitize_health_delivery,
+        project_persisted_health_messages,
     )
 
-    health_delivery_enabled = bool(
-        getattr(settings, "health_evidence_runtime_enabled", False)
-    )
-    source_query = ""
-    if health_delivery_enabled and msgs and msgs[0].role == "assistant":
+    initial_source_query = None
+    if msgs and msgs[0].role == "assistant":
         previous_user = (
             db.query(AgentMessage)
             .filter(
@@ -2591,35 +2567,37 @@ async def get_conversation(
             .first()
         )
         if previous_user is not None:
-            source_query = str(previous_user.content or "")
+            initial_source_query = str(previous_user.content or "")
 
+    projected_messages = project_persisted_health_messages(
+        [
+            {
+                "role": message.role,
+                "content": message.content,
+                "meta": delivered_metas[index],
+            }
+            for index, message in enumerate(msgs)
+        ],
+        initial_source_query=initial_source_query,
+    )
     delivered_messages = []
-    for index, message in enumerate(msgs):
-        content = str(message.content or "")
-        meta = delivered_metas[index]
-        if message.role == "user":
-            source_query = content
-        elif message.role == "assistant":
-            delivery = sanitize_health_delivery(
-                source_query=source_query,
-                assistant_content=content,
-                assistant_meta=meta,
-                enabled=health_delivery_enabled,
-            )
-            content = delivery.content
-            meta = delivery.meta
+    for message, projection in zip(
+        msgs,
+        projected_messages,
+        strict=True,
+    ):
         delivered_messages.append(
             {
                 "id": message.id,
                 "role": message.role,
-                "content": content,
+                "content": projection.content,
                 "image_url": refresh_chat_image_url_value(
                     message.image_url,
                     current_user.id,
                 ),
                 "rating": message.rating,
                 "created_at": str(message.created_at),
-                "meta": meta,
+                "meta": projection.meta,
             }
         )
 

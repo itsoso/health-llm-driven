@@ -102,7 +102,10 @@ def create_share(
             raise HTTPException(status_code=404, detail="对话不存在")
         msgs = db.query(AgentMessage).filter(
             AgentMessage.conversation_id == conv.id,
-        ).order_by(AgentMessage.created_at).all()
+        ).order_by(
+            AgentMessage.created_at,
+            AgentMessage.id,
+        ).all()
     else:
         conv = db.query(ChatConversation).filter(
             ChatConversation.id == req.conversation_id,
@@ -119,13 +122,34 @@ def create_share(
 
     # 构建消息快照
     messages_snapshot = []
-    for m in msgs:
-        messages_snapshot.append({
+    projected_messages = None
+    if req.source_type == "agent":
+        from app.services.health_evidence.delivery import (
+            project_persisted_health_messages,
+        )
+
+        projected_messages = project_persisted_health_messages(msgs)
+    for index, m in enumerate(msgs):
+        projected = (
+            projected_messages[index]
+            if projected_messages is not None
+            else None
+        )
+        snapshot = {
             "role": m.role,
-            "content": m.content,
+            "content": projected.content if projected else m.content,
             "created_at": m.created_at.isoformat() if m.created_at else None,
             "image_url": getattr(m, "image_url", None),
-        })
+        }
+        if projected is not None and m.role == "assistant":
+            from app.services.health_evidence.delivery import (
+                health_evidence_snapshot_meta,
+            )
+
+            health_meta = health_evidence_snapshot_meta(projected.meta)
+            if health_meta:
+                snapshot["health_meta"] = health_meta
+        messages_snapshot.append(snapshot)
 
     # 检查是否已分享过（复用已有分享）
     existing = db.query(SharedConversation).filter(
@@ -234,15 +258,37 @@ def get_shared_conversation(
         shared.view_count = (shared.view_count or 0) + 1
         db.commit()
 
+    snapshot_messages = list(shared.messages_snapshot)
+    projected_messages = None
+    if shared.source_type == "agent":
+        from app.services.health_evidence.delivery import (
+            project_persisted_health_messages,
+        )
+
+        projected_messages = project_persisted_health_messages(
+            [
+                {
+                    "role": message.get("role"),
+                    "content": message.get("content"),
+                    "meta": message.get("health_meta"),
+                }
+                for message in snapshot_messages
+            ]
+        )
+
     messages = [
         SharedMessageOut(
             role=m["role"],
-            content=m["content"],
+            content=(
+                projected_messages[index].content
+                if projected_messages is not None
+                else m["content"]
+            ),
             created_at=m.get("created_at"),
             image_url=refresh_chat_image_url_value(m.get("image_url"), shared.user_id)
             if m.get("image_url") else None,
         )
-        for m in shared.messages_snapshot
+        for index, m in enumerate(snapshot_messages)
     ]
 
     return SharedConversationOut(

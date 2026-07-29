@@ -891,9 +891,28 @@ def get_desktop_conversation_trace(
         .order_by(AgentMessage.created_at.asc(), AgentMessage.id.asc())
         .all()
     )
-    assistant_messages = [m for m in messages if m.role == "assistant"]
-    latest_assistant = assistant_messages[-1] if assistant_messages else None
-    meta = dict(latest_assistant.meta or {}) if latest_assistant else {}
+    from app.services.health_evidence.delivery import (
+        project_persisted_health_messages,
+    )
+
+    projected_messages = project_persisted_health_messages(messages)
+    assistant_indexes = [
+        index
+        for index, message in enumerate(messages)
+        if message.role == "assistant"
+    ]
+    latest_index = assistant_indexes[-1] if assistant_indexes else None
+    latest_assistant = (
+        messages[latest_index]
+        if latest_index is not None
+        else None
+    )
+    latest_projection = (
+        projected_messages[latest_index]
+        if latest_index is not None
+        else None
+    )
+    meta = dict(latest_projection.meta) if latest_projection else {}
 
     return {
         "conversation": {
@@ -906,10 +925,14 @@ def get_desktop_conversation_trace(
             {
                 "id": m.id,
                 "role": m.role,
-                "content": m.content,
+                "content": projected.content,
                 "created_at": m.created_at.isoformat() if m.created_at else None,
             }
-            for m in messages
+            for m, projected in zip(
+                messages,
+                projected_messages,
+                strict=True,
+            )
         ],
         "assistant_message": {
             "id": latest_assistant.id if latest_assistant else None,

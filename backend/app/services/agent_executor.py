@@ -7838,17 +7838,12 @@ class AgentExecutor:
             }}
             return
         from app.services.health_evidence.delivery import (
-            sanitize_health_delivery,
+            project_persisted_health_messages,
         )
 
-        replay_delivery = sanitize_health_delivery(
-            source_query=str(getattr(user_message, "content", "") or ""),
-            assistant_content=str(assistant.content or ""),
-            assistant_meta=getattr(assistant, "meta", None),
-            enabled=bool(
-                getattr(settings, "health_evidence_runtime_enabled", False)
-            ),
-        )
+        replay_delivery = project_persisted_health_messages(
+            (user_message, assistant)
+        )[-1]
         replay_content = replay_delivery.content
         if replay_content:
             yield {"event": "token", "data": {"content": replay_content}}

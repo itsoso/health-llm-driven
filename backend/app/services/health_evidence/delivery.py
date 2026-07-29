@@ -8,9 +8,12 @@ shortcuts.  It never reconstructs private personal evidence.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from copy import deepcopy
 from dataclasses import dataclass
+import hashlib
 import hmac
+import json
 from typing import Any, Mapping
 
 from .authority import is_current_health_evidence_artifact
@@ -25,12 +28,27 @@ _VERIFIER_VERDICTS = frozenset({"pass", "repair", "block"})
 _SUFFICIENCY_VALUES = frozenset(
     {"sufficient", "clarify", "safe_fallback"}
 )
-_UNVERIFIED_META_KEYS = (
-    "cards",
-    "health_evidence_manifest",
-    "health_evidence_verification",
+_CANONICAL_MANIFEST_KEYS = (
+    "version",
+    "intent",
     "risk_level",
-    "sources_used",
+    "sufficiency",
+    "verifier_verdict",
+    "context_categories_used",
+    "personal_evidence_refs",
+    "authority_evidence_refs",
+    "authority_artifacts",
+    "evidence_refs",
+    "authority_sources",
+    "sources",
+    "missing_discriminators",
+    "urgent_red_flags",
+    "detected_red_flags",
+    "safety_precautions",
+    "gaps",
+    "conflicts",
+    "truncated",
+    "limitations",
 )
 
 
@@ -38,6 +56,16 @@ _UNVERIFIED_META_KEYS = (
 class HealthDelivery:
     """One privacy-safe projection ready for an API response."""
 
+    content: str
+    meta: dict[str, Any]
+    sanitized: bool
+
+
+@dataclass(frozen=True)
+class ProjectedHealthMessage:
+    """One persisted message projected under the current release policy."""
+
+    role: str
     content: str
     meta: dict[str, Any]
     sanitized: bool
@@ -64,6 +92,7 @@ def sanitize_health_delivery(
     assistant_content: str,
     assistant_meta: Any,
     enabled: bool,
+    source_query_bound: bool = True,
 ) -> HealthDelivery:
     """Replace an unverified persisted health answer with a safe projection.
 
@@ -86,15 +115,19 @@ def sanitize_health_delivery(
         if intent.requires_authority
         else _claimed_health_intent_id(meta)
     )
-    if expected_intent_id and has_current_health_verification(
-        meta,
-        intent_id=expected_intent_id,
-        assistant_content=content,
-        expected_risk_level=(
-            intent.risk_level.value
-            if intent.requires_authority
-            else None
-        ),
+    if (
+        source_query_bound
+        and expected_intent_id
+        and has_current_health_verification(
+            meta,
+            intent_id=expected_intent_id,
+            assistant_content=content,
+            expected_risk_level=(
+                intent.risk_level.value
+                if intent.requires_authority
+                else None
+            ),
+        )
     ):
         manifest = meta["health_evidence_manifest"]
         return HealthDelivery(
@@ -108,20 +141,85 @@ def sanitize_health_delivery(
         if intent.requires_authority
         else _claimed_health_risk(meta)
     )
-    for key in _UNVERIFIED_META_KEYS:
-        meta.pop(key, None)
-    meta.update(
-        {
-            "cards": [],
-            "sources_used": [],
-            "health_evidence_replay_sanitized": True,
-        }
-    )
+    meta = {
+        "cards": [],
+        "sources_used": [],
+        "health_evidence_replay_sanitized": True,
+    }
     return HealthDelivery(
         content=unverified_health_delivery_text(claimed_risk),
         meta=meta,
         sanitized=True,
     )
+
+
+def project_persisted_health_messages(
+    messages: Iterable[Mapping[str, Any] | object],
+    *,
+    initial_source_query: str | None = None,
+) -> tuple[ProjectedHealthMessage, ...]:
+    """Project persisted rows using one paired user→assistant policy.
+
+    Mapping rows and ORM/object rows are both accepted.  A health-evidence
+    assistant without a real preceding user row (or an explicitly supplied
+    source query for a paginated window) is not source-bound and therefore
+    fails closed.  Persisted projections always revalidate current artifacts,
+    independently of the synthesis feature flag.
+    """
+
+    source_query = str(initial_source_query or "")
+    source_bound = initial_source_query is not None
+    projected: list[ProjectedHealthMessage] = []
+    for message in messages:
+        if isinstance(message, Mapping):
+            role = str(message.get("role") or "")
+            content = str(message.get("content") or "")
+            raw_meta = message.get("meta")
+        else:
+            role = str(getattr(message, "role", "") or "")
+            content = str(getattr(message, "content", "") or "")
+            raw_meta = getattr(message, "meta", None)
+        meta = dict(raw_meta) if isinstance(raw_meta, Mapping) else {}
+
+        if role == "user":
+            source_query = content
+            source_bound = True
+            projected.append(
+                ProjectedHealthMessage(
+                    role=role,
+                    content=content,
+                    meta=meta,
+                    sanitized=False,
+                )
+            )
+            continue
+        if role != "assistant":
+            projected.append(
+                ProjectedHealthMessage(
+                    role=role,
+                    content=content,
+                    meta=meta,
+                    sanitized=False,
+                )
+            )
+            continue
+
+        delivery = sanitize_health_delivery(
+            source_query=source_query,
+            assistant_content=content,
+            assistant_meta=meta,
+            enabled=True,
+            source_query_bound=source_bound,
+        )
+        projected.append(
+            ProjectedHealthMessage(
+                role=role,
+                content=delivery.content,
+                meta=delivery.meta,
+                sanitized=delivery.sanitized,
+            )
+        )
+    return tuple(projected)
 
 
 def _metadata_claims_health(meta: Mapping[str, Any]) -> bool:
@@ -139,6 +237,67 @@ def _metadata_claims_health(meta: Mapping[str, Any]) -> bool:
             for card in cards
         )
     )
+
+
+def metadata_claims_health(value: Any) -> bool:
+    """Return whether a public payload carries health-evidence release metadata."""
+
+    return (
+        _metadata_claims_health(value)
+        if isinstance(value, Mapping)
+        else False
+    )
+
+
+def health_evidence_snapshot_meta(value: Any) -> dict[str, Any]:
+    """Return the minimal private snapshot proof needed for later revalidation."""
+
+    if not isinstance(value, Mapping):
+        return {}
+    return {
+        key: deepcopy(value[key])
+        for key in (
+            "health_evidence_manifest",
+            "health_evidence_verification",
+        )
+        if key in value
+    }
+
+
+def health_release_policy_fingerprint() -> str:
+    """Hash the release inputs that govern persisted health verification."""
+
+    from app.services.clinical_claim_release import (
+        CLINICAL_RELEASE_HOLD_DOCUMENT_IDS,
+        HEALTH_EVIDENCE_RUNTIME_RELEASED_CLAIM_IDS,
+        HEALTH_EVIDENCE_RUNTIME_SERVING_SCOPE,
+    )
+
+    from .authority import LOW_BACK_CLAIM_POLICY
+
+    payload = {
+        "version": "health-delivery-policy.v2",
+        "manifest_version": _CURRENT_MANIFEST_VERSION,
+        "intent_version": _CURRENT_INTENT_VERSION,
+        "serving_scope": HEALTH_EVIDENCE_RUNTIME_SERVING_SCOPE,
+        "held_document_ids": sorted(
+            CLINICAL_RELEASE_HOLD_DOCUMENT_IDS
+        ),
+        "released_claim_ids": sorted(
+            HEALTH_EVIDENCE_RUNTIME_RELEASED_CLAIM_IDS
+        ),
+        "artifact_sha256": {
+            doc_id: policy.artifact_sha256
+            for doc_id, policy in sorted(LOW_BACK_CLAIM_POLICY.items())
+        },
+    }
+    canonical = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def _claimed_health_intent_id(meta: Mapping[str, Any]) -> str | None:
@@ -313,8 +472,41 @@ def _canonical_verified_meta(
     meta: Mapping[str, Any],
     manifest: Mapping[str, Any],
 ) -> dict[str, Any]:
-    canonical_meta = deepcopy(dict(meta))
-    canonical_manifest = deepcopy(dict(manifest))
+    canonical_manifest = {
+        key: deepcopy(manifest[key])
+        for key in _CANONICAL_MANIFEST_KEYS
+        if key in manifest
+    }
+    verification = meta["health_evidence_verification"]
+    canonical_verification = {
+        "verdict": verification["verdict"],
+        "evidence_refs_used": deepcopy(
+            verification["evidence_refs_used"]
+        ),
+        "released_text_sha256": verification[
+            "released_text_sha256"
+        ],
+        "manifest_sha256": health_manifest_sha256(
+            canonical_manifest
+        ),
+    }
+    canonical_meta: dict[str, Any] = {
+        "health_evidence_manifest": canonical_manifest,
+        "health_evidence_verification": canonical_verification,
+    }
+    completion_status = meta.get("completion_status")
+    if completion_status in {
+        "complete",
+        "interrupted",
+        "failed",
+        "error",
+        "partial",
+    }:
+        canonical_meta["completion_status"] = completion_status
+    if isinstance(meta.get("client_turn_finalized"), bool):
+        canonical_meta["client_turn_finalized"] = meta[
+            "client_turn_finalized"
+        ]
     canonical_meta["cards"] = [
         {
             "type": "health_evidence",
