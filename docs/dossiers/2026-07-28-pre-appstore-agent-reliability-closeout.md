@@ -81,7 +81,8 @@ RequirementAdmission:
   “模型服务不可用”，单模型和多模型链路语义一致。
 - [x] Jest 环境释放 React Query inactive cache 的 GC timer 引用，全量 Mobile
   回归可以自然退出，不再依赖 `--forceExit`。
-- [ ] 完成在线合成评测、独立安全评审、提交、部署和 OTA。
+- [x] 完成在线合成评测与独立安全评审。
+- [ ] 完成主干提交、部署和 OTA。
 - [ ] 完成 TestFlight 239 真机 G6。
 
 ## G3 · 测试闸
@@ -109,10 +110,13 @@ RequirementAdmission:
 - `harness_llm_change_gate.py --base-ref origin/main` 正确阻断本次发布：Executor
   和 trajectory evaluator 均属高风险 LLM 变更，必须先执行 5 个纯合成
   orchestrator 用例的在线模型评测。本 Gate 涉及向阿里云百炼发送约 10 次请求、
-  约 12K token；不含用户、图片、账户或数据库数据，但仍需用户明确授权后执行。
+  约 12K token；不含用户、图片、账户或数据库数据。用户已明确授权，评测使用
+  TokenPlan `MiniMax-M2.5` 完成，结果 `5/5 passed`、平均分 `0.92`。
+- 首次 live 执行因临时 SQLite 缺少 `llm_usage_logs` 被生产配额守卫正确 fail closed；
+  补齐项目完整 ORM schema 后以相同授权范围重跑通过。未关闭或绕过预算守卫，也未
+  使用真实生产健康数据。
 - 页面测试保留既有 React `act(...)` 警告但无失败；不作为真机 G6 的替代证据。
-- **裁决: PENDING。** 本地、离线和静态 Gate 全绿；在线合成评测尚未获数据出境授权，
-  不得提前标记 PASS。
+- **裁决: PASS。** 本地、离线、静态和已授权的在线合成评测全部通过。
 
 ## G4 · 安全闸
 
