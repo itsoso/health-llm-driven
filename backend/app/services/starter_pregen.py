@@ -36,15 +36,16 @@ from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
-# Redis key namespace. v1: bump on any store-shape change so stale entries can't
+# Redis key namespace. v2 rejects every health-evidence query/payload; bumping all
+# namespaces makes any legacy health entries and in-flight claims unreachable.
 # be decoded into the new shape.
-_ENTRY_PREFIX = "starter_pregen:v1"
-_INFLIGHT_PREFIX = "starter_pregen:inflight:v1"
-_METRIC_PREFIX = "starter_pregen:metric:v1"
+_ENTRY_PREFIX = "starter_pregen:v2"
+_INFLIGHT_PREFIX = "starter_pregen:inflight:v2"
+_METRIC_PREFIX = "starter_pregen:metric:v2"
 # Per-user index SET of a user's live entry keys — invalidate_pregen clears via
 # SMEMBERS+DEL rather than a full-keyspace scan_iter (C3: scans are O(keyspace)
 # and ran on EVERY mutation). The index self-expires well beyond any entry TTL.
-_INDEX_PREFIX = "starter_pregen:idx:v1"
+_INDEX_PREFIX = "starter_pregen:idx:v2"
 _INDEX_TTL_SECONDS = 24 * 60 * 60
 # An in-flight claim self-expires so a crashed pregen can't wedge a chip forever.
 _INFLIGHT_TTL_SECONDS = 120
@@ -202,6 +203,15 @@ def write_pregen(
     ttl_seconds: int,
 ) -> None:
     """Persist a pregen entry for `ttl_seconds` + index it. Never raises."""
+    from app.services.health_evidence.delivery import (
+        metadata_claims_health,
+        requires_live_health_executor,
+    )
+
+    if requires_live_health_executor(starter_text, enabled=True):
+        return
+    if metadata_claims_health(payload):
+        return
     try:
         client = _redis()
         if client is None:
@@ -265,6 +275,12 @@ def _should_generate(
     repeated home visits don't re-generate the same (user, text) — single attempt,
     no retry storms. Fail-soft: Redis unavailable → False (skip, no unbounded fan-out).
     """
+    from app.services.health_evidence.delivery import (
+        requires_live_health_executor,
+    )
+
+    if requires_live_health_executor(starter_text, enabled=True):
+        return False
     if not sig_hash:
         return False
     try:
@@ -325,11 +341,23 @@ def try_serve(
         text = (message or "").strip()
         if not text:
             return None
+        from app.services.health_evidence.delivery import (
+            requires_live_health_executor,
+        )
+
+        if requires_live_health_executor(text, enabled=True):
+            return None
 
         # Cheap first: a non-starter message misses on this Redis GET and pays
         # nothing more (no twin build / signal collection).
         entry = read_pregen(user_id, text)
         if not entry:
+            return None
+        from app.services.health_evidence.delivery import (
+            metadata_claims_health,
+        )
+
+        if metadata_claims_health(entry):
             return None
 
         # Recompute the freshness key NOW and compare against what was stored. ANY
@@ -370,8 +398,8 @@ def try_serve(
         if served is None:
             return None
         _incr_metric("hit")
-        events, conv_id, msg_id = served
-        return events, conv_id, msg_id, answer_text
+        events, conv_id, msg_id, delivered_reply = served
+        return events, conv_id, msg_id, delivered_reply
     except Exception as exc:  # noqa: BLE001
         logger.warning("[starter_pregen] try_serve failed (fall through): %s", exc)
         return None
@@ -401,7 +429,7 @@ def _persist_and_build_events(
     client_turn_id: Optional[str],
     sources_used: list,
     generated_at: Any,
-) -> Optional[tuple[list[dict], int, int]]:
+) -> Optional[tuple[list[dict], int, int, str]]:
     """Persist the pregen answer as a normal assistant message and build SSE events.
 
     Mirrors the deterministic-answer replay precedent (GenUI short-circuit): a real
@@ -415,7 +443,17 @@ def _persist_and_build_events(
     svc = AgentConversationService(db)
     thinking_steps = ["正在理解你的问题", "整理回复中"]
 
-    def _replay(existing_user, existing_assistant) -> tuple[list[dict], int, int]:
+    def _replay(
+        existing_user,
+        existing_assistant,
+    ) -> tuple[list[dict], int, int, str]:
+        from app.services.health_evidence.delivery import (
+            project_persisted_health_messages,
+        )
+
+        projected = project_persisted_health_messages(
+            (existing_user, existing_assistant)
+        )[-1]
         events = [{
             "event": "request_persisted",
             "data": {
@@ -424,8 +462,8 @@ def _persist_and_build_events(
                 "client_turn_id": client_turn_id,
                 "replayed": True,
             },
-        }, {"event": "token", "data": {"content": existing_assistant.content}}]
-        done_data = dict(existing_assistant.meta or {})
+        }, {"event": "token", "data": {"content": projected.content}}]
+        done_data = dict(projected.meta)
         done_data.update({
             "conversation_id": existing_assistant.conversation_id,
             "message_id": existing_assistant.id,
@@ -434,7 +472,12 @@ def _persist_and_build_events(
             "replayed": True,
         })
         events.append({"event": "done", "data": done_data})
-        return events, existing_user.conversation_id, existing_assistant.id
+        return (
+            events,
+            existing_user.conversation_id,
+            existing_assistant.id,
+            projected.content,
+        )
 
     claimed_turn = False
     try:
@@ -509,7 +552,7 @@ def _persist_and_build_events(
                 },
             },
         ]
-        return events, conv.id, ai_msg.id
+        return events, conv.id, ai_msg.id, full_reply
     finally:
         if claimed_turn and client_turn_id:
             svc.release_client_turn_execution(user_id, client_turn_id)

@@ -28,7 +28,7 @@ import ChatView from '@/components/assistant/ChatView';
 import LlmModelPicker, { ModelOption } from '@/components/assistant/LlmModelPicker';
 import ConversationHistoryRail from '@/components/assistant/ConversationHistoryRail';
 import { api } from '@/services/api/client';
-import { buildSelectedChatShareText } from '@/components/assistant/shareSelection';
+import { durableSelectedMessageIds } from '@/components/assistant/shareSelection';
 import {
   clearChatScrollTimers,
   scheduleSettledScrollToBottom,
@@ -159,6 +159,8 @@ function AIAssistantInner() {
   const searchParams = useSearchParams();
   const [activeConvId, setActiveConvId] = useState<number | undefined>(undefined);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const messagesRef = useRef<ChatMessage[]>([]);
+  messagesRef.current = messages;
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [convPage, setConvPage] = useState(1);   // 历史记录当前页(1-based)
   const [convTotal, setConvTotal] = useState(0); // 全部对话条数(翻页用)
@@ -421,7 +423,17 @@ function AIAssistantInner() {
         // /agent/stream event shape: { event, data: {content, conversation_id, ...} }
         const type = evt.event ?? evt.type;
         const data = evt.data ?? {};
-        if (type === 'token' && typeof data.content === 'string') {
+        if (type === 'request_persisted') {
+          const durableUserId = Number(data.user_message_id);
+          if (Number.isInteger(durableUserId) && durableUserId > 0) {
+            setMessages(prev => prev.map(message => (
+              message.id === tempUserId
+                ? { ...message, id: durableUserId }
+                : message
+            )));
+          }
+          if (data.conversation_id) realConvId = data.conversation_id;
+        } else if (type === 'token' && typeof data.content === 'string') {
           assistantBuf += data.content;
           // 首 token 落地即清空状态行 (loader 旁的小字), 让正文接管。
           if (statusRef.current !== null) {
@@ -446,6 +458,13 @@ function AIAssistantInner() {
           // 用户感知: 显示"调用工具中"提示一行 (灰色 italic), 不污染主回答
         } else if (type === 'done') {
           if (data.conversation_id) realConvId = data.conversation_id;
+          const durableAssistantId = Number(data.message_id);
+          const persistedAssistantId = (
+            Number.isInteger(durableAssistantId)
+            && durableAssistantId > 0
+          )
+            ? durableAssistantId
+            : tempAssistantId;
           const serverCard = projectServerCards(data.cards, data);
           const medicationTerminal = medicationBatchTerminalFromMeta(data);
           if (medicationTerminal) {
@@ -467,6 +486,7 @@ function AIAssistantInner() {
           setMessages(prev => prev.map((message) => {
             let next = message.id === tempAssistantId ? {
               ...message,
+              id: persistedAssistantId,
               ...perf,
               ...(serverCard ? {
                 card_type: serverCard.type,
@@ -489,7 +509,7 @@ function AIAssistantInner() {
             }
             return next;
           }));
-          setDoneIds(prev => new Set(prev).add(tempAssistantId));
+          setDoneIds(prev => new Set(prev).add(persistedAssistantId));
         } else if (type === 'error') {
           const errMsg = data.message || data.content || evt.message || '未知错误';
           assistantBuf += `\n\n_出错: ${errMsg}_`;
@@ -741,11 +761,28 @@ function AIAssistantInner() {
 
   const shareMessages = async (messageIds?: number[]) => {
     const ids = messageIds ? new Set(messageIds) : selectedMessageIds;
-    const text = buildSelectedChatShareText(messages, ids);
-    if (!text || sharing) return;
+    if (sharing) return;
+    let durableMessageIds: number[];
+    const conversationId = activeConvIdRef.current;
+    try {
+      if (!conversationId) {
+        throw new Error('selected_agent_message_not_durable');
+      }
+      durableMessageIds = durableSelectedMessageIds(
+        messagesRef.current,
+        ids,
+      );
+    } catch {
+      window.alert('请等本轮回答完成并保存后再分享。');
+      return;
+    }
     setSharing(true);
     try {
-      const res = await sharedApi.createTextShare('健康小巴 · 对话节选', text);
+      const res = await sharedApi.createShare(
+        conversationId,
+        'agent',
+        durableMessageIds,
+      );
       const shareUrl = res.data.share_url;
       if (navigator.share) {
         await navigator.share({ title: '健康小巴 · 对话节选', text: '我分享了一段健康小巴对话', url: shareUrl });

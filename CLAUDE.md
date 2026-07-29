@@ -287,7 +287,7 @@ Collectors + Services (L1) ← Garmin/Withings/CGM/化验/基因/环境/补剂/�
 
 | Specialist | 模块 | 职责 |
 |---|---|---|
-| SafetyGuardian | `agents/safety_guardian/` | 59 条确定性规则（药物/基因/急性阈值/CGM/训练负荷/症状急症/ECG房颤/个性化红线） |
+| SafetyGuardian | `agents/safety_guardian/` | 确定性规则（计数以 `docs/_generated/system-map.json` 为准；覆盖药物/基因/急性阈值/CGM/训练负荷/症状急症/ECG房颤/个性化红线） |
 | RecoveryCoach | `agents/recovery_coach/` | Readiness 0–100 加权评分（HRV/睡眠/压力/电量） |
 | FuelStrategist | `agents/fuel_strategist/` | TDEE-摄入缺口 + 蛋白目标 + 基因驱动营养（MTHFR/APOE/FTO） |
 | MovementCoach | `agents/movement_coach/` | ACWR × readiness 决策矩阵 + ACTN3 基因偏好 |
@@ -301,20 +301,22 @@ Collectors + Services (L1) ← Garmin/Withings/CGM/化验/基因/环境/补剂/�
 | LongevitySpecialist | `agents/longevity_specialist/` | PhenoAge(Levine 2018)表型年龄解读 + 缺值列清单 + 委托四件套(抗衰 MVP) |
 | CrossSourceValidator | `agents/cross_source_validator/` | 跨设备(Garmin/Apple Watch/RingConn)同指标差异过大检测(佩戴位移/硬件故障/数据可疑)+ 暂以高优先级源为准 |
 
-**Safety Guardian 规则分类** (`agents/safety_guardian/rules/`, total 64):
-- `vitals.py` (12): BP/HR/SpO2/stress/sleep 急性阈值
-- `labs.py` (9): 肝酶三联/LDL/HbA1c/eGFR/WBC 模式识别 + 高尿酸血症(尿酸≥420μmol/L,自动判 mg/dL,非急症 MEDIUM) + 红细胞系整体偏高(HGB+HCT 同向超上限才触发,MEDIUM,非诊断)
-- `ddi.py` (7): GLP-1×磺脲、华法林×NSAID、SSRI×MAOI 等
-- `dsi.py` (8): 鱼油×抗凝、钙×铁、维K×华法林、圣约翰草、长期抑酸(PPI/P-CAB)×B12/镁/铁化验感知等
-- `pgx.py` (10): 9 条手写(CYP2D6/CYP2C19/SLCO1B1/G6PD/HLA-B*5701/DPYD/ALDH2/MTHFR/VKORC1) + 1 条 CPIC Level-A 表驱动(`pgx_cpic_table.py` 纯数据,无 @register;迭代 TPMT/NUDT15/HLA-B*15:02/HLA-A*31:01/HLA-B*58:01/CYP2C19/CYP2D6/CYP2C9/CYP3A5/CYP2B6/RYR1/CACNA1S)
-- `training_load.py` (3): ACWR 过载/欠训练/零运动
-- `cgm.py` (6): 低血糖/高血糖/TIR/CV/GLP-1 联动
-- `symptoms.py` (5): 症状级急症红线(可疑心脏事件/卒中FAST/急性呼吸困难/急腹症/大病前兆)
-- `cardiac.py` (1): Apple Watch ECG 房颤分类筛查(筛查非诊断, 升级措辞按次数, 给就医动作)
-- `problem_red_lines.py` (1): 数据驱动——把用户已登记 HealthProblem 的 red_lines 与当前症状文本关键词匹配, 命中按 problem 风险等级升级(P0/P1→CRITICAL, P2→HIGH), 给医嘱里的 action
-- `guidance_red_lines.py` (2): R4 越界拦截——扫描 AI 生成指导/总结文本里的量化/命令式饮食处方(`diet_prescription_red_line`→CRITICAL)与命令式体态/训练指令(`movement_imperative_red_line`→HIGH);读 `twin.acute.pending_guidance_texts`(仅 guidance 校验路径临时塞入, builder 永不填充, 默认空=存量评估行为零变化), 与 `services/guidance_validator.py` (token 级 strip/soften 护栏)共享正则
+**Safety Guardian 规则分类** (`agents/safety_guardian/rules/`;
+精确计数以 `docs/_generated/system-map.json` 为准):
+- `vitals.py`: BP/HR/SpO2/stress/sleep 急性阈值
+- `labs.py`: 肝酶三联/LDL/HbA1c/eGFR/WBC 模式识别 + 高尿酸血症(尿酸≥420μmol/L,自动判 mg/dL,非急症 MEDIUM) + 红细胞系整体偏高(HGB+HCT 同向超上限才触发,MEDIUM,非诊断)
+- `ddi.py`: GLP-1×磺脲、华法林×NSAID、SSRI×MAOI 等
+- `dsi.py`: 鱼油×抗凝、钙×铁、维K×华法林、圣约翰草、长期抑酸(PPI/P-CAB)×B12/镁/铁化验感知等
+- `pgx.py`: 手写规则 + CPIC Level-A 表驱动(`pgx_cpic_table.py` 纯数据,无 @register;迭代 TPMT/NUDT15/HLA-B*15:02/HLA-A*31:01/HLA-B*58:01/CYP2C19/CYP2D6/CYP2C9/CYP3A5/CYP2B6/RYR1/CACNA1S)
+- `training_load.py`: ACWR 过载/欠训练/零运动
+- `cgm.py`: 低血糖/高血糖/TIR/CV/GLP-1 联动
+- `symptoms.py`: 症状级急症红线(可疑心脏事件/卒中FAST/急性呼吸困难/急腹症/大病前兆/腰痛严重神经压迫警示)
+- `cardiac.py`: Apple Watch ECG 房颤分类筛查(筛查非诊断, 升级措辞按次数, 给就医动作)
+- `problem_red_lines.py`: 数据驱动——把用户已登记 HealthProblem 的 red_lines 与当前症状文本关键词匹配, 命中按 problem 风险等级升级(P0/P1→CRITICAL, P2→HIGH), 给医嘱里的 action
+- `guidance_red_lines.py`: R4 越界拦截——扫描 AI 生成指导/总结文本里的量化/命令式饮食处方(`diet_prescription_red_line`→CRITICAL)与命令式体态/训练指令(`movement_imperative_red_line`→HIGH);读 `twin.acute.pending_guidance_texts`(仅 guidance 校验路径临时塞入, builder 永不填充, 默认空=存量评估行为零变化), 与 `services/guidance_validator.py` (token 级 strip/soften 护栏)共享正则
 
-> 这些数字由 `scripts/check_doc_drift.py` 在 CI 里校验；规则增删时同步更新该脚本的 `EXPECTED` 常量和本表，否则 CI 挂掉。
+> 规则增删后运行 `scripts/dump_system_map.py` 与
+> `scripts/check_doc_drift.py`；文档不手写架构计数。
 
 **Digital Health Twin** (`app/twin/`):
 - `schema.py` — 14 语义分区 Pydantic 模型（physiological/body_composition/labs/cgm/medication/supplement/genetic/environment/behavioral/acute/mental/chronic/goals/freshness）
@@ -561,7 +563,7 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on push/PR to `main`:
 | 目录 | 职责 |
 |------|------|
 | `backend/app/twin/` | Digital Health Twin 构建 + 缓存 + 格式化 |
-| `backend/app/agents/safety_guardian/` | 63 条安全规则引擎（不依赖 LLM） |
+| `backend/app/agents/safety_guardian/` | 安全规则引擎（不依赖 LLM；计数以 `docs/_generated/system-map.json` 为准） |
 | `backend/app/agents/recovery_coach/` | Readiness 评分 + 恢复行动 |
 | `backend/app/agents/fuel_strategist/` | 营养缺口 + 基因驱动饮食 |
 | `backend/app/agents/movement_coach/` | ACWR + 训练处方 |

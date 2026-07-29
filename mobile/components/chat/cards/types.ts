@@ -63,6 +63,83 @@ export interface ServerCardDescriptor {
   actions?: ChatCardActionDescriptor[];
 }
 
+/**
+ * Privacy-safe public projection emitted by the backend health evidence runtime.
+ *
+ * Values remain `unknown` at the network boundary on purpose: HealthEvidenceCard
+ * allowlists display fields and never serializes arbitrary objects or private
+ * personal evidence values.
+ */
+export interface HealthEvidenceProjectionItem {
+  id?: unknown;
+  label?: unknown;
+  title?: unknown;
+  name?: unknown;
+  question?: unknown;
+  prompt?: unknown;
+  message?: unknown;
+  summary?: unknown;
+  category?: unknown;
+  choices?: unknown;
+  priority?: unknown;
+  urgency?: unknown;
+  severity?: unknown;
+  is_red_flag?: unknown;
+}
+
+export interface HealthEvidenceAuthoritySource {
+  source_id?: unknown;
+  title?: unknown;
+  display_name?: unknown;
+  name?: unknown;
+  source_name?: unknown;
+  organization?: unknown;
+  publisher?: unknown;
+  source_kind?: unknown;
+  kind?: unknown;
+  evidence_level?: unknown;
+}
+
+export interface HealthEvidenceCardData {
+  version?: unknown;
+  intent?: unknown;
+  risk_level?: unknown;
+  sufficiency?: unknown;
+  verifier_verdict?: unknown;
+  context_categories_used?: unknown;
+  evidence_refs?: unknown;
+  authority_evidence_refs?: unknown;
+  authority_sources?: unknown;
+  sources?: unknown;
+  missing_discriminators?: unknown;
+  limitations?: unknown;
+  gaps?: unknown;
+  conflicts?: unknown;
+  truncated?: unknown;
+  red_flags?: unknown;
+  urgent_red_flags?: unknown;
+  detected_red_flags?: unknown;
+  safety_precautions?: unknown;
+}
+
+export interface HealthEvidenceParentReference {
+  messageRef?: number;
+  turnRef?: string;
+}
+
+export interface HealthEvidenceContinuationAnswer {
+  discriminator_id: string;
+  answer: 'yes' | 'no' | 'unknown';
+}
+
+export interface HealthEvidenceContinuationPayload {
+  version: 'health-evidence-continuation.v1';
+  parent_intent_id: string;
+  parent_message_id: number;
+  parent_turn_id?: string;
+  answers: HealthEvidenceContinuationAnswer[];
+}
+
 export type ChatCardActionStyle = 'primary' | 'secondary' | 'danger';
 export type ChatCardActionRuntimeState = 'running' | 'done' | 'error';
 
@@ -100,6 +177,10 @@ export interface ChatCardActionDescriptor {
 
 export interface CardRenderOptions {
   onAction?: (action: ChatCardActionDescriptor, descriptor: ServerCardDescriptor) => void;
+  /** Existing chat-composer path plus optional structured backend context. */
+  onSendSuggestedPrompt?: (prompt: string, extraContext?: string) => void;
+  /** Durable parent identity for a health-evidence continuation. */
+  healthEvidenceParent?: HealthEvidenceParentReference;
   actionStateByKey?: Record<string, ChatCardActionRuntimeState | undefined>;
   onCardDataChange?: (data: any) => void;
   cardActions?: ChatCardActionDescriptor[];

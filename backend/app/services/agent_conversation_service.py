@@ -656,7 +656,12 @@ class AgentConversationService:
             .order_by(AgentMessage.created_at.asc(), AgentMessage.id.asc())
             .all()
         )
-        recent = history[-limit:] if len(history) > limit else history
+        from app.services.health_evidence.delivery import (
+            project_persisted_health_messages,
+        )
+
+        projected = project_persisted_health_messages(history)
+        recent = projected[-limit:] if len(projected) > limit else projected
         out = [{"role": m.role, "content": m.content} for m in recent]
         # R1 长对话折叠(ships-OFF): 溢出部分现状是**静默丢弃**;flag 开且后台已折叠好
         # 恰到最后一条溢出消息时, 前置一条前情摘要(纯增益)。缓存无效/异常 = 现状截断
@@ -666,8 +671,17 @@ class AgentConversationService:
                 from app.services.history_compaction import (
                     build_summary_message, get_valid_fold_summary,
                 )
-                summary = get_valid_fold_summary(
-                    conversation_id, last_overflow_id=history[-limit - 1].id
+                overflow_projection = projected[:-limit]
+                summary = (
+                    None
+                    if any(
+                        message.sanitized
+                        for message in overflow_projection
+                    )
+                    else get_valid_fold_summary(
+                        conversation_id,
+                        last_overflow_id=history[-limit - 1].id,
+                    )
                 )
                 if summary:
                     out = [build_summary_message(summary)] + out

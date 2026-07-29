@@ -1,8 +1,9 @@
 """对话分享 API"""
 import logging
+from collections.abc import Mapping
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from typing import List, Optional
 from datetime import UTC, datetime, timedelta
 
@@ -16,11 +17,39 @@ from app.services.chat_utils import refresh_chat_image_url_value
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/shared", tags=["shared-conversation"])
+_SELECTED_AGENT_SHARE_TITLE = "健康小巴 · 对话节选"
 
 
 class ShareRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     conversation_id: int
     source_type: str = "health"  # health / agent
+    message_ids: Optional[List[int]] = Field(
+        default=None,
+        min_length=1,
+        max_length=100,
+    )
+
+    @field_validator("message_ids")
+    @classmethod
+    def validate_message_ids(
+        cls,
+        value: Optional[List[int]],
+    ) -> Optional[List[int]]:
+        if value is None:
+            return None
+        if any(message_id <= 0 for message_id in value):
+            raise ValueError("message_ids 必须是正整数")
+        if len(value) != len(set(value)):
+            raise ValueError("message_ids 不允许重复")
+        return value
+
+    @model_validator(mode="after")
+    def validate_selected_agent_share(self):
+        if self.message_ids is not None and self.source_type != "agent":
+            raise ValueError("message_ids 仅支持 agent 对话")
+        return self
 
 
 class TextShareRequest(BaseModel):
@@ -85,6 +114,60 @@ def _masked_display_name(user: User) -> Optional[str]:
     return raw_name
 
 
+def _selection_rows(
+    messages: list[AgentMessage],
+    selected_ids: set[int],
+) -> list[tuple[AgentMessage, bool]]:
+    available_ids = {message.id for message in messages}
+    if not selected_ids.issubset(available_ids):
+        raise HTTPException(
+            status_code=400,
+            detail="部分消息不存在或不属于此对话",
+        )
+    if any(
+        message.id in selected_ids
+        and message.role not in {"user", "assistant"}
+        for message in messages
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="仅可分享用户或助理消息",
+        )
+
+    support_ids: set[int] = set()
+    preceding_user: AgentMessage | None = None
+    for message in messages:
+        if message.role == "user":
+            preceding_user = message
+            continue
+        if message.id not in selected_ids or message.role != "assistant":
+            continue
+        if preceding_user is None:
+            raise HTTPException(
+                status_code=400,
+                detail="所选回答缺少可验证的前序用户消息",
+            )
+        support_ids.add(preceding_user.id)
+
+    included_ids = selected_ids | support_ids
+    return [
+        (message, message.id in selected_ids)
+        for message in messages
+        if message.id in included_ids
+    ]
+
+
+def _is_selection_snapshot(messages_snapshot: object) -> bool:
+    return bool(
+        isinstance(messages_snapshot, list)
+        and any(
+            isinstance(message, Mapping)
+            and message.get("selection_share") is True
+            for message in messages_snapshot
+        )
+    )
+
+
 @router.post("/create", response_model=ShareResponse)
 def create_share(
     req: ShareRequest,
@@ -100,9 +183,22 @@ def create_share(
         ).first()
         if not conv:
             raise HTTPException(status_code=404, detail="对话不存在")
-        msgs = db.query(AgentMessage).filter(
+        all_messages = db.query(AgentMessage).filter(
             AgentMessage.conversation_id == conv.id,
-        ).order_by(AgentMessage.created_at).all()
+        ).order_by(
+            AgentMessage.created_at,
+            AgentMessage.id,
+        ).all()
+        if req.message_ids is not None:
+            selected_ids = set(req.message_ids)
+            rows = _selection_rows(all_messages, selected_ids)
+            msgs = [message for message, _selected in rows]
+            selected_flags = [
+                selected for _message, selected in rows
+            ]
+        else:
+            msgs = all_messages
+            selected_flags = [True] * len(msgs)
     else:
         conv = db.query(ChatConversation).filter(
             ChatConversation.id == req.conversation_id,
@@ -113,27 +209,66 @@ def create_share(
         msgs = db.query(ChatMessage).filter(
             ChatMessage.conversation_id == conv.id,
         ).order_by(ChatMessage.created_at).all()
+        selected_flags = [True] * len(msgs)
 
     if not msgs:
         raise HTTPException(status_code=400, detail="对话为空，无法分享")
 
     # 构建消息快照
     messages_snapshot = []
-    for m in msgs:
-        messages_snapshot.append({
+    projected_messages = None
+    if req.source_type == "agent":
+        from app.services.health_evidence.delivery import (
+            project_persisted_health_messages,
+        )
+
+        projected_messages = project_persisted_health_messages(msgs)
+    for index, m in enumerate(msgs):
+        projected = (
+            projected_messages[index]
+            if projected_messages is not None
+            else None
+        )
+        snapshot = {
             "role": m.role,
-            "content": m.content,
+            "content": projected.content if projected else m.content,
             "created_at": m.created_at.isoformat() if m.created_at else None,
             "image_url": getattr(m, "image_url", None),
-        })
+        }
+        if projected is not None and m.role == "assistant":
+            from app.services.health_evidence.delivery import (
+                health_evidence_snapshot_meta,
+            )
+
+            health_meta = health_evidence_snapshot_meta(projected.meta)
+            if health_meta:
+                snapshot["health_meta"] = health_meta
+        if req.message_ids is not None:
+            selected = selected_flags[index]
+            snapshot["selection_share"] = True
+            snapshot["selected"] = selected
+            snapshot["private_support"] = not selected
+        messages_snapshot.append(snapshot)
 
     # 检查是否已分享过（复用已有分享）
-    existing = db.query(SharedConversation).filter(
-        SharedConversation.user_id == current_user.id,
-        SharedConversation.source_type == req.source_type,
-        SharedConversation.source_conversation_id == req.conversation_id,
-        SharedConversation.is_active == True,
-    ).first()
+    existing = None
+    if req.message_ids is None:
+        candidates = db.query(SharedConversation).filter(
+            SharedConversation.user_id == current_user.id,
+            SharedConversation.source_type == req.source_type,
+            SharedConversation.source_conversation_id == req.conversation_id,
+            SharedConversation.is_active.is_(True),
+        ).all()
+        existing = next(
+            (
+                candidate
+                for candidate in candidates
+                if not _is_selection_snapshot(
+                    candidate.messages_snapshot
+                )
+            ),
+            None,
+        )
 
     if existing:
         # 更新快照（对话可能有新消息）
@@ -148,7 +283,11 @@ def create_share(
             user_id=current_user.id,
             source_type=req.source_type,
             source_conversation_id=req.conversation_id,
-            title=conv.title or "分享的对话",
+            title=(
+                _SELECTED_AGENT_SHARE_TITLE
+                if req.message_ids is not None
+                else conv.title or "分享的对话"
+            ),
             messages_snapshot=messages_snapshot,
             sharer_name=_masked_display_name(current_user),
             expires_at=_default_expires_at(),
@@ -218,7 +357,7 @@ def get_shared_conversation(
     """公开访问分享的对话（无需登录）"""
     shared = db.query(SharedConversation).filter(
         SharedConversation.share_token == share_token,
-        SharedConversation.is_active == True,
+        SharedConversation.is_active.is_(True),
     ).first()
     if not shared:
         raise HTTPException(status_code=404, detail="分享链接不存在或已失效")
@@ -234,19 +373,52 @@ def get_shared_conversation(
         shared.view_count = (shared.view_count or 0) + 1
         db.commit()
 
-    messages = [
-        SharedMessageOut(
-            role=m["role"],
-            content=m["content"],
-            created_at=m.get("created_at"),
-            image_url=refresh_chat_image_url_value(m.get("image_url"), shared.user_id)
-            if m.get("image_url") else None,
+    snapshot_messages = list(shared.messages_snapshot)
+    projected_messages = None
+    if shared.source_type == "agent":
+        from app.services.health_evidence.delivery import (
+            project_persisted_health_messages,
         )
-        for m in shared.messages_snapshot
-    ]
+
+        projected_messages = project_persisted_health_messages(
+            [
+                {
+                    "role": message.get("role"),
+                    "content": message.get("content"),
+                    "meta": message.get("health_meta"),
+                }
+                for message in snapshot_messages
+            ]
+        )
+
+    messages = []
+    for index, message in enumerate(snapshot_messages):
+        if message.get("private_support") is True:
+            continue
+        messages.append(
+            SharedMessageOut(
+                role=message["role"],
+                content=(
+                    projected_messages[index].content
+                    if projected_messages is not None
+                    else message["content"]
+                ),
+                created_at=message.get("created_at"),
+                image_url=refresh_chat_image_url_value(
+                    message.get("image_url"),
+                    shared.user_id,
+                )
+                if message.get("image_url")
+                else None,
+            )
+        )
 
     return SharedConversationOut(
-        title=shared.title,
+        title=(
+            _SELECTED_AGENT_SHARE_TITLE
+            if _is_selection_snapshot(snapshot_messages)
+            else shared.title
+        ),
         sharer_name=shared.sharer_name,
         messages=messages,
         created_at=shared.created_at.isoformat() if shared.created_at else "",

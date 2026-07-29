@@ -144,7 +144,9 @@ export interface StreamEvent {
   // 2026-06-12: 本轮调用的 Skill / 工具名 (后端 done.tools_used; 去重保序, 空 [])
   toolsUsed?: string[];
   completionStatus?: 'complete' | 'interrupted' | 'error' | 'unknown';
-  // SSE done 事件里的动态卡片，由 useChatEngine 交给 card registry 渲染
+  // SSE done 事件里的动态卡片，由 useChatEngine 交给 card registry 渲染。
+  // health_evidence_manifest 以 health_evidence card.data 为 Mobile 唯一展示投影，
+  // 不再复制一份可漂移的 UI 状态。
   cards?: StreamCardDescriptor[];
   writeReceipts?: WriteReceipt[];
   medicationBatchDecision?: MedicationBatchStreamDecision;

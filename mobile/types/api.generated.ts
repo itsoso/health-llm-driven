@@ -29927,6 +29927,8 @@ export interface components {
              * @default health
              */
             source_type: string;
+            /** Message Ids */
+            message_ids?: number[] | null;
         };
         /** ShareResponse */
         ShareResponse: {

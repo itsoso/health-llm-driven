@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildSelectedChatShareText } from './shareSelection';
+import {
+  buildSelectedChatShareText,
+  durableSelectedMessageIds,
+} from './shareSelection';
 
 describe('buildSelectedChatShareText', () => {
   it('keeps selected messages in conversation order with roles', () => {
@@ -19,5 +22,20 @@ describe('buildSelectedChatShareText', () => {
       '',
       '— 健康 Agent 对话节选',
     ].join('\n'));
+  });
+});
+
+describe('durableSelectedMessageIds', () => {
+  it('returns positive durable ids in conversation order', () => {
+    expect(durableSelectedMessageIds([
+      { id: 11, role: 'user', content: '问题' },
+      { id: 12, role: 'assistant', content: '回答' },
+    ], new Set([12, 11]))).toEqual([11, 12]);
+  });
+
+  it('fails closed for optimistic local message ids', () => {
+    expect(() => durableSelectedMessageIds([
+      { id: -1, role: 'assistant', content: '仍在生成' },
+    ], new Set([-1]))).toThrow('selected_agent_message_not_durable');
   });
 });

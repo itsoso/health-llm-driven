@@ -212,7 +212,10 @@ def test_desktop_bootstrap_returns_current_user_operating_context(client, db, au
             confidence=0.82,
             evidence_level="B",
             sources=["dedao:qiuzilong-genetics-07", "pubmed:123"],
-            metadata_json={"origin": "down-dedao-llm-wiki"},
+            metadata_json={
+                "origin": "down-dedao-llm-wiki",
+                "review_status": "reviewed",
+            },
             is_archived=False,
         ),
         KBDocument(
@@ -222,7 +225,10 @@ def test_desktop_bootstrap_returns_current_user_operating_context(client, db, au
             entity_id="MTHFR",
             title="MTHFR",
             sources=["dedao:qiuzilong-genetics-07"],
-            metadata_json={"origin": "down-dedao-llm-wiki"},
+            metadata_json={
+                "origin": "down-dedao-llm-wiki",
+                "review_status": "reviewed",
+            },
             is_archived=False,
         ),
         KBDocument(
@@ -230,7 +236,31 @@ def test_desktop_bootstrap_returns_current_user_operating_context(client, db, au
             doc_type="article",
             title="叶酸代谢课程",
             sources=["dedao:qiuzilong-genetics-07"],
-            metadata_json={"origin": "down-dedao-llm-wiki"},
+            metadata_json={
+                "origin": "down-dedao-llm-wiki",
+                "review_status": "reviewed",
+            },
+            is_archived=False,
+        ),
+        KBDocument(
+            doc_id="claim:c_low_back_emergency_neurologic_red_flags",
+            doc_type="claim",
+            title="runtime-only low-back claim must stay hidden",
+            summary="runtime-only low-back summary must stay hidden",
+            sources=["nhs:back-pain-2026"],
+            metadata_json={"review_status": "reviewed"},
+            is_archived=False,
+        ),
+        KBDocument(
+            doc_id="article:draft:must-not-serve",
+            doc_type="article",
+            title="unreviewed draft must stay hidden",
+            summary="unreviewed draft must stay hidden",
+            sources=["internal:draft"],
+            metadata_json={
+                "origin": "down-dedao-llm-wiki",
+                "review_status": "draft",
+            },
             is_archived=False,
         ),
     ])
@@ -240,6 +270,13 @@ def test_desktop_bootstrap_returns_current_user_operating_context(client, db, au
         relation="has_claim",
         confidence=0.8,
         source_claim_id="claim:c_mthfr_c677t_hcy_folate_boundary",
+    ))
+    db.add(KBEdge(
+        src_doc_id="entity:gene:MTHFR",
+        dst_doc_id="claim:c_low_back_emergency_neurologic_red_flags",
+        relation="must_not_leak",
+        confidence=1.0,
+        source_claim_id="claim:c_low_back_emergency_neurologic_red_flags",
     ))
     db.commit()
     supplement = SupplementDefinition(
@@ -332,6 +369,8 @@ def test_desktop_bootstrap_returns_current_user_operating_context(client, db, au
     ]
     assert body["knowledge_summary"]["local_source_summary"]["bridge_manifest"]["pipeline"] == "down_dedao_llm_wiki_bridge_v1"
     assert body["knowledge_summary"]["recent_documents"][0]["doc_id"] == "article:dedao:folate"
+    assert "runtime-only low-back" not in str(body["knowledge_summary"])
+    assert "unreviewed draft" not in str(body["knowledge_summary"])
     recent_types = [record["type"] for record in body["recent_records_summary"]["recent_records"]]
     assert "blood_pressure" in recent_types
     assert "weight" in recent_types

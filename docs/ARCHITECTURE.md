@@ -164,9 +164,8 @@
 ┌────────────────────────────────────────────────────────────────┐
 │  13 Specialists                                               │
 │  ┌─────────────────────────────────────────────────────────┐   │
-│  │ SafetyGuardian  — 64 条确定性规则, 不调 LLM             │   │
-│  │   vitals.py (12) labs.py (7) ddi.py (7) dsi.py (7)     │   │
-│  │   pgx.py (10) training_load.py (3) cgm.py (6)           │   │
+│  │ SafetyGuardian  — 确定性规则, 不调 LLM                 │   │
+│  │   分类/精确计数: docs/_generated/system-map.json       │   │
 │  ├─────────────────────────────────────────────────────────┤   │
 │  │ RecoveryCoach  · MovementCoach  · FuelStrategist        │   │
 │  │ MentalHealthCompanion · KnowledgeLibrarian              │   │
@@ -194,6 +193,47 @@
 └────────────────────────────────────┘
 ```
 
+### Health Evidence Runtime（跨端健康建议真源）
+
+Mobile、Mac、Web 和外部 channel 不各自实现医疗推理。健康建议在
+`AgentExecutor` 内进入同一个服务端 choke point：
+
+```text
+query + frozen HealthTwin
+  → typed health intent / risk / mandatory discriminators
+  → query-specific personal evidence + explicit gaps
+  → internal runtime-only System KB retrieval
+  → authority tier + locator + applicability + immutable artifact check
+  → sufficiency (sufficient / clarify / safe_fallback)
+  → strong model may select approved claim IDs only
+  → deterministic verifier and canonical evidence envelope
+  → Mobile / Mac / Web render the same clinical semantics
+```
+
+低背痛包继续被 `CLINICAL_RELEASE_HOLD_DOCUMENT_IDS` 排除在通用搜索、claim
+详情和 legacy knowledge tool 之外；受控 health-evidence runtime 通过另一份精确
+allowlist 只读取经 product owner 确认、T1 官方来源验证的 runtime-only claim，
+不主张独立临床签署，并在每次生成和读取时重新验证 artifact 与适用性。Entity/eval
+文档不作为用户回答证据。Dedao 只用于离线主题发现和解释结构，raw 内容或付费文本
+不能进入 runtime。
+
+持久化答案不因 synthesis feature flag 关闭而跳过撤销校验。历史、重复回放、模型
+上下文、compaction、Desktop trace、cloud facade、pregen 和公开 agent share
+统一经过 paired user→assistant projection；claim 被移出 allowlist 或 artifact
+变化时，旧正文降级为确定性安全提示。读取时由 `source_query` 可重建的风险作为
+下界：sealed manifest 可以记录 frozen Twin/SafetyGuardian 带来的更高风险，但绝不
+允许低于问题文本本身已明确的风险。
+
+Mobile/Web 的对话节选分享只提交 authenticated conversation ID 与 durable message
+IDs。后端自行读取配对问题和最小 verification proof，公开页每次访问重新投影；客户端
+不能提交 answer、manifest 或 proof。所有节选分享使用服务端中性标题，读取旧链接时
+也不复用可能含症状的原会话标题。`/shared/create-text` 仅用于用户自拟的普通文本。
+
+低背痛时序规则按每次症状提及分别解析既往、已缓解、持续/复发、否定和当前状态，
+并遵循“当前变化优先”：只有明确的既往稳定/已停止且没有后续当前变化的泌尿症状
+可从新发马尾风险判断中排除；任何当前尿潴留、失禁、鞍区/会阴感觉变化或明确的
+新发/持续/复发/加重对比都会覆盖既往描述并进入急症分流。
+
 ### HealthTwin 15 分区
 
 `backend/app/twin/schema.py`:
@@ -215,21 +255,24 @@
 
 辅助: **DataFreshness** 标记每个分区新鲜度(>X 小时视为过期, LLM prompt 里附提示)。
 
-### Safety Guardian 规则分类(64 条)
+### Safety Guardian 规则分类
+
+精确计数只引用 `docs/_generated/system-map.json`，不在手写文档中复制。
 
 `backend/app/agents/safety_guardian/rules/`:
 
-- `vitals.py` (12): BP/HR/SpO2/stress/sleep 急性阈值
-- `labs.py` (9): 肝酶三联/LDL/HbA1c/eGFR/WBC 模式识别 + 高尿酸血症 + 红细胞系整体偏高(HGB+HCT 同向超上限才触发, MEDIUM, 非诊断)
-- `ddi.py` (7): 药-药相互作用(GLP-1×磺脲, SSRI×MAOI 等)
-- `dsi.py` (7): 药-补剂相互作用(鱼油×抗凝, 钙×铁)
-- `pgx.py` (10): 9 条手写(CYP2D6/CYP2C19/SLCO1B1/G6PD/HLA-B*5701/DPYD/ALDH2/MTHFR/VKORC1) + 1 条 CPIC Level-A 表驱动规则, 表数据在 `pgx_cpic_table.py`(纯数据, 无 @register): TPMT/NUDT15/UGT1A1/HLA-B*15:02/HLA-A*31:01/HLA-B*58:01/CYP2C19/CYP2D6/CYP2C9/CYP3A5/CYP2B6/RYR1/CACNA1S
-- `training_load.py` (3): ACWR 过载/欠训练/零运动
-- `cgm.py` (6): 低血糖/高血糖/TIR/CV/GLP-1 联动
-- `symptoms.py` (5)/`cardiac.py` (1)/`problem_red_lines.py` (1): 症状急症 + ECG 房颤 + 数据驱动红线
-- `guidance_red_lines.py` (2): R4 越界拦截——扫描 AI 生成的指导/总结文本里的量化/命令式饮食处方(CRITICAL)与命令式体态/训练指令(HIGH);读 `twin.acute.pending_guidance_texts`(仅 guidance 校验路径临时塞入, builder 永不填充), 与 `services/guidance_validator.py` 共享正则
+- `vitals.py`: BP/HR/SpO2/stress/sleep 急性阈值
+- `labs.py`: 肝酶三联/LDL/HbA1c/eGFR/WBC 模式识别 + 高尿酸血症 + 红细胞系整体偏高(HGB+HCT 同向超上限才触发, MEDIUM, 非诊断)
+- `ddi.py`: 药-药相互作用(GLP-1×磺脲, SSRI×MAOI 等)
+- `dsi.py`: 药-补剂相互作用(鱼油×抗凝, 钙×铁)
+- `pgx.py`: 手写规则 + CPIC Level-A 表驱动规则, 表数据在 `pgx_cpic_table.py`(纯数据, 无 @register): TPMT/NUDT15/UGT1A1/HLA-B*15:02/HLA-A*31:01/HLA-B*58:01/CYP2C19/CYP2D6/CYP2C9/CYP3A5/CYP2B6/RYR1/CACNA1S
+- `training_load.py`: ACWR 过载/欠训练/零运动
+- `cgm.py`: 低血糖/高血糖/TIR/CV/GLP-1 联动
+- `symptoms.py`/`cardiac.py`/`problem_red_lines.py`: 症状急症（含腰痛严重神经压迫/马尾警示分流）+ ECG 房颤 + 数据驱动红线
+- `guidance_red_lines.py`: R4 越界拦截——扫描 AI 生成的指导/总结文本里的量化/命令式饮食处方(CRITICAL)与命令式体态/训练指令(HIGH);读 `twin.acute.pending_guidance_texts`(仅 guidance 校验路径临时塞入, builder 永不填充), 与 `services/guidance_validator.py` 共享正则
 
-数字由 `scripts/check_doc_drift.py` 校验, 规则增删时同步更新本表 + CLAUDE.md + 该脚本。
+规则增删后运行 `scripts/dump_system_map.py` 与
+`scripts/check_doc_drift.py`；手写文档不复制架构计数。
 
 ### 抗衰 / Longevity 子系统(横切 L1-L4 + 闭环 + 群体)
 
@@ -551,16 +594,15 @@ APNs payload `data.deep_link` → mobile `useNotifications` 接收 → `router.p
 ```
 ./deploy.sh -b
     │
-    ├─ git push (GitHub + kuaishou GitLab 双推)
-    ├─ DB 备份 (保留最近 10 份)
-    ├─ 同步 .env (scp)
-    ├─ ssh 服务器 → git pull + pip install
-    ├─ python scripts/apply_managed_migrations.py
-    ├─ 重启 systemd (health-backend) + Celery worker/beat
-    ├─ Skills manifest 同步 + 验证 (22 个 SKILL.md)
-    └─ 健康度检查 (scripts/system_health_score.py)
-         - score >= 35 (skip_tests) → PASS
-         - 否则自动回滚到上一版本
+    ├─ 获取本地 + 远端 release lease，冻结 exact expected SHA
+    ├─ 备份/恢复演练/站外归档预检，保存健康回滚点
+    ├─ 将候选 backend env 暂存在 root-only release stage
+    ├─ 停 socket/backend/Celery → 撤销 runtime 授权并 fsync
+    ├─ 原子安装规范 flag=false env → 重启并逐 cgroup PID 证明 false
+    ├─ exact SHA checkout（Git bundle 是 fetch 超时回退）+ locked 依赖 + migration
+    ├─ guard 健康/revision/通用 hold contract 通过后才导入 System KB
+    ├─ staged runtime-only KB contract + health score + skills manifest
+    └─ 成功时线上仍为 flag=false；医学运行时另走 ./deploy.sh -H
 ```
 
 健康度维度(总分 60 skip_tests 模式):
@@ -570,11 +612,31 @@ APNs payload `data.deep_link` → mobile `useNotifications` 接收 → `router.p
 
 阈值调参: `scripts/system_health_score.py::FAIL_THRESHOLD` + 各 score 函数内部分段。
 
+`HEALTH_EVIDENCE_RUNTIME_ENABLED=true` 不能通过通用 env/restart 路径上线。受控
+`./deploy.sh -H` 先验证 exact revision、staged KB contract 和 systemd deadman
+能力，再用 `/run` drop-in 做 canary；所有健康、认证、score、语义 contract 通过后，
+才原子提交包含 commit 与 guard hash 的 durable authorization。去掉 canary 并重启
+后，还要证明 backend、Celery worker pool 与 beat 的全部 cgroup PID 都是唯一
+`flag=true`。任何失败必须自动恢复并证明 `flag=false`，否则隔离服务并保留远端
+lease/stage 供人工处置。
+
+通用 deploy/env/restart/rollback 在改代码、配置或知识前都先撤销 durable/runtime
+authorization。SSH/HUP/INT/TERM 导致远端结果不明确时，发布端保留 lease 与 stage，
+禁止启动猜测性的并发 rollback；只有远端命令终止且 schema/auth/quarantine/逐 PID
+终态都已证明，rollback 才报告成功。
+
 ### 12.2 Frontend (`-f`)
 
 ```
-./deploy.sh -f → npm run build → PM2 restart health-frontend
+./deploy.sh -f
+  → 证明服务器 checkout 是 expected SHA 且 clean
+  → npm ci → build → PM2 restart health-frontend
+  → 再证明 exact SHA/clean/revision
 ```
+
+frontend-only 不 checkout 共享仓库、不重启 backend/Celery、不更改 health-evidence
+授权。要部署包含新前端 commit 的版本，必须先走 `--all`/backend 建立同 SHA 后端
+回滚地板。
 
 ### 12.3 Mobile
 
