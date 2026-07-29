@@ -190,6 +190,33 @@ def test_chronic_recovery_question_selects_recovery_but_not_step_count():
     assert packet.conflicts[0].trusted_source == "garmin"
 
 
+def test_urinary_history_chronicity_does_not_select_recovery_wearables():
+    packet = _compile(
+        _rich_twin(),
+        query="腰痛，我长期有排尿困难但一直稳定。",
+        max_evidence_items=12,
+    )
+
+    assert not any(
+        item.category == "wearable" for item in packet.evidence
+    )
+    assert packet.conflicts == ()
+
+
+def test_emergency_low_back_question_omits_optional_wearables():
+    packet = _compile(
+        _rich_twin(),
+        query="慢性腰痛，但现在突然完全排不出尿。",
+        max_evidence_items=12,
+    )
+
+    assert packet.intent.risk_level == RiskLevel.EMERGENCY
+    assert not any(
+        item.category == "wearable" for item in packet.evidence
+    )
+    assert packet.conflicts == ()
+
+
 def test_requested_wearable_domain_without_data_is_an_explicit_gap():
     packet = _compile(
         HealthTwin(meta=TwinMeta(user_id=7, generated_at=NOW)),

@@ -97,9 +97,6 @@ _LOW_BACK_MOVEMENT_TERMS = (
     "physical activity",
 )
 _LOW_BACK_RECOVERY_TERMS = (
-    "慢性",
-    "长期",
-    "反复",
     "恢复",
     "睡眠",
     "失眠",
@@ -108,10 +105,6 @@ _LOW_BACK_RECOVERY_TERMS = (
     "压力",
     "焦虑",
     "情绪",
-    "chronic",
-    "persistent",
-    "long-term",
-    "long term",
     "recovery",
     "sleep",
     "insomnia",
@@ -119,6 +112,26 @@ _LOW_BACK_RECOVERY_TERMS = (
     "stress",
     "anxiety",
     "mood",
+)
+_LOW_BACK_CHRONIC_CONTEXT_PATTERNS = (
+    re.compile(
+        r"(?:慢性|长期|反复)[^，,；;。.!！？?]{0,8}"
+        r"(?:腰(?:部|背|椎|骶部|骶)?(?:痛|疼)|下背痛)"
+    ),
+    re.compile(
+        r"(?:腰(?:部|背|椎|骶部|骶)?(?:痛|疼)|下背痛)"
+        r"[^，,；;。.!！？?]{0,10}"
+        r"(?:慢性|长期|反复|"
+        r"超过?(?:[一二三四五六七八九十\d]+|数|半)个?月|半年|一年)"
+    ),
+    re.compile(
+        r"(?:chronic|persistent|long[- ]term)[^,;.!?]{0,24}"
+        r"(?:low(?:er)?[- ]?back|back pain)"
+    ),
+    re.compile(
+        r"(?:low(?:er)?[- ]?back|back pain)[^,;.!?]{0,24}"
+        r"(?:chronic|persistent|long[- ]term)"
+    ),
 )
 
 
@@ -631,13 +644,19 @@ def _compile_conflicts(
 def _requested_low_back_wearable_profiles(
     intent: HealthIntentEnvelope,
 ) -> tuple[str, ...]:
-    if intent.domain != "low_back_pain":
+    if (
+        intent.domain != "low_back_pain"
+        or intent.risk_level != RiskLevel.MEDIUM
+    ):
         return ()
     query = intent.query.casefold()
     profiles: list[str] = []
     if _query_contains_any(query, _LOW_BACK_MOVEMENT_TERMS):
         profiles.append("movement")
-    if _query_contains_any(query, _LOW_BACK_RECOVERY_TERMS):
+    if _query_contains_any(query, _LOW_BACK_RECOVERY_TERMS) or any(
+        pattern.search(query)
+        for pattern in _LOW_BACK_CHRONIC_CONTEXT_PATTERNS
+    ):
         profiles.append("recovery")
     return tuple(profiles)
 
