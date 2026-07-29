@@ -5,7 +5,11 @@ import pytest
 
 from app.services.agent_executor import AgentExecutor
 from app.services.agent_kernel.intent_frame import build_intent_frame
-from app.services.agent_kernel.tool_gateway import ToolGateway, blocked_tool_result
+from app.services.agent_kernel.tool_gateway import (
+    ToolGateway,
+    ToolPreflightError,
+    blocked_tool_result,
+)
 from app.services.agent_kernel.types import AgentEnvelope, ExecutionContext, ToolExecutionRequest, TurnSnapshot
 
 
@@ -62,22 +66,56 @@ def test_blocked_tool_result_includes_a_recovery_instruction_for_the_agent():
 async def test_gateway_execute_dispatches_allowed_request_exactly_once():
     gateway = ToolGateway(_snapshot("记录午餐吃了牛肉面"))
     calls = []
+    events = []
     request = ToolExecutionRequest(
         tool_name="health_record",
         arguments={"record_type": "diet", "data": {"food_items": "牛肉面"}},
     )
 
     async def dispatch(normalized_request):
+        events.append("dispatch")
         calls.append(normalized_request)
         return '{"id": 1, "resource_type": "diet_record"}'
 
-    result = await gateway.execute(request, dispatch)
+    result = await gateway.execute(
+        request,
+        dispatch,
+        on_decision=lambda _decision: events.append("decision"),
+    )
 
     assert len(calls) == 1
+    assert events == ["decision", "dispatch"]
     assert calls[0].arguments == request.arguments
     assert result.content == '{"id": 1, "resource_type": "diet_record"}'
     assert result.decision is not None
     assert result.decision.action == "allow"
+
+
+@pytest.mark.asyncio
+async def test_gateway_decision_observer_failure_prevents_dispatch():
+    gateway = ToolGateway(_snapshot("记录午餐吃了牛肉面"))
+    dispatched = False
+    request = ToolExecutionRequest(
+        tool_name="health_record",
+        arguments={"record_type": "diet", "data": {"food_items": "牛肉面"}},
+    )
+
+    async def dispatch(_request):
+        nonlocal dispatched
+        dispatched = True
+        return "unexpected"
+
+    def fail_before_dispatch(_decision):
+        raise RuntimeError("private-health-payload")
+
+    with pytest.raises(ToolPreflightError, match="tool_preflight_failed"):
+        await gateway.execute(
+            request,
+            dispatch,
+            on_decision=fail_before_dispatch,
+        )
+
+    assert dispatched is False
 
 
 @pytest.mark.asyncio
@@ -163,6 +201,128 @@ async def test_execute_tool_blocks_policy_denied_health_record_before_dispatch(d
 
 
 @pytest.mark.asyncio
+async def test_execute_tool_decision_failure_is_structured_pre_dispatch_rejection(
+    db,
+    monkeypatch,
+):
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._current_turn_user_message = "记录午餐吃了牛肉面"
+    dispatched = False
+
+    monkeypatch.setattr(
+        "app.services.llm.tool_validator.validate_tool_call",
+        lambda tool_name, args, db, user_id, reference_now=None: {
+            "error": None,
+            "data": args,
+        },
+    )
+
+    def fail_decision_recording(_tool_name, _decision):
+        raise RuntimeError("private-health-payload")
+
+    async def dispatch_should_not_run(_request, _token):
+        nonlocal dispatched
+        dispatched = True
+        return '{"id": 1, "resource_type": "diet_record"}'
+
+    monkeypatch.setattr(
+        executor,
+        "_agent_kernel_record_capability_decision",
+        fail_decision_recording,
+    )
+    monkeypatch.setattr(executor, "_dispatch_tool_request", dispatch_should_not_run)
+
+    result = await executor._execute_tool(
+        "health_record",
+        {"record_type": "diet", "data": {"food_items": "牛肉面"}},
+        None,
+    )
+
+    payload = json.loads(result)
+    assert dispatched is False
+    assert payload["status"] == "rejected"
+    assert payload["dispatch_started"] is False
+    assert payload["error_code"] == "policy_check_failed"
+
+
+@pytest.mark.asyncio
+async def test_structured_successful_read_result_remains_successful_in_telemetry(
+    db,
+    monkeypatch,
+):
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._current_turn_user_message = "查询今天的饮水记录"
+
+    monkeypatch.setattr(
+        "app.services.llm.tool_validator.validate_tool_call",
+        lambda tool_name, args, db, user_id, reference_now=None: {
+            "error": None,
+            "data": args,
+        },
+    )
+
+    async def read_success(_base_url, _headers, _args):
+        return '{"status":"success","records":[]}'
+
+    monkeypatch.setattr(executor, "_exec_health_query", read_success)
+
+    result = await executor._execute_tool(
+        "health_query",
+        {"query_type": "water", "date": "today"},
+        None,
+    )
+
+    assert json.loads(result)["status"] == "success"
+    assert executor._agent_kernel_event_bus is not None
+    tool_result = next(
+        event
+        for event in executor._agent_kernel_event_bus.events
+        if event.name == "agent.tool_result"
+    )
+    assert tool_result.data["success"] is True
+
+
+@pytest.mark.asyncio
+async def test_structured_pending_read_result_is_not_a_tool_failure(
+    db,
+    monkeypatch,
+):
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._current_turn_user_message = "查询今天的饮水记录"
+
+    monkeypatch.setattr(
+        "app.services.llm.tool_validator.validate_tool_call",
+        lambda tool_name, args, db, user_id, reference_now=None: {
+            "error": None,
+            "data": args,
+        },
+    )
+
+    async def read_pending(_base_url, _headers, _args):
+        return '{"status":"pending","records":[]}'
+
+    monkeypatch.setattr(executor, "_exec_health_query", read_pending)
+
+    await executor._execute_tool(
+        "health_query",
+        {"query_type": "water", "date": "today"},
+        None,
+    )
+
+    assert executor._agent_kernel_event_bus is not None
+    tool_result = next(
+        event
+        for event in executor._agent_kernel_event_bus.events
+        if event.name == "agent.tool_result"
+    )
+    assert tool_result.data["success"] is True
+    assert "health_query" not in executor._agent_kernel_tool_failure_tools
+
+
+@pytest.mark.asyncio
 async def test_execute_tool_blocks_health_manage_update_in_read_turn(db, monkeypatch):
     executor = AgentExecutor(db)
     executor._current_user_id = 1
@@ -214,7 +374,10 @@ async def test_execute_tool_allows_explicit_health_record_write(db, monkeypatch)
         None,
     )
 
-    assert calls == [{"record_type": "diet", "data": {"food_items": "牛肉面"}}]
+    assert calls == [{
+        "record_type": "diet",
+        "data": {"food_items": "牛肉面", "source": "agent_text"},
+    }]
     assert '"id": 1' in result
 
 
@@ -248,6 +411,47 @@ async def test_execute_tool_emits_receipt_for_json_encoded_write_arguments(db, m
 
 
 @pytest.mark.asyncio
+async def test_recorded_health_write_with_verified_receipt_is_telemetry_success(
+    db,
+    monkeypatch,
+):
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._current_turn_user_message = "记录午餐吃了牛肉面"
+
+    monkeypatch.setattr(
+        "app.services.llm.tool_validator.validate_tool_call",
+        lambda tool_name, args, db, user_id, reference_now=None: {
+            "error": None,
+            "data": args,
+        },
+    )
+
+    async def fake_exec(_base, _headers, _args):
+        return (
+            '{"status":"recorded","id":42,'
+            '"resource_type":"diet_record","food_items":"牛肉面"}'
+        )
+
+    monkeypatch.setattr(executor, "_exec_health_record", fake_exec)
+
+    await executor._execute_tool(
+        "health_record",
+        {"record_type": "diet", "data": {"food_items": "牛肉面"}},
+        None,
+    )
+
+    assert executor._agent_kernel_event_bus is not None
+    tool_result = next(
+        event
+        for event in executor._agent_kernel_event_bus.events
+        if event.name == "agent.tool_result"
+    )
+    assert tool_result.data["success"] is True
+    assert "health_record" not in executor._agent_kernel_tool_failure_tools
+
+
+@pytest.mark.asyncio
 async def test_shadow_policy_observes_denied_write_without_blocking_dispatch(db, monkeypatch):
     executor = AgentExecutor(db)
     executor._current_user_id = 1
@@ -271,7 +475,10 @@ async def test_shadow_policy_observes_denied_write_without_blocking_dispatch(db,
         None,
     )
 
-    assert calls == [{"record_type": "diet", "data": {"food_items": "牛肉面"}}]
+    assert calls == [{
+        "record_type": "diet",
+        "data": {"food_items": "牛肉面", "source": "agent_text"},
+    }]
     assert executor._agent_kernel_event_bus is not None
     assert "agent.tool_blocked" in [event.name for event in executor._agent_kernel_event_bus.events]
 
@@ -297,6 +504,9 @@ async def test_agent_media_tool_uses_current_image_and_emits_manual_confirmation
                 id="aigc_confirm_0123456789abcdef0123456789abcdef",
                 kind=request.kind,
                 source_message_id=request.source_message_id,
+                model="happyhorse-1.1-i2v",
+                duration_seconds=request.duration_seconds,
+                ratio=request.ratio,
             )
 
     monkeypatch.setattr(
@@ -333,14 +543,21 @@ async def test_agent_media_tool_uses_current_image_and_emits_manual_confirmation
         "data": {
             "confirmation_id": "aigc_confirm_0123456789abcdef0123456789abcdef",
             "kind": "image_to_video",
-            "title": "小巴创作草稿",
-            "provider": "百炼 Wan",
+            "title": "短视频草稿",
+            "provider": "百炼 HappyHorse",
             "source_attached": True,
             "status": "pending",
+            "content_summary": "围绕补水生成健康行动短视频",
+            "content_topics": ["补水"],
+            "duration_seconds": 5,
+            "duration_options": [5, 8, 15],
+            "ratio": "9:16",
+            "resolution": "720P",
+            "generates_audio": True,
         },
         "actions": [{
             "id": "aigc_media.confirm:aigc_confirm_0123456789abcdef0123456789abcdef",
-            "label": "发送给百炼并生成",
+            "label": "确认并生成",
             "action": "aigc_media.confirm",
             "endpoint": "/aigc/media/confirmations/aigc_confirm_0123456789abcdef0123456789abcdef/confirm",
             "requires_manual_confirm": True,
@@ -358,3 +575,27 @@ async def test_agent_media_tool_uses_current_image_and_emits_manual_confirmation
     assert receipt.data["resource_id"] == (
         "aigc_confirm_0123456789abcdef0123456789abcdef"
     )
+    tool_result = next(
+        event
+        for event in executor._agent_kernel_event_bus.events
+        if event.name == "agent.tool_result"
+    )
+    assert tool_result.data["success"] is True
+    assert "draft_aigc_media" not in executor._agent_kernel_tool_failure_tools
+
+
+def test_aigc_media_preview_exposes_categories_without_raw_health_details():
+    from app.services.agent_executor import _aigc_media_content_preview
+
+    preview = _aigc_media_content_preview(
+        kind="text_to_video",
+        prompt="用今天 95 分睡眠、8200 步和晚餐 580 kcal 生成回顾视频",
+    )
+
+    assert preview == {
+        "content_summary": "围绕活动、饮食和睡眠生成健康行动短视频",
+        "content_topics": ["活动", "饮食", "睡眠"],
+    }
+    assert "95" not in preview["content_summary"]
+    assert "8200" not in preview["content_summary"]
+    assert "580" not in preview["content_summary"]

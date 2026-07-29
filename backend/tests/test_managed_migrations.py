@@ -137,6 +137,210 @@ def test_apply_managed_migrations_runs_matching_dialect_once(tmp_path: Path):
     assert count == 1
 
 
+def test_community_peer_support_migration_has_pair_and_is_idempotent(
+    tmp_path: Path,
+):
+    migrations_dir = Path(__file__).resolve().parents[1] / "migrations" / "managed"
+    sqlite_file = (
+        migrations_dir
+        / "20260725_120000_community_peer_support.sqlite.sql"
+    )
+    postgres_file = (
+        migrations_dir
+        / "20260725_120000_community_peer_support.postgresql.sql"
+    )
+    assert sqlite_file.exists()
+    assert postgres_file.exists()
+
+    isolated = tmp_path / "managed"
+    isolated.mkdir()
+    (isolated / sqlite_file.name).write_text(
+        sqlite_file.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE users (id INTEGER PRIMARY KEY)"))
+
+    first = apply_managed_migrations(engine, isolated)
+    second = apply_managed_migrations(engine, isolated)
+
+    inspector = inspect(engine)
+    assert [item.id for item in first.applied] == [
+        "20260725_120000_community_peer_support"
+    ]
+    assert second.applied == []
+    assert {
+        "community_posts",
+        "community_reactions",
+        "community_reports",
+    }.issubset(inspector.get_table_names())
+    assert {
+        "ix_community_posts_status_created",
+        "ix_community_posts_user_id",
+    }.issubset(
+        {index["name"] for index in inspector.get_indexes("community_posts")}
+    )
+
+
+def test_agent_runtime_contract_snapshot_migration_extends_existing_run_ledger(
+    tmp_path: Path,
+):
+    migrations_dir = Path(__file__).resolve().parents[1] / "migrations" / "managed"
+    sqlite_file = (
+        migrations_dir
+        / "20260723_120000_agent_runtime_contract_snapshot.sqlite.sql"
+    )
+    postgres_file = (
+        migrations_dir
+        / "20260723_120000_agent_runtime_contract_snapshot.postgresql.sql"
+    )
+    assert sqlite_file.exists()
+    assert postgres_file.exists()
+
+    isolated = tmp_path / "managed"
+    isolated.mkdir()
+    (isolated / sqlite_file.name).write_text(
+        sqlite_file.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        conn.execute(text(
+            "CREATE TABLE agent_runs (run_id VARCHAR(64) PRIMARY KEY)"
+        ))
+
+    first = apply_managed_migrations(engine, isolated)
+    second = apply_managed_migrations(engine, isolated)
+
+    columns = {column["name"] for column in inspect(engine).get_columns("agent_runs")}
+    assert [item.id for item in first.applied] == [
+        "20260723_120000_agent_runtime_contract_snapshot"
+    ]
+    assert second.applied == []
+    assert {
+        "runtime_contract_version",
+        "tool_registry_digest",
+        "capability_policy_digest",
+    }.issubset(columns)
+
+
+def test_external_agent_channel_session_migration_adds_unique_index_once(
+    tmp_path: Path,
+):
+    migrations_dir = Path(__file__).resolve().parents[1] / "migrations" / "managed"
+    sqlite_file = (
+        migrations_dir
+        / "20260723_130000_external_agent_channel_session_uniqueness.sqlite.sql"
+    )
+    postgres_file = (
+        migrations_dir
+        / "20260723_130000_external_agent_channel_session_uniqueness.postgresql.sql"
+    )
+    assert sqlite_file.exists()
+    assert postgres_file.exists()
+
+    isolated = tmp_path / "managed"
+    isolated.mkdir()
+    (isolated / sqlite_file.name).write_text(
+        sqlite_file.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        conn.execute(text(
+            "CREATE TABLE agent_conversations ("
+            "id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, session_key TEXT)"
+        ))
+        conn.execute(text(
+            "CREATE TABLE agent_messages ("
+            "id INTEGER PRIMARY KEY, conversation_id INTEGER NOT NULL, content TEXT)"
+        ))
+        conn.execute(text(
+            "CREATE TABLE agent_runs ("
+            "run_id TEXT PRIMARY KEY, conversation_id INTEGER, "
+            "input_seq INTEGER, status TEXT NOT NULL, "
+            "current_attempt_id TEXT NOT NULL, retryable BOOLEAN NOT NULL DEFAULT 0, "
+            "error_code TEXT, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, "
+            "finished_at TIMESTAMP)"
+        ))
+        conn.execute(text(
+            "CREATE UNIQUE INDEX uq_agent_runs_active_conversation "
+            "ON agent_runs(conversation_id) "
+            "WHERE conversation_id IS NOT NULL "
+            "AND status IN ('queued', 'running')"
+        ))
+        conn.execute(text(
+            "CREATE UNIQUE INDEX uq_agent_runs_conversation_input_seq "
+            "ON agent_runs(conversation_id, input_seq) "
+            "WHERE conversation_id IS NOT NULL AND input_seq IS NOT NULL"
+        ))
+        conn.execute(text(
+            "CREATE TABLE agent_run_attempts ("
+            "attempt_id TEXT PRIMARY KEY, run_id TEXT NOT NULL, "
+            "status TEXT NOT NULL, error_code TEXT, finished_at TIMESTAMP)"
+        ))
+        conn.execute(text(
+            "INSERT INTO agent_conversations(id, user_id, session_key) VALUES "
+            "(1, 7, 'external-wechat-7'), "
+            "(2, 7, 'external-wechat-7')"
+        ))
+        conn.execute(text(
+            "INSERT INTO agent_messages(id, conversation_id, content) VALUES "
+            "(10, 1, 'first'), (11, 2, 'second')"
+        ))
+        conn.execute(text(
+            "INSERT INTO agent_runs("
+            "run_id, conversation_id, input_seq, status, current_attempt_id"
+            ") VALUES "
+            "('run-first', 1, 1, 'running', 'attempt-first'), "
+            "('run-second', 2, 1, 'running', 'attempt-second'), "
+            "('run-third', 2, 2, 'succeeded', 'attempt-third')"
+        ))
+        conn.execute(text(
+            "INSERT INTO agent_run_attempts("
+            "attempt_id, run_id, status"
+            ") VALUES "
+            "('attempt-first', 'run-first', 'running'), "
+            "('attempt-second', 'run-second', 'running'), "
+            "('attempt-third', 'run-third', 'succeeded')"
+        ))
+
+    first = apply_managed_migrations(engine, isolated)
+    second = apply_managed_migrations(engine, isolated)
+
+    indexes = {
+        item["name"]: item
+        for item in inspect(engine).get_indexes("agent_conversations")
+    }
+    assert [item.id for item in first.applied] == [
+        "20260723_130000_external_agent_channel_session_uniqueness"
+    ]
+    assert second.applied == []
+    assert indexes["uq_agent_conv_user_session_key"]["unique"] == 1
+    with engine.connect() as conn:
+        assert conn.execute(text(
+            "SELECT count(*) FROM agent_messages WHERE conversation_id = 1"
+        )).scalar_one() == 2
+        assert conn.execute(text(
+            "SELECT count(*) FROM agent_runs WHERE conversation_id = 1"
+        )).scalar_one() == 3
+        assert conn.execute(text(
+            "SELECT count(DISTINCT input_seq) FROM agent_runs "
+            "WHERE conversation_id = 1"
+        )).scalar_one() == 3
+        assert conn.execute(text(
+            "SELECT status FROM agent_runs WHERE run_id = 'run-second'"
+        )).scalar_one() == "reconciliation_required"
+        assert conn.execute(text(
+            "SELECT error_code FROM agent_runs WHERE run_id = 'run-second'"
+        )).scalar_one() == "external_session_merge_active_run"
+        assert conn.execute(text(
+            "SELECT status FROM agent_run_attempts "
+            "WHERE attempt_id = 'attempt-second'"
+        )).scalar_one() == "failed"
+
+
 def test_agent_runtime_resilience_migration_extends_existing_ledger_once(
     tmp_path: Path,
 ):
@@ -428,6 +632,71 @@ def test_diet_photo_asset_migrations_create_canonical_owner_scoped_ledger(tmp_pa
                 "origin_message_id, ordinal, classification, intent_decision, lifecycle) VALUES "
                 "('asset-2', 7, 12, '/api/v1/upload/files/diet/7/asset-2.jpg', 'b', 'image/jpeg', "
                 "'chat', 99, 0, 'food', 'auto_record', 'attached')"
+            ))
+
+
+def test_diet_photo_capture_session_migration_adds_owner_scoped_source_identity(
+    tmp_path: Path,
+):
+    migrations_dir = Path(__file__).resolve().parents[1] / "migrations" / "managed"
+    sqlite_file = (
+        migrations_dir
+        / "20260725_120000_add_diet_photo_draft_session.sqlite.sql"
+    )
+    postgres_file = (
+        migrations_dir
+        / "20260725_120000_add_diet_photo_draft_session.postgresql.sql"
+    )
+    assert sqlite_file.exists()
+    assert postgres_file.exists()
+    assert "source_message_id INTEGER" in postgres_file.read_text(encoding="utf-8")
+    assert "uq_diet_photo_drafts_user_source_message" in postgres_file.read_text(
+        encoding="utf-8",
+    )
+
+    isolated = tmp_path / "managed"
+    isolated.mkdir()
+    (isolated / sqlite_file.name).write_text(
+        sqlite_file.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        conn.execute(text(
+            "CREATE TABLE diet_photo_drafts ("
+            "token TEXT PRIMARY KEY, user_id INTEGER NOT NULL"
+            ")"
+        ))
+        conn.execute(text(
+            "INSERT INTO diet_photo_drafts (token, user_id) "
+            "VALUES ('legacy-one', 7)"
+        ))
+
+    result = apply_managed_migrations(engine, isolated)
+
+    assert [migration.id for migration in result.applied] == [
+        "20260725_120000_add_diet_photo_draft_session"
+    ]
+    columns = {
+        column["name"]
+        for column in inspect(engine).get_columns("diet_photo_drafts")
+    }
+    assert "source_message_id" in columns
+    with engine.begin() as conn:
+        conn.execute(text(
+            "UPDATE diet_photo_drafts SET source_message_id=99 "
+            "WHERE token='legacy-one'"
+        ))
+        conn.execute(text(
+            "INSERT INTO diet_photo_drafts "
+            "(token, user_id, source_message_id) VALUES ('other-owner', 8, 99)"
+        ))
+    with pytest.raises(Exception):
+        with engine.begin() as conn:
+            conn.execute(text(
+                "INSERT INTO diet_photo_drafts "
+                "(token, user_id, source_message_id) "
+                "VALUES ('duplicate-session', 7, 99)"
             ))
 
 
@@ -982,3 +1251,123 @@ def test_agent_runtime_migrations_create_content_free_control_plane(tmp_path: Pa
         "uq_agent_runs_conversation_input_seq",
         "ix_agent_runs_current_attempt_id",
     } <= run_indexes
+
+
+def test_community_source_idempotency_migration_deduplicates_and_enforces_index(
+    tmp_path: Path,
+):
+    from sqlalchemy.exc import IntegrityError
+
+    migrations_dir = Path(__file__).resolve().parents[1] / "migrations" / "managed"
+    sqlite_file = (
+        migrations_dir
+        / "20260725_180000_community_source_idempotency.sqlite.sql"
+    )
+    postgres_file = (
+        migrations_dir
+        / "20260725_180000_community_source_idempotency.postgresql.sql"
+    )
+    assert sqlite_file.exists()
+    assert postgres_file.exists()
+
+    isolated = tmp_path / "managed"
+    isolated.mkdir()
+    (isolated / sqlite_file.name).write_text(
+        sqlite_file.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        conn.execute(text(
+            "CREATE TABLE community_posts ("
+            "id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, "
+            "source_type TEXT NOT NULL, source_id INTEGER NOT NULL, "
+            "status TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT)"
+        ))
+        conn.execute(text(
+            "INSERT INTO community_posts "
+            "(id, user_id, source_type, source_id, status, created_at) VALUES "
+            "(1, 7, 'diet_record', 91, 'active', '2026-07-25 10:00:00'), "
+            "(2, 7, 'diet_record', 91, 'active', '2026-07-25 11:00:00'), "
+            "(3, 7, 'diet_record', 91, 'deleted', '2026-07-25 09:00:00')"
+        ))
+
+    result = apply_managed_migrations(engine, isolated)
+
+    assert [item.id for item in result.applied] == [
+        "20260725_180000_community_source_idempotency"
+    ]
+    with engine.connect() as conn:
+        statuses = dict(conn.execute(text(
+            "SELECT id, status FROM community_posts ORDER BY id"
+        )).all())
+    assert statuses == {1: "deleted", 2: "active", 3: "deleted"}
+
+    with pytest.raises(IntegrityError):
+        with engine.begin() as conn:
+            conn.execute(text(
+                "INSERT INTO community_posts "
+                "(id, user_id, source_type, source_id, status, created_at) "
+                "VALUES (4, 7, 'diet_record', 91, 'active', "
+                "'2026-07-25 12:00:00')"
+            ))
+    with engine.begin() as conn:
+        conn.execute(text(
+            "INSERT INTO community_posts "
+            "(id, user_id, source_type, source_id, status, created_at) "
+            "VALUES (5, 7, 'diet_record', 91, 'deleted', "
+            "'2026-07-25 12:00:00')"
+        ))
+
+
+def test_medical_exam_source_fingerprint_migration_enforces_user_scoped_uniqueness(
+    tmp_path: Path,
+):
+    from sqlalchemy.exc import IntegrityError
+
+    migrations_dir = Path(__file__).resolve().parents[1] / "migrations" / "managed"
+    sqlite_file = (
+        migrations_dir
+        / "20260728_120000_medical_exam_source_fingerprint.sqlite.sql"
+    )
+    postgres_file = (
+        migrations_dir
+        / "20260728_120000_medical_exam_source_fingerprint.postgresql.sql"
+    )
+    assert sqlite_file.exists()
+    assert postgres_file.exists()
+
+    isolated = tmp_path / "managed"
+    isolated.mkdir()
+    (isolated / sqlite_file.name).write_text(
+        sqlite_file.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        conn.execute(text(
+            "CREATE TABLE medical_exams ("
+            "id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL)"
+        ))
+
+    result = apply_managed_migrations(engine, isolated)
+    assert [item.id for item in result.applied] == [
+        "20260728_120000_medical_exam_source_fingerprint"
+    ]
+
+    with engine.begin() as conn:
+        conn.execute(text(
+            "INSERT INTO medical_exams "
+            "(id, user_id, source_fingerprint) VALUES (1, 7, 'same-image')"
+        ))
+    with pytest.raises(IntegrityError):
+        with engine.begin() as conn:
+            conn.execute(text(
+                "INSERT INTO medical_exams "
+                "(id, user_id, source_fingerprint) VALUES (2, 7, 'same-image')"
+            ))
+    with engine.begin() as conn:
+        conn.execute(text(
+            "INSERT INTO medical_exams "
+            "(id, user_id, source_fingerprint) VALUES (3, 8, 'same-image')"
+        ))

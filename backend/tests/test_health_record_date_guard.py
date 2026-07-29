@@ -1,10 +1,10 @@
-"""LLM 日期幻觉守门 — 防止 GPT-4o-mini 把今天的记录写到 2023/2024.
+"""LLM 日期幻觉守门 — 防止模型把今天的记录写到错误日期.
 
-走真实链路 _execute_tool (prelude 里的 validate_tool_call 会先 coerce 日期),
+走真实链路 _execute_tool (prelude 里的 validate_tool_call 会校验日期),
 而不是直接打 _exec_health_record, 以免绕过守门.
 """
 import json
-from datetime import datetime, date, timedelta
+from datetime import date, timedelta
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -26,8 +26,8 @@ def _declare_explicit_turn_for_raw_date_guard_contracts(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_overrides_record_date_when_far_past(db):
-    """LLM 给 record_date=2023-10-09, 应覆盖为今天."""
+async def test_rejects_record_date_when_far_past(db):
+    """LLM 给 record_date=2023-10-09, 应拒绝而不是静默改成今天."""
     from app.services.agent_executor import AgentExecutor
 
     executor = AgentExecutor(db)
@@ -39,7 +39,7 @@ async def test_overrides_record_date_when_far_past(db):
         return '{"id": 1, "ok": true}'
 
     with patch.object(executor, '_api_post', new=AsyncMock(side_effect=fake_post)):
-        await executor._execute_tool(
+        result = await executor._execute_tool(
             tool_name="health_record",
             args_raw=json.dumps({
                 "record_type": "diet",
@@ -53,13 +53,8 @@ async def test_overrides_record_date_when_far_past(db):
             user_token=None,
         )
 
-    expected_today = date.today()
-    actual_dates = {(expected_today - timedelta(days=1)).isoformat(),
-                    expected_today.isoformat(),
-                    (expected_today + timedelta(days=1)).isoformat()}
-    assert captured_data.get("record_date") in actual_dates, \
-        f"应覆盖为今天附近, 实际 {captured_data.get('record_date')}"
-    assert "2023" not in captured_data.get("record_date", "")
+    assert captured_data == {}
+    assert "超出可直接记录的日期范围" in result
 
 
 @pytest.mark.asyncio
@@ -82,7 +77,13 @@ async def test_keeps_recent_date(db):
             args_raw=json.dumps({
                 "record_type": "diet",
                 "data": {
-                    "meal_type": "lunch", "food_items": "三明治",
+                    "meal_type": "lunch",
+                    "food_items": "三明治",
+                    "calories": 320,
+                    "protein": 15,
+                    "carbs": 38,
+                    "fat": 12,
+                    "fiber": 4,
                     "record_date": yesterday,
                 },
             }),
@@ -93,7 +94,7 @@ async def test_keeps_recent_date(db):
 
 
 @pytest.mark.asyncio
-async def test_overrides_invalid_format(db):
+async def test_rejects_invalid_format(db):
     from app.services.agent_executor import AgentExecutor
 
     executor = AgentExecutor(db)
@@ -105,7 +106,7 @@ async def test_overrides_invalid_format(db):
         return '{"id": 1}'
 
     with patch.object(executor, '_api_post', new=AsyncMock(side_effect=fake_post)):
-        await executor._execute_tool(
+        result = await executor._execute_tool(
             tool_name="health_record",
             args_raw=json.dumps({
                 "record_type": "diet",
@@ -117,6 +118,5 @@ async def test_overrides_invalid_format(db):
             user_token=None,
         )
 
-    # 应该被改成有效的 YYYY-MM-DD
-    assert captured.get("record_date") and "-" in captured["record_date"]
-    assert captured["record_date"] != "Tuesday"
+    assert captured == {}
+    assert "不是合法日期" in result

@@ -862,6 +862,16 @@ class WeChatMessageRequest(BaseModel):
     msg_type: str = Field(..., description="消息类型: text/image/voice")
     content: str = Field(..., description="消息内容（文字/图片base64/语音识别文字）")
     wechat_openid: Optional[str] = Field(None, description="发送者微信 OpenID")
+    msg_id: Optional[str] = Field(
+        None,
+        max_length=200,
+        description="微信/企业微信原始消息 ID，用于防重复投递",
+    )
+    message_id: Optional[str] = Field(
+        None,
+        max_length=200,
+        description="兼容调用方的原始消息 ID 字段",
+    )
 
 @router.post("/wechat-bot/message", summary="微信 Bot 消息入口", tags=["wechat-bot"])
 async def handle_wechat_message(
@@ -873,12 +883,19 @@ async def handle_wechat_message(
     微信 Bot 消息处理入口。
     当前通过 JWT 认证（测试阶段），未来接入企业微信 webhook 后改为签名验证。
     """
+    if not str(req.msg_id or req.message_id or "").strip():
+        raise HTTPException(
+            status_code=422,
+            detail="缺少微信原始消息 ID，无法安全防止重复处理",
+        )
     from app.services.wechat_bot import WeChatBotHandler
     handler = WeChatBotHandler(db)
     result = await handler.handle_message({
         "msg_type": req.msg_type,
         "content": req.content,
         "wechat_openid": req.wechat_openid,
+        "msg_id": req.msg_id,
+        "message_id": req.message_id,
         "user_id": current_user.id,
     })
     return result

@@ -54,8 +54,23 @@ public struct AIGCMediaJobProjection: Decodable, Equatable, Sendable {
     }
 }
 
+public struct AIGCMediaConfirmationProjection: Decodable, Equatable, Sendable {
+    public let id: String
+    public let status: String
+    public let canConfirm: Bool?
+    public let requiresReconfirmation: Bool?
+    public let job: AIGCMediaJobProjection?
+
+    enum CodingKeys: String, CodingKey {
+        case id, status, job
+        case canConfirm = "can_confirm"
+        case requiresReconfirmation = "requires_reconfirmation"
+    }
+}
+
 public protocol AIGCMediaJobLoading: Sendable {
     func getJob(id: String) async throws -> AIGCMediaJobProjection
+    func getConfirmation(id: String) async throws -> AIGCMediaConfirmationProjection
     func confirmDraft(id: String) async throws -> AIGCMediaJobProjection
 }
 
@@ -68,6 +83,10 @@ public final class AIGCMediaJobClient: AIGCMediaJobLoading, @unchecked Sendable 
 
     public func getJob(id: String) async throws -> AIGCMediaJobProjection {
         try await apiClient.get("aigc/media/jobs/\(id)")
+    }
+
+    public func getConfirmation(id: String) async throws -> AIGCMediaConfirmationProjection {
+        try await apiClient.get("aigc/media/confirmations/\(id)")
     }
 
     public func confirmDraft(id: String) async throws -> AIGCMediaJobProjection {

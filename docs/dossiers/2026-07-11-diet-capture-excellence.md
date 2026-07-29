@@ -83,6 +83,9 @@
 - [x] T5.4 视觉模型升级、非思考结构化识别与延迟基准（backend deploy）
 - [x] T5.5 单图相册降级、照片清洗信任边界与空闲态 Capture FAB（OTA）
 - [x] T5.6 Agent Native Mobile capture deeplink：相机、相册、文字、语音确认后回小巴上下文（OTA）
+- [x] T5.7 营养成分表图片与用户实际食用重量本地融合，保证图片、营养、记录和回执单次闭环（backend deploy）
+- [x] T5.8 图片消息首个 SSE 确认前断流时，以 `client_turn_id` 核对 Runtime 持久化状态并恢复同一回合（backend deploy + OTA）
+- [x] T5.9 失败写入的源消息恢复绑定：用户紧邻回复“重试/需要”时恢复原文字与图片，保留新回合幂等检查点；不确定写入禁止重放（backend deploy）
 - [ ] T6 模拟器视觉、真机微信/小红书、生产数据闭环验收
 - Agent Native 验收约束：每个新增 Mobile 饮食入口都必须证明三件事：Agent 可引用 pending draft 或 confirmed DietRecord；确认成功必须有 `diet_record_id` 回执；用户能在小巴对话里继续追问、修正或查看全天影响。
 - 并发检查：2026-07-11 `origin/main` 与当前干净集成 worktree 一致；原始用户工作区不纳入暂存。
@@ -101,6 +104,8 @@
 - T5.4：生产视觉模型仍停留在官方已列为旧版的 `qwen-vl-max`。公开餐食样本对比确认，直连 DashScope 的 `qwen3-vl-flash` 在非思考模式下保持合法结构化结果，并避免把外观相似的裹酱鸡肉高置信猜成宫保鸡丁；食物识别服务现只对 Qwen3 视觉模型显式发送 `enable_thinking=false`，旧 provider 保持兼容。
 - T5.5：饮食 FAB 新增单图相册入口，相机与相册只在取图阶段分叉，后续共用 1568px/JPEG q0.7 预处理、识别、服务端草稿、SecureStore 恢复与人工确认。照片候选已通过 Backend 结构化食物清洗，Mobile 不再用把“片”视作药片的通用文字启发式二次拒绝“橙子片”等食物；文字、语音和外部草稿仍保留本地防护。Capture FAB 只在 `idle` 显示，选图、识别、待确认、修正和保存时隐藏，避免遮挡确认卡和并发取图。
 - T5.6：`/diet?capture=photo|library|text|voice&return_to=chat` 全部进入同一 quick draft 状态机；确认成功后统一把 `diet/quick_capture`、`diet_record_id` 和本餐结构化摘要推回小巴对话上下文。这样 Agent 对话可以继续回答“全天热量如何、下一餐怎么调、刚才那餐要不要修正”，Mobile 不再只有拍照入口能完成 Agent Native 闭环。已有草稿恢复或当前页面已有 quick draft 时不会再启动第二个 capture，避免从后台/重载回来重复弹相机、相册或输入框。
+- T5.7：包装营养成分表只允许视觉模型提取标签基准值（每 100g 或每份），用户输入的实际食用重量只在受信任的后端本地解析和换算，不把整段健康对话追加发送给视觉供应商。标签营养不再被通用食物表覆盖；缺少或存在多个重量时 fail closed 并明确要求补充，不得把标签基准量误写成实际摄入。恢复结构化识别错误分支依赖的餐食语境判断，并用完整 `run_stream` 回归锁定：同一回合只写一次，图片关联、饮食卡和写入回执使用同一 `DietRecord`，模型冗余的不完整写调用不能覆盖成功结果。
+- T5.8：iOS 在 App 切换、弱网或上传大图时可能先收到 XHR `onerror(status=200)` 或 SSE 正常关闭，首个 `request_persisted` 事件却尚未抵达设备；旧客户端把传输断开等同于业务拒绝，错误保留草稿并显示“发送失败”，用户重试后存在重复记录风险。Backend 新增 owner-scoped、无健康正文的回合状态查询，只返回 Run、持久化、会话和重试控制元数据；图片上传前创建的消息占位行不构成成功回执，只有 Runtime 绑定了 source message 才返回 `request_persisted=true`，部分 assistant checkpoint 也必须有 `client_turn_finalized=true` 才算最终回复。Mobile 在首个确认前断流时以原 `client_turn_id` 做最多约 1 秒的短暂核对；权威确认后清理草稿并从持久化历史恢复服务端图片和最终回复，失败、取消或待核对 Run 则映射为对应终态而不是继续显示“处理中”。无法取得权威状态时仍保持 fail closed，不会凭 HTTP 200 猜测成功。
 
 ## G3 · 测试闸
 
@@ -124,6 +129,11 @@
 - T5.5 先以 RED 锁定相册入口、单图识别和取消恢复，再以现场公开餐食图复现“橙子片”被误判成药片并增加 RED；模拟器首次实测发现预授权会主动弹出全图库权限，依据 Expo ImagePicker 当前纯图片契约删除预请求，并以 2 个 RED 锁定成功/取消路径都不请求全图库。最终相册/内容边界/FAB focused regression `3 suites / 40 tests`、Mobile 全量 `234 suites / 1636 tests` 与 TypeScript 通过。全量 Jest 断言完成后仍报告仓库既有 open handle，使用 `--forceExit` 取得明确 0 退出码；不把该警告表述为已修复。iPhone 17 Pro 模拟器完成相册 -> 生产识别 -> 3 项待确认草稿，进程重载后草稿恢复且 Capture FAB 不再遮挡卡片。
 - T5.5 Linux 权威闸门：GitHub Actions run `29174866840` 最终 SUCCESS；Mobile TypeScript/Jest、Frontend、macOS、type drift、backend quality、18 个后端分片与 Backend tests enforcement 全部通过。首轮仅既有 `test_exercise_dedup` 在高负载 runner 上跨过生产代码的 1 秒去重窗口而失败（测试文案仍写 5 秒），失败分片干净重跑通过；本轮没有后端代码改动。
 - T5.6 RED/GREEN：先用 RED 证明 `capture=library&return_to=chat`、`capture=text&return_to=chat` 和 `capture=voice&return_to=chat` 均不会触发对应入口；再补最小 switch 分发。最终 `mobile/app/__tests__/dietCapture.test.tsx` 完整回归 `30 passed`，覆盖四种入口确认后均通过 `pushChatWithContext` 带 `diet/quick_capture` 上下文回到小巴。聊天入口 focused regression `4 passed`；`npx tsc --noEmit` 通过；Mobile lint `0 errors / 97 existing warnings`；Mobile 全量 Jest `234 suites / 1639 tests` 通过，仍保留仓库既有 open handle warning，不表述为已修复。
+- T5.7 RED/GREEN：先复现营养标签按 100g 返回后未结合“20 克”实际食用量、通用食物表覆盖标签值、错误分支调用缺失方法三类问题；最终食品识别/营养校准/Agent 图片写入 focused regression `59 passed`，饮食写入、图片事务、回执和恢复相关扩展回归 `264 passed`。完整流式用例验证 20g 坚果由 655 kcal/100g 换算为 131 kcal，生成且关联唯一记录和图片，缺少食用量时零写入并要求补充。
+- T5.7 真实模型回归（2026-07-27）：首次隔离 SQLite 因缺少 `llm_usage_logs` 被成本护栏 fail closed，未发生有效模型放行；初始化独立临时成本账本后重跑，`invariants 12/12`、`health_agent_core 50/50`、真实 `orchestrator 5/5` 通过，Orchestrator 平均分 `0.98`、无 regression，11 项轨迹契约全部通过。实际模型为 `MiniMax-M2.5`，原始 JSON 仅保存在本机 `/tmp/diet-photo-live-llm-eval-20260727.json`。
+- T5.8 RED/GREEN：先以 `网络请求失败 (status: 200)` 且首个 SSE 持久化事件未到达复现客户端误判，RED 证明状态核对从未调用；新增 Runtime 状态接口后，Backend owner isolation、无正文响应及“图片占位消息/部分回复不得提前确认” `3/3` 通过，Runtime API/Service 扩展回归 `65/65` 通过。Mobile 覆盖异常断流、clean close、服务端图片 URI 恢复、部分回复保持运行和不可重试终态映射，相关输入、图片草稿、聊天流和恢复回归 `164/164` 通过；TypeScript、OpenAPI 双端生成类型、目标 ESLint（0 error）与 Python Ruff 均通过。
+- T5.9 RED/GREEN：先复现失败助手询问是否重试后，用户回复“需要”只把两个字送入新 Run，原始饮食文本、营养和图片全部丢失；新增内容最小化 `retry_source_turn` 绑定后，恢复链路、目标约束和完成状态 `113/113` 通过，Agent 核心回归 `451/451` 通过，Runtime API、并发、reconcile 与断流恢复 `224 passed / 3 skipped`。测试覆盖 owner/conversation scope、紧邻顺序、重试的重试、客户端同 Turn 接管、原图片复用不重复上传、已验证/不确定写入禁止重放，以及含明确营养数值时保留营养但不误拆“牛肉和风沙拉”等完整菜名。
+- T5.9 最终回归（2026-07-28）：合并最新主干后恢复链路、目标约束和完成状态 `119 passed`，Agent 核心 `452 passed`，Runtime API、并发、reconcile 与断流恢复 `224 passed / 3 skipped`，完整恢复测试文件 `25 passed`；真实模型闸门 `invariants 12/12`、`health_agent_core 50/50`、`orchestrator 5/5` 通过，Orchestrator 平均分 `0.94`、无 regression。实际模型为 `MiniMax-M2.5`，原始 JSON 仅保存在本机 `/tmp/agent-write-recovery-live-eval.json`，不提交模型回答或健康正文。
 - T5.2 首次 CI run `29164922239` 中 type drift 在补齐 Frontend 生成类型后通过，但 Linux `a-b` 分片连续两次远超历史绿灯的 4 分 23 秒，并在 `test_agent_health_manage.py` 与 `test_agent_intervention_cycle_tool.py` 边界失去输出；该边界组合本机 `30/30` 通过，`c-d` 重跑也在 3 分 36 秒通过。判定为既有进程级顺序污染而非饮食断言回归，将 86 个 `a-b` 测试文件拆为非 Agent、`agent_[a-h]`、`agent_[i-z]` 三个互斥进程；文件覆盖校验为 `86 -> 86`、差集 0。
 - T5.2 CI run `29166225719` 验证上述三个新分片分别在 3 分 2 秒、2 分 15 秒和 1 分 24 秒通过；同轮旧 `t[f-z]+u` 分片在 69% 处进入 `test_twin_builder.py` 后冻结，并被 20 分钟上限终止，其他 16 个作业均通过。本机同命令 `392/392` 在 31.23 秒通过；据逐用例日志将其拆为 `t[f-v]`、`t[w-z]`、`u` 三个干净进程，原 24 个文件覆盖校验仍为 `24 -> 24`、差集 0。
 - T5.2 CI run `29166933157` 中 `t[f-v]`、`t[w-z]`、`u` 已分别在 1 分 44 秒、1 分 25 秒和 1 分 28 秒通过；唯一剩余的旧 `s` 大分片进入 `test_schedule_into_agenda.py` 后失去输出，其他 18 个作业均通过。本机同一 643 项命令也在该模块首个用例后停住，但该模块单跑 `8/8`、与前一模块配对 `26/26`、`s[c-k]` 分组 `55/55` 均通过，确认是更长前序造成的进程状态污染；将 58 个 `s` 文件拆为 `s[a-b]`、`s[c-k]`、`s[l-z]`，覆盖校验为 `58 -> 58`、差集 0。
@@ -135,6 +145,7 @@
 
 - 触发：健康数据写入、AI 营养估算、私有图片和社交分享。
 - 已落实：owner scope、确认/取消/清理行锁、真实 PostgreSQL 竞态证明、确认幂等、取消后正文擦除、草稿与正式记录图片失败可重试、SecureStore 用户隔离且非阻断、恢复前服务端 token 终态校验、编辑时 Mobile/Backend 双层 provenance 清理、分享前显式操作、分享产物去身份化和临时文件释放。
+- T5.9 安全复核：恢复控制面只保存 source/root/trigger message id 和原因码，不保存健康正文、工具参数或图片内容；源消息和图片读取强制 owner scope；仅明确 retryable 且没有回执、没有 `in_flight/uncertain/verified` 检查点时提供动作。恢复 Run 使用新的 client turn 写入检查点和幂等身份，原图片只作为 owner-scoped 媒体来源复用。
 - 同一独立审查代理连续五轮核对；最后一轮未发现 P0/P1/P2。
 - **裁决：PASS**。
 
@@ -153,6 +164,10 @@
 - T5.4 部署前 PostgreSQL 备份：`/opt/health-app/backups/health_db_2026-07-12_07-59.sql.gz`，38 MB、权限 `0600`，两张 force-RLS 表的数据段完整性检查通过。
 - T5.5 production OTA：runtime `1.3.1`，update group `8831e015-4afd-4871-839f-741147b67776`，iOS update `019f53f4-ba80-7e83-9050-ccd6faeaa2ac`；EAS `update:view` 复核 branch=`production`、commit=`d8cdc1d1e3d69eaf962615ddead3e57ebaecfae0`、runtime 与 `isRollBackToEmbedded=false` 一致。
 - T5.6 production OTA：runtime `1.3.1`，update group `fd730fd7-22dd-4cd6-962a-260267e51f31`，iOS update `019f54d5-4bb7-7476-b49b-b9d5b95d837e`；EAS `update:view` 复核 branch=`production`、commit=`da579f055def97902f25c3a7edc3b0992d17df1d`、runtime 与 `isRollBackToEmbedded=false` 一致。
+- T5.7 Backend 已从干净且与 `origin/main` 一致的部署副本通过 `./deploy.sh -b -y` 发布；生产 Git HEAD 为 `32ac803bc9f36f7c4e015f7045de6a6b551e6ed4`，本轮无新 migration。部署前备份为 `/var/backups/health-app/database/health_db_2026-07-27_21-16-48_221912.sql.gz`，41 MB、权限 `0600`，force-RLS 数据段、恢复演练和异地加密归档校验通过。
+- T5.8 Backend 已从干净且与 `origin/main` 一致的部署副本通过 `./deploy.sh -b -y` 发布；生产 Git HEAD 为 `b2ee0ec6c19ebf79fd227cf97a3050cc0b7b226a`，本轮无新 migration。部署前备份为 `/var/backups/health-app/database/health_db_2026-07-27_23-28-00_233292.sql.gz`，41 MB、权限 `0600`，force-RLS 数据段、234 表恢复演练与站外加密归档哈希/HMAC 校验通过。
+- T5.8 production OTA：runtime `1.3.2`，update group `d1c14bea-b018-4e28-a0b0-5a7352986ed0`，iOS update `019fa439-1a11-79ce-9b93-65c0a5011016`；发布脚本复核 channel=`production`、commit=`b2ee0ec6c19ebf79fd227cf97a3050cc0b7b226a`、active group/update 与发布结果一致。
+- T5.9 Backend 已从干净且与 `origin/main` 一致的部署副本通过 `./deploy.sh -b` 发布；恢复逻辑代码提交为 `6c2b1c48`，生产 Git HEAD 为 `4bd96fa62a75da8a8b06aee8ccc76764bcf205f7`，本轮无新 migration。部署前备份为 `/var/backups/health-app/database/health_db_2026-07-29_10-32-43_309421.sql.gz`，41 MB、权限 `0600`，force-RLS 数据段、234 表恢复演练与站外加密归档哈希/HMAC 校验通过。该变更为纯 Backend，不发布 Mobile OTA。
 
 ## G5 · 部署健康闸
 
@@ -163,6 +178,9 @@
 - T5.1 增量部署后 `health-backend` 为 active；公网 `/api/v1/health` 再次返回 healthy，production OTA 已绑定同一代码 commit。
 - T5.2 增量部署后 `health-backend`、`celery-worker`、`celery-beat` 均为 active，服务器 Git HEAD 为 `c6d3d3f49`，部署健康分 `60/60 PASS`；公网健康仍为 healthy，服务器本机 OpenAPI 的 `FoodItem` 已包含 `portion_basis` 与 `portion_confidence`。
 - T5.4 增量部署后 `health-backend` 为 active，部署健康分 `60/60 PASS`，skills manifest 本地/线上均为 22；公网 `/api/v1/health` 返回 API、PostgreSQL、Redis、Celery 全部 healthy/connected。
+- T5.7 增量部署后 `health-backend`、`celery-worker`、`celery-beat` 均正常，部署健康分 `60/60 PASS`；公网 `/api/v1/health` 返回 API running、PostgreSQL/Redis/Celery connected。公网 skills manifest 的 HTTP/2 请求出现可恢复传输告警，HTTP/1.1 已验证可读取有效 manifest，不影响 Backend 健康闸。
+- T5.8 增量部署健康分 `60/60 PASS`，skills manifest 本地/线上均为 22；公网 `/api/v1/health` 返回 `healthy`，API running、PostgreSQL/Redis/Celery connected。
+- T5.9 主干 CI run `30416635659` 全绿，包含 Agent Runtime PostgreSQL 语义、真实模型回归、Backend 全分片、Frontend、Mobile、Mac 与类型漂移闸门；一次性真实模型授权变量已在 CI 结束后删除。部署后健康分 `60/60 PASS`，skills manifest 本地/线上均为 22；正确生产入口 `https://health.executor.life/api/v1/health` 经正式域名 SNI 返回 HTTP 200，API running、PostgreSQL/Redis/Celery connected。
 - **裁决：PASS**。
 
 ## S7 · 上线验证
@@ -176,11 +194,12 @@
 - T5.5 模拟器实链路：同一公开餐食图经 Mobile 相册入口和生产 API 返回“橙子鸡、咖喱炒饭、橙子片”3 项草稿；修复前被 Mobile 二次误判为用药/补剂，修复后正常进入待确认且没有写入正式 DietRecord。截图保存在本机 `/tmp/reva-library-draft-no-fab.png`。
 - T5.5 OTA 已绑定 build 221 的 runtime `1.3.1` 与代码提交 `d8cdc1d1e`；设备冷启或后台超过 30 秒后可拉取。真机相册权限体验、微信和小红书投递仍保持待验证，不以 EAS 发布成功替代终端验收。
 - T5.6 OTA 已绑定 build 221 的 runtime `1.3.1` 与代码提交 `da579f055`；设备冷启或后台超过 30 秒后可拉取。自动化已证明相机、相册、文字、语音四种 Mobile 入口确认后都会带 `diet/quick_capture` 上下文回到小巴；真实设备语音输入和真机目标应用分享仍需继续验收。
+- T5.9 失败写入恢复已部署至生产 Backend。自动化与真实模型回归已证明窄确认短语可以在同一用户、同一会话、紧邻顺序且没有已验证或不确定写入时恢复原文字与图片，并为新 Run 使用新的幂等身份；仍需在真机生产会话中人为触发一次可重试失败并完成“重试/需要”闭环，作为最终终端证据。
 - 待真机验证：相机实拍 -> 识别 -> 修正 -> 确认单次写入，以及分享图分别投递微信和小红书。
 
 ## G6 · 验证闸
 
-- 模拟器与生产后端验证通过；真机目标应用投递尚缺证据。
+- 模拟器与生产后端验证通过；T5.9 生产部署与公网健康已通过，真机失败写入恢复及目标应用投递尚缺终端证据。
 - **裁决：PENDING**。保持 `device_validation_pending`，不进入完成态。
 
 ## S8 · 沉淀
@@ -188,3 +207,4 @@
 - 决策 1：审核营养目录是校准链路的运行时前置条件，必须由标准部署幂等补齐，不能只依赖可选手工 seed。
 - 决策 2：新增原生分享依赖必须发新二进制；旧二进制禁止接收会引用缺失原生模块的 OTA。
 - 决策 3：社交分享验收必须覆盖目标应用真机接收，不以系统分享面板出现代替微信/小红书成功投递。
+- 决策 4：营养标签的基准份量与用户实际摄入量必须作为两个字段处理；视觉模型只提取标签，实际摄入换算在本地完成。任何标签图片写入都必须同时证明营养值大于零、图片已关联、写入回执可验证且没有并行失败文案。

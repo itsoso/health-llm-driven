@@ -10,12 +10,14 @@ from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field, field_validator, model_validator
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user_required
 from app.database import get_db
 from app.models.client_event import ClientEvent
 from app.models.user import User
+from app.services.agent_runtime_identity import runtime_hmac_digest
 
 router = APIRouter(prefix="/client-events", tags=["client-events"])
 logger = logging.getLogger(__name__)
@@ -51,6 +53,7 @@ _ALLOWED_EVENTS = frozenset({
     "agenda_action_failed",
     # Mobile Agent 可靠性终态. meta 严格限制为无正文、无资源标识的字段.
     "chat_turn_queued",
+    "chat_attachment_terminal",
     "agent_turn_terminal",
     "voice_input_terminal",
     "voice_asr_terminal",
@@ -58,6 +61,9 @@ _ALLOWED_EVENTS = frozenset({
     "diet_photo_recognition_terminal",
     "diet_photo_confirmation_terminal",
     "diet_share_terminal",
+    # AIGC 媒体结果使用漏斗；禁止正文、URL、job_id 等资源标识。
+    "aigc_media_played",
+    "aigc_media_shared",
     # App update control plane — content-free lifecycle telemetry only.
     "app_update_phase",
     "app_update_terminal",
@@ -129,6 +135,23 @@ _CHAT_QUEUE_EVENT_SCHEMA = {
     "surfaces": frozenset({"mobile", "web", "mac"}),
     "channels": frozenset({"typed", "voice", "siri", "card"}),
 }
+_CHAT_ATTACHMENT_EVENT_SCHEMA = {
+    "allowed": frozenset({
+        "phase", "stage", "image_count", "duration_bucket",
+        "payload_bucket", "error_code",
+    }),
+    "required": frozenset({
+        "phase", "stage", "image_count", "duration_bucket", "payload_bucket",
+    }),
+    "phases": frozenset({"accepted", "failed"}),
+    "stages": frozenset({"local_prepare", "server_accept"}),
+    "payload_buckets": frozenset({
+        "unknown", "lt_256kb", "256kb_1mb", "1_4mb", "gte_4mb",
+    }),
+    "error_codes": frozenset({
+        "draft_hydration_failed", "server_not_accepted", "send_rejected",
+    }),
+}
 
 _DIET_CAPTURE_EVENT_SCHEMAS = {
     "diet_photo_recognition_terminal": {
@@ -157,11 +180,32 @@ _DIET_CAPTURE_EVENT_SCHEMAS = {
         "phases": frozenset({"completed", "failed"}),
     },
 }
+_AIGC_ENGAGEMENT_EVENT_SCHEMAS = {
+    "aigc_media_played": {
+        "allowed": frozenset({"media_kind"}),
+        "required": frozenset({"media_kind"}),
+    },
+    "aigc_media_shared": {
+        "allowed": frozenset({"phase", "media_kind", "share_target", "error_code"}),
+        "required": frozenset({"phase", "media_kind", "share_target"}),
+        "phases": frozenset({"completed", "failed"}),
+    },
+}
+_AIGC_MEDIA_KINDS = frozenset({"image", "video"})
+_AIGC_SHARE_TARGETS = frozenset({"wechat", "xiaohongshu"})
 
 
 class EventIn(BaseModel):
     event_name: str = Field(..., max_length=64)
+    event_key: Optional[str] = Field(default=None, max_length=64)
     meta: Optional[Dict[str, Any]] = None
+
+    @field_validator("event_key")
+    @classmethod
+    def _safe_event_key(cls, value: Optional[str]):
+        if value is not None and _SAFE_TOKEN.fullmatch(value) is None:
+            raise ValueError("invalid event_key")
+        return value
 
     @field_validator("meta")
     @classmethod
@@ -177,6 +221,11 @@ class EventIn(BaseModel):
 
     @model_validator(mode="after")
     def _validate_reliability_meta(self):
+        if (
+            self.event_key is not None
+            and self.event_name != "chat_attachment_terminal"
+        ):
+            raise ValueError("event_key is not supported for this event")
         if self.event_name == "chat_turn_queued":
             if self.meta is None:
                 raise ValueError("chat queue event meta is required")
@@ -195,6 +244,68 @@ class EventIn(BaseModel):
             queue_depth = self.meta.get("queue_depth_at_submit")
             if type(queue_depth) is not int or not 1 <= queue_depth <= 50:
                 raise ValueError("invalid chat queue event queue_depth_at_submit")
+            return self
+
+        if self.event_name == "chat_attachment_terminal":
+            if self.event_key is None:
+                raise ValueError("chat attachment event_key is required")
+            if self.meta is None:
+                raise ValueError("chat attachment event meta is required")
+            keys = set(self.meta)
+            extra = keys - _CHAT_ATTACHMENT_EVENT_SCHEMA["allowed"]
+            missing = _CHAT_ATTACHMENT_EVENT_SCHEMA["required"] - keys
+            if extra:
+                raise ValueError(
+                    f"chat attachment event meta has forbidden fields: {sorted(extra)}"
+                )
+            if missing:
+                raise ValueError(
+                    f"chat attachment event meta missing fields: {sorted(missing)}"
+                )
+            if self.meta.get("phase") not in _CHAT_ATTACHMENT_EVENT_SCHEMA["phases"]:
+                raise ValueError("invalid chat attachment event phase")
+            if self.meta.get("stage") not in _CHAT_ATTACHMENT_EVENT_SCHEMA["stages"]:
+                raise ValueError("invalid chat attachment event stage")
+            if self.meta.get("duration_bucket") not in _DURATION_BUCKETS:
+                raise ValueError("invalid chat attachment event duration_bucket")
+            if (
+                self.meta.get("payload_bucket")
+                not in _CHAT_ATTACHMENT_EVENT_SCHEMA["payload_buckets"]
+            ):
+                raise ValueError("invalid chat attachment event payload_bucket")
+            image_count = self.meta.get("image_count")
+            if type(image_count) is not int or not 1 <= image_count <= 9:
+                raise ValueError("invalid chat attachment event image_count")
+            error_code = self.meta.get("error_code")
+            if (
+                error_code is not None
+                and (
+                    not isinstance(error_code, str)
+                    or error_code
+                    not in _CHAT_ATTACHMENT_EVENT_SCHEMA["error_codes"]
+                )
+            ):
+                raise ValueError("invalid chat attachment event error_code")
+            phase = self.meta.get("phase")
+            stage = self.meta.get("stage")
+            if phase == "accepted" and (
+                stage != "server_accept" or error_code is not None
+            ):
+                raise ValueError("invalid accepted chat attachment terminal state")
+            if phase == "failed" and error_code is None:
+                raise ValueError("failed chat attachment terminal requires error_code")
+            if (
+                phase == "failed"
+                and stage == "local_prepare"
+                and error_code != "draft_hydration_failed"
+            ):
+                raise ValueError("invalid local preparation attachment failure")
+            if (
+                phase == "failed"
+                and stage == "server_accept"
+                and error_code not in {"server_not_accepted", "send_rejected"}
+            ):
+                raise ValueError("invalid server attachment failure")
             return self
 
         app_update_schema = _APP_UPDATE_EVENT_SCHEMAS.get(self.event_name)
@@ -264,6 +375,32 @@ class EventIn(BaseModel):
                     raise ValueError("write receipt phase contradicts verified")
             return self
 
+        aigc_schema = _AIGC_ENGAGEMENT_EVENT_SCHEMAS.get(self.event_name)
+        if aigc_schema is not None:
+            if self.meta is None:
+                raise ValueError("AIGC engagement event meta is required")
+            keys = set(self.meta)
+            extra = keys - aigc_schema["allowed"]
+            missing = aigc_schema["required"] - keys
+            if extra:
+                raise ValueError(f"AIGC engagement event meta has forbidden fields: {sorted(extra)}")
+            if missing:
+                raise ValueError(f"AIGC engagement event meta missing fields: {sorted(missing)}")
+            if self.meta.get("media_kind") not in _AIGC_MEDIA_KINDS:
+                raise ValueError("invalid AIGC engagement media_kind")
+            if self.event_name == "aigc_media_shared":
+                if self.meta.get("phase") not in aigc_schema["phases"]:
+                    raise ValueError("invalid AIGC engagement phase")
+                if self.meta.get("share_target") not in _AIGC_SHARE_TARGETS:
+                    raise ValueError("invalid AIGC engagement share_target")
+                error_code = self.meta.get("error_code")
+                if error_code is not None and (
+                    not isinstance(error_code, str)
+                    or _SAFE_TOKEN.fullmatch(error_code) is None
+                ):
+                    raise ValueError("invalid AIGC engagement error_code")
+            return self
+
         diet_schema = _DIET_CAPTURE_EVENT_SCHEMAS.get(self.event_name)
         if diet_schema is None:
             return self
@@ -326,20 +463,64 @@ def post_client_event(
             },
         )
 
+    stored_event_key = None
+    if body.event_key is not None:
+        stored_event_key = runtime_hmac_digest(
+            "client-event-idempotency-v1",
+            current_user.id,
+            body.event_name,
+            body.event_key,
+        )
+    existing = None
+    if stored_event_key is not None:
+        existing = db.query(ClientEvent).filter(
+            ClientEvent.user_id == current_user.id,
+            ClientEvent.event_name == body.event_name,
+            ClientEvent.event_key == stored_event_key,
+        ).first()
+    if existing is not None:
+        return {"ok": True, "id": existing.id, "duplicate": True}
+
     try:
         ev = ClientEvent(
             user_id=current_user.id,
             event_name=body.event_name,
+            event_key=stored_event_key,
             meta=body.meta,
         )
         db.add(ev)
         db.commit()
-        return {"ok": True, "id": ev.id}
-    except Exception as e:  # noqa: BLE001
-        logger.warning(f"[client-events] 写入失败 (bypass): {e}")
+        return {"ok": True, "id": ev.id, "duplicate": False}
+    except IntegrityError:
+        db.rollback()
+        if stored_event_key is not None:
+            existing = db.query(ClientEvent).filter(
+                ClientEvent.user_id == current_user.id,
+                ClientEvent.event_name == body.event_name,
+                ClientEvent.event_key == stored_event_key,
+            ).first()
+            if existing is not None:
+                return {"ok": True, "id": existing.id, "duplicate": True}
+        logger.warning("[client-events] 幂等键冲突后未找到原事件")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "message": "事件暂未持久化，请稍后重试",
+                "error_code": "client_event_persistence_failed",
+            },
+        )
+    except HTTPException:
+        raise
+    except Exception:  # noqa: BLE001
+        logger.warning("[client-events] 写入失败", exc_info=True)
         try:
             db.rollback()
         except Exception:
             pass
-        # 不抛 500 — 埋点失败不影响用户主流程
-        return {"ok": False}
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "message": "事件暂未持久化，请稍后重试",
+                "error_code": "client_event_persistence_failed",
+            },
+        )

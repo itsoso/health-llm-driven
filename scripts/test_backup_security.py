@@ -55,6 +55,14 @@ def test_offsite_archive_is_encrypted_and_verified():
     assert "cipher_sha256" in script
 
 
+def test_offsite_archive_emits_a_low_frequency_upload_heartbeat():
+    script = OFFSITE.read_text(encoding="utf-8")
+
+    assert "--stats 30s" in script
+    assert "--stats-one-line" in script
+    assert "--stats-log-level NOTICE" in script
+
+
 def test_backup_preserves_local_postgres_port_for_dump_and_restore():
     backup = BACKUP.read_text(encoding="utf-8")
     restore = RESTORE.read_text(encoding="utf-8")

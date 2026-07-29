@@ -10,6 +10,8 @@ jest.mock('expo-web-browser', () => ({
 
 const mockVideoPlay = jest.fn();
 const mockShareRemoteVideo = jest.fn();
+const mockShareImage = jest.fn();
+const mockEmitClientEvent = jest.fn();
 jest.mock('expo-video', () => {
   const React = require('react');
   return {
@@ -19,12 +21,18 @@ jest.mock('expo-video', () => {
 }, { virtual: true });
 
 jest.mock('../../../../utils/share', () => ({
+  shareImage: (...args: unknown[]) => mockShareImage(...args),
   shareRemoteVideo: (...args: unknown[]) => mockShareRemoteVideo(...args),
+}));
+jest.mock('../../../../services/clientEvents', () => ({
+  emitClientEvent: (...args: unknown[]) => mockEmitClientEvent(...args),
 }));
 
 import { CARD_REGISTRY, CARD_MAP, dispatchCard, renderCard, renderServerCards } from '../registry';
 import type { CardContext } from '../types';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { AppState } from 'react-native';
+import NetInfo from '@react-native-community/netinfo';
 import * as WebBrowser from 'expo-web-browser';
 import api from '../../../../services/api';
 
@@ -122,6 +130,29 @@ describe('dispatchCard', () => {
     expect(result).toBeNull();
   });
 
+  it('does not turn AIGC source topics into unrelated local health cards', async () => {
+    const get = jest.fn().mockResolvedValue({
+      data: {
+        total_calories: 1825,
+        total_protein: 82,
+        total_carbs: 224,
+        total_fat: 62,
+        total_fiber: 17,
+        meals_count: 6,
+        meals: [],
+      },
+    });
+    const ctx = makeContext(
+      '根据我今天的活动、饮食和睡眠，生成一个短视频。',
+      { api: { get, post: jest.fn() } },
+    );
+
+    const result = await dispatchCard(ctx);
+
+    expect(result).toBeNull();
+    expect(get).not.toHaveBeenCalled();
+  });
+
   it('build 抛错时不阻塞, 返回 null', async () => {
     const ctx = makeContext('体重多少', {
       api: { get: jest.fn().mockRejectedValue(new Error('net')), post: jest.fn() },
@@ -163,6 +194,106 @@ describe('renderCard 安全降级', () => {
         }),
       ]),
     );
+  });
+
+  it('opens an ordered gallery for all available meal photos', () => {
+    const element = renderCard({
+      type: 'diet_draft',
+      data: {
+        meal_type: 'dinner',
+        food_items: '鱼 + 蔬菜',
+        calories: 620,
+        recorded: true,
+        source: 'chat_photo',
+        photo_urls: [
+          '/api/v1/upload/files/diet/1/first.jpg?signature=one',
+          '/api/v1/upload/files/diet/1/second.jpg?signature=two',
+        ],
+      },
+    });
+
+    const screen = render(element!);
+    expect(screen.getByTestId('diet-photo-count')).toHaveTextContent('2');
+
+    fireEvent.press(screen.getByTestId('diet-photo-cover'));
+
+    expect(screen.getByTestId('diet-photo-gallery')).toBeTruthy();
+    expect(screen.getByText('2 张餐食照片')).toBeTruthy();
+    expect(screen.getByText('1 / 2')).toBeTruthy();
+    expect(screen.getByText('2 / 2')).toBeTruthy();
+  });
+
+  it('refreshes a mounted card when the server projection adds another photo', () => {
+    const first = {
+      type: 'diet_draft',
+      data: {
+        card_id: 'diet-record-88',
+        meal_type: 'dinner',
+        food_items: '鱼 + 蔬菜',
+        calories: 620,
+        recorded: true,
+        source: 'chat_photo',
+        photo_urls: ['/api/v1/upload/files/diet/1/first.jpg?signature=one'],
+      },
+    } as const;
+    const screen = render(renderCard(first)!);
+    expect(screen.queryByTestId('diet-photo-count')).toBeNull();
+
+    screen.rerender(renderCard({
+      ...first,
+      data: {
+        ...first.data,
+        photo_urls: [
+          '/api/v1/upload/files/diet/1/first.jpg?signature=one',
+          '/api/v1/upload/files/diet/1/second.jpg?signature=two',
+        ],
+      },
+    })!);
+
+    expect(screen.getByTestId('diet-photo-count')).toHaveTextContent('2');
+  });
+
+  it('lets the user retry a meal photo that failed to render locally', () => {
+    const screen = render(renderCard({
+      type: 'diet_draft',
+      data: {
+        card_id: 'diet-record-89',
+        meal_type: 'lunch',
+        food_items: '鸡胸肉',
+        calories: 320,
+        recorded: true,
+        source: 'chat_photo',
+        photo_urls: ['/api/v1/upload/files/diet/1/retry.jpg?signature=one'],
+      },
+    })!);
+
+    fireEvent(screen.getByTestId('diet-draft-photo'), 'error', { nativeEvent: {} });
+    const retry = screen.getByRole('button', { name: '重试加载餐食照片' });
+    fireEvent.press(retry);
+
+    expect(screen.getByTestId('diet-draft-photo')).toBeTruthy();
+  });
+
+  it('keeps the meal card usable when only part of its photos can be restored', () => {
+    const element = renderCard({
+      type: 'diet_draft',
+      data: {
+        meal_type: 'breakfast',
+        food_items: '煎饼',
+        calories: 360,
+        recorded: true,
+        record_id: 88,
+        source: 'chat_photo',
+        media_stage: 'partially_available',
+        photo_urls: ['/api/v1/upload/files/diet/1/first.jpg?signature=one'],
+        photo_unavailable_count: 1,
+      },
+    });
+
+    const screen = render(element!);
+    expect(screen.getByTestId('diet-photo-count')).toHaveTextContent('1/2');
+    expect(screen.getByText('1/2 张照片可用，饮食记录和营养数据仍已保留')).toBeTruthy();
+    expect(screen.getByText('早餐已记录')).toBeTruthy();
   });
 
   it('renders an automatic contextual meal save as a visible receipt without an action', () => {
@@ -222,6 +353,227 @@ describe('renderCard 安全降级', () => {
     screen.unmount();
   });
 
+  it('refreshes an active AIGC job immediately on foreground and network recovery', async () => {
+    (api.get as jest.Mock).mockReset();
+    let appStateListener: ((state: string) => void) | undefined;
+    let networkListener: ((state: {
+      isConnected: boolean | null;
+      isInternetReachable?: boolean | null;
+    }) => void) | undefined;
+    const appStateSpy = jest.spyOn(AppState, 'addEventListener').mockImplementation(
+      ((_event: string, listener: (state: string) => void) => {
+        appStateListener = listener;
+        return { remove: jest.fn() };
+      }) as typeof AppState.addEventListener,
+    );
+    (NetInfo.addEventListener as jest.Mock).mockImplementation(
+      (listener: (state: {
+        isConnected: boolean | null;
+        isInternetReachable?: boolean | null;
+      }) => void) => {
+        networkListener = listener;
+        return jest.fn();
+      },
+    );
+    (api.get as jest.Mock).mockResolvedValue({
+      data: {
+        id: 'aigc_resume_1',
+        kind: 'text_to_video',
+        status: 'running',
+        progress: 50,
+        result: { media_type: null, url: null },
+      },
+    });
+    const screen = render(renderCard({
+      type: 'aigc_media_job',
+      data: {
+        job_id: 'aigc_resume_1',
+        kind: 'text_to_video',
+        status: 'running',
+        progress: 25,
+        result: { media_type: null, url: null },
+      },
+    })!);
+    await waitFor(() => expect(api.get).toHaveBeenCalledTimes(1));
+    (api.get as jest.Mock).mockClear();
+
+    await act(async () => {
+      appStateListener?.('background');
+      appStateListener?.('active');
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(api.get).toHaveBeenCalledTimes(1));
+    (api.get as jest.Mock).mockClear();
+
+    await act(async () => {
+      networkListener?.({ isConnected: true, isInternetReachable: false });
+      networkListener?.({ isConnected: true, isInternetReachable: true });
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(api.get).toHaveBeenCalledTimes(1));
+
+    screen.unmount();
+    appStateSpy.mockRestore();
+  });
+
+  it('does not refresh an active AIGC job on foreground while internet is unreachable', async () => {
+    (api.get as jest.Mock).mockReset();
+    let appStateListener: ((state: string) => void) | undefined;
+    let networkListener: ((state: {
+      isConnected: boolean | null;
+      isInternetReachable?: boolean | null;
+    }) => void) | undefined;
+    const appStateSpy = jest.spyOn(AppState, 'addEventListener').mockImplementation(
+      ((_event: string, listener: (state: string) => void) => {
+        appStateListener = listener;
+        return { remove: jest.fn() };
+      }) as typeof AppState.addEventListener,
+    );
+    (NetInfo.addEventListener as jest.Mock).mockImplementation(
+      (listener: (state: {
+        isConnected: boolean | null;
+        isInternetReachable?: boolean | null;
+      }) => void) => {
+        networkListener = listener;
+        return jest.fn();
+      },
+    );
+    (api.get as jest.Mock).mockResolvedValue({
+      data: {
+        id: 'aigc_offline_resume',
+        kind: 'text_to_video',
+        status: 'running',
+        progress: 50,
+        result: { media_type: null, url: null },
+      },
+    });
+    const screen = render(renderCard({
+      type: 'aigc_media_job',
+      data: {
+        job_id: 'aigc_offline_resume',
+        kind: 'text_to_video',
+        status: 'running',
+        progress: 25,
+        result: { media_type: null, url: null },
+      },
+    })!);
+    await waitFor(() => expect(api.get).toHaveBeenCalledTimes(1));
+    (api.get as jest.Mock).mockClear();
+
+    await act(async () => {
+      networkListener?.({ isConnected: true, isInternetReachable: false });
+      appStateListener?.('background');
+      appStateListener?.('active');
+      await Promise.resolve();
+    });
+
+    expect(api.get).not.toHaveBeenCalled();
+    screen.unmount();
+    appStateSpy.mockRestore();
+  });
+
+  it('defers network recovery refresh until an active AIGC card returns to foreground', async () => {
+    (api.get as jest.Mock).mockReset();
+    let appStateListener: ((state: string) => void) | undefined;
+    let networkListener: ((state: {
+      isConnected: boolean | null;
+      isInternetReachable?: boolean | null;
+    }) => void) | undefined;
+    const appStateSpy = jest.spyOn(AppState, 'addEventListener').mockImplementation(
+      ((_event: string, listener: (state: string) => void) => {
+        appStateListener = listener;
+        return { remove: jest.fn() };
+      }) as typeof AppState.addEventListener,
+    );
+    (NetInfo.addEventListener as jest.Mock).mockImplementation(
+      (listener: (state: {
+        isConnected: boolean | null;
+        isInternetReachable?: boolean | null;
+      }) => void) => {
+        networkListener = listener;
+        return jest.fn();
+      },
+    );
+    (api.get as jest.Mock).mockResolvedValue({
+      data: {
+        id: 'aigc_background_recovery',
+        kind: 'text_to_video',
+        status: 'running',
+        progress: 50,
+        result: { media_type: null, url: null },
+      },
+    });
+    const screen = render(renderCard({
+      type: 'aigc_media_job',
+      data: {
+        job_id: 'aigc_background_recovery',
+        kind: 'text_to_video',
+        status: 'running',
+        progress: 25,
+        result: { media_type: null, url: null },
+      },
+    })!);
+    await waitFor(() => expect(api.get).toHaveBeenCalledTimes(1));
+    (api.get as jest.Mock).mockClear();
+
+    await act(async () => {
+      appStateListener?.('background');
+      networkListener?.({ isConnected: true, isInternetReachable: false });
+      networkListener?.({ isConnected: true, isInternetReachable: true });
+      await Promise.resolve();
+    });
+    expect(api.get).not.toHaveBeenCalled();
+
+    await act(async () => {
+      appStateListener?.('active');
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(api.get).toHaveBeenCalledTimes(1));
+
+    screen.unmount();
+    appStateSpy.mockRestore();
+  });
+
+  it('tells the user an active AIGC task continues after leaving the page', () => {
+    const screen = render(renderCard({
+      type: 'aigc_media_job',
+      data: {
+        job_id: 'aigc_background_safe',
+        kind: 'text_to_video',
+        status: 'running',
+        progress: 40,
+        result: { media_type: null, url: null },
+      },
+    })!);
+
+    expect(screen.getByText('可离开此页面，完成后小巴会通知你。')).toBeTruthy();
+    expect(screen.queryByText('正在生成画面和音频，请保持网络可用。')).toBeNull();
+    screen.unmount();
+  });
+
+  it('describes HappyHorse image-to-video ratio as following the source image', () => {
+    const screen = render(renderCard({
+      type: 'aigc_media_job',
+      data: {
+        job_id: 'aigc_source_ratio',
+        kind: 'image_to_video',
+        status: 'running',
+        progress: 50,
+        spec: {
+          duration_seconds: 10,
+          ratio_mode: 'source',
+          resolution: '720P',
+          generates_audio: true,
+        },
+        result: { media_type: null, url: null },
+      },
+    })!);
+
+    expect(screen.getByText('10秒 · 跟随原图 · 720P · 含音频')).toBeTruthy();
+    expect(screen.queryByText(/9:16/)).toBeNull();
+    screen.unmount();
+  });
+
   it('restores a consumed AIGC confirmation as its existing job on mount', async () => {
     (api.get as jest.Mock).mockResolvedValueOnce({
       data: {
@@ -263,6 +615,269 @@ describe('renderCard 安全降级', () => {
     screen.unmount();
   });
 
+  it('lets the user choose a disclosed video duration before the one-time confirmation', async () => {
+    let resolveConfirmation: ((value: unknown) => void) | undefined;
+    (api.get as jest.Mock).mockImplementationOnce(() => new Promise((resolve) => {
+      resolveConfirmation = resolve;
+    }));
+    (api.post as jest.Mock).mockResolvedValueOnce({
+      data: {
+        id: 'aigc_duration_job',
+        kind: 'text_to_video',
+        status: 'queued',
+        progress: 10,
+        spec: {
+          duration_seconds: 8,
+          ratio: '9:16',
+          resolution: '720P',
+          generates_audio: true,
+        },
+        result: { media_type: null, url: null },
+      },
+    });
+    const screen = render(renderCard({
+      type: 'aigc_media_confirmation',
+      data: {
+        confirmation_id: 'aigc_confirm_duration',
+        kind: 'text_to_video',
+        status: 'pending',
+        duration_seconds: 5,
+        duration_options: [5, 8, 15],
+        ratio: '9:16',
+        resolution: '720P',
+        provider: '百炼 HappyHorse',
+        content_summary: '围绕活动、饮食和睡眠生成健康行动短视频',
+        content_topics: ['活动', '饮食', '睡眠'],
+      },
+    })!);
+
+    expect(screen.getByText('内容预览')).toBeTruthy();
+    expect(screen.getByText('围绕活动、饮食和睡眠生成健康行动短视频')).toBeTruthy();
+    expect(screen.getByText('确认并生成')).toBeTruthy();
+    expect(screen.getByText('5 秒')).toBeTruthy();
+    expect(screen.getByText('8 秒')).toBeTruthy();
+    expect(screen.getByText('15 秒')).toBeTruthy();
+    expect(screen.queryByText('10 秒')).toBeNull();
+    fireEvent.press(screen.getByLabelText('选择8秒'));
+    await act(async () => {
+      resolveConfirmation?.({
+        data: {
+          id: 'aigc_confirm_duration',
+          status: 'pending',
+          job: null,
+          spec: {
+            duration_seconds: 5,
+            duration_options: [5, 8, 15],
+          },
+        },
+      });
+      await Promise.resolve();
+    });
+    fireEvent.press(screen.getByLabelText('确认生成8秒短视频'));
+
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith(
+      '/aigc/media/confirmations/aigc_confirm_duration/confirm',
+      { duration_seconds: 8 },
+    ));
+    expect(await screen.findByText('8秒 · 9:16 · 720P · 含音频')).toBeTruthy();
+    screen.unmount();
+    (api.post as jest.Mock).mockClear();
+  });
+
+  it('migrates a historical AIGC duration card to the current safe choices', async () => {
+    (api.get as jest.Mock).mockResolvedValueOnce({
+      data: {
+        id: 'aigc_confirm_legacy_duration',
+        status: 'pending',
+        job: null,
+        spec: {
+          duration_seconds: 10,
+          duration_options: [5, 10, 15],
+        },
+      },
+    });
+    (api.post as jest.Mock).mockResolvedValueOnce({
+      data: {
+        id: 'aigc_legacy_duration_job',
+        kind: 'text_to_video',
+        status: 'queued',
+        progress: 10,
+        spec: {
+          duration_seconds: 5,
+          ratio: '9:16',
+          resolution: '720P',
+          generates_audio: true,
+        },
+        result: { media_type: null, url: null },
+      },
+    });
+    const screen = render(renderCard({
+      type: 'aigc_media_confirmation',
+      data: {
+        confirmation_id: 'aigc_confirm_legacy_duration',
+        kind: 'text_to_video',
+        status: 'pending',
+        duration_seconds: 10,
+        duration_options: [5, 10, 15],
+      },
+    })!);
+
+    expect(screen.getByText('5 秒')).toBeTruthy();
+    expect(screen.getByText('8 秒')).toBeTruthy();
+    expect(screen.getByText('15 秒')).toBeTruthy();
+    expect(screen.queryByText('10 秒')).toBeNull();
+    fireEvent.press(screen.getByLabelText('确认生成5秒短视频'));
+
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith(
+      '/aigc/media/confirmations/aigc_confirm_legacy_duration/confirm',
+      { duration_seconds: 5 },
+    ));
+    screen.unmount();
+    (api.post as jest.Mock).mockClear();
+  });
+
+  it('shows an expired AIGC draft as re-confirmable instead of a failed submission', async () => {
+    (api.get as jest.Mock).mockResolvedValueOnce({
+      data: {
+        id: 'aigc_confirm_expired',
+        status: 'expired',
+        job: null,
+        spec: {
+          duration_seconds: 5,
+          ratio: '9:16',
+          resolution: '720P',
+          generates_audio: true,
+        },
+      },
+    });
+    const screen = render(renderCard({
+      type: 'aigc_media_confirmation',
+      data: {
+        confirmation_id: 'aigc_confirm_expired',
+        kind: 'text_to_video',
+        status: 'pending',
+        duration_seconds: 5,
+        duration_options: [5, 8, 15],
+      },
+    })!);
+
+    expect(await screen.findByText('草稿已过期，点击下方可重新确认生成。')).toBeTruthy();
+    expect(screen.getByLabelText('重新确认生成5秒短视频')).toBeTruthy();
+    expect(screen.queryByText('提交未完成，请稍后重试。')).toBeNull();
+    screen.unmount();
+  });
+
+  it('resolves an indeterminate AIGC confirmation before reporting a failure', async () => {
+    (api.get as jest.Mock)
+      .mockResolvedValueOnce({
+        data: { id: 'aigc_confirm_reconcile', status: 'pending', job: null },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          id: 'aigc_confirm_reconcile',
+          status: 'dispatched',
+          job: {
+            id: 'aigc_reconciled_job',
+            kind: 'text_to_video',
+            status: 'queued',
+            progress: 10,
+            result: { media_type: null, url: null },
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          id: 'aigc_reconciled_job',
+          kind: 'text_to_video',
+          status: 'queued',
+          progress: 10,
+          result: { media_type: null, url: null },
+        },
+      });
+    (api.post as jest.Mock).mockRejectedValueOnce({
+      response: {
+        status: 409,
+        data: { detail: 'AIGC 任务正在提交，请稍后查看' },
+      },
+    });
+    const screen = render(renderCard({
+      type: 'aigc_media_confirmation',
+      data: {
+        confirmation_id: 'aigc_confirm_reconcile',
+        kind: 'text_to_video',
+        status: 'pending',
+      },
+    })!);
+
+    fireEvent.press(screen.getByLabelText('确认生成5秒短视频'));
+
+    expect(await screen.findByText('排队中')).toBeTruthy();
+    expect(screen.queryByText('提交未完成，请稍后重试。')).toBeNull();
+    expect(api.get).toHaveBeenCalledWith(
+      '/aigc/media/confirmations/aigc_confirm_reconcile',
+    );
+    screen.unmount();
+    (api.post as jest.Mock).mockClear();
+  });
+
+  it('keeps reconciling a dispatching confirmation until its durable job appears', async () => {
+    (api.get as jest.Mock)
+      .mockResolvedValueOnce({
+        data: { id: 'aigc_confirm_dispatching', status: 'pending', can_confirm: true, job: null },
+      })
+      .mockResolvedValueOnce({
+        data: { id: 'aigc_confirm_dispatching', status: 'dispatching', can_confirm: false, job: null },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          id: 'aigc_confirm_dispatching',
+          status: 'dispatched',
+          can_confirm: false,
+          job: {
+            id: 'aigc_dispatching_job',
+            kind: 'text_to_video',
+            status: 'queued',
+            progress: 10,
+            result: { media_type: null, url: null },
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          id: 'aigc_dispatching_job',
+          kind: 'text_to_video',
+          status: 'queued',
+          progress: 10,
+          result: { media_type: null, url: null },
+        },
+      });
+    (api.post as jest.Mock).mockRejectedValueOnce({
+      response: {
+        status: 409,
+        data: { detail: 'AIGC 任务正在提交，请稍后查看' },
+      },
+    });
+    const screen = render(renderCard({
+      type: 'aigc_media_confirmation',
+      data: {
+        confirmation_id: 'aigc_confirm_dispatching',
+        kind: 'text_to_video',
+        status: 'pending',
+      },
+    })!);
+
+    fireEvent.press(screen.getByLabelText('确认生成5秒短视频'));
+
+    expect(await screen.findByText('排队中')).toBeTruthy();
+    const confirmationGets = (api.get as jest.Mock).mock.calls.filter(
+      ([url]) => url === '/aigc/media/confirmations/aigc_confirm_dispatching',
+    );
+    screen.unmount();
+    (api.get as jest.Mock).mockClear();
+    (api.post as jest.Mock).mockClear();
+    expect(confirmationGets).toHaveLength(3);
+  });
+
   it('renders a private generated short video inline with native controls', async () => {
     mockVideoPlay.mockClear();
     mockShareRemoteVideo.mockResolvedValueOnce(undefined);
@@ -298,6 +913,9 @@ describe('renderCard 安全降级', () => {
     expect(player).toHaveProp('fullscreenOptions', expect.objectContaining({ enable: true }));
     fireEvent.press(screen.getByLabelText('播放短视频'));
     expect(mockVideoPlay).toHaveBeenCalledTimes(1);
+    expect(mockEmitClientEvent).toHaveBeenCalledWith('aigc_media_played', {
+      media_kind: 'video',
+    });
     fireEvent.press(screen.getByLabelText('分享到微信'));
     await waitFor(() => {
       expect(mockShareRemoteVideo).toHaveBeenCalledWith(
@@ -305,8 +923,51 @@ describe('renderCard 安全降级', () => {
         { target: 'wechat', cacheKey: 'aigc_video_1' },
       );
     });
+    expect(mockEmitClientEvent).toHaveBeenCalledWith('aigc_media_shared', {
+      phase: 'completed',
+      media_kind: 'video',
+      share_target: 'wechat',
+    });
     expect(api.post).not.toHaveBeenCalled();
     expect(WebBrowser.openBrowserAsync).not.toHaveBeenCalled();
+    screen.unmount();
+  });
+
+  it('shares a completed generated image without submitting another generation request', async () => {
+    mockShareImage.mockResolvedValueOnce(undefined);
+    const relativeImageUrl = '/api/v1/upload/files/aigc/3/result.jpg?expires=1&signature=signed';
+    (api.get as jest.Mock).mockResolvedValueOnce({
+      data: {
+        id: 'aigc_image_1',
+        kind: 'text_to_image',
+        status: 'succeeded',
+        progress: 100,
+        result: { media_type: 'image/jpeg', url: relativeImageUrl },
+      },
+    });
+    const screen = render(renderCard({
+      type: 'aigc_media_job',
+      data: {
+        job_id: 'aigc_image_1',
+        kind: 'text_to_image',
+        status: 'succeeded',
+        progress: 100,
+        result: { media_type: 'image/jpeg', url: relativeImageUrl },
+      },
+    })!);
+
+    fireEvent.press(await screen.findByLabelText('图片分享到小红书'));
+    await waitFor(() => {
+      expect(mockShareImage).toHaveBeenCalledWith(
+        'https://health.executor.life/api/v1/upload/files/aigc/3/result.jpg?expires=1&signature=signed',
+        {
+          target: 'xiaohongshu',
+          cacheKey: 'aigc_image_1',
+          mimeType: 'image/jpeg',
+        },
+      );
+    });
+    expect(api.post).not.toHaveBeenCalled();
     screen.unmount();
   });
 

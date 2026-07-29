@@ -1,17 +1,20 @@
 # -*- coding: utf-8 -*-
 """记录后的回答质量层：结构化上下文、当天汇总、多记录聚合。"""
 import logging
-from datetime import date
+from datetime import date, timedelta
 from urllib.parse import unquote
 
 from app.models.daily_health import DietRecord
+from app.models.health_program import HealthProgram
 from app.models.user_profile import UserProfile
+from app.models.weight import WeightRecord
 from app.services.post_record_quality import (
     build_post_record_quality_response,
     combine_post_record_quality_responses,
     extract_personal_context_pack,
     fetch_today_diet_totals,
 )
+from tests.conftest import create_authenticated_user
 
 
 def test_personal_context_pack_merges_profile_and_prompt(db, auth_user_and_headers):
@@ -69,6 +72,35 @@ def test_today_diet_totals_logs_lookup_failure(caplog):
 
     assert totals is None
     assert any("diet totals lookup failed" in rec.getMessage() for rec in caplog.records)
+
+
+def test_today_diet_totals_counts_recorded_days_without_streak_pressure(db, auth_user_and_headers):
+    user, _headers = auth_user_and_headers
+    today = date.today()
+    db.add_all(
+        [
+            DietRecord(
+                user_id=user.id,
+                record_date=today - timedelta(days=offset),
+                meal_type="lunch",
+                food_items=f"第{index}餐",
+                calories=400,
+            )
+            for index, offset in enumerate((0, 1, 1, 3, 6, 7), start=1)
+        ]
+    )
+    db.commit()
+
+    totals = fetch_today_diet_totals(
+        db=db,
+        user_id=user.id,
+        context=extract_personal_context_pack(),
+        record_date=today,
+    )
+
+    assert totals is not None
+    assert totals.meals_count == 1
+    assert totals.recorded_days_7d == 4
 
 
 def test_diet_quality_response_uses_today_totals_and_actionable_routes(db, auth_user_and_headers):
@@ -134,7 +166,8 @@ def test_diet_quality_response_uses_today_totals_and_actionable_routes(db, auth_
     assert card["data"]["progress"]["protein_total_g"] == 37
     assert card["data"]["progress"]["protein_target_g"] == 112
     assert card["data"]["progress"]["remaining_protein_g"] == 75
-    assert [action["label"] for action in card["actions"]] == ["看下一餐建议", "调整记录"]
+    assert card["data"]["progress"]["recorded_days_7d"] == 1
+    assert [action["label"] for action in card["actions"]] == ["看下一餐建议", "调整记录", "发到同行圈"]
     assert card["actions"][0]["action"] == "ui.inline.expand"
     assert card["actions"][0]["payload"]["target"] == "next_meal"
     assert "route" not in card["actions"][0]["payload"]
@@ -160,6 +193,212 @@ def test_diet_quality_response_uses_today_totals_and_actionable_routes(db, auth_
         "fat": 17.0,
     }
     assert all("问小巴" not in action["label"] for action in card["actions"])
+    publish = card["actions"][2]
+    assert publish["id"] == "share-with-peers"
+    assert publish["action"] == "route.open"
+    assert publish["payload"]["route"] == "/community?composeRecordId=2"
+
+
+def test_diet_quality_response_adds_owned_weight_goal_progress(db, auth_user_and_headers):
+    user, _headers = auth_user_and_headers
+    other_user, _ = create_authenticated_user(db)
+    today = date.today()
+    db.add(
+        UserProfile(
+            user_id=user.id,
+            height_cm=175,
+            current_weight_kg=74.5,
+            target_weight_kg=70,
+            primary_goal="weight_loss",
+        )
+    )
+    db.add(
+        HealthProgram(
+            user_id=user.id,
+            name="减脂周期",
+            program_type="metabolic",
+            status="active",
+            baseline={"weight_kg": 75},
+            target={"weight_kg": 70},
+            started_on=today - timedelta(days=30),
+        )
+    )
+    db.add_all(
+        [
+            WeightRecord(user_id=user.id, record_date=today - timedelta(days=6), weight=74),
+            WeightRecord(user_id=user.id, record_date=today, weight=73),
+            WeightRecord(user_id=other_user.id, record_date=today, weight=99),
+        ]
+    )
+    db.commit()
+
+    response = build_post_record_quality_response(
+        "diet",
+        {"meal_type": "dinner", "food_items": "鱼、蔬菜", "calories": 480, "protein": 35},
+        result='{"id": 91}',
+        db=db,
+        user_id=user.id,
+    )
+
+    goal = response["cards"][0]["data"]["goal_progress"]
+    assert goal == {
+        "goal_type": "weight_loss",
+        "current_kg": 73.0,
+        "target_kg": 70.0,
+        "remaining_kg": 3.0,
+        "baseline_kg": 75.0,
+        "progress_pct": 40.0,
+        "change_7d_kg": -1.0,
+        "measured_on": today.isoformat(),
+        "freshness": "fresh",
+        "status": "active",
+    }
+    assert response["cards"][0]["data"]["record_id"] == 91
+
+
+def test_weight_goal_progress_omits_unverifiable_percentage_and_marks_stale(db, auth_user_and_headers):
+    user, _headers = auth_user_and_headers
+    measured_on = date.today() - timedelta(days=8)
+    db.add(
+        UserProfile(
+            user_id=user.id,
+            height_cm=170,
+            current_weight_kg=78,
+            target_weight_kg=70,
+            primary_goal="weight_loss",
+        )
+    )
+    db.add(WeightRecord(user_id=user.id, record_date=measured_on, weight=76))
+    db.commit()
+
+    response = build_post_record_quality_response(
+        "diet",
+        {"meal_type": "lunch", "food_items": "鸡胸、米饭", "calories": 520},
+        result='{"id": 92}',
+        db=db,
+        user_id=user.id,
+    )
+
+    goal = response["cards"][0]["data"]["goal_progress"]
+    assert goal["current_kg"] == 76.0
+    assert goal["remaining_kg"] == 6.0
+    assert goal["freshness"] == "stale"
+    assert "baseline_kg" not in goal
+    assert "progress_pct" not in goal
+    assert "change_7d_kg" not in goal
+    update_weight = next(
+        action
+        for action in response["cards"][0]["actions"]
+        if action["id"] == "update-weight"
+    )
+    assert update_weight["label"] == "更新体重"
+    assert update_weight["payload"]["route"] == "/body-measurements"
+
+
+def test_weight_goal_progress_reports_achieved_without_negative_remaining(db, auth_user_and_headers):
+    user, _headers = auth_user_and_headers
+    db.add(
+        UserProfile(
+            user_id=user.id,
+            height_cm=172,
+            target_weight_kg=70,
+            primary_goal="weight_loss",
+        )
+    )
+    db.add(WeightRecord(user_id=user.id, record_date=date.today(), weight=69.8))
+    db.commit()
+
+    response = build_post_record_quality_response(
+        "diet",
+        {"meal_type": "breakfast", "food_items": "鸡蛋、豆浆", "calories": 320},
+        result='{"id": 93}',
+        db=db,
+        user_id=user.id,
+    )
+
+    goal = response["cards"][0]["data"]["goal_progress"]
+    assert goal["status"] == "achieved"
+    assert goal["remaining_kg"] == 0.0
+
+
+def test_weight_goal_progress_is_hidden_for_weight_gain_goal(db, auth_user_and_headers):
+    user, _headers = auth_user_and_headers
+    db.add(
+        UserProfile(
+            user_id=user.id,
+            height_cm=175,
+            current_weight_kg=62,
+            target_weight_kg=68,
+            primary_goal="muscle_gain",
+        )
+    )
+    db.add(WeightRecord(user_id=user.id, record_date=date.today(), weight=62))
+    db.commit()
+
+    response = build_post_record_quality_response(
+        "diet",
+        {"meal_type": "dinner", "food_items": "牛肉、米饭", "calories": 680},
+        result='{"id": 96}',
+        db=db,
+        user_id=user.id,
+    )
+
+    assert "goal_progress" not in response["cards"][0]["data"]
+
+
+def test_weight_goal_progress_does_not_promote_low_bmi_target(db, auth_user_and_headers):
+    user, _headers = auth_user_and_headers
+    db.add(
+        UserProfile(
+            user_id=user.id,
+            height_cm=180,
+            current_weight_kg=68,
+            target_weight_kg=55,
+            primary_goal="weight_loss",
+        )
+    )
+    db.add(WeightRecord(user_id=user.id, record_date=date.today(), weight=68))
+    db.commit()
+
+    response = build_post_record_quality_response(
+        "diet",
+        {"meal_type": "lunch", "food_items": "豆腐、蔬菜", "calories": 420},
+        result='{"id": 94}',
+        db=db,
+        user_id=user.id,
+    )
+
+    goal = response["cards"][0]["data"]["goal_progress"]
+    assert goal["status"] == "target_requires_review"
+    assert goal["current_kg"] == 68.0
+    assert goal["target_kg"] == 55.0
+    assert "remaining_kg" not in goal
+    assert "progress_pct" not in goal
+    assert all(
+        action["id"] != "update-weight"
+        for action in response["cards"][0]["actions"]
+    )
+
+
+def test_diet_quality_response_hides_goal_progress_when_target_is_missing(db, auth_user_and_headers):
+    user, _headers = auth_user_and_headers
+    db.add(UserProfile(user_id=user.id, current_weight_kg=73, primary_goal="weight_loss"))
+    db.commit()
+
+    response = build_post_record_quality_response(
+        "diet",
+        {"meal_type": "snack", "food_items": "酸奶", "calories": 120},
+        result='{"id": 95}',
+        db=db,
+        user_id=user.id,
+    )
+
+    assert "goal_progress" not in response["cards"][0]["data"]
+    assert any(
+        action["id"] == "setup-weight-goal"
+        and action["payload"]["route"] == "/goals"
+        for action in response["cards"][0]["actions"]
+    )
 
 
 def test_uncertain_write_never_builds_success_reply_or_card():

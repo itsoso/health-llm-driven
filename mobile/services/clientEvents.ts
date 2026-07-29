@@ -1,4 +1,7 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
 import api from './api';
+import { getAuthStorageScope } from './authStorageScope';
 
 export type ClientEventName =
   // 上一季 ship 的 3 个事件 (2026-05-01)
@@ -28,6 +31,7 @@ export type ClientEventName =
   | 'agenda_action_failed'
   // Mobile Agent 可靠性闭环 (2026-07-09) — 只允许无正文、无资源标识的终态元数据
   | 'chat_turn_queued'
+  | 'chat_attachment_terminal'
   | 'agent_turn_terminal'
   | 'voice_input_terminal'
   | 'voice_asr_terminal'
@@ -35,6 +39,8 @@ export type ClientEventName =
   | 'diet_photo_recognition_terminal'
   | 'diet_photo_confirmation_terminal'
   | 'diet_share_terminal'
+  | 'aigc_media_played'
+  | 'aigc_media_shared'
   // App update control plane — content-free lifecycle telemetry only
   | 'app_update_phase'
   | 'app_update_terminal'
@@ -57,6 +63,8 @@ const DIET_CAPTURE_PHASES = {
   diet_share_terminal: new Set(['completed', 'failed']),
 } as const;
 const DIET_SHARE_TARGETS = new Set(['generic', 'wechat', 'xiaohongshu']);
+const AIGC_MEDIA_KINDS = new Set(['image', 'video']);
+const AIGC_SHARE_TARGETS = new Set(['wechat', 'xiaohongshu']);
 const APP_UPDATE_PHASES = {
   app_update_phase: new Set(['checking', 'downloading', 'applying']),
   app_update_terminal: new Set([
@@ -72,6 +80,20 @@ const APP_UPDATE_PHASES = {
 const APP_UPDATE_LAUNCH_SOURCES = new Set(['embedded', 'ota', 'emergency', 'unknown']);
 const CHAT_QUEUE_SURFACES = new Set(['mobile', 'web', 'mac']);
 const CHAT_QUEUE_CHANNELS = new Set(['typed', 'voice', 'siri', 'card']);
+const CHAT_ATTACHMENT_PHASES = new Set(['accepted', 'failed']);
+const CHAT_ATTACHMENT_STAGES = new Set(['local_prepare', 'server_accept']);
+const CHAT_ATTACHMENT_PAYLOAD_BUCKETS = new Set([
+  'unknown',
+  'lt_256kb',
+  '256kb_1mb',
+  '1_4mb',
+  'gte_4mb',
+]);
+const CHAT_ATTACHMENT_ERROR_CODES = new Set([
+  'draft_hydration_failed',
+  'server_not_accepted',
+  'send_rejected',
+]);
 
 type ReliabilityEventName = keyof typeof RELIABILITY_PHASES;
 
@@ -83,6 +105,24 @@ const DURATION_BUCKETS = new Set<DurationBucket>([
   'gte_30s',
 ]);
 const SAFE_TOKEN = /^[a-z0-9][a-z0-9_.:-]{0,63}$/;
+const CLIENT_EVENT_OUTBOX_PREFIX = 'client-events:outbox:v1';
+
+type AttachmentTerminalOutboxItem = {
+  eventKey: string;
+  name: 'chat_attachment_terminal';
+  meta: Record<string, unknown>;
+};
+
+let clientEventOutboxMutation: Promise<void> = Promise.resolve();
+
+function serializeClientEventOutbox<T>(operation: () => Promise<T>): Promise<T> {
+  const result = clientEventOutboxMutation.then(operation, operation);
+  clientEventOutboxMutation = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  return result;
+}
 
 export function durationBucket(startedAt: number, endedAt = Date.now()): DurationBucket {
   const elapsedMs = Math.max(0, endedAt - startedAt);
@@ -184,6 +224,24 @@ export function sanitizeClientEventMeta(
     }
     return sanitized;
   }
+  if (name === 'aigc_media_played' || name === 'aigc_media_shared') {
+    const sanitized: Record<string, unknown> = {};
+    if (typeof meta.media_kind === 'string' && AIGC_MEDIA_KINDS.has(meta.media_kind)) {
+      sanitized.media_kind = meta.media_kind;
+    }
+    if (name === 'aigc_media_shared') {
+      if (meta.phase === 'completed' || meta.phase === 'failed') {
+        sanitized.phase = meta.phase;
+      }
+      if (typeof meta.share_target === 'string' && AIGC_SHARE_TARGETS.has(meta.share_target)) {
+        sanitized.share_target = meta.share_target;
+      }
+      if (typeof meta.error_code === 'string' && SAFE_TOKEN.test(meta.error_code)) {
+        sanitized.error_code = meta.error_code;
+      }
+    }
+    return sanitized;
+  }
   if (name === 'chat_turn_queued') {
     const surface = meta.surface;
     const channel = meta.channel;
@@ -205,6 +263,43 @@ export function sanitizeClientEventMeta(
       channel,
       queue_depth_at_submit: queueDepth,
     };
+  }
+  if (name === 'chat_attachment_terminal') {
+    const phase = meta.phase;
+    const stage = meta.stage;
+    const imageCount = meta.image_count;
+    const bucket = meta.duration_bucket;
+    const payloadBucket = meta.payload_bucket;
+    if (
+      typeof phase !== 'string'
+      || !CHAT_ATTACHMENT_PHASES.has(phase)
+      || typeof stage !== 'string'
+      || !CHAT_ATTACHMENT_STAGES.has(stage)
+      || typeof imageCount !== 'number'
+      || !Number.isInteger(imageCount)
+      || imageCount < 1
+      || imageCount > 9
+      || typeof bucket !== 'string'
+      || !DURATION_BUCKETS.has(bucket as DurationBucket)
+      || typeof payloadBucket !== 'string'
+      || !CHAT_ATTACHMENT_PAYLOAD_BUCKETS.has(payloadBucket)
+    ) {
+      return {};
+    }
+    const sanitized: Record<string, unknown> = {
+      phase,
+      stage,
+      image_count: imageCount,
+      duration_bucket: bucket,
+      payload_bucket: payloadBucket,
+    };
+    if (
+      typeof meta.error_code === 'string'
+      && CHAT_ATTACHMENT_ERROR_CODES.has(meta.error_code)
+    ) {
+      sanitized.error_code = meta.error_code;
+    }
+    return sanitized;
   }
   if (!isReliabilityEvent(name)) return meta;
 
@@ -255,6 +350,125 @@ export function sanitizeClientEventMeta(
   return sanitized;
 }
 
+function isAttachmentTerminalMeta(
+  meta: Record<string, unknown> | undefined,
+): meta is Record<string, unknown> {
+  return Boolean(
+    meta
+    && typeof meta.phase === 'string'
+    && CHAT_ATTACHMENT_PHASES.has(meta.phase)
+    && typeof meta.stage === 'string'
+    && CHAT_ATTACHMENT_STAGES.has(meta.stage)
+    && typeof meta.image_count === 'number'
+    && Number.isInteger(meta.image_count)
+    && meta.image_count >= 1
+    && meta.image_count <= 9
+    && typeof meta.duration_bucket === 'string'
+    && DURATION_BUCKETS.has(meta.duration_bucket as DurationBucket)
+    && typeof meta.payload_bucket === 'string'
+    && CHAT_ATTACHMENT_PAYLOAD_BUCKETS.has(meta.payload_bucket),
+  );
+}
+
+async function clientEventOutboxStorageKey(): Promise<string> {
+  return `${CLIENT_EVENT_OUTBOX_PREFIX}:${await getAuthStorageScope()}`;
+}
+
+async function readClientEventOutbox(
+  storageKey: string,
+): Promise<AttachmentTerminalOutboxItem[]> {
+  const stored = await AsyncStorage.getItem(storageKey);
+  if (!stored) return [];
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(stored);
+  } catch {
+    await AsyncStorage.removeItem(storageKey);
+    return [];
+  }
+  if (!Array.isArray(parsed)) {
+    await AsyncStorage.removeItem(storageKey);
+    return [];
+  }
+  return parsed.flatMap((item): AttachmentTerminalOutboxItem[] => {
+    if (
+      !item
+      || typeof item !== 'object'
+      || (item as AttachmentTerminalOutboxItem).name !== 'chat_attachment_terminal'
+      || typeof (item as AttachmentTerminalOutboxItem).eventKey !== 'string'
+      || !SAFE_TOKEN.test((item as AttachmentTerminalOutboxItem).eventKey)
+    ) {
+      return [];
+    }
+    const sanitized = sanitizeClientEventMeta(
+      'chat_attachment_terminal',
+      (item as AttachmentTerminalOutboxItem).meta,
+    );
+    if (!isAttachmentTerminalMeta(sanitized)) return [];
+    return [{
+      eventKey: (item as AttachmentTerminalOutboxItem).eventKey,
+      name: 'chat_attachment_terminal',
+      meta: sanitized,
+    }];
+  });
+}
+
+async function writeClientEventOutbox(
+  storageKey: string,
+  items: AttachmentTerminalOutboxItem[],
+): Promise<void> {
+  if (items.length === 0) {
+    await AsyncStorage.removeItem(storageKey);
+    return;
+  }
+  await AsyncStorage.setItem(storageKey, JSON.stringify(items));
+}
+
+async function enqueueAttachmentTerminalEvent(
+  eventKey: string,
+  meta: Record<string, unknown>,
+): Promise<void> {
+  await serializeClientEventOutbox(async () => {
+    const storageKey = await clientEventOutboxStorageKey();
+    const items = await readClientEventOutbox(storageKey);
+    if (items.some((item) => item.eventKey === eventKey)) return;
+    await writeClientEventOutbox(storageKey, [
+      ...items,
+      { eventKey, name: 'chat_attachment_terminal', meta },
+    ]);
+  });
+}
+
+/**
+ * Replays content-free attachment terminal events after network/app interruptions.
+ * The server deduplicates by event_key; each acknowledged item is removed durably.
+ */
+export async function flushClientEventOutbox(): Promise<void> {
+  await serializeClientEventOutbox(async () => {
+    const storageKey = await clientEventOutboxStorageKey();
+    const items = await readClientEventOutbox(storageKey);
+    let remaining = items;
+    while (remaining.length > 0) {
+      const item = remaining[0];
+      try {
+        const response = await api.post('/client-events', {
+          event_name: item.name,
+          event_key: item.eventKey,
+          meta: item.meta,
+        });
+        if (response?.data?.ok !== true) {
+          return;
+        }
+      } catch {
+        return;
+      }
+      remaining = remaining.slice(1);
+      await writeClientEventOutbox(storageKey, remaining);
+    }
+  });
+}
+
 /**
  * 发一条 UI 埋点事件. 失败静默 — 埋点不该影响用户流程.
  * 后端 /client-events 把事件写入 client_events 表, 观察期看板用来算行为率.
@@ -274,11 +488,36 @@ export function sanitizeClientEventMeta(
 export async function emitClientEvent(
   name: ClientEventName,
   meta?: Record<string, unknown>,
+  options?: { eventKey?: string },
 ): Promise<void> {
+  const eventKey = options?.eventKey;
+  const sanitizedMeta = sanitizeClientEventMeta(name, meta);
+  if (
+    name === 'chat_attachment_terminal'
+    && typeof eventKey === 'string'
+    && SAFE_TOKEN.test(eventKey)
+    && isAttachmentTerminalMeta(sanitizedMeta)
+  ) {
+    try {
+      await enqueueAttachmentTerminalEvent(eventKey, sanitizedMeta);
+      void flushClientEventOutbox().catch(() => {
+        // The durable outbox owns retry; network delivery must not block cleanup.
+      });
+    } catch {
+      // Callers await this function before cleanup, so a local persistence failure
+      // leaves the draft intact even though telemetry itself stays UI-silent.
+      throw new Error('client_event_outbox_persistence_failed');
+    }
+    return;
+  }
+
   try {
     await api.post('/client-events', {
       event_name: name,
-      meta: sanitizeClientEventMeta(name, meta),
+      ...(typeof eventKey === 'string' && SAFE_TOKEN.test(eventKey)
+        ? { event_key: eventKey }
+        : {}),
+      meta: sanitizedMeta,
     });
   } catch {
     // swallow — 埋点不该影响 UI

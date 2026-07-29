@@ -3,12 +3,15 @@
 计算训练负荷（TRIMP）、急性:慢性负荷比（ACWR）、综合恢复就绪度。
 """
 import logging
+import math
 from datetime import date, timedelta
 from typing import Optional
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 from app.models.daily_health import GarminData, WorkoutRecord
 from app.models.user import User
+from app.services.training_load_metrics import assess_acwr
+from app.utils.timezone import get_user_today
 
 logger = logging.getLogger(__name__)
 
@@ -87,21 +90,37 @@ class ExerciseRecoveryService:
             "hrv_trend": hrv_trend, "recommendation": rec, "record_date": str(g.record_date),
         }
 
-    def get_training_load(self, db: Session, user_id: int) -> dict:
+    def get_training_load(
+        self,
+        db: Session,
+        user_id: int,
+        *,
+        as_of_date: Optional[date] = None,
+    ) -> dict:
         """TRIMP + ACWR (7d acute / 28d chronic rolling average)"""
-        today = date.today()
+        today = as_of_date or get_user_today(db, user_id)
+        window_start = today - timedelta(days=27)
         user = db.query(User).filter(User.id == user_id).first()
         hr_max = _estimate_hr_max(user)
 
         workouts = (
             db.query(WorkoutRecord)
-            .filter(WorkoutRecord.user_id == user_id, WorkoutRecord.workout_date >= today - timedelta(days=28))
+            .filter(
+                WorkoutRecord.user_id == user_id,
+                WorkoutRecord.workout_date >= window_start,
+                WorkoutRecord.workout_date <= today,
+            )
             .order_by(desc(WorkoutRecord.workout_date)).all()
         )
-        # 按日期汇总
+        # 按日期汇总。ACWR 必须全窗口使用同一负荷量纲，因此统一由时长和
+        # 心率推算 TRIMP；不能把 Garmin 原始 trainingLoad 与推算值混用。
         dt, dty = {}, {}  # daily_trimp, daily_type
+        invalid_load_data = False
         for w in workouts:
-            trimp = self._workout_trimp(w, hr_max)
+            trimp, valid = self._workout_trimp(w, hr_max)
+            if not valid:
+                invalid_load_data = True
+                continue
             d = w.workout_date
             dt[d] = dt.get(d, 0) + trimp
             if d not in dty:
@@ -111,14 +130,15 @@ class ExerciseRecoveryService:
         daily_loads = [{"date": str(today - timedelta(days=i)), "trimp": loads[i],
                         "workout_type": dty.get(today - timedelta(days=i))} for i in range(14)]
 
-        acute_sum, chronic_sum = sum(loads[:7]), sum(loads)
-        acute_avg, chronic_avg = acute_sum / 7, chronic_sum / 28
-        acwr = round(acute_avg / chronic_avg, 2) if chronic_avg > 0 else 0
-
-        if acwr < 0.8: zone = "undertraining"
-        elif acwr <= 1.3: zone = "optimal"
-        elif acwr <= 1.5: zone = "danger"
-        else: zone = "overtraining"
+        assessment = assess_acwr(
+            loads,
+            invalid_input=invalid_load_data,
+        )
+        acute_sum = assessment.acute_load_7d
+        chronic_sum = assessment.chronic_load_28d
+        acute_avg = acute_sum / 7
+        acwr = assessment.acwr
+        zone = assessment.zone
 
         prev_avg = sum(loads[7:14]) / 7 if any(loads[7:14]) else 0
         if prev_avg > 0:
@@ -129,14 +149,26 @@ class ExerciseRecoveryService:
         return {
             "today_trimp": round(dt.get(today, 0), 1), "acute_load_7d": round(acute_sum, 1),
             "chronic_load_28d": round(chronic_sum, 1), "acwr": acwr, "acwr_zone": zone,
-            "acwr_trend": trend, "daily_loads": daily_loads, "data_days": sum(1 for v in loads if v > 0),
+            "acwr_reliable": assessment.reliable,
+            "acwr_unavailable_reason": assessment.unavailable_reason,
+            "baseline_active_days": assessment.baseline_active_days,
+            "baseline_weeks_with_load": assessment.baseline_weeks_with_load,
+            "baseline_load_21d": assessment.baseline_load_21d,
+            "acute_observed_days": assessment.acute_observed_days,
+            "baseline_observed_days": assessment.baseline_observed_days,
+            "oldest_load_age_days": assessment.oldest_load_age_days,
+            "load_method": "derived_trimp",
+            "acwr_trend": trend, "daily_loads": daily_loads, "data_days": assessment.data_days,
+            "as_of_date": str(today),
         }
 
     def get_recommendation(self, db: Session, user_id: int) -> dict:
         """训练建议: readiness x ACWR 决策矩阵"""
         r = self.get_recovery_readiness(db, user_id)
         l = self.get_training_load(db, user_id)
-        score, acwr, zone = r.get("readiness_score"), l.get("acwr", 0), l.get("acwr_zone", "unknown")
+        score = r.get("readiness_score")
+        acwr = l.get("acwr")
+        zone = l.get("acwr_zone") or "unknown"
 
         advice = self._decide(score, zone)
         warnings = []
@@ -148,14 +180,24 @@ class ExerciseRecoveryService:
             warnings.append("睡眠质量不佳，已降低建议训练强度")
             idx = ADVICE_ORDER.index(advice) if advice in ADVICE_ORDER else 2
             advice = ADVICE_ORDER[max(0, idx - 1)]
-        if l.get("data_days", 0) < 14:
-            warnings.append("运动数据不足 14 天，ACWR 仅供参考")
+        if l.get("acwr_unavailable_reason") == "insufficient_chronic_baseline":
+            warnings.append("慢性训练基线不足，暂不计算 ACWR")
+        elif l.get("acwr_unavailable_reason") == "insufficient_data_coverage":
+            warnings.append("训练数据覆盖不足，暂不计算 ACWR")
+        elif l.get("acwr_unavailable_reason") == "invalid_training_load_data":
+            warnings.append("训练负荷数据异常，暂不计算 ACWR")
+        elif l.get("acwr_unavailable_reason") == "no_recent_training":
+            warnings.append("过去 7 天没有可用于计算 ACWR 的训练负荷")
+        elif l.get("data_days", 0) < 14:
+            warnings.append("运动负荷样本偏少，ACWR 仅供参考")
 
         p = ADVICE_PARAMS.get(advice, ADVICE_PARAMS["moderate"])
         parts = []
         if score is not None:
             parts.append(f"恢复就绪度 {score} 分")
-        parts += [f"ACWR {acwr}", f"处于{ZONE_NAMES.get(zone, zone)}", ADVICE_NAMES.get(advice, "")]
+        if acwr is not None:
+            parts.extend([f"ACWR {acwr}", f"处于{ZONE_NAMES.get(zone, zone)}"])
+        parts.append(ADVICE_NAMES.get(advice, ""))
 
         return {
             "training_advice": advice, "suggested_intensity": p[0], "suggested_types": p[1],
@@ -192,14 +234,36 @@ class ExerciseRecoveryService:
         if r3 < avg * 0.85: return "declining"
         return "stable"
 
-    def _workout_trimp(self, w: WorkoutRecord, hr_max: int) -> float:
-        if w.training_load and w.training_load > 0:
-            return float(w.training_load)
-        dur = (w.duration_seconds or 0) / 60
+    def _workout_trimp(self, w: WorkoutRecord, hr_max: int) -> tuple[float, bool]:
+        """Return one homogeneous derived-TRIMP scale for every provider."""
+        if w.training_load is not None:
+            try:
+                provider_load = float(w.training_load)
+            except (TypeError, ValueError):
+                return 0.0, False
+            if not math.isfinite(provider_load) or provider_load < 0:
+                return 0.0, False
+
+        try:
+            duration_seconds = float(w.duration_seconds or 0)
+        except (TypeError, ValueError):
+            return 0.0, False
+        if not math.isfinite(duration_seconds) or duration_seconds < 0:
+            return 0.0, False
+
+        dur = duration_seconds / 60
         if dur <= 0:
-            return 0
-        coeff = _trimp_coeff(w.avg_heart_rate / hr_max) if w.avg_heart_rate and hr_max > 0 else 1.5
-        return dur * coeff
+            return 0.0, True
+
+        try:
+            avg_hr = float(w.avg_heart_rate) if w.avg_heart_rate is not None else None
+        except (TypeError, ValueError):
+            return 0.0, False
+        if avg_hr is not None and (not math.isfinite(avg_hr) or avg_hr <= 0):
+            return 0.0, False
+
+        coeff = _trimp_coeff(avg_hr / hr_max) if avg_hr and hr_max > 0 else 1.5
+        return dur * coeff, True
 
     def _decide(self, score: Optional[float], zone: str) -> str:
         if score is None:

@@ -167,11 +167,18 @@ describe('SettingsScreen', () => {
   });
 
   it('opens the privacy policy instead of rendering a dead row', () => {
-    const { getByText } = render(<SettingsScreen />);
+    const { getByRole } = render(<SettingsScreen />);
 
-    fireEvent.press(getByText('隐私政策'));
+    fireEvent.press(getByRole('button', { name: '隐私政策' }));
 
     expect(mockPush).toHaveBeenCalledWith('/privacy-policy');
+  });
+
+  it('exposes privacy and deletion rows as named accessibility buttons', () => {
+    const { getByRole } = render(<SettingsScreen />);
+
+    expect(getByRole('button', { name: '隐私政策' })).toBeTruthy();
+    expect(getByRole('button', { name: '删除账号与数据' })).toBeTruthy();
   });
 
   it('opens account security for password management', () => {

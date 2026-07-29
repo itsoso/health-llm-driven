@@ -3,6 +3,7 @@ from datetime import date, datetime, timedelta
 
 import pytest
 
+import app.services.llm.tool_validator as tool_validator
 from app.services.llm.tool_validator import validate_health_record, validate_tool_call
 
 
@@ -10,24 +11,22 @@ from app.services.llm.tool_validator import validate_health_record, validate_too
 
 
 class TestDateGuard:
-    def test_far_past_date_coerced_to_today(self):
+    def test_far_past_date_is_rejected_without_rewriting_it(self):
         v = validate_health_record("diet", {
             "meal_type": "dinner", "food_items": "牛肉面",
             "record_date": "2023-10-09",
         })
-        assert v["error"] is None
-        assert v["data"]["record_date"] != "2023-10-09"
-        # 应该是今天附近 (允许时区 ±1 天)
-        recorded = v["data"]["record_date"]
-        assert "2026" in recorded or "2027" in recorded or "2028" in recorded
+        assert v["error"] is not None
+        assert v["data"]["record_date"] == "2023-10-09"
         assert any("偏离" in w for w in v["warnings"])
 
-    def test_far_future_date_coerced(self):
+    def test_far_future_date_is_rejected_without_rewriting_it(self):
         v = validate_health_record("diet", {
             "food_items": "x",
             "record_date": "2099-01-01",
         })
-        assert v["data"]["record_date"] != "2099-01-01"
+        assert v["error"] is not None
+        assert v["data"]["record_date"] == "2099-01-01"
 
     def test_recent_date_kept(self):
         yesterday = (date.today() - timedelta(days=1)).isoformat()
@@ -37,12 +36,13 @@ class TestDateGuard:
         })
         assert v["data"]["record_date"] == yesterday
 
-    def test_invalid_date_format(self):
+    def test_invalid_date_format_is_rejected_without_rewriting_it(self):
         v = validate_health_record("diet", {
             "food_items": "x",
             "record_date": "Tuesday",
         })
-        assert "Tuesday" not in v["data"]["record_date"]
+        assert v["error"] is not None
+        assert v["data"]["record_date"] == "Tuesday"
         assert any("非合法" in w for w in v["warnings"])
 
 
@@ -104,6 +104,174 @@ class TestRequiredFields:
     def test_diet_with_food_items_ok(self):
         v = validate_health_record("diet", {"food_items": "牛肉面"})
         assert v["error"] is None
+
+    @pytest.mark.parametrize(
+        "nutrition",
+        (
+            {},
+            {"calories": 0, "protein": 0, "carbs": 0, "fat": 0},
+            {"calories": 520, "protein": 20, "carbs": 72},
+            {"calories": 520, "protein": 20, "carbs": 72, "fat": 17},
+        ),
+    )
+    def test_agent_text_diet_requires_complete_nutrition_estimate(self, nutrition):
+        v = validate_health_record(
+            "diet",
+            {
+                "food_items": "一个包子、一个茶叶蛋、一碗粥",
+                "source": "agent_text",
+                **nutrition,
+            },
+        )
+
+        assert v["error"] is not None
+        assert "营养" in v["error"]
+
+    def test_agent_text_diet_with_complete_nutrition_estimate_is_valid(self):
+        v = validate_health_record(
+            "diet",
+            {
+                "food_items": "一个包子、一个茶叶蛋、一碗粥",
+                "source": "agent_text",
+                "calories": 520,
+                "protein": 20,
+                "carbs": 72,
+                "fat": 17,
+                "fiber": 4,
+            },
+        )
+
+        assert v["error"] is None
+
+    def test_agent_text_diet_rejects_nonzero_calories_with_all_zero_macros(self):
+        v = validate_health_record(
+            "diet",
+            {
+                "food_items": "一个包子、一个茶叶蛋、一碗粥",
+                "source": "agent_text",
+                "calories": 520,
+                "protein": 0,
+                "carbs": 0,
+                "fat": 0,
+                "fiber": 0,
+            },
+        )
+
+        assert v["error"] is not None
+        assert v["error_code"] == "diet_nutrition_incomplete"
+
+    def test_agent_text_alcohol_diet_allows_zero_macros_with_alcohol_units(self):
+        v = validate_health_record(
+            "diet",
+            {
+                "food_items": "一杯威士忌",
+                "source": "agent_text",
+                "calories": 105,
+                "protein": 0,
+                "carbs": 0,
+                "fat": 0,
+                "fiber": 0,
+                "alcohol_units": 1.5,
+            },
+        )
+
+        assert v["error"] is None
+
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        (
+            ("calories", True),
+            ("protein", float("nan")),
+            ("carbs", float("inf")),
+            ("fat", float("-inf")),
+            ("fiber", False),
+        ),
+    )
+    def test_agent_text_diet_rejects_non_finite_or_boolean_nutrition(
+        self, field, value
+    ):
+        nutrition = {
+            "calories": 520,
+            "protein": 20,
+            "carbs": 72,
+            "fat": 17,
+            "fiber": 4,
+        }
+        nutrition[field] = value
+
+        v = validate_health_record(
+            "diet",
+            {
+                "food_items": "一个包子、一个茶叶蛋、一碗粥",
+                "source": "agent_text",
+                **nutrition,
+            },
+        )
+
+        assert v["error"] is not None
+        assert "营养" in v["error"]
+
+    def test_agent_attachment_diet_requires_complete_nutrition_estimate(self):
+        v = validate_tool_call(
+            "health_record",
+            {
+                "record_type": "diet",
+                "data": {
+                    "meal_type": "lunch",
+                    "food_items": "米饭和鸡肉",
+                    "source": "agent_attachment",
+                },
+            },
+        )
+
+        assert v["error"] is not None
+        assert v["error_code"] == "diet_nutrition_incomplete"
+
+    def test_health_record_validator_exception_fails_closed(self, monkeypatch):
+        def explode(*args, **kwargs):
+            raise RuntimeError("validator unavailable")
+
+        monkeypatch.setattr(tool_validator, "validate_health_record", explode)
+
+        v = validate_tool_call(
+            "health_record",
+            {
+                "record_type": "diet",
+                "data": {
+                    "food_items": "一个包子",
+                    "source": "agent_text",
+                },
+            },
+        )
+
+        assert v["error"] is not None
+        assert v["error_code"] == "tool_validation_unavailable"
+
+    def test_agent_diet_rejection_log_does_not_include_nutrition_value(
+        self, caplog
+    ):
+        with caplog.at_level("WARNING"):
+            v = validate_health_record(
+                "diet",
+                {
+                    "food_items": "一个包子",
+                    "source": "agent_text",
+                    "calories": 9876,
+                    "protein": 0,
+                    "carbs": 0,
+                    "fat": 0,
+                    "fiber": 0,
+                },
+            )
+
+        assert v["error"] is not None
+        nutrition_logs = [
+            record.getMessage()
+            for record in caplog.records
+            if "Agent diet 缺少完整营养估算" in record.getMessage()
+        ]
+        assert nutrition_logs
+        assert all("9876" not in message for message in nutrition_logs)
 
     def test_water_missing_amount_is_required(self):
         v = validate_health_record("water", {})
@@ -264,11 +432,8 @@ def test_yesterday_repro_bug_now_caught():
         "record_date": "2023-10-09",
     }
     v = validate_health_record("diet", args)
-    assert v["error"] is None
-    # 日期被覆盖了
-    assert v["data"]["record_date"] != "2023-10-09"
-    today_year = str(datetime.now().year)
-    assert today_year in v["data"]["record_date"]
+    assert "超出可直接记录的日期范围" in str(v["error"])
+    assert v["data"]["record_date"] == "2023-10-09"
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -293,8 +458,8 @@ class TestDispatcher:
             "record_type": "weight",
             "data": {"weight": 72.0, "record_date": "2023-10-09"},
         })
-        assert v["error"] is None
-        assert v["data"]["data"]["record_date"] != "2023-10-09"
+        assert "超出可直接记录的日期范围" in str(v["error"])
+        assert v["data"]["data"]["record_date"] == "2023-10-09"
 
     def test_health_record_with_non_dict_data(self):
         """LLM 乱塞 data=str, 应当 coerce 成 dict 而不是崩."""
@@ -521,9 +686,9 @@ class TestManagePlanGuard:
         assert len(v["data"]["data"]["title"]) == 200
 
 
-class TestBypassSafe:
-    def test_validator_exception_does_not_propagate(self, monkeypatch):
-        """validator 自身崩 → 放行, 不让工具调用挂."""
+class TestValidatorFailurePolicy:
+    def test_validator_exception_is_returned_without_propagating(self, monkeypatch):
+        """validator 自身崩 → 不抛异常，也不执行未经校验的工具调用."""
         from app.services.llm import tool_validator as tv
 
         def boom(*a, **k):
@@ -531,7 +696,8 @@ class TestBypassSafe:
 
         monkeypatch.setitem(tv._TOOL_VALIDATORS, "health_query", boom)
         v = tv.validate_tool_call("health_query", {"dimension": "sleep"})
-        assert v["error"] is None
+        assert v["error"] is not None
+        assert v["error_code"] == "tool_validation_unavailable"
         assert v["warnings"] == []
 
 

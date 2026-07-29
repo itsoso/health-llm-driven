@@ -29,7 +29,7 @@ Status: draft for the next App Store submission.
 
 小巴，你忠实的健康参谋——面向长期健康管理的个人健康操作系统。它把你授权同步的 Apple Health / HealthKit 数据、Apple Watch 记录、体检报告、饮食运动记录、用药和补剂信息组织成可复盘的健康时间线，并通过 AI 帮你生成日常行动建议。
 
-打开即进入小巴。小巴对话是主入口,你可以从对话里的今日简报看到当前最重要的健康行动,通过输入栏和快捷入口完成记录,并从更多菜单进入个人中心管理数据来源、健康档案、提醒、安全与隐私。
+打开即进入小巴。小巴对话是主入口；当存在明确待办、风险或处理状态时，顶部动态上下文条会连接到今日计划，但不会在每轮回复后重复出现。你可以通过输入栏和快捷入口完成记录，并从更多菜单进入个人中心管理数据来源、健康档案、提醒、安全与隐私。
 
 核心能力:
 
@@ -50,7 +50,7 @@ Status: draft for the next App Store submission.
 
 ### What's New
 
-本版本收敛为 iPhone 上的 Agent Native 核心体验: 打开即进入小巴，今日简报、文字与语音输入、拍照记录、确认写入和个人中心都围绕对话完成。新增可查询的账号与数据删除请求，改为场景触发权限，并优化动态行动、流式 Markdown、图片持久化和写入回执。
+本版本收敛为 iPhone 上的 Agent Native 核心体验：打开即进入小巴，动态上下文条与今日计划、文字与语音输入、拍照记录、确认写入和个人中心都围绕对话完成。新增可查询的账号与数据删除请求，改为场景触发权限，并优化动态行动、流式 Markdown、图片持久化和写入回执。
 
 ## Review Notes
 
@@ -100,7 +100,17 @@ python3 scripts/check_app_store_release_pack.py \
   --screenshot-dir design/screenshots/app-store/<build-id>-ready
 ```
 
-Create the external evidence file from `docs/release/app-store/real-device-acceptance.template.json`. It must refer to the exact TestFlight build, identify the tester, and mark every physical-iPhone check `true`, including demo login, briefing, text fallback after denied permissions, voice, photo, sharing, confirmed write, privacy and deletion paths. Do not commit tester evidence containing device or account details.
+Create the external evidence file from `docs/release/app-store/real-device-acceptance.template.json`. It must refer to the exact TestFlight build and include the app version, production EAS build ID, source commit, device, iOS version and tester. Mark every physical-iPhone check `true`, including demo login, streaming Markdown, permission-denied text fallback, both voice modes, external-audio interruption, photo persistence, image/video playback and sharing, write/correct/delete idempotency, foreground recovery, draft preservation, latest-message scrolling, privacy and deletion paths. Do not commit tester evidence containing device or account details.
+
+Run the non-destructive automated subset against the installed production app first:
+
+```bash
+scripts/run_ios_real_device_acceptance.sh \
+  <physical-device-udid> \
+  /secure/path/XiaobaAcceptance-<build-id>.xcresult
+```
+
+This harness covers launch, authenticated Agent access, briefing interaction, foreground draft recovery, and the privacy/account-deletion entries. It does not replace the dedicated physical checks for voice, camera, sharing, health writes, correction/deletion idempotency, or completed account deletion.
 
 ## Privacy Nutrition Label
 
@@ -118,7 +128,7 @@ Official requirement: https://developer.apple.com/help/app-store-connect/manage-
 
 ## Screenshot Set
 
-Build 226 current App Store Connect set (uploaded and API-verified on 2026-07-15):
+Build 226 historical App Store Connect set (uploaded and API-verified on 2026-07-15):
 
 1. Agent home and today's priority.
 2. Expanded today action and decision basis.
@@ -127,6 +137,14 @@ Build 226 current App Store Connect set (uploaded and API-verified on 2026-07-15
 5. Health archive import.
 
 The uploaded set uses the demo account, contains no private user health data, and targets `APP_IPHONE_67` at 1290 x 2796. The settings screenshot containing the demo login identifier and the privacy-policy screenshot were validated locally but intentionally excluded from marketing assets.
+
+The current internal TestFlight candidate is version 1.3.2 Build 237, EAS build
+`7a7df837-50b8-46ed-97a8-983fc8ea3a07`, source commit
+`f6e4308c`. App Store Connect reports the
+build as `VALID`, not expired and `IN_BETA_TESTING` for internal testers. The
+Build 226 screenshots are stale evidence and cannot satisfy the final gate for
+Build 237; capture or explicitly re-verify the required screenshot set against
+the exact Build 237 UI before submission.
 
 Use `docs/release/app-store/screenshot-runbook.md`. Required first pass:
 

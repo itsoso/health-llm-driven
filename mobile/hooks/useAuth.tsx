@@ -4,6 +4,7 @@ import React, {
   useState,
   useEffect,
   useCallback,
+  useRef,
   type ReactNode,
 } from 'react';
 import { AppState } from 'react-native';
@@ -17,9 +18,15 @@ import {
 } from '../services/auth';
 import { setOnUnauthorized } from '../services/api';
 import { saveTokenToSharedKeychain } from '../modules/shared-keychain';
+import {
+  hasPersistedSessionMarker,
+  markPersistedSession,
+} from '../services/authSessionMarker';
 
 const TOKEN_RESTORE_ATTEMPTS = 3;
+const KNOWN_SESSION_RESTORE_ATTEMPTS = 10;
 const TOKEN_RESTORE_RETRY_MS = 150;
+const UNAUTHORIZED_CONFIRM_RETRY_MS = 350;
 
 interface AuthState {
   user: User | null;
@@ -29,6 +36,7 @@ interface AuthState {
   login: (username: string, password: string) => Promise<void>;
   loginByPhoneCode: (phone: string, code: string) => Promise<void>;
   logout: () => Promise<void>;
+  retrySession: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthState>({
@@ -39,17 +47,21 @@ const AuthContext = createContext<AuthState>({
   login: async () => {},
   loginByPhoneCode: async () => {},
   logout: async () => {},
+  retrySession: async () => {},
 });
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function restoreSavedToken(): Promise<string | null> {
-  for (let attempt = 0; attempt < TOKEN_RESTORE_ATTEMPTS; attempt += 1) {
+async function restoreSavedToken(knownSession = false): Promise<string | null> {
+  const attempts = knownSession
+    ? KNOWN_SESSION_RESTORE_ATTEMPTS
+    : TOKEN_RESTORE_ATTEMPTS;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
     const saved = await getToken();
     if (saved) return saved;
-    if (attempt < TOKEN_RESTORE_ATTEMPTS - 1) {
+    if (attempt < attempts - 1) {
       await sleep(TOKEN_RESTORE_RETRY_MS);
     }
   }
@@ -58,6 +70,16 @@ async function restoreSavedToken(): Promise<string | null> {
 
 function isUnauthorizedError(error: unknown): boolean {
   return (error as { response?: { status?: number } } | null)?.response?.status === 401;
+}
+
+async function fetchCurrentUserWithConfirmedAuth(): Promise<User> {
+  try {
+    return await fetchCurrentUser();
+  } catch (error) {
+    if (!isUnauthorizedError(error)) throw error;
+    await sleep(UNAUTHORIZED_CONFIRM_RETRY_MS);
+    return fetchCurrentUser();
+  }
 }
 
 export function AuthProvider({
@@ -70,23 +92,57 @@ export function AuthProvider({
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const sessionEpochRef = useRef(0);
+  const sessionValidationRef = useRef<Promise<void> | null>(null);
 
   const clearSession = useCallback(async () => {
+    sessionEpochRef.current += 1;
     setToken(null);
     setUser(null);
     await logoutApi();
   }, []);
 
-  // A 401 from an authenticated endpoint means the persisted credential is no
-  // longer usable. Keeping it would route the user into an authenticated shell
-  // where every request fails and there is no reliable path back to login.
+  const retrySession = useCallback(async () => {
+    if (sessionValidationRef.current) return sessionValidationRef.current;
+
+    const validation = (async () => {
+      const recoveryEpoch = sessionEpochRef.current;
+      const knownSession = token !== null || await hasPersistedSessionMarker();
+      const saved = token || await restoreSavedToken(knownSession);
+      if (!saved || sessionEpochRef.current !== recoveryEpoch) return;
+
+      setToken(saved);
+      await markPersistedSession();
+      saveTokenToSharedKeychain(saved).catch(() => {});
+      try {
+        const me = await fetchCurrentUserWithConfirmedAuth();
+        if (sessionEpochRef.current === recoveryEpoch) setUser(me);
+      } catch (error) {
+        if (sessionEpochRef.current === recoveryEpoch && isUnauthorizedError(error)) {
+          await clearSession();
+        }
+        throw error;
+      }
+    })();
+    sessionValidationRef.current = validation;
+    try {
+      await validation;
+    } finally {
+      if (sessionValidationRef.current === validation) {
+        sessionValidationRef.current = null;
+      }
+    }
+  }, [clearSession, token]);
+
+  // A business endpoint can return 401 because of deploy/proxy timing or an
+  // endpoint-specific policy. Revalidate against /auth/me before deciding that
+  // the durable credential is invalid; never erase it from one incidental 401.
   useEffect(() => {
     setOnUnauthorized(() => {
-      setToken(null);
-      setUser(null);
-      void logoutApi();
+      void retrySession().catch(() => {});
     });
-  }, []);
+    return () => setOnUnauthorized(null);
+  }, [retrySession]);
 
   useEffect(() => {
     let mounted = true;
@@ -99,18 +155,24 @@ export function AuthProvider({
       };
     }
     setIsLoading(true);
+    const hydrationEpoch = sessionEpochRef.current;
     (async () => {
       try {
-        const saved = await restoreSavedToken();
-        if (saved && mounted) {
+        const knownSession = await hasPersistedSessionMarker();
+        const saved = await restoreSavedToken(knownSession);
+        if (saved && mounted && sessionEpochRef.current === hydrationEpoch) {
           setToken(saved);
+          await markPersistedSession();
           // 冷启动回灌 token 到 App Group UserDefaults + 共享 keychain,
           // 让 Siri extension 能读到。失败静默 —— 主 App 体验不受影响。
           saveTokenToSharedKeychain(saved).catch(() => {});
           try {
-            const me = await fetchCurrentUser();
-            if (mounted) setUser(me);
+            const me = await fetchCurrentUserWithConfirmedAuth();
+            if (mounted && sessionEpochRef.current === hydrationEpoch) setUser(me);
           } catch (error) {
+            if (sessionEpochRef.current !== hydrationEpoch) {
+              return;
+            }
             if (isUnauthorizedError(error)) {
               await clearSession();
             } else if (mounted) {
@@ -121,8 +183,10 @@ export function AuthProvider({
           }
         }
       } catch {
-        setToken(null);
-        setUser(null);
+        if (sessionEpochRef.current === hydrationEpoch) {
+          setToken(null);
+          setUser(null);
+        }
       } finally {
         if (mounted) setIsLoading(false);
       }
@@ -140,49 +204,51 @@ export function AuthProvider({
       if (state !== 'active' || isLoading || !restoreCloudSession) return;
       void (async () => {
         try {
-          if (!token) {
-            const saved = await restoreSavedToken();
-            if (saved) {
-              setToken(saved);
-              saveTokenToSharedKeychain(saved).catch(() => {});
-              setUser(await fetchCurrentUser());
-            }
-          } else if (!user) {
-            setUser(await fetchCurrentUser());
-          }
-        } catch (error) {
-          if (isUnauthorizedError(error)) {
-            await clearSession();
-          }
+          if (!token || !user) await retrySession();
+        } catch {
+          // retrySession owns confirmed credential invalidation. Transient
+          // failures remain recoverable on the next foreground transition.
         }
       })();
     });
     return () => sub.remove();
-  }, [token, user, isLoading, clearSession, restoreCloudSession]);
+  }, [token, user, isLoading, restoreCloudSession, retrySession]);
 
   const login = useCallback(async (username: string, password: string) => {
     const result = await loginApi(username, password);
+    sessionEpochRef.current += 1;
     setToken(result.access_token);
     setUser(result.user);
   }, []);
 
   const loginByPhoneCode = useCallback(async (phone: string, code: string) => {
     const result = await loginByPhoneCodeApi(phone, code);
+    sessionEpochRef.current += 1;
     setToken(result.access_token);
     setUser(result.user);
   }, []);
 
   const logout = useCallback(async () => {
-    await logoutApi();
+    sessionEpochRef.current += 1;
     setToken(null);
     setUser(null);
+    await logoutApi();
   }, []);
 
   const isAuthenticated = token !== null;
 
   return (
     <AuthContext.Provider
-      value={{ user, token, isLoading, isAuthenticated, login, loginByPhoneCode, logout }}
+      value={{
+        user,
+        token,
+        isLoading,
+        isAuthenticated,
+        login,
+        loginByPhoneCode,
+        logout,
+        retrySession,
+      }}
     >
       {children}
     </AuthContext.Provider>

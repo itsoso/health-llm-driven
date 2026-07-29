@@ -16,6 +16,7 @@ class ClientEvent(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     event_name = Column(String(64), nullable=False, index=True)
+    event_key = Column(String(64), nullable=True)
     meta = Column(JSONColumn, nullable=True)  # 可选上下文: rule_id / specialist / audit_id
     created_at = Column(
         DateTime(timezone=True),
@@ -26,4 +27,11 @@ class ClientEvent(Base):
 
     __table_args__ = (
         Index("ix_client_events_name_created", "event_name", "created_at"),
+        Index(
+            "uq_client_events_owner_name_key",
+            "user_id",
+            "event_name",
+            "event_key",
+            unique=True,
+        ),
     )

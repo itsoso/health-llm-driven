@@ -409,6 +409,144 @@ describe('renderCard', () => {
     get.mockRestore();
   });
 
+  it('renders a recoverable expired AIGC confirmation as a fresh confirmation', async () => {
+    const get = vi.spyOn(api, 'get').mockResolvedValueOnce({
+      data: {
+        id: 'aigc_confirm_expired',
+        status: 'expired',
+        can_confirm: true,
+        requires_reconfirmation: true,
+        job: null,
+      },
+    } as never);
+    const card = renderCard({
+      type: 'aigc_media_confirmation',
+      data: {
+        confirmation_id: 'aigc_confirm_expired',
+        kind: 'text_to_video',
+        status: 'pending',
+      },
+    });
+    render(card!);
+
+    expect(await screen.findByText('草稿已过期，点击下方可重新确认生成。')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '重新确认并生成' })).toBeEnabled();
+    get.mockRestore();
+  });
+
+  it('reconciles an AIGC job after the confirm response is lost', async () => {
+    const get = vi.spyOn(api, 'get')
+      .mockResolvedValueOnce({
+        data: {
+          id: 'aigc_confirm_reconcile',
+          status: 'pending',
+          can_confirm: true,
+          job: null,
+        },
+      } as never)
+      .mockResolvedValueOnce({
+        data: {
+          id: 'aigc_confirm_reconcile',
+          status: 'dispatched',
+          can_confirm: false,
+          job: {
+            id: 'aigc_reconciled_1',
+            kind: 'text_to_video',
+            status: 'queued',
+            progress: 0,
+          },
+        },
+      } as never)
+      .mockResolvedValueOnce({
+        data: {
+          id: 'aigc_reconciled_1',
+          kind: 'text_to_video',
+          status: 'queued',
+          progress: 0,
+        },
+      } as never);
+    const post = vi.spyOn(api, 'post').mockRejectedValueOnce({
+      response: { status: 409, data: { detail: '确认正在处理' } },
+    });
+    const card = renderCard({
+      type: 'aigc_media_confirmation',
+      data: {
+        confirmation_id: 'aigc_confirm_reconcile',
+        kind: 'text_to_video',
+        status: 'pending',
+      },
+    });
+    render(card!);
+
+    fireEvent.click(await screen.findByRole('button', { name: '发送给百炼并生成' }));
+
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText('排队中')).toBeInTheDocument();
+    expect(screen.queryByText('提交未完成，请稍后重试。')).not.toBeInTheDocument();
+    get.mockRestore();
+    post.mockRestore();
+  });
+
+  it('keeps reconciling a dispatching AIGC confirmation until its job appears', async () => {
+    const get = vi.spyOn(api, 'get')
+      .mockResolvedValueOnce({
+        data: {
+          id: 'aigc_confirm_dispatching',
+          status: 'pending',
+          can_confirm: true,
+          job: null,
+        },
+      } as never)
+      .mockResolvedValueOnce({
+        data: {
+          id: 'aigc_confirm_dispatching',
+          status: 'dispatching',
+          can_confirm: false,
+          job: null,
+        },
+      } as never)
+      .mockResolvedValueOnce({
+        data: {
+          id: 'aigc_confirm_dispatching',
+          status: 'dispatched',
+          can_confirm: false,
+          job: {
+            id: 'aigc_dispatching_1',
+            kind: 'text_to_video',
+            status: 'queued',
+            progress: 0,
+          },
+        },
+      } as never)
+      .mockResolvedValueOnce({
+        data: {
+          id: 'aigc_dispatching_1',
+          kind: 'text_to_video',
+          status: 'queued',
+          progress: 0,
+        },
+      } as never);
+    const post = vi.spyOn(api, 'post').mockRejectedValueOnce({
+      response: { status: 409, data: { detail: '确认正在处理' } },
+    });
+    const card = renderCard({
+      type: 'aigc_media_confirmation',
+      data: {
+        confirmation_id: 'aigc_confirm_dispatching',
+        kind: 'text_to_video',
+        status: 'pending',
+      },
+    });
+    render(card!);
+
+    fireEvent.click(await screen.findByRole('button', { name: '发送给百炼并生成' }));
+
+    expect(await screen.findByText('排队中')).toBeInTheDocument();
+    expect(get).toHaveBeenCalledTimes(4);
+    get.mockRestore();
+    post.mockRestore();
+  });
+
   it('renders an indeterminate AIGC submission without claiming a retryable failure', () => {
     const r = renderCard({
       type: 'aigc_media_job',

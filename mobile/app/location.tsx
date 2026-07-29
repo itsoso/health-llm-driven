@@ -120,7 +120,7 @@ export default function LocationScreen() {
       setUseManual(!!data.use_manual_location);
       setCityInput(data.manual_location?.city || '');
     }
-  }, [data?.use_manual_location, data?.manual_location?.city]);
+  }, [data]);
 
   // 同步时区状态: 有 manual_timezone = 已锁定; 否则默认填生效时区方便切换
   useEffect(() => {
@@ -128,7 +128,7 @@ export default function LocationScreen() {
       setTzManual(!!tz.manual_timezone);
       setTzInput(tz.manual_timezone || tz.timezone || '');
     }
-  }, [tz?.manual_timezone, tz?.timezone]);
+  }, [tz]);
 
   const saveMut = useMutation({
     mutationFn: (payload: { use: boolean; city: string }) =>

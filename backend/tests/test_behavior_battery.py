@@ -9,6 +9,7 @@ R1(compaction)/R5(渐进披露)等改 prompt/路由的增量,翻 flag 前本文�
 """
 from __future__ import annotations
 
+import json
 from collections import Counter
 from pathlib import Path
 
@@ -82,8 +83,13 @@ def _run_check(case_id: str, query: str, chk: dict) -> None:
         from app.services.agent_executor import _remember_structured_medical_redirect
         got = _remember_structured_medical_redirect(chk["predicate"], chk["value"])
         if chk["expect"] == "blocked":
-            assert got is not None and str(got).startswith("Error:"), (
+            assert got is not None, (
                 f"{case_id}: 结构化医疗数据未被 remember 硬闸拦截(fail-open 回归)")
+            result = json.loads(str(got))
+            assert result["status"] == "rejected"
+            assert result["success"] is False
+            assert result["dispatch_started"] is False
+            assert result["error_code"], f"{case_id}: 拒绝结果缺稳定错误码"
         else:
             assert got is None, f"{case_id}: 良性属性被误拦(over-alarm 回归): {got}"
 

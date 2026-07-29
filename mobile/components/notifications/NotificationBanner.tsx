@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Text, StyleSheet, TextStyle, TouchableOpacity } from 'react-native';
-import Animated, { useSharedValue, useAnimatedStyle, withSpring, withDelay, runOnJS } from 'react-native-reanimated';
+import Animated, { useSharedValue, useAnimatedStyle, withSpring, runOnJS } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import type { Notification } from 'expo-notifications';
@@ -17,25 +17,41 @@ export default function NotificationBanner({ onTap }: { onTap?: (n: Notification
   const [current, setCurrent] = useState<Notification | null>(null);
   const translateY = useSharedValue(-120);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const currentIdentifierRef = useRef<string | null>(null);
+
+  const clearCurrentIfMatching = useCallback((identifier: string) => {
+    setCurrent((value) => {
+      if (value?.request.identifier !== identifier) return value;
+      currentIdentifierRef.current = null;
+      return null;
+    });
+  }, []);
+
+  const dismiss = useCallback((identifier?: string | null) => {
+    const targetIdentifier = identifier || currentIdentifierRef.current;
+    if (!targetIdentifier) return;
+    translateY.value = withSpring(-120, { damping: 18 }, (finished) => {
+      if (finished) {
+        runOnJS(clearCurrentIfMatching)(targetIdentifier);
+      }
+    });
+  }, [clearCurrentIfMatching, translateY]);
 
   useEffect(() => {
     setOnForegroundNotification((n) => {
+      const identifier = n.request.identifier;
+      currentIdentifierRef.current = identifier;
       setCurrent(n);
       translateY.value = withSpring(0, { damping: 18, stiffness: 160 });
       if (timerRef.current) clearTimeout(timerRef.current);
-      timerRef.current = setTimeout(() => dismiss(), AUTO_DISMISS_MS);
+      timerRef.current = setTimeout(() => dismiss(identifier), AUTO_DISMISS_MS);
     });
     return () => {
       setOnForegroundNotification(null);
       if (timerRef.current) clearTimeout(timerRef.current);
+      currentIdentifierRef.current = null;
     };
-  }, []);
-
-  const dismiss = () => {
-    translateY.value = withSpring(-120, { damping: 18 }, () => {
-      runOnJS(setCurrent)(null);
-    });
-  };
+  }, [dismiss, translateY]);
 
   const animStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: translateY.value }],
@@ -51,8 +67,9 @@ export default function NotificationBanner({ onTap }: { onTap?: (n: Notification
       <TouchableOpacity
         style={styles.inner}
         onPress={() => {
-          dismiss();
-          onTap?.(current);
+          const tappedNotification = current;
+          dismiss(tappedNotification.request.identifier);
+          onTap?.(tappedNotification);
         }}
         activeOpacity={0.85}
       >

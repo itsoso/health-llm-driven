@@ -1151,6 +1151,8 @@ interface AIGCMediaJobData {
 
 const AIGC_ACTIVE_STATUSES = new Set(['queued', 'running']);
 const AIGC_POLL_INTERVAL_MS = 6000;
+const AIGC_CONFIRM_RECONCILE_INTERVAL_MS = 1500;
+const AIGC_CONFIRM_RECONCILE_ATTEMPTS = 8;
 
 function aigcKindLabel(kind: string): string {
   switch (kind) {
@@ -1341,6 +1343,9 @@ export function AIGCMediaConfirmationCardView(data: AIGCMediaConfirmationData) {
   const [submitting, setSubmitting] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [job, setJob] = React.useState<AIGCMediaJobData | null>(null);
+  const [status, setStatus] = React.useState(String(data.status || 'pending').toLowerCase());
+  const [canConfirm, setCanConfirm] = React.useState(true);
+  const submittingRef = React.useRef(false);
   const confirmationID = String(data.confirmation_id || '').trim();
 
   React.useEffect(() => {
@@ -1356,6 +1361,12 @@ export function AIGCMediaConfirmationCardView(data: AIGCMediaConfirmationData) {
           progress: 0,
         });
         if (active && restored?.job_id) setJob(restored);
+        if (active) {
+          setStatus(String(response.data?.status || 'pending').toLowerCase());
+          if (typeof response.data?.can_confirm === 'boolean') {
+            setCanConfirm(response.data.can_confirm);
+          }
+        }
       })
       .catch(() => {
         // A pending draft remains actionable. A later history refresh can
@@ -1364,8 +1375,53 @@ export function AIGCMediaConfirmationCardView(data: AIGCMediaConfirmationData) {
     return () => { active = false; };
   }, [confirmationID, data.kind]);
 
+  React.useEffect(() => {
+    if (!confirmationID || status !== 'dispatching' || job) return;
+    let active = true;
+    let attempts = 0;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const reconcile = async () => {
+      attempts += 1;
+      try {
+        const response = await api.get(`/aigc/media/confirmations/${encodeURIComponent(confirmationID)}`);
+        if (!active) return;
+        const restored = normalizeAIGCMediaJob(response.data?.job, {
+          job_id: '',
+          kind: data.kind,
+          status: 'queued',
+          progress: 0,
+        });
+        if (restored?.job_id) {
+          setJob(restored);
+          return;
+        }
+        const nextStatus = String(response.data?.status || 'pending').toLowerCase();
+        setStatus(nextStatus);
+        if (typeof response.data?.can_confirm === 'boolean') {
+          setCanConfirm(response.data.can_confirm);
+        }
+        if (nextStatus !== 'dispatching') return;
+      } catch {
+        if (!active) return;
+      }
+      if (attempts < AIGC_CONFIRM_RECONCILE_ATTEMPTS) {
+        timer = setTimeout(reconcile, AIGC_CONFIRM_RECONCILE_INTERVAL_MS);
+      } else if (active) {
+        setError('任务仍在服务器处理中，稍后重新打开对话即可继续查看。');
+      }
+    };
+
+    void reconcile();
+    return () => {
+      active = false;
+      if (timer) clearTimeout(timer);
+    };
+  }, [confirmationID, data.kind, job, status]);
+
   const confirm = async () => {
-    if (!confirmationID || submitting) return;
+    if (!confirmationID || !canConfirm || submittingRef.current) return;
+    submittingRef.current = true;
     setSubmitting(true);
     setError(null);
     try {
@@ -1375,27 +1431,80 @@ export function AIGCMediaConfirmationCardView(data: AIGCMediaConfirmationData) {
         throw new Error('aigc_confirmation_missing_job');
       }
       setJob({ ...(payload as Record<string, unknown>), job_id: payload.id } as AIGCMediaJobData);
-    } catch {
-      setError('提交未完成，请稍后重试。');
+    } catch (caught) {
+      let reconciled = false;
+      try {
+        const response = await api.get(`/aigc/media/confirmations/${encodeURIComponent(confirmationID)}`);
+        const restored = normalizeAIGCMediaJob(response.data?.job, {
+          job_id: '',
+          kind: data.kind,
+          status: 'queued',
+          progress: 0,
+        });
+        if (restored?.job_id) {
+          setJob(restored);
+          reconciled = true;
+        } else {
+          const nextStatus = String(response.data?.status || 'pending').toLowerCase();
+          setStatus(nextStatus);
+          if (typeof response.data?.can_confirm === 'boolean') {
+            setCanConfirm(response.data.can_confirm);
+          }
+          reconciled = nextStatus === 'expired' || nextStatus === 'dispatching';
+        }
+      } catch {
+        // The original error is clearer when the owner-scoped ledger cannot be reached.
+      }
+      if (!reconciled) {
+        const responseData = (
+          caught && typeof caught === 'object'
+            ? (caught as { response?: { data?: { detail?: unknown } } }).response?.data
+            : undefined
+        );
+        const detail = typeof responseData?.detail === 'string' ? responseData.detail.trim() : '';
+        setError(detail || '提交未完成，请检查网络后重试。');
+      }
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   };
 
   if (job) return <AIGCMediaJobCardView {...job} />;
+  const isExpired = status === 'expired';
+  const isDispatching = status === 'dispatching';
+  const buttonDisabled = !confirmationID || !canConfirm || submitting || isDispatching;
   return (
     <CardShell emoji="✦" title={data.title || '小巴创作草稿'} badge={aigcKindLabel(String(data.kind || ''))} badgeColor="#16805C" bg="#F1FAF5" border="#BFE4D1">
       <div className="rounded-lg bg-emerald-50 px-3 py-2 text-xs leading-5 text-slate-600">
         将发送你的创作描述{data.source_attached ? '和当前图片' : ''}给{data.provider || '百炼 Wan'}生成。
       </div>
+      {isExpired && (
+        <div className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">
+          {canConfirm
+            ? '草稿已过期，点击下方可重新确认生成。'
+            : '草稿已超过可恢复时间，请重新向小巴发起创作。'}
+        </div>
+      )}
+      {isDispatching && (
+        <div className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">
+          正在核对生成任务，请稍候。
+        </div>
+      )}
       {error && <div className="mt-2 text-xs text-red-600">{error}</div>}
       <button
         type="button"
         onClick={() => { void confirm(); }}
-        disabled={!confirmationID || submitting}
+        disabled={buttonDisabled}
         className="mt-3 flex min-h-11 w-full items-center justify-center rounded-lg bg-emerald-700 px-3 text-sm font-extrabold text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-60"
       >
-        {submitting ? '正在提交…' : '发送给百炼并生成'}
+        {submitting
+          ? '正在提交…'
+          : isDispatching
+            ? '正在核对任务'
+            : isExpired
+              ? '重新确认并生成'
+              : '发送给百炼并生成'}
       </button>
     </CardShell>
   );

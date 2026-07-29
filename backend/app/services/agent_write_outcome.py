@@ -9,6 +9,7 @@ only for older tools that have not migrated yet.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Collection
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -32,7 +33,7 @@ _REJECTED_STATUSES = {
     "cancelled",
     "canceled",
 }
-_FAILED_STATUSES = {"needs_confirmation", "confirmation_required"}
+_FAILED_STATUSES = {"failed", "needs_confirmation", "confirmation_required"}
 _UNCERTAIN_STATUSES = {
     "uncertain",
     "in_flight",
@@ -83,11 +84,57 @@ _LOCAL_VALIDATION_MARKERS = (
     "带附件的鼻炎症状暂不自动写入",
     "症状记录参数无效，已阻止",
     "鼻炎打卡参数无效，已阻止",
+    "用药确认计划未能建立，本次没有写入",
     "必须提供",
     "需要提供",
     "缺少",
     "不支持",
 )
+_LOCAL_WRITE_ERROR_CODE_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
+
+
+def local_write_rejection(
+    error_code: str,
+    *,
+    message: str | None = None,
+    recovery_guidance: str | None = None,
+) -> str:
+    """Build a deterministic pre-dispatch write rejection.
+
+    Registered write adapters use this instead of natural-language ``Error:``
+    strings. Runtime can then distinguish a safe local rejection from an
+    external write whose outcome is unknown.
+    """
+    normalized_code = str(error_code or "").strip()
+    if not _LOCAL_WRITE_ERROR_CODE_PATTERN.fullmatch(normalized_code):
+        raise ValueError("invalid_local_write_error_code")
+    payload: dict[str, Any] = {
+        "status": "rejected",
+        "success": False,
+        "dispatch_started": False,
+        "error_code": normalized_code,
+    }
+    if message:
+        payload["message"] = str(message)
+    if recovery_guidance:
+        payload["recovery_guidance"] = str(recovery_guidance)
+    return json.dumps(
+        payload,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+
+
+def is_legacy_local_write_rejection(result: Any) -> bool:
+    """Return whether a write still depends on the deprecated prose fallback."""
+    if _structured_payload(result) is not None:
+        return False
+    text = str(result or "").strip()
+    if text.startswith("Error: API 返回 "):
+        return False
+    return text.startswith("Error:") and any(
+        marker in text for marker in _LOCAL_VALIDATION_MARKERS
+    )
 
 
 def _structured_payload(result: Any) -> dict[str, Any] | None:
@@ -136,13 +183,13 @@ def classify_write_execution(
         dispatch_started = _dispatch_started(payload)
         if status in _REJECTED_STATUSES:
             return WriteExecutionOutcome(
-                status="rejected",
+                status="rejected" if dispatch_started is False else "uncertain",
                 error_code=error_code or status,
                 dispatch_started=dispatch_started,
             )
         if status in _FAILED_STATUSES:
             return WriteExecutionOutcome(
-                status="failed",
+                status="failed" if dispatch_started is False else "uncertain",
                 error_code=error_code or status,
                 dispatch_started=dispatch_started,
             )
@@ -181,9 +228,7 @@ def classify_write_execution(
     # it was never dispatched.
     if text.startswith("Error: API 返回 "):
         return WriteExecutionOutcome(status="uncertain")
-    if text.startswith("Error:") and any(
-        marker in text for marker in _LOCAL_VALIDATION_MARKERS
-    ):
+    if is_legacy_local_write_rejection(result):
         return WriteExecutionOutcome(status="rejected", dispatch_started=False)
     return WriteExecutionOutcome(status="uncertain")
 
@@ -206,6 +251,33 @@ def classify_explicit_write_execution(
     if not status and not has_explicit_failure:
         return None
     return classify_write_execution(payload)
+
+
+def result_declares_explicit_failure(result: Any) -> bool:
+    """Return whether a result declares a hard failure for any tool kind.
+
+    This intentionally excludes nonterminal business states such as
+    ``pending`` and ``processing``. Write-specific callers still use
+    ``classify_write_execution`` to fail closed when a verified receipt is
+    missing; generic telemetry must not turn a valid read or a confirmed
+    persisted draft into a tool failure.
+    """
+    payload = _structured_payload(result)
+    if payload is None:
+        return False
+    if payload.get("success") is False or payload.get("ok") is False:
+        return True
+    error = payload.get("error")
+    if error not in (None, "", False, {}, []):
+        return True
+    status = str(payload.get("status") or "").strip().lower()
+    return status in {
+        *_REJECTED_STATUSES,
+        *_FAILED_STATUSES,
+        "failed",
+        "error",
+        "failure",
+    }
 
 
 def write_result_declares_non_success(

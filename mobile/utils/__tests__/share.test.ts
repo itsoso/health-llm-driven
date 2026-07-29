@@ -4,7 +4,13 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import api from '../../services/api';
 
-import { shareLocalImage, sharePlainCaption, sharePlainText, shareRemoteVideo } from '../share';
+import {
+  shareImage,
+  shareLocalImage,
+  sharePlainCaption,
+  sharePlainText,
+  shareRemoteVideo,
+} from '../share';
 
 jest.mock('expo-clipboard', () => ({
   setStringAsync: jest.fn().mockResolvedValue(undefined),
@@ -157,6 +163,74 @@ describe('shareLocalImage', () => {
     (Sharing.isAvailableAsync as jest.Mock).mockResolvedValueOnce(false);
 
     await expect(shareLocalImage('file:///tmp/diet-card.png')).rejects.toThrow('image_sharing_unavailable');
+    expect(Sharing.shareAsync).not.toHaveBeenCalled();
+  });
+
+  it('normalizes a bare iOS temporary path before sharing', async () => {
+    await shareLocalImage('/private/var/mobile/tmp/diet-card.png');
+
+    expect(Sharing.shareAsync).toHaveBeenCalledWith(
+      'file:///private/var/mobile/tmp/diet-card.png',
+      expect.objectContaining({
+        mimeType: 'image/png',
+        UTI: 'public.png',
+      }),
+    );
+  });
+});
+
+describe('shareImage', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    (Sharing.isAvailableAsync as jest.Mock).mockResolvedValue(true);
+    (Sharing.shareAsync as jest.Mock).mockResolvedValue(undefined);
+    (FileSystem.downloadAsync as jest.Mock).mockResolvedValue({
+      uri: 'file:///cache/reva-shared-image-aigc-42.jpg',
+      status: 200,
+    });
+  });
+
+  it('downloads a protected remote image before opening the native share sheet', async () => {
+    await shareImage(
+      'https://health.executor.life/api/v1/upload/files/chat/42/meal.jpg?signature=signed',
+      {
+        target: 'xiaohongshu',
+        cacheKey: 'aigc-42',
+        headers: { Authorization: 'Bearer token' },
+      },
+    );
+
+    expect(FileSystem.downloadAsync).toHaveBeenCalledWith(
+      'https://health.executor.life/api/v1/upload/files/chat/42/meal.jpg?signature=signed',
+      'file:///cache/reva-shared-image-aigc-42.jpg',
+      { headers: { Authorization: 'Bearer token' } },
+    );
+    expect(Sharing.shareAsync).toHaveBeenCalledWith(
+      'file:///cache/reva-shared-image-aigc-42.jpg',
+      {
+        dialogTitle: '分享到小红书',
+        mimeType: 'image/jpeg',
+        UTI: 'public.jpeg',
+      },
+    );
+    expect(FileSystem.deleteAsync).toHaveBeenCalledWith(
+      'file:///cache/reva-shared-image-aigc-42.jpg',
+      { idempotent: true },
+    );
+  });
+
+  it('cleans up a partial image when the remote download fails', async () => {
+    (FileSystem.downloadAsync as jest.Mock).mockRejectedValueOnce(new Error('connection reset'));
+
+    await expect(shareImage(
+      'https://health.executor.life/private/result.png',
+      { target: 'wechat', cacheKey: 'broken-image' },
+    )).rejects.toThrow('connection reset');
+
+    expect(FileSystem.deleteAsync).toHaveBeenCalledWith(
+      'file:///cache/reva-shared-image-broken-image.png',
+      { idempotent: true },
+    );
     expect(Sharing.shareAsync).not.toHaveBeenCalled();
   });
 });

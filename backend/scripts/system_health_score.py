@@ -105,7 +105,7 @@ def score_health_check(base_url: str = "http://localhost:8000") -> dict:
         }
     except urllib.error.HTTPError as e:
         if e.code == 503:
-            return {"score": 15, "detail": f"degraded (HTTP 503)"}
+            return {"score": 15, "detail": "degraded (HTTP 503)"}
         return {"score": 0, "detail": f"HTTP {e.code}"}
     except Exception as e:
         return {"score": 0, "detail": f"unreachable: {e}"}
@@ -213,6 +213,58 @@ def score_error_rate_from_logs() -> dict:
     }
 
 
+def score_agent_runtime_circuit(session_factory=None) -> dict:
+    """Fail the release gate when the Agent write circuit is paused."""
+    db = None
+    owns_session = session_factory is None
+    try:
+        from app.services.agent_runtime_rollout import runtime_control_enabled
+
+        if not runtime_control_enabled():
+            return {
+                "score": 0,
+                "detail": "disabled",
+                "healthy": True,
+            }
+
+        from app.models.agent_runtime import AgentRuntimeRolloutState
+
+        if session_factory is None:
+            from app.database import SessionLocal
+
+            session_factory = SessionLocal
+        db = session_factory()
+        state = db.query(AgentRuntimeRolloutState).filter_by(id=1).first()
+        if state is None:
+            return {
+                "score": 0,
+                "detail": "not_initialized",
+                "healthy": True,
+            }
+        status = str(state.status or "").strip().lower()
+        reason = str(state.reason_code or "none").strip().lower()
+        generation = int(state.reconciliation_generation or 0)
+        acknowledged = int(
+            state.reconciliation_acknowledged_generation or 0
+        )
+        return {
+            "score": 0,
+            "detail": (
+                f"{status}:{reason}:generation={generation}:ack={acknowledged}"
+            ),
+            "healthy": status == "active" and generation == acknowledged,
+        }
+    except Exception as exc:
+        return {
+            "score": 0,
+            "detail": f"unavailable:{type(exc).__name__}",
+            "healthy": False,
+        }
+    finally:
+        if owns_session and db is not None:
+            db.close()
+
+
 # ============================================================
 # 主流程
 # ============================================================
@@ -229,15 +281,22 @@ def calculate_health_score(base_url: str = "http://localhost:8000", skip_tests: 
     results["health_check"] = score_health_check(base_url)
     results["api_latency"] = score_api_latency(base_url)
     results["error_rate"] = score_error_rate_from_logs()
+    results["agent_runtime_circuit"] = score_agent_runtime_circuit()
 
     total = sum(r["score"] for r in results.values())
     max_possible = 100 if not skip_tests else 60
+    critical_failures = [
+        name
+        for name, result in results.items()
+        if result.get("healthy") is False
+    ]
 
     return {
         "total_score": round(total, 1),
         "max_possible": max_possible,
-        "pass": total >= FAIL_THRESHOLD,
+        "pass": total >= FAIL_THRESHOLD and not critical_failures,
         "threshold": FAIL_THRESHOLD,
+        "critical_failures": critical_failures,
         "dimensions": results,
     }
 

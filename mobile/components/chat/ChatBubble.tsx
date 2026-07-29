@@ -36,7 +36,12 @@ import {
 } from '../../constants/revaTheme';
 import { useToast } from '../../hooks/useToast';
 import { SocialBrandIcon } from '../common/SocialBrandIcon';
-import { shareLocalImage, sharePlainCaption, sharePlainText } from '../../utils/share';
+import {
+  shareImage,
+  shareLocalImage,
+  sharePlainCaption,
+  sharePlainText,
+} from '../../utils/share';
 import { buildAiShareMessage, buildXiaohongshuShareMessage } from '../../utils/aiShareText';
 import { buildChatImageSource } from '../../utils/chatImageSource';
 import { containsMarkdownTable, preprocessMarkdownTables } from '../../utils/markdownTables';
@@ -803,8 +808,25 @@ function ChatBubbleInner({
       return;
     }
     try { Haptics.selectionAsync(); } catch {}
+    const share = async () => {
+      const source = buildChatImageSource(uri, imageAuthToken);
+      if (!source) {
+        toast.show('图片需要登录后才能分享', 'info');
+        return;
+      }
+      try {
+        await shareImage(source.uri, {
+          target: 'more',
+          cacheKey: item.id,
+          headers: source.headers,
+        });
+      } catch {
+        toast.show('分享图片失败，请稍后重试', 'error');
+      }
+    };
     Alert.alert('图片', undefined, [
       { text: '保存到相册', onPress: () => { void handleSaveImage(uri); } },
+      { text: '分享图片', onPress: () => { void share(); } },
       { text: '取消', style: 'cancel' },
     ]);
   };

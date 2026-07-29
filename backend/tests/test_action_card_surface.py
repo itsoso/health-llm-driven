@@ -143,6 +143,61 @@ def test_surface_batch_writes_all(db):
     assert severities == ["critical", "high", "medium"]
 
 
+def test_reconcile_archives_stale_managed_safety_card(db):
+    user = _make_user(db, username="archive_stale_acwr")
+    stale_id = surface_safety_alert(
+        db,
+        user.id,
+        _make_alert(rule_id="training.acwr_overload", title="训练负荷过载"),
+    )
+    unrelated_id = surface_safety_alert(
+        db,
+        user.id,
+        _make_alert(rule_id="vitals.hr_spike"),
+    )
+
+    surface_safety_alerts(
+        db,
+        user.id,
+        [],
+        reconcile_rule_ids={
+            "training.acwr_overload",
+            "training.acwr_undertraining",
+        },
+    )
+
+    stale = db.query(ActionCard).get(stale_id)
+    unrelated = db.query(ActionCard).get(unrelated_id)
+    assert stale.status == "archived"
+    assert stale.is_visible is False
+    assert unrelated.status == "active"
+    assert unrelated.is_visible is True
+
+
+def test_reappearing_managed_alert_reactivates_undecided_card(db):
+    user = _make_user(db, username="reactivate_acwr")
+    alert = _make_alert(
+        rule_id="training.acwr_overload",
+        title="训练负荷过载",
+    )
+    cid = surface_safety_alert(db, user.id, alert)
+
+    surface_safety_alerts(
+        db,
+        user.id,
+        [],
+        reconcile_rule_ids={"training.acwr_overload"},
+    )
+    assert db.query(ActionCard).get(cid).status == "archived"
+
+    same_id = surface_safety_alert(db, user.id, alert)
+
+    card = db.query(ActionCard).get(cid)
+    assert same_id == cid
+    assert card.status == "active"
+    assert card.is_visible is True
+
+
 def test_surface_swallows_exceptions(db):
     """旁路语义: 内部异常不应该抛到调用方."""
     user = _make_user(db, username="robust_user")

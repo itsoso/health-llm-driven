@@ -67,6 +67,59 @@ def test_post_client_event_rejects_oversized_meta(client, auth_user_and_headers)
     assert any("meta too large" in (e.get("msg") or "") for e in detail), detail
 
 
+@pytest.mark.parametrize(
+    ("event_name", "meta"),
+    [
+        ("aigc_media_played", {"media_kind": "video"}),
+        (
+            "aigc_media_shared",
+            {
+                "phase": "completed",
+                "media_kind": "image",
+                "share_target": "xiaohongshu",
+            },
+        ),
+    ],
+)
+def test_post_client_event_accepts_content_free_aigc_engagement(
+    client, db, auth_user_and_headers, event_name, meta,
+):
+    _, headers = auth_user_and_headers
+
+    response = client.post(
+        "/api/v1/client-events",
+        headers=headers,
+        json={"event_name": event_name, "meta": meta},
+    )
+
+    assert response.status_code == 202, response.text
+    row = db.query(ClientEvent).order_by(ClientEvent.id.desc()).first()
+    assert row.event_name == event_name
+    assert row.meta == meta
+
+
+def test_post_client_event_rejects_aigc_resource_identifiers(
+    client, auth_user_and_headers,
+):
+    _, headers = auth_user_and_headers
+
+    response = client.post(
+        "/api/v1/client-events",
+        headers=headers,
+        json={
+            "event_name": "aigc_media_shared",
+            "meta": {
+                "phase": "completed",
+                "media_kind": "video",
+                "share_target": "wechat",
+                "job_id": "private-job-id",
+            },
+        },
+    )
+
+    assert response.status_code == 422, response.text
+
+
 def test_client_events_stats_counts_by_event(db, auth_user_and_headers):
     from app.models.user import User
     from app.services.observability_service import client_events_stats
@@ -125,6 +178,16 @@ def test_client_events_stats_empty(db):
         },
         "starter_ctr": {},
         "home_cold_start_ms": {"n": 0, "p50": None, "p95": None, "incomplete": 0},
+        "chat_attachment_pipeline": {
+            "attempts": 0,
+            "accepted": 0,
+            "failures": 0,
+            "acceptance_rate_pct": None,
+            "image_count_total": 0,
+            "failures_by_stage": {},
+            "duration_buckets": {},
+            "payload_buckets": {},
+        },
         "diet_capture_ms": {
             "recognition": {
                 "n": 0, "attempts": 0, "p50": None, "p95": None,
@@ -483,6 +546,247 @@ def test_chat_turn_queued_event_accepts_safe_queue_metadata(
         "channel": "voice",
         "queue_depth_at_submit": 2,
     }
+
+
+def test_chat_attachment_terminal_accepts_content_free_pipeline_metadata(
+    client,
+    db,
+    auth_user_and_headers,
+):
+    _, headers = auth_user_and_headers
+    meta = {
+        "phase": "accepted",
+        "stage": "server_accept",
+        "image_count": 3,
+        "duration_bucket": "3_10s",
+        "payload_bucket": "1_4mb",
+    }
+    response = client.post(
+        "/api/v1/client-events",
+        headers=headers,
+        json={
+            "event_name": "chat_attachment_terminal",
+            "event_key": "attachment-attempt-001",
+            "meta": meta,
+        },
+    )
+
+    assert response.status_code == 202, response.text
+    row = db.query(ClientEvent).order_by(ClientEvent.id.desc()).first()
+    assert row.event_name == "chat_attachment_terminal"
+    assert row.event_key != "attachment-attempt-001"
+    assert len(row.event_key) == 64
+    assert row.meta == meta
+
+
+def test_chat_attachment_terminal_is_idempotent_by_owner_and_event_key(
+    client,
+    db,
+    auth_user_and_headers,
+):
+    _, headers = auth_user_and_headers
+    body = {
+        "event_name": "chat_attachment_terminal",
+        "event_key": "attachment-attempt-dedup",
+        "meta": {
+            "phase": "accepted",
+            "stage": "server_accept",
+            "image_count": 1,
+            "duration_bucket": "1_3s",
+            "payload_bucket": "lt_256kb",
+        },
+    }
+
+    first = client.post("/api/v1/client-events", headers=headers, json=body)
+    second = client.post("/api/v1/client-events", headers=headers, json=body)
+
+    assert first.status_code == 202, first.text
+    assert second.status_code == 202, second.text
+    assert second.json()["duplicate"] is True
+    rows = db.query(ClientEvent).filter(
+        ClientEvent.event_name == "chat_attachment_terminal",
+    ).all()
+    assert len(rows) == 1
+    assert rows[0].event_key != "attachment-attempt-dedup"
+
+
+def test_chat_attachment_terminal_returns_retryable_error_when_persistence_fails(
+    client,
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+):
+    _, headers = auth_user_and_headers
+
+    def fail_commit():
+        raise RuntimeError("simulated persistence failure")
+
+    monkeypatch.setattr(db, "commit", fail_commit)
+
+    response = client.post(
+        "/api/v1/client-events",
+        headers=headers,
+        json={
+            "event_name": "chat_attachment_terminal",
+            "event_key": "attachment-attempt-persist-failure",
+            "meta": {
+                "phase": "accepted",
+                "stage": "server_accept",
+                "image_count": 1,
+                "duration_bucket": "1_3s",
+                "payload_bucket": "lt_256kb",
+            },
+        },
+    )
+
+    assert response.status_code == 503, response.text
+    assert response.json()["detail"]["error_code"] == "client_event_persistence_failed"
+
+
+def test_chat_attachment_terminal_requires_safe_event_key(
+    client,
+    auth_user_and_headers,
+):
+    _, headers = auth_user_and_headers
+    response = client.post(
+        "/api/v1/client-events",
+        headers=headers,
+        json={
+            "event_name": "chat_attachment_terminal",
+            "meta": {
+                "phase": "accepted",
+                "stage": "server_accept",
+                "image_count": 1,
+                "duration_bucket": "1_3s",
+                "payload_bucket": "lt_256kb",
+            },
+        },
+    )
+
+    assert response.status_code == 422, response.text
+
+
+@pytest.mark.parametrize(
+    "meta",
+    [
+        {
+            "phase": "accepted",
+            "stage": "local_prepare",
+            "image_count": 1,
+            "duration_bucket": "1_3s",
+            "payload_bucket": "lt_256kb",
+        },
+        {
+            "phase": "accepted",
+            "stage": "server_accept",
+            "image_count": 1,
+            "duration_bucket": "1_3s",
+            "payload_bucket": "lt_256kb",
+            "error_code": "send_rejected",
+        },
+        {
+            "phase": "failed",
+            "stage": "server_accept",
+            "image_count": 1,
+            "duration_bucket": "1_3s",
+            "payload_bucket": "lt_256kb",
+        },
+        {
+            "phase": "failed",
+            "stage": "local_prepare",
+            "image_count": 1,
+            "duration_bucket": "1_3s",
+            "payload_bucket": "unknown",
+            "error_code": "send_rejected",
+        },
+    ],
+)
+def test_chat_attachment_terminal_rejects_contradictory_terminal_state(
+    client,
+    auth_user_and_headers,
+    meta,
+):
+    _, headers = auth_user_and_headers
+    response = client.post(
+        "/api/v1/client-events",
+        headers=headers,
+        json={
+            "event_name": "chat_attachment_terminal",
+            "event_key": "attachment-state-contract",
+            "meta": meta,
+        },
+    )
+
+    assert response.status_code == 422, response.text
+
+
+@pytest.mark.parametrize(
+    "meta",
+    [
+        {
+            "phase": "accepted",
+            "stage": "server_accept",
+            "image_count": 1,
+            "duration_bucket": "1_3s",
+            "payload_bucket": "lt_256kb",
+            "uri": "file:///private/meal.jpeg",
+        },
+        {
+            "phase": "completed",
+            "stage": "server_accept",
+            "image_count": 1,
+            "duration_bucket": "1_3s",
+            "payload_bucket": "lt_256kb",
+        },
+        {
+            "phase": "failed",
+            "stage": "upload",
+            "image_count": 1,
+            "duration_bucket": "1_3s",
+            "payload_bucket": "lt_256kb",
+        },
+        {
+            "phase": "failed",
+            "stage": "local_prepare",
+            "image_count": 10,
+            "duration_bucket": "1_3s",
+            "payload_bucket": "unknown",
+        },
+        {
+            "phase": "failed",
+            "stage": "server_accept",
+            "image_count": 1,
+            "duration_bucket": "1_3s",
+            "payload_bucket": "lt_256kb",
+            "error_code": "turn_private_identifier",
+        },
+        {
+            "phase": "failed",
+            "stage": "server_accept",
+            "image_count": 1,
+            "duration_bucket": "1_3s",
+            "payload_bucket": "lt_256kb",
+            "error_code": ["send_rejected"],
+        },
+    ],
+)
+def test_chat_attachment_terminal_rejects_private_or_invalid_metadata(
+    client,
+    auth_user_and_headers,
+    meta,
+):
+    _, headers = auth_user_and_headers
+    response = client.post(
+        "/api/v1/client-events",
+        headers=headers,
+        json={
+            "event_name": "chat_attachment_terminal",
+            "event_key": "attachment-invalid-metadata",
+            "meta": meta,
+        },
+    )
+
+    assert response.status_code == 422, response.text
 
 
 @pytest.mark.parametrize("meta", [

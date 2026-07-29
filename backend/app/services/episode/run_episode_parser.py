@@ -5,19 +5,21 @@
 2. 建 context_snapshot (天气/aqi/睡眠/HRV/ACWR)
 3. 建 baseline_snapshot (7d avg HR, pace, 30d sleep median)
 
-ACWR 计算采用简化 7d acute / 28d chronic 负荷比 (training_load 字段优先, fallback 距离).
+ACWR 复用 HealthTwin 的训练负荷服务和可靠性边界，避免 Episode 与安全规则口径漂移。
 """
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
 from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
 from app.models.daily_health import WorkoutRecord, GarminData
+from app.services.exercise_recovery_service import ExerciseRecoveryService
+from app.utils.timezone import get_user_timezone
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +41,9 @@ def parse_run_episode(
     """构建跑步 Episode 的触发输入 — context + baseline snapshot."""
     occurred_at = workout.end_time or workout.start_time or datetime.now(timezone.utc)
     if occurred_at.tzinfo is None:
-        occurred_at = occurred_at.replace(tzinfo=timezone.utc)
+        occurred_at = occurred_at.replace(
+            tzinfo=get_user_timezone(db, user_id),
+        ).astimezone(timezone.utc)
 
     distance_km = (workout.distance_meters or 0) / 1000.0
     duration_min = (workout.duration_seconds or 0) / 60.0
@@ -62,7 +66,7 @@ def parse_run_episode(
         context["weather"] = weather
 
     # 睡眠前一晚 — 查最近的 GarminData
-    prior_date = occurred_at.date() - timedelta(days=0)  # 当日 (夜间睡眠已 roll up 到当日)
+    prior_date = workout.workout_date or occurred_at.date()
     gd = (
         db.query(GarminData)
         .filter(GarminData.user_id == user_id, GarminData.record_date <= prior_date)
@@ -76,7 +80,7 @@ def parse_run_episode(
         context["body_battery_current"] = getattr(gd, "body_battery_current", None)
 
     # ACWR 7/28d training load ratio
-    acwr = _compute_acwr(db, user_id, occurred_at)
+    acwr = _compute_acwr(db, user_id, workout.workout_date)
     if acwr is not None:
         context["acwr"] = acwr
 
@@ -91,42 +95,15 @@ def parse_run_episode(
     )
 
 
-def _compute_acwr(db: Session, user_id: int, now: datetime) -> Optional[float]:
-    """7 天 acute / 28 天 chronic training load ratio.
+def _compute_acwr(db: Session, user_id: int, as_of_date: date) -> Optional[float]:
+    """Return the same reliable ACWR value used by HealthTwin and Safety."""
 
-    load 优先用 training_load 字段, 否则 fallback 用 distance_meters/1000.
-    """
-    acute_start = now - timedelta(days=7)
-    chronic_start = now - timedelta(days=28)
-
-    def _sum_load(start: datetime, end: datetime) -> float:
-        rows = (
-            db.query(WorkoutRecord)
-            .filter(
-                and_(
-                    WorkoutRecord.user_id == user_id,
-                    WorkoutRecord.end_time >= start,
-                    WorkoutRecord.end_time <= end,
-                )
-            )
-            .all()
-        )
-        total = 0.0
-        for r in rows:
-            if r.training_load:
-                total += float(r.training_load)
-            elif r.distance_meters:
-                total += float(r.distance_meters) / 1000.0
-        return total
-
-    acute = _sum_load(acute_start, now)
-    chronic = _sum_load(chronic_start, now)
-    if chronic <= 0:
-        return None
-    chronic_weekly_avg = chronic / 4.0
-    if chronic_weekly_avg <= 0:
-        return None
-    return round(acute / chronic_weekly_avg, 2)
+    result = ExerciseRecoveryService().get_training_load(
+        db,
+        user_id,
+        as_of_date=as_of_date,
+    )
+    return result.get("acwr")
 
 
 def _compute_baseline(db: Session, user_id: int, now: datetime) -> Dict[str, Any]:

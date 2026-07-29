@@ -1,4 +1,4 @@
-import { offsetDate, todayStr } from '../dietDate';
+import { formatLocalDate, offsetDate, todayStr } from '../dietDate';
 
 // 数据完整性回归: prod 上一次午餐被记到 2 天前 (record_date=2026-06-29 而非 2026-07-01)。
 // 根因是旧 offsetDate 用 `new Date("YYYY-MM-DD")` (UTC 午夜解析), 在负 UTC 时区里
@@ -60,5 +60,12 @@ describe('todayStr', () => {
     const now = new Date();
     const expected = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     expect(todayStr()).toBe(expected);
+  });
+});
+
+describe('formatLocalDate', () => {
+  it('formats the supplied local calendar components instead of the UTC date', () => {
+    const localLateEvening = new Date(2026, 6, 25, 23, 30, 0);
+    expect(formatLocalDate(localLateEvening)).toBe('2026-07-25');
   });
 });

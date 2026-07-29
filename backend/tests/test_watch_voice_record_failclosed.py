@@ -147,8 +147,12 @@ async def test_medication_execution_requires_explicit_actual_dosage(db):
         args,
     )
 
-    assert result.startswith("Error:")
-    assert "actual_dosage" in result
+    payload = json.loads(result)
+    assert payload["status"] == "rejected"
+    assert payload["success"] is False
+    assert payload["dispatch_started"] is False
+    assert payload["error_code"] == "medication_arguments_invalid"
+    assert "actual_dosage" in payload["message"]
 
 
 @pytest.mark.asyncio

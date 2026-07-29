@@ -11,6 +11,8 @@ const mockVoiceRemoveAllListeners = jest.fn();
 const mockPlayerPlay = jest.fn();
 const mockPlayerPause = jest.fn();
 const mockPlayerRemove = jest.fn();
+const mockPlaybackCallbacks: ((status: any) => void)[] = [];
+let mockAutoFinishPlayback = true;
 
 jest.mock('@react-native-voice/voice', () => ({
   __esModule: true,
@@ -33,7 +35,10 @@ jest.mock('expo-audio', () => ({
   setAudioModeAsync: jest.fn().mockResolvedValue(undefined),
   createAudioPlayer: jest.fn(() => ({
     addListener: jest.fn((_event: string, cb: (status: any) => void) => {
-      setTimeout(() => cb({ didJustFinish: true }), 0);
+      mockPlaybackCallbacks.push(cb);
+      if (mockAutoFinishPlayback) {
+        setTimeout(() => cb({ didJustFinish: true }), 0);
+      }
       return { remove: jest.fn() };
     }),
     play: (...args: any[]) => mockPlayerPlay(...args),
@@ -71,6 +76,8 @@ const mockedVoice = Voice as any;
 describe('useVoiceConversation', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockPlaybackCallbacks.length = 0;
+    mockAutoFinishPlayback = true;
   });
 
   it('keeps long direct voice-chat scripts on private cloud voice by chunking them safely', async () => {
@@ -115,5 +122,30 @@ describe('useVoiceConversation', () => {
     });
 
     expect(mockVoiceRemoveAllListeners).not.toHaveBeenCalled();
+  });
+
+  it('stops queued playback and never reopens the microphone after unmount', async () => {
+    mockAutoFinishPlayback = false;
+    const longText = Array.from({ length: 35 }, (_, i) => (
+      `第${i + 1}段：离开语音页面后，不应继续播放，也不应重新启动麦克风。`
+    )).join(' ');
+    expect(splitTextForCloudTts(longText).length).toBeGreaterThan(1);
+
+    const { result, unmount } = renderHook(() => useVoiceConversation());
+
+    act(() => {
+      void result.current.speakDirect(longText, { thenListen: true });
+    });
+    await waitFor(() => {
+      expect(mockPlayerPlay).toHaveBeenCalledTimes(1);
+    });
+
+    act(() => {
+      unmount();
+    });
+    await new Promise((resolve) => setTimeout(resolve, 350));
+
+    expect(mockPlayerPlay).toHaveBeenCalledTimes(1);
+    expect(mockedVoice.start).not.toHaveBeenCalled();
   });
 });

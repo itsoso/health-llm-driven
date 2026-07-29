@@ -8,6 +8,8 @@ import datetime
 import json
 import uuid
 
+import pytest
+
 
 def _mk_user(db):
     from app.models.user import User
@@ -205,6 +207,69 @@ def test_update_cycle_requires_confirmation_then_adjusts_days(db):
     assert cycle.planned_end_date == cycle.start_date + datetime.timedelta(days=120)
 
 
+def test_update_cycle_error_after_service_dispatch_is_not_local_rejection(
+    db,
+    monkeypatch,
+):
+    from app.services.agent_executor import AgentExecutor
+    from app.services.intervention_cycle_service import get_active_cycle
+    from app.services import intervention_cycle_service as ics
+
+    user = _mk_user(db)
+    _seed_abnormal_labs(db, user.id)
+    _exec(db, user.id, {"action": "start", "confirmed": True, "days": 90})
+    cycle = get_active_cycle(db, user.id)
+    executor = AgentExecutor(db)
+    executor._current_user_id = user.id
+
+    def commit_then_fail(db_session, owned_cycle, **kwargs):
+        owned_cycle.cycle_type = "committed-before-error"
+        db_session.commit()
+        raise ValueError("private-health-content")
+
+    monkeypatch.setattr(ics, "update_cycle_params", commit_then_fail)
+
+    with pytest.raises(ValueError, match="private-health-content"):
+        executor._intervention_update(
+            user.id,
+            {"cycle_id": cycle.id, "days": 120},
+        )
+
+    db.expire_all()
+    assert get_active_cycle(db, user.id).cycle_type == "committed-before-error"
+
+
+def test_update_inactive_cycle_is_rejected_before_service_dispatch(
+    db,
+    monkeypatch,
+):
+    from app.services.agent_executor import AgentExecutor
+    from app.services import intervention_cycle_service as ics
+
+    user = _mk_user(db)
+    _seed_abnormal_labs(db, user.id)
+    _exec(db, user.id, {"action": "start", "confirmed": True, "days": 90})
+    cycle = ics.get_active_cycle(db, user.id)
+    cycle = ics.complete_cycle(db, cycle, status="completed")
+    executor = AgentExecutor(db)
+    executor._current_user_id = user.id
+
+    def update_must_not_run(*args, **kwargs):
+        raise AssertionError("update service crossed the dispatch boundary")
+
+    monkeypatch.setattr(ics, "update_cycle_params", update_must_not_run)
+
+    result = executor._intervention_update(
+        user.id,
+        {"cycle_id": cycle.id, "days": 120},
+    )
+
+    payload = json.loads(result)
+    assert payload["status"] == "rejected"
+    assert payload["dispatch_started"] is False
+    assert payload["error_code"] == "intervention_cycle_not_active"
+
+
 def test_cancel_cycle_requires_confirmation_then_abandons(db):
     from app.services.intervention_cycle_service import get_active_cycle
 
@@ -277,4 +342,10 @@ def test_proposal_blob_empty_when_no_abnormal_levers(db):
 def test_unknown_action(db):
     u = _mk_user(db)
     out = _exec(db, u.id, {"action": "bogus"})
-    assert out.startswith("Error:")
+    assert json.loads(out) == {
+        "status": "rejected",
+        "success": False,
+        "dispatch_started": False,
+        "error_code": "intervention_action_unsupported",
+        "message": "当前干预周期操作不受支持。",
+    }

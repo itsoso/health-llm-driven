@@ -112,6 +112,35 @@ class IntentFrame:
 
 
 @dataclass(frozen=True)
+class ActionableReference:
+    """Minimal structured state from a previously rendered actionable object."""
+
+    kind: str
+    source_message_id: Optional[str] = None
+    data: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class GoalSpec:
+    """Deterministic task contract that the executor must satisfy."""
+
+    kind: str
+    domain: str
+    operation: str
+    target_date: Optional[str] = None
+    target_meal_types: tuple[str, ...] = ()
+    target_record_type: Optional[str] = None
+    target_values: tuple[tuple[str, str], ...] = ()
+    reference_foods: tuple[tuple[str, str], ...] = ()
+    requires_lookup: bool = False
+    requires_verification: bool = False
+    requires_clarification: bool = False
+    prohibited_operations: tuple[str, ...] = ()
+    postconditions: tuple[str, ...] = ()
+    evidence: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class TurnSnapshot:
     """The stable routing state for one provider/tool boundary."""
 
@@ -119,6 +148,8 @@ class TurnSnapshot:
     context: ExecutionContext
     intent: IntentFrame
     policy_mode: str = "enforce"
+    actionable_references: tuple[ActionableReference, ...] = ()
+    goal: Optional[GoalSpec] = None
 
 
 @dataclass(frozen=True)

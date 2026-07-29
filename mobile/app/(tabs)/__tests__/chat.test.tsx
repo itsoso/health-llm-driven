@@ -15,12 +15,16 @@ const mockNewChat = jest.fn();
 const mockSetMessages = jest.fn();
 const mockSetParams = jest.fn();
 const mockLoadLatestConversation = jest.fn();
+const mockLoadMoreHistory = jest.fn();
 const mockSaveChatImageToLibrary = jest.fn();
+const mockShareImage = jest.fn();
 let mockRouteParams: Record<string, string | undefined> = {};
 let mockLlmPreference: any = { model_id: null, options: [] };
 let mockMessages: any[] = [];
 let mockIsStreaming = false;
 let mockActiveTurn: any = { phase: 'idle', recoverable: false, label: undefined };
+let mockHasMoreHistory = false;
+let mockIsLoadingMoreHistory = false;
 let mockTodayTimelineData: any = undefined;
 let mockTodayDynamicViewData: any = undefined;
 let mockDailyPlanData: any = undefined;
@@ -63,6 +67,9 @@ jest.mock('../../../hooks/useChatEngine', () => ({
     newChat: mockNewChat,
     loadLatestConversation: mockLoadLatestConversation,
     loadConversation: jest.fn(),
+    loadMoreHistory: mockLoadMoreHistory,
+    hasMoreHistory: mockHasMoreHistory,
+    isLoadingMoreHistory: mockIsLoadingMoreHistory,
     setMessages: mockSetMessages,
   }),
 }));
@@ -113,6 +120,12 @@ jest.mock('../../../hooks/useAuth', () => ({
 
 jest.mock('../../../services/chatImageSave', () => ({
   saveChatImageToLibrary: (...args: any[]) => mockSaveChatImageToLibrary(...args),
+}));
+
+jest.mock('../../../utils/share', () => ({
+  shareImage: (...args: any[]) => mockShareImage(...args),
+  shareLocalImage: jest.fn(),
+  sharePlainText: jest.fn(),
 }));
 
 jest.mock('../../../hooks/useTheme', () => ({
@@ -182,11 +195,14 @@ describe('ChatScreen', () => {
     mockMessages = [];
     mockIsStreaming = false;
     mockActiveTurn = { phase: 'idle', recoverable: false, label: undefined };
+    mockHasMoreHistory = false;
+    mockIsLoadingMoreHistory = false;
     mockTodayTimelineData = undefined;
     mockTodayDynamicViewData = undefined;
     mockDailyPlanData = undefined;
     mockLoadLatestConversation.mockResolvedValue(undefined);
     mockSaveChatImageToLibrary.mockResolvedValue(undefined);
+    mockShareImage.mockResolvedValue(undefined);
   });
 
   it('lets the reviewer save an image from the full-screen preview', async () => {
@@ -200,7 +216,7 @@ describe('ChatScreen', () => {
     const view = render(<ChatScreen />);
 
     fireEvent.press(view.getByLabelText('open-image-photo-1'));
-    fireEvent(view.getByLabelText('预览图片，长按可保存'), 'longPress');
+    fireEvent(view.getByLabelText('预览图片，长按可保存或分享'), 'longPress');
 
     const actions = alertSpy.mock.calls.at(-1)?.[2] as any[];
     await act(async () => {
@@ -212,6 +228,35 @@ describe('ChatScreen', () => {
       uri: 'https://health.executor.life/api/v1/upload/files/chat/7/meal.jpg',
       headers: { Authorization: 'Bearer review-token' },
     });
+  });
+
+  it('lets the reviewer share a protected image from the full-screen preview', async () => {
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(jest.fn());
+    mockMessages = [{
+      id: 'photo-2',
+      role: 'user',
+      content: '晚餐照片',
+      imageUris: ['https://health.executor.life/api/v1/upload/files/chat/8/dinner.jpg'],
+    }];
+    const view = render(<ChatScreen />);
+
+    fireEvent.press(view.getByLabelText('open-image-photo-2'));
+    fireEvent(view.getByLabelText('预览图片，长按可保存或分享'), 'longPress');
+
+    const actions = alertSpy.mock.calls.at(-1)?.[2] as any[];
+    await act(async () => {
+      actions.find(action => action.text === '分享图片').onPress();
+      await Promise.resolve();
+    });
+
+    expect(mockShareImage).toHaveBeenCalledWith(
+      'https://health.executor.life/api/v1/upload/files/chat/8/dinner.jpg',
+      {
+        target: 'more',
+        cacheKey: 'viewer-image',
+        headers: { Authorization: 'Bearer review-token' },
+      },
+    );
   });
 
   it('keeps one stable bootstrap shell until history, opener, and memory settle', async () => {
@@ -252,7 +297,8 @@ describe('ChatScreen', () => {
     await waitFor(() => {
       expect(view.queryByLabelText('正在准备小巴')).toBeNull();
       expect(view.getByText(/今天先确认午餐记录/)).toBeTruthy();
-      expect(view.getByText('查询全天饮食')).toBeTruthy();
+      expect(view.getByText('依据 1 条饮食')).toBeTruthy();
+      expect(view.queryByText('查询全天饮食')).toBeNull();
     });
   });
 
@@ -730,7 +776,8 @@ describe('ChatScreen', () => {
 
     await waitFor(() => {
       expect(getByText(/今天就是「夜间血氧复盘」的检验日，做到了吗？/)).toBeTruthy();
-      expect(getByText(/旧记忆/)).toBeTruthy();
+      expect(getByText('依据 1 条医疗')).toBeTruthy();
+      expect(queryByText(/旧记忆/)).toBeNull();
     });
 
     await act(async () => {
@@ -791,6 +838,27 @@ describe('ChatScreen', () => {
       null,
       expect.objectContaining({ onAccepted: expect.any(Function) }),
     );
+  });
+
+  it('hides generic composer suggestions when an opener owns the empty conversation', async () => {
+    mockFetchConversationStarters.mockResolvedValue({
+      opener: {
+        text: '今晚按计划完成了吗？',
+        source: 'action_card_due',
+        source_id: 7,
+        quick_replies: [{ text: '做到了' }, { text: '调整计划' }],
+        deep_link: null,
+        priority: 100,
+      },
+      suggestions: [{ text: '分析我的睡眠质量', key: 'sleep', priority: 10 }],
+      onboarding: false,
+    });
+
+    const { getByLabelText, queryByLabelText } = render(<ChatScreen />);
+
+    await waitFor(() => expect(getByLabelText('一键回复: 做到了')).toBeTruthy());
+    expect(queryByLabelText('拍照记一餐')).toBeNull();
+    expect(queryByLabelText('向小巴提问: 分析我的睡眠质量')).toBeNull();
   });
 
   it('hides the composer chips row once the conversation has messages', async () => {
@@ -905,6 +973,114 @@ describe('ChatScreen', () => {
     expect(mockPush).not.toHaveBeenCalledWith('/settings');
   });
 
+  it('hides opener reply actions when the iOS keyboard takes over the viewport', async () => {
+    const keyboardListeners: Record<string, (event: any) => void> = {};
+    const keyboardSpy = jest.spyOn(Keyboard, 'addListener').mockImplementation((eventName: any, callback: any) => {
+      keyboardListeners[String(eventName)] = callback;
+      return { remove: jest.fn() } as any;
+    });
+    mockFetchConversationStarters.mockResolvedValue({
+      opener: {
+        text: '今晚按计划完成了吗？',
+        source: 'action_card_due',
+        source_id: 7,
+        quick_replies: [{ text: '做到了' }, { text: '调整计划' }],
+        deep_link: null,
+        priority: 100,
+      },
+      suggestions: null,
+      onboarding: false,
+    });
+
+    const { getByLabelText, queryByLabelText } = render(<ChatScreen />);
+    await waitFor(() => expect(getByLabelText('一键回复: 做到了')).toBeTruthy());
+
+    act(() => {
+      keyboardListeners.keyboardDidShow({
+        endCoordinates: { height: 336 },
+      });
+    });
+
+    expect(queryByLabelText('一键回复: 做到了')).toBeNull();
+    expect(queryByLabelText('一键回复: 调整计划')).toBeNull();
+    expect(queryByLabelText('换个话题')).toBeNull();
+    keyboardSpy.mockRestore();
+  });
+
+  it('hides non-critical Today context while the keyboard owns the viewport', () => {
+    const keyboardListeners: Record<string, (event: any) => void> = {};
+    const keyboardSpy = jest.spyOn(Keyboard, 'addListener').mockImplementation((eventName: any, callback: any) => {
+      keyboardListeners[String(eventName)] = callback;
+      return { remove: jest.fn() } as any;
+    });
+    mockTodayTimelineData = {
+      items: [{
+        id: 'lab-review',
+        kind: 'action',
+        title: '复查血脂四项',
+        status: 'overdue',
+        priority: 9,
+        can_complete: true,
+        deep_link: '/agenda',
+      }],
+      past: { completed_count: 0, events: [] },
+      counts: { actionable: 1, overdue: 1, info: 0 },
+    };
+
+    const view = render(<ChatScreen />);
+    expect(view.getByText('复查血脂四项')).toBeTruthy();
+
+    act(() => {
+      keyboardListeners.keyboardDidShow({
+        endCoordinates: { height: 336 },
+      });
+    });
+
+    expect(view.queryByText('复查血脂四项')).toBeNull();
+    expect(view.queryByTestId('chat-today-focus-card')).toBeNull();
+    keyboardSpy.mockRestore();
+  });
+
+  it('keeps active Agent status visible when the keyboard opens', () => {
+    const keyboardListeners: Record<string, (event: any) => void> = {};
+    const keyboardSpy = jest.spyOn(Keyboard, 'addListener').mockImplementation((eventName: any, callback: any) => {
+      keyboardListeners[String(eventName)] = callback;
+      return { remove: jest.fn() } as any;
+    });
+    mockTodayTimelineData = {
+      items: [{
+        id: 'lab-review',
+        kind: 'action',
+        title: '复查血脂四项',
+        status: 'overdue',
+        priority: 9,
+        can_complete: true,
+        deep_link: '/agenda',
+      }],
+      past: { completed_count: 0, events: [] },
+      counts: { actionable: 1, overdue: 1, info: 0 },
+    };
+    mockActiveTurn = {
+      phase: 'generating',
+      recoverable: false,
+      label: '小巴正在整理…',
+      turnId: 'turn-current',
+    };
+
+    const view = render(<ChatScreen />);
+    expect(view.getByText('小巴正在整理…')).toBeTruthy();
+
+    act(() => {
+      keyboardListeners.keyboardDidShow({
+        endCoordinates: { height: 336 },
+      });
+    });
+
+    expect(view.getByText('小巴正在整理…')).toBeTruthy();
+    expect(view.queryByText('复查血脂四项')).toBeNull();
+    keyboardSpy.mockRestore();
+  });
+
   it('third state (onboarding, no opener, no memory) shows the Quick Start card', async () => {
     // opener 因故未到 + 无记忆, 但 onboarding=true → 出 Quick Start 卡(三动作)。
     mockFetchConversationStarters.mockResolvedValue({
@@ -991,6 +1167,33 @@ describe('ChatScreen', () => {
       flex: 1,
       minHeight: 0,
     });
+  });
+
+  it('offers a compact control to load earlier messages at the top of the transcript', async () => {
+    mockHasMoreHistory = true;
+    mockMessages = [
+      { id: 'u-1', role: 'user', content: '较新的问题' },
+      { id: 'a-1', role: 'assistant', content: '较新的回复', completionStatus: 'complete' },
+    ];
+
+    const view = render(<ChatScreen />);
+    await waitFor(() => expect(view.getByLabelText('加载更早消息')).toBeTruthy());
+
+    fireEvent.press(view.getByLabelText('加载更早消息'));
+
+    expect(mockLoadMoreHistory).toHaveBeenCalledTimes(1);
+  });
+
+  it('disables the earlier-message control while history is loading', async () => {
+    mockHasMoreHistory = true;
+    mockIsLoadingMoreHistory = true;
+
+    const view = render(<ChatScreen />);
+    await waitFor(() => expect(view.getByLabelText('正在加载更早消息')).toBeTruthy());
+
+    fireEvent.press(view.getByLabelText('正在加载更早消息'));
+
+    expect(mockLoadMoreHistory).not.toHaveBeenCalled();
   });
 
   it('keeps a newly sent turn pinned through the first transcript relayout', async () => {
@@ -1088,7 +1291,7 @@ describe('ChatScreen', () => {
         suggestions: [{ text: '今天饮水 300/2000ml，帮我安排剩余补水', key: 'water', priority: 50 }],
       });
 
-    const { getByLabelText, getByText, queryByText } = render(<ChatScreen />);
+    const { getByLabelText, getByTestId, getByText, queryByText } = render(<ChatScreen />);
 
     await waitFor(() => {
       expect(getByText('今天饮水 300/2000ml，帮我安排剩余补水')).toBeTruthy();
@@ -1101,6 +1304,8 @@ describe('ChatScreen', () => {
     expect(queryByText('新建对话')).toBeNull();
     expect(queryByText('对话历史')).toBeNull();
     expect(getByText('更多操作')).toBeTruthy();
+    expect(getByTestId('chat-tool-menu-overlay').props.accessible).toBe(false);
+    expect(getByTestId('chat-tool-menu-sheet').props.accessible).toBe(false);
   });
 
   it('starts a new conversation when opened from an Agent context entry', async () => {

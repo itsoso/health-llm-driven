@@ -82,7 +82,9 @@ export function buildMedicalExamImportResultCard(
   return { type: 'medical_exam_import_result', data };
 }
 
-function buildSkillResult(result: MedicalExamImportResult): ChatMedicalExamImportSkillResult {
+export function buildMedicalExamImportSkillResult(
+  result: MedicalExamImportResult,
+): ChatMedicalExamImportSkillResult {
   const card = buildMedicalExamImportResultCard(result);
   return {
     skillId: CHAT_MEDICAL_EXAM_IMPORT_SKILL.id,
@@ -102,12 +104,12 @@ export async function executeMedicalExamImportSkillForDocumentAsset(
 ): Promise<ChatMedicalExamImportSkillResult> {
   if (isPdfAsset(asset)) {
     const result = await uploadMedicalExamPdf(asset.uri, fileNameFor(asset, 'medical-exam.pdf'));
-    return buildSkillResult(result);
+    return buildMedicalExamImportSkillResult(result);
   }
   if (isImageAsset(asset)) {
     const mimeType = asset.mimeType ?? 'image/jpeg';
     const result = await uploadMedicalExamImage(asset.uri, fileNameFor(asset, 'medical-exam.jpg'), mimeType);
-    return buildSkillResult(result);
+    return buildMedicalExamImportSkillResult(result);
   }
   throw new Error('请选择 PDF、JPG、PNG、HEIC 或 WebP 格式的体检报告');
 }

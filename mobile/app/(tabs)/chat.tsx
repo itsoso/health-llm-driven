@@ -50,7 +50,7 @@ import {
   revaSemantic,
   revaFonts,
 } from '../../constants/revaTheme';
-import { sharePlainText, shareLocalImage } from '../../utils/share';
+import { shareImage, sharePlainText, shareLocalImage } from '../../utils/share';
 import { buildSelectedChatShareMessage, isShareableChatMessage } from '../../utils/chatShareSelection';
 import { captureRef } from 'react-native-view-shot';
 import ConversationShareImage, { type ShareImageMessage } from '../../components/chat/ConversationShareImage';
@@ -156,6 +156,9 @@ export default function ChatScreen() {
     newChat,
     loadLatestConversation,
     loadConversation,
+    loadMoreHistory,
+    hasMoreHistory,
+    isLoadingMoreHistory,
     setMessages,
   } = chat;
   const flatListRef = useRef<FlatList>(null);
@@ -218,13 +221,31 @@ export default function ChatScreen() {
     }
   }, [authToken]);
 
+  const shareViewingImage = useCallback(async (uri: string) => {
+    const source = buildChatImageSource(uri, authToken);
+    if (!source) {
+      Alert.alert('无法分享', '请重新登录后再试。');
+      return;
+    }
+    try {
+      await shareImage(source.uri, {
+        target: 'more',
+        cacheKey: 'viewer-image',
+        headers: source.headers,
+      });
+    } catch {
+      Alert.alert('分享失败', '图片下载或系统分享暂时不可用，请检查网络后重试。');
+    }
+  }, [authToken]);
+
   const handleViewingImageLongPress = useCallback(() => {
     if (!viewingImage) return;
     Alert.alert('图片', undefined, [
       { text: '保存到相册', onPress: () => { void saveViewingImage(viewingImage); } },
+      { text: '分享图片', onPress: () => { void shareViewingImage(viewingImage); } },
       { text: '取消', style: 'cancel' },
     ]);
-  }, [saveViewingImage, viewingImage]);
+  }, [saveViewingImage, shareViewingImage, viewingImage]);
 
   // Context from alert / push / Siri deep-link. Read ONCE on first mount, then cleared.
   // autoSend=1 (from Siri HealthAnalysisOpenIntent) → directly send instead of prefilling.
@@ -882,7 +903,14 @@ export default function ChatScreen() {
         ),
       }
     : undefined;
-  const visibleTodayFocusModel = todayFocusModel.contextStrip?.key === dismissedTodayFocusKey
+  const shouldSuppressTodayContext = (
+    todayFocusModel.contextStrip?.key === dismissedTodayFocusKey
+    || (
+      keyboardVisible
+      && todayFocusModel.contextStrip?.tone !== 'risk'
+    )
+  );
+  const visibleTodayFocusModel = shouldSuppressTodayContext
     ? { ...todayFocusModel, contextStrip: null }
     : todayFocusModel;
   const messageListItems = useMemo(
@@ -931,6 +959,26 @@ export default function ChatScreen() {
           contentContainerStyle={styles.messageList}
           keyboardDismissMode="on-drag"
           keyboardShouldPersistTaps="always"
+          maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+          ListHeaderComponent={hasMoreHistory || isLoadingMoreHistory ? (
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel={isLoadingMoreHistory ? '正在加载更早消息' : '加载更早消息'}
+              activeOpacity={0.72}
+              disabled={isLoadingMoreHistory}
+              onPress={() => { void loadMoreHistory(); }}
+              style={styles.loadEarlierButton}
+            >
+              {isLoadingMoreHistory ? (
+                <ActivityIndicator size="small" color={C.green500} />
+              ) : (
+                <Ionicons name="time-outline" size={14} color={C.green500} />
+              )}
+              <Text style={txt.loadEarlier}>
+                {isLoadingMoreHistory ? '正在加载…' : '加载更早消息'}
+              </Text>
+            </TouchableOpacity>
+          ) : null}
           onContentSizeChange={() => {
             if (shouldScrollChatToEnd({
               forcePending: forceScrollPending.current,
@@ -957,6 +1005,7 @@ export default function ChatScreen() {
                 onOpenerQuickReply={handleOpenerQuickReply}
                 onboarding={startersOnboarding}
                 onQuickAction={handleQuickAction}
+                showReplyActions={!keyboardVisible}
               />
             ) : <AgentHomeBootstrapLoading />
           }
@@ -1024,7 +1073,12 @@ export default function ChatScreen() {
             />
           </View>
         )}
-        {bootstrapReady && messages.length === 0 && !selectionMode && (
+        {bootstrapReady
+          && messages.length === 0
+          && !selectionMode
+          && !opener
+          && !keyboardVisible
+          && (
           <ComposerSuggestionsRow
             suggestions={starterSuggestions}
             onCapturePhoto={() => setCaptureMealPhotoToken(token => token + 1)}
@@ -1052,7 +1106,7 @@ export default function ChatScreen() {
               onPress={(event) => event.stopPropagation()}
               onLongPress={handleViewingImageLongPress}
               accessibilityRole="imagebutton"
-              accessibilityLabel="预览图片，长按可保存"
+              accessibilityLabel="预览图片，长按可保存或分享"
             >
               <Image
                 source={buildChatImageSource(viewingImage, authToken)}
@@ -1067,8 +1121,13 @@ export default function ChatScreen() {
         </Pressable>
       </Modal>
       <Modal visible={toolMenuVisible} transparent animationType="fade" onRequestClose={() => setToolMenuVisible(false)}>
-        <Pressable style={styles.menuOverlay} onPress={() => setToolMenuVisible(false)}>
-          <Pressable style={styles.toolSheet}>
+        <Pressable
+          testID="chat-tool-menu-overlay"
+          accessible={false}
+          style={styles.menuOverlay}
+          onPress={() => setToolMenuVisible(false)}
+        >
+          <Pressable testID="chat-tool-menu-sheet" accessible={false} style={styles.toolSheet}>
             <View style={styles.toolSheetHeader}>
               <View>
                 <Text style={txt.toolSheetTitle}>更多操作</Text>
@@ -1181,6 +1240,20 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.paper },
   messageListViewport: { flex: 1, minHeight: 0 },
   messageList: { padding: revaSpacing.s4, paddingBottom: 8 },
+  loadEarlierButton: {
+    minHeight: 36,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: revaSpacing.s3,
+    paddingHorizontal: revaSpacing.s3,
+    paddingVertical: 7,
+    borderRadius: revaRadii.pill,
+    backgroundColor: C.green50,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.green100,
+  },
   timeDivider: {
     alignSelf: 'center',
     marginTop: 2,
@@ -1284,6 +1357,7 @@ const styles = StyleSheet.create({
 
 const txt = {
   bootstrapLoading: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink2, fontWeight: '700' } as TextStyle,
+  loadEarlier: { fontFamily: revaFonts.sans, fontSize: 12, color: C.green500, fontWeight: '700' } as TextStyle,
   timeDivider: { fontFamily: revaFonts.mono, fontSize: 10.5, lineHeight: 14, color: C.ink3, fontWeight: '700' } as TextStyle,
   contextBanner: { fontFamily: revaFonts.sans, fontSize: 12, color: C.green500, flex: 1, fontWeight: '500' } as TextStyle,
   shareBarTitle: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink1, fontWeight: '700' } as TextStyle,

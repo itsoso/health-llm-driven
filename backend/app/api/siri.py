@@ -17,7 +17,6 @@ import re
 import logging
 import plistlib
 import uuid
-from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
@@ -25,9 +24,7 @@ from pydantic import BaseModel
 
 from app.database import get_db
 from app.models.user import User
-from app.models.chat import ChatConversation
 from app.api.deps import get_current_user_required
-from app.services.agent_executor import AgentExecutor
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -64,19 +61,33 @@ def strip_markdown(text: str) -> str:
 
 def get_or_create_siri_conversation(user_id: int, db: Session) -> int:
     """获取或创建用户的 Siri 专用对话，避免污染普通对话列表"""
-    conv = db.query(ChatConversation).filter(
-        ChatConversation.user_id == user_id,
-        ChatConversation.title == SIRI_CONVERSATION_TITLE,
-    ).first()
-    if not conv:
-        conv = ChatConversation(
-            user_id=user_id,
-            title=SIRI_CONVERSATION_TITLE,
-        )
-        db.add(conv)
-        db.commit()
-        db.refresh(conv)
-    return conv.id
+    from app.services.agent_runtime_facade import (
+        get_or_create_channel_conversation,
+    )
+
+    return get_or_create_channel_conversation(
+        db,
+        user_id=user_id,
+        channel="siri",
+        title=SIRI_CONVERSATION_TITLE,
+    )
+
+
+def _siri_client_turn_id(request: Request) -> str:
+    raw = (
+        request.headers.get("idempotency-key")
+        or request.headers.get("x-client-turn-id")
+        or ""
+    ).strip()
+    from app.services.agent_runtime_identity import external_client_turn_id
+
+    return external_client_turn_id(
+        "siri",
+        channel="siri",
+        user_id=getattr(getattr(request, "state", None), "user_id", ""),
+        conversation_id="shortcut",
+        message_id=raw,
+    )
 
 
 def _generate_generic_shortcut_plist() -> bytes:
@@ -87,6 +98,7 @@ def _generate_generic_shortcut_plist() -> bytes:
     适合通过 iCloud 链接分享给所有人。
     """
     dictate_uuid = str(uuid.uuid4()).upper()
+    request_uuid = str(uuid.uuid4()).upper()
     download_uuid = str(uuid.uuid4()).upper()
     param_key = "health_token"
 
@@ -125,6 +137,10 @@ def _generate_generic_shortcut_plist() -> bytes:
             "WFWorkflowActionParameters": {"UUID": dictate_uuid},
         },
         {
+            "WFWorkflowActionIdentifier": "is.workflow.actions.getuuid",
+            "WFWorkflowActionParameters": {"UUID": request_uuid},
+        },
+        {
             "WFWorkflowActionIdentifier": "is.workflow.actions.downloadurl",
             "WFWorkflowActionParameters": {
                 "UUID": download_uuid,
@@ -140,6 +156,14 @@ def _generate_generic_shortcut_plist() -> bytes:
                                     "WFSerializationType": "WFTextTokenString",
                                 },
                                 "WFValue": auth_value_with_param,
+                            },
+                            {
+                                "WFItemType": 0,
+                                "WFKey": {
+                                    "Value": {"string": "Idempotency-Key"},
+                                    "WFSerializationType": "WFTextTokenString",
+                                },
+                                "WFValue": _action_ref(request_uuid, "UUID"),
                             }
                         ]
                     },
@@ -195,6 +219,7 @@ def _generate_shortcut_plist(token: str) -> bytes:
       4. 朗读回复
     """
     dictate_uuid = str(uuid.uuid4()).upper()
+    request_uuid = str(uuid.uuid4()).upper()
     download_uuid = str(uuid.uuid4()).upper()
 
     # 引用前一步 Action 输出的 helper
@@ -221,6 +246,12 @@ def _generate_shortcut_plist(token: str) -> bytes:
                 "UUID": dictate_uuid,
             },
         },
+        {
+            "WFWorkflowActionIdentifier": "is.workflow.actions.getuuid",
+            "WFWorkflowActionParameters": {
+                "UUID": request_uuid,
+            },
+        },
         # ── Step 2: 发送到健康 API ────────────────────────────────────
         # body 类型 = File → 把上一步的文本作为 text/plain 发送
         # 后端 /siri/say 同时接受 JSON 和 text/plain
@@ -243,6 +274,14 @@ def _generate_shortcut_plist(token: str) -> bytes:
                                     "Value": {"string": f"Bearer {token}"},
                                     "WFSerializationType": "WFTextTokenString",
                                 },
+                            },
+                            {
+                                "WFItemType": 0,
+                                "WFKey": {
+                                    "Value": {"string": "Idempotency-Key"},
+                                    "WFSerializationType": "WFTextTokenString",
+                                },
+                                "WFValue": _action_ref(request_uuid, "UUID"),
                             }
                         ]
                     },
@@ -337,10 +376,24 @@ async def siri_say(
 
     # 使用专属 Siri 对话（不影响普通对话列表的排序）
     conversation_id = get_or_create_siri_conversation(current_user.id, db)
+    request.state.user_id = current_user.id
+    from app.services.agent_runtime_identity import (
+        MissingExternalMessageIdentity,
+    )
+
+    try:
+        client_turn_id = _siri_client_turn_id(request)
+    except MissingExternalMessageIdentity as exc:
+        raise HTTPException(
+            status_code=422,
+            detail="缺少请求唯一标识，请更新 Siri 快捷指令后重试",
+        ) from exc
 
     # Siri 快捷指令 HTTP 超时约 25-30s，通过第一方 Agent stream 收集完整回复
     SIRI_TIMEOUT = 25
-    agent = AgentExecutor(db)
+    from app.services.agent_runtime_facade import CloudAgentRuntimeFacade
+
+    agent = CloudAgentRuntimeFacade(db)
     try:
         full_reply = ""
         async def collect_reply():
@@ -349,6 +402,8 @@ async def siri_say(
                 user_id=current_user.id,
                 message=message,
                 conversation_id=conversation_id,
+                client_turn_id=client_turn_id,
+                origin="siri",
                 channel="siri",
             ):
                 if event.get("event") == "token":

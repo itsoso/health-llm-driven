@@ -1,11 +1,17 @@
 """Deterministic tool capability policy for XiaoBa Agent Kernel."""
 from __future__ import annotations
 
+import hashlib
 import json
 from typing import Any
 
-from app.services.agent_kernel.tool_registry import get_tool_spec, list_tool_specs
+from app.services.agent_kernel.tool_registry import (
+    ToolRegistryError,
+    get_tool_spec,
+    list_tool_specs,
+)
 from app.services.agent_kernel.types import CapabilityDecision, ToolExecutionRequest, TurnSnapshot
+from app.services.agent_kernel.write_safety import is_explicit_write_cancellation
 
 READ_ONLY_TOOLS = frozenset(
     spec.name
@@ -45,6 +51,37 @@ _RECIPE_RECORD_TYPE_ALIASES = {
     "blood-pressure": "blood_pressure",
     "bloodpressure": "blood_pressure",
 }
+_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v1"
+
+
+def capability_policy_contract_payload() -> dict[str, Any]:
+    """Return static, content-free metadata that governs tool authorization."""
+    return {
+        "contract_version": _CAPABILITY_POLICY_CONTRACT_VERSION,
+        "read_only_tools": sorted(READ_ONLY_TOOLS),
+        "specialist_read_only_tools": sorted(SPECIALIST_READ_ONLY_TOOLS),
+        "write_tools": sorted(WRITE_TOOL_NAMES),
+        "known_tools": sorted(KNOWN_TOOL_NAMES),
+        "manage_write_operations": sorted(MANAGE_WRITE_OPERATIONS),
+        "intervention_write_actions": sorted(INTERVENTION_WRITE_ACTIONS),
+        "intervention_read_actions": sorted(INTERVENTION_READ_ACTIONS),
+        "manage_plan_actions": sorted(MANAGE_PLAN_ACTIONS),
+        "recipe_record_types": sorted(RECIPE_REPLAY_ALLOWED_RECORD_TYPES),
+        "recipe_record_type_aliases": dict(
+            sorted(_RECIPE_RECORD_TYPE_ALIASES.items())
+        ),
+    }
+
+
+def capability_policy_digest() -> str:
+    """Fingerprint policy metadata without prompts, arguments or user content."""
+    encoded = json.dumps(
+        capability_policy_contract_payload(),
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def decide_tool_capability(
@@ -62,6 +99,31 @@ def decide_tool_capability(
 
     if not tool_name:
         return _decision("block", "missing_tool_name", tool_name, args)
+
+    mutating_request = _is_mutating_request(tool_name, args)
+    if (
+        mutating_request
+        and is_explicit_write_cancellation(snapshot.envelope.text)
+    ):
+        return _decision(
+            "block",
+            "explicit_write_cancellation",
+            tool_name,
+            args,
+            receipt_required=True,
+        )
+    if (
+        mutating_request
+        and snapshot.goal is not None
+        and snapshot.goal.requires_clarification
+    ):
+        return _decision(
+            "block",
+            "goal_requires_clarification",
+            tool_name,
+            args,
+            receipt_required=True,
+        )
 
     # Procedure recipes are user-owned, exact-triggered, server-stored tool
     # sequences. Their AUTO/typed-only confirmation semantics are still applied
@@ -87,6 +149,23 @@ def decide_tool_capability(
         return _decision(
             "allow",
             "prevalidated_recipe_replay",
+            tool_name,
+            args,
+            receipt_required=True,
+        )
+
+    if request.source == "telegram_directive":
+        if tool_name != "user_directive":
+            return _decision(
+                "block",
+                "telegram_directive_tool_not_allowed",
+                tool_name,
+                args,
+                receipt_required=True,
+            )
+        return _decision(
+            "allow",
+            "prevalidated_telegram_directive",
             tool_name,
             args,
             receipt_required=True,
@@ -156,6 +235,23 @@ def decide_tool_capability(
                 if primary == "unknown"
                 else "write_tool_without_write_intent"
             ),
+            tool_name,
+            args,
+            receipt_required=True,
+        )
+
+    if tool_name == "user_directive":
+        if primary in {"write", "mutate"} and snapshot.intent.is_write:
+            return _decision(
+                "allow",
+                "explicit_user_directive",
+                tool_name,
+                args,
+                receipt_required=True,
+            )
+        return _decision(
+            "block",
+            "user_directive_without_write_intent",
             tool_name,
             args,
             receipt_required=True,
@@ -245,6 +341,13 @@ def decide_tool_capability(
         return _decision("block", "unhandled_write_tool", tool_name, args, receipt_required=True)
 
     return _decision("block", "unknown_tool", tool_name, args, receipt_required=True)
+
+
+def _is_mutating_request(tool_name: str, args: dict[str, Any]) -> bool:
+    try:
+        return get_tool_spec(tool_name).classify_effect(args) == "write"
+    except ToolRegistryError:
+        return tool_name in WRITE_TOOL_NAMES
 
 
 def _decision(

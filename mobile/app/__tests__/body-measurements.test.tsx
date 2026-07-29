@@ -29,7 +29,12 @@ import BodyMeasurementsScreen from '../body-measurements';
 jest.spyOn(console, 'error').mockImplementation(() => undefined);
 
 function renderScreen() {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  const qc = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false, gcTime: 0 },
+      mutations: { retry: false, gcTime: 0 },
+    },
+  });
   return render(
     <QueryClientProvider client={qc}>
       <BodyMeasurementsScreen />

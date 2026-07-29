@@ -16,11 +16,24 @@ def _conversation(db, user_id: int, suffix: str = "one") -> AgentConversation:
 
 
 def test_create_or_resume_run_keeps_one_logical_identity(db, auth_user_and_headers):
-    from app.services.agent_runtime import AgentRuntimeCoordinator
+    from app.services.agent_runtime import (
+        AgentRuntimeCoordinator,
+        RuntimeContractSnapshot,
+    )
 
     user, _headers = auth_user_and_headers
     conversation = _conversation(db, user.id)
     runtime = AgentRuntimeCoordinator(db)
+    original_contract = RuntimeContractSnapshot(
+        runtime_contract_version="runtime-contract-v1",
+        tool_registry_digest="1" * 64,
+        capability_policy_digest="2" * 64,
+    )
+    ignored_contract = RuntimeContractSnapshot(
+        runtime_contract_version="runtime-contract-v2",
+        tool_registry_digest="3" * 64,
+        capability_policy_digest="4" * 64,
+    )
 
     first = runtime.create_or_resume_run(
         run_id="run-first",
@@ -29,6 +42,7 @@ def test_create_or_resume_run_keeps_one_logical_identity(db, auth_user_and_heade
         conversation_id=conversation.id,
         client_turn_id="client-turn-1",
         origin="mobile",
+        contract_snapshot=original_contract,
     )
     duplicate = runtime.create_or_resume_run(
         run_id="run-ignored",
@@ -37,6 +51,7 @@ def test_create_or_resume_run_keeps_one_logical_identity(db, auth_user_and_heade
         conversation_id=conversation.id,
         client_turn_id="client-turn-1",
         origin="mobile",
+        contract_snapshot=ignored_contract,
     )
 
     assert first.resumed is False
@@ -48,6 +63,44 @@ def test_create_or_resume_run_keeps_one_logical_identity(db, auth_user_and_heade
     assert duplicate.context.run_id == "run-first"
     assert duplicate.context.attempt_id == "attempt-first"
     assert duplicate.context.input_seq == 1
+    run = runtime.get_run(user.id, "run-first")
+    assert run.runtime_contract_version == original_contract.runtime_contract_version
+    assert run.tool_registry_digest == original_contract.tool_registry_digest
+    assert run.capability_policy_digest == original_contract.capability_policy_digest
+
+
+def test_new_run_uses_current_content_free_contract_snapshot(
+    db,
+    auth_user_and_headers,
+):
+    from app.services.agent_runtime import (
+        AgentRuntimeCoordinator,
+        RuntimeContractSnapshot,
+    )
+
+    user, _headers = auth_user_and_headers
+    runtime = AgentRuntimeCoordinator(db)
+    admission = runtime.create_or_resume_run(
+        run_id="run-current-contract",
+        attempt_id="attempt-current-contract",
+        user_id=user.id,
+        conversation_id=None,
+        client_turn_id="turn-current-contract",
+        origin="test",
+    )
+
+    run = runtime.get_run(user.id, admission.context.run_id)
+    current = RuntimeContractSnapshot.current()
+    assert run.runtime_contract_version == current.runtime_contract_version
+    assert run.tool_registry_digest == current.tool_registry_digest
+    assert run.capability_policy_digest == current.capability_policy_digest
+    assert "private" not in repr(
+        (
+            run.runtime_contract_version,
+            run.tool_registry_digest,
+            run.capability_policy_digest,
+        )
+    )
 
 
 def test_busy_conversation_rejects_a_distinct_turn(db, auth_user_and_headers):

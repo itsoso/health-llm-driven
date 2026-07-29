@@ -16,6 +16,10 @@ from app.services.agent_kernel.types import (
 logger = logging.getLogger(__name__)
 
 
+class ToolPreflightError(RuntimeError):
+    """A tool failed before its dispatch boundary was crossed."""
+
+
 class ToolGateway:
     """Apply deterministic policy before a tool dispatch crosses into execution."""
 
@@ -42,9 +46,16 @@ class ToolGateway:
         self,
         request: ToolExecutionRequest,
         dispatch: Callable[[ToolExecutionRequest], Awaitable[object]],
+        *,
+        on_decision: Callable[[CapabilityDecision], None] | None = None,
     ) -> ToolExecutionResult:
         """Apply policy and invoke the supplied adapter at most once."""
-        decision = self.preflight(request)
+        try:
+            decision = self.preflight(request)
+            if on_decision is not None:
+                on_decision(decision)
+        except Exception as exc:  # noqa: BLE001 - preserve the dispatch boundary
+            raise ToolPreflightError("tool_preflight_failed") from exc
         if decision.action == "block" and self.snapshot.policy_mode == "enforce":
             return ToolExecutionResult(
                 tool_name=decision.normalized_tool_name or request.tool_name,

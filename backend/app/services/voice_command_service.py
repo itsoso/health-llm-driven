@@ -63,6 +63,7 @@ class VoiceCommandService:
         text: str,
         *,
         user_auth_token: Optional[str] = None,
+        client_turn_id: Optional[str] = None,
     ) -> Optional[dict[str, Any]]:
         """Route a parsed voice observation through the normal tool boundary.
 
@@ -100,10 +101,19 @@ class VoiceCommandService:
             }
 
         try:
-            result = await executor._execute_tool(
-                "health_record",
-                tool_arguments,
-                user_auth_token,
+            from app.services.agent_runtime_facade import CloudAgentRuntimeFacade
+
+            result = await CloudAgentRuntimeFacade(self.db).execute_tool(
+                user_id=self.user_id,
+                message=clean,
+                origin="voice_command",
+                channel="voice",
+                tool_name="health_record",
+                arguments=tool_arguments,
+                user_auth_token=user_auth_token,
+                client_turn_id=client_turn_id,
+                run_id=snapshot.context.run_id,
+                executor=executor,
                 source="voice_command",
             )
         except Exception as exc:  # noqa: BLE001 - client receives no false completion
@@ -122,7 +132,10 @@ class VoiceCommandService:
                 "execution_status": "failed",
             }
 
-        receipt = _verified_record_receipt(result)
+        receipt = _verified_record_receipt(
+            result,
+            fallback_message=draft["message"].replace("准备记录 ", "已记录 ", 1),
+        )
         write_outcome = classify_write_execution(result, receipt=receipt)
         if str(result).startswith("[NEEDS_CONFIRMATION]"):
             executor._finish_agent_kernel_turn(status="pending_confirmation")
@@ -201,7 +214,11 @@ def _extract_water(text: str) -> Optional[dict[str, Any]]:
     )
 
 
-def _verified_record_receipt(result: Any) -> dict[str, Any] | None:
+def _verified_record_receipt(
+    result: Any,
+    *,
+    fallback_message: str | None = None,
+) -> dict[str, Any] | None:
     if isinstance(result, str):
         try:
             payload = json.loads(result)
@@ -218,9 +235,13 @@ def _verified_record_receipt(result: Any) -> dict[str, Any] | None:
     if payload.get("success") is not True:
         return None
     record_id = payload.get("record_id")
+    if record_id is None and payload.get("replayed") is True:
+        record_id = payload.get("resource_id")
+    if isinstance(record_id, str) and record_id.isdigit():
+        record_id = int(record_id)
     if isinstance(record_id, bool) or not isinstance(record_id, int) or record_id <= 0:
         return None
-    message = str(payload.get("message") or "").strip()
+    message = str(payload.get("message") or fallback_message or "").strip()
     if not message:
         return None
     return {

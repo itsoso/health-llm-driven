@@ -19,7 +19,7 @@ import KnowledgeEntityScreen from '../knowledge/entity';
 
 function renderScreen() {
   const qc = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
+    defaultOptions: { queries: { retry: false, gcTime: 0 } },
   });
   return render(
     <QueryClientProvider client={qc}>

@@ -15,6 +15,8 @@ from urllib.parse import urlsplit
 
 import httpx
 
+from app.services.aigc_media_capabilities import validate_video_spec
+
 
 logger = logging.getLogger(__name__)
 
@@ -227,6 +229,7 @@ class AIGCMediaProvider:
         source_url: str | None = None,
         duration_seconds: int = 5,
         ratio: str = "9:16",
+        resolution: str = "720P",
         model: str | None = None,
     ) -> AIGCTask:
         if kind not in VIDEO_KINDS:
@@ -243,13 +246,18 @@ class AIGCMediaProvider:
         ).strip()
         if not model:
             raise AIGCMediaConfigurationError("Wan video model ID is required")
-        if model in HAPPYHORSE_VIDEO_MODELS:
-            if duration_seconds < 3 or duration_seconds > 15:
-                raise AIGCMediaConfigurationError("HappyHorse video duration must be between 3 and 15 seconds")
-        elif duration_seconds < 2 or duration_seconds > 15:
-            raise AIGCMediaConfigurationError("Video duration must be between 2 and 15 seconds")
+        try:
+            validate_video_spec(
+                model=model,
+                kind=kind,
+                duration_seconds=duration_seconds,
+                ratio=ratio,
+                resolution=resolution,
+            )
+        except ValueError as exc:
+            raise AIGCMediaConfigurationError(str(exc)) from exc
         parameters: dict[str, Any] = {
-            "resolution": "720P",
+            "resolution": resolution.upper(),
             "duration": duration_seconds,
             "watermark": False,
         }

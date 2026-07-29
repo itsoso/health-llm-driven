@@ -1,4 +1,5 @@
 import api from './api';
+import { todayStr } from '../utils/dietDate';
 
 export type GoalType = 'diet' | 'exercise' | 'sleep' | 'water' | 'supplement' | 'outdoor' | 'weight' | 'other';
 export type GoalPeriod = 'daily' | 'weekly' | 'monthly' | 'yearly';
@@ -52,7 +53,7 @@ export async function createGoal(goal: GoalCreate): Promise<GoalResponse> {
 }
 
 export async function updateGoalProgress(id: number, progressValue: number): Promise<any> {
-  const today = new Date().toISOString().split('T')[0];
+  const today = todayStr();
   const { data } = await api.post(`/goals/${id}/progress`, null, {
     params: { progress_date: today, progress_value: progressValue },
   });

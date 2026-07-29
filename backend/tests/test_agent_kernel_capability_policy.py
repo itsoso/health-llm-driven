@@ -1,7 +1,14 @@
+import re
+
 import pytest
 
-from app.services.agent_kernel.capability_policy import decide_tool_capability
+from app.services.agent_kernel.capability_policy import (
+    capability_policy_contract_payload,
+    capability_policy_digest,
+    decide_tool_capability,
+)
 from app.services.agent_kernel.intent_frame import build_intent_frame
+from app.services.agent_kernel.goal_spec import compile_goal_spec
 from app.services.agent_kernel.types import (
     AgentEnvelope,
     ExecutionContext,
@@ -74,6 +81,84 @@ def test_write_turn_allows_health_record_with_receipt():
 
     assert decision.action == "allow"
     assert decision.receipt_required is True
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "不要记录午餐牛肉面",
+        "先别保存午餐牛肉面",
+        "暂不录入午餐牛肉面",
+    ),
+)
+def test_explicit_record_cancellation_blocks_health_record(message):
+    snapshot = _snapshot(message)
+    decision = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_record",
+            {"record_type": "diet", "data": {"food_items": "牛肉面"}},
+        ),
+    )
+
+    assert snapshot.intent.is_write is False
+    assert decision.action == "block"
+    assert decision.reason == "explicit_write_cancellation"
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "记录午餐牛肉面不要辣",
+        "记录午餐牛肉面别放香菜",
+        "记录午餐牛肉面需要少盐",
+    ),
+)
+def test_food_preferences_do_not_cancel_health_record(message):
+    decision = decide_tool_capability(
+        _snapshot(message),
+        _request(
+            "health_record",
+            {"record_type": "diet", "data": {"food_items": message}},
+        ),
+    )
+
+    assert decision.action == "allow"
+    assert decision.reason == "explicit_create_intent"
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "记录2026-02-30午餐牛肉面",
+        "记录2月30日午餐牛肉面",
+    ),
+)
+def test_invalid_explicit_date_goal_blocks_health_record(message):
+    base = _snapshot(message)
+    goal = compile_goal_spec(
+        envelope=base.envelope,
+        context=base.context,
+        intent=base.intent,
+    )
+    snapshot = TurnSnapshot(
+        envelope=base.envelope,
+        context=base.context,
+        intent=base.intent,
+        goal=goal,
+    )
+
+    decision = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_record",
+            {"record_type": "diet", "data": {"food_items": "牛肉面"}},
+        ),
+    )
+
+    assert goal.requires_clarification is True
+    assert decision.action == "block"
+    assert decision.reason == "goal_requires_clarification"
 
 
 def test_explicit_aigc_photo_turn_blocks_health_record_even_if_model_requests_it():
@@ -300,3 +385,19 @@ def test_unknown_tool_is_blocked_fail_closed():
 
     assert decision.action == "block"
     assert decision.reason == "unknown_tool"
+
+
+def test_capability_policy_digest_is_deterministic_content_free_sha256():
+    first = capability_policy_digest()
+    second = capability_policy_digest()
+    payload = capability_policy_contract_payload()
+
+    assert first == second
+    assert re.fullmatch(r"[0-9a-f]{64}", first)
+    assert payload["contract_version"] == "agent-capability-policy-v1"
+    assert payload["known_tools"]
+    assert payload["recipe_record_types"]
+    serialized = repr(payload).lower()
+    assert "prompt" not in serialized
+    assert "user_id" not in serialized
+    assert "health_value" not in serialized

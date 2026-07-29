@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import re
+
 import pytest
 
 
 def test_registry_covers_every_core_and_specialist_tool_exactly_once():
-    from app.services.agent_kernel.tool_registry import list_tool_specs
+    from app.services.agent_kernel.tool_registry import (
+        list_model_visible_tool_specs,
+        list_tool_specs,
+    )
     from app.services.specialist_tools import SPECIALIST_TOOLS
     from app.services.tool_schema_registry import get_tool_names
 
@@ -12,7 +17,12 @@ def test_registry_covers_every_core_and_specialist_tool_exactly_once():
     names = [spec.name for spec in specs]
 
     assert len(names) == len(set(names))
-    assert set(names) == set(get_tool_names()) | set(SPECIALIST_TOOLS)
+    assert {
+        spec.name for spec in list_model_visible_tool_specs()
+    } == set(get_tool_names()) | set(SPECIALIST_TOOLS)
+    assert {
+        spec.name for spec in specs if not spec.model_visible
+    } == {"user_directive"}
 
 
 @pytest.mark.parametrize(
@@ -115,3 +125,24 @@ def test_unknown_tool_fails_closed():
         from app.services.agent_kernel.tool_registry import get_tool_spec
 
         get_tool_spec("future_unregistered_tool")
+
+
+def test_tool_registry_digest_is_deterministic_content_free_sha256():
+    from app.services.agent_kernel.tool_registry import (
+        tool_registry_contract_payload,
+        tool_registry_digest,
+    )
+
+    first = tool_registry_digest()
+    second = tool_registry_digest()
+    payload = tool_registry_contract_payload()
+
+    assert first == second
+    assert re.fullmatch(r"[0-9a-f]{64}", first)
+    assert payload["contract_version"] == "agent-tool-registry-v1"
+    assert payload["tools"]
+    assert all("name" in item and "effect" in item for item in payload["tools"])
+    serialized = repr(payload).lower()
+    assert "prompt" not in serialized
+    assert "arguments" not in serialized
+    assert "result" not in serialized

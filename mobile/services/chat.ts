@@ -86,6 +86,17 @@ export interface LlmUsageProfile {
 
 export type AgentPerfProfile = AgentPerfProfileLike;
 
+export interface AgentTurnStatus {
+  clientTurnId: string;
+  runId?: string;
+  status: string;
+  requestPersisted: boolean;
+  responsePersisted: boolean;
+  conversationId?: number;
+  retryable: boolean;
+  errorCode?: string;
+}
+
 export interface MedicationBatchStreamDecision {
   intentId: number;
   decisionStatus: 'executed' | 'dismissed' | 'expired';
@@ -632,19 +643,76 @@ export async function getConversations(titleLike?: string): Promise<Conversation
 
 export async function getConversationMessages(
   conversationId: number,
-  opts?: { days?: number },
-): Promise<{ messages: ChatMessage[]; total_messages: number }> {
+  opts?: { days?: number; limit?: number; beforeMessageId?: number },
+): Promise<{
+  messages: ChatMessage[];
+  total_messages: number;
+  has_more?: boolean;
+  oldest_message_id?: number;
+}> {
   await enforceAppEgressAllowed();
   const token = await getToken();
-  const qs = opts?.days ? `?days=${opts.days}` : '';
+  const params = new URLSearchParams();
+  if (opts?.days) params.set('days', String(opts.days));
+  if (opts?.limit) params.set('limit', String(opts.limit));
+  if (opts?.beforeMessageId) params.set('before_message_id', String(opts.beforeMessageId));
+  const query = params.toString();
+  const qs = query ? `?${query}` : '';
   const res = await fetch(`${BASE_URL}/agent/conversations/${conversationId}${qs}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
-  if (!res.ok) return { messages: [], total_messages: 0 };
+  if (!res.ok) {
+    throw new Error(`getConversationMessages failed: ${res.status}`);
+  }
   const data = await res.json();
   return {
     messages: data.messages || [],
     total_messages: data.total_messages ?? (data.messages?.length ?? 0),
+    has_more: typeof data.has_more === 'boolean' ? data.has_more : undefined,
+    oldest_message_id: typeof data.oldest_message_id === 'number'
+      ? data.oldest_message_id
+      : undefined,
+  };
+}
+
+export async function getAgentTurnStatus(
+  clientTurnId: string,
+): Promise<AgentTurnStatus | null> {
+  await enforceAppEgressAllowed();
+  const token = await getToken();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 1000);
+  let res: Response;
+  try {
+    res = await fetch(
+      `${BASE_URL}/agent/turns/${encodeURIComponent(clientTurnId)}/status`,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: controller.signal,
+        cache: 'no-store',
+      },
+    );
+  } finally {
+    clearTimeout(timeout);
+  }
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    throw new Error(`getAgentTurnStatus failed: ${res.status}`);
+  }
+  const data = await res.json();
+  return {
+    clientTurnId: String(data.client_turn_id || clientTurnId),
+    ...(typeof data.run_id === 'string' ? { runId: data.run_id } : {}),
+    status: String(data.status || 'unknown'),
+    requestPersisted: data.request_persisted === true,
+    responsePersisted: data.response_persisted === true,
+    ...(typeof data.conversation_id === 'number'
+      ? { conversationId: data.conversation_id }
+      : {}),
+    retryable: data.retryable === true,
+    ...(typeof data.error_code === 'string'
+      ? { errorCode: data.error_code }
+      : {}),
   };
 }
 

@@ -7,6 +7,7 @@ import * as SecureStore from 'expo-secure-store';
 const mockStreamChat = jest.fn();
 const mockGetConversations = jest.fn();
 const mockGetConversationMessages = jest.fn();
+const mockGetAgentTurnStatus = jest.fn();
 const mockDeleteConversation = jest.fn();
 const mockRenderServerCards = jest.fn();
 const mockDispatchCard = jest.fn().mockResolvedValue(null);
@@ -31,6 +32,7 @@ jest.mock('../../services/chat', () => ({
   streamChat: (...args: any[]) => mockStreamChat(...args),
   getConversations: (...args: any[]) => mockGetConversations(...args),
   getConversationMessages: (...args: any[]) => mockGetConversationMessages(...args),
+  getAgentTurnStatus: (...args: any[]) => mockGetAgentTurnStatus(...args),
   deleteConversation: (...args: any[]) => mockDeleteConversation(...args),
 }));
 
@@ -158,6 +160,10 @@ async function* streamAcceptedThenEndsWithoutDone() {
   // absent from the client-visible stream.
   yield { type: 'start', conversationId: 777 };
   yield { type: 'token', content: '已经收到，我正在查询。' };
+}
+
+async function* streamEndsBeforeFirstPersistenceEvent() {
+  return;
 }
 
 async function* streamDoneExplicitlyNotPersisted() {
@@ -554,6 +560,7 @@ describe('useChatEngine', () => {
     persistStream = undefined;
     mockGetConversations.mockResolvedValue([]);
     mockGetConversationMessages.mockResolvedValue({ total_messages: 0, messages: [] });
+    mockGetAgentTurnStatus.mockResolvedValue(null);
     mockDeleteConversation.mockResolvedValue(true);
     mockRenderServerCards.mockImplementation((cards: any[]) => Array.isArray(cards) ? cards : []);
     (NetInfo.fetch as jest.Mock).mockResolvedValue({ isConnected: true });
@@ -570,6 +577,55 @@ describe('useChatEngine', () => {
 
   afterEach(() => {
     jest.restoreAllMocks();
+  });
+
+  it('discards an older conversation response that resolves after a newer selection', async () => {
+    let resolveFirst!: (value: unknown) => void;
+    let resolveSecond!: (value: unknown) => void;
+    mockGetConversationMessages.mockImplementation((id: number) => new Promise(resolve => {
+      if (id === 101) resolveFirst = resolve;
+      if (id === 202) resolveSecond = resolve;
+    }));
+    const { result } = renderHook(() => useChatEngine());
+    let firstLoad!: Promise<void>;
+    let secondLoad!: Promise<void>;
+
+    act(() => {
+      firstLoad = result.current.loadConversation(101);
+      secondLoad = result.current.loadConversation(202);
+    });
+    await act(async () => {
+      resolveSecond({
+        total_messages: 1,
+        has_more: false,
+        oldest_message_id: 2021,
+        messages: [{
+          id: 2021,
+          role: 'assistant',
+          content: '较新的会话',
+          created_at: '2026-07-25T12:01:00Z',
+        }],
+      });
+      await secondLoad;
+    });
+    await act(async () => {
+      resolveFirst({
+        total_messages: 1,
+        has_more: false,
+        oldest_message_id: 1011,
+        messages: [{
+          id: 1011,
+          role: 'assistant',
+          content: '已经过时的会话',
+          created_at: '2026-07-25T12:00:00Z',
+        }],
+      });
+      await firstLoad;
+    });
+
+    expect(result.current.conversationId).toBe(202);
+    expect(result.current.messages.map(message => message.content)).toContain('较新的会话');
+    expect(result.current.messages.map(message => message.content)).not.toContain('已经过时的会话');
   });
 
   it('restores persisted safe thinking steps from assistant history meta', () => {
@@ -887,7 +943,7 @@ describe('useChatEngine', () => {
         ]),
       );
     });
-    expect(mockGetConversationMessages).toHaveBeenCalledWith(321, { days: 7 });
+    expect(mockGetConversationMessages).toHaveBeenCalledWith(321, { limit: 80 });
     expect(mockGetConversations).not.toHaveBeenCalledWith('每日健康简报');
   });
 
@@ -1001,6 +1057,51 @@ describe('useChatEngine', () => {
     await waitFor(() => {
       expect(mockStreamChat).toHaveBeenCalledTimes(2);
     });
+
+    await act(async () => {
+      finishStream?.();
+      await Promise.resolve();
+    });
+  });
+
+  it('does not acknowledge a queued photo turn until the backend accepts it', async () => {
+    mockStreamChat.mockImplementation(streamStartThenWait);
+    const onAccepted = jest.fn();
+    const { result } = renderHook(() => useChatEngine());
+
+    act(() => {
+      void result.current.sendMessage('第一条先慢慢分析');
+    });
+    await waitFor(() => {
+      expect(result.current.isStreaming).toBe(true);
+      expect(mockStreamChat).toHaveBeenCalledTimes(1);
+    });
+
+    let queuedResult: Promise<boolean> | undefined;
+    act(() => {
+      queuedResult = result.current.sendMessage('记录这餐', [{
+        uri: 'file:///documents/chat-drafts/queued-meal.jpeg',
+        base64: 'queued-photo',
+        type: 'jpeg',
+      }], { onAccepted } as any);
+    });
+
+    expect(result.current.queuedCount).toBe(1);
+    expect(onAccepted).not.toHaveBeenCalled();
+
+    await act(async () => {
+      finishStream?.();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(mockStreamChat).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(onAccepted).toHaveBeenCalledWith(true));
+    await expect(queuedResult).resolves.toBe(true);
+
+    await act(async () => {
+      finishStream?.();
+      await Promise.resolve();
+    });
   });
 
   it('tracks and persists the active Agent turn through stream completion', async () => {
@@ -1047,8 +1148,7 @@ describe('useChatEngine', () => {
     });
   });
 
-  it('continues the real request when the network status probe itself fails', async () => {
-    (NetInfo.fetch as jest.Mock).mockRejectedValueOnce(new Error('netinfo unavailable'));
+  it('does not gate the real request on an advisory network probe', async () => {
     mockStreamChat.mockImplementation(streamTokenBurstThenDone);
     const { result } = renderHook(() => useChatEngine());
 
@@ -1059,6 +1159,7 @@ describe('useChatEngine', () => {
     });
 
     expect(mockStreamChat).toHaveBeenCalled();
+    expect(NetInfo.fetch).not.toHaveBeenCalled();
     expect(accepted).toBe(true);
     expect(onAccepted).toHaveBeenCalledTimes(1);
     expect(onAccepted).toHaveBeenCalledWith(true);
@@ -1145,23 +1246,30 @@ describe('useChatEngine', () => {
     });
   });
 
-  it('rejects before acceptance when the device is known to be offline', async () => {
-    (NetInfo.fetch as jest.Mock).mockResolvedValueOnce({ isConnected: false });
+  it.each([
+    { isConnected: false },
+    { isConnected: true, isInternetReachable: false },
+  ])('treats a transient NetInfo offline state as advisory: %j', async (networkState) => {
+    (NetInfo.fetch as jest.Mock).mockResolvedValueOnce(networkState);
+    mockStreamChat.mockImplementation(streamTokenBurstThenDone);
     const onAccepted = jest.fn();
     const { result } = renderHook(() => useChatEngine());
     let accepted: boolean | undefined;
 
     await act(async () => {
-      accepted = await result.current.sendMessage('离线消息', null, { onAccepted } as any);
+      accepted = await result.current.sendMessage('记录这餐', [{
+        uri: 'file:///tmp/meal.jpg',
+        type: 'image/jpeg',
+        base64: 'meal-photo',
+      }], { onAccepted } as any);
     });
 
-    expect(accepted).toBe(false);
+    expect(accepted).toBe(true);
     expect(onAccepted).toHaveBeenCalledTimes(1);
-    expect(onAccepted).toHaveBeenCalledWith(false);
-    expect(mockStreamChat).not.toHaveBeenCalled();
+    expect(onAccepted).toHaveBeenCalledWith(true);
+    expect(mockStreamChat).toHaveBeenCalledTimes(1);
     expect(result.current.activeTurn).toMatchObject({
-      phase: 'failed',
-      errorCode: 'network_unavailable',
+      phase: 'completed',
     });
   });
 
@@ -1261,10 +1369,11 @@ describe('useChatEngine', () => {
   });
 
   it('reuses the same client turn when an unchanged offline draft is retried', async () => {
-    (NetInfo.fetch as jest.Mock)
-      .mockResolvedValueOnce({ isConnected: false })
-      .mockResolvedValueOnce({ isConnected: true });
-    mockStreamChat.mockImplementation(streamTokenBurstThenDone);
+    mockStreamChat
+      .mockImplementationOnce(async function* () {
+        throw new Error('network unavailable');
+      })
+      .mockImplementation(streamTokenBurstThenDone);
     const { result } = renderHook(() => useChatEngine());
 
     await act(async () => {
@@ -1285,10 +1394,11 @@ describe('useChatEngine', () => {
   });
 
   it('reuses one optimistic turn when the same image is retried with a new temporary URI', async () => {
-    (NetInfo.fetch as jest.Mock)
-      .mockResolvedValueOnce({ isConnected: false })
-      .mockResolvedValueOnce({ isConnected: true });
-    mockStreamChat.mockImplementation(streamTokenBurstThenDone);
+    mockStreamChat
+      .mockImplementationOnce(async function* () {
+        throw new Error('network unavailable');
+      })
+      .mockImplementation(streamTokenBurstThenDone);
     const { result } = renderHook(() => useChatEngine());
 
     await act(async () => {
@@ -1316,11 +1426,14 @@ describe('useChatEngine', () => {
   });
 
   it('keeps one optimistic pair across repeated offline retries before recovery', async () => {
-    (NetInfo.fetch as jest.Mock)
-      .mockResolvedValueOnce({ isConnected: false })
-      .mockResolvedValueOnce({ isConnected: false })
-      .mockResolvedValueOnce({ isConnected: true });
-    mockStreamChat.mockImplementation(streamTokenBurstThenDone);
+    mockStreamChat
+      .mockImplementationOnce(async function* () {
+        throw new Error('network unavailable');
+      })
+      .mockImplementationOnce(async function* () {
+        throw new Error('network unavailable');
+      })
+      .mockImplementation(streamTokenBurstThenDone);
     const { result } = renderHook(() => useChatEngine());
 
     await act(async () => { await result.current.sendMessage('准备睡觉了，给我建议'); });
@@ -1361,7 +1474,11 @@ describe('useChatEngine', () => {
           id: 2,
           role: 'assistant',
           content: '已完成',
-          meta: { client_turn_id: 'turn-hydration-race', completion_status: 'complete' },
+          meta: {
+            client_turn_id: 'turn-hydration-race',
+            completion_status: 'complete',
+            client_turn_finalized: true,
+          },
         },
       ],
     });
@@ -1441,7 +1558,11 @@ describe('useChatEngine', () => {
           role: 'assistant',
           content: '服务端已经完成。',
           created_at: '2026-07-09T10:00:05Z',
-          meta: { completion_status: 'complete', client_turn_id: 'turn-restored' },
+          meta: {
+            completion_status: 'complete',
+            client_turn_id: 'turn-restored',
+            client_turn_finalized: true,
+          },
         },
       ],
     });
@@ -1496,7 +1617,11 @@ describe('useChatEngine', () => {
           id: 2,
           role: 'assistant',
           content: '旧问题的答案',
-          meta: { completion_status: 'complete', client_turn_id: 'turn-old' },
+          meta: {
+            completion_status: 'complete',
+            client_turn_id: 'turn-old',
+            client_turn_finalized: true,
+          },
         },
         { id: 3, role: 'user', content: '本轮尚未完成', meta: { client_turn_id: 'turn-new' } },
       ],
@@ -1539,7 +1664,11 @@ describe('useChatEngine', () => {
           id: 2,
           role: 'assistant',
           content: '已处理。',
-          meta: { completion_status: 'complete', client_turn_id: 'turn-write-no-receipt' },
+          meta: {
+            completion_status: 'complete',
+            client_turn_id: 'turn-write-no-receipt',
+            client_turn_finalized: true,
+          },
         },
       ],
     });
@@ -1579,7 +1708,11 @@ describe('useChatEngine', () => {
           id: 2,
           role: 'assistant',
           content: '本轮中断。',
-          meta: { completion_status: 'interrupted', client_turn_id: 'turn-server-interrupted' },
+          meta: {
+            completion_status: 'interrupted',
+            client_turn_id: 'turn-server-interrupted',
+            client_turn_finalized: true,
+          },
         },
       ],
     });
@@ -2035,7 +2168,7 @@ describe('useChatEngine', () => {
       expect.arrayContaining([
         expect.objectContaining({
           role: 'user',
-          imageUris: ['file:///lab-report.jpg'],
+          imageUris: ['data:image/jpeg;base64,abc123'],
         }),
       ]),
     );
@@ -2065,7 +2198,11 @@ describe('useChatEngine', () => {
             role: 'assistant',
             content: '已从服务端恢复的完整回答',
             created_at: '2026-05-22T23:31:00Z',
-            meta: { client_turn_id: clientTurnId, completion_status: 'complete' },
+            meta: {
+              client_turn_id: clientTurnId,
+              completion_status: 'complete',
+              client_turn_finalized: true,
+            },
           },
         ],
       };
@@ -2099,7 +2236,7 @@ describe('useChatEngine', () => {
         expect.objectContaining({ content: expect.stringContaining('请求超时') }),
       ]),
     );
-    expect(mockGetConversationMessages).toHaveBeenCalledWith(777, { days: 7 });
+    expect(mockGetConversationMessages).toHaveBeenCalledWith(777, { limit: 80 });
   });
 
   it('recovers an accepted background-aborted stream from server history on foreground', async () => {
@@ -2141,7 +2278,11 @@ describe('useChatEngine', () => {
             role: 'assistant',
             content: '服务端后台完成的完整回答',
             created_at: '2026-07-16T15:40:20Z',
-            meta: { client_turn_id: clientTurnId, completion_status: 'complete' },
+            meta: {
+              client_turn_id: clientTurnId,
+              completion_status: 'complete',
+              client_turn_finalized: true,
+            },
           },
         ],
       };
@@ -2219,7 +2360,11 @@ describe('useChatEngine', () => {
             role: 'assistant',
             content: '切回 App 后恢复的完整回答',
             created_at: '2026-07-17T17:00:20Z',
-            meta: { client_turn_id: clientTurnId, completion_status: 'complete' },
+            meta: {
+              client_turn_id: clientTurnId,
+              completion_status: 'complete',
+              client_turn_finalized: true,
+            },
           }] : []),
         ],
       };
@@ -2264,6 +2409,146 @@ describe('useChatEngine', () => {
         recoverable: false,
       });
     });
+  });
+
+  it('reconciles a photo turn that disconnects before the first persistence event', async () => {
+    mockStreamChat.mockImplementation(async function* () {
+      throw new Error('网络请求失败 (status: 200)');
+    });
+    mockGetAgentTurnStatus.mockResolvedValue({
+      clientTurnId: 'turn-placeholder',
+      status: 'running',
+      requestPersisted: true,
+      responsePersisted: false,
+      conversationId: 777,
+      retryable: false,
+    });
+    mockGetConversationMessages.mockImplementation(async () => {
+      const generatedTurnId = mockStreamChat.mock.calls[0][6];
+      return {
+        total_messages: 1,
+        messages: [{
+          id: 41,
+          role: 'user',
+          content: '记录这餐',
+          image_url: '["/api/v1/chat/uploads/meal.jpg"]',
+          meta: { client_turn_id: generatedTurnId },
+        }],
+      };
+    });
+    const onAccepted = jest.fn();
+    const { result } = renderHook(() => useChatEngine());
+    let accepted: boolean | undefined;
+
+    await act(async () => {
+      accepted = await result.current.sendMessage('记录这餐', [{
+        uri: 'file:///documents/chat-drafts/meal.jpeg',
+        base64: 'meal-photo',
+        type: 'jpeg',
+      }], { onAccepted } as any);
+    });
+
+    const turnId = mockStreamChat.mock.calls[0][6];
+    expect(mockGetAgentTurnStatus).toHaveBeenCalledWith(turnId);
+    expect(accepted).toBe(true);
+    expect(onAccepted).toHaveBeenCalledTimes(1);
+    expect(onAccepted).toHaveBeenCalledWith(true);
+    expect(result.current.messages.map(message => message.content).join('\n'))
+      .not.toContain('请重新提问');
+    expect(result.current.messages.find(message => message.role === 'user')?.imageUris)
+      .toEqual(['https://example.test/api/v1/chat/uploads/meal.jpg']);
+    expect(result.current.activeTurn).toMatchObject({
+      turnId,
+      phase: 'running',
+      conversationId: 777,
+      recoverable: true,
+    });
+  });
+
+  it('reconciles a clean SSE close before the first persistence event', async () => {
+    mockStreamChat.mockImplementation(streamEndsBeforeFirstPersistenceEvent);
+    mockGetAgentTurnStatus.mockResolvedValue({
+      clientTurnId: 'turn-placeholder',
+      status: 'running',
+      requestPersisted: true,
+      responsePersisted: false,
+      conversationId: 778,
+      retryable: false,
+    });
+    mockGetConversationMessages.mockImplementation(async () => {
+      const generatedTurnId = mockStreamChat.mock.calls[0][6];
+      return {
+        total_messages: 2,
+        messages: [{
+          id: 52,
+          role: 'assistant',
+          content: '尚未完成的半截回复',
+          meta: {
+            client_turn_id: generatedTurnId,
+            client_turn_finalized: false,
+          },
+        }],
+      };
+    });
+    const onAccepted = jest.fn();
+    const { result } = renderHook(() => useChatEngine());
+    let accepted: boolean | undefined;
+
+    await act(async () => {
+      accepted = await result.current.sendMessage('记录这餐', [{
+        uri: 'file:///documents/chat-drafts/meal-2.jpeg',
+        base64: 'meal-photo-2',
+        type: 'jpeg',
+      }], { onAccepted } as any);
+    });
+
+    expect(accepted).toBe(true);
+    expect(onAccepted).toHaveBeenCalledWith(true);
+    expect(mockGetAgentTurnStatus).toHaveBeenCalledTimes(1);
+    expect(result.current.activeTurn).toMatchObject({
+      phase: 'running',
+      conversationId: 778,
+      recoverable: true,
+    });
+  });
+
+  it('preserves an accepted request but surfaces a terminal non-retryable Run', async () => {
+    mockStreamChat.mockImplementation(streamEndsBeforeFirstPersistenceEvent);
+    mockGetAgentTurnStatus.mockResolvedValue({
+      clientTurnId: 'turn-placeholder',
+      status: 'reconciliation_required',
+      requestPersisted: true,
+      responsePersisted: false,
+      conversationId: 779,
+      retryable: false,
+      errorCode: 'write_uncertain',
+    });
+    mockGetConversationMessages.mockResolvedValue({
+      total_messages: 1,
+      messages: [],
+    });
+    const onAccepted = jest.fn();
+    const { result } = renderHook(() => useChatEngine());
+    let accepted: boolean | undefined;
+
+    await act(async () => {
+      accepted = await result.current.sendMessage('记录这餐', [{
+        uri: 'file:///documents/chat-drafts/meal-3.jpeg',
+        base64: 'meal-photo-3',
+        type: 'jpeg',
+      }], { onAccepted } as any);
+    });
+
+    expect(accepted).toBe(true);
+    expect(onAccepted).toHaveBeenCalledWith(true);
+    expect(result.current.activeTurn).toMatchObject({
+      phase: 'failed',
+      conversationId: 779,
+      errorCode: 'write_uncertain',
+      recoverable: false,
+    });
+    expect(result.current.messages.find(message => message.role === 'assistant')?.content)
+      .toBe('记录状态需要核对，请先查看现有记录。');
   });
 
   // ── P0-5 竞态守卫: 流式活跃时 focus-reload 不用服务端半截 partial 覆盖本地流 ──

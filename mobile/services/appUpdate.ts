@@ -15,6 +15,8 @@ export type AppUpdateAdapter = {
 type NativeVersionSource = {
   nativeAppVersion?: string | null;
   nativeBuildVersion?: string | null;
+  expoAppVersion?: string | null;
+  expoBuildVersion?: string | null;
 };
 
 export type AppUpdateTelemetryContext = {
@@ -37,9 +39,11 @@ const expoAppUpdateAdapter: AppUpdateAdapter = {
 export function getNativeVersionLabel(source: NativeVersionSource = {
   nativeAppVersion: Constants.nativeAppVersion,
   nativeBuildVersion: Constants.nativeBuildVersion,
+  expoAppVersion: Constants.expoConfig?.version,
+  expoBuildVersion: Constants.expoConfig?.ios?.buildNumber,
 }): string {
-  const version = source.nativeAppVersion?.trim();
-  const build = source.nativeBuildVersion?.trim();
+  const version = source.nativeAppVersion?.trim() || source.expoAppVersion?.trim();
+  const build = source.nativeBuildVersion?.trim() || source.expoBuildVersion?.trim();
   if (version && build) return `${version} (${build})`;
   return version || build || '未知版本';
 }

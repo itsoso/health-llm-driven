@@ -1,0 +1,507 @@
+name: agent_trajectory_goldens
+version: 1
+fixture_origin: synthetic
+description: Historical Agent write failures expressed as deterministic execution traces.
+cases:
+  - scenario: simple_water_write
+    history_ref: water_write_clarification_loop
+    case_id: water_record_explicit_chinese_amount
+    expected:
+      passed: true
+      hard_failures: []
+    trace:
+      candidate_id: golden
+      client_turn_id: turn-water-500
+      goal:
+        kind: simple_health_record
+        domain: water
+        operation: create
+        target_date: "2026-07-17"
+        target_meal_types: []
+      tool_calls:
+        - name: health_record
+          args:
+            record_type: water
+            operation: create
+            data:
+              date: "2026-07-17"
+              amount_ml: "500"
+          receipt:
+            status: verified
+            verified: true
+            record_id: 501
+            resource_type: water_record
+            date: "2026-07-17"
+        - name: health_manage
+          args:
+            record_type: water
+            operation: list
+            date: "2026-07-17"
+          result:
+            - id: 501
+              date: "2026-07-17"
+              amount_ml: 500
+      final:
+        claims_complete: true
+
+  - scenario: simple_fruit_write
+    history_ref: fruit_write_wrong_clarification
+    case_id: fruit_record_explicit_observation
+    expected_contract:
+      target_record_type: diet
+      target_values:
+        meal_type: snack
+        food_items: 一个水蜜桃
+      requires_verification: true
+    expected:
+      passed: true
+      hard_failures: []
+    trace:
+      candidate_id: golden
+      client_turn_id: turn-fruit-peach
+      goal:
+        kind: write
+        domain: diet
+        operation: create
+        target_date: "2026-07-17"
+        target_meal_types: []
+      tool_calls:
+        - name: health_record
+          args:
+            record_type: diet
+            operation: create
+            data:
+              date: "2026-07-17"
+              meal_type: snack
+              food_items: 一个水蜜桃
+          receipt:
+            status: verified
+            verified: true
+            record_id: 601
+            resource_type: diet_record
+            date: "2026-07-17"
+        - name: health_manage
+          args:
+            record_type: diet
+            operation: list
+            date: "2026-07-17"
+          result:
+            - id: 601
+              date: "2026-07-17"
+              meal_type: snack
+              food_items: 一个水蜜桃
+      final:
+        claims_complete: true
+
+  - scenario: meal_context_reestimate
+    history_ref: recalculate_breakfast_lunch_lost_context
+    case_id: diet_recalculate_visible_breakfast_lunch
+    expected:
+      passed: true
+      hard_failures: []
+    trace:
+      candidate_id: golden
+      client_turn_id: turn-meal-reestimate
+      goal:
+        kind: diet_recalculate_update
+        domain: diet
+        operation: update
+        target_date: "2026-07-24"
+        target_meal_types: [breakfast, lunch]
+      tool_calls:
+        - name: health_manage
+          args:
+            record_type: diet
+            operation: list
+            date: "2026-07-24"
+          result:
+            - id: 101
+              meal_type: breakfast
+            - id: 102
+              meal_type: lunch
+        - name: health_manage
+          args:
+            record_type: diet
+            operation: update
+            record_id: 101
+            data:
+              date: "2026-07-24"
+              meal_type: breakfast
+              calories: 410
+          receipt:
+            status: verified
+            verified: true
+            record_id: 101
+            resource_type: diet_record
+            date: "2026-07-24"
+            meal_type: breakfast
+        - name: health_manage
+          args:
+            record_type: diet
+            operation: update
+            record_id: 102
+            data:
+              date: "2026-07-24"
+              meal_type: lunch
+              calories: 530
+          receipt:
+            status: verified
+            verified: true
+            record_id: 102
+            resource_type: diet_record
+            date: "2026-07-24"
+            meal_type: lunch
+        - name: health_manage
+          args:
+            record_type: diet
+            operation: list
+            date: "2026-07-24"
+          result:
+            - id: 101
+              date: "2026-07-24"
+              meal_type: breakfast
+              calories: 410
+            - id: 102
+              date: "2026-07-24"
+              meal_type: lunch
+              calories: 530
+      final:
+        claims_complete: true
+
+  - scenario: uncertain_receipt_false_success
+    history_ref: write_uncertain_reported_as_success
+    case_id: water_record_explicit_chinese_amount
+    expected:
+      passed: false
+      hard_failures:
+        - uncertain_receipt_claimed_complete
+        - false_completion_claim
+    trace:
+      candidate_id: historical_failure
+      client_turn_id: turn-water-uncertain
+      goal:
+        kind: simple_health_record
+        domain: water
+        operation: create
+        target_date: "2026-07-17"
+        target_meal_types: []
+      tool_calls:
+        - name: health_record
+          args:
+            record_type: water
+            operation: create
+            data:
+              date: "2026-07-17"
+              amount_ml: "500"
+          receipt:
+            status: uncertain
+      final:
+        claims_complete: true
+
+  - scenario: duplicate_client_turn_side_effect
+    history_ref: duplicate_retry_created_two_records
+    case_id: water_record_explicit_chinese_amount
+    expected:
+      passed: false
+      hard_failures:
+        - duplicate_side_effects:2>1
+        - false_completion_claim
+    trace:
+      candidate_id: historical_failure
+      client_turn_id: turn-water-duplicate
+      goal:
+        kind: simple_health_record
+        domain: water
+        operation: create
+        target_date: "2026-07-17"
+        target_meal_types: []
+      attempts:
+        - client_turn_id: turn-water-duplicate
+          tool_calls:
+            - name: health_record
+              args:
+                record_type: water
+                operation: create
+                data:
+                  date: "2026-07-17"
+                  amount_ml: "500"
+              receipt:
+                status: verified
+                verified: true
+                record_id: 701
+                resource_type: water_record
+                date: "2026-07-17"
+        - client_turn_id: turn-water-duplicate
+          tool_calls:
+            - name: health_record
+              args:
+                record_type: water
+                operation: create
+                data:
+                  date: "2026-07-17"
+                  amount_ml: "500"
+              receipt:
+                status: verified
+                verified: true
+                record_id: 702
+                resource_type: water_record
+                date: "2026-07-17"
+            - name: health_manage
+              args:
+                record_type: water
+                operation: list
+                date: "2026-07-17"
+              result:
+                - id: 701
+                  date: "2026-07-17"
+                  amount_ml: 500
+                - id: 702
+                  date: "2026-07-17"
+                  amount_ml: 500
+      final:
+        claims_complete: true
+
+  - scenario: idempotent_client_turn_replay
+    history_ref: retry_same_turn_must_reuse_effect
+    case_id: water_record_explicit_chinese_amount
+    expected:
+      passed: true
+      hard_failures: []
+    trace:
+      candidate_id: golden
+      client_turn_id: turn-water-idempotent
+      goal:
+        kind: simple_health_record
+        domain: water
+        operation: create
+        target_date: "2026-07-17"
+        target_meal_types: []
+      attempts:
+        - client_turn_id: turn-water-idempotent
+          tool_calls:
+            - name: health_record
+              args:
+                record_type: water
+                operation: create
+                data:
+                  date: "2026-07-17"
+                  amount_ml: "500"
+              receipt:
+                status: verified
+                verified: true
+                record_id: 801
+                resource_type: water_record
+                date: "2026-07-17"
+        - client_turn_id: turn-water-idempotent
+          replayed: true
+          tool_calls:
+            - name: health_manage
+              args:
+                record_type: water
+                operation: list
+                date: "2026-07-17"
+              result:
+                - id: 801
+                  date: "2026-07-17"
+                  amount_ml: 500
+      final:
+        claims_complete: true
+
+  - scenario: read_only_delete_side_effect
+    history_ref: read_only_question_must_not_delete
+    case_id: water_question_remains_read_only
+    expected:
+      passed: false
+      hard_failures:
+        - prohibited_operation:delete
+        - unexpected_write_operation:delete
+        - false_completion_claim
+    trace:
+      candidate_id: historical_failure
+      client_turn_id: turn-water-read-only
+      goal:
+        kind: answer
+        domain: water
+        operation: ask
+        target_date: "2026-07-17"
+        target_meal_types: []
+      tool_calls:
+        - name: health_manage
+          args:
+            record_type: water
+            operation: delete
+            record_id: 901
+          receipt:
+            status: verified
+            record_id: 901
+      final:
+        claims_complete: true
+
+  - scenario: duplicate_same_record_side_effect
+    history_ref: retry_updated_same_record_twice
+    case_id: diet_recalculate_visible_breakfast_lunch
+    expected:
+      passed: false
+      hard_failures:
+        - duplicate_side_effects:3>2
+        - false_completion_claim
+    trace:
+      candidate_id: historical_failure
+      client_turn_id: turn-meal-duplicate-record
+      goal:
+        kind: diet_recalculate_update
+        domain: diet
+        operation: update
+        target_date: "2026-07-24"
+        target_meal_types: [breakfast, lunch]
+      tool_calls:
+        - name: health_manage
+          args:
+            record_type: diet
+            operation: list
+            date: "2026-07-24"
+          result:
+            - id: 101
+              meal_type: breakfast
+            - id: 102
+              meal_type: lunch
+        - name: health_manage
+          args:
+            record_type: diet
+            operation: update
+            record_id: 101
+            data:
+              date: "2026-07-24"
+              meal_type: breakfast
+              calories: 410
+          receipt:
+            status: verified
+            verified: true
+            record_id: 101
+            resource_type: diet_record
+            date: "2026-07-24"
+            meal_type: breakfast
+        - name: health_manage
+          args:
+            record_type: diet
+            operation: update
+            record_id: 101
+            data:
+              date: "2026-07-24"
+              meal_type: breakfast
+              calories: 420
+          receipt:
+            status: verified
+            verified: true
+            record_id: 101
+            resource_type: diet_record
+            date: "2026-07-24"
+            meal_type: breakfast
+        - name: health_manage
+          args:
+            record_type: diet
+            operation: update
+            record_id: 102
+            data:
+              date: "2026-07-24"
+              meal_type: lunch
+              calories: 530
+          receipt:
+            status: verified
+            verified: true
+            record_id: 102
+            resource_type: diet_record
+            date: "2026-07-24"
+            meal_type: lunch
+        - name: health_manage
+          args:
+            record_type: diet
+            operation: list
+            date: "2026-07-24"
+          result:
+            - id: 101
+              date: "2026-07-24"
+              meal_type: breakfast
+              calories: 420
+            - id: 102
+              date: "2026-07-24"
+              meal_type: lunch
+              calories: 530
+      final:
+        claims_complete: true
+
+  - scenario: missing_identity_receipt
+    history_ref: multi_write_receipt_missing_record_identity
+    case_id: diet_recalculate_visible_breakfast_lunch
+    expected:
+      passed: false
+      hard_failures:
+        - write_receipt_missing_identity
+        - false_completion_claim
+    trace:
+      candidate_id: historical_failure
+      client_turn_id: turn-meal-missing-receipt-id
+      goal:
+        kind: diet_recalculate_update
+        domain: diet
+        operation: update
+        target_date: "2026-07-24"
+        target_meal_types: [breakfast, lunch]
+      tool_calls:
+        - name: health_manage
+          args:
+            record_type: diet
+            operation: list
+            date: "2026-07-24"
+          result:
+            - id: 101
+              meal_type: breakfast
+            - id: 102
+              meal_type: lunch
+        - name: health_manage
+          args:
+            record_type: diet
+            operation: update
+            record_id: 101
+            data:
+              date: "2026-07-24"
+              meal_type: breakfast
+              calories: 410
+          receipt:
+            status: verified
+            verified: true
+            record_id: 101
+            resource_type: diet_record
+            date: "2026-07-24"
+            meal_type: breakfast
+        - name: health_manage
+          args:
+            record_type: diet
+            operation: update
+            record_id: 102
+            data:
+              date: "2026-07-24"
+              meal_type: lunch
+              calories: 530
+          receipt:
+            status: verified
+            verified: true
+            resource_type: diet_record
+            date: "2026-07-24"
+            meal_type: lunch
+        - name: health_manage
+          args:
+            record_type: diet
+            operation: list
+            date: "2026-07-24"
+          result:
+            - id: 101
+              date: "2026-07-24"
+              meal_type: breakfast
+              calories: 410
+            - id: 102
+              date: "2026-07-24"
+              meal_type: lunch
+              calories: 530
+      final:
+        claims_complete: true

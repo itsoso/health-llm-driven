@@ -535,15 +535,18 @@ goal: {"title":"每日快走 30 分钟","status":"paused","notes":"膝盖恢复�
         "type": "function",
         "function": {
             "name": "upload_medical_exam_text",
-            "description": """用户口述/粘贴体检化验结果文本时调用 (非 PDF 非图片, 纯文本).
+            "description": """用户口述/粘贴体检化验结果或 MRI/CT/病理等报告文本时调用 (非 PDF 非图片, 纯文本).
 
 触发场景:
 - "我刚去抽血, LDL 3.8, ALT 42, 空腹血糖 5.6"
 - 用户从微信/短信粘贴的化验结果文本
+- 用户粘贴 MRI、CT、超声、内镜或病理报告的检查所见/结论
 - 拍照 OCR 都不方便, 用户直接念出来
 
-行为: 调 medical_text_parser 抽取指标 → 写 MedicalExamItem + MedicalIndicator → 触发 Twin 失效.
-之后 query_lab_indicators 能查到.
+行为:
+- 数值化验: 调 medical_text_parser 抽取指标 → 写 MedicalExamItem + MedicalIndicator.
+- 叙述型报告: 按原文写入 MedicalExam.overall_assessment, 不要求虚构数值指标.
+- 两者都会触发 Twin 失效.
 
 不要为单一指标 (单条血压 130/85) 走这个, 那个用 health_record(record_type='blood_pressure'). 这个适合 *多指标体检结果*.""",
             "parameters": {
@@ -555,7 +558,21 @@ goal: {"title":"每日快走 30 分钟","status":"paused","notes":"膝盖恢复�
                     },
                     "exam_date": {
                         "type": "string",
-                        "description": "检查日期 ISO YYYY-MM-DD. 用户没说就填今天.",
+                        "description": "检查日期 ISO YYYY-MM-DD 或今天/昨天等相对日期. 用户没说就填今天.",
+                    },
+                    "report_type": {
+                        "type": "string",
+                        "enum": [
+                            "biochemistry",
+                            "imaging",
+                            "mri",
+                            "ct",
+                            "ultrasound",
+                            "endoscopy",
+                            "pathology",
+                            "medical_report",
+                        ],
+                        "description": "报告类型. MRI/CT/病理等叙述型报告必须填写对应类型.",
                     },
                 },
                 "required": ["text"],

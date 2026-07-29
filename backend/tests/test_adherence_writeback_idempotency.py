@@ -203,15 +203,29 @@ def test_supplement_records_endpoint_idempotent(client, db):
 # ══════════════════════════════════════════════════════════════════════
 # 5. 协议补剂完成 不被「同日已有打卡」无辜 500(新约束下的 upsert)
 # ══════════════════════════════════════════════════════════════════════
-def test_protocol_supplement_completion_upserts_existing_day_record(db):
+def test_protocol_supplement_completion_upserts_existing_day_record(db, monkeypatch):
     """用户先在补剂页勾过今日打卡(taken=False),再完成补剂协议 → 不撞唯一约束,
     翻成 taken=True 且库里恰好一条(而非协议盲插第二条撞约束 500)。
     """
     user = _mk_user(db)
     sd = _mk_supp(db, user.id)
-    today = date.today()
+    # Protocol completion keys the record by the user's local calendar day,
+    # not by the date of the server running this test.
+    protocol_day = date(2031, 1, 2)
+    monkeypatch.setattr(
+        proto_svc,
+        "get_user_today",
+        lambda _db, _user_id: protocol_day,
+    )
     # 同日已有一条打卡(未服),模拟用户先在补剂页操作过
-    db.add(SupplementRecord(user_id=user.id, supplement_id=sd.id, record_date=today, taken=False))
+    db.add(
+        SupplementRecord(
+            user_id=user.id,
+            supplement_id=sd.id,
+            record_date=protocol_day,
+            taken=False,
+        )
+    )
     db.commit()
 
     p = proto_svc.create_protocol(db, user.id, {
@@ -224,4 +238,6 @@ def test_protocol_supplement_completion_upserts_existing_day_record(db):
 
     recs = db.query(SupplementRecord).filter(SupplementRecord.supplement_id == sd.id).all()
     assert len(recs) == 1, "协议完成应 upsert 既有同日记录,不该再插一条撞唯一约束"
+    assert recs[0].record_date == protocol_day
     assert recs[0].taken is True, "协议完成应把既有记录翻成 taken"
+    assert ev.value["linked_record_id"] == recs[0].id

@@ -6,6 +6,7 @@ import { EvidenceRefsRow } from './EvidenceRefsRow';
 import type { EvidenceRef } from './EvidenceRefsRow';
 import { revaColors as C, revaSemantic, revaFonts } from '../../../constants/revaTheme';
 import type { CardSpec } from './types';
+import { todayStr } from '../../../utils/dietDate';
 
 // 补剂类目 accent (紫) + 卡底 tint = 装饰色, 保留字面量 (= legacy purple/tintPurple).
 const SUPP_ACCENT = '#7C5CBF';
@@ -75,7 +76,7 @@ export const SupplementCardSpec: CardSpec<SupplementData> = {
   },
   async build({ api }) {
     try {
-      const today = new Date().toISOString().split('T')[0];
+      const today = todayStr();
       const res = await api.get(`/supplements/me/date/${today}`);
       const list: any[] = res.data || [];
       if (list.length === 0) return null;

@@ -2,6 +2,12 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
+> **Interaction update (2026-07-24):** Focus-driven expansion and the focused
+> quick-action rail were superseded by
+> `2026-07-24-mobile-empty-chat-hierarchy-design.md`. The composer now stays
+> compact until text wraps, and generic capture actions remain behind the
+> attachment menu.
+
 **Goal:** 让 Mobile 聊天输入框在点击后进入类似阿福/DeepSeek 的智能输入态，同时保留文字输入、阿里云实时 ASR 和可编辑草稿。
 
 **Architecture:** 保留现有 `ChatInputBar` 与 `useRealtimeDictation` 的云端 ASR 链路，不新增原生语音识别或新的后端协议。输入框点击只负责聚焦并展开多行输入态；麦克风按钮是明确的实时 ASR 入口，识别结果回填当前草稿，发送仍复用现有 `onSend`。
@@ -18,7 +24,7 @@
 4. 点击麦克风后使用现有阿里云实时 ASR；显示“正在听”和动态波形，点击同一按钮停止并将最终文字保留在输入框。
 5. 已有文字时，语音结果追加到文字末尾；识别结果仍可编辑，编辑会停止实时识别并以文字渠道发送。
 6. 有文字或图片时显示发送按钮；无内容时显示附件按钮。键盘回车继续发送，不改变现有行为。
-7. 输入框聚焦且草稿为空时，在输入栏上方显示三项最小快捷动作：拍照记餐、记录喝水、记录运动；开始输入或录音后立即隐藏。
+7. 输入框聚焦时不额外显示快捷动作栏；拍照记餐继续从附件菜单进入，喝水和运动通过自然语言输入。
 8. 不在点击输入框时自动开始录音，避免误触收音和权限惊扰；语音必须由用户点击麦克风明确触发。
 
 ## Implementation Tasks
@@ -61,9 +67,9 @@
 
 ## Acceptance Criteria
 
-- 点击键盘输入入口后，键盘出现，输入容器进入展开态且不会自动录音。
+- 点击键盘输入入口后，键盘出现；空输入框保持紧凑且不会自动录音。
 - 输入框右侧麦克风入口清晰可见，点击后走阿里云实时 ASR。
 - ASR 中间结果可见，停止后最终文字回填并可修改。
 - 原有文字与语音结果能正确追加，发送渠道和草稿恢复行为不回归。
-- 输入框聚焦且为空时显示三个快捷动作；有草稿后快捷动作隐藏。
+- 输入框聚焦时保持单一输入层，不显示第三套快捷动作栏。
 - 长按输入框、按住说话、拍照记餐、附件菜单和回车发送保持可用。

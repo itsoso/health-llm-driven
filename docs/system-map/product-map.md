@@ -2,7 +2,7 @@
      端 roster / surface 名 / 流程 = 叙事,改了 bump 下方 last-reviewed。 -->
 ---
 doc: system-map/product-map
-last-reviewed: 2026-07-19
+last-reviewed: 2026-07-25
 generated-source: docs/_generated/system-map.json
 authoritative-surface-doc: docs/specs/active/2026-06-26-surface-ownership-inventory.md
 ---
@@ -28,7 +28,7 @@ authoritative-surface-doc: docs/specs/active/2026-06-26-surface-ownership-invent
 
 ## 2. 每端 UI surface(roster;计数见 `_generated`)
 
-- **mobile**(`mobile/app/`):可见 tab 为今日 `index.tsx` · 小巴 `chat.tsx` · 记录 `record.tsx` · 我 `me.tsx`(隐藏:`alerts.tsx`/`journal/`)。日常非 tab:`reva.tsx`/`agenda.tsx`/`timeline.tsx`/`day-schedule.tsx`/`diet.tsx`/`symptom-record.tsx`/`medications.tsx`/`goals.tsx`/`reminders.tsx`/`voice-chat.tsx`。
+- **mobile**(`mobile/app/`):可见 tab 为今日 `index.tsx` · 小巴 `chat.tsx` · 记录 `record.tsx` · 我 `me.tsx`(隐藏:`alerts.tsx`/`journal/`)。日常非 tab:`reva.tsx`/`agenda.tsx`/`timeline.tsx`/`day-schedule.tsx`/`diet.tsx`/`symptom-record.tsx`/`medications.tsx`/`goals.tsx`/`reminders.tsx`/`voice-chat.tsx`;同行支持从已验证饮食卡的服务端 `route.open` 动态进入 `community.tsx`，因此静态导航抽取器不会生成入边。
 - **frontend**(`frontend/src/app/`):dashboard/digital-twin/health-trends/health-report/personal-outcome/admin/review/onboarding/family/… (全量计数 `_generated`)。
 - **mac**(`SidebarDestination.swift`):today/agenda/timeline/calendar/agent/record/data/dataSources/prescriptions/liver/healthExtras/genetics/knowledge/workouts/goals/jobs/trace/settings。
 - **watch**(`apps/watch/WatchApp/`):`TodayStatusView` · `PushListView` · `QuickRecordView` + complication `RevaComplication.swift`。(对话/记录扩展见 watch §13 实施规划)
@@ -41,12 +41,12 @@ authoritative-surface-doc: docs/specs/active/2026-06-26-surface-ownership-invent
 > ⚠️ CLAUDE.md 的「AI Chat Routing」前端 `needsSkill` 分流图**已部分过时** —— 现状是 mobile+web 统一打 `/agent/stream`,**服务端 tool-calling 路由**;`_needs_skill` 仅是弱模型(无 tool 支持)的兜底。
 
 1. **AI 对话(统一 agent chat,主流)**:mobile `mobile/services/chat.ts` `POST /agent/stream` · web `frontend/src/services/api/ai.ts` `agentApi.streamMessage` → `backend/app/api/agent.py` `POST /agent/stream` → `agent_executor.py:AgentExecutor.run_stream`(暴露 `health_record`/`health_query`/`health_analysis`/`draft_aigc_media`; AIGC 工具只能创建确认草稿，真正外部调用由用户卡片点击消费一次性确认记录)。
-2. **本地私有饮食**:登录页选择本地模式 → `LocalModeHome` → `LocalDietScreen` → 确定性中文解析 / Chinese-CLIP 本地候选 → 用户确认 → `LocalDietRepository` 原子写入加密 `DietRecord + ExecutionEvent`;严格本地由统一 egress policy 拒绝所有云请求。
-3. **云端记录饮食**:`mobile/app/diet.tsx` → `backend/app/api/diet.py`:`POST /diet/records`(确认写)· `POST /diet/voice/parse`(**只产草稿不写库**,R4)· `POST /diet/recognize[-and-save]`(照片)。
-4. **完成议程闭环**:`mobile/app/agenda.tsx` `POST /agenda/complete` + `POST /timeline/events/{id}/complete` → 单核 `timeline_agenda_service.py:complete_agenda_event`(DB 原子认领防虚高依从 → `agenda_service.complete_item` 写真实领域行,确定性 taken_time;失败回滚不翻态)。
-5. **安全告警**:`mobile/app/(tabs)/alerts.tsx` / web `SafetyPanel.tsx` → `backend/app/api/safety.py` `GET /safety/me` → `guardian.py:evaluate_safety(twin)` → `evaluate_rules` 跑 `rules/` 下 `@register`(计数见 `_generated`);确定性、无 LLM、按 severity 排序、带 `failed_rule_count` fail-loud。
-6. **HealthKit 同步(iOS)**:`mobile/services/appleHealth.ts` `fetchDailyRecords` → `toApiRecord`(生成 schema 标注)→ `POST /devices/healthkit/import` → `device_adapters/healthkit.py`。(自动同步规划见 reva mobile/watch/healthkit experience plan)
-7. **私有 AIGC 媒体任务**:Mobile/Web/Mac 在既有对话中上传素材 → Agent Kernel 的 `draft_aigc_media` 创建加密 `AIGCMediaConfirmation` → 用户卡片点击 `POST /aigc/media/confirmations/{id}/confirm`(仅 opaque ID) → `AIGCMediaJob` → owner-scoped `GET/cancel /aigc/media/jobs` → `aigc_media_confirmation.v1`/`aigc_media_job.v1` 动态卡片。仅向确认过的百炼 Wan 请求传出绑定的提示词与当回合图像；输出拷贝到用户私有存储，卡片按需换取短期结果链接。
+2. **云端记录饮食**:`mobile/app/diet.tsx` → `backend/app/api/diet.py`:`POST /diet/records`(确认写)· `POST /diet/voice/parse`(**只产草稿不写库**,R4)· `POST /diet/recognize[-and-save]`(照片)。Mobile 仅支持云端账号会话；未认证或会话未知时 egress fail-closed，不生成本地替代回复。
+3. **完成议程闭环**:`mobile/app/agenda.tsx` `POST /agenda/complete` + `POST /timeline/events/{id}/complete` → 单核 `timeline_agenda_service.py:complete_agenda_event`(DB 原子认领防虚高依从 → `agenda_service.complete_item` 写真实领域行,确定性 taken_time;失败回滚不翻态)。
+4. **安全告警**:`mobile/app/(tabs)/alerts.tsx` / web `SafetyPanel.tsx` → `backend/app/api/safety.py` `GET /safety/me` → `guardian.py:evaluate_safety(twin)` → `evaluate_rules` 跑 `rules/` 下 `@register`(计数见 `_generated`);确定性、无 LLM、按 severity 排序、带 `failed_rule_count` fail-loud。
+5. **HealthKit 同步(iOS)**:`mobile/services/appleHealth.ts` `fetchDailyRecords` → `toApiRecord`(生成 schema 标注)→ `POST /devices/healthkit/import` → `device_adapters/healthkit.py`。(自动同步规划见 reva mobile/watch/healthkit experience plan)
+6. **私有 AIGC 媒体任务**:Mobile/Web/Mac 在既有对话中上传素材 → Agent Kernel 的 `draft_aigc_media` 创建加密 `AIGCMediaConfirmation` → 用户卡片点击 `POST /aigc/media/confirmations/{id}/confirm`(仅 opaque ID) → `AIGCMediaJob` → owner-scoped `GET/cancel /aigc/media/jobs` → `aigc_media_confirmation.v1`/`aigc_media_job.v1` 动态卡片。仅向确认过的百炼 Wan 请求传出绑定的提示词与当回合图像；输出拷贝到用户私有存储，卡片按需换取短期结果链接。
+7. **饮食价值回执与同行支持**:Agent/饮食 API 的已验证 `DietRecord` 写入 → `post_record_quality.py` 在原有单卡中加入 owner-scoped 目标距离与近 7 日记录反馈 → 用户手动点击 `route.open /community?composeRecordId=…` → `POST /community/posts` 再次校验记录所有权并生成无原图、体重、病史、药物、位置和备注的匿名快照 → 支持/同行/有启发三种反应。社区发布失败不回滚或重试私人饮食写入，反应数不进入 Agent 健康建议排序。
 
 ## 4. 系统流(内部架构)
 

@@ -81,6 +81,56 @@ def test_calibrate_recognized_foods_uses_table_for_explicit_weight(db):
     }
 
 
+def test_calibrate_recognized_foods_preserves_scaled_nutrition_label(db):
+    _add_chicken_breast(db)
+    foods = [{
+        "name": "鸡胸肉",
+        "quantity": "200g",
+        "quantity_grams": 200,
+        "calories": 412,
+        "protein": 45,
+        "carbs": 8,
+        "fat": 22,
+        "fiber": 1,
+        "confidence": 0.96,
+        "source": "nutrition_label",
+        "nutrition_basis": "nutrition_label_scaled",
+    }]
+
+    calibrated = calibrate_recognized_foods(db, foods)
+
+    assert calibrated[0] == foods[0]
+    assert calibrated[0]["calories"] == 412
+    assert calibrated[0]["protein"] == 45
+    assert calibrated[0]["source"] == "nutrition_label"
+    assert calibrated[0]["nutrition_basis"] == "nutrition_label_scaled"
+
+
+def test_calibrate_recognized_foods_preserves_unscaled_nutrition_label(db):
+    _add_chicken_breast(db)
+    foods = [{
+        "name": "鸡胸肉",
+        "quantity": "每100g",
+        "quantity_grams": 100,
+        "label_basis_grams": 100,
+        "calories": 206,
+        "protein": 22.5,
+        "carbs": 4,
+        "fat": 11,
+        "fiber": 0.5,
+        "confidence": 0.96,
+        "source": "nutrition_label",
+        "nutrition_basis": "nutrition_label_per_100g",
+    }]
+
+    calibrated = calibrate_recognized_foods(db, foods)
+
+    assert calibrated[0]["calories"] == 206
+    assert calibrated[0]["protein"] == 22.5
+    assert calibrated[0]["source"] == "nutrition_label"
+    assert calibrated[0]["nutrition_basis"] == "nutrition_label_per_100g"
+
+
 def test_calibrate_recognized_foods_keeps_model_estimate_without_weight(db):
     _add_chicken_breast(db)
     foods = [{

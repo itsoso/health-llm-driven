@@ -4,6 +4,7 @@ const appJson = require('../app.json');
 function configForVariant(variant?: string, env: Record<string, string | undefined> = {}) {
   const previous = process.env.APP_VARIANT;
   const optionalEnvKeys = [
+    'REVA_IOS_BUILD_NUMBER',
     'ROKID_IOS_SDK_ENABLED',
     'ROKID_IOS_CALLBACK_SCHEME',
     'INCLUDE_WATCH_APP',
@@ -73,6 +74,12 @@ describe('app.config app links', () => {
   it('keeps user-visible variant names aligned with 小巴', () => {
     expect(configForVariant('development').ios?.infoPlist?.CFBundleDisplayName).toBe('小巴 Dev');
     expect(configForVariant('preview').ios?.infoPlist?.CFBundleDisplayName).toBe('小巴 Preview');
+  });
+
+  it('uses an explicit native build number for reproducible local release builds', () => {
+    const config = configForVariant('production', { REVA_IOS_BUILD_NUMBER: '237' });
+
+    expect(config.ios?.buildNumber).toBe('237');
   });
 
   it('adds the health share universal link domain to iOS builds', () => {

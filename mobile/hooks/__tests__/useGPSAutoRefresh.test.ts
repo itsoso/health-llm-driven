@@ -50,7 +50,9 @@ jest.mock('react-native', () => ({
 import { useGPSAutoRefresh } from '../useGPSAutoRefresh';
 
 function wrapper({ children }: { children: React.ReactNode }) {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const qc = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: 0 } },
+  });
   return React.createElement(QueryClientProvider, { client: qc }, children);
 }
 

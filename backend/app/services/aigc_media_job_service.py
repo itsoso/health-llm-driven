@@ -29,12 +29,17 @@ from app.models.agent_audit_log import AgentAuditLog
 from app.models.agent_conversation import AgentConversation, AgentMessage
 from app.models.aigc_media_job import AIGCMediaJob
 from app.models.aigc_media_confirmation import AIGCMediaConfirmation
+from app.models.user import User
 from app.services.aigc_media_service import (
     AIGCMediaConfigurationError,
     AIGCMediaProvider,
     AIGCMediaProviderError,
     AIGCMediaProviderIndeterminateError,
     _extract_result_urls,
+)
+from app.services.aigc_media_capabilities import (
+    validate_video_spec,
+    video_capability_for,
 )
 from app.services.chat_utils import (
     build_short_lived_chat_image_provider_url,
@@ -70,7 +75,18 @@ AIGC_SAFE_RETRY_ERROR_CODES = frozenset(
 _AIGC_UPLOAD_ROOT = Path(__file__).resolve().parents[2] / "uploads" / "aigc"
 _MAX_IMAGE_RESULT_BYTES = 20 * 1024 * 1024
 _MAX_VIDEO_RESULT_BYTES = 100 * 1024 * 1024
-_CONFIRMATION_TTL = timedelta(minutes=10)
+# A creation card is part of durable chat history, so a 10-minute lifetime made
+# a normal "come back later" flow look actionable while the server had already
+# rejected it. New drafts remain directly confirmable for a day. A fresh owner
+# click may also reclaim an expired draft within the same window; that click is
+# the new explicit consent and the atomic status claim still prevents duplicate
+# provider spend.
+_CONFIRMATION_TTL = timedelta(hours=24)
+_CONFIRMATION_RECOVERY_WINDOW = timedelta(hours=24)
+# Confirmation claiming is a short database lease, not a permanent state. The
+# durable job row is committed before any provider call, so a claim with no
+# matching job after this window is safe to release for a fresh owner click.
+_CONFIRMATION_CLAIM_LEASE = timedelta(seconds=30)
 
 
 def is_recoverable_provider_result_missing_job(job: AIGCMediaJob) -> bool:
@@ -113,6 +129,7 @@ class AIGCMediaJobRequest:
     source_image_index: int = 0
     duration_seconds: int = 5
     ratio: str = "9:16"
+    resolution: str = "720P"
     # Only the service sets this internal field when it issues a confirmation.
     # It freezes the billable provider/model choice across the confirmation TTL.
     model: str | None = None
@@ -175,6 +192,76 @@ class AIGCMediaJobService:
         )
         self._result_downloader = result_downloader or self._download_provider_result
 
+    def _recover_confirmation_job(
+        self,
+        *,
+        user_id: int,
+        confirmation: AIGCMediaConfirmation,
+    ) -> AIGCMediaJob | None:
+        job = None
+        if confirmation.job_id:
+            job = (
+                self.db.query(AIGCMediaJob)
+                .filter(
+                    AIGCMediaJob.id == confirmation.job_id,
+                    AIGCMediaJob.user_id == int(user_id),
+                )
+                .first()
+            )
+        if job is None:
+            job = (
+                self.db.query(AIGCMediaJob)
+                .filter(
+                    AIGCMediaJob.user_id == int(user_id),
+                    AIGCMediaJob.idempotency_key == f"aigc-confirmation:{confirmation.id}",
+                )
+                .first()
+            )
+        if job is not None and (
+            confirmation.status != "dispatched"
+            or confirmation.job_id != job.id
+        ):
+            confirmation.status = "dispatched"
+            confirmation.job_id = job.id
+            self.db.commit()
+        return job
+
+    def _release_stale_confirmation_claim(
+        self,
+        *,
+        user_id: int,
+        confirmation: AIGCMediaConfirmation,
+        now: datetime,
+    ) -> bool:
+        if confirmation.status != "dispatching" or confirmation.job_id:
+            return False
+        consumed_at = confirmation.consumed_at
+        if consumed_at is not None:
+            normalized = consumed_at if consumed_at.tzinfo else consumed_at.replace(tzinfo=UTC)
+            if normalized > now - _CONFIRMATION_CLAIM_LEASE:
+                return False
+        released = (
+            self.db.query(AIGCMediaConfirmation)
+            .filter(
+                AIGCMediaConfirmation.id == confirmation.id,
+                AIGCMediaConfirmation.user_id == int(user_id),
+                AIGCMediaConfirmation.status == "dispatching",
+                AIGCMediaConfirmation.job_id.is_(None),
+                or_(
+                    AIGCMediaConfirmation.consumed_at.is_(None),
+                    AIGCMediaConfirmation.consumed_at <= now - _CONFIRMATION_CLAIM_LEASE,
+                ),
+            )
+            .update(
+                {"status": "pending", "consumed_at": None},
+                synchronize_session=False,
+            )
+        )
+        self.db.commit()
+        if released:
+            self.db.refresh(confirmation)
+        return bool(released)
+
     async def issue_confirmation(
         self,
         *,
@@ -229,18 +316,69 @@ class AIGCMediaJobService:
         *,
         user_id: int,
         confirmation_id: str,
+        duration_seconds: int | None = None,
     ) -> AIGCMediaJob:
         """Atomically consume a user confirmation and start exactly one job."""
         now = datetime.now(UTC)
+        candidate = (
+            self.db.query(AIGCMediaConfirmation)
+            .filter(
+                AIGCMediaConfirmation.id == str(confirmation_id),
+                AIGCMediaConfirmation.user_id == int(user_id),
+            )
+            .first()
+        )
+        if not candidate:
+            raise AIGCMediaJobRequestError("AIGC 确认不存在或无权使用")
+        requested_duration = (
+            int(duration_seconds)
+            if duration_seconds is not None
+            else int(candidate.duration_seconds)
+        )
+        if candidate.kind in VIDEO_KINDS:
+            try:
+                validate_video_spec(
+                    model=candidate.model,
+                    kind=candidate.kind,  # type: ignore[arg-type]
+                    duration_seconds=requested_duration,
+                    ratio=candidate.ratio,
+                    resolution="720P",
+                )
+            except ValueError as exc:
+                raise AIGCMediaJobRequestError(str(exc)) from exc
+        elif duration_seconds is not None:
+            raise AIGCMediaJobRequestError("图片创作不支持视频时长设置")
+
+        recovered_job = self._recover_confirmation_job(
+            user_id=user_id,
+            confirmation=candidate,
+        )
+        if recovered_job is not None:
+            return recovered_job
+        self._release_stale_confirmation_claim(
+            user_id=user_id,
+            confirmation=candidate,
+            now=now,
+        )
+
+        claim_values: dict[str, object] = {
+            "status": "dispatching",
+            "consumed_at": now,
+            "expires_at": now + _CONFIRMATION_TTL,
+        }
+        if candidate.kind in VIDEO_KINDS:
+            claim_values["duration_seconds"] = requested_duration
+        recovery_cutoff = now - _CONFIRMATION_RECOVERY_WINDOW
         claimed = (
             self.db.query(AIGCMediaConfirmation)
             .filter(
                 AIGCMediaConfirmation.id == str(confirmation_id),
                 AIGCMediaConfirmation.user_id == int(user_id),
-                AIGCMediaConfirmation.status == "pending",
-                AIGCMediaConfirmation.expires_at >= now,
+                AIGCMediaConfirmation.status.in_(("pending", "expired")),
+                AIGCMediaConfirmation.created_at >= recovery_cutoff,
+                AIGCMediaConfirmation.job_id.is_(None),
             )
-            .update({"status": "dispatching", "consumed_at": now}, synchronize_session=False)
+            .update(claim_values, synchronize_session=False)
         )
         self.db.commit()
         confirmation = (
@@ -254,31 +392,16 @@ class AIGCMediaJobService:
         if not confirmation:
             raise AIGCMediaJobRequestError("AIGC 确认不存在或无权使用")
         if not claimed:
-            if confirmation.job_id:
-                job = (
-                    self.db.query(AIGCMediaJob)
-                    .filter(AIGCMediaJob.id == confirmation.job_id, AIGCMediaJob.user_id == int(user_id))
-                    .first()
-                )
-                if job:
-                    return job
             # A process can die after persisting the provider job but before it
             # writes confirmation.job_id.  The confirmation ID is also the
             # job's unique idempotency key, so recover that durable job instead
             # of leaving the owner with a permanently spinning draft or
             # attempting a second provider call.
-            recovered_job = (
-                self.db.query(AIGCMediaJob)
-                .filter(
-                    AIGCMediaJob.user_id == int(user_id),
-                    AIGCMediaJob.idempotency_key == f"aigc-confirmation:{confirmation.id}",
-                )
-                .first()
+            recovered_job = self._recover_confirmation_job(
+                user_id=user_id,
+                confirmation=confirmation,
             )
             if recovered_job:
-                confirmation.status = "dispatched"
-                confirmation.job_id = recovered_job.id
-                self.db.commit()
                 return recovered_job
             if confirmation.status == "deduplicated":
                 matching_job = (
@@ -313,8 +436,14 @@ class AIGCMediaJobService:
                 source_image_index=confirmation.source_image_index or 0,
                 duration_seconds=confirmation.duration_seconds,
                 ratio=confirmation.ratio,
+                resolution="720P",
                 model=confirmation.model,
             )
+            confirmation.prompt_fingerprint = self._fingerprint(
+                user_id=user_id,
+                request=request,
+            )
+            self.db.commit()
             job = await self._dispatch_confirmed(
                 user_id=user_id,
                 request=request,
@@ -436,6 +565,9 @@ class AIGCMediaJobService:
             model=request.model or self._model_for_kind(request.kind),
             idempotency_key=idempotency_key,
             request_fingerprint=fingerprint,
+            result_metadata={
+                "request": self._request_spec_metadata(request),
+            },
             created_at=now,
         )
         # The accepted job and the user's explicit provider disclosure are one
@@ -451,6 +583,16 @@ class AIGCMediaJobService:
                 "kind": job.kind,
                 "model": job.model,
                 "source_attached": request.kind in SOURCE_IMAGE_KINDS,
+                "duration_seconds": (
+                    int(request.duration_seconds)
+                    if request.kind in VIDEO_KINDS
+                    else None
+                ),
+                "resolution": (
+                    request.resolution
+                    if request.kind in VIDEO_KINDS
+                    else None
+                ),
             },
         )
         self.db.add_all([job, audit])
@@ -509,6 +651,7 @@ class AIGCMediaJobService:
             source_image_index=confirmation.source_image_index or 0,
             duration_seconds=confirmation.duration_seconds,
             ratio=confirmation.ratio,
+            resolution="720P",
             model=confirmation.model,
         )
         source_url, source_data_uri = self._prepare_owned_source(user_id=user_id, request=request)
@@ -597,6 +740,7 @@ class AIGCMediaJobService:
                     source_url=source_url,
                     duration_seconds=request.duration_seconds,
                     ratio=request.ratio,
+                    resolution=request.resolution,
                     model=job.model,
                 )
                 provider_accepted = True
@@ -799,6 +943,14 @@ class AIGCMediaJobService:
         return job
 
     def project(self, job: AIGCMediaJob) -> dict:
+        result_metadata = (
+            dict(job.result_metadata)
+            if isinstance(job.result_metadata, dict)
+            else {}
+        )
+        request_spec = result_metadata.get("request")
+        if not isinstance(request_spec, dict):
+            request_spec = None
         result_url = None
         if job.output_filename:
             result_url = build_signed_private_upload_url(
@@ -810,9 +962,11 @@ class AIGCMediaJobService:
             "status": job.status,
             "progress": job.progress,
             "model": job.model,
+            "spec": request_spec,
             "result": {
                 "media_type": job.output_media_type,
                 "url": result_url,
+                "byte_size": result_metadata.get("byte_size"),
             },
             "error_message": job.error_message if job.status in {"failed", "submission_unknown"} else None,
             "error_code": job.provider_error_code if job.status in {"failed", "submission_unknown"} else None,
@@ -872,6 +1026,7 @@ class AIGCMediaJobService:
             "status": projection["status"],
             "progress": projection["progress"],
             "title": "小巴创作",
+            "spec": projection["spec"],
             "error_message": projection["error_message"],
             "error_code": projection["error_code"],
             "can_retry": projection["can_retry"],
@@ -927,17 +1082,32 @@ class AIGCMediaJobService:
         )
         if not confirmation:
             raise AIGCMediaJobRequestError("AIGC 确认不存在或无权使用")
-        job = None
-        if confirmation.job_id:
-            job = (
-                self.db.query(AIGCMediaJob)
-                .filter(
-                    AIGCMediaJob.id == confirmation.job_id,
-                    AIGCMediaJob.user_id == int(user_id),
-                )
-                .first()
+        now = datetime.now(UTC)
+        job = self._recover_confirmation_job(
+            user_id=user_id,
+            confirmation=confirmation,
+        )
+        if job is None:
+            self._release_stale_confirmation_claim(
+                user_id=user_id,
+                confirmation=confirmation,
+                now=now,
             )
-        elif confirmation.status == "deduplicated":
+        expires_at = confirmation.expires_at
+        if expires_at.tzinfo is None:  # SQLite test/dev compatibility
+            expires_at = expires_at.replace(tzinfo=UTC)
+        if confirmation.status == "pending" and expires_at < now:
+            confirmation.status = "expired"
+            self.db.commit()
+        created_at = confirmation.created_at
+        if created_at.tzinfo is None:  # SQLite test/dev compatibility
+            created_at = created_at.replace(tzinfo=UTC)
+        can_confirm = bool(
+            confirmation.job_id is None
+            and confirmation.status in {"pending", "expired"}
+            and created_at >= now - _CONFIRMATION_RECOVERY_WINDOW
+        )
+        if job is None and confirmation.status == "deduplicated":
             job = self._find_matching_fingerprint_job(
                 user_id=int(user_id),
                 fingerprint=confirmation.prompt_fingerprint,
@@ -945,19 +1115,29 @@ class AIGCMediaJobService:
         return {
             "id": confirmation.id,
             "status": confirmation.status,
+            "can_confirm": can_confirm,
+            "requires_reconfirmation": confirmation.status == "expired" and can_confirm,
+            "expires_at": expires_at.isoformat(),
+            "spec": self._confirmation_spec(confirmation),
             "job": self.project(job) if job is not None else None,
         }
 
     async def _complete_from_provider_url(self, job: AIGCMediaJob, url: str, *, kind: str) -> None:
         data, media_type, extension = await self._result_downloader(url, kind)
         filename = self._write_private_result(job.user_id, data, extension)
+        result_metadata = (
+            dict(job.result_metadata)
+            if isinstance(job.result_metadata, dict)
+            else {}
+        )
+        result_metadata["byte_size"] = len(data)
         completed = self._update_active_job(
             job,
             status="succeeded",
             progress=100,
             output_filename=filename,
             output_media_type=media_type,
-            result_metadata={"byte_size": len(data)},
+            result_metadata=result_metadata,
             completed_at=datetime.now(UTC),
             provider_error_code=None,
             error_message=None,
@@ -967,6 +1147,44 @@ class AIGCMediaJobService:
             # expose the orphaned private output after a cancelled task.
             self._delete_private_result(job.user_id, filename)
         self.db.refresh(job)
+        if completed and kind in VIDEO_KINDS:
+            await self._notify_video_completion(job)
+
+    async def _notify_video_completion(self, job: AIGCMediaJob) -> None:
+        """Send a generic, deduplicated completion push without health content."""
+        from app.models.notification import NotificationChannel
+        from app.services.notification.push_service import PushService
+
+        try:
+            result = await PushService(self.db).send_notification(
+                user_id=int(job.user_id),
+                notification_type="aigc_media_completed",
+                title="小巴创作已完成",
+                content="你的创作结果已准备好，打开小巴即可查看。",
+                data={
+                    "rule_id": f"aigc_media_completed:{job.id}",
+                    "job_id": job.id,
+                    "kind": job.kind,
+                    "deep_link": "/(tabs)/chat",
+                },
+                channels=[NotificationChannel.IOS_APNS.value],
+                respect_quiet_hours=True,
+                severity="info",
+                dedup_window_hours=168,
+            )
+            logger.info(
+                "[aigc_media] completion notification job_id=%s delivered=%s",
+                job.id,
+                bool(result.get("success")),
+            )
+        except Exception as exc:  # noqa: BLE001
+            # The private result is already durable. Push is an optional wake-up
+            # surface and must never roll back or mislabel a successful job.
+            logger.warning(
+                "[aigc_media] completion notification failed job_id=%s error=%s",
+                job.id,
+                type(exc).__name__,
+            )
 
     def _load_owned_source_url(self, user_id: int, request: AIGCMediaJobRequest) -> str:
         if request.source_message_id is None:
@@ -1030,12 +1248,22 @@ class AIGCMediaJobService:
             raise AIGCMediaJobRequestError(str(exc)) from exc
         if request.kind in SOURCE_IMAGE_KINDS and request.source_message_id is None:
             raise AIGCMediaJobRequestError("图像生成需要选择当前对话中的一张图片")
-        if request.kind in {"text_to_video", "image_to_video"} and not 3 <= int(request.duration_seconds) <= 15:
-            raise AIGCMediaJobRequestError("短视频时长需在 3 到 15 秒之间")
-        if request.ratio not in {"16:9", "9:16", "1:1", "4:3", "3:4"}:
-            raise AIGCMediaJobRequestError("不支持的视频比例")
         if request.model is not None and (not request.model.strip() or len(request.model.strip()) > 80):
             raise AIGCMediaJobRequestError("AIGC 模型配置无效")
+        if request.kind in VIDEO_KINDS:
+            model = request.model or AIGCMediaJobService._model_for_kind(request.kind)
+            try:
+                validate_video_spec(
+                    model=model,
+                    kind=request.kind,  # type: ignore[arg-type]
+                    duration_seconds=request.duration_seconds,
+                    ratio=request.ratio,
+                    resolution=request.resolution,
+                )
+            except ValueError as exc:
+                raise AIGCMediaJobRequestError(str(exc)) from exc
+        elif request.ratio not in {"16:9", "9:16", "1:1", "4:3", "3:4"}:
+            raise AIGCMediaJobRequestError("不支持的视频比例")
 
     @staticmethod
     def _fingerprint(*, user_id: int, request: AIGCMediaJobRequest) -> str:
@@ -1049,6 +1277,7 @@ class AIGCMediaJobService:
                 "source_image_index": request.source_image_index,
                 "duration_seconds": request.duration_seconds,
                 "ratio": request.ratio,
+                "resolution": request.resolution,
                 "model": request.model,
             },
             ensure_ascii=False,
@@ -1063,6 +1292,44 @@ class AIGCMediaJobService:
             canonical.encode("utf-8"),
             hashlib.sha256,
         ).hexdigest()
+
+    @staticmethod
+    def _request_spec_metadata(request: AIGCMediaJobRequest) -> dict:
+        if request.kind not in VIDEO_KINDS:
+            return {}
+        model = request.model or AIGCMediaJobService._model_for_kind(request.kind)
+        capability = video_capability_for(
+            model=model,
+            kind=request.kind,  # type: ignore[arg-type]
+        )
+        spec = {
+            "duration_seconds": int(request.duration_seconds),
+            "resolution": request.resolution.upper(),
+            "generates_audio": capability.generates_audio,
+            "ratio_mode": "fixed" if capability.supports_ratio else "source",
+        }
+        if capability.supports_ratio:
+            spec["ratio"] = request.ratio
+        return spec
+
+    @staticmethod
+    def _confirmation_spec(confirmation: AIGCMediaConfirmation) -> dict | None:
+        if confirmation.kind not in VIDEO_KINDS:
+            return None
+        capability = video_capability_for(
+            model=confirmation.model,
+            kind=confirmation.kind,  # type: ignore[arg-type]
+        )
+        spec = {
+            "duration_seconds": int(confirmation.duration_seconds),
+            "duration_options": list(capability.selectable_duration_seconds),
+            "resolution": capability.default_resolution,
+            "generates_audio": capability.generates_audio,
+            "ratio_mode": "fixed" if capability.supports_ratio else "source",
+        }
+        if capability.supports_ratio:
+            spec["ratio"] = confirmation.ratio
+        return spec
 
     @staticmethod
     def _model_for_kind(kind: str) -> str:
@@ -1131,6 +1398,13 @@ class AIGCMediaJobService:
         )
         if global_active >= max(1, int(settings.dashscope_aigc_max_active_jobs_global)):
             raise AIGCMediaJobQuotaExceeded("百炼创作任务繁忙，请稍后再试")
+        is_admin = bool(
+            self.db.query(User.is_admin)
+            .filter(User.id == int(user_id))
+            .scalar()
+        )
+        if is_admin:
+            return
         if user_active >= max(1, int(settings.dashscope_aigc_max_active_jobs_per_user)):
             raise AIGCMediaJobQuotaExceeded("你已有进行中的创作任务，请等待结果后再试")
         if daily_dispatches >= max(1, int(settings.dashscope_aigc_max_dispatches_per_user_per_day)):

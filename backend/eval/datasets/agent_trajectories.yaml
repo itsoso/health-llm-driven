@@ -1,0 +1,259 @@
+name: agent_trajectories
+version: 1
+fixture_origin: synthetic
+description: Deterministic stateful task cases scored by goal, tool trajectory, and DB delta.
+cases:
+  - id: diet_recalculate_visible_breakfast_lunch
+    prior_actionable:
+      - kind: diet_daily_summary
+        source_message_id: "assistant-101"
+        data:
+          record_date: "2026-07-24"
+          meals:
+            - meal_type: breakfast
+              food_items: "豆腐脑约1碗 + 小笼包1个"
+              calories: null
+            - meal_type: lunch
+              food_items: "三文鱼约1块 + 藜麦约半碗"
+              calories: null
+            - meal_type: dinner
+              food_items: "方便面约1碗 + 苹果1个"
+              calories: 615
+    user: "重新估算和写入早午两餐"
+    expected:
+      goal_kind: diet_recalculate_update
+      domain: diet
+      operation: update
+      target_date: "2026-07-24"
+      target_meal_types: [breakfast, lunch]
+      requires_lookup: true
+      requires_verification: true
+      prohibited_operations: [create, delete]
+      clarification: false
+
+  - id: diet_recalculate_visible_breakfast_only
+    prior_actionable:
+      - kind: diet_daily_summary
+        source_message_id: "assistant-102"
+        data:
+          record_date: "2026-07-24"
+          meals:
+            - meal_type: breakfast
+              food_items: "山药小米粥 + 蒸蛋羹"
+              calories: null
+    user: "把上面的早餐重新估算后写回"
+    expected:
+      goal_kind: diet_recalculate_update
+      domain: diet
+      operation: update
+      target_date: "2026-07-24"
+      target_meal_types: [breakfast]
+      requires_lookup: true
+      requires_verification: true
+      prohibited_operations: [create, delete]
+      clarification: false
+
+  - id: diet_recalculate_question_is_read_only
+    prior_actionable:
+      - kind: diet_daily_summary
+        source_message_id: "assistant-103"
+        data:
+          record_date: "2026-07-24"
+          meals:
+            - meal_type: breakfast
+              food_items: "小米粥"
+              calories: 200
+    user: "早午两餐需要重新估算吗？"
+    expected:
+      goal_kind: answer
+      domain: diet
+      operation: ask
+      target_date: "2026-07-24"
+      target_meal_types: [breakfast, lunch]
+      requires_lookup: false
+      requires_verification: false
+      prohibited_operations: [create, update, delete]
+      clarification: false
+
+  - id: diet_recalculate_negated_update
+    prior_actionable:
+      - kind: diet_daily_summary
+        source_message_id: "assistant-104"
+        data:
+          record_date: "2026-07-24"
+          meals:
+            - meal_type: breakfast
+              food_items: "小米粥"
+              calories: 200
+            - meal_type: lunch
+              food_items: "三文鱼"
+              calories: 400
+    user: "先不要重新估算和写入早午两餐"
+    expected:
+      goal_kind: chat
+      domain: diet
+      operation: none
+      target_date: "2026-07-24"
+      target_meal_types: [breakfast, lunch]
+      requires_lookup: false
+      requires_verification: false
+      prohibited_operations: [create, update, delete]
+      clarification: false
+
+  - id: diet_recalculate_referent_without_visible_card
+    prior_actionable: []
+    user: "把上面两餐重新估算后写入"
+    expected:
+      goal_kind: clarify
+      domain: diet
+      operation: none
+      target_date: "2026-07-17"
+      target_meal_types: []
+      requires_lookup: false
+      requires_verification: false
+      prohibited_operations: [create, update, delete]
+      clarification: true
+
+  - id: diet_recalculate_explicit_yesterday_overrides_visible_today
+    prior_actionable:
+      - kind: diet_daily_summary
+        source_message_id: "assistant-today"
+        data:
+          record_date: "2026-07-17"
+          meals:
+            - meal_type: breakfast
+              food_items: "今天的小米粥"
+              calories: 210
+            - meal_type: lunch
+              food_items: "今天的三文鱼"
+              calories: 430
+      - kind: diet_daily_summary
+        source_message_id: "assistant-yesterday"
+        data:
+          record_date: "2026-07-16"
+          meals:
+            - meal_type: breakfast
+              food_items: "昨天的豆腐脑"
+              calories: null
+            - meal_type: lunch
+              food_items: "昨天的牛肉面"
+              calories: null
+    user: "把昨天早饭和午饭重新算一下，直接更新记录"
+    expected:
+      goal_kind: diet_recalculate_update
+      domain: diet
+      operation: update
+      target_date: "2026-07-16"
+      target_meal_types: [breakfast, lunch]
+      requires_lookup: true
+      requires_verification: true
+      prohibited_operations: [create, delete]
+      clarification: false
+
+  - id: diet_recalculate_colloquial_visible_two_meals
+    prior_actionable:
+      - kind: diet_daily_summary
+        source_message_id: "assistant-colloquial"
+        data:
+          record_date: "2026-07-17"
+          meals:
+            - meal_type: breakfast
+              food_items: "小米粥"
+              calories: null
+            - meal_type: lunch
+              food_items: "鸡胸肉沙拉"
+              calories: null
+    user: "把这两餐重估一下后补回记录"
+    expected:
+      goal_kind: diet_recalculate_update
+      domain: diet
+      operation: update
+      target_date: "2026-07-17"
+      target_meal_types: [breakfast, lunch]
+      requires_lookup: true
+      requires_verification: true
+      prohibited_operations: [create, delete]
+      clarification: false
+
+  - id: water_record_explicit_chinese_amount
+    prior_actionable: []
+    user: "记录喝水五百毫升"
+    expected:
+      goal_kind: simple_health_record
+      domain: water
+      operation: create
+      target_date: "2026-07-17"
+      target_meal_types: []
+      target_record_type: water
+      target_values:
+        amount_ml: "500"
+      requires_lookup: false
+      requires_verification: true
+      prohibited_operations: [update, delete]
+      clarification: false
+
+  - id: fruit_record_explicit_observation
+    prior_actionable: []
+    user: "记录刚才吃了一个水蜜桃"
+    expected:
+      goal_kind: write
+      domain: diet
+      operation: create
+      target_date: "2026-07-17"
+      target_meal_types: []
+      target_record_type:
+      target_values: {}
+      requires_lookup: false
+      requires_verification: false
+      prohibited_operations: []
+      clarification: false
+
+  - id: symptom_record_explicit_observation
+    prior_actionable: []
+    user: "记录刚才打了一个喷嚏"
+    expected:
+      goal_kind: simple_health_record
+      domain: symptom
+      operation: create
+      target_date: "2026-07-17"
+      target_meal_types: []
+      target_record_type: symptom
+      target_values:
+        body_part: respiratory
+        description: "记录刚才打了一个喷嚏"
+      requires_lookup: false
+      requires_verification: true
+      prohibited_operations: [update, delete]
+      clarification: false
+
+  - id: water_question_remains_read_only
+    prior_actionable: []
+    user: "今天一共喝了多少水？"
+    expected:
+      goal_kind: answer
+      domain: water
+      operation: ask
+      target_date: "2026-07-17"
+      target_meal_types: []
+      target_record_type: null
+      target_values: {}
+      requires_lookup: false
+      requires_verification: false
+      prohibited_operations: [create, update, delete]
+      clarification: false
+
+  - id: negated_water_record_never_writes
+    prior_actionable: []
+    user: "先别记录喝水500ml"
+    expected:
+      goal_kind: chat
+      domain: water
+      operation: none
+      target_date: "2026-07-17"
+      target_meal_types: []
+      target_record_type: null
+      target_values: {}
+      requires_lookup: false
+      requires_verification: false
+      prohibited_operations: [create, update, delete]
+      clarification: false

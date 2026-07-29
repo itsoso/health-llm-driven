@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, RefreshControl, TouchableOpacity, TextStyle, TextInput, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -43,6 +43,7 @@ import {
   revaSemantic,
   revaFonts,
 } from '../../constants/revaTheme';
+import { todayStr } from '../../utils/dietDate';
 
 // 快捷记录入口的装饰性 hue (饮食橙 / 身体青 / 声音蓝 / 跑前绿) —— 「区分类目」的色码,
 // 不是「指标好坏」三步语义,故为局部字面量 (同 VitalsGrid 的 HUES)。
@@ -85,6 +86,7 @@ export default function RecordScreen() {
   const [bpSysInput, setBpSysInput] = useState('');
   const [bpDiaInput, setBpDiaInput] = useState('');
   const [undo, setUndo] = useState<{ label: string; action: () => Promise<void> } | null>(null);
+  const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const exerciseToday = Array.isArray(data?.exerciseToday) ? data.exerciseToday : [];
   const medications = filterMedicationRecordItems(data?.medicationToday);
@@ -118,7 +120,7 @@ export default function RecordScreen() {
     };
   }, [bpStats?.average_systolic, meals.length, weightStats?.current_weight]);
 
-  const today = new Date().toISOString().split('T')[0];
+  const today = todayStr();
   const highFrequencyRecords = useMemo<QuickRecordEntry[]>(() => {
     const entries: QuickRecordEntry[] = [
       {
@@ -176,11 +178,28 @@ export default function RecordScreen() {
   const recommendedRecord = highFrequencyRecords[0];
   const shouldShowRecommendedRecord = recommendedRecord?.priority >= 60;
 
-  const showUndo = (label: string, action: () => Promise<void>) => { setUndo({ label, action }); setTimeout(() => setUndo(null), 5000); };
+  const clearUndo = useCallback(() => {
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    undoTimerRef.current = null;
+    setUndo(null);
+  }, []);
+  const showUndo = useCallback((label: string, action: () => Promise<void>) => {
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    setUndo({ label, action });
+    undoTimerRef.current = setTimeout(() => {
+      undoTimerRef.current = null;
+      setUndo(null);
+    }, 5000);
+  }, []);
+  useEffect(() => () => {
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    undoTimerRef.current = null;
+  }, []);
+
   const doWater = useCallback(async (amt: number, drinkType = '水') => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     try { const rec = await recordWater(amt, drinkType); await invalidateRecordMutation(qc); showUndo(`${amt}ml`, async () => { await deleteWater(rec.id); await invalidateRecordMutation(qc); }); } catch { Alert.alert('记录失败', '饮水记录保存失败，请重试'); }
-  }, [qc]);
+  }, [qc, showUndo]);
 
   // 常用补剂 / 常用饮水 —— 一键记录 (后端按历史频次聚合)
   const frequentSupplementsQuery = useQuery({
@@ -206,7 +225,7 @@ export default function RecordScreen() {
         await invalidateRecordMutation(qc);
       });
     } catch { Alert.alert('记录失败', '补剂打卡失败，请重试'); }
-  }, [qc, today]);
+  }, [qc, showUndo, today]);
 
   const handleChatHydration = useCallback(() => {
     pushChatWithContext(router, {
@@ -450,7 +469,7 @@ export default function RecordScreen() {
                   if (!w || w < 30 || w > 200) { Alert.alert('请输入有效体重'); return; }
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
                   try {
-                    await api.post('/weight/records', { weight: w, record_date: new Date().toISOString().split('T')[0] });
+                    await api.post('/weight/records', { weight: w, record_date: todayStr() });
                     emitClientEvent('quick_record_logged', { kind: 'weight' }); // Phase 0.4
                     setWeightInput(''); await invalidateRecordMutation(qc);
                   } catch { Alert.alert('记录失败'); }
@@ -467,7 +486,7 @@ export default function RecordScreen() {
                   if (!sys || !dia || sys < 60 || sys > 250 || dia < 30 || dia > 150) { Alert.alert('请输入有效血压'); return; }
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
                   try {
-                    const response = await api.post('/blood-pressure/records', { systolic: sys, diastolic: dia, record_date: new Date().toISOString().split('T')[0] });
+                    const response = await api.post('/blood-pressure/records', { systolic: sys, diastolic: dia, record_date: todayStr() });
                     emitClientEvent('quick_record_logged', { kind: 'bp' }); // Phase 0.4
                     setBpSysInput(''); setBpDiaInput(''); await invalidateRecordMutation(qc);
                     const alert = bloodPressureSaveAlert(response.data?.safety_guidance);
@@ -578,7 +597,7 @@ export default function RecordScreen() {
       {undo && (
         <View style={styles.undoBar}>
           <Text style={txt.undoText}>已记录 {undo.label}</Text>
-          <TouchableOpacity onPress={async () => { await undo.action(); setUndo(null); }}>
+          <TouchableOpacity onPress={async () => { clearUndo(); await undo.action(); }}>
             <Text style={txt.undoBtn}>撤销</Text>
           </TouchableOpacity>
         </View>

@@ -7,10 +7,12 @@ const LEGACY_CHAT_DRAFT_STORAGE_KEY = 'chat:composer_draft:v1';
 const CHAT_DRAFT_STORAGE_KEY_PREFIX = 'chat:composer_draft:v2';
 // SecureStore keys only allow alphanumeric characters plus '.', '-' and '_'.
 const CHAT_DRAFT_TEXT_KEY_PREFIX = 'chat.composer_draft_text.v1';
-const CHAT_DRAFT_VERSION = 2;
+const CHAT_DRAFT_VERSION = 3;
 const CHAT_DRAFT_DIRECTORY_ROOT = `${FileSystem.documentDirectory ?? ''}chat-drafts/`;
 const MAX_DRAFT_IMAGES = 9;
+const CHAT_DRAFT_TTL_MS = 24 * 60 * 60 * 1000;
 const ABANDONED_FILE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+let draftMutationTail: Promise<void> = Promise.resolve();
 
 export interface DraftableImage {
   uri: string;
@@ -25,7 +27,11 @@ type DraftImageReference = Pick<DraftableImage, 'uri'>
 export interface ChatDraft {
   text: string;
   images: DraftableImage[];
+  intent?: 'diet_photo_record';
+  captureSessionId?: string;
 }
+
+export type ChatDraftMetadata = Pick<ChatDraft, 'intent' | 'captureSessionId'>;
 
 interface StoredDraftImage {
   uri: string;
@@ -34,15 +40,23 @@ interface StoredDraftImage {
 }
 
 interface StoredChatDraft {
-  version: 2;
+  version: 2 | 3;
   updatedAt: number;
   images: StoredDraftImage[];
+  intent?: 'diet_photo_record';
+  captureSessionId?: string;
 }
 
 interface DraftStorageContext {
   metadataKey: string;
   textKey: string;
   directory: string;
+}
+
+function serializeDraftMutation<T>(operation: () => Promise<T>): Promise<T> {
+  const result = draftMutationTail.then(operation, operation);
+  draftMutationTail = result.then(() => undefined, () => undefined);
+  return result;
 }
 
 export function chatDraftStorageKey(scope: string): string {
@@ -85,10 +99,15 @@ function toStoredSnapshot(
   images: DraftableImage[],
   updatedAt: number,
   directory: string,
+  metadata: ChatDraftMetadata = {},
 ): StoredChatDraft {
   return {
     version: CHAT_DRAFT_VERSION,
     updatedAt,
+    ...(metadata.intent === 'diet_photo_record' ? { intent: metadata.intent } : {}),
+    ...(metadata.intent === 'diet_photo_record' && metadata.captureSessionId
+      ? { captureSessionId: metadata.captureSessionId }
+      : {}),
     images: images
       .filter(image => isPrivateDraftUri(image.uri, directory))
       .slice(0, MAX_DRAFT_IMAGES)
@@ -128,39 +147,54 @@ export async function materializeDraftImages(
   if (!images.length) return [];
   const context = await currentStorageContext();
   await ensureDraftDirectory(context.directory);
-  return Promise.all(images.slice(0, MAX_DRAFT_IMAGES).map(async (image, index) => {
-    if (isPrivateDraftUri(image.uri, context.directory)) {
-      return {
-        ...image,
-        type: normalizeImageType(image.type),
-        draftCreatedAt: image.draftCreatedAt ?? now,
-      };
+  const materialized: DraftableImage[] = [];
+  const createdUris: string[] = [];
+  try {
+    for (const [index, image] of images.slice(0, MAX_DRAFT_IMAGES).entries()) {
+      if (isPrivateDraftUri(image.uri, context.directory)) {
+        materialized.push({
+          ...image,
+          type: normalizeImageType(image.type),
+          draftCreatedAt: image.draftCreatedAt ?? now,
+        });
+        continue;
+      }
+      const type = normalizeImageType(image.type);
+      const suffix = Math.random().toString(36).slice(2, 10);
+      const uri = `${context.directory}${now}-${index}-${suffix}.${type}`;
+      if (image.base64) {
+        await FileSystem.writeAsStringAsync(uri, image.base64, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+      } else {
+        await FileSystem.copyAsync({ from: image.uri, to: uri });
+      }
+      createdUris.push(uri);
+      materialized.push({ ...image, uri, type, draftCreatedAt: now });
     }
-    const type = normalizeImageType(image.type);
-    const suffix = Math.random().toString(36).slice(2, 10);
-    const uri = `${context.directory}${now}-${index}-${suffix}.${type}`;
-    if (image.base64) {
-      await FileSystem.writeAsStringAsync(uri, image.base64, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-    } else {
-      await FileSystem.copyAsync({ from: image.uri, to: uri });
-    }
-    return { ...image, uri, type, draftCreatedAt: now };
-  }));
+    return materialized;
+  } catch (error) {
+    await Promise.allSettled(createdUris.map(uri => (
+      FileSystem.deleteAsync(uri, { idempotent: true })
+    )));
+    throw error;
+  }
 }
 
 export async function persistChatDraft(
   text: string,
   images: DraftableImage[],
   updatedAt = Date.now(),
+  metadata: ChatDraftMetadata = {},
 ): Promise<void> {
-  const context = await currentStorageContext();
-  await storeSnapshot(
-    context,
-    text,
-    toStoredSnapshot(images, updatedAt, context.directory),
-  );
+  await serializeDraftMutation(async () => {
+    const context = await currentStorageContext();
+    await storeSnapshot(
+      context,
+      text,
+      toStoredSnapshot(images, updatedAt, context.directory, metadata),
+    );
+  });
 }
 
 export async function loadChatDraft(): Promise<ChatDraft> {
@@ -181,9 +215,37 @@ export async function loadChatDraft(): Promise<ChatDraft> {
     await AsyncStorage.removeItem(context.metadataKey);
     return { text, images: [] };
   }
-  if (snapshot?.version !== CHAT_DRAFT_VERSION || !Array.isArray(snapshot.images)) {
+  if (![2, CHAT_DRAFT_VERSION].includes(snapshot?.version) || !Array.isArray(snapshot.images)) {
     await AsyncStorage.removeItem(context.metadataKey);
     return { text, images: [] };
+  }
+  const updatedAt = Number(snapshot.updatedAt);
+  const isLegacySnapshot = snapshot.version === 2;
+  if (
+    !isLegacySnapshot
+    && (
+      !Number.isFinite(updatedAt)
+      || updatedAt <= 0
+      || Date.now() - updatedAt > CHAT_DRAFT_TTL_MS
+    )
+  ) {
+    const cleared = await serializeDraftMutation(async () => {
+      const latestRaw = await AsyncStorage.getItem(context.metadataKey);
+      if (latestRaw !== raw) return false;
+      await Promise.allSettled(snapshot.images.map(image => {
+        if (!image || typeof image.uri !== 'string' || !isPrivateDraftUri(image.uri, context.directory)) {
+          return Promise.resolve();
+        }
+        return FileSystem.deleteAsync(image.uri, { idempotent: true });
+      }));
+      await Promise.all([
+        AsyncStorage.removeItem(context.metadataKey),
+        SecureStore.deleteItemAsync(context.textKey),
+      ]);
+      return true;
+    });
+    if (!cleared) return loadChatDraft();
+    return { text: '', images: [] };
   }
   const restored: DraftableImage[] = [];
   for (const image of snapshot.images.slice(0, MAX_DRAFT_IMAGES)) {
@@ -201,14 +263,37 @@ export async function loadChatDraft(): Promise<ChatDraft> {
       draftCreatedAt: Number(image.createdAt) || snapshot.updatedAt || Date.now(),
     });
   }
-  if (restored.length !== snapshot.images.length) {
+  if (isLegacySnapshot || restored.length !== snapshot.images.length) {
     await storeSnapshot(
       context,
       text,
-      toStoredSnapshot(restored, snapshot.updatedAt || Date.now(), context.directory),
+      toStoredSnapshot(
+        restored,
+        isLegacySnapshot ? Date.now() : (snapshot.updatedAt || Date.now()),
+        context.directory,
+        {
+        intent: snapshot.intent,
+        captureSessionId: snapshot.captureSessionId,
+        },
+      ),
     );
   }
-  return { text, images: restored };
+  const captureSessionId = typeof snapshot.captureSessionId === 'string'
+    ? snapshot.captureSessionId.trim()
+    : '';
+  const hasMealIntent = (
+    snapshot.intent === 'diet_photo_record'
+    && captureSessionId.length > 0
+    && restored.length > 0
+  );
+  return {
+    text,
+    images: restored,
+    ...(hasMealIntent ? {
+      intent: 'diet_photo_record' as const,
+      captureSessionId,
+    } : {}),
+  };
 }
 
 export async function hydrateDraftImagesForSend(images: DraftableImage[]): Promise<DraftableImage[]> {
@@ -233,12 +318,18 @@ export async function deleteDraftImage(image: DraftImageReference): Promise<void
 }
 
 export async function clearPersistedChatDraft(images: DraftImageReference[] = []): Promise<void> {
-  await Promise.all(images.map(image => deleteDraftImage(image)));
-  const context = await currentStorageContext();
-  await Promise.all([
-    AsyncStorage.removeItem(context.metadataKey),
-    SecureStore.deleteItemAsync(context.textKey),
-  ]);
+  await serializeDraftMutation(async () => {
+    const context = await currentStorageContext();
+    await Promise.all(images.map(image => (
+      isPrivateDraftUri(image.uri, context.directory)
+        ? FileSystem.deleteAsync(image.uri, { idempotent: true })
+        : Promise.resolve()
+    )));
+    await Promise.all([
+      AsyncStorage.removeItem(context.metadataKey),
+      SecureStore.deleteItemAsync(context.textKey),
+    ]);
+  });
 }
 
 export async function cleanupAbandonedChatDraftFiles(

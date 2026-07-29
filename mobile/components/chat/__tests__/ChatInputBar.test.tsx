@@ -38,6 +38,7 @@ const mockPersistChatDraft = jest.fn().mockResolvedValue(undefined);
 const mockHydrateDraftImages = jest.fn();
 const mockClearPersistedChatDraft = jest.fn().mockResolvedValue(undefined);
 const mockCleanupDraftFiles = jest.fn().mockResolvedValue(undefined);
+const mockEmitClientEvent = jest.fn().mockResolvedValue(undefined);
 
 jest.mock('../../../hooks/useMediaPicker', () => ({
   useMediaPicker: () => ({
@@ -57,6 +58,11 @@ jest.mock('../../../services/chatDraftStorage', () => ({
   hydrateDraftImagesForSend: (...args: any[]) => mockHydrateDraftImages(...args),
   clearPersistedChatDraft: (...args: any[]) => mockClearPersistedChatDraft(...args),
   cleanupAbandonedChatDraftFiles: (...args: any[]) => mockCleanupDraftFiles(...args),
+}));
+
+jest.mock('../../../services/clientEvents', () => ({
+  emitClientEvent: (...args: any[]) => mockEmitClientEvent(...args),
+  durationBucket: () => 'lt_1s',
 }));
 
 jest.mock('../../../hooks/useRealtimeDictation', () => ({
@@ -79,8 +85,29 @@ jest.mock('expo-document-picker', () => ({
 }));
 
 jest.mock('../../../services/chatMedicalExamImportSkill', () => ({
-  executeMedicalExamImportSkillForDocumentAsset: (...args: any[]) => mockExecuteMedicalExamImport(...args),
+  buildMedicalExamImportSkillResult: (...args: any[]) => mockExecuteMedicalExamImport(...args),
 }));
+
+jest.mock('../../medical/MedicalExamImportFlow', () => {
+  const React = require('react');
+  const { Pressable, Text } = require('react-native');
+  return function MockMedicalExamImportFlow(props: any) {
+    if (!props.visible) return null;
+    return React.createElement(
+      Pressable,
+      {
+        accessibilityLabel: '确认模拟导入',
+        onPress: () => props.onImported({
+          examId: 42,
+          exam_id: 42,
+          source: 'pdf',
+          reviewRequired: true,
+        }),
+      },
+      React.createElement(Text, null, '体检报告导入流程'),
+    );
+  };
+});
 
 jest.mock('expo-router', () => ({
   router: { push: (...args: any[]) => mockRouterPush(...args) },
@@ -122,6 +149,7 @@ describe('ChatInputBar', () => {
     mockHydrateDraftImages.mockImplementation(async (images: any[]) => images);
     mockClearPersistedChatDraft.mockResolvedValue(undefined);
     mockCleanupDraftFiles.mockResolvedValue(undefined);
+    mockEmitClientEvent.mockResolvedValue(undefined);
     appStateHandler = undefined;
     jest.spyOn(AppState, 'addEventListener').mockImplementation(((_event: string, handler: (state: string) => void) => {
       appStateHandler = handler;
@@ -261,6 +289,31 @@ describe('ChatInputBar', () => {
     expect(mockReleaseImagesAfterSend).not.toHaveBeenCalled();
   });
 
+  it('does not mix an existing generic attachment into a new meal capture session', async () => {
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(jest.fn());
+    mockPendingImages = [{
+      uri: 'file:///documents/chat-drafts/report.jpeg',
+      base64: 'report',
+      type: 'jpeg',
+    }];
+    const view = render(
+      <ChatInputBar onSend={jest.fn()} isStreaming={false} captureMealPhotoToken={0} />,
+    );
+
+    await act(async () => {
+      view.rerender(
+        <ChatInputBar onSend={jest.fn()} isStreaming={false} captureMealPhotoToken={1} />,
+      );
+      await Promise.resolve();
+    });
+
+    expect(mockTakePhoto).not.toHaveBeenCalled();
+    expect(alertSpy).toHaveBeenCalledWith(
+      '先处理已选图片',
+      expect.stringContaining('不会把普通附件自动当成餐食照片'),
+    );
+  });
+
   it('offers separate camera and library actions after the first photo is staged', async () => {
     mockPendingImages = [
       { uri: 'file:///meal-1.jpg', base64: 'meal-1', type: 'jpeg' },
@@ -368,6 +421,16 @@ describe('ChatInputBar', () => {
     expect(fieldStyle.color).toBe(revaColors.ink1);
   });
 
+  it('exposes the multiline text input instead of collapsing it into the outer press surface', () => {
+    const view = render(
+      <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
+    );
+    enterKeyboardMode(view);
+
+    expect(view.getByTestId('wechat-composer-input').props.accessible).toBe(false);
+    expect(view.getByLabelText('消息输入框').props.accessibilityLabel).toBe('消息输入框');
+  });
+
   it('keyboard composer controls meet thumb ergonomics in the WeChat-style layout', () => {
     const view = render(
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
@@ -425,7 +488,7 @@ describe('ChatInputBar', () => {
     expect(inputSurface.borderRadius).toBeLessThanOrEqual(10);
   });
 
-  it('expands the smart text composer on focus without starting cloud ASR', () => {
+  it('keeps an empty text composer compact on focus without starting cloud ASR', () => {
     const view = render(
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
     );
@@ -437,9 +500,9 @@ describe('ChatInputBar', () => {
 
     fireEvent.press(getByTestId('wechat-composer-input'));
 
-    const expandedSurface = StyleSheet.flatten(getByTestId('wechat-composer-input').props.style);
-    expect(expandedSurface.minHeight).toBeGreaterThan(compactSurface.minHeight);
-    expect(expandedSurface.borderRadius).toBeGreaterThan(compactSurface.borderRadius);
+    const focusedSurface = StyleSheet.flatten(getByTestId('wechat-composer-input').props.style);
+    expect(focusedSurface.minHeight).toBe(compactSurface.minHeight);
+    expect(focusedSurface.borderRadius).toBe(compactSurface.borderRadius);
     expect(getByLabelText('实时语音转文字')).toBeTruthy();
     expect(mockStartDictation).not.toHaveBeenCalled();
   });
@@ -458,64 +521,36 @@ describe('ChatInputBar', () => {
     expect(getByLabelText('消息输入框').props.placeholder).toBe('问小巴，或点麦克风说话');
   });
 
-  it('shows minimal quick capture actions only while the empty composer is focused', () => {
+  it('does not add a third quick-action rail when the empty composer is focused', () => {
     const view = render(
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
     );
     enterKeyboardMode(view);
-    const { getByLabelText, getByTestId, queryByTestId } = view;
+    const { getByTestId, queryByTestId } = view;
 
     expect(queryByTestId('smart-composer-quick-actions')).toBeNull();
     fireEvent.press(getByTestId('wechat-composer-input'));
 
-    expect(getByTestId('smart-composer-quick-actions')).toBeTruthy();
-    expect(getByLabelText('拍照记餐')).toBeTruthy();
-    expect(getByLabelText('记录喝水')).toBeTruthy();
-    expect(getByLabelText('记录运动')).toBeTruthy();
-
-    fireEvent.changeText(getByLabelText('消息输入框'), '已有健康问题');
     expect(queryByTestId('smart-composer-quick-actions')).toBeNull();
   });
 
-  it('routes the quick water action through the typed chat pipeline', async () => {
-    const onSend = jest.fn().mockResolvedValue(true);
+  it('grows the composer from text content and caps it at three lines', () => {
     const view = render(
-      <ChatInputBar onSend={onSend} isStreaming={false} />,
+      <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
     );
     enterKeyboardMode(view);
-    fireEvent.press(view.getByTestId('wechat-composer-input'));
+    const field = view.getByLabelText('消息输入框');
+    const surface = () => StyleSheet.flatten(view.getByTestId('wechat-composer-input').props.style);
 
-    await act(async () => {
-      fireEvent.press(view.getByLabelText('记录喝水'));
-      await Promise.resolve();
-      await Promise.resolve();
+    fireEvent(field, 'contentSizeChange', {
+      nativeEvent: { contentSize: { height: 66 } },
     });
+    expect(surface().minHeight).toBeGreaterThan(48);
 
-    expect(onSend).toHaveBeenCalledWith(
-      '记录喝水',
-      null,
-      expect.objectContaining({ channel: 'typed' }),
-    );
-  });
-
-  it('starts meal photo capture from the focused quick action rail', async () => {
-    const photo = { uri: 'file:///quick-meal.jpg', base64: 'quick-meal', type: 'jpeg' };
-    mockTakePhoto.mockResolvedValueOnce([photo]);
-    const onSend = jest.fn();
-    const view = render(
-      <ChatInputBar onSend={onSend} isStreaming={false} />,
-    );
-    enterKeyboardMode(view);
-    fireEvent.press(view.getByTestId('wechat-composer-input'));
-
-    await act(async () => {
-      fireEvent.press(view.getByLabelText('拍照记餐'));
-      await Promise.resolve();
+    fireEvent(field, 'contentSizeChange', {
+      nativeEvent: { contentSize: { height: 200 } },
     });
-
-    expect(mockTakePhoto).toHaveBeenCalledTimes(1);
-    expect(onSend).not.toHaveBeenCalled();
-    expect(view.getByLabelText('消息输入框').props.value).toBe('记录这餐');
+    expect(surface().minHeight).toBeLessThanOrEqual(84);
   });
 
   it('toggles from keyboard input back into WeChat hold-to-talk mode', () => {
@@ -888,7 +923,7 @@ describe('ChatInputBar', () => {
   });
 
   it('stops realtime dictation after submit and keeps the microphone available', async () => {
-    const onSend = jest.fn();
+    const onSend = jest.fn().mockResolvedValue(true);
     const view = render(
       <ChatInputBar onSend={onSend} isStreaming={false} />,
     );
@@ -1234,8 +1269,40 @@ describe('ChatInputBar', () => {
 
     await waitFor(() => {
       expect(getByLabelText('消息输入框').props.value).toBe('继续确认午餐');
-      expect(mockSetPendingImages).toHaveBeenCalledWith(restoredImages);
+      expect(mockSetPendingImages).toHaveBeenCalledWith(restoredImages, 9);
     });
+  });
+
+  it('does not let a late draft hydration overwrite a photo captured after mount', async () => {
+    let resolveDraft!: (value: unknown) => void;
+    mockLoadChatDraft.mockImplementationOnce(() => new Promise(resolve => {
+      resolveDraft = resolve;
+    }));
+    mockTakePhoto.mockResolvedValueOnce([{
+      uri: 'file:///documents/chat-drafts/new-meal.jpeg',
+      base64: 'new-meal',
+      type: 'jpeg',
+    }]);
+    const oldImages = [{
+      uri: 'file:///documents/chat-drafts/old-meal.jpeg',
+      base64: '',
+      type: 'jpeg',
+    }];
+    const view = render(
+      <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
+    );
+
+    fireEvent.press(view.getByLabelText('附件菜单'));
+    await act(async () => {
+      fireEvent.press(view.getByLabelText('拍照记餐'));
+      await Promise.resolve();
+    });
+    await act(async () => {
+      resolveDraft({ text: '过时草稿', images: oldImages });
+      await Promise.resolve();
+    });
+
+    expect(mockSetPendingImages).not.toHaveBeenCalledWith(oldImages);
   });
 
   it('flushes the latest draft immediately when iOS moves to the background', async () => {
@@ -1244,7 +1311,7 @@ describe('ChatInputBar', () => {
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
     );
 
-    await waitFor(() => expect(mockSetPendingImages).toHaveBeenCalledWith([]));
+    await waitFor(() => expect(mockSetPendingImages).toHaveBeenCalledWith([], 9));
     fireEvent.press(getByLabelText('切换到键盘输入'));
     fireEvent.changeText(getByLabelText('消息输入框'), '切后台前必须保存');
 
@@ -1253,11 +1320,16 @@ describe('ChatInputBar', () => {
     });
 
     await waitFor(() => {
-      expect(mockPersistChatDraft).toHaveBeenCalledWith('切后台前必须保存', []);
+      expect(mockPersistChatDraft).toHaveBeenCalledWith(
+        '切后台前必须保存',
+        [],
+        expect.any(Number),
+        {},
+      );
     });
   });
 
-  it('hydrates private image bytes before send and clears only after acceptance', async () => {
+  it('keeps private image bytes when the caller does not explicitly accept the send', async () => {
     const storedImage = {
       uri: 'file:///documents/chat-drafts/lunch.jpeg',
       base64: '',
@@ -1280,10 +1352,199 @@ describe('ChatInputBar', () => {
 
     await waitFor(() => {
       expect(onSend).toHaveBeenCalledWith('请分析这些图片', [hydratedImage], undefined);
-      expect(mockReleaseImagesAfterSend).toHaveBeenCalled();
+      expect(mockReleaseImagesAfterSend).not.toHaveBeenCalled();
       expect(mockClearImages).not.toHaveBeenCalled();
-      expect(mockClearPersistedChatDraft).toHaveBeenCalled();
+      expect(mockClearPersistedChatDraft).not.toHaveBeenCalled();
     });
+    expect(mockEmitClientEvent).toHaveBeenCalledWith('chat_attachment_terminal', {
+      phase: 'failed',
+      stage: 'server_accept',
+      image_count: 1,
+      duration_bucket: 'lt_1s',
+      payload_bucket: 'lt_256kb',
+      error_code: 'server_not_accepted',
+    }, expect.objectContaining({ eventKey: expect.any(String) }));
+  });
+
+  it('allows only one attachment send and one terminal event for rapid repeated presses', async () => {
+    const storedImage = {
+      uri: 'file:///documents/chat-drafts/rapid-lunch.jpeg',
+      base64: '',
+      type: 'jpeg',
+      draftCreatedAt: 100,
+    };
+    const hydratedImage = { ...storedImage, base64: 'private-base64' };
+    let acceptSend: ((accepted: boolean) => void) | undefined;
+    mockPendingImages = [storedImage];
+    mockHydrateDraftImages.mockResolvedValueOnce([hydratedImage]);
+    const onSend = jest.fn(() => new Promise<boolean>((resolve) => {
+      acceptSend = resolve;
+    }));
+    const view = render(
+      <ChatInputBar onSend={onSend} isStreaming={false} />,
+    );
+
+    act(() => {
+      fireEvent.press(view.getByLabelText('发送消息'));
+      fireEvent.press(view.getByLabelText('发送消息'));
+    });
+    await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      acceptSend?.(true);
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(mockEmitClientEvent).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('keeps durable photo files while a queued send is awaiting server acceptance', async () => {
+    const storedImage = {
+      uri: 'file:///documents/chat-drafts/queued-lunch.jpeg',
+      base64: '',
+      type: 'jpeg',
+      draftCreatedAt: 100,
+    };
+    const hydratedImage = { ...storedImage, base64: 'private-base64' };
+    let acceptSend: ((accepted: boolean) => void) | undefined;
+    mockPendingImages = [storedImage];
+    mockHydrateDraftImages.mockResolvedValueOnce([hydratedImage]);
+    const onSend = jest.fn(() => new Promise<boolean>((resolve) => {
+      acceptSend = resolve;
+    }));
+    const { getByLabelText } = render(
+      <ChatInputBar onSend={onSend} isStreaming={true} />,
+    );
+
+    act(() => {
+      fireEvent.press(getByLabelText('发送消息'));
+    });
+    await waitFor(() => {
+      expect(onSend).toHaveBeenCalledWith('请分析这些图片', [hydratedImage], undefined);
+    });
+    expect(mockReleaseImagesAfterSend).not.toHaveBeenCalled();
+    expect(mockClearPersistedChatDraft).not.toHaveBeenCalled();
+
+    await act(async () => {
+      acceptSend?.(true);
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(mockReleaseImagesAfterSend).toHaveBeenCalledTimes(1);
+      expect(mockClearPersistedChatDraft).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('keeps accepted image drafts until the terminal event is durably queued', async () => {
+    const storedImage = {
+      uri: 'file:///documents/chat-drafts/terminal-persist.jpeg',
+      base64: '',
+      type: 'jpeg',
+      draftCreatedAt: 100,
+    };
+    const hydratedImage = { ...storedImage, base64: 'private-base64' };
+    let persistTerminal: (() => void) | undefined;
+    mockPendingImages = [storedImage];
+    mockHydrateDraftImages.mockResolvedValueOnce([hydratedImage]);
+    mockEmitClientEvent.mockImplementationOnce(() => new Promise<void>((resolve) => {
+      persistTerminal = resolve;
+    }));
+    const view = render(
+      <ChatInputBar onSend={jest.fn().mockResolvedValue(true)} isStreaming={false} />,
+    );
+
+    act(() => {
+      fireEvent.press(view.getByLabelText('发送消息'));
+    });
+    await waitFor(() => {
+      expect(mockEmitClientEvent).toHaveBeenCalledWith(
+        'chat_attachment_terminal',
+        expect.objectContaining({ phase: 'accepted' }),
+        expect.objectContaining({ eventKey: expect.any(String) }),
+      );
+    });
+
+    expect(mockReleaseImagesAfterSend).not.toHaveBeenCalled();
+    expect(mockClearPersistedChatDraft).not.toHaveBeenCalled();
+
+    await act(async () => {
+      persistTerminal?.();
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(mockReleaseImagesAfterSend).toHaveBeenCalledTimes(1);
+      expect(mockClearPersistedChatDraft).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('does not report an accepted image send as failed when terminal telemetry persistence fails', async () => {
+    const storedImage = {
+      uri: 'file:///documents/chat-drafts/accepted-telemetry-failure.jpeg',
+      base64: '',
+      type: 'jpeg',
+      draftCreatedAt: 100,
+    };
+    const hydratedImage = { ...storedImage, base64: 'private-base64' };
+    const alertSpy = jest.spyOn(Alert, 'alert');
+    mockPendingImages = [storedImage];
+    mockHydrateDraftImages.mockResolvedValueOnce([hydratedImage]);
+    mockEmitClientEvent.mockRejectedValueOnce(
+      new Error('client_event_outbox_persistence_failed'),
+    );
+    const view = render(
+      <ChatInputBar onSend={jest.fn().mockResolvedValue(true)} isStreaming={false} />,
+    );
+
+    await act(async () => {
+      fireEvent.press(view.getByLabelText('发送消息'));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(mockReleaseImagesAfterSend).toHaveBeenCalledTimes(1);
+      expect(mockClearPersistedChatDraft).toHaveBeenCalledTimes(1);
+    });
+    expect(alertSpy).not.toHaveBeenCalledWith(
+      '发送失败',
+      expect.any(String),
+    );
+    expect(mockEmitClientEvent).toHaveBeenCalledTimes(1);
+  });
+
+  it('publishes an empty in-memory snapshot before accepted-send cleanup can trigger background persistence', async () => {
+    mockLoadChatDraft.mockResolvedValueOnce({ text: '', images: [] });
+    let snapshotPersistedDuringRelease: unknown[] | undefined;
+    let releasing = false;
+    mockPersistChatDraft.mockImplementation(async (...args: unknown[]) => {
+      if (releasing) snapshotPersistedDuringRelease = args;
+    });
+    mockReleaseImagesAfterSend.mockImplementation(() => {
+      releasing = true;
+      appStateHandler?.('background');
+      releasing = false;
+      return Promise.resolve();
+    });
+    const view = render(
+      <ChatInputBar onSend={jest.fn().mockResolvedValue(true)} isStreaming={false} />,
+    );
+    await waitFor(() => expect(mockSetPendingImages).toHaveBeenCalledWith([], 9));
+    enterKeyboardMode(view);
+    fireEvent.changeText(view.getByLabelText('消息输入框'), '已发送后不能复活');
+
+    await act(async () => {
+      fireEvent.press(view.getByLabelText('发送消息'));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(snapshotPersistedDuringRelease).toEqual([
+      '',
+      [],
+      expect.any(Number),
+      {},
+    ]);
   });
 
   it('retains the draft when send rejects immediately', async () => {
@@ -1338,10 +1599,54 @@ describe('ChatInputBar', () => {
     expect(getByLabelText('消息输入框').props.value).toBe('离线时也不能丢');
     expect(mockClearImages).not.toHaveBeenCalled();
     expect(mockClearPersistedChatDraft).not.toHaveBeenCalled();
+    expect(mockEmitClientEvent).toHaveBeenCalledWith('chat_attachment_terminal', {
+      phase: 'failed',
+      stage: 'server_accept',
+      image_count: 1,
+      duration_bucket: 'lt_1s',
+      payload_bucket: 'lt_256kb',
+      error_code: 'server_not_accepted',
+    }, expect.objectContaining({ eventKey: expect.any(String) }));
+  });
+
+  it('reports local image hydration failures without leaking draft identifiers', async () => {
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(jest.fn());
+    jest.spyOn(console, 'warn').mockImplementation(jest.fn());
+    mockPendingImages = [{
+      uri: 'file:///documents/chat-drafts/private-meal.jpeg',
+      base64: '',
+      type: 'jpeg',
+    }];
+    mockHydrateDraftImages.mockRejectedValueOnce(new Error('private file path'));
+    const onSend = jest.fn();
+    const view = render(
+      <ChatInputBar onSend={onSend} isStreaming={false} />,
+    );
+
+    await act(async () => {
+      fireEvent.press(view.getByLabelText('发送消息'));
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(alertSpy).toHaveBeenCalledWith(
+        '发送失败',
+        expect.stringContaining('草稿已保留'),
+      );
+    });
+    expect(onSend).not.toHaveBeenCalled();
+    expect(mockEmitClientEvent).toHaveBeenCalledWith('chat_attachment_terminal', {
+      phase: 'failed',
+      stage: 'local_prepare',
+      image_count: 1,
+      duration_bucket: 'lt_1s',
+      payload_bucket: 'unknown',
+      error_code: 'draft_hydration_failed',
+    }, expect.objectContaining({ eventKey: expect.any(String) }));
   });
 
   it('updates the composer when the same follow-up prompt is injected again', async () => {
-    const onSend = jest.fn();
+    const onSend = jest.fn().mockResolvedValue(true);
     const prompt = '请基于上一条建议继续追问';
     const { getByLabelText, rerender } = render(
       <ChatInputBar
@@ -1372,15 +1677,6 @@ describe('ChatInputBar', () => {
   });
 
   it('runs the medical exam import skill from the attachment menu', async () => {
-    const DocumentPicker = require('expo-document-picker');
-    DocumentPicker.getDocumentAsync.mockResolvedValueOnce({
-      canceled: false,
-      assets: [{
-        uri: 'file:///tmp/report.pdf',
-        name: 'report.pdf',
-        mimeType: 'application/pdf',
-      }],
-    });
     const skillResult = {
       skillId: 'medical_exam_import',
       card: {
@@ -1388,10 +1684,10 @@ describe('ChatInputBar', () => {
         data: { exam_id: 42, items_count: 28, review_required: true },
       },
     };
-    mockExecuteMedicalExamImport.mockResolvedValueOnce(skillResult);
+    mockExecuteMedicalExamImport.mockReturnValueOnce(skillResult);
     const onMedicalExamImportResult = jest.fn();
 
-    const { getByLabelText } = render(
+    const { getByLabelText, getByText } = render(
       <ChatInputBar
         onSend={jest.fn()}
         isStreaming={false}
@@ -1401,15 +1697,13 @@ describe('ChatInputBar', () => {
 
     fireEvent.press(getByLabelText('附件菜单'));
     fireEvent.press(getByLabelText('导入体检报告'));
-    fireEvent.press(getByLabelText('选择 PDF 或图片报告'));
+    expect(getByText('体检报告导入流程')).toBeTruthy();
+    fireEvent.press(getByLabelText('确认模拟导入'));
 
-    await waitFor(() => {
-      expect(mockExecuteMedicalExamImport).toHaveBeenCalledWith({
-        uri: 'file:///tmp/report.pdf',
-        name: 'report.pdf',
-        mimeType: 'application/pdf',
-      });
-    });
+    expect(mockExecuteMedicalExamImport).toHaveBeenCalledWith(expect.objectContaining({
+      examId: 42,
+      source: 'pdf',
+    }));
     expect(onMedicalExamImportResult).toHaveBeenCalledWith(skillResult);
   });
 });

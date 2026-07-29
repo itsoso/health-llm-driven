@@ -39,8 +39,17 @@ _NUTRIENT_LIMITS = {
     "fat": 500.0,
     "fiber": 200.0,
 }
+_NUTRITION_LABEL_UNSCALED_BASES = {
+    "nutrition_label_per_100g",
+    "nutrition_label_per_serving",
+}
+_EXPLICIT_FOOD_MASS_RE = re.compile(
+    r"(?P<amount>\d+(?:\.\d+)?)\s*"
+    r"(?P<unit>kilograms?|kg|公斤|千克|grams?|g|克|斤)(?![a-z])",
+    re.I,
+)
 
-FOOD_RECOGNITION_SYSTEM_PROMPT = """你是专业的食物识别与营养估算助手。只分析照片中清晰可见、可食用的餐食，不把界面文字、包装文案、药物或补剂识别成食物，也不要猜测被遮挡的配料。
+FOOD_RECOGNITION_SYSTEM_PROMPT = """你是专业的食物识别与营养估算助手。分析照片中清晰可见的餐食，或清晰可读的食品营养成分表；不把界面文字、按钮、药物或补剂识别成食物，也不要猜测被遮挡的配料。
 
 请严格只返回以下 JSON，不要附加说明：
 {
@@ -48,13 +57,17 @@ FOOD_RECOGNITION_SYSTEM_PROMPT = """你是专业的食物识别与营养估算�
     {
       "name": "中文食物名称",
       "quantity": "约1碗",
+      "quantity_grams": null,
+      "label_basis_grams": null,
       "calories": 320,
       "protein": 18.0,
       "carbs": 42.0,
       "fat": 9.0,
       "fiber": 4.0,
       "confidence": 0.86,
-      "portion_confidence": 0.68
+      "portion_confidence": 0.68,
+      "source": "vision_estimate",
+      "nutrition_basis": "vision_estimate"
     }
   ],
   "meal_description": "餐食简述",
@@ -67,7 +80,11 @@ FOOD_RECOGNITION_SYSTEM_PROMPT = """你是专业的食物识别与营养估算�
 3. 无法确认食物身份或营养值时使用 null，不用 0 代替未知。
 4. 不输出药品、补剂、餐食卡片文字、按钮文字或其他界面元素。
 5. 同一种食物合并为一个条目，quantity 写用户这一餐可见的总份量。
-6. 只返回合法 JSON。"""
+6. 如果图片主体是食品包装上的营养成分表，可将商品作为一个 food 返回，但只抄录标签基准值，不推断用户实际吃了多少：
+   - 标签按每 100g 标示时，quantity 写“每100g”，quantity_grams 和 label_basis_grams 都写 100，source 写 nutrition_label，nutrition_basis 写 nutrition_label_per_100g。
+   - 标签按每份标示且份量克数清晰时，quantity 写标签份量，quantity_grams 和 label_basis_grams 写该份克数，source 写 nutrition_label，nutrition_basis 写 nutrition_label_per_serving。
+   - 标签只有千焦时，除以 4.184 换算为千卡。标签基准、单位或商品身份不清楚时返回 null，不猜测。
+7. 只返回合法 JSON。"""
 
 
 def _as_number(value: Any, maximum: Optional[float] = None) -> Optional[float]:
@@ -128,6 +145,12 @@ def _sanitize_food_item(raw: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     quantity_grams = _as_number(raw.get("quantity_grams"), maximum=10000.0)
     if quantity_grams is not None:
         item["quantity_grams"] = quantity_grams
+    label_basis_grams = _as_number(
+        raw.get("label_basis_grams"),
+        maximum=10000.0,
+    )
+    if label_basis_grams is not None:
+        item["label_basis_grams"] = label_basis_grams
     for field, maximum_length in (
         ("food_id", 120),
         ("source", 80),
@@ -138,6 +161,94 @@ def _sanitize_food_item(raw: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         if value:
             item[field] = value
     return item
+
+
+def apply_user_stated_amount_to_nutrition_label(
+    result: Dict[str, Any],
+    user_message: str,
+) -> Dict[str, Any]:
+    """Scale one product label locally without sending free-form text upstream."""
+    transformed = dict(result)
+    foods = [
+        dict(food)
+        for food in result.get("foods") or []
+        if isinstance(food, dict)
+    ]
+    label_indexes = [
+        index
+        for index, food in enumerate(foods)
+        if _is_unscaled_nutrition_label(food)
+    ]
+    if not label_indexes:
+        return transformed
+
+    consumed_grams = _single_explicit_food_mass_grams(user_message)
+    if len(label_indexes) != 1 or consumed_grams is None:
+        transformed["nutrition_label_requires_amount"] = True
+        transformed["foods"] = foods
+        return transformed
+
+    food = foods[label_indexes[0]]
+    basis = str(food.get("nutrition_basis") or "").strip().lower()
+    basis_grams = _as_number(food.get("label_basis_grams"), maximum=10000.0)
+    if basis_grams is None and basis == "nutrition_label_per_100g":
+        basis_grams = 100.0
+    if basis_grams is None:
+        basis_grams = _as_number(food.get("quantity_grams"), maximum=10000.0)
+    if basis_grams is None or basis_grams <= 0:
+        transformed["nutrition_label_requires_amount"] = True
+        transformed["foods"] = foods
+        return transformed
+
+    factor = consumed_grams / basis_grams
+    for field in _NUTRIENT_LIMITS:
+        value = _as_number(food.get(field), maximum=_NUTRIENT_LIMITS[field])
+        if value is not None:
+            food[field] = round(value * factor, 1)
+    food["quantity"] = f"{_display_grams(consumed_grams)}g"
+    food["quantity_grams"] = round(consumed_grams, 1)
+    food["source"] = "nutrition_label"
+    food["nutrition_basis"] = "nutrition_label_scaled"
+    foods[label_indexes[0]] = food
+    transformed["foods"] = foods
+    transformed["nutrition_label_amount_applied"] = True
+    return transformed
+
+
+def _is_unscaled_nutrition_label(food: Dict[str, Any]) -> bool:
+    basis = str(food.get("nutrition_basis") or "").strip().lower()
+    if basis in _NUTRITION_LABEL_UNSCALED_BASES:
+        return True
+    if basis != "nutrition_label":
+        return False
+    quantity = re.sub(r"\s+", "", str(food.get("quantity") or "")).lower()
+    return bool(
+        re.search(r"每(?:100)?(?:g|克)", quantity)
+        or _as_number(food.get("label_basis_grams"), maximum=10000.0)
+        is not None
+    )
+
+
+def _single_explicit_food_mass_grams(text: str) -> Optional[float]:
+    matches: List[float] = []
+    for match in _EXPLICIT_FOOD_MASS_RE.finditer(str(text or "")):
+        prefix = str(text or "")[max(0, match.start() - 1):match.start()]
+        if prefix == "每":
+            continue
+        amount = float(match.group("amount"))
+        unit = match.group("unit").lower()
+        if unit in {"kg", "kilogram", "kilograms", "公斤", "千克"}:
+            amount *= 1000
+        elif unit == "斤":
+            amount *= 500
+        if 0 < amount <= 10000:
+            matches.append(round(amount, 3))
+    unique = sorted(set(matches))
+    return unique[0] if len(unique) == 1 else None
+
+
+def _display_grams(value: float) -> str:
+    return str(int(value)) if float(value).is_integer() else str(round(value, 2))
 
 
 def sanitize_food_recognition_result(result: Dict[str, Any]) -> Dict[str, Any]:
@@ -216,6 +327,123 @@ def sanitize_food_recognition_result(result: Dict[str, Any]) -> Dict[str, Any]:
     sanitized["meal_description"] = "、".join(descriptions)[:300]
     sanitized["success"] = True
     return sanitized
+
+
+def merge_food_recognition_results(
+    results: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Merge independent views of one meal without double-counting dishes.
+
+    The existing privacy boundary remains unchanged: each photo is recognized
+    through the current single-image provider call, then only sanitized JSON is
+    merged locally. Same dish + same portion is an alternate view. Conflicting
+    portions are retained once and force manual confirmation upstream.
+    """
+    merged_foods: List[Dict[str, Any]] = []
+    food_positions: Dict[str, int] = {}
+    conflict = False
+    ambiguous_duplicate = False
+    health_tips: Optional[str] = None
+    safe_errors: List[str] = []
+    consumed_fractions: List[float] = []
+    consumed_fraction_labels: List[str] = []
+
+    for raw_result in results:
+        result = sanitize_food_recognition_result(raw_result)
+        if not result.get("success"):
+            error = str(result.get("error") or "").strip()
+            if error:
+                safe_errors.append(error)
+            continue
+        if health_tips is None and result.get("health_tips"):
+            health_tips = str(result["health_tips"])
+        raw_fraction = raw_result.get("consumed_fraction")
+        fraction = (
+            float(raw_fraction)
+            if isinstance(raw_fraction, (int, float))
+            and not isinstance(raw_fraction, bool)
+            and math.isfinite(float(raw_fraction))
+            else None
+        )
+        label = str(raw_result.get("consumed_fraction_label") or "").strip()
+        if fraction is not None and 0 < fraction < 1:
+            consumed_fractions.append(fraction)
+            if label:
+                consumed_fraction_labels.append(label)
+        for food in result.get("foods") or []:
+            if not isinstance(food, dict):
+                continue
+            name_key = re.sub(r"\s+", "", str(food.get("name") or "")).lower()
+            if not name_key:
+                continue
+            existing_position = food_positions.get(name_key)
+            if existing_position is None:
+                food_positions[name_key] = len(merged_foods)
+                merged_foods.append(dict(food))
+                continue
+
+            existing = merged_foods[existing_position]
+            # Independent photos do not prove whether this is another view of
+            # one serving or a second identical serving. Keep one conservative
+            # estimate but force confirmation instead of silently undercounting.
+            ambiguous_duplicate = True
+            conflict = True
+            existing_quantity = re.sub(
+                r"\s+",
+                "",
+                str(existing.get("quantity") or ""),
+            ).lower()
+            incoming_quantity = re.sub(
+                r"\s+",
+                "",
+                str(food.get("quantity") or ""),
+            ).lower()
+            if (
+                existing_quantity
+                and incoming_quantity
+                and existing_quantity != incoming_quantity
+            ):
+                conflict = True
+                continue
+            if not existing_quantity and incoming_quantity:
+                merged_foods[existing_position] = dict(food)
+                continue
+            existing_confidence = _as_probability(existing.get("confidence")) or 0
+            incoming_confidence = _as_probability(food.get("confidence")) or 0
+            if incoming_confidence > existing_confidence:
+                merged_foods[existing_position] = dict(food)
+
+    if not merged_foods:
+        return {
+            "success": False,
+            "error": safe_errors[0] if safe_errors else "图片中未识别到可记录的食物，请重新拍摄餐食本身。",
+            "foods": [],
+            "multi_photo_conflict": False,
+        }
+
+    merged = sanitize_food_recognition_result({
+        "success": True,
+        "foods": merged_foods,
+        "health_tips": health_tips,
+    })
+    merged["multi_photo_conflict"] = conflict
+    merged["multi_photo_ambiguous_duplicate"] = ambiguous_duplicate
+    merged["source_image_count"] = len(results)
+    if consumed_fractions:
+        first_fraction = consumed_fractions[0]
+        if all(abs(value - first_fraction) < 1e-6 for value in consumed_fractions):
+            merged["consumed_fraction"] = first_fraction
+            if consumed_fraction_labels:
+                merged["consumed_fraction_label"] = consumed_fraction_labels[0]
+        else:
+            merged["multi_photo_conflict"] = True
+    confidences = [
+        confidence
+        for food in merged.get("foods") or []
+        if (confidence := _as_probability(food.get("confidence"))) is not None
+    ]
+    merged["multi_photo_min_confidence"] = min(confidences) if confidences else None
+    return merged
 
 
 def extract_json_from_text(text: str) -> str:
@@ -312,7 +540,7 @@ class FoodRecognitionService:
         try:
             # 构建图片URL
             data_url = f"data:image/{image_type};base64,{image_base64}"
-            logger.info(f"调用 LLM Vision API 识别食物")
+            logger.info("调用 LLM Vision API 识别食物")
 
             provider = self._get_provider()
             from app.services.llm.usage_tracker import set_caller

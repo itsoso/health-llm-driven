@@ -435,7 +435,10 @@ jobs:
 
       - name: Audit production dependencies
         working-directory: mobile
-        run: npm audit --omit=dev --audit-level=high
+        run: node ../scripts/npm-audit-gate.mjs --policy npm-audit-policy.json
+
+      - name: Test dependency audit gate
+        run: node --test scripts/npm-audit-gate.test.mjs
 
       - name: TypeScript check
         working-directory: mobile

@@ -152,6 +152,62 @@ class TestVoiceCommandAPI:
         assert response.status_code == 200
         assert response.json()["matched"] is False
 
+    def test_api_records_runtime_ledger_for_direct_voice_write(
+        self,
+        client,
+        db,
+        monkeypatch,
+    ):
+        from app.config import settings
+        from app.models.agent_runtime import AgentRun, AgentToolOperation
+        from app.services.auth import auth_service
+
+        user = User(
+            name="Runtime语音用户",
+            phone="13800138004",
+            is_active=True,
+            is_approved=True,
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        token = auth_service.create_access_token({"sub": str(user.id)})
+        monkeypatch.setattr(settings, "agent_runtime_mode", "enforce")
+
+        response = client.post(
+            "/api/v1/chat/voice-command",
+            json={
+                "text": "喝了250ml水",
+                "client_turn_id": "voice-runtime-1",
+            },
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["execution_status"] == "recorded"
+        run = db.query(AgentRun).filter_by(
+            user_id=user.id,
+        ).one()
+        assert run.client_turn_id.startswith("voice-command-")
+        assert run.client_turn_id != "voice-runtime-1"
+        assert run.status == "succeeded"
+        operation = db.query(AgentToolOperation).filter_by(run_id=run.run_id).one()
+        assert operation.status == "succeeded"
+        assert operation.resource_id is not None
+
+        replay = client.post(
+            "/api/v1/chat/voice-command",
+            json={
+                "text": "喝了250ml水",
+                "client_turn_id": "voice-runtime-1",
+            },
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert replay.status_code == 200
+        assert replay.json()["execution_status"] == "recorded"
+        assert db.query(AgentRun).filter_by(user_id=user.id).count() == 1
+        assert db.query(WaterIntake).filter_by(user_id=user.id).count() == 1
+
     def test_api_requires_auth(self, client):
         response = client.post("/api/v1/chat/voice-command", json={"text": "喝了300ml水"})
         assert response.status_code in [401, 403]

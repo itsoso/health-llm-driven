@@ -296,9 +296,6 @@ export default function SettingsScreen() {
 
         <Text style={txt.sectionLabel}>账号与隐私</Text>
         <View style={styles.card}>
-          <SettingRow icon="options-outline" label="运行模式"
-            value="云端账号"
-            onPress={() => router.push('/app-mode' as any)} />
           <SettingRow icon="key-outline" label="账号安全"
             value={(user as any)?.has_password ? '修改密码' : '设置密码'}
             onPress={() => router.push('/account-security' as any)} />
@@ -403,7 +400,14 @@ function SettingRow({
   const Wrapper = onPress ? TouchableOpacity : View;
   const color = destructive ? revaSemantic.risk.fg : C.ink2;
   return (
-    <Wrapper style={styles.settingRow} onPress={onPress} activeOpacity={0.6}>
+    <Wrapper
+      style={styles.settingRow}
+      onPress={onPress}
+      activeOpacity={0.6}
+      accessibilityRole={onPress ? 'button' : undefined}
+      accessibilityLabel={onPress ? label : undefined}
+      accessibilityValue={onPress && value ? { text: value } : undefined}
+    >
       <Ionicons name={icon} size={18} color={color} />
       <Text style={[txt.settingLabel, destructive && { color }]}>{label}</Text>
       <Text style={[txt.settingValue, destructive && { color }]}>{value || ''}</Text>

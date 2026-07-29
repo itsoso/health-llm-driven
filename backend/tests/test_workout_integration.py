@@ -1,10 +1,12 @@
 """Workout 集成到 Twin + movement_coach 的测试."""
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
-import pytest
-
+from app.agents.safety_guardian import evaluate_safety
 from app.models.daily_health import WorkoutRecord
+from app.models.action_card import ActionCard
+from app.services.action_card_surface import surface_safety_alerts
 from app.twin.schema import WorkoutSummary, HealthTwin, TwinMeta, BehavioralState
+from app.utils.timezone import get_user_today
 
 
 def _mk_user(db):
@@ -54,8 +56,9 @@ class TestTwinBuilderFillsWorkouts:
     def test_recent_workout_populated(self, db):
         """最近 7 天的 WorkoutRecord 应该进 twin.behavioral.recent_workouts."""
         u = _mk_user(db)
+        today = get_user_today(db, u.id)
         db.add(WorkoutRecord(
-            user_id=u.id, workout_date=date.today() - timedelta(days=2),
+            user_id=u.id, workout_date=today - timedelta(days=2),
             workout_type="running",
             duration_seconds=45 * 60, distance_meters=8500,
             avg_heart_rate=152, max_heart_rate=178,
@@ -76,11 +79,90 @@ class TestTwinBuilderFillsWorkouts:
         assert w.training_effect_aerobic == 3.2
         assert "workout" in sources
 
+    def test_sparse_training_does_not_publish_reliable_acwr(self, db):
+        """只有近期一次训练、没有三周慢性基线时，Twin 必须标记 ACWR 不可靠。"""
+        u = _mk_user(db)
+        today = get_user_today(db, u.id)
+        db.add(WorkoutRecord(
+            user_id=u.id,
+            workout_date=today - timedelta(days=1),
+            workout_type="walking",
+            duration_seconds=30 * 60,
+            avg_heart_rate=110,
+            training_load=20,
+        ))
+        db.commit()
+
+        twin, _ = self._fill(db, u.id)
+
+        assert twin.behavioral.training_load_7d > 0
+        assert twin.behavioral.acute_chronic_ratio is None
+        assert twin.behavioral.acwr_reliable is False
+        rule_ids = {alert.rule_id for alert in evaluate_safety(twin).alerts}
+        assert "training.acwr_overload" not in rule_ids
+
+    def test_real_baseline_surfaces_and_reconciles_acwr_alert(self, db):
+        u = _mk_user(db)
+        today = get_user_today(db, u.id)
+        for days_ago, duration_minutes in ((0, 120), (8, 30), (14, 30), (21, 30)):
+            db.add(
+                WorkoutRecord(
+                    user_id=u.id,
+                    workout_date=today - timedelta(days=days_ago),
+                    workout_type="running",
+                    duration_seconds=duration_minutes * 60,
+                    external_id=f"e2e-acwr-{days_ago}",
+                )
+            )
+        db.commit()
+
+        twin, _ = self._fill(db, u.id)
+        report = evaluate_safety(twin)
+        overload = next(
+            alert
+            for alert in report.alerts
+            if alert.rule_id == "training.acwr_overload"
+        )
+        surface_safety_alerts(
+            db,
+            u.id,
+            [overload],
+            reconcile_rule_ids={
+                "training.acwr_overload",
+                "training.acwr_undertraining",
+            },
+        )
+        card = (
+            db.query(ActionCard)
+            .filter(
+                ActionCard.user_id == u.id,
+                ActionCard.source_id == "training.acwr_overload",
+            )
+            .one()
+        )
+        assert twin.behavioral.acwr_reliable is True
+        assert card.status == "active"
+        assert card.is_visible is True
+
+        surface_safety_alerts(
+            db,
+            u.id,
+            [],
+            reconcile_rule_ids={
+                "training.acwr_overload",
+                "training.acwr_undertraining",
+            },
+        )
+        db.refresh(card)
+        assert card.status == "archived"
+        assert card.is_visible is False
+
     def test_old_workout_excluded(self, db):
         """10 天前的不进 (cutoff = 7 天)."""
         u = _mk_user(db)
+        today = get_user_today(db, u.id)
         db.add(WorkoutRecord(
-            user_id=u.id, workout_date=date.today() - timedelta(days=10),
+            user_id=u.id, workout_date=today - timedelta(days=10),
             workout_type="running", duration_seconds=1800,
         ))
         db.commit()
@@ -89,9 +171,10 @@ class TestTwinBuilderFillsWorkouts:
 
     def test_ordered_desc_by_date(self, db):
         u = _mk_user(db)
+        today = get_user_today(db, u.id)
         for i in [5, 1, 3]:
             db.add(WorkoutRecord(
-                user_id=u.id, workout_date=date.today() - timedelta(days=i),
+                user_id=u.id, workout_date=today - timedelta(days=i),
                 workout_type=f"t{i}", duration_seconds=1200,
             ))
         db.commit()

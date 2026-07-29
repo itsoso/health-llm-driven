@@ -3,13 +3,13 @@
 // getDate() 已经是前一天 → 单次 "-1" 会跳 2 个日历日 (prod 上把午餐记到 2 天前)。
 // 因此这里对 "YYYY-MM-DD" 一律拆成本地年月日构造, 绝不 `new Date(string)`。
 
-function fmtLocal(d: Date): string {
+export function formatLocalDate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 /** 当前本地日历日 (YYYY-MM-DD)。`new Date()` 取当前瞬时 + 本地 getters → 本地日, 天生时区安全。 */
 export function todayStr(): string {
-  return fmtLocal(new Date());
+  return formatLocalDate(new Date());
 }
 
 /**
@@ -20,5 +20,5 @@ export function offsetDate(base: string, offset: number): string {
   const [y, m, d] = base.split('-').map(Number);
   const dt = new Date(y, m - 1, d); // 本地组件构造, 非 UTC 字符串解析
   dt.setDate(dt.getDate() + offset);
-  return fmtLocal(dt);
+  return formatLocalDate(dt);
 }

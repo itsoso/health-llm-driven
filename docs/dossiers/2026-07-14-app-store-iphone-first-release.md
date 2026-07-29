@@ -5,7 +5,7 @@
 | slug | `app-store-iphone-first-release` |
 | 创建日期 | 2026-07-14 |
 | 当前阶段 | S7 上线验证 |
-| 状态 | app_store_connect_ready_pending_physical_g6 |
+| 状态 | build_237_internal_testflight_pending_physical_g6 |
 | 负责 | Codex |
 | 目标版本 | iPhone App Store RC |
 
@@ -77,7 +77,7 @@ RequirementAdmission:
 - [ ] R4 Agent 核心写入、语音、拍照、分享和渲染回归（自动化与模拟器已过；真机待测）。
 - [x] R5 安全、依赖、可访问性和审核材料 Gate。
 - [x] R6 commit/push、前后端部署、新 EAS production build 与 TestFlight 上传。
-- [ ] R7 在 Build 227 上完成真机 G6 并补齐 App Review 材料。
+- [ ] R7 在 Build 237 上完成真机 G6 并补齐 App Review 材料。
 
 ## Gate Ledger
 
@@ -87,8 +87,8 @@ RequirementAdmission:
 | G2 可行性/安全 | PASS | 已冻结范围与医疗/隐私边界 |
 | G3 测试 | PASS | 当前 `main`=`56875570b` 的 GitHub Actions run `29417247062` 28/28 jobs 通过；Mobile 245 suites / 1731 tests、Web 43 files / 243 tests、TypeScript、Lint、生产构建通过；Harness invariants 12/12、core 50/50、live orchestrator 5/5 通过 |
 | G4 安全 | PASS | 生产包无后台录音/持续定位；账号删除、隐私清单、写入回执 fail-closed 已复核 |
-| G5 部署健康 | PASS | 生产运行提交 `c26ddcebb`，前后端部署健康度 60/60；EAS Build 227 从 `838bfa9bb` 构建完成，Submission `16964993-cfdf-442d-8655-cf9104ca0235` 已被 App Store Connect 接收 |
-| G6 真机验证 | BLOCKED | 必须在同一 TestFlight Build 227 完成真实 iPhone 语音/拍照/微信与小红书分享/写入/删除状态证据 |
+| G5 部署健康 | PASS | 后端生产健康度 60/60；App Store Connect 中 version 1.3.2 Build 237 为 `VALID`、未过期且内部 `IN_BETA_TESTING` |
+| G6 真机验证 | BLOCKED | 必须在同一 TestFlight Build 237 完成真实 iPhone 语音、切 App 恢复、草稿、滚动、拍照、图片/视频播放分享、微信/小红书跳转、写入纠正删除及账号删除证据 |
 
 ## Correction Block
 
@@ -145,3 +145,88 @@ RequirementAdmission:
 - 用 Build 227 运行严格 final-submit Gate，确认现有 `226-ready` 截图 manifest 会因 build 不一致被拒绝。Apple 要求截图准确反映当前核心体验；本项目继续采用更严格的同 Build 证据，不通过改 manifest 绕过，待真机可用后从 Build 227 重新确认或采集截图。
 - App Store Connect 浏览器会话当前返回登录失败，未代替发布负责人登录或提交声明。已上传的 Build 227 保持 `VALID`、绑定 1.3.1 且未 Submit for Review。
 - 当前剩余四项：Build 227 真实 iPhone G6、Build 227 截图证据、App Privacy 发布确认、受监管医疗器械状态 `No`。上述四项未完成前，submission pack 和 Review Notes 必须保持 Draft。
+
+## 2026-07-24 Build 235 Reliability Baseline
+
+- EAS 只读核验显示最新标准 production 构建为 version 1.3.2 Build 235，EAS build ID `d6b5f7de-1208-488d-8799-4b6f8a76b011`，源提交 `371dacc60ba3f218edec4b367ea61472798904a2`。
+- App Store Connect API 回读 Build 235：`VALID`、`expired=false`、内部测试状态 `IN_BETA_TESTING`；外部测试状态为 `READY_FOR_BETA_SUBMISSION`，尚未进入外部 Beta Review。
+- 修复联网状态误判：连接存在但 `isInternetReachable=false` 时显示离线；探测中的 `null` 保持最近可信状态，避免前后台切换时在线/离线闪烁。
+- OTA 应用前新增统一保存闸门。聊天输入框会同步落盘当前文字和图片草稿；保存失败时停止重载并提示稍后重试，禁止以更新成功为由丢失用户输入。
+- 真机证据模板从 12 项扩展到 20 项，并强制记录 app version、production profile、EAS build ID 和 source commit。新增流式 Markdown、外部音频打断、图片保存分享、视频播放不二次生成、写入纠正删除幂等、前台恢复、草稿保留和最新消息定位。
+- production OTA 已从提交 `a9bb9b8752d3313722c8d2deca70220e12b70b6f` 发布到 runtime `1.3.2`：update group `c96503a6-91f3-467c-9051-a9e18bd8b2a6`，iOS update `019f92f8-6957-7a4c-a8fe-71689563d8c6`。
+- 当前仍不可提交审核：Build 235 真机 20 项证据、同 Build 截图复核、App Privacy 发布确认和受监管医疗器械状态 `No` 均未完成。发布材料继续保持 Draft。
+
+## 2026-07-24 Final Gate Recheck
+
+- 当前代码基线为 `main=670984598`，工作区干净；基础 release-pack 与 iOS submission preflight 均通过。
+- 在加载发布机密钥并允许联网后，严格 final-submit gate 不再报告 App Store Connect 凭证、Review 演示账号或联系人缺失，证明这些发布机配置和演示登录链路可用。
+- 历史 `226-ready` 截图集本身通过尺寸、隐私和素材完整性检查，但严格门禁按预期拒绝其用于 Build 235：manifest 中 `build_id=226`，与目标 `235` 不一致。不得通过改写 manifest 绕过同 Build 复核。
+- CoreDevice 仍能识别已配对的 iPhone 17 Pro Max `suntice`，但状态为 `unavailable`；因此无法执行 Build 235 的 20 项物理 iPhone 验收，模拟器不得代替外部音频打断、真实语音、相机/相册、微信/小红书跳转和前后台恢复证据。
+- 严格门禁的真实剩余阻断仍为四项：Build 235 真机验收文件、Build 235 截图证据、App Privacy 已发布确认、受监管医疗器械状态 `No`。submission pack 与 Review Notes 的 Draft 标记是上述阻断的保护结果，不应提前移除。
+
+## 2026-07-24 Build 236 TestFlight Release
+
+- 从干净源码提交 `d1a5e8aa83cf7409728fd72fe5efe89b3e9fda1a` 执行 iOS production 构建；App Version `1.3.2`，Build `236`，runtime `1.3.2`，production channel，App Store distribution。
+- 发布前基础 release-pack、App Store Connect 凭证预检、TypeScript、设计约束和 lint 均通过；Mobile 全量回归为 285 suites / 2103 passed / 1 skipped / 1 snapshot passed。Jest 存在既有异步句柄未退出提示，使用 `--forceExit` 取得明确 exit 0，断言无失败。
+- EAS Build ID `d405e79a-ea2e-4b4a-b14d-de5304a893be` 状态为 `FINISHED`；EAS Submission ID `251e1432-694c-411d-a7c9-e3b88af57f5e` 已成功把二进制上传至 App Store Connect。
+- App Store Connect API 回读 Build ID `907487ef-c0a1-42ee-9654-ae02a15e6d82`：`processingState=VALID`、`expired=false`、`internalBuildState=IN_BETA_TESTING`，Build 236 已可供内部 TestFlight 安装；外部状态为 `READY_FOR_BETA_SUBMISSION`，未提交外部 Beta Review。
+- G6 继续 `BLOCKED`：真机验收和同 Build 截图目标从 Build 235 切换为 Build 236；App Privacy 发布确认及受监管医疗器械状态 `No` 仍未完成，禁止据此提交 App Review。
+
+## 2026-07-25 Build 237 App Review Hardening
+
+- 当前内部 TestFlight 候选为 version 1.3.2 Build 237。EAS Build ID `7a7df837-50b8-46ed-97a8-983fc8ea3a07`，Submission ID `e8202581-365c-4c6a-83c5-16b6b92928b0`，App Store Connect Build ID `caeb6880-2fae-41a9-8324-58156b8e4ac3`；状态为 `VALID`、内部 `IN_BETA_TESTING`、外部 `READY_FOR_BETA_SUBMISSION`。
+- 修复语音会话退出竞态：关闭页面或重置时先清空待播队列再取消当前播放器，阻止同步完成回调继续播放下一段；同时托管“播完继续听”定时器，组件卸载后不得重新打开麦克风。
+- 修复前台通知横幅竞态：旧通知的退出动画被新通知替换时，只有动画真实完成且标识仍匹配才允许清空当前横幅，防止新通知被旧回调误删。
+- 修复训练详情异步串页：训练切换时立即重置分析状态并取消旧请求的状态写回，避免较慢的上一条训练分析覆盖当前训练。
+- 新增三项回归测试，先证明旧实现会继续播放、清除新通知及写回过期训练分析，再验证修复。定向测试在 `--detectOpenHandles` 下 3 suites / 5 tests 通过；TypeScript 和改动文件 ESLint 通过；Mobile 全量回归 278 suites / 2083 passed / 1 skipped / 1 snapshot passed。
+- 提交 `3c680aa54b75437105643002403234aa7db855bc` 已推送 `main` 并发布至 iOS production OTA/runtime 1.3.2：update group `ba275b4d-2a7c-4fd6-bc22-0cc01dfabb97`，iOS update `019f99d6-c363-7f21-a9cb-ed6508729a74`。该 OTA 只包含当前原生接口可承载的 JS/TS 修复，不替代 Build 237 的同 Build 真机 G6。
+- 2026-07-24 新发布的 `brace-expansion` 高危 DoS 公告会被 `npm audit --omit=dev` 报告为 37 条传递性路径。当前路径来自 React Native、Expo 配置插件、Voice/Health 原生模块的 Node 构建工具，不进入 iOS JS bundle，也没有把用户输入传给 Node glob/brace 展开。上游仅为 5.x 发布兼容补丁，强制修复会升级 React Native 主版本，因此本轮记录为构建时残余风险，不做破坏性强升；每个候选版本继续重跑 audit，出现运行时可达路径、critical 或兼容补丁后未升级时阻断发布。
+- 依赖闸门已改为机器可验证的窄例外：`scripts/npm-audit-gate.mjs` 递归解析所有 high/critical 路径，只允许 `mobile/npm-audit-policy.json` 中 GHSA-mh99-v99m-4gvg，且例外于 2026-08-15 自动到期。未知、过期、无法解析或新增 advisory 均 fail-closed；Node gate 自测 4/4 通过，真实 mobile audit 37 条传递路径全部只归因到该单一 advisory。
+- 修复复合健康记录被单目标保护错误压平的问题：`记录早餐鸡蛋和喝水300ml` 曾被编译成单一 water goal，两个工具调用都被规范化为同一喝水写入，第二条又被幂等去重，导致早餐丢失且不生成配方卡。现在复合餐饮+饮水、多次饮水、症状+饮水及多症状请求均退出 single-target canonicalization，保留正常多工具链。目标编译/守卫/配方相关回归共 58/58 通过，原 CI 失败用例恢复。
+- 严格 final-submit gate 仍按预期失败：Build 237 物理 iPhone 20 项验收、同 Build 截图集、App Privacy 已发布确认、受监管医疗器械声明 `No`、发布机 App Store Connect 凭据与 Review 联系/演示账号注入尚未在本工作区完成。submission pack 与 Review Notes 必须保持 Draft。
+
+## 2026-07-25 Mobile Session And Calendar Hardening
+
+- 修复前后台会话竞态：冷启动或前台 `/auth/me` 的旧结果不得在退出登录、401 清理或新登录后回填旧用户；AuthProvider 卸载时注销全局 401 callback，避免旧 Provider 继续修改新树状态。
+- 每个 API 请求记录发送时使用的认证 token（仅保存在 Axios config，不进入请求头或日志）。延迟返回的旧 token 401 不再清除当前新会话；当前 token 的 401 与 Web 无 Bearer 会话仍保持原登出语义。
+- SecureStore 与共享 Keychain 的 token 写入/删除改为同一串行队列。旧登出尚未完成时的新登录会在删除完成后持久化，避免切账号或快速重登后 token 被过期删除任务擦除。
+- 清理用户日历日的 UTC 漂移：体重、血压、饮水/补剂、症状、用药、目标、趋势、训练卡、化验和基因导入统一使用本地日历日，避免美国等负 UTC 时区晚间记录落到第二天或上一天。
+- 修复页面生命周期竞态：新的撤销提示不会被上一条 5 秒定时器清除；周报延迟刷新、训练语音播放和兜底超时均在卸载时停止；位置、化验编辑、化验列表与解释面板按最新数据刷新。
+- TDD 新增认证旧结果、旧 401、存储删除/写入竞态和本地日期回归。重放并发图片保存修复后的 Mobile 全量回归为 278 suites / 2090 passed / 1 skipped / 1 snapshot passed；TypeScript、设计 token、App Store submission preflight、release pack 和 `git diff --check` 通过；lint 为 0 errors / 93 个既有 warnings。生产依赖 audit 通过，仅保留 `brace-expansion` 至 2026-08-15 的构建时窄例外。
+- 本轮全部为 JS/TS 变更，不新增原生权限、隐私数据类别或原生模块，可发布 production OTA；OTA 不能代替 Build 237 的物理 iPhone G6 和同 Build 截图复核。
+- G6 继续 `BLOCKED`：Build 237 物理 iPhone 20 项验收、同 Build 截图、App Privacy 发布确认、受监管医疗器械状态 `No` 及最终 Review 联系/演示账号资料仍须人工完成。上述证据齐全前不得移除 Draft 或点击 Submit for Review。
+
+## 2026-07-26 Login Persistence Recovery
+
+- 真实 iPhone 验收发现：用户成功登录后终止并重新启动 Build 237，客户端仍可能回到登录页。根因有两条：登录接口只要后端成功就允许 token 仅留在内存，即使 SecureStore 与共享 Keychain 都没有可靠落盘；冷启动已读到 token 但 `/auth/me` 因临时网络错误失败时，路由层把“用户资料待恢复”误判成未登录。
+- 登录成功条件改为 durable write：SecureStore 或共享 Keychain 至少一处必须写入并读回完全相同的 token，否则清理运行时 token 并提示“登录状态无法安全保存”，禁止制造下次冷启动必丢的假成功。共享 Keychain 原生模块返回非零 OSStatus 时也会显式失败，不再把 resolved Promise 当成写入成功。
+- 会话恢复成为独立 UI 状态：已持有 token 但用户资料暂未恢复时显示“正在恢复登录状态”，自动重试并允许手动重新连接；只有明确的 401 才清理 token 并回到登录页，断网、切换 App 或服务短暂不可用不会要求二次登录。
+- TDD 覆盖双存储失败、写后不可读、登出与新登录并发、token 存在但用户资料待恢复。Mobile 全量回归 278 suites / 2092 passed / 1 skipped / 1 snapshot passed，TypeScript 通过，改动文件 ESLint 0 errors（保留既有 import/require warnings）。
+- 本轮为 JS/TS 修复，可通过 runtime 1.3.2 production OTA 下发。G6 在 OTA 后仍需用 Build 237 做“登录一次 -> 终止进程 -> 重启 -> 进入 Agent 页面”的 USB 真机验证；验证通过前不得把登录持久化标记为最终完成。
+- 第一轮 OTA 的连续冷启动验收暴露了更深层原因：任意业务接口的单次 401 都会触发全局回调并删除 SecureStore token；`/auth/me` 自身的 401 还会再次进入同一回调。首次启动仍可显示缓存页面，但下一次进程启动已经没有持久凭证，因此回到登录页。
+- 会话失效判定改为两阶段：业务接口 401 只触发一次 single-flight `/auth/me` 复核；鉴权接口不进入全局 401 回调；`/auth/me` 连续两次返回 401 才清理 token。一次部署、代理或端点策略抖动不得永久登出，真正失效的凭证仍能回到登录页。
+- 新增非敏感 AsyncStorage 恢复标记，仅记录“曾成功持久化会话”，不保存 token、账号或健康数据。已知会话冷启动时扩大 Keychain 读取窗口；成功恢复和登录会刷新标记，显式登出或确认失效会清除标记。
+- 新增业务 401 复核、鉴权接口隔离、瞬时 `/auth/me` 401、确认失效及已知会话 Keychain 延迟可读回归。定向认证回归 45/45、TypeScript、`git diff --check` 通过；全量 Mobile 断言 278 suites / 2096 passed / 1 skipped / 1 snapshot passed。G6 仍需在修复 OTA 上重新登录一次后连续终止/启动两轮均进入 Agent 页面。
+- 修复提交 `2518aea9a6651d9ea103e8f07e766aea7447566b` 已推送 `main`，并发布 runtime 1.3.2 production OTA：update group `752c2637-2e94-455a-9501-97551c7b1e46`，iOS update `019f9cf4-1d6f-7a19-a43f-cf04a7515d82`。
+- Build 237 在真实 iPhone 17 Pro Max 上应用该 OTA 后，连续两次执行“终止进程 -> 冷启动”，均在约 4 秒内直接进入 Agent 页面，未出现登录页或二次登录。结果包：`/tmp/RevaAuthPersistencePostFixCold1.xcresult`、`/tmp/RevaAuthPersistencePostFixCold2.xcresult`。
+- 登录持久化真机子项判定为 `PASS`。完整 G6 仍保持 `BLOCKED`，其余语音、拍照、分享、写入纠正删除、账号删除及同 Build 截图等验收项目不得由本子项代替。
+- 临时 XCUITest 已固化为仓库脚本 `scripts/run_ios_real_device_acceptance.sh`。脚本对已安装 production App 执行非破坏性启动、登录态 Agent surface、今日简报、草稿前后台恢复、隐私政策与账号删除入口检查，保留 `.xcresult` 和截图；不会提交健康记录、授权权限或删除账号。
+- 验收工程在 Xcode 26.5 的 iOS Simulator SDK 上 `build-for-testing` 成功。发布机 App Store Connect API 凭证预检通过；当前物理 iPhone 在 CoreDevice 中为 offline，浏览器控制会话未继承 App Store Connect 登录，因此剩余真机项目、App Privacy 发布和受监管医疗器械声明仍不得标记完成。
+
+## 2026-07-26 Build 237 Release Simulator Evidence
+
+- 从 `main=e67a1a2e6f0fef04590e59b7067d34bf1c06f51d` 重新完成 iPhone 17 Pro Max Release 模拟器构建、安装和启动。已安装二进制的 `Info.plist` 回读为 App Version `1.3.2`、Build `237`；应用直接进入已登录 Agent 页面，输入草稿为空，证明本轮安装后仍能恢复演示会话。
+- 设置页的版本来源已改为优先读取已安装原生二进制信息；服务层回归 16 项、TypeScript、ESLint 和 Release 模拟器构建通过。版本行的最终可视滚动复核仍需解锁发布机后完成，不能只凭源码测试替代 UI 证据。
+- App Store 截图脚本原先把 `01-today` 深链写成 `/`。该路径现在按 Agent Native 路由约定重定向到 Chat，导致 `00-launch`、`01-today`、`02-chat` 连续出现同一段对话；`/chat`、`/record` 也不是当前 Tab 的规范路径。
+- 截图脚本现改为 `/(tabs)/today`、`/(tabs)/chat`、`/(tabs)/record`，并新增静态回归测试锁定捕获和 manifest 的同一规范路由。修复后重新截图确认 `01-today` 进入今日行动页，`02-chat` 进入 Agent 对话页，`03-record` 进入健康记录页。
+- 当前截图只完成候选素材审查，尚未标记 `app_store_ready`：Agent 对话页展示“无法自动同步 Garmin”的低价值样例，设置页展示演示邮箱；两者不适合作为公开营销素材。健康记录、导入健康档案和隐私政策页可保留，剩余素材需在演示账号中重新策展后再导出 1290 x 2796。
+- CoreDevice 仍识别 iPhone `suntice`，但 `available=false`，提示设备需解锁并通过线缆可发现；因此 20 项物理 iPhone 证据仍未执行。App Privacy 发布确认和受监管医疗器械声明 `No` 也未在 App Store Connect 登录态页面核验。
+- G6 保持 `BLOCKED`。不得因为 Release 模拟器构建、登录恢复或部分截图通过而移除 Draft 或点击 Submit for Review。
+
+## 2026-07-26 Deterministic Review Conversation
+
+- 截图复核确认演示账号只稳定提供健康观测、今日行动、时间线和每日工件，没有稳定的 Agent 对话种子。Mobile 会先恢复本地记住的 conversation；没有本地记录时再优先打开最近的「每日健康简报」。因此截图会被该账号历史测试对话污染，出现“无法自动同步 Garmin”等低价值内容。
+- 演示 fixture 新增一段不含诊断、药名、化验或私人数据的合成对话，展示最近一周睡眠、步数和两项可执行建议。seeder 使用专用 `session_key=app-store-review-demo` 重建当天简报，只删除同标识的旧演示对话，审核员自己创建的其他对话保持不变。
+- seeder 现在返回并验证 `demo_conversation_id` 与消息数。专项测试覆盖内容合规、消息角色、重复执行不增生、其他对话不被删除；演示账号、Agent 对话 API 和每日简报联合回归 50/50 通过，Python 编译与 `git diff --check` 通过。
+- 本改动尚未把截图标记为 `app_store_ready`。部署并重建生产演示账号后，必须在清除模拟器旧会话状态的干净安装上重新采集、逐张视觉审核，再决定最终营销集合。
+- G6 继续 `BLOCKED`：物理 iPhone 验收、App Privacy 已发布确认、受监管医疗器械状态 `No` 均未由本轮覆盖。

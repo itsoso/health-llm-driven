@@ -161,6 +161,426 @@ async def test_multi_model_stream_lead_tools_once_then_synthesizes(db, auth_user
 
 
 @pytest.mark.asyncio
+async def test_multi_model_advice_recovers_when_lead_selects_write_tool(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    lead_tools = [{
+        "type": "function",
+        "function": {"name": "health_record"},
+    }]
+    monkeypatch.setattr(executor, "_build_system_prompt", lambda *a, **k: "SYS")
+    monkeypatch.setattr(
+        "app.services.agent_executor.get_health_tools",
+        lambda subset=None: lead_tools,
+    )
+
+    lead_calls = []
+
+    async def fake_call_llm(messages, tools):
+        lead_calls.append(tools)
+        if len(lead_calls) == 1:
+            return {
+                "content": "",
+                "finish_reason": "tool_calls",
+                "tool_calls": [{
+                    "id": "mistaken-write",
+                    "type": "function",
+                    "function": {
+                        "name": "health_record",
+                        "arguments": json.dumps({
+                            "record_type": "event",
+                            "data": {"description": "准备睡觉"},
+                        }),
+                    },
+                }],
+            }
+        assert tools == []
+        return {"content": "LEAD SAFE ADVICE", "finish_reason": "stop"}
+
+    async def should_not_execute(*_args, **_kwargs):
+        raise AssertionError("goal-blocked write must not execute")
+
+    monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
+    monkeypatch.setattr(executor, "_execute_tool", should_not_execute)
+
+    class FakeProvider:
+        def __init__(self, model_id):
+            self.model = model_id
+
+        async def chat(self, **kwargs):
+            system = kwargs["messages"][0]["content"]
+            if "综合专家" in system:
+                return {"content": "SAFE SYNTHESIS", "finish_reason": "stop"}
+            return {"content": f"SAFE {self.model}", "finish_reason": "stop"}
+
+    monkeypatch.setattr(
+        "app.services.llm.factory.create_provider_for_model_id",
+        lambda model_id: FakeProvider(model_id),
+    )
+
+    events = [
+        event
+        async for event in executor._run_multi_model_stream(
+            user.id,
+            "我准备睡觉了，给我一些建议。",
+            None,
+            None,
+            '{"multi_model": true}',
+            "turn-multi-advice",
+        )
+    ]
+
+    assert len(lead_calls) == 2
+    assert lead_calls[0] == lead_tools
+    assert lead_calls[1] == []
+    assert events[-1]["event"] == "done"
+    assert events[-1]["data"]["completion_status"] == "complete"
+
+    from app.models.agent_conversation import AgentMessage
+
+    saved_user = db.query(AgentMessage).filter_by(role="user").one()
+    assert saved_user.meta["write_state"]["status"] == "rejected"
+
+
+@pytest.mark.asyncio
+async def test_multi_model_simple_record_stops_after_verified_receipt(
+    db, auth_user_and_headers, monkeypatch
+):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    monkeypatch.setattr(executor, "_build_system_prompt", lambda *a, **k: "SYS")
+    monkeypatch.setattr(
+        "app.services.agent_executor.get_health_tools",
+        lambda subset=None: [],
+    )
+    lead_calls = 0
+    executed = []
+
+    async def fake_call_llm(messages, tools):
+        nonlocal lead_calls
+        lead_calls += 1
+        return {
+            "content": "模型声称已经记录。",
+            "finish_reason": "stop",
+        }
+
+    async def fake_execute_tool(name, args, token):
+        parsed = json.loads(args) if isinstance(args, str) else args
+        executed.append((name, parsed))
+        return json.dumps(
+            {
+                "id": 913,
+                "record_id": 913,
+                "resource_type": "water_record",
+                "status": "verified",
+                "success": True,
+                "message": "已记录饮水 500ml",
+            },
+            ensure_ascii=False,
+        )
+
+    monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
+    monkeypatch.setattr(executor, "_execute_tool", fake_execute_tool)
+    monkeypatch.setattr(
+        "app.services.llm.factory.create_provider_for_model_id",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("simple record must not enter panel synthesis")
+        ),
+    )
+
+    events = [
+        event
+        async for event in executor._run_multi_model_stream(
+            user.id,
+            "记录喝水五百毫升",
+            None,
+            None,
+            '{"multi_model": true}',
+            "turn-multi-simple-water",
+        )
+    ]
+
+    assert lead_calls == 2
+    assert executed == [(
+        "health_record",
+        {
+            "record_type": "water",
+            "data": {"amount": 500},
+        },
+    )]
+    rendered = "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+    assert rendered == "已记录饮水 500ml"
+    assert events[-1]["data"]["completion_status"] == "complete"
+    assert len(events[-1]["data"]["write_receipts"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_multi_model_nutrition_rejection_stops_before_panel_synthesis(
+    db, auth_user_and_headers, monkeypatch
+):
+    from app.services.agent_write_outcome import local_write_rejection
+
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
+    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [])
+    lead_calls = 0
+
+    async def fake_call_llm(messages, tools):
+        nonlocal lead_calls
+        lead_calls += 1
+        if lead_calls == 1:
+            return {
+                "content": "",
+                "finish_reason": "tool_calls",
+                "tool_calls": [{
+                    "id": "incomplete-breakfast",
+                    "type": "function",
+                    "function": {
+                        "name": "health_record",
+                        "arguments": json.dumps({
+                            "record_type": "diet",
+                            "data": {
+                                "meal_type": "breakfast",
+                                "food_items": "一个包子、一个茶叶蛋、一碗粥",
+                            },
+                        }, ensure_ascii=False),
+                    },
+                }],
+            }
+        return {
+            "content": "早餐已经记录好了。",
+            "finish_reason": "stop",
+        }
+
+    async def reject_incomplete_nutrition(name, args, token):
+        return local_write_rejection(
+            "diet_nutrition_incomplete",
+            message=(
+                "饮食记录必须先根据食物和份量估算完整营养，并提供 "
+                "calories (>0)、protein、carbs、fat、fiber。"
+            ),
+        )
+
+    monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
+    monkeypatch.setattr(executor, "_execute_tool", reject_incomplete_nutrition)
+    monkeypatch.setattr(
+        "app.services.llm.factory.create_provider_for_model_id",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("panel synthesis must not hide a rejected write")
+        ),
+    )
+
+    events = [
+        event
+        async for event in executor._run_multi_model_stream(
+            user.id,
+            "记录早餐，一个包子、一个茶叶蛋、一碗粥，计算热量和营养成分。",
+            None,
+            None,
+            '{"multi_model": true}',
+            "turn-multi-incomplete-diet",
+        )
+    ]
+
+    rendered = "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+    done = events[-1]["data"]
+
+    assert lead_calls >= 2
+    assert "完整营养" in rendered
+    assert "早餐已经记录好了" not in rendered
+    assert done["completion_status"] == "error"
+    assert done["write_receipts"] == []
+
+
+@pytest.mark.asyncio
+async def test_multi_model_validation_rejects_success_claim_without_receipt(
+    db, auth_user_and_headers, monkeypatch
+):
+    from app.services.agent_write_outcome import local_write_rejection
+
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
+    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [])
+    lead_calls = 0
+
+    async def fake_call_llm(messages, tools):
+        nonlocal lead_calls
+        lead_calls += 1
+        if lead_calls == 1:
+            return {
+                "content": "",
+                "finish_reason": "tool_calls",
+                "tool_calls": [{
+                    "id": "sleep-missing-times",
+                    "type": "function",
+                    "function": {
+                        "name": "health_record",
+                        "arguments": json.dumps({
+                            "record_type": "sleep",
+                            "data": {"sleep_quality": 5},
+                        }),
+                    },
+                }],
+            }
+        return {
+            "content": "睡眠记录已经保存好了。",
+            "finish_reason": "stop",
+        }
+
+    async def reject_missing_times(name, args, token):
+        return local_write_rejection(
+            "tool_validation_failed",
+            message="睡眠记录缺少 bedtime、wake_time。",
+        )
+
+    monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
+    monkeypatch.setattr(executor, "_execute_tool", reject_missing_times)
+    monkeypatch.setattr(
+        "app.services.llm.factory.create_provider_for_model_id",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("panel synthesis must not hide a rejected write")
+        ),
+    )
+
+    events = [
+        event
+        async for event in executor._run_multi_model_stream(
+            user.id,
+            "记录昨晚睡眠质量很好",
+            None,
+            None,
+            '{"multi_model": true}',
+            "turn-multi-sleep-false-success",
+        )
+    ]
+
+    rendered = "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+    done = events[-1]["data"]
+
+    assert lead_calls >= 2
+    assert "这次没有写入" in rendered
+    assert "缺少 bedtime、wake_time" in rendered
+    assert "已经保存好了" not in rendered
+    assert done["completion_status"] == "error"
+    assert done["write_receipts"] == []
+
+
+@pytest.mark.asyncio
+async def test_multi_model_partial_success_cannot_hide_independent_rejection(
+    db, auth_user_and_headers, monkeypatch
+):
+    from app.services.agent_write_outcome import local_write_rejection
+
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
+    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [])
+    lead_calls = 0
+
+    async def fake_call_llm(messages, tools):
+        nonlocal lead_calls
+        lead_calls += 1
+        if lead_calls == 1:
+            return {
+                "content": "",
+                "finish_reason": "tool_calls",
+                "tool_calls": [
+                    {
+                        "id": "sleep-missing-times",
+                        "type": "function",
+                        "function": {
+                            "name": "health_record",
+                            "arguments": json.dumps({
+                                "record_type": "sleep",
+                                "data": {"sleep_quality": 5},
+                            }),
+                        },
+                    },
+                    {
+                        "id": "water-complete",
+                        "type": "function",
+                        "function": {
+                            "name": "health_record",
+                            "arguments": json.dumps({
+                                "record_type": "water",
+                                "data": {"amount": 500},
+                            }),
+                        },
+                    },
+                ],
+            }
+        return {
+            "content": "两项记录都已经保存好了。",
+            "finish_reason": "stop",
+        }
+
+    async def execute_mixed_writes(name, args, token):
+        payload = json.loads(args)
+        if payload["record_type"] == "sleep":
+            return local_write_rejection(
+                "tool_validation_failed",
+                message="睡眠记录缺少 bedtime、wake_time。",
+            )
+        return json.dumps({
+            "id": 921,
+            "resource_type": "water_record",
+            "amount": 500,
+        })
+
+    monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
+    monkeypatch.setattr(executor, "_execute_tool", execute_mixed_writes)
+    monkeypatch.setattr(
+        "app.services.llm.factory.create_provider_for_model_id",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("panel synthesis must not hide a partial write rejection")
+        ),
+    )
+
+    events = [
+        event
+        async for event in executor._run_multi_model_stream(
+            user.id,
+            "请完成两项健康记录。",
+            None,
+            None,
+            '{"multi_model": true}',
+            "turn-multi-partial-rejection",
+        )
+    ]
+
+    rendered = "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+    done = events[-1]["data"]
+
+    assert "另有 1 项记录已完成并取得回执" in rendered
+    assert "缺少 bedtime、wake_time" in rendered
+    assert "两项记录都已经保存好了" not in rendered
+    assert done["completion_status"] == "error"
+    assert len(done["write_receipts"]) == 1
+
+
+@pytest.mark.asyncio
 async def test_multi_model_identityless_write_fails_closed_before_panel_synthesis(
     db, auth_user_and_headers, monkeypatch
 ):

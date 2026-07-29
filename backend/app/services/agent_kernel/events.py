@@ -123,6 +123,21 @@ class AgentEventBus:
                 executed_ref=receipt.get("executed_ref"),
             )
 
+    def goal_evaluated(
+        self,
+        *,
+        satisfied: bool,
+        verified_target_count: int,
+        reason: str,
+    ) -> AgentKernelEvent:
+        """Record only aggregate goal progress, never target names or health data."""
+        return self.emit(
+            "agent.goal_evaluated",
+            satisfied=bool(satisfied),
+            verified_target_count=max(0, int(verified_target_count)),
+            reason=str(reason or "unknown"),
+        )
+
     def turn_ended(self, *, status: str) -> AgentKernelEvent:
         return self.emit("agent.turn_end", status=status)
 
@@ -132,6 +147,15 @@ class AgentEventBus:
         tool_results = [
             event for event in self.events if event.name == "agent.tool_result"
         ]
+        goal_event = next(
+            (
+                event
+                for event in reversed(self.events)
+                if event.name == "agent.goal_evaluated"
+            ),
+            None,
+        )
+        goal = self.snapshot.goal
         return {
             "schema_version": 1,
             "run_id": self.snapshot.context.run_id,
@@ -158,4 +182,18 @@ class AgentEventBus:
             ),
             "blocked_tools": counts.get("agent.tool_blocked", 0),
             "verified_receipts": counts.get("agent.write_receipt_verified", 0),
+            "goal_kind": goal.kind if goal is not None else None,
+            "goal_target_count": len(goal.target_meal_types) if goal is not None else 0,
+            "goal_verified_target_count": (
+                int(goal_event.data.get("verified_target_count") or 0)
+                if goal_event is not None else 0
+            ),
+            "goal_satisfied": (
+                bool(goal_event.data.get("satisfied"))
+                if goal_event is not None else None
+            ),
+            "goal_reason": (
+                str(goal_event.data.get("reason") or "unknown")
+                if goal_event is not None else None
+            ),
         }

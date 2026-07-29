@@ -111,15 +111,20 @@ enabled.
 
 ## Mobile Playback And Sharing
 
-Completed video cards play the existing private result in the Agent
-conversation. Playback and sharing are read-only actions: neither is allowed
-to call confirmation, retry, or generation endpoints.
+Completed image and video cards render the existing private result in the Agent
+conversation. Video playback and media sharing are read-only actions: neither
+is allowed to call confirmation, retry, or generation endpoints.
 
 Before sharing, Mobile refreshes the owner-scoped job projection to obtain a
-fresh short-lived URL, downloads the MP4 into the application cache, and opens
-the iOS share sheet with the local `video/mp4` file. The temporary file is
+fresh short-lived URL, downloads the image or MP4 into the application cache,
+and opens the iOS share sheet with the local media file. The temporary file is
 deleted after sharing or a failed download. Repeated taps while one share is
 active are coalesced, so sharing cannot create a second provider task or charge.
+
+The shared image utility also accepts authenticated Agent-conversation images
+and local screenshot paths. Protected images are downloaded with the active
+authorization header; bare iOS temporary paths are normalized to `file://`
+before opening the native share sheet.
 
 The WeChat and Xiaohongshu buttons use compact platform artwork. Xiaohongshu
 uses its official application artwork instead of a generic book icon. Platform

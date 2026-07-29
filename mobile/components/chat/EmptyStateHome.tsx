@@ -30,6 +30,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import type {
   ConversationOpener,
+  QuickReply,
   QuickReplyAction,
 } from '../../services/conversationOpener';
 import { formatOpenerText } from './OpenerCard';
@@ -83,6 +84,8 @@ interface Props {
   todayFocus?: EmptyStateTodayFocus | null;
   /** 打开聊天页内联 Today 面板。 */
   onOpenToday?: () => void;
+  /** 键盘接管视口时隐藏开场回复，避免动作层与输入层竞争。 */
+  showReplyActions?: boolean;
 }
 
 /**
@@ -140,6 +143,49 @@ function formatQuickReplyLabel(reply: string): string {
   return reply.replace(/[✅❌]/g, '').trim();
 }
 
+type VisibleOpenerReply = {
+  key: string;
+  label: string;
+  reply: QuickReply;
+  changeTopic: boolean;
+};
+
+export function buildVisibleOpenerReplies(
+  replies: QuickReply[],
+  limit = 3,
+): VisibleOpenerReply[] {
+  const visible: VisibleOpenerReply[] = [];
+  const seen = new Set<string>();
+
+  for (const reply of replies) {
+    const label = reply.action
+      ? QUICK_ACTION_LABEL[reply.action]
+      : formatQuickReplyLabel(reply.text);
+    if (!label) continue;
+    const identity = reply.action ? `action:${reply.action}` : `label:${label}`;
+    if (seen.has(identity)) continue;
+    seen.add(identity);
+    visible.push({
+      key: identity,
+      label,
+      reply,
+      changeTopic: label === CHANGE_TOPIC_REPLY,
+    });
+    if (visible.length >= limit) return visible;
+  }
+
+  const changeTopicIdentity = `label:${CHANGE_TOPIC_REPLY}`;
+  if (visible.length < limit && !seen.has(changeTopicIdentity)) {
+    visible.push({
+      key: changeTopicIdentity,
+      label: CHANGE_TOPIC_REPLY,
+      reply: { text: CHANGE_TOPIC_REPLY },
+      changeTopic: true,
+    });
+  }
+  return visible;
+}
+
 /** 冷启动 action → 图标 (气泡 quick reply + Quick Start 卡共用)。 */
 function quickActionIcon(action: QuickReplyAction): keyof typeof Ionicons.glyphMap {
   if (action === 'photo_meal') return 'camera-outline';
@@ -152,34 +198,29 @@ function quickActionIcon(action: QuickReplyAction): keyof typeof Ionicons.glyphM
  * 复用外层的 formatMemoryOpenerText 清洗结果(never render raw memory)。
  */
 function MemoryFootnote({
-  text,
+  count,
   typeLabel,
   onOpenMemory,
 }: {
-  text: string;
+  count: number;
   typeLabel?: string;
   onOpenMemory: () => void;
 }) {
   return (
-    <View style={styles.footnote}>
-      <View style={styles.footnoteLead}>
-        <View style={styles.memorySourceBadge}>
-          <Ionicons name="bookmark-outline" size={11} color={C.green600} />
-          <Text style={txt.memorySourceBadge}>记忆 · {typeLabel || '健康'}</Text>
-        </View>
-        <Text style={txt.footnoteBody} numberOfLines={2}>
-          {text}
-        </Text>
-      </View>
-      <TouchableOpacity
-        onPress={onOpenMemory}
-        hitSlop={8}
-        accessibilityRole="button"
-        accessibilityLabel="查看和校准 AI 记忆"
-      >
-        <Text style={txt.footnoteAction}>校准</Text>
-      </TouchableOpacity>
-    </View>
+    <TouchableOpacity
+      style={styles.footnote}
+      onPress={onOpenMemory}
+      hitSlop={8}
+      activeOpacity={0.62}
+      accessibilityRole="button"
+      accessibilityLabel="查看和校准 AI 记忆"
+    >
+      <Ionicons name="layers-outline" size={13} color={C.ink3} />
+      <Text style={txt.footnoteSource} numberOfLines={1}>
+        依据 {count} 条{typeLabel || '健康记录'}
+      </Text>
+      <Ionicons name="chevron-forward" size={13} color={C.ink3} />
+    </TouchableOpacity>
   );
 }
 
@@ -237,6 +278,7 @@ export default function EmptyStateHome({
   onQuickAction,
   todayFocus,
   onOpenToday,
+  showReplyActions = true,
 }: Props) {
   const memoryText = formatMemoryOpenerText(memoryOpener);
   const showMemory = memoryOpener.length > 0 && memoryText.length > 0;
@@ -246,8 +288,7 @@ export default function EmptyStateHome({
   // opener 存在 → 完整开场气泡(问候 + opener.text + 可选记忆 footnote + quick replies)。
   if (opener) {
     const openerText = formatOpenerText(opener.text);
-    // 气泡外 quick replies: opener 自带的 + 末尾追加「换个话题」中性 chip。
-    const replies = opener.quick_replies || [];
+    const replies = buildVisibleOpenerReplies(opener.quick_replies || []);
     return (
       <View style={styles.container}>
         {todayCockpit}
@@ -260,7 +301,7 @@ export default function EmptyStateHome({
             </Text>
             {showMemory && (
               <MemoryFootnote
-                text={memoryText}
+                count={memoryOpener.length}
                 typeLabel={memoryOpener[0]?.type_label}
                 onOpenMemory={onOpenMemory}
               />
@@ -268,21 +309,18 @@ export default function EmptyStateHome({
           </View>
         </View>
 
-        <View style={styles.repliesRow}>
-          {replies.map((reply, i) => {
+        {showReplyActions && replies.length > 0 && <View style={styles.repliesRow}>
+          {replies.map(({ key, label, reply, changeTopic }, i) => {
             const tinted = i === 0;
             // 带 action 的 reply → 本地导航 (不发文本); 否则走既有发送路径。
             const onPress = reply.action && onQuickAction
               ? () => onQuickAction(reply.action as QuickReplyAction)
               : () => onOpenerQuickReply(reply.text);
-            const label = reply.action
-              ? QUICK_ACTION_LABEL[reply.action]
-              : formatQuickReplyLabel(reply.text);
             // 无障碍标签: action reply 用动作标签; 文本 reply 保留原始文本(既有行为)。
             const a11yLabel = reply.action ? label : reply.text;
             return (
               <Pressable
-                key={reply.action ? `action:${reply.action}` : `text:${reply.text}`}
+                key={key}
                 style={({ pressed }) => [
                   styles.reply,
                   tinted ? styles.replyTinted : styles.replyNeutral,
@@ -290,7 +328,7 @@ export default function EmptyStateHome({
                 ]}
                 onPress={onPress}
                 accessibilityRole="button"
-                accessibilityLabel={`一键回复: ${a11yLabel}`}
+                accessibilityLabel={changeTopic ? CHANGE_TOPIC_REPLY : `一键回复: ${a11yLabel}`}
               >
                 {reply.action && (
                   <Ionicons
@@ -305,19 +343,7 @@ export default function EmptyStateHome({
               </Pressable>
             );
           })}
-          <Pressable
-            style={({ pressed }) => [
-              styles.reply,
-              styles.replyNeutral,
-              pressed && styles.replyPressed,
-            ]}
-            onPress={() => onOpenerQuickReply(CHANGE_TOPIC_REPLY)}
-            accessibilityRole="button"
-            accessibilityLabel="换个话题"
-          >
-            <Text style={[txt.reply, txt.replyNeutral]}>{CHANGE_TOPIC_REPLY}</Text>
-          </Pressable>
-        </View>
+        </View>}
       </View>
     );
   }
@@ -431,35 +457,18 @@ const styles = StyleSheet.create({
   },
   bubble: {
     flexShrink: 1,
-    maxWidth: '86%',
-    backgroundColor: C.surface,
-    // 非对称圆角: 左上贴近 avatar 收窄(4), 其余保持气泡感(16)。
-    borderTopLeftRadius: 4,
-    borderTopRightRadius: 16,
-    borderBottomLeftRadius: 16,
-    borderBottomRightRadius: 16,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.line,
-    paddingHorizontal: revaSpacing.s3,
-    paddingVertical: revaSpacing.s3,
-    ...revaShadows.sm,
+    maxWidth: '88%',
+    paddingHorizontal: revaSpacing.s1,
+    paddingVertical: 2,
   },
   footnote: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: revaSpacing.s2,
-    marginTop: revaSpacing.s2,
-    paddingTop: revaSpacing.s2,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: C.line,
-  },
-  footnoteLead: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignSelf: 'flex-start',
     gap: 5,
-    flexShrink: 1,
-    minWidth: 0,
+    minHeight: 28,
+    marginTop: revaSpacing.s2,
+    paddingHorizontal: 0,
   },
   memorySourceBadge: {
     flexDirection: 'row',
@@ -610,12 +619,12 @@ const txt = {
     fontWeight: '600',
     color: C.ink1,
   } as TextStyle,
-  footnoteBody: {
+  footnoteSource: {
     fontFamily: revaFonts.sans,
     fontSize: 12,
     color: C.ink3,
-    lineHeight: 17,
-    flexShrink: 1,
+    lineHeight: 16,
+    fontWeight: '600',
   } as TextStyle,
   memorySourceBadge: {
     fontFamily: revaFonts.sans,

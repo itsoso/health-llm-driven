@@ -29,6 +29,14 @@ class AgentConversation(Base):
 
     __table_args__ = (
         Index("ix_agent_conv_user_updated", "user_id", "updated_at"),
+        Index(
+            "uq_agent_conv_user_session_key",
+            "user_id",
+            "session_key",
+            unique=True,
+            postgresql_where=text("session_key LIKE 'external-%'"),
+            sqlite_where=text("session_key LIKE 'external-%'"),
+        ),
     )
 
 

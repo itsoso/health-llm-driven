@@ -30,10 +30,12 @@ import * as ImagePicker from 'expo-image-picker';
 import { spacing, radii, shadows } from '../constants/theme';
 import { ColorPalette, useTheme } from '../hooks/useTheme';
 import { uploadMedicalExamPdf, uploadMedicalExamImage, uploadMedicalExamText } from '../services/medicalExams';
+import MedicalExamImportFlow from '../components/medical/MedicalExamImportFlow';
 import { uploadGeneticTxt, uploadGeneticPdf, pollGeneticProfileStatus } from '../services/geneticData';
 import AgentFeedbackLink from '../components/agent/AgentFeedbackLink';
 import { createImportResultAgentContext } from '../utils/agentContext';
 import { geneticImportStatusView, isTerminalGeneticImportStatus } from '../utils/geneticImportStatus';
+import { todayStr } from '../utils/dietDate';
 
 type FileKind = 'genetic_txt' | 'genetic_pdf' | 'medical_pdf' | 'medical_image';
 
@@ -55,6 +57,22 @@ export default function ImportScreen() {
   const [result, setResult] = useState<UploadResult | null>(null);
   const [fallbackOpen, setFallbackOpen] = useState(false);
   const [fallbackText, setFallbackText] = useState('');
+
+  if (isMedicalFocused) {
+    return (
+      <MedicalExamImportFlow
+        presentation="screen"
+        onClose={() => router.back()}
+        onImported={importResult => {
+          setResult({
+            kind: importResult.source === 'pdf' ? 'medical_pdf' : 'medical_image',
+            message: importResult.message,
+            detail: `已写入体检记录 #${importResult.examId}`,
+          });
+        }}
+      />
+    );
+  }
 
   const onPickFile = async () => {
     if (busy) return;
@@ -255,7 +273,7 @@ export default function ImportScreen() {
     setBusyHint('AI 正在从文字中抽取健康指标...');
     try {
       const data = await uploadMedicalExamText(text, {
-        exam_date: new Date().toISOString().slice(0, 10),
+        exam_date: todayStr(),
         hospital_name: '手工贴文字',
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);

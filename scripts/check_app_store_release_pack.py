@@ -89,21 +89,29 @@ DEMO_API_BASE_ENV = "APP_STORE_REVIEW_API_BASE"
 DEFAULT_DEMO_API_BASE = "https://health.executor.life/api/v1"
 REAL_DEVICE_CHECKS = (
     "demo_account_login",
-    "today_briefing_expand_collapse",
+    "today_context_open_dismiss",
     "agent_text_conversation",
+    "streaming_markdown_rendering",
     "realtime_dictation_toggle",
     "hold_to_talk_send_cancel_text",
+    "voice_interrupts_external_audio",
     "camera_photo_persistence",
+    "image_save_and_share",
     "wechat_share_handoff",
     "xiaohongshu_share_handoff",
+    "generated_video_playback_no_regeneration",
     "confirmed_database_write",
+    "write_correction_delete_idempotency",
+    "foreground_stream_recovery",
+    "draft_preserved_across_background",
+    "conversation_opens_at_latest_message",
     "personal_center_privacy_policy",
     "optional_permission_denial_text_chat",
     "account_deletion_status",
 )
 CURRENT_AGENT_NATIVE_ENTRY_TERMS = [
     "打开即进入小巴",
-    "今日简报",
+    "今日计划",
     "记录",
     "个人中心",
 ]
@@ -449,9 +457,29 @@ def validate_real_device_evidence(path: Path, *, expected_build_id: str) -> list
             "real-device evidence build_id does not match APP_STORE_BUILD_ID: "
             f"evidence={evidence.get('build_id')!r}, expected={expected_build_id!r}"
         )
-    for field in ("device_model", "ios_version", "tested_at", "tester"):
+    for field in (
+        "app_version",
+        "eas_build_id",
+        "git_commit_hash",
+        "device_model",
+        "ios_version",
+        "tested_at",
+        "tester",
+    ):
         if not str(evidence.get(field) or "").strip():
             failures.append(f"real-device evidence missing {field}")
+    if evidence.get("build_profile") != "production":
+        failures.append("real-device evidence build_profile must be production")
+    eas_build_id = str(evidence.get("eas_build_id") or "").strip()
+    if eas_build_id and not re.fullmatch(
+        r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+        eas_build_id,
+        re.IGNORECASE,
+    ):
+        failures.append("real-device evidence has invalid eas_build_id")
+    git_commit_hash = str(evidence.get("git_commit_hash") or "").strip()
+    if git_commit_hash and not re.fullmatch(r"[0-9a-f]{7,40}", git_commit_hash, re.IGNORECASE):
+        failures.append("real-device evidence has invalid git_commit_hash")
     checks = evidence.get("checks")
     if not isinstance(checks, dict):
         return failures + ["real-device evidence missing checks object"]

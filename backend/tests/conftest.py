@@ -47,16 +47,16 @@ def _reset_in_memory_rate_limiters():
 
 @pytest.fixture(autouse=True)
 def _isolate_twin_cache():
-    """测试隔离:每个测试前后清空 Redis 中的 twin 缓存,消除跨测试污染。
+    """测试隔离:每个测试前后清空 Twin 及派生 Safety 缓存。
 
     每个测试用全新内存 SQLite,user_id 自增从 1 重启;但 Redis twin 缓存
-    (key `twin:v1:{user_id}`) 是进程级全局的,不随测试重置。本地 Redis 存活时,
+    (key `twin:v2:{user_id}`) 是进程级全局的,不随测试重置。本地 Redis 存活时,
     上一个测试为 user_id=1 写入的 twin 会污染下一个测试(读到陈旧 twin),
     导致只在本地有 Redis 时才复现的偶发失败(CI 无 Redis service,故被掩盖)。
 
-    只删 `twin:v1:*` 前缀的 key,不动 get_redis_client 本身(避免 shadow 掉
-    test_redis_cache 等对该函数的直接断言)。Redis 不在时 client 为 None,
-    此 fixture 静默 no-op —— 与 CI 行为完全一致,不改变任何无 Redis 路径。
+    派生 Safety 报告同样跨测试持久化,因此同时清理 `safety:v3:*`。不动
+    get_redis_client 本身(避免 shadow 掉 test_redis_cache 等直接断言)。
+    Redis 不在时 client 为 None,fixture 静默 no-op,与 CI 行为一致。
     """
     def _flush_twin_keys():
         try:
@@ -65,7 +65,9 @@ def _isolate_twin_cache():
             client = get_redis_client()
             if client is None:
                 return
-            keys = list(client.scan_iter(match="twin:v1:*"))
+            keys = []
+            for pattern in ("twin:v2:*", "safety:v3:*"):
+                keys.extend(client.scan_iter(match=pattern))
             if keys:
                 client.delete(*keys)
         except Exception:

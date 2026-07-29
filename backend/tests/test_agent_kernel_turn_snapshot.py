@@ -101,7 +101,10 @@ def test_test_context_converts_the_frozen_time_into_requested_timezone():
     assert context.current_time.isoformat() == "2026-07-17T00:00:00-04:00"
 
 
-def test_turn_snapshot_reference_time_normalizes_relative_record_dates(db, auth_user_and_headers):
+def test_turn_snapshot_reference_time_rejects_untrusted_far_record_dates(
+    db,
+    auth_user_and_headers,
+):
     from app.services.llm.tool_validator import validate_tool_call
 
     user, _headers = auth_user_and_headers
@@ -125,7 +128,8 @@ def test_turn_snapshot_reference_time_normalizes_relative_record_dates(db, auth_
         reference_now=snapshot.context.current_time,
     )
 
-    assert result["data"]["data"]["record_date"] == "2026-07-17"
+    assert "超出可直接记录的日期范围" in str(result["error"])
+    assert result["data"]["data"]["record_date"] == "2026-07-09"
 
 
 def test_reminder_time_follow_up_refines_only_an_active_reminder_continuation(
@@ -153,6 +157,12 @@ def test_reminder_time_follow_up_refines_only_an_active_reminder_continuation(
         "create",
     )
     assert "continuation:reminder_schedule" in snapshot.intent.evidence
+    assert snapshot.goal is not None
+    assert (snapshot.goal.kind, snapshot.goal.domain, snapshot.goal.operation) == (
+        "write",
+        "reminder",
+        "create",
+    )
     assert executor._agent_kernel_event_bus is not None
     assert "agent.intent_refined" in [event.name for event in executor._agent_kernel_event_bus.events]
 

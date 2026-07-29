@@ -7,11 +7,19 @@
   - ACWR > 1.5: 伤病风险显著升高（高于 1.5 的一周，下一周伤病率可达 +50%）
 """
 
+import math
 from typing import Optional
 
 from app.agents.safety_guardian.engine import register
 from app.agents.safety_guardian.schema import Alert, Severity
 from app.twin.schema import HealthTwin
+
+ACWR_RULE_IDS = frozenset(
+    {
+        "training.acwr_overload",
+        "training.acwr_undertraining",
+    }
+)
 
 
 @register
@@ -20,6 +28,18 @@ def training_acwr_overload(twin: HealthTwin) -> Optional[Alert]:
     acwr = twin.behavioral.acute_chronic_ratio
     if acwr is None:
         return None
+    if not math.isfinite(acwr):
+        return None
+    if twin.behavioral.acwr_reliable is not True:
+        return None
+    # Defensive consistency guard: a ratio cannot indicate acute overload when
+    # the same Twin explicitly says the recent load is zero. This also prevents
+    # a stale cached ratio from surviving a later activity resync.
+    if twin.behavioral.training_load_7d is not None:
+        if not math.isfinite(twin.behavioral.training_load_7d):
+            return None
+        if twin.behavioral.training_load_7d <= 0:
+            return None
     if acwr <= 1.5:
         return None
 
@@ -50,6 +70,10 @@ def training_acwr_undertraining(twin: HealthTwin) -> Optional[Alert]:
     """ACWR < 0.8 + 本周运动次数少 —— undertraining，体能流失。"""
     acwr = twin.behavioral.acute_chronic_ratio
     if acwr is None:
+        return None
+    if not math.isfinite(acwr):
+        return None
+    if twin.behavioral.acwr_reliable is not True:
         return None
     if acwr >= 0.8:
         return None
@@ -88,8 +112,9 @@ def training_complete_inactivity(twin: HealthTwin) -> Optional[Alert]:
     if w > 0:
         return None
 
-    # 如果连 Twin 都没有训练负荷数据，就不触发（可能是数据未同步）
-    if twin.behavioral.training_load_7d is None and twin.behavioral.acute_chronic_ratio is None:
+    # 只有训练同步层明确证明最近 7 天已完整观测且为零时才能提示。
+    # 缺失数据与真实静息在当前数据模型里不可区分，必须 fail closed。
+    if twin.behavioral.acwr_unavailable_reason != "no_recent_training":
         return None
 
     return Alert(

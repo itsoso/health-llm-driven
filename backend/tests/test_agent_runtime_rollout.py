@@ -377,8 +377,14 @@ def test_resume_is_manual_idempotent_and_does_not_store_health_text(
         reason_code="reconciliation_detected",
     )
 
-    first = rollout.resume(actor_user_id=user.id)
-    second = rollout.resume(actor_user_id=user.id)
+    first = rollout.resume(
+        actor_user_id=user.id,
+        expected_reconciliation_generation=0,
+    )
+    second = rollout.resume(
+        actor_user_id=user.id,
+        expected_reconciliation_generation=0,
+    )
     decision = rollout.admission_decision(user.id)
 
     assert first.changed is True
@@ -392,6 +398,78 @@ def test_resume_is_manual_idempotent_and_does_not_store_health_text(
     assert "private health" not in serialized
     assert "prompt" not in serialized
     assert "response" not in serialized
+
+
+def test_resume_rejects_a_stale_reconciliation_generation(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+):
+    from app.services.agent_runtime_rollout import (
+        AgentRuntimeRolloutService,
+        ReconciliationGenerationMismatch,
+    )
+
+    user, _headers = auth_user_and_headers
+    _configure(monkeypatch, mode="enforce")
+    rollout = AgentRuntimeRolloutService(db)
+    rollout.pause(
+        actor_kind="system",
+        reason_code="reconciliation_detected",
+    )
+    reviewed_generation = rollout.get_state().reconciliation_generation
+    rollout.record_reconciliation()
+    db.commit()
+
+    with pytest.raises(ReconciliationGenerationMismatch):
+        rollout.resume(
+            actor_user_id=user.id,
+            expected_reconciliation_generation=reviewed_generation,
+        )
+
+    state = rollout.get_state()
+    assert state.status == "paused"
+    assert state.reconciliation_generation == reviewed_generation + 1
+    assert (
+        state.reconciliation_acknowledged_generation
+        < state.reconciliation_generation
+    )
+
+
+def test_active_resume_still_rejects_a_stale_reconciliation_generation(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+):
+    from app.services.agent_runtime_rollout import (
+        AgentRuntimeRolloutService,
+        ReconciliationGenerationMismatch,
+    )
+
+    user, _headers = auth_user_and_headers
+    _configure(monkeypatch, mode="enforce")
+    rollout = AgentRuntimeRolloutService(db)
+    initial_state = rollout.get_state()
+    reviewed_generation = initial_state.reconciliation_generation
+    acknowledged_generation = (
+        initial_state.reconciliation_acknowledged_generation
+    )
+    rollout.record_reconciliation()
+    db.commit()
+
+    with pytest.raises(ReconciliationGenerationMismatch):
+        rollout.resume(
+            actor_user_id=user.id,
+            expected_reconciliation_generation=reviewed_generation,
+        )
+
+    state = rollout.get_state()
+    assert state.status == "active"
+    assert state.reconciliation_generation == reviewed_generation + 1
+    assert (
+        state.reconciliation_acknowledged_generation
+        == acknowledged_generation
+    )
 
 
 def test_manual_pause_preserves_latest_evaluation_counts(
@@ -496,6 +574,98 @@ def test_rollout_snapshot_is_aggregate_only(
     assert "private" not in serialized
 
 
+def test_rollout_snapshot_reports_content_free_runtime_integrity(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+):
+    from app.models.agent_conversation import AgentConversation
+    from app.services.agent_runtime_rollout import AgentRuntimeRolloutService
+
+    user, _headers = auth_user_and_headers
+    now = datetime.now(UTC)
+    _configure(monkeypatch, mode="canary", percent=100)
+    complete = _runtime_row(
+        db,
+        user_id=user.id,
+        suffix="integrity-complete",
+        status="succeeded",
+        now=now,
+    )
+    complete.runtime_contract_version = "agent-runtime-v1"
+    complete.tool_registry_digest = "a" * 64
+    complete.capability_policy_digest = "b" * 64
+
+    conversation = AgentConversation(
+        user_id=user.id,
+        title="content must not leak",
+        session_key="runtime-integrity-gap",
+    )
+    db.add(conversation)
+    db.flush()
+    unlinked = _runtime_row(
+        db,
+        user_id=user.id,
+        suffix="integrity-unlinked",
+        status="succeeded",
+        now=now,
+    )
+    unlinked.conversation_id = conversation.id
+    unlinked.runtime_contract_version = "agent-runtime-v1"
+    unlinked.tool_registry_digest = "c" * 64
+    unlinked.capability_policy_digest = "d" * 64
+
+    missing_attempt = _runtime_row(
+        db,
+        user_id=user.id,
+        suffix="integrity-missing-attempt",
+        status="failed",
+        now=now,
+    )
+    missing_attempt.current_attempt_id = "attempt-does-not-exist"
+
+    overdue = _runtime_row(
+        db,
+        user_id=user.id,
+        suffix="integrity-overdue",
+        status="running",
+        now=now,
+    )
+    overdue.deadline_at = now - timedelta(seconds=1)
+
+    waiting = _runtime_row(
+        db,
+        user_id=user.id,
+        suffix="integrity-waiting",
+        status="failed",
+        now=now,
+    )
+    waiting.status = "waiting_for_user"
+    waiting.finished_at = None
+    waiting.created_at = now - timedelta(hours=25)
+    db.commit()
+
+    payload = AgentRuntimeRolloutService(db).snapshot(now=now).to_dict()
+    integrity = payload["integrity"]
+
+    assert integrity == {
+        "window_runs": 4,
+        "contract_snapshot_runs": 2,
+        "contract_snapshot_coverage_percent": 50,
+        "contract_versions": {"agent-runtime-v1": 2},
+        "settled_message_linkage_gaps": 1,
+        "missing_current_attempt_runs": 1,
+        "active_over_deadline_runs": 1,
+        "waiting_over_24h_runs": 1,
+    }
+    serialized = repr(integrity)
+    assert "user_id" not in serialized
+    assert "run_id" not in serialized
+    assert "content must not leak" not in serialized
+    assert "prompt" not in serialized
+    assert "response" not in serialized
+
+
 def test_deadline_exceeded_is_not_counted_as_system_failure(
     db,
     auth_user_and_headers,
@@ -568,7 +738,11 @@ def test_manual_resume_acknowledges_existing_reconciliation_watermark(
     )
     rollout = AgentRuntimeRolloutService(db)
     first = rollout.evaluate_and_maybe_pause(now=now)
-    rollout.resume(actor_user_id=user.id)
+    reviewed_generation = rollout.get_state().reconciliation_generation
+    rollout.resume(
+        actor_user_id=user.id,
+        expected_reconciliation_generation=reviewed_generation,
+    )
 
     repeated = rollout.evaluate_and_maybe_pause(now=now + timedelta(minutes=1))
 

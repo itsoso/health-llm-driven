@@ -5,6 +5,8 @@ import pytest
 
 from app.services.ai.food_recognition import (
     FoodRecognitionService,
+    apply_user_stated_amount_to_nutrition_label,
+    merge_food_recognition_results,
     sanitize_food_recognition_result,
 )
 from app.config import Settings
@@ -196,6 +198,36 @@ def test_sanitize_food_recognition_deduplicates_and_caps_model_items():
     assert result["foods"][0]["calories"] == 330
 
 
+def test_legacy_generic_nutrition_label_is_scaled_from_local_user_amount():
+    result = sanitize_food_recognition_result({
+        "success": True,
+        "foods": [{
+            "name": "每日坚果",
+            "quantity": "每100g",
+            "quantity_grams": 100,
+            "calories": 655,
+            "protein": 15,
+            "carbs": 15,
+            "fat": 60,
+            "fiber": 7.5,
+            "confidence": 0.95,
+            "source": "nutrition_label",
+            "nutrition_basis": "nutrition_label",
+        }],
+    })
+
+    scaled = apply_user_stated_amount_to_nutrition_label(
+        result,
+        "记录这餐，吃了20克坚果",
+    )
+    scaled = sanitize_food_recognition_result(scaled)
+
+    assert scaled["foods"][0]["quantity"] == "20g"
+    assert scaled["foods"][0]["calories"] == 131
+    assert scaled["foods"][0]["protein"] == 3
+    assert scaled["foods"][0]["nutrition_basis"] == "nutrition_label_scaled"
+
+
 @pytest.mark.asyncio
 async def test_food_recognition_does_not_log_model_content_or_food_names(caplog):
     private_food_name = "仅用于隐私测试的私密餐食"
@@ -249,6 +281,44 @@ async def test_food_recognition_disables_thinking_for_qwen3_vision_models():
 
 
 @pytest.mark.asyncio
+async def test_food_recognition_requests_machine_readable_nutrition_label_basis():
+    class FakeProvider:
+        def __init__(self):
+            self.kwargs = None
+
+        async def chat_with_vision(self, **kwargs):
+            self.kwargs = kwargs
+            return json.dumps({
+                "foods": [{
+                    "name": "每日坚果",
+                    "quantity": "每100g",
+                    "quantity_grams": 100,
+                    "label_basis_grams": 100,
+                    "calories": 655,
+                    "protein": 15,
+                    "carbs": 15,
+                    "fat": 60,
+                    "fiber": 7.5,
+                    "confidence": 0.95,
+                    "source": "nutrition_label",
+                    "nutrition_basis": "nutrition_label_per_100g",
+                }],
+            }, ensure_ascii=False)
+
+    provider = FakeProvider()
+    service = FoodRecognitionService()
+    service._provider = provider
+
+    result = await service.recognize_food_from_base64("aW1hZ2U=")
+
+    assert result["success"] is True
+    assert result["foods"][0]["label_basis_grams"] == 100
+    system_prompt = provider.kwargs["messages"][0]["content"]
+    assert "营养成分表" in system_prompt
+    assert "nutrition_label_per_100g" in system_prompt
+
+
+@pytest.mark.asyncio
 async def test_food_recognition_does_not_expose_provider_error_content(caplog):
     private_error = "provider-error-containing-private-meal"
 
@@ -265,3 +335,84 @@ async def test_food_recognition_does_not_expose_provider_error_content(caplog):
     assert result["success"] is False
     assert private_error not in result["error"]
     assert private_error not in caplog.text
+
+
+def test_multi_photo_same_dish_is_ambiguous_and_requires_confirmation():
+    merged = merge_food_recognition_results([
+        {
+            "success": True,
+            "foods": [{
+                "name": "煎饼",
+                "quantity": "约4块",
+                "calories": 360,
+                "protein": 12,
+                "confidence": 0.91,
+            }],
+        },
+        {
+            "success": True,
+            "foods": [{
+                "name": "煎饼",
+                "quantity": "约4块",
+                "calories": 360,
+                "protein": 12,
+                "confidence": 0.88,
+            }],
+        },
+    ])
+
+    assert merged["success"] is True
+    assert len(merged["foods"]) == 1
+    assert merged["total_calories"] == 360
+    assert merged["total_protein"] == 12
+    assert merged["multi_photo_conflict"] is True
+    assert merged["multi_photo_ambiguous_duplicate"] is True
+
+
+def test_multi_photo_results_flag_conflicting_portions_for_confirmation():
+    merged = merge_food_recognition_results([
+        {
+            "success": True,
+            "foods": [{
+                "name": "煎饼",
+                "quantity": "约2块",
+                "calories": 180,
+                "confidence": 0.91,
+            }],
+        },
+        {
+            "success": True,
+            "foods": [{
+                "name": "煎饼",
+                "quantity": "约4块",
+                "calories": 360,
+                "confidence": 0.89,
+            }],
+        },
+    ])
+
+    assert merged["success"] is True
+    assert merged["multi_photo_conflict"] is True
+
+
+def test_multi_photo_results_preserve_consumed_fraction_context():
+    source = {
+        "success": True,
+        "foods": [{
+            "name": "鸡胸肉",
+            "quantity": "约40g",
+            "calories": 66,
+            "protein": 12.3,
+            "carbs": 0,
+            "fat": 1.4,
+            "fiber": 0,
+        }],
+        "consumed_fraction": 1 / 3,
+        "consumed_fraction_label": "三分之一",
+    }
+
+    merged = merge_food_recognition_results([source])
+
+    assert merged["consumed_fraction"] == pytest.approx(1 / 3)
+    assert merged["consumed_fraction_label"] == "三分之一"
+    assert merged["foods"][0]["quantity"] == "约40g"

@@ -9,18 +9,12 @@ import {
   Platform,
   Alert,
   ActivityIndicator,
-  Pressable,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../hooks/useAuth';
-import { useAppSession } from '../hooks/useAppSession';
 import { useTheme, type ColorPalette } from '../hooks/useTheme';
 import { loadCredentials, requestPhoneCode, saveCredentials } from '../services/auth';
-import {
-  hasSeenLocalRecoveryWarning,
-  markLocalRecoveryWarningSeen,
-} from '../services/localIdentity';
 import { APP_DISPLAY_NAME } from '../constants/brand';
 
 type LoginMode = 'phone' | 'account';
@@ -29,7 +23,6 @@ export default function LoginScreen() {
   const { c } = useTheme();
   const styles = useMemo(() => createStyles(c), [c]);
   const { login, loginByPhoneCode } = useAuth();
-  const { startLocalMode } = useAppSession();
   const [mode, setMode] = useState<LoginMode>('phone');
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
@@ -120,35 +113,6 @@ export default function LoginScreen() {
   const switchMode = (next: LoginMode) => {
     setMode(next);
     setPhoneHint('');
-  };
-
-  const handleStartLocal = async () => {
-    setLoading(true);
-    try {
-      await startLocalMode('strict_local');
-      if (!await hasSeenLocalRecoveryWarning()) {
-        Alert.alert(
-          '本地保险库已创建',
-          '健康资料只保存在这台 iPhone。换机或重装前，需要同时保存恢复文件和恢复密钥；你可以稍后在本地模式设置中备份。',
-          [{ text: '知道了' }],
-        );
-        await markLocalRecoveryWarningSeen();
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message.includes('device_passcode_required')) {
-        Alert.alert(
-          '需要先设置锁屏密码',
-          '请打开 iPhone 设置，先启用面容 ID 与密码或触控 ID 与密码，然后回来重试。',
-        );
-      } else if (message.includes('protected_data_unavailable')) {
-        Alert.alert('请先解锁设备', '本地健康保险库只能在设备已解锁时创建。');
-      } else {
-        Alert.alert('本地模式暂时不可用', '保险库没有创建成功，也没有保存本地身份。请稍后重试。');
-      }
-    } finally {
-      setLoading(false);
-    }
   };
 
   return (
@@ -338,26 +302,6 @@ export default function LoginScreen() {
             </>
           )}
 
-          <View style={styles.localDivider}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>或</Text>
-            <View style={styles.dividerLine} />
-          </View>
-          <Pressable
-            style={({ pressed }) => [
-              styles.localButton,
-              loading && styles.buttonDisabled,
-              pressed && !loading ? styles.localButtonPressed : null,
-            ]}
-            onPress={handleStartLocal}
-            disabled={loading}
-            accessibilityRole="button"
-            accessibilityLabel="无需注册，立即本地使用"
-          >
-            <Ionicons name="phone-portrait-outline" size={19} color={c.brand} />
-            <Text style={styles.localButtonText}>无需注册，立即本地使用</Text>
-          </Pressable>
-          <Text style={styles.localHint}>健康资料保存在本机；严格本地模式不会连接云端。</Text>
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -464,44 +408,5 @@ const createStyles = (c: ColorPalette) => StyleSheet.create({
     color: c.brand,
     fontSize: 14,
     fontWeight: '600',
-  },
-  localDivider: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginTop: 2,
-  },
-  dividerLine: {
-    flex: 1,
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: c.separator,
-  },
-  dividerText: {
-    color: c.labelTertiary,
-    fontSize: 13,
-  },
-  localButton: {
-    height: 50,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: c.brand,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 8,
-  },
-  localButtonText: {
-    color: c.brand,
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  localButtonPressed: {
-    opacity: 0.72,
-  },
-  localHint: {
-    color: c.labelSecondary,
-    fontSize: 12,
-    lineHeight: 17,
-    textAlign: 'center',
   },
 });

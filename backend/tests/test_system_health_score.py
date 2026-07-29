@@ -10,6 +10,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 from scripts.system_health_score import (
     score_tests,
     score_health_check,
+    score_agent_runtime_circuit,
     calculate_health_score,
     FAIL_THRESHOLD,
 )
@@ -103,7 +104,8 @@ class TestCalculateHealthScore:
         """skip_tests=True 返回正确结构"""
         with patch("scripts.system_health_score.score_health_check", return_value={"score": 30, "detail": "ok"}), \
              patch("scripts.system_health_score.score_api_latency", return_value={"score": 20, "detail": "ok"}), \
-             patch("scripts.system_health_score.score_error_rate_from_logs", return_value={"score": 10, "detail": "ok"}):
+             patch("scripts.system_health_score.score_error_rate_from_logs", return_value={"score": 10, "detail": "ok"}), \
+             patch("scripts.system_health_score.score_agent_runtime_circuit", return_value={"score": 0, "detail": "active", "healthy": True}):
             result = calculate_health_score(skip_tests=True)
 
         assert "total_score" in result
@@ -119,7 +121,8 @@ class TestCalculateHealthScore:
         with patch("scripts.system_health_score.score_tests", return_value={"score": 40, "detail": "ok"}), \
              patch("scripts.system_health_score.score_health_check", return_value={"score": 30, "detail": "ok"}), \
              patch("scripts.system_health_score.score_api_latency", return_value={"score": 20, "detail": "ok"}), \
-             patch("scripts.system_health_score.score_error_rate_from_logs", return_value={"score": 10, "detail": "ok"}):
+             patch("scripts.system_health_score.score_error_rate_from_logs", return_value={"score": 10, "detail": "ok"}), \
+             patch("scripts.system_health_score.score_agent_runtime_circuit", return_value={"score": 0, "detail": "active", "healthy": True}):
             result = calculate_health_score()
 
         assert result["total_score"] == 100
@@ -130,7 +133,8 @@ class TestCalculateHealthScore:
         with patch("scripts.system_health_score.score_tests", return_value={"score": 10, "detail": "bad"}), \
              patch("scripts.system_health_score.score_health_check", return_value={"score": 0, "detail": "down"}), \
              patch("scripts.system_health_score.score_api_latency", return_value={"score": 0, "detail": "slow"}), \
-             patch("scripts.system_health_score.score_error_rate_from_logs", return_value={"score": 0, "detail": "errors"}):
+             patch("scripts.system_health_score.score_error_rate_from_logs", return_value={"score": 0, "detail": "errors"}), \
+             patch("scripts.system_health_score.score_agent_runtime_circuit", return_value={"score": 0, "detail": "active", "healthy": True}):
             result = calculate_health_score()
 
         assert result["total_score"] == 10
@@ -145,8 +149,57 @@ class TestCalculateHealthScore:
         with patch("scripts.system_health_score.score_tests", return_value={"score": 15, "detail": "ok"}), \
              patch("scripts.system_health_score.score_health_check", return_value={"score": 10, "detail": "ok"}), \
              patch("scripts.system_health_score.score_api_latency", return_value={"score": 5, "detail": "ok"}), \
-             patch("scripts.system_health_score.score_error_rate_from_logs", return_value={"score": 5, "detail": "ok"}):
+             patch("scripts.system_health_score.score_error_rate_from_logs", return_value={"score": 5, "detail": "ok"}), \
+             patch("scripts.system_health_score.score_agent_runtime_circuit", return_value={"score": 0, "detail": "active", "healthy": True}):
             result = calculate_health_score()
 
         assert result["total_score"] == 35
         assert result["pass"] is True
+
+    def test_paused_agent_runtime_circuit_blocks_health_gate(self):
+        with patch(
+            "scripts.system_health_score.score_health_check",
+            return_value={"score": 30, "detail": "ok"},
+        ), patch(
+            "scripts.system_health_score.score_api_latency",
+            return_value={"score": 20, "detail": "ok"},
+        ), patch(
+            "scripts.system_health_score.score_error_rate_from_logs",
+            return_value={"score": 10, "detail": "ok"},
+        ), patch(
+            "scripts.system_health_score.score_agent_runtime_circuit",
+            return_value={
+                "score": 0,
+                "detail": "paused:reconciliation_detected",
+                "healthy": False,
+            },
+        ):
+            result = calculate_health_score(skip_tests=True)
+
+        assert result["total_score"] == 60
+        assert result["pass"] is False
+        assert result["critical_failures"] == ["agent_runtime_circuit"]
+
+
+def test_agent_runtime_circuit_score_is_content_free(db, monkeypatch):
+    from app.models.agent_runtime import AgentRuntimeRolloutState
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "agent_runtime_mode", "enforce")
+    state = db.query(AgentRuntimeRolloutState).filter_by(id=1).first()
+    if state is None:
+        state = AgentRuntimeRolloutState(id=1, version=1)
+        db.add(state)
+    state.status = "paused"
+    state.reason_code = "reconciliation_detected"
+    state.reconciliation_generation = 1
+    state.reconciliation_acknowledged_generation = 0
+    db.commit()
+
+    result = score_agent_runtime_circuit(session_factory=lambda: db)
+
+    assert result == {
+        "score": 0,
+        "detail": "paused:reconciliation_detected:generation=1:ack=0",
+        "healthy": False,
+    }

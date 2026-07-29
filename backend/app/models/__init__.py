@@ -177,6 +177,7 @@ from app.models.procedure_recipe import ProcedureRecipe
 from app.models.account_deletion_request import AccountDeletionRequest
 from app.models.aigc_media_job import AIGCMediaJob
 from app.models.aigc_media_confirmation import AIGCMediaConfirmation
+from app.models.community import CommunityPost, CommunityReaction, CommunityReport
 
 __all__ = [
     "FitnessPlan",
@@ -184,6 +185,9 @@ __all__ = [
     "AccountDeletionRequest",
     "AIGCMediaJob",
     "AIGCMediaConfirmation",
+    "CommunityPost",
+    "CommunityReaction",
+    "CommunityReport",
     "AgentRun",
     "AgentRunAttempt",
     "AgentRunEvent",

@@ -307,7 +307,10 @@ async def test_structured_symptom_write_is_blocked_before_gateway(
         "test-token",
     )
 
-    assert result.startswith("Error: 这段话不是明确的本人症状记录请求")
+    rejection = json.loads(result)
+    assert rejection["status"] == "rejected"
+    assert rejection["dispatch_started"] is False
+    assert rejection["error_code"] == "symptom_write_not_authorized"
 
 
 @pytest.mark.asyncio
@@ -409,10 +412,53 @@ async def test_structured_symptom_write_is_blocked_on_attachment_turn(db):
         "test-token",
     )
 
-    assert result == (
-        "Error: 带附件的症状内容暂不自动写入，请在不带附件的消息中直接复述"
-        "要记录的本人症状。"
+    assert json.loads(result) == {
+        "status": "rejected",
+        "success": False,
+        "dispatch_started": False,
+        "error_code": "symptom_attachment_not_supported",
+        "message": "带附件的消息不能自动写入症状记录。",
+        "recovery_guidance": "请在不带附件的新消息中直接复述要记录的本人症状。",
+    }
+
+
+@pytest.mark.asyncio
+async def test_rhinitis_write_is_blocked_on_attachment_turn_with_local_rejection(db):
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._current_turn_user_message = "记录下来刚才打了一个喷嚏。"
+    executor._current_turn_recent_messages = []
+    executor._current_turn_has_attachment = True
+
+    result = await executor._execute_tool_impl(
+        "health_record",
+        {
+            "record_type": "rhinitis",
+            "data": {"sneezing": 1},
+        },
+        "test-token",
     )
+
+    rejection = json.loads(result)
+    assert rejection["status"] == "rejected"
+    assert rejection["dispatch_started"] is False
+    assert rejection["error_code"] == "rhinitis_attachment_not_supported"
+
+
+@pytest.mark.asyncio
+async def test_malformed_tool_arguments_return_local_rejection(db):
+    executor = AgentExecutor(db)
+
+    result = await executor._execute_tool_impl(
+        "health_record",
+        "not-json-at-all",
+        "test-token",
+    )
+
+    rejection = json.loads(result)
+    assert rejection["status"] == "rejected"
+    assert rejection["dispatch_started"] is False
+    assert rejection["error_code"] == "tool_arguments_invalid"
 
 
 @pytest.mark.asyncio
@@ -1247,7 +1293,18 @@ async def test_write_state_is_persisted_before_execution_and_verified_with_recei
                     "id": "write-1",
                     "function": {
                         "name": "health_record",
-                        "arguments": '{"record_type":"diet","data":{"food_items":"鸡胸肉"}}',
+                        "arguments": json.dumps({
+                            "record_type": "diet",
+                            "data": {
+                                "meal_type": "lunch",
+                                "food_items": "鸡胸肉",
+                                "calories": 165,
+                                "protein": 31,
+                                "carbs": 0,
+                                "fat": 3.6,
+                                "fiber": 0,
+                            },
+                        }, ensure_ascii=False),
                     },
                 }],
             }

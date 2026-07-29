@@ -25,6 +25,10 @@ jest.mock('../../services/clientEvents', () => ({
   emitClientEvent: jest.fn(),
 }));
 
+jest.mock('../../services/appReloadPreparation', () => ({
+  prepareForAppReload: jest.fn().mockResolvedValue(undefined),
+}));
+
 jest.mock('../../services/remoteConfig', () => ({
   getReleasePolicyRolloutBucket: jest.fn().mockResolvedValue(0),
   getNativeUpdateRequirement: jest.fn().mockReturnValue('none'),
@@ -46,12 +50,14 @@ jest.mock('../../services/remoteConfig', () => ({
 }));
 
 import { applyDownloadedUpdate, downloadAvailableUpdate } from '../../services/appUpdate';
+import { prepareForAppReload } from '../../services/appReloadPreparation';
 import { emitClientEvent } from '../../services/clientEvents';
 import { loadReleasePolicy } from '../../services/remoteConfig';
 import { AppUpdateProvider, useAppUpdate } from '../useAppUpdate';
 
 const mockedDownload = downloadAvailableUpdate as jest.Mock;
 const mockedApply = applyDownloadedUpdate as jest.Mock;
+const mockedPrepareForReload = prepareForAppReload as jest.Mock;
 const mockedEmit = emitClientEvent as jest.Mock;
 const mockedLoadPolicy = loadReleasePolicy as jest.Mock;
 
@@ -73,6 +79,7 @@ describe('AppUpdateProvider', () => {
     });
     mockedDownload.mockResolvedValue('current');
     mockedApply.mockResolvedValue(undefined);
+    mockedPrepareForReload.mockResolvedValue(undefined);
     mockedLoadPolicy.mockResolvedValue({
       config_version: 0,
       platform: 'ios',
@@ -156,6 +163,40 @@ describe('AppUpdateProvider', () => {
     expect(mockedApply).toHaveBeenCalledTimes(1);
     expect(result.current.status).toBe('failed');
     expect(result.current.error).toBe('reload failed');
+  });
+
+  it('persists active UI state before applying a downloaded update', async () => {
+    mockedDownload.mockResolvedValue('ready');
+    const order: string[] = [];
+    mockedPrepareForReload.mockImplementation(async () => {
+      order.push('prepare');
+    });
+    mockedApply.mockImplementation(async () => {
+      order.push('reload');
+    });
+    const { result } = renderHook(() => useAppUpdate(), { wrapper });
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+
+    await act(async () => {
+      await result.current.applyUpdate();
+    });
+
+    expect(order).toEqual(['prepare', 'reload']);
+  });
+
+  it('does not reload when active UI state cannot be persisted', async () => {
+    mockedDownload.mockResolvedValue('ready');
+    mockedPrepareForReload.mockRejectedValue(new Error('无法安全保存当前内容，请稍后重试更新'));
+    const { result } = renderHook(() => useAppUpdate(), { wrapper });
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+
+    await act(async () => {
+      await result.current.applyUpdate();
+    });
+
+    expect(mockedApply).not.toHaveBeenCalled();
+    expect(result.current.status).toBe('failed');
+    expect(result.current.error).toBe('无法安全保存当前内容，请稍后重试更新');
   });
 
   it('keeps a forced update non-dismissible after the bundle is ready', async () => {

@@ -3,12 +3,14 @@
 import inspect
 import json
 import logging
+from datetime import date
 from urllib.parse import parse_qs, urlparse
 
 import pytest
 from sqlalchemy.orm import sessionmaker
 
 from app.models.agent_conversation import AgentConversation, AgentMessage
+from app.models.daily_health import DietPhotoAsset, DietRecord
 from app.models.user import User
 from app.api.agent import (
     agent_stream,
@@ -726,6 +728,55 @@ def test_agent_conversation_detail_returns_messages(client, db, auth_user_and_he
     assert data["messages"][1]["content"] == "先做 Zone 2。"
 
 
+def test_agent_conversation_detail_supports_cursor_pagination(
+    client, db, auth_user_and_headers
+):
+    user, headers = auth_user_and_headers
+    conv = _create_conversation(db, user.id, "长对话")
+    messages = [
+        _add_message(db, conv.id, "user" if index % 2 == 0 else "assistant", f"消息{index}")
+        for index in range(5)
+    ]
+
+    latest = client.get(
+        f"/api/v1/agent/conversations/{conv.id}?limit=2",
+        headers=headers,
+    )
+    assert latest.status_code == 200
+    latest_body = latest.json()
+    assert [item["id"] for item in latest_body["messages"]] == [
+        messages[3].id,
+        messages[4].id,
+    ]
+    assert latest_body["total_messages"] == 5
+    assert latest_body["has_more"] is True
+    assert latest_body["oldest_message_id"] == messages[3].id
+
+    older = client.get(
+        f"/api/v1/agent/conversations/{conv.id}"
+        f"?limit=2&before_message_id={latest_body['oldest_message_id']}",
+        headers=headers,
+    )
+    assert older.status_code == 200
+    older_body = older.json()
+    assert [item["id"] for item in older_body["messages"]] == [
+        messages[1].id,
+        messages[2].id,
+    ]
+    assert older_body["has_more"] is True
+
+    oldest = client.get(
+        f"/api/v1/agent/conversations/{conv.id}"
+        f"?limit=2&before_message_id={older_body['oldest_message_id']}",
+        headers=headers,
+    )
+    assert oldest.status_code == 200
+    oldest_body = oldest.json()
+    assert [item["id"] for item in oldest_body["messages"]] == [messages[0].id]
+    assert oldest_body["has_more"] is False
+    assert oldest_body["oldest_message_id"] == messages[0].id
+
+
 def test_agent_conversation_detail_refreshes_private_chat_image_signature(
     client, db, auth_user_and_headers
 ):
@@ -746,6 +797,226 @@ def test_agent_conversation_detail_refreshes_private_chat_image_signature(
     assert parsed.path == f"/api/v1/upload/files/chat/{user.id}/meal.jpg"
     assert int(query["expires"][0]) > 1
     assert query["signature"][0] != "expired"
+
+
+def test_agent_conversation_detail_restores_each_persisted_diet_card_photo(
+    client, db, auth_user_and_headers
+):
+    user, headers = auth_user_and_headers
+    conv = _create_conversation(db, user.id, "连续拍照记餐")
+    first = _add_message(db, conv.id, "assistant", "早餐已记录。")
+    second = _add_message(db, conv.id, "assistant", "午餐已记录。")
+    records = [
+        DietRecord(
+            user_id=user.id,
+            record_date=date.today(),
+            meal_type=meal_type,
+            food_name=label,
+            food_items=label,
+            source="chat_photo",
+        )
+        for meal_type, label in (("breakfast", "早餐"), ("lunch", "午餐"))
+    ]
+    db.add_all(records)
+    db.flush()
+    assets = [
+        DietPhotoAsset(
+            id=f"diet-history-photo-{ordinal}",
+            user_id=user.id,
+            diet_record_id=records[ordinal].id,
+            storage_key=(
+                f"/api/v1/upload/files/diet/{user.id}/meal-{ordinal}.jpg"
+            ),
+            content_sha256=str(ordinal + 1) * 64,
+            media_type="image/jpeg",
+            origin="chat",
+            ordinal=ordinal,
+            classification="food",
+            recognition_confidence=0.93,
+            intent_decision="auto_record",
+            recognition_snapshot={"food_count": 1},
+            lifecycle="attached",
+        )
+        for ordinal in range(2)
+    ]
+    db.add_all(assets)
+    first.meta = {
+        "cards": [{
+            "type": "diet_draft",
+            "data": {
+                "recorded": True,
+                "record_id": records[0].id,
+                "photo_asset_id": assets[0].id,
+                "food_items": "早餐",
+            },
+            "actions": [],
+        }],
+    }
+    second.meta = {
+        "cards": [{
+            "type": "diet_draft",
+            "data": {
+                "recorded": True,
+                "record_id": records[1].id,
+                "photo_asset_id": assets[1].id,
+                "food_items": "午餐",
+            },
+            "actions": [],
+        }],
+    }
+    db.commit()
+
+    response = client.get(f"/api/v1/agent/conversations/{conv.id}", headers=headers)
+
+    assert response.status_code == 200
+    cards = [
+        message["meta"]["cards"][0]
+        for message in response.json()["messages"]
+    ]
+    for ordinal, card in enumerate(cards):
+        photo_url = card["data"]["photo_url"]
+        parsed = urlparse(photo_url)
+        query = parse_qs(parsed.query)
+        assert parsed.path == (
+            f"/api/v1/upload/files/diet/{user.id}/meal-{ordinal}.jpg"
+        )
+        assert "expires" in query
+        assert "signature" in query
+
+    db.refresh(first)
+    db.refresh(second)
+    assert "photo_url" not in first.meta["cards"][0]["data"]
+    assert "photo_url" not in second.meta["cards"][0]["data"]
+
+
+def test_agent_conversation_detail_never_restores_another_users_diet_photo(
+    client, db, auth_user_and_headers
+):
+    user, headers = auth_user_and_headers
+    other = _create_user(db, "diet_photo_owner")
+    foreign_record = DietRecord(
+        user_id=other.id,
+        record_date=date.today(),
+        meal_type="lunch",
+        food_name="私有餐食",
+        food_items="私有餐食",
+        source="chat_photo",
+    )
+    db.add(foreign_record)
+    db.flush()
+    foreign_asset = DietPhotoAsset(
+        id="foreign-diet-history-photo",
+        user_id=other.id,
+        diet_record_id=foreign_record.id,
+        storage_key=(
+            f"/api/v1/upload/files/diet/{other.id}/private-meal.jpg"
+        ),
+        content_sha256="f" * 64,
+        media_type="image/jpeg",
+        origin="chat",
+        ordinal=0,
+        classification="food",
+        recognition_confidence=0.91,
+        intent_decision="auto_record",
+        recognition_snapshot={"food_count": 1},
+        lifecycle="attached",
+    )
+    db.add(foreign_asset)
+    conv = _create_conversation(db, user.id, "隔离照片")
+    message = _add_message(db, conv.id, "assistant", "餐食已记录。")
+    message.meta = {
+        "cards": [{
+            "type": "diet_draft",
+            "data": {
+                "recorded": True,
+                "record_id": foreign_record.id,
+                "photo_asset_id": foreign_asset.id,
+                "photo_url": (
+                    f"/api/v1/upload/files/diet/{other.id}/private-meal.jpg"
+                    "?expires=9999999999&signature=untrusted"
+                ),
+            },
+            "actions": [],
+        }],
+    }
+    db.commit()
+
+    response = client.get(f"/api/v1/agent/conversations/{conv.id}", headers=headers)
+
+    assert response.status_code == 200
+    card_data = response.json()["messages"][0]["meta"]["cards"][0]["data"]
+    assert "photo_url" not in card_data
+
+
+def test_agent_conversation_detail_restores_one_multi_photo_card_in_asset_order(
+    client, db, auth_user_and_headers
+):
+    user, headers = auth_user_and_headers
+    conv = _create_conversation(db, user.id, "多图午餐")
+    message = _add_message(db, conv.id, "assistant", "午餐已记录。")
+    record = DietRecord(
+        user_id=user.id,
+        record_date=date.today(),
+        meal_type="lunch",
+        food_name="多图午餐",
+        food_items="多图午餐",
+        source="chat_photo",
+    )
+    db.add(record)
+    db.flush()
+    assets = [
+        DietPhotoAsset(
+            id=f"multi-photo-{ordinal}",
+            user_id=user.id,
+            diet_record_id=record.id,
+            storage_key=f"/api/v1/upload/files/diet/{user.id}/multi-{ordinal}.jpg",
+            content_sha256=str(ordinal + 3) * 64,
+            media_type="image/jpeg",
+            origin="chat",
+            ordinal=ordinal,
+            classification="food",
+            recognition_confidence=0.9,
+            intent_decision="auto_record",
+            recognition_snapshot={"food_count": 1},
+            lifecycle="attached",
+        )
+        for ordinal in range(2)
+    ]
+    db.add_all(assets)
+    message.meta = {
+        "cards": [{
+            "type": "diet_draft",
+            "data": {
+                "card_id": f"diet-record:{record.id}",
+                "recorded": True,
+                "record_id": record.id,
+                "photo_asset_id": assets[0].id,
+                "photo_asset_ids": [assets[1].id, assets[0].id],
+            },
+            "actions": [],
+        }],
+    }
+    db.commit()
+
+    response = client.get(f"/api/v1/agent/conversations/{conv.id}", headers=headers)
+
+    assert response.status_code == 200
+    data = response.json()["messages"][0]["meta"]["cards"][0]["data"]
+    assert data["photo_asset_ids"] == [assets[1].id, assets[0].id]
+    assert len(data["photo_urls"]) == 2
+    assert [
+        urlparse(value).path
+        for value in data["photo_urls"]
+    ] == [
+        f"/api/v1/upload/files/diet/{user.id}/multi-1.jpg",
+        f"/api/v1/upload/files/diet/{user.id}/multi-0.jpg",
+    ]
+    assert data["photo_url"] == data["photo_urls"][0]
+
+    db.refresh(message)
+    durable_data = message.meta["cards"][0]["data"]
+    assert "photo_url" not in durable_data
+    assert "photo_urls" not in durable_data
 
 
 def test_agent_conversation_detail_returns_persisted_card_meta(client, db, auth_user_and_headers):
@@ -776,6 +1047,21 @@ def test_merge_card_descriptors_preserves_existing_and_deduplicates():
     merged = _merge_card_descriptors(inline, existing, existing)
 
     assert [card["type"] for card in merged] == ["menu_share", "system_knowledge_evidence"]
+
+
+def test_merge_card_descriptors_replaces_same_stable_card_with_fresher_projection():
+    first = {
+        "type": "diet_draft",
+        "data": {"card_id": "diet-record:42", "photo_asset_ids": ["one"]},
+    }
+    fresher = {
+        "type": "diet_draft",
+        "data": {"card_id": "diet-record:42", "photo_asset_ids": ["one", "two"]},
+    }
+
+    merged = _merge_card_descriptors([first], [fresher])
+
+    assert merged == [fresher]
 
 
 def test_answer_owns_visualization_for_closed_deterministic_reva_ui_fences():

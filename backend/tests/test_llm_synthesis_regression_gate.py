@@ -51,6 +51,355 @@ def test_llm_regression_gate_defaults_to_offline_synthesis_suites(capsys):
     payload = json.loads(capsys.readouterr().out)
     assert payload["status"] == "passed"
     assert payload["llm_cost"] == "none"
+    assert payload["trajectory_contract"]["status"] == "passed"
+    assert payload["trajectory_contract"]["total_cases"] >= 5
+    assert payload["trajectory_goldens"]["status"] == "passed"
+    assert payload["trajectory_goldens"]["total_cases"] >= 9
+
+
+def test_agent_trajectory_contract_is_part_of_the_offline_gate():
+    module = _load_gate_module()
+
+    report = module.run_agent_trajectory_contract_gate()
+
+    assert report["status"] == "passed"
+    assert report["failed_cases"] == []
+
+
+def test_historical_golden_traces_are_part_of_the_offline_gate():
+    module = _load_gate_module()
+
+    report = module.run_agent_golden_trace_gate()
+
+    assert report["status"] == "passed"
+    assert report["failed_cases"] == []
+    assert {
+        "simple_water_write",
+        "simple_fruit_write",
+        "meal_context_reestimate",
+        "uncertain_receipt_false_success",
+        "duplicate_client_turn_side_effect",
+        "idempotent_client_turn_replay",
+        "read_only_delete_side_effect",
+        "duplicate_same_record_side_effect",
+        "missing_identity_receipt",
+    }.issubset(report["covered_scenarios"])
+
+
+def test_historical_golden_trace_can_refine_execution_postconditions(monkeypatch):
+    module = _load_gate_module()
+    original_score = module._score_golden_trace
+    captured_expected: list[dict] = []
+
+    def capture_score(case, trace):
+        if trace.get("client_turn_id") == "turn-fruit-peach":
+            captured_expected.append(dict(case.get("expected") or {}))
+        return original_score(case, trace)
+
+    monkeypatch.setattr(module, "_score_golden_trace", capture_score)
+
+    report = module.run_agent_golden_trace_gate()
+
+    assert report["status"] == "passed"
+    assert captured_expected == [
+        {
+            "goal_kind": "write",
+            "domain": "diet",
+            "operation": "create",
+            "target_date": "2026-07-17",
+            "target_meal_types": [],
+            "target_record_type": "diet",
+            "target_values": {
+                "meal_type": "snack",
+                "food_items": "一个水蜜桃",
+            },
+            "requires_lookup": False,
+            "requires_verification": True,
+            "prohibited_operations": [],
+            "clarification": False,
+        }
+    ]
+
+
+def test_historical_golden_trace_gate_blocks_an_unexpected_acceptance(monkeypatch):
+    module = _load_gate_module()
+
+    monkeypatch.setattr(
+        module,
+        "_score_golden_trace",
+        lambda case, trace: {
+            "passed": True,
+            "hard_failures": [],
+            "dimensions": {},
+        },
+    )
+
+    report = module.run_agent_golden_trace_gate()
+
+    assert report["status"] == "failed"
+    failed_by_scenario = {
+        row["scenario"]: row for row in report["failed_cases"]
+    }
+    assert "uncertain_receipt_false_success" in failed_by_scenario
+    assert "duplicate_client_turn_side_effect" in failed_by_scenario
+
+
+def test_historical_golden_trace_gate_blocks_missing_required_scenario(
+    monkeypatch,
+    tmp_path,
+):
+    module = _load_gate_module()
+    incomplete_fixture = tmp_path / "agent_trajectory_goldens.yaml"
+    incomplete_fixture.write_text(
+        """
+name: agent_trajectory_goldens
+version: 1
+cases:
+  - scenario: simple_water_write
+    history_ref: water_write_clarification_loop
+    case_id: water_record_explicit_chinese_amount
+    expected:
+      passed: true
+      hard_failures: []
+    trace:
+      client_turn_id: turn-water-500
+      goal:
+        kind: simple_health_record
+        domain: water
+        operation: create
+        target_date: "2026-07-17"
+        target_meal_types: []
+      tool_calls:
+        - args:
+            record_type: water
+            operation: create
+            data: {amount_ml: "500"}
+          receipt: {status: verified, record_id: 501}
+        - args: {record_type: water, operation: list}
+          result: [{id: 501, amount_ml: 500}]
+      final: {claims_complete: true}
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(module, "AGENT_TRAJECTORY_GOLDENS", incomplete_fixture)
+
+    report = module.run_agent_golden_trace_gate()
+
+    assert report["status"] == "failed"
+    assert any(
+        "missing required scenarios" in row.get("mismatch", {}).get("fixture", "")
+        for row in report["failed_cases"]
+    )
+
+
+def test_historical_golden_trace_gate_rejects_private_fixture_data(
+    monkeypatch,
+    tmp_path,
+):
+    module = _load_gate_module()
+    private_fixture = tmp_path / "agent_trajectory_goldens.yaml"
+    private_fixture.write_text(
+        """
+name: agent_trajectory_goldens
+version: 1
+fixture_origin: synthetic
+cases:
+  - scenario: simple_water_write
+    history_ref: water_write_clarification_loop
+    case_id: water_record_explicit_chinese_amount
+    user_id: 123
+    trace:
+      client_turn_id: turn-water-500
+      source_url: https://example.invalid/private.jpg
+    expected: {passed: false, hard_failures: []}
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(module, "AGENT_TRAJECTORY_GOLDENS", private_fixture)
+
+    report = module.run_agent_golden_trace_gate()
+
+    assert report["status"] == "failed"
+    fixture_errors = [
+        row.get("mismatch", {}).get("fixture", "")
+        for row in report["failed_cases"]
+    ]
+    assert any("forbidden fixture key: user_id" in error for error in fixture_errors)
+    assert any("forbidden URI value" in error for error in fixture_errors)
+
+
+def test_historical_golden_trace_gate_scans_fixture_root_and_embedded_uri(
+    monkeypatch,
+    tmp_path,
+):
+    module = _load_gate_module()
+    private_fixture = tmp_path / "agent_trajectory_goldens.yaml"
+    private_fixture.write_text(
+        """
+name: agent_trajectory_goldens
+version: 1
+fixture_origin: synthetic
+user_id: 123
+note: "synthetic trace copied from https://example.invalid/private.jpg"
+cases: []
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(module, "AGENT_TRAJECTORY_GOLDENS", private_fixture)
+
+    report = module.run_agent_golden_trace_gate()
+    fixture_errors = [
+        row.get("mismatch", {}).get("fixture", "")
+        for row in report["failed_cases"]
+    ]
+
+    assert any("forbidden fixture key: user_id at $.user_id" in error for error in fixture_errors)
+    assert any("forbidden URI value at $.note" in error for error in fixture_errors)
+
+
+def test_historical_golden_trace_gate_rejects_sensitive_key_variants(
+    monkeypatch,
+    tmp_path,
+):
+    module = _load_gate_module()
+    private_fixture = tmp_path / "agent_trajectory_goldens.yaml"
+    private_fixture.write_text(
+        """
+name: agent_trajectory_goldens
+version: 1
+fixture_origin: synthetic
+patient_id: real-patient
+authorization: Bearer private-secret
+message_body: private health text
+cases: []
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(module, "AGENT_TRAJECTORY_GOLDENS", private_fixture)
+
+    report = module.run_agent_golden_trace_gate()
+    fixture_errors = [
+        row.get("mismatch", {}).get("fixture", "")
+        for row in report["failed_cases"]
+    ]
+
+    assert any("forbidden fixture key: patient_id" in error for error in fixture_errors)
+    assert any("forbidden fixture key: authorization" in error for error in fixture_errors)
+    assert any("forbidden fixture key: message_body" in error for error in fixture_errors)
+
+
+def test_fixture_privacy_gate_rejects_refresh_credentials_and_inline_tokens():
+    module = _load_gate_module()
+
+    errors = module._fixture_privacy_errors({
+        "refresh_token": "synthetic-but-forbidden",
+        "credential": "synthetic-but-forbidden",
+        "note": "token=sk-live-secretvalue",
+    })
+
+    assert any("forbidden fixture key: refresh_token" in error for error in errors)
+    assert any("forbidden fixture key: credential" in error for error in errors)
+    assert any("forbidden inline credential" in error for error in errors)
+
+
+def test_expected_contract_can_only_tighten_dataset_contract():
+    module = _load_gate_module()
+
+    merged, errors = module._tighten_expected_contract(
+        {
+            "requires_verification": True,
+            "prohibited_operations": ["delete"],
+        },
+        {
+            "requires_verification": False,
+            "prohibited_operations": [],
+        },
+    )
+
+    assert merged["requires_verification"] is True
+    assert merged["prohibited_operations"] == ["delete"]
+    assert "requires_verification cannot be relaxed" in errors
+    assert "prohibited_operations cannot remove existing values" in errors
+
+
+def test_expected_failure_must_match_exact_historical_failure_class():
+    module = _load_gate_module()
+
+    errors = module._expected_outcome_errors(
+        {
+            "passed": False,
+            "hard_failures": ["uncertain_receipt_claimed_complete"],
+        },
+        {
+            "passed": False,
+            "hard_failures": ["write_before_lookup"],
+        },
+    )
+
+    assert "hard_failures" in errors
+    assert errors["hard_failures"]["missing"] == [
+        "uncertain_receipt_claimed_complete"
+    ]
+    assert errors["hard_failures"]["unexpected"] == ["write_before_lookup"]
+
+
+def test_historical_golden_trace_gate_scans_dataset_privacy(
+    monkeypatch,
+    tmp_path,
+):
+    module = _load_gate_module()
+    private_dataset = tmp_path / "agent_trajectories.yaml"
+    private_dataset.write_text(
+        """
+name: agent_trajectories
+version: 1
+fixture_origin: synthetic
+cases:
+  - id: private-case
+    patient_id: real-patient
+    user: "synthetic prompt"
+    expected: {}
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(module, "AGENT_TRAJECTORY_DATASET", private_dataset)
+
+    report = module.run_agent_golden_trace_gate()
+    fixture_errors = [
+        row.get("mismatch", {}).get("fixture", "")
+        for row in report["failed_cases"]
+    ]
+
+    assert any(
+        "forbidden fixture key: patient_id at $dataset.cases[0].patient_id" in error
+        for error in fixture_errors
+    )
+
+
+def test_historical_golden_trace_gate_requires_synthetic_origin(
+    monkeypatch,
+    tmp_path,
+):
+    module = _load_gate_module()
+    fixture_without_origin = tmp_path / "agent_trajectory_goldens.yaml"
+    fixture_without_origin.write_text(
+        """
+name: agent_trajectory_goldens
+version: 1
+cases: []
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(module, "AGENT_TRAJECTORY_GOLDENS", fixture_without_origin)
+
+    report = module.run_agent_golden_trace_gate()
+
+    assert report["status"] == "failed"
+    assert any(
+        "fixture_origin must be synthetic"
+        in row.get("mismatch", {}).get("fixture", "")
+        for row in report["failed_cases"]
+    )
 
 
 def test_llm_regression_gate_fails_on_suite_failure():

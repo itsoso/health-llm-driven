@@ -38,6 +38,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from sqlalchemy.orm import Session
 
 from app.models.action_card import ActionCard  # noqa: F401 - register lazily-loaded table
+from app.models.agent_conversation import AgentConversation, AgentMessage
 from app.models.blood_pressure import BloodPressureRecord
 from app.models.daily_health import GarminData, WaterIntake, WorkoutRecord
 from app.models.medical_exam import MedicalExam
@@ -53,6 +54,7 @@ FIXTURE_PATH = Path(__file__).resolve().parent.parent / "fixtures" / "demo_user_
 DEFAULT_EMAIL = "demo@reva.health"
 DEFAULT_NAME = "演示用户"
 DEFAULT_DAYS = 7
+DEMO_CONVERSATION_SESSION_KEY = "app-store-review-demo"
 
 
 def _load_fixture() -> dict[str, Any]:
@@ -239,6 +241,59 @@ def _inject_timeline_seed(db: Session, user_id: int, fixture: dict) -> int:
     return len(workouts)
 
 
+def _inject_demo_conversation(
+    db: Session,
+    user_id: int,
+    fixture: dict[str, Any],
+) -> tuple[int, int]:
+    """Rebuild only the deterministic App Store review conversation.
+
+    The dedicated session key keeps the reset narrowly scoped. Conversations
+    created by a reviewer remain untouched.
+    """
+    existing = (
+        db.query(AgentConversation)
+        .filter(
+            AgentConversation.user_id == user_id,
+            AgentConversation.session_key == DEMO_CONVERSATION_SESSION_KEY,
+        )
+        .all()
+    )
+    for conversation in existing:
+        db.delete(conversation)
+    db.flush()
+
+    cfg = fixture["agent_conversation"]
+    now = datetime.now(timezone.utc)
+    conversation = AgentConversation(
+        user_id=user_id,
+        title=f"{cfg['title_prefix']} · {now:%m-%d}",
+        session_key=DEMO_CONVERSATION_SESSION_KEY,
+        created_at=now - timedelta(minutes=1),
+        updated_at=now,
+    )
+    db.add(conversation)
+    db.flush()
+    db.add_all(
+        [
+            AgentMessage(
+                conversation_id=conversation.id,
+                role="user",
+                content=cfg["user_message"],
+                created_at=now - timedelta(minutes=1),
+            ),
+            AgentMessage(
+                conversation_id=conversation.id,
+                role="assistant",
+                content=cfg["assistant_message"],
+                created_at=now,
+            ),
+        ]
+    )
+    db.commit()
+    return int(conversation.id), 2
+
+
 def seed_demo(
     db: Session,
     *,
@@ -270,6 +325,11 @@ def seed_demo(
     _reset_synthetic_data(db, user.id)
     _inject_observations(db, user.id, fixture, days)
     _inject_timeline_seed(db, user.id, fixture)
+    demo_conversation_id, demo_conversation_messages = _inject_demo_conversation(
+        db,
+        user.id,
+        fixture,
+    )
 
     # Trigger the real initial health loop (HealthProblem/Program/DailyOperatingPlan).
     user.onboarding_completed = True
@@ -305,6 +365,8 @@ def seed_demo(
         "daily_plan_actions": len(plan_actions),
         "timeline_events": len(timeline),
         "daily_artifact_top_action": top_action.get("title"),
+        "demo_conversation_id": demo_conversation_id,
+        "demo_conversation_messages": demo_conversation_messages,
         "bootstrap_problem": bootstrap["problem"]["name"],
         "bootstrap_program": bootstrap["program"]["name"],
         "verification": "PASS",

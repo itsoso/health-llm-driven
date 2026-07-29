@@ -376,6 +376,13 @@ async def test_provider_error_fallback_for_tools_returns_to_manual_model_for_fin
     monkeypatch.setattr("app.services.agent_executor.settings.llm_provider", "tokenplan")
     monkeypatch.setattr("app.services.agent_executor.settings.agent_base_url", None)
     monkeypatch.setattr("app.services.agent_executor.settings.agent_api_key", None)
+    # This test isolates selected-model tool fallback. A developer's .env may
+    # enable the independent fast tool-round feature, which would bypass the
+    # selected provider before the fallback behavior under test is exercised.
+    monkeypatch.setattr(
+        "app.services.agent_executor.settings.task_tiered_routing",
+        False,
+    )
     monkeypatch.setattr(
         "app.services.agent_executor.get_health_tools",
         lambda: [{

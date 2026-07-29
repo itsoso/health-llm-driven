@@ -13,7 +13,7 @@ surface 到 action_cards 作为用户可决策、可追踪的条目.
 from __future__ import annotations
 
 import logging
-from typing import Iterable, List, Optional
+from typing import Collection, Iterable, List, Optional
 
 from sqlalchemy.orm import Session
 
@@ -64,6 +64,12 @@ def surface_safety_alert(
 
         if existing is not None:
             updated = False
+            if existing.status != "active":
+                existing.status = "active"
+                updated = True
+            if existing.is_visible is not True:
+                existing.is_visible = True
+                updated = True
             if existing.severity != severity_label:
                 existing.severity = severity_label
                 updated = True
@@ -113,11 +119,49 @@ def surface_safety_alerts(
     db: Session,
     user_id: int,
     alerts: Iterable[Alert],
+    *,
+    reconcile_rule_ids: Optional[Collection[str]] = None,
 ) -> List[int]:
-    """批量 surface, 返回所有成功写入的 card_id 列表."""
+    """批量 surface，并归档已不再触发的指定规则卡片。"""
+    alerts = list(alerts)
     ids: List[int] = []
     for alert in alerts:
         cid = surface_safety_alert(db, user_id, alert)
         if cid is not None:
             ids.append(cid)
+
+    if reconcile_rule_ids:
+        active_rule_ids = {alert.rule_id for alert in alerts}
+        stale_rule_ids = set(reconcile_rule_ids) - active_rule_ids
+        if stale_rule_ids:
+            try:
+                stale_cards = (
+                    db.query(ActionCard)
+                    .filter(
+                        ActionCard.user_id == user_id,
+                        ActionCard.source_type == "safety_alert",
+                        ActionCard.source_id.in_(stale_rule_ids),
+                        ActionCard.user_decision.is_(None),
+                    )
+                    .all()
+                )
+                changed = False
+                for card in stale_cards:
+                    if card.status != "archived":
+                        card.status = "archived"
+                        changed = True
+                    if card.is_visible is not False:
+                        card.is_visible = False
+                        changed = True
+                if changed:
+                    db.commit()
+            except Exception as e:  # noqa: BLE001
+                logger.warning(
+                    "[action_card_surface] reconcile 失败 "
+                    f"(user={user_id}, rules={sorted(stale_rule_ids)}): {e}"
+                )
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
     return ids

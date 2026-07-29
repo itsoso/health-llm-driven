@@ -31,11 +31,22 @@ const api = axios.create({
 
 export const EXPLICIT_CLOUD_AI_HEADER = 'X-Reva-Explicit-Cloud-AI';
 
+const CLOUD_SESSION_BOOTSTRAP_REQUESTS = new Set([
+  'POST /auth/login/json',
+  'POST /auth/phone/code',
+  'POST /auth/phone/login',
+]);
+
+function isCloudSessionBootstrapRequest(method: string | undefined, url: string | undefined): boolean {
+  const normalizedMethod = String(method || 'get').toUpperCase();
+  const normalizedPath = String(url || '').split('?', 1)[0];
+  return CLOUD_SESSION_BOOTSTRAP_REQUESTS.has(`${normalizedMethod} ${normalizedPath}`);
+}
+
 api.interceptors.request.use(
   async (config) => {
     const explicitCloudAI = config.headers.get(EXPLICIT_CLOUD_AI_HEADER) === '1';
     config.headers.delete(EXPLICIT_CLOUD_AI_HEADER);
-    await enforceAppEgressAllowed({ explicitCloudAI });
     let token = runtimeAuthToken;
     if (!token) {
       try {
@@ -49,9 +60,18 @@ api.interceptors.request.use(
         // window). A token installed by login remains usable in memory.
       }
     }
+    await enforceAppEgressAllowed({
+      explicitCloudAI,
+      cloudSessionBootstrap: isCloudSessionBootstrapRequest(config.method, config.url),
+      cloudCredentialPresent: isUsableNativeAuthToken(token),
+    });
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+    // Scope a later 401 to the exact session that sent this request. Without
+    // this marker, a delayed response from an old token can log out a newly
+    // authenticated user after an app foreground or account switch.
+    (config as typeof config & { __revaAuthToken?: string | null }).__revaAuthToken = token;
     return config;
   },
   (error) => Promise.reject(error),
@@ -59,13 +79,24 @@ api.interceptors.request.use(
 
 // Global 401 callback — set by AuthProvider to force logout
 let onUnauthorized: (() => void) | null = null;
-export function setOnUnauthorized(cb: () => void) { onUnauthorized = cb; }
+export function setOnUnauthorized(cb: (() => void) | null) { onUnauthorized = cb; }
 
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
     if (error.response?.status === 401) {
-      onUnauthorized?.();
+      const requestToken = (
+        error.config as { __revaAuthToken?: string | null } | undefined
+      )?.__revaAuthToken;
+      const requestUrl = String(error.config?.url || '').split('?', 1)[0];
+      const isAuthRequest = requestUrl.startsWith('/auth/');
+      if (
+        !isAuthRequest
+        && requestToken !== undefined
+        && requestToken === runtimeAuthToken
+      ) {
+        onUnauthorized?.();
+      }
     }
     return Promise.reject(error);
   },

@@ -12,7 +12,10 @@ const { getKnowledgeClaim } = jest.requireMock('../../../services/systemKnowledg
 
 function renderWithQuery(ui: React.ReactElement) {
   const qc = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    defaultOptions: {
+      queries: { retry: false, gcTime: 0 },
+      mutations: { retry: false, gcTime: 0 },
+    },
   });
   return render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>);
 }

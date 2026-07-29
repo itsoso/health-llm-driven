@@ -5850,7 +5850,7 @@ export interface paths {
         put?: never;
         /**
          * Create Diet Record
-         * @description 创建饮食记录（需要登录）
+         * @description Create a diet record, serializing confirmation with photo auto-capture.
          */
         post: operations["create_diet_record_api_v1_diet_records_post"];
         delete?: never;
@@ -10897,6 +10897,93 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/community/posts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Posts */
+        get: operations["list_posts_api_v1_community_posts_get"];
+        put?: never;
+        /** Create Post */
+        post: operations["create_post_api_v1_community_posts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/community/posts/source/diet_record/{source_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Diet Post By Source */
+        get: operations["get_diet_post_by_source_api_v1_community_posts_source_diet_record__source_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/community/posts/{post_id}/reaction": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set Reaction */
+        put: operations["set_reaction_api_v1_community_posts__post_id__reaction_put"];
+        post?: never;
+        /** Delete Reaction */
+        delete: operations["delete_reaction_api_v1_community_posts__post_id__reaction_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/community/posts/{post_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Post */
+        delete: operations["delete_post_api_v1_community_posts__post_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/community/posts/{post_id}/report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Report Post */
+        post: operations["report_post_api_v1_community_posts__post_id__report_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/twin/me": {
         parameters: {
             query?: never;
@@ -11172,6 +11259,26 @@ export interface paths {
         put?: never;
         /** Cancel Agent Runtime Run */
         post: operations["cancel_agent_runtime_run_api_v1_agent_runs__run_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/turns/{client_turn_id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Agent Turn Status
+         * @description Reconcile an interrupted transport using content-free control metadata.
+         */
+        get: operations["get_agent_turn_status_api_v1_agent_turns__client_turn_id__status_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -19235,6 +19342,11 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AIGCMediaConfirmRequest */
+        AIGCMediaConfirmRequest: {
+            /** Duration Seconds */
+            duration_seconds?: number | null;
+        };
         /**
          * AIInsightListResponse
          * @description AI 洞察列表响应
@@ -19761,6 +19873,27 @@ export interface components {
             client_turn_id?: string | null;
             client_time_context?: components["schemas"]["ClientTimeContext"] | null;
         };
+        /** AgentRuntimeIntegrityResponse */
+        AgentRuntimeIntegrityResponse: {
+            /** Window Runs */
+            window_runs: number;
+            /** Contract Snapshot Runs */
+            contract_snapshot_runs: number;
+            /** Contract Snapshot Coverage Percent */
+            contract_snapshot_coverage_percent: number;
+            /** Contract Versions */
+            contract_versions: {
+                [key: string]: number;
+            };
+            /** Settled Message Linkage Gaps */
+            settled_message_linkage_gaps: number;
+            /** Missing Current Attempt Runs */
+            missing_current_attempt_runs: number;
+            /** Active Over Deadline Runs */
+            active_over_deadline_runs: number;
+            /** Waiting Over 24H Runs */
+            waiting_over_24h_runs: number;
+        };
         /** AgentRuntimeReconciliationRequest */
         AgentRuntimeReconciliationRequest: {
             /**
@@ -19796,6 +19929,11 @@ export interface components {
             /** Resource Id */
             resource_id?: string | null;
         };
+        /** AgentRuntimeResumeRequest */
+        AgentRuntimeResumeRequest: {
+            /** Expected Reconciliation Generation */
+            expected_reconciliation_generation: number;
+        };
         /** AgentRuntimeRolloutCircuitResponse */
         AgentRuntimeRolloutCircuitResponse: {
             /**
@@ -19809,6 +19947,10 @@ export interface components {
             version: number;
             /** Last Evaluated At */
             last_evaluated_at?: string | null;
+            /** Reconciliation Generation */
+            reconciliation_generation: number;
+            /** Reconciliation Acknowledged Generation */
+            reconciliation_acknowledged_generation: number;
         };
         /** AgentRuntimeRolloutDurationResponse */
         AgentRuntimeRolloutDurationResponse: {
@@ -19846,6 +19988,7 @@ export interface components {
                 [key: string]: number;
             };
             duration_ms: components["schemas"]["AgentRuntimeRolloutDurationResponse"];
+            integrity: components["schemas"]["AgentRuntimeIntegrityResponse"];
         };
         /** AgentRuntimeRolloutStatusResponse */
         AgentRuntimeRolloutStatusResponse: {
@@ -19886,6 +20029,25 @@ export interface components {
             status: "active" | "paused";
             /** Reason Code */
             reason_code?: string | null;
+        };
+        /** AgentTurnStatusResponse */
+        AgentTurnStatusResponse: {
+            /** Client Turn Id */
+            client_turn_id: string;
+            /** Run Id */
+            run_id?: string | null;
+            /** Status */
+            status: string;
+            /** Request Persisted */
+            request_persisted: boolean;
+            /** Response Persisted */
+            response_persisted: boolean;
+            /** Conversation Id */
+            conversation_id?: number | null;
+            /** Retryable */
+            retryable: boolean;
+            /** Error Code */
+            error_code?: string | null;
         };
         /** AmbientAudioInputResponse */
         AmbientAudioInputResponse: {
@@ -21534,6 +21696,74 @@ export interface components {
             source_type: string;
             /** Video Url */
             video_url?: string | null;
+        };
+        /** CommunityFeedResponse */
+        CommunityFeedResponse: {
+            /** Items */
+            items: components["schemas"]["CommunityPostResponse"][];
+        };
+        /** CommunityPostCreate */
+        CommunityPostCreate: {
+            /**
+             * Source Type
+             * @constant
+             * @enum {string}
+             */
+            source_type: "diet_record";
+            /** Source Id */
+            source_id: number;
+            /** Caption */
+            caption?: string | null;
+            /** Idempotency Key */
+            idempotency_key: string;
+        };
+        /** CommunityPostResponse */
+        CommunityPostResponse: {
+            /** Id */
+            id: number;
+            /** Anonymous Name */
+            anonymous_name: string;
+            /** Source Type */
+            source_type: string;
+            /** Snapshot */
+            snapshot: Record<string, never>;
+            /** Caption */
+            caption: string | null;
+            /** Status */
+            status: string;
+            /** Reaction Counts */
+            reaction_counts: {
+                [key: string]: number;
+            };
+            /** My Reaction */
+            my_reaction: ("support" | "same_path" | "learned") | null;
+            /** Is Owner */
+            is_owner: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** CommunityReactionUpdate */
+        CommunityReactionUpdate: {
+            /**
+             * Reaction
+             * @enum {string}
+             */
+            reaction: "support" | "same_path" | "learned";
+        };
+        /** CommunityReportCreate */
+        CommunityReportCreate: {
+            /** Reason */
+            reason: string;
+        };
+        /** CommunityReportResponse */
+        CommunityReportResponse: {
+            /** Report Count */
+            report_count: number;
+            /** Status */
+            status: string;
         };
         /** CompleteAgendaEventRequest */
         CompleteAgendaEventRequest: {
@@ -23417,6 +23647,8 @@ export interface components {
         EventIn: {
             /** Event Name */
             event_name: string;
+            /** Event Key */
+            event_key?: string | null;
             /** Meta */
             meta?: Record<string, never> | null;
         };
@@ -24144,6 +24376,8 @@ export interface components {
             source?: string | null;
             /** Quantity Grams */
             quantity_grams?: number | null;
+            /** Label Basis Grams */
+            label_basis_grams?: number | null;
             /** Nutrition Basis */
             nutrition_basis?: string | null;
             /** Portion Basis */
@@ -32340,6 +32574,16 @@ export interface components {
              * @description 发送者微信 OpenID
              */
             wechat_openid?: string | null;
+            /**
+             * Msg Id
+             * @description 微信/企业微信原始消息 ID，用于防重复投递
+             */
+            msg_id?: string | null;
+            /**
+             * Message Id
+             * @description 兼容调用方的原始消息 ID 字段
+             */
+            message_id?: string | null;
         };
         /**
          * WechatLoginRequest
@@ -36345,7 +36589,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentRuntimeResumeRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -36354,6 +36602,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AgentRuntimeRolloutTransitionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -50583,7 +50840,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["AIGCMediaConfirmRequest"] | null;
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -50685,6 +50946,232 @@ export interface operations {
                 };
                 content: {
                     "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_posts_api_v1_community_posts_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                before_id?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommunityFeedResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_post_api_v1_community_posts_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommunityPostCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommunityPostResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_diet_post_by_source_api_v1_community_posts_source_diet_record__source_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommunityPostResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_reaction_api_v1_community_posts__post_id__reaction_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                post_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommunityReactionUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommunityPostResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_reaction_api_v1_community_posts__post_id__reaction_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                post_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommunityPostResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_post_api_v1_community_posts__post_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                post_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    report_post_api_v1_community_posts__post_id__report_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                post_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommunityReportCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommunityReportResponse"];
                 };
             };
             /** @description Validation Error */
@@ -51108,6 +51595,37 @@ export interface operations {
             };
         };
     };
+    get_agent_turn_status_api_v1_agent_turns__client_turn_id__status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_turn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentTurnStatusResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_agent_runtime_run_api_v1_agent_runs__run_id__get: {
         parameters: {
             query?: {
@@ -51254,6 +51772,10 @@ export interface operations {
             query?: {
                 /** @description 只返回最近 N 天的消息 */
                 days?: number | null;
+                /** @description 按消息 ID 取最近一页 */
+                limit?: number | null;
+                /** @description 只返回此消息 ID 之前的数据 */
+                before_message_id?: number | null;
             };
             header?: never;
             path: {

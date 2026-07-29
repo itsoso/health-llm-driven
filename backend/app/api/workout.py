@@ -47,6 +47,20 @@ def format_pace(seconds_per_km: int) -> str:
     return f"{minutes}:{seconds:02d}/km"
 
 
+def _invalidate_twin(user_id: int) -> None:
+    """Workout mutations change Twin summaries and derived Safety state."""
+    try:
+        from app.twin.cache import invalidate_twin
+
+        invalidate_twin(user_id)
+    except Exception as exc:
+        logger.warning(
+            "运动数据写入后 Twin 缓存失效失败 - user_id=%s error=%s",
+            user_id,
+            exc,
+        )
+
+
 def calculate_hr_zone_distribution(record: WorkoutRecord) -> Optional[HeartRateZoneDistribution]:
     """计算心率区间分布"""
     zones = [
@@ -419,6 +433,7 @@ def create_workout(
     db.add(db_record)
     db.commit()
     db.refresh(db_record)
+    _invalidate_twin(current_user.id)
 
     logger.info(f"用户 {current_user.id} 创建运动记录: {db_record.workout_type} on {db_record.workout_date}")
 
@@ -452,6 +467,7 @@ def update_workout(
 
     db.commit()
     db.refresh(record)
+    _invalidate_twin(current_user.id)
 
     return record
 
@@ -473,6 +489,7 @@ def delete_workout(
 
     db.delete(record)
     db.commit()
+    _invalidate_twin(current_user.id)
 
     logger.info(f"用户 {current_user.id} 删除运动记录 ID: {workout_id}")
 
@@ -656,6 +673,7 @@ async def refresh_workout_heart_rate(
                     logger.info(f"计算得到心率区间: {zone_seconds}")
 
                 db.commit()
+                _invalidate_twin(current_user.id)
                 logger.info(f"用户 {current_user.id} 刷新运动 {workout_id} 心率数据: {len(hr_points)} 点")
                 return {
                     "status": "success",
@@ -674,6 +692,7 @@ async def refresh_workout_heart_rate(
             if hr_points:
                 record.heart_rate_data = json.dumps(hr_points)
                 db.commit()
+                _invalidate_twin(current_user.id)
                 return {
                     "status": "simulated",
                     "message": f"使用模拟心率曲线 ({len(hr_points)} 点)",
@@ -736,6 +755,7 @@ async def refresh_workout_gps(
             if route_points:
                 record.route_data = json.dumps(route_points)
                 db.commit()
+                _invalidate_twin(current_user.id)
                 logger.info(f"用户 {current_user.id} 刷新运动 {workout_id} GPS数据: {len(route_points)} 点")
                 return {
                     "status": "success",
@@ -799,6 +819,7 @@ async def refresh_workout_laps(
             if lap_points:
                 record.lap_data = json.dumps(lap_points)
                 db.commit()
+                _invalidate_twin(current_user.id)
                 logger.info(f"用户 {current_user.id} 刷新运动 {workout_id} 计圈数据: {len(lap_points)} 圈")
                 return {
                     "status": "success",
@@ -888,6 +909,8 @@ async def refresh_workout_gps_batch(
                 continue
 
         db.commit()
+        if refreshed_count:
+            _invalidate_twin(current_user.id)
 
         return {
             "status": "success",
@@ -952,6 +975,7 @@ async def sync_garmin_activities(
         )
 
         result = await sync_service.sync_activities(db, current_user.id, days)
+        _invalidate_twin(current_user.id)
 
         return {
             "status": "success",

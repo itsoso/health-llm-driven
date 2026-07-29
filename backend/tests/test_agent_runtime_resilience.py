@@ -761,6 +761,16 @@ def test_recovery_task_settles_an_expired_run(
                 "status_counts": {"failed": 1},
                 "tool_status_counts": {},
                 "duration_ms": {"p50": 120000, "p95": 120000},
+                "integrity": {
+                    "window_runs": 0,
+                    "contract_snapshot_runs": 0,
+                    "contract_snapshot_coverage_percent": 100,
+                    "contract_versions": {},
+                    "settled_message_linkage_gaps": 0,
+                    "missing_current_attempt_runs": 0,
+                    "active_over_deadline_runs": 0,
+                    "waiting_over_24h_runs": 0,
+                },
             },
         },
     }
@@ -768,7 +778,7 @@ def test_recovery_task_settles_an_expired_run(
 
 
 def test_recovery_task_pauses_rollout_after_uncertain_write(
-    db, auth_user_and_headers, monkeypatch
+    db, auth_user_and_headers, monkeypatch, caplog
 ):
     from app.config import settings
     from app.models.agent_runtime import AgentRuntimeRolloutEvent
@@ -799,7 +809,8 @@ def test_recovery_task_pauses_rollout_after_uncertain_write(
         sessionmaker(bind=db.get_bind(), autocommit=False, autoflush=False),
     )
 
-    result = recover_expired_agent_runs(now_iso=now.isoformat())
+    with caplog.at_level("CRITICAL"):
+        result = recover_expired_agent_runs(now_iso=now.isoformat())
 
     db.expire_all()
     assert result["recovered"] == 1
@@ -812,6 +823,11 @@ def test_recovery_task_pauses_rollout_after_uncertain_write(
     assert event.action == "pause"
     assert event.actor_kind == "system"
     assert event.reason_code == "reconciliation_detected"
+    assert (
+        "[agent-runtime] write circuit paused "
+        "reason=reconciliation_detected"
+    ) in caplog.text
+    assert "reconciliation_generation=1 acknowledged_generation=0" in caplog.text
 
 
 def test_recovery_task_pauses_rollout_when_reconciliation_scan_fails(

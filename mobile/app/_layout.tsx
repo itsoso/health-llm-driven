@@ -1,13 +1,11 @@
-// Sentry SDK import stays first, but initialization is mode-gated below so a
-// strict-local cold start cannot create an observability session.
 import { configureSentryForAppMode, Sentry, SENTRY_ENABLED } from '../applib/sentry';
 
-import React, { useEffect, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { focusManager } from '@tanstack/react-query';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
-import { asyncStoragePersister, queryClient, persistOptions } from '../applib/queryClient';
+import { queryClient, persistOptions } from '../applib/queryClient';
 import { useAuth } from '../hooks/useAuth';
 import { AppSessionProvider, useAppSession } from '../hooks/useAppSession';
 import { ToastProvider } from '../hooks/useToast';
@@ -21,23 +19,23 @@ import { useHealthKitForegroundSync } from '../hooks/useHealthKitForegroundSync'
 import { useRevaFonts } from '../components/reva/useRevaFonts';
 import AppLockScreen from '../components/AppLockScreen';
 import NotificationBanner from '../components/notifications/NotificationBanner';
-import NetworkBanner from '../components/NetworkBanner';
 import AppUpdateBanner from '../components/updates/AppUpdateBanner';
 import RootErrorBoundary from '../components/RootErrorBoundary';
 import LoginScreen from './login';
-import LocalModeHome from '../components/local-mode/LocalModeHome';
-import LocalModeBlockedScreen from '../components/local-mode/LocalModeBlockedScreen';
 // Side-effect import: TaskManager.defineTask 必须在 module load 时跑 (React 树挂载前).
 import { registerBackgroundLocationTask } from '../services/backgroundLocationTask';
 import { getReleaseCapabilities } from '../config/releaseCapabilities';
 import { useTheme, type ColorPalette } from '../hooks/useTheme';
 import { loadDietPhotoDraft } from '../services/dietPhotoDraftStorage';
+import { flushClientEventOutbox } from '../services/clientEvents';
 import {
   View,
   ActivityIndicator,
   StyleSheet,
   AppState,
   Platform,
+  Pressable,
+  Text,
 } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
@@ -50,8 +48,9 @@ export const unstable_settings = {
 function AppContent() {
   const { c } = useTheme();
   const styles = useMemo(() => createStyles(c), [c]);
-  const { isAuthenticated, user } = useAuth();
+  const { isAuthenticated, user, retrySession } = useAuth();
   const { session, isLoading, errorCode } = useAppSession();
+  const [sessionRecoveryError, setSessionRecoveryError] = useState(false);
   const cloudActive = session?.mode === 'cloud_account' && isAuthenticated;
   const { isLocked, authenticate } = useBiometricLock(cloudActive);
   const releaseCapabilities = getReleaseCapabilities();
@@ -80,10 +79,32 @@ function AppContent() {
   }, [cloudActive, user?.id]);
 
   useEffect(() => {
+    if (!cloudActive) return;
+    void flushClientEventOutbox().catch((error) => {
+      console.warn('[ClientEventOutbox] startup flush failed', error);
+    });
+  }, [cloudActive]);
+
+  useEffect(() => {
     if (cloudActive && isLocked) {
       authenticate();
     }
   }, [authenticate, isLocked, cloudActive]);
+
+  const recoverSession = useCallback(async () => {
+    setSessionRecoveryError(false);
+    try {
+      await retrySession();
+    } catch {
+      setSessionRecoveryError(true);
+    }
+  }, [retrySession]);
+
+  useEffect(() => {
+    if (errorCode === 'session_recovery_required') {
+      void recoverSession();
+    }
+  }, [errorCode, recoverSession]);
 
   if (isLoading) {
     return (
@@ -93,15 +114,30 @@ function AppContent() {
     );
   }
 
-  if (!session) {
-    if (errorCode === 'vault_key_missing' || errorCode === 'invalid_local_session_preference') {
-      return <LocalModeBlockedScreen errorCode={errorCode} />;
-    }
-    return <LoginScreen />;
+  if (errorCode === 'session_recovery_required') {
+    return (
+      <View style={styles.sessionRecoveryContainer}>
+        <ActivityIndicator size="small" color={c.brand} />
+        <Text style={styles.sessionRecoveryTitle}>正在恢复登录状态</Text>
+        <Text style={styles.sessionRecoveryBody}>
+          {sessionRecoveryError ? '网络暂时不可用，登录信息仍已安全保留。' : '正在连接服务，请稍候。'}
+        </Text>
+        {sessionRecoveryError ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="重新连接"
+            onPress={() => void recoverSession()}
+            style={styles.sessionRecoveryButton}
+          >
+            <Text style={styles.sessionRecoveryButtonText}>重新连接</Text>
+          </Pressable>
+        ) : null}
+      </View>
+    );
   }
 
-  if (session.mode !== 'cloud_account') {
-    return <LocalModeHome />;
+  if (!session) {
+    return <LoginScreen />;
   }
 
   if (isLocked) {
@@ -133,7 +169,6 @@ function AppContent() {
           options={{ headerShown: false, gestureEnabled: true }}
         />
         <Stack.Screen name="settings" options={{ headerShown: false, presentation: 'modal' }} />
-        <Stack.Screen name="app-mode" options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="account-security" options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="memory" options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="medical-exams" options={{ headerShown: false, presentation: 'modal' }} />
@@ -148,6 +183,7 @@ function AppContent() {
         <Stack.Screen name="workout-list" options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="workout-detail" options={{ headerShown: false }} />
         <Stack.Screen name="diet" options={{ headerShown: false, presentation: 'modal' }} />
+        <Stack.Screen name="community" options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="body-measurements" options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="goals" options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="directives" options={{ headerShown: false, presentation: 'modal' }} />
@@ -178,7 +214,6 @@ function AppContent() {
       </Stack>
       <NotificationBanner />
       <AppUpdateBanner />
-      <NetworkBanner />
     </>
   );
 }
@@ -191,6 +226,11 @@ function RootLayout() {
     const sub = AppState.addEventListener('change', (status) => {
       if (Platform.OS !== 'web') {
         focusManager.setFocused(status === 'active');
+      }
+      if (status === 'active') {
+        void flushClientEventOutbox().catch((error) => {
+          console.warn('[ClientEventOutbox] foreground flush failed', error);
+        });
       }
     });
     return () => sub.remove();
@@ -216,22 +256,11 @@ function RootLayout() {
 }
 
 function ModeAwareProviders({ children }: { children: React.ReactNode }) {
-  const { session } = useAppSession();
-  const cloudActive = session?.mode === 'cloud_account';
-
   useEffect(() => {
-    if (session) {
-      configureSentryForAppMode(cloudActive ? 'cloud' : 'local');
-      if (!cloudActive) {
-        queryClient.clear();
-        void asyncStoragePersister.removeClient();
-      }
-    }
-  }, [cloudActive, session]);
+    configureSentryForAppMode('cloud');
+  }, []);
 
-  return cloudActive
-    ? <AppUpdateProvider>{children}</AppUpdateProvider>
-    : <>{children}</>;
+  return <AppUpdateProvider>{children}</AppUpdateProvider>;
 }
 
 // Sentry.wrap: 自动捕获未处理异常 + Profiler. 未配置 DSN 时是 noop.
@@ -243,5 +272,39 @@ const createStyles = (c: ColorPalette) => StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: c.bgPrimary,
+  },
+  sessionRecoveryContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 32,
+    backgroundColor: c.bgPrimary,
+  },
+  sessionRecoveryTitle: {
+    marginTop: 6,
+    color: c.labelPrimary,
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  sessionRecoveryBody: {
+    color: c.labelSecondary,
+    fontSize: 14,
+    lineHeight: 21,
+    textAlign: 'center',
+  },
+  sessionRecoveryButton: {
+    minHeight: 44,
+    marginTop: 8,
+    paddingHorizontal: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+    backgroundColor: c.brand,
+  },
+  sessionRecoveryButtonText: {
+    color: c.bgCard,
+    fontSize: 15,
+    fontWeight: '600',
   },
 });

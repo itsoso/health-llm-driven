@@ -51,3 +51,34 @@ def test_agent_event_bus_emits_traceable_tool_and_receipt_events(db, auth_user_a
     assert summary["tool_results"] == 1
     assert summary["verified_receipts"] == 1
     assert summary["blocked_tools"] == 0
+
+
+def test_agent_event_summary_exposes_goal_progress_without_health_content(
+    db,
+    auth_user_and_headers,
+):
+    user, _headers = auth_user_and_headers
+    snapshot = build_turn_snapshot(
+        db,
+        user_id=user.id,
+        channel="typed",
+        text="重新估算和写入早午两餐",
+        run_id="run-goal",
+        turn_id="turn-goal",
+    )
+    bus = AgentEventBus(snapshot)
+
+    bus.goal_evaluated(
+        satisfied=False,
+        verified_target_count=1,
+        reason="verification_targets_missing",
+    )
+    summary = bus.trace_summary(status="incomplete")
+
+    assert summary["goal_kind"] == "diet_recalculate_update"
+    assert summary["goal_target_count"] == 2
+    assert summary["goal_verified_target_count"] == 1
+    assert summary["goal_satisfied"] is False
+    assert summary["goal_reason"] == "verification_targets_missing"
+    assert "breakfast" not in repr(summary)
+    assert "lunch" not in repr(summary)

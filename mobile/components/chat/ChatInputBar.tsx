@@ -2,13 +2,12 @@ import React, { useCallback, useRef, useState } from 'react';
 import {
   View, TextInput, TouchableOpacity, StyleSheet, Text,
   Modal, Pressable, ActivityIndicator, TextStyle, ScrollView,
-  Alert, AppState, Keyboard,
+  Alert, AppState, Keyboard, NativeSyntheticEvent, TextInputContentSizeChangeEventData,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as DocumentPicker from 'expo-document-picker';
-import * as ImagePicker from 'expo-image-picker';
 import ReAnimated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming } from 'react-native-reanimated';
 import { useMediaPicker, type PendingImage } from '../../hooks/useMediaPicker';
 import { useRealtimeDictation } from '../../hooks/useRealtimeDictation';
@@ -20,16 +19,19 @@ import {
   shouldShowDisabledMic,
 } from './composerState';
 import {
-  executeMedicalExamImportSkillForDocumentAsset,
+  buildMedicalExamImportSkillResult,
   type ChatMedicalExamImportSkillResult,
 } from '../../services/chatMedicalExamImportSkill';
+import MedicalExamImportFlow from '../medical/MedicalExamImportFlow';
 import {
   cleanupAbandonedChatDraftFiles,
   clearPersistedChatDraft,
   hydrateDraftImagesForSend,
   loadChatDraft,
   persistChatDraft,
+  type ChatDraftMetadata,
 } from '../../services/chatDraftStorage';
+import { registerAppReloadPreparation } from '../../services/appReloadPreparation';
 import {
   revaColors as C,
   revaRadii,
@@ -46,6 +48,7 @@ import {
   type VoiceInputSource,
 } from '../../services/voiceDraft';
 import type { TranscribeAudioResult } from '../../services/transcribe';
+import { durationBucket, emitClientEvent } from '../../services/clientEvents';
 
 const CANCEL_THRESHOLD = 80;
 const VOICE_SLIDE_THRESHOLD = 88;
@@ -59,9 +62,30 @@ const COMPOSER_BUTTON_BG = C.surface2;
 const COMPOSER_BUTTON_BG_ACTIVE = C.green50;
 const COMPOSER_ICON = C.ink2;
 const COMPOSER_ICON_MUTED = C.ink3;
+const COMPOSER_TEXT_MIN_HEIGHT = 40;
+const COMPOSER_TEXT_MAX_HEIGHT = 72;
+const COMPOSER_TEXT_VERTICAL_CHROME = 8;
 const VOICE_WAVE_BARS = Array.from({ length: 28 }, (_, i) => i);
 
 type ChatAgentMode = 'daily' | 'deep' | 'vision';
+type AttachmentPayloadBucket =
+  | 'unknown'
+  | 'lt_256kb'
+  | '256kb_1mb'
+  | '1_4mb'
+  | 'gte_4mb';
+
+function attachmentPayloadBucket(images: PendingImage[]): AttachmentPayloadBucket {
+  const encodedLength = images.reduce((total, image) => (
+    total + (typeof image.base64 === 'string' ? image.base64.length : 0)
+  ), 0);
+  if (encodedLength === 0) return 'unknown';
+  const approximateBytes = Math.floor(encodedLength * 0.75);
+  if (approximateBytes < 256 * 1024) return 'lt_256kb';
+  if (approximateBytes < 1024 * 1024) return '256kb_1mb';
+  if (approximateBytes < 4 * 1024 * 1024) return '1_4mb';
+  return 'gte_4mb';
+}
 
 export interface ChatInputSendOptions {
   extraContext?: string;
@@ -84,21 +108,29 @@ const MODE_PLACEHOLDER: Record<ChatAgentMode, string> = {
   vision: '拍照/报告后问小巴',
 };
 
-const SMART_QUICK_ACTIONS: {
-  id: 'meal' | 'water' | 'exercise';
-  label: string;
-  icon: keyof typeof Ionicons.glyphMap;
-}[] = [
-  { id: 'meal', label: '拍照记餐', icon: 'camera-outline' },
-  { id: 'water', label: '记录喝水', icon: 'water-outline' },
-  { id: 'exercise', label: '记录运动', icon: 'walk-outline' },
-];
-
 const MEAL_PHOTO_CONTEXT = {
   source: 'mobile_chat_meal_photo',
   intent: 'diet_photo_record',
   instruction: '用户刚通过拍照记餐明确发起记录。把本轮全部餐食照片作为同一餐的上下文,综合识别食物和份量,识别完成后直接保存为今日饮食记录,不要等待二次确认。保存成功后返回已保存的结构化饮食卡,并注明营养值为估算值,允许用户稍后调整。',
 };
+
+function createMealCaptureSessionId(): string {
+  return `meal-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function createAttachmentEventKey(): string {
+  return `attachment-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
+function draftMetadataForPhotoContext(
+  context: Record<string, string> | null,
+): ChatDraftMetadata {
+  if (context?.intent !== 'diet_photo_record') return {};
+  return {
+    intent: 'diet_photo_record',
+    captureSessionId: context.capture_session_id,
+  };
+}
 
 function mergePhotoContext(base: string | undefined, photoContext: Record<string, string>): string {
   if (!base) return JSON.stringify(photoContext);
@@ -144,7 +176,7 @@ interface Props {
     text: string,
     images?: PendingImage[] | null,
     options?: ChatInputSendOptions,
-  ) => boolean | void | Promise<boolean | void>;
+  ) => boolean | Promise<boolean>;
   isStreaming: boolean;
   /** Prefills the composer when callers deep-link into chat with a prompt. */
   initialText?: string;
@@ -170,12 +202,12 @@ export default function ChatInputBar({
 }: Props) {
   const [input, setInput] = useState(initialText ?? '');
   const [showMenu, setShowMenu] = useState(false);
-  const [showMedicalImportMenu, setShowMedicalImportMenu] = useState(false);
-  const [medicalImportBusy, setMedicalImportBusy] = useState(false);
+  const [showMedicalImportFlow, setShowMedicalImportFlow] = useState(false);
   const [agentMode, setAgentMode] = useState<ChatAgentMode>('daily');
   const [cancelHint, setCancelHint] = useState(false);
   const [holdTranscript, setHoldTranscript] = useState('');
   const [textInputFocused, setTextInputFocused] = useState(false);
+  const [textInputHeight, setTextInputHeight] = useState(COMPOSER_TEXT_MIN_HEIGHT);
   const [composer, dispatchComposer] = React.useReducer(
     reduceComposerState,
     undefined,
@@ -213,13 +245,23 @@ export default function ChatInputBar({
   const voiceRealtimeActiveRef = useRef(false);
   const voiceDraftRef = useRef<VoiceDraft | null>(null);
   const pendingPhotoContextRef = useRef<Record<string, string> | null>(null);
+  const draftInteractionVersionRef = useRef(0);
   const draftPersistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const draftHydratedRef = useRef(false);
-  const draftSnapshotRef = useRef({ text: input, images: pendingImages });
+  const draftSnapshotRef = useRef({
+    text: input,
+    images: pendingImages,
+    photoContext: pendingPhotoContextRef.current,
+  });
   const justSentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sendInFlightRef = useRef(false);
   composerRef.current = composer;
   draftHydratedRef.current = draftHydrated;
-  draftSnapshotRef.current = { text: input, images: pendingImages };
+  draftSnapshotRef.current = {
+    text: input,
+    images: pendingImages,
+    photoContext: pendingPhotoContextRef.current,
+  };
   const canSend = (!!input.trim() || pendingImages.length > 0)
     && composer.phase !== 'submitting';
 
@@ -234,10 +276,17 @@ export default function ChatInputBar({
 
   React.useEffect(() => {
     let mounted = true;
+    const hydrationVersion = draftInteractionVersionRef.current;
     void (async () => {
       try {
         const draft = await loadChatDraft();
         if (!mounted) return;
+        if (draftInteractionVersionRef.current !== hydrationVersion) {
+          void cleanupAbandonedChatDraftFiles(
+            draftSnapshotRef.current.images.map(image => image.uri),
+          );
+          return;
+        }
         if (initialText == null) {
           inputChannelRef.current = 'typed';
           setInput(prev => prev || draft.text);
@@ -245,7 +294,13 @@ export default function ChatInputBar({
             dispatchComposer({ type: 'toggle_mode' });
           }
         }
-        setPendingImages(draft.images);
+        if (draft.intent === 'diet_photo_record' && draft.captureSessionId && draft.images.length > 0) {
+          pendingPhotoContextRef.current = {
+            ...MEAL_PHOTO_CONTEXT,
+            capture_session_id: draft.captureSessionId,
+          };
+        }
+        setPendingImages(draft.images, draft.intent === 'diet_photo_record' ? 3 : 9);
         void cleanupAbandonedChatDraftFiles(draft.images.map(image => image.uri));
       } catch (e) {
         if (__DEV__) console.warn('[ChatInputBar] draft restore failed:', e);
@@ -265,7 +320,12 @@ export default function ChatInputBar({
     if (draftPersistTimerRef.current) clearTimeout(draftPersistTimerRef.current);
     draftPersistTimerRef.current = setTimeout(() => {
       draftPersistTimerRef.current = null;
-      void persistChatDraft(input, pendingImages).catch((e) => {
+      void persistChatDraft(
+        input,
+        pendingImages,
+        Date.now(),
+        draftMetadataForPhotoContext(pendingPhotoContextRef.current),
+      ).catch((e) => {
         if (__DEV__) console.warn('[ChatInputBar] draft persistence failed:', e);
       });
     }, 250);
@@ -276,6 +336,21 @@ export default function ChatInputBar({
       }
     };
   }, [draftHydrated, input, pendingImages]);
+
+  React.useEffect(() => registerAppReloadPreparation(async () => {
+    if (!draftHydratedRef.current) return;
+    if (draftPersistTimerRef.current) {
+      clearTimeout(draftPersistTimerRef.current);
+      draftPersistTimerRef.current = null;
+    }
+    const snapshot = draftSnapshotRef.current;
+    await persistChatDraft(
+      snapshot.text,
+      snapshot.images,
+      Date.now(),
+      draftMetadataForPhotoContext(snapshot.photoContext),
+    );
+  }), []);
 
   const restoreVoiceTranscriptDraft = useCallback((text: string) => {
     const clean = text.trim();
@@ -327,11 +402,18 @@ export default function ChatInputBar({
     return () => clearTimeout(t);
   }, [autoFocusToken]);
 
-  const handleSend = useCallback(async (text?: string, sendOptions?: ChatInputSendOptions) => {
+  const performSend = useCallback(async (text?: string, sendOptions?: ChatInputSendOptions) => {
     let msg = (text || input).trim();
     if (!msg && pendingImages.length === 0) return;
     const phase = composerRef.current.phase;
     let effectiveChannelForSend: 'typed' | 'voice' | 'siri' = sendOptions?.channel ?? inputChannelRef.current;
+    const attachmentStartedAt = Date.now();
+    const attachmentImageCount = pendingImages.length;
+    const attachmentEventKey = createAttachmentEventKey();
+    let attachmentStage: 'local_prepare' | 'server_accept' = 'local_prepare';
+    let attachmentPayload: AttachmentPayloadBucket = (
+      attachmentImageCount > 0 ? attachmentPayloadBucket(pendingImages) : 'unknown'
+    );
     dispatchComposer({ type: 'submit' });
     try {
       let voiceDraftForSend: VoiceDraft | null = null;
@@ -351,6 +433,10 @@ export default function ChatInputBar({
       const sendImages = pendingImages.length > 0
         ? await hydrateDraftImagesForSend(pendingImages)
         : pendingImages;
+      if (attachmentImageCount > 0) {
+        attachmentPayload = attachmentPayloadBucket(sendImages);
+        attachmentStage = 'server_accept';
+      }
       const modeOptions = buildAgentModeOptions(agentMode);
       const effectiveChannel = sendOptions?.channel ?? inputChannelRef.current;
       effectiveChannelForSend = effectiveChannel;
@@ -390,7 +476,21 @@ export default function ChatInputBar({
         Object.keys(outboundOptions).length > 0 ? outboundOptions : undefined,
       );
       const accepted = await Promise.resolve(sendResult);
-      if (accepted === false) {
+      if (accepted !== true) {
+        if (attachmentImageCount > 0) {
+          try {
+            await emitClientEvent('chat_attachment_terminal', {
+              phase: 'failed',
+              stage: 'server_accept',
+              image_count: attachmentImageCount,
+              duration_bucket: durationBucket(attachmentStartedAt),
+              payload_bucket: attachmentPayload,
+              error_code: 'server_not_accepted',
+            }, { eventKey: attachmentEventKey });
+          } catch {
+            // The rejected send already preserves the draft for a later retry.
+          }
+        }
         if (effectiveChannelForSend === 'voice' && msg) {
           restoreVoiceTranscriptDraft(msg);
           Alert.alert('发送失败', '语音已转成文字并保留在输入框里，请修改后重试。');
@@ -400,7 +500,38 @@ export default function ChatInputBar({
         Alert.alert('发送失败', '消息和图片草稿已保留，请检查网络后重试。');
         return;
       }
+      if (attachmentImageCount > 0) {
+        try {
+          await emitClientEvent('chat_attachment_terminal', {
+            phase: 'accepted',
+            stage: 'server_accept',
+            image_count: attachmentImageCount,
+            duration_bucket: durationBucket(attachmentStartedAt),
+            payload_bucket: attachmentPayload,
+          }, { eventKey: attachmentEventKey });
+        } catch (e) {
+          // The server already accepted the Turn. Telemetry persistence must
+          // not turn that success into a user-visible retry and duplicate send.
+          if (__DEV__) console.warn('[ChatInputBar] accepted-send telemetry persistence failed:', e);
+        }
+      }
     } catch (e) {
+      if (attachmentImageCount > 0) {
+        try {
+          await emitClientEvent('chat_attachment_terminal', {
+            phase: 'failed',
+            stage: attachmentStage,
+            image_count: attachmentImageCount,
+            duration_bucket: durationBucket(attachmentStartedAt),
+            payload_bucket: attachmentPayload,
+            error_code: attachmentStage === 'local_prepare'
+              ? 'draft_hydration_failed'
+              : 'send_rejected',
+          }, { eventKey: attachmentEventKey });
+        } catch {
+          // The failure path retains the source draft regardless of telemetry.
+        }
+      }
       if (effectiveChannelForSend === 'voice' && msg) {
         restoreVoiceTranscriptDraft(msg);
         Alert.alert('发送失败', '语音已转成文字并保留在输入框里，请修改后重试。');
@@ -422,7 +553,17 @@ export default function ChatInputBar({
     voiceDraftRef.current = null;
     realtimeAsrResultRef.current = undefined;
     pendingPhotoContextRef.current = null;
-    releaseImagesAfterSend();
+    draftInteractionVersionRef.current += 1;
+    draftSnapshotRef.current = {
+      text: '',
+      images: [],
+      photoContext: null,
+    };
+    try {
+      await releaseImagesAfterSend();
+    } catch (e) {
+      if (__DEV__) console.warn('[ChatInputBar] sent image cleanup failed:', e);
+    }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setJustSent(true);
     if (justSentTimerRef.current) clearTimeout(justSentTimerRef.current);
@@ -445,6 +586,19 @@ export default function ChatInputBar({
     releaseImagesAfterSend,
     restoreVoiceTranscriptDraft,
   ]);
+
+  const handleSend = useCallback(async (
+    text?: string,
+    sendOptions?: ChatInputSendOptions,
+  ) => {
+    if (sendInFlightRef.current) return;
+    sendInFlightRef.current = true;
+    try {
+      await performSend(text, sendOptions);
+    } finally {
+      sendInFlightRef.current = false;
+    }
+  }, [performSend]);
 
   const handleRealtimeTranscript = useCallback((text: string, asr?: TranscribeAudioResult) => {
     const clean = text.trim();
@@ -597,16 +751,10 @@ export default function ChatInputBar({
   const realtimeMicIcon = realtimeDictationDisabled ? 'mic-off' : 'mic';
   const isVoiceMode = composer.mode === 'hold';
   const textComposerActive = !isVoiceMode && (textInputFocused || realtimeActive);
-  const textComposerExpanded = !isVoiceMode && (
-    textInputFocused
-    || input.trim().length > 0
-    || pendingImages.length > 0
-    || realtimeActive
+  const textComposerMinHeight = Math.max(
+    48,
+    textInputHeight + COMPOSER_TEXT_VERTICAL_CHROME,
   );
-  const showSmartQuickActions = textComposerExpanded
-    && !input.trim()
-    && pendingImages.length === 0
-    && !realtimeActive;
   const voiceGesture = composer.gesture;
   const voiceModeToggleLabel = isVoiceMode ? '切换到键盘输入' : '切换到语音输入';
 
@@ -773,7 +921,12 @@ export default function ChatInputBar({
           draftPersistTimerRef.current = null;
         }
         const snapshot = draftSnapshotRef.current;
-        void persistChatDraft(snapshot.text, snapshot.images).catch((e) => {
+        void persistChatDraft(
+          snapshot.text,
+          snapshot.images,
+          Date.now(),
+          draftMetadataForPhotoContext(snapshot.photoContext),
+        ).catch((e) => {
           if (__DEV__) console.warn('[ChatInputBar] background draft persistence failed:', e);
         });
       }
@@ -819,6 +972,7 @@ export default function ChatInputBar({
   }, []);
 
   const handleInputChange = useCallback((text: string) => {
+    draftInteractionVersionRef.current += 1;
     const realtimeDictationActive =
       composerRef.current.phase === 'live_dictating'
       || dictationRealtimeActiveRef.current;
@@ -839,24 +993,57 @@ export default function ChatInputBar({
     setInput(text);
   }, []);
 
-  const handleQuickTypedAction = useCallback((prompt: string) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    void handleSend(prompt, { channel: 'typed' });
-  }, [handleSend]);
+  const handleTextContentSizeChange = useCallback((
+    event: NativeSyntheticEvent<TextInputContentSizeChangeEventData>,
+  ) => {
+    const measured = Number(event.nativeEvent.contentSize.height);
+    if (!Number.isFinite(measured)) return;
+    const nextHeight = Math.min(
+      COMPOSER_TEXT_MAX_HEIGHT,
+      Math.max(COMPOSER_TEXT_MIN_HEIGHT, measured),
+    );
+    setTextInputHeight(current => current === nextHeight ? current : nextHeight);
+  }, []);
 
-  const handlePickImage = useCallback(async () => { setShowMenu(false); await pickImage(); }, [pickImage]);
+  React.useEffect(() => {
+    if (!input) setTextInputHeight(COMPOSER_TEXT_MIN_HEIGHT);
+  }, [input]);
+
+  const handlePickImage = useCallback(async () => {
+    setShowMenu(false);
+    draftInteractionVersionRef.current += 1;
+    await pickImage(pendingPhotoContextRef.current?.intent === 'diet_photo_record' ? 3 : 9);
+  }, [pickImage]);
   const stageCameraPhoto = useCallback(async (mealPhoto: boolean) => {
     setShowMenu(false);
+    if (
+      mealPhoto
+      && pendingImages.length > 0
+      && pendingPhotoContextRef.current?.intent !== 'diet_photo_record'
+    ) {
+      Alert.alert(
+        '先处理已选图片',
+        '为避免误记，小巴不会把普通附件自动当成餐食照片。请先发送或移除已选图片，再开始拍照记餐。',
+      );
+      return [];
+    }
+    draftInteractionVersionRef.current += 1;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    const photos = await takePhoto();
+    const mealSessionActive = mealPhoto
+      || pendingPhotoContextRef.current?.intent === 'diet_photo_record';
+    const photos = await takePhoto(mealSessionActive ? 3 : 9);
     if (!photos || photos.length === 0) return [];
     if (mealPhoto) {
-      pendingPhotoContextRef.current = MEAL_PHOTO_CONTEXT;
+      pendingPhotoContextRef.current = {
+        ...MEAL_PHOTO_CONTEXT,
+        capture_session_id: pendingPhotoContextRef.current?.capture_session_id
+          || createMealCaptureSessionId(),
+      };
       inputChannelRef.current = 'typed';
       setInput(current => current.trim() ? current : '记录这餐');
     }
     return photos;
-  }, [takePhoto]);
+  }, [pendingImages.length, takePhoto]);
   const handleCaptureMealPhoto = useCallback(() => {
     void stageCameraPhoto(true);
   }, [stageCameraPhoto]);
@@ -884,94 +1071,16 @@ export default function ChatInputBar({
     }
   }, []);
 
-  const runMedicalExamImport = useCallback(async (asset: { uri: string; name?: string | null; mimeType?: string | null }) => {
-    if (medicalImportBusy) return;
-    setMedicalImportBusy(true);
-    try {
-      const result = await executeMedicalExamImportSkillForDocumentAsset(asset);
-      onMedicalExamImportResult?.(result);
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    } catch (e: any) {
-      Alert.alert('导入体检报告失败', e?.message || '请稍后再试');
-    } finally {
-      setMedicalImportBusy(false);
-      setShowMedicalImportMenu(false);
-    }
-  }, [medicalImportBusy, onMedicalExamImportResult]);
-
-  const handleImportMedicalExamFile = useCallback(async () => {
-    try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: ['application/pdf', 'image/*'],
-        copyToCacheDirectory: true,
-      });
-      if (!result.canceled && result.assets[0]) {
-        const asset = result.assets[0];
-        await runMedicalExamImport({
-          uri: asset.uri,
-          name: asset.name,
-          mimeType: asset.mimeType,
-        });
-      }
-    } catch (e: any) {
-      Alert.alert('选择报告失败', e?.message || '请稍后再试');
-    }
-  }, [runMedicalExamImport]);
-
-  const handleImportMedicalExamPhoto = useCallback(async () => {
-    try {
-      const perm = await ImagePicker.requestCameraPermissionsAsync();
-      if (!perm.granted) {
-        Alert.alert('需要相机权限', '请在系统设置中允许小巴使用相机。');
-        return;
-      }
-      const picked = await ImagePicker.launchCameraAsync({
-        mediaTypes: ['images'],
-        quality: 0.85,
-        allowsEditing: false,
-      });
-      if (!picked.canceled && picked.assets[0]) {
-        const asset = picked.assets[0];
-        await runMedicalExamImport({
-          uri: asset.uri,
-          name: asset.fileName || 'medical-exam-photo.jpg',
-          mimeType: asset.mimeType || 'image/jpeg',
-        });
-      }
-    } catch (e: any) {
-      Alert.alert('拍摄报告失败', e?.message || '请稍后再试');
-    }
-  }, [runMedicalExamImport]);
-
-  const handleImportMedicalExamLibrary = useCallback(async () => {
-    try {
-      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!perm.granted) {
-        Alert.alert('需要相册权限', '请在系统设置中允许小巴访问照片。');
-        return;
-      }
-      const picked = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
-        quality: 0.85,
-        allowsEditing: false,
-      });
-      if (!picked.canceled && picked.assets[0]) {
-        const asset = picked.assets[0];
-        await runMedicalExamImport({
-          uri: asset.uri,
-          name: asset.fileName || 'medical-exam-image.jpg',
-          mimeType: asset.mimeType || 'image/jpeg',
-        });
-      }
-    } catch (e: any) {
-      Alert.alert('选择报告图片失败', e?.message || '请稍后再试');
-    }
-  }, [runMedicalExamImport]);
+  const handleMedicalExamImported = useCallback((result: Parameters<typeof buildMedicalExamImportSkillResult>[0]) => {
+    onMedicalExamImportResult?.(buildMedicalExamImportSkillResult(result));
+    setShowMedicalImportFlow(false);
+  }, [onMedicalExamImportResult]);
 
   const toggleMenu = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setShowMenu(!showMenu);
   };
+  const pendingImageLimit = pendingPhotoContextRef.current?.intent === 'diet_photo_record' ? 3 : 9;
 
   return (
     <>
@@ -984,6 +1093,7 @@ export default function ChatInputBar({
               <TouchableOpacity
                 style={styles.previewRemove}
                 onPress={() => {
+                  draftInteractionVersionRef.current += 1;
                   if (pendingImages.length === 1) pendingPhotoContextRef.current = null;
                   void removeImage(i);
                 }}
@@ -993,7 +1103,7 @@ export default function ChatInputBar({
               </TouchableOpacity>
             </View>
           ))}
-          {pendingImages.length < 9 && (
+          {pendingImages.length < pendingImageLimit && (
             <View style={styles.previewActionGroup}>
               <TouchableOpacity
                 style={styles.previewAddBtn}
@@ -1005,7 +1115,7 @@ export default function ChatInputBar({
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.previewAddBtn}
-                onPress={pickImage}
+                onPress={handlePickImage}
                 accessibilityRole="button"
                 accessibilityLabel="继续从相册选择"
               >
@@ -1013,7 +1123,7 @@ export default function ChatInputBar({
               </TouchableOpacity>
             </View>
           )}
-          <Text style={styles.previewCount}>{pendingImages.length}/9</Text>
+          <Text style={styles.previewCount}>{pendingImages.length}/{pendingImageLimit}</Text>
         </ScrollView>
       )}
 
@@ -1062,39 +1172,7 @@ export default function ChatInputBar({
         </View>
       )}
 
-      {medicalImportBusy && (
-        <View style={styles.transcribingBar}>
-          <ActivityIndicator size="small" color={C.green500} />
-          <Text style={styles.transcribingText}>体检报告导入中...</Text>
-        </View>
-      )}
-
       <View testID="chat-composer-surface" style={styles.composerSurface}>
-        {showSmartQuickActions && (
-          <ScrollView
-            testID="smart-composer-quick-actions"
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.quickActionsContent}
-            style={styles.quickActionsBar}
-            keyboardShouldPersistTaps="always"
-          >
-            {SMART_QUICK_ACTIONS.map(action => (
-              <QuickComposerAction
-                key={action.id}
-                icon={action.icon}
-                label={action.label}
-                onPress={() => {
-                  if (action.id === 'meal') {
-                    void stageCameraPhoto(true);
-                  } else {
-                    handleQuickTypedAction(action.id === 'water' ? '记录喝水' : '记录今天的运动');
-                  }
-                }}
-              />
-            ))}
-          </ScrollView>
-        )}
         {/* 输入栏 */}
         <View style={styles.inputBar}>
           <Pressable
@@ -1144,9 +1222,10 @@ export default function ChatInputBar({
           ) : (
             <Pressable
               testID="wechat-composer-input"
+              accessible={false}
               style={({ pressed }) => [
                 styles.inputWrap,
-                textComposerExpanded && styles.inputWrapExpanded,
+                { minHeight: textComposerMinHeight },
                 textComposerActive && styles.inputWrapFocused,
                 realtimeActive && styles.inputWrapDictating,
                 pressed && styles.inputWrapPressed,
@@ -1155,13 +1234,10 @@ export default function ChatInputBar({
               onLongPress={handleInputLongPressDictation}
               onPressOut={handleInputPressOutDictation}
               delayLongPress={INPUT_HOLD_DICTATION_DELAY_MS}
-              accessibilityRole="button"
-              accessibilityLabel="消息输入框容器"
-              accessibilityHint="点击输入文字，长按实时语音输入，点右侧麦克风持续转文字"
             >
               <TextInput
                 ref={textInputRef}
-                style={[styles.textInput, { pointerEvents: 'auto' }]}
+                style={[styles.textInput, { height: textInputHeight, pointerEvents: 'auto' }]}
                 placeholder={MODE_PLACEHOLDER[agentMode]}
                 placeholderTextColor={C.ink3}
                 value={input}
@@ -1170,6 +1246,7 @@ export default function ChatInputBar({
                 onBlur={handleTextInputBlur}
                 onPressIn={handleInputPressInDictation}
                 onPressOut={handleInputPressOutDictation}
+                onContentSizeChange={handleTextContentSizeChange}
                 onKeyPress={handleTextInputKeyPress}
                 onSubmitEditing={handleKeyboardSubmit}
                 returnKeyType="send"
@@ -1235,10 +1312,10 @@ export default function ChatInputBar({
               <AttachmentGridItem
                 icon="document-text-outline"
                 label="导入体检报告"
-                desc={medicalImportBusy ? '导入中' : '入库成卡片'}
+                desc="先预览再保存"
                 onPress={() => {
                   setShowMenu(false);
-                  setShowMedicalImportMenu(true);
+                  setShowMedicalImportFlow(true);
                 }}
               />
             </View>
@@ -1263,24 +1340,11 @@ export default function ChatInputBar({
         </Pressable>
       </Modal>
 
-      <Modal visible={showMedicalImportMenu} transparent animationType="slide" onRequestClose={() => setShowMedicalImportMenu(false)}>
-        <Pressable style={styles.menuOverlay} onPress={() => setShowMedicalImportMenu(false)}>
-          <Pressable
-            testID="medical-exam-import-sheet"
-            style={styles.menuSheet}
-            onPress={e => e.stopPropagation()}
-          >
-            <View testID="medical-exam-import-menu-handle" style={styles.menuHandle} />
-            <View style={styles.medicalImportHeader}>
-              <Text style={styles.menuLabel}>导入体检报告</Text>
-              <Text style={styles.menuDesc}>写入体检记录，并在对话中生成可复核卡片</Text>
-            </View>
-            <MenuItem icon="document-outline" label="选择 PDF 或图片报告" desc="从文件中选择体检 PDF 或化验单图片" onPress={handleImportMedicalExamFile} />
-            <MenuItem icon="camera-outline" label="拍摄体检/化验单" desc="拍照后直接 OCR 入库" onPress={handleImportMedicalExamPhoto} />
-            <MenuItem icon="images-outline" label="从相册选择报告图片" desc="选择已有报告照片并入库" onPress={handleImportMedicalExamLibrary} />
-          </Pressable>
-        </Pressable>
-      </Modal>
+      <MedicalExamImportFlow
+        visible={showMedicalImportFlow}
+        onClose={() => setShowMedicalImportFlow(false)}
+        onImported={handleMedicalExamImported}
+      />
     </>
   );
 }
@@ -1313,29 +1377,6 @@ function ModeSegmentItem({
   );
 }
 
-function QuickComposerAction({
-  icon,
-  label,
-  onPress,
-}: {
-  icon: keyof typeof Ionicons.glyphMap;
-  label: string;
-  onPress: () => void;
-}) {
-  return (
-    <TouchableOpacity
-      style={styles.quickAction}
-      onPress={onPress}
-      activeOpacity={0.68}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-    >
-      <Ionicons name={icon} size={15} color={C.green500} />
-      <Text style={styles.quickActionLabel}>{label}</Text>
-    </TouchableOpacity>
-  );
-}
-
 function AttachmentGridItem({ icon, label, desc, onPress }: { icon: any; label: string; desc: string; onPress: () => void }) {
   return (
     <TouchableOpacity
@@ -1351,20 +1392,6 @@ function AttachmentGridItem({ icon, label, desc, onPress }: { icon: any; label: 
       <View style={styles.attachmentGridText}>
         <Text style={styles.attachmentGridLabel} numberOfLines={1}>{label}</Text>
         <Text style={styles.attachmentGridDesc} numberOfLines={1}>{desc}</Text>
-      </View>
-    </TouchableOpacity>
-  );
-}
-
-function MenuItem({ icon, label, desc, onPress }: { icon: any; label: string; desc: string; onPress: () => void }) {
-  return (
-    <TouchableOpacity style={styles.menuItem} onPress={onPress} activeOpacity={0.6} accessibilityRole="button" accessibilityLabel={label}>
-      <View style={styles.menuIconWrap}>
-        <Ionicons name={icon} size={20} color={C.ink1} />
-      </View>
-      <View style={{ flex: 1 }}>
-        <Text style={styles.menuLabel}>{label}</Text>
-        <Text style={styles.menuDesc}>{desc}</Text>
       </View>
     </TouchableOpacity>
   );
@@ -1390,34 +1417,6 @@ const styles = StyleSheet.create({
     paddingBottom: 7,
     backgroundColor: COMPOSER_BAR_BG,
   },
-  quickActionsBar: {
-    maxHeight: 40,
-  },
-  quickActionsContent: {
-    flexDirection: 'row',
-    gap: 8,
-    paddingHorizontal: 10,
-    paddingTop: 6,
-    paddingBottom: 2,
-  },
-  quickAction: {
-    minHeight: 32,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    borderRadius: 16,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.line,
-    backgroundColor: C.surface,
-  },
-  quickActionLabel: {
-    fontFamily: revaFonts.sans,
-    fontSize: 13,
-    lineHeight: 18,
-    color: C.ink2,
-    fontWeight: '600',
-  } as TextStyle,
   voiceModeBtn: {
     width: 40, height: 40, borderRadius: 20,
     borderWidth: StyleSheet.hairlineWidth, borderColor: C.lineStrong,
@@ -1443,13 +1442,6 @@ const styles = StyleSheet.create({
   inputWrapPressed: {
     backgroundColor: COMPOSER_INPUT_BG_PRESSED,
     borderColor: C.lineStrong,
-  },
-  inputWrapExpanded: {
-    minHeight: 72,
-    borderRadius: 16,
-    alignItems: 'flex-end',
-    paddingTop: 8,
-    paddingBottom: 8,
   },
   inputWrapFocused: {
     borderColor: C.green500,

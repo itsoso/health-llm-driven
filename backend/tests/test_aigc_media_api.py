@@ -251,6 +251,58 @@ def test_aigc_confirmation_returns_429_when_dispatch_budget_is_exhausted(
     assert "进行中的创作任务" in response.text
 
 
+def test_aigc_confirmation_forwards_only_validated_product_spec(
+    client, auth_user_and_headers, monkeypatch,
+):
+    from app.api import aigc_media
+
+    owner, headers = auth_user_and_headers
+    received = {}
+
+    class SpecService:
+        def __init__(self, _db):
+            pass
+
+        async def confirm_and_dispatch(self, **kwargs):
+            received.update(kwargs)
+            return type("Job", (), {"id": "job-spec"})()
+
+        def persist_job_card(self, **_kwargs):
+            return True
+
+        def project(self, target):
+            return {"id": target.id, "status": "queued", "progress": 10}
+
+    monkeypatch.setattr(aigc_media, "AIGCMediaJobService", SpecService)
+
+    response = client.post(
+        "/api/v1/aigc/media/confirmations/aigc_confirm_spec/confirm",
+        headers=headers,
+        json={"duration_seconds": 15},
+    )
+
+    assert response.status_code == 200
+    assert received == {
+        "user_id": owner.id,
+        "confirmation_id": "aigc_confirm_spec",
+        "duration_seconds": 15,
+    }
+
+
+def test_aigc_confirmation_rejects_out_of_range_duration_before_service(
+    client, auth_user_and_headers,
+):
+    _, headers = auth_user_and_headers
+
+    response = client.post(
+        "/api/v1/aigc/media/confirmations/aigc_confirm_spec/confirm",
+        headers=headers,
+        json={"duration_seconds": 16},
+    )
+
+    assert response.status_code == 422
+
+
 def test_aigc_retry_is_owner_scoped_and_returns_the_updated_projection(
     client, db, auth_user_and_headers, monkeypatch,
 ):

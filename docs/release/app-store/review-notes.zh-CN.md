@@ -2,7 +2,7 @@
 
 > Demo account credentials stay outside git. At final submit, provide them through `APP_STORE_REVIEW_DEMO_ACCOUNT` and `APP_STORE_REVIEW_DEMO_PASSWORD`.
 >
-> App Store Connect version 1.3.1 already contains the demo account, password, reviewer contact and these review notes. This checked-in draft intentionally retains placeholders so secrets are not committed; change the heading to final only after Build 227 physical-iPhone G6 passes.
+> App Store Connect contains the demo account, password, reviewer contact and these review notes. This checked-in draft intentionally retains placeholders so secrets are not committed; change the heading to final only after version 1.3.2 Build 237 passes the physical-iPhone G6 checklist.
 
 ## Reviewer Access
 
@@ -12,24 +12,17 @@
 
 If the reviewer cannot sign in, please contact support@executor.life.
 
-Reviewers can also use the local diet slice without any demo account. A device passcode must be enabled because the local encryption key uses the passcode-protected, device-only Keychain class.
-
 ## What To Test
 
-1. For account-free review, tap `无需注册，立即本地使用`. The app creates a separate encrypted local vault without creating a server account.
-2. Open `本地饮食记录`, enter `午饭半碗米饭两个鸡蛋`, generate the local draft, review it and confirm. The record remains available offline after relaunch.
-3. Tap `从照片识别` to run the bundled Chinese-CLIP image tower on the device. The result is an approximate list of at most three candidates; it never estimates portion or nutrition and never saves before manual confirmation. The selected temporary photo copy is deleted after inference.
-4. `运行模式` lets the user switch among strict local, local-first and cloud account. Switching does not silently upload or migrate existing data.
-5. `本地数据管理` creates an encrypted backup and a separate recovery key, restores only into an empty vault, or permanently crypto-shreds local data.
-6. To review the existing cloud product, tap `云端账号`, choose `账号密码登录`, and sign in with the demo account. The app opens directly into 小巴.
-7. The 今日简报 at the top shows the current health focus. It can be collapsed and reopened.
-8. Ask 小巴: `今天应该先做什么健康行动？`
-9. Tap the `+` button beside the input bar to photograph or select a meal image. The recognized result remains an editable draft until the user confirms it.
-10. Open the top-right more menu, then enter 个人中心 to manage data sources, health records, notifications, privacy and the mode configuration.
+1. Choose `账号密码登录` and sign in with the demo account. The app opens directly into 小巴.
+2. When the demo account has a qualified pending action, risk or processing state, a compact context strip appears at the top. Tap it to open 今日计划, use 返回小巴 to return, or close the strip. It is intentionally not repeated after every response.
+3. Ask 小巴: `今天应该先做什么健康行动？`
+4. Tap the `+` button beside the input bar to photograph or select a meal image. The recognized result remains editable until it is saved.
+5. Open the top-right more menu, then enter 个人中心 to manage data sources, health records, notifications and privacy.
 
 Text chat remains available if the reviewer declines notification, location, microphone, photo, camera or HealthKit permissions. Each optional permission is requested only after the reviewer starts the related feature.
 
-Strict-local mode does not initialize cloud session restoration, push registration, remote configuration or Sentry delivery. Its local diet records, photo candidates, audit events and encrypted backups are not collected by the developer.
+The submitted binary does not bundle an on-device inference model or expose an account-free local mode. Authenticated requests are sent only to the documented service endpoints; an unavailable or unknown session fails closed instead of producing an offline model response.
 
 ## HealthKit Use
 
@@ -53,6 +46,6 @@ The request receives a unique deletion request number and a queryable status. Th
 
 ## Notes For Review
 
-- The demo account contains sample health records, so 今日简报 and 小巴 show non-empty content without HealthKit authorization on the review device.
+- The demo account contains sample health records, so 小巴 and 今日计划 show non-empty content without HealthKit authorization on the review device. The compact context strip appears only when the current data produces a qualified action, risk or processing state.
 - Optional permissions are not required for the reviewer to use text conversation.
 - The submitted binary is iPhone-only, portrait-only and supports iOS 16 or later.

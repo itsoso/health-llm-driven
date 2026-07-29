@@ -88,11 +88,24 @@ def test_aigc_media_stats_empty_db(db):
         "total_jobs": 0,
         "by_status": {},
         "by_model": {},
+        "by_kind": {},
         "by_error_code": {},
         "auth_failures": 0,
         "submission_unknown": 0,
         "safe_retryable": 0,
         "success_rate_pct": None,
+        "latency_seconds": {"count": 0, "p50": None, "p95": None},
+        "output_bytes": {"count": 0, "total": 0, "average": None},
+        "requested_video_seconds": 0,
+        "by_duration_seconds": {},
+        "stuck_active_jobs": 0,
+        "engagement": {
+            "played": 0,
+            "share_attempts": 0,
+            "share_completed": 0,
+            "share_failed": 0,
+            "share_by_target": {},
+        },
         "last_job_at": None,
         "last_failure_at": None,
         "status": "no_data",
@@ -137,7 +150,16 @@ def test_aigc_media_stats_aggregate_failures_without_exposing_job_content(db):
             model="wan2.7-image",
             idempotency_key="success",
             request_fingerprint="b" * 64,
+            result_metadata={
+                "byte_size": 4_000_000,
+                "request": {
+                    "duration_seconds": 10,
+                    "ratio": "9:16",
+                    "resolution": "720P",
+                },
+            },
             created_at=now - timedelta(minutes=5),
+            started_at=now - timedelta(minutes=5),
             completed_at=now - timedelta(minutes=4),
         ),
         AIGCMediaJob(
@@ -166,13 +188,108 @@ def test_aigc_media_stats_aggregate_failures_without_exposing_job_content(db):
         "wan2.7-image": 1,
         "wan2.7-t2v": 2,
     }
+    assert all_users["by_kind"] == {
+        "text_to_image": 1,
+        "text_to_video": 2,
+    }
+    assert all_users["latency_seconds"] == {
+        "count": 1,
+        "p50": 60.0,
+        "p95": 60.0,
+    }
+    assert all_users["output_bytes"] == {
+        "count": 1,
+        "total": 4_000_000,
+        "average": 4_000_000,
+    }
+    assert all_users["requested_video_seconds"] == 0
+    assert all_users["by_duration_seconds"] == {}
     assert all_users["success_rate_pct"] == 50.0
     assert all_users["status"] == "critical"
+    assert all_users["stuck_active_jobs"] == 0
+    assert all_users["engagement"]["played"] == 0
     assert owner["total_jobs"] == 2
     assert owner["submission_unknown"] == 0
     assert owner["by_status"] == {"failed": 1, "succeeded": 1}
     assert "aigc-auth-failed" not in str(all_users)
     assert "must never be returned" not in str(all_users)
+
+
+def test_aigc_media_stats_aggregates_stuck_jobs_and_content_free_engagement(db):
+    from app.models.aigc_media_job import AIGCMediaJob
+    from app.models.client_event import ClientEvent
+
+    now = _now()
+    db.add_all([
+        AIGCMediaJob(
+            id="aigc-stuck-running",
+            user_id=1,
+            kind="text_to_video",
+            status="running",
+            progress=50,
+            model="happyhorse-1.1-t2v",
+            provider_task_id="task-stuck-running",
+            idempotency_key="stuck-running",
+            request_fingerprint="s" * 64,
+            created_at=now - timedelta(minutes=40),
+        ),
+        ClientEvent(
+            user_id=1,
+            event_name="aigc_media_played",
+            meta={"media_kind": "video"},
+            created_at=now - timedelta(minutes=5),
+        ),
+        ClientEvent(
+            user_id=1,
+            event_name="aigc_media_shared",
+            meta={
+                "phase": "completed",
+                "media_kind": "video",
+                "share_target": "wechat",
+            },
+            created_at=now - timedelta(minutes=4),
+        ),
+        ClientEvent(
+            user_id=1,
+            event_name="aigc_media_shared",
+            meta={
+                "phase": "failed",
+                "media_kind": "video",
+                "share_target": "xiaohongshu",
+                "error_code": "share_failed",
+            },
+            created_at=now - timedelta(minutes=3),
+        ),
+    ])
+    db.commit()
+
+    stats = aigc_media_stats(db, _since(), user_id=1)
+
+    assert stats["stuck_active_jobs"] == 1
+    assert stats["status"] == "warning"
+    assert stats["engagement"] == {
+        "played": 1,
+        "share_attempts": 2,
+        "share_completed": 1,
+        "share_failed": 1,
+        "share_by_target": {
+            "wechat": {"attempts": 1, "completed": 1, "failed": 0},
+            "xiaohongshu": {"attempts": 1, "completed": 0, "failed": 1},
+        },
+    }
+
+
+def test_actionable_suggestions_reports_stuck_aigc_jobs(db):
+    report = collect_dashboard(db, days=7, user_id=None, include_journalctl=False)
+    report["aigc_media"] = {
+        **report["aigc_media"],
+        "stuck_active_jobs": 2,
+        "status": "warning",
+    }
+
+    lines = actionable_suggestions(report)
+
+    assert lines[0] == "🟡 AIGC 媒体有 2 个任务超过 30 分钟仍未完成：检查 Celery 和供应商任务状态"
 
 
 def test_actionable_suggestions_puts_aigc_auth_failure_first(db):
@@ -292,6 +409,31 @@ def test_actionable_suggestions_flags_release_health_pause(db):
     lines = actionable_suggestions(report)
 
     assert lines[0] == "🔴 发布健康门建议暂停放量：紧急启动率 5.0% 达到暂停阈值 5.0%"
+
+
+def test_actionable_suggestions_flags_chat_attachment_pipeline_failures(db):
+    report = collect_dashboard(db, days=7, user_id=None, include_journalctl=False)
+    report["client_events"]["chat_attachment_pipeline"] = {
+        "attempts": 10,
+        "accepted": 7,
+        "failures": 3,
+        "acceptance_rate_pct": 70.0,
+        "image_count_total": 14,
+        "failures_by_stage": {
+            "local_prepare": 2,
+            "server_accept": 1,
+        },
+        "duration_buckets": {"lt_1s": 2, "3_10s": 8},
+        "payload_buckets": {"unknown": 2, "1_4mb": 8},
+    }
+
+    lines = actionable_suggestions(report)
+
+    assert (
+        "🔴 Agent 图片受理率 70.0% (7/10)："
+        "本地草稿读取失败 2 次，检查私有文件持久化与磁盘权限；"
+        "服务端未受理 1 次，检查弱网恢复与请求大小"
+    ) in lines
 
 
 # ----------------------------------------------------------------

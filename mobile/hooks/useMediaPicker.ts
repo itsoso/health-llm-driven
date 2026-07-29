@@ -10,7 +10,22 @@ import {
 } from '../utils/imageUpload';
 import type { PreparedUploadImage } from '../utils/imageUpload';
 
-const MAX_IMAGES = 9;
+const DEFAULT_MAX_IMAGES = 9;
+
+function imageLimit(value?: number): number {
+  if (!Number.isFinite(value)) return DEFAULT_MAX_IMAGES;
+  return Math.max(1, Math.min(DEFAULT_MAX_IMAGES, Math.floor(Number(value))));
+}
+
+function imageLimitAlert(maxImages: number, truncated = false): void {
+  const mealCapture = maxImages === 3;
+  Alert.alert(
+    mealCapture ? '本餐最多 3 张照片' : '已达上限',
+    truncated
+      ? `已保留前 ${maxImages} 张，请发送后再继续补充`
+      : `最多选择 ${maxImages} 张图片`,
+  );
+}
 
 export interface PendingImage {
   uri: string;
@@ -35,23 +50,27 @@ export function useMediaPicker() {
 
   pendingImagesRef.current = pendingImages;
 
-  const setPendingImages = useCallback((images: PendingImage[]) => {
-    const next = images.slice(0, MAX_IMAGES);
+  const setPendingImages = useCallback((images: PendingImage[], requestedLimit = DEFAULT_MAX_IMAGES) => {
+    const next = images.slice(0, imageLimit(requestedLimit));
     pendingImagesRef.current = next;
     setPendingImagesState(next);
   }, []);
 
-  const addImages = useCallback(async (newImages: PendingImage[]) => {
-    const remaining = MAX_IMAGES - pendingImagesRef.current.length;
+  const addImages = useCallback(async (
+    newImages: PendingImage[],
+    requestedLimit = DEFAULT_MAX_IMAGES,
+  ) => {
+    const maxImages = imageLimit(requestedLimit);
+    const remaining = maxImages - pendingImagesRef.current.length;
     if (remaining <= 0) {
-      Alert.alert('已达上限', `最多选择 ${MAX_IMAGES} 张图片`);
+      imageLimitAlert(maxImages);
       return [];
     }
     if (newImages.length > remaining) {
-      Alert.alert('最多选择 9 张', `已保留前 ${MAX_IMAGES} 张`);
+      imageLimitAlert(maxImages, true);
     }
     const durableImages = await materializeDraftImages(newImages.slice(0, remaining));
-    setPendingImages([...pendingImagesRef.current, ...durableImages]);
+    setPendingImages([...pendingImagesRef.current, ...durableImages], maxImages);
     return durableImages;
   }, [setPendingImages]);
 
@@ -67,10 +86,10 @@ export function useMediaPicker() {
     await Promise.all(removed.map(image => deleteDraftImage(image)));
   }, [setPendingImages]);
 
-  // 服务端已持久化请求后，当前消息气泡仍引用这些本地文件。这里只释放输入框状态，
-  // 文件由草稿目录的过期清理回收；显式移除/取消仍走 clearImages 并立即删除。
-  const releaseImagesAfterSend = useCallback(() => {
+  const releaseImagesAfterSend = useCallback(async () => {
+    const accepted = pendingImagesRef.current;
     setPendingImages([]);
+    await Promise.all(accepted.map(image => deleteDraftImage(image)));
   }, [setPendingImages]);
 
   const setPendingImage = useCallback(async (img: PendingImage | null) => {
@@ -84,16 +103,17 @@ export function useMediaPicker() {
     await Promise.all(removed.map(image => deleteDraftImage(image)));
   }, [clearImages, setPendingImages]);
 
-  const pickImage = useCallback(async () => {
+  const pickImage = useCallback(async (requestedLimit = DEFAULT_MAX_IMAGES) => {
     try {
+      const maxImages = imageLimit(requestedLimit);
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!perm.granted) {
         Alert.alert('需要相册权限', '请在系统设置中允许小巴访问相册');
         return;
       }
-      const remaining = MAX_IMAGES - (pendingImages?.length || 0);
+      const remaining = maxImages - pendingImagesRef.current.length;
       if (remaining <= 0) {
-        Alert.alert('已达上限', `最多选择 ${MAX_IMAGES} 张图片`);
+        imageLimitAlert(maxImages);
         return;
       }
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -108,7 +128,7 @@ export function useMediaPicker() {
         warnSkipped(result.assets.length - picked.length);
         if (picked.length === 0) return;
         try {
-          await addImages(picked.map(toPendingImage));
+          await addImages(picked.map(toPendingImage), maxImages);
         } finally {
           await cleanupPreparedUploadImages(picked);
         }
@@ -116,12 +136,15 @@ export function useMediaPicker() {
     } catch (e) {
       Alert.alert('选择图片失败', String(e));
     }
-  }, [pendingImages?.length, addImages]);
+  }, [addImages]);
 
-  const takePhoto = useCallback(async (): Promise<PendingImage[]> => {
+  const takePhoto = useCallback(async (
+    requestedLimit = DEFAULT_MAX_IMAGES,
+  ): Promise<PendingImage[]> => {
     try {
-      if ((pendingImages?.length || 0) >= MAX_IMAGES) {
-        Alert.alert('已达上限', `最多选择 ${MAX_IMAGES} 张图片`);
+      const maxImages = imageLimit(requestedLimit);
+      if (pendingImagesRef.current.length >= maxImages) {
+        imageLimitAlert(maxImages);
         return [];
       }
       const perm = await ImagePicker.requestCameraPermissionsAsync();
@@ -140,7 +163,7 @@ export function useMediaPicker() {
           return [];
         }
         try {
-          return await addImages([toPendingImage(image)]);
+          return await addImages([toPendingImage(image)], maxImages);
         } finally {
           await cleanupPreparedUploadImages([image]);
         }
@@ -150,7 +173,7 @@ export function useMediaPicker() {
       Alert.alert('拍照失败', String(e));
       return [];
     }
-  }, [pendingImages?.length, addImages]);
+  }, [addImages]);
 
   const pickFile = useCallback(async () => {
     try {

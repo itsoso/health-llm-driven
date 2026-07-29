@@ -799,13 +799,16 @@ def _fill_training_load(db: Session, user_id: int, twin: HealthTwin, sources: Se
 
         twin.behavioral.acute_chronic_ratio = _as_float(load.get("acwr"))
         twin.behavioral.acwr_zone = load.get("acwr_zone")
+        twin.behavioral.acwr_reliable = load.get("acwr_reliable")
+        twin.behavioral.acwr_unavailable_reason = load.get("acwr_unavailable_reason")
         twin.behavioral.training_load_7d = _as_float(load.get("acute_load_7d"))
 
         daily = load.get("daily_loads") or []
         if daily:
             from datetime import timedelta
+            from app.utils.timezone import get_user_today
 
-            cutoff = date.today() - timedelta(days=7)
+            cutoff = get_user_today(db, user_id) - timedelta(days=7)
             count = 0
             for d in daily:
                 try:
@@ -828,8 +831,9 @@ def _fill_training_load(db: Session, user_id: int, twin: HealthTwin, sources: Se
         from datetime import timedelta as _td
         from app.models.daily_health import WorkoutRecord
         from app.twin.schema import WorkoutSummary as _WS
+        from app.utils.timezone import get_user_today
 
-        cutoff = date.today() - _td(days=7)
+        cutoff = get_user_today(db, user_id) - _td(days=7)
         wrs = (
             db.query(WorkoutRecord)
             .filter(

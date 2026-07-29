@@ -1,9 +1,15 @@
 """系统自我监控:数据完整性检查。钉:量纲/层断连/空目标命中;正常数据不误报。"""
-from datetime import date
+from datetime import date, datetime, timezone
 
 from sqlalchemy import text
 
-from app.services.data_integrity import range_issue, check_user_integrity
+import pytest
+
+from app.services.data_integrity import (
+    DataIntegrityScanError,
+    check_user_integrity,
+    range_issue,
+)
 
 
 # ── 纯 range 函数 ──
@@ -78,6 +84,154 @@ def test_healthy_user_no_issues(client, db):
     ), {"u": user.id, "d": date.today()})
     db.commit()
     assert check_user_integrity(db, user.id) == []
+
+
+def test_diet_photo_asset_without_exactly_one_parent_is_detected(client, db):
+    from tests.conftest import create_authenticated_user
+    from app.models.daily_health import DietPhotoAsset
+
+    user, _ = create_authenticated_user(db)
+    db.add(DietPhotoAsset(
+        id="orphan-photo",
+        user_id=user.id,
+        storage_key=f"/uploads/diet/{user.id}/orphan.jpg",
+        content_sha256="a" * 64,
+        media_type="image/jpeg",
+        origin="chat",
+        origin_message_id=901,
+        ordinal=0,
+        captured_at=datetime.now(timezone.utc),
+        captured_timezone="Asia/Shanghai",
+        classification="food",
+        recognition_confidence=0.9,
+        intent_decision="auto_record",
+        recognition_snapshot={},
+        lifecycle="pending",
+    ))
+    db.commit()
+
+    assert "diet_photo_asset_parent_invalid" in _codes(db, user.id)
+
+
+def test_contextual_diet_record_without_photo_asset_is_detected(client, db):
+    from tests.conftest import create_authenticated_user
+    from app.models.daily_health import DietRecord
+
+    user, _ = create_authenticated_user(db)
+    db.add(DietRecord(
+        user_id=user.id,
+        record_date=date.today(),
+        meal_type="breakfast",
+        food_name="煎饼",
+        food_items="煎饼",
+        source="chat_photo",
+        client_action_id="contextual-meal-photo:902",
+    ))
+    db.commit()
+
+    assert "diet_photo_record_asset_missing" in _codes(db, user.id)
+
+
+def test_diet_photo_parent_owner_mismatch_is_detected(client, db):
+    from tests.conftest import create_authenticated_user
+    from app.models.daily_health import DietPhotoAsset, DietRecord
+
+    record_owner, _ = create_authenticated_user(db)
+    asset_owner, _ = create_authenticated_user(db)
+    record = DietRecord(
+        user_id=record_owner.id,
+        record_date=date.today(),
+        meal_type="breakfast",
+        food_name="煎饼",
+        food_items="煎饼",
+        source="chat_photo",
+    )
+    db.add(record)
+    db.flush()
+    db.add(DietPhotoAsset(
+        id="cross-owner-photo",
+        user_id=asset_owner.id,
+        diet_record_id=record.id,
+        storage_key=f"/api/v1/upload/files/diet/{asset_owner.id}/cross-owner.jpg",
+        content_sha256="b" * 64,
+        media_type="image/jpeg",
+        origin="chat",
+        origin_message_id=903,
+        ordinal=0,
+        captured_at=datetime.now(timezone.utc),
+        captured_timezone="Asia/Shanghai",
+        classification="food",
+        recognition_confidence=0.9,
+        intent_decision="auto_record",
+        recognition_snapshot={},
+        lifecycle="attached",
+    ))
+    db.commit()
+
+    assert "diet_photo_parent_owner_mismatch" in _codes(db, asset_owner.id)
+
+
+def test_diet_photo_draft_source_mismatch_is_detected(client, db):
+    from datetime import timedelta
+
+    from tests.conftest import create_authenticated_user
+    from app.models.daily_health import DietPhotoAsset, DietPhotoDraft
+
+    user, _ = create_authenticated_user(db)
+    draft = DietPhotoDraft(
+        token="integrity-source-mismatch",
+        user_id=user.id,
+        source_message_id=904,
+        image_url=f"/api/v1/upload/files/diet/{user.id}/draft.jpg",
+        image_type="jpeg",
+        recognition_result={"food_items": "煎饼"},
+        status="pending",
+        expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+    )
+    asset = DietPhotoAsset(
+        id="source-mismatch-photo",
+        user_id=user.id,
+        photo_draft_token=draft.token,
+        storage_key=f"/api/v1/upload/files/diet/{user.id}/draft.jpg",
+        content_sha256="c" * 64,
+        media_type="image/jpeg",
+        origin="chat",
+        origin_message_id=905,
+        ordinal=0,
+        captured_at=datetime.now(timezone.utc),
+        captured_timezone="Asia/Shanghai",
+        classification="food",
+        recognition_confidence=0.9,
+        intent_decision="confirm",
+        recognition_snapshot={},
+        lifecycle="pending",
+    )
+    db.add_all([draft, asset])
+    db.commit()
+
+    assert "diet_photo_draft_source_mismatch" in _codes(db, user.id)
+
+
+def test_diet_photo_integrity_query_failure_is_fail_loud(
+    client, db, monkeypatch
+):
+    from tests.conftest import create_authenticated_user
+
+    user, _ = create_authenticated_user(db)
+    real_execute = db.execute
+
+    def fail_diet_photo_scan(statement, *args, **kwargs):
+        if "FROM diet_photo_assets" in str(statement):
+            raise RuntimeError("simulated diet photo ledger outage")
+        return real_execute(statement, *args, **kwargs)
+
+    monkeypatch.setattr(db, "execute", fail_diet_photo_scan)
+
+    with pytest.raises(
+        DataIntegrityScanError,
+        match="diet_photo_integrity_scan_failed",
+    ):
+        check_user_integrity(db, user.id)
 
 
 def test_integrity_endpoint(client, db):

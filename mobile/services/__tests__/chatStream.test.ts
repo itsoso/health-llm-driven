@@ -9,7 +9,7 @@ jest.mock('../api', () => ({
 
 import { streamChat } from '../chat';
 import { buildClientCapsHeader } from '../clientCaps';
-import { setAppEgressAuditSink, setAppEgressMode } from '../egressPolicy';
+import { setAppEgressMode } from '../egressPolicy';
 
 class MockXMLHttpRequest {
   static instances: MockXMLHttpRequest[] = [];
@@ -47,7 +47,6 @@ describe('streamChat', () => {
     jest.useRealTimers();
     jest.clearAllMocks();
     setAppEgressMode(null);
-    setAppEgressAuditSink(null);
   });
 
   it('yields conversation id from agent_start before done for resume', async () => {

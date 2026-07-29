@@ -355,6 +355,8 @@ class BehavioralState(BaseModel):
     training_load_7d: Optional[float] = None
     acute_chronic_ratio: Optional[float] = None
     acwr_zone: Optional[str] = None  # under / optimal / risky
+    acwr_reliable: Optional[bool] = None
+    acwr_unavailable_reason: Optional[str] = None
 
     # Garmin 官方 Training Status (P1a 已采, 现在接入 Twin)
     # productive / maintaining / detraining / overreaching / peaking / recovery / unproductive

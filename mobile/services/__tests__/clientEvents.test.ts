@@ -1,7 +1,9 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import api from '../api';
 import {
   durationBucket,
   emitClientEvent,
+  flushClientEventOutbox,
   sanitizeClientEventMeta,
 } from '../clientEvents';
 
@@ -9,12 +11,18 @@ jest.mock('../api', () => ({
   __esModule: true,
   default: { post: jest.fn().mockResolvedValue({ data: { ok: true } }) },
 }));
+jest.mock('../authStorageScope', () => ({
+  getAuthStorageScope: jest.fn().mockResolvedValue('user-7'),
+}));
 
 const mockPost = api.post as jest.Mock;
 
 describe('client reliability events', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockPost.mockReset();
+    mockPost.mockResolvedValue({ data: { ok: true } });
+    return AsyncStorage.clear();
   });
 
   it.each([
@@ -133,6 +141,206 @@ describe('client reliability events', () => {
     });
   });
 
+  it('keeps chat attachment telemetry content-free and identifier-free', () => {
+    expect(sanitizeClientEventMeta('chat_attachment_terminal', {
+      phase: 'accepted',
+      stage: 'server_accept',
+      image_count: 3,
+      duration_bucket: '3_10s',
+      payload_bucket: '1_4mb',
+      content: '晚餐照片',
+      uri: 'file:///private/chat-drafts/meal.jpeg',
+      base64: 'private-image-bytes',
+      turn_id: 'private-turn-id',
+    })).toEqual({
+      phase: 'accepted',
+      stage: 'server_accept',
+      image_count: 3,
+      duration_bucket: '3_10s',
+      payload_bucket: '1_4mb',
+    });
+  });
+
+  it('persists an attachment terminal event when delivery fails', async () => {
+    mockPost.mockRejectedValueOnce(new Error('offline'));
+
+    await emitClientEvent('chat_attachment_terminal', {
+      phase: 'accepted',
+      stage: 'server_accept',
+      image_count: 2,
+      duration_bucket: '3_10s',
+      payload_bucket: '1_4mb',
+      content: 'private meal description',
+    }, { eventKey: 'attachment-terminal-1' });
+
+    const stored = await AsyncStorage.getItem('client-events:outbox:v1:user-7');
+    expect(JSON.parse(stored || '[]')).toEqual([{
+      eventKey: 'attachment-terminal-1',
+      name: 'chat_attachment_terminal',
+      meta: {
+        phase: 'accepted',
+        stage: 'server_accept',
+        image_count: 2,
+        duration_bucket: '3_10s',
+        payload_bucket: '1_4mb',
+      },
+    }]);
+  });
+
+  it('recovers a corrupted outbox before persisting a new terminal event', async () => {
+    await AsyncStorage.setItem('client-events:outbox:v1:user-7', '{not-json');
+    mockPost.mockRejectedValueOnce(new Error('offline'));
+
+    await emitClientEvent('chat_attachment_terminal', {
+      phase: 'accepted',
+      stage: 'server_accept',
+      image_count: 1,
+      duration_bucket: '1_3s',
+      payload_bucket: 'lt_256kb',
+    }, { eventKey: 'attachment-terminal-after-corruption' });
+
+    const stored = await AsyncStorage.getItem('client-events:outbox:v1:user-7');
+    expect(JSON.parse(stored || '[]')).toEqual([{
+      eventKey: 'attachment-terminal-after-corruption',
+      name: 'chat_attachment_terminal',
+      meta: {
+        phase: 'accepted',
+        stage: 'server_accept',
+        image_count: 1,
+        duration_bucket: '1_3s',
+        payload_bucket: 'lt_256kb',
+      },
+    }]);
+  });
+
+  it('retries a persisted attachment terminal event and removes it after acknowledgement', async () => {
+    await AsyncStorage.setItem('client-events:outbox:v1:user-7', JSON.stringify([{
+      eventKey: 'attachment-terminal-2',
+      name: 'chat_attachment_terminal',
+      meta: {
+        phase: 'failed',
+        stage: 'server_accept',
+        image_count: 1,
+        duration_bucket: '1_3s',
+        payload_bucket: 'lt_256kb',
+        error_code: 'server_not_accepted',
+      },
+    }]));
+
+    await flushClientEventOutbox();
+
+    expect(mockPost).toHaveBeenCalledWith('/client-events', {
+      event_name: 'chat_attachment_terminal',
+      event_key: 'attachment-terminal-2',
+      meta: {
+        phase: 'failed',
+        stage: 'server_accept',
+        image_count: 1,
+        duration_bucket: '1_3s',
+        payload_bucket: 'lt_256kb',
+        error_code: 'server_not_accepted',
+      },
+    });
+    expect(await AsyncStorage.getItem('client-events:outbox:v1:user-7')).toBeNull();
+  });
+
+  it('retains a persisted terminal event when the server resolves with ok false', async () => {
+    await AsyncStorage.setItem('client-events:outbox:v1:user-7', JSON.stringify([{
+      eventKey: 'attachment-terminal-not-persisted',
+      name: 'chat_attachment_terminal',
+      meta: {
+        phase: 'accepted',
+        stage: 'server_accept',
+        image_count: 1,
+        duration_bucket: '1_3s',
+        payload_bucket: 'lt_256kb',
+      },
+    }]));
+    mockPost.mockResolvedValueOnce({ data: { ok: false } });
+
+    await flushClientEventOutbox();
+
+    const stored = await AsyncStorage.getItem('client-events:outbox:v1:user-7');
+    expect(JSON.parse(stored || '[]')).toHaveLength(1);
+  });
+
+  it('resolves a terminal emit after local persistence without waiting for network acknowledgement', async () => {
+    let resolvePost: ((value: { data: { ok: boolean } }) => void) | undefined;
+    mockPost.mockImplementationOnce(() => new Promise((resolve) => {
+      resolvePost = resolve;
+    }));
+
+    await emitClientEvent('chat_attachment_terminal', {
+      phase: 'accepted',
+      stage: 'server_accept',
+      image_count: 1,
+      duration_bucket: '1_3s',
+      payload_bucket: 'lt_256kb',
+    }, { eventKey: 'attachment-terminal-local-first' });
+    const storedBeforeNetworkAck = await AsyncStorage.getItem('client-events:outbox:v1:user-7');
+    for (let index = 0; index < 10 && !resolvePost; index += 1) {
+      await Promise.resolve();
+    }
+
+    expect(JSON.parse(storedBeforeNetworkAck || '[]')).toHaveLength(1);
+    expect(resolvePost).toBeDefined();
+    resolvePost?.({ data: { ok: true } });
+    await flushClientEventOutbox();
+  });
+
+  it('deduplicates an attachment terminal event in the local outbox', async () => {
+    mockPost.mockRejectedValue(new Error('offline'));
+    const payload = {
+      phase: 'accepted',
+      stage: 'server_accept',
+      image_count: 1,
+      duration_bucket: '1_3s',
+      payload_bucket: 'lt_256kb',
+    };
+
+    await emitClientEvent(
+      'chat_attachment_terminal',
+      payload,
+      { eventKey: 'attachment-terminal-3' },
+    );
+    await emitClientEvent(
+      'chat_attachment_terminal',
+      payload,
+      { eventKey: 'attachment-terminal-3' },
+    );
+
+    const stored = await AsyncStorage.getItem('client-events:outbox:v1:user-7');
+    expect(JSON.parse(stored || '[]')).toHaveLength(1);
+  });
+
+  it('drops invalid chat attachment telemetry instead of forwarding partial data', () => {
+    expect(sanitizeClientEventMeta('chat_attachment_terminal', {
+      phase: 'completed',
+      stage: 'upload',
+      image_count: 10,
+      duration_bucket: 'forever',
+      payload_bucket: 'huge',
+      error_code: 'private error text',
+    })).toEqual({});
+  });
+
+  it('drops identifier-shaped attachment error codes outside the fixed enum', () => {
+    expect(sanitizeClientEventMeta('chat_attachment_terminal', {
+      phase: 'failed',
+      stage: 'server_accept',
+      image_count: 1,
+      duration_bucket: '1_3s',
+      payload_bucket: 'lt_256kb',
+      error_code: 'turn_private_identifier',
+    })).toEqual({
+      phase: 'failed',
+      stage: 'server_accept',
+      image_count: 1,
+      duration_bucket: '1_3s',
+      payload_bucket: 'lt_256kb',
+    });
+  });
+
   it('keeps ASR quality metadata content-free for voice input tuning', async () => {
     await emitClientEvent('voice_asr_terminal', {
       phase: 'completed',
@@ -161,6 +369,27 @@ describe('client reliability events', () => {
   it('keeps existing event metadata backward compatible', () => {
     const meta = { source: 'chat', has_image: false };
     expect(sanitizeClientEventMeta('chat_message_sent', meta)).toBe(meta);
+  });
+
+  it('keeps AIGC engagement telemetry content-free and identifier-free', () => {
+    expect(sanitizeClientEventMeta('aigc_media_shared', {
+      phase: 'completed',
+      media_kind: 'video',
+      share_target: 'wechat',
+      job_id: 'private-job-id',
+      prompt: '用户健康隐私',
+      result_url: 'https://private.example/video.mp4',
+    })).toEqual({
+      phase: 'completed',
+      media_kind: 'video',
+      share_target: 'wechat',
+    });
+    expect(sanitizeClientEventMeta('aigc_media_played', {
+      media_kind: 'video',
+      job_id: 'private-job-id',
+    })).toEqual({
+      media_kind: 'video',
+    });
   });
 
   it('keeps app update telemetry content-free and normalizes invalid values', () => {

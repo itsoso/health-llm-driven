@@ -1,8 +1,13 @@
 """Persistence contracts for contextual chat meal photos."""
+import base64
 import os
+import threading
+import time
+from io import BytesIO
 from datetime import datetime, timezone
 
 import pytest
+from PIL import Image
 
 from app.models.daily_health import DietPhotoAsset, DietPhotoDraft, DietRecord
 from app.models.user import User
@@ -77,6 +82,44 @@ def _source_image(tmp_path, monkeypatch, user_id: int) -> str:
     monkeypatch.setattr(chat_utils, "_UPLOAD_DIR", str(tmp_path / "chat"))
     monkeypatch.setattr(upload_api, "UPLOAD_DIR", str(tmp_path / "uploads"))
     return chat_utils.upload_chat_image(VALID_PNG_BASE64, user_id, "png")
+
+
+def _source_image_variant(
+    tmp_path,
+    monkeypatch,
+    user_id: int,
+    *,
+    color: tuple[int, int, int],
+) -> str:
+    from app.api import upload as upload_api
+
+    monkeypatch.setattr(chat_utils, "_UPLOAD_DIR", str(tmp_path / "chat"))
+    monkeypatch.setattr(upload_api, "UPLOAD_DIR", str(tmp_path / "uploads"))
+    buffer = BytesIO()
+    Image.new("RGB", (2, 2), color=color).save(buffer, format="PNG")
+    encoded = base64.b64encode(buffer.getvalue()).decode()
+    return chat_utils.upload_chat_image(encoded, user_id, "png")
+
+
+def _capture(
+    *,
+    user_id: int,
+    message_id: int,
+    source_url: str,
+    ordinal: int,
+    at: datetime,
+    vision_result: dict | None = None,
+    classification: str = "food",
+) -> ContextualMealPhotoCapture:
+    return ContextualMealPhotoCapture(
+        user_id=user_id,
+        source_message_id=message_id,
+        source_image_url=source_url,
+        source_image_index=ordinal,
+        decision=_decision(at=at),
+        vision_result=vision_result or _vision_result(),
+        classification=classification,
+    )
 
 
 def test_auto_capture_copies_owned_chat_media_to_one_idempotent_diet_record(
@@ -177,6 +220,348 @@ def test_food_photo_outside_auto_window_creates_owner_bound_confirmation_draft(
     assert asset.photo_draft_token == draft.token
     assert asset.diet_record_id is None
     assert asset.lifecycle == "pending"
+
+
+def test_same_message_photos_attach_to_one_auto_record(
+    db, test_user, tmp_path, monkeypatch
+):
+    first_url = _source_image_variant(
+        tmp_path, monkeypatch, test_user.id, color=(220, 30, 30),
+    )
+    second_url = _source_image_variant(
+        tmp_path, monkeypatch, test_user.id, color=(30, 180, 80),
+    )
+    at = datetime(2026, 7, 19, 16, 30, tzinfo=timezone.utc)
+    service = ContextualMealPhotoService(db)
+
+    result = service.capture_session([
+        _capture(
+            user_id=test_user.id,
+            message_id=708,
+            source_url=first_url,
+            ordinal=0,
+            at=at,
+        ),
+        _capture(
+            user_id=test_user.id,
+            message_id=708,
+            source_url=second_url,
+            ordinal=1,
+            at=at,
+        ),
+    ])
+
+    records = db.query(DietRecord).filter(DietRecord.user_id == test_user.id).all()
+    assets = (
+        db.query(DietPhotoAsset)
+        .filter(DietPhotoAsset.user_id == test_user.id)
+        .order_by(DietPhotoAsset.ordinal.asc())
+        .all()
+    )
+    assert len(records) == 1
+    assert result.record is not None
+    assert result.record.id == records[0].id
+    assert result.record.client_action_id == "contextual-meal-photo:708"
+    assert [asset.ordinal for asset in assets] == [0, 1]
+    assert {asset.diet_record_id for asset in assets} == {records[0].id}
+    assert [asset.id for asset in result.photo_assets] == [asset.id for asset in assets]
+    # The structured vision result describes the whole session. Adding an
+    # alternate angle must not double-count its nutrition.
+    assert result.record.calories == 198
+
+
+def test_same_message_photos_attach_to_one_confirmation_draft(
+    db, test_user, tmp_path, monkeypatch
+):
+    first_url = _source_image_variant(
+        tmp_path, monkeypatch, test_user.id, color=(20, 80, 220),
+    )
+    second_url = _source_image_variant(
+        tmp_path, monkeypatch, test_user.id, color=(220, 180, 20),
+    )
+    at = datetime(2026, 7, 20, 3, 30, tzinfo=timezone.utc)
+    service = ContextualMealPhotoService(db)
+
+    result = service.capture_session([
+        _capture(
+            user_id=test_user.id,
+            message_id=709,
+            source_url=first_url,
+            ordinal=0,
+            at=at,
+        ),
+        _capture(
+            user_id=test_user.id,
+            message_id=709,
+            source_url=second_url,
+            ordinal=1,
+            at=at,
+        ),
+    ])
+
+    drafts = db.query(DietPhotoDraft).filter(
+        DietPhotoDraft.user_id == test_user.id,
+    ).all()
+    assets = (
+        db.query(DietPhotoAsset)
+        .filter(DietPhotoAsset.user_id == test_user.id)
+        .order_by(DietPhotoAsset.ordinal.asc())
+        .all()
+    )
+    assert len(drafts) == 1
+    assert result.photo_draft is not None
+    assert result.photo_draft.token == drafts[0].token
+    assert [asset.ordinal for asset in assets] == [0, 1]
+    assert {asset.photo_draft_token for asset in assets} == {drafts[0].token}
+    assert [asset.id for asset in result.photo_assets] == [asset.id for asset in assets]
+
+
+def test_same_message_duplicate_photo_content_is_stored_once(
+    db, test_user, tmp_path, monkeypatch
+):
+    source_url = _source_image(tmp_path, monkeypatch, test_user.id)
+    at = datetime(2026, 7, 19, 16, 30, tzinfo=timezone.utc)
+    service = ContextualMealPhotoService(db)
+
+    result = service.capture_session([
+        _capture(
+            user_id=test_user.id,
+            message_id=710,
+            source_url=source_url,
+            ordinal=0,
+            at=at,
+        ),
+        _capture(
+            user_id=test_user.id,
+            message_id=710,
+            source_url=source_url,
+            ordinal=1,
+            at=at,
+        ),
+    ])
+
+    assert result.record is not None
+    assert db.query(DietRecord).count() == 1
+    assert db.query(DietPhotoAsset).count() == 1
+    assert len(result.photo_assets) == 1
+
+
+def test_postgres_capture_session_uses_transaction_advisory_lock(
+    db, test_user, tmp_path, monkeypatch
+):
+    source_url = _source_image(tmp_path, monkeypatch, test_user.id)
+    real_execute = db.execute
+    statements: list[str] = []
+
+    monkeypatch.setattr(db.get_bind().dialect, "name", "postgresql")
+
+    def capture_execute(statement, params=None, *args, **kwargs):
+        sql = str(statement)
+        if "pg_advisory_xact_lock" in sql:
+            statements.append(sql)
+            return None
+        return real_execute(statement, params, *args, **kwargs)
+
+    monkeypatch.setattr(db, "execute", capture_execute)
+
+    result = ContextualMealPhotoService(db).capture(_capture(
+        user_id=test_user.id,
+        message_id=711,
+        source_url=source_url,
+        ordinal=0,
+        at=datetime(2026, 7, 19, 16, 30, tzinfo=timezone.utc),
+    ))
+
+    assert result.record is not None
+    assert len(statements) == 1
+    assert "pg_advisory_xact_lock" in statements[0]
+
+
+def test_sqlite_capture_session_lock_serializes_same_source_message(db):
+    active = 0
+    max_active = 0
+    state_lock = threading.Lock()
+
+    def enter_guard():
+        nonlocal active, max_active
+        service = ContextualMealPhotoService(db)
+        with service._capture_session_lock(9, 712):
+            with state_lock:
+                active += 1
+                max_active = max(max_active, active)
+            time.sleep(0.04)
+            with state_lock:
+                active -= 1
+
+    threads = [threading.Thread(target=enter_guard) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=2)
+
+    assert all(not thread.is_alive() for thread in threads)
+    assert max_active == 1
+
+
+def test_mixed_recognition_batch_cannot_auto_record_failed_image_as_food(
+    db, test_user, tmp_path, monkeypatch
+):
+    first_url = _source_image_variant(
+        tmp_path, monkeypatch, test_user.id, color=(220, 30, 30),
+    )
+    second_url = _source_image_variant(
+        tmp_path, monkeypatch, test_user.id, color=(30, 180, 80),
+    )
+    at = datetime(2026, 7, 19, 16, 30, tzinfo=timezone.utc)
+
+    with pytest.raises(
+        ContextualMealPhotoServiceError,
+        match="contextual_meal_photo_incomplete_batch_requires_confirmation",
+    ):
+        ContextualMealPhotoService(db).capture_session([
+            _capture(
+                user_id=test_user.id,
+                message_id=713,
+                source_url=first_url,
+                ordinal=0,
+                at=at,
+            ),
+            _capture(
+                user_id=test_user.id,
+                message_id=713,
+                source_url=second_url,
+                ordinal=1,
+                at=at,
+                classification="unknown",
+            ),
+        ])
+
+    assert db.query(DietRecord).count() == 0
+    assert db.query(DietPhotoAsset).count() == 0
+
+
+def test_appending_photo_updates_record_aggregate_inside_session(
+    db, test_user, tmp_path, monkeypatch
+):
+    first_url = _source_image_variant(
+        tmp_path, monkeypatch, test_user.id, color=(220, 30, 30),
+    )
+    second_url = _source_image_variant(
+        tmp_path, monkeypatch, test_user.id, color=(30, 180, 80),
+    )
+    at = datetime(2026, 7, 19, 16, 30, tzinfo=timezone.utc)
+    service = ContextualMealPhotoService(db)
+    first_capture = _capture(
+        user_id=test_user.id,
+        message_id=714,
+        source_url=first_url,
+        ordinal=0,
+        at=at,
+    )
+    first = service.capture(first_capture)
+    aggregate = {
+        "foods": [
+            *_vision_result()["foods"],
+            {
+                "name": "西兰花",
+                "quantity": "约150g",
+                "calories": 50,
+                "protein": 4,
+                "carbs": 8,
+                "fat": 0.5,
+                "fiber": 4,
+                "confidence": 0.9,
+            },
+        ],
+        "total_calories": 248,
+        "total_protein": 41,
+        "total_carbs": 8,
+        "total_fat": 4.8,
+        "total_fiber": 4,
+        "health_tips": "补图后的完整估算。",
+    }
+
+    updated = service.capture_session([
+        _capture(
+            user_id=test_user.id,
+            message_id=714,
+            source_url=first_url,
+            ordinal=0,
+            at=at,
+            vision_result=aggregate,
+        ),
+        _capture(
+            user_id=test_user.id,
+            message_id=714,
+            source_url=second_url,
+            ordinal=1,
+            at=at,
+            vision_result=aggregate,
+        ),
+    ])
+
+    assert first.record is not None
+    assert updated.record is not None
+    assert updated.record.id == first.record.id
+    assert updated.record.calories == 248
+    assert updated.record.food_items == "鸡胸肉 约120g + 西兰花 约150g"
+    assert updated.record.health_tips == "补图后的完整估算。"
+    assert len(updated.photo_assets) == 2
+
+
+def test_appending_photo_updates_draft_aggregate_inside_session(
+    db, test_user, tmp_path, monkeypatch
+):
+    first_url = _source_image_variant(
+        tmp_path, monkeypatch, test_user.id, color=(20, 80, 220),
+    )
+    second_url = _source_image_variant(
+        tmp_path, monkeypatch, test_user.id, color=(220, 180, 20),
+    )
+    at = datetime(2026, 7, 20, 3, 30, tzinfo=timezone.utc)
+    service = ContextualMealPhotoService(db)
+    first = service.capture(_capture(
+        user_id=test_user.id,
+        message_id=715,
+        source_url=first_url,
+        ordinal=0,
+        at=at,
+    ))
+    aggregate = {
+        **_vision_result(),
+        "foods": [{
+            **_vision_result()["foods"][0],
+            "calories": 260,
+        }],
+        "total_calories": 260,
+        "health_tips": "补图后的草稿估算。",
+    }
+
+    updated = service.capture_session([
+        _capture(
+            user_id=test_user.id,
+            message_id=715,
+            source_url=first_url,
+            ordinal=0,
+            at=at,
+            vision_result=aggregate,
+        ),
+        _capture(
+            user_id=test_user.id,
+            message_id=715,
+            source_url=second_url,
+            ordinal=1,
+            at=at,
+            vision_result=aggregate,
+        ),
+    ])
+
+    assert first.photo_draft is not None
+    assert updated.photo_draft is not None
+    assert updated.photo_draft.token == first.photo_draft.token
+    assert updated.photo_draft.recognition_result["calories"] == 260
+    assert updated.photo_draft.recognition_result["health_tips"] == "补图后的草稿估算。"
+    assert len(updated.photo_assets) == 2
 
 
 def test_auto_capture_write_failure_falls_back_to_owner_bound_confirmation_draft(

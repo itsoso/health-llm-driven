@@ -193,6 +193,49 @@ def test_import_medical_exam_from_text_persists_indicators(client, db):
     assert next(row for row in rows if row.item_code == "FBG").value == 5.6
     assert next(row for row in rows if row.item_code == "CREA").record_date.isoformat() == "2026-05-11"
 
+    from app.models.medical_exam import MedicalExam
+
+    exam = db.query(MedicalExam).filter(MedicalExam.id == data["exam_id"]).one()
+    assert payload["text"] not in (exam.notes or "")
+    assert exam.notes == "从手工粘贴文本导入，原文未复制到备注。"
+
+
+def test_import_medical_exam_from_text_error_does_not_leak_report(
+    client,
+    db,
+    monkeypatch,
+    caplog,
+):
+    """DB/provider exceptions must not echo health text into logs or API errors."""
+    from app.services.data_collection.medical_exam_import import (
+        MedicalExamImportService,
+    )
+
+    _, headers = _create_user(db)
+    private_report = "private-MRI-report-content"
+
+    def fail_import(*args, **kwargs):
+        raise RuntimeError(private_report)
+
+    monkeypatch.setattr(
+        MedicalExamImportService,
+        "import_from_text",
+        fail_import,
+    )
+
+    with caplog.at_level("ERROR", logger="app.api.medical_exams"):
+        resp = client.post(
+            "/api/v1/medical-exams/import/text",
+            json={"text": private_report},
+            headers=headers,
+        )
+
+    assert resp.status_code == 500
+    assert resp.json()["detail"] == "入库服务暂不可用，请稍后重试"
+    assert private_report not in caplog.text
+    assert private_report not in resp.text
+    assert "RuntimeError" in caplog.text
+
 
 def test_import_image_requires_auth(client):
     resp = client.post("/api/v1/medical-exams/import/image")
@@ -256,6 +299,97 @@ def test_import_image_ocr_success(client, db):
     assert data["abnormal_count"] == 1
     assert data["hospital_name"] == "测试医院"
     assert "exam_id" in data
+
+
+def test_parse_image_preview_does_not_persist(client, db):
+    """Mobile preview must never write health data before user confirmation."""
+    from app.models.medical_exam import MedicalExam
+
+    user, headers = _create_user(db)
+    mock_ocr = {
+        "report_type": "生化",
+        "report_date": "2026-07-29",
+        "institution": "测试医院",
+        "items": [
+            {
+                "name": "丙氨酸氨基转移酶",
+                "name_en": "ALT",
+                "value": 25.0,
+                "unit": "U/L",
+                "reference_low": 0,
+                "reference_high": 40,
+                "is_abnormal": False,
+            }
+        ],
+        "conclusion": "本响应只用于导入前复核",
+    }
+
+    with patch(
+        "app.api.medical_exams.recognize_medical_report",
+        new=AsyncMock(return_value=mock_ocr),
+    ):
+        resp = client.post(
+            "/api/v1/medical-exams/parse-image-preview",
+            files={"file": ("report.jpg", _tiny_image_bytes(), "image/jpeg")},
+            headers=headers,
+        )
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["parsed_data"]["items"][0]["name_en"] == "ALT"
+    assert (
+        db.query(MedicalExam)
+        .filter(MedicalExam.user_id == user.id)
+        .count()
+        == 0
+    )
+
+
+def test_create_medical_exam_idempotency_key_is_owner_scoped(
+    client,
+    db,
+    sample_medical_exam_data,
+):
+    """Repeated confirmation returns one report; another owner gets their own."""
+    from app.models.medical_exam import MedicalExam
+
+    user, headers = _create_user(db)
+    other, other_headers = _create_user(db)
+    idempotency_key = f"mobile-medical-import-{uuid.uuid4().hex}"
+    request_headers = {**headers, "Idempotency-Key": idempotency_key}
+
+    first = client.post(
+        "/api/v1/medical-exams",
+        json=sample_medical_exam_data,
+        headers=request_headers,
+    )
+    second = client.post(
+        "/api/v1/medical-exams",
+        json=sample_medical_exam_data,
+        headers=request_headers,
+    )
+    other_result = client.post(
+        "/api/v1/medical-exams",
+        json=sample_medical_exam_data,
+        headers={**other_headers, "Idempotency-Key": idempotency_key},
+    )
+
+    assert first.status_code == 200, first.text
+    assert second.status_code == 200, second.text
+    assert other_result.status_code == 200, other_result.text
+    assert first.json()["id"] == second.json()["id"]
+    assert other_result.json()["id"] != first.json()["id"]
+    assert (
+        db.query(MedicalExam)
+        .filter(MedicalExam.user_id == user.id)
+        .count()
+        == 1
+    )
+    assert (
+        db.query(MedicalExam)
+        .filter(MedicalExam.user_id == other.id)
+        .count()
+        == 1
+    )
 
 
 def test_import_image_pathology_narrative_persists_conclusion(client, db):

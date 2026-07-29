@@ -12,15 +12,255 @@ import pytest
 from app.services.agent_executor import (
     AgentExecutor,
     _build_deterministic_diet_correction_tool_call,
+    _build_deterministic_goal_lookup_tool_call,
+    _build_goal_verification_tool_call,
     _ground_query_response_date_labels,
+    _goal_target_record_ids,
+    _goal_lookup_resolution_prompt,
     _is_explicit_latest_diet_delete,
     _model_tool_result_content,
     _parse_explicit_diet_correction,
     _normalize_relative_date,
+    _normalize_goal_guarded_tool_calls,
     _tool_call_is_read_only,
 )
+from app.services.agent_kernel.types import GoalSpec
 
 BJ = timezone(timedelta(hours=8))
+
+
+def _diet_recalculate_goal() -> GoalSpec:
+    return GoalSpec(
+        kind="diet_recalculate_update",
+        domain="diet",
+        operation="update",
+        target_date="2026-07-24",
+        target_meal_types=("breakfast", "lunch"),
+        reference_foods=(
+            ("breakfast", "豆腐脑约1碗 + 小笼包1个"),
+            ("lunch", "三文鱼约1块 + 藜麦约半碗"),
+        ),
+        requires_lookup=True,
+        requires_verification=True,
+        prohibited_operations=("create", "delete"),
+        postconditions=("existing_records_only", "read_back_verified"),
+    )
+
+
+def test_recalculate_goal_starts_with_one_deterministic_database_lookup():
+    call = _build_deterministic_goal_lookup_tool_call(
+        _diet_recalculate_goal(),
+        write_receipts=[],
+    )
+
+    assert call is not None
+    assert call["function"]["name"] == "health_manage"
+    assert json.loads(call["function"]["arguments"]) == {
+        "record_type": "diet",
+        "operation": "list",
+        "date": "2026-07-24",
+        "limit": 20,
+    }
+
+
+def test_recalculate_goal_never_allows_model_to_create_duplicate_diet_record():
+    call = {
+        "id": "unsafe-create",
+        "type": "function",
+        "function": {
+            "name": "health_record",
+            "arguments": json.dumps({
+                "record_type": "diet",
+                "data": {
+                    "meal_type": "breakfast",
+                    "food_items": "豆腐脑约1碗 + 小笼包1个",
+                },
+            }),
+        },
+    }
+
+    normalized = _normalize_goal_guarded_tool_calls(
+        [call],
+        _diet_recalculate_goal(),
+    )
+
+    assert normalized[0]["function"]["name"] == "health_manage"
+    assert json.loads(normalized[0]["function"]["arguments"]) == {
+        "record_type": "diet",
+        "operation": "list",
+        "date": "2026-07-24",
+        "limit": 20,
+    }
+
+
+def test_recalculate_goal_never_allows_model_to_delete_existing_diet_record():
+    call = {
+        "id": "unsafe-delete",
+        "type": "function",
+        "function": {
+            "name": "health_manage",
+            "arguments": json.dumps({
+                "record_type": "diet",
+                "operation": "delete",
+                "record_id": 101,
+            }),
+        },
+    }
+
+    normalized = _normalize_goal_guarded_tool_calls(
+        [call],
+        _diet_recalculate_goal(),
+        lookup_completed=True,
+        allowed_record_ids={"101", "102"},
+    )
+
+    assert normalized == []
+
+
+def test_recalculate_goal_only_updates_ids_resolved_from_target_meals():
+    wrong_record = {
+        "id": "wrong-record",
+        "type": "function",
+        "function": {
+            "name": "health_manage",
+            "arguments": json.dumps({
+                "record_type": "diet",
+                "operation": "update",
+                "record_id": 303,
+                "data": {"meal_type": "breakfast", "calories": 410},
+            }),
+        },
+    }
+
+    normalized = _normalize_goal_guarded_tool_calls(
+        [wrong_record],
+        _diet_recalculate_goal(),
+        lookup_completed=True,
+        allowed_record_ids={"101", "102"},
+    )
+
+    assert normalized[0]["function"]["name"] == "health_manage"
+    assert json.loads(normalized[0]["function"]["arguments"])["operation"] == "list"
+
+
+def test_recalculate_goal_allows_only_a_resolved_target_record_update():
+    target_record = {
+        "id": "target-record",
+        "type": "function",
+        "function": {
+            "name": "health_manage",
+            "arguments": json.dumps({
+                "record_type": "diet",
+                "operation": "update",
+                "record_id": 101,
+                "data": {"meal_type": "breakfast", "calories": 410},
+            }),
+        },
+    }
+
+    normalized = _normalize_goal_guarded_tool_calls(
+        [target_record],
+        _diet_recalculate_goal(),
+        lookup_completed=True,
+        allowed_record_ids={"101", "102"},
+    )
+
+    assert normalized == [target_record]
+
+
+def test_recalculate_goal_resolves_ids_only_when_every_target_meal_is_unique():
+    result = json.dumps([
+        {"id": 101, "meal_type": "breakfast"},
+        {"id": 102, "meal_type": "lunch"},
+        {"id": 103, "meal_type": "dinner"},
+    ])
+
+    assert _goal_target_record_ids(_diet_recalculate_goal(), result) == {"101", "102"}
+
+
+def test_recalculate_goal_rejects_the_whole_batch_when_a_target_is_ambiguous():
+    result = json.dumps([
+        {"id": 101, "meal_type": "breakfast"},
+        {"id": 111, "meal_type": "breakfast"},
+        {"id": 102, "meal_type": "lunch"},
+    ])
+
+    assert _goal_target_record_ids(_diet_recalculate_goal(), result) == set()
+
+
+def test_recalculate_goal_rejects_the_whole_batch_when_a_target_is_missing():
+    result = json.dumps([
+        {"id": 101, "meal_type": "breakfast"},
+        {"id": 103, "meal_type": "dinner"},
+    ])
+
+    assert _goal_target_record_ids(_diet_recalculate_goal(), result) == set()
+
+
+def test_recalculate_goal_explains_ambiguous_targets_without_allowing_a_write():
+    result = json.dumps([
+        {"id": 101, "meal_type": "breakfast"},
+        {"id": 111, "meal_type": "breakfast"},
+        {"id": 102, "meal_type": "lunch"},
+    ])
+
+    prompt = _goal_lookup_resolution_prompt(_diet_recalculate_goal(), result)
+
+    assert "存在多条早餐" in prompt
+    assert "禁止继续写入或宣称完成" in prompt
+    assert "午餐" not in prompt
+
+
+def test_recalculate_goal_explains_missing_targets_without_generic_failure():
+    result = json.dumps([
+        {"id": 101, "meal_type": "breakfast"},
+    ])
+
+    prompt = _goal_lookup_resolution_prompt(_diet_recalculate_goal(), result)
+
+    assert "未找到午餐" in prompt
+    assert "请用户选择或补充" in prompt
+
+
+def test_recalculate_goal_adds_no_resolution_prompt_for_unique_targets():
+    result = json.dumps([
+        {"id": 101, "meal_type": "breakfast"},
+        {"id": 102, "meal_type": "lunch"},
+    ])
+
+    assert _goal_lookup_resolution_prompt(_diet_recalculate_goal(), result) == ""
+
+
+def test_recalculate_goal_does_not_mislabel_a_tool_error_as_missing_records():
+    assert _goal_lookup_resolution_prompt(
+        _diet_recalculate_goal(),
+        "Error: database unavailable",
+    ) == ""
+
+
+def test_recalculate_goal_reads_back_after_all_target_updates_have_receipts():
+    goal = _diet_recalculate_goal()
+    call = _build_goal_verification_tool_call(
+        goal,
+        write_receipts=[
+            {"resource_type": "diet", "resource_id": 101},
+            {"resource_type": "diet", "resource_id": 102},
+        ],
+        already_attempted=False,
+    )
+
+    assert call is not None
+    assert json.loads(call["function"]["arguments"]) == {
+        "record_type": "diet",
+        "operation": "list",
+        "date": "2026-07-24",
+        "limit": 20,
+    }
+    assert _build_goal_verification_tool_call(
+        goal,
+        write_receipts=[{"resource_type": "diet", "resource_id": 101}],
+        already_attempted=False,
+    ) is None
 
 
 def test_today_resolves_to_iso_date():
@@ -556,7 +796,15 @@ async def test_delete_without_record_id_stays_fail_closed_when_latest_is_not_exp
         {"record_type": "diet", "operation": "delete"},
     )
 
-    assert result.startswith("Error:")
+    rejection = json.loads(result)
+    assert rejection == {
+        "status": "rejected",
+        "success": False,
+        "dispatch_started": False,
+        "error_code": "record_id_missing",
+        "message": "修改或删除缺少记录 ID。",
+        "recovery_guidance": "请先查询候选记录并确认要操作的记录。",
+    }
     executor._api_get.assert_not_awaited()
     executor._api_delete.assert_not_awaited()
 

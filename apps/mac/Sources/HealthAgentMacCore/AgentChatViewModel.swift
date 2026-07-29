@@ -2324,37 +2324,53 @@ public final class AgentChatViewModel {
         guard let aigcMediaClient, !id.isEmpty else { return }
         do {
             let projection = try await aigcMediaClient.confirmDraft(id: id)
-            guard let index = messages.indices.first(where: {
-                Self.containsAIGCMediaConfirmation(in: messages[$0], confirmationID: id)
-            }) else { return }
-            let jobData = projection.persistedCardData(title: "小巴创作")
-            if messages[index].cardType == "aigc_media_confirmation" {
-                messages[index].cardType = "aigc_media_job"
-                messages[index].cardData = jobData
-                messages[index].cardActions = []
-            } else if let type = messages[index].cardType,
-                      let data = messages[index].cardData,
-                      let updated = Self.replacingAIGCMediaConfirmation(
-                        type: type,
-                        data: data,
-                        confirmationID: id,
-                        jobData: jobData
-                      ) {
-                messages[index].cardData = updated
-            } else {
+            applyAIGCMediaJobProjection(projection, confirmationID: id)
+        } catch {
+            // A timeout or lost response may happen after the server accepted
+            // the paid task. Resolve the owner-scoped ledger before leaving the
+            // draft actionable so another click cannot create false uncertainty.
+            guard let confirmation = try? await aigcMediaClient.getConfirmation(id: id),
+                  let projection = confirmation.job else {
                 return
             }
-            if let resultURL = projection.resultURL {
-                aigcResultURLs[projection.id] = resultURL
-            } else {
-                aigcResultURLs.removeValue(forKey: projection.id)
-            }
-            persistCurrentConversation()
-            scheduleAIGCMediaRefreshIfNeeded(for: messages[index].id)
-        } catch {
-            // Keep the confirmation card intact. It can be retried and must not
-            // claim dispatch unless the owner-scoped API returns a job.
+            applyAIGCMediaJobProjection(projection, confirmationID: id)
         }
+    }
+
+    private func applyAIGCMediaJobProjection(
+        _ projection: AIGCMediaJobProjection,
+        confirmationID: String
+    ) {
+        guard let index = messages.indices.first(where: {
+            Self.containsAIGCMediaConfirmation(
+                in: messages[$0],
+                confirmationID: confirmationID
+            )
+        }) else { return }
+        let jobData = projection.persistedCardData(title: "小巴创作")
+        if messages[index].cardType == "aigc_media_confirmation" {
+            messages[index].cardType = "aigc_media_job"
+            messages[index].cardData = jobData
+            messages[index].cardActions = []
+        } else if let type = messages[index].cardType,
+                  let data = messages[index].cardData,
+                  let updated = Self.replacingAIGCMediaConfirmation(
+                    type: type,
+                    data: data,
+                    confirmationID: confirmationID,
+                    jobData: jobData
+                  ) {
+            messages[index].cardData = updated
+        } else {
+            return
+        }
+        if let resultURL = projection.resultURL {
+            aigcResultURLs[projection.id] = resultURL
+        } else {
+            aigcResultURLs.removeValue(forKey: projection.id)
+        }
+        persistCurrentConversation()
+        scheduleAIGCMediaRefreshIfNeeded(for: messages[index].id)
     }
 
     private static func containsAIGCMediaConfirmation(

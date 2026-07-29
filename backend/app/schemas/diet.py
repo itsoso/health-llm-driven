@@ -174,6 +174,7 @@ class FoodItem(BaseModel):
     food_id: Optional[str] = None
     source: Optional[str] = None
     quantity_grams: Optional[float] = None
+    label_basis_grams: Optional[float] = None
     nutrition_basis: Optional[str] = None
     portion_basis: Optional[str] = None
     portion_confidence: Optional[float] = None

@@ -367,11 +367,48 @@ def memory_injection_stats(db: Session, since: datetime, user_id: Optional[int])
 def aigc_media_stats(db: Session, since: datetime, user_id: Optional[int]) -> dict:
     """Return de-identified media-job health for operators."""
     from app.models.aigc_media_job import AIGCMediaJob
+    from app.models.client_event import ClientEvent
     from app.services.aigc_media_job_service import AIGC_SAFE_RETRY_ERROR_CODES
 
     q = db.query(AIGCMediaJob).filter(AIGCMediaJob.created_at >= since)
     if user_id:
         q = q.filter(AIGCMediaJob.user_id == user_id)
+    engagement_q = db.query(ClientEvent).filter(
+        ClientEvent.created_at >= since,
+        ClientEvent.event_name.in_(("aigc_media_played", "aigc_media_shared")),
+    )
+    if user_id:
+        engagement_q = engagement_q.filter(ClientEvent.user_id == user_id)
+    engagement = {
+        "played": 0,
+        "share_attempts": 0,
+        "share_completed": 0,
+        "share_failed": 0,
+        "share_by_target": {},
+    }
+    for event_name, meta in engagement_q.with_entities(
+        ClientEvent.event_name,
+        ClientEvent.meta,
+    ).all():
+        payload = meta if isinstance(meta, dict) else {}
+        if event_name == "aigc_media_played":
+            engagement["played"] += 1
+            continue
+        engagement["share_attempts"] += 1
+        phase = payload.get("phase")
+        target = payload.get("share_target")
+        if phase == "completed":
+            engagement["share_completed"] += 1
+        elif phase == "failed":
+            engagement["share_failed"] += 1
+        if target in {"wechat", "xiaohongshu"}:
+            target_stats = engagement["share_by_target"].setdefault(
+                target,
+                {"attempts": 0, "completed": 0, "failed": 0},
+            )
+            target_stats["attempts"] += 1
+            if phase in {"completed", "failed"}:
+                target_stats[phase] += 1
 
     total = q.count()
     if total == 0:
@@ -379,11 +416,18 @@ def aigc_media_stats(db: Session, since: datetime, user_id: Optional[int]) -> di
             "total_jobs": 0,
             "by_status": {},
             "by_model": {},
+            "by_kind": {},
             "by_error_code": {},
             "auth_failures": 0,
             "submission_unknown": 0,
             "safe_retryable": 0,
             "success_rate_pct": None,
+            "latency_seconds": {"count": 0, "p50": None, "p95": None},
+            "output_bytes": {"count": 0, "total": 0, "average": None},
+            "requested_video_seconds": 0,
+            "by_duration_seconds": {},
+            "stuck_active_jobs": 0,
+            "engagement": engagement,
             "last_job_at": None,
             "last_failure_at": None,
             "status": "no_data",
@@ -403,6 +447,13 @@ def aigc_media_stats(db: Session, since: datetime, user_id: Optional[int]) -> di
             func.count(AIGCMediaJob.id),
         ).group_by(AIGCMediaJob.model).all()
     }
+    by_kind = {
+        str(kind or "unknown"): int(count)
+        for kind, count in q.with_entities(
+            AIGCMediaJob.kind,
+            func.count(AIGCMediaJob.id),
+        ).group_by(AIGCMediaJob.kind).all()
+    }
     by_error_code = {
         str(code): int(count)
         for code, count in q.with_entities(
@@ -419,11 +470,56 @@ def aigc_media_stats(db: Session, since: datetime, user_id: Optional[int]) -> di
         AIGCMediaJob.provider_task_id.is_(None),
         AIGCMediaJob.provider_error_code.in_(AIGC_SAFE_RETRY_ERROR_CODES),
     ).count()
+    stuck_active_jobs = q.filter(
+        AIGCMediaJob.status.in_(("dispatching", "queued", "running")),
+        AIGCMediaJob.created_at <= utc_now() - timedelta(minutes=30),
+    ).count()
     resolved = int(by_status.get("succeeded", 0)) + int(by_status.get("failed", 0))
     success_rate = (
         round(100.0 * int(by_status.get("succeeded", 0)) / resolved, 1)
         if resolved else None
     )
+    latency_values: list[float] = []
+    output_byte_values: list[int] = []
+    requested_video_seconds = 0
+    by_duration_seconds: Dict[str, int] = {}
+    for kind, result_metadata in q.with_entities(
+        AIGCMediaJob.kind,
+        AIGCMediaJob.result_metadata,
+    ).all():
+        if kind not in {"text_to_video", "image_to_video"}:
+            continue
+        metadata = result_metadata if isinstance(result_metadata, dict) else {}
+        request_metadata = metadata.get("request")
+        request_metadata = request_metadata if isinstance(request_metadata, dict) else {}
+        duration = request_metadata.get("duration_seconds")
+        if (
+            isinstance(duration, (int, float))
+            and not isinstance(duration, bool)
+            and 0 < duration <= 60
+        ):
+            rounded_duration = int(round(duration))
+            requested_video_seconds += rounded_duration
+            key = str(rounded_duration)
+            by_duration_seconds[key] = by_duration_seconds.get(key, 0) + 1
+    completed_rows = q.filter(
+        AIGCMediaJob.status == "succeeded",
+        AIGCMediaJob.completed_at.isnot(None),
+    ).with_entities(
+        AIGCMediaJob.created_at,
+        AIGCMediaJob.started_at,
+        AIGCMediaJob.completed_at,
+        AIGCMediaJob.result_metadata,
+    ).all()
+    for created_at, started_at, completed_at, result_metadata in completed_rows:
+        start = started_at or created_at
+        if start is not None and completed_at is not None:
+            latency_values.append(max(0.0, (completed_at - start).total_seconds()))
+        metadata = result_metadata if isinstance(result_metadata, dict) else {}
+        byte_size = metadata.get("byte_size")
+        if isinstance(byte_size, int) and not isinstance(byte_size, bool) and byte_size >= 0:
+            output_byte_values.append(byte_size)
+    total_output_bytes = sum(output_byte_values)
     last_job = q.with_entities(func.max(AIGCMediaJob.created_at)).scalar()
     last_failure = q.filter(
         AIGCMediaJob.status.in_(("failed", "submission_unknown"))
@@ -435,7 +531,7 @@ def aigc_media_stats(db: Session, since: datetime, user_id: Optional[int]) -> di
 
     if auth_failures:
         status = "critical"
-    elif submission_unknown or int(by_status.get("failed", 0)):
+    elif submission_unknown or int(by_status.get("failed", 0)) or stuck_active_jobs:
         status = "warning"
     else:
         status = "ok"
@@ -443,11 +539,30 @@ def aigc_media_stats(db: Session, since: datetime, user_id: Optional[int]) -> di
         "total_jobs": int(total),
         "by_status": by_status,
         "by_model": by_model,
+        "by_kind": by_kind,
         "by_error_code": by_error_code,
         "auth_failures": auth_failures,
         "submission_unknown": submission_unknown,
         "safe_retryable": int(safe_retryable),
         "success_rate_pct": success_rate,
+        "latency_seconds": {
+            "count": len(latency_values),
+            "p50": round(_percentile(latency_values, 50), 2) if latency_values else None,
+            "p95": round(_percentile(latency_values, 95), 2) if latency_values else None,
+        },
+        "output_bytes": {
+            "count": len(output_byte_values),
+            "total": total_output_bytes,
+            "average": (
+                round(total_output_bytes / len(output_byte_values))
+                if output_byte_values
+                else None
+            ),
+        },
+        "requested_video_seconds": requested_video_seconds,
+        "by_duration_seconds": by_duration_seconds,
+        "stuck_active_jobs": int(stuck_active_jobs),
+        "engagement": engagement,
         "last_job_at": last_job.isoformat() if last_job else None,
         "last_failure_at": last_failure.isoformat() if last_failure else None,
         "status": status,
@@ -604,6 +719,13 @@ def client_events_stats(db: Session, since: datetime, user_id: Optional[int]) ->
     app_update_outcome_terminals = 0
     app_update_ready = 0
     app_update_failures = 0
+    chat_attachment_attempts = 0
+    chat_attachment_accepted = 0
+    chat_attachment_failures = 0
+    chat_attachment_image_count_total = 0
+    chat_attachment_failures_by_stage: Dict[str, int] = {}
+    chat_attachment_duration_buckets: Dict[str, int] = {}
+    chat_attachment_payload_buckets: Dict[str, int] = {}
 
     for name, meta in rows:
         by_event[name] = by_event.get(name, 0) + 1
@@ -679,6 +801,31 @@ def client_events_stats(db: Session, since: datetime, user_id: Optional[int]) ->
                 app_update_by_launch_source[launch_source] = (
                     app_update_by_launch_source.get(launch_source, 0) + 1
                 )
+        elif name == "chat_attachment_terminal":
+            chat_attachment_attempts += 1
+            phase = meta.get("phase")
+            stage = meta.get("stage")
+            image_count = meta.get("image_count")
+            duration_bucket = meta.get("duration_bucket")
+            payload_bucket = meta.get("payload_bucket")
+            if phase == "accepted":
+                chat_attachment_accepted += 1
+            elif phase == "failed":
+                chat_attachment_failures += 1
+                if isinstance(stage, str):
+                    chat_attachment_failures_by_stage[stage] = (
+                        chat_attachment_failures_by_stage.get(stage, 0) + 1
+                    )
+            if isinstance(image_count, int) and not isinstance(image_count, bool):
+                chat_attachment_image_count_total += image_count
+            if isinstance(duration_bucket, str):
+                chat_attachment_duration_buckets[duration_bucket] = (
+                    chat_attachment_duration_buckets.get(duration_bucket, 0) + 1
+                )
+            if isinstance(payload_bucket, str):
+                chat_attachment_payload_buckets[payload_bucket] = (
+                    chat_attachment_payload_buckets.get(payload_bucket, 0) + 1
+                )
 
     starter_ctr: Dict[str, dict] = {}
     for key in sorted(set(impressions) | set(clicks)):
@@ -752,6 +899,19 @@ def client_events_stats(db: Session, since: datetime, user_id: Optional[int]) ->
             "p95": round(p95) if p95 is not None else None,
             "incomplete": cold_start_incomplete,
         },
+        "chat_attachment_pipeline": {
+            "attempts": chat_attachment_attempts,
+            "accepted": chat_attachment_accepted,
+            "failures": chat_attachment_failures,
+            "acceptance_rate_pct": (
+                round(100.0 * chat_attachment_accepted / chat_attachment_attempts, 1)
+                if chat_attachment_attempts else None
+            ),
+            "image_count_total": chat_attachment_image_count_total,
+            "failures_by_stage": chat_attachment_failures_by_stage,
+            "duration_buckets": chat_attachment_duration_buckets,
+            "payload_buckets": chat_attachment_payload_buckets,
+        },
         "diet_capture_ms": diet_capture_ms,
     }
 
@@ -797,6 +957,11 @@ def actionable_suggestions(report: dict) -> list[str]:
         out.append(
             f"🟡 AIGC 媒体有 {int(aigc['submission_unknown'])} 个提交待核验任务："
             "先对账供应商任务，不要重复提交"
+        )
+    elif int(aigc.get("stuck_active_jobs") or 0) > 0:
+        out.append(
+            f"🟡 AIGC 媒体有 {int(aigc['stuck_active_jobs'])} 个任务超过 30 分钟仍未完成："
+            "检查 Celery 和供应商任务状态"
         )
     ol = report["open_loop"]
     if ol["total_sent"] == 0:
@@ -879,6 +1044,25 @@ def actionable_suggestions(report: dict) -> list[str]:
     if release_health.get("status") == "pause_rollout":
         reasons = "；".join(release_health.get("reasons") or ["发布健康门命中暂停阈值"])
         out.insert(0, f"🔴 发布健康门建议暂停放量：{reasons}")
+    attachment_pipeline = (ce or {}).get("chat_attachment_pipeline", {})
+    attachment_attempts = int(attachment_pipeline.get("attempts") or 0)
+    attachment_accepted = int(attachment_pipeline.get("accepted") or 0)
+    attachment_failures_by_stage = (
+        attachment_pipeline.get("failures_by_stage")
+        if isinstance(attachment_pipeline.get("failures_by_stage"), dict)
+        else {}
+    )
+    if attachment_attempts >= 5:
+        attachment_rate = round(100.0 * attachment_accepted / attachment_attempts, 1)
+        if attachment_rate < 90.0:
+            local_failures = int(attachment_failures_by_stage.get("local_prepare") or 0)
+            server_failures = int(attachment_failures_by_stage.get("server_accept") or 0)
+            out.append(
+                f"🔴 Agent 图片受理率 {attachment_rate}% "
+                f"({attachment_accepted}/{attachment_attempts})："
+                f"本地草稿读取失败 {local_failures} 次，检查私有文件持久化与磁盘权限；"
+                f"服务端未受理 {server_failures} 次，检查弱网恢复与请求大小"
+            )
 
     # reasoning 抽屉: 点击次数 / Safety 告警累计 (每条告警都显示"为什么?" 按钮)
     sg_total = report.get("safety_guardian", {}).get("total_alerts_raised", 0)

@@ -134,17 +134,23 @@ managed admission when any of these conditions is true within the configured win
 Evaluation persists aggregate counters only. Repeated evaluations while paused do not
 append duplicate pause events. The system never automatically resumes; an administrator
 must inspect the aggregate snapshot and resume explicitly.
-Manual resume acknowledges the current monotonic reconciliation generation. Run
-settlement increments that generation while holding the same control-row lock;
-automatic evaluation never acknowledges it. Commit ordering therefore prevents a late
-transaction with an older `finished_at` from being hidden by resume or evaluation.
+Manual resume acknowledges only the monotonic reconciliation generation that the
+operator actually reviewed. The API requires
+`expected_reconciliation_generation`, and the locked state must still match it;
+otherwise resume returns `409` and the circuit remains paused. Run settlement
+increments that generation while holding the same control-row lock; automatic
+evaluation never acknowledges it. Commit ordering plus the generation compare-and-set
+therefore prevents a late transaction with an older `finished_at` from being hidden by
+resume or evaluation.
 
 ## 11. Administrator API Contract
 
 - `GET /api/v1/monitoring/agent-runtime/rollout` returns typed mode, circuit,
   thresholds and aggregate snapshot fields only.
 - `POST /api/v1/monitoring/agent-runtime/pause` is an idempotent manual pause.
-- `POST /api/v1/monitoring/agent-runtime/resume` is an idempotent manual resume.
+- `POST /api/v1/monitoring/agent-runtime/resume` is an idempotent manual resume
+  for an exact reviewed `expected_reconciliation_generation`; stale requests
+  return `409`.
 - All three endpoints require the existing administrator authorization contract.
 - Manual transitions are audited without user-level health or conversation content.
 

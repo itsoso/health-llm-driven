@@ -9,6 +9,21 @@ from app.models.daily_health import WorkoutRecord
 
 logger = logging.getLogger(__name__)
 
+
+def _invalidate_twin(user_id: int) -> None:
+    """Invalidate Twin and derived Safety state after persisted workout changes."""
+    try:
+        from app.twin.cache import invalidate_twin
+
+        invalidate_twin(user_id)
+    except Exception as exc:  # Cache invalidation must not roll back persisted workouts.
+        logger.warning(
+            "[用户 %s] Garmin 活动已写入，但 Twin/Safety 缓存失效失败: %s",
+            user_id,
+            exc,
+        )
+
+
 try:
     from garminconnect import Garmin
     GARMINCONNECT_AVAILABLE = True
@@ -1113,6 +1128,7 @@ class WorkoutSyncService:
         end_date = date.today().isoformat()
 
         logger.info(f"{self._log_prefix()}开始同步活动 {start_date} 到 {end_date}")
+        committed_changes = False
 
         try:
             # 获取活动列表
@@ -1256,6 +1272,7 @@ class WorkoutSyncService:
 
                         if updated:
                             db.commit()
+                            committed_changes = True
                             synced_count += 1
                             logger.info(f"{self._log_prefix()}更新活动: {parsed['workout_name']} ({parsed['workout_type']})")
                     else:
@@ -1278,10 +1295,15 @@ class WorkoutSyncService:
                     continue
 
             db.commit()
+            if synced_count:
+                committed_changes = True
+                _invalidate_twin(user_id)
             logger.info(f"{self._log_prefix()}同步完成，共 {synced_count} 条活动")
 
             return {"synced_count": synced_count}
 
         except Exception as e:
+            if committed_changes:
+                _invalidate_twin(user_id)
             logger.error(f"{self._log_prefix()}同步活动失败: {e}")
             raise

@@ -75,9 +75,11 @@ jest.mock('../../../services/interventionDraft', () => ({
   buildInterventionDraft: jest.fn(() => ({})),
 }));
 jest.mock('../../../utils/share', () => ({
+  shareImage: (...args: any[]) => mockShareImage(...args),
   sharePlainText: jest.fn(),
 }));
 const mockSaveChatImageToLibrary = jest.fn();
+const mockShareImage = jest.fn();
 jest.mock('../../../services/chatImageSave', () => ({
   saveChatImageToLibrary: (...args: any[]) => mockSaveChatImageToLibrary(...args),
 }));
@@ -601,6 +603,41 @@ describe('ChatBubble streaming degraded render', () => {
 
     await waitFor(() => {
       expect(mockSaveChatImageToLibrary).toHaveBeenCalledWith({ uri: 'file:///tmp/lunch.jpg' });
+    });
+
+    alertSpy.mockRestore();
+  });
+
+  it('downloads and shares a protected chat image from the long-press menu', async () => {
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation((_title, _message, buttons) => {
+      buttons?.find(button => button.text === '分享图片')?.onPress?.();
+    });
+    mockShareImage.mockResolvedValueOnce(undefined);
+    const qc = new QueryClient();
+    const imageUri = 'https://health.executor.life/api/v1/upload/files/chat/7/lunch.jpg';
+    const { getByLabelText } = render(
+      <QueryClientProvider client={qc}>
+        <ChatBubble
+          item={{
+            id: 'user-protected-image',
+            role: 'user',
+            content: '',
+            imageUris: [imageUri],
+            streaming: false,
+          }}
+          imageAuthToken="auth-token"
+        />
+      </QueryClientProvider>,
+    );
+
+    fireEvent(getByLabelText('打开图片 1'), 'longPress');
+
+    await waitFor(() => {
+      expect(mockShareImage).toHaveBeenCalledWith(imageUri, {
+        target: 'more',
+        cacheKey: 'user-protected-image',
+        headers: { Authorization: 'Bearer auth-token' },
+      });
     });
 
     alertSpy.mockRestore();

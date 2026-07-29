@@ -232,6 +232,7 @@ def test_postgres_resume_does_not_hide_older_late_reconciliation_commit(
         try:
             return AgentRuntimeRolloutService(session).resume(
                 actor_user_id=user_id,
+                expected_reconciliation_generation=0,
             )
         finally:
             session.close()

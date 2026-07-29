@@ -6,6 +6,7 @@ import { EvidenceRefsRow } from './EvidenceRefsRow';
 import type { EvidenceRef } from './EvidenceRefsRow';
 import { revaColors as C, revaFonts, revaRadii } from '../../../constants/revaTheme';
 import type { CardSpec } from './types';
+import { formatLocalDate } from '../../../utils/dietDate';
 
 interface WorkoutData {
   activity_type?: string;
@@ -29,7 +30,7 @@ interface WorkoutData {
  */
 function parseDateWindow(q: string): { start: string; end: string } | null {
   const today = new Date();
-  const toYMD = (d: Date) => d.toISOString().slice(0, 10);
+  const toYMD = formatLocalDate;
   const shift = (d: Date, n: number) => { const nd = new Date(d); nd.setDate(d.getDate() + n); return nd; };
 
   if (/今天|今日/.test(q)) {
@@ -105,7 +106,7 @@ export function WorkoutCardView(d: WorkoutData) {
 
 function humanizeDate(ymd: string): string {
   const today = new Date();
-  const toYMD = (d: Date) => d.toISOString().slice(0, 10);
+  const toYMD = formatLocalDate;
   const t = toYMD(today);
   if (ymd === t) return '今天';
   const yest = new Date(today); yest.setDate(today.getDate() - 1);

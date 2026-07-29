@@ -43,6 +43,15 @@ class RolloutConfigurationError(RuntimeError):
     pass
 
 
+class ReconciliationGenerationMismatch(RuntimeError):
+    """The operator reviewed an older reconciliation generation."""
+
+    def __init__(self, *, expected: int, current: int) -> None:
+        super().__init__("reconciliation_generation_mismatch")
+        self.expected = expected
+        self.current = current
+
+
 @dataclass(frozen=True)
 class RuntimeAdmissionDecision:
     managed: bool
@@ -63,6 +72,32 @@ class RolloutTransition:
 
 
 @dataclass(frozen=True)
+class RuntimeIntegritySnapshot:
+    window_runs: int
+    contract_snapshot_runs: int
+    contract_snapshot_coverage_percent: int
+    contract_versions: dict[str, int]
+    settled_message_linkage_gaps: int
+    missing_current_attempt_runs: int
+    active_over_deadline_runs: int
+    waiting_over_24h_runs: int
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "window_runs": self.window_runs,
+            "contract_snapshot_runs": self.contract_snapshot_runs,
+            "contract_snapshot_coverage_percent": (
+                self.contract_snapshot_coverage_percent
+            ),
+            "contract_versions": dict(self.contract_versions),
+            "settled_message_linkage_gaps": self.settled_message_linkage_gaps,
+            "missing_current_attempt_runs": self.missing_current_attempt_runs,
+            "active_over_deadline_runs": self.active_over_deadline_runs,
+            "waiting_over_24h_runs": self.waiting_over_24h_runs,
+        }
+
+
+@dataclass(frozen=True)
 class RolloutSnapshot:
     window_started_at: datetime
     evaluated_at: datetime
@@ -73,6 +108,7 @@ class RolloutSnapshot:
     status_counts: dict[str, int]
     tool_status_counts: dict[str, int]
     duration_ms: dict[str, int | None]
+    integrity: RuntimeIntegritySnapshot
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -85,6 +121,7 @@ class RolloutSnapshot:
             "status_counts": dict(self.status_counts),
             "tool_status_counts": dict(self.tool_status_counts),
             "duration_ms": dict(self.duration_ms),
+            "integrity": self.integrity.to_dict(),
         }
 
 
@@ -336,6 +373,10 @@ class AgentRuntimeRolloutService:
             max(0, int((finished_at - started_at).total_seconds() * 1000))
             for started_at, finished_at in duration_rows
         )
+        integrity = self._integrity_snapshot(
+            window_started_at=window_started_at,
+            evaluated_at=evaluated_at,
+        )
         return RolloutSnapshot(
             window_started_at=window_started_at,
             evaluated_at=evaluated_at,
@@ -349,6 +390,110 @@ class AgentRuntimeRolloutService:
                 "p50": self._percentile(durations, 0.50),
                 "p95": self._percentile(durations, 0.95),
             },
+            integrity=integrity,
+        )
+
+    def _integrity_snapshot(
+        self,
+        *,
+        window_started_at: datetime,
+        evaluated_at: datetime,
+    ) -> RuntimeIntegritySnapshot:
+        window_filter = (
+            AgentRun.created_at >= window_started_at,
+            AgentRun.created_at <= evaluated_at,
+        )
+        window_runs = int(
+            self.db.query(func.count(AgentRun.run_id))
+            .filter(*window_filter)
+            .scalar()
+            or 0
+        )
+        contract_snapshot_runs = int(
+            self.db.query(func.count(AgentRun.run_id))
+            .filter(
+                *window_filter,
+                AgentRun.runtime_contract_version.is_not(None),
+                AgentRun.tool_registry_digest.is_not(None),
+                AgentRun.capability_policy_digest.is_not(None),
+            )
+            .scalar()
+            or 0
+        )
+        coverage = (
+            100
+            if window_runs == 0
+            else round(contract_snapshot_runs * 100 / window_runs)
+        )
+        version_rows = (
+            self.db.query(
+                AgentRun.runtime_contract_version,
+                func.count(AgentRun.run_id),
+            )
+            .filter(
+                *window_filter,
+                AgentRun.runtime_contract_version.is_not(None),
+            )
+            .group_by(AgentRun.runtime_contract_version)
+            .order_by(func.count(AgentRun.run_id).desc())
+            .limit(8)
+            .all()
+        )
+        contract_versions = {
+            str(version): int(count) for version, count in version_rows
+        }
+        settled_message_linkage_gaps = int(
+            self.db.query(func.count(AgentRun.run_id))
+            .filter(
+                *window_filter,
+                AgentRun.conversation_id.is_not(None),
+                AgentRun.status.in_({"succeeded", "waiting_for_user"}),
+                or_(
+                    AgentRun.source_message_id.is_(None),
+                    AgentRun.assistant_message_id.is_(None),
+                ),
+            )
+            .scalar()
+            or 0
+        )
+        missing_current_attempt_runs = int(
+            self.db.query(func.count(AgentRun.run_id))
+            .outerjoin(
+                AgentRunAttempt,
+                AgentRunAttempt.attempt_id == AgentRun.current_attempt_id,
+            )
+            .filter(*window_filter, AgentRunAttempt.attempt_id.is_(None))
+            .scalar()
+            or 0
+        )
+        active_over_deadline_runs = int(
+            self.db.query(func.count(AgentRun.run_id))
+            .filter(
+                AgentRun.status.in_({"queued", "running"}),
+                AgentRun.deadline_at.is_not(None),
+                AgentRun.deadline_at < evaluated_at,
+            )
+            .scalar()
+            or 0
+        )
+        waiting_over_24h_runs = int(
+            self.db.query(func.count(AgentRun.run_id))
+            .filter(
+                AgentRun.status == "waiting_for_user",
+                AgentRun.created_at < evaluated_at - timedelta(hours=24),
+            )
+            .scalar()
+            or 0
+        )
+        return RuntimeIntegritySnapshot(
+            window_runs=window_runs,
+            contract_snapshot_runs=contract_snapshot_runs,
+            contract_snapshot_coverage_percent=coverage,
+            contract_versions=contract_versions,
+            settled_message_linkage_gaps=settled_message_linkage_gaps,
+            missing_current_attempt_runs=missing_current_attempt_runs,
+            active_over_deadline_runs=active_over_deadline_runs,
+            waiting_over_24h_runs=waiting_over_24h_runs,
         )
 
     def evaluate_and_maybe_pause(
@@ -457,9 +602,28 @@ class AgentRuntimeRolloutService:
         self,
         *,
         actor_user_id: int,
+        expected_reconciliation_generation: int,
     ) -> RolloutTransition:
         self._validate_transition("admin", "manual_resume", actor_user_id)
+        if (
+            type(expected_reconciliation_generation) is not int
+            or expected_reconciliation_generation < 0
+        ):
+            raise ValueError("invalid_reconciliation_generation")
         state = self._locked_state()
+        current_generation = int(state.reconciliation_generation)
+        if current_generation != expected_reconciliation_generation:
+            self.db.rollback()
+            logger.warning(
+                "Agent Runtime resume rejected: reconciliation generation changed "
+                "expected=%s current=%s",
+                expected_reconciliation_generation,
+                current_generation,
+            )
+            raise ReconciliationGenerationMismatch(
+                expected=expected_reconciliation_generation,
+                current=current_generation,
+            )
         if state.status == "active":
             self.db.commit()
             return RolloutTransition(False, state.status, state.reason_code)
@@ -468,7 +632,7 @@ class AgentRuntimeRolloutService:
         state.version += 1
         state.updated_by_user_id = actor_user_id
         state.reconciliation_acknowledged_generation = (
-            state.reconciliation_generation
+            expected_reconciliation_generation
         )
         self.db.add(
             AgentRuntimeRolloutEvent(

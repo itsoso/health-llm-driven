@@ -56,21 +56,110 @@ export async function sharePlainCaption({ title, message }: SharePlainTextOption
   return Share.share({ title, message });
 }
 
-export async function shareLocalImage(uri: string) {
-  const imageUri = String(uri || '').trim();
-  if (!/^file:\/\//i.test(imageUri)) throw new Error('image_share_requires_local_file');
+export type SocialShareTarget = 'wechat' | 'xiaohongshu';
+export type VideoShareTarget = SocialShareTarget;
+export type ImageShareTarget = SocialShareTarget | 'more';
+
+interface ShareImageOptions {
+  target?: ImageShareTarget;
+  cacheKey?: string;
+  headers?: Record<string, string>;
+  mimeType?: string;
+  dialogTitle?: string;
+}
+
+interface ImageFormat {
+  extension: string;
+  mimeType: string;
+  uti: string;
+}
+
+function imageFormat(uri: string, requestedMimeType?: string): ImageFormat {
+  const mimeType = String(requestedMimeType || '').trim().toLowerCase();
+  if (mimeType === 'image/png') return { extension: 'png', mimeType, uti: 'public.png' };
+  if (mimeType === 'image/gif') return { extension: 'gif', mimeType, uti: 'com.compuserve.gif' };
+  if (mimeType === 'image/heic' || mimeType === 'image/heif') {
+    return { extension: 'heic', mimeType: 'image/heic', uti: 'public.heic' };
+  }
+  if (mimeType === 'image/webp') return { extension: 'webp', mimeType, uti: 'org.webmproject.webp' };
+  if (mimeType === 'image/jpeg' || mimeType === 'image/jpg') {
+    return { extension: 'jpg', mimeType: 'image/jpeg', uti: 'public.jpeg' };
+  }
+
+  const path = uri.split('?')[0]?.toLowerCase() || '';
+  if (path.endsWith('.png')) return { extension: 'png', mimeType: 'image/png', uti: 'public.png' };
+  if (path.endsWith('.gif')) return { extension: 'gif', mimeType: 'image/gif', uti: 'com.compuserve.gif' };
+  if (path.endsWith('.heic') || path.endsWith('.heif')) {
+    return { extension: 'heic', mimeType: 'image/heic', uti: 'public.heic' };
+  }
+  if (path.endsWith('.webp')) return { extension: 'webp', mimeType: 'image/webp', uti: 'org.webmproject.webp' };
+  return { extension: 'jpg', mimeType: 'image/jpeg', uti: 'public.jpeg' };
+}
+
+function imageDialogTitle(target?: ImageShareTarget): string {
+  if (target === 'wechat') return '分享到微信';
+  if (target === 'xiaohongshu') return '分享到小红书';
+  return '分享图片';
+}
+
+export async function shareImage(uri: string, options: ShareImageOptions = {}) {
+  const sourceUri = String(uri || '').trim();
+  if (!sourceUri) throw new Error('image_uri_missing');
 
   const available = await Sharing.isAvailableAsync();
   if (!available) throw new Error('image_sharing_unavailable');
 
-  return Sharing.shareAsync(imageUri, {
-    dialogTitle: '分享饮食打卡截图',
-    mimeType: 'image/png',
-    UTI: 'public.png',
-  });
+  const format = imageFormat(sourceUri, options.mimeType);
+  const isRemote = /^https?:\/\//i.test(sourceUri);
+  const isBareAbsolutePath = sourceUri.startsWith('/');
+  if (!isRemote && !isBareAbsolutePath && !/^file:\/\//i.test(sourceUri)) {
+    throw new Error('image_share_requires_file_or_https');
+  }
+
+  let localUri = isBareAbsolutePath ? `file://${sourceUri}` : sourceUri;
+  let cleanup = false;
+  if (isRemote) {
+    if (!FileSystem.cacheDirectory) throw new Error('image_share_cache_unavailable');
+    localUri = `${FileSystem.cacheDirectory}reva-shared-image-${safeCacheKey(options.cacheKey)}.${format.extension}`;
+    let download;
+    try {
+      download = options.headers
+        ? await FileSystem.downloadAsync(sourceUri, localUri, { headers: options.headers })
+        : await FileSystem.downloadAsync(sourceUri, localUri);
+    } catch (error) {
+      await FileSystem.deleteAsync(localUri, { idempotent: true }).catch(() => {});
+      throw error;
+    }
+    const status = typeof download.status === 'number' ? download.status : 200;
+    if (status < 200 || status >= 300) {
+      await FileSystem.deleteAsync(localUri, { idempotent: true }).catch(() => {});
+      throw new Error('image_share_download_failed');
+    }
+    localUri = download.uri || localUri;
+    cleanup = true;
+  }
+
+  try {
+    return await Sharing.shareAsync(localUri, {
+      dialogTitle: options.dialogTitle || imageDialogTitle(options.target),
+      mimeType: format.mimeType,
+      UTI: format.uti,
+    });
+  } finally {
+    if (cleanup) {
+      await FileSystem.deleteAsync(localUri, { idempotent: true }).catch((error) => {
+        if (__DEV__) console.warn('[share] temporary image cleanup failed', error);
+      });
+    }
+  }
 }
 
-export type VideoShareTarget = 'wechat' | 'xiaohongshu';
+export async function shareLocalImage(uri: string) {
+  return shareImage(uri, {
+    dialogTitle: '分享饮食打卡截图',
+    mimeType: 'image/png',
+  });
+}
 
 interface ShareRemoteVideoOptions {
   target: VideoShareTarget;

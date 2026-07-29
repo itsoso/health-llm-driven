@@ -6,8 +6,14 @@ export interface ChatImageSaveSource {
   headers?: Record<string, string>;
 }
 
-function isLocalFileUri(uri: string): boolean {
-  return /^(file|content|ph|assets-library):\/\//i.test(uri);
+function normalizeLocalFileUri(uri: string): string | null {
+  if (/^(file|content|ph|assets-library):\/\//i.test(uri)) {
+    return uri;
+  }
+  if (uri.startsWith('/')) {
+    return `file://${uri}`;
+  }
+  return null;
 }
 
 function extensionFromUri(uri: string): string {
@@ -29,8 +35,9 @@ export async function saveChatImageToLibrary(source: ChatImageSaveSource): Promi
 
   await ensurePhotoWritePermission();
 
-  if (isLocalFileUri(uri)) {
-    await MediaLibrary.saveToLibraryAsync(uri);
+  const localFileUri = normalizeLocalFileUri(uri);
+  if (localFileUri) {
+    await MediaLibrary.saveToLibraryAsync(localFileUri);
     return;
   }
 

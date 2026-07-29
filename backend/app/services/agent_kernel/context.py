@@ -9,7 +9,13 @@ from uuid import uuid4
 from sqlalchemy.orm import Session
 
 from app.services.agent_kernel.intent_frame import build_intent_frame
-from app.services.agent_kernel.types import AgentEnvelope, ExecutionContext, TurnSnapshot
+from app.services.agent_kernel.goal_spec import compile_goal_spec
+from app.services.agent_kernel.types import (
+    ActionableReference,
+    AgentEnvelope,
+    ExecutionContext,
+    TurnSnapshot,
+)
 
 
 BEIJING_TZ = timezone(timedelta(hours=8))
@@ -63,6 +69,7 @@ def build_turn_snapshot(
     run_id: Optional[str] = None,
     turn_id: Optional[str] = None,
     policy_mode: str = "enforce",
+    actionable_references: Optional[Sequence[ActionableReference]] = None,
 ) -> TurnSnapshot:
     """Create the one immutable envelope/context/intent snapshot for a turn."""
     context = build_execution_context(
@@ -88,11 +95,20 @@ def build_turn_snapshot(
         source_message_id=(str(source_message_id).strip() or None) if source_message_id else None,
         client_turn_id=(str(client_turn_id).strip() or None) if client_turn_id else None,
     )
+    intent = build_intent_frame(envelope, context)
+    references = tuple(actionable_references or ())
     return TurnSnapshot(
         envelope=envelope,
         context=context,
-        intent=build_intent_frame(envelope, context),
+        intent=intent,
         policy_mode=policy_mode,
+        actionable_references=references,
+        goal=compile_goal_spec(
+            envelope=envelope,
+            context=context,
+            intent=intent,
+            actionable_references=references,
+        ),
     )
 
 

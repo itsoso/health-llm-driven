@@ -1,18 +1,26 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  AppState,
   Pressable,
   StyleSheet,
   Text,
   TextStyle,
   View,
 } from 'react-native';
+import NetInfo from '@react-native-community/netinfo';
 import { Image } from 'expo-image';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { Ionicons } from '@expo/vector-icons';
 
 import api, { BASE_URL } from '../../../services/api';
-import { shareRemoteVideo, type VideoShareTarget } from '../../../utils/share';
+import { emitClientEvent } from '../../../services/clientEvents';
+import {
+  shareImage,
+  shareRemoteVideo,
+  type VideoShareTarget,
+} from '../../../utils/share';
+import { resolveNetworkOnlineState } from '../../../utils/networkReachability';
 import { SocialBrandIcon } from '../../common/SocialBrandIcon';
 import { CardShell } from './CardShell';
 import type { CardSpec } from './types';
@@ -32,9 +40,17 @@ export interface AIGCMediaJobCardData {
   status: AIGCStatus | string;
   progress: number;
   title?: string;
+  spec?: {
+    duration_seconds?: number;
+    ratio?: string;
+    ratio_mode?: 'fixed' | 'source' | string;
+    resolution?: string;
+    generates_audio?: boolean;
+  } | null;
   result?: {
     media_type?: string | null;
     url?: string | null;
+    byte_size?: number | null;
   } | null;
   error_message?: string | null;
   error_code?: string | null;
@@ -42,7 +58,11 @@ export interface AIGCMediaJobCardData {
 }
 
 const ACTIVE_STATUSES = new Set<AIGCStatus>(['queued', 'running']);
-const POLL_INTERVAL_MS = 6000;
+function pollDelay(attempt: number): number {
+  if (attempt < 2) return 6000;
+  if (attempt < 6) return 15000;
+  return 30000;
+}
 
 function statusOf(value: unknown): AIGCStatus {
   const normalized = String(value || '').trim().toLowerCase();
@@ -106,8 +126,14 @@ export function AIGCMediaJobCardView(initialData: AIGCMediaJobCardData) {
   const [playbackStarted, setPlaybackStarted] = useState(false);
   const [sharingTarget, setSharingTarget] = useState<VideoShareTarget | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [appIsActive, setAppIsActive] = useState(AppState.currentState === 'active');
+  const [networkOnline, setNetworkOnline] = useState(true);
   const mounted = useRef(true);
   const sharingRef = useRef(false);
+  const refreshInFlight = useRef<Promise<void> | null>(null);
+  const appStateRef = useRef(AppState.currentState);
+  const networkOnlineRef = useRef(true);
+  const playbackEventSent = useRef(false);
 
   useEffect(() => {
     setData(initialData);
@@ -116,17 +142,26 @@ export function AIGCMediaJobCardView(initialData: AIGCMediaJobCardData) {
   const refresh = useCallback(async () => {
     const jobId = String(initialData.job_id || '').trim();
     if (!jobId) return;
-    setRefreshing(true);
-    try {
-      const response = await api.get(`/aigc/media/jobs/${encodeURIComponent(jobId)}`);
-      const projection = normalizeJobProjection(response?.data, jobId);
-      if (mounted.current && projection) {
-        setData(projection);
+    if (refreshInFlight.current) return refreshInFlight.current;
+    const request = (async () => {
+      setRefreshing(true);
+      try {
+        const response = await api.get(`/aigc/media/jobs/${encodeURIComponent(jobId)}`);
+        const projection = normalizeJobProjection(response?.data, jobId);
+        if (mounted.current && projection) {
+          setData(projection);
+        }
+      } catch {
+        // Preserve the last known job projection. The next poll or task update may succeed.
+      } finally {
+        if (mounted.current) setRefreshing(false);
       }
-    } catch {
-      // Preserve the last known job projection. The next poll or task update may succeed.
+    })();
+    refreshInFlight.current = request;
+    try {
+      await request;
     } finally {
-      if (mounted.current) setRefreshing(false);
+      if (refreshInFlight.current === request) refreshInFlight.current = null;
     }
   }, [initialData.job_id]);
 
@@ -139,11 +174,57 @@ export function AIGCMediaJobCardView(initialData: AIGCMediaJobCardData) {
   }, [refresh]);
 
   useEffect(() => {
+    if (
+      !ACTIVE_STATUSES.has(statusOf(data.status))
+      || !appIsActive
+      || !networkOnline
+    ) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let attempt = 0;
+    const schedule = () => {
+      timer = setTimeout(() => {
+        if (cancelled) return;
+        void refresh().finally(() => {
+          attempt += 1;
+          if (!cancelled) schedule();
+        });
+      }, pollDelay(attempt));
+    };
+    schedule();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [appIsActive, data.status, networkOnline, refresh]);
+
+  useEffect(() => {
     if (!ACTIVE_STATUSES.has(statusOf(data.status))) return;
-    const timer = setInterval(() => {
-      void refresh();
-    }, POLL_INTERVAL_MS);
-    return () => { clearInterval(timer); };
+    const appStateSubscription = AppState.addEventListener('change', (nextState) => {
+      const previousState = appStateRef.current;
+      appStateRef.current = nextState;
+      setAppIsActive(nextState === 'active');
+      if (
+        nextState === 'active'
+        && previousState !== 'active'
+        && networkOnlineRef.current
+      ) {
+        void refresh();
+      }
+    });
+    const removeNetworkListener = NetInfo.addEventListener((state) => {
+      const wasOnline = networkOnlineRef.current;
+      const isOnline = resolveNetworkOnlineState(wasOnline, state);
+      networkOnlineRef.current = isOnline;
+      setNetworkOnline(isOnline);
+      if (isOnline && !wasOnline && appStateRef.current === 'active') {
+        void refresh();
+      }
+    });
+    return () => {
+      appStateSubscription?.remove?.();
+      removeNetworkListener?.();
+    };
   }, [data.status, refresh]);
 
   const status = statusOf(data.status);
@@ -163,15 +244,29 @@ export function AIGCMediaJobCardView(initialData: AIGCMediaJobCardData) {
 
   useEffect(() => {
     setPlaybackStarted(false);
+    playbackEventSent.current = false;
   }, [resultUrl]);
 
   const detail = useMemo(() => {
     if (status === 'queued') return '小巴已提交任务，正在等待百炼处理。';
-    if (status === 'running') return '生成完成后会自动保存到你的私有空间。';
+    if (status === 'running' && progress < 75) return '可离开此页面，完成后小巴会通知你。';
+    if (status === 'running') return '生成已接近完成，正在保存到你的私有空间。';
     if (status === 'succeeded') return '结果仅对当前账号可见。';
     if (status === 'submission_unknown') return '提交结果待核验，已停止自动重试以避免重复生成。';
     return data.error_message || '本次创作未完成，修改描述后可以重新生成。';
-  }, [data.error_message, status]);
+  }, [data.error_message, progress, status]);
+
+  const specText = useMemo(() => {
+    const duration = Number(data.spec?.duration_seconds);
+    if (!Number.isFinite(duration) || duration <= 0) return null;
+    const parts = [
+      `${Math.round(duration)}秒`,
+      data.spec?.ratio_mode === 'source' ? '跟随原图' : data.spec?.ratio,
+      data.spec?.resolution,
+      data.spec?.generates_audio === true ? '含音频' : null,
+    ].filter(Boolean);
+    return parts.join(' · ');
+  }, [data.spec]);
 
   const cancel = async () => {
     if (!canCancel) return;
@@ -210,13 +305,17 @@ export function AIGCMediaJobCardView(initialData: AIGCMediaJobCardData) {
     try {
       videoPlayer.play();
       setPlaybackStarted(true);
+      if (!playbackEventSent.current) {
+        playbackEventSent.current = true;
+        void emitClientEvent('aigc_media_played', { media_kind: 'video' });
+      }
     } catch {
       setActionError('视频暂时无法播放，请稍后重试。');
     }
   }, [isVideo, resultUrl, videoPlayer]);
 
-  const shareVideo = useCallback(async (target: VideoShareTarget) => {
-    if (!isVideo || !resultUrl || sharingRef.current) return;
+  const shareResult = useCallback(async (target: VideoShareTarget) => {
+    if ((!isVideo && !isImage) || !resultUrl || sharingRef.current) return;
     sharingRef.current = true;
     setActionError(null);
     setSharingTarget(target);
@@ -230,21 +329,46 @@ export function AIGCMediaJobCardView(initialData: AIGCMediaJobCardData) {
       }
       const projection = normalizeJobProjection(response?.data, data.job_id);
       const freshResultUrl = privateMediaUrl(projection?.result?.url);
-      if (freshResultUrl && String(projection?.result?.media_type || '').toLowerCase().startsWith('video/')) {
+      const freshMediaType = String(projection?.result?.media_type || '').toLowerCase();
+      const hasMatchingFreshResult = isVideo
+        ? freshMediaType.startsWith('video/')
+        : freshMediaType.startsWith('image/');
+      if (freshResultUrl && hasMatchingFreshResult) {
         shareUrl = freshResultUrl;
         if (mounted.current && projection) setData(projection);
       }
-      await shareRemoteVideo(shareUrl, {
-        target,
-        cacheKey: data.job_id,
+      if (isVideo) {
+        await shareRemoteVideo(shareUrl, {
+          target,
+          cacheKey: data.job_id,
+        });
+      } else {
+        await shareImage(shareUrl, {
+          target,
+          cacheKey: data.job_id,
+          mimeType: mediaType,
+        });
+      }
+      void emitClientEvent('aigc_media_shared', {
+        phase: 'completed',
+        media_kind: isVideo ? 'video' : 'image',
+        share_target: target,
       });
     } catch {
-      if (mounted.current) setActionError('视频分享未打开，请检查网络后再试。');
+      void emitClientEvent('aigc_media_shared', {
+        phase: 'failed',
+        media_kind: isVideo ? 'video' : 'image',
+        share_target: target,
+        error_code: 'share_failed',
+      });
+      if (mounted.current) {
+        setActionError(`${isVideo ? '视频' : '图片'}分享未打开，请检查网络后再试。`);
+      }
     } finally {
       sharingRef.current = false;
       if (mounted.current) setSharingTarget(null);
     }
-  }, [data.job_id, isVideo, resultUrl]);
+  }, [data.job_id, isImage, isVideo, mediaType, resultUrl]);
 
   return (
     <CardShell
@@ -279,6 +403,12 @@ export function AIGCMediaJobCardView(initialData: AIGCMediaJobCardData) {
           </Pressable>
         ) : null}
       </View>
+      {specText ? (
+        <View style={styles.specPill}>
+          <Ionicons name="videocam-outline" size={14} color={C.green700} />
+          <Text maxFontSizeMultiplier={1.15} style={styles.specText}>{specText}</Text>
+        </View>
+      ) : null}
 
       {ACTIVE_STATUSES.has(status) ? (
         <View style={styles.progressWrap} accessibilityLabel={`生成进度 ${progress}%`}>
@@ -311,13 +441,15 @@ export function AIGCMediaJobCardView(initialData: AIGCMediaJobCardData) {
       {actionError ? <Text style={styles.actionError}>{actionError}</Text> : null}
 
       {resultUrl && isImage ? (
-        <Image
-          source={{ uri: resultUrl }}
-          style={styles.image}
-          contentFit="cover"
-          transition={160}
-          accessibilityLabel="小巴生成的图片"
-        />
+        <View style={styles.imageWrap}>
+          <Image
+            source={{ uri: resultUrl }}
+            style={styles.image}
+            contentFit="cover"
+            transition={160}
+            accessibilityLabel="小巴生成的图片"
+          />
+        </View>
       ) : null}
 
       {resultUrl && isVideo ? (
@@ -350,43 +482,46 @@ export function AIGCMediaJobCardView(initialData: AIGCMediaJobCardData) {
               </Pressable>
             ) : null}
           </View>
-          <View style={styles.shareRow}>
-            <Pressable
-              testID="aigc-video-share-wechat"
-              style={({ pressed }) => [
-                styles.shareButton,
-                pressed && !sharingTarget && styles.shareButtonPressed,
-              ]}
-              onPress={() => { void shareVideo('wechat'); }}
-              disabled={sharingTarget !== null}
-              accessibilityRole="button"
-              accessibilityLabel="分享到微信"
-              accessibilityState={{ disabled: sharingTarget !== null, busy: sharingTarget === 'wechat' }}
-            >
-              {sharingTarget === 'wechat'
-                ? <ActivityIndicator size="small" color={C.green600} />
-                : <SocialBrandIcon brand="wechat" size={14} />}
-              <Text style={styles.shareText}>微信</Text>
-            </Pressable>
-            <Pressable
-              testID="aigc-video-share-xiaohongshu"
-              style={({ pressed }) => [
-                styles.shareButton,
-                pressed && !sharingTarget && styles.shareButtonPressed,
-              ]}
-              onPress={() => { void shareVideo('xiaohongshu'); }}
-              disabled={sharingTarget !== null}
-              accessibilityRole="button"
-              accessibilityLabel="分享到小红书"
-              accessibilityState={{ disabled: sharingTarget !== null, busy: sharingTarget === 'xiaohongshu' }}
-            >
-              {sharingTarget === 'xiaohongshu'
-                ? <ActivityIndicator size="small" color={C.green600} />
-                : <SocialBrandIcon brand="xiaohongshu" size={14} />}
-              <Text style={styles.shareText}>小红书</Text>
-            </Pressable>
-          </View>
         </>
+      ) : null}
+
+      {resultUrl && (isImage || isVideo) ? (
+        <View style={styles.shareRow}>
+          <Pressable
+            testID={`aigc-${isVideo ? 'video' : 'image'}-share-wechat`}
+            style={({ pressed }) => [
+              styles.shareButton,
+              pressed && !sharingTarget && styles.shareButtonPressed,
+            ]}
+            onPress={() => { void shareResult('wechat'); }}
+            disabled={sharingTarget !== null}
+            accessibilityRole="button"
+            accessibilityLabel={isVideo ? '分享到微信' : '图片分享到微信'}
+            accessibilityState={{ disabled: sharingTarget !== null, busy: sharingTarget === 'wechat' }}
+          >
+            {sharingTarget === 'wechat'
+              ? <ActivityIndicator size="small" color={C.green600} />
+              : <SocialBrandIcon brand="wechat" size={14} />}
+            <Text style={styles.shareText}>微信</Text>
+          </Pressable>
+          <Pressable
+            testID={`aigc-${isVideo ? 'video' : 'image'}-share-xiaohongshu`}
+            style={({ pressed }) => [
+              styles.shareButton,
+              pressed && !sharingTarget && styles.shareButtonPressed,
+            ]}
+            onPress={() => { void shareResult('xiaohongshu'); }}
+            disabled={sharingTarget !== null}
+            accessibilityRole="button"
+            accessibilityLabel={isVideo ? '分享到小红书' : '图片分享到小红书'}
+            accessibilityState={{ disabled: sharingTarget !== null, busy: sharingTarget === 'xiaohongshu' }}
+          >
+            {sharingTarget === 'xiaohongshu'
+              ? <ActivityIndicator size="small" color={C.green600} />
+              : <SocialBrandIcon brand="xiaohongshu" size={14} />}
+            <Text style={styles.shareText}>小红书</Text>
+          </Pressable>
+        </View>
       ) : null}
     </CardShell>
   );
@@ -411,6 +546,8 @@ const styles = StyleSheet.create({
   statusBody: { flex: 1, gap: 2 },
   statusTitle: { fontFamily: revaFonts.sans, fontSize: 15, fontWeight: '800', color: C.ink1 } as TextStyle,
   detail: { fontFamily: revaFonts.sans, fontSize: 12, lineHeight: 18, color: C.ink3 } as TextStyle,
+  specPill: { alignSelf: 'flex-start', marginTop: 10, minHeight: 30, paddingHorizontal: 10, borderRadius: revaRadii.pill, backgroundColor: C.green50, flexDirection: 'row', alignItems: 'center', gap: 5 },
+  specText: { fontFamily: revaFonts.sans, fontSize: 11, fontWeight: '700', color: C.green700 } as TextStyle,
   iconButton: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: C.paper2 },
   iconButtonPressed: { opacity: 0.72 },
   progressWrap: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12 },
@@ -421,7 +558,8 @@ const styles = StyleSheet.create({
   retryButtonPressed: { opacity: 0.72 },
   retryButtonText: { fontFamily: revaFonts.sans, fontSize: 14, fontWeight: '800', color: C.green700 } as TextStyle,
   actionError: { marginTop: 8, fontFamily: revaFonts.sans, fontSize: 12, lineHeight: 18, color: revaSemantic.risk.fg } as TextStyle,
-  image: { width: '100%', aspectRatio: 1, borderRadius: revaRadii.md, marginTop: 12, backgroundColor: C.paper2 },
+  imageWrap: { width: '100%', aspectRatio: 1, marginTop: 12, borderRadius: revaRadii.md, overflow: 'hidden' },
+  image: { width: '100%', height: '100%', backgroundColor: C.paper2 },
   videoFrame: { width: '100%', aspectRatio: 16 / 9, marginTop: 12, borderRadius: revaRadii.md, overflow: 'hidden', backgroundColor: C.ink1 },
   video: { flex: 1 },
   playOverlay: {

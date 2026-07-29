@@ -3,7 +3,7 @@
 > Status: implemented; native validation
 > Updated: 2026-07-19
 > Canonical product: `docs/prd/reva-personal-health-os-prd.md`
-> Feature spec: `docs/specs/active/2026-07-18-local-first-private-mode.md`
+> Feature spec (retired): `docs/specs/archive/2026-07-18-local-first-private-mode.md`
 
 ## 1. 决策
 

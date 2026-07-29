@@ -48,6 +48,51 @@ def test_agent_send_passes_one_canonical_identity_to_executor(
     assert body["attempt_id"] == captured["attempt_id"]
 
 
+def test_agent_send_propagates_paused_runtime_write_block_to_executor(
+    client, db, auth_user_and_headers, monkeypatch
+):
+    from app.services.agent_runtime_rollout import AgentRuntimeRolloutService
+
+    user, headers = auth_user_and_headers
+    captured = {}
+
+    async def fake_run_stream(self, **kwargs):
+        captured.update(kwargs)
+        yield {"event": "token", "data": {"content": "read-only answer"}}
+        yield {
+            "event": "done",
+            "data": {
+                "conversation_id": None,
+                "message_id": None,
+                "completion_status": "complete",
+            },
+        }
+
+    monkeypatch.setattr(settings, "agent_runtime_mode", "enforce")
+    AgentRuntimeRolloutService(db).pause(
+        actor_kind="admin",
+        reason_code="manual_pause",
+        actor_user_id=user.id,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_executor.AgentExecutor.run_stream",
+        fake_run_stream,
+    )
+
+    response = client.post(
+        "/api/v1/agent/send",
+        headers=headers,
+        json={
+            "message": "查询今天饮水",
+            "client_turn_id": "runtime-send-paused-control",
+        },
+    )
+
+    assert response.status_code == 200
+    assert captured["runtime_managed"] is False
+    assert captured["runtime_write_block_reason"] == "circuit_paused"
+
+
 def test_off_mode_ignores_invalid_runtime_deadline_configuration(
     db, auth_user_and_headers, monkeypatch
 ):
@@ -673,6 +718,55 @@ def test_agent_stream_passes_canonical_identity_to_executor(
     assert done["data"]["attempt_id"] == captured["attempt_id"]
 
 
+def test_agent_stream_propagates_paused_runtime_write_block_to_executor(
+    client, db, auth_user_and_headers, monkeypatch
+):
+    from app.services.agent_runtime_rollout import AgentRuntimeRolloutService
+
+    user, headers = auth_user_and_headers
+    captured = {}
+
+    async def fake_run_stream(self, **kwargs):
+        captured.update(kwargs)
+        yield {"event": "token", "data": {"content": "read-only answer"}}
+        yield {
+            "event": "done",
+            "data": {
+                "conversation_id": None,
+                "message_id": None,
+                "completion_status": "complete",
+            },
+        }
+
+    monkeypatch.setattr(settings, "agent_runtime_mode", "enforce")
+    AgentRuntimeRolloutService(db).pause(
+        actor_kind="admin",
+        reason_code="manual_pause",
+        actor_user_id=user.id,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_executor.AgentExecutor.run_stream",
+        fake_run_stream,
+    )
+    monkeypatch.setattr(
+        "app.database.SessionLocal",
+        sessionmaker(bind=db.get_bind(), autocommit=False, autoflush=False),
+    )
+
+    response = client.post(
+        "/api/v1/agent/stream",
+        headers=headers,
+        json={
+            "message": "查询今天饮水",
+            "client_turn_id": "runtime-stream-paused-control",
+        },
+    )
+
+    assert response.status_code == 200
+    assert captured["runtime_managed"] is False
+    assert captured["runtime_write_block_reason"] == "circuit_paused"
+
+
 def test_agent_stream_genui_shortcut_gets_runtime_identity(
     client, db, auth_user_and_headers, monkeypatch
 ):
@@ -811,6 +905,152 @@ def test_agent_runtime_existing_run_remains_operable_after_canary_pause(
     assert status_response.json()["status"] == "queued"
     assert cancel_response.status_code == 200
     assert cancel_response.json()["status"] == "cancelled"
+
+
+def test_agent_turn_status_recovers_persisted_request_without_health_content(
+    client, db, auth_user_and_headers, monkeypatch
+):
+    from app.services.agent_runtime import AgentRuntimeCoordinator
+
+    user, headers = auth_user_and_headers
+    monkeypatch.setattr(settings, "agent_runtime_mode", "enforce")
+    conversation = AgentConversation(
+        user_id=user.id,
+        title="turn recovery",
+        session_key="turn-recovery-status",
+    )
+    db.add(conversation)
+    db.commit()
+    source = AgentMessage(
+        conversation_id=conversation.id,
+        role="user",
+        content="private meal details",
+        client_turn_id=f"{user.id}:turn-mobile-photo-recovery",
+    )
+    db.add(source)
+    db.commit()
+    runtime = AgentRuntimeCoordinator(db)
+    admission = runtime.create_or_resume_run(
+        run_id="run-api-turn-recovery",
+        attempt_id="attempt-api-turn-recovery",
+        user_id=user.id,
+        conversation_id=conversation.id,
+        client_turn_id="turn-mobile-photo-recovery",
+        origin="test",
+    )
+    runtime.bind_messages(
+        admission.context,
+        conversation_id=conversation.id,
+        source_message_id=source.id,
+        assistant_message_id=None,
+    )
+    runtime.mark_running(admission.context)
+
+    response = client.get(
+        "/api/v1/agent/turns/turn-mobile-photo-recovery/status",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    body = response.json()
+    assert body == {
+        "client_turn_id": "turn-mobile-photo-recovery",
+        "run_id": "run-api-turn-recovery",
+        "status": "running",
+        "request_persisted": True,
+        "response_persisted": False,
+        "conversation_id": conversation.id,
+        "retryable": False,
+        "error_code": None,
+    }
+    assert "private meal details" not in response.text
+
+
+def test_agent_turn_status_hides_another_users_turn(
+    client, db, auth_user_and_headers
+):
+    from app.models.user import User
+
+    _user, headers = auth_user_and_headers
+    other = User(
+        username="runtime-turn-status-other",
+        email="runtime-turn-status-other@example.com",
+        hashed_password="hashed",
+        name="runtime-turn-status-other",
+        is_active=True,
+        is_approved=True,
+    )
+    db.add(other)
+    db.commit()
+    conversation = AgentConversation(
+        user_id=other.id,
+        title="private other turn",
+        session_key="private-other-turn-status",
+    )
+    db.add(conversation)
+    db.commit()
+    db.add(AgentMessage(
+        conversation_id=conversation.id,
+        role="user",
+        content="another user's private health content",
+        client_turn_id=f"{other.id}:turn-other-user-only",
+    ))
+    db.commit()
+
+    response = client.get(
+        "/api/v1/agent/turns/turn-other-user-only/status",
+        headers=headers,
+    )
+
+    assert response.status_code == 404
+    assert response.headers["cache-control"] == "no-store"
+    assert "another user's private health content" not in response.text
+
+
+def test_agent_turn_status_does_not_ack_claimed_photo_before_runtime_binding(
+    client, db, auth_user_and_headers
+):
+    user, headers = auth_user_and_headers
+    conversation = AgentConversation(
+        user_id=user.id,
+        title="photo upload still pending",
+        session_key="photo-upload-still-pending",
+    )
+    db.add(conversation)
+    db.commit()
+    source = AgentMessage(
+        conversation_id=conversation.id,
+        role="user",
+        content="private photo placeholder",
+        client_turn_id=f"{user.id}:turn-photo-upload-pending",
+        meta={"client_turn_id": "turn-photo-upload-pending"},
+    )
+    partial = AgentMessage(
+        conversation_id=conversation.id,
+        role="assistant",
+        content="partial answer checkpoint",
+        client_turn_id=f"{user.id}:turn-photo-upload-pending",
+        meta={
+            "client_turn_id": "turn-photo-upload-pending",
+            "client_turn_finalized": False,
+        },
+    )
+    db.add_all([source, partial])
+    db.commit()
+
+    response = client.get(
+        "/api/v1/agent/turns/turn-photo-upload-pending/status",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["request_persisted"] is False
+    assert body["response_persisted"] is False
+    assert body["conversation_id"] == conversation.id
+    assert "private photo placeholder" not in response.text
+    assert "partial answer checkpoint" not in response.text
 
 
 def test_agent_runtime_cancel_endpoint_requests_running_worker_stop(

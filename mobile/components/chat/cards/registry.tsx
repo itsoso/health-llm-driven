@@ -19,6 +19,7 @@ import type {
   ChatCardActionRuntimeState,
   ServerCardDescriptor,
 } from './types';
+import { serverCardIdentity, stableServerCardId } from './cardIdentity';
 import { revaColors as C, revaRadii, revaSemantic } from '../../../constants/revaTheme';
 import { isSafeInternalRoute } from '../../../utils/internalRoutes';
 
@@ -94,6 +95,16 @@ export const CARD_MAP: Record<string, CardSpec> = Object.fromEntries(
   CARD_REGISTRY.map((c) => [c.type, c]),
 );
 
+function isMediaCreationRequest(query: string): boolean {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) return false;
+  const requestsCreation =
+    /生成|制作|做成|创作|创建|画一张|做一张|剪成|剪辑|generate|create/.test(normalized);
+  const requestsMedia =
+    /短视频|视频|图片|图像|封面|海报|插画|动图|照片|video|image/.test(normalized);
+  return requestsCreation && requestsMedia;
+}
+
 const ALLOWED_ACTIONS = new Set([
   'agenda.complete',
   'daily_plan_action.complete',
@@ -118,6 +129,11 @@ const WRITE_ACTIONS = new Set([
  * @returns {type, data} 或 null
  */
 export async function dispatchCard(ctx: CardContext): Promise<{ type: string; data: any } | null> {
+  // Local keyword cards are a read-query fallback. Media creation can mention
+  // health topics as source material ("用饮食和睡眠生成短视频"); projecting a
+  // diet/sleep card for those nouns competes with the authoritative creation card.
+  if (isMediaCreationRequest(ctx.query_lower)) return null;
+
   const scored = CARD_REGISTRY
     .map((spec) => ({ spec, score: spec.match(ctx) }))
     .filter((x) => typeof x.score === 'number' && (x.score as number) > 0) as { spec: CardSpec; score: number }[];
@@ -149,7 +165,7 @@ export function renderCard(
   // cards_group: iPad(>= 768) 双列, iPhone 单列
   if (descriptor.type === 'cards_group' && Array.isArray(descriptor.data?.cards)) {
     const items = (descriptor.data.cards as ServerCardDescriptor[])
-      .map((c, i) => ({ key: i, el: renderCard(c, options) }))
+      .map((card) => ({ key: serverCardIdentity(card), el: renderCard(card, options) }))
       .filter((x) => x.el != null);
     if (items.length === 0) return null;
     if (items.length === 1) return items[0].el;
@@ -190,6 +206,13 @@ function StatefulCardRenderer({
 }) {
   const [data, setData] = React.useState(descriptor.data);
   const [localDoneActionKeys, setLocalDoneActionKeys] = React.useState<Record<string, true>>({});
+  const runtimeIdentity = stableServerCardId(descriptor) ?? descriptor.type;
+  React.useEffect(() => {
+    setData(descriptor.data);
+  }, [descriptor.data]);
+  React.useEffect(() => {
+    setLocalDoneActionKeys({});
+  }, [runtimeIdentity]);
   try {
     const actions = normalizeCardActions(descriptor.actions, descriptor.type)
       .map((action) => rewriteActionForCurrentCardData(action, descriptor.type, data));

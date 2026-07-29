@@ -20,7 +20,8 @@ class MedicalExamItemCreate(BaseModel):
 
 class MedicalExamCreate(BaseModel):
     """创建体检记录"""
-    user_id: int
+    # 兼容旧客户端;服务端始终以登录用户为准。
+    user_id: Optional[int] = None
     patient_name: Optional[str] = None
     patient_gender: Optional[str] = None
     patient_age: Optional[int] = None

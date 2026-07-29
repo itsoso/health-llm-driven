@@ -61,6 +61,7 @@ class DietDayTotals:
     fat: float
     fiber: float
     protein_target_g: int
+    recorded_days_7d: int = 0
 
     @property
     def remaining_protein_g(self) -> int:
@@ -261,6 +262,16 @@ def fetch_today_diet_totals(
             .filter(DietRecord.user_id == user_id, DietRecord.record_date == target_date)
             .all()
         )
+        recorded_days_7d = (
+            db.query(DietRecord.record_date)
+            .filter(
+                DietRecord.user_id == user_id,
+                DietRecord.record_date >= target_date - timedelta(days=6),
+                DietRecord.record_date <= target_date,
+            )
+            .distinct()
+            .count()
+        )
     except Exception as exc:
         logger.warning(
             "[post_record_quality] diet totals lookup failed user_id=%s date=%s error=%s",
@@ -280,6 +291,7 @@ def fetch_today_diet_totals(
         fat=sum(float(r.fat or 0) for r in rows),
         fiber=sum(float(r.fiber or 0) for r in rows),
         protein_target_g=context.protein_target_g,
+        recorded_days_7d=recorded_days_7d,
     )
 
 
@@ -399,7 +411,144 @@ def _diet_progress_data(totals: Optional[DietDayTotals]) -> Optional[dict[str, A
         "protein_total_g": round(totals.protein),
         "protein_target_g": totals.protein_target_g,
         "remaining_protein_g": totals.remaining_protein_g,
+        "recorded_days_7d": totals.recorded_days_7d,
     }
+
+
+def _weight_metric(payload: Any) -> Optional[float]:
+    """Read a weight metric from HealthProgram JSON without inventing a value."""
+    if not isinstance(payload, dict):
+        return None
+    for key in ("weight_kg", "weight"):
+        raw = payload.get(key)
+        if isinstance(raw, dict):
+            raw = raw.get("value")
+        value = _number_or_none(raw)
+        if value is not None and value > 0:
+            return value
+    return None
+
+
+def build_weight_goal_progress(
+    *,
+    db: Optional[Session],
+    user_id: Optional[int],
+) -> Optional[dict[str, Any]]:
+    """Build owner-scoped, measurement-backed weight-loss progress.
+
+    This is observational feedback only. It never attributes a weight change to
+    the meal that triggered the receipt and omits fields that cannot be verified.
+    """
+    if db is None or user_id is None:
+        return None
+    try:
+        from app.models.health_program import HealthProgram
+        from app.models.user_profile import UserProfile
+        from app.models.weight import WeightRecord
+
+        profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
+        program = (
+            db.query(HealthProgram)
+            .filter(
+                HealthProgram.user_id == user_id,
+                HealthProgram.program_type == "metabolic",
+                HealthProgram.status == "active",
+            )
+            .order_by(HealthProgram.id.desc())
+            .first()
+        )
+        latest_weight = (
+            db.query(WeightRecord)
+            .filter(WeightRecord.user_id == user_id)
+            .order_by(WeightRecord.record_date.desc(), WeightRecord.id.desc())
+            .first()
+        )
+
+        target_kg = _weight_metric(program.target) if program else None
+        if target_kg is None and profile is not None:
+            target_kg = _number_or_none(profile.target_weight_kg)
+        if target_kg is None or target_kg <= 0:
+            return None
+
+        current_kg = _number_or_none(latest_weight.weight) if latest_weight else None
+        if current_kg is None and program is not None:
+            current_kg = _weight_metric(program.latest)
+        if current_kg is None and profile is not None:
+            current_kg = _number_or_none(profile.current_weight_kg)
+        if current_kg is None or current_kg <= 0:
+            return None
+
+        baseline_kg = _weight_metric(program.baseline) if program else None
+        explicit_weight_loss = (
+            _is_weight_loss_goal(profile.primary_goal if profile is not None else None)
+            or _is_weight_loss_goal(program.name if program is not None else None)
+        )
+        if not (
+            explicit_weight_loss
+            or current_kg > target_kg
+            or (baseline_kg is not None and baseline_kg > target_kg)
+        ):
+            return None
+
+        measured_on = latest_weight.record_date if latest_weight else None
+        today = datetime.now(BEIJING_TZ).date()
+        freshness = "unknown"
+        if measured_on is not None:
+            freshness = "fresh" if (today - measured_on).days <= 3 else "stale"
+
+        result: dict[str, Any] = {
+            "goal_type": "weight_loss",
+            "current_kg": round(current_kg, 2),
+            "target_kg": round(target_kg, 2),
+            "measured_on": measured_on.isoformat() if measured_on else None,
+            "freshness": freshness,
+            "status": "active",
+        }
+        if result["measured_on"] is None:
+            result.pop("measured_on")
+
+        height_cm = _number_or_none(profile.height_cm) if profile is not None else None
+        if height_cm and height_cm > 0:
+            target_bmi = target_kg / ((height_cm / 100) ** 2)
+            if target_bmi < 18.5:
+                result["status"] = "target_requires_review"
+                return result
+
+        remaining_kg = max(current_kg - target_kg, 0)
+        result["remaining_kg"] = round(remaining_kg, 2)
+        if remaining_kg <= 0:
+            result["status"] = "achieved"
+
+        if baseline_kg is not None and baseline_kg > target_kg:
+            result["baseline_kg"] = round(baseline_kg, 2)
+            progress = ((baseline_kg - current_kg) / (baseline_kg - target_kg)) * 100
+            result["progress_pct"] = round(min(100, max(0, progress)), 2)
+
+        if latest_weight is not None:
+            trend_start = latest_weight.record_date - timedelta(days=7)
+            trend_rows = (
+                db.query(WeightRecord)
+                .filter(
+                    WeightRecord.user_id == user_id,
+                    WeightRecord.record_date >= trend_start,
+                    WeightRecord.record_date <= latest_weight.record_date,
+                )
+                .order_by(WeightRecord.record_date.asc(), WeightRecord.id.asc())
+                .all()
+            )
+            if len(trend_rows) >= 2:
+                first_weight = _number_or_none(trend_rows[0].weight)
+                last_weight = _number_or_none(trend_rows[-1].weight)
+                if first_weight is not None and last_weight is not None:
+                    result["change_7d_kg"] = round(last_weight - first_weight, 2)
+        return result
+    except Exception as exc:
+        logger.warning(
+            "[post_record_quality] weight goal lookup failed user_id=%s error=%s",
+            user_id,
+            exc,
+        )
+        return None
 
 
 def _route_action(action_id: str, label: str, route: str, *, style: str = "secondary") -> dict[str, Any]:
@@ -410,6 +559,16 @@ def _route_action(action_id: str, label: str, route: str, *, style: str = "secon
         "payload": {"route": route},
         "style": style,
     }
+
+
+def _is_weight_loss_goal(value: Optional[str]) -> bool:
+    normalized = re.sub(r"[\s_-]+", "", str(value or "")).lower()
+    return (
+        normalized in {"weightloss", "loseweight", "减重", "减脂", "减肥"}
+        or "weightloss" in normalized
+        or "loseweight" in normalized
+        or any(term in normalized for term in ("减重", "减脂", "减肥"))
+    )
 
 
 def _inline_expand_action(
@@ -678,28 +837,62 @@ def build_post_record_quality_response(
             card_data["progress"] = progress
         record_id = _record_id_from_write(result, record_data)
         if record_id is not None:
+            card_data["record_id"] = record_id
+        goal_progress = build_weight_goal_progress(db=db, user_id=user_id)
+        if goal_progress:
+            card_data["goal_progress"] = goal_progress
+        if record_id is not None:
             adjust_action = build_diet_adjust_action(record_id, record_data)
         else:
             # 拿不到 id 无法就地调整 → 至少跳真正的饮食页(不再去通用记录 tab)。
             adjust_action = _route_action("open-diet", "去饮食页调整", "/diet")
+        actions = [
+            _inline_expand_action(
+                "show-next-meal",
+                "看下一餐建议",
+                "next_meal",
+                {
+                    "expanded_sections": ["next_meal"],
+                    "next_meal_detail": next_meal_detail,
+                },
+                style="primary",
+            ),
+            adjust_action,
+        ]
+        if (
+            goal_progress
+            and goal_progress.get("freshness") == "stale"
+            and goal_progress.get("status") != "target_requires_review"
+        ):
+            actions.append(
+                _route_action(
+                    "update-weight",
+                    "更新体重",
+                    "/body-measurements",
+                )
+            )
+        if record_id is not None:
+            actions.append(
+                _route_action(
+                    "share-with-peers",
+                    "发到同行圈",
+                    f"/community?composeRecordId={record_id}",
+                )
+            )
+        if goal_progress is None and _is_weight_loss_goal(context.primary_goal):
+            actions.append(
+                _route_action(
+                    "setup-weight-goal",
+                    "设置减重目标",
+                    "/goals",
+                )
+            )
         return {
             "reply": re.sub(r"\s+", " ", reply).strip()[:280],
             "cards": [{
                 "type": "record_quality",
                 "data": card_data,
-                "actions": [
-                    _inline_expand_action(
-                        "show-next-meal",
-                        "看下一餐建议",
-                        "next_meal",
-                        {
-                            "expanded_sections": ["next_meal"],
-                            "next_meal_detail": next_meal_detail,
-                        },
-                        style="primary",
-                    ),
-                    adjust_action,
-                ],
+                "actions": actions,
             }],
         }
 

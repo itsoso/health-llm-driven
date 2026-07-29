@@ -150,6 +150,74 @@ def test_client_events_stats_computes_diet_capture_latency_and_failures(db):
     }
 
 
+def test_client_events_stats_aggregates_chat_attachment_pipeline(db):
+    from app.models.user import User
+    from app.services.observability_service import client_events_stats, utc_now
+
+    user = User(
+        username="attachment-obs",
+        email="attachment-obs@test.com",
+        hashed_password="x",
+        name="attachment",
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    _seed(db, user.id, "chat_attachment_terminal", {
+        "phase": "accepted",
+        "stage": "server_accept",
+        "image_count": 2,
+        "duration_bucket": "3_10s",
+        "payload_bucket": "1_4mb",
+    })
+    _seed(db, user.id, "chat_attachment_terminal", {
+        "phase": "failed",
+        "stage": "local_prepare",
+        "image_count": 1,
+        "duration_bucket": "lt_1s",
+        "payload_bucket": "unknown",
+        "error_code": "draft_hydration_failed",
+    })
+    _seed(db, user.id, "chat_attachment_terminal", {
+        "phase": "failed",
+        "stage": "server_accept",
+        "image_count": 3,
+        "duration_bucket": "10_30s",
+        "payload_bucket": "gte_4mb",
+        "error_code": "server_not_accepted",
+    })
+    db.commit()
+
+    pipeline = client_events_stats(
+        db,
+        utc_now() - timedelta(days=7),
+        user_id=None,
+    )["chat_attachment_pipeline"]
+
+    assert pipeline == {
+        "attempts": 3,
+        "accepted": 1,
+        "failures": 2,
+        "acceptance_rate_pct": 33.3,
+        "image_count_total": 6,
+        "failures_by_stage": {
+            "local_prepare": 1,
+            "server_accept": 1,
+        },
+        "duration_buckets": {
+            "lt_1s": 1,
+            "3_10s": 1,
+            "10_30s": 1,
+        },
+        "payload_buckets": {
+            "unknown": 1,
+            "1_4mb": 1,
+            "gte_4mb": 1,
+        },
+    }
+
+
 def test_app_update_release_health_observes_until_minimum_sample():
     from app.services.observability_service import app_update_release_health
 

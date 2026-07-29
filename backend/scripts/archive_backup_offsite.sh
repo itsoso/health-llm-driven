@@ -141,7 +141,13 @@ if grep -Fxq "$NAME" <<< "$REMOTE_LIST" || \
     exit 0
 fi
 
-rclone copyto "$TMP" "$REMOTE" --immutable
+# The encrypted database object can take several minutes to upload. Emit a
+# low-frequency progress line so SSH/proxy channel-idle timeouts cannot discard
+# the command's final exit status and make a successful archive look failed.
+rclone copyto "$TMP" "$REMOTE" --immutable \
+    --stats 30s \
+    --stats-one-line \
+    --stats-log-level NOTICE
 rclone copyto "$TMP_CHECKSUM" "$CHECKSUM_REMOTE" --immutable
 rclone copyto "$TMP_MANIFEST" "$MANIFEST_REMOTE" --immutable
 verify_remote_archive

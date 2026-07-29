@@ -8,7 +8,8 @@ import Markdown from 'react-native-markdown-display';
 import { prepareSafeMarkdown, safeMarkdownIt } from '../utils/safeMarkdown';
 import { useQuery } from '@tanstack/react-query';
 import { useWorkoutDetail } from '../hooks/useWorkouts';
-import { getPostWorkoutAnalysis, getWorkoutChart, getWorkoutVoiceCoach, type WorkoutAnalysis, type PostWorkoutAnalysisResponse, type WorkoutChartData } from '../services/workouts';
+import { useWorkoutAutoAnalysis } from '../hooks/useWorkoutAutoAnalysis';
+import { getPostWorkoutAnalysis, getWorkoutChart, getWorkoutVoiceCoach, type WorkoutChartData } from '../services/workouts';
 import HealthCard from '../components/design-system/HealthCard';
 import HeroMetrics from '../components/workout/HeroMetrics';
 import HrChart from '../components/workout/HrChart';
@@ -174,11 +175,6 @@ function formatTime(isoStr: string | null): string | null {
   } catch { return null; }
 }
 
-function parseAnalysisJson(raw: string | null): Record<string, any> | null {
-  if (!raw) return null;
-  try { return JSON.parse(raw); } catch { return null; }
-}
-
 const WORKOUT_TYPE_LABEL: Record<string, string> = {
   running: '跑步',
   cycling: '骑行',
@@ -203,33 +199,15 @@ export default function WorkoutDetailScreen() {
     staleTime: 300_000,
   });
 
-  const [analysis, setAnalysis] = useState<WorkoutAnalysis | null>(null);
-  const [analyzing, setAnalyzing] = useState(false);
-  const [postAnalysis, setPostAnalysis] = useState<PostWorkoutAnalysisResponse | null>(null);
   const [postAnalyzing, setPostAnalyzing] = useState(false);
-  const [fromCache, setFromCache] = useState(false);
   const [mapActive, setMapActive] = useState(false);
-
-  useEffect(() => {
-    if (!workout || !workoutId) return;
-    if (workout.ai_analysis && !analysis) {
-      const parsed = parseAnalysisJson(workout.ai_analysis);
-      if (parsed) {
-        setAnalysis(parsed as unknown as WorkoutAnalysis);
-        setFromCache(true);
-      }
-    }
-    if (!postAnalysis) {
-      getPostWorkoutAnalysis(workoutId, false, true)
-        .then(res => {
-          if (res.success) {
-            setPostAnalysis(res);
-            setFromCache(true);
-          }
-        })
-        .catch(() => {});
-    }
-  }, [workout?.id]);
+  const {
+    analysis,
+    postAnalysis,
+    setPostAnalysis,
+    fromCache,
+    setFromCache,
+  } = useWorkoutAutoAnalysis({ workoutId, workout });
 
   const handlePostAnalysis = useCallback(async (forceRegenerate = false) => {
     if (!workoutId) return;
@@ -251,11 +229,12 @@ export default function WorkoutDetailScreen() {
     } finally {
       setPostAnalyzing(false);
     }
-  }, [workoutId]);
+  }, [setFromCache, setPostAnalysis, workoutId]);
 
   // '听一下'按钮 — 私享女声读 150-200 字教练短稿
   const [speaking, setSpeaking] = useState(false);
   const playerRef = React.useRef<ReturnType<typeof createAudioPlayer> | null>(null);
+  const finishPlaybackRef = React.useRef<(() => void) | null>(null);
   const handleSpeakCoach = useCallback(async () => {
     if (!workoutId || speaking) return;
     setSpeaking(true);
@@ -280,13 +259,18 @@ export default function WorkoutDetailScreen() {
       playerRef.current = player;
       await new Promise<void>((resolve) => {
         let finished = false;
+        let timeout: ReturnType<typeof setTimeout> | null = null;
         const finish = () => {
           if (finished) return;
           finished = true;
+          if (timeout) clearTimeout(timeout);
+          timeout = null;
           try { player.remove(); } catch {}
           playerRef.current = null;
+          finishPlaybackRef.current = null;
           resolve();
         };
+        finishPlaybackRef.current = finish;
         const sub = player.addListener('playbackStatusUpdate', (status: any) => {
           if (status?.didJustFinish || status?.finished) {
             sub?.remove?.();
@@ -294,7 +278,7 @@ export default function WorkoutDetailScreen() {
           }
         });
         // 兜底 30s 硬超时
-        setTimeout(() => { if (!finished) { try { sub?.remove?.(); } catch {}; finish(); } }, 30000);
+        timeout = setTimeout(() => { if (!finished) { try { sub?.remove?.(); } catch {}; finish(); } }, 30000);
         player.play();
       });
     } catch (e: any) {
@@ -308,6 +292,7 @@ export default function WorkoutDetailScreen() {
   // 退出页面确保停止播放, 避免后台继续念
   useEffect(() => {
     return () => {
+      finishPlaybackRef.current?.();
       try { playerRef.current?.pause(); playerRef.current?.remove(); } catch {}
       playerRef.current = null;
     };
@@ -592,7 +577,7 @@ export default function WorkoutDetailScreen() {
           }
         >
           {/* 操作工具条 — 横向 scroll, 防按钮挤压标题 */}
-          {(hasAnalysis || (!analyzing && !postAnalyzing)) && (
+          {(hasAnalysis || !postAnalyzing) && (
             <View style={S.aiToolbar}>
               <TouchableOpacity
                 onPress={handleChatWorkoutReview}
@@ -604,7 +589,7 @@ export default function WorkoutDetailScreen() {
                 <Ionicons name="chatbubble-ellipses-outline" size={15} color={C.green500} />
                 <Text style={[T.agentReviewBtn, { marginLeft: 4 }]}>跟小巴复盘这次</Text>
               </TouchableOpacity>
-              {hasAnalysis && !analyzing && !postAnalyzing && (
+              {hasAnalysis && !postAnalyzing && (
                 <TouchableOpacity
                   onPress={handleSpeakCoach}
                   activeOpacity={0.7}
@@ -621,7 +606,7 @@ export default function WorkoutDetailScreen() {
                   </Text>
                 </TouchableOpacity>
               )}
-              {hasAnalysis && !analyzing && !postAnalyzing && (
+              {hasAnalysis && !postAnalyzing && (
                 <TouchableOpacity
                   onPress={() => handlePostAnalysis(true)}
                   activeOpacity={0.7}
@@ -631,7 +616,7 @@ export default function WorkoutDetailScreen() {
                   <Text style={[T.reanalyzeBtn, { marginLeft: 4 }]}>重新分析</Text>
                 </TouchableOpacity>
               )}
-              {!hasAnalysis && !analyzing && !postAnalyzing && (
+              {!hasAnalysis && !postAnalyzing && (
                 <TouchableOpacity
                   onPress={() => handlePostAnalysis(false)}
                   activeOpacity={0.7}
@@ -644,7 +629,7 @@ export default function WorkoutDetailScreen() {
             </View>
           )}
 
-          {(analyzing || postAnalyzing) ? (
+          {postAnalyzing ? (
             <View style={{ alignItems: 'center', paddingVertical: 16, gap: 8 }}>
               <ActivityIndicator color={HUES.purple.fg} />
               <Text style={T.placeholder}>AI 正在分析运动数据...</Text>

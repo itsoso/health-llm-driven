@@ -11,6 +11,7 @@
 """
 import ast
 import asyncio
+import base64
 from dataclasses import replace
 import hashlib
 import json
@@ -48,9 +49,19 @@ from app.services.agent_turn_recovery import (
     should_retry_tool_failure,
 )
 from app.services.agent_turn_outcome import classify_agent_turn_outcome
+from app.services.agent_turn_retry import (
+    RetryableTurnRecovery,
+    build_retry_source_action_if_safe,
+    materialize_retryable_turn_images,
+    resolve_retryable_turn_recovery,
+    restore_retryable_turn_recovery,
+)
 from app.services.agent_write_outcome import (
     classify_explicit_write_execution,
     classify_write_execution,
+    is_legacy_local_write_rejection,
+    local_write_rejection,
+    result_declares_explicit_failure,
     write_result_declares_non_success,
 )
 from app.services.dynamic_card_persistence import cards_for_persistence
@@ -60,10 +71,21 @@ from app.services.agent_kernel.context import (
     build_turn_snapshot,
     format_turn_time_context_prompt,
 )
+from app.services.agent_kernel.actionable_context import (
+    format_actionable_context_prompt,
+)
+from app.services.agent_kernel.goal_spec import (
+    compile_goal_spec,
+    format_goal_contract_prompt,
+)
+from app.services.agent_kernel.postconditions import verify_goal_postconditions
 from app.services.agent_kernel.events import AgentEventBus
 from app.services.agent_kernel.tool_registry import (
+    HEALTH_MANAGE_RECEIPT_RESOURCE_TYPE_BY_RECORD_TYPE,
+    HEALTH_RECORD_RECEIPT_RESOURCE_TYPE_BY_RECORD_TYPE,
     UnknownToolAction,
     classify_tool_effect,
+    expected_receipt_resource_type,
     get_tool_spec,
     is_registered_receipt_resource_type,
     is_valid_receipt_resource_id,
@@ -72,6 +94,7 @@ from app.services.agent_kernel.tool_registry import (
 )
 from app.services.agent_kernel.types import (
     CapabilityDecision,
+    GoalSpec,
     ToolExecutionRequest,
     TurnSnapshot,
 )
@@ -2545,6 +2568,7 @@ _RECEIPT_TYPE_LABELS = {
     "mood_record": "心情",
     "health_checkin": "鼻炎打卡",
     "smart_reminder": "提醒",
+    "user_directive": "健康约束",
 }
 
 
@@ -2578,40 +2602,171 @@ class _UnverifiedWriteResult(RuntimeError):
     pass
 
 
+class _SimpleRecordTerminal(RuntimeError):
+    """Stop a model panel once a typed simple-record outcome is known."""
+
+    def __init__(self, message: str, *, satisfied: bool) -> None:
+        super().__init__(message)
+        self.message = message
+        self.satisfied = satisfied
+
+
 def _write_result_is_pre_dispatch_validation_error(result: Any) -> bool:
-    """Compatibility wrapper for callers that need the terminal rejection bit."""
-    return classify_write_execution(result).status == "rejected"
+    """Hide only argument/validation rejections the same model turn can repair."""
+    outcome = classify_write_execution(result)
+    if (
+        outcome.status == "rejected"
+        and outcome.dispatch_started is False
+        and outcome.error_code
+        in {
+            "diet_nutrition_incomplete",
+            "tool_arguments_invalid",
+            "tool_validation_failed",
+        }
+    ):
+        return True
+
+    # Compatibility for older adapters that still return prose instead of the
+    # structured local_write_rejection contract. Policy/capability denials are
+    # terminal and must remain visible; only argument gaps are recoverable in
+    # the same model turn.
+    if not isinstance(result, str):
+        return False
+    text = result.strip()
+    return (
+        text.startswith("Error:")
+        and not text.startswith("Error: API 返回 ")
+        and any(
+            marker in text
+            for marker in (
+                "参数解析失败",
+                "参数无效",
+                "必须提供",
+                "需要提供",
+                "缺少",
+            )
+        )
+    )
 
 
-_RESOURCE_TYPE_BY_RECORD_TYPE = {
-    "bp": "blood_pressure_record",
-    "blood_pressure": "blood_pressure_record",
-    "diet": "diet_record",
-    "event": "health_episode",
-    "exercise": "exercise_record",
-    "excretion": "excretion_record",
-    "goal": "goal",
-    "illness": "illness_episode",
-    "medication": "medication_log",
-    "mood": "mood_record",
-    "reminder": "smart_reminder",
-    "remember": "memory_fact",
-    "rhinitis": "health_checkin",
-    "sleep": "sleep_record",
-    "supplement": "supplement_log",
-    "supplement_group": "supplement_log",
-    "symptom": "symptom_record",
-    "waist": "waist_record",
-    "water": "water_record",
-    "weight": "weight_record",
-}
+def _pre_dispatch_validation_user_message(result: Any) -> str:
+    """Turn a recoverable local rejection into a safe terminal explanation."""
+    payload: Dict[str, Any] = {}
+    if isinstance(result, dict):
+        payload = result
+    elif isinstance(result, str) and result.strip().startswith("{"):
+        try:
+            parsed = json.loads(result)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            parsed = None
+        if isinstance(parsed, dict):
+            payload = parsed
 
-_HEALTH_MANAGE_RESOURCE_TYPE_BY_RECORD_TYPE = {
-    **_RESOURCE_TYPE_BY_RECORD_TYPE,
-    "medication": "medication",
-    "medication_log": "medication_log",
-    "supplement_definition": "supplement_definition",
-}
+    message = str(payload.get("message") or "").strip()
+    guidance = str(payload.get("recovery_guidance") or "").strip()
+    error_code = str(payload.get("error_code") or "").strip()
+    if not message and error_code == "diet_nutrition_incomplete":
+        message = (
+            "饮食记录缺少完整营养估算，需要提供 calories (>0)、"
+            "protein、carbs、fat、fiber。"
+        )
+    if not message and isinstance(result, str):
+        message = result.strip().removeprefix("Error:").strip()
+    if not message:
+        message = "记录参数不完整。"
+
+    reply = f"这次没有写入：{message}"
+    if guidance and guidance not in message:
+        reply = f"{reply} {guidance}"
+    return reply
+
+
+_UNVERIFIED_WRITE_SUCCESS_CLAIMS = (
+    "已记录",
+    "已经记录",
+    "记录好了",
+    "记录成功",
+    "已保存",
+    "已经保存",
+    "保存好了",
+    "保存成功",
+    "已写入",
+    "写入成功",
+    "已更新",
+    "已经更新",
+    "更新好了",
+    "更新成功",
+    "已修改",
+    "修改成功",
+    "已删除",
+    "删除成功",
+    "已同步",
+    "同步成功",
+    "已创建",
+    "创建成功",
+    "操作已完成",
+)
+_UNVERIFIED_WRITE_CLAUSE_SPLIT_RE = re.compile(
+    r"(?:[，,。！？!?；;\n]|但是|但|不过|然而|并且|且|同时|另外|此外|然后)"
+)
+_UNVERIFIED_WRITE_NEGATION_TERMS = (
+    "尚未",
+    "还没有",
+    "还没",
+    "没有",
+    "未能",
+    "没能",
+    "无法",
+    "不能",
+    "不确定",
+    "未确认",
+)
+_UNVERIFIED_WRITE_POST_NEGATION_TERMS = (
+    "并不准确",
+    "并非事实",
+    "不准确",
+    "不代表",
+    "不等于",
+    "无法确认",
+    "不能确认",
+    "尚未确认",
+    "仍待确认",
+    "存疑",
+)
+
+
+def _claims_unverified_write_success(text: Any) -> bool:
+    """Detect a model success claim that cannot replace a verified receipt."""
+    normalized = "".join(str(text or "").split()).lower()
+    if not normalized:
+        return False
+    for clause in _UNVERIFIED_WRITE_CLAUSE_SPLIT_RE.split(normalized):
+        for claim in _UNVERIFIED_WRITE_SUCCESS_CLAIMS:
+            start = clause.find(claim)
+            while start >= 0:
+                prefix = clause[:start]
+                suffix = clause[start + len(claim):]
+                negated_before = any(
+                    term in prefix
+                    for term in _UNVERIFIED_WRITE_NEGATION_TERMS
+                )
+                negated_after = any(
+                    term in suffix[:16]
+                    for term in _UNVERIFIED_WRITE_POST_NEGATION_TERMS
+                )
+                if not negated_before and not negated_after:
+                    return True
+                start = clause.find(claim, start + len(claim))
+    return False
+
+
+_RESOURCE_TYPE_BY_RECORD_TYPE = dict(
+    HEALTH_RECORD_RECEIPT_RESOURCE_TYPE_BY_RECORD_TYPE
+)
+
+_HEALTH_MANAGE_RESOURCE_TYPE_BY_RECORD_TYPE = dict(
+    HEALTH_MANAGE_RECEIPT_RESOURCE_TYPE_BY_RECORD_TYPE
+)
 
 _MANAGE_PLAN_RESOURCE_TYPE_BY_ACTION = {
     "generate_weekly": "smart_plan",
@@ -2622,9 +2777,21 @@ _MANAGE_PLAN_RESOURCE_TYPE_BY_ACTION = {
 _FIXED_RECEIPT_RESOURCE_TYPE_BY_TOOL = {
     "draft_aigc_media": "aigc_media_confirmation",
     "intervention_cycle": "intervention_cycle",
+    "user_directive": "user_directive",
     "upload_genetic_txt": "genetic_profile",
     "upload_medical_exam_text": "medical_exam",
 }
+
+
+def _result_payload_sources(payload: Dict[str, Any]) -> list[Dict[str, Any]]:
+    """Return every supported producer envelope used to verify a write result."""
+    sources = [payload]
+    sources.extend(
+        nested
+        for container_name in ("resource", "record", "data", "result")
+        if isinstance((nested := payload.get(container_name)), dict)
+    )
+    return sources
 
 
 def _write_result_payload(
@@ -2647,14 +2814,26 @@ def _write_result_payload(
         return None
     if not isinstance(payload, dict):
         return None
-    if write_result_declares_non_success(
-        payload,
-        allow_pending=allow_pending,
-        allowed_statuses=allowed_statuses,
+    verification_sources = _result_payload_sources(payload)
+    if any(
+        "verified" in source and source.get("verified") is not True
+        for source in verification_sources
     ):
         return None
-    message = str(payload.get("message") or "")
-    if any(marker in message for marker in _WRITE_RESULT_FAILURE_MARKERS):
+    if any(
+        write_result_declares_non_success(
+            source,
+            allow_pending=allow_pending,
+            allowed_statuses=allowed_statuses,
+        )
+        for source in verification_sources
+    ):
+        return None
+    if any(
+        marker in str(source.get("message") or "")
+        for source in verification_sources
+        for marker in _WRITE_RESULT_FAILURE_MARKERS
+    ):
         return None
     return payload
 
@@ -2706,14 +2885,13 @@ def _write_operation_fingerprint(
     tool_name: str,
     parsed_args: Dict[str, Any],
 ) -> str:
-    fingerprint_payload = json.dumps(
-        {"tool": tool_name, "args": parsed_args},
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-        default=str,
+    from app.services.agent_runtime_identity import runtime_hmac_digest
+
+    return runtime_hmac_digest(
+        "write-operation-fingerprint-v1",
+        tool_name,
+        parsed_args,
     )
-    return hashlib.sha256(fingerprint_payload.encode()).hexdigest()
 
 
 def _runtime_write_operation_fingerprint(
@@ -2901,6 +3079,8 @@ def _runtime_write_operation_identity(
     for a diet create. Other writes fall back to exact-fingerprint matching and
     are rejected if a retry introduces a new, unprovable side effect.
     """
+    from app.services.agent_runtime_identity import runtime_hmac_digest
+
     args = dict(parsed_args or {})
     record_type = _normalize_fast_record_kind(
         args.get("record_type") or args.get("type") or args.get("kind") or ""
@@ -2947,7 +3127,11 @@ def _runtime_write_operation_identity(
         record_date = str(data.get("record_date") or "").strip()
         meal_type = str(data.get("meal_type") or "").strip()
         food_items = str(data.get("food_items") or "")
-        normalized_food_items = re.sub(r"\s+", "", food_items).casefold()
+        normalized_food_items = re.sub(
+            r"[\s,，、;；/|]+",
+            "",
+            food_items,
+        ).casefold()
         meal_time = str(data.get("meal_time") or "").strip()
         # Scope is the normalized business slot, not model-generated food
         # wording. A missing date is filled from this Turn's reference time at
@@ -2975,9 +3159,10 @@ def _runtime_write_operation_identity(
                 "record_type": record_type,
                 "record_date": record_date,
                 "meal_type": meal_type,
-                "item_identity": hashlib.sha256(
-                    f"food_text:{normalized_food_items}".encode()
-                ).hexdigest(),
+                "item_identity": runtime_hmac_digest(
+                    "diet-item-identity-v1",
+                    normalized_food_items,
+                ),
             }
             if meal_time:
                 identity["meal_time"] = meal_time
@@ -2989,13 +3174,10 @@ def _runtime_write_operation_identity(
         return None, None, None, None
 
     def opaque(prefix: str, value: Mapping[str, str] | str) -> str:
-        encoded = json.dumps(
+        return f"{prefix}:" + runtime_hmac_digest(
+            f"write-logical-{prefix}-v1",
             value,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
         )
-        return f"{prefix}:" + hashlib.sha256(encoded.encode()).hexdigest()
 
     return (
         opaque("target", identity) if identity is not None else None,
@@ -3014,6 +3196,222 @@ def _runtime_write_logical_operation_key(
     parsed_args: Dict[str, Any],
 ) -> Optional[str]:
     return _runtime_write_operation_identity(tool_name, parsed_args)[0]
+
+
+def _recoverable_write_operation_key(
+    tool_name: str,
+    parsed_args: Dict[str, Any],
+    *,
+    default_record_date: str | None = None,
+) -> str:
+    """Stable key for one logical write while the model repairs its arguments.
+
+    Exact argument fingerprints cannot correlate a rejected draft with a
+    corrected retry because the corrected fields necessarily change. Prefer a
+    durable target identity, then the narrow business scope, and finally a
+    record-type/action scope. This prevents an unrelated successful write from
+    clearing another operation's unresolved rejection.
+    """
+    from app.services.agent_runtime_identity import runtime_hmac_digest
+
+    target_key, scope_key, _kind, _discriminator = (
+        _runtime_write_operation_identity(
+            tool_name,
+            parsed_args,
+            default_record_date=default_record_date,
+        )
+    )
+    if target_key:
+        return target_key
+    if scope_key:
+        return scope_key
+
+    record_type = _normalize_fast_record_kind(
+        parsed_args.get("record_type")
+        or parsed_args.get("type")
+        or parsed_args.get("kind")
+        or ""
+    )
+    action = str(
+        parsed_args.get("operation")
+        or parsed_args.get("action")
+        or "create"
+    ).strip().lower()
+    raw_data = parsed_args.get("data")
+    data = dict(raw_data) if isinstance(raw_data, dict) else dict(parsed_args)
+    discriminator_fields = {
+        "blood_pressure": ("systolic", "diastolic"),
+        "bp": ("systolic", "diastolic"),
+        "exercise": ("exercise_type", "activity_type", "duration", "distance"),
+        "mood": ("mood", "score"),
+        "sleep": ("record_date", "date", "sleep_quality"),
+        "symptom": ("description", "symptom", "name", "title"),
+        "waist": ("waist", "value"),
+        "water": ("amount", "amount_ml", "ml"),
+        "weight": ("weight", "value"),
+    }.get(record_type, ())
+    discriminator = {
+        field: str(data[field]).strip().casefold()
+        for field in discriminator_fields
+        if data.get(field) not in (None, "", [])
+    }
+    if discriminator:
+        return "rejection-target:" + runtime_hmac_digest(
+            "recoverable-write-rejection-target-v1",
+            {
+                "tool": tool_name,
+                "record_type": record_type,
+                "action": action,
+                "discriminator": discriminator,
+            },
+        )
+    return _recoverable_write_scope_key(
+        tool_name,
+        parsed_args,
+    )
+
+
+def _recoverable_write_scope_key(
+    tool_name: str,
+    parsed_args: Dict[str, Any],
+) -> str:
+    """Return the stable coarse slot shared by a rejected draft and its repair."""
+    from app.services.agent_runtime_identity import runtime_hmac_digest
+
+    record_type = _normalize_fast_record_kind(
+        parsed_args.get("record_type")
+        or parsed_args.get("type")
+        or parsed_args.get("kind")
+        or ""
+    )
+    action = str(
+        parsed_args.get("operation")
+        or parsed_args.get("action")
+        or "create"
+    ).strip().lower()
+    return "rejection-scope:" + runtime_hmac_digest(
+        "recoverable-write-rejection-scope-v1",
+        {
+            "tool": tool_name,
+            "record_type": record_type,
+            "action": action,
+        },
+    )
+
+
+def _goal_binds_recoverable_write(
+    goal: Optional[GoalSpec],
+    tool_name: str,
+    parsed_args: Dict[str, Any],
+) -> bool:
+    """Allow coarse repair matching only for one explicit write target.
+
+    Attachment-backed diet turns cannot become ``simple_health_record`` goals:
+    the server must let the model read the label before it can build the
+    nutrition payload. They still compile to one bounded ``diet/create`` goal,
+    so a later verified estimate is allowed to repair an older validation
+    rejection for that meal. Multi-meal and cross-domain turns stay isolated.
+    """
+    if (
+        goal is None
+        or goal.operation != "create"
+        or tool_name != "health_record"
+    ):
+        return False
+    record_type = _normalize_fast_record_kind(
+        parsed_args.get("record_type")
+        or parsed_args.get("type")
+        or parsed_args.get("kind")
+        or ""
+    )
+    if (
+        goal.kind == "simple_health_record"
+        and record_type
+        and record_type == str(goal.target_record_type or "").strip().lower()
+    ):
+        return True
+    return bool(
+        goal.kind == "write"
+        and goal.domain == "diet"
+        and record_type == "diet"
+        and len(goal.target_meal_types) <= 1
+    )
+
+
+def _clear_repaired_write_rejections(
+    pending: dict[str, tuple[str, str]],
+    rounds: dict[str, int],
+    scopes: dict[str, str],
+    *,
+    operation_key: str,
+    scope_key: str,
+    current_round: int,
+    allow_scope_repair: bool,
+) -> None:
+    """Clear an older validation rejection repaired by a verified write.
+
+    A model may refine the target text while filling missing fields, for
+    example ``坚果 20g`` -> ``品牌每日坚果 20g``.  Those calls have different
+    target hashes but still belong to one bounded create goal. Scope repair is
+    therefore limited to older rounds of that explicit single-target goal;
+    same-round and multi-target writes remain independent.
+    """
+    pending.pop(operation_key, None)
+    rounds.pop(operation_key, None)
+    scopes.pop(operation_key, None)
+    if not allow_scope_repair:
+        return
+
+    repaired_keys = [
+        key
+        for key, rejection_scope in scopes.items()
+        if rejection_scope == scope_key
+        and rounds.get(key, current_round) < current_round
+    ]
+    for key in repaired_keys:
+        pending.pop(key, None)
+        rounds.pop(key, None)
+        scopes.pop(key, None)
+
+
+def _summarize_recoverable_write_rejections(
+    pending: Mapping[str, tuple[str, str]],
+) -> tuple[Optional[str], Optional[str]]:
+    if not pending:
+        return None, None
+    unique_items = list(pending.values())
+    if len(unique_items) == 1:
+        return unique_items[0]
+
+    details = []
+    for index, (message, _code) in enumerate(unique_items, start=1):
+        detail = message.removeprefix("这次没有写入：").strip()
+        details.append(f"{index}. {detail}")
+    summary = (
+        f"这次有 {len(unique_items)} 项没有写入：\n"
+        + "\n".join(details)
+    )
+    summary_code = (
+        "diet_nutrition_incomplete"
+        if any(
+            code == "diet_nutrition_incomplete"
+            for _message, code in unique_items
+        )
+        else unique_items[-1][1]
+    )
+    return summary, summary_code
+
+
+def _write_rejection_with_receipt_context(
+    rejection: str,
+    write_receipts: Sequence[Mapping[str, Any]],
+) -> str:
+    if not write_receipts:
+        return rejection
+    return (
+        f"另有 {len(write_receipts)} 项记录已完成并取得回执。\n\n"
+        f"{rejection}"
+    )
 
 
 # 只读工具回合级去重(founder 2026-07-14「列出喝水记录」→ health_query 空转 7 次 70s 根因)。
@@ -3065,32 +3463,64 @@ def _receipt_resource_identity(payload: Dict[str, Any]) -> tuple[Optional[str], 
         "exam_id",
     )
 
-    def read_id(source: Dict[str, Any]) -> Optional[str]:
+    def read_ids(source: Dict[str, Any]) -> list[str]:
+        values: list[str] = []
         for key in id_keys:
             value = source.get(key)
             if isinstance(value, bool) or value in (None, ""):
                 continue
             normalized = str(value).strip()
             if normalized:
-                return normalized
-        return None
+                values.append(normalized)
+        return values
 
-    resource_id = read_id(payload)
-    resource_type = str(payload.get("resource_type") or "").strip() or None
-    if resource_id:
-        return resource_type, resource_id
+    resource_ids = read_ids(payload)
+    resource_types = [
+        normalized
+        for value in (payload.get("resource_type"),)
+        if (normalized := str(value or "").strip())
+    ]
     for container_name in ("resource", "record", "data", "result"):
         nested = payload.get(container_name)
         if not isinstance(nested, dict):
             continue
-        resource_id = read_id(nested)
-        if not resource_id:
-            continue
+        resource_ids.extend(read_ids(nested))
         nested_type = nested.get("resource_type")
         if container_name == "resource" and not nested_type:
             nested_type = nested.get("type")
-        return str(nested_type or "").strip() or resource_type, resource_id
-    return resource_type, None
+        normalized_type = str(nested_type or "").strip()
+        if normalized_type:
+            resource_types.append(normalized_type)
+
+    unique_ids = list(dict.fromkeys(resource_ids))
+    unique_types = list(dict.fromkeys(resource_types))
+    if len(unique_ids) > 1 or len(unique_types) > 1:
+        return None, None
+    return (
+        unique_types[0] if unique_types else None,
+        unique_ids[0] if unique_ids else None,
+    )
+
+
+def _receipt_target_date(
+    payload: Dict[str, Any],
+    args: Dict[str, Any],
+) -> tuple[Optional[str], bool]:
+    """Return one agreed ISO-like target date; reject contradictory aliases."""
+    values: list[str] = []
+    for source in (payload, args):
+        for container in _result_payload_sources(source):
+            for key in ("date", "record_date"):
+                value = container.get(key)
+                if value in (None, ""):
+                    continue
+                normalized = str(value).strip()
+                if normalized:
+                    values.append(normalized)
+    unique = list(dict.fromkeys(values))
+    if len(unique) > 1:
+        return None, True
+    return (unique[0] if unique else None), False
 
 
 def _write_receipt_from_tool_result(
@@ -3109,14 +3539,8 @@ def _write_receipt_from_tool_result(
         args.get("record_type") or args.get("type") or ""
     ).strip().lower()
     normalized_action = str(args.get("action") or "").strip().lower()
-    if tool_name == "health_record":
-        expected_resource_type = _RESOURCE_TYPE_BY_RECORD_TYPE.get(
-            normalized_record_type
-        )
-    elif tool_name == "health_manage":
-        expected_resource_type = _HEALTH_MANAGE_RESOURCE_TYPE_BY_RECORD_TYPE.get(
-            normalized_record_type
-        )
+    if tool_name in {"health_record", "health_manage"}:
+        expected_resource_type = expected_receipt_resource_type(tool_name, args)
     elif tool_name == "manage_plan":
         expected_resource_type = _MANAGE_PLAN_RESOURCE_TYPE_BY_ACTION.get(
             normalized_action
@@ -3162,6 +3586,9 @@ def _write_receipt_from_tool_result(
         return None
     if not is_valid_receipt_resource_id(tool_name, resource_id):
         return None
+    target_date, target_date_conflict = _receipt_target_date(payload, args)
+    if target_date_conflict:
+        return None
     completed_at = (
         payload.get("completed_at")
         or payload.get("updated_at")
@@ -3172,7 +3599,7 @@ def _write_receipt_from_tool_result(
         payload.get("operation_id")
         or f"{tool_name}:{resource_type}:{resource_id}"
     )
-    return {
+    receipt = {
         "operation_id": operation_id,
         "status": "verified",
         "resource_type": resource_type,
@@ -3180,6 +3607,9 @@ def _write_receipt_from_tool_result(
         "completed_at": str(completed_at),
         "verified": True,
     }
+    if target_date:
+        receipt["date"] = target_date
+    return receipt
 
 
 def _write_tool_completed(tool_name: str, args: Any, result: Any) -> bool:
@@ -3804,21 +4234,30 @@ def _normalize_reminder_record_data(
 
 def _merge_agent_card_descriptors(*groups: list | None) -> list[dict]:
     out: list[dict] = []
-    seen: set[str] = set()
+    positions: dict[str, int] = {}
     for group in groups:
         if not isinstance(group, list):
             continue
         for card in group:
             if not isinstance(card, dict) or not isinstance(card.get("type"), str):
                 continue
-            try:
-                key = json.dumps(card, sort_keys=True, ensure_ascii=False, default=str)
-            except Exception:
-                key = f"{card.get('type')}:{len(out)}"
-            if key in seen:
-                continue
-            seen.add(key)
-            out.append(card)
+            data = card.get("data")
+            card_id = data.get("card_id") if isinstance(data, dict) else None
+            if isinstance(card_id, str) and card_id.strip():
+                key = f"{card['type']}:{card_id.strip()}"
+            else:
+                try:
+                    key = json.dumps(card, sort_keys=True, ensure_ascii=False, default=str)
+                except Exception:
+                    key = f"{card.get('type')}:{len(out)}"
+            position = positions.get(key)
+            if position is None:
+                positions[key] = len(out)
+                out.append(card)
+            else:
+                # A later descriptor is a fresher projection of the same
+                # durable card (for example after a second meal photo attaches).
+                out[position] = card
     return out
 
 
@@ -3887,6 +4326,20 @@ def _looks_like_medical_report_image_context(text: str) -> bool:
     if not normalized:
         return False
     return any(keyword in normalized for keyword in _MEDICAL_REPORT_IMAGE_KEYWORDS)
+
+
+def _medical_report_analysis_requested(text: str, *, persisted: bool) -> bool:
+    """Separate a record-only command from a request that also needs interpretation."""
+    normalized = (text or "").strip().lower()
+    if not persisted:
+        return True
+    return bool(
+        re.search(
+            r"(分析|解读|看看|看一下|严重|有问题|正常|异常|建议|怎么办|"
+            r"意味着|说明|是什么|如何|为什么|吗|？|\?)",
+            normalized,
+        )
+    )
 
 
 def _record_intent_needs_detail_message(record_text: str) -> str:
@@ -3966,19 +4419,34 @@ def _remember_structured_medical_redirect(
     if (drug_lexicon.contains_drug_name(blob)
             or _REMEMBER_DOSE_RE.search(blob)
             or any(k in blob for k in _REMEMBER_MED_KW)):
-        return ('Error: 这像用药/剂量 —— 请走结构化用药记录 '
-                'health_record(record_type="medication"),不用 remember(否则绕过用药安全规则)。')
+        return local_write_rejection(
+            "remember_medication_redirect",
+            message="这像用药或剂量，不能保存为普通记忆。",
+            recovery_guidance=(
+                '请改用 health_record(record_type="medication")，'
+                "以保留用药安全校验。"
+            ),
+        )
     # 基因:词表 OR rs 位点(rs\d{3,} 无歧义)。C282Y/星等位 只在基因上下文才算(避免误伤
     # 流水号 A2024B / 评分 *5)—— 基因上下文由 _REMEMBER_GENE_KW 覆盖,故无需独立形状正则。
     if any(k in low for k in _REMEMBER_GENE_KW) or _REMEMBER_RS_RE.search(blob):
-        return ('Error: 基因/基因型数据请走基因档案上传路径,不用 remember'
-                '(基因数据需独立授权 + 加密隔离)。')
+        return local_write_rejection(
+            "remember_genetic_redirect",
+            message="基因或基因型数据不能保存为普通记忆。",
+            recovery_guidance="请改用基因档案上传路径完成独立授权和加密隔离。",
+        )
     # 血压/化验:BP 形状(扫全 blob, 含 unit)OR CJK 化验词 OR 英文化验缩写(词边界)
     if (_REMEMBER_BP_RE.search(blob)
             or any(k in blob for k in _REMEMBER_LAB_CJK)
             or _REMEMBER_LAB_EN_RE.search(blob)):
-        return ('Error: 这像血压/化验指标 —— 请走结构化记录(blood_pressure 或化验上传),'
-                '不用 remember(否则绕过高血压/化验安全规则)。')
+        return local_write_rejection(
+            "remember_clinical_data_redirect",
+            message="血压或化验指标不能保存为普通记忆。",
+            recovery_guidance=(
+                "请改用 blood_pressure 结构化记录或化验上传路径，"
+                "以保留健康安全校验。"
+            ),
+        )
     return None
 
 
@@ -4315,6 +4783,412 @@ def _build_deterministic_diet_correction_tool_call(
             "arguments": json.dumps(arguments, ensure_ascii=False),
         },
     }
+
+
+def _build_deterministic_goal_lookup_tool_call(
+    goal: Optional[GoalSpec],
+    *,
+    write_receipts: Sequence[dict[str, Any]],
+    has_attachment: bool = False,
+) -> Optional[Dict[str, Any]]:
+    """Start a typed recalculation task with the required authoritative lookup."""
+    if (
+        goal is None
+        or goal.kind != "diet_recalculate_update"
+        or not goal.requires_lookup
+        or write_receipts
+        or has_attachment
+        or not goal.target_date
+    ):
+        return None
+    arguments = {
+        "record_type": "diet",
+        "operation": "list",
+        "date": goal.target_date,
+        "limit": 20,
+    }
+    return {
+        "id": f"goal-lookup-{_sha12(repr(goal))}",
+        "type": "function",
+        "function": {
+            "name": "health_manage",
+            "arguments": json.dumps(arguments, ensure_ascii=False),
+        },
+    }
+
+
+def _build_goal_verification_tool_call(
+    goal: Optional[GoalSpec],
+    *,
+    write_receipts: Sequence[dict[str, Any]],
+    already_attempted: bool,
+) -> Optional[Dict[str, Any]]:
+    """Read the target scope back only after every intended update has a receipt."""
+    if (
+        goal is None
+        or goal.kind != "diet_recalculate_update"
+        or not goal.requires_verification
+        or already_attempted
+        or not goal.target_date
+        or len(write_receipts) < len(goal.target_meal_types)
+    ):
+        return None
+    arguments = {
+        "record_type": "diet",
+        "operation": "list",
+        "date": goal.target_date,
+        "limit": 20,
+    }
+    return {
+        "id": f"goal-verify-{_sha12(repr(goal))}",
+        "type": "function",
+        "function": {
+            "name": "health_manage",
+            "arguments": json.dumps(arguments, ensure_ascii=False),
+        },
+    }
+
+
+def _normalize_goal_guarded_tool_calls(
+    tool_calls: List[Dict[str, Any]],
+    goal: Optional[GoalSpec],
+    *,
+    lookup_completed: bool = False,
+    allowed_record_ids: Optional[set[str]] = None,
+) -> List[Dict[str, Any]]:
+    """Fail closed when a model violates the current task's mutation contract."""
+    if goal is None:
+        return tool_calls
+    prohibited = {
+        str(operation).strip().lower()
+        for operation in goal.prohibited_operations
+        if str(operation).strip()
+    }
+    if prohibited:
+        contract_safe_calls: list[dict[str, Any]] = []
+        fully_read_only = {"create", "update", "delete"}.issubset(prohibited)
+        for tool_call in tool_calls:
+            function = tool_call.get("function") or {}
+            name = str(function.get("name") or "")
+            try:
+                args = (
+                    json.loads(function.get("arguments"))
+                    if isinstance(function.get("arguments"), str)
+                    else dict(function.get("arguments") or {})
+                )
+            except (json.JSONDecodeError, TypeError, ValueError):
+                args = {}
+            attempted_write = _write_tool_attempted(name, args)
+            is_read_only_call = _tool_call_is_read_only(name, args)
+            operation = str(
+                args.get("operation") or args.get("action") or ""
+            ).strip().lower()
+            # health_record always crosses a side-effect boundary. Some action
+            # record types (for example garmin_sync) intentionally do not
+            # require a persistence receipt, but that does not make them safe
+            # in a read-only turn.
+            attempted_mutation = attempted_write or name == "health_record"
+            if name == "health_record":
+                operation = "create"
+            record_type = str(args.get("record_type") or "").strip().lower()
+            violates_contract = (
+                (fully_read_only and not is_read_only_call)
+                or (
+                    attempted_mutation
+                    and (
+                        not operation
+                        or operation in prohibited
+                    )
+                )
+            )
+            if (
+                goal.kind == "diet_recalculate_update"
+                and attempted_mutation
+                and record_type != "diet"
+            ):
+                violates_contract = True
+            # The recalculation path deliberately converts an unsafe create
+            # request for the diet domain into its required read-only lookup
+            # below. Cross-domain writes must never inherit that exception.
+            is_diet_create_recovery = (
+                goal.kind == "diet_recalculate_update"
+                and record_type == "diet"
+                and operation == "create"
+            )
+            if is_diet_create_recovery:
+                violates_contract = False
+            if violates_contract:
+                logger.warning(
+                    "[agent_executor] goal contract blocked prohibited mutation "
+                    "kind=%s tool=%s operation=%s",
+                    goal.kind,
+                    name,
+                    operation or "unknown",
+                )
+                continue
+            contract_safe_calls.append(tool_call)
+        tool_calls = contract_safe_calls
+    if goal.kind == "simple_health_record":
+        authoritative_args = _simple_record_goal_arguments(goal)
+        normalized: list[dict[str, Any]] = []
+        for tool_call in tool_calls:
+            function = tool_call.get("function") or {}
+            name = str(function.get("name") or "")
+            try:
+                args = (
+                    json.loads(function.get("arguments"))
+                    if isinstance(function.get("arguments"), str)
+                    else dict(function.get("arguments") or {})
+                )
+            except (json.JSONDecodeError, TypeError, ValueError):
+                args = {}
+            is_write = (
+                name == "health_record"
+                or (
+                    name in _WRITE_RECEIPT_TOOL_NAMES
+                    and _write_tool_attempted(name, args)
+                )
+            )
+            if not is_write:
+                normalized.append(tool_call)
+                continue
+            if authoritative_args is None:
+                logger.error(
+                    "[agent_executor] blocked model write for invalid simple goal "
+                    "tool=%s target_record_type=%s",
+                    name,
+                    goal.target_record_type,
+                )
+                continue
+            guarded_args = authoritative_args
+            if name == "health_record" and goal.target_record_type == "diet":
+                guarded_args = _merge_equivalent_diet_model_estimates(
+                    goal,
+                    model_args=args,
+                    authoritative_args=authoritative_args,
+                )
+            if name != "health_record" or args != guarded_args:
+                logger.warning(
+                    "[agent_executor] simple goal canonicalized model write "
+                    "tool=%s target_record_type=%s",
+                    name,
+                    goal.target_record_type,
+                )
+            normalized.append({
+                **tool_call,
+                "function": {
+                    **function,
+                    "name": "health_record",
+                    "arguments": json.dumps(
+                        guarded_args,
+                        ensure_ascii=False,
+                    ),
+                },
+            })
+        return normalized
+    if goal.kind != "diet_recalculate_update":
+        return tool_calls
+    lookup_args = {
+        "record_type": "diet",
+        "operation": "list",
+        "date": goal.target_date,
+        "limit": 20,
+    }
+    normalized: list[dict[str, Any]] = []
+    for tool_call in tool_calls:
+        function = tool_call.get("function") or {}
+        name = function.get("name")
+        try:
+            args = (
+                json.loads(function.get("arguments"))
+                if isinstance(function.get("arguments"), str)
+                else dict(function.get("arguments") or {})
+            )
+        except (json.JSONDecodeError, TypeError, ValueError):
+            normalized.append(tool_call)
+            continue
+        is_diet_create = (
+            args.get("record_type") == "diet"
+            and (
+                name == "health_record"
+                or args.get("operation") == "create"
+            )
+        )
+        record_id = args.get("record_id") or args.get("id")
+        is_unresolved_diet_update = (
+            name == "health_manage"
+            and args.get("record_type") == "diet"
+            and args.get("operation") == "update"
+            and (
+                not lookup_completed
+                or record_id in (None, "")
+                or (
+                    allowed_record_ids is not None
+                    and str(record_id) not in allowed_record_ids
+                )
+            )
+        )
+        if not is_diet_create and not is_unresolved_diet_update:
+            normalized.append(tool_call)
+            continue
+        logger.warning(
+            "[agent_executor] goal contract blocked unsafe diet mutation "
+            "tool=%s operation=%s",
+            name,
+            args.get("operation") or "create",
+        )
+        normalized.append({
+            **tool_call,
+            "function": {
+                **function,
+                "name": "health_manage",
+                "arguments": json.dumps(lookup_args, ensure_ascii=False),
+            },
+        })
+    return normalized
+
+
+def _goal_guard_rejected_writes(
+    proposed_calls: Sequence[Dict[str, Any]],
+    guarded_calls: Sequence[Dict[str, Any]],
+) -> List[tuple[str, Dict[str, Any]]]:
+    """Return write calls removed by the goal guard without retaining health data."""
+    retained_call_ids = {
+        str(call.get("id"))
+        for call in guarded_calls
+        if call.get("id") not in (None, "")
+    }
+    retained_objects = {id(call) for call in guarded_calls}
+    rejected: list[tuple[str, Dict[str, Any]]] = []
+    for call in proposed_calls:
+        call_id = call.get("id")
+        if (
+            id(call) in retained_objects
+            or (
+                call_id not in (None, "")
+                and str(call_id) in retained_call_ids
+            )
+        ):
+            continue
+        function = call.get("function") or {}
+        tool_name = str(function.get("name") or "")
+        try:
+            parsed_args = (
+                json.loads(function.get("arguments"))
+                if isinstance(function.get("arguments"), str)
+                else dict(function.get("arguments") or {})
+            )
+        except (json.JSONDecodeError, TypeError, ValueError):
+            parsed_args = {}
+        if tool_name == "health_record" or _write_tool_attempted(
+            tool_name,
+            parsed_args,
+        ):
+            rejected.append((tool_name, parsed_args))
+    return rejected
+
+
+_GOAL_GUARD_RECOVERY_PROMPT = (
+    "刚才选择的写入操作不符合本回合目标，系统已经拒绝执行。"
+    "请不要调用任何工具，直接回答用户原本的问题；"
+    "不得声称已经记录、修改或删除任何数据，也不要向用户暴露内部工具或策略。"
+)
+
+
+def _goal_target_record_ids(
+    goal: Optional[GoalSpec],
+    result: Any,
+) -> set[str]:
+    """Resolve target IDs only when every requested meal has one unique row."""
+    record_ids, _, _ = _goal_target_record_resolution(goal, result)
+    return record_ids
+
+
+def _goal_target_record_resolution(
+    goal: Optional[GoalSpec],
+    result: Any,
+) -> tuple[set[str], tuple[str, ...], tuple[str, ...]]:
+    """Return safe IDs plus missing and ambiguous target meals."""
+    if goal is None or goal.kind != "diet_recalculate_update":
+        return set(), (), ()
+    parsed = result
+    if isinstance(result, str):
+        try:
+            parsed = json.loads(result)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return set(), tuple(goal.target_meal_types), ()
+    rows: list[dict[str, Any]] = []
+    if isinstance(parsed, list):
+        rows = [row for row in parsed if isinstance(row, dict)]
+    elif isinstance(parsed, dict):
+        for key in ("items", "records", "data", "results"):
+            nested = parsed.get(key)
+            if isinstance(nested, list):
+                rows = [row for row in nested if isinstance(row, dict)]
+                break
+    target_meals = set(goal.target_meal_types)
+    ids_by_meal: dict[str, set[str]] = {
+        meal_type: set()
+        for meal_type in target_meals
+    }
+    for row in rows:
+        meal_type = str(row.get("meal_type") or "").strip().lower()
+        record_id = row.get("id") or row.get("record_id")
+        if meal_type in ids_by_meal and record_id not in (None, ""):
+            ids_by_meal[meal_type].add(str(record_id))
+    missing = tuple(sorted(
+        meal_type
+        for meal_type in target_meals
+        if not ids_by_meal[meal_type]
+    ))
+    ambiguous = tuple(sorted(
+        meal_type
+        for meal_type in target_meals
+        if len(ids_by_meal[meal_type]) > 1
+    ))
+    if missing or ambiguous:
+        return set(), missing, ambiguous
+    return {
+        next(iter(ids_by_meal[meal_type]))
+        for meal_type in target_meals
+    }, (), ()
+
+
+def _goal_lookup_resolution_prompt(
+    goal: Optional[GoalSpec],
+    result: Any,
+) -> str:
+    """Give the model a deterministic stop condition for unsafe target lookup."""
+    if isinstance(result, str):
+        try:
+            json.loads(result)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return ""
+    elif not isinstance(result, (list, dict)):
+        return ""
+    _, missing, ambiguous = _goal_target_record_resolution(goal, result)
+    if not missing and not ambiguous:
+        return ""
+    labels = {
+        "breakfast": "早餐",
+        "lunch": "午餐",
+        "dinner": "晚餐",
+        "snack": "加餐",
+    }
+    details: list[str] = []
+    if missing:
+        details.append(
+            "未找到" + "、".join(labels.get(item, item) for item in missing)
+        )
+    if ambiguous:
+        details.append(
+            "存在多条" + "、".join(labels.get(item, item) for item in ambiguous)
+        )
+    return (
+        "\n\n[系统任务约束] 目标记录无法唯一确定（"
+        + "；".join(details)
+        + "）。禁止继续写入或宣称完成；请用简洁中文说明具体餐次，并请用户选择或补充。"
+    )
 
 
 def _is_explicit_latest_diet_delete(message: str) -> bool:
@@ -5135,6 +6009,376 @@ def _build_deterministic_symptom_tool_call(
     }
 
 
+def _build_deterministic_simple_record_tool_call(
+    goal: Optional[GoalSpec],
+    *,
+    write_receipts: Sequence[dict[str, Any]],
+    has_attachment: bool = False,
+) -> Optional[Dict[str, Any]]:
+    """Recover one narrow server-owned write from a typed task contract."""
+    if (
+        goal is None
+        or goal.kind != "simple_health_record"
+        or goal.operation != "create"
+        or write_receipts
+        or has_attachment
+    ):
+        return None
+    arguments = _simple_record_goal_arguments(goal)
+    if arguments is None:
+        return None
+    return {
+        "id": f"deterministic-simple-record-{_sha12(repr(arguments))}",
+        "type": "function",
+        "function": {
+            "name": "health_record",
+            "arguments": json.dumps(arguments, ensure_ascii=False),
+        },
+    }
+
+
+def _simple_record_goal_arguments(
+    goal: Optional[GoalSpec],
+) -> Optional[Dict[str, Any]]:
+    """Build the only write payload authorized by a simple-record goal."""
+    if goal is None or goal.kind != "simple_health_record":
+        return None
+    values = dict(goal.target_values)
+    if goal.target_record_type == "water":
+        try:
+            amount_ml = int(values["amount_ml"])
+        except (KeyError, TypeError, ValueError):
+            return None
+        if not 1 <= amount_ml <= 5000:
+            return None
+        return {
+            "record_type": "water",
+            "data": {"amount": amount_ml},
+        }
+    if goal.target_record_type == "symptom":
+        body_part = str(values.get("body_part") or "").strip()
+        description = str(values.get("description") or "").strip()
+        if (
+            body_part not in {
+                "eye",
+                "respiratory",
+                "skin",
+                "digestive",
+                "musculoskeletal",
+                "head",
+                "general",
+                "other",
+            }
+            or not description
+        ):
+            return None
+        return {
+            "record_type": "symptom",
+            "data": {
+                "body_part": body_part,
+                "description": description[:500],
+            },
+        }
+    if goal.target_record_type == "diet":
+        meal_type = str(values.get("meal_type") or "").strip().lower()
+        food_items = str(values.get("food_items") or "").strip()
+        record_date = str(goal.target_date or "").strip()
+        if (
+            meal_type not in {"breakfast", "lunch", "dinner", "snack"}
+            or not food_items
+        ):
+            return None
+        try:
+            canonical_date = date.fromisoformat(record_date).isoformat()
+        except (TypeError, ValueError):
+            return None
+        return {
+            "record_type": "diet",
+            "data": {
+                "record_date": canonical_date,
+                "meal_type": meal_type,
+                "food_items": food_items[:1000],
+                "source": "agent_text",
+            },
+        }
+    return None
+
+
+def _merge_equivalent_diet_model_estimates(
+    goal: GoalSpec,
+    *,
+    model_args: Dict[str, Any],
+    authoritative_args: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Keep estimates only when the model preserved the user-owned meal."""
+    authoritative_data = dict(authoritative_args.get("data") or {})
+    model_record_type = _normalize_fast_record_kind(
+        model_args.get("record_type")
+        or model_args.get("type")
+        or model_args.get("kind")
+        or ""
+    )
+    if model_record_type != "diet":
+        return authoritative_args
+
+    model_data = _normalize_diet_create_data(
+        model_args,
+        default_record_date=goal.target_date,
+    )
+    nutrient_fact_patterns = {
+        "calories": re.compile(
+            r"(?:(?:热量|卡路里)\s*[:：]?\s*)?"
+            r"(?P<value>\d+(?:\.\d+)?)\s*(?:千卡|kcal|大卡)",
+            re.IGNORECASE,
+        ),
+        "protein": re.compile(
+            r"蛋白质\s*[:：]?\s*(?P<value>\d+(?:\.\d+)?)\s*(?:克|g)",
+            re.IGNORECASE,
+        ),
+        "carbs": re.compile(
+            r"碳水(?:化合物)?\s*[:：]?\s*"
+            r"(?P<value>\d+(?:\.\d+)?)\s*(?:克|g)",
+            re.IGNORECASE,
+        ),
+        "fat": re.compile(
+            r"脂肪\s*[:：]?\s*(?P<value>\d+(?:\.\d+)?)\s*(?:克|g)",
+            re.IGNORECASE,
+        ),
+        "fiber": re.compile(
+            r"膳食纤维\s*[:：]?\s*(?P<value>\d+(?:\.\d+)?)\s*(?:克|g)",
+            re.IGNORECASE,
+        ),
+    }
+
+    def extract_user_nutrition(value: Any) -> dict[str, float]:
+        text = str(value or "")
+        result: dict[str, float] = {}
+        for field, pattern in nutrient_fact_patterns.items():
+            match = pattern.search(text)
+            if match is not None:
+                result[field] = float(match.group("value"))
+        return result
+
+    def strip_user_nutrition(value: Any) -> str:
+        text = str(value or "")
+        for pattern in nutrient_fact_patterns.values():
+            text = pattern.sub("", text)
+        return text.strip(" \t\r\n,，、;；。.!！:：")
+
+    user_nutrition = extract_user_nutrition(
+        authoritative_data.get("food_items")
+    )
+    for field, user_value in user_nutrition.items():
+        model_value = model_data.get(field)
+        if (
+            not isinstance(model_value, (int, float))
+            or isinstance(model_value, bool)
+            or not math.isfinite(float(model_value))
+            or not math.isclose(
+                float(model_value),
+                user_value,
+                rel_tol=1e-6,
+                abs_tol=1e-6,
+            )
+        ):
+            return authoritative_args
+
+    quantity_number = r"(?:\d+(?:\.\d+)?|[一二两三四五六七八九十百半]+)"
+    quantity_unit = r"(?:毫升|ml|克|g|碗|杯|份|个|只|枚|颗|片|块|根|条)"
+    leading_quantity_re = re.compile(
+        rf"^(?P<number>{quantity_number})(?P<unit>{quantity_unit})"
+        r"(?P<food>.+)$",
+        re.IGNORECASE,
+    )
+    trailing_quantity_re = re.compile(
+        rf"^(?P<food>.+?)(?P<number>{quantity_number})"
+        rf"(?P<unit>{quantity_unit})$",
+        re.IGNORECASE,
+    )
+
+    def flat_food_identity(value: Any) -> str:
+        return re.sub(
+            r"[\s,，、。.!！;；:：]+",
+            "",
+            str(value or ""),
+        ).casefold()
+
+    def conjunction_food_identity(value: Any) -> str:
+        normalized = flat_food_identity(value)
+        return re.sub(
+            r"(?<=[\u4e00-\u9fff])(?:和|与)(?=[\u4e00-\u9fff])",
+            "",
+            normalized,
+        )
+
+    def normalized_quantity(value: str) -> str:
+        raw = value.casefold()
+        try:
+            return str(float(raw)).removesuffix(".0")
+        except ValueError:
+            pass
+        if raw == "半":
+            return "0.5"
+        digits = {
+            "一": 1,
+            "二": 2,
+            "两": 2,
+            "三": 3,
+            "四": 4,
+            "五": 5,
+            "六": 6,
+            "七": 7,
+            "八": 8,
+            "九": 9,
+        }
+        if raw == "十":
+            return "10"
+        if "十" in raw:
+            tens, ones = raw.split("十", 1)
+            value_int = digits.get(tens, 1) * 10 + digits.get(ones, 0)
+            return str(value_int)
+        if raw in digits:
+            return str(digits[raw])
+        return raw
+
+    def food_parts(value: Any) -> list[str]:
+        if isinstance(value, (list, tuple)):
+            return [
+                str(item).strip()
+                for item in value
+                if str(item).strip()
+            ]
+        raw = str(value or "").strip()
+        if not raw:
+            return []
+        parts = [
+            part.strip()
+            for part in re.split(r"[,，、;；/|]+", raw)
+            if part.strip()
+        ]
+        if len(parts) != 1:
+            return parts
+
+        # ASR and weak models often omit separators:
+        # "一个包子一个茶叶蛋一碗粥". Split only at explicit quantity-unit
+        # boundaries, so food names themselves remain authoritative.
+        marker_re = re.compile(
+            rf"(?={quantity_number}{quantity_unit})",
+            re.IGNORECASE,
+        )
+        starts = [match.start() for match in marker_re.finditer(raw)]
+        if len(starts) > 1 and starts[0] == 0:
+            return [
+                raw[start:end].strip()
+                for start, end in zip(starts, starts[1:] + [len(raw)])
+                if raw[start:end].strip()
+            ]
+        return parts
+
+    def canonical_food_identity(value: Any) -> tuple[str, ...]:
+        canonical: list[str] = []
+        unit_aliases = {"只": "个", "枚": "个", "颗": "个"}
+        lexicalized_quantity_dishes = {"三杯鸡", "一碗香"}
+        beverage_terms = (
+            "水",
+            "牛奶",
+            "奶",
+            "豆浆",
+            "咖啡",
+            "茶",
+            "果汁",
+            "酸奶",
+            "酒",
+            "饮料",
+        )
+        for raw_part in food_parts(value):
+            part = re.sub(r"[\s。.!！:：]+", "", raw_part).casefold()
+            if part in lexicalized_quantity_dishes:
+                canonical.append(part)
+                continue
+            match = leading_quantity_re.fullmatch(part)
+            if match is None:
+                match = trailing_quantity_re.fullmatch(part)
+            if match is None:
+                canonical.append(part)
+                continue
+            food = re.sub(
+                r"[\s。.!！:：]+",
+                "",
+                match.group("food"),
+            ).casefold()
+            unit = match.group("unit").casefold()
+            if unit == "杯" and not any(term in food for term in beverage_terms):
+                canonical.append(part)
+                continue
+            canonical.append(
+                f"{food}#{normalized_quantity(match.group('number'))}"
+                f"{unit_aliases.get(unit, unit)}"
+            )
+        return tuple(sorted(canonical))
+
+    authoritative_food_items = strip_user_nutrition(
+        authoritative_data.get("food_items")
+    )
+    direct_food_matches = (
+        flat_food_identity(model_data.get("food_items"))
+        == flat_food_identity(authoritative_food_items)
+        or canonical_food_identity(model_data.get("food_items"))
+        == canonical_food_identity(authoritative_food_items)
+    )
+    conjunction_food_matches = bool(user_nutrition) and (
+        conjunction_food_identity(model_data.get("food_items"))
+        == conjunction_food_identity(authoritative_food_items)
+    )
+    food_matches = direct_food_matches or conjunction_food_matches
+    if (
+        str(model_data.get("meal_type") or "").strip().lower()
+        != str(authoritative_data.get("meal_type") or "").strip().lower()
+        or not food_matches
+    ):
+        return authoritative_args
+
+    merged_data = dict(authoritative_data)
+    merged_data["food_items"] = (
+        str(model_data["food_items"]).strip()[:1000]
+        if direct_food_matches
+        else authoritative_food_items[:1000]
+    )
+    for field in (
+        "calories",
+        "protein",
+        "carbs",
+        "fat",
+        "fiber",
+        "alcohol_units",
+        "health_tips",
+    ):
+        if model_data.get(field) not in (None, "", []):
+            merged_data[field] = model_data[field]
+    return {
+        "record_type": "diet",
+        "data": merged_data,
+    }
+
+
+def _simple_record_goal_completion_text(goal: GoalSpec) -> str:
+    """Render a verified simple-record result without another model call."""
+    values = dict(goal.target_values)
+    if goal.target_record_type == "water":
+        return f"已记录饮水 {values.get('amount_ml')}ml"
+    if goal.target_record_type == "symptom":
+        return f"已记录症状：{values.get('description')}"
+    if goal.target_record_type == "diet":
+        meal_label = {
+            "breakfast": "早餐",
+            "lunch": "午餐",
+            "dinner": "晚餐",
+            "snack": "加餐",
+        }.get(str(values.get("meal_type") or ""), "饮食")
+        return f"已记录{meal_label}。"
+    return "记录已完成。"
+
+
 def _symptom_write_authorized_by_current_turn(
     message: Any,
     recent_messages: Any,
@@ -5240,6 +6484,51 @@ def _prepare_health_record_args_for_validation(
             if _iso:
                 data[_dk] = _iso
 
+    return args
+
+
+def _apply_server_health_record_provenance(
+    tool_name: str,
+    args: Any,
+    *,
+    execution_source: str,
+    has_attachment: bool,
+    diet_photo_auto_save: bool,
+    contextual_diet_recorded: bool,
+    user_message: str,
+) -> Any:
+    """Replace model-authored diet provenance with server-known turn provenance."""
+    if (
+        tool_name != "health_record"
+        or not isinstance(args, dict)
+        or _fast_record_kind(args) != "diet"
+    ):
+        return args
+
+    data = args.get("data")
+    if not isinstance(data, dict):
+        return args
+
+    if execution_source == "procedure_recipe_replay":
+        if data.get("source") == "agent_text":
+            data["source"] = "procedure_recipe"
+        return args
+
+    if execution_source != "structured_or_recovered":
+        return args
+
+    if contextual_diet_recorded:
+        # Contextual capture already persisted the authoritative meal. This
+        # redundant model call must reach _exec_health_record so it can replay
+        # that verified receipt instead of failing nutrition validation.
+        data["source"] = "contextual_diet_replay"
+    elif has_attachment or diet_photo_auto_save:
+        # Auto-save intent proves an attachment turn even on legacy clients
+        # that omitted the explicit has_attachment flag. If capture failed,
+        # the fallback still has to provide complete estimated nutrition.
+        data["source"] = "agent_attachment"
+    elif str(user_message or "").strip():
+        data["source"] = "agent_text"
     return args
 
 
@@ -5506,6 +6795,44 @@ def _fast_turn_tool_names_for_message(message: Optional[str]) -> tuple:
 
 
 _AIGC_MEDIA_DRAFT_TOOL_NAMES: tuple[str, ...] = ("draft_aigc_media",)
+_AIGC_MEDIA_TOPIC_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    (
+        "活动",
+        re.compile(r"活动|运动|训练|步数|[0-9０-９]+\s*步|跑步|步行|骑行|游泳|消耗"),
+    ),
+    ("饮食", re.compile(r"饮食|早餐|午餐|晚餐|加餐|餐食|热量|蛋白质|碳水|脂肪|kcal", re.IGNORECASE)),
+    ("睡眠", re.compile(r"睡眠|入睡|深睡|清醒|起床|睡眠分")),
+    ("补水", re.compile(r"补水|饮水|喝水|水分")),
+    ("用药提醒", re.compile(r"用药|服药|吃药|药物提醒")),
+    ("健康计划", re.compile(r"健康计划|行动计划|今日计划|明日计划")),
+)
+
+
+def _aigc_media_content_preview(*, kind: str, prompt: str) -> Dict[str, Any]:
+    """Project an allowlisted category summary without exposing prompt details."""
+    source = str(prompt or "")
+    topics = [
+        label
+        for label, pattern in _AIGC_MEDIA_TOPIC_PATTERNS
+        if pattern.search(source)
+    ][:3]
+    medium = "短视频" if kind in {"text_to_video", "image_to_video"} else "图片"
+    if not topics:
+        return {
+            "content_summary": f"根据本轮创作描述生成健康行动{medium}",
+            "content_topics": [],
+        }
+    topic_text = (
+        topics[0]
+        if len(topics) == 1
+        else f"{topics[0]}和{topics[1]}"
+        if len(topics) == 2
+        else f"{'、'.join(topics[:-1])}和{topics[-1]}"
+    )
+    return {
+        "content_summary": f"围绕{topic_text}生成健康行动{medium}",
+        "content_topics": topics,
+    }
 
 
 def _is_explicit_aigc_media_draft_turn(message: Optional[str]) -> bool:
@@ -5994,12 +7321,14 @@ class AgentExecutor:
         self._current_turn_user_message = ""
         self._current_turn_recent_messages: list[dict] = []
         self._current_turn_source_message_id: Optional[int] = None
+        self._current_turn_media_source_message_id: Optional[int] = None
         self._current_turn_conversation_id: Optional[int] = None
         self._current_turn_image_urls: list[str] = []
         self._current_turn_has_attachment = False
         self._turn_aigc_media_cards: list[dict] = []
         self._turn_contextual_diet_receipts: list[dict] = []
         self._turn_contextual_diet_cards: list[dict] = []
+        self._turn_attachment_write_receipts: list[dict] = []
         self._turn_contextual_diet_record_id: Optional[int] = None
         self._turn_contextual_diet_consumed_fraction: Optional[float] = None
         self._turn_pending_write_intent_ids: list[int] = []
@@ -6063,6 +7392,7 @@ class AgentExecutor:
         # 需要长思考, 不该被封顶。每回合入口重置。
         self._turn_invoked_deep_analysis = False
         self._current_turn_source_message_id = None
+        self._current_turn_media_source_message_id = None
         self._current_turn_conversation_id = None
         self._current_turn_image_urls = []
         self._current_turn_has_attachment = False
@@ -6088,6 +7418,7 @@ class AgentExecutor:
         self._runtime_run_id: Optional[str] = None
         self._runtime_attempt_id: Optional[str] = None
         self._runtime_managed = False
+        self._runtime_write_block_reason: Optional[str] = None
 
     def _start_agent_kernel_turn(
         self,
@@ -6154,6 +7485,33 @@ class AgentExecutor:
         if self._agent_kernel_event_bus is not None:
             self._agent_kernel_event_bus.snapshot = bound
 
+    def _bind_agent_kernel_actionable_references(
+        self,
+        references: Sequence[Any],
+    ) -> None:
+        """Rebind visible structured objects after the conversation is resolved."""
+        snapshot = self._agent_kernel_snapshot
+        if snapshot is None:
+            return
+        normalized = tuple(references or ())
+        goal = compile_goal_spec(
+            envelope=snapshot.envelope,
+            context=snapshot.context,
+            intent=snapshot.intent,
+            actionable_references=normalized,
+        )
+        rebound = replace(
+            snapshot,
+            actionable_references=normalized,
+            goal=goal,
+        )
+        self._agent_kernel_snapshot = rebound
+        if self._agent_kernel_event_bus is not None:
+            self._agent_kernel_event_bus.rebind_snapshot(
+                rebound,
+                reason="actionable_context_resolved",
+            )
+
     def _ensure_agent_kernel_turn(self, *, channel: Optional[str] = None) -> TurnSnapshot:
         """Support non-chat adapters while keeping the same single-turn contract."""
         user_id = self._current_user_id
@@ -6206,7 +7564,17 @@ class AgentExecutor:
             ambiguity=tuple(flag for flag in snapshot.intent.ambiguity if flag != "low_confidence"),
             is_write=True,
         )
-        refined = replace(snapshot, intent=refined_intent)
+        refined_goal = compile_goal_spec(
+            envelope=snapshot.envelope,
+            context=snapshot.context,
+            intent=refined_intent,
+            actionable_references=snapshot.actionable_references,
+        )
+        refined = replace(
+            snapshot,
+            intent=refined_intent,
+            goal=refined_goal,
+        )
         self._agent_kernel_snapshot = refined
         if self._agent_kernel_event_bus is not None:
             self._agent_kernel_event_bus.rebind_snapshot(
@@ -6261,15 +7629,6 @@ class AgentExecutor:
             and snapshot is not None
             and snapshot.policy_mode == "enforce"
         )
-        if result_text.startswith("[NEEDS_CONFIRMATION]"):
-            if tool_name not in self._agent_kernel_pending_confirmation_tools:
-                self._agent_kernel_pending_confirmation_tools.append(tool_name)
-        elif result_text.startswith("Error:") and not policy_blocked:
-            if tool_name not in self._agent_kernel_tool_failure_tools:
-                self._agent_kernel_tool_failure_tools.append(tool_name)
-        elif not policy_blocked and tool_name in self._agent_kernel_tool_failure_tools:
-            # 同一工具后续重试成功时，只保留未恢复的失败，避免把成功回合计入拒答率。
-            self._agent_kernel_tool_failure_tools.remove(tool_name)
         receipt = None
         if decision is not None and decision.receipt_required:
             receipt = _write_receipt_from_tool_result(
@@ -6277,6 +7636,20 @@ class AgentExecutor:
                 parsed_args,
                 result,
             )
+        explicit_failure = (
+            receipt is None and result_declares_explicit_failure(result)
+        )
+        if result_text.startswith("[NEEDS_CONFIRMATION]"):
+            if tool_name not in self._agent_kernel_pending_confirmation_tools:
+                self._agent_kernel_pending_confirmation_tools.append(tool_name)
+        elif (
+            result_text.startswith("Error:") or explicit_failure
+        ) and not policy_blocked:
+            if tool_name not in self._agent_kernel_tool_failure_tools:
+                self._agent_kernel_tool_failure_tools.append(tool_name)
+        elif not policy_blocked and tool_name in self._agent_kernel_tool_failure_tools:
+            # 同一工具后续重试成功时，只保留未恢复的失败，避免把成功回合计入拒答率。
+            self._agent_kernel_tool_failure_tools.remove(tool_name)
         write_outcome = (
             classify_write_execution(result, receipt=receipt)
             if decision is not None and decision.receipt_required
@@ -6301,6 +7674,7 @@ class AgentExecutor:
             success=(
                 not policy_blocked
                 and not result_text.startswith("Error:")
+                and not explicit_failure
                 and (
                     write_outcome is None
                     or write_outcome.status == "verified"
@@ -6883,13 +8257,39 @@ class AgentExecutor:
         self._current_turn_conversation_id = int(conv.id)
         self._current_turn_image_urls = []
         self._bind_agent_kernel_source_message(user_msg.id)
+        try:
+            self._bind_agent_kernel_actionable_references(
+                svc.build_actionable_references(conv.id)
+            )
+        except Exception as exc:  # noqa: BLE001 - context loss must not abort the turn
+            logger.warning(
+                "[agent_executor] multi-model actionable context projection failed "
+                "conversation=%s error=%s",
+                conv.id,
+                exc,
+            )
 
         yield {"event": "agent_start", "data": {"message": "多模型综合分析中…", "conversation_id": conv.id}}
 
         system_content = self._build_system_prompt(user_id, conv.id, user_auth_token)
         turn_time_context = self._agent_kernel_time_context(client_time_context)
+        multi_model_context = [
+            turn_time_context,
+            format_actionable_context_prompt(
+                self._agent_kernel_snapshot.actionable_references
+                if self._agent_kernel_snapshot is not None else ()
+            ),
+            format_goal_contract_prompt(
+                self._agent_kernel_snapshot.goal
+                if self._agent_kernel_snapshot is not None else None
+            ),
+        ]
+        multi_model_context_text = "\n\n".join(
+            part for part in multi_model_context if part
+        )
         message_with_time_context = (
-            f"[系统附注 — 本回合参考上下文,非用户输入]\n{turn_time_context}\n"
+            "[系统附注 — 本回合参考上下文,非用户输入]\n"
+            f"{multi_model_context_text}\n"
             f"[用户消息]\n{message}"
         )
         tools = get_health_tools()
@@ -6909,9 +8309,27 @@ class AgentExecutor:
                 {"role": "user", "content": message_with_time_context},
             ]
             lead_text = ""
+            pending_recoverable_write_rejections: dict[
+                str, tuple[str, str]
+            ] = {}
+            pending_recoverable_write_rejection_rounds: dict[str, int] = {}
+            pending_recoverable_write_rejection_scopes: dict[str, str] = {}
+            last_recoverable_write_rejection: Optional[str] = None
+            last_recoverable_write_rejection_code: Optional[str] = None
             deterministic_diet_correction_fallback_attempted = False
+            deterministic_simple_record_fallback_attempted = False
+            deterministic_goal_lookup_attempted = False
+            goal_verification_attempted = False
+            receipt_goal_evaluated = False
+            goal_verification_result: Any = None
+            goal_lookup_completed = False
+            goal_allowed_record_ids: set[str] = set()
+            lead_force_no_tools_synthesis = False
             for _round in range(MULTI_MODEL_MAX_LEAD_ROUNDS):
-                resp = await self._call_llm(lead_messages, tools)
+                resp = await self._call_llm(
+                    lead_messages,
+                    [] if lead_force_no_tools_synthesis else tools,
+                )
                 tool_calls = resp.get("tool_calls") if isinstance(resp, dict) else None
                 content = ((resp.get("content") if isinstance(resp, dict) else str(resp)) or "")
                 if not tool_calls:
@@ -6940,6 +8358,62 @@ class AgentExecutor:
                     content = _strip_text_tool_call(content)
                 if (
                     not tool_calls
+                    and not deterministic_simple_record_fallback_attempted
+                ):
+                    deterministic_simple_record_call = (
+                        _build_deterministic_simple_record_tool_call(
+                            (
+                                self._agent_kernel_snapshot.goal
+                                if self._agent_kernel_snapshot is not None else None
+                            ),
+                            write_receipts=write_receipts,
+                        )
+                    )
+                    if deterministic_simple_record_call:
+                        deterministic_simple_record_fallback_attempted = True
+                        tool_calls = [deterministic_simple_record_call]
+                        content = ""
+                        logger.info(
+                            "[agent_executor] deterministic simple record fallback "
+                            "user=%s record_type=%s",
+                            user_id,
+                            (
+                                self._agent_kernel_snapshot.goal.target_record_type
+                                if self._agent_kernel_snapshot is not None
+                                and self._agent_kernel_snapshot.goal is not None
+                                else "unknown"
+                            ),
+                        )
+                if (
+                    not tool_calls
+                    and not deterministic_goal_lookup_attempted
+                ):
+                    deterministic_goal_call = _build_deterministic_goal_lookup_tool_call(
+                        (
+                            self._agent_kernel_snapshot.goal
+                            if self._agent_kernel_snapshot is not None else None
+                        ),
+                        write_receipts=write_receipts,
+                    )
+                    if deterministic_goal_call:
+                        deterministic_goal_lookup_attempted = True
+                        tool_calls = [deterministic_goal_call]
+                        content = ""
+                if not tool_calls:
+                    verification_call = _build_goal_verification_tool_call(
+                        (
+                            self._agent_kernel_snapshot.goal
+                            if self._agent_kernel_snapshot is not None else None
+                        ),
+                        write_receipts=write_receipts,
+                        already_attempted=goal_verification_attempted,
+                    )
+                    if verification_call:
+                        goal_verification_attempted = True
+                        tool_calls = [verification_call]
+                        content = ""
+                if (
+                    not tool_calls
                     and not deterministic_diet_correction_fallback_attempted
                 ):
                     deterministic_diet_call = (
@@ -6959,7 +8433,89 @@ class AgentExecutor:
                             user_id,
                             len(message or ""),
                         )
+                if (
+                    not tool_calls
+                    and goal_verification_attempted
+                    and goal_verification_result is not None
+                ):
+                    postcondition = verify_goal_postconditions(
+                        (
+                            self._agent_kernel_snapshot.goal
+                            if self._agent_kernel_snapshot is not None else None
+                        ),
+                        write_receipts=write_receipts,
+                        verification_result=goal_verification_result,
+                    )
+                    if self._agent_kernel_event_bus is not None:
+                        self._agent_kernel_event_bus.goal_evaluated(
+                            satisfied=postcondition.satisfied,
+                            verified_target_count=len(
+                                postcondition.verified_resource_ids
+                            ),
+                            reason=postcondition.reason,
+                        )
+                    if not postcondition.satisfied:
+                        content = (
+                            "更新操作已执行，但读回核验未覆盖全部目标餐次，"
+                            "因此本轮不能确认已经全部完成。请重试，系统会继续核对现有记录。"
+                        )
+                goal = (
+                    self._agent_kernel_snapshot.goal
+                    if self._agent_kernel_snapshot is not None else None
+                )
+                if (
+                    not tool_calls
+                    and not receipt_goal_evaluated
+                    and deterministic_simple_record_fallback_attempted
+                    and goal is not None
+                    and goal.kind == "simple_health_record"
+                ):
+                    receipt_goal_evaluated = True
+                    postcondition = verify_goal_postconditions(
+                        goal,
+                        write_receipts=write_receipts,
+                        verification_result=None,
+                    )
+                    if self._agent_kernel_event_bus is not None:
+                        self._agent_kernel_event_bus.goal_evaluated(
+                            satisfied=postcondition.satisfied,
+                            verified_target_count=len(
+                                postcondition.verified_resource_ids
+                            ),
+                            reason=postcondition.reason,
+                        )
+                    terminal_completed = postcondition.satisfied
+                    if postcondition.satisfied:
+                        terminal_text = _simple_record_goal_completion_text(goal)
+                    elif last_recoverable_write_rejection:
+                        rejection_is_terminal = bool(
+                            last_recoverable_write_rejection_code
+                            == "diet_nutrition_incomplete"
+                            or _claims_unverified_write_success(content)
+                            or not content.strip()
+                        )
+                        if rejection_is_terminal:
+                            terminal_text = _write_rejection_with_receipt_context(
+                                last_recoverable_write_rejection,
+                                write_receipts,
+                            )
+                        else:
+                            terminal_text = _write_rejection_with_receipt_context(
+                                content,
+                                write_receipts,
+                            )
+                            terminal_completed = True
+                    else:
+                        terminal_text = (
+                            "记录请求已执行，但没有取得与目标类型一致的可验证回执，"
+                            "因此本轮不能确认已经完成。请重试。"
+                        )
+                    raise _SimpleRecordTerminal(
+                        terminal_text,
+                        satisfied=terminal_completed,
+                    )
                 if tool_calls:
+                    proposed_tool_calls = list(tool_calls)
                     tool_calls = self._normalize_query_only_health_manage_tool_calls(
                         tool_calls,
                     )
@@ -6971,6 +8527,45 @@ class AgentExecutor:
                         tool_calls,
                         user_auth_token,
                     )
+                    tool_calls = _normalize_goal_guarded_tool_calls(
+                        tool_calls,
+                        (
+                            self._agent_kernel_snapshot.goal
+                            if self._agent_kernel_snapshot is not None else None
+                        ),
+                        lookup_completed=goal_lookup_completed,
+                        allowed_record_ids=goal_allowed_record_ids,
+                    )
+                    rejected_goal_writes = _goal_guard_rejected_writes(
+                        proposed_tool_calls,
+                        tool_calls,
+                    )
+                    for rejected_tool_name, rejected_args in rejected_goal_writes:
+                        self._persist_turn_write_state(
+                            user_msg,
+                            status="rejected",
+                            tool_name=rejected_tool_name,
+                            parsed_args=rejected_args,
+                        )
+                    if proposed_tool_calls and not tool_calls:
+                        logger.warning(
+                            "[agent_executor] all multi-model lead tool calls were "
+                            "blocked by the goal contract; recovering with a "
+                            "text-only lead answer user=%s rejected_writes=%s",
+                            user_id,
+                            len(rejected_goal_writes),
+                        )
+                        if content.strip():
+                            lead_messages.append({
+                                "role": "assistant",
+                                "content": content,
+                            })
+                        lead_messages.append({
+                            "role": "user",
+                            "content": _GOAL_GUARD_RECOVERY_PROMPT,
+                        })
+                        lead_force_no_tools_synthesis = True
+                        continue
                     self._prepare_medication_tool_plan(tool_calls)
                     planned_writes: List[tuple[str, Dict[str, Any]]] = []
                     for tc in tool_calls:
@@ -7006,6 +8601,18 @@ class AgentExecutor:
                             _write_operation_fingerprint(fn, parsed_args)
                             if write_attempted else None
                         )
+                        recoverable_write_key = (
+                            _recoverable_write_operation_key(
+                                fn,
+                                parsed_args,
+                                default_record_date=(
+                                    self._agent_kernel_reference_now()
+                                    .date()
+                                    .isoformat()
+                                ),
+                            )
+                            if write_attempted else None
+                        )
                         replayed_write = bool(
                             write_fingerprint
                             and write_fingerprint in write_results_by_fingerprint
@@ -7024,16 +8631,45 @@ class AgentExecutor:
                                     result = _hb_val
                             if write_fingerprint:
                                 write_results_by_fingerprint[write_fingerprint] = result
+                        if (
+                            fn == "health_manage"
+                            and parsed_args.get("record_type") == "diet"
+                            and parsed_args.get("operation") == "list"
+                            and not str(result or "").startswith("Error")
+                        ):
+                            goal_lookup_completed = True
+                            goal_allowed_record_ids = _goal_target_record_ids(
+                                (
+                                    self._agent_kernel_snapshot.goal
+                                    if self._agent_kernel_snapshot is not None else None
+                                ),
+                                result,
+                            )
+                            if str(tc.get("id") or "").startswith("goal-verify-"):
+                                goal_verification_result = result
+                        tool_content = _model_tool_result_content(
+                            fn,
+                            parsed_args,
+                            result,
+                            reference_now=self._agent_kernel_reference_now(),
+                            timezone_label=self._ensure_agent_kernel_turn().context.timezone,
+                        )
+                        if (
+                            fn == "health_manage"
+                            and parsed_args.get("record_type") == "diet"
+                            and parsed_args.get("operation") == "list"
+                        ):
+                            tool_content += _goal_lookup_resolution_prompt(
+                                (
+                                    self._agent_kernel_snapshot.goal
+                                    if self._agent_kernel_snapshot is not None else None
+                                ),
+                                result,
+                            )
                         lead_messages.append({
                             "role": "tool",
                             "tool_call_id": tc["id"],
-                            "content": _model_tool_result_content(
-                                fn,
-                                parsed_args,
-                                result,
-                                reference_now=self._agent_kernel_reference_now(),
-                                timezone_label=self._ensure_agent_kernel_turn().context.timezone,
-                            ),
+                            "content": tool_content,
                         })
                         lbl = _TOOL_TO_SOURCE_LABEL.get(fn)
                         if lbl and lbl not in sources_used:
@@ -7079,7 +8715,64 @@ class AgentExecutor:
                                     parsed_args=parsed_args,
                                     receipt=receipt,
                                 )
-                        yield {"event": "tool_result", "data": tool_event_data}
+                        transient_local_rejection = bool(
+                            write_attempted
+                            and _write_result_is_pre_dispatch_validation_error(result)
+                        )
+                        if transient_local_rejection:
+                            assert recoverable_write_key is not None
+                            pending_recoverable_write_rejections.pop(
+                                recoverable_write_key,
+                                None,
+                            )
+                            pending_recoverable_write_rejections[
+                                recoverable_write_key
+                            ] = (
+                                _pre_dispatch_validation_user_message(result),
+                                classify_write_execution(result).error_code,
+                            )
+                            pending_recoverable_write_rejection_rounds[
+                                recoverable_write_key
+                            ] = _round
+                            pending_recoverable_write_rejection_scopes[
+                                recoverable_write_key
+                            ] = _recoverable_write_scope_key(
+                                fn,
+                                parsed_args,
+                            )
+                        elif write_attempted and write_completed:
+                            assert recoverable_write_key is not None
+                            recoverable_scope_key = (
+                                _recoverable_write_scope_key(fn, parsed_args)
+                            )
+                            _clear_repaired_write_rejections(
+                                pending_recoverable_write_rejections,
+                                pending_recoverable_write_rejection_rounds,
+                                pending_recoverable_write_rejection_scopes,
+                                operation_key=recoverable_write_key,
+                                scope_key=recoverable_scope_key,
+                                current_round=_round,
+                                allow_scope_repair=(
+                                    _goal_binds_recoverable_write(
+                                        (
+                                            self._agent_kernel_snapshot.goal
+                                            if self._agent_kernel_snapshot
+                                            is not None
+                                            else None
+                                        ),
+                                        fn,
+                                        parsed_args,
+                                    )
+                                ),
+                            )
+                        (
+                            last_recoverable_write_rejection,
+                            last_recoverable_write_rejection_code,
+                        ) = _summarize_recoverable_write_rejections(
+                            pending_recoverable_write_rejections
+                        )
+                        if not transient_local_rejection:
+                            yield {"event": "tool_result", "data": tool_event_data}
                         if (
                             write_attempted
                             and checkpoint_status == "uncertain"
@@ -7092,6 +8785,29 @@ class AgentExecutor:
                 content = _strip_xml_tool_markers(content)
                 lead_text = content
                 break
+
+            if last_recoverable_write_rejection:
+                rejection_is_terminal = bool(
+                    last_recoverable_write_rejection_code
+                    == "diet_nutrition_incomplete"
+                    or _claims_unverified_write_success(lead_text)
+                    or not lead_text.strip()
+                )
+                terminal_text = (
+                    _write_rejection_with_receipt_context(
+                        last_recoverable_write_rejection,
+                        write_receipts,
+                    )
+                    if rejection_is_terminal
+                    else _write_rejection_with_receipt_context(
+                        lead_text,
+                        write_receipts,
+                    )
+                )
+                raise _SimpleRecordTerminal(
+                    terminal_text,
+                    satisfied=not rejection_is_terminal,
+                )
 
             data_ctx = _gathered_data_context(lead_messages)
 
@@ -7151,6 +8867,14 @@ class AgentExecutor:
             for i in range(0, len(final_text), 24):
                 yield {"event": "token", "data": {"content": final_text[i:i + 24]}}
             full_reply = final_text
+        except _SimpleRecordTerminal as terminal:
+            completion_status = "complete" if terminal.satisfied else "error"
+            full_reply = terminal.message
+            for i in range(0, len(full_reply), 24):
+                yield {
+                    "event": "token",
+                    "data": {"content": full_reply[i:i + 24]},
+                }
         except _UnverifiedWriteResult:
             completion_status = "error"
             full_reply = _UNVERIFIED_WRITE_USER_MESSAGE
@@ -7253,6 +8977,7 @@ class AgentExecutor:
         run_id: Optional[str] = None,
         attempt_id: Optional[str] = None,
         runtime_managed: bool = False,
+        runtime_write_block_reason: Optional[str] = None,
     ) -> AsyncGenerator[Dict, None]:
         """Run one durable client turn, taking over an ACKed turn after worker loss.
 
@@ -7263,6 +8988,7 @@ class AgentExecutor:
         self._runtime_run_id = run_id
         self._runtime_attempt_id = attempt_id
         self._runtime_managed = bool(runtime_managed)
+        self._runtime_write_block_reason = runtime_write_block_reason
         yield self._progress_event("accepted")
         self._current_user_id = user_id
         self._current_turn_user_message = message or ""
@@ -7274,20 +9000,6 @@ class AgentExecutor:
         self._turn_medication_tool_preflight_error = None
         self._turn_medication_tool_confirmation_card = None
         self._multi_model_turn = False
-        self._start_agent_kernel_turn(
-            user_id=user_id,
-            message=message,
-            channel=channel,
-            client_caps=client_caps,
-            client_time_context=client_time_context,
-            media=_kernel_media_metadata(
-                images,
-                has_file=bool(file_base64),
-                file_name=file_name,
-            ),
-            client_turn_id=client_turn_id,
-            run_id=run_id,
-        )
         kernel_completion_status = "interrupted"
         recovered_user_message = None
         claimed_turn = False
@@ -7388,6 +9100,79 @@ class AgentExecutor:
                 raise
 
         try:
+            retry_recovery: RetryableTurnRecovery | None = None
+            if recovered_user_message is not None:
+                retry_recovery = restore_retryable_turn_recovery(
+                    self.db,
+                    user_id=user_id,
+                    user_message=recovered_user_message,
+                )
+            elif not images and not file_base64:
+                retry_recovery = resolve_retryable_turn_recovery(
+                    self.db,
+                    user_id=user_id,
+                    conversation_id=conversation_id,
+                    confirmation_text=message,
+                )
+
+            display_message = message or ""
+            effective_message = display_message
+            effective_images = images
+            persist_images = images
+            if retry_recovery is not None:
+                effective_message = retry_recovery.message
+                persist_images = []
+                try:
+                    effective_images = materialize_retryable_turn_images(
+                        retry_recovery,
+                        user_id=user_id,
+                    )
+                except (OSError, ValueError):
+                    self._start_agent_kernel_turn(
+                        user_id=user_id,
+                        message=effective_message,
+                        channel=channel,
+                        client_caps=client_caps,
+                        client_time_context=client_time_context,
+                        media=(),
+                        client_turn_id=client_turn_id,
+                        run_id=run_id,
+                    )
+                    kernel_completion_status = "error"
+                    notice = "原请求中的图片暂时无法读取，请重新选择图片后发送。"
+                    yield {"event": "token", "data": {"content": notice}}
+                    yield self._attach_runtime_identity({
+                        "event": "done",
+                        "data": {
+                            "conversation_id": conversation_id,
+                            "message_id": None,
+                            "completion_status": "error",
+                            "client_turn_id": client_turn_id,
+                            "request_persisted": False,
+                            "recovery_error": "retry_source_image_unavailable",
+                        },
+                    })
+                    return
+
+            self._current_turn_user_message = effective_message
+            self._current_turn_has_attachment = bool(
+                effective_images or file_base64
+            )
+            self._start_agent_kernel_turn(
+                user_id=user_id,
+                message=effective_message,
+                channel=channel,
+                client_caps=client_caps,
+                client_time_context=client_time_context,
+                media=_kernel_media_metadata(
+                    effective_images,
+                    has_file=bool(file_base64),
+                    file_name=file_name,
+                ),
+                client_turn_id=client_turn_id,
+                run_id=run_id,
+            )
+
             if recovered_user_message is not None:
                 recovered_meta = dict(recovered_user_message.meta or {})
                 recovered_write_state = dict(recovered_meta.get("write_state") or {})
@@ -7433,10 +9218,10 @@ class AgentExecutor:
                     return
             async for event in self._run_stream_impl(
                 user_id=user_id,
-                message=message,
+                message=effective_message,
                 conversation_id=conversation_id,
                 user_auth_token=user_auth_token,
-                images=images,
+                images=effective_images,
                 file_base64=file_base64,
                 file_name=file_name,
                 extra_context=extra_context,
@@ -7446,6 +9231,9 @@ class AgentExecutor:
                 client_caps=client_caps,
                 client_time_context=client_time_context,
                 read_only_tools=read_only_tools,
+                display_message=display_message,
+                persist_images=persist_images,
+                retry_recovery=retry_recovery,
             ):
                 if event.get("event") == "done":
                     kernel_completion_status = str(
@@ -7473,6 +9261,9 @@ class AgentExecutor:
         client_caps: Optional[List[str]] = None,
         client_time_context: Optional[Dict[str, Any]] = None,
         read_only_tools: bool = False,
+        display_message: Optional[str] = None,
+        persist_images: Optional[List[dict]] = None,
+        retry_recovery: RetryableTurnRecovery | None = None,
     ) -> AsyncGenerator[Dict, None]:
         """运行 Agent 循环，SSE 流式输出"""
         from app.services.llm.usage_tracker import set_caller
@@ -7484,6 +9275,7 @@ class AgentExecutor:
         self._current_turn_user_message = message or ""
         self._turn_contextual_diet_receipts = []
         self._turn_contextual_diet_cards = []
+        self._turn_attachment_write_receipts = []
         self._turn_contextual_diet_record_id = None
         self._turn_contextual_diet_consumed_fraction = None
         self._ensure_agent_kernel_turn(channel=channel)
@@ -7675,12 +9467,21 @@ class AgentExecutor:
             ),
             title=message,
         )
+        stored_message = (
+            display_message if display_message is not None else message
+        )
+        stored_images = images if persist_images is None else persist_images
+        turn_user_meta: Dict[str, Any] = {}
+        if client_turn_id:
+            turn_user_meta["client_turn_id"] = client_turn_id
+        if retry_recovery is not None:
+            turn_user_meta["retry_source"] = retry_recovery.user_message_meta()
 
         # 先 claim 用户消息，再落图片。这样 DB claim 失败时不会产生孤儿文件；
         # worker 在 ACK 前退出时，新 worker 也能沿同一 turn 继续补齐图片。
-        user_content = message
-        if images:
-            user_content += f"\n[附图: {len(images)}张]"
+        user_content = stored_message
+        if stored_images:
+            user_content += f"\n[附图: {len(stored_images)}张]"
         if file_base64 and file_name:
             user_content += f"\n[附件: {file_name}]"
 
@@ -7694,7 +9495,7 @@ class AgentExecutor:
                 user_content,
                 client_turn_id=client_turn_id,
                 image_url=None,
-                meta={"client_turn_id": client_turn_id} if client_turn_id else None,
+                meta=turn_user_meta or None,
             )
 
         saved_image_urls: List[str] = []
@@ -7712,9 +9513,12 @@ class AgentExecutor:
                     saved_image_urls = [user_msg.image_url]
 
         new_image_urls: List[str] = []
-        if images:
+        if stored_images:
             try:
-                for index, img in enumerate(images[len(saved_image_urls):], start=len(saved_image_urls)):
+                for index, img in enumerate(
+                    stored_images[len(saved_image_urls):],
+                    start=len(saved_image_urls),
+                ):
                     object_key = None
                     if client_turn_id:
                         object_key = hashlib.sha256(
@@ -7755,8 +9559,7 @@ class AgentExecutor:
                     content=user_content,
                     image_url=image_url_value or user_msg.image_url,
                     meta=(
-                        {"client_turn_id": client_turn_id}
-                        if client_turn_id else None
+                        turn_user_meta or None
                     ),
                 )
                 if updated_user_msg is None:
@@ -7766,7 +9569,7 @@ class AgentExecutor:
                 user_msg.content = user_content
                 user_msg.meta = {
                     **(user_msg.meta or {}),
-                    **({"client_turn_id": client_turn_id} if client_turn_id else {}),
+                    **turn_user_meta,
                 }
                 self.db.commit()
                 self.db.refresh(user_msg)
@@ -7800,9 +9603,29 @@ class AgentExecutor:
         }}
 
         self._current_turn_source_message_id = int(user_msg.id)
+        self._current_turn_media_source_message_id = (
+            int(retry_recovery.source_message_id)
+            if retry_recovery is not None
+            else int(user_msg.id)
+        )
         self._current_turn_conversation_id = int(conv.id)
-        self._current_turn_image_urls = list(saved_image_urls)
+        self._current_turn_image_urls = (
+            list(retry_recovery.image_urls)
+            if retry_recovery is not None
+            else list(saved_image_urls)
+        )
         self._bind_agent_kernel_source_message(user_msg.id)
+        try:
+            self._bind_agent_kernel_actionable_references(
+                svc.build_actionable_references(conv.id)
+            )
+        except Exception as exc:  # noqa: BLE001 - context loss must not abort the turn
+            logger.warning(
+                "[agent_executor] actionable context projection failed "
+                "conversation=%s error=%s",
+                conv.id,
+                exc,
+            )
 
         # Multi-medication intake is a server-owned two-turn transaction:
         # source-bound proposal now, strict immediate confirmation next turn.
@@ -7896,6 +9719,19 @@ class AgentExecutor:
         # 字节稳定,turn 内容落在增长尾部,天然不破坏前缀匹配。块文本逐字保留。
         turn_context_parts: List[str] = []
         turn_context_parts.append(self._agent_kernel_time_context(client_time_context))
+        actionable_context = format_actionable_context_prompt(
+            (self._agent_kernel_snapshot.actionable_references or ())
+            if self._agent_kernel_snapshot is not None
+            else ()
+        )
+        if actionable_context:
+            turn_context_parts.append(actionable_context)
+        goal_contract = format_goal_contract_prompt(
+            self._agent_kernel_snapshot.goal
+            if self._agent_kernel_snapshot is not None else None
+        )
+        if goal_contract:
+            turn_context_parts.append(goal_contract)
         if opener_quick_reply_note:
             turn_context_parts.append(
                 "## 入口动作处理结果\n"
@@ -7987,6 +9823,11 @@ class AgentExecutor:
         self._current_turn_recent_messages = [
             dict(item) for item in recent_messages[-6:] if isinstance(item, dict)
         ]
+        if retry_recovery is not None:
+            for history_message in reversed(messages):
+                if history_message.get("role") == "user":
+                    history_message["content"] = message
+                    break
         # 确定性护栏 (R4): 历史里助手消息带过 ```reva-ui``` 图表 block —— 若原样喂回
         # LLM, 它会**模仿**这个格式并**编造**图表数据 (实测: 编 "Apple Watch + Garmin +
         # RingConn 多源合并")。把历史助手消息里的 block 换成占位符, LLM 无从模仿。
@@ -8001,15 +9842,24 @@ class AgentExecutor:
         # Mobile 的默认纯图片提示必须先走结构化识别，避免 provider 选择
         # 绕过饮食清洗、校准与写入边界。
         _t_stage = time.time()
+        vision_description = None
         if images:
             should_preprocess_images = self._should_preprocess_attached_images(user_id, message)
-            vision_description = None
             if should_preprocess_images:
                 # 真实思考过程: 图片/视觉预处理 (4–20s 的 vision_ms 块) 即将开始。
                 # 仅在会真的跑独立 vision 预处理时发 (原图直传多模态模型时无此阶段)。
                 yield self._status_event("vision", detail=None)
                 if _looks_like_medical_report_image_context(message):
-                    vision_description = await self._try_import_medical_report_images(user_id, images)
+                    snapshot = self._ensure_agent_kernel_turn()
+                    persist_medical_report = bool(
+                        snapshot.intent.primary in {"write", "mutate"}
+                        and snapshot.intent.is_write
+                    )
+                    vision_description = await self._try_import_medical_report_images(
+                        user_id,
+                        images,
+                        persist=persist_medical_report,
+                    )
                 if not vision_description:
                     vision_description = await self._analyze_image_with_vision(message, images)
 
@@ -8023,6 +9873,13 @@ class AgentExecutor:
             else:
                 _attach_images_to_last_user_message(messages, message, images)
         pre_stages["vision_ms"] = _pre_stage(_t_stage) if images else 0
+        if self._turn_attachment_write_receipts:
+            turn_context_parts.append(
+                "## 附件写入结果\n"
+                "本回合的医疗报告图片已保存并取得持久化回执；OCR 文字仍待用户核对。"
+                "不要再次调用 upload_medical_exam_text 写入同一份报告；"
+                "用户要求分析时，请基于图片识别结果直接回答。"
+            )
 
         # ── fast-routed 工具决策轮的 lite 消息栈 (2026-07-12 token 优化: 首个工具决策轮
         # 已 fast-route 到 qwen3.6-flash, 但仍背 ~14k-token 全量栈 → flash 白付 6-8s prefill)。
@@ -8091,6 +9948,14 @@ class AgentExecutor:
             tools = get_health_tools(subset=list(turn_tool_names))
         else:
             tools = get_health_tools()
+        if self._turn_attachment_write_receipts:
+            blocked_attachment_write_tools = {"upload_medical_exam_text"}
+            tools = [
+                tool
+                for tool in tools
+                if (tool.get("function") or {}).get("name")
+                not in blocked_attachment_write_tools
+            ]
         # 任一子集(fast big-3 或 analysis 只读)激活 → 走同一 withheld-upgrade 护栏。
         tool_subset_active = turn_tool_names is not None
 
@@ -8139,15 +10004,32 @@ class AgentExecutor:
         tool_executed_count = 0
         deterministic_symptom_fallback_attempted = False
         deterministic_diet_correction_fallback_attempted = False
+        deterministic_simple_record_fallback_attempted = False
+        deterministic_goal_lookup_attempted = False
+        goal_verification_attempted = False
+        receipt_goal_evaluated = False
+        goal_verification_result: Any = None
+        goal_lookup_completed = False
+        goal_allowed_record_ids: set[str] = set()
         # 本轮 agent 实际调用过的工具/Skill 名, 去重、按首次调用顺序。供 mac/mobile
         # 展示"调用了哪些 Skills"。与 sources_used (引用了哪些数据源) 独立。
         tools_used: List[str] = []
         write_receipts: List[Dict[str, Any]] = []
         write_receipts.extend(self._turn_contextual_diet_receipts)
+        write_receipts.extend(self._turn_attachment_write_receipts)
+        if self._turn_attachment_write_receipts:
+            tools_used.append("medical_report_ocr")
         write_results_by_fingerprint: Dict[str, tuple[str, str]] = {}
         # 只读工具回合级去重(同名+同参已跑过 → 复用结果, 不重复真执行)。回合级 local, 自然重置。
         read_results_by_fingerprint: Dict[str, tuple[str, str]] = {}
         unverified_write_operations: Dict[str, str] = {}
+        pending_recoverable_write_rejections: dict[
+            str, tuple[str, str]
+        ] = {}
+        pending_recoverable_write_rejection_rounds: dict[str, int] = {}
+        pending_recoverable_write_rejection_scopes: dict[str, str] = {}
+        last_recoverable_write_rejection: Optional[str] = None
+        last_recoverable_write_rejection_code: Optional[str] = None
         # Slice 3 配方候选: 本轮**成功完成**的 health_record 写步骤 (sanitize 掉
         # 一次性确认标志 + 日期模板化)。≥2 步时 done 附 save_recipe 描述符
         # (仅描述符, 移动端渲染"存为配方"入口; 存不存由用户点)。
@@ -8523,6 +10405,81 @@ class AgentExecutor:
                 if (
                     isinstance(response, dict)
                     and not response.get("tool_calls")
+                    and not deterministic_simple_record_fallback_attempted
+                ):
+                    deterministic_simple_record_call = (
+                        _build_deterministic_simple_record_tool_call(
+                            (
+                                self._agent_kernel_snapshot.goal
+                                if self._agent_kernel_snapshot is not None else None
+                            ),
+                            write_receipts=write_receipts,
+                            has_attachment=bool(images or file_base64),
+                        )
+                    )
+                    if deterministic_simple_record_call:
+                        deterministic_simple_record_fallback_attempted = True
+                        response = {
+                            **response,
+                            "content": "",
+                            "finish_reason": "tool_calls",
+                            "tool_calls": [deterministic_simple_record_call],
+                        }
+                        logger.info(
+                            "[agent_executor] deterministic simple record fallback "
+                            "user=%s record_type=%s",
+                            user_id,
+                            (
+                                self._agent_kernel_snapshot.goal.target_record_type
+                                if self._agent_kernel_snapshot is not None
+                                and self._agent_kernel_snapshot.goal is not None
+                                else "unknown"
+                            ),
+                        )
+
+                if (
+                    isinstance(response, dict)
+                    and not response.get("tool_calls")
+                    and not deterministic_goal_lookup_attempted
+                ):
+                    deterministic_goal_call = _build_deterministic_goal_lookup_tool_call(
+                        (
+                            self._agent_kernel_snapshot.goal
+                            if self._agent_kernel_snapshot is not None else None
+                        ),
+                        write_receipts=write_receipts,
+                        has_attachment=bool(images or file_base64),
+                    )
+                    if deterministic_goal_call:
+                        deterministic_goal_lookup_attempted = True
+                        response = {
+                            **response,
+                            "content": "",
+                            "finish_reason": "tool_calls",
+                            "tool_calls": [deterministic_goal_call],
+                        }
+
+                if isinstance(response, dict) and not response.get("tool_calls"):
+                    verification_call = _build_goal_verification_tool_call(
+                        (
+                            self._agent_kernel_snapshot.goal
+                            if self._agent_kernel_snapshot is not None else None
+                        ),
+                        write_receipts=write_receipts,
+                        already_attempted=goal_verification_attempted,
+                    )
+                    if verification_call:
+                        goal_verification_attempted = True
+                        response = {
+                            **response,
+                            "content": "",
+                            "finish_reason": "tool_calls",
+                            "tool_calls": [verification_call],
+                        }
+
+                if (
+                    isinstance(response, dict)
+                    and not response.get("tool_calls")
                     and not deterministic_diet_correction_fallback_attempted
                 ):
                     deterministic_diet_call = (
@@ -8547,6 +10504,72 @@ class AgentExecutor:
                             user_id,
                             len(message or ""),
                         )
+
+                if (
+                    isinstance(response, dict)
+                    and not response.get("tool_calls")
+                    and goal_verification_attempted
+                    and goal_verification_result is not None
+                ):
+                    postcondition = verify_goal_postconditions(
+                        (
+                            self._agent_kernel_snapshot.goal
+                            if self._agent_kernel_snapshot is not None else None
+                        ),
+                        write_receipts=write_receipts,
+                        verification_result=goal_verification_result,
+                    )
+                    if self._agent_kernel_event_bus is not None:
+                        self._agent_kernel_event_bus.goal_evaluated(
+                            satisfied=postcondition.satisfied,
+                            verified_target_count=len(
+                                postcondition.verified_resource_ids
+                            ),
+                            reason=postcondition.reason,
+                        )
+                    if not postcondition.satisfied:
+                        response = {
+                            **response,
+                            "content": (
+                                "更新操作已执行，但读回核验未覆盖全部目标餐次，"
+                                "因此本轮不能确认已经全部完成。请重试，系统会继续核对现有记录。"
+                            ),
+                        }
+
+                goal = (
+                    self._agent_kernel_snapshot.goal
+                    if self._agent_kernel_snapshot is not None else None
+                )
+                if (
+                    isinstance(response, dict)
+                    and not response.get("tool_calls")
+                    and not receipt_goal_evaluated
+                    and goal is not None
+                    and goal.kind == "simple_health_record"
+                    and write_receipts
+                ):
+                    receipt_goal_evaluated = True
+                    postcondition = verify_goal_postconditions(
+                        goal,
+                        write_receipts=write_receipts,
+                        verification_result=None,
+                    )
+                    if self._agent_kernel_event_bus is not None:
+                        self._agent_kernel_event_bus.goal_evaluated(
+                            satisfied=postcondition.satisfied,
+                            verified_target_count=len(
+                                postcondition.verified_resource_ids
+                            ),
+                            reason=postcondition.reason,
+                        )
+                    if not postcondition.satisfied:
+                        response = {
+                            **response,
+                            "content": (
+                                "记录请求已执行，但没有取得与目标类型一致的可验证回执，"
+                                "因此本轮不能确认已经完成。请重试。"
+                            ),
+                        }
 
                 if (
                     isinstance(response, dict)
@@ -8607,6 +10630,7 @@ class AgentExecutor:
                 if isinstance(response, dict) and response.get("tool_calls"):
                     self._record_tool_model_name(self._last_provider_model_name or model_name)
                     tool_calls = response["tool_calls"]
+                    proposed_tool_calls = list(tool_calls)
                     text_content = response.get("content") or ""
 
                     # 工具子集守卫(token 优化 #2 fast + R5 analysis):模型想调的工具不在
@@ -8634,6 +10658,13 @@ class AgentExecutor:
                                 _withheld,
                             )
                             tools = get_health_tools()
+                            if self._turn_attachment_write_receipts:
+                                tools = [
+                                    tool
+                                    for tool in tools
+                                    if (tool.get("function") or {}).get("name")
+                                    != "upload_medical_exam_text"
+                                ]
                             tool_subset_active = False
                             self._record_model_fallback_reason("tool_subset_upgraded_full_tools")
                             continue
@@ -8649,6 +10680,51 @@ class AgentExecutor:
                         tool_calls,
                         user_auth_token,
                     )
+                    tool_calls = _normalize_goal_guarded_tool_calls(
+                        tool_calls,
+                        (
+                            self._agent_kernel_snapshot.goal
+                            if self._agent_kernel_snapshot is not None else None
+                        ),
+                        lookup_completed=goal_lookup_completed,
+                        allowed_record_ids=goal_allowed_record_ids,
+                    )
+                    rejected_goal_writes = _goal_guard_rejected_writes(
+                        proposed_tool_calls,
+                        tool_calls,
+                    )
+                    for rejected_tool_name, rejected_args in rejected_goal_writes:
+                        self._persist_turn_write_state(
+                            user_msg,
+                            status="rejected",
+                            tool_name=rejected_tool_name,
+                            parsed_args=rejected_args,
+                        )
+                    if proposed_tool_calls and not tool_calls:
+                        logger.warning(
+                            "[agent_executor] all model tool calls were blocked by "
+                            "the goal contract; recovering with a text-only answer "
+                            "user=%s rejected_writes=%s",
+                            user_id,
+                            len(rejected_goal_writes),
+                        )
+                        if text_content.strip():
+                            messages.append({
+                                "role": "assistant",
+                                "content": text_content,
+                            })
+                        messages.append({
+                            "role": "user",
+                            "content": _GOAL_GUARD_RECOVERY_PROMPT,
+                        })
+                        rounds.append({
+                            "llm_gen_ms": _round_llm_gen_ms,
+                            "tool_exec_ms": 0,
+                            "tools": [],
+                        })
+                        self._force_no_tools_synthesis = True
+                        keep_tools_after_synthesis_miss = False
+                        continue
 
                     self._prepare_medication_tool_plan(tool_calls)
 
@@ -8750,6 +10826,18 @@ class AgentExecutor:
                                 parsed_tool_args,
                                 default_record_date=(
                                     self._agent_kernel_reference_now().strftime("%Y-%m-%d")
+                                ),
+                            )
+                            if write_attempted else None
+                        )
+                        recoverable_write_key = (
+                            _recoverable_write_operation_key(
+                                func_name,
+                                parsed_tool_args,
+                                default_record_date=(
+                                    self._agent_kernel_reference_now()
+                                    .date()
+                                    .isoformat()
                                 ),
                             )
                             if write_attempted else None
@@ -8916,18 +11004,47 @@ class AgentExecutor:
                                 result,
                                 result_for_record_card,
                             )
+                        if (
+                            func_name == "health_manage"
+                            and parsed_tool_args.get("record_type") == "diet"
+                            and parsed_tool_args.get("operation") == "list"
+                            and not str(result or "").startswith("Error")
+                        ):
+                            goal_lookup_completed = True
+                            goal_allowed_record_ids = _goal_target_record_ids(
+                                (
+                                    self._agent_kernel_snapshot.goal
+                                    if self._agent_kernel_snapshot is not None else None
+                                ),
+                                result,
+                            )
+                            if str(tc.get("id") or "").startswith("goal-verify-"):
+                                goal_verification_result = result
 
                         # 追加 tool_result 到 messages
+                        tool_content = _model_tool_result_content(
+                            func_name,
+                            parsed_tool_args,
+                            result,
+                            reference_now=self._agent_kernel_reference_now(),
+                            timezone_label=self._ensure_agent_kernel_turn().context.timezone,
+                        )
+                        if (
+                            func_name == "health_manage"
+                            and parsed_tool_args.get("record_type") == "diet"
+                            and parsed_tool_args.get("operation") == "list"
+                        ):
+                            tool_content += _goal_lookup_resolution_prompt(
+                                (
+                                    self._agent_kernel_snapshot.goal
+                                    if self._agent_kernel_snapshot is not None else None
+                                ),
+                                result,
+                            )
                         messages.append({
                             "role": "tool",
                             "tool_call_id": tool_id,
-                            "content": _model_tool_result_content(
-                                func_name,
-                                parsed_tool_args,
-                                result,
-                                reference_now=self._agent_kernel_reference_now(),
-                                timezone_label=self._ensure_agent_kernel_turn().context.timezone,
-                            ),
+                            "content": tool_content,
                         })
 
                         # GenUI metric_table (rank1): 记下只读数据查询工具的
@@ -9008,6 +11125,71 @@ class AgentExecutor:
                                         )
                         record_card = None
                         quality_cards: list[dict] = []
+                        transient_local_rejection = bool(
+                            write_attempted
+                            and _write_result_is_pre_dispatch_validation_error(
+                                result_for_record_card
+                            )
+                        )
+                        if transient_local_rejection:
+                            assert recoverable_write_key is not None
+                            pending_recoverable_write_rejections.pop(
+                                recoverable_write_key,
+                                None,
+                            )
+                            pending_recoverable_write_rejections[
+                                recoverable_write_key
+                            ] = (
+                                _pre_dispatch_validation_user_message(
+                                    result_for_record_card
+                                ),
+                                classify_write_execution(
+                                    result_for_record_card
+                                ).error_code,
+                            )
+                            pending_recoverable_write_rejection_rounds[
+                                recoverable_write_key
+                            ] = round_idx
+                            pending_recoverable_write_rejection_scopes[
+                                recoverable_write_key
+                            ] = _recoverable_write_scope_key(
+                                func_name,
+                                parsed_tool_args,
+                            )
+                        elif write_attempted and write_completed:
+                            assert recoverable_write_key is not None
+                            recoverable_scope_key = (
+                                _recoverable_write_scope_key(
+                                    func_name,
+                                    parsed_tool_args,
+                                )
+                            )
+                            _clear_repaired_write_rejections(
+                                pending_recoverable_write_rejections,
+                                pending_recoverable_write_rejection_rounds,
+                                pending_recoverable_write_rejection_scopes,
+                                operation_key=recoverable_write_key,
+                                scope_key=recoverable_scope_key,
+                                current_round=round_idx,
+                                allow_scope_repair=(
+                                    _goal_binds_recoverable_write(
+                                        (
+                                            self._agent_kernel_snapshot.goal
+                                            if self._agent_kernel_snapshot
+                                            is not None
+                                            else None
+                                        ),
+                                        func_name,
+                                        parsed_tool_args,
+                                    )
+                                ),
+                            )
+                        (
+                            last_recoverable_write_rejection,
+                            last_recoverable_write_rejection_code,
+                        ) = _summarize_recoverable_write_rejections(
+                            pending_recoverable_write_rejections
+                        )
                         suppress_contextual_diet_replay_card = (
                             func_name == "health_record"
                             and bool(self._turn_contextual_diet_cards)
@@ -9016,6 +11198,7 @@ class AgentExecutor:
                         if (
                             func_name == "health_record"
                             and not replayed_write
+                            and not transient_local_rejection
                             and not suppress_contextual_diet_replay_card
                         ):
                             try:
@@ -9053,10 +11236,11 @@ class AgentExecutor:
                             except Exception:
                                 pass
 
-                        yield {
-                            "event": "tool_result",
-                            "data": tool_event_data,
-                        }
+                        if not transient_local_rejection:
+                            yield {
+                                "event": "tool_result",
+                                "data": tool_event_data,
+                            }
                         for quality_card in quality_cards:
                             before = len(streamed_cards)
                             streamed_cards = _merge_agent_card_descriptors(streamed_cards, [quality_card])
@@ -9175,7 +11359,11 @@ class AgentExecutor:
                         t in ("health_record", "health_manage") for t in _round_tool_names
                     )
                     _turn_had_verified_write = bool(write_receipts)
-                    if self._prefer_fast_record_model and _turn_had_verified_write:
+                    if (
+                        self._prefer_fast_record_model
+                        and _turn_had_verified_write
+                        and not last_recoverable_write_rejection
+                    ):
                         combined_post_record_quality = combine_post_record_quality_responses(post_record_qualities)
                         final_text = (
                             str(combined_post_record_quality.get("reply") or "").strip()
@@ -9226,6 +11414,29 @@ class AgentExecutor:
                     # 停住 loop(_force_no_tools_synthesis 在轮首最先判, 压过 keep_tools_after_synthesis_miss)。
                     if planned_reads_all_seen:
                         self._force_no_tools_synthesis = True
+
+                    if (
+                        round_idx == MAX_TOOL_ROUNDS - 1
+                        and last_recoverable_write_rejection
+                    ):
+                        final_finish_reason = "error"
+                        terminal_rejection = _write_rejection_with_receipt_context(
+                            last_recoverable_write_rejection,
+                            write_receipts,
+                        )
+                        for i in range(
+                            0,
+                            len(terminal_rejection),
+                            20,
+                        ):
+                            yield {
+                                "event": "token",
+                                "data": {
+                                    "content": terminal_rejection[i:i + 20]
+                                },
+                            }
+                        full_reply += terminal_rejection
+                        break
 
                     # 继续循环让模型处理 tool_result
                     continue
@@ -9380,7 +11591,27 @@ class AgentExecutor:
                         and not self._agent_kernel_tool_failure_tools
                         and not self._agent_kernel_capability_block_reasons
                     )
-                    if pure_pending_confirmation:
+                    if (
+                        last_recoverable_write_rejection
+                        and (
+                            last_recoverable_write_rejection_code
+                            == "diet_nutrition_incomplete"
+                            or _claims_unverified_write_success(final_text)
+                        )
+                    ):
+                        final_text = _write_rejection_with_receipt_context(
+                            last_recoverable_write_rejection,
+                            write_receipts,
+                        )
+                        final_finish_reason = "error"
+                        streamed_to_client = False
+                    elif last_recoverable_write_rejection and write_receipts:
+                        final_text = _write_rejection_with_receipt_context(
+                            final_text,
+                            write_receipts,
+                        )
+                        streamed_to_client = False
+                    elif pure_pending_confirmation:
                         pending_text = _pending_confirmation_reply_from_tool_results(
                             messages
                         )
@@ -9497,10 +11728,30 @@ class AgentExecutor:
                 user_id,
                 type(e).__name__,
             )
-            error_msg = safe_llm_error_message(e)
+            if self._turn_attachment_write_receipts and vision_description:
+                asks_for_analysis = _medical_report_analysis_requested(
+                    message,
+                    persisted=True,
+                )
+                if asks_for_analysis:
+                    error_msg = (
+                        "报告已保存，OCR 识别文字也已保留但尚待核对；"
+                        "本次个性化解读服务暂时不可用。"
+                        "请稍后重试分析，系统不会重复保存这份报告。\n\n"
+                        f"{vision_description}"
+                    )
+                else:
+                    error_msg = (
+                        "报告已保存并取得持久化回执；OCR 内容尚待核对。\n\n"
+                        f"{vision_description}"
+                    )
+                    final_finish_reason = "stop"
+            else:
+                error_msg = safe_llm_error_message(e)
             yield {"event": "token", "data": {"content": error_msg}}
             full_reply = error_msg
-            final_finish_reason = "error"
+            if final_finish_reason != "stop":
+                final_finish_reason = "error"
         finally:
             if self._http_client:
                 await self._http_client.aclose()
@@ -9521,6 +11772,7 @@ class AgentExecutor:
             self._prefer_fast_record_model
             and not write_receipts
             and not self._agent_kernel_pending_confirmation_tools
+            and not last_recoverable_write_rejection
         )
         # 破坏性/同步意图从 fast-record 集排除后(留强模型),其 0-工具 缺口在此补上,
         # 与 record_intent_no_tool 加层不减层(不与之重叠:record 集已被上面判掉)。
@@ -9707,6 +11959,23 @@ class AgentExecutor:
             record_intent_no_tool=record_intent_no_tool,
             destructive_or_sync_no_tool=destructive_or_sync_no_tool,
         )
+        kernel_snapshot = self._agent_kernel_snapshot
+        health_write_requested = bool(
+            kernel_snapshot is not None
+            and kernel_snapshot.intent.is_write
+            and kernel_snapshot.intent.domain != "aigc_media"
+        )
+        recovery_action = build_retry_source_action_if_safe(
+            source_message=user_msg,
+            turn_outcome=turn_outcome,
+            write_receipts=write_receipts,
+            health_write_requested=health_write_requested,
+            root_source_message_id=(
+                retry_recovery.root_source_message_id
+                if retry_recovery is not None
+                else int(user_msg.id)
+            ),
+        )
         answer_model = model_name
         selected_model = self._display_model_name_for_id(self._request_model_id) or answer_model
         tool_models = list(self._tool_model_names)
@@ -9834,6 +12103,11 @@ class AgentExecutor:
                 "completion_status": completion_status,
                 "record_intent_no_tool": record_intent_no_tool,
                 "turn_outcome": turn_outcome,
+                **(
+                    {"recovery_action": recovery_action}
+                    if recovery_action is not None
+                    else {}
+                ),
                 "recovery": {
                     "tool_retry_count": self._agent_kernel_tool_retry_count,
                 },
@@ -9879,6 +12153,11 @@ class AgentExecutor:
                 "completion_status": completion_status,
                 "record_intent_no_tool": record_intent_no_tool,
                 "turn_outcome": turn_outcome,
+                **(
+                    {"recovery_action": recovery_action}
+                    if recovery_action is not None
+                    else {}
+                ),
                 "recovery": {
                     "tool_retry_count": self._agent_kernel_tool_retry_count,
                 },
@@ -12484,22 +14763,50 @@ class AgentExecutor:
         """Prefer strict food-recognition JSON over free-form vision prose for diet photos."""
         if not images:
             return None
+        if len(images) > 3:
+            return (
+                "本轮包含超过 3 张图片。为避免静默漏记，本次没有写入饮食；"
+                "请拆成两次发送，每次最多 3 张同一餐照片。"
+            )
         try:
             from app.services.ai.food_recognition import (
+                apply_user_stated_amount_to_nutrition_label,
                 food_recognition_service,
+                merge_food_recognition_results,
                 sanitize_food_recognition_result,
             )
             from app.services.food_nutrition_lookup import calibrate_recognized_foods
 
-            summaries: List[str] = []
+            recognized_results: List[Dict[str, Any]] = []
             errors: List[str] = []
+            unique_image_indexes: List[int] = []
+            image_classifications: Dict[int, str] = {}
+            seen_image_hashes: set[str] = set()
             for image_index, img in enumerate(images[:3]):
+                encoded = str(img.get("base64") or "")
+                digest = hashlib.sha256(encoded.encode("ascii", errors="ignore")).hexdigest()
+                if digest in seen_image_hashes:
+                    continue
+                seen_image_hashes.add(digest)
+                unique_image_indexes.append(image_index)
                 result = await food_recognition_service.recognize_food_from_base64(
-                    img.get("base64") or "",
+                    encoded,
                     image_type=img.get("type", "jpeg"),
                 )
                 result = sanitize_food_recognition_result(result)
                 if result.get("success") and result.get("foods"):
+                    result = apply_user_stated_amount_to_nutrition_label(
+                        result,
+                        user_message,
+                    )
+                    if result.get("nutrition_label_requires_amount"):
+                        errors.append(
+                            "已识别营养成分表，但还需要明确实际食用重量。"
+                        )
+                        image_classifications[image_index] = "food"
+                        continue
+                    result = sanitize_food_recognition_result(result)
+                    image_classifications[image_index] = "food"
                     calibrate_recognized_foods(self.db, result["foods"])
                     result = sanitize_food_recognition_result(result)
                     consumed_fraction = _contextual_meal_consumed_fraction(
@@ -12515,20 +14822,48 @@ class AgentExecutor:
                         result = sanitize_food_recognition_result(result)
                         result["consumed_fraction"] = fraction
                         result["consumed_fraction_label"] = label
-                    capture = self._capture_contextual_meal_photo(
-                        user_message,
-                        result,
-                        image_index=image_index,
+                    recognized_results.append(result)
+                else:
+                    error = str(result.get("error") or "图片识别未完成")
+                    errors.append(error)
+                    image_classifications[image_index] = (
+                        "non_food"
+                        if self._food_recognition_found_no_food([error])
+                        else "unknown"
                     )
-                    summaries.append(self._format_food_recognition_for_agent(
-                        user_message,
-                        result,
-                        contextual_capture=capture,
-                    ))
-                elif result.get("error"):
-                    errors.append(str(result.get("error")))
-            if summaries:
-                return "\n".join(summaries)
+            if recognized_results:
+                merged_result = merge_food_recognition_results(recognized_results)
+                merged_result["source_image_count"] = len(unique_image_indexes)
+                failed_image_indexes = [
+                    image_index
+                    for image_index in unique_image_indexes
+                    if image_classifications.get(image_index) != "food"
+                ]
+                if failed_image_indexes:
+                    merged_result["multi_photo_incomplete"] = True
+                    merged_result["failed_image_indexes"] = failed_image_indexes
+                capture = self._capture_contextual_meal_photos(
+                    user_message,
+                    merged_result,
+                    image_indexes=unique_image_indexes,
+                    image_classifications=image_classifications,
+                )
+                return self._format_food_recognition_for_agent(
+                    user_message,
+                    merged_result,
+                    contextual_capture=capture,
+                )
+            if errors and self._looks_like_food_photo_context(user_message):
+                if not self._food_recognition_found_no_food(errors):
+                    if any("实际食用重量" in error for error in errors):
+                        return (
+                            "已读取图片中的营养成分表，但还缺少实际食用重量。"
+                            "本次没有写入饮食记录；请补充你实际吃了多少克。"
+                        )
+                    return (
+                        "本轮餐食图片识别未完整完成，因此没有写入饮食记录。"
+                        "请稍后重试，或补充食物名称和份量后再确认。"
+                    )
             if self._looks_like_food_photo_context(user_message) and self._food_recognition_found_no_food(errors):
                 return (
                     "结构化餐食识别结果: 图片中未识别到可记录的食物。"
@@ -12551,16 +14886,39 @@ class AgentExecutor:
         *,
         image_index: int,
     ) -> Any | None:
+        return self._capture_contextual_meal_photos(
+            user_message,
+            vision_result,
+            image_indexes=[image_index],
+        )
+
+    def _capture_contextual_meal_photos(
+        self,
+        user_message: str,
+        vision_result: Dict[str, Any],
+        *,
+        image_indexes: List[int],
+        image_classifications: Dict[int, str] | None = None,
+    ) -> Any | None:
         """Persist a qualified chat food photo before the answer model runs.
 
         This boundary only receives typed semantic intent plus sanitized vision
         output.  It never scans raw text for a recording keyword.
         """
         user_id = self._current_user_id
-        source_message_id = self._current_turn_source_message_id
+        source_message_id = (
+            self._current_turn_media_source_message_id
+            or self._current_turn_source_message_id
+        )
         if user_id is None or source_message_id is None:
+            vision_result["contextual_capture_failed"] = True
             return None
-        if image_index < 0 or image_index >= len(self._current_turn_image_urls):
+        normalized_indexes = sorted(set(image_indexes))
+        if not normalized_indexes or any(
+            image_index < 0 or image_index >= len(self._current_turn_image_urls)
+            for image_index in normalized_indexes
+        ):
+            vision_result["contextual_capture_failed"] = True
             return None
 
         from app.services.contextual_meal_photo_policy import (
@@ -12607,12 +14965,28 @@ class AgentExecutor:
             )
 
         foods = vision_result.get("foods") if isinstance(vision_result.get("foods"), list) else []
-        confidences = [
-            float(food.get("confidence"))
-            for food in foods
-            if isinstance(food, dict) and isinstance(food.get("confidence"), (int, float))
-        ]
-        confidence = sum(confidences) / len(confidences) if confidences else None
+        confidences: list[float] = []
+        confidence_complete = bool(foods)
+        for food in foods:
+            value = food.get("confidence") if isinstance(food, dict) else None
+            if (
+                not isinstance(value, (int, float))
+                or isinstance(value, bool)
+                or not math.isfinite(float(value))
+            ):
+                confidence_complete = False
+                continue
+            confidences.append(float(value))
+        confidence = (
+            min(confidences)
+            if confidence_complete and len(confidences) == len(foods)
+            else None
+        )
+        if (
+            vision_result.get("multi_photo_conflict")
+            or vision_result.get("multi_photo_incomplete")
+        ):
+            confidence = 0.0
         decision = decide_contextual_meal_photo(MealPhotoCandidate(
             origin="chat",
             semantic_intent=semantic_intent,
@@ -12626,15 +15000,22 @@ class AgentExecutor:
             return None
 
         try:
-            result = ContextualMealPhotoService(self.db).capture(ContextualMealPhotoCapture(
-                user_id=user_id,
-                source_message_id=source_message_id,
-                source_image_url=self._current_turn_image_urls[image_index],
-                source_image_index=image_index,
-                decision=decision,
-                vision_result=vision_result,
-            ))
+            result = ContextualMealPhotoService(self.db).capture_session([
+                ContextualMealPhotoCapture(
+                    user_id=user_id,
+                    source_message_id=source_message_id,
+                    source_image_url=self._current_turn_image_urls[image_index],
+                    source_image_index=image_index,
+                    decision=decision,
+                    vision_result=vision_result,
+                    classification=(
+                        (image_classifications or {}).get(image_index, "food")
+                    ),
+                )
+                for image_index in normalized_indexes
+            ])
         except ContextualMealPhotoServiceError as exc:
+            vision_result["contextual_capture_failed"] = True
             logger.warning(
                 "[contextual_meal_photo] capture rejected user_id=%s source_message_id=%s reason=%s",
                 user_id,
@@ -12643,6 +15024,7 @@ class AgentExecutor:
             )
             return None
         except Exception as exc:  # noqa: BLE001 - never claim a record after a failed write
+            vision_result["contextual_capture_failed"] = True
             logger.error(
                 "[contextual_meal_photo] capture failed user_id=%s source_message_id=%s error=%s",
                 user_id,
@@ -12669,6 +15051,7 @@ class AgentExecutor:
                 "status": "verified",
                 "resource_type": "diet_record",
                 "resource_id": str(result.record.id),
+                "date": result.record.record_date.isoformat(),
                 "verified": True,
             }
             if receipt not in self._turn_contextual_diet_receipts:
@@ -12677,24 +15060,37 @@ class AgentExecutor:
             # contract. Emit the same portable meal-photo card used for manual
             # confirmation so Web, Mobile and Mac all show a deterministic
             # receipt immediately and after conversation reload.
-            self._turn_contextual_diet_cards.append(
-                self._contextual_diet_recorded_card(result)
+            self._upsert_turn_contextual_diet_card(
+                self._contextual_diet_recorded_card(result),
             )
             self._invalidate_twin_after_mutation()
         elif result.photo_draft is not None:
-            self._turn_contextual_diet_cards.append(
-                self._contextual_diet_confirmation_card(result)
+            self._upsert_turn_contextual_diet_card(
+                self._contextual_diet_confirmation_card(result),
             )
         return result
+
+    def _upsert_turn_contextual_diet_card(self, card: Dict[str, Any]) -> None:
+        self._turn_contextual_diet_cards = _merge_agent_card_descriptors(
+            self._turn_contextual_diet_cards,
+            [card],
+        )
 
     def _contextual_diet_recorded_card(self, result: Any) -> Dict[str, Any]:
         """Build an owner-scoped, durable visual receipt for an auto-save."""
         from app.utils.diet_image_url import diet_response_image_url
 
         record = result.record
-        asset = result.photo_asset
-        if record is None or asset is None:
+        assets = tuple(result.photo_assets or ())
+        if not assets and result.photo_asset is not None:
+            assets = (result.photo_asset,)
+        if record is None or not assets:
             raise ValueError("contextual_diet_recorded_card_missing_receipt")
+        photo_asset_ids = [asset.id for asset in assets]
+        photo_urls = [
+            diet_response_image_url(asset.storage_key, asset.user_id)
+            for asset in assets
+        ]
         record_data = {
             "meal_type": record.meal_type,
             "food_items": record.food_items,
@@ -12703,9 +15099,12 @@ class AgentExecutor:
             "carbs": record.carbs,
             "fat": record.fat,
         }
+        capture_session_id = self._contextual_diet_capture_session_id(assets)
         return {
             "type": "diet_draft",
             "data": format_card_numbers({
+                "card_id": f"diet-capture:{capture_session_id}",
+                "capture_session_id": capture_session_id,
                 "recorded": True,
                 "record_id": record.id,
                 "record_date": record.record_date.isoformat(),
@@ -12718,8 +15117,11 @@ class AgentExecutor:
                 "fiber": record.fiber,
                 "confidence": record.ai_confidence,
                 "source": "chat_photo",
-                "photo_asset_id": asset.id,
-                "photo_url": diet_response_image_url(asset.storage_key, asset.user_id),
+                "photo_asset_id": photo_asset_ids[0],
+                "photo_asset_ids": photo_asset_ids,
+                "photo_url": photo_urls[0],
+                "photo_urls": photo_urls,
+                "media_stage": "attached",
                 "receipt_message": "已保存到今日饮食，餐食照片已关联到这条记录。",
                 "boundary": "营养为图像估算；可在饮食记录中继续修正。",
             }),
@@ -12732,10 +15134,18 @@ class AgentExecutor:
         from app.utils.diet_image_url import diet_response_image_url
 
         draft = result.photo_draft
-        asset = result.photo_asset
-        if draft is None or asset is None:
+        assets = tuple(result.photo_assets or ())
+        if not assets and result.photo_asset is not None:
+            assets = (result.photo_asset,)
+        if draft is None or not assets:
             raise ValueError("contextual_diet_confirmation_missing_draft")
+        photo_asset_ids = [asset.id for asset in assets]
+        photo_urls = [
+            diet_response_image_url(asset.storage_key, asset.user_id)
+            for asset in assets
+        ]
         recognition = draft.recognition_result if isinstance(draft.recognition_result, dict) else {}
+        capture_session_id = self._contextual_diet_capture_session_id(assets)
         record = {
             key: recognition[key]
             for key in (
@@ -12769,10 +15179,15 @@ class AgentExecutor:
             # values for the eventual write request.
             "data": format_card_numbers({
                 **record,
+                "card_id": f"diet-capture:{capture_session_id}",
+                "capture_session_id": capture_session_id,
                 "confidence": recognition.get("ai_confidence"),
                 "source": "chat_photo",
-                "photo_asset_id": asset.id,
-                "photo_url": diet_response_image_url(asset.storage_key, asset.user_id),
+                "photo_asset_id": photo_asset_ids[0],
+                "photo_asset_ids": photo_asset_ids,
+                "photo_url": photo_urls[0],
+                "photo_urls": photo_urls,
+                "media_stage": "pending_confirmation",
                 "photo_draft_token": draft.token,
                 "auto_save_fallback": bool(result.fallback_from_auto),
                 "boundary": (
@@ -12783,6 +15198,17 @@ class AgentExecutor:
             }),
             "actions": actions,
         }
+
+    @staticmethod
+    def _contextual_diet_capture_session_id(assets: tuple[Any, ...]) -> str:
+        source_message_ids = {
+            int(asset.origin_message_id)
+            for asset in assets
+            if asset.origin_message_id is not None
+        }
+        if len(source_message_ids) != 1:
+            raise ValueError("contextual_diet_capture_session_identity_invalid")
+        return f"meal-photo:{next(iter(source_message_ids))}"
 
     def _format_food_recognition_for_agent(
         self,
@@ -12815,9 +15241,9 @@ class AgentExecutor:
             recognized_foods.append({
                 key: food[key]
                 for key in (
-                    "name", "quantity", "quantity_grams", "calories", "protein",
-                    "carbs", "fat", "fiber", "confidence", "food_id", "source",
-                    "nutrition_basis",
+                    "name", "quantity", "quantity_grams", "label_basis_grams",
+                    "calories", "protein", "carbs", "fat", "fiber",
+                    "confidence", "food_id", "source", "nutrition_basis",
                 )
                 if food.get(key) is not None
             })
@@ -12887,6 +15313,12 @@ class AgentExecutor:
                 "本轮仅用于分析或查询，严禁调用 health_record；"
                 "只解释识别结果、不确定性和可选建议。"
             )
+        elif result.get("contextual_capture_failed"):
+            capture_instruction = (
+                "图片资产与饮食记录的原子保存没有完成；严禁调用 health_record "
+                "或 health_manage 补写无图记录，也不得声称已经保存。"
+                "请明确告知用户图片草稿仍需重试。"
+            )
         elif contextual_capture is not None and contextual_capture.record is not None:
             if consumed_fraction_label:
                 capture_instruction = (
@@ -12929,6 +15361,18 @@ class AgentExecutor:
         return "snack"
 
     @staticmethod
+    def _looks_like_food_photo_context(user_message: str) -> bool:
+        text = user_message or ""
+        if not text.strip():
+            return True
+        return bool(re.search(
+            r"食物|饮食|餐|饭|吃|营养成分|热量|卡路里|"
+            r"蛋白|碳水|脂肪|kcal|calorie",
+            text,
+            re.I,
+        ))
+
+    @staticmethod
     def _is_default_image_analysis_prompt(user_message: str) -> bool:
         ignored = frozenset("。.!！?？")
         normalized = "".join(
@@ -12943,126 +15387,229 @@ class AgentExecutor:
             "分析这张图片",
         }
 
-    async def _try_import_medical_report_images(self, user_id: int, images: List[dict]) -> Optional[str]:
-        """Detect lab-report images in chat, persist recognized indicators, and summarize.
+    async def _try_import_medical_report_images(
+        self,
+        user_id: int,
+        images: List[dict],
+        *,
+        persist: bool = False,
+    ) -> Optional[str]:
+        """Recognize report images and persist only under explicit write intent.
 
-        The normal chat image path used to describe photos for diet logging only.
-        Lab screenshots therefore informed one answer but never reached the
-        canonical MedicalIndicator timeline. This hook keeps report ingestion
-        protocol-first: OCR returns structured items, then the same importer used
-        by upload endpoints writes MedicalExam + MedicalIndicator.
+        A verified receipt confirms database persistence, not OCR correctness.
+        OCR-derived content remains clearly marked as unverified until the user
+        reviews it. Analysis-only turns never cross the write boundary.
         """
         if not images:
             return None
         try:
+            from sqlalchemy.exc import IntegrityError
+
+            from app.models.medical_exam import MedicalExam
             from app.services.ai.medical_report_ocr import recognize_medical_report
-            from app.services.data_collection.medical_exam_import import MedicalExamImportService
+            from app.services.data_collection.medical_exam_import import (
+                MedicalExamImportService,
+            )
             from app.twin.cache import invalidate_twin
 
-            imported = []
+            recognized: list[tuple[Optional[MedicalExam], dict, list[dict], str]] = []
+            created_any = False
+            message_date = _normalize_relative_date(
+                classify_agent_utterance(
+                    self._current_turn_user_message,
+                    reference_now=self._agent_kernel_reference_now(),
+                ).scope.get("date"),
+                reference_now=self._agent_kernel_reference_now(),
+            )
             for img in images:
                 result = await recognize_medical_report(
                     img["base64"],
                     image_type=img.get("type", "jpeg"),
                 )
-                items = result.get("items") if isinstance(result, dict) else None
-                items = items or []
-                conclusion = (result.get("conclusion") or "").strip() if isinstance(result, dict) else ""
-                # 准入门 (只加不减方向): 数值项 ≥2 OR 有诊断结论全文 → 入库。
-                # 两者都无才 skip (挡非报告照片噪声)。病理/影像报告常 0 数值项、
-                # 只有诊断全文, 旧的 len(items)<2 会把它们连同 conclusion 一起丢弃
-                # (exam_id=42 病理诊断全文丢失的根因)。
+                if not isinstance(result, dict) or result.get("error"):
+                    continue
+                items = result.get("items") or []
+                conclusion = str(result.get("conclusion") or "").strip()
                 if len(items) < 2 and not conclusion:
                     continue
-                exam_date = None
-                if result.get("report_date"):
-                    try:
-                        exam_date = parse_date_value = datetime.strptime(str(result["report_date"])[:10], "%Y-%m-%d").date()
-                    except Exception:
-                        parse_date_value = None
-                    exam_date = parse_date_value
-                exam = MedicalExamImportService.import_from_items(
-                    self.db,
-                    user_id=user_id,
-                    items_data=items,
-                    exam_date=exam_date or self._agent_kernel_reference_now().date(),
-                    exam_type=result.get("report_type") or "medical_report",
-                    hospital_name=result.get("institution"),
-                    notes="从聊天图片 OCR 自动导入",
-                    source="agent_image_ocr",
-                    overall_assessment=conclusion or None,
-                    conclusions=result.get("conclusions"),
-                )
-                imported.append((exam, result, items))
 
-            if not imported:
+                encoded_image = str(img.get("base64") or "").split(",", 1)[-1]
+                try:
+                    fingerprint_bytes = base64.b64decode(
+                        encoded_image,
+                        validate=True,
+                    )
+                except (ValueError, base64.binascii.Error):
+                    fingerprint_bytes = encoded_image.encode(
+                        "ascii",
+                        errors="ignore",
+                    )
+                image_fingerprint = hashlib.sha256(fingerprint_bytes).hexdigest()
+                exam: Optional[MedicalExam] = None
+                if persist:
+                    exam = (
+                        self.db.query(MedicalExam)
+                        .filter(
+                            MedicalExam.user_id == user_id,
+                            MedicalExam.source_fingerprint == image_fingerprint,
+                        )
+                        .order_by(MedicalExam.id.desc())
+                        .first()
+                    )
+                    if exam is None:
+                        # Backward-compatible lookup for records created before
+                        # source_fingerprint became a dedicated unique column.
+                        fingerprint_marker = f"[image_sha256:{image_fingerprint}]"
+                        exam = (
+                            self.db.query(MedicalExam)
+                            .filter(
+                                MedicalExam.user_id == user_id,
+                                MedicalExam.notes.contains(fingerprint_marker),
+                            )
+                            .order_by(MedicalExam.id.desc())
+                            .first()
+                        )
+                    if exam is None:
+                        normalized_report_date = _normalize_relative_date(
+                            result.get("report_date"),
+                            reference_now=self._agent_kernel_reference_now(),
+                        )
+                        # An explicit user date is authoritative for this write.
+                        resolved_exam_date = (
+                            message_date
+                            or normalized_report_date
+                            or self._agent_kernel_reference_now().date().isoformat()
+                        )
+                        try:
+                            exam = MedicalExamImportService.import_from_items(
+                                self.db,
+                                user_id=user_id,
+                                items_data=items,
+                                exam_date=datetime.strptime(
+                                    resolved_exam_date,
+                                    "%Y-%m-%d",
+                                ).date(),
+                                exam_type=result.get("report_type") or "medical_report",
+                                hospital_name=result.get("institution"),
+                                notes="从聊天图片 OCR 导入，内容待用户核对",
+                                source="agent_image_ocr",
+                                overall_assessment=conclusion or None,
+                                # Structured conclusions are model-generated and
+                                # must not be promoted to a verified health field.
+                                conclusions=None,
+                                source_fingerprint=image_fingerprint,
+                            )
+                            created_any = True
+                        except IntegrityError:
+                            # The unique (user, fingerprint) index makes
+                            # concurrent retries converge on one canonical row.
+                            self.db.rollback()
+                            exam = (
+                                self.db.query(MedicalExam)
+                                .filter(
+                                    MedicalExam.user_id == user_id,
+                                    MedicalExam.source_fingerprint
+                                    == image_fingerprint,
+                                )
+                                .one()
+                            )
+
+                    receipt = {
+                        "operation_id": (
+                            f"medical-report-image:{image_fingerprint[:32]}"
+                        ),
+                        "status": "verified",
+                        "resource_type": "medical_exam",
+                        "resource_id": str(exam.id),
+                        "verified": True,
+                        "verification_scope": "persistence_only",
+                        "content_verified": False,
+                    }
+                    if receipt not in self._turn_attachment_write_receipts:
+                        self._turn_attachment_write_receipts.append(receipt)
+                recognized.append((exam, result, items, image_fingerprint))
+
+            if not recognized:
                 return None
 
-            # A4: 聊天图片 OCR 导入了化验指标 → Twin 已变。此导入发生在 pre-round-1 KB
-            # 证据卡之后, 置位 → done 侧证据卡强制重算 (use_cache=False → 反映刚导入的指标)。
-            self._turn_twin_write_occurred = True
-            try:
-                invalidate_twin(user_id)
-            except Exception:
-                pass
+            if created_any:
+                self._turn_twin_write_occurred = True
+                try:
+                    invalidate_twin(user_id)
+                except Exception:
+                    pass
 
             def _is_numeric(item: dict) -> bool:
-                """value 是有效数值才算数值项 (排除 value=null 的病理/影像自由文本项)。"""
-                v = item.get("value")
-                if v is None:
+                value = item.get("value")
+                if value is None:
                     return False
                 try:
-                    float(v)
+                    float(value)
                     return True
                 except (ValueError, TypeError):
                     return False
 
             total_numeric = sum(
                 1
-                for _exam, _result, items in imported
-                for item in items
+                for _exam, _result, report_items, _fingerprint in recognized
+                for item in report_items
                 if _is_numeric(item)
             )
-            # 红线#2: value=null 的病理项绝不进"数值异常门" —— 异常统计只数
-            # 有真实数值且标异常的项, 空值项不计入。
             abnormal_items = [
                 item
-                for _exam, _result, items in imported
-                for item in items
+                for _exam, _result, report_items, _fingerprint in recognized
+                for item in report_items
                 if item.get("is_abnormal") and _is_numeric(item)
             ]
-            abnormal_text = "；".join(
-                f"{item.get('name') or item.get('item_name') or item.get('name_en')} {item.get('value')} {item.get('unit') or ''}".strip()
-                for item in abnormal_items[:8]
-            )
-            # 红线#1: 病理/影像/自由文本诊断只逐字回显, 严禁总结/改写/推断。
-            # 逐字截取诊断原文 (只做长度截断, 不改字), 优先于"N 项化验指标"叙述。
-            narrative_texts = []
-            for _exam, _result, _items in imported:
-                concl = (_result.get("conclusion") or "").strip() if isinstance(_result, dict) else ""
-                if concl:
-                    narrative_texts.append(concl)
-            exam_ids = ", ".join(str(exam.id) for exam, _result, _items in imported)
+            narrative_texts = [
+                str(result.get("conclusion") or "").strip()
+                for _exam, result, _items, _fingerprint in recognized
+                if str(result.get("conclusion") or "").strip()
+            ]
 
-            parts = []
+            parts: list[str] = []
             if total_numeric:
-                parts.append(f"已将图片中的 {total_numeric} 项化验指标写入系统。")
+                parts.append(
+                    (
+                        f"已从图片中识别 {total_numeric} 项化验指标并写入系统。"
+                        if persist
+                        else f"已从图片中识别 {total_numeric} 项化验指标。"
+                    )
+                )
             if narrative_texts:
-                # 逐字照抄诊断原文 (仅长度截断, 不总结/改写)
-                _MAX_ECHO = 800
                 joined = "\n".join(narrative_texts)
-                echoed = joined if len(joined) <= _MAX_ECHO else (joined[:_MAX_ECHO] + "……(原文过长已截断)")
-                parts.append(f"报告诊断原文(逐字):\n{echoed}")
+                echoed = (
+                    joined
+                    if len(joined) <= 800
+                    else f"{joined[:800]}……(OCR 文字过长已截断)"
+                )
+                parts.append(f"OCR 识别文字（待核对）：\n{echoed}")
             if not parts:
-                # 既无数值项也无诊断原文, 只落了空壳记录 —— 保守只报 ID, 不编造内容。
-                parts.append("已将图片中的报告写入系统。")
-            note = " ".join(parts) if len(parts) == 1 else "\n".join(parts)
-            note += f"\n体检记录 ID: {exam_ids}。"
-            if abnormal_text:
-                note += f" 识别到异常/标记数值项：{abnormal_text}。"
-            return note
-        except Exception as e:
-            logger.warning(f"[Vision] 医疗报告图片自动入库失败: {e}", exc_info=True)
+                parts.append("已识别图片中的医疗报告。")
+            if persist:
+                exam_ids = ", ".join(
+                    str(exam.id)
+                    for exam, _result, _items, _fingerprint in recognized
+                    if exam is not None
+                )
+                parts.append(f"报告已保存，记录 ID: {exam_ids}；OCR 内容尚未核对。")
+            else:
+                parts.append("本次仅用于分析，尚未保存。")
+            if abnormal_items:
+                abnormal_text = "；".join(
+                    (
+                        f"{item.get('name') or item.get('item_name') or item.get('name_en')} "
+                        f"{item.get('value')} {item.get('unit') or ''}"
+                    ).strip()
+                    for item in abnormal_items[:8]
+                )
+                parts.append(f"OCR 标记的数值异常（待核对）：{abnormal_text}。")
+            return "\n".join(parts)
+        except Exception:
+            logger.warning(
+                "[Vision] medical report processing failed user=%s",
+                user_id,
+            )
             try:
                 self.db.rollback()
             except Exception:
@@ -13443,7 +15990,9 @@ class AgentExecutor:
                         raise
                     except Exception as e:  # noqa: BLE001
                         logger.warning(
-                            f"[tool exec] {func_name} 抛异常: {type(e).__name__}: {str(e)[:120]}"
+                            "[tool exec] failed tool=%s error_type=%s",
+                            func_name,
+                            type(e).__name__,
                         )
                         result = f"Error: {progress_label}执行失败,请稍后重试。"
             finally:
@@ -13553,9 +16102,17 @@ class AgentExecutor:
                             tool_name,
                             len(args_raw),
                         )
-                        return "Error: 工具参数解析失败，请重新生成结构化参数。"
+                        return local_write_rejection(
+                            "tool_arguments_invalid",
+                            message="工具参数无法解析。",
+                            recovery_guidance="请重新生成完整的结构化参数。",
+                        )
             else:
-                return "Error: 工具参数解析失败，请重新生成结构化参数。"
+                return local_write_rejection(
+                    "tool_arguments_invalid",
+                    message="工具参数无法解析。",
+                    recovery_guidance="请重新生成完整的结构化参数。",
+                )
 
         trusted_recipe_authorized = False
         if tool_name == "health_record" and isinstance(args, dict):
@@ -13569,6 +16126,44 @@ class AgentExecutor:
                     args.get("_fast_record_requires_confirmation") is not True
                 )
             _strip_untrusted_write_authorization(args)
+
+        if self._runtime_write_block_reason:
+            from app.services.agent_kernel.tool_registry import classify_tool_effect
+
+            try:
+                runtime_effect = classify_tool_effect(tool_name, args)
+            except Exception:
+                logger.exception(
+                    "Runtime control unavailable and tool effect classification failed: "
+                    "tool=%s reason=%s",
+                    tool_name,
+                    self._runtime_write_block_reason,
+                )
+                return json.dumps(
+                    {
+                        "status": "failed",
+                        "success": False,
+                        "error_code": "runtime_control_unavailable",
+                        "dispatch_started": False,
+                    },
+                    ensure_ascii=False,
+                )
+            if runtime_effect == "write":
+                logger.warning(
+                    "Runtime control unavailable; blocked dynamic write before dispatch: "
+                    "tool=%s reason=%s",
+                    tool_name,
+                    self._runtime_write_block_reason,
+                )
+                return json.dumps(
+                    {
+                        "status": "failed",
+                        "success": False,
+                        "error_code": "runtime_control_unavailable",
+                        "dispatch_started": False,
+                    },
+                    ensure_ascii=False,
+                )
 
         # === 统一 tool_call 守门 (所有 6 个工具必过) ===
         # 日期/数值/枚举/引用 ID 存在性/越权 / 必填 — 触发 coerce 只 log,
@@ -13595,9 +16190,13 @@ class AgentExecutor:
                 "[_execute_tool] blocked rhinitis write on attachment turn user=%s",
                 self._current_user_id,
             )
-            return (
-                "Error: 带附件的鼻炎症状暂不自动写入，请在不带附件的消息中直接复述"
-                "要记录的本人喷嚏、鼻塞或流鼻涕情况。"
+            return local_write_rejection(
+                "rhinitis_attachment_not_supported",
+                message="带附件的消息不能自动写入鼻炎症状记录。",
+                recovery_guidance=(
+                    "请在不带附件的新消息中直接复述要记录的本人喷嚏、"
+                    "鼻塞或流鼻涕情况。"
+                ),
             )
         if (
             tool_name == "health_record"
@@ -13611,9 +16210,10 @@ class AgentExecutor:
                 self._current_user_id,
                 len(getattr(self, "_current_turn_user_message", "") or ""),
             )
-            return (
-                "Error: 这段话不是明确的本人鼻炎症状记录请求，已阻止自动写入。"
-                "请直接说出当前的喷嚏、鼻塞或流鼻涕情况。"
+            return local_write_rejection(
+                "rhinitis_write_not_authorized",
+                message="当前消息不是明确的本人鼻炎症状记录请求。",
+                recovery_guidance="请直接说出当前的喷嚏、鼻塞或流鼻涕情况。",
             )
         if (
             tool_name == "health_record"
@@ -13625,7 +16225,11 @@ class AgentExecutor:
                 rhinitis_authorization,
             )
             if authorized_args is None:
-                return "Error: 鼻炎打卡参数无效，已阻止自动写入。"
+                return local_write_rejection(
+                    "rhinitis_payload_invalid",
+                    message="鼻炎症状记录参数无效。",
+                    recovery_guidance="请直接复述当前要记录的本人症状。",
+                )
             args = authorized_args
         if (
             tool_name == "health_record"
@@ -13637,9 +16241,10 @@ class AgentExecutor:
                 "[_execute_tool] blocked symptom write on attachment turn user=%s",
                 self._current_user_id,
             )
-            return (
-                "Error: 带附件的症状内容暂不自动写入，请在不带附件的消息中直接复述"
-                "要记录的本人症状。"
+            return local_write_rejection(
+                "symptom_attachment_not_supported",
+                message="带附件的消息不能自动写入症状记录。",
+                recovery_guidance="请在不带附件的新消息中直接复述要记录的本人症状。",
             )
         if (
             tool_name == "health_record"
@@ -13653,9 +16258,10 @@ class AgentExecutor:
                 self._current_user_id,
                 len(getattr(self, "_current_turn_user_message", "") or ""),
             )
-            return (
-                "Error: 这段话不是明确的本人症状记录请求，已阻止自动写入。"
-                "如果你希望记录，请直接说出当前要记录的本人症状。"
+            return local_write_rejection(
+                "symptom_write_not_authorized",
+                message="当前消息不是明确的本人症状记录请求。",
+                recovery_guidance="请直接说出当前要记录的本人症状。",
             )
         if (
             tool_name == "health_record"
@@ -13667,12 +16273,34 @@ class AgentExecutor:
                 symptom_authorization,
             )
             if authorized_args is None:
-                return "Error: 症状记录参数无效，已阻止自动写入。"
+                return local_write_rejection(
+                    "symptom_payload_invalid",
+                    message="症状记录参数无效。",
+                    recovery_guidance="请直接复述当前要记录的本人症状。",
+                )
             args = authorized_args
         args = _prepare_health_record_args_for_validation(
             tool_name,
             args,
             reference_now=self._agent_kernel_reference_now(),
+        )
+        args = _apply_server_health_record_provenance(
+            tool_name,
+            args,
+            execution_source=source,
+            has_attachment=bool(
+                getattr(self, "_current_turn_has_attachment", False)
+            ),
+            diet_photo_auto_save=bool(
+                getattr(self, "_diet_photo_auto_save", False)
+            ),
+            contextual_diet_recorded=bool(
+                getattr(self, "_turn_contextual_diet_record_id", None)
+                is not None
+            ),
+            user_message=str(
+                getattr(self, "_current_turn_user_message", "") or ""
+            ),
         )
         v = validate_tool_call(
             tool_name,
@@ -13682,7 +16310,11 @@ class AgentExecutor:
             reference_now=self._agent_kernel_reference_now(),
         )
         if v["error"]:
-            return v["error"]
+            return local_write_rejection(
+                str(v.get("error_code") or "tool_validation_failed"),
+                message=str(v["error"]).removeprefix("Error:").strip(),
+                recovery_guidance="请修正参数后重新提交。",
+            )
         args = v["data"]
         if tool_name == "health_record" and trusted_recipe_authorized:
             args["_trusted_server_write_authorized"] = True
@@ -13701,10 +16333,16 @@ class AgentExecutor:
                     "[agent_executor] read-only pregen turn blocked non-read tool=%s user=%s",
                     tool_name, self._current_user_id,
                 )
-                return f"Error: 只读预生成回合不执行写入/变更操作（{tool_name}）"
+                return local_write_rejection(
+                    "read_only_write_blocked",
+                    message="只读预生成回合不执行写入或变更操作。",
+                )
 
         try:
-            from app.services.agent_kernel.tool_gateway import ToolGateway
+            from app.services.agent_kernel.tool_gateway import (
+                ToolGateway,
+                ToolPreflightError,
+            )
 
             snapshot = self._ensure_agent_kernel_turn()
             gateway_result = await ToolGateway(snapshot).execute(
@@ -13714,22 +16352,28 @@ class AgentExecutor:
                     source=source,
                 ),
                 lambda request: self._dispatch_tool_request(request, user_token),
+                on_decision=lambda decision: (
+                    self._agent_kernel_record_capability_decision(
+                        tool_name,
+                        decision,
+                    )
+                ),
             )
-            decision = gateway_result.decision
-            if decision is not None:
-                self._agent_kernel_record_capability_decision(tool_name, decision)
             return str(gateway_result.content)
-        except Exception as exc:  # noqa: BLE001
+        except ToolPreflightError as exc:
             if "policy_check_failed" not in self._agent_kernel_capability_block_reasons:
                 self._agent_kernel_capability_block_reasons.append("policy_check_failed")
             logger.error(
-                "[agent_kernel] gateway failed tool=%s user=%s error=%s",
+                "[agent_kernel] gateway failed tool=%s user=%s error_type=%s",
                 tool_name,
                 self._current_user_id,
-                exc,
-                exc_info=True,
+                type(exc).__name__,
             )
-            return "Error: 工具调用策略检查失败,已阻止执行。"
+            return local_write_rejection(
+                "policy_check_failed",
+                message="工具调用策略检查失败，已阻止执行。",
+                recovery_guidance="请稍后重试；本次没有派发写入。",
+            )
 
     async def _dispatch_tool_request(
         self,
@@ -13757,9 +16401,9 @@ class AgentExecutor:
                 )
             except Exception as finalize_exc:  # noqa: BLE001
                 logger.error(
-                    "Runtime tool operation finalize failed operation=%s error=%s",
+                    "Runtime tool operation finalize failed operation=%s error_type=%s",
                     runtime_operation.operation_id,
-                    finalize_exc,
+                    type(finalize_exc).__name__,
                 )
 
         try:
@@ -13878,6 +16522,15 @@ class AgentExecutor:
             if spec.marks_deep_analysis:
                 self._turn_invoked_deep_analysis = True
             handler = getattr(self, spec.executor_method)
+            handler_args = args
+            if (
+                runtime_operation is not None
+                and request.tool_name == "upload_medical_exam_text"
+            ):
+                handler_args = {
+                    **args,
+                    "_runtime_operation_id": runtime_operation.operation_id,
+                }
             if spec.call_style == "http":
                 base_url = (
                     settings.health_api_base_url
@@ -13893,9 +16546,9 @@ class AgentExecutor:
                     and expected_resource_type is not None
                 ):
                     headers["Idempotency-Key"] = runtime_operation.operation_id
-                result = await handler(base_url, headers, args)
+                result = await handler(base_url, headers, handler_args)
             else:
-                result = await handler(args)
+                result = await handler(handler_args)
             result = (
                 annotate_if_implausible(result)
                 if spec.annotate_implausible
@@ -13912,6 +16565,11 @@ class AgentExecutor:
                     result,
                 )
                 outcome = classify_write_execution(result, receipt=receipt)
+                if is_legacy_local_write_rejection(result):
+                    logger.warning(
+                        "legacy local write rejection contract tool=%s",
+                        request.tool_name,
+                    )
                 if outcome.status == "verified" and receipt is not None:
                     runtime_coordinator.finalize_tool_operation(
                         runtime_context,
@@ -13948,7 +16606,17 @@ class AgentExecutor:
             finalize_uncertain_operation()
             raise
         except Exception as exc:  # noqa: BLE001
-            logger.error("工具执行失败 %s: %s", request.tool_name, exc)
+            logger.error(
+                "tool execution failed tool=%s error_type=%s operation=%s run=%s",
+                request.tool_name,
+                type(exc).__name__,
+                (
+                    runtime_operation.operation_id
+                    if runtime_operation is not None
+                    else None
+                ),
+                self._runtime_run_id,
+            )
             finalize_uncertain_operation()
             return f"Error: {safe_tool_error_message(request.tool_name, exc)}"
 
@@ -14472,6 +17140,112 @@ class AgentExecutor:
             )
 
 
+    def _contextual_diet_replay_result(
+        self,
+        *,
+        requested_record_id: Any = None,
+    ) -> str | None:
+        """Return the verified receipt for a meal already saved in this turn.
+
+        Contextual photo capture is the sole writer for its turn.  Models may
+        still emit a redundant create/update call after seeing the structured
+        vision summary, or may select an older record after listing history.
+        Replaying the first write's receipt keeps the turn idempotent and
+        prevents a stale record from being mutated.
+        """
+        contextual_record_id = self._turn_contextual_diet_record_id
+        if contextual_record_id is None:
+            return None
+
+        from app.models.daily_health import DietRecord
+
+        existing = (
+            self.db.query(DietRecord)
+            .filter(
+                DietRecord.id == contextual_record_id,
+                DietRecord.user_id == self._current_user_id,
+            )
+            .first()
+        )
+        if existing is None:
+            return None
+
+        requested = str(requested_record_id or "").strip()
+        if requested and requested != str(existing.id):
+            logger.warning(
+                "[contextual_meal_photo] suppressed stale same-turn diet update "
+                "user=%s contextual_record_id=%s requested_record_id=%s",
+                self._current_user_id,
+                existing.id,
+                requested,
+            )
+        else:
+            logger.info(
+                "[contextual_meal_photo] replayed verified same-turn receipt "
+                "user=%s record_id=%s",
+                self._current_user_id,
+                existing.id,
+            )
+
+        payload = {
+            "id": existing.id,
+            "record_id": existing.id,
+            "resource_type": "diet_record",
+            "record_date": existing.record_date.isoformat(),
+            "operation_id": f"contextual_meal_photo:{existing.id}",
+            "status": "recorded",
+            "replayed": True,
+        }
+        if self._turn_contextual_diet_consumed_fraction is not None:
+            payload["portion_adjustment_applied"] = True
+        return json.dumps(payload, ensure_ascii=False)
+
+    async def _exec_user_directive(self, args: dict) -> str:
+        """Persist a prevalidated user constraint with a verifiable receipt."""
+        text = str(args.get("text") or "").strip()
+        source = str(args.get("source") or "user_self").strip()[:40]
+        source_message_id = str(args.get("source_message_id") or "").strip() or None
+        if len(text) < 4:
+            return json.dumps(
+                {
+                    "status": "rejected",
+                    "success": False,
+                    "dispatch_started": False,
+                    "error_code": "directive_text_too_short",
+                },
+                ensure_ascii=False,
+            )
+        from app.services.directive_parser import parse_and_store_async
+
+        ids = await parse_and_store_async(
+            self.db,
+            int(self._current_user_id),
+            text,
+            source=source,
+            source_message_id=source_message_id,
+        )
+        if not ids:
+            return json.dumps(
+                {
+                    "status": "rejected",
+                    "success": False,
+                    "dispatch_started": False,
+                    "error_code": "directive_not_recognized",
+                },
+                ensure_ascii=False,
+            )
+        return json.dumps(
+            {
+                "status": "verified",
+                "success": True,
+                "resource_type": "user_directive",
+                "resource_id": str(ids[0]),
+                "resource_ids": [str(item) for item in ids],
+                "count": len(ids),
+            },
+            ensure_ascii=False,
+        )
+
     async def _exec_health_record(
         self, base: str, headers: dict, args: dict
     ) -> str:
@@ -14522,24 +17296,9 @@ class AgentExecutor:
         # model receives its structured vision summary.  A model retry must
         # receive the same verified record, never create a second meal.
         if rtype == "diet" and self._turn_contextual_diet_record_id is not None:
-            from app.models.daily_health import DietRecord
-
-            existing = (
-                self.db.query(DietRecord)
-                .filter(
-                    DietRecord.id == self._turn_contextual_diet_record_id,
-                    DietRecord.user_id == self._current_user_id,
-                )
-                .first()
-            )
-            if existing is not None:
-                return json.dumps({
-                    "id": existing.id,
-                    "record_id": existing.id,
-                    "resource_type": "diet_record",
-                    "operation_id": f"contextual_meal_photo:{existing.id}",
-                    "status": "recorded",
-                }, ensure_ascii=False)
+            replay = self._contextual_diet_replay_result()
+            if replay is not None:
+                return replay
             return "Error: 本轮图片记录未取得可验证回执，未创建新的饮食记录。"
 
         # Mobile 相机入口是用户已经明确点击“拍照记餐”发起的动作，不再创建
@@ -14574,7 +17333,16 @@ class AgentExecutor:
                 self._medication_item_from_health_record_args(args)
             )
             if medication_error is not None or medication_item is None:
-                return f"Error: {medication_error or '用药参数无效'}"
+                return json.dumps(
+                    {
+                        "status": "rejected",
+                        "success": False,
+                        "dispatch_started": False,
+                        "error_code": "medication_arguments_invalid",
+                        "message": medication_error or "用药参数无效",
+                    },
+                    ensure_ascii=False,
+                )
             med_name = medication_item["medication_name"]
             actual_dosage = medication_item["actual_dosage"]
             observed_strength = medication_item.get("observed_strength")
@@ -14585,9 +17353,19 @@ class AgentExecutor:
                 None,
             )
             if preflight_error:
-                return (
-                    "Error: 用药确认计划未能建立，本次没有写入。"
-                    f"{preflight_error}；请重新发送完整药名和本次实际服量。"
+                return json.dumps(
+                    {
+                        "status": "rejected",
+                        "success": False,
+                        "dispatch_started": False,
+                        "error_code": "medication_plan_preflight_failed",
+                        "message": (
+                            "用药确认计划未能建立，本次没有写入。"
+                            f"{preflight_error}；"
+                            "请重新发送完整药名和本次实际服量。"
+                        ),
+                    },
+                    ensure_ascii=False,
                 )
 
             intent = None
@@ -14596,9 +17374,18 @@ class AgentExecutor:
                 and self._current_turn_conversation_id is not None
                 and self._current_turn_source_message_id is not None
             ):
-                return (
-                    "Error: 用药确认计划未能建立，本次没有写入。"
-                    "请在聊天中重新发送药名和本次实际服量。"
+                return json.dumps(
+                    {
+                        "status": "rejected",
+                        "success": False,
+                        "dispatch_started": False,
+                        "error_code": "medication_plan_context_missing",
+                        "message": (
+                            "用药确认计划未能建立，本次没有写入。"
+                            "请在聊天中重新发送药名和本次实际服量。"
+                        ),
+                    },
+                    ensure_ascii=False,
                 )
             try:
                 from app.services.medication_intake_batch import (
@@ -14646,9 +17433,18 @@ class AgentExecutor:
                     type(error).__name__,
                 )
                 self.db.rollback()
-                return (
-                    "Error: 用药确认计划未能建立，本次没有写入。"
-                    "请重新发送药名和本次实际服量。"
+                return json.dumps(
+                    {
+                        "status": "rejected",
+                        "success": False,
+                        "dispatch_started": False,
+                        "error_code": "medication_plan_proposal_failed",
+                        "message": (
+                            "用药确认计划未能建立，本次没有写入。"
+                            "请重新发送药名和本次实际服量。"
+                        ),
+                    },
+                    ensure_ascii=False,
                 )
             preview = (
                 f"用药: {med_name} {observed_strength}，本次服量 {actual_dosage}"
@@ -14681,17 +17477,25 @@ class AgentExecutor:
         if rtype == "water":
             amount = data.get("amount") or args.get("amount")
             if amount is None:
-                return (
-                    "Error: water 记录必须提供 amount (毫升, 整数). 例如 "
-                    '{"record_type":"water","data":{"amount":250}}. '
-                    "若用户没提具体毫升数, 请先问'喝了多少 ml?'再调用本工具."
+                return local_write_rejection(
+                    "water_amount_missing",
+                    message="饮水记录缺少毫升数。",
+                    recovery_guidance="请先确认喝了多少 ml，再重新记录。",
                 )
             try:
                 amount_int = int(amount)
             except (ValueError, TypeError):
-                return f"Error: water amount 必须是整数毫升 (got {amount!r})"
+                return local_write_rejection(
+                    "water_amount_invalid",
+                    message="饮水量必须是整数毫升。",
+                    recovery_guidance="请提供 1 到 5000 之间的整数毫升数。",
+                )
             if amount_int <= 0 or amount_int > 5000:
-                return f"Error: water amount={amount_int} 不合理 (1-5000ml)"
+                return local_write_rejection(
+                    "water_amount_out_of_range",
+                    message="饮水量超出可记录范围。",
+                    recovery_guidance="请提供 1 到 5000 之间的整数毫升数。",
+                )
             data["amount"] = amount_int
             check = _confirm_or_describe(
                 args, data,
@@ -14702,18 +17506,20 @@ class AgentExecutor:
                 return check
             from app.services.water_service import create_water_intake
 
+            recorded_at = self._agent_kernel_reference_now()
             record = create_water_intake(
                 self.db,
                 user_id=self._current_user_id,
                 amount_ml=amount_int,
                 drink_type=data.get("drink_type") or "水",
-                recorded_at=self._agent_kernel_reference_now(),
+                recorded_at=recorded_at,
             )
             return json.dumps(
                 {
                     "id": record.id,
                     "record_id": record.id,
                     "resource_type": "water_record",
+                    "record_date": record.record_date.isoformat(),
                     "status": "verified",
                     "success": True,
                     "message": f"已记录饮水 {amount_int}ml",
@@ -14730,7 +17536,11 @@ class AgentExecutor:
         # 补全 diet 必填字段
         if rtype == "diet":
             if not data.get("food_items"):
-                return "Error: diet 记录必须提供 food_items（食物内容）。请先识别食物内容，然后重新调用 health_record 并在 data.food_items 中填写具体食物。"
+                return local_write_rejection(
+                    "diet_food_items_missing",
+                    message="饮食记录缺少食物内容。",
+                    recovery_guidance="请补充本餐吃了什么后重新记录。",
+                )
 
         # 补全 weight 必填字段
         if rtype == "weight":
@@ -14746,7 +17556,11 @@ class AgentExecutor:
             if "weight" not in data and "weight_kg" in data:
                 data["weight"] = data.pop("weight_kg")
             if "weight" not in data:
-                return "Error: weight 记录必须提供 weight（体重数值，单位 kg）。请在 data.weight 中填入数字，例如 {\"record_type\":\"weight\",\"data\":{\"weight\":71.2}}"
+                return local_write_rejection(
+                    "weight_value_missing",
+                    message="体重记录缺少 kg 数值。",
+                    recovery_guidance="请补充体重数值后重新记录。",
+                )
 
             # L8 (Karpathy "verification is the bottleneck"): 高确定性数值, 写错没法静默修正
             check = _confirm_or_describe(
@@ -14768,9 +17582,10 @@ class AgentExecutor:
             if dia_v is None and args.get("diastolic") is not None:
                 data["diastolic"] = dia_v = args["diastolic"]
             if sys_v is None or dia_v is None:
-                return (
-                    "Error: blood_pressure 记录必须提供 systolic + diastolic. 例如 "
-                    '{"record_type":"blood_pressure","data":{"systolic":120,"diastolic":80}}'
+                return local_write_rejection(
+                    "blood_pressure_values_missing",
+                    message="血压记录需要同时提供收缩压和舒张压。",
+                    recovery_guidance="请补充完整的血压读数后重新记录。",
                 )
             # L8: 血压数值高/低风险大, 必须先确认
             check = _confirm_or_describe(
@@ -14786,9 +17601,10 @@ class AgentExecutor:
             data.setdefault("start_date", today)
             name = data.get("name") or data.get("illness_name") or args.get("name") or args.get("illness_name")
             if not name:
-                return (
-                    "Error: illness 记录必须提供 name. 例如 "
-                    '{"record_type":"illness","data":{"name":"感冒","severity":5}}'
+                return local_write_rejection(
+                    "illness_name_missing",
+                    message="疾病记录缺少名称。",
+                    recovery_guidance="请说明要记录的疾病或不适名称。",
                 )
             data["name"] = name
             sev = data.get("severity") or args.get("severity")
@@ -14833,9 +17649,10 @@ class AgentExecutor:
                     data["waist_cm"] = data.pop(src)
                     break
             if "waist_cm" not in data:
-                return (
-                    "Error: waist 记录必须提供 waist_cm（腰围厘米数）。例如 "
-                    '{"record_type":"waist","data":{"waist_cm":88.5}}'
+                return local_write_rejection(
+                    "waist_value_missing",
+                    message="腰围记录缺少厘米数。",
+                    recovery_guidance="请补充腰围厘米数后重新记录。",
                 )
 
         # sleep: 手动睡眠补录。不要代猜入睡/醒来时间;缺字段 fail-loud 让模型追问。
@@ -14873,12 +17690,12 @@ class AgentExecutor:
                         f"{base}/episodes/life-event", headers, payload
                     )
                     return _result_with_resource_type(result, "health_episode")
-                return (
-                    "Error: sleep 记录必须提供 bedtime、wake_time、sleep_quality(1-5). "
-                    f"缺少: {', '.join(missing)}. 例如 "
-                    '{"record_type":"sleep","data":{"record_date":"YYYY-MM-DD",'
-                    '"bedtime":"YYYY-MM-DDT23:00:00+08:00",'
-                    '"wake_time":"YYYY-MM-DDT07:00:00+08:00","sleep_quality":4}}'
+                return local_write_rejection(
+                    "sleep_fields_missing",
+                    message=f"睡眠记录缺少字段：{', '.join(missing)}。",
+                    recovery_guidance=(
+                        "请补充入睡时间、醒来时间和 1 到 5 分的睡眠质量。"
+                    ),
                 )
 
         # excretion: 排便/排尿记录。type 是下游统计的关键,缺失时明确追问。
@@ -14892,9 +17709,10 @@ class AgentExecutor:
             if raw_type in type_map:
                 raw_type = type_map[raw_type]
             if raw_type not in ("bowel", "urine"):
-                return (
-                    "Error: excretion 记录必须提供 type=bowel 或 urine. "
-                    "如果用户没说清楚,请先问是排便还是排尿。"
+                return local_write_rejection(
+                    "excretion_type_missing",
+                    message="排泄记录未说明是排便还是排尿。",
+                    recovery_guidance="请先确认记录类型后重试。",
                 )
             data["type"] = raw_type
 
@@ -14917,9 +17735,10 @@ class AgentExecutor:
                 data.get(key) not in (None, "")
                 for key in ("start_time", "end_time", "interval_minutes")
             ):
-                return (
-                    "Error: 时间窗提醒必须同时提供 start_time、end_time、"
-                    "interval_minutes。请继承上一轮已确认的时段与间隔后重试。"
+                return local_write_rejection(
+                    "reminder_window_incomplete",
+                    message="时间窗提醒缺少开始、结束或间隔设置。",
+                    recovery_guidance="请补充完整时段与提醒间隔后重试。",
                 )
             args["data"] = data
 
@@ -14927,10 +17746,10 @@ class AgentExecutor:
             data.setdefault("start_date", today)
             title = data.get("title") or data.get("name") or args.get("title")
             if not title:
-                return (
-                    "Error: goal 记录必须提供 title. 例如 "
-                    '{"record_type":"goal","data":{"title":"每日快走30分钟",'
-                    '"goal_type":"exercise","goal_period":"daily","start_date":"YYYY-MM-DD"}}'
+                return local_write_rejection(
+                    "goal_title_missing",
+                    message="目标记录缺少标题。",
+                    recovery_guidance="请说明要建立的目标后重新记录。",
                 )
             data["title"] = str(title).strip()
 
@@ -15034,9 +17853,10 @@ class AgentExecutor:
             if object_value is None:
                 object_value = data.get("value")
             if not predicate or object_value in (None, ""):
-                return (
-                    "Error: 记档案属性需要属性名和值 —— 例如 "
-                    'health_record(record_type="remember", data={"predicate":"鞋码","object_value":"42.5"})'
+                return local_write_rejection(
+                    "memory_attribute_missing",
+                    message="个人档案记录需要属性名和值。",
+                    recovery_guidance="请补充要记住的属性及其具体值。",
                 )
             # 硬闸:结构化医疗/化验/基因/用药数据绝不走 memory_fact(会绕过 Safety Guardian +
             # 加密/RLS)。命中 → fail-loud redirect 到对应结构化记录(服务端硬闸,非软指引)。
@@ -15123,13 +17943,21 @@ class AgentExecutor:
                     },
                     ensure_ascii=False,
                 )
-            return "Error: 需要提供补剂名称（supplement_name）"
+            return local_write_rejection(
+                "supplement_name_missing",
+                message="补剂记录缺少补剂名称。",
+                recovery_guidance="请补充补剂名称后重新记录。",
+            )
 
         # medication: 用药记录
         if rtype == "medication":
             med_name = data.get("medication_name", data.get("name", ""))
             if not med_name:
-                return "Error: 需要提供药物名称（medication_name）"
+                return local_write_rejection(
+                    "medication_name_missing",
+                    message="用药记录缺少药物名称。",
+                    recovery_guidance="请补充药物名称和本次实际服量。",
+                )
             # 查找 medication_id (走 _api_get_json: 拿干净可解析数据, 不被字符截断)
             meds, err = await self._api_get_json(f"{base}/medication/medications/me", headers)
             if err:
@@ -15172,7 +18000,11 @@ class AgentExecutor:
             # life_event 是别名(_FAST_RECORD_KIND_ALIASES),canonical 名只有 event。
             title = str(data.get("title") or data.get("name") or data.get("event") or "").strip()
             if not title:
-                return "Error: event 必须提供 title (如 '落地北京' / '药品送达酒店')"
+                return local_write_rejection(
+                    "event_title_missing",
+                    message="事件记录缺少标题。",
+                    recovery_guidance="请说明发生了什么事件后重新记录。",
+                )
             payload = {"title": title[:80]}
             if data.get("occurred_at"):
                 payload["occurred_at"] = str(data["occurred_at"])[:64]
@@ -15188,7 +18020,11 @@ class AgentExecutor:
             payload.setdefault("start_date", self._agent_kernel_reference_now().date().isoformat())
             payload.setdefault("status", "active")
             if not payload.get("name"):
-                return "Error: illness 必须提供 name (如 '感冒' / '发烧')"
+                return local_write_rejection(
+                    "illness_name_missing",
+                    message="疾病记录缺少名称。",
+                    recovery_guidance="请说明要记录的疾病或不适名称。",
+                )
             return await self._api_post(f"{base}/illness/episodes", headers, payload)
 
         # garmin_sync 不是写记录,是一个长跑的 ingest **job**。绝不走内联阻塞路径
@@ -15240,9 +18076,17 @@ class AgentExecutor:
             body_part = data.get("body_part")
             description = data.get("description")
             if not body_part:
-                return "Error: symptom 必须提供 body_part (eye/respiratory/skin/digestive/musculoskeletal/head/general/other)"
+                return local_write_rejection(
+                    "symptom_body_part_missing",
+                    message="症状记录缺少身体部位。",
+                    recovery_guidance="请说明症状发生在哪个部位。",
+                )
             if not description:
-                return "Error: symptom 必须提供 description (如 '眼睛痒' / '右膝盖钝痛')"
+                return local_write_rejection(
+                    "symptom_description_missing",
+                    message="症状记录缺少具体描述。",
+                    recovery_guidance="请描述具体的不适后重新记录。",
+                )
             # provenance 按真实通道打标(SymptomCreate 只收 manual|voice|siri):
             # typed 聊天=manual;siri=siri;其余(语音/未声明)=voice。此前硬编码
             # voice 把打字记录也标成语音,污染任何依赖 source 的下游区分。
@@ -15263,7 +18107,11 @@ class AgentExecutor:
                     len(str(result or "")),
                 )
                 return result
-        return f"Error: 不支持的记录类型 {rtype}"
+        return local_write_rejection(
+            "record_type_unsupported",
+            message="当前记录类型不受支持。",
+            recovery_guidance="请改用受支持的健康记录类型。",
+        )
 
     async def _trigger_garmin_sync(self) -> str:
         """触发 Garmin 数据同步 —— 异步 job 模型(不阻塞对话回合)。
@@ -15333,39 +18181,16 @@ class AgentExecutor:
             record_type == "diet"
             and operation == "update"
             and self._turn_contextual_diet_record_id is not None
-            and self._turn_contextual_diet_consumed_fraction is not None
-            and (
-                record_id in (None, "", False)
-                or str(record_id) == str(self._turn_contextual_diet_record_id)
-            )
         ):
-            from app.models.daily_health import DietRecord
-
-            existing = (
-                self.db.query(DietRecord)
-                .filter(
-                    DietRecord.id == self._turn_contextual_diet_record_id,
-                    DietRecord.user_id == self._current_user_id,
-                )
-                .first()
+            replay = self._contextual_diet_replay_result(
+                requested_record_id=record_id,
             )
-            if existing is not None:
-                logger.info(
-                    "[health_manage] replay contextual diet receipt "
-                    "user=%s record_id=%s portion=%s",
-                    self._current_user_id,
-                    existing.id,
-                    self._turn_contextual_diet_consumed_fraction,
-                )
-                return json.dumps({
-                    "id": existing.id,
-                    "record_id": existing.id,
-                    "resource_type": "diet_record",
-                    "operation_id": f"contextual_meal_photo:{existing.id}",
-                    "status": "recorded",
-                    "replayed": True,
-                    "portion_adjustment_applied": True,
-                }, ensure_ascii=False)
+            if replay is not None:
+                return replay
+            return (
+                "Error: 本轮图片记录未取得可验证回执，"
+                "未执行第二次饮食修改。"
+            )
         # LLM 常传字面 'today'/'昨天'; 端点要真日期, 传 'today' → 422。归一成 ISO 日期,
         # 解析不出则不带日期过滤(列近期), 绝不把相对词当 start_date 发出去。
         target_date = _normalize_relative_date(
@@ -15458,7 +18283,10 @@ class AgentExecutor:
 
         async def _delete_record_by_id(resolved_record_id: Any) -> str:
             if not path_tmpl:
-                return f"Error: 不支持管理 {record_type}"
+                return local_write_rejection(
+                    "record_type_not_manageable",
+                    message="当前记录类型不支持修改或删除。",
+                )
             delete_path = path_tmpl.format(id=resolved_record_id)
             result = await self._api_delete(f"{base}{delete_path}", headers)
             if str(result).startswith("Error:"):
@@ -15486,13 +18314,23 @@ class AgentExecutor:
         if operation == "list":
             path = list_paths.get(record_type)
             if not path:
-                return f"Error: 不支持查询 {record_type}"
+                return local_write_rejection(
+                    "record_type_query_unsupported",
+                    message="当前记录类型不支持查询。",
+                )
             return await self._api_get(f"{base}{path}", headers)
 
         if not path_tmpl:
-            return f"Error: 不支持管理 {record_type}"
+            return local_write_rejection(
+                "record_type_not_manageable",
+                message="当前记录类型不支持修改或删除。",
+            )
         if not record_id:
-            return "Error: 修改或删除必须提供 record_id. 请先查询候选记录并确认 ID."
+            return local_write_rejection(
+                "record_id_missing",
+                message="修改或删除缺少记录 ID。",
+                recovery_guidance="请先查询候选记录并确认要操作的记录。",
+            )
         path = path_tmpl.format(id=record_id)
 
         if operation == "delete":
@@ -15500,7 +18338,11 @@ class AgentExecutor:
 
         if operation == "update":
             if record_type not in update_supported:
-                return f"Error: {record_type} 暂不支持 update, 可先删除后重记."
+                return local_write_rejection(
+                    "record_type_update_unsupported",
+                    message="当前记录类型暂不支持修改。",
+                    recovery_guidance="可以确认后删除原记录并重新记录。",
+                )
             result = await self._api_put(f"{base}{path}", headers, data)
             self._invalidate_twin_after_mutation()
             if record_type == "diet" and not str(result).startswith("Error:"):
@@ -15518,7 +18360,10 @@ class AgentExecutor:
                     result = json.dumps(payload, ensure_ascii=False)
             return result
 
-        return f"Error: 不支持的操作 {operation}"
+        return local_write_rejection(
+            "health_manage_operation_unsupported",
+            message="当前健康记录管理操作不受支持。",
+        )
 
     def _invalidate_twin_after_mutation(self) -> None:
         if self._current_user_id is None:
@@ -15708,10 +18553,17 @@ class AgentExecutor:
                     f"{base}/smart-plan/{plan_id}/items/{item_id}",
                     headers, {"is_completed": True}
                 )
-            return "Error: 需要 plan_id 和 item_id"
+            return local_write_rejection(
+                "plan_item_identity_missing",
+                message="完成计划项缺少计划 ID 或项目 ID。",
+                recovery_guidance="请先查询并确认要完成的计划项目。",
+            )
         elif action == "save_to_card":
             return await self._api_post(f"{base}/action-cards/from-message", headers, data)
-        return f"Error: 不支持的计划操作 {action}"
+        return local_write_rejection(
+            "plan_action_unsupported",
+            message="当前计划操作不受支持。",
+        )
 
     async def _exec_intervention_cycle(self, args: dict) -> str:
         """N-of-1 干预结局闭环工具 — status/list/start/update/cancel.
@@ -15724,7 +18576,10 @@ class AgentExecutor:
         action = args.get("action", "")
         user_id = self._current_user_id
         if user_id is None:
-            return "Error: 缺少用户身份, 无法操作干预周期"
+            return local_write_rejection(
+                "intervention_user_missing",
+                message="当前会话缺少用户身份，无法操作干预周期。",
+            )
 
         if action == "status":
             return await _aio.to_thread(self._intervention_status, user_id)
@@ -15780,7 +18635,10 @@ class AgentExecutor:
                 )
             return await _aio.to_thread(self._intervention_cancel, user_id, args)
 
-        return f"Error: 不支持的干预周期操作 {action}"
+        return local_write_rejection(
+            "intervention_action_unsupported",
+            message="当前干预周期操作不受支持。",
+        )
 
     async def _exec_draft_aigc_media(self, args: dict) -> str:
         """Create a server-bound AIGC draft; a user click dispatches it later."""
@@ -15794,12 +18652,19 @@ class AgentExecutor:
 
         user_id = self._current_user_id
         if user_id is None:
-            return "Error: 缺少用户身份，无法创建 AIGC 创作草稿。"
+            return local_write_rejection(
+                "aigc_user_missing",
+                message="当前会话缺少用户身份，无法创建创作草稿。",
+            )
         kind = str(args.get("kind") or "").strip()
         requires_source = kind in {"image_to_image", "image_to_video"}
         source_message_id = self._current_turn_source_message_id if requires_source else None
         if requires_source and (source_message_id is None or not self._current_turn_image_urls):
-            return "Error: 图生图片或图生视频需要在当前消息附上一张图片，请上传后重新创建草稿。"
+            return local_write_rejection(
+                "aigc_source_image_missing",
+                message="当前创作类型需要一张来源图片。",
+                recovery_guidance="请在当前消息上传图片后重新创建草稿。",
+            )
         service = AIGCMediaJobService(self.db)
         try:
             confirmation = await service.issue_confirmation(
@@ -15816,27 +18681,62 @@ class AgentExecutor:
                 ),
             )
         except AIGCMediaConfigurationError:
-            return "Error: AIGC 媒体服务尚未配置百炼按量 API Key。"
+            return local_write_rejection(
+                "aigc_service_unconfigured",
+                message="AIGC 媒体服务当前未配置。",
+            )
         except AIGCMediaJobRequestError as exc:
-            return f"Error: {exc}"
+            return local_write_rejection(
+                "aigc_request_invalid",
+                message=str(exc),
+            )
         except AIGCMediaJobError as exc:
             return f"Error: {exc}"
 
         card_data = {
             "confirmation_id": confirmation.id,
             "kind": confirmation.kind,
-            "title": "小巴创作草稿",
-            "provider": "百炼 Wan",
+            "title": (
+                "短视频草稿"
+                if confirmation.kind in {"text_to_video", "image_to_video"}
+                else "图片草稿"
+            ),
+            "provider": (
+                "百炼 HappyHorse"
+                if confirmation.kind in {"text_to_video", "image_to_video"}
+                and str(confirmation.model).startswith("happyhorse-")
+                else "百炼"
+            ),
             "source_attached": confirmation.source_message_id is not None,
             "status": "pending",
+            **_aigc_media_content_preview(
+                kind=confirmation.kind,
+                prompt=str(args.get("prompt") or ""),
+            ),
         }
+        if confirmation.kind in {"text_to_video", "image_to_video"}:
+            from app.services.aigc_media_capabilities import video_capability_for
+
+            capability = video_capability_for(
+                model=confirmation.model,
+                kind=confirmation.kind,
+            )
+            card_data.update(
+                {
+                    "duration_seconds": confirmation.duration_seconds,
+                    "duration_options": list(capability.selectable_duration_seconds),
+                    "ratio": confirmation.ratio,
+                    "resolution": capability.default_resolution,
+                    "generates_audio": capability.generates_audio,
+                }
+            )
         descriptor = {
             "type": "aigc_media_confirmation",
             "data": card_data,
             "actions": [
                 {
                     "id": f"aigc_media.confirm:{confirmation.id}",
-                    "label": "发送给百炼并生成",
+                    "label": "确认并生成",
                     "action": "aigc_media.confirm",
                     "endpoint": f"/aigc/media/confirmations/{confirmation.id}/confirm",
                     "requires_manual_confirm": True,
@@ -15923,20 +18823,36 @@ class AgentExecutor:
 
         cycle = self._owned_intervention_cycle(user_id, args.get("cycle_id"))
         if cycle is None:
-            return "Error: 没有找到可调整的干预周期。请先 list/status 确认周期。"
+            return local_write_rejection(
+                "intervention_cycle_not_found",
+                message="没有找到可调整的干预周期。",
+                recovery_guidance="请先查询并确认要调整的周期。",
+            )
+        if cycle.status != "active":
+            return local_write_rejection(
+                "intervention_cycle_not_active",
+                message="只能调整进行中的干预周期。",
+            )
 
         days = args.get("days")
         if days is not None:
             try:
                 days = int(days)
             except (TypeError, ValueError):
-                return "Error: days 必须是整数。"
+                return local_write_rejection(
+                    "intervention_days_invalid",
+                    message="干预周期天数必须是整数。",
+                )
         target_specs = args.get("target_specs") if isinstance(args.get("target_specs"), list) else None
         stop_conditions = (
             args.get("stop_conditions") if isinstance(args.get("stop_conditions"), list) else None
         )
         if days is None and target_specs is None and stop_conditions is None:
-            return "Error: update 需要提供 days、target_specs 或 stop_conditions。"
+            return local_write_rejection(
+                "intervention_update_empty",
+                message="干预周期调整缺少可更新的字段。",
+                recovery_guidance="请提供天数、目标或停止条件。",
+            )
 
         try:
             cycle = ics.update_cycle_params(
@@ -15946,8 +18862,6 @@ class AgentExecutor:
                 target_specs=target_specs,
                 stop_conditions=stop_conditions,
             )
-        except ValueError as exc:
-            return f"Error: {exc}"
         except Exception:
             self.db.rollback()
             raise
@@ -15965,9 +18879,16 @@ class AgentExecutor:
 
         cycle = self._owned_intervention_cycle(user_id, args.get("cycle_id"))
         if cycle is None:
-            return "Error: 没有找到可取消的干预周期。请先 list/status 确认周期。"
+            return local_write_rejection(
+                "intervention_cycle_not_found",
+                message="没有找到可取消的干预周期。",
+                recovery_guidance="请先查询并确认要取消的周期。",
+            )
         if cycle.status != "active":
-            return "Error: 只能取消进行中的干预周期。"
+            return local_write_rejection(
+                "intervention_cycle_not_active",
+                message="只能取消进行中的干预周期。",
+            )
 
         try:
             cycle = ics.complete_cycle(self.db, cycle, status="abandoned")
@@ -16083,7 +19004,11 @@ class AgentExecutor:
         """上传 23andMe / WeGene TXT 原始数据."""
         txt = args.get("txt_content") or ""
         if len(txt) < 50:
-            return "Error: txt_content 太短, 不像是 23andMe/WeGene 原始数据 (应是含 rsid 的 tab 分隔行)"
+            return local_write_rejection(
+                "genetic_text_invalid",
+                message="基因原始数据内容过短或格式不正确。",
+                recovery_guidance="请上传包含 rsid 的完整原始 TXT 内容。",
+            )
         today = self._agent_kernel_reference_now().strftime("%Y-%m-%d")
         payload = {
             "test_provider": args.get("test_provider") or "unknown",
@@ -16113,28 +19038,95 @@ class AgentExecutor:
         """口述化验文本 → medical_text_parser → 入 MedicalExam + Indicator."""
         text = (args.get("text") or "").strip()
         if not text:
-            return "Error: text 不能为空"
+            return local_write_rejection(
+                "medical_exam_text_missing",
+                message="化验记录文本不能为空。",
+            )
         if self._current_user_id is None:
-            return "Error: 当前会话无 user_id, 无法写入化验指标"
+            return local_write_rejection(
+                "medical_exam_user_missing",
+                message="当前会话缺少用户身份，无法写入化验指标。",
+            )
+
+        from app.services.medical_text_parser import parse_lab_indicators_from_text
+
+        raw_date = args.get("exam_date")
+        normalized_date = _normalize_relative_date(
+            raw_date,
+            reference_now=self._agent_kernel_reference_now(),
+        )
+        if raw_date and not normalized_date:
+            return local_write_rejection(
+                "medical_exam_date_invalid",
+                message="化验日期格式无效。",
+                recovery_guidance="请使用 YYYY-MM-DD 或今天、昨天等明确日期。",
+            )
+        exam_date = datetime.strptime(
+            normalized_date or self._agent_kernel_reference_now().date().isoformat(),
+            "%Y-%m-%d",
+        ).date()
 
         try:
-            from datetime import date as _date
+            items = parse_lab_indicators_from_text(text)
+        except (TypeError, ValueError):
+            items = []
+        report_type = str(args.get("report_type") or "").strip().lower()
+        narrative_report_types = {
+            "imaging",
+            "mri",
+            "ct",
+            "pathology",
+            "ultrasound",
+            "endoscopy",
+            "medical_report",
+        }
+        is_narrative_report = report_type in narrative_report_types
+        if not items and not is_narrative_report:
+            return local_write_rejection(
+                "medical_exam_text_invalid",
+                message="未能从文本中识别出可入库的化验指标。",
+                recovery_guidance=(
+                    "化验结果请补充项目、数值和单位；MRI、CT、病理等报告"
+                    "请同时标明报告类型。"
+                ),
+            )
 
-            from app.services.data_collection.medical_exam_import import MedicalExamImportService
+        try:
+            from app.services.data_collection.medical_exam_import import (
+                MedicalExamImportService,
+            )
+            from app.services.agent_operation_reconciliation import (
+                runtime_operation_source_fingerprint,
+            )
             from app.twin.cache import invalidate_twin
 
-            raw_date = args.get("exam_date")
-            exam_date = (
-                datetime.strptime(raw_date, "%Y-%m-%d").date()
-                if raw_date
-                else _date.today()
+            runtime_operation_id = str(
+                args.get("_runtime_operation_id") or ""
+            ).strip()
+            source_fingerprint = (
+                runtime_operation_source_fingerprint(runtime_operation_id)
+                if runtime_operation_id
+                else None
             )
-            exam = MedicalExamImportService.import_from_text(
+            exam_type = (
+                "imaging"
+                if report_type in {"mri", "ct", "ultrasound", "endoscopy"}
+                else (report_type or "biochemistry")
+            )
+            exam = MedicalExamImportService.import_from_items(
                 self.db,
                 user_id=self._current_user_id,
-                text=text,
+                items_data=items,
                 exam_date=exam_date,
+                exam_type=exam_type,
+                notes=(
+                    "从聊天文本导入，叙述内容待用户核对"
+                    if is_narrative_report
+                    else "从聊天文本导入"
+                ),
                 source="agent_text",
+                overall_assessment=text if is_narrative_report else None,
+                source_fingerprint=source_fingerprint,
             )
             # 这里显式置位, 让 done 侧 KB 证据卡重算反映刚写入的化验指标;
             # 同时由统一写入回执集合负责验证本次持久化身份。
@@ -16154,15 +19146,16 @@ class AgentExecutor:
                 },
                 ensure_ascii=False,
             )
-        except ValueError as e:
-            return f"Error: {e}"
-        except Exception as e:
-            logger.error(f"[upload_medical_exam_text] 入库失败: {e}", exc_info=True)
+        except Exception as exc:  # noqa: BLE001
+            logger.error(
+                "medical exam import failed error_type=%s",
+                type(exc).__name__,
+            )
             try:
                 self.db.rollback()
             except Exception:
                 pass
-            return f"Error: 化验指标入库失败: {e}"
+            return "Error: 化验指标入库失败"
 
     _MAX_LAB_BATCH_NAMES = 20  # 单次批量最多查这么多指标(防滥用/超时)
 

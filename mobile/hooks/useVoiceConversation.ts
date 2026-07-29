@@ -191,6 +191,8 @@ export function useVoiceConversation() {
   const abortRef = useRef<AbortController | null>(null);
   const voiceEventLeaseRef = useRef<VoiceEventLease | null>(null);
   const voiceHandlersRef = useRef<VoiceEventHandlers>({});
+  const mountedRef = useRef(true);
+  const resumeListeningTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // I Phase 2: 本次会话内成功 health_record 的录入摘要 (关闭 voice-chat 时弹 summary 卡用)
   // 记 record_type + 简短描述 + 原始 record_data (撤销用)
@@ -406,14 +408,13 @@ export function useVoiceConversation() {
     }
   }, [enqueueTtsText, flushTTS]);
 
-  const waitTTSDrain = useCallback(() => {
-    return new Promise<void>((resolve) => {
-      const check = () => {
-        if (ttsQueueRef.current.length === 0 && !isSpeakingRef.current) resolve();
-        else setTimeout(check, 200);
-      };
-      check();
-    });
+  const waitTTSDrain = useCallback(async () => {
+    while (
+      mountedRef.current
+      && (ttsQueueRef.current.length > 0 || isSpeakingRef.current)
+    ) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 200));
+    }
   }, []);
 
   const submit = useCallback(async (userText: string) => {
@@ -498,13 +499,14 @@ export function useVoiceConversation() {
       }
       flushTail();
       await waitTTSDrain();
-      setState('idle');
+      if (mountedRef.current) setState('idle');
     } catch (e: any) {
       const msg = e?.message || '请求失败';
       if (msg === 'aborted') {
-        setState('idle');
+        if (mountedRef.current) setState('idle');
         return;
       }
+      if (!mountedRef.current) return;
       setError(msg);
       setTurns((prev) => [...prev, { role: 'assistant', text: `[错误] ${msg}`, at: Date.now() }]);
       setState('error');
@@ -518,6 +520,7 @@ export function useVoiceConversation() {
   useEffect(() => { submitRef.current = submit; }, [submit]);
 
   useEffect(() => {
+    mountedRef.current = true;
     // 收到 partial 时重置 silence timer; 1.2s 内没新内容 → 自动 stop + submit.
     // 这比 iOS 系统的 onSpeechEnd (2-3s 才触发) 快得多, 体验上"说完即送".
     //
@@ -595,11 +598,20 @@ export function useVoiceConversation() {
       },
     };
     return () => {
+      mountedRef.current = false;
+      if (resumeListeningTimerRef.current) {
+        clearTimeout(resumeListeningTimerRef.current);
+        resumeListeningTimerRef.current = null;
+      }
       if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
       const ownsNativeSession = isVoiceEventHandlerOwner(voiceEventLeaseRef.current);
       releaseVoiceEventHandlers(voiceEventLeaseRef.current);
       voiceEventLeaseRef.current = null;
       if (ownsNativeSession) Voice.destroy().catch(() => undefined);
+      // 清队列必须早于 cancel；cancel 会同步触发 onDone -> flushTTS。
+      ttsQueueRef.current = [];
+      pendingTextRef.current = '';
+      preSynthRef.current = null;
       stopCurrentSpeech();
       abortRef.current?.abort();
       cleanupTmpTts().catch(() => {});
@@ -653,10 +665,16 @@ export function useVoiceConversation() {
       silenceTimerRef.current = null;
     }
     justSubmittedRef.current = false;
-    stopCurrentSpeech();
+    if (resumeListeningTimerRef.current) {
+      clearTimeout(resumeListeningTimerRef.current);
+      resumeListeningTimerRef.current = null;
+    }
+    // 和 startListening/unmount 使用同一顺序，避免 cancel 回调继续播下一段。
     ttsQueueRef.current = [];
     pendingTextRef.current = '';
     assistantTextRef.current = '';
+    preSynthRef.current = null;
+    stopCurrentSpeech();
     recordedItemsRef.current = [];
     abortRef.current?.abort();
     releaseVoiceEventHandlers(voiceEventLeaseRef.current);
@@ -681,6 +699,7 @@ export function useVoiceConversation() {
     async (text: string, opts?: { thenListen?: boolean }) => {
       if (!text || !text.trim()) return;
       await refreshVoiceStyle();
+      if (!mountedRef.current) return;
       // 清当前播放队列, 防止冲撞
       ttsQueueRef.current = [];
       pendingTextRef.current = '';
@@ -694,26 +713,21 @@ export function useVoiceConversation() {
       pendingTextRef.current = text;
       flushTail();
 
-      // 等队列播完
-      await new Promise<void>((resolve) => {
-        const check = () => {
-          if (ttsQueueRef.current.length === 0 && !isSpeakingRef.current) resolve();
-          else setTimeout(check, 200);
-        };
-        check();
-      });
+      await waitTTSDrain();
+      if (!mountedRef.current) return;
 
       if (opts?.thenListen) {
         setState('idle');
         // 等 200ms 让用户感知"该我说了"
-        setTimeout(() => {
-          startListening();
+        resumeListeningTimerRef.current = setTimeout(() => {
+          resumeListeningTimerRef.current = null;
+          if (mountedRef.current) void startListening();
         }, 200);
       } else {
         setState('idle');
       }
     },
-    [refreshVoiceStyle, stopCurrentSpeech, flushTail, startListening],
+    [refreshVoiceStyle, stopCurrentSpeech, flushTail, startListening, waitTTSDrain],
   );
 
   return {

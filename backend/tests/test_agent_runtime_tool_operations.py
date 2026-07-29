@@ -98,6 +98,16 @@ def test_health_record_diet_declares_reconcilable_resource_type():
     ) is None
 
 
+def test_fixed_receipt_write_declares_reconcilable_resource_type():
+    from app.services.agent_kernel.tool_registry import get_tool_spec
+
+    spec = get_tool_spec("upload_medical_exam_text")
+
+    assert spec.reconciliation_resource_type(
+        {"text": "LDL 3.8 mmol/L"}
+    ) == "medical_exam"
+
+
 def test_verified_operation_is_replayed_without_second_execution(
     db, auth_user_and_headers
 ):
@@ -1009,6 +1019,72 @@ def test_operation_fingerprint_must_be_an_opaque_sha256(
         )
 
 
+def test_runtime_write_fingerprint_is_keyed_and_not_plain_sha256(monkeypatch):
+    import hashlib
+    import json
+
+    from app.config import settings
+    from app.services.agent_executor import _runtime_write_operation_fingerprint
+
+    monkeypatch.setattr(settings, "secret_key", "a" * 32)
+    args = {"record_type": "water", "data": {"amount": 500}}
+    fingerprint = _runtime_write_operation_fingerprint("health_record", args)
+    plain = hashlib.sha256(
+        json.dumps(
+            {"tool": "health_record", "args": args},
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode()
+    ).hexdigest()
+
+    assert len(fingerprint) == 64
+    assert fingerprint != plain
+    assert _runtime_write_operation_fingerprint("health_record", args) == fingerprint
+
+
+def test_runtime_logical_operation_hashes_are_keyed(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+):
+    from app.config import settings
+    from app.models.agent_runtime import AgentToolOperation
+    from app.services.agent_runtime import AgentRuntimeCoordinator
+
+    user, _headers = auth_user_and_headers
+    monkeypatch.setattr(settings, "secret_key", "a" * 32)
+    runtime = AgentRuntimeCoordinator(db)
+    admission = _run(db, user.id, suffix="keyed-logical-hashes")
+    runtime.mark_running(admission.context)
+    logical_key = "diet:2026-07-24:lunch"
+    logical_scope = "diet:2026-07-24"
+    discriminator = "lunch"
+
+    runtime.claim_tool_operation(
+        admission.context,
+        tool_name="health_record",
+        effect_class="write",
+        operation_fingerprint=_fingerprint("keyed-logical-hashes"),
+        logical_operation_key=logical_key,
+        logical_operation_scope_key=logical_scope,
+        logical_operation_discriminator_kind="meal_time",
+        logical_operation_discriminator_key=discriminator,
+    )
+
+    operation = db.query(AgentToolOperation).one()
+    assert operation.logical_operation_key_hash != hashlib.sha256(
+        logical_key.encode()
+    ).hexdigest()
+    assert operation.logical_operation_scope_hash != hashlib.sha256(
+        logical_scope.encode()
+    ).hexdigest()
+    assert operation.logical_operation_discriminator_hash != hashlib.sha256(
+        discriminator.encode()
+    ).hexdigest()
+
+
 def test_stale_attempt_cannot_claim_or_finalize_tool_operation(
     db, auth_user_and_headers
 ):
@@ -1240,6 +1316,15 @@ async def test_executor_enforce_mode_ledgers_and_replays_verified_write(
     assert operation.status == "succeeded"
     assert operation.resource_type == "diet_record"
     assert operation.resource_id == "829"
+    assert executor._agent_kernel_event_bus is not None
+    tool_results = [
+        event
+        for event in executor._agent_kernel_event_bus.events
+        if event.name == "agent.tool_result"
+    ]
+    assert len(tool_results) == 2
+    assert tool_results[-1].data["success"] is True
+    assert "health_record" not in executor._agent_kernel_tool_failure_tools
 
 
 @pytest.mark.asyncio
@@ -1283,6 +1368,55 @@ async def test_executor_passes_runtime_operation_id_to_reconcilable_diet_write(
 
     operation = db.query(AgentToolOperation).one()
     assert observed_headers == [{"Idempotency-Key": operation.operation_id}]
+
+
+@pytest.mark.asyncio
+async def test_executor_passes_runtime_operation_id_to_local_medical_exam_write(
+    db, auth_user_and_headers, monkeypatch
+):
+    from app.models.agent_runtime import AgentToolOperation
+    from app.services.agent_executor import AgentExecutor
+    from app.services.agent_runtime import AgentRuntimeCoordinator
+
+    user, _headers = auth_user_and_headers
+    admission = _run(db, user.id, suffix="executor-medical-exam-idempotency")
+    AgentRuntimeCoordinator(db).mark_running(admission.context)
+    executor = AgentExecutor(db)
+    executor._current_user_id = user.id
+    executor._current_turn_user_message = "记录 LDL 3.8 mmol/L"
+    executor._runtime_run_id = admission.context.run_id
+    executor._runtime_attempt_id = admission.context.attempt_id
+    executor._runtime_managed = True
+    observed_args = []
+
+    monkeypatch.setattr(
+        "app.services.llm.tool_validator.validate_tool_call",
+        lambda tool_name, args, db, user_id, reference_now=None: {
+            "error": None,
+            "data": args,
+        },
+    )
+
+    async def fake_write(base_url, headers, args):
+        observed_args.append(dict(args))
+        return '{"id": 833, "resource_type": "medical_exam"}'
+
+    monkeypatch.setattr(executor, "_exec_upload_medical_exam_text", fake_write)
+
+    await executor._execute_tool(
+        "upload_medical_exam_text",
+        {"text": "LDL 3.8 mmol/L"},
+        None,
+    )
+
+    operation = db.query(AgentToolOperation).one()
+    assert observed_args == [
+        {
+            "text": "LDL 3.8 mmol/L",
+            "_runtime_operation_id": operation.operation_id,
+        }
+    ]
+    assert operation.resource_type == "medical_exam"
 
 
 @pytest.mark.asyncio
@@ -1485,6 +1619,139 @@ async def test_executor_enforce_mode_marks_missing_receipt_for_reconciliation(
 
 
 @pytest.mark.asyncio
+async def test_executor_marks_local_medication_plan_rejection_failed_not_uncertain(
+    db, auth_user_and_headers, monkeypatch
+):
+    from app.models.agent_runtime import AgentToolOperation
+    from app.services.agent_executor import AgentExecutor
+    from app.services.agent_runtime import AgentRuntimeCoordinator
+
+    user, _headers = auth_user_and_headers
+    runtime = AgentRuntimeCoordinator(db)
+    admission = _run(db, user.id, suffix="executor-medication-local-rejection")
+    runtime.mark_running(admission.context)
+    executor = AgentExecutor(db)
+    executor._current_user_id = user.id
+    executor._current_turn_user_message = "记录本次服药"
+    executor._runtime_run_id = admission.context.run_id
+    executor._runtime_attempt_id = admission.context.attempt_id
+    executor._runtime_managed = True
+    executor._turn_medication_tool_preflight_error = (
+        "服务端未能封存完整的用药确认计划"
+    )
+
+    monkeypatch.setattr(
+        "app.services.agent_executor.settings.agent_runtime_mode", "enforce"
+    )
+    monkeypatch.setattr(
+        "app.services.llm.tool_validator.validate_tool_call",
+        lambda tool_name, args, db, user_id, reference_now=None: {
+            "error": None,
+            "data": args,
+        },
+    )
+
+    await executor._execute_tool(
+        "health_record",
+        {
+            "record_type": "medication",
+            "data": {
+                "medication_name": "测试药物",
+                "actual_dosage": "1片",
+            },
+        },
+        None,
+    )
+
+    operation = db.query(AgentToolOperation).one()
+    assert operation.status == "failed"
+    assert operation.error_code == "tool_rejected"
+
+
+@pytest.mark.asyncio
+async def test_executor_marks_registered_adapter_local_rejection_failed_not_uncertain(
+    db, auth_user_and_headers, monkeypatch
+):
+    from app.models.agent_runtime import AgentToolOperation
+    from app.services.agent_executor import AgentExecutor
+    from app.services.agent_kernel.types import ToolExecutionRequest
+    from app.services.agent_runtime import AgentRuntimeCoordinator
+
+    user, _headers = auth_user_and_headers
+    runtime = AgentRuntimeCoordinator(db)
+    admission = _run(db, user.id, suffix="executor-genetic-local-rejection")
+    runtime.mark_running(admission.context)
+    executor = AgentExecutor(db)
+    executor._current_user_id = user.id
+    executor._runtime_run_id = admission.context.run_id
+    executor._runtime_attempt_id = admission.context.attempt_id
+    executor._runtime_managed = True
+
+    monkeypatch.setattr(
+        "app.services.agent_executor.settings.agent_runtime_mode", "enforce"
+    )
+
+    result = await executor._dispatch_tool_request(
+        ToolExecutionRequest(
+            tool_name="upload_genetic_txt",
+            arguments={"txt_content": "too short"},
+            source="test",
+        ),
+        None,
+    )
+
+    payload = __import__("json").loads(result)
+    assert payload["dispatch_started"] is False
+    operation = db.query(AgentToolOperation).one()
+    assert operation.status == "failed"
+    assert operation.error_code == "tool_rejected"
+
+
+@pytest.mark.asyncio
+async def test_executor_logs_content_free_warning_for_legacy_local_rejection(
+    db, auth_user_and_headers, monkeypatch, caplog
+):
+    import logging
+
+    from app.services.agent_executor import AgentExecutor
+    from app.services.agent_kernel.types import ToolExecutionRequest
+    from app.services.agent_runtime import AgentRuntimeCoordinator
+
+    user, _headers = auth_user_and_headers
+    runtime = AgentRuntimeCoordinator(db)
+    admission = _run(db, user.id, suffix="executor-legacy-local-rejection")
+    runtime.mark_running(admission.context)
+    executor = AgentExecutor(db)
+    executor._current_user_id = user.id
+    executor._runtime_run_id = admission.context.run_id
+    executor._runtime_attempt_id = admission.context.attempt_id
+    executor._runtime_managed = True
+
+    async def legacy_rejection(base_url, headers, args):
+        return "Error: 需要提供 private-health-content"
+
+    monkeypatch.setattr(executor, "_exec_upload_genetic_txt", legacy_rejection)
+    caplog.set_level(logging.WARNING, logger="app.services.agent_executor")
+
+    await executor._dispatch_tool_request(
+        ToolExecutionRequest(
+            tool_name="upload_genetic_txt",
+            arguments={"txt_content": "x" * 80},
+            source="test",
+        ),
+        None,
+    )
+
+    warning = next(
+        record
+        for record in caplog.records
+        if "legacy local write rejection contract" in record.getMessage()
+    )
+    assert "upload_genetic_txt" in warning.getMessage()
+    assert "private-health-content" not in warning.getMessage()
+
+
+@pytest.mark.asyncio
 async def test_executor_cancellation_marks_claimed_write_for_reconciliation(
     db, auth_user_and_headers, monkeypatch
 ):
@@ -1580,8 +1847,10 @@ async def test_executor_off_mode_keeps_runtime_operation_ledger_empty(
 
 @pytest.mark.asyncio
 async def test_executor_exception_after_claim_is_marked_for_reconciliation(
-    db, auth_user_and_headers, monkeypatch
+    db, auth_user_and_headers, monkeypatch, caplog
 ):
+    import logging
+
     from app.models.agent_runtime import AgentToolOperation
     from app.services.agent_executor import AgentExecutor
     from app.services.agent_runtime import AgentRuntimeCoordinator
@@ -1609,9 +1878,12 @@ async def test_executor_exception_after_claim_is_marked_for_reconciliation(
     )
 
     async def exploding_write(base_url, headers, args):
-        raise RuntimeError("transport dropped after dispatch")
+        user.name = "committed-before-error"
+        db.commit()
+        raise RuntimeError("private-health-content")
 
     monkeypatch.setattr(executor, "_exec_health_record", exploding_write)
+    caplog.set_level(logging.ERROR, logger="app.services.agent_executor")
     result = await executor._execute_tool(
         "health_record",
         {"record_type": "diet", "data": {"food_items": "牛肉面"}},
@@ -1620,5 +1892,60 @@ async def test_executor_exception_after_claim_is_marked_for_reconciliation(
 
     operation = db.query(AgentToolOperation).one()
     assert result.startswith("Error:")
+    assert operation.status == "reconciliation_required"
+    assert operation.error_code == "write_uncertain"
+    assert "private-health-content" not in caplog.text
+    db.expire_all()
+    assert user.name == "committed-before-error"
+
+
+@pytest.mark.asyncio
+async def test_executor_http_timeout_after_claim_is_marked_for_reconciliation(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+):
+    import httpx
+
+    from app.models.agent_runtime import AgentToolOperation
+    from app.services.agent_executor import AgentExecutor
+    from app.services.agent_runtime import AgentRuntimeCoordinator
+
+    user, _headers = auth_user_and_headers
+    runtime = AgentRuntimeCoordinator(db)
+    admission = _run(db, user.id, suffix="executor-http-timeout")
+    runtime.mark_running(admission.context)
+    executor = AgentExecutor(db)
+    executor._current_user_id = user.id
+    executor._current_turn_user_message = "记录午餐吃了牛肉面"
+    executor._runtime_run_id = admission.context.run_id
+    executor._runtime_attempt_id = admission.context.attempt_id
+    executor._runtime_managed = True
+
+    monkeypatch.setattr(
+        "app.services.agent_executor.settings.agent_runtime_mode",
+        "enforce",
+    )
+    monkeypatch.setattr(
+        "app.services.llm.tool_validator.validate_tool_call",
+        lambda tool_name, args, db, user_id, reference_now=None: {
+            "error": None,
+            "data": args,
+        },
+    )
+
+    async def timed_out_write(base_url, headers, args):
+        raise httpx.ReadTimeout("private-upstream-detail")
+
+    monkeypatch.setattr(executor, "_exec_health_record", timed_out_write)
+
+    result = await executor._execute_tool(
+        "health_record",
+        {"record_type": "diet", "data": {"food_items": "牛肉面"}},
+        None,
+    )
+
+    operation = db.query(AgentToolOperation).one()
+    assert "处理超时" in result
     assert operation.status == "reconciliation_required"
     assert operation.error_code == "write_uncertain"

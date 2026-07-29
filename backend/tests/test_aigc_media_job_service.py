@@ -133,6 +133,7 @@ async def test_image_to_video_uses_owned_short_lived_source_and_persists_task(
         "prompt": "把这张早餐照片做成 5 秒竖屏短视频",
         "duration_seconds": 5,
         "ratio": "9:16",
+        "resolution": "720P",
         "model": "happyhorse-1.1-i2v",
     }
     transient_url = provider.video_requests[0]["source_url"]
@@ -184,6 +185,8 @@ async def test_confirmed_provider_dispatch_writes_prompt_free_audit_evidence(
         "kind": "image_to_video",
         "model": "happyhorse-1.1-i2v",
         "source_attached": True,
+        "duration_seconds": 5,
+        "resolution": "720P",
     }
     assert prompt not in str(audit.result_detail)
     assert source_url not in str(audit.result_detail)
@@ -564,6 +567,202 @@ async def test_global_and_daily_aigc_budgets_are_enforced_before_dispatch(
     )
     with pytest.raises(AIGCMediaJobQuotaExceeded, match="今日创作次数"):
         await service.confirm_and_dispatch(user_id=user.id, confirmation_id=daily_confirmation.id)
+
+
+def test_admin_bypasses_personal_aigc_budgets_but_not_global_capacity(
+    db, auth_user_and_headers, monkeypatch,
+):
+    from datetime import UTC, datetime
+
+    from app.config import settings
+    from app.models.aigc_media_job import AIGCMediaJob
+    from app.services.aigc_media_job_service import (
+        AIGCMediaJobQuotaExceeded,
+        AIGCMediaJobService,
+    )
+    from tests.conftest import create_authenticated_user
+
+    admin, _ = auth_user_and_headers
+    admin.is_admin = True
+    other, _ = create_authenticated_user(db)
+    db.add_all([
+        AIGCMediaJob(
+            id="aigc-admin-active",
+            user_id=admin.id,
+            kind="text_to_video",
+            status="running",
+            progress=25,
+            model="happyhorse-1.1-t2v",
+            provider_task_id="task-admin-active",
+            idempotency_key="admin-active",
+            request_fingerprint="a" * 64,
+            created_at=datetime.now(UTC),
+        ),
+        AIGCMediaJob(
+            id="aigc-admin-daily",
+            user_id=admin.id,
+            kind="text_to_image",
+            status="succeeded",
+            progress=100,
+            model="wan2.7-image",
+            idempotency_key="admin-daily",
+            request_fingerprint="b" * 64,
+            created_at=datetime.now(UTC),
+        ),
+    ])
+    db.commit()
+    monkeypatch.setattr(settings, "dashscope_aigc_max_active_jobs_global", 20)
+    monkeypatch.setattr(settings, "dashscope_aigc_max_active_jobs_per_user", 1)
+    monkeypatch.setattr(settings, "dashscope_aigc_max_dispatches_per_user_per_day", 1)
+    service = AIGCMediaJobService(db, provider_factory=_FakeProvider)
+
+    service._reserve_dispatch_capacity(user_id=admin.id)
+
+    db.add(AIGCMediaJob(
+        id="aigc-global-blocker",
+        user_id=other.id,
+        kind="text_to_video",
+        status="running",
+        progress=25,
+        model="happyhorse-1.1-t2v",
+        provider_task_id="task-global-blocker",
+        idempotency_key="global-blocker",
+        request_fingerprint="c" * 64,
+        created_at=datetime.now(UTC),
+    ))
+    db.commit()
+    monkeypatch.setattr(settings, "dashscope_aigc_max_active_jobs_global", 2)
+
+    with pytest.raises(AIGCMediaJobQuotaExceeded, match="任务繁忙"):
+        service._reserve_dispatch_capacity(user_id=admin.id)
+
+
+def test_happyhorse_image_to_video_spec_follows_source_image_ratio():
+    from app.services.aigc_media_job_service import (
+        AIGCMediaJobRequest,
+        AIGCMediaJobService,
+    )
+
+    spec = AIGCMediaJobService._request_spec_metadata(AIGCMediaJobRequest(
+        kind="image_to_video",
+        purpose="meal_visual",
+        prompt="把午餐照片做成短视频",
+        duration_seconds=10,
+        ratio="9:16",
+        model="happyhorse-1.1-i2v",
+    ))
+
+    assert spec["ratio_mode"] == "source"
+    assert "ratio" not in spec
+
+
+@pytest.mark.asyncio
+async def test_completed_video_sends_generic_private_completion_notification(
+    db, auth_user_and_headers, monkeypatch, tmp_path,
+):
+    from app.models.aigc_media_job import AIGCMediaJob
+    from app.services import aigc_media_job_service
+    from app.services.aigc_media_job_service import AIGCMediaJobService
+    from app.services.notification.push_service import PushService
+
+    user, _ = auth_user_and_headers
+    job = AIGCMediaJob(
+        id="aigc-notify-complete",
+        user_id=user.id,
+        kind="text_to_video",
+        status="running",
+        progress=70,
+        model="happyhorse-1.1-t2v",
+        provider_task_id="task-notify-complete",
+        idempotency_key="notify-complete",
+        request_fingerprint="n" * 64,
+    )
+    db.add(job)
+    db.commit()
+    monkeypatch.setattr(aigc_media_job_service, "_AIGC_UPLOAD_ROOT", tmp_path)
+    sent: list[dict] = []
+
+    async def fake_send(_self, **kwargs):
+        sent.append(kwargs)
+        return {"success": True, "channels": {}}
+
+    monkeypatch.setattr(PushService, "send_notification", fake_send)
+
+    async def download(_url: str, _kind: str):
+        return b"private-video", "video/mp4", "mp4"
+
+    await AIGCMediaJobService(
+        db,
+        provider_factory=_FakeProvider,
+        result_downloader=download,
+    )._complete_from_provider_url(
+        job,
+        "https://result.aliyuncs.com/private-health-video.mp4",
+        kind="text_to_video",
+    )
+
+    assert len(sent) == 1
+    payload = sent[0]
+    assert payload["user_id"] == user.id
+    assert payload["notification_type"] == "aigc_media_completed"
+    assert payload["channels"] == ["ios_apns"]
+    assert payload["data"] == {
+        "rule_id": "aigc_media_completed:aigc-notify-complete",
+        "job_id": "aigc-notify-complete",
+        "kind": "text_to_video",
+        "deep_link": "/(tabs)/chat",
+    }
+    assert "private-health-video" not in str(payload)
+    assert "prompt" not in str(payload).lower()
+
+
+@pytest.mark.asyncio
+async def test_completion_notification_failure_does_not_rollback_video_result(
+    db, auth_user_and_headers, monkeypatch, tmp_path,
+):
+    from app.models.aigc_media_job import AIGCMediaJob
+    from app.services import aigc_media_job_service
+    from app.services.aigc_media_job_service import AIGCMediaJobService
+    from app.services.notification.push_service import PushService
+
+    user, _ = auth_user_and_headers
+    job = AIGCMediaJob(
+        id="aigc-notify-failure",
+        user_id=user.id,
+        kind="text_to_video",
+        status="running",
+        progress=70,
+        model="happyhorse-1.1-t2v",
+        provider_task_id="task-notify-failure",
+        idempotency_key="notify-failure",
+        request_fingerprint="f" * 64,
+    )
+    db.add(job)
+    db.commit()
+    monkeypatch.setattr(aigc_media_job_service, "_AIGC_UPLOAD_ROOT", tmp_path)
+
+    async def fail_send(_self, **_kwargs):
+        raise RuntimeError("push unavailable")
+
+    monkeypatch.setattr(PushService, "send_notification", fail_send)
+
+    async def download(_url: str, _kind: str):
+        return b"durable-video", "video/mp4", "mp4"
+
+    await AIGCMediaJobService(
+        db,
+        provider_factory=_FakeProvider,
+        result_downloader=download,
+    )._complete_from_provider_url(
+        job,
+        "https://result.aliyuncs.com/video.mp4",
+        kind="text_to_video",
+    )
+
+    db.refresh(job)
+    assert job.status == "succeeded"
+    assert job.output_filename
+    assert (tmp_path / str(user.id) / job.output_filename).read_bytes() == b"durable-video"
 
 
 @pytest.mark.asyncio

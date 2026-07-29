@@ -22,6 +22,7 @@ from app.models.agent_runtime import (
     AgentRunEvent,
     AgentToolOperation,
 )
+from app.services.agent_runtime_identity import runtime_hmac_digest
 
 
 ACTIVE_RUN_STATUSES = frozenset({"queued", "running"})
@@ -79,6 +80,8 @@ _SAFE_EVENT_TOKEN = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_.:-]*$")
 _TOKEN_EVENT_KEYS = frozenset(
     {"status", "completion_status", "error_code", "tool_name", "effect_class"}
 )
+_CONTRACT_DIGEST = re.compile(r"^[0-9a-f]{64}$")
+_RUNTIME_CONTRACT_VERSION = "agent-runtime-v1"
 _KNOWN_ERROR_CODES = frozenset(
     {
         "cancelled",
@@ -189,6 +192,40 @@ class RunContext:
     origin_device_id: str | None = None
     local_execution_id: str | None = None
     privacy_mode: str = "cloud"
+    control_reason: str | None = None
+
+
+RUNTIME_WRITE_BLOCK_REASONS = frozenset({
+    "circuit_paused",
+    "circuit_unavailable",
+})
+
+
+def runtime_write_block_reason(context: RunContext) -> str | None:
+    """Return the control-plane reason that must fail writes closed."""
+    if context.control_reason in RUNTIME_WRITE_BLOCK_REASONS:
+        return context.control_reason
+    return None
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeContractSnapshot:
+    runtime_contract_version: str
+    tool_registry_digest: str
+    capability_policy_digest: str
+
+    @classmethod
+    def current(cls) -> "RuntimeContractSnapshot":
+        from app.services.agent_kernel.capability_policy import (
+            capability_policy_digest,
+        )
+        from app.services.agent_kernel.tool_registry import tool_registry_digest
+
+        return cls(
+            runtime_contract_version=_RUNTIME_CONTRACT_VERSION,
+            tool_registry_digest=tool_registry_digest(),
+            capability_policy_digest=capability_policy_digest(),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -319,6 +356,30 @@ def _runtime_lock_key(user_id: int, scope: str) -> int:
     return int.from_bytes(hashlib.blake2b(raw, digest_size=4).digest(), "big", signed=True)
 
 
+def _validated_contract_snapshot(
+    snapshot: RuntimeContractSnapshot | None,
+) -> RuntimeContractSnapshot:
+    resolved = snapshot or RuntimeContractSnapshot.current()
+    version = _bounded(
+        resolved.runtime_contract_version,
+        field="runtime_contract_version",
+        limit=32,
+    )
+    if version is None:
+        raise ValueError("invalid_runtime_contract_version")
+    tool_digest = str(resolved.tool_registry_digest or "").strip()
+    policy_digest = str(resolved.capability_policy_digest or "").strip()
+    if not _CONTRACT_DIGEST.fullmatch(tool_digest):
+        raise ValueError("invalid_tool_registry_digest")
+    if not _CONTRACT_DIGEST.fullmatch(policy_digest):
+        raise ValueError("invalid_capability_policy_digest")
+    return RuntimeContractSnapshot(
+        runtime_contract_version=version,
+        tool_registry_digest=tool_digest,
+        capability_policy_digest=policy_digest,
+    )
+
+
 @contextmanager
 def _local_runtime_lock(lock_key: int) -> Iterator[None]:
     with _LOCAL_LOCK_GUARD:
@@ -363,6 +424,24 @@ class AgentRuntimeCoordinator:
             raise AgentRuntimeError("run_not_found")
         return run
 
+    def get_run_by_client_turn(
+        self,
+        user_id: int,
+        client_turn_id: str,
+    ) -> AgentRun | None:
+        """Return an owner-scoped Run without exposing message content."""
+        normalized = _bounded(
+            client_turn_id,
+            field="client_turn_id",
+            limit=112,
+        )
+        if not normalized:
+            return None
+        return self.db.query(AgentRun).filter(
+            AgentRun.user_id == user_id,
+            AgentRun.client_turn_id == normalized,
+        ).first()
+
     def create_or_resume_run(
         self,
         *,
@@ -376,6 +455,7 @@ class AgentRuntimeCoordinator:
         local_execution_id: str | None = None,
         privacy_mode: str = "cloud",
         deadline_at: datetime | None = None,
+        contract_snapshot: RuntimeContractSnapshot | None = None,
     ) -> RunAdmission:
         run_id = _bounded(run_id, field="run_id", limit=64) or ""
         attempt_id = _bounded(attempt_id, field="attempt_id", limit=64) or ""
@@ -384,6 +464,7 @@ class AgentRuntimeCoordinator:
         origin_device_id = _bounded(origin_device_id, field="origin_device_id", limit=128)
         local_execution_id = _bounded(local_execution_id, field="local_execution_id", limit=128)
         privacy_mode = _bounded(privacy_mode, field="privacy_mode", limit=32) or "cloud"
+        contract_snapshot = _validated_contract_snapshot(contract_snapshot)
 
         values = {
             "run_id": run_id,
@@ -396,6 +477,13 @@ class AgentRuntimeCoordinator:
             "local_execution_id": local_execution_id,
             "privacy_mode": privacy_mode,
             "deadline_at": deadline_at,
+            "runtime_contract_version": (
+                contract_snapshot.runtime_contract_version
+            ),
+            "tool_registry_digest": contract_snapshot.tool_registry_digest,
+            "capability_policy_digest": (
+                contract_snapshot.capability_policy_digest
+            ),
         }
         if client_turn_id:
             with self._admission_lock(user_id, f"client_turn:{client_turn_id}"):
@@ -571,6 +659,9 @@ class AgentRuntimeCoordinator:
             origin_device_id=values.get("origin_device_id"),
             local_execution_id=values.get("local_execution_id"),
             privacy_mode=values["privacy_mode"],
+            runtime_contract_version=values["runtime_contract_version"],
+            tool_registry_digest=values["tool_registry_digest"],
+            capability_policy_digest=values["capability_policy_digest"],
             deadline_at=values.get("deadline_at"),
         )
         attempt = AgentRunAttempt(
@@ -1135,7 +1226,7 @@ class AgentRuntimeCoordinator:
         ):
             raise ValueError("invalid_logical_operation_key")
         logical_key_hash = (
-            hashlib.sha256(logical_key.encode()).hexdigest()
+            runtime_hmac_digest("tool-logical-key", logical_key)
             if logical_key is not None
             else None
         )
@@ -1147,7 +1238,7 @@ class AgentRuntimeCoordinator:
         ):
             raise ValueError("invalid_logical_operation_scope_key")
         logical_scope_hash = (
-            hashlib.sha256(logical_scope_key.encode()).hexdigest()
+            runtime_hmac_digest("tool-logical-scope", logical_scope_key)
             if logical_scope_key is not None
             else None
         )
@@ -1169,7 +1260,7 @@ class AgentRuntimeCoordinator:
         ):
             raise ValueError("invalid_logical_operation_discriminator_key")
         discriminator_hash = (
-            hashlib.sha256(discriminator_key.encode()).hexdigest()
+            runtime_hmac_digest("tool-logical-discriminator", discriminator_key)
             if discriminator_key is not None
             else None
         )
@@ -1186,12 +1277,17 @@ class AgentRuntimeCoordinator:
         if normalized_resource_type is not None:
             from app.services.agent_kernel.tool_registry import get_tool_spec
 
+            spec = get_tool_spec(normalized_tool)
             declared_types = {
                 resource_type
-                for _record_type, resource_type in get_tool_spec(
-                    normalized_tool
-                ).reconciliation_record_types
+                for _record_type, resource_type in spec.reconciliation_record_types
             }
+            if (
+                spec.receipt_required
+                and spec.effect == "write"
+                and len(spec.receipt_resource_types) == 1
+            ):
+                declared_types.update(spec.receipt_resource_types)
             if normalized_resource_type not in declared_types:
                 raise AgentRuntimeError("invalid_resource_type")
 
@@ -1698,10 +1794,39 @@ class AgentRuntimeCoordinator:
                     verify_resource_owner,
                 )
 
-                if not is_registered_receipt_resource_type(
+                resource_type_registered = is_registered_receipt_resource_type(
                     operation.tool_name,
                     normalized_resource_type or "",
+                )
+                legacy_medical_import_linked = False
+                if (
+                    not resource_type_registered
+                    and operation.tool_name == "health_record"
+                    and normalized_resource_type == "medical_exam"
+                    and operation.resource_type is None
+                    and operation.resource_id is None
                 ):
+                    # Older executors could attach the uncertain checkpoint to
+                    # health_record after a rejected medical import in the same
+                    # attempt. Keep this compatibility path deliberately narrow:
+                    # a linked rejected importer must exist, and owner
+                    # verification below still applies.
+                    legacy_medical_import_linked = (
+                        self.db.query(AgentToolOperation.operation_id)
+                        .filter(
+                            AgentToolOperation.run_id == run.run_id,
+                            AgentToolOperation.attempt_id == operation.attempt_id,
+                            AgentToolOperation.operation_id
+                            != operation.operation_id,
+                            AgentToolOperation.tool_name
+                            == "upload_medical_exam_text",
+                            AgentToolOperation.status == "failed",
+                            AgentToolOperation.error_code == "tool_rejected",
+                        )
+                        .first()
+                        is not None
+                    )
+                if not (resource_type_registered or legacy_medical_import_linked):
                     raise AgentRuntimeError("invalid_resource_type")
                 if not is_valid_receipt_resource_id(
                     operation.tool_name,
@@ -1835,10 +1960,7 @@ class AgentRuntimeCoordinator:
         return run, attempt
 
     def _find_client_turn(self, user_id: int, client_turn_id: str) -> AgentRun | None:
-        return self.db.query(AgentRun).filter(
-            AgentRun.user_id == user_id,
-            AgentRun.client_turn_id == client_turn_id,
-        ).first()
+        return self.get_run_by_client_turn(user_id, client_turn_id)
 
     def _active_conversation_run(
         self,

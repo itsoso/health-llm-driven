@@ -1,5 +1,15 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text, TextInput, TextStyle, View } from 'react-native';
+import {
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TextStyle,
+  useWindowDimensions,
+  View,
+} from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { CardShell } from './CardShell';
@@ -52,6 +62,11 @@ interface DietDraftData {
   time?: unknown;
   recorded_at?: unknown;
   photo_url?: unknown;
+  photo_urls?: unknown;
+  photo_asset_ids?: unknown;
+  photo_unavailable_count?: unknown;
+  media_stage?: unknown;
+  card_id?: unknown;
   recorded?: unknown;
   receipt_message?: unknown;
   auto_save_fallback?: unknown;
@@ -191,6 +206,22 @@ function privatePhotoUri(value: unknown): string | undefined {
   return `${origin}${raw.startsWith('/') ? raw : `/${raw}`}`;
 }
 
+function privatePhotoUris(data: DietDraftData): string[] {
+  const values = Array.isArray(data.photo_urls)
+    ? data.photo_urls
+    : [data.photo_url];
+  const uris: string[] = [];
+  const seen = new Set<string>();
+  values.forEach((value) => {
+    const uri = privatePhotoUri(value);
+    if (uri && !seen.has(uri)) {
+      seen.add(uri);
+      uris.push(uri);
+    }
+  });
+  return uris;
+}
+
 function isPhotoSource(value: unknown): boolean {
   const source = text(value)?.toLowerCase();
   return Boolean(source && (source.includes('photo') || source.includes('image') || source.includes('vision')));
@@ -268,7 +299,37 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
   );
   const boundary = boundaryText(data);
   const editHint = editHintText(data);
-  const photoUri = privatePhotoUri(data.photo_url);
+  const photoUris = React.useMemo(() => privatePhotoUris(data), [data]);
+  const [galleryVisible, setGalleryVisible] = React.useState(false);
+  const [failedPhotoUris, setFailedPhotoUris] = React.useState<Set<string>>(() => new Set());
+  const currentFailedPhotoUris = React.useMemo(
+    () => new Set(photoUris.filter(uri => failedPhotoUris.has(uri))),
+    [failedPhotoUris, photoUris],
+  );
+  const photoUri = photoUris.find(uri => !currentFailedPhotoUris.has(uri));
+  const declaredUnavailableCount = Math.max(
+    0,
+    Math.floor(numberValue(data.photo_unavailable_count) ?? 0),
+  );
+  const unavailablePhotoCount = declaredUnavailableCount + currentFailedPhotoUris.size;
+  const photoTotal = photoUris.length + declaredUnavailableCount;
+  const mediaUnavailable = (
+    text(data.media_stage) === 'unavailable'
+    || text(data.media_stage) === 'partially_available'
+    || declaredUnavailableCount > 0
+    || (photoUris.length > 0 && !photoUri)
+  );
+  const markPhotoFailed = React.useCallback((uri: string) => {
+    setFailedPhotoUris((current) => {
+      if (current.has(uri)) return current;
+      const next = new Set(current);
+      next.add(uri);
+      return next;
+    });
+  }, []);
+  const retryFailedPhotos = React.useCallback(() => {
+    setFailedPhotoUris(new Set());
+  }, []);
   const isRecorded = data.recorded === true || data.confirmActionState === 'done';
   const adjustRecord = objectValue(data.adjust_record);
   const adjustRecordId = numberValue(adjustRecord?.record_id) ?? numberValue(data.record_id);
@@ -318,14 +379,18 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
       >
         <View style={styles.compactTitleRow}>
           {photoUri ? (
-            <Image
-              testID="diet-draft-photo"
-              source={{ uri: photoUri }}
-              style={styles.compactPhoto}
-              contentFit="cover"
-              transition={120}
-              accessibilityLabel="本次识别的餐食照片"
+            <MealPhotoCover
+              uri={photoUri}
+              availableCount={Math.max(0, photoUris.length - currentFailedPhotoUris.size)}
+              totalCount={Math.max(photoTotal, photoUris.length)}
+              compact
+              onOpen={() => setGalleryVisible(true)}
+              onError={() => markPhotoFailed(photoUri)}
             />
+          ) : mediaUnavailable ? (
+            <View style={styles.compactPhotoUnavailable}>
+              <Ionicons name="image-outline" size={19} color={C.ink3} />
+            </View>
           ) : null}
           <View style={styles.compactTitleCopy}>
             <Text maxFontSizeMultiplier={1.16} style={styles.compactMealTitle} numberOfLines={2}>
@@ -400,6 +465,14 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
         <Text maxFontSizeMultiplier={1.12} style={styles.compactBoundary}>
           营养为估算值，保存前可继续修正
         </Text>
+        <MealPhotoGallery
+          visible={galleryVisible}
+          uris={photoUris}
+          unavailableCount={declaredUnavailableCount}
+          failedUris={currentFailedPhotoUris}
+          onClose={() => setGalleryVisible(false)}
+          onError={markPhotoFailed}
+        />
       </CardShell>
     );
   }
@@ -416,14 +489,39 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
       bg={DIET_TINT}
     >
       {photoUri ? (
-        <Image
-          testID="diet-draft-photo"
-          source={{ uri: photoUri }}
-          style={styles.detailPhoto}
-          contentFit="cover"
-          transition={120}
-          accessibilityLabel="本次识别的餐食照片"
+        <MealPhotoCover
+          uri={photoUri}
+          availableCount={Math.max(0, photoUris.length - currentFailedPhotoUris.size)}
+          totalCount={Math.max(photoTotal, photoUris.length)}
+          onOpen={() => setGalleryVisible(true)}
+          onError={() => markPhotoFailed(photoUri)}
         />
+      ) : null}
+      {mediaUnavailable ? (
+        <View style={styles.photoUnavailableBlock}>
+          <View style={styles.photoUnavailableRow}>
+            <Ionicons name="image-outline" size={15} color={C.ink3} />
+            <Text style={styles.photoUnavailableText}>
+              {unavailablePhotoCount > 0 && photoUris.length > 0
+                ? `${Math.max(0, photoUris.length - failedPhotoUris.size)}/${Math.max(photoTotal, photoUris.length)} 张照片可用，饮食记录和营养数据仍已保留`
+                : '餐食照片暂时无法加载，饮食记录和营养数据仍已保留'}
+            </Text>
+          </View>
+          {currentFailedPhotoUris.size > 0 ? (
+            <Pressable
+              onPress={retryFailedPhotos}
+              accessibilityRole="button"
+              accessibilityLabel="重试加载餐食照片"
+              style={({ pressed }) => [
+                styles.photoRetryButton,
+                pressed && { opacity: 0.76 },
+              ]}
+            >
+              <Ionicons name="refresh" size={14} color={C.green700} />
+              <Text style={styles.photoRetryText}>重试照片</Text>
+            </Pressable>
+          ) : null}
+        </View>
       ) : null}
       {/* 卡尔路里 hero：大号等宽数字 + 单位。无每日目标字段 → 不造「占今日 X%」。 */}
       <View style={styles.heroRow}>
@@ -782,7 +880,138 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
           {boundary}
         </Text>
       </View>
+      <MealPhotoGallery
+        visible={galleryVisible}
+        uris={photoUris}
+        unavailableCount={declaredUnavailableCount}
+        failedUris={currentFailedPhotoUris}
+        onClose={() => setGalleryVisible(false)}
+        onError={markPhotoFailed}
+      />
     </CardShell>
+  );
+}
+
+function MealPhotoCover({
+  uri,
+  availableCount,
+  totalCount,
+  compact = false,
+  onOpen,
+  onError,
+}: {
+  uri: string;
+  availableCount: number;
+  totalCount: number;
+  compact?: boolean;
+  onOpen: () => void;
+  onError: () => void;
+}) {
+  return (
+    <Pressable
+      testID="diet-photo-cover"
+      onPress={onOpen}
+      accessibilityRole="button"
+      accessibilityLabel={`查看餐食照片，${availableCount}/${totalCount} 张可用`}
+      style={compact ? styles.compactPhotoFrame : styles.detailPhotoFrame}
+    >
+      <Image
+        testID="diet-draft-photo"
+        source={{ uri }}
+        style={StyleSheet.absoluteFill}
+        contentFit="cover"
+        transition={120}
+        onError={onError}
+        accessibilityLabel="本次识别的餐食照片"
+      />
+      {totalCount > 1 ? (
+        <View testID="diet-photo-count" style={styles.photoCountBadge}>
+          <Ionicons name="images-outline" size={11} color="#fff" />
+          <Text style={styles.photoCountText}>
+            {availableCount < totalCount ? `${availableCount}/${totalCount}` : totalCount}
+          </Text>
+        </View>
+      ) : null}
+    </Pressable>
+  );
+}
+
+function MealPhotoGallery({
+  visible,
+  uris,
+  unavailableCount,
+  failedUris,
+  onClose,
+  onError,
+}: {
+  visible: boolean;
+  uris: string[];
+  unavailableCount: number;
+  failedUris: Set<string>;
+  onClose: () => void;
+  onError: (uri: string) => void;
+}) {
+  const { width, height } = useWindowDimensions();
+  if (!visible) return null;
+  const total = uris.length + unavailableCount;
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+      <View testID="diet-photo-gallery" style={styles.galleryBackdrop}>
+        <View style={styles.galleryHeader}>
+          <Text style={styles.galleryTitle}>
+            {unavailableCount > 0 ? `${uris.length}/${total} 张照片可用` : `${uris.length} 张餐食照片`}
+          </Text>
+          <Pressable
+            onPress={onClose}
+            accessibilityRole="button"
+            accessibilityLabel="关闭餐食照片"
+            style={styles.galleryClose}
+          >
+            <Ionicons name="close" size={23} color="#fff" />
+          </Pressable>
+        </View>
+        <ScrollView
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.galleryPages}
+        >
+          {uris.map((uri, index) => (
+            <View
+              key={uri}
+              style={[styles.galleryPage, { width, minHeight: Math.max(300, height - 150) }]}
+            >
+              {failedUris.has(uri) ? (
+                <View style={styles.galleryFailure}>
+                  <Ionicons name="image-outline" size={28} color="rgba(255,255,255,0.72)" />
+                  <Text style={styles.galleryFailureText}>第 {index + 1} 张照片暂时无法加载</Text>
+                </View>
+              ) : (
+                <Image
+                  source={{ uri }}
+                  style={styles.galleryImage}
+                  contentFit="contain"
+                  onError={() => onError(uri)}
+                  accessibilityLabel={`餐食照片 ${index + 1}`}
+                />
+              )}
+              <Text style={styles.galleryIndex}>{index + 1} / {total}</Text>
+            </View>
+          ))}
+          {unavailableCount > 0 ? (
+            <View style={[styles.galleryPage, { width, minHeight: Math.max(300, height - 150) }]}>
+              <View style={styles.galleryFailure}>
+                <Ionicons name="cloud-offline-outline" size={28} color="rgba(255,255,255,0.72)" />
+                <Text style={styles.galleryFailureText}>
+                  另有 {unavailableCount} 张照片暂时无法加载
+                </Text>
+                <Text style={styles.galleryFailureHint}>重新打开对话后会自动尝试恢复</Text>
+              </View>
+            </View>
+          ) : null}
+        </ScrollView>
+      </View>
+    </Modal>
   );
 }
 
@@ -850,11 +1079,20 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     gap: 10,
   },
-  compactPhoto: {
+  compactPhotoFrame: {
     width: 58,
     height: 58,
     borderRadius: revaRadii.sm,
     backgroundColor: C.paper2,
+    overflow: 'hidden',
+  },
+  compactPhotoUnavailable: {
+    width: 58,
+    height: 58,
+    borderRadius: revaRadii.sm,
+    backgroundColor: C.paper2,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   compactTitleCopy: { flex: 1, minWidth: 0, gap: 3 },
   compactMealTitle: {
@@ -999,13 +1237,139 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 8,
   },
-  detailPhoto: {
+  detailPhotoFrame: {
     width: '100%',
     height: 152,
     borderRadius: revaRadii.md,
     backgroundColor: C.paper2,
     marginBottom: 10,
+    overflow: 'hidden',
   },
+  photoCountBadge: {
+    position: 'absolute',
+    right: 7,
+    bottom: 7,
+    minWidth: 29,
+    height: 23,
+    borderRadius: revaRadii.pill,
+    backgroundColor: 'rgba(11, 31, 23, 0.78)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingHorizontal: 7,
+  },
+  photoCountText: {
+    fontFamily: revaFonts.mono,
+    color: '#fff',
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: '800',
+  } as TextStyle,
+  photoUnavailableBlock: {
+    marginBottom: 10,
+    minHeight: 42,
+    borderRadius: revaRadii.sm,
+    backgroundColor: C.paper2,
+    paddingHorizontal: 11,
+    paddingVertical: 9,
+  },
+  photoUnavailableRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  photoUnavailableText: {
+    flex: 1,
+    fontFamily: revaFonts.sans,
+    fontSize: 11.5,
+    lineHeight: 17,
+    color: C.ink3,
+  } as TextStyle,
+  photoRetryButton: {
+    alignSelf: 'flex-start',
+    minHeight: 34,
+    marginTop: 7,
+    marginLeft: 22,
+    borderRadius: revaRadii.pill,
+    backgroundColor: C.green50,
+    paddingHorizontal: 11,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  photoRetryText: {
+    fontFamily: revaFonts.sans,
+    fontSize: 11.5,
+    lineHeight: 16,
+    color: C.green700,
+    fontWeight: '700',
+  } as TextStyle,
+  galleryBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(8, 16, 12, 0.96)',
+  },
+  galleryHeader: {
+    minHeight: 82,
+    paddingTop: 34,
+    paddingHorizontal: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  galleryTitle: {
+    fontFamily: revaFonts.sans,
+    color: '#fff',
+    fontSize: 15,
+    lineHeight: 21,
+    fontWeight: '800',
+  } as TextStyle,
+  galleryClose: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.12)',
+  },
+  galleryPages: {
+    alignItems: 'stretch',
+  },
+  galleryPage: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+    paddingBottom: 30,
+  },
+  galleryImage: {
+    width: '100%',
+    flex: 1,
+  },
+  galleryFailure: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  galleryFailureText: {
+    fontFamily: revaFonts.sans,
+    color: 'rgba(255,255,255,0.78)',
+    fontSize: 13,
+    lineHeight: 19,
+  } as TextStyle,
+  galleryFailureHint: {
+    fontFamily: revaFonts.sans,
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 11,
+    lineHeight: 16,
+  } as TextStyle,
+  galleryIndex: {
+    marginTop: 12,
+    fontFamily: revaFonts.mono,
+    color: 'rgba(255,255,255,0.72)',
+    fontSize: 12,
+    lineHeight: 16,
+  } as TextStyle,
   heroLeft: {
     flexDirection: 'row',
     alignItems: 'baseline',

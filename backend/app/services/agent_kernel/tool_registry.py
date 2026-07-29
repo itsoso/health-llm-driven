@@ -6,6 +6,7 @@ dispatch adapter, timeout and receipt requirements.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from dataclasses import dataclass
@@ -41,6 +42,7 @@ class ToolSpec:
     receipt_required: bool = False
     adapter_kind: AdapterKind = "executor"
     call_style: ExecutorCallStyle = "http"
+    model_visible: bool = True
     action_field: str | None = None
     read_actions: frozenset[str] = frozenset()
     write_actions: frozenset[str] = frozenset()
@@ -79,13 +81,19 @@ class ToolSpec:
 
     def reconciliation_resource_type(self, arguments: Any) -> str | None:
         """Return the content-free resource kind that can be reconciled safely."""
-        if not self.reconciliation_record_types:
-            return None
-        args = _parse_arguments(arguments)
-        record_type = str(
-            args.get("record_type") or args.get("type") or ""
-        ).strip().lower()
-        return dict(self.reconciliation_record_types).get(record_type)
+        if self.reconciliation_record_types:
+            args = _parse_arguments(arguments)
+            record_type = str(
+                args.get("record_type") or args.get("type") or ""
+            ).strip().lower()
+            return dict(self.reconciliation_record_types).get(record_type)
+        if (
+            self.receipt_required
+            and self.effect == "write"
+            and len(self.receipt_resource_types) == 1
+        ):
+            return next(iter(self.receipt_resource_types))
+        return None
 
 
 def _spec(
@@ -105,33 +113,41 @@ def _spec(
 _POSITIVE_INTEGER_RECEIPT_ID = r"^[1-9][0-9]*$"
 _AIGC_CONFIRMATION_RECEIPT_ID = r"^aigc_confirm_[0-9a-f]{32}$"
 
+HEALTH_RECORD_RECEIPT_RESOURCE_TYPE_BY_RECORD_TYPE: Mapping[str, str] = {
+    "bp": "blood_pressure_record",
+    "blood_pressure": "blood_pressure_record",
+    "diet": "diet_record",
+    "event": "health_episode",
+    "exercise": "exercise_record",
+    "excretion": "excretion_record",
+    "goal": "goal",
+    "illness": "illness_episode",
+    "medication": "medication_log",
+    "mood": "mood_record",
+    "reminder": "smart_reminder",
+    "remember": "memory_fact",
+    "rhinitis": "health_checkin",
+    "sleep": "sleep_record",
+    "supplement": "supplement_log",
+    "supplement_group": "supplement_log",
+    "symptom": "symptom_record",
+    "waist": "waist_record",
+    "water": "water_record",
+    "weight": "weight_record",
+}
+HEALTH_MANAGE_RECEIPT_RESOURCE_TYPE_BY_RECORD_TYPE: Mapping[str, str] = {
+    **HEALTH_RECORD_RECEIPT_RESOURCE_TYPE_BY_RECORD_TYPE,
+    "medication": "medication",
+    "medication_log": "medication_log",
+    "supplement_definition": "supplement_definition",
+}
+
 _HEALTH_RECORD_RECEIPT_RESOURCE_TYPES = frozenset(
-    {
-        "blood_pressure_record",
-        "diet_record",
-        "exercise_record",
-        "excretion_record",
-        "goal",
-        "health_checkin",
-        "health_episode",
-        "illness_episode",
-        "medication_log",
-        "memory_fact",
-        "mood_record",
-        "sleep_record",
-        "smart_reminder",
-        "supplement_definition",
-        "supplement_log",
-        "symptom_record",
-        "waist_record",
-        "water_record",
-        "weight_record",
-    }
+    HEALTH_RECORD_RECEIPT_RESOURCE_TYPE_BY_RECORD_TYPE.values()
 )
 
 _HEALTH_MANAGE_RECEIPT_RESOURCE_TYPES = (
-    _HEALTH_RECORD_RECEIPT_RESOURCE_TYPES
-    | frozenset({"medication", "supplement_definition"})
+    frozenset(HEALTH_MANAGE_RECEIPT_RESOURCE_TYPE_BY_RECORD_TYPE.values())
 )
 
 
@@ -151,6 +167,16 @@ _CORE_TOOL_SPECS = (
         receipt_exempt_record_types=frozenset({"garmin_sync"}),
         receipt_resource_types=_HEALTH_RECORD_RECEIPT_RESOURCE_TYPES,
         reconciliation_record_types=(("diet", "diet_record"),),
+        receipt_resource_id_pattern=_POSITIVE_INTEGER_RECEIPT_ID,
+    ),
+    _spec(
+        "user_directive",
+        "write",
+        "_exec_user_directive",
+        receipt_required=True,
+        call_style="args",
+        model_visible=False,
+        receipt_resource_types=frozenset({"user_directive"}),
         receipt_resource_id_pattern=_POSITIVE_INTEGER_RECEIPT_ID,
     ),
     _spec(
@@ -259,10 +285,62 @@ _SPECIALIST_TOOL_SPECS = tuple(
 _TOOL_SPECS: Mapping[str, ToolSpec] = {
     spec.name: spec for spec in (*_CORE_TOOL_SPECS, *_SPECIALIST_TOOL_SPECS)
 }
+_TOOL_REGISTRY_CONTRACT_VERSION = "agent-tool-registry-v1"
 
 
 def list_tool_specs() -> tuple[ToolSpec, ...]:
     return tuple(_TOOL_SPECS.values())
+
+
+def list_model_visible_tool_specs() -> tuple[ToolSpec, ...]:
+    """Return tools exposed through model schemas, excluding trusted adapters."""
+    return tuple(spec for spec in _TOOL_SPECS.values() if spec.model_visible)
+
+
+def tool_registry_contract_payload() -> dict[str, Any]:
+    """Return static, content-free operational metadata for one registry build."""
+    tools = []
+    for spec in sorted(_TOOL_SPECS.values(), key=lambda item: item.name):
+        tools.append(
+            {
+                "name": spec.name,
+                "effect": spec.effect,
+                "executor_method": spec.executor_method,
+                "timeout_seconds": spec.timeout_seconds,
+                "receipt_required": spec.receipt_required,
+                "adapter_kind": spec.adapter_kind,
+                "call_style": spec.call_style,
+                "model_visible": spec.model_visible,
+                "action_field": spec.action_field,
+                "read_actions": sorted(spec.read_actions),
+                "write_actions": sorted(spec.write_actions),
+                "receipt_exempt_record_types": sorted(
+                    spec.receipt_exempt_record_types
+                ),
+                "receipt_resource_types": sorted(spec.receipt_resource_types),
+                "reconciliation_record_types": sorted(
+                    [list(item) for item in spec.reconciliation_record_types]
+                ),
+                "receipt_resource_id_pattern": spec.receipt_resource_id_pattern,
+                "annotate_implausible": spec.annotate_implausible,
+                "marks_deep_analysis": spec.marks_deep_analysis,
+            }
+        )
+    return {
+        "contract_version": _TOOL_REGISTRY_CONTRACT_VERSION,
+        "tools": tools,
+    }
+
+
+def tool_registry_digest() -> str:
+    """Fingerprint the operational registry without prompts or user content."""
+    encoded = json.dumps(
+        tool_registry_contract_payload(),
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def get_tool_spec(tool_name: str) -> ToolSpec:
@@ -294,6 +372,28 @@ def is_registered_receipt_resource_type(
 ) -> bool:
     spec = get_tool_spec(tool_name)
     return resource_type in spec.receipt_resource_types
+
+
+def expected_receipt_resource_type(
+    tool_name: str,
+    arguments: Any,
+) -> str | None:
+    """Resolve the canonical receipt type from the same registry contract."""
+    args = _parse_arguments(arguments)
+    record_type_aliases = [
+        normalized
+        for value in (args.get("record_type"), args.get("type"))
+        if (normalized := str(value or "").strip().lower())
+    ]
+    unique_record_types = list(dict.fromkeys(record_type_aliases))
+    if len(unique_record_types) != 1:
+        return None
+    record_type = unique_record_types[0]
+    if tool_name == "health_record":
+        return HEALTH_RECORD_RECEIPT_RESOURCE_TYPE_BY_RECORD_TYPE.get(record_type)
+    if tool_name == "health_manage":
+        return HEALTH_MANAGE_RECEIPT_RESOURCE_TYPE_BY_RECORD_TYPE.get(record_type)
+    return None
 
 
 def is_valid_receipt_resource_id(tool_name: str, resource_id: str) -> bool:

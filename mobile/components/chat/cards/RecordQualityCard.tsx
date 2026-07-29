@@ -13,10 +13,12 @@ import { updateDietRecord, type DietRecordCreate, type MealType } from '../../..
 
 interface RecordQualityData {
   domain?: unknown;
+  record_id?: unknown;
   title?: unknown;
   summary?: unknown;
   metrics?: unknown;
   progress?: unknown;
+  goal_progress?: unknown;
   primary_judgement?: unknown;
   personal_cautions?: unknown;
   next_action?: unknown;
@@ -124,6 +126,17 @@ function integerRecordId(value: unknown): number | undefined {
   return parsed != null && Number.isInteger(parsed) ? parsed : undefined;
 }
 
+function formatDisplayNumber(value: number): string {
+  return String(Math.round(value * 100) / 100);
+}
+
+function formatMeasuredOn(value: unknown): string | undefined {
+  const raw = text(value);
+  const match = raw?.match(/^\d{4}-(\d{2})-(\d{2})$/);
+  if (!match) return undefined;
+  return `${Number(match[1])}月${Number(match[2])}日`;
+}
+
 function domainMeta(domain?: unknown): { icon: string; fg: string; bg: string; badge: string } {
   if (text(domain) === 'exercise') {
     return { icon: 'fitness-outline', fg: '#C2487A', bg: '#F7E4EC', badge: '运动' };
@@ -142,6 +155,8 @@ export function RecordQualityCardView(props: RecordQualityViewProps) {
   const remainingProtein = progressValue(data.progress, 'remaining_protein_g');
   const caloriesTotal = progressValue(data.progress, 'calories_total');
   const mealsCount = progressValue(data.progress, 'meals_count');
+  const recordedDays7d = progressValue(data.progress, 'recorded_days_7d');
+  const goalProgress = objectValue(data.goal_progress);
   const hasProgress = Boolean(proteinTotal && proteinTarget);
   // 蛋白进度条填充比(截图目标):total/target 折算 0–100%,越界钳住;非数值不画条。
   const proteinPct = (() => {
@@ -218,6 +233,20 @@ export function RecordQualityCardView(props: RecordQualityViewProps) {
           </Text>
         </View>
       ) : null}
+
+      {recordedDays7d ? (
+        <View style={styles.consistencyRow}>
+          <Ionicons name="calendar-outline" size={13} color={C.green600} />
+          <Text maxFontSizeMultiplier={1.2} style={styles.consistencyText}>
+            近7天记录 {recordedDays7d} 天
+          </Text>
+          <Text maxFontSizeMultiplier={1.15} style={styles.consistencyHint}>
+            规律比完美更重要
+          </Text>
+        </View>
+      ) : null}
+
+      {goalProgress ? <WeightGoalProgressView goal={goalProgress} /> : null}
 
       {judgement ? (
         <Text maxFontSizeMultiplier={1.25} style={styles.judgement}>
@@ -366,6 +395,81 @@ export function RecordQualityCardView(props: RecordQualityViewProps) {
         {boundary}
       </Text>
     </CardShell>
+  );
+}
+
+function WeightGoalProgressView({ goal }: { goal: Record<string, unknown> }) {
+  const current = numberValue(goal.current_kg);
+  const target = numberValue(goal.target_kg);
+  const remaining = numberValue(goal.remaining_kg);
+  const progress = numberValue(goal.progress_pct);
+  const change = numberValue(goal.change_7d_kg);
+  const status = text(goal.status);
+  const freshness = text(goal.freshness);
+  const measuredOn = formatMeasuredOn(goal.measured_on);
+
+  if (current == null || target == null) return null;
+  if (status === 'target_requires_review') {
+    return (
+      <View style={[styles.goalBox, styles.goalReviewBox]}>
+        <View style={styles.goalHeader}>
+          <Ionicons name="flag-outline" size={14} color={revaSemantic.caution.fg} />
+          <Text maxFontSizeMultiplier={1.2} style={styles.goalReviewTitle}>目标需要复核</Text>
+        </View>
+        <Text maxFontSizeMultiplier={1.25} style={styles.goalReviewText}>
+          当前目标可能不适合直接推进，请先核对身高和目标体重。
+        </Text>
+      </View>
+    );
+  }
+
+  const achieved = status === 'achieved';
+  const safeProgress = progress == null ? null : Math.max(0, Math.min(100, progress));
+  const showTrend = freshness !== 'stale' && change != null;
+  return (
+    <View style={styles.goalBox}>
+      <View style={styles.goalHeader}>
+        <View style={styles.goalTitleRow}>
+          <Ionicons name={achieved ? 'checkmark-circle-outline' : 'flag-outline'} size={14} color={C.green600} />
+          <Text maxFontSizeMultiplier={1.2} style={styles.goalTitle}>目标进度</Text>
+        </View>
+        <Text maxFontSizeMultiplier={1.15} style={styles.goalCurrent}>
+          {formatDisplayNumber(current)} → {formatDisplayNumber(target)}kg
+        </Text>
+      </View>
+      <View style={styles.goalValueRow}>
+        <Text maxFontSizeMultiplier={1.2} style={styles.goalValue}>
+          {achieved ? '已达到当前目标' : `距目标 ${formatDisplayNumber(remaining ?? Math.max(current - target, 0))}kg`}
+        </Text>
+        {showTrend ? (
+          <Text maxFontSizeMultiplier={1.15} style={styles.goalTrend}>
+            近7天 {change > 0 ? '+' : ''}{formatDisplayNumber(change)}kg
+          </Text>
+        ) : null}
+      </View>
+      {safeProgress != null ? (
+        <View
+          accessible
+          accessibilityRole="progressbar"
+          accessibilityLabel={`减重目标进度 ${formatDisplayNumber(safeProgress)}%`}
+          accessibilityValue={{ min: 0, max: 100, now: safeProgress }}
+          style={styles.goalTrack}
+        >
+          <View style={[styles.goalFill, { width: `${safeProgress}%` }]} />
+        </View>
+      ) : null}
+      {freshness === 'stale' ? (
+        <Text maxFontSizeMultiplier={1.2} style={styles.goalStale}>
+          体重数据较旧，更新后再看趋势
+        </Text>
+      ) : null}
+      {measuredOn ? (
+        <Text maxFontSizeMultiplier={1.15} style={styles.goalMeasured}>测于 {measuredOn}</Text>
+      ) : null}
+      <Text maxFontSizeMultiplier={1.15} style={styles.goalBoundary}>
+        体重变化来自连续测量，不归因于单次饮食。
+      </Text>
+    </View>
   );
 }
 
@@ -678,6 +782,128 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: C.ink3,
     lineHeight: 14,
+  } as TextStyle,
+  goalBox: {
+    marginTop: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    borderRadius: revaRadii.md,
+    backgroundColor: C.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.green100,
+    gap: 5,
+  },
+  consistencyRow: {
+    minHeight: 36,
+    marginTop: 10,
+    paddingHorizontal: 11,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: revaRadii.sm,
+    backgroundColor: C.green50,
+  },
+  consistencyText: {
+    fontFamily: revaFonts.cjk,
+    fontSize: 12,
+    lineHeight: 17,
+    color: C.green700,
+    fontWeight: '600',
+  },
+  consistencyHint: {
+    flex: 1,
+    fontFamily: revaFonts.cjk,
+    fontSize: 11,
+    lineHeight: 15,
+    color: C.ink2,
+    textAlign: 'right',
+  },
+  goalReviewBox: {
+    borderColor: revaSemantic.caution.line,
+  },
+  goalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  goalTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  goalTitle: {
+    fontFamily: revaFonts.sans,
+    fontSize: 11,
+    fontWeight: '700',
+    color: C.green700,
+  } as TextStyle,
+  goalReviewTitle: {
+    flex: 1,
+    fontFamily: revaFonts.sans,
+    fontSize: 12,
+    fontWeight: '700',
+    color: revaSemantic.caution.fg,
+  } as TextStyle,
+  goalReviewText: {
+    fontFamily: revaFonts.sans,
+    fontSize: 11,
+    lineHeight: 16,
+    color: C.ink2,
+  } as TextStyle,
+  goalCurrent: {
+    fontFamily: revaFonts.mono,
+    fontSize: 11,
+    color: C.ink2,
+    fontVariant: ['tabular-nums'] as const,
+  } as TextStyle,
+  goalValueRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  goalValue: {
+    fontFamily: revaFonts.sans,
+    fontSize: 14,
+    fontWeight: '800',
+    lineHeight: 19,
+    color: C.ink1,
+  } as TextStyle,
+  goalTrend: {
+    fontFamily: revaFonts.mono,
+    fontSize: 10,
+    color: C.green700,
+  } as TextStyle,
+  goalTrack: {
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: C.green100,
+    overflow: 'hidden',
+  },
+  goalFill: {
+    height: '100%',
+    borderRadius: 3,
+    backgroundColor: C.green500,
+  },
+  goalStale: {
+    fontFamily: revaFonts.sans,
+    fontSize: 10,
+    fontWeight: '600',
+    lineHeight: 14,
+    color: revaSemantic.caution.fg,
+  } as TextStyle,
+  goalMeasured: {
+    fontFamily: revaFonts.mono,
+    fontSize: 9.5,
+    color: C.ink3,
+  } as TextStyle,
+  goalBoundary: {
+    fontFamily: revaFonts.sans,
+    fontSize: 9.5,
+    lineHeight: 13,
+    color: C.ink3,
   } as TextStyle,
   cautionList: {
     marginTop: 9,

@@ -187,7 +187,14 @@ def test_resolve_provider_tool_round_swaps_to_fast(monkeypatch):
 # 端到端: 工具轮 fast / 合成轮 strong (镜像 tool_gating 的 per-round 断言)
 # ──────────────────────────────────────────────────────────────
 
-def _wire(executor, monkeypatch, provider_factory, *, user_provider=None):
+def _wire(
+    executor,
+    monkeypatch,
+    provider_factory,
+    *,
+    user_provider=None,
+    tool_name="health_record",
+):
     monkeypatch.setattr("app.services.agent_executor.settings.llm_provider", "tokenplan")
     monkeypatch.setattr("app.services.agent_executor.settings.agent_base_url", None)
     monkeypatch.setattr("app.services.agent_executor.settings.agent_api_key", None)
@@ -196,8 +203,8 @@ def _wire(executor, monkeypatch, provider_factory, *, user_provider=None):
         lambda: [{
             "type": "function",
             "function": {
-                "name": "health_record",
-                "description": "record",
+                "name": tool_name,
+                "description": "test tool",
                 "parameters": {"type": "object", "properties": {}},
             },
         }],
@@ -251,9 +258,10 @@ async def test_advice_turn_tool_round_fast_synthesis_strong(db, auth_user_and_he
                 # 首个工具决策轮 (fast): 吐结构化 tool_call
                 yield {"type": "tool_calls", "tool_calls": [{
                     "id": "r1", "type": "function",
-                    "function": {"name": "health_record",
-                                 "arguments": json.dumps({"record_type": "symptom",
-                                                          "data": {"description": "胃痛"}})},
+                    "function": {
+                        "name": "environment_check",
+                        "arguments": json.dumps({"location": "北京"}),
+                    },
                 }]}
                 yield {"type": "finish", "finish_reason": "tool_calls"}
                 return
@@ -267,20 +275,20 @@ async def test_advice_turn_tool_round_fast_synthesis_strong(db, auth_user_and_he
             return {"content": "STRONG SYNTHESIS", "finish_reason": "stop"}
 
     async def fake_exec_tool(name, args, token):
-        return json.dumps(
-            {
-                "id": 42,
-                "resource_type": "symptom_record",
-                "message": "已记录胃痛症状",
-            },
-            ensure_ascii=False,
-        )
+        assert name == "environment_check"
+        return "北京当前 19C 小雨，湿度 92%"
 
     user_provider = FakeProvider(strong)
-    _wire(executor, monkeypatch, lambda mid: FakeProvider(mid), user_provider=user_provider)
+    _wire(
+        executor,
+        monkeypatch,
+        lambda mid: FakeProvider(mid),
+        user_provider=user_provider,
+        tool_name="environment_check",
+    )
     monkeypatch.setattr(executor, "_execute_tool", fake_exec_tool)
 
-    events = await _run(executor, "我胃还有点痛，怎么办？", user.id)
+    events = await _run(executor, "来北京之后有点头疼，怎么办？", user.id)
     rendered = "".join(
         e["data"].get("content", "") for e in events if e.get("event") == "token"
     )
@@ -294,7 +302,7 @@ async def test_advice_turn_tool_round_fast_synthesis_strong(db, auth_user_and_he
     assert done["answer_model"] == "qwen3.7-max"          # 面向用户答案 = 强模型
     assert "qwen3.6-flash" in done["tool_models"]          # 工具轮 = fast (可观测)
     assert "tool_round_fast_routed" in done["fallback_reasons"]
-    assert done["tools_used"] == ["health_record"]
+    assert done["tools_used"] == ["environment_check"]
 
 
 @pytest.mark.asyncio
@@ -441,9 +449,10 @@ async def test_explicit_model_tool_round_fast_answer_on_explicit(
             if self.model == "qwen3.6-flash":
                 yield {"type": "tool_calls", "tool_calls": [{
                     "id": "r1", "type": "function",
-                    "function": {"name": "health_record",
-                                 "arguments": json.dumps({"record_type": "symptom",
-                                                          "data": {"description": "胃痛"}})},
+                    "function": {
+                        "name": "environment_check",
+                        "arguments": json.dumps({"location": "北京"}),
+                    },
                 }]}
                 yield {"type": "finish", "finish_reason": "tool_calls"}
                 return
@@ -456,16 +465,21 @@ async def test_explicit_model_tool_round_fast_answer_on_explicit(
             return {"content": "EXPLICIT SYNTHESIS", "finish_reason": "stop"}
 
     async def fake_exec_tool(name, args, token):
-        return json.dumps({"id": 42, "resource_type": "symptom_record",
-                           "message": "已记录胃痛症状"}, ensure_ascii=False)
+        assert name == "environment_check"
+        return "北京当前 19C 小雨，湿度 92%"
 
     # user_provider = 显式选定的 qwen3.7-max (create_provider_for_model_id 也据 mid 建)。
-    _wire(executor, monkeypatch, lambda mid: FakeProvider(mid),
-          user_provider=FakeProvider("qwen3.7-max"))
+    _wire(
+        executor,
+        monkeypatch,
+        lambda mid: FakeProvider(mid),
+        user_provider=FakeProvider("qwen3.7-max"),
+        tool_name="environment_check",
+    )
     monkeypatch.setattr(executor, "_execute_tool", fake_exec_tool)
 
     events = await _run(
-        executor, "我胃还有点痛，怎么办？", user.id,
+        executor, "来北京之后有点头疼，怎么办？", user.id,
         extra_context=json.dumps({"model_id": "qwen3.7-max"}),
     )
     rendered = "".join(

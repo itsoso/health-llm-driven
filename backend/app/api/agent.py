@@ -10,13 +10,13 @@ import logging
 import math
 import time
 import uuid
-from datetime import UTC, datetime, timedelta
 from typing import Optional, List
 
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Path, Query, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, field_validator
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -39,6 +39,17 @@ logger = logging.getLogger(__name__)
 _BACKGROUND_AGENT_TASKS: set = set()
 _BACKGROUND_AGENT_TASKS_BY_RUN: dict[str, set[asyncio.Task]] = {}
 router = APIRouter()
+
+
+class AgentTurnStatusResponse(BaseModel):
+    client_turn_id: str
+    run_id: str | None = None
+    status: str
+    request_persisted: bool
+    response_persisted: bool
+    conversation_id: int | None = None
+    retryable: bool
+    error_code: str | None = None
 
 
 class _BoundedSSEBridge:
@@ -259,24 +270,31 @@ def _answer_owns_its_visualization(answer_text: str, tools_used: list | None) ->
 
 
 def _merge_card_descriptors(*groups: list | None) -> list:
-    """Merge SSE card descriptors without duplicating identical payloads."""
+    """Merge SSE cards, updating a stable card instead of duplicating it."""
 
     out: list = []
-    seen: set[str] = set()
+    positions: dict[str, int] = {}
     for group in groups:
         if not isinstance(group, list):
             continue
         for card in group:
             if not isinstance(card, dict) or not isinstance(card.get("type"), str):
                 continue
-            try:
-                key = json.dumps(card, sort_keys=True, ensure_ascii=False, default=str)
-            except Exception:
-                key = f"{card.get('type')}:{len(out)}"
-            if key in seen:
-                continue
-            seen.add(key)
-            out.append(card)
+            data = card.get("data")
+            card_id = data.get("card_id") if isinstance(data, dict) else None
+            if isinstance(card_id, str) and card_id.strip():
+                key = f"{card['type']}:{card_id.strip()}"
+            else:
+                try:
+                    key = json.dumps(card, sort_keys=True, ensure_ascii=False, default=str)
+                except Exception:
+                    key = f"{card.get('type')}:{len(out)}"
+            position = positions.get(key)
+            if position is None:
+                positions[key] = len(out)
+                out.append(card)
+            else:
+                out[position] = card
     return out
 
 
@@ -843,49 +861,17 @@ def _admit_agent_runtime(
     origin: str,
 ):
     """Return canonical identity, lifecycle ownership and admission disposition."""
-    from app.services.agent_runtime import RunContext
-    from app.services.agent_runtime_rollout import (
-        AgentRuntimeRolloutService,
-        runtime_mode,
-    )
-    from app.config import settings
+    from app.services.agent_runtime_facade import admit_agent_runtime
 
-    if runtime_mode() == "off":
-        return RunContext(
-            run_id=run_id,
-            attempt_id=attempt_id,
-            user_id=user_id,
-            conversation_id=conversation_id,
-            client_turn_id=client_turn_id,
-            input_seq=None,
-            origin=origin,
-        ), False, "execute"
-    deadline_seconds = int(
-        getattr(settings, "agent_runtime_deadline_seconds", 300) or 300
-    )
-    if not 30 <= deadline_seconds <= 3600:
-        raise RuntimeError("invalid_agent_runtime_deadline_seconds")
-    managed_admission = AgentRuntimeRolloutService(db).admit_run(
+    return admit_agent_runtime(
+        db,
         run_id=run_id,
         attempt_id=attempt_id,
         user_id=user_id,
         conversation_id=conversation_id,
         client_turn_id=client_turn_id,
         origin=origin,
-        deadline_at=datetime.now(UTC) + timedelta(seconds=deadline_seconds),
     )
-    admission = managed_admission.admission
-    if admission is None:
-        return RunContext(
-            run_id=run_id,
-            attempt_id=attempt_id,
-            user_id=user_id,
-            conversation_id=conversation_id,
-            client_turn_id=client_turn_id,
-            input_seq=None,
-            origin=origin,
-        ), False, "execute"
-    return admission.context, admission.owns_execution, admission.disposition
 
 
 def _reserve_agent_capacity(db: Session, *, user_id: int, origin: str) -> str:
@@ -969,92 +955,15 @@ async def _agent_runtime_heartbeat(
     owner_task: asyncio.Task,
     initial_lease_deadline: float,
 ) -> None:
-    if not managed:
-        return
-    from app.config import settings
-    from app.database import SessionLocal
-    from app.services.agent_runtime import (
-        ACTIVE_RUN_STATUSES,
-        AgentRuntimeCoordinator,
-        StaleRunAttempt,
-        StaleRunWorker,
-    )
+    from app.services.agent_runtime_lease import agent_runtime_heartbeat
 
-    heartbeat_seconds = int(
-        getattr(settings, "agent_runtime_heartbeat_seconds", 20) or 20
+    await agent_runtime_heartbeat(
+        context,
+        managed=managed,
+        worker_id=worker_id,
+        owner_task=owner_task,
+        initial_lease_deadline=initial_lease_deadline,
     )
-    lease_seconds = int(
-        getattr(settings, "agent_runtime_lease_seconds", 90) or 90
-    )
-    if heartbeat_seconds < 1 or heartbeat_seconds >= lease_seconds:
-        raise RuntimeError("invalid_agent_runtime_heartbeat_seconds")
-    lease_deadline = initial_lease_deadline
-    retry_delay = float(heartbeat_seconds)
-    while not owner_task.done():
-        await asyncio.sleep(retry_delay)
-        heartbeat_db = None
-        try:
-            heartbeat_db = SessionLocal()
-            runtime = AgentRuntimeCoordinator(heartbeat_db)
-            try:
-                renew_started = time.monotonic()
-                signal = runtime.renew_lease(
-                    context,
-                    worker_id=worker_id,
-                    lease_seconds=lease_seconds,
-                )
-            except (StaleRunAttempt, StaleRunWorker):
-                run = runtime.get_run(context.user_id, context.run_id)
-                if run.current_attempt_id != context.attempt_id:
-                    owner_task.cancel()
-                    return
-                if run.status not in ACTIVE_RUN_STATUSES:
-                    if (
-                        run.status in {"cancelled", "reconciliation_required"}
-                        or run.error_code
-                        in {"deadline_exceeded", "worker_lease_expired"}
-                    ):
-                        owner_task.cancel()
-                    return
-                owner_task.cancel()
-                return
-            if signal.action != "continue":
-                runtime.settle_control_stop(context, action=signal.action)
-                owner_task.cancel()
-                return
-            lease_deadline = renew_started + lease_seconds
-            retry_delay = float(heartbeat_seconds)
-        except Exception as exc:  # noqa: BLE001
-            remaining = lease_deadline - time.monotonic()
-            logger.warning(
-                "Agent Runtime heartbeat retry: run_id=%s attempt_id=%s "
-                "remaining_lease=%.2fs error=%s",
-                context.run_id,
-                context.attempt_id,
-                max(0.0, remaining),
-                type(exc).__name__,
-            )
-            if remaining <= 1.0:
-                owner_task.cancel()
-                return
-            retry_delay = min(
-                max(1.0, heartbeat_seconds / 2),
-                max(0.1, remaining - 1.0),
-            )
-        finally:
-            if heartbeat_db is not None:
-                try:
-                    heartbeat_db.close()
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning(
-                        "Agent Runtime heartbeat session close failed: "
-                        "run_id=%s attempt_id=%s error=%s",
-                        context.run_id,
-                        context.attempt_id,
-                        type(exc).__name__,
-                    )
-                    owner_task.cancel()
-                    return
 
 
 async def _stop_agent_runtime_heartbeat(
@@ -1062,18 +971,9 @@ async def _stop_agent_runtime_heartbeat(
     *,
     run_id: str,
 ) -> None:
-    """Stop the helper without allowing its failure to replace the Run result."""
-    heartbeat_task.cancel()
-    try:
-        await heartbeat_task
-    except asyncio.CancelledError:
-        pass
-    except Exception:
-        logger.error(
-            "Agent Runtime heartbeat failed during cleanup: run_id=%s",
-            run_id,
-            exc_info=True,
-        )
+    from app.services.agent_runtime_lease import stop_agent_runtime_heartbeat
+
+    await stop_agent_runtime_heartbeat(heartbeat_task, run_id=run_id)
 
 
 @router.post("/runs/{run_id}/cancel")
@@ -1097,6 +997,73 @@ async def cancel_agent_runtime_run(
     if result.status == "cancellation_requested":
         _cancel_agent_runtime_task(run_id)
     return {"run_id": result.run_id, "status": result.status}
+
+
+@router.get(
+    "/turns/{client_turn_id}/status",
+    response_model=AgentTurnStatusResponse,
+)
+async def get_agent_turn_status(
+    response: Response,
+    client_turn_id: str = Path(min_length=1, max_length=112),
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """Reconcile an interrupted transport using content-free control metadata."""
+    from app.services.agent_conversation_service import AgentConversationService
+    from app.services.agent_runtime import AgentRuntimeCoordinator
+
+    response.headers["Cache-Control"] = "no-store"
+
+    runtime = AgentRuntimeCoordinator(db)
+    conversations = AgentConversationService(db)
+    run = runtime.get_run_by_client_turn(current_user.id, client_turn_id)
+    source = conversations.find_user_message_by_client_turn(
+        current_user.id,
+        client_turn_id,
+    )
+    assistant = conversations.find_assistant_message_by_client_turn(
+        current_user.id,
+        client_turn_id,
+    )
+    if run is None and source is None:
+        raise HTTPException(
+            status_code=404,
+            detail="回合不存在",
+            headers={"Cache-Control": "no-store"},
+        )
+
+    conversation_id = (
+        source.conversation_id
+        if source is not None
+        else run.conversation_id if run is not None else None
+    )
+    # A client-turn user row is claimed before private images finish uploading.
+    # Only Runtime binding happens after the executor emits request_persisted,
+    # so row existence alone must never acknowledge a photo turn.
+    request_persisted = bool(
+        run is not None and run.source_message_id is not None
+    )
+    response_persisted = bool(
+        assistant is not None
+        and (assistant.meta or {}).get("client_turn_finalized") is True
+    ) or bool(
+        run is not None and run.assistant_message_id is not None
+    )
+    return {
+        "client_turn_id": client_turn_id,
+        "run_id": run.run_id if run is not None else None,
+        "status": (
+            run.status
+            if run is not None
+            else "succeeded" if response_persisted else "running"
+        ),
+        "request_persisted": request_persisted,
+        "response_persisted": response_persisted,
+        "conversation_id": conversation_id,
+        "retryable": bool(run.retryable) if run is not None else False,
+        "error_code": run.error_code if run is not None else None,
+    }
 
 
 @router.get("/runs/{run_id}")
@@ -1757,6 +1724,12 @@ async def agent_stream(
                     run_id=runtime_context.run_id,
                     attempt_id=runtime_context.attempt_id,
                     runtime_managed=runtime_managed,
+                    runtime_write_block_reason=(
+                        runtime_context.control_reason
+                        if runtime_context.control_reason
+                        in {"circuit_paused", "circuit_unavailable"}
+                        else None
+                    ),
                 ):
                     if event.get("event") == "request_persisted":
                         persisted_data = event.get("data")
@@ -2147,6 +2120,12 @@ async def agent_send(
                 run_id=runtime_context.run_id,
                 attempt_id=runtime_context.attempt_id,
                 runtime_managed=runtime_managed,
+                runtime_write_block_reason=(
+                    runtime_context.control_reason
+                    if runtime_context.control_reason
+                    in {"circuit_paused", "circuit_unavailable"}
+                    else None
+                ),
             ):
                 if event.get("event") == "request_persisted":
                     persisted_data = event.get("data")
@@ -2453,30 +2432,69 @@ async def list_conversations(
 async def get_conversation(
     conversation_id: int,
     days: Optional[int] = Query(None, ge=1, le=365, description="只返回最近 N 天的消息"),
+    limit: Optional[int] = Query(None, ge=1, le=200, description="按消息 ID 取最近一页"),
+    before_message_id: Optional[int] = Query(None, ge=1, description="只返回此消息 ID 之前的数据"),
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ):
-    from app.services.agent_conversation_service import AgentConversationService
+    from app.models.agent_conversation import AgentConversation, AgentMessage
 
-    service = AgentConversationService(db)
-    conv = service.get_conversation_detail(current_user.id, conversation_id)
+    conv = (
+        db.query(AgentConversation)
+        .filter(
+            AgentConversation.id == conversation_id,
+            AgentConversation.user_id == current_user.id,
+        )
+        .first()
+    )
     if not conv:
         raise HTTPException(status_code=404, detail="对话不存在")
 
-    msgs = conv.messages
-    total_messages = len(msgs)
+    total_messages = (
+        db.query(func.count(AgentMessage.id))
+        .filter(AgentMessage.conversation_id == conversation_id)
+        .scalar()
+        or 0
+    )
+    message_query = db.query(AgentMessage).filter(
+        AgentMessage.conversation_id == conversation_id,
+    )
     if days is not None:
         from datetime import datetime, timedelta, timezone
 
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-        msgs = [m for m in msgs if m.created_at and _msg_dt(m.created_at) >= cutoff]
+        message_query = message_query.filter(AgentMessage.created_at >= cutoff)
+    if before_message_id is not None:
+        message_query = message_query.filter(AgentMessage.id < before_message_id)
+
+    has_more = False
+    if limit is not None:
+        descending = (
+            message_query
+            .order_by(AgentMessage.id.desc())
+            .limit(limit + 1)
+            .all()
+        )
+        has_more = len(descending) > limit
+        msgs = list(reversed(descending[:limit]))
+    else:
+        msgs = message_query.order_by(AgentMessage.id.asc()).all()
 
     from app.services.chat_utils import refresh_chat_image_url_value
+    from app.services.dynamic_card_persistence import message_metas_for_delivery
+
+    delivered_metas = message_metas_for_delivery(
+        db,
+        [getattr(message, "meta", None) for message in msgs],
+        current_user.id,
+    )
 
     return {
         "id": conv.id,
         "title": conv.title,
         "total_messages": total_messages,
+        "has_more": has_more,
+        "oldest_message_id": msgs[0].id if msgs else None,
         "mode": "agent",
         "messages": [
             {
@@ -2486,21 +2504,11 @@ async def get_conversation(
                 "image_url": refresh_chat_image_url_value(m.image_url, current_user.id),
                 "rating": m.rating,
                 "created_at": str(m.created_at),
-                "meta": getattr(m, "meta", None),
+                "meta": delivered_metas[index],
             }
-            for m in msgs
+            for index, m in enumerate(msgs)
         ],
     }
-
-
-def _msg_dt(value):
-    """Normalize SQLite naive / PostgreSQL aware timestamps to aware UTC."""
-    from datetime import datetime, timezone
-
-    if isinstance(value, datetime):
-        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
-    return datetime.fromisoformat(str(value)).replace(tzinfo=timezone.utc) if value else datetime.now(timezone.utc)
-
 
 @router.delete("/conversations/{conversation_id}", summary="删除统一健康助理对话")
 async def delete_conversation(
