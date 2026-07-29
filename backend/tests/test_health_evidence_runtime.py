@@ -886,6 +886,44 @@ def test_persisted_health_answer_is_sanitized_on_manifest_digest_mismatch():
     assert content not in delivery.content
 
 
+def test_medium_health_envelope_cannot_be_replayed_for_emergency_query():
+    content, meta = _verified_persisted_health_answer()
+
+    delivery = sanitize_health_delivery(
+        source_query="腰痛而且排不出尿",
+        assistant_content=content,
+        assistant_meta=meta,
+        enabled=False,
+    )
+
+    assert delivery.sanitized is True
+    assert content not in delivery.content
+    assert "联系当地急救服务" in delivery.content
+
+
+@pytest.mark.parametrize(
+    "source_query",
+    [
+        "腰痛怎么办",
+        "没有",
+    ],
+)
+def test_valid_health_envelope_survives_medium_or_continuation_query(
+    source_query,
+):
+    content, meta = _verified_persisted_health_answer()
+
+    delivery = sanitize_health_delivery(
+        source_query=source_query,
+        assistant_content=content,
+        assistant_meta=meta,
+        enabled=False,
+    )
+
+    assert delivery.sanitized is False
+    assert delivery.content == content
+
+
 @pytest.mark.parametrize(
     "mutation",
     ["empty", "duplicate", "forged_extra"],

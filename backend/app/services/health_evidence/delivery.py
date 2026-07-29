@@ -90,6 +90,11 @@ def sanitize_health_delivery(
         meta,
         intent_id=expected_intent_id,
         assistant_content=content,
+        expected_risk_level=(
+            intent.risk_level.value
+            if intent.requires_authority
+            else None
+        ),
     ):
         manifest = meta["health_evidence_manifest"]
         return HealthDelivery(
@@ -165,6 +170,7 @@ def has_current_health_verification(
     *,
     intent_id: str,
     assistant_content: str,
+    expected_risk_level: str | None = None,
 ) -> bool:
     """Validate the current public manifest/verification delivery contract."""
 
@@ -192,6 +198,11 @@ def has_current_health_verification(
 
     risk_level = str(manifest.get("risk_level") or "")
     if not risk_level or public_intent.get("risk_level") != risk_level:
+        return False
+    if (
+        expected_risk_level is not None
+        and risk_level != expected_risk_level
+    ):
         return False
     sufficiency = str(manifest.get("sufficiency") or "")
     if sufficiency not in _SUFFICIENCY_VALUES:
