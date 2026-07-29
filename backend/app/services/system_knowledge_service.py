@@ -23,7 +23,7 @@ from app.config import settings
 from app.models.system_knowledge import KBAudit, KBDocument, KBDocumentVector, KBEdge
 from app.services.retrieval_guard import guard_retrieval_query
 from app.services.clinical_claim_release import (
-    CLINICAL_RELEASE_HOLD_CLAIM_IDS,
+    CLINICAL_RELEASE_HOLD_DOCUMENT_IDS,
     HEALTH_EVIDENCE_RUNTIME_RELEASED_CLAIM_IDS,
 )
 from app.services.system_knowledge_ingest import validate_artifact_review_gate
@@ -136,21 +136,33 @@ def _reviewed_document_filter():
     return KBDocument.metadata_json["review_status"].as_string() == "reviewed"
 
 
-def _serving_document_filters(
-    runtime_released_ids: frozenset[str] | None = None,
-):
-    scope_filter = (
-        KBDocument.doc_id.in_(runtime_released_ids)
-        if runtime_released_ids is not None
-        else KBDocument.doc_id.notin_(
-            CLINICAL_RELEASE_HOLD_CLAIM_IDS
-        )
-    )
+def generic_serving_document_filters():
+    """Return the shared policy for every ordinary user-facing System KB read."""
     return (
         KBDocument.is_archived.is_(False),
         _reviewed_document_filter(),
-        scope_filter,
+        KBDocument.doc_id.notin_(CLINICAL_RELEASE_HOLD_DOCUMENT_IDS),
     )
+
+
+def health_evidence_runtime_document_filters():
+    """Return the sealed exact-claim policy for the health-evidence runtime."""
+    return (
+        KBDocument.is_archived.is_(False),
+        _reviewed_document_filter(),
+        KBDocument.doc_type == "claim",
+        KBDocument.doc_id.in_(HEALTH_EVIDENCE_RUNTIME_RELEASED_CLAIM_IDS),
+    )
+
+
+def _serving_document_filters(
+    runtime_released_ids: frozenset[str] | None = None,
+):
+    if runtime_released_ids is None:
+        return generic_serving_document_filters()
+    if runtime_released_ids != HEALTH_EVIDENCE_RUNTIME_RELEASED_CLAIM_IDS:
+        raise ValueError("runtime serving IDs must match the sealed release set")
+    return health_evidence_runtime_document_filters()
 
 
 def evidence_level_detail(level: str | None) -> dict[str, str] | None:
@@ -407,7 +419,7 @@ def get_claim_bundle(
         return None
     if (
         not include_archived
-        and claim.doc_id in CLINICAL_RELEASE_HOLD_CLAIM_IDS
+        and claim.doc_id in CLINICAL_RELEASE_HOLD_DOCUMENT_IDS
     ):
         return None
 

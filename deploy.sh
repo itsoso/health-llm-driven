@@ -18,7 +18,7 @@ NC='\033[0m' # No Color
 
 # 获取脚本所在目录
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ENV_FILE="$SCRIPT_DIR/.env"
+ENV_FILE="${DEPLOY_ENV_FILE:-$SCRIPT_DIR/.env}"
 source "$SCRIPT_DIR/scripts/release_lock.sh"
 
 # 检查 .env 文件是否存在
@@ -37,7 +37,23 @@ REMOTE_PATH=$(grep "^DEPLOY_PATH=" "$ENV_FILE" | cut -d'=' -f2)
 REMOTE_DEPLOY_BUNDLE="/tmp/health-app-deploy-$$-$(date +%s).bundle"
 REMOTE_BACKUP_PREFLIGHT_DIR="/tmp/health-app-backup-preflight-$$-$(date +%s)"
 REMOTE_BACKUP_RUNNER="$REMOTE_BACKUP_PREFLIGHT_DIR/backup_db.sh"
+REMOTE_ROLLBACK_RUNNER="$REMOTE_BACKUP_PREFLIGHT_DIR/rollback_release.sh"
+REMOTE_ACTIVATION_RUNNER="$REMOTE_BACKUP_PREFLIGHT_DIR/activate_health_evidence_runtime.sh"
+REMOTE_BACKEND_ENV_CANDIDATE="$REMOTE_BACKUP_PREFLIGHT_DIR/backend.env.candidate"
+REMOTE_BACKEND_ENV_CANDIDATE_SHA=""
+REMOTE_ACTIVATION_STATE_DIR="${REMOTE_BACKUP_PREFLIGHT_DIR}.activation-state"
+REMOTE_ACTIVATION_SUCCESS_MARKER="$REMOTE_ACTIVATION_STATE_DIR/success"
+REMOTE_HEALTH_EVIDENCE_DURABLE_STATE_DIR="${REMOTE_HEALTH_EVIDENCE_DURABLE_STATE_DIR:-/var/lib/reva-health-evidence-runtime}"
+REMOTE_HEALTH_EVIDENCE_RUNTIME_STATE_DIR="${REMOTE_HEALTH_EVIDENCE_RUNTIME_STATE_DIR:-/run/reva-health-evidence-activation}"
+REMOTE_HEALTH_EVIDENCE_SYSTEMD_RUNTIME_DIR="${REMOTE_HEALTH_EVIDENCE_SYSTEMD_RUNTIME_DIR:-/run/systemd/system}"
+REMOTE_HEALTH_EVIDENCE_CGROUP_ROOT="${REMOTE_HEALTH_EVIDENCE_CGROUP_ROOT:-/sys/fs/cgroup}"
+REMOTE_HEALTH_EVIDENCE_PROC_ROOT="${REMOTE_HEALTH_EVIDENCE_PROC_ROOT:-/proc}"
 DEPLOY_EXPECTED_SHA=""
+REMOTE_RELEASE_LOCK_DIR="${REMOTE_RELEASE_LOCK_DIR:-/var/lock/health-app-release}"
+REMOTE_RELEASE_LOCK_TOKEN=""
+_REMOTE_RELEASE_LOCK_ACQUIRED=0
+_REMOTE_RELEASE_LOCK_DELEGATED=0
+_REMOTE_RELEASE_LOCK_ABANDONED=0
 
 # 验证必要配置
 if [[ -z "$SERVER" || -z "$REMOTE_PATH" ]]; then
@@ -64,25 +80,139 @@ print_warning() {
 }
 
 cleanup_remote_release_artifacts() {
-    ssh "$SERVER" "rm -f '$REMOTE_DEPLOY_BUNDLE'; rm -rf '$REMOTE_BACKUP_PREFLIGHT_DIR'" >/dev/null 2>&1 || true
+    if [[ "${_REMOTE_RELEASE_LOCK_ABANDONED:-0}" != "1" &&
+          "${_REMOTE_RELEASE_LOCK_DELEGATED:-0}" != "1" ]]; then
+        ssh "$SERVER" \
+            "rm -f '$REMOTE_DEPLOY_BUNDLE'; rm -rf '$REMOTE_BACKUP_PREFLIGHT_DIR' '$REMOTE_ACTIVATION_STATE_DIR'" \
+            >/dev/null 2>&1 || true
+        release_remote_release_lock || true
+    fi
     release_release_lock
+}
+
+abandon_remote_release_lock() {
+    local signal_exit="$1"
+    _REMOTE_RELEASE_LOCK_ABANDONED=1
+    release_release_lock
+    exit "$signal_exit"
+}
+
+install_release_cleanup_traps() {
+    trap cleanup_remote_release_artifacts EXIT
+    trap 'abandon_remote_release_lock 129' HUP
+    trap 'abandon_remote_release_lock 130' INT
+    trap 'abandon_remote_release_lock 143' TERM
+}
+
+acquire_remote_release_lock() {
+    local label="${1:-release}"
+    local token
+
+    if [[ "${_REMOTE_RELEASE_LOCK_ACQUIRED:-0}" = "1" ]]; then
+        return 0
+    fi
+    if [[ "$REMOTE_RELEASE_LOCK_DIR" != /* || "$REMOTE_RELEASE_LOCK_DIR" = "/" ]]; then
+        print_error "远端发布锁路径不安全: $REMOTE_RELEASE_LOCK_DIR"
+        return 70
+    fi
+    token="${REVA_RELEASE_LOCK_TOKEN:-$$-${RANDOM:-0}-$(date +%s)}"
+    if ! [[ "$token" =~ ^[A-Za-z0-9._:-]+$ ]]; then
+        print_error "远端发布锁 token 格式非法"
+        return 70
+    fi
+    if ! ssh "$SERVER" bash -s -- \
+        "$REMOTE_RELEASE_LOCK_DIR" "$token" "$label" <<'REMOTE_RELEASE_LOCK'
+set -euo pipefail
+lock_dir="$1"
+token="$2"
+label="$3"
+umask 077
+if ! mkdir "$lock_dir" 2>/dev/null; then
+    owner=$(cat "$lock_dir/label" 2>/dev/null || true)
+    started=$(cat "$lock_dir/started_at" 2>/dev/null || true)
+    echo "remote release already active: label=${owner:-unknown} started=${started:-unknown}" >&2
+    exit 73
+fi
+printf '%s\n' "$token" > "$lock_dir/token"
+printf '%s\n' "$label" > "$lock_dir/label"
+date -u +%Y-%m-%dT%H:%M:%SZ > "$lock_dir/started_at"
+REMOTE_RELEASE_LOCK
+    then
+        print_error "无法获取服务器发布锁"
+        return 73
+    fi
+    REMOTE_RELEASE_LOCK_TOKEN="$token"
+    _REMOTE_RELEASE_LOCK_ACQUIRED=1
+}
+
+assert_remote_release_lock() {
+    if [[ "${_REMOTE_RELEASE_LOCK_ACQUIRED:-0}" != "1" ||
+          -z "$REMOTE_RELEASE_LOCK_TOKEN" ]]; then
+        print_error "服务器发布锁未持有"
+        return 73
+    fi
+    ssh "$SERVER" bash -s -- \
+        "$REMOTE_RELEASE_LOCK_DIR" "$REMOTE_RELEASE_LOCK_TOKEN" <<'REMOTE_RELEASE_ASSERT'
+set -euo pipefail
+lock_dir="$1"
+expected="$2"
+test -r "$lock_dir/token"
+test "$(cat "$lock_dir/token")" = "$expected"
+REMOTE_RELEASE_ASSERT
+}
+
+assert_remote_release_lock_if_acquired() {
+    if [[ "${_REMOTE_RELEASE_LOCK_ACQUIRED:-0}" = "1" ]]; then
+        assert_remote_release_lock
+    fi
+}
+
+release_remote_release_lock() {
+    if [[ "${_REMOTE_RELEASE_LOCK_ACQUIRED:-0}" != "1" ]]; then
+        return 0
+    fi
+    if ! ssh "$SERVER" bash -s -- \
+        "$REMOTE_RELEASE_LOCK_DIR" "$REMOTE_RELEASE_LOCK_TOKEN" <<'REMOTE_RELEASE_UNLOCK'
+set -euo pipefail
+lock_dir="$1"
+expected="$2"
+test -r "$lock_dir/token"
+test "$(cat "$lock_dir/token")" = "$expected"
+rm -f "$lock_dir/token" "$lock_dir/label" "$lock_dir/started_at"
+rmdir "$lock_dir"
+REMOTE_RELEASE_UNLOCK
+    then
+        print_error "服务器发布锁释放失败；保留锁以阻断并发发布"
+        return 73
+    fi
+    _REMOTE_RELEASE_LOCK_ACQUIRED=0
+    REMOTE_RELEASE_LOCK_TOKEN=""
 }
 
 # 上传当前 HEAD 的 git bundle 到服务器,作为 GitHub 超时时的回退源。
 # 前端/后端部署都调用它,所以两边都能走 bundle 回退。
 upload_deploy_bundle() {
     local bundle
+    local delegation_owner=0
+    assert_remote_release_lock_if_acquired
     bundle=$(mktemp)
     if ! git bundle create "$bundle" HEAD >/dev/null; then
         rm -f "$bundle"
         return 1
     fi
+    if [[ "${_REMOTE_RELEASE_LOCK_DELEGATED:-0}" != "1" ]]; then
+        _REMOTE_RELEASE_LOCK_DELEGATED=1
+        delegation_owner=1
+    fi
     if ! scp "$bundle" "$SERVER:$REMOTE_DEPLOY_BUNDLE" >/dev/null; then
         rm -f "$bundle"
+        _REMOTE_RELEASE_LOCK_ABANDONED=1
         return 1
     fi
     rm "$bundle"
-    trap cleanup_remote_release_artifacts EXIT
+    if [ "$delegation_owner" -eq 1 ]; then
+        _REMOTE_RELEASE_LOCK_DELEGATED=0
+    fi
 }
 
 # 备份发生在远端 checkout 更新之前。先上传当前已核验 commit 的备份工具，
@@ -92,12 +222,73 @@ stage_backup_preflight_scripts() {
         "$SCRIPT_DIR/backend/scripts/backup_db.sh"
         "$SCRIPT_DIR/backend/scripts/verify_backup_restore.sh"
         "$SCRIPT_DIR/backend/scripts/archive_backup_offsite.sh"
+        "$SCRIPT_DIR/backend/scripts/rollback_release.sh"
+        "$SCRIPT_DIR/backend/scripts/activate_health_evidence_runtime.sh"
+        "$SCRIPT_DIR/backend/scripts/verify_runtime_schema_compatibility.py"
+        "$SCRIPT_DIR/backend/scripts/quarantine_runtime_only_kb.py"
+        "$SCRIPT_DIR/backend/data/system_kb_v2_seed/review_manifest.json"
     )
+    local source_file
+    local source_relative
+    local staged_name
+    local expected_hash
+    local actual_hash
 
-    ssh "$SERVER" "install -d -m 0700 '$REMOTE_BACKUP_PREFLIGHT_DIR'"
-    scp "${scripts[@]}" "$SERVER:$REMOTE_BACKUP_PREFLIGHT_DIR/"
-    ssh "$SERVER" "chmod 0700 '$REMOTE_BACKUP_PREFLIGHT_DIR/'*.sh"
-    trap cleanup_remote_release_artifacts EXIT
+    assert_remote_release_lock_if_acquired
+    if ! [[ "$DEPLOY_EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+        print_error "缺少合法 DEPLOY_EXPECTED_SHA，拒绝生成发布预检 artifacts"
+        return 1
+    fi
+    if ! ssh "$SERVER" "
+        umask 077 && \
+        mkdir '$REMOTE_BACKUP_PREFLIGHT_DIR' && \
+        test \"\$(stat -c '%U:%G:%a' '$REMOTE_BACKUP_PREFLIGHT_DIR')\" = 'root:root:700'
+    "; then
+        return 1
+    fi
+    if ! scp "${scripts[@]}" "$SERVER:$REMOTE_BACKUP_PREFLIGHT_DIR/"; then
+        return 1
+    fi
+    if ! ssh "$SERVER" "chmod 0700 '$REMOTE_BACKUP_PREFLIGHT_DIR/'*.sh"; then
+        return 1
+    fi
+
+    for source_file in "${scripts[@]}"; do
+        staged_name="${source_file##*/}"
+        source_relative="${source_file#"$SCRIPT_DIR/"}"
+        if ! git cat-file -e "${DEPLOY_EXPECTED_SHA}:${source_relative}"; then
+            print_error "发布预检 artifact 不在待部署 commit: $source_relative"
+            return 1
+        fi
+        expected_hash="$(
+            git show "${DEPLOY_EXPECTED_SHA}:${source_relative}" \
+                | shasum -a 256 \
+                | awk '{print $1}'
+        )"
+        actual_hash="$(ssh "$SERVER" \
+            "sha256sum '$REMOTE_BACKUP_PREFLIGHT_DIR/$staged_name' | awk '{print \$1}'" \
+            2>/dev/null || true)"
+        if [[ -z "$expected_hash" || "$actual_hash" != "$expected_hash" ]]; then
+            print_error "发布预检 artifact 哈希不匹配: $staged_name"
+            return 1
+        fi
+    done
+    if ! ssh "$SERVER" "
+        cd '$REMOTE_BACKUP_PREFLIGHT_DIR' && \
+        sha256sum \
+            backup_db.sh \
+            verify_backup_restore.sh \
+            archive_backup_offsite.sh \
+            rollback_release.sh \
+            activate_health_evidence_runtime.sh \
+            verify_runtime_schema_compatibility.py \
+            quarantine_runtime_only_kb.py \
+            review_manifest.json \
+            > staged.sha256 && \
+        chmod 0400 staged.sha256
+    "; then
+        return 1
+    fi
 }
 
 remote_git_sync_command() {
@@ -105,7 +296,14 @@ remote_git_sync_command() {
         print_error "缺少合法的 DEPLOY_EXPECTED_SHA，拒绝生成远端同步命令"
         return 1
     fi
+    if [[ "${_REMOTE_RELEASE_LOCK_ACQUIRED:-0}" != "1" ||
+          -z "$REMOTE_RELEASE_LOCK_TOKEN" ]]; then
+        print_error "缺少服务器发布锁，拒绝生成远端同步命令"
+        return 1
+    fi
     cat <<EOF
+        test -r '$REMOTE_RELEASE_LOCK_DIR/token' &&
+        test "\$(cat '$REMOTE_RELEASE_LOCK_DIR/token')" = '$REMOTE_RELEASE_LOCK_TOKEN' &&
         echo '暂存服务器本地改动...' &&
         git stash push -m auto-deploy-stash >/dev/null &&
         echo '同步到已核验的 main commit $DEPLOY_EXPECTED_SHA...' &&
@@ -119,6 +317,7 @@ EOF
 
 verify_deployed_revision() {
     local deployed_sha
+    assert_remote_release_lock_if_acquired
     deployed_sha=$(ssh "$SERVER" "cd '$REMOTE_PATH' && git rev-parse HEAD" 2>/dev/null || true)
     if [[ "$deployed_sha" != "$DEPLOY_EXPECTED_SHA" ]]; then
         print_error "远端部署版本不匹配: expected=$DEPLOY_EXPECTED_SHA actual=${deployed_sha:-missing}"
@@ -133,9 +332,10 @@ show_help() {
     echo ""
     echo "选项:"
     echo "  -a, --all       部署前端和后端 (默认)"
-    echo "  -f, --frontend  仅部署前端"
+    echo "  -f, --frontend  重建远端已部署同一 SHA 的前端（新 commit 请用 --all）"
     echo "  -b, --backend   仅部署后端"
     echo "  -e, --env       仅同步 .env 到服务器"
+    echo "  -H, --activate-health-evidence  受控启用健康证据运行时"
     echo "  -r, --restart   仅重启服务 (不拉取代码)"
     echo "  -p, --push      仅推送代码到 GitHub (不部署)"
     echo "  -s, --status    查看服务器服务状态"
@@ -149,9 +349,10 @@ show_help() {
     echo ""
     echo "示例:"
     echo "  ./deploy.sh           # 部署全部"
-    echo "  ./deploy.sh -f        # 仅部署前端"
+    echo "  ./deploy.sh -f        # 重建远端当前同 SHA 的前端"
     echo "  ./deploy.sh -b        # 仅部署后端"
     echo "  ./deploy.sh -e        # 仅同步环境变量"
+    echo "  ./deploy.sh -H        # 启用并验证健康证据运行时，失败自动恢复"
     echo "  ./deploy.sh -r        # 仅重启服务"
     echo "  ./deploy.sh -s        # 查看服务状态"
 }
@@ -165,16 +366,28 @@ DEPLOY_SCORE_THRESHOLD=35  # 部署后健康度最低分（满分60，skip-tests
 
 # 备份数据库
 backup_database() {
+    local delegation_owner=0
     print_step "备份数据库..."
+    if [[ "${_REMOTE_RELEASE_LOCK_DELEGATED:-0}" != "1" ]]; then
+        _REMOTE_RELEASE_LOCK_DELEGATED=1
+        delegation_owner=1
+    fi
     # 备份早于远端 git checkout 更新，因此必须执行本次发布 commit 随附的脚本；
     # 数据库与站外归档配置仍从线上 backend/.env 加载。
     if ! stage_backup_preflight_scripts; then
+        _REMOTE_RELEASE_LOCK_ABANDONED=1
         print_error "无法上传本次发布的数据库备份工具，阻断部署"
+        print_error "远端 stage 结果不明确；发布锁与现场保留"
         return 1
     fi
     if ! ssh "$SERVER" "set -a; source '$REMOTE_PATH/backend/.env'; set +a; BACKUP_OFFSITE_REQUIRED=1 bash \"$REMOTE_BACKUP_RUNNER\""; then
+        _REMOTE_RELEASE_LOCK_ABANDONED=1
         print_error "数据库备份、恢复演练或站外归档失败，阻断部署"
+        print_error "远端备份结果不明确；发布锁与现场保留"
         return 1
+    fi
+    if [ "$delegation_owner" -eq 1 ]; then
+        _REMOTE_RELEASE_LOCK_DELEGATED=0
     fi
     print_success "数据库备份、恢复演练和站外归档完成"
 }
@@ -193,17 +406,30 @@ rollback_deploy() {
         print_error "无回滚点，请手动恢复"
         return 1
     fi
+    assert_remote_release_lock_if_acquired
     print_warning "健康度不达标，自动回滚到 ${ROLLBACK_COMMIT:0:8}..."
-    if ! ssh "$SERVER" \
-        "bash '$REMOTE_PATH/backend/scripts/rollback_release.sh' '$REMOTE_PATH' '$ROLLBACK_COMMIT'"; then
+    local rollback_output
+    _REMOTE_RELEASE_LOCK_DELEGATED=1
+    if ! rollback_output=$(ssh "$SERVER" \
+        "bash '$REMOTE_ROLLBACK_RUNNER' '$REMOTE_PATH' '$ROLLBACK_COMMIT' '$REMOTE_RELEASE_LOCK_DIR' '$REMOTE_RELEASE_LOCK_TOKEN'" 2>&1); then
+        echo "$rollback_output" >&2
         print_error "自动回滚未通过 exact-SHA 或数据库兼容健康验证"
+        _REMOTE_RELEASE_LOCK_ABANDONED=1
         return 1
     fi
-    print_success "代码已回滚到 ${ROLLBACK_COMMIT:0:8}，当前数据库结构兼容性已验证"
+    echo "$rollback_output"
+    if [[ "$rollback_output" != *"ROLLBACK_OK commit=$ROLLBACK_COMMIT kb_quarantine=passed schema_probe=passed auth_probe=passed services=active process_flag=false"* ]]; then
+        print_error "自动回滚缺少精确成功证明，拒绝接受"
+        _REMOTE_RELEASE_LOCK_ABANDONED=1
+        return 1
+    fi
+    _REMOTE_RELEASE_LOCK_DELEGATED=0
+    print_success "代码已回滚到 ${ROLLBACK_COMMIT:0:8}，runtime-only KB 已隔离且兼容性已验证 (kb_quarantine=passed)"
 }
 
 # 部署后验证（项目的 val_bpb 检查）
 verify_deployment() {
+    assert_remote_release_lock_if_acquired
     print_step "部署后健康度检查..."
     # 等待服务启动 + warmup。生产后端多 worker 冷启动可能超过固定 sleep,
     # 因此使用条件轮询，避免服务尚未 ready 时被误判并回滚。
@@ -277,6 +503,37 @@ get_env_value() {
     grep -m1 "^${key}=" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2-
 }
 
+require_health_evidence_flag_value() {
+    local expected="$1"
+    local source_env="${2:-$ENV_FILE}"
+    local assignment_count
+    local canonical_count
+
+    if [[ "$expected" != "true" && "$expected" != "false" ]]; then
+        print_error "health-evidence flag 校验器只接受 true/false"
+        return 1
+    fi
+    if [[ ! -r "$source_env" ]]; then
+        print_error "health-evidence flag 配置不可读"
+        return 1
+    fi
+    assignment_count=$(awk '
+        /^[[:space:]]*(export[[:space:]]+)?HEALTH_EVIDENCE_RUNTIME_ENABLED[[:space:]]*=/ {
+            count += 1
+        }
+        END { print count + 0 }
+    ' "$source_env")
+    canonical_count=$(
+        grep -Fxc "HEALTH_EVIDENCE_RUNTIME_ENABLED=$expected" "$source_env" \
+            2>/dev/null || true
+    )
+    if [[ "$assignment_count" != "1" || "$canonical_count" != "1" ]]; then
+        print_error \
+            "HEALTH_EVIDENCE_RUNTIME_ENABLED 必须唯一且规范写为 $expected"
+        return 1
+    fi
+}
+
 validate_langbridge_env() {
     local registry_file="$SCRIPT_DIR/backend/app/services/llm/model_registry.py"
 
@@ -302,15 +559,21 @@ validate_langbridge_env() {
         print_error ".env 缺少 LangBridge Gateway 配置: ${missing[*]}"
         echo "当前代码启用了 langbridge-proxy 商用模型；缺少这些变量会导致 mobile 模型选项被后端过滤。"
         echo "请在 .env 补齐后重新部署。确实要禁用商用模型时，可临时设置 ALLOW_MISSING_LANGBRIDGE_ENV=1。"
-        exit 1
+        return 1
     fi
 }
 
 # 备份服务器当前 backend/.env，避免环境变量同步覆盖后无法回退
 backup_remote_env() {
+    local delegation_owner=0
+    assert_remote_release_lock_if_acquired
     print_step "备份服务器 backend/.env..."
+    if [[ "${_REMOTE_RELEASE_LOCK_DELEGATED:-0}" != "1" ]]; then
+        _REMOTE_RELEASE_LOCK_DELEGATED=1
+        delegation_owner=1
+    fi
 
-    ssh "$SERVER" "REMOTE_BACKEND='$REMOTE_PATH/backend' bash -s" <<'REMOTE_ENV_BACKUP'
+    if ! ssh "$SERVER" "REMOTE_BACKEND='$REMOTE_PATH/backend' bash -s" <<'REMOTE_ENV_BACKUP'
 set -euo pipefail
 cd "$REMOTE_BACKEND"
 
@@ -333,14 +596,133 @@ else
     echo "服务器 backend/.env 不存在，跳过备份"
 fi
 REMOTE_ENV_BACKUP
+    then
+        _REMOTE_RELEASE_LOCK_ABANDONED=1
+        print_error "远端 env 备份结果不明确；发布锁与现场保留"
+        return 1
+    fi
 
+    if [ "$delegation_owner" -eq 1 ]; then
+        _REMOTE_RELEASE_LOCK_DELEGATED=0
+    fi
     print_success "服务器环境变量备份检查完成"
 }
 
-# 同步环境变量到服务器
-sync_env() {
-    print_step "同步 .env 到服务器..."
+upload_backend_env_file() {
+    local source_env="$1"
+    local temp_env
+    local upload_path
+    local candidate_hash
 
+    assert_remote_release_lock_if_acquired
+    if [[ ! -r "$source_env" ]]; then
+        print_error "待上传 env 文件不可读"
+        return 1
+    fi
+    temp_env=$(mktemp)
+    chmod 600 "$temp_env"
+    if ! awk '
+        !/^DEPLOY_SERVER=/ &&
+        !/^DEPLOY_PATH=/ &&
+        !/^#.*服务器信息/ &&
+        !/^# -.*deploy\.sh/
+    ' "$source_env" > "$temp_env"; then
+        rm -f "$temp_env"
+        return 1
+    fi
+    if ! require_health_evidence_flag_value false "$temp_env"; then
+        rm -f "$temp_env"
+        return 1
+    fi
+    candidate_hash="$(shasum -a 256 "$temp_env" | awk '{print $1}')"
+    if ! [[ "$candidate_hash" =~ ^[0-9a-f]{64}$ ]]; then
+        rm -f "$temp_env"
+        return 1
+    fi
+    upload_path="${REMOTE_BACKEND_ENV_CANDIDATE}.upload"
+
+    # Upload only into the root-only release stage. The live backend/.env is
+    # changed later, while services are inactive, by one same-filesystem rename.
+    if ! ssh "$SERVER" bash -s -- \
+        "$REMOTE_BACKUP_PREFLIGHT_DIR" \
+        "$REMOTE_RELEASE_LOCK_DIR" \
+        "$REMOTE_RELEASE_LOCK_TOKEN" <<'REMOTE_ENV_STAGE_PREP'
+set -euo pipefail
+stage_dir="$1"
+release_lock_dir="$2"
+release_lock_token="$3"
+safe_absolute_path() {
+    local value="$1"
+    [[ "$value" =~ ^/[A-Za-z0-9._/-]+$ ]] &&
+        [ "$value" != "/" ] &&
+        [[ "$value" != *"/../"* ]] &&
+        [[ "$value" != *"/.." ]] &&
+        [[ "$value" != *"/./"* ]] &&
+        [[ "$value" != *"/." ]]
+}
+safe_absolute_path "$stage_dir"
+safe_absolute_path "$release_lock_dir"
+[[ "$release_lock_token" =~ ^[A-Za-z0-9._:-]+$ ]]
+test -r "$release_lock_dir/token"
+test "$(cat "$release_lock_dir/token")" = "$release_lock_token"
+if [ -e "$stage_dir" ]; then
+    test -d "$stage_dir"
+    test ! -L "$stage_dir"
+    test "$(stat -c '%U:%G:%a' "$stage_dir")" = "root:root:700"
+else
+    umask 077
+    mkdir "$stage_dir"
+    test "$(stat -c '%U:%G:%a' "$stage_dir")" = "root:root:700"
+fi
+REMOTE_ENV_STAGE_PREP
+    then
+        rm -f "$temp_env"
+        return 1
+    fi
+    if ! scp "$temp_env" "$SERVER:$upload_path"; then
+        rm -f "$temp_env"
+        return 1
+    fi
+    rm -f "$temp_env"
+    if ! ssh "$SERVER" bash -s -- \
+        "$REMOTE_BACKUP_PREFLIGHT_DIR" \
+        "$upload_path" \
+        "$REMOTE_BACKEND_ENV_CANDIDATE" \
+        "$candidate_hash" \
+        "$REMOTE_RELEASE_LOCK_DIR" \
+        "$REMOTE_RELEASE_LOCK_TOKEN" <<'REMOTE_ENV_STAGE_COMMIT'
+set -euo pipefail
+stage_dir="$1"
+upload_path="$2"
+candidate_path="$3"
+candidate_hash="$4"
+release_lock_dir="$5"
+release_lock_token="$6"
+trap 'rm -f -- "$upload_path"' EXIT
+test -r "$release_lock_dir/token"
+test "$(cat "$release_lock_dir/token")" = "$release_lock_token"
+test "$(stat -c '%U:%G:%a' "$stage_dir")" = "root:root:700"
+test -f "$upload_path"
+test ! -L "$upload_path"
+test "$(sha256sum "$upload_path" | awk '{print $1}')" = "$candidate_hash"
+candidate_tmp="${candidate_path}.tmp"
+rm -f -- "$candidate_tmp"
+install -o root -g root -m 0400 "$upload_path" "$candidate_tmp"
+sync -f "$candidate_tmp"
+mv -fT "$candidate_tmp" "$candidate_path"
+sync -f "$stage_dir"
+test "$(stat -c '%U:%G:%a' "$candidate_path")" = "root:root:400"
+printf '%s  %s\n' "$candidate_hash" "$candidate_path" | sha256sum -c -
+test -r "$release_lock_dir/token"
+test "$(cat "$release_lock_dir/token")" = "$release_lock_token"
+REMOTE_ENV_STAGE_COMMIT
+    then
+        return 1
+    fi
+    REMOTE_BACKEND_ENV_CANDIDATE_SHA="$candidate_hash"
+}
+
+validate_env_sync_safety() {
     # ── env 守卫(2026-07-12 事故加固,机械拦截,勿删)──────────────────
     # 事故:从陈旧 checkout 跑 deploy,sync_env 把缺 12 个 key + APP_ENV=development
     # 的本地 .env 推上 prod → 短信密钥丢失 + dev_code 回显洞重开。
@@ -348,56 +730,81 @@ sync_env() {
     # 守卫2:prod 现有的 key 本地缺失 → 说明本地 .env 陈旧,推送会删 prod 配置,硬退。
     # 逃生口:DEPLOY_ENV_FORCE=1(明知故犯,比如刻意删 key)。
     if [ "${DEPLOY_ENV_FORCE:-0}" != "1" ]; then
-        if ! grep -q "^APP_ENV=production" "$ENV_FILE" || ! grep -q "^DEBUG=False" "$ENV_FILE"; then
+        if ! grep -q "^APP_ENV=production" "$ENV_FILE" ||
+            ! grep -q "^DEBUG=False" "$ENV_FILE"; then
             print_error "env 守卫:本地 .env 不是 prod 形态(需 APP_ENV=production + DEBUG=False)。"
             print_error "你可能在用 dev/陈旧 .env。修正后重试,或 DEPLOY_ENV_FORCE=1 强制。"
-            exit 1
+            return 1
         fi
-        _GUARD_REMOTE=$(mktemp)
-        if scp -q "$SERVER:$REMOTE_PATH/backend/.env" "$_GUARD_REMOTE" 2>/dev/null; then
-            _MISSING_KEYS=$(comm -13 \
-                <(grep -vE '^#|^$' "$ENV_FILE" | sed -E 's/=.*//' | sort -u) \
-                <(grep -vE '^#|^$' "$_GUARD_REMOTE" | sed -E 's/=.*//' | sort -u) | head -20)
-            if [ -n "$_MISSING_KEYS" ]; then
+        local guard_remote
+        local missing_keys
+        guard_remote=$(mktemp)
+        chmod 600 "$guard_remote"
+        if scp -q "$SERVER:$REMOTE_PATH/backend/.env" "$guard_remote" \
+            2>/dev/null; then
+            missing_keys=$(comm -13 \
+                <(grep -vE '^#|^$' "$ENV_FILE" |
+                    sed -E 's/=.*//' | sort -u) \
+                <(grep -vE '^#|^$' "$guard_remote" |
+                    sed -E 's/=.*//' | sort -u) |
+                head -20)
+            if [ -n "$missing_keys" ]; then
                 print_error "env 守卫:prod 上存在但本地 .env 缺失的 key(推送会把它们从 prod 删掉):"
-                echo "$_MISSING_KEYS"
+                echo "$missing_keys"
                 print_error "先把这些 key 收敛进本地根 .env(scp prod 值回来),或 DEPLOY_ENV_FORCE=1 强制。"
-                rm -f "$_GUARD_REMOTE"
-                exit 1
+                rm -f "$guard_remote"
+                return 1
             fi
         fi
-        rm -f "$_GUARD_REMOTE"
+        rm -f "$guard_remote"
     fi
-
-    validate_langbridge_env
-    backup_remote_env
-
-    # 创建临时文件，过滤掉部署配置
-    TEMP_ENV=$(mktemp)
-    grep -v "^DEPLOY_SERVER=" "$ENV_FILE" | grep -v "^DEPLOY_PATH=" | grep -v "^#.*服务器信息" | grep -v "^# -.*deploy.sh" > "$TEMP_ENV"
-
-    # 上传到服务器
-    scp "$TEMP_ENV" "$SERVER:$REMOTE_PATH/backend/.env"
-    rm "$TEMP_ENV"
-    ssh "$SERVER" "chown root:health-app '$REMOTE_PATH/backend/.env' && chmod 640 '$REMOTE_PATH/backend/.env'"
-
-    print_success "环境变量已同步到 $SERVER:$REMOTE_PATH/backend/.env (root:health-app, 0640)"
 }
 
-# 仅重启服务
-restart_services() {
-    print_step "重启服务..."
+# 同步环境变量到服务器
+sync_env() {
+    print_step "同步 .env 到服务器..."
 
-    ssh $SERVER "
-        echo '重启后端服务...' && \
-        systemctl restart health-backend && \
-        echo '重启 Celery worker & beat...' && \
-        systemctl restart celery-worker celery-beat && \
+    if ! validate_env_sync_safety || ! validate_langbridge_env; then
+        return 1
+    fi
+    if ! backup_remote_env; then
+        return 1
+    fi
+    # From the first remote stage write onward, a lost client must not delete
+    # the evidence needed to decide whether the transition completed.
+    _REMOTE_RELEASE_LOCK_DELEGATED=1
+    if ! upload_backend_env_file "$ENV_FILE"; then
+        _REMOTE_RELEASE_LOCK_ABANDONED=1
+        print_error "env candidate staging 结果不明确；发布锁与现场保留"
+        return 1
+    fi
+
+    print_success "环境变量 candidate 已精确暂存；live .env 尚未改变"
+}
+
+# 去激活事务已经完成 backend/Celery 的最后一次重启和逐 PID flag=false
+# 证明；通用 env/restart 模式此后只能重启前端，不能再让后端越过证明点。
+restart_frontend_service() {
+    print_step "重启前端服务..."
+    assert_remote_release_lock_if_acquired
+
+    _REMOTE_RELEASE_LOCK_DELEGATED=1
+    if ! ssh $SERVER "
         echo '重启前端服务 (PM2)...' && \
         pm2 restart health-frontend
-    "
+    "; then
+        _REMOTE_RELEASE_LOCK_ABANDONED=1
+        print_error "前端重启结果不明确；发布锁与现场保留"
+        return 1
+    fi
+    if ! ssh "$SERVER" "pm2 describe health-frontend >/dev/null"; then
+        _REMOTE_RELEASE_LOCK_ABANDONED=1
+        print_error "无法证明前端服务终态；发布锁与现场保留"
+        return 1
+    fi
+    _REMOTE_RELEASE_LOCK_DELEGATED=0
 
-    print_success "服务已重启"
+    print_success "前端服务已重启"
 }
 
 # 推送代码到 GitHub
@@ -453,38 +860,591 @@ push_code() {
 # 部署前端
 deploy_frontend() {
     print_step "部署前端..."
+    assert_remote_release_lock_if_acquired
 
-    # 预上传 bundle,使前端也具备和后端一致的 GitHub 超时回退路径
-    upload_deploy_bundle
-    local remote_git_sync
-    remote_git_sync="$(remote_git_sync_command)"
+    # frontend 与 backend 共用仓库。纯前端路径绝不能 checkout 整仓，否则会
+    # 在未迁移/未验证 backend 的情况下改变下一次进程启动所加载的代码。
+    # all 模式先由 deploy_backend 完成 exact-SHA guard；frontend-only 只有在
+    # 远端已经是该 SHA 时才允许 build。
+    if ! verify_deployed_revision; then
+        print_error "远端尚未部署本次整仓 SHA；请使用 --all 或先完成 backend guard"
+        return 1
+    fi
 
-    ssh $SERVER "
+    _REMOTE_RELEASE_LOCK_DELEGATED=1
+    if ! ssh $SERVER "
         cd $REMOTE_PATH && \
-        $remote_git_sync && \
+        test \"\$(git rev-parse HEAD)\" = '$DEPLOY_EXPECTED_SHA' && \
+        test -z \"\$(git status --porcelain --untracked-files=all)\" && \
         cd frontend && \
         echo '安装依赖...' && \
-        npm install && \
+        npm ci && \
         echo '正在构建前端...' && \
         npm run build && \
+        cd '$REMOTE_PATH' && \
+        test \"\$(git rev-parse HEAD)\" = '$DEPLOY_EXPECTED_SHA' && \
+        test -z \"\$(git status --porcelain --untracked-files=all)\" && \
+        cd frontend && \
         echo '重启前端服务 (PM2)...' && \
         pm2 restart health-frontend
-    "
+    "; then
+        _REMOTE_RELEASE_LOCK_ABANDONED=1
+        print_error "前端构建/重启结果不明确；发布锁与现场保留"
+        return 1
+    fi
 
-    verify_deployed_revision
+    if ! verify_deployed_revision; then
+        _REMOTE_RELEASE_LOCK_ABANDONED=1
+        print_error "前端构建后 revision 终态无法证明；发布锁与现场保留"
+        return 1
+    fi
+    _REMOTE_RELEASE_LOCK_DELEGATED=0
     print_success "前端部署完成"
+}
+
+validate_runtime_only_kb_staging() {
+    local review_manifest="$SCRIPT_DIR/backend/data/system_kb_v2_seed/review_manifest.json"
+    local runtime_pack_count
+
+    if [[ ! -r "$review_manifest" ]]; then
+        print_error "缺少 System KB review_manifest.json，无法验证 runtime-only 发布边界"
+        return 1
+    fi
+
+    runtime_pack_count=$(python3 - "$review_manifest" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    manifest = json.load(handle)
+packs = manifest.get("authority_packs", [])
+if not isinstance(packs, list):
+    raise SystemExit("authority_packs must be a list")
+count = 0
+for index, pack in enumerate(packs):
+    if not isinstance(pack, dict):
+        raise SystemExit(f"authority_packs[{index}] must be an object")
+    if pack.get("serving_scope") == "health_evidence_runtime":
+        if pack.get("generic_serving_allowed") is not False:
+            raise SystemExit(
+                f"authority_packs[{index}] must declare generic_serving_allowed=false"
+            )
+        count += 1
+print(count)
+PY
+    ) || {
+        print_error "runtime-only KB manifest 校验失败"
+        return 1
+    }
+
+    if [[ "$runtime_pack_count" = "0" ]]; then
+        return 0
+    fi
+
+    if ! require_health_evidence_flag_value false; then
+        print_error "runtime-only KB 首阶段部署要求 HEALTH_EVIDENCE_RUNTIME_ENABLED=false"
+        print_error "先发布并验证 generic-hold guard 与 KB，再通过 env-only 阶段启用运行时"
+        return 1
+    fi
+    print_success "runtime-only KB staged rollout: feature flag=false"
+}
+
+verify_runtime_only_kb_contract() {
+    local phase="$1"
+    if [[ "$phase" != "guard" && "$phase" != "staged" && "$phase" != "enabled" ]]; then
+        print_error "未知 runtime-only KB contract phase: $phase"
+        return 1
+    fi
+
+    assert_remote_release_lock_if_acquired
+    print_step "验证 runtime-only KB serving contract ($phase)..."
+    if ! ssh "$SERVER" "
+        cd '$REMOTE_PATH/backend' && \
+        source venv/bin/activate && \
+        set -a && source .env && set +a && \
+        PYTHONPATH=. python scripts/verify_runtime_only_kb_contract.py \
+            --phase '$phase'
+    "; then
+        print_error "runtime-only KB serving contract 失败 ($phase)"
+        return 1
+    fi
+    print_success "runtime-only KB serving contract 通过 ($phase)"
+}
+
+run_health_evidence_deactivation_transaction() {
+    local candidate_path="-"
+    local candidate_hash="-"
+
+    if [[ -n "$REMOTE_BACKEND_ENV_CANDIDATE_SHA" ]]; then
+        candidate_path="$REMOTE_BACKEND_ENV_CANDIDATE"
+        candidate_hash="$REMOTE_BACKEND_ENV_CANDIDATE_SHA"
+    fi
+
+    ssh "$SERVER" bash -s -- \
+        "$REMOTE_PATH" \
+        "$REMOTE_HEALTH_EVIDENCE_DURABLE_STATE_DIR" \
+        "$REMOTE_RELEASE_LOCK_DIR" \
+        "$REMOTE_RELEASE_LOCK_TOKEN" \
+        "$candidate_path" \
+        "$candidate_hash" \
+        "$REMOTE_HEALTH_EVIDENCE_RUNTIME_STATE_DIR" \
+        "$REMOTE_HEALTH_EVIDENCE_SYSTEMD_RUNTIME_DIR" \
+        "$REMOTE_HEALTH_EVIDENCE_CGROUP_ROOT" \
+        "$REMOTE_HEALTH_EVIDENCE_PROC_ROOT" <<'REMOTE_DEACTIVATE_HEALTH_EVIDENCE'
+set -Eeuo pipefail
+repo_path="$1"
+durable_state_dir="$2"
+release_lock_dir="$3"
+release_lock_token="$4"
+candidate_path="$5"
+candidate_hash="$6"
+runtime_state_dir="$7"
+runtime_systemd_dir="$8"
+cgroup_root="$9"
+proc_root="${10}"
+target_env="$repo_path/backend/.env"
+target_env_dir="$repo_path/backend"
+candidate_install_tmp="$target_env_dir/.env.reva-release.tmp"
+durable_enabled="$durable_state_dir/enabled.env"
+runtime_enabled="$runtime_state_dir/enabled.env"
+runtime_override_name="90-reva-health-evidence-activation.conf"
+process_units=(
+    health-backend.service
+    celery-worker.service
+    celery-beat.service
+)
+all_units=(
+    health-backend.socket
+    health-backend.service
+    celery-worker.service
+    celery-beat.service
+)
+mutation_started=0
+deactivation_complete=0
+
+safe_absolute_path() {
+    local value="$1"
+    [[ "$value" =~ ^/[A-Za-z0-9._/-]+$ ]] &&
+        [ "$value" != "/" ] &&
+        [[ "$value" != *"/../"* ]] &&
+        [[ "$value" != *"/.." ]] &&
+        [[ "$value" != *"/./"* ]] &&
+        [[ "$value" != *"/." ]]
+}
+
+assert_release_lease() {
+    test -r "$release_lock_dir/token" &&
+        test "$(cat "$release_lock_dir/token")" = "$release_lock_token"
+}
+
+verify_flag_file_false() {
+    local env_file="$1"
+    test -r "$env_file" &&
+        test -f "$env_file" &&
+        test ! -L "$env_file" &&
+        awk '
+            /^[[:space:]]*(export[[:space:]]+)?HEALTH_EVIDENCE_RUNTIME_ENABLED[[:space:]]*=/ {
+                assignments += 1
+            }
+            $0 == "HEALTH_EVIDENCE_RUNTIME_ENABLED=false" {
+                canonical += 1
+            }
+            END {
+                if (assignments != 1 || canonical != 1) {
+                    exit 1
+                }
+            }
+        ' "$env_file"
+}
+
+verify_services_inactive() {
+    local unit
+    for unit in "${all_units[@]}"; do
+        test "$(
+            systemctl show "$unit" --property=ActiveState --value 2>/dev/null
+        )" = "inactive"
+    done
+}
+
+stop_and_prove_services_inactive() {
+    local unit
+    # Socket first: no health probe may reactivate the backend while the
+    # authorization and live environment are being changed.
+    for unit in "${all_units[@]}"; do
+        assert_release_lease
+        systemctl stop "$unit"
+    done
+    verify_services_inactive
+}
+
+verify_process_environment_false() {
+    local unit
+    local main_pid
+    local control_group
+    local procs_file
+    local pid
+    local process_count
+    local main_pid_seen
+    for unit in "${process_units[@]}"; do
+        main_pid="$(
+            systemctl show "$unit" --property=MainPID --value 2>/dev/null
+        )"
+        [[ "$main_pid" =~ ^[1-9][0-9]*$ ]] && [ "$main_pid" -gt 1 ]
+        control_group="$(
+            systemctl show "$unit" --property=ControlGroup --value \
+                2>/dev/null
+        )"
+        [[ "$control_group" =~ ^/[A-Za-z0-9_.@:/\\-]+$ ]]
+        [[ "$control_group" != *"/../"* ]]
+        procs_file="${cgroup_root}${control_group}/cgroup.procs"
+        test -r "$procs_file"
+        process_count=0
+        main_pid_seen=0
+        while IFS= read -r pid; do
+            [[ "$pid" =~ ^[1-9][0-9]*$ ]] && [ "$pid" -gt 1 ]
+            process_count=$((process_count + 1))
+            if [ "$pid" = "$main_pid" ]; then
+                main_pid_seen=1
+            fi
+            LC_ALL=C tr '\000' '\n' <"$proc_root/$pid/environ" |
+                awk '
+                    /^HEALTH_EVIDENCE_RUNTIME_ENABLED=/ {
+                        assignments += 1
+                    }
+                    $0 == "HEALTH_EVIDENCE_RUNTIME_ENABLED=false" {
+                        canonical += 1
+                    }
+                    END {
+                        if (assignments != 1 || canonical != 1) {
+                            exit 1
+                        }
+                    }
+                '
+        done <"$procs_file"
+        [ "$process_count" -gt 0 ] && [ "$main_pid_seen" -eq 1 ]
+    done
+}
+
+remove_runtime_authorization() {
+    local unit
+    local override_dir
+    assert_release_lease
+    verify_flag_file_false "$target_env"
+    if [ -d "$durable_state_dir" ]; then
+        test ! -L "$durable_state_dir"
+        rm -f -- "$durable_enabled"
+        sync -f "$durable_state_dir"
+    fi
+    test ! -e "$durable_enabled"
+    for unit in "${process_units[@]}"; do
+        override_dir="$runtime_systemd_dir/$unit.d"
+        rm -f -- "$override_dir/$runtime_override_name"
+        if [ -d "$override_dir" ]; then
+            rmdir "$override_dir" >/dev/null 2>&1 || true
+        fi
+    done
+    rm -f -- "$runtime_enabled"
+    if [ -d "$runtime_state_dir" ]; then
+        rmdir "$runtime_state_dir"
+    fi
+    systemctl daemon-reload
+    assert_release_lease
+}
+
+contain_on_failure() {
+    local original_rc=$?
+    local containment_failed=0
+    local unit
+    trap - EXIT
+    rm -f -- "$candidate_install_tmp" >/dev/null 2>&1 || true
+    if [ "$mutation_started" -eq 1 ] &&
+        [ "$deactivation_complete" -ne 1 ]; then
+        # Once a canonical false base exists, revocation is safe and makes a
+        # later host boot false as well. Any failure still leaves all services
+        # stopped and the release lease/stage preserved for diagnosis.
+        if verify_flag_file_false "$target_env"; then
+            remove_runtime_authorization >/dev/null 2>&1 || true
+        fi
+        for unit in "${all_units[@]}"; do
+            systemctl stop "$unit" >/dev/null 2>&1 || true
+            systemctl kill --kill-who=all --signal=SIGKILL "$unit" \
+                >/dev/null 2>&1 || true
+            systemctl stop "$unit" >/dev/null 2>&1 || true
+        done
+        if ! verify_services_inactive; then
+            containment_failed=1
+        fi
+    fi
+    if [ "$containment_failed" -eq 1 ]; then
+        echo "DEACTIVATION_CONTAINMENT_FAILED services=unverified" >&2
+        exit 70
+    fi
+    exit "$original_rc"
+}
+trap contain_on_failure EXIT
+
+safe_absolute_path "$repo_path"
+safe_absolute_path "$durable_state_dir"
+safe_absolute_path "$release_lock_dir"
+safe_absolute_path "$runtime_state_dir"
+safe_absolute_path "$runtime_systemd_dir"
+safe_absolute_path "$cgroup_root"
+safe_absolute_path "$proc_root"
+[[ "$release_lock_token" =~ ^[A-Za-z0-9._:-]+$ ]]
+assert_release_lease
+if [ "$candidate_path" != "-" ]; then
+    safe_absolute_path "$candidate_path"
+    [[ "$candidate_hash" =~ ^[0-9a-f]{64}$ ]]
+    test "$(stat -c '%U:%G:%a' "$candidate_path")" = "root:root:400"
+    test "$(sha256sum "$candidate_path" | awk '{print $1}')" = \
+        "$candidate_hash"
+    verify_flag_file_false "$candidate_path"
+else
+    [ "$candidate_hash" = "-" ]
+fi
+verify_flag_file_false "$target_env"
+
+mutation_started=1
+stop_and_prove_services_inactive
+assert_release_lease
+verify_flag_file_false "$target_env"
+
+# The old live base is already canonical false. Revoke and fsync durable/run
+# authorization before installing any new configuration, so every crash
+# prefix (including a host reboot) can only restart with flag=false.
+remove_runtime_authorization
+verify_flag_file_false "$target_env"
+test ! -e "$durable_enabled"
+test ! -e "$runtime_state_dir"
+
+if [ "$candidate_path" != "-" ]; then
+    rm -f -- "$candidate_install_tmp"
+    install -o root -g health-app -m 0640 \
+        "$candidate_path" "$candidate_install_tmp"
+    sync -f "$candidate_install_tmp"
+    mv -fT "$candidate_install_tmp" "$target_env"
+    sync -f "$target_env_dir"
+    test "$(stat -c '%U:%G:%a' "$target_env")" = \
+        "root:health-app:640"
+    test "$(sha256sum "$target_env" | awk '{print $1}')" = \
+        "$candidate_hash"
+fi
+verify_flag_file_false "$target_env"
+assert_release_lease
+
+for unit in "${all_units[@]}"; do
+    assert_release_lease
+    systemctl start "$unit"
+done
+for unit in "${all_units[@]}"; do
+    test "$(
+        systemctl show "$unit" --property=ActiveState --value 2>/dev/null
+    )" = "active"
+done
+verify_process_environment_false
+assert_release_lease
+verify_flag_file_false "$target_env"
+test ! -e "$durable_enabled"
+test ! -e "$runtime_state_dir"
+deactivation_complete=1
+trap - EXIT
+echo "HEALTH_EVIDENCE_DEACTIVATED flag=false services=active"
+REMOTE_DEACTIVATE_HEALTH_EVIDENCE
+}
+
+prove_health_evidence_deactivated_state() {
+    local candidate_hash="-"
+    if [[ -n "$REMOTE_BACKEND_ENV_CANDIDATE_SHA" ]]; then
+        candidate_hash="$REMOTE_BACKEND_ENV_CANDIDATE_SHA"
+    fi
+
+    ssh "$SERVER" bash -s -- \
+        "$REMOTE_PATH" \
+        "$REMOTE_HEALTH_EVIDENCE_DURABLE_STATE_DIR" \
+        "$REMOTE_RELEASE_LOCK_DIR" \
+        "$REMOTE_RELEASE_LOCK_TOKEN" \
+        "$candidate_hash" \
+        "$REMOTE_HEALTH_EVIDENCE_RUNTIME_STATE_DIR" \
+        "$REMOTE_HEALTH_EVIDENCE_SYSTEMD_RUNTIME_DIR" \
+        "$REMOTE_HEALTH_EVIDENCE_CGROUP_ROOT" \
+        "$REMOTE_HEALTH_EVIDENCE_PROC_ROOT" <<'REMOTE_DEACTIVATION_PROOF'
+set -euo pipefail
+repo_path="$1"
+durable_state_dir="$2"
+release_lock_dir="$3"
+release_lock_token="$4"
+candidate_hash="$5"
+runtime_state_dir="$6"
+runtime_systemd_dir="$7"
+cgroup_root="$8"
+proc_root="$9"
+target_env="$repo_path/backend/.env"
+durable_enabled="$durable_state_dir/enabled.env"
+runtime_override_name="90-reva-health-evidence-activation.conf"
+process_units=(
+    health-backend.service
+    celery-worker.service
+    celery-beat.service
+)
+all_units=(
+    health-backend.socket
+    health-backend.service
+    celery-worker.service
+    celery-beat.service
+)
+
+safe_absolute_path() {
+    local value="$1"
+    [[ "$value" =~ ^/[A-Za-z0-9._/-]+$ ]] &&
+        [ "$value" != "/" ] &&
+        [[ "$value" != *"/../"* ]] &&
+        [[ "$value" != *"/.." ]] &&
+        [[ "$value" != *"/./"* ]] &&
+        [[ "$value" != *"/." ]]
+}
+safe_absolute_path "$repo_path"
+safe_absolute_path "$durable_state_dir"
+safe_absolute_path "$release_lock_dir"
+safe_absolute_path "$runtime_state_dir"
+safe_absolute_path "$runtime_systemd_dir"
+safe_absolute_path "$cgroup_root"
+safe_absolute_path "$proc_root"
+test -r "$release_lock_dir/token"
+test "$(cat "$release_lock_dir/token")" = "$release_lock_token"
+test -r "$target_env"
+test -f "$target_env"
+test ! -L "$target_env"
+awk '
+    /^[[:space:]]*(export[[:space:]]+)?HEALTH_EVIDENCE_RUNTIME_ENABLED[[:space:]]*=/ {
+        assignments += 1
+    }
+    $0 == "HEALTH_EVIDENCE_RUNTIME_ENABLED=false" {
+        canonical += 1
+    }
+    END {
+        if (assignments != 1 || canonical != 1) {
+            exit 1
+        }
+    }
+' "$target_env"
+if [ "$candidate_hash" != "-" ]; then
+    [[ "$candidate_hash" =~ ^[0-9a-f]{64}$ ]]
+    test "$(sha256sum "$target_env" | awk '{print $1}')" = \
+        "$candidate_hash"
+fi
+test ! -e "$durable_enabled"
+test ! -e "$runtime_state_dir"
+for unit in "${process_units[@]}"; do
+    test ! -e "$runtime_systemd_dir/$unit.d/$runtime_override_name"
+done
+for unit in "${all_units[@]}"; do
+    test "$(
+        systemctl show "$unit" --property=ActiveState --value 2>/dev/null
+    )" = "active"
+done
+for unit in "${process_units[@]}"; do
+    main_pid="$(
+        systemctl show "$unit" --property=MainPID --value 2>/dev/null
+    )"
+    [[ "$main_pid" =~ ^[1-9][0-9]*$ ]] && [ "$main_pid" -gt 1 ]
+    control_group="$(
+        systemctl show "$unit" --property=ControlGroup --value 2>/dev/null
+    )"
+    [[ "$control_group" =~ ^/[A-Za-z0-9_.@:/\\-]+$ ]]
+    [[ "$control_group" != *"/../"* ]]
+    procs_file="${cgroup_root}${control_group}/cgroup.procs"
+    test -r "$procs_file"
+    process_count=0
+    main_pid_seen=0
+    while IFS= read -r pid; do
+        [[ "$pid" =~ ^[1-9][0-9]*$ ]] && [ "$pid" -gt 1 ]
+        process_count=$((process_count + 1))
+        if [ "$pid" = "$main_pid" ]; then
+            main_pid_seen=1
+        fi
+        LC_ALL=C tr '\000' '\n' <"$proc_root/$pid/environ" |
+            awk '
+                /^HEALTH_EVIDENCE_RUNTIME_ENABLED=/ {
+                    assignments += 1
+                }
+                $0 == "HEALTH_EVIDENCE_RUNTIME_ENABLED=false" {
+                    canonical += 1
+                }
+                END {
+                    if (assignments != 1 || canonical != 1) {
+                        exit 1
+                    }
+                }
+            '
+    done <"$procs_file"
+    [ "$process_count" -gt 0 ] && [ "$main_pid_seen" -eq 1 ]
+done
+test -r "$release_lock_dir/token"
+test "$(cat "$release_lock_dir/token")" = "$release_lock_token"
+REMOTE_DEACTIVATION_PROOF
+}
+
+prove_health_evidence_runtime_process_flag() {
+    local expected="$1"
+    if [[ "$expected" != "false" ]]; then
+        print_error "通用发布只允许证明 runtime process flag=false"
+        return 1
+    fi
+    prove_health_evidence_deactivated_state
+}
+
+deactivate_health_evidence_runtime_before_mutation() {
+    local proof_rc
+    local transaction_rc
+
+    assert_remote_release_lock
+    print_step "撤销持久 health-evidence 授权并证明真实服务 flag=false..."
+    # Delegation starts before the first RPC that can stop a live service or
+    # atomically replace production state. EXIT must preserve lease and stage
+    # until an independent exact proof is obtained.
+    _REMOTE_RELEASE_LOCK_DELEGATED=1
+    if run_health_evidence_deactivation_transaction; then
+        transaction_rc=0
+    else
+        transaction_rc=$?
+    fi
+
+    if prove_health_evidence_deactivated_state; then
+        proof_rc=0
+    else
+        proof_rc=$?
+    fi
+    if [ "$transaction_rc" -eq 0 ] && [ "$proof_rc" -eq 0 ]; then
+        _REMOTE_RELEASE_LOCK_DELEGATED=0
+        print_success "持久 health-evidence 授权已撤销；真实服务 flag=false"
+        return 0
+    fi
+
+    _REMOTE_RELEASE_LOCK_ABANDONED=1
+    if prove_health_evidence_services_inactive; then
+        print_error "health-evidence 去激活结果不完整 (exit=$transaction_rc)；服务已隔离，发布锁与现场保留"
+    else
+        print_error "health-evidence 去激活结果不明确；无法证明服务已停止，发布锁与现场保留"
+    fi
+    return 1
 }
 
 # 部署后端
 deploy_backend() {
     print_step "部署后端..."
+    assert_remote_release_lock_if_acquired
 
-    # 1. 备份数据库 + 记录回滚点
+    # runtime-only 医疗知识必须先让 hold-aware 代码成为健康回滚地板，
+    # 且首阶段禁止生成新 evidence answer。
+    validate_runtime_only_kb_staging
+
+    # 1. 备份数据库 + 记录发布前回滚点
     backup_database
     save_rollback_point
 
     # 2. 同步环境变量
     sync_env
+    deactivate_health_evidence_runtime_before_mutation
 
     # GitHub 在服务器侧偶发超时；预先上传当前 HEAD 的 bundle，
     # 远端 git fetch 失败时仍可通过 deploy.sh 完成同一提交的部署。
@@ -492,7 +1452,9 @@ deploy_backend() {
     local remote_git_sync
     remote_git_sync="$(remote_git_sync_command)"
 
-    # 3. 部署代码 (skill 同步可能失败 → 我们自己处理回滚, 临时关闭 set -e)
+    # 3. Guard phase：先启动新代码，不写入任何 System KB artifact。这样旧服务
+    # 永远看不到新 runtime-only 文档，且健康失败可安全回到发布前代码。
+    _REMOTE_RELEASE_LOCK_DELEGATED=1
     set +e
     ssh $SERVER "
         cd $REMOTE_PATH && \
@@ -509,45 +1471,657 @@ deploy_backend() {
         set -a && source /etc/health-app/migration.env && set +a && \
         python scripts/apply_managed_migrations.py && \
         unset MIGRATION_DATABASE_URL && \
-        echo '补齐审核食物营养基准...' && \
-        python scripts/seed_food_nutrition.py && \
-        echo '写入系统知识库 Phase 0 种子...' && \
-        python scripts/seed_system_kb_phase0.py && \
-        echo '导入系统知识库 V2 扩展 artifacts...' && \
-        python scripts/import_system_kb_v2_artifacts.py && \
         echo '重启后端服务...' && \
+        systemctl restart health-backend.socket && \
         systemctl restart health-backend && \
         echo '重启 Celery worker & beat...' && \
         systemctl restart celery-worker celery-beat && \
         echo '统计本地 skills...' && \
         find skills -maxdepth 2 -name SKILL.md | wc -l | xargs printf '  本地 SKILL.md: %s 个\\n'
     "
-    SKILL_EXIT=$?
+    CODE_EXIT=$?
     set -e
-    if [ $SKILL_EXIT -ne 0 ]; then
+    if [ $CODE_EXIT -ne 0 ]; then
+        _REMOTE_RELEASE_LOCK_ABANDONED=1
+        print_error "后端 guard 远端事务结果不明确 (exit=$CODE_EXIT)；不与可能仍运行的旧命令并发回滚"
+        print_error "发布锁与现场保留，请先在服务器确认 transaction terminal state"
+        exit 1
+    fi
+    if ! prove_health_evidence_runtime_process_flag false ||
+        ! verify_deployed_revision; then
+        # ssh rc=0 proves the remote command is terminal, so rollback can now
+        # safely own a fresh delegated transaction.
+        _REMOTE_RELEASE_LOCK_DELEGATED=0
         if rollback_deploy; then
-            print_error "后端部署 SSH 命令失败 (exit=$SKILL_EXIT)，代码已自动回滚并通过健康检查"
+            print_error "后端 guard 终态证明失败，已自动回滚并通过健康检查"
         else
-            print_error "后端部署 SSH 命令失败 (exit=$SKILL_EXIT)，且自动回滚失败，无法证明服务已停止，请立即人工隔离主机"
+            print_error "后端 guard 终态证明失败，且自动回滚失败，无法证明服务已停止，请立即人工隔离主机"
         fi
         exit 1
     fi
+    _REMOTE_RELEASE_LOCK_DELEGATED=0
 
-    # 4. 部署后验证（快速失败）
+    # 4. 先验证 hold-aware guard；未通过时 KB 尚未写入。
     if ! verify_deployment; then
         if rollback_deploy; then
-            print_error "部署健康检查失败，代码已自动回滚并通过健康检查"
+            print_error "后端 guard 健康检查失败，代码已自动回滚并通过健康检查"
         else
-            print_error "部署健康检查失败，且自动回滚失败，无法证明服务已停止，请立即人工隔离主机"
+            print_error "后端 guard 健康检查失败，且自动回滚失败，无法证明服务已停止，请立即人工隔离主机"
         fi
         exit 1
     fi
 
-    # 4.5 后端健康通过后再验证第一方 Agent skills manifest，避免冷启动误报。
-    wait_for_agent_skills_manifest
-    verify_deployed_revision
+    if ! verify_deployed_revision; then
+        if rollback_deploy; then
+            print_error "后端 guard revision 校验失败，已自动回滚并通过健康检查"
+        else
+            print_error "后端 guard revision 校验失败，且自动回滚失败，无法证明服务已停止，请立即人工隔离主机"
+        fi
+        exit 1
+    fi
 
-    print_success "后端部署完成"
+    if ! verify_runtime_only_kb_contract "guard"; then
+        if rollback_deploy; then
+            print_error "后端 guard serving contract 失败，已自动回滚并通过健康检查"
+        else
+            print_error "后端 guard serving contract 失败，且自动回滚失败，无法证明服务已停止，请立即人工隔离主机"
+        fi
+        exit 1
+    fi
+
+    # Guard 已健康：从现在起即使 KB activation 失败，也绝不回到不认识
+    # generic hold 的旧代码。rollback runner 还会定向 archive 作为第二层防线。
+    ROLLBACK_COMMIT="$DEPLOY_EXPECTED_SHA"
+    print_success "generic-hold guard 已成为回滚地板: ${ROLLBACK_COMMIT:0:12}"
+
+    # 5. KB activation phase：此时线上已运行 hold-aware 新代码，feature flag=false。
+    assert_remote_release_lock
+    _REMOTE_RELEASE_LOCK_DELEGATED=1
+    set +e
+    ssh $SERVER "
+        test -r '$REMOTE_RELEASE_LOCK_DIR/token' && \
+        test \"\$(cat '$REMOTE_RELEASE_LOCK_DIR/token')\" = '$REMOTE_RELEASE_LOCK_TOKEN' && \
+        cd $REMOTE_PATH/backend && \
+        source venv/bin/activate && \
+        set -a && source .env && set +a && \
+        echo '补齐审核食物营养基准...' && \
+        python scripts/seed_food_nutrition.py && \
+        echo '写入系统知识库 Phase 0 种子...' && \
+        python scripts/seed_system_kb_phase0.py && \
+        echo '导入系统知识库 V2 扩展 artifacts...' && \
+        python scripts/import_system_kb_v2_artifacts.py
+    "
+    KB_EXIT=$?
+    set -e
+    if [ $KB_EXIT -ne 0 ]; then
+        _REMOTE_RELEASE_LOCK_ABANDONED=1
+        print_error "System KB 远端事务结果不明确 (exit=$KB_EXIT)；不与可能仍运行的 importer 并发回滚"
+        print_error "发布锁与现场保留，请先确认数据库事务与 advisory lock 已终止"
+        exit 1
+    fi
+
+    # 6. 数据激活后再次跑完整健康度；失败回到同一 guard SHA 并隔离 pack。
+    if ! verify_deployment; then
+        _REMOTE_RELEASE_LOCK_DELEGATED=0
+        if rollback_deploy; then
+            print_error "KB activation 后健康检查失败，guard 代码保留且 runtime-only KB 已隔离"
+        else
+            print_error "KB activation 后健康检查失败，且隔离回滚失败，无法证明服务已停止，请立即人工隔离主机"
+        fi
+        exit 1
+    fi
+
+    if ! verify_deployed_revision; then
+        _REMOTE_RELEASE_LOCK_DELEGATED=0
+        if rollback_deploy; then
+            print_error "KB activation 后 revision 校验失败，guard 代码保留且 runtime-only KB 已隔离"
+        else
+            print_error "KB activation 后 revision 校验失败，且隔离回滚失败，无法证明服务已停止，请立即人工隔离主机"
+        fi
+        exit 1
+    fi
+
+    if ! verify_runtime_only_kb_contract "staged"; then
+        _REMOTE_RELEASE_LOCK_DELEGATED=0
+        if rollback_deploy; then
+            print_error "KB activation serving contract 失败，guard 代码保留且 runtime-only KB 已隔离"
+        else
+            print_error "KB activation serving contract 失败，且隔离回滚失败，无法证明服务已停止，请立即人工隔离主机"
+        fi
+        exit 1
+    fi
+    _REMOTE_RELEASE_LOCK_DELEGATED=0
+
+    # 6.5 所有 fatal gate 通过后再验证第一方 Agent skills manifest。
+    wait_for_agent_skills_manifest
+
+    print_success "后端 guard + System KB staged deployment 完成；运行时仍保持 feature flag=false"
+}
+
+render_backend_env_file() {
+    local source_env="$1"
+    local target_env="$2"
+    awk '
+        !/^DEPLOY_SERVER=/ &&
+        !/^DEPLOY_PATH=/ &&
+        !/^#.*服务器信息/ &&
+        !/^# -.*deploy\.sh/
+    ' "$source_env" > "$target_env"
+    chmod 600 "$target_env"
+}
+
+prepare_health_evidence_guard_env() {
+    local candidate_env="$1"
+    local target_env="$2"
+    awk '
+        $0 == "HEALTH_EVIDENCE_RUNTIME_ENABLED=true" {
+            print "HEALTH_EVIDENCE_RUNTIME_ENABLED=false"
+            seen += 1
+            next
+        }
+        /^[[:space:]]*(export[[:space:]]+)?HEALTH_EVIDENCE_RUNTIME_ENABLED[[:space:]]*=/ {
+            invalid = 1
+        }
+        { print }
+        END {
+            if (seen != 1 || invalid == 1) {
+                exit 1
+            }
+        }
+    ' "$candidate_env" > "$target_env"
+    chmod 600 "$target_env"
+}
+
+validate_health_evidence_activation_paths() {
+    local value
+    for value in \
+        "$REMOTE_PATH" \
+        "$REMOTE_BACKUP_PREFLIGHT_DIR" \
+        "$REMOTE_ACTIVATION_STATE_DIR" \
+        "$REMOTE_HEALTH_EVIDENCE_DURABLE_STATE_DIR" \
+        "$REMOTE_RELEASE_LOCK_DIR"; do
+        if [[ ! "$value" =~ ^/[A-Za-z0-9._/-]+$ ||
+            "$value" = "/" ||
+            "$value" = *"/../"* ||
+            "$value" = *"/.." ||
+            "$value" = *"/./"* ||
+            "$value" = *"/." ]]; then
+            print_error "health-evidence 激活路径不安全"
+            return 1
+        fi
+    done
+}
+
+verify_systemd_activation_capability() {
+    local unit_name
+    unit_name="health-evidence-deadman-probe-${DEPLOY_EXPECTED_SHA:0:12}-$$.service"
+
+    assert_remote_release_lock
+    ssh "$SERVER" bash -s -- \
+        "$unit_name" \
+        "$REMOTE_RELEASE_LOCK_DIR" \
+        "$REMOTE_RELEASE_LOCK_TOKEN" <<'REMOTE_SYSTEMD_CAPABILITY'
+set -euo pipefail
+unit_name="$1"
+release_lock="$2"
+release_token="$3"
+[[ "$unit_name" =~ ^[A-Za-z0-9_.@-]+\.service$ ]]
+test -r "$release_lock/token"
+test "$(cat "$release_lock/token")" = "$release_token"
+probe_dir="$(mktemp -d /tmp/health-evidence-deadman-probe.XXXXXX)"
+chmod 0700 "$probe_dir"
+marker="$probe_dir/exec-stop-post-ran"
+trap 'rm -f "$marker"; rmdir "$probe_dir" >/dev/null 2>&1 || true; systemctl reset-failed "$unit_name" >/dev/null 2>&1 || true' EXIT
+touch_bin="$(command -v touch)"
+[[ "$touch_bin" =~ ^/[A-Za-z0-9._/-]+$ ]]
+
+set +e
+systemd-run \
+    --unit="$unit_name" \
+    --wait \
+    --property=Type=oneshot \
+    --property=RemainAfterExit=no \
+    --property=Restart=no \
+    --property=TimeoutStartSec=30s \
+    --property=TimeoutStopSec=30s \
+    --property="ExecStopPost=$touch_bin $marker" \
+    /bin/false \
+    >/dev/null 2>&1
+set -e
+
+test -f "$marker"
+test -r "$release_lock/token"
+test "$(cat "$release_lock/token")" = "$release_token"
+REMOTE_SYSTEMD_CAPABILITY
+}
+
+stage_health_evidence_activation_artifacts() (
+    set -e
+    local candidate_env
+    local candidate_as_guard
+    local guard_env
+    local candidate_hash
+    local guard_hash
+
+    candidate_env=$(mktemp)
+    candidate_as_guard=$(mktemp)
+    guard_env=$(mktemp)
+    trap 'rm -f "$candidate_env" "$candidate_as_guard" "$guard_env"' EXIT
+
+    validate_health_evidence_activation_paths
+    validate_env_sync_safety
+    validate_langbridge_env
+    backup_remote_env
+
+    render_backend_env_file "$ENV_FILE" "$candidate_env"
+    require_health_evidence_flag_value true "$candidate_env"
+    prepare_health_evidence_guard_env "$candidate_env" "$candidate_as_guard"
+    require_health_evidence_flag_value false "$candidate_as_guard"
+
+    # The recovery guard is the exact remote config that just passed the staged
+    # semantic probe. Activation is allowed to change only the one feature flag.
+    scp -q "$SERVER:$REMOTE_PATH/backend/.env" "$guard_env"
+    chmod 600 "$guard_env"
+    require_health_evidence_flag_value false "$guard_env"
+    if ! cmp -s "$candidate_as_guard" "$guard_env"; then
+        print_error "本地 candidate 除 feature flag 外与线上 staged guard 不一致"
+        print_error "请先以 flag=false 独立同步并验证环境，再执行受控启用"
+        return 1
+    fi
+
+    stage_backup_preflight_scripts
+    scp "$candidate_env" \
+        "$SERVER:$REMOTE_BACKUP_PREFLIGHT_DIR/candidate.env"
+    scp "$guard_env" \
+        "$SERVER:$REMOTE_BACKUP_PREFLIGHT_DIR/guard.env"
+
+    candidate_hash=$(shasum -a 256 "$candidate_env" | awk '{print $1}')
+    guard_hash=$(shasum -a 256 "$guard_env" | awk '{print $1}')
+    ssh "$SERVER" bash -s -- \
+        "$REMOTE_BACKUP_PREFLIGHT_DIR" \
+        "$REMOTE_ACTIVATION_STATE_DIR" \
+        "$candidate_hash" \
+        "$guard_hash" <<'REMOTE_ACTIVATION_STAGE'
+set -euo pipefail
+stage_dir="$1"
+state_dir="$2"
+candidate_hash="$3"
+guard_hash="$4"
+
+test "$(stat -c '%U:%G:%a' "$stage_dir")" = "root:root:700"
+test -f "$stage_dir/candidate.env"
+test ! -L "$stage_dir/candidate.env"
+test -f "$stage_dir/guard.env"
+test ! -L "$stage_dir/guard.env"
+test "$(sha256sum "$stage_dir/candidate.env" | awk '{print $1}')" = \
+    "$candidate_hash"
+test "$(sha256sum "$stage_dir/guard.env" | awk '{print $1}')" = "$guard_hash"
+chmod 0400 "$stage_dir/candidate.env" "$stage_dir/guard.env"
+
+rm -f "$stage_dir/staged.sha256"
+(
+    cd "$stage_dir"
+    sha256sum \
+        backup_db.sh \
+        verify_backup_restore.sh \
+        archive_backup_offsite.sh \
+        rollback_release.sh \
+        activate_health_evidence_runtime.sh \
+        verify_runtime_schema_compatibility.py \
+        quarantine_runtime_only_kb.py \
+        review_manifest.json \
+        candidate.env \
+        guard.env \
+        > staged.sha256
+    chmod 0400 staged.sha256
+    test "$(awk 'NF {count += 1} END {print count + 0}' staged.sha256)" \
+        -eq 10
+    sha256sum -c staged.sha256 >/dev/null
+)
+
+umask 077
+mkdir "$state_dir"
+test "$(stat -c '%U:%G:%a' "$state_dir")" = "root:root:700"
+REMOTE_ACTIVATION_STAGE
+)
+
+run_health_evidence_activation_unit() {
+    local unit_name="$1"
+    local candidate_env="$REMOTE_BACKUP_PREFLIGHT_DIR/candidate.env"
+    local guard_env="$REMOTE_BACKUP_PREFLIGHT_DIR/guard.env"
+    local outcome_file="${REMOTE_ACTIVATION_SUCCESS_MARKER}.outcome"
+
+    ssh "$SERVER" bash -s -- \
+        "$unit_name" \
+        "$REMOTE_ACTIVATION_RUNNER" \
+        "$REMOTE_PATH" \
+        "$DEPLOY_EXPECTED_SHA" \
+        "$candidate_env" \
+        "$guard_env" \
+        "$REMOTE_ACTIVATION_SUCCESS_MARKER" \
+        "$outcome_file" \
+        "$REMOTE_RELEASE_LOCK_DIR" \
+        "$REMOTE_RELEASE_LOCK_TOKEN" <<'REMOTE_ACTIVATION_UNIT'
+set -euo pipefail
+unit_name="$1"
+runner="$2"
+repo="$3"
+expected_sha="$4"
+candidate_env="$5"
+guard_env="$6"
+success_marker="$7"
+outcome_file="$8"
+release_lock="$9"
+release_token="${10}"
+
+safe_path() {
+    local value="$1"
+    [[ "$value" =~ ^/[A-Za-z0-9._/-]+$ ]]
+    [[ "$value" != "/" ]]
+    [[ "$value" != *"/../"* && "$value" != *"/.." ]]
+    [[ "$value" != *"/./"* && "$value" != *"/." ]]
+}
+[[ "$unit_name" =~ ^[A-Za-z0-9_.@-]+\.service$ ]]
+[[ "$expected_sha" =~ ^[0-9a-f]{40}$ ]]
+[[ "$release_token" =~ ^[A-Za-z0-9._:-]+$ ]]
+for path in \
+    "$runner" "$repo" "$candidate_env" "$guard_env" \
+    "$success_marker" "$outcome_file" "$release_lock"; do
+    safe_path "$path"
+done
+test -r "$release_lock/token"
+test "$(cat "$release_lock/token")" = "$release_token"
+test "$(stat -c '%U:%G:%a' "$(dirname "$success_marker")")" = \
+    "root:root:700"
+rm -f "$success_marker" "$outcome_file"
+
+deadman="/bin/bash $runner --recover-if-unverified $repo $expected_sha $candidate_env $guard_env $success_marker $release_lock $release_token"
+systemd-run \
+    --unit="$unit_name" \
+    --wait \
+    --property=Type=oneshot \
+    --property=RemainAfterExit=no \
+    --property=Restart=no \
+    --property=KillMode=control-group \
+    --property=UMask=0077 \
+    --property=TimeoutStartSec=20min \
+    --property=TimeoutStopSec=15min \
+    --property=StandardOutput=journal \
+    --property=StandardError=journal \
+    --property="ExecStopPost=$deadman" \
+    /bin/bash "$runner" \
+        --activate \
+        "$repo" \
+        "$expected_sha" \
+        "$candidate_env" \
+        "$guard_env" \
+        "$success_marker" \
+        "$release_lock" \
+        "$release_token"
+REMOTE_ACTIVATION_UNIT
+}
+
+prove_health_evidence_activation_state() {
+    local phase="$1"
+    local unit_name="$2"
+    local expected_outcome="$3"
+    local expected_success="$4"
+
+    ssh "$SERVER" bash -s -- \
+        "$phase" \
+        "$unit_name" \
+        "$REMOTE_PATH" \
+        "$DEPLOY_EXPECTED_SHA" \
+        "$REMOTE_BACKUP_PREFLIGHT_DIR/candidate.env" \
+        "$REMOTE_BACKUP_PREFLIGHT_DIR/guard.env" \
+        "$REMOTE_HEALTH_EVIDENCE_DURABLE_STATE_DIR" \
+        "$REMOTE_ACTIVATION_SUCCESS_MARKER" \
+        "${REMOTE_ACTIVATION_SUCCESS_MARKER}.outcome" \
+        "$expected_outcome" \
+        "$expected_success" \
+        "$REMOTE_RELEASE_LOCK_DIR" \
+        "$REMOTE_RELEASE_LOCK_TOKEN" <<'REMOTE_ACTIVATION_PROOF'
+set -euo pipefail
+phase="$1"
+unit_name="$2"
+repo="$3"
+expected_sha="$4"
+candidate_env="$5"
+guard_env="$6"
+durable_state_dir="$7"
+success_marker="$8"
+outcome_file="$9"
+expected_outcome="${10}"
+expected_success="${11}"
+release_lock="${12}"
+release_token="${13}"
+durable_enabled="$durable_state_dir/enabled.env"
+
+test -r "$release_lock/token"
+test "$(cat "$release_lock/token")" = "$release_token"
+
+# The exact outcome file is written only after ExecStart/ExecStopPost reaches a
+# terminal proof. It is per-attempt and lives in a freshly-created root-only dir.
+test -f "$outcome_file"
+test ! -L "$outcome_file"
+test "$(cat "$outcome_file")" = "$expected_outcome"
+
+flag_is_exact() {
+    local env_file="$1"
+    local expected="$2"
+    awk -v expected="$expected" '
+        /^[[:space:]]*(export[[:space:]]+)?HEALTH_EVIDENCE_RUNTIME_ENABLED[[:space:]]*=/ {
+            assignments += 1
+        }
+        $0 == "HEALTH_EVIDENCE_RUNTIME_ENABLED=" expected {
+            canonical += 1
+        }
+        END {
+            exit(assignments == 1 && canonical == 1 ? 0 : 1)
+        }
+    ' "$env_file"
+}
+
+verify_process_environment() {
+    local expected="$1"
+    local unit
+    local main_pid
+    local control_group
+    local procs_file
+    local pid
+    local process_count
+    local main_pid_seen
+    for unit in \
+        health-backend.service celery-worker.service celery-beat.service; do
+        main_pid="$(
+            systemctl show "$unit" --property=MainPID --value 2>/dev/null
+        )"
+        [[ "$main_pid" =~ ^[1-9][0-9]*$ ]] && [ "$main_pid" -gt 1 ]
+        control_group="$(
+            systemctl show "$unit" --property=ControlGroup --value \
+                2>/dev/null
+        )"
+        [[ "$control_group" =~ ^/[A-Za-z0-9_.@:/\\-]+$ ]]
+        [[ "$control_group" != *"/../"* ]]
+        procs_file="/sys/fs/cgroup${control_group}/cgroup.procs"
+        test -r "$procs_file"
+        process_count=0
+        main_pid_seen=0
+        while IFS= read -r pid; do
+            [[ "$pid" =~ ^[1-9][0-9]*$ ]] && [ "$pid" -gt 1 ]
+            process_count=$((process_count + 1))
+            if [ "$pid" = "$main_pid" ]; then
+                main_pid_seen=1
+            fi
+            LC_ALL=C tr '\000' '\n' <"/proc/$pid/environ" |
+                awk -v expected="$expected" '
+                    /^HEALTH_EVIDENCE_RUNTIME_ENABLED=/ {
+                        assignments += 1
+                    }
+                    $0 == "HEALTH_EVIDENCE_RUNTIME_ENABLED=" expected {
+                        canonical += 1
+                    }
+                    END {
+                        exit(
+                            assignments == 1 && canonical == 1 ? 0 : 1
+                        )
+                    }
+                '
+        done <"$procs_file"
+        [ "$process_count" -gt 0 ] && [ "$main_pid_seen" -eq 1 ]
+    done
+}
+
+test "$(git -C "$repo" rev-parse HEAD)" = "$expected_sha"
+test -z "$(git -C "$repo" status --porcelain --untracked-files=all)"
+for service in \
+    health-backend.socket health-backend celery-worker celery-beat; do
+    test "$(systemctl show "$service" --property=ActiveState --value)" = \
+        "active"
+done
+
+case "$phase" in
+    enabled)
+        test -f "$success_marker"
+        test "$(cat "$success_marker")" = "$expected_success"
+        flag_is_exact "$candidate_env" true
+        flag_is_exact "$guard_env" false
+        flag_is_exact "$repo/backend/.env" false
+        cmp -s "$guard_env" "$repo/backend/.env"
+        guard_hash="$(sha256sum "$guard_env" | awk '{print $1}')"
+        expected_durable="$(mktemp)"
+        printf '%s\n' \
+            "# commit=$expected_sha" \
+            "# guard_sha256=$guard_hash" \
+            "HEALTH_EVIDENCE_RUNTIME_ENABLED=true" >"$expected_durable"
+        cmp -s "$expected_durable" "$durable_enabled"
+        rm -f -- "$expected_durable"
+        flag_is_exact "$durable_enabled" true
+        test ! -e "/run/reva-health-evidence-activation"
+        for unit in \
+            health-backend.service celery-worker.service celery-beat.service; do
+            test ! -e \
+                "/run/systemd/system/$unit.d/90-reva-health-evidence-activation.conf"
+        done
+        verify_process_environment true
+        ;;
+    staged)
+        test ! -e "$success_marker"
+        flag_is_exact "$guard_env" false
+        flag_is_exact "$repo/backend/.env" false
+        cmp -s "$guard_env" "$repo/backend/.env"
+        test ! -e "$durable_enabled"
+        test ! -e "/run/reva-health-evidence-activation"
+        verify_process_environment false
+        ;;
+    *)
+        exit 2
+        ;;
+esac
+
+(
+    cd "$repo/backend"
+    if [ "$phase" = "enabled" ]; then
+        HEALTH_EVIDENCE_RUNTIME_ENABLED=true \
+            PYTHONPATH=. \
+            venv/bin/python scripts/verify_runtime_only_kb_contract.py \
+                --phase "$phase"
+    else
+        env -u HEALTH_EVIDENCE_RUNTIME_ENABLED \
+            PYTHONPATH=. \
+            venv/bin/python scripts/verify_runtime_only_kb_contract.py \
+                --phase "$phase"
+    fi
+) >/dev/null
+test -r "$release_lock/token"
+test "$(cat "$release_lock/token")" = "$release_token"
+REMOTE_ACTIVATION_PROOF
+}
+
+prove_health_evidence_services_inactive() {
+    ssh "$SERVER" bash -s -- \
+        "$REMOTE_RELEASE_LOCK_DIR" \
+        "$REMOTE_RELEASE_LOCK_TOKEN" <<'REMOTE_ACTIVATION_CONTAINMENT'
+set -euo pipefail
+release_lock="$1"
+release_token="$2"
+test -r "$release_lock/token"
+test "$(cat "$release_lock/token")" = "$release_token"
+for service in \
+    health-backend.socket health-backend celery-worker celery-beat; do
+    test "$(systemctl show "$service" --property=ActiveState --value)" = \
+        "inactive"
+done
+REMOTE_ACTIVATION_CONTAINMENT
+}
+
+activate_health_evidence_runtime() {
+    local unit_name
+    local launch_rc
+    local expected_success
+    local expected_noop
+    local expected_recovered
+
+    if ! require_health_evidence_flag_value true; then
+        print_error "受控启用要求本地 HEALTH_EVIDENCE_RUNTIME_ENABLED=true"
+        return 1
+    fi
+    if ! verify_deployed_revision; then
+        print_error "启用前 revision 校验失败"
+        return 1
+    fi
+    if ! verify_runtime_only_kb_contract "staged"; then
+        print_error "启用前 staged serving contract 失败"
+        return 1
+    fi
+    _REMOTE_RELEASE_LOCK_DELEGATED=1
+    if ! verify_systemd_activation_capability; then
+        _REMOTE_RELEASE_LOCK_ABANDONED=1
+        print_error "服务器 systemd 未通过 ExecStopPost deadman 能力探针"
+        return 1
+    fi
+    if ! stage_health_evidence_activation_artifacts; then
+        _REMOTE_RELEASE_LOCK_ABANDONED=1
+        print_error "无法生成不可变 health-evidence 激活事务"
+        return 1
+    fi
+    _REMOTE_RELEASE_LOCK_DELEGATED=0
+
+    unit_name="health-evidence-activation-${DEPLOY_EXPECTED_SHA:0:12}-$$.service"
+    expected_success="HEALTH_EVIDENCE_ACTIVATION_OK commit=$DEPLOY_EXPECTED_SHA flag=true health=passed auth_probe=passed score=passed contract=enabled services=active"
+    expected_noop="HEALTH_EVIDENCE_DEADMAN_NOOP commit=$DEPLOY_EXPECTED_SHA authorization=verified"
+    expected_recovered="HEALTH_EVIDENCE_DEADMAN_RECOVERED commit=$DEPLOY_EXPECTED_SHA flag=false health=passed contract=staged services=active"
+
+    # Delegate before the first D-Bus/RPC that can create the persistent unit.
+    # Any SSH/client interruption after this point keeps stage + lease in place.
+    _REMOTE_RELEASE_LOCK_DELEGATED=1
+    if run_health_evidence_activation_unit "$unit_name"; then
+        launch_rc=0
+    else
+        launch_rc=$?
+    fi
+
+    if prove_health_evidence_activation_state \
+        enabled "$unit_name" "$expected_noop" "$expected_success"; then
+        _REMOTE_RELEASE_LOCK_DELEGATED=0
+        print_success "health-evidence runtime 已受控启用并通过真实 runtime eval"
+        return 0
+    fi
+
+    if prove_health_evidence_activation_state \
+        staged "$unit_name" "$expected_recovered" "$expected_success"; then
+        _REMOTE_RELEASE_LOCK_DELEGATED=0
+        print_error "health-evidence runtime 启用失败 (exit=$launch_rc)，已恢复并复验 flag=false guard"
+        return 1
+    fi
+
+    _REMOTE_RELEASE_LOCK_ABANDONED=1
+    if prove_health_evidence_services_inactive; then
+        print_error "health-evidence runtime 未能恢复；service/socket 已隔离，发布锁与现场保留"
+    else
+        print_error "health-evidence runtime 结果不明确，无法证明服务已停止；发布锁与现场保留"
+    fi
+    return 1
 }
 
 # 查看服务状态
@@ -674,6 +2248,10 @@ main() {
                 DEPLOY_MODE="env"
                 shift
                 ;;
+            -H|--activate-health-evidence)
+                DEPLOY_MODE="health-evidence"
+                shift
+                ;;
             -r|--restart)
                 DEPLOY_MODE="restart"
                 shift
@@ -707,8 +2285,15 @@ main() {
     done
 
     case $DEPLOY_MODE in
-        "all"|"frontend"|"backend"|"env"|"restart"|"push")
+        "all"|"frontend"|"backend"|"env"|"health-evidence"|"restart"|"push")
             acquire_release_lock "deploy:${DEPLOY_MODE}"
+            ;;
+    esac
+    case $DEPLOY_MODE in
+        "all"|"frontend"|"backend"|"env"|"health-evidence"|"restart")
+            acquire_remote_release_lock "deploy:${DEPLOY_MODE}"
+            install_release_cleanup_traps
+            assert_remote_release_lock
             ;;
     esac
 
@@ -723,8 +2308,8 @@ main() {
     case $DEPLOY_MODE in
         "all")
             push_code
-            deploy_frontend
             deploy_backend
+            deploy_frontend
             echo ""
             check_status
             ;;
@@ -737,11 +2322,24 @@ main() {
             deploy_backend
             ;;
         "env")
+            if ! require_health_evidence_flag_value false; then
+                print_error "通用 -e 只允许保持健康证据运行时为 false；启用请使用 --activate-health-evidence"
+                exit 1
+            fi
             sync_env
-            restart_services
+            deactivate_health_evidence_runtime_before_mutation
+            ;;
+        "health-evidence")
+            push_code
+            activate_health_evidence_runtime
             ;;
         "restart")
-            restart_services
+            if ! require_health_evidence_flag_value false; then
+                print_error "通用 restart 只允许 flag=false；flag=true 请使用 --activate-health-evidence 受控重启"
+                exit 1
+            fi
+            deactivate_health_evidence_runtime_before_mutation
+            restart_frontend_service
             ;;
         "push")
             push_code
@@ -759,5 +2357,7 @@ main() {
     echo ""
 }
 
-# 运行主函数
-main "$@"
+# 运行主函数。测试可 source 本文件并对部署边界做真实故障演练。
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
+fi

@@ -56,19 +56,30 @@ def run_system_kb_eval_cases(
     db: Session,
     *,
     case_ids: Iterable[str] | None = None,
+    exact_doc_ids: Iterable[str] | None = None,
     limit: int = 50,
 ) -> dict[str, Any]:
     """Run reviewed eval_case rows against local KB search and Twin lookup."""
+    if case_ids is not None and exact_doc_ids is not None:
+        raise ValueError("case_ids and exact_doc_ids are mutually exclusive")
     wanted = set(case_ids or [])
+    exact_wanted = set(exact_doc_ids or [])
     query = (
         db.query(KBDocument)
         .filter(KBDocument.doc_type == "eval_case", KBDocument.is_archived.is_(False))
         .order_by(KBDocument.doc_id.asc())
     )
+    if exact_doc_ids is not None:
+        query = query.filter(KBDocument.doc_id.in_(exact_wanted))
     cases = [
         doc for doc in query.all()
         if (doc.metadata_json or {}).get("review_status") == "reviewed"
-        and (not wanted or ((doc.metadata_json or {}).get("case_id") or doc.doc_id) in wanted or doc.doc_id in wanted)
+        and (
+            exact_doc_ids is not None
+            or not wanted
+            or ((doc.metadata_json or {}).get("case_id") or doc.doc_id) in wanted
+            or doc.doc_id in wanted
+        )
     ][:limit]
 
     results = [_run_eval_case(db, doc) for doc in cases]
@@ -111,7 +122,15 @@ def _run_eval_case(db: Session, document: KBDocument) -> dict[str, Any]:
         if missing:
             failures.append(f"missing_required_docs={sorted(missing)}")
 
-    lookup_twin = expected.get("lookup_twin") or case_input.get("lookup_twin")
+    # ``metadata.input`` is the only executable source. Expected metadata may
+    # mirror an input for human-readable fixtures, but it must never override
+    # the action exercised by the eval.
+    lookup_twin = case_input.get("lookup_twin")
+    if (
+        "lookup_twin" in expected
+        and expected.get("lookup_twin") != lookup_twin
+    ):
+        failures.append("eval_lookup_twin_contract_mismatch")
     required_claim_ids = set(expected.get("required_claim_ids") or [])
     advice_guard_result = _run_advice_guard_expectation(case_id, expected.get("advice_guard"))
     if advice_guard_result is not None:
@@ -133,7 +152,12 @@ def _run_eval_case(db: Session, document: KBDocument) -> dict[str, Any]:
     lookup_rank: int | None = None
     lookup_targets: list[dict[str, Any]] = []
 
-    search_query = expected.get("search_query") or case_input.get("search_query")
+    search_query = case_input.get("search_query")
+    if (
+        "search_query" in expected
+        and expected.get("search_query") != search_query
+    ):
+        failures.append("eval_search_query_contract_mismatch")
     if search_query and required_doc_ids:
         search_required_doc_ids = required_doc_ids - required_claim_ids
         ranked_ids = _search_doc_ids_ranked(
@@ -147,6 +171,19 @@ def _run_eval_case(db: Session, document: KBDocument) -> dict[str, Any]:
             failures.append(f"search_missing={sorted(missing_from_search)}")
         search_targets = _target_ranks(sorted(search_required_doc_ids), ranked_ids)
         search_rank = _best_rank(search_targets)
+        if runtime_eval:
+            if len(search_required_doc_ids) != 1:
+                failures.append(
+                    "sealed_runtime_eval_requires_exactly_one_search_target"
+                )
+            elif search_rank != 1:
+                failures.append(
+                    "sealed_runtime_target_not_top1="
+                    f"{next(iter(search_required_doc_ids))!r} "
+                    f"rank={search_rank!r}"
+                )
+    elif runtime_eval and required_doc_ids:
+        failures.append("sealed_runtime_eval_has_no_executable_search_query")
 
     if lookup_twin and required_claim_ids:
         ranked_claims = _lookup_claim_ids_ranked(db, lookup_twin)

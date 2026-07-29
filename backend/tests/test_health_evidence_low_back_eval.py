@@ -452,6 +452,50 @@ def test_low_back_golden_eval_cases_pass(db):
     assert report["failed"] == 0, report["cases"]
 
 
+def test_low_back_eval_executes_only_input_query_and_rejects_expected_drift(
+    db,
+    monkeypatch,
+):
+    from app.services import system_knowledge_service
+
+    _import_low_back_pack(db)
+    eval_id = "eval:low_back_self_management"
+    eval_document = db.get(KBDocument, eval_id)
+    assert eval_document is not None
+    metadata = dict(eval_document.metadata_json or {})
+    case_input = dict(metadata["input"])
+    expected = dict(metadata["expected"])
+    expected["search_query"] = "query from expected must never execute"
+    eval_document.metadata_json = {
+        **metadata,
+        "input": case_input,
+        "expected": expected,
+    }
+    db.commit()
+    real_search = (
+        system_knowledge_service.search_health_evidence_runtime_claims
+    )
+    executed_queries: list[str] = []
+
+    def _recording_search(db, query, *, limit):
+        executed_queries.append(query)
+        return real_search(db, query, limit=limit)
+
+    monkeypatch.setattr(
+        system_knowledge_service,
+        "search_health_evidence_runtime_claims",
+        _recording_search,
+    )
+
+    report = run_system_kb_eval_cases(db, case_ids={eval_id})
+
+    assert executed_queries == [case_input["search_query"]]
+    assert report["failed"] == 1
+    assert "eval_search_query_contract_mismatch" in (
+        report["cases"][0]["failures"]
+    )
+
+
 def test_low_back_eval_rejects_same_id_tampered_target_claim(db):
     _import_low_back_pack(db)
     claim = db.get(

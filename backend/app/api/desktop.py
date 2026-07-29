@@ -35,6 +35,7 @@ from app.models.weight import WeightRecord
 from app.services.daily_operating_plan import build_daily_operating_plan
 from app.services.genetic_risk import clinical_status
 from app.services.health_trajectory import build_health_trajectory_snapshot
+from app.services.system_knowledge_service import generic_serving_document_filters
 
 router = APIRouter(prefix="/desktop", tags=["desktop"])
 DEFAULT_DOWN_DEDAO_ROOT = "~/work/personal/down-dedao"
@@ -600,10 +601,11 @@ def _genomic_summary(db: Session, user_id: int) -> dict[str, Any]:
 def _knowledge_summary(db: Session) -> dict[str, Any]:
     docs = (
         db.query(KBDocument)
-        .filter(KBDocument.is_archived == False)  # noqa: E712
+        .filter(*generic_serving_document_filters())
         .order_by(asc(KBDocument.doc_id))
         .all()
     )
+    serving_doc_ids = {doc.doc_id for doc in docs}
     doc_type_counts = Counter(doc.doc_type or "unknown" for doc in docs)
     source_counts: Counter[str] = Counter()
     evidence_counts: Counter[str] = Counter()
@@ -638,7 +640,17 @@ def _knowledge_summary(db: Session) -> dict[str, Any]:
         "claim_count": doc_type_counts.get("claim", 0),
         "entity_count": doc_type_counts.get("entity", 0),
         "article_count": doc_type_counts.get("article", 0),
-        "edge_count": db.query(func.count(KBEdge.edge_id)).scalar() or 0,
+        "edge_count": (
+            db.query(func.count(KBEdge.edge_id))
+            .filter(
+                KBEdge.src_doc_id.in_(serving_doc_ids),
+                KBEdge.dst_doc_id.in_(serving_doc_ids),
+            )
+            .scalar()
+            or 0
+            if serving_doc_ids
+            else 0
+        ),
         "source_total_count": len(source_counts),
         "doc_type_counts": [
             {"level": doc_type, "count": count}
