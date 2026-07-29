@@ -1,12 +1,13 @@
 import json
+from copy import deepcopy
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
-import app.services.health_evidence.authority as authority_module
 from app.config import settings
+import app.services.clinical_claim_release as release_policy
 from app.services.health_evidence import (
     LOW_BACK_MANDATORY_DISCRIMINATOR_IDS,
     RiskLevel,
@@ -15,16 +16,12 @@ from app.services.health_evidence import (
     classify_health_intent,
     compile_health_evidence_turn,
 )
+from app.services.health_evidence.delivery import sanitize_health_delivery
 from app.twin.schema import AcuteHealthState, HealthTwin, TwinMeta
 
 
 @pytest.fixture(autouse=True)
-def _exercise_candidate_pack_behind_release_hold(monkeypatch):
-    monkeypatch.setattr(
-        authority_module,
-        "is_clinical_claim_serving_allowed",
-        lambda _doc_id: True,
-    )
+def _enable_health_evidence_runtime(monkeypatch):
     monkeypatch.setattr(
         settings,
         "health_evidence_runtime_enabled",
@@ -436,7 +433,7 @@ def test_runtime_builds_one_frozen_twin_and_uses_a_deidentified_authority_query(
     monkeypatch.setattr(twin_builder, "build_twin", fake_build_twin)
     monkeypatch.setattr(
         system_knowledge_service,
-        "search_knowledge",
+        "search_health_evidence_runtime_claims",
         fake_search_knowledge,
     )
     raw_query = "我的报告记录ID-991：腰痛，是否需要做 MRI？"
@@ -679,7 +676,7 @@ def test_twin_build_failure_marks_safety_core_failed_and_uses_safe_fallback(
     monkeypatch.setattr(twin_builder, "build_twin", fail_build_twin)
     monkeypatch.setattr(
         system_knowledge_service,
-        "search_knowledge",
+        "search_health_evidence_runtime_claims",
         fake_search_knowledge,
     )
 
@@ -723,7 +720,7 @@ def test_safety_profile_load_failure_is_failed_not_absent_and_fails_closed(
     )
     monkeypatch.setattr(
         system_knowledge_service,
-        "search_knowledge",
+        "search_health_evidence_runtime_claims",
         lambda *_args, **_kwargs: {"results": [_authority_result()]},
     )
 
@@ -784,6 +781,75 @@ def test_explicit_turn_age_can_unlock_adult_authority_without_profile_age():
     assert turn.sufficiency == "sufficient"
 
 
+def _verified_persisted_health_answer() -> tuple[str, dict]:
+    turn = _compile_turn(
+        "我35岁，腰痛，没有排尿困难，也没有会阴麻木；"
+        "没有双腿麻木或无力；没有严重外伤；"
+        "没有发热或严重感染，没有体重下降，没有癌症史",
+        safety_profile=SafetyProfileContext(),
+        results=[
+            _authority_result(
+                "claim:c_low_back_self_management_activity_boundary"
+            )
+        ],
+    )
+    verification = turn.verify("请给我有权威依据的安全建议")
+    manifest = turn.public_manifest(verification=verification)
+    return verification.text, {
+        "health_evidence_manifest": manifest,
+        "health_evidence_verification": verification.public_dict(),
+        "cards": [turn.card_descriptor(verification=verification)],
+    }
+
+
+def test_persisted_health_answer_is_sanitized_when_runtime_release_is_revoked(
+    monkeypatch,
+):
+    content, meta = _verified_persisted_health_answer()
+    assert meta["health_evidence_manifest"]["authority_artifacts"]
+    initial = sanitize_health_delivery(
+        source_query="腰痛怎么办",
+        assistant_content=content,
+        assistant_meta=meta,
+        enabled=False,
+    )
+    assert initial.sanitized is False
+
+    monkeypatch.setattr(
+        release_policy,
+        "HEALTH_EVIDENCE_RUNTIME_RELEASED_CLAIM_IDS",
+        frozenset(),
+    )
+    revoked = sanitize_health_delivery(
+        source_query="腰痛怎么办",
+        assistant_content=content,
+        assistant_meta=meta,
+        enabled=False,
+    )
+
+    assert revoked.sanitized is True
+    assert content not in revoked.content
+    assert revoked.meta["cards"] == []
+
+
+def test_persisted_health_answer_is_sanitized_on_artifact_version_mismatch():
+    content, meta = _verified_persisted_health_answer()
+    tampered_meta = deepcopy(meta)
+    tampered_meta["health_evidence_manifest"]["authority_artifacts"][0][
+        "sha256"
+    ] = "0" * 64
+
+    delivery = sanitize_health_delivery(
+        source_query="腰痛怎么办",
+        assistant_content=content,
+        assistant_meta=tampered_meta,
+        enabled=False,
+    )
+
+    assert delivery.sanitized is True
+    assert content not in delivery.content
+
+
 def test_user_profile_age_under_16_never_routes_adult_authority(
     monkeypatch,
 ):
@@ -797,7 +863,7 @@ def test_user_profile_age_under_16_never_routes_adult_authority(
     )
     monkeypatch.setattr(
         system_knowledge_service,
-        "search_knowledge",
+        "search_health_evidence_runtime_claims",
         lambda *_args, **_kwargs: {"results": [_authority_result()]},
     )
 

@@ -589,8 +589,29 @@ def _maybe_genui_chart_events(
             "replayed": True,
         }}]
         if existing_assistant and (existing_assistant.meta or {}).get("client_turn_finalized"):
-            replay_events.append({"event": "token", "data": {"content": existing_assistant.content}})
-            done_data = dict(existing_assistant.meta or {})
+            from app.services.health_evidence.delivery import (
+                sanitize_health_delivery,
+            )
+            from app.config import settings as _delivery_settings
+
+            delivery = sanitize_health_delivery(
+                source_query=str(existing_user.content or ""),
+                assistant_content=str(existing_assistant.content or ""),
+                assistant_meta=existing_assistant.meta,
+                enabled=bool(
+                    getattr(
+                        _delivery_settings,
+                        "health_evidence_runtime_enabled",
+                        False,
+                    )
+                ),
+            )
+            if delivery.content:
+                replay_events.append({
+                    "event": "token",
+                    "data": {"content": delivery.content},
+                })
+            done_data = delivery.meta
             done_data.update({
                 "conversation_id": existing_assistant.conversation_id,
                 "message_id": existing_assistant.id,

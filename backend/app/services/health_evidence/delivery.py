@@ -13,6 +13,7 @@ import hmac
 from typing import Any, Mapping
 
 from .continuation import parse_health_evidence_continuation
+from .authority import is_current_health_evidence_artifact
 from .intent import classify_health_intent
 from .verifier import health_answer_text_sha256
 
@@ -71,11 +72,11 @@ def sanitize_health_delivery(
 
     content = str(assistant_content or "")
     meta = dict(assistant_meta) if isinstance(assistant_meta, Mapping) else {}
-    if not enabled:
+    metadata_claims_health = _metadata_claims_health(meta)
+    if not enabled and not metadata_claims_health:
         return HealthDelivery(content=content, meta=meta, sanitized=False)
 
     intent = classify_health_intent(source_query)
-    metadata_claims_health = _metadata_claims_health(meta)
     if not intent.requires_authority and not metadata_claims_health:
         return HealthDelivery(content=content, meta=meta, sanitized=False)
     expected_intent_id = (
@@ -222,6 +223,29 @@ def has_current_health_verification(
     if not set(map(str, refs_used)).issubset(set(map(str, evidence_refs))):
         return False
     if not set(map(str, refs_used)).issubset(set(map(str, authority_refs))):
+        return False
+    normalized_refs_used = {str(item) for item in refs_used}
+    authority_artifacts = manifest.get("authority_artifacts")
+    if not isinstance(authority_artifacts, list):
+        return False
+    artifact_by_id: dict[str, str] = {}
+    for raw in authority_artifacts:
+        if not isinstance(raw, Mapping):
+            return False
+        doc_id = str(raw.get("doc_id") or "").strip()
+        sha256 = str(raw.get("sha256") or "").strip().lower()
+        if not doc_id or doc_id in artifact_by_id:
+            return False
+        artifact_by_id[doc_id] = sha256
+    if set(artifact_by_id) != normalized_refs_used:
+        return False
+    if not all(
+        is_current_health_evidence_artifact(
+            doc_id,
+            artifact_by_id[doc_id],
+        )
+        for doc_id in normalized_refs_used
+    ):
         return False
     return True
 

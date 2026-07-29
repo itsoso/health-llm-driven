@@ -10,12 +10,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 import hashlib
+import hmac
 import json
 from types import MappingProxyType
 from typing import Any, Iterable, Mapping, Sequence
 from urllib.parse import parse_qs, urlsplit
 
 from app.services.clinical_claim_release import (
+    HEALTH_EVIDENCE_RUNTIME_SERVING_SCOPE,
     is_clinical_claim_serving_allowed,
 )
 
@@ -119,8 +121,8 @@ class CandidateClaimPolicy:
 
 
 # Security admission manifest. A seed edit must be explicitly reviewed and its
-# canonical artifact hash updated here; this policy cannot override the separate
-# global clinical serving hold.
+# canonical artifact hash updated here. Hash admission never grants scope by
+# itself: the separate runtime release permission must also allow the claim.
 LOW_BACK_CLAIM_POLICY: Mapping[str, CandidateClaimPolicy] = MappingProxyType({
     "claim:c_low_back_emergency_neurologic_red_flags": CandidateClaimPolicy(
         domain="low_back_pain",
@@ -202,6 +204,7 @@ class AuthorityEvidence:
     source_ids: tuple[str, ...]
     sources: tuple[AuthoritySource, ...]
     authority_tier: str
+    artifact_sha256: str
 
 
 @dataclass(frozen=True)
@@ -232,6 +235,13 @@ class AuthorityBundle:
             "status": self.status,
             "evidence_refs": [item.doc_id for item in self.accepted],
             "sources": sources,
+            "artifacts": [
+                {
+                    "doc_id": item.doc_id,
+                    "sha256": item.artifact_sha256,
+                }
+                for item in self.accepted
+            ],
         }
 
     def to_prompt(self) -> str:
@@ -269,6 +279,7 @@ def route_authority_results(
     population: str | None = None,
     use_case: str | None = None,
     now: datetime | None = None,
+    serving_scope: str | None = None,
 ) -> AuthorityBundle:
     """Admit reviewed System KB search results into an authority bundle.
 
@@ -298,6 +309,7 @@ def route_authority_results(
             use_case=use_case,
             allowed_tiers=allowed_tiers,
             now=reference_now,
+            serving_scope=serving_scope,
         )
         if reason:
             rejected.append(AuthorityRejection(doc_id=doc_id, reason=reason))
@@ -313,6 +325,9 @@ def route_authority_results(
                 source_ids=source_ids,
                 sources=registered.sources,
                 authority_tier=registered.authority_tier,
+                artifact_sha256=LOW_BACK_CLAIM_POLICY[
+                    doc_id
+                ].artifact_sha256,
             )
         )
 
@@ -333,8 +348,12 @@ def _rejection_reason(
     use_case: str | None,
     allowed_tiers: frozenset[str],
     now: datetime,
+    serving_scope: str | None,
 ) -> str | None:
-    if not is_clinical_claim_serving_allowed(document.get("doc_id")):
+    if not is_clinical_claim_serving_allowed(
+        document.get("doc_id"),
+        serving_scope,
+    ):
         return "clinical_review_pending"
     if _text(metadata.get("review_status")).lower() != "reviewed":
         return "unreviewed"
@@ -563,6 +582,27 @@ def _claim_artifact_sha256(
     except (TypeError, ValueError):
         return ""
     return hashlib.sha256(payload).hexdigest()
+
+
+def is_current_health_evidence_artifact(
+    doc_id: object,
+    artifact_sha256: object,
+) -> bool:
+    """Revalidate persisted evidence against the current scoped release policy."""
+
+    normalized_id = _text(doc_id)
+    policy = LOW_BACK_CLAIM_POLICY.get(normalized_id)
+    return bool(
+        policy is not None
+        and is_clinical_claim_serving_allowed(
+            normalized_id,
+            HEALTH_EVIDENCE_RUNTIME_SERVING_SCOPE,
+        )
+        and hmac.compare_digest(
+            policy.artifact_sha256,
+            _text(artifact_sha256).lower(),
+        )
+    )
 
 
 def _reviewed_sources(raw: Any) -> list[AuthoritySource]:

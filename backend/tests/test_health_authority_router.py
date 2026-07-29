@@ -8,7 +8,9 @@ from pathlib import Path
 import pytest
 
 import app.services.health_evidence.authority as authority_module
-from app.services.health_evidence.authority import route_authority_results
+from app.services.health_evidence.authority import (
+    route_authority_results as _route_authority_results,
+)
 
 
 NOW = datetime(2026, 7, 29, tzinfo=UTC)
@@ -20,16 +22,12 @@ SEED_CLAIMS = (
 )
 
 
-@pytest.fixture(autouse=True)
-def _exercise_candidate_pack_behind_release_hold(monkeypatch):
-    """Unit-test routing dimensions without weakening the production hold."""
-
-    monkeypatch.setattr(
-        authority_module,
-        "is_clinical_claim_serving_allowed",
-        lambda _doc_id: True,
+def route_authority_results(results, **kwargs):
+    return _route_authority_results(
+        results,
+        serving_scope="health_evidence_runtime",
+        **kwargs,
     )
-
 
 def _seed_claim(doc_id: str) -> dict:
     for line in SEED_CLAIMS.read_text(encoding="utf-8").splitlines():
@@ -103,7 +101,7 @@ def test_default_release_policy_can_hold_an_otherwise_valid_claim(monkeypatch):
     monkeypatch.setattr(
         authority_module,
         "is_clinical_claim_serving_allowed",
-        lambda _doc_id: False,
+        lambda _doc_id, _serving_scope: False,
     )
 
     bundle = route_authority_results(
@@ -314,11 +312,13 @@ def test_rejects_self_declared_tier_that_disagrees_with_registry():
     assert bundle.rejections[0].reason == "authority_tier_mismatch"
 
 
-def test_rejects_forged_claim_even_when_it_wraps_an_official_nice_source():
+@pytest.mark.parametrize("tampered_field", ["summary", "body"])
+def test_rejects_tampered_claim_and_never_releases_its_text(tampered_field):
     forged = deepcopy(
         _seed_claim("claim:c_low_back_serious_cause_screening_boundary")
     )
-    forged["summary"] = "建议卧床三天，并自行服用布洛芬 800 毫克，每日三次。"
+    malicious_text = "建议卧床三天，并自行服用布洛芬 800 毫克，每日三次。"
+    forged[tampered_field] = malicious_text
 
     bundle = route_authority_results(
         [{"document": forged}],
@@ -331,6 +331,7 @@ def test_rejects_forged_claim_even_when_it_wraps_an_official_nice_source():
 
     assert bundle.accepted == ()
     assert bundle.rejections[0].reason == "claim_artifact_mismatch"
+    assert malicious_text not in bundle.to_prompt()
 
 
 def test_rejects_unpublished_claim_even_when_it_copies_an_official_source():
@@ -475,6 +476,17 @@ def test_public_manifest_exposes_trace_not_private_or_paid_body():
         "status": "sufficient",
         "evidence_refs": [
             "claim:c_low_back_serious_cause_screening_boundary"
+        ],
+        "artifacts": [
+            {
+                "doc_id": (
+                    "claim:c_low_back_serious_cause_screening_boundary"
+                ),
+                "sha256": (
+                    "8e943e3a0caf2b2a903e0d3601c9b163"
+                    "536d88d73e5d7c64d1a63382fb9a1730"
+                ),
+            }
         ],
         "sources": [
             {

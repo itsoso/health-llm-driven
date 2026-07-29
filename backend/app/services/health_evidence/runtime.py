@@ -157,6 +157,7 @@ class HealthEvidenceTurn:
         authority = self.authority_bundle.public_manifest()
         authority_refs = list(authority["evidence_refs"])
         sources = list(authority["sources"])
+        authority_artifacts = list(authority["artifacts"])
         if verification is not None:
             used = set(verification.evidence_refs_used)
             authority_refs = [
@@ -168,6 +169,11 @@ class HealthEvidenceTurn:
                 self.authority_bundle,
                 authority_refs,
             )
+            authority_artifacts = [
+                artifact
+                for artifact in authority_artifacts
+                if artifact["doc_id"] in used
+            ]
         personal_refs = [
             *personal["evidence_refs"],
             *personal["safety_signal_refs"],
@@ -182,6 +188,7 @@ class HealthEvidenceTurn:
             "context_categories_used": list(personal["context_categories_used"]),
             "personal_evidence_refs": personal_refs,
             "authority_evidence_refs": authority_refs,
+            "authority_artifacts": authority_artifacts,
             "evidence_refs": [*personal_refs, *authority_refs],
             "authority_sources": sources,
             # Mobile's first renderer shipped with ``sources`` as an alias.
@@ -310,6 +317,7 @@ def compile_health_evidence_turn(
         population=profile.population,
         use_case=_authority_use_case(effective_intent),
         now=now,
+        serving_scope="health_evidence_runtime",
     )
     missing = _missing_discriminators(
         effective_intent,
@@ -586,13 +594,14 @@ def build_health_evidence_turn(
 
     results: Sequence[Mapping[str, Any]] = ()
     try:
-        from app.services.system_knowledge_service import search_knowledge
+        from app.services.system_knowledge_service import (
+            search_health_evidence_runtime_claims,
+        )
 
-        response = search_knowledge(
+        response = search_health_evidence_runtime_claims(
             db,
             _authority_query(intent, query),
             limit=12,
-            doc_type="claim",
         )
         raw_results = response.get("results") if isinstance(response, Mapping) else ()
         if isinstance(raw_results, list):

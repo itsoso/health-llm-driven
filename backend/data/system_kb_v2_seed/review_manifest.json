@@ -8,13 +8,15 @@
         "claim:c_low_back_imaging_not_routine_boundary",
         "claim:c_chronic_low_back_holistic_care_boundary"
       ],
-      "decision": "candidate_pending_independent_clinical_review",
+      "decision": "approved_for_health_evidence_runtime_by_product_owner",
       "domain": "low_back_pain",
+      "clinical_signoff": "not_claimed",
       "license_scope": "internal_transformed_claims",
       "reviewed_at": "2026-07-29T00:00:00+00:00",
-      "reviewer": "codex-medical-boundary-review-2026-07-29",
-      "reviewer_role": "automated-medical-boundary-and-authority-source-review",
-      "serving_allowed": false,
+      "reviewer": "product-owner-2026-07-29",
+      "reviewer_role": "product_owner",
+      "serving_allowed": true,
+      "serving_scope": "health_evidence_runtime_only",
       "source_policy": "T1 official guidance only; no raw Dedao or paid-course text",
       "version": "low-back-authority-pack.v1"
     }

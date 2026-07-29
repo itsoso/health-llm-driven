@@ -352,7 +352,7 @@ def test_get_claim_excludes_non_reviewed_claim(client, db, auth_user_and_headers
     assert response.status_code == 404
 
 
-def test_get_claim_excludes_candidate_awaiting_clinical_release(
+def test_get_claim_excludes_runtime_only_low_back_claim(
     client,
     db,
     auth_user_and_headers,
@@ -364,9 +364,9 @@ def test_get_claim_excludes_candidate_awaiting_clinical_release(
             doc_type="claim",
             entity_type="condition",
             entity_id="low-back-pain",
-            title="候选腰痛神经红旗",
-            summary="候选内容不得在临床签署前 serving。",
-            body="候选内容",
+            title="运行时专用腰痛神经红旗",
+            summary="只能进入受控健康证据运行时。",
+            body="通用 claim detail 不得返回。",
             confidence=0.95,
             evidence_level="A",
             metadata_json={"review_status": "reviewed"},
@@ -383,7 +383,7 @@ def test_get_claim_excludes_candidate_awaiting_clinical_release(
     assert response.status_code == 404
 
 
-def test_generic_search_excludes_entire_unsigned_low_back_candidate_pack(db):
+def test_generic_search_excludes_runtime_only_low_back_pack(db):
     held_documents = {
         "claim:c_low_back_emergency_neurologic_red_flags": "claim",
         "claim:c_low_back_serious_cause_screening_boundary": "claim",
@@ -403,9 +403,9 @@ def test_generic_search_excludes_entire_unsigned_low_back_candidate_pack(db):
                 doc_type=doc_type,
                 entity_type="condition",
                 entity_id="low-back-pain",
-                title=f"候选腰痛知识 {doc_id}",
+                title=f"运行时专用腰痛知识 {doc_id}",
                 summary="腰痛 排尿困难 会阴麻木 自我管理 影像 慢性",
-                body="独立临床签署前不得进入任何 serving 检索。",
+                body="通用检索不得返回。",
                 confidence=0.95,
                 evidence_level="A",
                 metadata_json={"review_status": "reviewed"},

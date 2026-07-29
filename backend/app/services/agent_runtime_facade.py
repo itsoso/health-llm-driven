@@ -616,6 +616,26 @@ class CloudAgentRuntimeFacade:
                 )
                 .first()
             )
+        from app.services.health_evidence.delivery import (
+            sanitize_health_delivery,
+        )
+
+        delivery = sanitize_health_delivery(
+            source_query=(
+                str(getattr(source, "content", "") or "")
+                if source is not None
+                else ""
+            ),
+            assistant_content=str(assistant.content or ""),
+            assistant_meta=getattr(assistant, "meta", None),
+            enabled=bool(
+                getattr(
+                    settings,
+                    "health_evidence_runtime_enabled",
+                    False,
+                )
+            ),
+        )
         events: list[dict[str, Any]] = []
         if source is not None:
             events.append({
@@ -629,12 +649,12 @@ class CloudAgentRuntimeFacade:
                     "attempt_id": context.attempt_id,
                 },
             })
-        if assistant.content:
+        if delivery.content:
             events.append({
                 "event": "token",
-                "data": {"content": assistant.content},
+                "data": {"content": delivery.content},
             })
-        done_data = dict(assistant.meta) if isinstance(assistant.meta, dict) else {}
+        done_data = delivery.meta
         done_data.update({
             "conversation_id": assistant.conversation_id,
             "message_id": assistant.id,

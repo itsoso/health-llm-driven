@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
-import app.services.health_evidence.authority as authority_module
 from app.config import settings
 from app.models.agent_conversation import AgentConversation, AgentMessage
+from app.models.system_knowledge import KBDocument
 from app.services.agent_executor import AgentExecutor
 from app.services.health_evidence import (
     SafetyProfileContext,
@@ -14,6 +14,8 @@ from app.services.health_evidence import (
     compile_health_evidence_turn,
 )
 from app.twin.schema import HealthTwin, TwinMeta
+from app.services.system_knowledge_importer import import_system_kb_artifacts
+from app.services.system_knowledge_service import search_knowledge
 
 
 NOW = datetime(2026, 7, 29, tzinfo=UTC)
@@ -28,16 +30,7 @@ _CLAIMS_PATH = (
     / "system_kb_v2_seed"
     / "claims.jsonl"
 )
-
-
-@pytest.fixture(autouse=True)
-def _exercise_candidate_pack_behind_release_hold(monkeypatch):
-    monkeypatch.setattr(
-        authority_module,
-        "is_clinical_claim_serving_allowed",
-        lambda _doc_id: True,
-    )
-
+_SEED_DIR = _CLAIMS_PATH.parent
 
 def _authority_result(
     expected_id: str = "claim:c_low_back_serious_cause_screening_boundary",
@@ -62,6 +55,41 @@ def _turn(user_id: int, query: str):
         safety_profile=SafetyProfileContext(population="adults_16_plus"),
         now=NOW,
     )
+
+
+@pytest.mark.asyncio
+async def test_flag_off_legacy_knowledge_search_cannot_release_low_back_pack(
+    db,
+    monkeypatch,
+):
+    monkeypatch.setattr(settings, "health_evidence_runtime_enabled", False)
+    counts = import_system_kb_artifacts(
+        db,
+        _SEED_DIR,
+        actor="test:flag_off_low_back_isolation",
+    )
+    assert counts["skipped_documents"] == 0
+    sentinel = "MALICIOUS_HELD_LOW_BACK_SENTINEL_7A91"
+    held_claim = db.get(
+        KBDocument,
+        "claim:c_low_back_emergency_neurologic_red_flags",
+    )
+    assert held_claim is not None
+    held_claim.summary = sentinel
+    held_claim.body = sentinel
+    db.commit()
+
+    generic = search_knowledge(
+        db,
+        "腰痛 大小便失禁 会阴麻木",
+        limit=20,
+    )
+    output = await AgentExecutor(db)._exec_knowledge_search(
+        {"query": "腰痛 大小便失禁 会阴麻木"}
+    )
+
+    assert sentinel not in str(generic)
+    assert sentinel not in output
 
 
 def _install_runtime(
@@ -628,7 +656,7 @@ async def test_health_turn_discards_hallucinated_structured_tool_call(
 
 
 @pytest.mark.asyncio
-async def test_legacy_health_replay_never_releases_unverified_answer(
+async def test_flag_off_legacy_health_replay_never_releases_unverified_answer(
     db,
     auth_user_and_headers,
     monkeypatch,
@@ -659,11 +687,14 @@ async def test_legacy_health_replay_never_releases_unverified_answer(
             "completion_status": "complete",
             "client_turn_finalized": True,
             "client_turn_id": turn_id,
+            "health_evidence_manifest": {
+                "version": "health-evidence.legacy",
+            },
         },
         client_turn_id=turn_id,
         client_turn_user_id=user.id,
     )
-    monkeypatch.setattr(settings, "health_evidence_runtime_enabled", True)
+    monkeypatch.setattr(settings, "health_evidence_runtime_enabled", False)
     executor = AgentExecutor(db)
 
     async def must_not_call_llm(*_args, **_kwargs):

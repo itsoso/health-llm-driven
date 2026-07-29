@@ -41,6 +41,14 @@ from app.models.system_knowledge import KBDocument
 # to the limit the binary search path already used so binary and ranked views
 # agree on what "found" means.
 RANK_PROBE_LIMIT = 30
+_RUNTIME_ONLY_LOW_BACK_EVAL_IDS = frozenset(
+    {
+        "eval:low_back_neurologic_red_flags",
+        "eval:low_back_self_management",
+        "eval:low_back_imaging_boundary",
+        "eval:chronic_low_back_holistic_care",
+    }
+)
 
 
 def run_system_kb_eval_cases(
@@ -113,7 +121,11 @@ def _run_eval_case(db: Session, document: KBDocument) -> dict[str, Any]:
     search_query = expected.get("search_query") or case_input.get("search_query")
     if search_query and required_doc_ids:
         search_required_doc_ids = required_doc_ids - required_claim_ids
-        ranked_ids = _search_doc_ids_ranked(db, str(search_query))
+        ranked_ids = _search_doc_ids_ranked(
+            db,
+            str(search_query),
+            case_id=case_id,
+        )
         found = set(ranked_ids)
         missing_from_search = search_required_doc_ids - found
         if missing_from_search:
@@ -197,11 +209,24 @@ def _reviewed_doc_ids(db: Session, doc_ids: set[str]) -> set[str]:
     }
 
 
-def _search_doc_ids_ranked(db: Session, query: str) -> list[str]:
+def _search_doc_ids_ranked(
+    db: Session,
+    query: str,
+    *,
+    case_id: str | None = None,
+) -> list[str]:
     """Ordered doc_ids from search_knowledge, preserving fusion rank (dedup, keep-first)."""
-    from app.services.system_knowledge_service import search_knowledge
+    from app.services.system_knowledge_service import (
+        search_health_evidence_runtime_claims,
+        search_knowledge,
+    )
 
-    result = search_knowledge(db, query, limit=RANK_PROBE_LIMIT)
+    search = (
+        search_health_evidence_runtime_claims
+        if case_id in _RUNTIME_ONLY_LOW_BACK_EVAL_IDS
+        else search_knowledge
+    )
+    result = search(db, query, limit=RANK_PROBE_LIMIT)
     ordered: list[str] = []
     seen: set[str] = set()
     for item in (result.get("results") or []):

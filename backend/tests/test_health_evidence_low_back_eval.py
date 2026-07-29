@@ -5,16 +5,16 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import urlparse
 
-import pytest
-
-import app.services.health_evidence.authority as authority_module
+import app.services.clinical_claim_release as release_policy
 import app.services.system_knowledge_service as knowledge_module
 from app.models.system_knowledge import KBDocument
-from app.services.health_evidence.authority import route_authority_results
+from app.services.health_evidence.authority import (
+    route_authority_results as _route_authority_results,
+)
 from app.services.system_knowledge_eval import run_system_kb_eval_cases
 from app.services.system_knowledge_importer import import_system_kb_artifacts
-from app.services.system_knowledge_service import search_knowledge
 
 
 SEED_DIR = Path(__file__).resolve().parents[1] / "data" / "system_kb_v2_seed"
@@ -32,21 +32,19 @@ EVAL_IDS = {
     "eval:chronic_low_back_holistic_care",
 }
 NOW = datetime(2026, 7, 29, tzinfo=UTC)
+OFFICIAL_T1_HOSTS = {
+    "www.nice.org.uk",
+    "www.nhs.uk",
+    "gravitas.acr.org",
+    "www.who.int",
+}
 
 
-@pytest.fixture(autouse=True)
-def _exercise_offline_candidate_pack_behind_release_hold(monkeypatch):
-    """Golden authoring checks are offline; production serving stays held."""
-
-    monkeypatch.setattr(
-        authority_module,
-        "is_clinical_claim_serving_allowed",
-        lambda _doc_id: True,
-    )
-    monkeypatch.setattr(
-        knowledge_module,
-        "CLINICAL_RELEASE_HOLD_CLAIM_IDS",
-        frozenset(),
+def route_authority_results(results, **kwargs):
+    return _route_authority_results(
+        results,
+        serving_scope="health_evidence_runtime",
+        **kwargs,
     )
 
 
@@ -65,6 +63,42 @@ def _import_low_back_pack(db) -> None:
         actor="test:low_back_health_evidence",
     )
     assert counts["skipped_documents"] == 0
+
+
+def test_low_back_pack_manifest_binds_exact_runtime_only_release_contract():
+    manifest = json.loads(
+        (SEED_DIR / "review_manifest.json").read_text(encoding="utf-8")
+    )
+    pack = next(
+        item
+        for item in manifest["authority_packs"]
+        if item["domain"] == "low_back_pain"
+    )
+
+    assert set(pack["claim_ids"]) == CLAIM_IDS
+    assert (
+        pack["decision"]
+        == "approved_for_health_evidence_runtime_by_product_owner"
+    )
+    assert pack["reviewer_role"] == "product_owner"
+    assert pack["clinical_signoff"] == "not_claimed"
+    assert pack["serving_scope"] == "health_evidence_runtime_only"
+    assert pack["serving_allowed"] is True
+    assert (
+        pack["source_policy"]
+        == "T1 official guidance only; no raw Dedao or paid-course text"
+    )
+    assert (
+        set(
+            getattr(
+                release_policy,
+                "HEALTH_EVIDENCE_RUNTIME_RELEASED_CLAIM_IDS",
+                (),
+            )
+        )
+        == set(pack["claim_ids"])
+        == CLAIM_IDS
+    )
 
 
 def test_low_back_claims_are_reviewed_t1_and_never_depend_on_raw_dedao():
@@ -89,7 +123,8 @@ def test_low_back_claims_are_reviewed_t1_and_never_depend_on_raw_dedao():
         assert metadata["external_sources"], doc_id
         assert all(
             source.get("review_status") == "reviewed"
-            and source.get("source")
+            and urlparse(source.get("source") or "").scheme == "https"
+            and urlparse(source.get("source") or "").hostname in OFFICIAL_T1_HOSTS
             and source.get("kind")
             and source.get("organization")
             and source.get("title")
@@ -99,6 +134,7 @@ def test_low_back_claims_are_reviewed_t1_and_never_depend_on_raw_dedao():
         serialized = json.dumps(claim, ensure_ascii=False).lower()
         assert "dedao:" not in serialized, doc_id
         assert "paid_course_raw" not in serialized, doc_id
+        assert "paid-course" not in serialized, doc_id
 
 
 def test_low_back_pack_authority_gate_enforces_exact_applicability_context(db):
@@ -196,7 +232,7 @@ def test_low_back_pack_rejects_unconfirmed_population_and_use_case(db):
         assert bundle.rejections[0].reason == expected_reason
 
 
-def test_low_back_queries_retrieve_the_expected_reviewed_claims(db):
+def test_runtime_scoped_low_back_queries_retrieve_only_the_released_claims(db):
     _import_low_back_pack(db)
     cases = {
         "腰痛 大小便失禁 会阴麻木 双腿无力 急诊": {
@@ -216,13 +252,54 @@ def test_low_back_queries_retrieve_the_expected_reviewed_claims(db):
         },
     }
 
+    found_across_cases = set()
     for query, expected in cases.items():
-        response = search_knowledge(db, query, limit=10, doc_type="claim")
+        response = knowledge_module.search_health_evidence_runtime_claims(
+            db,
+            query,
+            limit=10,
+        )
         found = {
             (item.get("document") or {}).get("doc_id")
             for item in response.get("results") or []
         }
+        assert found <= CLAIM_IDS, (query, found)
         assert expected <= found, (query, expected, found)
+        found_across_cases.update(found)
+    assert found_across_cases == CLAIM_IDS
+
+
+def test_empty_runtime_release_allowlist_returns_zero_results(
+    db,
+    monkeypatch,
+):
+    sentinel = "EMPTY_RUNTIME_SCOPE_SENTINEL_4D2F"
+    db.add(
+        KBDocument(
+            doc_id="claim:generic-reviewed-sentinel",
+            doc_type="claim",
+            title=sentinel,
+            summary=sentinel,
+            body=sentinel,
+            confidence=0.99,
+            evidence_level="A",
+            metadata_json={"review_status": "reviewed"},
+        )
+    )
+    db.commit()
+    monkeypatch.setattr(
+        knowledge_module,
+        "HEALTH_EVIDENCE_RUNTIME_RELEASED_CLAIM_IDS",
+        frozenset(),
+    )
+
+    response = knowledge_module.search_health_evidence_runtime_claims(
+        db,
+        sentinel,
+        limit=10,
+    )
+
+    assert response["results"] == []
 
 
 def test_low_back_golden_eval_cases_pass(db):

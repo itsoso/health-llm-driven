@@ -40,7 +40,11 @@ def _health_continuation_context(*, valid: bool) -> str:
 
 
 def _verified_health_meta(released_text: str) -> dict:
-    claim_id = "claim:c_test_released_health_answer"
+    from app.services.health_evidence.authority import (
+        LOW_BACK_CLAIM_POLICY,
+    )
+
+    claim_id = "claim:c_low_back_self_management_activity_boundary"
     return {
         "health_evidence_manifest": {
             "version": "health-evidence.v1",
@@ -57,6 +61,16 @@ def _verified_health_meta(released_text: str) -> dict:
             "verifier_verdict": "pass",
             "evidence_refs": [claim_id],
             "authority_evidence_refs": [claim_id],
+            "authority_artifacts": [
+                {
+                    "doc_id": claim_id,
+                    "sha256": (
+                        LOW_BACK_CLAIM_POLICY[
+                            claim_id
+                        ].artifact_sha256
+                    ),
+                }
+            ],
         },
         "health_evidence_verification": {
             "verdict": "pass",
@@ -153,7 +167,7 @@ def _terminal_runtime_health_turn(
         assistant_message_id=assistant.id,
     )
     runtime.complete(admission.context, status="succeeded")
-    return conversation, turn_id
+    return conversation, turn_id, admission.context
 
 
 def _sse_events(response) -> list[dict]:
@@ -301,7 +315,7 @@ def test_history_rejects_current_meta_when_released_body_hash_does_not_match(
         _UNVERIFIED_ANSWER,
         meta=_verified_health_meta("另一条经过验证的回答"),
     )
-    monkeypatch.setattr(settings, "health_evidence_runtime_enabled", True)
+    monkeypatch.setattr(settings, "health_evidence_runtime_enabled", False)
 
     response = client.get(
         f"/api/v1/agent/conversations/{conversation.id}",
@@ -393,7 +407,7 @@ def test_agent_runtime_stream_replay_sanitizes_unverified_health_answer(
     monkeypatch,
 ):
     user, headers = auth_user_and_headers
-    conversation, turn_id = _terminal_runtime_health_turn(
+    conversation, turn_id, _context = _terminal_runtime_health_turn(
         db,
         user_id=user.id,
         origin="agent_stream",
@@ -445,7 +459,7 @@ def test_agent_runtime_send_replay_sanitizes_unverified_health_answer(
     monkeypatch,
 ):
     user, headers = auth_user_and_headers
-    conversation, turn_id = _terminal_runtime_health_turn(
+    conversation, turn_id, _context = _terminal_runtime_health_turn(
         db,
         user_id=user.id,
         origin="agent_send",
@@ -469,6 +483,132 @@ def test_agent_runtime_send_replay_sanitizes_unverified_health_answer(
     assert _UNVERIFIED_ANSWER not in body["reply"]
     assert "未经过当前健康安全校验" in body["reply"]
     assert body["meta"]["health_evidence_replay_sanitized"] is True
+
+
+def test_flag_off_external_facade_replay_sanitizes_tampered_health_meta(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+):
+    from app.services.agent_runtime_facade import CloudAgentRuntimeFacade
+
+    user, _headers = auth_user_and_headers
+    conversation, _turn_id, context = _terminal_runtime_health_turn(
+        db,
+        user_id=user.id,
+        origin="telegram",
+        suffix="external-facade-health-replay",
+    )
+    assistant = (
+        db.query(AgentMessage)
+        .filter(
+            AgentMessage.conversation_id == conversation.id,
+            AgentMessage.role == "assistant",
+        )
+        .one()
+    )
+    assistant.meta = {
+        **_verified_health_meta("different verified body"),
+        "completion_status": "complete",
+        "client_turn_finalized": True,
+    }
+    db.commit()
+    monkeypatch.setattr(settings, "health_evidence_runtime_enabled", False)
+
+    events = CloudAgentRuntimeFacade(db)._replay_events(context)
+
+    assert events is not None
+    visible = "".join(
+        str((event.get("data") or {}).get("content") or "")
+        for event in events
+        if event.get("event") == "token"
+    )
+    done = events[-1]["data"]
+    assert _UNVERIFIED_ANSWER not in visible
+    assert "未经过当前健康安全校验" in visible
+    assert done["health_evidence_replay_sanitized"] is True
+
+
+def test_flag_off_genui_duplicate_replay_sanitizes_tampered_health_meta(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+):
+    from app.api.agent import _maybe_genui_chart_events
+    from app.services.agent_conversation_service import (
+        AgentConversationService,
+    )
+    from app.services import genui
+
+    user, _headers = auth_user_and_headers
+    turn_id = "genui-health-replay-flag-off"
+    conversation = _conversation(db, user.id, suffix="genui-health-replay")
+    service = AgentConversationService(db)
+    service.save_user_message_once(
+        conversation.id,
+        user.id,
+        "最近一周腰痛趋势图",
+        client_turn_id=turn_id,
+        meta={"client_turn_id": turn_id},
+    )
+    service.save_message(
+        conversation.id,
+        "assistant",
+        _UNVERIFIED_ANSWER,
+        meta={
+            **_verified_health_meta("different verified body"),
+            "completion_status": "complete",
+            "client_turn_finalized": True,
+            "client_turn_id": turn_id,
+        },
+        client_turn_id=turn_id,
+        client_turn_user_id=user.id,
+    )
+    monkeypatch.setattr(settings, "health_evidence_runtime_enabled", False)
+    monkeypatch.setattr(
+        genui,
+        "detect_intra_curve_request",
+        lambda _message: None,
+    )
+    monkeypatch.setattr(
+        genui,
+        "detect_chart_requests",
+        lambda _message: [("hrv", "7d")],
+    )
+    monkeypatch.setattr(
+        genui,
+        "build_line_chart",
+        lambda *_args, **_kwargs: {
+            "component": "line_chart",
+            "data_note": "",
+        },
+    )
+    monkeypatch.setattr(
+        genui,
+        "render_reva_ui_block",
+        lambda _block: "safe chart",
+    )
+
+    hit = _maybe_genui_chart_events(
+        db,
+        user.id,
+        "最近一周腰痛趋势图",
+        conversation.id,
+        ["genui-v1"],
+        client_turn_id=turn_id,
+    )
+
+    assert hit is not None
+    events, _conversation_id, _message_id = hit
+    visible = "".join(
+        str((event.get("data") or {}).get("content") or "")
+        for event in events
+        if event.get("event") == "token"
+    )
+    done = events[-1]["data"]
+    assert _UNVERIFIED_ANSWER not in visible
+    assert "未经过当前健康安全校验" in visible
+    assert done["health_evidence_replay_sanitized"] is True
 
 
 def test_emergency_health_chart_intent_skips_genui_and_runs_executor(
