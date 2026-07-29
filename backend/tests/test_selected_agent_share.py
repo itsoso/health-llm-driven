@@ -16,6 +16,8 @@ from app.services.health_evidence.verifier import health_manifest_sha256
 
 _HEALTH_QUERY = "我腰疼，应该怎么处理？"
 _HEALTH_ANSWER = "保持适度活动，并留意需要紧急就医的警示征象。"
+_SELECTED_SHARE_TITLE = "健康小巴 · 对话节选"
+_PRIVATE_CONVERSATION_TITLE = "我 HIV 阳性，而且出现了新的排尿困难"
 
 
 def _verified_health_meta(released_text: str) -> dict:
@@ -96,6 +98,8 @@ def test_selected_agent_share_hides_support_user_and_revalidates_on_get(
             {"role": "assistant", "content": "不相关回答"},
         ],
     )
+    conversation.title = _PRIVATE_CONVERSATION_TITLE
+    db.commit()
     current = {"value": True}
     monkeypatch.setattr(
         delivery,
@@ -126,6 +130,7 @@ def test_selected_agent_share_hides_support_user_and_revalidates_on_get(
     assert shared.messages_snapshot[0]["private_support"] is True
     assert shared.messages_snapshot[0]["selected"] is False
     assert shared.messages_snapshot[1]["selected"] is True
+    assert shared.title == _SELECTED_SHARE_TITLE
     assert _HEALTH_QUERY not in client.get(
         f"/api/v1/shared/{shared.share_token}?count_view=false"
     ).text
@@ -134,6 +139,8 @@ def test_selected_agent_share_hides_support_user_and_revalidates_on_get(
         f"/api/v1/shared/{shared.share_token}?count_view=false"
     )
     assert before.status_code == 200
+    assert before.json()["title"] == _SELECTED_SHARE_TITLE
+    assert _PRIVATE_CONVERSATION_TITLE not in before.text
     assert before.json()["messages"] == [
         {
             "role": "assistant",
@@ -152,6 +159,48 @@ def test_selected_agent_share_hides_support_user_and_revalidates_on_get(
     assert after.json()["messages"][0]["role"] == "assistant"
     assert _HEALTH_ANSWER not in after.text
     assert _HEALTH_QUERY not in after.text
+    assert _PRIVATE_CONVERSATION_TITLE not in after.text
+
+
+def test_legacy_selected_agent_share_neutralizes_stored_private_title_on_get(
+    client,
+    db,
+    auth_user_and_headers,
+):
+    user, headers = auth_user_and_headers
+    conversation, messages = _conversation_with_messages(
+        db,
+        user.id,
+        [
+            {"role": "user", "content": _PRIVATE_CONVERSATION_TITLE},
+            {"role": "assistant", "content": "仅分享这条回答"},
+        ],
+    )
+    created = client.post(
+        "/api/v1/shared/create",
+        headers=headers,
+        json={
+            "conversation_id": conversation.id,
+            "source_type": "agent",
+            "message_ids": [messages[1].id],
+        },
+    )
+    assert created.status_code == 200
+
+    shared = (
+        db.query(SharedConversation)
+        .filter(SharedConversation.share_token == created.json()["share_token"])
+        .one()
+    )
+    shared.title = _PRIVATE_CONVERSATION_TITLE
+    db.commit()
+
+    public = client.get(
+        f"/api/v1/shared/{shared.share_token}?count_view=false"
+    )
+    assert public.status_code == 200
+    assert public.json()["title"] == _SELECTED_SHARE_TITLE
+    assert _PRIVATE_CONVERSATION_TITLE not in public.text
 
 
 def test_selected_agent_share_public_order_is_conversation_order(

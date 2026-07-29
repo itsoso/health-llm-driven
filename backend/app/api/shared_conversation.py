@@ -17,6 +17,7 @@ from app.services.chat_utils import refresh_chat_image_url_value
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/shared", tags=["shared-conversation"])
+_SELECTED_AGENT_SHARE_TITLE = "健康小巴 · 对话节选"
 
 
 class ShareRequest(BaseModel):
@@ -282,7 +283,11 @@ def create_share(
             user_id=current_user.id,
             source_type=req.source_type,
             source_conversation_id=req.conversation_id,
-            title=conv.title or "分享的对话",
+            title=(
+                _SELECTED_AGENT_SHARE_TITLE
+                if req.message_ids is not None
+                else conv.title or "分享的对话"
+            ),
             messages_snapshot=messages_snapshot,
             sharer_name=_masked_display_name(current_user),
             expires_at=_default_expires_at(),
@@ -409,7 +414,11 @@ def get_shared_conversation(
         )
 
     return SharedConversationOut(
-        title=shared.title,
+        title=(
+            _SELECTED_AGENT_SHARE_TITLE
+            if _is_selection_snapshot(snapshot_messages)
+            else shared.title
+        ),
         sharer_name=shared.sharer_name,
         messages=messages,
         created_at=shared.created_at.isoformat() if shared.created_at else "",
