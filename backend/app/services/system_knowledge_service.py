@@ -22,6 +22,9 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.models.system_knowledge import KBAudit, KBDocument, KBDocumentVector, KBEdge
 from app.services.retrieval_guard import guard_retrieval_query
+from app.services.clinical_claim_release import (
+    CLINICAL_RELEASE_HOLD_CLAIM_IDS,
+)
 from app.services.system_knowledge_ingest import validate_artifact_review_gate
 from app.services.kbase_review_workspace import (
     adjudicate_review_claim,
@@ -136,6 +139,7 @@ def _serving_document_filters():
     return (
         KBDocument.is_archived.is_(False),
         _reviewed_document_filter(),
+        KBDocument.doc_id.notin_(CLINICAL_RELEASE_HOLD_CLAIM_IDS),
     )
 
 
@@ -390,6 +394,11 @@ def get_claim_bundle(
     if claim.is_archived and not include_archived:
         return None
     if not include_archived and (claim.metadata_json or {}).get("review_status") != "reviewed":
+        return None
+    if (
+        not include_archived
+        and claim.doc_id in CLINICAL_RELEASE_HOLD_CLAIM_IDS
+    ):
         return None
 
     edges = (

@@ -376,6 +376,45 @@ describe('streamChat', () => {
     await iter.return?.(undefined as any);
   });
 
+  it('uses the health evidence card as the Mobile projection of the done manifest', async () => {
+    const iter = streamChat('我腰疼怎么办');
+    const first = iter.next();
+
+    await Promise.resolve();
+    const xhr = MockXMLHttpRequest.instances[0];
+    const manifest = {
+      version: 'health-evidence.v1',
+      risk_level: 'medium',
+      missing_discriminators: [{
+        question: '近期是否有严重外伤？',
+        choices: ['有', '没有', '不确定'],
+      }],
+    };
+    xhr.responseText = `data: ${JSON.stringify({
+      event: 'done',
+      data: {
+        conversation_id: 42,
+        message_id: 100,
+        health_evidence_manifest: manifest,
+        cards: [{ type: 'health_evidence', data: manifest, actions: [] }],
+      },
+    })}\n\n`;
+    xhr.onprogress?.();
+
+    await expect(first).resolves.toEqual({
+      value: expect.objectContaining({
+        type: 'done',
+        cards: [{
+          type: 'health_evidence',
+          data: manifest,
+          actions: [],
+        }],
+      }),
+      done: false,
+    });
+    await iter.return?.(undefined as any);
+  });
+
   it('preserves verified write receipts from done for durable message rendering', async () => {
     const iter = streamChat('记录午餐');
     const first = iter.next();

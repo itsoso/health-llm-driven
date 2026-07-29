@@ -796,10 +796,13 @@ export default function ChatScreen() {
     setSelectedMessageIds(new Set([id]));
   }, []);
 
-  const sendSuggestedPrompt = useCallback((prompt: string) => {
-    if (isStreaming) return;
-    void sendMessage(prompt, null);
-  }, [isStreaming, sendMessage]);
+  const sendSuggestedPrompt = useCallback((prompt: string, extraContext?: string) => {
+    void sendMessage(
+      prompt,
+      null,
+      extraContext ? { extraContext } : undefined,
+    );
+  }, [sendMessage]);
 
   const shareSelectedMessages = useCallback(async () => {
     const message = buildSelectedChatShareMessage(messages, selectedMessageIds);

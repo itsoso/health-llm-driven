@@ -14,6 +14,7 @@ from app.services.system_knowledge_service import (
     apply_confidence_decay,
     attach_system_knowledge_evidence,
     build_evidence_card_for_message,
+    search_knowledge,
 )
 from app.orchestrator.schema import SpecialistFinding
 
@@ -349,6 +350,79 @@ def test_get_claim_excludes_non_reviewed_claim(client, db, auth_user_and_headers
     response = client.get("/api/v1/knowledge/claim/claim:c_draft_claim_detail", headers=headers)
 
     assert response.status_code == 404
+
+
+def test_get_claim_excludes_candidate_awaiting_clinical_release(
+    client,
+    db,
+    auth_user_and_headers,
+):
+    _user, headers = auth_user_and_headers
+    db.add(
+        KBDocument(
+            doc_id="claim:c_low_back_emergency_neurologic_red_flags",
+            doc_type="claim",
+            entity_type="condition",
+            entity_id="low-back-pain",
+            title="候选腰痛神经红旗",
+            summary="候选内容不得在临床签署前 serving。",
+            body="候选内容",
+            confidence=0.95,
+            evidence_level="A",
+            metadata_json={"review_status": "reviewed"},
+        )
+    )
+    db.commit()
+
+    response = client.get(
+        "/api/v1/knowledge/claim/"
+        "claim:c_low_back_emergency_neurologic_red_flags",
+        headers=headers,
+    )
+
+    assert response.status_code == 404
+
+
+def test_generic_search_excludes_entire_unsigned_low_back_candidate_pack(db):
+    held_documents = {
+        "claim:c_low_back_emergency_neurologic_red_flags": "claim",
+        "claim:c_low_back_serious_cause_screening_boundary": "claim",
+        "claim:c_low_back_self_management_activity_boundary": "claim",
+        "claim:c_low_back_imaging_not_routine_boundary": "claim",
+        "claim:c_chronic_low_back_holistic_care_boundary": "claim",
+        "entity:condition:low-back-pain": "entity",
+        "eval:low_back_neurologic_red_flags": "eval_case",
+        "eval:low_back_self_management": "eval_case",
+        "eval:low_back_imaging_boundary": "eval_case",
+        "eval:chronic_low_back_holistic_care": "eval_case",
+    }
+    for doc_id, doc_type in held_documents.items():
+        db.add(
+            KBDocument(
+                doc_id=doc_id,
+                doc_type=doc_type,
+                entity_type="condition",
+                entity_id="low-back-pain",
+                title=f"候选腰痛知识 {doc_id}",
+                summary="腰痛 排尿困难 会阴麻木 自我管理 影像 慢性",
+                body="独立临床签署前不得进入任何 serving 检索。",
+                confidence=0.95,
+                evidence_level="A",
+                metadata_json={"review_status": "reviewed"},
+            )
+        )
+    db.commit()
+
+    response = search_knowledge(
+        db,
+        "腰痛 排尿困难 会阴麻木 自我管理 影像 慢性",
+        limit=30,
+    )
+
+    returned_ids = {
+        item["document"]["doc_id"] for item in response["results"]
+    }
+    assert returned_ids.isdisjoint(held_documents)
 
 
 def test_evidence_resolver_does_not_attach_non_reviewed_claim_refs(db):

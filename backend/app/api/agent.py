@@ -1112,8 +1112,12 @@ async def get_agent_runtime_run(
 
 def _agent_runtime_replay_events(db: Session, context) -> list[dict] | None:
     """Build a deterministic replay without starting another Executor."""
+    from app.config import settings
     from app.models.agent_conversation import AgentConversation, AgentMessage
     from app.services.agent_runtime import AgentRuntimeCoordinator
+    from app.services.health_evidence.delivery import (
+        sanitize_health_delivery,
+    )
 
     run = AgentRuntimeCoordinator(db).get_run(context.user_id, context.run_id)
     if run.assistant_message_id is None:
@@ -1147,6 +1151,19 @@ def _agent_runtime_replay_events(db: Session, context) -> list[dict] | None:
             .first()
         )
 
+    replay_delivery = sanitize_health_delivery(
+        source_query=(
+            str(getattr(source, "content", "") or "")
+            if source is not None
+            else ""
+        ),
+        assistant_content=str(assistant.content or ""),
+        assistant_meta=getattr(assistant, "meta", None),
+        enabled=bool(
+            getattr(settings, "health_evidence_runtime_enabled", False)
+        ),
+    )
+
     events: list[dict] = []
     if source is not None:
         events.append(
@@ -1162,11 +1179,14 @@ def _agent_runtime_replay_events(db: Session, context) -> list[dict] | None:
                 },
             }
         )
-    if assistant.content:
+    if replay_delivery.content:
         events.append(
-            {"event": "token", "data": {"content": assistant.content}}
+            {
+                "event": "token",
+                "data": {"content": replay_delivery.content},
+            }
         )
-    done_data = dict(assistant.meta) if isinstance(assistant.meta, dict) else {}
+    done_data = replay_delivery.meta
     done_data.update(
         {
             "conversation_id": assistant.conversation_id,
@@ -1203,6 +1223,8 @@ def _agent_runtime_replay_send_response(db: Session, context) -> dict | None:
 
     meta = build_send_meta(done_data, None)
     meta["replayed"] = True
+    if done_data.get("health_evidence_replay_sanitized") is True:
+        meta["health_evidence_replay_sanitized"] = True
     return {
         "reply": reply,
         "conversation_id": done_data.get("conversation_id"),
@@ -1468,6 +1490,22 @@ async def agent_stream(
     extra_ctx = req.extra_context
     chan = req.channel
     client_turn_id = req.client_turn_id
+    from app.config import settings as _agent_settings
+    from app.services.health_evidence.delivery import (
+        requires_live_health_executor,
+    )
+
+    live_health_executor_required = requires_live_health_executor(
+        msg_text,
+        enabled=bool(
+            getattr(
+                _agent_settings,
+                "health_evidence_runtime_enabled",
+                False,
+            )
+        ),
+        extra_context=extra_ctx,
+    )
 
     stream_run_id = f"run_{uuid.uuid4().hex[:16]}"
     stream_attempt_id = f"attempt_{uuid.uuid4().hex[:16]}"
@@ -1526,7 +1564,11 @@ async def agent_stream(
 
     caps = parse_client_caps(x_reva_client_caps)
     genui_events: Optional[list[dict]] = None
-    if not has_images and not file_b64:
+    if (
+        not live_health_executor_required
+        and not has_images
+        and not file_b64
+    ):
         try:
             hit = _maybe_genui_chart_events(
                 db,
@@ -1582,6 +1624,7 @@ async def agent_stream(
 
     if (
         getattr(_pregen_settings, "starter_pregen_enabled", False)
+        and not live_health_executor_required
         and not has_images
         and not file_b64
     ):
@@ -2014,6 +2057,22 @@ async def agent_send(
     from app.api._client_caps import parse_client_caps
 
     send_caps = parse_client_caps(x_reva_client_caps)
+    from app.config import settings as _send_settings
+    from app.services.health_evidence.delivery import (
+        requires_live_health_executor,
+    )
+
+    live_health_executor_required = requires_live_health_executor(
+        req.message.strip(),
+        enabled=bool(
+            getattr(
+                _send_settings,
+                "health_evidence_runtime_enabled",
+                False,
+            )
+        ),
+        extra_context=req.extra_context,
+    )
 
     from app.services.agent_executor import AgentExecutor
 
@@ -2238,6 +2297,7 @@ async def agent_send(
 
     if (
         getattr(_pregen_settings, "starter_pregen_enabled", False)
+        and not live_health_executor_required
         and not has_images
         and not file_b64
     ):
@@ -2489,6 +2549,59 @@ async def get_conversation(
         current_user.id,
     )
 
+    from app.config import settings
+    from app.services.health_evidence.delivery import (
+        sanitize_health_delivery,
+    )
+
+    health_delivery_enabled = bool(
+        getattr(settings, "health_evidence_runtime_enabled", False)
+    )
+    source_query = ""
+    if health_delivery_enabled and msgs and msgs[0].role == "assistant":
+        previous_user = (
+            db.query(AgentMessage)
+            .filter(
+                AgentMessage.conversation_id == conversation_id,
+                AgentMessage.role == "user",
+                AgentMessage.id < msgs[0].id,
+            )
+            .order_by(AgentMessage.id.desc())
+            .first()
+        )
+        if previous_user is not None:
+            source_query = str(previous_user.content or "")
+
+    delivered_messages = []
+    for index, message in enumerate(msgs):
+        content = str(message.content or "")
+        meta = delivered_metas[index]
+        if message.role == "user":
+            source_query = content
+        elif message.role == "assistant":
+            delivery = sanitize_health_delivery(
+                source_query=source_query,
+                assistant_content=content,
+                assistant_meta=meta,
+                enabled=health_delivery_enabled,
+            )
+            content = delivery.content
+            meta = delivery.meta
+        delivered_messages.append(
+            {
+                "id": message.id,
+                "role": message.role,
+                "content": content,
+                "image_url": refresh_chat_image_url_value(
+                    message.image_url,
+                    current_user.id,
+                ),
+                "rating": message.rating,
+                "created_at": str(message.created_at),
+                "meta": meta,
+            }
+        )
+
     return {
         "id": conv.id,
         "title": conv.title,
@@ -2496,18 +2609,7 @@ async def get_conversation(
         "has_more": has_more,
         "oldest_message_id": msgs[0].id if msgs else None,
         "mode": "agent",
-        "messages": [
-            {
-                "id": m.id,
-                "role": m.role,
-                "content": m.content,
-                "image_url": refresh_chat_image_url_value(m.image_url, current_user.id),
-                "rating": m.rating,
-                "created_at": str(m.created_at),
-                "meta": delivered_metas[index],
-            }
-            for index, m in enumerate(msgs)
-        ],
+        "messages": delivered_messages,
     }
 
 @router.delete("/conversations/{conversation_id}", summary="删除统一健康助理对话")

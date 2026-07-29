@@ -94,6 +94,25 @@ async function* streamStartThenWait() {
   yield { type: 'done', conversationId: 777, messageId: 2 };
 }
 
+async function* streamHealthDoneCardAfterWait() {
+  yield { type: 'start', conversationId: 777 };
+  yield { type: 'token', content: '第一轮健康回答。' };
+  await new Promise<void>((resolve) => {
+    finishStream = resolve;
+  });
+  yield {
+    type: 'done',
+    conversationId: 777,
+    messageId: 901,
+    completionStatus: 'complete',
+    cards: [{
+      type: 'health_evidence',
+      data: { intent: { intent_id: 'health_advice.symptom.low_back_pain' } },
+      actions: [],
+    }],
+  };
+}
+
 async function* streamStartWaitForPersistenceThenDone(...args: any[]) {
   await new Promise<void>((resolve) => {
     persistStream = resolve;
@@ -1057,6 +1076,60 @@ describe('useChatEngine', () => {
     await waitFor(() => {
       expect(mockStreamChat).toHaveBeenCalledTimes(2);
     });
+
+    await act(async () => {
+      finishStream?.();
+      await Promise.resolve();
+    });
+  });
+
+  it('keeps a done health card anchored before a queued next turn', async () => {
+    let streamCalls = 0;
+    mockStreamChat.mockImplementation(() => {
+      streamCalls += 1;
+      return streamCalls === 1
+        ? streamHealthDoneCardAfterWait()
+        : streamStartThenWait();
+    });
+    const { result } = renderHook(() => useChatEngine());
+
+    act(() => {
+      void result.current.sendMessage('第一条腰痛问题');
+    });
+    await waitFor(() => expect(result.current.isStreaming).toBe(true));
+
+    await act(async () => {
+      await result.current.sendMessage('第二条排队补充');
+    });
+    expect(result.current.queuedCount).toBe(1);
+
+    await act(async () => {
+      finishStream?.();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(result.current.messages.some(
+        message => message.cardType === 'health_evidence',
+      )).toBe(true);
+    });
+
+    const messages = result.current.messages;
+    const firstAssistantIndex = messages.findIndex(
+      message => message.role === 'assistant'
+        && !message.cardType
+        && message.content.includes('第一轮健康回答'),
+    );
+    const cardIndex = messages.findIndex(
+      message => message.cardType === 'health_evidence',
+    );
+    const queuedUserIndex = messages.findIndex(
+      message => message.role === 'user'
+        && message.content === '第二条排队补充',
+    );
+    expect(firstAssistantIndex).toBeGreaterThanOrEqual(0);
+    expect(cardIndex).toBe(firstAssistantIndex + 1);
+    expect(cardIndex).toBeLessThan(queuedUserIndex);
 
     await act(async () => {
       finishStream?.();

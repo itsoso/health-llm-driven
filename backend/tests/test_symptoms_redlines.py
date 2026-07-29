@@ -1,8 +1,11 @@
 """症状级急症红线 + 世界观注入。钉:危急组合命中 CRITICAL;无症状/普通症状不误报。"""
 from datetime import datetime
 
+import pytest
+
 from app.agents.safety_guardian.engine import evaluate_rules
 from app.agents.safety_guardian.schema import Severity
+from app.config import settings
 from app.services.health_worldview import worldview_prompt_blob
 from app.twin.schema import HealthTwin, TwinMeta
 
@@ -21,6 +24,19 @@ def _ids(alerts):
     return {a.rule_id for a in alerts}
 
 
+@pytest.fixture(autouse=True)
+def _enable_health_evidence_runtime(monkeypatch):
+    monkeypatch.setattr(settings, "health_evidence_runtime_enabled", True)
+
+
+def test_cauda_equina_rule_is_inert_while_release_flag_is_off(monkeypatch):
+    monkeypatch.setattr(settings, "health_evidence_runtime_enabled", False)
+
+    assert "symptoms.cauda_equina_warning" not in _ids(
+        _run(["腰痛", "突然无法控制尿液"])
+    )
+
+
 def test_cardiac_event_needs_chest_plus_danger():
     # 仅"胸闷"不报(可能是焦虑/胃食管反流);胸痛+冷汗才报
     assert "symptoms.acute_cardiac_event" not in _ids(_run(["有点胸闷"]))
@@ -37,6 +53,91 @@ def test_stroke_fast():
 def test_dyspnea_and_abdomen():
     assert "symptoms.acute_dyspnea" in _ids(_run(["突然喘不上气,无法平卧"]))
     assert "symptoms.acute_abdomen" in _ids(_run(["剧烈腹痛,还呕血"]))
+
+
+def test_low_back_pain_with_cauda_equina_warning_signs_is_critical():
+    scenarios = [
+        ["腰痛", "两条腿都麻木无力"],
+        ["下背痛", "会阴和肛门周围没有感觉"],
+        ["腰疼", "突然排尿困难"],
+        ["腰痛", "大小便失禁"],
+        ["腰痛", "突然无法控制尿液"],
+        ["腰痛", "最近开始漏尿"],
+        ["腰痛", "尿意和便意消失"],
+        ["lower back pain", "cannot empty my bladder"],
+        ["lower back pain", "numbness in my saddle area"],
+        ["lower back pain", "difficulty starting urination"],
+    ]
+    for symptoms in scenarios:
+        alert = next(
+            item
+            for item in _run(symptoms)
+            if item.rule_id == "symptoms.cauda_equina_warning"
+        )
+        assert alert.severity == Severity.CRITICAL
+        assert alert.requires_medical_attention is True
+        assert alert.references
+
+
+def test_benign_back_pain_does_not_trigger_cauda_equina_warning():
+    assert "symptoms.cauda_equina_warning" not in _ids(
+        _run(["久坐后腰有点酸", "走动后缓解"])
+    )
+    assert "symptoms.cauda_equina_warning" not in _ids(
+        _run(["腰痛", "只有右腿轻微发麻"])
+    )
+    assert "symptoms.cauda_equina_warning" not in _ids(
+        _run(["腰痛", "没有尿失禁，也没有会阴麻木"])
+    )
+    assert "symptoms.cauda_equina_warning" not in _ids(
+        _run(["腰痛", "尿频"])
+    )
+    assert "symptoms.cauda_equina_warning" not in _ids(
+        _run(["腰痛", "一条腿有点无力"])
+    )
+    assert "symptoms.cauda_equina_warning" not in _ids(
+        _run(
+            [
+                "腰痛，但排尿并没有任何困难",
+                "会阴也完全没有麻木，双腿没有无力",
+            ]
+        )
+    )
+    assert "symptoms.cauda_equina_warning" not in _ids(
+        _run(["腰痛，无明显会阴麻木，也无排尿困难"])
+    )
+    assert "symptoms.cauda_equina_warning" not in _ids(
+        _run(["腰痛，不是排尿困难，只是尿频"])
+    )
+    for phrase in (
+        "排尿不困难",
+        "双腿不麻木，也不无力",
+        "会阴并不麻木",
+        "排尿并不费力",
+    ):
+        assert "symptoms.cauda_equina_warning" not in _ids(
+            _run(["腰痛", phrase])
+        )
+
+
+def test_natural_cauda_equina_phrasing_still_triggers_warning():
+    scenarios = [
+        ["腰背痛", "排尿开始变得很困难"],
+        ["腰疼", "会阴附近感觉明显变迟钝"],
+        ["腰痛", "小便完全解不出来"],
+        ["腰痛", "尿怎么都排不出来"],
+        ["腰痛", "肛周麻木"],
+        ["腰痛", "感觉不到擦拭肛门"],
+    ]
+
+    for symptoms in scenarios:
+        assert "symptoms.cauda_equina_warning" in _ids(_run(symptoms))
+
+
+def test_negated_persistent_red_flags_do_not_trigger_warning():
+    assert "symptoms.red_flag_persistent_warning" not in _ids(
+        _run(["腰痛", "没有不明原因消瘦，也没有持续发热"])
+    )
 
 
 def test_red_flag_warning():

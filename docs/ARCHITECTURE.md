@@ -164,9 +164,8 @@
 ┌────────────────────────────────────────────────────────────────┐
 │  13 Specialists                                               │
 │  ┌─────────────────────────────────────────────────────────┐   │
-│  │ SafetyGuardian  — 64 条确定性规则, 不调 LLM             │   │
-│  │   vitals.py (12) labs.py (7) ddi.py (7) dsi.py (7)     │   │
-│  │   pgx.py (10) training_load.py (3) cgm.py (6)           │   │
+│  │ SafetyGuardian  — 确定性规则, 不调 LLM                 │   │
+│  │   分类/精确计数: docs/_generated/system-map.json       │   │
 │  ├─────────────────────────────────────────────────────────┤   │
 │  │ RecoveryCoach  · MovementCoach  · FuelStrategist        │   │
 │  │ MentalHealthCompanion · KnowledgeLibrarian              │   │
@@ -215,21 +214,24 @@
 
 辅助: **DataFreshness** 标记每个分区新鲜度(>X 小时视为过期, LLM prompt 里附提示)。
 
-### Safety Guardian 规则分类(64 条)
+### Safety Guardian 规则分类
+
+精确计数只引用 `docs/_generated/system-map.json`，不在手写文档中复制。
 
 `backend/app/agents/safety_guardian/rules/`:
 
-- `vitals.py` (12): BP/HR/SpO2/stress/sleep 急性阈值
-- `labs.py` (9): 肝酶三联/LDL/HbA1c/eGFR/WBC 模式识别 + 高尿酸血症 + 红细胞系整体偏高(HGB+HCT 同向超上限才触发, MEDIUM, 非诊断)
-- `ddi.py` (7): 药-药相互作用(GLP-1×磺脲, SSRI×MAOI 等)
-- `dsi.py` (7): 药-补剂相互作用(鱼油×抗凝, 钙×铁)
-- `pgx.py` (10): 9 条手写(CYP2D6/CYP2C19/SLCO1B1/G6PD/HLA-B*5701/DPYD/ALDH2/MTHFR/VKORC1) + 1 条 CPIC Level-A 表驱动规则, 表数据在 `pgx_cpic_table.py`(纯数据, 无 @register): TPMT/NUDT15/UGT1A1/HLA-B*15:02/HLA-A*31:01/HLA-B*58:01/CYP2C19/CYP2D6/CYP2C9/CYP3A5/CYP2B6/RYR1/CACNA1S
-- `training_load.py` (3): ACWR 过载/欠训练/零运动
-- `cgm.py` (6): 低血糖/高血糖/TIR/CV/GLP-1 联动
-- `symptoms.py` (5)/`cardiac.py` (1)/`problem_red_lines.py` (1): 症状急症 + ECG 房颤 + 数据驱动红线
-- `guidance_red_lines.py` (2): R4 越界拦截——扫描 AI 生成的指导/总结文本里的量化/命令式饮食处方(CRITICAL)与命令式体态/训练指令(HIGH);读 `twin.acute.pending_guidance_texts`(仅 guidance 校验路径临时塞入, builder 永不填充), 与 `services/guidance_validator.py` 共享正则
+- `vitals.py`: BP/HR/SpO2/stress/sleep 急性阈值
+- `labs.py`: 肝酶三联/LDL/HbA1c/eGFR/WBC 模式识别 + 高尿酸血症 + 红细胞系整体偏高(HGB+HCT 同向超上限才触发, MEDIUM, 非诊断)
+- `ddi.py`: 药-药相互作用(GLP-1×磺脲, SSRI×MAOI 等)
+- `dsi.py`: 药-补剂相互作用(鱼油×抗凝, 钙×铁)
+- `pgx.py`: 手写规则 + CPIC Level-A 表驱动规则, 表数据在 `pgx_cpic_table.py`(纯数据, 无 @register): TPMT/NUDT15/UGT1A1/HLA-B*15:02/HLA-A*31:01/HLA-B*58:01/CYP2C19/CYP2D6/CYP2C9/CYP3A5/CYP2B6/RYR1/CACNA1S
+- `training_load.py`: ACWR 过载/欠训练/零运动
+- `cgm.py`: 低血糖/高血糖/TIR/CV/GLP-1 联动
+- `symptoms.py`/`cardiac.py`/`problem_red_lines.py`: 症状急症（含腰痛严重神经压迫/马尾警示分流）+ ECG 房颤 + 数据驱动红线
+- `guidance_red_lines.py`: R4 越界拦截——扫描 AI 生成的指导/总结文本里的量化/命令式饮食处方(CRITICAL)与命令式体态/训练指令(HIGH);读 `twin.acute.pending_guidance_texts`(仅 guidance 校验路径临时塞入, builder 永不填充), 与 `services/guidance_validator.py` 共享正则
 
-数字由 `scripts/check_doc_drift.py` 校验, 规则增删时同步更新本表 + CLAUDE.md + 该脚本。
+规则增删后运行 `scripts/dump_system_map.py` 与
+`scripts/check_doc_drift.py`；手写文档不复制架构计数。
 
 ### 抗衰 / Longevity 子系统(横切 L1-L4 + 闭环 + 群体)
 

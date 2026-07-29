@@ -1,4 +1,24 @@
 {
+  "authority_packs": [
+    {
+      "claim_ids": [
+        "claim:c_low_back_emergency_neurologic_red_flags",
+        "claim:c_low_back_serious_cause_screening_boundary",
+        "claim:c_low_back_self_management_activity_boundary",
+        "claim:c_low_back_imaging_not_routine_boundary",
+        "claim:c_chronic_low_back_holistic_care_boundary"
+      ],
+      "decision": "candidate_pending_independent_clinical_review",
+      "domain": "low_back_pain",
+      "license_scope": "internal_transformed_claims",
+      "reviewed_at": "2026-07-29T00:00:00+00:00",
+      "reviewer": "codex-medical-boundary-review-2026-07-29",
+      "reviewer_role": "automated-medical-boundary-and-authority-source-review",
+      "serving_allowed": false,
+      "source_policy": "T1 official guidance only; no raw Dedao or paid-course text",
+      "version": "low-back-authority-pack.v1"
+    }
+  ],
   "artifact_dir": "backend/data/system_kb_v2_seed",
   "contraindications_reviewed": 0,
   "documents_reviewed": 10,

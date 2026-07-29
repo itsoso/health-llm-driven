@@ -45,7 +45,7 @@ EXPECTED: dict = {
         "pgx_cpic_table": 0,  # 纯数据文件, 无 @register, 但 glob 会扫到 → 必须登记防 "unknown file"
         "training_load": 3,
         "cgm": 6,
-        "symptoms": 5,
+        "symptoms": 6,
         "cardiac": 1,
         "problem_red_lines": 1,
         "guidance_red_lines": 2,

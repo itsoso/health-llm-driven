@@ -564,6 +564,7 @@ function upsertCardMessagesAfterAssistant(
   assistantId: string,
   cards: ServerCardDescriptor[],
   sourceTurnId?: string,
+  sourceMessageId?: number,
 ): UIMessage[] {
   if (cards.length === 0) return messages;
   let nextMessages = messages;
@@ -595,6 +596,7 @@ function upsertCardMessagesAfterAssistant(
     cardType: card.type,
     cardData: card.data,
     cardActions: card.actions,
+    sourceMessageId,
     sourceTurnId,
   }));
   return [...nextMessages.slice(0, insertAt), ...cardMessages, ...nextMessages.slice(insertAt)];
@@ -1803,16 +1805,13 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
               ? projectMedicationTerminalMessages(settled, evt.medicationBatchDecision)
               : settled;
             if (!terminalCard) return projected;
-            return [...projected, {
-              id: nextId(),
-              role: 'assistant' as const,
-              content: '',
-              cardType: terminalCard.type,
-              cardData: terminalCard.data,
-              cardActions: terminalCard.actions,
-              sourceMessageId: evt.messageId,
-              sourceTurnId: turnId,
-            }];
+            return upsertCardMessagesAfterAssistant(
+              projected,
+              aId,
+              [terminalCard],
+              turnId,
+              evt.messageId,
+            );
           });
           if (
             allowDoneCards

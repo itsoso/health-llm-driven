@@ -7837,9 +7837,22 @@ class AgentExecutor:
                 "replayed": True,
             }}
             return
-        if assistant.content:
-            yield {"event": "token", "data": {"content": assistant.content}}
-        done_data = dict(assistant.meta) if isinstance(assistant.meta, dict) else {}
+        from app.services.health_evidence.delivery import (
+            sanitize_health_delivery,
+        )
+
+        replay_delivery = sanitize_health_delivery(
+            source_query=str(getattr(user_message, "content", "") or ""),
+            assistant_content=str(assistant.content or ""),
+            assistant_meta=getattr(assistant, "meta", None),
+            enabled=bool(
+                getattr(settings, "health_evidence_runtime_enabled", False)
+            ),
+        )
+        replay_content = replay_delivery.content
+        if replay_content:
+            yield {"event": "token", "data": {"content": replay_content}}
+        done_data = replay_delivery.meta
         done_data.update({
             "conversation_id": assistant.conversation_id,
             "message_id": assistant.id,
@@ -8913,7 +8926,11 @@ class AgentExecutor:
         conv.updated_at = datetime.now(UTC)
         elapsed_ms = int((time.time() - start_time) * 1000)
         # P1 数字锚定核验(shadow, additive; fail-soft 见 helper)。
-        citation_anchor = _citation_anchor_shadow_meta(self.db, user_id, full_reply)
+        citation_anchor = _citation_anchor_shadow_meta(
+            self.db,
+            user_id,
+            full_reply,
+        )
         kernel_trace = self._agent_kernel_trace_summary(status=completion_status)
         try:
             ai_msg.meta = {
@@ -9279,6 +9296,76 @@ class AgentExecutor:
         self._turn_contextual_diet_record_id = None
         self._turn_contextual_diet_consumed_fraction = None
         self._ensure_agent_kernel_turn(channel=channel)
+        # Backend-owned health evidence runtime. Clinical semantics are compiled
+        # before any client-specific presentation or model routing so Mobile/Mac
+        # cannot diverge. A health answer is buffered until deterministic verify.
+        health_evidence_turn = None
+        health_verification = None
+        health_evidence_manifest: Optional[Dict[str, Any]] = None
+        health_continuation_attempted = False
+        if getattr(settings, "health_evidence_runtime_enabled", False):
+            from app.services import health_evidence as _health_evidence
+            from app.services.health_evidence.continuation import (
+                parse_health_evidence_continuation,
+                resolve_health_evidence_continuation_query,
+            )
+
+            continuation_parse = parse_health_evidence_continuation(extra_context)
+            health_continuation_attempted = continuation_parse.attempted
+            clinical_query = resolve_health_evidence_continuation_query(
+                self.db,
+                user_id=user_id,
+                parsed=continuation_parse,
+                fallback_query=message,
+            )
+            health_intent = _health_evidence.classify_health_intent(
+                clinical_query,
+                client=channel,
+            )
+            if health_intent.requires_authority:
+                try:
+                    health_evidence_turn = (
+                        _health_evidence.build_health_evidence_turn(
+                            self.db,
+                            user_id=user_id,
+                            query=clinical_query,
+                            intent=health_intent,
+                            now=self._agent_kernel_reference_now(),
+                        )
+                    )
+                except Exception as exc:  # noqa: BLE001 - never fall back to legacy advice
+                    logger.exception(
+                        "[health_evidence] turn compilation failed user=%s "
+                        "error_type=%s",
+                        user_id,
+                        type(exc).__name__,
+                    )
+                    from app.twin.schema import HealthTwin, TwinMeta
+
+                    health_evidence_turn = (
+                        _health_evidence.compile_health_evidence_turn(
+                            twin=HealthTwin(
+                                meta=TwinMeta(
+                                    user_id=user_id,
+                                    generated_at=self._agent_kernel_reference_now(),
+                                    failed_partitions=[
+                                        "acute",
+                                        "medication",
+                                        "safety_profile",
+                                        "chronic",
+                                    ],
+                                )
+                            ),
+                            intent=health_intent,
+                            authority_results=(),
+                            now=self._agent_kernel_reference_now(),
+                        )
+                    )
+        health_advice_buffered = health_evidence_turn is not None
+        deterministic_health_release = bool(
+            health_evidence_turn is not None
+            and health_evidence_turn.sufficiency != "sufficient"
+        )
         # GenUI metric_table (rank1): 客户端声明 genui-table-v1 且未被 kill-switch 关闭时,
         # 工具结果确定性打成表格卡片 (合成后追加 fence)。正文仍按问题完整回答，避免
         # 把卡片优化误变成用户可见的 500 字硬截断。
@@ -9315,6 +9402,7 @@ class AgentExecutor:
         # 带图片/附件时回退普通单模型路径 (panel 是文本综合, 不处理多模态)。
         if (
             _extract_multi_model_flag(extra_context)
+            and not health_advice_buffered
             and not images
             and not file_base64
             and not (
@@ -9348,7 +9436,11 @@ class AgentExecutor:
             extra_context,
             has_images=bool(images),
         )
-        self._request_model_id = _extract_model_id_from_extra_context(extra_context)
+        self._request_model_id = (
+            str(getattr(settings, "health_evidence_model_id", "") or "").strip()
+            if health_advice_buffered
+            else _extract_model_id_from_extra_context(extra_context)
+        ) or None
         self._request_model_tool_fallback_used = False
         self._fast_route_simple_turn = False
         self._analysis_turn_subset = False  # R5:纯分析轮只读工具子集(flag 门控,下方设定)
@@ -9372,7 +9464,8 @@ class AgentExecutor:
         self._read_only_turn_write_attempted = False
         self._current_turn_user_message = message or ""
         self._prefer_fast_record_model = (
-            not images
+            health_evidence_turn is None
+            and not images
             and not file_base64
             and _has_fast_record_write_intent(message or "")
         )
@@ -9632,7 +9725,12 @@ class AgentExecutor:
         # It runs after the durable user ACK but before recipes, prompts, or any
         # model call.  Read-only pregeneration is never allowed to propose or
         # execute a health write.
-        if not read_only_tools and not images and not file_base64:
+        if (
+            health_evidence_turn is None
+            and not read_only_tools
+            and not images
+            and not file_base64
+        ):
             medication_batch_result = self._resolve_medication_batch_turn(
                 user_id=user_id,
                 conversation_id=conv.id,
@@ -9656,7 +9754,11 @@ class AgentExecutor:
         # 每步确认策略沿用该 kind 既有 confirm tier (typed_only/never_auto 原样
         # 生效, 配方不绕任何确认门)。匹配失败/异常绝不断主链路 (fail-soft 回
         # 正常 LLM 路径, 但记 warning 可观测)。
-        if not images and not file_base64:
+        if (
+            health_evidence_turn is None
+            and not images
+            and not file_base64
+        ):
             matched_recipe = None
             try:
                 from app.services.procedure_recipe_service import match_trigger
@@ -9701,6 +9803,7 @@ class AgentExecutor:
         system_content = self._build_system_prompt(
             user_id, conv.id, user_auth_token, lite=self._fast_route_simple_turn,
             intent_query=message,
+            health_evidence_runtime=health_advice_buffered,
         )
         for source_label in _source_labels_from_system_prompt(system_content):
             if source_label not in sources_used:
@@ -9719,6 +9822,10 @@ class AgentExecutor:
         # 字节稳定,turn 内容落在增长尾部,天然不破坏前缀匹配。块文本逐字保留。
         turn_context_parts: List[str] = []
         turn_context_parts.append(self._agent_kernel_time_context(client_time_context))
+        if health_evidence_turn is not None:
+            # Clinical envelope precedes every surface-format instruction. Clients
+            # may alter presentation, never risk semantics or admitted evidence.
+            turn_context_parts.append(health_evidence_turn.private_prompt())
         actionable_context = format_actionable_context_prompt(
             (self._agent_kernel_snapshot.actionable_references or ())
             if self._agent_kernel_snapshot is not None
@@ -9781,7 +9888,12 @@ class AgentExecutor:
                 turn_context_parts.append(database_verification_snapshot)
         # 入口 deeplink 携带的结构化上下文 — 用户在 SNP/饮食/运动等页点"详细聊"时,
         # 把当前页正展示的具体方案条目透传过来, 让 LLM 不重新猜, 在已有方案上深化.
-        if extra_context and extra_context.strip():
+        if (
+            extra_context
+            and extra_context.strip()
+            and health_evidence_turn is None
+            and not health_continuation_attempted
+        ):
             turn_context_parts.append(
                 "## 入口上下文 (用户正在看的具体方案)\n"
                 "用户从下面这个上下文点过来跟你详细聊, 请在**这些已展示的具体条目**上深化, "
@@ -9792,7 +9904,7 @@ class AgentExecutor:
         # fast-routed 简单回合跳过系统知识库检索: KB claim 是给分析/解读用的依据,
         # 对「今天喝了多少水」无用, 且检索本身占 pre-first-token 壁钟 (kb_ms)。
         system_kb_context = (
-            "" if self._fast_route_simple_turn
+            "" if self._fast_route_simple_turn or health_advice_buffered
             else self._build_system_knowledge_prompt_context(user_id, message)
         )
         pre_stages["kb_ms"] = _pre_stage(_t_stage)
@@ -9803,10 +9915,31 @@ class AgentExecutor:
         # 2026-05-14: 用户数据源 inspection — 不依赖 system_prompt 实际用了什么,
         # 直接 SQL count 用户哪些表有数据, 给"AI 用了什么数据"chip 用.
         _t_stage = time.time()
-        try:
-            sources_used.extend(_inspect_user_data_sources(self.db, user_id))
-        except Exception as e:
-            logger.warning(f"[sources_used] inspect failed: {e}")
+        if health_evidence_turn is not None:
+            # Truthful projection: list only evidence actually selected this turn,
+            # never every populated user table.
+            health_preview = health_evidence_turn.public_manifest()
+            sources_used = list(
+                dict.fromkeys(
+                    str(item.get("organization") or "").strip()
+                    for item in health_preview.get("authority_sources", [])
+                    if str(item.get("organization") or "").strip()
+                )
+            )
+            context_categories = [
+                str(item).strip()
+                for item in health_preview.get("context_categories_used", [])
+                if str(item).strip()
+            ]
+            if context_categories:
+                sources_used.append(
+                    "个人健康上下文：" + "、".join(context_categories)
+                )
+        else:
+            try:
+                sources_used.extend(_inspect_user_data_sources(self.db, user_id))
+            except Exception as e:
+                logger.warning(f"[sources_used] inspect failed: {e}")
         pre_stages["inspect_ms"] = _pre_stage(_t_stage)
 
         # 3. 构建对话历史
@@ -9948,6 +10081,12 @@ class AgentExecutor:
             tools = get_health_tools(subset=list(turn_tool_names))
         else:
             tools = get_health_tools()
+        if health_advice_buffered:
+            # The compiler has already selected the frozen personal packet and
+            # admitted reviewed authority claims. Synthesis receives no tools:
+            # it cannot widen evidence, mutate health state, or fall into a weak
+            # tool-decision round before producing the answer.
+            tools = []
         if self._turn_attachment_write_receipts:
             blocked_attachment_write_tools = {"upload_medical_exam_text"}
             tools = [
@@ -9956,7 +10095,8 @@ class AgentExecutor:
                 if (tool.get("function") or {}).get("name")
                 not in blocked_attachment_write_tools
             ]
-        # 任一子集(fast big-3 或 analysis 只读)激活 → 走同一 withheld-upgrade 护栏。
+        # 任一真实子集(fast big-3 或 analysis 只读)激活 → 走 withheld-upgrade。
+        # health evidence 不是“可升级子集”：它是强制零工具的临床边界。
         tool_subset_active = turn_tool_names is not None
 
         # 5. Agent 循环
@@ -10050,6 +10190,14 @@ class AgentExecutor:
         self._http_client = httpx.AsyncClient(timeout=90.0)
         try:
             for round_idx in range(MAX_TOOL_ROUNDS):
+                if deterministic_health_release:
+                    # Sufficiency is a pre-synthesis policy decision. Clarify,
+                    # high/emergency, and authority-miss turns are rendered by
+                    # the deterministic verifier, so waiting for a model whose
+                    # prose will be discarded only adds latency and cost.
+                    full_reply = "本轮由确定性健康策略直接生成。"
+                    final_finish_reason = "stop"
+                    break
                 # 快路由逃生门(见 FAST_ROUTE_ESCALATE_AFTER_ROUNDS 常量注释):整轮快路由用掉
                 # N 轮仍未收敛 → 换回强模型跑完剩下的轮。恢复 _request_model_id=None 即回到
                 # 快路由介入**前**的默认路由(admin global / user pref)—— 因为快路由本就只在
@@ -10128,8 +10276,14 @@ class AgentExecutor:
                             first_token_at = time.time()
                         # 内层调用整段一次返回 → 切成 20-char token 让端逐块渲染
                         # (镜像既有非流式兜底口径 4827/5024)。
-                        for i in range(0, len(passthrough_final), 20):
-                            yield {"event": "token", "data": {"content": passthrough_final[i:i + 20]}}
+                        if not health_advice_buffered:
+                            for i in range(0, len(passthrough_final), 20):
+                                yield {
+                                    "event": "token",
+                                    "data": {
+                                        "content": passthrough_final[i:i + 20]
+                                    },
+                                }
                         full_reply += passthrough_final
                         passthrough_taken = True
                         # 透传答案是一段完整回答(非待决工具调用)→ finish_reason 与二次合成
@@ -10237,6 +10391,7 @@ class AgentExecutor:
                         # 重合成 (安全不变量: 面向用户的医疗正文绝不来自 fast 模型)。
                         if (
                             not inline_suppressed
+                            and not health_advice_buffered
                             and not self._tool_round_fast_routed
                             and not _record_claim_unverified
                             and not _diet_correction_claim_unverified
@@ -10260,7 +10415,11 @@ class AgentExecutor:
                         #   3. 距上次发 ≥ 间隔 且 新增 reasoning ≥ 字符阈值 (whichever later);
                         #   4. 累积 reasoning 未形成工具结果 JSON 泄漏 (复用 _streaming_leak_forming);
                         #   5. 清洗后片段非空。
-                        if streamed_text or self._tool_round_fast_routed:
+                        if (
+                            health_advice_buffered
+                            or streamed_text
+                            or self._tool_round_fast_routed
+                        ):
                             continue
                         rdelta = evt.get("text") or ""
                         if not rdelta:
@@ -10333,6 +10492,27 @@ class AgentExecutor:
                     len(str(response_content or "")),
                 )
 
+                if (
+                    health_advice_buffered
+                    and isinstance(response, dict)
+                    and response.get("tool_calls")
+                ):
+                    # A provider can hallucinate structured calls even when sent
+                    # tools=[]. Health synthesis is a sealed evidence envelope:
+                    # never upgrade to the full tool set and never execute a
+                    # model-authored read/write call.
+                    logger.warning(
+                        "[health_evidence] discarded model tool calls user=%s count=%s",
+                        user_id,
+                        len(response.get("tool_calls") or []),
+                    )
+                    response = {
+                        **response,
+                        "content": "本轮模型未生成可发布的健康回答。",
+                        "tool_calls": [],
+                        "finish_reason": "stop",
+                    }
+
                 if isinstance(response, dict) and not response.get("tool_calls"):
                     _resp_content = response.get("content") or ""
                     # 数据完整性硬门:**数组形工具结果回显**(`[{` + 白名单字段键)绝不参与
@@ -10403,7 +10583,8 @@ class AgentExecutor:
                 # 上游返回异常时产生重复写入。问题句(如“腰疼怎么办”)不会命中
                 # _extract_clear_symptom_record,仍保持建议路径。
                 if (
-                    isinstance(response, dict)
+                    not health_advice_buffered
+                    and isinstance(response, dict)
                     and not response.get("tool_calls")
                     and not deterministic_simple_record_fallback_attempted
                 ):
@@ -10438,7 +10619,8 @@ class AgentExecutor:
                         )
 
                 if (
-                    isinstance(response, dict)
+                    not health_advice_buffered
+                    and isinstance(response, dict)
                     and not response.get("tool_calls")
                     and not deterministic_goal_lookup_attempted
                 ):
@@ -10459,7 +10641,11 @@ class AgentExecutor:
                             "tool_calls": [deterministic_goal_call],
                         }
 
-                if isinstance(response, dict) and not response.get("tool_calls"):
+                if (
+                    not health_advice_buffered
+                    and isinstance(response, dict)
+                    and not response.get("tool_calls")
+                ):
                     verification_call = _build_goal_verification_tool_call(
                         (
                             self._agent_kernel_snapshot.goal
@@ -10478,7 +10664,8 @@ class AgentExecutor:
                         }
 
                 if (
-                    isinstance(response, dict)
+                    not health_advice_buffered
+                    and isinstance(response, dict)
                     and not response.get("tool_calls")
                     and not deterministic_diet_correction_fallback_attempted
                 ):
@@ -10572,7 +10759,8 @@ class AgentExecutor:
                         }
 
                 if (
-                    isinstance(response, dict)
+                    not health_advice_buffered
+                    and isinstance(response, dict)
                     and not response.get("tool_calls")
                     and not deterministic_symptom_fallback_attempted
                 ):
@@ -10778,7 +10966,7 @@ class AgentExecutor:
                         and not self._tool_round_fast_routed
                         and not write_action_requested
                     ):
-                        if not streamed_to_client:
+                        if not streamed_to_client and not health_advice_buffered:
                             yield {"event": "token", "data": {"content": text_content}}
                         full_reply += text_content
 
@@ -11306,13 +11494,14 @@ class AgentExecutor:
                         final_finish_reason = "error"
                         # 部分成功要点名(write_receipts=本轮已验证写入),不一刀切否定
                         _unverified_msg = _unverified_write_message(write_receipts)
-                        for i in range(0, len(_unverified_msg), 20):
-                            yield {
-                                "event": "token",
-                                "data": {
-                                    "content": _unverified_msg[i:i + 20]
-                                },
-                            }
+                        if not health_advice_buffered:
+                            for i in range(0, len(_unverified_msg), 20):
+                                yield {
+                                    "event": "token",
+                                    "data": {
+                                        "content": _unverified_msg[i:i + 20]
+                                    },
+                                }
                         full_reply += _unverified_msg
                         break
 
@@ -11335,12 +11524,13 @@ class AgentExecutor:
                                     f"另有 {len(write_receipts)} 项记录已完成并取得回执。\n\n"
                                     f"{pending_text}"
                                 )
-                            for i in range(0, len(pending_text), 20):
-                                chunk = pending_text[i:i + 20]
-                                yield {
-                                    "event": "token",
-                                    "data": {"content": chunk},
-                                }
+                            if not health_advice_buffered:
+                                for i in range(0, len(pending_text), 20):
+                                    chunk = pending_text[i:i + 20]
+                                    yield {
+                                        "event": "token",
+                                        "data": {"content": chunk},
+                                    }
                             full_reply += pending_text
                             final_finish_reason = "stop"
                             break
@@ -11378,9 +11568,13 @@ class AgentExecutor:
                         if safety_suffix and safety_suffix not in final_text:
                             final_text = f"{final_text}\n\n{safety_suffix}" if final_text else safety_suffix
                         if final_text:
-                            for i in range(0, len(final_text), 20):
-                                chunk = final_text[i:i + 20]
-                                yield {"event": "token", "data": {"content": chunk}}
+                            if not health_advice_buffered:
+                                for i in range(0, len(final_text), 20):
+                                    chunk = final_text[i:i + 20]
+                                    yield {
+                                        "event": "token",
+                                        "data": {"content": chunk},
+                                    }
                             full_reply += final_text
                             break
 
@@ -11401,9 +11595,13 @@ class AgentExecutor:
 
                         deterministic_query_text = query_readouts.deterministic_query_reply(messages)
                         if deterministic_query_text:
-                            for i in range(0, len(deterministic_query_text), 20):
-                                chunk = deterministic_query_text[i:i + 20]
-                                yield {"event": "token", "data": {"content": chunk}}
+                            if not health_advice_buffered:
+                                for i in range(0, len(deterministic_query_text), 20):
+                                    chunk = deterministic_query_text[i:i + 20]
+                                    yield {
+                                        "event": "token",
+                                        "data": {"content": chunk},
+                                    }
                             full_reply += deterministic_query_text
                             # 最终答案路径 → finish_reason 对齐 'stop' (completion_status → complete),
                             # 不留工具轮的 'tool_calls' 陈值 (镜像 rank7 passthrough 收尾)。
@@ -11424,17 +11622,18 @@ class AgentExecutor:
                             last_recoverable_write_rejection,
                             write_receipts,
                         )
-                        for i in range(
-                            0,
-                            len(terminal_rejection),
-                            20,
-                        ):
-                            yield {
-                                "event": "token",
-                                "data": {
-                                    "content": terminal_rejection[i:i + 20]
-                                },
-                            }
+                        if not health_advice_buffered:
+                            for i in range(
+                                0,
+                                len(terminal_rejection),
+                                20,
+                            ):
+                                yield {
+                                    "event": "token",
+                                    "data": {
+                                        "content": terminal_rejection[i:i + 20]
+                                    },
+                                }
                         full_reply += terminal_rejection
                         break
 
@@ -11646,14 +11845,18 @@ class AgentExecutor:
                         # 破坏性/同步意图但 0 工具执行 = 动作未执行 → 诚实覆盖(加层不减层)。
                         final_text = _destructive_or_sync_not_performed_message(message)
                         streamed_to_client = False
-                    if streamed_to_client and final_text.startswith(streamed_text):
+                    if (
+                        not health_advice_buffered
+                        and streamed_to_client
+                        and final_text.startswith(streamed_text)
+                    ):
                         # 正文已实时下发,只补 interrupted notice 等未流式的后缀。
                         tail = final_text[len(streamed_text):]
                         if tail:
                             if first_token_at is None:
                                 first_token_at = time.time()
                             yield {"event": "token", "data": {"content": tail}}
-                    else:
+                    elif not health_advice_buffered:
                         # 重试/兜底产生的新文本 (非流式来源) → 一次性下发。
                         if final_text:
                             if first_token_at is None:
@@ -11717,9 +11920,10 @@ class AgentExecutor:
                         "我已经完成了多轮数据查询，但没有生成足够明确的最终结论。"
                         "请缩小问题范围，或稍后使用更强模型重新分析。"
                     )
-                for i in range(0, len(final_text), 20):
-                    chunk = final_text[i:i + 20]
-                    yield {"event": "token", "data": {"content": chunk}}
+                if not health_advice_buffered:
+                    for i in range(0, len(final_text), 20):
+                        chunk = final_text[i:i + 20]
+                        yield {"event": "token", "data": {"content": chunk}}
                 full_reply += final_text
 
         except Exception as e:
@@ -11748,7 +11952,8 @@ class AgentExecutor:
                     final_finish_reason = "stop"
             else:
                 error_msg = safe_llm_error_message(e)
-            yield {"event": "token", "data": {"content": error_msg}}
+            if not health_advice_buffered:
+                yield {"event": "token", "data": {"content": error_msg}}
             full_reply = error_msg
             if final_finish_reason != "stop":
                 final_finish_reason = "error"
@@ -11769,7 +11974,8 @@ class AgentExecutor:
             reference_now=self._agent_kernel_reference_now(),
         )
         record_intent_no_tool = bool(
-            self._prefer_fast_record_model
+            health_evidence_turn is None
+            and self._prefer_fast_record_model
             and not write_receipts
             and not self._agent_kernel_pending_confirmation_tools
             and not last_recoverable_write_rejection
@@ -11777,7 +11983,8 @@ class AgentExecutor:
         # 破坏性/同步意图从 fast-record 集排除后(留强模型),其 0-工具 缺口在此补上,
         # 与 record_intent_no_tool 加层不减层(不与之重叠:record 集已被上面判掉)。
         destructive_or_sync_no_tool = bool(
-            not record_intent_no_tool
+            health_evidence_turn is None
+            and not record_intent_no_tool
             and _needs_reliable_tool_model(message or "")
             and tool_executed_count == 0
         )
@@ -11803,6 +12010,54 @@ class AgentExecutor:
                 user_id,
                 len(message or ""),
             )
+        if health_evidence_turn is not None:
+            # This is the only release point for model-authored health advice.
+            # Every earlier token path is buffered; only deterministic verifier
+            # output may be persisted or sent to any client.
+            try:
+                health_verification = health_evidence_turn.verify(full_reply)
+            except Exception as exc:  # noqa: BLE001 - fail closed, never leak candidate
+                logger.exception(
+                    "[health_evidence] final verifier failed user=%s error_type=%s",
+                    user_id,
+                    type(exc).__name__,
+                )
+                health_verification = (
+                    health_evidence_turn.verifier_failure()
+                )
+            full_reply = health_verification.text
+            health_evidence_manifest = health_evidence_turn.public_manifest(
+                verification=health_verification,
+            )
+            sources_used = list(
+                dict.fromkeys(
+                    str(item.get("organization") or "").strip()
+                    for item in health_evidence_manifest.get(
+                        "authority_sources",
+                        [],
+                    )
+                    if str(item.get("organization") or "").strip()
+                )
+            )
+            context_categories = [
+                str(item).strip()
+                for item in health_evidence_manifest.get(
+                    "context_categories_used",
+                    [],
+                )
+                if str(item).strip()
+            ]
+            if context_categories:
+                sources_used.append(
+                    "个人健康上下文：" + "、".join(context_categories)
+                )
+            if first_token_at is None:
+                first_token_at = time.time()
+            for i in range(0, len(full_reply), 24):
+                yield {
+                    "event": "token",
+                    "data": {"content": full_reply[i:i + 24]},
+                }
         # [guidance-probe · 2026-07-17] 主对话 R4 guidance 红线的**纯影子测量**(只打 log)。
         # 现状(对抗评审揪出): diet_prescription_red_line(CRITICAL) / movement_imperative_red_line
         # 只扫 twin.acute.pending_guidance_texts, 而 builder 永不填充、agent_executor 零调用
@@ -11821,7 +12076,16 @@ class AgentExecutor:
         # reva-ui 表格卡片, 追加到答案末尾 (镜像图表 "叙事在前、卡片在后" 的顺序)。
         # 数值全部来自工具结果具名字段 (R4); 在 _strip_reva_ui_from_llm_text **之后**追加
         # → 确定性 fence 不会被防伪造剥离器吃掉。fail-open: 无表/任何异常 → 逐字节现状。
-        if genui_tool_calls and (genui_table_on or genui_diet_summary_on or genui_sleep_summary_on or genui_medication_list_on):
+        if (
+            not health_advice_buffered
+            and genui_tool_calls
+            and (
+                genui_table_on
+                or genui_diet_summary_on
+                or genui_sleep_summary_on
+                or genui_medication_list_on
+            )
+        ):
             try:
                 from app.services.genui import (
                     build_tables_from_tool_calls,
@@ -11981,7 +12245,7 @@ class AgentExecutor:
         tool_models = list(self._tool_model_names)
         fallback_reasons = list(self._model_fallback_reasons)
         evidence_cards = []
-        if completion_status == "complete":
+        if completion_status == "complete" and health_evidence_turn is None:
             try:
                 evidence_card = self._build_system_knowledge_evidence_card(user_id, message)
                 if evidence_card:
@@ -12014,6 +12278,24 @@ class AgentExecutor:
                 self._turn_aigc_media_cards,
                 response_cards,
             )
+        if (
+            health_evidence_turn is not None
+            and health_evidence_manifest is not None
+        ):
+            health_card = health_evidence_turn.card_descriptor(
+                verification=health_verification,
+            )
+            response_cards = _merge_agent_card_descriptors(
+                response_cards,
+                [health_card],
+            )
+            yield {
+                "event": "card",
+                "data": {
+                    "anchor": "health_evidence",
+                    "descriptor": health_card,
+                },
+            }
 
         # Slice 3: 一轮完成 ≥2 个写类工具 → done 附 save_recipe 描述符 (仅描述符,
         # 移动端渲染"存为配方"入口)。候选步骤持久化到 message.meta.recipe_candidate,
@@ -12058,7 +12340,11 @@ class AgentExecutor:
 
         # P1 数字锚定核验(shadow): 观测最终答案里的个人数值能否锚定到 Twin。additive
         # 摘要进 meta + done, 客户端不读不炸。内部全 fail-soft, 绝不打死回合。
-        citation_anchor = _citation_anchor_shadow_meta(self.db, user_id, full_reply)
+        citation_anchor = (
+            None
+            if health_evidence_turn is not None
+            else _citation_anchor_shadow_meta(self.db, user_id, full_reply)
+        )
         kernel_trace = self._agent_kernel_trace_summary(status=completion_status)
 
         # rank7: passthrough 观测/标记进 meta(offline judge 读)。shadow 落 would-be
@@ -12103,6 +12389,18 @@ class AgentExecutor:
                 "completion_status": completion_status,
                 "record_intent_no_tool": record_intent_no_tool,
                 "turn_outcome": turn_outcome,
+                **(
+                    {
+                        "health_evidence_manifest": health_evidence_manifest,
+                        "health_evidence_verification": (
+                            health_verification.public_dict()
+                            if health_verification is not None
+                            else None
+                        ),
+                    }
+                    if health_evidence_manifest is not None
+                    else {}
+                ),
                 **(
                     {"recovery_action": recovery_action}
                     if recovery_action is not None
@@ -12153,6 +12451,18 @@ class AgentExecutor:
                 "completion_status": completion_status,
                 "record_intent_no_tool": record_intent_no_tool,
                 "turn_outcome": turn_outcome,
+                **(
+                    {
+                        "health_evidence_manifest": health_evidence_manifest,
+                        "health_evidence_verification": (
+                            health_verification.public_dict()
+                            if health_verification is not None
+                            else None
+                        ),
+                    }
+                    if health_evidence_manifest is not None
+                    else {}
+                ),
                 **(
                     {"recovery_action": recovery_action}
                     if recovery_action is not None
@@ -13340,6 +13650,7 @@ class AgentExecutor:
     def _build_system_prompt(
         self, user_id: int, conv_id: int, user_auth_token: Optional[str],
         lite: bool = False, intent_query: Optional[str] = None,
+        health_evidence_runtime: bool = False,
     ) -> str:
         """构建统一 Agent 的 system prompt。
 
@@ -13411,7 +13722,14 @@ class AgentExecutor:
             *(_GENE_RULES_PROMPT_BLOCK if _wants_gene_rules_block(intent_query) else ()),
             *(_MENU_SHARE_PROMPT_BLOCK if _wants_menu_share_block(intent_query) else ()),
             "## 安全与边界 (R4 — 必须严格遵守)",
-            "- 解读异常指标/给健康建议时,先调用 knowledge_search 取依据;无命中就如实说明依据来自通用知识,**绝不编造引用或具体研究**。",
+            (
+                "- 本轮权威医学证据已由健康证据运行时完成检索、准入和注入；"
+                "不得再次调用 knowledge_search 替换或扩张证据，只能使用本轮已审定 claim。"
+                if health_evidence_runtime
+                else
+                "- 解读异常指标/给健康建议时,先调用 knowledge_search 取依据;"
+                "无命中就如实说明依据来自通用知识,**绝不编造引用或具体研究**。"
+            ),
             "- **不得把补剂/保健品作为针对某指标异常的治疗或\"护X\"方案推荐**(例:不得说\"姜黄素/NAC 护肝\")。补剂相关一律表述为\"是否需要请医生评估\";任何剂量数字必须注明\"须医生确认\"。",
             "- 任何把指标改善归因于某项干预(如\"ALT 下降=某方案有效\")**必须标注\"相关性,非因果\"**,不得下因果结论。",
             "- **不得对结构性发现下\"无需处理/不用管\"的临床判断**;改为\"通常定期随访,以医生意见为准\"。",
@@ -13423,7 +13741,7 @@ class AgentExecutor:
 
         # 注入 ak-kbase gene_knowledge 高优先级警示规则（PM/缺陷/纯合风险）
         # lite 回合跳过: 分析用的基因规则库对「记录喝水/多少水」是纯 prefill 噪音。
-        if not lite:
+        if not lite and not health_evidence_runtime:
             try:
                 from app.services.gene_rules_registry import get_registry
                 gene_section = get_registry().system_prompt_section(user_phenotypes=None)
@@ -13432,28 +13750,30 @@ class AgentExecutor:
             except Exception:
                 pass
 
-        # 注入健康上下文 (lite 与 full 都注入 —— 基础画像是记录/查询也需要的最小上下文)
-        try:
-            from app.services.health_context_lite_service import (
-                build_lite_health_context, _get_time_period,
-            )
-            # P2 意图分级: intent_query 存在时按纯知识 vs 个人判读裁剪个人上下文预算;
-            # None (默认 / 多模型综合入口) → 全量注入, 零回归。
-            health_ctx = build_lite_health_context(self.db, user_id, intent=intent_query)
-            if health_ctx:
-                parts.append("\n## 用户健康档案")
-                parts.append(health_ctx)
+        # 健康证据运行时已经从一份冻结 Twin 编译了 query-specific packet；
+        # 不再叠加旧版泛化档案，避免重复、冲突和“表里有就声称用过”。
+        if not health_evidence_runtime:
+            try:
+                from app.services.health_context_lite_service import (
+                    build_lite_health_context, _get_time_period,
+                )
+                # P2 意图分级: intent_query 存在时按纯知识 vs 个人判读裁剪个人上下文预算;
+                # None (默认 / 多模型综合入口) → 全量注入, 零回归。
+                health_ctx = build_lite_health_context(self.db, user_id, intent=intent_query)
+                if health_ctx:
+                    parts.append("\n## 用户健康档案")
+                    parts.append(health_ctx)
 
-            _, period = _get_time_period()
-            parts.append(f"\n当前时段: {period}")
-        except Exception as e:
-            logger.warning(f"Agent 健康上下文注入失败: {e}")
+                _, period = _get_time_period()
+                parts.append(f"\n当前时段: {period}")
+            except Exception as e:
+                logger.warning(f"Agent 健康上下文注入失败: {e}")
 
         # ──── 分析 blob (仅 full 回合注入) ────
         # 下面这一组都是给分析/建议/复盘用的重上下文: 原研药建议、健康世界观、肝脏/血常规
         # 趋势、用药疗程、干预闭环、N-of-1 效应估计、对话记忆。fast-routed 简单记录/查询回合
         # (lite=True) 全部跳过 —— 对「记录喝水」「今天喝了多少水」无用, 只增加 prefill 与噪音。
-        if not lite:
+        if not lite and not health_evidence_runtime:
             # 注入原研药可换建议(基于在用药;已采纳/忽略的已被抑制,不会重复推荐)
             try:
                 from app.services.originator_recommendations import originator_recs_prompt_blob
@@ -16648,11 +16968,11 @@ class AgentExecutor:
         )
 
     async def _exec_knowledge_search(self, args: dict) -> str:
-        """检索两路知识库, fail-honest, 不静默返回空:
-          1. 已审定 System KB v2 claims (DB-backed, owner-reviewed 通用结论)
-          2. 得到医学 wiki RAG 片段 (ChromaDB, 仅供参考)
-        二者各自独立 try/except: 一路挂不影响另一路。两路全空且 dedao 探测不可用 →
-        诚实「检索失败」; 两路全空但可用 → 诚实「未命中」; 任一有命中 → 合并双区块返回。
+        """检索已审定 System KB v2, fail-honest, 不静默返回空。
+
+        common ``knowledge_search`` 是用户可见医学依据的运行时边界,只允许
+        owner-reviewed System KB 结论。得到/Dedao 素材只可参与离线选题、改写与审核,
+        不得作为 raw runtime fallback;否则 reviewed KB 的未命中/故障会被伪装成有依据。
         """
         query = (args.get("query") or "").strip()
         if not query:
@@ -16669,90 +16989,49 @@ class AgentExecutor:
             n = 5
         n = max(1, min(8, n))
 
-        # ── 1. 已审定 System KB v2 claims (通用 reviewed 结论, 非个性化) ──
+        # 已审定 System KB v2 claims (通用 reviewed 结论, 非个性化)。
         kb_results: list[dict] = []
+        kb_errored = False
         try:
             from app.services.system_knowledge_service import search_knowledge as kb_search
             kb_payload = kb_search(self.db, query, limit=n)
             kb_results = (kb_payload or {}).get("results") or []
-        except Exception as e:  # noqa: BLE001 — fail honest, 一路挂不冒充成功
+        except Exception as e:  # noqa: BLE001 — fail honest, 不冒充未命中
             logger.warning(f"[knowledge_search] System KB 检索失败: {e}")
             kb_results = []
+            kb_errored = True
 
-        # ── 2. 得到医学 wiki RAG (ChromaDB) ──
-        dedao_results: list[dict] = []
-        dedao_errored = False
-        try:
-            from app.agents.knowledge_librarian.indexer import search_knowledge
-            dedao_results = search_knowledge(query, n_results=n) or []
-        except Exception as e:  # noqa: BLE001 — fail honest, 一路挂不冒充成功
-            logger.warning(f"[knowledge_search] 得到 wiki 检索失败: {e}")
-            dedao_results = []
-            dedao_errored = True
-
-        # ── 双路全空: 区分「不可用」与「零命中」(否则模型把挂了误当未收录而编造) ──
-        # indexer.search_knowledge 对「不可用」与「零命中」都返回 [](契约不能改,
-        # librarian.py 依赖 []),故旁路探测 dedao collection 可用性。
-        if not kb_results and not dedao_results:
-            dedao_available = False
-            if not dedao_errored:
-                try:
-                    from app.agents.knowledge_librarian.indexer import _get_collection
-                    collection = _get_collection()
-                    dedao_available = collection is not None and collection.count() > 0
-                except Exception:  # noqa: BLE001 — 探测自身出错 → 视作不可用(诚实)
-                    dedao_available = False
-
-            if not dedao_available:
+        if not kb_results:
+            if kb_errored:
                 return (
-                    "知识库检索失败(暂不可用),请基于已有信息谨慎作答,勿编造依据。"
+                    "已审定知识库检索失败(暂不可用),"
+                    "请基于已有信息谨慎作答,勿编造依据或引用。"
                 )
             return (
-                f"知识库未命中『{query}』相关条目(该主题可能未收录)。"
-                "请如实说明依据来自通用医学知识而非本系统知识库,勿编造引用。"
+                f"已审定知识库未命中『{query}』相关条目(该主题可能未收录)。"
+                "请如实说明缺少本系统已审定依据,勿编造引用。"
             )
 
-        # ── 合并双区块 ──
-        sections: list[str] = []
-
-        if kb_results:
-            kb_lines = [
-                "【已审定知识库(owner-reviewed,通用结论,需结合个人情况,非诊断)】",
-                "(以下为已审定的通用医学结论,非针对当前用户的个性化判断;"
-                "个性化证据见 Twin evidence card。仅供参考,不替代医生,不得据此开处方/给剂量)",
-                "以下条目按主题相关性召回,未经『是否适用于本用户』判定;"
-                "若与本用户实际指标/基因/用药不符,以 Twin evidence card 为准并忽略本条。",
-            ]
-            for i, r in enumerate(kb_results, 1):
-                doc = (r.get("document") or {}) if isinstance(r, dict) else {}
-                title = (doc.get("title") or "").strip()
-                snippet = (doc.get("summary") or doc.get("body") or "").strip().replace("\n", " ")
-                if len(snippet) > 300:
-                    snippet = snippet[:300] + "…"
-                evidence = (doc.get("evidence_level") or "").strip()
-                label = title or doc.get("doc_id") or "结论"
-                head = f"{i}. [{label}]"
-                if evidence:
-                    head += f"(证据等级 {evidence})"
-                kb_lines.append(f"{head} {snippet}")
-            sections.append("\n".join(kb_lines))
-
-        if dedao_results:
-            dd_lines = ["【得到医学wiki 检索片段(仅供参考)】"]
-            for i, r in enumerate(dedao_results, 1):
-                snippet = (r.get("text") or "").strip().replace("\n", " ")
-                if len(snippet) > 400:
-                    snippet = snippet[:400] + "…"
-                title = (r.get("title") or "").strip()
-                source = (r.get("source") or "").strip()
-                label = title or source or "片段"
-                head = f"{i}. [{label}]"
-                if source and source != label:
-                    head += f" ({source})"
-                dd_lines.append(f"{head} {snippet}")
-            sections.append("\n".join(dd_lines))
-
-        return "\n\n".join(sections)
+        kb_lines = [
+            "【已审定知识库(owner-reviewed,通用结论,需结合个人情况,非诊断)】",
+            "(以下为已审定的通用医学结论,非针对当前用户的个性化判断;"
+            "个性化证据见 Twin evidence card。仅供参考,不替代医生,不得据此开处方/给剂量)",
+            "以下条目按主题相关性召回,未经『是否适用于本用户』判定;"
+            "若与本用户实际指标/基因/用药不符,以 Twin evidence card 为准并忽略本条。",
+        ]
+        for i, r in enumerate(kb_results, 1):
+            doc = (r.get("document") or {}) if isinstance(r, dict) else {}
+            title = (doc.get("title") or "").strip()
+            snippet = (doc.get("summary") or doc.get("body") or "").strip().replace("\n", " ")
+            if len(snippet) > 300:
+                snippet = snippet[:300] + "…"
+            evidence = (doc.get("evidence_level") or "").strip()
+            label = title or doc.get("doc_id") or "结论"
+            head = f"{i}. [{label}]"
+            if evidence:
+                head += f"(证据等级 {evidence})"
+            kb_lines.append(f"{head} {snippet}")
+        return "\n".join(kb_lines)
 
     async def _exec_realtime_search(self, args: dict) -> str:
         """实时联网检索(阿里云 IQS)给 chat/体检分析路径做最新指南/时效事实接地。
