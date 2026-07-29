@@ -284,8 +284,11 @@ def cauda_equina_warning(twin: HealthTwin) -> Optional[Alert]:
             ),
             data_citation={"symptoms": twin.acute.symptom_texts_all[:6]},
             references=[
+                (
+                    "https://www.nice.org.uk/guidance/ng127/chapter/"
+                    "Recommendations-for-adults-aged-over-16"
+                ),
                 "https://www.nhs.uk/conditions/back-pain/",
-                "https://www.nice.org.uk/guidance/ng59",
             ],
             requires_medical_attention=True,
         )

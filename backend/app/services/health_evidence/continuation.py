@@ -76,7 +76,9 @@ _CANONICAL_PHRASES: dict[str, dict[str, str]] = {
         "unknown": "",
     },
     "low_back.cauda_equina": {
-        "yes": "排不出尿并且会阴麻木",
+        "yes": (
+            "排尿困难、膀胱/肠道控制改变或会阴感觉异常中至少一项为是"
+        ),
         "no": (
             "没有排尿困难，没有尿失禁，没有大小便异常，"
             "没有会阴麻木，没有鞍区麻木"
@@ -84,17 +86,17 @@ _CANONICAL_PHRASES: dict[str, dict[str, str]] = {
         "unknown": "",
     },
     "low_back.progressive_neurologic_deficit": {
-        "yes": "双腿无力",
+        "yes": "双腿明显或进行性麻木/无力警示线索中至少一项为是",
         "no": "没有双腿麻木或无力",
         "unknown": "",
     },
     "low_back.major_trauma": {
-        "yes": "近期有严重外伤",
+        "yes": "近期严重外伤警示线索为是",
         "no": "近期没有严重外伤或车祸",
         "unknown": "",
     },
     "low_back.systemic_red_flag": {
-        "yes": "伴有高热",
+        "yes": "发热、不明原因体重下降或癌症/严重感染史中至少一项为是",
         "no": (
             "没有发热或严重感染，没有不明原因体重下降，"
             "没有癌症史"

@@ -455,8 +455,8 @@ class Settings(BaseSettings):
     legacy_knowledge_runtime_enabled: bool = False
     # 同端健康证据运行时。临床语义、个人上下文、权威证据与最终校验都由后端
     # 一次性编译，Mobile/Mac 仅承担展示；关闭时回到原有通用 Agent 路径。
-    # Clinical-content release stays opt-in until the reviewed claim pack has an
-    # independent medical sign-off recorded in its release manifest.
+    # 发布边界：reviewer_role=product_owner + T1 source boundary review；
+    # clinical_signoff=not_claimed。开关仅控制运行时启用，不改变该审定边界。
     health_evidence_runtime_enabled: bool = False
     # 健康建议统一由服务端指定的强模型合成，避免客户端默认模型造成临床质量漂移。
     # 需要切换时在服务端配置，而不是由 Mobile/Mac 各自选择。
