@@ -4,8 +4,8 @@
 |---|---|
 | slug | `mobile-health-evidence-runtime` |
 | 创建日期 | 2026-07-29 |
-| 当前阶段 | 本地 G3/G4 已通过 → 干净 main 集成验证与 CI |
-| 状态 | release-candidate / not-deployed |
+| 当前阶段 | 干净 main 本地集成已通过 → main CI |
+| 状态 | integrated-main-candidate / not-deployed |
 | 负责 | product owner + Codex |
 | 反馈环 | backend deploy → Web deploy → Mobile OTA → Mobile/Mac 真实路径对照 |
 
@@ -229,7 +229,7 @@
   - [x] T7 Mobile evidence/clarification UI
   - [x] T8 parity/golden/integration/safety review
   - [ ] T9 backend deploy → Web deploy → Mobile OTA → production verification
-    （local G3 与 G4 已通过；待干净 main 集成 CI）
+    （local G3/G4 与干净 main 本地集成已通过；待 main CI）
 - 并发检查(`git fetch` + `gh pr list`,没被抢先):☒
   - overlap noted: PR #221 claim honesty and PRs #214/#216 medical safety; this
     implementation avoids cherry-picking unrelated branches and will run overlap review.
@@ -240,7 +240,9 @@
 - 分支(off origin/main)/ commit: `codex/mobile-health-evidence-runtime` off
   `origin/main@b3e15300c`;release-hardening code head
   `832d7325615fdc810bc50112377cf774448a078f`，
-  不代表已合入 main 或部署
+  integrated main merge `0d674fa28b503d006d133de9b7107dca2e06936f`，
+  regenerated client types `ab300686f5c14f05bd3f32a951ebe5eb6cfa223e`；
+  不代表已部署
 - 实现边界:
   - 这是低背痛 golden safety slice + 可复用 runtime，不是全医学域完成；
   - low-back compiler 用症状/问题/用药/过敏/慢病安全核心和查询相关可穿戴，
@@ -273,7 +275,9 @@
   - runtime-only exact contract / semantic top-1 / mutation-lock 真实 PostgreSQL
     复验 10/10；向量 SQL 错误后外层 advisory lock 仍阻塞并发 importer。
 - clients:
-  - Mobile 8 suites / 202 tests；TypeScript 0 error；lint 0 error；
+  - feature candidate Mobile 8 suites / 202 tests；
+  - integrated Mobile + main medical-import overlap 12 suites / 297 tests；
+    TypeScript 0 error；lint 0 error；
   - Web 2 suites / 20 tests；TypeScript 0 error；lint 0 error；
   - 无 native/plugin/SDK/lockfile diff，发布路由为 OTA。
 - release transaction:
@@ -284,8 +288,14 @@
   （460 claims / 247 entities / 3318 relations）PASS。
 - system-map/doc drift: 从当前冻结代码重新生成，`check_doc_drift.py` 与
   `check_dossier_consistency.py` 均 PASS。
-- main CI 真实色: 待与最新 `origin/main` 集成、双端重新生成 OpenAPI types 后触发。
-- **裁决**: local candidate ☒ 绿；最终 G3 ☐ 绿 ☒ PENDING integrated-main CI
+- clean-main local integration:
+  - 合入最新 `origin/main@684823494`，无冲突；Mobile/Web OpenAPI types 从合并后
+    backend 重新生成；
+  - feature 20 文件 backend 矩阵 692 passed / 3 skipped，main 新增
+    `test_medical_exams.py` 20/20，release transaction 69/69；
+  - doc drift、Dossier consistency、Shell 语法、diff check 均 PASS。
+- main CI 真实色: 待 push `main` 后触发并读取远端结果。
+- **裁决**: integrated local candidate ☒ 绿；最终 G3 ☐ 绿 ☒ PENDING main CI
 
 ## G4 · 安全闸
 
@@ -316,7 +326,7 @@
   production semantic smoke → OTA
 - TestFlight 判断: 当前仅 Python/JSON/TS/TSX/API 变更，无 native/plugin/SDK/runtime
   变更；按发布契约走 OTA，不浪费 TestFlight build。若最终 diff 出现原生变更再改路由。
-- 部署 SHA / 回滚点: 未执行；等待干净 main 集成与 CI
+- 部署 SHA / 回滚点: 未执行；等待 main CI
 
 ## G5 · 部署健康闸
 
