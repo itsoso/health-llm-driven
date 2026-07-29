@@ -539,7 +539,11 @@ async def test_structured_mobile_continuation_routes_without_keyword_guessing(
         "health_advice.symptom.low_back_pain"
     )
     assert captured_turn["intent"].risk_level.value == "emergency"
-    assert "排不出尿" in captured_turn["query"]
+    assert (
+        "排尿困难、膀胱/肠道控制改变或会阴感觉异常中至少一项为是"
+        in captured_turn["query"]
+    )
+    assert "排不出尿并且会阴麻木" not in captured_turn["query"]
     assert "MRI" in captured_turn["query"]
     assert "立即" in visible
     assert "急诊" in visible
