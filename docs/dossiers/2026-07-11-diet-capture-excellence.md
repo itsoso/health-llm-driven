@@ -167,6 +167,7 @@
 - T5.7 Backend 已从干净且与 `origin/main` 一致的部署副本通过 `./deploy.sh -b -y` 发布；生产 Git HEAD 为 `32ac803bc9f36f7c4e015f7045de6a6b551e6ed4`，本轮无新 migration。部署前备份为 `/var/backups/health-app/database/health_db_2026-07-27_21-16-48_221912.sql.gz`，41 MB、权限 `0600`，force-RLS 数据段、恢复演练和异地加密归档校验通过。
 - T5.8 Backend 已从干净且与 `origin/main` 一致的部署副本通过 `./deploy.sh -b -y` 发布；生产 Git HEAD 为 `b2ee0ec6c19ebf79fd227cf97a3050cc0b7b226a`，本轮无新 migration。部署前备份为 `/var/backups/health-app/database/health_db_2026-07-27_23-28-00_233292.sql.gz`，41 MB、权限 `0600`，force-RLS 数据段、234 表恢复演练与站外加密归档哈希/HMAC 校验通过。
 - T5.8 production OTA：runtime `1.3.2`，update group `d1c14bea-b018-4e28-a0b0-5a7352986ed0`，iOS update `019fa439-1a11-79ce-9b93-65c0a5011016`；发布脚本复核 channel=`production`、commit=`b2ee0ec6c19ebf79fd227cf97a3050cc0b7b226a`、active group/update 与发布结果一致。
+- T5.9 Backend 已从干净且与 `origin/main` 一致的部署副本通过 `./deploy.sh -b` 发布；恢复逻辑代码提交为 `6c2b1c48`，生产 Git HEAD 为 `4bd96fa62a75da8a8b06aee8ccc76764bcf205f7`，本轮无新 migration。部署前备份为 `/var/backups/health-app/database/health_db_2026-07-29_10-32-43_309421.sql.gz`，41 MB、权限 `0600`，force-RLS 数据段、234 表恢复演练与站外加密归档哈希/HMAC 校验通过。该变更为纯 Backend，不发布 Mobile OTA。
 
 ## G5 · 部署健康闸
 
@@ -179,6 +180,7 @@
 - T5.4 增量部署后 `health-backend` 为 active，部署健康分 `60/60 PASS`，skills manifest 本地/线上均为 22；公网 `/api/v1/health` 返回 API、PostgreSQL、Redis、Celery 全部 healthy/connected。
 - T5.7 增量部署后 `health-backend`、`celery-worker`、`celery-beat` 均正常，部署健康分 `60/60 PASS`；公网 `/api/v1/health` 返回 API running、PostgreSQL/Redis/Celery connected。公网 skills manifest 的 HTTP/2 请求出现可恢复传输告警，HTTP/1.1 已验证可读取有效 manifest，不影响 Backend 健康闸。
 - T5.8 增量部署健康分 `60/60 PASS`，skills manifest 本地/线上均为 22；公网 `/api/v1/health` 返回 `healthy`，API running、PostgreSQL/Redis/Celery connected。
+- T5.9 主干 CI run `30416635659` 全绿，包含 Agent Runtime PostgreSQL 语义、真实模型回归、Backend 全分片、Frontend、Mobile、Mac 与类型漂移闸门；一次性真实模型授权变量已在 CI 结束后删除。部署后健康分 `60/60 PASS`，skills manifest 本地/线上均为 22；正确生产入口 `https://health.executor.life/api/v1/health` 经正式域名 SNI 返回 HTTP 200，API running、PostgreSQL/Redis/Celery connected。
 - **裁决：PASS**。
 
 ## S7 · 上线验证
@@ -192,11 +194,12 @@
 - T5.5 模拟器实链路：同一公开餐食图经 Mobile 相册入口和生产 API 返回“橙子鸡、咖喱炒饭、橙子片”3 项草稿；修复前被 Mobile 二次误判为用药/补剂，修复后正常进入待确认且没有写入正式 DietRecord。截图保存在本机 `/tmp/reva-library-draft-no-fab.png`。
 - T5.5 OTA 已绑定 build 221 的 runtime `1.3.1` 与代码提交 `d8cdc1d1e`；设备冷启或后台超过 30 秒后可拉取。真机相册权限体验、微信和小红书投递仍保持待验证，不以 EAS 发布成功替代终端验收。
 - T5.6 OTA 已绑定 build 221 的 runtime `1.3.1` 与代码提交 `da579f055`；设备冷启或后台超过 30 秒后可拉取。自动化已证明相机、相册、文字、语音四种 Mobile 入口确认后都会带 `diet/quick_capture` 上下文回到小巴；真实设备语音输入和真机目标应用分享仍需继续验收。
+- T5.9 失败写入恢复已部署至生产 Backend。自动化与真实模型回归已证明窄确认短语可以在同一用户、同一会话、紧邻顺序且没有已验证或不确定写入时恢复原文字与图片，并为新 Run 使用新的幂等身份；仍需在真机生产会话中人为触发一次可重试失败并完成“重试/需要”闭环，作为最终终端证据。
 - 待真机验证：相机实拍 -> 识别 -> 修正 -> 确认单次写入，以及分享图分别投递微信和小红书。
 
 ## G6 · 验证闸
 
-- 模拟器与生产后端验证通过；真机目标应用投递尚缺证据。
+- 模拟器与生产后端验证通过；T5.9 生产部署与公网健康已通过，真机失败写入恢复及目标应用投递尚缺终端证据。
 - **裁决：PENDING**。保持 `device_validation_pending`，不进入完成态。
 
 ## S8 · 沉淀
