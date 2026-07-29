@@ -778,7 +778,7 @@ def test_recovery_task_settles_an_expired_run(
 
 
 def test_recovery_task_pauses_rollout_after_uncertain_write(
-    db, auth_user_and_headers, monkeypatch
+    db, auth_user_and_headers, monkeypatch, caplog
 ):
     from app.config import settings
     from app.models.agent_runtime import AgentRuntimeRolloutEvent
@@ -809,7 +809,8 @@ def test_recovery_task_pauses_rollout_after_uncertain_write(
         sessionmaker(bind=db.get_bind(), autocommit=False, autoflush=False),
     )
 
-    result = recover_expired_agent_runs(now_iso=now.isoformat())
+    with caplog.at_level("CRITICAL"):
+        result = recover_expired_agent_runs(now_iso=now.isoformat())
 
     db.expire_all()
     assert result["recovered"] == 1
@@ -822,6 +823,11 @@ def test_recovery_task_pauses_rollout_after_uncertain_write(
     assert event.action == "pause"
     assert event.actor_kind == "system"
     assert event.reason_code == "reconciliation_detected"
+    assert (
+        "[agent-runtime] write circuit paused "
+        "reason=reconciliation_detected"
+    ) in caplog.text
+    assert "reconciliation_generation=1 acknowledged_generation=0" in caplog.text
 
 
 def test_recovery_task_pauses_rollout_when_reconciliation_scan_fails(

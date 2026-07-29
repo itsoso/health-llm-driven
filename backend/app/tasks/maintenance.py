@@ -69,9 +69,20 @@ def recover_expired_agent_runs(*, now_iso: str | None = None):
                 "before failing the maintenance task",
                 exc_info=True,
             )
-        rollout_evaluation = AgentRuntimeRolloutService(
-            db
-        ).evaluate_and_maybe_pause(now=now)
+        rollout_service = AgentRuntimeRolloutService(db)
+        rollout_evaluation = rollout_service.evaluate_and_maybe_pause(now=now)
+        if (
+            rollout_evaluation.transition.changed
+            and rollout_evaluation.transition.status == "paused"
+        ):
+            rollout_state = rollout_service.get_state()
+            logger.critical(
+                "[agent-runtime] write circuit paused reason=%s "
+                "reconciliation_generation=%s acknowledged_generation=%s",
+                rollout_evaluation.reason_code,
+                rollout_state.reconciliation_generation,
+                rollout_state.reconciliation_acknowledged_generation,
+            )
         if reconciliation_error is not None:
             raise reconciliation_error
 
