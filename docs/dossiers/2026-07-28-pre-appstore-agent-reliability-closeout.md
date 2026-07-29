@@ -4,11 +4,11 @@
 |---|---|
 | slug | `pre-appstore-agent-reliability-closeout` |
 | 创建日期 | 2026-07-28 |
-| 当前阶段 | S5 验证 |
-| 状态 | building |
+| 当前阶段 | S7 上线验证 |
+| 状态 | validating |
 | 负责 | Codex + 用户 |
 | 规划 | `docs/plans/2026-07-28-pre-appstore-agent-reliability-closeout.md` |
-| 反馈环 | Agent golden traces + privacy-safe attachment telemetry + TestFlight 239 |
+| 反馈环 | Agent golden traces + privacy-safe attachment telemetry + TestFlight 240 |
 
 ## S0 · 用户需求
 
@@ -28,7 +28,7 @@ RequirementAdmission:
   safety_level: privacy_sensitive
   prescription_or_causal_verdict: false
   autonomy_tier: preserve_existing
-  verification_window: automated gates plus TestFlight 239 real-device checks
+  verification_window: automated gates plus TestFlight 240 real-device checks
   success_metric: accepted image Turns survive interruption and historical write failures remain blocked
   added_user_burden: none
   non_goals: [medical behavior changes, framework migration, content telemetry]
@@ -82,8 +82,9 @@ RequirementAdmission:
 - [x] Jest 环境释放 React Query inactive cache 的 GC timer 引用，全量 Mobile
   回归可以自然退出，不再依赖 `--forceExit`。
 - [x] 完成在线合成评测与独立安全评审。
-- [ ] 完成主干提交、部署和 OTA。
-- [ ] 完成 TestFlight 239 真机 G6。
+- [x] 完成主干提交和后端生产部署；Mobile 因包含原生模块删除与图标变化，按发布
+  安全策略改走 TestFlight 原生构建，不发布不完整 OTA。
+- [ ] 完成 TestFlight 240 真机 G6。
 
 ## G3 · 测试闸
 
@@ -231,14 +232,27 @@ RequirementAdmission:
 
 ## S6 / G5 · 部署与健康
 
-- 后端部署和 Mobile production OTA 尚未执行。
-- **裁决: PENDING。** 本段仅声明部署尚未开始，不冒充生产健康验证。
+- 后端从独立干净 `main` 克隆部署提交 `bd7567c92860`，远端部署 SHA 核验一致。
+- 部署前完成 41 MB PostgreSQL 备份、force-RLS 数据完整性检查、234 张表恢复
+  演练，以及异地加密归档 hash/HMAC 校验。
+- 生产托管迁移 `20260728_230000_client_event_idempotency` 已应用，服务重启后
+  健康检查得分 `58/60`，Skills 本地与线上均为 `22/22`。
+- Mobile OTA 安全检查发现自上个 runtime anchor 起包含本地 Health Kernel 原生
+  Swift/CoreML 模块删除、App 图标/启动图和原生依赖配置变化；OTA 无法移除旧原生
+  模型或更新图标，因此未发布可能造成 JS/原生不一致的 production OTA。
+- 使用同一已验证提交构建 iOS `1.3.2 (240)`；EAS build
+  `a62a4dc5-f542-4cfe-bc87-8eb0d84a7ff4` 成功，submission
+  `dc84c785-e1b1-4db1-8a90-c3981b38429d` 已由 Apple App Store Connect 接收。
+- **裁决: PASS。** 后端生产健康和 Mobile 原生交付均完成；Apple 二进制处理与真机
+  行为验证继续由 G6 裁决。
 
 ## S7 / G6 · 上线验证
 
-- TestFlight `1.3.2 (239)` 已上传。
+- TestFlight `1.3.2 (240)` 已上传并由 App Store Connect 接收，等待 Apple 完成
+  二进制处理后安装。
 - 待真机验证：多图连续拍摄、切后台恢复、弱网重试、草稿不丢、只生成一个
-  accepted Turn、写操作显示唯一可验证回执、自动滚动到最新输出。
+  accepted Turn、写操作显示唯一可验证回执、自动滚动到最新输出、登录持久化、
+  新图标生效且安装包不再包含已删除的本地模型。
 - **裁决: PENDING。** 当前保持 in progress；只有上述真实设备证据齐全后才改为 shipped。
 
 ## 回滚
