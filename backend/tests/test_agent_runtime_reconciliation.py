@@ -667,6 +667,119 @@ def test_manual_medical_exam_effect_resolution_verifies_the_run_owner(
     assert run.error_code == "write_verified_reply_incomplete"
 
 
+def test_manual_resolution_accepts_linked_legacy_medical_exam_operation(
+    db, auth_user_and_headers
+):
+    from app.models.agent_runtime import AgentRun, AgentToolOperation
+    from app.models.medical_exam import MedicalExam
+    from app.services.agent_runtime import AgentRuntimeCoordinator
+
+    user, _headers = auth_user_and_headers
+    exam = MedicalExam(
+        user_id=user.id,
+        exam_date=datetime.now(UTC).date(),
+        exam_type="imaging",
+    )
+    db.add(exam)
+    db.commit()
+
+    runtime = AgentRuntimeCoordinator(db)
+    admission = runtime.create_or_resume_run(
+        run_id="run-reconcile-legacy-medical-effect",
+        attempt_id="attempt-reconcile-legacy-medical-effect-1",
+        user_id=user.id,
+        conversation_id=None,
+        client_turn_id="turn-reconcile-legacy-medical-effect",
+        origin="test",
+    )
+    runtime.mark_running(admission.context)
+    import_operation = runtime.claim_tool_operation(
+        admission.context,
+        tool_name="upload_medical_exam_text",
+        effect_class="write",
+        operation_fingerprint=_fingerprint("legacy-medical-import"),
+        expected_resource_type="medical_exam",
+        logical_operation_key="medical-exam:legacy-import",
+    )
+    runtime.finalize_tool_operation(
+        admission.context,
+        operation_id=import_operation.operation_id,
+        status="failed",
+        error_code="tool_rejected",
+    )
+    legacy_operation = runtime.claim_tool_operation(
+        admission.context,
+        tool_name="health_record",
+        effect_class="write",
+        operation_fingerprint=_fingerprint("legacy-medical-health-record"),
+        expected_resource_type=None,
+        logical_operation_key="write:legacy-medical",
+    )
+    runtime.interrupt_active(admission.context)
+
+    result = runtime.resolve_tool_operation_manually(
+        legacy_operation.operation_id,
+        outcome="verified_effect",
+        resource_type="medical_exam",
+        resource_id=str(exam.id),
+    )
+
+    run = db.query(AgentRun).filter_by(run_id=admission.context.run_id).one()
+    operation = db.query(AgentToolOperation).filter_by(
+        operation_id=legacy_operation.operation_id
+    ).one()
+    assert result.disposition == "verified_effect"
+    assert result.resource_id == str(exam.id)
+    assert operation.status == "succeeded"
+    assert run.status == "failed"
+    assert run.retryable is True
+    assert run.error_code == "write_verified_reply_incomplete"
+
+
+def test_manual_resolution_rejects_unlinked_health_record_as_medical_exam(
+    db, auth_user_and_headers
+):
+    from app.models.medical_exam import MedicalExam
+    from app.services.agent_runtime import AgentRuntimeCoordinator, AgentRuntimeError
+
+    user, _headers = auth_user_and_headers
+    exam = MedicalExam(
+        user_id=user.id,
+        exam_date=datetime.now(UTC).date(),
+        exam_type="imaging",
+    )
+    db.add(exam)
+    db.commit()
+
+    runtime = AgentRuntimeCoordinator(db)
+    admission = runtime.create_or_resume_run(
+        run_id="run-reconcile-unlinked-medical-effect",
+        attempt_id="attempt-reconcile-unlinked-medical-effect-1",
+        user_id=user.id,
+        conversation_id=None,
+        client_turn_id="turn-reconcile-unlinked-medical-effect",
+        origin="test",
+    )
+    runtime.mark_running(admission.context)
+    operation = runtime.claim_tool_operation(
+        admission.context,
+        tool_name="health_record",
+        effect_class="write",
+        operation_fingerprint=_fingerprint("unlinked-medical-health-record"),
+        expected_resource_type=None,
+        logical_operation_key="write:unlinked-medical",
+    )
+    runtime.interrupt_active(admission.context)
+
+    with pytest.raises(AgentRuntimeError, match="invalid_resource_type"):
+        runtime.resolve_tool_operation_manually(
+            operation.operation_id,
+            outcome="verified_effect",
+            resource_type="medical_exam",
+            resource_id=str(exam.id),
+        )
+
+
 def test_pending_reconciliation_scan_settles_supported_operation_once(
     db, auth_user_and_headers
 ):

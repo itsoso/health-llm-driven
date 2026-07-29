@@ -1794,10 +1794,39 @@ class AgentRuntimeCoordinator:
                     verify_resource_owner,
                 )
 
-                if not is_registered_receipt_resource_type(
+                resource_type_registered = is_registered_receipt_resource_type(
                     operation.tool_name,
                     normalized_resource_type or "",
+                )
+                legacy_medical_import_linked = False
+                if (
+                    not resource_type_registered
+                    and operation.tool_name == "health_record"
+                    and normalized_resource_type == "medical_exam"
+                    and operation.resource_type is None
+                    and operation.resource_id is None
                 ):
+                    # Older executors could attach the uncertain checkpoint to
+                    # health_record after a rejected medical import in the same
+                    # attempt. Keep this compatibility path deliberately narrow:
+                    # a linked rejected importer must exist, and owner
+                    # verification below still applies.
+                    legacy_medical_import_linked = (
+                        self.db.query(AgentToolOperation.operation_id)
+                        .filter(
+                            AgentToolOperation.run_id == run.run_id,
+                            AgentToolOperation.attempt_id == operation.attempt_id,
+                            AgentToolOperation.operation_id
+                            != operation.operation_id,
+                            AgentToolOperation.tool_name
+                            == "upload_medical_exam_text",
+                            AgentToolOperation.status == "failed",
+                            AgentToolOperation.error_code == "tool_rejected",
+                        )
+                        .first()
+                        is not None
+                    )
+                if not (resource_type_registered or legacy_medical_import_linked):
                     raise AgentRuntimeError("invalid_resource_type")
                 if not is_valid_receipt_resource_id(
                     operation.tool_name,
