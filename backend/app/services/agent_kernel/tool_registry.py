@@ -81,13 +81,19 @@ class ToolSpec:
 
     def reconciliation_resource_type(self, arguments: Any) -> str | None:
         """Return the content-free resource kind that can be reconciled safely."""
-        if not self.reconciliation_record_types:
-            return None
-        args = _parse_arguments(arguments)
-        record_type = str(
-            args.get("record_type") or args.get("type") or ""
-        ).strip().lower()
-        return dict(self.reconciliation_record_types).get(record_type)
+        if self.reconciliation_record_types:
+            args = _parse_arguments(arguments)
+            record_type = str(
+                args.get("record_type") or args.get("type") or ""
+            ).strip().lower()
+            return dict(self.reconciliation_record_types).get(record_type)
+        if (
+            self.receipt_required
+            and self.effect == "write"
+            and len(self.receipt_resource_types) == 1
+        ):
+            return next(iter(self.receipt_resource_types))
+        return None
 
 
 def _spec(

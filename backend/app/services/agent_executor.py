@@ -16522,6 +16522,15 @@ class AgentExecutor:
             if spec.marks_deep_analysis:
                 self._turn_invoked_deep_analysis = True
             handler = getattr(self, spec.executor_method)
+            handler_args = args
+            if (
+                runtime_operation is not None
+                and request.tool_name == "upload_medical_exam_text"
+            ):
+                handler_args = {
+                    **args,
+                    "_runtime_operation_id": runtime_operation.operation_id,
+                }
             if spec.call_style == "http":
                 base_url = (
                     settings.health_api_base_url
@@ -16537,9 +16546,9 @@ class AgentExecutor:
                     and expected_resource_type is not None
                 ):
                     headers["Idempotency-Key"] = runtime_operation.operation_id
-                result = await handler(base_url, headers, args)
+                result = await handler(base_url, headers, handler_args)
             else:
-                result = await handler(args)
+                result = await handler(handler_args)
             result = (
                 annotate_if_implausible(result)
                 if spec.annotate_implausible
@@ -19086,8 +19095,19 @@ class AgentExecutor:
             from app.services.data_collection.medical_exam_import import (
                 MedicalExamImportService,
             )
+            from app.services.agent_operation_reconciliation import (
+                runtime_operation_source_fingerprint,
+            )
             from app.twin.cache import invalidate_twin
 
+            runtime_operation_id = str(
+                args.get("_runtime_operation_id") or ""
+            ).strip()
+            source_fingerprint = (
+                runtime_operation_source_fingerprint(runtime_operation_id)
+                if runtime_operation_id
+                else None
+            )
             exam_type = (
                 "imaging"
                 if report_type in {"mri", "ct", "ultrasound", "endoscopy"}
@@ -19106,6 +19126,7 @@ class AgentExecutor:
                 ),
                 source="agent_text",
                 overall_assessment=text if is_narrative_report else None,
+                source_fingerprint=source_fingerprint,
             )
             # 这里显式置位, 让 done 侧 KB 证据卡重算反映刚写入的化验指标;
             # 同时由统一写入回执集合负责验证本次持久化身份。

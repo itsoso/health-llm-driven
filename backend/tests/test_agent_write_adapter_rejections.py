@@ -385,6 +385,40 @@ async def test_medical_exam_narrative_mri_text_persists_without_numeric_items(
 
 
 @pytest.mark.asyncio
+async def test_medical_exam_runtime_operation_sets_opaque_source_fingerprint(
+    db,
+    auth_user_and_headers,
+):
+    from app.models.medical_exam import MedicalExam
+    from app.services.agent_executor import AgentExecutor
+    from app.services.agent_operation_reconciliation import (
+        runtime_operation_source_fingerprint,
+    )
+
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    executor._current_user_id = user.id
+    operation_id = "op_" + ("a" * 64)
+
+    result = await executor._exec_upload_medical_exam_text(
+        "http://example.test",
+        {},
+        {
+            "text": "ALT 47 U/L，GGT 78 U/L",
+            "_runtime_operation_id": operation_id,
+        },
+    )
+
+    payload = json.loads(result)
+    exam = db.query(MedicalExam).filter(MedicalExam.user_id == user.id).one()
+    assert payload["resource_type"] == "medical_exam"
+    assert exam.source_fingerprint == runtime_operation_source_fingerprint(
+        operation_id
+    )
+    assert operation_id not in exam.source_fingerprint
+
+
+@pytest.mark.asyncio
 async def test_attachment_medical_report_receipt_does_not_swallow_other_writes(
     monkeypatch,
     db,

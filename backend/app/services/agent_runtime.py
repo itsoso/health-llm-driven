@@ -1277,12 +1277,17 @@ class AgentRuntimeCoordinator:
         if normalized_resource_type is not None:
             from app.services.agent_kernel.tool_registry import get_tool_spec
 
+            spec = get_tool_spec(normalized_tool)
             declared_types = {
                 resource_type
-                for _record_type, resource_type in get_tool_spec(
-                    normalized_tool
-                ).reconciliation_record_types
+                for _record_type, resource_type in spec.reconciliation_record_types
             }
+            if (
+                spec.receipt_required
+                and spec.effect == "write"
+                and len(spec.receipt_resource_types) == 1
+            ):
+                declared_types.update(spec.receipt_resource_types)
             if normalized_resource_type not in declared_types:
                 raise AgentRuntimeError("invalid_resource_type")
 

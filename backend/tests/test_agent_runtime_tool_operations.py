@@ -98,6 +98,16 @@ def test_health_record_diet_declares_reconcilable_resource_type():
     ) is None
 
 
+def test_fixed_receipt_write_declares_reconcilable_resource_type():
+    from app.services.agent_kernel.tool_registry import get_tool_spec
+
+    spec = get_tool_spec("upload_medical_exam_text")
+
+    assert spec.reconciliation_resource_type(
+        {"text": "LDL 3.8 mmol/L"}
+    ) == "medical_exam"
+
+
 def test_verified_operation_is_replayed_without_second_execution(
     db, auth_user_and_headers
 ):
@@ -1358,6 +1368,55 @@ async def test_executor_passes_runtime_operation_id_to_reconcilable_diet_write(
 
     operation = db.query(AgentToolOperation).one()
     assert observed_headers == [{"Idempotency-Key": operation.operation_id}]
+
+
+@pytest.mark.asyncio
+async def test_executor_passes_runtime_operation_id_to_local_medical_exam_write(
+    db, auth_user_and_headers, monkeypatch
+):
+    from app.models.agent_runtime import AgentToolOperation
+    from app.services.agent_executor import AgentExecutor
+    from app.services.agent_runtime import AgentRuntimeCoordinator
+
+    user, _headers = auth_user_and_headers
+    admission = _run(db, user.id, suffix="executor-medical-exam-idempotency")
+    AgentRuntimeCoordinator(db).mark_running(admission.context)
+    executor = AgentExecutor(db)
+    executor._current_user_id = user.id
+    executor._current_turn_user_message = "记录 LDL 3.8 mmol/L"
+    executor._runtime_run_id = admission.context.run_id
+    executor._runtime_attempt_id = admission.context.attempt_id
+    executor._runtime_managed = True
+    observed_args = []
+
+    monkeypatch.setattr(
+        "app.services.llm.tool_validator.validate_tool_call",
+        lambda tool_name, args, db, user_id, reference_now=None: {
+            "error": None,
+            "data": args,
+        },
+    )
+
+    async def fake_write(base_url, headers, args):
+        observed_args.append(dict(args))
+        return '{"id": 833, "resource_type": "medical_exam"}'
+
+    monkeypatch.setattr(executor, "_exec_upload_medical_exam_text", fake_write)
+
+    await executor._execute_tool(
+        "upload_medical_exam_text",
+        {"text": "LDL 3.8 mmol/L"},
+        None,
+    )
+
+    operation = db.query(AgentToolOperation).one()
+    assert observed_args == [
+        {
+            "text": "LDL 3.8 mmol/L",
+            "_runtime_operation_id": operation.operation_id,
+        }
+    ]
+    assert operation.resource_type == "medical_exam"
 
 
 @pytest.mark.asyncio
