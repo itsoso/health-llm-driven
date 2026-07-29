@@ -197,12 +197,116 @@ def test_negated_or_unrelated_change_does_not_trigger_guardian(symptoms):
         ],
         ["腰痛", "我以前漏尿，但目前没有了"],
         ["腰痛", "我曾经尿失禁，现在没有"],
+        ["腰痛", "以前尿失禁，现在还没有"],
+        ["腰痛", "以前尿失禁，现在还是没有了"],
+        ["腰痛", "以前尿失禁，现在仍没有"],
+        ["腰痛", "以前尿失禁，现在仍然没有"],
+        ["腰痛", "以前尿失禁，现在已经不再漏尿"],
+        ["腰痛", "以前尿失禁，现在已停止漏尿"],
+        ["腰痛", "以前尿失禁，现在没有继续漏尿"],
+        ["腰痛", "以前尿失禁，漏尿已经不再持续"],
+        ["腰痛", "一年前我有过尿失禁"],
+        ["腰痛", "三年前我漏尿"],
+        ["腰痛", "多年前我尿失禁"],
+        ["腰痛", "我不漏尿"],
+        ["腰痛", "我并不漏尿"],
+        ["腰痛", "我从不漏尿"],
+        ["腰痛", "我从未漏尿"],
+        ["腰痛", "我不曾漏尿"],
+        ["腰痛", "我未曾漏尿"],
+        ["腰痛", "我不会漏尿"],
         [
             "lower back pain",
             "had urinary incontinence last year but it resolved",
         ],
         ["lower back pain", "used to be leaking urine, no longer"],
         ["lower back pain", "prior urinary incontinence, none now"],
+        [
+            "lower back pain",
+            "urinary incontinence resolved and hasn't returned",
+        ],
+        [
+            "lower back pain",
+            "urinary incontinence resolved and hasn't recurred",
+        ],
+        [
+            "lower back pain",
+            "urinary incontinence resolved and has not returned",
+        ],
+        [
+            "lower back pain",
+            "urinary incontinence resolved and has not recurred",
+        ],
+        [
+            "lower back pain",
+            "urinary incontinence resolved and isn't ongoing",
+        ],
+        [
+            "lower back pain",
+            "urinary incontinence resolved and wasn't ongoing",
+        ],
+        [
+            "lower back pain",
+            (
+                "urinary incontinence resolved "
+                "and isn't still leaking urine"
+            ),
+        ],
+        [
+            "lower back pain",
+            "urinary incontinence resolved and didn't return",
+        ],
+        [
+            "lower back pain",
+            "prior urinary incontinence is no longer ongoing",
+        ],
+        [
+            "lower back pain",
+            "prior urinary incontinence does not continue",
+        ],
+        [
+            "lower back pain",
+            "prior urinary incontinence doesn't continue",
+        ],
+        [
+            "lower back pain",
+            "prior urinary incontinence does not continue leaking urine",
+        ],
+        [
+            "lower back pain",
+            "prior urinary incontinence doesn't continue leaking urine",
+        ],
+        [
+            "lower back pain",
+            "prior urinary incontinence no longer continues",
+        ],
+        [
+            "lower back pain",
+            (
+                "prior urinary incontinence no longer continues "
+                "having urinary incontinence"
+            ),
+        ],
+        [
+            "lower back pain",
+            "prior urinary incontinence has stopped leaking urine",
+        ],
+        ["lower back pain", "no urine leakage today"],
+        ["lower back pain", "no longer leak urine"],
+        ["lower back pain", "I have stopped leaking urine"],
+        ["lower back pain", "I no longer leak urine"],
+        ["lower back pain", "urine leakage has stopped"],
+        ["lower back pain", "last year I had urinary incontinence"],
+        ["lower back pain", "years ago I leaked urine"],
+        ["lower back pain", "last year I leaked urine"],
+        ["lower back pain", "a year ago I leaked urine"],
+        ["lower back pain", "I haven't leaked urine"],
+        ["lower back pain", "I hadn't leaked urine"],
+        ["lower back pain", "I have never leaked urine"],
+        ["lower back pain", "I never leak urine"],
+        ["lower back pain", "I haven't had urine leakage"],
+        ["lower back pain", "I had not leaked urine"],
+        ["lower back pain", "I wasn't leaking urine"],
     ],
 )
 def test_resolved_historical_incontinence_does_not_trigger_guardian(symptoms):
@@ -238,12 +342,98 @@ def test_current_retention_overrides_long_term_history_for_guardian():
         ["腰痛", "今天有过尿失禁"],
         ["腰痛", "去年开始漏尿，到现在还没好"],
         ["腰痛", "以前尿失禁，一直持续到现在"],
+        ["腰痛", "以前尿失禁，现在还有尿失禁"],
+        ["腰痛", "以前尿失禁，现在仍有漏尿"],
+        ["腰痛", "以前尿失禁，仍持续漏尿"],
+        ["腰痛", "以前尿失禁，现在还没好"],
+        ["腰痛", "以前尿失禁，现在还在漏尿"],
+        ["腰痛", "以前尿失禁，仍在漏尿"],
+        ["腰痛", "以前尿失禁，漏尿仍在持续"],
+        ["腰痛", "以前尿失禁，现在没有停止漏尿"],
+        ["腰痛", "无法停止漏尿"],
+        ["腰痛", "不能停止漏尿"],
+        ["腰痛", "今天我漏尿"],
+        ["腰痛", "三年前我漏尿，但现在仍有漏尿"],
         ["腰痛", "以前漏尿已好了，但今天又漏尿"],
         ["腰痛", "曾经尿失禁，现在再次出现"],
         ["lower back pain", "had urinary incontinence today"],
         [
             "lower back pain",
             "previous urinary incontinence that has not resolved",
+        ],
+        [
+            "lower back pain",
+            "previous urinary incontinence that hasn't resolved",
+        ],
+        [
+            "lower back pain",
+            "previous urinary incontinence isn't resolved",
+        ],
+        [
+            "lower back pain",
+            "previous urinary incontinence is not resolved",
+        ],
+        [
+            "lower back pain",
+            "previous urinary incontinence remains unresolved",
+        ],
+        [
+            "lower back pain",
+            "previous urinary incontinence is still unresolved",
+        ],
+        ["lower back pain", "prior urinary incontinence persists"],
+        ["lower back pain", "prior urinary incontinence is persisting"],
+        [
+            "lower back pain",
+            "prior urinary incontinence continues to leak urine",
+        ],
+        [
+            "lower back pain",
+            "prior urinary incontinence continues having urinary incontinence",
+        ],
+        [
+            "lower back pain",
+            "prior urinary incontinence hasn't stopped leaking urine",
+        ],
+        [
+            "lower back pain",
+            "prior urinary incontinence has not stopped leaking urine",
+        ],
+        ["lower back pain", "continues to leak urine"],
+        ["lower back pain", "I leak urine now"],
+        ["lower back pain", "urine leakage today"],
+        ["lower back pain", "I cannot stop leaking urine"],
+        ["lower back pain", "today I leaked urine"],
+        ["lower back pain", "the patient leaks urine today"],
+        [
+            "lower back pain",
+            "years ago I leaked urine and still do today",
+        ],
+        ["lower back pain", "I haven't stopped leaking urine"],
+        ["lower back pain", "I never stopped leaking urine"],
+        [
+            "lower back pain",
+            "prior urinary incontinence never stopped leaking urine",
+        ],
+        [
+            "lower back pain",
+            "urinary incontinence and has stopped smoking",
+        ],
+        [
+            "lower back pain",
+            "urinary incontinence and medication has stopped working",
+        ],
+        [
+            "lower back pain",
+            "urinary incontinence and I have stopped smoking",
+        ],
+        [
+            "lower back pain",
+            "urinary incontinence and rain has stopped",
+        ],
+        [
+            "lower back pain",
+            "urinary incontinence and bleeding has stopped",
         ],
         [
             "lower back pain",

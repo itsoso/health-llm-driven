@@ -82,6 +82,10 @@ _LOW_BACK_EMERGENCY_TERMS = (
     "瘫痪",
     "urinaryretention",
     "urinaryincontinence",
+    "urineleakage",
+    "leakurine",
+    "leakedurine",
+    "leaksurine",
     "leakingurine",
     "cannoturinate",
     "cannotpassurine",
@@ -217,6 +221,10 @@ _AFFIRMED_LOW_BACK_DISCRIMINATOR_TERMS = {
         "不能排尿",
         "urinaryretention",
         "urinaryincontinence",
+        "urineleakage",
+        "leakurine",
+        "leakedurine",
+        "leaksurine",
         "leakingurine",
         "cannoturinate",
         "cannotpassurine",
@@ -364,8 +372,11 @@ _NEGATED_PREFIXES = (
     "否认",
     "否认有",
     "不伴",
+    "不再",
     "不存在",
     "不是",
+    "已经停止",
+    "已停止",
     "没",
     "无",
     "no",
@@ -377,6 +388,13 @@ _NEGATED_PREFIXES = (
     "doesnt",
     "didnot",
     "didnt",
+    "hasnt",
+    "havent",
+    "hadnt",
+    "isnt",
+    "wasnt",
+    "nolonger",
+    "never",
     "not",
 )
 _NEGATION_SCOPE_BOUNDARY_RE = re.compile(
@@ -404,10 +422,15 @@ _NEGATION_FILLERS = frozenset(
         "having",
         "has",
         "had",
+        "still",
         "有",
         "伴有",
         "出现",
         "experiencing",
+        "继续",
+        "continue",
+        "continues",
+        "continuing",
     }
 )
 _NEGATION_COORDINATORS = ("或", "和", "及", "、", "/", "or", "and")
@@ -449,8 +472,15 @@ _INCONTINENCE_FINDING_TERMS = frozenset(
         "尿失禁",
         "漏尿",
         "urinaryincontinence",
+        "urineleakage",
+        "leakurine",
+        "leakedurine",
+        "leaksurine",
         "leakingurine",
     }
+)
+_INCONTINENCE_NEGATED_PREFIX_PATTERNS = (
+    re.compile(r"(?:并不|从不|从未|不曾|未曾|不会|不)$"),
 )
 _INCONTINENCE_HISTORY_PREFIX_MARKERS = (
     "以前",
@@ -468,32 +498,79 @@ _INCONTINENCE_HISTORY_PREFIX_MARKERS = (
     "formerly",
     "historyof",
 )
+_INCONTINENCE_HISTORY_PREFIX_PATTERNS = (
+    re.compile(r"(?:[一二三四五六七八九十百]+|\d+|数|多)年前"),
+    re.compile(r"(?:lastyear|yearsago|yearago)"),
+)
 _INCONTINENCE_POST_MENTION_HISTORY_PATTERNS = (
     re.compile(r"(?:去年|多年前|数年前|以前|之前)"),
     re.compile(r"(?:lastyear|yearsago|previously)"),
 )
+_INCONTINENCE_RESOLVED_PREFIX_PATTERNS = (
+    re.compile(r"(?:has|have|had)stopped$"),
+)
+_INCONTINENCE_IMMEDIATE_POST_MENTION_RESOLUTION_PATTERNS = (
+    re.compile(r"(?:已经|已)?停止"),
+    re.compile(r"(?:has|have|had)(?:now)?stopped"),
+)
 _INCONTINENCE_RESOLUTION_PATTERNS = (
     re.compile(r"(?:已经|已)(?:好了|恢复了?|消失了?)"),
     re.compile(
-        r"(?:现在|目前|当前)(?:已经)?"
+        r"(?:现在|目前|当前)(?:已经|还是|仍然|还|仍)?"
         r"(?:没有了?|没了|不存在|消失了?)"
     ),
+    re.compile(
+        r"(?:现在|目前|当前)?(?:已经|已)?"
+        r"(?:不再|停止)(?:漏尿|尿失禁|持续)"
+    ),
+    re.compile(
+        r"(?:现在|目前|当前)?(?:没有|没)(?:再)?"
+        r"继续(?:漏尿|尿失禁|持续)"
+    ),
     re.compile(r"(?:resolved|nolonger|nonenow|(?:is|has)?gone)"),
+    re.compile(r"(?:doesnot|doesnt|didnot|didnt)continu(?:e|ing)"),
+    re.compile(
+        r"(?:(?:has|have|had)stopped)"
+        r"(?:leaking(?:urine)?|havingurinaryincontinence)"
+    ),
+    re.compile(
+        r"(?:(?:hasnot|hasnt|didnot|didnt)"
+        r"(?:returned|recurred|return|recur)|"
+        r"(?:isnot|isnt|wasnot|wasnt)"
+        r"(?:ongoing|still(?:leaking|leaks?)(?:urine)?))"
+    ),
 )
 _INCONTINENCE_RECURRENCE_OR_PERSISTENCE_PATTERNS = (
     re.compile(r"(?:再次|重新)(?:出现|发生)"),
     re.compile(r"(?:今天|现在|目前|当前)?又(?:开始)?(?:漏尿|尿失禁)"),
     re.compile(r"(?:复发|再发)"),
     re.compile(
-        r"(?:现在|目前|当前)(?:仍然|仍|还)(?:有|存在|持续)?"
+        r"(?:现在|目前|当前)(?:仍然|仍|还)(?:有|存在|持续)"
     ),
+    re.compile(r"(?:仍然|仍)(?:有|存在|持续)(?:漏尿|尿失禁)"),
+    re.compile(
+        r"(?:现在|目前|当前)?(?:仍然|仍|还)在(?:漏尿|尿失禁)"
+    ),
+    re.compile(r"(?:漏尿|尿失禁)(?:仍然|仍|还)?在持续"),
+    re.compile(r"(?:没有|没|未)(?:再)?停止(?:漏尿|尿失禁)"),
     re.compile(r"(?:一直到现在|一直持续到现在|持续至今)"),
     re.compile(r"(?:还没|尚未|未)(?:好|恢复)"),
+    re.compile(
+        r"continu(?:e(?:s|d)?|ing)(?:to)?"
+        r"(?:leak(?:ing)?urine|(?:have|having)urinaryincontinence)"
+    ),
+    re.compile(
+        r"(?:hasnot|hasnt|havent|hadnot|hadnt|didnot|didnt|never)"
+        r"stopped"
+        r"(?:leaking(?:urine)?|havingurinaryincontinence)"
+    ),
     re.compile(
         r"(?:again|returned|recurred|cameback|"
         r"still(?:have|has|do|does|present|ongoing)|"
         r"still(?:leaking|leaks?)(?:urine)?(?:now)?|"
-        r"(?:hasnot|hasnt|not)(?:yet)?resolved|ongoing)"
+        r"(?:hasnot|hasnt|isnot|isnt|wasnot|wasnt|not)"
+        r"(?:yet)?resolved|(?:still)?unresolved|"
+        r"persists?|persisting|ongoing)"
     ),
 )
 _INCONTINENCE_MENTION_LOOKAHEAD = 96
@@ -781,17 +858,16 @@ def _has_affirmed_term(text: str, term: str) -> bool:
         prefix = text[max(0, index - 64):index]
         scoped_prefix = _NEGATION_SCOPE_BOUNDARY_RE.split(prefix)[-1]
         affirmed = not _negates_following_term(scoped_prefix)
-        if (
-            affirmed
-            and term in _INCONTINENCE_FINDING_TERMS
-            and not _incontinence_mention_is_current(
+        if affirmed and term in _INCONTINENCE_FINDING_TERMS:
+            affirmed = not any(
+                pattern.search(scoped_prefix)
+                for pattern in _INCONTINENCE_NEGATED_PREFIX_PATTERNS
+            ) and _incontinence_mention_is_current(
                 text,
                 start=index,
                 end=index + len(term),
                 scoped_prefix=scoped_prefix,
             )
-        ):
-            affirmed = False
         if affirmed:
             return True
         start = index + len(term)
@@ -825,6 +901,9 @@ def _incontinence_mention_is_current(
         marker in scoped_prefix
         for marker in _INCONTINENCE_HISTORY_PREFIX_MARKERS
     ) or any(
+        pattern.search(scoped_prefix)
+        for pattern in _INCONTINENCE_HISTORY_PREFIX_PATTERNS
+    ) or any(
         pattern.search(text, end, scope_end)
         for pattern in _INCONTINENCE_POST_MENTION_HISTORY_PATTERNS
     )
@@ -833,6 +912,14 @@ def _incontinence_mention_is_current(
         _INCONTINENCE_RESOLUTION_PATTERNS,
         start=end,
         end=scope_end,
+    ) or any(
+        pattern.search(scoped_prefix)
+        for pattern in _INCONTINENCE_RESOLVED_PREFIX_PATTERNS
+    ) or any(
+        pattern.match(text, end, scope_end)
+        for pattern in (
+            _INCONTINENCE_IMMEDIATE_POST_MENTION_RESOLUTION_PATTERNS
+        )
     )
     return not (explicit_history or explicitly_resolved)
 
