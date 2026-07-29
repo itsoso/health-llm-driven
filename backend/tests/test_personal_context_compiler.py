@@ -190,10 +190,20 @@ def test_chronic_recovery_question_selects_recovery_but_not_step_count():
     assert packet.conflicts[0].trusted_source == "garmin"
 
 
-def test_urinary_history_chronicity_does_not_select_recovery_wearables():
+@pytest.mark.parametrize(
+    "query",
+    [
+        "腰痛，我长期有排尿困难但一直稳定。",
+        "我长期有排尿困难最近腰痛。",
+        "长期排尿困难腰痛",
+    ],
+)
+def test_urinary_history_chronicity_does_not_select_recovery_wearables(
+    query,
+):
     packet = _compile(
         _rich_twin(),
-        query="腰痛，我长期有排尿困难但一直稳定。",
+        query=query,
         max_evidence_items=12,
     )
 
@@ -201,6 +211,44 @@ def test_urinary_history_chronicity_does_not_select_recovery_wearables():
         item.category == "wearable" for item in packet.evidence
     )
     assert packet.conflicts == ()
+
+
+def test_explicit_low_back_duration_selects_recovery_wearables():
+    packet = _compile(
+        _rich_twin(),
+        query="腰痛已经持续三个月，应该怎么办？",
+        max_evidence_items=12,
+    )
+
+    assert {
+        item.source_ref
+        for item in packet.evidence
+        if item.category == "wearable" and item.kind == "measurement"
+    } == {
+        "wearable.hrv_latest",
+        "wearable.resting_hr",
+        "wearable.sleep_score_latest",
+        "wearable.training_readiness_score",
+    }
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "我有慢性腰痛，应该怎么办？",
+        "I have long-term lower back pain. What should I do?",
+    ],
+)
+def test_explicit_chronic_low_back_modifier_selects_recovery(query):
+    packet = _compile(
+        _rich_twin(),
+        query=query,
+        max_evidence_items=12,
+    )
+
+    assert any(
+        item.category == "wearable" for item in packet.evidence
+    )
 
 
 def test_emergency_low_back_question_omits_optional_wearables():

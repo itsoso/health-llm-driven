@@ -115,22 +115,32 @@ _LOW_BACK_RECOVERY_TERMS = (
 )
 _LOW_BACK_CHRONIC_CONTEXT_PATTERNS = (
     re.compile(
-        r"(?:慢性|长期|反复)[^，,；;。.!！？?]{0,8}"
+        r"(?:慢性|长期|反复)(?:的)?"
         r"(?:腰(?:部|背|椎|骶部|骶)?(?:痛|疼)|下背痛)"
     ),
     re.compile(
         r"(?:腰(?:部|背|椎|骶部|骶)?(?:痛|疼)|下背痛)"
-        r"[^，,；;。.!！？?]{0,10}"
-        r"(?:慢性|长期|反复|"
-        r"超过?(?:[一二三四五六七八九十\d]+|数|半)个?月|半年|一年)"
+        r"(?:已经|已)?(?:持续|反复)?(?:超过)?"
+        r"(?:[一二三四五六七八九十\d]+|数|半)个?"
+        r"(?:月|年)"
     ),
     re.compile(
-        r"(?:chronic|persistent|long[- ]term)[^,;.!?]{0,24}"
-        r"(?:low(?:er)?[- ]?back|back pain)"
+        r"(?:腰(?:部|背|椎|骶部|骶)?(?:痛|疼)|下背痛)"
+        r"(?:属于|是)?(?:慢性|长期|反复)(?:的)?"
     ),
     re.compile(
-        r"(?:low(?:er)?[- ]?back|back pain)[^,;.!?]{0,24}"
+        r"(?:chronic|persistent|long[- ]term)\s+"
+        r"(?:low(?:er)?[- ]?back\s+pain|back\s+pain)"
+    ),
+    re.compile(
+        r"(?:low(?:er)?[- ]?back\s+pain|back\s+pain)"
+        r"(?:\s+(?:is|has\s+been))?\s+"
         r"(?:chronic|persistent|long[- ]term)"
+    ),
+    re.compile(
+        r"(?:low(?:er)?[- ]?back\s+pain|back\s+pain)"
+        r"\s+(?:for|lasting)\s+"
+        r"(?:\d+|several|many)\s+(?:months?|years?)"
     ),
 )
 
