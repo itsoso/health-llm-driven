@@ -399,23 +399,53 @@ _NEGATED_FINDING_IN_MATCH_RE = re.compile(
 )
 _STABLE_PREEXISTING_URINARY_DIFFICULTY_PATTERNS = (
     re.compile(
-        r"(?:排尿|小便|尿).{0,6}(?:困难|费力|不畅).{0,12}"
-        r"(?:已|已经)?(?:稳定|多年|数年|很久|一直如此|长期存在|"
-        r"没有(?:新)?变化|没(?:有)?变化|无变化|未变化)"
+        r"(?:排尿|小便|尿)(?:困难|费力|不畅)"
+        r"(?:(?:已|已经)?(?:稳定(?:多年|数年|很久)?|多年|数年|"
+        r"很久|一直如此|长期存在)|(?:一直|长期)?"
+        r"(?:没有(?:新)?变化|没(?:有)?变化|无变化|未变化))"
     ),
     re.compile(
-        r"(?:多年|数年|长期|一直|既往).{0,12}"
-        r"(?:存在|有)?(?:排尿|小便|尿).{0,6}(?:困难|费力|不畅)"
+        r"(?:多年|数年|长期|一直|既往)(?:存在|有)?(?:的)?"
+        r"(?:排尿|小便|尿)(?:困难|费力|不畅)"
     ),
     re.compile(
-        r"(?:difficulty|trouble)(?:with)?"
-        r"(?:peeing|urinating|starting(?:to)?urination).{0,16}"
-        r"(?:stable|unchanged|longstanding|presentforyears)"
-    ),
-    re.compile(
-        r"(?:stable|unchanged|longstanding|presentforyears).{0,16}"
         r"(?:difficulty|trouble)(?:with)?"
         r"(?:peeing|urinating|starting(?:to)?urination)"
+        r"(?:(?:has|have)?been)?"
+        r"(?:stable(?:foryears)?|unchanged|longstanding|presentforyears)"
+    ),
+    re.compile(
+        r"(?:stable|unchanged|longstanding|presentforyears)"
+        r"(?:historyof|prior|preexisting)?"
+        r"(?:difficulty|trouble)(?:with)?"
+        r"(?:peeing|urinating|starting(?:to)?urination)"
+    ),
+)
+_STABLE_URINARY_OVERRIDE_TERMS = tuple(
+    term
+    for term in _LOW_BACK_EMERGENCY_TERMS
+    if term not in {"difficultypeeing", "difficultyurinating"}
+)
+_STABLE_URINARY_OVERRIDE_PATTERNS = tuple(
+    pattern
+    for index, pattern in enumerate(_LOW_BACK_EMERGENCY_PATTERNS)
+    if index not in {6, 7}
+)
+_CURRENT_OR_WORSENING_URINARY_CHANGE_PATTERNS = (
+    re.compile(
+        r"(?:今天|现在|目前|当前|这次|新发|新出现|刚刚|突然).{0,10}"
+        r"(?:尿潴留|尿失禁|漏尿|尿不出|尿不出来|排不出尿|"
+        r"会阴麻木|鞍区麻木|肛周麻木|排尿困难)"
+    ),
+    re.compile(
+        r"(?:但|但是|不过|然而).{0,8}"
+        r"(?:(?:今天|现在|目前|当前|这次).{0,6})?"
+        r"(?:明显)?(?:加重|恶化|变差|更严重)"
+    ),
+    re.compile(
+        r"(?:but|however).{0,24}"
+        r"(?:(?:today|now|currently).{0,12})?"
+        r"(?:(?:much)?worse|worsening|deteriorat(?:e|ed|ing))"
     ),
 )
 
@@ -495,10 +525,38 @@ def _without_stable_preexisting_urinary_difficulty(text: str) -> str:
     or bilateral neurologic finding remains in the text and still escalates.
     """
 
+    stable_history_present = any(
+        pattern.search(text)
+        for pattern in _STABLE_PREEXISTING_URINARY_DIFFICULTY_PATTERNS
+    )
+    if not stable_history_present:
+        return text
+    if _has_current_or_worsening_cauda_change(text):
+        return text
+
     remaining = text
     for pattern in _STABLE_PREEXISTING_URINARY_DIFFICULTY_PATTERNS:
         remaining = pattern.sub("", remaining)
     return remaining
+
+
+def _has_current_or_worsening_cauda_change(text: str) -> bool:
+    """Let any affirmative current/new/worse CES finding override history."""
+
+    if any(
+        _has_affirmed_term(text, term)
+        for term in _STABLE_URINARY_OVERRIDE_TERMS
+    ):
+        return True
+    if any(
+        _has_affirmed_pattern(text, pattern)
+        for pattern in _STABLE_URINARY_OVERRIDE_PATTERNS
+    ):
+        return True
+    return any(
+        _has_affirmed_pattern(text, pattern)
+        for pattern in _CURRENT_OR_WORSENING_URINARY_CHANGE_PATTERNS
+    )
 
 
 def infer_low_back_population(query: str) -> str | None:

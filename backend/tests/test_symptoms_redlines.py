@@ -163,12 +163,30 @@ def test_natural_cauda_equina_phrasing_still_triggers_warning():
     "symptoms",
     [
         ["腰痛", "排尿困难已稳定多年，但今天突然完全排不出尿"],
+        ["腰痛", "我长期有排尿困难，但今天明显加重了"],
+        ["腰痛", "排尿困难，今天尿不出来，既往稳定多年"],
+        ["腰痛", "排尿困难、现在尿不出来，此前一直稳定"],
+        ["腰痛", "排尿困难，今天尿潴留，之前一直稳定"],
+        ["腰痛", "排尿困难，今天尿失禁，之前稳定"],
+        ["腰痛", "排尿困难，今天会阴麻木，之前稳定"],
         [
             "lower back pain",
             (
                 "difficulty peeing has been stable for years, "
                 "but today I cannot empty my bladder"
             ),
+        ],
+        [
+            "lower back pain",
+            "longstanding difficulty peeing, but much worse today",
+        ],
+        [
+            "lower back pain",
+            "difficulty peeing, cannot urinate, stable before",
+        ],
+        [
+            "lower back pain",
+            "difficulty peeing, saddle numbness, stable before",
         ],
     ],
 )
