@@ -82,8 +82,12 @@ def test_low_back_pack_manifest_binds_exact_runtime_only_release_contract():
     )
     assert pack["reviewer_role"] == "product_owner"
     assert pack["clinical_signoff"] == "not_claimed"
-    assert pack["serving_scope"] == "health_evidence_runtime_only"
+    assert (
+        pack["serving_scope"]
+        == release_policy.HEALTH_EVIDENCE_RUNTIME_SERVING_SCOPE
+    )
     assert pack["serving_allowed"] is True
+    assert pack["generic_serving_allowed"] is False
     assert (
         pack["source_policy"]
         == "T1 official guidance only; no raw Dedao or paid-course text"
@@ -99,6 +103,31 @@ def test_low_back_pack_manifest_binds_exact_runtime_only_release_contract():
         == set(pack["claim_ids"])
         == CLAIM_IDS
     )
+
+
+def test_runtime_scope_requires_explicit_allowlist_even_when_not_globally_held(
+    monkeypatch,
+):
+    claim_id = "claim:c_low_back_emergency_neurologic_red_flags"
+    monkeypatch.setattr(
+        release_policy,
+        "CLINICAL_RELEASE_HOLD_DOCUMENT_IDS",
+        frozenset(),
+    )
+    monkeypatch.setattr(
+        release_policy,
+        "HEALTH_EVIDENCE_RUNTIME_RELEASED_CLAIM_IDS",
+        frozenset(),
+    )
+
+    assert (
+        release_policy.is_clinical_claim_serving_allowed(
+            claim_id,
+            release_policy.HEALTH_EVIDENCE_RUNTIME_SERVING_SCOPE,
+        )
+        is False
+    )
+    assert release_policy.is_clinical_claim_serving_allowed(claim_id) is True
 
 
 def test_low_back_claims_are_reviewed_t1_and_never_depend_on_raw_dedao():
@@ -309,3 +338,67 @@ def test_low_back_golden_eval_cases_pass(db):
 
     assert report["total"] == len(EVAL_IDS)
     assert report["failed"] == 0, report["cases"]
+
+
+def test_low_back_eval_rejects_same_id_tampered_target_claim(db):
+    _import_low_back_pack(db)
+    claim = db.get(
+        KBDocument,
+        "claim:c_low_back_self_management_activity_boundary",
+    )
+    assert claim is not None
+    claim.summary = "TAMPERED_SAME_ID_EVAL_TARGET"
+    db.commit()
+
+    report = run_system_kb_eval_cases(
+        db,
+        case_ids={"eval:low_back_self_management"},
+    )
+
+    assert report["failed"] == 1
+    assert any(
+        "missing_required_docs" in failure
+        or "search_missing" in failure
+        for failure in report["cases"][0]["failures"]
+    )
+
+
+def test_spoofed_eval_metadata_case_id_never_unlocks_runtime_search(db):
+    spoofed_doc_id = "eval:spoofed-low-back-runtime"
+    privileged_case_id = "eval:low_back_self_management"
+    db.add(
+        KBDocument(
+            doc_id=spoofed_doc_id,
+            doc_type="eval_case",
+            title="Spoofed runtime eval",
+            summary="metadata.case_id must not grant privileged retrieval",
+            confidence=0.99,
+            evidence_level="A",
+            metadata_json={
+                "review_status": "reviewed",
+                "case_id": privileged_case_id,
+                "input": {
+                    "search_query": (
+                        "普通急性腰痛 无红旗 继续活动 避免长期卧床"
+                    ),
+                },
+                "expected": {
+                    "search_query": (
+                        "普通急性腰痛 无红旗 继续活动 避免长期卧床"
+                    ),
+                    "required_doc_ids": [
+                        "claim:c_low_back_self_management_activity_boundary"
+                    ],
+                },
+            },
+        )
+    )
+    db.commit()
+
+    report = run_system_kb_eval_cases(
+        db,
+        case_ids={spoofed_doc_id},
+    )
+
+    assert report["failed"] == 1
+    assert "eval_case_identity_mismatch" in report["cases"][0]["failures"]

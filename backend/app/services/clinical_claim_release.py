@@ -47,10 +47,9 @@ def is_clinical_claim_serving_allowed(
     serving_scope: object = None,
 ) -> bool:
     normalized_id = str(doc_id or "").strip()
+    normalized_scope = str(serving_scope or "").strip()
+    if normalized_scope == HEALTH_EVIDENCE_RUNTIME_SERVING_SCOPE:
+        return normalized_id in HEALTH_EVIDENCE_RUNTIME_RELEASED_CLAIM_IDS
     if normalized_id not in CLINICAL_RELEASE_HOLD_DOCUMENT_IDS:
         return True
-    return (
-        str(serving_scope or "").strip()
-        == HEALTH_EVIDENCE_RUNTIME_SERVING_SCOPE
-        and normalized_id in HEALTH_EVIDENCE_RUNTIME_RELEASED_CLAIM_IDS
-    )
+    return False

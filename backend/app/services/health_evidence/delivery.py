@@ -8,14 +8,15 @@ shortcuts.  It never reconstructs private personal evidence.
 
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass
 import hmac
 from typing import Any, Mapping
 
-from .continuation import parse_health_evidence_continuation
 from .authority import is_current_health_evidence_artifact
+from .continuation import parse_health_evidence_continuation
 from .intent import classify_health_intent
-from .verifier import health_answer_text_sha256
+from .verifier import health_answer_text_sha256, health_manifest_sha256
 
 
 _CURRENT_MANIFEST_VERSION = "health-evidence.v1"
@@ -28,6 +29,7 @@ _UNVERIFIED_META_KEYS = (
     "cards",
     "health_evidence_manifest",
     "health_evidence_verification",
+    "risk_level",
     "sources_used",
 )
 
@@ -89,7 +91,12 @@ def sanitize_health_delivery(
         intent_id=expected_intent_id,
         assistant_content=content,
     ):
-        return HealthDelivery(content=content, meta=meta, sanitized=False)
+        manifest = meta["health_evidence_manifest"]
+        return HealthDelivery(
+            content=content,
+            meta=_canonical_verified_meta(meta, manifest),
+            sanitized=False,
+        )
 
     claimed_risk = (
         intent.risk_level.value
@@ -203,6 +210,15 @@ def has_current_health_verification(
     if risk_level in {"high", "emergency"} and verdict != "block":
         return False
 
+    manifest_hash = str(
+        verification.get("manifest_sha256") or ""
+    ).strip().lower()
+    if len(manifest_hash) != 64 or not hmac.compare_digest(
+        manifest_hash,
+        health_manifest_sha256(manifest),
+    ):
+        return False
+
     released_hash = str(
         verification.get("released_text_sha256") or ""
     ).strip().lower()
@@ -215,19 +231,34 @@ def has_current_health_verification(
     evidence_refs = manifest.get("evidence_refs")
     authority_refs = manifest.get("authority_evidence_refs")
     refs_used = verification.get("evidence_refs_used")
-    if not all(
-        isinstance(item, list)
-        for item in (evidence_refs, authority_refs, refs_used)
+    normalized_evidence_refs = _unique_ref_list(evidence_refs)
+    normalized_authority_refs = _unique_ref_list(authority_refs)
+    normalized_refs_used = _unique_ref_list(refs_used)
+    if (
+        normalized_evidence_refs is None
+        or normalized_authority_refs is None
+        or normalized_refs_used is None
     ):
         return False
-    if not set(map(str, refs_used)).issubset(set(map(str, evidence_refs))):
+    if normalized_authority_refs != normalized_refs_used:
         return False
-    if not set(map(str, refs_used)).issubset(set(map(str, authority_refs))):
+    if [
+        ref
+        for ref in normalized_evidence_refs
+        if ref.startswith("claim:")
+    ] != normalized_authority_refs:
         return False
-    normalized_refs_used = {str(item) for item in refs_used}
+    if (
+        sufficiency == "sufficient"
+        and verdict in {"pass", "repair"}
+        and not normalized_refs_used
+    ):
+        return False
+
     authority_artifacts = manifest.get("authority_artifacts")
     if not isinstance(authority_artifacts, list):
         return False
+    artifact_ids: list[str] = []
     artifact_by_id: dict[str, str] = {}
     for raw in authority_artifacts:
         if not isinstance(raw, Mapping):
@@ -236,8 +267,9 @@ def has_current_health_verification(
         sha256 = str(raw.get("sha256") or "").strip().lower()
         if not doc_id or doc_id in artifact_by_id:
             return False
+        artifact_ids.append(doc_id)
         artifact_by_id[doc_id] = sha256
-    if set(artifact_by_id) != normalized_refs_used:
+    if artifact_ids != normalized_refs_used:
         return False
     if not all(
         is_current_health_evidence_artifact(
@@ -248,6 +280,59 @@ def has_current_health_verification(
     ):
         return False
     return True
+
+
+def _unique_ref_list(value: Any) -> list[str] | None:
+    if not isinstance(value, list):
+        return None
+    refs: list[str] = []
+    for raw in value:
+        if not isinstance(raw, str):
+            return None
+        ref = raw.strip()
+        if not ref or ref != raw:
+            return None
+        refs.append(ref)
+    if len(refs) != len(set(refs)):
+        return None
+    return refs
+
+
+def _canonical_verified_meta(
+    meta: Mapping[str, Any],
+    manifest: Mapping[str, Any],
+) -> dict[str, Any]:
+    canonical_meta = deepcopy(dict(meta))
+    canonical_manifest = deepcopy(dict(manifest))
+    canonical_meta["cards"] = [
+        {
+            "type": "health_evidence",
+            "data": canonical_manifest,
+            "actions": [],
+        }
+    ]
+
+    sources_used: list[str] = []
+    for raw in canonical_manifest.get("authority_sources") or []:
+        if not isinstance(raw, Mapping):
+            continue
+        organization = str(raw.get("organization") or "").strip()
+        if organization and organization not in sources_used:
+            sources_used.append(organization)
+    context_categories = [
+        str(item).strip()
+        for item in canonical_manifest.get("context_categories_used") or []
+        if str(item).strip()
+    ]
+    if context_categories:
+        sources_used.append(
+            "个人健康上下文：" + "、".join(context_categories)
+        )
+    canonical_meta["sources_used"] = sources_used
+    canonical_meta["risk_level"] = str(
+        canonical_manifest.get("risk_level") or ""
+    )
+    return canonical_meta
 
 
 def unverified_health_delivery_text(risk_level: str) -> str:

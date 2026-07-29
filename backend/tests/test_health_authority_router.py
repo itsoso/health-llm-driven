@@ -187,7 +187,7 @@ def test_rejects_self_declared_dedao_paid_course_even_when_marked_t1():
     )
 
     assert bundle.accepted == ()
-    assert bundle.rejections[0].reason == "untrusted_source_id"
+    assert bundle.rejections[0].reason == "clinical_review_pending"
 
 
 def test_rejects_source_identity_fields_that_do_not_match_registry():
@@ -350,7 +350,7 @@ def test_rejects_unpublished_claim_even_when_it_copies_an_official_source():
     )
 
     assert bundle.accepted == ()
-    assert bundle.rejections[0].reason == "untrusted_claim_id"
+    assert bundle.rejections[0].reason == "clinical_review_pending"
 
 
 def test_claim_cannot_widen_its_published_applicability_metadata():

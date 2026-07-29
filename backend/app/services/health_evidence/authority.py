@@ -605,6 +605,19 @@ def is_current_health_evidence_artifact(
     )
 
 
+def is_current_health_evidence_document(document: Mapping[str, Any]) -> bool:
+    """Validate a stored claim's complete sealed artifact, not only its ID."""
+
+    metadata = _mapping(
+        document.get("metadata") or document.get("metadata_json")
+    )
+    doc_id = _text(document.get("doc_id"))
+    return is_current_health_evidence_artifact(
+        doc_id,
+        _claim_artifact_sha256(document, metadata),
+    )
+
+
 def _reviewed_sources(raw: Any) -> list[AuthoritySource]:
     if not isinstance(raw, Iterable) or isinstance(raw, (str, bytes, Mapping)):
         return []

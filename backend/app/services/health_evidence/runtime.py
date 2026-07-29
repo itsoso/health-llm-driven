@@ -10,6 +10,9 @@ from typing import Any, Mapping, Sequence
 
 from sqlalchemy.orm import Session
 
+from app.services.clinical_claim_release import (
+    HEALTH_EVIDENCE_RUNTIME_SERVING_SCOPE,
+)
 from app.twin.schema import HealthTwin, TwinMeta
 
 from .authority import AuthorityBundle, route_authority_results
@@ -317,7 +320,7 @@ def compile_health_evidence_turn(
         population=profile.population,
         use_case=_authority_use_case(effective_intent),
         now=now,
-        serving_scope="health_evidence_runtime",
+        serving_scope=HEALTH_EVIDENCE_RUNTIME_SERVING_SCOPE,
     )
     missing = _missing_discriminators(
         effective_intent,

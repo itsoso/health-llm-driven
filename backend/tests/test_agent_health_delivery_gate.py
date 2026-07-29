@@ -43,35 +43,39 @@ def _verified_health_meta(released_text: str) -> dict:
     from app.services.health_evidence.authority import (
         LOW_BACK_CLAIM_POLICY,
     )
+    from app.services.health_evidence.verifier import (
+        health_manifest_sha256,
+    )
 
     claim_id = "claim:c_low_back_self_management_activity_boundary"
-    return {
-        "health_evidence_manifest": {
-            "version": "health-evidence.v1",
-            "intent": {
-                "version": "health-intent.v1",
-                "intent_id": "health_advice.symptom.low_back_pain",
-                "intent": "health_advice",
-                "domain": "low_back_pain",
-                "risk_level": "medium",
-                "requires_authority": True,
-            },
+    manifest = {
+        "version": "health-evidence.v1",
+        "intent": {
+            "version": "health-intent.v1",
+            "intent_id": "health_advice.symptom.low_back_pain",
+            "intent": "health_advice",
+            "domain": "low_back_pain",
             "risk_level": "medium",
-            "sufficiency": "sufficient",
-            "verifier_verdict": "pass",
-            "evidence_refs": [claim_id],
-            "authority_evidence_refs": [claim_id],
-            "authority_artifacts": [
-                {
-                    "doc_id": claim_id,
-                    "sha256": (
-                        LOW_BACK_CLAIM_POLICY[
-                            claim_id
-                        ].artifact_sha256
-                    ),
-                }
-            ],
+            "requires_authority": True,
         },
+        "risk_level": "medium",
+        "sufficiency": "sufficient",
+        "verifier_verdict": "pass",
+        "evidence_refs": [claim_id],
+        "authority_evidence_refs": [claim_id],
+        "authority_artifacts": [
+            {
+                "doc_id": claim_id,
+                "sha256": (
+                    LOW_BACK_CLAIM_POLICY[
+                        claim_id
+                    ].artifact_sha256
+                ),
+            }
+        ],
+    }
+    return {
+        "health_evidence_manifest": manifest,
         "health_evidence_verification": {
             "verdict": "pass",
             "reasons": [],
@@ -79,6 +83,7 @@ def _verified_health_meta(released_text: str) -> dict:
             "released_text_sha256": hashlib.sha256(
                 released_text.encode("utf-8")
             ).hexdigest(),
+            "manifest_sha256": health_manifest_sha256(manifest),
         },
     }
 

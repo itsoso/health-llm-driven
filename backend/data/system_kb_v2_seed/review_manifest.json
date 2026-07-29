@@ -16,7 +16,8 @@
       "reviewer": "product-owner-2026-07-29",
       "reviewer_role": "product_owner",
       "serving_allowed": true,
-      "serving_scope": "health_evidence_runtime_only",
+      "serving_scope": "health_evidence_runtime",
+      "generic_serving_allowed": false,
       "source_policy": "T1 official guidance only; no raw Dedao or paid-course text",
       "version": "low-back-authority-pack.v1"
     }

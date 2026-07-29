@@ -1,6 +1,7 @@
-import json
 from copy import deepcopy
 from datetime import UTC, datetime
+import hashlib
+import json
 from pathlib import Path
 
 import pytest
@@ -795,11 +796,27 @@ def _verified_persisted_health_answer() -> tuple[str, dict]:
     )
     verification = turn.verify("请给我有权威依据的安全建议")
     manifest = turn.public_manifest(verification=verification)
-    return verification.text, {
+    meta = {
         "health_evidence_manifest": manifest,
-        "health_evidence_verification": verification.public_dict(),
+        "health_evidence_verification": verification.public_dict(
+            manifest=manifest,
+        ),
         "cards": [turn.card_descriptor(verification=verification)],
     }
+    return verification.text, meta
+
+
+def _bind_manifest_digest(meta: dict) -> None:
+    manifest = meta["health_evidence_manifest"]
+    payload = json.dumps(
+        manifest,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    meta["health_evidence_verification"]["manifest_sha256"] = (
+        hashlib.sha256(payload).hexdigest()
+    )
 
 
 def test_persisted_health_answer_is_sanitized_when_runtime_release_is_revoked(
@@ -838,6 +855,7 @@ def test_persisted_health_answer_is_sanitized_on_artifact_version_mismatch():
     tampered_meta["health_evidence_manifest"]["authority_artifacts"][0][
         "sha256"
     ] = "0" * 64
+    _bind_manifest_digest(tampered_meta)
 
     delivery = sanitize_health_delivery(
         source_query="腰痛怎么办",
@@ -848,6 +866,114 @@ def test_persisted_health_answer_is_sanitized_on_artifact_version_mismatch():
 
     assert delivery.sanitized is True
     assert content not in delivery.content
+
+
+def test_persisted_health_answer_is_sanitized_on_manifest_digest_mismatch():
+    content, meta = _verified_persisted_health_answer()
+    tampered_meta = deepcopy(meta)
+    tampered_meta["health_evidence_manifest"]["limitations"].append(
+        "forged delivery metadata"
+    )
+
+    delivery = sanitize_health_delivery(
+        source_query="腰痛怎么办",
+        assistant_content=content,
+        assistant_meta=tampered_meta,
+        enabled=False,
+    )
+
+    assert delivery.sanitized is True
+    assert content not in delivery.content
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ["empty", "duplicate", "forged_extra"],
+)
+def test_sufficient_delivery_requires_exact_unique_nonempty_authority_refs(
+    mutation,
+):
+    content, meta = _verified_persisted_health_answer()
+    forged = deepcopy(meta)
+    manifest = forged["health_evidence_manifest"]
+    verification = forged["health_evidence_verification"]
+    claim_id = manifest["authority_evidence_refs"][0]
+    artifact = dict(manifest["authority_artifacts"][0])
+    if mutation == "empty":
+        manifest["authority_evidence_refs"] = []
+        manifest["authority_artifacts"] = []
+        manifest["evidence_refs"] = [
+            ref
+            for ref in manifest["evidence_refs"]
+            if ref != claim_id
+        ]
+        verification["evidence_refs_used"] = []
+    elif mutation == "duplicate":
+        manifest["authority_evidence_refs"].append(claim_id)
+        manifest["evidence_refs"].append(claim_id)
+        verification["evidence_refs_used"].append(claim_id)
+    else:
+        extra = "claim:forged-extra-authority-ref"
+        manifest["authority_evidence_refs"].append(extra)
+        manifest["evidence_refs"].append(extra)
+        manifest["authority_artifacts"].append(
+            {**artifact, "doc_id": extra}
+        )
+    _bind_manifest_digest(forged)
+
+    delivery = sanitize_health_delivery(
+        source_query="腰痛怎么办",
+        assistant_content=content,
+        assistant_meta=forged,
+        enabled=False,
+    )
+
+    assert delivery.sanitized is True
+    assert content not in delivery.content
+
+
+def test_valid_delivery_reconstructs_canonical_card_sources_and_risk():
+    content, meta = _verified_persisted_health_answer()
+    manifest = meta["health_evidence_manifest"]
+    forged = deepcopy(meta)
+    forged["cards"] = [
+        {
+            "type": "health_evidence",
+            "data": {"risk_level": "low", "fake": True},
+            "actions": [{"type": "unsafe"}],
+        },
+        {"type": "fake_health_card", "data": {"diagnosis": "forged"}},
+    ]
+    forged["sources_used"] = ["fake-paid-source"]
+    forged["risk_level"] = "low"
+
+    delivery = sanitize_health_delivery(
+        source_query="腰痛怎么办",
+        assistant_content=content,
+        assistant_meta=forged,
+        enabled=False,
+    )
+
+    assert delivery.sanitized is False
+    assert delivery.content == content
+    assert delivery.meta["cards"] == [
+        {
+            "type": "health_evidence",
+            "data": manifest,
+            "actions": [],
+        }
+    ]
+    expected_sources = [
+        source["organization"]
+        for source in manifest["authority_sources"]
+    ]
+    if manifest["context_categories_used"]:
+        expected_sources.append(
+            "个人健康上下文："
+            + "、".join(manifest["context_categories_used"])
+        )
+    assert delivery.meta["sources_used"] == expected_sources
+    assert delivery.meta["risk_level"] == manifest["risk_level"]
 
 
 def test_user_profile_age_under_16_never_routes_adult_authority(

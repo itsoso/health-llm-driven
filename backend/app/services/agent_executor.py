@@ -12393,7 +12393,9 @@ class AgentExecutor:
                     {
                         "health_evidence_manifest": health_evidence_manifest,
                         "health_evidence_verification": (
-                            health_verification.public_dict()
+                            health_verification.public_dict(
+                                manifest=health_evidence_manifest,
+                            )
                             if health_verification is not None
                             else None
                         ),
@@ -12455,7 +12457,9 @@ class AgentExecutor:
                     {
                         "health_evidence_manifest": health_evidence_manifest,
                         "health_evidence_verification": (
-                            health_verification.public_dict()
+                            health_verification.public_dict(
+                                manifest=health_evidence_manifest,
+                            )
                             if health_verification is not None
                             else None
                         ),

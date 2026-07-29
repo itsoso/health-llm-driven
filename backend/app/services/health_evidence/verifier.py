@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
+import json
 import re
 from types import SimpleNamespace
 from typing import Any, Collection, Iterable, Mapping
@@ -127,19 +128,41 @@ class HealthAnswerVerification:
     reasons: tuple[str, ...] = ()
     evidence_refs_used: tuple[str, ...] = ()
 
-    def public_dict(self) -> dict[str, Any]:
-        return {
+    def public_dict(
+        self,
+        *,
+        manifest: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        payload = {
             "verdict": self.verdict,
             "reasons": list(self.reasons),
             "evidence_refs_used": list(self.evidence_refs_used),
             "released_text_sha256": health_answer_text_sha256(self.text),
         }
+        if manifest is not None:
+            payload["manifest_sha256"] = health_manifest_sha256(manifest)
+        return payload
 
 
 def health_answer_text_sha256(text: str) -> str:
     """Bind persisted verification metadata to the exact released answer."""
 
     return hashlib.sha256(str(text or "").encode("utf-8")).hexdigest()
+
+
+def health_manifest_sha256(manifest: Mapping[str, Any]) -> str:
+    """Bind verification metadata to one canonical public manifest."""
+
+    try:
+        payload = json.dumps(
+            manifest,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    except (TypeError, ValueError):
+        return ""
+    return hashlib.sha256(payload).hexdigest()
 
 
 def verify_health_answer(
