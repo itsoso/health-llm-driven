@@ -55,6 +55,9 @@ def _rich_twin(*, failed_partitions=()) -> HealthTwin:
         physiological=PhysiologicalState(
             sleep_score_latest=61,
             hrv_latest=38,
+            resting_hr=57,
+            training_readiness_score=74,
+            steps_today=6432,
             last_updated=NOW.date(),
             divergent_metrics=[
                 CrossSourceDivergence(
@@ -121,12 +124,13 @@ def _rich_twin(*, failed_partitions=()) -> HealthTwin:
 def _compile(
     twin: HealthTwin,
     *,
+    query: str = "我腰疼怎么办",
     max_evidence_items: int = 8,
     allergies=("青霉素",),
 ):
     return compile_personal_context(
         twin=twin,
-        intent=classify_health_intent("我腰疼怎么办"),
+        intent=classify_health_intent(query),
         safety_profile=SafetyProfileContext(allergies=allergies),
         max_evidence_items=max_evidence_items,
     )
@@ -137,10 +141,91 @@ def test_low_back_context_selects_safety_core_and_only_relevant_optional_evidenc
     categories = {item.category for item in packet.evidence}
 
     assert MANDATORY_LOW_BACK_CATEGORIES.issubset(categories)
-    assert "wearable" in categories
+    assert "wearable" not in categories
     assert "lab" not in categories
     assert "genetic" not in categories
     assert "diet" not in categories
+    assert packet.conflicts == ()
+
+
+def test_low_back_activity_question_selects_only_movement_wearables():
+    packet = _compile(
+        _rich_twin(),
+        query="腰痛时还能走路和运动吗？",
+        max_evidence_items=12,
+    )
+
+    wearable_refs = {
+        item.source_ref
+        for item in packet.evidence
+        if item.category == "wearable" and item.kind == "measurement"
+    }
+    assert wearable_refs == {
+        "wearable.steps_today",
+        "wearable.training_readiness_score",
+    }
+    assert packet.conflicts == ()
+
+
+def test_chronic_recovery_question_selects_recovery_but_not_step_count():
+    packet = _compile(
+        _rich_twin(),
+        query="慢性腰痛影响睡眠和恢复，应该怎么办？",
+        max_evidence_items=12,
+    )
+
+    wearable_refs = {
+        item.source_ref
+        for item in packet.evidence
+        if item.category == "wearable" and item.kind == "measurement"
+    }
+    assert wearable_refs == {
+        "wearable.hrv_latest",
+        "wearable.resting_hr",
+        "wearable.sleep_score_latest",
+        "wearable.training_readiness_score",
+    }
+    assert "wearable.steps_today" not in wearable_refs
+    assert len(packet.conflicts) == 1
+    assert packet.conflicts[0].trusted_source == "garmin"
+
+
+def test_requested_wearable_domain_without_data_is_an_explicit_gap():
+    packet = _compile(
+        HealthTwin(meta=TwinMeta(user_id=7, generated_at=NOW)),
+        query="腰痛时还能锻炼吗？",
+        allergies=(),
+    )
+
+    gap = next(
+        item
+        for item in packet.gaps
+        if item.gap_id == "personal-gap:wearable:movement"
+    )
+    assert gap.category == "wearable"
+    assert gap.state == GapState.ABSENT
+
+
+def test_failed_requested_wearable_domain_is_not_reported_as_absent():
+    packet = _compile(
+        HealthTwin(
+            meta=TwinMeta(
+                user_id=7,
+                generated_at=NOW,
+                failed_partitions=["training_load"],
+            )
+        ),
+        query="腰痛时还能运动吗？",
+        allergies=(),
+    )
+
+    gap = next(
+        item
+        for item in packet.gaps
+        if item.gap_id == "personal-gap:wearable:movement"
+    )
+    assert gap.state == GapState.FAILED
+    assert gap.failed_partition == "training_load"
 
 
 def test_every_mandatory_category_is_evidence_or_an_explicit_gap():
@@ -177,9 +262,10 @@ def test_failed_partition_is_not_reported_as_absent_data():
 
 def test_budgeting_is_deterministic_and_never_drops_mandatory_categories():
     twin = _rich_twin()
+    query = "慢性腰痛影响睡眠，我还能运动吗？"
 
-    first = _compile(twin, max_evidence_items=7)
-    second = _compile(twin, max_evidence_items=7)
+    first = _compile(twin, query=query, max_evidence_items=7)
+    second = _compile(twin, query=query, max_evidence_items=7)
 
     assert first == second
     assert len(first.evidence) <= 7
@@ -202,7 +288,10 @@ def test_iso_freshness_is_normalized_against_frozen_twin_time():
 
 
 def test_cross_source_conflict_is_preserved_without_averaging_sources():
-    packet = _compile(_rich_twin())
+    packet = _compile(
+        _rich_twin(),
+        query="慢性腰痛让我睡不好，最近恢复怎么样？",
+    )
 
     assert len(packet.conflicts) == 1
     conflict = packet.conflicts[0]

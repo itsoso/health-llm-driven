@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 import logging
+import re
 from typing import Any
 
 from app.services.personal_evidence_matrix import build_personal_evidence_matrix
@@ -54,6 +55,71 @@ _SAFETY_CRITICAL_PARTITIONS = frozenset(
         "collectors",
     }
 )
+_LOW_BACK_WEARABLE_PROFILE_DOMAINS = {
+    "movement": frozenset({"movement"}),
+    "recovery": frozenset({"recovery_capacity", "sleep"}),
+}
+_LOW_BACK_WEARABLE_PROFILE_FAILED_PARTITIONS = {
+    "movement": frozenset(
+        {"garmin_official", "physiological_derived", "training_load"}
+    ),
+    "recovery": frozenset(
+        {
+            "garmin_official",
+            "hrv_nightly",
+            "physiological_derived",
+            "sleep_deep",
+            "training_load",
+        }
+    ),
+}
+_LOW_BACK_MOVEMENT_TERMS = (
+    "运动",
+    "锻炼",
+    "训练",
+    "健身",
+    "走路",
+    "步行",
+    "散步",
+    "跑步",
+    "拉伸",
+    "活动量",
+    "搬重物",
+    "exercise",
+    "workout",
+    "training",
+    "walk",
+    "walking",
+    "run",
+    "running",
+    "stretch",
+    "lifting",
+    "physical activity",
+)
+_LOW_BACK_RECOVERY_TERMS = (
+    "慢性",
+    "长期",
+    "反复",
+    "恢复",
+    "睡眠",
+    "失眠",
+    "睡不好",
+    "疲劳",
+    "压力",
+    "焦虑",
+    "情绪",
+    "chronic",
+    "persistent",
+    "long-term",
+    "long term",
+    "recovery",
+    "sleep",
+    "insomnia",
+    "fatigue",
+    "stress",
+    "anxiety",
+    "mood",
+)
 
 
 def compile_personal_context(
@@ -97,12 +163,27 @@ def compile_personal_context(
             generated_at=generated_at,
         )
 
-    optional_specs = _matrix_candidates(
+    wearable_profiles = _requested_low_back_wearable_profiles(intent)
+    optional_specs, covered_wearable_profiles = _matrix_candidates(
         twin,
         intent=intent,
         generated_at=generated_at,
+        wearable_profiles=wearable_profiles,
     )
-    optional_specs.extend(_conflict_evidence_candidates(twin, intent=intent))
+    gaps.extend(
+        _missing_wearable_profile_gaps(
+            wearable_profiles,
+            covered_profiles=covered_wearable_profiles,
+            failed_partitions=failed_partitions,
+        )
+    )
+    optional_specs.extend(
+        _conflict_evidence_candidates(
+            twin,
+            intent=intent,
+            wearable_profiles=wearable_profiles,
+        )
+    )
     optional_specs.sort(
         key=lambda spec: (
             str(spec["category"]),
@@ -114,7 +195,11 @@ def compile_personal_context(
     remaining = max_evidence_items - len(evidence_specs)
     selected_specs = evidence_specs + optional_specs[:remaining]
     evidence = _materialize_evidence(selected_specs)
-    conflicts = _compile_conflicts(twin, intent=intent)
+    conflicts = _compile_conflicts(
+        twin,
+        intent=intent,
+        wearable_profiles=wearable_profiles,
+    )
 
     return PersonalEvidencePacket(
         generated_at=generated_at,
@@ -424,15 +509,37 @@ def _matrix_candidates(
     *,
     intent: HealthIntentEnvelope,
     generated_at: datetime,
-) -> list[dict[str, Any]]:
-    if intent.domain != "low_back_pain":
-        return []
+    wearable_profiles: tuple[str, ...],
+) -> tuple[list[dict[str, Any]], frozenset[str]]:
+    if intent.domain != "low_back_pain" or not wearable_profiles:
+        return [], frozenset()
     matrix = build_personal_evidence_matrix(twin)
     candidates: list[dict[str, Any]] = []
-    observed_at = twin.freshness.sleep or twin.freshness.garmin
+    covered_profiles: set[str] = set()
     for signal in matrix.get("signals", []):
         if signal.get("signal_type") != "wearable":
             continue
+        signal_domains = {
+            str(domain)
+            for domain in signal.get("domains", [])
+            if isinstance(domain, str)
+        }
+        matching_profiles = {
+            profile
+            for profile in wearable_profiles
+            if signal_domains.intersection(
+                _LOW_BACK_WEARABLE_PROFILE_DOMAINS[profile]
+            )
+        }
+        if not matching_profiles:
+            continue
+        covered_profiles.update(matching_profiles)
+        signal_id = str(signal.get("signal_id") or "")
+        observed_at = (
+            twin.freshness.garmin
+            if signal_id == "wearable.steps_today"
+            else twin.freshness.sleep or twin.freshness.garmin
+        )
         candidates.append(
             {
                 "category": "wearable",
@@ -441,7 +548,7 @@ def _matrix_candidates(
                 "value": signal.get("value"),
                 "unit": signal.get("unit"),
                 "source_kind": str(signal.get("source") or "health_twin"),
-                "source_ref": str(signal.get("signal_id") or ""),
+                "source_ref": signal_id,
                 "observed_at": _to_iso(observed_at),
                 "freshness": _normalize_freshness(
                     observed_at or signal.get("freshness"),
@@ -450,15 +557,16 @@ def _matrix_candidates(
                 "reliability": str(signal.get("reliability") or "unknown"),
             }
         )
-    return candidates
+    return candidates, frozenset(covered_profiles)
 
 
 def _conflict_evidence_candidates(
     twin: HealthTwin,
     *,
     intent: HealthIntentEnvelope,
+    wearable_profiles: tuple[str, ...],
 ) -> list[dict[str, Any]]:
-    if intent.domain != "low_back_pain":
+    if intent.domain != "low_back_pain" or not wearable_profiles:
         return []
     return [
         {
@@ -476,6 +584,10 @@ def _conflict_evidence_candidates(
             "reliability": "low",
         }
         for divergence in twin.physiological.divergent_metrics
+        if _divergence_matches_profiles(
+            divergence.metric,
+            wearable_profiles,
+        )
     ]
 
 
@@ -483,8 +595,9 @@ def _compile_conflicts(
     twin: HealthTwin,
     *,
     intent: HealthIntentEnvelope,
+    wearable_profiles: tuple[str, ...],
 ) -> list[EvidenceConflict]:
-    if intent.domain != "low_back_pain":
+    if intent.domain != "low_back_pain" or not wearable_profiles:
         return []
     return [
         EvidenceConflict(
@@ -496,7 +609,14 @@ def _compile_conflicts(
         )
         for index, item in enumerate(
             sorted(
-                twin.physiological.divergent_metrics,
+                (
+                    divergence
+                    for divergence in twin.physiological.divergent_metrics
+                    if _divergence_matches_profiles(
+                        divergence.metric,
+                        wearable_profiles,
+                    )
+                ),
                 key=lambda divergence: (
                     divergence.metric,
                     divergence.trusted_source,
@@ -506,6 +626,90 @@ def _compile_conflicts(
             start=1,
         )
     ]
+
+
+def _requested_low_back_wearable_profiles(
+    intent: HealthIntentEnvelope,
+) -> tuple[str, ...]:
+    if intent.domain != "low_back_pain":
+        return ()
+    query = intent.query.casefold()
+    profiles: list[str] = []
+    if _query_contains_any(query, _LOW_BACK_MOVEMENT_TERMS):
+        profiles.append("movement")
+    if _query_contains_any(query, _LOW_BACK_RECOVERY_TERMS):
+        profiles.append("recovery")
+    return tuple(profiles)
+
+
+def _query_contains_any(query: str, terms: tuple[str, ...]) -> bool:
+    for term in terms:
+        normalized = term.casefold()
+        if normalized.isascii():
+            if re.search(rf"(?<!\w){re.escape(normalized)}(?!\w)", query):
+                return True
+        elif normalized in query:
+            return True
+    return False
+
+
+def _missing_wearable_profile_gaps(
+    requested_profiles: tuple[str, ...],
+    *,
+    covered_profiles: frozenset[str],
+    failed_partitions: tuple[str, ...],
+) -> list[ContextGap]:
+    gaps: list[ContextGap] = []
+    for profile in requested_profiles:
+        if profile in covered_profiles:
+            continue
+        failed_partition = next(
+            (
+                partition
+                for partition in failed_partitions
+                if partition
+                in _LOW_BACK_WEARABLE_PROFILE_FAILED_PARTITIONS[profile]
+            ),
+            None,
+        )
+        gaps.append(
+            ContextGap(
+                gap_id=f"personal-gap:wearable:{profile}",
+                category="wearable",
+                state=(
+                    GapState.FAILED
+                    if failed_partition is not None
+                    else GapState.ABSENT
+                ),
+                detail=(
+                    "问题所需的可穿戴活动/恢复信息本轮不可用，"
+                    "不能把缺失解释为状态正常。"
+                ),
+                failed_partition=failed_partition,
+            )
+        )
+    return gaps
+
+
+def _divergence_matches_profiles(
+    metric: str,
+    profiles: tuple[str, ...],
+) -> bool:
+    normalized = metric.casefold()
+    domains: set[str] = set()
+    if any(token in normalized for token in ("step", "walk", "distance")):
+        domains.add("movement")
+    if any(
+        token in normalized
+        for token in ("hrv", "resting_hr", "resting_heart", "sleep")
+    ):
+        domains.add("recovery_capacity")
+    if any(token in normalized for token in ("training", "readiness")):
+        domains.update({"movement", "recovery_capacity"})
+    return any(
+        domains.intersection(_LOW_BACK_WEARABLE_PROFILE_DOMAINS[profile])
+        for profile in profiles
+    )
 
 
 def _materialize_evidence(
