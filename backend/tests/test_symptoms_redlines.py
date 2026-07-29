@@ -166,6 +166,8 @@ def test_natural_cauda_equina_phrasing_still_triggers_warning():
         ["腰痛", "我的排尿困难已稳定多年，但今天并未加重"],
         ["腰痛", "我的排尿困难已稳定多年，目前没有恶化"],
         ["腰痛", "我长期有排尿困难，但今天没有尿潴留"],
+        ["腰痛", "我长期有排尿困难，今天没有尿失禁"],
+        ["腰痛", "我长期有排尿困难，现在没有漏尿"],
         [
             "lower back pain",
             "longstanding difficulty peeing, but not worse today",
@@ -173,6 +175,10 @@ def test_natural_cauda_equina_phrasing_still_triggers_warning():
         [
             "lower back pain",
             "longstanding difficulty peeing, no new urinary retention",
+        ],
+        [
+            "lower back pain",
+            "longstanding difficulty peeing, no new urinary incontinence",
         ],
         ["腰痛加重了", "我的排尿困难已稳定多年，没有变化"],
         ["我的排尿困难已稳定多年", "但腰痛这两天加重了"],
@@ -190,6 +196,11 @@ def test_negated_or_unrelated_change_does_not_trigger_guardian(symptoms):
         ["腰痛", "我长期有排尿困难，这两天更严重了"],
         ["腰痛", "我长期有排尿困难，最近越来越难尿"],
         ["腰痛", "我长期有排尿困难，最近控制不住小便"],
+        ["腰痛", "我长期有排尿困难，今天尿失禁"],
+        ["腰痛", "我长期有排尿困难，现在漏尿"],
+        ["腰痛", "我长期有排尿困难，目前尿失禁"],
+        ["腰痛", "我长期有排尿困难，当前漏尿"],
+        ["腰痛", "我长期有排尿困难，这次尿失禁"],
         ["腰痛", "排尿困难，今天尿不出来，既往稳定多年"],
         ["腰痛", "排尿困难、现在尿不出来，此前一直稳定"],
         ["腰痛", "排尿困难，今天尿潴留，之前一直稳定"],
@@ -201,6 +212,18 @@ def test_negated_or_unrelated_change_does_not_trigger_guardian(symptoms):
                 "difficulty peeing has been stable for years, "
                 "but today I cannot empty my bladder"
             ),
+        ],
+        [
+            "lower back pain",
+            "longstanding difficulty peeing, today urinary incontinence",
+        ],
+        [
+            "lower back pain",
+            "longstanding difficulty peeing, now leaking urine",
+        ],
+        [
+            "lower back pain",
+            "longstanding difficulty peeing, new urinary incontinence",
         ],
         [
             "lower back pain",
