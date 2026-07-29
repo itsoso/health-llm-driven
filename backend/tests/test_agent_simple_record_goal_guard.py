@@ -178,6 +178,143 @@ def test_diet_goal_keeps_model_nutrition_when_food_text_is_equivalent():
     }
 
 
+def test_diet_goal_keeps_model_nutrition_when_food_list_replaces_conjunction():
+    goal = GoalSpec(
+        kind="simple_health_record",
+        domain="diet",
+        operation="create",
+        target_date="2026-07-26",
+        target_meal_types=("dinner",),
+        target_record_type="diet",
+        target_values=(
+            ("meal_type", "dinner"),
+            (
+                "food_items",
+                "牛排和蔬菜，520千卡，蛋白质42克，碳水18克，"
+                "脂肪30克，膳食纤维5克",
+            ),
+        ),
+        requires_verification=True,
+    )
+    calls = [
+        _tool_call(
+            "equivalent-diet-list",
+            {
+                "record_type": "diet",
+                "data": {
+                    "meal_type": "dinner",
+                    "food_items": [
+                        {"name": "牛排"},
+                        {"name": "蔬菜"},
+                    ],
+                    "calories": 520,
+                    "protein": 42,
+                    "carbs": 18,
+                    "fat": 30,
+                    "fiber": 5,
+                },
+            },
+        ),
+    ]
+
+    normalized = _normalize_goal_guarded_tool_calls(calls, goal)
+    normalized_data = json.loads(
+        normalized[0]["function"]["arguments"]
+    )["data"]
+
+    assert normalized_data["food_items"] == "牛排和蔬菜"
+    assert normalized_data["calories"] == 520
+    assert normalized_data["protein"] == 42
+    assert normalized_data["fiber"] == 5
+
+
+def test_diet_goal_does_not_split_lexicalized_food_name_on_conjunction():
+    goal = GoalSpec(
+        kind="simple_health_record",
+        domain="diet",
+        operation="create",
+        target_date="2026-07-26",
+        target_meal_types=("lunch",),
+        target_record_type="diet",
+        target_values=(
+            ("meal_type", "lunch"),
+            ("food_items", "牛肉和风沙拉"),
+        ),
+        requires_verification=True,
+    )
+    calls = [
+        _tool_call(
+            "ambiguous-conjunction-diet",
+            {
+                "record_type": "diet",
+                "data": {
+                    "meal_type": "lunch",
+                    "food_items": [
+                        {"name": "牛肉"},
+                        {"name": "风沙拉"},
+                    ],
+                    "calories": 480,
+                    "protein": 35,
+                    "carbs": 20,
+                    "fat": 28,
+                    "fiber": 6,
+                },
+            },
+        ),
+    ]
+
+    normalized = _normalize_goal_guarded_tool_calls(calls, goal)
+    normalized_data = json.loads(
+        normalized[0]["function"]["arguments"]
+    )["data"]
+
+    assert normalized_data["food_items"] == "牛肉和风沙拉"
+    assert "calories" not in normalized_data
+    assert "protein" not in normalized_data
+
+
+def test_diet_goal_rejects_model_nutrition_that_conflicts_with_user_values():
+    goal = GoalSpec(
+        kind="simple_health_record",
+        domain="diet",
+        operation="create",
+        target_date="2026-07-26",
+        target_meal_types=("dinner",),
+        target_record_type="diet",
+        target_values=(
+            ("meal_type", "dinner"),
+            ("food_items", "牛排和蔬菜，520千卡，蛋白质42克"),
+        ),
+        requires_verification=True,
+    )
+    calls = [
+        _tool_call(
+            "conflicting-diet-estimate",
+            {
+                "record_type": "diet",
+                "data": {
+                    "meal_type": "dinner",
+                    "food_items": "牛排, 蔬菜",
+                    "calories": 800,
+                    "protein": 42,
+                    "carbs": 18,
+                    "fat": 30,
+                    "fiber": 5,
+                },
+            },
+        ),
+    ]
+
+    normalized = _normalize_goal_guarded_tool_calls(calls, goal)
+    normalized_data = json.loads(
+        normalized[0]["function"]["arguments"]
+    )["data"]
+
+    assert normalized_data["food_items"].startswith("牛排和蔬菜")
+    assert "calories" not in normalized_data
+    assert "protein" not in normalized_data
+
+
 def test_diet_goal_keeps_complete_estimate_after_analysis_suffix_is_removed():
     goal = GoalSpec(
         kind="simple_health_record",

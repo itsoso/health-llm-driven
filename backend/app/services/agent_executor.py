@@ -49,6 +49,13 @@ from app.services.agent_turn_recovery import (
     should_retry_tool_failure,
 )
 from app.services.agent_turn_outcome import classify_agent_turn_outcome
+from app.services.agent_turn_retry import (
+    RetryableTurnRecovery,
+    build_retry_source_action_if_safe,
+    materialize_retryable_turn_images,
+    resolve_retryable_turn_recovery,
+    restore_retryable_turn_recovery,
+)
 from app.services.agent_write_outcome import (
     classify_explicit_write_execution,
     classify_write_execution,
@@ -6118,6 +6125,63 @@ def _merge_equivalent_diet_model_estimates(
         model_args,
         default_record_date=goal.target_date,
     )
+    nutrient_fact_patterns = {
+        "calories": re.compile(
+            r"(?:(?:热量|卡路里)\s*[:：]?\s*)?"
+            r"(?P<value>\d+(?:\.\d+)?)\s*(?:千卡|kcal|大卡)",
+            re.IGNORECASE,
+        ),
+        "protein": re.compile(
+            r"蛋白质\s*[:：]?\s*(?P<value>\d+(?:\.\d+)?)\s*(?:克|g)",
+            re.IGNORECASE,
+        ),
+        "carbs": re.compile(
+            r"碳水(?:化合物)?\s*[:：]?\s*"
+            r"(?P<value>\d+(?:\.\d+)?)\s*(?:克|g)",
+            re.IGNORECASE,
+        ),
+        "fat": re.compile(
+            r"脂肪\s*[:：]?\s*(?P<value>\d+(?:\.\d+)?)\s*(?:克|g)",
+            re.IGNORECASE,
+        ),
+        "fiber": re.compile(
+            r"膳食纤维\s*[:：]?\s*(?P<value>\d+(?:\.\d+)?)\s*(?:克|g)",
+            re.IGNORECASE,
+        ),
+    }
+
+    def extract_user_nutrition(value: Any) -> dict[str, float]:
+        text = str(value or "")
+        result: dict[str, float] = {}
+        for field, pattern in nutrient_fact_patterns.items():
+            match = pattern.search(text)
+            if match is not None:
+                result[field] = float(match.group("value"))
+        return result
+
+    def strip_user_nutrition(value: Any) -> str:
+        text = str(value or "")
+        for pattern in nutrient_fact_patterns.values():
+            text = pattern.sub("", text)
+        return text.strip(" \t\r\n,，、;；。.!！:：")
+
+    user_nutrition = extract_user_nutrition(
+        authoritative_data.get("food_items")
+    )
+    for field, user_value in user_nutrition.items():
+        model_value = model_data.get(field)
+        if (
+            not isinstance(model_value, (int, float))
+            or isinstance(model_value, bool)
+            or not math.isfinite(float(model_value))
+            or not math.isclose(
+                float(model_value),
+                user_value,
+                rel_tol=1e-6,
+                abs_tol=1e-6,
+            )
+        ):
+            return authoritative_args
 
     quantity_number = r"(?:\d+(?:\.\d+)?|[一二两三四五六七八九十百半]+)"
     quantity_unit = r"(?:毫升|ml|克|g|碗|杯|份|个|只|枚|颗|片|块|根|条)"
@@ -6138,6 +6202,14 @@ def _merge_equivalent_diet_model_estimates(
             "",
             str(value or ""),
         ).casefold()
+
+    def conjunction_food_identity(value: Any) -> str:
+        normalized = flat_food_identity(value)
+        return re.sub(
+            r"(?<=[\u4e00-\u9fff])(?:和|与)(?=[\u4e00-\u9fff])",
+            "",
+            normalized,
+        )
 
     def normalized_quantity(value: str) -> str:
         raw = value.casefold()
@@ -6245,12 +6317,20 @@ def _merge_equivalent_diet_model_estimates(
             )
         return tuple(sorted(canonical))
 
-    food_matches = (
-        flat_food_identity(model_data.get("food_items"))
-        == flat_food_identity(authoritative_data.get("food_items"))
-        or canonical_food_identity(model_data.get("food_items"))
-        == canonical_food_identity(authoritative_data.get("food_items"))
+    authoritative_food_items = strip_user_nutrition(
+        authoritative_data.get("food_items")
     )
+    direct_food_matches = (
+        flat_food_identity(model_data.get("food_items"))
+        == flat_food_identity(authoritative_food_items)
+        or canonical_food_identity(model_data.get("food_items"))
+        == canonical_food_identity(authoritative_food_items)
+    )
+    conjunction_food_matches = bool(user_nutrition) and (
+        conjunction_food_identity(model_data.get("food_items"))
+        == conjunction_food_identity(authoritative_food_items)
+    )
+    food_matches = direct_food_matches or conjunction_food_matches
     if (
         str(model_data.get("meal_type") or "").strip().lower()
         != str(authoritative_data.get("meal_type") or "").strip().lower()
@@ -6259,7 +6339,11 @@ def _merge_equivalent_diet_model_estimates(
         return authoritative_args
 
     merged_data = dict(authoritative_data)
-    merged_data["food_items"] = str(model_data["food_items"]).strip()[:1000]
+    merged_data["food_items"] = (
+        str(model_data["food_items"]).strip()[:1000]
+        if direct_food_matches
+        else authoritative_food_items[:1000]
+    )
     for field in (
         "calories",
         "protein",
@@ -7237,6 +7321,7 @@ class AgentExecutor:
         self._current_turn_user_message = ""
         self._current_turn_recent_messages: list[dict] = []
         self._current_turn_source_message_id: Optional[int] = None
+        self._current_turn_media_source_message_id: Optional[int] = None
         self._current_turn_conversation_id: Optional[int] = None
         self._current_turn_image_urls: list[str] = []
         self._current_turn_has_attachment = False
@@ -7307,6 +7392,7 @@ class AgentExecutor:
         # 需要长思考, 不该被封顶。每回合入口重置。
         self._turn_invoked_deep_analysis = False
         self._current_turn_source_message_id = None
+        self._current_turn_media_source_message_id = None
         self._current_turn_conversation_id = None
         self._current_turn_image_urls = []
         self._current_turn_has_attachment = False
@@ -8914,20 +9000,6 @@ class AgentExecutor:
         self._turn_medication_tool_preflight_error = None
         self._turn_medication_tool_confirmation_card = None
         self._multi_model_turn = False
-        self._start_agent_kernel_turn(
-            user_id=user_id,
-            message=message,
-            channel=channel,
-            client_caps=client_caps,
-            client_time_context=client_time_context,
-            media=_kernel_media_metadata(
-                images,
-                has_file=bool(file_base64),
-                file_name=file_name,
-            ),
-            client_turn_id=client_turn_id,
-            run_id=run_id,
-        )
         kernel_completion_status = "interrupted"
         recovered_user_message = None
         claimed_turn = False
@@ -9028,6 +9100,79 @@ class AgentExecutor:
                 raise
 
         try:
+            retry_recovery: RetryableTurnRecovery | None = None
+            if recovered_user_message is not None:
+                retry_recovery = restore_retryable_turn_recovery(
+                    self.db,
+                    user_id=user_id,
+                    user_message=recovered_user_message,
+                )
+            elif not images and not file_base64:
+                retry_recovery = resolve_retryable_turn_recovery(
+                    self.db,
+                    user_id=user_id,
+                    conversation_id=conversation_id,
+                    confirmation_text=message,
+                )
+
+            display_message = message or ""
+            effective_message = display_message
+            effective_images = images
+            persist_images = images
+            if retry_recovery is not None:
+                effective_message = retry_recovery.message
+                persist_images = []
+                try:
+                    effective_images = materialize_retryable_turn_images(
+                        retry_recovery,
+                        user_id=user_id,
+                    )
+                except (OSError, ValueError):
+                    self._start_agent_kernel_turn(
+                        user_id=user_id,
+                        message=effective_message,
+                        channel=channel,
+                        client_caps=client_caps,
+                        client_time_context=client_time_context,
+                        media=(),
+                        client_turn_id=client_turn_id,
+                        run_id=run_id,
+                    )
+                    kernel_completion_status = "error"
+                    notice = "原请求中的图片暂时无法读取，请重新选择图片后发送。"
+                    yield {"event": "token", "data": {"content": notice}}
+                    yield self._attach_runtime_identity({
+                        "event": "done",
+                        "data": {
+                            "conversation_id": conversation_id,
+                            "message_id": None,
+                            "completion_status": "error",
+                            "client_turn_id": client_turn_id,
+                            "request_persisted": False,
+                            "recovery_error": "retry_source_image_unavailable",
+                        },
+                    })
+                    return
+
+            self._current_turn_user_message = effective_message
+            self._current_turn_has_attachment = bool(
+                effective_images or file_base64
+            )
+            self._start_agent_kernel_turn(
+                user_id=user_id,
+                message=effective_message,
+                channel=channel,
+                client_caps=client_caps,
+                client_time_context=client_time_context,
+                media=_kernel_media_metadata(
+                    effective_images,
+                    has_file=bool(file_base64),
+                    file_name=file_name,
+                ),
+                client_turn_id=client_turn_id,
+                run_id=run_id,
+            )
+
             if recovered_user_message is not None:
                 recovered_meta = dict(recovered_user_message.meta or {})
                 recovered_write_state = dict(recovered_meta.get("write_state") or {})
@@ -9073,10 +9218,10 @@ class AgentExecutor:
                     return
             async for event in self._run_stream_impl(
                 user_id=user_id,
-                message=message,
+                message=effective_message,
                 conversation_id=conversation_id,
                 user_auth_token=user_auth_token,
-                images=images,
+                images=effective_images,
                 file_base64=file_base64,
                 file_name=file_name,
                 extra_context=extra_context,
@@ -9086,6 +9231,9 @@ class AgentExecutor:
                 client_caps=client_caps,
                 client_time_context=client_time_context,
                 read_only_tools=read_only_tools,
+                display_message=display_message,
+                persist_images=persist_images,
+                retry_recovery=retry_recovery,
             ):
                 if event.get("event") == "done":
                     kernel_completion_status = str(
@@ -9113,6 +9261,9 @@ class AgentExecutor:
         client_caps: Optional[List[str]] = None,
         client_time_context: Optional[Dict[str, Any]] = None,
         read_only_tools: bool = False,
+        display_message: Optional[str] = None,
+        persist_images: Optional[List[dict]] = None,
+        retry_recovery: RetryableTurnRecovery | None = None,
     ) -> AsyncGenerator[Dict, None]:
         """运行 Agent 循环，SSE 流式输出"""
         from app.services.llm.usage_tracker import set_caller
@@ -9316,12 +9467,21 @@ class AgentExecutor:
             ),
             title=message,
         )
+        stored_message = (
+            display_message if display_message is not None else message
+        )
+        stored_images = images if persist_images is None else persist_images
+        turn_user_meta: Dict[str, Any] = {}
+        if client_turn_id:
+            turn_user_meta["client_turn_id"] = client_turn_id
+        if retry_recovery is not None:
+            turn_user_meta["retry_source"] = retry_recovery.user_message_meta()
 
         # 先 claim 用户消息，再落图片。这样 DB claim 失败时不会产生孤儿文件；
         # worker 在 ACK 前退出时，新 worker 也能沿同一 turn 继续补齐图片。
-        user_content = message
-        if images:
-            user_content += f"\n[附图: {len(images)}张]"
+        user_content = stored_message
+        if stored_images:
+            user_content += f"\n[附图: {len(stored_images)}张]"
         if file_base64 and file_name:
             user_content += f"\n[附件: {file_name}]"
 
@@ -9335,7 +9495,7 @@ class AgentExecutor:
                 user_content,
                 client_turn_id=client_turn_id,
                 image_url=None,
-                meta={"client_turn_id": client_turn_id} if client_turn_id else None,
+                meta=turn_user_meta or None,
             )
 
         saved_image_urls: List[str] = []
@@ -9353,9 +9513,12 @@ class AgentExecutor:
                     saved_image_urls = [user_msg.image_url]
 
         new_image_urls: List[str] = []
-        if images:
+        if stored_images:
             try:
-                for index, img in enumerate(images[len(saved_image_urls):], start=len(saved_image_urls)):
+                for index, img in enumerate(
+                    stored_images[len(saved_image_urls):],
+                    start=len(saved_image_urls),
+                ):
                     object_key = None
                     if client_turn_id:
                         object_key = hashlib.sha256(
@@ -9396,8 +9559,7 @@ class AgentExecutor:
                     content=user_content,
                     image_url=image_url_value or user_msg.image_url,
                     meta=(
-                        {"client_turn_id": client_turn_id}
-                        if client_turn_id else None
+                        turn_user_meta or None
                     ),
                 )
                 if updated_user_msg is None:
@@ -9407,7 +9569,7 @@ class AgentExecutor:
                 user_msg.content = user_content
                 user_msg.meta = {
                     **(user_msg.meta or {}),
-                    **({"client_turn_id": client_turn_id} if client_turn_id else {}),
+                    **turn_user_meta,
                 }
                 self.db.commit()
                 self.db.refresh(user_msg)
@@ -9441,8 +9603,17 @@ class AgentExecutor:
         }}
 
         self._current_turn_source_message_id = int(user_msg.id)
+        self._current_turn_media_source_message_id = (
+            int(retry_recovery.source_message_id)
+            if retry_recovery is not None
+            else int(user_msg.id)
+        )
         self._current_turn_conversation_id = int(conv.id)
-        self._current_turn_image_urls = list(saved_image_urls)
+        self._current_turn_image_urls = (
+            list(retry_recovery.image_urls)
+            if retry_recovery is not None
+            else list(saved_image_urls)
+        )
         self._bind_agent_kernel_source_message(user_msg.id)
         try:
             self._bind_agent_kernel_actionable_references(
@@ -9652,6 +9823,11 @@ class AgentExecutor:
         self._current_turn_recent_messages = [
             dict(item) for item in recent_messages[-6:] if isinstance(item, dict)
         ]
+        if retry_recovery is not None:
+            for history_message in reversed(messages):
+                if history_message.get("role") == "user":
+                    history_message["content"] = message
+                    break
         # 确定性护栏 (R4): 历史里助手消息带过 ```reva-ui``` 图表 block —— 若原样喂回
         # LLM, 它会**模仿**这个格式并**编造**图表数据 (实测: 编 "Apple Watch + Garmin +
         # RingConn 多源合并")。把历史助手消息里的 block 换成占位符, LLM 无从模仿。
@@ -11783,6 +11959,23 @@ class AgentExecutor:
             record_intent_no_tool=record_intent_no_tool,
             destructive_or_sync_no_tool=destructive_or_sync_no_tool,
         )
+        kernel_snapshot = self._agent_kernel_snapshot
+        health_write_requested = bool(
+            kernel_snapshot is not None
+            and kernel_snapshot.intent.is_write
+            and kernel_snapshot.intent.domain != "aigc_media"
+        )
+        recovery_action = build_retry_source_action_if_safe(
+            source_message=user_msg,
+            turn_outcome=turn_outcome,
+            write_receipts=write_receipts,
+            health_write_requested=health_write_requested,
+            root_source_message_id=(
+                retry_recovery.root_source_message_id
+                if retry_recovery is not None
+                else int(user_msg.id)
+            ),
+        )
         answer_model = model_name
         selected_model = self._display_model_name_for_id(self._request_model_id) or answer_model
         tool_models = list(self._tool_model_names)
@@ -11910,6 +12103,11 @@ class AgentExecutor:
                 "completion_status": completion_status,
                 "record_intent_no_tool": record_intent_no_tool,
                 "turn_outcome": turn_outcome,
+                **(
+                    {"recovery_action": recovery_action}
+                    if recovery_action is not None
+                    else {}
+                ),
                 "recovery": {
                     "tool_retry_count": self._agent_kernel_tool_retry_count,
                 },
@@ -11955,6 +12153,11 @@ class AgentExecutor:
                 "completion_status": completion_status,
                 "record_intent_no_tool": record_intent_no_tool,
                 "turn_outcome": turn_outcome,
+                **(
+                    {"recovery_action": recovery_action}
+                    if recovery_action is not None
+                    else {}
+                ),
                 "recovery": {
                     "tool_retry_count": self._agent_kernel_tool_retry_count,
                 },
@@ -14703,7 +14906,10 @@ class AgentExecutor:
         output.  It never scans raw text for a recording keyword.
         """
         user_id = self._current_user_id
-        source_message_id = self._current_turn_source_message_id
+        source_message_id = (
+            self._current_turn_media_source_message_id
+            or self._current_turn_source_message_id
+        )
         if user_id is None or source_message_id is None:
             vision_result["contextual_capture_failed"] = True
             return None

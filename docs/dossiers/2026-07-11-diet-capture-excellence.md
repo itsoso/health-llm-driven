@@ -85,6 +85,7 @@
 - [x] T5.6 Agent Native Mobile capture deeplink：相机、相册、文字、语音确认后回小巴上下文（OTA）
 - [x] T5.7 营养成分表图片与用户实际食用重量本地融合，保证图片、营养、记录和回执单次闭环（backend deploy）
 - [x] T5.8 图片消息首个 SSE 确认前断流时，以 `client_turn_id` 核对 Runtime 持久化状态并恢复同一回合（backend deploy + OTA）
+- [x] T5.9 失败写入的源消息恢复绑定：用户紧邻回复“重试/需要”时恢复原文字与图片，保留新回合幂等检查点；不确定写入禁止重放（backend deploy）
 - [ ] T6 模拟器视觉、真机微信/小红书、生产数据闭环验收
 - Agent Native 验收约束：每个新增 Mobile 饮食入口都必须证明三件事：Agent 可引用 pending draft 或 confirmed DietRecord；确认成功必须有 `diet_record_id` 回执；用户能在小巴对话里继续追问、修正或查看全天影响。
 - 并发检查：2026-07-11 `origin/main` 与当前干净集成 worktree 一致；原始用户工作区不纳入暂存。
@@ -131,6 +132,7 @@
 - T5.7 RED/GREEN：先复现营养标签按 100g 返回后未结合“20 克”实际食用量、通用食物表覆盖标签值、错误分支调用缺失方法三类问题；最终食品识别/营养校准/Agent 图片写入 focused regression `59 passed`，饮食写入、图片事务、回执和恢复相关扩展回归 `264 passed`。完整流式用例验证 20g 坚果由 655 kcal/100g 换算为 131 kcal，生成且关联唯一记录和图片，缺少食用量时零写入并要求补充。
 - T5.7 真实模型回归（2026-07-27）：首次隔离 SQLite 因缺少 `llm_usage_logs` 被成本护栏 fail closed，未发生有效模型放行；初始化独立临时成本账本后重跑，`invariants 12/12`、`health_agent_core 50/50`、真实 `orchestrator 5/5` 通过，Orchestrator 平均分 `0.98`、无 regression，11 项轨迹契约全部通过。实际模型为 `MiniMax-M2.5`，原始 JSON 仅保存在本机 `/tmp/diet-photo-live-llm-eval-20260727.json`。
 - T5.8 RED/GREEN：先以 `网络请求失败 (status: 200)` 且首个 SSE 持久化事件未到达复现客户端误判，RED 证明状态核对从未调用；新增 Runtime 状态接口后，Backend owner isolation、无正文响应及“图片占位消息/部分回复不得提前确认” `3/3` 通过，Runtime API/Service 扩展回归 `65/65` 通过。Mobile 覆盖异常断流、clean close、服务端图片 URI 恢复、部分回复保持运行和不可重试终态映射，相关输入、图片草稿、聊天流和恢复回归 `164/164` 通过；TypeScript、OpenAPI 双端生成类型、目标 ESLint（0 error）与 Python Ruff 均通过。
+- T5.9 RED/GREEN：先复现失败助手询问是否重试后，用户回复“需要”只把两个字送入新 Run，原始饮食文本、营养和图片全部丢失；新增内容最小化 `retry_source_turn` 绑定后，恢复链路、目标约束和完成状态 `113/113` 通过，Agent 核心回归 `451/451` 通过，Runtime API、并发、reconcile 与断流恢复 `224 passed / 3 skipped`。测试覆盖 owner/conversation scope、紧邻顺序、重试的重试、客户端同 Turn 接管、原图片复用不重复上传、已验证/不确定写入禁止重放，以及含明确营养数值时保留营养但不误拆“牛肉和风沙拉”等完整菜名。
 - T5.2 首次 CI run `29164922239` 中 type drift 在补齐 Frontend 生成类型后通过，但 Linux `a-b` 分片连续两次远超历史绿灯的 4 分 23 秒，并在 `test_agent_health_manage.py` 与 `test_agent_intervention_cycle_tool.py` 边界失去输出；该边界组合本机 `30/30` 通过，`c-d` 重跑也在 3 分 36 秒通过。判定为既有进程级顺序污染而非饮食断言回归，将 86 个 `a-b` 测试文件拆为非 Agent、`agent_[a-h]`、`agent_[i-z]` 三个互斥进程；文件覆盖校验为 `86 -> 86`、差集 0。
 - T5.2 CI run `29166225719` 验证上述三个新分片分别在 3 分 2 秒、2 分 15 秒和 1 分 24 秒通过；同轮旧 `t[f-z]+u` 分片在 69% 处进入 `test_twin_builder.py` 后冻结，并被 20 分钟上限终止，其他 16 个作业均通过。本机同命令 `392/392` 在 31.23 秒通过；据逐用例日志将其拆为 `t[f-v]`、`t[w-z]`、`u` 三个干净进程，原 24 个文件覆盖校验仍为 `24 -> 24`、差集 0。
 - T5.2 CI run `29166933157` 中 `t[f-v]`、`t[w-z]`、`u` 已分别在 1 分 44 秒、1 分 25 秒和 1 分 28 秒通过；唯一剩余的旧 `s` 大分片进入 `test_schedule_into_agenda.py` 后失去输出，其他 18 个作业均通过。本机同一 643 项命令也在该模块首个用例后停住，但该模块单跑 `8/8`、与前一模块配对 `26/26`、`s[c-k]` 分组 `55/55` 均通过，确认是更长前序造成的进程状态污染；将 58 个 `s` 文件拆为 `s[a-b]`、`s[c-k]`、`s[l-z]`，覆盖校验为 `58 -> 58`、差集 0。
@@ -142,6 +144,7 @@
 
 - 触发：健康数据写入、AI 营养估算、私有图片和社交分享。
 - 已落实：owner scope、确认/取消/清理行锁、真实 PostgreSQL 竞态证明、确认幂等、取消后正文擦除、草稿与正式记录图片失败可重试、SecureStore 用户隔离且非阻断、恢复前服务端 token 终态校验、编辑时 Mobile/Backend 双层 provenance 清理、分享前显式操作、分享产物去身份化和临时文件释放。
+- T5.9 安全复核：恢复控制面只保存 source/root/trigger message id 和原因码，不保存健康正文、工具参数或图片内容；源消息和图片读取强制 owner scope；仅明确 retryable 且没有回执、没有 `in_flight/uncertain/verified` 检查点时提供动作。恢复 Run 使用新的 client turn 写入检查点和幂等身份，原图片只作为 owner-scoped 媒体来源复用。
 - 同一独立审查代理连续五轮核对；最后一轮未发现 P0/P1/P2。
 - **裁决：PASS**。
 

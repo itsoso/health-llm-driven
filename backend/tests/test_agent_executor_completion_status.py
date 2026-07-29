@@ -2722,6 +2722,8 @@ async def test_agent_stream_reports_nutrition_rejection_instead_of_model_success
     assert "补充记录类型和值" not in rendered
     assert done["data"]["completion_status"] == "error"
     assert done["data"]["write_receipts"] == []
+    assert done["data"]["recovery_action"]["type"] == "retry_source_turn"
+    assert done["data"]["recovery_action"]["status"] == "active"
 
 
 @pytest.mark.asyncio
