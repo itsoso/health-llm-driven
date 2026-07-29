@@ -132,8 +132,38 @@ def test_isolated_or_stable_findings_do_not_trigger_emergency_triage(query):
 @pytest.mark.parametrize(
     "query",
     [
+        "腰痛，我的排尿困难已稳定多年，但今天没有加重",
+        "腰痛，我的排尿困难已稳定多年，但今天并未加重",
+        "腰痛，我的排尿困难已稳定多年，目前没有恶化",
+        "腰痛，我长期有排尿困难，但今天没有尿潴留",
+        (
+            "lower back pain, longstanding difficulty peeing, "
+            "but not worse today"
+        ),
+        (
+            "lower back pain, longstanding difficulty peeing, "
+            "with no new urinary retention"
+        ),
+        "腰痛加重了，我的排尿困难已稳定多年，没有变化",
+        "我的排尿困难已稳定多年，但腰痛这两天加重了",
+    ],
+)
+def test_negated_or_unrelated_change_does_not_override_stable_urinary_history(
+    query,
+):
+    intent = classify_health_intent(query)
+
+    assert intent.risk_level == RiskLevel.MEDIUM
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
         "腰痛，排尿困难已稳定多年，但今天突然完全排不出尿",
         "腰痛，我长期有排尿困难，但今天明显加重了",
+        "腰痛，我长期有排尿困难，这两天更严重了",
+        "腰痛，我长期有排尿困难，最近越来越难尿",
+        "腰痛，我长期有排尿困难，最近控制不住小便",
         "腰痛，排尿困难，今天尿不出来，既往稳定多年",
         "腰痛，排尿困难、现在尿不出来，此前一直稳定",
         "腰痛，排尿困难，今天尿潴留，之前一直稳定",
@@ -146,6 +176,10 @@ def test_isolated_or_stable_findings_do_not_trigger_emergency_triage(query):
         (
             "lower back pain, longstanding difficulty peeing, "
             "but much worse today"
+        ),
+        (
+            "lower back pain, longstanding difficulty peeing, "
+            "getting worse this week"
         ),
         (
             "lower back pain, difficulty peeing, cannot urinate, "

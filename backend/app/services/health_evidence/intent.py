@@ -154,6 +154,12 @@ _LOW_BACK_EMERGENCY_PATTERNS = (
         r"(?:尿意|便意)(?:(?:和|及|、)(?:尿意|便意))?"
         r".{0,5}(?:消失|感觉不到)"
     ),
+    re.compile(
+        r"(?:越来越|愈来愈)(?:难尿|难以排尿|排尿困难)"
+    ),
+    re.compile(
+        r"(?:控制不住|失控)(?:小便|排尿|尿液|大便|大小便)"
+    ),
 )
 _LOW_BACK_UNILATERAL_PROGRESSIVE_PATTERNS = (
     re.compile(
@@ -291,6 +297,12 @@ _AFFIRMED_LOW_BACK_DISCRIMINATOR_PATTERNS = {
             r"(?:尿意|便意)(?:(?:和|及|、)(?:尿意|便意))?"
             r".{0,5}(?:消失|感觉不到)"
         ),
+        re.compile(
+            r"(?:越来越|愈来愈)(?:难尿|难以排尿|排尿困难)"
+        ),
+        re.compile(
+            r"(?:控制不住|失控)(?:小便|排尿|尿液|大便|大小便)"
+        ),
     ),
     "low_back.progressive_neurologic_deficit": (
         re.compile(
@@ -336,9 +348,11 @@ _NEGATED_PREFIXES = (
     "完全没有",
     "没有任何",
     "并无",
+    "并未",
     "未见",
     "未出现",
     "未伴",
+    "未",
     "否认",
     "否认有",
     "不伴",
@@ -431,23 +445,28 @@ _STABLE_URINARY_OVERRIDE_PATTERNS = tuple(
     for index, pattern in enumerate(_LOW_BACK_EMERGENCY_PATTERNS)
     if index not in {6, 7}
 )
-_CURRENT_OR_WORSENING_URINARY_CHANGE_PATTERNS = (
+_URINARY_HISTORY_WORSENING_PATTERNS = (
     re.compile(
-        r"(?:今天|现在|目前|当前|这次|新发|新出现|刚刚|突然).{0,10}"
-        r"(?:尿潴留|尿失禁|漏尿|尿不出|尿不出来|排不出尿|"
-        r"会阴麻木|鞍区麻木|肛周麻木|排尿困难)"
+        r"(?:明显)?(?:加重|恶化|变差|更严重|越来越严重)"
     ),
     re.compile(
-        r"(?:但|但是|不过|然而).{0,8}"
-        r"(?:(?:今天|现在|目前|当前|这次).{0,6})?"
-        r"(?:明显)?(?:加重|恶化|变差|更严重)"
-    ),
-    re.compile(
-        r"(?:but|however).{0,24}"
-        r"(?:(?:today|now|currently).{0,12})?"
-        r"(?:(?:much)?worse|worsening|deteriorat(?:e|ed|ing))"
+        r"(?:muchworse|worsening|gettingworse|"
+        r"deteriorat(?:e|ed|ing))"
     ),
 )
+_URINARY_MENTION_TERMS = (
+    "排尿",
+    "小便",
+    "尿液",
+    "膀胱",
+    "peeing",
+    "urinating",
+    "urination",
+    "urinary",
+    "bladder",
+)
+_HARD_SENTENCE_BOUNDARY_RE = re.compile(r"[。.!！？?]")
+_URINARY_HISTORY_CHANGE_MAX_DISTANCE = 96
 
 
 def classify_health_intent(
@@ -525,13 +544,17 @@ def _without_stable_preexisting_urinary_difficulty(text: str) -> str:
     or bilateral neurologic finding remains in the text and still escalates.
     """
 
-    stable_history_present = any(
-        pattern.search(text)
+    stable_history_matches = tuple(
+        match
         for pattern in _STABLE_PREEXISTING_URINARY_DIFFICULTY_PATTERNS
+        for match in pattern.finditer(text)
     )
-    if not stable_history_present:
+    if not stable_history_matches:
         return text
-    if _has_current_or_worsening_cauda_change(text):
+    if _has_current_or_worsening_cauda_change(
+        text,
+        stable_history_matches,
+    ):
         return text
 
     remaining = text
@@ -540,7 +563,10 @@ def _without_stable_preexisting_urinary_difficulty(text: str) -> str:
     return remaining
 
 
-def _has_current_or_worsening_cauda_change(text: str) -> bool:
+def _has_current_or_worsening_cauda_change(
+    text: str,
+    stable_history_matches: tuple[re.Match[str], ...],
+) -> bool:
     """Let any affirmative current/new/worse CES finding override history."""
 
     if any(
@@ -553,10 +579,50 @@ def _has_current_or_worsening_cauda_change(text: str) -> bool:
         for pattern in _STABLE_URINARY_OVERRIDE_PATTERNS
     ):
         return True
-    return any(
-        _has_affirmed_pattern(text, pattern)
-        for pattern in _CURRENT_OR_WORSENING_URINARY_CHANGE_PATTERNS
+    return _has_affirmed_worsening_of_stable_urinary_history(
+        text,
+        stable_history_matches,
     )
+
+
+def _has_affirmed_worsening_of_stable_urinary_history(
+    text: str,
+    stable_history_matches: tuple[re.Match[str], ...],
+) -> bool:
+    """Bind an elliptical worsening phrase to its urinary antecedent.
+
+    A phrase such as ``这两天更严重了`` can inherit the preceding urinary
+    subject. A new explicit low-back subject breaks that inheritance, and the
+    normal scoped-negation parser still owns ``没有/并未/not worse``.
+    """
+
+    for pattern in _URINARY_HISTORY_WORSENING_PATTERNS:
+        for change_match in pattern.finditer(text):
+            if not _is_affirmed_pattern_match(text, change_match):
+                continue
+            for history_match in stable_history_matches:
+                if history_match.end() > change_match.start():
+                    continue
+                intervening = text[
+                    history_match.end():change_match.start()
+                ]
+                if (
+                    len(intervening)
+                    > _URINARY_HISTORY_CHANGE_MAX_DISTANCE
+                    or _HARD_SENTENCE_BOUNDARY_RE.search(intervening)
+                ):
+                    continue
+                urinary_subject_repeated = any(
+                    term in intervening for term in _URINARY_MENTION_TERMS
+                )
+                low_back_subject_started = any(
+                    term in intervening
+                    for term in (*_LOW_BACK_TERMS, *_BACK_PAIN_TERMS)
+                )
+                if low_back_subject_started and not urinary_subject_repeated:
+                    continue
+                return True
+    return False
 
 
 def infer_low_back_population(query: str) -> str | None:
@@ -660,14 +726,21 @@ def _has_affirmed_term(text: str, term: str) -> bool:
 
 def _has_affirmed_pattern(text: str, pattern: re.Pattern[str]) -> bool:
     for match in pattern.finditer(text):
-        prefix = text[max(0, match.start() - 64):match.start()]
-        scoped_prefix = _NEGATION_SCOPE_BOUNDARY_RE.split(prefix)[-1]
-        if (
-            not _negates_following_term(scoped_prefix)
-            and not _NEGATED_FINDING_IN_MATCH_RE.search(match.group(0))
-        ):
+        if _is_affirmed_pattern_match(text, match):
             return True
     return False
+
+
+def _is_affirmed_pattern_match(
+    text: str,
+    match: re.Match[str],
+) -> bool:
+    prefix = text[max(0, match.start() - 64):match.start()]
+    scoped_prefix = _NEGATION_SCOPE_BOUNDARY_RE.split(prefix)[-1]
+    return (
+        not _negates_following_term(scoped_prefix)
+        and not _NEGATED_FINDING_IN_MATCH_RE.search(match.group(0))
+    )
 
 
 def _negates_following_term(scoped_prefix: str) -> bool:

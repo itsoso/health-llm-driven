@@ -162,8 +162,34 @@ def test_natural_cauda_equina_phrasing_still_triggers_warning():
 @pytest.mark.parametrize(
     "symptoms",
     [
+        ["腰痛", "我的排尿困难已稳定多年，但今天没有加重"],
+        ["腰痛", "我的排尿困难已稳定多年，但今天并未加重"],
+        ["腰痛", "我的排尿困难已稳定多年，目前没有恶化"],
+        ["腰痛", "我长期有排尿困难，但今天没有尿潴留"],
+        [
+            "lower back pain",
+            "longstanding difficulty peeing, but not worse today",
+        ],
+        [
+            "lower back pain",
+            "longstanding difficulty peeing, no new urinary retention",
+        ],
+        ["腰痛加重了", "我的排尿困难已稳定多年，没有变化"],
+        ["我的排尿困难已稳定多年", "但腰痛这两天加重了"],
+    ],
+)
+def test_negated_or_unrelated_change_does_not_trigger_guardian(symptoms):
+    assert "symptoms.cauda_equina_warning" not in _ids(_run(symptoms))
+
+
+@pytest.mark.parametrize(
+    "symptoms",
+    [
         ["腰痛", "排尿困难已稳定多年，但今天突然完全排不出尿"],
         ["腰痛", "我长期有排尿困难，但今天明显加重了"],
+        ["腰痛", "我长期有排尿困难，这两天更严重了"],
+        ["腰痛", "我长期有排尿困难，最近越来越难尿"],
+        ["腰痛", "我长期有排尿困难，最近控制不住小便"],
         ["腰痛", "排尿困难，今天尿不出来，既往稳定多年"],
         ["腰痛", "排尿困难、现在尿不出来，此前一直稳定"],
         ["腰痛", "排尿困难，今天尿潴留，之前一直稳定"],
@@ -179,6 +205,13 @@ def test_natural_cauda_equina_phrasing_still_triggers_warning():
         [
             "lower back pain",
             "longstanding difficulty peeing, but much worse today",
+        ],
+        [
+            "lower back pain",
+            (
+                "longstanding difficulty peeing, "
+                "getting worse this week"
+            ),
         ],
         [
             "lower back pain",
