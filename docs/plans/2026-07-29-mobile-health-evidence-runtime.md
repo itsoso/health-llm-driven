@@ -2,9 +2,10 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 >
-> Execution status (2026-07-29): Tasks 1–8 implemented and technically verified
-> behind a disabled feature flag. Task 9 is blocked by independent clinical
-> sign-off; no production deploy or Mobile OTA is authorized.
+> Execution status (2026-07-29): Tasks 1–8 are implemented and locally verified
+> for the product-owner-approved runtime-only release, cross-surface revocation,
+> selected assistant sharing, and corrected source artifacts. Exact-HEAD G4 is GO;
+> production deploy and Mobile OTA wait for clean-main integration and green CI.
 
 **Goal:** Make Mobile and Mac consume one authoritative, personalized, verified health-advice runtime, then give Mobile a better low-back-pain clarification experience.
 
@@ -25,8 +26,10 @@
   bypass model synthesis.
 - Structured continuation is bound to the parent assistant message and preserves
   the current user text on malformed/stale metadata.
-- All low-back candidate documents and the new Guardian behavior remain under
-  release controls pending independent clinical review.
+- The complete low-back pack remains unavailable to generic knowledge surfaces.
+  Exactly five product-owner-ratified claims may be used only by the controlled
+  runtime after T1 source, applicability, immutable artifact, verifier, and
+  delivery checks. No independent clinical sign-off is claimed.
 
 ## Task 1: Pin the reviewed-only knowledge boundary
 
@@ -84,7 +87,7 @@
 
 ## Task 4: Add Authority Router and low-back official evidence pack
 
-**Status:** implemented as an automated candidate pack; globally held
+**Status:** five claims approved for runtime-only use; complete pack generically held
 
 **Files:**
 
@@ -105,8 +108,9 @@
 3. Confirm RED.
 4. Implement authority-tier, freshness, license, and applicability gates around
    reviewed System KB results.
-5. Add short transformed candidate claims grounded in NICE, WHO, NHS, and ACR
-   metadata; do not serve them before independent clinical sign-off.
+5. Add short transformed claims grounded in NICE, WHO, NHS, and ACR metadata;
+   generic serving remains disabled, while runtime-only release requires the
+   explicit product-owner manifest plus all deterministic gates.
 6. Regenerate/import seed artifacts using repository tooling.
 7. Confirm GREEN with System KB verification and golden tests.
 
@@ -180,7 +184,7 @@
 
 ## Task 8: Cross-surface golden evaluation and documentation
 
-**Status:** technical implementation complete; independent clinical gate remains BLOCK
+**Status:** completed; local G3 passed and exact-HEAD G4 is GO
 
 **Files:**
 
@@ -200,18 +204,21 @@
 
 ## Task 9: Deploy, verify, and close the loop
 
-**Status:** blocked—not started. Requires removal of the clinical serving hold
-after independent sign-off and a fresh G3/G4 pass.
+**Status:** clean-main integration in progress. Local G3 and exact-HEAD G4 are
+green; integrated-main CI, G5, and G6 remain pending. Generic serving hold stays
+in place and is not a deployment blocker for the separate runtime-only allowlist.
 
 **Files:**
 
 - Update: `docs/dossiers/2026-07-29-mobile-health-evidence-runtime.md`
 
 1. Read and follow `backend-deploy` and `mobile-ota` project skills.
-2. Confirm clean deploy source, green main CI state, and rollback point.
-3. Deploy backend first and pass service/route/log health checks.
-4. Publish Mobile OTA only for JS/TS changes.
-5. Validate a real authenticated Mobile and Mac low-back turn against the same user
+2. Integrate into the latest clean `main`, regenerate Mobile/Web OpenAPI types and
+   the system map from that merged source, then pass integrated tests and main CI.
+3. Confirm the exact clean deploy source and rollback point.
+4. Deploy backend first and pass service/route/log health checks.
+5. Deploy the matching Web client, then publish Mobile OTA only for JS/TS changes.
+6. Validate a real authenticated Mobile and Mac low-back turn against the same user
    snapshot; compare public manifest semantics and verify Mobile follow-up behavior.
-6. Record G5/G6 honestly; rollback on any failed Gate.
-7. Commit and push only this feature’s files.
+7. Record G5/G6 honestly; rollback on any failed Gate.
+8. Commit and push only this feature’s files.

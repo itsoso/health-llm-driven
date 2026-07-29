@@ -1,6 +1,6 @@
 # PRD: Mobile Health Evidence Runtime
 
-> Status: implemented candidate; release blocked on independent clinical sign-off
+> Status: local G3/G4 passed; integrated-main CI and production deployment pending
 > Date: 2026-07-29
 > Feature Spec: `docs/specs/active/2026-07-29-mobile-health-evidence-runtime.md`
 > Dossier: `docs/dossiers/2026-07-29-mobile-health-evidence-runtime.md`
@@ -152,16 +152,19 @@ Official source baseline verified 2026-07-29:
 - NHS Back pain patient guidance, page reviewed 2026-03-05:
   `https://www.nhs.uk/conditions/back-pain/`
 - ACR Appropriateness Criteria, Low Back Pain topic:
-  `https://gravitas.acr.org/ACPortal/TopicNarrativePdf?topicId=141`
+  `https://acsearch.acr.org/docs/69483/Narrative/`
 
 NICE/WHO support professional management recommendations; NHS supplies plain-language
 urgent symptom wording; ACR supports imaging applicability. Each imported claim must
 retain exact source/version/applicability metadata.
 
-The documents added by this implementation are automated review candidates, not
-clinician-approved content. The entire candidate pack is excluded from generic and
-health-specific serving by a global release hold until an independent credentialed
-review is recorded.
+The documents added by this implementation are not represented as
+clinician-approved content. The product owner accepted T1 official-source and
+boundary review as the release basis and explicitly confirmed that no independent
+clinical sign-off is claimed. The entire pack remains excluded from generic
+serving; exactly five claims are eligible only inside the controlled
+health-evidence runtime after artifact, applicability, verifier, and delivery
+checks pass.
 
 ## 5. Success Metrics
 
@@ -257,6 +260,13 @@ Current implementation truth:
   the parent assistant message;
 - personal facts currently affect risk, sufficiency, applicability, detected
   signals, and clarification—not free-form personalized explanation;
-- the feature flag is off and the low-back evidence pack is globally held;
-- no production deployment or capability claim is permitted before G4 clinical
-  sign-off.
+- generic knowledge surfaces continue to hold the entire low-back pack, while an
+  exact runtime-only allowlist contains the five owner-ratified claims;
+- persisted answers and public agent shares are revalidated against the current
+  allowlist and immutable artifact digests, even when new synthesis is disabled;
+- Mobile/Web selected assistant shares send durable message IDs to the server
+  instead of flattening health answers into unverified plain text; the server uses
+  a neutral title so hidden support symptoms cannot leak through page metadata;
+- local feature-candidate G3 and exact-HEAD G4 have passed; no production
+  deployment or shipped-capability claim is permitted before integrated-main CI,
+  deployment-health, and production-verification gates pass.

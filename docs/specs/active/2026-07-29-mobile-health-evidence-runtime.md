@@ -1,6 +1,6 @@
 # Feature Spec: Mobile Health Evidence Runtime
 
-> Status: implemented behind disabled release gate; independent clinical sign-off blocked
+> Status: local G3/G4 passed; integrated-main CI and production deployment pending
 > Owner: Codex + product owner
 > Updated: 2026-07-29
 > Related PRD/PDD: `docs/prd/2026-07-29-mobile-health-evidence-runtime.md`
@@ -121,6 +121,7 @@ user asks "我腰疼怎么办"
 ```yaml
 apis:
   - "POST /agent/stream: backward-compatible SSE fields plus health_evidence_manifest"
+  - "POST /shared/create: optional server-owned durable message selection for agent shares"
 events:
   - "done.health_evidence_manifest"
 models:
@@ -166,12 +167,26 @@ the full personal packet.
   and clinician/pharmacist boundaries.
 - Medical claims may use only reviewed System KB material that passes authority,
   freshness, license, and applicability gates.
-- The low-back candidate pack in this change is under a global serving hold until
-  an independent credentialed clinical reviewer signs it. Automated source and
-  boundary review is not represented as clinical approval.
+- The complete low-back pack remains excluded from generic search, claim detail,
+  and the legacy knowledge tool. Exactly five reviewed claims may be retrieved by
+  the controlled health-evidence runtime after the runtime allowlist, authority
+  artifact, applicability, verifier, and delivery checks all pass.
+- The release record truthfully names `product_owner` approval based on T1
+  official-source and boundary review. It records `clinical_signoff=not_claimed`;
+  no independent clinical credential or sign-off is implied.
 - The feature flag gates both the AgentExecutor health path and the new low-back
   Guardian rule, so disabled means the candidate behavior is inert on every
   existing SafetyGuardian consumer.
+- Persisted answers are revalidated independently of the synthesis flag. Removing
+  a claim from the runtime allowlist or changing its immutable artifact digest
+  sanitizes history, replay, Desktop trace, model context, and public shares.
+- Read-time query classification is a minimum risk floor. A sealed answer may
+  retain a higher risk promoted from its frozen Twin/SafetyGuardian context, but
+  it may never replay below a risk explicitly present in the paired query.
+- Mobile/Web selected assistant sharing submits only authenticated conversation
+  and durable message IDs. The server resolves the paired user query and private
+  verification proof; `/shared/create-text` is reserved for genuinely
+  user-authored arbitrary text.
 - Dedao material may support offline topic discovery and explanation drafting only.
   Paid text is never returned, quoted, embedded as runtime authority, or used as the
   sole support for a claim.
@@ -284,17 +299,21 @@ recorded in the Dossier as their Gates are reached.
 ## 13. Rollout And Rollback
 
 - `HEALTH_EVIDENCE_RUNTIME_ENABLED` controls the compiler/router/verifier
-  integration and the new low-back Guardian rule. It remains false until focused
-  and integration gates plus independent clinical sign-off pass.
+  integration and the new low-back Guardian rule. It remains false in the
+  release-candidate source after local focused/integration G3 and safety G4 pass;
+  the production deployment enables it only after integrated-main CI is green so
+  G5 deployment health and G6 production verification can exercise the real path.
 - The low-back entity, claims, relations, and eval candidates are listed in
-  `CLINICAL_RELEASE_HOLD_DOCUMENT_IDS`; generic System KB search also excludes
-  them while the hold exists.
+  `CLINICAL_RELEASE_HOLD_DOCUMENT_IDS`; generic System KB search always excludes
+  them. A separate exact allowlist releases only five claims to the controlled
+  health-evidence runtime.
 - Raw Dedao fallback removal is a safety correction and is not re-enabled by the
   feature flag.
-- Backend deploy precedes Mobile OTA. Old clients continue to render answer text and
-  ignore the optional manifest/card.
-- Rollback disables the new integration and redeploys the prior backend/Mobile
-  release, while retaining the reviewed-only knowledge-search correction.
+- Backend and Web deploys precede Mobile OTA. Old clients continue to render answer
+  text and ignore the optional manifest/card.
+- Rollback disables the new integration, redeploys the prior backend/Web release,
+  and rolls Mobile back through the OTA release policy, while retaining the
+  reviewed-only knowledge-search correction.
 - Production rollout begins with low-back-pain symptom intent and expands by
   reviewed domain packs plus golden evaluations.
 
@@ -309,8 +328,9 @@ recorded in the Dossier as their Gates are reached.
 - Structured Mobile continuation binds the follow-up to the parent assistant
   message and optional turn ID. Malformed or stale continuation metadata preserves
   the current user text and fails safely instead of silently substituting history.
-- The low-back pack contains automated official-source candidates only. It is not
-  clinician-approved, served, enabled, deployed, or described as shipped.
+- The low-back pack is not represented as clinician-approved. Five claims have
+  product-owner approval for runtime-only use on the stated T1 source and boundary
+  review basis; the feature is not described as shipped until production G6 passes.
 
 ## 15. Open Questions
 

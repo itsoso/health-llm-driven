@@ -193,6 +193,47 @@
 └────────────────────────────────────┘
 ```
 
+### Health Evidence Runtime（跨端健康建议真源）
+
+Mobile、Mac、Web 和外部 channel 不各自实现医疗推理。健康建议在
+`AgentExecutor` 内进入同一个服务端 choke point：
+
+```text
+query + frozen HealthTwin
+  → typed health intent / risk / mandatory discriminators
+  → query-specific personal evidence + explicit gaps
+  → internal runtime-only System KB retrieval
+  → authority tier + locator + applicability + immutable artifact check
+  → sufficiency (sufficient / clarify / safe_fallback)
+  → strong model may select approved claim IDs only
+  → deterministic verifier and canonical evidence envelope
+  → Mobile / Mac / Web render the same clinical semantics
+```
+
+低背痛包继续被 `CLINICAL_RELEASE_HOLD_DOCUMENT_IDS` 排除在通用搜索、claim
+详情和 legacy knowledge tool 之外；受控 health-evidence runtime 通过另一份精确
+allowlist 只读取经 product owner 确认、T1 官方来源验证的 runtime-only claim，
+不主张独立临床签署，并在每次生成和读取时重新验证 artifact 与适用性。Entity/eval
+文档不作为用户回答证据。Dedao 只用于离线主题发现和解释结构，raw 内容或付费文本
+不能进入 runtime。
+
+持久化答案不因 synthesis feature flag 关闭而跳过撤销校验。历史、重复回放、模型
+上下文、compaction、Desktop trace、cloud facade、pregen 和公开 agent share
+统一经过 paired user→assistant projection；claim 被移出 allowlist 或 artifact
+变化时，旧正文降级为确定性安全提示。读取时由 `source_query` 可重建的风险作为
+下界：sealed manifest 可以记录 frozen Twin/SafetyGuardian 带来的更高风险，但绝不
+允许低于问题文本本身已明确的风险。
+
+Mobile/Web 的对话节选分享只提交 authenticated conversation ID 与 durable message
+IDs。后端自行读取配对问题和最小 verification proof，公开页每次访问重新投影；客户端
+不能提交 answer、manifest 或 proof。所有节选分享使用服务端中性标题，读取旧链接时
+也不复用可能含症状的原会话标题。`/shared/create-text` 仅用于用户自拟的普通文本。
+
+低背痛时序规则按每次症状提及分别解析既往、已缓解、持续/复发、否定和当前状态，
+并遵循“当前变化优先”：只有明确的既往稳定/已停止且没有后续当前变化的泌尿症状
+可从新发马尾风险判断中排除；任何当前尿潴留、失禁、鞍区/会阴感觉变化或明确的
+新发/持续/复发/加重对比都会覆盖既往描述并进入急症分流。
+
 ### HealthTwin 15 分区
 
 `backend/app/twin/schema.py`:
