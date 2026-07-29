@@ -7,6 +7,8 @@ import hashlib
 import json
 from datetime import datetime, timezone
 
+from sqlalchemy.orm import sessionmaker
+
 from app.config import settings
 from app.models.agent_conversation import AgentConversation, AgentMessage
 from app.models.shared_conversation import SharedConversation
@@ -631,8 +633,11 @@ async def test_history_compaction_projects_revoked_turn_before_llm_and_receipts(
     captured: dict[str, object] = {}
     import app.database as app_database
 
-    monkeypatch.setattr(app_database, "SessionLocal", lambda: db)
-    monkeypatch.setattr(db, "close", lambda: None)
+    monkeypatch.setattr(
+        app_database,
+        "SessionLocal",
+        sessionmaker(bind=db.get_bind()),
+    )
     monkeypatch.setattr(settings, "health_evidence_runtime_enabled", False)
     monkeypatch.setattr(
         delivery,

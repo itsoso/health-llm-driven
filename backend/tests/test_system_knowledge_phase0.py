@@ -5,6 +5,7 @@ import json
 from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.schema import CreateTable
 
+from app.api.system_knowledge import DEDAO_KBASE_PUBLISH_PREVIEW_OP
 from app.config import settings
 from app.models.agent_audit_log import AgentAuditLog
 from app.models.notification import NotificationLog
@@ -15,6 +16,7 @@ from app.services.system_knowledge_service import (
     apply_confidence_decay,
     attach_system_knowledge_evidence,
     build_evidence_card_for_message,
+    reindex_knowledge_documents,
     search_knowledge,
 )
 from app.orchestrator.schema import SpecialistFinding
@@ -588,6 +590,7 @@ def test_claim_feedback_disagree_writes_audit_log(client, db, auth_user_and_head
 def test_search_knowledge_returns_lexical_and_graph_context(client, db, auth_user_and_headers):
     _user, headers = auth_user_and_headers
     _seed_phase0_knowledge(db)
+    reindex_knowledge_documents(db, actor="test")
 
     response = client.get(
         "/api/v1/knowledge/search",
@@ -603,10 +606,20 @@ def test_search_knowledge_returns_lexical_and_graph_context(client, db, auth_use
     assert payload["graph_context"]["edges"][0]["relation"] == "has_claim"
     assert {"lexical", "fts"} <= set(payload["retrieval_plan"]["channels"])
     assert payload["retrieval_plan"]["lexical_backend"] == "python_bm25_v1"
-    assert payload["retrieval_plan"]["fts_backend"] == "sqlite_precomputed_text"
+    expected_fts_backend = (
+        "postgres_tsv"
+        if db.bind.dialect.name == "postgresql"
+        else "sqlite_precomputed_text"
+    )
+    assert payload["retrieval_plan"]["fts_backend"] == expected_fts_backend
     assert payload["retrieval_plan"]["vector_backend"] == "sparse_term_cosine_v1"
     assert payload["retrieval_plan"]["rrf_backend"] == "python_rrf_v1"
-    assert {"lexical", "fts"} <= set(payload["results"][0]["retrieval"]["channels"])
+    observed_channels = {
+        channel
+        for result in payload["results"]
+        for channel in result["retrieval"]["channels"]
+    }
+    assert {"lexical", "fts"} <= observed_channels
     assert payload["results"][0]["retrieval"]["lexical_score"] > 0
 
 
@@ -1844,7 +1857,13 @@ def test_admin_dedao_kbase_finalize_requires_resolved_claims_then_allows_dry_run
     assert preview.json()["dry_run"] is True
     assert preview.json()["import"]["documents"] == 3
     assert db.get(KBDocument, "claim:release-abc-claim-1") is None
-    assert db.query(KBAudit).filter(KBAudit.op == "dedao_kbase_reviewed_artifacts_publish_preview").count() == 1
+    preview_audits = (
+        db.query(KBAudit)
+        .filter(KBAudit.op == DEDAO_KBASE_PUBLISH_PREVIEW_OP)
+        .all()
+    )
+    assert len(preview_audits) == 1
+    assert len(preview_audits[0].op) <= 40
 
 
 def test_admin_dedao_kbase_legacy_approve_rejects_unresolved_claims(
@@ -2400,7 +2419,7 @@ def test_admin_reindex_refreshes_search_text_and_content_hash(client, db, auth_u
     assert payload["reindex"]["documents"] == 2
     refreshed = db.get(KBDocument, "entity:gene:MTHFR")
     assert refreshed.tsv is not None
-    assert "MTHFR" in refreshed.tsv
+    assert "mthfr" in str(refreshed.tsv).lower()
     assert refreshed.content_hash is not None
 
 

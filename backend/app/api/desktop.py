@@ -106,7 +106,6 @@ def _memory_fact_to_dict(fact: MemoryFact) -> dict[str, Any]:
 def _recent_records_summary(db: Session, user_id: int) -> dict[str, Any]:
     today = date.today()
     since_30 = today - timedelta(days=30)
-    since_7 = today - timedelta(days=6)
     diet_records = (
         db.query(DietRecord)
         .filter(DietRecord.user_id == user_id, DietRecord.record_date == today)

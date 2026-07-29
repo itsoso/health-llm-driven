@@ -49,6 +49,7 @@ admin_router = APIRouter(
 # filesystem write cannot be reported as a 500 solely while recording metadata.
 DEDAO_KBASE_VERIFICATION_GENERATED_OP = "dedao_kbase_verification_generated"
 DEDAO_KBASE_VERIFICATION_APPLIED_OP = "dedao_kbase_verification_applied"
+DEDAO_KBASE_PUBLISH_PREVIEW_OP = "dedao_kbase_publish_preview"
 DedaoKbaseReviewWorkspace = Literal["release", "agent_package"]
 
 
@@ -952,7 +953,7 @@ def preview_dedao_kbase_reviewed_artifacts_publish_endpoint(
     _record_audit(
         db,
         doc_id=None,
-        op="dedao_kbase_reviewed_artifacts_publish_preview",
+        op=DEDAO_KBASE_PUBLISH_PREVIEW_OP,
         actor=f"admin:{admin_user.id}",
         diff={
             "note": request.note,
