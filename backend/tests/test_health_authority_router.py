@@ -79,6 +79,24 @@ def _result(
     }
 
 
+def _result_with_tampered_nice_source(**changes) -> dict:
+    result = _result()
+    metadata = result["document"]["metadata"]
+    external_sources = deepcopy(metadata["external_sources"])
+    nice_index = next(
+        index
+        for index, source in enumerate(external_sources)
+        if source.get("organization") == "NICE"
+        and "ng59" in str(source.get("source") or "").lower()
+    )
+    external_sources[nice_index] = {
+        **external_sources[nice_index],
+        **changes,
+    }
+    metadata["external_sources"] = external_sources
+    return result
+
+
 def test_accepts_fresh_reviewed_applicable_t1_evidence():
     bundle = route_authority_results(
         [_result()],
@@ -192,41 +210,14 @@ def test_rejects_self_declared_dedao_paid_course_even_when_marked_t1():
 
 def test_rejects_source_identity_fields_that_do_not_match_registry():
     cases = {
-        "source_url": _result(
-            external_sources=[
-                {
-                    "source": "https://www.nice.org.uk.evil.example/guidance/ng59",
-                    "kind": "guideline",
-                    "organization": "NICE",
-                    "title": "Forged NICE host",
-                    "version": "2026",
-                    "review_status": "reviewed",
-                }
-            ]
+        "source_url": _result_with_tampered_nice_source(
+            source="https://www.nice.org.uk.evil.example/guidance/ng59",
         ),
-        "organization": _result(
-            external_sources=[
-                {
-                    "source": "https://www.nice.org.uk/guidance/ng59",
-                    "kind": "guideline",
-                    "organization": "Dedao",
-                    "title": "Forged publisher",
-                    "version": "2026",
-                    "review_status": "reviewed",
-                }
-            ]
+        "organization": _result_with_tampered_nice_source(
+            organization="Dedao",
         ),
-        "kind": _result(
-            external_sources=[
-                {
-                    "source": "https://www.nice.org.uk/guidance/ng59",
-                    "kind": "course",
-                    "organization": "NICE",
-                    "title": "Forged source kind",
-                    "version": "2026",
-                    "review_status": "reviewed",
-                }
-            ]
+        "kind": _result_with_tampered_nice_source(
+            kind="course",
         ),
     }
 
@@ -244,22 +235,18 @@ def test_rejects_source_identity_fields_that_do_not_match_registry():
 
 
 def test_rejects_source_title_or_version_that_is_not_registry_canonical():
-    canonical = {
-        "source": "https://www.nice.org.uk/guidance/ng59",
-        "kind": "guideline",
-        "organization": "NICE",
-        "title": "Low back pain and sciatica in over 16s: assessment and management",
-        "version": "NG59 updated 2020-12-11",
-        "review_status": "reviewed",
-    }
     cases = {
-        "title": {**canonical, "title": "得到付费腰痛课"},
-        "version": {**canonical, "version": "自报 2026 权威版"},
+        "title": _result_with_tampered_nice_source(
+            title="得到付费腰痛课",
+        ),
+        "version": _result_with_tampered_nice_source(
+            version="自报 2026 权威版",
+        ),
     }
 
-    for field, source in cases.items():
+    for field, result in cases.items():
         bundle = route_authority_results(
-            [_result(external_sources=[source])],
+            [result],
             domain="low_back_pain",
             risk_level="medium",
             population="adults_16_plus",
@@ -483,8 +470,8 @@ def test_public_manifest_exposes_trace_not_private_or_paid_body():
                     "claim:c_low_back_serious_cause_screening_boundary"
                 ),
                 "sha256": (
-                    "8e943e3a0caf2b2a903e0d3601c9b163"
-                    "536d88d73e5d7c64d1a63382fb9a1730"
+                    "c7fff0ee91b46518296a13a9cad51468"
+                    "3a1bb79fdb618f97f1533e24e996718b"
                 ),
             }
         ],
@@ -494,7 +481,30 @@ def test_public_manifest_exposes_trace_not_private_or_paid_body():
                 "kind": "guideline",
                 "organization": "NICE",
                 "title": "Low back pain and sciatica in over 16s: assessment and management",
-                "version": "NG59 updated 2020-12-11",
+                "version": "NG59; updated 2020-12-11",
+                "locator": "NG59 recommendation 1.1.1",
+                "authority_tier": "T1",
+            },
+            {
+                "source": "https://www.nhs.uk/conditions/back-pain/",
+                "kind": "public_health_guidance",
+                "organization": "NHS",
+                "title": "Back pain",
+                "version": "Page reviewed 2026-03-05",
+                "locator": (
+                    "Urgent advice and Immediate action required sections"
+                ),
+                "authority_tier": "T1",
+            },
+            {
+                "source": (
+                    "https://acsearch.acr.org/docs/69483/Narrative/"
+                ),
+                "kind": "appropriateness_criteria",
+                "organization": "American College of Radiology",
+                "title": "ACR Appropriateness Criteria® Low Back Pain",
+                "version": "Revised 2021; accessed 2026-07-29",
+                "locator": "Variants 4, 6 and 7",
                 "authority_tier": "T1",
             }
         ],
@@ -515,7 +525,10 @@ def test_prompt_uses_short_reviewed_claim_and_source_id_only():
     )
 
     prompt = bundle.to_prompt()
-    assert "腰痛自我管理前先筛严重病因线索" in prompt
-    assert "腰痛先筛重大外伤" in prompt
+    assert "腰痛先按线索分层筛查严重替代病因" in prompt
+    assert "腰痛应先排查替代病因" in prompt
+    assert "严重事故后腰痛立即急诊" in prompt
     assert "nice:ng59" in prompt
-    assert "初次腰痛评估应先检查" not in prompt
+    assert "nhs:back-pain-2026" in prompt
+    assert "acr:low-back-pain-2026" in prompt
+    assert "低能量外伤、骨质疏松、高龄、长期使用糖皮质激素" not in prompt

@@ -2,7 +2,8 @@ from datetime import UTC, datetime
 import inspect
 import json
 
-from sqlalchemy.dialects import postgresql
+from sqlalchemy.dialects import postgresql, sqlite
+from sqlalchemy.schema import CreateTable
 
 from app.config import settings
 from app.models.agent_audit_log import AgentAuditLog
@@ -2415,6 +2416,26 @@ def test_postgres_reindex_statement_writes_tsvector_not_plain_text():
     assert "to_tsvector" in compiled
     assert "tsv=to_tsvector" in compiled
     assert "content_hash" in compiled
+
+
+def test_postgres_kb_document_schema_declares_tsvector():
+    compiled = str(
+        CreateTable(KBDocument.__table__).compile(
+            dialect=postgresql.dialect()
+        )
+    )
+
+    assert "tsv TSVECTOR" in compiled
+
+
+def test_sqlite_kb_document_schema_keeps_text_search_storage():
+    compiled = str(
+        CreateTable(KBDocument.__table__).compile(
+            dialect=sqlite.dialect()
+        )
+    )
+
+    assert "tsv TEXT" in compiled
 
 
 def test_apply_confidence_decay_reduces_stale_fast_claims(db):
