@@ -127,6 +127,22 @@ async function* streamStartWaitForPersistenceThenDone(...args: any[]) {
   yield { type: 'done', conversationId: 777, messageId: 42 };
 }
 
+async function* streamPersistedIdsThenDone(...args: any[]) {
+  yield {
+    type: 'persisted',
+    conversationId: 777,
+    userMessageId: 41,
+    clientTurnId: args[6],
+  };
+  yield { type: 'token', content: '已保存的回答' };
+  yield {
+    type: 'done',
+    conversationId: 777,
+    messageId: 42,
+    completionStatus: 'complete',
+  };
+}
+
 async function* streamPersistsRelativeImageUrl(...args: any[]) {
   yield { type: 'start', conversationId: 777 };
   yield {
@@ -1276,6 +1292,29 @@ describe('useChatEngine', () => {
       expect(onAccepted).toHaveBeenCalledWith(true);
       expect(result.current.conversationId).toBe(777);
     });
+  });
+
+  it('binds live user and assistant bubbles to their durable server message ids', async () => {
+    mockStreamChat.mockImplementation(streamPersistedIdsThenDone);
+    const { result } = renderHook(() => useChatEngine());
+
+    await act(async () => {
+      await result.current.sendMessage('需要保存的问题');
+    });
+
+    expect(result.current.messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        role: 'user',
+        content: '需要保存的问题',
+        sourceMessageId: 41,
+      }),
+      expect.objectContaining({
+        role: 'assistant',
+        content: '已保存的回答',
+        sourceMessageId: 42,
+        streaming: false,
+      }),
+    ]));
   });
 
   it('keeps a newly uploaded image visible when persistence returns a relative URL', async () => {

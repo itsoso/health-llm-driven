@@ -6,7 +6,7 @@
  */
 import React from 'react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 const searchParamsGet = vi.fn();
 const routerReplace = vi.fn();
@@ -18,6 +18,7 @@ vi.mock('next/navigation', () => ({
 const getConversation = vi.fn();
 const getConversations = vi.fn();
 const streamMessage = vi.fn();
+const createAgentShare = vi.fn();
 vi.mock('@/services/api/ai', () => ({
   agentApi: {
     getConversation: (...a: unknown[]) => getConversation(...a),
@@ -26,7 +27,10 @@ vi.mock('@/services/api/ai', () => ({
     deleteConversation: vi.fn(),
     updateConversationTitle: vi.fn(),
   },
-  sharedApi: { createTextShare: vi.fn() },
+  sharedApi: {
+    createShare: (...a: unknown[]) => createAgentShare(...a),
+    createTextShare: vi.fn(),
+  },
 }));
 
 const apiGet = vi.fn();
@@ -62,6 +66,12 @@ beforeEach(() => {
   getConversation.mockResolvedValue({ data: { messages: [] } });
   streamMessage.mockImplementation(async function* () {
     yield { event: 'done', data: { conversation_id: 88 } };
+  });
+  createAgentShare.mockResolvedValue({
+    data: {
+      share_token: 'selected-token',
+      share_url: 'https://health.executor.life/shared/selected-token',
+    },
   });
 });
 
@@ -139,6 +149,130 @@ describe('ai-assistant URL state', () => {
     render(<AIAssistantPage />);
     await waitFor(() => expect(getConversations).toHaveBeenCalled());
     expect(getConversation).not.toHaveBeenCalled();
+  });
+
+  it('shares selected persisted messages through the server-owned Agent API', async () => {
+    searchParamsGet.mockReturnValue('42');
+    getConversation.mockResolvedValue({
+      data: {
+        messages: [{
+          id: 501,
+          role: 'assistant',
+          content: '服务端保存的回答',
+          created_at: '2026-07-29T12:00:00Z',
+        }],
+      },
+    });
+    Object.defineProperty(navigator, 'share', {
+      configurable: true,
+      value: vi.fn().mockResolvedValue(undefined),
+    });
+
+    render(<AIAssistantPage />);
+    fireEvent.click(await screen.findByRole('button', { name: '分享这条' }));
+
+    await waitFor(() => {
+      expect(createAgentShare).toHaveBeenCalledWith(42, 'agent', [501]);
+    });
+  });
+
+  it('uses durable done ids when sharing a just-completed assistant reply', async () => {
+    searchParamsGet.mockReturnValue(null);
+    streamMessage.mockImplementationOnce(async function* () {
+      yield {
+        event: 'request_persisted',
+        data: {
+          conversation_id: 88,
+          user_message_id: 701,
+        },
+      };
+      yield { event: 'token', data: { content: '刚完成的服务端回答' } };
+      yield {
+        event: 'done',
+        data: {
+          conversation_id: 88,
+          message_id: 702,
+          completion_status: 'complete',
+        },
+      };
+    });
+    Object.defineProperty(navigator, 'share', {
+      configurable: true,
+      value: vi.fn().mockResolvedValue(undefined),
+    });
+
+    render(<AIAssistantPage />);
+    fireEvent.change(
+      screen.getByPlaceholderText(/发消息/),
+      { target: { value: '刚发送的问题' } },
+    );
+    fireEvent.click(screen.getByTitle('发送'));
+    await screen.findByText('刚完成的服务端回答');
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '导入体检报告' }))
+        .not.toBeDisabled();
+    });
+
+    const shareButtons = screen.getAllByRole('button', { name: '分享这条' });
+    fireEvent.click(shareButtons[shareButtons.length - 1]);
+
+    await waitFor(() => {
+      expect(createAgentShare).toHaveBeenCalledWith(88, 'agent', [702]);
+    });
+  });
+
+  it('shares an older durable message while a different reply is streaming', async () => {
+    searchParamsGet.mockReturnValue('42');
+    getConversation.mockResolvedValue({
+      data: {
+        messages: [{
+          id: 501,
+          role: 'assistant',
+          content: '旧的已保存回答',
+          created_at: '2026-07-29T12:00:00Z',
+        }],
+      },
+    });
+    let finishStream: (() => void) | undefined;
+    streamMessage.mockImplementationOnce(async function* () {
+      yield { event: 'start', data: { conversation_id: 42 } };
+      await new Promise<void>((resolve) => {
+        finishStream = resolve;
+      });
+      yield {
+        event: 'done',
+        data: { conversation_id: 42, message_id: 702 },
+      };
+    });
+    Object.defineProperty(navigator, 'share', {
+      configurable: true,
+      value: vi.fn().mockResolvedValue(undefined),
+    });
+
+    render(<AIAssistantPage />);
+    await screen.findByText('旧的已保存回答');
+    fireEvent.change(
+      screen.getByPlaceholderText(/发消息/),
+      { target: { value: '另一条问题' } },
+    );
+    fireEvent.click(screen.getByTitle('发送'));
+    await waitFor(() => expect(streamMessage).toHaveBeenCalled());
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '导入体检报告' }))
+        .toBeDisabled();
+    });
+
+    fireEvent.click(
+      screen.getAllByRole('button', { name: '分享这条' })[0],
+    );
+    await waitFor(() => {
+      expect(createAgentShare).toHaveBeenCalledWith(42, 'agent', [501]);
+    });
+
+    await act(async () => {
+      finishStream?.();
+      await Promise.resolve();
+    });
   });
 
   it('ignores non-numeric ?c value', async () => {

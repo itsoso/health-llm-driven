@@ -146,6 +146,10 @@ describe('restoreMessagesFromHistory', () => {
     ], 'https://example.test', 'h');
 
     expect(restored).toHaveLength(2);
+    expect(restored[0]).toMatchObject({
+      role: 'assistant',
+      sourceMessageId: 14,
+    });
     expect(restored[1]).toMatchObject({
       role: 'assistant',
       cardType: 'health_evidence',

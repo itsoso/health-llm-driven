@@ -387,6 +387,7 @@ export function restoreMessagesFromHistory(
       role: m.role,
       content: m.content,
       createdAt: m.created_at,
+      sourceMessageId: typeof m.id === 'number' ? m.id : undefined,
       sourceTurnId: typeof m?.meta?.client_turn_id === 'string'
         ? m.meta.client_turn_id
         : undefined,
@@ -1588,6 +1589,13 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
               m.id === userMsg.id ? { ...m, imageUris: persistedImageUris } : m
             )));
           }
+          if (typeof evt.userMessageId === 'number') {
+            setMessages(prev => prev.map(m => (
+              m.id === userMsg.id
+                ? { ...m, sourceMessageId: evt.userMessageId }
+                : m
+            )));
+          }
           settleAcceptance(true);
           await acknowledgeContinuityOnce();
           dispatchAgentTurn({
@@ -1798,6 +1806,12 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
               sourcesUsed: evt.sourcesUsed,
               toolsUsed: evt.toolsUsed,
               completionStatus: effectiveCompletionStatus,
+              sourceMessageId: (
+                evt.requestPersisted !== false
+                && typeof evt.messageId === 'number'
+              )
+                ? evt.messageId
+                : undefined,
               thinkingSteps: evt.thinkingSteps?.length ? evt.thinkingSteps : m.thinkingSteps,
               writeReceipts: evt.writeReceipts,
               } : m);

@@ -265,10 +265,15 @@ export const agentApi = {
 
 // ===== 对话分享 API =====
 export const sharedApi = {
-  createShare: (conversationId: number, sourceType: string = 'health') =>
+  createShare: (
+    conversationId: number,
+    sourceType: string = 'health',
+    messageIds?: number[],
+  ) =>
     api.post<{ share_token: string; share_url: string }>('/shared/create', {
       conversation_id: conversationId,
       source_type: sourceType,
+      ...(messageIds ? { message_ids: messageIds } : {}),
     }),
   createTextShare: (title: string, message: string) =>
     api.post<{ share_token: string; share_url: string }>('/shared/create-text', {
