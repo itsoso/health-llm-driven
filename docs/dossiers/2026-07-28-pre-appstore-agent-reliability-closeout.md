@@ -116,6 +116,11 @@ RequirementAdmission:
 - 首次 live 执行因临时 SQLite 缺少 `llm_usage_logs` 被生产配额守卫正确 fail closed；
   补齐项目完整 ORM schema 后以相同授权范围重跑通过。未关闭或绕过预算守卫，也未
   使用真实生产健康数据。
+- 主干首次发布后 CI 的 `type-drift` 单项失败，根因是新增
+  `EventIn.event_key` 后 Mobile/Web OpenAPI 客户端未同步，且本地旧 FastAPI
+  生成环境与锁文件不一致。已使用 Python 3.12、`backend/requirements.lock` 和
+  `openapi-typescript 7.13.0` 重建两端类型；重复生成字节一致，Mobile
+  `tsc --noEmit` 通过。最终裁决以修复提交后的主干全量 CI 为准。
 - 页面测试保留既有 React `act(...)` 警告但无失败；不作为真机 G6 的替代证据。
 - **裁决: PASS。** 本地、离线、静态和已授权的在线合成评测全部通过。
 
