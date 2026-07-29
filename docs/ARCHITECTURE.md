@@ -594,16 +594,15 @@ APNs payload `data.deep_link` → mobile `useNotifications` 接收 → `router.p
 ```
 ./deploy.sh -b
     │
-    ├─ git push (GitHub + kuaishou GitLab 双推)
-    ├─ DB 备份 (保留最近 10 份)
-    ├─ 同步 .env (scp)
-    ├─ ssh 服务器 → git pull + pip install
-    ├─ python scripts/apply_managed_migrations.py
-    ├─ 重启 systemd (health-backend) + Celery worker/beat
-    ├─ Skills manifest 同步 + 验证 (22 个 SKILL.md)
-    └─ 健康度检查 (scripts/system_health_score.py)
-         - score >= 35 (skip_tests) → PASS
-         - 否则自动回滚到上一版本
+    ├─ 获取本地 + 远端 release lease，冻结 exact expected SHA
+    ├─ 备份/恢复演练/站外归档预检，保存健康回滚点
+    ├─ 将候选 backend env 暂存在 root-only release stage
+    ├─ 停 socket/backend/Celery → 撤销 runtime 授权并 fsync
+    ├─ 原子安装规范 flag=false env → 重启并逐 cgroup PID 证明 false
+    ├─ exact SHA checkout（Git bundle 是 fetch 超时回退）+ locked 依赖 + migration
+    ├─ guard 健康/revision/通用 hold contract 通过后才导入 System KB
+    ├─ staged runtime-only KB contract + health score + skills manifest
+    └─ 成功时线上仍为 flag=false；医学运行时另走 ./deploy.sh -H
 ```
 
 健康度维度(总分 60 skip_tests 模式):
@@ -613,11 +612,31 @@ APNs payload `data.deep_link` → mobile `useNotifications` 接收 → `router.p
 
 阈值调参: `scripts/system_health_score.py::FAIL_THRESHOLD` + 各 score 函数内部分段。
 
+`HEALTH_EVIDENCE_RUNTIME_ENABLED=true` 不能通过通用 env/restart 路径上线。受控
+`./deploy.sh -H` 先验证 exact revision、staged KB contract 和 systemd deadman
+能力，再用 `/run` drop-in 做 canary；所有健康、认证、score、语义 contract 通过后，
+才原子提交包含 commit 与 guard hash 的 durable authorization。去掉 canary 并重启
+后，还要证明 backend、Celery worker pool 与 beat 的全部 cgroup PID 都是唯一
+`flag=true`。任何失败必须自动恢复并证明 `flag=false`，否则隔离服务并保留远端
+lease/stage 供人工处置。
+
+通用 deploy/env/restart/rollback 在改代码、配置或知识前都先撤销 durable/runtime
+authorization。SSH/HUP/INT/TERM 导致远端结果不明确时，发布端保留 lease 与 stage，
+禁止启动猜测性的并发 rollback；只有远端命令终止且 schema/auth/quarantine/逐 PID
+终态都已证明，rollback 才报告成功。
+
 ### 12.2 Frontend (`-f`)
 
 ```
-./deploy.sh -f → npm run build → PM2 restart health-frontend
+./deploy.sh -f
+  → 证明服务器 checkout 是 expected SHA 且 clean
+  → npm ci → build → PM2 restart health-frontend
+  → 再证明 exact SHA/clean/revision
 ```
+
+frontend-only 不 checkout 共享仓库、不重启 backend/Celery、不更改 health-evidence
+授权。要部署包含新前端 commit 的版本，必须先走 `--all`/backend 建立同 SHA 后端
+回滚地板。
 
 ### 12.3 Mobile
 

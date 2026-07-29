@@ -4,7 +4,7 @@
 |---|---|
 | slug | `mobile-health-evidence-runtime` |
 | 创建日期 | 2026-07-29 |
-| 当前阶段 | G3 干净 main 集成验证 → CI |
+| 当前阶段 | 本地 G3/G4 已通过 → 干净 main 集成验证与 CI |
 | 状态 | release-candidate / not-deployed |
 | 负责 | product owner + Codex |
 | 反馈环 | backend deploy → Web deploy → Mobile OTA → Mobile/Mac 真实路径对照 |
@@ -91,6 +91,34 @@
   - 需重跑 Gate: G3、G4
   - 当前状态: 已解决。`8c6f75a80`、`96dd7b352`；受影响 PostgreSQL 与 SQLite
     套件各 70/70，全套结束后 `idle in transaction=0`。
+- [x] Correction Block — runtime-only KB 与持久激活事务
+  - 触发: 发布演练发现仅靠进程内 feature flag、先写 live `.env`、SSH 失败后立即
+    并发回滚，以及 frontend-only checkout 共享仓库，都可能让实际服务状态与发布
+    工具声称的状态分叉；通用 System KB read surface 也没有共享一份精确 serving
+    predicate。
+  - 旧基线: generic/runtime 检索条件分散；导入和隔离可以交错；服务重启成功被近似
+    当成全部进程已取得同一 flag；远端结果不明时本地清理锁并尝试第二个事务。
+  - 新基线:
+    - generic serving 统一为 active + reviewed + 排除完整 held pack；health-evidence
+      runtime 统一为 active + reviewed + exact five-claim allowlist；
+    - import/quarantine/verifier 共享 PostgreSQL mutation lock，导入在首次 DB 操作前
+      取锁；semantic probe 以 `metadata.input` 为唯一可执行输入，逐 case 严格 top-1，
+      并用 nested savepoint 保持外层 advisory transaction lock；
+    - live base `.env` 永远是规范 `false`。受控激活先以 runtime-only systemd drop-in
+      做 canary，再原子、fsync 地提交含 commit/guard hash 的 durable authorization，
+      去掉 canary 后重启并逐 cgroup PID 证明 `true`；
+    - 任意通用 mutation 先停 socket/backend/Celery，证明 inactive，再撤销 durable/
+      runtime 授权并 fsync，最后才原子安装候选 `false` env、重启并逐 PID 证明
+      `false`；所有 crash prefix 因而只能重启到完整旧文件或完整新文件且不会越过
+      `false`；
+    - 远端 SSH/HUP/INT/TERM 结果不明确时保留 release lease 与 stage，禁止并发回滚；
+      rollback 只有在 schema/auth/quarantine 和全部 writer `flag=false` 终态证明后才
+      输出成功哨兵；
+    - frontend-only 只允许在服务器已是 exact expected SHA 且 checkout clean 时
+      `npm ci`/build/PM2 restart，不 checkout、不触碰 backend/Celery/运行时授权。
+  - 回退阶段: S3/S5
+  - 需重跑 Gate: G3、G4、G5、G6
+  - 当前状态: 已解决。`832d73256`；冻结发布事务 69/69，两个独立 G4 复审均 GO。
 
 ## S0 · 用户需求(逐字)
 
@@ -210,7 +238,8 @@
 
 - 委托: health-harness-orchestrator contract + TDD + parallel discovery agents
 - 分支(off origin/main)/ commit: `codex/mobile-health-evidence-runtime` off
-  `origin/main@b3e15300c`;release-candidate head `96dd7b352dcb41253ee155f6a91c444b922822a3`，
+  `origin/main@b3e15300c`;release-hardening code head
+  `832d7325615fdc810bc50112377cf774448a078f`，
   不代表已合入 main 或部署
 - 实现边界:
   - 这是低背痛 golden safety slice + 可复用 runtime，不是全医学域完成；
@@ -230,17 +259,27 @@
 
 ## G3 · 测试闸
 
-- backend CI-equivalent SQLite: 16 个相关文件共 700 项全部有绿色证据；Dedao
-  consumer 的 60 项因 sandbox 禁止 loopback bind，改在授权回环环境单独复跑全绿。
+- backend CI-equivalent SQLite:
+  - 最新 20 文件相关矩阵 692 passed / 3 skipped / 190 warnings；
+  - release policy / quarantine / Desktop / genetic refs / eval / mutation-lock
+    提交前焦点复跑 63 passed / 3 skipped；
+  - Dedao consumer 的 60 项因 sandbox 禁止 loopback bind，改在授权回环环境单独
+    复跑全绿。
 - backend PostgreSQL:
   - release-candidate 首轮 696/700；4 项真红回 S5；
   - 2 项为 FTS 方言/reindex 测试契约，2 项复现 `KBAudit.op VARCHAR(40)` 真实 500；
   - 修正后受影响 System KB + persisted-revocation 套件 70/70，且无遗留事务；
-  - temporal intent/Guardian/authority 跨层套件 417/417。
+  - temporal intent/Guardian/authority 跨层套件 417/417；
+  - runtime-only exact contract / semantic top-1 / mutation-lock 真实 PostgreSQL
+    复验 10/10；向量 SQL 错误后外层 advisory lock 仍阻塞并发 importer。
 - clients:
   - Mobile 8 suites / 202 tests；TypeScript 0 error；lint 0 error；
   - Web 2 suites / 20 tests；TypeScript 0 error；lint 0 error；
   - 无 native/plugin/SDK/lockfile diff，发布路由为 OTA。
+- release transaction:
+  - activation/deactivation/deploy/rollback 69/69；
+  - `bash -n` 三个 shell 入口、Ruff、`git diff --check` PASS；
+  - 两次独立复审前后六个冻结发布文件 SHA256 不变。
 - static/data: Ruff、`git diff --check`、seed integrity
   （460 claims / 247 entities / 3318 relations）PASS。
 - system-map/doc drift: 从当前冻结代码重新生成，`check_doc_drift.py` 与
@@ -262,6 +301,9 @@
     truthful continuation、上下文最小化和 109 组红旗时态给出 GO；
   - `96dd7b352` exact-delta 复审确认只缩短 schema-safe audit op、删除未使用变量并
     修正测试方言/事务，不改变 clinical/privacy 语义。
+  - `832d73256` 的 frozen semantic review 与 release/activation 双重复审均 GO；
+    query-agnostic 全五 claim falsification 被 4/5 case 拒绝，未发现假绿、并发
+    rollback、非原子 env 替换、frontend-only 误停 backend 或 secrets/privacy 泄露。
 - **裁决**:☒ GO ☐ NO-GO→回 S5
 
 ## S6 · 部署
@@ -269,7 +311,9 @@
 - 路由(获 integrated-main CI 绿后):☒ backend-deploy（backend + Web） ☒ mobile-ota
   ☐ mobile-testflight
 - 序:干净 main 集成 → Mobile/Web OpenAPI types 与 system map 重生成 →
-  integrated verification/CI → 后端 deploy → Web deploy → OTA
+  integrated verification/CI → 以 base flag=false 部署后端 → Web deploy →
+  Linux systemd/cgroup 故障演练 → `--activate-health-evidence` 受控持久启用 →
+  production semantic smoke → OTA
 - TestFlight 判断: 当前仅 Python/JSON/TS/TSX/API 变更，无 native/plugin/SDK/runtime
   变更；按发布契约走 OTA，不浪费 TestFlight build。若最终 diff 出现原生变更再改路由。
 - 部署 SHA / 回滚点: 未执行；等待干净 main 集成与 CI
@@ -278,6 +322,10 @@
 
 - 健康分(阈值 35,低于自动回滚): NOT RUN
 - prod smoke(服务 active + 路由 200/401 + 启动日志无 error + 新表/列 ssh 实查): NOT RUN
+- Linux 实机硬条件: systemd drop-in precedence、cgroup v2 全部 uvicorn/Celery/beat
+  子进程 flag 一致性、durable commit/revoke/candidate rename 断电前缀、SSH/HUP
+  断连租约、生产文件系统 `sync -f`/`mv -fT`/目录 fsync 与 rollback 终态证明均
+  NOT RUN
 - **裁决**:☐ PASS ☒ NOT RUN
 
 ## S7 · 上线验证
@@ -296,7 +344,9 @@
 - 新坑沉淀: clinical content workflow review 不等于 independent clinician
   sign-off，release record 必须如实写实际批准角色；feature flag 必须覆盖所有新
   synthesis 行为，但历史/分享撤销校验不能被 flag 关闭；系统生成健康答复不得走
-  无 provenance 的 plain-text share。
+  无 provenance 的 plain-text share。高风险运行时启用不是“把 `.env` 改成 true”
+  而是独立、持久、可恢复的事务；远端结果不明确时必须保留租约和现场，不能用第二个
+  rollback 猜测第一个事务的状态。
 - 文档同步(ARCHITECTURE.md / doc-drift EXPECTED / parity 表): 已完成；system-map
   从冻结代码重新生成，doc drift 与 Dossier consistency 均 PASS
 - 状态 → **shipped** only after G6

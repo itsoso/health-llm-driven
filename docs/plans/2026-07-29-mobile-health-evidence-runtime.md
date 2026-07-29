@@ -216,9 +216,15 @@ in place and is not a deployment blocker for the separate runtime-only allowlist
 2. Integrate into the latest clean `main`, regenerate Mobile/Web OpenAPI types and
    the system map from that merged source, then pass integrated tests and main CI.
 3. Confirm the exact clean deploy source and rollback point.
-4. Deploy backend first and pass service/route/log health checks.
-5. Deploy the matching Web client, then publish Mobile OTA only for JS/TS changes.
-6. Validate a real authenticated Mobile and Mac low-back turn against the same user
+4. Deploy backend first with the canonical base flag false; pass exact revision,
+   generic-hold, staged runtime-only KB, service/route/log and health-score checks.
+5. Deploy the matching Web client at the same SHA, then exercise the real Linux
+   systemd/cgroup deadman, durable commit/revoke, crash-prefix and lost-SSH paths.
+6. Use the dedicated health-evidence activation transaction and require
+   health/auth/score/semantic contract plus every writer PID `flag=true`; publish
+   Mobile OTA only after this backend/Web state is proven.
+7. Validate a real authenticated Mobile and Mac low-back turn against the same user
    snapshot; compare public manifest semantics and verify Mobile follow-up behavior.
-7. Record G5/G6 honestly; rollback on any failed Gate.
-8. Commit and push only this feature’s files.
+8. Record G5/G6 honestly; rollback on any failed Gate and require the rollback
+   terminal proof to show every writer PID `flag=false`.
+9. Commit and push only this feature’s files.

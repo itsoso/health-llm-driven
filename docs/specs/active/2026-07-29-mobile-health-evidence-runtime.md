@@ -300,9 +300,12 @@ recorded in the Dossier as their Gates are reached.
 
 - `HEALTH_EVIDENCE_RUNTIME_ENABLED` controls the compiler/router/verifier
   integration and the new low-back Guardian rule. It remains false in the
-  release-candidate source after local focused/integration G3 and safety G4 pass;
-  the production deployment enables it only after integrated-main CI is green so
-  G5 deployment health and G6 production verification can exercise the real path.
+  canonical backend `.env` after local focused/integration G3 and safety G4 pass.
+  After integrated-main CI is green, backend deployment stages the runtime-only KB
+  while every real writer process remains false. A separate
+  `deploy.sh --activate-health-evidence` transaction must pass systemd deadman,
+  canary health/auth/score/semantic checks, durable authorization commit, and
+  all-cgroup-PID `flag=true` proof before production is considered enabled.
 - The low-back entity, claims, relations, and eval candidates are listed in
   `CLINICAL_RELEASE_HOLD_DOCUMENT_IDS`; generic System KB search always excludes
   them. A separate exact allowlist releases only five claims to the controlled
@@ -311,9 +314,11 @@ recorded in the Dossier as their Gates are reached.
   feature flag.
 - Backend and Web deploys precede Mobile OTA. Old clients continue to render answer
   text and ignore the optional manifest/card.
-- Rollback disables the new integration, redeploys the prior backend/Web release,
-  and rolls Mobile back through the OTA release policy, while retaining the
-  reviewed-only knowledge-search correction.
+- Rollback first stops socket/backend/Celery writers, revokes and fsyncs durable
+  authorization, restores a canonical false environment, quarantines the
+  runtime-only KB where required, and proves schema/auth/health plus all writer
+  PIDs false before reporting success. Mobile rolls back through the OTA release
+  policy while the reviewed-only generic knowledge correction remains in place.
 - Production rollout begins with low-back-pain symptom intent and expands by
   reviewed domain packs plus golden evaluations.
 
