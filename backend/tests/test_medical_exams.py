@@ -301,6 +301,97 @@ def test_import_image_ocr_success(client, db):
     assert "exam_id" in data
 
 
+def test_parse_image_preview_does_not_persist(client, db):
+    """Mobile preview must never write health data before user confirmation."""
+    from app.models.medical_exam import MedicalExam
+
+    user, headers = _create_user(db)
+    mock_ocr = {
+        "report_type": "生化",
+        "report_date": "2026-07-29",
+        "institution": "测试医院",
+        "items": [
+            {
+                "name": "丙氨酸氨基转移酶",
+                "name_en": "ALT",
+                "value": 25.0,
+                "unit": "U/L",
+                "reference_low": 0,
+                "reference_high": 40,
+                "is_abnormal": False,
+            }
+        ],
+        "conclusion": "本响应只用于导入前复核",
+    }
+
+    with patch(
+        "app.api.medical_exams.recognize_medical_report",
+        new=AsyncMock(return_value=mock_ocr),
+    ):
+        resp = client.post(
+            "/api/v1/medical-exams/parse-image-preview",
+            files={"file": ("report.jpg", _tiny_image_bytes(), "image/jpeg")},
+            headers=headers,
+        )
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["parsed_data"]["items"][0]["name_en"] == "ALT"
+    assert (
+        db.query(MedicalExam)
+        .filter(MedicalExam.user_id == user.id)
+        .count()
+        == 0
+    )
+
+
+def test_create_medical_exam_idempotency_key_is_owner_scoped(
+    client,
+    db,
+    sample_medical_exam_data,
+):
+    """Repeated confirmation returns one report; another owner gets their own."""
+    from app.models.medical_exam import MedicalExam
+
+    user, headers = _create_user(db)
+    other, other_headers = _create_user(db)
+    idempotency_key = f"mobile-medical-import-{uuid.uuid4().hex}"
+    request_headers = {**headers, "Idempotency-Key": idempotency_key}
+
+    first = client.post(
+        "/api/v1/medical-exams",
+        json=sample_medical_exam_data,
+        headers=request_headers,
+    )
+    second = client.post(
+        "/api/v1/medical-exams",
+        json=sample_medical_exam_data,
+        headers=request_headers,
+    )
+    other_result = client.post(
+        "/api/v1/medical-exams",
+        json=sample_medical_exam_data,
+        headers={**other_headers, "Idempotency-Key": idempotency_key},
+    )
+
+    assert first.status_code == 200, first.text
+    assert second.status_code == 200, second.text
+    assert other_result.status_code == 200, other_result.text
+    assert first.json()["id"] == second.json()["id"]
+    assert other_result.json()["id"] != first.json()["id"]
+    assert (
+        db.query(MedicalExam)
+        .filter(MedicalExam.user_id == user.id)
+        .count()
+        == 1
+    )
+    assert (
+        db.query(MedicalExam)
+        .filter(MedicalExam.user_id == other.id)
+        .count()
+        == 1
+    )
+
+
 def test_import_image_pathology_narrative_persists_conclusion(client, db):
     """REST 上传路径: 病理报告(0 数值项, 只有诊断全文)入库,
     overall_assessment 逐字保留, value=null 病理项不进数值异常门, value_text 落库。"""

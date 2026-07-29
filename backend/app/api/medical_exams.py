@@ -1,28 +1,32 @@
 """体检数据API"""
-import tempfile
-import os
 import base64
+import hashlib
 import logging
-from datetime import datetime, date, timezone
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
-from pydantic import BaseModel, Field
-from sqlalchemy.orm import Session, selectinload
+import os
+import tempfile
+from datetime import date, datetime, timezone
 from typing import List
+
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, UploadFile
+from pydantic import BaseModel, Field
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session, selectinload
+
+from app.api.deps import get_current_user_required
 from app.database import get_db
-from app.schemas.medical_exam import (
-    MedicalExamCreate,
-    MedicalExamResponse,
-    MedicalExamItemUpdate,
-    MedicalExamItemResponse,
-    MedicalExamReportSummary,
-)
 from app.models.medical_exam import MedicalExam, MedicalExamItem
 from app.models.user import User
-from app.api.deps import get_current_user_required
-from app.services.data_collection.medical_exam_import import MedicalExamImportService
-from app.services.pdf_parser import pdf_parser
-from app.services.exam_packages import create_indicator_from_item
+from app.schemas.medical_exam import (
+    MedicalExamCreate,
+    MedicalExamItemResponse,
+    MedicalExamItemUpdate,
+    MedicalExamReportSummary,
+    MedicalExamResponse,
+)
 from app.services.ai.medical_report_ocr import recognize_medical_report
+from app.services.data_collection.medical_exam_import import MedicalExamImportService
+from app.services.exam_packages import create_indicator_from_item
+from app.services.pdf_parser import pdf_parser
 from app.services.secure_upload import (
     UploadContentInvalid,
     UploadTooLarge,
@@ -86,34 +90,84 @@ def parse_date(date_str) -> date:
         return date.today()
 
 
+def _confirmation_source_fingerprint(user_id: int, idempotency_key: str) -> str:
+    """Return an owner-scoped, non-PHI fingerprint for a confirmed import."""
+    key = idempotency_key.strip()
+    if not key or len(key) > 128:
+        raise HTTPException(status_code=400, detail="无效的确认请求标识")
+    material = f"mobile-medical-confirm:v1:{user_id}:{key}".encode()
+    return hashlib.sha256(material).hexdigest()
+
+
 @router.post("/", response_model=MedicalExamResponse)
 def create_medical_exam(
     exam: MedicalExamCreate,
     current_user: User = Depends(get_current_user_required),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
-    """创建体检记录"""
+    """创建体检记录;确认导入可用 Idempotency-Key 安全重试。"""
+    source_fingerprint = None
+    if idempotency_key is not None:
+        source_fingerprint = _confirmation_source_fingerprint(
+            current_user.id,
+            idempotency_key,
+        )
+        existing = (
+            db.query(MedicalExam)
+            .options(selectinload(MedicalExam.items))
+            .filter(
+                MedicalExam.user_id == current_user.id,
+                MedicalExam.source_fingerprint == source_fingerprint,
+            )
+            .first()
+        )
+        if existing is not None:
+            return existing
+
     # 忽略 payload 里的 user_id,强制绑到当前登录用户 (防止越权写别人数据)
     payload = exam.model_dump(exclude={"items", "user_id"})
-    db_exam = MedicalExam(user_id=current_user.id, **payload)
+    db_exam = MedicalExam(
+        user_id=current_user.id,
+        source_fingerprint=source_fingerprint,
+        **payload,
+    )
     db.add(db_exam)
-    db.flush()
+    try:
+        db.flush()
 
-    # 创建体检项目
-    for item in exam.items:
-        db_item = MedicalExamItem(
-            exam_id=db_exam.id,
-            **item.model_dump()
-        )
-        db.add(db_item)
-        indicator = create_indicator_from_item(
-            user_id=current_user.id, exam_id=db_exam.id,
-            record_date=db_exam.exam_date,
-            item_dict=item.model_dump(), source="manual",
-        )
-        db.add(indicator)
+        # 创建体检项目
+        for item in exam.items or []:
+            item_payload = item.model_dump()
+            db_item = MedicalExamItem(exam_id=db_exam.id, **item_payload)
+            db.add(db_item)
+            indicator = create_indicator_from_item(
+                user_id=current_user.id,
+                exam_id=db_exam.id,
+                record_date=db_exam.exam_date,
+                item_dict=item_payload,
+                source="manual",
+            )
+            db.add(indicator)
 
-    db.commit()
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        if source_fingerprint is None:
+            raise
+        existing = (
+            db.query(MedicalExam)
+            .options(selectinload(MedicalExam.items))
+            .filter(
+                MedicalExam.user_id == current_user.id,
+                MedicalExam.source_fingerprint == source_fingerprint,
+            )
+            .first()
+        )
+        if existing is None:
+            raise
+        return existing
+
     db.refresh(db_exam)
     return db_exam
 
@@ -718,3 +772,49 @@ async def parse_pdf_preview(
         raise HTTPException(status_code=500, detail=f"解析失败: {str(e)}")
     finally:
         os.unlink(tmp_file_path)
+
+
+@router.post("/parse-image-preview")
+async def parse_image_preview(
+    file: UploadFile = File(..., description="体检报告图片 (jpg/png/heic/webp)"),
+    current_user: User = Depends(get_current_user_required),
+):
+    """解析体检报告图片并返回预览;此接口不产生任何数据库写入。"""
+    filename = (file.filename or "").lower()
+    ext = filename.rsplit(".", 1)[-1] if "." in filename else ""
+    if ext not in ("jpg", "jpeg", "png", "heic", "webp"):
+        raise HTTPException(status_code=400, detail="请上传图片文件 (jpg/png/heic/webp)")
+
+    try:
+        content = await read_upload_limited(file, max_bytes=MAX_IMAGE_BYTES)
+        image_type = validate_image_bytes(content, declared_extension=ext)
+    except UploadTooLarge as exc:
+        raise HTTPException(status_code=413, detail="图片过大,请压缩后重试") from exc
+    except UploadContentInvalid as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    result = await recognize_medical_report(
+        base64.b64encode(content).decode("ascii"),
+        image_type=image_type,
+    )
+    if "error" in result:
+        raise HTTPException(status_code=422, detail=result["error"])
+
+    items = result.get("items", []) or []
+    conclusion = (result.get("conclusion") or "").strip()
+    if not items and not conclusion:
+        raise HTTPException(
+            status_code=422,
+            detail="未能从图片中识别出检查指标或诊断结论,请换一张更清晰的照片",
+        )
+
+    logger.info(
+        "体检报告图片预览解析完成 user_id=%s items=%s",
+        current_user.id,
+        len(items),
+    )
+    return {
+        "message": "图片解析成功,请核对后保存",
+        "filename": file.filename,
+        "parsed_data": result,
+    }

@@ -3,7 +3,7 @@
   "counts": {
     "api_routers": 164,
     "celery_tasks": 72,
-    "mobile_routes": 123,
+    "mobile_routes": 124,
     "model_files": 115,
     "safety_rules_total": 64,
     "service_files": 392,

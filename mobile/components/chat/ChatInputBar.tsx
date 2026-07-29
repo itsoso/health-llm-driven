@@ -8,7 +8,6 @@ import { Image } from 'expo-image';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as DocumentPicker from 'expo-document-picker';
-import * as ImagePicker from 'expo-image-picker';
 import ReAnimated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming } from 'react-native-reanimated';
 import { useMediaPicker, type PendingImage } from '../../hooks/useMediaPicker';
 import { useRealtimeDictation } from '../../hooks/useRealtimeDictation';
@@ -20,9 +19,10 @@ import {
   shouldShowDisabledMic,
 } from './composerState';
 import {
-  executeMedicalExamImportSkillForDocumentAsset,
+  buildMedicalExamImportSkillResult,
   type ChatMedicalExamImportSkillResult,
 } from '../../services/chatMedicalExamImportSkill';
+import MedicalExamImportFlow from '../medical/MedicalExamImportFlow';
 import {
   cleanupAbandonedChatDraftFiles,
   clearPersistedChatDraft,
@@ -202,8 +202,7 @@ export default function ChatInputBar({
 }: Props) {
   const [input, setInput] = useState(initialText ?? '');
   const [showMenu, setShowMenu] = useState(false);
-  const [showMedicalImportMenu, setShowMedicalImportMenu] = useState(false);
-  const [medicalImportBusy, setMedicalImportBusy] = useState(false);
+  const [showMedicalImportFlow, setShowMedicalImportFlow] = useState(false);
   const [agentMode, setAgentMode] = useState<ChatAgentMode>('daily');
   const [cancelHint, setCancelHint] = useState(false);
   const [holdTranscript, setHoldTranscript] = useState('');
@@ -1072,89 +1071,10 @@ export default function ChatInputBar({
     }
   }, []);
 
-  const runMedicalExamImport = useCallback(async (asset: { uri: string; name?: string | null; mimeType?: string | null }) => {
-    if (medicalImportBusy) return;
-    setMedicalImportBusy(true);
-    try {
-      const result = await executeMedicalExamImportSkillForDocumentAsset(asset);
-      onMedicalExamImportResult?.(result);
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    } catch (e: any) {
-      Alert.alert('导入体检报告失败', e?.message || '请稍后再试');
-    } finally {
-      setMedicalImportBusy(false);
-      setShowMedicalImportMenu(false);
-    }
-  }, [medicalImportBusy, onMedicalExamImportResult]);
-
-  const handleImportMedicalExamFile = useCallback(async () => {
-    try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: ['application/pdf', 'image/*'],
-        copyToCacheDirectory: true,
-      });
-      if (!result.canceled && result.assets[0]) {
-        const asset = result.assets[0];
-        await runMedicalExamImport({
-          uri: asset.uri,
-          name: asset.name,
-          mimeType: asset.mimeType,
-        });
-      }
-    } catch (e: any) {
-      Alert.alert('选择报告失败', e?.message || '请稍后再试');
-    }
-  }, [runMedicalExamImport]);
-
-  const handleImportMedicalExamPhoto = useCallback(async () => {
-    try {
-      const perm = await ImagePicker.requestCameraPermissionsAsync();
-      if (!perm.granted) {
-        Alert.alert('需要相机权限', '请在系统设置中允许小巴使用相机。');
-        return;
-      }
-      const picked = await ImagePicker.launchCameraAsync({
-        mediaTypes: ['images'],
-        quality: 0.85,
-        allowsEditing: false,
-      });
-      if (!picked.canceled && picked.assets[0]) {
-        const asset = picked.assets[0];
-        await runMedicalExamImport({
-          uri: asset.uri,
-          name: asset.fileName || 'medical-exam-photo.jpg',
-          mimeType: asset.mimeType || 'image/jpeg',
-        });
-      }
-    } catch (e: any) {
-      Alert.alert('拍摄报告失败', e?.message || '请稍后再试');
-    }
-  }, [runMedicalExamImport]);
-
-  const handleImportMedicalExamLibrary = useCallback(async () => {
-    try {
-      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!perm.granted) {
-        Alert.alert('需要相册权限', '请在系统设置中允许小巴访问照片。');
-        return;
-      }
-      const picked = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
-        quality: 0.85,
-        allowsEditing: false,
-      });
-      if (!picked.canceled && picked.assets[0]) {
-        const asset = picked.assets[0];
-        await runMedicalExamImport({
-          uri: asset.uri,
-          name: asset.fileName || 'medical-exam-image.jpg',
-          mimeType: asset.mimeType || 'image/jpeg',
-        });
-      }
-    } catch (e: any) {
-      Alert.alert('选择报告图片失败', e?.message || '请稍后再试');
-    }
-  }, [runMedicalExamImport]);
+  const handleMedicalExamImported = useCallback((result: Parameters<typeof buildMedicalExamImportSkillResult>[0]) => {
+    onMedicalExamImportResult?.(buildMedicalExamImportSkillResult(result));
+    setShowMedicalImportFlow(false);
+  }, [onMedicalExamImportResult]);
 
   const toggleMenu = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -1249,13 +1169,6 @@ export default function ChatInputBar({
         <View style={styles.transcribingBar}>
           <ActivityIndicator size="small" color={C.green500} />
           <Text style={styles.transcribingText}>语音识别中...</Text>
-        </View>
-      )}
-
-      {medicalImportBusy && (
-        <View style={styles.transcribingBar}>
-          <ActivityIndicator size="small" color={C.green500} />
-          <Text style={styles.transcribingText}>体检报告导入中...</Text>
         </View>
       )}
 
@@ -1399,10 +1312,10 @@ export default function ChatInputBar({
               <AttachmentGridItem
                 icon="document-text-outline"
                 label="导入体检报告"
-                desc={medicalImportBusy ? '导入中' : '入库成卡片'}
+                desc="先预览再保存"
                 onPress={() => {
                   setShowMenu(false);
-                  setShowMedicalImportMenu(true);
+                  setShowMedicalImportFlow(true);
                 }}
               />
             </View>
@@ -1427,24 +1340,11 @@ export default function ChatInputBar({
         </Pressable>
       </Modal>
 
-      <Modal visible={showMedicalImportMenu} transparent animationType="slide" onRequestClose={() => setShowMedicalImportMenu(false)}>
-        <Pressable style={styles.menuOverlay} onPress={() => setShowMedicalImportMenu(false)}>
-          <Pressable
-            testID="medical-exam-import-sheet"
-            style={styles.menuSheet}
-            onPress={e => e.stopPropagation()}
-          >
-            <View testID="medical-exam-import-menu-handle" style={styles.menuHandle} />
-            <View style={styles.medicalImportHeader}>
-              <Text style={styles.menuLabel}>导入体检报告</Text>
-              <Text style={styles.menuDesc}>写入体检记录，并在对话中生成可复核卡片</Text>
-            </View>
-            <MenuItem icon="document-outline" label="选择 PDF 或图片报告" desc="从文件中选择体检 PDF 或化验单图片" onPress={handleImportMedicalExamFile} />
-            <MenuItem icon="camera-outline" label="拍摄体检/化验单" desc="拍照后直接 OCR 入库" onPress={handleImportMedicalExamPhoto} />
-            <MenuItem icon="images-outline" label="从相册选择报告图片" desc="选择已有报告照片并入库" onPress={handleImportMedicalExamLibrary} />
-          </Pressable>
-        </Pressable>
-      </Modal>
+      <MedicalExamImportFlow
+        visible={showMedicalImportFlow}
+        onClose={() => setShowMedicalImportFlow(false)}
+        onImported={handleMedicalExamImported}
+      />
     </>
   );
 }
@@ -1492,20 +1392,6 @@ function AttachmentGridItem({ icon, label, desc, onPress }: { icon: any; label: 
       <View style={styles.attachmentGridText}>
         <Text style={styles.attachmentGridLabel} numberOfLines={1}>{label}</Text>
         <Text style={styles.attachmentGridDesc} numberOfLines={1}>{desc}</Text>
-      </View>
-    </TouchableOpacity>
-  );
-}
-
-function MenuItem({ icon, label, desc, onPress }: { icon: any; label: string; desc: string; onPress: () => void }) {
-  return (
-    <TouchableOpacity style={styles.menuItem} onPress={onPress} activeOpacity={0.6} accessibilityRole="button" accessibilityLabel={label}>
-      <View style={styles.menuIconWrap}>
-        <Ionicons name={icon} size={20} color={C.ink1} />
-      </View>
-      <View style={{ flex: 1 }}>
-        <Text style={styles.menuLabel}>{label}</Text>
-        <Text style={styles.menuDesc}>{desc}</Text>
       </View>
     </TouchableOpacity>
   );

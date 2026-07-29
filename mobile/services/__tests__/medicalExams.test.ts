@@ -14,6 +14,8 @@ import {
   uploadMedicalExamPdf,
   uploadMedicalExamImage,
   uploadMedicalExamText,
+  previewMedicalExamAsset,
+  confirmMedicalExamPreview,
   type MedicalExam,
 } from '../medicalExams';
 
@@ -134,6 +136,122 @@ describe('medical exam import uploads', () => {
       '/medical-exams/import/image',
       expect.any(FormData),
       expect.objectContaining({ timeout: 120_000 }),
+    );
+  });
+});
+
+describe('review-first medical exam import', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('previews an image without calling a persistent import endpoint', async () => {
+    mockPost.mockResolvedValueOnce({
+      data: {
+        filename: 'report.jpg',
+        parsed_data: {
+          report_date: '2026-07-29',
+          report_type: 'biochemistry',
+          institution: '测试医院',
+          items: [{ name: '丙氨酸氨基转移酶', name_en: 'ALT', value: 25, unit: 'U/L' }],
+        },
+      },
+    });
+
+    const preview = await previewMedicalExamAsset({
+      uri: 'file:///tmp/report.jpg',
+      name: 'report.jpg',
+      mimeType: 'image/jpeg',
+    });
+
+    expect(preview.items[0]).toMatchObject({ item_name: '丙氨酸氨基转移酶', item_code: 'ALT' });
+    expect(mockPost).toHaveBeenCalledWith(
+      '/medical-exams/parse-image-preview',
+      expect.any(FormData),
+      expect.objectContaining({ timeout: 120_000 }),
+    );
+    expect(mockPost).not.toHaveBeenCalledWith(
+      '/medical-exams/import/image',
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
+  it('normalizes OCR date and numeric strings before confirmation', async () => {
+    mockPost.mockResolvedValueOnce({
+      data: {
+        filename: 'report.jpg',
+        parsed_data: {
+          report_date: '2026年7月9日',
+          conclusion: '建议结合临床复核',
+          items: [
+            {
+              name: '丙氨酸氨基转移酶',
+              value: '25.6',
+              reference_low: 0,
+              reference_high: 40,
+              is_abnormal: false,
+            },
+          ],
+        },
+      },
+    });
+
+    const preview = await previewMedicalExamAsset({
+      uri: 'file:///tmp/report.jpg',
+      name: 'report.jpg',
+      mimeType: 'image/jpeg',
+    });
+
+    expect(preview.exam_date).toBe('2026-07-09');
+    expect(preview.items[0]).toMatchObject({
+      value: 25.6,
+      value_text: null,
+      reference_range: '0-40',
+      is_abnormal: 'normal',
+    });
+  });
+
+  it('rejects an empty parser response before showing a save action', async () => {
+    mockPost.mockResolvedValueOnce({
+      data: { filename: 'blank.pdf', parsed_data: { items: [] } },
+    });
+
+    await expect(previewMedicalExamAsset({
+      uri: 'file:///tmp/blank.pdf',
+      name: 'blank.pdf',
+      mimeType: 'application/pdf',
+    })).rejects.toThrow('未识别到可保存的体检内容');
+  });
+
+  it('confirms a preview with a stable idempotency key', async () => {
+    mockPost.mockResolvedValueOnce({
+      data: {
+        id: 88,
+        user_id: 3,
+        exam_date: '2026-07-29',
+        exam_type: 'biochemistry',
+        hospital_name: '测试医院',
+        conclusions: [],
+        items: [
+          { id: 1, exam_id: 88, item_name: 'ALT', value: 25, is_abnormal: 'normal' },
+        ],
+      },
+    });
+
+    const result = await confirmMedicalExamPreview({
+      source: 'image',
+      fileName: 'report.jpg',
+      exam_date: '2026-07-29',
+      exam_type: 'biochemistry',
+      hospital_name: '测试医院',
+      conclusions: [],
+      items: [{ item_name: 'ALT', value: 25, is_abnormal: 'normal' }],
+    }, 'medical-confirm-stable-key');
+
+    expect(result).toMatchObject({ examId: 88, itemsCount: 1, source: 'image' });
+    expect(mockPost).toHaveBeenCalledWith(
+      '/medical-exams/',
+      expect.objectContaining({ exam_date: '2026-07-29', items: expect.any(Array) }),
+      { headers: { 'Idempotency-Key': 'medical-confirm-stable-key' } },
     );
   });
 });

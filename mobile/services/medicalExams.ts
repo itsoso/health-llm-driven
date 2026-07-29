@@ -165,6 +165,42 @@ export interface MedicalExamTextUploadOptions {
 
 export type MedicalExamTextUploadResult = MedicalExamImportResult;
 
+export interface MedicalExamImportAsset {
+  uri: string;
+  name?: string | null;
+  mimeType?: string | null;
+}
+
+export interface MedicalExamPreviewItem {
+  category?: string | null;
+  item_name: string;
+  item_code?: string | null;
+  value?: number | null;
+  value_text?: string | null;
+  unit?: string | null;
+  reference_range?: string | null;
+  result?: string | null;
+  is_abnormal?: string | null;
+  notes?: string | null;
+}
+
+export interface MedicalExamPreview {
+  source: 'pdf' | 'image';
+  fileName: string;
+  patient_name?: string | null;
+  patient_gender?: string | null;
+  patient_age?: number | null;
+  exam_number?: string | null;
+  exam_date: string;
+  exam_type?: string | null;
+  body_system?: string | null;
+  hospital_name?: string | null;
+  doctor_name?: string | null;
+  overall_assessment?: string | null;
+  conclusions?: any[] | null;
+  items: MedicalExamPreviewItem[];
+}
+
 export function normalizeMedicalExamImportResult(
   raw: Record<string, any>,
   source: MedicalExamImportSource,
@@ -248,6 +284,186 @@ export async function uploadMedicalExamText(
     ...options,
   });
   return normalizeMedicalExamImportResult(res.data, 'text');
+}
+
+function assetExtension(asset: MedicalExamImportAsset): string {
+  const name = (asset.name ?? '').toLowerCase();
+  const dot = name.lastIndexOf('.');
+  return dot >= 0 ? name.slice(dot + 1) : '';
+}
+
+function isPdfAsset(asset: MedicalExamImportAsset): boolean {
+  return asset.mimeType?.toLowerCase() === 'application/pdf' || assetExtension(asset) === 'pdf';
+}
+
+function numericValue(raw: unknown): number | null {
+  if (typeof raw === 'number') return Number.isFinite(raw) ? raw : null;
+  if (typeof raw !== 'string') return null;
+  const value = raw.trim();
+  if (!/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)$/.test(value)) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function normalizePreviewItem(raw: Record<string, any>): MedicalExamPreviewItem | null {
+  const itemName = String(raw.item_name ?? raw.name ?? '').trim();
+  if (!itemName) return null;
+  const low = raw.reference_low;
+  const high = raw.reference_high;
+  const referenceRange = raw.reference_range
+    ?? (low != null && high != null ? `${low}-${high}` : null);
+  const value = numericValue(raw.value);
+  const abnormal = typeof raw.is_abnormal === 'string'
+    ? (raw.is_abnormal.trim() || 'normal')
+    : (raw.is_abnormal === true ? 'abnormal' : 'normal');
+  return {
+    category: raw.category ?? null,
+    item_name: itemName,
+    item_code: raw.item_code ?? raw.name_en ?? null,
+    value,
+    value_text: raw.value_text ?? (value == null && raw.value != null ? String(raw.value) : null),
+    unit: raw.unit ?? null,
+    reference_range: referenceRange,
+    result: raw.result ?? null,
+    is_abnormal: abnormal,
+    notes: raw.notes ?? null,
+  };
+}
+
+function todayLocal(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function normalizeExamDate(raw: unknown): string {
+  const text = String(raw ?? '').trim();
+  const separated = text.match(/^(\d{4})[年./-](\d{1,2})[月./-](\d{1,2})日?$/);
+  const compact = text.match(/^(\d{4})(\d{2})(\d{2})$/);
+  const match = separated ?? compact;
+  if (!match) return todayLocal();
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  if (
+    parsed.getUTCFullYear() !== year
+    || parsed.getUTCMonth() + 1 !== month
+    || parsed.getUTCDate() !== day
+  ) {
+    return todayLocal();
+  }
+  return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+function normalizeMedicalExamPreview(
+  raw: Record<string, any>,
+  source: 'pdf' | 'image',
+  fileName: string,
+): MedicalExamPreview {
+  const items = (Array.isArray(raw.items) ? raw.items : [])
+    .map(item => normalizePreviewItem(item))
+    .filter((item): item is MedicalExamPreviewItem => item != null);
+  const overallAssessment = raw.overall_assessment ?? raw.conclusion ?? null;
+  return {
+    source,
+    fileName,
+    patient_name: raw.patient_name ?? null,
+    patient_gender: raw.patient_gender ?? null,
+    patient_age: raw.patient_age ?? null,
+    exam_number: raw.exam_number ?? null,
+    exam_date: normalizeExamDate(raw.exam_date ?? raw.report_date),
+    exam_type: raw.exam_type ?? raw.report_type ?? 'other',
+    body_system: raw.body_system ?? null,
+    hospital_name: raw.hospital_name ?? raw.institution ?? null,
+    doctor_name: raw.doctor_name ?? null,
+    overall_assessment: overallAssessment,
+    conclusions: Array.isArray(raw.conclusions) ? raw.conclusions : null,
+    items,
+  };
+}
+
+/**
+ * Parse a selected report without persistence. The returned preview is the
+ * only input accepted by the explicit confirmation step below.
+ */
+export async function previewMedicalExamAsset(
+  asset: MedicalExamImportAsset,
+): Promise<MedicalExamPreview> {
+  const pdf = isPdfAsset(asset);
+  const source = pdf ? 'pdf' : 'image';
+  const fileName = asset.name?.trim() || (pdf ? 'medical-exam.pdf' : 'medical-exam.jpg');
+  const mimeType = asset.mimeType || (pdf ? 'application/pdf' : 'image/jpeg');
+  const form = new FormData();
+  form.append('file', { uri: asset.uri, name: fileName, type: mimeType } as any);
+  const endpoint = pdf
+    ? '/medical-exams/parse-pdf-preview'
+    : '/medical-exams/parse-image-preview';
+  const response = await api.post(
+    endpoint,
+    form,
+    { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120_000 },
+  );
+  const preview = normalizeMedicalExamPreview(
+    response.data?.parsed_data ?? {},
+    source,
+    fileName,
+  );
+  if (
+    preview.items.length === 0
+    && !preview.overall_assessment
+    && (preview.conclusions?.length ?? 0) === 0
+  ) {
+    throw new Error('未识别到可保存的体检内容，请更换更清晰或完整的报告。');
+  }
+  return preview;
+}
+
+/**
+ * Persist an already-reviewed preview. Reusing the key is safe and returns the
+ * original owner-scoped report instead of creating duplicate health records.
+ */
+export async function confirmMedicalExamPreview(
+  preview: MedicalExamPreview,
+  idempotencyKey: string,
+): Promise<MedicalExamImportResult> {
+  const response = await api.post<MedicalExam>(
+    '/medical-exams/',
+    {
+      patient_name: preview.patient_name,
+      patient_gender: preview.patient_gender,
+      patient_age: preview.patient_age,
+      exam_number: preview.exam_number,
+      exam_date: preview.exam_date,
+      exam_type: preview.exam_type,
+      body_system: preview.body_system,
+      hospital_name: preview.hospital_name,
+      doctor_name: preview.doctor_name,
+      overall_assessment: preview.overall_assessment,
+      conclusions: preview.conclusions,
+      notes: `经用户确认导入: ${preview.fileName}`,
+      items: preview.items,
+    },
+    { headers: { 'Idempotency-Key': idempotencyKey } },
+  );
+  const exam = response.data;
+  const abnormalCount = (exam.items ?? []).filter(item => {
+    const status = String(item.is_abnormal ?? '').toLowerCase();
+    return status !== '' && status !== 'normal';
+  }).length;
+  return normalizeMedicalExamImportResult({
+    message: '体检报告已保存',
+    exam_id: exam.id,
+    exam_date: exam.exam_date,
+    exam_type: exam.exam_type,
+    hospital_name: exam.hospital_name,
+    items_count: exam.items?.length ?? 0,
+    abnormal_count: abnormalCount,
+    conclusions_count: exam.conclusions?.length ?? 0,
+    conclusion: exam.overall_assessment,
+  }, preview.source);
 }
 
 /**

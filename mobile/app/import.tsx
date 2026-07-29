@@ -30,6 +30,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { spacing, radii, shadows } from '../constants/theme';
 import { ColorPalette, useTheme } from '../hooks/useTheme';
 import { uploadMedicalExamPdf, uploadMedicalExamImage, uploadMedicalExamText } from '../services/medicalExams';
+import MedicalExamImportFlow from '../components/medical/MedicalExamImportFlow';
 import { uploadGeneticTxt, uploadGeneticPdf, pollGeneticProfileStatus } from '../services/geneticData';
 import AgentFeedbackLink from '../components/agent/AgentFeedbackLink';
 import { createImportResultAgentContext } from '../utils/agentContext';
@@ -56,6 +57,22 @@ export default function ImportScreen() {
   const [result, setResult] = useState<UploadResult | null>(null);
   const [fallbackOpen, setFallbackOpen] = useState(false);
   const [fallbackText, setFallbackText] = useState('');
+
+  if (isMedicalFocused) {
+    return (
+      <MedicalExamImportFlow
+        presentation="screen"
+        onClose={() => router.back()}
+        onImported={importResult => {
+          setResult({
+            kind: importResult.source === 'pdf' ? 'medical_pdf' : 'medical_image',
+            message: importResult.message,
+            detail: `已写入体检记录 #${importResult.examId}`,
+          });
+        }}
+      />
+    );
+  }
 
   const onPickFile = async () => {
     if (busy) return;

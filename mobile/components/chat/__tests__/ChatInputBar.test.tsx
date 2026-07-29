@@ -85,8 +85,29 @@ jest.mock('expo-document-picker', () => ({
 }));
 
 jest.mock('../../../services/chatMedicalExamImportSkill', () => ({
-  executeMedicalExamImportSkillForDocumentAsset: (...args: any[]) => mockExecuteMedicalExamImport(...args),
+  buildMedicalExamImportSkillResult: (...args: any[]) => mockExecuteMedicalExamImport(...args),
 }));
+
+jest.mock('../../medical/MedicalExamImportFlow', () => {
+  const React = require('react');
+  const { Pressable, Text } = require('react-native');
+  return function MockMedicalExamImportFlow(props: any) {
+    if (!props.visible) return null;
+    return React.createElement(
+      Pressable,
+      {
+        accessibilityLabel: '确认模拟导入',
+        onPress: () => props.onImported({
+          examId: 42,
+          exam_id: 42,
+          source: 'pdf',
+          reviewRequired: true,
+        }),
+      },
+      React.createElement(Text, null, '体检报告导入流程'),
+    );
+  };
+});
 
 jest.mock('expo-router', () => ({
   router: { push: (...args: any[]) => mockRouterPush(...args) },
@@ -1656,15 +1677,6 @@ describe('ChatInputBar', () => {
   });
 
   it('runs the medical exam import skill from the attachment menu', async () => {
-    const DocumentPicker = require('expo-document-picker');
-    DocumentPicker.getDocumentAsync.mockResolvedValueOnce({
-      canceled: false,
-      assets: [{
-        uri: 'file:///tmp/report.pdf',
-        name: 'report.pdf',
-        mimeType: 'application/pdf',
-      }],
-    });
     const skillResult = {
       skillId: 'medical_exam_import',
       card: {
@@ -1672,10 +1684,10 @@ describe('ChatInputBar', () => {
         data: { exam_id: 42, items_count: 28, review_required: true },
       },
     };
-    mockExecuteMedicalExamImport.mockResolvedValueOnce(skillResult);
+    mockExecuteMedicalExamImport.mockReturnValueOnce(skillResult);
     const onMedicalExamImportResult = jest.fn();
 
-    const { getByLabelText } = render(
+    const { getByLabelText, getByText } = render(
       <ChatInputBar
         onSend={jest.fn()}
         isStreaming={false}
@@ -1685,15 +1697,13 @@ describe('ChatInputBar', () => {
 
     fireEvent.press(getByLabelText('附件菜单'));
     fireEvent.press(getByLabelText('导入体检报告'));
-    fireEvent.press(getByLabelText('选择 PDF 或图片报告'));
+    expect(getByText('体检报告导入流程')).toBeTruthy();
+    fireEvent.press(getByLabelText('确认模拟导入'));
 
-    await waitFor(() => {
-      expect(mockExecuteMedicalExamImport).toHaveBeenCalledWith({
-        uri: 'file:///tmp/report.pdf',
-        name: 'report.pdf',
-        mimeType: 'application/pdf',
-      });
-    });
+    expect(mockExecuteMedicalExamImport).toHaveBeenCalledWith(expect.objectContaining({
+      examId: 42,
+      source: 'pdf',
+    }));
     expect(onMedicalExamImportResult).toHaveBeenCalledWith(skillResult);
   });
 });

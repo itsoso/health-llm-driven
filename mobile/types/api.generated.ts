@@ -3190,7 +3190,7 @@ export interface paths {
         put?: never;
         /**
          * Create Medical Exam
-         * @description 创建体检记录
+         * @description 创建体检记录;确认导入可用 Idempotency-Key 安全重试。
          */
         post: operations["create_medical_exam_api_v1_medical_exams__post"];
         delete?: never;
@@ -3447,6 +3447,26 @@ export interface paths {
          *     需要登录 — 该路径会消耗 LLM vision 配额,不能裸奔.
          */
         post: operations["parse_pdf_preview_api_v1_medical_exams_parse_pdf_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/medical-exams/parse-image-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Parse Image Preview
+         * @description 解析体检报告图片并返回预览;此接口不产生任何数据库写入。
+         */
+        post: operations["parse_image_preview_api_v1_medical_exams_parse_image_preview_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -20764,6 +20784,14 @@ export interface components {
              */
             client_secret?: string | null;
         };
+        /** Body_parse_image_preview_api_v1_medical_exams_parse_image_preview_post */
+        Body_parse_image_preview_api_v1_medical_exams_parse_image_preview_post: {
+            /**
+             * File
+             * @description 体检报告图片 (jpg/png/heic/webp)
+             */
+            file: string;
+        };
         /** Body_parse_pdf_preview_api_v1_medical_exams_parse_pdf_preview_post */
         Body_parse_pdf_preview_api_v1_medical_exams_parse_pdf_preview_post: {
             /**
@@ -26993,7 +27021,7 @@ export interface components {
          */
         MedicalExamCreate: {
             /** User Id */
-            user_id: number;
+            user_id?: number | null;
             /** Patient Name */
             patient_name?: string | null;
             /** Patient Gender */
@@ -38128,7 +38156,9 @@ export interface operations {
     create_medical_exam_api_v1_medical_exams__post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "Idempotency-Key"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -38529,6 +38559,39 @@ export interface operations {
         requestBody: {
             content: {
                 "multipart/form-data": components["schemas"]["Body_parse_pdf_preview_api_v1_medical_exams_parse_pdf_preview_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    parse_image_preview_api_v1_medical_exams_parse_image_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_parse_image_preview_api_v1_medical_exams_parse_image_preview_post"];
             };
         };
         responses: {
