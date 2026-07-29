@@ -28,6 +28,12 @@ _VERIFIER_VERDICTS = frozenset({"pass", "repair", "block"})
 _SUFFICIENCY_VALUES = frozenset(
     {"sufficient", "clarify", "safe_fallback"}
 )
+_RISK_RANK = {
+    "low": 0,
+    "medium": 1,
+    "high": 2,
+    "emergency": 3,
+}
 _CANONICAL_MANIFEST_KEYS = (
     "version",
     "intent",
@@ -136,11 +142,15 @@ def sanitize_health_delivery(
             sanitized=False,
         )
 
-    claimed_risk = (
+    query_risk = (
         intent.risk_level.value
         if intent.requires_authority
-        else _claimed_health_risk(meta)
+        else None
     )
+    claimed_risk = _max_known_risk(
+        query_risk,
+        _claimed_health_risk(meta),
+    ) or "medium"
     meta = {
         "cards": [],
         "sources_used": [],
@@ -311,17 +321,42 @@ def _claimed_health_intent_id(meta: Mapping[str, Any]) -> str | None:
     return intent_id if intent_id.startswith("health_advice.") else None
 
 
-def _claimed_health_risk(meta: Mapping[str, Any]) -> str:
+def _claimed_health_risk(meta: Mapping[str, Any]) -> str | None:
     manifest = meta.get("health_evidence_manifest")
     if not isinstance(manifest, Mapping):
-        return "medium"
+        return None
     public_intent = manifest.get("intent")
-    risk_level = str(manifest.get("risk_level") or "").strip().lower()
-    if not risk_level and isinstance(public_intent, Mapping):
-        risk_level = str(
-            public_intent.get("risk_level") or ""
-        ).strip().lower()
-    return risk_level if risk_level in {"emergency", "high"} else "medium"
+    intent_risk = (
+        public_intent.get("risk_level")
+        if isinstance(public_intent, Mapping)
+        else None
+    )
+    return _max_known_risk(
+        manifest.get("risk_level"),
+        intent_risk,
+        default=None,
+    )
+
+
+def _max_known_risk(
+    *values: Any,
+    default: str | None = "medium",
+) -> str | None:
+    known = [
+        normalized
+        for value in values
+        if (normalized := _known_risk(value)) is not None
+    ]
+    if not known:
+        return default
+    return max(known, key=_RISK_RANK.__getitem__)
+
+
+def _known_risk(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower()
+    return normalized if normalized in _RISK_RANK else None
 
 
 def has_current_health_verification(
@@ -331,7 +366,7 @@ def has_current_health_verification(
     assistant_content: str,
     expected_risk_level: str | None = None,
 ) -> bool:
-    """Validate the current public manifest/verification delivery contract."""
+    """Validate the manifest, treating expected risk as a minimum safety floor."""
 
     if not isinstance(value, Mapping):
         return False
@@ -355,14 +390,23 @@ def has_current_health_verification(
     if public_intent.get("requires_authority") is not True:
         return False
 
-    risk_level = str(manifest.get("risk_level") or "")
-    if not risk_level or public_intent.get("risk_level") != risk_level:
-        return False
+    raw_risk_level = manifest.get("risk_level")
+    risk_level = _known_risk(raw_risk_level)
     if (
-        expected_risk_level is not None
-        and risk_level != expected_risk_level
+        risk_level is None
+        or raw_risk_level != risk_level
+        or public_intent.get("risk_level") != risk_level
     ):
         return False
+    if expected_risk_level is not None:
+        expected_risk = _known_risk(expected_risk_level)
+        # A frozen Twin or Guardian signal may conservatively promote the
+        # server-sealed turn above the risk visible in the paired user query.
+        if (
+            expected_risk is None
+            or _RISK_RANK[risk_level] < _RISK_RANK[expected_risk]
+        ):
+            return False
     sufficiency = str(manifest.get("sufficiency") or "")
     if sufficiency not in _SUFFICIENCY_VALUES:
         return False
