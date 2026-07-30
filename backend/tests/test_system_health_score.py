@@ -1,4 +1,7 @@
 """系统健康度评分脚本测试 — scripts/system_health_score.py"""
+import json
+from pathlib import Path
+import subprocess
 from unittest.mock import patch, MagicMock
 
 import sys
@@ -14,6 +17,37 @@ from scripts.system_health_score import (
     calculate_health_score,
     FAIL_THRESHOLD,
 )
+
+
+def test_health_score_direct_script_resolves_backend_imports_without_pythonpath(
+    tmp_path: Path,
+):
+    script = Path(__file__).resolve().parents[1] / "scripts" / "system_health_score.py"
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--skip-tests",
+            "--url",
+            "http://127.0.0.1:1",
+            "--json",
+        ],
+        cwd=tmp_path,
+        env={
+            **os.environ,
+            "APP_ENV": "test",
+            "DATABASE_URL": "sqlite:///:memory:",
+            "PYTHONPATH": "",
+        },
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=30,
+    )
+
+    payload = json.loads(result.stdout)
+    circuit = payload["dimensions"]["agent_runtime_circuit"]
+    assert circuit["detail"] != "unavailable:ModuleNotFoundError:attempts=3"
 
 
 class TestScoreTests:

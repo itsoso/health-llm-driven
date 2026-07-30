@@ -22,6 +22,13 @@ import sys
 import time
 import os
 
+# Executing this file as ``python scripts/system_health_score.py`` makes
+# ``backend/scripts`` the first import root, so production-only ``app.*``
+# checks would otherwise fail even though the application is installed.
+_BACKEND_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _BACKEND_ROOT not in sys.path:
+    sys.path.insert(0, _BACKEND_ROOT)
+
 # 快速失败阈值（低于此分数应触发回滚）
 # The deployment contract uses 35 as the minimum score.  Keep this constant
 # aligned with the dossier/G5 gate instead of exposing a different threshold

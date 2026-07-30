@@ -4,7 +4,7 @@
 |---|---|
 | slug | `mobile-health-evidence-runtime` |
 | 创建日期 | 2026-07-29 |
-| 当前阶段 | G5 事故已恢复 → 持久发布链修复本地 PASS → replacement CI 待跑 |
+| 当前阶段 | G5 第二次自动恢复 → health-score import-root 修复待 CI |
 | 状态 | G5 remediation / production restored at rollback SHA / feature not-deployed |
 | 负责 | product owner + Codex |
 | 反馈环 | backend deploy → Web deploy → Mobile OTA → Mobile/Mac 真实路径对照 |
@@ -217,6 +217,27 @@
     diff check PASS。
   - 回退阶段: G5 → S5/G3/G4；replacement CI 和重新部署全绿前继续禁止
     Web/activation/OTA。
+- [x] Correction Block — health-score 直接执行 import root
+  - 触发: incident remediation `5df2cfde36b233eabcabde8d25cb313750e4212e`
+    的 CI run `30510213024` 43/43 全绿后，backend deploy 完成数据保护、旧回滚点
+    199 表兼容预检、managed reconciliation migration、启动前 schema probe 与
+    exact-SHA 验证；部署健康硬闸随后精确报告
+    `agent_runtime_circuit=unavailable:ModuleNotFoundError:attempts=3`。
+  - 终态: 自动 rollback runner 返回精确
+    `ROLLBACK_OK commit=ad85cd66... kb_quarantine=passed schema_probe=passed
+    auth_probe=passed services=active process_flag=false`；生产仍为旧 SHA、flag=false，
+    未继续 Web、activation 或 OTA。
+  - 根因: `python scripts/system_health_score.py` 把 `backend/scripts` 而不是
+    `backend` 作为首个 import root；旧评分维度仅用标准库，新增
+    `app.services.agent_runtime_rollout` 后才暴露。pytest 的项目路径注入掩盖了真实
+    direct-script 契约。
+  - 修复: health-score executable 从自身绝对路径显式加入 `backend` 根目录；新增
+    清空 `PYTHONPATH`、任意 cwd 直接执行的 subprocess 回归，已严格 RED 复现并
+    GREEN，且继续断言电路 detail 不得降级为 ModuleNotFoundError。
+  - 回归: migration + circuit + runtime schema 57/57、health-score 19/19；
+    independent fresh review GO，Ruff、diff check、Dossier consistency PASS。
+  - 回退阶段: G5 → S5/G3/G4；该最小修复本地闸门与精确 SHA CI 全绿前继续禁止
+    重新部署、Web、activation/OTA。
 
 ## S0 · 用户需求(逐字)
 
@@ -407,9 +428,11 @@
   - release deploy/rollback/activation 92/92；
   - managed migration、Agent circuit、runtime schema 56/56，health-score 18/18；
   - Shell syntax、Ruff、`git diff --check` PASS。
-- main CI 真实色: incident remediation 提交尚未推送；必须对其精确 SHA 重跑并读取
-  远端结果，禁止复用 `1eb8c2f8` 的绿灯。
-- **裁决**: incident remediation local candidate ☒ 绿；最终 G3 ☐ 绿 ☒ PENDING main CI
+- incident remediation CI: run `30510213024` 对精确
+  `5df2cfde36b233eabcabde8d25cb313750e4212e` 43/43 success、0 skipped/failed。
+- direct-script import-root 修复: 精确 subprocess RED→GREEN；57/57 定向回归、
+  fresh review、Ruff、diff check 与 Dossier consistency PASS；新 main CI 待跑。
+- **裁决**: incident remediation ☒ 绿；import-root fix local ☒ 绿 / CI ☒ PENDING
 
 ## G4 · 安全闸
 
@@ -443,13 +466,15 @@
 - 部署 SHA / 回滚点:
   - 首次目标 `6e449b176d...` 在首次 flag bootstrap 的 mutation 前停止；
   - bootstrap 修复目标 `1eb8c2f8...` 已进入 guard，但 G5 hard veto 后回滚；
+  - incident remediation 目标 `5df2cfde...` 完成 migration/probe 后被
+    ModuleNotFoundError 硬闸阻断并成功回滚；
   - 生产当前为 `ad85cd667cb415a3cc1dc298633c75998856f68e`，服务健康、
-    base flag=false、历史 schema drift 已受控补齐；下一目标待 incident remediation
+    base flag=false、历史 schema drift 已受控补齐；下一目标待 import-root 修复
     提交与 CI 生成。
 
 ## G5 · 部署健康闸
 
-- 数据保护前置 Gate: PASS —— 两次 41 MB production backup、234 表临时库恢复演练、
+- 数据保护前置 Gate: PASS —— 三次 41 MB production backup、234 表临时库恢复演练、
   force-RLS 遗传原始文件/审计表完整性、站外 age 归档 hash + HMAC 真实性均通过。
 - staged deploy:
   - 首次 BLOCK: legacy live env 缺首次 flag；mutation 前停止；
@@ -458,8 +483,12 @@
   - 第二次 BLOCK: guard score `60/60 FAIL` 后 rollback schema probe 暴露历史缺列；
     服务 fail-closed inactive。受控 schema reconciliation + staged rollback 已恢复
     旧 SHA，未带红继续。
-- 健康分(阈值 35): candidate 当时 `60/60 FAIL`，critical detail 因旧日志契约未保存；
-  recovery 后用 candidate scorer 复验 `60/60 PASS`、`critical_failures=[]`。
+  - 第三次 BLOCK: `5df2cfde...` migration、启动前 probe 与 exact-SHA 均通过，
+    health score 精确硬失败为 `unavailable:ModuleNotFoundError:attempts=3`；自动
+    rollback exact marker 全通过，未带红继续。
+- 健康分(阈值 35): 第二次 candidate 的 `60/60 FAIL` detail 因旧日志契约未保存；
+  recovery 后 candidate scorer 为 `60/60 PASS`。第三次 candidate 同样总分 60，
+  但 circuit import unavailable 按硬闸正确 veto，不把分数当作 PASS。
 - prod recovery smoke: PASS —— exact rollback SHA、四服务 active、health 200、
   auth 401、199 表 schema probe、目标列契约、writer PID flag=false、circuit 4=4、
   runtime-only targets 11/matched 0、事故锁/现场清理均已 ssh 实查。
