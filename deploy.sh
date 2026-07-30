@@ -293,7 +293,45 @@ stage_backup_preflight_scripts() {
     fi
 }
 
+remote_repository_trust_normalization_command() {
+    cat <<'REMOTE_REPOSITORY_TRUST'
+(
+    set -euo pipefail
+    echo '规范化受信发布工作树 ownership...'
+    chown root:root .
+    chmod go-w .
+    chown -R root:root .git
+    chmod -R go-w .git
+    tracked_list="$(mktemp /tmp/reva-release-tracked.XXXXXX)"
+    trap '/bin/rm -f -- "$tracked_list"' EXIT
+    git ls-files -z >"$tracked_list"
+    tracked_count=0
+    while IFS= read -r -d '' tracked_path; do
+        tracked_count=$((tracked_count + 1))
+        if [ -L "$tracked_path" ]; then
+            chown -h root:root -- "$tracked_path"
+        else
+            chown root:root -- "$tracked_path"
+            chmod go-w -- "$tracked_path"
+        fi
+        parent="$(dirname -- "$tracked_path")"
+        while [ "$parent" != "." ]; do
+            chown root:root -- "$parent"
+            chmod go-w -- "$parent"
+            parent="$(dirname -- "$parent")"
+        done
+    done <"$tracked_list"
+    test "$tracked_count" -gt 0
+    test "$(stat -c '%U:%G' .)" = "root:root"
+    /bin/rm -f -- "$tracked_list"
+    trap - EXIT
+)
+REMOTE_REPOSITORY_TRUST
+}
+
 remote_git_sync_command() {
+    local trust_normalization
+
     if ! [[ "$DEPLOY_EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
         print_error "缺少合法的 DEPLOY_EXPECTED_SHA，拒绝生成远端同步命令"
         return 1
@@ -303,6 +341,9 @@ remote_git_sync_command() {
         print_error "缺少服务器发布锁，拒绝生成远端同步命令"
         return 1
     fi
+    trust_normalization="$(
+        remote_repository_trust_normalization_command
+    )" || return 1
     cat <<EOF
         test -r '$REMOTE_RELEASE_LOCK_DIR/token' &&
         test "\$(cat '$REMOTE_RELEASE_LOCK_DIR/token')" = '$REMOTE_RELEASE_LOCK_TOKEN' &&
@@ -313,7 +354,8 @@ remote_git_sync_command() {
           (echo 'git fetch origin 失败或缺少目标 commit, 使用上传的 deploy bundle...' &&
            git fetch '$REMOTE_DEPLOY_BUNDLE' HEAD && git cat-file -e '$DEPLOY_EXPECTED_SHA^{commit}') ) &&
         git checkout -B main '$DEPLOY_EXPECTED_SHA' &&
-        test "\$(git rev-parse HEAD)" = '$DEPLOY_EXPECTED_SHA'
+        test "\$(git rev-parse HEAD)" = '$DEPLOY_EXPECTED_SHA' &&
+        $trust_normalization
 EOF
 }
 
@@ -2129,6 +2171,8 @@ release_lock="${12}"
 release_token="${13}"
 durable_enabled="$durable_state_dir/enabled.env"
 
+[[ "$repo" =~ ^/[A-Za-z0-9._/-]+$ ]]
+[[ "$repo" != "/" && "$repo" != *"/../"* && "$repo" != *"/.." ]]
 test -r "$release_lock/token"
 test "$(cat "$release_lock/token")" = "$release_token"
 
@@ -2152,6 +2196,207 @@ flag_is_exact() {
             exit(assignments == 1 && canonical == 1 ? 0 : 1)
         }
     ' "$env_file"
+}
+
+verify_root_owned_nonwritable() {
+    local path="$1"
+    local metadata
+    local mode
+
+    metadata="$(stat -c '%U:%G:%a' "$path")"
+    [[ "$metadata" =~ ^root:root:([0-7]{3,4})$ ]]
+    mode="${BASH_REMATCH[1]}"
+    (( (8#$mode & 8#022) == 0 ))
+}
+
+verify_git_metadata_trust() {
+    local git_config="$repo/.git/config"
+    local git_dir="$repo/.git"
+    local git_head="$git_dir/HEAD"
+    local main_ref="$git_dir/refs/heads/main"
+    local metadata_entry
+    local metadata_listing
+
+    [ "$(id -u)" = "0" ]
+    test -d "$repo"
+    test ! -L "$repo"
+    test -d "$git_dir"
+    test ! -L "$git_dir"
+    test -f "$git_config"
+    test ! -L "$git_config"
+    test ! -e "$git_dir/config.worktree"
+    test ! -e "$git_dir/objects/info/alternates"
+    test ! -e "$git_dir/objects/info/http-alternates"
+    test -f "$git_head" && test ! -L "$git_head"
+    test -f "$main_ref" && test ! -L "$main_ref"
+    test "$(/bin/cat "$git_head")" = "ref: refs/heads/main"
+    test "$(/bin/cat "$main_ref")" = "$expected_sha"
+    verify_root_owned_nonwritable "$repo"
+
+    umask 077
+    metadata_listing="$(
+        /usr/bin/mktemp /tmp/reva-health-git-metadata.XXXXXX
+    )"
+    if ! /usr/bin/find "$git_dir" -xdev -print0 >"$metadata_listing"; then
+        /bin/rm -f -- "$metadata_listing"
+        return 1
+    fi
+    while IFS= read -r -d '' metadata_entry; do
+        if test -L "$metadata_entry" ||
+            ! verify_root_owned_nonwritable "$metadata_entry"; then
+            /bin/rm -f -- "$metadata_listing"
+            return 1
+        fi
+    done <"$metadata_listing"
+    /bin/rm -f -- "$metadata_listing"
+}
+
+trusted_git() {
+    local git_dir="$repo/.git"
+    local proof_git
+    local proof_root
+    local protected_config
+    local rc
+
+    umask 077
+    proof_root="$(
+        /usr/bin/mktemp -d /tmp/reva-health-git-proof.XXXXXX
+    )" || return 1
+    proof_git="$proof_root/git"
+    protected_config="$proof_root/global.config"
+    if ! /bin/mkdir -m 0700 -- \
+        "$proof_git" "$proof_git/objects" "$proof_git/refs" ||
+        ! printf '%s\n' "$expected_sha" >"$proof_git/HEAD" ||
+        ! printf '%s\n' \
+            '[core]' \
+            '    repositoryformatversion = 0' \
+            '    filemode = true' \
+            '    bare = false' >"$proof_git/config" ||
+        ! printf '[safe]\n\tdirectory = %s\n' \
+            "$repo" >"$protected_config" ||
+        ! /bin/chmod 0600 \
+            "$proof_git/HEAD" "$proof_git/config" "$protected_config"; then
+        /bin/rm -rf -- "$proof_root"
+        return 1
+    fi
+    if ! /usr/bin/env -i \
+        HOME=/nonexistent \
+        PATH=/usr/bin:/bin \
+        LC_ALL=C \
+        GIT_ATTR_NOSYSTEM=1 \
+        GIT_ALTERNATE_OBJECT_DIRECTORIES= \
+        GIT_CONFIG_NOSYSTEM=1 \
+        GIT_CONFIG_GLOBAL="$protected_config" \
+        GIT_OBJECT_DIRECTORY="$git_dir/objects" \
+        GIT_OPTIONAL_LOCKS=0 \
+        /usr/bin/git --no-optional-locks --no-replace-objects \
+        -c core.fsmonitor=false \
+        -c core.hooksPath=/dev/null \
+        --git-dir="$proof_git" \
+        --work-tree="$repo" \
+        read-tree "$expected_sha"; then
+        /bin/rm -rf -- "$proof_root"
+        return 1
+    fi
+    if /usr/bin/env -i \
+        HOME=/nonexistent \
+        PATH=/usr/bin:/bin \
+        LC_ALL=C \
+        GIT_ATTR_NOSYSTEM=1 \
+        GIT_ALTERNATE_OBJECT_DIRECTORIES= \
+        GIT_CONFIG_NOSYSTEM=1 \
+        GIT_CONFIG_GLOBAL="$protected_config" \
+        GIT_OBJECT_DIRECTORY="$git_dir/objects" \
+        GIT_OPTIONAL_LOCKS=0 \
+        /usr/bin/git --no-optional-locks --no-replace-objects \
+        -c core.fsmonitor=false \
+        -c core.hooksPath=/dev/null \
+        --git-dir="$proof_git" \
+        --work-tree="$repo" \
+        "$@"; then
+        rc=0
+    else
+        rc=$?
+    fi
+    /bin/rm -rf -- "$proof_root"
+    return "$rc"
+}
+
+verify_tracked_worktree_trust() {
+    local component
+    local current
+    local listing
+    local parent
+    local relative
+    local target
+
+    umask 077
+    listing="$(
+        /usr/bin/mktemp /tmp/reva-health-tracked-paths.XXXXXX
+    )" || return 1
+    if ! trusted_git ls-files -z >"$listing"; then
+        /bin/rm -f -- "$listing"
+        return 1
+    fi
+    while IFS= read -r -d '' relative; do
+        [[ -n "$relative" && "$relative" != /* ]] || {
+            /bin/rm -f -- "$listing"
+            return 1
+        }
+        [[ "/$relative/" != *"/../"* && "/$relative/" != *"/./"* ]] || {
+            /bin/rm -f -- "$listing"
+            return 1
+        }
+        current="$repo"
+        if [[ "$relative" = */* ]]; then
+            parent="${relative%/*}"
+            while [[ -n "$parent" ]]; do
+                component="${parent%%/*}"
+                [[ -n "$component" ]] || {
+                    /bin/rm -f -- "$listing"
+                    return 1
+                }
+                current="$current/$component"
+                test -d "$current" &&
+                    test ! -L "$current" &&
+                    verify_root_owned_nonwritable "$current" || {
+                    /bin/rm -f -- "$listing"
+                    return 1
+                }
+                if [[ "$parent" = "$component" ]]; then
+                    break
+                fi
+                parent="${parent#*/}"
+            done
+        fi
+        target="$repo/$relative"
+        if test -L "$target"; then
+            :
+        elif test -f "$target" || test -d "$target"; then
+            verify_root_owned_nonwritable "$target" || {
+                /bin/rm -f -- "$listing"
+                return 1
+            }
+        else
+            /bin/rm -f -- "$listing"
+            return 1
+        fi
+    done <"$listing"
+    /bin/rm -f -- "$listing"
+}
+
+verify_repo_revision() {
+    local actual_sha
+    local status_output
+
+    verify_git_metadata_trust
+    actual_sha="$(trusted_git rev-parse HEAD)"
+    test "$actual_sha" = "$expected_sha"
+    verify_tracked_worktree_trust
+    status_output="$(
+        trusted_git status --porcelain --untracked-files=all
+    )"
+    test -z "$status_output"
 }
 
 verify_process_environment() {
@@ -2204,8 +2449,7 @@ verify_process_environment() {
     done
 }
 
-test "$(git -C "$repo" rev-parse HEAD)" = "$expected_sha"
-test -z "$(git -C "$repo" status --porcelain --untracked-files=all)"
+verify_repo_revision
 for service in \
     health-backend.socket health-backend celery-worker celery-beat; do
     test "$(systemctl show "$service" --property=ActiveState --value)" = \

@@ -44,6 +44,117 @@ def test_remote_sync_does_not_stash_untracked_runtime_files():
     assert "auto-deploy-stash >/dev/null 2>&1 || true" not in script
 
 
+def test_remote_sync_normalizes_only_git_metadata_and_tracked_paths():
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    start = script.index("remote_repository_trust_normalization_command() {")
+    end = script.index("remote_git_sync_command() {", start)
+    body = script[start:end]
+
+    assert "chown root:root ." in body
+    assert "chown -R root:root .git" in body
+    assert "chmod -R go-w .git" in body
+    assert "git ls-files -z" in body
+    assert 'chown -h root:root -- "$tracked_path"' in body
+    assert 'chmod go-w -- "$tracked_path"' in body
+    assert "chown -R root:root .\n" not in body
+
+
+def test_repository_trust_normalization_never_targets_ignored_runtime_data(
+    tmp_path: Path,
+):
+    repo = tmp_path / "release"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "release@example.test"],
+        cwd=repo,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Release Test"],
+        cwd=repo,
+        check=True,
+    )
+    (repo / "src").mkdir()
+    (repo / "src/app.py").write_text("print('ok')\n", encoding="utf-8")
+    (repo / ".gitignore").write_text(
+        "backend/.env\nuploads/\ntmp/\nnode_modules/\n",
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "add", "."], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "fixture"], cwd=repo, check=True)
+    for ignored in (
+        repo / "backend/.env",
+        repo / "uploads/private.bin",
+        repo / "tmp/runtime.sock",
+        repo / "node_modules/pkg/index.js",
+    ):
+        ignored.parent.mkdir(parents=True, exist_ok=True)
+        ignored.write_text("runtime\n", encoding="utf-8")
+
+    env_file = tmp_path / "deploy.env"
+    env_file.write_text(
+        "DEPLOY_SERVER=root@example.test\n"
+        f"DEPLOY_PATH={repo!s}\n"
+        "HEALTH_EVIDENCE_RUNTIME_ENABLED=false\n",
+        encoding="utf-8",
+    )
+    harness = (
+        f"source {DEPLOY_SCRIPT!s}\n"
+        "remote_repository_trust_normalization_command\n"
+    )
+    generated = subprocess.run(
+        ["bash", "-c", harness],
+        text=True,
+        capture_output=True,
+        check=False,
+        env={**os.environ, "DEPLOY_ENV_FILE": str(env_file)},
+    )
+    assert generated.returncode == 0, generated.stderr
+
+    event_log = tmp_path / "ownership-targets.log"
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    for command in ("chown", "chmod"):
+        _write_executable(
+            fake_bin / command,
+            "#!/bin/bash\n"
+            "set -euo pipefail\n"
+            f"printf '{command}' >> \"$TARGET_EVENT_LOG\"\n"
+            "for arg in \"$@\"; do "
+            "printf '|%s' \"$arg\" >> \"$TARGET_EVENT_LOG\"; done\n"
+            "printf '\\n' >> \"$TARGET_EVENT_LOG\"\n",
+        )
+    _write_executable(
+        fake_bin / "stat",
+        "#!/bin/sh\nprintf 'root:root\\n'\n",
+    )
+    result = subprocess.run(
+        ["bash", "-c", generated.stdout],
+        cwd=repo,
+        text=True,
+        capture_output=True,
+        check=False,
+        env={
+            **os.environ,
+            "PATH": f"{fake_bin}:{os.environ['PATH']}",
+            "TARGET_EVENT_LOG": str(event_log),
+        },
+    )
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    targets = event_log.read_text(encoding="utf-8")
+    assert "|.git\n" in targets
+    assert "|src/app.py\n" in targets
+    assert "|src\n" in targets
+    for ignored in (
+        "backend/.env",
+        "uploads",
+        "tmp",
+        "node_modules",
+    ):
+        assert ignored not in targets
+
+
 def test_backup_and_health_score_failures_block_deploy():
     script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
 
@@ -998,6 +1109,19 @@ def test_activation_proof_uses_durable_authorization_and_real_process_flags():
     assert 'flag_is_exact "$repo/backend/.env" false' in proof
     assert 'cmp -s "$guard_env" "$repo/backend/.env"' in proof
     assert 'cmp -s "$candidate_env" "$repo/backend/.env"' not in proof
+    assert "verify_git_metadata_trust" in proof
+    assert "verify_tracked_worktree_trust" in proof
+    assert "verify_repo_revision" in proof
+    assert "GIT_CONFIG_NOSYSTEM=1" in proof
+    assert 'GIT_CONFIG_GLOBAL="$protected_config"' in proof
+    assert 'GIT_OBJECT_DIRECTORY="$git_dir/objects"' in proof
+    assert "GIT_OPTIONAL_LOCKS=0" in proof
+    assert "/usr/bin/git --no-optional-locks --no-replace-objects" in proof
+    assert '--git-dir="$proof_git"' in proof
+    assert '--work-tree="$repo"' in proof
+    assert '-c "safe.directory=$repo"' not in proof
+    assert "-c core.fsmonitor=false" in proof
+    assert "-c core.hooksPath=/dev/null" in proof
 
 
 def test_release_preflight_hashes_activation_runner_for_rollback_floor():

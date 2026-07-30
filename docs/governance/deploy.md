@@ -88,7 +88,9 @@ MIGRATION_DATABASE_URL=postgresql://health_app_migrator:***@localhost:5432/healt
    root-only stage，再由去激活事务原子安装规范 `false`。运行时文件强制为
    `root:health-app`、`0640`，外部备份为 `0600`。
 6. 先停 backend socket、backend、Celery worker 与 beat 并证明全部 inactive，再
-   checkout 精确 SHA、安装锁定依赖。
+   checkout 精确 SHA。checkout 后只把 repo root、`.git`、tracked paths 及其
+   ancestors 规范为 root-owned/non-group-writable；不得递归改动 ignored
+   `.env`、venv、uploads 或其他 runtime data，随后安装锁定依赖。
 7. 仅临时加载 `/etc/health-app/migration.env`，在 migration runner 紧前重新核验
    release token，再执行 managed migrations 并清除 migration URL；在启动任何
    writer 前，用 runtime role 再跑完整 schema probe，并再次核验 release token。
@@ -96,6 +98,13 @@ MIGRATION_DATABASE_URL=postgresql://health_app_migrator:***@localhost:5432/healt
    脱敏后的健康硬闸与 runtime-only KB serving contract。
 9. 远端 SSH/信号结果不明确时保留 release lease 与 stage；没有独立 terminal
    证明时禁止并发 rollback 或第二次部署。
+10. health-evidence activation 的 revision proof 不读取部署仓库的 local/global
+    Git config，也不复制 live index。它在 root-only 临时 Git dir 中以 expected
+    SHA 执行 `read-tree` 重建 proof index，再用显式 worktree 做 clean/untracked
+    检查；repo metadata、非 symlink tracked paths 与 ancestors 必须 root-owned
+    且不可 group/world 写。filter/fsmonitor/hooks 与 live-index semantic flags
+    被隔离，不能影响 proof；ownership 或 clean-tree 异常在 mutation 前
+    fail closed。
 
 ### 8.5 环境变量同步
 

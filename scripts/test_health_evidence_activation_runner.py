@@ -278,7 +278,9 @@ chmod 0640 "$target"
         """#!/bin/bash
 set -euo pipefail
 target="${@: -1}"
-if [ -d "$target" ]; then
+if [ "$target" = "$FAKE_REPO" ]; then
+  printf '%s\n' "${FAKE_REPO_STAT:-root:root:700}"
+elif [ -d "$target" ]; then
   case "$target" in
     *systemd-runtime*) printf 'root:root:755\n' ;;
     *systemd-persistent*) printf 'root:root:755\n' ;;
@@ -288,12 +290,27 @@ if [ -d "$target" ]; then
   esac
 else
   case "$target" in
+    "$FAKE_REPO"/backend/.env) printf 'root:health-app:640\n' ;;
+    */.git/config) printf '%s\n' "${FAKE_GIT_CONFIG_STAT:-root:root:600}" ;;
+    "$FAKE_REPO"/.git/*) printf 'root:root:600\n' ;;
+    "$FAKE_REPO"/*) printf 'root:root:600\n' ;;
     *runtime-state/enabled.env) printf 'root:root:400\n' ;;
     *durable-state/enabled.env) printf 'root:root:400\n' ;;
     *health-evidence-activation.conf) printf 'root:root:600\n' ;;
     *health-evidence-runtime.conf) printf 'root:root:644\n' ;;
     *) printf 'root:health-app:640\n' ;;
   esac
+fi
+""",
+    )
+    _write_executable(
+        bin_dir / "id",
+        """#!/bin/bash
+set -euo pipefail
+if [ "$#" -eq 1 ] && [ "$1" = "-u" ]; then
+  printf '0\n'
+else
+  exec /usr/bin/id "$@"
 fi
 """,
     )
@@ -528,6 +545,293 @@ def _assert_fake_process_flags(env: dict[str, str], expected: str) -> None:
         )
 
 
+def test_activation_revision_proof_never_executes_repo_fsmonitor(
+    tmp_path: Path,
+):
+    repo, sha = _make_release_repo(tmp_path)
+    fsmonitor_marker = tmp_path / "fsmonitor-executed"
+    fsmonitor_hook = tmp_path / "malicious-fsmonitor.sh"
+    _write_executable(
+        fsmonitor_hook,
+        "#!/bin/sh\n"
+        f": > {fsmonitor_marker!s}\n"
+        "printf '\\n'\n",
+    )
+    subprocess.run(
+        ["git", "config", "core.fsmonitor", str(fsmonitor_hook)],
+        cwd=repo,
+        check=True,
+    )
+    runner, candidate, guard = _stage_runner(tmp_path)
+    (repo / "backend/.env").write_bytes(guard.read_bytes())
+    lock_dir, token = _release_lock(tmp_path)
+    marker = tmp_path / "activation.success"
+    bin_dir = _fake_commands(tmp_path)
+    env, _ = _runner_env(tmp_path, repo, bin_dir)
+
+    result = subprocess.run(
+        [
+            str(runner),
+            "--activate",
+            str(repo),
+            sha,
+            str(candidate),
+            str(guard),
+            str(marker),
+            str(lock_dir),
+            token,
+        ],
+        text=True,
+        capture_output=True,
+        env=env,
+        check=False,
+    )
+
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert result.stdout.strip() == SUCCESS_TEMPLATE.format(sha=sha)
+    assert not fsmonitor_marker.exists()
+
+
+def test_activation_revision_proof_never_executes_repo_clean_filter(
+    tmp_path: Path,
+):
+    repo, _ = _make_release_repo(tmp_path)
+    (repo / ".gitattributes").write_text(
+        "payload.txt filter=evil\n", encoding="utf-8"
+    )
+    (repo / "payload.txt").write_text("canonical\n", encoding="utf-8")
+    subprocess.run(["git", "add", ".gitattributes", "payload.txt"], cwd=repo, check=True)
+    subprocess.run(
+        ["git", "commit", "-qm", "add filter fixture"], cwd=repo, check=True
+    )
+    sha = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=repo, text=True
+    ).strip()
+    filter_marker = tmp_path / "clean-filter-executed"
+    clean_filter = tmp_path / "malicious-clean-filter.sh"
+    _write_executable(
+        clean_filter,
+        "#!/bin/sh\n"
+        f": > {filter_marker!s}\n"
+        "cat >/dev/null\n"
+        "printf 'canonical\\n'\n",
+    )
+    subprocess.run(
+        ["git", "config", "filter.evil.clean", str(clean_filter)],
+        cwd=repo,
+        check=True,
+    )
+    # Keep the same byte length as the committed content so Git must hash the
+    # worktree file instead of rejecting it from stat data alone.
+    (repo / "payload.txt").write_text("tampered!\n", encoding="utf-8")
+    runner, candidate, guard = _stage_runner(tmp_path)
+    (repo / "backend/.env").write_bytes(guard.read_bytes())
+    lock_dir, token = _release_lock(tmp_path)
+    marker = tmp_path / "activation.success"
+    bin_dir = _fake_commands(tmp_path)
+    env, _ = _runner_env(tmp_path, repo, bin_dir)
+
+    result = subprocess.run(
+        [
+            str(runner),
+            "--activate",
+            str(repo),
+            sha,
+            str(candidate),
+            str(guard),
+            str(marker),
+            str(lock_dir),
+            token,
+        ],
+        text=True,
+        capture_output=True,
+        env=env,
+        check=False,
+    )
+
+    assert result.returncode == 70, (result.stdout, result.stderr)
+    assert result.stdout.strip() == BLOCKED_TEMPLATE.format(sha=sha)
+    assert not filter_marker.exists()
+    assert not marker.exists()
+
+
+def test_activation_revision_proof_ignores_repo_core_worktree(tmp_path: Path):
+    repo, sha = _make_release_repo(tmp_path)
+    alternate = tmp_path / "alternate-worktree"
+    subprocess.run(
+        ["git", "clone", "-q", str(repo), str(alternate)], check=True
+    )
+    subprocess.run(
+        ["git", "config", "core.worktree", str(alternate)],
+        cwd=repo,
+        check=True,
+    )
+    (repo / ".gitignore").write_text(
+        "backend/.env\nunexpected-dirty-entry\n", encoding="utf-8"
+    )
+    runner, candidate, guard = _stage_runner(tmp_path)
+    (repo / "backend/.env").write_bytes(guard.read_bytes())
+    lock_dir, token = _release_lock(tmp_path)
+    marker = tmp_path / "activation.success"
+    bin_dir = _fake_commands(tmp_path)
+    env, _ = _runner_env(tmp_path, repo, bin_dir)
+
+    result = subprocess.run(
+        [
+            str(runner),
+            "--activate",
+            str(repo),
+            sha,
+            str(candidate),
+            str(guard),
+            str(marker),
+            str(lock_dir),
+            token,
+        ],
+        text=True,
+        capture_output=True,
+        env=env,
+        check=False,
+    )
+
+    assert result.returncode == 70, (result.stdout, result.stderr)
+    assert result.stdout.strip() == BLOCKED_TEMPLATE.format(sha=sha)
+    assert not marker.exists()
+
+
+@pytest.mark.parametrize(
+    "index_flag",
+    ["--assume-unchanged", "--skip-worktree"],
+)
+def test_activation_revision_proof_rebuilds_index_from_expected_tree(
+    tmp_path: Path,
+    index_flag: str,
+):
+    repo, sha = _make_release_repo(tmp_path)
+    subprocess.run(
+        ["git", "update-index", index_flag, ".gitignore"],
+        cwd=repo,
+        check=True,
+    )
+    (repo / ".gitignore").write_text(
+        "backend/.env\nhidden-runtime-tamper\n", encoding="utf-8"
+    )
+    runner, candidate, guard = _stage_runner(tmp_path)
+    (repo / "backend/.env").write_bytes(guard.read_bytes())
+    lock_dir, token = _release_lock(tmp_path)
+    marker = tmp_path / "activation.success"
+    bin_dir = _fake_commands(tmp_path)
+    env, _ = _runner_env(tmp_path, repo, bin_dir)
+
+    result = subprocess.run(
+        [
+            str(runner),
+            "--activate",
+            str(repo),
+            sha,
+            str(candidate),
+            str(guard),
+            str(marker),
+            str(lock_dir),
+            token,
+        ],
+        text=True,
+        capture_output=True,
+        env=env,
+        check=False,
+    )
+
+    assert result.returncode == 70, (result.stdout, result.stderr)
+    assert result.stdout.strip() == BLOCKED_TEMPLATE.format(sha=sha)
+    assert not marker.exists()
+
+
+def test_activation_blocks_group_writable_git_config(tmp_path: Path):
+    repo, sha = _make_release_repo(tmp_path)
+    runner, candidate, guard = _stage_runner(tmp_path)
+    (repo / "backend/.env").write_bytes(guard.read_bytes())
+    lock_dir, token = _release_lock(tmp_path)
+    marker = tmp_path / "activation.success"
+    bin_dir = _fake_commands(tmp_path)
+    env, _ = _runner_env(tmp_path, repo, bin_dir)
+    env["FAKE_GIT_CONFIG_STAT"] = "root:root:666"
+
+    result = subprocess.run(
+        [
+            str(runner),
+            "--activate",
+            str(repo),
+            sha,
+            str(candidate),
+            str(guard),
+            str(marker),
+            str(lock_dir),
+            token,
+        ],
+        text=True,
+        capture_output=True,
+        env=env,
+        check=False,
+    )
+
+    assert result.returncode == 70, (result.stdout, result.stderr)
+    assert result.stdout.strip() == BLOCKED_TEMPLATE.format(sha=sha)
+    assert not marker.exists()
+    state_dir = Path(env["FAKE_SERVICE_STATE_DIR"])
+    for unit in (
+        "health-backend.socket",
+        "health-backend",
+        "celery-worker",
+        "celery-beat",
+    ):
+        assert (state_dir / f"{unit}.state").read_text(
+            encoding="utf-8"
+        ).strip() == "inactive"
+
+
+def test_activation_blocks_non_root_owned_release_repo(tmp_path: Path):
+    repo, sha = _make_release_repo(tmp_path)
+    runner, candidate, guard = _stage_runner(tmp_path)
+    (repo / "backend/.env").write_bytes(guard.read_bytes())
+    lock_dir, token = _release_lock(tmp_path)
+    marker = tmp_path / "activation.success"
+    bin_dir = _fake_commands(tmp_path)
+    env, _ = _runner_env(tmp_path, repo, bin_dir)
+    env["FAKE_REPO_STAT"] = "UNKNOWN:staff:755"
+
+    result = subprocess.run(
+        [
+            str(runner),
+            "--activate",
+            str(repo),
+            sha,
+            str(candidate),
+            str(guard),
+            str(marker),
+            str(lock_dir),
+            token,
+        ],
+        text=True,
+        capture_output=True,
+        env=env,
+        check=False,
+    )
+
+    assert result.returncode == 70, (result.stdout, result.stderr)
+    assert result.stdout.strip() == BLOCKED_TEMPLATE.format(sha=sha)
+    assert not marker.exists()
+    state_dir = Path(env["FAKE_SERVICE_STATE_DIR"])
+    for unit in (
+        "health-backend.socket",
+        "health-backend",
+        "celery-worker",
+        "celery-beat",
+    ):
+        assert (state_dir / f"{unit}.state").read_text(
+            encoding="utf-8"
+        ).strip() == "inactive"
+
+
 def test_activation_proves_ephemeral_canary_before_persisting_candidate(
     tmp_path: Path,
 ):
@@ -656,7 +960,7 @@ def test_reboot_before_durable_commit_returns_to_false(tmp_path: Path):
         env=env,
         start_new_session=True,
     )
-    deadline = time.monotonic() + 20
+    deadline = time.monotonic() + 45
     while not ready_file.exists() and time.monotonic() < deadline:
         time.sleep(0.02)
     assert ready_file.exists()
@@ -712,7 +1016,7 @@ def test_reboot_after_durable_commit_stays_true_without_outcome(
         env=env,
         start_new_session=True,
     )
-    deadline = time.monotonic() + 20
+    deadline = time.monotonic() + 45
     while not ready_file.exists() and time.monotonic() < deadline:
         time.sleep(0.02)
     assert ready_file.exists()
@@ -788,7 +1092,9 @@ def test_false_real_service_environment_recovers_before_enabled_probes(
     )
 
     assert result.returncode != 0
-    assert result.stdout.strip() == ROLLBACK_TEMPLATE.format(sha=sha)
+    assert result.stdout.strip() == ROLLBACK_TEMPLATE.format(
+        sha=sha
+    ), (result.stderr, event_log.read_text(encoding="utf-8"))
     assert not marker.exists()
     assert (repo / "backend/.env").read_bytes() == guard.read_bytes()
     events = event_log.read_text(encoding="utf-8").splitlines()
@@ -839,7 +1145,9 @@ def test_enabled_contract_failure_installs_guard_and_reverifies_staged(
     )
 
     assert result.returncode != 0
-    assert result.stdout.strip() == ROLLBACK_TEMPLATE.format(sha=sha)
+    assert result.stdout.strip() == ROLLBACK_TEMPLATE.format(
+        sha=sha
+    ), (result.stderr, event_log.read_text(encoding="utf-8"))
     assert SUCCESS_TEMPLATE.format(sha=sha) not in result.stdout
     assert not marker.exists()
     assert Path(f"{marker}.outcome").read_text(encoding="utf-8").strip() == (

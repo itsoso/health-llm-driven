@@ -4,10 +4,10 @@
 |---|---|
 | slug | `mobile-health-evidence-runtime` |
 | 创建日期 | 2026-07-29 |
-| 当前阶段 | G5 第二次自动恢复 → health-score import-root 修复待 CI |
-| 状态 | G5 remediation / production restored at rollback SHA / feature not-deployed |
+| 当前阶段 | isolated-Git local G3/G4 GO → freeze/push/exact-SHA CI |
+| 状态 | prod=`1a831aa4...`, flag=false；新候选 CI/部署/activation/OTA 待执行 |
 | 负责 | product owner + Codex |
-| 反馈环 | backend deploy → Web deploy → Mobile OTA → Mobile/Mac 真实路径对照 |
+| 反馈环 | backend/Web → 受控 activation → semantic smoke → Mobile OTA → 跨端对照 |
 
 ## Correct Course
 
@@ -238,6 +238,60 @@
     independent fresh review GO，Ruff、diff check、Dossier consistency PASS。
   - 回退阶段: G5 → S5/G3/G4；该最小修复本地闸门与精确 SHA CI 全绿前继续禁止
     重新部署、Web、activation/OTA。
+- [x] Correction Block — transient systemd Git dubious ownership
+  - 触发: import-root 修复 `1a831aa49670ef04859b30cb1b497166bc3187b6`
+    的 CI run `30511389923` 43/43 全绿；backend 重部署通过两次 60/60、
+    exact-SHA、199 表 probe、staged KB contract 与 skills 22/22，Web 73 页构建
+    通过。受控 activation 随后在 transient systemd unit 内被 Git
+    `detected dubious ownership in repository at '/opt/health-app'` 阻断；
+    同一未显式声明 safe-directory 的 revision proof 也阻断自动 deadman recovery，
+    runner 正确输出 BLOCKED 并隔离四服务、保留 lease/stage。
+  - 现场与恢复: HEAD 仍为 candidate、工作树 clean、live flag 唯一 false，
+    durable/runtime/drop-in 全 absent。保持既有 lease，用原 hash-verified staged
+    runner `--recover-if-unverified` 并仅注入进程级
+    `safe.directory=/opt/health-app`，得到精确
+    `HEALTH_EVIDENCE_DEADMAN_RECOVERED commit=1a831aa4... flag=false
+    health=passed contract=staged services=active`；未授权 feature。
+  - 根因: SSH root 环境已有 Git trust，但 transient systemd 环境不继承该隐式全局
+    配置；activation/recovery 的 revision proof 错把外部环境当作契约。
+  - 安全压测修正:
+    - 第一版只加 exact `safe.directory`；fresh review 用真实恶意
+      `core.fsmonitor` 证明 root `git status` 会执行 repo-local 命令，REJECT。
+    - 第二版清空进程环境并禁用 fsmonitor/hooks；fresh review 又以
+      `.gitattributes` + repo-local `filter.<name>.clean` 实证篡改文件可被过滤器
+      伪装为 clean，同时执行任意命令；且 production Git 2.34.1 不接受该版
+      command-scope safe-directory，REJECT。
+    - 生产只读 ownership 审计还确认 `/opt/health-app` 为
+      `UID 501:staff:755`（`%U` 因无对应账户显示 `UNKNOWN`）；4,655 个 tracked
+      path 中 274 个仍非 root，15,225 个工作树目录中 350 个非 root。仅检查
+      `.git` 的方案无法闭合
+      stat→Git/服务启动间 TOCTOU，REJECT。
+    - 第三版虽隔离 repo-local config，却复制 live `.git/index`；fresh review
+      实证 `assume-unchanged`、`skip-worktree` 和同尺寸 racy stat 均可让被篡改的
+      tracked 文件返回 clean，REJECT。
+  - 当前候选修复: staged runner 与 deploy 外层 proof 不再让 Git 读取真实
+    `.git/config/index`。它们在 root-only 临时目录构造最小 Git metadata，用
+    expected SHA 固定 HEAD，并以隔离 `read-tree` 从 expected commit 新建无
+    semantic flag/stat cache 的 proof index；Git proof 禁止 optional write，
+    引用 ownership 已验证的真实 object store，并通过 root-only global config
+    声明 exact safe-directory；同时显式 `--git-dir/--work-tree`、
+    禁用 system attributes/config、replace objects、optional lock、fsmonitor 与
+    hooks。运行前要求 repo root、整个 `.git`、非 symlink tracked path 及其
+    ancestors root-owned 且不可 group/world 写；tracked symlink 内容由无 filter
+    status 校验，其 parent 不可写，checkout normalization 另以 `chown -h` 固定
+    owner。proof 还拒绝 symlink metadata、worktree config 与 alternate object
+    store。远端 checkout 只规范化 `.git`、tracked paths 及 ancestors，不递归
+    改动 ignored `.env`/venv/runtime data。
+  - 故障注入: 恶意 same-size clean filter 已严格 RED（误放行且 marker 被执行）→
+    GREEN（70/BLOCK 且 marker absent）；`assume-unchanged`/`skip-worktree` 均
+    RED→GREEN；fsmonitor、`core.worktree` clean alternate、writable config 和
+    non-root repo 均有回归。可执行 target-recorder 证明 normalization 未触及
+    `backend/.env`、uploads、tmp、node_modules。完整 release/activation 回归
+    106/106、两路 fresh review、production Git 2.34.1 read-tree proof、Ruff、
+    shell/diff/doc drift/Dossier consistency 均通过；exact-SHA main CI、重新部署、
+    activation 与 OTA 仍待完成。
+  - 回退阶段: G5 → S5/G3/G4；完整 activation/release 回归、fresh review 与新
+    main CI 全绿前禁止再次 activation/OTA。
 
 ## S0 · 用户需求(逐字)
 
@@ -302,7 +356,8 @@
 
 - 链接:`docs/prd/2026-07-29-mobile-health-evidence-runtime.md`
 - 引用的权威 R 号(不重 spec): R1–R8
-- 边界(不做): 微调、诊断/处方、raw Dedao runtime、全医学域一次迁移、DB migration
+- 边界(不做): 微调、诊断/处方、raw Dedao runtime、全医学域一次迁移或 feature
+  domain schema migration；历史 schema drift 的受控运维 reconciliation 例外
 - 验收 Gate: reviewed-only、cross-surface parity、red-flag golden、privacy projection、
   verifier、Mobile interaction
 - 未决问题(进交付环前必清零,否则 G2 出口闸拦): 无阻断项
@@ -348,7 +403,8 @@
   - [x] T7 Mobile evidence/clarification UI
   - [x] T8 parity/golden/integration/safety review
   - [ ] T9 backend deploy → Web deploy → Mobile OTA → production verification
-    （local G3/G4 与干净 main 本地集成已通过；待 main CI）
+    （`1a831aa4...` 的 backend/Web 已通过；当前 isolated-Git delta 尚待完整
+    local G3/G4、提交/CI、backend redeploy/staging、activation、OTA 与 prod 验证）
 - 并发检查(`git fetch` + `gh pr list`,没被抢先):☒
   - overlap noted: PR #221 claim honesty and PRs #214/#216 medical safety; this
     implementation avoids cherry-picking unrelated branches and will run overlap review.
@@ -356,13 +412,16 @@
 ## S5 · 实现
 
 - 委托: health-harness-orchestrator contract + TDD + parallel discovery agents
-- 分支(off origin/main)/ commit: `codex/mobile-health-evidence-runtime` off
+- 历史实现分支/commit: `codex/mobile-health-evidence-runtime` off
   `origin/main@b3e15300c`;release-hardening code head
   `832d7325615fdc810bc50112377cf774448a078f`，
   integrated main merge `0d674fa28b503d006d133de9b7107dca2e06936f`，
   regenerated client types `ab300686f5c14f05bd3f32a951ebe5eb6cfa223e`，
-  integrated-CI remediation `f89ed2d5`；
-  不代表已部署
+  integrated-CI remediation `f89ed2d5`。
+- 已部署: `1a831aa49670ef04859b30cb1b497166bc3187b6`（backend/Web，
+  runtime flag=false）。
+- 当前工作候选: isolated-Git/read-tree + scoped ownership normalization delta；
+  local G3/G4 已冻结通过，exact-SHA main CI 与部署仍待执行。
 - 实现边界:
   - 这是低背痛 golden safety slice + 可复用 runtime，不是全医学域完成；
   - low-back compiler 用症状/问题/用药/过敏/慢病安全核心和查询相关可穿戴，
@@ -400,14 +459,22 @@
     TypeScript 0 error；lint 0 error；
   - Web 2 suites / 20 tests；TypeScript 0 error；lint 0 error；
   - 无 native/plugin/SDK/lockfile diff，发布路由为 OTA。
-- release transaction:
+- 历史 release transaction 基线:
   - activation/deactivation/deploy/rollback 69/69；
   - `bash -n` 三个 shell 入口、Ruff、`git diff --check` PASS；
   - 两次独立复审前后六个冻结发布文件 SHA256 不变。
-- static/data: Ruff、`git diff --check`、seed integrity
+- 当前 isolated-Git delta:
+  - clean-filter + assume-unchanged + skip-worktree 3/3；
+  - ownership normalization static + executable target-recorder 2/2；
+  - deploy/activation/release-lock/rollback 完整套件 106/106；
+  - 两路 fresh release-security review GO；production Git 2.34.1 exact
+    read-tree proof 通过；
+  - bash syntax、Ruff、`git diff --check`、doc drift、92 份 Dossier consistency
+    均 PASS；exact-SHA main CI 仍待跑。
+- 历史 static/data 基线: Ruff、`git diff --check`、seed integrity
   （460 claims / 247 entities / 3318 relations）PASS。
-- system-map/doc drift: 从当前冻结代码重新生成，`check_doc_drift.py` 与
-  `check_dossier_consistency.py` 均 PASS。
+- 历史 system-map/doc drift: 从当时冻结代码重新生成，`check_doc_drift.py` 与
+  `check_dossier_consistency.py` 均 PASS；当前候选冻结后必须重跑。
 - clean-main local integration:
   - 合入最新 `origin/main@684823494`，无冲突；Mobile/Web OpenAPI types 从合并后
     backend 重新生成；
@@ -431,8 +498,14 @@
 - incident remediation CI: run `30510213024` 对精确
   `5df2cfde36b233eabcabde8d25cb313750e4212e` 43/43 success、0 skipped/failed。
 - direct-script import-root 修复: 精确 subprocess RED→GREEN；57/57 定向回归、
-  fresh review、Ruff、diff check 与 Dossier consistency PASS；新 main CI 待跑。
-- **裁决**: incident remediation ☒ 绿；import-root fix local ☒ 绿 / CI ☒ PENDING
+  fresh review、Ruff、diff check 与 Dossier consistency PASS。
+- import-root CI: run `30511389923` 对精确
+  `1a831aa49670ef04859b30cb1b497166bc3187b6` 43/43 success。
+- activation isolated-Git 修复: 真实 clean-filter exploit 已 RED→GREEN；
+  fsmonitor、`core.worktree`、writable-config、non-root repo 故障注入通过；
+  完整本地闸、两路 fresh review、production Git 2.34.1 staged proof 与 main CI
+  待跑。
+- **裁决**: import-root fix ☒ 绿；activation fix ☐ 绿 ☒ PENDING local/CI
 
 ## G4 · 安全闸
 
@@ -451,7 +524,10 @@
   - `832d73256` 的 frozen semantic review 与 release/activation 双重复审均 GO；
     query-agnostic 全五 claim falsification 被 4/5 case 拒绝，未发现假绿、并发
     rollback、非原子 env 替换、frontend-only 误停 backend 或 secrets/privacy 泄露。
-- **裁决**:☒ GO ☐ NO-GO→回 S5
+- 当前 release-security delta 曾连续发现 fsmonitor、clean-filter 与 live-index
+  三个 P1，均已在 read-tree 候选中以故障注入闭环；两路 fresh review 未发现新
+  P1/P2。历史 clinical/privacy GO 与当前 release-security GO 均有独立证据。
+- **裁决**:☒ GO ☐ BLOCK/PENDING
 
 ## S6 · 部署
 
@@ -468,14 +544,19 @@
   - bootstrap 修复目标 `1eb8c2f8...` 已进入 guard，但 G5 hard veto 后回滚；
   - incident remediation 目标 `5df2cfde...` 完成 migration/probe 后被
     ModuleNotFoundError 硬闸阻断并成功回滚；
-  - 生产当前为 `ad85cd667cb415a3cc1dc298633c75998856f68e`，服务健康、
-    base flag=false、历史 schema drift 已受控补齐；下一目标待 import-root 修复
-    提交与 CI 生成。
+  - import-root 目标 `1a831aa4...` 已完成 backend/Web G5；activation 被
+    systemd Git trust BLOCK 后由 staged deadman 恢复；
+  - 生产当前为 `1a831aa49670ef04859b30cb1b497166bc3187b6`，服务健康、
+    base flag=false、staged contract 通过，feature 尚未授权；下一目标依次为
+    isolated-Git 完整 local G3/G4 + fresh review、提交/CI、backend redeploy
+    （ownership normalization + 新 runner staging）、受控 activation 与 smoke，
+    最后才是 OTA。
 
 ## G5 · 部署健康闸
 
-- 数据保护前置 Gate: PASS —— 三次 41 MB production backup、234 表临时库恢复演练、
-  force-RLS 遗传原始文件/审计表完整性、站外 age 归档 hash + HMAC 真实性均通过。
+- 数据保护前置 Gate（已执行的 backend 尝试）: PASS —— 每次均有约 41 MB
+  production backup、234 表临时库恢复演练、force-RLS 遗传原始文件/审计表
+  完整性、站外 age 归档 hash + HMAC 真实性；当前新 SHA 尚未开始新一次备份。
 - staged deploy:
   - 首次 BLOCK: legacy live env 缺首次 flag；mutation 前停止；
   - canonical-false bootstrap 修复 CI 全绿，事故锁经严格现场证明后精确清理，
@@ -486,16 +567,24 @@
   - 第三次 BLOCK: `5df2cfde...` migration、启动前 probe 与 exact-SHA 均通过，
     health score 精确硬失败为 `unavailable:ModuleNotFoundError:attempts=3`；自动
     rollback exact marker 全通过，未带红继续。
+  - backend/Web PASS: `1a831aa4...` 两次 60/60、exact SHA、199 表 schema、
+    staged KB、skills 22/22、Web build/TypeScript/PM2 online 均通过。
+  - activation BLOCK: transient systemd Git trust 缺失；mutation 前 live=false、
+    durable/runtime/drop-in absent，随后 staged deadman 手工恢复 exact sentinel
+    通过。feature 继续关闭，未带红继续。
 - 健康分(阈值 35): 第二次 candidate 的 `60/60 FAIL` detail 因旧日志契约未保存；
   recovery 后 candidate scorer 为 `60/60 PASS`。第三次 candidate 同样总分 60，
   但 circuit import unavailable 按硬闸正确 veto，不把分数当作 PASS。
-- prod recovery smoke: PASS —— exact rollback SHA、四服务 active、health 200、
-  auth 401、199 表 schema probe、目标列契约、writer PID flag=false、circuit 4=4、
-  runtime-only targets 11/matched 0、事故锁/现场清理均已 ssh 实查。
+- prod recovery smoke: PASS —— 当前 production/deployed exact SHA
+  `1a831aa4...`、四服务 active、
+  health 200、auth 401、199 表 schema probe、目标列契约、writer PID
+  flag=false、circuit 4=4、runtime-only targets 11/matched 0 均已 ssh 实查；
+  本次 activation 的 lease/stage 为后续精确修复刻意保留，尚未清理。
 - Linux 实机硬条件: systemd drop-in precedence、cgroup v2 全部 uvicorn/Celery/beat
   子进程 flag 一致性、durable commit/revoke/candidate rename 断电前缀、SSH/HUP
   断连租约、生产文件系统 `sync -f`/`mv -fT`/目录 fsync 与 rollback 终态证明在
-  recovery 路径已通过；incident remediation 的完整 backend G5 仍须重跑。
+  recovery 路径已通过；isolated-Git 候选仍须重新 backend deploy（规范化
+  ownership 并 stage 新 runner）后再跑 activation G5。
 - **裁决**:☐ PASS ☒ BLOCK → 回 S5/G3/G4
 
 ## S7 · 上线验证
@@ -517,6 +606,7 @@
   无 provenance 的 plain-text share。高风险运行时启用不是“把 `.env` 改成 true”
   而是独立、持久、可恢复的事务；远端结果不明确时必须保留租约和现场，不能用第二个
   rollback 猜测第一个事务的状态。
-- 文档同步(ARCHITECTURE.md / doc-drift EXPECTED / parity 表): 已完成；system-map
-  从冻结代码重新生成，doc drift 与 Dossier consistency 均 PASS
+- 文档同步: 历史 ARCHITECTURE/doc-drift/parity 已完成；当前
+  isolated-Git/deploy governance delta 的 doc drift 与 92 份 Dossier consistency
+  已在冻结候选重跑 PASS。
 - 状态 → **shipped** only after G6

@@ -174,11 +174,223 @@ verify_flag_file() {
     ' "$env_file"
 }
 
+verify_root_owned_nonwritable() {
+    local path="$1"
+    local metadata
+    local mode
+
+    metadata="$(stat -c '%U:%G:%a' "$path")" || return 1
+    [[ "$metadata" =~ ^root:root:([0-7]{3,4})$ ]] || return 1
+    mode="${BASH_REMATCH[1]}"
+    (( (8#$mode & 8#022) == 0 ))
+}
+
+verify_git_metadata_trust() {
+    local git_config="$REPO_PATH/.git/config"
+    local git_dir="$REPO_PATH/.git"
+    local git_head="$git_dir/HEAD"
+    local main_ref="$git_dir/refs/heads/main"
+    local metadata_entry
+    local metadata_listing
+
+    [ "$(id -u)" = "0" ] || return 1
+    test -d "$REPO_PATH" || return 1
+    test ! -L "$REPO_PATH" || return 1
+    test -d "$git_dir" || return 1
+    test ! -L "$git_dir" || return 1
+    test -f "$git_config" || return 1
+    test ! -L "$git_config" || return 1
+    test ! -e "$git_dir/config.worktree" || return 1
+    test ! -e "$git_dir/objects/info/alternates" || return 1
+    test ! -e "$git_dir/objects/info/http-alternates" || return 1
+    test -f "$git_head" && test ! -L "$git_head" || return 1
+    test -f "$main_ref" && test ! -L "$main_ref" || return 1
+    test "$(/bin/cat "$git_head")" = "ref: refs/heads/main" || return 1
+    test "$(/bin/cat "$main_ref")" = "$EXPECTED_SHA" || return 1
+    verify_root_owned_nonwritable "$REPO_PATH" || return 1
+
+    umask 077
+    metadata_listing="$(
+        /usr/bin/mktemp /tmp/reva-health-git-metadata.XXXXXX
+    )" || return 1
+    if ! /usr/bin/find "$git_dir" -xdev -print0 >"$metadata_listing"; then
+        /bin/rm -f -- "$metadata_listing"
+        return 1
+    fi
+    while IFS= read -r -d '' metadata_entry; do
+        if test -L "$metadata_entry" ||
+            ! verify_root_owned_nonwritable "$metadata_entry"; then
+            /bin/rm -f -- "$metadata_listing"
+            return 1
+        fi
+    done <"$metadata_listing"
+    /bin/rm -f -- "$metadata_listing"
+}
+
+trusted_git() {
+    local git_dir="$REPO_PATH/.git"
+    local proof_git
+    local proof_root
+    local protected_config
+    local rc
+
+    umask 077
+    proof_root="$(
+        /usr/bin/mktemp -d /tmp/reva-health-git-proof.XXXXXX
+    )" || return 1
+    proof_git="$proof_root/git"
+    protected_config="$proof_root/global.config"
+    if ! /bin/mkdir -m 0700 -- \
+        "$proof_git" "$proof_git/objects" "$proof_git/refs" ||
+        ! printf '%s\n' "$EXPECTED_SHA" >"$proof_git/HEAD" ||
+        ! printf '%s\n' \
+            '[core]' \
+            '    repositoryformatversion = 0' \
+            '    filemode = true' \
+            '    bare = false' >"$proof_git/config" ||
+        ! printf '[safe]\n\tdirectory = %s\n' \
+            "$REPO_PATH" >"$protected_config" ||
+        ! /bin/chmod 0600 \
+            "$proof_git/HEAD" "$proof_git/config" "$protected_config"; then
+        /bin/rm -rf -- "$proof_root"
+        return 1
+    fi
+    if ! /usr/bin/env -i \
+        HOME=/nonexistent \
+        PATH=/usr/bin:/bin \
+        LC_ALL=C \
+        GIT_ATTR_NOSYSTEM=1 \
+        GIT_ALTERNATE_OBJECT_DIRECTORIES= \
+        GIT_CONFIG_NOSYSTEM=1 \
+        GIT_CONFIG_GLOBAL="$protected_config" \
+        GIT_OBJECT_DIRECTORY="$git_dir/objects" \
+        GIT_OPTIONAL_LOCKS=0 \
+        /usr/bin/git --no-optional-locks --no-replace-objects \
+        -c core.fsmonitor=false \
+        -c core.hooksPath=/dev/null \
+        --git-dir="$proof_git" \
+        --work-tree="$REPO_PATH" \
+        read-tree "$EXPECTED_SHA"; then
+        /bin/rm -rf -- "$proof_root"
+        return 1
+    fi
+    if /usr/bin/env -i \
+        HOME=/nonexistent \
+        PATH=/usr/bin:/bin \
+        LC_ALL=C \
+        GIT_ATTR_NOSYSTEM=1 \
+        GIT_ALTERNATE_OBJECT_DIRECTORIES= \
+        GIT_CONFIG_NOSYSTEM=1 \
+        GIT_CONFIG_GLOBAL="$protected_config" \
+        GIT_OBJECT_DIRECTORY="$git_dir/objects" \
+        GIT_OPTIONAL_LOCKS=0 \
+        /usr/bin/git --no-optional-locks --no-replace-objects \
+        -c core.fsmonitor=false \
+        -c core.hooksPath=/dev/null \
+        --git-dir="$proof_git" \
+        --work-tree="$REPO_PATH" \
+        "$@"; then
+        rc=0
+    else
+        rc=$?
+    fi
+    /bin/rm -rf -- "$proof_root"
+    return "$rc"
+}
+
+verify_tracked_worktree_trust() {
+    local component
+    local current
+    local listing
+    local parent
+    local relative
+    local target
+
+    umask 077
+    listing="$(
+        /usr/bin/mktemp /tmp/reva-health-tracked-paths.XXXXXX
+    )" || return 1
+    if ! trusted_git ls-files -z >"$listing"; then
+        /bin/rm -f -- "$listing"
+        return 1
+    fi
+    while IFS= read -r -d '' relative; do
+        [[ -n "$relative" && "$relative" != /* ]] || {
+            /bin/rm -f -- "$listing"
+            return 1
+        }
+        [[ "/$relative/" != *"/../"* && "/$relative/" != *"/./"* ]] || {
+            /bin/rm -f -- "$listing"
+            return 1
+        }
+        current="$REPO_PATH"
+        if [[ "$relative" = */* ]]; then
+            parent="${relative%/*}"
+            while [[ -n "$parent" ]]; do
+                component="${parent%%/*}"
+                [[ -n "$component" ]] || {
+                    /bin/rm -f -- "$listing"
+                    return 1
+                }
+                current="$current/$component"
+                test -d "$current" &&
+                    test ! -L "$current" &&
+                    verify_root_owned_nonwritable "$current" || {
+                    /bin/rm -f -- "$listing"
+                    return 1
+                }
+                if [[ "$parent" = "$component" ]]; then
+                    break
+                fi
+                parent="${parent#*/}"
+            done
+        fi
+        target="$REPO_PATH/$relative"
+        if test -L "$target"; then
+            :
+        elif test -f "$target" || test -d "$target"; then
+            verify_root_owned_nonwritable "$target" || {
+                /bin/rm -f -- "$listing"
+                return 1
+            }
+        else
+            /bin/rm -f -- "$listing"
+            return 1
+        fi
+    done <"$listing"
+    /bin/rm -f -- "$listing"
+}
+
 verify_repo_revision() {
-    test "$(git -C "$REPO_PATH" rev-parse HEAD)" = "$EXPECTED_SHA" &&
-        test -z "$(
-            git -C "$REPO_PATH" status --porcelain --untracked-files=all
-        )"
+    local actual_sha
+    local status_output
+
+    if ! verify_git_metadata_trust; then
+        echo "release revision proof failed: git metadata trust" >&2
+        return 1
+    fi
+    if ! actual_sha="$(trusted_git rev-parse HEAD)"; then
+        echo "release revision proof failed: isolated HEAD read" >&2
+        return 1
+    fi
+    if test "$actual_sha" != "$EXPECTED_SHA"; then
+        echo "release revision proof failed: unexpected HEAD" >&2
+        return 1
+    fi
+    if ! verify_tracked_worktree_trust; then
+        echo "release revision proof failed: tracked path trust" >&2
+        return 1
+    fi
+    status_output="$(
+        trusted_git status --porcelain --untracked-files=all
+    )" || {
+        echo "release revision proof failed: isolated status" >&2
+        return 1
+    }
+    if test -n "$status_output"; then
+        echo "release revision proof failed: worktree is not clean" >&2
+        return 1
+    fi
 }
 
 verify_services_active() {
@@ -766,21 +978,34 @@ verify_enabled_marker_state() {
     verify_services_active || return 1
 }
 
+recover_step() {
+    local label="$1"
+    shift
+    if "$@"; then
+        return 0
+    fi
+    echo "guard recovery failed: step=$label" >&2
+    return 1
+}
+
 recover_guard() {
-    assert_release_lease || return 1
-    install_env_atomically "$GUARD_ENV" || return 1
-    verify_flag_file "$TARGET_ENV" false || return 1
-    cmp -s "$GUARD_ENV" "$TARGET_ENV" || return 1
-    remove_durable_enabled || return 1
-    remove_runtime_overrides || return 1
-    restart_services_in_order || return 1
-    assert_release_lease || return 1
-    verify_repo_revision || return 1
-    verify_service_process_flags false || return 1
-    wait_for_health || return 1
-    verify_runtime_contract staged persistent || return 1
-    assert_release_lease || return 1
-    verify_services_active || return 1
+    recover_step release-lease-before-guard assert_release_lease || return 1
+    recover_step install-guard install_env_atomically "$GUARD_ENV" || return 1
+    recover_step verify-guard-flag \
+        verify_flag_file "$TARGET_ENV" false || return 1
+    recover_step verify-guard-bytes \
+        cmp -s "$GUARD_ENV" "$TARGET_ENV" || return 1
+    recover_step revoke-durable remove_durable_enabled || return 1
+    recover_step remove-runtime-overrides remove_runtime_overrides || return 1
+    recover_step restart-services restart_services_in_order || return 1
+    recover_step release-lease-after-restart assert_release_lease || return 1
+    recover_step revision-proof verify_repo_revision || return 1
+    recover_step process-flags verify_service_process_flags false || return 1
+    recover_step health wait_for_health || return 1
+    recover_step staged-contract \
+        verify_runtime_contract staged persistent || return 1
+    recover_step release-lease-final assert_release_lease || return 1
+    recover_step services-active verify_services_active
 }
 
 ACTIVATION_COMPLETE=0
