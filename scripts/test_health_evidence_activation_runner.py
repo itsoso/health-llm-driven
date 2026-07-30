@@ -235,7 +235,7 @@ case "$1" in
         if [ "$(cat "$(state_file "$unit")")" != "active" ]; then
           printf 'dead\n'
         elif [ "$(normalize_unit "$unit")" = "health-backend.socket" ]; then
-          printf 'listening\n'
+          printf 'running\n'
         else
           printf 'running\n'
         fi

@@ -2461,6 +2461,7 @@ SERVICE_STABILITY_SECONDS=7
 stable_main_pid=()
 stable_restart_count=()
 stable_enter_timestamp=()
+stable_socket_sub_state=""
 
 safe_absolute_path() {
     local value="$1"
@@ -2533,7 +2534,19 @@ verify_service_metadata_snapshot() {
         test "$active_state" = "active"
         test "$result" = "success"
         if [ "$unit" = "health-backend.socket" ]; then
-            test "$sub_state" = "listening"
+            # systemd 249 reports an active bound socket as "running", while
+            # newer releases may report "listening". Both are ready states;
+            # still require the exact state to remain unchanged across the
+            # stability window.
+            case "$sub_state" in
+                listening|running) ;;
+                *) return 1 ;;
+            esac
+            if [ "$phase" = "record" ]; then
+                stable_socket_sub_state="$sub_state"
+            else
+                test "$sub_state" = "$stable_socket_sub_state"
+            fi
             continue
         fi
         test "$sub_state" = "running"

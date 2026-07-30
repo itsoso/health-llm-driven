@@ -120,8 +120,11 @@ MIGRATION_DATABASE_URL=postgresql://health_app_migrator:***@localhost:5432/healt
    shelf 后缀，拒绝
    symlink 或 group/world writable state。重启服务后跨越 `RestartSec` 双采样
    `MainPID`、`NRestarts` 与 activation timestamp，逐 cgroup PID 证明 feature
-   flag 终态，再验证 exact SHA、health/auth、脱敏后的健康硬闸与 runtime-only KB
-   serving contract。只有新 state 已存在且服务稳定后，才精确清理 legacy shelf。
+   flag 终态；socket 的 ready SubState 只接受跨 systemd 版本的
+   `listening|running`，且 record/compare 必须逐字不变，其他状态或窗口内切换都
+   fail closed。随后再验证 exact SHA、health/auth、脱敏后的健康硬闸与
+   runtime-only KB serving contract。只有新 state 已存在且服务稳定后，才精确
+   清理 legacy shelf。
 9. 远端 SSH/信号结果不明确时保留 release lease 与 stage；没有独立 terminal
    证明时禁止并发 rollback 或第二次部署。恢复必须显式提供原 token 并接管 lock
    记录的原 stage；接管只校验、复用 immutable artifacts，禁止重传覆盖。持久事务

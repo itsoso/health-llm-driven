@@ -388,8 +388,13 @@ def test_deactivation_proof_requires_services_stable_across_restart_window():
     assert body.count("verify_process_environment_false") >= 2
 
 
+@pytest.mark.parametrize(
+    "failure_mode",
+    ("beat-restart", "socket-substate-flip"),
+)
 def test_deactivation_proof_rejects_restart_of_only_celery_beat(
     tmp_path: Path,
+    failure_mode: str,
 ):
     script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
     proof = script.split(
@@ -459,7 +464,12 @@ case "$*" in
   *--property=ActiveState*) printf 'active\n' ;;
   *--property=SubState*)
     if [ "$name" = "health-backend.socket" ]; then
-      printf 'listening\n'
+      if [ "${FAKE_SOCKET_FLIP_AFTER_SLEEP:-0}" = "1" ] &&
+         [ -e "$FAKE_RESTART_MARKER" ]; then
+        printf 'listening\n'
+      else
+        printf 'running\n'
+      fi
     else
       printf 'running\n'
     fi
@@ -467,7 +477,8 @@ case "$*" in
   *--property=Result*) printf 'success\n' ;;
   *--property=MainPID*) printf '%s\n' "$pid" ;;
   *--property=NRestarts*)
-    if [ "$name" = "celery-beat" ] &&
+    if [ "${FAKE_BEAT_RESTART_AFTER_SLEEP:-0}" = "1" ] &&
+       [ "$name" = "celery-beat" ] &&
        [ -e "$FAKE_RESTART_MARKER" ]; then
       printf '1\n'
     else
@@ -475,7 +486,8 @@ case "$*" in
     fi
     ;;
   *--property=ActiveEnterTimestampMonotonic*)
-    if [ "$name" = "celery-beat" ] &&
+    if [ "${FAKE_BEAT_RESTART_AFTER_SLEEP:-0}" = "1" ] &&
+       [ "$name" = "celery-beat" ] &&
        [ -e "$FAKE_RESTART_MARKER" ]; then
       printf '200\n'
     else
@@ -510,11 +522,40 @@ esac
             **os.environ,
             "PATH": f"{fake_bin}:{os.environ['PATH']}",
             "FAKE_RESTART_MARKER": str(restart_marker),
+            "FAKE_BEAT_RESTART_AFTER_SLEEP": (
+                "1" if failure_mode == "beat-restart" else "0"
+            ),
+            "FAKE_SOCKET_FLIP_AFTER_SLEEP": (
+                "1" if failure_mode == "socket-substate-flip" else "0"
+            ),
         },
     )
 
     assert result.returncode != 0, (result.stdout, result.stderr)
     assert restart_marker.exists()
+
+
+def test_socket_ready_state_is_portable_but_stable_across_proofs():
+    deploy = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    deploy_start = deploy.index("prove_health_evidence_deactivated_state() {")
+    deploy_end = deploy.index(
+        "prove_health_evidence_runtime_process_flag() {", deploy_start
+    )
+    activation = (
+        ROOT
+        / "backend"
+        / "scripts"
+        / "activate_health_evidence_runtime.sh"
+    ).read_text(encoding="utf-8")
+    rollback = (
+        ROOT / "backend" / "scripts" / "rollback_release.sh"
+    ).read_text(encoding="utf-8")
+
+    for body in (deploy[deploy_start:deploy_end], activation, rollback):
+        assert "listening|running" in body
+        assert 'stable_socket_sub_state="$sub_state"' in body
+        assert '"$sub_state" = "$stable_socket_sub_state"' in body
+        assert "*) return 1 ;;" in body
 
 
 def test_activation_and_rollback_proofs_reject_restart_windows():

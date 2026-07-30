@@ -4,8 +4,8 @@
 |---|---|
 | slug | `mobile-health-evidence-runtime` |
 | 创建日期 | 2026-07-29 |
-| 当前阶段 | G3/G4 本地 GO → replacement exact-SHA CI |
-| 状态 | prod=`85fd0a69...`, flag=false；beat 已恢复，activation/OTA 继续阻断 |
+| 当前阶段 | socket-state 修复 G3/G4 GO → replacement exact-SHA CI |
+| 状态 | prod=`85fd0a69...`, flag=false、四服务稳定；现场已证明并清理，activation/OTA 继续阻断 |
 | 负责 | product owner + Codex |
 | 反馈环 | backend/Web → 受控 activation → semantic smoke → Mobile OTA → 跨端对照 |
 
@@ -354,6 +354,33 @@
     存在但 outcome 缺失时保留 stage/lease。所有 release mode 的 terminal success
     统一清理接管状态，delegated/unknown 结果仍保留现场。
   - 回退阶段: G5 → S5/G3/G4；禁止带红继续。
+- [x] Correction Block — systemd socket ready-state portability
+  - 触发: state-boundary replacement CI run `30544779284` 对精确
+    `294f8c6761a46b37c8aecb19475165164dc56657` 的 44 个 job 全部 success、
+    0 non-success；临时 `HARNESS_LIVE_LLM_EVAL_CONFIRMED` 随即删除并按名称复证
+    计数为 0。backend deploy 的 41 MB backup、234 表恢复演练、站外 age
+    hash/HMAC 真实性与旧 SHA 199 表 schema probe 均通过；去激活事务也输出精确
+    `HEALTH_EVIDENCE_DEACTIVATED flag=false services=active`，但独立终态 proof
+    随后失败，G5 立即 REJECT，未 checkout、migration、KB import 或激活。
+  - 根因: 三条稳定性 proof 把 `health-backend.socket` 的合法 SubState 只写成
+    `listening`。生产 systemd 249 对同一 active、success、已绑定
+    `127.0.0.1:8000` 且列在 `list-sockets` 的 socket 报告 `running`，因此
+    deploy proof、rollback runner 与 activation runner 都会把真实健康状态误判为
+    BLOCK；单测 mock 只返回 `listening`，掩盖了跨版本契约。
+  - 安全处置: 保留原 release lease/stage，不并发部署或回滚；复证旧 SHA
+    `85fd0a69...`、candidate=live、唯一 canonical false、全部 cgroup PID=false、
+    durable/runtime/drop-in absent、四服务 active/success 且 restart count=0。
+    用修正后的 proof 跨 7 秒重验 PID/restart/timestamp/socket SubState 不变后，
+    只删除本次 PID 23162 的精确 stage、bundle 与 lease；生产仍为旧 SHA、
+    flag=false，运行数据与备份未触碰。
+  - 新基线: socket ready state 明确兼容 systemd 的 `listening|running`，但不把
+    两者当作可在窗口中切换：record/compare 必须逐字相等；ActiveState=active、
+    Result=success、writer PID/NRestarts/enter timestamp 与全部 cgroup flag 的原
+    硬闸不变。三个生产路径的测试 fixture 改为 systemd 249 的 `running`，均先
+    RED 后 GREEN；CI 原样七文件 release-invariants 260/260（756.58 秒）、
+    Bash 语法、diff/doc drift/Dossier 闸与 fresh P0/P1 复审均 GO。replacement
+    exact-SHA CI 全绿后才能再次部署。
+  - 回退阶段: G5 → S5/G3/G4；禁止带红继续。
 
 ## S0 · 用户需求(逐字)
 
@@ -595,8 +622,12 @@
     rollback floor → seed/import → staged post-gate；测试现从 importer 之后查找
     目标校验，不删除或放宽任何 Gate。定向文件 8/8 已通过，replacement
     exact-SHA CI 待重跑。
-- **裁决**: 本地/冻结集成 G3 ☒ GO；replacement exact-SHA main CI
-  ☐ GO ☒ PENDING。后者全绿前继续禁止 G5/activation/OTA。
+  - replacement run `30544779284` 对精确
+    `294f8c6761a46b37c8aecb19475165164dc56657` 44/44 success、0
+    non-success；`backend-test-d` 通过。临时 live-eval repo variable 在终态
+    success 后立即删除并复证 absent。
+- **裁决**: socket ready-state 修复本地 G3/G4 ☒ GO；replacement exact-SHA
+  main CI ☐ GO ☒ PENDING。后者全绿前继续禁止 G5/activation/OTA。
 
 ## G4 · 安全闸
 
@@ -677,6 +708,12 @@
     `PermissionError` 进入 crash loop；脚本仅命中短暂 active 窗口。已在 flag=false
     下恢复 beat，未继续 activation/OTA；replacement deploy 必须把 state 迁到
     `/var/lib` 并跨越 RestartSec 证明稳定。
+  - socket proof BLOCK: `294f8c67...` 的 CI 44/44、backup/restore/offsite 与旧
+    SHA schema probe 均通过；去激活事务已安装 canonical false candidate 并重启
+    四服务，但 systemd 249 的 socket SubState=`running` 被仅接受 `listening` 的
+    proof 误拒绝。部署在 checkout/migration 前停止，lease/stage 保留；经完整
+    7 秒 patched proof 后只清理该次临时 artifacts。生产仍为 `85fd0a69...`、
+    flag=false、四服务 stable，未激活或 OTA。
 - 健康分(阈值 35): 第二次 candidate 的 `60/60 FAIL` detail 因旧日志契约未保存；
   recovery 后 candidate scorer 为 `60/60 PASS`。第三次 candidate 同样总分 60，
   但 circuit import unavailable 按硬闸正确 veto，不把分数当作 PASS。

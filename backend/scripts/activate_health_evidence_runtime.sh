@@ -407,6 +407,7 @@ verify_services_active() {
     local stable_main_pid=()
     local stable_restart_count=()
     local stable_enter_timestamp=()
+    local stable_socket_sub_state=""
 
     for phase in record compare; do
         process_index=0
@@ -426,7 +427,20 @@ verify_services_active() {
             [ "$active_state" = "active" ] || return 1
             [ "$result" = "success" ] || return 1
             if [ "$unit" = "health-backend.socket" ]; then
-                [ "$sub_state" = "listening" ] || return 1
+                # systemd 249 uses "running" for an active bound socket;
+                # newer releases may use "listening". Require one of those
+                # ready states and require it to stay unchanged across the
+                # complete stability window.
+                case "$sub_state" in
+                    listening|running) ;;
+                    *) return 1 ;;
+                esac
+                if [ "$phase" = "record" ]; then
+                    stable_socket_sub_state="$sub_state"
+                else
+                    [ "$sub_state" = "$stable_socket_sub_state" ] ||
+                        return 1
+                fi
                 continue
             fi
             [ "$sub_state" = "running" ] || return 1

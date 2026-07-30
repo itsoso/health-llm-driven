@@ -335,7 +335,7 @@ case "$1" in
     case "$*" in
       *--property=SubState*)
         case "$2" in
-          health-backend.socket) printf 'listening\n' ;;
+          health-backend.socket) printf 'running\n' ;;
           *) printf 'running\n' ;;
         esac
         ;;

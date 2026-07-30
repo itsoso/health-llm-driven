@@ -174,6 +174,7 @@ verify_services_stable() {
     local stable_main_pid=()
     local stable_restart_count=()
     local stable_enter_timestamp=()
+    local stable_socket_sub_state=""
 
     for phase in record compare; do
         process_index=0
@@ -193,7 +194,19 @@ verify_services_stable() {
             test "$active_state" = "active"
             test "$result" = "success"
             if [ "$service" = "$BACKEND_SOCKET" ]; then
-                test "$sub_state" = "listening"
+                # systemd 249 uses "running" for an active bound socket;
+                # newer releases may use "listening". Require one of those
+                # ready states and require it to stay unchanged across the
+                # complete stability window.
+                case "$sub_state" in
+                    listening|running) ;;
+                    *) return 1 ;;
+                esac
+                if [ "$phase" = "record" ]; then
+                    stable_socket_sub_state="$sub_state"
+                else
+                    test "$sub_state" = "$stable_socket_sub_state"
+                fi
                 continue
             fi
             test "$sub_state" = "running"
