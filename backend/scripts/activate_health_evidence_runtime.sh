@@ -79,6 +79,7 @@ PROCESS_UNITS=(
     celery-worker.service
     celery-beat.service
 )
+SERVICE_STABILITY_SECONDS=7
 SUCCESS_SENTINEL="HEALTH_EVIDENCE_ACTIVATION_OK commit=$EXPECTED_SHA flag=true health=passed auth_probe=passed score=passed contract=enabled services=active"
 ROLLBACK_SENTINEL="HEALTH_EVIDENCE_ACTIVATION_ROLLED_BACK commit=$EXPECTED_SHA flag=false health=passed contract=staged services=active"
 BLOCKED_SENTINEL="HEALTH_EVIDENCE_ACTIVATION_BLOCKED commit=$EXPECTED_SHA flag=unknown services=inactive containment=passed manual_intervention=required"
@@ -394,13 +395,77 @@ verify_repo_revision() {
 }
 
 verify_services_active() {
+    local phase
     local unit
-    local state
-    for unit in "${SERVICES[@]}"; do
-        state="$(
-            systemctl show "$unit" --property=ActiveState --value 2>/dev/null
-        )" || return 1
-        [ "$state" = "active" ] || return 1
+    local active_state
+    local sub_state
+    local result
+    local main_pid
+    local restart_count
+    local enter_timestamp
+    local process_index
+    local stable_main_pid=()
+    local stable_restart_count=()
+    local stable_enter_timestamp=()
+
+    for phase in record compare; do
+        process_index=0
+        for unit in "${SERVICES[@]}"; do
+            active_state="$(
+                systemctl show "$unit" --property=ActiveState --value \
+                    2>/dev/null
+            )" || return 1
+            sub_state="$(
+                systemctl show "$unit" --property=SubState --value \
+                    2>/dev/null
+            )" || return 1
+            result="$(
+                systemctl show "$unit" --property=Result --value \
+                    2>/dev/null
+            )" || return 1
+            [ "$active_state" = "active" ] || return 1
+            [ "$result" = "success" ] || return 1
+            if [ "$unit" = "health-backend.socket" ]; then
+                [ "$sub_state" = "listening" ] || return 1
+                continue
+            fi
+            [ "$sub_state" = "running" ] || return 1
+            main_pid="$(
+                systemctl show "$unit" --property=MainPID --value \
+                    2>/dev/null
+            )" || return 1
+            restart_count="$(
+                systemctl show "$unit" --property=NRestarts --value \
+                    2>/dev/null
+            )" || return 1
+            enter_timestamp="$(
+                systemctl show "$unit" \
+                    --property=ActiveEnterTimestampMonotonic --value \
+                    2>/dev/null
+            )" || return 1
+            [[ "$main_pid" =~ ^[1-9][0-9]*$ ]] || return 1
+            [ "$main_pid" -gt 1 ] || return 1
+            [[ "$restart_count" =~ ^[0-9]+$ ]] || return 1
+            [[ "$enter_timestamp" =~ ^[1-9][0-9]*$ ]] || return 1
+            if [ "$phase" = "record" ]; then
+                stable_main_pid[$process_index]="$main_pid"
+                stable_restart_count[$process_index]="$restart_count"
+                stable_enter_timestamp[$process_index]="$enter_timestamp"
+            else
+                [ "$main_pid" = \
+                    "${stable_main_pid[$process_index]}" ] || return 1
+                [ "$restart_count" = \
+                    "${stable_restart_count[$process_index]}" ] || return 1
+                [ "$enter_timestamp" = \
+                    "${stable_enter_timestamp[$process_index]}" ] || return 1
+            fi
+            process_index=$((process_index + 1))
+        done
+        if [ "$phase" = "record" ]; then
+            assert_release_lease || return 1
+            sleep "$SERVICE_STABILITY_SECONDS" || return 1
+            assert_release_lease || return 1
+        fi
     done
 }
 
@@ -879,9 +944,12 @@ write_state_file_atomically() {
         rm -f -- "$marker_tmp"
         return 1
     fi
-    if ! chmod 0600 "$marker_tmp" ||
+    if ! chmod 0400 "$marker_tmp" ||
         ! chown root:root "$marker_tmp" ||
-        ! mv -f -- "$marker_tmp" "$target_file"; then
+        ! sync -f "$marker_tmp" ||
+        ! mv -f -- "$marker_tmp" "$target_file" ||
+        ! sync -f "$target_file" ||
+        ! sync -f "$marker_dir"; then
         rm -f -- "$marker_tmp"
         return 1
     fi

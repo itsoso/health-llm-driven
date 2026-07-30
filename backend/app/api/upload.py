@@ -19,6 +19,7 @@ from app.services.private_uploads import (
     verify_signed_private_upload_url,
 )
 from app.utils.image_compression import compress_image, should_compress
+from app.utils.runtime_data import upload_dir
 from app.services.secure_upload import (
     UploadContentInvalid,
     UploadTooLarge,
@@ -31,7 +32,7 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 # 上传目录配置
-UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "uploads")
+UPLOAD_DIR = os.fspath(upload_dir())
 ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "gif", "webp"}
 ALLOWED_CATEGORIES = {"diet", "medical", "avatar", "other"}
 PRIVATE_CATEGORIES = set(PRIVATE_UPLOAD_CATEGORIES) - {"chat"}

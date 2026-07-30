@@ -17,11 +17,12 @@ from app.services.secure_upload import (
     read_upload_limited,
     validate_image_bytes,
 )
+from app.utils.runtime_data import upload_dir
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "uploads")
+UPLOAD_DIR = os.fspath(upload_dir())
 ALLOWED_IMAGE_EXTENSIONS = {"jpg", "jpeg", "png", "gif", "webp"}
 
 

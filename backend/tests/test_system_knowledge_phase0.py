@@ -1397,7 +1397,11 @@ def test_admin_dedao_kbase_draft_review_bundle_reads_configured_artifacts(
     user.is_admin = True
     artifact_dir = tmp_path / "system_kb_v2_seed"
     artifact_dir.mkdir()
-    monkeypatch.setattr(settings, "system_kb_artifact_dir", str(artifact_dir))
+    monkeypatch.setattr(
+        settings,
+        "dedao_kbase_review_artifact_dir",
+        str(artifact_dir),
+    )
     _write_artifact_jsonl(
         artifact_dir / "pages.jsonl",
         [
@@ -1877,7 +1881,11 @@ def test_admin_dedao_kbase_legacy_approve_rejects_unresolved_claims(
     user.is_admin = True
     artifact_dir = tmp_path / "system_kb_v2_seed"
     artifact_dir.mkdir()
-    monkeypatch.setattr(settings, "system_kb_artifact_dir", str(artifact_dir))
+    monkeypatch.setattr(
+        settings,
+        "dedao_kbase_review_artifact_dir",
+        str(artifact_dir),
+    )
     for name in ("pages", "entities", "protocols", "contraindications", "eval_cases"):
         _write_artifact_jsonl(artifact_dir / f"{name}.jsonl", [])
     _write_artifact_jsonl(
@@ -1945,7 +1953,11 @@ def test_admin_dedao_kbase_legacy_approve_rejects_direct_publish(
     user.is_admin = True
     artifact_dir = tmp_path / "system_kb_v2_seed"
     artifact_dir.mkdir()
-    monkeypatch.setattr(settings, "system_kb_artifact_dir", str(artifact_dir))
+    monkeypatch.setattr(
+        settings,
+        "dedao_kbase_review_artifact_dir",
+        str(artifact_dir),
+    )
     for name in ("pages", "protocols", "contraindications", "eval_cases"):
         _write_artifact_jsonl(artifact_dir / f"{name}.jsonl", [])
     _write_artifact_jsonl(
@@ -2028,7 +2040,11 @@ def test_admin_dedao_kbase_legacy_approve_rejects_inline_publish_preview(
     user.is_admin = True
     artifact_dir = tmp_path / "system_kb_v2_seed"
     artifact_dir.mkdir()
-    monkeypatch.setattr(settings, "system_kb_artifact_dir", str(artifact_dir))
+    monkeypatch.setattr(
+        settings,
+        "dedao_kbase_review_artifact_dir",
+        str(artifact_dir),
+    )
     for name in ("pages", "protocols", "contraindications", "eval_cases"):
         _write_artifact_jsonl(artifact_dir / f"{name}.jsonl", [])
     _write_artifact_jsonl(
@@ -2112,7 +2128,11 @@ def test_admin_dedao_kbase_reviewed_artifacts_publish_imports_without_reapprovin
     user.is_admin = True
     artifact_dir = tmp_path / "system_kb_v2_seed"
     artifact_dir.mkdir()
-    monkeypatch.setattr(settings, "system_kb_artifact_dir", str(artifact_dir))
+    monkeypatch.setattr(
+        settings,
+        "dedao_kbase_review_artifact_dir",
+        str(artifact_dir),
+    )
     for name in ("pages", "protocols", "contraindications", "eval_cases"):
         _write_artifact_jsonl(artifact_dir / f"{name}.jsonl", [])
     _write_artifact_jsonl(

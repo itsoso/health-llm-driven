@@ -4,8 +4,8 @@
 |---|---|
 | slug | `mobile-health-evidence-runtime` |
 | 创建日期 | 2026-07-29 |
-| 当前阶段 | isolated-Git local G3/G4 GO → freeze/push/exact-SHA CI |
-| 状态 | prod=`1a831aa4...`, flag=false；新候选 CI/部署/activation/OTA 待执行 |
+| 当前阶段 | G3/G4 本地 GO → replacement exact-SHA CI |
+| 状态 | prod=`85fd0a69...`, flag=false；beat 已恢复，activation/OTA 继续阻断 |
 | 负责 | product owner + Codex |
 | 反馈环 | backend/Web → 受控 activation → semantic smoke → Mobile OTA → 跨端对照 |
 
@@ -292,6 +292,68 @@
     activation 与 OTA 仍待完成。
   - 回退阶段: G5 → S5/G3/G4；完整 activation/release 回归、fresh review 与新
     main CI 全绿前禁止再次 activation/OTA。
+- [x] Correction Block — Celery Beat 可变状态越过 immutable checkout 边界
+  - 触发: isolated-Git 修复 `85fd0a69adf9e9cf1ee6010e416b4e4039e1cc2a`
+    的 exact-SHA CI run `30515848406` 43/43 全绿，临时 repo variable
+    `HARNESS_LIVE_LLM_EVAL_CONFIRMED=1` 在 CI success 后已删除。backend deploy
+    随后完成约 41 MB backup、234 表恢复演练、站外加密归档、199 表 schema probe、
+    两次 60/60、exact SHA、KB 11/11 与 skills 22/22，脚本报告成功；但独立
+    postdeploy 复查发现 `celery-beat` 正处于每约 8 秒重启一次的 crash loop。
+    因此脚本成功不构成 G5 PASS，立即 REJECT，未进入 activation/OTA。
+  - 根因: ownership normalization 把 tracked `backend/data` 从运行账号专有目录
+    收紧为 `root:root:0700`，旧 unit 又把 Celery Beat shelf 写在
+    `backend/data/celerybeat-schedule`。这既让 beat 得到 `PermissionError`，也让
+    health-app 无法读取同目录内受版本控制的基因/System KB seeds；原终态证明只在
+    crash loop 的短暂 active 窗口采样，未跨越 unit 的 `RestartSec=5s`，形成假绿。
+  - 即时恢复: 保持 production exact SHA 与 base flag=false，把
+    `backend/data` 临时恢复为 `health-app:health-app:0700` 后重启 beat，并跨越
+    RestartSec 证明 PID/restart count 稳定。feature 从未授权；该临时权限不作为
+    最终架构，必须由 replacement backend deploy 覆盖。
+  - 新基线:
+    - checkout 内 tracked 目录统一 `root:root:0755`，tracked 文件按 Git mode
+      确定为 `0644`/`0755`；ignored runtime 文件不被 normalization 触碰；
+    - Celery Beat shelf 迁到 systemd `StateDirectory` 管理的
+      `/var/lib/health-app/celery-beat`，runtime drop-in 与候选 commit 一起 hash
+      staging、systemd 249 verify、原子安装并校验 effective `ExecStart`；
+    - 只迁移/清理精确 allowlist 的 shelf 后缀，拒绝 symlink 与 group/world
+      writable 文件；必须先在新目录看到 health-app-owned state，再删除 legacy；
+    - deploy、activation、deactivation 与 rollback 的服务终态证明均跨 7 秒双采样
+      `ActiveState/SubState/Result/MainPID/NRestarts/ActiveEnterTimestampMonotonic`
+      和 cgroup flag；PID、restart count 或 activation timestamp 有任何变化即
+      fail closed。
+  - 回归: 新测试先 RED 复现 tracked seed 不可读与 delayed restart 假绿，再
+    GREEN；候选 unit 已在 production 同版本 systemd 249 通过离线 verify。
+    replacement release 全套、fresh review、exact-SHA CI 和二次 backend deploy
+    全绿前，继续禁止受控 activation 与 Mobile OTA。
+  - 同一 replacement 修复已把 legacy vectorstore、gene registry 与 Dedao review
+    workspace 的生产写路径迁到 `/var/lib/health-app/runtime` 和
+    `/var/lib/health-app/dedao-kbase/workspace`；生产配置若指回 checkout 会启动失败，
+    legacy Chroma API/定时 rebuild 默认关闭。gene registry 写入使用同目录临时文件、
+    file fsync、atomic replace、parent fsync，并按同一 FD 的 inode/signature 重载。
+  - 发布事务新增 root-only 持久 journal 与 boot gate：在 mutation 前同时封存
+    old/candidate env、runtime/beat/Dedao/drop-in/enablement preimage；SSH 断线只允许
+    用原 token 接管原 immutable stage。candidate floor 后禁止回到旧代码；System KB
+    与 skills 完成后还要重新跨稳定窗口证明，再 finalize 清理快照。old rollback
+    同时恢复旧 env，不能留下新路径配旧 systemd 的潜伏写入故障。
+  - Fresh write-path audit 又发现 uploads 与 Skills Hub cache 仍写 checkout。修复后
+    backend/worker/beat 的 effective writable set 分别精确收敛到
+    `{uploads, cache, runtime, Dedao}`、`{uploads, Dedao}`、`{beat state}`，不存在
+    `/opt/health-app` 后代。最终安全审计以单权威契约取代旧的任意 union 口径：
+    old writers 指向 legacy 时，非空 external 因来源不可证明会在 preflight
+    fail closed；prepare 后只接受 sealed legacy 的逐路径、同 kind/hash 拷贝子集。
+    destination 完整复证后才退役 source，且每次退休重入都要求剩余 source 是封存
+    manifest 的 deletion-only 子集并保持 uid/gid/mode、kind 与文件 hash；任何
+    新增、改写、类型/权限漂移都保留现场并 BLOCK。old-SHA rollback 把完整 external
+    （含 candidate-window 新增与删除）精确复制回 legacy 后退役 external；若旧
+    writers 已指向 external，则保持 external 权威。
+    cache 固定为 `/var/cache/health-app/skills-hub`；生产 install/uninstall 在任何
+    fetch/path/write 前显式返回 `hub_skill_mutation_disabled`。
+  - Activation 接管也改为 immutable resume：第一次 systemd RPC 前先持久化并 fsync
+    `launch-intent`；接管只能只读验证 sealed candidate/guard 与 terminal outcome。
+    已终结只做 exact proof；仅 state dir 为空时允许复用原工件 launch；intent
+    存在但 outcome 缺失时保留 stage/lease。所有 release mode 的 terminal success
+    统一清理接管状态，delegated/unknown 结果仍保留现场。
+  - 回退阶段: G5 → S5/G3/G4；禁止带红继续。
 
 ## S0 · 用户需求(逐字)
 
@@ -403,8 +465,9 @@
   - [x] T7 Mobile evidence/clarification UI
   - [x] T8 parity/golden/integration/safety review
   - [ ] T9 backend deploy → Web deploy → Mobile OTA → production verification
-    （`1a831aa4...` 的 backend/Web 已通过；当前 isolated-Git delta 尚待完整
-    local G3/G4、提交/CI、backend redeploy/staging、activation、OTA 与 prod 验证）
+    （`85fd0a69...` 已通过 exact-SHA CI 并部署，但独立 postdeploy 检查发现
+    Celery Beat crash loop，G5 REJECT；当前 state-boundary 修复尚待完整 local
+    G3/G4、提交/CI、backend redeploy、activation、OTA 与 prod 验证）
 - 并发检查(`git fetch` + `gh pr list`,没被抢先):☒
   - overlap noted: PR #221 claim honesty and PRs #214/#216 medical safety; this
     implementation avoids cherry-picking unrelated branches and will run overlap review.
@@ -418,10 +481,12 @@
   integrated main merge `0d674fa28b503d006d133de9b7107dca2e06936f`，
   regenerated client types `ab300686f5c14f05bd3f32a951ebe5eb6cfa223e`，
   integrated-CI remediation `f89ed2d5`。
-- 已部署: `1a831aa49670ef04859b30cb1b497166bc3187b6`（backend/Web，
-  runtime flag=false）。
-- 当前工作候选: isolated-Git/read-tree + scoped ownership normalization delta；
-  local G3/G4 已冻结通过，exact-SHA main CI 与部署仍待执行。
+- 已部署: `85fd0a69adf9e9cf1ee6010e416b4e4039e1cc2a`（backend，
+  runtime flag=false）；Celery Beat crash loop 已即时恢复，但其 checkout 内临时
+  state/ownership 仍须由 replacement deploy 迁到 `/var/lib`。
+- 当前工作候选: Celery Beat external state + deterministic tracked modes +
+  restart-stable release proof；local G3/G4、fresh review、exact-SHA main CI 与
+  replacement backend deploy 仍待完成。
 - 实现边界:
   - 这是低背痛 golden safety slice + 可复用 runtime，不是全医学域完成；
   - low-back compiler 用症状/问题/用药/过敏/慢病安全核心和查询相关可穿戴，
@@ -503,9 +568,25 @@
   `1a831aa49670ef04859b30cb1b497166bc3187b6` 43/43 success。
 - activation isolated-Git 修复: 真实 clean-filter exploit 已 RED→GREEN；
   fsmonitor、`core.worktree`、writable-config、non-root repo 故障注入通过；
-  完整本地闸、两路 fresh review、production Git 2.34.1 staged proof 与 main CI
-  待跑。
-- **裁决**: import-root fix ☒ 绿；activation fix ☐ 绿 ☒ PENDING local/CI
+  完整本地闸、两路 fresh review、production Git 2.34.1 staged proof 与 exact-SHA
+  CI run `30515848406` 43/43 全绿；临时 live-eval repo variable 已删除并复证 absent。
+- Celery Beat state-boundary 修复:
+  - tracked seed mode/readability、external StateDirectory、exact unit staging、
+    legacy shelf allowlist migration/cleanup 与 delayed restart failure 均有
+    RED→GREEN；
+  - production 同版本 systemd 249 候选 unit verify PASS；
+  - 上传单权威事务 83/83、release/rollback/deploy/infra/CI contracts 146/146、
+    external runtime paths 27/27；冻结快照按 CI 原样执行七文件
+    `release-invariants` 为 258/258，耗时 752.51 秒，前后 hash 不变；
+  - 精确 Python 3.12 锁定依赖下，健康证据/权威/System KB 442 passed /
+    1 skipped，Dedao/System KB 117/117；Mobile TypeScript、设计 token、依赖
+    audit policy 全绿，Jest 282 suites / 2184 passed / 1 skipped；
+  - 两路独立 release/security review 与知识路由语义复审均 GO；Secret scan、
+    OpenAPI 双客户端零漂移、LLM synthesis 12/12 + 50/50 + 12/12 + 9/9、
+    Shell syntax、Ruff、Python compile、`git diff --check`、doc drift 与
+    92 份 Dossier consistency 均 PASS。
+- **裁决**: 本地/冻结集成 G3 ☒ GO；replacement exact-SHA main CI
+  ☐ GO ☒ PENDING。后者全绿前继续禁止 G5/activation/OTA。
 
 ## G4 · 安全闸
 
@@ -527,7 +608,15 @@
 - 当前 release-security delta 曾连续发现 fsmonitor、clean-filter 与 live-index
   三个 P1，均已在 read-tree 候选中以故障注入闭环；两路 fresh review 未发现新
   P1/P2。历史 clinical/privacy GO 与当前 release-security GO 均有独立证据。
-- **裁决**:☒ GO ☐ BLOCK/PENDING
+- Celery Beat incident 修复涉及 root-owned checkout、systemd drop-in 原子替换和旧
+  state 精确清理；最终安全审计曾发现并关闭两项上传 P1：双树会复活已删除 PII，
+  以及 retirement 崩溃重入会删除 divergent source。当前单权威事务对无来源
+  non-empty external、source 新增/改写、类型/权限/hash 漂移全部保留现场并
+  fail closed；83 项事务测试、独立复审与完整冻结 release 合跑均通过。
+- 知识路由语义复审确认 reviewed PostgreSQL/System KB 与 Dedao 保持可路由，
+  held/未审核 low-back 与 legacy Chroma/RAG 不进入通用 serving；急性 Safety
+  Guardian 和确定性红旗判断未削弱，运行时无 fine-tuning/LoRA 依赖。
+- **裁决**:☒ GO ☐ PENDING
 
 ## S6 · 部署
 
@@ -546,17 +635,18 @@
     ModuleNotFoundError 硬闸阻断并成功回滚；
   - import-root 目标 `1a831aa4...` 已完成 backend/Web G5；activation 被
     systemd Git trust BLOCK 后由 staged deadman 恢复；
-  - 生产当前为 `1a831aa49670ef04859b30cb1b497166bc3187b6`，服务健康、
-    base flag=false、staged contract 通过，feature 尚未授权；下一目标依次为
-    isolated-Git 完整 local G3/G4 + fresh review、提交/CI、backend redeploy
-    （ownership normalization + 新 runner staging）、受控 activation 与 smoke，
-    最后才是 OTA。
+  - isolated-Git 目标 `85fd0a69...` 已通过 CI 与 backend deploy；部署脚本瞬时
+    验证通过，但独立复查发现 beat crash loop，故 G5 REJECT。生产当前仍为该
+    exact SHA、base flag=false、beat 已即时恢复，feature 尚未授权；下一目标依次
+    为 state-boundary 修复完整 local G3/G4 + fresh review、提交/CI、backend
+    replacement deploy、受控 activation 与 smoke，最后才是 OTA。
 
 ## G5 · 部署健康闸
 
 - 数据保护前置 Gate（已执行的 backend 尝试）: PASS —— 每次均有约 41 MB
   production backup、234 表临时库恢复演练、force-RLS 遗传原始文件/审计表
-  完整性、站外 age 归档 hash + HMAC 真实性；当前新 SHA 尚未开始新一次备份。
+  完整性、站外 age 归档 hash + HMAC 真实性；state-boundary replacement SHA 尚未
+  开始新一次备份。
 - staged deploy:
   - 首次 BLOCK: legacy live env 缺首次 flag；mutation 前停止；
   - canonical-false bootstrap 修复 CI 全绿，事故锁经严格现场证明后精确清理，
@@ -572,14 +662,19 @@
   - activation BLOCK: transient systemd Git trust 缺失；mutation 前 live=false、
     durable/runtime/drop-in absent，随后 staged deadman 手工恢复 exact sentinel
     通过。feature 继续关闭，未带红继续。
+  - backend script PASS / independent G5 REJECT: `85fd0a69...` 的 backup、schema、
+    score、revision、KB 与 skills 检查均通过，但 beat 因 checkout state
+    `PermissionError` 进入 crash loop；脚本仅命中短暂 active 窗口。已在 flag=false
+    下恢复 beat，未继续 activation/OTA；replacement deploy 必须把 state 迁到
+    `/var/lib` 并跨越 RestartSec 证明稳定。
 - 健康分(阈值 35): 第二次 candidate 的 `60/60 FAIL` detail 因旧日志契约未保存；
   recovery 后 candidate scorer 为 `60/60 PASS`。第三次 candidate 同样总分 60，
   但 circuit import unavailable 按硬闸正确 veto，不把分数当作 PASS。
-- prod recovery smoke: PASS —— 当前 production/deployed exact SHA
-  `1a831aa4...`、四服务 active、
-  health 200、auth 401、199 表 schema probe、目标列契约、writer PID
-  flag=false、circuit 4=4、runtime-only targets 11/matched 0 均已 ssh 实查；
-  本次 activation 的 lease/stage 为后续精确修复刻意保留，尚未清理。
+- prod recovery smoke: PARTIAL —— 当前 production/deployed exact SHA
+  `85fd0a69...`、base flag=false，Celery Beat 已跨 RestartSec 恢复稳定；首次
+  deploy 的 health/auth、199 表 schema probe、目标列契约、60/60、KB 11/11 与
+  skills 22/22 均通过。因生产仍使用临时 checkout-owned beat state，不能据此把
+  G5 改成 PASS。
 - Linux 实机硬条件: systemd drop-in precedence、cgroup v2 全部 uvicorn/Celery/beat
   子进程 flag 一致性、durable commit/revoke/candidate rename 断电前缀、SSH/HUP
   断连租约、生产文件系统 `sync -f`/`mv -fT`/目录 fsync 与 rollback 终态证明在

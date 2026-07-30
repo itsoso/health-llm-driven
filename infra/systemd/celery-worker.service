@@ -27,7 +27,7 @@ LockPersonality=true
 RestrictRealtime=true
 SystemCallArchitectures=native
 UMask=0077
-ReadWritePaths=/opt/health-app/backend/logs /opt/health-app/backend/uploads /opt/health-app/backend/data /opt/health-app/backend/private_media /opt/health-app/.health-skills-cache
+ReadWritePaths=/var/lib/health-app/uploads /var/lib/health-app/dedao-kbase
 
 [Install]
 WantedBy=multi-user.target

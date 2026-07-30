@@ -1442,6 +1442,28 @@ def test_configured_release_root_symlink_uses_one_workspace_for_sync_and_review(
     assert (review_workspace / "draft_manifest.json").is_file()
 
 
+def test_dedao_review_workspace_requires_dedicated_configuration(
+    monkeypatch,
+):
+    from app.config import settings
+    from app.services.system_knowledge_service import (
+        _configured_system_kb_artifact_dir,
+    )
+
+    monkeypatch.setattr(settings, "dedao_kbase_review_artifact_dir", None)
+    monkeypatch.setattr(
+        settings,
+        "system_kb_artifact_dir",
+        "/tmp/canonical-system-kb-seed",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="DEDAO_KBASE_REVIEW_ARTIFACT_DIR is required",
+    ):
+        _configured_system_kb_artifact_dir(workspace="release")
+
+
 def test_review_bundle_recovers_workspace_backup_before_read(tmp_path, monkeypatch):
     from app.config import settings
     from app.services.kbase_review_workspace import workspace_backup_path

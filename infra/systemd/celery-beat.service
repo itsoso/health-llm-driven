@@ -9,7 +9,9 @@ Group=health-app
 WorkingDirectory=/opt/health-app/backend
 EnvironmentFile=/opt/health-app/backend/.env
 Environment=PATH=/opt/health-app/backend/venv/bin:/usr/bin
-ExecStart=/opt/health-app/backend/venv/bin/celery -A app.celery_app:celery_app beat --loglevel=info --schedule=/opt/health-app/backend/data/celerybeat-schedule
+StateDirectory=health-app/celery-beat
+StateDirectoryMode=0700
+ExecStart=/opt/health-app/backend/venv/bin/celery -A app.celery_app:celery_app beat --loglevel=info --schedule=/var/lib/health-app/celery-beat/celerybeat-schedule
 Restart=on-failure
 RestartSec=5s
 
@@ -26,7 +28,7 @@ LockPersonality=true
 RestrictRealtime=true
 SystemCallArchitectures=native
 UMask=0077
-ReadWritePaths=/opt/health-app/backend/logs /opt/health-app/backend/uploads /opt/health-app/backend/data /opt/health-app/backend/private_media /opt/health-app/.health-skills-cache
+ReadWritePaths=/var/lib/health-app/celery-beat
 
 [Install]
 WantedBy=multi-user.target

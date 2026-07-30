@@ -40,6 +40,7 @@ REMOTE_BACKUP_RUNNER="$REMOTE_BACKUP_PREFLIGHT_DIR/backup_db.sh"
 REMOTE_ROLLBACK_RUNNER="$REMOTE_BACKUP_PREFLIGHT_DIR/rollback_release.sh"
 REMOTE_ACTIVATION_RUNNER="$REMOTE_BACKUP_PREFLIGHT_DIR/activate_health_evidence_runtime.sh"
 REMOTE_BACKEND_ENV_CANDIDATE="$REMOTE_BACKUP_PREFLIGHT_DIR/backend.env.candidate"
+REMOTE_BACKEND_ENV_ROLLBACK="$REMOTE_BACKUP_PREFLIGHT_DIR/backend.env.rollback"
 REMOTE_BACKEND_ENV_CANDIDATE_SHA=""
 REMOTE_ACTIVATION_STATE_DIR="${REMOTE_BACKUP_PREFLIGHT_DIR}.activation-state"
 REMOTE_ACTIVATION_SUCCESS_MARKER="$REMOTE_ACTIVATION_STATE_DIR/success"
@@ -48,19 +49,52 @@ REMOTE_HEALTH_EVIDENCE_RUNTIME_STATE_DIR="${REMOTE_HEALTH_EVIDENCE_RUNTIME_STATE
 REMOTE_HEALTH_EVIDENCE_SYSTEMD_RUNTIME_DIR="${REMOTE_HEALTH_EVIDENCE_SYSTEMD_RUNTIME_DIR:-/run/systemd/system}"
 REMOTE_HEALTH_EVIDENCE_CGROUP_ROOT="${REMOTE_HEALTH_EVIDENCE_CGROUP_ROOT:-/sys/fs/cgroup}"
 REMOTE_HEALTH_EVIDENCE_PROC_ROOT="${REMOTE_HEALTH_EVIDENCE_PROC_ROOT:-/proc}"
+REMOTE_RUNTIME_STATE_RUNNER="$REMOTE_BACKUP_PREFLIGHT_DIR/runtime_state_release_transaction.py"
 DEPLOY_EXPECTED_SHA=""
 ROLLBACK_CANDIDATE_COMMIT=""
 ROLLBACK_COMMIT=""
+RUNTIME_STATE_RESUME_PHASE="NONE"
+RUNTIME_STATE_RESUME_TARGET="none"
+RUNTIME_STATE_ALREADY_FINALIZED=0
 REMOTE_RELEASE_LOCK_DIR="${REMOTE_RELEASE_LOCK_DIR:-/var/lock/health-app-release}"
 REMOTE_RELEASE_LOCK_TOKEN=""
 _REMOTE_RELEASE_LOCK_ACQUIRED=0
 _REMOTE_RELEASE_LOCK_DELEGATED=0
 _REMOTE_RELEASE_LOCK_ABANDONED=0
+_REMOTE_RELEASE_LOCK_ADOPTED=0
+
+set_remote_backup_preflight_dir() {
+    local stage_dir="$1"
+
+    if [[ ! "$stage_dir" =~ ^/tmp/health-app-backup-preflight-[1-9][0-9]*-[1-9][0-9]*$ ]]; then
+        print_error "远端发布 stage 路径不符合固定契约"
+        return 1
+    fi
+    REMOTE_BACKUP_PREFLIGHT_DIR="$stage_dir"
+    REMOTE_BACKUP_RUNNER="$stage_dir/backup_db.sh"
+    REMOTE_ROLLBACK_RUNNER="$stage_dir/rollback_release.sh"
+    REMOTE_ACTIVATION_RUNNER="$stage_dir/activate_health_evidence_runtime.sh"
+    REMOTE_BACKEND_ENV_CANDIDATE="$stage_dir/backend.env.candidate"
+    REMOTE_BACKEND_ENV_ROLLBACK="$stage_dir/backend.env.rollback"
+    REMOTE_RUNTIME_STATE_RUNNER="$stage_dir/runtime_state_release_transaction.py"
+    REMOTE_ACTIVATION_STATE_DIR="${stage_dir}.activation-state"
+    REMOTE_ACTIVATION_SUCCESS_MARKER="$REMOTE_ACTIVATION_STATE_DIR/success"
+}
 
 # 验证必要配置
 if [[ -z "$SERVER" || -z "$REMOTE_PATH" ]]; then
     echo -e "${RED}✗${NC} 错误: .env 中缺少必要配置"
     echo "请确保配置了 DEPLOY_SERVER 和 DEPLOY_PATH"
+    exit 1
+fi
+if [[ ! "$SERVER" =~ ^[A-Za-z0-9._@:-]+$ ||
+      ! "$REMOTE_PATH" =~ ^/[A-Za-z0-9._/-]+$ ||
+      "$REMOTE_PATH" = "/" ||
+      "$REMOTE_PATH" = *"/../"* ||
+      "$REMOTE_PATH" = *"/.." ||
+      "$REMOTE_PATH" = *"/./"* ||
+      "$REMOTE_PATH" = *"/." ]]; then
+    echo -e "${RED}✗${NC} 错误: DEPLOY_SERVER/DEPLOY_PATH 格式不安全"
     exit 1
 fi
 
@@ -106,14 +140,44 @@ install_release_cleanup_traps() {
     trap 'abandon_remote_release_lock 143' TERM
 }
 
+arm_remote_release_cleanup_after_terminal_mode_success() {
+    local mode="$1"
+
+    case "$mode" in
+        all|frontend|backend|env|health-evidence|restart) ;;
+        *) return 0 ;;
+    esac
+    if [[ "${_REMOTE_RELEASE_LOCK_ACQUIRED:-0}" != "1" ]]; then
+        print_error "terminal release mode 缺少远端发布锁"
+        return 73
+    fi
+    if [[ "${_REMOTE_RELEASE_LOCK_DELEGATED:-0}" != "0" ]]; then
+        _REMOTE_RELEASE_LOCK_ABANDONED=1
+        print_error "terminal release mode 仍有未协调的远端动作"
+        return 73
+    fi
+    # Reaching this call means the selected mode returned only after its exact
+    # terminal proof. This is the common adoption cleanup edge for frontend,
+    # backend, env, restart, and controlled activation.
+    _REMOTE_RELEASE_LOCK_ABANDONED=0
+}
+
 acquire_remote_release_lock() {
     local label="${1:-release}"
     local token
+    local adopt="${REVA_RELEASE_LOCK_ADOPT:-0}"
+    local lock_output
+    local adopted_stage
 
     if [[ "${_REMOTE_RELEASE_LOCK_ACQUIRED:-0}" = "1" ]]; then
         return 0
     fi
-    if [[ "$REMOTE_RELEASE_LOCK_DIR" != /* || "$REMOTE_RELEASE_LOCK_DIR" = "/" ]]; then
+    if [[ ! "$REMOTE_RELEASE_LOCK_DIR" =~ ^/[A-Za-z0-9._/-]+$ ||
+          "$REMOTE_RELEASE_LOCK_DIR" = "/" ||
+          "$REMOTE_RELEASE_LOCK_DIR" = *"/../"* ||
+          "$REMOTE_RELEASE_LOCK_DIR" = *"/.." ||
+          "$REMOTE_RELEASE_LOCK_DIR" = *"/./"* ||
+          "$REMOTE_RELEASE_LOCK_DIR" = *"/." ]]; then
         print_error "远端发布锁路径不安全: $REMOTE_RELEASE_LOCK_DIR"
         return 70
     fi
@@ -122,25 +186,81 @@ acquire_remote_release_lock() {
         print_error "远端发布锁 token 格式非法"
         return 70
     fi
-    if ! ssh "$SERVER" bash -s -- \
-        "$REMOTE_RELEASE_LOCK_DIR" "$token" "$label" <<'REMOTE_RELEASE_LOCK'
+    if [[ "$adopt" != "0" && "$adopt" != "1" ]]; then
+        print_error "REVA_RELEASE_LOCK_ADOPT 只接受 0/1"
+        return 70
+    fi
+    if [[ "$adopt" = "1" && -z "${REVA_RELEASE_LOCK_TOKEN:-}" ]]; then
+        print_error "显式接管远端发布锁必须提供原 REVA_RELEASE_LOCK_TOKEN"
+        return 70
+    fi
+    if ! lock_output=$(ssh "$SERVER" bash -s -- \
+        "$REMOTE_RELEASE_LOCK_DIR" \
+        "$token" \
+        "$label" \
+        "$REMOTE_BACKUP_PREFLIGHT_DIR" \
+        "$adopt" <<'REMOTE_RELEASE_LOCK'
 set -euo pipefail
 lock_dir="$1"
 token="$2"
 label="$3"
+stage_dir="$4"
+adopt="$5"
 umask 077
 if ! mkdir "$lock_dir" 2>/dev/null; then
     owner=$(cat "$lock_dir/label" 2>/dev/null || true)
     started=$(cat "$lock_dir/started_at" 2>/dev/null || true)
+    if [ "$adopt" = "1" ]; then
+        test -r "$lock_dir/token"
+        test -r "$lock_dir/label"
+        test -r "$lock_dir/stage"
+        test "$(cat "$lock_dir/token")" = "$token"
+        test "$(cat "$lock_dir/label")" = "$label"
+        adopted_stage="$(cat "$lock_dir/stage")"
+        [[ "$adopted_stage" =~ ^/tmp/health-app-backup-preflight-[1-9][0-9]*-[1-9][0-9]*$ ]]
+        printf 'REMOTE_RELEASE_LOCK_ADOPTED stage=%s\n' "$adopted_stage"
+        exit 0
+    fi
     echo "remote release already active: label=${owner:-unknown} started=${started:-unknown}" >&2
     exit 73
 fi
 printf '%s\n' "$token" > "$lock_dir/token"
 printf '%s\n' "$label" > "$lock_dir/label"
+printf '%s\n' "$stage_dir" > "$lock_dir/stage"
 date -u +%Y-%m-%dT%H:%M:%SZ > "$lock_dir/started_at"
+printf 'REMOTE_RELEASE_LOCK_CREATED stage=%s\n' "$stage_dir"
 REMOTE_RELEASE_LOCK
-    then
+    ); then
+        echo "$lock_output" >&2
         print_error "无法获取服务器发布锁"
+        return 73
+    fi
+    if [[ "$adopt" = "1" ]]; then
+        adopted_stage="$(
+            printf '%s\n' "$lock_output" |
+                awk '
+                    /^REMOTE_RELEASE_LOCK_ADOPTED stage=\/tmp\/health-app-backup-preflight-[1-9][0-9]*-[1-9][0-9]*$/ {
+                        matches += 1
+                        value = $0
+                        sub(/^REMOTE_RELEASE_LOCK_ADOPTED stage=/, "", value)
+                    }
+                    END {
+                        if (matches != 1) exit 1
+                        print value
+                    }
+                '
+        )" || {
+            print_error "远端发布锁接管缺少精确 stage 证明"
+            return 73
+        }
+        set_remote_backup_preflight_dir "$adopted_stage"
+        _REMOTE_RELEASE_LOCK_ADOPTED=1
+        # Until durable status proves there is no active transaction (or a
+        # terminal one has been safely reconciled), every early exit must
+        # preserve the adopted owner's exact stage and lease.
+        _REMOTE_RELEASE_LOCK_ABANDONED=1
+    elif [[ "$lock_output" != "REMOTE_RELEASE_LOCK_CREATED stage=$REMOTE_BACKUP_PREFLIGHT_DIR" ]]; then
+        print_error "远端发布锁创建缺少精确成功证明"
         return 73
     fi
     REMOTE_RELEASE_LOCK_TOKEN="$token"
@@ -180,7 +300,7 @@ lock_dir="$1"
 expected="$2"
 test -r "$lock_dir/token"
 test "$(cat "$lock_dir/token")" = "$expected"
-rm -f "$lock_dir/token" "$lock_dir/label" "$lock_dir/started_at"
+rm -f "$lock_dir/token" "$lock_dir/label" "$lock_dir/stage" "$lock_dir/started_at"
 rmdir "$lock_dir"
 REMOTE_RELEASE_UNLOCK
     then
@@ -228,7 +348,11 @@ stage_backup_preflight_scripts() {
         "$SCRIPT_DIR/backend/scripts/activate_health_evidence_runtime.sh"
         "$SCRIPT_DIR/backend/scripts/verify_runtime_schema_compatibility.py"
         "$SCRIPT_DIR/backend/scripts/quarantine_runtime_only_kb.py"
+        "$SCRIPT_DIR/backend/scripts/runtime_state_release_transaction.py"
         "$SCRIPT_DIR/backend/data/system_kb_v2_seed/review_manifest.json"
+        "$SCRIPT_DIR/infra/systemd/dropins/health-backend-runtime-state.conf"
+        "$SCRIPT_DIR/infra/systemd/dropins/celery-worker-runtime-state.conf"
+        "$SCRIPT_DIR/infra/systemd/dropins/celery-beat-runtime-state.conf"
     )
     local source_file
     local source_relative
@@ -241,18 +365,172 @@ stage_backup_preflight_scripts() {
         print_error "缺少合法 DEPLOY_EXPECTED_SHA，拒绝生成发布预检 artifacts"
         return 1
     fi
-    if ! ssh "$SERVER" "
-        umask 077 && \
-        mkdir '$REMOTE_BACKUP_PREFLIGHT_DIR' && \
-        test \"\$(stat -c '%U:%G:%a' '$REMOTE_BACKUP_PREFLIGHT_DIR')\" = 'root:root:700'
-    "; then
-        return 1
+    if [[ "${_REMOTE_RELEASE_LOCK_ADOPTED:-0}" = "1" ]]; then
+        # A resumed client must consume the exact immutable release stage left
+        # by the interrupted owner. Never overwrite scripts, env snapshots, or
+        # their manifest before the durable transaction status is inspected.
+        if ! ssh "$SERVER" bash -s -- \
+            "$REMOTE_BACKUP_PREFLIGHT_DIR" <<'REMOTE_REUSE_RELEASE_STAGE'
+set -euo pipefail
+stage_dir="$1"
+test -d "$stage_dir"
+test ! -L "$stage_dir"
+test "$(stat -c '%U:%G:%a' "$stage_dir")" = "root:root:700"
+test -f "$stage_dir/staged.sha256"
+test ! -L "$stage_dir/staged.sha256"
+test "$(stat -c '%U:%G:%a' "$stage_dir/staged.sha256")" = \
+    "root:root:400"
+shopt -s nullglob dotglob
+stage_artifact_count=0
+for entry in "$stage_dir"/*; do
+    name="${entry##*/}"
+    case "$name" in
+        backup_db.sh|\
+        verify_backup_restore.sh|\
+        archive_backup_offsite.sh|\
+        rollback_release.sh|\
+        activate_health_evidence_runtime.sh|\
+        verify_runtime_schema_compatibility.py|\
+        quarantine_runtime_only_kb.py|\
+        runtime_state_release_transaction.py|\
+        review_manifest.json|\
+        health-backend-runtime-state.conf|\
+        celery-worker-runtime-state.conf|\
+        celery-beat-runtime-state.conf|\
+        staged.sha256|\
+        backend.env.rollback|\
+        backend.env.candidate|\
+        candidate.env|\
+        guard.env)
+            ;;
+        *)
+            echo "unknown immutable release artifact: $name" >&2
+            exit 1
+            ;;
+    esac
+    if [ "$name" = "staged.sha256" ]; then
+        continue
     fi
-    if ! scp "${scripts[@]}" "$SERVER:$REMOTE_BACKUP_PREFLIGHT_DIR/"; then
-        return 1
-    fi
-    if ! ssh "$SERVER" "chmod 0700 '$REMOTE_BACKUP_PREFLIGHT_DIR/'*.sh"; then
-        return 1
+    test -f "$entry"
+    test ! -L "$entry"
+    awk -v expected="$name" '
+        $2 == expected { matches += 1 }
+        END { exit(matches == 1 ? 0 : 1) }
+    ' "$stage_dir/staged.sha256"
+    stage_artifact_count=$((stage_artifact_count + 1))
+done
+shopt -u nullglob dotglob
+manifest_artifact_count="$(
+    awk 'NF { count += 1 } END { print count + 0 }' \
+        "$stage_dir/staged.sha256"
+)"
+test "$stage_artifact_count" = "$manifest_artifact_count"
+(
+    cd "$stage_dir"
+    sha256sum --strict -c staged.sha256 >/dev/null
+    required=(
+        backup_db.sh
+        verify_backup_restore.sh
+        archive_backup_offsite.sh
+        rollback_release.sh
+        activate_health_evidence_runtime.sh
+        verify_runtime_schema_compatibility.py
+        quarantine_runtime_only_kb.py
+        runtime_state_release_transaction.py
+        review_manifest.json
+        health-backend-runtime-state.conf
+        celery-worker-runtime-state.conf
+        celery-beat-runtime-state.conf
+    )
+    for artifact in "${required[@]}"; do
+        test -f "$artifact"
+        test ! -L "$artifact"
+        awk -v expected="$artifact" '
+            $2 == expected &&
+            length($1) == 64 &&
+            $1 !~ /[^0-9a-f]/ {
+                matches += 1
+            }
+            END { exit(matches == 1 ? 0 : 1) }
+        ' staged.sha256
+    done
+    awk '
+        NF != 2 { exit 1 }
+        $2 == "backup_db.sh" ||
+        $2 == "verify_backup_restore.sh" ||
+        $2 == "archive_backup_offsite.sh" ||
+        $2 == "rollback_release.sh" ||
+        $2 == "activate_health_evidence_runtime.sh" ||
+        $2 == "verify_runtime_schema_compatibility.py" ||
+        $2 == "quarantine_runtime_only_kb.py" ||
+        $2 == "runtime_state_release_transaction.py" ||
+        $2 == "review_manifest.json" ||
+        $2 == "health-backend-runtime-state.conf" ||
+        $2 == "celery-worker-runtime-state.conf" ||
+        $2 == "celery-beat-runtime-state.conf" {
+            allowed += 1
+            next
+        }
+        $2 == "backend.env.rollback" {
+            backend_rollback += 1
+            allowed += 1
+            next
+        }
+        $2 == "backend.env.candidate" {
+            backend_candidate += 1
+            allowed += 1
+            next
+        }
+        $2 == "candidate.env" {
+            activation_candidate += 1
+            allowed += 1
+            next
+        }
+        $2 == "guard.env" {
+            activation_guard += 1
+            allowed += 1
+            next
+        }
+        { exit 1 }
+        END {
+            backend_pair = backend_rollback == 1 &&
+                backend_candidate == 1 &&
+                activation_candidate == 0 &&
+                activation_guard == 0
+            activation_pair = backend_rollback == 0 &&
+                backend_candidate == 0 &&
+                activation_candidate == 1 &&
+                activation_guard == 1
+            if (allowed != 12 &&
+                !(allowed == 14 && (backend_pair || activation_pair))) {
+                exit 1
+            }
+        }
+    ' staged.sha256
+)
+REMOTE_REUSE_RELEASE_STAGE
+        then
+            print_error "既有远端 release stage 不完整或已被修改；拒绝接管"
+            return 1
+        fi
+    else
+        if ! ssh "$SERVER" "
+            umask 077 && \
+            mkdir '$REMOTE_BACKUP_PREFLIGHT_DIR' && \
+            test \"\$(stat -c '%U:%G:%a' '$REMOTE_BACKUP_PREFLIGHT_DIR')\" = 'root:root:700'
+        "; then
+            return 1
+        fi
+        if ! scp "${scripts[@]}" "$SERVER:$REMOTE_BACKUP_PREFLIGHT_DIR/"; then
+            return 1
+        fi
+        if ! ssh "$SERVER" "
+            chmod 0700 '$REMOTE_BACKUP_PREFLIGHT_DIR/'*.sh \
+                '$REMOTE_RUNTIME_STATE_RUNNER' && \
+            chmod 0600 '$REMOTE_BACKUP_PREFLIGHT_DIR/'*-runtime-state.conf
+        "; then
+            return 1
+        fi
     fi
 
     for source_file in "${scripts[@]}"; do
@@ -275,22 +553,356 @@ stage_backup_preflight_scripts() {
             return 1
         fi
     done
-    if ! ssh "$SERVER" "
-        cd '$REMOTE_BACKUP_PREFLIGHT_DIR' && \
-        sha256sum \
-            backup_db.sh \
-            verify_backup_restore.sh \
-            archive_backup_offsite.sh \
-            rollback_release.sh \
-            activate_health_evidence_runtime.sh \
-            verify_runtime_schema_compatibility.py \
-            quarantine_runtime_only_kb.py \
-            review_manifest.json \
-            > staged.sha256 && \
-        chmod 0400 staged.sha256
-    "; then
+    if [[ "${_REMOTE_RELEASE_LOCK_ADOPTED:-0}" != "1" ]]; then
+        if ! ssh "$SERVER" "
+            cd '$REMOTE_BACKUP_PREFLIGHT_DIR' && \
+            sha256sum \
+                backup_db.sh \
+                verify_backup_restore.sh \
+                archive_backup_offsite.sh \
+                rollback_release.sh \
+                activate_health_evidence_runtime.sh \
+                verify_runtime_schema_compatibility.py \
+                quarantine_runtime_only_kb.py \
+                runtime_state_release_transaction.py \
+                review_manifest.json \
+                health-backend-runtime-state.conf \
+                celery-worker-runtime-state.conf \
+                celery-beat-runtime-state.conf \
+                > staged.sha256 && \
+            chmod 0400 staged.sha256 && \
+            sync -f staged.sha256 && \
+            sync -f '$REMOTE_BACKUP_PREFLIGHT_DIR'
+        "; then
+            return 1
+        fi
+    fi
+}
+
+run_runtime_state_transaction() {
+    local command="$1"
+    local first_sha="${2:-}"
+    local second_sha="${3:-}"
+    local output
+    local expected
+
+    assert_remote_release_lock
+    case "$command" in
+        status)
+            expected="RUNTIME_STATE_TRANSACTION_OK command=status"
+            if ! output=$(ssh "$SERVER" \
+                "/usr/bin/python3 '$REMOTE_RUNTIME_STATE_RUNNER' \
+                    status '$REMOTE_RELEASE_LOCK_DIR' \
+                    '$REMOTE_RELEASE_LOCK_TOKEN'" 2>&1); then
+                echo "$output" >&2
+                return 1
+            fi
+            ;;
+        preflight|prepare|install)
+            if ! [[ "$first_sha" =~ ^[0-9a-f]{40}$ &&
+                  "$second_sha" =~ ^[0-9a-f]{40}$ ]]; then
+                print_error "runtime state transaction SHA 非法"
+                return 1
+            fi
+            expected="RUNTIME_STATE_TRANSACTION_OK command=$command"
+            if ! output=$(ssh "$SERVER" \
+                "/usr/bin/python3 '$REMOTE_RUNTIME_STATE_RUNNER' \
+                    '$command' '$first_sha' '$second_sha' \
+                    '$REMOTE_RELEASE_LOCK_DIR' \
+                    '$REMOTE_RELEASE_LOCK_TOKEN'" 2>&1); then
+                echo "$output" >&2
+                return 1
+            fi
+            ;;
+        restore|commit|release-gate|finalize)
+            if ! [[ "$first_sha" =~ ^[0-9a-f]{40}$ ]]; then
+                print_error "runtime state transaction SHA 非法"
+                return 1
+            fi
+            expected="RUNTIME_STATE_TRANSACTION_OK command=$command"
+            if ! output=$(ssh "$SERVER" \
+                "/usr/bin/python3 '$REMOTE_RUNTIME_STATE_RUNNER' \
+                    '$command' '$first_sha' \
+                    '$REMOTE_RELEASE_LOCK_DIR' \
+                    '$REMOTE_RELEASE_LOCK_TOKEN'" 2>&1); then
+                echo "$output" >&2
+                return 1
+            fi
+            ;;
+        *)
+            print_error "runtime state transaction command 非法"
+            return 1
+            ;;
+    esac
+    echo "$output"
+    if [[ "$output" != *"$expected"* ]]; then
+        print_error "runtime state transaction 缺少精确成功证明"
         return 1
     fi
+}
+
+commit_runtime_state_transaction_after_guard() {
+    assert_remote_release_lock
+    _REMOTE_RELEASE_LOCK_DELEGATED=1
+    if ! run_runtime_state_transaction commit "$DEPLOY_EXPECTED_SHA"; then
+        # A lost SSH connection does not prove whether remote commit is still
+        # deleting legacy shelf files or writing its journal. Preserve the
+        # lease and stage; never start a concurrent restore with the same token.
+        _REMOTE_RELEASE_LOCK_ABANDONED=1
+        print_error "runtime state commit 结果不明确；发布锁与事务现场保留"
+        print_error "确认远端 transaction terminal state 后再恢复"
+        return 1
+    fi
+    _REMOTE_RELEASE_LOCK_DELEGATED=0
+}
+
+finalize_runtime_state_transaction_after_all_gates() {
+    assert_remote_release_lock
+    _REMOTE_RELEASE_LOCK_DELEGATED=1
+    if ! run_runtime_state_transaction finalize "$DEPLOY_EXPECTED_SHA"; then
+        # Finalize atomically publishes a terminal marker and renames the
+        # durable transaction before reaping it. A broken SSH session cannot
+        # distinguish "not started" from "terminal rename already happened".
+        _REMOTE_RELEASE_LOCK_ABANDONED=1
+        print_error "runtime state finalize 结果不明确；发布锁与事务现场保留"
+        print_error "用同一 candidate SHA 的 status/finalize 完成终态协调"
+        return 1
+    fi
+    _REMOTE_RELEASE_LOCK_DELEGATED=0
+    _REMOTE_RELEASE_LOCK_ABANDONED=0
+}
+
+runtime_state_status_field() {
+    local payload="$1"
+    local field="$2"
+
+    printf '%s\n' "$payload" | awk -v field="$field" '
+        /RUNTIME_STATE_TRANSACTION_OK command=status / {
+            sentinels += 1
+            for (position = 1; position <= NF; position += 1) {
+                if (field == "phase" && $position ~ /^result=phase=/) {
+                    value = $position
+                    sub(/^result=phase=/, "", value)
+                    matches += 1
+                } else if ($position ~ ("^" field "=")) {
+                    value = $position
+                    sub(("^" field "="), "", value)
+                    matches += 1
+                }
+            }
+        }
+        END {
+            if (sentinels != 1 || matches != 1 || value == "") {
+                exit 1
+            }
+            print value
+        }
+    '
+}
+
+inspect_runtime_state_transaction_before_deploy() {
+    local status_output
+    local phase
+    local old_sha
+    local candidate_sha
+    local release_target
+    local next_action
+    local state_source
+    local remote_head
+
+    # A durable journal depends on the exact immutable stage (including both
+    # env preimages) and the original lease token. Default to preserving both
+    # until every status/provenance/HEAD/env proof reaches a known-safe exit.
+    _REMOTE_RELEASE_LOCK_ABANDONED=1
+    if ! status_output="$(run_runtime_state_transaction status)"; then
+        print_error "无法读取持久 runtime state transaction；现场与租约保留"
+        return 1
+    fi
+    echo "$status_output"
+    phase="$(runtime_state_status_field "$status_output" phase)" ||
+        return 1
+    old_sha="$(runtime_state_status_field "$status_output" old_sha)" ||
+        return 1
+    candidate_sha="$(
+        runtime_state_status_field "$status_output" candidate_sha
+    )" || return 1
+    release_target="$(
+        runtime_state_status_field "$status_output" release_target
+    )" || return 1
+    next_action="$(
+        runtime_state_status_field "$status_output" next_action
+    )" || return 1
+    state_source="$(
+        runtime_state_status_field "$status_output" state_source
+    )" || return 1
+
+    if [[ "$phase" = "NONE" ]]; then
+        if [[ "$state_source" != "none" ]]; then
+            print_error "NONE status 的 provenance 无效"
+            return 1
+        fi
+        RUNTIME_STATE_RESUME_PHASE="NONE"
+        RUNTIME_STATE_RESUME_TARGET="none"
+        _REMOTE_RELEASE_LOCK_ABANDONED=0
+        return 0
+    fi
+    if ! [[ "$old_sha" =~ ^[0-9a-f]{40}$ &&
+          "$candidate_sha" =~ ^[0-9a-f]{40}$ &&
+          "$old_sha" != "$candidate_sha" ]]; then
+        print_error "持久 runtime state status 的 SHA 契约无效"
+        return 1
+    fi
+    if [[ "$state_source" = "terminal" &&
+          ( "$next_action" = "finalize" ||
+            "$next_action" = "release-gate" ) ]]; then
+        _REMOTE_RELEASE_LOCK_DELEGATED=1
+        if [[ "$next_action" = "finalize" ]]; then
+            if ! run_runtime_state_transaction finalize "$candidate_sha"; then
+                _REMOTE_RELEASE_LOCK_ABANDONED=1
+                print_error "terminal candidate cleanup 结果不明确；租约与现场保留"
+                return 1
+            fi
+        elif ! run_runtime_state_transaction release-gate "$old_sha"; then
+            _REMOTE_RELEASE_LOCK_ABANDONED=1
+            print_error "terminal old cleanup 结果不明确；租约与现场保留"
+            return 1
+        fi
+        _REMOTE_RELEASE_LOCK_DELEGATED=0
+        next_action="none"
+    fi
+    if [[ "$state_source" = "terminal" &&
+          "$next_action" = "none" ]]; then
+        remote_head="$(
+            ssh "$SERVER" "git -C '$REMOTE_PATH' rev-parse HEAD" \
+                2>/dev/null || true
+        )"
+        if [[ "$release_target" = "candidate" &&
+              "$candidate_sha" = "$DEPLOY_EXPECTED_SHA" ]]; then
+            if [[ "$remote_head" != "$candidate_sha" ]]; then
+                print_error "terminal candidate marker 与远端 HEAD 不一致"
+                return 1
+            fi
+            RUNTIME_STATE_ALREADY_FINALIZED=1
+            RUNTIME_STATE_RESUME_PHASE="$phase"
+            RUNTIME_STATE_RESUME_TARGET="candidate"
+            ROLLBACK_CANDIDATE_COMMIT="$old_sha"
+            ROLLBACK_COMMIT="$candidate_sha"
+            print_warning "本次 candidate 的持久事务已完成；只重跑只读 post-gates"
+            _REMOTE_RELEASE_LOCK_ABANDONED=0
+            return 0
+        fi
+        RUNTIME_STATE_RESUME_PHASE="NONE"
+        RUNTIME_STATE_RESUME_TARGET="none"
+        _REMOTE_RELEASE_LOCK_ABANDONED=0
+        return 0
+    fi
+    if [[ "$state_source" != "journal" &&
+          "$state_source" != "preparing" ]]; then
+        print_error "active runtime state status 的 provenance 无效"
+        return 1
+    fi
+    if [[ "$candidate_sha" != "$DEPLOY_EXPECTED_SHA" ]]; then
+        _REMOTE_RELEASE_LOCK_ABANDONED=1
+        print_error "未完成事务属于另一 candidate；拒绝跨 SHA 覆盖"
+        print_error "status: phase=$phase candidate=${candidate_sha:0:12}"
+        return 1
+    fi
+    case "$phase" in
+        ARMING|PREPARED|INSTALLED|COMMITTING|COMMITTED) ;;
+        *)
+            _REMOTE_RELEASE_LOCK_ABANDONED=1
+            print_error "持久事务需要先完成既有 rollback/release-gate: phase=$phase action=$next_action"
+            return 1
+            ;;
+    esac
+    case "$release_target" in
+        none|candidate) ;;
+        *)
+            _REMOTE_RELEASE_LOCK_ABANDONED=1
+            print_error "持久事务 release target 与 candidate resume 冲突"
+            return 1
+            ;;
+    esac
+
+    remote_head="$(
+        ssh "$SERVER" "git -C '$REMOTE_PATH' rev-parse HEAD" 2>/dev/null ||
+            true
+    )"
+    if [[ "$phase" = "INSTALLED" ||
+          "$phase" = "COMMITTING" ||
+          "$phase" = "COMMITTED" ]]; then
+        if [[ "$remote_head" != "$candidate_sha" ]]; then
+            print_error "持久事务 phase=$phase 但远端不是 candidate SHA"
+            return 1
+        fi
+    elif [[ "$remote_head" != "$old_sha" &&
+            "$remote_head" != "$candidate_sha" ]]; then
+        print_error "ARMING/PREPARED 远端 SHA 不属于持久事务"
+        return 1
+    fi
+
+    if ! ssh "$SERVER" "
+        set -eu
+        cd '$REMOTE_BACKUP_PREFLIGHT_DIR'
+        test \"\$(
+            awk 'NF { count += 1 } END { print count + 0 }' staged.sha256
+        )\" = 14
+        sha256sum --strict -c staged.sha256 >/dev/null
+        test -f backend.env.candidate
+        test ! -L backend.env.candidate
+        test \"\$(stat -c '%U:%G:%a' backend.env.candidate)\" = root:root:400
+        env_file='$REMOTE_PATH/backend/.env'
+        test -r \"\$env_file\"
+        cmp -s backend.env.candidate \"\$env_file\"
+        awk '
+            /^HEALTH_EVIDENCE_RUNTIME_ENABLED=/ { a += 1 }
+            \$0 == \"HEALTH_EVIDENCE_RUNTIME_ENABLED=false\" { e += 1 }
+            END { exit(a == 1 && e == 1 ? 0 : 1) }
+        ' \"\$env_file\"
+        awk '
+            /^HEALTH_RUNTIME_DATA_DIR=/ { a += 1 }
+            \$0 == \"HEALTH_RUNTIME_DATA_DIR=/var/lib/health-app/runtime\" { e += 1 }
+            END { exit(a == 1 && e == 1 ? 0 : 1) }
+        ' \"\$env_file\"
+        awk '
+            /^HEALTH_UPLOAD_DIR=/ { a += 1 }
+            \$0 == \"HEALTH_UPLOAD_DIR=/var/lib/health-app/uploads\" { e += 1 }
+            END { exit(a == 1 && e == 1 ? 0 : 1) }
+        ' \"\$env_file\"
+        awk '
+            /^HEALTH_SKILLS_CACHE_DIR=/ { a += 1 }
+            \$0 == \"HEALTH_SKILLS_CACHE_DIR=/var/cache/health-app/skills-hub\" { e += 1 }
+            END { exit(a == 1 && e == 1 ? 0 : 1) }
+        ' \"\$env_file\"
+        awk '
+            /^DEDAO_KBASE_REVIEW_ARTIFACT_DIR=/ { a += 1 }
+            \$0 == \"DEDAO_KBASE_REVIEW_ARTIFACT_DIR=/var/lib/health-app/dedao-kbase/workspace\" { e += 1 }
+            END { exit(a == 1 && e == 1 ? 0 : 1) }
+        ' \"\$env_file\"
+        awk '
+            /^LEGACY_KNOWLEDGE_RUNTIME_ENABLED=/ { a += 1 }
+            \$0 == \"LEGACY_KNOWLEDGE_RUNTIME_ENABLED=false\" { e += 1 }
+            END { exit(a == 1 && e == 1 ? 0 : 1) }
+        ' \"\$env_file\"
+    "; then
+        print_error "持久事务 candidate env 终态证明失败"
+        return 1
+    fi
+
+    RUNTIME_STATE_RESUME_PHASE="$phase"
+    RUNTIME_STATE_RESUME_TARGET="$release_target"
+    ROLLBACK_CANDIDATE_COMMIT="$old_sha"
+    if [[ "$phase" = "COMMITTING" ||
+          "$phase" = "COMMITTED" ||
+          "$release_target" = "candidate" ]]; then
+        ROLLBACK_COMMIT="$candidate_sha"
+    else
+        ROLLBACK_COMMIT="$old_sha"
+    fi
+    print_warning "续接持久 runtime state transaction: phase=$phase old=${old_sha:0:12} candidate=${candidate_sha:0:12}"
+    # An active journal still depends on this exact stage and lease. Finalize
+    # or an exact rollback proof is the only safe point that arms cleanup.
+    _REMOTE_RELEASE_LOCK_ABANDONED=1
 }
 
 remote_repository_trust_normalization_command() {
@@ -299,25 +911,46 @@ remote_repository_trust_normalization_command() {
     set -euo pipefail
     echo '规范化受信发布工作树 ownership...'
     chown root:root .
-    chmod go-w .
+    chmod 0755 .
     chown -R root:root .git
     chmod -R go-w .git
     tracked_list="$(mktemp /tmp/reva-release-tracked.XXXXXX)"
     trap '/bin/rm -f -- "$tracked_list"' EXIT
-    git ls-files -z >"$tracked_list"
+    git ls-files --stage -z >"$tracked_list"
     tracked_count=0
-    while IFS= read -r -d '' tracked_path; do
+    while IFS= read -r -d '' tracked_entry; do
         tracked_count=$((tracked_count + 1))
-        if [ -L "$tracked_path" ]; then
-            chown -h root:root -- "$tracked_path"
-        else
-            chown root:root -- "$tracked_path"
-            chmod go-w -- "$tracked_path"
-        fi
+        metadata="${tracked_entry%%	*}"
+        tracked_path="${tracked_entry#*	}"
+        tracked_mode="${metadata%% *}"
+        test -n "$tracked_path"
+        test "$tracked_path" != "$tracked_entry"
+        case "$tracked_mode" in
+            100644)
+                test -f "$tracked_path"
+                test ! -L "$tracked_path"
+                chown root:root -- "$tracked_path"
+                chmod 0644 -- "$tracked_path"
+                ;;
+            100755)
+                test -f "$tracked_path"
+                test ! -L "$tracked_path"
+                chown root:root -- "$tracked_path"
+                chmod 0755 -- "$tracked_path"
+                ;;
+            120000)
+                test -L "$tracked_path"
+                chown -h root:root -- "$tracked_path"
+                ;;
+            *)
+                echo "unsupported tracked mode: $tracked_mode" >&2
+                exit 1
+                ;;
+        esac
         parent="$(dirname -- "$tracked_path")"
         while [ "$parent" != "." ]; do
             chown root:root -- "$parent"
-            chmod go-w -- "$parent"
+            chmod 0755 -- "$parent"
             parent="$(dirname -- "$parent")"
         done
     done <"$tracked_list"
@@ -510,12 +1143,21 @@ rollback_deploy() {
         return 1
     fi
     echo "$rollback_output"
-    if [[ "$rollback_output" != *"ROLLBACK_OK commit=$ROLLBACK_COMMIT kb_quarantine=passed schema_probe=passed auth_probe=passed services=active process_flag=false"* ]]; then
+    local rollback_marker
+    rollback_marker="ROLLBACK_OK commit=$ROLLBACK_COMMIT kb_quarantine=passed schema_probe=passed auth_probe=passed services=active process_flag=false"
+    if ! printf '%s\n' "$rollback_output" | awk -v marker="$rollback_marker" '
+        $0 == marker " runtime_state=restored" ||
+        $0 == marker " runtime_state=candidate-retained" {
+            accepted += 1
+        }
+        END { exit(accepted == 1 ? 0 : 1) }
+    '; then
         print_error "自动回滚缺少精确成功证明，拒绝接受"
         _REMOTE_RELEASE_LOCK_ABANDONED=1
         return 1
     fi
     _REMOTE_RELEASE_LOCK_DELEGATED=0
+    _REMOTE_RELEASE_LOCK_ABANDONED=0
     print_success "代码已回滚到 ${ROLLBACK_COMMIT:0:8}，runtime-only KB 已隔离且兼容性已验证 (kb_quarantine=passed)"
 }
 
@@ -694,6 +1336,12 @@ validate_langbridge_env() {
 # 备份服务器当前 backend/.env，避免环境变量同步覆盖后无法回退
 backup_remote_env() {
     local delegation_owner=0
+    local snapshot_mode="${1:-release}"
+    if [[ "$snapshot_mode" != "release" &&
+          "$snapshot_mode" != "rolling-only" ]]; then
+        print_error "env 备份模式非法"
+        return 1
+    fi
     assert_remote_release_lock_if_acquired
     print_step "备份服务器 backend/.env..."
     if [[ "${_REMOTE_RELEASE_LOCK_DELEGATED:-0}" != "1" ]]; then
@@ -701,28 +1349,124 @@ backup_remote_env() {
         delegation_owner=1
     fi
 
-    if ! ssh "$SERVER" "REMOTE_BACKEND='$REMOTE_PATH/backend' bash -s" <<'REMOTE_ENV_BACKUP'
+    if ! ssh "$SERVER" bash -s -- \
+        "$REMOTE_PATH/backend" \
+        "$REMOTE_BACKUP_PREFLIGHT_DIR" \
+        "$REMOTE_BACKEND_ENV_ROLLBACK" \
+        "$REMOTE_RELEASE_LOCK_DIR" \
+        "$REMOTE_RELEASE_LOCK_TOKEN" \
+        "$snapshot_mode" <<'REMOTE_ENV_BACKUP'
 set -euo pipefail
-cd "$REMOTE_BACKEND"
+remote_backend="$1"
+stage_dir="$2"
+rollback_snapshot="$3"
+release_lock_dir="$4"
+release_lock_token="$5"
+snapshot_mode="$6"
+case "$snapshot_mode" in
+    release|rolling-only) ;;
+    *) exit 1 ;;
+esac
+test -r "$release_lock_dir/token"
+test "$(cat "$release_lock_dir/token")" = "$release_lock_token"
+cd "$remote_backend"
+test -f .env
+test ! -L .env
 
-if [ -f .env ]; then
-    REMOTE_BACKUP_ROOT="${HEALTH_BACKUP_ROOT:-/var/backups/health-app}"
-    CONFIGURED_BACKUP_ROOT=$(grep -m1 '^HEALTH_BACKUP_ROOT=' .env 2>/dev/null | cut -d= -f2- || true)
-    if [ -n "$CONFIGURED_BACKUP_ROOT" ]; then
-        REMOTE_BACKUP_ROOT="$CONFIGURED_BACKUP_ROOT"
-    fi
-    ENV_BACKUP_DIR="$REMOTE_BACKUP_ROOT/env"
-    BACKUP_TS=$(date +%Y%m%d_%H%M%S)
-    mkdir -p "$ENV_BACKUP_DIR"
-    chmod 700 "$REMOTE_BACKUP_ROOT" "$ENV_BACKUP_DIR"
-    cp -p .env "$ENV_BACKUP_DIR/.env.${BACKUP_TS}"
-    chmod 600 "$ENV_BACKUP_DIR/.env.${BACKUP_TS}"
-    find "$ENV_BACKUP_DIR" -maxdepth 1 -type f -name '.env.*' -printf '%T@ %p\n' \
-        | sort -nr | awk 'NR > 20 {sub(/^[^ ]+ /, ""); print}' | xargs -r rm --
-    echo "已备份到工作树外: $ENV_BACKUP_DIR/.env.${BACKUP_TS}"
-else
-    echo "服务器 backend/.env 不存在，跳过备份"
+REMOTE_BACKUP_ROOT="${HEALTH_BACKUP_ROOT:-/var/backups/health-app}"
+CONFIGURED_BACKUP_ROOT=$(grep -m1 '^HEALTH_BACKUP_ROOT=' .env 2>/dev/null | cut -d= -f2- || true)
+if [ -n "$CONFIGURED_BACKUP_ROOT" ]; then
+    REMOTE_BACKUP_ROOT="$CONFIGURED_BACKUP_ROOT"
 fi
+ENV_BACKUP_DIR="$REMOTE_BACKUP_ROOT/env"
+BACKUP_TS=$(date +%Y%m%d_%H%M%S)
+mkdir -p "$ENV_BACKUP_DIR"
+chmod 700 "$REMOTE_BACKUP_ROOT" "$ENV_BACKUP_DIR"
+cp -p .env "$ENV_BACKUP_DIR/.env.${BACKUP_TS}"
+chmod 600 "$ENV_BACKUP_DIR/.env.${BACKUP_TS}"
+find "$ENV_BACKUP_DIR" -maxdepth 1 -type f -name '.env.*' -printf '%T@ %p\n' \
+    | sort -nr | awk 'NR > 20 {sub(/^[^ ]+ /, ""); print}' | xargs -r rm --
+if [ "$snapshot_mode" = "rolling-only" ]; then
+    echo "已备份到工作树外: $ENV_BACKUP_DIR/.env.${BACKUP_TS}"
+    exit 0
+fi
+
+if [ -e "$stage_dir" ]; then
+    test -d "$stage_dir"
+    test ! -L "$stage_dir"
+else
+    umask 077
+    mkdir "$stage_dir"
+fi
+test "$(stat -c '%U:%G:%a' "$stage_dir")" = "root:root:700"
+
+# The rollback snapshot preserves every pre-release key/path but guarantees
+# the one safe base flag required by both old and new service processes. A
+# predecessor that predates the flag is bootstrapped by appending false.
+snapshot_tmp="$(mktemp "$stage_dir/.backend.env.rollback.XXXXXX")"
+trap 'rm -f -- "$snapshot_tmp"' EXIT
+awk '
+    /^[[:space:]]*(export[[:space:]]+)?HEALTH_EVIDENCE_RUNTIME_ENABLED[[:space:]]*=/ {
+        assignments += 1
+        if ($0 == "HEALTH_EVIDENCE_RUNTIME_ENABLED=false") {
+            canonical += 1
+            print "HEALTH_EVIDENCE_RUNTIME_ENABLED=false"
+            next
+        }
+        invalid = 1
+        next
+    }
+    { print }
+    END {
+        if (assignments > 1 || invalid == 1 || canonical > 1) {
+            exit 1
+        }
+        if (assignments == 0) {
+            print "HEALTH_EVIDENCE_RUNTIME_ENABLED=false"
+        }
+    }
+' .env >"$snapshot_tmp"
+chmod 0400 "$snapshot_tmp"
+if [ -e "$rollback_snapshot" ]; then
+    test -f "$rollback_snapshot"
+    test ! -L "$rollback_snapshot"
+    test "$(stat -c '%U:%G:%a' "$rollback_snapshot")" = "root:root:400"
+    if cmp -s "$snapshot_tmp" "$rollback_snapshot"; then
+        :
+    else
+        # A client can disconnect after the sealed candidate was installed
+        # but before runtime-state prepare wrote ARMING. In that exact prefix,
+        # preserve the old snapshot and require the live env to match the
+        # already sealed candidate byte-for-byte.
+        manifest="$stage_dir/staged.sha256"
+        candidate_snapshot="$stage_dir/backend.env.candidate"
+        test -f "$manifest"
+        test ! -L "$manifest"
+        (
+            cd "$stage_dir"
+            test "$(
+                awk 'NF { count += 1 } END { print count + 0 }' staged.sha256
+            )" = "14"
+            sha256sum --strict -c staged.sha256 >/dev/null
+        )
+        test -f "$candidate_snapshot"
+        test ! -L "$candidate_snapshot"
+        test "$(stat -c '%U:%G:%a' "$candidate_snapshot")" = \
+            "root:root:400"
+        cmp -s "$snapshot_tmp" "$candidate_snapshot"
+    fi
+else
+    install -o root -g root -m 0400 "$snapshot_tmp" \
+        "${rollback_snapshot}.tmp"
+    sync -f "${rollback_snapshot}.tmp"
+    mv -fT "${rollback_snapshot}.tmp" "$rollback_snapshot"
+    sync -f "$stage_dir"
+    cmp -s "$snapshot_tmp" "$rollback_snapshot"
+fi
+test "$(stat -c '%U:%G:%a' "$rollback_snapshot")" = "root:root:400"
+test -r "$release_lock_dir/token"
+test "$(cat "$release_lock_dir/token")" = "$release_lock_token"
+echo "已备份到工作树外并封存 release rollback env: $ENV_BACKUP_DIR/.env.${BACKUP_TS}"
 REMOTE_ENV_BACKUP
     then
         _REMOTE_RELEASE_LOCK_ABANDONED=1
@@ -741,6 +1485,7 @@ upload_backend_env_file() {
     local temp_env
     local upload_path
     local candidate_hash
+    local candidate_state
 
     assert_remote_release_lock_if_acquired
     if [[ ! -r "$source_env" ]]; then
@@ -768,6 +1513,49 @@ upload_backend_env_file() {
         return 1
     fi
     upload_path="${REMOTE_BACKEND_ENV_CANDIDATE}.upload"
+
+    if [[ "${_REMOTE_RELEASE_LOCK_ADOPTED:-0}" = "1" ]]; then
+        if ! candidate_state="$(ssh "$SERVER" bash -s -- \
+            "$REMOTE_BACKUP_PREFLIGHT_DIR" \
+            "$REMOTE_BACKEND_ENV_CANDIDATE" \
+            "$candidate_hash" \
+            "$REMOTE_RELEASE_LOCK_DIR" \
+            "$REMOTE_RELEASE_LOCK_TOKEN" <<'REMOTE_ENV_CANDIDATE_REUSE'
+set -euo pipefail
+stage_dir="$1"
+candidate_path="$2"
+candidate_hash="$3"
+release_lock_dir="$4"
+release_lock_token="$5"
+test -r "$release_lock_dir/token"
+test "$(cat "$release_lock_dir/token")" = "$release_lock_token"
+test "$(stat -c '%U:%G:%a' "$stage_dir")" = "root:root:700"
+if [ ! -e "$candidate_path" ]; then
+    printf 'missing\n'
+    exit 0
+fi
+test -f "$candidate_path"
+test ! -L "$candidate_path"
+test "$(stat -c '%U:%G:%a' "$candidate_path")" = "root:root:400"
+test "$(sha256sum "$candidate_path" | awk '{print $1}')" = "$candidate_hash"
+printf 'matching\n'
+REMOTE_ENV_CANDIDATE_REUSE
+        )"; then
+            rm -f "$temp_env"
+            print_error "既有 candidate env 与当前 release 不一致；拒绝覆盖"
+            return 1
+        fi
+        if [[ "$candidate_state" = "matching" ]]; then
+            rm -f "$temp_env"
+            REMOTE_BACKEND_ENV_CANDIDATE_SHA="$candidate_hash"
+            return 0
+        fi
+        if [[ "$candidate_state" != "missing" ]]; then
+            rm -f "$temp_env"
+            print_error "既有 candidate env 状态证明无效"
+            return 1
+        fi
+    fi
 
     # Upload only into the root-only release stage. The live backend/.env is
     # changed later, while services are inactive, by one same-filesystem rename.
@@ -850,6 +1638,109 @@ REMOTE_ENV_STAGE_COMMIT
     REMOTE_BACKEND_ENV_CANDIDATE_SHA="$candidate_hash"
 }
 
+seal_release_env_snapshots() {
+    assert_remote_release_lock
+    if ! ssh "$SERVER" bash -s -- \
+        "$REMOTE_BACKUP_PREFLIGHT_DIR" \
+        "$REMOTE_BACKEND_ENV_ROLLBACK" \
+        "$REMOTE_BACKEND_ENV_CANDIDATE" \
+        "$REMOTE_BACKEND_ENV_CANDIDATE_SHA" \
+        "$REMOTE_RELEASE_LOCK_DIR" \
+        "$REMOTE_RELEASE_LOCK_TOKEN" <<'REMOTE_SEAL_RELEASE_ENVS'
+set -euo pipefail
+stage_dir="$1"
+rollback_snapshot="$2"
+candidate_snapshot="$3"
+candidate_hash="$4"
+release_lock_dir="$5"
+release_lock_token="$6"
+manifest="$stage_dir/staged.sha256"
+manifest_tmp="$stage_dir/.staged.sha256.env.tmp"
+trap 'rm -f -- "$manifest_tmp"' EXIT
+test -r "$release_lock_dir/token"
+test "$(cat "$release_lock_dir/token")" = "$release_lock_token"
+test "$(stat -c '%U:%G:%a' "$stage_dir")" = "root:root:700"
+[[ "$candidate_hash" =~ ^[0-9a-f]{64}$ ]]
+for snapshot in "$rollback_snapshot" "$candidate_snapshot"; do
+    test -f "$snapshot"
+    test ! -L "$snapshot"
+    test "$(stat -c '%U:%G:%a' "$snapshot")" = "root:root:400"
+done
+test "$(sha256sum "$candidate_snapshot" | awk '{print $1}')" = \
+    "$candidate_hash"
+(
+    cd "$stage_dir"
+    sha256sum --strict -c staged.sha256 >/dev/null
+    current_count="$(
+        awk 'NF { count += 1 } END { print count + 0 }' staged.sha256
+    )"
+    if [ "$current_count" = "14" ]; then
+        for name in backend.env.rollback backend.env.candidate; do
+            awk -v expected="$name" '
+                $2 == expected { matches += 1 }
+                END { exit(matches == 1 ? 0 : 1) }
+            ' staged.sha256
+        done
+        exit 0
+    fi
+    test "$current_count" = "12"
+    sha256sum \
+        backup_db.sh \
+        verify_backup_restore.sh \
+        archive_backup_offsite.sh \
+        rollback_release.sh \
+        activate_health_evidence_runtime.sh \
+        verify_runtime_schema_compatibility.py \
+        quarantine_runtime_only_kb.py \
+        runtime_state_release_transaction.py \
+        review_manifest.json \
+        health-backend-runtime-state.conf \
+        celery-worker-runtime-state.conf \
+        celery-beat-runtime-state.conf \
+        backend.env.rollback \
+        backend.env.candidate \
+        >"$manifest_tmp"
+)
+if [ -s "$manifest_tmp" ]; then
+    chmod 0400 "$manifest_tmp"
+    sync -f "$manifest_tmp"
+    mv -fT "$manifest_tmp" "$manifest"
+    sync -f "$stage_dir"
+fi
+(
+    cd "$stage_dir"
+    test "$(
+        awk 'NF { count += 1 } END { print count + 0 }' staged.sha256
+    )" = "14"
+    sha256sum --strict -c staged.sha256 >/dev/null
+)
+test -r "$release_lock_dir/token"
+test "$(cat "$release_lock_dir/token")" = "$release_lock_token"
+REMOTE_SEAL_RELEASE_ENVS
+    then
+        _REMOTE_RELEASE_LOCK_ABANDONED=1
+        print_error "release env 快照封存结果不明确；发布锁与现场保留"
+        return 1
+    fi
+}
+
+require_canonical_env_assignment() {
+    local key="$1"
+    local expected_value="$2"
+
+    awk -v key="$key" -v canonical="$key=$expected_value" '
+        $0 ~ ("^[[:space:]]*(export[[:space:]]+)?" key "[[:space:]]*=") {
+            assignments += 1
+        }
+        $0 == canonical {
+            exact += 1
+        }
+        END {
+            exit(assignments == 1 && exact == 1 ? 0 : 1)
+        }
+    ' "$ENV_FILE"
+}
+
 validate_env_sync_safety() {
     # ── env 守卫(2026-07-12 事故加固,机械拦截,勿删)──────────────────
     # 事故:从陈旧 checkout 跑 deploy,sync_env 把缺 12 个 key + APP_ENV=development
@@ -858,9 +1749,24 @@ validate_env_sync_safety() {
     # 守卫2:prod 现有的 key 本地缺失 → 说明本地 .env 陈旧,推送会删 prod 配置,硬退。
     # 逃生口:DEPLOY_ENV_FORCE=1(明知故犯,比如刻意删 key)。
     if [ "${DEPLOY_ENV_FORCE:-0}" != "1" ]; then
-        if ! grep -q "^APP_ENV=production" "$ENV_FILE" ||
-            ! grep -q "^DEBUG=False" "$ENV_FILE"; then
-            print_error "env 守卫:本地 .env 不是 prod 形态(需 APP_ENV=production + DEBUG=False)。"
+        if ! require_canonical_env_assignment APP_ENV production ||
+            ! require_canonical_env_assignment DEBUG False ||
+            ! require_canonical_env_assignment \
+                HEALTH_RUNTIME_DATA_DIR \
+                /var/lib/health-app/runtime ||
+            ! require_canonical_env_assignment \
+                HEALTH_UPLOAD_DIR \
+                /var/lib/health-app/uploads ||
+            ! require_canonical_env_assignment \
+                HEALTH_SKILLS_CACHE_DIR \
+                /var/cache/health-app/skills-hub ||
+            ! require_canonical_env_assignment \
+                DEDAO_KBASE_REVIEW_ARTIFACT_DIR \
+                /var/lib/health-app/dedao-kbase/workspace ||
+            ! require_canonical_env_assignment \
+                LEGACY_KNOWLEDGE_RUNTIME_ENABLED \
+                false; then
+            print_error "env 守卫:本地 .env 缺少唯一规范的 production/runtime/uploads/cache/Dedao/legacy 配置。"
             print_error "你可能在用 dev/陈旧 .env。修正后重试,或 DEPLOY_ENV_FORCE=1 强制。"
             return 1
         fi
@@ -906,8 +1812,13 @@ sync_env() {
         print_error "env candidate staging 结果不明确；发布锁与现场保留"
         return 1
     fi
+    if [[ "$DEPLOY_EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+        if ! seal_release_env_snapshots; then
+            return 1
+        fi
+    fi
 
-    print_success "环境变量 candidate 已精确暂存；live .env 尚未改变"
+    print_success "发布前/候选 env 已封存并校验；live .env 尚未改变"
 }
 
 # 去激活事务已经完成 backend/Celery 的最后一次重启和逐 PID flag=false
@@ -1546,6 +2457,10 @@ all_units=(
     celery-worker.service
     celery-beat.service
 )
+SERVICE_STABILITY_SECONDS=7
+stable_main_pid=()
+stable_restart_count=()
+stable_enter_timestamp=()
 
 safe_absolute_path() {
     local value="$1"
@@ -1591,48 +2506,129 @@ test ! -e "$runtime_state_dir"
 for unit in "${process_units[@]}"; do
     test ! -e "$runtime_systemd_dir/$unit.d/$runtime_override_name"
 done
-for unit in "${all_units[@]}"; do
-    test "$(
-        systemctl show "$unit" --property=ActiveState --value 2>/dev/null
-    )" = "active"
-done
-for unit in "${process_units[@]}"; do
-    main_pid="$(
-        systemctl show "$unit" --property=MainPID --value 2>/dev/null
-    )"
-    [[ "$main_pid" =~ ^[1-9][0-9]*$ ]] && [ "$main_pid" -gt 1 ]
-    control_group="$(
-        systemctl show "$unit" --property=ControlGroup --value 2>/dev/null
-    )"
-    [[ "$control_group" =~ ^/[A-Za-z0-9_.@:/\\-]+$ ]]
-    [[ "$control_group" != *"/../"* ]]
-    procs_file="${cgroup_root}${control_group}/cgroup.procs"
-    test -r "$procs_file"
-    process_count=0
-    main_pid_seen=0
-    while IFS= read -r pid; do
-        [[ "$pid" =~ ^[1-9][0-9]*$ ]] && [ "$pid" -gt 1 ]
-        process_count=$((process_count + 1))
-        if [ "$pid" = "$main_pid" ]; then
-            main_pid_seen=1
+verify_service_metadata_snapshot() {
+    local phase="$1"
+    local unit
+    local active_state
+    local sub_state
+    local result
+    local main_pid
+    local restart_count
+    local enter_timestamp
+    local process_index=0
+
+    for unit in "${all_units[@]}"; do
+        active_state="$(
+            systemctl show "$unit" --property=ActiveState --value \
+                2>/dev/null
+        )"
+        sub_state="$(
+            systemctl show "$unit" --property=SubState --value \
+                2>/dev/null
+        )"
+        result="$(
+            systemctl show "$unit" --property=Result --value \
+                2>/dev/null
+        )"
+        test "$active_state" = "active"
+        test "$result" = "success"
+        if [ "$unit" = "health-backend.socket" ]; then
+            test "$sub_state" = "listening"
+            continue
         fi
-        LC_ALL=C tr '\000' '\n' <"$proc_root/$pid/environ" |
-            awk '
-                /^HEALTH_EVIDENCE_RUNTIME_ENABLED=/ {
-                    assignments += 1
-                }
-                $0 == "HEALTH_EVIDENCE_RUNTIME_ENABLED=false" {
-                    canonical += 1
-                }
-                END {
-                    if (assignments != 1 || canonical != 1) {
-                        exit 1
+        test "$sub_state" = "running"
+        main_pid="$(
+            systemctl show "$unit" --property=MainPID --value \
+                2>/dev/null
+        )"
+        restart_count="$(
+            systemctl show "$unit" --property=NRestarts --value \
+                2>/dev/null
+        )"
+        enter_timestamp="$(
+            systemctl show "$unit" \
+                --property=ActiveEnterTimestampMonotonic --value \
+                2>/dev/null
+        )"
+        [[ "$main_pid" =~ ^[1-9][0-9]*$ ]] && [ "$main_pid" -gt 1 ]
+        [[ "$restart_count" =~ ^[0-9]+$ ]]
+        [[ "$enter_timestamp" =~ ^[1-9][0-9]*$ ]]
+        if [ "$phase" = "record" ]; then
+            stable_main_pid[$process_index]="$main_pid"
+            stable_restart_count[$process_index]="$restart_count"
+            stable_enter_timestamp[$process_index]="$enter_timestamp"
+        else
+            test "$main_pid" = "${stable_main_pid[$process_index]}"
+            test "$restart_count" = \
+                "${stable_restart_count[$process_index]}"
+            test "$enter_timestamp" = \
+                "${stable_enter_timestamp[$process_index]}"
+        fi
+        process_index=$((process_index + 1))
+    done
+}
+
+verify_process_environment_false() {
+    local unit
+    local main_pid
+    local control_group
+    local procs_file
+    local pid
+    local process_count
+    local main_pid_seen
+    local process_index=0
+
+    for unit in "${process_units[@]}"; do
+        main_pid="$(
+            systemctl show "$unit" --property=MainPID --value 2>/dev/null
+        )"
+        test "$main_pid" = "${stable_main_pid[$process_index]}"
+        control_group="$(
+            systemctl show "$unit" --property=ControlGroup --value \
+                2>/dev/null
+        )"
+        [[ "$control_group" =~ ^/[A-Za-z0-9_.@:/\\-]+$ ]]
+        [[ "$control_group" != *"/../"* ]]
+        procs_file="${cgroup_root}${control_group}/cgroup.procs"
+        test -r "$procs_file"
+        process_count=0
+        main_pid_seen=0
+        while IFS= read -r pid; do
+            [[ "$pid" =~ ^[1-9][0-9]*$ ]] && [ "$pid" -gt 1 ]
+            process_count=$((process_count + 1))
+            if [ "$pid" = "$main_pid" ]; then
+                main_pid_seen=1
+            fi
+            LC_ALL=C tr '\000' '\n' <"$proc_root/$pid/environ" |
+                awk '
+                    /^HEALTH_EVIDENCE_RUNTIME_ENABLED=/ {
+                        assignments += 1
                     }
-                }
-            '
-    done <"$procs_file"
-    [ "$process_count" -gt 0 ] && [ "$main_pid_seen" -eq 1 ]
-done
+                    $0 == "HEALTH_EVIDENCE_RUNTIME_ENABLED=false" {
+                        canonical += 1
+                    }
+                    END {
+                        if (assignments != 1 || canonical != 1) {
+                            exit 1
+                        }
+                    }
+                '
+        done <"$procs_file"
+        [ "$process_count" -gt 0 ] && [ "$main_pid_seen" -eq 1 ]
+        process_index=$((process_index + 1))
+    done
+}
+
+verify_service_metadata_snapshot record
+verify_process_environment_false
+test -r "$release_lock_dir/token"
+test "$(cat "$release_lock_dir/token")" = "$release_lock_token"
+sleep "$SERVICE_STABILITY_SECONDS"
+test -r "$release_lock_dir/token"
+test "$(cat "$release_lock_dir/token")" = "$release_lock_token"
+verify_service_metadata_snapshot compare
+verify_process_environment_false
+verify_service_metadata_snapshot compare
 test -r "$release_lock_dir/token"
 test "$(cat "$release_lock_dir/token")" = "$release_lock_token"
 REMOTE_DEACTIVATION_PROOF
@@ -1685,6 +2681,8 @@ deactivate_health_evidence_runtime_before_mutation() {
 
 # 部署后端
 deploy_backend() {
+    local runtime_state_preflight_complete=0
+
     print_step "部署后端..."
     assert_remote_release_lock_if_acquired
 
@@ -1694,16 +2692,73 @@ deploy_backend() {
 
     # 1. 备份数据库 + 记录发布前回滚点
     backup_database
-    save_rollback_point
-    verify_rollback_point_schema_compatibility
+    inspect_runtime_state_transaction_before_deploy
+    if [[ "$RUNTIME_STATE_ALREADY_FINALIZED" = "1" ]]; then
+        if ! prove_health_evidence_runtime_process_flag false ||
+            ! verify_deployment ||
+            ! verify_deployed_revision ||
+            ! verify_runtime_only_kb_contract "staged"; then
+            _REMOTE_RELEASE_LOCK_ABANDONED=1
+            print_error "已终结 candidate 的只读 post-gates 失败；现场与租约保留"
+            return 1
+        fi
+        wait_for_agent_skills_manifest
+        print_success "持久事务已终结且 backend/System KB post-gates 复证通过"
+        return 0
+    fi
+    if [[ "$RUNTIME_STATE_RESUME_PHASE" = "NONE" ]]; then
+        save_rollback_point
+        verify_rollback_point_schema_compatibility
 
-    # 2. 同步环境变量
-    sync_env
-    deactivate_health_evidence_runtime_before_mutation
+        # All locally fallible transport and read-only transaction checks run
+        # before live env/service mutation. A preflight RPC failure preserves
+        # the exact stage because it may have recovered a durable ARMING intent.
+        if ! upload_deploy_bundle; then
+            print_error "candidate bundle 上传失败；服务与 live env 尚未变更"
+            return 1
+        fi
+        _REMOTE_RELEASE_LOCK_ABANDONED=1
+        if ! run_runtime_state_transaction \
+            preflight \
+            "$ROLLBACK_CANDIDATE_COMMIT" \
+            "$DEPLOY_EXPECTED_SHA"; then
+            print_error "runtime state 只读预检失败；服务与 live env 尚未变更，现场与租约保留"
+            return 1
+        fi
+        runtime_state_preflight_complete=1
+        _REMOTE_RELEASE_LOCK_ABANDONED=0
 
-    # GitHub 在服务器侧偶发超时；预先上传当前 HEAD 的 bundle，
-    # 远端 git fetch 失败时仍可通过 deploy.sh 完成同一提交的部署。
-    upload_deploy_bundle
+        # 2. 同步环境变量并受控撤销运行时授权。
+        if ! sync_env; then
+            return 1
+        fi
+        # Arm preservation before the deactivation call: its exact-success
+        # path clears delegation internally, so there must be no signal window
+        # between live mutation and the caller restoring the preserve state.
+        _REMOTE_RELEASE_LOCK_ABANDONED=1
+        if ! deactivate_health_evidence_runtime_before_mutation; then
+            return 1
+        fi
+    else
+        print_step "沿用持久事务中的已验证回滚点与 candidate env"
+    fi
+
+    if [[ "$runtime_state_preflight_complete" != "1" ]]; then
+        # Resume keeps the existing journal's stage/lease authoritative across
+        # every bundle or preflight failure.
+        _REMOTE_RELEASE_LOCK_ABANDONED=1
+        if ! upload_deploy_bundle; then
+            print_error "candidate bundle 上传失败；持久事务现场与租约保留"
+            return 1
+        fi
+        if ! run_runtime_state_transaction \
+            preflight \
+            "$ROLLBACK_CANDIDATE_COMMIT" \
+            "$DEPLOY_EXPECTED_SHA"; then
+            print_error "runtime state 续接预检失败；现场与租约保留"
+            return 1
+        fi
+    fi
     local remote_git_sync
     remote_git_sync="$(remote_git_sync_command)"
 
@@ -1720,8 +2775,18 @@ deploy_backend() {
         test \"\$(systemctl show health-backend -p ActiveState --value)\" = inactive && \
         test \"\$(systemctl show celery-worker -p ActiveState --value)\" = inactive && \
         test \"\$(systemctl show celery-beat -p ActiveState --value)\" = inactive && \
+        if [ '$RUNTIME_STATE_RESUME_PHASE' != 'COMMITTED' ]; then \
+            /usr/bin/python3 '$REMOTE_RUNTIME_STATE_RUNNER' \
+                prepare '$ROLLBACK_CANDIDATE_COMMIT' '$DEPLOY_EXPECTED_SHA' \
+                '$REMOTE_RELEASE_LOCK_DIR' '$REMOTE_RELEASE_LOCK_TOKEN'; \
+        fi && \
         cd $REMOTE_PATH && \
         $remote_git_sync && \
+        if [ '$RUNTIME_STATE_RESUME_PHASE' != 'COMMITTED' ]; then \
+            /usr/bin/python3 '$REMOTE_RUNTIME_STATE_RUNNER' \
+                install '$ROLLBACK_CANDIDATE_COMMIT' '$DEPLOY_EXPECTED_SHA' \
+                '$REMOTE_RELEASE_LOCK_DIR' '$REMOTE_RELEASE_LOCK_TOKEN'; \
+        fi && \
         cd backend && \
         echo '激活虚拟环境...' && \
         source venv/bin/activate && \
@@ -1803,6 +2868,12 @@ deploy_backend() {
         exit 1
     fi
 
+    # 所有 guard Gate 通过后才提交 state transaction。commit 会精确删除
+    # 已迁移的 legacy beat shelf；失败仍可从快照回到发布前 SHA。
+    if ! commit_runtime_state_transaction_after_guard; then
+        exit 1
+    fi
+
     # Guard 已健康：从现在起即使 KB activation 失败，也绝不回到不认识
     # generic hold 的旧代码。rollback runner 还会定向 archive 作为第二层防线。
     ROLLBACK_COMMIT="$DEPLOY_EXPECTED_SHA"
@@ -1868,6 +2939,29 @@ deploy_backend() {
 
     # 6.5 所有 fatal gate 通过后再验证第一方 Agent skills manifest。
     wait_for_agent_skills_manifest
+
+    # Manifest generation can take long enough for a late service crash or
+    # restart loop to appear. Re-prove the exact candidate, health, staged KB
+    # contract, and a full process-stability window immediately before the
+    # durable rollback snapshot is destroyed.
+    if ! prove_health_evidence_runtime_process_flag false ||
+        ! verify_deployment ||
+        ! verify_deployed_revision ||
+        ! verify_runtime_only_kb_contract "staged"; then
+        if rollback_deploy; then
+            print_error "最终 terminal gate 失败；candidate 已重新安装并通过回滚健康证明"
+        else
+            print_error "最终 terminal gate 失败且恢复失败；服务已隔离或需人工隔离"
+        fi
+        exit 1
+    fi
+
+    # 只有 backend、System KB、revision、serving contract 和 manifest 全部
+    # 走完，才清理可跨重启恢复的持久事务。SSH 结果不明时保留 lease/stage，
+    # 由同 SHA 的 status/finalize 重入，绝不猜测式并发回滚。
+    if ! finalize_runtime_state_transaction_after_all_gates; then
+        exit 1
+    fi
 
     print_success "后端 guard + System KB staged deployment 完成；运行时仍保持 feature flag=false"
 }
@@ -1974,23 +3068,79 @@ stage_health_evidence_activation_artifacts() (
     local candidate_env
     local candidate_as_guard
     local guard_env
+    local staged_candidate_env
+    local staged_guard_env
     local candidate_hash
     local guard_hash
 
     candidate_env=$(mktemp)
     candidate_as_guard=$(mktemp)
     guard_env=$(mktemp)
-    trap 'rm -f "$candidate_env" "$candidate_as_guard" "$guard_env"' EXIT
+    staged_candidate_env=$(mktemp)
+    staged_guard_env=$(mktemp)
+    trap 'rm -f "$candidate_env" "$candidate_as_guard" "$guard_env" \
+        "$staged_candidate_env" "$staged_guard_env"' EXIT
 
     validate_health_evidence_activation_paths
     validate_env_sync_safety
     validate_langbridge_env
-    backup_remote_env
 
     render_backend_env_file "$ENV_FILE" "$candidate_env"
     require_health_evidence_flag_value true "$candidate_env"
     prepare_health_evidence_guard_env "$candidate_env" "$candidate_as_guard"
     require_health_evidence_flag_value false "$candidate_as_guard"
+
+    if [[ "${_REMOTE_RELEASE_LOCK_ADOPTED:-0}" = "1" ]]; then
+        # Adoption is read-only with respect to the original release stage.
+        # Consume only the already-sealed candidate/guard pair and the
+        # root-owned durable attempt state left by the interrupted owner.
+        stage_backup_preflight_scripts
+        scp -q \
+            "$SERVER:$REMOTE_BACKUP_PREFLIGHT_DIR/candidate.env" \
+            "$staged_candidate_env"
+        scp -q \
+            "$SERVER:$REMOTE_BACKUP_PREFLIGHT_DIR/guard.env" \
+            "$staged_guard_env"
+        chmod 600 "$staged_candidate_env" "$staged_guard_env"
+        require_health_evidence_flag_value true "$staged_candidate_env"
+        require_health_evidence_flag_value false "$staged_guard_env"
+        if ! cmp -s "$candidate_env" "$staged_candidate_env" ||
+            ! cmp -s "$candidate_as_guard" "$staged_guard_env"; then
+            print_error "本地 activation 配置与既有封存事务不一致"
+            return 1
+        fi
+        ssh "$SERVER" bash -s -- \
+            "$REMOTE_ACTIVATION_STATE_DIR" <<'REMOTE_ACTIVATION_STATE_REUSE'
+set -euo pipefail
+state_dir="$1"
+test -d "$state_dir"
+test ! -L "$state_dir"
+test "$(stat -c '%U:%G:%a' "$state_dir")" = "root:root:700"
+shopt -s nullglob dotglob
+for entry in "$state_dir"/*; do
+    name="${entry##*/}"
+    case "$name" in
+        launch-intent|success|success.outcome) ;;
+        *) exit 1 ;;
+    esac
+    test -f "$entry"
+    test ! -L "$entry"
+    test "$(stat -c '%U:%G:%a' "$entry")" = "root:root:400"
+    test "$(stat -c '%h' "$entry")" = "1"
+done
+shopt -u nullglob dotglob
+if test -e "$state_dir/success"; then
+    test -e "$state_dir/launch-intent"
+    test -e "$state_dir/success.outcome"
+fi
+if test -e "$state_dir/success.outcome"; then
+    test -e "$state_dir/launch-intent"
+fi
+REMOTE_ACTIVATION_STATE_REUSE
+        return
+    fi
+
+    backup_remote_env rolling-only
 
     # The recovery guard is the exact remote config that just passed the staged
     # semantic probe. Activation is allowed to change only the one feature flag.
@@ -2043,19 +3193,24 @@ rm -f "$stage_dir/staged.sha256"
         activate_health_evidence_runtime.sh \
         verify_runtime_schema_compatibility.py \
         quarantine_runtime_only_kb.py \
+        runtime_state_release_transaction.py \
         review_manifest.json \
+        health-backend-runtime-state.conf \
+        celery-worker-runtime-state.conf \
+        celery-beat-runtime-state.conf \
         candidate.env \
         guard.env \
         > staged.sha256
     chmod 0400 staged.sha256
     test "$(awk 'NF {count += 1} END {print count + 0}' staged.sha256)" \
-        -eq 10
+        -eq 14
     sha256sum -c staged.sha256 >/dev/null
 )
 
 umask 077
 mkdir "$state_dir"
 test "$(stat -c '%U:%G:%a' "$state_dir")" = "root:root:700"
+sync -f "$state_dir"
 REMOTE_ACTIVATION_STAGE
 )
 
@@ -2087,6 +3242,9 @@ success_marker="$7"
 outcome_file="$8"
 release_lock="$9"
 release_token="${10}"
+state_dir="$(dirname "$success_marker")"
+intent_file="$state_dir/launch-intent"
+intent_temp=""
 
 safe_path() {
     local value="$1"
@@ -2100,14 +3258,36 @@ safe_path() {
 [[ "$release_token" =~ ^[A-Za-z0-9._:-]+$ ]]
 for path in \
     "$runner" "$repo" "$candidate_env" "$guard_env" \
-    "$success_marker" "$outcome_file" "$release_lock"; do
+    "$success_marker" "$outcome_file" "$release_lock" \
+    "$state_dir" "$intent_file"; do
     safe_path "$path"
 done
 test -r "$release_lock/token"
 test "$(cat "$release_lock/token")" = "$release_token"
-test "$(stat -c '%U:%G:%a' "$(dirname "$success_marker")")" = \
-    "root:root:700"
-rm -f "$success_marker" "$outcome_file"
+test "$(stat -c '%U:%G:%a' "$state_dir")" = "root:root:700"
+test ! -e "$intent_file"
+test ! -e "$success_marker"
+test ! -e "$outcome_file"
+
+# Persist the exact launch intent before the first systemd/D-Bus RPC. An
+# adopted client may launch only when this durable negative evidence is absent.
+lease_hash="$(
+    printf '%s' "$release_token" | sha256sum | awk '{print $1}'
+)"
+intent_temp="$(mktemp "$state_dir/.launch-intent.XXXXXX")"
+trap 'rm -f -- "$intent_temp"' EXIT
+printf '%s\n' \
+    "commit=$expected_sha" \
+    "unit=$unit_name" \
+    "lease_sha256=$lease_hash" >"$intent_temp"
+chmod 0400 "$intent_temp"
+sync -f "$intent_temp"
+ln "$intent_temp" "$intent_file"
+rm -f -- "$intent_temp"
+intent_temp=""
+sync -f "$state_dir"
+test "$(stat -c '%U:%G:%a' "$intent_file")" = "root:root:400"
+test "$(stat -c '%h' "$intent_file")" = "1"
 
 deadman="/bin/bash $runner --recover-if-unverified $repo $expected_sha $candidate_env $guard_env $success_marker $release_lock $release_token"
 systemd-run \
@@ -2170,16 +3350,49 @@ expected_success="${11}"
 release_lock="${12}"
 release_token="${13}"
 durable_enabled="$durable_state_dir/enabled.env"
+state_dir="$(dirname "$success_marker")"
+intent_file="$state_dir/launch-intent"
 
 [[ "$repo" =~ ^/[A-Za-z0-9._/-]+$ ]]
 [[ "$repo" != "/" && "$repo" != *"/../"* && "$repo" != *"/.." ]]
 test -r "$release_lock/token"
 test "$(cat "$release_lock/token")" = "$release_token"
 
+# Every terminal outcome must be bound to a durable intent written before the
+# launch RPC. This prevents an adopter from mistaking an unrelated/stale
+# outcome for the exact release attempt it owns.
+test -f "$intent_file"
+test ! -L "$intent_file"
+test "$(stat -c '%U:%G:%a' "$intent_file")" = "root:root:400"
+test "$(stat -c '%h' "$intent_file")" = "1"
+lease_hash="$(
+    printf '%s' "$release_token" | sha256sum | awk '{print $1}'
+)"
+intent_unit="$(
+    awk -F= '
+        NR == 1 && $1 == "commit" { commit += 1; next }
+        NR == 2 && $1 == "unit" { unit += 1; value = $2; next }
+        NR == 3 && $1 == "lease_sha256" { lease += 1; next }
+        { exit 1 }
+        END {
+            if (NR != 3 || commit != 1 || unit != 1 || lease != 1) {
+                exit 1
+            }
+            print value
+        }
+    ' "$intent_file"
+)"
+test "$(sed -n '1p' "$intent_file")" = "commit=$expected_sha"
+test "$(sed -n '3p' "$intent_file")" = "lease_sha256=$lease_hash"
+intent_prefix="${expected_sha:0:12}"
+[[ "$intent_unit" =~ ^health-evidence-activation-${intent_prefix}-[1-9][0-9]*\.service$ ]]
+
 # The exact outcome file is written only after ExecStart/ExecStopPost reaches a
 # terminal proof. It is per-attempt and lives in a freshly-created root-only dir.
 test -f "$outcome_file"
 test ! -L "$outcome_file"
+test "$(stat -c '%U:%G:%a' "$outcome_file")" = "root:root:400"
+test "$(stat -c '%h' "$outcome_file")" = "1"
 test "$(cat "$outcome_file")" = "$expected_outcome"
 
 flag_is_exact() {
@@ -2459,6 +3672,10 @@ done
 case "$phase" in
     enabled)
         test -f "$success_marker"
+        test ! -L "$success_marker"
+        test "$(stat -c '%U:%G:%a' "$success_marker")" = \
+            "root:root:400"
+        test "$(stat -c '%h' "$success_marker")" = "1"
         test "$(cat "$success_marker")" = "$expected_success"
         flag_is_exact "$candidate_env" true
         flag_is_exact "$guard_env" false
@@ -2514,6 +3731,27 @@ test "$(cat "$release_lock/token")" = "$release_token"
 REMOTE_ACTIVATION_PROOF
 }
 
+prove_health_evidence_activation_not_launched() {
+    ssh "$SERVER" bash -s -- \
+        "$REMOTE_ACTIVATION_STATE_DIR" \
+        "$REMOTE_RELEASE_LOCK_DIR" \
+        "$REMOTE_RELEASE_LOCK_TOKEN" <<'REMOTE_ACTIVATION_NOT_LAUNCHED'
+set -euo pipefail
+state_dir="$1"
+release_lock="$2"
+release_token="$3"
+test -r "$release_lock/token"
+test "$(cat "$release_lock/token")" = "$release_token"
+test -d "$state_dir"
+test ! -L "$state_dir"
+test "$(stat -c '%U:%G:%a' "$state_dir")" = "root:root:700"
+# launch-intent is atomically persisted and fsynced before the first D-Bus
+# call. Therefore an entirely empty trusted state dir is durable proof that
+# this exact sealed attempt has never launched.
+test -z "$(find "$state_dir" -mindepth 1 -maxdepth 1 -print -quit)"
+REMOTE_ACTIVATION_NOT_LAUNCHED
+}
+
 prove_health_evidence_services_inactive() {
     ssh "$SERVER" bash -s -- \
         "$REMOTE_RELEASE_LOCK_DIR" \
@@ -2537,6 +3775,7 @@ activate_health_evidence_runtime() {
     local expected_success
     local expected_noop
     local expected_recovered
+    local adopted="${_REMOTE_RELEASE_LOCK_ADOPTED:-0}"
 
     if ! require_health_evidence_flag_value true; then
         print_error "受控启用要求本地 HEALTH_EVIDENCE_RUNTIME_ENABLED=true"
@@ -2546,27 +3785,67 @@ activate_health_evidence_runtime() {
         print_error "启用前 revision 校验失败"
         return 1
     fi
+
+    unit_name="health-evidence-activation-${DEPLOY_EXPECTED_SHA:0:12}-$$.service"
+    expected_success="HEALTH_EVIDENCE_ACTIVATION_OK commit=$DEPLOY_EXPECTED_SHA flag=true health=passed auth_probe=passed score=passed contract=enabled services=active"
+    expected_noop="HEALTH_EVIDENCE_DEADMAN_NOOP commit=$DEPLOY_EXPECTED_SHA authorization=verified"
+    expected_recovered="HEALTH_EVIDENCE_DEADMAN_RECOVERED commit=$DEPLOY_EXPECTED_SHA flag=false health=passed contract=staged services=active"
+
+    if [[ "$adopted" = "1" ]]; then
+        # The adopted owner starts in preserve mode. Validate the original
+        # sealed stage without writing it, then reconcile a terminal outcome
+        # before evaluating any pre-launch staged contract.
+        _REMOTE_RELEASE_LOCK_DELEGATED=1
+        if ! stage_health_evidence_activation_artifacts; then
+            _REMOTE_RELEASE_LOCK_ABANDONED=1
+            print_error "既有 health-evidence 激活事务不完整或已被修改"
+            return 1
+        fi
+        if prove_health_evidence_activation_state \
+            enabled "$unit_name" "$expected_noop" "$expected_success"; then
+            _REMOTE_RELEASE_LOCK_DELEGATED=0
+            _REMOTE_RELEASE_LOCK_ABANDONED=0
+            print_success "既有 health-evidence 激活事务已证明成功"
+            return 0
+        fi
+        if prove_health_evidence_activation_state \
+            staged "$unit_name" "$expected_recovered" "$expected_success"; then
+            _REMOTE_RELEASE_LOCK_DELEGATED=0
+            _REMOTE_RELEASE_LOCK_ABANDONED=0
+            print_error "既有 health-evidence 激活事务已恢复到 flag=false guard"
+            return 1
+        fi
+        if ! prove_health_evidence_activation_not_launched; then
+            _REMOTE_RELEASE_LOCK_DELEGATED=1
+            _REMOTE_RELEASE_LOCK_ABANDONED=1
+            print_error "既有 activation 已有 launch-intent 但尚无可信终态；现场与租约保留"
+            return 1
+        fi
+    fi
+
     if ! verify_runtime_only_kb_contract "staged"; then
+        if [[ "$adopted" = "1" ]]; then
+            _REMOTE_RELEASE_LOCK_DELEGATED=1
+            _REMOTE_RELEASE_LOCK_ABANDONED=1
+        fi
         print_error "启用前 staged serving contract 失败"
         return 1
     fi
+
     _REMOTE_RELEASE_LOCK_DELEGATED=1
     if ! verify_systemd_activation_capability; then
         _REMOTE_RELEASE_LOCK_ABANDONED=1
         print_error "服务器 systemd 未通过 ExecStopPost deadman 能力探针"
         return 1
     fi
-    if ! stage_health_evidence_activation_artifacts; then
-        _REMOTE_RELEASE_LOCK_ABANDONED=1
-        print_error "无法生成不可变 health-evidence 激活事务"
-        return 1
+    if [[ "$adopted" != "1" ]]; then
+        if ! stage_health_evidence_activation_artifacts; then
+            _REMOTE_RELEASE_LOCK_ABANDONED=1
+            print_error "无法生成不可变 health-evidence 激活事务"
+            return 1
+        fi
+        _REMOTE_RELEASE_LOCK_DELEGATED=0
     fi
-    _REMOTE_RELEASE_LOCK_DELEGATED=0
-
-    unit_name="health-evidence-activation-${DEPLOY_EXPECTED_SHA:0:12}-$$.service"
-    expected_success="HEALTH_EVIDENCE_ACTIVATION_OK commit=$DEPLOY_EXPECTED_SHA flag=true health=passed auth_probe=passed score=passed contract=enabled services=active"
-    expected_noop="HEALTH_EVIDENCE_DEADMAN_NOOP commit=$DEPLOY_EXPECTED_SHA authorization=verified"
-    expected_recovered="HEALTH_EVIDENCE_DEADMAN_RECOVERED commit=$DEPLOY_EXPECTED_SHA flag=false health=passed contract=staged services=active"
 
     # Delegate before the first D-Bus/RPC that can create the persistent unit.
     # Any SSH/client interruption after this point keeps stage + lease in place.
@@ -2580,6 +3859,7 @@ activate_health_evidence_runtime() {
     if prove_health_evidence_activation_state \
         enabled "$unit_name" "$expected_noop" "$expected_success"; then
         _REMOTE_RELEASE_LOCK_DELEGATED=0
+        _REMOTE_RELEASE_LOCK_ABANDONED=0
         print_success "health-evidence runtime 已受控启用并通过真实 runtime eval"
         return 0
     fi
@@ -2587,6 +3867,7 @@ activate_health_evidence_runtime() {
     if prove_health_evidence_activation_state \
         staged "$unit_name" "$expected_recovered" "$expected_success"; then
         _REMOTE_RELEASE_LOCK_DELEGATED=0
+        _REMOTE_RELEASE_LOCK_ABANDONED=0
         print_error "health-evidence runtime 启用失败 (exit=$launch_rc)，已恢复并复验 flag=false guard"
         return 1
     fi
@@ -2827,6 +4108,8 @@ main() {
             view_logs
             ;;
     esac
+
+    arm_remote_release_cleanup_after_terminal_mode_success "$DEPLOY_MODE"
 
     echo ""
     print_success "完成！"

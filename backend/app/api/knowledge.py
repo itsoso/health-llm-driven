@@ -140,7 +140,10 @@ class GeneKnowledgeInput(BaseModel):
 
 @router.get("/stats", summary="获取知识库统计信息")
 def get_knowledge_stats(
-    current_user: User = Depends(get_current_user_required)
+    current_user: User = Depends(get_current_user_required),
+    _legacy_runtime: None = Depends(
+        _ensure_legacy_knowledge_runtime_enabled
+    ),
 ):
     """获取知识库的统计信息"""
     stats = vector_store.get_stats()
@@ -151,7 +154,10 @@ def get_knowledge_stats(
 def add_documents(
     input_data: DocumentBatchInput,
     current_user: User = Depends(get_current_user_required),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _legacy_runtime: None = Depends(
+        _ensure_legacy_knowledge_runtime_enabled
+    ),
 ):
     """
     批量添加文档到知识库
@@ -186,7 +192,10 @@ def add_documents(
 def add_text_document(
     input_data: TextInput,
     current_user: User = Depends(get_current_user_required),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _legacy_runtime: None = Depends(
+        _ensure_legacy_knowledge_runtime_enabled
+    ),
 ):
     """
     添加纯文本内容到知识库
@@ -239,7 +248,10 @@ async def upload_course_files(
     difficulty: str = Form("intermediate"),
     target_audiences: str = Form("[]"),  # JSON string of list
     current_user: User = Depends(get_current_user_required),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _legacy_runtime: None = Depends(
+        _ensure_legacy_knowledge_runtime_enabled
+    ),
 ):
     """
     批量上传课程 Markdown 文件到知识库（使用增强版加载器）
@@ -402,7 +414,10 @@ async def upload_course_files(
 def upload_course(
     input_data: CourseUploadInput,
     current_user: User = Depends(get_current_user_required),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _legacy_runtime: None = Depends(
+        _ensure_legacy_knowledge_runtime_enabled
+    ),
 ):
     """
     上传专业课程内容到知识库（使用增强版加载器）
@@ -486,7 +501,10 @@ async def upload_document(
     source: str = Form(...),
     category: Optional[str] = Form("general"),
     current_user: User = Depends(get_current_user_required),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _legacy_runtime: None = Depends(
+        _ensure_legacy_knowledge_runtime_enabled
+    ),
 ):
     """
     上传文件到知识库
@@ -598,15 +616,16 @@ async def upload_document(
 @router.post("/search", summary="搜索知识库")
 def search_knowledge(
     query: SearchQuery,
-    current_user: User = Depends(get_current_user_required)
+    current_user: User = Depends(get_current_user_required),
+    _legacy_runtime: None = Depends(
+        _ensure_legacy_knowledge_runtime_enabled
+    ),
 ):
     """
     搜索知识库内容
 
     使用向量相似度搜索相关文档
     """
-    _ensure_legacy_knowledge_runtime_enabled()
-
     if not vector_store.is_available():
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -631,15 +650,16 @@ def search_knowledge(
 def ask_question(
     query: RAGQuery,
     current_user: User = Depends(get_current_user_required),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _legacy_runtime: None = Depends(
+        _ensure_legacy_knowledge_runtime_enabled
+    ),
 ):
     """
     基于知识库的 RAG 问答
 
     结合知识库内容和用户画像生成个性化回答
     """
-    _ensure_legacy_knowledge_runtime_enabled()
-
     if not rag_pipeline.is_available():
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -684,7 +704,10 @@ def ask_question(
 @router.delete("/documents/source", summary="按来源删除文档")
 def delete_by_source(
     input_data: DeleteBySourceInput,
-    current_user: User = Depends(get_current_user_required)
+    current_user: User = Depends(get_current_user_required),
+    _legacy_runtime: None = Depends(
+        _ensure_legacy_knowledge_runtime_enabled
+    ),
 ):
     """
     删除指定来源的所有文档
@@ -717,7 +740,10 @@ def delete_by_source(
 @router.delete("/documents/all", summary="清空知识库")
 def clear_all_documents(
     confirm: bool = False,
-    current_user: User = Depends(get_current_user_required)
+    current_user: User = Depends(get_current_user_required),
+    _legacy_runtime: None = Depends(
+        _ensure_legacy_knowledge_runtime_enabled
+    ),
 ):
     """
     清空整个知识库
@@ -757,6 +783,9 @@ def clear_all_documents(
 def upload_gene_drug_rules(
     input_data: GeneDrugRulesInput,
     current_user: User = Depends(get_current_user_required),
+    _legacy_runtime: None = Depends(
+        _ensure_legacy_knowledge_runtime_enabled
+    ),
 ):
     """
     上传基因-药物交互规则库
@@ -883,16 +912,17 @@ def get_knowledge_feedback(
     insights = []
 
     # Insight 1: 知识库使用统计
-    try:
-        stats = vector_store.get_stats()
-        insights.append({
-            "title": "知识库统计",
-            "content": f"当前共 {stats.get('total_documents', 0)} 篇文档",
-            "type": "stats",
-            "sample_size": None,
-        })
-    except Exception:
-        pass
+    if settings.legacy_knowledge_runtime_enabled:
+        try:
+            stats = vector_store.get_stats()
+            insights.append({
+                "title": "知识库统计",
+                "content": f"当前共 {stats.get('total_documents', 0)} 篇文档",
+                "type": "stats",
+                "sample_size": None,
+            })
+        except Exception:
+            pass
 
     # Insight 2: 疾病模板使用分布（匿名）
     try:
@@ -982,7 +1012,10 @@ def get_knowledge_feedback(
 
 @router.post("/init/health-basics", summary="初始化基础健康知识")
 def init_health_basics(
-    current_user: User = Depends(get_current_user_required)
+    current_user: User = Depends(get_current_user_required),
+    _legacy_runtime: None = Depends(
+        _ensure_legacy_knowledge_runtime_enabled
+    ),
 ):
     """
     初始化基础健康知识到知识库

@@ -6,7 +6,7 @@
 - 每个 chunk 带 metadata: {source_file, section_title, domain}
 - 首次启动时全量索引，之后按需增量
 
-存储位置：backend/data/knowledge_chromadb/
+生产存储位置：/var/lib/health-app/runtime/knowledge_chromadb/
 """
 
 from __future__ import annotations
@@ -18,13 +18,15 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List
 
+from app.utils.runtime_data import runtime_data_path
+
 logger = logging.getLogger(__name__)
 
 # 本地开发用 ~/work/personal/down-dedao/wiki，服务器用 /opt/health-app/knowledge/dedao-wiki
 _LOCAL_WIKI = Path(os.path.expanduser("~/work/personal/down-dedao/wiki"))
 _SERVER_WIKI = Path("/opt/health-app/knowledge/dedao-wiki")
 WIKI_DIR = _LOCAL_WIKI if _LOCAL_WIKI.exists() else _SERVER_WIKI
-CHROMA_PERSIST_DIR = Path(__file__).parent.parent.parent.parent / "data" / "knowledge_chromadb"
+CHROMA_PERSIST_DIR = runtime_data_path("knowledge_chromadb")
 COLLECTION_NAME = "health_knowledge"
 
 # 健康关键词 — 用于过滤非健康文件

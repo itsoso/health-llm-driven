@@ -30,11 +30,95 @@ def test_systemd_units_use_dedicated_user_and_sandbox() -> None:
         assert "NoNewPrivileges=true" in body
         assert "PrivateTmp=true" in body
         assert "ProtectSystem=strict" in body
-        assert "/opt/health-app/.health-skills-cache" in body
         assert "/tmp/tts_cache" not in body
 
     socket = (unit_dir / "health-backend.socket").read_text()
     assert "ListenStream=127.0.0.1:8000" in socket
+
+
+def test_celery_beat_state_is_outside_the_trusted_worktree() -> None:
+    body = (ROOT / "infra" / "systemd" / "celery-beat.service").read_text()
+    read_write_paths = next(
+        line for line in body.splitlines() if line.startswith("ReadWritePaths=")
+    )
+
+    assert "StateDirectory=health-app/celery-beat" in body
+    assert "StateDirectoryMode=0700" in body
+    assert (
+        "--schedule=/var/lib/health-app/celery-beat/celerybeat-schedule"
+        in body
+    )
+    assert "/opt/health-app/backend/data" not in read_write_paths
+    assert "/var/lib/health-app/runtime" not in read_write_paths
+
+
+def _nonempty_read_write_paths(body: str) -> set[str]:
+    values: list[str] = []
+    for line in body.splitlines():
+        if line.startswith("ReadWritePaths="):
+            values = line.removeprefix("ReadWritePaths=").split()
+    return {value.removeprefix("-") for value in values}
+
+
+def test_each_systemd_unit_has_only_its_exact_external_write_boundary() -> None:
+    unit_dir = ROOT / "infra" / "systemd"
+    expected = {
+        "health-backend.service": {
+            "/var/lib/health-app/uploads",
+            "/var/cache/health-app/skills-hub",
+            "/var/lib/health-app/runtime",
+            "/var/lib/health-app/dedao-kbase",
+        },
+        "celery-worker.service": {
+            "/var/lib/health-app/uploads",
+            "/var/lib/health-app/dedao-kbase",
+        },
+        "celery-beat.service": {
+            "/var/lib/health-app/celery-beat",
+        },
+    }
+    dropin_dir = unit_dir / "dropins"
+
+    for name, exact_paths in expected.items():
+        base_paths = _nonempty_read_write_paths(
+            (unit_dir / name).read_text()
+        )
+        dropin_paths = _nonempty_read_write_paths(
+            (dropin_dir / name.replace(".service", "-runtime-state.conf"))
+            .read_text()
+        )
+        assert base_paths == exact_paths
+        assert dropin_paths == exact_paths
+        assert all(
+            not path.startswith("/opt/health-app/")
+            for path in base_paths | dropin_paths
+        )
+
+
+def test_backend_env_example_contains_the_production_runtime_contract() -> None:
+    assignments: dict[str, list[str]] = {}
+    for raw_line in (ROOT / "backend" / ".env.example").read_text().splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        name, value = line.split("=", 1)
+        assignments.setdefault(name, []).append(value)
+
+    assert assignments["APP_ENV"] == ["production"]
+    assert assignments["DEBUG"] == ["False"]
+    assert assignments["HEALTH_RUNTIME_DATA_DIR"] == [
+        "/var/lib/health-app/runtime"
+    ]
+    assert assignments["HEALTH_UPLOAD_DIR"] == [
+        "/var/lib/health-app/uploads"
+    ]
+    assert assignments["HEALTH_SKILLS_CACHE_DIR"] == [
+        "/var/cache/health-app/skills-hub"
+    ]
+    assert assignments["DEDAO_KBASE_REVIEW_ARTIFACT_DIR"] == [
+        "/var/lib/health-app/dedao-kbase/workspace"
+    ]
+    assert assignments["LEGACY_KNOWLEDGE_RUNTIME_ENABLED"] == ["false"]
 
 
 def test_nginx_and_firewall_do_not_publish_internal_services() -> None:

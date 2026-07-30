@@ -1,5 +1,6 @@
 import hashlib
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -53,9 +54,10 @@ def test_remote_sync_normalizes_only_git_metadata_and_tracked_paths():
     assert "chown root:root ." in body
     assert "chown -R root:root .git" in body
     assert "chmod -R go-w .git" in body
-    assert "git ls-files -z" in body
+    assert "git ls-files --stage -z" in body
     assert 'chown -h root:root -- "$tracked_path"' in body
-    assert 'chmod go-w -- "$tracked_path"' in body
+    assert 'chmod 0644 -- "$tracked_path"' in body
+    assert 'chmod 0755 -- "$tracked_path"' in body
     assert "chown -R root:root .\n" not in body
 
 
@@ -155,6 +157,385 @@ def test_repository_trust_normalization_never_targets_ignored_runtime_data(
         assert ignored not in targets
 
 
+def test_repository_trust_normalization_makes_tracked_seeds_readable_not_writable(
+    tmp_path: Path,
+):
+    repo = tmp_path / "release"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "release@example.test"],
+        cwd=repo,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Release Test"],
+        cwd=repo,
+        check=True,
+    )
+    data_dir = repo / "backend/data"
+    data_dir.mkdir(parents=True)
+    seed = data_dir / "gene_knowledge.json"
+    seed.write_text("{}\n", encoding="utf-8")
+    executable = repo / "backend/scripts/probe.sh"
+    executable.parent.mkdir(parents=True)
+    executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    executable.chmod(0o755)
+    (repo / ".gitignore").write_text(
+        "*.db\n",
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "add", "."], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "fixture"], cwd=repo, check=True)
+    schedule = data_dir / "celerybeat-schedule.db"
+    schedule.write_text("runtime\n", encoding="utf-8")
+    data_dir.chmod(0o700)
+    seed.chmod(0o600)
+    executable.chmod(0o700)
+    schedule.chmod(0o600)
+
+    env_file = tmp_path / "deploy.env"
+    env_file.write_text(
+        "DEPLOY_SERVER=root@example.test\n"
+        f"DEPLOY_PATH={repo!s}\n"
+        "HEALTH_EVIDENCE_RUNTIME_ENABLED=false\n",
+        encoding="utf-8",
+    )
+    harness = (
+        f"source {DEPLOY_SCRIPT!s}\n"
+        "remote_repository_trust_normalization_command\n"
+    )
+    generated = subprocess.run(
+        ["bash", "-c", harness],
+        text=True,
+        capture_output=True,
+        check=False,
+        env={**os.environ, "DEPLOY_ENV_FILE": str(env_file)},
+    )
+    assert generated.returncode == 0, generated.stderr
+
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    ownership_log = tmp_path / "ownership.log"
+    _write_executable(
+        fake_bin / "chown",
+        """#!/bin/sh
+set -eu
+printf 'chown' >> "$OWNERSHIP_LOG"
+for argument in "$@"; do
+  printf '|%s' "$argument" >> "$OWNERSHIP_LOG"
+done
+printf '\n' >> "$OWNERSHIP_LOG"
+""",
+    )
+    _write_executable(fake_bin / "stat", "#!/bin/sh\nprintf 'root:root\\n'\n")
+    _write_executable(
+        fake_bin / "chmod",
+        "#!/bin/bash\n"
+        "set -euo pipefail\n"
+        "args=()\n"
+        "for arg in \"$@\"; do\n"
+        "  [ \"$arg\" = \"--\" ] || args+=(\"$arg\")\n"
+        "done\n"
+        "exec /bin/chmod \"${args[@]}\"\n",
+    )
+    result = subprocess.run(
+        ["bash", "-c", generated.stdout],
+        cwd=repo,
+        text=True,
+        capture_output=True,
+        check=False,
+        env={
+            **os.environ,
+            "PATH": f"{fake_bin}:{os.environ['PATH']}",
+            "OWNERSHIP_LOG": str(ownership_log),
+        },
+    )
+
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    ownership_calls = ownership_log.read_text(encoding="utf-8").splitlines()
+    for tracked_path in (
+        ".gitignore",
+        "backend/data/gene_knowledge.json",
+        "backend/scripts/probe.sh",
+    ):
+        assert f"chown|root:root|--|{tracked_path}" in ownership_calls
+    for tracked_parent in (
+        "backend",
+        "backend/data",
+        "backend/scripts",
+    ):
+        assert f"chown|root:root|--|{tracked_parent}" in ownership_calls
+    assert all("celerybeat-schedule.db" not in call for call in ownership_calls)
+    assert data_dir.stat().st_mode & 0o777 == 0o755
+    assert seed.stat().st_mode & 0o777 == 0o644
+    assert executable.stat().st_mode & 0o777 == 0o755
+    assert schedule.stat().st_mode & 0o777 == 0o600
+
+
+def test_backend_wraps_runtime_state_in_verified_release_transaction():
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    stage_start = script.index("stage_backup_preflight_scripts() {")
+    stage_end = script.index(
+        "remote_repository_trust_normalization_command() {", stage_start
+    )
+    stage_body = script[stage_start:stage_end]
+    deploy_start = script.index("deploy_backend() {")
+    deploy_body = script[deploy_start:]
+
+    assert "backend/scripts/runtime_state_release_transaction.py" in stage_body
+    for name in (
+        "health-backend-runtime-state.conf",
+        "celery-worker-runtime-state.conf",
+        "celery-beat-runtime-state.conf",
+    ):
+        assert name in stage_body
+    assert "remote_celery_beat_state_migration_command" not in script
+    assert "cleanup_legacy_celery_beat_state" not in script
+
+    status = deploy_body.index(
+        "inspect_runtime_state_transaction_before_deploy"
+    )
+    preflight = deploy_body.index(
+        "run_runtime_state_transaction \\\n            preflight"
+    )
+    stop = deploy_body.index("systemctl stop health-backend.socket")
+    prepare = deploy_body.index(
+        "prepare '$ROLLBACK_CANDIDATE_COMMIT' '$DEPLOY_EXPECTED_SHA'"
+    )
+    checkout = deploy_body.index("$remote_git_sync")
+    install = deploy_body.index(
+        "install '$ROLLBACK_CANDIDATE_COMMIT' '$DEPLOY_EXPECTED_SHA'"
+    )
+    restart = deploy_body.index("systemctl restart celery-worker celery-beat")
+    stable_proof = deploy_body.index(
+        "prove_health_evidence_runtime_process_flag false", restart
+    )
+    guard_contract = deploy_body.index(
+        'verify_runtime_only_kb_contract "guard"',
+        stable_proof,
+    )
+    commit = deploy_body.index(
+        "commit_runtime_state_transaction_after_guard",
+        guard_contract,
+    )
+    floor = deploy_body.index(
+        'ROLLBACK_COMMIT="$DEPLOY_EXPECTED_SHA"',
+        commit,
+    )
+    skills = deploy_body.index("wait_for_agent_skills_manifest", floor)
+    finalize = deploy_body.index(
+        "finalize_runtime_state_transaction_after_all_gates",
+        skills,
+    )
+    assert (
+        status
+        < preflight
+        < stop
+        < prepare
+        < checkout
+        < install
+        < restart
+        < stable_proof
+        < guard_contract
+        < commit
+        < floor
+        < skills
+        < finalize
+    )
+
+
+def test_backend_reprobes_stability_process_revision_and_kb_after_skills():
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    deploy_body = script[script.index("deploy_backend() {") :]
+    skills = deploy_body.rindex("wait_for_agent_skills_manifest")
+    finalize = deploy_body.index(
+        "finalize_runtime_state_transaction_after_all_gates",
+        skills,
+    )
+    terminal_gate_body = deploy_body[skills:finalize]
+
+    for probe in (
+        "prove_health_evidence_runtime_process_flag false",
+        "verify_deployment",
+        "verify_deployed_revision",
+        'verify_runtime_only_kb_contract "staged"',
+    ):
+        assert probe in terminal_gate_body
+
+
+def test_deactivation_proof_requires_services_stable_across_restart_window():
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    start = script.index("prove_health_evidence_deactivated_state() {")
+    end = script.index(
+        "prove_health_evidence_runtime_process_flag() {", start
+    )
+    body = script[start:end]
+
+    assert "SERVICE_STABILITY_SECONDS=7" in body
+    assert "--property=SubState" in body
+    assert "--property=Result" in body
+    assert "--property=NRestarts" in body
+    assert 'sleep "$SERVICE_STABILITY_SECONDS"' in body
+    assert (
+        'test "$main_pid" = "${stable_main_pid[$process_index]}"'
+        in body
+    )
+    assert (
+        '"${stable_restart_count[$process_index]}"'
+        in body
+    )
+    assert body.count("verify_process_environment_false") >= 2
+
+
+def test_deactivation_proof_rejects_restart_of_only_celery_beat(
+    tmp_path: Path,
+):
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    proof = script.split(
+        "<<'REMOTE_DEACTIVATION_PROOF'\n", 1
+    )[1].split("\nREMOTE_DEACTIVATION_PROOF", 1)[0]
+    proof_script = tmp_path / "deactivation-proof.sh"
+    proof_script.write_text(proof, encoding="utf-8")
+
+    repo = tmp_path / "release"
+    (repo / "backend").mkdir(parents=True)
+    (repo / "backend" / ".env").write_text(
+        "HEALTH_EVIDENCE_RUNTIME_ENABLED=false\n",
+        encoding="utf-8",
+    )
+    release_lock = tmp_path / "release.lock"
+    release_lock.mkdir()
+    (release_lock / "token").write_text("proof-owner\n", encoding="utf-8")
+    runtime_state = tmp_path / "runtime-state"
+    systemd_runtime = tmp_path / "systemd-runtime"
+    systemd_runtime.mkdir()
+    durable_state = tmp_path / "durable-state"
+    cgroup_root = tmp_path / "cgroup"
+    proc_root = tmp_path / "proc"
+    cgroup_root.mkdir()
+    proc_root.mkdir()
+    unit_pids = {
+        "health-backend": 4101,
+        "celery-worker": 4201,
+        "celery-beat": 4301,
+    }
+    for unit, pid in unit_pids.items():
+        cgroup = cgroup_root / "system.slice" / f"{unit}.service"
+        cgroup.mkdir(parents=True)
+        (cgroup / "cgroup.procs").write_text(f"{pid}\n", encoding="utf-8")
+        process = proc_root / str(pid)
+        process.mkdir()
+        (process / "environ").write_bytes(
+            b"PATH=/usr/bin\0"
+            b"HEALTH_EVIDENCE_RUNTIME_ENABLED=false\0"
+        )
+
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    restart_marker = tmp_path / "restart-window.elapsed"
+    _write_executable(
+        fake_bin / "sleep",
+        """#!/bin/sh
+set -eu
+: > "$FAKE_RESTART_MARKER"
+""",
+    )
+    _write_executable(
+        fake_bin / "systemctl",
+        """#!/bin/bash
+set -euo pipefail
+test "$1" = "show"
+unit="$2"
+name="${unit%.service}"
+case "$name" in
+  health-backend) pid=4101 ;;
+  celery-worker) pid=4201 ;;
+  celery-beat) pid=4301 ;;
+  health-backend.socket) pid=0 ;;
+  *) exit 91 ;;
+esac
+case "$*" in
+  *--property=ActiveState*) printf 'active\n' ;;
+  *--property=SubState*)
+    if [ "$name" = "health-backend.socket" ]; then
+      printf 'listening\n'
+    else
+      printf 'running\n'
+    fi
+    ;;
+  *--property=Result*) printf 'success\n' ;;
+  *--property=MainPID*) printf '%s\n' "$pid" ;;
+  *--property=NRestarts*)
+    if [ "$name" = "celery-beat" ] &&
+       [ -e "$FAKE_RESTART_MARKER" ]; then
+      printf '1\n'
+    else
+      printf '0\n'
+    fi
+    ;;
+  *--property=ActiveEnterTimestampMonotonic*)
+    if [ "$name" = "celery-beat" ] &&
+       [ -e "$FAKE_RESTART_MARKER" ]; then
+      printf '200\n'
+    else
+      printf '100\n'
+    fi
+    ;;
+  *--property=ControlGroup*)
+    printf '/system.slice/%s.service\n' "$name"
+    ;;
+  *) exit 92 ;;
+esac
+""",
+    )
+    result = subprocess.run(
+        [
+            "bash",
+            str(proof_script),
+            str(repo),
+            str(durable_state),
+            str(release_lock),
+            "proof-owner",
+            "-",
+            str(runtime_state),
+            str(systemd_runtime),
+            str(cgroup_root),
+            str(proc_root),
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+        env={
+            **os.environ,
+            "PATH": f"{fake_bin}:{os.environ['PATH']}",
+            "FAKE_RESTART_MARKER": str(restart_marker),
+        },
+    )
+
+    assert result.returncode != 0, (result.stdout, result.stderr)
+    assert restart_marker.exists()
+
+
+def test_activation_and_rollback_proofs_reject_restart_windows():
+    activation = (
+        ROOT
+        / "backend"
+        / "scripts"
+        / "activate_health_evidence_runtime.sh"
+    ).read_text(encoding="utf-8")
+    rollback = (
+        ROOT / "backend" / "scripts" / "rollback_release.sh"
+    ).read_text(encoding="utf-8")
+
+    for body in (activation, rollback):
+        assert "SERVICE_STABILITY_SECONDS=7" in body
+        assert "--property=NRestarts" in body
+        assert "--property=SubState" in body
+        assert "--property=Result" in body
+        assert 'sleep "$SERVICE_STABILITY_SECONDS"' in body
+
+
 def test_backup_and_health_score_failures_block_deploy():
     script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
 
@@ -195,6 +576,84 @@ def test_backend_proves_rollback_schema_before_live_env_mutation():
     sync_env = deploy_body.index("sync_env")
 
     assert backup < rollback_point < rollback_probe < sync_env
+
+
+def test_backend_runs_bundle_and_runtime_preflight_before_live_mutation():
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    deploy_start = script.index("deploy_backend() {")
+    deploy_body = script[deploy_start:]
+
+    rollback_probe = deploy_body.index(
+        "verify_rollback_point_schema_compatibility"
+    )
+    bundle = deploy_body.index("upload_deploy_bundle", rollback_probe)
+    preflight = deploy_body.index(
+        "run_runtime_state_transaction \\\n            preflight",
+        bundle,
+    )
+    sync_env = deploy_body.index("sync_env", preflight)
+    preserve = deploy_body.index(
+        "_REMOTE_RELEASE_LOCK_ABANDONED=1",
+        sync_env,
+    )
+    deactivate = deploy_body.index(
+        "deactivate_health_evidence_runtime_before_mutation",
+        preserve,
+    )
+
+    assert (
+        rollback_probe
+        < bundle
+        < preflight
+        < sync_env
+        < preserve
+        < deactivate
+    )
+
+
+def test_adopted_release_lock_is_preserved_before_transaction_inspection(
+    tmp_path: Path,
+):
+    env_file = tmp_path / "deploy.env"
+    event_log = tmp_path / "ssh.events"
+    adopted_stage = (
+        f"/tmp/health-app-backup-preflight-{os.getpid()}-"
+        f"{tmp_path.stat().st_ino}"
+    )
+    env_file.write_text(
+        "DEPLOY_SERVER=fake-server\n"
+        "DEPLOY_PATH=/tmp/fake-health-app\n"
+        "HEALTH_EVIDENCE_RUNTIME_ENABLED=false\n",
+        encoding="utf-8",
+    )
+    harness = f"""
+source {DEPLOY_SCRIPT!s}
+REVA_RELEASE_LOCK_ADOPT=1
+REVA_RELEASE_LOCK_TOKEN=owner
+ssh() {{
+    printf 'ssh\\n' >> "$ADOPT_EVENT_LOG"
+    printf '%s\\n' \
+      'REMOTE_RELEASE_LOCK_ADOPTED stage={adopted_stage}'
+}}
+acquire_remote_release_lock deploy:backend
+test "$_REMOTE_RELEASE_LOCK_ADOPTED" -eq 1
+test "$_REMOTE_RELEASE_LOCK_ABANDONED" -eq 1
+cleanup_remote_release_artifacts
+test "$(wc -l < "$ADOPT_EVENT_LOG")" -eq 1
+"""
+    result = subprocess.run(
+        ["bash", "-c", harness],
+        text=True,
+        capture_output=True,
+        check=False,
+        env={
+            **os.environ,
+            "DEPLOY_ENV_FILE": str(env_file),
+            "ADOPT_EVENT_LOG": str(event_log),
+        },
+    )
+
+    assert result.returncode == 0, (result.stdout, result.stderr)
 
 
 def test_rollback_sha_is_recorded_only_after_schema_probe_success():
@@ -319,6 +778,12 @@ def test_guard_lost_lease_after_pip_never_runs_migration_or_restarts_writers(
         "stage evidence remains\n",
         encoding="utf-8",
     )
+    runtime_helper = stage_dir / "runtime_state_release_transaction.py"
+    runtime_helper.write_text(
+        "import sys\n"
+        "print('RUNTIME_STATE_TRANSACTION_OK command=' + sys.argv[1])\n",
+        encoding="utf-8",
+    )
     _write_executable(
         fake_bin / "systemctl",
         """#!/usr/bin/env bash
@@ -346,21 +811,26 @@ fi
     )
     harness = f"""
 source {DEPLOY_SCRIPT!s}
+DEPLOY_EXPECTED_SHA={'2' * 40}
+_REMOTE_RELEASE_LOCK_ACQUIRED=1
 REMOTE_RELEASE_LOCK_DIR={lease_dir!s}
 REMOTE_RELEASE_LOCK_TOKEN=lease-token
 REMOTE_BACKUP_PREFLIGHT_DIR={stage_dir!s}
+REMOTE_RUNTIME_STATE_RUNNER={runtime_helper!s}
 validate_runtime_only_kb_staging() {{ :; }}
 assert_remote_release_lock_if_acquired() {{ :; }}
+assert_remote_release_lock() {{ :; }}
 backup_database() {{ :; }}
 save_rollback_point() {{ ROLLBACK_CANDIDATE_COMMIT={'1' * 40}; }}
 verify_rollback_point_schema_compatibility() {{
     ROLLBACK_COMMIT="$ROLLBACK_CANDIDATE_COMMIT"
 }}
 sync_env() {{ :; }}
-deactivate_health_evidence_runtime_before_mutation() {{ :; }}
-upload_deploy_bundle() {{ :; }}
-remote_git_sync_command() {{ printf ':'; }}
-ssh() {{
+    deactivate_health_evidence_runtime_before_mutation() {{ :; }}
+    upload_deploy_bundle() {{ :; }}
+    run_runtime_state_transaction() {{ :; }}
+    remote_git_sync_command() {{ printf ':'; }}
+    ssh() {{
     shift
     local command="$*"
     command="${{command//\\/etc\\/health-app\\/migration.env/$FAKE_MIGRATION_ENV}}"
@@ -421,6 +891,500 @@ def test_unknown_guard_transaction_failure_never_starts_concurrent_rollback():
     assert "_REMOTE_RELEASE_LOCK_DELEGATED=0" not in failure_body
     assert "_REMOTE_RELEASE_LOCK_ABANDONED=1" in failure_body
     assert "transaction terminal" in failure_body
+
+
+def test_runtime_state_commit_disconnect_preserves_lease_without_rollback(
+    tmp_path: Path,
+):
+    env_file = tmp_path / "deploy.env"
+    event_log = tmp_path / "events"
+    env_file.write_text(
+        "DEPLOY_SERVER=fake-server\n"
+        "DEPLOY_PATH=/tmp/fake-health-app\n"
+        "HEALTH_EVIDENCE_RUNTIME_ENABLED=false\n",
+        encoding="utf-8",
+    )
+    harness = f"""
+source {DEPLOY_SCRIPT!s}
+set +e
+_REMOTE_RELEASE_LOCK_ACQUIRED=1
+REMOTE_RELEASE_LOCK_TOKEN=owner
+DEPLOY_EXPECTED_SHA={'a' * 40}
+assert_remote_release_lock() {{ :; }}
+run_runtime_state_transaction() {{
+    printf 'commit-rpc\\n' >> "$COMMIT_EVENT_LOG"
+    return 255
+}}
+rollback_deploy() {{
+    printf 'rollback\\n' >> "$COMMIT_EVENT_LOG"
+}}
+commit_runtime_state_transaction_after_guard
+commit_rc=$?
+printf 'rc=%s delegated=%s abandoned=%s\\n' \
+    "$commit_rc" \
+    "$_REMOTE_RELEASE_LOCK_DELEGATED" \
+    "$_REMOTE_RELEASE_LOCK_ABANDONED" \
+    >> "$COMMIT_EVENT_LOG"
+exit 0
+"""
+    result = subprocess.run(
+        ["bash", "-c", harness],
+        text=True,
+        capture_output=True,
+        check=False,
+        env={
+            **os.environ,
+            "DEPLOY_ENV_FILE": str(env_file),
+            "COMMIT_EVENT_LOG": str(event_log),
+        },
+    )
+
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert event_log.read_text(encoding="utf-8").splitlines() == [
+        "commit-rpc",
+        "rc=1 delegated=1 abandoned=1",
+    ]
+
+
+def test_runtime_state_finalize_disconnect_preserves_lease_without_rollback(
+    tmp_path: Path,
+):
+    env_file = tmp_path / "deploy.env"
+    event_log = tmp_path / "events"
+    env_file.write_text(
+        "DEPLOY_SERVER=fake-server\n"
+        "DEPLOY_PATH=/tmp/fake-health-app\n"
+        "HEALTH_EVIDENCE_RUNTIME_ENABLED=false\n",
+        encoding="utf-8",
+    )
+    harness = f"""
+source {DEPLOY_SCRIPT!s}
+set +e
+_REMOTE_RELEASE_LOCK_ACQUIRED=1
+REMOTE_RELEASE_LOCK_TOKEN=owner
+DEPLOY_EXPECTED_SHA={'a' * 40}
+assert_remote_release_lock() {{ :; }}
+run_runtime_state_transaction() {{
+    printf 'finalize-rpc\\n' >> "$FINALIZE_EVENT_LOG"
+    return 255
+}}
+rollback_deploy() {{
+    printf 'rollback\\n' >> "$FINALIZE_EVENT_LOG"
+}}
+finalize_runtime_state_transaction_after_all_gates
+finalize_rc=$?
+printf 'rc=%s delegated=%s abandoned=%s\\n' \
+    "$finalize_rc" \
+    "$_REMOTE_RELEASE_LOCK_DELEGATED" \
+    "$_REMOTE_RELEASE_LOCK_ABANDONED" \
+    >> "$FINALIZE_EVENT_LOG"
+exit 0
+"""
+    result = subprocess.run(
+        ["bash", "-c", harness],
+        text=True,
+        capture_output=True,
+        check=False,
+        env={
+            **os.environ,
+            "DEPLOY_ENV_FILE": str(env_file),
+            "FINALIZE_EVENT_LOG": str(event_log),
+        },
+    )
+
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert event_log.read_text(encoding="utf-8").splitlines() == [
+        "finalize-rpc",
+        "rc=1 delegated=1 abandoned=1",
+    ]
+
+
+def test_runtime_state_status_adopts_journal_authoritative_release(
+    tmp_path: Path,
+):
+    env_file = tmp_path / "deploy.env"
+    env_file.write_text(
+        "DEPLOY_SERVER=fake-server\n"
+        "DEPLOY_PATH=/tmp/fake-health-app\n"
+        "HEALTH_EVIDENCE_RUNTIME_ENABLED=false\n",
+        encoding="utf-8",
+    )
+    old_sha = "a" * 40
+    candidate_sha = "b" * 40
+    harness = f"""
+source {DEPLOY_SCRIPT!s}
+DEPLOY_EXPECTED_SHA={candidate_sha}
+run_runtime_state_transaction() {{
+    printf '%s\\n' \
+      'RUNTIME_STATE_TRANSACTION_OK command=status result=phase=PREPARED old_sha={old_sha} candidate_sha={candidate_sha} gate_armed=true gate_released=false release_target=none next_action=install state_source=journal'
+}}
+ssh() {{
+    case "$*" in
+      *"rev-parse HEAD"*) printf '%s\\n' '{old_sha}' ;;
+      *) return 0 ;;
+    esac
+}}
+inspect_runtime_state_transaction_before_deploy
+test "$RUNTIME_STATE_RESUME_PHASE" = PREPARED
+test "$RUNTIME_STATE_RESUME_TARGET" = none
+test "$ROLLBACK_CANDIDATE_COMMIT" = {old_sha}
+test "$ROLLBACK_COMMIT" = {old_sha}
+"""
+    result = subprocess.run(
+        ["bash", "-c", harness],
+        text=True,
+        capture_output=True,
+        check=False,
+        env={**os.environ, "DEPLOY_ENV_FILE": str(env_file)},
+    )
+
+    assert result.returncode == 0, (result.stdout, result.stderr)
+
+
+def test_runtime_state_status_rejects_other_candidate_and_preserves_lease(
+    tmp_path: Path,
+):
+    env_file = tmp_path / "deploy.env"
+    env_file.write_text(
+        "DEPLOY_SERVER=fake-server\n"
+        "DEPLOY_PATH=/tmp/fake-health-app\n"
+        "HEALTH_EVIDENCE_RUNTIME_ENABLED=false\n",
+        encoding="utf-8",
+    )
+    harness = f"""
+source {DEPLOY_SCRIPT!s}
+DEPLOY_EXPECTED_SHA={'b' * 40}
+run_runtime_state_transaction() {{
+    printf '%s\\n' \
+      'RUNTIME_STATE_TRANSACTION_OK command=status result=phase=INSTALLED old_sha={'a' * 40} candidate_sha={'c' * 40} gate_armed=true gate_released=false release_target=none next_action=candidate-guard state_source=journal'
+}}
+set +e
+inspect_runtime_state_transaction_before_deploy
+inspect_rc=$?
+test "$inspect_rc" -ne 0
+test "$_REMOTE_RELEASE_LOCK_ABANDONED" -eq 1
+"""
+    result = subprocess.run(
+        ["bash", "-c", harness],
+        text=True,
+        capture_output=True,
+        check=False,
+        env={**os.environ, "DEPLOY_ENV_FILE": str(env_file)},
+    )
+
+    assert result.returncode == 0, (result.stdout, result.stderr)
+
+
+@pytest.mark.parametrize(
+    ("phase", "remote_head", "env_proof_ok"),
+    (
+        ("INSTALLED", "c" * 40, True),
+        ("PREPARED", "a" * 40, False),
+    ),
+)
+def test_runtime_state_resume_proof_failure_preserves_stage_and_lease(
+    tmp_path: Path,
+    phase: str,
+    remote_head: str,
+    env_proof_ok: bool,
+):
+    env_file = tmp_path / "deploy.env"
+    stage = tmp_path / "release-stage"
+    lock_dir = tmp_path / "release-lock"
+    stage.mkdir()
+    lock_dir.mkdir()
+    (stage / "backend.env.rollback").write_text("rollback")
+    (lock_dir / "token").write_text("owner")
+    env_file.write_text(
+        "DEPLOY_SERVER=fake-server\n"
+        "DEPLOY_PATH=/tmp/fake-health-app\n"
+        "HEALTH_EVIDENCE_RUNTIME_ENABLED=false\n",
+        encoding="utf-8",
+    )
+    old_sha = "a" * 40
+    candidate_sha = "b" * 40
+    harness = f"""
+source {DEPLOY_SCRIPT!s}
+set +e
+DEPLOY_EXPECTED_SHA={candidate_sha}
+REMOTE_BACKUP_PREFLIGHT_DIR={stage!s}
+REMOTE_RELEASE_LOCK_DIR={lock_dir!s}
+_REMOTE_RELEASE_LOCK_ACQUIRED=1
+REMOTE_RELEASE_LOCK_TOKEN=owner
+run_runtime_state_transaction() {{
+    printf '%s\\n' \
+      'RUNTIME_STATE_TRANSACTION_OK command=status result=phase={phase} old_sha={old_sha} candidate_sha={candidate_sha} gate_armed=true gate_released=false release_target=none next_action=install state_source=journal'
+}}
+ssh() {{
+    case "$*" in
+      *"rev-parse HEAD"*) printf '%s\\n' '{remote_head}' ;;
+      *) [ '{1 if env_proof_ok else 0}' = 1 ] ;;
+    esac
+}}
+inspect_runtime_state_transaction_before_deploy
+inspect_rc=$?
+set -e
+test "$inspect_rc" -ne 0
+test "$_REMOTE_RELEASE_LOCK_ABANDONED" -eq 1
+cleanup_remote_release_artifacts
+test -d "$REMOTE_BACKUP_PREFLIGHT_DIR"
+test -f "$REMOTE_BACKUP_PREFLIGHT_DIR/backend.env.rollback"
+test -d "$REMOTE_RELEASE_LOCK_DIR"
+test -f "$REMOTE_RELEASE_LOCK_DIR/token"
+"""
+    result = subprocess.run(
+        ["bash", "-c", harness],
+        text=True,
+        capture_output=True,
+        check=False,
+        env={**os.environ, "DEPLOY_ENV_FILE": str(env_file)},
+    )
+
+    assert result.returncode == 0, (result.stdout, result.stderr)
+
+
+def test_committed_journal_resumes_post_commit_gates_before_finalize(
+    tmp_path: Path,
+):
+    env_file = tmp_path / "deploy.env"
+    event_log = tmp_path / "events"
+    env_file.write_text(
+        "DEPLOY_SERVER=fake-server\n"
+        "DEPLOY_PATH=/tmp/fake-health-app\n"
+        "HEALTH_EVIDENCE_RUNTIME_ENABLED=false\n",
+        encoding="utf-8",
+    )
+    old_sha = "a" * 40
+    candidate_sha = "b" * 40
+    harness = f"""
+source {DEPLOY_SCRIPT!s}
+DEPLOY_EXPECTED_SHA={candidate_sha}
+run_runtime_state_transaction() {{
+    printf '%s\\n' "$1" >> "$STATUS_EVENT_LOG"
+    test "$1" = status
+    printf '%s\\n' \
+      'RUNTIME_STATE_TRANSACTION_OK command=status result=phase=COMMITTED old_sha={old_sha} candidate_sha={candidate_sha} gate_armed=false gate_released=true release_target=candidate next_action=finalize state_source=journal'
+}}
+ssh() {{
+    case "$*" in
+      *"rev-parse HEAD"*) printf '%s\\n' '{candidate_sha}' ;;
+      *) return 0 ;;
+    esac
+}}
+inspect_runtime_state_transaction_before_deploy
+test "$RUNTIME_STATE_RESUME_PHASE" = COMMITTED
+test "$RUNTIME_STATE_ALREADY_FINALIZED" -eq 0
+"""
+    result = subprocess.run(
+        ["bash", "-c", harness],
+        text=True,
+        capture_output=True,
+        check=False,
+        env={
+            **os.environ,
+            "DEPLOY_ENV_FILE": str(env_file),
+            "STATUS_EVENT_LOG": str(event_log),
+        },
+    )
+
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert event_log.read_text(encoding="utf-8").splitlines() == ["status"]
+
+
+def test_terminal_marker_cleanup_is_idempotent_before_read_only_post_gates(
+    tmp_path: Path,
+):
+    env_file = tmp_path / "deploy.env"
+    event_log = tmp_path / "events"
+    env_file.write_text(
+        "DEPLOY_SERVER=fake-server\n"
+        "DEPLOY_PATH=/tmp/fake-health-app\n"
+        "HEALTH_EVIDENCE_RUNTIME_ENABLED=false\n",
+        encoding="utf-8",
+    )
+    old_sha = "a" * 40
+    candidate_sha = "b" * 40
+    harness = f"""
+source {DEPLOY_SCRIPT!s}
+DEPLOY_EXPECTED_SHA={candidate_sha}
+assert_remote_release_lock() {{ :; }}
+run_runtime_state_transaction() {{
+    printf '%s\\n' "$1" >> "$STATUS_EVENT_LOG"
+    if [ "$1" = status ]; then
+        printf '%s\\n' \
+          'RUNTIME_STATE_TRANSACTION_OK command=status result=phase=COMMITTED old_sha={old_sha} candidate_sha={candidate_sha} gate_armed=false gate_released=true release_target=candidate next_action=finalize state_source=terminal'
+    else
+        test "$1" = finalize
+        test "$2" = {candidate_sha}
+        printf '%s\\n' \
+          'RUNTIME_STATE_TRANSACTION_OK command=finalize result=finalized'
+    fi
+}}
+ssh() {{
+    case "$*" in
+      *"rev-parse HEAD"*) printf '%s\\n' '{candidate_sha}' ;;
+      *) return 0 ;;
+    esac
+}}
+inspect_runtime_state_transaction_before_deploy
+test "$RUNTIME_STATE_ALREADY_FINALIZED" -eq 1
+"""
+    result = subprocess.run(
+        ["bash", "-c", harness],
+        text=True,
+        capture_output=True,
+        check=False,
+        env={
+            **os.environ,
+            "DEPLOY_ENV_FILE": str(env_file),
+            "STATUS_EVENT_LOG": str(event_log),
+        },
+    )
+
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert event_log.read_text(encoding="utf-8").splitlines() == [
+        "status",
+        "finalize",
+    ]
+
+
+def test_remote_release_lock_rejects_shell_metacharacters_before_ssh(
+    tmp_path: Path,
+):
+    env_file = tmp_path / "deploy.env"
+    ssh_marker = tmp_path / "ssh-called"
+    env_file.write_text(
+        "DEPLOY_SERVER=fake-server\n"
+        "DEPLOY_PATH=/tmp/fake-health-app\n"
+        "HEALTH_EVIDENCE_RUNTIME_ENABLED=false\n",
+        encoding="utf-8",
+    )
+    harness = f"""
+source {DEPLOY_SCRIPT!s}
+REMOTE_RELEASE_LOCK_DIR="/tmp/release-lock';touch /tmp/injected"
+ssh() {{ : > "$SSH_MARKER"; }}
+set +e
+acquire_remote_release_lock test
+lock_rc=$?
+test "$lock_rc" -eq 70
+test ! -e "$SSH_MARKER"
+"""
+    result = subprocess.run(
+        ["bash", "-c", harness],
+        text=True,
+        capture_output=True,
+        check=False,
+        env={
+            **os.environ,
+            "DEPLOY_ENV_FILE": str(env_file),
+            "SSH_MARKER": str(ssh_marker),
+        },
+    )
+
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert not ssh_marker.exists()
+
+
+@pytest.mark.parametrize(
+    (
+        "runtime_dir",
+        "upload_dir",
+        "skills_cache_dir",
+        "dedao_dir",
+        "legacy_enabled",
+        "allowed",
+    ),
+    (
+        (
+            "/var/lib/health-app/runtime",
+            "/var/lib/health-app/uploads",
+            "/var/cache/health-app/skills-hub",
+            "/var/lib/health-app/dedao-kbase/workspace",
+            "false",
+            True,
+        ),
+        (
+            "/opt/health-app/backend/data",
+            "/var/lib/health-app/uploads",
+            "/var/cache/health-app/skills-hub",
+            "/var/lib/health-app/dedao-kbase/workspace",
+            "false",
+            False,
+        ),
+        (
+            "/var/lib/health-app/runtime",
+            "/opt/health-app/backend/uploads",
+            "/var/cache/health-app/skills-hub",
+            "/var/lib/health-app/dedao-kbase/workspace",
+            "false",
+            False,
+        ),
+        (
+            "/var/lib/health-app/runtime",
+            "/var/lib/health-app/uploads",
+            "/opt/health-app/.health-skills-cache",
+            "/var/lib/health-app/dedao-kbase/workspace",
+            "false",
+            False,
+        ),
+        (
+            "/var/lib/health-app/runtime",
+            "/var/lib/health-app/uploads",
+            "/var/cache/health-app/skills-hub",
+            "/var/lib/health-app/dedao-kbase-review",
+            "false",
+            False,
+        ),
+        (
+            "/var/lib/health-app/runtime",
+            "/var/lib/health-app/uploads",
+            "/var/cache/health-app/skills-hub",
+            "/var/lib/health-app/dedao-kbase/workspace",
+            "true",
+            False,
+        ),
+    ),
+)
+def test_env_guard_requires_canonical_external_runtime_paths(
+    tmp_path: Path,
+    runtime_dir: str,
+    upload_dir: str,
+    skills_cache_dir: str,
+    dedao_dir: str,
+    legacy_enabled: str,
+    allowed: bool,
+):
+    env_file = tmp_path / "deploy.env"
+    env_file.write_text(
+        "DEPLOY_SERVER=fake-server\n"
+        "DEPLOY_PATH=/tmp/fake-health-app\n"
+        "APP_ENV=production\n"
+        "DEBUG=False\n"
+        f"HEALTH_RUNTIME_DATA_DIR={runtime_dir}\n"
+        f"HEALTH_UPLOAD_DIR={upload_dir}\n"
+        f"HEALTH_SKILLS_CACHE_DIR={skills_cache_dir}\n"
+        f"DEDAO_KBASE_REVIEW_ARTIFACT_DIR={dedao_dir}\n"
+        f"LEGACY_KNOWLEDGE_RUNTIME_ENABLED={legacy_enabled}\n"
+        "HEALTH_EVIDENCE_RUNTIME_ENABLED=false\n",
+        encoding="utf-8",
+    )
+    harness = f"""
+source {DEPLOY_SCRIPT!s}
+scp() {{ return 1; }}
+validate_env_sync_safety
+"""
+    result = subprocess.run(
+        ["bash", "-c", harness],
+        text=True,
+        capture_output=True,
+        check=False,
+        env={**os.environ, "DEPLOY_ENV_FILE": str(env_file)},
+    )
+
+    assert (result.returncode == 0) is allowed, (
+        result.stdout,
+        result.stderr,
+    )
 
 
 def test_plain_ssh_write_failures_preserve_server_lease_for_reconciliation():
@@ -529,6 +1493,71 @@ def test_automatic_rollback_uses_verified_release_runner_and_propagates_failure(
     assert "ROLLBACK_OK commit=$ROLLBACK_COMMIT kb_quarantine=passed" in rollback_body
 
 
+@pytest.mark.parametrize(
+    ("runtime_state_marker", "accepted"),
+    (
+        ("runtime_state=restored", True),
+        ("runtime_state=candidate-retained", True),
+        ("", False),
+        ("runtime_state=unknown", False),
+        ("runtime_state=restored-extra", False),
+    ),
+)
+def test_automatic_rollback_accepts_only_terminal_runtime_state_values(
+    tmp_path: Path,
+    runtime_state_marker: str,
+    accepted: bool,
+):
+    env_file = tmp_path / "deploy.env"
+    env_file.write_text(
+        "DEPLOY_SERVER=fake-server\n"
+        "DEPLOY_PATH=/tmp/fake-health-app\n"
+        "HEALTH_EVIDENCE_RUNTIME_ENABLED=false\n",
+        encoding="utf-8",
+    )
+    rollback_commit = "a" * 40
+    marker = (
+        f"ROLLBACK_OK commit={rollback_commit} "
+        "kb_quarantine=passed schema_probe=passed auth_probe=passed "
+        "services=active process_flag=false"
+    )
+    if runtime_state_marker:
+        marker += f" {runtime_state_marker}"
+    harness = f"""
+source {DEPLOY_SCRIPT!s}
+set +e
+ROLLBACK_COMMIT={rollback_commit}
+ssh() {{ printf '%s\\n' "$FAKE_ROLLBACK_OUTPUT"; }}
+rollback_deploy
+rollback_rc=$?
+printf 'ROLLBACK_RESULT rc=%s delegated=%s abandoned=%s\\n' \
+    "$rollback_rc" \
+    "$_REMOTE_RELEASE_LOCK_DELEGATED" \
+    "$_REMOTE_RELEASE_LOCK_ABANDONED"
+exit 0
+"""
+
+    result = subprocess.run(
+        ["bash", "-c", harness],
+        text=True,
+        capture_output=True,
+        check=False,
+        env={
+            **os.environ,
+            "DEPLOY_ENV_FILE": str(env_file),
+            "FAKE_ROLLBACK_OUTPUT": marker,
+        },
+    )
+
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    expected = (
+        "ROLLBACK_RESULT rc=0 delegated=0 abandoned=0"
+        if accepted
+        else "ROLLBACK_RESULT rc=1 delegated=1 abandoned=1"
+    )
+    assert expected in result.stdout
+
+
 def test_release_preflight_stages_rollback_code_and_failed_release_manifest():
     script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
     stage_start = script.index("stage_backup_preflight_scripts() {")
@@ -544,6 +1573,28 @@ def test_release_preflight_stages_rollback_code_and_failed_release_manifest():
     assert "git cat-file -e" in stage_body
     assert "git show" in stage_body
     assert "staged.sha256" in stage_body
+
+
+def test_release_env_snapshots_are_sealed_into_verified_stage_before_deactivation():
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    seal_start = script.index("seal_release_env_snapshots() {")
+    seal_end = script.index("require_canonical_env_assignment() {", seal_start)
+    seal_body = script[seal_start:seal_end]
+    sync_start = script.index("sync_env() {")
+    sync_end = script.index("# 去激活事务", sync_start)
+    sync_body = script[sync_start:sync_end]
+    deploy_body = script[script.index("deploy_backend() {") :]
+
+    for snapshot in ("backend.env.rollback", "backend.env.candidate"):
+        assert snapshot in seal_body
+    assert "sha256sum --strict -c staged.sha256" in seal_body
+    assert '" = "14"' in seal_body
+    assert sync_body.index("upload_backend_env_file") < sync_body.index(
+        "seal_release_env_snapshots"
+    )
+    assert deploy_body.index("sync_env") < deploy_body.index(
+        "deactivate_health_evidence_runtime_before_mutation"
+    )
 
 
 def test_deploy_does_not_claim_services_are_blocked_when_rollback_fails():
@@ -568,7 +1619,11 @@ def test_all_mode_captures_old_backend_sha_before_frontend_checkout(tmp_path):
 source {DEPLOY_SCRIPT!s}
 REMOTE_HEAD={old_sha}
 acquire_release_lock() {{ :; }}
-acquire_remote_release_lock() {{ :; }}
+acquire_remote_release_lock() {{
+    _REMOTE_RELEASE_LOCK_ACQUIRED=1
+    _REMOTE_RELEASE_LOCK_DELEGATED=0
+    _REMOTE_RELEASE_LOCK_ABANDONED=0
+}}
 install_release_cleanup_traps() {{ :; }}
 assert_remote_release_lock() {{ :; }}
 confirm_ota_drift() {{ :; }}
@@ -1046,9 +2101,33 @@ def test_health_evidence_activation_is_delegated_to_persistent_systemd_transacti
     )
     runner_body = script[runner_start:runner_end]
 
-    precheck = body.index('verify_runtime_only_kb_contract "staged"')
+    adopted_branch = body.index('if [[ "$adopted" = "1" ]]')
+    adopted_stage = body.index(
+        "stage_health_evidence_activation_artifacts",
+        adopted_branch,
+    )
+    adopted_enabled_proof = body.index(
+        "prove_health_evidence_activation_state",
+        adopted_stage,
+    )
+    adopted_not_launched = body.index(
+        "prove_health_evidence_activation_not_launched",
+        adopted_enabled_proof,
+    )
+    precheck = body.index(
+        'verify_runtime_only_kb_contract "staged"',
+        adopted_not_launched,
+    )
     stage_delegated = body.index("_REMOTE_RELEASE_LOCK_DELEGATED=1", precheck)
-    stage = body.index("stage_health_evidence_activation_artifacts")
+    capability = body.index(
+        "verify_systemd_activation_capability",
+        stage_delegated,
+    )
+    fresh_branch = body.index('if [[ "$adopted" != "1" ]]', capability)
+    stage = body.index(
+        "stage_health_evidence_activation_artifacts",
+        fresh_branch,
+    )
     stage_clear = body.index("_REMOTE_RELEASE_LOCK_DELEGATED=0", stage)
     launch_delegated = body.index(
         "_REMOTE_RELEASE_LOCK_DELEGATED=1", stage_clear
@@ -1058,8 +2137,14 @@ def test_health_evidence_activation_is_delegated_to_persistent_systemd_transacti
     recover_mode = runner_body.index("--recover-if-unverified")
 
     assert (
-        precheck
+        adopted_branch
+        < adopted_stage
+        < adopted_enabled_proof
+        < adopted_not_launched
+        < precheck
         < stage_delegated
+        < capability
+        < fresh_branch
         < stage
         < stage_clear
         < launch_delegated
@@ -1268,6 +2353,806 @@ test ! -e "$REMOTE_RELEASE_LOCK_DIR"
     )
 
     assert result.returncode == 0, (result.stdout, result.stderr)
+
+
+@pytest.mark.parametrize(
+    "mode",
+    ("all", "frontend", "backend", "env", "health-evidence", "restart"),
+)
+def test_each_terminal_release_mode_arms_adopted_stage_cleanup(
+    tmp_path: Path,
+    mode: str,
+):
+    env_file = tmp_path / "deploy.env"
+    env_file.write_text(
+        "DEPLOY_SERVER=fake-server\n"
+        "DEPLOY_PATH=/tmp/fake-health-app\n",
+        encoding="utf-8",
+    )
+    harness = f"""
+source {DEPLOY_SCRIPT!s}
+_REMOTE_RELEASE_LOCK_ACQUIRED=1
+_REMOTE_RELEASE_LOCK_ADOPTED=1
+_REMOTE_RELEASE_LOCK_ABANDONED=1
+_REMOTE_RELEASE_LOCK_DELEGATED=0
+arm_remote_release_cleanup_after_terminal_mode_success {mode}
+printf 'delegated=%s abandoned=%s\\n' \
+    "$_REMOTE_RELEASE_LOCK_DELEGATED" \
+    "$_REMOTE_RELEASE_LOCK_ABANDONED"
+"""
+    result = subprocess.run(
+        ["bash", "-c", harness],
+        text=True,
+        capture_output=True,
+        check=False,
+        env={**os.environ, "DEPLOY_ENV_FILE": str(env_file)},
+    )
+
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert result.stdout.strip() == "delegated=0 abandoned=0"
+
+
+def test_terminal_release_mode_preserves_adopted_stage_while_delegated(
+    tmp_path: Path,
+):
+    env_file = tmp_path / "deploy.env"
+    env_file.write_text(
+        "DEPLOY_SERVER=fake-server\n"
+        "DEPLOY_PATH=/tmp/fake-health-app\n",
+        encoding="utf-8",
+    )
+    harness = f"""
+source {DEPLOY_SCRIPT!s}
+set +e
+_REMOTE_RELEASE_LOCK_ACQUIRED=1
+_REMOTE_RELEASE_LOCK_ADOPTED=1
+_REMOTE_RELEASE_LOCK_ABANDONED=1
+_REMOTE_RELEASE_LOCK_DELEGATED=1
+arm_remote_release_cleanup_after_terminal_mode_success backend
+rc=$?
+printf 'rc=%s delegated=%s abandoned=%s\\n' \
+    "$rc" \
+    "$_REMOTE_RELEASE_LOCK_DELEGATED" \
+    "$_REMOTE_RELEASE_LOCK_ABANDONED"
+"""
+    result = subprocess.run(
+        ["bash", "-c", harness],
+        text=True,
+        capture_output=True,
+        check=False,
+        env={**os.environ, "DEPLOY_ENV_FILE": str(env_file)},
+    )
+
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert "rc=73 delegated=1 abandoned=1" in result.stdout
+
+
+def test_adopted_terminal_activation_proof_removes_stage_state_and_lease(
+    tmp_path: Path,
+):
+    stage = Path("/tmp") / (
+        f"health-app-backup-preflight-{os.getpid()}-"
+        f"{tmp_path.stat().st_ino}"
+    )
+    state_dir = Path(f"{stage}.activation-state")
+    for path in (stage, state_dir):
+        if path.exists():
+            shutil.rmtree(path)
+        path.mkdir(mode=0o700)
+    (stage / "sealed").write_text("immutable\n", encoding="utf-8")
+    (state_dir / "success").write_text("terminal\n", encoding="utf-8")
+    remote_lock = tmp_path / "release.lock"
+    remote_lock.mkdir()
+    token = "activation-owner"
+    for name, value in (
+        ("token", token),
+        ("label", "deploy:health-evidence"),
+        ("stage", str(stage)),
+        ("started_at", "2026-07-30T12:00:00Z"),
+    ):
+        (remote_lock / name).write_text(value + "\n", encoding="utf-8")
+    env_file = tmp_path / "deploy.env"
+    env_file.write_text(
+        "DEPLOY_SERVER=fake-server\n"
+        f"DEPLOY_PATH={tmp_path / 'remote-app'}\n"
+        "HEALTH_EVIDENCE_RUNTIME_ENABLED=true\n",
+        encoding="utf-8",
+    )
+    harness = f"""
+source {DEPLOY_SCRIPT!s}
+set_remote_backup_preflight_dir {stage}
+REMOTE_RELEASE_LOCK_DIR={remote_lock}
+REMOTE_RELEASE_LOCK_TOKEN={token}
+_REMOTE_RELEASE_LOCK_ACQUIRED=1
+_REMOTE_RELEASE_LOCK_ADOPTED=1
+_REMOTE_RELEASE_LOCK_ABANDONED=1
+DEPLOY_EXPECTED_SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ssh() {{
+    shift
+    if [ "${{1:-}}" = bash ] && [ "${{2:-}}" = -s ]; then
+        "$@"
+    else
+        test "$#" -eq 1
+        bash -c "$1"
+    fi
+}}
+require_health_evidence_flag_value() {{ return 0; }}
+verify_deployed_revision() {{ return 0; }}
+stage_health_evidence_activation_artifacts() {{ return 0; }}
+prove_health_evidence_activation_state() {{ test "$1" = enabled; }}
+verify_runtime_only_kb_contract() {{ exit 91; }}
+verify_systemd_activation_capability() {{ exit 92; }}
+run_health_evidence_activation_unit() {{ exit 93; }}
+prove_health_evidence_activation_not_launched() {{ exit 94; }}
+activate_health_evidence_runtime
+test "$_REMOTE_RELEASE_LOCK_ABANDONED" = 0
+test "$_REMOTE_RELEASE_LOCK_DELEGATED" = 0
+cleanup_remote_release_artifacts
+"""
+    try:
+        result = subprocess.run(
+            ["bash", "-c", harness],
+            text=True,
+            capture_output=True,
+            check=False,
+            env={**os.environ, "DEPLOY_ENV_FILE": str(env_file)},
+        )
+
+        assert result.returncode == 0, (result.stdout, result.stderr)
+        assert not stage.exists()
+        assert not state_dir.exists()
+        assert not remote_lock.exists()
+    finally:
+        shutil.rmtree(stage, ignore_errors=True)
+        shutil.rmtree(state_dir, ignore_errors=True)
+
+
+_ADOPTED_STAGE_ARTIFACTS = (
+    ("backup_db.sh", "backend/scripts/backup_db.sh"),
+    ("verify_backup_restore.sh", "backend/scripts/verify_backup_restore.sh"),
+    ("archive_backup_offsite.sh", "backend/scripts/archive_backup_offsite.sh"),
+    ("rollback_release.sh", "backend/scripts/rollback_release.sh"),
+    (
+        "activate_health_evidence_runtime.sh",
+        "backend/scripts/activate_health_evidence_runtime.sh",
+    ),
+    (
+        "verify_runtime_schema_compatibility.py",
+        "backend/scripts/verify_runtime_schema_compatibility.py",
+    ),
+    (
+        "quarantine_runtime_only_kb.py",
+        "backend/scripts/quarantine_runtime_only_kb.py",
+    ),
+    (
+        "runtime_state_release_transaction.py",
+        "backend/scripts/runtime_state_release_transaction.py",
+    ),
+    (
+        "review_manifest.json",
+        "backend/data/system_kb_v2_seed/review_manifest.json",
+    ),
+    (
+        "health-backend-runtime-state.conf",
+        "infra/systemd/dropins/health-backend-runtime-state.conf",
+    ),
+    (
+        "celery-worker-runtime-state.conf",
+        "infra/systemd/dropins/celery-worker-runtime-state.conf",
+    ),
+    (
+        "celery-beat-runtime-state.conf",
+        "infra/systemd/dropins/celery-beat-runtime-state.conf",
+    ),
+)
+
+
+def _write_immutable_adopted_stage(
+    stage: Path,
+    *,
+    source_repo: Path,
+    release_sha: str,
+    candidate_env: bytes,
+) -> None:
+    stage.mkdir(mode=0o700)
+    for staged_name, repository_path in _ADOPTED_STAGE_ARTIFACTS:
+        payload = subprocess.check_output(
+            ["git", "show", f"{release_sha}:{repository_path}"],
+            cwd=source_repo,
+        )
+        target = stage / staged_name
+        target.write_bytes(payload)
+        target.chmod(0o400)
+    for name, payload in (
+        ("backend.env.rollback", candidate_env),
+        ("backend.env.candidate", candidate_env),
+    ):
+        target = stage / name
+        target.write_bytes(payload)
+        target.chmod(0o400)
+
+    manifest_lines = []
+    for path in sorted(stage.iterdir(), key=lambda item: item.name):
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        manifest_lines.append(f"{digest}  {path.name}")
+    manifest = stage / "staged.sha256"
+    manifest.write_text("\n".join(manifest_lines) + "\n", encoding="utf-8")
+    manifest.chmod(0o400)
+
+
+def _immutable_stage_snapshot(
+    stage: Path,
+) -> tuple[int, int, dict[str, tuple[int, str, bytes]]]:
+    files = {}
+    for path in sorted(stage.iterdir(), key=lambda item: item.name):
+        payload = path.read_bytes()
+        files[path.name] = (
+            path.stat().st_ino,
+            hashlib.sha256(payload).hexdigest(),
+            payload,
+        )
+    metadata = stage.stat()
+    return metadata.st_ino, metadata.st_mtime_ns, files
+
+
+def _run_adopted_release_stage_harness(
+    tmp_path: Path,
+    *,
+    scenario: str,
+) -> dict[str, object]:
+    source_repo = tmp_path / "release-source"
+    source_repo.mkdir()
+    subprocess.run(
+        ["git", "init", "-q", "-b", "main"],
+        cwd=source_repo,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.email", "release@example.test"],
+        cwd=source_repo,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Release Test"],
+        cwd=source_repo,
+        check=True,
+    )
+    for _, repository_path in _ADOPTED_STAGE_ARTIFACTS:
+        target = source_repo / repository_path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes((ROOT / repository_path).read_bytes())
+    subprocess.run(["git", "add", "."], cwd=source_repo, check=True)
+    subprocess.run(
+        ["git", "commit", "-qm", "release fixture"],
+        cwd=source_repo,
+        check=True,
+    )
+    release_sha = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"],
+        cwd=source_repo,
+        text=True,
+    ).strip()
+    old_sha = "1" * 40
+    status_candidate_sha = (
+        "f" * 40 if scenario == "wrong-sha" else release_sha
+    )
+    if status_candidate_sha == old_sha:
+        old_sha = "2" * 40
+
+    stage = Path("/tmp") / (
+        f"health-app-backup-preflight-{os.getpid()}-"
+        f"{tmp_path.stat().st_ino}"
+    )
+    if stage.exists():
+        shutil.rmtree(stage)
+    candidate_env = (
+        b"HEALTH_EVIDENCE_RUNTIME_ENABLED=false\n"
+        b"HEALTH_RUNTIME_DATA_DIR=/var/lib/health-app/runtime\n"
+        b"HEALTH_UPLOAD_DIR=/var/lib/health-app/uploads\n"
+        b"HEALTH_SKILLS_CACHE_DIR=/var/cache/health-app/skills-hub\n"
+        b"DEDAO_KBASE_REVIEW_ARTIFACT_DIR="
+        b"/var/lib/health-app/dedao-kbase/workspace\n"
+        b"LEGACY_KNOWLEDGE_RUNTIME_ENABLED=false\n"
+    )
+    _write_immutable_adopted_stage(
+        stage,
+        source_repo=source_repo,
+        release_sha=release_sha,
+        candidate_env=candidate_env,
+    )
+    if scenario == "unsealed-allowed-name":
+        unsealed = stage / "candidate.env"
+        unsealed.write_bytes(candidate_env)
+        unsealed.chmod(0o400)
+    stage_before = _immutable_stage_snapshot(stage)
+
+    remote_path = tmp_path / "remote-app"
+    (remote_path / "backend").mkdir(parents=True)
+    (remote_path / "backend/.env").write_bytes(candidate_env)
+    remote_lock = tmp_path / "remote-release.lock"
+    remote_lock.mkdir()
+    token = "resume-owner"
+    label = "deploy:backend"
+    (remote_lock / "token").write_text(token + "\n", encoding="utf-8")
+    (remote_lock / "label").write_text(label + "\n", encoding="utf-8")
+    (remote_lock / "stage").write_text(str(stage) + "\n", encoding="utf-8")
+    (remote_lock / "started_at").write_text(
+        "2026-07-30T12:00:00Z\n",
+        encoding="utf-8",
+    )
+
+    attempted_token = "wrong-owner" if scenario == "wrong-token" else token
+    attempted_label = (
+        "deploy:frontend" if scenario == "wrong-label" else label
+    )
+    env_file = tmp_path / "deploy.env"
+    env_file.write_text(
+        "DEPLOY_SERVER=fake-server\n"
+        f"DEPLOY_PATH={remote_path}\n"
+        "HEALTH_EVIDENCE_RUNTIME_ENABLED=false\n",
+        encoding="utf-8",
+    )
+    event_log = tmp_path / "adoption.events"
+    proof_file = tmp_path / "adoption.proof"
+    mkdir_log = tmp_path / "mkdir.events"
+    scp_log = tmp_path / "scp.events"
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    _write_executable(
+        fake_bin / "stat",
+        """#!/bin/bash
+set -euo pipefail
+target="${@: -1}"
+case "$target" in
+  "$FAKE_ADOPTED_STAGE") printf 'root:root:700\n' ;;
+  "$FAKE_ADOPTED_STAGE/staged.sha256"|\
+"$FAKE_ADOPTED_STAGE/backend.env.candidate"|\
+staged.sha256|backend.env.candidate)
+    printf 'root:root:400\n'
+    ;;
+  *) exit 97 ;;
+esac
+""",
+    )
+    _write_executable(
+        fake_bin / "mkdir",
+        """#!/bin/sh
+set -eu
+printf '%s\n' "$*" >> "$FAKE_MKDIR_LOG"
+exec /bin/mkdir "$@"
+""",
+    )
+    harness = f"""
+source {DEPLOY_SCRIPT!s}
+REMOTE_RELEASE_LOCK_DIR="$FAKE_REMOTE_LOCK"
+REVA_RELEASE_LOCK_ADOPT=1
+REVA_RELEASE_LOCK_TOKEN="$ATTEMPTED_TOKEN"
+DEPLOY_EXPECTED_SHA="$EXPECTED_RELEASE_SHA"
+ssh() {{
+    shift
+    if [ "${{1:-}}" = bash ] && [ "${{2:-}}" = -s ]; then
+        "$@"
+        return
+    fi
+    if [ "$#" -eq 1 ]; then
+        case "$1" in
+          *"rev-parse HEAD"*) printf '%s\\n' "$FAKE_REMOTE_HEAD" ;;
+          *) bash -c "$1" ;;
+        esac
+        return
+    fi
+    "$@"
+}}
+scp() {{
+    printf '%s\\n' "$*" >> "$FAKE_SCP_LOG"
+    return 99
+}}
+run_runtime_state_transaction() {{
+    test "$1" = status
+    printf '%s\\n' \
+      "RUNTIME_STATE_TRANSACTION_OK command=status result=phase=PREPARED old_sha=$STATUS_OLD_SHA candidate_sha=$STATUS_CANDIDATE_SHA gate_armed=true gate_released=false release_target=none next_action=install state_source=journal"
+}}
+
+printf 'acquire\\n' >> "$ADOPTION_EVENT_LOG"
+if acquire_remote_release_lock "$ATTEMPTED_LABEL"; then
+    :
+else
+    acquire_rc=$?
+    printf 'acquire-failed:%s\\n' "$acquire_rc" >> "$ADOPTION_EVENT_LOG"
+    exit 81
+fi
+test "$REMOTE_BACKUP_PREFLIGHT_DIR" = "$FAKE_ADOPTED_STAGE"
+test "$REMOTE_RUNTIME_STATE_RUNNER" = \
+    "$FAKE_ADOPTED_STAGE/runtime_state_release_transaction.py"
+printf 'stage\\n' >> "$ADOPTION_EVENT_LOG"
+if stage_backup_preflight_scripts; then
+    :
+else
+    stage_rc=$?
+    printf 'stage-failed:%s\\n' "$stage_rc" >> "$ADOPTION_EVENT_LOG"
+    exit 82
+fi
+printf 'inspect\\n' >> "$ADOPTION_EVENT_LOG"
+if inspect_runtime_state_transaction_before_deploy; then
+    :
+else
+    inspect_rc=$?
+    printf 'inspect-failed:%s\\n' "$inspect_rc" >> "$ADOPTION_EVENT_LOG"
+    exit 83
+fi
+printf 'stage=%s adopted=%s phase=%s candidate=%s\\n' \
+    "$REMOTE_BACKUP_PREFLIGHT_DIR" \
+    "$_REMOTE_RELEASE_LOCK_ADOPTED" \
+    "$RUNTIME_STATE_RESUME_PHASE" \
+    "$STATUS_CANDIDATE_SHA" \
+    > "$ADOPTION_PROOF_FILE"
+printf 'complete\\n' >> "$ADOPTION_EVENT_LOG"
+"""
+    try:
+        result = subprocess.run(
+            ["bash", "-c", harness],
+            cwd=source_repo,
+            text=True,
+            capture_output=True,
+            check=False,
+            env={
+                **os.environ,
+                "PATH": f"{fake_bin}:{os.environ['PATH']}",
+                "DEPLOY_ENV_FILE": str(env_file),
+                "FAKE_REMOTE_LOCK": str(remote_lock),
+                "FAKE_ADOPTED_STAGE": str(stage),
+                "FAKE_REMOTE_HEAD": old_sha,
+                "FAKE_MKDIR_LOG": str(mkdir_log),
+                "FAKE_SCP_LOG": str(scp_log),
+                "ADOPTION_EVENT_LOG": str(event_log),
+                "ADOPTION_PROOF_FILE": str(proof_file),
+                "ATTEMPTED_TOKEN": attempted_token,
+                "ATTEMPTED_LABEL": attempted_label,
+                "EXPECTED_RELEASE_SHA": release_sha,
+                "STATUS_OLD_SHA": old_sha,
+                "STATUS_CANDIDATE_SHA": status_candidate_sha,
+            },
+        )
+        stage_after = _immutable_stage_snapshot(stage)
+        return {
+            "result": result,
+            "stage": str(stage),
+            "stage_before": stage_before,
+            "stage_after": stage_after,
+            "events": (
+                event_log.read_text(encoding="utf-8").splitlines()
+                if event_log.exists()
+                else []
+            ),
+            "proof": (
+                proof_file.read_text(encoding="utf-8")
+                if proof_file.exists()
+                else ""
+            ),
+            "mkdir_calls": (
+                mkdir_log.read_text(encoding="utf-8").splitlines()
+                if mkdir_log.exists()
+                else []
+            ),
+            "scp_calls": (
+                scp_log.read_text(encoding="utf-8").splitlines()
+                if scp_log.exists()
+                else []
+            ),
+        }
+    finally:
+        shutil.rmtree(stage)
+
+
+def test_existing_remote_release_is_adopted_without_mutating_immutable_stage(
+    tmp_path: Path,
+):
+    outcome = _run_adopted_release_stage_harness(
+        tmp_path,
+        scenario="valid",
+    )
+    result = outcome["result"]
+
+    assert isinstance(result, subprocess.CompletedProcess)
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert outcome["events"] == ["acquire", "stage", "inspect", "complete"]
+    assert (
+        f"stage={outcome['stage']} adopted=1 phase=PREPARED"
+        in outcome["proof"]
+    )
+    assert outcome["stage_after"] == outcome["stage_before"]
+    assert outcome["scp_calls"] == []
+    assert all(outcome["stage"] not in call for call in outcome["mkdir_calls"])
+
+
+@pytest.mark.parametrize(
+    ("scenario", "expected_returncode", "expected_events"),
+    (
+        ("wrong-token", 81, ("acquire", "acquire-failed:73")),
+        ("wrong-label", 81, ("acquire", "acquire-failed:73")),
+        (
+            "wrong-sha",
+            83,
+            ("acquire", "stage", "inspect", "inspect-failed:1"),
+        ),
+        (
+            "unsealed-allowed-name",
+            82,
+            ("acquire", "stage", "stage-failed:1"),
+        ),
+    ),
+)
+def test_existing_remote_release_adoption_fails_closed_on_identity_mismatch(
+    tmp_path: Path,
+    scenario: str,
+    expected_returncode: int,
+    expected_events: tuple[str, ...],
+):
+    outcome = _run_adopted_release_stage_harness(
+        tmp_path,
+        scenario=scenario,
+    )
+    result = outcome["result"]
+
+    assert isinstance(result, subprocess.CompletedProcess)
+    assert result.returncode == expected_returncode, (
+        result.stdout,
+        result.stderr,
+    )
+    assert outcome["events"] == list(expected_events)
+    assert outcome["proof"] == ""
+    assert outcome["stage_after"] == outcome["stage_before"]
+    assert outcome["scp_calls"] == []
+    assert all(outcome["stage"] not in call for call in outcome["mkdir_calls"])
+
+
+def _run_adopted_activation_stage_harness(
+    tmp_path: Path,
+    *,
+    terminal: bool,
+) -> dict[str, object]:
+    source_repo = tmp_path / "activation-release-source"
+    source_repo.mkdir()
+    subprocess.run(
+        ["git", "init", "-q", "-b", "main"],
+        cwd=source_repo,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.email", "release@example.test"],
+        cwd=source_repo,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Release Test"],
+        cwd=source_repo,
+        check=True,
+    )
+    for _, repository_path in _ADOPTED_STAGE_ARTIFACTS:
+        target = source_repo / repository_path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes((ROOT / repository_path).read_bytes())
+    subprocess.run(["git", "add", "."], cwd=source_repo, check=True)
+    subprocess.run(
+        ["git", "commit", "-qm", "activation release fixture"],
+        cwd=source_repo,
+        check=True,
+    )
+    release_sha = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"],
+        cwd=source_repo,
+        text=True,
+    ).strip()
+
+    stage = Path("/tmp") / (
+        f"health-app-backup-preflight-{os.getpid()}-"
+        f"{tmp_path.stat().st_ino}"
+    )
+    if stage.exists():
+        shutil.rmtree(stage)
+    stage.mkdir(mode=0o700)
+    for staged_name, repository_path in _ADOPTED_STAGE_ARTIFACTS:
+        payload = subprocess.check_output(
+            ["git", "show", f"{release_sha}:{repository_path}"],
+            cwd=source_repo,
+        )
+        target = stage / staged_name
+        target.write_bytes(payload)
+        target.chmod(0o400)
+
+    candidate = (
+        b"APP_ENV=production\n"
+        b"DEBUG=False\n"
+        b"HEALTH_RUNTIME_DATA_DIR=/var/lib/health-app/runtime\n"
+        b"HEALTH_UPLOAD_DIR=/var/lib/health-app/uploads\n"
+        b"HEALTH_SKILLS_CACHE_DIR=/var/cache/health-app/skills-hub\n"
+        b"DEDAO_KBASE_REVIEW_ARTIFACT_DIR="
+        b"/var/lib/health-app/dedao-kbase/workspace\n"
+        b"LEGACY_KNOWLEDGE_RUNTIME_ENABLED=false\n"
+        b"HEALTH_EVIDENCE_RUNTIME_ENABLED=true\n"
+    )
+    guard = candidate.replace(
+        b"HEALTH_EVIDENCE_RUNTIME_ENABLED=true",
+        b"HEALTH_EVIDENCE_RUNTIME_ENABLED=false",
+    )
+    for name, payload in (("candidate.env", candidate), ("guard.env", guard)):
+        target = stage / name
+        target.write_bytes(payload)
+        target.chmod(0o400)
+    manifest_lines = [
+        f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}"
+        for path in sorted(stage.iterdir(), key=lambda item: item.name)
+    ]
+    manifest = stage / "staged.sha256"
+    manifest.write_text("\n".join(manifest_lines) + "\n", encoding="utf-8")
+    manifest.chmod(0o400)
+
+    state_dir = Path(f"{stage}.activation-state")
+    if state_dir.exists():
+        shutil.rmtree(state_dir)
+    state_dir.mkdir(mode=0o700)
+    if terminal:
+        terminal_payloads = {
+            "launch-intent": (
+                f"commit={release_sha}\n"
+                "unit=health-evidence-activation-"
+                f"{release_sha[:12]}-4242.service\n"
+                "lease_sha256="
+                f"{hashlib.sha256(b'activation-owner').hexdigest()}\n"
+            ),
+            "success": "terminal-success\n",
+            "success.outcome": "terminal-outcome\n",
+        }
+        for name, payload in terminal_payloads.items():
+            target = state_dir / name
+            target.write_text(payload, encoding="utf-8")
+            target.chmod(0o400)
+
+    remote_path = tmp_path / "remote-app"
+    (remote_path / "backend").mkdir(parents=True)
+    (remote_path / "backend/.env").write_bytes(guard)
+    remote_lock = tmp_path / "activation-release.lock"
+    remote_lock.mkdir()
+    (remote_lock / "token").write_text(
+        "activation-owner\n", encoding="utf-8"
+    )
+    env_file = tmp_path / "activation.env"
+    env_file.write_bytes(
+        b"DEPLOY_SERVER=fake-server\n"
+        + f"DEPLOY_PATH={remote_path}\n".encode()
+        + candidate
+    )
+    scp_log = tmp_path / "activation.scp"
+    mkdir_log = tmp_path / "activation.mkdir"
+    fake_bin = tmp_path / "activation-bin"
+    fake_bin.mkdir()
+    _write_executable(
+        fake_bin / "stat",
+        """#!/bin/bash
+set -euo pipefail
+format="$2"
+target="${@: -1}"
+case "$format" in
+  %U:%G:%a)
+    if [ -d "$target" ]; then
+      printf 'root:root:700\n'
+    else
+      printf 'root:root:400\n'
+    fi
+    ;;
+  %h) printf '1\n' ;;
+  *) exit 97 ;;
+esac
+""",
+    )
+    _write_executable(
+        fake_bin / "mkdir",
+        """#!/bin/bash
+set -euo pipefail
+printf '%s\n' "$*" >> "$FAKE_ACTIVATION_MKDIR_LOG"
+exec /bin/mkdir "$@"
+""",
+    )
+    stage_before = _immutable_stage_snapshot(stage)
+    state_before = _immutable_stage_snapshot(state_dir)
+    harness = f"""
+source {DEPLOY_SCRIPT!s}
+set_remote_backup_preflight_dir "$FAKE_ACTIVATION_STAGE"
+DEPLOY_EXPECTED_SHA="$FAKE_ACTIVATION_SHA"
+REMOTE_RELEASE_LOCK_DIR="$FAKE_ACTIVATION_LOCK"
+REMOTE_RELEASE_LOCK_TOKEN=activation-owner
+_REMOTE_RELEASE_LOCK_ACQUIRED=1
+_REMOTE_RELEASE_LOCK_ADOPTED=1
+_REMOTE_RELEASE_LOCK_ABANDONED=1
+validate_env_sync_safety() {{ return 0; }}
+validate_langbridge_env() {{ return 0; }}
+ssh() {{
+    shift
+    if [ "${{1:-}}" = bash ] && [ "${{2:-}}" = -s ]; then
+        "$@"
+        return
+    fi
+    test "$#" -eq 1
+    bash -c "$1"
+}}
+scp() {{
+    if [ "${{1:-}}" = -q ]; then shift; fi
+    test "$#" -eq 2
+    source_path="$1"
+    target_path="$2"
+    case "$source_path" in
+      fake-server:*)
+        printf 'download:%s\\n' "${{source_path#fake-server:}}" \
+            >> "$FAKE_ACTIVATION_SCP_LOG"
+        cp "${{source_path#fake-server:}}" "$target_path"
+        ;;
+      *)
+        printf 'upload:%s\\n' "$source_path" \
+            >> "$FAKE_ACTIVATION_SCP_LOG"
+        return 99
+        ;;
+    esac
+}}
+stage_health_evidence_activation_artifacts
+"""
+    try:
+        result = subprocess.run(
+            ["bash", "-c", harness],
+            cwd=source_repo,
+            text=True,
+            capture_output=True,
+            check=False,
+            env={
+                **os.environ,
+                "PATH": f"{fake_bin}:{os.environ['PATH']}",
+                "DEPLOY_ENV_FILE": str(env_file),
+                "FAKE_ACTIVATION_STAGE": str(stage),
+                "FAKE_ACTIVATION_SHA": release_sha,
+                "FAKE_ACTIVATION_LOCK": str(remote_lock),
+                "FAKE_ACTIVATION_SCP_LOG": str(scp_log),
+                "FAKE_ACTIVATION_MKDIR_LOG": str(mkdir_log),
+            },
+        )
+        return {
+            "result": result,
+            "stage_before": stage_before,
+            "stage_after": _immutable_stage_snapshot(stage),
+            "state_before": state_before,
+            "state_after": _immutable_stage_snapshot(state_dir),
+            "scp": (
+                scp_log.read_text(encoding="utf-8").splitlines()
+                if scp_log.exists()
+                else []
+            ),
+            "mkdir": (
+                mkdir_log.read_text(encoding="utf-8").splitlines()
+                if mkdir_log.exists()
+                else []
+            ),
+        }
+    finally:
+        shutil.rmtree(stage)
+        shutil.rmtree(state_dir)
+
+
+@pytest.mark.parametrize("terminal", (False, True))
+def test_adopted_activation_stage_is_read_only_for_empty_and_terminal_state(
+    tmp_path: Path,
+    terminal: bool,
+):
+    outcome = _run_adopted_activation_stage_harness(
+        tmp_path,
+        terminal=terminal,
+    )
+    result = outcome["result"]
+
+    assert isinstance(result, subprocess.CompletedProcess)
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert outcome["stage_after"] == outcome["stage_before"]
+    assert outcome["state_after"] == outcome["state_before"]
+    assert outcome["mkdir"] == []
+    assert len(outcome["scp"]) == 2
+    assert all(call.startswith("download:") for call in outcome["scp"])
 
 
 def _run_deactivation_orchestrator_harness(
@@ -1934,6 +3819,7 @@ def _run_activation_orchestrator_harness(
     tmp_path: Path,
     *,
     proof_mode: str,
+    adopted: bool = False,
 ) -> tuple[subprocess.CompletedProcess[str], list[str]]:
     env_file = tmp_path / f"deploy-{proof_mode}.env"
     event_log = tmp_path / f"activation-{proof_mode}.events"
@@ -1949,6 +3835,8 @@ set +e
 DEPLOY_EXPECTED_SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 _REMOTE_RELEASE_LOCK_ACQUIRED=1
 REMOTE_RELEASE_LOCK_TOKEN=test-owner
+_REMOTE_RELEASE_LOCK_ADOPTED={"1" if adopted else "0"}
+_REMOTE_RELEASE_LOCK_ABANDONED={"1" if adopted else "0"}
 verify_deployed_revision() {{ printf 'revision\\n' >> "$ACTIVATION_EVENT_LOG"; }}
 verify_runtime_only_kb_contract() {{
     printf 'contract:%s\\n' "$1" >> "$ACTIVATION_EVENT_LOG"
@@ -1959,17 +3847,30 @@ verify_systemd_activation_capability() {{
 stage_health_evidence_activation_artifacts() {{
     printf 'stage\\n' >> "$ACTIVATION_EVENT_LOG"
 }}
+ACTIVATION_LAUNCHED=0
 run_health_evidence_activation_unit() {{
     printf 'run:delegated=%s\\n' "$_REMOTE_RELEASE_LOCK_DELEGATED" \
         >> "$ACTIVATION_EVENT_LOG"
-    [ "$ACTIVATION_PROOF_MODE" = "success" ]
+    ACTIVATION_LAUNCHED=1
+    [ "$ACTIVATION_PROOF_MODE" = "success" ] ||
+        [ "$ACTIVATION_PROOF_MODE" = "adopted-not-launched" ]
 }}
 prove_health_evidence_activation_state() {{
     printf 'prove:%s\\n' "$1" >> "$ACTIVATION_EVENT_LOG"
     case "$ACTIVATION_PROOF_MODE:$1" in
-        success:enabled|recovered:staged) return 0 ;;
+        success:enabled|recovered:staged|adopted-success:enabled|\
+adopted-recovered:staged)
+            return 0
+            ;;
+        adopted-not-launched:enabled)
+            [ "$ACTIVATION_LAUNCHED" = "1" ]
+            ;;
         *) return 1 ;;
     esac
+}}
+prove_health_evidence_activation_not_launched() {{
+    printf 'prove:not-launched\\n' >> "$ACTIVATION_EVENT_LOG"
+    [ "$ACTIVATION_PROOF_MODE" = "adopted-not-launched" ]
 }}
 prove_health_evidence_services_inactive() {{
     printf 'containment-proof\\n' >> "$ACTIVATION_EVENT_LOG"
@@ -2061,3 +3962,99 @@ def test_activation_orchestrator_preserves_stage_and_lease_on_unknown_result(
         "containment-proof",
         "final:rc=1:delegated=1:abandoned=1",
     ]
+
+
+def test_adopted_activation_terminal_success_arms_stage_and_lease_cleanup(
+    tmp_path: Path,
+):
+    result, events = _run_activation_orchestrator_harness(
+        tmp_path,
+        proof_mode="adopted-success",
+        adopted=True,
+    )
+
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert events == [
+        "revision",
+        "stage",
+        "prove:enabled",
+        "final:rc=0:delegated=0:abandoned=0",
+    ]
+
+
+def test_adopted_activation_terminal_recovery_arms_cleanup_and_fails_closed(
+    tmp_path: Path,
+):
+    result, events = _run_activation_orchestrator_harness(
+        tmp_path,
+        proof_mode="adopted-recovered",
+        adopted=True,
+    )
+
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert events == [
+        "revision",
+        "stage",
+        "prove:enabled",
+        "prove:staged",
+        "final:rc=1:delegated=0:abandoned=0",
+    ]
+
+
+def test_adopted_activation_reuses_sealed_artifacts_only_when_never_launched(
+    tmp_path: Path,
+):
+    result, events = _run_activation_orchestrator_harness(
+        tmp_path,
+        proof_mode="adopted-not-launched",
+        adopted=True,
+    )
+
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert events == [
+        "revision",
+        "stage",
+        "prove:enabled",
+        "prove:staged",
+        "prove:not-launched",
+        "contract:staged",
+        "systemd-capability",
+        "run:delegated=1",
+        "prove:enabled",
+        "final:rc=0:delegated=0:abandoned=0",
+    ]
+
+
+def test_adopted_activation_with_launch_intent_but_no_outcome_is_preserved(
+    tmp_path: Path,
+):
+    result, events = _run_activation_orchestrator_harness(
+        tmp_path,
+        proof_mode="adopted-in-flight",
+        adopted=True,
+    )
+
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert events == [
+        "revision",
+        "stage",
+        "prove:enabled",
+        "prove:staged",
+        "prove:not-launched",
+        "final:rc=1:delegated=1:abandoned=1",
+    ]
+
+
+def test_activation_persists_launch_intent_before_systemd_rpc():
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    start = script.index("run_health_evidence_activation_unit() {")
+    end = script.index("prove_health_evidence_activation_state() {", start)
+    body = script[start:end]
+
+    intent = body.index("launch-intent")
+    durable_sync = body.index('sync -f "$state_dir"', intent)
+    systemd_rpc = body.index("systemd-run", durable_sync)
+
+    assert intent < durable_sync < systemd_rpc
+    assert 'test ! -e "$intent_file"' in body
+    assert 'rm -f "$success_marker" "$outcome_file"' not in body

@@ -27,6 +27,9 @@ BLOCKED_TEMPLATE = (
     "HEALTH_EVIDENCE_ACTIVATION_BLOCKED commit={sha} flag=unknown "
     "services=inactive containment=passed manual_intervention=required"
 )
+DEADMAN_NOOP_TEMPLATE = (
+    "HEALTH_EVIDENCE_DEADMAN_NOOP commit={sha} authorization=verified"
+)
 
 
 def _write_executable(path: Path, body: str) -> None:
@@ -228,6 +231,22 @@ case "$1" in
     done
     case "$property" in
       ActiveState) cat "$(state_file "$unit")" ;;
+      SubState)
+        if [ "$(cat "$(state_file "$unit")")" != "active" ]; then
+          printf 'dead\n'
+        elif [ "$(normalize_unit "$unit")" = "health-backend.socket" ]; then
+          printf 'listening\n'
+        else
+          printf 'running\n'
+        fi
+        ;;
+      Result) printf 'success\n' ;;
+      NRestarts)
+        cat "$FAKE_SERVICE_METRICS_DIR/$(normalize_unit "$unit").restarts"
+        ;;
+      ActiveEnterTimestampMonotonic)
+        cat "$FAKE_SERVICE_METRICS_DIR/$(normalize_unit "$unit").entered"
+        ;;
       MainPID) main_pid "$unit"; printf '\n' ;;
       ControlGroup) control_group "$unit"; printf '\n' ;;
       *) exit 93 ;;
@@ -315,7 +334,25 @@ fi
 """,
     )
     _write_executable(bin_dir / "chown", "#!/bin/sh\nexit 0\n")
-    _write_executable(bin_dir / "sleep", "#!/bin/sh\nexit 0\n")
+    _write_executable(
+        bin_dir / "sleep",
+        """#!/bin/bash
+set -euo pipefail
+if [ "${FAKE_BUMP_RESTART_ON_STABILITY:-0}" = "1" ] &&
+   [ "${1:-}" = "7" ] &&
+   [ ! -e "$FAKE_STABILITY_BUMP_MARKER" ]; then
+  restart_file="$FAKE_SERVICE_METRICS_DIR/celery-beat.restarts"
+  entered_file="$FAKE_SERVICE_METRICS_DIR/celery-beat.entered"
+  restart_count="$(cat "$restart_file")"
+  enter_timestamp="$(cat "$entered_file")"
+  printf '%s\n' "$((restart_count + 1))" > "$restart_file"
+  printf '%s\n' "$((enter_timestamp + 1))" \
+    > "$entered_file"
+  : > "$FAKE_STABILITY_BUMP_MARKER"
+fi
+exit 0
+""",
+    )
     _write_executable(
         bin_dir / "sync",
         """#!/bin/bash
@@ -402,6 +439,15 @@ def _runner_env(
     proc_root.mkdir()
     cgroup_root = tmp_path / "cgroup"
     cgroup_root.mkdir()
+    service_metrics_dir = tmp_path / "service-metrics"
+    service_metrics_dir.mkdir()
+    for unit in ("health-backend", "celery-worker", "celery-beat"):
+        (service_metrics_dir / f"{unit}.restarts").write_text(
+            "0\n", encoding="utf-8"
+        )
+        (service_metrics_dir / f"{unit}.entered").write_text(
+            "1000\n", encoding="utf-8"
+        )
     for unit in (
         "health-backend.socket",
         "health-backend",
@@ -423,6 +469,10 @@ def _runner_env(
         "FAKE_DURABLE_ENABLED_ENV": str(durable_state_dir / "enabled.env"),
         "FAKE_PROC_ROOT": str(proc_root),
         "FAKE_CGROUP_ROOT": str(cgroup_root),
+        "FAKE_SERVICE_METRICS_DIR": str(service_metrics_dir),
+        "FAKE_STABILITY_BUMP_MARKER": str(
+            tmp_path / "stability-restart-bumped"
+        ),
         "FAKE_SYNC_LOG": str(tmp_path / "sync.events"),
         "HEALTH_EVIDENCE_ACTIVATION_ATTEMPTS": "1",
         "HEALTH_EVIDENCE_ACTIVATION_SYSTEMD_RUNTIME_DIR": str(
@@ -543,6 +593,160 @@ def _assert_fake_process_flags(env: dict[str, str], expected: str) -> None:
             f"HEALTH_EVIDENCE_RUNTIME_ENABLED={expected}".encode()
             in entries
         )
+
+
+def test_terminal_runner_state_is_durable_and_adopted_without_rewrite(
+    tmp_path: Path,
+):
+    repo, sha = _make_release_repo(tmp_path)
+    runner, candidate, guard = _stage_runner(tmp_path)
+    (repo / "backend/.env").write_bytes(guard.read_bytes())
+    lock_dir, token = _release_lock(tmp_path)
+    state_dir = tmp_path / "activation-state"
+    state_dir.mkdir(mode=0o700)
+    marker = state_dir / "success"
+    unit_name = f"health-evidence-activation-{sha[:12]}-4242.service"
+    intent = state_dir / "launch-intent"
+    intent.write_text(
+        f"commit={sha}\n"
+        f"unit={unit_name}\n"
+        "lease_sha256="
+        f"{hashlib.sha256(token.encode()).hexdigest()}\n",
+        encoding="utf-8",
+    )
+    intent.chmod(0o400)
+    bin_dir = _fake_commands(tmp_path)
+    env, _ = _runner_env(tmp_path, repo, bin_dir)
+
+    activated = subprocess.run(
+        [
+            str(runner),
+            "--activate",
+            str(repo),
+            sha,
+            str(candidate),
+            str(guard),
+            str(marker),
+            str(lock_dir),
+            token,
+        ],
+        text=True,
+        capture_output=True,
+        env=env,
+        check=False,
+    )
+    recovered = subprocess.run(
+        [
+            str(runner),
+            "--recover-if-unverified",
+            str(repo),
+            sha,
+            str(candidate),
+            str(guard),
+            str(marker),
+            str(lock_dir),
+            token,
+        ],
+        text=True,
+        capture_output=True,
+        env=env,
+        check=False,
+    )
+
+    assert activated.returncode == 0, (activated.stdout, activated.stderr)
+    assert recovered.returncode == 0, (recovered.stdout, recovered.stderr)
+    assert marker.read_text(encoding="utf-8").strip() == (
+        SUCCESS_TEMPLATE.format(sha=sha)
+    )
+    outcome = state_dir / "success.outcome"
+    assert outcome.read_text(encoding="utf-8").strip() == (
+        DEADMAN_NOOP_TEMPLATE.format(sha=sha)
+    )
+    for terminal_file in (intent, marker, outcome):
+        assert stat.S_IMODE(terminal_file.stat().st_mode) == 0o400
+
+    sync_events = Path(env["FAKE_SYNC_LOG"]).read_text(
+        encoding="utf-8"
+    ).splitlines()
+    assert str(marker) in sync_events
+    assert str(outcome) in sync_events
+    assert str(state_dir) in sync_events
+
+    before = {
+        path.name: (
+            path.stat().st_ino,
+            hashlib.sha256(path.read_bytes()).hexdigest(),
+        )
+        for path in (*stage_files(runner.parent), *state_dir.iterdir())
+    }
+    deploy_env = tmp_path / "deploy.env"
+    deploy_env.write_text(
+        "DEPLOY_SERVER=fake-server\n"
+        f"DEPLOY_PATH={repo}\n"
+        "HEALTH_EVIDENCE_RUNTIME_ENABLED=true\n",
+        encoding="utf-8",
+    )
+    deploy_script = ROOT / "deploy.sh"
+    harness = f"""
+source {deploy_script!s}
+set +e
+DEPLOY_EXPECTED_SHA={sha}
+_REMOTE_RELEASE_LOCK_ACQUIRED=1
+_REMOTE_RELEASE_LOCK_ADOPTED=1
+_REMOTE_RELEASE_LOCK_ABANDONED=1
+_REMOTE_RELEASE_LOCK_DELEGATED=0
+REMOTE_RELEASE_LOCK_TOKEN={token}
+require_health_evidence_flag_value() {{ return 0; }}
+verify_deployed_revision() {{ return 0; }}
+stage_health_evidence_activation_artifacts() {{
+    test "$(cat "$ADOPT_STATE_DIR/launch-intent")" = \
+        "$(printf '%s\\n' \
+            'commit={sha}' \
+            'unit={unit_name}' \
+            'lease_sha256={hashlib.sha256(token.encode()).hexdigest()}')"
+}}
+prove_health_evidence_activation_state() {{
+    test "$1" = enabled
+    test "$(cat "$ADOPT_STATE_DIR/success")" = "$4"
+    test "$(cat "$ADOPT_STATE_DIR/success.outcome")" = "$3"
+}}
+verify_runtime_only_kb_contract() {{ exit 91; }}
+verify_systemd_activation_capability() {{ exit 92; }}
+run_health_evidence_activation_unit() {{ exit 93; }}
+prove_health_evidence_activation_not_launched() {{ exit 94; }}
+activate_health_evidence_runtime
+rc=$?
+printf 'rc=%s delegated=%s abandoned=%s\\n' \
+    "$rc" \
+    "$_REMOTE_RELEASE_LOCK_DELEGATED" \
+    "$_REMOTE_RELEASE_LOCK_ABANDONED"
+"""
+    adopted = subprocess.run(
+        ["bash", "-c", harness],
+        text=True,
+        capture_output=True,
+        env={
+            **os.environ,
+            "DEPLOY_ENV_FILE": str(deploy_env),
+            "ADOPT_STATE_DIR": str(state_dir),
+        },
+        check=False,
+    )
+
+    assert adopted.returncode == 0, (adopted.stdout, adopted.stderr)
+    assert "rc=0 delegated=0 abandoned=0" in adopted.stdout
+    after = {
+        path.name: (
+            path.stat().st_ino,
+            hashlib.sha256(path.read_bytes()).hexdigest(),
+        )
+        for path in (*stage_files(runner.parent), *state_dir.iterdir())
+    }
+    assert after == before
+
+
+def stage_files(stage: Path) -> tuple[Path, ...]:
+    return tuple(sorted(stage.iterdir(), key=lambda path: path.name))
 
 
 def test_activation_revision_proof_never_executes_repo_fsmonitor(
@@ -927,6 +1131,44 @@ def test_activation_proves_ephemeral_canary_before_persisting_candidate(
     ).splitlines()
     assert any(".enabled-commit." in target for target in sync_targets)
     assert str(durable_enabled.parent) in sync_targets
+
+
+def test_activation_restart_during_stability_window_recovers_to_guard(
+    tmp_path: Path,
+):
+    repo, sha = _make_release_repo(tmp_path)
+    runner, candidate, guard = _stage_runner(tmp_path)
+    (repo / "backend/.env").write_bytes(guard.read_bytes())
+    lock_dir, token = _release_lock(tmp_path)
+    marker = tmp_path / "activation.success"
+    bin_dir = _fake_commands(tmp_path)
+    env, _ = _runner_env(tmp_path, repo, bin_dir)
+    env["FAKE_BUMP_RESTART_ON_STABILITY"] = "1"
+
+    result = subprocess.run(
+        [
+            str(runner),
+            "--activate",
+            str(repo),
+            sha,
+            str(candidate),
+            str(guard),
+            str(marker),
+            str(lock_dir),
+            token,
+        ],
+        text=True,
+        capture_output=True,
+        env=env,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert result.stdout.strip() == ROLLBACK_TEMPLATE.format(sha=sha)
+    assert not marker.exists()
+    assert (repo / "backend/.env").read_bytes() == guard.read_bytes()
+    assert Path(env["FAKE_STABILITY_BUMP_MARKER"]).exists()
+    _assert_fake_process_flags(env, "false")
 
 
 def test_reboot_before_durable_commit_returns_to_false(tmp_path: Path):
@@ -1622,7 +1864,19 @@ def test_term_before_enabled_proof_runs_exit_guard(tmp_path: Path):
             f"stderr={stderr!r}"
         )
     process.send_signal(signal.SIGTERM)
-    stdout, stderr = process.communicate(timeout=15)
+    try:
+        # Guard recovery deliberately proves two service-stability windows
+        # before it reports a safe rollback. Keep the test deadline above
+        # that production contract, and always reap the child on failure.
+        stdout, stderr = process.communicate(timeout=30)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        stdout, stderr = process.communicate(timeout=10)
+        pytest.fail(
+            "activation runner did not finish TERM recovery within 30s: "
+            f"returncode={process.returncode}, stdout={stdout!r}, "
+            f"stderr={stderr!r}"
+        )
 
     assert process.returncode != 0, stderr
     assert stdout.strip() == ROLLBACK_TEMPLATE.format(sha=sha)

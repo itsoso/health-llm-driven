@@ -77,34 +77,72 @@ MIGRATION_DATABASE_URL=postgresql://health_app_migrator:***@localhost:5432/healt
 **后端部署脚本执行流程:**
 
 1. 检查 `.env`、干净 `main`、`origin/main` 精确 SHA 与发布 lease。
-2. 把本次提交的 backup/rollback/schema-probe 工具上传到 root-only stage，并逐文件
-   校验 Git blob hash。
+2. 把本次提交的 backup/rollback/schema-probe 工具和生产 systemd runtime
+   drop-in 上传到 root-only stage，并逐文件校验 Git blob hash；候选 effective
+   unit 还必须通过目标 systemd 版本的 `systemd-analyze verify`。
 3. 在 Git 工作树外创建数据库备份，完成临时库恢复演练及 age 加密站外归档；任一步
    失败即停止。
 4. 在修改 live env、checkout 或停服前，使用 staged probe 验证“当前生产 SHA 与
    实时 schema 兼容”。只有 stage hash、HEAD、clean tree、完整表/列/零行写探针及
    release token 前后均通过，才记录 rollback point。
-5. 同步根目录 `.env` 时先备份到 `/var/backups/health-app/env/`；候选文件先进入
-   root-only stage，再由去激活事务原子安装规范 `false`。运行时文件强制为
-   `root:health-app`、`0640`，外部备份为 `0600`。
+5. 同步根目录 `.env` 时先备份到 `/var/backups/health-app/env/`；发布前 env
+   （legacy 缺 flag 时只追加唯一规范的 false）与候选 env 一起进入 root-only
+   stage，并与 release 工具统一写入 SHA-256 manifest。候选再由去激活事务原子
+   安装。live 文件强制为 `root:health-app`、`0640`，外部滚动备份为 `0600`。
 6. 先停 backend socket、backend、Celery worker 与 beat 并证明全部 inactive，再
    checkout 精确 SHA。checkout 后只把 repo root、`.git`、tracked paths 及其
-   ancestors 规范为 root-owned/non-group-writable；不得递归改动 ignored
-   `.env`、venv、uploads 或其他 runtime data，随后安装锁定依赖。
+   ancestors 规范为 root-owned/non-group-writable；tracked 目录固定 `0755`，
+   tracked 文件按 Git mode 固定为 `0644` 或 `0755`，使运行账号可读但不可改；
+   不得由 checkout normalization 递归改动 ignored `.env`、venv、uploads 或
+   其他 runtime data，随后安装锁定依赖；legacy uploads 只允许由下述持久事务按
+   manifest/hash 迁移。
 7. 仅临时加载 `/etc/health-app/migration.env`，在 migration runner 紧前重新核验
    release token，再执行 managed migrations 并清除 migration URL；在启动任何
    writer 前，用 runtime role 再跑完整 schema probe，并再次核验 release token。
-8. 重启服务，逐 cgroup PID 证明 feature flag 终态，验证 exact SHA、health/auth、
-   脱敏后的健康硬闸与 runtime-only KB serving contract。
+8. 启动 writer 前，把 legacy uploads 无损合并到
+   `/var/lib/health-app/uploads`：old authority 为 legacy 时，事务准入只接受
+   external tree 缺失或为空；任何既有非空内容都因无权威来源而 BLOCK，禁止静默
+   union 或删除。prepare 后的拷贝断点只接受 external 是 sealed legacy manifest
+   的逐路径、同 kind/hash 子集；完整 copy/hash/fsync 证明后才退役 legacy tree。
+   每次首次或重入退休前，仍存 source 必须是对应 sealed manifest 的 deletion-only
+   子集，且 uid/gid/mode、kind 与文件 hash 未漂移；新增、改写、类型或权限变化都
+   保留现场并 BLOCK，绝不自动删除不可信树。
+   old-SHA rollback 必须从旧 effective backend+worker `ReadWritePaths` 机器判定
+   old upload authority：首次迁移回 legacy 时，把 external tree（含 candidate
+   窗口新增与删除）精确复制并校验回 legacy，再退役 external；旧版本已使用
+   external 时则保持 external 权威，两个 writer 判定不一致必须 BLOCK。任一终态
+   只保留当前 SHA 的 upload authority；root-only in-flight snapshot 随
+   terminal cleanup 清除。Skills Hub 可重建 cache 固定为
+   `/var/cache/health-app/skills-hub`，生产 install/uninstall 禁止写 tracked
+   skills。随后把 Celery Beat shelf 从 checkout 迁到 systemd
+   `StateDirectory=/var/lib/health-app/celery-beat`，原子安装 staged drop-in 并
+   校验 `FragmentPath`、`DropInPaths` 与 effective `ExecStart`；只允许迁移已知
+   shelf 后缀，拒绝
+   symlink 或 group/world writable state。重启服务后跨越 `RestartSec` 双采样
+   `MainPID`、`NRestarts` 与 activation timestamp，逐 cgroup PID 证明 feature
+   flag 终态，再验证 exact SHA、health/auth、脱敏后的健康硬闸与 runtime-only KB
+   serving contract。只有新 state 已存在且服务稳定后，才精确清理 legacy shelf。
 9. 远端 SSH/信号结果不明确时保留 release lease 与 stage；没有独立 terminal
-   证明时禁止并发 rollback 或第二次部署。
-10. health-evidence activation 的 revision proof 不读取部署仓库的 local/global
+   证明时禁止并发 rollback 或第二次部署。恢复必须显式提供原 token 并接管 lock
+   记录的原 stage；接管只校验、复用 immutable artifacts，禁止重传覆盖。持久事务
+   journal 位于 `/var/lib/health-app/release-state`，记录 old/candidate SHA、
+   boot gate、快照与不可逆 candidate floor。
+10. health-evidence activation 在第一次 systemd/D-Bus RPC 前原子、fsync 写入
+    root-only `launch-intent`。断线接管先只读验证原 14-entry sealed stage 与
+    state/outcome：已终结只做 exact proof；只有 state dir 为空（durable negative
+    proof）才可复用原 candidate/guard 启动；intent 存在但 outcome 缺失时保留
+    stage/lease，禁止并发重启。revision proof 不读取部署仓库的 local/global
     Git config，也不复制 live index。它在 root-only 临时 Git dir 中以 expected
     SHA 执行 `read-tree` 重建 proof index，再用显式 worktree 做 clean/untracked
     检查；repo metadata、非 symlink tracked paths 与 ancestors 必须 root-owned
     且不可 group/world 写。filter/fsmonitor/hooks 与 live-index semantic flags
     被隔离，不能影响 proof；ownership 或 clean-tree 异常在 mutation 前
     fail closed。
+11. System KB import 与 skills manifest 完成后，必须再次跨完整稳定窗口证明
+    backend/Celery 的 PID、restart count、flag=false、exact revision、health 与
+    staged KB contract；全部通过后才 `finalize` 并删除持久回滚快照。old 分支
+    rollback 同时恢复旧 code、drop-in、runtime state、发布前 env，并按第 8 项恢复
+    机器判定的 old upload authority；candidate floor 分支保持候选 env 原字节不变。
 
 ### 8.5 环境变量同步
 

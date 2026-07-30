@@ -23,6 +23,7 @@ from app.services.private_uploads import (
     refresh_private_upload_url,
     verify_signed_private_upload_url,
 )
+from app.utils.runtime_data import upload_dir
 
 logger = logging.getLogger(__name__)
 _ACTIVE_STAGED_DELETION_GUARD = threading.Lock()
@@ -31,10 +32,7 @@ _CHAT_IMAGE_LIFECYCLE_PROCESS_LOCK = threading.RLock()
 _CHAT_IMAGE_LIFECYCLE_THREAD_STATE = threading.local()
 CHAT_IMAGE_LIFECYCLE_LOCK_TIMEOUT_SECONDS = 5.0
 
-_UPLOAD_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-    "uploads", "chat",
-)
+_UPLOAD_DIR = os.fspath(upload_dir() / "chat")
 
 
 @contextmanager

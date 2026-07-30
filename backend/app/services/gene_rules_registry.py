@@ -4,7 +4,8 @@ Loaded once at process start and re-loaded when /knowledge/gene-drug-rules
 POST endpoint is hit.
 
 Source of truth: down-dedao/artifacts/gene_knowledge.json (llm-wiki-v2 schema).
-Local mirror path: $HEALTH_DATA_DIR/gene_knowledge.json (default backend/data/).
+Local mirror path: $HEALTH_GENE_KNOWLEDGE_PATH. Production defaults to
+/var/lib/health-app/runtime/gene_knowledge.json; development keeps backend/data.
 
 This module REPLACES the hard-coded gene ladders in two places:
 - app/twin/gene_config.py: phenotype → summary_line lookup
@@ -21,20 +22,68 @@ from __future__ import annotations
 import json
 import logging
 import os
+import stat
+import tempfile
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
+from app.utils.runtime_data import configured_runtime_path, runtime_data_path
+
 logger = logging.getLogger(__name__)
 
 
-DEFAULT_PATH = Path(
-    os.environ.get(
-        "HEALTH_GENE_KNOWLEDGE_PATH",
-        str(Path(__file__).resolve().parent.parent.parent / "data" / "gene_knowledge.json"),
-    )
-)
+def default_path() -> Path:
+    configured = os.environ.get("HEALTH_GENE_KNOWLEDGE_PATH", "").strip()
+    if configured:
+        return configured_runtime_path(
+            configured,
+            "HEALTH_GENE_KNOWLEDGE_PATH",
+        )
+    return runtime_data_path("gene_knowledge.json")
+
+
+DEFAULT_PATH = default_path()
+
+
+class AtomicPayloadCommitError(RuntimeError):
+    """The file was replaced, but its parent-directory sync failed."""
+
+
+def _atomic_write_payload(path: Path, payload: Dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path: Path | None = None
+    replaced = False
+    try:
+        descriptor, raw_temp_path = tempfile.mkstemp(
+            dir=path.parent,
+            prefix=f".{path.name}.",
+        )
+        temp_path = Path(raw_temp_path)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, ensure_ascii=False, indent=2)
+            handle.write("\n")
+            os.fchmod(handle.fileno(), 0o600)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_path, path)
+        replaced = True
+        temp_path = None
+        directory_fd = os.open(path.parent, os.O_RDONLY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    except Exception as exc:
+        if replaced:
+            raise AtomicPayloadCommitError(
+                "payload replaced but parent directory fsync failed"
+            ) from exc
+        raise
+    finally:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
 
 
 @dataclass
@@ -49,6 +98,24 @@ class GeneRulesRegistry:
     entities: Dict[str, Dict[str, Dict[str, Any]]] = field(default_factory=dict)
     _loaded: bool = False
 
+    def _load_data(self, data: Dict[str, Any]) -> bool:
+        self.version = data.get("version", "")
+        self.compiled_at = data.get("compiled_at", "")
+        self.schema_id = data.get("schema_id", "")
+        self.gene_rules = data.get("gene_rules", {}) or {}
+        self.claims = data.get("claims", []) or []
+        self.snp_registry = data.get("snp_registry", {}) or {}
+        self.entities = data.get("entities", {}) or {}
+        self._loaded = True
+        logger.info(
+            "Gene knowledge loaded: version=%s genes=%d claims=%d snps=%d",
+            self.version,
+            len(self.gene_rules),
+            len(self.claims),
+            len(self.snp_registry),
+        )
+        return True
+
     def load(self) -> bool:
         if not self.path.exists():
             logger.warning("gene_knowledge.json not found at %s; registry empty", self.path)
@@ -60,19 +127,7 @@ class GeneRulesRegistry:
             logger.error("Failed to parse gene_knowledge.json: %s", exc)
             self._loaded = False
             return False
-        self.version = data.get("version", "")
-        self.compiled_at = data.get("compiled_at", "")
-        self.schema_id = data.get("schema_id", "")
-        self.gene_rules = data.get("gene_rules", {}) or {}
-        self.claims = data.get("claims", []) or []
-        self.snp_registry = data.get("snp_registry", {}) or {}
-        self.entities = data.get("entities", {}) or {}
-        self._loaded = True
-        logger.info(
-            "Gene knowledge loaded: version=%s genes=%d claims=%d snps=%d",
-            self.version, len(self.gene_rules), len(self.claims), len(self.snp_registry),
-        )
-        return True
+        return self._load_data(data)
 
     def is_loaded(self) -> bool:
         return self._loaded
@@ -202,16 +257,88 @@ class GeneRulesRegistry:
 # ─────────────────────────────────────────
 
 _registry: Optional[GeneRulesRegistry] = None
+_registry_signature: tuple[int, int, int, int] | None = None
 _lock = threading.Lock()
 
 
+def _path_signature(path: Path) -> tuple[int, int, int, int] | None:
+    try:
+        current = path.stat()
+    except FileNotFoundError:
+        return None
+    return (
+        current.st_dev,
+        current.st_ino,
+        current.st_size,
+        current.st_mtime_ns,
+    )
+
+
+def _load_registry_snapshot(
+    path: Path,
+) -> tuple[GeneRulesRegistry, tuple[int, int, int, int] | None]:
+    registry = GeneRulesRegistry(path=path)
+    try:
+        descriptor = os.open(
+            path,
+            os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+        )
+    except FileNotFoundError:
+        logger.warning("gene_knowledge.json not found at %s; registry empty", path)
+        return registry, None
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode):
+            raise RuntimeError("gene knowledge path is not a regular file")
+        chunks = []
+        while True:
+            chunk = os.read(descriptor, 1024 * 1024)
+            if not chunk:
+                break
+            chunks.append(chunk)
+        after = os.fstat(descriptor)
+    finally:
+        os.close(descriptor)
+    signature = (
+        before.st_dev,
+        before.st_ino,
+        before.st_size,
+        before.st_mtime_ns,
+    )
+    if signature != (
+        after.st_dev,
+        after.st_ino,
+        after.st_size,
+        after.st_mtime_ns,
+    ):
+        raise RuntimeError("gene knowledge changed while reading")
+    try:
+        data = json.loads(b"".join(chunks).decode("utf-8"))
+    except Exception as exc:
+        logger.error("Failed to parse gene_knowledge.json: %s", exc)
+        return registry, signature
+    registry._load_data(data)
+    return registry, signature
+
+
 def get_registry() -> GeneRulesRegistry:
-    global _registry
-    if _registry is None:
+    global _registry, _registry_signature
+    signature = _path_signature(DEFAULT_PATH)
+    if (
+        _registry is None
+        or _registry.path != DEFAULT_PATH
+        or _registry_signature != signature
+    ):
         with _lock:
-            if _registry is None:
-                _registry = GeneRulesRegistry()
-                _registry.load()
+            signature = _path_signature(DEFAULT_PATH)
+            if (
+                _registry is None
+                or _registry.path != DEFAULT_PATH
+                or _registry_signature != signature
+            ):
+                _registry, _registry_signature = (
+                    _load_registry_snapshot(DEFAULT_PATH)
+                )
     return _registry
 
 
@@ -222,10 +349,9 @@ def reload_from_payload(payload: Dict[str, Any]) -> GeneRulesRegistry:
     Accepts either the new gene_knowledge.json shape or the legacy
     gene_drug_rules.json shape (which lacks claims/snp_registry/entities).
     """
-    global _registry
+    global _registry, _registry_signature
     with _lock:
         path = DEFAULT_PATH
-        path.parent.mkdir(parents=True, exist_ok=True)
         # Normalize legacy shape into new shape so registry has at least gene_rules.
         if "gene_rules" not in payload and "rules" in payload:
             # Legacy gene_drug_rules.json with high/medium tiers.
@@ -255,7 +381,19 @@ def reload_from_payload(payload: Dict[str, Any]) -> GeneRulesRegistry:
                     "entity_counts": {},
                 },
             }
-        path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-        _registry = GeneRulesRegistry(path=path)
-        _registry.load()
+        committed_error: AtomicPayloadCommitError | None = None
+        try:
+            _atomic_write_payload(path, payload)
+        except AtomicPayloadCommitError as exc:
+            committed_error = exc
+        next_registry, next_signature = _load_registry_snapshot(path)
+        loaded = next_registry.is_loaded()
+        _registry = next_registry
+        _registry_signature = next_signature
+        if not loaded:
+            raise RuntimeError(
+                "committed gene knowledge could not be reloaded"
+            ) from committed_error
+        if committed_error is not None:
+            raise committed_error
     return _registry

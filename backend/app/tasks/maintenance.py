@@ -218,9 +218,23 @@ def rebuild_knowledge_index():
     防止本地 wiki 更新后, ChromaDB 索引仍是旧快照导致 KnowledgeLibrarian
     检索到过期内容.
     """
+    from app.config import settings
+
+    if not settings.legacy_knowledge_runtime_enabled:
+        logger.info(
+            "[Knowledge Index] skipped: legacy Chroma runtime is disabled"
+        )
+        return {
+            "status": "skipped",
+            "reason": "legacy_knowledge_runtime_disabled",
+        }
+
     try:
         from app.agents.knowledge_librarian.indexer import build_index
         result = build_index(force=True)
+        if result.get("error"):
+            logger.error("[Knowledge Index] 重建失败: %s", result["error"])
+            return {**result, "status": "error"}
         logger.info(f"[Knowledge Index] 重建完成: {result}")
         return {"status": "ok", **result}
     except Exception as e:
