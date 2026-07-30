@@ -75,8 +75,11 @@ def test_backend_deploy_activates_kb_only_after_guard_restart_and_contract():
     food_seed = deploy_backend.index("python scripts/seed_food_nutrition.py")
     phase0_seed = deploy_backend.index("python scripts/seed_system_kb_phase0.py")
     v2_import = deploy_backend.index("python scripts/import_system_kb_v2_artifacts.py")
+    # A resumed, already-finalized transaction has an earlier read-only staged
+    # contract recheck. This ordering assertion is specifically about the
+    # post-import activation gate, so anchor the search after the importer.
     staged_contract = deploy_backend.index(
-        'verify_runtime_only_kb_contract "staged"'
+        'verify_runtime_only_kb_contract "staged"', v2_import
     )
 
     assert (

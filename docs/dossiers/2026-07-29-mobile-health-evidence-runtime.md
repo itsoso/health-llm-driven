@@ -585,6 +585,16 @@
     OpenAPI 双客户端零漂移、LLM synthesis 12/12 + 50/50 + 12/12 + 9/9、
     Shell syntax、Ruff、Python compile、`git diff --check`、doc drift 与
     92 份 Dossier consistency 均 PASS。
+- state-boundary replacement CI 首轮:
+  - run `30543782762` 对精确 main
+    `9c56d2d0f42fcdc2fdd6b113d93e3e1727d4fc05` 的 release-invariants、
+    Mobile、Mac、frontend、PostgreSQL runtime、quality 与其余 backend shards
+    均通过；`backend-test-d` 单项红灯，故 G3 按契约 REJECT，变量保留且未部署；
+  - 根因是结构测试把“已终结事务的前置只读 staged 复证”误当成“KB 导入后的
+    staged post-gate”。生产顺序仍为 migration → guard restart/contract →
+    rollback floor → seed/import → staged post-gate；测试现从 importer 之后查找
+    目标校验，不删除或放宽任何 Gate。定向文件 8/8 已通过，replacement
+    exact-SHA CI 待重跑。
 - **裁决**: 本地/冻结集成 G3 ☒ GO；replacement exact-SHA main CI
   ☐ GO ☒ PENDING。后者全绿前继续禁止 G5/activation/OTA。
 
