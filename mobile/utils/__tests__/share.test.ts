@@ -6,6 +6,7 @@ import api from '../../services/api';
 
 import {
   shareImage,
+  shareAgentSelection,
   shareLocalImage,
   sharePlainCaption,
   sharePlainText,
@@ -113,6 +114,48 @@ describe('sharePlainText', () => {
     })).rejects.toThrow('share sheet failed');
 
     expect(api.delete).toHaveBeenCalledWith('/shared/token123');
+  });
+});
+
+describe('shareAgentSelection', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jest.spyOn(Share, 'share').mockResolvedValue({ action: Share.sharedAction });
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('sends only conversation and durable message ids to the Agent share API', async () => {
+    await shareAgentSelection({
+      title: '小巴 · 对话节选',
+      conversationId: 77,
+      messageIds: [41, 42],
+    });
+
+    expect(api.post).toHaveBeenCalledWith('/shared/create', {
+      conversation_id: 77,
+      source_type: 'agent',
+      message_ids: [41, 42],
+    });
+    expect(api.post).not.toHaveBeenCalledWith(
+      '/shared/create-text',
+      expect.anything(),
+    );
+    expect(Clipboard.setStringAsync).toHaveBeenCalledWith(
+      'https://health.executor.life/shared/token123',
+    );
+  });
+
+  it('fails before network access when durable identity is missing', async () => {
+    await expect(shareAgentSelection({
+      title: '小巴 · 对话节选',
+      conversationId: 0,
+      messageIds: [41],
+    })).rejects.toThrow('selected_agent_share_not_durable');
+
+    expect(api.post).not.toHaveBeenCalled();
   });
 });
 

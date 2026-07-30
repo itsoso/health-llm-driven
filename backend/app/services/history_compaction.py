@@ -26,7 +26,7 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-_FOLD_KEY = "history_fold:{cid}"
+_FOLD_KEY = "history_fold:v2:{policy}:{cid}"
 _FOLD_TTL_S = 24 * 3600  # 安全评审 2026-07-17: 从 7天缩到 24h(缓存的健康语义摘要缩短驻留)
 _SUMMARY_MAX_CHARS = 1400
 _RECEIPT_LINE_MAX = 12
@@ -46,10 +46,19 @@ _INFLIGHT: set[int] = set()
 
 
 # ── 缓存薄封装(测试 monkeypatch 点;Redis 不可用 = 特性自然退化为现状截断)──
+def _fold_key(cid: int, *, policy: str | None = None) -> str:
+    from app.services.health_evidence import delivery
+
+    return _FOLD_KEY.format(
+        cid=cid,
+        policy=policy or delivery.health_release_policy_fingerprint(),
+    )
+
+
 def _cache_get(cid: int) -> Optional[Dict[str, Any]]:
     try:
         from app.utils.redis_cache import RedisCache
-        val = RedisCache.get(_FOLD_KEY.format(cid=cid))
+        val = RedisCache.get(_fold_key(cid))
         return val if isinstance(val, dict) else None
     except Exception:  # noqa: BLE001
         return None
@@ -58,7 +67,21 @@ def _cache_get(cid: int) -> Optional[Dict[str, Any]]:
 def _cache_set(cid: int, payload: Dict[str, Any]) -> None:
     try:
         from app.utils.redis_cache import RedisCache
-        RedisCache.set(_FOLD_KEY.format(cid=cid), payload, ttl=_FOLD_TTL_S)
+        from app.services.health_evidence.delivery import (
+            health_release_policy_fingerprint,
+        )
+
+        current_policy = health_release_policy_fingerprint()
+        payload_policy = str(
+            payload.get("health_release_policy") or ""
+        )
+        if payload_policy and payload_policy != current_policy:
+            return
+        RedisCache.set(
+            _fold_key(cid, policy=current_policy),
+            payload,
+            ttl=_FOLD_TTL_S,
+        )
     except Exception:  # noqa: BLE001
         pass
 
@@ -186,23 +209,52 @@ async def _refresh_fold(cid: int, keep_recent: int) -> None:
         overflow = history[:-keep_recent]
         last_overflow_id = overflow[-1].id
 
+        from app.services.health_evidence.delivery import (
+            health_release_policy_fingerprint,
+            project_persisted_health_messages,
+        )
+
+        release_policy = health_release_policy_fingerprint()
+        projected_overflow = project_persisted_health_messages(overflow)
+        contains_sanitized = any(
+            projection.sanitized
+            for projection in projected_overflow
+        )
         cached = _cache_get(cid) or {}
-        if cached.get("folded_thru_id") == last_overflow_id:
+        if (
+            cached.get("folded_thru_id") == last_overflow_id
+            and not contains_sanitized
+        ):
             return  # 已是最新
+        if contains_sanitized:
+            cached = {}
         prior_thru = cached.get("folded_thru_id")
         prior_summary = str(cached.get("summary") or "")
         prior_receipts: List[str] = list(cached.get("receipt_lines") or [])
 
-        fresh = [m for m in overflow if not isinstance(prior_thru, int) or m.id > prior_thru]
+        fresh = [
+            (message, projection)
+            for message, projection in zip(
+                overflow,
+                projected_overflow,
+                strict=True,
+            )
+            if not isinstance(prior_thru, int) or message.id > prior_thru
+        ]
         if not fresh:
             return
-        turns = [{"role": m.role, "content": m.content or ""} for m in fresh]
+        turns = [
+            {"role": projection.role, "content": projection.content}
+            for _message, projection in fresh
+        ]
 
         # 叙事(LLM, fail-open)+ 回执行(代码逐字提取, 绝不经 LLM)
         narrative_prior = prior_summary.split("【健康记录与回执】")[0].strip()
         narrative = await _summarize(narrative_prior, turns)
         if narrative is None:
             return  # 保留旧缓存;下一轮再试
+        if health_release_policy_fingerprint() != release_policy:
+            return
         # 时间序:旧回执在前,新提取的在后;超限保最近 N 行
         receipts = (prior_receipts + _extract_receipt_lines(
             [m["content"] for m in turns if m["role"] == "assistant"]
@@ -216,6 +268,7 @@ async def _refresh_fold(cid: int, keep_recent: int) -> None:
             "folded_thru_id": last_overflow_id,
             "summary": summary[:_SUMMARY_MAX_CHARS + 600],
             "receipt_lines": receipts,
+            "health_release_policy": release_policy,
         })
         logger.info(
             "[history_compaction] conv=%s 折叠至 msg#%s(新折 %d 条)",

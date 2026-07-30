@@ -10,6 +10,9 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.models.system_knowledge import KBAudit, KBDocument, KBEdge
+from app.services.system_knowledge_release_policy import (
+    acquire_system_kb_release_mutation_lock,
+)
 
 
 DOC_FILES = (
@@ -45,49 +48,58 @@ def import_system_kb_artifacts(db: Session, artifact_dir: str | Path, actor: str
     skipped_documents = 0
     skipped_edges = 0
 
-    for file_name in DOC_FILES:
-        for payload in _read_jsonl(root / file_name):
-            if not _is_reviewed_payload(payload):
-                _demote_existing_non_reviewed_document(db, payload)
-                skipped_documents += 1
+    try:
+        # This must be the first database operation. Rollback quarantine takes
+        # the same transaction lock after writers are stopped, so it drains any
+        # import already in flight before archiving the sealed release policy.
+        acquire_system_kb_release_mutation_lock(db)
+
+        for file_name in DOC_FILES:
+            for payload in _read_jsonl(root / file_name):
+                if not _is_reviewed_payload(payload):
+                    _demote_existing_non_reviewed_document(db, payload)
+                    skipped_documents += 1
+                    continue
+                _upsert_document(db, payload)
+                documents += 1
+
+        db.flush()
+        reviewed_doc_ids = _reviewed_document_ids(db)
+        for payload in _read_jsonl(root / "relations.jsonl"):
+            if (
+                payload.get("src_doc_id") not in reviewed_doc_ids
+                or payload.get("dst_doc_id") not in reviewed_doc_ids
+            ):
+                skipped_edges += 1
                 continue
-            _upsert_document(db, payload)
-            documents += 1
+            _upsert_edge(db, payload)
+            edges += 1
 
-    db.flush()
-    reviewed_doc_ids = _reviewed_document_ids(db)
-    for payload in _read_jsonl(root / "relations.jsonl"):
-        if (
-            payload.get("src_doc_id") not in reviewed_doc_ids
-            or payload.get("dst_doc_id") not in reviewed_doc_ids
-        ):
-            skipped_edges += 1
-            continue
-        _upsert_edge(db, payload)
-        edges += 1
-
-    diff = {
-        "artifact_dir": str(root),
-        "documents": documents,
-        "edges": edges,
-        "skipped_documents": skipped_documents,
-        "skipped_edges": skipped_edges,
-    }
-    db.add(
-        KBAudit(
-            doc_id=None,
-            op="import_system_kb_artifacts",
-            actor=actor,
-            diff=diff,
+        diff = {
+            "artifact_dir": str(root),
+            "documents": documents,
+            "edges": edges,
+            "skipped_documents": skipped_documents,
+            "skipped_edges": skipped_edges,
+        }
+        db.add(
+            KBAudit(
+                doc_id=None,
+                op="import_system_kb_artifacts",
+                actor=actor,
+                diff=diff,
+            )
         )
-    )
-    db.commit()
-    return {
-        "documents": documents,
-        "edges": edges,
-        "skipped_documents": skipped_documents,
-        "skipped_edges": skipped_edges,
-    }
+        db.commit()
+        return {
+            "documents": documents,
+            "edges": edges,
+            "skipped_documents": skipped_documents,
+            "skipped_edges": skipped_edges,
+        }
+    except Exception:
+        db.rollback()
+        raise
 
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:

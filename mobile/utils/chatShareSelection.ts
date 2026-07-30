@@ -6,6 +6,7 @@ type ShareableChatMessage = {
   cardType?: string;
   completionStatus?: 'complete' | 'interrupted' | 'error' | 'unknown';
   imageUris?: string[];
+  sourceMessageId?: number;
 };
 
 const ROLE_LABEL: Record<ShareableChatMessage['role'], string> = {
@@ -52,4 +53,30 @@ export function buildSelectedChatShareMessage(
   return parts.length > 0
     ? `${parts.join('\n\n')}\n\n— 小巴对话节选`
     : '';
+}
+
+export function durableSelectedAgentMessageIds(
+  messages: ShareableChatMessage[],
+  selectedIds: Set<string>,
+): number[] {
+  const selected = messages.filter(message => selectedIds.has(message.id));
+  if (selected.length === 0 || selected.length !== selectedIds.size) {
+    throw new Error('selected_agent_message_not_durable');
+  }
+
+  const durableIds = selected.map((message) => {
+    const durableId = message.sourceMessageId;
+    if (
+      !isShareableChatMessage(message)
+      || !Number.isInteger(durableId)
+      || (durableId as number) <= 0
+    ) {
+      throw new Error('selected_agent_message_not_durable');
+    }
+    return durableId as number;
+  });
+  if (new Set(durableIds).size !== durableIds.length) {
+    throw new Error('selected_agent_message_not_durable');
+  }
+  return durableIds;
 }

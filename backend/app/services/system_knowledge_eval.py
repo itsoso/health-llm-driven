@@ -41,25 +41,45 @@ from app.models.system_knowledge import KBDocument
 # to the limit the binary search path already used so binary and ranked views
 # agree on what "found" means.
 RANK_PROBE_LIMIT = 30
+_RUNTIME_ONLY_LOW_BACK_EVAL_IDS = frozenset(
+    {
+        "eval:low_back_neurologic_red_flags",
+        "eval:low_back_serious_cause_screening",
+        "eval:low_back_self_management",
+        "eval:low_back_imaging_boundary",
+        "eval:chronic_low_back_holistic_care",
+    }
+)
 
 
 def run_system_kb_eval_cases(
     db: Session,
     *,
     case_ids: Iterable[str] | None = None,
+    exact_doc_ids: Iterable[str] | None = None,
     limit: int = 50,
 ) -> dict[str, Any]:
     """Run reviewed eval_case rows against local KB search and Twin lookup."""
+    if case_ids is not None and exact_doc_ids is not None:
+        raise ValueError("case_ids and exact_doc_ids are mutually exclusive")
     wanted = set(case_ids or [])
+    exact_wanted = set(exact_doc_ids or [])
     query = (
         db.query(KBDocument)
         .filter(KBDocument.doc_type == "eval_case", KBDocument.is_archived.is_(False))
         .order_by(KBDocument.doc_id.asc())
     )
+    if exact_doc_ids is not None:
+        query = query.filter(KBDocument.doc_id.in_(exact_wanted))
     cases = [
         doc for doc in query.all()
         if (doc.metadata_json or {}).get("review_status") == "reviewed"
-        and (not wanted or ((doc.metadata_json or {}).get("case_id") or doc.doc_id) in wanted or doc.doc_id in wanted)
+        and (
+            exact_doc_ids is not None
+            or not wanted
+            or ((doc.metadata_json or {}).get("case_id") or doc.doc_id) in wanted
+            or doc.doc_id in wanted
+        )
     ][:limit]
 
     results = [_run_eval_case(db, doc) for doc in cases]
@@ -81,14 +101,36 @@ def _run_eval_case(db: Session, document: KBDocument) -> dict[str, Any]:
     case_input = metadata.get("input") or {}
     case_id = str(metadata.get("case_id") or document.doc_id)
     failures: list[str] = []
+    sealed_runtime_identity = (
+        document.doc_id in _RUNTIME_ONLY_LOW_BACK_EVAL_IDS
+        or case_id in _RUNTIME_ONLY_LOW_BACK_EVAL_IDS
+    )
+    runtime_eval = (
+        document.doc_id in _RUNTIME_ONLY_LOW_BACK_EVAL_IDS
+        and case_id == document.doc_id
+    )
+    if sealed_runtime_identity and case_id != document.doc_id:
+        failures.append("eval_case_identity_mismatch")
 
     required_doc_ids = set(expected.get("required_doc_ids") or [])
     if required_doc_ids:
-        missing = required_doc_ids - _reviewed_doc_ids(db, required_doc_ids)
+        missing = required_doc_ids - _reviewed_doc_ids(
+            db,
+            required_doc_ids,
+            require_current_runtime_artifact=runtime_eval,
+        )
         if missing:
             failures.append(f"missing_required_docs={sorted(missing)}")
 
-    lookup_twin = expected.get("lookup_twin") or case_input.get("lookup_twin")
+    # ``metadata.input`` is the only executable source. Expected metadata may
+    # mirror an input for human-readable fixtures, but it must never override
+    # the action exercised by the eval.
+    lookup_twin = case_input.get("lookup_twin")
+    if (
+        "lookup_twin" in expected
+        and expected.get("lookup_twin") != lookup_twin
+    ):
+        failures.append("eval_lookup_twin_contract_mismatch")
     required_claim_ids = set(expected.get("required_claim_ids") or [])
     advice_guard_result = _run_advice_guard_expectation(case_id, expected.get("advice_guard"))
     if advice_guard_result is not None:
@@ -110,16 +152,38 @@ def _run_eval_case(db: Session, document: KBDocument) -> dict[str, Any]:
     lookup_rank: int | None = None
     lookup_targets: list[dict[str, Any]] = []
 
-    search_query = expected.get("search_query") or case_input.get("search_query")
+    search_query = case_input.get("search_query")
+    if (
+        "search_query" in expected
+        and expected.get("search_query") != search_query
+    ):
+        failures.append("eval_search_query_contract_mismatch")
     if search_query and required_doc_ids:
         search_required_doc_ids = required_doc_ids - required_claim_ids
-        ranked_ids = _search_doc_ids_ranked(db, str(search_query))
+        ranked_ids = _search_doc_ids_ranked(
+            db,
+            str(search_query),
+            runtime_eval=runtime_eval,
+        )
         found = set(ranked_ids)
         missing_from_search = search_required_doc_ids - found
         if missing_from_search:
             failures.append(f"search_missing={sorted(missing_from_search)}")
         search_targets = _target_ranks(sorted(search_required_doc_ids), ranked_ids)
         search_rank = _best_rank(search_targets)
+        if runtime_eval:
+            if len(search_required_doc_ids) != 1:
+                failures.append(
+                    "sealed_runtime_eval_requires_exactly_one_search_target"
+                )
+            elif search_rank != 1:
+                failures.append(
+                    "sealed_runtime_target_not_top1="
+                    f"{next(iter(search_required_doc_ids))!r} "
+                    f"rank={search_rank!r}"
+                )
+    elif runtime_eval and required_doc_ids:
+        failures.append("sealed_runtime_eval_has_no_executable_search_query")
 
     if lookup_twin and required_claim_ids:
         ranked_claims = _lookup_claim_ids_ranked(db, lookup_twin)
@@ -187,25 +251,61 @@ def _best_rank(targets: list[dict[str, Any]]) -> int | None:
     return min(ranks) if ranks else None
 
 
-def _reviewed_doc_ids(db: Session, doc_ids: set[str]) -> set[str]:
+def _reviewed_doc_ids(
+    db: Session,
+    doc_ids: set[str],
+    *,
+    require_current_runtime_artifact: bool = False,
+) -> set[str]:
     if not doc_ids:
         return set()
+    from app.services.health_evidence.authority import (
+        is_current_health_evidence_document,
+    )
+    from app.services.system_knowledge_service import serialize_document
+
     return {
         doc.doc_id
         for doc in db.query(KBDocument).filter(KBDocument.doc_id.in_(doc_ids)).all()
         if not doc.is_archived and (doc.metadata_json or {}).get("review_status") == "reviewed"
+        and (
+            not require_current_runtime_artifact
+            or is_current_health_evidence_document(serialize_document(doc))
+        )
     }
 
 
-def _search_doc_ids_ranked(db: Session, query: str) -> list[str]:
+def _search_doc_ids_ranked(
+    db: Session,
+    query: str,
+    *,
+    runtime_eval: bool = False,
+) -> list[str]:
     """Ordered doc_ids from search_knowledge, preserving fusion rank (dedup, keep-first)."""
-    from app.services.system_knowledge_service import search_knowledge
+    from app.services.health_evidence.authority import (
+        is_current_health_evidence_document,
+    )
+    from app.services.system_knowledge_service import (
+        search_health_evidence_runtime_claims,
+        search_knowledge,
+    )
 
-    result = search_knowledge(db, query, limit=RANK_PROBE_LIMIT)
+    search = (
+        search_health_evidence_runtime_claims
+        if runtime_eval
+        else search_knowledge
+    )
+    result = search(db, query, limit=RANK_PROBE_LIMIT)
     ordered: list[str] = []
     seen: set[str] = set()
     for item in (result.get("results") or []):
-        doc_id = (item.get("document") or {}).get("doc_id")
+        stored_document = item.get("document") or {}
+        if (
+            runtime_eval
+            and not is_current_health_evidence_document(stored_document)
+        ):
+            continue
+        doc_id = stored_document.get("doc_id")
         if doc_id and doc_id not in seen:
             seen.add(doc_id)
             ordered.append(doc_id)

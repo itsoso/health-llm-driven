@@ -41,6 +41,10 @@ import { MedicalReportCardSpec } from './MedicalReportCard';
 import { MedicalExamImportResultCardSpec } from './MedicalExamImportResultCard';
 import { MenuShareCardSpec } from './MenuShareCard';
 import { SystemKnowledgeEvidenceCardSpec } from './SystemKnowledgeEvidenceCard';
+import {
+  HealthEvidenceCardSpec,
+  projectHealthEvidenceCardData,
+} from './HealthEvidenceCard';
 import { RuntimeAgendaCardSpec } from './RuntimeAgendaCard';
 import { OperatingReviewCardSpec } from './OperatingReviewCard';
 import { MetricChartCardSpec, MetricEmptyStateCardSpec, MetricLineChartCardSpec, RevaUiLineChartCardSpec } from './MetricChartCard';
@@ -70,6 +74,7 @@ export const CARD_REGISTRY: CardSpec[] = [
   MedicalExamImportResultCardSpec,
   MedicalReportCardSpec,
   SystemKnowledgeEvidenceCardSpec,
+  HealthEvidenceCardSpec,
   RuntimeAgendaCardSpec,
   OperatingReviewCardSpec,
   MetricEmptyStateCardSpec,
@@ -338,7 +343,9 @@ export function renderServerCards(cards?: ServerCardDescriptor[] | null): Server
     c && typeof c.type === 'string' && CARD_MAP[c.type] && isRenderableServerCard(c)
   )).map((c) => ({
     type: c.type,
-    data: c.data,
+    data: c.type === 'health_evidence'
+      ? projectHealthEvidenceCardData(c.data)
+      : c.data,
     actions: normalizeCardActions(c.actions, c.type),
   }));
 }

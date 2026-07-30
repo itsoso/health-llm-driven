@@ -75,6 +75,7 @@ def _seed_entity(db, gene_symbol):
         summary=f"{gene_symbol} summary",
         confidence=1.0,
         evidence_level="A",
+        metadata_json={"review_status": "reviewed"},
         is_archived=False,
     )
     db.add(d)
@@ -93,6 +94,7 @@ def _seed_claim(db, claim_slug, confidence=0.8, evidence_level="B", archived=Fal
         body=f"body for {claim_slug}",
         confidence=confidence,
         evidence_level=evidence_level,
+        metadata_json={"review_status": "reviewed"},
         is_archived=archived,
     )
     db.add(d)
@@ -184,6 +186,29 @@ def test_evidence_refs_skips_archived_claims(db):
     r = genetic_report.build_report(db, user.id)
     mthfr = next(it for it in r["items"] if it["gene"] == "MTHFR")
     assert mthfr["evidence_refs"] == [c_live]
+
+
+def test_evidence_refs_skips_runtime_only_claims(db):
+    """通用基因报告不得绕过 runtime-only claim hold."""
+    user = _make_user(db, "runtime_hold_user")
+    p = _make_profile(db, user.id)
+    _make_variant(db, p, gene="MTHFR", variant_name="C677T", rsid="rs1801133", genotype="CT")
+
+    gene = _seed_entity(db, "MTHFR")
+    visible = _seed_claim(db, "nutrition/folate-visible", confidence=0.6)
+    held = _seed_claim(
+        db,
+        "c_low_back_emergency_neurologic_red_flags",
+        confidence=0.99,
+    )
+    _link(db, gene, visible)
+    _link(db, gene, held)
+    db.commit()
+
+    report = genetic_report.build_report(db, user.id)
+    mthfr = next(item for item in report["items"] if item["gene"] == "MTHFR")
+
+    assert mthfr["evidence_refs"] == [visible]
 
 
 def test_evidence_refs_query_count_bounded(db):

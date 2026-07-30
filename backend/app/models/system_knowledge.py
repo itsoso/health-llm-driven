@@ -11,7 +11,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
 from sqlalchemy.sql import func
 
 from app.database import Base
@@ -35,7 +35,7 @@ class KBDocument(Base):
     applies_when = Column(JSONB, default=list)
     recommends_lookup = Column(JSONB, default=list)
     sources = Column(JSONB, default=list)
-    tsv = Column(Text)
+    tsv = Column(Text().with_variant(TSVECTOR(), "postgresql"))
     last_confirmed = Column(DateTime(timezone=True))
     decay_rate = Column(String(20), default="normal")
     is_archived = Column(Boolean, default=False, nullable=False)

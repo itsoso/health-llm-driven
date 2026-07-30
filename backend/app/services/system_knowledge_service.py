@@ -22,6 +22,10 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.models.system_knowledge import KBAudit, KBDocument, KBDocumentVector, KBEdge
 from app.services.retrieval_guard import guard_retrieval_query
+from app.services.clinical_claim_release import (
+    CLINICAL_RELEASE_HOLD_DOCUMENT_IDS,
+    HEALTH_EVIDENCE_RUNTIME_RELEASED_CLAIM_IDS,
+)
 from app.services.system_knowledge_ingest import validate_artifact_review_gate
 from app.services.kbase_review_workspace import (
     adjudicate_review_claim,
@@ -132,11 +136,33 @@ def _reviewed_document_filter():
     return KBDocument.metadata_json["review_status"].as_string() == "reviewed"
 
 
-def _serving_document_filters():
+def generic_serving_document_filters():
+    """Return the shared policy for every ordinary user-facing System KB read."""
     return (
         KBDocument.is_archived.is_(False),
         _reviewed_document_filter(),
+        KBDocument.doc_id.notin_(CLINICAL_RELEASE_HOLD_DOCUMENT_IDS),
     )
+
+
+def health_evidence_runtime_document_filters():
+    """Return the sealed exact-claim policy for the health-evidence runtime."""
+    return (
+        KBDocument.is_archived.is_(False),
+        _reviewed_document_filter(),
+        KBDocument.doc_type == "claim",
+        KBDocument.doc_id.in_(HEALTH_EVIDENCE_RUNTIME_RELEASED_CLAIM_IDS),
+    )
+
+
+def _serving_document_filters(
+    runtime_released_ids: frozenset[str] | None = None,
+):
+    if runtime_released_ids is None:
+        return generic_serving_document_filters()
+    if runtime_released_ids != HEALTH_EVIDENCE_RUNTIME_RELEASED_CLAIM_IDS:
+        raise ValueError("runtime serving IDs must match the sealed release set")
+    return health_evidence_runtime_document_filters()
 
 
 def evidence_level_detail(level: str | None) -> dict[str, str] | None:
@@ -390,6 +416,11 @@ def get_claim_bundle(
     if claim.is_archived and not include_archived:
         return None
     if not include_archived and (claim.metadata_json or {}).get("review_status") != "reviewed":
+        return None
+    if (
+        not include_archived
+        and claim.doc_id in CLINICAL_RELEASE_HOLD_DOCUMENT_IDS
+    ):
         return None
 
     edges = (
@@ -645,6 +676,47 @@ def search_knowledge(
     doc_type: str | None = None,
     entity_type: str | None = None,
 ) -> dict[str, Any]:
+    """Search the generic serving KB; globally held documents never enter."""
+
+    return _search_knowledge(
+        db,
+        query,
+        limit=limit,
+        doc_type=doc_type,
+        entity_type=entity_type,
+        runtime_released_ids=None,
+    )
+
+
+def search_health_evidence_runtime_claims(
+    db: Session,
+    query: str,
+    *,
+    limit: int = 10,
+) -> dict[str, Any]:
+    """Retrieve only owner-ratified claims for the sealed evidence runtime."""
+
+    return _search_knowledge(
+        db,
+        query,
+        limit=limit,
+        doc_type="claim",
+        entity_type=None,
+        runtime_released_ids=(
+            HEALTH_EVIDENCE_RUNTIME_RELEASED_CLAIM_IDS
+        ),
+    )
+
+
+def _search_knowledge(
+    db: Session,
+    query: str,
+    *,
+    limit: int,
+    doc_type: str | None,
+    entity_type: str | None,
+    runtime_released_ids: frozenset[str] | None,
+) -> dict[str, Any]:
     """DB-backed hybrid search for the serving KB.
 
     The serving implementation stays DB-only so it works with both local
@@ -658,7 +730,10 @@ def search_knowledge(
     normalized_query = guarded_query.query
     terms = _query_terms(normalized_query)
 
-    docs_query = db.query(KBDocument).filter(*_serving_document_filters())
+    serving_filters = _serving_document_filters(
+        runtime_released_ids
+    )
+    docs_query = db.query(KBDocument).filter(*serving_filters)
     if doc_type:
         docs_query = docs_query.filter(KBDocument.doc_type == doc_type)
     if entity_type:
@@ -684,6 +759,7 @@ def search_knowledge(
             limit=max(50, limit),
             doc_type=doc_type,
             entity_type=entity_type,
+            runtime_released_ids=runtime_released_ids,
         )
     for document in documents:
         if fts_backend != "postgres_tsv":
@@ -724,7 +800,10 @@ def search_knowledge(
         if neighbor_ids:
             neighbors = (
                 db.query(KBDocument)
-                .filter(KBDocument.doc_id.in_(neighbor_ids), *_serving_document_filters())
+                .filter(
+                    KBDocument.doc_id.in_(neighbor_ids),
+                    *serving_filters,
+                )
                 .order_by(KBDocument.doc_type.asc(), KBDocument.doc_id.asc())
                 .all()
             )
@@ -812,6 +891,7 @@ def _postgres_fts_rank_documents(
     limit: int,
     doc_type: str | None,
     entity_type: str | None,
+    runtime_released_ids: frozenset[str] | None,
 ) -> list[tuple[float, KBDocument]]:
     """Use PostgreSQL tsvector search when serving on production Postgres."""
 
@@ -838,7 +918,10 @@ def _postgres_fts_rank_documents(
     rank = func.ts_rank_cd(KBDocument.tsv, ts_query)
     query_builder = (
         db.query(KBDocument, rank.label("rank"))
-        .filter(*_serving_document_filters(), KBDocument.tsv.op("@@")(ts_query))
+        .filter(
+            *_serving_document_filters(runtime_released_ids),
+            KBDocument.tsv.op("@@")(ts_query),
+        )
     )
     if doc_type:
         query_builder = query_builder.filter(KBDocument.doc_type == doc_type)

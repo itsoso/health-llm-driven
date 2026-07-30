@@ -14,6 +14,12 @@ interface TextSharePage {
   share_url: string;
 }
 
+interface ShareAgentSelectionOptions {
+  title?: string;
+  conversationId: number;
+  messageIds: number[];
+}
+
 async function createTextSharePage(title: string | undefined, message: string): Promise<TextSharePage> {
   const res = await api.post<TextSharePage>('/shared/create-text', {
     title,
@@ -42,6 +48,59 @@ export async function sharePlainText({ title, message }: SharePlainTextOptions) 
     } catch (cleanupError) {
       if (__DEV__) console.warn('[share] failed to revoke abandoned share page', cleanupError);
     }
+    throw error;
+  }
+
+  if (result.action === Share.dismissedAction) {
+    await revokeTextSharePage(shareToken);
+  }
+  return result;
+}
+
+export async function shareAgentSelection({
+  title,
+  conversationId,
+  messageIds,
+}: ShareAgentSelectionOptions) {
+  if (
+    !Number.isInteger(conversationId)
+    || conversationId <= 0
+    || messageIds.length === 0
+    || messageIds.length > 100
+    || messageIds.some(messageId => (
+      !Number.isInteger(messageId) || messageId <= 0
+    ))
+    || new Set(messageIds).size !== messageIds.length
+  ) {
+    throw new Error('selected_agent_share_not_durable');
+  }
+
+  const res = await api.post<TextSharePage>('/shared/create', {
+    conversation_id: conversationId,
+    source_type: 'agent',
+    message_ids: messageIds,
+  });
+  const {
+    share_token: shareToken,
+    share_url: shareUrl,
+  } = res.data;
+  await Clipboard.setStringAsync(shareUrl).catch(() => {});
+  const shareMessage = title ? `${title}\n${shareUrl}` : shareUrl;
+
+  let result: Awaited<ReturnType<typeof Share.share>>;
+  try {
+    result = Platform.OS === 'ios'
+      ? await Share.share({ title, message: shareMessage, url: shareUrl })
+      : await Share.share({ title, message: shareMessage });
+  } catch (error) {
+    await revokeTextSharePage(shareToken).catch((cleanupError) => {
+      if (__DEV__) {
+        console.warn(
+          '[share] failed to revoke abandoned Agent selection page',
+          cleanupError,
+        );
+      }
+    });
     throw error;
   }
 

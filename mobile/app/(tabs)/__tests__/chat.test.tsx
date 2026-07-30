@@ -147,7 +147,15 @@ jest.mock('../../../hooks/useTheme', () => ({
 jest.mock('../../../components/chat/ChatBubble', () => {
   const React = require('react');
   const { Pressable, Text } = require('react-native');
-  const MockChatBubble = ({ item, selectionMode, selected, onToggleSelected, onEnterSelection, onViewImage }: any) => (
+  const MockChatBubble = ({
+    item,
+    selectionMode,
+    selected,
+    onToggleSelected,
+    onEnterSelection,
+    onViewImage,
+    onSendSuggestedPrompt,
+  }: any) => (
     <>
       <Pressable
         accessibilityLabel={`message-${item.id}`}
@@ -162,6 +170,15 @@ jest.mock('../../../components/chat/ChatBubble', () => {
         <Pressable
           accessibilityLabel={`open-image-${item.id}`}
           onPress={() => onViewImage?.(item.imageUris[0])}
+        />
+      ) : null}
+      {item.cardType === 'health_evidence' ? (
+        <Pressable
+          accessibilityLabel={`submit-health-continuation-${item.id}`}
+          onPress={() => onSendSuggestedPrompt?.(
+            '我已完成本轮安全追问，请继续分析。',
+            '{"health_evidence_continuation":{"version":"health-evidence-continuation.v1"}}',
+          )}
         />
       ) : null}
     </>
@@ -465,6 +482,27 @@ describe('ChatScreen', () => {
     expect(getByText('网络中断，已保留内容')).toBeTruthy();
     fireEvent.press(getByLabelText('重试上一轮'));
     await waitFor(() => expect(mockSendMessage).toHaveBeenCalledWith('查询今天饮食', null));
+  });
+
+  it('queues structured health continuation while another turn is streaming', () => {
+    const extraContext = '{"health_evidence_continuation":{"version":"health-evidence-continuation.v1"}}';
+    mockIsStreaming = true;
+    mockMessages = [{
+      id: 'health-card-1',
+      role: 'assistant',
+      content: '',
+      cardType: 'health_evidence',
+      cardData: {},
+    }];
+
+    const view = render(<ChatScreen />);
+    fireEvent.press(view.getByLabelText('submit-health-continuation-health-card-1'));
+
+    expect(mockSendMessage).toHaveBeenCalledWith(
+      '我已完成本轮安全追问，请继续分析。',
+      null,
+      { extraContext },
+    );
   });
 
   it('does not retry an older text turn when the failed current turn contains an image', () => {

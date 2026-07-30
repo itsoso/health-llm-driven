@@ -1,4 +1,8 @@
-import { buildSelectedChatShareMessage, isShareableChatMessage } from '../chatShareSelection';
+import {
+  buildSelectedChatShareMessage,
+  durableSelectedAgentMessageIds,
+  isShareableChatMessage,
+} from '../chatShareSelection';
 
 describe('buildSelectedChatShareMessage', () => {
   it('formats selected chat messages in visible order', () => {
@@ -101,5 +105,51 @@ describe('buildSelectedChatShareMessage', () => {
         isShareableChatMessage({ id: 'e', role: 'assistant', content: '部分内容[回复因长度限制中断]' }),
       ).toBe(false);
     });
+  });
+});
+
+describe('durableSelectedAgentMessageIds', () => {
+  it('returns only server-owned ids in visible conversation order', () => {
+    expect(durableSelectedAgentMessageIds([
+      { id: 'local-u', role: 'user', content: '问题', sourceMessageId: 41 },
+      { id: 'local-a', role: 'assistant', content: '回答', sourceMessageId: 42 },
+    ], new Set(['local-a', 'local-u']))).toEqual([41, 42]);
+  });
+
+  it.each([
+    {
+      message: { id: 'local-u', role: 'user' as const, content: '尚未落库' },
+      selected: new Set(['local-u']),
+    },
+    {
+      message: {
+        id: 'local-a',
+        role: 'assistant' as const,
+        content: '生成中',
+        sourceMessageId: 42,
+        streaming: true,
+      },
+      selected: new Set(['local-a']),
+    },
+  ])('fails closed when a selected message is not durably shareable', ({ message, selected }) => {
+    expect(() => durableSelectedAgentMessageIds([message], selected))
+      .toThrow('selected_agent_message_not_durable');
+  });
+
+  it('allows a completed durable selection while another message is streaming', () => {
+    expect(durableSelectedAgentMessageIds([
+      {
+        id: 'old-a',
+        role: 'assistant',
+        content: '已经保存的旧回答',
+        sourceMessageId: 42,
+      },
+      {
+        id: 'new-a',
+        role: 'assistant',
+        content: '正在生成的新回答',
+        streaming: true,
+      },
+    ], new Set(['old-a']))).toEqual([42]);
   });
 });

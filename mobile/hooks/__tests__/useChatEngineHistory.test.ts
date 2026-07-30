@@ -109,6 +109,70 @@ describe('restoreMessagesFromHistory', () => {
     });
   });
 
+  it('restores health evidence from persisted meta.cards without a second manifest state', () => {
+    const manifest = {
+      version: 'health-evidence.v1',
+      risk_level: 'medium',
+      intent: {
+        intent_id: 'health_advice.symptom.low_back_pain',
+      },
+      context_categories_used: ['symptom'],
+      authority_evidence_refs: ['claim:low-back-triage'],
+      missing_discriminators: [{
+        id: 'low_back.major_trauma',
+        question: '近期是否有严重外伤？',
+        choices: ['有', '没有', '不确定'],
+      }],
+      private_packet: {
+        medication_record_id: 42,
+      },
+    };
+    const restored = restoreMessagesFromHistory([
+      {
+        id: 14,
+        role: 'assistant',
+        content: '先确认几个安全问题。',
+        created_at: '2026-07-29 12:00:00',
+        meta: {
+          health_evidence_manifest: manifest,
+          client_turn_id: 'turn-parent-7',
+          cards: [{
+            type: 'health_evidence',
+            data: manifest,
+            actions: [],
+          }],
+        },
+      },
+    ], 'https://example.test', 'h');
+
+    expect(restored).toHaveLength(2);
+    expect(restored[0]).toMatchObject({
+      role: 'assistant',
+      sourceMessageId: 14,
+    });
+    expect(restored[1]).toMatchObject({
+      role: 'assistant',
+      cardType: 'health_evidence',
+      cardData: {
+        version: 'health-evidence.v1',
+        risk_level: 'medium',
+        intent: {
+          intent_id: 'health_advice.symptom.low_back_pain',
+        },
+        context_categories_used: ['symptom'],
+        authority_evidence_refs: ['claim:low-back-triage'],
+        missing_discriminators: [{
+          id: 'low_back.major_trauma',
+          question: '近期是否有严重外伤？',
+          choices: ['有', '没有', '不确定'],
+        }],
+      },
+      cardActions: [],
+      sourceMessageId: 14,
+      sourceTurnId: 'turn-parent-7',
+    });
+  });
+
   it('folds repeated projections of one meal card and keeps the latest media set', () => {
     const restored = restoreMessagesFromHistory([
       {

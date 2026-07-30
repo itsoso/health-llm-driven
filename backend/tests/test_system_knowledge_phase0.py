@@ -2,8 +2,10 @@ from datetime import UTC, datetime
 import inspect
 import json
 
-from sqlalchemy.dialects import postgresql
+from sqlalchemy.dialects import postgresql, sqlite
+from sqlalchemy.schema import CreateTable
 
+from app.api.system_knowledge import DEDAO_KBASE_PUBLISH_PREVIEW_OP
 from app.config import settings
 from app.models.agent_audit_log import AgentAuditLog
 from app.models.notification import NotificationLog
@@ -14,6 +16,8 @@ from app.services.system_knowledge_service import (
     apply_confidence_decay,
     attach_system_knowledge_evidence,
     build_evidence_card_for_message,
+    reindex_knowledge_documents,
+    search_knowledge,
 )
 from app.orchestrator.schema import SpecialistFinding
 
@@ -351,6 +355,80 @@ def test_get_claim_excludes_non_reviewed_claim(client, db, auth_user_and_headers
     assert response.status_code == 404
 
 
+def test_get_claim_excludes_runtime_only_low_back_claim(
+    client,
+    db,
+    auth_user_and_headers,
+):
+    _user, headers = auth_user_and_headers
+    db.add(
+        KBDocument(
+            doc_id="claim:c_low_back_emergency_neurologic_red_flags",
+            doc_type="claim",
+            entity_type="condition",
+            entity_id="low-back-pain",
+            title="运行时专用腰痛神经红旗",
+            summary="只能进入受控健康证据运行时。",
+            body="通用 claim detail 不得返回。",
+            confidence=0.95,
+            evidence_level="A",
+            metadata_json={"review_status": "reviewed"},
+        )
+    )
+    db.commit()
+
+    response = client.get(
+        "/api/v1/knowledge/claim/"
+        "claim:c_low_back_emergency_neurologic_red_flags",
+        headers=headers,
+    )
+
+    assert response.status_code == 404
+
+
+def test_generic_search_excludes_runtime_only_low_back_pack(db):
+    held_documents = {
+        "claim:c_low_back_emergency_neurologic_red_flags": "claim",
+        "claim:c_low_back_serious_cause_screening_boundary": "claim",
+        "claim:c_low_back_self_management_activity_boundary": "claim",
+        "claim:c_low_back_imaging_not_routine_boundary": "claim",
+        "claim:c_chronic_low_back_holistic_care_boundary": "claim",
+        "entity:condition:low-back-pain": "entity",
+        "eval:low_back_neurologic_red_flags": "eval_case",
+        "eval:low_back_serious_cause_screening": "eval_case",
+        "eval:low_back_self_management": "eval_case",
+        "eval:low_back_imaging_boundary": "eval_case",
+        "eval:chronic_low_back_holistic_care": "eval_case",
+    }
+    for doc_id, doc_type in held_documents.items():
+        db.add(
+            KBDocument(
+                doc_id=doc_id,
+                doc_type=doc_type,
+                entity_type="condition",
+                entity_id="low-back-pain",
+                title=f"运行时专用腰痛知识 {doc_id}",
+                summary="腰痛 排尿困难 会阴麻木 自我管理 影像 慢性",
+                body="通用检索不得返回。",
+                confidence=0.95,
+                evidence_level="A",
+                metadata_json={"review_status": "reviewed"},
+            )
+        )
+    db.commit()
+
+    response = search_knowledge(
+        db,
+        "腰痛 排尿困难 会阴麻木 自我管理 影像 慢性",
+        limit=30,
+    )
+
+    returned_ids = {
+        item["document"]["doc_id"] for item in response["results"]
+    }
+    assert returned_ids.isdisjoint(held_documents)
+
+
 def test_evidence_resolver_does_not_attach_non_reviewed_claim_refs(db):
     db.add(
         KBDocument(
@@ -512,6 +590,7 @@ def test_claim_feedback_disagree_writes_audit_log(client, db, auth_user_and_head
 def test_search_knowledge_returns_lexical_and_graph_context(client, db, auth_user_and_headers):
     _user, headers = auth_user_and_headers
     _seed_phase0_knowledge(db)
+    reindex_knowledge_documents(db, actor="test")
 
     response = client.get(
         "/api/v1/knowledge/search",
@@ -527,10 +606,20 @@ def test_search_knowledge_returns_lexical_and_graph_context(client, db, auth_use
     assert payload["graph_context"]["edges"][0]["relation"] == "has_claim"
     assert {"lexical", "fts"} <= set(payload["retrieval_plan"]["channels"])
     assert payload["retrieval_plan"]["lexical_backend"] == "python_bm25_v1"
-    assert payload["retrieval_plan"]["fts_backend"] == "sqlite_precomputed_text"
+    expected_fts_backend = (
+        "postgres_tsv"
+        if db.bind.dialect.name == "postgresql"
+        else "sqlite_precomputed_text"
+    )
+    assert payload["retrieval_plan"]["fts_backend"] == expected_fts_backend
     assert payload["retrieval_plan"]["vector_backend"] == "sparse_term_cosine_v1"
     assert payload["retrieval_plan"]["rrf_backend"] == "python_rrf_v1"
-    assert {"lexical", "fts"} <= set(payload["results"][0]["retrieval"]["channels"])
+    observed_channels = {
+        channel
+        for result in payload["results"]
+        for channel in result["retrieval"]["channels"]
+    }
+    assert {"lexical", "fts"} <= observed_channels
     assert payload["results"][0]["retrieval"]["lexical_score"] > 0
 
 
@@ -1768,7 +1857,13 @@ def test_admin_dedao_kbase_finalize_requires_resolved_claims_then_allows_dry_run
     assert preview.json()["dry_run"] is True
     assert preview.json()["import"]["documents"] == 3
     assert db.get(KBDocument, "claim:release-abc-claim-1") is None
-    assert db.query(KBAudit).filter(KBAudit.op == "dedao_kbase_reviewed_artifacts_publish_preview").count() == 1
+    preview_audits = (
+        db.query(KBAudit)
+        .filter(KBAudit.op == DEDAO_KBASE_PUBLISH_PREVIEW_OP)
+        .all()
+    )
+    assert len(preview_audits) == 1
+    assert len(preview_audits[0].op) <= 40
 
 
 def test_admin_dedao_kbase_legacy_approve_rejects_unresolved_claims(
@@ -2324,7 +2419,7 @@ def test_admin_reindex_refreshes_search_text_and_content_hash(client, db, auth_u
     assert payload["reindex"]["documents"] == 2
     refreshed = db.get(KBDocument, "entity:gene:MTHFR")
     assert refreshed.tsv is not None
-    assert "MTHFR" in refreshed.tsv
+    assert "mthfr" in str(refreshed.tsv).lower()
     assert refreshed.content_hash is not None
 
 
@@ -2340,6 +2435,26 @@ def test_postgres_reindex_statement_writes_tsvector_not_plain_text():
     assert "to_tsvector" in compiled
     assert "tsv=to_tsvector" in compiled
     assert "content_hash" in compiled
+
+
+def test_postgres_kb_document_schema_declares_tsvector():
+    compiled = str(
+        CreateTable(KBDocument.__table__).compile(
+            dialect=postgresql.dialect()
+        )
+    )
+
+    assert "tsv TSVECTOR" in compiled
+
+
+def test_sqlite_kb_document_schema_keeps_text_search_storage():
+    compiled = str(
+        CreateTable(KBDocument.__table__).compile(
+            dialect=sqlite.dialect()
+        )
+    )
+
+    assert "tsv TEXT" in compiled
 
 
 def test_apply_confidence_decay_reduces_stale_fast_claims(db):

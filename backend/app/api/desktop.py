@@ -35,6 +35,7 @@ from app.models.weight import WeightRecord
 from app.services.daily_operating_plan import build_daily_operating_plan
 from app.services.genetic_risk import clinical_status
 from app.services.health_trajectory import build_health_trajectory_snapshot
+from app.services.system_knowledge_service import generic_serving_document_filters
 
 router = APIRouter(prefix="/desktop", tags=["desktop"])
 DEFAULT_DOWN_DEDAO_ROOT = "~/work/personal/down-dedao"
@@ -106,7 +107,6 @@ def _memory_fact_to_dict(fact: MemoryFact) -> dict[str, Any]:
 def _recent_records_summary(db: Session, user_id: int) -> dict[str, Any]:
     today = date.today()
     since_30 = today - timedelta(days=30)
-    since_7 = today - timedelta(days=6)
     diet_records = (
         db.query(DietRecord)
         .filter(DietRecord.user_id == user_id, DietRecord.record_date == today)
@@ -601,10 +601,11 @@ def _genomic_summary(db: Session, user_id: int) -> dict[str, Any]:
 def _knowledge_summary(db: Session) -> dict[str, Any]:
     docs = (
         db.query(KBDocument)
-        .filter(KBDocument.is_archived == False)  # noqa: E712
+        .filter(*generic_serving_document_filters())
         .order_by(asc(KBDocument.doc_id))
         .all()
     )
+    serving_doc_ids = {doc.doc_id for doc in docs}
     doc_type_counts = Counter(doc.doc_type or "unknown" for doc in docs)
     source_counts: Counter[str] = Counter()
     evidence_counts: Counter[str] = Counter()
@@ -639,7 +640,17 @@ def _knowledge_summary(db: Session) -> dict[str, Any]:
         "claim_count": doc_type_counts.get("claim", 0),
         "entity_count": doc_type_counts.get("entity", 0),
         "article_count": doc_type_counts.get("article", 0),
-        "edge_count": db.query(func.count(KBEdge.edge_id)).scalar() or 0,
+        "edge_count": (
+            db.query(func.count(KBEdge.edge_id))
+            .filter(
+                KBEdge.src_doc_id.in_(serving_doc_ids),
+                KBEdge.dst_doc_id.in_(serving_doc_ids),
+            )
+            .scalar()
+            or 0
+            if serving_doc_ids
+            else 0
+        ),
         "source_total_count": len(source_counts),
         "doc_type_counts": [
             {"level": doc_type, "count": count}
@@ -891,9 +902,28 @@ def get_desktop_conversation_trace(
         .order_by(AgentMessage.created_at.asc(), AgentMessage.id.asc())
         .all()
     )
-    assistant_messages = [m for m in messages if m.role == "assistant"]
-    latest_assistant = assistant_messages[-1] if assistant_messages else None
-    meta = dict(latest_assistant.meta or {}) if latest_assistant else {}
+    from app.services.health_evidence.delivery import (
+        project_persisted_health_messages,
+    )
+
+    projected_messages = project_persisted_health_messages(messages)
+    assistant_indexes = [
+        index
+        for index, message in enumerate(messages)
+        if message.role == "assistant"
+    ]
+    latest_index = assistant_indexes[-1] if assistant_indexes else None
+    latest_assistant = (
+        messages[latest_index]
+        if latest_index is not None
+        else None
+    )
+    latest_projection = (
+        projected_messages[latest_index]
+        if latest_index is not None
+        else None
+    )
+    meta = dict(latest_projection.meta) if latest_projection else {}
 
     return {
         "conversation": {
@@ -906,10 +936,14 @@ def get_desktop_conversation_trace(
             {
                 "id": m.id,
                 "role": m.role,
-                "content": m.content,
+                "content": projected.content,
                 "created_at": m.created_at.isoformat() if m.created_at else None,
             }
-            for m in messages
+            for m, projected in zip(
+                messages,
+                projected_messages,
+                strict=True,
+            )
         ],
         "assistant_message": {
             "id": latest_assistant.id if latest_assistant else None,

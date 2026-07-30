@@ -37,6 +37,7 @@ from app.models.system_knowledge import KBDocument, KBEdge
 from app.models.genetic_data import GeneticProfile, GeneticVariant
 from app.services.genetic_risk import clinical_status, effective_risk_level
 from app.services.outcome_safety import user_facing_efficacy_fields
+from app.services.system_knowledge_service import generic_serving_document_filters
 
 logger = logging.getLogger(__name__)
 
@@ -263,7 +264,7 @@ def _attach_evidence_refs(db: Session, items: List[Dict[str, Any]]) -> None:
             KBDocument.doc_type == "entity",
             KBDocument.entity_type == "gene",
             KBDocument.entity_id.in_(hit_genes),
-            KBDocument.is_archived.is_(False),
+            *generic_serving_document_filters(),
         )
         .all()
     )
@@ -295,7 +296,7 @@ def _attach_evidence_refs(db: Session, items: List[Dict[str, Any]]) -> None:
         .filter(
             KBDocument.doc_id.in_(claim_ids),
             KBDocument.doc_type == "claim",
-            KBDocument.is_archived.is_(False),
+            *generic_serving_document_filters(),
         )
         .all()
     )

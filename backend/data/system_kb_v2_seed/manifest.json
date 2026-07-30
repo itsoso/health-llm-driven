@@ -1,13 +1,13 @@
 {
   "compiled_at": "2026-05-22T09:45:00+00:00",
   "counts": {
-    "claims": 455,
+    "claims": 460,
     "contraindications": 45,
-    "entities": 246,
-    "eval_cases": 63,
+    "entities": 247,
+    "eval_cases": 68,
     "pages": 61,
     "protocols": 10,
-    "relations": 3313
+    "relations": 3318
   },
   "diff": {
     "claims_added": 12,

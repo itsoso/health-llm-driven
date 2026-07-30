@@ -94,6 +94,25 @@ async function* streamStartThenWait() {
   yield { type: 'done', conversationId: 777, messageId: 2 };
 }
 
+async function* streamHealthDoneCardAfterWait() {
+  yield { type: 'start', conversationId: 777 };
+  yield { type: 'token', content: '第一轮健康回答。' };
+  await new Promise<void>((resolve) => {
+    finishStream = resolve;
+  });
+  yield {
+    type: 'done',
+    conversationId: 777,
+    messageId: 901,
+    completionStatus: 'complete',
+    cards: [{
+      type: 'health_evidence',
+      data: { intent: { intent_id: 'health_advice.symptom.low_back_pain' } },
+      actions: [],
+    }],
+  };
+}
+
 async function* streamStartWaitForPersistenceThenDone(...args: any[]) {
   await new Promise<void>((resolve) => {
     persistStream = resolve;
@@ -106,6 +125,22 @@ async function* streamStartWaitForPersistenceThenDone(...args: any[]) {
     clientTurnId: args[6],
   };
   yield { type: 'done', conversationId: 777, messageId: 42 };
+}
+
+async function* streamPersistedIdsThenDone(...args: any[]) {
+  yield {
+    type: 'persisted',
+    conversationId: 777,
+    userMessageId: 41,
+    clientTurnId: args[6],
+  };
+  yield { type: 'token', content: '已保存的回答' };
+  yield {
+    type: 'done',
+    conversationId: 777,
+    messageId: 42,
+    completionStatus: 'complete',
+  };
 }
 
 async function* streamPersistsRelativeImageUrl(...args: any[]) {
@@ -1064,6 +1099,60 @@ describe('useChatEngine', () => {
     });
   });
 
+  it('keeps a done health card anchored before a queued next turn', async () => {
+    let streamCalls = 0;
+    mockStreamChat.mockImplementation(() => {
+      streamCalls += 1;
+      return streamCalls === 1
+        ? streamHealthDoneCardAfterWait()
+        : streamStartThenWait();
+    });
+    const { result } = renderHook(() => useChatEngine());
+
+    act(() => {
+      void result.current.sendMessage('第一条腰痛问题');
+    });
+    await waitFor(() => expect(result.current.isStreaming).toBe(true));
+
+    await act(async () => {
+      await result.current.sendMessage('第二条排队补充');
+    });
+    expect(result.current.queuedCount).toBe(1);
+
+    await act(async () => {
+      finishStream?.();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(result.current.messages.some(
+        message => message.cardType === 'health_evidence',
+      )).toBe(true);
+    });
+
+    const messages = result.current.messages;
+    const firstAssistantIndex = messages.findIndex(
+      message => message.role === 'assistant'
+        && !message.cardType
+        && message.content.includes('第一轮健康回答'),
+    );
+    const cardIndex = messages.findIndex(
+      message => message.cardType === 'health_evidence',
+    );
+    const queuedUserIndex = messages.findIndex(
+      message => message.role === 'user'
+        && message.content === '第二条排队补充',
+    );
+    expect(firstAssistantIndex).toBeGreaterThanOrEqual(0);
+    expect(cardIndex).toBe(firstAssistantIndex + 1);
+    expect(cardIndex).toBeLessThan(queuedUserIndex);
+
+    await act(async () => {
+      finishStream?.();
+      await Promise.resolve();
+    });
+  });
+
   it('does not acknowledge a queued photo turn until the backend accepts it', async () => {
     mockStreamChat.mockImplementation(streamStartThenWait);
     const onAccepted = jest.fn();
@@ -1203,6 +1292,29 @@ describe('useChatEngine', () => {
       expect(onAccepted).toHaveBeenCalledWith(true);
       expect(result.current.conversationId).toBe(777);
     });
+  });
+
+  it('binds live user and assistant bubbles to their durable server message ids', async () => {
+    mockStreamChat.mockImplementation(streamPersistedIdsThenDone);
+    const { result } = renderHook(() => useChatEngine());
+
+    await act(async () => {
+      await result.current.sendMessage('需要保存的问题');
+    });
+
+    expect(result.current.messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        role: 'user',
+        content: '需要保存的问题',
+        sourceMessageId: 41,
+      }),
+      expect.objectContaining({
+        role: 'assistant',
+        content: '已保存的回答',
+        sourceMessageId: 42,
+        streaming: false,
+      }),
+    ]));
   });
 
   it('keeps a newly uploaded image visible when persistence returns a relative URL', async () => {

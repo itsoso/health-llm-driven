@@ -50,8 +50,11 @@ import {
   revaSemantic,
   revaFonts,
 } from '../../constants/revaTheme';
-import { shareImage, sharePlainText, shareLocalImage } from '../../utils/share';
-import { buildSelectedChatShareMessage, isShareableChatMessage } from '../../utils/chatShareSelection';
+import { shareAgentSelection, shareImage, shareLocalImage } from '../../utils/share';
+import {
+  durableSelectedAgentMessageIds,
+  isShareableChatMessage,
+} from '../../utils/chatShareSelection';
 import { captureRef } from 'react-native-view-shot';
 import ConversationShareImage, { type ShareImageMessage } from '../../components/chat/ConversationShareImage';
 import type { ChatMedicalExamImportSkillResult } from '../../services/chatMedicalExamImportSkill';
@@ -796,24 +799,52 @@ export default function ChatScreen() {
     setSelectedMessageIds(new Set([id]));
   }, []);
 
-  const sendSuggestedPrompt = useCallback((prompt: string) => {
-    if (isStreaming) return;
-    void sendMessage(prompt, null);
-  }, [isStreaming, sendMessage]);
+  const sendSuggestedPrompt = useCallback((prompt: string, extraContext?: string) => {
+    void sendMessage(
+      prompt,
+      null,
+      extraContext ? { extraContext } : undefined,
+    );
+  }, [sendMessage]);
 
   const shareSelectedMessages = useCallback(async () => {
-    const message = buildSelectedChatShareMessage(messages, selectedMessageIds);
-    if (!message || sharing) return;
+    if (sharing) return;
+    let durableMessageIds: number[];
+    try {
+      if (!conversationId) {
+        throw new Error('selected_agent_message_not_durable');
+      }
+      durableMessageIds = durableSelectedAgentMessageIds(
+        messages,
+        selectedMessageIds,
+      );
+    } catch {
+      Alert.alert(
+        '暂时无法分享',
+        '请等本轮回答完成并保存后再分享。',
+      );
+      return;
+    }
     setSharing(true);
     try {
-      await sharePlainText({ title: '小巴 · 对话节选', message });
+      await shareAgentSelection({
+        title: '小巴 · 对话节选',
+        conversationId,
+        messageIds: durableMessageIds,
+      });
       exitSelectionMode();
     } catch {
       Alert.alert('分享失败', '请稍后重试');
     } finally {
       setSharing(false);
     }
-  }, [exitSelectionMode, messages, selectedMessageIds, sharing]);
+  }, [
+    conversationId,
+    exitSelectionMode,
+    messages,
+    selectedMessageIds,
+    sharing,
+  ]);
 
   // 「选一段对话成图」:把选中消息渲染进离屏品牌长图 → captureRef 截 PNG → 分享/存图。
   const exportSelectedImage = useCallback(async () => {

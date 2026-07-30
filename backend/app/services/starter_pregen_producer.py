@@ -65,6 +65,12 @@ def enqueue_pregen(
             text = (text or "").strip()
             if not text or text in seen:
                 continue
+            from app.services.health_evidence.delivery import (
+                requires_live_health_executor,
+            )
+
+            if requires_live_health_executor(text, enabled=True):
+                continue
             seen.add(text)
             if len(seen) > cap:
                 break
@@ -145,6 +151,13 @@ async def _produce_answer(
         AgentConversationService,
     )
     from app.services.agent_executor import _WRITE_RECEIPT_TOOL_NAMES, AgentExecutor
+    from app.services.health_evidence.delivery import (
+        metadata_claims_health,
+        requires_live_health_executor,
+    )
+
+    if requires_live_health_executor(starter_text, enabled=True):
+        return None
 
     svc = AgentConversationService(db)
     scratch: Optional[AgentConversation] = None
@@ -195,6 +208,13 @@ async def _produce_answer(
             logger.warning("[starter_pregen] discarded — write tool in tools_used user=%s", user_id)
             return None
         if errored or done_data.get("completion_status") != "complete":
+            return None
+        if metadata_claims_health(done_data):
+            logger.warning(
+                "[starter_pregen] discarded — health evidence requires live "
+                "release user=%s",
+                user_id,
+            )
             return None
         answer_text = "".join(reply_parts).strip()
         if not answer_text:

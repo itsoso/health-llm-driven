@@ -212,6 +212,49 @@ describe('ChatBubble streaming degraded render', () => {
     expect(queryByTestId('assistant-avatar')).toBeNull();
   });
 
+  it('passes the existing suggested-prompt sender into health evidence cards', () => {
+    const onSendSuggestedPrompt = jest.fn();
+    const cardData = {
+      missing_discriminators: [{
+        question: '近期是否有严重外伤？',
+        choices: ['有', '没有', '不确定'],
+      }],
+    };
+
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <ChatBubble
+          item={{
+            id: 'assistant-health-evidence',
+            role: 'assistant',
+            content: '',
+            streaming: false,
+            cardType: 'health_evidence',
+            cardData,
+            sourceMessageId: 314,
+            sourceTurnId: 'turn-parent-7',
+          }}
+          onSendSuggestedPrompt={onSendSuggestedPrompt}
+        />
+      </QueryClientProvider>,
+    );
+
+    expect(renderCard).toHaveBeenCalledWith(
+      {
+        type: 'health_evidence',
+        data: cardData,
+        actions: undefined,
+      },
+      expect.objectContaining({
+        onSendSuggestedPrompt,
+        healthEvidenceParent: {
+          messageRef: 314,
+          turnRef: 'turn-parent-7',
+        },
+      }),
+    );
+  });
+
   it('long press on an assistant message opens copy-first progressive actions instead of selecting immediately', () => {
     const onEnterSelection = jest.fn();
     const { getByLabelText, queryByLabelText } = render(

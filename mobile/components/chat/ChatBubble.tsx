@@ -88,7 +88,7 @@ interface Props {
   onToggleSelected?: (id: string) => void;
   /** 微信式: 长按这条消息进入多选模式 (仅可分享的消息才传). 进入后默认选中该条. */
   onEnterSelection?: (id: string) => void;
-  onSendSuggestedPrompt?: (prompt: string) => void;
+  onSendSuggestedPrompt?: (prompt: string, extraContext?: string) => void;
   onStopStreaming?: () => void;
 }
 
@@ -688,7 +688,15 @@ function ChatBubbleInner({
   if (item.cardType && item.cardData) {
     const rendered = renderCard(
       { type: item.cardType, data: renderedCardData, actions: renderedCardActions },
-      { onAction: handleCardAction, actionStateByKey: cardActionStateByKey },
+      {
+        onAction: handleCardAction,
+        onSendSuggestedPrompt,
+        healthEvidenceParent: {
+          messageRef: item.sourceMessageId,
+          turnRef: item.sourceTurnId,
+        },
+        actionStateByKey: cardActionStateByKey,
+      },
     );
     if (rendered) {
       const cardContents = (
@@ -1158,7 +1166,15 @@ function ChatBubbleInner({
             {revaUiContent.cards.length > 0 ? (
               <View testID="assistant-reva-ui-cards" style={styles.inlineCardStack}>
                 {revaUiContent.cards.map((card, index) => {
-                  const rendered = renderCard(card, { onAction: handleCardAction, actionStateByKey: cardActionStateByKey });
+                  const rendered = renderCard(card, {
+                    onAction: handleCardAction,
+                    onSendSuggestedPrompt,
+                    healthEvidenceParent: {
+                      messageRef: item.sourceMessageId,
+                      turnRef: item.sourceTurnId,
+                    },
+                    actionStateByKey: cardActionStateByKey,
+                  });
                   return rendered ? <View key={`${card.type}-${index}`}>{rendered}</View> : null;
                 })}
               </View>
