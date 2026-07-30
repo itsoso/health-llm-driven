@@ -1,5 +1,6 @@
 import hashlib
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -2141,6 +2142,11 @@ def test_health_evidence_activation_is_delegated_to_persistent_systemd_transacti
         "prove_health_evidence_activation_state() {", runner_start
     )
     runner_body = script[runner_start:runner_end]
+    proof_start = runner_end
+    proof_end = script.index(
+        "prove_health_evidence_activation_not_launched() {", proof_start
+    )
+    proof_body = script[proof_start:proof_end]
 
     adopted_branch = body.index('if [[ "$adopted" = "1" ]]')
     adopted_stage = body.index(
@@ -2198,7 +2204,7 @@ def test_health_evidence_activation_is_delegated_to_persistent_systemd_transacti
     assert "sync_env" not in body
     assert "upload_backend_env_file" not in body
     assert "restart_health_runtime_services" not in body
-    assert 'HEALTH_EVIDENCE_ACTIVATION_OK commit=$DEPLOY_EXPECTED_SHA' in body
+    assert 'HEALTH_EVIDENCE_ACTIVATION_OK commit=$expected_sha' in proof_body
     assert "_REMOTE_RELEASE_LOCK_ABANDONED=1" in body
 
 
@@ -2248,6 +2254,157 @@ def test_activation_proof_uses_durable_authorization_and_real_process_flags():
     assert '-c "safe.directory=$repo"' not in proof
     assert "-c core.fsmonitor=false" in proof
     assert "-c core.hooksPath=/dev/null" in proof
+
+
+def test_activation_proof_derives_space_bearing_markers_on_remote_side():
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    start = script.index("prove_health_evidence_activation_state() {")
+    end = script.index(
+        "prove_health_evidence_activation_not_launched() {", start
+    )
+    proof = script[start:end]
+    ssh_prefix = 'ssh "$SERVER" bash -s -- \\'
+    remote_start = proof.index(ssh_prefix)
+    heredoc_start = proof.index("<<'REMOTE_ACTIVATION_PROOF'", remote_start)
+    ssh_argv = proof[remote_start + len(ssh_prefix) : heredoc_start]
+    argv = [
+        line.strip().removesuffix("\\").strip()
+        for line in ssh_argv.splitlines()
+        if line.strip()
+    ]
+    remote = proof[heredoc_start:]
+
+    # OpenSSH joins command arguments into one remote shell command. Marker
+    # strings contain spaces, so sending them as argv silently shifts every
+    # following positional parameter. Pin the exact ordered argv contract,
+    # and independently make the remote reject any future extra argument.
+    assert argv == [
+        '"$phase"',
+        '"$unit_name"',
+        '"$REMOTE_PATH"',
+        '"$DEPLOY_EXPECTED_SHA"',
+        '"$REMOTE_BACKUP_PREFLIGHT_DIR/candidate.env"',
+        '"$REMOTE_BACKUP_PREFLIGHT_DIR/guard.env"',
+        '"$REMOTE_HEALTH_EVIDENCE_DURABLE_STATE_DIR"',
+        '"$REMOTE_ACTIVATION_SUCCESS_MARKER"',
+        '"${REMOTE_ACTIVATION_SUCCESS_MARKER}.outcome"',
+        '"$REMOTE_RELEASE_LOCK_DIR"',
+        '"$REMOTE_RELEASE_LOCK_TOKEN"',
+    ]
+    argc_check = remote.index('test "$#" -eq 11')
+    first_assignment = remote.index('phase="$1"')
+    assert argc_check < first_assignment
+    assert 'expected_outcome="${10}"' not in remote
+    assert 'expected_success="${11}"' not in remote
+    assert 'release_lock="${10}"' in remote
+    assert 'release_token="${11}"' in remote
+    runner = (
+        ROOT / "backend/scripts/activate_health_evidence_runtime.sh"
+    ).read_text(encoding="utf-8")
+    expected_markers = (
+        "HEALTH_EVIDENCE_ACTIVATION_OK commit=$expected_sha flag=true "
+        "health=passed auth_probe=passed score=passed contract=enabled "
+        "services=active",
+        "HEALTH_EVIDENCE_DEADMAN_NOOP commit=$expected_sha "
+        "authorization=verified",
+        "HEALTH_EVIDENCE_DEADMAN_RECOVERED commit=$expected_sha flag=false "
+        "health=passed contract=staged services=active",
+    )
+    marker_pattern = re.compile(
+        r'"(HEALTH_EVIDENCE_(?:ACTIVATION_OK|DEADMAN_'
+        r'(?:NOOP|RECOVERED))[^"\n]*)"'
+    )
+    remote_markers = tuple(marker_pattern.findall(remote))
+    runner_markers = tuple(
+        marker.replace("$EXPECTED_SHA", "$expected_sha")
+        for marker in marker_pattern.findall(runner)
+    )
+    assert sorted(remote_markers) == sorted(expected_markers)
+    assert sorted(runner_markers) == sorted(expected_markers)
+    assert sorted(remote_markers) == sorted(runner_markers)
+
+    phase_case = remote[remote.index('case "$phase" in') :]
+    enabled_start = phase_case.index("enabled)")
+    staged_start = phase_case.index("staged)", enabled_start)
+    invalid_start = phase_case.index("*)", staged_start)
+    case_end = phase_case.index("esac", invalid_start)
+    enabled_body = phase_case[enabled_start:staged_start]
+    staged_body = phase_case[staged_start:invalid_start]
+    invalid_body = phase_case[invalid_start:case_end]
+    assert enabled_body.count("expected_outcome=") == 1
+    assert "HEALTH_EVIDENCE_DEADMAN_NOOP" in enabled_body
+    assert "HEALTH_EVIDENCE_DEADMAN_RECOVERED" not in enabled_body
+    assert staged_body.count("expected_outcome=") == 1
+    assert "HEALTH_EVIDENCE_DEADMAN_RECOVERED" in staged_body
+    assert "HEALTH_EVIDENCE_DEADMAN_NOOP" not in staged_body
+    assert "expected_outcome=" not in invalid_body
+    assert "exit 2" in invalid_body
+
+
+def test_activation_proof_marker_checks_are_byte_exact(tmp_path: Path):
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    start = script.index("prove_health_evidence_activation_state() {")
+    end = script.index(
+        "prove_health_evidence_activation_not_launched() {", start
+    )
+    proof = script[start:end]
+    outcome_check = (
+        'cmp -s "$outcome_file" '
+        '<(printf \'%s\\n\' "$expected_outcome")'
+    )
+    success_check = (
+        'cmp -s "$success_marker" '
+        '<(printf \'%s\\n\' "$expected_success")'
+    )
+
+    assert outcome_check in proof
+    assert success_check in proof
+    assert 'test "$(cat "$outcome_file")" = "$expected_outcome"' not in proof
+    assert 'test "$(cat "$success_marker")" = "$expected_success"' not in proof
+
+    harness = (
+        "set -euo pipefail\n"
+        'outcome_file="$1"\n'
+        'success_marker="$2"\n'
+        'expected_outcome="$3"\n'
+        'expected_success="$4"\n'
+        f"{outcome_check}\n"
+        f"{success_check}\n"
+    )
+    expected_outcome = "known outcome"
+    expected_success = "known success"
+    cases = (
+        ("exact", b"known outcome\n", b"known success\n", True),
+        ("outcome-missing-lf", b"known outcome", b"known success\n", False),
+        ("outcome-extra-lf", b"known outcome\n\n", b"known success\n", False),
+        ("success-missing-lf", b"known outcome\n", b"known success", False),
+        ("success-extra-lf", b"known outcome\n", b"known success\n\n", False),
+    )
+    for label, outcome_bytes, success_bytes, should_pass in cases:
+        outcome_file = tmp_path / f"{label}.outcome"
+        success_file = tmp_path / f"{label}.success"
+        outcome_file.write_bytes(outcome_bytes)
+        success_file.write_bytes(success_bytes)
+        result = subprocess.run(
+            [
+                "bash",
+                "-c",
+                harness,
+                "--",
+                str(outcome_file),
+                str(success_file),
+                expected_outcome,
+                expected_success,
+            ],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert (result.returncode == 0) is should_pass, (
+            label,
+            result.stdout,
+            result.stderr,
+        )
 
 
 def test_release_preflight_hashes_activation_runner_for_rollback_floor():

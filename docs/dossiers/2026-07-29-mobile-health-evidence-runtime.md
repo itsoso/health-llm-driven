@@ -5,7 +5,7 @@
 | slug | `mobile-health-evidence-runtime` |
 | 创建日期 | 2026-07-29 |
 | 当前阶段 | replacement exact-SHA CI |
-| 状态 | local G3/G4 GO；prod=`85fd0a69...`, flag=false、四服务稳定；exact-SHA CI 前 activation/OTA 继续阻断 |
+| 状态 | prod=`98e27869...`、base flag=false、durable runtime=true、四服务 active；activation terminal marker 成功但 lease/stage 保留，proof 修复前 OTA 阻断 |
 | 负责 | product owner + Codex |
 | 反馈环 | backend/Web → 受控 activation → semantic smoke → Mobile OTA → 跨端对照 |
 
@@ -432,6 +432,40 @@
       完整七文件 release-invariants 305/305 已通过；fresh test-contract 与
       release-security 复核均 GO（P0=0、P1=0）。新 exact-SHA CI 仍待完成。
   - 回退阶段: G5 → S5/G3/G4；禁止带红继续。
+- [ ] Correction Block — activation proof 的 OpenSSH argv 重组
+  - 触发: release-recovery 修复提交
+    `98e278693934f8f78d0b6669d99509f262c89bb9` 的 exact-SHA CI run
+    `30562194862` 44/44 success 后，临时 live-eval repo variable 复证 absent；
+    backend base flag=false 部署完成 41 MB backup、234 表恢复演练、站外
+    age hash/HMAC、199 表 schema、三轮 60/60 health、staged KB contract、
+    22/22 skills 与 transaction finalize。随后受控 activation 的远端 transient
+    systemd unit 以 status=0/success 完成，但客户端无法证明终态，按契约保留
+    release lease/stage 并阻断 OTA。
+  - 生产只读证据: success marker 与 deadman NOOP outcome 均匹配预期，
+    base env 精确 false、durable override 精确 true、临时 runtime/drop-in 已清除，
+    backend/worker/beat 的全部 10 个 cgroup PID 均只含 flag=true，四服务 active，
+    enabled KB contract=0、repo exact SHA/clean、Git/tracked ownership 全通过。
+    因此数据面 activation 已成功；尚未完成的是控制面 exact proof 与 terminal
+    cleanup。
+  - 根因: `prove_health_evidence_activation_state` 把两个含空格的 expected marker
+    当作 SSH command argv 传输。OpenSSH 会重新拼接为远端 shell 字符串，13 个
+    本地参数被拆成 22 个远端词；远端 `${12}` 实际变成
+    `authorization=verified`，导致 release-lock path 断言必败。内置 adoption
+    正确复用原 immutable stage 且没有重启 activation，但同一传输缺陷使 proof
+    再次 fail closed。
+  - 修复基线:
+    - SSH 边界只允许精确有序的 11 个无空格 enum/path/token 参数；远端在读取
+      positional parameter 前强制 `argc=11`；
+    - expected success/NOOP/recovered marker 由远端用已绑定的 phase+SHA 构造，
+      phase 只接受 enabled/staged，其他值 exit 2；
+    - success/outcome 使用 byte-exact compare，缺少或多余结尾换行都拒绝；
+      deploy proof 的三模板与 sealed activation runner 三模板由跨文件测试绑定；
+    - 新测试已 RED→GREEN，activation 定向旧基线 72/72、完整七文件
+      release-invariants 307/307 通过；fresh mutation test-contract review 与
+      release-security review 均 GO（P0=0、P1=0、P2=0）。replacement exact-SHA
+      CI、原 lease adoption terminal proof 与 cleanup 尚待完成。
+  - 回退阶段: G5/G6 → S5/G3/G4；lease/stage 保留，禁止并发 activation、
+    rollback、部署或 OTA。
 
 ## S0 · 用户需求(逐字)
 

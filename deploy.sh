@@ -3331,8 +3331,6 @@ REMOTE_ACTIVATION_UNIT
 prove_health_evidence_activation_state() {
     local phase="$1"
     local unit_name="$2"
-    local expected_outcome="$3"
-    local expected_success="$4"
 
     ssh "$SERVER" bash -s -- \
         "$phase" \
@@ -3344,11 +3342,10 @@ prove_health_evidence_activation_state() {
         "$REMOTE_HEALTH_EVIDENCE_DURABLE_STATE_DIR" \
         "$REMOTE_ACTIVATION_SUCCESS_MARKER" \
         "${REMOTE_ACTIVATION_SUCCESS_MARKER}.outcome" \
-        "$expected_outcome" \
-        "$expected_success" \
         "$REMOTE_RELEASE_LOCK_DIR" \
         "$REMOTE_RELEASE_LOCK_TOKEN" <<'REMOTE_ACTIVATION_PROOF'
 set -euo pipefail
+test "$#" -eq 11
 phase="$1"
 unit_name="$2"
 repo="$3"
@@ -3358,13 +3355,23 @@ guard_env="$6"
 durable_state_dir="$7"
 success_marker="$8"
 outcome_file="$9"
-expected_outcome="${10}"
-expected_success="${11}"
-release_lock="${12}"
-release_token="${13}"
+release_lock="${10}"
+release_token="${11}"
 durable_enabled="$durable_state_dir/enabled.env"
 state_dir="$(dirname "$success_marker")"
 intent_file="$state_dir/launch-intent"
+expected_success="HEALTH_EVIDENCE_ACTIVATION_OK commit=$expected_sha flag=true health=passed auth_probe=passed score=passed contract=enabled services=active"
+case "$phase" in
+    enabled)
+        expected_outcome="HEALTH_EVIDENCE_DEADMAN_NOOP commit=$expected_sha authorization=verified"
+        ;;
+    staged)
+        expected_outcome="HEALTH_EVIDENCE_DEADMAN_RECOVERED commit=$expected_sha flag=false health=passed contract=staged services=active"
+        ;;
+    *)
+        exit 2
+        ;;
+esac
 
 [[ "$repo" =~ ^/[A-Za-z0-9._/-]+$ ]]
 [[ "$repo" != "/" && "$repo" != *"/../"* && "$repo" != *"/.." ]]
@@ -3406,7 +3413,7 @@ test -f "$outcome_file"
 test ! -L "$outcome_file"
 test "$(stat -c '%U:%G:%a' "$outcome_file")" = "root:root:400"
 test "$(stat -c '%h' "$outcome_file")" = "1"
-test "$(cat "$outcome_file")" = "$expected_outcome"
+cmp -s "$outcome_file" <(printf '%s\n' "$expected_outcome")
 
 flag_is_exact() {
     local env_file="$1"
@@ -3689,7 +3696,7 @@ case "$phase" in
         test "$(stat -c '%U:%G:%a' "$success_marker")" = \
             "root:root:400"
         test "$(stat -c '%h' "$success_marker")" = "1"
-        test "$(cat "$success_marker")" = "$expected_success"
+        cmp -s "$success_marker" <(printf '%s\n' "$expected_success")
         flag_is_exact "$candidate_env" true
         flag_is_exact "$guard_env" false
         flag_is_exact "$repo/backend/.env" false
@@ -3785,9 +3792,6 @@ REMOTE_ACTIVATION_CONTAINMENT
 activate_health_evidence_runtime() {
     local unit_name
     local launch_rc
-    local expected_success
-    local expected_noop
-    local expected_recovered
     local adopted="${_REMOTE_RELEASE_LOCK_ADOPTED:-0}"
 
     if ! require_health_evidence_flag_value true; then
@@ -3800,9 +3804,6 @@ activate_health_evidence_runtime() {
     fi
 
     unit_name="health-evidence-activation-${DEPLOY_EXPECTED_SHA:0:12}-$$.service"
-    expected_success="HEALTH_EVIDENCE_ACTIVATION_OK commit=$DEPLOY_EXPECTED_SHA flag=true health=passed auth_probe=passed score=passed contract=enabled services=active"
-    expected_noop="HEALTH_EVIDENCE_DEADMAN_NOOP commit=$DEPLOY_EXPECTED_SHA authorization=verified"
-    expected_recovered="HEALTH_EVIDENCE_DEADMAN_RECOVERED commit=$DEPLOY_EXPECTED_SHA flag=false health=passed contract=staged services=active"
 
     if [[ "$adopted" = "1" ]]; then
         # The adopted owner starts in preserve mode. Validate the original
@@ -3814,15 +3815,13 @@ activate_health_evidence_runtime() {
             print_error "既有 health-evidence 激活事务不完整或已被修改"
             return 1
         fi
-        if prove_health_evidence_activation_state \
-            enabled "$unit_name" "$expected_noop" "$expected_success"; then
+        if prove_health_evidence_activation_state enabled "$unit_name"; then
             _REMOTE_RELEASE_LOCK_DELEGATED=0
             _REMOTE_RELEASE_LOCK_ABANDONED=0
             print_success "既有 health-evidence 激活事务已证明成功"
             return 0
         fi
-        if prove_health_evidence_activation_state \
-            staged "$unit_name" "$expected_recovered" "$expected_success"; then
+        if prove_health_evidence_activation_state staged "$unit_name"; then
             _REMOTE_RELEASE_LOCK_DELEGATED=0
             _REMOTE_RELEASE_LOCK_ABANDONED=0
             print_error "既有 health-evidence 激活事务已恢复到 flag=false guard"
@@ -3869,16 +3868,14 @@ activate_health_evidence_runtime() {
         launch_rc=$?
     fi
 
-    if prove_health_evidence_activation_state \
-        enabled "$unit_name" "$expected_noop" "$expected_success"; then
+    if prove_health_evidence_activation_state enabled "$unit_name"; then
         _REMOTE_RELEASE_LOCK_DELEGATED=0
         _REMOTE_RELEASE_LOCK_ABANDONED=0
         print_success "health-evidence runtime 已受控启用并通过真实 runtime eval"
         return 0
     fi
 
-    if prove_health_evidence_activation_state \
-        staged "$unit_name" "$expected_recovered" "$expected_success"; then
+    if prove_health_evidence_activation_state staged "$unit_name"; then
         _REMOTE_RELEASE_LOCK_DELEGATED=0
         _REMOTE_RELEASE_LOCK_ABANDONED=0
         print_error "health-evidence runtime 启用失败 (exit=$launch_rc)，已恢复并复验 flag=false guard"

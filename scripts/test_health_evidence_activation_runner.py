@@ -707,8 +707,10 @@ stage_health_evidence_activation_artifacts() {{
 }}
 prove_health_evidence_activation_state() {{
     test "$1" = enabled
-    test "$(cat "$ADOPT_STATE_DIR/success")" = "$4"
-    test "$(cat "$ADOPT_STATE_DIR/success.outcome")" = "$3"
+    test "$(cat "$ADOPT_STATE_DIR/success")" = \
+        "{SUCCESS_TEMPLATE.format(sha=sha)}"
+    test "$(cat "$ADOPT_STATE_DIR/success.outcome")" = \
+        "{DEADMAN_NOOP_TEMPLATE.format(sha=sha)}"
 }}
 verify_runtime_only_kb_contract() {{ exit 91; }}
 verify_systemd_activation_capability() {{ exit 92; }}
