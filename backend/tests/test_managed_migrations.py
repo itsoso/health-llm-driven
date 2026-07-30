@@ -1371,3 +1371,80 @@ def test_medical_exam_source_fingerprint_migration_enforces_user_scoped_uniquene
             "INSERT INTO medical_exams "
             "(id, user_id, source_fingerprint) VALUES (3, 8, 'same-image')"
         ))
+
+
+def test_plan_item_weather_condition_tag_migration_backfills_legacy_rows_once(
+    tmp_path: Path,
+):
+    migrations_dir = Path(__file__).resolve().parents[1] / "migrations" / "managed"
+    migration_id = "20260729_160000_add_plan_item_weather_condition_tag"
+    sqlite_file = migrations_dir / f"{migration_id}.sqlite.sql"
+    postgres_file = migrations_dir / f"{migration_id}.postgresql.sql"
+    assert sqlite_file.exists()
+    assert postgres_file.exists()
+    postgres_sql = postgres_file.read_text(encoding="utf-8")
+    sqlite_sql = sqlite_file.read_text(encoding="utf-8")
+    assert "ADD COLUMN IF NOT EXISTS weather_condition_tag" in postgres_sql
+
+    legacy_sql = (
+        migrations_dir.parent / "20260509_150000_add_weather_condition_tag.sql"
+    ).read_text(encoding="utf-8")
+
+    def normalized_updates(sql: str) -> list[str]:
+        return [
+            " ".join(statement.split())
+            for statement in _split_sql_statements(sql)
+            if statement.lstrip().startswith("UPDATE ")
+        ]
+
+    assert normalized_updates(postgres_sql) == normalized_updates(legacy_sql)
+    assert normalized_updates(sqlite_sql) == normalized_updates(legacy_sql)
+
+    isolated = tmp_path / "managed"
+    isolated.mkdir()
+    (isolated / sqlite_file.name).write_text(
+        sqlite_sql,
+        encoding="utf-8",
+    )
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        conn.execute(text(
+            "CREATE TABLE plan_items ("
+            "id INTEGER PRIMARY KEY, title VARCHAR(255) NOT NULL)"
+        ))
+        conn.execute(text(
+            "INSERT INTO plan_items (id, title) VALUES "
+            "(1, '雷雨日室内训练'), "
+            "(2, '雪天慢走'), "
+            "(3, '晴天户外跑'), "
+            "(4, '雾霾日戴口罩'), "
+            "(5, '大风日减少骑行'), "
+            "(6, '雷暴日留在室内'), "
+            "(7, '普通恢复日')"
+        ))
+
+    first = apply_managed_migrations(engine, isolated)
+    second = apply_managed_migrations(engine, isolated)
+
+    assert [item.id for item in first.applied] == [migration_id]
+    assert second.applied == []
+    assert [item.id for item in second.skipped] == [migration_id]
+    columns = {column["name"] for column in inspect(engine).get_columns("plan_items")}
+    assert "weather_condition_tag" in columns
+    with engine.connect() as conn:
+        rows = conn.execute(text(
+            "SELECT id, weather_condition_tag FROM plan_items ORDER BY id"
+        )).all()
+        ledger_count = conn.execute(text(
+            "SELECT COUNT(*) FROM schema_migrations WHERE id = :id"
+        ), {"id": migration_id}).scalar_one()
+    assert rows == [
+        (1, "rain"),
+        (2, "snow"),
+        (3, "sun"),
+        (4, "fog"),
+        (5, "wind"),
+        (6, "thunder"),
+        (7, None),
+    ]
+    assert ledger_count == 1

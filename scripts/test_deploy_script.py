@@ -60,6 +60,258 @@ def test_backup_and_health_score_failures_block_deploy():
     assert "健康度脚本无有效输出" in verify_body
 
 
+def test_health_score_failure_reports_critical_gate_detail():
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    verify_start = script.index("verify_deployment() {")
+    verify_end = script.index("wait_for_agent_skills_manifest()", verify_start)
+    verify_body = script[verify_start:verify_end]
+
+    assert "critical_failures" in verify_body
+    assert "agent_runtime_circuit" in verify_body
+    assert "健康度硬闸" in verify_body
+
+
+def test_backend_proves_rollback_schema_before_live_env_mutation():
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    deploy_start = script.index("deploy_backend() {")
+    deploy_body = script[deploy_start:]
+
+    backup = deploy_body.index("backup_database")
+    rollback_point = deploy_body.index("save_rollback_point")
+    rollback_probe = deploy_body.index(
+        "verify_rollback_point_schema_compatibility"
+    )
+    sync_env = deploy_body.index("sync_env")
+
+    assert backup < rollback_point < rollback_probe < sync_env
+
+
+def test_rollback_sha_is_recorded_only_after_schema_probe_success():
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    save_start = script.index("save_rollback_point() {")
+    save_end = script.index(
+        "verify_rollback_point_schema_compatibility() {",
+        save_start,
+    )
+    save_body = script[save_start:save_end]
+    verify_start = save_end
+    verify_end = script.index("# 回滚到上一个版本", verify_start)
+    verify_body = script[verify_start:verify_end]
+
+    assert 'ROLLBACK_CANDIDATE_COMMIT="$rollback_commit"' in save_body
+    assert 'ROLLBACK_COMMIT="$rollback_commit"' not in save_body
+    assert "sha256sum --strict -c staged.sha256" in verify_body
+    assert "source .env" not in verify_body
+    assert "env -u MIGRATION_DATABASE_URL" in verify_body
+    assert "ROLLBACK_POINT_SCHEMA_OK commit=" in verify_body
+    probe_success = verify_body.index(
+        'if [[ "$probe_output" != *"ROLLBACK_SCHEMA_PROBE_OK tables="* ||'
+    )
+    record = verify_body.index(
+        'ROLLBACK_COMMIT="$ROLLBACK_CANDIDATE_COMMIT"'
+    )
+    assert probe_success < record
+
+
+def test_guard_probes_full_schema_before_starting_any_backend_writer():
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    deploy_start = script.index("deploy_backend() {")
+    deploy_body = script[deploy_start:]
+    guard_end = deploy_body.index("CODE_EXIT=$?")
+    guard_body = deploy_body[:guard_end]
+
+    stop_socket = guard_body.index("systemctl stop health-backend.socket")
+    stop_backend = guard_body.index("systemctl stop health-backend &&")
+    stop_celery = guard_body.index(
+        "systemctl stop celery-worker celery-beat"
+    )
+    checkout = guard_body.index("$remote_git_sync")
+    pip_install = guard_body.index("pip install --require-hashes")
+    migration = guard_body.index("python scripts/apply_managed_migrations.py")
+    lease_before_migration = guard_body.index(
+        "test -r '$REMOTE_RELEASE_LOCK_DIR/token'",
+        pip_install,
+    )
+    stage_recheck = guard_body.index(
+        "sha256sum --strict -c staged.sha256",
+        migration,
+    )
+    schema_probe = guard_body.index(
+        "verify_runtime_schema_compatibility.py"
+    )
+    lease_after_probe = guard_body.index(
+        "test -r '$REMOTE_RELEASE_LOCK_DIR/token'",
+        schema_probe,
+    )
+    restart_socket = guard_body.index(
+        "systemctl restart health-backend.socket"
+    )
+    restart_backend = guard_body.index("systemctl restart health-backend &&")
+    restart_celery = guard_body.index(
+        "systemctl restart celery-worker celery-beat"
+    )
+
+    assert (
+        stop_socket
+        < stop_backend
+        < stop_celery
+        < checkout
+        < pip_install
+        < lease_before_migration
+        < migration
+        < stage_recheck
+        < schema_probe
+        < lease_after_probe
+        < restart_socket
+        < restart_backend
+        < restart_celery
+    )
+
+
+def test_guard_lost_lease_after_pip_never_runs_migration_or_restarts_writers(
+    tmp_path: Path,
+):
+    env_file = tmp_path / "deploy.env"
+    remote_repo = tmp_path / "remote"
+    backend = remote_repo / "backend"
+    fake_bin = tmp_path / "bin"
+    lease_dir = tmp_path / "release-lock"
+    stage_dir = tmp_path / "stage"
+    event_log = tmp_path / "events"
+    migration_marker = tmp_path / "migration-ran"
+    fake_migration_env = tmp_path / "migration.env"
+    backend.mkdir(parents=True)
+    fake_bin.mkdir()
+    lease_dir.mkdir()
+    stage_dir.mkdir()
+    (backend / "venv" / "bin").mkdir(parents=True)
+    env_file.write_text(
+        "DEPLOY_SERVER=fake-server\n"
+        f"DEPLOY_PATH={remote_repo}\n"
+        "HEALTH_EVIDENCE_RUNTIME_ENABLED=false\n",
+        encoding="utf-8",
+    )
+    (backend / ".env").write_text(
+        "HEALTH_EVIDENCE_RUNTIME_ENABLED=false\n",
+        encoding="utf-8",
+    )
+    (backend / "venv" / "bin" / "activate").write_text(
+        ":\n",
+        encoding="utf-8",
+    )
+    fake_migration_env.write_text(
+        "MIGRATION_DATABASE_URL=postgresql://migration-role@example/health\n",
+        encoding="utf-8",
+    )
+    (lease_dir / "token").write_text("lease-token\n", encoding="utf-8")
+    (stage_dir / "staged.sha256").write_text(
+        "stage evidence remains\n",
+        encoding="utf-8",
+    )
+    _write_executable(
+        fake_bin / "systemctl",
+        """#!/usr/bin/env bash
+printf 'systemctl:%s\\n' "$*" >> "$FAKE_EVENT_LOG"
+if [ "$1" = "show" ]; then
+    printf 'inactive\\n'
+fi
+""",
+    )
+    _write_executable(
+        fake_bin / "pip",
+        """#!/usr/bin/env bash
+printf 'pip:%s\\n' "$*" >> "$FAKE_EVENT_LOG"
+rm -f "$FAKE_LEASE_DIR/token"
+""",
+    )
+    _write_executable(
+        fake_bin / "python",
+        """#!/usr/bin/env bash
+printf 'python:%s\\n' "$*" >> "$FAKE_EVENT_LOG"
+if [ "$1" = "scripts/apply_managed_migrations.py" ]; then
+    : > "$FAKE_MIGRATION_MARKER"
+fi
+""",
+    )
+    harness = f"""
+source {DEPLOY_SCRIPT!s}
+REMOTE_RELEASE_LOCK_DIR={lease_dir!s}
+REMOTE_RELEASE_LOCK_TOKEN=lease-token
+REMOTE_BACKUP_PREFLIGHT_DIR={stage_dir!s}
+validate_runtime_only_kb_staging() {{ :; }}
+assert_remote_release_lock_if_acquired() {{ :; }}
+backup_database() {{ :; }}
+save_rollback_point() {{ ROLLBACK_CANDIDATE_COMMIT={'1' * 40}; }}
+verify_rollback_point_schema_compatibility() {{
+    ROLLBACK_COMMIT="$ROLLBACK_CANDIDATE_COMMIT"
+}}
+sync_env() {{ :; }}
+deactivate_health_evidence_runtime_before_mutation() {{ :; }}
+upload_deploy_bundle() {{ :; }}
+remote_git_sync_command() {{ printf ':'; }}
+ssh() {{
+    shift
+    local command="$*"
+    command="${{command//\\/etc\\/health-app\\/migration.env/$FAKE_MIGRATION_ENV}}"
+    PATH="$FAKE_BIN:$PATH" bash -c "$command"
+}}
+if (deploy_backend); then exit 91; fi
+test -d "$REMOTE_RELEASE_LOCK_DIR"
+test -d "$REMOTE_BACKUP_PREFLIGHT_DIR"
+test -f "$REMOTE_BACKUP_PREFLIGHT_DIR/staged.sha256"
+test ! -e "$FAKE_MIGRATION_MARKER"
+test ! -e "$REMOTE_RELEASE_LOCK_DIR/token"
+"""
+    result = subprocess.run(
+        ["bash", "-c", harness],
+        text=True,
+        capture_output=True,
+        check=False,
+        env={
+            **os.environ,
+            "DEPLOY_ENV_FILE": str(env_file),
+            "FAKE_BIN": str(fake_bin),
+            "FAKE_EVENT_LOG": str(event_log),
+            "FAKE_LEASE_DIR": str(lease_dir),
+            "FAKE_MIGRATION_ENV": str(fake_migration_env),
+            "FAKE_MIGRATION_MARKER": str(migration_marker),
+        },
+    )
+
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert not migration_marker.exists()
+    events = event_log.read_text(encoding="utf-8").splitlines()
+    assert any(event.startswith("pip:") for event in events)
+    assert not any(event.startswith("python:") for event in events)
+    assert not any("restart" in event for event in events)
+    assert {
+        event.removeprefix("systemctl:")
+        for event in events
+        if event.startswith("systemctl:stop ")
+    } >= {
+        "stop health-backend.socket",
+        "stop health-backend",
+        "stop celery-worker celery-beat",
+    }
+
+
+def test_unknown_guard_transaction_failure_never_starts_concurrent_rollback():
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    deploy_start = script.index("deploy_backend() {")
+    deploy_body = script[deploy_start:]
+    failure_start = deploy_body.index("if [ $CODE_EXIT -ne 0 ]; then")
+    failure_end = deploy_body.index(
+        "if ! prove_health_evidence_runtime_process_flag false",
+        failure_start,
+    )
+    failure_body = deploy_body[failure_start:failure_end]
+
+    assert "rollback_deploy" not in failure_body
+    assert "_REMOTE_RELEASE_LOCK_DELEGATED=0" not in failure_body
+    assert "_REMOTE_RELEASE_LOCK_ABANDONED=1" in failure_body
+    assert "transaction terminal" in failure_body
+
+
 def test_plain_ssh_write_failures_preserve_server_lease_for_reconciliation():
     script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
     for function_name, next_marker in (
@@ -220,8 +472,12 @@ deploy_frontend() {{
 }}
 deploy_backend() {{
     save_rollback_point
+    verify_rollback_point_schema_compatibility
     printf 'backend-floor:%s\\n' "$ROLLBACK_COMMIT" >> "$DEPLOY_EVENT_LOG"
     REMOTE_HEAD={new_sha}
+}}
+verify_rollback_point_schema_compatibility() {{
+    ROLLBACK_COMMIT="$ROLLBACK_CANDIDATE_COMMIT"
 }}
 check_status() {{ printf 'status\\n' >> "$DEPLOY_EVENT_LOG"; }}
 main --all --yes

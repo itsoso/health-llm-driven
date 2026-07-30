@@ -49,6 +49,8 @@ REMOTE_HEALTH_EVIDENCE_SYSTEMD_RUNTIME_DIR="${REMOTE_HEALTH_EVIDENCE_SYSTEMD_RUN
 REMOTE_HEALTH_EVIDENCE_CGROUP_ROOT="${REMOTE_HEALTH_EVIDENCE_CGROUP_ROOT:-/sys/fs/cgroup}"
 REMOTE_HEALTH_EVIDENCE_PROC_ROOT="${REMOTE_HEALTH_EVIDENCE_PROC_ROOT:-/proc}"
 DEPLOY_EXPECTED_SHA=""
+ROLLBACK_CANDIDATE_COMMIT=""
+ROLLBACK_COMMIT=""
 REMOTE_RELEASE_LOCK_DIR="${REMOTE_RELEASE_LOCK_DIR:-/var/lock/health-app-release}"
 REMOTE_RELEASE_LOCK_TOKEN=""
 _REMOTE_RELEASE_LOCK_ACQUIRED=0
@@ -394,10 +396,58 @@ backup_database() {
 
 # 记录当前 commit 用于回滚
 save_rollback_point() {
-    ROLLBACK_COMMIT=$(ssh $SERVER "cd $REMOTE_PATH && git rev-parse HEAD" 2>/dev/null)
-    if [[ -n "$ROLLBACK_COMMIT" ]]; then
-        print_step "回滚点: ${ROLLBACK_COMMIT:0:8}"
+    local rollback_commit
+    rollback_commit=$(
+        ssh "$SERVER" "cd '$REMOTE_PATH' && git rev-parse HEAD" 2>/dev/null ||
+            true
+    )
+    if ! [[ "$rollback_commit" =~ ^[0-9a-f]{40}$ ]]; then
+        print_error "无法取得合法的生产回滚点"
+        return 1
     fi
+    ROLLBACK_CANDIDATE_COMMIT="$rollback_commit"
+    print_step "候选回滚点: ${ROLLBACK_CANDIDATE_COMMIT:0:8}"
+}
+
+verify_rollback_point_schema_compatibility() {
+    local probe_output
+
+    assert_remote_release_lock
+    if ! [[ "$ROLLBACK_CANDIDATE_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+        print_error "回滚点 SHA 非法，拒绝兼容性预检"
+        return 1
+    fi
+    print_step "验证当前生产回滚点与实时 schema 兼容..."
+    if ! probe_output=$(ssh "$SERVER" "
+        set -euo pipefail
+        test -r '$REMOTE_RELEASE_LOCK_DIR/token'
+        test \"\$(cat '$REMOTE_RELEASE_LOCK_DIR/token')\" = '$REMOTE_RELEASE_LOCK_TOKEN'
+        cd '$REMOTE_BACKUP_PREFLIGHT_DIR'
+        sha256sum --strict -c staged.sha256 >/dev/null
+        cd '$REMOTE_PATH'
+        test \"\$(git rev-parse HEAD)\" = '$ROLLBACK_CANDIDATE_COMMIT'
+        test -z \"\$(git status --porcelain --untracked-files=no)\"
+        cd backend
+        test -r .env
+        env -u MIGRATION_DATABASE_URL PYTHONPATH=. \
+            venv/bin/python '$REMOTE_BACKUP_PREFLIGHT_DIR/verify_runtime_schema_compatibility.py'
+        test \"\$(git -C '$REMOTE_PATH' rev-parse HEAD)\" = '$ROLLBACK_CANDIDATE_COMMIT'
+        test -z \"\$(git -C '$REMOTE_PATH' status --porcelain --untracked-files=no)\"
+        test \"\$(cat '$REMOTE_RELEASE_LOCK_DIR/token')\" = '$REMOTE_RELEASE_LOCK_TOKEN'
+        printf 'ROLLBACK_POINT_SCHEMA_OK commit=%s\\n' '$ROLLBACK_CANDIDATE_COMMIT'
+    " 2>&1); then
+        echo "$probe_output" >&2
+        print_error "当前生产 SHA 与实时 schema 不兼容；服务尚未变更，阻断部署"
+        return 1
+    fi
+    echo "$probe_output"
+    if [[ "$probe_output" != *"ROLLBACK_SCHEMA_PROBE_OK tables="* ||
+          "$probe_output" != *"ROLLBACK_POINT_SCHEMA_OK commit=$ROLLBACK_CANDIDATE_COMMIT"* ]]; then
+        print_error "回滚点 schema probe 缺少精确成功证明"
+        return 1
+    fi
+    ROLLBACK_COMMIT="$ROLLBACK_CANDIDATE_COMMIT"
+    print_success "生产回滚点已验证并记录: ${ROLLBACK_COMMIT:0:12}"
 }
 
 # 回滚到上一个版本
@@ -463,12 +513,48 @@ verify_deployment() {
 
     TOTAL=$(echo "$SCORE" | python3 -c "import sys,json; print(json.load(sys.stdin)['total_score'])" 2>/dev/null)
     PASSED=$(echo "$SCORE" | python3 -c "import sys,json; print('true' if json.load(sys.stdin)['pass'] else 'false')" 2>/dev/null)
+    MAXIMUM=$(echo "$SCORE" | python3 -c "import sys,json; print(json.load(sys.stdin)['max_possible'])" 2>/dev/null)
+    CRITICAL_FAILURES=$(echo "$SCORE" | python3 -c "
+import json
+import re
+import sys
+payload = json.load(sys.stdin)
+raw = payload.get('critical_failures')
+if not isinstance(raw, list):
+    raise SystemExit(1)
+names = []
+for value in raw:
+    name = str(value)
+    names.append(name if re.fullmatch(r'[A-Za-z0-9_.:-]{1,80}', name) else 'invalid')
+print(','.join(names) if names else 'none')
+" 2>/dev/null)
+    AGENT_RUNTIME_CIRCUIT=$(echo "$SCORE" | python3 -c "
+import json
+import re
+import sys
+payload = json.load(sys.stdin)
+dimensions = payload.get('dimensions')
+if not isinstance(dimensions, dict):
+    raise SystemExit(1)
+circuit = dimensions.get('agent_runtime_circuit')
+if not isinstance(circuit, dict):
+    raise SystemExit(1)
+detail = str(circuit.get('detail', 'missing'))
+print(re.sub(r'[^A-Za-z0-9_.:=,-]', '_', detail)[:160])
+" 2>/dev/null)
+
+    if [[ -z "$TOTAL" || -z "$PASSED" || "$MAXIMUM" != "60" ||
+          -z "$CRITICAL_FAILURES" || -z "$AGENT_RUNTIME_CIRCUIT" ]]; then
+        print_error "健康度 JSON 契约无效，阻断部署"
+        return 1
+    fi
 
     if [[ "$PASSED" == "true" ]]; then
         print_success "健康度: ${TOTAL}/60 ✅ PASS"
         return 0
     else
         print_error "健康度: ${TOTAL}/60 ❌ FAIL (阈值: ${DEPLOY_SCORE_THRESHOLD})"
+        print_error "健康度硬闸: critical_failures=${CRITICAL_FAILURES}; agent_runtime_circuit=${AGENT_RUNTIME_CIRCUIT}"
         return 1
     fi
 }
@@ -1567,6 +1653,7 @@ deploy_backend() {
     # 1. 备份数据库 + 记录发布前回滚点
     backup_database
     save_rollback_point
+    verify_rollback_point_schema_compatibility
 
     # 2. 同步环境变量
     sync_env
@@ -1583,6 +1670,14 @@ deploy_backend() {
     _REMOTE_RELEASE_LOCK_DELEGATED=1
     set +e
     ssh $SERVER "
+        echo '停止后端 socket 与所有 writer...' && \
+        systemctl stop health-backend.socket && \
+        systemctl stop health-backend && \
+        systemctl stop celery-worker celery-beat && \
+        test \"\$(systemctl show health-backend.socket -p ActiveState --value)\" = inactive && \
+        test \"\$(systemctl show health-backend -p ActiveState --value)\" = inactive && \
+        test \"\$(systemctl show celery-worker -p ActiveState --value)\" = inactive && \
+        test \"\$(systemctl show celery-beat -p ActiveState --value)\" = inactive && \
         cd $REMOTE_PATH && \
         $remote_git_sync && \
         cd backend && \
@@ -1595,8 +1690,16 @@ deploy_backend() {
         echo '执行受控数据库迁移...' && \
         test -r /etc/health-app/migration.env && \
         set -a && source /etc/health-app/migration.env && set +a && \
+        test -r '$REMOTE_RELEASE_LOCK_DIR/token' && \
+        test \"\$(cat '$REMOTE_RELEASE_LOCK_DIR/token')\" = '$REMOTE_RELEASE_LOCK_TOKEN' && \
         python scripts/apply_managed_migrations.py && \
         unset MIGRATION_DATABASE_URL && \
+        (cd '$REMOTE_BACKUP_PREFLIGHT_DIR' && \
+            sha256sum --strict -c staged.sha256 >/dev/null) && \
+        echo '启动服务前验证完整 runtime schema...' && \
+        PYTHONPATH=. python '$REMOTE_BACKUP_PREFLIGHT_DIR/verify_runtime_schema_compatibility.py' && \
+        test -r '$REMOTE_RELEASE_LOCK_DIR/token' && \
+        test \"\$(cat '$REMOTE_RELEASE_LOCK_DIR/token')\" = '$REMOTE_RELEASE_LOCK_TOKEN' && \
         echo '重启后端服务...' && \
         systemctl restart health-backend.socket && \
         systemctl restart health-backend && \
@@ -1608,6 +1711,9 @@ deploy_backend() {
     CODE_EXIT=$?
     set -e
     if [ $CODE_EXIT -ne 0 ]; then
+        # SSH 断连时远端命令可能仍在执行；不得把本地非零退出误当成远端
+        # transaction terminal。保留 delegated lease 与完整现场，避免与 pip、
+        # migration 或 systemd transition 并发回滚。
         _REMOTE_RELEASE_LOCK_ABANDONED=1
         print_error "后端 guard 远端事务结果不明确 (exit=$CODE_EXIT)；不与可能仍运行的旧命令并发回滚"
         print_error "发布锁与现场保留，请先在服务器确认 transaction terminal state"

@@ -14,7 +14,8 @@
 ./deploy.sh           # 部署全部 (前端 + 后端)
 ./deploy.sh -f        # 仅部署前端
 ./deploy.sh -b        # 仅部署后端
-./deploy.sh -e        # 仅同步环境变量并重启
+./deploy.sh -e        # 仅同步环境变量，并证明 backend/Celery 运行时 flag=false
+./deploy.sh -H        # 受控启用 health-evidence runtime
 ./deploy.sh -r        # 仅重启服务
 ./deploy.sh -s        # 查看服务状态
 ./deploy.sh -l        # 查看服务日志
@@ -73,14 +74,28 @@ MIGRATION_DATABASE_URL=postgresql://health_app_migrator:***@localhost:5432/healt
 1. 修改代码 → 2. 本地测试 → 3. git commit → 4. ./deploy.sh → 5. 验证线上
 ```
 
-**部署脚本执行流程:**
-1. 检查 `.env` 配置
-2. 推送代码到 GitHub
-3. SSH 到服务器拉取代码
-4. 在 Git 工作树外创建数据库备份，完成临时库恢复演练及 age 加密站外归档；任一步失败即停止
-5. 同步根目录 `.env` 到服务器 `backend/.env` 前，先备份到 `/var/backups/health-app/env/`；运行时文件强制为 `root:health-app`、`0640`（仅 root 与专用服务组可读），外部备份仍为 `0600`
-6. 安装依赖
-7. 重启服务并通过健康评分
+**后端部署脚本执行流程:**
+
+1. 检查 `.env`、干净 `main`、`origin/main` 精确 SHA 与发布 lease。
+2. 把本次提交的 backup/rollback/schema-probe 工具上传到 root-only stage，并逐文件
+   校验 Git blob hash。
+3. 在 Git 工作树外创建数据库备份，完成临时库恢复演练及 age 加密站外归档；任一步
+   失败即停止。
+4. 在修改 live env、checkout 或停服前，使用 staged probe 验证“当前生产 SHA 与
+   实时 schema 兼容”。只有 stage hash、HEAD、clean tree、完整表/列/零行写探针及
+   release token 前后均通过，才记录 rollback point。
+5. 同步根目录 `.env` 时先备份到 `/var/backups/health-app/env/`；候选文件先进入
+   root-only stage，再由去激活事务原子安装规范 `false`。运行时文件强制为
+   `root:health-app`、`0640`，外部备份为 `0600`。
+6. 先停 backend socket、backend、Celery worker 与 beat 并证明全部 inactive，再
+   checkout 精确 SHA、安装锁定依赖。
+7. 仅临时加载 `/etc/health-app/migration.env`，在 migration runner 紧前重新核验
+   release token，再执行 managed migrations 并清除 migration URL；在启动任何
+   writer 前，用 runtime role 再跑完整 schema probe，并再次核验 release token。
+8. 重启服务，逐 cgroup PID 证明 feature flag 终态，验证 exact SHA、health/auth、
+   脱敏后的健康硬闸与 runtime-only KB serving contract。
+9. 远端 SSH/信号结果不明确时保留 release lease 与 stage；没有独立 terminal
+   证明时禁止并发 rollback 或第二次部署。
 
 ### 8.5 环境变量同步
 

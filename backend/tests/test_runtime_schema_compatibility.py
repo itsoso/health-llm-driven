@@ -76,6 +76,25 @@ def test_runtime_schema_probe_fails_when_old_code_table_is_missing():
         )
 
 
+def test_runtime_schema_probe_fails_when_declared_column_is_missing():
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as connection:
+        connection.execute(text(
+            "CREATE TABLE probe_records (id INTEGER PRIMARY KEY)"
+        ))
+    factory = sessionmaker(bind=engine)
+
+    with pytest.raises(
+        RuntimeError,
+        match=r"missing columns: probe_records\.value",
+    ):
+        verify_runtime_schema_compatibility(
+            engine=engine,
+            metadata=ProbeBase.metadata,
+            session_factory=factory,
+        )
+
+
 def test_runtime_schema_probe_fails_when_bowel_timer_table_is_missing():
     from app.database import Base
 

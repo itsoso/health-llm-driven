@@ -4,8 +4,8 @@
 |---|---|
 | slug | `mobile-health-evidence-runtime` |
 | 创建日期 | 2026-07-29 |
-| 当前阶段 | replacement CI PASS → G5 首次发布 pre-mutation BLOCK → bootstrap 修复待 CI |
-| 状态 | G5 remediation / not-deployed |
+| 当前阶段 | G5 事故已恢复 → 持久发布链修复本地 PASS → replacement CI 待跑 |
+| 状态 | G5 remediation / production restored at rollback SHA / feature not-deployed |
 | 负责 | product owner + Codex |
 | 反馈环 | backend deploy → Web deploy → Mobile OTA → Mobile/Mac 真实路径对照 |
 
@@ -174,6 +174,49 @@
     独立 crash-prefix 复审 GO；Shell syntax、Ruff、diff check、system-map 与
     92 份 Dossier consistency 均 PASS。replacement CI 待本修复提交后重跑。
   - 回退阶段: G5 → S5/G3/G4；禁止带 BLOCK 继续 activation/OTA。
+- [x] Correction Block — production schema drift 与可恢复发布链
+  - 触发: bootstrap 修复提交 `1eb8c2f8bcc904144b57beefceefc34cb8f40667`
+    的 main CI run `30507073580` 43 个 job 全绿、临时
+    `HARNESS_LIVE_LLM_EVAL_CONFIRMED` 已确认删除后，正式 backend deploy 在
+    guard health Gate 输出 `60/60 FAIL`；自动回滚随后被完整 runtime schema
+    probe 拒绝，缺少 `plan_items.weather_condition_tag`，四个服务按设计保持
+    inactive，发布锁与 stage 保留。
+  - 根因拆分:
+    - `weather_condition_tag` 自 `0908e9db6` 起同时存在于 ORM 与 legacy SQL，
+      但 SQL 位于 `backend/migrations/`，而生产只执行
+      `backend/migrations/managed/`；CI 使用 `Base.metadata.create_all` 建理想库，
+      因而长期掩盖 production migration lineage drift；
+    - `60/60 FAIL` 只能来自新增 `agent_runtime_circuit` 硬闸，但旧 deploy 日志只
+      打印 total/pass，未保留当时的 circuit detail。恢复后用同一新评分逻辑复跑为
+      `active:none:generation=4:ack=4`、`critical_failures=[]`、`60/60 PASS`，
+      因此不把当时状态臆断成 paused 或 unavailable。
+  - 受控恢复:
+    - 保留 release lease 与全部 writer inactive；使用 root-only 独立 migration
+      role 对仓库内 hash `ce1cdf78015f...` 的既有幂等 SQL 做单事务执行，新增
+      nullable `VARCHAR(20)` 并确定性回填 2 行；
+    - staged full schema probe 通过 199 表后才重跑 hash-verified rollback runner；
+      得到精确哨兵 `ROLLBACK_OK commit=ad85cd66... kb_quarantine=passed
+      schema_probe=passed auth_probe=passed services=active process_flag=false`；
+    - 随后复证 health 200、auth 401、四服务 active、全部 writer PID 唯一
+      `flag=false`、runtime-only targets 11/matched 0、circuit 4=4，并精确清理
+      本次 stage/bundle/lock。生产恢复旧 SHA，新功能没有被激活或 OTA。
+  - 持久修复:
+    - PG/SQLite 成对 managed reconciliation migration，legacy 缺列升级、六类回填、
+      ledger 与二次 skip 均有测试；
+    - backup 后、任何 env/停服变更前，用 candidate stage 的 hash-verified probe
+      验证当前生产回滚 SHA；只有 HEAD/clean/schema/lease 前后与精确 marker 全部
+      通过才记录全局 rollback point，且不把 `.env` 当 shell source；
+    - guard 顺序固定为 stop socket/writers → checkout/install → release-token recheck
+      → managed migration → full runtime schema probe → release-token recheck → restart；
+    - SSH 非零继续视为远端 transaction unknown，保留 delegated lease/stage，
+      禁止并发 rollback；Agent circuit 将 query/session-close 异常统一收敛到有限、
+      脱敏重试，paused/generation mismatch 仍立即硬失败，日志新增脱敏后的
+      critical/detail。
+  - 回归: release deploy/rollback/activation 92/92；managed migration +
+    circuit + runtime schema 56/56；health-score 18/18；Shell syntax、Ruff、
+    diff check PASS。
+  - 回退阶段: G5 → S5/G3/G4；replacement CI 和重新部署全绿前继续禁止
+    Web/activation/OTA。
 
 ## S0 · 用户需求(逐字)
 
@@ -356,8 +399,17 @@
     release transaction 69/69，Mobile/Web TypeScript 均 0 error；
   - health-harness run `8cf7ad14fa3e` 已记录一次不采信的环境失败和随后采信的 live
     TokenPlan PASS；只保留合成统计，不记录 prompt、回答、密钥或用户数据。
-- main CI 真实色: replacement run 待触发并读取远端结果；禁止以首轮部分绿代替。
-- **裁决**: integrated local candidate ☒ 绿；最终 G3 ☐ 绿 ☒ PENDING main CI
+- bootstrap replacement CI:
+  - run `30507073580` 对精确 main
+    `1eb8c2f8bcc904144b57beefceefc34cb8f40667` 的 43 个 job 全绿；
+  - `backend-quality` 在临时 repo variable 删除后仍通过；变量复查为 not found。
+- G5 incident remediation:
+  - release deploy/rollback/activation 92/92；
+  - managed migration、Agent circuit、runtime schema 56/56，health-score 18/18；
+  - Shell syntax、Ruff、`git diff --check` PASS。
+- main CI 真实色: incident remediation 提交尚未推送；必须对其精确 SHA 重跑并读取
+  远端结果，禁止复用 `1eb8c2f8` 的绿灯。
+- **裁决**: incident remediation local candidate ☒ 绿；最终 G3 ☐ 绿 ☒ PENDING main CI
 
 ## G4 · 安全闸
 
@@ -388,22 +440,33 @@
   production semantic smoke → OTA
 - TestFlight 判断: 当前仅 Python/JSON/TS/TSX/API 变更，无 native/plugin/SDK/runtime
   变更；按发布契约走 OTA，不浪费 TestFlight build。若最终 diff 出现原生变更再改路由。
-- 部署 SHA / 回滚点: 首次尝试目标
-  `6e449b176d3235d52a933968816396cc33c0089c`；远端回滚点
-  `ad85cd667cb415a3cc1dc298633c75998856f68e`；该尝试在代码 checkout 前停止
+- 部署 SHA / 回滚点:
+  - 首次目标 `6e449b176d...` 在首次 flag bootstrap 的 mutation 前停止；
+  - bootstrap 修复目标 `1eb8c2f8...` 已进入 guard，但 G5 hard veto 后回滚；
+  - 生产当前为 `ad85cd667cb415a3cc1dc298633c75998856f68e`，服务健康、
+    base flag=false、历史 schema drift 已受控补齐；下一目标待 incident remediation
+    提交与 CI 生成。
 
 ## G5 · 部署健康闸
 
-- 数据保护前置 Gate: PASS —— 41 MB production backup、234 表临时库恢复演练、
+- 数据保护前置 Gate: PASS —— 两次 41 MB production backup、234 表临时库恢复演练、
   force-RLS 遗传原始文件/审计表完整性、站外 age 归档 hash + HMAC 真实性均通过。
-- staged deploy: BLOCK —— legacy live env 缺少首次引入的 flag，严格去激活事务在
-  mutation 前停止；发布锁和 root-only stage 保留，未并发重试。
-- 健康分(阈值 35,低于自动回滚): NOT RUN（未到服务变更阶段）
-- prod smoke(服务 active + 路由 200/401 + 启动日志无 error + 新表/列 ssh 实查): NOT RUN
+- staged deploy:
+  - 首次 BLOCK: legacy live env 缺首次 flag；mutation 前停止；
+  - canonical-false bootstrap 修复 CI 全绿，事故锁经严格现场证明后精确清理，
+    env-only bootstrap 返回 `HEALTH_EVIDENCE_DEACTIVATED flag=false services=active`；
+  - 第二次 BLOCK: guard score `60/60 FAIL` 后 rollback schema probe 暴露历史缺列；
+    服务 fail-closed inactive。受控 schema reconciliation + staged rollback 已恢复
+    旧 SHA，未带红继续。
+- 健康分(阈值 35): candidate 当时 `60/60 FAIL`，critical detail 因旧日志契约未保存；
+  recovery 后用 candidate scorer 复验 `60/60 PASS`、`critical_failures=[]`。
+- prod recovery smoke: PASS —— exact rollback SHA、四服务 active、health 200、
+  auth 401、199 表 schema probe、目标列契约、writer PID flag=false、circuit 4=4、
+  runtime-only targets 11/matched 0、事故锁/现场清理均已 ssh 实查。
 - Linux 实机硬条件: systemd drop-in precedence、cgroup v2 全部 uvicorn/Celery/beat
   子进程 flag 一致性、durable commit/revoke/candidate rename 断电前缀、SSH/HUP
-  断连租约、生产文件系统 `sync -f`/`mv -fT`/目录 fsync 与 rollback 终态证明均
-  bootstrap 修复后须重跑
+  断连租约、生产文件系统 `sync -f`/`mv -fT`/目录 fsync 与 rollback 终态证明在
+  recovery 路径已通过；incident remediation 的完整 backend G5 仍须重跑。
 - **裁决**:☐ PASS ☒ BLOCK → 回 S5/G3/G4
 
 ## S7 · 上线验证
