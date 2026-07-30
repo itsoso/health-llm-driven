@@ -1057,6 +1057,23 @@ verify_flag_file_false() {
         ' "$env_file"
 }
 
+verify_flag_file_unset() {
+    local env_file="$1"
+    test -r "$env_file" &&
+        test -f "$env_file" &&
+        test ! -L "$env_file" &&
+        awk '
+            /^[[:space:]]*(export[[:space:]]+)?HEALTH_EVIDENCE_RUNTIME_ENABLED[[:space:]]*=/ {
+                assignments += 1
+            }
+            END {
+                if (assignments != 0) {
+                    exit 1
+                }
+            }
+        ' "$env_file"
+}
+
 verify_services_inactive() {
     local unit
     for unit in "${all_units[@]}"; do
@@ -1075,6 +1092,86 @@ stop_and_prove_services_inactive() {
         systemctl stop "$unit"
     done
     verify_services_inactive
+}
+
+verify_runtime_authorization_absent() {
+    local unit
+    local override_dir
+    local override_path
+    if [ -L "$durable_state_dir" ] ||
+        [ -L "$runtime_systemd_dir" ] ||
+        [ -e "$durable_enabled" ] || [ -L "$durable_enabled" ] ||
+        [ -e "$runtime_state_dir" ] || [ -L "$runtime_state_dir" ]; then
+        return 1
+    fi
+    for unit in "${process_units[@]}"; do
+        override_dir="$runtime_systemd_dir/$unit.d"
+        override_path="$override_dir/$runtime_override_name"
+        if [ -L "$override_dir" ]; then
+            return 1
+        fi
+        if [ -e "$override_path" ] || [ -L "$override_path" ]; then
+            return 1
+        fi
+    done
+}
+
+verify_process_environment_unset() {
+    local unit
+    local main_pid
+    local control_group
+    local procs_file
+    local pid
+    local process_count
+    local main_pid_seen
+    for unit in "${process_units[@]}"; do
+        main_pid="$(
+            systemctl show "$unit" --property=MainPID --value 2>/dev/null
+        )"
+        if ! [[ "$main_pid" =~ ^[1-9][0-9]*$ ]] ||
+            [ "$main_pid" -le 1 ]; then
+            return 1
+        fi
+        control_group="$(
+            systemctl show "$unit" --property=ControlGroup --value \
+                2>/dev/null
+        )"
+        if ! [[ "$control_group" =~ ^/[A-Za-z0-9_.@:/\\-]+$ ]] ||
+            [[ "$control_group" = *"/../"* ]]; then
+            return 1
+        fi
+        procs_file="${cgroup_root}${control_group}/cgroup.procs"
+        if [ ! -r "$procs_file" ]; then
+            return 1
+        fi
+        process_count=0
+        main_pid_seen=0
+        while IFS= read -r pid; do
+            if ! [[ "$pid" =~ ^[1-9][0-9]*$ ]] || [ "$pid" -le 1 ]; then
+                return 1
+            fi
+            process_count=$((process_count + 1))
+            if [ "$pid" = "$main_pid" ]; then
+                main_pid_seen=1
+            fi
+            if ! LC_ALL=C tr '\000' '\n' <"$proc_root/$pid/environ" |
+                awk '
+                    /^HEALTH_EVIDENCE_RUNTIME_ENABLED=/ {
+                        assignments += 1
+                    }
+                    END {
+                        if (assignments != 0) {
+                            exit 1
+                        }
+                    }
+                '; then
+                return 1
+            fi
+        done <"$procs_file"
+        if [ "$process_count" -le 0 ] || [ "$main_pid_seen" -ne 1 ]; then
+            return 1
+        fi
+    done
 }
 
 verify_process_environment_false() {
@@ -1123,6 +1220,23 @@ verify_process_environment_false() {
         done <"$procs_file"
         [ "$process_count" -gt 0 ] && [ "$main_pid_seen" -eq 1 ]
     done
+}
+
+install_candidate_env() {
+    test "$candidate_path" != "-"
+    assert_release_lease
+    rm -f -- "$candidate_install_tmp"
+    install -o root -g health-app -m 0640 \
+        "$candidate_path" "$candidate_install_tmp"
+    sync -f "$candidate_install_tmp"
+    assert_release_lease
+    mv -fT "$candidate_install_tmp" "$target_env"
+    sync -f "$target_env_dir"
+    assert_release_lease
+    test "$(stat -c '%U:%G:%a' "$target_env")" = \
+        "root:health-app:640"
+    test "$(sha256sum "$target_env" | awk '{print $1}')" = \
+        "$candidate_hash"
 }
 
 remove_runtime_authorization() {
@@ -1202,32 +1316,44 @@ if [ "$candidate_path" != "-" ]; then
 else
     [ "$candidate_hash" = "-" ]
 fi
-verify_flag_file_false "$target_env"
+legacy_flag_bootstrap=0
+if verify_flag_file_false "$target_env"; then
+    :
+elif [ "$candidate_path" != "-" ] &&
+    verify_flag_file_unset "$target_env" &&
+    verify_runtime_authorization_absent &&
+    verify_process_environment_unset; then
+    # One-time bootstrap for a release whose predecessor predates this flag.
+    # It is safe only when every live process is also unset and no durable or
+    # runtime authorization exists. Services are stopped before the canonical
+    # false candidate is installed, so no new-code process can observe an
+    # implicit value.
+    legacy_flag_bootstrap=1
+else
+    exit 1
+fi
 
 mutation_started=1
 stop_and_prove_services_inactive
 assert_release_lease
-verify_flag_file_false "$target_env"
 
-# The old live base is already canonical false. Revoke and fsync durable/run
-# authorization before installing any new configuration, so every crash
-# prefix (including a host reboot) can only restart with flag=false.
-remove_runtime_authorization
-verify_flag_file_false "$target_env"
-test ! -e "$durable_enabled"
-test ! -e "$runtime_state_dir"
-
-if [ "$candidate_path" != "-" ]; then
-    rm -f -- "$candidate_install_tmp"
-    install -o root -g health-app -m 0640 \
-        "$candidate_path" "$candidate_install_tmp"
-    sync -f "$candidate_install_tmp"
-    mv -fT "$candidate_install_tmp" "$target_env"
-    sync -f "$target_env_dir"
-    test "$(stat -c '%U:%G:%a' "$target_env")" = \
-        "root:health-app:640"
-    test "$(sha256sum "$target_env" | awk '{print $1}')" = \
-        "$candidate_hash"
+if [ "$legacy_flag_bootstrap" -eq 1 ]; then
+    # There is nothing to revoke in the legacy state; prove that again after
+    # stopping all writers, then establish the explicit false base first.
+    verify_flag_file_unset "$target_env"
+    verify_runtime_authorization_absent
+    install_candidate_env
+    verify_flag_file_false "$target_env"
+    remove_runtime_authorization
+else
+    verify_flag_file_false "$target_env"
+    # The old live base is already canonical false. Revoke and fsync
+    # durable/run authorization before installing any new configuration, so
+    # every crash prefix (including a host reboot) can only restart false.
+    remove_runtime_authorization
+    if [ "$candidate_path" != "-" ]; then
+        install_candidate_env
+    fi
 fi
 verify_flag_file_false "$target_env"
 assert_release_lease

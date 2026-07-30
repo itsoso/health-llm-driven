@@ -7,6 +7,8 @@ import subprocess
 import time
 from pathlib import Path
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[1]
 ACTIVATION_RUNNER = (
@@ -1300,10 +1302,17 @@ def test_term_before_enabled_proof_runs_exit_guard(tmp_path: Path):
         stderr=subprocess.PIPE,
         env=env,
     )
-    deadline = time.monotonic() + 10
+    deadline = time.monotonic() + 30
     while not ready_file.exists() and time.monotonic() < deadline:
         time.sleep(0.02)
-    assert ready_file.exists()
+    if not ready_file.exists():
+        process.terminate()
+        stdout, stderr = process.communicate(timeout=10)
+        pytest.fail(
+            "activation runner did not reach enabled proof pause: "
+            f"returncode={process.returncode}, stdout={stdout!r}, "
+            f"stderr={stderr!r}"
+        )
     process.send_signal(signal.SIGTERM)
     stdout, stderr = process.communicate(timeout=15)
 

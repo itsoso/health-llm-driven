@@ -4,8 +4,8 @@
 |---|---|
 | slug | `mobile-health-evidence-runtime` |
 | 创建日期 | 2026-07-29 |
-| 当前阶段 | 首轮 main CI 已拒绝 → 修复与真实 LLM 回归已通过 → replacement CI |
-| 状态 | integrated-main-candidate / not-deployed |
+| 当前阶段 | replacement CI PASS → G5 首次发布 pre-mutation BLOCK → bootstrap 修复待 CI |
+| 状态 | G5 remediation / not-deployed |
 | 负责 | product owner + Codex |
 | 反馈环 | backend deploy → Web deploy → Mobile OTA → Mobile/Mac 真实路径对照 |
 
@@ -145,7 +145,35 @@
     Ruff/diff check PASS。
   - 回退阶段: G3
   - 需重跑 Gate: G3 replacement CI；全绿后才可进入 G5/G6
-  - 当前状态: 本地已解决，等待 replacement CI。
+  - replacement CI: run `30504712139` 对精确 main
+    `6e449b176d3235d52a933968816396cc33c0089c` 全绿；临时 repo variable
+    `HARNESS_LIVE_LLM_EVAL_CONFIRMED=1` 在 CI 终态 success 后立即删除，随后
+    `gh variable get` 返回 not found。
+  - 当前状态: 已解决。
+- [x] Correction Block — first-introduction flag bootstrap
+  - 触发: 首次 production backend staged deploy 在完成数据库备份、234 表恢复演练
+    与站外加密归档后，被 deactivation transaction 拒绝：
+    `health-evidence 去激活结果不明确；无法证明服务已停止`。G5 立即停止；没有
+    checkout、migration、KB import、服务重启、运行时激活或 OTA。
+  - 现场证明: 远端仍为回滚提交 `ad85cd667cb415a3cc1dc298633c75998856f68e`；
+    live `.env` 对新 flag 为 0 个 assignment，root-only candidate 唯一规范为
+    `false`；socket/backend/worker/beat 全 active；durable authorization 与
+    `/run` authorization 均 absent；发布锁与 stage 按设计保留。
+  - 根因: 首次引入 flag 的旧生产版本没有该 assignment，但事务要求旧 live base
+    必须已经显式 `false`，又只允许该事务原子安装 `false` candidate，形成
+    pre-mutation bootstrap Catch-22。
+  - 新基线: 只允许一次严格 legacy bootstrap：candidate 必须唯一 `false`、live
+    必须完全 unset、每个 cgroup PID 也必须 unset、durable/runtime/drop-in（含
+    dangling symlink）必须全部 absent。取得租约后先停 socket 与全部 writer 并
+    复证，再原子安装/文件 fsync/目录 fsync 显式 `false`；rename 前后均重验租约。
+    任一 candidate sync、lease、PID、授权或 symlink 检查失败，保持旧 env 且隔离
+    全部服务。已有显式 `false` 路径继续保持先 revoke+fsync、后换 candidate。
+  - 回归: deploy transaction 60/60、完整 deploy/activation/rollback 86/86；覆盖每个单点 durable/runtime/三 unit
+    drop-in、dangling file/dir symlink、三 unit 主进程、同 cgroup child、显式
+    `false` assignment、candidate sync 失败与 rename 前丢 lease。完整 release
+    独立 crash-prefix 复审 GO；Shell syntax、Ruff、diff check、system-map 与
+    92 份 Dossier consistency 均 PASS。replacement CI 待本修复提交后重跑。
+  - 回退阶段: G5 → S5/G3/G4；禁止带 BLOCK 继续 activation/OTA。
 
 ## S0 · 用户需求(逐字)
 
@@ -360,17 +388,23 @@
   production semantic smoke → OTA
 - TestFlight 判断: 当前仅 Python/JSON/TS/TSX/API 变更，无 native/plugin/SDK/runtime
   变更；按发布契约走 OTA，不浪费 TestFlight build。若最终 diff 出现原生变更再改路由。
-- 部署 SHA / 回滚点: 未执行；等待 replacement main CI
+- 部署 SHA / 回滚点: 首次尝试目标
+  `6e449b176d3235d52a933968816396cc33c0089c`；远端回滚点
+  `ad85cd667cb415a3cc1dc298633c75998856f68e`；该尝试在代码 checkout 前停止
 
 ## G5 · 部署健康闸
 
-- 健康分(阈值 35,低于自动回滚): NOT RUN
+- 数据保护前置 Gate: PASS —— 41 MB production backup、234 表临时库恢复演练、
+  force-RLS 遗传原始文件/审计表完整性、站外 age 归档 hash + HMAC 真实性均通过。
+- staged deploy: BLOCK —— legacy live env 缺少首次引入的 flag，严格去激活事务在
+  mutation 前停止；发布锁和 root-only stage 保留，未并发重试。
+- 健康分(阈值 35,低于自动回滚): NOT RUN（未到服务变更阶段）
 - prod smoke(服务 active + 路由 200/401 + 启动日志无 error + 新表/列 ssh 实查): NOT RUN
 - Linux 实机硬条件: systemd drop-in precedence、cgroup v2 全部 uvicorn/Celery/beat
   子进程 flag 一致性、durable commit/revoke/candidate rename 断电前缀、SSH/HUP
   断连租约、生产文件系统 `sync -f`/`mv -fT`/目录 fsync 与 rollback 终态证明均
-  NOT RUN
-- **裁决**:☐ PASS ☒ NOT RUN
+  bootstrap 修复后须重跑
+- **裁决**:☐ PASS ☒ BLOCK → 回 S5/G3/G4
 
 ## S7 · 上线验证
 

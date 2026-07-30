@@ -3,6 +3,8 @@ import os
 import subprocess
 from pathlib import Path
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[1]
 DEPLOY_SCRIPT = ROOT / "deploy.sh"
@@ -113,16 +115,21 @@ def test_env_sync_stages_candidate_and_only_deactivation_atomically_installs_liv
     assert "sha256sum -c" in upload_body
     assert 'scp "$temp_env" "$SERVER:$REMOTE_PATH/backend/.env"' not in upload_body
     assert 'mv -fT "$candidate_install_tmp" "$target_env"' in transaction_body
-    install = execution_body.index(
+    helper_start = transaction_body.index("install_candidate_env() {")
+    helper_end = transaction_body.index(
+        "remove_runtime_authorization() {", helper_start
+    )
+    helper_body = transaction_body[helper_start:helper_end]
+    install = helper_body.index(
         'install -o root -g health-app -m 0640'
     )
-    sync_tmp = execution_body.index('sync -f "$candidate_install_tmp"')
-    rename = execution_body.index(
+    sync_tmp = helper_body.index('sync -f "$candidate_install_tmp"')
+    rename = helper_body.index(
         'mv -fT "$candidate_install_tmp" "$target_env"'
     )
-    sync_parent = execution_body.index('sync -f "$target_env_dir"')
-    revoke = execution_body.index("remove_runtime_authorization")
-    assert revoke < install < sync_tmp < rename < sync_parent
+    sync_parent = helper_body.index('sync -f "$target_env_dir"')
+    assert install < sync_tmp < rename < sync_parent
+    assert "install_candidate_env" in execution_body
 
 
 def test_deploy_requires_main_and_pushes_exact_head_to_origin_main():
@@ -524,13 +531,24 @@ def test_backend_revokes_durable_runtime_before_checkout_or_kb_mutation():
     )
     assert "verify_services_inactive" in deactivation
     stop = execution.index("stop_and_prove_services_inactive")
-    install = execution.index(
-        'install -o root -g health-app -m 0640'
+    branch_start = execution.index(
+        'if [ "$legacy_flag_bootstrap" -eq 1 ]; then'
     )
-    revoke = execution.index("remove_runtime_authorization")
+    branch_else = execution.index("\nelse\n", branch_start)
+    branch_end = execution.index(
+        "\nfi\nverify_flag_file_false", branch_else
+    )
+    bootstrap_branch = execution[branch_start:branch_else]
+    standard_branch = execution[branch_else:branch_end]
     start = execution.index('systemctl start "$unit"')
     process_false = execution.index("verify_process_environment_false")
-    assert stop < revoke < install < start < process_false
+    assert stop < branch_start < branch_end < start < process_false
+    assert bootstrap_branch.index(
+        "install_candidate_env"
+    ) < bootstrap_branch.index("remove_runtime_authorization")
+    assert standard_branch.index(
+        "remove_runtime_authorization"
+    ) < standard_branch.index("install_candidate_env")
 
 
 def test_deactivation_delegates_before_remote_stage_or_live_mutation_and_proves_last_restart():
@@ -992,16 +1010,23 @@ def _run_deactivation_transaction_fixture(
     tmp_path: Path,
     *,
     fail_candidate_sync: bool,
+    live_flag: str | None = "false",
+    authorization_enabled: bool = True,
+    process_flag: str | None = "true",
+    dirty_auth_artifact: str | None = None,
+    dirty_process_unit: str | None = None,
+    dirty_process_flag: str = "true",
+    dirty_process_child_unit: str | None = None,
+    drop_lease_after_candidate_sync: bool = False,
 ) -> tuple[subprocess.CompletedProcess[str], dict[str, Path]]:
     repo = tmp_path / "release"
     backend = repo / "backend"
     backend.mkdir(parents=True)
     old_env = backend / ".env"
-    old_env.write_text(
-        "CONFIG_REVISION=old\n"
-        "HEALTH_EVIDENCE_RUNTIME_ENABLED=false\n",
-        encoding="utf-8",
-    )
+    old_env_text = "CONFIG_REVISION=old\n"
+    if live_flag is not None:
+        old_env_text += f"HEALTH_EVIDENCE_RUNTIME_ENABLED={live_flag}\n"
+    old_env.write_text(old_env_text, encoding="utf-8")
     stage = tmp_path / "stage"
     stage.mkdir()
     candidate = stage / "backend.env.candidate"
@@ -1013,30 +1038,69 @@ def _run_deactivation_transaction_fixture(
     candidate.chmod(0o400)
     candidate_hash = hashlib.sha256(candidate.read_bytes()).hexdigest()
     durable = tmp_path / "durable"
-    durable.mkdir()
-    (durable / "enabled.env").write_text(
-        "HEALTH_EVIDENCE_RUNTIME_ENABLED=true\n",
-        encoding="utf-8",
-    )
     runtime_state = tmp_path / "runtime-state"
-    runtime_state.mkdir()
-    (runtime_state / "enabled.env").write_text(
-        "HEALTH_EVIDENCE_RUNTIME_ENABLED=true\n",
-        encoding="utf-8",
-    )
     systemd_runtime = tmp_path / "systemd-runtime"
     systemd_runtime.mkdir()
-    for unit in (
-        "health-backend.service",
-        "celery-worker.service",
-        "celery-beat.service",
-    ):
-        unit_dir = systemd_runtime / f"{unit}.d"
-        unit_dir.mkdir()
-        (unit_dir / "90-reva-health-evidence-activation.conf").write_text(
-            "[Service]\nEnvironmentFile=/tmp/runtime-enabled.env\n",
+    dirty_auth_artifacts = (
+        {
+            "durable",
+            "runtime_state",
+            "backend_dropin",
+            "worker_dropin",
+            "beat_dropin",
+        }
+        if authorization_enabled
+        else ({dirty_auth_artifact} if dirty_auth_artifact else set())
+    )
+    if "durable" in dirty_auth_artifacts:
+        durable.mkdir()
+        (durable / "enabled.env").write_text(
+            "HEALTH_EVIDENCE_RUNTIME_ENABLED=true\n",
             encoding="utf-8",
         )
+    elif "durable_symlink" in dirty_auth_artifacts:
+        durable.mkdir()
+        (durable / "enabled.env").symlink_to(
+            tmp_path / "missing-durable-authorization"
+        )
+    if "runtime_state" in dirty_auth_artifacts:
+        runtime_state.mkdir()
+        (runtime_state / "enabled.env").write_text(
+            "HEALTH_EVIDENCE_RUNTIME_ENABLED=true\n",
+            encoding="utf-8",
+        )
+    elif "runtime_state_symlink" in dirty_auth_artifacts:
+        runtime_state.symlink_to(
+            tmp_path / "missing-runtime-state",
+            target_is_directory=True,
+        )
+    dirty_dropins = {
+        "backend_dropin": "health-backend.service",
+        "worker_dropin": "celery-worker.service",
+        "beat_dropin": "celery-beat.service",
+        "backend_dropin_symlink": "health-backend.service",
+        "backend_dropin_dir_symlink": "health-backend.service",
+    }
+    for artifact, unit in dirty_dropins.items():
+        if artifact in dirty_auth_artifacts:
+            unit_dir = systemd_runtime / f"{unit}.d"
+            if artifact.endswith("_dir_symlink"):
+                unit_dir.symlink_to(
+                    tmp_path / "missing-runtime-override-dir",
+                    target_is_directory=True,
+                )
+                continue
+            unit_dir.mkdir()
+            override = (
+                unit_dir / "90-reva-health-evidence-activation.conf"
+            )
+            if artifact.endswith("_symlink"):
+                override.symlink_to(tmp_path / "missing-runtime-override")
+            else:
+                override.write_text(
+                    "[Service]\nEnvironmentFile=/tmp/runtime-enabled.env\n",
+                    encoding="utf-8",
+                )
     release_lock = tmp_path / "release.lock"
     release_lock.mkdir()
     token = "deactivation-owner"
@@ -1064,12 +1128,33 @@ def _run_deactivation_transaction_fixture(
     for unit, pid in unit_pids.items():
         group = cgroup_root / "system.slice" / f"{unit}.service"
         group.mkdir(parents=True)
-        (group / "cgroup.procs").write_text(f"{pid}\n", encoding="utf-8")
+        cgroup_pids = [pid]
+        if dirty_process_child_unit == unit:
+            cgroup_pids.append(pid + 50)
+        (group / "cgroup.procs").write_text(
+            "".join(f"{process_pid}\n" for process_pid in cgroup_pids),
+            encoding="utf-8",
+        )
         process = proc_root / str(pid)
         process.mkdir()
-        (process / "environ").write_bytes(
-            b"PATH=/usr/bin\0HEALTH_EVIDENCE_RUNTIME_ENABLED=true\0"
-        )
+        process_env = b"PATH=/usr/bin\0"
+        unit_process_flag = process_flag
+        if dirty_process_unit == unit:
+            unit_process_flag = dirty_process_flag
+        if unit_process_flag is not None:
+            process_env += (
+                "HEALTH_EVIDENCE_RUNTIME_ENABLED="
+                f"{unit_process_flag}\0"
+            ).encode()
+        (process / "environ").write_bytes(process_env)
+        if dirty_process_child_unit == unit:
+            child_process = proc_root / str(pid + 50)
+            child_process.mkdir()
+            child_process_env = (
+                b"PATH=/usr/bin\0"
+                b"HEALTH_EVIDENCE_RUNTIME_ENABLED=true\0"
+            )
+            (child_process / "environ").write_bytes(child_process_env)
 
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -1160,6 +1245,10 @@ if [ "${FAKE_FAIL_CANDIDATE_SYNC:-0}" = "1" ] &&
 fi
 test -e "$2"
 printf 'sync:%s\n' "$2" >> "$FAKE_EVENT_LOG"
+if [ "${FAKE_DROP_LEASE_AFTER_CANDIDATE_SYNC:-0}" = "1" ] &&
+   [[ "$2" == *".env.reva-release.tmp" ]]; then
+  rm -f "$FAKE_RELEASE_TOKEN_FILE"
+fi
 """,
     )
     _write_executable(
@@ -1206,6 +1295,10 @@ run_health_evidence_deactivation_transaction
             "FAKE_FAIL_CANDIDATE_SYNC": (
                 "1" if fail_candidate_sync else "0"
             ),
+            "FAKE_DROP_LEASE_AFTER_CANDIDATE_SYNC": (
+                "1" if drop_lease_after_candidate_sync else "0"
+            ),
+            "FAKE_RELEASE_TOKEN_FILE": str(release_lock / "token"),
         },
     )
     return result, {
@@ -1269,6 +1362,192 @@ def test_deactivation_sync_failure_keeps_old_env_and_contains_services(
             paths["service_state"] / f"{unit}.state"
         ).read_text(encoding="utf-8").strip() == "inactive"
     assert "start:" not in paths["event_log"].read_text(encoding="utf-8")
+
+
+def test_deactivation_bootstraps_missing_legacy_flag_only_when_unset_everywhere(
+    tmp_path: Path,
+):
+    result, paths = _run_deactivation_transaction_fixture(
+        tmp_path,
+        fail_candidate_sync=False,
+        live_flag=None,
+        authorization_enabled=False,
+        process_flag=None,
+    )
+
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert paths["old_env"].read_bytes() == paths["candidate"].read_bytes()
+    events = paths["event_log"].read_text(encoding="utf-8").splitlines()
+    install_index = next(
+        index for index, event in enumerate(events) if event.startswith("install:")
+    )
+    assert all(
+        events.index(f"stop:{unit}") < install_index
+        for unit in (
+            "health-backend.socket",
+            "health-backend.service",
+            "celery-worker.service",
+            "celery-beat.service",
+        )
+    )
+    assert all(
+        events.index(f"start:{unit}") > install_index
+        for unit in (
+            "health-backend.socket",
+            "health-backend.service",
+            "celery-worker.service",
+            "celery-beat.service",
+        )
+    )
+
+
+def test_deactivation_bootstrap_sync_failure_contains_legacy_services(
+    tmp_path: Path,
+):
+    result, paths = _run_deactivation_transaction_fixture(
+        tmp_path,
+        fail_candidate_sync=True,
+        live_flag=None,
+        authorization_enabled=False,
+        process_flag=None,
+    )
+
+    assert result.returncode != 0
+    assert (
+        paths["old_env"].read_text(encoding="utf-8")
+        == "CONFIG_REVISION=old\n"
+    )
+    events = paths["event_log"].read_text(encoding="utf-8")
+    assert "start:" not in events
+    for unit in (
+        "health-backend.socket",
+        "health-backend",
+        "celery-worker",
+        "celery-beat",
+    ):
+        assert (
+            paths["service_state"] / f"{unit}.state"
+        ).read_text(encoding="utf-8").strip() == "inactive"
+
+
+def test_deactivation_bootstrap_lost_lease_before_rename_keeps_legacy_env(
+    tmp_path: Path,
+):
+    result, paths = _run_deactivation_transaction_fixture(
+        tmp_path,
+        fail_candidate_sync=False,
+        live_flag=None,
+        authorization_enabled=False,
+        process_flag=None,
+        drop_lease_after_candidate_sync=True,
+    )
+
+    assert result.returncode != 0
+    assert (
+        paths["old_env"].read_text(encoding="utf-8")
+        == "CONFIG_REVISION=old\n"
+    )
+    events = paths["event_log"].read_text(encoding="utf-8")
+    assert "start:" not in events
+    for unit in (
+        "health-backend.socket",
+        "health-backend",
+        "celery-worker",
+        "celery-beat",
+    ):
+        assert (
+            paths["service_state"] / f"{unit}.state"
+        ).read_text(encoding="utf-8").strip() == "inactive"
+
+
+@pytest.mark.parametrize(
+    "dirty_auth_artifact",
+    (
+        "durable",
+        "runtime_state",
+        "backend_dropin",
+        "worker_dropin",
+        "beat_dropin",
+        "durable_symlink",
+        "runtime_state_symlink",
+        "backend_dropin_symlink",
+        "backend_dropin_dir_symlink",
+    ),
+)
+def test_deactivation_rejects_each_legacy_authorization_artifact(
+    tmp_path: Path,
+    dirty_auth_artifact: str,
+):
+    result, paths = _run_deactivation_transaction_fixture(
+        tmp_path,
+        fail_candidate_sync=False,
+        live_flag=None,
+        authorization_enabled=False,
+        process_flag=None,
+        dirty_auth_artifact=dirty_auth_artifact,
+    )
+
+    assert result.returncode != 0
+    assert (
+        paths["old_env"].read_text(encoding="utf-8")
+        == "CONFIG_REVISION=old\n"
+    )
+    if paths["event_log"].exists():
+        assert "stop:" not in paths["event_log"].read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    ("dirty_process_unit", "dirty_process_flag"),
+    (
+        ("health-backend", "true"),
+        ("celery-worker", "true"),
+        ("celery-beat", "true"),
+        ("health-backend", "false"),
+    ),
+)
+def test_deactivation_rejects_each_legacy_process_assignment(
+    tmp_path: Path,
+    dirty_process_unit: str,
+    dirty_process_flag: str,
+):
+    result, paths = _run_deactivation_transaction_fixture(
+        tmp_path,
+        fail_candidate_sync=False,
+        live_flag=None,
+        authorization_enabled=False,
+        process_flag=None,
+        dirty_process_unit=dirty_process_unit,
+        dirty_process_flag=dirty_process_flag,
+    )
+
+    assert result.returncode != 0
+    assert (
+        paths["old_env"].read_text(encoding="utf-8")
+        == "CONFIG_REVISION=old\n"
+    )
+    if paths["event_log"].exists():
+        assert "stop:" not in paths["event_log"].read_text(encoding="utf-8")
+
+
+def test_deactivation_rejects_dirty_child_process_in_legacy_cgroup(
+    tmp_path: Path,
+):
+    result, paths = _run_deactivation_transaction_fixture(
+        tmp_path,
+        fail_candidate_sync=False,
+        live_flag=None,
+        authorization_enabled=False,
+        process_flag=None,
+        dirty_process_child_unit="celery-worker",
+    )
+
+    assert result.returncode != 0
+    assert (
+        paths["old_env"].read_text(encoding="utf-8")
+        == "CONFIG_REVISION=old\n"
+    )
+    if paths["event_log"].exists():
+        assert "stop:" not in paths["event_log"].read_text(encoding="utf-8")
 
 
 def _run_activation_orchestrator_harness(
