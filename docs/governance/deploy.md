@@ -125,11 +125,29 @@ MIGRATION_DATABASE_URL=postgresql://health_app_migrator:***@localhost:5432/healt
    fail closed。随后再验证 exact SHA、health/auth、脱敏后的健康硬闸与
    runtime-only KB serving contract。只有新 state 已存在且服务稳定后，才精确
    清理 legacy shelf。
+   `ExecStart` 比较只允许忽略 systemd 同一命令记录里的运行态
+   `start_time/stop_time/pid/code/status`，必须严格保留并比较静态
+   `path/argv[]/ignore_errors`。旧 journal 与实时输出只接受单条、固定字段顺序的
+   systemd raw 记录或内部三字段 canonical 记录；未知字段、多命令、缺失字段或
+   静态漂移一律 BLOCK。candidate 的 backend、worker、beat 三个 unit 都必须经过
+   同一严格解析并与精确预期命令比较，不能只从 beat 命令抽取 schedule。
 9. 远端 SSH/信号结果不明确时保留 release lease 与 stage；没有独立 terminal
    证明时禁止并发 rollback 或第二次部署。恢复必须显式提供原 token 并接管 lock
-   记录的原 stage；接管只校验、复用 immutable artifacts，禁止重传覆盖。持久事务
-   journal 位于 `/var/lib/health-app/release-state`，记录 old/candidate SHA、
-   boot gate、快照与不可逆 candidate floor。
+   记录的原 stage；接管只校验、复用 immutable artifacts，禁止重传覆盖。正常
+   发布/恢复工具绝不改写 `lock/stage`。deploy staging 与 rollback shell 负责验证
+   stage root、sealed manifest、精确 allowlist/hash，额外文件（包括可 shadow
+   Python stdlib 的模块）一律 BLOCK；rollback shell 还必须在任何停服或 checkout
+   前验证 lock/token/stage pointer 的 root metadata、单链接与精确字节。runtime
+   helper 的每个命令独立验证 root-only lock/token、exact stage pointer，并在相关
+   命令验证 candidate files；helper 使用 isolated Python mode。若原 stage 的 runner
+   自身有缺陷而不能安全恢复，保持全部服务 inactive、保留现场并上报 BLOCK；本规范
+   不授权临时 rebind，也不得用文档步骤替代一个另行评审、测试并落库的 recovery
+   workflow。持久事务 journal 位于
+   `/var/lib/health-app/release-state`，记录 old/candidate SHA、boot gate、快照
+   与不可逆 candidate floor。journal 必须在任何 restore mutation 前完成
+   old-effective、metadata、snapshot tree/record、upload authority 与 enablement
+   的完整结构/类型/权限校验及 `ExecStart` canonicalization，进入 `PREPARED` 时
+   持久化 canonical 静态值。
 10. health-evidence activation 在第一次 systemd/D-Bus RPC 前原子、fsync 写入
     root-only `launch-intent`。断线接管先只读验证原 14-entry sealed stage 与
     state/outcome：已终结只做 exact proof；只有 state dir 为空（durable negative
@@ -146,6 +164,12 @@ MIGRATION_DATABASE_URL=postgresql://health_app_migrator:***@localhost:5432/healt
     staged KB contract；全部通过后才 `finalize` 并删除持久回滚快照。old 分支
     rollback 同时恢复旧 code、drop-in、runtime state、发布前 env，并按第 8 项恢复
     机器判定的 old upload authority；candidate floor 分支保持候选 env 原字节不变。
+    live `backend/.env` 的终态必须为 `root:health-app`、`0640`。回滚不能沿用
+    root-only stage snapshot 的 `0600` 元数据，因为应用在降权为 `health-app`
+    后仍由 Settings 读取该文件；权限不满足时必须保持服务 inactive 并让回滚失败，
+    禁止把启动失败误报成恢复成功。目标 `.env` 在写入前后都必须是 non-symlink
+    regular file，rename 使用 exact-target `mv -fT`；文件 fsync、rename、父目录
+    fsync 任一步失败都不能启动服务或输出成功哨兵。
 
 ### 8.5 环境变量同步
 

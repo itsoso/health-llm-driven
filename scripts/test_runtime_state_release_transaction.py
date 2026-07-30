@@ -18,6 +18,7 @@ from runtime_state_release_transaction import (  # noqa: E402
     Layout,
     ReleaseTransaction,
     TransactionError,
+    UNITS,
     parse_cli,
     production_layout,
 )
@@ -57,6 +58,11 @@ class FakeSystemd:
         }
         self.exec_start_queries = 0
         self.flip_schedule_on_query: int | None = None
+        self.clear_exec_runtime_metadata_on_disable = False
+        self.exec_runtime_metadata_cleared = False
+        self.extra_candidate_exec_record_unit: str | None = None
+        self.changed_candidate_exec_unit: str | None = None
+        self.static_exec_change_on_disable: str | None = None
 
     def daemon_reload(self) -> None:
         self.events.append("daemon-reload")
@@ -69,6 +75,8 @@ class FakeSystemd:
         self.events.append(f"disable:{unit}")
         if self.enablement[unit] == "enabled":
             self.enablement[unit] = "disabled"
+        if self.clear_exec_runtime_metadata_on_disable:
+            self.exec_runtime_metadata_cleared = True
 
     def enable(self, unit: str) -> None:
         self.events.append(f"enable:{unit}")
@@ -100,12 +108,50 @@ class FakeSystemd:
                 else self.old_schedule
             )
             if unit == "celery-beat.service":
-                return (
+                command = (
                     "/opt/health-app/backend/venv/bin/celery "
                     "-A app.celery_app:celery_app beat --loglevel=info "
                     f"--schedule={schedule}"
                 )
-            return f"/opt/health-app/{unit}"
+            else:
+                command = f"/opt/health-app/{unit}"
+            path = command.split()[0]
+            ignore_errors = "no"
+            if self.exec_runtime_metadata_cleared:
+                if self.static_exec_change_on_disable == "path":
+                    changed = f"{path}.changed"
+                    command = changed + command[len(path) :]
+                    path = changed
+                elif self.static_exec_change_on_disable == "argv":
+                    command += " --unexpected-static-change=true"
+                elif self.static_exec_change_on_disable == "ignore_errors":
+                    ignore_errors = "yes"
+            if candidate_installed and unit == self.changed_candidate_exec_unit:
+                command += " --unexpected-candidate-change=true"
+            if self.exec_runtime_metadata_cleared:
+                runtime = (
+                    "start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; "
+                    "code=(null) ; status=0/0"
+                )
+            else:
+                runtime = (
+                    "start_time=[Thu 2026-07-30 22:15:44 CST] ; "
+                    "stop_time=[Thu 2026-07-30 22:15:55 CST] ; "
+                    "pid=523354 ; code=exited ; status=0"
+                )
+            record = (
+                f"{{ path={path} ; argv[]={command} ; "
+                f"ignore_errors={ignore_errors} ; "
+                f"{runtime} }}"
+            )
+            if candidate_installed and unit == self.extra_candidate_exec_record_unit:
+                extra = (
+                    "{ path=/bin/true ; argv[]=/bin/true ; "
+                    "ignore_errors=no ; start_time=[n/a] ; "
+                    "stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }"
+                )
+                return f"{record} {extra}"
+            return record
         if prop == "ReadWritePaths":
             if candidate_installed:
                 if unit == "celery-beat.service":
@@ -202,12 +248,27 @@ def _replacement_stage(tmp_path: Path, layout: Layout) -> Layout:
     )
 
 
-def _lock(tmp_path: Path) -> tuple[Path, str]:
+def _lock(
+    tmp_path: Path,
+    *,
+    stage: Path | None = None,
+) -> tuple[Path, str]:
     lock_dir = tmp_path / "release.lock"
-    lock_dir.mkdir()
+    lock_dir.mkdir(mode=0o700)
     token = "release-owner"
     (lock_dir / "token").write_text(token + "\n", encoding="utf-8")
+    (lock_dir / "token").chmod(0o600)
+    (lock_dir / "stage").write_text(
+        str(stage or (tmp_path / "stage")) + "\n",
+        encoding="utf-8",
+    )
+    (lock_dir / "stage").chmod(0o600)
     return lock_dir, token
+
+
+def _bind_lock_stage(lock_dir: Path, stage: Path) -> None:
+    (lock_dir / "stage").write_text(str(stage) + "\n", encoding="utf-8")
+    (lock_dir / "stage").chmod(0o600)
 
 
 def _write_shelf(base: Path, suffix: str, value: bytes) -> Path:
@@ -272,7 +333,7 @@ def _transaction(
         enablement=enablement,
         old_upload_authority=old_upload_authority,
     )
-    lock_dir, token = _lock(tmp_path)
+    lock_dir, token = _lock(tmp_path, stage=layout.release_stage)
     return (
         ReleaseTransaction(
             layout,
@@ -385,6 +446,288 @@ def test_prepare_rejects_effective_authority_change_before_journal(
         transaction.prepare("a" * 40, "b" * 40, lock_dir, token)
 
     assert not layout.transaction_root.exists()
+
+
+def test_prepare_ignores_execstart_runtime_metadata_reset_after_boot_gate(
+    tmp_path: Path,
+) -> None:
+    transaction, _layout, lock_dir, token = _transaction(tmp_path)
+    transaction.systemd.clear_exec_runtime_metadata_on_disable = True
+
+    assert transaction.prepare(
+        "a" * 40,
+        "b" * 40,
+        lock_dir,
+        token,
+    ) == "PREPARED"
+
+
+@pytest.mark.parametrize("change", ("path", "argv", "ignore_errors"))
+def test_prepare_rejects_static_execstart_change_after_boot_gate(
+    tmp_path: Path,
+    change: str,
+) -> None:
+    transaction, _layout, lock_dir, token = _transaction(tmp_path)
+    transaction.systemd.clear_exec_runtime_metadata_on_disable = True
+    transaction.systemd.static_exec_change_on_disable = change
+
+    with pytest.raises(TransactionError, match="effective config changed"):
+        transaction.prepare("a" * 40, "b" * 40, lock_dir, token)
+
+
+def test_prepare_canonicalizes_legacy_raw_arming_journal_after_boot_gate(
+    tmp_path: Path,
+) -> None:
+    def fail_after_gate(point: str) -> None:
+        if point == "prepare:after-gate":
+            raise OSError("simulated old-runner interruption")
+
+    transaction, layout, lock_dir, token = _transaction(
+        tmp_path,
+        fault_hook=fail_after_gate,
+    )
+    raw_exec_start = {
+        unit: transaction.systemd.show(unit, "ExecStart")
+        for unit in UNITS
+    }
+    transaction.systemd.clear_exec_runtime_metadata_on_disable = True
+
+    with pytest.raises(OSError, match="old-runner interruption"):
+        transaction.prepare("a" * 40, "b" * 40, lock_dir, token)
+
+    journal = _journal(layout)
+    assert journal["phase"] == "ARMING"
+    assert journal["boot_gate_armed"] is True
+    for unit in UNITS:
+        journal["old_effective"][unit]["ExecStart"] = raw_exec_start[unit]
+    journal_path = layout.transaction_root / "journal.json"
+    journal_path.write_text(
+        json.dumps(journal, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+    journal_path.chmod(0o600)
+    transaction._fault_hook = lambda _point: None
+
+    assert transaction.prepare(
+        "a" * 40,
+        "b" * 40,
+        lock_dir,
+        token,
+    ) == "PREPARED"
+    persisted = _journal(layout)
+    assert persisted["phase"] == "PREPARED"
+    for unit in UNITS:
+        assert persisted["old_effective"][unit]["ExecStart"].startswith("path=")
+
+
+def test_execstart_stability_parser_rejects_multiple_command_records(
+    tmp_path: Path,
+) -> None:
+    transaction, _layout, _lock_dir, _token = _transaction(tmp_path)
+    command = transaction.systemd.show("health-backend.service", "ExecStart")
+
+    with pytest.raises(TransactionError, match="unsupported systemd ExecStart shape"):
+        transaction._stable_exec_start(f"{command} {command}")
+
+
+def test_execstart_stability_parser_rejects_unknown_fields(
+    tmp_path: Path,
+) -> None:
+    transaction, _layout, _lock_dir, _token = _transaction(tmp_path)
+    command = transaction.systemd.show("health-backend.service", "ExecStart")
+    command_with_unknown = command.replace(
+        " ; ignore_errors=",
+        " ; unknown=surprise ; ignore_errors=",
+        1,
+    )
+
+    with pytest.raises(TransactionError, match="unsupported systemd ExecStart shape"):
+        transaction._stable_exec_start(command_with_unknown)
+
+    stable = transaction._stable_exec_start(command)
+    stable_with_unknown = stable.replace(
+        "\nignore_errors=",
+        " ; unknown=surprise\nignore_errors=",
+        1,
+    )
+    with pytest.raises(TransactionError, match="unsupported systemd ExecStart shape"):
+        transaction._stable_exec_start(stable_with_unknown)
+
+
+def test_execstart_stability_parser_accepts_systemd_v249_realtime_signal_status(
+    tmp_path: Path,
+) -> None:
+    transaction, _layout, _lock_dir, _token = _transaction(tmp_path)
+    command = transaction.systemd.show("health-backend.service", "ExecStart")
+    realtime_signal = command.replace(
+        "code=exited ; status=0",
+        "code=killed ; status=35/RTMIN+1",
+        1,
+    )
+
+    assert transaction._stable_exec_start(realtime_signal) == (
+        transaction._stable_exec_start(command)
+    )
+
+
+def test_malformed_old_effective_is_rejected_before_restore_mutation(
+    tmp_path: Path,
+) -> None:
+    transaction, layout, lock_dir, token = _transaction(tmp_path)
+    legacy = _write_shelf(layout.legacy_shelf_base, ".db", b"before")
+    transaction.prepare("a" * 40, "b" * 40, lock_dir, token)
+    legacy.write_bytes(b"after")
+    journal = _journal(layout)
+    journal["old_effective"]["health-backend.service"]["ExecStart"] = (
+        journal["old_effective"]["health-backend.service"]["ExecStart"].replace(
+            "\nignore_errors=",
+            " ; unknown=surprise\nignore_errors=",
+            1,
+        )
+    )
+    journal_path = layout.transaction_root / "journal.json"
+    journal_path.write_text(
+        json.dumps(journal, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+    journal_path.chmod(0o600)
+
+    with pytest.raises(TransactionError, match="unsupported systemd ExecStart shape"):
+        transaction.restore("a" * 40, lock_dir, token)
+
+    assert legacy.read_bytes() == b"after"
+
+
+@pytest.mark.parametrize(
+    "corruption",
+    (
+        "metadata-missing-key",
+        "metadata-required-none",
+        "metadata-bool-uid",
+        "metadata-unsafe-mode",
+        "metadata-runtime-root-cross-field",
+        "metadata-beat-state-cross-field",
+        "snapshot-missing-top-level",
+        "snapshot-missing-record-field",
+        "snapshot-bool-gid",
+        "snapshot-unsafe-mode",
+    ),
+)
+def test_malformed_restore_schema_is_rejected_before_any_restore_mutation(
+    tmp_path: Path,
+    corruption: str,
+) -> None:
+    transaction, layout, lock_dir, token = _transaction(tmp_path)
+    legacy = _write_shelf(layout.legacy_shelf_base, ".db", b"before")
+    if corruption == "metadata-runtime-root-cross-field":
+        layout.runtime_root.mkdir(mode=0o700)
+        runtime_gene = layout.runtime_root / "gene_knowledge.json"
+        runtime_gene.write_text("runtime-before", encoding="utf-8")
+        runtime_gene.chmod(0o600)
+    if corruption == "metadata-beat-state-cross-field":
+        _write_shelf(layout.current_shelf_base, ".db", b"current-before")
+    transaction.prepare("a" * 40, "b" * 40, lock_dir, token)
+    legacy.write_bytes(b"after")
+    journal = _journal(layout)
+    if corruption == "metadata-missing-key":
+        del journal["metadata"]["runtime_root"]
+    elif corruption == "metadata-required-none":
+        journal["metadata"]["backend_data"] = None
+    elif corruption == "metadata-bool-uid":
+        journal["metadata"]["backend_data"]["uid"] = True
+    elif corruption == "metadata-unsafe-mode":
+        journal["metadata"]["backend_data"]["mode"] = 0o777
+    elif corruption == "metadata-runtime-root-cross-field":
+        journal["metadata"]["runtime_root"] = None
+    elif corruption == "metadata-beat-state-cross-field":
+        journal["metadata"]["beat_state_dir"] = None
+    elif corruption == "snapshot-missing-top-level":
+        del journal["snapshots"]["runtime_current"]
+    else:
+        record = journal["snapshots"]["shelf"]["legacy"][".db"]
+        if corruption == "snapshot-missing-record-field":
+            del record["uid"]
+        elif corruption == "snapshot-bool-gid":
+            record["gid"] = False
+        elif corruption == "snapshot-unsafe-mode":
+            record["mode"] = 0o666
+        else:  # pragma: no cover - parameter list is exhaustive
+            raise AssertionError(corruption)
+    journal_path = layout.transaction_root / "journal.json"
+    journal_path.write_text(
+        json.dumps(journal, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+    journal_path.chmod(0o600)
+
+    with pytest.raises(TransactionError):
+        transaction.restore("a" * 40, lock_dir, token)
+
+    assert legacy.read_bytes() == b"after"
+    assert _journal(layout)["phase"] == "PREPARED"
+
+
+def test_prepare_crash_after_snapshot_publish_rebuilds_snapshot_on_reentry(
+    tmp_path: Path,
+) -> None:
+    def crash_after_snapshot_publish(point: str) -> None:
+        if point == "prepare:after-snapshot-publish":
+            raise OSError("simulated snapshot publish interruption")
+
+    transaction, layout, lock_dir, token = _transaction(
+        tmp_path,
+        fault_hook=crash_after_snapshot_publish,
+    )
+    legacy_gene = layout.backend_data / "gene_knowledge.json"
+    legacy_gene.write_text("before-interruption", encoding="utf-8")
+
+    with pytest.raises(OSError, match="snapshot publish interruption"):
+        transaction.prepare("a" * 40, "b" * 40, lock_dir, token)
+
+    interrupted = _journal(layout)
+    assert interrupted["phase"] == "ARMING"
+    assert interrupted["boot_gate_armed"] is True
+    assert "snapshots" not in interrupted
+    assert (layout.transaction_root / "snapshots").is_dir()
+    legacy_gene.write_text("after-interruption", encoding="utf-8")
+    transaction._fault_hook = lambda _point: None
+
+    assert transaction.prepare(
+        "a" * 40,
+        "b" * 40,
+        lock_dir,
+        token,
+    ) == "PREPARED"
+    transaction.install("a" * 40, "b" * 40, lock_dir, token)
+    assert (layout.runtime_root / "gene_knowledge.json").read_text(
+        encoding="utf-8"
+    ) == "after-interruption"
+
+
+@pytest.mark.parametrize("unit", UNITS)
+def test_candidate_effective_rejects_additional_execstart_record(
+    tmp_path: Path,
+    unit: str,
+) -> None:
+    transaction, _layout, lock_dir, token = _transaction(tmp_path)
+    transaction.prepare("a" * 40, "b" * 40, lock_dir, token)
+    transaction.systemd.extra_candidate_exec_record_unit = unit
+
+    with pytest.raises(TransactionError, match="unsupported systemd ExecStart shape"):
+        transaction.install("a" * 40, "b" * 40, lock_dir, token)
+
+
+@pytest.mark.parametrize("unit", UNITS)
+def test_candidate_effective_rejects_changed_static_execstart(
+    tmp_path: Path,
+    unit: str,
+) -> None:
+    transaction, _layout, lock_dir, token = _transaction(tmp_path)
+    transaction.prepare("a" * 40, "b" * 40, lock_dir, token)
+    transaction.systemd.changed_candidate_exec_unit = unit
+
+    with pytest.raises(TransactionError, match="candidate ExecStart mismatch"):
+        transaction.install("a" * 40, "b" * 40, lock_dir, token)
 
 
 def test_prepare_arms_exact_boot_gate_and_reentry_repairs_it(
@@ -511,8 +854,11 @@ def test_prepare_publish_crash_recovers_exact_sibling_and_blocks_other_release(
 
     other_lock_parent = tmp_path / "other-preparing-owner"
     other_lock_parent.mkdir()
-    other_lock_dir, other_token = _lock(other_lock_parent)
     replacement = _replacement_stage(tmp_path, layout)
+    other_lock_dir, other_token = _lock(
+        other_lock_parent,
+        stage=replacement.release_stage,
+    )
     blocked = ReleaseTransaction(
         replacement,
         FakeSystemd(
@@ -559,6 +905,26 @@ def test_preflight_provisions_exact_secure_persistent_parent(
     assert stat.S_IMODE(parent.stat().st_mode) == 0o700
     assert parent.stat().st_uid == layout.root_uid
     assert parent.stat().st_gid == layout.root_gid
+
+
+def test_release_lock_binds_exact_stage_before_any_transaction_mutation(
+    tmp_path: Path,
+) -> None:
+    transaction, layout, lock_dir, token = _transaction(tmp_path)
+    replacement = _replacement_stage(tmp_path, layout)
+    wrong_stage = ReleaseTransaction(
+        replacement,
+        FakeSystemd(
+            replacement,
+            old_schedule=replacement.legacy_shelf_base,
+        ),
+    )
+
+    with pytest.raises(TransactionError, match="release lock stage"):
+        wrong_stage.preflight("a" * 40, "b" * 40, lock_dir, token)
+
+    assert not layout.transaction_root.exists()
+    assert transaction.status(lock_dir, token).startswith("phase=NONE ")
 
 
 def test_legacy_old_preflight_rejects_unproven_external_upload_content(
@@ -641,6 +1007,7 @@ def test_reboot_after_install_crash_uses_persistent_journal_and_new_stage(
         transaction.install("a" * 40, "b" * 40, lock_dir, token)
 
     replacement = _replacement_stage(tmp_path, layout)
+    _bind_lock_stage(lock_dir, replacement.release_stage)
     resumed = ReleaseTransaction(
         replacement,
         FakeSystemd(
@@ -656,7 +1023,10 @@ def test_reboot_after_install_crash_uses_persistent_journal_and_new_stage(
 
     other_lock_parent = tmp_path / "other-owner"
     other_lock_parent.mkdir()
-    other_lock_dir, other_token = _lock(other_lock_parent)
+    other_lock_dir, other_token = _lock(
+        other_lock_parent,
+        stage=replacement.release_stage,
+    )
     with pytest.raises(TransactionError, match="different release"):
         resumed.prepare(
             "c" * 40,
@@ -677,7 +1047,10 @@ def test_status_recovers_authoritative_shas_with_new_lock_owner(
     replacement = _replacement_stage(tmp_path, layout)
     new_lock_parent = tmp_path / "reboot-owner"
     new_lock_parent.mkdir()
-    new_lock_dir, new_token = _lock(new_lock_parent)
+    new_lock_dir, new_token = _lock(
+        new_lock_parent,
+        stage=replacement.release_stage,
+    )
     resumed = ReleaseTransaction(
         replacement,
         FakeSystemd(
@@ -1033,7 +1406,10 @@ def test_terminal_rename_crash_recovers_with_new_token_and_blocks_other_sha(
 
     new_lock_parent = tmp_path / "terminal-owner"
     new_lock_parent.mkdir()
-    new_lock_dir, new_token = _lock(new_lock_parent)
+    new_lock_dir, new_token = _lock(
+        new_lock_parent,
+        stage=layout.release_stage,
+    )
     resumed = ReleaseTransaction(
         layout,
         FakeSystemd(

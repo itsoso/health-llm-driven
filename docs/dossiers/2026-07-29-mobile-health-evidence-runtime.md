@@ -4,8 +4,8 @@
 |---|---|
 | slug | `mobile-health-evidence-runtime` |
 | 创建日期 | 2026-07-29 |
-| 当前阶段 | socket-state 修复 G3/G4 GO → replacement exact-SHA CI |
-| 状态 | prod=`85fd0a69...`, flag=false、四服务稳定；现场已证明并清理，activation/OTA 继续阻断 |
+| 当前阶段 | replacement exact-SHA CI |
+| 状态 | local G3/G4 GO；prod=`85fd0a69...`, flag=false、四服务稳定；exact-SHA CI 前 activation/OTA 继续阻断 |
 | 负责 | product owner + Codex |
 | 反馈环 | backend/Web → 受控 activation → semantic smoke → Mobile OTA → 跨端对照 |
 
@@ -381,6 +381,57 @@
     Bash 语法、diff/doc drift/Dossier 闸与 fresh P0/P1 复审均 GO。replacement
     exact-SHA CI 全绿后才能再次部署。
   - 回退阶段: G5 → S5/G3/G4；禁止带红继续。
+- [x] Correction Block — ExecStart 稳态契约与 rollback env ownership
+  - 触发: socket-state 修复提交
+    `c9e21068904de9aa6b963aa18d9d51bcc7c85bd0` 的 exact-SHA CI run
+    `30549606506` 44/44 success 后再次 backend deploy。41 MB backup、234 表
+    恢复演练、站外 age hash/HMAC、旧 SHA 199 表 schema probe、去激活与四服务
+    inactive proof 均通过；持久事务随后以
+    `effective config changed while preparing transaction` BLOCK。生产未
+    checkout、migration、KB import、activation 或 OTA。
+  - 根因一: `systemctl show ExecStart` 同一条命令同时返回静态
+    `path/argv[]/ignore_errors` 和运行态
+    `start_time/stop_time/pid/code/status`。停用 socket/writers 后，systemd 249
+    合法地把后五项清为 n/a/0；事务比较整个 raw 字符串，因运行态元数据变化把
+    未变化的有效配置误判成静态漂移。
+  - 恢复中的第二根因: 第一次 formal rollback 已恢复 code/runtime/schema，但把
+    root-only staged `.env` 以 `root:root:0600` 安装到 live。backend/worker/beat
+    以 `health-app` 运行，Pydantic Settings 在降权后读取 `.env`，因此三个进程均
+    `PermissionError`，健康闸正确保持服务 inactive，回滚没有输出成功哨兵。
+  - 安全处置:
+    - 原 sealed stage 保留不变；新建完整 hash-sealed recovery stage，在同一
+      release token 下完成一次性人工 handoff 后才运行修正 runner/rollback；这是
+      本次已结束事故处置的历史事实，不是可复用发布工具契约；
+    - 第二次 formal rollback 输出 `runtime_state=restored`、
+      `ROLLBACK_SCHEMA_PROBE_OK tables=199`、
+      `release-gate=RESTORE_FINALIZED` 与 `ROLLBACK_OK`；
+    - 独立 proof 确认 terminal `RESTORE_FINALIZED`、gate unarmed/released、
+      old exact SHA、clean tree、health=200、auth=401、
+      `.env=root:health-app:640`，四服务跨 7 秒 PID/restart/state 不变；
+    - 仅随后精确清理两个 recovery stage、bundle 与 lease。生产终态仍为
+      `85fd0a69...`、base flag=false，无 release lock/stage。
+  - 新基线:
+    - `ExecStart` 只忽略同一命令记录的五个运行态字段；严格保留
+      `path/argv[]/ignore_errors`，未知字段、多记录、缺失/乱序或静态漂移全部
+      fail closed；
+    - legacy raw `ARMING + gate_armed=true` journal 在 mutation 前严格验证并
+      canonicalize，`PREPARED` 持久化三字段 canonical 值；畸形 journal 在
+      restore 数据变化前拒绝；
+    - candidate backend/worker/beat 三个 unit 共用严格解析并比较精确静态命令；
+      rollback 安装 live `.env` 时强制并终验 `root:health-app:640`；
+    - fresh 审计进一步关闭 stage provenance、Python import shadow、
+      symlink/directory env target、post-rename fsync、RT signal status、snapshot
+      publish crash 与畸形 metadata/snapshot 延迟失败：rollback shell 和 runtime
+      helper 双重绑定 `lock/stage`，正常工具禁止 rebind；journal 的全部
+      restore-relevant 结构在任何 mutation 前精确校验；
+    - 第二路测试审计关闭 lease fixture 假绿：lock/token/stage pointer 使用真实
+      0700/0600/0600，fake helper 校验 exact pointer/owner/mode；shell 在任何停服前
+      同时验证 owner/mode、单链接和包含唯一结尾换行的精确字节，错误 metadata、
+      hardlink、少/多换行均保持服务 untouched；
+    - runtime transaction 完整文件 110/110、rollback 完整文件 36/36、
+      完整七文件 release-invariants 305/305 已通过；fresh test-contract 与
+      release-security 复核均 GO（P0=0、P1=0）。新 exact-SHA CI 仍待完成。
+  - 回退阶段: G5 → S5/G3/G4；禁止带红继续。
 
 ## S0 · 用户需求(逐字)
 
@@ -492,9 +543,9 @@
   - [x] T7 Mobile evidence/clarification UI
   - [x] T8 parity/golden/integration/safety review
   - [ ] T9 backend deploy → Web deploy → Mobile OTA → production verification
-    （`85fd0a69...` 已通过 exact-SHA CI 并部署，但独立 postdeploy 检查发现
-    Celery Beat crash loop，G5 REJECT；当前 state-boundary 修复尚待完整 local
-    G3/G4、提交/CI、backend redeploy、activation、OTA 与 prod 验证）
+    （生产已正式回滚到 `85fd0a69...`、flag=false、四服务稳定且无 release
+    lock/stage；当前 ExecStart/rollback ownership 加固尚待完整 local G3/G4、
+    提交/CI、backend redeploy、activation、OTA 与 prod 验证）
 - 并发检查(`git fetch` + `gh pr list`,没被抢先):☒
   - overlap noted: PR #221 claim honesty and PRs #214/#216 medical safety; this
     implementation avoids cherry-picking unrelated branches and will run overlap review.
@@ -508,12 +559,13 @@
   integrated main merge `0d674fa28b503d006d133de9b7107dca2e06936f`，
   regenerated client types `ab300686f5c14f05bd3f32a951ebe5eb6cfa223e`，
   integrated-CI remediation `f89ed2d5`。
-- 已部署: `85fd0a69adf9e9cf1ee6010e416b4e4039e1cc2a`（backend，
-  runtime flag=false）；Celery Beat crash loop 已即时恢复，但其 checkout 内临时
-  state/ownership 仍须由 replacement deploy 迁到 `/var/lib`。
+- 生产回滚点: `85fd0a69adf9e9cf1ee6010e416b4e4039e1cc2a`（backend，
+  runtime flag=false）；正式 rollback、schema/auth/health、跨 RestartSec 服务稳定、
+  env ownership 与 terminal cleanup 均已独立证明。
 - 当前工作候选: Celery Beat external state + deterministic tracked modes +
-  restart-stable release proof；local G3/G4、fresh review、exact-SHA main CI 与
-  replacement backend deploy 仍待完成。
+  restart-stable release proof + stable ExecStart journal + service-readable rollback
+  env；local G3/G4、fresh review、exact-SHA main CI 与 replacement backend deploy
+  仍待完成。
 - 实现边界:
   - 这是低背痛 golden safety slice + 可复用 runtime，不是全医学域完成；
   - low-back compiler 用症状/问题/用药/过敏/慢病安全核心和查询相关可穿戴，
@@ -626,8 +678,25 @@
     `294f8c6761a46b37c8aecb19475165164dc56657` 44/44 success、0
     non-success；`backend-test-d` 通过。临时 live-eval repo variable 在终态
     success 后立即删除并复证 absent。
-- **裁决**: socket ready-state 修复本地 G3/G4 ☒ GO；replacement exact-SHA
-  main CI ☐ GO ☒ PENDING。后者全绿前继续禁止 G5/activation/OTA。
+- socket-state replacement CI:
+  - run `30549606506` 对精确
+    `c9e21068904de9aa6b963aa18d9d51bcc7c85bd0` 44/44 success、0
+    non-success；临时 live-eval repo variable 保持 absent。
+- ExecStart/rollback ownership incident remediation:
+  - legacy raw ARMING journal、runtime metadata reset、静态 path/argv/ignore
+    drift、unknown/multi-record、restore-before-mutation 与三 candidate unit
+    exact-command 覆盖已 RED→GREEN；stage exact pointer、snapshot publish crash、
+    RT signal 与 metadata/snapshot schema 也已闭环；runtime transaction
+    110/110；
+  - rollback live env `root:health-app:640`、nonregular target、exact rename、
+    两段 fsync、stage metadata/allowlist/import shadow 静态与功能覆盖已
+    RED→GREEN；rollback 完整文件 36/36；
+  - 七文件 release-invariants 305/305、Ruff、Shell syntax、doc/dossier drift
+    全绿；fresh test-contract 与 release-security review 均 GO，冻结哈希前后
+    一致。
+- **裁决**: incident remediation 本地完整 G3/G4 ☒ GO ☐ PENDING；
+  replacement exact-SHA main CI ☐ GO ☒ PENDING。全部全绿前继续禁止
+  G5/activation/OTA。
 
 ## G4 · 安全闸
 
@@ -657,6 +726,11 @@
 - 知识路由语义复审确认 reviewed PostgreSQL/System KB 与 Dedao 保持可路由，
   held/未审核 low-back 与 legacy Chroma/RAG 不进入通用 serving；急性 Safety
   Guardian 和确定性红旗判断未削弱，运行时无 fine-tuning/LoRA 依赖。
+- 当前 ExecStart/rollback ownership delta 不改变 clinical/privacy 语义，但涉及
+  root 权限、sealed recovery stage 与 systemd effective config fail-closed
+  边界；最终增量 release-security review 对冻结源码确认 P0=0、P1=0，并验证
+  lease exact bytes/nlink、四个 isolated helper 调用、env symlink/rename/fsync
+  fail-closed 与 staging/helper 职责边界。
 - **裁决**:☒ GO ☐ PENDING
 
 ## S6 · 部署
@@ -678,9 +752,13 @@
     systemd Git trust BLOCK 后由 staged deadman 恢复；
   - isolated-Git 目标 `85fd0a69...` 已通过 CI 与 backend deploy；部署脚本瞬时
     验证通过，但独立复查发现 beat crash loop，故 G5 REJECT。生产当前仍为该
-    exact SHA、base flag=false、beat 已即时恢复，feature 尚未授权；下一目标依次
-    为 state-boundary 修复完整 local G3/G4 + fresh review、提交/CI、backend
-    replacement deploy、受控 activation 与 smoke，最后才是 OTA。
+    exact SHA、base flag=false、feature 尚未授权；
+  - socket-state 目标 `c9e21068...` 在 runtime transaction prepare 被动态
+    ExecStart metadata 误判阻断，随后 formal rollback 暴露 live env ownership
+    问题；使用新 immutable recovery stage 的第二次 formal rollback 已完整恢复并
+    清理。下一目标依次为 ExecStart/ownership 修复完整 local G3/G4 + fresh
+    review、提交/CI、backend replacement deploy、受控 activation 与 smoke，
+    最后才是 OTA。
 
 ## G5 · 部署健康闸
 
@@ -714,20 +792,27 @@
     proof 误拒绝。部署在 checkout/migration 前停止，lease/stage 保留；经完整
     7 秒 patched proof 后只清理该次临时 artifacts。生产仍为 `85fd0a69...`、
     flag=false、四服务 stable，未激活或 OTA。
+  - runtime prepare BLOCK: `c9e21068...` 的 CI 44/44，backup/restore/offsite、
+    old-schema、deactivation 与 inactive proof 均通过；动态 ExecStart metadata
+    被误认为静态漂移，checkout 前停止。第一次 formal rollback 又因 live `.env`
+    被装成 `root:root:600` 使降权进程无法读取而保持 inactive；没有输出
+    `ROLLBACK_OK`。新 sealed recovery stage 修复 ownership 后，formal rollback
+    完成 runtime restore、199 表 schema、quarantine、health/auth、四服务稳定与
+    `RESTORE_FINALIZED`；独立 proof 后精确清理 stages/bundle/lease。
 - 健康分(阈值 35): 第二次 candidate 的 `60/60 FAIL` detail 因旧日志契约未保存；
   recovery 后 candidate scorer 为 `60/60 PASS`。第三次 candidate 同样总分 60，
   但 circuit import unavailable 按硬闸正确 veto，不把分数当作 PASS。
-- prod recovery smoke: PARTIAL —— 当前 production/deployed exact SHA
-  `85fd0a69...`、base flag=false，Celery Beat 已跨 RestartSec 恢复稳定；首次
-  deploy 的 health/auth、199 表 schema probe、目标列契约、60/60、KB 11/11 与
-  skills 22/22 均通过。因生产仍使用临时 checkout-owned beat state，不能据此把
-  G5 改成 PASS。
+- prod recovery smoke: PASS（仅旧版本恢复）—— 当前 production exact SHA
+  `85fd0a69...`、clean tree、base flag=false、health=200、auth=401、
+  `.env=root:health-app:640`，四服务跨 RestartSec 保持相同
+  PID/restart/state，terminal `RESTORE_FINALIZED` 且无 release lock/stage。该
+  PASS 只证明旧版本安全恢复，不等于候选发布通过。
 - Linux 实机硬条件: systemd drop-in precedence、cgroup v2 全部 uvicorn/Celery/beat
   子进程 flag 一致性、durable commit/revoke/candidate rename 断电前缀、SSH/HUP
   断连租约、生产文件系统 `sync -f`/`mv -fT`/目录 fsync 与 rollback 终态证明在
   recovery 路径已通过；isolated-Git 候选仍须重新 backend deploy（规范化
   ownership 并 stage 新 runner）后再跑 activation G5。
-- **裁决**:☐ PASS ☒ BLOCK → 回 S5/G3/G4
+- **裁决**:☐ PASS ☒ BLOCK → 候选回 S5/G3/G4；旧版本恢复 PASS
 
 ## S7 · 上线验证
 

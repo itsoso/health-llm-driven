@@ -65,8 +65,26 @@ if ! [[ "$REMOTE_RELEASE_LOCK_TOKEN" =~ ^[A-Za-z0-9._:-]+$ ]]; then
     exit 1
 fi
 assert_release_lock() {
+    test -d "$REMOTE_RELEASE_LOCK_DIR"
+    test ! -L "$REMOTE_RELEASE_LOCK_DIR"
+    test "$(stat -c '%U:%G:%a' "$REMOTE_RELEASE_LOCK_DIR")" = \
+        "root:root:700"
+    test -f "$REMOTE_RELEASE_LOCK_DIR/token"
+    test ! -L "$REMOTE_RELEASE_LOCK_DIR/token"
     test -r "$REMOTE_RELEASE_LOCK_DIR/token"
-    test "$(cat "$REMOTE_RELEASE_LOCK_DIR/token")" = "$REMOTE_RELEASE_LOCK_TOKEN"
+    test "$(stat -c '%U:%G:%a' "$REMOTE_RELEASE_LOCK_DIR/token")" = \
+        "root:root:600"
+    test "$(stat -c '%h' "$REMOTE_RELEASE_LOCK_DIR/token")" = "1"
+    cmp -s "$REMOTE_RELEASE_LOCK_DIR/token" \
+        <(printf '%s\n' "$REMOTE_RELEASE_LOCK_TOKEN")
+    test -f "$REMOTE_RELEASE_LOCK_DIR/stage"
+    test ! -L "$REMOTE_RELEASE_LOCK_DIR/stage"
+    test -r "$REMOTE_RELEASE_LOCK_DIR/stage"
+    test "$(stat -c '%U:%G:%a' "$REMOTE_RELEASE_LOCK_DIR/stage")" = \
+        "root:root:600"
+    test "$(stat -c '%h' "$REMOTE_RELEASE_LOCK_DIR/stage")" = "1"
+    cmp -s "$REMOTE_RELEASE_LOCK_DIR/stage" \
+        <(printf '%s\n' "$SCRIPT_DIR")
 }
 safe_absolute_path() {
     local value="$1"
@@ -82,7 +100,39 @@ if ! [[ "$HEALTH_ATTEMPTS" =~ ^[1-9][0-9]*$ ]]; then
     echo "ROLLBACK_HEALTH_ATTEMPTS 必须是正整数" >&2
     exit 1
 fi
+safe_absolute_path "$SCRIPT_DIR"
+test -d "$SCRIPT_DIR"
+test ! -L "$SCRIPT_DIR"
+test "$(stat -c '%U:%G:%a' "$SCRIPT_DIR")" = "root:root:700"
+test -f "$STAGED_HASH_MANIFEST"
+test ! -L "$STAGED_HASH_MANIFEST"
 test -r "$STAGED_HASH_MANIFEST"
+test "$(stat -c '%U:%G:%a' "$STAGED_HASH_MANIFEST")" = "root:root:400"
+shopt -s nullglob dotglob
+stage_entry_count=0
+for entry in "$SCRIPT_DIR"/*; do
+    name="${entry##*/}"
+    allowed=0
+    if [ "$name" = "staged.sha256" ]; then
+        allowed=1
+    else
+        for artifact in "${REQUIRED_STAGED_ARTIFACTS[@]}"; do
+            if [ "$name" = "$artifact" ]; then
+                allowed=1
+                break
+            fi
+        done
+    fi
+    if [ "$allowed" != "1" ]; then
+        echo "unknown immutable rollback artifact: $name" >&2
+        exit 1
+    fi
+    test -f "$entry"
+    test ! -L "$entry"
+    stage_entry_count=$((stage_entry_count + 1))
+done
+shopt -u nullglob dotglob
+test "$stage_entry_count" -eq "$((${#REQUIRED_STAGED_ARTIFACTS[@]} + 1))"
 for artifact in "${REQUIRED_STAGED_ARTIFACTS[@]}"; do
     test -f "$SCRIPT_DIR/$artifact"
     test ! -L "$SCRIPT_DIR/$artifact"
@@ -100,7 +150,7 @@ test "$(awk 'NF {count += 1} END {print count + 0}' "$STAGED_HASH_MANIFEST")" \
     -eq "${#REQUIRED_STAGED_ARTIFACTS[@]}"
 (
     cd "$SCRIPT_DIR"
-    sha256sum -c "$STAGED_HASH_MANIFEST" >/dev/null
+    sha256sum --strict -c "$STAGED_HASH_MANIFEST" >/dev/null
 )
 test -r "$STAGED_REVIEW_MANIFEST"
 safe_absolute_path "$HEALTH_EVIDENCE_DURABLE_STATE_DIR"
@@ -315,6 +365,8 @@ select_release_env_for_runtime_result() {
 
     test -d "$target_dir"
     test ! -L "$target_dir"
+    test -f "$target_env"
+    test ! -L "$target_env"
     test -f "$STAGED_BACKEND_ENV_ROLLBACK"
     test ! -L "$STAGED_BACKEND_ENV_ROLLBACK"
     test -f "$STAGED_BACKEND_ENV_CANDIDATE"
@@ -350,9 +402,10 @@ select_release_env_for_runtime_result() {
                 rm -f -- "$target_tmp"
                 return 1
             fi
-            if ! chmod 0600 "$target_tmp" ||
+            if ! chown root:health-app "$target_tmp" ||
+                ! chmod 0640 "$target_tmp" ||
                 ! sync -f "$target_tmp" ||
-                ! mv -f -- "$target_tmp" "$target_env"; then
+                ! mv -fT -- "$target_tmp" "$target_env"; then
                 rm -f -- "$target_tmp"
                 return 1
             fi
@@ -374,6 +427,9 @@ select_release_env_for_runtime_result() {
             return 1
             ;;
     esac
+    test -f "$target_env"
+    test ! -L "$target_env"
+    test "$(stat -c '%U:%G:%a' "$target_env")" = "root:health-app:640"
 }
 
 revoke_health_evidence_authorization() {
@@ -441,7 +497,7 @@ test "$(git rev-parse HEAD)" = "$ROLLBACK_COMMIT"
 assert_release_lock
 
 runtime_state_output="$(
-    /usr/bin/python3 "$RUNTIME_STATE_RUNNER" \
+    /usr/bin/python3 -I "$RUNTIME_STATE_RUNNER" \
         restore "$ROLLBACK_COMMIT" \
         "$REMOTE_RELEASE_LOCK_DIR" \
         "$REMOTE_RELEASE_LOCK_TOKEN"
@@ -510,7 +566,7 @@ test "$(git rev-parse HEAD)" = "$ROLLBACK_COMMIT"
 assert_release_lock
 if [ "$runtime_state_result" = "restored" ]; then
     runtime_terminal_output="$(
-        /usr/bin/python3 "$RUNTIME_STATE_RUNNER" \
+        /usr/bin/python3 -I "$RUNTIME_STATE_RUNNER" \
             release-gate "$ROLLBACK_COMMIT" \
             "$REMOTE_RELEASE_LOCK_DIR" \
             "$REMOTE_RELEASE_LOCK_TOKEN"
@@ -526,7 +582,7 @@ if [ "$runtime_state_result" = "restored" ]; then
     esac
 else
     runtime_commit_output="$(
-        /usr/bin/python3 "$RUNTIME_STATE_RUNNER" \
+        /usr/bin/python3 -I "$RUNTIME_STATE_RUNNER" \
             commit "$ROLLBACK_COMMIT" \
             "$REMOTE_RELEASE_LOCK_DIR" \
             "$REMOTE_RELEASE_LOCK_TOKEN"
@@ -541,7 +597,7 @@ else
             ;;
     esac
     runtime_terminal_output="$(
-        /usr/bin/python3 "$RUNTIME_STATE_RUNNER" \
+        /usr/bin/python3 -I "$RUNTIME_STATE_RUNNER" \
             finalize "$ROLLBACK_COMMIT" \
             "$REMOTE_RELEASE_LOCK_DIR" \
             "$REMOTE_RELEASE_LOCK_TOKEN"

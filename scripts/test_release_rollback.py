@@ -5,6 +5,8 @@ import stat
 import subprocess
 from pathlib import Path
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[1]
 ROLLBACK_SCRIPT = ROOT / "backend/scripts/rollback_release.sh"
@@ -34,6 +36,7 @@ DROPIN_ARTIFACT_SOURCES = {
 }
 FAKE_RUNTIME_STATE_RUNNER = """#!/usr/bin/python3
 import os
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -58,8 +61,29 @@ if len(release_commit) != 40 or any(
 release_lock_dir = Path(release_lock_dir_raw)
 if not release_lock_dir.is_absolute():
     fail("fake runtime restore received a relative release lock")
-if (release_lock_dir / "token").read_text(encoding="utf-8").strip() != release_lock_token:
+stage_dir = Path(__file__).resolve().parent
+token_path = release_lock_dir / "token"
+stage_path = release_lock_dir / "stage"
+if stat.S_IMODE(release_lock_dir.stat().st_mode) != 0o700:
+    fail("fake runtime transaction observed invalid release lock mode")
+if stat.S_IMODE(token_path.stat().st_mode) != 0o600:
+    fail("fake runtime transaction observed invalid token mode")
+if stat.S_IMODE(stage_path.stat().st_mode) != 0o600:
+    fail("fake runtime transaction observed invalid stage pointer mode")
+if token_path.stat().st_nlink != 1:
+    fail("fake runtime transaction observed hard-linked token")
+if stage_path.stat().st_nlink != 1:
+    fail("fake runtime transaction observed hard-linked stage pointer")
+if os.environ.get("FAKE_LOCK_OWNER", "root:root") != "root:root":
+    fail("fake runtime transaction observed invalid release lock owner")
+if os.environ.get("FAKE_TOKEN_OWNER", "root:root") != "root:root":
+    fail("fake runtime transaction observed invalid token owner")
+if os.environ.get("FAKE_LOCK_STAGE_OWNER", "root:root") != "root:root":
+    fail("fake runtime transaction observed invalid stage pointer owner")
+if token_path.read_text(encoding="utf-8") != release_lock_token + "\\n":
     fail("fake runtime transaction observed a lost release lock")
+if stage_path.read_text(encoding="utf-8") != str(stage_dir) + "\\n":
+    fail("fake runtime transaction observed a mismatched release stage")
 
 service_state_dir_raw = os.environ.get("FAKE_SERVICE_STATE_DIR")
 service_state_raw = os.environ.get("FAKE_SERVICE_STATE")
@@ -140,14 +164,26 @@ def test_rollback_runner_requires_verified_staged_failed_release_artifacts():
     assert 'test -r "$STAGED_REVIEW_MANIFEST"' in script
     assert 'STAGED_HASH_MANIFEST="$SCRIPT_DIR/staged.sha256"' in script
     assert 'test -r "$STAGED_HASH_MANIFEST"' in script
-    assert 'sha256sum -c "$STAGED_HASH_MANIFEST"' in script
+    assert 'sha256sum --strict -c "$STAGED_HASH_MANIFEST"' in script
+    assert 'cmp -s "$REMOTE_RELEASE_LOCK_DIR/token"' in script
+    assert 'cmp -s "$REMOTE_RELEASE_LOCK_DIR/stage"' in script
+    assert '<(printf \'%s\\n\' "$REMOTE_RELEASE_LOCK_TOKEN")' in script
+    assert '<(printf \'%s\\n\' "$SCRIPT_DIR")' in script
+    assert '"root:root:700"' in script
+    assert '"root:root:400"' in script
+    assert "shopt -s nullglob dotglob" in script
+    assert script.count('/usr/bin/python3 -I "$RUNTIME_STATE_RUNNER"') == 4
+    assert '/usr/bin/python3 "$RUNTIME_STATE_RUNNER"' not in script
     assert "backend/data/system_kb_v2_seed/review_manifest.json" not in script
     for artifact_name in REQUIRED_ARTIFACT_NAMES:
         assert artifact_name in script
 
     services_touched = script.index("SERVICES_TOUCHED=1")
     writers_inactive = script.index("force_services_inactive", services_touched)
-    restore = script.index('/usr/bin/python3 "$RUNTIME_STATE_RUNNER"', writers_inactive)
+    restore = script.index(
+        '/usr/bin/python3 -I "$RUNTIME_STATE_RUNNER"',
+        writers_inactive,
+    )
     checkout = script.index('git checkout -B main "$ROLLBACK_COMMIT"')
     final_start = script.index('systemctl start "$BACKEND_SOCKET"', restore)
     assert writers_inactive < checkout < restore < final_start
@@ -163,6 +199,19 @@ def test_rollback_stage_requires_both_backend_env_snapshots():
 
     assert "backend.env.rollback" in required_body
     assert "backend.env.candidate" in required_body
+
+
+def test_rollback_restores_service_readable_env_metadata():
+    script = ROLLBACK_SCRIPT.read_text(encoding="utf-8")
+    select_start = script.index("select_release_env_for_runtime_result() {")
+    select_end = script.index("revoke_health_evidence_authorization() {", select_start)
+    select_body = script[select_start:select_end]
+
+    assert 'chown root:health-app "$target_tmp"' in select_body
+    assert 'chmod 0640 "$target_tmp"' in select_body
+    assert 'mv -fT -- "$target_tmp" "$target_env"' in select_body
+    assert '"root:health-app:640"' in select_body
+    assert 'chmod 0600 "$target_tmp"' not in select_body
 
 
 def test_rollback_proves_every_writer_process_flag_false_after_final_start():
@@ -258,9 +307,10 @@ def _stage_rollback_runner(
     *,
     rollback_env: str | None = None,
     candidate_env: str | None = None,
+    stage_name: str = "staged-release",
 ) -> Path:
-    stage = tmp_path / "staged-release"
-    stage.mkdir()
+    stage = tmp_path / stage_name
+    stage.mkdir(mode=0o700)
     source_dir = ROOT / "backend/scripts"
     live_env = (repo / "backend/.env").read_text(encoding="utf-8")
     for name in REQUIRED_ARTIFACT_NAMES:
@@ -294,20 +344,100 @@ def _stage_rollback_runner(
         digest = hashlib.sha256((stage / name).read_bytes()).hexdigest()
         lines.append(f"{digest}  {name}")
     (stage / "staged.sha256").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    (stage / "staged.sha256").chmod(0o400)
     return stage / "rollback_release.sh"
 
 
-def _release_lock_args(tmp_path: Path) -> tuple[str, str]:
+def _release_lock_args(
+    tmp_path: Path,
+    *,
+    stage: Path | None = None,
+) -> tuple[str, str]:
     lock_dir = tmp_path / "remote-release.lock"
-    lock_dir.mkdir()
+    lock_dir.mkdir(mode=0o700)
     token = "test-release-owner"
     (lock_dir / "token").write_text(token + "\n", encoding="utf-8")
+    (lock_dir / "token").chmod(0o600)
+    (lock_dir / "stage").write_text(
+        str(stage or (tmp_path / "staged-release")) + "\n",
+        encoding="utf-8",
+    )
+    (lock_dir / "stage").chmod(0o600)
     return str(lock_dir), token
 
 
 def _fake_commands(tmp_path: Path, *, healthy: bool) -> Path:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
+    fake_owner = tmp_path / "fake-env-owner"
+    fake_owner.write_text("root:root\n", encoding="utf-8")
+    _write_executable(
+        bin_dir / "chown",
+        f"""#!/bin/sh
+set -eu
+test "$1" = "root:health-app"
+test -f "$2"
+if [ "${{FAKE_CHOWN_NO_EFFECT:-0}}" != "1" ]; then
+  printf '%s\n' "$1" > "{fake_owner}"
+fi
+""",
+    )
+    _write_executable(
+        bin_dir / "stat",
+        f"""#!/bin/sh
+set -eu
+test "$1" = "-c"
+test -e "$3" || test -L "$3"
+if [ "$2" = "%h" ]; then
+  if links=$(/usr/bin/stat -c '%h' "$3" 2>/dev/null); then
+    :
+  else
+    links=$(/usr/bin/stat -f '%l' "$3")
+  fi
+  printf '%s\n' "$links"
+  exit 0
+fi
+test "$2" = "%U:%G:%a"
+if mode=$(/usr/bin/stat -c '%a' "$3" 2>/dev/null); then
+  :
+else
+  mode=$(/usr/bin/stat -f '%Lp' "$3")
+fi
+case "$3" in
+  */remote-release.lock)
+    owner="${{FAKE_LOCK_OWNER:-root:root}}"
+    ;;
+  */remote-release.lock/token)
+    owner="${{FAKE_TOKEN_OWNER:-root:root}}"
+    ;;
+  */remote-release.lock/stage)
+    owner="${{FAKE_LOCK_STAGE_OWNER:-root:root}}"
+    ;;
+  */staged-release|*/staged-release-*)
+    owner="${{FAKE_STAGE_OWNER:-root:root}}"
+    ;;
+  */staged-release/staged.sha256|*/staged-release-*/staged.sha256)
+    owner="${{FAKE_MANIFEST_OWNER:-root:root}}"
+    ;;
+  *)
+    owner="$(cat "{fake_owner}")"
+    ;;
+esac
+printf '%s:%s\n' "$owner" "$mode"
+""",
+    )
+    _write_executable(
+        bin_dir / "mv",
+        """#!/bin/sh
+set -eu
+test "$1" = "-fT"
+test "$2" = "--"
+if [ "${FAKE_MV_FAIL:-0}" = "1" ]; then
+  exit 89
+fi
+/bin/mv -f "$3" "$4"
+""",
+    )
     _write_executable(
         bin_dir / "systemctl",
         """#!/bin/sh
@@ -386,9 +516,19 @@ exit 0
     _write_executable(
         bin_dir / "sync",
         """#!/bin/sh
+set -eu
 test "$1" = "-f"
 test -e "$2"
-if [ "${FAKE_SYNC_FAIL:-0}" = "1" ]; then
+count=0
+if [ -n "${FAKE_SYNC_COUNT:-}" ] && [ -f "$FAKE_SYNC_COUNT" ]; then
+  count=$(cat "$FAKE_SYNC_COUNT")
+fi
+count=$((count + 1))
+if [ -n "${FAKE_SYNC_COUNT:-}" ]; then
+  printf '%s\n' "$count" > "$FAKE_SYNC_COUNT"
+fi
+if [ "${FAKE_SYNC_FAIL:-0}" = "1" ] ||
+   [ "${FAKE_SYNC_FAIL_ON_CALL:-0}" = "$count" ]; then
   exit 88
 fi
 if [ -n "${FAKE_SYNC_LOG:-}" ]; then
@@ -494,27 +634,59 @@ esac
 def test_release_rollback_rejects_missing_or_tampered_stage_before_stopping_services(
     tmp_path: Path,
 ):
-    for scenario in ("missing-hash", "missing-manifest", "tampered-quarantine"):
+    for scenario in (
+        "missing-hash",
+        "missing-manifest",
+        "tampered-quarantine",
+        "extra-python-module",
+        "stage-mismatch",
+        "wrong-stage-mode",
+        "wrong-manifest-mode",
+        "wrong-stage-owner",
+        "wrong-manifest-owner",
+    ):
         case_path = tmp_path / scenario
         case_path.mkdir()
         repo, known_good, _ = _make_release_repo(case_path)
         rollback_runner = _stage_rollback_runner(case_path, repo)
         stage = rollback_runner.parent
+        fake_stage_owner = "root:root"
+        fake_manifest_owner = "root:root"
         if scenario == "missing-hash":
             (stage / "staged.sha256").unlink()
         elif scenario == "missing-manifest":
             (stage / "review_manifest.json").unlink()
-        else:
+        elif scenario == "tampered-quarantine":
             with (stage / "quarantine_runtime_only_kb.py").open(
                 "a", encoding="utf-8"
             ) as handle:
                 handle.write("\n# tampered\n")
+        elif scenario == "extra-python-module":
+            (stage / "hashlib.py").write_text(
+                "raise RuntimeError('stage import shadow executed')\n",
+                encoding="utf-8",
+            )
+        elif scenario == "wrong-stage-mode":
+            stage.chmod(0o755)
+        elif scenario == "wrong-manifest-mode":
+            (stage / "staged.sha256").chmod(0o600)
+        elif scenario == "wrong-stage-owner":
+            fake_stage_owner = "root:health-app"
+        elif scenario == "wrong-manifest-owner":
+            fake_manifest_owner = "root:health-app"
 
         bin_dir = _fake_commands(case_path, healthy=True)
         service_state = case_path / "service-state"
         service_state.write_text("active\n", encoding="utf-8")
         event_log = case_path / "rollback-events"
-        lock_args = _release_lock_args(case_path)
+        lock_args = _release_lock_args(
+            case_path,
+            stage=(
+                case_path / "different-sealed-stage"
+                if scenario == "stage-mismatch"
+                else stage
+            ),
+        )
         env = {
             **os.environ,
             **_process_proof_env(case_path),
@@ -524,6 +696,8 @@ def test_release_rollback_rejects_missing_or_tampered_stage_before_stopping_serv
             "FAKE_SCHEMA_PROBE_LOG": str(case_path / "schema-probe"),
             "FAKE_STOP_COUNT": str(case_path / "stop-count"),
             "FAKE_ROLLBACK_EVENT_LOG": str(event_log),
+            "FAKE_STAGE_OWNER": fake_stage_owner,
+            "FAKE_MANIFEST_OWNER": fake_manifest_owner,
         }
 
         result = subprocess.run(
@@ -539,6 +713,96 @@ def test_release_rollback_rejects_missing_or_tampered_stage_before_stopping_serv
         assert service_state.read_text(encoding="utf-8").strip() == "active"
         assert not (case_path / "stop-count").exists()
         assert not event_log.exists()
+
+
+@pytest.mark.parametrize(
+    "scenario",
+    (
+        "lock-mode",
+        "token-mode",
+        "stage-pointer-mode",
+        "lock-owner",
+        "token-owner",
+        "stage-pointer-owner",
+        "token-missing-newline",
+        "token-extra-newline",
+        "stage-pointer-missing-newline",
+        "stage-pointer-extra-newline",
+        "token-hardlink",
+        "stage-pointer-hardlink",
+    ),
+)
+def test_release_rollback_rejects_unsafe_lock_metadata_before_stopping_services(
+    tmp_path: Path,
+    scenario: str,
+):
+    repo, known_good, _ = _make_release_repo(tmp_path)
+    rollback_runner = _stage_rollback_runner(tmp_path, repo)
+    bin_dir = _fake_commands(tmp_path, healthy=True)
+    service_state = tmp_path / "service-state"
+    service_state.write_text("active\n", encoding="utf-8")
+    event_log = tmp_path / "rollback-events"
+    lock_args = _release_lock_args(tmp_path, stage=rollback_runner.parent)
+    lock_dir = Path(lock_args[0])
+    if scenario == "lock-mode":
+        lock_dir.chmod(0o755)
+    elif scenario == "token-mode":
+        (lock_dir / "token").chmod(0o644)
+    elif scenario == "stage-pointer-mode":
+        (lock_dir / "stage").chmod(0o644)
+    elif scenario == "token-missing-newline":
+        (lock_dir / "token").write_text(lock_args[1], encoding="utf-8")
+    elif scenario == "token-extra-newline":
+        (lock_dir / "token").write_text(lock_args[1] + "\n\n", encoding="utf-8")
+    elif scenario == "stage-pointer-missing-newline":
+        (lock_dir / "stage").write_text(
+            str(rollback_runner.parent),
+            encoding="utf-8",
+        )
+    elif scenario == "stage-pointer-extra-newline":
+        (lock_dir / "stage").write_text(
+            str(rollback_runner.parent) + "\n\n",
+            encoding="utf-8",
+        )
+    elif scenario == "token-hardlink":
+        os.link(lock_dir / "token", tmp_path / "token-hardlink")
+    elif scenario == "stage-pointer-hardlink":
+        os.link(lock_dir / "stage", tmp_path / "stage-hardlink")
+    env = {
+        **os.environ,
+        **_process_proof_env(tmp_path),
+        "PATH": f"{bin_dir}:{os.environ['PATH']}",
+        "ROLLBACK_HEALTH_ATTEMPTS": "1",
+        "FAKE_SERVICE_STATE": str(service_state),
+        "FAKE_SCHEMA_PROBE_LOG": str(tmp_path / "schema-probe"),
+        "FAKE_STOP_COUNT": str(tmp_path / "stop-count"),
+        "FAKE_ROLLBACK_EVENT_LOG": str(event_log),
+        "FAKE_LOCK_OWNER": (
+            "root:health-app" if scenario == "lock-owner" else "root:root"
+        ),
+        "FAKE_TOKEN_OWNER": (
+            "root:health-app" if scenario == "token-owner" else "root:root"
+        ),
+        "FAKE_LOCK_STAGE_OWNER": (
+            "root:health-app"
+            if scenario == "stage-pointer-owner"
+            else "root:root"
+        ),
+    }
+
+    result = subprocess.run(
+        [str(rollback_runner), str(repo), known_good, *lock_args],
+        text=True,
+        capture_output=True,
+        env=env,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "ROLLBACK_OK" not in result.stdout
+    assert service_state.read_text(encoding="utf-8").strip() == "active"
+    assert not (tmp_path / "stop-count").exists()
+    assert not event_log.exists()
 
 
 def test_release_rollback_stops_socket_before_checkout_and_only_starts_after_probes(
@@ -705,6 +969,7 @@ def test_release_rollback_moves_head_and_requires_health_check(tmp_path: Path):
         == "schema-probe-ran"
     )
     assert not Path(env["FAKE_ENV_EXECUTED"]).exists()
+    assert stat.S_IMODE((repo / "backend/.env").stat().st_mode) == 0o640
     assert Path(env["FAKE_ROLLBACK_EVENT_LOG"]).read_text(
         encoding="utf-8"
     ).splitlines() == [
@@ -724,6 +989,11 @@ def test_release_rollback_candidate_floor_commits_then_finalizes(
     repo, _, candidate = _make_release_repo(tmp_path)
     rollback_runner = _stage_rollback_runner(tmp_path, repo)
     bin_dir = _fake_commands(tmp_path, healthy=True)
+    (repo / "backend/.env").chmod(0o640)
+    (tmp_path / "fake-env-owner").write_text(
+        "root:health-app\n",
+        encoding="utf-8",
+    )
     service_state = tmp_path / "service-state"
     service_state.write_text("active\n", encoding="utf-8")
     event_log = tmp_path / "rollback-events"
@@ -772,6 +1042,12 @@ def _run_rollback_with_env_snapshots(
     candidate_env: str,
     expected_env_at_start: str | None = None,
     fail_sync: bool = False,
+    sync_fail_on_call: int = 0,
+    initial_owner: str | None = None,
+    initial_mode: int | None = None,
+    chown_no_effect: bool = False,
+    target_env_kind: str = "file",
+    fail_mv: bool = False,
 ) -> tuple[subprocess.CompletedProcess[str], dict[str, Path]]:
     repo, known_good, candidate = _make_release_repo(tmp_path)
     rollback_commit = known_good if runtime_result == "restored" else candidate
@@ -783,11 +1059,39 @@ def _run_rollback_with_env_snapshots(
     )
     live_env = repo / "backend/.env"
     live_env.write_text(candidate_env, encoding="utf-8")
+    if initial_mode is None:
+        initial_mode = 0o640 if runtime_result == "candidate-retained" else 0o600
+    live_env.chmod(initial_mode)
+    redirected_env_dir = tmp_path / "redirected-env-dir"
+    if target_env_kind == "directory":
+        live_env.unlink()
+        live_env.mkdir()
+        redirected_env_dir = live_env
+    elif target_env_kind == "symlink-directory":
+        live_env.unlink()
+        redirected_env_dir.mkdir()
+        live_env.symlink_to(redirected_env_dir, target_is_directory=True)
+    elif target_env_kind == "symlink-regular":
+        live_env.unlink()
+        redirected_env_dir.write_text(candidate_env, encoding="utf-8")
+        live_env.symlink_to(redirected_env_dir)
+    elif target_env_kind != "file":
+        raise ValueError(f"unknown target_env_kind: {target_env_kind}")
     expected_env = tmp_path / "expected-env-at-start"
     if expected_env_at_start is not None:
         expected_env.write_text(expected_env_at_start, encoding="utf-8")
 
     bin_dir = _fake_commands(tmp_path, healthy=True)
+    fake_owner = tmp_path / "fake-env-owner"
+    fake_owner.write_text(
+        (initial_owner or (
+            "root:health-app"
+            if runtime_result == "candidate-retained"
+            else "root:root"
+        ))
+        + "\n",
+        encoding="utf-8",
+    )
     service_state = tmp_path / "service-state"
     service_state.write_text("active\n", encoding="utf-8")
     event_log = tmp_path / "rollback-events"
@@ -810,6 +1114,10 @@ def _run_rollback_with_env_snapshots(
         "FAKE_RUNTIME_EXPECTED_HEAD": rollback_commit,
         "FAKE_LIVE_ENV": str(live_env),
         "FAKE_SYNC_FAIL": "1" if fail_sync else "0",
+        "FAKE_SYNC_FAIL_ON_CALL": str(sync_fail_on_call),
+        "FAKE_SYNC_COUNT": str(tmp_path / "sync-count"),
+        "FAKE_CHOWN_NO_EFFECT": "1" if chown_no_effect else "0",
+        "FAKE_MV_FAIL": "1" if fail_mv else "0",
     }
     if expected_env_at_start is not None:
         env["FAKE_EXPECT_ENV_AT_START"] = str(expected_env)
@@ -825,6 +1133,8 @@ def _run_rollback_with_env_snapshots(
         "live_env": live_env,
         "service_state": service_state,
         "event_log": event_log,
+        "fake_owner": fake_owner,
+        "redirected_env_dir": redirected_env_dir,
     }
 
 
@@ -855,6 +1165,10 @@ def test_release_rollback_restores_legacy_env_before_starting_old_services(
     assert restored_lines.count(
         "HEALTH_EVIDENCE_RUNTIME_ENABLED=false"
     ) == 1
+    assert stat.S_IMODE(paths["live_env"].stat().st_mode) == 0o640
+    assert paths["fake_owner"].read_text(encoding="utf-8").strip() == (
+        "root:health-app"
+    )
 
 
 def test_release_rollback_candidate_retained_never_overwrites_candidate_env(
@@ -880,6 +1194,83 @@ def test_release_rollback_candidate_retained_never_overwrites_candidate_env(
     assert result.returncode == 0, (result.stdout, result.stderr)
     assert "runtime_state=candidate-retained" in result.stdout
     assert paths["live_env"].read_text(encoding="utf-8") == candidate_env
+    assert stat.S_IMODE(paths["live_env"].stat().st_mode) == 0o640
+    assert paths["fake_owner"].read_text(encoding="utf-8").strip() == (
+        "root:health-app"
+    )
+
+
+def test_release_rollback_restored_branch_rejects_ineffective_chown(
+    tmp_path: Path,
+):
+    result, paths = _run_rollback_with_env_snapshots(
+        tmp_path,
+        runtime_result="restored",
+        rollback_env="HEALTH_EVIDENCE_RUNTIME_ENABLED=false\n",
+        candidate_env="HEALTH_EVIDENCE_RUNTIME_ENABLED=false\n",
+        initial_owner="root:root",
+        chown_no_effect=True,
+    )
+
+    assert result.returncode != 0
+    assert "ROLLBACK_OK" not in result.stdout
+    assert paths["fake_owner"].read_text(encoding="utf-8").strip() == "root:root"
+    assert paths["service_state"].read_text(encoding="utf-8").strip() == "inactive"
+
+
+def test_release_rollback_candidate_retained_rejects_wrong_env_metadata(
+    tmp_path: Path,
+):
+    for label, owner, mode in (
+        ("wrong-owner", "root:root", 0o640),
+        ("wrong-mode", "root:health-app", 0o600),
+    ):
+        case_path = tmp_path / label
+        case_path.mkdir()
+        result, paths = _run_rollback_with_env_snapshots(
+            case_path,
+            runtime_result="candidate-retained",
+            rollback_env="HEALTH_EVIDENCE_RUNTIME_ENABLED=false\n",
+            candidate_env="HEALTH_EVIDENCE_RUNTIME_ENABLED=false\n",
+            initial_owner=owner,
+            initial_mode=mode,
+        )
+
+        assert result.returncode != 0, label
+        assert "ROLLBACK_OK" not in result.stdout
+        assert paths["service_state"].read_text(
+            encoding="utf-8"
+        ).strip() == "inactive"
+
+
+def test_release_rollback_rejects_nonregular_env_destination_without_write(
+    tmp_path: Path,
+):
+    for target_kind in ("directory", "symlink-directory", "symlink-regular"):
+        case_path = tmp_path / target_kind
+        case_path.mkdir()
+        result, paths = _run_rollback_with_env_snapshots(
+            case_path,
+            runtime_result="restored",
+            rollback_env=(
+                "SECRET_SENTINEL=must-not-move\n"
+                "HEALTH_EVIDENCE_RUNTIME_ENABLED=false\n"
+            ),
+            candidate_env="HEALTH_EVIDENCE_RUNTIME_ENABLED=false\n",
+            target_env_kind=target_kind,
+        )
+
+        assert result.returncode != 0, target_kind
+        assert "ROLLBACK_OK" not in result.stdout
+        assert paths["service_state"].read_text(
+            encoding="utf-8"
+        ).strip() == "inactive"
+        if target_kind == "symlink-regular":
+            assert paths["redirected_env_dir"].read_text(
+                encoding="utf-8"
+            ) == "HEALTH_EVIDENCE_RUNTIME_ENABLED=false\n"
+        else:
+            assert list(paths["redirected_env_dir"].glob("*")) == []
 
 
 def test_release_rollback_env_restore_failure_never_claims_success(
@@ -900,6 +1291,62 @@ def test_release_rollback_env_restore_failure_never_claims_success(
         rollback_env=rollback_env,
         candidate_env=candidate_env,
         fail_sync=True,
+    )
+
+    assert result.returncode != 0
+    assert "ROLLBACK_OK" not in result.stdout
+    assert paths["live_env"].read_text(encoding="utf-8") == candidate_env
+    assert paths["service_state"].read_text(encoding="utf-8").strip() == "inactive"
+    if paths["event_log"].exists():
+        assert "service-start" not in paths["event_log"].read_text(
+            encoding="utf-8"
+        )
+
+
+def test_release_rollback_post_rename_directory_sync_failure_stays_inactive(
+    tmp_path: Path,
+):
+    rollback_env = (
+        "CONFIG_REVISION=old\n"
+        "HEALTH_EVIDENCE_RUNTIME_ENABLED=false\n"
+    )
+    result, paths = _run_rollback_with_env_snapshots(
+        tmp_path,
+        runtime_result="restored",
+        rollback_env=rollback_env,
+        candidate_env=(
+            "CONFIG_REVISION=candidate\n"
+            "HEALTH_EVIDENCE_RUNTIME_ENABLED=false\n"
+        ),
+        sync_fail_on_call=2,
+    )
+
+    assert result.returncode != 0
+    assert "ROLLBACK_OK" not in result.stdout
+    assert paths["live_env"].read_text(encoding="utf-8") == rollback_env
+    assert paths["service_state"].read_text(encoding="utf-8").strip() == "inactive"
+    if paths["event_log"].exists():
+        assert "service-start" not in paths["event_log"].read_text(
+            encoding="utf-8"
+        )
+
+
+def test_release_rollback_env_rename_failure_never_claims_success(
+    tmp_path: Path,
+):
+    candidate_env = (
+        "CONFIG_REVISION=candidate\n"
+        "HEALTH_EVIDENCE_RUNTIME_ENABLED=false\n"
+    )
+    result, paths = _run_rollback_with_env_snapshots(
+        tmp_path,
+        runtime_result="restored",
+        rollback_env=(
+            "CONFIG_REVISION=old\n"
+            "HEALTH_EVIDENCE_RUNTIME_ENABLED=false\n"
+        ),
+        candidate_env=candidate_env,
+        fail_mv=True,
     )
 
     assert result.returncode != 0

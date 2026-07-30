@@ -397,10 +397,36 @@ class ReleaseTransaction:
 
     def _assert_release_lock(self, lock_dir: Path, token: str) -> None:
         _validate_lock_inputs(lock_dir, token)
+        lock_state = self._validate_directory(lock_dir, required=True)
+        if (
+            lock_state is None
+            or lock_state.st_uid != self.layout.root_uid
+            or lock_state.st_gid != self.layout.root_gid
+            or stat.S_IMODE(lock_state.st_mode) != 0o700
+        ):
+            raise TransactionError("release lock must be root-owned mode 0700")
         token_path = lock_dir / "token"
-        self._validate_regular(token_path, allow_writable=False)
-        if token_path.read_text(encoding="utf-8").rstrip("\n") != token:
+        token_state = self._validate_regular(token_path, allow_writable=False)
+        if (
+            token_state.st_uid != self.layout.root_uid
+            or token_state.st_gid != self.layout.root_gid
+            or stat.S_IMODE(token_state.st_mode) != 0o600
+        ):
+            raise TransactionError("release lock token must be root-owned mode 0600")
+        if token_path.read_text(encoding="utf-8") != f"{token}\n":
             raise TransactionError("release lock ownership changed")
+        stage_path = lock_dir / "stage"
+        stage_state = self._validate_regular(stage_path, allow_writable=False)
+        if (
+            stage_state.st_uid != self.layout.root_uid
+            or stage_state.st_gid != self.layout.root_gid
+            or stat.S_IMODE(stage_state.st_mode) != 0o600
+        ):
+            raise TransactionError("release lock stage must be root-owned mode 0600")
+        if stage_path.read_text(encoding="utf-8") != (
+            f"{self.layout.release_stage}\n"
+        ):
+            raise TransactionError("release lock stage changed")
 
     def _validate_regular(
         self,
@@ -523,6 +549,96 @@ class ReleaseTransaction:
             raise TransactionError(f"unexpected celery-beat schedule path: {schedule}")
         return schedule
 
+    def _stable_exec_start(self, value: str) -> str:
+        error = "unsupported systemd ExecStart shape"
+
+        def field(item: str, prefix: str) -> str:
+            if not item.startswith(prefix):
+                raise TransactionError(error)
+            result = item[len(prefix) :]
+            if not result:
+                raise TransactionError(error)
+            return result
+
+        if "\n" in value:
+            if "\r" in value:
+                raise TransactionError(error)
+            configured = value.split("\n")
+            if len(configured) != 3:
+                raise TransactionError(error)
+            path = field(configured[0], "path=")
+            argv = field(configured[1], "argv[]=")
+            ignore_errors = field(configured[2], "ignore_errors=")
+        else:
+            if not value.startswith("{ ") or not value.endswith(" }"):
+                raise TransactionError(error)
+            configured = value[2:-2].split(" ; ")
+            if len(configured) != 8:
+                raise TransactionError(error)
+            path = field(configured[0], "path=")
+            argv = field(configured[1], "argv[]=")
+            ignore_errors = field(configured[2], "ignore_errors=")
+            start_time = field(configured[3], "start_time=")
+            stop_time = field(configured[4], "stop_time=")
+            pid = field(configured[5], "pid=")
+            code = field(configured[6], "code=")
+            status = field(configured[7], "status=")
+            if (
+                re.fullmatch(r"\[[^]\r\n]*\]", start_time) is None
+                or re.fullmatch(r"\[[^]\r\n]*\]", stop_time) is None
+                or not pid.isdigit()
+                or re.fullmatch(
+                    r"(?:\(null\)|[A-Za-z][A-Za-z0-9_-]*)",
+                    code,
+                )
+                is None
+                or re.fullmatch(r"[A-Za-z0-9_()+/.-]+", status) is None
+            ):
+                raise TransactionError(error)
+        if (
+            re.fullmatch(r"/[A-Za-z0-9_./@:+-]+", path) is None
+            or ignore_errors not in {"yes", "no"}
+            or any(character in argv for character in ";{}\r\n\0")
+            or (argv != path and not argv.startswith(f"{path} "))
+        ):
+            raise TransactionError(error)
+        return "\n".join(
+            (
+                f"path={path}",
+                f"argv[]={argv}",
+                f"ignore_errors={ignore_errors}",
+            )
+        )
+
+    def _stable_effective_snapshot(
+        self,
+        value: object,
+    ) -> dict[str, dict[str, str]]:
+        properties = {
+            "FragmentPath",
+            "DropInPaths",
+            "ExecStart",
+            "ReadWritePaths",
+        }
+        if not isinstance(value, Mapping) or set(value) != set(UNITS):
+            raise TransactionError("invalid effective config unit set")
+        result: dict[str, dict[str, str]] = {}
+        for unit in UNITS:
+            unit_value = value[unit]
+            if not isinstance(unit_value, Mapping) or set(unit_value) != properties:
+                raise TransactionError(
+                    f"invalid effective config property set for {unit}"
+                )
+            if any(not isinstance(item, str) for item in unit_value.values()):
+                raise TransactionError(
+                    f"invalid effective config property value for {unit}"
+                )
+            result[unit] = dict(unit_value)
+            result[unit]["ExecStart"] = self._stable_exec_start(
+                unit_value["ExecStart"]
+            )
+        return result
+
     def _old_effective(self) -> dict[str, dict[str, str]]:
         result: dict[str, dict[str, str]] = {}
         for unit in UNITS:
@@ -540,8 +656,9 @@ class ReleaseTransaction:
                     "ReadWritePaths",
                 ),
             }
-        self._schedule_path(result["celery-beat.service"]["ExecStart"])
-        return result
+        stable = self._stable_effective_snapshot(result)
+        self._schedule_path(stable["celery-beat.service"]["ExecStart"])
+        return stable
 
     def _assert_boot_gate_units_inactive(self) -> None:
         for unit in BOOT_GATE_UNITS:
@@ -1321,9 +1438,15 @@ class ReleaseTransaction:
 
     def _verify_snapshot_record(
         self,
-        record: Mapping,
+        record: object,
         snapshot: Path,
     ) -> None:
+        self._validate_upload_manifest_record(
+            record,
+            label="snapshot record",
+        )
+        if not isinstance(record, dict):
+            raise TransactionError(f"invalid snapshot record: {snapshot}")
         if record.get("exists") is False:
             if snapshot.exists() or snapshot.is_symlink():
                 raise TransactionError(
@@ -1406,11 +1529,45 @@ class ReleaseTransaction:
     def _verify_all_snapshots(self, journal: Mapping) -> None:
         root = self.layout.transaction_root / "snapshots"
         snapshots = journal.get("snapshots")
-        if not isinstance(snapshots, dict):
+        expected_top_level = {
+            "dropins",
+            "shelf",
+            "runtime_legacy",
+            "runtime_current",
+            "dedao_legacy",
+            "dedao_current",
+            "uploads_legacy",
+            "uploads_current",
+        }
+        if (
+            not isinstance(snapshots, dict)
+            or set(snapshots) != expected_top_level
+        ):
             raise TransactionError("transaction snapshot manifest is missing")
+        dropins = snapshots["dropins"]
+        shelf = snapshots["shelf"]
+        runtime_legacy = snapshots["runtime_legacy"]
+        runtime_current = snapshots["runtime_current"]
+        shelf_labels = {suffix or "base" for suffix in SHELF_SUFFIXES}
+        if (
+            not isinstance(dropins, dict)
+            or set(dropins) != set(UNITS)
+            or not isinstance(shelf, dict)
+            or set(shelf) != {"legacy", "current"}
+            or any(
+                not isinstance(shelf[namespace], dict)
+                or set(shelf[namespace]) != shelf_labels
+                for namespace in ("legacy", "current")
+            )
+            or not isinstance(runtime_legacy, dict)
+            or set(runtime_legacy) != set(RUNTIME_ITEMS)
+            or not isinstance(runtime_current, dict)
+            or set(runtime_current) != set(RUNTIME_ITEMS)
+        ):
+            raise TransactionError("invalid transaction snapshot structure")
         for unit in UNITS:
             self._verify_snapshot_record(
-                snapshots["dropins"][unit],
+                dropins[unit],
                 root / "dropins" / unit,
             )
         for namespace in ("legacy", "current"):
@@ -1446,6 +1603,71 @@ class ReleaseTransaction:
             root / "uploads-current",
         )
 
+    def _validate_journal_metadata(self, value: object) -> None:
+        if not isinstance(value, dict) or set(value) != {
+            "backend_data",
+            "runtime_root",
+            "beat_state_dir",
+        }:
+            raise TransactionError("invalid transaction metadata structure")
+        for name in ("backend_data", "runtime_root", "beat_state_dir"):
+            record = value[name]
+            if record is None:
+                if name == "backend_data":
+                    raise TransactionError(
+                        "backend data metadata cannot be absent"
+                    )
+                continue
+            if not isinstance(record, dict) or set(record) != {
+                "uid",
+                "gid",
+                "mode",
+            }:
+                raise TransactionError(
+                    f"invalid transaction metadata record: {name}"
+                )
+            for field in ("uid", "gid"):
+                field_value = record[field]
+                if (
+                    isinstance(field_value, bool)
+                    or not isinstance(field_value, int)
+                    or not 0 <= field_value <= 2**31 - 1
+                ):
+                    raise TransactionError(
+                        f"invalid transaction metadata record: {name}"
+                    )
+            mode = record["mode"]
+            if (
+                isinstance(mode, bool)
+                or not isinstance(mode, int)
+                or not 0 <= mode <= 0o777
+                or mode & 0o022
+            ):
+                raise TransactionError(
+                    f"unsafe transaction metadata record: {name}"
+                )
+
+    def _validate_metadata_snapshot_consistency(
+        self,
+        journal: Mapping,
+    ) -> None:
+        metadata = journal["metadata"]
+        snapshots = journal["snapshots"]
+        if metadata["runtime_root"] is None and any(
+            record["exists"] is not False
+            for record in snapshots["runtime_current"].values()
+        ):
+            raise TransactionError(
+                "runtime snapshot exists without runtime root metadata"
+            )
+        if metadata["beat_state_dir"] is None and any(
+            record["exists"] is not False
+            for record in snapshots["shelf"]["current"].values()
+        ):
+            raise TransactionError(
+                "beat snapshot exists without beat state metadata"
+            )
+
     def _load_journal(self) -> dict:
         self._validate_transaction_location()
         path = self.layout.transaction_root / "journal.json"
@@ -1456,6 +1678,9 @@ class ReleaseTransaction:
             raise TransactionError("invalid transaction journal") from exc
         if not isinstance(journal, dict) or journal.get("version") != 1:
             raise TransactionError("unsupported transaction journal")
+        journal["old_effective"] = self._stable_effective_snapshot(
+            journal.get("old_effective")
+        )
         _validate_sha(str(journal.get("old_sha")), "journal old SHA")
         _validate_sha(
             str(journal.get("candidate_sha")),
@@ -1559,6 +1784,8 @@ class ReleaseTransaction:
                 raise TransactionError("arming journal cannot publish snapshots")
         else:
             self._verify_all_snapshots(journal)
+            self._validate_journal_metadata(journal.get("metadata"))
+            self._validate_metadata_snapshot_consistency(journal)
         return journal
 
     def _finish_prepare(
@@ -1575,10 +1802,14 @@ class ReleaseTransaction:
         self._recover_scoped_orphans(journal)
         self._fault("prepare:after-gate")
         confirmed_effective = self._old_effective()
-        if confirmed_effective != journal["old_effective"]:
+        expected_effective = self._stable_effective_snapshot(
+            journal["old_effective"]
+        )
+        if confirmed_effective != expected_effective:
             raise TransactionError(
                 "effective config changed while preparing transaction"
             )
+        journal["old_effective"] = expected_effective
         self._assert_release_lock(lock_dir, token)
         transaction_id = journal["transaction_id"]
         build_root = (
@@ -1900,11 +2131,22 @@ class ReleaseTransaction:
             return
         if record.get("exists") is not True:
             raise TransactionError(f"invalid {label}")
-        for field in ("uid", "gid", "mode"):
+        for field in ("uid", "gid"):
             value = record.get(field)
-            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, int)
+                or not 0 <= value <= 2**31 - 1
+            ):
                 raise TransactionError(f"invalid {label}")
-        if int(record["mode"]) & 0o022:
+        mode = record.get("mode")
+        if (
+            isinstance(mode, bool)
+            or not isinstance(mode, int)
+            or not 0 <= mode <= 0o777
+        ):
+            raise TransactionError(f"invalid {label}")
+        if mode & 0o022:
             raise TransactionError(f"unsafe {label}")
         kind = record.get("kind")
         if kind == "file":
@@ -2696,7 +2938,11 @@ class ReleaseTransaction:
                 mode=0o644,
             )
 
-    def _validate_candidate_effective(self) -> None:
+    def _validate_candidate_effective(self, journal: Mapping) -> None:
+        old_effective = self._stable_effective_snapshot(
+            journal.get("old_effective")
+        )
+        candidate_exec_start: dict[str, str] = {}
         for unit in UNITS:
             if self.systemd.show(unit, "FragmentPath") != str(
                 self.layout.base_units[unit]
@@ -2705,6 +2951,30 @@ class ReleaseTransaction:
             dropins = self.systemd.show(unit, "DropInPaths").split()
             if str(self.layout.live_dropins[unit]) not in dropins:
                 raise TransactionError(f"candidate drop-in is not effective for {unit}")
+            actual_exec_start = self._stable_exec_start(
+                self.systemd.show(unit, "ExecStart")
+            )
+            if unit == "celery-beat.service":
+                celery = Path("/opt/health-app/backend/venv/bin/celery")
+                expected_exec_start = "\n".join(
+                    (
+                        f"path={celery}",
+                        (
+                            f"argv[]={celery} "
+                            "-A app.celery_app:celery_app beat "
+                            "--loglevel=info "
+                            f"--schedule={self.layout.current_shelf_base}"
+                        ),
+                        "ignore_errors=no",
+                    )
+                )
+            else:
+                expected_exec_start = old_effective[unit]["ExecStart"]
+            if actual_exec_start != expected_exec_start:
+                raise TransactionError(
+                    f"candidate ExecStart mismatch for {unit}"
+                )
+            candidate_exec_start[unit] = actual_exec_start
             writable = {
                 value.removeprefix("-")
                 for value in self.systemd.show(unit, "ReadWritePaths").split()
@@ -2734,7 +3004,7 @@ class ReleaseTransaction:
                         "celery-beat writable paths exceed its state boundary"
                     )
         schedule = self._schedule_path(
-            self.systemd.show("celery-beat.service", "ExecStart")
+            candidate_exec_start["celery-beat.service"]
         )
         if schedule != self.layout.current_shelf_base:
             raise TransactionError("candidate celery-beat schedule is not current")
@@ -2756,7 +3026,7 @@ class ReleaseTransaction:
             raise TransactionError("transaction SHA mismatch")
         self._verify_boot_gate_armed(journal)
         if journal["phase"] in {"INSTALLED", "COMMITTING", "COMMITTED"}:
-            self._validate_candidate_effective()
+            self._validate_candidate_effective(journal)
             return str(journal["phase"])
         if journal["phase"] not in {"PREPARED", "RESTORED"}:
             raise TransactionError("transaction is not installable")
@@ -2789,7 +3059,7 @@ class ReleaseTransaction:
         self._install_dropins()
         self._assert_release_lock(lock_dir, token)
         self.systemd.daemon_reload()
-        self._validate_candidate_effective()
+        self._validate_candidate_effective(journal)
         self._write_journal_phase(journal, "INSTALLED")
         self._assert_release_lock(lock_dir, token)
         return "INSTALLED"
@@ -2882,7 +3152,8 @@ class ReleaseTransaction:
             )
 
     def _validate_old_effective(self, journal: Mapping) -> None:
-        expected = journal["old_effective"]
+        expected = self._stable_effective_snapshot(journal["old_effective"])
+        actual = self._old_effective()
         for unit in UNITS:
             for prop in (
                 "FragmentPath",
@@ -2890,8 +3161,7 @@ class ReleaseTransaction:
                 "ExecStart",
                 "ReadWritePaths",
             ):
-                actual = self.systemd.show(unit, prop)
-                if actual != expected[unit][prop]:
+                if actual[unit][prop] != expected[unit][prop]:
                     raise TransactionError(
                         f"old effective config mismatch: {unit} {prop}"
                     )
@@ -2915,7 +3185,7 @@ class ReleaseTransaction:
                 "COMMITTED",
             }:
                 raise TransactionError("candidate cannot be retained before install")
-            self._validate_candidate_effective()
+            self._validate_candidate_effective(journal)
             self._verify_upload_authority(journal, target="candidate")
             if journal["boot_gate_released"]:
                 self._verify_original_enablement(journal)
@@ -3023,7 +3293,7 @@ class ReleaseTransaction:
         if journal["phase"] not in {"INSTALLED", "COMMITTING"}:
             if journal["phase"] != "COMMITTED":
                 raise TransactionError("transaction is not committable")
-        self._validate_candidate_effective()
+        self._validate_candidate_effective(journal)
         self._verify_upload_authority(journal, target="candidate")
         if journal["phase"] in {"INSTALLED", "COMMITTING"}:
             self._verify_boot_gate_armed(journal)
@@ -3080,7 +3350,7 @@ class ReleaseTransaction:
             or journal["boot_gate_released"] is not True
         ):
             raise TransactionError("finalize requires committed released candidate")
-        self._validate_candidate_effective()
+        self._validate_candidate_effective(journal)
         self._verify_upload_authority(journal, target="candidate")
         self._verify_original_enablement(journal)
         self._assert_release_lock(lock_dir, token)
