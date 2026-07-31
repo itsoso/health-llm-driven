@@ -1,5 +1,7 @@
 from dataclasses import FrozenInstanceError
 from inspect import getsource
+import json
+from pathlib import Path
 
 import pytest
 
@@ -591,6 +593,44 @@ def _assert_raw_action_spans(text, actions):
         }
 
 
+_SAFETY_CASES_PATH = (
+    Path(__file__).parent
+    / "fixtures"
+    / "utterance_action_evidence_safety_cases.json"
+)
+
+
+def _authorization_eligible(action):
+    return (
+        action.actor == "user"
+        and action.polarity == "positive"
+        and action.modality == "command"
+        and action.target != "unknown"
+    )
+
+
+@pytest.mark.parametrize(
+    "case",
+    json.loads(_SAFETY_CASES_PATH.read_text(encoding="utf-8")),
+    ids=lambda case: case["id"],
+)
+def test_fixed_authorization_safety_corpus(case):
+    parsed = parse_action_evidence(case["text"])
+
+    actual = [
+        {
+            "surface": case["text"][action.start : action.end],
+            "actor": action.actor,
+            "target": action.target,
+            "polarity": action.polarity,
+            "modality": action.modality,
+            "eligible": _authorization_eligible(action),
+        }
+        for action in parsed.actions
+    ]
+    assert actual == case["actions"]
+
+
 @pytest.mark.parametrize(
     ("text", "expected"),
     (
@@ -971,7 +1011,7 @@ def test_user_cue_inside_provider_report_does_not_steal_authority(text):
         ),
         (
             "医生说是腰肌劳损。请记录医生诊断",
-            (("save", "clinician"),),
+            (("save", "user"),),
         ),
     ),
 )
@@ -1445,16 +1485,79 @@ def test_basis_modifier_excludes_all_nested_targets_before_resolution():
 def test_occurrence_extractor_preserves_task_1a_raw_spans():
     source = getsource(utterance_action_evidence)
 
-    assert "enumerate(raw_candidates)" in source
-    assert "enumerate(resolved_candidates)" in source
-    assert ".index(" not in source
+    assert ".find(" not in source
+    assert ".rfind(" not in source
 
     text = "医生说请删除用药记录，然后我想保存诊断记录"
-    parsed = parse_action_evidence(text)
+    parsed, lexical_index = (
+        utterance_action_evidence._parse_action_evidence_with_index(text)
+    )
+    assert lexical_index.scanner_runs == 1
     assert tuple(text[action.start : action.end] for action in parsed.actions) == (
         "删除",
         "保存",
     )
+
+
+def test_single_scanner_work_units_scale_near_linearly():
+    unit = "医生说‘请删除用药记录’，然后请记录腰痛。"
+    single, single_index = (
+        utterance_action_evidence._parse_action_evidence_with_index(unit)
+    )
+    repeated, repeated_index = (
+        utterance_action_evidence._parse_action_evidence_with_index(unit * 16)
+    )
+
+    assert single_index.scanner_runs == repeated_index.scanner_runs == 1
+    assert len(repeated.actions) == len(single.actions) * 16
+    assert repeated_index.work_units <= single_index.work_units * 18
+
+
+def test_candidate_processing_does_not_rescan_full_text():
+    source = getsource(utterance_action_evidence)
+
+    assert ".find(" not in source
+    assert ".rfind(" not in source
+    assert "import re" not in source
+
+
+@pytest.mark.parametrize("modifier", ("写成的", "整理的", "开具的", "汇编的"))
+def test_right_hand_target_head_is_independent_of_modifier_vocabulary(modifier):
+    text = f"删除根据医生对用药的建议{modifier}诊断记录"
+
+    parsed = parse_action_evidence(text)
+
+    assert tuple(
+        (action.action, action.target, action.modality)
+        for action in parsed.actions
+    ) == (("delete", "clinician_record", "command"),)
+
+
+@pytest.mark.parametrize("unknown_prefix", ("或许", "大概", "不宜", "万一"))
+def test_unknown_prefix_never_defaults_to_command(unknown_prefix):
+    text = f"根据医生建议{unknown_prefix}删除用药记录"
+
+    parsed = parse_action_evidence(text)
+
+    assert tuple(action.modality for action in parsed.actions) == ("unknown",)
+
+
+def test_embedded_history_does_not_change_outer_command_modality():
+    parsed = parse_action_evidence("查看曾经删除过的用药记录")
+
+    assert tuple(
+        (action.action, action.modality) for action in parsed.actions
+    ) == (("read", "command"), ("delete", "statement"))
+
+
+def test_user_cue_outside_quote_proves_the_quoted_user_command():
+    text = "医生说要删除用药记录但请“保存诊断记录”"
+
+    parsed = parse_action_evidence(text)
+
+    assert tuple(
+        (action.actor, action.modality) for action in parsed.actions
+    ) == (("clinician", "command"), ("user", "command"))
 
 
 def test_structured_action_candidates_exactly_cover_shared_lexicon():

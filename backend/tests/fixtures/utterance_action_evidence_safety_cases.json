@@ -1,0 +1,184 @@
+[
+  {
+    "id": "outer_report_beats_inner_basis",
+    "text": "医生说根据康复师建议删除用药记录",
+    "actions": [
+      {"surface": "删除", "actor": "clinician", "target": "medication", "polarity": "positive", "modality": "command", "eligible": false}
+    ]
+  },
+  {
+    "id": "outer_report_beats_inner_diagnosis_basis",
+    "text": "医生说依据物理治疗师诊断保存诊断记录",
+    "actions": [
+      {"surface": "保存", "actor": "clinician", "target": "clinician_record", "polarity": "positive", "modality": "command", "eligible": false}
+    ]
+  },
+  {
+    "id": "nested_report_quote_beats_basis",
+    "text": "我说“根据医生建议‘请删除用药记录’”",
+    "actions": [
+      {"surface": "删除", "actor": "clinician", "target": "medication", "polarity": "positive", "modality": "command", "eligible": false}
+    ]
+  },
+  {
+    "id": "should_or_should_not_question",
+    "text": "根据医生建议应不应该删除用药记录",
+    "actions": [
+      {"surface": "删除", "actor": "user", "target": "medication", "polarity": "positive", "modality": "question", "eligible": false}
+    ]
+  },
+  {
+    "id": "good_or_not_question",
+    "text": "根据医生建议删除用药记录好不好",
+    "actions": [
+      {"surface": "删除", "actor": "user", "target": "medication", "polarity": "positive", "modality": "question", "eligible": false}
+    ]
+  },
+  {
+    "id": "conditional_action",
+    "text": "根据医生建议如果删除用药记录会怎么样",
+    "actions": [
+      {"surface": "删除", "actor": "user", "target": "medication", "polarity": "positive", "modality": "unknown", "eligible": false}
+    ]
+  },
+  {
+    "id": "negative_should_not",
+    "text": "根据医生建议不应删除用药记录",
+    "actions": [
+      {"surface": "删除", "actor": "user", "target": "medication", "polarity": "negative", "modality": "unknown", "eligible": false}
+    ]
+  },
+  {
+    "id": "negative_must_not",
+    "text": "根据医生建议不得删除用药记录",
+    "actions": [
+      {"surface": "删除", "actor": "user", "target": "medication", "polarity": "negative", "modality": "unknown", "eligible": false}
+    ]
+  },
+  {
+    "id": "negative_refusal",
+    "text": "根据医生建议拒绝删除用药记录",
+    "actions": [
+      {"surface": "删除", "actor": "user", "target": "medication", "polarity": "negative", "modality": "unknown", "eligible": false}
+    ]
+  },
+  {
+    "id": "negative_coordination_propagates",
+    "text": "不要删除再保存任何用药记录",
+    "actions": [
+      {"surface": "删除", "actor": "user", "target": "medication", "polarity": "negative", "modality": "command", "eligible": false},
+      {"surface": "保存", "actor": "user", "target": "medication", "polarity": "negative", "modality": "command", "eligible": false}
+    ]
+  },
+  {
+    "id": "relative_delete_is_not_command",
+    "text": "根据医生建议查看删除前的用药记录",
+    "actions": [
+      {"surface": "查看", "actor": "user", "target": "medication", "polarity": "positive", "modality": "command", "eligible": true},
+      {"surface": "删除", "actor": "user", "target": "medication", "polarity": "positive", "modality": "statement", "eligible": false}
+    ]
+  },
+  {
+    "id": "historical_update_is_not_command",
+    "text": "根据医生建议分析调整以前的用药剂量",
+    "actions": [
+      {"surface": "分析", "actor": "user", "target": "medication", "polarity": "positive", "modality": "command", "eligible": true},
+      {"surface": "调整", "actor": "user", "target": "medication", "polarity": "positive", "modality": "statement", "eligible": false}
+    ]
+  },
+  {
+    "id": "completed_delete_is_not_command",
+    "text": "根据医生建议我曾删除用药记录",
+    "actions": [
+      {"surface": "删除", "actor": "user", "target": "medication", "polarity": "positive", "modality": "statement", "eligible": false}
+    ]
+  },
+  {
+    "id": "delete_record_is_a_noun",
+    "text": "根据医生建议查看用药删除记录",
+    "actions": [
+      {"surface": "查看", "actor": "user", "target": "medication", "polarity": "positive", "modality": "command", "eligible": true}
+    ]
+  },
+  {
+    "id": "right_hand_diagnosis_head_after_written_modifier",
+    "text": "删除根据医生对用药的建议写成的诊断记录",
+    "actions": [
+      {"surface": "删除", "actor": "user", "target": "clinician_record", "polarity": "positive", "modality": "command", "eligible": true}
+    ]
+  },
+  {
+    "id": "right_hand_diagnosis_head_after_arranged_modifier",
+    "text": "删除根据医生对用药的建议整理的诊断记录",
+    "actions": [
+      {"surface": "删除", "actor": "user", "target": "clinician_record", "polarity": "positive", "modality": "command", "eligible": true}
+    ]
+  },
+  {
+    "id": "conflicting_plan_and_record_heads",
+    "text": "保存康复计划并诊断记录",
+    "actions": []
+  },
+  {
+    "id": "basis_does_not_hide_conflicting_heads",
+    "text": "根据医生建议保存康复计划和诊断记录",
+    "actions": []
+  },
+  {
+    "id": "bare_imperative",
+    "text": "删除用药记录",
+    "actions": [
+      {"surface": "删除", "actor": "user", "target": "medication", "polarity": "positive", "modality": "command", "eligible": true}
+    ]
+  },
+  {
+    "id": "polite_save",
+    "text": "请保存诊断记录",
+    "actions": [
+      {"surface": "保存", "actor": "user", "target": "clinician_record", "polarity": "positive", "modality": "command", "eligible": true}
+    ]
+  },
+  {
+    "id": "help_me_save",
+    "text": "帮我记录腰痛",
+    "actions": [
+      {"surface": "记录", "actor": "user", "target": "symptom", "polarity": "positive", "modality": "command", "eligible": true}
+    ]
+  },
+  {
+    "id": "ba_object_before_action",
+    "text": "把用药记录删除",
+    "actions": [
+      {"surface": "删除", "actor": "user", "target": "medication", "polarity": "positive", "modality": "command", "eligible": true}
+    ]
+  },
+  {
+    "id": "first_person_sync",
+    "text": "我要同步健康数据",
+    "actions": [
+      {"surface": "同步", "actor": "user", "target": "health_record", "polarity": "positive", "modality": "command", "eligible": true}
+    ]
+  },
+  {
+    "id": "clinician_basis_command",
+    "text": "根据医生建议删除用药记录",
+    "actions": [
+      {"surface": "删除", "actor": "user", "target": "medication", "polarity": "positive", "modality": "command", "eligible": true}
+    ]
+  },
+  {
+    "id": "provider_owned_quote",
+    "text": "医生说“请删除用药记录”",
+    "actions": [
+      {"surface": "删除", "actor": "clinician", "target": "medication", "polarity": "positive", "modality": "command", "eligible": false}
+    ]
+  },
+  {
+    "id": "explicit_user_command_after_report",
+    "text": "医生说要保存诊断。请删除用药记录",
+    "actions": [
+      {"surface": "保存", "actor": "clinician", "target": "clinician_content", "polarity": "positive", "modality": "command", "eligible": false},
+      {"surface": "删除", "actor": "user", "target": "medication", "polarity": "positive", "modality": "command", "eligible": true}
+    ]
+  }
+]
