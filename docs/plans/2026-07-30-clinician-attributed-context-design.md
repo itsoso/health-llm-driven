@@ -45,6 +45,68 @@ feature needs fields the journal cannot represent.
 
 ## Architecture
 
+### Architecture correction: clause-level provenance
+
+Three TDD and review cycles showed that marker precedence alone cannot safely
+separate a user's command from a command quoted from a clinician. The whole-text
+classifier first collected read/write/mutation keywords and then tried to
+repair actor attribution for individual actions. That design repeatedly:
+
+- treated “医生告诉我是……” as a user read command;
+- treated quoted clinician update/delete/sync language as user authorization;
+- rejected a valid second-clause command such as
+  “医生说是臀肌无力。请帮我记录一下”.
+
+The approved correction is a deterministic clause-level provenance frame. It
+replaces per-action position patches while preserving the existing public
+`IntentFrame`.
+
+The following alternatives were rejected:
+
+1. An LLM semantic classifier would understand more language but is too
+   non-deterministic, slow and expensive to carry medical write authority.
+2. A capability-policy-only deny layer would reduce unsafe writes but would not
+   fix incorrect read/advice routing or support a valid “state, then save”
+   interaction.
+
+### Clause frame
+
+The classifier splits the raw text before normalization so punctuation and
+newlines remain structural boundaries. It recognizes
+`，,。；;：:！？!?\n` and builds a private frame for each non-empty clause:
+
+```text
+source: user | clinician_quote
+action: read | save | update | delete | sync | none
+actor: user | clinician | ambiguous
+object: clinician_content | health_record | medication | unknown
+```
+
+This is an internal routing primitive, not a new persistence model or public
+API. Existing keyword sets may supply evidence to a clause frame, but no
+whole-text keyword can independently grant write authority.
+
+### Clause reduction
+
+Clause frames reduce to the existing `IntentFrame` under these rules:
+
+- A clinician-quoted clause never authorizes a tool.
+- A user action applies to an explicit object in the same clause.
+- A user save command with an omitted object may refer to the immediately
+  preceding clinician-content clause. This supports
+  “医生说是臀肌无力。请帮我记录一下”.
+- Delete, update and sync do not inherit an omitted object from clinician
+  content; they require an explicit object in the user's command clause.
+- Explicit user read/mutation commands keep their existing semantics.
+- If clinician provenance is present but the actor is ambiguous, reduction is
+  fail-closed to `chat / clinical_context / acknowledge` with
+  `is_write=False`.
+- Text without clinician provenance continues through the existing general
+  classifier path.
+
+The reliable model still owns the natural-language response. The deterministic
+clause frame owns routing and authorization only.
+
 ### Intent boundary
 
 Clinician-attribution markers such as “医生诊断”, “医生说”, “医生认为”,
@@ -112,6 +174,11 @@ User sentence
 
 ## Error Handling
 
+- Clause parsing is deterministic and local; it does not call an LLM.
+- Ambiguous actor or object attribution fails closed to a non-write
+  `clinical_context` turn.
+- Parsing does not emit user-visible exceptions or log the clinical text.
+- Newline and punctuation boundaries are preserved before text normalization.
 - Missing all text fields: structured local rejection; no dispatch.
 - Missing user identity: structured local rejection; no dispatch.
 - Invalid visit date: structured local rejection with correction guidance.
@@ -125,16 +192,22 @@ User sentence
 
 TDD covers each boundary independently:
 
-1. Exact screenshot sentence classifies as `clinical_context` and is not
+1. A clause matrix crosses source (user/clinician), action
+   (none/read/save/update/delete/sync), structure (single/multiple/newline) and
+   Chinese/ASCII punctuation boundaries.
+2. The exact screenshot sentence classifies as `clinical_context` and is not
    fast-record eligible.
-2. Explicit save and clinician question produce distinct write/advice frames.
-3. Ordinary current symptoms retain existing classification and deterministic
-   symptom recovery.
-4. Tool schema, registry and capability policy expose only the intended write.
-5. Adapter validation and persistence produce an owner-scoped verified receipt.
-6. Full context recalls saved feedback with provenance; minimal context omits it;
+3. “医生告诉我是……” and quoted read/update/delete/sync language never become
+   user actions.
+4. “医生说是……。请记录” is a valid user save, while ambiguous language fails
+   closed.
+5. Explicit user read/delete/update and ordinary current symptoms retain their
+   existing behavior.
+6. Tool schema, registry and capability policy expose only the intended write.
+7. Adapter validation and persistence produce an owner-scoped verified receipt.
+8. Full context recalls saved feedback with provenance; minimal context omits it;
    cache invalidation makes the next turn fresh.
-7. Focused Agent streaming regression proves the original sentence no longer
+9. Focused Agent streaming regression proves the original sentence no longer
    reaches the record-details fallback.
 
 ## Rollout
@@ -142,4 +215,3 @@ TDD covers each boundary independently:
 Backend-only deployment. No schema migration and no Mobile release. Verify the
 original sentence and an explicit-save sentence through the production Agent
 path, then ask the user to confirm the Mobile behavior before closing G6.
-

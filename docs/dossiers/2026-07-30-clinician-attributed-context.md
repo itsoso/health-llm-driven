@@ -11,7 +11,17 @@
 
 ## Correct Course
 
-- [ ] Correction Block
+- [x] Correction Block
+  - 触发：T1 连续三轮实现后，独立质量评审仍发现同类动作主体误判。
+  - 证据：“医生告诉我是……”被判为 read；医生转述的 update/delete/sync
+    被升级为用户 mutation；多分句“先转述、再保存”被误拒。
+  - 根因：全句先聚合动作关键词，再为个别动作修补主体；属于结构问题而非
+    marker 覆盖问题。
+  - 回退决策：停止第四轮关键词/位置补丁，重新进入定义环。
+  - 新方案：raw text 先分句，生成 source/action/actor/object 的私有
+    clause frame，再 fail-closed 归并到现有 `IntentFrame`。
+  - 用户裁决：2026-07-31 批准 clause-level provenance 方案、组件边界、
+    失败策略和测试矩阵。
 
 ## S0 · 用户需求（逐字）
 
@@ -74,16 +84,18 @@
 
 - 评审方式：Codex challenge
 - 已焊进设计的硬约束：
-  - clinician attribution 的优先级高于 symptom keyword。
+  - clause-level actor/provenance 判定先于全句 read/write/mutation keyword。
   - 保存必须有显式写意图并产生可验证回执。
   - 上下文标明“用户转述的医生意见”，禁止把来源升级成系统诊断。
   - 不新增表、不迁移、不自动变更 HealthProblem。
 - 待拍板分叉：无。
-- **裁决**：PASS —— 用户已批准推荐方案及持久化语义。
+- **裁决**：PASS（2026-07-31 重新裁决）—— 用户已批准 clause-level
+  provenance 重构及持久化语义。
 
 ## S4 · 研发任务分解
 
-- T1：意图帧与 fast-record 防误判（原句 + 普通症状守恒测试）。
+- T1：clause-level provenance frame、动作主体归属、fast-record
+  防误判（原句 + 用户命令守恒 + quoted action fail-closed）。
 - T2：模型可见工具、Kernel registry、回执契约与 capability policy。
 - T3：owner-scoped 写入 adapter、校验、回滚与敏感日志测试。
 - T4：完整上下文中的来源标记召回、长度限制与 cache invalidation。
