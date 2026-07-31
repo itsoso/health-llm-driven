@@ -4,7 +4,7 @@
 
 **Goal:** Make the Agent understand clinician-attributed health statements without treating them as incomplete symptom writes, while allowing an explicitly requested save to create a receipted clinician journal entry.
 
-**Architecture:** Introduce a provenance-bearing `clinical_context` intent before symptom keyword inference. Reuse `ClinicalJournalEntry(created_by="doctor")` through a new capability-gated Agent tool, then recall recent entries only in full personalized context with an explicit “用户转述” label. Keep bare statements read-only and leave `HealthProblem` unchanged.
+**Architecture:** Parse clinician-bearing input into private clause frames before whole-text keyword classification, then reduce source/action/actor/object evidence into the existing public `IntentFrame` with fail-closed write semantics. Reuse `ClinicalJournalEntry(created_by="doctor")` through a capability-gated Agent tool, then recall recent entries only in full personalized context with an explicit “用户转述” label. Keep bare statements read-only and leave `HealthProblem` unchanged.
 
 **Tech Stack:** FastAPI, SQLAlchemy, Pydantic tool schemas, pytest/pytest-asyncio, existing Agent Kernel capability and receipt infrastructure.
 
@@ -30,7 +30,7 @@
 - Do not hand-edit architecture counts; regenerate the system map if the tool
   registry changes the generated snapshot.
 
-## Task 1: Add the clinician-attributed intent frame
+## Task 1: Replace whole-text clinician heuristics with clause provenance
 
 **Files:**
 
@@ -39,57 +39,106 @@
 - Modify: `backend/app/services/utterance_intent_classifier.py`
 - Modify: `backend/app/services/agent_executor.py`
 
-### Step 1: Write failing classifier tests
+### Step 1: Write the failing clause-boundary matrix
 
-Add tests for the exact reported sentence:
+Add one parametrized test for valid “clinician statement, then user save”
+sequences:
 
 ```python
-def test_clinician_attributed_assessment_is_context_not_symptom_write():
-    intent = classify_agent_utterance(
-        "医生诊断是大腿和臀部肌肉无力导致腰肌代偿进而导致腰肌痛"
-    )
+@pytest.mark.parametrize(
+    "text",
+    [
+        "医生说是臀肌无力。请记录医生诊断：臀肌无力导致腰痛",
+        "医生说是臀肌无力，帮我记录一下",
+        "医生说是臀肌无力！请记录医生诊断：臀肌无力导致腰痛",
+        "医生说是臀肌无力\n请记录医生诊断：臀肌无力导致腰痛",
+    ],
+)
+def test_user_save_clause_can_reference_adjacent_clinician_context(text):
+    intent = classify_agent_utterance(text)
+
+    assert intent.primary == "write"
+    assert intent.domain == "clinical_context"
+    assert intent.operation == "create"
+    assert intent.is_write is True
+    assert intent.requires_reliable_tool_model is True
+```
+
+Add a quoted-action fail-closed matrix:
+
+```python
+@pytest.mark.parametrize(
+    "text",
+    [
+        "医生说要查看昨天用药记录",
+        "医生说要记录每天疼痛情况",
+        "医生说要调整用药",
+        "医生建议删除昨天的用药记录",
+        "医生说要同步最近的健康数据",
+        "康复师说请记录每天的疼痛",
+    ],
+)
+def test_quoted_clinician_action_never_becomes_user_authorization(text):
+    intent = classify_agent_utterance(text)
 
     assert intent.primary == "chat"
     assert intent.domain == "clinical_context"
     assert intent.operation == "acknowledge"
     assert intent.is_write is False
-    assert intent.requires_reliable_tool_model is True
 ```
 
-Add distinct tests for:
+Add high-frequency attribution tests:
 
 ```python
-"医生认为是臀肌无力导致腰痛，我该怎么处理？"
-# advice / clinical_context / analyze / not write
+@pytest.mark.parametrize(
+    "text",
+    [
+        "医生告诉我是臀肌无力导致腰痛",
+        "主治医生告诉我是臀肌无力导致腰痛",
+        "大夫告知是臀肌无力导致腰痛",
+    ],
+)
+def test_clinician_telling_user_is_context_not_agent_read_command(text):
+    intent = classify_agent_utterance(text)
 
-"请记录医生诊断：臀肌无力导致腰肌代偿"
-# write / clinical_context / create / reliable tool model
+    assert intent.primary == "chat"
+    assert intent.domain == "clinical_context"
+    assert intent.operation == "acknowledge"
+    assert intent.is_write is False
 ```
 
-Keep the existing ordinary symptom assertion, such as “今天腰痛 6 分”, as
-`write / symptom` so the new precedence does not disable real symptom logging.
+Keep the existing tests introduced by commits `22b906037`, `451b48c0c` and
+`65c05fb38`; they form the single-clause compatibility matrix.
 
-### Step 2: Write failing fast-record tests
+### Step 2: Write user-command conservation tests
 
-In `backend/tests/test_force_record_tool_choice.py`, assert:
+Parametrize existing direct user actions and assert their old behavior:
 
 ```python
-assert not _has_fast_record_write_intent(
-    "医生诊断是大腿和臀部肌肉无力导致腰肌代偿进而导致腰肌痛"
-)
-assert not _has_fast_record_write_intent(
-    "请记录医生诊断：臀肌无力导致腰肌代偿"
-)
+[
+    ("查看医生诊断记录", "read", "list"),
+    ("医生诊断记录有哪些？", "read", "ask"),
+    ("删除医生诊断记录", "mutate", "delete"),
+    ("把用药剂量调整为每天两次", "mutate", "update"),
+    ("今天腰痛 6 分", "write", "create"),
+]
 ```
 
-The explicit save is deliberately excluded from deterministic fast-record
-because it needs the reliable model and typed clinician-feedback tool.
+Keep these explicit clinician saves as write-positive cases:
 
-Add extractor defense-in-depth cases for attribution variants (“医生诊断”,
-“医生认为”, “医生评估”, “康复师认为”) and assert that they do not become
-ordinary symptom records.
+```python
+[
+    "请记录医生诊断：臀肌无力导致腰痛",
+    "我想记录医生诊断：臀肌无力导致腰痛",
+    "医生诊断请帮我记录一下",
+    "医生诊断，记一下",
+    "医生的诊断帮我保存下来",
+    "请把医生诊断记录下来",
+    "把医生说的内容保存下来",
+]
+```
 
-### Step 3: Run the focused tests and confirm RED
+### Step 3: Run the new tests and verify RED
 
 Run:
 
@@ -97,43 +146,145 @@ Run:
 DATABASE_URL=sqlite:///:memory: TZ=Asia/Shanghai /Users/liqiuhua/work/personal/health-llm-driven/backend/venv/bin/python -m pytest -q --no-cov backend/tests/test_utterance_intent_classifier.py backend/tests/test_force_record_tool_choice.py
 ```
 
-Expected failure: the clinician statement is classified as
-`write / symptom`, and the fast-record assertion fails.
+Expected: the new multi-clause and “医生告诉我” cases fail for the reviewer-
+observed reasons. Confirm the failures are behavior mismatches, not collection
+or fixture errors.
 
-### Step 4: Implement the smallest intent change
+### Step 4: Add private clause-frame types
 
 In `utterance_intent_classifier.py`:
 
-- add a constant tuple of clinician attribution markers;
-- add a string-membership helper without regex;
-- evaluate clinician attribution after question/write signals are calculated
-  but before symptom-domain write inference;
-- return:
-  - explicit save command → `write / clinical_context / create`;
-  - question/advice → `advice / clinical_context / analyze`;
-  - otherwise → `chat / clinical_context / acknowledge`;
-- require the reliable model for all three frames because medical attribution
-  needs nuanced response behavior.
+- define private enums or `Literal` aliases for clause source, action, actor and
+  object;
+- define a frozen private `_ClauseFrame` dataclass carrying:
 
-Use `_has_explicit_write_command`, not generic write-like tokens, so reported
-phrases such as “医生说我吃了药” do not become save commands.
+```python
+@dataclass(frozen=True)
+class _ClauseFrame:
+    text: str
+    source: str
+    action: str
+    actor: str
+    object_kind: str
+```
 
-In `agent_executor.py`, extend `_SYMPTOM_NON_SELF_MARKERS` with the attribution
-variants covered by the tests. This is a second safety boundary, not the primary
-classification mechanism.
+Do not change the public `IntentFrame` contract. Do not add a dependency or use
+regex; the existing source-level test forbids regex in this module.
 
-### Step 5: Run focused tests and confirm GREEN
+### Step 5: Split raw text before normalization
 
-Run the same command from Step 3.
+Implement a character scanner:
 
-Expected: all classifier and fast-record tests pass, including existing
-ordinary symptom behavior.
+```python
+_CLAUSE_BOUNDARIES = frozenset("，,。；;：:！？!?\n")
 
-### Step 6: Commit
+
+def _split_clauses(raw_text: str) -> tuple[str, ...]:
+    ...
+```
+
+Requirements:
+
+- preserve newline as a boundary before `_normalize` removes it;
+- return trimmed non-empty clauses;
+- treat consecutive punctuation as one boundary;
+- retain clause order;
+- do not allocate or parse more than the existing input text.
+
+Add direct unit tests for punctuation, newline, empty clauses and consecutive
+boundaries. Run those tests and make them green before continuing.
+
+### Step 6: Parse each clause once
+
+Implement one `_classify_clause(text)` path that determines all four fields:
+
+- quoted source markers include clinician/provider terms combined with
+  “说/表示/认为/建议/告诉/告知/评估/诊断/检查提示”;
+- a source marker before an action makes the action actor `clinician`;
+- otherwise a recognized action actor is `user`;
+- distinguish a clinician-content object from a clinician-record noun;
+- `告诉我/告知我` inside a clinician-source clause is attribution, not a user
+  read request;
+- an unrecognized/ambiguous object remains `unknown`.
+
+Reuse the existing action and domain vocabulary. Remove or collapse the
+per-action position helpers added by the three previous commits when the clause
+frame replaces them; do not keep two authorization algorithms.
+
+### Step 7: Reduce clause frames to `IntentFrame`
+
+Implement one reducer with these rules:
+
+```text
+clinician actor action
+  -> chat / clinical_context / acknowledge / no write
+
+user save + clinician object in same clause
+  -> write / clinical_context / create
+
+clinician content clause + immediately adjacent user save with omitted object
+  -> write / clinical_context / create
+
+user read/update/delete/sync
+  -> preserve existing operation only when its object is explicit in that
+     user clause
+
+clinician provenance + ambiguous actor/object
+  -> chat / clinical_context / acknowledge / no write
+
+no clinician provenance
+  -> existing general classifier path
+```
+
+Do not allow delete/update/sync to inherit an omitted object from a preceding
+clinician clause. Preserve reliable-model routing for every `clinical_context`
+frame.
+
+### Step 8: Keep deterministic symptom extraction as a second boundary
+
+In `agent_executor.py`, continue importing the shared clinician attribution
+vocabulary used by `_SYMPTOM_NON_SELF_MARKERS`. Do not duplicate the provider
+marker list and do not create a circular import.
+
+In `test_force_record_tool_choice.py`, keep the exact screenshot and explicit
+clinician-save cases out of fast-record. Keep attribution variants out of
+`_extract_clear_symptom_record`.
+
+### Step 9: Run focused tests and confirm GREEN
+
+Run the command from Step 3.
+
+Expected: every existing and new classifier/fast-record test passes, including
+the previously reported `92 passed` baseline plus the new clause matrix.
+
+Run the wider intent consumers:
+
+```bash
+DATABASE_URL=sqlite:///:memory: TZ=Asia/Shanghai /Users/liqiuhua/work/personal/health-llm-driven/backend/venv/bin/python -m pytest -q --no-cov backend/tests/test_agent_kernel_capability_policy.py backend/tests/test_agent_turn_outcome.py
+```
+
+Expected: no downstream contract regression.
+
+### Step 10: Inspect the replacement diff
+
+Run:
+
+```bash
+git diff --check
+git diff --stat 65c05fb38..HEAD
+```
+
+Confirm:
+
+- the clause frame is the single actor-authorization path;
+- obsolete positional helpers are removed;
+- no public contract, Mobile file, database model or `HealthProblem` changed.
+
+### Step 11: Commit
 
 ```bash
 git add backend/app/services/utterance_intent_classifier.py backend/app/services/agent_executor.py backend/tests/test_utterance_intent_classifier.py backend/tests/test_force_record_tool_choice.py
-git commit -m "fix(agent): distinguish clinician-attributed context"
+git commit -m "refactor(agent): classify clinician commands by clause provenance"
 ```
 
 ## Task 2: Define the typed write capability and policy
@@ -610,4 +761,3 @@ git push -u origin codex/clinical-context-intelligence
 
 Deployment and production smoke testing remain governed by G5/G6 and must not
 start from the dirty main workspace.
-
