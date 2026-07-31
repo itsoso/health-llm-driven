@@ -331,6 +331,18 @@ SYMPTOM_TERMS = (
     "恶心",
     "呕吐",
 )
+CLINICIAN_ATTRIBUTION_MARKERS = (
+    "医生诊断",
+    "医生认为",
+    "医生评估",
+    "医生判断",
+    "医生说",
+    "康复师诊断",
+    "康复师认为",
+    "康复师评估",
+    "康复师判断",
+    "康复师说",
+)
 MEAL_TYPES = {
     "breakfast": ("早餐", "早饭", "早上"),
     "lunch": ("午餐", "午饭", "中饭", "中午"),
@@ -382,6 +394,44 @@ def classify_agent_utterance(
         mutation = "update"
     has_negated_mutation = _has_negated_mutation(normalized, mutation)
     has_advice = _has_any(normalized, ADVICE_ACTIONS)
+
+    if _has_clinician_attribution(normalized):
+        if has_write_command and not has_negated_write:
+            return _intent(
+                raw,
+                normalized,
+                "write",
+                "clinical_context",
+                "create",
+                0.94,
+                "explicit_clinician_context_write",
+                scope,
+                is_write=True,
+                requires_reliable_tool_model=True,
+            )
+        if has_question or has_advice:
+            return _intent(
+                raw,
+                normalized,
+                "advice",
+                "clinical_context",
+                "analyze",
+                0.92,
+                "clinician_context_advice",
+                scope,
+                requires_reliable_tool_model=True,
+            )
+        return _intent(
+            raw,
+            normalized,
+            "chat",
+            "clinical_context",
+            "acknowledge",
+            0.92,
+            "clinician_context_statement",
+            scope,
+            requires_reliable_tool_model=True,
+        )
 
     is_diet_recalculate_update = (
         domain == "diet"
@@ -592,6 +642,10 @@ def _normalize(value: str) -> str:
 
 def _has_any(text: str, phrases: tuple[str, ...]) -> bool:
     return any(phrase.lower() in text for phrase in phrases)
+
+
+def _has_clinician_attribution(text: str) -> bool:
+    return _has_any(text, CLINICIAN_ATTRIBUTION_MARKERS)
 
 
 def _has_bounded_water_marker(

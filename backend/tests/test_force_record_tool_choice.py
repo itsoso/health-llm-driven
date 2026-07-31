@@ -135,6 +135,27 @@ def test_negation_guard_allows_genuine_records():
         assert classify_agent_utterance(msg).primary == "write", msg
 
 
+def test_clinician_attribution_never_uses_fast_record_model():
+    assert not _prefer_fast_record(
+        "医生诊断是大腿和臀部肌肉无力导致腰肌代偿进而导致腰肌痛"
+    )
+    assert not _prefer_fast_record(
+        "请记录医生诊断：臀肌无力导致腰肌代偿"
+    )
+
+
+def test_clinician_attribution_is_not_extracted_as_a_self_symptom():
+    import app.services.agent_executor as ae
+
+    for message in (
+        "医生诊断是大腿和臀部肌肉无力导致腰肌代偿进而导致腰肌痛",
+        "医生认为是臀肌无力导致腰痛",
+        "医生评估为臀肌无力导致腰痛",
+        "康复师认为是臀肌无力导致腰痛",
+    ):
+        assert ae._extract_clear_symptom_record(message) is None, message
+
+
 def test_negation_blocks_recovered_textual_record_authorization():
     """弱模型把 health_record 吐成文本时,「别记录」也不授权恢复执行(绕 fast-path 的第二道门)。"""
     import app.services.agent_executor as ae

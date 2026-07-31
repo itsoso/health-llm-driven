@@ -46,6 +46,61 @@ def test_clear_symptom_statement_is_write_intent():
     assert intent.is_write is True
 
 
+def test_clinician_attributed_assessment_is_context_not_symptom_write():
+    intent = classify_agent_utterance(
+        "医生诊断是大腿和臀部肌肉无力导致腰肌代偿进而导致腰肌痛"
+    )
+
+    assert intent.primary == "chat"
+    assert intent.domain == "clinical_context"
+    assert intent.operation == "acknowledge"
+    assert intent.is_write is False
+    assert intent.requires_reliable_tool_model is True
+
+
+def test_clinician_attributed_question_is_reliable_advice():
+    intent = classify_agent_utterance(
+        "医生认为是臀肌无力导致腰痛，我该怎么处理？"
+    )
+
+    assert intent.primary == "advice"
+    assert intent.domain == "clinical_context"
+    assert intent.operation == "analyze"
+    assert intent.is_write is False
+    assert intent.requires_reliable_tool_model is True
+
+
+def test_explicit_clinician_feedback_save_is_reliable_write():
+    intent = classify_agent_utterance(
+        "请记录医生诊断：臀肌无力导致腰肌代偿"
+    )
+
+    assert intent.primary == "write"
+    assert intent.domain == "clinical_context"
+    assert intent.operation == "create"
+    assert intent.is_write is True
+    assert intent.requires_reliable_tool_model is True
+
+
+def test_reported_clinician_medication_statement_is_not_a_save_command():
+    intent = classify_agent_utterance("医生说我吃了药")
+
+    assert intent.primary == "chat"
+    assert intent.domain == "clinical_context"
+    assert intent.operation == "acknowledge"
+    assert intent.is_write is False
+    assert intent.requires_reliable_tool_model is True
+
+
+def test_current_symptom_with_severity_remains_a_symptom_write():
+    intent = classify_agent_utterance("今天腰痛 6 分")
+
+    assert intent.primary == "write"
+    assert intent.domain == "symptom"
+    assert intent.operation == "create"
+    assert intent.is_write is True
+
+
 def test_natural_sneeze_recording_is_symptom_write_intent():
     intent = classify_agent_utterance("记录下来刚才打了一个喷嚏。")
 
