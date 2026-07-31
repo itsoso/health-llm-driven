@@ -85,6 +85,7 @@ _ACTION_VOCABULARY: tuple[tuple[str, ActionKind], ...] = tuple(
             ("查看", "read"),
             ("删除", "delete"),
             ("调整", "update"),
+            ("更新", "update"),
             ("同步", "sync"),
             ("分析", "advice"),
             ("生成", "media"),
@@ -98,11 +99,16 @@ _ACTION_VOCABULARY: tuple[tuple[str, ActionKind], ...] = tuple(
 _ACTION_SEPARATORS = (
     "然后",
     "随后",
+    "接着",
+    "但是",
     "不过",
     "可是",
     "并且",
     "同时",
     "但",
+    "而",
+    "后",
+    "并",
     "，",
     ",",
     "。",
@@ -120,14 +126,20 @@ _NEGATIVE_MARKERS = (
     "别",
 )
 _QUESTION_MARKERS = ("要不要", "是否需要", "是否")
-_RECORD_NOUN_PREFIXES = (
-    "医生诊断",
-    "诊断",
-    "用药",
-    "健康",
-    "病历",
-    "检查",
-    "昨天",
+_USER_AUTHORITY_CUES = (
+    "我想",
+    "我要",
+    "请",
+    "帮我",
+)
+_RECORD_NOUN_TERMS = (
+    "医生诊断记录",
+    "诊断记录",
+    "用药记录",
+    "健康记录",
+    "病历记录",
+    "检查记录",
+    "昨天记录",
 )
 _TARGET_TERMS: tuple[tuple[str, TargetKind], ...] = (
     ("用药剂量", "medication"),
@@ -141,6 +153,8 @@ _TARGET_TERMS: tuple[tuple[str, TargetKind], ...] = (
     ("每天腰痛", "symptom"),
     ("腰痛", "symptom"),
     ("疼痛", "symptom"),
+    ("体重71kg", "weight"),
+    ("体重", "weight"),
     ("饮食", "diet"),
     ("午餐", "diet"),
     ("康复图片", "media"),
@@ -464,26 +478,34 @@ def _is_record_noun(
     if candidate.verb != "记录":
         return False
 
+    noun_start = next(
+        (
+            candidate.end - len(term)
+            for term in _RECORD_NOUN_TERMS
+            if candidate.end >= len(term)
+            and text.startswith(
+                term,
+                candidate.end - len(term),
+                candidate.end,
+            )
+        ),
+        None,
+    )
+    if noun_start is None:
+        return False
+
     region_start = _region_start(text, candidate.start)
     region_end = _region_end(text, candidate.end)
-    leading_text = text[region_start : candidate.start].rstrip()
     after = text[candidate.end : region_end].lstrip()
 
-    prior_governing_action = any(
-        other.end <= candidate.start
+    prior_targeting_action = any(
+        other.end <= noun_start
         and other.start >= region_start
         and other.action in {"read", "update", "delete", "sync", "advice"}
         for other in raw_candidates
     )
-    if prior_governing_action:
+    if prior_targeting_action:
         return True
-
-    noun_prefix = any(
-        leading_text.endswith(prefix)
-        for prefix in _RECORD_NOUN_PREFIXES
-    )
-    if not noun_prefix:
-        return False
 
     specific_object = _target_match(
         text,
@@ -518,21 +540,55 @@ def _scan_action_candidates(
     )
 
 
+def _nearest_provider_before(
+    candidate: _ActionCandidate,
+    providers: tuple[ProviderEvidence, ...],
+) -> ProviderEvidence | None:
+    preceding = tuple(
+        provider
+        for provider in providers
+        if provider.end <= candidate.start
+    )
+    return preceding[-1] if preceding else None
+
+
+def _last_user_cue_start(text: str, *, start: int, end: int) -> int:
+    latest = -1
+    for cue in _USER_AUTHORITY_CUES:
+        cursor = text.find(cue, start, end)
+        while cursor >= 0:
+            latest = max(latest, cursor)
+            cursor = text.find(cue, cursor + len(cue), end)
+    return latest
+
+
 def _resolve_actor(
     text: str,
     candidate: _ActionCandidate,
     providers: tuple[ProviderEvidence, ...],
+    candidates: tuple[_ActionCandidate, ...],
 ) -> ActorKind:
-    start = _region_start(text, candidate.start)
-    governing = tuple(
-        provider
-        for provider in providers
-        if provider.start >= start and provider.end <= candidate.start
+    provider = _nearest_provider_before(candidate, providers)
+    previous_action_end = max(
+        (
+            other.end
+            for other in candidates
+            if other.end <= candidate.start
+        ),
+        default=0,
     )
-    if not governing:
+    cue_floor = max(
+        previous_action_end,
+        provider.end if provider is not None else 0,
+    )
+    if _last_user_cue_start(
+        text,
+        start=cue_floor,
+        end=candidate.start,
+    ) >= 0:
         return "user"
-
-    provider = governing[-1]
+    if provider is None:
+        return "user"
     if provider.relation == "basis":
         return "user"
     if provider.relation == "report":
@@ -601,12 +657,17 @@ def _resolve_modality(
     return "command"
 
 
-def _provenance(actor: ActorKind, providers: tuple[ProviderEvidence, ...]) -> str:
+def _provenance(
+    actor: ActorKind,
+    candidate: _ActionCandidate,
+    providers: tuple[ProviderEvidence, ...],
+) -> str:
     if actor == "clinician":
         return "clinician_reported_action"
     if actor == "ambiguous":
         return "ambiguous_clinician_context"
-    if any(provider.relation == "basis" for provider in providers):
+    provider = _nearest_provider_before(candidate, providers)
+    if provider is not None and provider.relation == "basis":
         return "clinician_basis_user_action"
     return "explicit_user_action"
 
@@ -618,7 +679,12 @@ def _scan_actions(
     candidates = _scan_action_candidates(text)
     actions: list[ActionEvidence] = []
     for candidate in candidates:
-        actor = _resolve_actor(text, candidate, providers)
+        actor = _resolve_actor(
+            text,
+            candidate,
+            providers,
+            candidates,
+        )
         target, target_start, target_end = _resolve_target(
             text,
             candidate,
@@ -635,7 +701,7 @@ def _scan_actions(
                 target_end=target_end,
                 polarity=_resolve_polarity(text, candidate),
                 modality=_resolve_modality(text, candidate),
-                provenance=_provenance(actor, providers),
+                provenance=_provenance(actor, candidate, providers),
             )
         )
     return tuple(actions)

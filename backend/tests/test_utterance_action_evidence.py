@@ -580,6 +580,7 @@ def _assert_raw_action_spans(text, actions):
             "查看",
             "删除",
             "调整",
+            "更新",
             "同步",
             "分析",
             "生成",
@@ -803,3 +804,127 @@ def test_polarity_is_resolved_per_action_occurrence():
         (action.action, action.polarity)
         for action in parsed.actions
     ) == (("save", "negative"), ("save", "positive"))
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    (
+        (
+            "医生说要保存诊断而我想记录今天腰痛",
+            (("保存", "clinician"), ("记录", "user")),
+        ),
+        (
+            "医生说要保存诊断接着请记录今天腰痛",
+            (("保存", "clinician"), ("记录", "user")),
+        ),
+        (
+            "医生说要保存诊断但是帮我记录今天腰痛",
+            (("保存", "clinician"), ("记录", "user")),
+        ),
+        (
+            "我想记录饮食而医生说要保存诊断",
+            (("记录", "user"), ("保存", "clinician")),
+        ),
+    ),
+)
+def test_actor_uses_nearest_structural_evidence_per_occurrence(
+    text,
+    expected,
+):
+    parsed = parse_action_evidence(text)
+
+    assert tuple(
+        (text[action.start : action.end], action.actor)
+        for action in parsed.actions
+    ) == expected
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    (
+        (
+            "请删除用药记录后记录今天腰痛",
+            (
+                ("delete", "medication"),
+                ("save", "symptom"),
+            ),
+        ),
+        (
+            "查看医生诊断记录后记录今天饮食",
+            (
+                ("read", "clinician_record"),
+                ("save", "diet"),
+            ),
+        ),
+        (
+            "分析医生诊断记录然后记录体重71kg",
+            (
+                ("advice", "clinician_record"),
+                ("save", "weight"),
+            ),
+        ),
+        (
+            "更新用药记录并记录今天腰痛",
+            (
+                ("update", "medication"),
+                ("save", "symptom"),
+            ),
+        ),
+    ),
+)
+def test_lexical_record_noun_span_does_not_swallow_later_save(
+    text,
+    expected,
+):
+    parsed = parse_action_evidence(text)
+
+    assert tuple(
+        (action.action, action.target)
+        for action in parsed.actions
+    ) == expected
+
+
+_ACTOR_MATRIX_PROVIDERS = (
+    "医生",
+    "大夫",
+    "医师",
+    "康复师",
+    "物理治疗师",
+)
+_REPORT_CONNECTIVE_STRUCTURES = (
+    "对我说要",
+    "跟我说要",
+    "叫我",
+    "指示我",
+    "给我的要求是",
+    "希望我",
+    "要求我",
+)
+
+
+@pytest.mark.parametrize("provider", _ACTOR_MATRIX_PROVIDERS)
+@pytest.mark.parametrize("connective", _REPORT_CONNECTIVE_STRUCTURES)
+def test_provider_and_report_connective_cross_product_never_authorizes_user(
+    provider,
+    connective,
+):
+    text = f"{provider}{connective}删除昨天用药记录"
+
+    parsed = parse_action_evidence(text)
+
+    assert len(parsed.actions) == 1
+    assert parsed.actions[0].actor in {"clinician", "ambiguous"}
+
+
+@pytest.mark.parametrize("provider", _ACTOR_MATRIX_PROVIDERS)
+@pytest.mark.parametrize("basis", ("根据", "依据", "按照"))
+def test_basis_and_provider_cross_product_keeps_user_authority(
+    provider,
+    basis,
+):
+    text = f"{basis}{provider}建议删除昨天用药记录"
+
+    parsed = parse_action_evidence(text)
+
+    assert len(parsed.actions) == 1
+    assert parsed.actions[0].actor == "user"
