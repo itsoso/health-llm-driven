@@ -136,12 +136,15 @@ def test_negation_guard_allows_genuine_records():
 
 
 def test_clinician_attribution_never_uses_fast_record_model():
-    assert not _prefer_fast_record(
-        "医生诊断是大腿和臀部肌肉无力导致腰肌代偿进而导致腰肌痛"
-    )
-    assert not _prefer_fast_record(
-        "请记录医生诊断：臀肌无力导致腰肌代偿"
-    )
+    for message in (
+        "医生诊断是大腿和臀部肌肉无力导致腰肌代偿进而导致腰肌痛",
+        "医生告诉我是臀肌无力导致腰痛",
+        "主治医生告诉我是臀肌无力导致腰痛",
+        "大夫告知是臀肌无力导致腰痛",
+        "请记录医生诊断：臀肌无力导致腰肌代偿",
+        "医生说是臀肌无力。请记录医生诊断：臀肌无力导致腰痛",
+    ):
+        assert not _prefer_fast_record(message), message
 
 
 def test_clinician_attribution_is_not_extracted_as_a_self_symptom():
@@ -155,6 +158,9 @@ def test_clinician_attribution_is_not_extracted_as_a_self_symptom():
         "医生的诊断是臀肌无力导致腰痛",
         "检查提示腰肌劳损导致疼痛",
         "大夫说是臀肌无力导致腰痛",
+        "医生告诉我是臀肌无力导致腰痛",
+        "主治医生告诉我是臀肌无力导致腰痛",
+        "大夫告知是臀肌无力导致腰痛",
     ):
         assert ae._extract_clear_symptom_record(message) is None, message
 

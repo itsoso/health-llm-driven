@@ -85,6 +85,25 @@ def test_explicit_clinician_feedback_save_is_reliable_write():
 @pytest.mark.parametrize(
     "message",
     (
+        "医生说是臀肌无力。请记录医生诊断：臀肌无力导致腰痛",
+        "医生说是臀肌无力，帮我记录一下",
+        "医生说是臀肌无力！请记录医生诊断：臀肌无力导致腰痛",
+        "医生说是臀肌无力\n请记录医生诊断：臀肌无力导致腰痛",
+    ),
+)
+def test_adjacent_user_save_authorizes_clinician_feedback(message):
+    intent = classify_agent_utterance(message)
+
+    assert intent.primary == "write"
+    assert intent.domain == "clinical_context"
+    assert intent.operation == "create"
+    assert intent.is_write is True
+    assert intent.requires_reliable_tool_model is True
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
         "医生说请记录医生诊断",
         "医生说请把医生诊断记录下来",
         "医生说要记录每天疼痛情况",
@@ -136,9 +155,12 @@ def test_user_ba_construction_authorizes_clinician_feedback_save():
 @pytest.mark.parametrize(
     "message",
     (
+        "医生说要查看昨天用药记录",
+        "医生说要记录每天疼痛情况",
         "医生说要调整用药",
         "医生建议删除昨天的用药记录",
         "医生说要同步最近的健康数据",
+        "康复师说请记录每天的疼痛",
         "医生说请把医生诊断记录删除",
     ),
 )
@@ -150,6 +172,81 @@ def test_clinician_reported_mutation_is_not_user_authorization(message):
     assert intent.operation == "acknowledge"
     assert intent.is_write is False
     assert intent.requires_reliable_tool_model is True
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "医生告诉我是臀肌无力导致腰痛",
+        "主治医生告诉我是臀肌无力导致腰痛",
+        "大夫告知是臀肌无力导致腰痛",
+    ),
+)
+def test_clinician_disclosure_is_attribution_not_agent_read(message):
+    intent = classify_agent_utterance(message)
+
+    assert intent.primary == "chat"
+    assert intent.domain == "clinical_context"
+    assert intent.operation == "acknowledge"
+    assert intent.is_write is False
+    assert intent.requires_reliable_tool_model is True
+
+
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    (
+        (
+            "医生说要记录每天疼痛情况",
+            ("clinician_quote", "save", "clinician", "clinician_content"),
+        ),
+        (
+            "请记录医生诊断",
+            ("user", "save", "user", "clinician_record"),
+        ),
+        (
+            "把医生说的内容保存下来",
+            ("clinician_quote", "save", "user", "clinician_content"),
+        ),
+    ),
+)
+def test_clause_frame_resolves_action_actor_and_object(message, expected):
+    frame = utterance_intent_classifier._classify_clause(message)
+
+    assert (frame.source, frame.action, frame.actor, frame.object_kind) == expected
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "医生说是臀肌无力。请删除",
+        "医生说是臀肌无力。请调整",
+        "医生说是臀肌无力。请同步",
+    ),
+)
+def test_non_save_action_cannot_inherit_previous_clinician_object(message):
+    intent = classify_agent_utterance(message)
+
+    assert intent.primary == "chat"
+    assert intent.domain == "clinical_context"
+    assert intent.operation == "acknowledge"
+    assert intent.is_write is False
+    assert intent.requires_reliable_tool_model is True
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "请记录医生诊断，不要记录",
+        "医生说是臀肌无力。不要删除医生诊断记录",
+        "医生说是臀肌无力。不要调整医生诊断记录",
+        "医生说是臀肌无力。不要同步医生诊断记录",
+    ),
+)
+def test_clinician_clause_authorization_respects_negation(message):
+    intent = classify_agent_utterance(message)
+
+    assert intent.is_write is False
+    assert intent.primary not in {"write", "mutate"}
 
 
 def test_direct_user_medication_mutation_remains_authorized():
@@ -217,6 +314,24 @@ def test_reported_clinician_medication_statement_is_not_a_save_command():
     assert intent.operation == "acknowledge"
     assert intent.is_write is False
     assert intent.requires_reliable_tool_model is True
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    (
+        (
+            "医生说是臀肌无力。请记录医生诊断：臀肌无力导致腰痛",
+            ("医生说是臀肌无力", "请记录医生诊断", "臀肌无力导致腰痛"),
+        ),
+        ("甲，乙,丙；丁;戊：己:庚", ("甲", "乙", "丙", "丁", "戊", "己", "庚")),
+        ("甲！乙?丙？丁\n戊", ("甲", "乙", "丙", "丁", "戊")),
+        ("  甲！？\n，。；乙  ", ("甲", "乙")),
+        ("，。！？\n", ()),
+        ("", ()),
+    ),
+)
+def test_split_clauses_preserves_non_empty_order_across_boundaries(raw, expected):
+    assert utterance_intent_classifier._split_clauses(raw) == expected
 
 
 def test_current_symptom_with_severity_remains_a_symptom_write():
