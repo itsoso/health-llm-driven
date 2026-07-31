@@ -222,6 +222,8 @@ class _LexicalIndex:
     quotes: tuple[_LexEvent, ...]
     structures: tuple[_LexEvent, ...]
     scanner_runs: int
+    stance_prune_comparisons: int
+    stance_prune_work_units: int
     lexical_work_units: int
     work_units: int
 
@@ -229,6 +231,13 @@ class _LexicalIndex:
 @dataclass
 class _WorkMeter:
     units: int
+
+
+@dataclass(frozen=True)
+class _StancePruneResult:
+    stances: tuple[_LexEvent, ...]
+    comparisons: int
+    work_units: int
 
 
 _ACTIVE_WORK_METER: ContextVar[_WorkMeter | None] = ContextVar(
@@ -391,14 +400,14 @@ for _first, _rows in tuple(_LEXEMES_BY_FIRST.items()):
     )
 
 
-def _lexical_scan(text: str) -> _LexicalIndex:
+def _lexical_scan(text: str, meter: _WorkMeter) -> _LexicalIndex:
+    lexical_start_units = meter.units
     events: list[_LexEvent] = []
-    work_units = 0
     for cursor, char in enumerate(text):
         rows = _LEXEMES_BY_FIRST.get(char, ())
         longest_by_kind: dict[_EventKind, _Lexeme] = {}
         for row in rows:
-            work_units += 1
+            _work()
             if not text.startswith(row.surface, cursor):
                 continue
             existing = longest_by_kind.get(row.kind)
@@ -418,26 +427,47 @@ def _lexical_scan(text: str) -> _LexicalIndex:
     ordered = tuple(
         sorted(events, key=lambda event: (event.start, event.end, event.kind))
     )
-
-    def select(kind: _EventKind) -> tuple[_LexEvent, ...]:
-        return tuple(event for event in ordered if event.kind == kind)
+    _work(len(ordered))
 
     quote_kinds = {"quote_open", "quote_close", "quote_toggle"}
+    events_by_kind: dict[_EventKind, list[_LexEvent]] = {}
+    quote_events: list[_LexEvent] = []
+    for event in ordered:
+        _work()
+        events_by_kind.setdefault(event.kind, []).append(event)
+        if event.kind in quote_kinds:
+            quote_events.append(event)
+
+    def selected(kind: _EventKind) -> tuple[_LexEvent, ...]:
+        return tuple(events_by_kind.get(kind, ()))
+
+    actions = _prune_overlapping_events(selected("action"))
+    providers = _prune_overlapping_events(selected("provider"))
+    relations = selected("relation")
+    targets = _prune_contained_targets(selected("target"))
+    pruned_stances = _prune_shadowed_stances(selected("stance"))
+    boundaries = selected("boundary")
+    conjunctions = selected("conjunction")
+    quotes = tuple(quote_events)
+    structures = selected("structure")
+    lexical_work_units = meter.units - lexical_start_units
     return _LexicalIndex(
         text=text,
         events=ordered,
-        actions=_prune_overlapping_events(select("action")),
-        providers=_prune_overlapping_events(select("provider")),
-        relations=select("relation"),
-        targets=_prune_contained_targets(select("target")),
-        stances=_prune_shadowed_stances(select("stance")),
-        boundaries=select("boundary"),
-        conjunctions=select("conjunction"),
-        quotes=tuple(event for event in ordered if event.kind in quote_kinds),
-        structures=select("structure"),
+        actions=actions,
+        providers=providers,
+        relations=relations,
+        targets=targets,
+        stances=pruned_stances.stances,
+        boundaries=boundaries,
+        conjunctions=conjunctions,
+        quotes=quotes,
+        structures=structures,
         scanner_runs=1,
-        lexical_work_units=work_units + len(ordered),
-        work_units=work_units + len(ordered),
+        stance_prune_comparisons=pruned_stances.comparisons,
+        stance_prune_work_units=pruned_stances.work_units,
+        lexical_work_units=lexical_work_units,
+        work_units=lexical_work_units,
     )
 
 
@@ -446,6 +476,7 @@ def _prune_overlapping_events(
 ) -> tuple[_LexEvent, ...]:
     kept: list[_LexEvent] = []
     for event in events:
+        _work()
         if kept and event.start < kept[-1].end:
             previous = kept[-1]
             if event.start == previous.start and event.end > previous.end:
@@ -461,6 +492,7 @@ def _prune_contained_targets(
     kept: list[_LexEvent] = []
     furthest_end = -1
     for target in sorted(targets, key=lambda item: (item.start, -item.end)):
+        _work()
         if target.end <= furthest_end:
             continue
         kept.append(target)
@@ -470,31 +502,84 @@ def _prune_contained_targets(
 
 def _prune_shadowed_stances(
     stances: tuple[_LexEvent, ...],
-) -> tuple[_LexEvent, ...]:
-    shields = tuple(
-        event
-        for event in stances
-        if event.value.startswith("question")
-        or event.value in {"negative_exception", "negative_command"}
-    )
-    return tuple(
-        event
-        for event in stances
-        if not (
-            (
-                (
-                    event.value.startswith("negative")
-                    and event.value != "negative_exception"
-                )
-                or event.value == "strict_command"
-            )
-            and any(
-                shield != event
-                and shield.start <= event.start < shield.end
-                for shield in shields
-            )
-        )
-    )
+) -> _StancePruneResult:
+    """Drop stance lexemes shadowed by a containing shield in one sweep.
+
+    ``stances`` is ordered by ``(start, end, kind)``.  A prefix maximum is
+    sufficient for shields that started earlier; same-start shields are
+    resolved within their local group so the current shield never shadows
+    itself.  This preserves the former containment rule without comparing
+    every candidate with every shield.
+    """
+
+    kept: list[_LexEvent] = []
+    comparisons = 0
+    work_units = 0
+    furthest_prior_shield_end = -1
+    cursor = 0
+
+    def record_work(units: int = 1) -> None:
+        nonlocal work_units
+        work_units += units
+        _work(units)
+
+    def record_comparison() -> None:
+        nonlocal comparisons
+        comparisons += 1
+        record_work()
+
+    def is_shield(event: _LexEvent) -> bool:
+        return event.value.startswith("question") or event.value in {
+            "negative_exception",
+            "negative_command",
+        }
+
+    def is_shadowable(event: _LexEvent) -> bool:
+        return (
+            event.value.startswith("negative")
+            and event.value != "negative_exception"
+        ) or event.value == "strict_command"
+
+    while cursor < len(stances):
+        position = stances[cursor].start
+        group_shields: set[_LexEvent] = set()
+        shadowable_events: list[_LexEvent] = []
+        group_shield_end = -1
+        while cursor < len(stances) and stances[cursor].start == position:
+            event = stances[cursor]
+            record_work()
+            if is_shadowable(event):
+                shadowable_events.append(event)
+            else:
+                kept.append(event)
+            if is_shield(event):
+                group_shields.add(event)
+                if group_shield_end >= 0:
+                    record_work()
+                if event.end > group_shield_end:
+                    group_shield_end = event.end
+            cursor += 1
+
+        # The scanner emits at most one stance event per start (longest match
+        # per kind).  Only shadowable events need the containment decision;
+        # non-shadowable events were retained during the group pass.
+        for event in shadowable_events:
+            record_work()
+            record_comparison()
+            shadowed = furthest_prior_shield_end > event.start
+            if not shadowed:
+                record_comparison()
+                self_is_shield = event in group_shields
+                shadowed = len(group_shields) > (1 if self_is_shield else 0)
+            if not shadowed:
+                kept.append(event)
+
+        if group_shield_end >= 0:
+            record_work()
+            if group_shield_end > furthest_prior_shield_end:
+                furthest_prior_shield_end = group_shield_end
+
+    return _StancePruneResult(tuple(kept), comparisons, work_units)
 
 
 def _build_quote_scopes(index: _LexicalIndex) -> tuple[_QuoteScope, ...]:
@@ -1709,10 +1794,10 @@ def _scan_actions(
 def _parse_action_evidence_with_index(
     text: str,
 ) -> tuple[EvidenceParse, _LexicalIndex]:
-    index = _lexical_scan(text)
-    meter = _WorkMeter(index.lexical_work_units)
+    meter = _WorkMeter(0)
     token = _ACTIVE_WORK_METER.set(meter)
     try:
+        index = _lexical_scan(text, meter)
         providers = _build_provider_evidence(index)
         quotes = _build_quote_scopes(index)
         parsed = EvidenceParse(

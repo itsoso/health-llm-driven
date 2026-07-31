@@ -1686,6 +1686,36 @@ def test_work_units_include_post_lexical_parser_work():
     assert index.work_units > index.lexical_work_units
 
 
+def test_stance_pruning_work_is_instrumented_and_scales_linearly():
+    measurements = []
+    for count in (1, 16, 32):
+        _parsed, index = (
+            utterance_action_evidence._parse_action_evidence_with_index(
+                "不要" * count
+            )
+        )
+        assert index.scanner_runs == 1
+        assert index.stance_prune_comparisons > 0
+        assert index.stance_prune_work_units >= index.stance_prune_comparisons
+        assert index.lexical_work_units >= index.stance_prune_work_units
+        measurements.append(index)
+
+    one, sixteen, thirty_two = measurements
+    assert sixteen.stance_prune_comparisons <= (
+        one.stance_prune_comparisons * 18
+    )
+    assert thirty_two.stance_prune_comparisons <= (
+        one.stance_prune_comparisons * 36
+    )
+    assert thirty_two.stance_prune_comparisons <= (
+        sixteen.stance_prune_comparisons * 2
+    )
+    assert thirty_two.stance_prune_work_units <= (
+        sixteen.stance_prune_work_units * 3
+    )
+    assert sixteen.work_units <= one.work_units * 18
+
+
 def test_structured_action_candidates_exactly_cover_shared_lexicon():
     rows = lexicon.EVIDENCE_ACTION_LEXICON
     expected_surfaces = {row.surface for row in rows}
