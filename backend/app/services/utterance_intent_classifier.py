@@ -9,9 +9,28 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+from typing import Any, Literal, Optional, TypeAlias
 
 BJ = timezone(timedelta(hours=8))
+
+_ClauseSource: TypeAlias = Literal["user", "clinician_quote"]
+_ClauseAction: TypeAlias = Literal[
+    "read",
+    "save",
+    "update",
+    "delete",
+    "sync",
+    "analyze",
+    "none",
+]
+_ClauseActor: TypeAlias = Literal["user", "clinician"]
+_ClauseObjectKind: TypeAlias = Literal[
+    "clinician_content",
+    "clinician_record",
+    "health_record",
+    "medication",
+    "unknown",
+]
 
 
 @dataclass(frozen=True)
@@ -31,17 +50,22 @@ class AgentUtteranceIntent:
 @dataclass(frozen=True)
 class _ClauseFrame:
     text: str
-    source: str
-    action: str
-    actor: str
-    object_kind: str
+    source: _ClauseSource
+    action: _ClauseAction
+    actor: _ClauseActor
+    object_kind: _ClauseObjectKind
+    target_kind: _ClauseObjectKind = "unknown"
     introduces_clinician_content: bool = False
+    is_question: bool = False
+    action_negated: bool = False
 
 
 @dataclass(frozen=True)
 class _ClauseSegment:
     text: str
     separator_after: str
+    has_colon: bool
+    has_question: bool
 
 
 READ_ACTIONS = (
@@ -349,8 +373,12 @@ SYMPTOM_TERMS = (
 )
 CLINICIAN_PROVIDER_TERMS = ("主治医生", "康复师", "医生", "大夫")
 CLINICIAN_REPORT_VERBS = (
+    "交代",
+    "嘱咐",
     "告诉",
     "告知",
+    "要求",
+    "让",
     "表示",
     "认为",
     "建议",
@@ -385,6 +413,16 @@ CLINICIAN_CONTEXT_WRITE_ACTIONS = (
     "写入",
     "存下来",
 )
+CLAUSE_ACTION_NEGATIONS = (
+    "不需要",
+    "不要",
+    "不用",
+    "无需",
+    "不必",
+    "先别",
+    "别",
+)
+CLAUSE_SAVE_MODAL_TERMS = ("需要", "是否", "要不要")
 CLINICIAN_CONTEXT_CLAUSE_BOUNDARIES = frozenset("，,。；;：:！？!?\n")
 CLINICIAN_QUOTED_CONTENT_REFERENCES = (
     "的内容",
@@ -447,7 +485,8 @@ def classify_agent_utterance(
         tuple(
             _classify_clause(
                 segment.text,
-                introduces_clinician_content=segment.separator_after in {"：", ":"},
+                introduces_clinician_content=segment.has_colon,
+                terminal_question=segment.has_question,
             )
             for segment in clause_segments
         )
@@ -685,17 +724,33 @@ def _scan_clause_segments(raw_text: str) -> tuple[_ClauseSegment, ...]:
     """Split once while retaining the separator that closes each clause."""
     segments: list[_ClauseSegment] = []
     current: list[str] = []
+    separators: list[str] = []
+
+    def append_current() -> None:
+        clause = "".join(current).strip()
+        if not clause:
+            return
+        separator_after = "".join(separators)
+        segments.append(
+            _ClauseSegment(
+                text=clause,
+                separator_after=separator_after,
+                has_colon=any(char in {"：", ":"} for char in separators),
+                has_question=any(char in {"？", "?"} for char in separators),
+            )
+        )
+
     for char in str(raw_text or ""):
         if char in CLINICIAN_CONTEXT_CLAUSE_BOUNDARIES:
-            clause = "".join(current).strip()
-            if clause:
-                segments.append(_ClauseSegment(clause, char))
-            current = []
+            if current:
+                separators.append(char)
             continue
+        if separators:
+            append_current()
+            current = []
+            separators = []
         current.append(char)
-    clause = "".join(current).strip()
-    if clause:
-        segments.append(_ClauseSegment(clause, ""))
+    append_current()
     return tuple(segments)
 
 
@@ -766,8 +821,13 @@ def _find_clinician_attribution(
     return min(candidates, key=lambda span: (span[0], -span[1]))
 
 
-def _first_clause_action(text: str, object_kind: str) -> tuple[str, int]:
-    candidates: list[tuple[int, int, str]] = []
+def _first_clause_action(
+    text: str,
+    object_kind: str,
+    *,
+    has_question: bool,
+) -> tuple[_ClauseAction, int]:
+    candidates: list[tuple[int, int, _ClauseAction]] = []
 
     for phrase in READ_ACTIONS:
         for start in _all_phrase_positions(text, phrase):
@@ -776,7 +836,18 @@ def _first_clause_action(text: str, object_kind: str) -> tuple[str, int]:
     has_explicit_save = _has_explicit_write_command(text)
     for phrase in CLINICIAN_CONTEXT_WRITE_ACTIONS:
         for start in _all_phrase_positions(text, phrase):
-            if has_explicit_save or "把" in text[:start]:
+            prefix = text[:start]
+            suffix = text[start + len(phrase):]
+            has_explicit_health_target = (
+                phrase == "记录" and _infer_domain(suffix) != "unknown"
+            )
+            if (
+                has_explicit_save
+                or has_explicit_health_target
+                or "把" in prefix
+                or _has_any(prefix, CLAUSE_ACTION_NEGATIONS)
+                or _has_any(prefix, CLAUSE_SAVE_MODAL_TERMS)
+            ):
                 candidates.append((start, 0, "save"))
 
     for operation, phrases in MUTATE_ACTIONS.items():
@@ -791,9 +862,27 @@ def _first_clause_action(text: str, object_kind: str) -> tuple[str, int]:
     if candidates:
         start, _, action = min(candidates, key=lambda item: (item[0], item[1]))
         return action, start
-    if _has_question_signal(text):
+    if has_question:
         return ("read" if object_kind == "clinician_record" else "analyze"), 0
     return "none", -1
+
+
+def _clause_action_is_negated(
+    text: str,
+    *,
+    action: _ClauseAction,
+    action_start: int,
+) -> bool:
+    if action_start < 0:
+        return False
+    if action == "save" and _has_any(text, WRITE_NEGATION_EXCEPTIONS):
+        return False
+    prefix = text[:action_start]
+    if _has_any(prefix, CLAUSE_ACTION_NEGATIONS):
+        return True
+    if action in {"update", "delete", "sync"}:
+        return _has_negated_mutation(text, action)
+    return False
 
 
 def _has_quoted_content_reference(text: str) -> bool:
@@ -804,7 +893,7 @@ def _clause_object_kind(
     text: str,
     *,
     has_attribution: bool,
-) -> str:
+) -> _ClauseObjectKind:
     if has_attribution:
         return "clinician_content"
     if _has_quoted_content_reference(text):
@@ -818,6 +907,36 @@ def _clause_object_kind(
     if domain != "unknown":
         return "health_record"
     if _has_any(text, ("健康数据", "健康记录", "用药记录", "记录数据")):
+        return "health_record"
+    return "unknown"
+
+
+def _clause_action_target_kind(
+    text: str,
+    *,
+    action: _ClauseAction,
+    action_start: int,
+) -> _ClauseObjectKind:
+    if action_start < 0 or action not in {
+        "save",
+        "read",
+        "update",
+        "delete",
+        "sync",
+    }:
+        return "unknown"
+    target_text = text[action_start:]
+    if _has_any(target_text, CLINICIAN_RECORD_TERMS):
+        return "clinician_record"
+    target_domain = _infer_domain(target_text)
+    if target_domain == "medication":
+        return "medication"
+    if target_domain != "unknown":
+        return "health_record"
+    if _has_any(
+        target_text,
+        ("健康数据", "健康记录", "用药记录", "记录数据"),
+    ):
         return "health_record"
     return "unknown"
 
@@ -838,8 +957,10 @@ def _classify_clause(
     text: str,
     *,
     introduces_clinician_content: bool = False,
+    terminal_question: bool = False,
 ) -> _ClauseFrame:
     normalized = _normalize(text)
+    is_question = terminal_question or _has_question_signal(normalized)
     attribution = _find_clinician_attribution(
         normalized,
         allow_bare_diagnosis=introduces_clinician_content,
@@ -848,10 +969,22 @@ def _classify_clause(
         normalized,
         has_attribution=attribution is not None,
     )
-    action, action_start = _first_clause_action(normalized, object_kind)
+    action, action_start = _first_clause_action(
+        normalized,
+        object_kind,
+        has_question=is_question,
+    )
+    target_kind = _clause_action_target_kind(
+        normalized,
+        action=action,
+        action_start=action_start,
+    )
     source = "clinician_quote" if attribution is not None else "user"
 
-    if attribution is None or action_start < 0:
+    if attribution is not None and is_question:
+        action = "analyze"
+        actor = "user"
+    elif attribution is None or action_start < 0:
         actor = "clinician" if attribution is not None else "user"
     else:
         attribution_start, attribution_end = attribution
@@ -873,8 +1006,15 @@ def _classify_clause(
         action=action,
         actor=actor,
         object_kind=object_kind,
+        target_kind=target_kind,
         introduces_clinician_content=(
             introduces_clinician_content and attribution is not None
+        ),
+        is_question=is_question,
+        action_negated=_clause_action_is_negated(
+            normalized,
+            action=action,
+            action_start=action_start,
         ),
     )
 
@@ -891,11 +1031,20 @@ def _propagate_clinician_provenance(
             text=current.text,
             source="clinician_quote",
             action=current.action,
-            actor="clinician",
+            actor="user" if current.is_question else "clinician",
             object_kind="clinician_content",
-            introduces_clinician_content=False,
+            target_kind=current.target_kind,
+            introduces_clinician_content=current.introduces_clinician_content,
+            is_question=current.is_question,
+            action_negated=current.action_negated,
         )
     return tuple(propagated)
+
+
+def _effective_clause_target(frame: _ClauseFrame) -> _ClauseObjectKind:
+    if frame.target_kind != "unknown":
+        return frame.target_kind
+    return frame.object_kind
 
 
 def _reduce_clinician_clauses(
@@ -915,40 +1064,75 @@ def _reduce_clinician_clauses(
     if not has_clinician_source and not has_clinician_object:
         return None
 
-    if not _has_negated_write(normalized):
-        for index, frame in enumerate(frames):
-            if frame.actor != "user" or frame.action != "save":
-                continue
-            same_clause_object = frame.object_kind in clinician_objects
-            adjacent_clinician_object = (
-                frame.object_kind == "unknown"
-                and index > 0
-                and frames[index - 1].object_kind in clinician_objects
+    if not has_clinician_source and _is_media_generation_request(normalized):
+        return None
+    if not has_clinician_source and any(
+        frame.actor == "user" and frame.action == "analyze"
+        for frame in frames
+    ):
+        return None
+    if any(
+        frame.actor == "user"
+        and frame.action == "save"
+        and _effective_clause_target(frame) in {"health_record", "medication"}
+        and not frame.action_negated
+        and not frame.is_question
+        for frame in frames
+    ):
+        return None
+
+    for index, frame in enumerate(frames):
+        if (
+            frame.actor != "user"
+            or frame.action != "save"
+            or frame.action_negated
+            or frame.is_question
+        ):
+            continue
+        next_frame = frames[index + 1] if index + 1 < len(frames) else None
+        save_target = _effective_clause_target(frame)
+        cancelled_by_next_clause = (
+            next_frame is not None
+            and next_frame.action == "save"
+            and next_frame.action_negated
+            and _effective_clause_target(next_frame)
+            in {"unknown", save_target}
+        )
+        if cancelled_by_next_clause:
+            continue
+        same_clause_object = save_target in clinician_objects
+        adjacent_clinician_object = (
+            save_target == "unknown"
+            and index > 0
+            and frames[index - 1].object_kind in clinician_objects
+        )
+        if same_clause_object or adjacent_clinician_object:
+            return _intent(
+                raw,
+                normalized,
+                "write",
+                "clinical_context",
+                "create",
+                0.96,
+                "user_clinician_context_save",
+                scope,
+                is_write=True,
+                requires_reliable_tool_model=True,
             )
-            if same_clause_object or adjacent_clinician_object:
-                return _intent(
-                    raw,
-                    normalized,
-                    "write",
-                    "clinical_context",
-                    "create",
-                    0.96,
-                    "user_clinician_context_save",
-                    scope,
-                    is_write=True,
-                    requires_reliable_tool_model=True,
-                )
 
     for frame in frames:
-        if frame.actor != "user" or frame.object_kind == "unknown":
+        target_kind = _effective_clause_target(frame)
+        if frame.actor != "user" or target_kind == "unknown":
             continue
         if frame.action == "read":
             domain = (
                 "clinical_context"
-                if frame.object_kind in clinician_objects
+                if target_kind in clinician_objects
+                else "medication"
+                if target_kind == "medication"
                 else _infer_domain(frame.text)
             )
-            operation = "ask" if _has_question_signal(frame.text) else "list"
+            operation = "ask" if frame.is_question else "list"
             return _intent(
                 raw,
                 normalized,
@@ -961,11 +1145,13 @@ def _reduce_clinician_clauses(
                 requires_reliable_tool_model=domain == "clinical_context",
             )
         if frame.action in {"update", "delete", "sync"}:
-            if _has_negated_mutation(frame.text, frame.action):
+            if frame.action_negated or frame.is_question:
                 continue
             domain = (
                 "clinical_context"
-                if frame.object_kind in clinician_objects
+                if target_kind in clinician_objects
+                else "medication"
+                if target_kind == "medication"
                 else _infer_domain(frame.text)
             )
             return _intent(
@@ -980,6 +1166,24 @@ def _reduce_clinician_clauses(
                 is_write=True,
                 requires_reliable_tool_model=True,
             )
+
+    if any(
+        frame.actor == "user"
+        and frame.is_question
+        and frame.object_kind in clinician_objects
+        for frame in frames
+    ):
+        return _intent(
+            raw,
+            normalized,
+            "advice",
+            "clinical_context",
+            "analyze",
+            0.92,
+            "clinician_context_question",
+            scope,
+            requires_reliable_tool_model=True,
+        )
 
     if has_clinician_source:
         if any(
@@ -1005,6 +1209,22 @@ def _reduce_clinician_clauses(
             "acknowledge",
             0.96,
             "clinician_provenance_fail_closed",
+            scope,
+            requires_reliable_tool_model=True,
+        )
+
+    if any(
+        frame.action_negated and frame.object_kind in clinician_objects
+        for frame in frames
+    ):
+        return _intent(
+            raw,
+            normalized,
+            "chat",
+            "clinical_context",
+            "acknowledge",
+            0.94,
+            "negated_clinician_context_action",
             scope,
             requires_reliable_tool_model=True,
         )
