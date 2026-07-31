@@ -1375,10 +1375,7 @@ def _has_water_signal(text: str) -> bool:
 
 
 def _has_question_signal(text: str) -> bool:
-    multi_character_signals = tuple(
-        signal for signal in QUESTION_SIGNALS if signal != "么"
-    )
-    return _has_any(text, multi_character_signals) or text.endswith("么")
+    return _has_any(text, QUESTION_SIGNALS)
 
 
 def _wants_table_or_list(text: str) -> bool:

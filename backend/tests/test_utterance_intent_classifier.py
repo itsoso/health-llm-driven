@@ -5,8 +5,98 @@ import pytest
 
 import app.services.utterance_intent_classifier as utterance_intent_classifier
 from app.services.utterance_intent_classifier import classify_agent_utterance
+from app.services import utterance_intent_lexicon as lexicon
 
 BJ = timezone(timedelta(hours=8))
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    (
+        (
+            "删除用药记录么",
+            ("mutate", "medication", "delete", "mutation_command", True, True),
+        ),
+        (
+            "勿删除用药记录",
+            ("mutate", "medication", "delete", "mutation_command", True, True),
+        ),
+        (
+            "不再删除用药记录",
+            ("mutate", "medication", "delete", "mutation_command", True, True),
+        ),
+        (
+            "该不该记录今天腰痛6分",
+            ("advice", "symptom", "analyze", "advice_frame", False, False),
+        ),
+        (
+            "今天我没吃那么多，晚餐的两千大卡只有吃了四分之一",
+            (
+                "mutate",
+                "diet",
+                "update",
+                "diet_quantity_correction",
+                True,
+                True,
+            ),
+        ),
+    ),
+)
+def test_task_1b_keeps_legacy_classifier_contract(text, expected):
+    intent = classify_agent_utterance(text)
+
+    assert (
+        intent.primary,
+        intent.domain,
+        intent.operation,
+        intent.reason,
+        intent.is_write,
+        intent.requires_reliable_tool_model,
+    ) == expected
+
+
+def test_classifier_uses_exact_legacy_question_and_mutation_negation_views():
+    assert lexicon.QUESTION_SIGNALS == (
+        "?",
+        "？",
+        "多少",
+        "什么",
+        "啥",
+        "哪些",
+        "几",
+        "有没有",
+        "是不是",
+        "是否",
+        "吗",
+        "呢",
+        "如何",
+        "怎么",
+        "为什么",
+        "多高",
+        "多重",
+        "多久",
+        "高不高",
+        "正常吗",
+        "有问题吗",
+        "能否",
+        "可否",
+        "可不可以",
+        "怎么样",
+    )
+    assert lexicon.MUTATION_NEGATIONS == (
+        "不要",
+        "别",
+        "不用",
+        "无需",
+        "不需要",
+        "不想",
+        "先别",
+        "暂不",
+        "不能",
+        "不可",
+        "禁止",
+        "避免",
+    )
 
 
 def test_read_only_diet_record_noun_is_not_a_write_intent():

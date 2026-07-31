@@ -602,7 +602,7 @@ def _assert_raw_action_spans(text, actions):
             "医生说要保存诊断但请记录今天腰痛6分",
             (
                 ("保存", "save", "clinician"),
-                ("记录", "save", "clinician"),
+                ("记录", "save", "user"),
             ),
         ),
         (
@@ -613,7 +613,7 @@ def _assert_raw_action_spans(text, actions):
             "医生说要删除用药记录然后请记录今天腰痛6分",
             (
                 ("删除", "delete", "clinician"),
-                ("记录", "save", "clinician"),
+                ("记录", "save", "user"),
             ),
         ),
     ),
@@ -823,11 +823,11 @@ def test_polarity_is_resolved_per_action_occurrence():
         ),
         (
             "医生说要保存诊断接着请记录今天腰痛",
-            (("保存", "clinician"), ("记录", "clinician")),
+            (("保存", "clinician"), ("记录", "user")),
         ),
         (
             "医生说要保存诊断但是帮我记录今天腰痛",
-            (("保存", "clinician"), ("记录", "clinician")),
+            (("保存", "clinician"), ("记录", "user")),
         ),
         (
             "我想记录饮食而医生说要保存诊断",
@@ -959,15 +959,15 @@ def test_user_cue_inside_provider_report_does_not_steal_authority(text):
     (
         (
             "医生说要保存诊断但是帮我记录今天腰痛",
-            (("save", "clinician"), ("save", "clinician")),
+            (("save", "clinician"), ("save", "user")),
         ),
         (
             "医生说要保存诊断接着请记录今天腰痛",
-            (("save", "clinician"), ("save", "clinician")),
+            (("save", "clinician"), ("save", "user")),
         ),
         (
             "医生说是腰肌劳损。请记录医生诊断",
-            (("save", "user"),),
+            (("save", "clinician"),),
         ),
     ),
 )
@@ -984,37 +984,35 @@ def test_previous_action_or_hard_boundary_resets_to_user_authority(
 
 
 @pytest.mark.parametrize(
-    ("text", "expected_actions"),
+    ("text", "expected"),
     (
         (
             "医生说：“先删除旧记录，然后请记录每天腰痛”",
-            ("delete", "save"),
+            (("delete", "clinician"), ("save", "clinician")),
         ),
         (
             "医生说先保存诊断然后请删除用药记录",
-            ("save", "delete"),
+            (("save", "clinician"), ("delete", "user")),
         ),
         (
             "医生说要保存诊断但请记录今天腰痛",
-            ("save", "save"),
+            (("save", "clinician"), ("save", "user")),
         ),
         (
             "根据医生说：“请删除用药记录”",
-            ("delete",),
+            (("delete", "clinician"),),
         ),
     ),
 )
 def test_provider_report_scope_owns_every_nested_action(
     text,
-    expected_actions,
+    expected,
 ):
     parsed = parse_action_evidence(text)
 
-    assert tuple(action.action for action in parsed.actions) == expected_actions
-    assert all(
-        action.actor in {"clinician", "ambiguous"}
-        for action in parsed.actions
-    )
+    assert tuple(
+        (action.action, action.actor) for action in parsed.actions
+    ) == expected
 
 
 @pytest.mark.parametrize(
@@ -1232,38 +1230,10 @@ def test_shared_mutation_synonyms_are_extracted(verb, expected_action):
     assert text[parsed.actions[0].start : parsed.actions[0].end] == verb
 
 
-@pytest.mark.parametrize(
-    ("target_text", "expected_action"),
-    (
-        ("一张康复图片", "media"),
-        ("一个康复计划", "plan"),
-        ("一个复查提醒", "reminder"),
-    ),
-)
-@pytest.mark.parametrize(
-    "verb",
-    ("创建", "生成", "制作", "制定", "安排", "设置"),
-)
-def test_create_action_family_is_derived_from_target(
-    verb,
-    target_text,
-    expected_action,
-):
-    text = f"请{verb}{target_text}"
-
-    parsed = parse_action_evidence(text)
-
-    assert len(parsed.actions) == 1
-    assert parsed.actions[0].action == expected_action
-    assert parsed.actions[0].target == expected_action
-
-
-def test_create_without_a_known_target_stays_neutral_and_unknown():
+def test_create_without_a_known_target_fails_closed():
     parsed = parse_action_evidence("请创建一个东西")
 
-    assert len(parsed.actions) == 1
-    assert parsed.actions[0].action == "create"
-    assert parsed.actions[0].target == "unknown"
+    assert parsed.actions == ()
 
 
 @pytest.mark.parametrize(
@@ -1320,21 +1290,13 @@ def test_classifier_and_action_evidence_share_one_intent_lexicon():
         )
         assert f"\n{name} =" not in classifier_source
 
-    assert utterance_action_evidence.QUESTION_SIGNALS is lexicon.QUESTION_SIGNALS
-    assert utterance_action_evidence.MUTATE_ACTIONS is lexicon.MUTATE_ACTIONS
     action_verbs = {
         verb
         for verb, _ in utterance_action_evidence._ACTION_VOCABULARY
     }
-    expected_shared_verbs = {
-        *lexicon.CLINICIAN_CONTEXT_WRITE_ACTIONS,
-        *lexicon.MUTATE_ACTIONS["delete"],
-        *lexicon.MUTATE_ACTIONS["update"],
-        *lexicon.MEDIA_CREATE_ACTIONS,
-        *lexicon.PLAN_CREATE_ACTIONS,
-        *lexicon.REMINDER_CREATE_ACTIONS,
+    assert action_verbs == {
+        row.surface for row in lexicon.EVIDENCE_ACTION_LEXICON
     }
-    assert expected_shared_verbs <= action_verbs
 
     assert {
         "不需要",
@@ -1343,7 +1305,7 @@ def test_classifier_and_action_evidence_share_one_intent_lexicon():
         "不可",
         "禁止",
         "避免",
-    } <= set(lexicon.MUTATION_NEGATIONS)
+    } <= {cue.surface for cue in lexicon.EVIDENCE_NEGATION_CUES}
     assert {
         "能否",
         "可不可以",
@@ -1351,7 +1313,7 @@ def test_classifier_and_action_evidence_share_one_intent_lexicon():
         "怎么",
         "吗",
         "是否",
-    } <= set(lexicon.QUESTION_SIGNALS)
+    } <= {cue.surface for cue in lexicon.EVIDENCE_QUESTION_CUES}
 
 
 @pytest.mark.parametrize(
@@ -1379,55 +1341,19 @@ def test_every_shared_mutation_negation_applies_to_an_action(marker):
     assert parsed.actions[0].polarity == "negative"
 
 
-_REQUIRED_QUESTION_SIGNALS = tuple(
-    signal
-    for signal in lexicon.QUESTION_SIGNALS
-    if signal in {
-        "能否",
-        "可不可以",
-        "是不是",
-        "该不该",
-        "怎么",
-        "么",
-        "吗",
-        "是否",
-        "要不要",
-    }
-)
-
-
-def test_shared_question_property_covers_required_signals():
-    assert set(_REQUIRED_QUESTION_SIGNALS) == {
-        "能否",
-        "可不可以",
-        "是不是",
-        "该不该",
-        "怎么",
-        "么",
-        "吗",
-        "是否",
-        "要不要",
-    }
-
-
-@pytest.mark.parametrize("marker", _REQUIRED_QUESTION_SIGNALS)
-def test_every_required_shared_question_signal_applies_to_an_action(marker):
-    text = (
-        f"删除用药记录{marker}"
-        if marker in {"么", "吗"}
-        else f"{marker}删除用药记录"
-    )
-    parsed = parse_action_evidence(text)
-
-    assert len(parsed.actions) == 1
-    assert parsed.actions[0].modality == "question"
-
-
 def test_question_particle_does_not_match_inside_declarative_word():
     parsed = parse_action_evidence("删除那么多用药记录")
 
     assert len(parsed.actions) == 1
     assert parsed.actions[0].modality == "command"
+
+
+def test_prefix_question_cue_after_action_does_not_retroactively_scope_it():
+    parsed = parse_action_evidence("删除用药记录后怎么处理")
+
+    assert tuple(action.modality for action in parsed.actions) == (
+        "command",
+    )
 
 
 @pytest.mark.parametrize(
@@ -1529,38 +1455,6 @@ def test_structural_record_noun_is_not_an_extra_save_occurrence(
     assert parsed.actions[0].target == expected_target
 
 
-_SHARED_CREATE_ACTIONS = tuple(
-    dict.fromkeys(
-        (
-            *lexicon.MEDIA_CREATE_ACTIONS,
-            *lexicon.PLAN_CREATE_ACTIONS,
-            *lexicon.REMINDER_CREATE_ACTIONS,
-        )
-    )
-)
-
-
-@pytest.mark.parametrize("verb", _SHARED_CREATE_ACTIONS)
-@pytest.mark.parametrize(
-    ("target_text", "expected_family"),
-    (
-        ("一张康复图片", "media"),
-        ("一个康复计划", "plan"),
-        ("一个复查提醒", "reminder"),
-    ),
-)
-def test_every_shared_create_verb_derives_family_from_target(
-    verb,
-    target_text,
-    expected_family,
-):
-    parsed = parse_action_evidence(f"请{verb}{target_text}")
-
-    assert len(parsed.actions) == 1
-    assert parsed.actions[0].action == expected_family
-    assert parsed.actions[0].target == expected_family
-
-
 def test_basis_modifier_excludes_all_nested_targets_before_resolution():
     parsed = parse_action_evidence(
         "删除根据医生对用药的建议形成的诊断记录"
@@ -1571,19 +1465,215 @@ def test_basis_modifier_excludes_all_nested_targets_before_resolution():
     assert parsed.actions[0].target == "clinician_record"
 
 
-def test_occurrence_extractor_keeps_linear_enumeration_and_no_regex():
-    """Extraction stays deterministic and preserves Task 1A raw spans."""
-
-    source = getsource(utterance_action_evidence)
-
-    assert "enumerate(candidates)" in source
-    assert ".index(" not in source
-    assert "import re" not in source
-    assert "re." not in source
-
+def test_occurrence_extractor_preserves_task_1a_raw_spans():
     text = "医生说请删除用药记录，然后我想保存诊断记录"
     parsed = parse_action_evidence(text)
     assert tuple(text[action.start : action.end] for action in parsed.actions) == (
         "删除",
         "保存",
     )
+
+
+def test_structured_action_candidates_exactly_cover_shared_lexicon():
+    rows = lexicon.EVIDENCE_ACTION_LEXICON
+    expected_surfaces = {row.surface for row in rows}
+    actual_surfaces = {
+        surface
+        for surface, _allowed_families in utterance_action_evidence._ACTION_VOCABULARY
+    }
+
+    assert actual_surfaces == expected_surfaces
+    assert set(lexicon.READ_ACTIONS) <= expected_surfaces
+    assert all(row.allowed_families for row in rows)
+
+
+def test_structured_create_lexicon_conserves_each_allowed_family():
+    target_by_family = {
+        "media": "康复图片",
+        "plan": "康复计划",
+        "reminder": "复查提醒",
+    }
+    create_families = frozenset(target_by_family)
+
+    for row in lexicon.EVIDENCE_ACTION_LEXICON:
+        allowed_create_families = row.allowed_families & create_families
+        if not allowed_create_families:
+            continue
+        for family in allowed_create_families:
+            parsed = parse_action_evidence(
+                f"请{row.surface}{target_by_family[family]}"
+            )
+            assert tuple(
+                (action.action, action.target)
+                for action in parsed.actions
+            ) == ((family, family),)
+
+
+def test_structured_create_lexicon_rejects_every_unlisted_family():
+    target_by_family = {
+        "media": "康复图片",
+        "plan": "康复计划",
+        "reminder": "复查提醒",
+    }
+    create_families = frozenset(target_by_family)
+
+    for row in lexicon.EVIDENCE_ACTION_LEXICON:
+        allowed_create_families = row.allowed_families & create_families
+        if not allowed_create_families:
+            continue
+        for family in create_families - allowed_create_families:
+            parsed = parse_action_evidence(
+                f"请{row.surface}{target_by_family[family]}"
+            )
+            assert parsed.actions == (), (
+                row.surface,
+                family,
+                parsed.actions,
+            )
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    (
+        ("保存康复计划", (("保存", "plan"),)),
+        ("保存诊断记录", (("保存", "save"),)),
+        ("生成康复图片", (("生成", "media"),)),
+        ("生成康复计划", (("生成", "plan"),)),
+        ("生成复查提醒", ()),
+        ("设置康复计划", ()),
+        ("制作复查提醒", ()),
+        ("创建康复图片", ()),
+    ),
+)
+def test_create_family_overlap_is_constrained_and_cannot_be_laundered(
+    text,
+    expected,
+):
+    parsed = parse_action_evidence(text)
+
+    assert tuple(
+        (text[action.start : action.end], action.action)
+        for action in parsed.actions
+    ) == expected
+
+
+def test_actor_scope_transitions_require_shared_strict_user_cues():
+    for transition in lexicon.EVIDENCE_ACTOR_TRANSITION_CUES:
+        for cue in lexicon.EVIDENCE_STRICT_USER_COMMAND_CUES:
+            text = (
+                f"医生说要保存诊断{transition.surface}"
+                f"{cue.surface}记录今天腰痛6分"
+            )
+            parsed = parse_action_evidence(text)
+            assert tuple(action.actor for action in parsed.actions) == (
+                "clinician",
+                "user",
+            ), (transition, cue, parsed.actions)
+
+
+def test_hard_boundary_transitions_require_shared_strict_user_cues():
+    for boundary in lexicon.EVIDENCE_HARD_BOUNDARIES:
+        for cue in lexicon.EVIDENCE_STRICT_USER_COMMAND_CUES:
+            text = (
+                f"医生说要保存诊断{boundary.surface}"
+                f"{cue.surface}记录今天腰痛6分"
+            )
+            parsed = parse_action_evidence(text)
+            assert tuple(action.actor for action in parsed.actions) == (
+                "clinician",
+                "user",
+            ), (boundary, cue, parsed.actions)
+
+
+def test_provider_owned_quote_has_priority_over_every_user_command_cue():
+    for quote in lexicon.EVIDENCE_QUOTE_PAIRS:
+        for cue in (
+            *lexicon.EVIDENCE_STRICT_USER_COMMAND_CUES,
+            *lexicon.EVIDENCE_USER_SUBJECT_CUES,
+        ):
+            text = (
+                f"医生说{quote.opener}{cue.surface}记录腰痛"
+                f"{quote.closer}"
+            )
+            parsed = parse_action_evidence(text)
+            assert tuple(action.actor for action in parsed.actions) == (
+                "clinician",
+            ), (quote, cue, parsed.actions)
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    (
+        (
+            "医生说要保存诊断但请记录今天腰痛6分",
+            (("保存", "clinician"), ("记录", "user")),
+        ),
+        (
+            "医生说要删除用药记录然后请记录今天腰痛6分",
+            (("删除", "clinician"), ("记录", "user")),
+        ),
+        ("医生说请记录腰痛", (("记录", "clinician"),)),
+        (
+            "医生说要删除并保存记录",
+            (("删除", "clinician"), ("保存", "clinician")),
+        ),
+        (
+            "医生说要保存诊断但「请记录腰痛」",
+            (("保存", "clinician"), ("记录", "clinician")),
+        ),
+        (
+            "医生说要保存诊断。请记录腰痛",
+            (("保存", "clinician"), ("记录", "user")),
+        ),
+        (
+            "医生说要保存诊断但我想记录腰痛",
+            (("保存", "clinician"), ("记录", "user")),
+        ),
+    ),
+)
+def test_linear_actor_scope_assigns_each_action_once(text, expected):
+    parsed = parse_action_evidence(text)
+
+    assert tuple(
+        (text[action.start : action.end], action.actor)
+        for action in parsed.actions
+    ) == expected
+
+
+def test_rejected_family_candidate_cannot_open_a_user_scope_transition():
+    text = "医生说要生成复查提醒但请记录腰痛"
+
+    parsed = parse_action_evidence(text)
+
+    assert tuple(
+        (text[action.start : action.end], action.actor)
+        for action in parsed.actions
+    ) == (("记录", "clinician"),)
+
+
+def test_stance_properties_are_driven_by_positioned_evidence_cues():
+    for cue in lexicon.EVIDENCE_NEGATION_CUES:
+        if cue.placement != "prefix":
+            continue
+        parsed = parse_action_evidence(f"{cue.surface}删除用药记录")
+        assert tuple(action.polarity for action in parsed.actions) == (
+            "negative",
+        ), cue
+
+    for cue in lexicon.EVIDENCE_QUESTION_CUES:
+        if cue.placement == "prefix":
+            text = f"{cue.surface}删除用药记录"
+        else:
+            text = f"删除用药记录{cue.surface}"
+        parsed = parse_action_evidence(text)
+        assert tuple(action.modality for action in parsed.actions) == (
+            "question",
+        ), cue
+
+
+def test_negation_exceptions_are_driven_by_shared_positioned_cues():
+    for cue in lexicon.EVIDENCE_NEGATION_EXCEPTION_CUES:
+        parsed = parse_action_evidence(f"{cue.surface}删除用药记录")
+        assert tuple(action.polarity for action in parsed.actions) == (
+            "positive",
+        ), cue

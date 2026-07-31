@@ -1,4 +1,12 @@
-"""Shared deterministic lexicon for utterance intent extraction."""
+"""Shared deterministic lexicon for utterance intent extraction.
+
+The legacy tuples are a public-classifier compatibility view.  Evidence
+parsing uses the immutable structured rows at the bottom of this module so it
+can add stricter placement semantics without changing legacy routing.
+"""
+
+from dataclasses import dataclass
+from typing import Literal, TypeAlias
 
 READ_ACTIONS = (
     "重新列出",
@@ -44,9 +52,6 @@ QUESTION_SIGNALS = (
     "能否",
     "可否",
     "可不可以",
-    "该不该",
-    "要不要",
-    "么",
     "怎么样",
 )
 
@@ -145,9 +150,6 @@ MUTATION_NEGATIONS = (
     "不可",
     "禁止",
     "避免",
-    "勿",
-    "不再",
-    "不要帮我",
 )
 
 MUTATION_NEGATION_EXCEPTIONS = ("别忘了", "不要忘了")
@@ -249,3 +251,161 @@ CLAUSE_ACTION_NEGATIONS = (
 )
 
 CLAUSE_SAVE_MODAL_TERMS = ("需要", "是否", "要不要")
+
+
+EvidenceFamily: TypeAlias = Literal[
+    "read",
+    "save",
+    "update",
+    "delete",
+    "sync",
+    "advice",
+    "media",
+    "plan",
+    "reminder",
+]
+EvidenceCuePlacement: TypeAlias = Literal[
+    "prefix",
+    "terminal",
+    "between",
+    "boundary",
+]
+
+
+@dataclass(frozen=True)
+class EvidenceActionLexeme:
+    surface: str
+    allowed_families: frozenset[EvidenceFamily]
+
+
+@dataclass(frozen=True)
+class EvidenceCue:
+    surface: str
+    placement: EvidenceCuePlacement
+
+
+@dataclass(frozen=True)
+class EvidenceQuotePair:
+    opener: str
+    closer: str
+
+
+EVIDENCE_ADVICE_ACTIONS = ("分析", "解读", "评估")
+
+
+def _build_evidence_action_lexicon() -> tuple[EvidenceActionLexeme, ...]:
+    families_by_surface: dict[str, set[EvidenceFamily]] = {}
+
+    def add(
+        surfaces: tuple[str, ...],
+        family: EvidenceFamily,
+    ) -> None:
+        for surface in surfaces:
+            families_by_surface.setdefault(surface, set()).add(family)
+
+    add(READ_ACTIONS, "read")
+    add(CLINICIAN_CONTEXT_WRITE_ACTIONS, "save")
+    for family, surfaces in MUTATE_ACTIONS.items():
+        add(surfaces, family)
+    add(EVIDENCE_ADVICE_ACTIONS, "advice")
+    add(MEDIA_CREATE_ACTIONS, "media")
+    add(PLAN_CREATE_ACTIONS, "plan")
+    add(REMINDER_CREATE_ACTIONS, "reminder")
+
+    return tuple(
+        EvidenceActionLexeme(surface, frozenset(families))
+        for surface, families in sorted(
+            families_by_surface.items(),
+            key=lambda item: (-len(item[0]), item[0]),
+        )
+    )
+
+
+EVIDENCE_ACTION_LEXICON = _build_evidence_action_lexicon()
+
+EVIDENCE_QUESTION_CUES = tuple(
+    EvidenceCue(surface, "prefix")
+    for surface in (
+        "是否需要",
+        "可不可以",
+        "该不该",
+        "要不要",
+        "是不是",
+        "能否",
+        "可否",
+        "是否",
+        "怎么",
+        "如何",
+    )
+) + tuple(
+    EvidenceCue(surface, "terminal")
+    for surface in ("吗", "么", "？", "?")
+)
+
+EVIDENCE_NEGATION_CUES = tuple(
+    EvidenceCue(surface, "prefix")
+    for surface in (
+        "没有必要",
+        "不要帮我",
+        "不需要",
+        "不想",
+        "不要",
+        "不用",
+        "无需",
+        "不必",
+        "先别",
+        "暂不",
+        "不能",
+        "不可",
+        "禁止",
+        "避免",
+        "不再",
+        "勿",
+        "甭",
+        "别",
+    )
+)
+
+EVIDENCE_NEGATION_EXCEPTION_CUES = tuple(
+    EvidenceCue(surface, "prefix")
+    for surface in ("不要忘了", "别忘了")
+)
+
+EVIDENCE_STRICT_USER_COMMAND_CUES = tuple(
+    EvidenceCue(surface, "prefix")
+    for surface in ("帮我", "请")
+)
+
+EVIDENCE_USER_SUBJECT_CUES = tuple(
+    EvidenceCue(surface, "prefix")
+    for surface in ("我想", "我要")
+)
+
+EVIDENCE_ACTOR_TRANSITION_CUES = tuple(
+    EvidenceCue(surface, "between")
+    for surface in (
+        "但是",
+        "不过",
+        "可是",
+        "然后",
+        "随后",
+        "接着",
+        "而",
+        "但",
+    )
+)
+
+EVIDENCE_HARD_BOUNDARIES = tuple(
+    EvidenceCue(surface, "boundary")
+    for surface in ("。", "；", ";", "\n", "！", "!")
+)
+
+EVIDENCE_QUOTE_PAIRS = tuple(
+    EvidenceQuotePair(opener, closer)
+    for opener, closer in (
+        ("“", "”"),
+        ("‘", "’"),
+        ("「", "」"),
+        ('"', '"'),
+    )
+)

@@ -10,19 +10,18 @@ from dataclasses import dataclass
 from typing import Literal, TypeAlias
 
 from app.services.utterance_intent_lexicon import (
-    CLAUSE_ACTION_NEGATIONS,
-    CLINICIAN_CONTEXT_WRITE_ACTIONS,
-    MEDIA_CREATE_ACTIONS,
+    EVIDENCE_ACTION_LEXICON,
+    EVIDENCE_ACTOR_TRANSITION_CUES,
+    EVIDENCE_HARD_BOUNDARIES,
+    EVIDENCE_NEGATION_CUES,
+    EVIDENCE_NEGATION_EXCEPTION_CUES,
+    EVIDENCE_QUESTION_CUES,
+    EVIDENCE_QUOTE_PAIRS,
+    EVIDENCE_STRICT_USER_COMMAND_CUES,
+    EVIDENCE_USER_SUBJECT_CUES,
     MEDIA_TERMS,
-    MUTATE_ACTIONS,
-    MUTATION_NEGATIONS,
-    PLAN_CREATE_ACTIONS,
     PLAN_TERMS,
-    QUESTION_SIGNALS,
-    REMINDER_CREATE_ACTIONS,
     REMINDER_TERMS,
-    WRITE_ACTIONS,
-    WRITE_NEGATIONS,
 )
 
 __all__ = (
@@ -30,9 +29,6 @@ __all__ = (
     "EvidenceParse",
     "ProviderEvidence",
     "parse_action_evidence",
-    "MUTATE_ACTIONS",
-    "QUESTION_SIGNALS",
-    "WRITE_ACTIONS",
 )
 
 ActionKind: TypeAlias = Literal[
@@ -45,7 +41,6 @@ ActionKind: TypeAlias = Literal[
     "media",
     "plan",
     "reminder",
-    "create",
 ]
 CandidateActionKind: TypeAlias = ActionKind
 ActorKind: TypeAlias = Literal["user", "clinician", "ambiguous"]
@@ -99,28 +94,11 @@ _REPORT_NOUN_CONTINUATIONS = {
     "诊断": ("记录", "报告", "结果", "证明", "清单", "列表"),
     "建议": ("记录", "报告", "清单", "列表", "文档"),
 }
-_ACTION_KIND_BY_VERB: dict[str, CandidateActionKind] = {
-    verb: "save" for verb in CLINICIAN_CONTEXT_WRITE_ACTIONS
-}
-for _operation, _verbs in MUTATE_ACTIONS.items():
-    for _verb in _verbs:
-        _ACTION_KIND_BY_VERB[_verb] = _operation
-for _verb in ("查看", "查询", "看一下", "看看", "查一下", "显示", "汇总"):
-    _ACTION_KIND_BY_VERB[_verb] = "read"
-for _verb in ("分析", "解读", "评估"):
-    _ACTION_KIND_BY_VERB[_verb] = "advice"
-for _verb in (
-    *MEDIA_CREATE_ACTIONS,
-    *PLAN_CREATE_ACTIONS,
-    *REMINDER_CREATE_ACTIONS,
-):
-    _ACTION_KIND_BY_VERB.setdefault(_verb, "create")
-_ACTION_VOCABULARY: tuple[tuple[str, CandidateActionKind], ...] = tuple(
-    sorted(
-        _ACTION_KIND_BY_VERB.items(),
-        key=lambda item: len(item[0]),
-        reverse=True,
-    )
+_ACTION_VOCABULARY: tuple[
+    tuple[str, frozenset[CandidateActionKind]], ...
+] = tuple(
+    (row.surface, row.allowed_families)
+    for row in EVIDENCE_ACTION_LEXICON
 )
 _ACTION_SEPARATORS = (
     "然后",
@@ -140,33 +118,45 @@ _ACTION_SEPARATORS = (
     "。",
     "；",
     ";",
+    "！",
+    "!",
+    "？",
+    "?",
     "\n",
 )
-_NEGATIVE_MARKERS = tuple(
-    dict.fromkeys(
-        (
-            *CLAUSE_ACTION_NEGATIONS,
-            *MUTATION_NEGATIONS,
-            *WRITE_NEGATIONS,
-            "勿",
-            "不再",
-        )
-    )
+_NEGATIVE_MARKERS = tuple(cue.surface for cue in EVIDENCE_NEGATION_CUES)
+_NEGATIVE_EXCEPTIONS = tuple(
+    cue.surface for cue in EVIDENCE_NEGATION_EXCEPTION_CUES
 )
-_QUESTION_MARKERS = QUESTION_SIGNALS
+_QUESTION_PREFIX_MARKERS = tuple(
+    cue.surface
+    for cue in EVIDENCE_QUESTION_CUES
+    if cue.placement == "prefix"
+)
+_QUESTION_TERMINAL_MARKERS = tuple(
+    cue.surface
+    for cue in EVIDENCE_QUESTION_CUES
+    if cue.placement == "terminal"
+)
+_STRICT_USER_AUTHORITY_CUES = tuple(
+    cue.surface for cue in EVIDENCE_STRICT_USER_COMMAND_CUES
+)
+_EXPLICIT_USER_SUBJECT_CUES = tuple(
+    cue.surface for cue in EVIDENCE_USER_SUBJECT_CUES
+)
 _USER_AUTHORITY_CUES = (
-    "我想",
-    "我要",
-    "请",
-    "帮我",
+    *_EXPLICIT_USER_SUBJECT_CUES,
+    *_STRICT_USER_AUTHORITY_CUES,
 )
-_EXPLICIT_USER_SUBJECT_CUES = ("我想", "我要")
-_HARD_SPEECH_RESETS = ("。", "；", ";", "\n", "！", "!", "？", "?")
-_QUOTE_PAIRS = (
-    ("“", "”"),
-    ("‘", "’"),
-    ("「", "」"),
-    ('"', '"'),
+_ACTOR_TRANSITIONS = tuple(
+    cue.surface for cue in EVIDENCE_ACTOR_TRANSITION_CUES
+)
+_ACTOR_HARD_BOUNDARIES = tuple(
+    cue.surface for cue in EVIDENCE_HARD_BOUNDARIES
+)
+_HARD_SPEECH_RESETS = (*_ACTOR_HARD_BOUNDARIES, "？", "?")
+_QUOTE_PAIRS = tuple(
+    (pair.opener, pair.closer) for pair in EVIDENCE_QUOTE_PAIRS
 )
 _NESTED_REPORT_MARKERS = ("告诉", "表示", "要求", "让我", "称")
 _NOMINAL_SPEECH_SUFFIXES = ("的内容", "的建议", "的话")
@@ -220,13 +210,7 @@ _TARGET_TERMS: tuple[tuple[str, TargetKind], ...] = tuple(
         reverse=True,
     )
 )
-_CREATE_ACTIONS = frozenset(
-    (
-        *MEDIA_CREATE_ACTIONS,
-        *PLAN_CREATE_ACTIONS,
-        *REMINDER_CREATE_ACTIONS,
-    )
-)
+_CREATE_FAMILIES = frozenset({"media", "plan", "reminder"})
 _CLAUSE_SCOPE_BOUNDARIES = (
     *_HARD_SPEECH_RESETS,
     "，",
@@ -267,8 +251,17 @@ _BASIS_MODIFIER_END_MARKERS = (
 class _ActionCandidate:
     start: int
     end: int
-    action: CandidateActionKind
     verb: str
+    allowed_families: frozenset[CandidateActionKind]
+
+
+@dataclass(frozen=True)
+class _ResolvedActionCandidate:
+    candidate: _ActionCandidate
+    action: ActionKind
+    target: TargetKind
+    target_start: int
+    target_end: int
 
 
 @dataclass(frozen=True)
@@ -505,8 +498,8 @@ def _scan_raw_action_candidates(
     while cursor < len(text):
         match = next(
             (
-                (verb, action)
-                for verb, action in _ACTION_VOCABULARY
+                (verb, allowed_families)
+                for verb, allowed_families in _ACTION_VOCABULARY
                 if text.startswith(verb, cursor)
             ),
             None,
@@ -515,14 +508,14 @@ def _scan_raw_action_candidates(
             cursor += 1
             continue
 
-        verb, action = match
+        verb, allowed_families = match
         end = cursor + len(verb)
         candidates.append(
             _ActionCandidate(
                 start=cursor,
                 end=end,
-                action=action,
                 verb=verb,
+                allowed_families=allowed_families,
             )
         )
         cursor = end
@@ -603,8 +596,10 @@ def _is_record_noun(
         other != candidate
         and other.start >= region_start
         and other.end <= region_end
-        and other.action
-        in {"read", "save", "update", "delete", "sync", "advice"}
+        and bool(
+            other.allowed_families
+            & {"read", "save", "update", "delete", "sync", "advice"}
+        )
         for other in raw_candidates
     )
     if targeting_action and leading_text:
@@ -615,7 +610,7 @@ def _is_record_noun(
     explicit_leads = (
         _USER_AUTHORITY_CUES
         + _NEGATIVE_MARKERS
-        + _QUESTION_MARKERS
+        + _QUESTION_PREFIX_MARKERS
         + ("让我", "叫我", "要求我", "希望我")
     )
     if any(leading_text.endswith(cue) for cue in explicit_leads):
@@ -628,7 +623,7 @@ def _is_attributive_creation(
     candidate: _ActionCandidate,
 ) -> bool:
     return (
-        candidate.action == "create"
+        candidate.allowed_families <= _CREATE_FAMILIES
         and text.startswith("的", candidate.end)
     )
 
@@ -692,21 +687,6 @@ def _nearest_provider_before(
     return preceding[-1] if preceding else None
 
 
-def _last_explicit_user_subject_start(
-    text: str,
-    *,
-    start: int,
-    end: int,
-) -> int:
-    latest = -1
-    for cue in _EXPLICIT_USER_SUBJECT_CUES:
-        cursor = text.find(cue, start, end)
-        while cursor >= 0:
-            latest = max(latest, cursor)
-            cursor = text.find(cue, cursor + len(cue), end)
-    return latest
-
-
 def _has_hard_speech_reset(text: str, *, start: int, end: int) -> bool:
     return any(
         text.find(boundary, start, end) >= 0
@@ -755,73 +735,147 @@ def _has_quoted_report_marker(text: str, *, start: int, end: int) -> bool:
     )
 
 
-def _resolve_actor(
+def _provider_owns_quote(
     text: str,
-    candidate: _ActionCandidate,
+    quote_span: tuple[int, int],
     providers: tuple[ProviderEvidence, ...],
-    candidates: tuple[_ActionCandidate, ...],
-) -> ActorKind:
-    provider = _nearest_provider_before(candidate, providers)
-    if provider is None:
-        return "user"
-
-    quote_span = _quote_span_containing(text, candidate.start)
-    if quote_span is not None:
-        quote_start, _ = quote_span
-        quote_provider = next(
-            (
-                item
-                for item in reversed(providers)
-                if item.end <= quote_start
-            ),
-            None,
-        )
-        if quote_provider is not None and (
-            quote_provider.relation == "report"
-            or _has_quoted_report_marker(
-                text,
-                start=quote_provider.end,
-                end=quote_start,
-            )
-        ):
-            return "clinician"
-
-    previous_action_end = max(
+) -> bool:
+    quote_start, _quote_end = quote_span
+    provider = next(
         (
-            other.end
-            for other in candidates
-            if other.end <= candidate.start
+            item
+            for item in reversed(providers)
+            if item.end <= quote_start
         ),
-        default=0,
+        None,
     )
-    hard_reset = _has_hard_speech_reset(
-        text,
-        start=provider.end,
-        end=candidate.start,
-    )
-    if hard_reset:
-        return "user"
-    subject_start = _last_explicit_user_subject_start(
-        text,
-        start=max(previous_action_end, provider.end),
-        end=candidate.start,
-    )
-    explicit_subject_switch = (
-        previous_action_end > provider.end and subject_start >= 0
-    )
-    if provider.relation == "basis":
-        if _has_nested_report_marker(
+    return provider is not None and (
+        provider.relation == "report"
+        or _has_quoted_report_marker(
             text,
             start=provider.end,
-            end=candidate.start,
+            end=quote_start,
+        )
+    )
+
+
+def _latest_top_level_transition_end(
+    text: str,
+    *,
+    start: int,
+    end: int,
+) -> int:
+    latest = -1
+    for marker in (*_ACTOR_TRANSITIONS, *_ACTOR_HARD_BOUNDARIES):
+        cursor = text.find(marker, start, end)
+        while cursor >= 0:
+            if _quote_span_containing(text, cursor) is None:
+                latest = max(latest, cursor + len(marker))
+            cursor = text.find(marker, cursor + len(marker), end)
+    return latest
+
+
+def _has_user_cue_after_transition(
+    text: str,
+    *,
+    start: int,
+    end: int,
+) -> bool:
+    transition_end = _latest_top_level_transition_end(
+        text,
+        start=start,
+        end=end,
+    )
+    if transition_end < 0:
+        return False
+    return any(
+        text.find(cue, transition_end, end) >= 0
+        for cue in (
+            *_STRICT_USER_AUTHORITY_CUES,
+            *_EXPLICIT_USER_SUBJECT_CUES,
+        )
+    )
+
+
+def _assign_actors(
+    text: str,
+    providers: tuple[ProviderEvidence, ...],
+    candidates: tuple[_ActionCandidate, ...],
+) -> tuple[ActorKind, ...]:
+    actors: list[ActorKind] = []
+    active_provider: ProviderEvidence | None = None
+    report_scope_active = False
+    report_action_count = 0
+    previous_report_action_end = 0
+    provider_index = 0
+    provider: ProviderEvidence | None = None
+
+    for candidate in candidates:
+        while (
+            provider_index < len(providers)
+            and providers[provider_index].end <= candidate.start
         ):
-            return "clinician"
-        return "user"
-    if explicit_subject_switch:
-        return "user"
-    if provider.relation == "report":
-        return "clinician"
-    return "ambiguous"
+            provider = providers[provider_index]
+            provider_index += 1
+        if provider != active_provider:
+            active_provider = provider
+            report_scope_active = bool(
+                provider is not None and provider.relation == "report"
+            )
+            report_action_count = 0
+            previous_report_action_end = provider.end if provider else 0
+
+        quote_span = _quote_span_containing(text, candidate.start)
+        if quote_span is not None and _provider_owns_quote(
+            text,
+            quote_span,
+            providers,
+        ):
+            actor: ActorKind = "clinician"
+            if report_scope_active:
+                report_action_count += 1
+                previous_report_action_end = candidate.end
+            actors.append(actor)
+            continue
+
+        if provider is None:
+            actors.append("user")
+            continue
+
+        if provider.relation == "basis":
+            actor = (
+                "clinician"
+                if _has_nested_report_marker(
+                    text,
+                    start=provider.end,
+                    end=candidate.start,
+                )
+                else "user"
+            )
+            actors.append(actor)
+            continue
+
+        if report_scope_active:
+            may_switch = (
+                report_action_count > 0
+                and _has_user_cue_after_transition(
+                    text,
+                    start=previous_report_action_end,
+                    end=candidate.start,
+                )
+            )
+            if may_switch:
+                report_scope_active = False
+                actors.append("user")
+                continue
+            actors.append("clinician")
+            report_action_count += 1
+            previous_report_action_end = candidate.end
+            continue
+
+        actors.append("ambiguous" if provider.relation == "unresolved" else "user")
+
+    return tuple(actors)
 
 
 def _resolve_target(
@@ -1042,13 +1096,16 @@ def _is_question_scope(text: str, candidate: _ActionCandidate) -> bool:
     start = _clause_scope_start(text, candidate.start)
     end = _clause_scope_end(text, candidate.end)
     scope = text[start:end]
-    multi_character_markers = tuple(
-        marker for marker in _QUESTION_MARKERS if marker != "么"
-    )
+    prefix = text[start : candidate.start]
     normalized_scope = scope.rstrip("？?")
     return (
-        any(marker in scope for marker in multi_character_markers)
-        or normalized_scope.endswith("么")
+        any(marker in prefix for marker in _QUESTION_PREFIX_MARKERS)
+        or any(
+            normalized_scope.endswith(marker)
+            for marker in _QUESTION_TERMINAL_MARKERS
+            if marker not in {"？", "?"}
+        )
+        or scope.endswith(("？", "?"))
     )
 
 
@@ -1106,6 +1163,19 @@ def _resolve_polarity(
 
 
 def _has_negative_evidence(text: str, *, start: int, end: int) -> bool:
+    exception_spans: list[tuple[int, int]] = []
+    for exception in _NEGATIVE_EXCEPTIONS:
+        exception_start = text.find(exception, start, end)
+        while exception_start >= 0:
+            exception_spans.append(
+                (exception_start, exception_start + len(exception))
+            )
+            exception_start = text.find(
+                exception,
+                exception_start + len(exception),
+                end,
+            )
+
     for marker in _NEGATIVE_MARKERS:
         cursor = text.find(marker, start, end)
         while cursor >= 0:
@@ -1114,7 +1184,11 @@ def _has_negative_evidence(text: str, *, start: int, end: int) -> bool:
                 and cursor > start
                 and text[cursor - 1] == "要"
             )
-            if not is_question_compound:
+            is_exception = any(
+                exception_start <= cursor < exception_end
+                for exception_start, exception_end in exception_spans
+            )
+            if not is_question_compound and not is_exception:
                 return True
             cursor = text.find(marker, cursor + len(marker), end)
     return False
@@ -1172,44 +1246,62 @@ def _provenance(
 def _resolve_action_kind(
     candidate: _ActionCandidate,
     target: TargetKind,
-) -> ActionKind:
-    if (
-        candidate.verb in _CREATE_ACTIONS
-        and target in {"media", "plan", "reminder"}
-    ):
-        return target
-    return candidate.action
+) -> ActionKind | None:
+    create_families = candidate.allowed_families & _CREATE_FAMILIES
+    if target in _CREATE_FAMILIES:
+        if target in create_families:
+            return target
+        if create_families:
+            return None
+
+    non_create_families = candidate.allowed_families - _CREATE_FAMILIES
+    if len(non_create_families) == 1:
+        return next(iter(non_create_families))
+    return None
 
 
 def _scan_actions(
     text: str,
     providers: tuple[ProviderEvidence, ...],
 ) -> tuple[ActionEvidence, ...]:
-    candidates = _scan_action_candidates(text)
-    actions: list[ActionEvidence] = []
-    for candidate_index, candidate in enumerate(candidates):
-        actor = _resolve_actor(
-            text,
-            candidate,
-            providers,
-            candidates,
-        )
+    raw_candidates = _scan_action_candidates(text)
+    resolved_candidates: list[_ResolvedActionCandidate] = []
+    for candidate_index, candidate in enumerate(raw_candidates):
         target, target_start, target_end = _resolve_target(
             text,
             candidate,
             candidate_index,
-            candidates,
+            raw_candidates,
             providers,
         )
+        action_kind = _resolve_action_kind(candidate, target)
+        if action_kind is None:
+            continue
+        resolved_candidates.append(
+            _ResolvedActionCandidate(
+                candidate=candidate,
+                action=action_kind,
+                target=target,
+                target_start=target_start,
+                target_end=target_end,
+            )
+        )
+
+    candidates = tuple(item.candidate for item in resolved_candidates)
+    actors = _assign_actors(text, providers, candidates)
+    actions: list[ActionEvidence] = []
+    for candidate_index, resolved in enumerate(resolved_candidates):
+        candidate = resolved.candidate
+        actor = actors[candidate_index]
         actions.append(
             ActionEvidence(
                 start=candidate.start,
                 end=candidate.end,
-                action=_resolve_action_kind(candidate, target),
+                action=resolved.action,
                 actor=actor,
-                target=target,
-                target_start=target_start,
-                target_end=target_end,
+                target=resolved.target,
+                target_start=resolved.target_start,
+                target_end=resolved.target_end,
                 polarity=_resolve_polarity(
                     text,
                     candidate,
