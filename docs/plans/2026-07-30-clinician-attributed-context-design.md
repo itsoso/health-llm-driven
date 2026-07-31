@@ -45,67 +45,92 @@ feature needs fields the journal cannot represent.
 
 ## Architecture
 
-### Architecture correction: clause-level provenance
+### Architecture corrections
 
-Three TDD and review cycles showed that marker precedence alone cannot safely
-separate a user's command from a command quoted from a clinician. The whole-text
-classifier first collected read/write/mutation keywords and then tried to
-repair actor attribution for individual actions. That design repeatedly:
+Three TDD and review cycles first showed that marker precedence could not safely
+separate a user's command from a command quoted from a clinician. A deterministic
+clause frame then replaced whole-text marker precedence. That fixed
+punctuation-separated cases but failed another three review cycles because one
+clause can contain multiple actions with different actors:
 
-- treated “医生告诉我是……” as a user read command;
-- treated quoted clinician update/delete/sync language as user authorization;
-- rejected a valid second-clause command such as
-  “医生说是臀肌无力。请帮我记录一下”.
+```text
+我想记录饮食但医生说要保存诊断
+医生说要保存诊断但请记录今天腰痛6分
+```
 
-The approved correction is a deterministic clause-level provenance frame. It
-replaces per-action position patches while preserving the existing public
-`IntentFrame`.
+Attaching one actor, target and polarity to a clause necessarily transferred
+authority between those actions. Separate save and mutation reducers also
+drifted: a late cancellation applied to save but not delete, and a noun
+occurrence such as “诊断记录” could be interpreted as another save action.
+
+The approved correction is an action-occurrence evidence model. Authorization
+is resolved at the smallest semantic unit that can carry it: an individual
+action occurrence.
 
 The following alternatives were rejected:
 
-1. An LLM semantic classifier would understand more language but is too
+1. Splitting on more conjunctions such as “但/然后/不过” remains a clause
+   heuristic and still cannot represent nested or coordinated actors reliably.
+2. Failing closed for every clinician-bearing multi-action sentence is safe but
+   would make valid compound requests needlessly unusable.
+3. An LLM semantic classifier may help response generation but is too
    non-deterministic, slow and expensive to carry medical write authority.
-2. A capability-policy-only deny layer would reduce unsafe writes but would not
-   fix incorrect read/advice routing or support a valid “state, then save”
-   interaction.
 
-### Clause frame
+### Action evidence module
 
-The classifier splits the raw text before normalization so punctuation and
-newlines remain structural boundaries. It recognizes
-`，,。；;：:！？!?\n` and builds a private frame for each non-empty clause:
+Create a pure deterministic `utterance_action_evidence.py` module. It consumes
+raw text with original offsets and returns an ordered sequence:
 
 ```text
-source: user | clinician_quote
-action: read | save | update | delete | sync | none
-actor: user | clinician | ambiguous
-object: clinician_content | health_record | medication | unknown
+ActionEvidence
+  span
+  action
+  actor: user | clinician | ambiguous
+  target
+  target_span
+  polarity: positive | negative
+  modality: command | question | statement
+  provenance
 ```
 
-This is an internal routing primitive, not a new persistence model or public
-API. Existing keyword sets may supply evidence to a clause frame, but no
-whole-text keyword can independently grant write authority.
+Provider evidence is extracted independently of action vocabulary. Missing an
+action synonym must not erase known clinician provenance or expose the raw
+whole-text authorizer.
 
-### Clause reduction
+Each action occurrence resolves its own actor:
 
-Clause frames reduce to the existing `IntentFrame` under these rules:
+- a clinician reporting relationship governing the occurrence makes the actor
+  `clinician`;
+- a structurally scoped user command or “根据/依据/按照” basis construction
+  makes the actor `user`;
+- provider evidence before the occurrence without clear user authority makes
+  the actor `ambiguous`.
 
-- A clinician-quoted clause never authorizes a tool.
-- A user action applies to an explicit object in the same clause.
-- A user save command with an omitted object may refer to the immediately
-  preceding clinician-content clause. This supports
-  “医生说是臀肌无力。请帮我记录一下”.
-- Delete, update and sync do not inherit an omitted object from clinician
-  content; they require an explicit object in the user's command clause.
-- Explicit user read/mutation commands keep their existing semantics.
-- If clinician provenance is present but the actor is ambiguous, reduction is
-  fail-closed to `chat / clinical_context / acknowledge` with
-  `is_write=False`.
-- Text without clinician provenance continues through the existing general
-  classifier path.
+Noun spans such as “医生诊断记录” and “用药记录” are excluded before save
+evidence is created. Target resolution separates clinician basis/modifiers from
+the actual action object.
 
-The reliable model still owns the natural-language response. The deterministic
-clause frame owns routing and authorization only.
+### Evidence reduction
+
+Save, delete, update and sync share one target-aware stance reducer:
+
+- evidence is grouped by compatible target and ordered by source position;
+- a later negative stance cancels only a compatible earlier positive stance;
+- question modality never grants authority;
+- clinician and ambiguous evidence may inform response context but never
+  authorize a tool;
+- a user save may refer to immediately preceding clinician content;
+- destructive operations require their own explicit target.
+
+Read, media, plan and reminder actions use the same actor-resolved evidence
+sequence rather than a separate whole-text path. Clinician-bearing input must
+never fall back to raw whole-text authorization. Text with no clinician evidence
+continues through the existing general classifier.
+
+The classifier maps the final active evidence to the existing public
+`IntentFrame`; persistence models and public contracts do not change. The
+reliable model still owns natural-language response generation. Deterministic
+evidence owns routing and authorization only.
 
 ### Intent boundary
 
@@ -160,9 +185,11 @@ The Agent prompt explicitly requires:
 
 ```text
 User sentence
-  -> clinician attribution frame
-  -> bare statement -------------------------> reliable response, no write
-  -> explicit "记录/保存"
+  -> provider spans + ordered ActionEvidence
+  -> actor/target/polarity/modality per occurrence
+  -> target-aware stance reduction
+  -> bare or ambiguous clinician context ----> reliable response, no write
+  -> active user "记录/保存" evidence
        -> record_doctor_feedback tool
        -> ToolGateway explicit-write check
        -> doctor_report_service
@@ -174,11 +201,14 @@ User sentence
 
 ## Error Handling
 
-- Clause parsing is deterministic and local; it does not call an LLM.
-- Ambiguous actor or object attribution fails closed to a non-write
+- Evidence parsing is deterministic and local; it does not call an LLM.
+- Ambiguous actor, target or modality fails closed to a non-write
   `clinical_context` turn.
 - Parsing does not emit user-visible exceptions or log the clinical text.
-- Newline and punctuation boundaries are preserved before text normalization.
+- Raw offsets, punctuation, conjunctions and newlines are preserved before text
+  normalization.
+- Clinician evidence disables raw whole-text write/mutation fallback even when
+  no known action is found.
 - Missing all text fields: structured local rejection; no dispatch.
 - Missing user identity: structured local rejection; no dispatch.
 - Invalid visit date: structured local rejection with correction guidance.
@@ -192,22 +222,27 @@ User sentence
 
 TDD covers each boundary independently:
 
-1. A clause matrix crosses source (user/clinician), action
-   (none/read/save/update/delete/sync), structure (single/multiple/newline) and
-   Chinese/ASCII punctuation boundaries.
+1. An action-evidence matrix crosses actor (user/clinician/ambiguous), action
+   family, target, polarity and modality.
 2. The exact screenshot sentence classifies as `clinical_context` and is not
    fast-record eligible.
-3. “医生告诉我是……” and quoted read/update/delete/sync language never become
-   user actions.
-4. “医生说是……。请记录” is a valid user save, while ambiguous language fails
-   closed.
-5. Explicit user read/delete/update and ordinary current symptoms retain their
+3. Same-sentence multi-actor and multi-action permutations prove that every
+   occurrence keeps independent authority.
+4. Save/delete/update/sync synonyms are crossed with negative, interrogative and
+   late-cancellation stances.
+5. Noun “记录” spans never become save actions.
+6. Clinician basis before/after a medication, symptom, media, plan or reminder
+   target does not override the real target.
+7. Different targets do not cancel or authorize one another.
+8. A structural canary fails if clinician-bearing input reaches the legacy raw
+   whole-text authorizer.
+9. Explicit user read/delete/update and ordinary current symptoms retain their
    existing behavior.
-6. Tool schema, registry and capability policy expose only the intended write.
-7. Adapter validation and persistence produce an owner-scoped verified receipt.
-8. Full context recalls saved feedback with provenance; minimal context omits it;
-   cache invalidation makes the next turn fresh.
-9. Focused Agent streaming regression proves the original sentence no longer
+10. Tool schema, registry and capability policy expose only the intended write.
+11. Adapter validation and persistence produce an owner-scoped verified receipt.
+12. Full context recalls saved feedback with provenance; minimal context omits
+   it; cache invalidation makes the next turn fresh.
+13. Focused Agent streaming regression proves the original sentence no longer
    reaches the record-details fallback.
 
 ## Rollout

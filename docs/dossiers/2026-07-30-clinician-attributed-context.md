@@ -22,6 +22,18 @@
     clause frame，再 fail-closed 归并到现有 `IntentFrame`。
   - 用户裁决：2026-07-31 批准 clause-level provenance 方案、组件边界、
     失败策略和测试矩阵。
+- [x] Correction Block 2
+  - 触发：clause-level frame 完成三轮结构修正后，独立质量评审仍发现
+    quoted action 获得用户授权、delete 被误判 create、mutation 撤销失效。
+  - 证据：同一标点段内“我想记录…但医生说要保存…”的多个 action
+    共用 frame actor；save 与 mutation 使用不同粒度的解析和 stance。
+  - 根因：真实授权主体属于 action occurrence，不属于整句或 clause。
+  - 回退决策：停止第四轮 clause-frame 补丁，重新进入定义环。
+  - 新方案：独立 ActionEvidence 模块；每个动作拥有自己的
+    actor/target/polarity/modality/span；所有动作家族共用 target-aware
+    reducer；clinician-bearing 输入禁止 raw whole-text 授权。
+  - 用户裁决：2026-07-31 批准 ActionEvidence 方案、组件边界、失败策略和
+    属性测试矩阵。
 
 ## S0 · 用户需求（逐字）
 
@@ -84,18 +96,21 @@
 
 - 评审方式：Codex challenge
 - 已焊进设计的硬约束：
-  - clause-level actor/provenance 判定先于全句 read/write/mutation keyword。
+  - action-occurrence actor/provenance 判定先于全句
+    read/write/mutation keyword。
+  - clinician-bearing 输入绝不回 raw whole-text authorizer。
   - 保存必须有显式写意图并产生可验证回执。
   - 上下文标明“用户转述的医生意见”，禁止把来源升级成系统诊断。
   - 不新增表、不迁移、不自动变更 HealthProblem。
 - 待拍板分叉：无。
-- **裁决**：PASS（2026-07-31 重新裁决）—— 用户已批准 clause-level
-  provenance 重构及持久化语义。
+- **裁决**：PASS（2026-07-31 第二次重新裁决）—— 用户已批准
+  ActionEvidence 重构及持久化语义。
 
 ## S4 · 研发任务分解
 
-- T1：clause-level provenance frame、动作主体归属、fast-record
-  防误判（原句 + 用户命令守恒 + quoted action fail-closed）。
+- T1：ActionEvidence 解析、每动作主体与目标归属、统一 stance reducer、
+  fast-record 防误判（原句 + 多主体属性矩阵 + quoted action
+  fail-closed）。
 - T2：模型可见工具、Kernel registry、回执契约与 capability policy。
 - T3：owner-scoped 写入 adapter、校验、回滚与敏感日志测试。
 - T4：完整上下文中的来源标记召回、长度限制与 cache invalidation。
