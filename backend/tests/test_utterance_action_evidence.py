@@ -4,6 +4,8 @@ from inspect import getsource
 import pytest
 
 import app.services.utterance_action_evidence as utterance_action_evidence
+import app.services.utterance_intent_classifier as utterance_intent_classifier
+from app.services import utterance_intent_lexicon as lexicon
 from app.services.utterance_action_evidence import (
     ActionEvidence,
     EvidenceParse,
@@ -1290,3 +1292,298 @@ def test_target_scope_prefers_governed_target_or_fails_closed_on_conflict(
     assert len(parsed.actions) == 1
     assert parsed.actions[0].action == expected_action
     assert parsed.actions[0].target == expected_target
+
+
+def test_classifier_and_action_evidence_share_one_intent_lexicon():
+    shared_names = (
+        "QUESTION_SIGNALS",
+        "WRITE_ACTIONS",
+        "WRITE_NEGATIONS",
+        "WRITE_NEGATION_EXCEPTIONS",
+        "MUTATE_ACTIONS",
+        "MUTATION_NEGATIONS",
+        "MUTATION_NEGATION_EXCEPTIONS",
+        "MEDIA_TERMS",
+        "MEDIA_CREATE_ACTIONS",
+        "PLAN_TERMS",
+        "PLAN_CREATE_ACTIONS",
+        "PLAN_UPDATE_ACTIONS",
+        "REMINDER_TERMS",
+        "REMINDER_CREATE_ACTIONS",
+        "CLINICIAN_CONTEXT_WRITE_ACTIONS",
+    )
+    classifier_source = getsource(utterance_intent_classifier)
+    for name in shared_names:
+        assert getattr(utterance_intent_classifier, name) is getattr(
+            lexicon,
+            name,
+        )
+        assert f"\n{name} =" not in classifier_source
+
+    assert utterance_action_evidence.QUESTION_SIGNALS is lexicon.QUESTION_SIGNALS
+    assert utterance_action_evidence.MUTATE_ACTIONS is lexicon.MUTATE_ACTIONS
+    action_verbs = {
+        verb
+        for verb, _ in utterance_action_evidence._ACTION_VOCABULARY
+    }
+    expected_shared_verbs = {
+        *lexicon.CLINICIAN_CONTEXT_WRITE_ACTIONS,
+        *lexicon.MUTATE_ACTIONS["delete"],
+        *lexicon.MUTATE_ACTIONS["update"],
+        *lexicon.MEDIA_CREATE_ACTIONS,
+        *lexicon.PLAN_CREATE_ACTIONS,
+        *lexicon.REMINDER_CREATE_ACTIONS,
+    }
+    assert expected_shared_verbs <= action_verbs
+
+    assert {
+        "不需要",
+        "暂不",
+        "不能",
+        "不可",
+        "禁止",
+        "避免",
+    } <= set(lexicon.MUTATION_NEGATIONS)
+    assert {
+        "能否",
+        "可不可以",
+        "是不是",
+        "怎么",
+        "吗",
+        "是否",
+    } <= set(lexicon.QUESTION_SIGNALS)
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "根据医生建议「请删除用药记录」",
+        "依据医生诊断：“请保存诊断记录”",
+        "按照医生认为‘请同步健康数据’",
+        '根据医生判断"请调整用药剂量"',
+    ),
+)
+def test_quoted_clinician_report_overrides_basis_relation(text):
+    parsed = parse_action_evidence(text)
+
+    assert len(parsed.actions) == 1
+    assert parsed.actions[0].actor == "clinician"
+    assert parsed.actions[0].provenance == "clinician_reported_action"
+
+
+@pytest.mark.parametrize("marker", lexicon.MUTATION_NEGATIONS)
+def test_every_shared_mutation_negation_applies_to_an_action(marker):
+    parsed = parse_action_evidence(f"{marker}删除用药记录")
+
+    assert len(parsed.actions) == 1
+    assert parsed.actions[0].polarity == "negative"
+
+
+_REQUIRED_QUESTION_SIGNALS = tuple(
+    signal
+    for signal in lexicon.QUESTION_SIGNALS
+    if signal in {
+        "能否",
+        "可不可以",
+        "是不是",
+        "该不该",
+        "怎么",
+        "么",
+        "吗",
+        "是否",
+        "要不要",
+    }
+)
+
+
+def test_shared_question_property_covers_required_signals():
+    assert set(_REQUIRED_QUESTION_SIGNALS) == {
+        "能否",
+        "可不可以",
+        "是不是",
+        "该不该",
+        "怎么",
+        "么",
+        "吗",
+        "是否",
+        "要不要",
+    }
+
+
+@pytest.mark.parametrize("marker", _REQUIRED_QUESTION_SIGNALS)
+def test_every_required_shared_question_signal_applies_to_an_action(marker):
+    text = (
+        f"删除用药记录{marker}"
+        if marker in {"么", "吗"}
+        else f"{marker}删除用药记录"
+    )
+    parsed = parse_action_evidence(text)
+
+    assert len(parsed.actions) == 1
+    assert parsed.actions[0].modality == "question"
+
+
+def test_question_particle_does_not_match_inside_declarative_word():
+    parsed = parse_action_evidence("删除那么多用药记录")
+
+    assert len(parsed.actions) == 1
+    assert parsed.actions[0].modality == "command"
+
+
+@pytest.mark.parametrize(
+    ("text", "expected_polarities", "expected_modalities"),
+    (
+        (
+            "不要删除或保存任何用药记录",
+            ("negative", "negative"),
+            ("command", "command"),
+        ),
+        (
+            "是否需要删除并保存用药记录",
+            ("positive", "positive"),
+            ("question", "question"),
+        ),
+        (
+            "是否删除用药记录，但我想保存诊断记录",
+            ("positive", "positive"),
+            ("question", "command"),
+        ),
+        (
+            "我已经删除旧记录，现在我要保存诊断记录",
+            ("positive", "positive"),
+            ("statement", "command"),
+        ),
+    ),
+)
+def test_each_occurrence_has_its_own_polarity_and_modality_scope(
+    text,
+    expected_polarities,
+    expected_modalities,
+):
+    parsed = parse_action_evidence(text)
+
+    assert tuple(action.polarity for action in parsed.actions) == (
+        expected_polarities
+    )
+    assert tuple(action.modality for action in parsed.actions) == (
+        expected_modalities
+    )
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "我已删除用药记录",
+        "我已经删除用药记录",
+        "我刚删除了用药记录",
+        "我刚刚删除了用药记录",
+        "我刚才删除了用药记录",
+        "我早就删除了用药记录",
+        "我之前删除过用药记录",
+        "我曾经删除过用药记录",
+        "我删除了用药记录",
+        "我删除过用药记录",
+    ),
+)
+def test_completed_aspect_actions_default_to_statement(text):
+    parsed = parse_action_evidence(text)
+
+    assert len(parsed.actions) == 1
+    assert parsed.actions[0].modality == "statement"
+
+
+@pytest.mark.parametrize(
+    ("text", "inner_action"),
+    (
+        ("查看删除后的用药记录", "delete"),
+        ("保存调整后的用药剂量", "update"),
+        ("分析更新后的用药记录", "update"),
+        ("查看删除过的用药记录", "delete"),
+    ),
+)
+def test_relative_action_occurrence_is_statement(text, inner_action):
+    parsed = parse_action_evidence(text)
+
+    inner = next(action for action in parsed.actions if action.action == inner_action)
+    assert inner.modality == "statement"
+
+
+@pytest.mark.parametrize(
+    ("text", "expected_action", "expected_target"),
+    (
+        ("把饮食记录保存下来", "save", "diet"),
+        ("把诊断记录存下来", "save", "clinician_record"),
+        ("把运动记录删除", "delete", "health_record"),
+        ("查看疼痛记录", "read", "symptom"),
+    ),
+)
+def test_structural_record_noun_is_not_an_extra_save_occurrence(
+    text,
+    expected_action,
+    expected_target,
+):
+    parsed = parse_action_evidence(text)
+
+    assert len(parsed.actions) == 1
+    assert parsed.actions[0].action == expected_action
+    assert parsed.actions[0].target == expected_target
+
+
+_SHARED_CREATE_ACTIONS = tuple(
+    dict.fromkeys(
+        (
+            *lexicon.MEDIA_CREATE_ACTIONS,
+            *lexicon.PLAN_CREATE_ACTIONS,
+            *lexicon.REMINDER_CREATE_ACTIONS,
+        )
+    )
+)
+
+
+@pytest.mark.parametrize("verb", _SHARED_CREATE_ACTIONS)
+@pytest.mark.parametrize(
+    ("target_text", "expected_family"),
+    (
+        ("一张康复图片", "media"),
+        ("一个康复计划", "plan"),
+        ("一个复查提醒", "reminder"),
+    ),
+)
+def test_every_shared_create_verb_derives_family_from_target(
+    verb,
+    target_text,
+    expected_family,
+):
+    parsed = parse_action_evidence(f"请{verb}{target_text}")
+
+    assert len(parsed.actions) == 1
+    assert parsed.actions[0].action == expected_family
+    assert parsed.actions[0].target == expected_family
+
+
+def test_basis_modifier_excludes_all_nested_targets_before_resolution():
+    parsed = parse_action_evidence(
+        "删除根据医生对用药的建议形成的诊断记录"
+    )
+
+    assert len(parsed.actions) == 1
+    assert parsed.actions[0].action == "delete"
+    assert parsed.actions[0].target == "clinician_record"
+
+
+def test_occurrence_extractor_keeps_linear_enumeration_and_no_regex():
+    """Extraction stays deterministic and preserves Task 1A raw spans."""
+
+    source = getsource(utterance_action_evidence)
+
+    assert "enumerate(candidates)" in source
+    assert ".index(" not in source
+    assert "import re" not in source
+    assert "re." not in source
+
+    text = "医生说请删除用药记录，然后我想保存诊断记录"
+    parsed = parse_action_evidence(text)
+    assert tuple(text[action.start : action.end] for action in parsed.actions) == (
+        "删除",
+        "保存",
+    )

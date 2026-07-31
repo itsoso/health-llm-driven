@@ -9,6 +9,32 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal, TypeAlias
 
+from app.services.utterance_intent_lexicon import (
+    CLAUSE_ACTION_NEGATIONS,
+    CLINICIAN_CONTEXT_WRITE_ACTIONS,
+    MEDIA_CREATE_ACTIONS,
+    MEDIA_TERMS,
+    MUTATE_ACTIONS,
+    MUTATION_NEGATIONS,
+    PLAN_CREATE_ACTIONS,
+    PLAN_TERMS,
+    QUESTION_SIGNALS,
+    REMINDER_CREATE_ACTIONS,
+    REMINDER_TERMS,
+    WRITE_ACTIONS,
+    WRITE_NEGATIONS,
+)
+
+__all__ = (
+    "ActionEvidence",
+    "EvidenceParse",
+    "ProviderEvidence",
+    "parse_action_evidence",
+    "MUTATE_ACTIONS",
+    "QUESTION_SIGNALS",
+    "WRITE_ACTIONS",
+)
+
 ActionKind: TypeAlias = Literal[
     "read",
     "save",
@@ -73,41 +99,25 @@ _REPORT_NOUN_CONTINUATIONS = {
     "诊断": ("记录", "报告", "结果", "证明", "清单", "列表"),
     "建议": ("记录", "报告", "清单", "列表", "文档"),
 }
+_ACTION_KIND_BY_VERB: dict[str, CandidateActionKind] = {
+    verb: "save" for verb in CLINICIAN_CONTEXT_WRITE_ACTIONS
+}
+for _operation, _verbs in MUTATE_ACTIONS.items():
+    for _verb in _verbs:
+        _ACTION_KIND_BY_VERB[_verb] = _operation
+for _verb in ("查看", "查询", "看一下", "看看", "查一下", "显示", "汇总"):
+    _ACTION_KIND_BY_VERB[_verb] = "read"
+for _verb in ("分析", "解读", "评估"):
+    _ACTION_KIND_BY_VERB[_verb] = "advice"
+for _verb in (
+    *MEDIA_CREATE_ACTIONS,
+    *PLAN_CREATE_ACTIONS,
+    *REMINDER_CREATE_ACTIONS,
+):
+    _ACTION_KIND_BY_VERB.setdefault(_verb, "create")
 _ACTION_VOCABULARY: tuple[tuple[str, CandidateActionKind], ...] = tuple(
     sorted(
-        (
-            ("存下来", "save"),
-            ("记一下", "save"),
-            ("记录", "save"),
-            ("记下", "save"),
-            ("录入", "save"),
-            ("保存", "save"),
-            ("写入", "save"),
-            ("查看", "read"),
-            ("删除", "delete"),
-            ("删掉", "delete"),
-            ("删了", "delete"),
-            ("移除", "delete"),
-            ("去掉", "delete"),
-            ("撤销", "delete"),
-            ("清掉", "delete"),
-            ("调整", "update"),
-            ("更新", "update"),
-            ("修改", "update"),
-            ("改成", "update"),
-            ("改为", "update"),
-            ("改到", "update"),
-            ("更正", "update"),
-            ("修正", "update"),
-            ("同步", "sync"),
-            ("分析", "advice"),
-            ("生成", "create"),
-            ("创建", "create"),
-            ("制作", "create"),
-            ("制定", "create"),
-            ("安排", "create"),
-            ("设置", "create"),
-        ),
+        _ACTION_KIND_BY_VERB.items(),
         key=lambda item: len(item[0]),
         reverse=True,
     )
@@ -132,17 +142,18 @@ _ACTION_SEPARATORS = (
     ";",
     "\n",
 )
-_NEGATIVE_MARKERS = (
-    "没有必要",
-    "不要",
-    "不用",
-    "无需",
-    "先别",
-    "不想",
-    "不再",
-    "别",
+_NEGATIVE_MARKERS = tuple(
+    dict.fromkeys(
+        (
+            *CLAUSE_ACTION_NEGATIONS,
+            *MUTATION_NEGATIONS,
+            *WRITE_NEGATIONS,
+            "勿",
+            "不再",
+        )
+    )
 )
-_QUESTION_MARKERS = ("要不要", "是否需要", "是否")
+_QUESTION_MARKERS = QUESTION_SIGNALS
 _USER_AUTHORITY_CUES = (
     "我想",
     "我要",
@@ -151,10 +162,15 @@ _USER_AUTHORITY_CUES = (
 )
 _EXPLICIT_USER_SUBJECT_CUES = ("我想", "我要")
 _HARD_SPEECH_RESETS = ("。", "；", ";", "\n", "！", "!", "？", "?")
-_QUOTE_PAIRS = (("“", "”"), ("「", "」"), ('"', '"'))
+_QUOTE_PAIRS = (
+    ("“", "”"),
+    ("‘", "’"),
+    ("「", "」"),
+    ('"', '"'),
+)
 _NESTED_REPORT_MARKERS = ("告诉", "表示", "要求", "让我", "称")
 _NOMINAL_SPEECH_SUFFIXES = ("的内容", "的建议", "的话")
-_TARGET_TERMS: tuple[tuple[str, TargetKind], ...] = (
+_BASE_TARGET_TERMS: tuple[tuple[str, TargetKind], ...] = (
     ("用药剂量", "medication"),
     ("用药记录", "medication"),
     ("药物", "medication"),
@@ -189,6 +205,61 @@ _TARGET_TERMS: tuple[tuple[str, TargetKind], ...] = (
     ("医生说的内容", "clinician_content"),
     ("检查结果", "clinician_content"),
     ("诊断", "clinician_content"),
+)
+_TARGET_KIND_BY_TERM = dict(_BASE_TARGET_TERMS)
+for _term in MEDIA_TERMS:
+    _TARGET_KIND_BY_TERM.setdefault(_term, "media")
+for _term in PLAN_TERMS:
+    _TARGET_KIND_BY_TERM.setdefault(_term, "plan")
+for _term in REMINDER_TERMS:
+    _TARGET_KIND_BY_TERM.setdefault(_term, "reminder")
+_TARGET_TERMS: tuple[tuple[str, TargetKind], ...] = tuple(
+    sorted(
+        _TARGET_KIND_BY_TERM.items(),
+        key=lambda item: len(item[0]),
+        reverse=True,
+    )
+)
+_CREATE_ACTIONS = frozenset(
+    (
+        *MEDIA_CREATE_ACTIONS,
+        *PLAN_CREATE_ACTIONS,
+        *REMINDER_CREATE_ACTIONS,
+    )
+)
+_CLAUSE_SCOPE_BOUNDARIES = (
+    *_HARD_SPEECH_RESETS,
+    "，",
+    ",",
+    "然后",
+    "随后",
+    "接着",
+    "但是",
+    "不过",
+    "可是",
+    "现在",
+    "但",
+)
+_COORDINATION_MARKERS = ("或者", "以及", "并且", "或", "和", "与", "及", "并", "、")
+_COMPLETED_PREFIX_MARKERS = (
+    "已经",
+    "刚刚",
+    "刚才",
+    "早就",
+    "之前",
+    "曾经",
+    "已",
+    "刚",
+)
+_COMPLETED_SUFFIX_MARKERS = ("后的", "过的", "了的", "了", "过")
+_RELATIVE_ACTION_SUFFIXES = ("后的", "过的", "了的", "的")
+_BASIS_MODIFIER_END_MARKERS = (
+    "生成的",
+    "形成的",
+    "提到的",
+    "给出的",
+    "提出的",
+    "作出的",
 )
 
 
@@ -532,7 +603,8 @@ def _is_record_noun(
         other != candidate
         and other.start >= region_start
         and other.end <= region_end
-        and other.action in {"read", "update", "delete", "sync", "advice"}
+        and other.action
+        in {"read", "save", "update", "delete", "sync", "advice"}
         for other in raw_candidates
     )
     if targeting_action and leading_text:
@@ -561,6 +633,40 @@ def _is_attributive_creation(
     )
 
 
+def _is_reminder_target_noun(
+    text: str,
+    candidate: _ActionCandidate,
+    raw_candidates: tuple[_ActionCandidate, ...],
+) -> bool:
+    if candidate.verb not in REMINDER_TERMS:
+        return False
+
+    region_start = _region_start(text, candidate.start)
+    region_end = _region_end(text, candidate.end)
+    containing_target = next(
+        (
+            match
+            for match in _scan_target_matches(
+                text,
+                start=region_start,
+                end=region_end,
+            )
+            if match.target == "reminder"
+            and match.start <= candidate.start
+            and candidate.end <= match.end
+        ),
+        None,
+    )
+    if containing_target is None:
+        return False
+    return any(
+        other != candidate
+        and other.end <= containing_target.start
+        and other.start >= region_start
+        for other in raw_candidates
+    )
+
+
 def _scan_action_candidates(
     text: str,
 ) -> tuple[_ActionCandidate, ...]:
@@ -569,6 +675,7 @@ def _scan_action_candidates(
         candidate
         for candidate in raw_candidates
         if not _is_record_noun(text, candidate, raw_candidates)
+        and not _is_reminder_target_noun(text, candidate, raw_candidates)
         and not _is_attributive_creation(text, candidate)
     )
 
@@ -641,6 +748,13 @@ def _has_nested_report_marker(text: str, *, start: int, end: int) -> bool:
     return False
 
 
+def _has_quoted_report_marker(text: str, *, start: int, end: int) -> bool:
+    return any(
+        text.find(marker, start, end) >= 0
+        for marker in _REPORT_MARKERS
+    )
+
+
 def _resolve_actor(
     text: str,
     candidate: _ActionCandidate,
@@ -664,7 +778,7 @@ def _resolve_actor(
         )
         if quote_provider is not None and (
             quote_provider.relation == "report"
-            or _has_nested_report_marker(
+            or _has_quoted_report_marker(
                 text,
                 start=quote_provider.end,
                 end=quote_start,
@@ -724,7 +838,10 @@ def _resolve_target(
     )
     next_is_relative = (
         next_candidate is not None
-        and text.startswith("的", next_candidate.end)
+        and any(
+            text.startswith(marker, next_candidate.end)
+            for marker in _RELATIVE_ACTION_SUFFIXES
+        )
     )
     next_start = (
         len(text)
@@ -790,24 +907,84 @@ def _is_provider_modifier_target(
     return False
 
 
+def _basis_modifier_spans(
+    text: str,
+    providers: tuple[ProviderEvidence, ...],
+) -> tuple[tuple[int, int], ...]:
+    spans: list[tuple[int, int]] = []
+    for provider in providers:
+        if provider.relation != "basis":
+            continue
+        before_provider = _skip_whitespace_left(text, provider.start)
+        span_start = next(
+            (
+                before_provider - len(marker)
+                for marker in _BASIS_MARKERS
+                if before_provider >= len(marker)
+                and text.startswith(
+                    marker,
+                    before_provider - len(marker),
+                    before_provider,
+                )
+            ),
+            provider.start,
+        )
+        scope_end = _clause_scope_end(text, provider.end)
+        terminal_matches = tuple(
+            (text.find(marker, provider.end, scope_end), marker)
+            for marker in _BASIS_MODIFIER_END_MARKERS
+        )
+        valid_matches = tuple(
+            item for item in terminal_matches if item[0] >= 0
+        )
+        if not valid_matches:
+            continue
+        terminal_start, terminal = min(
+            valid_matches,
+            key=lambda item: item[0],
+        )
+        spans.append(
+            (span_start, terminal_start + len(terminal))
+        )
+    return tuple(spans)
+
+
+def _inside_any_span(
+    match: _TargetMatch,
+    spans: tuple[tuple[int, int], ...],
+) -> bool:
+    return any(
+        start <= match.start and match.end <= end
+        for start, end in spans
+    )
+
+
 def _resolve_target_matches(
     text: str,
     candidate: _ActionCandidate,
     matches: tuple[_TargetMatch, ...],
     providers: tuple[ProviderEvidence, ...],
 ) -> tuple[TargetKind, int, int]:
+    modifier_spans = _basis_modifier_spans(text, providers)
+    scoped_matches = tuple(
+        match
+        for match in matches
+        if not _inside_any_span(match, modifier_spans)
+    )
     has_actual_target = any(
         match.target not in {"clinician_content", "clinician_record"}
-        for match in matches
+        for match in scoped_matches
     )
     filtered = tuple(
         match
-        for match in matches
+        for match in scoped_matches
         if not (
             has_actual_target
             and _is_provider_modifier_target(text, match, providers)
         )
     )
+    if not filtered:
+        return "unknown", candidate.end, candidate.end
     target_kinds = {match.target for match in filtered}
     if len(target_kinds) != 1:
         return "unknown", candidate.end, candidate.end
@@ -843,16 +1020,51 @@ def _hard_scope_end(text: str, position: int) -> int:
     return end
 
 
+def _clause_scope_start(text: str, position: int) -> int:
+    start = 0
+    for boundary in _CLAUSE_SCOPE_BOUNDARIES:
+        index = text.rfind(boundary, 0, position)
+        if index >= 0:
+            start = max(start, index + len(boundary))
+    return start
+
+
+def _clause_scope_end(text: str, position: int) -> int:
+    end = len(text)
+    for boundary in _CLAUSE_SCOPE_BOUNDARIES:
+        index = text.find(boundary, position)
+        if index >= 0:
+            end = min(end, index + len(boundary))
+    return end
+
+
 def _is_question_scope(text: str, candidate: _ActionCandidate) -> bool:
-    start = _hard_scope_start(text, candidate.start)
-    end = _hard_scope_end(text, candidate.end)
+    start = _clause_scope_start(text, candidate.start)
+    end = _clause_scope_end(text, candidate.end)
     scope = text[start:end]
-    return (
-        any(marker in scope for marker in _QUESTION_MARKERS)
-        or "吗" in scope
-        or "？" in scope
-        or "?" in scope
+    multi_character_markers = tuple(
+        marker for marker in _QUESTION_MARKERS if marker != "么"
     )
+    normalized_scope = scope.rstrip("？?")
+    return (
+        any(marker in scope for marker in multi_character_markers)
+        or normalized_scope.endswith("么")
+    )
+
+
+def _is_coordinated_with_previous(
+    text: str,
+    candidate_index: int,
+    candidates: tuple[_ActionCandidate, ...],
+) -> bool:
+    if candidate_index == 0:
+        return False
+    previous = candidates[candidate_index - 1]
+    candidate = candidates[candidate_index]
+    bridge = text[previous.end : candidate.start]
+    if any(boundary in bridge for boundary in _CLAUSE_SCOPE_BOUNDARIES):
+        return False
+    return any(marker in bridge for marker in _COORDINATION_MARKERS)
 
 
 def _occurrence_prefix_start(
@@ -866,7 +1078,10 @@ def _occurrence_prefix_start(
         if candidate_index > 0
         else 0
     )
-    return max(previous_end, _hard_scope_start(text, candidate.start))
+    clause_start = _clause_scope_start(text, candidate.start)
+    if _is_coordinated_with_previous(text, candidate_index, candidates):
+        return clause_start
+    return max(previous_end, clause_start)
 
 
 def _resolve_polarity(
@@ -895,7 +1110,7 @@ def _has_negative_evidence(text: str, *, start: int, end: int) -> bool:
         cursor = text.find(marker, start, end)
         while cursor >= 0:
             is_question_compound = (
-                marker == "不要"
+                marker.startswith("不要")
                 and cursor > start
                 and text[cursor - 1] == "要"
             )
@@ -913,8 +1128,8 @@ def _resolve_modality(
 ) -> ModalityKind:
     if _is_question_scope(text, candidate):
         return "question"
-    scope_start = _hard_scope_start(text, candidate.start)
-    scope_end = _hard_scope_end(text, candidate.end)
+    scope_start = _clause_scope_start(text, candidate.start)
+    scope_end = _clause_scope_end(text, candidate.end)
     prefix = text[scope_start : candidate.start]
     suffix_end = (
         candidates[candidate_index + 1].start
@@ -922,9 +1137,17 @@ def _resolve_modality(
         else scope_end
     )
     suffix = text[candidate.end:suffix_end]
-    if text.startswith("的", candidate.end):
+    if any(
+        text.startswith(marker, candidate.end)
+        for marker in _RELATIVE_ACTION_SUFFIXES
+    ):
         return "statement"
-    if any(marker in prefix for marker in ("已经", "刚刚", "曾经")):
+    if any(
+        text.startswith(marker, candidate.end)
+        for marker in _COMPLETED_SUFFIX_MARKERS
+    ):
+        return "statement"
+    if any(marker in prefix for marker in _COMPLETED_PREFIX_MARKERS):
         return "statement"
     if "昨天" in prefix and ("过" in suffix or "了" in suffix):
         return "statement"
@@ -950,11 +1173,12 @@ def _resolve_action_kind(
     candidate: _ActionCandidate,
     target: TargetKind,
 ) -> ActionKind:
-    if candidate.action != "create":
-        return candidate.action
-    if target in {"media", "plan", "reminder"}:
+    if (
+        candidate.verb in _CREATE_ACTIONS
+        and target in {"media", "plan", "reminder"}
+    ):
         return target
-    return "create"
+    return candidate.action
 
 
 def _scan_actions(
