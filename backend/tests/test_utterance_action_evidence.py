@@ -928,3 +928,48 @@ def test_basis_and_provider_cross_product_keeps_user_authority(
 
     assert len(parsed.actions) == 1
     assert parsed.actions[0].actor == "user"
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "医生说请记录每天腰痛",
+        "医生说帮我删除用药记录",
+        "医生建议请调整用药",
+        "医生要求帮我同步健康数据",
+    ),
+)
+def test_user_cue_inside_provider_report_does_not_steal_authority(text):
+    parsed = parse_action_evidence(text)
+
+    assert len(parsed.actions) == 1
+    assert parsed.actions[0].actor in {"clinician", "ambiguous"}
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    (
+        (
+            "医生说要保存诊断但是帮我记录今天腰痛",
+            (("save", "clinician"), ("save", "user")),
+        ),
+        (
+            "医生说要保存诊断接着请记录今天腰痛",
+            (("save", "clinician"), ("save", "user")),
+        ),
+        (
+            "医生说是腰肌劳损。请记录医生诊断",
+            (("save", "user"),),
+        ),
+    ),
+)
+def test_previous_action_or_hard_boundary_resets_to_user_authority(
+    text,
+    expected,
+):
+    parsed = parse_action_evidence(text)
+
+    assert tuple(
+        (action.action, action.actor)
+        for action in parsed.actions
+    ) == expected

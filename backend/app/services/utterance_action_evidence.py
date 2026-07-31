@@ -132,6 +132,7 @@ _USER_AUTHORITY_CUES = (
     "请",
     "帮我",
 )
+_HARD_SPEECH_RESETS = ("。", "；", ";", "\n", "！", "!", "？", "?")
 _RECORD_NOUN_TERMS = (
     "医生诊断记录",
     "诊断记录",
@@ -562,6 +563,13 @@ def _last_user_cue_start(text: str, *, start: int, end: int) -> int:
     return latest
 
 
+def _has_hard_speech_reset(text: str, *, start: int, end: int) -> bool:
+    return any(
+        text.find(boundary, start, end) >= 0
+        for boundary in _HARD_SPEECH_RESETS
+    )
+
+
 def _resolve_actor(
     text: str,
     candidate: _ActionCandidate,
@@ -581,15 +589,23 @@ def _resolve_actor(
         previous_action_end,
         provider.end if provider is not None else 0,
     )
-    if _last_user_cue_start(
+    cue_start = _last_user_cue_start(
         text,
         start=cue_floor,
         end=candidate.start,
-    ) >= 0:
-        return "user"
+    )
     if provider is None:
         return "user"
     if provider.relation == "basis":
+        return "user"
+    if cue_start >= 0 and (
+        previous_action_end > provider.end
+        or _has_hard_speech_reset(
+            text,
+            start=provider.end,
+            end=cue_start,
+        )
+    ):
         return "user"
     if provider.relation == "report":
         return "clinician"
