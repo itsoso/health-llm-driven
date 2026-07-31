@@ -298,6 +298,183 @@ git add backend/app/services/utterance_action_evidence.py backend/tests/test_utt
 git commit -m "refactor(agent): parse actor per action occurrence"
 ```
 
+## Task 1B v2 correction: constrain families and assign actor scopes
+
+This section supersedes Task 1B Steps 1–9 for all work after commit
+`065f47220`. That commit did not pass specification review and must not be used
+by Task 1C until this correction passes both review gates.
+
+**Files:**
+
+- Modify: `backend/app/services/utterance_intent_lexicon.py`
+- Modify: `backend/app/services/utterance_action_evidence.py`
+- Modify: `backend/app/services/utterance_intent_classifier.py` only to restore
+  its pre-Task-1B imports/constants and behavior
+- Modify: `backend/tests/test_utterance_action_evidence.py`
+- Modify: `backend/tests/test_utterance_intent_classifier.py`
+- Regenerate: `docs/_generated/system-map.json` only when the official
+  generator reports a structural change
+
+### Step 1: Freeze the legacy classifier contract
+
+Restore the legacy values and ordering of `QUESTION_SIGNALS`,
+`MUTATION_NEGATIONS` and the other classifier-facing tuples to their values at
+`065f47220^`. Restore `_has_question_signal()` to its previous behavior.
+
+Before implementation, add a golden compatibility matrix that proves Task 1B
+does not change public classifier output for at least:
+
+```text
+删除用药记录么
+勿删除用药记录
+不再删除用药记录
+该不该记录今天腰痛6分
+今天我没吃那么多，晚餐的两千大卡只有吃了四分之一
+```
+
+The legacy view and the stricter evidence view live in the same lexicon module,
+but the classifier must consume only the legacy view until Task 1C.
+
+### Step 2: Define structured evidence vocabulary
+
+Add immutable lexicon rows that preserve each surface verb's original family
+membership instead of flattening all creation verbs into one set. At minimum:
+
+```text
+生成 -> media, plan
+保存 -> save, plan
+设置 -> reminder
+制定 -> plan
+制作 -> media
+创建 -> reminder
+```
+
+Read candidates must derive from `READ_ACTIONS`; save, mutation, media, plan and
+reminder candidates must derive from their shared tuples. Put evidence-only
+question and negation cues in explicitly named evidence constants with their
+prefix/suffix/terminal placement semantics. Do not copy a filtered tuple into
+the parser or tests.
+
+### Step 3: Write the family-conservation RED matrix
+
+For every structured create lexeme:
+
+- each listed allowed family gets a positive target example;
+- every unlisted media/plan/reminder family gets a negative example;
+- an incompatible target must not emit an authorizing evidence under another
+  family;
+- an action-like target noun such as “提醒” must not create a second candidate
+  that launders the incompatible outer verb.
+
+Pin these overlap cases:
+
+```text
+保存康复计划 -> plan
+保存诊断记录 -> save
+生成康复图片 -> media
+生成康复计划 -> plan
+生成复查提醒 -> no reminder authorization
+设置康复计划 -> no plan authorization
+制作复查提醒 -> no reminder authorization
+创建康复图片 -> no media authorization
+```
+
+Replace the rejected all-verbs × all-targets success matrix. Assert that parser
+candidate surfaces exactly cover the shared structured lexicon, including all
+`READ_ACTIONS`.
+
+### Step 4: Write the actor-scope RED matrix
+
+Correct the same-region assertions:
+
+```text
+医生说要保存诊断但请记录今天腰痛6分
+  -> 保存 clinician; 记录 user
+医生说要删除用药记录然后请记录今天腰痛6分
+  -> 删除 clinician; 记录 user
+```
+
+Cross the shared top-level transition cues with strict user-command cues.
+Separately cross every supported quote pair with “请/帮我” and prove that a
+provider-owned quote never switches to user. Also cover:
+
+```text
+医生说请记录腰痛 -> clinician
+医生说要删除并保存记录 -> both clinician
+医生说要保存诊断但「请记录腰痛」 -> both clinician/ambiguous
+医生说要保存诊断。请记录腰痛 -> clinician; user
+医生说要保存诊断但我想记录腰痛 -> clinician; user
+```
+
+The actor property matrix must derive transition and strict command cues from
+the shared evidence lexicon.
+
+### Step 5: Implement constrained candidates
+
+Replace the single `verb -> action` table with candidates containing:
+
+```text
+raw span
+verb
+allowed_families
+```
+
+Use longest-surface matching and merge family membership for an identical
+surface. Resolve the local governed target before choosing the final family.
+The final media/plan/reminder family must be the intersection of the target
+family and `allowed_families`. If the intersection is empty, fail closed and
+emit no authorizing `ActionEvidence`. Do not expose a generic public
+`action="create"` fallback.
+
+Keep Task 1A span and ordering invariants. Preserve the working noun,
+basis-modifier, target-conflict, polarity, modality, completed-aspect and
+relative-clause behavior.
+
+### Step 6: Implement one linear actor-scope pass
+
+Replace per-candidate backward actor guessing with a left-to-right assignment
+pass whose state distinguishes:
+
+```text
+user
+unquoted provider report
+provider-owned quote
+clinician basis
+```
+
+Provider-owned quote scope has highest priority. In an unquoted provider report,
+the first action and coordinated actions remain clinician/ambiguous. A switch to
+user requires:
+
+1. at least one prior clinician-owned action in the report;
+2. a top-level transition or hard sentence boundary outside any owned quote;
+3. an explicit user command cue before the new action.
+
+An explicit first-person cue may reset at a top-level boundary. Coordination
+markers alone never reset provider ownership.
+
+### Step 7: Drive stance properties from the evidence lexicon
+
+Delete handwritten `_SAVE_SYNONYMS`, selected question subsets and equivalent
+test-only vocabularies. Parameterize the save, mutation, question, negation and
+actor-transition matrices directly from the evidence constants. A lexicon
+change must automatically add or remove the corresponding property cases.
+
+### Step 8: Verify and review
+
+Run:
+
+```bash
+DATABASE_URL=sqlite:///:memory: TZ=Asia/Shanghai /Users/liqiuhua/work/personal/health-llm-driven/backend/venv/bin/python -m pytest -q --no-cov backend/tests/test_utterance_action_evidence.py backend/tests/test_utterance_intent_classifier.py backend/tests/test_force_record_tool_choice.py
+```
+
+Then run targeted Ruff, the official system-map generator/check,
+`check_doc_drift.py`, dossier consistency and `git diff --check`.
+
+Dispatch a fresh specification reviewer. Only after it reports full compliance
+dispatch the existing Task 1B quality reviewer for a final adversarial review.
+Any Critical or Important issue keeps Task 1B open and Task 1C blocked.
+
 ## Task 1C: Reduce evidence and integrate the public classifier
 
 **Files:**
@@ -483,4 +660,3 @@ continue to the write tool.
 
 After Task 1C passes both reviews, continue with Task 2 in
 `docs/plans/2026-07-30-clinician-attributed-context.md`.
-

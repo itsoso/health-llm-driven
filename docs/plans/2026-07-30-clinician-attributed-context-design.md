@@ -110,6 +110,41 @@ Noun spans such as “医生诊断记录” and “用药记录” are excluded 
 evidence is created. Target resolution separates clinician basis/modifiers from
 the actual action object.
 
+#### Task 1B v2 correction: constrained candidates and actor scopes
+
+The first occurrence extractor still collapsed every creation verb into one
+generic family and inferred actor independently by looking backwards from each
+verb. Independent specification review rejected that implementation: it made
+creation verbs authorize unrelated product capabilities, allowed clinician
+report scope to leak across a new top-level user command, and changed the
+legacy classifier before the evidence reducer was integrated.
+
+The corrected extractor therefore has two explicit internal contracts:
+
+1. An action candidate carries its exact raw span and the set of action
+   families that the matched verb already belongs to. Target resolution may
+   select only a member of that set. A known media/plan/reminder target outside
+   the verb's allowed families is an unresolved candidate and produces no
+   authorizing `ActionEvidence`; it must never be rewritten into another
+   family. Overlapping verbs such as “保存” retain all of their original
+   memberships, so “保存康复计划” may resolve to `plan` while “保存诊断” remains
+   `save`.
+2. Actor ownership is assigned by one left-to-right scope pass. A
+   provider-owned quote always remains clinician-owned, even when it contains
+   “请/帮我”. An unquoted provider report owns its first and coordinated
+   actions. It can switch back to the user only after a completed
+   clinician-owned action and a top-level transition plus an explicit user
+   command cue, or after a hard sentence boundary. Thus “医生说要保存诊断但请记录
+   今天腰痛6分” has clinician then user actors, while “医生说「请记录今天腰痛」”
+   remains clinician-owned.
+
+Shared vocabulary has a legacy view and an evidence view in one lexicon
+module. The legacy tuples and classifier behavior remain unchanged until Task
+1C. Evidence-only question, negation, transition and family metadata may be
+stricter, but the old classifier must not import those extensions. Candidate
+coverage and property tests are derived directly from the structured evidence
+view; no action family keeps a second handwritten verb subset.
+
 ### Evidence reduction
 
 Save, delete, update and sync share one target-aware stance reducer:

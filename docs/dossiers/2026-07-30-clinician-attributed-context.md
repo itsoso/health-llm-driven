@@ -34,6 +34,27 @@
     reducer；clinician-bearing 输入禁止 raw whole-text 授权。
   - 用户裁决：2026-07-31 批准 ActionEvidence 方案、组件边界、失败策略和
     属性测试矩阵。
+- [x] Correction Block 3
+  - 触发：Task 1B 最终补丁虽然 `601 passed`，但独立规格评审仍拒绝：
+    same-region 第二个明确用户动作被判 clinician；evidence 扩展词污染
+    legacy classifier；所有 create verb 被 target 跨家族改写；read 候选和
+    property tests 仍有第二套手写子集。
+  - 证据：`医生说要保存诊断但请记录今天腰痛6分` 得到
+    clinician/clinician；`删除用药记录么`、`勿删除用药记录`、
+    `不再删除用药记录` 的公共分类在 Task 1C 前已改变；`设置康复计划`、
+    `制作复查提醒`、`创建康复图片` 获得了原词典没有的能力。
+  - 根因：候选先被压成 generic create 再按 target 任意重写；actor 仍按每个
+    动作向后猜测而不是维护线性所有权 scope；“共享词典”没有区分 legacy
+    兼容视图和 evidence 安全扩展视图。
+  - 回退决策：Task 1B 规格 Gate 失败，不进入质量审查或 Task 1C；停止继续
+    添加 marker 例外，保留 Task 1A，重做 Task 1B 两个内部抽象。
+  - 新方案：candidate 携带其原有 `allowed_families`，target 只能在集合内
+    解析，空交集 fail closed；actor 用一次左到右 scope pass，provider-owned
+    quote 优先，只有引语外的顶层 transition + 明确用户 cue 才能从已消费的
+    clinician action 切回 user；legacy classifier 和 evidence lexicon 分层但
+    共处单一模块。
+  - 裁决：G2 仍 PASS，产品语义与安全边界不变；Task 1B v2 必须重新通过
+    spec + quality 双审后才能进入 reducer。
 
 ## S0 · 用户需求（逐字）
 
@@ -122,7 +143,9 @@
 ## S5 · 实现
 
 - 分支：`codex/clinical-context-intelligence`，从 `origin/main@b8164308f` 创建。
-- commit：待实现。
+- 已完成 Task 1A：typed primitives、span/order invariants。
+- Task 1B：`065f47220` 已提交但规格 Gate 拒绝；正在按 v2 correction 重做，
+  不能作为 Task 1C 输入。
 
 ## G3 · 测试闸
 
