@@ -4,7 +4,7 @@
 
 **Goal:** Make the Agent understand clinician-attributed health statements without treating them as incomplete symptom writes, while allowing an explicitly requested save to create a receipted clinician journal entry.
 
-**Architecture:** Parse clinician-bearing input into private clause frames before whole-text keyword classification, then reduce source/action/actor/object evidence into the existing public `IntentFrame` with fail-closed write semantics. Reuse `ClinicalJournalEntry(created_by="doctor")` through a capability-gated Agent tool, then recall recent entries only in full personalized context with an explicit “用户转述” label. Keep bare statements read-only and leave `HealthProblem` unchanged.
+**Architecture:** Parse clinician-bearing input into ordered action-occurrence evidence before whole-text keyword classification, then reduce actor/target/polarity/modality into the existing public `IntentFrame` with fail-closed write semantics. Reuse `ClinicalJournalEntry(created_by="doctor")` through a capability-gated Agent tool, then recall recent entries only in full personalized context with an explicit “用户转述” label. Keep bare statements read-only and leave `HealthProblem` unchanged.
 
 **Tech Stack:** FastAPI, SQLAlchemy, Pydantic tool schemas, pytest/pytest-asyncio, existing Agent Kernel capability and receipt infrastructure.
 
@@ -30,7 +30,15 @@
 - Do not hand-edit architecture counts; regenerate the system map if the tool
   registry changes the generated snapshot.
 
-## Task 1: Replace whole-text clinician heuristics with clause provenance
+## Superseded Task 1: Clause-frame attempt — do not execute
+
+This section is retained only as implementation history. It was invalidated by
+the second Correction Block after three quality-review cycles showed that a
+single clause can contain multiple actions with different actors.
+
+The authoritative replacement is:
+
+`docs/plans/2026-07-31-clinician-action-evidence.md`
 
 **Files:**
 

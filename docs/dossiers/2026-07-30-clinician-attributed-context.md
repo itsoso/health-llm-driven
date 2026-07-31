@@ -89,6 +89,7 @@
 
 - 设计：`docs/plans/2026-07-30-clinician-attributed-context-design.md`
 - 实施计划：`docs/plans/2026-07-30-clinician-attributed-context.md`
+- T1 替换计划：`docs/plans/2026-07-31-clinician-action-evidence.md`
 - 分阶段：意图帧 → Agent 写工具与回执 → 上下文召回 → 回归与安全验证。
 - 反馈环路由：后端改动，验证通过后走 backend deploy；无 Mobile OTA。
 
