@@ -65,7 +65,10 @@ from app.services.agent_write_outcome import (
     write_result_declares_non_success,
 )
 from app.services.dynamic_card_persistence import cards_for_persistence
-from app.services.utterance_intent_classifier import classify_agent_utterance
+from app.services.utterance_intent_classifier import (
+    CLINICIAN_ATTRIBUTION_MARKERS,
+    classify_agent_utterance,
+)
 from app.utils.number_format import format_card_numbers
 from app.services.agent_kernel.context import (
     build_turn_snapshot,
@@ -5736,18 +5739,8 @@ _SYMPTOM_NON_SELF_MARKERS = (
     "阿姨",
     "患者",
     "病人",
-    "医生说",
-    "医生诊断",
-    "医生认为",
-    "医生评估",
-    "医生判断",
-    "康复师说",
-    "康复师诊断",
-    "康复师认为",
-    "康复师评估",
-    "康复师判断",
+    *CLINICIAN_ATTRIBUTION_MARKERS,
     "报告",
-    "检查提示",
     "病历",
     "附件",
     "图片",

@@ -333,15 +333,42 @@ SYMPTOM_TERMS = (
 )
 CLINICIAN_ATTRIBUTION_MARKERS = (
     "医生诊断",
+    "医生的诊断",
     "医生认为",
     "医生评估",
     "医生判断",
     "医生说",
+    "大夫诊断",
+    "大夫认为",
+    "大夫评估",
+    "大夫判断",
+    "大夫说",
     "康复师诊断",
     "康复师认为",
     "康复师评估",
     "康复师判断",
     "康复师说",
+    "检查提示",
+)
+CLINICIAN_CONTEXT_WRITE_ACTIONS = (
+    "记录",
+    "记一下",
+    "记下",
+    "录入",
+    "保存",
+    "写入",
+    "存下来",
+)
+CLINICIAN_CONTEXT_WRITE_PREFIXES = (
+    "请",
+    "帮我",
+    "给我",
+    "麻烦",
+    "先",
+    "再",
+    "然后",
+    "并",
+    "顺便",
 )
 MEAL_TYPES = {
     "breakfast": ("早餐", "早饭", "早上"),
@@ -395,8 +422,50 @@ def classify_agent_utterance(
     has_negated_mutation = _has_negated_mutation(normalized, mutation)
     has_advice = _has_any(normalized, ADVICE_ACTIONS)
 
-    if _has_clinician_attribution(normalized):
-        if has_write_command and not has_negated_write:
+    has_clinician_attribution = _has_clinician_attribution(normalized)
+    has_clinician_record_reference = _has_clinician_record_reference(normalized)
+    if (
+        has_clinician_attribution
+        and has_clinician_record_reference
+        and has_question
+        and not has_read
+        and mutation is None
+    ):
+        return _intent(
+            raw,
+            normalized,
+            "read",
+            "unknown",
+            "ask",
+            0.88,
+            "clinician_record_query",
+            scope,
+        )
+    if (
+        has_clinician_attribution
+        and has_clinician_record_reference
+        and not has_read
+        and not has_question
+        and mutation is None
+    ):
+        return _intent(
+            raw,
+            normalized,
+            "unknown",
+            "unknown",
+            "none",
+            0.72,
+            "clinician_record_noun",
+            scope,
+        )
+
+    explicit_record_operation = (
+        has_read
+        or mutation is not None
+        or (has_question and has_clinician_record_reference)
+    )
+    if has_clinician_attribution and not explicit_record_operation:
+        if _has_clinician_context_write_authorization(normalized):
             return _intent(
                 raw,
                 normalized,
@@ -646,6 +715,52 @@ def _has_any(text: str, phrases: tuple[str, ...]) -> bool:
 
 def _has_clinician_attribution(text: str) -> bool:
     return _has_any(text, CLINICIAN_ATTRIBUTION_MARKERS)
+
+
+def _clinician_attribution_starts(text: str) -> list[int]:
+    return [
+        start
+        for marker in CLINICIAN_ATTRIBUTION_MARKERS
+        for start in _all_phrase_positions(text, marker)
+    ]
+
+
+def _has_clinician_record_reference(text: str) -> bool:
+    for marker in CLINICIAN_ATTRIBUTION_MARKERS:
+        for start in _all_phrase_positions(text, marker):
+            suffix = text[start + len(marker):]
+            if suffix.startswith(("记录", "的记录")):
+                return True
+    return False
+
+
+def _has_clinician_context_write_authorization(text: str) -> bool:
+    """Accept user save commands without treating quoted clinician advice as one."""
+    if _has_negated_write(text):
+        return False
+
+    attribution_starts = _clinician_attribution_starts(text)
+    if not attribution_starts:
+        return False
+
+    for action in CLINICIAN_CONTEXT_WRITE_ACTIONS:
+        for action_start in _all_phrase_positions(text, action):
+            left_context = text[:action_start]
+            is_user_command = (
+                action_start == 0
+                or left_context.endswith(CLINICIAN_CONTEXT_WRITE_PREFIXES)
+            )
+            if is_user_command and any(
+                action_start < attribution_start
+                for attribution_start in attribution_starts
+            ):
+                return True
+
+            for attribution_start in attribution_starts:
+                ba_start = text.rfind("把", 0, attribution_start)
+                if 0 <= ba_start < attribution_start < action_start:
+                    return True
+    return False
 
 
 def _has_bounded_water_marker(

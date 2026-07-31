@@ -82,6 +82,73 @@ def test_explicit_clinician_feedback_save_is_reliable_write():
     assert intent.requires_reliable_tool_model is True
 
 
+def test_clinician_reported_record_instruction_is_not_user_authorization():
+    intent = classify_agent_utterance("医生说要记录每天疼痛情况")
+
+    assert intent.primary == "chat"
+    assert intent.domain == "clinical_context"
+    assert intent.operation == "acknowledge"
+    assert intent.is_write is False
+    assert intent.requires_reliable_tool_model is True
+
+
+def test_user_ba_construction_authorizes_clinician_feedback_save():
+    intent = classify_agent_utterance("把医生说的内容保存下来")
+
+    assert intent.primary == "write"
+    assert intent.domain == "clinical_context"
+    assert intent.operation == "create"
+    assert intent.is_write is True
+    assert intent.requires_reliable_tool_model is True
+
+
+@pytest.mark.parametrize(
+    ("message", "expected_primary", "expected_operation", "expected_is_write"),
+    (
+        ("查看医生诊断记录", "read", "list", False),
+        ("医生诊断记录有哪些？", "read", "ask", False),
+        ("删除医生诊断记录", "mutate", "delete", True),
+    ),
+)
+def test_clinician_record_reference_keeps_explicit_record_operation(
+    message,
+    expected_primary,
+    expected_operation,
+    expected_is_write,
+):
+    intent = classify_agent_utterance(message)
+
+    assert intent.primary == expected_primary
+    assert intent.operation == expected_operation
+    assert intent.is_write is expected_is_write
+
+
+def test_clinician_record_noun_phrase_is_not_promoted_to_a_write():
+    intent = classify_agent_utterance("医生诊断记录")
+
+    assert intent.primary == "unknown"
+    assert intent.operation == "none"
+    assert intent.is_write is False
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "医生的诊断是臀肌无力导致腰痛",
+        "检查提示腰肌劳损导致疼痛",
+        "大夫说是臀肌无力导致腰痛",
+    ),
+)
+def test_common_clinician_attribution_variants_are_non_write_context(message):
+    intent = classify_agent_utterance(message)
+
+    assert intent.primary == "chat"
+    assert intent.domain == "clinical_context"
+    assert intent.operation == "acknowledge"
+    assert intent.is_write is False
+    assert intent.requires_reliable_tool_model is True
+
+
 def test_reported_clinician_medication_statement_is_not_a_save_command():
     intent = classify_agent_utterance("医生说我吃了药")
 

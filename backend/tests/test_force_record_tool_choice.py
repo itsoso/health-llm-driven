@@ -152,6 +152,9 @@ def test_clinician_attribution_is_not_extracted_as_a_self_symptom():
         "医生认为是臀肌无力导致腰痛",
         "医生评估为臀肌无力导致腰痛",
         "康复师认为是臀肌无力导致腰痛",
+        "医生的诊断是臀肌无力导致腰痛",
+        "检查提示腰肌劳损导致疼痛",
+        "大夫说是臀肌无力导致腰痛",
     ):
         assert ae._extract_clear_symptom_record(message) is None, message
 
