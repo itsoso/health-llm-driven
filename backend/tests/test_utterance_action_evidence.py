@@ -265,6 +265,58 @@ def test_evidence_parse_rejects_duplicate_start_offsets():
         )
 
 
+def test_evidence_parse_rejects_overlapping_provider_source_spans():
+    with pytest.raises(ValueError, match="providers.*non-overlapping"):
+        EvidenceParse(
+            text="主治医生",
+            clinician_bearing=True,
+            providers=(
+                ProviderEvidence(0, 4, "主治医生", "report"),
+                ProviderEvidence(2, 4, "医生", "report"),
+            ),
+            actions=(),
+        )
+
+
+def test_evidence_parse_rejects_overlapping_action_source_spans():
+    with pytest.raises(ValueError, match="actions.*non-overlapping"):
+        EvidenceParse(
+            text="记录保存",
+            clinician_bearing=False,
+            providers=(),
+            actions=(
+                _action(start=0, end=3, target_start=3, target_end=3),
+                _action(start=2, end=4, target_start=4, target_end=4),
+            ),
+        )
+
+
+def test_action_target_spans_may_overlap_other_action_sources_and_targets():
+    first = _action(
+        start=0,
+        end=2,
+        target="diet",
+        target_start=2,
+        target_end=4,
+    )
+    second = _action(
+        start=4,
+        end=6,
+        target="diet",
+        target_start=2,
+        target_end=4,
+    )
+
+    parsed = EvidenceParse(
+        text="记录饮食保存",
+        clinician_bearing=False,
+        providers=(),
+        actions=(first, second),
+    )
+
+    assert parsed.actions == (first, second)
+
+
 @pytest.mark.parametrize(
     ("text", "provider", "relation"),
     (
@@ -306,6 +358,19 @@ def test_provider_evidence_preserves_raw_span_and_relation(
     ),
 )
 def test_report_like_provider_noun_phrase_is_unresolved(text):
+    parsed = parse_action_evidence(text)
+
+    assert parsed.providers[0].relation == "unresolved"
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "医生诊断的记录",
+        "医生建议的清单",
+    ),
+)
+def test_linked_provider_noun_phrase_is_unresolved(text):
     parsed = parse_action_evidence(text)
 
     assert parsed.providers[0].relation == "unresolved"

@@ -147,13 +147,13 @@ def _validate_ordered(
     *,
     label: str,
 ) -> None:
-    previous_start = -1
+    previous_end = 0
     for item in evidence:
-        if item.start <= previous_start:
+        if item.start < previous_end:
             raise ValueError(
-                f"{label} must be ordered strictly by raw start offset"
+                f"{label} must be ordered and non-overlapping by raw span"
             )
-        previous_start = item.start
+        previous_end = item.end
 
 
 def _validate_provider_evidence(
@@ -229,8 +229,11 @@ def _is_report_predicate(
     )
     if content_start >= len(text):
         return False
+    noun_start = content_start
+    if text.startswith("的", noun_start):
+        noun_start = _skip_whitespace_right(text, noun_start + len("的"))
     return not any(
-        text.startswith(noun, content_start)
+        text.startswith(noun, noun_start)
         for noun in _REPORT_NOUN_CONTINUATIONS.get(marker, ())
     )
 
