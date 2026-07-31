@@ -866,17 +866,29 @@ def _assign_actors(
             previous_report_action_end = provider.end if provider else 0
 
         quote_span = _quote_span_containing(text, candidate.start)
-        if quote_span is not None and _provider_owns_quote(
-            text,
-            quote_span,
-            providers,
-        ):
-            actor: ActorKind = "clinician"
-            if report_scope_active:
-                report_action_count += 1
-                previous_report_action_end = candidate.end
-            actors.append(actor)
-            continue
+        if quote_span is not None:
+            provider_owns_quote = _provider_owns_quote(
+                text,
+                quote_span,
+                providers,
+            )
+            user_reset_before_quote = (
+                provider_owns_quote
+                and report_scope_active
+                and report_action_count > 0
+                and _has_user_cue_after_transition(
+                    text,
+                    start=previous_report_action_end,
+                    end=quote_span[0],
+                )
+            )
+            if provider_owns_quote and not user_reset_before_quote:
+                actor: ActorKind = "clinician"
+                if report_scope_active:
+                    report_action_count += 1
+                    previous_report_action_end = candidate.end
+                actors.append(actor)
+                continue
 
         if provider is None:
             actors.append("user")

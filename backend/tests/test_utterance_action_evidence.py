@@ -1631,6 +1631,40 @@ def test_hard_boundary_user_reset_owns_following_quote(text):
 
 
 @pytest.mark.parametrize(
+    "text",
+    (
+        "医生说要保存诊断但请「记录腰痛」",
+        "医生说要保存诊断然后帮我“记录腰痛”",
+        "医生说要保存诊断接着我想‘记录腰痛’",
+    ),
+)
+def test_top_level_transition_user_reset_owns_following_quote(text):
+    parsed = parse_action_evidence(text)
+
+    assert tuple(action.actor for action in parsed.actions) == (
+        "clinician",
+        "user",
+    )
+
+
+def test_quote_internal_user_cues_do_not_reset_consumed_report_scope():
+    for quote in lexicon.EVIDENCE_QUOTE_PAIRS:
+        for cue in (
+            *lexicon.EVIDENCE_STRICT_USER_COMMAND_CUES,
+            *lexicon.EVIDENCE_USER_SUBJECT_CUES,
+        ):
+            text = (
+                f"医生说要保存诊断但{quote.opener}"
+                f"{cue.surface}记录腰痛{quote.closer}"
+            )
+            parsed = parse_action_evidence(text)
+            assert tuple(action.actor for action in parsed.actions) == (
+                "clinician",
+                "clinician",
+            ), (quote, cue, parsed.actions)
+
+
+@pytest.mark.parametrize(
     ("text", "expected"),
     (
         (
