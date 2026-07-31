@@ -271,6 +271,14 @@ class _TargetMatch:
     end: int
 
 
+@dataclass(frozen=True)
+class _TargetResolution:
+    target: TargetKind
+    start: int
+    end: int
+    observed_targets: frozenset[TargetKind]
+
+
 def _validate_span(
     *,
     start: int,
@@ -749,7 +757,7 @@ def _provider_owns_quote(
         ),
         None,
     )
-    return provider is not None and (
+    report_owned = provider is not None and (
         provider.relation == "report"
         or _has_quoted_report_marker(
             text,
@@ -757,6 +765,40 @@ def _provider_owns_quote(
             end=quote_start,
         )
     )
+    if not report_owned:
+        return False
+    boundary_end = _latest_top_level_marker_end(
+        text,
+        start=provider.end,
+        end=quote_start,
+        markers=_ACTOR_HARD_BOUNDARIES,
+    )
+    if boundary_end < 0:
+        return True
+    return not any(
+        text.find(cue, boundary_end, quote_start) >= 0
+        for cue in (
+            *_STRICT_USER_AUTHORITY_CUES,
+            *_EXPLICIT_USER_SUBJECT_CUES,
+        )
+    )
+
+
+def _latest_top_level_marker_end(
+    text: str,
+    *,
+    start: int,
+    end: int,
+    markers: tuple[str, ...],
+) -> int:
+    latest = -1
+    for marker in markers:
+        cursor = text.find(marker, start, end)
+        while cursor >= 0:
+            if _quote_span_containing(text, cursor) is None:
+                latest = max(latest, cursor + len(marker))
+            cursor = text.find(marker, cursor + len(marker), end)
+    return latest
 
 
 def _latest_top_level_transition_end(
@@ -765,14 +807,12 @@ def _latest_top_level_transition_end(
     start: int,
     end: int,
 ) -> int:
-    latest = -1
-    for marker in (*_ACTOR_TRANSITIONS, *_ACTOR_HARD_BOUNDARIES):
-        cursor = text.find(marker, start, end)
-        while cursor >= 0:
-            if _quote_span_containing(text, cursor) is None:
-                latest = max(latest, cursor + len(marker))
-            cursor = text.find(marker, cursor + len(marker), end)
-    return latest
+    return _latest_top_level_marker_end(
+        text,
+        start=start,
+        end=end,
+        markers=(*_ACTOR_TRANSITIONS, *_ACTOR_HARD_BOUNDARIES),
+    )
 
 
 def _has_user_cue_after_transition(
@@ -884,7 +924,7 @@ def _resolve_target(
     candidate_index: int,
     candidates: tuple[_ActionCandidate, ...],
     providers: tuple[ProviderEvidence, ...],
-) -> tuple[TargetKind, int, int]:
+) -> _TargetResolution:
     next_candidate = (
         candidates[candidate_index + 1]
         if candidate_index + 1 < len(candidates)
@@ -908,11 +948,25 @@ def _resolve_target(
         start=candidate.end,
         end=forward_end,
     )
-    if forward:
+    contained_family_targets = tuple(
+        match
+        for match in _scan_target_matches(
+            text,
+            start=candidate.start,
+            end=candidate.end,
+        )
+        if match.target in candidate.allowed_families & _CREATE_FAMILIES
+    )
+    if contained_family_targets or forward:
         return _resolve_target_matches(
             text,
             candidate,
-            forward,
+            tuple(
+                sorted(
+                    (*contained_family_targets, *forward),
+                    key=lambda match: (match.start, match.end),
+                )
+            ),
             providers,
         )
 
@@ -937,7 +991,12 @@ def _resolve_target(
             backward,
             providers,
         )
-    return "unknown", candidate.end, candidate.end
+    return _TargetResolution(
+        target="unknown",
+        start=candidate.end,
+        end=candidate.end,
+        observed_targets=frozenset(),
+    )
 
 
 def _is_provider_modifier_target(
@@ -1018,7 +1077,7 @@ def _resolve_target_matches(
     candidate: _ActionCandidate,
     matches: tuple[_TargetMatch, ...],
     providers: tuple[ProviderEvidence, ...],
-) -> tuple[TargetKind, int, int]:
+) -> _TargetResolution:
     modifier_spans = _basis_modifier_spans(text, providers)
     scoped_matches = tuple(
         match
@@ -1038,10 +1097,20 @@ def _resolve_target_matches(
         )
     )
     if not filtered:
-        return "unknown", candidate.end, candidate.end
-    target_kinds = {match.target for match in filtered}
+        return _TargetResolution(
+            target="unknown",
+            start=candidate.end,
+            end=candidate.end,
+            observed_targets=frozenset(),
+        )
+    target_kinds = frozenset(match.target for match in filtered)
     if len(target_kinds) != 1:
-        return "unknown", candidate.end, candidate.end
+        return _TargetResolution(
+            target="unknown",
+            start=candidate.end,
+            end=candidate.end,
+            observed_targets=target_kinds,
+        )
 
     if candidate.end <= filtered[0].start:
         chosen = min(
@@ -1053,7 +1122,12 @@ def _resolve_target_matches(
             filtered,
             key=lambda match: (candidate.start - match.end, match.start),
         )
-    return chosen.target, chosen.start, chosen.end
+    return _TargetResolution(
+        target=chosen.target,
+        start=chosen.start,
+        end=chosen.end,
+        observed_targets=target_kinds,
+    )
 
 
 def _hard_scope_start(text: str, position: int) -> int:
@@ -1245,14 +1319,18 @@ def _provenance(
 
 def _resolve_action_kind(
     candidate: _ActionCandidate,
-    target: TargetKind,
+    target: _TargetResolution,
 ) -> ActionKind | None:
     create_families = candidate.allowed_families & _CREATE_FAMILIES
-    if target in _CREATE_FAMILIES:
-        if target in create_families:
-            return target
-        if create_families:
+    observed_create_targets = target.observed_targets & _CREATE_FAMILIES
+    can_authorize_save_or_create = bool(
+        create_families or "save" in candidate.allowed_families
+    )
+    if observed_create_targets and can_authorize_save_or_create:
+        if len(target.observed_targets) != 1:
             return None
+        create_target = next(iter(observed_create_targets))
+        return create_target if create_target in create_families else None
 
     non_create_families = candidate.allowed_families - _CREATE_FAMILIES
     if len(non_create_families) == 1:
@@ -1267,7 +1345,7 @@ def _scan_actions(
     raw_candidates = _scan_action_candidates(text)
     resolved_candidates: list[_ResolvedActionCandidate] = []
     for candidate_index, candidate in enumerate(raw_candidates):
-        target, target_start, target_end = _resolve_target(
+        target = _resolve_target(
             text,
             candidate,
             candidate_index,
@@ -1281,9 +1359,9 @@ def _scan_actions(
             _ResolvedActionCandidate(
                 candidate=candidate,
                 action=action_kind,
-                target=target,
-                target_start=target_start,
-                target_end=target_end,
+                target=target.target,
+                target_start=target.start,
+                target_end=target.end,
             )
         )
 

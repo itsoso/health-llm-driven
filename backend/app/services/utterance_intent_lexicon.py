@@ -310,6 +310,7 @@ def _build_evidence_action_lexicon() -> tuple[EvidenceActionLexeme, ...]:
     add(EVIDENCE_ADVICE_ACTIONS, "advice")
     add(MEDIA_CREATE_ACTIONS, "media")
     add(PLAN_CREATE_ACTIONS, "plan")
+    add(PLAN_UPDATE_ACTIONS, "plan")
     add(REMINDER_CREATE_ACTIONS, "reminder")
 
     return tuple(
