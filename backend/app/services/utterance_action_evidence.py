@@ -1,8 +1,9 @@
 """Typed evidence primitives for deterministic utterance authorization.
 
-This module only preserves raw spans and clinician-provider provenance.  It
-does not authorize actions; action extraction and reduction belong to the
-classifier integration layer.
+This evidence layer owns raw-span extraction and action reduction; the
+classifier integration layer only maps reduced evidence to its public intent
+contract.  The initial primitives below preserve clinician provenance without
+authorizing actions.
 """
 from __future__ import annotations
 
@@ -38,14 +39,20 @@ TargetKind: TypeAlias = Literal[
 ]
 ProviderRelationKind: TypeAlias = Literal["report", "basis", "unresolved"]
 
-_CLINICIAN_PROVIDERS = (
-    "物理治疗师",
-    "主治医生",
-    "康复师",
-    "理疗师",
-    "医生",
-    "医师",
-    "大夫",
+_CLINICIAN_PROVIDERS = tuple(
+    sorted(
+        (
+            "主治医生",
+            "物理治疗师",
+            "康复师",
+            "理疗师",
+            "医生",
+            "医师",
+            "大夫",
+        ),
+        key=len,
+        reverse=True,
+    )
 )
 _BASIS_MARKERS = ("根据", "依据", "按照")
 _REPORT_MARKERS = (
@@ -61,11 +68,27 @@ _REPORT_MARKERS = (
     "称",
 )
 _REPORT_DELIMITERS = ("：", ":")
+_REPORT_NOUN_CONTINUATIONS = {
+    "诊断": ("记录", "报告", "结果", "证明", "清单", "列表"),
+    "建议": ("记录", "报告", "清单", "列表", "文档"),
+}
 
 
-def _validate_span(*, start: int, end: int, label: str) -> None:
-    if start < 0 or end < start:
-        raise ValueError(f"{label} must satisfy 0 <= start <= end")
+def _validate_span(
+    *,
+    start: int,
+    end: int,
+    label: str,
+    allow_empty: bool = False,
+) -> None:
+    is_empty = start == end
+    if start < 0 or end < start or (is_empty and not allow_empty):
+        relation = "<=" if allow_empty else "<"
+        empty_note = "possibly empty" if allow_empty else "non-empty"
+        raise ValueError(
+            f"{label} must be {empty_note} and satisfy "
+            f"0 <= start {relation} end"
+        )
 
 
 @dataclass(frozen=True)
@@ -87,6 +110,7 @@ class ActionEvidence:
             start=self.target_start,
             end=self.target_end,
             label="target span",
+            allow_empty=self.target == "unknown",
         )
 
 
@@ -107,6 +131,53 @@ class EvidenceParse:
     clinician_bearing: bool
     providers: tuple[ProviderEvidence, ...]
     actions: tuple[ActionEvidence, ...]
+
+    def __post_init__(self) -> None:
+        if self.clinician_bearing != bool(self.providers):
+            raise ValueError(
+                "clinician_bearing must equal bool(providers)"
+            )
+
+        _validate_provider_evidence(self.text, self.providers)
+        _validate_action_evidence(self.text, self.actions)
+
+
+def _validate_ordered(
+    evidence: tuple[ProviderEvidence, ...] | tuple[ActionEvidence, ...],
+    *,
+    label: str,
+) -> None:
+    previous_start = -1
+    for item in evidence:
+        if item.start <= previous_start:
+            raise ValueError(
+                f"{label} must be ordered strictly by raw start offset"
+            )
+        previous_start = item.start
+
+
+def _validate_provider_evidence(
+    text: str,
+    providers: tuple[ProviderEvidence, ...],
+) -> None:
+    _validate_ordered(providers, label="providers")
+    for provider in providers:
+        if provider.end > len(text):
+            raise ValueError("provider span must fall within text")
+        if text[provider.start : provider.end] != provider.provider:
+            raise ValueError("provider raw slice must equal provider")
+
+
+def _validate_action_evidence(
+    text: str,
+    actions: tuple[ActionEvidence, ...],
+) -> None:
+    _validate_ordered(actions, label="actions")
+    for action in actions:
+        if action.end > len(text):
+            raise ValueError("action span must fall within text")
+        if action.target_end > len(text):
+            raise ValueError("target span must fall within text")
 
 
 def _skip_whitespace_left(text: str, end: int) -> int:
@@ -135,12 +206,33 @@ def _has_marker_ending_at(
     return False
 
 
-def _has_marker_starting_at(
+def _marker_starting_at(
     text: str,
     start: int,
     markers: tuple[str, ...],
+) -> str | None:
+    return next(
+        (marker for marker in markers if text.startswith(marker, start)),
+        None,
+    )
+
+
+def _is_report_predicate(
+    text: str,
+    *,
+    marker: str,
+    marker_start: int,
 ) -> bool:
-    return any(text.startswith(marker, start) for marker in markers)
+    content_start = _skip_whitespace_right(
+        text,
+        marker_start + len(marker),
+    )
+    if content_start >= len(text):
+        return False
+    return not any(
+        text.startswith(noun, content_start)
+        for noun in _REPORT_NOUN_CONTINUATIONS.get(marker, ())
+    )
 
 
 def _provider_relation(
@@ -154,10 +246,18 @@ def _provider_relation(
         return "basis"
 
     after = _skip_whitespace_right(text, end)
-    if _has_marker_starting_at(text, after, _REPORT_MARKERS):
-        return "report"
+    report_marker = _marker_starting_at(text, after, _REPORT_MARKERS)
+    if report_marker is not None:
+        if _is_report_predicate(
+            text,
+            marker=report_marker,
+            marker_start=after,
+        ):
+            return "report"
+        return "unresolved"
     if after < len(text) and text[after] in _REPORT_DELIMITERS:
-        return "report"
+        content_start = _skip_whitespace_right(text, after + 1)
+        return "report" if content_start < len(text) else "unresolved"
     return "unresolved"
 
 

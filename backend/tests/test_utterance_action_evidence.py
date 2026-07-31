@@ -49,6 +49,222 @@ def test_evidence_types_are_frozen_and_parse_starts_empty():
         action.actor = "clinician"
 
 
+def _action(
+    *,
+    start=0,
+    end=2,
+    target="unknown",
+    target_start=2,
+    target_end=2,
+):
+    return ActionEvidence(
+        start=start,
+        end=end,
+        action="save",
+        actor="user",
+        target=target,
+        target_start=target_start,
+        target_end=target_end,
+        polarity="positive",
+        modality="command",
+        provenance="explicit_user_command",
+    )
+
+
+@pytest.mark.parametrize(
+    "factory",
+    (
+        lambda: ProviderEvidence(
+            start=0,
+            end=0,
+            provider="医生",
+            relation="unresolved",
+        ),
+        lambda: ProviderEvidence(
+            start=-1,
+            end=1,
+            provider="医生",
+            relation="unresolved",
+        ),
+        lambda: ProviderEvidence(
+            start=2,
+            end=1,
+            provider="医生",
+            relation="unresolved",
+        ),
+        lambda: _action(start=0, end=0, target_start=0, target_end=0),
+    ),
+)
+def test_source_and_action_spans_must_be_non_empty(factory):
+    with pytest.raises(ValueError, match="non-empty"):
+        factory()
+
+
+def test_unknown_target_may_use_an_empty_anchor_span():
+    evidence = _action(target_start=2, target_end=2)
+
+    assert evidence.target == "unknown"
+    assert evidence.target_start == evidence.target_end == 2
+
+
+def test_known_target_span_must_be_non_empty():
+    with pytest.raises(ValueError, match="target span"):
+        _action(
+            target="health_record",
+            target_start=2,
+            target_end=2,
+        )
+
+
+@pytest.mark.parametrize(
+    "factory",
+    (
+        lambda: EvidenceParse(
+            text="医生",
+            clinician_bearing=False,
+            providers=(
+                ProviderEvidence(
+                    start=0,
+                    end=2,
+                    provider="医生",
+                    relation="unresolved",
+                ),
+            ),
+            actions=(),
+        ),
+        lambda: EvidenceParse(
+            text="没有医疗角色",
+            clinician_bearing=True,
+            providers=(),
+            actions=(),
+        ),
+    ),
+)
+def test_clinician_bearing_must_match_provider_presence(factory):
+    with pytest.raises(ValueError, match="clinician_bearing"):
+        factory()
+
+
+def test_evidence_parse_rejects_provider_span_outside_text():
+    provider = ProviderEvidence(
+        start=0,
+        end=2,
+        provider="医生",
+        relation="unresolved",
+    )
+
+    with pytest.raises(ValueError, match="provider span"):
+        EvidenceParse(
+            text="医",
+            clinician_bearing=True,
+            providers=(provider,),
+            actions=(),
+        )
+
+
+def test_evidence_parse_rejects_provider_raw_slice_mismatch():
+    provider = ProviderEvidence(
+        start=0,
+        end=2,
+        provider="医生",
+        relation="unresolved",
+    )
+
+    with pytest.raises(ValueError, match="provider raw slice"):
+        EvidenceParse(
+            text="大夫",
+            clinician_bearing=True,
+            providers=(provider,),
+            actions=(),
+        )
+
+
+def test_evidence_parse_rejects_action_or_target_span_outside_text():
+    with pytest.raises(ValueError, match="action span"):
+        EvidenceParse(
+            text="记",
+            clinician_bearing=False,
+            providers=(),
+            actions=(_action(),),
+        )
+
+    with pytest.raises(ValueError, match="target span"):
+        EvidenceParse(
+            text="记录",
+            clinician_bearing=False,
+            providers=(),
+            actions=(
+                _action(
+                    target="health_record",
+                    target_start=2,
+                    target_end=3,
+                ),
+            ),
+        )
+
+
+def test_evidence_parse_rejects_non_monotonic_provider_sequence():
+    text = "医生大夫"
+    doctor = ProviderEvidence(
+        start=0,
+        end=2,
+        provider="医生",
+        relation="unresolved",
+    )
+    doctor_alt = ProviderEvidence(
+        start=2,
+        end=4,
+        provider="大夫",
+        relation="unresolved",
+    )
+
+    with pytest.raises(ValueError, match="providers must be ordered"):
+        EvidenceParse(
+            text=text,
+            clinician_bearing=True,
+            providers=(doctor_alt, doctor),
+            actions=(),
+        )
+
+
+def test_evidence_parse_rejects_non_monotonic_action_sequence():
+    with pytest.raises(ValueError, match="actions must be ordered"):
+        EvidenceParse(
+            text="记录删除",
+            clinician_bearing=False,
+            providers=(),
+            actions=(
+                _action(start=2, end=4, target_start=4, target_end=4),
+                _action(start=0, end=2, target_start=2, target_end=2),
+            ),
+        )
+
+
+def test_evidence_parse_rejects_duplicate_start_offsets():
+    doctor = ProviderEvidence(
+        start=0,
+        end=2,
+        provider="医生",
+        relation="unresolved",
+    )
+    with pytest.raises(ValueError, match="providers must be ordered"):
+        EvidenceParse(
+            text="医生",
+            clinician_bearing=True,
+            providers=(doctor, doctor),
+            actions=(),
+        )
+
+    action = _action()
+    with pytest.raises(ValueError, match="actions must be ordered"):
+        EvidenceParse(
+            text="记录",
+            clinician_bearing=False,
+            providers=(),
+            actions=(action, action),
+        )
+
+
 @pytest.mark.parametrize(
     ("text", "provider", "relation"),
     (
@@ -85,21 +301,66 @@ def test_provider_evidence_preserves_raw_span_and_relation(
 @pytest.mark.parametrize(
     "text",
     (
-        "医生说腰痛，：\n主治医生认为臀肌无力！：大夫建议复诊",
-        "医生说腰痛,\n康复师认为臀肌无力!:理疗师建议复诊",
-        "医生说腰痛康复师认为臀肌无力物理治疗师建议复诊",
+        "医生诊断记录",
+        "医生建议清单",
     ),
 )
-def test_scanner_keeps_provider_offsets_across_delimiters_and_connections(text):
+def test_report_like_provider_noun_phrase_is_unresolved(text):
+    parsed = parse_action_evidence(text)
+
+    assert parsed.providers[0].relation == "unresolved"
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "医生诊断是腰肌劳损",
+        "医生建议每天拉伸",
+    ),
+)
+def test_provider_report_predicate_with_content_is_report(text):
+    parsed = parse_action_evidence(text)
+
+    assert parsed.providers[0].relation == "report"
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    (
+        (
+            "医生说腰痛，：\n主治医生认为臀肌无力！：大夫建议复诊",
+            (
+                ProviderEvidence(0, 2, "医生", "report"),
+                ProviderEvidence(8, 12, "主治医生", "report"),
+                ProviderEvidence(20, 22, "大夫", "report"),
+            ),
+        ),
+        (
+            "医生说腰痛,\n康复师认为臀肌无力!:理疗师建议复诊",
+            (
+                ProviderEvidence(0, 2, "医生", "report"),
+                ProviderEvidence(7, 10, "康复师", "report"),
+                ProviderEvidence(18, 21, "理疗师", "report"),
+            ),
+        ),
+        (
+            "医生说腰痛康复师认为臀肌无力物理治疗师建议复诊",
+            (
+                ProviderEvidence(0, 2, "医生", "report"),
+                ProviderEvidence(5, 8, "康复师", "report"),
+                ProviderEvidence(14, 19, "物理治疗师", "report"),
+            ),
+        ),
+    ),
+)
+def test_scanner_keeps_provider_offsets_across_delimiters_and_connections(
+    text,
+    expected,
+):
     parsed = parse_action_evidence(text)
 
     assert parsed.text == text
-    assert tuple(
-        text[evidence.start : evidence.end] for evidence in parsed.providers
-    ) == tuple(evidence.provider for evidence in parsed.providers)
-    assert tuple(evidence.start for evidence in parsed.providers) == tuple(
-        sorted(evidence.start for evidence in parsed.providers)
-    )
+    assert parsed.providers == expected
     assert parsed.actions == ()
 
 
@@ -114,6 +375,43 @@ def test_longest_provider_match_does_not_duplicate_nested_doctor_term():
             end=len("主治医生"),
             provider="主治医生",
             relation="report",
+        ),
+    )
+
+
+def test_repeated_provider_is_returned_at_each_raw_offset():
+    text = "医生说腰痛医生建议拉伸"
+
+    parsed = parse_action_evidence(text)
+
+    assert parsed.providers == (
+        ProviderEvidence(0, 2, "医生", "report"),
+        ProviderEvidence(5, 7, "医生", "report"),
+    )
+
+
+def test_provider_at_end_preserves_exact_offset():
+    text = "复诊时问医生"
+
+    parsed = parse_action_evidence(text)
+
+    assert parsed.providers == (
+        ProviderEvidence(4, 6, "医生", "unresolved"),
+    )
+
+
+def test_provider_after_emoji_and_combining_unicode_preserves_exact_offset():
+    prefix = "🧑🏽‍⚕️e\u0301"
+    text = f"{prefix}医生说先观察"
+
+    parsed = parse_action_evidence(text)
+
+    assert parsed.providers == (
+        ProviderEvidence(
+            len(prefix),
+            len(prefix) + len("医生"),
+            "医生",
+            "report",
         ),
     )
 
