@@ -58,6 +58,25 @@ def test_clinician_attributed_assessment_is_context_not_symptom_write():
     assert intent.requires_reliable_tool_model is True
 
 
+@pytest.mark.parametrize(
+    "message",
+    (
+        "医生诊断：臀肌无力导致腰肌代偿",
+        "主治医生诊断:臀肌无力导致腰痛",
+        "大夫诊断：臀肌无力",
+        "康复师诊断:臀肌无力",
+    ),
+)
+def test_colon_diagnosis_introducer_is_clinician_context(message):
+    intent = classify_agent_utterance(message)
+
+    assert intent.primary == "chat"
+    assert intent.domain == "clinical_context"
+    assert intent.operation == "acknowledge"
+    assert intent.is_write is False
+    assert intent.requires_reliable_tool_model is True
+
+
 def test_clinician_attributed_question_is_reliable_advice():
     intent = classify_agent_utterance(
         "医生认为是臀肌无力导致腰痛，我该怎么处理？"
@@ -98,6 +117,61 @@ def test_adjacent_user_save_authorizes_clinician_feedback(message):
     assert intent.domain == "clinical_context"
     assert intent.operation == "create"
     assert intent.is_write is True
+    assert intent.requires_reliable_tool_model is True
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "医生说：臀肌无力。请记录一下",
+        "医生告诉我：臀肌无力。帮我记录一下",
+    ),
+)
+def test_colon_introduced_clinician_content_can_be_saved_by_adjacent_user_action(
+    message,
+):
+    intent = classify_agent_utterance(message)
+
+    assert intent.primary == "write"
+    assert intent.domain == "clinical_context"
+    assert intent.operation == "create"
+    assert intent.is_write is True
+    assert intent.requires_reliable_tool_model is True
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "医生说：臀肌无力",
+        "医生告诉我：臀肌无力",
+    ),
+)
+def test_colon_introduced_clinician_content_without_user_save_is_read_only(
+    message,
+):
+    intent = classify_agent_utterance(message)
+
+    assert intent.primary == "chat"
+    assert intent.domain == "clinical_context"
+    assert intent.operation == "acknowledge"
+    assert intent.is_write is False
+    assert intent.requires_reliable_tool_model is True
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "医生说：请记录每天疼痛情况",
+        "医生说：臀肌无力。天气不错。请记录一下",
+    ),
+)
+def test_colon_provenance_does_not_authorize_quoted_or_distant_save(message):
+    intent = classify_agent_utterance(message)
+
+    assert intent.primary == "chat"
+    assert intent.domain == "clinical_context"
+    assert intent.operation == "acknowledge"
+    assert intent.is_write is False
     assert intent.requires_reliable_tool_model is True
 
 

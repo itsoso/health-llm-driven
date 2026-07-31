@@ -35,6 +35,13 @@ class _ClauseFrame:
     action: str
     actor: str
     object_kind: str
+    introduces_clinician_content: bool = False
+
+
+@dataclass(frozen=True)
+class _ClauseSegment:
+    text: str
+    separator_after: str
 
 
 READ_ACTIONS = (
@@ -409,7 +416,7 @@ def classify_agent_utterance(
     reference_now: Optional[datetime] = None,
 ) -> AgentUtteranceIntent:
     raw = "" if message is None else str(message).strip()
-    clauses = _split_clauses(raw)
+    clause_segments = _scan_clause_segments(raw)
     normalized = _normalize(raw)
     if not normalized:
         return _intent(raw, normalized, "unknown", "unknown", "none", 0.0, "empty")
@@ -436,7 +443,15 @@ def classify_agent_utterance(
     has_negated_mutation = _has_negated_mutation(normalized, mutation)
     has_advice = _has_any(normalized, ADVICE_ACTIONS)
 
-    clause_frames = tuple(_classify_clause(clause) for clause in clauses)
+    clause_frames = _propagate_clinician_provenance(
+        tuple(
+            _classify_clause(
+                segment.text,
+                introduces_clinician_content=segment.separator_after in {"：", ":"},
+            )
+            for segment in clause_segments
+        )
+    )
     clinician_intent = _reduce_clinician_clauses(
         raw=raw,
         normalized=normalized,
@@ -666,22 +681,27 @@ def _normalize(value: str) -> str:
     return "".join(str(value or "").split()).lower()
 
 
-def _split_clauses(raw_text: str) -> tuple[str, ...]:
-    """Split before normalization so punctuation and newlines stay visible."""
-    clauses: list[str] = []
+def _scan_clause_segments(raw_text: str) -> tuple[_ClauseSegment, ...]:
+    """Split once while retaining the separator that closes each clause."""
+    segments: list[_ClauseSegment] = []
     current: list[str] = []
     for char in str(raw_text or ""):
         if char in CLINICIAN_CONTEXT_CLAUSE_BOUNDARIES:
             clause = "".join(current).strip()
             if clause:
-                clauses.append(clause)
+                segments.append(_ClauseSegment(clause, char))
             current = []
             continue
         current.append(char)
     clause = "".join(current).strip()
     if clause:
-        clauses.append(clause)
-    return tuple(clauses)
+        segments.append(_ClauseSegment(clause, ""))
+    return tuple(segments)
+
+
+def _split_clauses(raw_text: str) -> tuple[str, ...]:
+    """Compatibility view of the scanner for direct structural tests."""
+    return tuple(segment.text for segment in _scan_clause_segments(raw_text))
 
 
 def _has_any(text: str, phrases: tuple[str, ...]) -> bool:
@@ -692,12 +712,16 @@ def _diagnosis_marker_is_attribution(
     text: str,
     marker: str,
     marker_end: int,
+    *,
+    allow_bare_diagnosis: bool,
 ) -> bool:
     if marker not in CLINICIAN_DIAGNOSIS_MARKERS:
         return True
     suffix = text[marker_end:]
-    if not suffix or suffix.startswith(("记录", "的记录")):
+    if suffix.startswith(("记录", "的记录")):
         return False
+    if not suffix:
+        return allow_bare_diagnosis
     return not suffix.startswith(
         (
             "请",
@@ -721,12 +745,21 @@ def _diagnosis_marker_is_attribution(
     )
 
 
-def _find_clinician_attribution(text: str) -> Optional[tuple[int, int]]:
+def _find_clinician_attribution(
+    text: str,
+    *,
+    allow_bare_diagnosis: bool,
+) -> Optional[tuple[int, int]]:
     candidates: list[tuple[int, int]] = []
     for marker in CLINICIAN_ATTRIBUTION_MARKERS:
         for start in _all_phrase_positions(text, marker):
             end = start + len(marker)
-            if _diagnosis_marker_is_attribution(text, marker, end):
+            if _diagnosis_marker_is_attribution(
+                text,
+                marker,
+                end,
+                allow_bare_diagnosis=allow_bare_diagnosis,
+            ):
                 candidates.append((start, end))
     if not candidates:
         return None
@@ -801,9 +834,16 @@ def _quoted_content_is_user_object(
     )
 
 
-def _classify_clause(text: str) -> _ClauseFrame:
+def _classify_clause(
+    text: str,
+    *,
+    introduces_clinician_content: bool = False,
+) -> _ClauseFrame:
     normalized = _normalize(text)
-    attribution = _find_clinician_attribution(normalized)
+    attribution = _find_clinician_attribution(
+        normalized,
+        allow_bare_diagnosis=introduces_clinician_content,
+    )
     object_kind = _clause_object_kind(
         normalized,
         has_attribution=attribution is not None,
@@ -833,7 +873,29 @@ def _classify_clause(text: str) -> _ClauseFrame:
         action=action,
         actor=actor,
         object_kind=object_kind,
+        introduces_clinician_content=(
+            introduces_clinician_content and attribution is not None
+        ),
     )
+
+
+def _propagate_clinician_provenance(
+    frames: tuple[_ClauseFrame, ...],
+) -> tuple[_ClauseFrame, ...]:
+    propagated = list(frames)
+    for index in range(1, len(propagated)):
+        if not propagated[index - 1].introduces_clinician_content:
+            continue
+        current = propagated[index]
+        propagated[index] = _ClauseFrame(
+            text=current.text,
+            source="clinician_quote",
+            action=current.action,
+            actor="clinician",
+            object_kind="clinician_content",
+            introduces_clinician_content=False,
+        )
+    return tuple(propagated)
 
 
 def _reduce_clinician_clauses(
