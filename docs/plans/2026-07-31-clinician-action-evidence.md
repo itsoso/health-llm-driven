@@ -475,6 +475,200 @@ Dispatch a fresh specification reviewer. Only after it reports full compliance
 dispatch the existing Task 1B quality reviewer for a final adversarial review.
 Any Critical or Important issue keeps Task 1B open and Task 1C blocked.
 
+## Task 1B v3 correction: require authorization proof
+
+This section supersedes Task 1B v2 after quality review of `2a8f57b07`.
+Task 1A invariants and v2 family conservation remain valid. The v2 actor,
+stance, action-role and target algorithms must not feed Task 1C.
+
+**Files:**
+
+- Modify: `backend/app/services/utterance_intent_lexicon.py`
+- Replace internals: `backend/app/services/utterance_action_evidence.py`
+- Modify: `backend/app/services/utterance_intent_classifier.py` only to import
+  shared legacy vocabulary without changing public behavior
+- Modify: `backend/tests/test_utterance_action_evidence.py`
+- Modify: `backend/tests/test_utterance_intent_classifier.py`
+- Add:
+  `backend/tests/fixtures/utterance_action_evidence_safety_cases.json`
+- Regenerate `docs/_generated/system-map.json` only if the official generator
+  reports a code-structure change
+
+### Step 1: Add the independent security corpus and prove RED
+
+Create a fixed JSON corpus that does not import or derive from the lexicon. It
+must include every Task 1B v2 quality finding and positive controls:
+
+```text
+医生说根据康复师建议删除用药记录
+医生说依据物理治疗师诊断保存诊断记录
+我说“根据医生建议‘请删除用药记录’”
+根据医生建议应不应该删除用药记录
+根据医生建议删除用药记录好不好
+根据医生建议如果删除用药记录会怎么样
+根据医生建议不应删除用药记录
+根据医生建议不得删除用药记录
+根据医生建议拒绝删除用药记录
+不要删除再保存任何用药记录
+根据医生建议查看删除前的用药记录
+根据医生建议分析调整以前的用药剂量
+根据医生建议我曾删除用药记录
+根据医生建议查看用药删除记录
+删除根据医生对用药的建议写成的诊断记录
+删除根据医生对用药的建议整理的诊断记录
+保存康复计划并诊断记录
+根据医生建议保存康复计划和诊断记录
+```
+
+For each case, pin ordered action surface, actor, target, polarity, modality and
+whether it is authorization-eligible. Add positive controls for top-level bare
+imperative, `请/帮我/把/我要`, clinician basis command, provider-owned quote,
+and an explicit user command after a completed clinician report.
+
+Run the focused test and preserve the initial failure evidence.
+
+### Step 2: Extend the typed primitives without changing public intent
+
+Add private immutable structures for:
+
+```text
+lexical scan index
+nested quote scope
+nested provider report/basis scope
+action draft and action group
+command proof
+target and stance resolution
+```
+
+Extend `ModalityKind` with `unknown`, or use an equivalent private
+non-authorizing modality that cannot be confused with `command`. Keep the
+public `ActionEvidence`, `ProviderEvidence` and `EvidenceParse` frozen/raw-span
+invariants. Task 1B still does not map evidence to `IntentFrame`.
+
+### Step 3: Build one lexical index
+
+Use one deterministic character scan, with vocabulary bucketed by first
+character and longest surface, to emit ordered events for:
+
+- quote open/close;
+- provider and report/basis predicate;
+- action surface and allowed families;
+- target head;
+- stance/cue;
+- hard/soft boundary and conjunction.
+
+Build nested quote scopes with a stack. Unclosed quotes extend to end of input
+and remain fail closed. Link provider scopes and event containment with ordered
+cursors. Candidate processing must not call full-text `.find/.rfind` or rescan
+quotes, targets or basis modifiers.
+
+### Step 4: Build nested ownership scopes
+
+Actor priority is:
+
+```text
+provider-owned quote
+> any enclosing active clinician report
+> other reported/quoted speech
+> unresolved provider speech
+> local clinician basis plus user command proof
+> ordinary user command proof
+```
+
+An outer report cannot be replaced by a newer inner basis. Lower-priority
+evidence may only tighten to clinician/ambiguous. Preserve the approved
+unquoted report transition behavior: after at least one clinician action, a
+top-level transition or hard boundary plus a strict user command proof can
+start a new user action group outside an owned quote.
+
+### Step 5: Require positive command proof
+
+Only the following top-level shapes may return `modality=command`:
+
+```text
+ACTION [OBJECT]
+请|帮我|麻烦|给我 + ACTION [OBJECT]
+我要|我想|我需要 + ACTION [OBJECT]
+[请...] 把 + OBJECT + ACTION
+根据|依据|按照 + provider basis + ACTION [OBJECT]
+proven command + top-level action coordination + ACTION [OBJECT]
+```
+
+All tokens between the governing boundary/cue and action must be consumed by a
+known shape. An unknown prefix defaults to `unknown`/non-authorizing, never
+`command`. Known question, negative, completed and conditional forms retain
+their precise modality/polarity; missing a marker remains safe because it
+cannot produce command proof. Negative coordination propagates within the same
+action group unless a new explicit positive command proof starts.
+
+### Step 6: Classify action structural roles
+
+Before stance resolution, classify each action draft as:
+
+- `governor`;
+- valid top-level `coordinated`;
+- `embedded` in another action's object/modifier;
+- `noun` inside an action-like record/history phrase.
+
+Only governor/coordinated drafts may receive command proof. This must block
+inner mutations in relative/history/read phrases without enumerating every
+possible suffix.
+
+### Step 7: Resolve target heads and conflicts structurally
+
+Use the action group and ordered events to define object windows. Soft
+conjunctions do not end the window unless they introduce another action group.
+Within an object:
+
+- `X 的 Y` treats `X` as modifier and the right-hand `Y` as head regardless of
+  the modifier verb;
+- different target kinds joined at the same object level by
+  `和/与/及/以及/并/、` set `conflicted=true` and `target=unknown`;
+- same-kind coordinated heads may keep that kind;
+- create family remains
+  `allowed_families ∩ resolved_target_family`; an empty or conflicted result
+  emits no authorization-eligible action evidence.
+
+Delete the basis-modifier verb whitelist and raw separator target truncation.
+
+### Step 8: Consolidate the lexicon without behavior drift
+
+Move provider/report/basis/action/target/stance metadata into typed evidence
+rows in `utterance_intent_lexicon.py`. Keep legacy tuple values and order
+byte-compatible with the pre-Task-1B classifier. Public classifier golden tests
+must remain unchanged.
+
+Lexicon-derived property tests remain for vocabulary coverage only. They do not
+replace the fixed security corpus.
+
+### Step 9: Prove bounded scanning work
+
+Add deterministic instrumentation or an internal work-unit count so a 16x
+repeated-event input stays within a generous near-linear bound. Also assert:
+
+- the lexical scan runs once;
+- per-candidate code contains no full-text `.find/.rfind`;
+- raw spans and ordering remain exact;
+- no regex or new dependency is introduced.
+
+The performance test should not rely on a fragile absolute wall-clock
+threshold.
+
+### Step 10: Verify and review
+
+Run:
+
+```bash
+DATABASE_URL=sqlite:///:memory: TZ=Asia/Shanghai /Users/liqiuhua/work/personal/health-llm-driven/backend/venv/bin/python -m pytest -q --no-cov backend/tests/test_utterance_action_evidence.py backend/tests/test_utterance_intent_classifier.py backend/tests/test_force_record_tool_choice.py
+```
+
+Then run targeted Ruff, the official system-map generator/check, doc drift,
+dossier consistency and `git diff --check`.
+
+Dispatch a fresh specification reviewer. After it passes, dispatch a fresh
+quality reviewer with the complete fixed corpus plus independent probes. Any
+Critical or Important issue keeps Task 1B open and Task 1C blocked.
+
 ## Task 1C: Reduce evidence and integrate the public classifier
 
 **Files:**

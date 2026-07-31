@@ -55,6 +55,23 @@
     共处单一模块。
   - 裁决：G2 仍 PASS，产品语义与安全边界不变；Task 1B v2 必须重新通过
     spec + quality 双审后才能进入 reducer。
+- [x] Correction Block 4
+  - 触发：Task 1B v2 最终通过规格闸，但独立质量评审报告 6 Critical /
+    4 Important，不能作为授权 reducer 的输入。
+  - 证据：外层 `医生说` 被内层 clinician basis 覆盖成 user；未收录的
+    `应不应该/不得/拒绝/曾` 默认 positive command；读取“删除前/删除历史”
+    产生 mutation；basis modifier 换成“写成的/整理的/开具的”即选错目标；
+    并列目标冲突被 separator/provider filter 隐藏；重复扫描呈明显非线性。
+  - 根因：v2 仍以“未命中反例词 = command”为默认；provider 只保存最近一层；
+    action role 和 target modifier 依赖有限 marker，而不是授权级结构证明。
+  - 回退决策：不再扩充问题/否定/relative/modifier 词表；保留 Task 1A 和
+    `allowed_families`，替换 v2 actor/stance/action-role/target internals。
+  - 新方案：单次 lexical index + nested provider/quote scopes +
+    structural command proof + governor/embedded action roles + target
+    head/coordination conflict；未知结构默认不授权。词典属性测试之外新增一份
+    不由实现常量生成的固定安全语料。
+  - 裁决：G2 仍 PASS，产品语义、显式写入和 fail-closed 边界不变；
+    Task 1B v3 必须重新通过 fresh spec + fresh quality 双审。
 
 ## S0 · 用户需求（逐字）
 
@@ -144,8 +161,8 @@
 
 - 分支：`codex/clinical-context-intelligence`，从 `origin/main@b8164308f` 创建。
 - 已完成 Task 1A：typed primitives、span/order invariants。
-- Task 1B：`065f47220` 已提交但规格 Gate 拒绝；正在按 v2 correction 重做，
-  不能作为 Task 1C 输入。
+- Task 1B：v2 最终 HEAD `2a8f57b07` 通过规格、未通过质量 Gate；正在按
+  v3 authorization-proof correction 重做，不能作为 Task 1C 输入。
 
 ## G3 · 测试闸
 

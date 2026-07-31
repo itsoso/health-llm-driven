@@ -145,6 +145,51 @@ stricter, but the old classifier must not import those extensions. Candidate
 coverage and property tests are derived directly from the structured evidence
 view; no action family keeps a second handwritten verb subset.
 
+#### Task 1B v3 correction: authorization-grade parsing
+
+The v2 extractor passed specification review but failed adversarial quality
+review because an unrecognized stance still defaulted to `command`, provider
+scope was flat, and target/relative parsing still depended on finite marker
+lists. Adding more question, negation or modifier words would recreate the same
+fail-open boundary.
+
+Task 1B therefore treats action evidence as an authorization proof rather than
+a complete natural-language interpretation:
+
+- `command` requires a positive structural proof. A top-level bare imperative,
+  strict polite/user prefix, `把` disposal construction, first-person command,
+  clinician basis command, or coordination from an already proven command may
+  establish that proof. Unexplained prefixes and embedded action surfaces
+  remain non-authorizing even when no known negation/question marker matches.
+- Quote, provider report and basis scopes form a nested tree. A
+  provider-owned quote or any enclosing active clinician report has higher
+  priority than a local basis. Lower-priority evidence may tighten ownership but
+  never upgrade clinician/ambiguous speech to user authority.
+- Action groups identify governors, coordinated actions, embedded actions and
+  action-like nouns before modality is assigned. Only governors and valid
+  coordinated actions can receive command proof. Relative phrases and deletion
+  history therefore cannot become mutations merely because their surface verb
+  is in the action vocabulary.
+- Target scope follows the governing action and actual action/boundary events.
+  The right-hand head in a modifier chain wins without enumerating its
+  intermediate verb. Different target kinds joined at the same object level
+  fail closed as a conflict.
+
+Parsing uses one lexical pass to index quote, provider, action, target, stance,
+boundary and conjunction events. Scope linking, action grouping, target
+resolution and stance resolution consume those ordered events with cursors;
+per-action full-text rescans are forbidden. The intended bound is linear in
+input plus emitted events.
+
+The shared lexicon keeps byte-compatible legacy views for the public classifier
+and typed evidence views for provider, report, basis, action-family, target and
+stance metadata. Task 1B still must not change public classifier behavior.
+
+Lexicon-derived property matrices prove vocabulary coverage. A separate fixed
+security corpus, whose cases are not generated from implementation constants,
+proves fail-closed behavior for nested providers, unknown stance, embedded
+actions, target conflicts and all prior review findings.
+
 ### Evidence reduction
 
 Save, delete, update and sync share one target-aware stance reducer:
