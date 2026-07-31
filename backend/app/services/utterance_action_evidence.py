@@ -72,6 +72,100 @@ _REPORT_NOUN_CONTINUATIONS = {
     "诊断": ("记录", "报告", "结果", "证明", "清单", "列表"),
     "建议": ("记录", "报告", "清单", "列表", "文档"),
 }
+_ACTION_VOCABULARY: tuple[tuple[str, ActionKind], ...] = tuple(
+    sorted(
+        (
+            ("存下来", "save"),
+            ("记一下", "save"),
+            ("记录", "save"),
+            ("记下", "save"),
+            ("录入", "save"),
+            ("保存", "save"),
+            ("写入", "save"),
+            ("查看", "read"),
+            ("删除", "delete"),
+            ("调整", "update"),
+            ("同步", "sync"),
+            ("分析", "advice"),
+            ("生成", "media"),
+            ("创建", "reminder"),
+            ("制定", "plan"),
+        ),
+        key=lambda item: len(item[0]),
+        reverse=True,
+    )
+)
+_ACTION_SEPARATORS = (
+    "然后",
+    "随后",
+    "不过",
+    "可是",
+    "并且",
+    "同时",
+    "但",
+    "，",
+    ",",
+    "。",
+    "；",
+    ";",
+    "\n",
+)
+_NEGATIVE_MARKERS = (
+    "没有必要",
+    "不要",
+    "不用",
+    "无需",
+    "先别",
+    "不想",
+    "别",
+)
+_QUESTION_MARKERS = ("要不要", "是否需要", "是否")
+_RECORD_NOUN_PREFIXES = (
+    "医生诊断",
+    "诊断",
+    "用药",
+    "健康",
+    "病历",
+    "检查",
+    "昨天",
+)
+_TARGET_TERMS: tuple[tuple[str, TargetKind], ...] = (
+    ("用药剂量", "medication"),
+    ("用药记录", "medication"),
+    ("药物", "medication"),
+    ("用药", "medication"),
+    ("每天腰痛情况", "symptom"),
+    ("今天腰痛6分", "symptom"),
+    ("今天腰痛", "symptom"),
+    ("每天疼痛", "symptom"),
+    ("每天腰痛", "symptom"),
+    ("腰痛", "symptom"),
+    ("疼痛", "symptom"),
+    ("饮食", "diet"),
+    ("午餐", "diet"),
+    ("康复图片", "media"),
+    ("图片", "media"),
+    ("复查提醒", "reminder"),
+    ("提醒", "reminder"),
+    ("康复计划", "plan"),
+    ("计划", "plan"),
+    ("健康数据", "health_record"),
+    ("健康记录", "health_record"),
+    ("昨天记录", "health_record"),
+    ("医生诊断记录", "clinician_record"),
+    ("诊断记录", "clinician_record"),
+    ("医生说的内容", "clinician_content"),
+    ("检查结果", "clinician_content"),
+    ("诊断", "clinician_content"),
+)
+
+
+@dataclass(frozen=True)
+class _ActionCandidate:
+    start: int
+    end: int
+    action: ActionKind
+    verb: str
 
 
 def _validate_span(
@@ -293,13 +387,267 @@ def _scan_providers(text: str) -> tuple[ProviderEvidence, ...]:
     return tuple(providers)
 
 
+def _scan_raw_action_candidates(
+    text: str,
+) -> tuple[_ActionCandidate, ...]:
+    candidates: list[_ActionCandidate] = []
+    cursor = 0
+    while cursor < len(text):
+        match = next(
+            (
+                (verb, action)
+                for verb, action in _ACTION_VOCABULARY
+                if text.startswith(verb, cursor)
+            ),
+            None,
+        )
+        if match is None:
+            cursor += 1
+            continue
+
+        verb, action = match
+        end = cursor + len(verb)
+        candidates.append(
+            _ActionCandidate(
+                start=cursor,
+                end=end,
+                action=action,
+                verb=verb,
+            )
+        )
+        cursor = end
+    return tuple(candidates)
+
+
+def _region_start(text: str, position: int) -> int:
+    start = 0
+    for separator in _ACTION_SEPARATORS:
+        index = text.rfind(separator, 0, position)
+        if index >= 0:
+            start = max(start, index + len(separator))
+    return start
+
+
+def _region_end(text: str, position: int) -> int:
+    end = len(text)
+    for separator in _ACTION_SEPARATORS:
+        index = text.find(separator, position)
+        if index >= 0:
+            end = min(end, index)
+    return end
+
+
+def _target_match(
+    text: str,
+    *,
+    start: int,
+    end: int,
+    exclude_clinician: bool = False,
+) -> tuple[TargetKind, int, int] | None:
+    for term, target in _TARGET_TERMS:
+        if exclude_clinician and target in {
+            "clinician_content",
+            "clinician_record",
+        }:
+            continue
+        index = text.find(term, start, end)
+        if index >= 0:
+            return target, index, index + len(term)
+    return None
+
+
+def _is_record_noun(
+    text: str,
+    candidate: _ActionCandidate,
+    raw_candidates: tuple[_ActionCandidate, ...],
+) -> bool:
+    if candidate.verb != "记录":
+        return False
+
+    region_start = _region_start(text, candidate.start)
+    region_end = _region_end(text, candidate.end)
+    leading_text = text[region_start : candidate.start].rstrip()
+    after = text[candidate.end : region_end].lstrip()
+
+    prior_governing_action = any(
+        other.end <= candidate.start
+        and other.start >= region_start
+        and other.action in {"read", "update", "delete", "sync", "advice"}
+        for other in raw_candidates
+    )
+    if prior_governing_action:
+        return True
+
+    noun_prefix = any(
+        leading_text.endswith(prefix)
+        for prefix in _RECORD_NOUN_PREFIXES
+    )
+    if not noun_prefix:
+        return False
+
+    specific_object = _target_match(
+        text,
+        start=candidate.end,
+        end=region_end,
+        exclude_clinician=True,
+    )
+    if specific_object is not None and after:
+        return False
+    return True
+
+
+def _is_attributive_creation(
+    text: str,
+    candidate: _ActionCandidate,
+) -> bool:
+    return (
+        candidate.action in {"media", "reminder", "plan"}
+        and text.startswith("的", candidate.end)
+    )
+
+
+def _scan_action_candidates(
+    text: str,
+) -> tuple[_ActionCandidate, ...]:
+    raw_candidates = _scan_raw_action_candidates(text)
+    return tuple(
+        candidate
+        for candidate in raw_candidates
+        if not _is_record_noun(text, candidate, raw_candidates)
+        and not _is_attributive_creation(text, candidate)
+    )
+
+
+def _resolve_actor(
+    text: str,
+    candidate: _ActionCandidate,
+    providers: tuple[ProviderEvidence, ...],
+) -> ActorKind:
+    start = _region_start(text, candidate.start)
+    governing = tuple(
+        provider
+        for provider in providers
+        if provider.start >= start and provider.end <= candidate.start
+    )
+    if not governing:
+        return "user"
+
+    provider = governing[-1]
+    if provider.relation == "basis":
+        return "user"
+    if provider.relation == "report":
+        return "clinician"
+    return "ambiguous"
+
+
+def _resolve_target(
+    text: str,
+    candidate: _ActionCandidate,
+    candidates: tuple[_ActionCandidate, ...],
+) -> tuple[TargetKind, int, int]:
+    index = candidates.index(candidate)
+    next_start = (
+        candidates[index + 1].start
+        if index + 1 < len(candidates)
+        else len(text)
+    )
+    forward_end = min(next_start, _region_end(text, candidate.end))
+    forward = _target_match(
+        text,
+        start=candidate.end,
+        end=forward_end,
+    )
+    if forward is not None:
+        return forward
+
+    previous_end = candidates[index - 1].end if index > 0 else 0
+    backward_start = max(
+        previous_end,
+        _region_start(text, candidate.start),
+    )
+    backward = _target_match(
+        text,
+        start=backward_start,
+        end=candidate.start,
+    )
+    if backward is not None:
+        return backward
+    return "unknown", candidate.end, candidate.end
+
+
+def _local_prefix(text: str, candidate: _ActionCandidate) -> str:
+    return text[_region_start(text, candidate.start) : candidate.start].rstrip()
+
+
+def _resolve_polarity(
+    text: str,
+    candidate: _ActionCandidate,
+) -> PolarityKind:
+    prefix = _local_prefix(text, candidate)
+    if any(prefix.endswith(marker) for marker in _QUESTION_MARKERS):
+        return "positive"
+    if any(prefix.endswith(marker) for marker in _NEGATIVE_MARKERS):
+        return "negative"
+    return "positive"
+
+
+def _resolve_modality(
+    text: str,
+    candidate: _ActionCandidate,
+) -> ModalityKind:
+    prefix = _local_prefix(text, candidate)
+    if any(prefix.endswith(marker) for marker in _QUESTION_MARKERS):
+        return "question"
+    return "command"
+
+
+def _provenance(actor: ActorKind, providers: tuple[ProviderEvidence, ...]) -> str:
+    if actor == "clinician":
+        return "clinician_reported_action"
+    if actor == "ambiguous":
+        return "ambiguous_clinician_context"
+    if any(provider.relation == "basis" for provider in providers):
+        return "clinician_basis_user_action"
+    return "explicit_user_action"
+
+
+def _scan_actions(
+    text: str,
+    providers: tuple[ProviderEvidence, ...],
+) -> tuple[ActionEvidence, ...]:
+    candidates = _scan_action_candidates(text)
+    actions: list[ActionEvidence] = []
+    for candidate in candidates:
+        actor = _resolve_actor(text, candidate, providers)
+        target, target_start, target_end = _resolve_target(
+            text,
+            candidate,
+            candidates,
+        )
+        actions.append(
+            ActionEvidence(
+                start=candidate.start,
+                end=candidate.end,
+                action=candidate.action,
+                actor=actor,
+                target=target,
+                target_start=target_start,
+                target_end=target_end,
+                polarity=_resolve_polarity(text, candidate),
+                modality=_resolve_modality(text, candidate),
+                provenance=_provenance(actor, providers),
+            )
+        )
+    return tuple(actions)
+
+
 def parse_action_evidence(text: str) -> EvidenceParse:
-    """Return raw clinician-provider evidence without authorizing actions."""
+    """Return ordered raw evidence without reducing authorization state."""
 
     providers = _scan_providers(text)
     return EvidenceParse(
         text=text,
         clinician_bearing=bool(providers),
         providers=providers,
-        actions=(),
+        actions=_scan_actions(text, providers),
     )
