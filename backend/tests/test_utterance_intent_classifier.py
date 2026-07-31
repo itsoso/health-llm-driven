@@ -82,13 +82,44 @@ def test_explicit_clinician_feedback_save_is_reliable_write():
     assert intent.requires_reliable_tool_model is True
 
 
-def test_clinician_reported_record_instruction_is_not_user_authorization():
-    intent = classify_agent_utterance("医生说要记录每天疼痛情况")
+@pytest.mark.parametrize(
+    "message",
+    (
+        "医生说请记录医生诊断",
+        "医生说请把医生诊断记录下来",
+        "医生说要记录每天疼痛情况",
+        "康复师说请记录每天疼痛情况",
+        "检查提示要记录每天疼痛情况",
+    ),
+)
+def test_clinician_reported_record_instruction_is_not_user_authorization(message):
+    intent = classify_agent_utterance(message)
 
     assert intent.primary == "chat"
     assert intent.domain == "clinical_context"
     assert intent.operation == "acknowledge"
     assert intent.is_write is False
+    assert intent.requires_reliable_tool_model is True
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "我想记录医生诊断：臀肌无力导致腰痛",
+        "医生诊断请帮我记录一下",
+        "医生诊断，记一下",
+        "医生的诊断帮我保存下来",
+        "请把医生诊断记录下来",
+        "请记录医生诊断记录",
+    ),
+)
+def test_structural_user_command_authorizes_clinician_feedback_save(message):
+    intent = classify_agent_utterance(message)
+
+    assert intent.primary == "write"
+    assert intent.domain == "clinical_context"
+    assert intent.operation == "create"
+    assert intent.is_write is True
     assert intent.requires_reliable_tool_model is True
 
 
@@ -98,6 +129,35 @@ def test_user_ba_construction_authorizes_clinician_feedback_save():
     assert intent.primary == "write"
     assert intent.domain == "clinical_context"
     assert intent.operation == "create"
+    assert intent.is_write is True
+    assert intent.requires_reliable_tool_model is True
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "医生说要调整用药",
+        "医生建议删除昨天的用药记录",
+        "医生说要同步最近的健康数据",
+        "医生说请把医生诊断记录删除",
+    ),
+)
+def test_clinician_reported_mutation_is_not_user_authorization(message):
+    intent = classify_agent_utterance(message)
+
+    assert intent.primary == "chat"
+    assert intent.domain == "clinical_context"
+    assert intent.operation == "acknowledge"
+    assert intent.is_write is False
+    assert intent.requires_reliable_tool_model is True
+
+
+def test_direct_user_medication_mutation_remains_authorized():
+    intent = classify_agent_utterance("把用药剂量调整为每天两次")
+
+    assert intent.primary == "mutate"
+    assert intent.domain == "medication"
+    assert intent.operation == "update"
     assert intent.is_write is True
     assert intent.requires_reliable_tool_model is True
 
