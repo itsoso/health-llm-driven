@@ -6,14 +6,14 @@ an unrecognised prefix as an imperative.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from contextvars import ContextVar
+from dataclasses import dataclass, replace
 from typing import Literal, TypeAlias
 
 from app.services.utterance_intent_lexicon import (
     EVIDENCE_ACTION_LEXICON,
     EVIDENCE_ACTOR_TRANSITION_CUES,
     EVIDENCE_BA_PARTICLE_CHARS,
-    EVIDENCE_COMMAND_PARTICLES,
     EVIDENCE_GROUP_BOUNDARIES,
     EVIDENCE_HARD_BOUNDARIES,
     EVIDENCE_PROVIDER_LEXICON,
@@ -222,7 +222,25 @@ class _LexicalIndex:
     quotes: tuple[_LexEvent, ...]
     structures: tuple[_LexEvent, ...]
     scanner_runs: int
+    lexical_work_units: int
     work_units: int
+
+
+@dataclass
+class _WorkMeter:
+    units: int
+
+
+_ACTIVE_WORK_METER: ContextVar[_WorkMeter | None] = ContextVar(
+    "utterance_action_evidence_work_meter",
+    default=None,
+)
+
+
+def _work(units: int = 1) -> None:
+    meter = _ACTIVE_WORK_METER.get()
+    if meter is not None:
+        meter.units += units
 
 
 @dataclass(frozen=True)
@@ -296,6 +314,12 @@ _ACTOR_TRANSITION_SURFACES = frozenset(
 )
 _GROUP_BOUNDARY_SURFACES = frozenset(EVIDENCE_GROUP_BOUNDARIES)
 _COORDINATION_SURFACES = frozenset(EVIDENCE_SOFT_CONJUNCTIONS)
+_MAX_PROVIDER_SURFACE_LENGTH = max(
+    len(row.surface) for row in EVIDENCE_PROVIDER_LEXICON
+)
+_MAX_TARGET_SURFACE_LENGTH = max(
+    len(row.surface) for row in EVIDENCE_TARGET_LEXICON
+)
 
 
 def _all_lexemes() -> tuple[_Lexeme, ...]:
@@ -412,6 +436,7 @@ def _lexical_scan(text: str) -> _LexicalIndex:
         quotes=tuple(event for event in ordered if event.kind in quote_kinds),
         structures=select("structure"),
         scanner_runs=1,
+        lexical_work_units=work_units + len(ordered),
         work_units=work_units + len(ordered),
     )
 
@@ -478,6 +503,7 @@ def _build_quote_scopes(index: _LexicalIndex) -> tuple[_QuoteScope, ...]:
     completed: list[_QuoteScope] = []
     next_scope_id = 0
     for event in index.quotes:
+        _work()
         pair = event.value
         stack = stacks.setdefault(pair, [])
         if event.kind == "quote_toggle" and stack:
@@ -548,6 +574,10 @@ def _innermost_quote(
     position: int,
     quotes: tuple[_QuoteScope, ...],
 ) -> _QuoteScope | None:
+    # Count the indexed lookup once, then count only scopes actually inspected.
+    # Binary-search comparisons are an implementation detail rather than a
+    # candidate-sized scan; the backward cursor below exposes any real fan-out.
+    _work()
     low = 0
     high = len(quotes)
     while low < high:
@@ -558,6 +588,7 @@ def _innermost_quote(
             high = middle
     cursor = low - 1
     while cursor >= 0:
+        _work()
         quote = quotes[cursor]
         if quote.content_start <= position < quote.content_end:
             return quote
@@ -572,6 +603,10 @@ def _events_between(
     start: int,
     end: int,
 ) -> tuple[_LexEvent, ...]:
+    # This is an indexed range lookup.  Work accounting includes the lookup and
+    # every returned event, while deliberately not pretending binary search is
+    # a scan of the prefix that it skips.
+    _work()
     low = 0
     high = len(events)
     while low < high:
@@ -583,6 +618,7 @@ def _events_between(
     selected: list[_LexEvent] = []
     cursor = low
     while cursor < len(events) and events[cursor].start < end:
+        _work()
         event = events[cursor]
         if event.end <= end:
             selected.append(event)
@@ -594,13 +630,24 @@ def _first_hard_boundary_after(
     index: _LexicalIndex,
     position: int,
 ) -> int:
-    for event in _events_between(
-        index.boundaries,
-        position,
-        len(index.text),
-    ):
+    # Do not materialize every remaining boundary for every provider.  Find the
+    # first possible boundary and stop as soon as the hard boundary is known.
+    _work()
+    low = 0
+    high = len(index.boundaries)
+    while low < high:
+        middle = (low + high) // 2
+        if index.boundaries[middle].start < position:
+            low = middle + 1
+        else:
+            high = middle
+    cursor = low
+    while cursor < len(index.boundaries):
+        _work()
+        event = index.boundaries[cursor]
         if event.surface in _HARD_BOUNDARY_SURFACES:
             return event.start
+        cursor += 1
     return len(index.text)
 
 
@@ -622,7 +669,12 @@ def _relation_after_provider(
                 provider.end,
                 relation.start,
             )
-            if boundary.surface in _HARD_BOUNDARY_SURFACES
+        ):
+            return None
+        if _events_between(
+            index.actions,
+            provider.end,
+            relation.start,
         ):
             return None
         return relation
@@ -669,6 +721,7 @@ def _build_provider_evidence(
 ) -> tuple[ProviderEvidence, ...]:
     evidence: list[ProviderEvidence] = []
     for provider in index.providers:
+        _work()
         basis = _basis_before_provider(index, provider)
         report = _relation_after_provider(index, provider)
         if basis is not None:
@@ -703,6 +756,7 @@ def _build_report_scopes(
 ) -> tuple[_ReportScope, ...]:
     scopes: list[_ReportScope] = []
     for provider_index, provider in enumerate(providers):
+        _work()
         if provider.relation != "report":
             continue
         scopes.append(
@@ -722,9 +776,14 @@ def _action_is_report_predicate(
 ) -> bool:
     if action.surface != "告诉我":
         return False
+    local_providers = _events_between(
+        index.providers,
+        max(0, action.start - _MAX_PROVIDER_SURFACE_LENGTH),
+        action.start + 1,
+    )
     return any(
         provider.end == action.start
-        for provider in index.providers
+        for provider in local_providers
     )
 
 
@@ -733,13 +792,21 @@ def _action_is_inside_target_noun(
     index: _LexicalIndex,
     previous: _LexEvent | None,
 ) -> bool:
+    local_targets = _events_between(
+        index.targets,
+        max(0, action.start - _MAX_TARGET_SURFACE_LENGTH),
+        min(
+            len(index.text),
+            action.end + 3 + _MAX_TARGET_SURFACE_LENGTH,
+        ),
+    )
     following_object = any(
         target.start >= action.end
         and target.start - action.end <= 3
         and target.value != "health_record"
         and not _events_between(index.actions, action.end, target.start)
         and not _events_between(index.conjunctions, action.end, target.start)
-        for target in index.targets
+        for target in local_targets
     )
     if following_object:
         return False
@@ -747,7 +814,7 @@ def _action_is_inside_target_noun(
         target.start <= action.start
         and action.end <= target.end
         and (target.start < action.start or action.end < target.end)
-        for target in index.targets
+        for target in local_targets
     )
     exact_record_target = (
         action.surface == "记录"
@@ -756,7 +823,7 @@ def _action_is_inside_target_noun(
             target.start == action.start
             and target.end == action.end
             and target.value == "health_record"
-            for target in index.targets
+            for target in local_targets
         )
     )
     return strictly_contained or exact_record_target
@@ -777,6 +844,7 @@ def _build_action_drafts(
     group = 0
     previous: _LexEvent | None = None
     for action in index.actions:
+        _work()
         if _action_is_report_predicate(action, index):
             continue
         if _action_is_inside_target_noun(action, index, previous):
@@ -825,38 +893,66 @@ def _group_window(
 
 def _finalize_drafts(
     drafts: tuple[_ActionDraft, ...],
-    text_length: int,
+    index: _LexicalIndex,
 ) -> tuple[_ActionDraft, ...]:
     if not drafts:
         return ()
     group_indices: dict[int, list[int]] = {}
     for ordinal, draft in enumerate(drafts):
+        _work()
         group_indices.setdefault(draft.group, []).append(ordinal)
     finalized: list[_ActionDraft] = []
     previous_top_level_by_group: dict[int, int | None] = {}
     next_top_level_by_ordinal: dict[int, int | None] = {}
     next_top_level_by_group: dict[int, int | None] = {}
     for ordinal in range(len(drafts) - 1, -1, -1):
+        _work()
         reverse_draft = drafts[ordinal]
         next_top_level_by_ordinal[ordinal] = next_top_level_by_group.get(
             reverse_draft.group
         )
         if reverse_draft.role in {"governor", "coordinated"}:
             next_top_level_by_group[reverse_draft.group] = ordinal
-    for ordinal, draft in enumerate(drafts):
-        indices = group_indices[draft.group]
-        previous_group_indices = group_indices.get(draft.group - 1, [])
-        next_group_indices = group_indices.get(draft.group + 1, [])
-        group_start = (
+    group_windows: dict[int, tuple[int, int]] = {}
+    ordered_groups = tuple(group_indices)
+    for group_offset, group in enumerate(ordered_groups):
+        _work()
+        indices = group_indices[group]
+        previous_group_indices = (
+            group_indices[ordered_groups[group_offset - 1]]
+            if group_offset > 0
+            else []
+        )
+        next_group_indices = (
+            group_indices[ordered_groups[group_offset + 1]]
+            if group_offset + 1 < len(ordered_groups)
+            else []
+        )
+        search_start = (
             drafts[previous_group_indices[0]].event.end
             if previous_group_indices
             else 0
         )
+        preceding_boundaries = _events_between(
+            index.boundaries,
+            search_start,
+            drafts[indices[0]].event.start,
+        )
+        group_start = (
+            preceding_boundaries[-1].end
+            if preceding_boundaries
+            else search_start
+        )
         group_end = (
             drafts[next_group_indices[0]].event.start
             if next_group_indices
-            else text_length
+            else len(index.text)
         )
+        group_windows[group] = (group_start, group_end)
+    for ordinal, draft in enumerate(drafts):
+        _work()
+        indices = group_indices[draft.group]
+        group_start, group_end = group_windows[draft.group]
         previous_top_level = previous_top_level_by_group.get(draft.group)
         finalized.append(
             _ActionDraft(
@@ -935,6 +1031,7 @@ def _resolve_target(
     drafts: tuple[_ActionDraft, ...],
     index: _LexicalIndex,
 ) -> _TargetResolution:
+    _work()
     start, end = _action_target_window(draft, drafts, index)
     targets = tuple(
         target
@@ -983,6 +1080,7 @@ def _resolve_action_kind(
     draft: _ActionDraft,
     target: _TargetResolution,
 ) -> ActionKind | None:
+    _work()
     if draft.role == "noun":
         return None
     create_families = draft.event.allowed_families & _CREATE_FAMILIES
@@ -1134,12 +1232,26 @@ def _span_covered(
     spans: tuple[tuple[int, int], ...],
     text: str,
 ) -> bool:
+    ordered_spans = tuple(sorted(spans))
+    span_cursor = 0
     for cursor in range(start, end):
+        _work()
         if text[cursor].isspace() or text[cursor] in (
             "，,：:。；;！!?？“”‘’「」\""
         ):
             continue
-        if any(span_start <= cursor < span_end for span_start, span_end in spans):
+        while (
+            span_cursor < len(ordered_spans)
+            and ordered_spans[span_cursor][1] <= cursor
+        ):
+            _work()
+            span_cursor += 1
+        if (
+            span_cursor < len(ordered_spans)
+            and ordered_spans[span_cursor][0]
+            <= cursor
+            < ordered_spans[span_cursor][1]
+        ):
             continue
         return False
     return True
@@ -1177,9 +1289,12 @@ def _basis_command_proof(
     )
     if provider is None:
         return None
-    spans: list[tuple[int, int]] = [(basis.start, basis.end), (provider.start, provider.end)]
-    spans.extend(
-        (event.start, event.end)
+    spans: list[tuple[int, int]] = [
+        (basis.start, basis.end),
+        (provider.start, provider.end),
+    ]
+    report_relations = tuple(
+        event
         for event in _events_between(
             index.relations,
             provider.end,
@@ -1187,6 +1302,26 @@ def _basis_command_proof(
         )
         if event.value == "report"
     )
+    spans.extend((event.start, event.end) for event in report_relations)
+    for report in report_relations:
+        continuation_start = report.end
+        if (
+            continuation_start < draft.event.start
+            and index.text[continuation_start] == "的"
+        ):
+            continuation_start += 1
+        for continuation in EVIDENCE_REPORT_NOUN_CONTINUATIONS.get(
+            report.surface,
+            (),
+        ):
+            if index.text.startswith(continuation, continuation_start):
+                spans.append(
+                    (
+                        continuation_start,
+                        continuation_start + len(continuation),
+                    )
+                )
+                break
     spans.extend(
         (event.start, event.end)
         for event in _events_between(
@@ -1194,16 +1329,8 @@ def _basis_command_proof(
             prefix_start,
             basis.start,
         )
-        if event.value == "strict_command"
+        if event.value in {"negative_command", "strict_command"}
     )
-    for particle in EVIDENCE_COMMAND_PARTICLES:
-        particle_start = prefix_start
-        while particle_start < draft.event.start:
-            if index.text.startswith(particle, particle_start):
-                spans.append((particle_start, particle_start + len(particle)))
-                particle_start += len(particle)
-            else:
-                particle_start += 1
     for cursor in range(provider.end, draft.event.start):
         if index.text[cursor] in EVIDENCE_REPORT_FILLER_CHARS:
             spans.append((cursor, cursor + 1))
@@ -1254,7 +1381,11 @@ def _ordinary_command_proof(
             prefix_start,
             draft.event.start,
         )
-        if stance.value in {"strict_command", "user_subject"}
+        if stance.value in {
+            "negative_command",
+            "strict_command",
+            "user_subject",
+        }
     )
     if stances:
         prefix_start = stances[-1].start
@@ -1271,19 +1402,17 @@ def _ordinary_command_proof(
         )
         if event.surface == "把"
     )
-    spans = tuple(
-        (event.start, event.end)
-        for event in (*stances, *targets, *structures)
-    )
-    spans += tuple(
-        (cursor, cursor + 1)
-        for cursor in range(prefix_start, draft.event.start)
-        if index.text[cursor] in EVIDENCE_BA_PARTICLE_CHARS
-    )
-    for particle in EVIDENCE_COMMAND_PARTICLES:
-        for cursor in range(prefix_start, draft.event.start):
-            if index.text.startswith(particle, cursor):
-                spans += ((cursor, cursor + len(particle)),)
+    spans = tuple((event.start, event.end) for event in stances)
+    if structures:
+        spans += tuple(
+            (event.start, event.end)
+            for event in (*targets, *structures)
+        )
+        spans += tuple(
+            (cursor, cursor + 1)
+            for cursor in range(prefix_start, draft.event.start)
+            if index.text[cursor] in EVIDENCE_BA_PARTICLE_CHARS
+        )
     complete = _span_covered(
         prefix_start,
         draft.event.start,
@@ -1294,8 +1423,6 @@ def _ordinary_command_proof(
         shape = stances[-1].value
     elif structures and targets:
         shape = "ba_object"
-    elif targets:
-        shape = "object_before_action"
     else:
         shape = "bare_action"
     return _CommandProof(shape, prefix_start, draft.event.start, complete)
@@ -1363,7 +1490,11 @@ def _actor_reset_between(
             transition.end,
             current.draft.event.start,
         ):
-            if stance.value not in {"strict_command", "user_subject"}:
+            if stance.value not in {
+                "negative_command",
+                "strict_command",
+                "user_subject",
+            }:
                 continue
             if _innermost_quote(stance.start, quotes) is None:
                 return True
@@ -1378,7 +1509,6 @@ def _assign_actors(
     report_scopes: tuple[_ReportScope, ...],
 ) -> tuple[ActorKind, ...]:
     basis_owned_quotes = _owned_basis_quote_ids(index, quotes, providers)
-    consumed: dict[int, int] = {scope.scope_id: 0 for scope in report_scopes}
     reset_scopes: set[int] = set()
     last_report_action_end: dict[int, int] = {}
     actors: list[ActorKind] = []
@@ -1388,68 +1518,96 @@ def _assign_actors(
     latest_basis: ProviderEvidence | None = None
     latest_unresolved: ProviderEvidence | None = None
     for item in resolved:
+        _work()
         position = item.draft.event.start
         quote = _innermost_quote(position, quotes)
         while (
             report_cursor < len(report_scopes)
             and report_scopes[report_cursor].start <= position
         ):
+            _work()
             active_reports.append(report_scopes[report_cursor])
             report_cursor += 1
         active_reports = [
             scope for scope in active_reports if position < scope.end
         ]
-        active = active_reports[0] if active_reports else None
         while (
             provider_cursor < len(providers)
             and providers[provider_cursor].end <= position
         ):
+            _work()
             provider = providers[provider_cursor]
             if provider.relation == "basis":
                 latest_basis = provider
             elif provider.relation == "unresolved":
                 latest_unresolved = provider
             provider_cursor += 1
-        if active is not None and active.scope_id not in reset_scopes:
-            previous_end = last_report_action_end.get(active.scope_id)
-            if (
-                consumed[active.scope_id] > 0
-                and previous_end is not None
-                and _actor_reset_between(
-                    previous_end,
-                    item,
-                    index,
-                    quotes,
-                )
-            ):
-                reset_scopes.add(active.scope_id)
-            else:
-                actors.append("clinician")
-                consumed[active.scope_id] += 1
-                last_report_action_end[active.scope_id] = item.draft.event.end
-                continue
         if quote is not None and quote.scope_id in basis_owned_quotes:
             actors.append("clinician")
+            continue
+        active = next(
+            (
+                scope
+                for scope in active_reports
+                if scope.scope_id not in reset_scopes
+            ),
+            None,
+        )
+        while active is not None:
+            previous_end = last_report_action_end.get(
+                active.scope_id,
+                active.start,
+            )
+            if _actor_reset_between(
+                previous_end,
+                item,
+                index,
+                quotes,
+            ):
+                reset_scopes.add(active.scope_id)
+                active = next(
+                    (
+                        scope
+                        for scope in active_reports
+                        if scope.scope_id not in reset_scopes
+                    ),
+                    None,
+                )
+                continue
+            actors.append("clinician")
+            last_report_action_end[active.scope_id] = item.draft.event.end
+            break
+        if active is not None and active.scope_id not in reset_scopes:
+            continue
+        if quote is not None:
+            user_proof_before_quote = (
+                item.proof.complete
+                and item.proof.shape
+                in {"negative_command", "strict_command", "user_subject"}
+                and item.proof.start < quote.start
+            )
+            actors.append("user" if user_proof_before_quote else "ambiguous")
             continue
         basis = latest_basis
         if basis is not None and (
             _first_hard_boundary_after(index, basis.end) < position
         ):
             basis = None
-        if basis is not None:
-            actors.append("user")
-            continue
         unresolved = latest_unresolved
         if unresolved is not None and (
             _first_hard_boundary_after(index, unresolved.end) < position
         ):
             unresolved = None
-        if unresolved is not None and not (
-            item.proof.complete and item.target.target == "clinician_record"
-        ):
+        if unresolved is not None:
             actors.append("ambiguous")
-        else:
+        elif basis is not None and item.proof.complete:
             actors.append("user")
+        elif basis is not None:
+            actors.append("ambiguous")
+        elif item.proof.complete:
+            actors.append("user")
+        else:
+            actors.append("ambiguous")
     return tuple(actors)
 
 
@@ -1457,8 +1615,8 @@ def _resolve_stance(
     item: _ResolvedDraft,
     drafts: tuple[_ActionDraft, ...],
     index: _LexicalIndex,
-    actor: ActorKind,
 ) -> tuple[PolarityKind, ModalityKind]:
+    _work()
     negative = _negative_stance(item.draft, drafts, index)
     polarity: PolarityKind = "negative" if negative is not None else "positive"
     if item.draft.role == "embedded":
@@ -1472,8 +1630,6 @@ def _resolve_stance(
     if negative is not None and negative.value == "negative_statement":
         return polarity, "unknown"
     if negative is not None and negative.value == "negative_command":
-        return polarity, "command"
-    if actor == "clinician":
         return polarity, "command"
     return polarity, "command" if item.proof.complete else "unknown"
 
@@ -1502,11 +1658,12 @@ def _scan_actions(
     all_drafts = _build_action_drafts(index, quotes)
     drafts = _finalize_drafts(
         tuple(draft for draft in all_drafts if draft.role != "noun"),
-        len(index.text),
+        index,
     )
     prior_proofs: dict[int, _CommandProof] = {}
     resolved: list[_ResolvedDraft] = []
     for draft in drafts:
+        _work()
         target = _resolve_target(draft, drafts, index)
         action = _resolve_action_kind(draft, target)
         if action is None:
@@ -1530,7 +1687,8 @@ def _scan_actions(
     )
     actions: list[ActionEvidence] = []
     for item, actor in zip(resolved_tuple, actors):
-        polarity, modality = _resolve_stance(item, drafts, index, actor)
+        _work()
+        polarity, modality = _resolve_stance(item, drafts, index)
         actions.append(
             ActionEvidence(
                 start=item.draft.event.start,
@@ -1552,14 +1710,20 @@ def _parse_action_evidence_with_index(
     text: str,
 ) -> tuple[EvidenceParse, _LexicalIndex]:
     index = _lexical_scan(text)
-    providers = _build_provider_evidence(index)
-    quotes = _build_quote_scopes(index)
-    parsed = EvidenceParse(
-        text=text,
-        clinician_bearing=bool(providers),
-        providers=providers,
-        actions=_scan_actions(index, providers, quotes),
-    )
+    meter = _WorkMeter(index.lexical_work_units)
+    token = _ACTIVE_WORK_METER.set(meter)
+    try:
+        providers = _build_provider_evidence(index)
+        quotes = _build_quote_scopes(index)
+        parsed = EvidenceParse(
+            text=text,
+            clinician_bearing=bool(providers),
+            providers=providers,
+            actions=_scan_actions(index, providers, quotes),
+        )
+    finally:
+        _ACTIVE_WORK_METER.reset(token)
+    index = replace(index, work_units=meter.units)
     return parsed, index
 
 

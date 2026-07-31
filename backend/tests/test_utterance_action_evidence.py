@@ -1557,7 +1557,133 @@ def test_user_cue_outside_quote_proves_the_quoted_user_command():
 
     assert tuple(
         (action.actor, action.modality) for action in parsed.actions
-    ) == (("clinician", "command"), ("user", "command"))
+    ) == (("clinician", "unknown"), ("user", "command"))
+
+
+@pytest.mark.parametrize("text", ("用药记录删除", "要删除用药记录"))
+def test_unapproved_command_shapes_fail_closed(text):
+    parsed = parse_action_evidence(text)
+
+    assert tuple(
+        (action.actor, action.modality, _authorization_eligible(action))
+        for action in parsed.actions
+    ) == (("ambiguous", "unknown", False),)
+
+
+def test_clinician_actor_does_not_bypass_command_proof():
+    text = "医生说要保存诊断"
+
+    parsed = parse_action_evidence(text)
+
+    assert tuple(
+        (action.actor, action.modality, _authorization_eligible(action))
+        for action in parsed.actions
+    ) == (("clinician", "unknown", False),)
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "不要删除用药记录",
+        "别删除用药记录",
+        "不用删除用药记录",
+        "无需删除用药记录",
+        "先别删除用药记录",
+    ),
+)
+def test_explicit_negative_command_keeps_user_cancellation_evidence(text):
+    parsed = parse_action_evidence(text)
+
+    assert tuple(
+        (action.actor, action.polarity, action.modality)
+        for action in parsed.actions
+    ) == (("user", "negative", "command"),)
+
+
+def test_later_negative_command_can_cancel_prior_positive_action():
+    text = "请删除用药记录。不要删除用药记录"
+
+    parsed = parse_action_evidence(text)
+
+    assert tuple(
+        (
+            action.action,
+            action.actor,
+            action.polarity,
+            action.modality,
+        )
+        for action in parsed.actions
+    ) == (
+        ("delete", "user", "positive", "command"),
+        ("delete", "user", "negative", "command"),
+    )
+
+
+def test_negative_command_can_reset_a_clinician_report_scope():
+    text = "医生说要删除用药记录但不要删除用药记录"
+
+    parsed = parse_action_evidence(text)
+
+    assert tuple(
+        (action.actor, action.polarity, action.modality)
+        for action in parsed.actions
+    ) == (
+        ("clinician", "positive", "unknown"),
+        ("user", "negative", "command"),
+    )
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "他说“请删除用药记录”",
+        "朋友说「请删除用药记录」",
+        "‘请删除用药记录’",
+    ),
+)
+def test_unowned_quote_is_ambiguous_even_with_internal_command_cue(text):
+    parsed = parse_action_evidence(text)
+
+    assert tuple(
+        (action.actor, action.modality, _authorization_eligible(action))
+        for action in parsed.actions
+    ) == (("ambiguous", "command", False),)
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "医生，请删除诊断记录",
+        "根据康复师建议医生请删除用药记录",
+    ),
+)
+def test_unresolved_provider_has_priority_over_user_command_proof(text):
+    parsed = parse_action_evidence(text)
+
+    assert len(parsed.actions) == 1
+    assert parsed.actions[0].actor == "ambiguous"
+    assert _authorization_eligible(parsed.actions[0]) is False
+
+
+def test_report_transition_can_reset_without_prior_action_evidence():
+    transitioned = parse_action_evidence("医生说腰肌劳损但请记录腰痛")
+    unseparated = parse_action_evidence("医生说腰肌劳损请记录腰痛")
+
+    assert tuple(action.actor for action in transitioned.actions) == ("user",)
+    assert tuple(action.actor for action in unseparated.actions) == (
+        "clinician",
+    )
+
+
+def test_work_units_include_post_lexical_parser_work():
+    parsed, index = (
+        utterance_action_evidence._parse_action_evidence_with_index(
+            "医生说‘请删除用药记录’，然后请记录腰痛。"
+        )
+    )
+
+    assert parsed.actions
+    assert index.work_units > index.lexical_work_units
 
 
 def test_structured_action_candidates_exactly_cover_shared_lexicon():
@@ -1806,7 +1932,7 @@ def test_linear_actor_scope_assigns_each_action_once(text, expected):
     ) == expected
 
 
-def test_rejected_family_candidate_cannot_open_a_user_scope_transition():
+def test_rejected_family_candidate_does_not_block_user_scope_transition():
     text = "医生说要生成复查提醒但请记录腰痛"
 
     parsed = parse_action_evidence(text)
@@ -1814,7 +1940,7 @@ def test_rejected_family_candidate_cannot_open_a_user_scope_transition():
     assert tuple(
         (text[action.start : action.end], action.actor)
         for action in parsed.actions
-    ) == (("记录", "clinician"),)
+    ) == (("记录", "user"),)
 
 
 def test_negation_exceptions_are_driven_by_shared_positioned_cues():

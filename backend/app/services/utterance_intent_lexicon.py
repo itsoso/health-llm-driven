@@ -678,6 +678,5 @@ EVIDENCE_REPORT_NOUN_CONTINUATIONS = {
     "说": ("内容", "话"),
 }
 
-EVIDENCE_COMMAND_PARTICLES = ("顺便", "然后", "先", "再", "要")
-EVIDENCE_REPORT_FILLER_CHARS = frozenset("的对跟给我是要先再：:，, ")
-EVIDENCE_BA_PARTICLE_CHARS = frozenset("把都给将 ")
+EVIDENCE_REPORT_FILLER_CHARS = frozenset("的对跟给我是：:，, ")
+EVIDENCE_BA_PARTICLE_CHARS = frozenset("把都 ")
